@@ -34,6 +34,11 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
     coarse_w0("cprim",1,1,1,1,1),
     u1("cons1",1,1,1,1,1),
     uflx("uflx",1,1,1,1,1),
+    phi0("phi_fc",1,1,1,1),
+    phicc0("phi_cc",1,1,1,1,1),
+    u0wb("conswb",1,1,1,1,1),
+    w0wb("primwb",1,1,1,1,1),
+    w0facewb("primfwb",1,1,1,1,1),
     utest("utest",1,1,1,1,1),
     fofc("fofc",1,1,1,1) {
   // Total number of MeshBlocks on this rank to be used in array dimensioning
@@ -129,6 +134,20 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
   } else {
     porb_u = nullptr;
     psbox_u = nullptr;
+  }
+        
+  // determine if etotgrav is enabled
+  use_etotgrav = pin->GetOrAddBoolean("hydro","etotgrav",false);
+  // allocate array of flags used with etotgrav
+  if (use_etotgrav) {
+    auto &indcs = pmy_pack->pmesh->mb_indcs;
+    int ncells1 = indcs.nx1 + 2*(indcs.ng);
+    int ncells2 = (indcs.nx2 > 1)? (indcs.nx2 + 2*(indcs.ng)) : 1;
+    int ncells3 = (indcs.nx3 > 1)? (indcs.nx3 + 2*(indcs.ng)) : 1;
+    Kokkos::realloc(phicc0, nmb, ncells3, ncells2, ncells1);
+    Kokkos::realloc(phi0.x1f, nmb, ncells3, ncells2, ncells1);
+    Kokkos::realloc(phi0.x2f, nmb, ncells3, ncells2, ncells1);
+    Kokkos::realloc(phi0.x3f, nmb, ncells3, ncells2, ncells1);
   }
 
   // for time-evolving problems, continue to construct methods, allocate arrays

@@ -103,6 +103,11 @@ class Hydro {
   DvceArray4D<bool> fofc;  // flag for each cell to indicate if FOFC is needed
   bool use_fofc = false;   // flag to enable FOFC
   DvceArray5D<Real> utest;  // scratch array for FOFC
+    
+  // following only used for including time-independent gravity in the conserved energy equation
+  bool use_etotgrav = false;   // flag to enable etotgrav
+  DvceFaceFld4D<Real> phi0;     // face-centered gravitational potential energy
+  DvceArray4D<Real> phicc0;     // cell-centered gravitational potential energy
 
   // container to hold names of TaskIDs
   HydroTaskIDs id;
@@ -139,6 +144,10 @@ class Hydro {
 
   // first-order flux correction
   void FOFC(Driver *d, int stage);
+    
+  void AddGravFlux(const DvceFaceFld4D<Real> &phi0, DvceFaceFld5D<Real> &flx);
+  void AddGravEtot(const DvceArray4D<Real> &phicc0, DvceArray5D<Real> &cons, const int il, const int iu, const int jl, const int ju, const int kl, const int ku);
+  void RemoveGravEtot(const DvceArray4D<Real> &phicc0, DvceArray5D<Real> &cons, const int il, const int iu, const int jl, const int ju, const int kl, const int ku);
 
  private:
   MeshBlockPack* pmy_pack;  // ptr to MeshBlockPack containing this Hydro
