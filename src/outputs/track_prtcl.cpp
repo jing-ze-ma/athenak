@@ -70,8 +70,10 @@ void TrackedParticleOutput::LoadOutputData(Mesh *pm) {
 #endif
   tracked_prtcl.resize(npout);
   // sync tracked particle device array with host
-  tracked_prtcl.template modify<DevExeSpace>();
-  tracked_prtcl.template sync<HostMemSpace>();
+//  tracked_prtcl.template modify<DevExeSpace>();
+//  tracked_prtcl.template sync<HostMemSpace>();
+    tracked_prtcl.modify_device();
+    tracked_prtcl.sync_host();
 
   // copy host view into host outpart array
   Kokkos::realloc(outpart, npout);

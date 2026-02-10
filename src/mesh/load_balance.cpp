@@ -260,8 +260,10 @@ void MeshRefinement::InitRecvAMR(int nleaf) {
     }
   }
   // Sync dual array, reallocate receive data array
-  recvbuf.template modify<HostMemSpace>();
-  recvbuf.template sync<DevExeSpace>();
+//  recvbuf.template modify<HostMemSpace>();
+//  recvbuf.template sync<DevExeSpace>();
+    recvbuf.modify_host();
+    recvbuf.sync_device();
   {
     int ndata = recvbuf.h_view((nmb_recv-1)).offset + recvbuf.h_view((nmb_recv-1)).cnt;
     Kokkos::realloc(recv_data, ndata);
@@ -517,8 +519,10 @@ void MeshRefinement::PackAndSendAMR(int nleaf) {
     }
   }
   // Sync dual array, reallocate send data array
-  sendbuf.template modify<HostMemSpace>();
-  sendbuf.template sync<DevExeSpace>();
+//  sendbuf.template modify<HostMemSpace>();
+//  sendbuf.template sync<DevExeSpace>();
+    sendbuf.modify_host();
+    sendbuf.sync_device();
   {
     int ndata = sendbuf.h_view((nmb_send-1)).offset + sendbuf.h_view((nmb_send-1)).cnt;
     Kokkos::realloc(send_data, ndata);
