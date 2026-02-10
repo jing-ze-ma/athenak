@@ -82,13 +82,13 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   Real gm1, p0;
   Real grav_acc;
   if (pmbp->phydro != nullptr) {
-    grav_acc = pin->GetReal("hydro","const_accel_val");
+    grav_acc = pin->GetReal("hydro_srcterms","const_accel_val");
     u0_ = pmbp->phydro->u0;
     gm1 = (pmbp->phydro->peos->eos_data.gamma) - 1.0;
     p0 = 1.0/(pmbp->phydro->peos->eos_data.gamma);
     p0 = pin->GetOrAddReal("problem", "p0", p0);
   } else if (pmbp->pmhd != nullptr) {
-    grav_acc = pin->GetReal("mhd","const_accel_val");
+    grav_acc = pin->GetReal("mhd_srcterms","const_accel_val");
     u0_ = pmbp->pmhd->u0;
     gm1 = (pmbp->pmhd->peos->eos_data.gamma) - 1.0;
     p0 = 1.0/(pmbp->pmhd->peos->eos_data.gamma);
