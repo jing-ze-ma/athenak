@@ -30,8 +30,8 @@
 
 #include "eos/primitive_solver_hyd.hpp"
 #include "eos/primitive-solver/idealgas.hpp"
-#include "eos/primitive-solver/eos_compose.hpp"
-#include "eos/primitive-solver/eos_hybrid.hpp"
+//#include "eos/primitive-solver/eos_compose.hpp"
+//#include "eos/primitive-solver/eos_hybrid.hpp"
 #include "eos/primitive-solver/piecewise_polytrope.hpp"
 #include "eos/primitive-solver/reset_floor.hpp"
 
@@ -50,26 +50,26 @@ DynGRMHD* SelectDynGRMHDEOS(MeshBlockPack *ppack, ParameterInput *pin,
     case DynGRMHD_EOS::eos_piecewise_poly:
       dyn_gr = new DynGRMHDPS<Primitive::PiecewisePolytrope, ErrorPolicy>(ppack, pin);
       break;
-    case DynGRMHD_EOS::eos_compose:
-      use_NQT = pin->GetOrAddBoolean("mhd", "use_NQT",false);
-      if (use_NQT) {
-        dyn_gr = new DynGRMHDPS<Primitive::EOSCompOSE<Primitive::NQTLogs>,
-                                ErrorPolicy>(ppack, pin);
-      } else {
-        dyn_gr = new DynGRMHDPS<Primitive::EOSCompOSE<Primitive::NormalLogs>,
-                                ErrorPolicy>(ppack, pin);
-      }
-      break;
-    case DynGRMHD_EOS::eos_hybrid:
-      use_NQT = pin->GetOrAddBoolean("mhd", "use_NQT",false);
-      if (use_NQT) {
-        dyn_gr = new DynGRMHDPS<Primitive::EOSHybrid<Primitive::NQTLogs>,
-                                ErrorPolicy>(ppack, pin);
-      } else {
-        dyn_gr = new DynGRMHDPS<Primitive::EOSHybrid<Primitive::NormalLogs>,
-                                ErrorPolicy>(ppack, pin);
-      }
-      break;
+//    case DynGRMHD_EOS::eos_compose:
+//      use_NQT = pin->GetOrAddBoolean("mhd", "use_NQT",false);
+//      if (use_NQT) {
+//        dyn_gr = new DynGRMHDPS<Primitive::EOSCompOSE<Primitive::NQTLogs>,
+//                                ErrorPolicy>(ppack, pin);
+//      } else {
+//        dyn_gr = new DynGRMHDPS<Primitive::EOSCompOSE<Primitive::NormalLogs>,
+//                                ErrorPolicy>(ppack, pin);
+//      }
+//      break;
+//    case DynGRMHD_EOS::eos_hybrid:
+//      use_NQT = pin->GetOrAddBoolean("mhd", "use_NQT",false);
+//      if (use_NQT) {
+//        dyn_gr = new DynGRMHDPS<Primitive::EOSHybrid<Primitive::NQTLogs>,
+//                                ErrorPolicy>(ppack, pin);
+//      } else {
+//        dyn_gr = new DynGRMHDPS<Primitive::EOSHybrid<Primitive::NormalLogs>,
+//                                ErrorPolicy>(ppack, pin);
+//      }
+//      break;
   }
   return dyn_gr;
 }
@@ -84,10 +84,10 @@ DynGRMHD* BuildDynGRMHD(MeshBlockPack *ppack, ParameterInput *pin) {
     eos_policy = DynGRMHD_EOS::eos_ideal;
   } else if (eos_string.compare("piecewise_poly") == 0) {
     eos_policy = DynGRMHD_EOS::eos_piecewise_poly;
-  } else if (eos_string.compare("compose") == 0) {
-    eos_policy = DynGRMHD_EOS::eos_compose;
-  } else if (eos_string.compare("hybrid") == 0) {
-    eos_policy = DynGRMHD_EOS::eos_hybrid;
+//  } else if (eos_string.compare("compose") == 0) {
+//    eos_policy = DynGRMHD_EOS::eos_compose;
+//  } else if (eos_string.compare("hybrid") == 0) {
+//    eos_policy = DynGRMHD_EOS::eos_hybrid;
   } else {
     std::cout << "### FATAL ERROR in " <<__FILE__ << " at line " << __LINE__
               << std::endl << "<mhd> dyn_eos = '" << eos_string
@@ -653,14 +653,14 @@ void DynGRMHDPS<EOSPolicy, ErrorPolicy>::AddCoordTermsEOS(const DvceArray5D<Real
 // Instantiated templates
 template class DynGRMHDPS<Primitive::IdealGas, Primitive::ResetFloor>;
 template class DynGRMHDPS<Primitive::PiecewisePolytrope, Primitive::ResetFloor>;
-template class DynGRMHDPS<Primitive::EOSCompOSE<Primitive::NormalLogs>,
-                          Primitive::ResetFloor>;
-template class DynGRMHDPS<Primitive::EOSCompOSE<Primitive::NQTLogs>,
-                          Primitive::ResetFloor>;
-template class DynGRMHDPS<Primitive::EOSHybrid<Primitive::NormalLogs>,
-                          Primitive::ResetFloor>;
-template class DynGRMHDPS<Primitive::EOSHybrid<Primitive::NQTLogs>,
-                          Primitive::ResetFloor>;
+//template class DynGRMHDPS<Primitive::EOSCompOSE<Primitive::NormalLogs>,
+//                          Primitive::ResetFloor>;
+//template class DynGRMHDPS<Primitive::EOSCompOSE<Primitive::NQTLogs>,
+//                          Primitive::ResetFloor>;
+//template class DynGRMHDPS<Primitive::EOSHybrid<Primitive::NormalLogs>,
+//                          Primitive::ResetFloor>;
+//template class DynGRMHDPS<Primitive::EOSHybrid<Primitive::NQTLogs>,
+//                          Primitive::ResetFloor>;
 
 // Macro for defining CoordTerms templates
 #define INSTANTIATE_COORD_TERMS(EOSPolicy, ErrorPolicy) \
@@ -679,12 +679,12 @@ void DynGRMHDPS<EOSPolicy, ErrorPolicy>::AddCoordTermsEOS<4>( \
 
 INSTANTIATE_COORD_TERMS(Primitive::IdealGas, Primitive::ResetFloor);
 INSTANTIATE_COORD_TERMS(Primitive::PiecewisePolytrope, Primitive::ResetFloor);
-INSTANTIATE_COORD_TERMS(Primitive::EOSCompOSE<Primitive::NormalLogs>,
-                        Primitive::ResetFloor);
-INSTANTIATE_COORD_TERMS(Primitive::EOSCompOSE<Primitive::NQTLogs>, Primitive::ResetFloor);
-INSTANTIATE_COORD_TERMS(Primitive::EOSHybrid<Primitive::NormalLogs>,
-                        Primitive::ResetFloor);
-INSTANTIATE_COORD_TERMS(Primitive::EOSHybrid<Primitive::NQTLogs>, Primitive::ResetFloor);
+//INSTANTIATE_COORD_TERMS(Primitive::EOSCompOSE<Primitive::NormalLogs>,
+//                        Primitive::ResetFloor);
+//INSTANTIATE_COORD_TERMS(Primitive::EOSCompOSE<Primitive::NQTLogs>, Primitive::ResetFloor);
+//INSTANTIATE_COORD_TERMS(Primitive::EOSHybrid<Primitive::NormalLogs>,
+//                        Primitive::ResetFloor);
+//INSTANTIATE_COORD_TERMS(Primitive::EOSHybrid<Primitive::NQTLogs>, Primitive::ResetFloor);
 
 #undef INSTANTIATE_COORD_TERMS
 
