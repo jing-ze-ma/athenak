@@ -21,6 +21,9 @@
 #include "hydro/rsolvers/llf_hyd.hpp"
 #include "hydro/rsolvers/hlle_hyd.hpp"
 #include "hydro/rsolvers/hllc_hyd.hpp"
+#include "hydro/rsolvers/lhllc_hyd.hpp"
+#include "hydro/rsolvers/hllclm_hyd.hpp"
+#include "hydro/rsolvers/ausmpup_hyd.hpp"
 #include "hydro/rsolvers/roe_hyd.hpp"
 #include "hydro/rsolvers/llf_srhyd.hpp"
 #include "hydro/rsolvers/hlle_srhyd.hpp"
@@ -125,6 +128,12 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
       HLLE(member, eos, indcs, size, coord, m, k, j, il, iu, IVX, wl, wr, flx1);
     } else if constexpr (rsolver_method_ == Hydro_RSolver::hllc) {
       HLLC(member, eos, indcs, size, coord, m, k, j, il, iu, IVX, wl, wr, flx1);
+    } else if constexpr (rsolver_method_ == Hydro_RSolver::lhllc) {
+      LHLLC(member, eos, indcs, size, coord, m, k, j, il, iu, IVX, wl, wr, flx1);
+    } else if constexpr (rsolver_method_ == Hydro_RSolver::hllclm) {
+      HLLCLM(member, eos, indcs, size, coord, m, k, j, il, iu, IVX, wl, wr, flx1);
+    } else if constexpr (rsolver_method_ == Hydro_RSolver::ausmpup) {
+      AUSMPUP(member, eos, indcs, size, coord, m, k, j, il, iu, IVX, wl, wr, flx1);
     } else if constexpr (rsolver_method_ == Hydro_RSolver::roe) {
       Roe(member, eos, indcs, size, coord, m, k, j, il, iu, IVX, wl, wr, flx1);
     } else if constexpr (rsolver_method_ == Hydro_RSolver::llf_sr) {
@@ -229,6 +238,12 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
             HLLE(member, eos, indcs, size, coord, m, k, j, il, iu, IVY, wl, wr, flx2);
           } else if constexpr (rsolver_method_ == Hydro_RSolver::hllc) {
             HLLC(member, eos, indcs, size, coord, m, k, j, il, iu, IVY, wl, wr, flx2);
+          } else if constexpr (rsolver_method_ == Hydro_RSolver::lhllc) {
+            LHLLC(member, eos, indcs, size, coord, m, k, j, il, iu, IVY, wl, wr, flx2);
+          } else if constexpr (rsolver_method_ == Hydro_RSolver::hllclm) {
+            HLLCLM(member, eos, indcs, size, coord, m, k, j, il, iu, IVY, wl, wr, flx2);
+          } else if constexpr (rsolver_method_ == Hydro_RSolver::ausmpup) {
+            AUSMPUP(member, eos, indcs, size, coord, m, k, j, il, iu, IVY, wl, wr, flx2);
           } else if constexpr (rsolver_method_ == Hydro_RSolver::roe) {
             Roe(member, eos, indcs, size, coord, m, k, j, il, iu, IVY, wl, wr, flx2);
           } else if constexpr (rsolver_method_ == Hydro_RSolver::llf_sr) {
@@ -329,6 +344,12 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
             HLLE(member, eos, indcs, size, coord, m, k, j, il, iu, IVZ, wl, wr, flx3);
           } else if constexpr (rsolver_method_ == Hydro_RSolver::hllc) {
             HLLC(member, eos, indcs, size, coord, m, k, j, il, iu, IVZ, wl, wr, flx3);
+          } else if constexpr (rsolver_method_ == Hydro_RSolver::lhllc) {
+            LHLLC(member, eos, indcs, size, coord, m, k, j, il, iu, IVZ, wl, wr, flx3);
+          } else if constexpr (rsolver_method_ == Hydro_RSolver::hllclm) {
+            HLLCLM(member, eos, indcs, size, coord, m, k, j, il, iu, IVZ, wl, wr, flx3);
+          } else if constexpr (rsolver_method_ == Hydro_RSolver::ausmpup) {
+            AUSMPUP(member, eos, indcs, size, coord, m, k, j, il, iu, IVZ, wl, wr, flx3);
           } else if constexpr (rsolver_method_ == Hydro_RSolver::roe) {
             Roe(member, eos, indcs, size, coord, m, k, j, il, iu, IVZ, wl, wr, flx3);
           } else if constexpr (rsolver_method_ == Hydro_RSolver::llf_sr) {
@@ -369,6 +390,9 @@ template void Hydro::CalculateFluxes<Hydro_RSolver::advect>(Driver *pdriver, int
 template void Hydro::CalculateFluxes<Hydro_RSolver::llf>(Driver *pdriver, int stage);
 template void Hydro::CalculateFluxes<Hydro_RSolver::hlle>(Driver *pdriver, int stage);
 template void Hydro::CalculateFluxes<Hydro_RSolver::hllc>(Driver *pdriver, int stage);
+template void Hydro::CalculateFluxes<Hydro_RSolver::lhllc>(Driver *pdriver, int stage);
+template void Hydro::CalculateFluxes<Hydro_RSolver::hllclm>(Driver *pdriver, int stage);
+template void Hydro::CalculateFluxes<Hydro_RSolver::ausmpup>(Driver *pdriver, int stage);
 template void Hydro::CalculateFluxes<Hydro_RSolver::roe>(Driver *pdriver, int stage);
 template void Hydro::CalculateFluxes<Hydro_RSolver::llf_sr>(Driver *pdriver, int stage);
 template void Hydro::CalculateFluxes<Hydro_RSolver::hlle_sr>(Driver *pdriver, int stage);

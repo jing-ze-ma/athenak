@@ -172,6 +172,12 @@ TaskStatus Hydro::Fluxes(Driver *pdrive, int stage) {
     CalculateFluxes<Hydro_RSolver::hlle>(pdrive, stage);
   } else if (rsolver_method == Hydro_RSolver::hllc) {
     CalculateFluxes<Hydro_RSolver::hllc>(pdrive, stage);
+  } else if (rsolver_method == Hydro_RSolver::lhllc) {
+    CalculateFluxes<Hydro_RSolver::lhllc>(pdrive, stage);
+  } else if (rsolver_method == Hydro_RSolver::hllclm) {
+    CalculateFluxes<Hydro_RSolver::hllclm>(pdrive, stage);
+  } else if (rsolver_method == Hydro_RSolver::ausmpup) {
+    CalculateFluxes<Hydro_RSolver::ausmpup>(pdrive, stage);
   } else if (rsolver_method == Hydro_RSolver::roe) {
     CalculateFluxes<Hydro_RSolver::roe>(pdrive, stage);
   } else if (rsolver_method == Hydro_RSolver::llf_sr) {

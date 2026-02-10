@@ -278,6 +278,36 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
                     << "isothermal EOS" << std::endl;
           std::exit(EXIT_FAILURE);
         }
+      // LHLLC solver
+      } else if (rsolver.compare("lhllc") == 0) {
+        if (peos->eos_data.is_ideal) {
+          rsolver_method = Hydro_RSolver::lhllc;
+        } else {
+          std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                    << std::endl << "<hydro>/rsolver = lhllc cannot be used with "
+                    << "isothermal EOS" << std::endl;
+          std::exit(EXIT_FAILURE);
+        }
+      // HLLCLM solver
+      } else if (rsolver.compare("hllclm") == 0) {
+        if (peos->eos_data.is_ideal) {
+          rsolver_method = Hydro_RSolver::hllclm;
+        } else {
+          std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                    << std::endl << "<hydro>/rsolver = hllclm cannot be used with "
+                    << "isothermal EOS" << std::endl;
+          std::exit(EXIT_FAILURE);
+        }
+      // AUSMPUP solver
+      } else if (rsolver.compare("ausmpup") == 0) {
+        if (peos->eos_data.is_ideal) {
+          rsolver_method = Hydro_RSolver::ausmpup;
+        } else {
+          std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                    << std::endl << "<hydro>/rsolver = ausmpup cannot be used with "
+                    << "isothermal EOS" << std::endl;
+          std::exit(EXIT_FAILURE);
+        }
       // Roe solver
       } else if (rsolver.compare("roe") == 0) {
         rsolver_method = Hydro_RSolver::roe;
