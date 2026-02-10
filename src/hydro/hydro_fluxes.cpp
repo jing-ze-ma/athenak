@@ -55,6 +55,11 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
   auto &size_ = pmy_pack->pmb->mb_size;
   auto &coord_ = pmy_pack->pcoord->coord_data;
   auto &w0_ = w0;
+//  if (use_wellbalance) {
+      auto w0facewb_x1f = w0facewb.x1f;
+      auto w0facewb_x2f = w0facewb.x2f;
+      auto w0facewb_x3f = w0facewb.x3f;
+//  }
 
   //--------------------------------------------------------------------------------------
   // i-direction
@@ -97,6 +102,11 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
       default:
         break;
     }
+      
+      if (use_wellbalance) {
+        AddWbPrimFaceX1(member,m,k,j,il-1,iu,w0facewb_x1f,wl,wr);
+      }
+      
     // Sync all threads in the team so that scratch memory is consistent
     member.team_barrier();
 
@@ -196,6 +206,11 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
           default:
             break;
         }
+          
+          if (use_wellbalance) {
+            AddWbPrimFaceX2(member,m,k,j,il,iu,w0facewb_x2f,wl_jp1,wr);
+          }
+          
         member.team_barrier();
 
         // compute fluxes over [js,je+1].  RS returns flux in input wr array
@@ -291,6 +306,11 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
           default:
             break;
         }
+          
+          if (use_wellbalance) {
+            AddWbPrimFaceX3(member,m,k,j,il,iu,w0facewb_x3f,wl_kp1,wr);
+          }
+          
         member.team_barrier();
 
         // compute fluxes over [ks,ke+1].  RS returns flux in input wr array

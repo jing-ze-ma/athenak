@@ -60,6 +60,7 @@ add_executable(
 	geodesic-grid/gauss_legendre.cpp
 
         hydro/hydro.cpp
+        hydro/hydro_wellbalance.cpp
         hydro/hydro_fluxes.cpp
         hydro/hydro_fofc.cpp
         hydro/hydro_newdt.cpp
