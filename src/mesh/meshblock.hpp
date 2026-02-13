@@ -43,7 +43,8 @@ class MeshBlock {
   DualArray2D<NeighborBlock> nghbr;  // data on all (up to 56) neighbors for each MB
 
   // function to set data describing neighbors
-  void SetNeighbors(std::unique_ptr<MeshBlockTree> &ptree, int *ranklist);
+//  void SetNeighbors(std::unique_ptr<MeshBlockTree> &ptree, int *ranklist);
+  void SetNeighbors(int *ranklist);
 
  private:
   // data

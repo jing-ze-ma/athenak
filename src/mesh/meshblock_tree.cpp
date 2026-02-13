@@ -17,8 +17,8 @@
 #include "meshblock_tree.hpp"
 
 // Define static member variables
-Mesh* MeshBlockTree::pmesh_;
-MeshBlockTree* MeshBlockTree::proot_;
+//Mesh* MeshBlockTree::pmesh_;
+//MeshBlockTree* MeshBlockTree::proot_;
 int MeshBlockTree::nleaf_;
 
 //----------------------------------------------------------------------------------------
@@ -26,12 +26,13 @@ int MeshBlockTree::nleaf_;
 //! \brief constructor for the logical root level
 
 MeshBlockTree::MeshBlockTree(Mesh *pmesh) :
-  pleaf_(nullptr), gid_(-1) {
-  pmesh_ = pmesh;
+  pleaf_(nullptr), gid_(-1), pmesh_(pmesh), proot_(this) {
+//  pmesh_ = pmesh;
   lloc_.lx1 = 0;
   lloc_.lx2 = 0;
   lloc_.lx3 = 0;
   lloc_.level = 0;
+  lloc_.panel = -1;
 }
 
 //----------------------------------------------------------------------------------------
@@ -39,11 +40,12 @@ MeshBlockTree::MeshBlockTree(Mesh *pmesh) :
 //! \brief constructor for a leaf
 
 MeshBlockTree::MeshBlockTree(MeshBlockTree *parent, int ox1, int ox2, int ox3) :
-  pleaf_(nullptr), gid_(parent->gid_) {
+  pleaf_(nullptr), gid_(parent->gid_), pmesh_(parent->pmesh_), proot_(parent->proot_) {
   lloc_.lx1 = (parent->lloc_.lx1<<1) + ox1;
   lloc_.lx2 = (parent->lloc_.lx2<<1) + ox2;
   lloc_.lx3 = (parent->lloc_.lx3<<1) + ox3;
   lloc_.level = parent->lloc_.level + 1;
+  lloc_.panel = parent->lloc_.panel;
 }
 
 //----------------------------------------------------------------------------------------
@@ -55,6 +57,10 @@ MeshBlockTree::~MeshBlockTree() {
     for (int i=0; i<nleaf_; i++) { delete pleaf_[i]; }
     delete [] pleaf_;
   }
+}
+
+void MeshBlockTree::SetPanelID(int &p) {
+    lloc_.panel = p;
 }
 
 //----------------------------------------------------------------------------------------

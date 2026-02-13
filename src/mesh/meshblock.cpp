@@ -148,7 +148,8 @@ MeshBlock::MeshBlock(MeshBlockPack* ppack, int igids, int nmb) :
 // Indices of the view are (m,n) = (no. of MBs, no. of neighbors)
 // Based on SearchAndSetNeighbors() function in /src/bvals/bvals_base.cpp in C++ version
 
-void MeshBlock::SetNeighbors(std::unique_ptr<MeshBlockTree> &ptree, int *ranklist) {
+//void MeshBlock::SetNeighbors(std::unique_ptr<MeshBlockTree> &ptree, int *ranklist) {
+void MeshBlock::SetNeighbors(int *ranklist) {
   // min number of array elements needed to store MeshBlock neighbors withe SMR/AMR
   // Note not all buffers will be allocated for all nghbrs
   if (pmy_pack->pmesh->one_d) {nnghbr = 8;}
@@ -166,6 +167,7 @@ void MeshBlock::SetNeighbors(std::unique_ptr<MeshBlockTree> &ptree, int *ranklis
       nghbr.h_view(m,n).lev   = -1;
       nghbr.h_view(m,n).rank  = -1;
       nghbr.h_view(m,n).dest  = -1;
+      nghbr.h_view(m,n).panel = -1;
     }
   }
 
@@ -180,6 +182,8 @@ void MeshBlock::SetNeighbors(std::unique_ptr<MeshBlockTree> &ptree, int *ranklis
   // Search MeshBlock tree and find neighbors
   for (int b=0; b<nmb; ++b) {
     LogicalLocation lloc = pmy_pack->pmesh->lloc_eachmb[mb_gid.h_view(b)];
+    int panel = lloc.panel;
+    MeshBlockTree* ptree = pmy_pack->pmesh->panel_trees[panel].get();
 
     // find location of this MeshBlock relative to XXXX
     int myox1, myox2 = 0, myox3 = 0, myfx1, myfx2, myfx3;
@@ -204,6 +208,7 @@ void MeshBlock::SetNeighbors(std::unique_ptr<MeshBlockTree> &ptree, int *ranklis
               nghbr.h_view(b,inghbr).lev = nf->lloc_.level;
               nghbr.h_view(b,inghbr).rank = ranklist[nf->gid_];
               nghbr.h_view(b,inghbr).dest = NeighborIndex(-n,0,0,fy,fz);
+              nghbr.h_view(b,inghbr).panel = panel;
             }
           }
         } else {   // neighbor at same or coarser level
@@ -219,6 +224,7 @@ void MeshBlock::SetNeighbors(std::unique_ptr<MeshBlockTree> &ptree, int *ranklis
           nghbr.h_view(b,inghbr).lev = nt->lloc_.level;
           nghbr.h_view(b,inghbr).rank = ranklist[nt->gid_];
           nghbr.h_view(b,inghbr).dest = idest;
+          nghbr.h_view(b,inghbr).panel = panel;
         }
       }
     }
@@ -238,6 +244,7 @@ void MeshBlock::SetNeighbors(std::unique_ptr<MeshBlockTree> &ptree, int *ranklis
                 nghbr.h_view(b,inghbr).lev = nf->lloc_.level;
                 nghbr.h_view(b,inghbr).rank = ranklist[nf->gid_];
                 nghbr.h_view(b,inghbr).dest = NeighborIndex(0,-m,0,fx,fz);
+                nghbr.h_view(b,inghbr).panel = panel;
               }
             }
           } else {   // neighbor at same or coarser level
@@ -253,6 +260,7 @@ void MeshBlock::SetNeighbors(std::unique_ptr<MeshBlockTree> &ptree, int *ranklis
             nghbr.h_view(b,inghbr).lev = nt->lloc_.level;
             nghbr.h_view(b,inghbr).rank = ranklist[nt->gid_];
             nghbr.h_view(b,inghbr).dest = idest;
+            nghbr.h_view(b,inghbr).panel = panel;
           }
         }
       }
@@ -272,6 +280,7 @@ void MeshBlock::SetNeighbors(std::unique_ptr<MeshBlockTree> &ptree, int *ranklis
                 nghbr.h_view(b,inghbr).lev = nf->lloc_.level;
                 nghbr.h_view(b,inghbr).rank = ranklist[nf->gid_];
                 nghbr.h_view(b,inghbr).dest = NeighborIndex(-n,-m,0,fz,0);
+                nghbr.h_view(b,inghbr).panel = panel;
               }
             } else {   // neighbor at same or coarser level
               int idest,inghbr;
@@ -288,6 +297,7 @@ void MeshBlock::SetNeighbors(std::unique_ptr<MeshBlockTree> &ptree, int *ranklis
                 nghbr.h_view(b,inghbr).lev = nt->lloc_.level;
                 nghbr.h_view(b,inghbr).rank = ranklist[nt->gid_];
                 nghbr.h_view(b,inghbr).dest = idest;
+                nghbr.h_view(b,inghbr).panel = panel;
               }
             }
           }
@@ -310,6 +320,7 @@ void MeshBlock::SetNeighbors(std::unique_ptr<MeshBlockTree> &ptree, int *ranklis
                 nghbr.h_view(b,inghbr).lev = nf->lloc_.level;
                 nghbr.h_view(b,inghbr).rank = ranklist[nf->gid_];
                 nghbr.h_view(b,inghbr).dest = NeighborIndex(0,0,-l,fx,fy);
+                nghbr.h_view(b,inghbr).panel = panel;
               }
             }
           } else {   // neighbor at same or coarser level -- no subblocks
@@ -325,6 +336,7 @@ void MeshBlock::SetNeighbors(std::unique_ptr<MeshBlockTree> &ptree, int *ranklis
             nghbr.h_view(b,inghbr).lev = nt->lloc_.level;
             nghbr.h_view(b,inghbr).rank = ranklist[nt->gid_];
             nghbr.h_view(b,inghbr).dest = idest;
+            nghbr.h_view(b,inghbr).panel = panel;
           }
         }
       }
@@ -344,6 +356,7 @@ void MeshBlock::SetNeighbors(std::unique_ptr<MeshBlockTree> &ptree, int *ranklis
                 nghbr.h_view(b,inghbr).lev = nf->lloc_.level;
                 nghbr.h_view(b,inghbr).rank = ranklist[nf->gid_];
                 nghbr.h_view(b,inghbr).dest = NeighborIndex(-n,0,-l,fy,0);
+                nghbr.h_view(b,inghbr).panel = panel;
               }
             } else {   // neighbor at same or coarser level -- no subblocks
               int idest,inghbr;
@@ -360,6 +373,7 @@ void MeshBlock::SetNeighbors(std::unique_ptr<MeshBlockTree> &ptree, int *ranklis
                 nghbr.h_view(b,inghbr).lev = nt->lloc_.level;
                 nghbr.h_view(b,inghbr).rank = ranklist[nt->gid_];
                 nghbr.h_view(b,inghbr).dest = idest;
+                nghbr.h_view(b,inghbr).panel = panel;
               }
             }
           }
@@ -381,6 +395,7 @@ void MeshBlock::SetNeighbors(std::unique_ptr<MeshBlockTree> &ptree, int *ranklis
                 nghbr.h_view(b,inghbr).lev = nf->lloc_.level;
                 nghbr.h_view(b,inghbr).rank = ranklist[nf->gid_];
                 nghbr.h_view(b,inghbr).dest = NeighborIndex(0,-m,-l,fx,0);
+                nghbr.h_view(b,inghbr).panel = panel;
               }
             } else {   // neighbor at same or coarser level -- no subblocks
               int idest,inghbr;
@@ -397,6 +412,7 @@ void MeshBlock::SetNeighbors(std::unique_ptr<MeshBlockTree> &ptree, int *ranklis
                 nghbr.h_view(b,inghbr).lev = nt->lloc_.level;
                 nghbr.h_view(b,inghbr).rank = ranklist[nt->gid_];
                 nghbr.h_view(b,inghbr).dest = idest;
+                nghbr.h_view(b,inghbr).panel = panel;
               }
             }
           }
@@ -423,6 +439,7 @@ void MeshBlock::SetNeighbors(std::unique_ptr<MeshBlockTree> &ptree, int *ranklis
                 nghbr.h_view(b,inghbr).lev = nt->lloc_.level;
                 nghbr.h_view(b,inghbr).rank = ranklist[nt->gid_];
                 nghbr.h_view(b,inghbr).dest = NeighborIndex(-n,-m,-l,0,0);
+                nghbr.h_view(b,inghbr).panel = panel;
               }
             }
           }

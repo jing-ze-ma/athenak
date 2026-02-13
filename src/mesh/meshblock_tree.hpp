@@ -39,6 +39,7 @@ class MeshBlockTree {
   std::int32_t GetLevel() {return lloc_.level;}
 
   // functions
+  void SetPanelID(int &p);
   void CreateRootGrid();
   void AddNode(LogicalLocation rloc, int &nnew);
   void AddNodeWithoutRefinement(LogicalLocation rloc);
@@ -56,8 +57,10 @@ class MeshBlockTree {
   int gid_;                // grid ID
   LogicalLocation lloc_;   // stores logical x1/x2/x3 location, level for node in tree
 
-  static Mesh *pmesh_;           // pointer to Mesh containing Tree
-  static MeshBlockTree *proot_;  // pointer to leaf at root level
+//  static Mesh *pmesh_;           // pointer to Mesh containing Tree
+//  static MeshBlockTree *proot_;  // pointer to leaf at root level
+  Mesh *pmesh_;           // pointer to Mesh containing Tree
+  MeshBlockTree *proot_;  // pointer to leaf at root level
   static int nleaf_;             // number of leafs (2/4/8 for 1D/2D/3D)
 };
 

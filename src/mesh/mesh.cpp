@@ -49,6 +49,8 @@ Mesh::Mesh(ParameterInput *pin) :
   three_d(false),
   multi_d(false),
   strictly_periodic(true),
+  use_cubed_sphere(false),
+  npanels(1),
   nmb_packs_thisrank(1),
   nprtcl_thisrank(0),
   nprtcl_total(0),
@@ -75,6 +77,16 @@ Mesh::Mesh(ParameterInput *pin) :
     multi_d = true;
   } else {
     one_d = true;
+  }
+      
+  use_cubed_sphere = pin->GetOrAddBoolean("mesh", "use_cubed_sphere", false);
+  npanels = (use_cubed_sphere ? 6 : 1);
+  if (use_cubed_sphere) {
+    strictly_periodic = false;
+    if (one_d) {
+      std::cout << "### FATAL ERROR: Cubed sphere requires 2D/3D mesh\n";
+      std::exit(EXIT_FAILURE);
+    }
   }
 
   // Set BC flags for ix1/ox1 boundaries and error check

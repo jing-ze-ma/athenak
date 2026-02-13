@@ -45,8 +45,15 @@ void Mesh::BuildTreeFromScratch(ParameterInput *pin) {
   int current_level = root_level;
 
   // Construct tree and create root grid
-  ptree = std::make_unique<MeshBlockTree>(this);
-  ptree->CreateRootGrid();
+//  ptree = std::make_unique<MeshBlockTree>(this);
+//  ptree->CreateRootGrid();
+  panel_trees.resize(npanels);
+  for (int p = 0; p < npanels; ++p) {
+    panel_trees[p] = std::make_unique<MeshBlockTree>(this);
+    // store panel id somewhere
+    panel_trees[p]->SetPanelID(p);
+    panel_trees[p]->CreateRootGrid();
+  }
 
   // Error check properties of input paraemters for SMR/AMR meshes.
   if (adaptive) {
@@ -187,25 +194,33 @@ void Mesh::BuildTreeFromScratch(ParameterInput *pin) {
         // Now add nodes to the MeshBlockTree corresponding to these MeshBlocks
         if (one_d) {  // 1D
           for (std::int32_t i=lx1min; i<lx1max; i+=2) {
-            LogicalLocation nlloc;
-            nlloc.level = log_ref_lev;
-            nlloc.lx1 = i;
-            nlloc.lx2 = 0;
-            nlloc.lx3 = 0;
-            int nnew;
-            ptree->AddNode(nlloc, nnew);
+            for (int p = 0; p < npanels; ++p) {
+              LogicalLocation nlloc;
+              nlloc.level = log_ref_lev;
+              nlloc.lx1 = i;
+              nlloc.lx2 = 0;
+              nlloc.lx3 = 0;
+              nlloc.panel = p;
+              int nnew;
+//            ptree->AddNode(nlloc, nnew);
+              panel_trees[p]->AddNode(nlloc, nnew);
+            }
           }
         }
         if (two_d) {  // 2D
           for (std::int32_t j=lx2min; j<lx2max; j+=2) {
             for (std::int32_t i=lx1min; i<lx1max; i+=2) {
-              LogicalLocation nlloc;
-              nlloc.level = log_ref_lev;
-              nlloc.lx1 = i;
-              nlloc.lx2 = j;
-              nlloc.lx3 = 0;
-              int nnew;
-              ptree->AddNode(nlloc, nnew);
+              for (int p = 0; p < npanels; ++p) {
+                LogicalLocation nlloc;
+                nlloc.level = log_ref_lev;
+                nlloc.lx1 = i;
+                nlloc.lx2 = j;
+                nlloc.lx3 = 0;
+                nlloc.panel = p;
+                int nnew;
+//              ptree->AddNode(nlloc, nnew);
+                panel_trees[p]->AddNode(nlloc, nnew);
+              }
             }
           }
         }
@@ -213,13 +228,17 @@ void Mesh::BuildTreeFromScratch(ParameterInput *pin) {
           for (std::int32_t k=lx3min; k<lx3max; k+=2) {
             for (std::int32_t j=lx2min; j<lx2max; j+=2) {
               for (std::int32_t i=lx1min; i<lx1max; i+=2) {
-                LogicalLocation nlloc;
-                nlloc.level = log_ref_lev;
-                nlloc.lx1 = i;
-                nlloc.lx2 = j;
-                nlloc.lx3 = k;
-                int nnew;
-                ptree->AddNode(nlloc, nnew);
+                for (int p = 0; p < npanels; ++p) {
+                  LogicalLocation nlloc;
+                  nlloc.level = log_ref_lev;
+                  nlloc.lx1 = i;
+                  nlloc.lx2 = j;
+                  nlloc.lx3 = k;
+                  nlloc.panel = p;
+                  int nnew;
+//                ptree->AddNode(nlloc, nnew);
+                  panel_trees[p]->AddNode(nlloc, nnew);
+                }
               }
             }
           }
@@ -231,7 +250,13 @@ void Mesh::BuildTreeFromScratch(ParameterInput *pin) {
   if (!adaptive) max_level = current_level;
 
   // initial mesh hierarchy construction is completed here
-  ptree->CountMeshBlocks(nmb_total);
+//  ptree->CountMeshBlocks(nmb_total);
+  nmb_total = 0;
+  for (int p = 0; p < npanels; ++p) {
+    int nmb_panel;
+    panel_trees[p]->CountMeshBlocks(nmb_panel);
+    nmb_total += nmb_panel;
+  }
 
   cost_eachmb = new float[nmb_total];
   rank_eachmb = new int[nmb_total];
@@ -240,7 +265,14 @@ void Mesh::BuildTreeFromScratch(ParameterInput *pin) {
   nmb_eachrank = new int[global_variable::nranks];
 
   // following returns LogicalLocation list sorted by Z-ordering, and total # of MBs
-  ptree->CreateZOrderedLLList(lloc_eachmb, nullptr, nmb_total);
+//  ptree->CreateZOrderedLLList(lloc_eachmb, nullptr, nmb_total);
+  int offset = 0;
+  for (int p = 0; p < npanels; ++p) {
+    int nmb_panel;
+    panel_trees[p]->CountMeshBlocks(nmb_panel);
+    panel_trees[p]->CreateZOrderedLLList(lloc_eachmb + offset, nullptr, nmb_panel);
+    offset += nmb_panel;
+  }
 
 #if MPI_PARALLEL_ENABLED
   // check there is at least one MeshBlock per MPI rank
@@ -265,7 +297,8 @@ void Mesh::BuildTreeFromScratch(ParameterInput *pin) {
   pmb_pack = new MeshBlockPack(this, mbp_gids, mbp_gide);
   nmb_packs_thisrank = 1;
   pmb_pack->AddMeshBlocks(pin);
-  pmb_pack->pmb->SetNeighbors(ptree, rank_eachmb);
+//  pmb_pack->pmb->SetNeighbors(ptree, rank_eachmb);
+  pmb_pack->pmb->SetNeighbors(rank_eachmb);
 
   // Fix maximum number of MeshBlocks per rank with AMR
   nmb_maxperrank = nmb_thisrank;
@@ -476,7 +509,8 @@ void Mesh::BuildTreeFromRestart(ParameterInput *pin, IOWrapper &resfile,
 
   pmb_pack = new MeshBlockPack(this, mbp_gids, mbp_gide);
   pmb_pack->AddMeshBlocks(pin);
-  pmb_pack->pmb->SetNeighbors(ptree, rank_eachmb);
+//  pmb_pack->pmb->SetNeighbors(ptree, rank_eachmb);
+  pmb_pack->pmb->SetNeighbors(rank_eachmb);
 
   // Fix maximum number of MeshBlocks per rank with AMR
   nmb_maxperrank = nmb_thisrank;

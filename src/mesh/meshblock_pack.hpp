@@ -86,11 +86,11 @@ class MeshBlockPack {
   void AddMeshBlocks(ParameterInput *pin);
   void AddCoordinates(ParameterInput *pin);
 
- private:
-  // data
-
-  // functions
-  void SetNeighbors(std::unique_ptr<MeshBlockTree> &ptree, int *ranklist);
+// private:
+//  // data
+//
+//  // functions
+//  void SetNeighbors(std::unique_ptr<MeshBlockTree> &ptree, int *ranklist);
 };
 
 #endif // MESH_MESHBLOCK_PACK_HPP_

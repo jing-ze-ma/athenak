@@ -49,6 +49,7 @@ struct NeighborBlock {
   int lev;     // logical level
   int rank;    // MPI rank
   int dest;    // index of recv buffer in target NeighborBlocks
+  int panel;   // panel ID
 };
 
 //----------------------------------------------------------------------------------------
@@ -60,7 +61,7 @@ struct NeighborBlock {
 //! max index = 1*2^31 > INT_MAX = 2^31 -1 for most 32-bit signed integer types
 
 struct LogicalLocation {
-  std::int32_t lx1, lx2, lx3, level;
+  std::int32_t lx1, lx2, lx3, level, panel;
 };
 
 //----------------------------------------------------------------------------------------
@@ -109,6 +110,10 @@ class Mesh {
   RegionIndcs mb_indcs;       // indices of cells in MeshBlocks (same for all MeshBlocks)
   BoundaryFlag mesh_bcs[6];   // physical boundary conditions at 6 faces of mesh
   bool strictly_periodic;     // true if all boundaries are periodic
+    
+  bool use_cubed_sphere;      // true if using cubed sphere
+  int npanels;                // 6 if using cubed sphere; 1 otherwise
+//  int nmb_panel;              // total number of MeshBlocks per panel
 
   bool one_d, two_d, three_d; // flags to indicate 1D or 2D or 3D calculations
   bool multi_d;               // flag to indicate 2D and 3D calculations
@@ -175,6 +180,7 @@ class Mesh {
 
  private:
   std::unique_ptr<MeshBlockTree> ptree;  // pointer to root node in binary/quad/oct-tree
+  std::vector<std::unique_ptr<MeshBlockTree>> panel_trees;
   void LoadBalance(float *clist, int *rlist, int *slist, int *nlist, int nb);
 };
 #endif  // MESH_MESH_HPP_
