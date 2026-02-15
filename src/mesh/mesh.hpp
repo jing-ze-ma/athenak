@@ -114,6 +114,7 @@ class Mesh {
   bool use_cubed_sphere;      // true if using cubed sphere
   int npanels;                // 6 if using cubed sphere; 1 otherwise
 //  int nmb_panel;              // total number of MeshBlocks per panel
+  int **panel_neighbors;      // [panel][face]
 
   bool one_d, two_d, three_d; // flags to indicate 1D or 2D or 3D calculations
   bool multi_d;               // flag to indicate 2D and 3D calculations
@@ -161,6 +162,8 @@ class Mesh {
   void AddCoordinatesAndPhysics(ParameterInput *pinput);
   BoundaryFlag GetBoundaryFlag(const std::string& input_string);
   std::string GetBoundaryString(BoundaryFlag input_flag);
+    
+  void InitPanelNeighbors();
 
   // comparison function for sorting LogicalLocations based on level
   static bool GreaterLevel(const LogicalLocation & left, const LogicalLocation &right) {

@@ -47,9 +47,12 @@ class MeshBlockTree {
   void Derefine(int &ndel);
   MeshBlockTree* FindMeshBlock(LogicalLocation tloc);
   void CountMeshBlocks(int& count);
-  void CreateZOrderedLLList(LogicalLocation *list, int *pglist, int& count);
+  void CreateZOrderedLLList(const int &startcount, LogicalLocation *list, int *pglist, int& count);
   MeshBlockTree* FindNeighbor(LogicalLocation myloc, int ox1, int ox2, int ox3,
                               bool amrflag=false);
+  MeshBlockTree* FindNeighborGlobal(LogicalLocation lloc, int ox1, int ox2, int ox3, Mesh *mesh, bool amrflag=false);
+  LogicalLocation TransformToPanel(const LogicalLocation &lloc,
+                                   int neighbor_panel, int face);
 
  private:
   // data: note private variable names have trailing underscore for this class

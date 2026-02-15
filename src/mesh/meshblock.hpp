@@ -38,6 +38,7 @@ class MeshBlock {
   // First dimension of each array will be [# of MeshBlocks in this MeshBlockPack]
   DualArray1D<int> mb_gid;           // grid ID, unique identifier for each MeshBlock
   DualArray1D<int> mb_lev;           // logical level of each MeshBlock
+  DualArray1D<int> mb_panel;         // panel of each MeshBlock
   DualArray1D<RegionSize> mb_size;   // physical size of each MeshBlock
   DualArray2D<BoundaryFlag> mb_bcs;  // boundary conditions at 6 faces of each MeshBlock
   DualArray2D<NeighborBlock> nghbr;  // data on all (up to 56) neighbors for each MB

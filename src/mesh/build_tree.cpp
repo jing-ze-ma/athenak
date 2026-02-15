@@ -266,12 +266,9 @@ void Mesh::BuildTreeFromScratch(ParameterInput *pin) {
 
   // following returns LogicalLocation list sorted by Z-ordering, and total # of MBs
 //  ptree->CreateZOrderedLLList(lloc_eachmb, nullptr, nmb_total);
-  int offset = 0;
+  int counttotal = 0;
   for (int p = 0; p < npanels; ++p) {
-    int nmb_panel;
-    panel_trees[p]->CountMeshBlocks(nmb_panel);
-    panel_trees[p]->CreateZOrderedLLList(lloc_eachmb + offset, nullptr, nmb_panel);
-    offset += nmb_panel;
+    panel_trees[p]->CreateZOrderedLLList(counttotal, lloc_eachmb, nullptr, counttotal);
   }
 
 #if MPI_PARALLEL_ENABLED
@@ -478,7 +475,7 @@ void Mesh::BuildTreeFromRestart(ParameterInput *pin, IOWrapper &resfile,
   // number read from the restart file.
   {
     int nnb;
-    ptree->CreateZOrderedLLList(lloc_eachmb, nullptr, nnb);
+    ptree->CreateZOrderedLLList(0, lloc_eachmb, nullptr, nnb);
     if (nnb != nmb_total) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
         << std::endl << "Tree reconstruction failed. Total number of blocks in "

@@ -80,13 +80,14 @@ Mesh::Mesh(ParameterInput *pin) :
   }
       
   use_cubed_sphere = pin->GetOrAddBoolean("mesh", "use_cubed_sphere", false);
-  npanels = (use_cubed_sphere ? 6 : 1);
+  npanels = (use_cubed_sphere ? 2 : 1);
   if (use_cubed_sphere) {
     strictly_periodic = false;
     if (one_d) {
       std::cout << "### FATAL ERROR: Cubed sphere requires 2D/3D mesh\n";
       std::exit(EXIT_FAILURE);
     }
+    InitPanelNeighbors();
   }
 
   // Set BC flags for ix1/ox1 boundaries and error check
@@ -687,3 +688,24 @@ void Mesh::AddCoordinatesAndPhysics(ParameterInput *pinput) {
     pmr->pmrc = new RefinementCriteria(this, pinput);
   }
 }
+
+
+void Mesh::InitPanelNeighbors() {
+
+    panel_neighbors = new int*[npanels];
+    for (int p = 0; p < npanels; ++p) {
+        panel_neighbors[p] = new int[6];
+        for (int f = 0; f < 6; ++f)
+            panel_neighbors[p][f] = -1;  // default: no neighbor
+    }
+
+    // Face indexing (must match FindNeighborGlobal):
+    // 0:-x1, 1:+x1, 2:-x2, 3:+x2, 4:-x3, 5:+x3
+
+    // Panel 0
+    panel_neighbors[0][5] = 1;   // +z → panel 1
+
+    // Panel 1
+    panel_neighbors[1][4] = 0;   // -z → panel 0
+}
+

@@ -339,8 +339,8 @@ void MeshBlockTree::CountMeshBlocks(int& count) {
 //! a new gid based on Z-ordering in the new tree. Thus pglist[n] is a mapping of
 //! (new gid n) --> (old gid). Also returns total number of MBs in tree in third argument.
 
-void MeshBlockTree::CreateZOrderedLLList(LogicalLocation *list, int *pglist, int& count) {
-  if (lloc_.level == 0) {count=0;}
+void MeshBlockTree::CreateZOrderedLLList(const int &startcount, LogicalLocation *list, int *pglist, int& count) {
+  if (lloc_.level == 0) {count=startcount;}
 
   if (pleaf_ == nullptr) {
     list[count]=lloc_;
@@ -349,7 +349,7 @@ void MeshBlockTree::CreateZOrderedLLList(LogicalLocation *list, int *pglist, int
     count++;
   } else {
     for (int n=0; n<nleaf_; n++) {
-      if (pleaf_[n] != nullptr) {pleaf_[n]->CreateZOrderedLLList(list, pglist, count);}
+      if (pleaf_[n] != nullptr) {pleaf_[n]->CreateZOrderedLLList(startcount, list, pglist, count);}
     }
   }
   return;
@@ -464,6 +464,58 @@ MeshBlockTree* MeshBlockTree::FindNeighbor(LogicalLocation myloc,
   }
   return bt;
 }
+
+LogicalLocation MeshBlockTree::TransformToPanel(
+    const LogicalLocation &lloc,
+    int neighbor_panel,
+    int face) {
+
+  LogicalLocation newlloc = lloc;
+  newlloc.panel = neighbor_panel;
+
+  int ll = lloc.level;
+
+  int num_x3 = pmesh_->nmb_rootx3
+               << (ll - pmesh_->root_level);
+
+  if (face == 5) {          // +z face
+    newlloc.lx3 = -1;
+  }
+  else if (face == 4) {     // -z face
+    newlloc.lx3 = num_x3;
+  }
+
+  return newlloc;
+}
+
+
+MeshBlockTree* MeshBlockTree::FindNeighborGlobal(LogicalLocation lloc, int ox1, int ox2, int ox3, Mesh *mesh, bool amrflag) {
+    // 1. Try local panel first
+    MeshBlockTree* nt = this->FindNeighbor(lloc, ox1, ox2, ox3, amrflag);
+    if (!mesh->use_cubed_sphere || nt != nullptr) return nt;
+
+    // 2. Which face to cross the panel
+    int face = -1;
+    if (ox3 > 0)      face = 5;   // +x3
+    else if (ox3 < 0) face = 4;   // -x3
+    else return nullptr;   // no cross-panel motion
+
+    if (face < 0) return nullptr; // no movement?
+
+    // 3. Lookup neighbor panel
+    int panel = lloc.panel;
+    int neighbor_panel = mesh->panel_neighbors[panel][face];
+    if (neighbor_panel < 0) return nullptr; // boundary, no neighbor
+
+    // 4. Transform logical location to neighbor panel
+    LogicalLocation lloc_other = TransformToPanel(lloc, neighbor_panel, face);
+
+    // 5. Search neighbor panel recursively (same offsets)
+    MeshBlockTree* nr = mesh->panel_trees[neighbor_panel]->FindNeighbor(lloc_other, ox1, ox2, ox3, amrflag);
+
+    return nr;
+}
+
 
 //----------------------------------------------------------------------------------------
 //! \fn MeshBlockTree* MeshBlockTree::FindMeshBlock(LogicalLocation tloc)

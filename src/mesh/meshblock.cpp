@@ -26,6 +26,7 @@ MeshBlock::MeshBlock(MeshBlockPack* ppack, int igids, int nmb) :
   pmy_pack(ppack),
   mb_gid("mb_gid",nmb),
   mb_lev("mb_lev",nmb),
+  mb_panel("mb_panel",nmb),
   mb_size("mbsize",nmb),
   mb_bcs("mbbcs",nmb,6) {
   Mesh* pm = pmy_pack->pmesh;
@@ -35,6 +36,7 @@ MeshBlock::MeshBlock(MeshBlockPack* ppack, int igids, int nmb) :
     // initialize host array elements of gids, levels
     mb_gid.h_view(m) = igids + m;
     mb_lev.h_view(m) = pm->lloc_eachmb[igids+m].level;
+    mb_panel.h_view(m) = pm->lloc_eachmb[igids+m].panel;
 
     // calculate physical size and set BCs of each MeshBlock in x1
     std::int32_t &lx1 = pm->lloc_eachmb[igids+m].lx1;
@@ -106,6 +108,44 @@ MeshBlock::MeshBlock(MeshBlockPack* ppack, int igids, int nmb) :
       } else {
         mb_size.h_view(m).x3max = LeftEdgeX(lx3+1, nmbx3, ms.x3min, ms.x3max);
         mb_bcs.h_view(m,5) = BoundaryFlag::block;
+      }
+      if (pm->use_cubed_sphere) {
+        std::int32_t &lx3 = pm->lloc_eachmb[igids+m].lx3;
+        std::int32_t nmbx3 = pm->nmb_rootx3 << (lev - pm->root_level);
+
+        int panel = mb_panel.h_view(m);
+        int npanels = pm->npanels;
+
+        // Global domain
+        Real global_zmin = ms.x3min;
+        Real global_zmax = ms.x3max;
+
+        // Split domain across panels
+        Real dz_panel = (global_zmax - global_zmin) / npanels;
+        Real panel_zmin = global_zmin + panel * dz_panel;
+        Real panel_zmax = global_zmin + (panel + 1) * dz_panel;
+
+        if (lx3 == 0) {
+          mb_size.h_view(m).x3min = panel_zmin;
+          mb_bcs.h_view(m,4) = (panel == 0)
+                               ? pm->mesh_bcs[BoundaryFace::inner_x3]
+                               : BoundaryFlag::block;
+        } else {
+          mb_size.h_view(m).x3min =
+              LeftEdgeX(lx3, nmbx3, panel_zmin, panel_zmax);
+          mb_bcs.h_view(m,4) = BoundaryFlag::block;
+        }
+
+        if (lx3 == (nmbx3 - 1)) {
+          mb_size.h_view(m).x3max = panel_zmax;
+          mb_bcs.h_view(m,5) = (panel == npanels - 1)
+                               ? pm->mesh_bcs[BoundaryFace::outer_x3]
+                               : BoundaryFlag::block;
+        } else {
+          mb_size.h_view(m).x3max =
+              LeftEdgeX(lx3+1, nmbx3, panel_zmin, panel_zmax);
+          mb_bcs.h_view(m,5) = BoundaryFlag::block;
+        }
       }
     }
 
@@ -196,7 +236,7 @@ void MeshBlock::SetNeighbors(int *ranklist) {
 
     // neighbors on x1face
     for (int n=-1; n<=1; n+=2) {
-      MeshBlockTree* nt = ptree->FindNeighbor(lloc, n, 0, 0);
+      MeshBlockTree* nt = ptree->FindNeighborGlobal(lloc, n, 0, 0, pmy_pack->pmesh);
       if (nt != nullptr) {
         if (nt->pleaf_ != nullptr) {  // neighbor at finer level -- requires subblocks
           int ffx = 1 - (n + 1)/2; // 0 for BoundaryFace::outer_x1, 1 for inner_x1
@@ -208,7 +248,7 @@ void MeshBlock::SetNeighbors(int *ranklist) {
               nghbr.h_view(b,inghbr).lev = nf->lloc_.level;
               nghbr.h_view(b,inghbr).rank = ranklist[nf->gid_];
               nghbr.h_view(b,inghbr).dest = NeighborIndex(-n,0,0,fy,fz);
-              nghbr.h_view(b,inghbr).panel = panel;
+              nghbr.h_view(b,inghbr).panel = nf->lloc_.panel;
             }
           }
         } else {   // neighbor at same or coarser level
@@ -224,7 +264,7 @@ void MeshBlock::SetNeighbors(int *ranklist) {
           nghbr.h_view(b,inghbr).lev = nt->lloc_.level;
           nghbr.h_view(b,inghbr).rank = ranklist[nt->gid_];
           nghbr.h_view(b,inghbr).dest = idest;
-          nghbr.h_view(b,inghbr).panel = panel;
+          nghbr.h_view(b,inghbr).panel = nt->lloc_.panel;
         }
       }
     }
@@ -232,7 +272,7 @@ void MeshBlock::SetNeighbors(int *ranklist) {
     // neighbors on x2face
     if (pmy_pack->pmesh->multi_d) {
       for (int m=-1; m<=1; m+=2) {
-        MeshBlockTree* nt = ptree->FindNeighbor(lloc, 0, m, 0);
+        MeshBlockTree* nt = ptree->FindNeighborGlobal(lloc, 0, m, 0, pmy_pack->pmesh);
         if (nt != nullptr) {
           if (nt->pleaf_ != nullptr) {  // neighbor at finer level -- requires subblocks
             int ffy = 1 - (m + 1)/2; // 0 for BoundaryFace::outer_x2, 1 for inner_x2
@@ -244,7 +284,7 @@ void MeshBlock::SetNeighbors(int *ranklist) {
                 nghbr.h_view(b,inghbr).lev = nf->lloc_.level;
                 nghbr.h_view(b,inghbr).rank = ranklist[nf->gid_];
                 nghbr.h_view(b,inghbr).dest = NeighborIndex(0,-m,0,fx,fz);
-                nghbr.h_view(b,inghbr).panel = panel;
+                nghbr.h_view(b,inghbr).panel = nf->lloc_.panel;
               }
             }
           } else {   // neighbor at same or coarser level
@@ -260,7 +300,7 @@ void MeshBlock::SetNeighbors(int *ranklist) {
             nghbr.h_view(b,inghbr).lev = nt->lloc_.level;
             nghbr.h_view(b,inghbr).rank = ranklist[nt->gid_];
             nghbr.h_view(b,inghbr).dest = idest;
-            nghbr.h_view(b,inghbr).panel = panel;
+            nghbr.h_view(b,inghbr).panel = nt->lloc_.panel;
           }
         }
       }
@@ -268,7 +308,7 @@ void MeshBlock::SetNeighbors(int *ranklist) {
       // neighbors on x1x2 edges
       for (int m=-1; m<=1; m+=2) {
         for (int n=-1; n<=1; n+=2) {
-          MeshBlockTree* nt = ptree->FindNeighbor(lloc, n, m, 0);
+          MeshBlockTree* nt = ptree->FindNeighborGlobal(lloc, n, m, 0, pmy_pack->pmesh);
           if (nt != nullptr) {
             if (nt->pleaf_ != nullptr) {  // neighbor at finer level -- requires subblocks
               int ffx = 1 - (n + 1)/2; // 0 for BoundaryFace::outer_x1, 1 for inner_x1
@@ -280,7 +320,7 @@ void MeshBlock::SetNeighbors(int *ranklist) {
                 nghbr.h_view(b,inghbr).lev = nf->lloc_.level;
                 nghbr.h_view(b,inghbr).rank = ranklist[nf->gid_];
                 nghbr.h_view(b,inghbr).dest = NeighborIndex(-n,-m,0,fz,0);
-                nghbr.h_view(b,inghbr).panel = panel;
+                nghbr.h_view(b,inghbr).panel = nf->lloc_.panel;
               }
             } else {   // neighbor at same or coarser level
               int idest,inghbr;
@@ -297,7 +337,7 @@ void MeshBlock::SetNeighbors(int *ranklist) {
                 nghbr.h_view(b,inghbr).lev = nt->lloc_.level;
                 nghbr.h_view(b,inghbr).rank = ranklist[nt->gid_];
                 nghbr.h_view(b,inghbr).dest = idest;
-                nghbr.h_view(b,inghbr).panel = panel;
+                nghbr.h_view(b,inghbr).panel = nt->lloc_.panel;
               }
             }
           }
@@ -308,7 +348,7 @@ void MeshBlock::SetNeighbors(int *ranklist) {
     // neighbors on x3face
     if (pmy_pack->pmesh->three_d) {
       for (int l=-1; l<=1; l+=2) {
-        MeshBlockTree* nt = ptree->FindNeighbor(lloc, 0, 0, l);
+        MeshBlockTree* nt = ptree->FindNeighborGlobal(lloc, 0, 0, l, pmy_pack->pmesh);
         if (nt != nullptr) {
           if (nt->pleaf_ != nullptr) {  // neighbor at finer level -- requires subblocks
             int ffz = 1 - (l + 1)/2; // 0 for BoundaryFace::outer_x3, 1 for inner_x3
@@ -320,7 +360,7 @@ void MeshBlock::SetNeighbors(int *ranklist) {
                 nghbr.h_view(b,inghbr).lev = nf->lloc_.level;
                 nghbr.h_view(b,inghbr).rank = ranklist[nf->gid_];
                 nghbr.h_view(b,inghbr).dest = NeighborIndex(0,0,-l,fx,fy);
-                nghbr.h_view(b,inghbr).panel = panel;
+                nghbr.h_view(b,inghbr).panel = nf->lloc_.panel;
               }
             }
           } else {   // neighbor at same or coarser level -- no subblocks
@@ -336,7 +376,7 @@ void MeshBlock::SetNeighbors(int *ranklist) {
             nghbr.h_view(b,inghbr).lev = nt->lloc_.level;
             nghbr.h_view(b,inghbr).rank = ranklist[nt->gid_];
             nghbr.h_view(b,inghbr).dest = idest;
-            nghbr.h_view(b,inghbr).panel = panel;
+            nghbr.h_view(b,inghbr).panel = nt->lloc_.panel;
           }
         }
       }
@@ -344,7 +384,7 @@ void MeshBlock::SetNeighbors(int *ranklist) {
       // neighbors on x3x1 edges
       for (int l=-1; l<=1; l+=2) {
         for (int n=-1; n<=1; n+=2) {
-          MeshBlockTree* nt = ptree->FindNeighbor(lloc, n, 0, l);
+          MeshBlockTree* nt = ptree->FindNeighborGlobal(lloc, n, 0, l, pmy_pack->pmesh);
           if (nt != nullptr) {
             if (nt->pleaf_ != nullptr) {  // neighbor at finer level -- requires subblocks
               int ffx = 1 - (n + 1)/2; // 0 for BoundaryFace::outer_x1, 1 for inner_x1
@@ -356,7 +396,7 @@ void MeshBlock::SetNeighbors(int *ranklist) {
                 nghbr.h_view(b,inghbr).lev = nf->lloc_.level;
                 nghbr.h_view(b,inghbr).rank = ranklist[nf->gid_];
                 nghbr.h_view(b,inghbr).dest = NeighborIndex(-n,0,-l,fy,0);
-                nghbr.h_view(b,inghbr).panel = panel;
+                nghbr.h_view(b,inghbr).panel = nf->lloc_.panel;
               }
             } else {   // neighbor at same or coarser level -- no subblocks
               int idest,inghbr;
@@ -373,7 +413,7 @@ void MeshBlock::SetNeighbors(int *ranklist) {
                 nghbr.h_view(b,inghbr).lev = nt->lloc_.level;
                 nghbr.h_view(b,inghbr).rank = ranklist[nt->gid_];
                 nghbr.h_view(b,inghbr).dest = idest;
-                nghbr.h_view(b,inghbr).panel = panel;
+                nghbr.h_view(b,inghbr).panel = nt->lloc_.panel;
               }
             }
           }
@@ -383,7 +423,7 @@ void MeshBlock::SetNeighbors(int *ranklist) {
       // neighbors on x2x3 edges
       for (int l=-1; l<=1; l+=2) {
         for (int m=-1; m<=1; m+=2) {
-          MeshBlockTree* nt = ptree->FindNeighbor(lloc, 0, m, l);
+          MeshBlockTree* nt = ptree->FindNeighborGlobal(lloc, 0, m, l, pmy_pack->pmesh);
           if (nt != nullptr) {
             if (nt->pleaf_ != nullptr) {  // neighbor at finer level -- requires subblocks
               int ffy = 1 - (m + 1)/2; // 0 for BoundaryFace::outer_x2, 1 for inner_x2
@@ -395,7 +435,7 @@ void MeshBlock::SetNeighbors(int *ranklist) {
                 nghbr.h_view(b,inghbr).lev = nf->lloc_.level;
                 nghbr.h_view(b,inghbr).rank = ranklist[nf->gid_];
                 nghbr.h_view(b,inghbr).dest = NeighborIndex(0,-m,-l,fx,0);
-                nghbr.h_view(b,inghbr).panel = panel;
+                nghbr.h_view(b,inghbr).panel = nf->lloc_.panel;
               }
             } else {   // neighbor at same or coarser level -- no subblocks
               int idest,inghbr;
@@ -412,7 +452,7 @@ void MeshBlock::SetNeighbors(int *ranklist) {
                 nghbr.h_view(b,inghbr).lev = nt->lloc_.level;
                 nghbr.h_view(b,inghbr).rank = ranklist[nt->gid_];
                 nghbr.h_view(b,inghbr).dest = idest;
-                nghbr.h_view(b,inghbr).panel = panel;
+                nghbr.h_view(b,inghbr).panel = nt->lloc_.panel;
               }
             }
           }
@@ -423,7 +463,7 @@ void MeshBlock::SetNeighbors(int *ranklist) {
       for (int l=-1; l<=1; l+=2) {
         for (int m=-1; m<=1; m+=2) {
           for (int n=-1; n<=1; n+=2) {
-            MeshBlockTree* nt = ptree->FindNeighbor(lloc, n, m, l);
+            MeshBlockTree* nt = ptree->FindNeighborGlobal(lloc, n, m, l, pmy_pack->pmesh);
             if (nt != nullptr) {
               if (nt->pleaf_ != nullptr) {  // neighbor at finer level
                 int ffx = 1 - (n + 1)/2; // 0 for BoundaryFace::outer_x1, 1 for inner_x1
@@ -439,7 +479,7 @@ void MeshBlock::SetNeighbors(int *ranklist) {
                 nghbr.h_view(b,inghbr).lev = nt->lloc_.level;
                 nghbr.h_view(b,inghbr).rank = ranklist[nt->gid_];
                 nghbr.h_view(b,inghbr).dest = NeighborIndex(-n,-m,-l,0,0);
-                nghbr.h_view(b,inghbr).panel = panel;
+                nghbr.h_view(b,inghbr).panel = nt->lloc_.panel;
               }
             }
           }
