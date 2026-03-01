@@ -35,6 +35,13 @@ void Mesh::BuildTreeFromScratch(ParameterInput *pin) {
   nmb_rootx2 = mesh_indcs.nx2/mb_indcs.nx2;
   nmb_rootx3 = mesh_indcs.nx3/mb_indcs.nx3;
 
+//  if (use_cubed_sphere) {
+//    if (nmb_rootx1 != nmb_rootx2) {
+//      std::cout << "### FATAL ERROR: Cubed sphere requires xy mesh blocks to be the same size\n";
+//      std::exit(EXIT_FAILURE);
+//    }
+//  }
+
   // find maximum number of MeshBlocks at root level in any dir
   int nmbmax = (nmb_rootx1 > nmb_rootx2) ? nmb_rootx1 : nmb_rootx2;
   nmbmax = (nmbmax > nmb_rootx3) ? nmbmax : nmb_rootx3;

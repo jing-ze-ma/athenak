@@ -51,8 +51,9 @@ class MeshBlockTree {
   MeshBlockTree* FindNeighbor(LogicalLocation myloc, int ox1, int ox2, int ox3,
                               bool amrflag=false);
   MeshBlockTree* FindNeighborGlobal(LogicalLocation lloc, int ox1, int ox2, int ox3, Mesh *mesh, bool amrflag=false);
+  MeshBlockTree* FindNeighborCrossPanel(LogicalLocation lloc, int ox1, int ox2, int ox3, Mesh *mesh, bool amrflag=false);
   LogicalLocation TransformToPanel(const LogicalLocation &lloc,
-                                   int neighbor_panel, int face);
+                                   int neighbor_panel, int neighbor_face, int rev_ax, int swap_ax);
 
  private:
   // data: note private variable names have trailing underscore for this class

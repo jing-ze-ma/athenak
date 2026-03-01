@@ -58,6 +58,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   int &ks = indcs.ks; int &ke = indcs.ke;
   MeshBlockPack *pmbp = pmy_mesh_->pmb_pack;
   auto &size = pmbp->pmb->mb_size;
+  auto &panel = pmbp->pmb->mb_panel;
 
   // Select either Hydro or MHD
   Real gm1, p0;
@@ -102,6 +103,14 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     Real &x2max = size.d_view(m).x2max;
     int nx2 = indcs.nx2;
     Real x2v = CellCenterX(j-js, nx2, x2min, x2max);
+      
+    int &pan = panel.d_view(m);
+      if (pan == 1) {
+          x1v = CellCenterX(j-js, nx2, x2min, x2max) - 0.5;
+          x2v = CellCenterX(i-is, nx1, x1min, x1max) + 0.5;
+//          x1v = (pmy_mesh_->mesh_size.x1max + pmy_mesh_->mesh_size.x1min) - x1v;
+          x2v = pmy_mesh_->mesh_size.x2max - x2v;
+      }
 
     auto rand_gen = rand_pool64.get_state();  // get random number state this thread
     Real rval;
@@ -182,6 +191,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     w0_(m,IVX,k,j,i) = u00*vx;
     w0_(m,IVY,k,j,i) = u00*vy;
     w0_(m,IVZ,k,j,i) = u00*vz;
+      if (pan == 1) {
+          w0_(m,IVX,k,j,i) = u00*vy;
+          w0_(m,IVY,k,j,i) = u00*vx;
+//          w0_(m,IVY,k,j,i) = -w0_(m,IVY,k,j,i);
+          w0_(m,IVX,k,j,i) = -w0_(m,IVX,k,j,i);
+      }
     // add passive scalars
     for (int n=nfluid; n<(nfluid+nscalars); ++n) {
       w0_(m,n,k,j,i) = scal;

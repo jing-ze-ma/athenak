@@ -87,7 +87,10 @@ Mesh::Mesh(ParameterInput *pin) :
       std::cout << "### FATAL ERROR: Cubed sphere requires 2D/3D mesh\n";
       std::exit(EXIT_FAILURE);
     }
-    InitPanelNeighbors();
+//    if (mesh_indcs.nx1 != mesh_indcs.nx2) {
+//      std::cout << "### FATAL ERROR: Cubed sphere requires xy indices to be the same size\n";
+//      std::exit(EXIT_FAILURE);
+//    }
   }
 
   // Set BC flags for ix1/ox1 boundaries and error check
@@ -367,8 +370,13 @@ Mesh::~Mesh() {
 
 void Mesh::PrintMeshDiagnostics() {
   std::cout << std::endl;
+  if (use_cubed_sphere) {
+    std::cout <<"Cubed sphere: Root grid = "<< npanels <<" x ("<< nmb_rootx1 <<" x "<< nmb_rootx2 <<") x "<< nmb_rootx3
+              <<" MeshBlocks"<< std::endl;
+  } else {
   std::cout <<"Root grid = "<< nmb_rootx1 <<" x "<< nmb_rootx2 <<" x "<< nmb_rootx3
             <<" MeshBlocks"<< std::endl;
+  }
   std::cout <<"Total number of MeshBlocks = " << nmb_total << std::endl;
   std::cout <<"Number of logical  levels of refinement = "<< max_level
             <<" (" << (max_level + 1) << " levels total)" << std::endl;
@@ -530,6 +538,8 @@ BoundaryFlag Mesh::GetBoundaryFlag(const std::string& input_string) {
     return BoundaryFlag::vacuum;
   } else if (input_string == "shear_periodic") {
     return BoundaryFlag::shear_periodic;
+  } else if (input_string == "panel") {
+    return BoundaryFlag::panel;
   } else if (input_string == "undef") {
     return BoundaryFlag::undef;
   } else {
@@ -564,6 +574,8 @@ std::string Mesh::GetBoundaryString(BoundaryFlag input_flag) {
       return "periodic";
     case BoundaryFlag::shear_periodic:
       return "shear_periodic";
+    case BoundaryFlag::panel:
+      return "panel";
     case BoundaryFlag::undef:
       return "undef";
     default:
@@ -688,24 +700,3 @@ void Mesh::AddCoordinatesAndPhysics(ParameterInput *pinput) {
     pmr->pmrc = new RefinementCriteria(this, pinput);
   }
 }
-
-
-void Mesh::InitPanelNeighbors() {
-
-    panel_neighbors = new int*[npanels];
-    for (int p = 0; p < npanels; ++p) {
-        panel_neighbors[p] = new int[6];
-        for (int f = 0; f < 6; ++f)
-            panel_neighbors[p][f] = -1;  // default: no neighbor
-    }
-
-    // Face indexing (must match FindNeighborGlobal):
-    // 0:-x1, 1:+x1, 2:-x2, 3:+x2, 4:-x3, 5:+x3
-
-    // Panel 0
-    panel_neighbors[0][5] = 1;   // +z → panel 1
-
-    // Panel 1
-    panel_neighbors[1][4] = 0;   // -z → panel 0
-}
-

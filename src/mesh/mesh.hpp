@@ -16,6 +16,7 @@
 #include <string>
 
 #include "athena.hpp"
+#include "mesh/nghbr_index.hpp"
 
 // Define following structure before other "include" files to resolve declarations
 //----------------------------------------------------------------------------------------
@@ -74,6 +75,24 @@ struct EventCounters {
                     neos_vceil(0), neos_fail(0), maxit_c2p(0) {}
 };
 
+//----------------------------------------------------------------------------------------
+//! \struct PanelNeighbors
+//! \brief stores connectivity table
+//!
+struct PanelNeighbors {
+  int nb_panel;   // neighbor panel id (0-6)
+  int nb_face;    // which face of neighbor we enter (0:-x1, 1:+x1, 2:-x2, 3:+x2)
+  int rev_ax;     // whether along-edge index is reversed (0/1)
+  int swap_ax;    // whether to swap the xy axis (0/1)
+};
+
+struct PanelBoundaries {
+  int swap_ax;    // whether to swap the xy axis (0/1)
+  int rev_x1;     // whether (after being swapped) x1 index is reversed (0/1)
+  int rev_x2;     // whether (after being swapped) x2 index is reversed (0/1)
+  int end_face;   // which face of the panel we transform into (0:-x1, 1:+x1, 2:-x2, 3:+x2)
+};
+
 // Forward declarations required due to recursive definitions amongst mesh classes
 class MeshBlock;
 class MeshBlockPack;
@@ -113,8 +132,6 @@ class Mesh {
     
   bool use_cubed_sphere;      // true if using cubed sphere
   int npanels;                // 6 if using cubed sphere; 1 otherwise
-//  int nmb_panel;              // total number of MeshBlocks per panel
-  int **panel_neighbors;      // [panel][face]
 
   bool one_d, two_d, three_d; // flags to indicate 1D or 2D or 3D calculations
   bool multi_d;               // flag to indicate 2D and 3D calculations
@@ -163,7 +180,51 @@ class Mesh {
   BoundaryFlag GetBoundaryFlag(const std::string& input_string);
   std::string GetBoundaryString(BoundaryFlag input_flag);
     
-  void InitPanelNeighbors();
+    KOKKOS_INLINE_FUNCTION
+    Real CubedSphereGhostFill(const int panel_start,
+                              const int panel_end,
+                              const int swap_ax,
+                              const int rev_x1,
+                              const int rev_x2,
+                              const int m, const int v,
+                              const int k, const int j, const int i, const int il, const int iu, const int jl, const int ju, const DvceArray5D<Real> &a) {
+
+      int ii = i;
+      int jj = j;
+      int vv = v;
+      int rev_x1_preswap = (swap_ax == 1) ? rev_x2 : rev_x1;
+      int rev_x2_preswap = (swap_ax == 1) ? rev_x1 : rev_x2;
+
+      // --- velocity component swap ---
+      if (swap_ax == 1) {
+        vv = (v == (IVX) ? (IVY) : (v == (IVY) ? (IVX) : v));
+      }
+
+      // --- reverse indices ---
+      if (rev_x1_preswap == 1) ii = il + iu - ii;
+      if (rev_x2_preswap == 1) jj = jl + ju - jj;
+        
+      Real out = a(m,vv,k,jj,ii);
+
+      // --- sign flip ---
+      if (rev_x1 == 1 && v == (IVX)) out = -out;
+      if (rev_x2 == 1 && v == (IVY)) out = -out;
+        
+      return out;
+        
+    }
+    
+    KOKKOS_INLINE_FUNCTION
+    int NeighborIndexPanel(int ix, int iy, int iz, int n1, int n2, int panel_start, int panel_end) {
+        
+        const PanelBoundaries pb = GetPanelBoundary(panel_start, panel_end);
+        int iix = (pb.swap_ax == 1) ? iy : ix;
+        int iiy = (pb.swap_ax == 1) ? ix : iy;
+        if (pb.rev_x1 == 1) iix = -iix;
+        if (pb.rev_x2 == 1) iiy = -iiy;
+        
+        return NeighborIndex(iix,iiy,iz,n1,n2);
+    }
 
   // comparison function for sorting LogicalLocations based on level
   static bool GreaterLevel(const LogicalLocation & left, const LogicalLocation &right) {
@@ -180,6 +241,210 @@ class Mesh {
   int NumberOfMeshBlockCells() const {
     return (mb_indcs.nx1)*(mb_indcs.nx2)*(mb_indcs.nx3);
   }
+    
+    /* Cubed sphere. Borrowed from SNAPY https://github.com/chengcli/snapy/blob/main/src/layout/cubed_sphere_layout.cpp
+    *                                            z  y
+    *                 ___________                | /
+    *                 |\        .\               |/---x
+    *                 | \   3   . \             (3)
+    *                 |  \_________\
+    *      y          | 4 |     .  |
+    *      |          \. .|......  |
+    *  z___|(4)        \  |    0 . |
+    *     /             \ |       .|             y
+    *   x/               \|________|             |
+    *                                        (0) |___x
+    *                                           /
+    *                                         z/
+    *
+    *
+    *
+    *                                         y  x
+    *                 __________              | /
+    *                 |\       .\             |/___z
+    *                 | \      . \           (1)
+    *      y  z       |  \________\
+    *      | /        |  |  2  .  |
+    *  x___|/         |..|......  |
+    *       (2)       \  |     . 1|        (5)  ___ x
+    *                  \ |  5   . |           /|
+    *                   \|_______.|         y/ |
+    *                                          z
+    *
+    * --------------------------
+    * Cubed-sphere connectivity
+    * --------------------------
+    * Face numbering (editable):
+    *
+    *           -------
+    *           |  3  |
+    *     |-----|-----|-----|-----|
+    *     |  4  |  0  |  1  |  2  |
+    *     |-----|-----|-----|-----|
+    *           |  5  |
+    *           |-----|
+    *
+    */
+    
+    // Face ordering:
+    // 0:-x1, 1:+x1, 2:-x2, 3:+x2, 4:-x3, 5:+x3
+
+//    static constexpr PanelNeighbors panel_neighbors[6][4] = {
+//      // panel 0: neighbors 4(L),1(R),5(B),3(T)
+//      {
+//        {4, 1, 0, 0},  // L
+//        {1, 0, 0, 0},  // R
+//        {5, 3, 0, 0},  // B
+//        {3, 2, 0, 0}   // T
+//      },
+//
+//      // panel 1: neighbors 0(L),2(R),5(B),3(T)
+//      {
+//        {0, 1, 0, 0},  // L
+//        {2, 0, 0, 0},  // R
+//        {5, 1, 1, 1},  // B
+//        {3, 1, 0, 1}   // T
+//      },
+//
+//      // panel 2: neighbors 1(L),4(R),5(B),3(T)
+//      {
+//        {1, 1, 0, 0},  // L
+//        {4, 0, 0, 0},  // R
+//        {5, 2, 1, 0},  // B
+//        {3, 3, 1, 0}   // T
+//      },
+//
+//      // panel 3: neighbors 4(L),1(R),0(B),2(T)
+//      {
+//        {4, 3, 1, 1},  // L
+//        {1, 3, 0, 1},  // R
+//        {0, 3, 0, 0},  // B
+//        {2, 3, 1, 0}   // T
+//      },
+//
+//      // panel 4: neighbors 2(L),0(R),5(B),3(T)
+//      {
+//        {2, 1, 0, 0},  // L
+//        {0, 0, 0, 0},  // R
+//        {5, 0, 0, 1},  // B
+//        {3, 0, 1, 1}   // T
+//      },
+//
+//      // panel 5: neighbors 4(L),1(R),2(B),0(T)
+//      {
+//        {4, 2, 0, 1},  // L
+//        {1, 2, 1, 1},  // R
+//        {2, 2, 1, 0},  // B
+//        {0, 2, 0, 0}   // T
+//      }
+//    };
+    
+    static constexpr PanelNeighbors panel_neighbors[2][4] = {
+      // panel 0
+      {
+        {0, 1, 0, 0},  // L
+        {0, 0, 0, 0},  // R
+        {1, 0, 0, 1},  // B
+        {1, 1, 0, 1},  // T
+      },
+
+      // panel 1
+      {
+        {0, 2, 0, 1}, // L
+        {0, 3, 0, 1}, // R
+        {1, 3, 0, 0}, // B
+        {1, 2, 0, 0}  // T
+      }
+    };
+    
+    KOKKOS_INLINE_FUNCTION
+    constexpr PanelBoundaries GetPanelBoundary(int ps, int pe) const {
+      constexpr PanelBoundaries table[2][2] = {
+        // … your SAME initializer …
+          // [i][j]: transforming from i panel to j panel
+          // panel 0:
+          {
+            {0, 0, 0, -1}, // 00
+            {1, 1, 0, 0},  // 01
+          },
+
+          // panel 1:
+          {
+            {1, 0, 1, 0},  // 10
+            {0, 0, 0, -1}, // 11
+          }
+      };
+      return table[ps][pe];
+    }
+    
+//    KOKKOS_INLINE_FUNCTION
+//    constexpr PanelBoundaries GetPanelBoundary(int ps, int pe) const {
+//      constexpr PanelBoundaries table[6][6] = {
+//        // … your SAME initializer …
+//          // [i][j]: transforming from i panel to j panel
+//          // panel 0:
+//          {
+//            {0, 0, 0, -1}, // 00
+//            {0, 0, 0, 0},  // 01
+//            {0, 0, 0, -1}, // 02
+//            {0, 0, 0, 2},  // 03
+//            {0, 0, 0, 1},  // 04
+//            {0, 0, 0, 3}   // 05
+//          },
+//
+//          // panel 1:
+//          {
+//            {0, 0, 0, 1},  // 10
+//            {0, 0, 0, -1}, // 11
+//            {0, 0, 0, 0},  // 12
+//            {1, 1, 0, 1},  // 13
+//            {0, 0, 0, -1}, // 14
+//            {1, 0, 1, 1}   // 15
+//          },
+//
+//          // panel 2:
+//          {
+//            {0, 0, 0, -1}, // 20
+//            {0, 0, 0, 1},  // 21
+//            {0, 0, 0, -1}, // 22
+//            {0, 1, 1, 3},  // 23
+//            {0, 0, 0, 0},  // 24
+//            {0, 1, 1, 2}   // 25
+//          },
+//
+//          // panel 3:
+//          {
+//            {0, 0, 0, 3},  // 30
+//            {1, 0, 1, 3},  // 31
+//            {0, 1, 1, 3},  // 32
+//            {0, 0, 0, -1}, // 33
+//            {1, 1, 0, 3},  // 34
+//            {0, 0, 0, -1}  // 35
+//          },
+//
+//          // panel 4:
+//          {
+//            {0, 0, 0, 0},  // 40
+//            {0, 0, 0, -1}, // 41
+//            {0, 0, 0, 1},  // 42
+//            {1, 0, 1, 0},  // 43
+//            {0, 0, 0, -1}, // 44
+//            {1, 1, 0, 0}   // 45
+//          },
+//
+//          // panel 5:
+//          {
+//            {0, 0, 0, 2},  // 50
+//            {1, 1, 0, 2},  // 51
+//            {0, 1, 1, 2},  // 52
+//            {0, 0, 0, -1}, // 53
+//            {1, 0, 1, 2},  // 54
+//            {0, 0, 0, -1}   // 55
+//          }
+//      };
+//      return table[ps][pe];
+//    }
+
 
  private:
   std::unique_ptr<MeshBlockTree> ptree;  // pointer to root node in binary/quad/oct-tree

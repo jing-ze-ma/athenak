@@ -83,6 +83,40 @@ MeshBlock::MeshBlock(MeshBlockPack* ppack, int igids, int nmb) :
         mb_size.h_view(m).x2max = LeftEdgeX(lx2+1, nmbx2, ms.x2min, ms.x2max);
         mb_bcs.h_view(m,3) = BoundaryFlag::block;
       }
+        
+        
+        if (pm->use_cubed_sphere) {
+
+          int panel = mb_panel.h_view(m);
+          int npanels = pm->npanels;
+
+          // Global domain
+          Real global_ymin = ms.x2min;
+          Real global_ymax = ms.x2max;
+
+          // Split domain across panels
+          Real dy_panel = (global_ymax - global_ymin) / npanels;
+          Real panel_ymin = global_ymin + panel * dy_panel;
+          Real panel_ymax = global_ymin + (panel + 1) * dy_panel;
+
+          if (lx2 == 0) {
+            mb_size.h_view(m).x2min = panel_ymin;
+            mb_bcs.h_view(m,2) = pm->mesh_bcs[BoundaryFace::inner_x2];
+          } else {
+            mb_size.h_view(m).x2min =
+                LeftEdgeX(lx2, nmbx2, panel_ymin, panel_ymax);
+            mb_bcs.h_view(m,2) = BoundaryFlag::block;
+          }
+
+          if (lx2 == (nmbx2 - 1)) {
+            mb_size.h_view(m).x2max = panel_ymax;
+            mb_bcs.h_view(m,3) = pm->mesh_bcs[BoundaryFace::outer_x2];
+          } else {
+            mb_size.h_view(m).x2max =
+                LeftEdgeX(lx2+1, nmbx2, panel_ymin, panel_ymax);
+            mb_bcs.h_view(m,3) = BoundaryFlag::block;
+          }
+        }
     }
 
     // calculate physical size and set BCs of each MeshBlock in x1, dependng on whether
@@ -108,44 +142,6 @@ MeshBlock::MeshBlock(MeshBlockPack* ppack, int igids, int nmb) :
       } else {
         mb_size.h_view(m).x3max = LeftEdgeX(lx3+1, nmbx3, ms.x3min, ms.x3max);
         mb_bcs.h_view(m,5) = BoundaryFlag::block;
-      }
-      if (pm->use_cubed_sphere) {
-        std::int32_t &lx3 = pm->lloc_eachmb[igids+m].lx3;
-        std::int32_t nmbx3 = pm->nmb_rootx3 << (lev - pm->root_level);
-
-        int panel = mb_panel.h_view(m);
-        int npanels = pm->npanels;
-
-        // Global domain
-        Real global_zmin = ms.x3min;
-        Real global_zmax = ms.x3max;
-
-        // Split domain across panels
-        Real dz_panel = (global_zmax - global_zmin) / npanels;
-        Real panel_zmin = global_zmin + panel * dz_panel;
-        Real panel_zmax = global_zmin + (panel + 1) * dz_panel;
-
-        if (lx3 == 0) {
-          mb_size.h_view(m).x3min = panel_zmin;
-          mb_bcs.h_view(m,4) = (panel == 0)
-                               ? pm->mesh_bcs[BoundaryFace::inner_x3]
-                               : BoundaryFlag::block;
-        } else {
-          mb_size.h_view(m).x3min =
-              LeftEdgeX(lx3, nmbx3, panel_zmin, panel_zmax);
-          mb_bcs.h_view(m,4) = BoundaryFlag::block;
-        }
-
-        if (lx3 == (nmbx3 - 1)) {
-          mb_size.h_view(m).x3max = panel_zmax;
-          mb_bcs.h_view(m,5) = (panel == npanels - 1)
-                               ? pm->mesh_bcs[BoundaryFace::outer_x3]
-                               : BoundaryFlag::block;
-        } else {
-          mb_size.h_view(m).x3max =
-              LeftEdgeX(lx3+1, nmbx3, panel_zmin, panel_zmax);
-          mb_bcs.h_view(m,5) = BoundaryFlag::block;
-        }
       }
     }
 
@@ -256,6 +252,9 @@ void MeshBlock::SetNeighbors(int *ranklist) {
           if (nt->lloc_.level == lloc.level) { // neighbor at same level -- no subblocks
             inghbr = NeighborIndex(n,0,0,0,0);
             idest = NeighborIndex(-n,0,0,0,0);
+              if (pmy_pack->pmesh->use_cubed_sphere && panel != nt->lloc_.panel) {
+                  idest = pmy_pack->pmesh->NeighborIndexPanel(-n,0,0,0,0,panel,nt->lloc_.panel);
+              }
           } else { // neighbor at coarser level, set index/destn to appropriate subblock
             inghbr = NeighborIndex(n,0,0,myfx2,myfx3);
             idest = NeighborIndex(-n,0,0,myfx2,myfx3);
@@ -292,6 +291,9 @@ void MeshBlock::SetNeighbors(int *ranklist) {
             if (nt->lloc_.level == lloc.level) { // neighbor at same level -- no subblocks
               inghbr = NeighborIndex(0,m,0,0,0);
               idest = NeighborIndex(0,-m,0,0,0);
+                if (pmy_pack->pmesh->use_cubed_sphere && panel != nt->lloc_.panel) {
+                    idest = pmy_pack->pmesh->NeighborIndexPanel(0,-m,0,0,0,panel,nt->lloc_.panel);
+                }
             } else { // neighbor at coarser level, set index/destn to appropriate subblock
               inghbr = NeighborIndex(0,m,0,myfx1,myfx3);
               idest = NeighborIndex(0,-m,0,myfx1,myfx3);
@@ -327,6 +329,9 @@ void MeshBlock::SetNeighbors(int *ranklist) {
               if (nt->lloc_.level == lloc.level) { // same level -- no subblocks
                 inghbr = NeighborIndex(n,m,0,0,0);
                 idest = NeighborIndex(-n,-m,0,0,0);
+                  if (pmy_pack->pmesh->use_cubed_sphere && panel != nt->lloc_.panel) {
+                      idest = pmy_pack->pmesh->NeighborIndexPanel(-n,-m,0,0,0,panel,nt->lloc_.panel);
+                  }
               } else { // neighbor at coarser level, set indx/dest to appropriate subblock
                 inghbr = NeighborIndex(n,m,0,myfx3,0);
                 idest = NeighborIndex(-n,-m,0,myfx3,0);
@@ -403,6 +408,9 @@ void MeshBlock::SetNeighbors(int *ranklist) {
               if (nt->lloc_.level == lloc.level) { // neighbor at same level
                 inghbr = NeighborIndex(n,0,l,0,0);
                 idest = NeighborIndex(-n,0,-l,0,0);
+                  if (pmy_pack->pmesh->use_cubed_sphere && panel != nt->lloc_.panel) {
+                      idest = pmy_pack->pmesh->NeighborIndexPanel(-n,0,-l,0,0,panel,nt->lloc_.panel);
+                  }
               } else { // neighbor at coarser level, set indx/dest to appropriate subblock
                 inghbr = NeighborIndex(n,0,l,myfx2,0);
                 idest = NeighborIndex(-n,0,-l,myfx2,0);
@@ -442,6 +450,9 @@ void MeshBlock::SetNeighbors(int *ranklist) {
               if (nt->lloc_.level == lloc.level) { // neighbor at same level
                 inghbr = NeighborIndex(0,m,l,0,0);
                 idest = NeighborIndex(0,-m,-l,0,0);
+                  if (pmy_pack->pmesh->use_cubed_sphere && panel != nt->lloc_.panel) {
+                      idest = pmy_pack->pmesh->NeighborIndexPanel(0,-m,-l,0,0,panel,nt->lloc_.panel);
+                  }
               } else { // neighbor at coarser level, set indx/dest to appropriate subblock
                 inghbr = NeighborIndex(0,m,l,myfx1,0);
                 idest = NeighborIndex(0,-m,-l,myfx1,0);
@@ -480,6 +491,9 @@ void MeshBlock::SetNeighbors(int *ranklist) {
                 nghbr.h_view(b,inghbr).rank = ranklist[nt->gid_];
                 nghbr.h_view(b,inghbr).dest = NeighborIndex(-n,-m,-l,0,0);
                 nghbr.h_view(b,inghbr).panel = nt->lloc_.panel;
+                  if (pmy_pack->pmesh->use_cubed_sphere && panel != nt->lloc_.panel) {
+                      nghbr.h_view(b,inghbr).dest = pmy_pack->pmesh->NeighborIndexPanel(-n,-m,-l,0,0,panel,nt->lloc_.panel);
+                  }
               }
             }
           }

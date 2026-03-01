@@ -49,6 +49,7 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
   auto &nghbr = pmy_pack->pmb->nghbr;
   auto &mbgid = pmy_pack->pmb->mb_gid;
   auto &mblev = pmy_pack->pmb->mb_lev;
+  auto &mbpanel = pmy_pack->pmb->mb_panel;
   auto &sbuf = sendbuf;
   auto &rbuf = recvbuf;
   auto &is_z4c = is_z4c_;
@@ -89,6 +90,10 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
         kl = sbuf[n].ifine[0].bks;
         ku = sbuf[n].ifine[0].bke;
       }
+        PanelBoundaries pb;
+        if (pmy_pack->pmesh->use_cubed_sphere && nghbr.d_view(m,n).panel != mbpanel.d_view(m)) {
+            pb = pmy_pack->pmesh->GetPanelBoundary(mbpanel.d_view(m),nghbr.d_view(m,n).panel);
+        }
       int ni = iu - il + 1;
       int nj = ju - jl + 1;
       int nk = ku - kl + 1;
@@ -113,7 +118,15 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
           if (nghbr.d_view(m,n).lev >= mblev.d_view(m)) {
             Kokkos::parallel_for(Kokkos::ThreadVectorRange(tmember,il,iu+1),
             [&](const int i) {
+                if (pmy_pack->pmesh->use_cubed_sphere && nghbr.d_view(m,n).panel != mbpanel.d_view(m)) {
+                    if (pb.swap_ax == 1) {
+                        rbuf[dn].vars(dm, (j-jl + nj*(i-il + ni*(k-kl + nk*v))) ) = pmy_pack->pmesh->CubedSphereGhostFill(mbpanel.d_view(m),nghbr.d_view(m,n).panel,pb.swap_ax,pb.rev_x1,pb.rev_x2,m,v,k,j,i,il,iu,jl,ju,a);
+                    } else {
+                    rbuf[dn].vars(dm, (i-il + ni*(j-jl + nj*(k-kl + nk*v))) ) = pmy_pack->pmesh->CubedSphereGhostFill(mbpanel.d_view(m),nghbr.d_view(m,n).panel,pb.swap_ax,pb.rev_x1,pb.rev_x2,m,v,k,j,i,il,iu,jl,ju,a);
+                    }
+                } else {
               rbuf[dn].vars(dm, (i-il + ni*(j-jl + nj*(k-kl + nk*v))) ) = a(m,v,k,j,i);
+                }
             });
           // if neighbor is at coarser level, load data from coarse_u0
           } else {
@@ -130,7 +143,15 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
           if (nghbr.d_view(m,n).lev >= mblev.d_view(m)) {
             Kokkos::parallel_for(Kokkos::ThreadVectorRange(tmember,il,iu+1),
             [&](const int i) {
+                if (pmy_pack->pmesh->use_cubed_sphere && nghbr.d_view(m,n).panel != mbpanel.d_view(m)) {
+                    if (pb.swap_ax == 1) {
+                        sbuf[n].vars(m, (j-jl + nj*(i-il + ni*(k-kl + nk*v))) ) = pmy_pack->pmesh->CubedSphereGhostFill(mbpanel.d_view(m),nghbr.d_view(m,n).panel,pb.swap_ax,pb.rev_x1,pb.rev_x2,m,v,k,j,i,il,iu,jl,ju,a);
+                    } else {
+                        sbuf[n].vars(m, (i-il + ni*(j-jl + nj*(k-kl + nk*v))) ) = pmy_pack->pmesh->CubedSphereGhostFill(mbpanel.d_view(m),nghbr.d_view(m,n).panel,pb.swap_ax,pb.rev_x1,pb.rev_x2,m,v,k,j,i,il,iu,jl,ju,a);
+                    }
+                } else {
               sbuf[n].vars(m, (i-il + ni*(j-jl + nj*(k-kl + nk*v))) ) = a(m,v,k,j,i);
+                }
             });
           // if neighbor is at coarser level, load data from coarse_u0
           } else {
