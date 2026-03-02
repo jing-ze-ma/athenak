@@ -181,40 +181,6 @@ class Mesh {
   std::string GetBoundaryString(BoundaryFlag input_flag);
     
     KOKKOS_INLINE_FUNCTION
-    Real CubedSphereGhostFill(const int panel_start,
-                              const int panel_end,
-                              const int swap_ax,
-                              const int rev_x1,
-                              const int rev_x2,
-                              const int m, const int v,
-                              const int k, const int j, const int i, const int il, const int iu, const int jl, const int ju, const DvceArray5D<Real> &a) {
-
-      int ii = i;
-      int jj = j;
-      int vv = v;
-      int rev_x1_preswap = (swap_ax == 1) ? rev_x2 : rev_x1;
-      int rev_x2_preswap = (swap_ax == 1) ? rev_x1 : rev_x2;
-
-      // --- velocity component swap ---
-      if (swap_ax == 1) {
-        vv = (v == (IVX) ? (IVY) : (v == (IVY) ? (IVX) : v));
-      }
-
-      // --- reverse indices ---
-      if (rev_x1_preswap == 1) ii = il + iu - ii;
-      if (rev_x2_preswap == 1) jj = jl + ju - jj;
-        
-      Real out = a(m,vv,k,jj,ii);
-
-      // --- sign flip ---
-      if (rev_x1 == 1 && v == (IVX)) out = -out;
-      if (rev_x2 == 1 && v == (IVY)) out = -out;
-        
-      return out;
-        
-    }
-    
-    KOKKOS_INLINE_FUNCTION
     int NeighborIndexPanel(int ix, int iy, int iz, int n1, int n2, int panel_start, int panel_end) {
         
         const PanelBoundaries pb = GetPanelBoundary(panel_start, panel_end);

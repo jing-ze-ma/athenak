@@ -90,10 +90,6 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
         kl = sbuf[n].ifine[0].bks;
         ku = sbuf[n].ifine[0].bke;
       }
-        PanelBoundaries pb;
-        if (pmy_pack->pmesh->use_cubed_sphere && nghbr.d_view(m,n).panel != mbpanel.d_view(m)) {
-            pb = pmy_pack->pmesh->GetPanelBoundary(mbpanel.d_view(m),nghbr.d_view(m,n).panel);
-        }
       int ni = iu - il + 1;
       int nj = ju - jl + 1;
       int nk = ku - kl + 1;
@@ -103,7 +99,93 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
       // in MeshBlockPacks, so array index equals (target_id - first_id)
       int dm = nghbr.d_view(m,n).gid - mbgid.d_view(0);
       int dn = nghbr.d_view(m,n).dest;
+        
+      const bool do_cs = pmy_pack->pmesh->use_cubed_sphere && (nghbr.d_view(m,n).panel != mbpanel.d_view(m));
+      if (do_cs) {
+          
+          const auto ngh = nghbr.d_view(m,n);
+          const int my_panel = mbpanel.d_view(m);
+          PanelBoundaries pb;
+          pb = pmy_pack->pmesh->GetPanelBoundary(my_panel, ngh.panel);
+          
+          int ai = 1, bi = 0;
+          int aj = 1, bj = 0;
+          int map_vx = IVX;
+          int map_vy = IVY;
+          int sign_vx = 1;
+          int sign_vy = 1;
+          
+          int rev_x1_preswap = (pb.swap_ax == 1) ? pb.rev_x2 : pb.rev_x1;
+          int rev_x2_preswap = (pb.swap_ax == 1) ? pb.rev_x1 : pb.rev_x2;
+          if (pb.swap_ax == 1) {
+            map_vx = IVY;
+            map_vy = IVX;
+          }
+          if (rev_x1_preswap) {
+            ai = -1;
+            bi = il + iu;
+          }
+          if (rev_x2_preswap) {
+            aj = -1;
+            bj = jl + ju;
+          }
+          if (pb.rev_x1) sign_vx = -1;
+          if (pb.rev_x2) sign_vy = -1;
+          
+          const bool swap = do_cs && pb.swap_ax == 1;
+          const int si = swap ? nj : 1;
+          const int sj = swap ? 1 : ni;
+          int vv = v;
+          if (v == IVX) vv = map_vx;
+          if (v == IVY) vv = map_vy;
+          int signvar = 1;
+          if (v == IVX) signvar = sign_vx;
+          if (v == IVY) signvar = sign_vy;
+      
+        // Middle loop over k,j
+        Kokkos::parallel_for(Kokkos::TeamThreadRange<>(tmember, nkj), [&](const int idx) {
+          int k = idx / nj;
+          int j = (idx - k * nj) + jl;
+          k += kl;
+          int jj = aj*j + bj;
 
+          // Inner (vector) loop over i
+          // copy directly into recv buffer if MeshBlocks on same rank
+
+          if (nghbr.d_view(m,n).rank == my_rank) {
+            // if neighbor is at same or finer level, load data from u0
+            if (nghbr.d_view(m,n).lev >= mblev.d_view(m)) {
+              Kokkos::parallel_for(Kokkos::ThreadVectorRange(tmember,il,iu+1),
+              [&](const int i) {
+                int ii = ai*i + bi;
+                Real val = a(m,vv,k,jj,ii);
+                val *= signvar;
+                int index = (i-il)*si + (j-jl)*sj + nj*ni*(k-kl + nk*v);
+                rbuf[dn].vars(dm, index) = val;
+              });
+            // if neighbor is at coarser level, load data from coarse_u0
+            }
+
+          // else copy into send buffer for MPI communication below
+
+          } else {
+            // if neighbor is at same or finer level, load data from u0
+            if (nghbr.d_view(m,n).lev >= mblev.d_view(m)) {
+              Kokkos::parallel_for(Kokkos::ThreadVectorRange(tmember,il,iu+1),
+              [&](const int i) {
+                int ii = ai*i + bi;
+                Real val = a(m,vv,k,jj,ii);
+                val *= signvar;
+                int index = (i-il)*si + (j-jl)*sj + nj*ni*(k-kl + nk*v);
+                sbuf[n].vars(m,index) = val;
+              });
+            // if neighbor is at coarser level, load data from coarse_u0
+            }
+          }
+        });
+          
+      } else {
+          
       // Middle loop over k,j
       Kokkos::parallel_for(Kokkos::TeamThreadRange<>(tmember, nkj), [&](const int idx) {
         int k = idx / nj;
@@ -118,15 +200,7 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
           if (nghbr.d_view(m,n).lev >= mblev.d_view(m)) {
             Kokkos::parallel_for(Kokkos::ThreadVectorRange(tmember,il,iu+1),
             [&](const int i) {
-                if (pmy_pack->pmesh->use_cubed_sphere && nghbr.d_view(m,n).panel != mbpanel.d_view(m)) {
-                    if (pb.swap_ax == 1) {
-                        rbuf[dn].vars(dm, (j-jl + nj*(i-il + ni*(k-kl + nk*v))) ) = pmy_pack->pmesh->CubedSphereGhostFill(mbpanel.d_view(m),nghbr.d_view(m,n).panel,pb.swap_ax,pb.rev_x1,pb.rev_x2,m,v,k,j,i,il,iu,jl,ju,a);
-                    } else {
-                    rbuf[dn].vars(dm, (i-il + ni*(j-jl + nj*(k-kl + nk*v))) ) = pmy_pack->pmesh->CubedSphereGhostFill(mbpanel.d_view(m),nghbr.d_view(m,n).panel,pb.swap_ax,pb.rev_x1,pb.rev_x2,m,v,k,j,i,il,iu,jl,ju,a);
-                    }
-                } else {
               rbuf[dn].vars(dm, (i-il + ni*(j-jl + nj*(k-kl + nk*v))) ) = a(m,v,k,j,i);
-                }
             });
           // if neighbor is at coarser level, load data from coarse_u0
           } else {
@@ -143,15 +217,7 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
           if (nghbr.d_view(m,n).lev >= mblev.d_view(m)) {
             Kokkos::parallel_for(Kokkos::ThreadVectorRange(tmember,il,iu+1),
             [&](const int i) {
-                if (pmy_pack->pmesh->use_cubed_sphere && nghbr.d_view(m,n).panel != mbpanel.d_view(m)) {
-                    if (pb.swap_ax == 1) {
-                        sbuf[n].vars(m, (j-jl + nj*(i-il + ni*(k-kl + nk*v))) ) = pmy_pack->pmesh->CubedSphereGhostFill(mbpanel.d_view(m),nghbr.d_view(m,n).panel,pb.swap_ax,pb.rev_x1,pb.rev_x2,m,v,k,j,i,il,iu,jl,ju,a);
-                    } else {
-                        sbuf[n].vars(m, (i-il + ni*(j-jl + nj*(k-kl + nk*v))) ) = pmy_pack->pmesh->CubedSphereGhostFill(mbpanel.d_view(m),nghbr.d_view(m,n).panel,pb.swap_ax,pb.rev_x1,pb.rev_x2,m,v,k,j,i,il,iu,jl,ju,a);
-                    }
-                } else {
               sbuf[n].vars(m, (i-il + ni*(j-jl + nj*(k-kl + nk*v))) ) = a(m,v,k,j,i);
-                }
             });
           // if neighbor is at coarser level, load data from coarse_u0
           } else {
@@ -162,6 +228,9 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
           }
         }
       });
+          
+      } // end if-do-cs block
+        
     } // end if-neighbor-exists block
     tmember.team_barrier();
   }); // end par_for_outer
