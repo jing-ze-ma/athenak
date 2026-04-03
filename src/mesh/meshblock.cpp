@@ -85,38 +85,38 @@ MeshBlock::MeshBlock(MeshBlockPack* ppack, int igids, int nmb) :
       }
         
         
-        if (pm->use_cubed_sphere) {
-
-          int panel = mb_panel.h_view(m);
-          int npanels = pm->npanels;
-
-          // Global domain
-          Real global_ymin = ms.x2min;
-          Real global_ymax = ms.x2max;
-
-          // Split domain across panels
-          Real dy_panel = (global_ymax - global_ymin) / npanels;
-          Real panel_ymin = global_ymin + panel * dy_panel;
-          Real panel_ymax = global_ymin + (panel + 1) * dy_panel;
-
-          if (lx2 == 0) {
-            mb_size.h_view(m).x2min = panel_ymin;
-            mb_bcs.h_view(m,2) = pm->mesh_bcs[BoundaryFace::inner_x2];
-          } else {
-            mb_size.h_view(m).x2min =
-                LeftEdgeX(lx2, nmbx2, panel_ymin, panel_ymax);
-            mb_bcs.h_view(m,2) = BoundaryFlag::block;
-          }
-
-          if (lx2 == (nmbx2 - 1)) {
-            mb_size.h_view(m).x2max = panel_ymax;
-            mb_bcs.h_view(m,3) = pm->mesh_bcs[BoundaryFace::outer_x2];
-          } else {
-            mb_size.h_view(m).x2max =
-                LeftEdgeX(lx2+1, nmbx2, panel_ymin, panel_ymax);
-            mb_bcs.h_view(m,3) = BoundaryFlag::block;
-          }
-        }
+//        if (pm->use_cubed_sphere) {
+//
+//          int panel = mb_panel.h_view(m);
+//          int npanels = pm->npanels;
+//
+//          // Global domain
+//          Real global_ymin = ms.x2min;
+//          Real global_ymax = ms.x2max;
+//
+//          // Split domain across panels
+//          Real dy_panel = (global_ymax - global_ymin) / npanels;
+//          Real panel_ymin = global_ymin + panel * dy_panel;
+//          Real panel_ymax = global_ymin + (panel + 1) * dy_panel;
+//
+//          if (lx2 == 0) {
+//            mb_size.h_view(m).x2min = panel_ymin;
+//            mb_bcs.h_view(m,2) = pm->mesh_bcs[BoundaryFace::inner_x2];
+//          } else {
+//            mb_size.h_view(m).x2min =
+//                LeftEdgeX(lx2, nmbx2, panel_ymin, panel_ymax);
+//            mb_bcs.h_view(m,2) = BoundaryFlag::block;
+//          }
+//
+//          if (lx2 == (nmbx2 - 1)) {
+//            mb_size.h_view(m).x2max = panel_ymax;
+//            mb_bcs.h_view(m,3) = pm->mesh_bcs[BoundaryFace::outer_x2];
+//          } else {
+//            mb_size.h_view(m).x2max =
+//                LeftEdgeX(lx2+1, nmbx2, panel_ymin, panel_ymax);
+//            mb_bcs.h_view(m,3) = BoundaryFlag::block;
+//          }
+//        }
     }
 
     // calculate physical size and set BCs of each MeshBlock in x1, dependng on whether

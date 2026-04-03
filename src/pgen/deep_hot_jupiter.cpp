@@ -29,17 +29,37 @@
 void HydrostaticEquilibrium(Mesh *pm);
 void SourceFunc(Mesh *pm, Real bdt);
 KOKKOS_INLINE_FUNCTION
+void StretchR(const Real r0, const Real r1, Real &r) {
+  Real xi = (r-r0)/(r1-r0);
+  Real a = 2.0;
+  if (fabs(a) < 1e-12) {
+    r = r0 + (r1 - r0)*xi;
+  }
+  Real denom = 1.0 - exp(-a);
+  r = r0 + (r1 - r0)*(1.0 - exp(-a*xi))/denom;
+};
+KOKKOS_INLINE_FUNCTION
 void get_daynight_Tp(const Real &p, Real &Tn, Real &Td);
 KOKKOS_INLINE_FUNCTION
 void get_itrad(const Real &p, Real &itrad);
 KOKKOS_INLINE_FUNCTION
-void get_hse_Tp(const Real &p, Real &T);
+void get_wb_Tp(const Real &p, Real &T);
+KOKKOS_INLINE_FUNCTION
+void get_init_Tp(const Real &p, Real &T);
 KOKKOS_INLINE_FUNCTION
 void get_eq_Tp(const Real &lam, const Real &phi, const Real &p, Real &Teq);
+template <typename View1D>
+void get_wb_eos_arr(const int &N, View1D zarr, View1D logparr);
+KOKKOS_INLINE_FUNCTION
+void get_wb_eos(const DvceArray1D<Real> &zarr, const DvceArray1D<Real> &logparr, const Real &z, Real &rho, Real &p);
 template <typename View1D>
 void get_init_eos_arr(const int &N, View1D zarr, View1D logparr);
 KOKKOS_INLINE_FUNCTION
 void get_init_eos(const DvceArray1D<Real> &zarr, const DvceArray1D<Real> &logparr, const Real &z, Real &rho, Real &p);
+//KOKKOS_INLINE_FUNCTION
+//void get_init_eos_arr(const Real &lam, const Real &phi, const int &N, DvceArray1D<Real> zarr, DvceArray1D<Real> logparr);
+//KOKKOS_INLINE_FUNCTION
+//void get_init_eos(const DvceArray1D<Real> &zarr, const DvceArray1D<Real> &logparr, const Real &z, const Real &lam, const Real &phi, Real &rho, Real &p);
 
 
 //----------------------------------------------------------------------------------------
@@ -49,6 +69,9 @@ void get_init_eos(const DvceArray1D<Real> &zarr, const DvceArray1D<Real> &logpar
 void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   const bool use_etotgrav = pmy_mesh_->pmb_pack->phydro->use_etotgrav;
   const bool use_wellbalance = pmy_mesh_->pmb_pack->phydro->use_wellbalance;
+  const bool use_wellbalance_local = pmy_mesh_->pmb_pack->phydro->use_wellbalance_local;
+  const bool use_spherical_polar = pmy_mesh_->use_spherical_polar;
+  const bool use_grid_stretch = pmy_mesh_->use_grid_stretch;
   bool user_srcs = pin->GetOrAddBoolean("problem","user_srcs",false);
   if (user_srcs) user_srcs_func = SourceFunc;
   user_bcs_func = HydrostaticEquilibrium;
@@ -66,6 +89,17 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   int &ks = indcs.ks; int &ke = indcs.ke;
   MeshBlockPack *pmbp = pmy_mesh_->pmb_pack;
   auto &size = pmbp->pmb->mb_size;
+    
+    Real r0, r1;
+    if (use_grid_stretch) {
+        r0 = pmy_mesh_->mesh_size.x3min;
+        r1 = pmy_mesh_->mesh_size.x3max;
+    }
+    
+    int &ng = indcs.ng;
+    int n1m1 = indcs.nx1 + 2*ng - 1;
+    int n2m1 = (indcs.nx2 > 1)? (indcs.nx2 + 2*ng - 1) : 0;
+    int n3m1 = (indcs.nx3 > 1)? (indcs.nx3 + 2*ng - 1) : 0;
 
   // Select either Hydro or MHD
   DvceArray5D<Real> u0_;
@@ -93,11 +127,14 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   Real gm1 = gamma - 1.0;
   Real igm1 = 1.0/gm1;
   Real grav_acc = -942.0;
+  Real ap = 9.44e9;
+  Real iap = 1.0/ap;
+  Real omega = 2.06e-5;
     
     const int N = 10000;
     DualArray1D<Real> zarr("zarr", N);
     DualArray1D<Real> logparr("logparr", N);
-    get_init_eos_arr(N, zarr.h_view, logparr.h_view);
+    get_wb_eos_arr(N, zarr.h_view, logparr.h_view);
 //    zarr.template modify<HostMemSpace>();
 //    zarr.template sync<DevExeSpace>();
 //    logparr.template modify<HostMemSpace>();
@@ -106,8 +143,18 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     zarr.sync_device();
     logparr.modify_host();
     logparr.sync_device();
+    
+//    DvceArray1D<Real> zinitarr("zinitarr", N);
+//    DvceArray1D<Real> logpinitarr("logpinitarr", N);
+    DualArray1D<Real> zarr_init("zarrinit", N);
+    DualArray1D<Real> logparr_init("logparrinit", N);
+    get_init_eos_arr(N, zarr_init.h_view, logparr_init.h_view);
+    zarr_init.modify_host();
+    zarr_init.sync_device();
+    logparr_init.modify_host();
+    logparr_init.sync_device();
   
-    par_for("probini", DevExeSpace(), 0,(pmbp->nmb_thispack-1),ks,ke,js,je,is,ie,
+    par_for("probini", DevExeSpace(), 0, (pmbp->nmb_thispack-1), 0, n3m1, 0, n2m1, 0, n1m1,
     KOKKOS_LAMBDA(int m, int k, int j, int i) {
       Real &x1min = size.d_view(m).x1min;
       Real &x1max = size.d_view(m).x1max;
@@ -123,170 +170,358 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       Real &x3max = size.d_view(m).x3max;
       int nx3 = indcs.nx3;
       Real x3v = CellCenterX(k-ks, nx3, x3min, x3max);
+      if (use_grid_stretch) StretchR(r0,r1,x3v);
+      Real r = x3v;
+      if (use_spherical_polar) x3v -= ap;
+        
+      Real lam, theta, phi;
+      if (use_spherical_polar) {
+        theta = x1v;
+        lam = -x1v+M_PI/2.0;
+        phi = x2v-M_PI;
+      } else {
+        theta = -(x2v*iap-M_PI/2.0);
+        lam = x2v*iap;
+        phi = x1v*iap;
+      }
+        
+      Real pwb, denwb;
+      get_wb_eos(zarr.d_view,logparr.d_view,x3v,denwb,pwb);
         
       Real p, den;
-      get_init_eos(zarr.d_view,logparr.d_view,x3v,den,p);
-      Real phicc = - grav_acc * x3v;
+      get_init_eos(zarr_init.d_view,logparr_init.d_view,x3v,den,p);
+//      get_init_eos_arr(lam, phi, N, zinitarr, logpinitarr);
+//      get_init_eos(zinitarr,logpinitarr,x3v,lam,phi,den,p);
+//      p = pwb;
+//      den = denwb;
 
       u0_(m,IDN,k,j,i) = den;
       u0_(m,IM1,k,j,i) = 0.0;
       u0_(m,IM2,k,j,i) = 0.0;
       u0_(m,IM3,k,j,i) = 0.0;
       u0_(m,IEN,k,j,i) = p*igm1;
-      if (use_etotgrav) {
-          u0_(m,IEN,k,j,i) += den*phicc;
+        
+        Real phicc = - grav_acc * x3v;// - 0.5*SQR(omega*r*sin(theta));
+        if (use_etotgrav) {
+            u0_(m,IEN,k,j,i) += den*phicc;
+        }
+    });
+            
+    par_for("probwb", DevExeSpace(), 0,(pmbp->nmb_thispack-1),ks,ke,js,je,is,ie,
+    KOKKOS_LAMBDA(int m, int k, int j, int i) {
+        Real &x1min = size.d_view(m).x1min;
+        Real &x1max = size.d_view(m).x1max;
+        int nx1 = indcs.nx1;
+        Real x1v = CellCenterX(i-is, nx1, x1min, x1max);
+
+        Real &x2min = size.d_view(m).x2min;
+        Real &x2max = size.d_view(m).x2max;
+        int nx2 = indcs.nx2;
+        Real x2v = CellCenterX(j-js, nx2, x2min, x2max);
+          
+        Real &x3min = size.d_view(m).x3min;
+        Real &x3max = size.d_view(m).x3max;
+        int nx3 = indcs.nx3;
+        Real x3v = CellCenterX(k-ks, nx3, x3min, x3max);
+        if (use_grid_stretch) StretchR(r0,r1,x3v);
+        Real r = x3v;
+        if (use_spherical_polar) x3v -= ap;
+          
+        Real lam, theta, phi;
+        if (use_spherical_polar) {
+          theta = x1v;
+          lam = -x1v+M_PI/2.0;
+          phi = x2v-M_PI;
+        } else {
+          theta = -(x2v*iap-M_PI/2.0);
+          lam = x2v*iap;
+          phi = x1v*iap;
+        }
+          
+        Real pwb, denwb;
+        get_wb_eos(zarr.d_view,logparr.d_view,x3v,denwb,pwb);
+        
+        Real p, den;
+        get_init_eos(zarr_init.d_view,logparr_init.d_view,x3v,den,p);
+//        get_init_eos_arr(lam, phi, N, zinitarr, logpinitarr);
+//        get_init_eos(zinitarr,logpinitarr,x3v,lam,phi,den,p);
+//        p = pwb;
+//        den = denwb;
+        
+        Real phicc = - grav_acc * x3v;// - 0.5*SQR(omega*r*sin(theta));
+        
+      if (use_etotgrav || use_wellbalance_local) {
+          x1v = LeftEdgeX(i-is, nx1, x1min, x1max);
+          x2v = CellCenterX(j-js, nx2, x2min, x2max);
+          x3v = CellCenterX(k-ks, nx3, x3min, x3max);
+          if (use_grid_stretch) StretchR(r0,r1,x3v);
+          r = x3v;
+          if (use_spherical_polar) x3v -= ap;
+          if (use_spherical_polar) {
+            theta = x1v;
+            lam = -x1v+M_PI/2.0;
+            phi = x2v-M_PI;
+          } else {
+            theta = -(x2v*iap-M_PI/2.0);
+            lam = x2v*iap;
+            phi = x1v*iap;
+          }
+          phicc = - grav_acc * x3v;// - 0.5*SQR(omega*r*sin(theta));
           phi0_x1f(m,k,j,i) = phicc;
           if (i == ie) {
+              x1v = LeftEdgeX(i+1-is, nx1, x1min, x1max);
+              if (use_spherical_polar) {
+                theta = x1v;
+                lam = -x1v+M_PI/2.0;
+                phi = x2v-M_PI;
+              } else {
+                theta = -(x2v*iap-M_PI/2.0);
+                lam = x2v*iap;
+                phi = x1v*iap;
+              }
+              phicc = - grav_acc * x3v;// - 0.5*SQR(omega*r*sin(theta));
               phi0_x1f(m,k,j,i+1) = phicc;
           }
+          
+          x1v = CellCenterX(i-is, nx1, x1min, x1max);
+          x2v = LeftEdgeX(j-js, nx2, x2min, x2max);
+          x3v = CellCenterX(k-ks, nx3, x3min, x3max);
+          if (use_grid_stretch) StretchR(r0,r1,x3v);
+          r = x3v;
+          if (use_spherical_polar) x3v -= ap;
+          if (use_spherical_polar) {
+            theta = x1v;
+            lam = -x1v+M_PI/2.0;
+            phi = x2v-M_PI;
+          } else {
+            theta = -(x2v*iap-M_PI/2.0);
+            lam = x2v*iap;
+            phi = x1v*iap;
+          }
+          phicc = - grav_acc * x3v;// - 0.5*SQR(omega*r*sin(theta));
           phi0_x2f(m,k,j,i) = phicc;
           if (j == je) {
+              x2v = LeftEdgeX(j+1-js, nx2, x2min, x2max);
+              if (use_spherical_polar) {
+                theta = x1v;
+                lam = -x1v+M_PI/2.0;
+                phi = x2v-M_PI;
+              } else {
+                theta = -(x2v*iap-M_PI/2.0);
+                lam = x2v*iap;
+                phi = x1v*iap;
+              }
+              phicc = - grav_acc * x3v;// - 0.5*SQR(omega*r*sin(theta));
               phi0_x2f(m,k,j+1,i) = phicc;
           }
+          
+          x1v = CellCenterX(i-is, nx1, x1min, x1max);
+          x2v = CellCenterX(j-js, nx2, x2min, x2max);
           x3v = LeftEdgeX(k-ks, nx3, x3min, x3max);
-          phi0_x3f(m,k,j,i) = - grav_acc * x3v;
+          if (use_grid_stretch) StretchR(r0,r1,x3v);
+          r = x3v;
+          if (use_spherical_polar) x3v -= ap;
+          if (use_spherical_polar) {
+            theta = x1v;
+            lam = -x1v+M_PI/2.0;
+            phi = x2v-M_PI;
+          } else {
+            theta = -(x2v*iap-M_PI/2.0);
+            lam = x2v*iap;
+            phi = x1v*iap;
+          }
+          phicc = - grav_acc * x3v;// - 0.5*SQR(omega*r*sin(theta));
+          phi0_x3f(m,k,j,i) = phicc;
           if (k == ke) {
               x3v = LeftEdgeX(k+1-ks, nx3, x3min, x3max);
-              phi0_x3f(m,k+1,j,i) = - grav_acc * x3v;
+              if (use_grid_stretch) StretchR(r0,r1,x3v);
+              r = x3v;
+              if (use_spherical_polar) x3v -= ap;
+              if (use_spherical_polar) {
+                theta = x1v;
+                lam = -x1v+M_PI/2.0;
+                phi = x2v-M_PI;
+              } else {
+                theta = -(x2v*iap-M_PI/2.0);
+                lam = x2v*iap;
+                phi = x1v*iap;
+              }
+              phicc = - grav_acc * x3v;// - 0.5*SQR(omega*r*sin(theta));
+              phi0_x3f(m,k+1,j,i) = phicc;
           }
       }
         if (use_wellbalance) {
             x1v = LeftEdgeX(i-is, nx1, x1min, x1max);
             x2v = CellCenterX(j-js, nx2, x2min, x2max);
             x3v = CellCenterX(k-ks, nx3, x3min, x3max);
+            if (use_grid_stretch) StretchR(r0,r1,x3v);
+            if (use_spherical_polar) x3v -= ap;
             Real denwb;
-            get_init_eos(zarr.d_view,logparr.d_view,x3v,denwb,p);
+            get_wb_eos(zarr.d_view,logparr.d_view,x3v,denwb,pwb);
             w0facewb_x1f(m,IDN,k,j,i) = denwb;
             w0facewb_x1f(m,IM1,k,j,i) = 0.0;
             w0facewb_x1f(m,IM2,k,j,i) = 0.0;
             w0facewb_x1f(m,IM3,k,j,i) = 0.0;
-            w0facewb_x1f(m,IEN,k,j,i) = p*igm1;
+            w0facewb_x1f(m,IEN,k,j,i) = pwb*igm1;
             if (i == ie) {
                 x1v = LeftEdgeX(i+1-is, nx1, x1min, x1max);
                 x2v = CellCenterX(j-js, nx2, x2min, x2max);
                 x3v = CellCenterX(k-ks, nx3, x3min, x3max);
-                get_init_eos(zarr.d_view,logparr.d_view,x3v,denwb,p);
+                if (use_grid_stretch) StretchR(r0,r1,x3v);
+                if (use_spherical_polar) x3v -= ap;
+                get_wb_eos(zarr.d_view,logparr.d_view,x3v,denwb,pwb);
                 w0facewb_x1f(m,IDN,k,j,i+1) = denwb;
                 w0facewb_x1f(m,IM1,k,j,i+1) = 0.0;
                 w0facewb_x1f(m,IM2,k,j,i+1) = 0.0;
                 w0facewb_x1f(m,IM3,k,j,i+1) = 0.0;
-                w0facewb_x1f(m,IEN,k,j,i+1) = p*igm1;
+                w0facewb_x1f(m,IEN,k,j,i+1) = pwb*igm1;
             }
             
             x1v = CellCenterX(i-is, nx1, x1min, x1max);
             x2v = LeftEdgeX(j-js, nx2, x2min, x2max);
             x3v = CellCenterX(k-ks, nx3, x3min, x3max);
-            get_init_eos(zarr.d_view,logparr.d_view,x3v,denwb,p);
+            if (use_grid_stretch) StretchR(r0,r1,x3v);
+            if (use_spherical_polar) x3v -= ap;
+            get_wb_eos(zarr.d_view,logparr.d_view,x3v,denwb,pwb);
             w0facewb_x2f(m,IDN,k,j,i) = denwb;
             w0facewb_x2f(m,IM1,k,j,i) = 0.0;
             w0facewb_x2f(m,IM2,k,j,i) = 0.0;
             w0facewb_x2f(m,IM3,k,j,i) = 0.0;
-            w0facewb_x2f(m,IEN,k,j,i) = p*igm1;
+            w0facewb_x2f(m,IEN,k,j,i) = pwb*igm1;
             if (j == je) {
                 x1v = CellCenterX(i-is, nx1, x1min, x1max);
                 x2v = LeftEdgeX(j+1-js, nx2, x2min, x2max);
                 x3v = CellCenterX(k-ks, nx3, x3min, x3max);
-                get_init_eos(zarr.d_view,logparr.d_view,x3v,denwb,p);
+                if (use_grid_stretch) StretchR(r0,r1,x3v);
+                if (use_spherical_polar) x3v -= ap;
+                get_wb_eos(zarr.d_view,logparr.d_view,x3v,denwb,pwb);
                 w0facewb_x2f(m,IDN,k,j+1,i) = denwb;
                 w0facewb_x2f(m,IM1,k,j+1,i) = 0.0;
                 w0facewb_x2f(m,IM2,k,j+1,i) = 0.0;
                 w0facewb_x2f(m,IM3,k,j+1,i) = 0.0;
-                w0facewb_x2f(m,IEN,k,j+1,i) = p*igm1;
+                w0facewb_x2f(m,IEN,k,j+1,i) = pwb*igm1;
             }
             
             x1v = CellCenterX(i-is, nx1, x1min, x1max);
             x2v = CellCenterX(j-js, nx2, x2min, x2max);
             x3v = LeftEdgeX(k-ks, nx3, x3min, x3max);
-            get_init_eos(zarr.d_view,logparr.d_view,x3v,denwb,p);
+            if (use_grid_stretch) StretchR(r0,r1,x3v);
+            if (use_spherical_polar) x3v -= ap;
+            get_wb_eos(zarr.d_view,logparr.d_view,x3v,denwb,pwb);
             w0facewb_x3f(m,IDN,k,j,i) = denwb;
             w0facewb_x3f(m,IM1,k,j,i) = 0.0;
             w0facewb_x3f(m,IM2,k,j,i) = 0.0;
             w0facewb_x3f(m,IM3,k,j,i) = 0.0;
-            w0facewb_x3f(m,IEN,k,j,i) = p*igm1;
+            w0facewb_x3f(m,IEN,k,j,i) = pwb*igm1;
             if (k == ke) {
                 x1v = CellCenterX(i-is, nx1, x1min, x1max);
                 x2v = CellCenterX(j-js, nx2, x2min, x2max);
                 x3v = LeftEdgeX(k+1-ks, nx3, x3min, x3max);
-                get_init_eos(zarr.d_view,logparr.d_view,x3v,denwb,p);
+                if (use_grid_stretch) StretchR(r0,r1,x3v);
+                if (use_spherical_polar) x3v -= ap;
+                get_wb_eos(zarr.d_view,logparr.d_view,x3v,denwb,pwb);
                 w0facewb_x3f(m,IDN,k+1,j,i) = denwb;
                 w0facewb_x3f(m,IM1,k+1,j,i) = 0.0;
                 w0facewb_x3f(m,IM2,k+1,j,i) = 0.0;
                 w0facewb_x3f(m,IM3,k+1,j,i) = 0.0;
-                w0facewb_x3f(m,IEN,k+1,j,i) = p*igm1;
+                w0facewb_x3f(m,IEN,k+1,j,i) = pwb*igm1;
             }
         }
     });
-    if (use_etotgrav) {
+    if (use_etotgrav || use_wellbalance_local) {
         int &ng = indcs.ng;
         int n1m1 = indcs.nx1 + 2*ng - 1;
         int n2m1 = (indcs.nx2 > 1)? (indcs.nx2 + 2*ng - 1) : 0;
         int n3m1 = (indcs.nx3 > 1)? (indcs.nx3 + 2*ng - 1) : 0;
         par_for("wbgrav", DevExeSpace(), 0, (pmbp->nmb_thispack-1), 0, n3m1, 0, n2m1, 0, n1m1,
         KOKKOS_LAMBDA(int m, int k, int j, int i) {
+            Real &x1min = size.d_view(m).x1min;
+            Real &x1max = size.d_view(m).x1max;
+            int nx1 = indcs.nx1;
+            Real x1v = CellCenterX(i-is, nx1, x1min, x1max);
 
+            Real &x2min = size.d_view(m).x2min;
+            Real &x2max = size.d_view(m).x2max;
+            int nx2 = indcs.nx2;
+            Real x2v = CellCenterX(j-js, nx2, x2min, x2max);
+              
             Real &x3min = size.d_view(m).x3min;
             Real &x3max = size.d_view(m).x3max;
             int nx3 = indcs.nx3;
             Real x3v = CellCenterX(k-ks, nx3, x3min, x3max);
+            if (use_grid_stretch) StretchR(r0,r1,x3v);
+            Real r = x3v;
+            if (use_spherical_polar) x3v -= ap;
+              
+            Real lam, theta, phi;
+            if (use_spherical_polar) {
+              theta = x1v;
+              lam = -x1v+M_PI/2.0;
+              phi = x2v-M_PI;
+            } else {
+              theta = -(x2v*iap-M_PI/2.0);
+              lam = x2v*iap;
+              phi = x1v*iap;
+            }
             
-            Real phicc = - grav_acc * x3v;
+            Real phicc = - grav_acc * x3v;// - 0.5*SQR(omega*r*sin(theta));
             phicc0(m,k,j,i) = phicc;
         });
-        auto &mb_bcs = pmbp->pmb->mb_bcs;
-        par_for("wbgravbc_x3", DevExeSpace(), 0,(pmbp->nmb_thispack-1),0,n2m1,0,n1m1,
-        KOKKOS_LAMBDA(int m, int j, int i) {
-          // apply physical boundaries to inner_x3
-          switch (mb_bcs.d_view(m,BoundaryFace::inner_x3)) {
-            case BoundaryFlag::reflect:
-              for (int k=0; k<ng; ++k) {
-                  phicc0(m,ks-k-1,j,i) =  phicc0(m,ks+k,j,i);
-              }
-              break;
-            case BoundaryFlag::outflow:
-              for (int k=0; k<ng; ++k) {
-                  phicc0(m,ks-k-1,j,i) = phicc0(m,ks,j,i);
-              }
-              break;
-            case BoundaryFlag::diode:
-              for (int k=0; k<ng; ++k) {
-                  phicc0(m,ks-k-1,j,i) = phicc0(m,ks,j,i);
-              }
-              break;
-            case BoundaryFlag::vacuum:
-              for (int k=0; k<ng; ++k) {
-                  phicc0(m,ks-k-1,j,i) = 0.0;
-              }
-              break;
-            default:
-              break;
-          }
-
-          // apply physical boundaries to outer_x3
-          switch (mb_bcs.d_view(m,BoundaryFace::outer_x3)) {
-            case BoundaryFlag::reflect:
-              for (int k=0; k<ng; ++k) {
-                  phicc0(m,ke+k+1,j,i) =  phicc0(m,ke-k,j,i);
-              }
-              break;
-            case BoundaryFlag::outflow:
-              for (int k=0; k<ng; ++k) {
-                  phicc0(m,ke+k+1,j,i) = phicc0(m,ke,j,i);
-              }
-              break;
-            case BoundaryFlag::diode:
-              for (int k=0; k<ng; ++k) {
-                  phicc0(m,ke+k+1,j,i) = phicc0(m,ke,j,i);
-              }
-              break;
-            case BoundaryFlag::vacuum:
-              for (int k=0; k<ng; ++k) {
-                  phicc0(m,ke+k+1,j,i) = 0.0;
-              }
-              break;
-            default:
-              break;
-          }
-        });
+//        auto &mb_bcs = pmbp->pmb->mb_bcs;
+//        par_for("wbgravbc_x3", DevExeSpace(), 0,(pmbp->nmb_thispack-1),0,n2m1,0,n1m1,
+//        KOKKOS_LAMBDA(int m, int j, int i) {
+//          // apply physical boundaries to inner_x3
+//          switch (mb_bcs.d_view(m,BoundaryFace::inner_x3)) {
+//            case BoundaryFlag::reflect:
+//              for (int k=0; k<ng; ++k) {
+//                  phicc0(m,ks-k-1,j,i) =  phicc0(m,ks+k,j,i);
+//              }
+//              break;
+//            case BoundaryFlag::outflow:
+//              for (int k=0; k<ng; ++k) {
+//                  phicc0(m,ks-k-1,j,i) = phicc0(m,ks,j,i);
+//              }
+//              break;
+//            case BoundaryFlag::diode:
+//              for (int k=0; k<ng; ++k) {
+//                  phicc0(m,ks-k-1,j,i) = phicc0(m,ks,j,i);
+//              }
+//              break;
+//            case BoundaryFlag::vacuum:
+//              for (int k=0; k<ng; ++k) {
+//                  phicc0(m,ks-k-1,j,i) = 0.0;
+//              }
+//              break;
+//            default:
+//              break;
+//          }
+//
+//          // apply physical boundaries to outer_x3
+//          switch (mb_bcs.d_view(m,BoundaryFace::outer_x3)) {
+//            case BoundaryFlag::reflect:
+//              for (int k=0; k<ng; ++k) {
+//                  phicc0(m,ke+k+1,j,i) =  phicc0(m,ke-k,j,i);
+//              }
+//              break;
+//            case BoundaryFlag::outflow:
+//              for (int k=0; k<ng; ++k) {
+//                  phicc0(m,ke+k+1,j,i) = phicc0(m,ke,j,i);
+//              }
+//              break;
+//            case BoundaryFlag::diode:
+//              for (int k=0; k<ng; ++k) {
+//                  phicc0(m,ke+k+1,j,i) = phicc0(m,ke,j,i);
+//              }
+//              break;
+//            case BoundaryFlag::vacuum:
+//              for (int k=0; k<ng; ++k) {
+//                  phicc0(m,ke+k+1,j,i) = 0.0;
+//              }
+//              break;
+//            default:
+//              break;
+//          }
+//        });
     }
     if (use_wellbalance) {
         int &ng = indcs.ng;
@@ -309,14 +544,16 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
           Real &x3max = size.d_view(m).x3max;
           int nx3 = indcs.nx3;
           Real x3v = CellCenterX(k-ks, nx3, x3min, x3max);
+          if (use_grid_stretch) StretchR(r0,r1,x3v);
+          if (use_spherical_polar) x3v -= ap;
             
-          Real p, denwb;
-          get_init_eos(zarr.d_view,logparr.d_view,x3v,denwb,p);
+          Real pwb, denwb;
+          get_wb_eos(zarr.d_view,logparr.d_view,x3v,denwb,pwb);
           u0wb(m,IDN,k,j,i) = denwb;
           u0wb(m,IM1,k,j,i) = 0.0;
           u0wb(m,IM2,k,j,i) = 0.0;
           u0wb(m,IM3,k,j,i) = 0.0;
-          u0wb(m,IEN,k,j,i) = p*igm1;
+          u0wb(m,IEN,k,j,i) = pwb*igm1;
           if (use_etotgrav) {
               Real phicc = - grav_acc * x3v;
               u0wb(m,IEN,k,j,i) += denwb*phicc;
@@ -325,8 +562,87 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
           w0wb(m,IM1,k,j,i) = 0.0;
           w0wb(m,IM2,k,j,i) = 0.0;
           w0wb(m,IM3,k,j,i) = 0.0;
-          w0wb(m,IEN,k,j,i) = p*igm1;
+          w0wb(m,IEN,k,j,i) = pwb*igm1;
         });
+//        auto &mb_bcs = pmbp->pmb->mb_bcs;
+//        par_for("wbbc_x3", DevExeSpace(), 0,(pmbp->nmb_thispack-1),0,n2m1,0,n1m1,
+//        KOKKOS_LAMBDA(int m, int j, int i) {
+//          // apply physical boundaries to inner_x3
+//          switch (mb_bcs.d_view(m,BoundaryFace::inner_x3)) {
+//            case BoundaryFlag::reflect:
+//              for (int k=0; k<ng; ++k) {
+//                  u0wb(m,IDN,ks-k-1,j,i) =  u0wb(m,IDN,ks+k,j,i);
+//                  u0wb(m,IEN,ks-k-1,j,i) =  u0wb(m,IEN,ks+k,j,i);
+//                  w0wb(m,IDN,ks-k-1,j,i) =  w0wb(m,IDN,ks+k,j,i);
+//                  w0wb(m,IEN,ks-k-1,j,i) =  w0wb(m,IEN,ks+k,j,i);
+//              }
+//              break;
+//            case BoundaryFlag::outflow:
+//              for (int k=0; k<ng; ++k) {
+//                  u0wb(m,IDN,ks-k-1,j,i) = u0wb(m,IDN,ks,j,i);
+//                  u0wb(m,IEN,ks-k-1,j,i) = u0wb(m,IEN,ks,j,i);
+//                  w0wb(m,IDN,ks-k-1,j,i) = w0wb(m,IDN,ks,j,i);
+//                  w0wb(m,IEN,ks-k-1,j,i) = w0wb(m,IEN,ks,j,i);
+//              }
+//              break;
+//            case BoundaryFlag::diode:
+//              for (int k=0; k<ng; ++k) {
+//                  u0wb(m,IDN,ks-k-1,j,i) = u0wb(m,IDN,ks,j,i);
+//                  u0wb(m,IEN,ks-k-1,j,i) = u0wb(m,IEN,ks,j,i);
+//                  w0wb(m,IDN,ks-k-1,j,i) = w0wb(m,IDN,ks,j,i);
+//                  w0wb(m,IEN,ks-k-1,j,i) = w0wb(m,IEN,ks,j,i);
+//              }
+//              break;
+//            case BoundaryFlag::vacuum:
+//              for (int k=0; k<ng; ++k) {
+//                  u0wb(m,IDN,ks-k-1,j,i) = 0.0;
+//                  u0wb(m,IEN,ks-k-1,j,i) = 0.0;
+//                  w0wb(m,IDN,ks-k-1,j,i) = 0.0;
+//                  w0wb(m,IEN,ks-k-1,j,i) = 0.0;
+//              }
+//              break;
+//            default:
+//              break;
+//          }
+//
+//          // apply physical boundaries to outer_x3
+//          switch (mb_bcs.d_view(m,BoundaryFace::outer_x3)) {
+//            case BoundaryFlag::reflect:
+//              for (int k=0; k<ng; ++k) {
+//                  u0wb(m,IDN,ke+k+1,j,i) =  u0wb(m,IDN,ke-k,j,i);
+//                  u0wb(m,IEN,ke+k+1,j,i) =  u0wb(m,IEN,ke-k,j,i);
+//                  w0wb(m,IDN,ke+k+1,j,i) =  w0wb(m,IDN,ke-k,j,i);
+//                  w0wb(m,IEN,ke+k+1,j,i) =  w0wb(m,IEN,ke-k,j,i);
+//              }
+//              break;
+//            case BoundaryFlag::outflow:
+//              for (int k=0; k<ng; ++k) {
+//                  u0wb(m,IDN,ke+k+1,j,i) = u0wb(m,IDN,ke,j,i);
+//                  u0wb(m,IEN,ke+k+1,j,i) = u0wb(m,IEN,ke,j,i);
+//                  w0wb(m,IDN,ke+k+1,j,i) = w0wb(m,IDN,ke,j,i);
+//                  w0wb(m,IEN,ke+k+1,j,i) = w0wb(m,IEN,ke,j,i);
+//              }
+//              break;
+//            case BoundaryFlag::diode:
+//              for (int k=0; k<ng; ++k) {
+//                  u0wb(m,IDN,ke+k+1,j,i) = u0wb(m,IDN,ke,j,i);
+//                  u0wb(m,IEN,ke+k+1,j,i) = u0wb(m,IEN,ke,j,i);
+//                  w0wb(m,IDN,ke+k+1,j,i) = w0wb(m,IDN,ke,j,i);
+//                  w0wb(m,IEN,ke+k+1,j,i) = w0wb(m,IEN,ke,j,i);
+//              }
+//              break;
+//            case BoundaryFlag::vacuum:
+//              for (int k=0; k<ng; ++k) {
+//                  u0wb(m,IDN,ke+k+1,j,i) = 0.0;
+//                  u0wb(m,IEN,ke+k+1,j,i) = 0.0;
+//                  w0wb(m,IDN,ke+k+1,j,i) = 0.0;
+//                  w0wb(m,IEN,ke+k+1,j,i) = 0.0;
+//              }
+//              break;
+//            default:
+//              break;
+//          }
+//        });
     }
 
     // initialize magnetic fields if MHD
@@ -365,82 +681,179 @@ void HydrostaticEquilibrium(Mesh *pm) {
   auto &size = pmbp->pmb->mb_size;
 
     DvceArray5D<Real> u0_;
-    DvceArray5D<Real> u0wb;
+    DvceArray5D<Real> w0_;
+//    DvceArray5D<Real> u0wb;
     const bool use_etotgrav = pmbp->phydro->use_etotgrav;
-    const bool use_wellbalance = pmbp->phydro->use_wellbalance;
-
+    const bool use_wellbalance_local = pmbp->phydro->use_wellbalance_local;
+//    const bool use_spherical_polar = pm->use_spherical_polar;
+    
+    auto phi0_x3f = pmbp->phydro->phi0.x3f;
+    auto phicc0 = pmbp->phydro->phicc0;
+//
     if (pmbp->phydro != nullptr) {
       u0_ = pmbp->phydro->u0;
+      w0_ = pmbp->phydro->w0;
     } else if (pmbp->pmhd != nullptr) {
       u0_ = pmbp->pmhd->u0;
+      w0_ = pmbp->pmhd->w0;
     }
     
-    u0wb = pmbp->phydro->u0wb;
+    Real gamma = pmbp->phydro->peos->eos_data.gamma;
+    Real igm1 = 1.0/(gamma-1.0);
+    Real gigm1 = gamma*igm1;
+    Real gm1ig = (gamma-1.0)/gamma;
+    Real ig = 1.0/gamma;
     
-
-  par_for("usrboundary", DevExeSpace(),0,(nmb-1),0,(ng-1),0,(n2-1),0,(n1-1),
-  KOKKOS_LAMBDA(int m, int k, int j, int i) {
-    Real &x3min = size.d_view(m).x3min;
-    Real &x3max = size.d_view(m).x3max;
-    if (mb_bcs.d_view(m,BoundaryFace::inner_x3) == BoundaryFlag::user) {
-        if (use_wellbalance)
-        {
-            u0_(m,IDN,k,j,i) = u0wb(m,IDN,k,j,i);
-            u0_(m,IM1,k,j,i) = 0.0;
-            u0_(m,IM2,k,j,i) = 0.0;
-            u0_(m,IM3,k,j,i) = 0.0;
-            u0_(m,IEN,k,j,i) = u0wb(m,IEN,k,j,i);
+  par_for("usrboundaryx1", DevExeSpace(),0,(nmb-1),0,(n3-1),0,(n2-1),
+  KOKKOS_LAMBDA(int m, int k, int j) {
+    if (mb_bcs.d_view(m,BoundaryFace::inner_x1) == BoundaryFlag::user) {
+      for (int i=0; i<ng; ++i) {
+        u0_(m,IDN,k,j,is-i-1) = u0_(m,IDN,k,j,is);
+        u0_(m,IM2,k,j,is-i-1) = u0_(m,IM2,k,j,is);
+        u0_(m,IM3,k,j,is-i-1) = u0_(m,IM3,k,j,is);
+        Real mom = fmin(0.0,u0_(m,IM1,k,j,is));
+        u0_(m,IEN,k,j,is-i-1) = u0_(m,IEN,k,j,is) - 0.5*(SQR(u0_(m,IM1,k,j,is))-SQR(mom))/u0_(m,IDN,k,j,is);
+        u0_(m,IM1,k,j,is-i-1) = mom;
+      }
+    }
+      if (mb_bcs.d_view(m,BoundaryFace::outer_x1) == BoundaryFlag::user) {
+        for (int i=0; i<ng; ++i) {
+          u0_(m,IDN,k,j,ie+i+1) = u0_(m,IDN,k,j,ie);
+          u0_(m,IM2,k,j,ie+i+1) = u0_(m,IM2,k,j,ie);
+          u0_(m,IM3,k,j,ie+i+1) = u0_(m,IM3,k,j,ie);
+          Real mom = fmax(0.0,u0_(m,IM1,k,j,ie));
+          u0_(m,IEN,k,j,ie+i+1) = u0_(m,IEN,k,j,ie) - 0.5*(SQR(u0_(m,IM1,k,j,ie))-SQR(mom))/u0_(m,IDN,k,j,ie);
+          u0_(m,IM1,k,j,ie+i+1) = mom;
         }
-//        else
+      }
+  });
+    par_for("usrboundaryx3", DevExeSpace(),0,(nmb-1),0,(n2-1),0,(n1-1),
+    KOKKOS_LAMBDA(int m, int j, int i) {
+        if (mb_bcs.d_view(m,BoundaryFace::outer_x3) == BoundaryFlag::user) {
+          for (int k=0; k<ng; ++k) {
+              if (use_wellbalance_local) {
+                Real rho_i = u0_(m,IDN,ke,j,i);
+                Real e_i = u0_(m,IEN,ke,j,i) - 0.5*(SQR(u0_(m,IM1,ke,j,i))+SQR(u0_(m,IM2,ke,j,i))+SQR(u0_(m,IM3,ke,j,i)))/rho_i;
+                if (use_etotgrav) e_i -= rho_i*phicc0(m,ke,j,i);
+                Real phi_i = phicc0(m,ke,j,i);
+//                Real q0_i = pow(e_i,gm1ig);
+//                Real factor_i = pow(rho_i,gamma)/e_i*ig;
+                Real q0_i = log(e_i);
+                Real factor_i = rho_i/e_i*igm1;
+                Real dphi_i = phicc0(m,(ke+k+1),j,i)-phi_i;
+                Real q0_ip = q0_i - factor_i * dphi_i;
+//                Real e0_ip = pow(q0_ip,gigm1);
+//                Real rho0_ip = pow(e0_ip/e_i,ig)*rho_i;
+                Real e0_ip = exp(q0_ip);
+                Real rho0_ip = e0_ip/e_i*rho_i;
+                u0_(m,IDN,(ke+k+1),j,i) = rho0_ip;
+                u0_(m,IM1,(ke+k+1),j,i) = u0_(m,IM1,ke,j,i)/rho_i*rho0_ip;
+                u0_(m,IM2,(ke+k+1),j,i) = u0_(m,IM2,ke,j,i)/rho_i*rho0_ip;
+                Real mom = fmax(0.0,u0_(m,IM3,ke,j,i)/rho_i*rho0_ip);
+//                Real mom = u0_(m,IM3,ke,j,i)/rho_i*rho0_ip;
+                u0_(m,IM3,(ke+k+1),j,i) = mom;
+                u0_(m,IEN,(ke+k+1),j,i) = e0_ip + 0.5*(SQR(u0_(m,IM1,(ke+k+1),j,i))+SQR(u0_(m,IM2,(ke+k+1),j,i))+SQR(u0_(m,IM3,(ke+k+1),j,i)))/rho0_ip;
+                if (use_etotgrav) u0_(m,IEN,(ke+k+1),j,i) += rho0_ip*phicc0(m,(ke+k+1),j,i);
+              } else {
+            u0_(m,IDN,(ke+k+1),j,i) = u0_(m,IDN,ke,j,i);
+            u0_(m,IM1,(ke+k+1),j,i) = u0_(m,IM1,ke,j,i);
+            u0_(m,IM2,(ke+k+1),j,i) = u0_(m,IM2,ke,j,i);
+            Real mom = fmax(0.0,u0_(m,IM3,ke,j,i));
+            u0_(m,IEN,(ke+k+1),j,i) = u0_(m,IEN,ke,j,i) - 0.5*(SQR(u0_(m,IM3,ke,j,i))-SQR(mom))/u0_(m,IDN,ke,j,i);
+            u0_(m,IM3,(ke+k+1),j,i) = mom;
+              }
+          }
+        }
+    });
+
+    
+    
+//    u0wb = pmbp->phydro->u0wb;
+//
+//    Real ap = 9.44e9;
+//    Real iap = 1.0/ap;
+//    Real grav_acc = -942.0;
+//    Real gamma = pmbp->phydro->peos->eos_data.gamma;
+//    Real gm1 = gamma-1.0;
+//
+//    const int N = 10000;
+//    DvceArray1D<Real> zinitarr("zinitarr", N);
+//    DvceArray1D<Real> logpinitarr("logpinitarr", N);
+//
+//  par_for("usrboundary", DevExeSpace(),0,(nmb-1),0,(n2-1),0,(n1-1),
+//  KOKKOS_LAMBDA(int m, int j, int i) {
+//    Real &x3min = size.d_view(m).x3min;
+//    Real &x3max = size.d_view(m).x3max;
+//    if (mb_bcs.d_view(m,BoundaryFace::inner_x3) == BoundaryFlag::user) {
+//      for (int k=0; k<ng; ++k) {
+//        if (use_wellbalance)
 //        {
-//            int nx3 = indcs.nx3;
-//            Real x3v = CellCenterX(k-ks, nx3, x3min, x3max);
-//
-//            Real p = p0 * std::exp(-x3v*iH0);
-//            Real den = rho0 * std::exp(-x3v*iH0);
-////            get_init_eos(x3v,den,p);
-//            Real phicc = - grav_acc * x3v;
-//
-//            u0_(m,IDN,k,j,i) = den;
+//            u0_(m,IDN,k,j,i) = u0wb(m,IDN,k,j,i);
 //            u0_(m,IM1,k,j,i) = 0.0;
 //            u0_(m,IM2,k,j,i) = 0.0;
 //            u0_(m,IM3,k,j,i) = 0.0;
-//            u0_(m,IEN,k,j,i) = p*igm1;
-//            if (use_etotgrav) {
-//                u0_(m,IEN,k,j,i) += den*phicc;
-//            }
+//            u0_(m,IEN,k,j,i) = u0wb(m,IEN,k,j,i);
 //        }
-    }
-    if (mb_bcs.d_view(m,BoundaryFace::outer_x3) == BoundaryFlag::user) {
-        if (use_wellbalance)
-        {
-            u0_(m,IDN,(ke+k+1),j,i) = u0wb(m,IDN,(ke+k+1),j,i);
-            u0_(m,IM1,(ke+k+1),j,i) = 0.0;
-            u0_(m,IM2,(ke+k+1),j,i) = 0.0;
-            u0_(m,IM3,(ke+k+1),j,i) = 0.0;
-            u0_(m,IEN,(ke+k+1),j,i) = u0wb(m,IEN,(ke+k+1),j,i);
-        }
-//        else
+//      }
+//    }
+//    if (mb_bcs.d_view(m,BoundaryFace::outer_x3) == BoundaryFlag::user) {
+//////        Real z0 = CellCenterX(ke-ks, indcs.nx3, x3min, x3max);
+//////        Real rho0 = w0_(m,IDN,ke,j,i);
+//////        Real p0 = w0_(m,IEN,ke,j,i)*gm1;
+//////        Real H0 = -p0/rho0/grav_acc;
+//////        Real iH0 = 1.0/H0;
+////
+////        Real &x1min = size.d_view(m).x1min;
+////        Real &x1max = size.d_view(m).x1max;
+////        Real x1v = CellCenterX(i-is, indcs.nx1, x1min, x1max);
+////
+////        Real &x2min = size.d_view(m).x2min;
+////        Real &x2max = size.d_view(m).x2max;
+////        Real x2v = CellCenterX(j-js, indcs.nx2, x2min, x2max);
+////
+////        Real lam, phi;
+////        if (use_spherical_polar) {
+////          lam = -x1v+M_PI/2.0;
+////          phi = x2v-M_PI;
+////        } else {
+////          lam = x2v*iap;
+////          phi = x1v*iap;
+////        }
+////        get_init_eos_arr(lam, phi, N, zinitarr, logpinitarr);
+//
+//      for (int k=0; k<ng; ++k) {
+//        if (use_wellbalance)
 //        {
-//            int nx3 = indcs.nx3;
-//            Real x3v = CellCenterX((ke+k+1)-ks, nx3, x3min, x3max);
-//
-//            Real p = p0 * std::exp(-x3v*iH0);
-//            Real den = rho0 * std::exp(-x3v*iH0);
-////            get_init_eos(x3v,den,p);
-//            Real phicc = - grav_acc * x3v;
-//
-//            u0_(m,IDN,(ke+k+1),j,i) = den;
+//            u0_(m,IDN,(ke+k+1),j,i) = u0wb(m,IDN,(ke+k+1),j,i);
 //            u0_(m,IM1,(ke+k+1),j,i) = 0.0;
 //            u0_(m,IM2,(ke+k+1),j,i) = 0.0;
 //            u0_(m,IM3,(ke+k+1),j,i) = 0.0;
-//            u0_(m,IEN,(ke+k+1),j,i) = p*igm1;
-//            if (use_etotgrav) {
-//                u0_(m,IEN,(ke+k+1),j,i) += den*phicc;
-//            }
+//            u0_(m,IEN,(ke+k+1),j,i) = u0wb(m,IEN,(ke+k+1),j,i);
 //        }
-    }
-  });
+//////        Real z = CellCenterX(ke+k+1-ks, indcs.nx3, x3min, x3max)-z0;
+//////        Real p = p0 * exp(-z*iH0);
+//////        Real den = rho0 * exp(-z*iH0);
+////
+////          Real &x3min = size.d_view(m).x3min;
+////          Real &x3max = size.d_view(m).x3max;
+////          Real x3v = CellCenterX(ke+k+1-ks, indcs.nx3, x3min, x3max);
+////          if (use_spherical_polar) x3v -= ap;
+////
+////          Real p, den;
+////          get_init_eos(zinitarr,logpinitarr,x3v,lam,phi,den,p);
+////
+////          u0_(m,IDN,(ke+k+1),j,i) = den;
+////          u0_(m,IM1,(ke+k+1),j,i) = 0.0;
+////          u0_(m,IM2,(ke+k+1),j,i) = 0.0;
+////          u0_(m,IM3,(ke+k+1),j,i) = 0.0;
+////          u0_(m,IEN,(ke+k+1),j,i) = p/gm1;
+////          if (use_etotgrav) {
+////              Real phicc = - grav_acc * x3v;
+////              u0_(m,IEN,(ke+k+1),j,i) += den*phicc;
+////          }
+//      }
+//    }
+//  });
   return;
 }
 
@@ -463,8 +876,22 @@ void SourceFunc(Mesh *pm, Real bdt) {
     u0 = pmbp->phydro->u0;
     w0 = pmbp->phydro->w0;
     w0wb = pmbp->phydro->w0wb;
+    auto phi0_x3f = pmbp->phydro->phi0.x3f;
+    auto phicc0 = pmbp->phydro->phicc0;
+    auto area3 = pmbp->pcoord->area.x3f;
+    auto volume = pmbp->pcoord->volume;
+    auto dx3 = pmbp->pcoord->dx3;
     const bool use_etotgrav = pmbp->phydro->use_etotgrav;
     const bool use_wellbalance = pmbp->phydro->use_wellbalance;
+    const bool use_spherical_polar = pm->use_spherical_polar;
+    const bool use_grid_stretch = pm->use_grid_stretch;
+    const bool use_wellbalance_local = pmbp->phydro->use_wellbalance_local;
+    
+    Real r0, r1;
+    if (use_grid_stretch) {
+        r0 = pm->mesh_size.x3min;
+        r1 = pm->mesh_size.x3max;
+    }
     
     Real ap = 9.44e9;
     Real iap = 1.0/ap;
@@ -473,6 +900,8 @@ void SourceFunc(Mesh *pm, Real bdt) {
     Real Rgas = 4.593e7;
     Real gamma = pmbp->phydro->peos->eos_data.gamma;
     Real gm1 = gamma-1.0;
+    
+    Real time = pm->time;
 
     par_for("usrsource", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -487,35 +916,125 @@ void SourceFunc(Mesh *pm, Real bdt) {
         Real &x3min = size.d_view(m).x3min;
         Real &x3max = size.d_view(m).x3max;
         Real x3v = CellCenterX(k-ks, indcs.nx3, x3min, x3max);
+        if (use_grid_stretch) StretchR(r0,r1,x3v);
         
-        Real lam = x2v*iap;
-        Real phi = x1v*iap;
-        Real z = x3v;
+        Real lam, phi, z, theta, r;
+        if (use_spherical_polar) {
+          theta = x1v;
+          lam = -theta+M_PI/2.0;
+          phi = x2v-M_PI;
+          z = x3v-ap;
+          r = x3v;
+        } else {
+          lam = x2v*iap;
+          phi = x1v*iap;
+          z = x3v;
+        }
         Real rho = w0(m,IDN,k,j,i);
         Real p = w0(m,IEN,k,j,i)*gm1;
         Real T = p/Rgas/rho;
         
+        Real area_r = area3(m,k+1,j,i);
+        Real area_l = area3(m,k,j,i);
+        Real vol = volume(m,k,j,i);
+//        Real dphi_k = phi0_x3f(m,k+1,j,i)-phicc0(m,k,j,i);
+//        Real dphi_kmh = phicc0(m,k,j,i)-phi0_x3f(m,k,j,i);
+//        Real grav_acc = -(area_r*dphi_k+area_l*dphi_kmh)/vol;
+        
         // gravity
         Real src = bdt*grav_acc*w0(m,IDN,k,j,i);
         if (!use_etotgrav) {
-            u0(m,IEN,k,j,i) += src*w0(m,IM3,k,j,i);
+            u0(m,IEN,k,j,i) += src*w0(m,IVZ,k,j,i);
         }
         if (use_wellbalance) {
             src = bdt*grav_acc*(w0(m,IDN,k,j,i)-w0wb(m,IDN,k,j,i));
         }
+        if (use_wellbalance_local) {
+//          Real dphi_k = phi0_x3f(m,k+1,j,i)-phicc0(m,k,j,i);
+//          Real dphi_kmh = phicc0(m,k,j,i)-phi0_x3f(m,k,j,i);
+//          src = -bdt*(area_r*dphi_k+area_l*dphi_kmh)/vol*w0(m,IDN,k,j,i);
+          Real e_kmh,e_kph,dum1,dum2,dum3;
+          pmbp->phydro->getWBerho(IEN, gamma,
+            w0(m,IDN,k-1,j,i),w0(m,IDN,k,j,i),w0(m,IDN,k+1,j,i),
+            w0(m,IEN,k-1,j,i),w0(m,IEN,k,j,i),w0(m,IEN,k+1,j,i),
+            phicc0(m,k-1,j,i),phi0_x3f(m,k,j,i),phicc0(m,k,j,i),phi0_x3f(m,k+1,j,i),phicc0(m,k+1,j,i),
+            dum1,e_kmh,dum2,e_kph,dum3);
+          Real pl = e_kmh*gm1;
+          Real pr = e_kph*gm1;
+          src = bdt*(area_r*(pr-p)+area_l*(p-pl))/vol;
+        }
         u0(m,IM3,k,j,i) += src;
         
-        // corotating beta-plane approximation e.g. Fromang+2016
-        Real omega3 = omega*lam;
-        u0(m,IM1,k,j,i) += -2.0*rho*omega3*(-w0(m,IM2,k,j,i))*bdt;
-        u0(m,IM2,k,j,i) += -2.0*rho*omega3*w0(m,IM1,k,j,i)*bdt;
+        // Forces in the corotating frame
+        if (use_spherical_polar) {
+          Real vtheta = w0(m,IVX,k,j,i);
+          Real vphi = w0(m,IVY,k,j,i);
+          Real vr = w0(m,IVZ,k,j,i);
+          Real sine = sin(theta);
+          Real cosine = cos(theta);
+          Real oor = SQR(omega)*r*sine;
+          Real cor = 2.0*omega*vphi;
+          u0(m,IM1,k,j,i) += rho*(cor+oor)*cosine*bdt;
+          u0(m,IM2,k,j,i) += -rho*2.0*omega*(vr*sine+vtheta*cosine)*bdt;
+          u0(m,IM3,k,j,i) += rho*(cor+oor)*sine*bdt;
+//          if (!use_etotgrav)
+          u0(m,IEN,k,j,i) += rho*oor*(vr*sine+vtheta*cosine)*bdt;
+        } else {
+          // corotating beta-plane approximation e.g. Fromang+2016
+          Real omega3 = omega*lam;
+          u0(m,IM1,k,j,i) += -2.0*rho*omega3*(-w0(m,IVY,k,j,i))*bdt;
+          u0(m,IM2,k,j,i) += -2.0*rho*omega3*w0(m,IVX,k,j,i)*bdt;
+        }
 
         // Newtonian cooling
         Real Teq, itrad;
         get_eq_Tp(lam, phi, p, Teq);
         get_itrad(p,itrad);
+//        Real t0 = 2.16e6;
+//        Real ff = (t0-time)/t0;
+//        ff = (ff < 0.0) ? 0.0 : ff;
+//        Real gg = 2.0*ff;
+//        itrad /= pow(10.0,gg);
         Real Tnew = (T + Teq*itrad*bdt)/(1.0 + itrad*bdt);
         u0(m,IEN,k,j,i) -= w0(m,IEN,k,j,i)*(Tnew-Teq)/T*itrad*bdt;
+        
+        // Rayleigh drag (initial relaxation)
+        Real dyntime = 2.0*M_PI/omega;
+        Real tau1 = dyntime / 10.0;
+        Real tau2 = dyntime;
+        Real t1   = 2.0 * dyntime;
+        Real t2   = 5.0 * dyntime;
+        Real itdrag;
+        if(time < t1) {
+          itdrag = 1.0 / tau1;
+        } else if(time < t2)
+          {
+            Real alp = (time - t1) / (t2 - t1);
+            itdrag   = 1.0 / tau1 * pow(tau1 / tau2, alp);
+          }
+        else {
+          itdrag = 0.0;
+        }
+        if (time < t2) {
+          Real fredux = itdrag*bdt;///(1.0+itdrag*bdt);
+          u0(m,IM1,k,j,i) -= u0(m,IM1,k,j,i)*fredux;
+          u0(m,IM2,k,j,i) -= u0(m,IM2,k,j,i)*fredux;
+          u0(m,IM3,k,j,i) -= u0(m,IM3,k,j,i)*fredux;
+        }
+        
+////        // Top sponge layer
+////        Real bar = 1.0e6;
+////        Real logpl = log(1.0e-4*bar);
+////        Real logpt = log(1.0e-5*bar);
+////        Real logp = log(p);
+////        Real fdrag = 1.0 - (logp-logpt)/(logpl-logpt); // high p = 0, low p = 1
+////        fdrag = fmax(fdrag,0.0);
+////        fdrag = fmin(fdrag,1.0);
+////        Real itdrag = fdrag/1.0e3;
+////        Real fredux = itdrag*bdt/(1.0+itdrag*bdt);
+////        u0(m,IM1,k,j,i) -= u0(m,IM1,k,j,i)*fredux;
+////        u0(m,IM2,k,j,i) -= u0(m,IM2,k,j,i)*fredux;
+////        u0(m,IM3,k,j,i) -= u0(m,IM3,k,j,i)*fredux;
     });
 
     return;
@@ -600,8 +1119,8 @@ void get_daynight_Tp(const Real &p, Real &Tn, Real &Td) {
 //    }
     Real x = log10(p / pl);
 
-    Real Tn_new = Tnstar_pl * exp(0.1   * x);
-    Real Td_new = Tdstar_pl * exp(0.015 * x);
+    Real Tn_new = Tnstar_pl;// * exp(0.1   * x);
+    Real Td_new = Tdstar_pl;// * exp(0.015 * x);
 
     Tn_new = fmax(Tn_new, 250.0);
     Td_new = fmax(Td_new, 1000.0);
@@ -662,18 +1181,61 @@ void get_itrad(const Real &p, Real &itrad) {
 }
 
 KOKKOS_INLINE_FUNCTION
-void get_hse_Tp(const Real &p, Real &T) {
+void get_wb_Tp(const Real &p, Real &T) {
     
     Real Tn, Td;
     get_daynight_Tp(p, Tn, Td);
+    
+    T = Tn;
+    
+//    Real Tn2 = Tn*Tn;
+//    Real Tn4 = Tn2*Tn2;
+//    Real Td2 = Td*Td;
+//    Real Td4 = Td2*Td2;
+//    Real Tmid4 = 0.75*Tn4 + 0.25*Td4;
+//
+//    Real Tmid = sqrt(sqrt(Tmid4));
+//    T = Tmid;
+//
+//    Real bar = 1.0e6;
+//    Real ph = 1.0e-2*bar;
+//    Real pl = 0.1*ph;
+//    Real logph = log(ph);
+//    Real logpl = log(pl);
+//    Real logp = log(p);
+//    Real btrop = (logp < logpl)? 0.0 : ((logp-logpl)/(logph-logpl));
+//    btrop = (logp < logph)? btrop : 1.0;
+//    T = btrop*Tmid + (1.0-btrop)*Tn;
+    
+    return;
+}
+
+KOKKOS_INLINE_FUNCTION
+void get_init_Tp(const Real &p, Real &T) {
+    
+    Real Tn, Td;
+    get_daynight_Tp(p, Tn, Td);
+    
+//    T = Tn;
     
     Real Tn2 = Tn*Tn;
     Real Tn4 = Tn2*Tn2;
     Real Td2 = Td*Td;
     Real Td4 = Td2*Td2;
     Real Tmid4 = 0.75*Tn4 + 0.25*Td4;
-    
-    T = sqrt(sqrt(Tmid4));
+
+    Real Tmid = sqrt(sqrt(Tmid4));
+    T = Tmid;
+
+//    Real bar = 1.0e6;
+//    Real ph = 1.0e-2*bar;
+//    Real pl = 0.1*ph;
+//    Real logph = log(ph);
+//    Real logpl = log(pl);
+//    Real logp = log(p);
+//    Real btrop = (logp < logpl)? 0.0 : ((logp-logpl)/(logph-logpl));
+//    btrop = (logp < logph)? btrop : 1.0;
+//    T = btrop*Tmid + (1.0-btrop)*Tn;
     
     return;
 }
@@ -693,21 +1255,11 @@ void get_eq_Tp(const Real &lam, const Real &phi, const Real &p, Real &Teq) {
     Teq = sqrt(sqrt(Teq4));
     Teq = (phi > -M_PI/2.0 && phi < M_PI/2.0) ? Teq : Tn;
     
-    Real Tmid4 = 0.75*Tn4 + 0.25*Td4;
-    Real Tmid = sqrt(sqrt(Tmid4));
-    Real sstra = 0.125;
-    Real pbase = 5.0e3;
-    Real sigma = p/pbase;
-    sigma = fmin(sigma,1.0);
-    Real btrop = sin(M_PI/2.0*(sigma-sstra)/(1.0-sstra));
-    btrop = (sigma < sstra) ? 0.0 : btrop;
-    Teq = btrop*Teq + (1.0-btrop)*Tmid;
-    
     return;
 }
 
 template <typename View1D>
-void get_init_eos_arr(const int &N, View1D zarr, View1D logparr) {
+void get_wb_eos_arr(const int &N, View1D zarr, View1D logparr) {
     
     Real Rgas = 4.593e7;
     Real grav_acc = -942.0;
@@ -725,7 +1277,7 @@ void get_init_eos_arr(const int &N, View1D zarr, View1D logparr) {
         Real p = exp(logparr(n));
         zarr(n) = zmin + n*dz;
 
-        get_hse_Tp(p,T);
+        get_wb_Tp(p,T);
 
         logparr(n+1) = logparr(n) + fac/T;
     }
@@ -735,7 +1287,7 @@ void get_init_eos_arr(const int &N, View1D zarr, View1D logparr) {
 }
 
 KOKKOS_INLINE_FUNCTION
-void get_init_eos(const DvceArray1D<Real> &zarr, const DvceArray1D<Real> &logparr, const Real &z, Real &rho, Real &p) {
+void get_wb_eos(const DvceArray1D<Real> &zarr, const DvceArray1D<Real> &logparr, const Real &z, Real &rho, Real &p) {
     
     Real Rgas = 4.593e7;
     Real bar = 1.0e6;
@@ -747,11 +1299,11 @@ void get_init_eos(const DvceArray1D<Real> &zarr, const DvceArray1D<Real> &logpar
         int Nt = std::floor(z/dz);
         Real logp = logparr(Nt) + (logparr(Nt+1)-logparr(Nt))/(zarr(Nt+1)-zarr(Nt))*(z-zarr(Nt));
         p = std::exp(logp);
-        get_hse_Tp(p,T);
+        get_wb_Tp(p,T);
         rho = p/Rgas/T;
     } else {
         Real T0;
-        get_hse_Tp(p0,T0);
+        get_wb_Tp(p0,T0);
         Real rho0 = p0/Rgas/T0;
         Real grav_acc = -942.0;
         Real H0 = -p0/rho0/grav_acc;
@@ -762,3 +1314,137 @@ void get_init_eos(const DvceArray1D<Real> &zarr, const DvceArray1D<Real> &logpar
 
     return;
 }
+
+template <typename View1D>
+void get_init_eos_arr(const int &N, View1D zarr, View1D logparr) {
+
+    Real Rgas = 4.593e7;
+    Real grav_acc = -942.0;
+    Real bar = 1.0e6;
+    Real p0 = 220.0*bar;
+
+    Real zmin = 0.0;
+    Real zmax = 1.2e9;
+    Real dz = (zmax-zmin)/N;
+    Real fac = grav_acc/Rgas*dz;
+    logparr(0) = std::log(p0);
+
+    for(int n=0; n<N; n++) {
+        Real T;
+        Real p = exp(logparr(n));
+        zarr(n) = zmin + n*dz;
+
+        get_init_Tp(p,T);
+
+        logparr(n+1) = logparr(n) + fac/T;
+    }
+
+
+    return;
+}
+
+KOKKOS_INLINE_FUNCTION
+void get_init_eos(const DvceArray1D<Real> &zarr, const DvceArray1D<Real> &logparr, const Real &z, Real &rho, Real &p) {
+
+    Real Rgas = 4.593e7;
+    Real bar = 1.0e6;
+    Real p0 = 220.0*bar;
+    Real dz = zarr(1)-zarr(0);
+    Real T;
+
+    if (z >= 0.0) {
+        int Nt = std::floor(z/dz);
+        Real logp = logparr(Nt) + (logparr(Nt+1)-logparr(Nt))/(zarr(Nt+1)-zarr(Nt))*(z-zarr(Nt));
+        p = std::exp(logp);
+        get_init_Tp(p,T);
+        rho = p/Rgas/T;
+    } else {
+        Real T0;
+        get_init_Tp(p0,T0);
+        Real rho0 = p0/Rgas/T0;
+        Real grav_acc = -942.0;
+        Real H0 = -p0/rho0/grav_acc;
+        Real iH0 = 1.0/H0;
+        p = p0 * std::exp(-z*iH0);
+        rho = rho0 * std::exp(-z*iH0);
+    }
+
+    return;
+}
+
+//KOKKOS_INLINE_FUNCTION
+//void get_init_eos_arr(const Real &lam, const Real &phi, const int &N, DvceArray1D<Real> zarr, DvceArray1D<Real> logparr) {
+//
+//    Real Rgas = 4.593e7;
+//    Real grav_acc = -942.0;
+//    Real bar = 1.0e6;
+//    Real p0 = 220.0*bar;
+//
+//    Real zmin = 0.0;
+//    Real zmax = 1.2e9;
+//    Real dz = (zmax-zmin)/N;
+//    Real fac = grav_acc/Rgas*dz;
+//    logparr(0) = std::log(p0);
+//
+//    Real ph = 1.0e-2*bar;
+//    Real pl = 0.1*ph;
+//    Real logph = log(ph);
+//    Real logpl = log(pl);
+//
+//    for(int n=0; n<N; n++) {
+//        Real Thse, Teq;
+//        Real logp = logparr(n);
+//        Real p = exp(logp);
+//        zarr(n) = zmin + n*dz;
+//
+////        get_wb_Tp(p,Thse);
+//        get_eq_Tp(lam,phi,p,Teq);
+////        Real btrop = (logp < logpl)? 0.0 : ((logp-logpl)/(logph-logpl));
+////        btrop = (logp < logph)? btrop : 1.0;
+////        Real T = btrop*Thse + (1.0-btrop)*Teq;
+//        Real T = Teq;
+//
+//        logparr(n+1) = logparr(n) + fac/T;
+//    }
+//
+//    return;
+//}
+//
+//KOKKOS_INLINE_FUNCTION
+//void get_init_eos(const DvceArray1D<Real> &zarr, const DvceArray1D<Real> &logparr, const Real &z, const Real &lam, const Real &phi, Real &rho, Real &p) {
+//
+//    Real Rgas = 4.593e7;
+//    Real bar = 1.0e6;
+//    Real p0 = 220.0*bar;
+//    Real dz = zarr(1)-zarr(0);
+//    Real T, Thse, Teq;
+//
+//    Real ph = 1.0e-2*bar;
+//    Real pl = 0.1*ph;
+//    Real logph = log(ph);
+//    Real logpl = log(pl);
+//
+//    if (z >= 0.0) {
+//        int Nt = std::floor(z/dz);
+//        Real logp = logparr(Nt) + (logparr(Nt+1)-logparr(Nt))/(zarr(Nt+1)-zarr(Nt))*(z-zarr(Nt));
+//        p = std::exp(logp);
+////        get_wb_Tp(p,Thse);
+//        get_eq_Tp(lam,phi,p,Teq);
+////        Real btrop = (logp < logpl)? 0.0 : ((logp-logpl)/(logph-logpl));
+////        btrop = (logp < logph)? btrop : 1.0;
+////        Real T = btrop*Thse + (1.0-btrop)*Teq;
+//        Real T = Teq;
+//        rho = p/Rgas/T;
+//    } else {
+//        Real T0;
+//        get_wb_Tp(p0,T0);
+//        Real rho0 = p0/Rgas/T0;
+//        Real grav_acc = -942.0;
+//        Real H0 = -p0/rho0/grav_acc;
+//        Real iH0 = 1.0/H0;
+//        p = p0 * std::exp(-z*iH0);
+//        rho = rho0 * std::exp(-z*iH0);
+//    }
+//
+//    return;
+//}

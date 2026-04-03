@@ -90,7 +90,7 @@ struct PanelBoundaries {
   int swap_ax;    // whether to swap the xy axis (0/1)
   int rev_x1;     // whether (after being swapped) x1 index is reversed (0/1)
   int rev_x2;     // whether (after being swapped) x2 index is reversed (0/1)
-  int end_face;   // which face of the panel we transform into (0:-x1, 1:+x1, 2:-x2, 3:+x2)
+  int end_face;   // which face of the starting panel (0:-x1, 1:+x1, 2:-x2, 3:+x2)
 };
 
 // Forward declarations required due to recursive definitions amongst mesh classes
@@ -132,6 +132,8 @@ class Mesh {
     
   bool use_cubed_sphere;      // true if using cubed sphere
   int npanels;                // 6 if using cubed sphere; 1 otherwise
+  bool use_spherical_polar;   // true if using spherical polar grid
+  bool use_grid_stretch;      // true if using grid stretching
 
   bool one_d, two_d, three_d; // flags to indicate 1D or 2D or 3D calculations
   bool multi_d;               // flag to indicate 2D and 3D calculations
@@ -255,161 +257,161 @@ class Mesh {
     // Face ordering:
     // 0:-x1, 1:+x1, 2:-x2, 3:+x2, 4:-x3, 5:+x3
 
-//    static constexpr PanelNeighbors panel_neighbors[6][4] = {
-//      // panel 0: neighbors 4(L),1(R),5(B),3(T)
-//      {
-//        {4, 1, 0, 0},  // L
-//        {1, 0, 0, 0},  // R
-//        {5, 3, 0, 0},  // B
-//        {3, 2, 0, 0}   // T
-//      },
-//
-//      // panel 1: neighbors 0(L),2(R),5(B),3(T)
-//      {
-//        {0, 1, 0, 0},  // L
-//        {2, 0, 0, 0},  // R
-//        {5, 1, 1, 1},  // B
-//        {3, 1, 0, 1}   // T
-//      },
-//
-//      // panel 2: neighbors 1(L),4(R),5(B),3(T)
-//      {
-//        {1, 1, 0, 0},  // L
-//        {4, 0, 0, 0},  // R
-//        {5, 2, 1, 0},  // B
-//        {3, 3, 1, 0}   // T
-//      },
-//
-//      // panel 3: neighbors 4(L),1(R),0(B),2(T)
-//      {
-//        {4, 3, 1, 1},  // L
-//        {1, 3, 0, 1},  // R
-//        {0, 3, 0, 0},  // B
-//        {2, 3, 1, 0}   // T
-//      },
-//
-//      // panel 4: neighbors 2(L),0(R),5(B),3(T)
-//      {
-//        {2, 1, 0, 0},  // L
-//        {0, 0, 0, 0},  // R
-//        {5, 0, 0, 1},  // B
-//        {3, 0, 1, 1}   // T
-//      },
-//
-//      // panel 5: neighbors 4(L),1(R),2(B),0(T)
-//      {
-//        {4, 2, 0, 1},  // L
-//        {1, 2, 1, 1},  // R
-//        {2, 2, 1, 0},  // B
-//        {0, 2, 0, 0}   // T
-//      }
-//    };
-    
-    static constexpr PanelNeighbors panel_neighbors[2][4] = {
-      // panel 0
+    static constexpr PanelNeighbors panel_neighbors[6][4] = {
+      // panel 0: neighbors 4(L),1(R),5(B),3(T)
       {
-        {0, 1, 0, 0},  // L
-        {0, 0, 0, 0},  // R
-        {1, 0, 0, 1},  // B
-        {1, 1, 0, 1},  // T
+        {4, 1, 0, 0},  // L
+        {1, 0, 0, 0},  // R
+        {5, 3, 0, 0},  // B
+        {3, 2, 0, 0}   // T
       },
 
-      // panel 1
+      // panel 1: neighbors 0(L),2(R),5(B),3(T)
       {
-        {0, 2, 0, 1}, // L
-        {0, 3, 0, 1}, // R
-        {1, 3, 0, 0}, // B
-        {1, 2, 0, 0}  // T
+        {0, 1, 0, 0},  // L
+        {2, 0, 0, 0},  // R
+        {5, 1, 1, 1},  // B
+        {3, 1, 0, 1}   // T
+      },
+
+      // panel 2: neighbors 1(L),4(R),5(B),3(T)
+      {
+        {1, 1, 0, 0},  // L
+        {4, 0, 0, 0},  // R
+        {5, 2, 1, 0},  // B
+        {3, 3, 1, 0}   // T
+      },
+
+      // panel 3: neighbors 4(L),1(R),0(B),2(T)
+      {
+        {4, 3, 1, 1},  // L
+        {1, 3, 0, 1},  // R
+        {0, 3, 0, 0},  // B
+        {2, 3, 1, 0}   // T
+      },
+
+      // panel 4: neighbors 2(L),0(R),5(B),3(T)
+      {
+        {2, 1, 0, 0},  // L
+        {0, 0, 0, 0},  // R
+        {5, 0, 0, 1},  // B
+        {3, 0, 1, 1}   // T
+      },
+
+      // panel 5: neighbors 4(L),1(R),2(B),0(T)
+      {
+        {4, 2, 0, 1},  // L
+        {1, 2, 1, 1},  // R
+        {2, 2, 1, 0},  // B
+        {0, 2, 0, 0}   // T
       }
     };
     
-    KOKKOS_INLINE_FUNCTION
-    constexpr PanelBoundaries GetPanelBoundary(int ps, int pe) const {
-      constexpr PanelBoundaries table[2][2] = {
-        // … your SAME initializer …
-          // [i][j]: transforming from i panel to j panel
-          // panel 0:
-          {
-            {0, 0, 0, -1}, // 00
-            {1, 1, 0, 0},  // 01
-          },
-
-          // panel 1:
-          {
-            {1, 0, 1, 0},  // 10
-            {0, 0, 0, -1}, // 11
-          }
-      };
-      return table[ps][pe];
-    }
-    
+//    static constexpr PanelNeighbors panel_neighbors[2][4] = {
+//      // panel 0
+//      {
+//        {0, 1, 0, 0},  // L
+//        {0, 0, 0, 0},  // R
+//        {1, 0, 0, 1},  // B
+//        {1, 1, 0, 1},  // T
+//      },
+//
+//      // panel 1
+//      {
+//        {0, 2, 0, 1}, // L
+//        {0, 3, 0, 1}, // R
+//        {1, 3, 0, 0}, // B
+//        {1, 2, 0, 0}  // T
+//      }
+//    };
+//
 //    KOKKOS_INLINE_FUNCTION
 //    constexpr PanelBoundaries GetPanelBoundary(int ps, int pe) const {
-//      constexpr PanelBoundaries table[6][6] = {
+//      constexpr PanelBoundaries table[2][2] = {
 //        // … your SAME initializer …
 //          // [i][j]: transforming from i panel to j panel
 //          // panel 0:
 //          {
 //            {0, 0, 0, -1}, // 00
-//            {0, 0, 0, 0},  // 01
-//            {0, 0, 0, -1}, // 02
-//            {0, 0, 0, 2},  // 03
-//            {0, 0, 0, 1},  // 04
-//            {0, 0, 0, 3}   // 05
+//            {1, 1, 0, 0},  // 01
 //          },
 //
 //          // panel 1:
 //          {
-//            {0, 0, 0, 1},  // 10
+//            {1, 0, 1, 0},  // 10
 //            {0, 0, 0, -1}, // 11
-//            {0, 0, 0, 0},  // 12
-//            {1, 1, 0, 1},  // 13
-//            {0, 0, 0, -1}, // 14
-//            {1, 0, 1, 1}   // 15
-//          },
-//
-//          // panel 2:
-//          {
-//            {0, 0, 0, -1}, // 20
-//            {0, 0, 0, 1},  // 21
-//            {0, 0, 0, -1}, // 22
-//            {0, 1, 1, 3},  // 23
-//            {0, 0, 0, 0},  // 24
-//            {0, 1, 1, 2}   // 25
-//          },
-//
-//          // panel 3:
-//          {
-//            {0, 0, 0, 3},  // 30
-//            {1, 0, 1, 3},  // 31
-//            {0, 1, 1, 3},  // 32
-//            {0, 0, 0, -1}, // 33
-//            {1, 1, 0, 3},  // 34
-//            {0, 0, 0, -1}  // 35
-//          },
-//
-//          // panel 4:
-//          {
-//            {0, 0, 0, 0},  // 40
-//            {0, 0, 0, -1}, // 41
-//            {0, 0, 0, 1},  // 42
-//            {1, 0, 1, 0},  // 43
-//            {0, 0, 0, -1}, // 44
-//            {1, 1, 0, 0}   // 45
-//          },
-//
-//          // panel 5:
-//          {
-//            {0, 0, 0, 2},  // 50
-//            {1, 1, 0, 2},  // 51
-//            {0, 1, 1, 2},  // 52
-//            {0, 0, 0, -1}, // 53
-//            {1, 0, 1, 2},  // 54
-//            {0, 0, 0, -1}   // 55
 //          }
 //      };
 //      return table[ps][pe];
 //    }
+    
+    KOKKOS_INLINE_FUNCTION
+    constexpr PanelBoundaries GetPanelBoundary(int ps, int pe) const {
+      constexpr PanelBoundaries table[6][6] = {
+        // … your SAME initializer …
+          // [i][j]: transforming from i panel to j panel
+          // panel 0:
+          {
+            {0, 0, 0, -1}, // 00
+            {0, 0, 0, 1},  // 01
+            {0, 0, 0, -1}, // 02
+            {0, 0, 0, 3},  // 03
+            {0, 0, 0, 0},  // 04
+            {0, 0, 0, 2}   // 05
+          },
+
+          // panel 1:
+          {
+            {0, 0, 0, 0},  // 10
+            {0, 0, 0, -1}, // 11
+            {0, 0, 0, 1},  // 12
+            {1, 1, 0, 3},  // 13
+            {0, 0, 0, -1}, // 14
+            {1, 0, 1, 2}   // 15
+          },
+
+          // panel 2:
+          {
+            {0, 0, 0, -1}, // 20
+            {0, 0, 0, 0},  // 21
+            {0, 0, 0, -1}, // 22
+            {0, 1, 1, 3},  // 23
+            {0, 0, 0, 1},  // 24
+            {0, 1, 1, 2}   // 25
+          },
+
+          // panel 3:
+          {
+            {0, 0, 0, 2},  // 30
+            {1, 0, 1, 1},  // 31
+            {0, 1, 1, 3},  // 32
+            {0, 0, 0, -1}, // 33
+            {1, 1, 0, 0},  // 34
+            {0, 0, 0, -1}  // 35
+          },
+
+          // panel 4:
+          {
+            {0, 0, 0, 1},  // 40
+            {0, 0, 0, -1}, // 41
+            {0, 0, 0, 0},  // 42
+            {1, 0, 1, 3},  // 43
+            {0, 0, 0, -1}, // 44
+            {1, 1, 0, 2}   // 45
+          },
+
+          // panel 5:
+          {
+            {0, 0, 0, 3},  // 50
+            {1, 1, 0, 1},  // 51
+            {0, 1, 1, 2},  // 52
+            {0, 0, 0, -1}, // 53
+            {1, 0, 1, 0},  // 54
+            {0, 0, 0, -1}   // 55
+          }
+      };
+      return table[ps][pe];
+    }
 
 
  private:

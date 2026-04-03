@@ -17,7 +17,8 @@
 //! Special reflecting boundary conditions added in x2 to improve hydrostatic eqm
 //! (prevents launching of weak waves) Atwood number A=(d2-d1)/(d2+d1)=1/3. Options:
 //!    - iprob = 1  -- Perturb V2 using single mode
-//!    - iprob != 1 -- Perturb V2 using multiple mode
+//!    - iprob = 2  -- Perturb V2 using double mode
+//!    - iprob != 1 or 2 -- Perturb V2 using multiple mode
 //!
 //! FOR 3D:
 //! Problem domain should be -0.5 < x < 0.5; -0.5 < y < 0.5, -1. < z < 1., gamma=5/3 to
@@ -128,6 +129,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
 
       if (iprob == 1) {
         u0_(m,IM2,k,j,i) = (1.0 + cos(kx*x1v))*(1.0 + cos(ky*x2v))/4.0;
+      } else if (iprob == 2) {
+        u0_(m,IM2,k,j,i) = (1.0 + cos(2.0*kx*x1v))*(1.0 + cos(2.0*ky*x2v))/4.0;
       } else {
         auto rand_gen = rand_pool64.get_state();  // get random number state this thread
         u0_(m,IM2,k,j,i) = (rand_gen.frand()-0.5)*(1.0 + cos(ky*x2v))/4.0;

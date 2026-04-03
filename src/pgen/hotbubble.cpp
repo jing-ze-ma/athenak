@@ -32,6 +32,7 @@
 
 void HydrostaticEquilibrium(Mesh *pm);
 void VaryingGravity(Mesh *pm, Real bdt);
+void ConstGravity(Mesh *pm, Real bdt);
 
 //----------------------------------------------------------------------------------------
 //! \fn void ProblemGenerator::UserProblem()
@@ -40,9 +41,11 @@ void VaryingGravity(Mesh *pm, Real bdt);
 void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   const bool use_etotgrav = pmy_mesh_->pmb_pack->phydro->use_etotgrav;
   const bool use_wellbalance = pmy_mesh_->pmb_pack->phydro->use_wellbalance;
+  const bool use_wellbalance_local = pmy_mesh_->pmb_pack->phydro->use_wellbalance_local;
   bool user_srcs = pin->GetOrAddBoolean("problem","user_srcs",false);
   int iprob  = pin->GetReal("problem","iprob");
   if (iprob == 1 && user_srcs) user_srcs_func = VaryingGravity;
+  if (iprob == 2 && user_srcs) user_srcs_func = ConstGravity;
   if (iprob == 2) user_bcs_func = HydrostaticEquilibrium;
   if (restart) return;
   if (pmy_mesh_->one_d) {
@@ -95,25 +98,25 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   Real p0, gamma;
   Real grav_acc;
   if (pmbp->phydro != nullptr) {
-      if (iprob == 1) {
+//      if (iprob == 1) {
           grav_acc = pin->GetReal("problem","g0");
-      }
-      else
-      {
-          grav_acc = pin->GetReal("hydro_srcterms","const_accel_val");
-      }
+//      }
+//      else
+//      {
+//          grav_acc = pin->GetReal("hydro_srcterms","const_accel_val");
+//      }
     u0_ = pmbp->phydro->u0;
     gamma = pmbp->phydro->peos->eos_data.gamma;
     p0 = 1.0/(pmbp->phydro->peos->eos_data.gamma);
     p0 = pin->GetOrAddReal("problem", "p0", p0);
   } else if (pmbp->pmhd != nullptr) {
-      if (iprob == 1) {
+//      if (iprob == 1) {
           grav_acc = pin->GetReal("problem","g0");
-      }
-      else
-      {
-          grav_acc = pin->GetReal("mhd_srcterms","const_accel_val");
-      }
+//      }
+//      else
+//      {
+//          grav_acc = pin->GetReal("mhd_srcterms","const_accel_val");
+//      }
     u0_ = pmbp->pmhd->u0;
     gamma = pmbp->pmhd->peos->eos_data.gamma;
     p0 = 1.0/(pmbp->pmhd->peos->eos_data.gamma);
@@ -162,16 +165,17 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       Real A = A0;
       if (r < 1.0) {A = A0*(1.0 + dAbyA*SQR(std::cos(0.5*M_PI*r)));}
       Real den = std::pow(p/A,1.0/gamma);
-      Real phicc = grav_acc/ky*std::cos(ky*x2v);
+      Real phicc;
+      if (iprob == 1) phicc = grav_acc/ky*std::cos(ky*x2v);
+      if (iprob == 2) phicc = - grav_acc * x2v;
 
       u0_(m,IDN,k,j,i) = den;
       u0_(m,IM1,k,j,i) = 0.0;
       u0_(m,IM2,k,j,i) = 0.0;
       u0_(m,IM3,k,j,i) = 0.0;
       u0_(m,IEN,k,j,i) = p/gm1;
-      if (use_etotgrav) {
-//          phicc0(m,k,j,i) = phicc;
-          u0_(m,IEN,k,j,i) += den*phicc;
+      if (use_etotgrav) u0_(m,IEN,k,j,i) += den*phicc;
+      if (use_etotgrav || use_wellbalance_local) {
           phi0_x1f(m,k,j,i) = phicc;
           if (i == ie) {
               phi0_x1f(m,k,j,i+1) = phicc;
@@ -181,10 +185,14 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
               phi0_x3f(m,k+1,j,i) = phicc;
           }
           x2v = LeftEdgeX(j-js, nx2, x2min, x2max);
-          phi0_x2f(m,k,j,i) = grav_acc/ky*std::cos(ky*x2v);
+          if (iprob == 1) phicc = grav_acc/ky*std::cos(ky*x2v);
+          if (iprob == 2) phicc = - grav_acc * x2v;
+          phi0_x2f(m,k,j,i) = phicc;
           if (j == je) {
               x2v = LeftEdgeX(j+1-js, nx2, x2min, x2max);
-              phi0_x2f(m,k,j+1,i) = grav_acc/ky*std::cos(ky*x2v);
+              if (iprob == 1) phicc = grav_acc/ky*std::cos(ky*x2v);
+              if (iprob == 2) phicc = - grav_acc * x2v;
+              phi0_x2f(m,k,j+1,i) = phicc;
           }
       }
         if (use_wellbalance) {
@@ -270,7 +278,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             }
         }
     });
-    if (use_etotgrav) {
+    if (use_etotgrav || use_wellbalance_local) {
         int &ng = indcs.ng;
         int n1m1 = indcs.nx1 + 2*ng - 1;
         int n2m1 = (indcs.nx2 > 1)? (indcs.nx2 + 2*ng - 1) : 0;
@@ -283,7 +291,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             int nx2 = indcs.nx2;
             Real x2v = CellCenterX(j-js, nx2, x2min, x2max);
             
-            Real phicc = grav_acc/ky*std::cos(ky*x2v);
+            Real phicc;
+            if (iprob == 1) phicc = grav_acc/ky*std::cos(ky*x2v);
+            if (iprob == 2) phicc = - grav_acc * x2v;
 
             phicc0(m,k,j,i) = phicc;
 //            phi0_x1f(m,k,j,i) = grav_acc/ky*std::cos(ky*x2v);
@@ -321,7 +331,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
           u0wb(m,IM3,k,j,i) = 0.0;
           u0wb(m,IEN,k,j,i) = p/gm1;
           if (use_etotgrav) {
-              Real phicc = grav_acc/ky*std::cos(ky*x2v);
+              Real phicc;
+              if (iprob == 1) phicc = grav_acc/ky*std::cos(ky*x2v);
+              if (iprob == 2) phicc = - grav_acc * x2v;
               u0wb(m,IEN,k,j,i) += denwb*phicc;
           }
           w0wb(m,IDN,k,j,i) = denwb;
@@ -407,6 +419,8 @@ void HydrostaticEquilibrium(Mesh *pm) {
   int nmb = pm->pmb_pack->nmb_thispack;
   MeshBlockPack *pmbp = pm->pmb_pack;
   auto &size = pmbp->pmb->mb_size;
+    
+    const bool use_etotgrav = pmbp->phydro->use_etotgrav;
 
     DvceArray5D<Real> u0_;
     Real p0, gamma;
@@ -448,6 +462,10 @@ void HydrostaticEquilibrium(Mesh *pm) {
         u0_(m,IM2,k,j,i) = 0.0;
         u0_(m,IM3,k,j,i) = 0.0;
         u0_(m,IEN,k,j,i) = p/gm1;
+        if (use_etotgrav) {
+            Real phicc = - grav_acc * x2v;
+            u0_(m,IEN,k,j,i) += den*phicc;
+        }
     }
     if (mb_bcs.d_view(m,BoundaryFace::outer_x2) == BoundaryFlag::user) {
         int nx2 = indcs.nx2;
@@ -461,6 +479,10 @@ void HydrostaticEquilibrium(Mesh *pm) {
         u0_(m,IM2,k,(je+j+1),i) = 0.0;
         u0_(m,IM3,k,(je+j+1),i) = 0.0;
         u0_(m,IEN,k,(je+j+1),i) = p/gm1;
+        if (use_etotgrav) {
+            Real phicc = - grav_acc * x2v;
+            u0_(m,IEN,k,(je+j+1),i) += den*phicc;
+        }
     }
   });
   return;
@@ -482,13 +504,20 @@ void VaryingGravity(Mesh *pm, Real bdt) {
     auto &size = pmbp->pmb->mb_size;
 
     DvceArray5D<Real> u0, w0, w0wb;
+    DvceArray4D<Real> phicc0;
+    auto phi0_x2f = pmbp->phydro->phi0.x2f;
     u0 = pmbp->phydro->u0;
     w0 = pmbp->phydro->w0;
     w0wb = pmbp->phydro->w0wb;
+    phicc0 = pmbp->phydro->phicc0;
     const bool use_etotgrav = pmbp->phydro->use_etotgrav;
     const bool use_wellbalance = pmbp->phydro->use_wellbalance;
+    const bool use_wellbalance_local = pmbp->phydro->use_wellbalance_local;
 
     Real ky = 2.0*M_PI/pm->mesh_size.x2max;
+    
+    Real gamma = pmbp->phydro->peos->eos_data.gamma;
+    Real gm1 = gamma-1.0;
 
     par_for("varying_grav", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -503,6 +532,76 @@ void VaryingGravity(Mesh *pm, Real bdt) {
       }
       if (use_wellbalance) {
         src = bdt*g*(w0(m,IDN,k,j,i)-w0wb(m,IDN,k,j,i));
+      }
+      if (use_wellbalance_local) {
+        Real e_kmh,e_kph,dum1,dum2,dum3;
+        pmbp->phydro->getWBerho(IEN, gamma,
+            w0(m,IDN,k,j-1,i),w0(m,IDN,k,j,i),w0(m,IDN,k,j+1,i),
+            w0(m,IEN,k,j-1,i),w0(m,IEN,k,j,i),w0(m,IEN,k,j+1,i),
+            phicc0(m,k,j-1,i),phi0_x2f(m,k,j,i),phicc0(m,k,j,i),phi0_x2f(m,k,j+1,i),phicc0(m,k,j+1,i),
+            dum1,e_kmh,dum2,e_kph,dum3);
+        Real pl = e_kmh*gm1;
+        Real pr = e_kph*gm1;
+        src = bdt*(pr-pl)/(size.d_view(m).dx2);
+      }
+      u0(m,IM2,k,j,i) += src;
+    });
+
+    return;
+}
+
+void ConstGravity(Mesh *pm, Real bdt) {
+    auto &indcs = pm->mb_indcs;
+    int &ng = indcs.ng;
+    int n1 = indcs.nx1 + 2*ng;
+    int n2 = (indcs.nx2 > 1)? (indcs.nx2 + 2*ng) : 1;
+    int n3 = (indcs.nx3 > 1)? (indcs.nx3 + 2*ng) : 1;
+    int &is = indcs.is;  int &ie  = indcs.ie;
+    int &js = indcs.js;  int &je  = indcs.je;
+    int &ks = indcs.ks;  int &ke  = indcs.ke;
+    auto &mb_bcs = pm->pmb_pack->pmb->mb_bcs;
+    int nmb1 = pm->pmb_pack->nmb_thispack - 1;
+    MeshBlockPack *pmbp = pm->pmb_pack;
+    auto &size = pmbp->pmb->mb_size;
+
+    DvceArray5D<Real> u0, w0, w0wb;
+    DvceArray4D<Real> phicc0;
+    auto phi0_x2f = pmbp->phydro->phi0.x2f;
+    u0 = pmbp->phydro->u0;
+    w0 = pmbp->phydro->w0;
+    w0wb = pmbp->phydro->w0wb;
+    phicc0 = pmbp->phydro->phicc0;
+    const bool use_etotgrav = pmbp->phydro->use_etotgrav;
+    const bool use_wellbalance = pmbp->phydro->use_wellbalance;
+    const bool use_wellbalance_local = pmbp->phydro->use_wellbalance_local;
+    
+    Real gamma = pmbp->phydro->peos->eos_data.gamma;
+    Real gm1 = gamma-1.0;
+
+    par_for("varying_grav", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        Real &x2min = size.d_view(m).x2min;
+        Real &x2max = size.d_view(m).x2max;
+        Real x2v = CellCenterX(j-js, indcs.nx2, x2min, x2max);
+        
+      Real g = -32797.0738964;
+      Real src = bdt*g*w0(m,IDN,k,j,i);
+      if (!use_etotgrav) {
+        u0(m,IEN,k,j,i) += src*w0(m,IM2,k,j,i);
+      }
+      if (use_wellbalance) {
+        src = bdt*g*(w0(m,IDN,k,j,i)-w0wb(m,IDN,k,j,i));
+      }
+      if (use_wellbalance_local) {
+        Real e_kmh,e_kph,dum1,dum2,dum3;
+        pmbp->phydro->getWBerho(IEN, gamma,
+              w0(m,IDN,k,j-1,i),w0(m,IDN,k,j,i),w0(m,IDN,k,j+1,i),
+              w0(m,IEN,k,j-1,i),w0(m,IEN,k,j,i),w0(m,IEN,k,j+1,i),
+              phicc0(m,k,j-1,i),phi0_x2f(m,k,j,i),phicc0(m,k,j,i),phi0_x2f(m,k,j+1,i),phicc0(m,k,j+1,i),
+              dum1,e_kmh,dum2,e_kph,dum3);
+        Real pl = e_kmh*gm1;
+        Real pr = e_kph*gm1;
+        src = bdt*(pr-pl)/(size.d_view(m).dx2);
       }
       u0(m,IM2,k,j,i) += src;
     });

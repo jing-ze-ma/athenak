@@ -62,6 +62,10 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
       auto w0facewb_x1f = w0facewb.x1f;
       auto w0facewb_x2f = w0facewb.x2f;
       auto w0facewb_x3f = w0facewb.x3f;
+      auto &phicc0_ = phicc0;
+      auto phi0_x1f = phi0.x1f;
+      auto phi0_x2f = phi0.x2f;
+      auto phi0_x3f = phi0.x3f;
 //  }
 
   //--------------------------------------------------------------------------------------
@@ -87,6 +91,11 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
     ScrArray2D<Real> wl(member.team_scratch(scr_level), nvars, ncells1);
     ScrArray2D<Real> wr(member.team_scratch(scr_level), nvars, ncells1);
 
+    if (use_wellbalance_local && use_wb_x1)
+    {
+      WbLocalPiecewiseLinearX1(member, eos_, m, k, j, il-1, iu, w0_, phicc0_, phi0_x1f, wl, wr);
+    } else {
+          
     // Reconstruct qR[i] and qL[i+1]
     switch (recon_method_) {
       case ReconstructionMethod::dc:
@@ -105,9 +114,15 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
       default:
         break;
     }
+        
+    }
       
-      if (use_wellbalance) {
+      if (use_wellbalance_reconst_perturb) {
         AddWbPrimFaceX1(member,m,k,j,il-1,iu,w0facewb_x1f,wl,wr);
+      }
+      
+      if (pmy_pack->pmesh->use_cubed_sphere) {
+          pmy_pack->pcoord->GnomonicEquianglePrimFaceX1(member,m,j,il-1,iu,wl,wr);
       }
       
     // Sync all threads in the team so that scratch memory is consistent
@@ -147,6 +162,10 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
     } else if constexpr (rsolver_method_ == Hydro_RSolver::hlle_gr) {
       HLLE_GR(member, eos, indcs, size, coord, m, k, j, il, iu, IVX, wl, wr, flx1);
     }
+      
+      if (pmy_pack->pmesh->use_cubed_sphere) {
+          pmy_pack->pcoord->GnomonicEquiangleFluxX1(member,m,k,j,il,iu,flx1);
+      }
     member.team_barrier();
 
     // calculate fluxes of scalars (if any)
@@ -196,6 +215,11 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
           wl     = scr2;
           wl_jp1 = scr1;
         }
+          
+        if (use_wellbalance_local && use_wb_x2)
+        {
+          WbLocalPiecewiseLinearX2(member, eos_, m, k, j, il, iu, w0_, phicc0_, phi0_x2f, wl_jp1, wr);
+        } else {
 
         // Reconstruct qR[j] and qL[j+1]
         switch (recon_method_) {
@@ -215,9 +239,15 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
           default:
             break;
         }
+            
+        }
           
-          if (use_wellbalance) {
+          if (use_wellbalance_reconst_perturb) {
             AddWbPrimFaceX2(member,m,k,j,il,iu,w0facewb_x2f,wl_jp1,wr);
+          }
+          
+          if (pmy_pack->pmesh->use_cubed_sphere) {
+              pmy_pack->pcoord->GnomonicEquianglePrimFaceX2(member,m,j,il,iu,wl_jp1,wr);
           }
           
         member.team_barrier();
@@ -257,6 +287,9 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
           } else if constexpr (rsolver_method_ == Hydro_RSolver::hlle_gr) {
             HLLE_GR(member, eos, indcs, size, coord, m, k, j, il, iu, IVY, wl, wr, flx2);
           }
+            if (pmy_pack->pmesh->use_cubed_sphere) {
+                pmy_pack->pcoord->GnomonicEquiangleFluxX2(member,m,k,j,il,iu,flx2);
+            }
           member.team_barrier();
         }
 
@@ -302,6 +335,34 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
           wl     = scr2;
           wl_kp1 = scr1;
         }
+          
+        if (pmy_pack->pmesh->use_grid_stretch)
+        {
+          auto &size = pmy_pack->pmb->mb_size;
+          auto &indcs = pmy_pack->pmesh->mb_indcs;
+          Real x3v_km1  = CellCenterX(k-1-ks, indcs.nx3, size.d_view(m).x3min, size.d_view(m).x3max);
+          Real x3v_kmh  = LeftEdgeX(k-ks, indcs.nx3, size.d_view(m).x3min, size.d_view(m).x3max);
+          Real x3v_k  = CellCenterX(k-ks, indcs.nx3, size.d_view(m).x3min, size.d_view(m).x3max);
+          Real x3v_kph  = LeftEdgeX(k+1-ks, indcs.nx3, size.d_view(m).x3min, size.d_view(m).x3max);
+          Real x3v_kp1  = CellCenterX(k+1-ks, indcs.nx3, size.d_view(m).x3min, size.d_view(m).x3max);
+          Real x3v_0 = pmy_pack->pmesh->mesh_size.x3min;
+          Real x3v_1 = pmy_pack->pmesh->mesh_size.x3max;
+          pmy_pack->pcoord->StretchR(x3v_0,x3v_1,x3v_km1);
+          pmy_pack->pcoord->StretchR(x3v_0,x3v_1,x3v_kmh);
+          pmy_pack->pcoord->StretchR(x3v_0,x3v_1,x3v_k);
+          pmy_pack->pcoord->StretchR(x3v_0,x3v_1,x3v_kph);
+          pmy_pack->pcoord->StretchR(x3v_0,x3v_1,x3v_kp1);
+          Real dxLh = x3v_k-x3v_kmh;
+          Real dxRh = x3v_kph-x3v_k;
+          Real dxL = x3v_k-x3v_km1;
+          Real dxR = x3v_kp1-x3v_k;
+          GridPiecewiseLinearX3(member, eos_, m, k, j, il, iu, w0_, phicc0_, phi0_x3f, dxL, dxR, dxLh, dxRh, wl_kp1, wr);
+        } else {
+          
+        if (use_wellbalance_local && use_wb_x3)
+        {
+          WbLocalPiecewiseLinearX3(member, eos_, m, k, j, il, iu, w0_, phicc0_, phi0_x3f, wl_kp1, wr);
+        } else {
 
         // Reconstruct qR[k] and qL[k+1]
         switch (recon_method_) {
@@ -321,9 +382,16 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
           default:
             break;
         }
+              
+        }
+        }
           
-          if (use_wellbalance) {
+          if (use_wellbalance_reconst_perturb) {
             AddWbPrimFaceX3(member,m,k,j,il,iu,w0facewb_x3f,wl_kp1,wr);
+          }
+          
+          if (pmy_pack->pmesh->use_cubed_sphere) {
+              pmy_pack->pcoord->GnomonicEquianglePrimFaceX3(member,m,j,il,iu,wl_kp1,wr);
           }
           
         member.team_barrier();
@@ -363,6 +431,9 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
           } else if constexpr (rsolver_method_ == Hydro_RSolver::hlle_gr) {
             HLLE_GR(member, eos, indcs, size, coord, m, k, j, il, iu, IVZ, wl, wr, flx3);
           }
+            if (pmy_pack->pmesh->use_cubed_sphere) {
+                pmy_pack->pcoord->GnomonicEquiangleFluxX3(member,m,k,j,il,iu,flx3);
+            }
           member.team_barrier();
         }
 

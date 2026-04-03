@@ -64,6 +64,11 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   int &ks = indcs.ks; int &ke = indcs.ke;
   MeshBlockPack *pmbp = pmy_mesh_->pmb_pack;
   auto &size = pmbp->pmb->mb_size;
+    
+    int &ng = indcs.ng;
+    int n1m1 = indcs.nx1 + 2*ng - 1;
+    int n2m1 = (indcs.nx2 > 1)? (indcs.nx2 + 2*ng - 1) : 0;
+    int n3m1 = (indcs.nx3 > 1)? (indcs.nx3 + 2*ng - 1) : 0;
 
   // Select either Hydro or MHD
   DvceArray5D<Real> u0_;
@@ -106,7 +111,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     phiarr.modify_host();
     phiarr.sync_device();
   
-    par_for("probini", DevExeSpace(), 0,(pmbp->nmb_thispack-1),ks,ke,js,je,is,ie,
+    par_for("probini", DevExeSpace(), 0, (pmbp->nmb_thispack-1), 0, n3m1, 0, n2m1, 0, n1m1,
     KOKKOS_LAMBDA(int m, int k, int j, int i) {
       Real &x1min = size.d_view(m).x1min;
       Real &x1max = size.d_view(m).x1max;
@@ -138,6 +143,36 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       u0_(m,IM2,k,j,i) = 0.0;
       u0_(m,IM3,k,j,i) = 0.0;
       u0_(m,IEN,k,j,i) = p*igm1;
+        
+    });
+    
+    par_for("probwb", DevExeSpace(), 0, (pmbp->nmb_thispack-1),ks,ke,js,je,is,ie,
+    KOKKOS_LAMBDA(int m, int k, int j, int i) {
+      Real &x1min = size.d_view(m).x1min;
+      Real &x1max = size.d_view(m).x1max;
+      int nx1 = indcs.nx1;
+      Real x1v = CellCenterX(i-is, nx1, x1min, x1max);
+
+      Real &x2min = size.d_view(m).x2min;
+      Real &x2max = size.d_view(m).x2max;
+      int nx2 = indcs.nx2;
+      Real x2v = CellCenterX(j-js, nx2, x2min, x2max);
+        
+      Real &x3min = size.d_view(m).x3min;
+      Real &x3max = size.d_view(m).x3max;
+      int nx3 = indcs.nx3;
+      Real x3v = CellCenterX(k-ks, nx3, x3min, x3max);
+        
+        Real p, den, phicc, dummy;
+        get_init_eos(zarr.d_view,logparr.d_view,logrhoarr.d_view,phiarr.d_view,x3v,den,p,phicc);
+        Real qdot;
+        get_qdotz(x3v,qdot);
+        Real qdot0 = 3.795720e-5;
+        Real &dx3 = size.d_view(m).dx3;
+        qdot *= sin(4.0*M_PI*dx3)/(4.0*M_PI*dx3);
+        Real drho = 1.1e-5*qdot/qdot0*(sin(3.0*M_PI*x1v)+cos(3.0*M_PI*x1v))*(sin(3.0*M_PI*x2v)-cos(M_PI*x2v));
+        den += drho;
+        
       if (use_etotgrav) {
           u0_(m,IEN,k,j,i) += den*phicc;
           phi0_x1f(m,k,j,i) = phicc;
@@ -358,58 +393,58 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
 
 
 void HydrostaticEquilibrium(Mesh *pm) {
-  auto &indcs = pm->mb_indcs;
-  int &ng = indcs.ng;
-  int n1 = indcs.nx1 + 2*ng;
-  int n2 = (indcs.nx2 > 1)? (indcs.nx2 + 2*ng) : 1;
-  int n3 = (indcs.nx3 > 1)? (indcs.nx3 + 2*ng) : 1;
-  int &is = indcs.is;  int &ie  = indcs.ie;
-  int &js = indcs.js;  int &je  = indcs.je;
-  int &ks = indcs.ks;  int &ke  = indcs.ke;
-  auto &mb_bcs = pm->pmb_pack->pmb->mb_bcs;
-  int nmb = pm->pmb_pack->nmb_thispack;
-  MeshBlockPack *pmbp = pm->pmb_pack;
-  auto &size = pmbp->pmb->mb_size;
-
-    DvceArray5D<Real> u0_;
-    DvceArray5D<Real> u0wb;
-    const bool use_etotgrav = pmbp->phydro->use_etotgrav;
-    const bool use_wellbalance = pmbp->phydro->use_wellbalance;
-
-    if (pmbp->phydro != nullptr) {
-      u0_ = pmbp->phydro->u0;
-    } else if (pmbp->pmhd != nullptr) {
-      u0_ = pmbp->pmhd->u0;
-    }
-    
-    u0wb = pmbp->phydro->u0wb;
-    
-
-  par_for("usrboundary", DevExeSpace(),0,(nmb-1),0,(ng-1),0,(n2-1),0,(n1-1),
-  KOKKOS_LAMBDA(int m, int k, int j, int i) {
-    Real &x3min = size.d_view(m).x3min;
-    Real &x3max = size.d_view(m).x3max;
-    if (mb_bcs.d_view(m,BoundaryFace::inner_x3) == BoundaryFlag::user) {
-        if (use_wellbalance)
-        {
-            u0_(m,IDN,k,j,i) = u0wb(m,IDN,k,j,i);
-            u0_(m,IM1,k,j,i) = 0.0;
-            u0_(m,IM2,k,j,i) = 0.0;
-            u0_(m,IM3,k,j,i) = 0.0;
-            u0_(m,IEN,k,j,i) = u0wb(m,IEN,k,j,i);
-        }
-    }
-    if (mb_bcs.d_view(m,BoundaryFace::outer_x3) == BoundaryFlag::user) {
-        if (use_wellbalance)
-        {
-            u0_(m,IDN,(ke+k+1),j,i) = u0wb(m,IDN,(ke+k+1),j,i);
-            u0_(m,IM1,(ke+k+1),j,i) = 0.0;
-            u0_(m,IM2,(ke+k+1),j,i) = 0.0;
-            u0_(m,IM3,(ke+k+1),j,i) = 0.0;
-            u0_(m,IEN,(ke+k+1),j,i) = u0wb(m,IEN,(ke+k+1),j,i);
-        }
-    }
-  });
+//  auto &indcs = pm->mb_indcs;
+//  int &ng = indcs.ng;
+//  int n1 = indcs.nx1 + 2*ng;
+//  int n2 = (indcs.nx2 > 1)? (indcs.nx2 + 2*ng) : 1;
+//  int n3 = (indcs.nx3 > 1)? (indcs.nx3 + 2*ng) : 1;
+//  int &is = indcs.is;  int &ie  = indcs.ie;
+//  int &js = indcs.js;  int &je  = indcs.je;
+//  int &ks = indcs.ks;  int &ke  = indcs.ke;
+//  auto &mb_bcs = pm->pmb_pack->pmb->mb_bcs;
+//  int nmb = pm->pmb_pack->nmb_thispack;
+//  MeshBlockPack *pmbp = pm->pmb_pack;
+//  auto &size = pmbp->pmb->mb_size;
+//
+//    DvceArray5D<Real> u0_;
+//    DvceArray5D<Real> u0wb;
+//    const bool use_etotgrav = pmbp->phydro->use_etotgrav;
+//    const bool use_wellbalance = pmbp->phydro->use_wellbalance;
+//
+//    if (pmbp->phydro != nullptr) {
+//      u0_ = pmbp->phydro->u0;
+//    } else if (pmbp->pmhd != nullptr) {
+//      u0_ = pmbp->pmhd->u0;
+//    }
+//
+//    u0wb = pmbp->phydro->u0wb;
+//
+//
+//  par_for("usrboundary", DevExeSpace(),0,(nmb-1),0,(ng-1),0,(n2-1),0,(n1-1),
+//  KOKKOS_LAMBDA(int m, int k, int j, int i) {
+//    Real &x3min = size.d_view(m).x3min;
+//    Real &x3max = size.d_view(m).x3max;
+//    if (mb_bcs.d_view(m,BoundaryFace::inner_x3) == BoundaryFlag::user) {
+//        if (use_wellbalance)
+//        {
+//            u0_(m,IDN,k,j,i) = u0wb(m,IDN,k,j,i);
+//            u0_(m,IM1,k,j,i) = 0.0;
+//            u0_(m,IM2,k,j,i) = 0.0;
+//            u0_(m,IM3,k,j,i) = 0.0;
+//            u0_(m,IEN,k,j,i) = u0wb(m,IEN,k,j,i);
+//        }
+//    }
+//    if (mb_bcs.d_view(m,BoundaryFace::outer_x3) == BoundaryFlag::user) {
+//        if (use_wellbalance)
+//        {
+//            u0_(m,IDN,(ke+k+1),j,i) = u0wb(m,IDN,(ke+k+1),j,i);
+//            u0_(m,IM1,(ke+k+1),j,i) = 0.0;
+//            u0_(m,IM2,(ke+k+1),j,i) = 0.0;
+//            u0_(m,IM3,(ke+k+1),j,i) = 0.0;
+//            u0_(m,IEN,(ke+k+1),j,i) = u0wb(m,IEN,(ke+k+1),j,i);
+//        }
+//    }
+//  });
   return;
 }
 
@@ -429,11 +464,15 @@ void SourceFunc(Mesh *pm, Real bdt) {
     auto &size = pmbp->pmb->mb_size;
 
     DvceArray5D<Real> u0, w0, w0wb;
+    DvceArray4D<Real> phicc0;
+    auto phi0_x3f = pmbp->phydro->phi0.x3f;
     u0 = pmbp->phydro->u0;
     w0 = pmbp->phydro->w0;
     w0wb = pmbp->phydro->w0wb;
+    phicc0 = pmbp->phydro->phicc0;
     const bool use_etotgrav = pmbp->phydro->use_etotgrav;
     const bool use_wellbalance = pmbp->phydro->use_wellbalance;
+    const bool use_wellbalance_local = pmbp->phydro->use_wellbalance_local;
 
     par_for("usrsource", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -460,6 +499,10 @@ void SourceFunc(Mesh *pm, Real bdt) {
         if (use_wellbalance) {
             src = bdt*grav_acc*(w0(m,IDN,k,j,i)-w0wb(m,IDN,k,j,i));
         }
+//        if (use_wellbalance_local) {
+////            src = bdt*(phicc0(m,k-1,j,i)-phicc0(m,k+1,j,i))/(2.0*size.d_view(m).dx3)*w0(m,IDN,k,j,i);
+//            src = bdt*(phi0_x3f(m,k,j,i)-phi0_x3f(m,k+1,j,i))/(size.d_view(m).dx3)*w0(m,IDN,k,j,i);
+//        }
         u0(m,IM3,k,j,i) += src;
 
         // cooling

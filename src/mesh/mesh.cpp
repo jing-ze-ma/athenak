@@ -50,6 +50,8 @@ Mesh::Mesh(ParameterInput *pin) :
   multi_d(false),
   strictly_periodic(true),
   use_cubed_sphere(false),
+  use_spherical_polar(false),
+  use_grid_stretch(false),
   npanels(1),
   nmb_packs_thisrank(1),
   nprtcl_thisrank(0),
@@ -80,18 +82,20 @@ Mesh::Mesh(ParameterInput *pin) :
   }
       
   use_cubed_sphere = pin->GetOrAddBoolean("mesh", "use_cubed_sphere", false);
-  npanels = (use_cubed_sphere ? 2 : 1);
+  npanels = (use_cubed_sphere ? 6 : 1);
   if (use_cubed_sphere) {
     strictly_periodic = false;
     if (one_d) {
       std::cout << "### FATAL ERROR: Cubed sphere requires 2D/3D mesh\n";
       std::exit(EXIT_FAILURE);
     }
-//    if (mesh_indcs.nx1 != mesh_indcs.nx2) {
-//      std::cout << "### FATAL ERROR: Cubed sphere requires xy indices to be the same size\n";
-//      std::exit(EXIT_FAILURE);
-//    }
+    if (mesh_indcs.nx1 != mesh_indcs.nx2) {
+      std::cout << "### FATAL ERROR: Cubed sphere requires xy indices to be the same size\n";
+      std::exit(EXIT_FAILURE);
+    }
   }
+  use_spherical_polar = pin->GetOrAddBoolean("mesh", "use_spherical_polar", false);
+  use_grid_stretch = pin->GetOrAddBoolean("mesh", "use_grid_stretch", false);
 
   // Set BC flags for ix1/ox1 boundaries and error check
   mesh_bcs[BoundaryFace::inner_x1] = GetBoundaryFlag(pin->GetString("mesh", "ix1_bc"));

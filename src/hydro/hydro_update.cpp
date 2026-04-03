@@ -40,6 +40,13 @@ TaskStatus Hydro::RKUpdate(Driver *pdriver, int stage) {
   auto flx2 = uflx.x2f;
   auto flx3 = uflx.x3f;
   auto &mbsize = pmy_pack->pmb->mb_size;
+    
+  auto &use_cubed_sphere = pmy_pack->pmesh->use_cubed_sphere;
+  auto &use_spherical_polar = pmy_pack->pmesh->use_spherical_polar;
+  auto &volume = pmy_pack->pcoord->volume;
+  auto &area1 = pmy_pack->pcoord->area.x1f;
+  auto &area2 = pmy_pack->pcoord->area.x2f;
+  auto &area3 = pmy_pack->pcoord->area.x3f;
 
   // hierarchical parallel loop that updates conserved variables to intermediate step
   // using weights and fractional time step appropriate to stages of time-integrator.
@@ -50,6 +57,34 @@ TaskStatus Hydro::RKUpdate(Driver *pdriver, int stage) {
   par_for_outer("h_update",DevExeSpace(),scr_size,scr_level,0,nmb1,0,nvar-1,ks,ke,js,je,
   KOKKOS_LAMBDA(TeamMember_t member, const int m, const int n, const int k, const int j) {
     ScrArray1D<Real> divf(member.team_scratch(scr_level), ncells1);
+      
+    if (use_cubed_sphere || use_spherical_polar) {
+        
+        // compute dF1/dx1
+        par_for_inner(member, is, ie, [&](const int i) {
+          divf(i) = (flx1(m,n,k,j,i+1)*area1(m,k,j,i+1) - flx1(m,n,k,j,i)*area1(m,k,j,i))/volume(m,k,j,i);
+        });
+        member.team_barrier();
+
+        // Add dF2/dx2
+        // Fluxes must be summed in pairs to symmetrize round-off error in each dir
+        if (multi_d) {
+          par_for_inner(member, is, ie, [&](const int i) {
+            divf(i) += (flx2(m,n,k,j+1,i)*area2(m,k,j+1,i) - flx2(m,n,k,j,i)*area2(m,k,j,i))/volume(m,k,j,i);
+          });
+          member.team_barrier();
+        }
+
+        // Add dF3/dx3
+        // Fluxes must be summed in pairs to symmetrize round-off error in each dir
+        if (three_d) {
+          par_for_inner(member, is, ie, [&](const int i) {
+            divf(i) += (flx3(m,n,k+1,j,i)*area3(m,k+1,j,i) - flx3(m,n,k,j,i)*area3(m,k,j,i))/volume(m,k,j,i);
+          });
+          member.team_barrier();
+        }
+          
+    } else {
 
     // compute dF1/dx1
     par_for_inner(member, is, ie, [&](const int i) {
@@ -73,6 +108,8 @@ TaskStatus Hydro::RKUpdate(Driver *pdriver, int stage) {
         divf(i) += (flx3(m,n,k+1,j,i) - flx3(m,n,k,j,i))/mbsize.d_view(m).dx3;
       });
       member.team_barrier();
+    }
+          
     }
 
     par_for_inner(member, is, ie, [&](const int i) {

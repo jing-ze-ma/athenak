@@ -50,6 +50,12 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
   const int nmkji = (pmy_pack->nmb_thispack)*nx3*nx2*nx1;
   const int nkji = nx3*nx2*nx1;
   const int nji  = nx2*nx1;
+    
+  auto &use_cubed_sphere = pmy_pack->pmesh->use_cubed_sphere;
+  auto &use_spherical_polar = pmy_pack->pmesh->use_spherical_polar;
+  auto &dx1_ = pmy_pack->pcoord->dx1;
+  auto &dx2_ = pmy_pack->pcoord->dx2;
+  auto &dx3_ = pmy_pack->pcoord->dx3;
 
   if (pdrive->time_evolution == TimeEvolution::kinematic) {
     // find smallest (dx/v) in each direction for advection problems
@@ -112,9 +118,15 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
         max_dv2 = fabs(w0_(m,IVY,k,j,i)) + cs;
         max_dv3 = fabs(w0_(m,IVZ,k,j,i)) + cs;
       }
+        if (use_cubed_sphere || use_spherical_polar) {
+            min_dt1 = fmin((dx1_(m,k,j,i)/max_dv1), min_dt1);
+            min_dt2 = fmin((dx2_(m,k,j,i)/max_dv2), min_dt2);
+            min_dt3 = fmin((dx3_(m,k,j,i)/max_dv3), min_dt3);
+        } else {
       min_dt1 = fmin((mbsize.d_view(m).dx1/max_dv1), min_dt1);
       min_dt2 = fmin((mbsize.d_view(m).dx2/max_dv2), min_dt2);
       min_dt3 = fmin((mbsize.d_view(m).dx3/max_dv3), min_dt3);
+        }
     }, Kokkos::Min<Real>(dt1), Kokkos::Min<Real>(dt2),Kokkos::Min<Real>(dt3));
   }
 
