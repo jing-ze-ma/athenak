@@ -551,13 +551,13 @@ void Coordinates::CoordSphericalPolar() {
     Real r_c, r_l, r_r;
     if (pmy_pack->pmesh->three_d) {
         // --- radial ---
-        r_c  = CellCenterX(k-ks, indcs.nx3, size.d_view(m).x3min, size.d_view(m).x3max);
-        r_l  = LeftEdgeX(k-ks, indcs.nx3, size.d_view(m).x3min, size.d_view(m).x3max);
-        r_r  = LeftEdgeX(k+1-ks, indcs.nx3, size.d_view(m).x3min, size.d_view(m).x3max);
+        r_c  = CellCenterX(i-is, indcs.nx1, size.d_view(m).x1min, size.d_view(m).x1max);
+        r_l  = LeftEdgeX(i-is, indcs.nx1, size.d_view(m).x1min, size.d_view(m).x1max);
+        r_r  = LeftEdgeX(i+1-is, indcs.nx1, size.d_view(m).x1min, size.d_view(m).x1max);
         // stretch the radial grid
         if (pmy_pack->pmesh->use_grid_stretch) {
-          Real r0 = pmy_pack->pmesh->mesh_size.x3min;
-          Real r1 = pmy_pack->pmesh->mesh_size.x3max;
+          Real r0 = pmy_pack->pmesh->mesh_size.x1min;
+          Real r1 = pmy_pack->pmesh->mesh_size.x1max;
           StretchR(r0,r1,r_c);
           StretchR(r0,r1,r_l);
           StretchR(r0,r1,r_r);
@@ -569,12 +569,12 @@ void Coordinates::CoordSphericalPolar() {
     }
 
     // --- angles ---
-    Real theta  = CellCenterX(i-is, indcs.nx1, size.d_view(m).x1min, size.d_view(m).x1max);
-    Real phi    = CellCenterX(j-js, indcs.nx2, size.d_view(m).x2min, size.d_view(m).x2max);
-    Real thetal = LeftEdgeX(i-is, indcs.nx1, size.d_view(m).x1min, size.d_view(m).x1max);
-    Real thetar = LeftEdgeX(i+1-is, indcs.nx1, size.d_view(m).x1min, size.d_view(m).x1max);
-    Real phil   = LeftEdgeX(j-js, indcs.nx2, size.d_view(m).x2min, size.d_view(m).x2max);
-    Real phir   = LeftEdgeX(j+1-js, indcs.nx2, size.d_view(m).x2min, size.d_view(m).x2max);
+    Real theta  = CellCenterX(j-js, indcs.nx2, size.d_view(m).x2min, size.d_view(m).x2max);
+    Real phi    = CellCenterX(k-ks, indcs.nx3, size.d_view(m).x3min, size.d_view(m).x3max);
+    Real thetal = LeftEdgeX(j-js, indcs.nx2, size.d_view(m).x2min, size.d_view(m).x2max);
+    Real thetar = LeftEdgeX(j+1-js, indcs.nx2, size.d_view(m).x2min, size.d_view(m).x2max);
+    Real phil   = LeftEdgeX(k-ks, indcs.nx3, size.d_view(m).x3min, size.d_view(m).x3max);
+    Real phir   = LeftEdgeX(k+1-ks, indcs.nx3, size.d_view(m).x3min, size.d_view(m).x3max);
 
     Real sinl   = fabs(sin(thetal));
     Real sinr   = fabs(sin(thetar));
@@ -583,29 +583,29 @@ void Coordinates::CoordSphericalPolar() {
     Real cosr   = cos(thetar);
 
     // --- radial faces ---
-    area.x3f(m,k,j,i) = SQR(r_l) * fabs(cosl-cosr) * (phir-phil);
-    Real area3r = SQR(r_r) * fabs(cosl-cosr) * (phir-phil);
-    if (k == ke) area.x3f(m,k+1,j,i) = area3r;
-
-    // --- theta faces ---
-    area.x1f(m,k,j,i) = 0.5 * (SQR(r_r)-SQR(r_l)) * sinl * (phir-phil);
-    Real area1r = 0.5 * (SQR(r_r)-SQR(r_l)) * sinr * (phir-phil);
+    area.x1f(m,k,j,i) = SQR(r_l) * fabs(cosl-cosr) * (phir-phil);
+    Real area1r = SQR(r_r) * fabs(cosl-cosr) * (phir-phil);
     if (i == ie) area.x1f(m,k,j,i+1) = area1r;
 
-    // --- phi faces ---
-    area.x2f(m,k,j,i) = 0.5 * (SQR(r_r)-SQR(r_l)) * (thetar-thetal);
-    Real area2r = 0.5 * (SQR(r_r)-SQR(r_l)) * (thetar-thetal);
+    // --- theta faces ---
+    area.x2f(m,k,j,i) = 0.5 * (SQR(r_r)-SQR(r_l)) * sinl * (phir-phil);
+    Real area2r = 0.5 * (SQR(r_r)-SQR(r_l)) * sinr * (phir-phil);
     if (j == je) area.x2f(m,k,j+1,i) = area2r;
+
+    // --- phi faces ---
+    area.x3f(m,k,j,i) = 0.5 * (SQR(r_r)-SQR(r_l)) * (thetar-thetal);
+    Real area3r = 0.5 * (SQR(r_r)-SQR(r_l)) * (thetar-thetal);
+    if (k == ke) area.x3f(m,k+1,j,i) = area3r;
 
     // --- volume ---
 
     volume(m,k,j,i) = 1.0/3.0*(r_r*r_r*r_r-r_l*r_l*r_l) * fabs(cosl-cosr) * (phir-phil);
-    dx1(m,k,j,i) = r_c * (thetar-thetal);
-    dx2(m,k,j,i) = r_c * sinc * (phir-phil);
-    dx3(m,k,j,i) = r_r-r_l;
+    dx2(m,k,j,i) = r_c * (thetar-thetal);
+    dx3(m,k,j,i) = r_c * sinc * (phir-phil);
+    dx1(m,k,j,i) = r_r-r_l;
       
-    z_ov_rE(m,k,j,i) = (area3r - area.x3f(m,k,j,i)) / volume(m,k,j,i);
-    x_ov_rD(m,k,j,i) = (area1r - area.x1f(m,k,j,i)) / volume(m,k,j,i);
+    z_ov_rE(m,k,j,i) = (area1r - area.x1f(m,k,j,i)) / volume(m,k,j,i);
+    x_ov_rD(m,k,j,i) = (area2r - area.x2f(m,k,j,i)) / volume(m,k,j,i);
     y_ov_rC(m,k,j,i) = (sinr-sinl)/(sinr+sinl);
   });
 }
@@ -625,12 +625,12 @@ void Coordinates::SrcTermsSphericalPolar(const DvceArray5D<Real> &w0, const Dvce
   par_for("spsrc", DevExeSpace(), 0,nmb1,ks,ke,js,je,is,ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       
-    Real r_l  = LeftEdgeX(k-ks, indcs.nx3, size.d_view(m).x3min, size.d_view(m).x3max);
-    Real r_r  = LeftEdgeX(k+1-ks, indcs.nx3, size.d_view(m).x3min, size.d_view(m).x3max);
+    Real r_l  = LeftEdgeX(i-is, indcs.nx1, size.d_view(m).x1min, size.d_view(m).x1max);
+    Real r_r  = LeftEdgeX(i+1-is, indcs.nx1, size.d_view(m).x1min, size.d_view(m).x1max);
     // stretch the radial grid
     if (pmy_pack->pmesh->use_grid_stretch) {
-      Real r0 = pmy_pack->pmesh->mesh_size.x3min;
-      Real r1 = pmy_pack->pmesh->mesh_size.x3max;
+      Real r0 = pmy_pack->pmesh->mesh_size.x1min;
+      Real r1 = pmy_pack->pmesh->mesh_size.x1max;
       StretchR(r0,r1,r_l);
       StretchR(r0,r1,r_r);
     }
@@ -643,12 +643,12 @@ void Coordinates::SrcTermsSphericalPolar(const DvceArray5D<Real> &w0, const Dvce
     if (pmy_pack->phydro->use_wellbalance) pr -= w0wb(m,IEN,k,j,i)*gm1;
     Real rho = w0(m,IDN,k,j,i);
       
-    Real src3 = z_ov_rE(m,k,j,i) * (pr + 0.5*rho*(v1*v1+v2*v2));
-    Real src1 = x_ov_rD(m,k,j,i) * (pr + rho*SQR(v2));
-    Real src2 = -y_ov_rC(m,k,j,i) * (uflx.x1f(m,IM2,k,j,i)*area.x1f(m,k,j,i)+uflx.x1f(m,IM2,k,j,i+1)*area.x1f(m,k,j,i+1))/volume(m,k,j,i);
+    Real src1 = z_ov_rE(m,k,j,i) * (pr + 0.5*rho*(v2*v2+v3*v3));
+    Real src2 = x_ov_rD(m,k,j,i) * (pr + rho*SQR(v3));
+    Real src3 = -y_ov_rC(m,k,j,i) * (uflx.x2f(m,IM3,k,j,i)*area.x2f(m,k,j,i)+uflx.x2f(m,IM3,k,j+1,i)*area.x2f(m,k,j+1,i))/volume(m,k,j,i);
       
-    src1 -= factor * (uflx.x3f(m,IM1,k,j,i)*area.x3f(m,k,j,i)+uflx.x3f(m,IM1,k+1,j,i)*area.x3f(m,k+1,j,i))/volume(m,k,j,i);
-    src2 -= factor * (uflx.x3f(m,IM2,k,j,i)*area.x3f(m,k,j,i)+uflx.x3f(m,IM2,k+1,j,i)*area.x3f(m,k+1,j,i))/volume(m,k,j,i);
+    src2 -= factor * (uflx.x1f(m,IM2,k,j,i)*area.x1f(m,k,j,i)+uflx.x1f(m,IM2,k,j,i+1)*area.x1f(m,k,j,i+1))/volume(m,k,j,i);
+    src3 -= factor * (uflx.x1f(m,IM3,k,j,i)*area.x1f(m,k,j,i)+uflx.x1f(m,IM3,k,j,i+1)*area.x1f(m,k,j,i+1))/volume(m,k,j,i);
       
     u0(m,IM1,k,j,i) += src1*bdt;
     u0(m,IM2,k,j,i) += src2*bdt;
