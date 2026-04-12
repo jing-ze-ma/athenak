@@ -92,8 +92,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     
     Real r0, r1;
     if (use_grid_stretch) {
-        r0 = pmy_mesh_->mesh_size.x3min;
-        r1 = pmy_mesh_->mesh_size.x3max;
+        r0 = pmy_mesh_->mesh_size.x1min;
+        r1 = pmy_mesh_->mesh_size.x1max;
     }
     
     int &ng = indcs.ng;
@@ -160,6 +160,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       Real &x1max = size.d_view(m).x1max;
       int nx1 = indcs.nx1;
       Real x1v = CellCenterX(i-is, nx1, x1min, x1max);
+      if (use_grid_stretch) StretchR(r0,r1,x1v);
+      Real r = x1v;
+      if (use_spherical_polar) x1v -= ap;
 
       Real &x2min = size.d_view(m).x2min;
       Real &x2max = size.d_view(m).x2max;
@@ -170,15 +173,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       Real &x3max = size.d_view(m).x3max;
       int nx3 = indcs.nx3;
       Real x3v = CellCenterX(k-ks, nx3, x3min, x3max);
-      if (use_grid_stretch) StretchR(r0,r1,x3v);
-      Real r = x3v;
-      if (use_spherical_polar) x3v -= ap;
         
       Real lam, theta, phi;
       if (use_spherical_polar) {
-        theta = x1v;
-        lam = -x1v+M_PI/2.0;
-        phi = x2v-M_PI;
+        theta = x2v;
+        lam = -x2v+M_PI/2.0;
+        phi = x3v-M_PI;
       } else {
         theta = -(x2v*iap-M_PI/2.0);
         lam = x2v*iap;
@@ -186,10 +186,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       }
         
       Real pwb, denwb;
-      get_wb_eos(zarr.d_view,logparr.d_view,x3v,denwb,pwb);
+      get_wb_eos(zarr.d_view,logparr.d_view,x1v,denwb,pwb);
         
       Real p, den;
-      get_init_eos(zarr_init.d_view,logparr_init.d_view,x3v,den,p);
+      get_init_eos(zarr_init.d_view,logparr_init.d_view,x1v,den,p);
 //      get_init_eos_arr(lam, phi, N, zinitarr, logpinitarr);
 //      get_init_eos(zinitarr,logpinitarr,x3v,lam,phi,den,p);
 //      p = pwb;
@@ -201,7 +201,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       u0_(m,IM3,k,j,i) = 0.0;
       u0_(m,IEN,k,j,i) = p*igm1;
         
-        Real phicc = - grav_acc * x3v;// - 0.5*SQR(omega*r*sin(theta));
+        Real phicc = - grav_acc * x1v;// - 0.5*SQR(omega*r*sin(theta));
         if (use_etotgrav) {
             u0_(m,IEN,k,j,i) += den*phicc;
         }
@@ -213,6 +213,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         Real &x1max = size.d_view(m).x1max;
         int nx1 = indcs.nx1;
         Real x1v = CellCenterX(i-is, nx1, x1min, x1max);
+        if (use_grid_stretch) StretchR(r0,r1,x1v);
+        Real r = x1v;
+        if (use_spherical_polar) x1v -= ap;
 
         Real &x2min = size.d_view(m).x2min;
         Real &x2max = size.d_view(m).x2max;
@@ -223,130 +226,127 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         Real &x3max = size.d_view(m).x3max;
         int nx3 = indcs.nx3;
         Real x3v = CellCenterX(k-ks, nx3, x3min, x3max);
-        if (use_grid_stretch) StretchR(r0,r1,x3v);
-        Real r = x3v;
-        if (use_spherical_polar) x3v -= ap;
           
         Real lam, theta, phi;
         if (use_spherical_polar) {
-          theta = x1v;
-          lam = -x1v+M_PI/2.0;
-          phi = x2v-M_PI;
+          theta = x2v;
+          lam = -x2v+M_PI/2.0;
+          phi = x3v-M_PI;
         } else {
-          theta = -(x2v*iap-M_PI/2.0);
-          lam = x2v*iap;
-          phi = x1v*iap;
+          theta = -(x3v*iap-M_PI/2.0);
+          lam = x3v*iap;
+          phi = x2v*iap;
         }
           
         Real pwb, denwb;
-        get_wb_eos(zarr.d_view,logparr.d_view,x3v,denwb,pwb);
+        get_wb_eos(zarr.d_view,logparr.d_view,x1v,denwb,pwb);
         
         Real p, den;
-        get_init_eos(zarr_init.d_view,logparr_init.d_view,x3v,den,p);
+        get_init_eos(zarr_init.d_view,logparr_init.d_view,x1v,den,p);
 //        get_init_eos_arr(lam, phi, N, zinitarr, logpinitarr);
-//        get_init_eos(zinitarr,logpinitarr,x3v,lam,phi,den,p);
+//        get_init_eos(zinitarr,logpinitarr,x1v,lam,phi,den,p);
 //        p = pwb;
 //        den = denwb;
         
-        Real phicc = - grav_acc * x3v;// - 0.5*SQR(omega*r*sin(theta));
+        Real phicc = - grav_acc * x1v;// - 0.5*SQR(omega*r*sin(theta));
         
       if (use_etotgrav || use_wellbalance_local) {
           x1v = LeftEdgeX(i-is, nx1, x1min, x1max);
           x2v = CellCenterX(j-js, nx2, x2min, x2max);
           x3v = CellCenterX(k-ks, nx3, x3min, x3max);
-          if (use_grid_stretch) StretchR(r0,r1,x3v);
-          r = x3v;
-          if (use_spherical_polar) x3v -= ap;
+          if (use_grid_stretch) StretchR(r0,r1,x1v);
+          r = x1v;
+          if (use_spherical_polar) x1v -= ap;
           if (use_spherical_polar) {
-            theta = x1v;
-            lam = -x1v+M_PI/2.0;
-            phi = x2v-M_PI;
+            theta = x2v;
+            lam = -x2v+M_PI/2.0;
+            phi = x3v-M_PI;
           } else {
-            theta = -(x2v*iap-M_PI/2.0);
-            lam = x2v*iap;
-            phi = x1v*iap;
+            theta = -(x3v*iap-M_PI/2.0);
+            lam = x3v*iap;
+            phi = x2v*iap;
           }
-          phicc = - grav_acc * x3v;// - 0.5*SQR(omega*r*sin(theta));
+          phicc = - grav_acc * x1v;// - 0.5*SQR(omega*r*sin(theta));
           phi0_x1f(m,k,j,i) = phicc;
           if (i == ie) {
               x1v = LeftEdgeX(i+1-is, nx1, x1min, x1max);
+              if (use_grid_stretch) StretchR(r0,r1,x1v);
+              r = x1v;
+              if (use_spherical_polar) x1v -= ap;
               if (use_spherical_polar) {
-                theta = x1v;
-                lam = -x1v+M_PI/2.0;
-                phi = x2v-M_PI;
+                theta = x2v;
+                lam = -x2v+M_PI/2.0;
+                phi = x3v-M_PI;
               } else {
-                theta = -(x2v*iap-M_PI/2.0);
-                lam = x2v*iap;
-                phi = x1v*iap;
+                theta = -(x3v*iap-M_PI/2.0);
+                lam = x3v*iap;
+                phi = x2v*iap;
               }
-              phicc = - grav_acc * x3v;// - 0.5*SQR(omega*r*sin(theta));
+              phicc = - grav_acc * x1v;// - 0.5*SQR(omega*r*sin(theta));
               phi0_x1f(m,k,j,i+1) = phicc;
           }
           
           x1v = CellCenterX(i-is, nx1, x1min, x1max);
           x2v = LeftEdgeX(j-js, nx2, x2min, x2max);
           x3v = CellCenterX(k-ks, nx3, x3min, x3max);
-          if (use_grid_stretch) StretchR(r0,r1,x3v);
-          r = x3v;
-          if (use_spherical_polar) x3v -= ap;
+          if (use_grid_stretch) StretchR(r0,r1,x1v);
+          r = x1v;
+          if (use_spherical_polar) x1v -= ap;
           if (use_spherical_polar) {
-            theta = x1v;
-            lam = -x1v+M_PI/2.0;
-            phi = x2v-M_PI;
+            theta = x2v;
+            lam = -x2v+M_PI/2.0;
+            phi = x3v-M_PI;
           } else {
-            theta = -(x2v*iap-M_PI/2.0);
-            lam = x2v*iap;
-            phi = x1v*iap;
+            theta = -(x3v*iap-M_PI/2.0);
+            lam = x3v*iap;
+            phi = x2v*iap;
           }
-          phicc = - grav_acc * x3v;// - 0.5*SQR(omega*r*sin(theta));
+          phicc = - grav_acc * x1v;// - 0.5*SQR(omega*r*sin(theta));
           phi0_x2f(m,k,j,i) = phicc;
           if (j == je) {
               x2v = LeftEdgeX(j+1-js, nx2, x2min, x2max);
               if (use_spherical_polar) {
-                theta = x1v;
-                lam = -x1v+M_PI/2.0;
-                phi = x2v-M_PI;
+                theta = x2v;
+                lam = -x2v+M_PI/2.0;
+                phi = x3v-M_PI;
               } else {
-                theta = -(x2v*iap-M_PI/2.0);
-                lam = x2v*iap;
-                phi = x1v*iap;
+                theta = -(x3v*iap-M_PI/2.0);
+                lam = x3v*iap;
+                phi = x2v*iap;
               }
-              phicc = - grav_acc * x3v;// - 0.5*SQR(omega*r*sin(theta));
+              phicc = - grav_acc * x1v;// - 0.5*SQR(omega*r*sin(theta));
               phi0_x2f(m,k,j+1,i) = phicc;
           }
           
           x1v = CellCenterX(i-is, nx1, x1min, x1max);
           x2v = CellCenterX(j-js, nx2, x2min, x2max);
           x3v = LeftEdgeX(k-ks, nx3, x3min, x3max);
-          if (use_grid_stretch) StretchR(r0,r1,x3v);
-          r = x3v;
-          if (use_spherical_polar) x3v -= ap;
+          if (use_grid_stretch) StretchR(r0,r1,x1v);
+          r = x1v;
+          if (use_spherical_polar) x1v -= ap;
           if (use_spherical_polar) {
-            theta = x1v;
-            lam = -x1v+M_PI/2.0;
-            phi = x2v-M_PI;
+            theta = x2v;
+            lam = -x2v+M_PI/2.0;
+            phi = x3v-M_PI;
           } else {
-            theta = -(x2v*iap-M_PI/2.0);
-            lam = x2v*iap;
-            phi = x1v*iap;
+            theta = -(x3v*iap-M_PI/2.0);
+            lam = x3v*iap;
+            phi = x2v*iap;
           }
-          phicc = - grav_acc * x3v;// - 0.5*SQR(omega*r*sin(theta));
+          phicc = - grav_acc * x1v;// - 0.5*SQR(omega*r*sin(theta));
           phi0_x3f(m,k,j,i) = phicc;
           if (k == ke) {
               x3v = LeftEdgeX(k+1-ks, nx3, x3min, x3max);
-              if (use_grid_stretch) StretchR(r0,r1,x3v);
-              r = x3v;
-              if (use_spherical_polar) x3v -= ap;
               if (use_spherical_polar) {
-                theta = x1v;
-                lam = -x1v+M_PI/2.0;
-                phi = x2v-M_PI;
+                theta = x2v;
+                lam = -x2v+M_PI/2.0;
+                phi = x3v-M_PI;
               } else {
-                theta = -(x2v*iap-M_PI/2.0);
-                lam = x2v*iap;
-                phi = x1v*iap;
+                theta = -(x3v*iap-M_PI/2.0);
+                lam = x3v*iap;
+                phi = x2v*iap;
               }
-              phicc = - grav_acc * x3v;// - 0.5*SQR(omega*r*sin(theta));
+              phicc = - grav_acc * x1v;// - 0.5*SQR(omega*r*sin(theta));
               phi0_x3f(m,k+1,j,i) = phicc;
           }
       }
@@ -354,10 +354,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             x1v = LeftEdgeX(i-is, nx1, x1min, x1max);
             x2v = CellCenterX(j-js, nx2, x2min, x2max);
             x3v = CellCenterX(k-ks, nx3, x3min, x3max);
-            if (use_grid_stretch) StretchR(r0,r1,x3v);
-            if (use_spherical_polar) x3v -= ap;
+            if (use_grid_stretch) StretchR(r0,r1,x1v);
+            if (use_spherical_polar) x1v -= ap;
             Real denwb;
-            get_wb_eos(zarr.d_view,logparr.d_view,x3v,denwb,pwb);
+            get_wb_eos(zarr.d_view,logparr.d_view,x1v,denwb,pwb);
             w0facewb_x1f(m,IDN,k,j,i) = denwb;
             w0facewb_x1f(m,IM1,k,j,i) = 0.0;
             w0facewb_x1f(m,IM2,k,j,i) = 0.0;
@@ -367,9 +367,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                 x1v = LeftEdgeX(i+1-is, nx1, x1min, x1max);
                 x2v = CellCenterX(j-js, nx2, x2min, x2max);
                 x3v = CellCenterX(k-ks, nx3, x3min, x3max);
-                if (use_grid_stretch) StretchR(r0,r1,x3v);
-                if (use_spherical_polar) x3v -= ap;
-                get_wb_eos(zarr.d_view,logparr.d_view,x3v,denwb,pwb);
+                if (use_grid_stretch) StretchR(r0,r1,x1v);
+                if (use_spherical_polar) x1v -= ap;
+                get_wb_eos(zarr.d_view,logparr.d_view,x1v,denwb,pwb);
                 w0facewb_x1f(m,IDN,k,j,i+1) = denwb;
                 w0facewb_x1f(m,IM1,k,j,i+1) = 0.0;
                 w0facewb_x1f(m,IM2,k,j,i+1) = 0.0;
@@ -380,9 +380,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             x1v = CellCenterX(i-is, nx1, x1min, x1max);
             x2v = LeftEdgeX(j-js, nx2, x2min, x2max);
             x3v = CellCenterX(k-ks, nx3, x3min, x3max);
-            if (use_grid_stretch) StretchR(r0,r1,x3v);
-            if (use_spherical_polar) x3v -= ap;
-            get_wb_eos(zarr.d_view,logparr.d_view,x3v,denwb,pwb);
+            if (use_grid_stretch) StretchR(r0,r1,x1v);
+            if (use_spherical_polar) x1v -= ap;
+            get_wb_eos(zarr.d_view,logparr.d_view,x1v,denwb,pwb);
             w0facewb_x2f(m,IDN,k,j,i) = denwb;
             w0facewb_x2f(m,IM1,k,j,i) = 0.0;
             w0facewb_x2f(m,IM2,k,j,i) = 0.0;
@@ -392,9 +392,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                 x1v = CellCenterX(i-is, nx1, x1min, x1max);
                 x2v = LeftEdgeX(j+1-js, nx2, x2min, x2max);
                 x3v = CellCenterX(k-ks, nx3, x3min, x3max);
-                if (use_grid_stretch) StretchR(r0,r1,x3v);
-                if (use_spherical_polar) x3v -= ap;
-                get_wb_eos(zarr.d_view,logparr.d_view,x3v,denwb,pwb);
+                if (use_grid_stretch) StretchR(r0,r1,x1v);
+                if (use_spherical_polar) x1v -= ap;
+                get_wb_eos(zarr.d_view,logparr.d_view,x1v,denwb,pwb);
                 w0facewb_x2f(m,IDN,k,j+1,i) = denwb;
                 w0facewb_x2f(m,IM1,k,j+1,i) = 0.0;
                 w0facewb_x2f(m,IM2,k,j+1,i) = 0.0;
@@ -405,9 +405,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             x1v = CellCenterX(i-is, nx1, x1min, x1max);
             x2v = CellCenterX(j-js, nx2, x2min, x2max);
             x3v = LeftEdgeX(k-ks, nx3, x3min, x3max);
-            if (use_grid_stretch) StretchR(r0,r1,x3v);
-            if (use_spherical_polar) x3v -= ap;
-            get_wb_eos(zarr.d_view,logparr.d_view,x3v,denwb,pwb);
+            if (use_grid_stretch) StretchR(r0,r1,x1v);
+            if (use_spherical_polar) x1v -= ap;
+            get_wb_eos(zarr.d_view,logparr.d_view,x1v,denwb,pwb);
             w0facewb_x3f(m,IDN,k,j,i) = denwb;
             w0facewb_x3f(m,IM1,k,j,i) = 0.0;
             w0facewb_x3f(m,IM2,k,j,i) = 0.0;
@@ -417,9 +417,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                 x1v = CellCenterX(i-is, nx1, x1min, x1max);
                 x2v = CellCenterX(j-js, nx2, x2min, x2max);
                 x3v = LeftEdgeX(k+1-ks, nx3, x3min, x3max);
-                if (use_grid_stretch) StretchR(r0,r1,x3v);
-                if (use_spherical_polar) x3v -= ap;
-                get_wb_eos(zarr.d_view,logparr.d_view,x3v,denwb,pwb);
+                if (use_grid_stretch) StretchR(r0,r1,x1v);
+                if (use_spherical_polar) x1v -= ap;
+                get_wb_eos(zarr.d_view,logparr.d_view,x1v,denwb,pwb);
                 w0facewb_x3f(m,IDN,k+1,j,i) = denwb;
                 w0facewb_x3f(m,IM1,k+1,j,i) = 0.0;
                 w0facewb_x3f(m,IM2,k+1,j,i) = 0.0;
@@ -439,6 +439,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             Real &x1max = size.d_view(m).x1max;
             int nx1 = indcs.nx1;
             Real x1v = CellCenterX(i-is, nx1, x1min, x1max);
+            if (use_grid_stretch) StretchR(r0,r1,x1v);
+            Real r = x1v;
+            if (use_spherical_polar) x1v -= ap;
 
             Real &x2min = size.d_view(m).x2min;
             Real &x2max = size.d_view(m).x2max;
@@ -449,79 +452,21 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             Real &x3max = size.d_view(m).x3max;
             int nx3 = indcs.nx3;
             Real x3v = CellCenterX(k-ks, nx3, x3min, x3max);
-            if (use_grid_stretch) StretchR(r0,r1,x3v);
-            Real r = x3v;
-            if (use_spherical_polar) x3v -= ap;
               
             Real lam, theta, phi;
             if (use_spherical_polar) {
-              theta = x1v;
-              lam = -x1v+M_PI/2.0;
-              phi = x2v-M_PI;
+              theta = x2v;
+              lam = -x2v+M_PI/2.0;
+              phi = x3v-M_PI;
             } else {
-              theta = -(x2v*iap-M_PI/2.0);
-              lam = x2v*iap;
-              phi = x1v*iap;
+              theta = -(x3v*iap-M_PI/2.0);
+              lam = x3v*iap;
+              phi = x2v*iap;
             }
             
-            Real phicc = - grav_acc * x3v;// - 0.5*SQR(omega*r*sin(theta));
+            Real phicc = - grav_acc * x1v;// - 0.5*SQR(omega*r*sin(theta));
             phicc0(m,k,j,i) = phicc;
         });
-//        auto &mb_bcs = pmbp->pmb->mb_bcs;
-//        par_for("wbgravbc_x3", DevExeSpace(), 0,(pmbp->nmb_thispack-1),0,n2m1,0,n1m1,
-//        KOKKOS_LAMBDA(int m, int j, int i) {
-//          // apply physical boundaries to inner_x3
-//          switch (mb_bcs.d_view(m,BoundaryFace::inner_x3)) {
-//            case BoundaryFlag::reflect:
-//              for (int k=0; k<ng; ++k) {
-//                  phicc0(m,ks-k-1,j,i) =  phicc0(m,ks+k,j,i);
-//              }
-//              break;
-//            case BoundaryFlag::outflow:
-//              for (int k=0; k<ng; ++k) {
-//                  phicc0(m,ks-k-1,j,i) = phicc0(m,ks,j,i);
-//              }
-//              break;
-//            case BoundaryFlag::diode:
-//              for (int k=0; k<ng; ++k) {
-//                  phicc0(m,ks-k-1,j,i) = phicc0(m,ks,j,i);
-//              }
-//              break;
-//            case BoundaryFlag::vacuum:
-//              for (int k=0; k<ng; ++k) {
-//                  phicc0(m,ks-k-1,j,i) = 0.0;
-//              }
-//              break;
-//            default:
-//              break;
-//          }
-//
-//          // apply physical boundaries to outer_x3
-//          switch (mb_bcs.d_view(m,BoundaryFace::outer_x3)) {
-//            case BoundaryFlag::reflect:
-//              for (int k=0; k<ng; ++k) {
-//                  phicc0(m,ke+k+1,j,i) =  phicc0(m,ke-k,j,i);
-//              }
-//              break;
-//            case BoundaryFlag::outflow:
-//              for (int k=0; k<ng; ++k) {
-//                  phicc0(m,ke+k+1,j,i) = phicc0(m,ke,j,i);
-//              }
-//              break;
-//            case BoundaryFlag::diode:
-//              for (int k=0; k<ng; ++k) {
-//                  phicc0(m,ke+k+1,j,i) = phicc0(m,ke,j,i);
-//              }
-//              break;
-//            case BoundaryFlag::vacuum:
-//              for (int k=0; k<ng; ++k) {
-//                  phicc0(m,ke+k+1,j,i) = 0.0;
-//              }
-//              break;
-//            default:
-//              break;
-//          }
-//        });
     }
     if (use_wellbalance) {
         int &ng = indcs.ng;
@@ -534,6 +479,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
           Real &x1max = size.d_view(m).x1max;
           int nx1 = indcs.nx1;
           Real x1v = CellCenterX(i-is, nx1, x1min, x1max);
+          if (use_grid_stretch) StretchR(r0,r1,x1v);
+          if (use_spherical_polar) x1v -= ap;
 
           Real &x2min = size.d_view(m).x2min;
           Real &x2max = size.d_view(m).x2max;
@@ -544,18 +491,16 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
           Real &x3max = size.d_view(m).x3max;
           int nx3 = indcs.nx3;
           Real x3v = CellCenterX(k-ks, nx3, x3min, x3max);
-          if (use_grid_stretch) StretchR(r0,r1,x3v);
-          if (use_spherical_polar) x3v -= ap;
             
           Real pwb, denwb;
-          get_wb_eos(zarr.d_view,logparr.d_view,x3v,denwb,pwb);
+          get_wb_eos(zarr.d_view,logparr.d_view,x1v,denwb,pwb);
           u0wb(m,IDN,k,j,i) = denwb;
           u0wb(m,IM1,k,j,i) = 0.0;
           u0wb(m,IM2,k,j,i) = 0.0;
           u0wb(m,IM3,k,j,i) = 0.0;
           u0wb(m,IEN,k,j,i) = pwb*igm1;
           if (use_etotgrav) {
-              Real phicc = - grav_acc * x3v;
+              Real phicc = - grav_acc * x1v;
               u0wb(m,IEN,k,j,i) += denwb*phicc;
           }
           w0wb(m,IDN,k,j,i) = denwb;
@@ -564,85 +509,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
           w0wb(m,IM3,k,j,i) = 0.0;
           w0wb(m,IEN,k,j,i) = pwb*igm1;
         });
-//        auto &mb_bcs = pmbp->pmb->mb_bcs;
-//        par_for("wbbc_x3", DevExeSpace(), 0,(pmbp->nmb_thispack-1),0,n2m1,0,n1m1,
-//        KOKKOS_LAMBDA(int m, int j, int i) {
-//          // apply physical boundaries to inner_x3
-//          switch (mb_bcs.d_view(m,BoundaryFace::inner_x3)) {
-//            case BoundaryFlag::reflect:
-//              for (int k=0; k<ng; ++k) {
-//                  u0wb(m,IDN,ks-k-1,j,i) =  u0wb(m,IDN,ks+k,j,i);
-//                  u0wb(m,IEN,ks-k-1,j,i) =  u0wb(m,IEN,ks+k,j,i);
-//                  w0wb(m,IDN,ks-k-1,j,i) =  w0wb(m,IDN,ks+k,j,i);
-//                  w0wb(m,IEN,ks-k-1,j,i) =  w0wb(m,IEN,ks+k,j,i);
-//              }
-//              break;
-//            case BoundaryFlag::outflow:
-//              for (int k=0; k<ng; ++k) {
-//                  u0wb(m,IDN,ks-k-1,j,i) = u0wb(m,IDN,ks,j,i);
-//                  u0wb(m,IEN,ks-k-1,j,i) = u0wb(m,IEN,ks,j,i);
-//                  w0wb(m,IDN,ks-k-1,j,i) = w0wb(m,IDN,ks,j,i);
-//                  w0wb(m,IEN,ks-k-1,j,i) = w0wb(m,IEN,ks,j,i);
-//              }
-//              break;
-//            case BoundaryFlag::diode:
-//              for (int k=0; k<ng; ++k) {
-//                  u0wb(m,IDN,ks-k-1,j,i) = u0wb(m,IDN,ks,j,i);
-//                  u0wb(m,IEN,ks-k-1,j,i) = u0wb(m,IEN,ks,j,i);
-//                  w0wb(m,IDN,ks-k-1,j,i) = w0wb(m,IDN,ks,j,i);
-//                  w0wb(m,IEN,ks-k-1,j,i) = w0wb(m,IEN,ks,j,i);
-//              }
-//              break;
-//            case BoundaryFlag::vacuum:
-//              for (int k=0; k<ng; ++k) {
-//                  u0wb(m,IDN,ks-k-1,j,i) = 0.0;
-//                  u0wb(m,IEN,ks-k-1,j,i) = 0.0;
-//                  w0wb(m,IDN,ks-k-1,j,i) = 0.0;
-//                  w0wb(m,IEN,ks-k-1,j,i) = 0.0;
-//              }
-//              break;
-//            default:
-//              break;
-//          }
-//
-//          // apply physical boundaries to outer_x3
-//          switch (mb_bcs.d_view(m,BoundaryFace::outer_x3)) {
-//            case BoundaryFlag::reflect:
-//              for (int k=0; k<ng; ++k) {
-//                  u0wb(m,IDN,ke+k+1,j,i) =  u0wb(m,IDN,ke-k,j,i);
-//                  u0wb(m,IEN,ke+k+1,j,i) =  u0wb(m,IEN,ke-k,j,i);
-//                  w0wb(m,IDN,ke+k+1,j,i) =  w0wb(m,IDN,ke-k,j,i);
-//                  w0wb(m,IEN,ke+k+1,j,i) =  w0wb(m,IEN,ke-k,j,i);
-//              }
-//              break;
-//            case BoundaryFlag::outflow:
-//              for (int k=0; k<ng; ++k) {
-//                  u0wb(m,IDN,ke+k+1,j,i) = u0wb(m,IDN,ke,j,i);
-//                  u0wb(m,IEN,ke+k+1,j,i) = u0wb(m,IEN,ke,j,i);
-//                  w0wb(m,IDN,ke+k+1,j,i) = w0wb(m,IDN,ke,j,i);
-//                  w0wb(m,IEN,ke+k+1,j,i) = w0wb(m,IEN,ke,j,i);
-//              }
-//              break;
-//            case BoundaryFlag::diode:
-//              for (int k=0; k<ng; ++k) {
-//                  u0wb(m,IDN,ke+k+1,j,i) = u0wb(m,IDN,ke,j,i);
-//                  u0wb(m,IEN,ke+k+1,j,i) = u0wb(m,IEN,ke,j,i);
-//                  w0wb(m,IDN,ke+k+1,j,i) = w0wb(m,IDN,ke,j,i);
-//                  w0wb(m,IEN,ke+k+1,j,i) = w0wb(m,IEN,ke,j,i);
-//              }
-//              break;
-//            case BoundaryFlag::vacuum:
-//              for (int k=0; k<ng; ++k) {
-//                  u0wb(m,IDN,ke+k+1,j,i) = 0.0;
-//                  u0wb(m,IEN,ke+k+1,j,i) = 0.0;
-//                  w0wb(m,IDN,ke+k+1,j,i) = 0.0;
-//                  w0wb(m,IEN,ke+k+1,j,i) = 0.0;
-//              }
-//              break;
-//            default:
-//              break;
-//          }
-//        });
     }
 
     // initialize magnetic fields if MHD
@@ -682,14 +548,12 @@ void HydrostaticEquilibrium(Mesh *pm) {
 
     DvceArray5D<Real> u0_;
     DvceArray5D<Real> w0_;
-//    DvceArray5D<Real> u0wb;
     const bool use_etotgrav = pmbp->phydro->use_etotgrav;
     const bool use_wellbalance_local = pmbp->phydro->use_wellbalance_local;
-//    const bool use_spherical_polar = pm->use_spherical_polar;
     
-    auto phi0_x3f = pmbp->phydro->phi0.x3f;
+    auto phi0_x1f = pmbp->phydro->phi0.x1f;
     auto phicc0 = pmbp->phydro->phicc0;
-//
+
     if (pmbp->phydro != nullptr) {
       u0_ = pmbp->phydro->u0;
       w0_ = pmbp->phydro->w0;
@@ -704,156 +568,44 @@ void HydrostaticEquilibrium(Mesh *pm) {
     Real gm1ig = (gamma-1.0)/gamma;
     Real ig = 1.0/gamma;
     
-  par_for("usrboundaryx1", DevExeSpace(),0,(nmb-1),0,(n3-1),0,(n2-1),
-  KOKKOS_LAMBDA(int m, int k, int j) {
-    if (mb_bcs.d_view(m,BoundaryFace::inner_x1) == BoundaryFlag::user) {
-      for (int i=0; i<ng; ++i) {
-        u0_(m,IDN,k,j,is-i-1) = u0_(m,IDN,k,j,is);
-        u0_(m,IM2,k,j,is-i-1) = u0_(m,IM2,k,j,is);
-        u0_(m,IM3,k,j,is-i-1) = u0_(m,IM3,k,j,is);
-        Real mom = fmin(0.0,u0_(m,IM1,k,j,is));
-        u0_(m,IEN,k,j,is-i-1) = u0_(m,IEN,k,j,is) - 0.5*(SQR(u0_(m,IM1,k,j,is))-SQR(mom))/u0_(m,IDN,k,j,is);
-        u0_(m,IM1,k,j,is-i-1) = mom;
-      }
-    }
-      if (mb_bcs.d_view(m,BoundaryFace::outer_x1) == BoundaryFlag::user) {
-        for (int i=0; i<ng; ++i) {
-          u0_(m,IDN,k,j,ie+i+1) = u0_(m,IDN,k,j,ie);
-          u0_(m,IM2,k,j,ie+i+1) = u0_(m,IM2,k,j,ie);
-          u0_(m,IM3,k,j,ie+i+1) = u0_(m,IM3,k,j,ie);
-          Real mom = fmax(0.0,u0_(m,IM1,k,j,ie));
-          u0_(m,IEN,k,j,ie+i+1) = u0_(m,IEN,k,j,ie) - 0.5*(SQR(u0_(m,IM1,k,j,ie))-SQR(mom))/u0_(m,IDN,k,j,ie);
-          u0_(m,IM1,k,j,ie+i+1) = mom;
-        }
-      }
-  });
-    par_for("usrboundaryx3", DevExeSpace(),0,(nmb-1),0,(n2-1),0,(n1-1),
-    KOKKOS_LAMBDA(int m, int j, int i) {
-        if (mb_bcs.d_view(m,BoundaryFace::outer_x3) == BoundaryFlag::user) {
-          for (int k=0; k<ng; ++k) {
+    par_for("usrboundaryx1", DevExeSpace(),0,(nmb-1),0,(n3-1),0,(n2-1),
+    KOKKOS_LAMBDA(int m, int k, int j) {
+        if (mb_bcs.d_view(m,BoundaryFace::outer_x1) == BoundaryFlag::user) {
+          for (int i=0; i<ng; ++i) {
               if (use_wellbalance_local) {
-                Real rho_i = u0_(m,IDN,ke,j,i);
-                Real e_i = u0_(m,IEN,ke,j,i) - 0.5*(SQR(u0_(m,IM1,ke,j,i))+SQR(u0_(m,IM2,ke,j,i))+SQR(u0_(m,IM3,ke,j,i)))/rho_i;
-                if (use_etotgrav) e_i -= rho_i*phicc0(m,ke,j,i);
-                Real phi_i = phicc0(m,ke,j,i);
+                Real rho_i = u0_(m,IDN,k,j,ie);
+                Real e_i = u0_(m,IEN,k,j,ie) - 0.5*(SQR(u0_(m,IM1,k,j,ie))+SQR(u0_(m,IM2,k,j,ie))+SQR(u0_(m,IM3,k,j,ie)))/rho_i;
+                if (use_etotgrav) e_i -= rho_i*phicc0(m,k,j,ie);
+                Real phi_i = phicc0(m,k,j,ie);
 //                Real q0_i = pow(e_i,gm1ig);
 //                Real factor_i = pow(rho_i,gamma)/e_i*ig;
                 Real q0_i = log(e_i);
                 Real factor_i = rho_i/e_i*igm1;
-                Real dphi_i = phicc0(m,(ke+k+1),j,i)-phi_i;
+                Real dphi_i = phicc0(m,k,j,(ie+i+1))-phi_i;
                 Real q0_ip = q0_i - factor_i * dphi_i;
 //                Real e0_ip = pow(q0_ip,gigm1);
 //                Real rho0_ip = pow(e0_ip/e_i,ig)*rho_i;
                 Real e0_ip = exp(q0_ip);
                 Real rho0_ip = e0_ip/e_i*rho_i;
-                u0_(m,IDN,(ke+k+1),j,i) = rho0_ip;
-                u0_(m,IM1,(ke+k+1),j,i) = u0_(m,IM1,ke,j,i)/rho_i*rho0_ip;
-                u0_(m,IM2,(ke+k+1),j,i) = u0_(m,IM2,ke,j,i)/rho_i*rho0_ip;
-                Real mom = fmax(0.0,u0_(m,IM3,ke,j,i)/rho_i*rho0_ip);
+                u0_(m,IDN,k,j,(ie+i+1)) = rho0_ip;
+                u0_(m,IM2,k,j,(ie+i+1)) = u0_(m,IM2,k,j,ie)/rho_i*rho0_ip;
+                u0_(m,IM3,k,j,(ie+i+1)) = u0_(m,IM3,k,j,ie)/rho_i*rho0_ip;
+                Real mom = fmax(0.0,u0_(m,IM1,k,j,ie)/rho_i*rho0_ip);
 //                Real mom = u0_(m,IM3,ke,j,i)/rho_i*rho0_ip;
-                u0_(m,IM3,(ke+k+1),j,i) = mom;
-                u0_(m,IEN,(ke+k+1),j,i) = e0_ip + 0.5*(SQR(u0_(m,IM1,(ke+k+1),j,i))+SQR(u0_(m,IM2,(ke+k+1),j,i))+SQR(u0_(m,IM3,(ke+k+1),j,i)))/rho0_ip;
-                if (use_etotgrav) u0_(m,IEN,(ke+k+1),j,i) += rho0_ip*phicc0(m,(ke+k+1),j,i);
+                u0_(m,IM1,k,j,(ie+i+1)) = mom;
+                u0_(m,IEN,k,j,(ie+i+1)) = e0_ip + 0.5*(SQR(u0_(m,IM1,k,j,(ie+i+1)))+SQR(u0_(m,IM2,k,j,(ie+i+1)))+SQR(u0_(m,IM3,k,j,(ie+i+1))))/rho0_ip;
+                if (use_etotgrav) u0_(m,IEN,k,j,(ie+i+1)) += rho0_ip*phicc0(m,k,j,(ie+i+1));
               } else {
-            u0_(m,IDN,(ke+k+1),j,i) = u0_(m,IDN,ke,j,i);
-            u0_(m,IM1,(ke+k+1),j,i) = u0_(m,IM1,ke,j,i);
-            u0_(m,IM2,(ke+k+1),j,i) = u0_(m,IM2,ke,j,i);
-            Real mom = fmax(0.0,u0_(m,IM3,ke,j,i));
-            u0_(m,IEN,(ke+k+1),j,i) = u0_(m,IEN,ke,j,i) - 0.5*(SQR(u0_(m,IM3,ke,j,i))-SQR(mom))/u0_(m,IDN,ke,j,i);
-            u0_(m,IM3,(ke+k+1),j,i) = mom;
+            u0_(m,IDN,k,j,(ie+i+1)) = u0_(m,IDN,k,j,ie);
+            u0_(m,IM2,k,j,(ie+i+1)) = u0_(m,IM2,k,j,ie);
+            u0_(m,IM3,k,j,(ie+i+1)) = u0_(m,IM3,k,j,ie);
+            Real mom = fmax(0.0,u0_(m,IM1,k,j,ie));
+            u0_(m,IEN,k,j,(ie+i+1)) = u0_(m,IEN,k,j,ie) - 0.5*(SQR(u0_(m,IM1,k,j,ie))-SQR(mom))/u0_(m,IDN,k,j,ie);
+            u0_(m,IM1,k,j,(ie+i+1)) = mom;
               }
           }
         }
     });
-
-    
-    
-//    u0wb = pmbp->phydro->u0wb;
-//
-//    Real ap = 9.44e9;
-//    Real iap = 1.0/ap;
-//    Real grav_acc = -942.0;
-//    Real gamma = pmbp->phydro->peos->eos_data.gamma;
-//    Real gm1 = gamma-1.0;
-//
-//    const int N = 10000;
-//    DvceArray1D<Real> zinitarr("zinitarr", N);
-//    DvceArray1D<Real> logpinitarr("logpinitarr", N);
-//
-//  par_for("usrboundary", DevExeSpace(),0,(nmb-1),0,(n2-1),0,(n1-1),
-//  KOKKOS_LAMBDA(int m, int j, int i) {
-//    Real &x3min = size.d_view(m).x3min;
-//    Real &x3max = size.d_view(m).x3max;
-//    if (mb_bcs.d_view(m,BoundaryFace::inner_x3) == BoundaryFlag::user) {
-//      for (int k=0; k<ng; ++k) {
-//        if (use_wellbalance)
-//        {
-//            u0_(m,IDN,k,j,i) = u0wb(m,IDN,k,j,i);
-//            u0_(m,IM1,k,j,i) = 0.0;
-//            u0_(m,IM2,k,j,i) = 0.0;
-//            u0_(m,IM3,k,j,i) = 0.0;
-//            u0_(m,IEN,k,j,i) = u0wb(m,IEN,k,j,i);
-//        }
-//      }
-//    }
-//    if (mb_bcs.d_view(m,BoundaryFace::outer_x3) == BoundaryFlag::user) {
-//////        Real z0 = CellCenterX(ke-ks, indcs.nx3, x3min, x3max);
-//////        Real rho0 = w0_(m,IDN,ke,j,i);
-//////        Real p0 = w0_(m,IEN,ke,j,i)*gm1;
-//////        Real H0 = -p0/rho0/grav_acc;
-//////        Real iH0 = 1.0/H0;
-////
-////        Real &x1min = size.d_view(m).x1min;
-////        Real &x1max = size.d_view(m).x1max;
-////        Real x1v = CellCenterX(i-is, indcs.nx1, x1min, x1max);
-////
-////        Real &x2min = size.d_view(m).x2min;
-////        Real &x2max = size.d_view(m).x2max;
-////        Real x2v = CellCenterX(j-js, indcs.nx2, x2min, x2max);
-////
-////        Real lam, phi;
-////        if (use_spherical_polar) {
-////          lam = -x1v+M_PI/2.0;
-////          phi = x2v-M_PI;
-////        } else {
-////          lam = x2v*iap;
-////          phi = x1v*iap;
-////        }
-////        get_init_eos_arr(lam, phi, N, zinitarr, logpinitarr);
-//
-//      for (int k=0; k<ng; ++k) {
-//        if (use_wellbalance)
-//        {
-//            u0_(m,IDN,(ke+k+1),j,i) = u0wb(m,IDN,(ke+k+1),j,i);
-//            u0_(m,IM1,(ke+k+1),j,i) = 0.0;
-//            u0_(m,IM2,(ke+k+1),j,i) = 0.0;
-//            u0_(m,IM3,(ke+k+1),j,i) = 0.0;
-//            u0_(m,IEN,(ke+k+1),j,i) = u0wb(m,IEN,(ke+k+1),j,i);
-//        }
-//////        Real z = CellCenterX(ke+k+1-ks, indcs.nx3, x3min, x3max)-z0;
-//////        Real p = p0 * exp(-z*iH0);
-//////        Real den = rho0 * exp(-z*iH0);
-////
-////          Real &x3min = size.d_view(m).x3min;
-////          Real &x3max = size.d_view(m).x3max;
-////          Real x3v = CellCenterX(ke+k+1-ks, indcs.nx3, x3min, x3max);
-////          if (use_spherical_polar) x3v -= ap;
-////
-////          Real p, den;
-////          get_init_eos(zinitarr,logpinitarr,x3v,lam,phi,den,p);
-////
-////          u0_(m,IDN,(ke+k+1),j,i) = den;
-////          u0_(m,IM1,(ke+k+1),j,i) = 0.0;
-////          u0_(m,IM2,(ke+k+1),j,i) = 0.0;
-////          u0_(m,IM3,(ke+k+1),j,i) = 0.0;
-////          u0_(m,IEN,(ke+k+1),j,i) = p/gm1;
-////          if (use_etotgrav) {
-////              Real phicc = - grav_acc * x3v;
-////              u0_(m,IEN,(ke+k+1),j,i) += den*phicc;
-////          }
-//      }
-//    }
-//  });
   return;
 }
 
@@ -876,11 +628,11 @@ void SourceFunc(Mesh *pm, Real bdt) {
     u0 = pmbp->phydro->u0;
     w0 = pmbp->phydro->w0;
     w0wb = pmbp->phydro->w0wb;
-    auto phi0_x3f = pmbp->phydro->phi0.x3f;
+    auto phi0_x1f = pmbp->phydro->phi0.x1f;
     auto phicc0 = pmbp->phydro->phicc0;
-    auto area3 = pmbp->pcoord->area.x3f;
+    auto area1 = pmbp->pcoord->area.x1f;
     auto volume = pmbp->pcoord->volume;
-    auto dx3 = pmbp->pcoord->dx3;
+    auto dx1 = pmbp->pcoord->dx1;
     const bool use_etotgrav = pmbp->phydro->use_etotgrav;
     const bool use_wellbalance = pmbp->phydro->use_wellbalance;
     const bool use_spherical_polar = pm->use_spherical_polar;
@@ -889,8 +641,8 @@ void SourceFunc(Mesh *pm, Real bdt) {
     
     Real r0, r1;
     if (use_grid_stretch) {
-        r0 = pm->mesh_size.x3min;
-        r1 = pm->mesh_size.x3max;
+        r0 = pm->mesh_size.x1min;
+        r1 = pm->mesh_size.x1max;
     }
     
     Real ap = 9.44e9;
@@ -916,74 +668,71 @@ void SourceFunc(Mesh *pm, Real bdt) {
         Real &x3min = size.d_view(m).x3min;
         Real &x3max = size.d_view(m).x3max;
         Real x3v = CellCenterX(k-ks, indcs.nx3, x3min, x3max);
-        if (use_grid_stretch) StretchR(r0,r1,x3v);
+        if (use_grid_stretch) StretchR(r0,r1,x1v);
         
         Real lam, phi, z, theta, r;
         if (use_spherical_polar) {
-          theta = x1v;
+          theta = x2v;
           lam = -theta+M_PI/2.0;
-          phi = x2v-M_PI;
-          z = x3v-ap;
-          r = x3v;
+          phi = x3v-M_PI;
+          z = x1v-ap;
+          r = x1v;
         } else {
-          lam = x2v*iap;
-          phi = x1v*iap;
-          z = x3v;
+          lam = x3v*iap;
+          phi = x2v*iap;
+          z = x1v;
         }
         Real rho = w0(m,IDN,k,j,i);
         Real p = w0(m,IEN,k,j,i)*gm1;
         Real T = p/Rgas/rho;
         
-        Real area_r = area3(m,k+1,j,i);
-        Real area_l = area3(m,k,j,i);
+        Real area_r = area1(m,k,j,i+1);
+        Real area_l = area1(m,k,j,i);
         Real vol = volume(m,k,j,i);
-//        Real dphi_k = phi0_x3f(m,k+1,j,i)-phicc0(m,k,j,i);
-//        Real dphi_kmh = phicc0(m,k,j,i)-phi0_x3f(m,k,j,i);
-//        Real grav_acc = -(area_r*dphi_k+area_l*dphi_kmh)/vol;
         
         // gravity
         Real src = bdt*grav_acc*w0(m,IDN,k,j,i);
         if (!use_etotgrav) {
-            u0(m,IEN,k,j,i) += src*w0(m,IVZ,k,j,i);
+            u0(m,IEN,k,j,i) += src*w0(m,IVX,k,j,i);
         }
         if (use_wellbalance) {
             src = bdt*grav_acc*(w0(m,IDN,k,j,i)-w0wb(m,IDN,k,j,i));
         }
         if (use_wellbalance_local) {
-//          Real dphi_k = phi0_x3f(m,k+1,j,i)-phicc0(m,k,j,i);
-//          Real dphi_kmh = phicc0(m,k,j,i)-phi0_x3f(m,k,j,i);
-//          src = -bdt*(area_r*dphi_k+area_l*dphi_kmh)/vol*w0(m,IDN,k,j,i);
-          Real e_kmh,e_kph,dum1,dum2,dum3;
+//          Real dphi_i = phi0_x1f(m,k,j,i+1)-phicc0(m,k,j,i);
+//          Real dphi_imh = phicc0(m,k,j,i)-phi0_x1f(m,k,j,i);
+//          src = -bdt*(area_r*dphi_i+area_l*dphi_imh)/vol*w0(m,IDN,k,j,i);
+          Real e_imh,e_iph,dum1,dum2,dum3;
           pmbp->phydro->getWBerho(IEN, gamma,
-            w0(m,IDN,k-1,j,i),w0(m,IDN,k,j,i),w0(m,IDN,k+1,j,i),
-            w0(m,IEN,k-1,j,i),w0(m,IEN,k,j,i),w0(m,IEN,k+1,j,i),
-            phicc0(m,k-1,j,i),phi0_x3f(m,k,j,i),phicc0(m,k,j,i),phi0_x3f(m,k+1,j,i),phicc0(m,k+1,j,i),
-            dum1,e_kmh,dum2,e_kph,dum3);
-          Real pl = e_kmh*gm1;
-          Real pr = e_kph*gm1;
+            w0(m,IDN,k,j,i-1),w0(m,IDN,k,j,i),w0(m,IDN,k,j,i+1),
+            w0(m,IEN,k,j,i-1),w0(m,IEN,k,j,i),w0(m,IEN,k,j,i+1),
+            phicc0(m,k,j,i-1),phi0_x1f(m,k,j,i),phicc0(m,k,j,i),phi0_x1f(m,k,j,i+1),phicc0(m,k,j,i+1),
+            dum1,e_imh,dum2,e_iph,dum3);
+          Real pl = e_imh*gm1;
+          Real pr = e_iph*gm1;
           src = bdt*(area_r*(pr-p)+area_l*(p-pl))/vol;
         }
-        u0(m,IM3,k,j,i) += src;
+        u0(m,IM1,k,j,i) += src;
         
         // Forces in the corotating frame
         if (use_spherical_polar) {
-          Real vtheta = w0(m,IVX,k,j,i);
-          Real vphi = w0(m,IVY,k,j,i);
-          Real vr = w0(m,IVZ,k,j,i);
+          Real vtheta = w0(m,IVY,k,j,i);
+          Real vphi = w0(m,IVZ,k,j,i);
+          Real vr = w0(m,IVX,k,j,i);
           Real sine = sin(theta);
           Real cosine = cos(theta);
           Real oor = SQR(omega)*r*sine;
           Real cor = 2.0*omega*vphi;
-          u0(m,IM1,k,j,i) += rho*(cor+oor)*cosine*bdt;
-          u0(m,IM2,k,j,i) += -rho*2.0*omega*(vr*sine+vtheta*cosine)*bdt;
-          u0(m,IM3,k,j,i) += rho*(cor+oor)*sine*bdt;
+          u0(m,IM2,k,j,i) += rho*(cor+oor)*cosine*bdt;
+          u0(m,IM3,k,j,i) += -rho*2.0*omega*(vr*sine+vtheta*cosine)*bdt;
+          u0(m,IM1,k,j,i) += rho*(cor+oor)*sine*bdt;
 //          if (!use_etotgrav)
           u0(m,IEN,k,j,i) += rho*oor*(vr*sine+vtheta*cosine)*bdt;
         } else {
           // corotating beta-plane approximation e.g. Fromang+2016
-          Real omega3 = omega*lam;
-          u0(m,IM1,k,j,i) += -2.0*rho*omega3*(-w0(m,IVY,k,j,i))*bdt;
-          u0(m,IM2,k,j,i) += -2.0*rho*omega3*w0(m,IVX,k,j,i)*bdt;
+          Real omega1 = omega*lam;
+          u0(m,IM2,k,j,i) += -2.0*rho*omega1*(-w0(m,IVZ,k,j,i))*bdt;
+          u0(m,IM3,k,j,i) += -2.0*rho*omega1*w0(m,IVY,k,j,i)*bdt;
         }
 
         // Newtonian cooling

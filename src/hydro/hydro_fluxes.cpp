@@ -90,6 +90,11 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
   KOKKOS_LAMBDA(TeamMember_t member, const int m, const int k, const int j) {
     ScrArray2D<Real> wl(member.team_scratch(scr_level), nvars, ncells1);
     ScrArray2D<Real> wr(member.team_scratch(scr_level), nvars, ncells1);
+      
+    if (pmy_pack->pmesh->use_grid_stretch)
+      {
+        GridPiecewiseLinearX1(member, eos_, m, k, j, il-1, iu, w0_, phicc0_, phi0_x1f, wl, wr);
+      } else {
 
     if (use_wellbalance_local && use_wb_x1)
     {
@@ -115,6 +120,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
         break;
     }
         
+    }
     }
       
       if (use_wellbalance_reconst_perturb) {
@@ -336,29 +342,6 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
           wl_kp1 = scr1;
         }
           
-        if (pmy_pack->pmesh->use_grid_stretch)
-        {
-          auto &size = pmy_pack->pmb->mb_size;
-          auto &indcs = pmy_pack->pmesh->mb_indcs;
-          Real x3v_km1  = CellCenterX(k-1-ks, indcs.nx3, size.d_view(m).x3min, size.d_view(m).x3max);
-          Real x3v_kmh  = LeftEdgeX(k-ks, indcs.nx3, size.d_view(m).x3min, size.d_view(m).x3max);
-          Real x3v_k  = CellCenterX(k-ks, indcs.nx3, size.d_view(m).x3min, size.d_view(m).x3max);
-          Real x3v_kph  = LeftEdgeX(k+1-ks, indcs.nx3, size.d_view(m).x3min, size.d_view(m).x3max);
-          Real x3v_kp1  = CellCenterX(k+1-ks, indcs.nx3, size.d_view(m).x3min, size.d_view(m).x3max);
-          Real x3v_0 = pmy_pack->pmesh->mesh_size.x3min;
-          Real x3v_1 = pmy_pack->pmesh->mesh_size.x3max;
-          pmy_pack->pcoord->StretchR(x3v_0,x3v_1,x3v_km1);
-          pmy_pack->pcoord->StretchR(x3v_0,x3v_1,x3v_kmh);
-          pmy_pack->pcoord->StretchR(x3v_0,x3v_1,x3v_k);
-          pmy_pack->pcoord->StretchR(x3v_0,x3v_1,x3v_kph);
-          pmy_pack->pcoord->StretchR(x3v_0,x3v_1,x3v_kp1);
-          Real dxLh = x3v_k-x3v_kmh;
-          Real dxRh = x3v_kph-x3v_k;
-          Real dxL = x3v_k-x3v_km1;
-          Real dxR = x3v_kp1-x3v_k;
-          GridPiecewiseLinearX3(member, eos_, m, k, j, il, iu, w0_, phicc0_, phi0_x3f, dxL, dxR, dxLh, dxRh, wl_kp1, wr);
-        } else {
-          
         if (use_wellbalance_local && use_wb_x3)
         {
           WbLocalPiecewiseLinearX3(member, eos_, m, k, j, il, iu, w0_, phicc0_, phi0_x3f, wl_kp1, wr);
@@ -383,7 +366,6 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
             break;
         }
               
-        }
         }
           
           if (use_wellbalance_reconst_perturb) {

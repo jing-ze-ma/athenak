@@ -118,9 +118,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       }
       
       if (pmy_mesh_->use_spherical_polar) {
-          Real r = x3v;
-          Real theta = x1v;
-          Real phi = x2v;
+          Real r = x1v;
+          Real theta = x2v;
+          Real phi = x3v;
           
           Real omega = 1.0e-2;
           Real xx = r*sin(theta)*cos(phi);
@@ -136,8 +136,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
           w0_(m,IDN,k,j,i) = dens;
           w0_(m,IEN,k,j,i) = (pres + 0.5*dens*(vx*vx+vy*vy))/gm1;
           w0_(m,IVX,k,j,i) = 0.0;
-          w0_(m,IVY,k,j,i) = omega*r*sin(theta);
-          w0_(m,IVZ,k,j,i) = 0.0;
+          w0_(m,IVY,k,j,i) = 0.0;
+          w0_(m,IVZ,k,j,i) = omega*r*sin(theta);
       }
     
   });
@@ -214,9 +214,9 @@ void UserBoundary(Mesh *pm) {
     }
     
 
-  par_for("usrboundary", DevExeSpace(),0,(nmb-1),0,(ng-1),0,(n2-1),0,(n1-1),
+  par_for("usrboundary", DevExeSpace(),0,(nmb-1),0,(n3-1),0,(n2-1),0,(ng-1),
   KOKKOS_LAMBDA(int m, int k, int j, int i) {
-    if (mb_bcs.d_view(m,BoundaryFace::inner_x3) == BoundaryFlag::user || mb_bcs.d_view(m,BoundaryFace::outer_x3) == BoundaryFlag::user) {
+    if (mb_bcs.d_view(m,BoundaryFace::inner_x1) == BoundaryFlag::user || mb_bcs.d_view(m,BoundaryFace::outer_x1) == BoundaryFlag::user) {
         Real &x1min = size.d_view(m).x1min;
         Real &x1max = size.d_view(m).x1max;
         int nx1 = indcs.nx1;
@@ -264,9 +264,9 @@ void UserBoundary(Mesh *pm) {
         }
         
         if (pm->use_spherical_polar) {
-            Real r = x3v;
-            Real theta = x1v;
-            Real phi = x2v;
+            Real r = x1v;
+            Real theta = x2v;
+            Real phi = x3v;
             
             Real omega = 1.0e-2;
             Real xx = r*sin(theta)*cos(phi);
@@ -282,8 +282,8 @@ void UserBoundary(Mesh *pm) {
             w0_(m,IDN,k,j,i) = dens;
             w0_(m,IEN,k,j,i) = (pres + 0.5*dens*(vx*vx+vy*vy))/gm1;
             w0_(m,IVX,k,j,i) = 0.0;
-            w0_(m,IVY,k,j,i) = omega*r*sin(theta);
-            w0_(m,IVZ,k,j,i) = 0.0;
+            w0_(m,IVY,k,j,i) = 0.0;
+            w0_(m,IVZ,k,j,i) = omega*r*sin(theta);
         }
         
             u0_(m,IDN,k,j,i) = w0_(m,IDN,k,j,i);

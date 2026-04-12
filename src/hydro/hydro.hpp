@@ -18,6 +18,7 @@
 #include "bvals/bvals.hpp"
 #include "reconstruct/plm.hpp"
 #include "eos/eos.hpp"
+#include "coordinates/cell_locations.hpp"
 
 // forward declarations
 class EquationOfState;
@@ -125,6 +126,10 @@ class Hydro {
   DvceArray5D<Real> u0wb;   // background conserved variables
   DvceArray5D<Real> w0wb;   // background primitive variables
   DvceFaceFld5D<Real> w0facewb;   // face-centered background primitive variables
+    
+  bool use_reconst_logp_x1 = false;
+  bool use_reconst_logp_x2 = false;
+  bool use_reconst_logp_x3 = false;
 
   // container to hold names of TaskIDs
   HydroTaskIDs id;
@@ -386,37 +391,89 @@ class Hydro {
     };
     
     KOKKOS_INLINE_FUNCTION
-    void GridPiecewiseLinearX3(TeamMember_t const &member, const EOS_Data &eos, const int m, const int k, const int j,
-         const int il, const int iu, const DvceArray5D<Real> &q, const DvceArray4D<Real> &phicc, const DvceArray4D<Real> &phi, const Real &dxL, const Real &dxR, const Real &dxRh, const Real &dxLh,
-         ScrArray2D<Real> &ql_kp1, ScrArray2D<Real> &qr_k) {
+    void GridPiecewiseLinearX1(TeamMember_t const &member, const EOS_Data &eos, const int m, const int k, const int j,
+         const int il, const int iu, const DvceArray5D<Real> &q, const DvceArray4D<Real> &phicc, const DvceArray4D<Real> &phi,
+        ScrArray2D<Real> &ql, ScrArray2D<Real> &qr) {
+      auto &size = pmy_pack->pmb->mb_size;
+      auto &indcs = pmy_pack->pmesh->mb_indcs;
+      int is = indcs.is;
       Real gamma = eos.gamma;
       int nvar = q.extent_int(1);
       for (int n=0; n<nvar; ++n) {
-          if ((n == (IEN) || (n == (IDN) && use_wb_rho)) && use_wellbalance_local && use_wb_x3) {
+          if ((n == (IEN) || (n == (IDN) && use_wb_rho)) && use_wellbalance_local && use_wb_x1) {
             par_for_inner(member, il, iu, [&](const int i) {
-              Real q0_km1, q0_kp1, q0_kmh, q0_kph, q0_k;
+                Real x1v_im1  = CellCenterX(i-1-is, indcs.nx1, size.d_view(m).x1min, size.d_view(m).x1max);
+                Real x1v_imh  = LeftEdgeX(i-is, indcs.nx1, size.d_view(m).x1min, size.d_view(m).x1max);
+                Real x1v_i  = CellCenterX(i-is, indcs.nx1, size.d_view(m).x1min, size.d_view(m).x1max);
+                Real x1v_iph  = LeftEdgeX(i+1-is, indcs.nx1, size.d_view(m).x1min, size.d_view(m).x1max);
+                Real x1v_ip1  = CellCenterX(i+1-is, indcs.nx1, size.d_view(m).x1min, size.d_view(m).x1max);
+                Real x1v_0 = pmy_pack->pmesh->mesh_size.x1min;
+                Real x1v_1 = pmy_pack->pmesh->mesh_size.x1max;
+                pmy_pack->pcoord->StretchR(x1v_0,x1v_1,x1v_im1);
+                pmy_pack->pcoord->StretchR(x1v_0,x1v_1,x1v_imh);
+                pmy_pack->pcoord->StretchR(x1v_0,x1v_1,x1v_i);
+                pmy_pack->pcoord->StretchR(x1v_0,x1v_1,x1v_iph);
+                pmy_pack->pcoord->StretchR(x1v_0,x1v_1,x1v_ip1);
+                Real dxLh = x1v_i-x1v_imh;
+                Real dxRh = x1v_iph-x1v_i;
+                Real dxL = x1v_i-x1v_im1;
+                Real dxR = x1v_ip1-x1v_i;
+                
+              Real q0_im1, q0_ip1, q0_imh, q0_iph, q0_i;
               getWBerho(n, eos.gamma,
-                     q(m,IDN,k-1,j,i),q(m,IDN,k,j,i),q(m,IDN,k+1,j,i),
-                     q(m,IEN,k-1,j,i),q(m,IEN,k,j,i),q(m,IEN,k+1,j,i),
-                     phicc(m,k-1,j,i),phi(m,k,j,i),phicc(m,k,j,i),phi(m,k+1,j,i),phicc(m,k+1,j,i),
-                     q0_km1, q0_kmh, q0_k, q0_kph, q0_kp1);
+                     q(m,IDN,k,j,i-1),q(m,IDN,k,j,i),q(m,IDN,k,j,i+1),
+                     q(m,IEN,k,j,i-1),q(m,IEN,k,j,i),q(m,IEN,k,j,i+1),
+                     phicc(m,k,j,i-1),phi(m,k,j,i),phicc(m,k,j,i),phi(m,k,j,i+1),phicc(m,k,j,i+1),
+                     q0_im1, q0_imh, q0_i, q0_iph, q0_ip1);
                 
-              Real q1_km1 = q(m,n,k-1,j,i) - q0_km1;
-              Real q1_k = q(m,n,k,j,i) - q0_k;
-              Real q1_kp1 = q(m,n,k+1,j,i) - q0_kp1;
+              Real q1_im1 = q(m,n,k,j,i-1) - q0_im1;
+              Real q1_i = q(m,n,k,j,i) - q0_i;
+              Real q1_ip1 = q(m,n,k,j,i+1) - q0_ip1;
                   
-              PLM_nonuniform(q1_km1, q1_k, q1_kp1, dxL, dxR, dxLh, dxRh, ql_kp1(n,i), qr_k(n,i));
+              PLM_nonuniform(q1_im1, q1_i, q1_ip1, dxL, dxR, dxLh, dxRh, ql(n,i+1), qr(n,i));
                   
-              ql_kp1(n,i) += q0_kph;
-              qr_k(n,i) += q0_kmh;
+              ql(n,i+1) += q0_iph;
+              qr(n,i) += q0_imh;
                 
-                if (ql_kp1(n,i) < 0.0 || qr_k(n,i) < 0.0) {
-                    PLM_nonuniform(q(m,n,k-1,j,i), q(m,n,k,j,i), q(m,n,k+1,j,i), dxL, dxR, dxLh, dxRh, ql_kp1(n,i), qr_k(n,i));
+                if (ql(n,i+1) < 0.0 || qr(n,i) < 0.0) {
+                    PLM_nonuniform(q(m,n,k,j,i-1), q(m,n,k,j,i), q(m,n,k,j,i+1), dxL, dxR, dxLh, dxRh, ql(n,i+1), qr(n,i));
                 }
             });
           } else {
             par_for_inner(member, il, iu, [&](const int i) {
-              PLM_nonuniform(q(m,n,k-1,j,i), q(m,n,k,j,i), q(m,n,k+1,j,i), dxL, dxR, dxLh, dxRh, ql_kp1(n,i), qr_k(n,i));
+                Real x1v_im1  = CellCenterX(i-1-is, indcs.nx1, size.d_view(m).x1min, size.d_view(m).x1max);
+                Real x1v_imh  = LeftEdgeX(i-is, indcs.nx1, size.d_view(m).x1min, size.d_view(m).x1max);
+                Real x1v_i  = CellCenterX(i-is, indcs.nx1, size.d_view(m).x1min, size.d_view(m).x1max);
+                Real x1v_iph  = LeftEdgeX(i+1-is, indcs.nx1, size.d_view(m).x1min, size.d_view(m).x1max);
+                Real x1v_ip1  = CellCenterX(i+1-is, indcs.nx1, size.d_view(m).x1min, size.d_view(m).x1max);
+                Real x1v_0 = pmy_pack->pmesh->mesh_size.x1min;
+                Real x1v_1 = pmy_pack->pmesh->mesh_size.x1max;
+                pmy_pack->pcoord->StretchR(x1v_0,x1v_1,x1v_im1);
+                pmy_pack->pcoord->StretchR(x1v_0,x1v_1,x1v_imh);
+                pmy_pack->pcoord->StretchR(x1v_0,x1v_1,x1v_i);
+                pmy_pack->pcoord->StretchR(x1v_0,x1v_1,x1v_iph);
+                pmy_pack->pcoord->StretchR(x1v_0,x1v_1,x1v_ip1);
+                Real dxLh = x1v_i-x1v_imh;
+                Real dxRh = x1v_iph-x1v_i;
+                Real dxL = x1v_i-x1v_im1;
+                Real dxR = x1v_ip1-x1v_i;
+                
+                Real qm1 = q(m,n,k,j,i-1);
+                Real q0 = q(m,n,k,j,i);
+                Real qp1 = q(m,n,k,j,i+1);
+                Real qlp1, qr0;
+                if (n == (IEN) && use_reconst_logp_x1) {
+                  qm1 = log(qm1);
+                  q0 = log(q0);
+                  qp1 = log(qp1);
+                }
+              PLM_nonuniform(qm1, q0, qp1, dxL, dxR, dxLh, dxRh, qlp1, qr0);
+                ql(n,i+1) = qlp1;
+                qr(n,i) = qr0;
+                if (n == (IEN) && use_reconst_logp_x1) {
+                  ql(n,i+1) = exp(ql(n,i+1));
+                  qr(n,i) = exp(qr(n,i));
+                }
             });
           }
       }
