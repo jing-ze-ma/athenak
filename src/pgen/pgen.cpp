@@ -34,10 +34,21 @@
 // default constructor, calls pgen function.
 
 ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm) :
+    hot_jupiter(false),
     user_bcs(false),
     user_srcs(false),
     user_hist(false),
     pmy_mesh_(pm) {
+        
+  hot_jupiter = pin->GetOrAddBoolean("problem","hot_jupiter",false);
+  if (hot_jupiter) {
+      hot_jupiter_param.Teq = pin->GetReal("problem","Teq");
+      hot_jupiter_param.omega = pin->GetReal("problem","omega");
+      hot_jupiter_param.grav = pin->GetReal("problem","grav");
+      hot_jupiter_param.ap = pin->GetReal("problem","ap");
+      hot_jupiter_param.Rgas = pin->GetReal("problem","Rgas");
+      hot_jupiter_param.met = pin->GetReal("problem","met");
+  }
   // check for user-defined boundary conditions
   for (int dir=0; dir<6; ++dir) {
     if (pm->mesh_bcs[dir] == BoundaryFlag::user) {
@@ -90,10 +101,22 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm) :
 
 ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resfile,
                                    bool single_file_per_rank) :
+    hot_jupiter(false),
     user_bcs(false),
     user_srcs(false),
     user_hist(false),
     pmy_mesh_(pm) {
+        
+  hot_jupiter = pin->GetOrAddBoolean("problem","hot_jupiter",false);
+  if (hot_jupiter) {
+    hot_jupiter_param.Teq = pin->GetReal("problem","Teq");
+    hot_jupiter_param.omega = pin->GetReal("problem","omega");
+    hot_jupiter_param.grav = pin->GetReal("problem","grav");
+    hot_jupiter_param.ap = pin->GetReal("problem","ap");
+    hot_jupiter_param.Rgas = pin->GetReal("problem","Rgas");
+    hot_jupiter_param.met = pin->GetReal("problem","met");
+  }
+        
   // check for user-defined boundary conditions
   for (int dir=0; dir<6; ++dir) {
     if (pm->mesh_bcs[dir] == BoundaryFlag::user) {

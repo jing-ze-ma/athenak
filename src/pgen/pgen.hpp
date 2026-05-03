@@ -21,6 +21,10 @@ using UserSrctermFnPtr = void (*)(Mesh* pm, const Real bdt);
 using UserRefinementFnPtr = void (*)(MeshBlockPack* pmbp);
 using UserHistoryFnPtr = void (*)(HistoryData *pdata, Mesh *pm);
 
+struct HotJupiterParam {
+  Real Teq, omega, grav, ap, Rgas, met;
+};
+
 //----------------------------------------------------------------------------------------
 //! \class ProblemGenerator
 
@@ -32,6 +36,9 @@ class ProblemGenerator {
   ProblemGenerator(ParameterInput *pin, Mesh *pmesh, IOWrapper resfile,
                    bool single_file_per_rank=false);
   ~ProblemGenerator() = default;
+    
+  bool hot_jupiter;
+  HotJupiterParam hot_jupiter_param;
 
   // true if user BCs are specified on any face
   bool user_bcs;

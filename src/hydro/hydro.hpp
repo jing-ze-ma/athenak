@@ -282,7 +282,11 @@ class Hydro {
             ql(n,i+1) += q0_iph;
             qr(n,i) += q0_imh;
               
-              if (ql(n,i+1) < 0.0 || qr(n,i) < 0.0) {
+              // Left/right slopes (properly scaled)
+              Real sL = q(m,n,k,j,i)   - q(m,n,k,j,i-1);
+              Real sR = q(m,n,k,j,i+1) - q(m,n,k,j,i);
+              
+              if (ql(n,i+1) < 0.0 || qr(n,i) < 0.0 || sL * sR <= 0.0) {
                   PLM(q(m,n,k,j,i-1), q(m,n,k,j,i), q(m,n,k,j,i+1), ql(n,i+1), qr(n,i));
               }
           });
@@ -320,7 +324,11 @@ class Hydro {
             ql_jp1(n,i) += q0_jph;
             qr_j(n,i) += q0_jmh;
               
-              if (ql_jp1(n,i) < 0.0 || qr_j(n,i) < 0.0) {
+              // Left/right slopes (properly scaled)
+              Real sL = q(m,n,k,j,i)   - q(m,n,k,j-1,i);
+              Real sR = q(m,n,k,j+1,i) - q(m,n,k,j,i);
+              
+              if (ql_jp1(n,i) < 0.0 || qr_j(n,i) < 0.0 || sL * sR <= 0.0) {
                   PLM(q(m,n,k,j-1,i), q(m,n,k,j,i), q(m,n,k,j+1,i), ql_jp1(n,i), qr_j(n,i));
               }
           });
@@ -358,7 +366,11 @@ class Hydro {
             ql_kp1(n,i) += q0_kph;
             qr_k(n,i) += q0_kmh;
               
-              if (ql_kp1(n,i) < 0.0 || qr_k(n,i) < 0.0) {
+              // Left/right slopes (properly scaled)
+              Real sL = q(m,n,k,j,i)   - q(m,n,k-1,j,i);
+              Real sR = q(m,n,k+1,j,i) - q(m,n,k,j,i);
+              
+              if (ql_kp1(n,i) < 0.0 || qr_k(n,i) < 0.0 || sL * sR <= 0.0) {
                   PLM(q(m,n,k-1,j,i), q(m,n,k,j,i), q(m,n,k+1,j,i), ql_kp1(n,i), qr_k(n,i));
               }
           });
@@ -435,7 +447,11 @@ class Hydro {
               ql(n,i+1) += q0_iph;
               qr(n,i) += q0_imh;
                 
-                if (ql(n,i+1) < 0.0 || qr(n,i) < 0.0) {
+                // Left/right slopes (properly scaled)
+                Real sL = (q(m,n,k,j,i)   - q(m,n,k,j,i-1)) / dxL;
+                Real sR = (q(m,n,k,j,i+1) - q(m,n,k,j,i)  ) / dxR;
+                
+                if (ql(n,i+1) < 0.0 || qr(n,i) < 0.0 || sL * sR <= 0.0) {
                     PLM_nonuniform(q(m,n,k,j,i-1), q(m,n,k,j,i), q(m,n,k,j,i+1), dxL, dxR, dxLh, dxRh, ql(n,i+1), qr(n,i));
                 }
             });

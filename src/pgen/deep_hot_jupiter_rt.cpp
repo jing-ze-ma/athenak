@@ -36,7 +36,7 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt);
 KOKKOS_INLINE_FUNCTION
 void get_albedo(const Real &Teff, const Real &gg, Real &A);
 KOKKOS_INLINE_FUNCTION
-void get_picket_fence_coeff(const Real &Teff, Real &gamv1, Real &gamv2, Real &gamv3, Real &beta, Real &gamir1, Real &gamir2);
+void get_picket_fence_coeff(const Real &Teq, const Real &Teff, Real &gamv1, Real &gamv2, Real &gamv3, Real &beta, Real &gamir1, Real &gamir2);
 KOKKOS_INLINE_FUNCTION
 void get_kapr(const Real &T, const Real &p, const Real &met, Real &kapr);
 KOKKOS_INLINE_FUNCTION
@@ -69,13 +69,13 @@ void get_init_Tp(const int &N, const DvceArray1D<Real> &Tarr, const DvceArray1D<
 template <typename View1D>
 void get_init_Tp_host(const int &N, const View1D &Tarr, const View1D &lgparr, const Real &p, Real &T);
 template <typename View1D>
-void get_wb_eos_arr(const int &N, const Real &zmax, View1D zarr, View1D logparr);
+void get_wb_eos_arr(const Real &Rgas, const Real &grav_acc, const int &N, const Real &zmax, View1D zarr, View1D logparr);
 KOKKOS_INLINE_FUNCTION
-void get_wb_eos(const DvceArray1D<Real> &zarr, const DvceArray1D<Real> &logparr, const Real &z, Real &rho, Real &p);
+void get_wb_eos(const Real &Rgas, const Real &grav_acc, const DvceArray1D<Real> &zarr, const DvceArray1D<Real> &logparr, const Real &z, Real &rho, Real &p);
 template <typename View1D>
-void get_init_eos_arr(const View1D &Tarr, const View1D &lgparr, const int &N, const Real &zmax, View1D zarr, View1D logparr);
+void get_init_eos_arr(const Real &Rgas, const Real &grav_acc, const View1D &Tarr, const View1D &lgparr, const int &N, const Real &zmax, View1D zarr, View1D logparr);
 KOKKOS_INLINE_FUNCTION
-void get_init_eos(const DvceArray1D<Real> &Tarr, const DvceArray1D<Real> &lgparr, const int &N, const DvceArray1D<Real> &zarr, const DvceArray1D<Real> &logparr, const Real &z, Real &rho, Real &p);
+void get_init_eos(const Real &Rgas, const Real &grav_acc, const DvceArray1D<Real> &Tarr, const DvceArray1D<Real> &lgparr, const int &N, const DvceArray1D<Real> &zarr, const DvceArray1D<Real> &logparr, const Real &z, Real &rho, Real &p);
 
 
 //----------------------------------------------------------------------------------------
@@ -107,10 +107,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   auto &size = pmbp->pmb->mb_size;
     
     Real r0, r1;
-    if (use_grid_stretch) {
-        r0 = pmy_mesh_->mesh_size.x1min;
-        r1 = pmy_mesh_->mesh_size.x1max;
-    }
+//    if (use_grid_stretch) {
+    r0 = pmy_mesh_->mesh_size.x1min;
+    r1 = pmy_mesh_->mesh_size.x1max;
+//    }
     
     int &ng = indcs.ng;
     int n1m1 = indcs.nx1 + 2*ng - 1;
@@ -142,23 +142,33 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   }
   Real gm1 = gamma - 1.0;
   Real igm1 = 1.0/gm1;
-  Real grav_acc = -942.0;
-  Real ap = 9.44e9;
-  Real iap = 1.0/ap;
-  Real omega = 2.06e-5;
     
-    Real Teq = 1469.0;
+//  Real Teq = 1469.0;
+//  Real grav_acc = -942.0;
+//  Real ap = 9.44e9;
+//  Real omega = 2.06e-5;
+//  Real Rgas = 4.593e7;
+//  Real met = 0.0;
+    
+    Real Teq = pin->GetReal("problem","Teq");
+    Real grav_acc = -pin->GetReal("problem","grav");
+    Real ap = pin->GetReal("problem","ap");
+    Real omega = pin->GetReal("problem","omega");
+    Real Rgas = pin->GetReal("problem","Rgas");
+    Real met = pin->GetReal("problem","met");
+  
+    Real iap = 1.0/ap;
+    
     Real grav = -grav_acc;
-    Real met = 0.0;
     Real Tirr = Teq*sqrt(2);
-    Real Tint = 500.0;
+    Real Tint;
     get_Tint(Teq, Tint);
     Real mus = 1.0;
     
     const int N = 10000;
     DualArray1D<Real> zarr("zarr", N);
     DualArray1D<Real> logparr("logparr", N);
-    get_wb_eos_arr(N, (r1-r0)*1.1, zarr.h_view, logparr.h_view);
+    get_wb_eos_arr(Rgas, grav_acc, N, (r1-r0)*1.1, zarr.h_view, logparr.h_view);
 //    zarr.template modify<HostMemSpace>();
 //    zarr.template sync<DevExeSpace>();
 //    logparr.template modify<HostMemSpace>();
@@ -181,7 +191,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
 //    DvceArray1D<Real> logpinitarr("logpinitarr", N);
     DualArray1D<Real> zarr_init("zarrinit", N);
     DualArray1D<Real> logparr_init("logparrinit", N);
-    get_init_eos_arr(Tarr_init.h_view, lgparr_init.h_view, N, (r1-r0)*1.1, zarr_init.h_view, logparr_init.h_view);
+    get_init_eos_arr(Rgas, grav_acc, Tarr_init.h_view, lgparr_init.h_view, N, (r1-r0)*1.1, zarr_init.h_view, logparr_init.h_view);
     
     zarr_init.modify_host();
     zarr_init.sync_device();
@@ -220,10 +230,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       }
         
       Real pwb, denwb;
-      get_wb_eos(zarr.d_view,logparr.d_view,x1v,denwb,pwb);
+      get_wb_eos(Rgas, grav_acc, zarr.d_view,logparr.d_view,x1v,denwb,pwb);
         
       Real p, den;
-      get_init_eos(Tarr_init.d_view,lgparr_init.d_view,N,zarr_init.d_view,logparr_init.d_view,x1v,den,p);
+      get_init_eos(Rgas, grav_acc, Tarr_init.d_view,lgparr_init.d_view,N,zarr_init.d_view,logparr_init.d_view,x1v,den,p);
 //      get_init_eos_arr(lam, phi, N, zinitarr, logpinitarr);
 //      get_init_eos(zinitarr,logpinitarr,x3v,lam,phi,den,p);
 //      p = pwb;
@@ -273,10 +283,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         }
           
         Real pwb, denwb;
-        get_wb_eos(zarr.d_view,logparr.d_view,x1v,denwb,pwb);
+        get_wb_eos(Rgas, grav_acc, zarr.d_view,logparr.d_view,x1v,denwb,pwb);
         
         Real p, den;
-        get_init_eos(Tarr_init.d_view,lgparr_init.d_view,N,zarr_init.d_view,logparr_init.d_view,x1v,den,p);
+        get_init_eos(Rgas, grav_acc, Tarr_init.d_view,lgparr_init.d_view,N,zarr_init.d_view,logparr_init.d_view,x1v,den,p);
 //        get_init_eos_arr(lam, phi, N, zinitarr, logpinitarr);
 //        get_init_eos(zinitarr,logpinitarr,x1v,lam,phi,den,p);
 //        p = pwb;
@@ -391,7 +401,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             if (use_grid_stretch) StretchR(r0,r1,x1v);
             if (use_spherical_polar) x1v -= ap;
             Real denwb;
-            get_wb_eos(zarr.d_view,logparr.d_view,x1v,denwb,pwb);
+            get_wb_eos(Rgas, grav_acc, zarr.d_view,logparr.d_view,x1v,denwb,pwb);
             w0facewb_x1f(m,IDN,k,j,i) = denwb;
             w0facewb_x1f(m,IM1,k,j,i) = 0.0;
             w0facewb_x1f(m,IM2,k,j,i) = 0.0;
@@ -403,7 +413,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                 x3v = CellCenterX(k-ks, nx3, x3min, x3max);
                 if (use_grid_stretch) StretchR(r0,r1,x1v);
                 if (use_spherical_polar) x1v -= ap;
-                get_wb_eos(zarr.d_view,logparr.d_view,x1v,denwb,pwb);
+                get_wb_eos(Rgas, grav_acc, zarr.d_view,logparr.d_view,x1v,denwb,pwb);
                 w0facewb_x1f(m,IDN,k,j,i+1) = denwb;
                 w0facewb_x1f(m,IM1,k,j,i+1) = 0.0;
                 w0facewb_x1f(m,IM2,k,j,i+1) = 0.0;
@@ -416,7 +426,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             x3v = CellCenterX(k-ks, nx3, x3min, x3max);
             if (use_grid_stretch) StretchR(r0,r1,x1v);
             if (use_spherical_polar) x1v -= ap;
-            get_wb_eos(zarr.d_view,logparr.d_view,x1v,denwb,pwb);
+            get_wb_eos(Rgas, grav_acc, zarr.d_view,logparr.d_view,x1v,denwb,pwb);
             w0facewb_x2f(m,IDN,k,j,i) = denwb;
             w0facewb_x2f(m,IM1,k,j,i) = 0.0;
             w0facewb_x2f(m,IM2,k,j,i) = 0.0;
@@ -428,7 +438,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                 x3v = CellCenterX(k-ks, nx3, x3min, x3max);
                 if (use_grid_stretch) StretchR(r0,r1,x1v);
                 if (use_spherical_polar) x1v -= ap;
-                get_wb_eos(zarr.d_view,logparr.d_view,x1v,denwb,pwb);
+                get_wb_eos(Rgas, grav_acc, zarr.d_view,logparr.d_view,x1v,denwb,pwb);
                 w0facewb_x2f(m,IDN,k,j+1,i) = denwb;
                 w0facewb_x2f(m,IM1,k,j+1,i) = 0.0;
                 w0facewb_x2f(m,IM2,k,j+1,i) = 0.0;
@@ -441,7 +451,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             x3v = LeftEdgeX(k-ks, nx3, x3min, x3max);
             if (use_grid_stretch) StretchR(r0,r1,x1v);
             if (use_spherical_polar) x1v -= ap;
-            get_wb_eos(zarr.d_view,logparr.d_view,x1v,denwb,pwb);
+            get_wb_eos(Rgas, grav_acc, zarr.d_view,logparr.d_view,x1v,denwb,pwb);
             w0facewb_x3f(m,IDN,k,j,i) = denwb;
             w0facewb_x3f(m,IM1,k,j,i) = 0.0;
             w0facewb_x3f(m,IM2,k,j,i) = 0.0;
@@ -453,7 +463,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                 x3v = LeftEdgeX(k+1-ks, nx3, x3min, x3max);
                 if (use_grid_stretch) StretchR(r0,r1,x1v);
                 if (use_spherical_polar) x1v -= ap;
-                get_wb_eos(zarr.d_view,logparr.d_view,x1v,denwb,pwb);
+                get_wb_eos(Rgas, grav_acc, zarr.d_view,logparr.d_view,x1v,denwb,pwb);
                 w0facewb_x3f(m,IDN,k+1,j,i) = denwb;
                 w0facewb_x3f(m,IM1,k+1,j,i) = 0.0;
                 w0facewb_x3f(m,IM2,k+1,j,i) = 0.0;
@@ -527,7 +537,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
           Real x3v = CellCenterX(k-ks, nx3, x3min, x3max);
             
           Real pwb, denwb;
-          get_wb_eos(zarr.d_view,logparr.d_view,x1v,denwb,pwb);
+          get_wb_eos(Rgas, grav_acc, zarr.d_view,logparr.d_view,x1v,denwb,pwb);
           u0wb(m,IDN,k,j,i) = denwb;
           u0wb(m,IM1,k,j,i) = 0.0;
           u0wb(m,IM2,k,j,i) = 0.0;
@@ -619,7 +629,7 @@ void HydrostaticEquilibrium(Mesh *pm) {
             u0_(m,IDN,k,j,(ie+i+1)) = rho0_ip;
             u0_(m,IM2,k,j,(ie+i+1)) = u0_(m,IM2,k,j,ie)/rho_i*rho0_ip;
             u0_(m,IM3,k,j,(ie+i+1)) = u0_(m,IM3,k,j,ie)/rho_i*rho0_ip;
-            Real mom = fmax(0.0,u0_(m,IM1,k,j,ie)/rho_i*rho0_ip);
+              Real mom = u0_(m,IM1,k,j,ie)/rho_i*rho0_ip; // fmax(0.0,u0_(m,IM1,k,j,ie)/rho_i*rho0_ip);
             u0_(m,IM1,k,j,(ie+i+1)) = mom;
             u0_(m,IEN,k,j,(ie+i+1)) = e0_ip + 0.5*(SQR(u0_(m,IM1,k,j,(ie+i+1)))+SQR(u0_(m,IM2,k,j,(ie+i+1)))+SQR(u0_(m,IM3,k,j,(ie+i+1))))/rho0_ip;
             if (use_etotgrav) u0_(m,IEN,k,j,(ie+i+1)) += rho0_ip*phicc0(m,k,j,(ie+i+1));
@@ -660,16 +670,23 @@ void SourceFunc(Mesh *pm, Real bdt) {
     const bool use_wellbalance_local = pmbp->phydro->use_wellbalance_local;
     
     Real r0, r1;
-    if (use_grid_stretch) {
-        r0 = pm->mesh_size.x1min;
-        r1 = pm->mesh_size.x1max;
-    }
+//    if (use_grid_stretch) {
+    r0 = pm->mesh_size.x1min;
+    r1 = pm->mesh_size.x1max;
+//    }
     
-    Real ap = 9.44e9;
+//    Real ap = 9.44e9;
+//    Real omega = 2.06e-5;
+//    Real grav_acc = -942.0;
+//    Real Rgas = 4.593e7;
+    
+//    ParameterInput* pin;
+    Real grav_acc = -pm->pgen->hot_jupiter_param.grav;
+    Real ap = pm->pgen->hot_jupiter_param.ap;
+    Real omega = pm->pgen->hot_jupiter_param.omega;
+    Real Rgas = pm->pgen->hot_jupiter_param.Rgas;
+    
     Real iap = 1.0/ap;
-    Real omega = 2.06e-5;
-    Real grav_acc = -942.0;
-    Real Rgas = 4.593e7;
     Real gamma = pmbp->phydro->peos->eos_data.gamma;
     Real gm1 = gamma-1.0;
     
@@ -772,7 +789,7 @@ void SourceFunc(Mesh *pm, Real bdt) {
         Real tau2 = dyntime;
         Real t1   = 2.0 * dyntime;
         Real t2   = 5.0 * dyntime;
-        Real itdrag;
+        Real itdrag, fredux;
         if(time < t1) {
           itdrag = 1.0 / tau1;
         } else if(time < t2)
@@ -784,11 +801,25 @@ void SourceFunc(Mesh *pm, Real bdt) {
           itdrag = 0.0;
         }
         if (time < t2) {
-          Real fredux = itdrag*bdt;///(1.0+itdrag*bdt);
+          fredux = itdrag*bdt;///(1.0+itdrag*bdt);
           u0(m,IM1,k,j,i) -= u0(m,IM1,k,j,i)*fredux;
           u0(m,IM2,k,j,i) -= u0(m,IM2,k,j,i)*fredux;
           u0(m,IM3,k,j,i) -= u0(m,IM3,k,j,i)*fredux;
         }
+        
+        // Top sponge layer
+        Real bar = 1.0e6;
+        Real logpl = log(1.0e-6*bar);
+        Real logpt = log(1.0e-7*bar);
+        Real logp = log(p);
+        Real fdrag = 1.0 - (logp-logpt)/(logpl-logpt); // high p = 0, low p = 1
+        fdrag = (fdrag < 0.0) ? 0.0 : fdrag;
+        fdrag = (fdrag > 1.0) ? 1.0 : fdrag;
+        itdrag = fdrag/1.0e3;
+        fredux = itdrag*bdt; ///(1.0+itdrag*bdt);
+        u0(m,IM1,k,j,i) -= u0(m,IM1,k,j,i)*fredux;
+        u0(m,IM2,k,j,i) -= u0(m,IM2,k,j,i)*fredux;
+        u0(m,IM3,k,j,i) -= u0(m,IM3,k,j,i)*fredux;
     });
 
     return;
@@ -817,18 +848,23 @@ void double_gray_two_stream_RT(Mesh *pm, Real bdt) {
     const bool test_oned = true;
     
     Real r0, r1;
-    if (use_grid_stretch) {
-        r0 = pm->mesh_size.x1min;
-        r1 = pm->mesh_size.x1max;
-    }
+//    if (use_grid_stretch) {
+    r0 = pm->mesh_size.x1min;
+    r1 = pm->mesh_size.x1max;
+//    }
     auto area1 = pmbp->pcoord->area.x1f;
     auto volume = pmbp->pcoord->volume;
     auto dx1 = pmbp->pcoord->dx1;
     
-    Real Teq = 1469.0;
-    Real grav = 942.0;
-    Real ap = 9.44e9;
-    Real Rgas = 4.593e7;
+//    Real Teq = 1469.0;
+//    Real grav = 942.0;
+//    Real ap = 9.44e9;
+//    Real Rgas = 4.593e7;
+//    ParameterInput* pin;
+    Real grav = pm->pgen->hot_jupiter_param.grav;
+    Real ap = pm->pgen->hot_jupiter_param.ap;
+    Real Rgas = pm->pgen->hot_jupiter_param.Rgas;
+    Real Teq = pm->pgen->hot_jupiter_param.Teq;
     
     Real iap = 1.0/ap;
     Real gamma = pmbp->phydro->peos->eos_data.gamma;
@@ -842,15 +878,23 @@ void double_gray_two_stream_RT(Mesh *pm, Real bdt) {
     Real Iint = boltz_sigma/M_PI*SQR(SQR(Tint));
     Real mu1 = 1.0/1.66; //sqrt(3);
 
-    size_t scr_size = ScrArray1D<Real>::shmem_size(n1) * 5;
-    par_for_outer("2stream_rt", DevExeSpace(), scr_size, 0,
-                  0, nmb1, ks, ke, js, je,
-    KOKKOS_LAMBDA(TeamMember_t member, const int m, const int k, const int j) {
-        ScrArray1D<Real> tau_ir_down_f(member.team_scratch(0), n1);
-        ScrArray1D<Real> F_v_down_f(member.team_scratch(0), n1);
-        ScrArray1D<Real> I_ir_down_f(member.team_scratch(0), n1);
-        ScrArray1D<Real> I_ir_up_f(member.team_scratch(0), n1);
-        ScrArray1D<Real> B(member.team_scratch(0), n1);
+//    size_t scr_size = ScrArray1D<Real>::shmem_size(n1) * 5;
+//    par_for_outer("2stream_rt", DevExeSpace(), scr_size, 0,
+//                  0, nmb1, ks, ke, js, je,
+//    KOKKOS_LAMBDA(TeamMember_t member, const int m, const int k, const int j) {
+//        ScrArray1D<Real> tau_ir_down_f(member.team_scratch(0), n1);
+//        ScrArray1D<Real> F_v_down_f(member.team_scratch(0), n1);
+//        ScrArray1D<Real> I_ir_down_f(member.team_scratch(0), n1);
+//        ScrArray1D<Real> I_ir_up_f(member.team_scratch(0), n1);
+//        ScrArray1D<Real> B(member.team_scratch(0), n1);
+    par_for("2stream_rt", DevExeSpace(), 0, nmb1, ks, ke, js, je,
+    KOKKOS_LAMBDA(const int m, const int k, const int j) {
+        constexpr int NN = 270;
+        Real tau_ir_down_f[NN];
+        Real F_v_down_f[NN];
+        Real I_ir_down_f[NN];
+        Real I_ir_up_f[NN];
+        Real B[NN];
         
         Real &x2min = size.d_view(m).x2min;
         Real &x2max = size.d_view(m).x2max;
@@ -887,7 +931,7 @@ void double_gray_two_stream_RT(Mesh *pm, Real bdt) {
         Real p = w0(m,IEN,k,j,ie+1)*gm1;
         Real rho = w0(m,IDN,k,j,ie+1);
         Real T = p/Rgas/rho;
-        B(ie+1) = boltz_sigma/M_PI*SQR(SQR(T));
+        B[ie+1] = boltz_sigma/M_PI*SQR(SQR(T));
         Real kap_v = 4.0e-3;
         Real kap_ir = 1.0e-2;
         Real pm1 = w0(m,IEN,k,j,ie)*gm1;
@@ -895,16 +939,16 @@ void double_gray_two_stream_RT(Mesh *pm, Real bdt) {
         Real tau_v_f = 0.0;//pf/(grav/kap_v);
         Real tau_ir_f = 0.0;//pf/(grav/kap_ir);
         
-        tau_ir_down_f(ie+1) = tau_ir_f;
-        F_v_down_f(ie+1) = Fstar*mu0;//*exp(-tau_v_f/muf);
-        F_v_down_f(ie+1) = (mu0 > 0.0) ? F_v_down_f(ie+1) : 0.0;
+        tau_ir_down_f[ie+1] = tau_ir_f;
+        F_v_down_f[ie+1] = Fstar*mu0;//*exp(-tau_v_f/muf);
+        F_v_down_f[ie+1] = (mu0 > 0.0) ? F_v_down_f[ie+1] : 0.0;
         
         // down-sweep
         for (int i=ie; i>is-1; --i) {
           Real p = w0(m,IEN,k,j,i)*gm1;
           Real rho = w0(m,IDN,k,j,i);
           Real T = p/Rgas/rho;
-          B(i) = boltz_sigma/M_PI*SQR(SQR(T));
+          B[i] = boltz_sigma/M_PI*SQR(SQR(T));
           Real kap_v = 4.0e-3; // Rauscher & Menou 2012; Guillot 2010
           Real kap_ir = 2.28e-5*pow(p*cgs2Pa,0.53); // Komocek+2017
           if (test_oned) kap_ir = 1.0e-2;
@@ -935,15 +979,15 @@ void double_gray_two_stream_RT(Mesh *pm, Real bdt) {
           Real fac = 1.0;
           if (correct_spherical) fac = SQR(rf1/rf); // Zhang+2023
           Real trans = exp(-dtau_v/muf);
-          F_v_down_f(i) = F_v_down_f(i+1)*trans*fac;
-          tau_ir_down_f(i) = tau_ir_down_f(i+1) + dtau_ir;
+          F_v_down_f[i] = F_v_down_f[i+1]*trans*fac;
+          tau_ir_down_f[i] = tau_ir_down_f[i+1] + dtau_ir;
         }
         p = w0(m,IEN,k,j,is-1)*gm1;
         rho = w0(m,IDN,k,j,is-1);
         T = p/Rgas/rho;
-        B(is-1) = boltz_sigma/M_PI*SQR(SQR(T));
+        B[is-1] = boltz_sigma/M_PI*SQR(SQR(T));
         
-        I_ir_down_f(ie+1) = 0.0;
+        I_ir_down_f[ie+1] = 0.0;
         // down-sweep
         for (int i=ie; i>is-1; --i) {
           Real rf = LeftEdgeX(i-is, indcs.nx1, x1min, x1max);
@@ -953,13 +997,13 @@ void double_gray_two_stream_RT(Mesh *pm, Real bdt) {
             
           Real fac = 1.0;
           if (correct_spherical) fac = SQR(rf1/rf);
-          Real dtau = tau_ir_down_f(i)-tau_ir_down_f(i+1);
+          Real dtau = tau_ir_down_f[i]-tau_ir_down_f[i+1];
           Real trans = exp(-dtau/mu1);
-          Real Bavg = (B(i)+B(i+1))/2.0;
-          I_ir_down_f(i) = (I_ir_down_f(i+1)*trans + Bavg*(1.0-trans))*fac;
+          Real Bavg = (B[i]+B[i+1])/2.0;
+          I_ir_down_f[i] = (I_ir_down_f[i+1]*trans + Bavg*(1.0-trans))*fac;
         }
         
-        I_ir_up_f(is) = Iint;
+        I_ir_up_f[is] = Iint;
         // up-sweep
         for (int i=is+1; i<ie+2; ++i) {
           Real rf = LeftEdgeX(i-is, indcs.nx1, x1min, x1max);
@@ -969,16 +1013,16 @@ void double_gray_two_stream_RT(Mesh *pm, Real bdt) {
             
           Real fac = 1.0;
           if (correct_spherical) fac = SQR(rfm1/rf);
-          Real dtau = tau_ir_down_f(i-1)-tau_ir_down_f(i);
+          Real dtau = tau_ir_down_f[i-1]-tau_ir_down_f[i];
           Real trans = exp(-dtau/mu1);
-          Real Bavg = (B(i-1)+B(i))/2.0;
-          I_ir_up_f(i) = (I_ir_up_f(i-1)*trans + Bavg*(1.0-trans))*fac;
+          Real Bavg = (B[i-1]+B[i])/2.0;
+          I_ir_up_f[i] = (I_ir_up_f[i-1]*trans + Bavg*(1.0-trans))*fac;
         }
         
         // flux divergence
         for (int i=is; i<ie+1; ++i) {
-          Real Ft = 2.0*M_PI*mu1*(I_ir_up_f(i+1)-I_ir_down_f(i+1))-F_v_down_f(i+1);
-          Real Fb = 2.0*M_PI*mu1*(I_ir_up_f(i)-I_ir_down_f(i))-F_v_down_f(i);
+          Real Ft = 2.0*M_PI*mu1*(I_ir_up_f[i+1]-I_ir_down_f[i+1])-F_v_down_f[i+1];
+          Real Fb = 2.0*M_PI*mu1*(I_ir_up_f[i]-I_ir_down_f[i])-F_v_down_f[i];
           Real area_t = area1(m,k,j,i+1);
           Real area_b = area1(m,k,j,i);
           Real vol = volume(m,k,j,i);
@@ -1015,16 +1059,22 @@ void double_gray_two_stream_RT_source(Mesh *pm, Real bdt) {
     const bool test_oned = false;
     
     Real r0, r1;
-    if (use_grid_stretch) {
-        r0 = pm->mesh_size.x1min;
-        r1 = pm->mesh_size.x1max;
-    }
+//    if (use_grid_stretch) {
+    r0 = pm->mesh_size.x1min;
+    r1 = pm->mesh_size.x1max;
+//    }
     auto dx1 = pmbp->pcoord->dx1;
     
-    Real Teq = 1469.0;
-    Real ap = 9.44e9;
-    Real Rgas = 4.593e7;
-    Real grav = 942.0;
+//    Real Teq = 1469.0;
+//    Real ap = 9.44e9;
+//    Real Rgas = 4.593e7;
+//    Real grav = 942.0;
+//    ParameterInput* pin;
+    Real grav = pm->pgen->hot_jupiter_param.grav;
+    Real ap = pm->pgen->hot_jupiter_param.ap;
+    Real Rgas = pm->pgen->hot_jupiter_param.Rgas;
+    Real Teq = pm->pgen->hot_jupiter_param.Teq;
+    
     Real iap = 1.0/ap;
     Real gamma = pmbp->phydro->peos->eos_data.gamma;
     Real gm1 = gamma-1.0;
@@ -1038,14 +1088,21 @@ void double_gray_two_stream_RT_source(Mesh *pm, Real bdt) {
     Real Iint = boltz_sigma/M_PI*SQR(SQR(Tint));
     Real mu1 = 1.0/1.66; //sqrt(3);
 
-    size_t scr_size = ScrArray1D<Real>::shmem_size(n1) * 4;
-    par_for_outer("2stream_rt", DevExeSpace(), scr_size, 0,
-                  0, nmb1, ks, ke, js, je,
-    KOKKOS_LAMBDA(TeamMember_t member, const int m, const int k, const int j) {
-        ScrArray1D<Real> tau_ir_down(member.team_scratch(0), n1);
-        ScrArray1D<Real> I_down(member.team_scratch(0), n1);
-        ScrArray1D<Real> B(member.team_scratch(0), n1);
-        ScrArray1D<Real> Q_v(member.team_scratch(0), n1);
+//    size_t scr_size = ScrArray1D<Real>::shmem_size(n1) * 4;
+//    par_for_outer("2stream_rt", DevExeSpace(), scr_size, 0,
+//                  0, nmb1, ks, ke, js, je,
+//    KOKKOS_LAMBDA(TeamMember_t member, const int m, const int k, const int j) {
+    par_for("2stream_rt", DevExeSpace(), 0, nmb1, ks, ke, js, je,
+    KOKKOS_LAMBDA(const int m, const int k, const int j) {
+//        ScrArray1D<Real> tau_ir_down(member.team_scratch(0), n1);
+//        ScrArray1D<Real> I_down(member.team_scratch(0), n1);
+//        ScrArray1D<Real> B(member.team_scratch(0), n1);
+//        ScrArray1D<Real> Q_v(member.team_scratch(0), n1);
+        constexpr int NN = 270;
+        Real tau_ir_down[NN];
+        Real I_down[NN];
+        Real B[NN];
+        Real Q_v[NN];
         
         Real &x2min = size.d_view(m).x2min;
         Real &x2max = size.d_view(m).x2max;
@@ -1077,7 +1134,7 @@ void double_gray_two_stream_RT_source(Mesh *pm, Real bdt) {
         Real p = w0(m,IEN,k,j,ie+1)*gm1;
         Real rho = w0(m,IDN,k,j,ie+1);
         Real T = p/Rgas/rho;
-        B(ie+1) = boltz_sigma/M_PI*SQR(SQR(T));
+        B[ie+1] = boltz_sigma/M_PI*SQR(SQR(T));
         Real kap_v = 4.0e-3;
         Real kap_ir = 1.0e-2;
         Real tau_v = 0.0;//p/(grav/kap_v);
@@ -1086,12 +1143,12 @@ void double_gray_two_stream_RT_source(Mesh *pm, Real bdt) {
 //          tau_v = p/(grav/kap_v)/mu0;
 //          tau_ir = p/(grav/kap_ir)/mu1;
 //        }
-        tau_ir_down(ie+1) = tau_ir;
+        tau_ir_down[ie+1] = tau_ir;
         for (int i=ie; i>is-1; --i) {
           Real p = w0(m,IEN,k,j,i)*gm1;
           Real rho = w0(m,IDN,k,j,i);
           Real T = p/Rgas/rho;
-          B(i) = boltz_sigma/M_PI*SQR(SQR(T));
+          B[i] = boltz_sigma/M_PI*SQR(SQR(T));
           Real kap_v = 4.0e-3; // Rauscher & Menou 2012; Guillot 2010
             Real kap_ir = 1.0e-2; // 2.28e-5*pow(p*cgs2Pa,0.53); // Komocek+2017
           if (test_oned) kap_ir = 1.0e-2;
@@ -1124,21 +1181,21 @@ void double_gray_two_stream_RT_source(Mesh *pm, Real bdt) {
 //          Real Q_v = kap_v*rho*Fstar*fac*exp(-tau_v/mu); // Zhang+2023
 //          Q_v = (mu0 > 0.0) ? Q_v : 0.0;
           Real Qv = kap_v*rho*Fstar*fac*exp(-tau_v);
-          Q_v(i) = (mu0 > -mucr) ? Qv : 0.0;
+          Q_v[i] = (mu0 > -mucr) ? Qv : 0.0;
 //          u0(m,IEN,k,j,i) += Q_v*bdt;
         
-          tau_ir_down(i) = tau_ir;
+          tau_ir_down[i] = tau_ir;
           tau_ir += dtau_ir/mu1;
-          if (i==is) tau_ir_down(i-1) = tau_ir;
+          if (i==is) tau_ir_down[i-1] = tau_ir;
         }
         p = w0(m,IEN,k,j,is-1)*gm1;
         rho = w0(m,IDN,k,j,is-1);
         T = p/Rgas/rho;
-        B(is-1) = boltz_sigma/M_PI*SQR(SQR(T));
+        B[is-1] = boltz_sigma/M_PI*SQR(SQR(T));
         
         Real rtop = CellCenterX(ie+1-is, indcs.nx1, x1min, x1max);
         if (use_grid_stretch) StretchR(r0,r1,rtop);
-        I_down(ie+1) = 0.0;
+        I_down[ie+1] = 0.0;
         // down-sweep
         for (int i=ie; i>is-1; --i) {
           Real r = CellCenterX(i-is, indcs.nx1, x1min, x1max);
@@ -1147,10 +1204,10 @@ void double_gray_two_stream_RT_source(Mesh *pm, Real bdt) {
           if (use_grid_stretch) StretchR(r0,r1,rp1);
           Real fac = 1.0;
           if (correct_spherical) fac = SQR(rp1/r);
-          Real dtau = tau_ir_down(i)-tau_ir_down(i+1);
+          Real dtau = tau_ir_down[i]-tau_ir_down[i+1];
           Real trans = exp(-dtau);
-          Real Bavg = B(i);//(B(i)+B(i+1))/2.0;
-          I_down(i) = (I_down(i+1)*trans + Bavg*(1.0-trans))*fac;
+          Real Bavg = B[i];//(B(i)+B(i+1))/2.0;
+          I_down[i] = (I_down[i+1]*trans + Bavg*(1.0-trans))*fac;
         }
         
         Real rbot = CellCenterX(is-1-is, indcs.nx1, x1min, x1max);
@@ -1164,11 +1221,11 @@ void double_gray_two_stream_RT_source(Mesh *pm, Real bdt) {
           if (use_grid_stretch) StretchR(r0,r1,rm1);
           Real fac = 1.0;
           if (correct_spherical) fac = SQR(rm1/r);
-          Real dtau = tau_ir_down(i-1)-tau_ir_down(i);
+          Real dtau = tau_ir_down[i-1]-tau_ir_down[i];
           Real trans = exp(-dtau);
-          Real Bavg = B(i);//(B(i-1)+B(i))/2.0;
+          Real Bavg = B[i];//(B(i-1)+B(i))/2.0;
           I_up = (I_up*trans + Bavg*(1.0-trans))*fac;
-          Real J = (I_up+I_down(i))/2.0;
+          Real J = (I_up+I_down[i])/2.0;
           Real p = w0(m,IEN,k,j,i)*gm1;
           Real rho = w0(m,IDN,k,j,i);
           Real T = p/Rgas/rho;
@@ -1180,7 +1237,7 @@ void double_gray_two_stream_RT_source(Mesh *pm, Real bdt) {
           Real cv = Rgas*rho*igm1;
           Real e0 = cv*T;
           Real kk = -4.0*M_PI*kap_ir*rho*boltz_sigma/M_PI*bdt;
-          Real bb = 4.0*M_PI*kap_ir*rho*J*bdt + Q_v(i)*bdt + e0;
+          Real bb = 4.0*M_PI*kap_ir*rho*J*bdt + Q_v[i]*bdt + e0;
           Real e;
           // Newton-Raphson
           for (int n=0; n<100; ++n) {
@@ -1299,7 +1356,7 @@ void get_init_Tp(const int &N, const DvceArray1D<Real> &Tarr, const DvceArray1D<
     Real lgp = log10(p);
     Real dlgp = (lgparr(N-1)-lgparr(0))/(N-1);
     int Nt = std::floor((lgp - lgparr(0))/dlgp);
-    int NN = Nt;
+    int NN = (Nt < 0) ? 0 : Nt;
 //    for (int it=Nt-2; it<Nt+3; ++it)
 //    {
 //        if (lgp < lgparr(it) && lgp >= lgparr(it-1)) {
@@ -1308,6 +1365,7 @@ void get_init_Tp(const int &N, const DvceArray1D<Real> &Tarr, const DvceArray1D<
 //        }
 //    }
     T = Tarr(NN) + (Tarr(NN+1)-Tarr(NN))/(lgparr(NN+1)-lgparr(NN))*(lgp-lgparr(NN));
+    T = (Nt < 0) ? Tarr(0) : T;
     
 //    Real Tn, Td;
 //    get_daynight_Tp(p, Tn, Td);
@@ -1351,7 +1409,7 @@ void get_init_Tp_host(const int &N, const View1D &Tarr, const View1D &lgparr, co
     Real lgp = log10(p);
     Real dlgp = (lgparr(N-1)-lgparr(0))/(N-1);
     int Nt = std::floor((lgp - lgparr(0))/dlgp);
-    int NN = Nt;
+    int NN = (Nt < 0) ? 0 : Nt;
 //    for (int it=Nt-2; it<Nt+3; ++it)
 //    {
 //        if (lgp < lgparr(it) && lgp >= lgparr(it-1)) {
@@ -1360,6 +1418,7 @@ void get_init_Tp_host(const int &N, const View1D &Tarr, const View1D &lgparr, co
 //        }
 //    }
     T = Tarr(NN) + (Tarr(NN+1)-Tarr(NN))/(lgparr(NN+1)-lgparr(NN))*(lgp-lgparr(NN));
+    T = (Nt < 0) ? Tarr(0) : T;
     
     return;
 }
@@ -1404,10 +1463,10 @@ void get_wb_Tp(const Real &p, Real &T) {
 
 
 template <typename View1D>
-void get_wb_eos_arr(const int &N, const Real &zmax, View1D zarr, View1D logparr) {
+void get_wb_eos_arr(const Real &Rgas, const Real &grav_acc, const int &N, const Real &zmax, View1D zarr, View1D logparr) {
     
-    Real Rgas = 4.593e7;
-    Real grav_acc = -942.0;
+//    Real Rgas = 4.593e7;
+//    Real grav_acc = -942.0;
     Real bar = 1.0e6;
     Real p0 = 250.0*bar;
 
@@ -1432,9 +1491,9 @@ void get_wb_eos_arr(const int &N, const Real &zmax, View1D zarr, View1D logparr)
 }
 
 KOKKOS_INLINE_FUNCTION
-void get_wb_eos(const DvceArray1D<Real> &zarr, const DvceArray1D<Real> &logparr, const Real &z, Real &rho, Real &p) {
+void get_wb_eos(const Real &Rgas, const Real &grav_acc, const DvceArray1D<Real> &zarr, const DvceArray1D<Real> &logparr, const Real &z, Real &rho, Real &p) {
     
-    Real Rgas = 4.593e7;
+//    Real Rgas = 4.593e7;
     Real bar = 1.0e6;
     Real p0 = 250.0*bar;
     Real dz = zarr(1)-zarr(0);
@@ -1450,7 +1509,7 @@ void get_wb_eos(const DvceArray1D<Real> &zarr, const DvceArray1D<Real> &logparr,
         Real T0;
         get_wb_Tp(p0,T0);
         Real rho0 = p0/Rgas/T0;
-        Real grav_acc = -942.0;
+//        Real grav_acc = -942.0;
         Real H0 = -p0/rho0/grav_acc;
         Real iH0 = 1.0/H0;
         p = p0 * std::exp(-z*iH0);
@@ -1461,10 +1520,10 @@ void get_wb_eos(const DvceArray1D<Real> &zarr, const DvceArray1D<Real> &logparr,
 }
 
 template <typename View1D>
-void get_init_eos_arr(const View1D &Tarr, const View1D &lgparr, const int &N, const Real &zmax, View1D zarr, View1D logparr) {
+void get_init_eos_arr(const Real &Rgas, const Real &grav_acc, const View1D &Tarr, const View1D &lgparr, const int &N, const Real &zmax, View1D zarr, View1D logparr) {
 
-    Real Rgas = 4.593e7;
-    Real grav_acc = -942.0;
+//    Real Rgas = 4.593e7;
+//    Real grav_acc = -942.0;
     Real bar = 1.0e6;
     Real p0 = 250.0*bar;
 
@@ -1489,9 +1548,9 @@ void get_init_eos_arr(const View1D &Tarr, const View1D &lgparr, const int &N, co
 }
 
 KOKKOS_INLINE_FUNCTION
-void get_init_eos(const DvceArray1D<Real> &Tarr, const DvceArray1D<Real> &lgparr, const int &N, const DvceArray1D<Real> &zarr, const DvceArray1D<Real> &logparr, const Real &z, Real &rho, Real &p) {
+void get_init_eos(const Real &Rgas, const Real &grav_acc, const DvceArray1D<Real> &Tarr, const DvceArray1D<Real> &lgparr, const int &N, const DvceArray1D<Real> &zarr, const DvceArray1D<Real> &logparr, const Real &z, Real &rho, Real &p) {
 
-    Real Rgas = 4.593e7;
+//    Real Rgas = 4.593e7;
     Real bar = 1.0e6;
     Real p0 = 250.0*bar;
     Real dz = zarr(1)-zarr(0);
@@ -1507,7 +1566,7 @@ void get_init_eos(const DvceArray1D<Real> &Tarr, const DvceArray1D<Real> &lgparr
         Real T0;
         get_init_Tp(N, Tarr, lgparr, p0,T0);
         Real rho0 = p0/Rgas/T0;
-        Real grav_acc = -942.0;
+//        Real grav_acc = -942.0;
         Real H0 = -p0/rho0/grav_acc;
         Real iH0 = 1.0/H0;
         p = p0 * std::exp(-z*iH0);
@@ -1542,13 +1601,20 @@ void get_albedo(const Real &Teff, const Real &gg, Real &A) {
 }
 
 KOKKOS_INLINE_FUNCTION
-void get_picket_fence_coeff(const Real &Teff, Real &gamv1, Real &gamv2, Real &gamv3, Real &beta, Real &gamir1, Real &gamir2) {
-  // Parmentier & Giollot 2014; Parmentier+2015
+void get_picket_fence_coeff(const Real &Teq, const Real &Teff, Real &gamv1, Real &gamv2, Real &gamv3, Real &beta, Real &gamir1, Real &gamir2) {
+  // Parmentier & Giollot 2014; Parmentier+2015; Roth+2024
   Real X = log10(Teff);
   Real a3, a2, a1, b3, b2, b1, ab, bb;
+  
   Real ap = -2.36;
   Real bp = 13.92;
   Real cp = -19.38;
+  if (Teq < 1800.0 && Teff >= 1400.0) {
+    ap = -12.45;
+    bp = 82.25;
+    cp = -134.42;
+  }
+  
   if (Teff < 2000.0) {
     ab = 0.84;
     bb = 0.0;
@@ -1556,6 +1622,11 @@ void get_picket_fence_coeff(const Real &Teff, Real &gamv1, Real &gamv2, Real &ga
     ab = 6.21;
     bb = -1.63;
   }
+  if (Teq < 1800.0 && Teff >= 1400.0) {
+    ab = 3.0;
+    bb = -0.69;
+  }
+  
   if (Teff < 200.0) {
     a3 = -3.03;
     b3 = -0.2;
@@ -1598,6 +1669,23 @@ void get_picket_fence_coeff(const Real &Teff, Real &gamv1, Real &gamv2, Real &ga
     b2 = -3.81;
     a1 = 12.65;
     b1 = -3.27;
+  }
+  if (Teq < 1800.0  && Teff >= 1400.0) {
+    if (Teff < 2000.0) {
+      a3 = 0.02;
+      b3 = -0.28;
+      a2 = 6.96;
+      b2 = -2.21;
+      a1 = -1.68;
+      b1 = 0.75;
+    } else {
+      a3 = -16.54;
+      b3 = 4.74;
+      a2 = -2.4;
+      b2 = 0.62;
+      a1 = 10.37;
+      b1 = -2.91;
+    }
   }
   Real log10gamv1 = a1 + b1*X;
   Real log10gamv2 = a2 + b2*X;
@@ -1675,6 +1763,7 @@ void get_picket_fence_Ttau_coeff(const Real &Tint, const Real &Tirr, const Real 
     
     Real Tirr4 = SQR(SQR(Tirr));
     Real Tint4 = SQR(SQR(Tint));
+    Real Teq = Tirr/sqrt(2);
     
     Real Teff0 = sqrt(sqrt(Tint4+Tirr4/sqrt(3.0)));
     Real albedo;
@@ -1682,7 +1771,7 @@ void get_picket_fence_Ttau_coeff(const Real &Tint, const Real &Tirr, const Real 
     
     Real Teff = sqrt(sqrt(Tint4+(1.0-albedo)*mus*Tirr4));
     Real gamv1, gamv2, gamv3, beta, gamir1, gamir2;
-    get_picket_fence_coeff(Teff, gamv1, gamv2, gamv3, beta, gamir1, gamir2);
+    get_picket_fence_coeff(Teq, Teff, gamv1, gamv2, gamv3, beta, gamir1, gamir2);
     
     Real R = gamir1/gamir2;
     Real gamp = gamir1 + gamir2 - SQR(gamir2)*R;
@@ -1852,19 +1941,26 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
     const bool test_oned = false;
     
     Real r0, r1;
-    if (use_grid_stretch) {
-        r0 = pm->mesh_size.x1min;
-        r1 = pm->mesh_size.x1max;
-    }
+//    if (use_grid_stretch) {
+    r0 = pm->mesh_size.x1min;
+    r1 = pm->mesh_size.x1max;
+//    }
     auto area1 = pmbp->pcoord->area.x1f;
     auto volume = pmbp->pcoord->volume;
     auto dx1 = pmbp->pcoord->dx1;
     
-    Real Teq = 1469.0;
-    Real grav = 942.0;
-    Real ap = 9.44e9;
-    Real Rgas = 4.593e7;
-    Real met = 0.0;
+//    Real Teq = 1469.0;
+//    Real grav = 942.0;
+//    Real ap = 9.44e9;
+//    Real Rgas = 4.593e7;
+//    Real met = 0.0;
+    
+//    ParameterInput* pin;
+    Real grav = pm->pgen->hot_jupiter_param.grav;
+    Real ap = pm->pgen->hot_jupiter_param.ap;
+    Real Rgas = pm->pgen->hot_jupiter_param.Rgas;
+    Real Teq = pm->pgen->hot_jupiter_param.Teq;
+    Real met = pm->pgen->hot_jupiter_param.met;
     
     Real iap = 1.0/ap;
     Real gamma = pmbp->phydro->peos->eos_data.gamma;
@@ -1876,15 +1972,15 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
     Real Tirr = Teq*sqrt(2);
     Real Tirr4 = SQR(SQR(Tirr));
     Real Fstar = boltz_sigma*Tirr4;
-    Real Tint = 500.0;
+    Real Tint;
     get_Tint(Teq, Tint);
     Real Tint4 = SQR(SQR(Tint));
     Real Iint = boltz_sigma/M_PI*Tint4;
     
     Real mug[2];
     Real wg[2];
-    mug[0] = 1.0/sqrt(3);
-    mug[1] = 1.0/sqrt(3);
+    mug[0] = 0.21132487;
+    mug[1] = 0.78867513;
     wg[0] = 0.5;
     wg[1] = 0.5;
     
@@ -1892,18 +1988,30 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
     Real albedo;
     get_albedo(Teff0,grav,albedo);
 
-    size_t scr_size = 8 * ScrArray1D<Real>::shmem_size(n1);
-    par_for_outer("2stream_rt", DevExeSpace(), scr_size, 0,
-                  0, nmb1, ks, ke, js, je,
-    KOKKOS_LAMBDA(TeamMember_t member, const int m, const int k, const int j) {
-        ScrArray1D<Real> tau_down_r_f(member.team_scratch(0), n1);
-        ScrArray1D<Real> F_v_down_f(member.team_scratch(0), n1);
-        ScrArray1D<Real> B(member.team_scratch(0), n1);
-        ScrArray1D<Real> I_ir_down_f(member.team_scratch(0), n1);
-        ScrArray1D<Real> I_ir_up_f(member.team_scratch(0), n1);
-        ScrArray1D<Real> F_ir_f(member.team_scratch(0), n1);
-        ScrArray1D<Real> Q_v(member.team_scratch(0), n1);
-        ScrArray1D<Real> kapJ_ir(member.team_scratch(0), n1);
+//    size_t scr_size = 8 * ScrArray1D<Real>::shmem_size(n1);
+//    int scr_level = 0;
+//    par_for_outer("2stream_rt", DevExeSpace(), scr_size, scr_level,
+//                  0, nmb1, ks, ke, js, je,
+//    KOKKOS_LAMBDA(TeamMember_t member, const int m, const int k, const int j) {
+    par_for("2stream_rt", DevExeSpace(), 0, nmb1, ks, ke, js, je,
+    KOKKOS_LAMBDA(const int m, const int k, const int j) {
+//        ScrArray1D<Real> tau_down_r_f(member.team_scratch(scr_level), n1);
+//        ScrArray1D<Real> F_v_down_f(member.team_scratch(scr_level), n1);
+//        ScrArray1D<Real> B(member.team_scratch(scr_level), n1);
+//        ScrArray1D<Real> I_ir_down_f(member.team_scratch(scr_level), n1);
+//        ScrArray1D<Real> I_ir_up_f(member.team_scratch(scr_level), n1);
+//        ScrArray1D<Real> F_ir_f(member.team_scratch(scr_level), n1);
+//        ScrArray1D<Real> Q_v(member.team_scratch(scr_level), n1);
+//        ScrArray1D<Real> kapJ_ir(member.team_scratch(scr_level), n1);
+        constexpr int NN = 270;
+        Real tau_down_r_f[NN];
+//        Real F_v_down_f[NN];
+        Real B[NN];
+        Real I_ir_down_f[NN];
+        Real I_ir_up_f[NN];
+        Real F_ir_f[NN];
+        Real Q_v[NN];
+//        Real kapJ_ir[NN];
         
         Real &x2min = size.d_view(m).x2min;
         Real &x2max = size.d_view(m).x2max;
@@ -1939,60 +2047,61 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
         Real mus = (mu0 > 0.0) ? mu0 : 0.0;
         Real Teff = sqrt(sqrt(Tint4+(1.0-albedo)*mus*Tirr4));
         Real gamv1, gamv2, gamv3, beta, gamir1, gamir2;
-        get_picket_fence_coeff(Teff, gamv1, gamv2, gamv3, beta, gamir1, gamir2);
+        get_picket_fence_coeff(Teq, Teff, gamv1, gamv2, gamv3, beta, gamir1, gamir2);
         
         // 3 V Bands
         // top
         Real p = w0(m,IEN,k,j,ie+1)*gm1;
         Real rho = w0(m,IDN,k,j,ie+1);
         Real T = p/Rgas/rho;
-        B(ie+1) = boltz_sigma/M_PI*SQR(SQR(T));
+        B[ie+1] = boltz_sigma/M_PI*SQR(SQR(T));
         Real kapr;
         get_kapr(T, p, met, kapr);
         Real tau_r_f = kapr*p/grav;
-        tau_down_r_f(ie+1) = tau_r_f;
+        tau_down_r_f[ie+1] = tau_r_f;
         Real drtop = tau_r_f/(kapr*rho);
         Real delta = drtop/rtop;
         Real fac = (sqrt(SQR(mu0)+2.0*delta+SQR(delta)) - mu0)/delta;
-//        fac = (mu0 > 0.1) ? (1.0/mu0) : 10.0;
+        fac = (mu0 > 0.1) ? (1.0/mu0) : (1.0/0.1);
         Real tausl = tau_r_f*fac;
-        Real trans1 = exp(-gamv1*tau_down_r_f(ie+1)*fac);
-        Real trans2 = exp(-gamv2*tau_down_r_f(ie+1)*fac);
-        Real trans3 = exp(-gamv3*tau_down_r_f(ie+1)*fac);
-        F_v_down_f(ie+1) = (1.0-albedo)*Fstar*mus*1.0/3.0*(trans1+trans2+trans3);
+        Real trans1 = exp(-gamv1*tau_down_r_f[ie+1]*fac);
+        Real trans2 = exp(-gamv2*tau_down_r_f[ie+1]*fac);
+        Real trans3 = exp(-gamv3*tau_down_r_f[ie+1]*fac);
+//        F_v_down_f[ie+1] = (1.0-albedo)*Fstar*mus*1.0/3.0*(trans1+trans2+trans3);
 //        F_v_down_f(ie+1) = (mu0 > 0.0)? F_v_down_f(ie+1) : 0.0;
         // down-sweep
         for (int i=ie; i>is-1; --i) {
           Real p = w0(m,IEN,k,j,i)*gm1;
           Real rho = w0(m,IDN,k,j,i);
           Real T = p/Rgas/rho;
-          B(i) = boltz_sigma/M_PI*SQR(SQR(T));
+          B[i] = boltz_sigma/M_PI*SQR(SQR(T));
           Real kapr;
           get_kapr(T, p, met, kapr);
           Real dr = dx1(m,k,j,i);
-          tau_down_r_f(i) = tau_down_r_f(i+1) + kapr*rho*dr;
+          tau_down_r_f[i] = tau_down_r_f[i+1] + kapr*rho*dr;
           Real r = LeftEdgeX(i-is, indcs.nx1, x1min, x1max);
           if (use_grid_stretch) StretchR(r0,r1,r);
-//          Real delta = (drtop+(rtop-r))/r;
-          Real delta = dr/r;
-          Real fac = (sqrt(SQR(mu0)+2.0*delta+SQR(delta)) - mu0)/delta;
-          tausl += kapr*rho*r*(sqrt(SQR(mu0)+2.0*delta+SQR(delta)) - mu0);
-//          Real trans1 = exp(-gamv1*tau_down_r_f(i)*fac);
-//          Real trans2 = exp(-gamv2*tau_down_r_f(i)*fac);
-//          Real trans3 = exp(-gamv3*tau_down_r_f(i)*fac);
-          Real trans1 = exp(-gamv1*tausl);
-          Real trans2 = exp(-gamv2*tausl);
-          Real trans3 = exp(-gamv3*tausl);
-          F_v_down_f(i) = (1.0-albedo)*Fstar*mus*1.0/3.0*(trans1+trans2+trans3);
-          Real mucr = sqrt(1.0-SQR(r0/r));
+////          Real delta = (drtop+(rtop-r))/r;
+//          Real delta = dr/r;
+//          Real fac = (sqrt(SQR(mu0)+2.0*delta+SQR(delta)) - mu0)/delta;
+//          tausl += kapr*rho*r*(sqrt(SQR(mu0)+2.0*delta+SQR(delta)) - mu0);
+          Real fac = (mu0 > 0.1) ? (1.0/mu0) : (1.0/0.1);
+          Real trans1 = exp(-gamv1*tau_down_r_f[i]*fac);
+          Real trans2 = exp(-gamv2*tau_down_r_f[i]*fac);
+          Real trans3 = exp(-gamv3*tau_down_r_f[i]*fac);
+//          Real trans1 = exp(-gamv1*tausl);
+//          Real trans2 = exp(-gamv2*tausl);
+//          Real trans3 = exp(-gamv3*tausl);
+//          F_v_down_f[i] = (1.0-albedo)*Fstar*mus*1.0/3.0*(trans1+trans2+trans3);
+          Real mucr = 0.0; //sqrt(1.0-SQR(r0/r));
           Real Qv = kapr*rho*(1.0-albedo)*Fstar*1.0/3.0*(gamv1*trans1+gamv2*trans2+gamv3*trans3);
-          Q_v(i) = (mu0 > -mucr) ? Qv : 0.0;
+          Q_v[i] = (mu0 > -mucr) ? Qv : 0.0;
         }
         
         // 2 IR Bands
         for (int i=is; i<ie+2; ++i) {
-          F_ir_f(i) = 0.0;
-          kapJ_ir(i) = 0.0;
+          F_ir_f[i] = 0.0;
+//          kapJ_ir[i] = 0.0;
         }
         // two quadrature
         for (int n=0; n<2; ++n) {
@@ -2009,112 +2118,120 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
             }
 
             // top
-            Real dtauir = gamir*tau_down_r_f(ie+1);
+            Real dtauir = gamir*tau_down_r_f[ie+1];
             Real trans = exp(-dtauir/mugg);
-            I_ir_down_f(ie+1) = (1.0-trans)*(fb*B(ie+1));
+            I_ir_down_f[ie+1] = (1.0-trans)*(fb*B[ie+1]);
             // down-sweep
             for (int i=ie; i>is-1; --i) {
-              Real dtauir = gamir*(tau_down_r_f(i)-tau_down_r_f(i+1));
+              Real dtauir = gamir*(tau_down_r_f[i]-tau_down_r_f[i+1]);
               Real trans = exp(-dtauir/mugg);
               Real e0 = -expm1(-dtauir/mugg);
               Real e1 = dtauir/mugg - e0;
-              Real alpa = 0.5*e0*(fb*B(i+1)+fb*B(i))/(fb*B(i+1));
-              Real alp = (dtauir > 1.0e-6) ? (e0 - e1/(dtauir/mugg)) : alpa;
-              Real bet = (dtauir > 1.0e-6) ? (e1/(dtauir/mugg)) : 0.0;
-              I_ir_down_f(i) = (1.0-e0)*I_ir_down_f(i+1) + alp*fb*B(i+1) + bet*fb*B(i);
+              Real alpa = 0.5*e0*(fb*B[i+1]+fb*B[i])/(fb*B[i+1]);
+              Real alp = (dtauir > 1.0e-3) ? (e0 - e1/(dtauir/mugg)) : alpa;
+              Real bet = (dtauir > 1.0e-3) ? (e1/(dtauir/mugg)) : 0.0;
+              I_ir_down_f[i] = (1.0-e0)*I_ir_down_f[i+1] + alp*fb*B[i+1] + bet*fb*B[i];
             }
               
             // bottom
-            I_ir_up_f(is) = Iint + I_ir_down_f(is);
+            I_ir_up_f[is] = Iint + I_ir_down_f[is];
             // up-sweep
             for (int i=is+1; i<ie+2; ++i) {
-              Real dtauir = gamir*(tau_down_r_f(i-1)-tau_down_r_f(i));
+              Real dtauir = gamir*(tau_down_r_f[i-1]-tau_down_r_f[i]);
               Real trans = exp(-dtauir/mugg);
               Real e0 = -expm1(-dtauir/mugg);
               Real e1 = dtauir/mugg - e0;
-              Real beto = 0.5*e0*(fb*B(i)+fb*B(i-1))/(fb*B(i));
-              Real bet = (dtauir > 1.0e-6) ? (e1/(dtauir/mugg)) : beto;
-              Real gam = (dtauir > 1.0e-6) ? (e0 - e1/(dtauir/mugg)) : 0.0;
-              I_ir_up_f(i) = (1.0-e0)*I_ir_up_f(i-1) + bet*fb*B(i) + gam*fb*B(i-1);
+              Real beto = 0.5*e0*(fb*B[i]+fb*B[i-1])/(fb*B[i]);
+              Real bet = (dtauir > 1.0e-3) ? (e1/(dtauir/mugg)) : beto;
+              Real gam = (dtauir > 1.0e-3) ? (e0 - e1/(dtauir/mugg)) : 0.0;
+              I_ir_up_f[i] = (1.0-e0)*I_ir_up_f[i-1] + bet*fb*B[i] + gam*fb*B[i-1];
             }
               
             for (int i=is; i<ie+2; ++i) {
-              Real F_ir_down_f = 2.0*M_PI*wgg*mugg*I_ir_down_f(i);
-              Real F_ir_up_f = 2.0*M_PI*wgg*mugg*I_ir_up_f(i);
-              F_ir_f(i) += F_ir_up_f - F_ir_down_f;
+              Real F_ir_down_f = 2.0*M_PI*wgg*mugg*I_ir_down_f[i];
+              Real F_ir_up_f = 2.0*M_PI*wgg*mugg*I_ir_up_f[i];
+              F_ir_f[i] += F_ir_up_f - F_ir_down_f;
             }
-            for (int i=is; i<ie+1; ++i) {
-              Real J = wgg*I_ir_down_f(i) + wgg*I_ir_up_f(i);
-              Real p = w0(m,IEN,k,j,i)*gm1;
-              Real rho = w0(m,IDN,k,j,i);
-              Real T = p/Rgas/rho;
-              Real kapr;
-              get_kapr(T, p, met, kapr);
-              kapJ_ir(i) += gamir*kapr*J;
-            }
+//            for (int i=is; i<ie+1; ++i) {
+//              Real J = wgg*I_ir_down_f[i] + wgg*I_ir_up_f[i];
+//              Real p = w0(m,IEN,k,j,i)*gm1;
+//              Real rho = w0(m,IDN,k,j,i);
+//              Real T = p/Rgas/rho;
+//              Real kapr;
+//              get_kapr(T, p, met, kapr);
+//              kapJ_ir[i] += gamir*kapr*J;
+//            }
           }
         }
         
+//        // Sync all threads in the team so that scratch memory is consistent
+//        member.team_barrier();
+        
+//        par_for_inner(member, is, ie, [&](const int i) {
         for (int i=is; i<ie+1; ++i) {
           // source term as flux divergence
           Real area_t = area1(m,k,j,i+1);
           Real area_b = area1(m,k,j,i);
           Real vol = volume(m,k,j,i);
-            Real Ft = F_ir_f(i+1);//-F_v_down_f(i+1);
-            Real Fb = F_ir_f(i);//-F_v_down_f(i);
+            Real Ft = F_ir_f[i+1];//-F_v_down_f(i+1);
+            Real Fb = F_ir_f[i];//-F_v_down_f(i);
           Real src = -(Ft-Fb)/dx1(m,k,j,i);
           if (correct_spherical) {
             src = -(Ft*area_t-Fb*area_b)/vol;
           }
-            src += Q_v(i);
+            src += Q_v[i];
           Real du_flux = src*bdt;
             
-//          // source term semi-implicit
-//          Real p = w0(m,IEN,k,j,i)*gm1;
-//          Real rho = w0(m,IDN,k,j,i);
-//          Real T = p/Rgas/rho;
-//          Real kapr;
-//          get_kapr(T, p, met, kapr);
-//          Real cv = Rgas*rho*igm1;
-//          Real e0 = cv*T;
-//          Real kk = 0.0;
-//          Real bb = du_flux + e0;
-////          Real bb = Q_v(i)*bdt + e0;
-//          for (int vir=0; vir<2; ++vir) {
-//            Real gamir, fb;
-//            if (vir == 0) {
-//              gamir = gamir1;
-//              fb = beta;
-//            } else {
-//              gamir = gamir2;
-//              fb = 1.0-beta;
-//            }
-//            kk += -4.0*M_PI*gamir*kapr*rho*fb*boltz_sigma/M_PI*bdt;
-//            bb += 4.0*M_PI*gamir*kapr*rho*fb*B(i)*bdt;
-//          }
-////          bb += 4.0*M_PI*rho*kapJ_ir(i)*bdt;
-//          int ierr=0;
-//          Real e;
-//          // Newton-Raphson
-//          for (int n=0; n<100; ++n) {
-//            e = cv*T;
-//            Real de = e - kk*SQR(SQR(T)) - bb;
-//            T -= de / (cv - 4.0*kk*T*T*T);
-//            if (T < 0.0) {
-//              e = e0;
-//              ierr = 1;
-//              break;
-//            }
-//            if (fabs(de) <= 1.0e-10*e)
-//              break;
-//          }
-//          Real du_src = e-e0;
-//
-//          Real du = (fabs(du_flux) < e0 && ierr == 1) ? du_flux : du_src;
-////          Real du = du_src;
-          Real du = du_flux;
+          // source term semi-implicit
+          Real p = w0(m,IEN,k,j,i)*gm1;
+          Real rho = w0(m,IDN,k,j,i);
+          Real T = p/Rgas/rho;
+          Real kapr;
+          get_kapr(T, p, met, kapr);
+          Real cv = Rgas*rho*igm1;
+          Real e0 = cv*T;
+          Real kk = 0.0;
+          Real bb = du_flux + e0;
+//          Real bb = Q_v(i)*bdt + e0;
+          for (int vir=0; vir<2; ++vir) {
+            Real gamir, fb;
+            if (vir == 0) {
+              gamir = gamir1;
+              fb = beta;
+            } else {
+              gamir = gamir2;
+              fb = 1.0-beta;
+            }
+            kk += -4.0*M_PI*gamir*kapr*rho*fb*boltz_sigma/M_PI*bdt;
+            bb += 4.0*M_PI*gamir*kapr*rho*fb*B[i]*bdt;
+          }
+//          bb += 4.0*M_PI*rho*kapJ_ir(i)*bdt;
+          int ierr=0;
+          Real e;
+          // Newton-Raphson
+          for (int n=0; n<100; ++n) {
+            e = cv*T;
+            Real de = e - kk*SQR(SQR(T)) - bb;
+            T -= de / (cv - 4.0*kk*T*T*T);
+            if (T < 0.0) {
+              e = e0;
+              ierr = 1;
+              break;
+            }
+            if (fabs(de) <= 1.0e-10*e)
+              break;
+          }
+          Real du_src = e-e0;
+
+          Real du = (fabs(du_flux) < e0 && ierr == 1) ? du_flux : du_src;
+//          Real du = du_src;
+//          Real du = du_flux;
           u0(m,IEN,k,j,i) += du;
         }
+//        });
+        
+//        // Sync all threads in the team so that scratch memory is consistent
+//        member.team_barrier();
         
     });
     
