@@ -51,16 +51,6 @@ template <typename View1D>
 void adjust_ad_pT_arr(const int &N, View1D Tarr, View1D lgparr);
 
 KOKKOS_INLINE_FUNCTION
-void StretchR(const Real r0, const Real r1, Real &r) {
-  Real xi = (r-r0)/(r1-r0);
-  Real a = 2.0;
-  if (fabs(a) < 1.0e-12) {
-    r = r0 + (r1 - r0)*xi;
-  }
-  Real denom = 1.0 - exp(-a);
-  r = r0 + (r1 - r0)*(1.0 - exp(-a*xi))/denom;
-};
-KOKKOS_INLINE_FUNCTION
 void get_daynight_Tp(const Real &p, Real &Tn, Real &Td);
 KOKKOS_INLINE_FUNCTION
 void get_wb_Tp(const Real &p, Real &T);
@@ -83,9 +73,9 @@ void get_init_eos(const Real &Rgas, const Real &grav_acc, const DvceArray1D<Real
 //  \brief Problem Generator for the shallow hot Jupiter test
 
 void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
-  const bool use_etotgrav = pmy_mesh_->pmb_pack->phydro->use_etotgrav;
-  const bool use_wellbalance = pmy_mesh_->pmb_pack->phydro->use_wellbalance;
-  const bool use_wellbalance_local = pmy_mesh_->pmb_pack->phydro->use_wellbalance_local;
+  bool use_etotgrav = false;
+  bool use_wellbalance = false;
+  bool use_wellbalance_local = false;
   const bool use_spherical_polar = pmy_mesh_->use_spherical_polar;
   const bool use_grid_stretch = pmy_mesh_->use_grid_stretch;
   bool user_srcs = pin->GetOrAddBoolean("problem","user_srcs",false);
@@ -105,40 +95,59 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   int &ks = indcs.ks; int &ke = indcs.ke;
   MeshBlockPack *pmbp = pmy_mesh_->pmb_pack;
   auto &size = pmbp->pmb->mb_size;
+  int &ng = indcs.ng;
+  int n1m1 = indcs.nx1 + 2*ng - 1;
+  int n2m1 = (indcs.nx2 > 1)? (indcs.nx2 + 2*ng - 1) : 0;
+  int n3m1 = (indcs.nx3 > 1)? (indcs.nx3 + 2*ng - 1) : 0;
     
-    Real r0, r1;
-//    if (use_grid_stretch) {
-    r0 = pmy_mesh_->mesh_size.x1min;
-    r1 = pmy_mesh_->mesh_size.x1max;
-//    }
-    
-    int &ng = indcs.ng;
-    int n1m1 = indcs.nx1 + 2*ng - 1;
-    int n2m1 = (indcs.nx2 > 1)? (indcs.nx2 + 2*ng - 1) : 0;
-    int n3m1 = (indcs.nx3 > 1)? (indcs.nx3 + 2*ng - 1) : 0;
+  Real r0, r1;
+  r0 = pmy_mesh_->mesh_size.x1min;
+  r1 = pmy_mesh_->mesh_size.x1max;
 
   // Select either Hydro or MHD
   DvceArray5D<Real> u0_;
     
-    auto phi0_x1f = pmbp->phydro->phi0.x1f;
-    auto phi0_x2f = pmbp->phydro->phi0.x2f;
-    auto phi0_x3f = pmbp->phydro->phi0.x3f;
-
-    auto phicc0 = pmbp->phydro->phicc0;
+  DvceArray4D<Real> phi0_x1f;
+  DvceArray4D<Real> phi0_x2f;
+  DvceArray4D<Real> phi0_x3f;
+  DvceArray4D<Real> phicc0;
+  DvceArray5D<Real> u0wb;
+  DvceArray5D<Real> w0wb;
+  DvceArray5D<Real> w0facewb_x1f;
+  DvceArray5D<Real> w0facewb_x2f;
+  DvceArray5D<Real> w0facewb_x3f;
     
-    auto u0wb = pmbp->phydro->u0wb;
-    auto w0wb = pmbp->phydro->w0wb;
-    auto w0facewb_x1f = pmbp->phydro->w0facewb.x1f;
-    auto w0facewb_x2f = pmbp->phydro->w0facewb.x2f;
-    auto w0facewb_x3f = pmbp->phydro->w0facewb.x3f;
+  auto &x1v_ = pmbp->pcoord->x1v;
+  auto &x1f_ = pmbp->pcoord->xx1f;
+  auto &x2v_ = pmbp->pcoord->x2v;
+  auto &x2f_ = pmbp->pcoord->xx2f;
+  auto &x3v_ = pmbp->pcoord->x3v;
+  auto &x3f_ = pmbp->pcoord->xx3f;
 
   Real gamma;
   if (pmbp->phydro != nullptr) {
     u0_ = pmbp->phydro->u0;
     gamma = pmbp->phydro->peos->eos_data.gamma;
+    use_etotgrav = pmbp->phydro->use_etotgrav;
+    use_wellbalance = pmbp->phydro->use_wellbalance;
+    use_wellbalance_local = pmbp->phydro->use_wellbalance_local;
+    phi0_x1f = pmbp->phydro->phi0.x1f;
+    phi0_x2f = pmbp->phydro->phi0.x2f;
+    phi0_x3f = pmbp->phydro->phi0.x3f;
+    phicc0 = pmbp->phydro->phicc0;
+    u0wb = pmbp->phydro->u0wb;
+    w0wb = pmbp->phydro->w0wb;
+    w0facewb_x1f = pmbp->phydro->w0facewb.x1f;
+    w0facewb_x2f = pmbp->phydro->w0facewb.x2f;
+    w0facewb_x3f = pmbp->phydro->w0facewb.x3f;
   } else if (pmbp->pmhd != nullptr) {
     u0_ = pmbp->pmhd->u0;
     gamma = pmbp->pmhd->peos->eos_data.gamma;
+    use_etotgrav = pmbp->pmhd->use_etotgrav;
+    phi0_x1f = pmbp->pmhd->phi0.x1f;
+    phi0_x2f = pmbp->pmhd->phi0.x2f;
+    phi0_x3f = pmbp->pmhd->phi0.x3f;
+    phicc0 = pmbp->pmhd->phicc0;
   }
   Real gm1 = gamma - 1.0;
   Real igm1 = 1.0/gm1;
@@ -200,23 +209,29 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   
     par_for("probini", DevExeSpace(), 0, (pmbp->nmb_thispack-1), 0, n3m1, 0, n2m1, 0, n1m1,
     KOKKOS_LAMBDA(int m, int k, int j, int i) {
+        
       Real &x1min = size.d_view(m).x1min;
       Real &x1max = size.d_view(m).x1max;
       int nx1 = indcs.nx1;
-      Real x1v = CellCenterX(i-is, nx1, x1min, x1max);
-      if (use_grid_stretch) StretchR(r0,r1,x1v);
-      Real r = x1v;
-      if (use_spherical_polar) x1v -= ap;
-
       Real &x2min = size.d_view(m).x2min;
       Real &x2max = size.d_view(m).x2max;
       int nx2 = indcs.nx2;
-      Real x2v = CellCenterX(j-js, nx2, x2min, x2max);
-        
       Real &x3min = size.d_view(m).x3min;
       Real &x3max = size.d_view(m).x3max;
       int nx3 = indcs.nx3;
-      Real x3v = CellCenterX(k-ks, nx3, x3min, x3max);
+        
+      Real x1v, x2v, x3v;
+      if (use_spherical_polar) {
+        x1v = x1v_(m,i);
+        x2v = x2v_(m,j);
+        x3v = x3v_(m,k);
+      } else {
+        x1v = CellCenterX(i-is, nx1, x1min, x1max);
+        x2v = CellCenterX(j-js, nx2, x2min, x2max);
+        x3v = CellCenterX(k-ks, nx3, x3min, x3max);
+      }
+      Real r = x1v;
+      if (use_spherical_polar) x1v -= ap;
         
       Real lam, theta, phi;
       if (use_spherical_polar) {
@@ -253,23 +268,29 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             
     par_for("probwb", DevExeSpace(), 0,(pmbp->nmb_thispack-1),ks,ke,js,je,is,ie,
     KOKKOS_LAMBDA(int m, int k, int j, int i) {
+        
         Real &x1min = size.d_view(m).x1min;
         Real &x1max = size.d_view(m).x1max;
         int nx1 = indcs.nx1;
-        Real x1v = CellCenterX(i-is, nx1, x1min, x1max);
-        if (use_grid_stretch) StretchR(r0,r1,x1v);
-        Real r = x1v;
-        if (use_spherical_polar) x1v -= ap;
-
         Real &x2min = size.d_view(m).x2min;
         Real &x2max = size.d_view(m).x2max;
         int nx2 = indcs.nx2;
-        Real x2v = CellCenterX(j-js, nx2, x2min, x2max);
-          
         Real &x3min = size.d_view(m).x3min;
         Real &x3max = size.d_view(m).x3max;
         int nx3 = indcs.nx3;
-        Real x3v = CellCenterX(k-ks, nx3, x3min, x3max);
+        
+        Real x1v, x2v, x3v;
+        if (use_spherical_polar) {
+          x1v = x1v_(m,i);
+          x2v = x2v_(m,j);
+          x3v = x3v_(m,k);
+        } else {
+          x1v = CellCenterX(i-is, nx1, x1min, x1max);
+          x2v = CellCenterX(j-js, nx2, x2min, x2max);
+          x3v = CellCenterX(k-ks, nx3, x3min, x3max);
+        }
+        Real r = x1v;
+        if (use_spherical_polar) x1v -= ap;
           
         Real lam, theta, phi;
         if (use_spherical_polar) {
@@ -295,10 +316,15 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         Real phicc = - grav_acc * x1v;// - 0.5*SQR(omega*r*sin(theta));
         
       if (use_etotgrav || use_wellbalance_local) {
-          x1v = LeftEdgeX(i-is, nx1, x1min, x1max);
-          x2v = CellCenterX(j-js, nx2, x2min, x2max);
-          x3v = CellCenterX(k-ks, nx3, x3min, x3max);
-          if (use_grid_stretch) StretchR(r0,r1,x1v);
+          if (use_spherical_polar) {
+            x1v = x1f_(m,i);
+            x2v = x2v_(m,j);
+            x3v = x3v_(m,k);
+          } else {
+            x1v = LeftEdgeX(i-is, nx1, x1min, x1max);
+            x2v = CellCenterX(j-js, nx2, x2min, x2max);
+            x3v = CellCenterX(k-ks, nx3, x3min, x3max);
+          }
           r = x1v;
           if (use_spherical_polar) x1v -= ap;
           if (use_spherical_polar) {
@@ -313,8 +339,11 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
           phicc = - grav_acc * x1v;// - 0.5*SQR(omega*r*sin(theta));
           phi0_x1f(m,k,j,i) = phicc;
           if (i == ie) {
-              x1v = LeftEdgeX(i+1-is, nx1, x1min, x1max);
-              if (use_grid_stretch) StretchR(r0,r1,x1v);
+              if (use_spherical_polar) {
+                x1v = x1f_(m,i+1);
+              } else {
+                x1v = LeftEdgeX(i+1-is, nx1, x1min, x1max);
+              }
               r = x1v;
               if (use_spherical_polar) x1v -= ap;
               if (use_spherical_polar) {
@@ -330,10 +359,15 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
               phi0_x1f(m,k,j,i+1) = phicc;
           }
           
-          x1v = CellCenterX(i-is, nx1, x1min, x1max);
-          x2v = LeftEdgeX(j-js, nx2, x2min, x2max);
-          x3v = CellCenterX(k-ks, nx3, x3min, x3max);
-          if (use_grid_stretch) StretchR(r0,r1,x1v);
+          if (use_spherical_polar) {
+            x1v = x1v_(m,i);
+            x2v = x2f_(m,j);
+            x3v = x3v_(m,k);
+          } else {
+            x1v = CellCenterX(i-is, nx1, x1min, x1max);
+            x2v = LeftEdgeX(j-js, nx2, x2min, x2max);
+            x3v = CellCenterX(k-ks, nx3, x3min, x3max);
+          }
           r = x1v;
           if (use_spherical_polar) x1v -= ap;
           if (use_spherical_polar) {
@@ -348,7 +382,11 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
           phicc = - grav_acc * x1v;// - 0.5*SQR(omega*r*sin(theta));
           phi0_x2f(m,k,j,i) = phicc;
           if (j == je) {
-              x2v = LeftEdgeX(j+1-js, nx2, x2min, x2max);
+              if (use_spherical_polar) {
+                x2v = x2f_(m,j+1);
+              } else {
+                x2v = LeftEdgeX(j+1-js, nx2, x2min, x2max);
+              }
               if (use_spherical_polar) {
                 theta = x2v;
                 lam = -x2v+M_PI/2.0;
@@ -362,10 +400,15 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
               phi0_x2f(m,k,j+1,i) = phicc;
           }
           
-          x1v = CellCenterX(i-is, nx1, x1min, x1max);
-          x2v = CellCenterX(j-js, nx2, x2min, x2max);
-          x3v = LeftEdgeX(k-ks, nx3, x3min, x3max);
-          if (use_grid_stretch) StretchR(r0,r1,x1v);
+          if (use_spherical_polar) {
+            x1v = x1v_(m,i);
+            x2v = x2v_(m,j);
+            x3v = x3f_(m,k);
+          } else {
+            x1v = CellCenterX(i-is, nx1, x1min, x1max);
+            x2v = CellCenterX(j-js, nx2, x2min, x2max);
+            x3v = LeftEdgeX(k-ks, nx3, x3min, x3max);
+          }
           r = x1v;
           if (use_spherical_polar) x1v -= ap;
           if (use_spherical_polar) {
@@ -380,7 +423,11 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
           phicc = - grav_acc * x1v;// - 0.5*SQR(omega*r*sin(theta));
           phi0_x3f(m,k,j,i) = phicc;
           if (k == ke) {
-              x3v = LeftEdgeX(k+1-ks, nx3, x3min, x3max);
+              if (use_spherical_polar) {
+                x3v = x3f_(m,k+1);
+              } else {
+                x3v = LeftEdgeX(k+1-ks, nx3, x3min, x3max);
+              }
               if (use_spherical_polar) {
                 theta = x2v;
                 lam = -x2v+M_PI/2.0;
@@ -395,10 +442,15 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
           }
       }
         if (use_wellbalance) {
-            x1v = LeftEdgeX(i-is, nx1, x1min, x1max);
-            x2v = CellCenterX(j-js, nx2, x2min, x2max);
-            x3v = CellCenterX(k-ks, nx3, x3min, x3max);
-            if (use_grid_stretch) StretchR(r0,r1,x1v);
+            if (use_spherical_polar) {
+              x1v = x1f_(m,i);
+              x2v = x2v_(m,j);
+              x3v = x3v_(m,k);
+            } else {
+              x1v = LeftEdgeX(i-is, nx1, x1min, x1max);
+              x2v = CellCenterX(j-js, nx2, x2min, x2max);
+              x3v = CellCenterX(k-ks, nx3, x3min, x3max);
+            }
             if (use_spherical_polar) x1v -= ap;
             Real denwb;
             get_wb_eos(Rgas, grav_acc, zarr.d_view,logparr.d_view,x1v,denwb,pwb);
@@ -408,10 +460,11 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             w0facewb_x1f(m,IM3,k,j,i) = 0.0;
             w0facewb_x1f(m,IEN,k,j,i) = pwb*igm1;
             if (i == ie) {
-                x1v = LeftEdgeX(i+1-is, nx1, x1min, x1max);
-                x2v = CellCenterX(j-js, nx2, x2min, x2max);
-                x3v = CellCenterX(k-ks, nx3, x3min, x3max);
-                if (use_grid_stretch) StretchR(r0,r1,x1v);
+                if (use_spherical_polar) {
+                  x1v = x1f_(m,i+1);
+                } else {
+                  x1v = LeftEdgeX(i+1-is, nx1, x1min, x1max);
+                }
                 if (use_spherical_polar) x1v -= ap;
                 get_wb_eos(Rgas, grav_acc, zarr.d_view,logparr.d_view,x1v,denwb,pwb);
                 w0facewb_x1f(m,IDN,k,j,i+1) = denwb;
@@ -421,10 +474,15 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                 w0facewb_x1f(m,IEN,k,j,i+1) = pwb*igm1;
             }
             
-            x1v = CellCenterX(i-is, nx1, x1min, x1max);
-            x2v = LeftEdgeX(j-js, nx2, x2min, x2max);
-            x3v = CellCenterX(k-ks, nx3, x3min, x3max);
-            if (use_grid_stretch) StretchR(r0,r1,x1v);
+            if (use_spherical_polar) {
+              x1v = x1v_(m,i);
+              x2v = x2f_(m,j);
+              x3v = x3v_(m,k);
+            } else {
+              x1v = CellCenterX(i-is, nx1, x1min, x1max);
+              x2v = LeftEdgeX(j-js, nx2, x2min, x2max);
+              x3v = CellCenterX(k-ks, nx3, x3min, x3max);
+            }
             if (use_spherical_polar) x1v -= ap;
             get_wb_eos(Rgas, grav_acc, zarr.d_view,logparr.d_view,x1v,denwb,pwb);
             w0facewb_x2f(m,IDN,k,j,i) = denwb;
@@ -433,12 +491,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             w0facewb_x2f(m,IM3,k,j,i) = 0.0;
             w0facewb_x2f(m,IEN,k,j,i) = pwb*igm1;
             if (j == je) {
-                x1v = CellCenterX(i-is, nx1, x1min, x1max);
-                x2v = LeftEdgeX(j+1-js, nx2, x2min, x2max);
-                x3v = CellCenterX(k-ks, nx3, x3min, x3max);
-                if (use_grid_stretch) StretchR(r0,r1,x1v);
-                if (use_spherical_polar) x1v -= ap;
-                get_wb_eos(Rgas, grav_acc, zarr.d_view,logparr.d_view,x1v,denwb,pwb);
                 w0facewb_x2f(m,IDN,k,j+1,i) = denwb;
                 w0facewb_x2f(m,IM1,k,j+1,i) = 0.0;
                 w0facewb_x2f(m,IM2,k,j+1,i) = 0.0;
@@ -446,10 +498,15 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                 w0facewb_x2f(m,IEN,k,j+1,i) = pwb*igm1;
             }
             
-            x1v = CellCenterX(i-is, nx1, x1min, x1max);
-            x2v = CellCenterX(j-js, nx2, x2min, x2max);
-            x3v = LeftEdgeX(k-ks, nx3, x3min, x3max);
-            if (use_grid_stretch) StretchR(r0,r1,x1v);
+            if (use_spherical_polar) {
+              x1v = x1v_(m,i);
+              x2v = x2v_(m,j);
+              x3v = x3f_(m,k);
+            } else {
+              x1v = CellCenterX(i-is, nx1, x1min, x1max);
+              x2v = CellCenterX(j-js, nx2, x2min, x2max);
+              x3v = LeftEdgeX(k-ks, nx3, x3min, x3max);
+            }
             if (use_spherical_polar) x1v -= ap;
             get_wb_eos(Rgas, grav_acc, zarr.d_view,logparr.d_view,x1v,denwb,pwb);
             w0facewb_x3f(m,IDN,k,j,i) = denwb;
@@ -458,12 +515,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             w0facewb_x3f(m,IM3,k,j,i) = 0.0;
             w0facewb_x3f(m,IEN,k,j,i) = pwb*igm1;
             if (k == ke) {
-                x1v = CellCenterX(i-is, nx1, x1min, x1max);
-                x2v = CellCenterX(j-js, nx2, x2min, x2max);
-                x3v = LeftEdgeX(k+1-ks, nx3, x3min, x3max);
-                if (use_grid_stretch) StretchR(r0,r1,x1v);
-                if (use_spherical_polar) x1v -= ap;
-                get_wb_eos(Rgas, grav_acc, zarr.d_view,logparr.d_view,x1v,denwb,pwb);
                 w0facewb_x3f(m,IDN,k+1,j,i) = denwb;
                 w0facewb_x3f(m,IM1,k+1,j,i) = 0.0;
                 w0facewb_x3f(m,IM2,k+1,j,i) = 0.0;
@@ -479,23 +530,29 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         int n3m1 = (indcs.nx3 > 1)? (indcs.nx3 + 2*ng - 1) : 0;
         par_for("wbgrav", DevExeSpace(), 0, (pmbp->nmb_thispack-1), 0, n3m1, 0, n2m1, 0, n1m1,
         KOKKOS_LAMBDA(int m, int k, int j, int i) {
+            
             Real &x1min = size.d_view(m).x1min;
             Real &x1max = size.d_view(m).x1max;
             int nx1 = indcs.nx1;
-            Real x1v = CellCenterX(i-is, nx1, x1min, x1max);
-            if (use_grid_stretch) StretchR(r0,r1,x1v);
-            Real r = x1v;
-            if (use_spherical_polar) x1v -= ap;
-
             Real &x2min = size.d_view(m).x2min;
             Real &x2max = size.d_view(m).x2max;
             int nx2 = indcs.nx2;
-            Real x2v = CellCenterX(j-js, nx2, x2min, x2max);
-              
             Real &x3min = size.d_view(m).x3min;
             Real &x3max = size.d_view(m).x3max;
             int nx3 = indcs.nx3;
-            Real x3v = CellCenterX(k-ks, nx3, x3min, x3max);
+            
+            Real x1v, x2v, x3v;
+            if (use_spherical_polar) {
+              x1v = x1v_(m,i);
+              x2v = x2v_(m,j);
+              x3v = x3v_(m,k);
+            } else {
+              x1v = CellCenterX(i-is, nx1, x1min, x1max);
+              x2v = CellCenterX(j-js, nx2, x2min, x2max);
+              x3v = CellCenterX(k-ks, nx3, x3min, x3max);
+            }
+            Real r = x1v;
+            if (use_spherical_polar) x1v -= ap;
               
             Real lam, theta, phi;
             if (use_spherical_polar) {
@@ -519,22 +576,29 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         int n3m1 = (indcs.nx3 > 1)? (indcs.nx3 + 2*ng - 1) : 0;
         par_for("wbcc", DevExeSpace(), 0,(pmbp->nmb_thispack-1), 0, n3m1, 0, n2m1, 0, n1m1,
         KOKKOS_LAMBDA(int m, int k, int j, int i) {
+            
           Real &x1min = size.d_view(m).x1min;
           Real &x1max = size.d_view(m).x1max;
           int nx1 = indcs.nx1;
-          Real x1v = CellCenterX(i-is, nx1, x1min, x1max);
-          if (use_grid_stretch) StretchR(r0,r1,x1v);
-          if (use_spherical_polar) x1v -= ap;
-
           Real &x2min = size.d_view(m).x2min;
           Real &x2max = size.d_view(m).x2max;
           int nx2 = indcs.nx2;
-          Real x2v = CellCenterX(j-js, nx2, x2min, x2max);
-            
           Real &x3min = size.d_view(m).x3min;
           Real &x3max = size.d_view(m).x3max;
           int nx3 = indcs.nx3;
-          Real x3v = CellCenterX(k-ks, nx3, x3min, x3max);
+            
+          Real x1v, x2v, x3v;
+          if (use_spherical_polar) {
+            x1v = x1v_(m,i);
+            x2v = x2v_(m,j);
+            x3v = x3v_(m,k);
+          } else {
+            x1v = CellCenterX(i-is, nx1, x1min, x1max);
+            x2v = CellCenterX(j-js, nx2, x2min, x2max);
+            x3v = CellCenterX(k-ks, nx3, x3min, x3max);
+          }
+          Real r = x1v;
+          if (use_spherical_polar) x1v -= ap;
             
           Real pwb, denwb;
           get_wb_eos(Rgas, grav_acc, zarr.d_view,logparr.d_view,x1v,denwb,pwb);
@@ -558,17 +622,16 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // initialize magnetic fields if MHD
     if (pmbp->pmhd != nullptr) {
       // Read magnetic field strength
-      Real bx = pin->GetReal("problem","b0");
       auto &b0 = pmbp->pmhd->b0;
-      par_for("pgen_b0", DevExeSpace(), 0,(pmbp->nmb_thispack-1),ks,ke,js,je,is,ie,
+      par_for("pgen_b0", DevExeSpace(), 0,(pmbp->nmb_thispack-1),0, n3m1, 0, n2m1, 0, n1m1, //ks,ke,js,je,is,ie,
       KOKKOS_LAMBDA(int m, int k, int j, int i) {
-        b0.x1f(m,k,j,i) = bx;
+        b0.x1f(m,k,j,i) = 0.0;
         b0.x2f(m,k,j,i) = 0.0;
         b0.x3f(m,k,j,i) = 0.0;
-        if (i==ie) b0.x1f(m,k,j,i+1) = bx;
+        if (i==ie) b0.x1f(m,k,j,i+1) = 0.0;
         if (j==je) b0.x2f(m,k,j+1,i) = 0.0;
         if (k==ke) b0.x3f(m,k+1,j,i) = 0.0;
-        u0_(m,IEN,k,j,i) += 0.5*bx*bx;
+//        u0_(m,IEN,k,j,i) += 0.5*bx*bx;
       });
     }
 
@@ -592,21 +655,30 @@ void HydrostaticEquilibrium(Mesh *pm) {
 
     DvceArray5D<Real> u0_;
     DvceArray5D<Real> w0_;
-    const bool use_etotgrav = pmbp->phydro->use_etotgrav;
-    const bool use_wellbalance_local = pmbp->phydro->use_wellbalance_local;
+    Real gamma;
+    bool use_etotgrav = false;
+    bool use_wellbalance_local = false;
     
-    auto phi0_x1f = pmbp->phydro->phi0.x1f;
-    auto phicc0 = pmbp->phydro->phicc0;
+    DvceArray4D<Real> phi0_x1f;
+    DvceArray4D<Real> phicc0;
 
     if (pmbp->phydro != nullptr) {
       u0_ = pmbp->phydro->u0;
       w0_ = pmbp->phydro->w0;
+      gamma = pmbp->phydro->peos->eos_data.gamma;
+      use_etotgrav = pmbp->phydro->use_etotgrav;
+      use_wellbalance_local = pmbp->phydro->use_wellbalance_local;
+      phi0_x1f = pmbp->phydro->phi0.x1f;
+      phicc0 = pmbp->phydro->phicc0;
     } else if (pmbp->pmhd != nullptr) {
       u0_ = pmbp->pmhd->u0;
       w0_ = pmbp->pmhd->w0;
+      gamma = pmbp->pmhd->peos->eos_data.gamma;
+      use_etotgrav = pmbp->pmhd->use_etotgrav;
+      phi0_x1f = pmbp->pmhd->phi0.x1f;
+      phicc0 = pmbp->pmhd->phicc0;
     }
     
-    Real gamma = pmbp->phydro->peos->eos_data.gamma;
     Real igm1 = 1.0/(gamma-1.0);
     Real gigm1 = gamma*igm1;
     Real gm1ig = (gamma-1.0)/gamma;
@@ -655,25 +727,42 @@ void SourceFunc(Mesh *pm, Real bdt) {
     auto &size = pmbp->pmb->mb_size;
 
     DvceArray5D<Real> u0, w0, w0wb;
-    u0 = pmbp->phydro->u0;
-    w0 = pmbp->phydro->w0;
-    w0wb = pmbp->phydro->w0wb;
-    auto phi0_x1f = pmbp->phydro->phi0.x1f;
-    auto phicc0 = pmbp->phydro->phicc0;
+    DvceArray4D<Real> phi0_x1f;
+    DvceArray4D<Real> phicc0;
+    bool use_etotgrav = false;
+    bool use_wellbalance = false;
+    bool use_wellbalance_local = false;
+    Real gamma;
+    if (pmbp->phydro != nullptr) {
+      u0 = pmbp->phydro->u0;
+      w0 = pmbp->phydro->w0;
+      gamma = pmbp->phydro->peos->eos_data.gamma;
+      use_etotgrav = pmbp->phydro->use_etotgrav;
+      use_wellbalance = pmbp->phydro->use_wellbalance;
+      use_wellbalance_local = pmbp->phydro->use_wellbalance_local;
+      phi0_x1f = pmbp->phydro->phi0.x1f;
+      phicc0 = pmbp->phydro->phicc0;
+      w0wb = pmbp->phydro->w0wb;
+    } else if (pmbp->pmhd != nullptr) {
+      u0 = pmbp->pmhd->u0;
+      w0 = pmbp->pmhd->w0;
+      gamma = pmbp->pmhd->peos->eos_data.gamma;
+      use_etotgrav = pmbp->pmhd->use_etotgrav;
+      phi0_x1f = pmbp->pmhd->phi0.x1f;
+      phicc0 = pmbp->pmhd->phicc0;
+    }
+    
+    const bool use_spherical_polar = pm->use_spherical_polar;
     auto area1 = pmbp->pcoord->area.x1f;
     auto volume = pmbp->pcoord->volume;
     auto dx1 = pmbp->pcoord->dx1;
-    const bool use_etotgrav = pmbp->phydro->use_etotgrav;
-    const bool use_wellbalance = pmbp->phydro->use_wellbalance;
-    const bool use_spherical_polar = pm->use_spherical_polar;
-    const bool use_grid_stretch = pm->use_grid_stretch;
-    const bool use_wellbalance_local = pmbp->phydro->use_wellbalance_local;
+    auto &x1v_ = pmbp->pcoord->x1v;
+    auto &x2v_ = pmbp->pcoord->x2v;
+    auto &x3v_ = pmbp->pcoord->x3v;
     
     Real r0, r1;
-//    if (use_grid_stretch) {
     r0 = pm->mesh_size.x1min;
     r1 = pm->mesh_size.x1max;
-//    }
     
 //    Real ap = 9.44e9;
 //    Real omega = 2.06e-5;
@@ -687,7 +776,6 @@ void SourceFunc(Mesh *pm, Real bdt) {
     Real Rgas = pm->pgen->hot_jupiter_param.Rgas;
     
     Real iap = 1.0/ap;
-    Real gamma = pmbp->phydro->peos->eos_data.gamma;
     Real gm1 = gamma-1.0;
     
     Real time = pm->time;
@@ -696,18 +784,25 @@ void SourceFunc(Mesh *pm, Real bdt) {
 
     par_for("usrsource", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-        Real &x1min = size.d_view(m).x1min;
-        Real &x1max = size.d_view(m).x1max;
-        Real x1v = CellCenterX(i-is, indcs.nx1, x1min, x1max);
         
-        Real &x2min = size.d_view(m).x2min;
-        Real &x2max = size.d_view(m).x2max;
-        Real x2v = CellCenterX(j-js, indcs.nx2, x2min, x2max);
+        Real x1v, x2v, x3v;
+        if (use_spherical_polar) {
+          x1v = x1v_(m,i);
+          x2v = x2v_(m,j);
+          x3v = x3v_(m,k);
+        } else {
+          Real &x1min = size.d_view(m).x1min;
+          Real &x1max = size.d_view(m).x1max;
+          Real x1v = CellCenterX(i-is, indcs.nx1, x1min, x1max);
         
-        Real &x3min = size.d_view(m).x3min;
-        Real &x3max = size.d_view(m).x3max;
-        Real x3v = CellCenterX(k-ks, indcs.nx3, x3min, x3max);
-        if (use_grid_stretch) StretchR(r0,r1,x1v);
+          Real &x2min = size.d_view(m).x2min;
+          Real &x2max = size.d_view(m).x2max;
+          Real x2v = CellCenterX(j-js, indcs.nx2, x2min, x2max);
+        
+          Real &x3min = size.d_view(m).x3min;
+          Real &x3max = size.d_view(m).x3max;
+          Real x3v = CellCenterX(k-ks, indcs.nx3, x3min, x3max);
+        }
         
         Real lam, phi, z, theta, r;
         if (use_spherical_polar) {
@@ -838,20 +933,31 @@ void double_gray_two_stream_RT(Mesh *pm, Real bdt) {
     int nmb1 = pm->pmb_pack->nmb_thispack - 1;
     MeshBlockPack *pmbp = pm->pmb_pack;
     auto &size = pmbp->pmb->mb_size;
-
+        
     DvceArray5D<Real> u0, w0;
-    u0 = pmbp->phydro->u0;
-    w0 = pmbp->phydro->w0;
     const bool use_spherical_polar = pm->use_spherical_polar;
-    const bool use_grid_stretch = pm->use_grid_stretch;
+    auto &x1v_ = pmbp->pcoord->x1v;
+    auto &x1f_ = pmbp->pcoord->xx1f;
+    auto &x2v_ = pmbp->pcoord->x2v;
+    auto &x3v_ = pmbp->pcoord->x3v;
     const bool correct_spherical = false;
-    const bool test_oned = true;
+    const bool test_oned = false;
+        
+    Real gamma;
+    if (pmbp->phydro != nullptr) {
+      u0 = pmbp->phydro->u0;
+      w0 = pmbp->phydro->w0;
+      gamma = pmbp->phydro->peos->eos_data.gamma;
+    } else if (pmbp->pmhd != nullptr) {
+      u0 = pmbp->pmhd->u0;
+      w0 = pmbp->pmhd->w0;
+      gamma = pmbp->pmhd->peos->eos_data.gamma;
+    }
     
     Real r0, r1;
-//    if (use_grid_stretch) {
     r0 = pm->mesh_size.x1min;
     r1 = pm->mesh_size.x1max;
-//    }
+
     auto area1 = pmbp->pcoord->area.x1f;
     auto volume = pmbp->pcoord->volume;
     auto dx1 = pmbp->pcoord->dx1;
@@ -867,7 +973,6 @@ void double_gray_two_stream_RT(Mesh *pm, Real bdt) {
     Real Teq = pm->pgen->hot_jupiter_param.Teq;
     
     Real iap = 1.0/ap;
-    Real gamma = pmbp->phydro->peos->eos_data.gamma;
     Real gm1 = gamma-1.0;
     Real cgs2Pa = 0.1;
     Real boltz_sigma = 5.6704e-5;
@@ -896,21 +1001,11 @@ void double_gray_two_stream_RT(Mesh *pm, Real bdt) {
         Real I_ir_up_f[NN];
         Real B[NN];
         
-        Real &x2min = size.d_view(m).x2min;
-        Real &x2max = size.d_view(m).x2max;
-        Real x2v = CellCenterX(j-js, indcs.nx2, x2min, x2max);
+        Real x2v = x2v_(m,j);
+        Real x3v = x3v_(m,k);
         
-        Real &x3min = size.d_view(m).x3min;
-        Real &x3max = size.d_view(m).x3max;
-        Real x3v = CellCenterX(k-ks, indcs.nx3, x3min, x3max);
-        
-        Real &x1min = size.d_view(m).x1min;
-        Real &x1max = size.d_view(m).x1max;
-        
-        Real rtop = LeftEdgeX(ie+1-is, indcs.nx1, x1min, x1max);
-        if (use_grid_stretch) StretchR(r0,r1,rtop);
-        Real rbot = LeftEdgeX(is-is, indcs.nx1, x1min, x1max);
-        if (use_grid_stretch) StretchR(r0,r1,rbot);
+        Real rtop = x1f_(m,ie+1);
+        Real rbot = x1f_(m,is);
         
         Real lam, phi, theta;
         if (use_spherical_polar) {
@@ -954,8 +1049,7 @@ void double_gray_two_stream_RT(Mesh *pm, Real bdt) {
           if (test_oned) kap_ir = 1.0e-2;
           Real dr = dx1(m,k,j,i);
             
-          Real x1v = CellCenterX(i-is, indcs.nx1, x1min, x1max);
-          if (use_grid_stretch) StretchR(r0,r1,x1v);
+          Real x1v = x1v_(m,i);
           Real z, r;
           if (use_spherical_polar) {
             z = x1v-ap;
@@ -964,10 +1058,8 @@ void double_gray_two_stream_RT(Mesh *pm, Real bdt) {
             z = x1v;
           }
             
-          Real rf = LeftEdgeX(i-is, indcs.nx1, x1min, x1max);
-          if (use_grid_stretch) StretchR(r0,r1,rf);
-          Real rf1 = LeftEdgeX(i+1-is, indcs.nx1, x1min, x1max);
-          if (use_grid_stretch) StretchR(r0,r1,rf1);
+          Real rf = x1f_(m,i);
+          Real rf1 = x1f_(m,i+1);
 
 //          Real muf = sqrt(1.0-SQR(ap/rf)*(1.0-SQR(mu0))); // Li & Shibata 2006
           Real mucr = sqrt(1.0-SQR(r0/r1));
@@ -990,10 +1082,8 @@ void double_gray_two_stream_RT(Mesh *pm, Real bdt) {
         I_ir_down_f[ie+1] = 0.0;
         // down-sweep
         for (int i=ie; i>is-1; --i) {
-          Real rf = LeftEdgeX(i-is, indcs.nx1, x1min, x1max);
-          if (use_grid_stretch) StretchR(r0,r1,rf);
-          Real rf1 = LeftEdgeX(i+1-is, indcs.nx1, x1min, x1max);
-          if (use_grid_stretch) StretchR(r0,r1,rf1);
+          Real rf = x1f_(m,i);
+          Real rf1 = x1f_(m,i+1);
             
           Real fac = 1.0;
           if (correct_spherical) fac = SQR(rf1/rf);
@@ -1006,10 +1096,8 @@ void double_gray_two_stream_RT(Mesh *pm, Real bdt) {
         I_ir_up_f[is] = Iint;
         // up-sweep
         for (int i=is+1; i<ie+2; ++i) {
-          Real rf = LeftEdgeX(i-is, indcs.nx1, x1min, x1max);
-          if (use_grid_stretch) StretchR(r0,r1,rf);
-          Real rfm1 = LeftEdgeX(i-1-is, indcs.nx1, x1min, x1max);
-          if (use_grid_stretch) StretchR(r0,r1,rfm1);
+          Real rf = x1f_(m,i);
+          Real rfm1 = x1f_(m,i-1);
             
           Real fac = 1.0;
           if (correct_spherical) fac = SQR(rfm1/rf);
@@ -1051,12 +1139,23 @@ void double_gray_two_stream_RT_source(Mesh *pm, Real bdt) {
     auto &size = pmbp->pmb->mb_size;
 
     DvceArray5D<Real> u0, w0;
-    u0 = pmbp->phydro->u0;
-    w0 = pmbp->phydro->w0;
     const bool use_spherical_polar = pm->use_spherical_polar;
-    const bool use_grid_stretch = pm->use_grid_stretch;
+    auto &x1v_ = pmbp->pcoord->x1v;
+    auto &x2v_ = pmbp->pcoord->x2v;
+    auto &x3v_ = pmbp->pcoord->x3v;
     const bool correct_spherical = false;
     const bool test_oned = false;
+    
+    Real gamma;
+    if (pmbp->phydro != nullptr) {
+      u0 = pmbp->phydro->u0;
+      w0 = pmbp->phydro->w0;
+      gamma = pmbp->phydro->peos->eos_data.gamma;
+    } else if (pmbp->pmhd != nullptr) {
+      u0 = pmbp->pmhd->u0;
+      w0 = pmbp->pmhd->w0;
+      gamma = pmbp->pmhd->peos->eos_data.gamma;
+    }
     
     Real r0, r1;
 //    if (use_grid_stretch) {
@@ -1076,7 +1175,6 @@ void double_gray_two_stream_RT_source(Mesh *pm, Real bdt) {
     Real Teq = pm->pgen->hot_jupiter_param.Teq;
     
     Real iap = 1.0/ap;
-    Real gamma = pmbp->phydro->peos->eos_data.gamma;
     Real gm1 = gamma-1.0;
     Real igm1 = 1.0/gm1;
     Real cgs2Pa = 0.1;
@@ -1104,16 +1202,8 @@ void double_gray_two_stream_RT_source(Mesh *pm, Real bdt) {
         Real B[NN];
         Real Q_v[NN];
         
-        Real &x2min = size.d_view(m).x2min;
-        Real &x2max = size.d_view(m).x2max;
-        Real x2v = CellCenterX(j-js, indcs.nx2, x2min, x2max);
-        
-        Real &x3min = size.d_view(m).x3min;
-        Real &x3max = size.d_view(m).x3max;
-        Real x3v = CellCenterX(k-ks, indcs.nx3, x3min, x3max);
-        
-        Real &x1min = size.d_view(m).x1min;
-        Real &x1max = size.d_view(m).x1max;
+        Real x2v = x2v_(m,j);
+        Real x3v = x3v_(m,k);
         
         Real lam, phi, theta;
         if (use_spherical_polar) {
@@ -1154,8 +1244,7 @@ void double_gray_two_stream_RT_source(Mesh *pm, Real bdt) {
           if (test_oned) kap_ir = 1.0e-2;
           Real dr = dx1(m,k,j,i);
             
-          Real x1v = CellCenterX(i-is, indcs.nx1, x1min, x1max);
-          if (use_grid_stretch) StretchR(r0,r1,x1v);
+          Real x1v = x1v_(m,i);
             
           Real z, r;
           if (use_spherical_polar) {
@@ -1193,15 +1282,12 @@ void double_gray_two_stream_RT_source(Mesh *pm, Real bdt) {
         T = p/Rgas/rho;
         B[is-1] = boltz_sigma/M_PI*SQR(SQR(T));
         
-        Real rtop = CellCenterX(ie+1-is, indcs.nx1, x1min, x1max);
-        if (use_grid_stretch) StretchR(r0,r1,rtop);
+        Real rtop = x1v_(m,ie+1);
         I_down[ie+1] = 0.0;
         // down-sweep
         for (int i=ie; i>is-1; --i) {
-          Real r = CellCenterX(i-is, indcs.nx1, x1min, x1max);
-          if (use_grid_stretch) StretchR(r0,r1,r);
-          Real rp1 = CellCenterX(i+1-is, indcs.nx1, x1min, x1max);
-          if (use_grid_stretch) StretchR(r0,r1,rp1);
+          Real r = x1v_(m,i);
+          Real rp1 = x1v_(m,i+1);
           Real fac = 1.0;
           if (correct_spherical) fac = SQR(rp1/r);
           Real dtau = tau_ir_down[i]-tau_ir_down[i+1];
@@ -1210,15 +1296,12 @@ void double_gray_two_stream_RT_source(Mesh *pm, Real bdt) {
           I_down[i] = (I_down[i+1]*trans + Bavg*(1.0-trans))*fac;
         }
         
-        Real rbot = CellCenterX(is-1-is, indcs.nx1, x1min, x1max);
-        if (use_grid_stretch) StretchR(r0,r1,rbot);
+        Real rbot = x1v_(m,is-1);
         Real I_up = Iint;
         // up-sweep
         for (int i=is; i<ie+1; ++i) {
-          Real r = CellCenterX(i-is, indcs.nx1, x1min, x1max);
-          if (use_grid_stretch) StretchR(r0,r1,r);
-          Real rm1 = CellCenterX(i-1-is, indcs.nx1, x1min, x1max);
-          if (use_grid_stretch) StretchR(r0,r1,rm1);
+          Real r = x1v_(m,i);
+          Real rm1 = x1v_(m,i-1);
           Real fac = 1.0;
           if (correct_spherical) fac = SQR(rm1/r);
           Real dtau = tau_ir_down[i-1]-tau_ir_down[i];
@@ -1609,7 +1692,7 @@ void get_picket_fence_coeff(const Real &Teq, const Real &Teff, Real &gamv1, Real
   Real ap = -2.36;
   Real bp = 13.92;
   Real cp = -19.38;
-  if (Teq < 1800.0 && Teff >= 1400.0) {
+  if (Teff >= 1400.0) { // && Teq < 1800.0) {
     ap = -12.45;
     bp = 82.25;
     cp = -134.42;
@@ -1622,7 +1705,7 @@ void get_picket_fence_coeff(const Real &Teq, const Real &Teff, Real &gamv1, Real
     ab = 6.21;
     bb = -1.63;
   }
-  if (Teq < 1800.0 && Teff >= 1400.0) {
+  if (Teff >= 1400.0) { // && Teq < 1800.0) {
     ab = 3.0;
     bb = -0.69;
   }
@@ -1670,7 +1753,7 @@ void get_picket_fence_coeff(const Real &Teq, const Real &Teff, Real &gamv1, Real
     a1 = 12.65;
     b1 = -3.27;
   }
-  if (Teq < 1800.0  && Teff >= 1400.0) {
+  if (Teff >= 1400.0) { // && Teq < 1800.0) {
     if (Teff < 2000.0) {
       a3 = 0.02;
       b3 = -0.28;
@@ -1933,18 +2016,29 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
     auto &size = pmbp->pmb->mb_size;
 
     DvceArray5D<Real> u0, w0;
-    u0 = pmbp->phydro->u0;
-    w0 = pmbp->phydro->w0;
     const bool use_spherical_polar = pm->use_spherical_polar;
-    const bool use_grid_stretch = pm->use_grid_stretch;
+    auto &x1v_ = pmbp->pcoord->x1v;
+    auto &x1f_ = pmbp->pcoord->xx1f;
+    auto &x2v_ = pmbp->pcoord->x2v;
+    auto &x3v_ = pmbp->pcoord->x3v;
     const bool correct_spherical = false;
     const bool test_oned = false;
+        
+    Real gamma;
+    if (pmbp->phydro != nullptr) {
+      u0 = pmbp->phydro->u0;
+      w0 = pmbp->phydro->w0;
+      gamma = pmbp->phydro->peos->eos_data.gamma;
+    } else if (pmbp->pmhd != nullptr) {
+      u0 = pmbp->pmhd->u0;
+      w0 = pmbp->pmhd->w0;
+      gamma = pmbp->pmhd->peos->eos_data.gamma;
+    }
     
     Real r0, r1;
-//    if (use_grid_stretch) {
     r0 = pm->mesh_size.x1min;
     r1 = pm->mesh_size.x1max;
-//    }
+
     auto area1 = pmbp->pcoord->area.x1f;
     auto volume = pmbp->pcoord->volume;
     auto dx1 = pmbp->pcoord->dx1;
@@ -1963,7 +2057,6 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
     Real met = pm->pgen->hot_jupiter_param.met;
     
     Real iap = 1.0/ap;
-    Real gamma = pmbp->phydro->peos->eos_data.gamma;
     Real gm1 = gamma-1.0;
     Real igm1 = 1.0/gm1;
     Real cgs2Pa = 0.1;
@@ -2013,21 +2106,11 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
         Real Q_v[NN];
 //        Real kapJ_ir[NN];
         
-        Real &x2min = size.d_view(m).x2min;
-        Real &x2max = size.d_view(m).x2max;
-        Real x2v = CellCenterX(j-js, indcs.nx2, x2min, x2max);
+        Real x2v = x2v_(m,j);
+        Real x3v = x3v_(m,k);
         
-        Real &x3min = size.d_view(m).x3min;
-        Real &x3max = size.d_view(m).x3max;
-        Real x3v = CellCenterX(k-ks, indcs.nx3, x3min, x3max);
-        
-        Real &x1min = size.d_view(m).x1min;
-        Real &x1max = size.d_view(m).x1max;
-        
-        Real rtop = LeftEdgeX(ie+1-is, indcs.nx1, x1min, x1max);
-        if (use_grid_stretch) StretchR(r0,r1,rtop);
-        Real rbot = LeftEdgeX(is-is, indcs.nx1, x1min, x1max);
-        if (use_grid_stretch) StretchR(r0,r1,rbot);
+        Real rtop = x1v_(m,ie+1);
+        Real rbot = x1v_(m,is);
         
         Real lam, phi, theta;
         if (use_spherical_polar) {
@@ -2079,8 +2162,7 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
           get_kapr(T, p, met, kapr);
           Real dr = dx1(m,k,j,i);
           tau_down_r_f[i] = tau_down_r_f[i+1] + kapr*rho*dr;
-          Real r = LeftEdgeX(i-is, indcs.nx1, x1min, x1max);
-          if (use_grid_stretch) StretchR(r0,r1,r);
+          Real r = x1f_(m,i);
 ////          Real delta = (drtop+(rtop-r))/r;
 //          Real delta = dr/r;
 //          Real fac = (sqrt(SQR(mu0)+2.0*delta+SQR(delta)) - mu0)/delta;

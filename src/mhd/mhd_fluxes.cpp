@@ -58,6 +58,9 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
   auto &coord_ = pmy_pack->pcoord->coord_data;
   auto &w0_ = w0;
   auto &b0_ = bcc0;
+    
+  auto &use_cubed_sphere = pmy_pack->pmesh->use_cubed_sphere;
+  auto &use_spherical_polar = pmy_pack->pmesh->use_spherical_polar;
 
   //--------------------------------------------------------------------------------------
   // i-direction
@@ -69,6 +72,9 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
   auto &e31_ = e3x1;
   auto &e21_ = e2x1;
   auto &bx_ = b0.x1f;
+    
+  auto &x1v_ = pmy_pack->pcoord->x1v;
+  auto &x1f_ = pmy_pack->pcoord->xx1f;
 
   // set the loop limits for 1D/2D/3D problems
   int jl,ju,kl,ku;
@@ -88,6 +94,11 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
     ScrArray2D<Real> wr(member.team_scratch(scr_level), nvars, ncells1);
     ScrArray2D<Real> bl(member.team_scratch(scr_level), 3, ncells1);
     ScrArray2D<Real> br(member.team_scratch(scr_level), 3, ncells1);
+      
+    if (use_spherical_polar) {
+      GridPiecewiseLinearX1(member, m, k, j, il-1, iu, w0_, x1v_, x1f_, wl, wr);
+      GridPiecewiseLinearX1(member, m, k, j, il-1, iu, b0_, x1v_, x1f_, bl, br);
+    } else {
 
     // Reconstruct qR[i] and qL[i+1], for both W and Bcc
     switch (recon_method_) {
@@ -111,6 +122,9 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
       default:
         break;
     }
+        
+    }
+      
     // Sync all threads in the team so that scratch memory is consistent
     member.team_barrier();
 
@@ -169,6 +183,9 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
     auto &by_ = b0.x2f;
     auto &e12_ = e1x2;
     auto &e32_ = e3x2;
+      
+    auto &x2v_ = pmy_pack->pcoord->x2v;
+    auto &x2f_ = pmy_pack->pcoord->xx2f;
 
     // set the loop limits for 2D/3D problems
     if (pmy_pack->pmesh->two_d) {
@@ -202,6 +219,11 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
           bl     = scr5;
           bl_jp1 = scr4;
         }
+          
+        if (use_spherical_polar) {
+          GridPiecewiseLinearX2(member, m, k, j, is-1, ie+1, w0_, x2v_, x2f_, wl_jp1, wr);
+          GridPiecewiseLinearX2(member, m, k, j, is-1, ie+1, b0_, x2v_, x2f_, bl_jp1, br);
+        } else {
 
         // Reconstruct qR[j] and qL[j+1], for both W and Bcc
         switch (recon_method_) {
@@ -225,6 +247,9 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
           default:
             break;
         }
+            
+        }
+          
         member.team_barrier();
 
         // compute fluxes over [js,je+1].  MHD RS also computes electric fields, where
@@ -294,6 +319,9 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
     auto &bz_ = b0.x3f;
     auto &e23_ = e2x3;
     auto &e13_ = e1x3;
+      
+    auto &x3v_ = pmy_pack->pcoord->x3v;
+    auto &x3f_ = pmy_pack->pcoord->xx3f;
 
     // set the loop limits
     kl = ks-1, ku = ke+1;
@@ -322,6 +350,11 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
           bl     = scr5;
           bl_kp1 = scr4;
         }
+          
+        if (use_spherical_polar) {
+          GridPiecewiseLinearX3(member, m, k, j, is-1, ie+1, w0_, x3v_, x3f_, wl_kp1, wr);
+          GridPiecewiseLinearX3(member, m, k, j, is-1, ie+1, b0_, x3v_, x3f_, bl_kp1, br);
+        } else {
 
         // Reconstruct qR[k] and qL[k+1], for both W and Bcc
         switch (recon_method_) {
@@ -345,6 +378,9 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
           default:
             break;
         }
+            
+        }
+          
         member.team_barrier();
 
         // compute fluxes over [ks,ke+1].  MHD RS also computes electric fields, where

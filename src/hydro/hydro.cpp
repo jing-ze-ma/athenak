@@ -182,9 +182,6 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
         std::exit(EXIT_FAILURE);
       }
   }
-  use_reconst_logp_x1 = pin->GetOrAddBoolean("hydro","reconst_logp_x1",false);
-  use_reconst_logp_x2 = pin->GetOrAddBoolean("hydro","reconst_logp_x2",false);
-  use_reconst_logp_x3 = pin->GetOrAddBoolean("hydro","reconst_logp_x3",false);
         
   // determine if wellbalance is enabled
   use_wellbalance = pin->GetOrAddBoolean("hydro","wellbalance",false);

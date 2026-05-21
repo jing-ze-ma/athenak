@@ -69,6 +69,13 @@ class Coordinates {
   DvceArray4D<Real> dx1;
   DvceArray4D<Real> dx2;
   DvceArray4D<Real> dx3;
+  DvceArray2D<Real> x1v;
+  DvceArray2D<Real> x2v;
+  DvceArray2D<Real> x3v;
+  DvceArray2D<Real> xx1f;
+  DvceArray2D<Real> xx2f;
+  DvceArray2D<Real> xx3f;
+  DvceEdgeFld4D<Real> dxedge;
   DvceArray3D<Real> sin_cell;
   DvceArray3D<Real> cos_cell;
   DvceArray3D<Real> sin_face1;
@@ -80,7 +87,8 @@ class Coordinates {
   DvceArray4D<Real> z_ov_rE;
     
   void CoordSphericalPolar();
-  void SrcTermsSphericalPolar(const DvceArray5D<Real> &w0, const DvceArray5D<Real> &w0wb, const DvceFaceFld5D<Real> uflx, const EOS_Data &eos_data, const Real bdt, DvceArray5D<Real> &u0);
+  void SrcTermsSphericalPolarHydro(const DvceArray5D<Real> &w0, const DvceArray5D<Real> &w0wb, const DvceFaceFld5D<Real> uflx, const EOS_Data &eos_data, const Real bdt, DvceArray5D<Real> &u0);
+  void SrcTermsSphericalPolarMHD(const DvceArray5D<Real> &w0, const DvceArray5D<Real> &bcc0,  const DvceFaceFld5D<Real> uflx, const EOS_Data &eos_data, const Real bdt, DvceArray5D<Real> &u0);
   KOKKOS_INLINE_FUNCTION
   void StretchR(const Real r0, const Real r1, Real &r) {
     Real xi = (r-r0)/(r1-r0);
@@ -90,6 +98,7 @@ class Coordinates {
     }
     Real denom = 1.0 - exp(-a);
     r = r0 + (r1 - r0)*(1.0 - exp(-a*xi))/denom;
+//    r = r0*pow(r1/r0,xi);
   };
     
   void CoordGnomonicEquiangle();

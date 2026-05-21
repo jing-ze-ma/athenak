@@ -204,6 +204,10 @@ TaskStatus MHD::Fluxes(Driver *pdrive, int stage) {
   if ((presist != nullptr) && (peos->eos_data.is_ideal)) {
     presist->AddResistiveFluxes(b0, uflx);
   }
+    
+  if (use_etotgrav) {
+    AddGravFlux(phi0,uflx);
+  }
 
   // call FOFC if necessary
   if (use_fofc) {
@@ -266,6 +270,14 @@ TaskStatus MHD::MHDSrcTerms(Driver *pdrive, int stage) {
     pmy_pack->pcoord->CoordSrcTerms(w0, bcc0, peos->eos_data, beta_dt, u0);
   } else if (pmy_pack->pcoord->is_dynamical_relativistic) {
     pmy_pack->pdyngr->AddCoordTerms(w0, bcc0, beta_dt, u0, pmy_pack->pmesh->mb_indcs.ng);
+  }
+    
+  // Add coordinate source terms in curvi-linear grid.  Again, must be computed with only primitives.
+  if (pmy_pack->pmesh->use_cubed_sphere) {
+    pmy_pack->pcoord->SrcTermsGnomonicEquiangle(w0, uflx, peos->eos_data, beta_dt, u0);
+  }
+  if (pmy_pack->pmesh->use_spherical_polar) {
+    pmy_pack->pcoord->SrcTermsSphericalPolarMHD(w0, bcc0, uflx, peos->eos_data, beta_dt, u0);
   }
 
   // Add user source terms
@@ -549,7 +561,13 @@ TaskStatus MHD::ConToPrim(Driver *pdrive, int stage) {
   int n1m1 = indcs.nx1 + 2*ng - 1;
   int n2m1 = (indcs.nx2 > 1)? (indcs.nx2 + 2*ng - 1) : 0;
   int n3m1 = (indcs.nx3 > 1)? (indcs.nx3 + 2*ng - 1) : 0;
+  if (use_etotgrav) {
+    RemoveGravEtot(phicc0, u0, 0, n1m1, 0, n2m1, 0, n3m1);
+  }
   peos->ConsToPrim(u0, b0, w0, bcc0, false, 0, n1m1, 0, n2m1, 0, n3m1);
+  if (use_etotgrav) {
+    AddGravEtot(phicc0, u0, 0, n1m1, 0, n2m1, 0, n3m1);
+  }
   return TaskStatus::complete;
 }
 

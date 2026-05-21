@@ -27,6 +27,8 @@ Coordinates::Coordinates(ParameterInput *pin, MeshBlockPack *ppack) :
     volume("volume",1,1,1,1),
     area("area",1,1,1,1),
     dx1("dx1",1,1,1,1), dx2("dx2",1,1,1,1), dx3("dx3",1,1,1,1),
+    x1v("x1v",1,1), x2v("x2v",1,1), x3v("x3v",1,1),
+    xx1f("xx1f",1,1), xx2f("xx2f",1,1), xx3f("xx3f",1,1), dxedge("dxe",1,1,1,1),
     sin_cell("sin_cell",1,1,1), cos_cell("cos_cell",1,1,1),
     sin_face1("sin_face1",1,1,1), cos_face1("cos_face1",1,1,1),
     sin_face2("sin_face2",1,1,1), cos_face2("cos_face2",1,1,1),
@@ -46,6 +48,15 @@ Coordinates::Coordinates(ParameterInput *pin, MeshBlockPack *ppack) :
     Kokkos::realloc(dx1, nmb, ncells3, ncells2, ncells1);
     Kokkos::realloc(dx2, nmb, ncells3, ncells2, ncells1);
     Kokkos::realloc(dx3, nmb, ncells3, ncells2, ncells1);
+    Kokkos::realloc(x1v, nmb, ncells1);
+    Kokkos::realloc(x2v, nmb, ncells2);
+    Kokkos::realloc(x3v, nmb, ncells3);
+    Kokkos::realloc(xx1f, nmb, ncells1+1);
+    Kokkos::realloc(xx2f, nmb, ncells2+1);
+    Kokkos::realloc(xx3f, nmb, ncells3+1);
+    Kokkos::realloc(dxedge.x1e, nmb, ncells3, ncells2, ncells1);
+    Kokkos::realloc(dxedge.x2e, nmb, ncells3, ncells2, ncells1);
+    Kokkos::realloc(dxedge.x3e, nmb, ncells3, ncells2, ncells1);
     Kokkos::realloc(x_ov_rD, nmb, ncells3, ncells2, ncells1);
     Kokkos::realloc(y_ov_rC, nmb, ncells3, ncells2, ncells1);
     Kokkos::realloc(z_ov_rE, nmb, ncells3, ncells2, ncells1);
@@ -543,29 +554,27 @@ void Coordinates::CoordSphericalPolar() {
   int &is = indcs.is; int &ie = indcs.ie;
   int &js = indcs.js; int &je = indcs.je;
   int &ks = indcs.ks; int &ke = indcs.ke;
+  int &ng = indcs.ng;
+  int n1m1 = indcs.nx1 + 2*ng - 1;
+  int n2m1 = (indcs.nx2 > 1)? (indcs.nx2 + 2*ng - 1) : 0;
+  int n3m1 = (indcs.nx3 > 1)? (indcs.nx3 + 2*ng - 1) : 0;
   int nmb1 = pmy_pack->nmb_thispack - 1;
 
-  par_for("spcoord", DevExeSpace(), 0,nmb1,ks,ke,js,je,is,ie,
+  par_for("spcoord", DevExeSpace(), 0,nmb1,0,n3m1,0,n2m1,0,n1m1,//ks,ke,js,je,is,ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
 
+    // --- radial ---
     Real r_c, r_l, r_r;
-    if (pmy_pack->pmesh->three_d) {
-        // --- radial ---
-        r_c  = CellCenterX(i-is, indcs.nx1, size.d_view(m).x1min, size.d_view(m).x1max);
-        r_l  = LeftEdgeX(i-is, indcs.nx1, size.d_view(m).x1min, size.d_view(m).x1max);
-        r_r  = LeftEdgeX(i+1-is, indcs.nx1, size.d_view(m).x1min, size.d_view(m).x1max);
-        // stretch the radial grid
-        if (pmy_pack->pmesh->use_grid_stretch) {
-          Real r0 = pmy_pack->pmesh->mesh_size.x1min;
-          Real r1 = pmy_pack->pmesh->mesh_size.x1max;
-          StretchR(r0,r1,r_c);
-          StretchR(r0,r1,r_l);
-          StretchR(r0,r1,r_r);
-        }
-    } else {
-        r_c = 1.0;
-        r_l = 0.0;
-        r_r = 1.0;
+    r_c  = CellCenterX(i-is, indcs.nx1, size.d_view(m).x1min, size.d_view(m).x1max);
+    r_l  = LeftEdgeX(i-is, indcs.nx1, size.d_view(m).x1min, size.d_view(m).x1max);
+    r_r  = LeftEdgeX(i+1-is, indcs.nx1, size.d_view(m).x1min, size.d_view(m).x1max);
+    // stretch the radial grid
+    if (pmy_pack->pmesh->use_grid_stretch) {
+      Real r0 = pmy_pack->pmesh->mesh_size.x1min;
+      Real r1 = pmy_pack->pmesh->mesh_size.x1max;
+      StretchR(r0,r1,r_c);
+      StretchR(r0,r1,r_l);
+      StretchR(r0,r1,r_r);
     }
 
     // --- angles ---
@@ -581,21 +590,45 @@ void Coordinates::CoordSphericalPolar() {
     Real sinc   = fabs(sin(theta));
     Real cosl   = cos(thetal);
     Real cosr   = cos(thetar);
+      
+    // --- radial edge lengths ---
+    dxedge.x1e(m,k,j,i) = r_r - r_l;
+    if (j == je) dxedge.x1e(m,k,j+1,i) = r_r - r_l;
+    if (k == ke) dxedge.x1e(m,k+1,j,i) = r_r - r_l;
+    if (j == je && k == ke) dxedge.x1e(m,k+1,j+1,i) = r_r - r_l;
+      
+    // --- theta edge lengths ---
+    dxedge.x2e(m,k,j,i) = r_l * (thetar-thetal);
+    if (i == ie) dxedge.x2e(m,k,j,i+1) = r_r * (thetar-thetal);
+    if (k == ke) dxedge.x2e(m,k+1,j,i) = r_l * (thetar-thetal);
+    if (i == ie && k == ke) dxedge.x2e(m,k+1,j,i+1) = r_r * (thetar-thetal);
+      
+    // --- phi edge lengths ---
+    dxedge.x3e(m,k,j,i) = r_l * sinl * (phir-phil);
+    if (i == ie) dxedge.x3e(m,k,j,i+1) = r_r * sinl * (phir-phil);
+    if (j == je) dxedge.x3e(m,k,j+1,i) = r_l * sinr * (phir-phil);
+    if (i == ie && j == je) dxedge.x3e(m,k,j+1,i+1) = r_r * sinr * (phir-phil);
 
     // --- radial faces ---
     area.x1f(m,k,j,i) = SQR(r_l) * fabs(cosl-cosr) * (phir-phil);
     Real area1r = SQR(r_r) * fabs(cosl-cosr) * (phir-phil);
     if (i == ie) area.x1f(m,k,j,i+1) = area1r;
+    xx1f(m,i) = r_l;
+    if (i == ie) xx1f(m,i+1) = r_r;
 
     // --- theta faces ---
     area.x2f(m,k,j,i) = 0.5 * (SQR(r_r)-SQR(r_l)) * sinl * (phir-phil);
     Real area2r = 0.5 * (SQR(r_r)-SQR(r_l)) * sinr * (phir-phil);
     if (j == je) area.x2f(m,k,j+1,i) = area2r;
+    xx2f(m,j) = thetal;
+    if (j == je) xx2f(m,j+1) = thetar;
 
     // --- phi faces ---
     area.x3f(m,k,j,i) = 0.5 * (SQR(r_r)-SQR(r_l)) * (thetar-thetal);
     Real area3r = 0.5 * (SQR(r_r)-SQR(r_l)) * (thetar-thetal);
     if (k == ke) area.x3f(m,k+1,j,i) = area3r;
+    xx3f(m,k) = phil;
+    if (k == ke) xx3f(m,k+1) = phir;
 
     // --- volume ---
 
@@ -604,13 +637,60 @@ void Coordinates::CoordSphericalPolar() {
     dx3(m,k,j,i) = r_c * sinc * (phir-phil);
     dx1(m,k,j,i) = r_r-r_l;
       
+    // Mignone 2014 correction
+    x1v(m,i) = 1.0/4.0*(SQR(SQR(r_r))-SQR(SQR(r_l))) / (1.0/3.0*(r_r*r_r*r_r-r_l*r_l*r_l));
+    x2v(m,j) = ((sinr-thetar*cosr) - (sinl-thetal*cosl)) / fabs(cosr-cosl);
+    x3v(m,k) = 0.5*(phir+phil);
+      
     z_ov_rE(m,k,j,i) = (area1r - area.x1f(m,k,j,i)) / volume(m,k,j,i);
     x_ov_rD(m,k,j,i) = (area2r - area.x2f(m,k,j,i)) / volume(m,k,j,i);
     y_ov_rC(m,k,j,i) = (sinr-sinl)/(sinr+sinl);
   });
 }
 
-void Coordinates::SrcTermsSphericalPolar(const DvceArray5D<Real> &w0, const DvceArray5D<Real> &w0wb, const DvceFaceFld5D<Real> uflx, const EOS_Data &eos_data, const Real bdt, DvceArray5D<Real> &u0) {
+void Coordinates::SrcTermsSphericalPolarHydro(const DvceArray5D<Real> &w0, const DvceArray5D<Real> &w0wb, const DvceFaceFld5D<Real> uflx, const EOS_Data &eos_data, const Real bdt, DvceArray5D<Real> &u0) {
+
+  auto &size = pmy_pack->pmb->mb_size;
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  int &is = indcs.is; int &ie = indcs.ie;
+  int &js = indcs.js; int &je = indcs.je;
+  int &ks = indcs.ks; int &ke = indcs.ke;
+  int nmb1 = pmy_pack->nmb_thispack - 1;
+ 
+  Real gamma = eos_data.gamma;
+  Real gm1 = gamma - 1.0;
+
+  par_for("spsrc", DevExeSpace(), 0,nmb1,ks,ke,js,je,is,ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      
+    Real r_l = xx1f(m,i);
+    Real r_r = xx1f(m,i+1);
+    Real factor = (r_r-r_l)/(r_r+r_l);
+      
+    Real v1 = w0(m,IVX,k,j,i);
+    Real v2 = w0(m,IVY,k,j,i);
+    Real v3 = w0(m,IVZ,k,j,i);
+    Real rho = w0(m,IDN,k,j,i);
+    Real pr = w0(m,IEN,k,j,i)*gm1;
+    if (pmy_pack->phydro->use_wellbalance) pr -= w0wb(m,IEN,k,j,i)*gm1;
+    Real m_ii_h = pr + 0.5*rho*(v2*v2+v3*v3);
+    Real m_pp = pr + rho*SQR(v3);
+      
+    Real src1 = z_ov_rE(m,k,j,i) * m_ii_h;
+    Real src2 = x_ov_rD(m,k,j,i) * m_pp;
+    Real src3 = -y_ov_rC(m,k,j,i) * (uflx.x2f(m,IM3,k,j,i)*area.x2f(m,k,j,i)+uflx.x2f(m,IM3,k,j+1,i)*area.x2f(m,k,j+1,i))/volume(m,k,j,i);
+      
+    src2 -= factor * (uflx.x1f(m,IM2,k,j,i)*area.x1f(m,k,j,i)+uflx.x1f(m,IM2,k,j,i+1)*area.x1f(m,k,j,i+1))/volume(m,k,j,i);
+    src3 -= factor * (uflx.x1f(m,IM3,k,j,i)*area.x1f(m,k,j,i)+uflx.x1f(m,IM3,k,j,i+1)*area.x1f(m,k,j,i+1))/volume(m,k,j,i);
+      
+    u0(m,IM1,k,j,i) += src1*bdt;
+    u0(m,IM2,k,j,i) += src2*bdt;
+    u0(m,IM3,k,j,i) += src3*bdt;
+    
+  });
+}
+
+void Coordinates::SrcTermsSphericalPolarMHD(const DvceArray5D<Real> &w0, const DvceArray5D<Real> &bcc0, const DvceFaceFld5D<Real> uflx, const EOS_Data &eos_data, const Real bdt, DvceArray5D<Real> &u0) {
 
   auto &size = pmy_pack->pmb->mb_size;
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -625,26 +705,22 @@ void Coordinates::SrcTermsSphericalPolar(const DvceArray5D<Real> &w0, const Dvce
   par_for("spsrc", DevExeSpace(), 0,nmb1,ks,ke,js,je,is,ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       
-    Real r_l  = LeftEdgeX(i-is, indcs.nx1, size.d_view(m).x1min, size.d_view(m).x1max);
-    Real r_r  = LeftEdgeX(i+1-is, indcs.nx1, size.d_view(m).x1min, size.d_view(m).x1max);
-    // stretch the radial grid
-    if (pmy_pack->pmesh->use_grid_stretch) {
-      Real r0 = pmy_pack->pmesh->mesh_size.x1min;
-      Real r1 = pmy_pack->pmesh->mesh_size.x1max;
-      StretchR(r0,r1,r_l);
-      StretchR(r0,r1,r_r);
-    }
+    Real r_l = xx1f(m,i);
+    Real r_r = xx1f(m,i+1);
     Real factor = (r_r-r_l)/(r_r+r_l);
       
     Real v1 = w0(m,IVX,k,j,i);
     Real v2 = w0(m,IVY,k,j,i);
     Real v3 = w0(m,IVZ,k,j,i);
-    Real pr = w0(m,IEN,k,j,i)*gm1;
-    if (pmy_pack->phydro->use_wellbalance) pr -= w0wb(m,IEN,k,j,i)*gm1;
     Real rho = w0(m,IDN,k,j,i);
+    Real pr = w0(m,IEN,k,j,i)*gm1;
+    Real m_ii_h = pr + 0.5*rho*(v2*v2+v3*v3);
+    Real m_pp = pr + rho*SQR(v3);
+    m_ii_h += 0.5*SQR(bcc0(m,IBX,k,j,i));
+    m_pp += 0.5*( SQR(bcc0(m,IBX,k,j,i)) + SQR(bcc0(m,IBY,k,j,i)) - SQR(bcc0(m,IBZ,k,j,i)) );
       
-    Real src1 = z_ov_rE(m,k,j,i) * (pr + 0.5*rho*(v2*v2+v3*v3));
-    Real src2 = x_ov_rD(m,k,j,i) * (pr + rho*SQR(v3));
+    Real src1 = z_ov_rE(m,k,j,i) * m_ii_h;
+    Real src2 = x_ov_rD(m,k,j,i) * m_pp;
     Real src3 = -y_ov_rC(m,k,j,i) * (uflx.x2f(m,IM3,k,j,i)*area.x2f(m,k,j,i)+uflx.x2f(m,IM3,k,j+1,i)*area.x2f(m,k,j+1,i))/volume(m,k,j,i);
       
     src2 -= factor * (uflx.x1f(m,IM2,k,j,i)*area.x1f(m,k,j,i)+uflx.x1f(m,IM2,k,j,i+1)*area.x1f(m,k,j,i+1))/volume(m,k,j,i);

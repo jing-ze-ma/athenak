@@ -1,0 +1,77 @@
+# AthenaXXX input file for deep hot Jupiter test
+
+<comment>
+problem   = deep hot jupiter
+reference = Noti et al. MNRAS 524, 3396 (2023); Lee et al. MNRAS 506,2695 (2021)
+
+<job>
+basename  = dhj          # problem ID: basename of output filenames
+
+<mesh>
+nghost    = 2           # Number of ghost cells
+nx1       = 64         # Number of zones in X1-direction
+x1min     = 9.44e9      # minimum value of X1
+x1max     = 11.34e9     # maximum value of X1
+ix1_bc    = user        # inner-X1 boundary flag
+ox1_bc    = user        # outer-X1 boundary flag
+
+nx2       = 64         # Number of zones in X2-direction
+x2min     = 0.349065844 # minimum value of X2
+x2max     = 2.792526756 # maximum value of X2
+ix2_bc    = reflect     # inner-X2 boundary flag
+ox2_bc    = reflect     # outer-X2 boundary flag
+
+nx3       = 128         # Number of zones in X3-direction
+x3min     = 0.0         # minimum value of X3
+x3max     = 6.2831853   # maximum value of X3
+ix3_bc    = periodic    # inner-X3 boundary flag
+ox3_bc    = periodic    # outer-X3 boundary flag
+
+use_spherical_polar = true
+#use_grid_stretch = true
+
+<meshblock>
+nx1       = 64         # Number of cells in each MeshBlock, X1-dir
+nx2       = 64         # Number of cells in each MeshBlock, X2-dir
+nx3       = 128         # Number of cells in each MeshBlock, X3-dir
+
+<time>
+evolution  = dynamic     # dynamic/kinematic/static
+integrator = rk2         # time integration algorithm
+cfl_number = 0.3         # The Courant, Friedrichs, & Lewy (CFL) Number
+nlim       = 1000000000    # cycle limit
+tlim       = 8.64e8       # time limit
+ndiag      = 1           # cycles between diagostic output
+
+<hydro>
+eos             = ideal  # EOS type
+reconstruct     = plm    # spatial reconstruction method
+rsolver         = hllc   # Riemann-solver to be used
+gamma           = 1.4727545958         # gamma = C_p/C_v
+etotgrav = true
+#wellbalance = true
+#wellbalance_reconst = false
+#wellbalance_local = true
+#wb_option = isentropic
+#wb_x1 = true
+#wb_rho = true
+
+<problem>
+user_srcs = true
+hot_jupiter = true
+Teq   = 1500.0
+omega = 2.06e-5
+grav  = 942.0
+ap    = 9.44e9
+Rgas  = 4.593e7
+met   = 0.0
+
+<output1>
+file_type  = hst         # History data dump
+dt         = 8.64e7        # time increment between outputs
+
+<output2>
+file_type  = bin         # Binary data dump
+variable   = hydro_w     # variables to be output
+dt         = 2.16e7         # time increment between outputs
+

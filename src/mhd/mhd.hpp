@@ -16,6 +16,7 @@
 #include "parameter_input.hpp"
 #include "tasklist/task_list.hpp"
 #include "bvals/bvals.hpp"
+#include "coordinates/cell_locations.hpp"
 
 // forward declarations
 class EquationOfState;
@@ -141,6 +142,11 @@ class MHD {
   // following used for FOFC algorithm
   DvceArray4D<bool> fofc;  // flag for each cell to indicate if FOFC is needed
   bool use_fofc = false;   // flag to enable FOFC
+    
+  // following only used for including time-independent gravity in the conserved energy equation
+  bool use_etotgrav = false;   // flag to enable etotgrav
+  DvceFaceFld4D<Real> phi0;     // face-centered gravitational potential energy
+  DvceArray4D<Real> phicc0;     // cell-centered gravitational potential energy
 
   // container to hold names of TaskIDs
   MHDTaskIDs id;
@@ -192,8 +198,102 @@ class MHD {
 
   // first-order flux correction
   void FOFC(Driver *d, int stage);
+    
+  void AddGravFlux(const DvceFaceFld4D<Real> &phi0, DvceFaceFld5D<Real> &flx);
+  void AddGravEtot(const DvceArray4D<Real> &phicc0, DvceArray5D<Real> &cons, const int il, const int iu, const int jl, const int ju, const int kl, const int ku);
+  void RemoveGravEtot(const DvceArray4D<Real> &phicc0, DvceArray5D<Real> &cons, const int il, const int iu, const int jl, const int ju, const int kl, const int ku);
 
   DvceArray5D<Real> utest, bcctest;  // scratch arrays for FOFC
+    
+    KOKKOS_INLINE_FUNCTION
+    void PLM_nonuniform(const Real &q_im1, const Real &q_i, const Real &q_ip1,
+                        const Real &dxL, const Real &dxR, const Real &dxLh, const Real &dxRh,
+                        Real &ql_ip1, Real &qr_i) {
+      Real cL = dxL/dxLh;
+      Real cR = dxR/dxRh;
+
+      // Left/right slopes (properly scaled)
+      Real sL = (q_i   - q_im1) / dxL;
+      Real sR = (q_ip1 - q_i  ) / dxR;
+
+      // modified van Leer (Mignone 2014)
+      Real slope = sL*sR*(cR*sL+cL*sR) / (SQR(sL)+(cR+cL-2.0)*sL*sR+SQR(sR));
+      slope = (sL * sR > 0.0) ? slope : 0.0;
+
+      // Reconstruct to faces
+      ql_ip1 = q_i + slope * dxRh;
+      qr_i   = q_i - slope * dxLh;
+      return;
+    };
+    
+    KOKKOS_INLINE_FUNCTION
+    void GridPiecewiseLinearX1(TeamMember_t const &member, const int m, const int k, const int j, const int il, const int iu,
+        const DvceArray5D<Real> &q, const DvceArray2D<Real> &xv, const DvceArray2D<Real> &xf,
+        ScrArray2D<Real> &ql, ScrArray2D<Real> &qr) {
+      int nvar = q.extent_int(1);
+      for (int n=0; n<nvar; ++n) {
+        par_for_inner(member, il, iu, [&](const int i) {
+          Real x_im1  = xv(m,i-1);
+          Real x_imh  = xf(m,i);
+          Real x_i    = xv(m,i);
+          Real x_iph  = xf(m,i+1);
+          Real x_ip1  = xv(m,i+1);
+          Real dxLh = x_i-x_imh;
+          Real dxRh = x_iph-x_i;
+          Real dxL = x_i-x_im1;
+          Real dxR = x_ip1-x_i;
+                
+          PLM_nonuniform(q(m,n,k,j,i-1), q(m,n,k,j,i), q(m,n,k,j,i+1), dxL, dxR, dxLh, dxRh, ql(n,i+1), qr(n,i));
+        });
+      }
+      return;
+    }
+    
+    KOKKOS_INLINE_FUNCTION
+    void GridPiecewiseLinearX2(TeamMember_t const &member, const int m, const int k, const int j, const int il, const int iu,
+        const DvceArray5D<Real> &q, const DvceArray2D<Real> &xv, const DvceArray2D<Real> &xf,
+        ScrArray2D<Real> &ql_jp1, ScrArray2D<Real> &qr_j) {
+      int nvar = q.extent_int(1);
+      for (int n=0; n<nvar; ++n) {
+        par_for_inner(member, il, iu, [&](const int i) {
+          Real x_jm1  = xv(m,j-1);
+          Real x_jmh  = xf(m,j);
+          Real x_j    = xv(m,j);
+          Real x_jph  = xf(m,j+1);
+          Real x_jp1  = xv(m,j+1);
+          Real dxLh = x_j-x_jmh;
+          Real dxRh = x_jph-x_j;
+          Real dxL = x_j-x_jm1;
+          Real dxR = x_jp1-x_j;
+                
+          PLM_nonuniform(q(m,n,k,j-1,i), q(m,n,k,j,i), q(m,n,k,j+1,i), dxL, dxR, dxLh, dxRh, ql_jp1(n,i), qr_j(n,i));
+        });
+      }
+      return;
+    }
+    
+    KOKKOS_INLINE_FUNCTION
+    void GridPiecewiseLinearX3(TeamMember_t const &member, const int m, const int k, const int j, const int il, const int iu,
+        const DvceArray5D<Real> &q, const DvceArray2D<Real> &xv, const DvceArray2D<Real> &xf,
+        ScrArray2D<Real> &ql_kp1, ScrArray2D<Real> &qr_k) {
+      int nvar = q.extent_int(1);
+      for (int n=0; n<nvar; ++n) {
+        par_for_inner(member, il, iu, [&](const int i) {
+          Real x_km1  = xv(m,k-1);
+          Real x_kmh  = xf(m,k);
+          Real x_k    = xv(m,k);
+          Real x_kph  = xf(m,k+1);
+          Real x_kp1  = xv(m,k+1);
+          Real dxLh = x_k-x_kmh;
+          Real dxRh = x_kph-x_k;
+          Real dxL = x_k-x_km1;
+          Real dxR = x_kp1-x_k;
+                
+          PLM_nonuniform(q(m,n,k-1,j,i), q(m,n,k,j,i), q(m,n,k+1,j,i), dxL, dxR, dxLh, dxRh, ql_kp1(n,i), qr_k(n,i));
+        });
+      }
+      return;
+    }
 
  private:
   MeshBlockPack* pmy_pack;   // ptr to MeshBlockPack containing this MHD

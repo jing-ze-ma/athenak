@@ -88,6 +88,7 @@ add_executable(
         mhd/mhd_newdt.cpp
         mhd/mhd_tasks.cpp
         mhd/mhd_update.cpp
+        mhd/mhd_etotgrav.cpp
 
         outputs/io_wrapper.cpp
         outputs/outputs.cpp

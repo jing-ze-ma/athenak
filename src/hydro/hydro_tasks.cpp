@@ -269,17 +269,12 @@ TaskStatus Hydro::HydroSrcTerms(Driver *pdrive, int stage) {
     pmy_pack->pcoord->CoordSrcTerms(w0, peos->eos_data, beta_dt, u0);
   }
     
+  // Add coordinate source terms in curvi-linear grid.  Again, must be computed with only primitives.
   if (pmy_pack->pmesh->use_cubed_sphere) {
     pmy_pack->pcoord->SrcTermsGnomonicEquiangle(w0, uflx, peos->eos_data, beta_dt, u0);
   }
   if (pmy_pack->pmesh->use_spherical_polar) {
-//    if (use_wellbalance) {
-//      RemoveWbVar(w0wb,w0);
-//    }
-    pmy_pack->pcoord->SrcTermsSphericalPolar(w0, w0wb, uflx, peos->eos_data, beta_dt, u0);
-//    if (use_wellbalance) {
-//      AddWbVar(w0wb,w0);
-//    }
+    pmy_pack->pcoord->SrcTermsSphericalPolarHydro(w0, w0wb, uflx, peos->eos_data, beta_dt, u0);
   }
 
   // Add user source terms

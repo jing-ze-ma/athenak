@@ -58,15 +58,17 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
   auto &size_ = pmy_pack->pmb->mb_size;
   auto &coord_ = pmy_pack->pcoord->coord_data;
   auto &w0_ = w0;
-//  if (use_wellbalance) {
-      auto w0facewb_x1f = w0facewb.x1f;
-      auto w0facewb_x2f = w0facewb.x2f;
-      auto w0facewb_x3f = w0facewb.x3f;
-      auto &phicc0_ = phicc0;
-      auto phi0_x1f = phi0.x1f;
-      auto phi0_x2f = phi0.x2f;
-      auto phi0_x3f = phi0.x3f;
-//  }
+
+  auto w0facewb_x1f = w0facewb.x1f;
+  auto w0facewb_x2f = w0facewb.x2f;
+  auto w0facewb_x3f = w0facewb.x3f;
+  auto &phicc0_ = phicc0;
+  auto phi0_x1f = phi0.x1f;
+  auto phi0_x2f = phi0.x2f;
+  auto phi0_x3f = phi0.x3f;
+    
+  auto &use_cubed_sphere = pmy_pack->pmesh->use_cubed_sphere;
+  auto &use_spherical_polar = pmy_pack->pmesh->use_spherical_polar;
 
   //--------------------------------------------------------------------------------------
   // i-direction
@@ -74,6 +76,9 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
   size_t scr_size = ScrArray2D<Real>::shmem_size(nvars, ncells1) * 2;
   int scr_level = 0;
   auto &flx1_ = uflx.x1f;
+    
+  auto &x1v_ = pmy_pack->pcoord->x1v;
+  auto &x1f_ = pmy_pack->pcoord->xx1f;
 
   // set the loop limits for 1D/2D/3D problems
   int il = is, iu = ie+1, jl = js, ju = je, kl = ks, ku = ke;
@@ -91,9 +96,9 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
     ScrArray2D<Real> wl(member.team_scratch(scr_level), nvars, ncells1);
     ScrArray2D<Real> wr(member.team_scratch(scr_level), nvars, ncells1);
       
-    if (pmy_pack->pmesh->use_grid_stretch)
+    if (use_spherical_polar)
       {
-        GridPiecewiseLinearX1(member, eos_, m, k, j, il-1, iu, w0_, phicc0_, phi0_x1f, wl, wr);
+        GridPiecewiseLinearX1(member, eos_, m, k, j, il-1, iu, w0_, x1v_, x1f_, phicc0_, phi0_x1f, wl, wr);
       } else {
 
     if (use_wellbalance_local && use_wb_x1)
@@ -194,6 +199,9 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
   if (pmy_pack->pmesh->multi_d) {
     scr_size = ScrArray2D<Real>::shmem_size(nvars, ncells1) * 3;
     auto &flx2_ = uflx.x2f;
+      
+    auto &x2v_ = pmy_pack->pcoord->x2v;
+    auto &x2f_ = pmy_pack->pcoord->xx2f;
 
     // set the loop limits for 1D/2D/3D problems
     il = is, iu = ie, jl = js-1, ju = je+1, kl = ks, ku = ke;
@@ -222,6 +230,10 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
           wl_jp1 = scr1;
         }
           
+        if (use_spherical_polar) {
+            GridPiecewiseLinearX2(member, m, k, j, is-1, ie+1, w0_, x2v_, x2f_, wl_jp1, wr);
+        } else {
+            
         if (use_wellbalance_local && use_wb_x2)
         {
           WbLocalPiecewiseLinearX2(member, eos_, m, k, j, il, iu, w0_, phicc0_, phi0_x2f, wl_jp1, wr);
@@ -246,6 +258,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
             break;
         }
             
+        }
         }
           
           if (use_wellbalance_reconst_perturb) {
@@ -321,6 +334,9 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
   if (pmy_pack->pmesh->three_d) {
     scr_size = ScrArray2D<Real>::shmem_size(nvars, ncells1) * 3;
     auto &flx3_ = uflx.x3f;
+      
+    auto &x3v_ = pmy_pack->pcoord->x3v;
+    auto &x3f_ = pmy_pack->pcoord->xx3f;
 
     // set the loop limits
     il = is, iu = ie, jl = js, ju = je, kl = ks-1, ku = ke+1;
@@ -341,6 +357,10 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
           wl     = scr2;
           wl_kp1 = scr1;
         }
+          
+        if (use_spherical_polar) {
+          GridPiecewiseLinearX3(member, m, k, j, is-1, ie+1, w0_, x3v_, x3f_, wl_kp1, wr);
+        } else {
           
         if (use_wellbalance_local && use_wb_x3)
         {
@@ -366,6 +386,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
             break;
         }
               
+        }
         }
           
           if (use_wellbalance_reconst_perturb) {

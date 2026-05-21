@@ -1,0 +1,77 @@
+# AthenaXXX input file for hot bubble test
+
+<comment>
+problem   = Hot bubble
+reference = Edelmann et al., A&A, 652, A53 (2021)
+
+<job>
+basename  = hb          # problem ID: basename of output filenames
+
+<mesh>
+nghost    = 2           # Number of ghost cells
+nx1       = 256         # Number of zones in X1-direction
+x1min     = -5e5        # minimum value of X1
+x1max     = 5e5         # maximum value of X1
+ix1_bc    = periodic    # inner-X1 boundary flag
+ox1_bc    = periodic    # outer-X1 boundary flag
+
+nx2       = 448         # Number of zones in X2-direction
+x2min     = 0.0         # minimum value of X2
+x2max     = 1.5e6       # maximum value of X2
+ix2_bc    = periodic    # inner-X2 boundary flag
+ox2_bc    = periodic    # outer-X2 boundary flag
+
+nx3       = 1           # Number of zones in X3-direction
+x3min     = -5e5        # minimum value of X3
+x3max     = 5e5         # maximum value of X3
+ix3_bc    = periodic    # inner-X3 boundary flag
+ox3_bc    = periodic    # outer-X3 boundary flag
+
+<meshblock>
+nx1       = 16         # Number of cells in each MeshBlock, X1-dir
+nx2       = 32         # Number of cells in each MeshBlock, X2-dir
+nx3       = 1           # Number of cells in each MeshBlock, X3-dir
+
+<time>
+evolution  = dynamic     # dynamic/kinematic/static
+integrator = rk3         # time integration algorithm
+cfl_number = 0.4         # The Courant, Friedrichs, & Lewy (CFL) Number
+nlim       = 10000000    # cycle limit
+tlim       = 300.0       # time limit
+ndiag      = 1           # cycles between diagostic output
+
+<hydro>
+eos             = ideal  # EOS type
+reconstruct     = plm    # spatial reconstruction method
+rsolver         = lhllc   # Riemann-solver to be used
+gamma           = 1.66667         # gamma = C_p/C_v
+etotgrav = true
+wellbalance = true
+wellbalance_reconst = true
+
+<hydro_srcterms>
+const_accel     = false   # add constant accleration source term
+const_accel_val = -32797.0738964   # value of constant acceleration
+const_accel_dir = 2      # direction of constant acceleration
+
+<problem>
+iprob = 1                # 1=periodic gravity, 2=constant gravity
+x0 = 0.0
+y0 = 1.875e5
+r0 = 1.25e5
+dAbyA = 1e-3
+g0 = -109904.373
+p0 = 1e6
+temp0 = 300.0
+
+user_srcs = true
+
+<output1>
+file_type  = hst         # History data dump
+dt         = 0.01        # time increment between outputs
+
+<output2>
+file_type  = bin         # Binary data dump
+variable   = hydro_w     # variables to be output
+dt         = 300.0         # time increment between outputs
+

@@ -36,6 +36,14 @@ void IdealMHD::ConsToPrim(DvceArray5D<Real> &cons, const DvceFaceFld4D<Real> &b,
   int &nmb = pmy_pack->nmb_thispack;
   auto &eos = eos_data;
   auto &fofc_ = pmy_pack->pmhd->fofc;
+    
+  auto &use_spherical_polar = pmy_pack->pmesh->use_spherical_polar;
+  auto &x1v_ = pmy_pack->pcoord->x1v;
+  auto &x1f_ = pmy_pack->pcoord->xx1f;
+  auto &x2v_ = pmy_pack->pcoord->x2v;
+  auto &x2f_ = pmy_pack->pcoord->xx2f;
+  auto &x3v_ = pmy_pack->pcoord->x3v;
+  auto &x3f_ = pmy_pack->pcoord->xx3f;
 
   const int ni   = (iu - il + 1);
   const int nji  = (ju - jl + 1)*ni;
@@ -68,9 +76,22 @@ void IdealMHD::ConsToPrim(DvceArray5D<Real> &cons, const DvceFaceFld4D<Real> &b,
       u.bz = bcc(m,IBZ,k,j,i);
     // else use simple linear average of face-centered fields
     } else {
+      if (use_spherical_polar) {
+        Real lw, rw;
+        lw = (x1f_(m,i+1)-x1v_(m,i))/(x1f_(m,i+1)-x1f_(m,i));
+        rw = (x1v_(m,i)-x1f_(m,i))/(x1f_(m,i+1)-x1f_(m,i));
+        u.bx = lw*b.x1f(m,k,j,i) + rw*b.x1f(m,k,j,i+1);
+        lw = (x2f_(m,j+1)-x2v_(m,j))/(x2f_(m,j+1)-x2f_(m,j));
+        rw = (x2v_(m,j)-x2f_(m,j))/(x2f_(m,j+1)-x2f_(m,j));
+        u.by = lw*b.x2f(m,k,j,i) + rw*b.x2f(m,k,j+1,i);
+        lw = (x3f_(m,k+1)-x3v_(m,k))/(x3f_(m,k+1)-x3f_(m,k));
+        rw = (x3v_(m,k)-x3f_(m,k))/(x3f_(m,k+1)-x3f_(m,k));
+        u.bz = lw*b.x3f(m,k,j,i) + rw*b.x3f(m,k+1,j,i);
+      } else {
       u.bx = 0.5*(b.x1f(m,k,j,i) + b.x1f(m,k,j,i+1));
       u.by = 0.5*(b.x2f(m,k,j,i) + b.x2f(m,k,j+1,i));
       u.bz = 0.5*(b.x3f(m,k,j,i) + b.x3f(m,k+1,j,i));
+      }
     }
 
     // call c2p function
