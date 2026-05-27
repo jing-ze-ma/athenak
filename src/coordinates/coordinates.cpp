@@ -42,9 +42,9 @@ Coordinates::Coordinates(ParameterInput *pin, MeshBlockPack *ppack) :
     int ncells2 = (indcs.nx2 > 1)? (indcs.nx2 + 2*(indcs.ng)) : 1;
     int ncells3 = (indcs.nx3 > 1)? (indcs.nx3 + 2*(indcs.ng)) : 1;
     Kokkos::realloc(volume, nmb, ncells3, ncells2, ncells1);
-    Kokkos::realloc(area.x1f, nmb, ncells3, ncells2, ncells1);
-    Kokkos::realloc(area.x2f, nmb, ncells3, ncells2, ncells1);
-    Kokkos::realloc(area.x3f, nmb, ncells3, ncells2, ncells1);
+    Kokkos::realloc(area.x1f, nmb, ncells3, ncells2, ncells1+1);
+    Kokkos::realloc(area.x2f, nmb, ncells3, ncells2+1, ncells1);
+    Kokkos::realloc(area.x3f, nmb, ncells3+1, ncells2, ncells1);
     Kokkos::realloc(dx1, nmb, ncells3, ncells2, ncells1);
     Kokkos::realloc(dx2, nmb, ncells3, ncells2, ncells1);
     Kokkos::realloc(dx3, nmb, ncells3, ncells2, ncells1);
@@ -54,9 +54,9 @@ Coordinates::Coordinates(ParameterInput *pin, MeshBlockPack *ppack) :
     Kokkos::realloc(xx1f, nmb, ncells1+1);
     Kokkos::realloc(xx2f, nmb, ncells2+1);
     Kokkos::realloc(xx3f, nmb, ncells3+1);
-    Kokkos::realloc(dxedge.x1e, nmb, ncells3, ncells2, ncells1);
-    Kokkos::realloc(dxedge.x2e, nmb, ncells3, ncells2, ncells1);
-    Kokkos::realloc(dxedge.x3e, nmb, ncells3, ncells2, ncells1);
+    Kokkos::realloc(dxedge.x1e, nmb, ncells3+1, ncells2+1, ncells1);
+    Kokkos::realloc(dxedge.x2e, nmb, ncells3+1, ncells2, ncells1+1);
+    Kokkos::realloc(dxedge.x3e, nmb, ncells3, ncells2+1, ncells1+1);
     Kokkos::realloc(x_ov_rD, nmb, ncells3, ncells2, ncells1);
     Kokkos::realloc(y_ov_rC, nmb, ncells3, ncells2, ncells1);
     Kokkos::realloc(z_ov_rE, nmb, ncells3, ncells2, ncells1);
@@ -593,42 +593,42 @@ void Coordinates::CoordSphericalPolar() {
       
     // --- radial edge lengths ---
     dxedge.x1e(m,k,j,i) = r_r - r_l;
-    if (j == je) dxedge.x1e(m,k,j+1,i) = r_r - r_l;
-    if (k == ke) dxedge.x1e(m,k+1,j,i) = r_r - r_l;
-    if (j == je && k == ke) dxedge.x1e(m,k+1,j+1,i) = r_r - r_l;
+    if (j == n2m1) dxedge.x1e(m,k,j+1,i) = r_r - r_l;
+    if (k == n3m1) dxedge.x1e(m,k+1,j,i) = r_r - r_l;
+    if (j == n2m1 && k == n3m1) dxedge.x1e(m,k+1,j+1,i) = r_r - r_l;
       
     // --- theta edge lengths ---
     dxedge.x2e(m,k,j,i) = r_l * (thetar-thetal);
-    if (i == ie) dxedge.x2e(m,k,j,i+1) = r_r * (thetar-thetal);
-    if (k == ke) dxedge.x2e(m,k+1,j,i) = r_l * (thetar-thetal);
-    if (i == ie && k == ke) dxedge.x2e(m,k+1,j,i+1) = r_r * (thetar-thetal);
+    if (i == n1m1) dxedge.x2e(m,k,j,i+1) = r_r * (thetar-thetal);
+    if (k == n3m1) dxedge.x2e(m,k+1,j,i) = r_l * (thetar-thetal);
+    if (i == n1m1 && k == n3m1) dxedge.x2e(m,k+1,j,i+1) = r_r * (thetar-thetal);
       
     // --- phi edge lengths ---
     dxedge.x3e(m,k,j,i) = r_l * sinl * (phir-phil);
-    if (i == ie) dxedge.x3e(m,k,j,i+1) = r_r * sinl * (phir-phil);
-    if (j == je) dxedge.x3e(m,k,j+1,i) = r_l * sinr * (phir-phil);
-    if (i == ie && j == je) dxedge.x3e(m,k,j+1,i+1) = r_r * sinr * (phir-phil);
+    if (i == n1m1) dxedge.x3e(m,k,j,i+1) = r_r * sinl * (phir-phil);
+    if (j == n2m1) dxedge.x3e(m,k,j+1,i) = r_l * sinr * (phir-phil);
+    if (i == n1m1 && j == n2m1) dxedge.x3e(m,k,j+1,i+1) = r_r * sinr * (phir-phil);
 
     // --- radial faces ---
     area.x1f(m,k,j,i) = SQR(r_l) * fabs(cosl-cosr) * (phir-phil);
     Real area1r = SQR(r_r) * fabs(cosl-cosr) * (phir-phil);
-    if (i == ie) area.x1f(m,k,j,i+1) = area1r;
+    if (i == n1m1) area.x1f(m,k,j,i+1) = area1r;
     xx1f(m,i) = r_l;
-    if (i == ie) xx1f(m,i+1) = r_r;
+    if (i == n1m1) xx1f(m,i+1) = r_r;
 
     // --- theta faces ---
     area.x2f(m,k,j,i) = 0.5 * (SQR(r_r)-SQR(r_l)) * sinl * (phir-phil);
     Real area2r = 0.5 * (SQR(r_r)-SQR(r_l)) * sinr * (phir-phil);
-    if (j == je) area.x2f(m,k,j+1,i) = area2r;
+    if (j == n2m1) area.x2f(m,k,j+1,i) = area2r;
     xx2f(m,j) = thetal;
-    if (j == je) xx2f(m,j+1) = thetar;
+    if (j == n2m1) xx2f(m,j+1) = thetar;
 
     // --- phi faces ---
     area.x3f(m,k,j,i) = 0.5 * (SQR(r_r)-SQR(r_l)) * (thetar-thetal);
     Real area3r = 0.5 * (SQR(r_r)-SQR(r_l)) * (thetar-thetal);
-    if (k == ke) area.x3f(m,k+1,j,i) = area3r;
+    if (k == n3m1) area.x3f(m,k+1,j,i) = area3r;
     xx3f(m,k) = phil;
-    if (k == ke) xx3f(m,k+1) = phir;
+    if (k == n3m1) xx3f(m,k+1) = phir;
 
     // --- volume ---
 

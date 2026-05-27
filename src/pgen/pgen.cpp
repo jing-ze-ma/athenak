@@ -48,6 +48,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm) :
       hot_jupiter_param.ap = pin->GetReal("problem","ap");
       hot_jupiter_param.Rgas = pin->GetReal("problem","Rgas");
       hot_jupiter_param.met = pin->GetReal("problem","met");
+      hot_jupiter_param.bbot = pin->GetReal("problem","bbot");
   }
   // check for user-defined boundary conditions
   for (int dir=0; dir<6; ++dir) {
@@ -115,6 +116,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     hot_jupiter_param.ap = pin->GetReal("problem","ap");
     hot_jupiter_param.Rgas = pin->GetReal("problem","Rgas");
     hot_jupiter_param.met = pin->GetReal("problem","met");
+    hot_jupiter_param.bbot = pin->GetReal("problem","bbot");
   }
         
   // check for user-defined boundary conditions

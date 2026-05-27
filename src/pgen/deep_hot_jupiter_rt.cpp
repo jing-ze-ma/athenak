@@ -127,6 +127,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   auto &x2f_ = pmbp->pcoord->xx2f;
   auto &x3v_ = pmbp->pcoord->x3v;
   auto &x3f_ = pmbp->pcoord->xx3f;
+  auto &area1 = pmbp->pcoord->area.x1f;
+  auto &area2 = pmbp->pcoord->area.x2f;
+  auto &area3 = pmbp->pcoord->area.x3f;
+  auto &dxe1 = pmbp->pcoord->dxedge.x1e;
+  auto &dxe2 = pmbp->pcoord->dxedge.x2e;
+  auto &dxe3 = pmbp->pcoord->dxedge.x3e;
 
   Real gamma;
   if (pmbp->phydro != nullptr) {
@@ -626,16 +632,55 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // initialize magnetic fields if MHD
     if (pmbp->pmhd != nullptr) {
       // Read magnetic field strength
+      Real bbot = pin->GetReal("problem","bbot");
       auto &b0 = pmbp->pmhd->b0;
+      auto &bcc0 = pmbp->pmhd->bcc0;
       par_for("pgen_b0", DevExeSpace(), 0,(pmbp->nmb_thispack-1),0, n3m1, 0, n2m1, 0, n1m1, //ks,ke,js,je,is,ie,
       KOKKOS_LAMBDA(int m, int k, int j, int i) {
-        b0.x1f(m,k,j,i) = 0.0;
-        b0.x2f(m,k,j,i) = 0.0;
-        b0.x3f(m,k,j,i) = 0.0;
-        if (i==ie) b0.x1f(m,k,j,i+1) = 0.0;
-        if (j==je) b0.x2f(m,k,j+1,i) = 0.0;
-        if (k==ke) b0.x3f(m,k+1,j,i) = 0.0;
-//        u0_(m,IEN,k,j,i) += 0.5*bx*bx;
+          if (use_spherical_polar) {
+            Real x1v = x1v_(m,i);
+            Real x2v = x2v_(m,j);
+            Real x3v = x3v_(m,k);
+            Real x1fl = x1f_(m,i);
+            Real x2fl = x2f_(m,j);
+            Real x3fl = x3f_(m,k);
+            Real x1fr = x1f_(m,i+1);
+            Real x2fr = x2f_(m,j+1);
+            Real x3fr = x3f_(m,k+1);
+              
+            Real A1 = 0.0;
+            Real A2 = 0.0;
+            Real A2ip = 0.0;
+            Real A2kp = 0.0;
+            Real A2ipkp = 0.0;
+            Real A3 = 0.5*bbot*r0*sin(x2fl)/SQR(x1fl/r0);
+            Real A3ip = 0.5*bbot*r0*sin(x2fl)/SQR(x1fr/r0);
+            Real A3jp = 0.5*bbot*r0*sin(x2fr)/SQR(x1fl/r0);
+            Real A3ipjp = 0.5*bbot*r0*sin(x2fr)/SQR(x1fr/r0);
+              
+            b0.x1f(m,k,j,i) = (dxe3(m,k,j+1,i)*A3jp - dxe3(m,k,j,i)*A3)/area1(m,k,j,i) - (dxe2(m,k+1,j,i)*A2kp - dxe2(m,k,j,i)*A2)/area1(m,k,j,i);
+            b0.x2f(m,k,j,i) = - (dxe3(m,k,j,i+1)*A3ip - dxe3(m,k,j,i)*A3)/area2(m,k,j,i);
+            b0.x3f(m,k,j,i) = (dxe2(m,k,j,i+1)*A2ip - dxe2(m,k,j,i)*A2)/area3(m,k,j,i);
+            Real b0x1fip = (dxe3(m,k,j+1,i+1)*A3ipjp - dxe3(m,k,j,i+1)*A3ip)/area1(m,k,j,i+1) - (dxe2(m,k+1,j,i+1)*A2ipkp - dxe2(m,k,j,i+1)*A2ip)/area1(m,k,j,i+1);
+            Real b0x2fjp = - (dxe3(m,k,j+1,i+1)*A3ipjp - dxe3(m,k,j+1,i)*A3jp)/area2(m,k,j+1,i);
+            Real b0x3fkp = (dxe2(m,k+1,j,i+1)*A2ipkp - dxe2(m,k+1,j,i)*A2kp)/area3(m,k+1,j,i);
+            if (i==n1m1) b0.x1f(m,k,j,i+1) = b0x1fip;
+            if (j==n2m1) b0.x2f(m,k,j+1,i) = b0x2fjp;
+            if (k==n3m1) b0.x3f(m,k+1,j,i) = b0x3fkp;
+              
+            Real lw, rw;
+            lw = (x1f_(m,i+1)-x1v_(m,i))/(x1f_(m,i+1)-x1f_(m,i));
+            rw = (x1v_(m,i)-x1f_(m,i))/(x1f_(m,i+1)-x1f_(m,i));
+            bcc0(m,IBX,k,j,i) = lw*b0.x1f(m,k,j,i) + rw*b0x1fip;
+            lw = (x2f_(m,j+1)-x2v_(m,j))/(x2f_(m,j+1)-x2f_(m,j));
+            rw = (x2v_(m,j)-x2f_(m,j))/(x2f_(m,j+1)-x2f_(m,j));
+            bcc0(m,IBY,k,j,i) = lw*b0.x2f(m,k,j,i) + rw*b0x2fjp;
+            lw = (x3f_(m,k+1)-x3v_(m,k))/(x3f_(m,k+1)-x3f_(m,k));
+            rw = (x3v_(m,k)-x3f_(m,k))/(x3f_(m,k+1)-x3f_(m,k));
+            bcc0(m,IBZ,k,j,i) = lw*b0.x3f(m,k,j,i) + rw*b0x3fkp;
+              
+            u0_(m,IEN,k,j,i) += 0.5*(SQR(bcc0(m,IBX,k,j,i))+SQR(bcc0(m,IBY,k,j,i))+SQR(bcc0(m,IBZ,k,j,i)));
+          }
       });
     }
 
@@ -665,6 +710,16 @@ void HydrostaticEquilibrium(Mesh *pm) {
     
     DvceArray4D<Real> phi0_x1f;
     DvceArray4D<Real> phicc0;
+    DvceArray5D<Real> bcc0;
+    DvceArray4D<Real> b0_x1f;
+    DvceArray4D<Real> b0_x2f;
+    DvceArray4D<Real> b0_x3f;
+    auto &x1v_ = pmbp->pcoord->x1v;
+    auto &x1f_ = pmbp->pcoord->xx1f;
+    auto &x2v_ = pmbp->pcoord->x2v;
+    auto &x2f_ = pmbp->pcoord->xx2f;
+    auto &x3v_ = pmbp->pcoord->x3v;
+    auto &x3f_ = pmbp->pcoord->xx3f;
 
     if (pmbp->phydro != nullptr) {
       u0_ = pmbp->phydro->u0;
@@ -681,23 +736,56 @@ void HydrostaticEquilibrium(Mesh *pm) {
       use_etotgrav = pmbp->pmhd->use_etotgrav;
       phi0_x1f = pmbp->pmhd->phi0.x1f;
       phicc0 = pmbp->pmhd->phicc0;
+      bcc0 = pmbp->pmhd->bcc0;
+      b0_x1f = pmbp->pmhd->b0.x1f;
+      b0_x2f = pmbp->pmhd->b0.x2f;
+      b0_x3f = pmbp->pmhd->b0.x3f;
     }
+    Real bbot = pm->pgen->hot_jupiter_param.bbot;
     
     Real igm1 = 1.0/(gamma-1.0);
     Real gigm1 = gamma*igm1;
     Real gm1ig = (gamma-1.0)/gamma;
     Real ig = 1.0/gamma;
     
+//    if (pmbp->pmhd != nullptr) {
+//      par_for("usrboundaryx1_bfield", DevExeSpace(),0,(nmb-1),0,(n3-1),0,(n2-1),
+//      KOKKOS_LAMBDA(int m, int k, int j) {
+//        if (mb_bcs.d_view(m,BoundaryFace::outer_x1) == BoundaryFlag::user) {
+//          for (int i=0; i<ng; ++i) {
+//            b0_x1f(m,k,j,ie+i+2) = b0_x1f(m,k,j,ie+1);
+//            b0_x2f(m,k,j,ie+i+1) = b0_x2f(m,k,j,ie);
+//            if (j == n2-1) {b0_x2f(m,k,j+1,ie+i+1) = b0_x2f(m,k,j+1,ie);}
+//            b0_x3f(m,k,j,ie+i+1) = b0_x3f(m,k,j,ie);
+//            if (k == n3-1) {b0_x3f(m,k+1,j,ie+i+1) = b0_x3f(m,k+1,j,ie);}
+//          }
+//        }
+//      });
+//    }
+    
     par_for("usrboundaryx1", DevExeSpace(),0,(nmb-1),0,(n3-1),0,(n2-1),
     KOKKOS_LAMBDA(int m, int k, int j) {
         if (mb_bcs.d_view(m,BoundaryFace::outer_x1) == BoundaryFlag::user) {
+          Real rho_i = u0_(m,IDN,k,j,ie);
+          Real e_i = u0_(m,IEN,k,j,ie) - 0.5*(SQR(u0_(m,IM1,k,j,ie))+SQR(u0_(m,IM2,k,j,ie))+SQR(u0_(m,IM3,k,j,ie)))/rho_i;
+          if (use_etotgrav) e_i -= rho_i*phicc0(m,k,j,ie);
+          if (pmbp->pmhd != nullptr) e_i -= 0.5*(SQR(bcc0(m,IBX,k,j,ie))+SQR(bcc0(m,IBY,k,j,ie))+SQR(bcc0(m,IBZ,k,j,ie)));
+          Real phi_i = phicc0(m,k,j,ie);
+          Real q0_i = log(e_i);
+          Real factor_i = rho_i/e_i*igm1;
           for (int i=0; i<ng; ++i) {
-            Real rho_i = u0_(m,IDN,k,j,ie);
-            Real e_i = u0_(m,IEN,k,j,ie) - 0.5*(SQR(u0_(m,IM1,k,j,ie))+SQR(u0_(m,IM2,k,j,ie))+SQR(u0_(m,IM3,k,j,ie)))/rho_i;
-            if (use_etotgrav) e_i -= rho_i*phicc0(m,k,j,ie);
-            Real phi_i = phicc0(m,k,j,ie);
-            Real q0_i = log(e_i);
-            Real factor_i = rho_i/e_i*igm1;
+//            if (pmbp->pmhd != nullptr) {
+//              Real lw, rw;
+//              lw = (x1f_(m,(ie+i+1)+1)-x1v_(m,(ie+i+1)))/(x1f_(m,(ie+i+1)+1)-x1f_(m,(ie+i+1)));
+//              rw = (x1v_(m,(ie+i+1))-x1f_(m,(ie+i+1)))/(x1f_(m,(ie+i+1)+1)-x1f_(m,(ie+i+1)));
+//              bcc0(m,IBX,k,j,(ie+i+1)) = lw*b0_x1f(m,k,j,(ie+i+1)) + rw*b0_x1f(m,k,j,(ie+i+1)+1);
+//              lw = (x2f_(m,j+1)-x2v_(m,j))/(x2f_(m,j+1)-x2f_(m,j));
+//              rw = (x2v_(m,j)-x2f_(m,j))/(x2f_(m,j+1)-x2f_(m,j));
+//              bcc0(m,IBY,k,j,(ie+i+1)) = lw*b0_x2f(m,k,j,(ie+i+1)) + rw*b0_x2f(m,k,j+1,(ie+i+1));
+//              lw = (x3f_(m,k+1)-x3v_(m,k))/(x3f_(m,k+1)-x3f_(m,k));
+//              rw = (x3v_(m,k)-x3f_(m,k))/(x3f_(m,k+1)-x3f_(m,k));
+//              bcc0(m,IBZ,k,j,(ie+i+1)) = lw*b0_x3f(m,k,j,(ie+i+1)) + rw*b0_x3f(m,k+1,j,(ie+i+1));
+//            }
             Real dphi_i = phicc0(m,k,j,(ie+i+1))-phi_i;
             Real q0_ip = q0_i - factor_i * dphi_i;
             Real e0_ip = exp(q0_ip);
@@ -705,12 +793,61 @@ void HydrostaticEquilibrium(Mesh *pm) {
             u0_(m,IDN,k,j,(ie+i+1)) = rho0_ip;
             u0_(m,IM2,k,j,(ie+i+1)) = u0_(m,IM2,k,j,ie)/rho_i*rho0_ip;
             u0_(m,IM3,k,j,(ie+i+1)) = u0_(m,IM3,k,j,ie)/rho_i*rho0_ip;
-              Real mom = u0_(m,IM1,k,j,ie)/rho_i*rho0_ip; // fmax(0.0,u0_(m,IM1,k,j,ie)/rho_i*rho0_ip);
+            Real mom = u0_(m,IM1,k,j,ie)/rho_i*rho0_ip; // fmax(0.0,u0_(m,IM1,k,j,ie)/rho_i*rho0_ip);
             u0_(m,IM1,k,j,(ie+i+1)) = mom;
             u0_(m,IEN,k,j,(ie+i+1)) = e0_ip + 0.5*(SQR(u0_(m,IM1,k,j,(ie+i+1)))+SQR(u0_(m,IM2,k,j,(ie+i+1)))+SQR(u0_(m,IM3,k,j,(ie+i+1))))/rho0_ip;
             if (use_etotgrav) u0_(m,IEN,k,j,(ie+i+1)) += rho0_ip*phicc0(m,k,j,(ie+i+1));
+            if (pmbp->pmhd != nullptr) u0_(m,IEN,k,j,(ie+i+1)) +=  0.5*(SQR(bcc0(m,IBX,k,j,(ie+i+1)))+SQR(bcc0(m,IBY,k,j,(ie+i+1)))+SQR(bcc0(m,IBZ,k,j,(ie+i+1))));
           }
         }
+//        if (mb_bcs.d_view(m,BoundaryFace::inner_x1) == BoundaryFlag::user && pmbp->pmhd != nullptr) {
+//          for (int i=0; i<ng+2; ++i) {
+//              u0_(m,IEN,k,j,i) -= 0.5*u0_(m,IDN,k,j,i)*(SQR(bcc0(m,IBX,k,j,i))+SQR(bcc0(m,IBY,k,j,i))+SQR(bcc0(m,IBZ,k,j,i)));
+//              
+//              Real x1v = x1v_(m,i);
+//              Real x2v = x2v_(m,j);
+//              Real x3v = x3v_(m,k);
+//              Real x1fl = x1f_(m,i);
+//              Real x2fl = x2f_(m,j);
+//              Real x3fl = x3f_(m,k);
+//              Real x1fr = x1f_(m,i+1);
+//              Real x2fr = x2f_(m,j+1);
+//              Real x3fr = x3f_(m,k+1);
+//                
+//              Real A1 = 0.0;
+//              Real A2 = 0.0;
+//              Real A2ip = 0.0;
+//              Real A2kp = 0.0;
+//              Real A2ipkp = 0.0;
+//              Real A3 = 0.5*bbot*r0*sin(x2fl)/SQR(x1fl/r0);
+//              Real A3ip = 0.5*bbot*r0*sin(x2fl)/SQR(x1fr/r0);
+//              Real A3jp = 0.5*bbot*r0*sin(x2fr)/SQR(x1fl/r0);
+//              Real A3ipjp = 0.5*bbot*r0*sin(x2fr)/SQR(x1fr/r0);
+//                
+//              b0.x1f(m,k,j,i) = (dxe3(m,k,j+1,i)*A3jp - dxe3(m,k,j,i)*A3)/area1(m,k,j,i) - (dxe2(m,k+1,j,i)*A2kp - dxe2(m,k,j,i)*A2)/area1(m,k,j,i);
+//              b0.x2f(m,k,j,i) = - (dxe3(m,k,j,i+1)*A3ip - dxe3(m,k,j,i)*A3)/area2(m,k,j,i);
+//              b0.x3f(m,k,j,i) = (dxe2(m,k,j,i+1)*A2ip - dxe2(m,k,j,i)*A2)/area3(m,k,j,i);
+//              Real b0x1fip = (dxe3(m,k,j+1,i+1)*A3ipjp - dxe3(m,k,j,i+1)*A3ip)/area1(m,k,j,i+1) - (dxe2(m,k+1,j,i+1)*A2ipkp - dxe2(m,k,j,i+1)*A2ip)/area1(m,k,j,i+1);
+//              Real b0x2fjp = - (dxe3(m,k,j+1,i+1)*A3ipjp - dxe3(m,k,j+1,i)*A3jp)/area2(m,k,j+1,i);
+//              Real b0x3fkp = (dxe2(m,k+1,j,i+1)*A2ipkp - dxe2(m,k+1,j,i)*A2kp)/area3(m,k+1,j,i);
+//              if (i==ie) b0.x1f(m,k,j,i+1) = b0x1fip;
+//              if (j==je) b0.x2f(m,k,j+1,i) = b0x2fjp;
+//              if (k==ke) b0.x3f(m,k+1,j,i) = b0x3fkp;
+//                
+//              Real lw, rw;
+//              lw = (x1f_(m,i+1)-x1v_(m,i))/(x1f_(m,i+1)-x1f_(m,i));
+//              rw = (x1v_(m,i)-x1f_(m,i))/(x1f_(m,i+1)-x1f_(m,i));
+//              bcc0(m,IBX,k,j,i) = lw*b0.x1f(m,k,j,i) + rw*b0x1fip;
+//              lw = (x2f_(m,j+1)-x2v_(m,j))/(x2f_(m,j+1)-x2f_(m,j));
+//              rw = (x2v_(m,j)-x2f_(m,j))/(x2f_(m,j+1)-x2f_(m,j));
+//              bcc0(m,IBY,k,j,i) = lw*b0.x2f(m,k,j,i) + rw*b0x2fjp;
+//              lw = (x3f_(m,k+1)-x3v_(m,k))/(x3f_(m,k+1)-x3f_(m,k));
+//              rw = (x3v_(m,k)-x3f_(m,k))/(x3f_(m,k+1)-x3f_(m,k));
+//              bcc0(m,IBZ,k,j,i) = lw*b0.x3f(m,k,j,i) + rw*b0x3fkp;
+//                
+//              u0_(m,IEN,k,j,i) += 0.5*u0_(m,IDN,k,j,i)*(SQR(bcc0(m,IBX,k,j,i))+SQR(bcc0(m,IBY,k,j,i))+SQR(bcc0(m,IBZ,k,j,i)));
+//          }
+//        }
     });
   return;
 }

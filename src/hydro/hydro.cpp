@@ -155,9 +155,9 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
     int ncells2 = (indcs.nx2 > 1)? (indcs.nx2 + 2*(indcs.ng)) : 1;
     int ncells3 = (indcs.nx3 > 1)? (indcs.nx3 + 2*(indcs.ng)) : 1;
     Kokkos::realloc(phicc0, nmb, ncells3, ncells2, ncells1);
-    Kokkos::realloc(phi0.x1f, nmb, ncells3, ncells2, ncells1);
-    Kokkos::realloc(phi0.x2f, nmb, ncells3, ncells2, ncells1);
-    Kokkos::realloc(phi0.x3f, nmb, ncells3, ncells2, ncells1);
+    Kokkos::realloc(phi0.x1f, nmb, ncells3, ncells2, ncells1+1);
+    Kokkos::realloc(phi0.x2f, nmb, ncells3, ncells2+1, ncells1);
+    Kokkos::realloc(phi0.x3f, nmb, ncells3+1, ncells2, ncells1);
   }
   if (use_wellbalance_dynamic) {
     // select well-balanced scheme assumption (no default).  Test for compatibility of options
@@ -196,9 +196,9 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
     int ncells3 = (indcs.nx3 > 1)? (indcs.nx3 + 2*(indcs.ng)) : 1;
     Kokkos::realloc(u0wb, nmb, nhydro, ncells3, ncells2, ncells1);
     Kokkos::realloc(w0wb, nmb, nhydro, ncells3, ncells2, ncells1);
-    Kokkos::realloc(w0facewb.x1f, nmb, nhydro, ncells3, ncells2, ncells1);
-    Kokkos::realloc(w0facewb.x2f, nmb, nhydro, ncells3, ncells2, ncells1);
-    Kokkos::realloc(w0facewb.x3f, nmb, nhydro, ncells3, ncells2, ncells1);
+    Kokkos::realloc(w0facewb.x1f, nmb, nhydro, ncells3, ncells2, ncells1+1);
+    Kokkos::realloc(w0facewb.x2f, nmb, nhydro, ncells3, ncells2+1, ncells1);
+    Kokkos::realloc(w0facewb.x3f, nmb, nhydro, ncells3+1, ncells2, ncells1);
   }
 
   // for time-evolving problems, continue to construct methods, allocate arrays

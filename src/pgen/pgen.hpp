@@ -22,7 +22,7 @@ using UserRefinementFnPtr = void (*)(MeshBlockPack* pmbp);
 using UserHistoryFnPtr = void (*)(HistoryData *pdata, Mesh *pm);
 
 struct HotJupiterParam {
-  Real Teq, omega, grav, ap, Rgas, met;
+  Real Teq, omega, grav, ap, Rgas, met, bbot;
 };
 
 //----------------------------------------------------------------------------------------
