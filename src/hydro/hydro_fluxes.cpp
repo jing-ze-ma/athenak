@@ -101,7 +101,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
         GridPiecewiseLinearX1(member, eos_, m, k, j, il-1, iu, w0_, x1v_, x1f_, phicc0_, phi0_x1f, wl, wr);
       } else {
 
-    if (use_wellbalance_local && use_wb_x1)
+    if (use_wellbalance_dynamic && use_wb_x1)
     {
       WbLocalPiecewiseLinearX1(member, eos_, m, k, j, il-1, iu, w0_, phicc0_, phi0_x1f, wl, wr);
     } else {
@@ -128,7 +128,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
     }
     }
       
-      if (use_wellbalance_reconst_perturb) {
+      if (use_wellbalance_static_reconst_perturb) {
         AddWbPrimFaceX1(member,m,k,j,il-1,iu,w0facewb_x1f,wl,wr);
       }
       
@@ -234,7 +234,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
             GridPiecewiseLinearX2(member, m, k, j, is-1, ie+1, w0_, x2v_, x2f_, wl_jp1, wr);
         } else {
             
-        if (use_wellbalance_local && use_wb_x2)
+        if (use_wellbalance_dynamic && use_wb_x2)
         {
           WbLocalPiecewiseLinearX2(member, eos_, m, k, j, il, iu, w0_, phicc0_, phi0_x2f, wl_jp1, wr);
         } else {
@@ -261,7 +261,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
         }
         }
           
-          if (use_wellbalance_reconst_perturb) {
+          if (use_wellbalance_static_reconst_perturb) {
             AddWbPrimFaceX2(member,m,k,j,il,iu,w0facewb_x2f,wl_jp1,wr);
           }
           
@@ -362,7 +362,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
           GridPiecewiseLinearX3(member, m, k, j, is-1, ie+1, w0_, x3v_, x3f_, wl_kp1, wr);
         } else {
           
-        if (use_wellbalance_local && use_wb_x3)
+        if (use_wellbalance_dynamic && use_wb_x3)
         {
           WbLocalPiecewiseLinearX3(member, eos_, m, k, j, il, iu, w0_, phicc0_, phi0_x3f, wl_kp1, wr);
         } else {
@@ -389,7 +389,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
         }
         }
           
-          if (use_wellbalance_reconst_perturb) {
+          if (use_wellbalance_static_reconst_perturb) {
             AddWbPrimFaceX3(member,m,k,j,il,iu,w0facewb_x3f,wl_kp1,wr);
           }
           

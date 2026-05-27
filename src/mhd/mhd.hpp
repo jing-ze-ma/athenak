@@ -253,19 +253,18 @@ class MHD {
     void GridPiecewiseLinearX2(TeamMember_t const &member, const int m, const int k, const int j, const int il, const int iu,
         const DvceArray5D<Real> &q, const DvceArray2D<Real> &xv, const DvceArray2D<Real> &xf,
         ScrArray2D<Real> &ql_jp1, ScrArray2D<Real> &qr_j) {
+      Real x_jm1  = xv(m,j-1);
+      Real x_jmh  = xf(m,j);
+      Real x_j    = xv(m,j);
+      Real x_jph  = xf(m,j+1);
+      Real x_jp1  = xv(m,j+1);
+      Real dxLh = x_j-x_jmh;
+      Real dxRh = x_jph-x_j;
+      Real dxL = x_j-x_jm1;
+      Real dxR = x_jp1-x_j;
       int nvar = q.extent_int(1);
       for (int n=0; n<nvar; ++n) {
         par_for_inner(member, il, iu, [&](const int i) {
-          Real x_jm1  = xv(m,j-1);
-          Real x_jmh  = xf(m,j);
-          Real x_j    = xv(m,j);
-          Real x_jph  = xf(m,j+1);
-          Real x_jp1  = xv(m,j+1);
-          Real dxLh = x_j-x_jmh;
-          Real dxRh = x_jph-x_j;
-          Real dxL = x_j-x_jm1;
-          Real dxR = x_jp1-x_j;
-                
           PLM_nonuniform(q(m,n,k,j-1,i), q(m,n,k,j,i), q(m,n,k,j+1,i), dxL, dxR, dxLh, dxRh, ql_jp1(n,i), qr_j(n,i));
         });
       }
@@ -276,19 +275,18 @@ class MHD {
     void GridPiecewiseLinearX3(TeamMember_t const &member, const int m, const int k, const int j, const int il, const int iu,
         const DvceArray5D<Real> &q, const DvceArray2D<Real> &xv, const DvceArray2D<Real> &xf,
         ScrArray2D<Real> &ql_kp1, ScrArray2D<Real> &qr_k) {
+      Real x_km1  = xv(m,k-1);
+      Real x_kmh  = xf(m,k);
+      Real x_k    = xv(m,k);
+      Real x_kph  = xf(m,k+1);
+      Real x_kp1  = xv(m,k+1);
+      Real dxLh = x_k-x_kmh;
+      Real dxRh = x_kph-x_k;
+      Real dxL = x_k-x_km1;
+      Real dxR = x_kp1-x_k;
       int nvar = q.extent_int(1);
       for (int n=0; n<nvar; ++n) {
         par_for_inner(member, il, iu, [&](const int i) {
-          Real x_km1  = xv(m,k-1);
-          Real x_kmh  = xf(m,k);
-          Real x_k    = xv(m,k);
-          Real x_kph  = xf(m,k+1);
-          Real x_kp1  = xv(m,k+1);
-          Real dxLh = x_k-x_kmh;
-          Real dxRh = x_kph-x_k;
-          Real dxL = x_k-x_km1;
-          Real dxR = x_kp1-x_k;
-                
           PLM_nonuniform(q(m,n,k-1,j,i), q(m,n,k,j,i), q(m,n,k+1,j,i), dxL, dxR, dxLh, dxRh, ql_kp1(n,i), qr_k(n,i));
         });
       }

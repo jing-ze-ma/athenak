@@ -42,7 +42,7 @@ void get_init_eos(const DvceArray1D<Real> &zarr, const DvceArray1D<Real> &logpar
 
 void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   const bool use_etotgrav = pmy_mesh_->pmb_pack->phydro->use_etotgrav;
-  const bool use_wellbalance = pmy_mesh_->pmb_pack->phydro->use_wellbalance;
+  const bool use_wellbalance_static = pmy_mesh_->pmb_pack->phydro->use_wellbalance_static;
   bool user_srcs = pin->GetOrAddBoolean("problem","user_srcs",false);
   if (user_srcs) user_srcs_func = SourceFunc;
   user_bcs_func = HydrostaticEquilibrium;
@@ -153,7 +153,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
               phi0_x3f(m,k+1,j,i) = - grav_acc * x3v;
           }
       }
-        if (use_wellbalance) {
+        if (use_wellbalance_static) {
             x1v = LeftEdgeX(i-is, nx1, x1min, x1max);
             x2v = CellCenterX(j-js, nx2, x2min, x2max);
             x3v = CellCenterX(k-ks, nx3, x3min, x3max);
@@ -302,7 +302,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
           }
         });
     }
-    if (use_wellbalance) {
+    if (use_wellbalance_static) {
         int &ng = indcs.ng;
         int n1m1 = indcs.nx1 + 2*ng - 1;
         int n2m1 = (indcs.nx2 > 1)? (indcs.nx2 + 2*ng - 1) : 0;
@@ -382,7 +382,7 @@ void HydrostaticEquilibrium(Mesh *pm) {
     DvceArray5D<Real> u0_;
     DvceArray5D<Real> u0wb;
     const bool use_etotgrav = pmbp->phydro->use_etotgrav;
-    const bool use_wellbalance = pmbp->phydro->use_wellbalance;
+    const bool use_wellbalance_static = pmbp->phydro->use_wellbalance_static;
 
     Real gamma;
     if (pmbp->phydro != nullptr) {
@@ -410,7 +410,7 @@ void HydrostaticEquilibrium(Mesh *pm) {
     Real &x3min = size.d_view(m).x3min;
     Real &x3max = size.d_view(m).x3max;
     if (mb_bcs.d_view(m,BoundaryFace::inner_x3) == BoundaryFlag::user) {
-        if (use_wellbalance)
+        if (use_wellbalance_static)
         {
             u0_(m,IDN,k,j,i) = u0wb(m,IDN,k,j,i);
             u0_(m,IM1,k,j,i) = 0.0;
@@ -439,7 +439,7 @@ void HydrostaticEquilibrium(Mesh *pm) {
 //        }
     }
     if (mb_bcs.d_view(m,BoundaryFace::outer_x3) == BoundaryFlag::user) {
-        if (use_wellbalance)
+        if (use_wellbalance_static)
         {
             u0_(m,IDN,(ke+k+1),j,i) = u0wb(m,IDN,(ke+k+1),j,i);
             u0_(m,IM1,(ke+k+1),j,i) = 0.0;
@@ -491,7 +491,7 @@ void SourceFunc(Mesh *pm, Real bdt) {
     w0 = pmbp->phydro->w0;
     w0wb = pmbp->phydro->w0wb;
     const bool use_etotgrav = pmbp->phydro->use_etotgrav;
-    const bool use_wellbalance = pmbp->phydro->use_wellbalance;
+    const bool use_wellbalance_static = pmbp->phydro->use_wellbalance_static;
     
     Real ap = 1.0e10;
     Real iap = 1.0/ap;
@@ -546,7 +546,7 @@ void SourceFunc(Mesh *pm, Real bdt) {
         if (!use_etotgrav) {
             u0(m,IEN,k,j,i) += src*w0(m,IM3,k,j,i);
         }
-        if (use_wellbalance) {
+        if (use_wellbalance_static) {
             src = bdt*grav_acc*(w0(m,IDN,k,j,i)-w0wb(m,IDN,k,j,i));
         }
         u0(m,IM3,k,j,i) += src;
@@ -561,7 +561,7 @@ void SourceFunc(Mesh *pm, Real bdt) {
         Real Tlow = Tsurf - Gtrop*(zstra+(z-zstra)/2.0) + sqrt(SQR(Gtrop*(z-zstra)/2.0) + SQR(dT));
         Real Thigh = Tsurf - Gtrop*zstra + dT;
         Real sig = p0 * std::exp(-z*iH0)/Ps;
-        if (use_wellbalance) {
+        if (use_wellbalance_static) {
             sig = w0wb(m,IEN,k,j,i)*gm1/Ps;
         }
         Real blow = sin(M_PI/2.0*(sig-sstra)/(1.0-sstra));

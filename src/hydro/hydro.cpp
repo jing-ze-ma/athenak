@@ -143,13 +143,13 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
         
   // determine if etotgrav and local well-balanced scheme is enabled
   use_etotgrav = pin->GetOrAddBoolean("hydro","etotgrav",false);
-  use_wellbalance_local = pin->GetOrAddBoolean("hydro","wellbalance_local",false);
+  use_wellbalance_dynamic = pin->GetOrAddBoolean("hydro","wellbalance_dynamic",false);
   use_wb_x1 = pin->GetOrAddBoolean("hydro","wb_x1",false);
   use_wb_x2 = pin->GetOrAddBoolean("hydro","wb_x2",false);
   use_wb_x3 = pin->GetOrAddBoolean("hydro","wb_x3",false);
   use_wb_rho = pin->GetOrAddBoolean("hydro","wb_rho",false);
   // allocate array of flags used with etotgrav
-  if (use_etotgrav || use_wellbalance_local) {
+  if (use_etotgrav || use_wellbalance_dynamic) {
     auto &indcs = pmy_pack->pmesh->mb_indcs;
     int ncells1 = indcs.nx1 + 2*(indcs.ng);
     int ncells2 = (indcs.nx2 > 1)? (indcs.nx2 + 2*(indcs.ng)) : 1;
@@ -159,7 +159,7 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
     Kokkos::realloc(phi0.x2f, nmb, ncells3, ncells2, ncells1);
     Kokkos::realloc(phi0.x3f, nmb, ncells3, ncells2, ncells1);
   }
-  if (use_wellbalance_local) {
+  if (use_wellbalance_dynamic) {
     // select well-balanced scheme assumption (no default).  Test for compatibility of options
     std::string wb_opt = pin->GetString("hydro","wb_option");
     if (wb_opt.compare("isothermal") == 0) {
@@ -168,6 +168,8 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
       wb_option = WB_Option::isodensity;
     } else if (wb_opt.compare("isentropic") == 0) {
       wb_option = WB_Option::isentropic;
+    } else if (wb_opt.compare("adaptive") == 0) {
+      wb_option = WB_Option::adaptive;
     // Error for anything else
     } else {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
@@ -183,11 +185,11 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
       }
   }
         
-  // determine if wellbalance is enabled
-  use_wellbalance = pin->GetOrAddBoolean("hydro","wellbalance",false);
-  use_wellbalance_reconst_perturb = pin->GetOrAddBoolean("hydro","wellbalance_reconst",false);
+  // determine if static wellbalance is enabled
+  use_wellbalance_static = pin->GetOrAddBoolean("hydro","wellbalance_static",false);
+  use_wellbalance_static_reconst_perturb = pin->GetOrAddBoolean("hydro","wellbalance_static_reconst",false);
   // allocate array of flags used with wellbalance
-  if (use_wellbalance) {
+  if (use_wellbalance_static) {
     auto &indcs = pmy_pack->pmesh->mb_indcs;
     int ncells1 = indcs.nx1 + 2*(indcs.ng);
     int ncells2 = (indcs.nx2 > 1)? (indcs.nx2 + 2*(indcs.ng)) : 1;

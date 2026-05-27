@@ -68,8 +68,8 @@ void get_init_eos(const DvceArray1D<Real> &zarr, const DvceArray1D<Real> &logpar
 
 void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   const bool use_etotgrav = pmy_mesh_->pmb_pack->phydro->use_etotgrav;
-  const bool use_wellbalance = pmy_mesh_->pmb_pack->phydro->use_wellbalance;
-  const bool use_wellbalance_local = pmy_mesh_->pmb_pack->phydro->use_wellbalance_local;
+  const bool use_wellbalance_static = pmy_mesh_->pmb_pack->phydro->use_wellbalance_static;
+  const bool use_wellbalance_dynamic = pmy_mesh_->pmb_pack->phydro->use_wellbalance_dynamic;
   const bool use_spherical_polar = pmy_mesh_->use_spherical_polar;
   const bool use_grid_stretch = pmy_mesh_->use_grid_stretch;
   bool user_srcs = pin->GetOrAddBoolean("problem","user_srcs",false);
@@ -250,7 +250,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         
         Real phicc = - grav_acc * x1v;// - 0.5*SQR(omega*r*sin(theta));
         
-      if (use_etotgrav || use_wellbalance_local) {
+      if (use_etotgrav || use_wellbalance_dynamic) {
           x1v = LeftEdgeX(i-is, nx1, x1min, x1max);
           x2v = CellCenterX(j-js, nx2, x2min, x2max);
           x3v = CellCenterX(k-ks, nx3, x3min, x3max);
@@ -350,7 +350,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
               phi0_x3f(m,k+1,j,i) = phicc;
           }
       }
-        if (use_wellbalance) {
+        if (use_wellbalance_static) {
             x1v = LeftEdgeX(i-is, nx1, x1min, x1max);
             x2v = CellCenterX(j-js, nx2, x2min, x2max);
             x3v = CellCenterX(k-ks, nx3, x3min, x3max);
@@ -428,7 +428,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             }
         }
     });
-    if (use_etotgrav || use_wellbalance_local) {
+    if (use_etotgrav || use_wellbalance_dynamic) {
         int &ng = indcs.ng;
         int n1m1 = indcs.nx1 + 2*ng - 1;
         int n2m1 = (indcs.nx2 > 1)? (indcs.nx2 + 2*ng - 1) : 0;
@@ -468,7 +468,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             phicc0(m,k,j,i) = phicc;
         });
     }
-    if (use_wellbalance) {
+    if (use_wellbalance_static) {
         int &ng = indcs.ng;
         int n1m1 = indcs.nx1 + 2*ng - 1;
         int n2m1 = (indcs.nx2 > 1)? (indcs.nx2 + 2*ng - 1) : 0;
@@ -549,7 +549,7 @@ void HydrostaticEquilibrium(Mesh *pm) {
     DvceArray5D<Real> u0_;
     DvceArray5D<Real> w0_;
     const bool use_etotgrav = pmbp->phydro->use_etotgrav;
-    const bool use_wellbalance_local = pmbp->phydro->use_wellbalance_local;
+    const bool use_wellbalance_dynamic = pmbp->phydro->use_wellbalance_dynamic;
     
     auto phi0_x1f = pmbp->phydro->phi0.x1f;
     auto phicc0 = pmbp->phydro->phicc0;
@@ -572,7 +572,7 @@ void HydrostaticEquilibrium(Mesh *pm) {
     KOKKOS_LAMBDA(int m, int k, int j) {
         if (mb_bcs.d_view(m,BoundaryFace::outer_x1) == BoundaryFlag::user) {
           for (int i=0; i<ng; ++i) {
-              if (use_wellbalance_local) {
+              if (use_wellbalance_dynamic) {
                 Real rho_i = u0_(m,IDN,k,j,ie);
                 Real e_i = u0_(m,IEN,k,j,ie) - 0.5*(SQR(u0_(m,IM1,k,j,ie))+SQR(u0_(m,IM2,k,j,ie))+SQR(u0_(m,IM3,k,j,ie)))/rho_i;
                 if (use_etotgrav) e_i -= rho_i*phicc0(m,k,j,ie);
@@ -634,10 +634,10 @@ void SourceFunc(Mesh *pm, Real bdt) {
     auto volume = pmbp->pcoord->volume;
     auto dx1 = pmbp->pcoord->dx1;
     const bool use_etotgrav = pmbp->phydro->use_etotgrav;
-    const bool use_wellbalance = pmbp->phydro->use_wellbalance;
+    const bool use_wellbalance_static = pmbp->phydro->use_wellbalance_static;
     const bool use_spherical_polar = pm->use_spherical_polar;
     const bool use_grid_stretch = pm->use_grid_stretch;
-    const bool use_wellbalance_local = pmbp->phydro->use_wellbalance_local;
+    const bool use_wellbalance_dynamic = pmbp->phydro->use_wellbalance_dynamic;
     
     Real r0, r1;
     if (use_grid_stretch) {
@@ -695,10 +695,10 @@ void SourceFunc(Mesh *pm, Real bdt) {
         if (!use_etotgrav) {
             u0(m,IEN,k,j,i) += src*w0(m,IVX,k,j,i);
         }
-        if (use_wellbalance) {
+        if (use_wellbalance_static) {
             src = bdt*grav_acc*(w0(m,IDN,k,j,i)-w0wb(m,IDN,k,j,i));
         }
-        if (use_wellbalance_local) {
+        if (use_wellbalance_dynamic) {
 //          Real dphi_i = phi0_x1f(m,k,j,i+1)-phicc0(m,k,j,i);
 //          Real dphi_imh = phicc0(m,k,j,i)-phi0_x1f(m,k,j,i);
 //          src = -bdt*(area_r*dphi_i+area_l*dphi_imh)/vol*w0(m,IDN,k,j,i);

@@ -74,10 +74,9 @@ void get_init_eos(const Real &Rgas, const Real &grav_acc, const DvceArray1D<Real
 
 void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   bool use_etotgrav = false;
-  bool use_wellbalance = false;
-  bool use_wellbalance_local = false;
+  bool use_wellbalance_static = false;
+  bool use_wellbalance_dynamic = false;
   const bool use_spherical_polar = pmy_mesh_->use_spherical_polar;
-  const bool use_grid_stretch = pmy_mesh_->use_grid_stretch;
   bool user_srcs = pin->GetOrAddBoolean("problem","user_srcs",false);
   if (user_srcs) user_srcs_func = SourceFunc;
   user_bcs_func = HydrostaticEquilibrium;
@@ -85,6 +84,11 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   if (pmy_mesh_->one_d || pmy_mesh_->two_d) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
               << "deep hot Jupiter problem generator only works in 3D" << std::endl;
+    exit(EXIT_FAILURE);
+  }
+  if (pin->GetInteger("mesh", "nx1") != pin->GetInteger("meshblock", "nx1")) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
+              << "deep hot Jupiter problem generator only allows one meshblock in r direction for the RT to work properly" << std::endl;
     exit(EXIT_FAILURE);
   }
 
@@ -129,8 +133,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     u0_ = pmbp->phydro->u0;
     gamma = pmbp->phydro->peos->eos_data.gamma;
     use_etotgrav = pmbp->phydro->use_etotgrav;
-    use_wellbalance = pmbp->phydro->use_wellbalance;
-    use_wellbalance_local = pmbp->phydro->use_wellbalance_local;
+    use_wellbalance_static = pmbp->phydro->use_wellbalance_static;
+    use_wellbalance_dynamic = pmbp->phydro->use_wellbalance_dynamic;
     phi0_x1f = pmbp->phydro->phi0.x1f;
     phi0_x2f = pmbp->phydro->phi0.x2f;
     phi0_x3f = pmbp->phydro->phi0.x3f;
@@ -315,7 +319,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         
         Real phicc = - grav_acc * x1v;// - 0.5*SQR(omega*r*sin(theta));
         
-      if (use_etotgrav || use_wellbalance_local) {
+      if (use_etotgrav || use_wellbalance_dynamic) {
           if (use_spherical_polar) {
             x1v = x1f_(m,i);
             x2v = x2v_(m,j);
@@ -441,7 +445,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
               phi0_x3f(m,k+1,j,i) = phicc;
           }
       }
-        if (use_wellbalance) {
+        if (use_wellbalance_static) {
             if (use_spherical_polar) {
               x1v = x1f_(m,i);
               x2v = x2v_(m,j);
@@ -523,7 +527,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             }
         }
     });
-    if (use_etotgrav || use_wellbalance_local) {
+    if (use_etotgrav || use_wellbalance_dynamic) {
         int &ng = indcs.ng;
         int n1m1 = indcs.nx1 + 2*ng - 1;
         int n2m1 = (indcs.nx2 > 1)? (indcs.nx2 + 2*ng - 1) : 0;
@@ -569,7 +573,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             phicc0(m,k,j,i) = phicc;
         });
     }
-    if (use_wellbalance) {
+    if (use_wellbalance_static) {
         int &ng = indcs.ng;
         int n1m1 = indcs.nx1 + 2*ng - 1;
         int n2m1 = (indcs.nx2 > 1)? (indcs.nx2 + 2*ng - 1) : 0;
@@ -657,7 +661,7 @@ void HydrostaticEquilibrium(Mesh *pm) {
     DvceArray5D<Real> w0_;
     Real gamma;
     bool use_etotgrav = false;
-    bool use_wellbalance_local = false;
+    bool use_wellbalance_dynamic = false;
     
     DvceArray4D<Real> phi0_x1f;
     DvceArray4D<Real> phicc0;
@@ -667,7 +671,7 @@ void HydrostaticEquilibrium(Mesh *pm) {
       w0_ = pmbp->phydro->w0;
       gamma = pmbp->phydro->peos->eos_data.gamma;
       use_etotgrav = pmbp->phydro->use_etotgrav;
-      use_wellbalance_local = pmbp->phydro->use_wellbalance_local;
+      use_wellbalance_dynamic = pmbp->phydro->use_wellbalance_dynamic;
       phi0_x1f = pmbp->phydro->phi0.x1f;
       phicc0 = pmbp->phydro->phicc0;
     } else if (pmbp->pmhd != nullptr) {
@@ -730,16 +734,16 @@ void SourceFunc(Mesh *pm, Real bdt) {
     DvceArray4D<Real> phi0_x1f;
     DvceArray4D<Real> phicc0;
     bool use_etotgrav = false;
-    bool use_wellbalance = false;
-    bool use_wellbalance_local = false;
+    bool use_wellbalance_static = false;
+    bool use_wellbalance_dynamic = false;
     Real gamma;
     if (pmbp->phydro != nullptr) {
       u0 = pmbp->phydro->u0;
       w0 = pmbp->phydro->w0;
       gamma = pmbp->phydro->peos->eos_data.gamma;
       use_etotgrav = pmbp->phydro->use_etotgrav;
-      use_wellbalance = pmbp->phydro->use_wellbalance;
-      use_wellbalance_local = pmbp->phydro->use_wellbalance_local;
+      use_wellbalance_static = pmbp->phydro->use_wellbalance_static;
+      use_wellbalance_dynamic = pmbp->phydro->use_wellbalance_dynamic;
       phi0_x1f = pmbp->phydro->phi0.x1f;
       phicc0 = pmbp->phydro->phicc0;
       w0wb = pmbp->phydro->w0wb;
@@ -829,10 +833,10 @@ void SourceFunc(Mesh *pm, Real bdt) {
         if (!use_etotgrav) {
             u0(m,IEN,k,j,i) += src*w0(m,IVX,k,j,i);
         }
-        if (use_wellbalance) {
+        if (use_wellbalance_static) {
             src = bdt*grav_acc*(w0(m,IDN,k,j,i)-w0wb(m,IDN,k,j,i));
         }
-        if (use_wellbalance_local) {
+        if (use_wellbalance_dynamic) {
           Real e_imh,e_iph,dum1,dum2,dum3;
           pmbp->phydro->getWBerho(IEN, gamma,
             w0(m,IDN,k,j,i-1),w0(m,IDN,k,j,i),w0(m,IDN,k,j,i+1),
@@ -877,7 +881,7 @@ void SourceFunc(Mesh *pm, Real bdt) {
 ////        itrad /= pow(10.0,gg);
 //        Real Tnew = (T + Teq*itrad*bdt)/(1.0 + itrad*bdt);
 //        u0(m,IEN,k,j,i) -= w0(m,IEN,k,j,i)*(Tnew-Teq)/T*itrad*bdt;
-        
+
         // Rayleigh drag (initial relaxation)
         Real dyntime = 2.0*M_PI/omega;
         Real tau1 = dyntime / 10.0;
@@ -901,7 +905,7 @@ void SourceFunc(Mesh *pm, Real bdt) {
           u0(m,IM2,k,j,i) -= u0(m,IM2,k,j,i)*fredux;
           u0(m,IM3,k,j,i) -= u0(m,IM3,k,j,i)*fredux;
         }
-        
+
         // Top sponge layer
         Real bar = 1.0e6;
         Real logpl = log(1.0e-6*bar);
@@ -1158,10 +1162,8 @@ void double_gray_two_stream_RT_source(Mesh *pm, Real bdt) {
     }
     
     Real r0, r1;
-//    if (use_grid_stretch) {
     r0 = pm->mesh_size.x1min;
     r1 = pm->mesh_size.x1max;
-//    }
     auto dx1 = pmbp->pcoord->dx1;
     
 //    Real Teq = 1469.0;

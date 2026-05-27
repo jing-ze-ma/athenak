@@ -39,8 +39,8 @@ void GravitySource(Mesh *pm, Real bdt);
 
 void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   const bool use_etotgrav = pmy_mesh_->pmb_pack->phydro->use_etotgrav;
-  const bool use_wellbalance = pmy_mesh_->pmb_pack->phydro->use_wellbalance;
-  const bool use_wellbalance_local = pmy_mesh_->pmb_pack->phydro->use_wellbalance_local;
+  const bool use_wellbalance_static = pmy_mesh_->pmb_pack->phydro->use_wellbalance_static;
+  const bool use_wellbalance_dynamic = pmy_mesh_->pmb_pack->phydro->use_wellbalance_dynamic;
   bool user_srcs = pin->GetOrAddBoolean("problem","user_srcs",false);
   int iprob  = pin->GetReal("problem","iprob");
   if (user_srcs) user_srcs_func = GravitySource;
@@ -131,7 +131,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       u0_(m,IM3,k,j,i) = 0.0;
       u0_(m,IEN,k,j,i) = p*igm1;
       if (use_etotgrav) u0_(m,IEN,k,j,i) += den*phicc;
-      if (use_etotgrav || use_wellbalance_local) {
+      if (use_etotgrav || use_wellbalance_dynamic) {
           phi0_x1f(m,k,j,i) = phicc;
           if (i == ie) {
               phi0_x1f(m,k,j,i+1) = phicc;
@@ -147,7 +147,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
               phi0_x2f(m,k,j+1,i) = - grav_acc * x2v;
           }
       }
-        if (use_wellbalance) {
+        if (use_wellbalance_static) {
             x1v = LeftEdgeX(i-is, nx1, x1min, x1max);
             x2v = CellCenterX(j-js, nx2, x2min, x2max);
             p = p0 * std::exp(-x2v*iH0);
@@ -236,7 +236,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             }
         }
     });
-    if (use_etotgrav || use_wellbalance_local) {
+    if (use_etotgrav || use_wellbalance_dynamic) {
         int &ng = indcs.ng;
         int n1m1 = indcs.nx1 + 2*ng - 1;
         int n2m1 = (indcs.nx2 > 1)? (indcs.nx2 + 2*ng - 1) : 0;
@@ -253,7 +253,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             phicc0(m,k,j,i) = phicc;
         });
     }
-    if (use_wellbalance) {
+    if (use_wellbalance_static) {
         int &ng = indcs.ng;
         int n1m1 = indcs.nx1 + 2*ng - 1;
         int n2m1 = (indcs.nx2 > 1)? (indcs.nx2 + 2*ng - 1) : 0;
@@ -473,8 +473,8 @@ void GravitySource(Mesh *pm, Real bdt) {
     auto phi0_x2f = pmbp->phydro->phi0.x2f;
     phicc0 = pmbp->phydro->phicc0;
     const bool use_etotgrav = pmbp->phydro->use_etotgrav;
-    const bool use_wellbalance = pmbp->phydro->use_wellbalance;
-    const bool use_wellbalance_local = pmbp->phydro->use_wellbalance_local;
+    const bool use_wellbalance_static = pmbp->phydro->use_wellbalance_static;
+    const bool use_wellbalance_dynamic = pmbp->phydro->use_wellbalance_dynamic;
 
     Real gamma = pmbp->phydro->peos->eos_data.gamma;
     Real gm1 = gamma-1.0;
@@ -490,10 +490,10 @@ void GravitySource(Mesh *pm, Real bdt) {
       if (!use_etotgrav) {
         u0(m,IEN,k,j,i) += src*w0(m,IM2,k,j,i);
       }
-      if (use_wellbalance) {
+      if (use_wellbalance_static) {
         src = bdt*g*(w0(m,IDN,k,j,i)-w0wb(m,IDN,k,j,i));
       }
-        if (use_wellbalance_local) {
+        if (use_wellbalance_dynamic) {
           Real e_kmh,e_kph,dum1,dum2,dum3;
           pmbp->phydro->getWBerho(IEN, gamma,
               w0(m,IDN,k,j-1,i),w0(m,IDN,k,j,i),w0(m,IDN,k,j+1,i),

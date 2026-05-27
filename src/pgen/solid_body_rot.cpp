@@ -200,7 +200,7 @@ void UserBoundary(Mesh *pm) {
     DvceArray5D<Real> u0_;
     DvceArray5D<Real> w0_;
     const bool use_etotgrav = pmbp->phydro->use_etotgrav;
-    const bool use_wellbalance = pmbp->phydro->use_wellbalance;
+    const bool use_wellbalance_static = pmbp->phydro->use_wellbalance_static;
 
     Real gm1;
     if (pmbp->phydro != nullptr) {

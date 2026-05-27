@@ -128,9 +128,6 @@ TaskStatus Hydro::InitRecv(Driver *pdrive, int stage) {
 //!  handle RK register logic at given stage
 
 TaskStatus Hydro::CopyCons(Driver *pdrive, int stage) {
-//  if (use_wellbalance) {
-//    RemoveWbVar(u0wb,u0);
-//  }
   if (stage == 1) {
     Kokkos::deep_copy(DevExeSpace(), u1, u0);
   } else {
@@ -160,9 +157,9 @@ TaskStatus Hydro::CopyCons(Driver *pdrive, int stage) {
 //! of conserved variables
 
 TaskStatus Hydro::Fluxes(Driver *pdrive, int stage) {
-    if (use_wellbalance_reconst_perturb) {
-      RemoveWbVar(w0wb,w0);
-    }
+  if (use_wellbalance_static_reconst_perturb) {
+    RemoveWbVar(w0wb,w0);
+  }
   // select which calculate_flux function to call based on rsolver_method
   if (rsolver_method == Hydro_RSolver::advect) {
     CalculateFluxes<Hydro_RSolver::advect>(pdrive, stage);
@@ -202,7 +199,7 @@ TaskStatus Hydro::Fluxes(Driver *pdrive, int stage) {
   if (use_etotgrav) {
     AddGravFlux(phi0,uflx);
   }
-  if (use_wellbalance) {
+  if (use_wellbalance_static) {
     RemoveWbFlux(w0facewb,uflx);
   }
 
@@ -253,8 +250,7 @@ TaskStatus Hydro::RecvFlux(Driver *pdrive, int stage) {
 //! variables (u0) have already been partially updated when this fn called.
 
 TaskStatus Hydro::HydroSrcTerms(Driver *pdrive, int stage) {
-//    if (use_wellbalance) AddWbVar(u0wb,u0);
-    if (use_wellbalance_reconst_perturb) AddWbVar(w0wb,w0);
+  if (use_wellbalance_static_reconst_perturb) AddWbVar(w0wb,w0);
     
   Real beta_dt = (pdrive->beta[stage-1])*(pmy_pack->pmesh->dt);
 
@@ -389,10 +385,6 @@ TaskStatus Hydro::ApplyPhysicalBCs(Driver *pdrive, int stage) {
 
   // physical BCs
   pbval_u->HydroBCs((pmy_pack), (pbval_u->u_in), u0);
-//    if (use_wellbalance) {
-//        pbval_u->HydroBCs((pmy_pack), (pbval_u->u_in), u0wb);
-//        pbval_u->HydroBCs((pmy_pack), (pbval_u->u_in), w0wb);
-//    }
 
   // user BCs
   if (pmy_pack->pmesh->pgen->user_bcs) {

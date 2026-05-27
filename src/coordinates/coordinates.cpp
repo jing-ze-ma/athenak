@@ -672,7 +672,7 @@ void Coordinates::SrcTermsSphericalPolarHydro(const DvceArray5D<Real> &w0, const
     Real v3 = w0(m,IVZ,k,j,i);
     Real rho = w0(m,IDN,k,j,i);
     Real pr = w0(m,IEN,k,j,i)*gm1;
-    if (pmy_pack->phydro->use_wellbalance) pr -= w0wb(m,IEN,k,j,i)*gm1;
+    if (pmy_pack->phydro->use_wellbalance_static) pr -= w0wb(m,IEN,k,j,i)*gm1;
     Real m_ii_h = pr + 0.5*rho*(v2*v2+v3*v3);
     Real m_pp = pr + rho*SQR(v3);
       

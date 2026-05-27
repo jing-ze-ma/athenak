@@ -96,6 +96,10 @@ Mesh::Mesh(ParameterInput *pin) :
   }
   use_spherical_polar = pin->GetOrAddBoolean("mesh", "use_spherical_polar", false);
   use_grid_stretch = pin->GetOrAddBoolean("mesh", "use_grid_stretch", false);
+  if (use_spherical_polar && pin->GetReal("mesh", "x3min")<0.0 && pin->GetReal("mesh", "x3max")<0.0) {
+    mesh_size.x3min = 0.0;
+    mesh_size.x3max = 2.0*M_PI;
+  }
 
   // Set BC flags for ix1/ox1 boundaries and error check
   mesh_bcs[BoundaryFace::inner_x1] = GetBoundaryFlag(pin->GetString("mesh", "ix1_bc"));

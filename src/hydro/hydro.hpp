@@ -34,8 +34,8 @@ class Driver;
 enum class Hydro_RSolver {advect, llf, hlle, hllc, lhllc, hllclm, ausmpup, roe,    // non-relativistic
                           llf_sr, hlle_sr, hllc_sr,        // SR
                           llf_gr, hlle_gr};                // GR
-// constants that enumerate local well-balanced scheme options
-enum WB_Option {isodensity, isothermal, isentropic};
+// constants that enumerate dynamical well-balanced scheme options
+enum WB_Option {isodensity, isothermal, isentropic, adaptive};
 
 //----------------------------------------------------------------------------------------
 //! \struct HydroTaskIDs
@@ -115,9 +115,9 @@ class Hydro {
   DvceArray4D<Real> phicc0;     // cell-centered gravitational potential energy
     
   // following used for well-balanced scheme
-  bool use_wellbalance = false;    // flag to enable wellbalance
-  bool use_wellbalance_reconst_perturb = false;    // flag to enable reconstructing perturbed primitive variables (less robust against large deviations)
-  bool use_wellbalance_local = false;    // flag to enable local well-balanced method by Kappeli & Mishra 2014, 2016
+  bool use_wellbalance_static = false;    // flag to enable wellbalance
+  bool use_wellbalance_static_reconst_perturb = false;    // flag to enable reconstructing perturbed primitive variables (less robust against large deviations)
+  bool use_wellbalance_dynamic = false;    // flag to enable dynamical well-balanced method by Kappeli & Mishra 2014, 2016
   bool use_wb_x1 = false;    // flag for directions
   bool use_wb_x2 = false;    // flag for directions
   bool use_wb_x3 = false;    // flag for directions
@@ -410,7 +410,7 @@ class Hydro {
       Real gamma = eos.gamma;
       int nvar = q.extent_int(1);
       for (int n=0; n<nvar; ++n) {
-          if ((n == (IEN) || (n == (IDN) && use_wb_rho)) && use_wellbalance_local && use_wb_x1) {
+          if ((n == (IEN) || (n == (IDN) && use_wb_rho)) && use_wellbalance_dynamic && use_wb_x1) {
             par_for_inner(member, il, iu, [&](const int i) {
               Real x_im1  = xv(m,i-1);
               Real x_imh  = xf(m,i);
@@ -469,19 +469,18 @@ class Hydro {
     void GridPiecewiseLinearX2(TeamMember_t const &member, const int m, const int k, const int j, const int il, const int iu,
         const DvceArray5D<Real> &q, const DvceArray2D<Real> &xv, const DvceArray2D<Real> &xf,
         ScrArray2D<Real> &ql_jp1, ScrArray2D<Real> &qr_j) {
+      Real x_jm1  = xv(m,j-1);
+      Real x_jmh  = xf(m,j);
+      Real x_j    = xv(m,j);
+      Real x_jph  = xf(m,j+1);
+      Real x_jp1  = xv(m,j+1);
+      Real dxLh = x_j-x_jmh;
+      Real dxRh = x_jph-x_j;
+      Real dxL = x_j-x_jm1;
+      Real dxR = x_jp1-x_j;
       int nvar = q.extent_int(1);
       for (int n=0; n<nvar; ++n) {
         par_for_inner(member, il, iu, [&](const int i) {
-          Real x_jm1  = xv(m,j-1);
-          Real x_jmh  = xf(m,j);
-          Real x_j    = xv(m,j);
-          Real x_jph  = xf(m,j+1);
-          Real x_jp1  = xv(m,j+1);
-          Real dxLh = x_j-x_jmh;
-          Real dxRh = x_jph-x_j;
-          Real dxL = x_j-x_jm1;
-          Real dxR = x_jp1-x_j;
-                
           PLM_nonuniform(q(m,n,k,j-1,i), q(m,n,k,j,i), q(m,n,k,j+1,i), dxL, dxR, dxLh, dxRh, ql_jp1(n,i), qr_j(n,i));
         });
       }
@@ -492,19 +491,18 @@ class Hydro {
     void GridPiecewiseLinearX3(TeamMember_t const &member, const int m, const int k, const int j, const int il, const int iu,
         const DvceArray5D<Real> &q, const DvceArray2D<Real> &xv, const DvceArray2D<Real> &xf,
         ScrArray2D<Real> &ql_kp1, ScrArray2D<Real> &qr_k) {
+      Real x_km1  = xv(m,k-1);
+      Real x_kmh  = xf(m,k);
+      Real x_k    = xv(m,k);
+      Real x_kph  = xf(m,k+1);
+      Real x_kp1  = xv(m,k+1);
+      Real dxLh = x_k-x_kmh;
+      Real dxRh = x_kph-x_k;
+      Real dxL = x_k-x_km1;
+      Real dxR = x_kp1-x_k;
       int nvar = q.extent_int(1);
       for (int n=0; n<nvar; ++n) {
         par_for_inner(member, il, iu, [&](const int i) {
-          Real x_km1  = xv(m,k-1);
-          Real x_kmh  = xf(m,k);
-          Real x_k    = xv(m,k);
-          Real x_kph  = xf(m,k+1);
-          Real x_kp1  = xv(m,k+1);
-          Real dxLh = x_k-x_kmh;
-          Real dxRh = x_kph-x_k;
-          Real dxL = x_k-x_km1;
-          Real dxR = x_kp1-x_k;
-                
           PLM_nonuniform(q(m,n,k-1,j,i), q(m,n,k,j,i), q(m,n,k+1,j,i), dxL, dxR, dxLh, dxRh, ql_kp1(n,i), qr_k(n,i));
         });
       }
@@ -518,44 +516,68 @@ class Hydro {
                 const Real &phi_im1, const Real &phi_imh, const Real &phi_i, const Real &phi_iph, const Real &phi_ip1,
                 Real &q0_im1, Real &q0_imh, Real &q0_i, Real &q0_iph, Real &q0_ip1) {
       const auto wb_option_ = wb_option;
+      int wb_option_num;
       Real igm1 = 1.0/(gamma-1.0);
       Real gigm1 = gamma*igm1;
       Real gm1ig = (gamma-1.0)/gamma;
       Real ig = 1.0/gamma;
         
+      switch (wb_option_) {
+        case WB_Option::isodensity:
+          {
+            wb_option_num = 0;
+          }
+          break;
+        case WB_Option::isothermal:
+          {
+            wb_option_num = 1;
+          }
+          break;
+        case WB_Option::isentropic:
+          {
+            wb_option_num = 2;
+          }
+          break;
+        case WB_Option::adaptive:
+          {
+            Real dTdivT = fabs((e_ip1/rho_ip1 - e_im1/rho_im1) / (e_i/rho_i));
+            Real dsdivs = fabs((e_ip1/pow(rho_ip1,gamma) - e_im1/pow(rho_im1,gamma)) / (e_i/pow(rho_i,gamma)));
+            if (dTdivT > dsdivs) {
+              wb_option_num = 2;
+            } else {
+              wb_option_num = 1;
+            }
+          }
+          break;
+        default:
+          break;
+      }
+        
         Real factor_im1, factor_i, factor_ip1;
         if (n == (IEN)) {    // reconstructing e
-          switch (wb_option_) {
-            case WB_Option::isodensity:
+          if (wb_option_num == 0)
               {
                 factor_im1 = rho_im1*igm1;
                 factor_i = rho_i*igm1;
                 factor_ip1 = rho_ip1*igm1;
                 q0_i = e_i;
               }
-              break;
-            case WB_Option::isothermal:
+          else if (wb_option_num == 1)
               {
                 factor_im1 = rho_im1/e_im1*igm1;
                 factor_i = rho_i/e_i*igm1;
                 factor_ip1 = rho_ip1/e_ip1*igm1;
                 q0_i = log(e_i);
               }
-              break;
-            case WB_Option::isentropic:
+          else
               {
                 factor_im1 = rho_im1/pow(e_im1,ig)*ig;
                 factor_i = rho_i/pow(e_i,ig)*ig;
                 factor_ip1 = rho_ip1/pow(e_ip1,ig)*ig;
                 q0_i = pow(e_i,gm1ig);
               }
-              break;
-            default:
-              break;
-          }
         } else {    // reconstructing rho
-          switch (wb_option_) {
-            case WB_Option::isodensity:
+            if (wb_option_num == 0)
               {
                 q0_im1 = 0.0;
                 q0_ip1 = 0.0;
@@ -564,26 +586,20 @@ class Hydro {
                 q0_i = 0.0;
                 return;
               }
-              break;
-            case WB_Option::isothermal:
+            else if (wb_option_num == 1)
               {
                 factor_im1 = rho_im1/e_im1*igm1;
                 factor_i = rho_i/e_i*igm1;
                 factor_ip1 = rho_ip1/e_ip1*igm1;
                 q0_i = log(rho_i);
               }
-              break;
-            case WB_Option::isentropic:
+            else
               {
                 factor_im1 = pow(rho_im1,gamma)/e_im1*ig;
                 factor_i = pow(rho_i,gamma)/e_i*ig;
                 factor_ip1 = pow(rho_ip1,gamma)/e_ip1*ig;
                 q0_i = pow(rho_i,gamma-1.0);
               }
-              break;
-            default:
-              break;
-          }
         }
           
         Real dphi_im1 = phi_imh-phi_im1;
@@ -598,48 +614,36 @@ class Hydro {
           
         if (n == (IEN)) {    // reconstructing e
             q0_i = e_i;
-            switch (wb_option_) {
-              case WB_Option::isothermal:
+            if (wb_option_num == 1)
                 {
                   q0_im1 = exp(q0_im1);
                   q0_ip1 = exp(q0_ip1);
                   q0_imh = exp(q0_imh);
                   q0_iph = exp(q0_iph);
                 }
-                break;
-              case WB_Option::isentropic:
+            if (wb_option_num == 2)
                 {
                   q0_im1 = pow(q0_im1,gigm1);
                   q0_ip1 = pow(q0_ip1,gigm1);
                   q0_imh = pow(q0_imh,gigm1);
                   q0_iph = pow(q0_iph,gigm1);
                 }
-                break;
-              default:
-                break;
-            }
         } else {    // reconstructing rho
             q0_i = rho_i;
-            switch (wb_option_) {
-              case WB_Option::isothermal:
+            if (wb_option_num == 1)
                 {
                   q0_im1 = exp(q0_im1);
                   q0_ip1 = exp(q0_ip1);
                   q0_imh = exp(q0_imh);
                   q0_iph = exp(q0_iph);
                 }
-                break;
-              case WB_Option::isentropic:
+            if (wb_option_num == 2)
                 {
                   q0_im1 = pow(q0_im1,igm1);
                   q0_ip1 = pow(q0_ip1,igm1);
                   q0_imh = pow(q0_imh,igm1);
                   q0_iph = pow(q0_iph,igm1);
                 }
-                break;
-              default:
-                break;
-            }
         }
       
       return;
