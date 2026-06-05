@@ -67,6 +67,9 @@ enum ParticlesIndex {PGID=0, PTAG=1, IPX=0, IPVX=1, IPY=2, IPVY=3, IPZ=4, IPVZ=5
 // integer constants to specify spatial reconstruction methods
 enum ReconstructionMethod {dc, plm, ppm4, ppmx, wenoz};
 
+// constants that enumerate dynamical well-balanced scheme options
+enum WBOption {isodensity, isothermal, isentropic, adaptive};
+
 // constants that enumerate time evolution options
 enum TimeEvolution {tstatic, kinematic, dynamic};
 

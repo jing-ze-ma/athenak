@@ -34,8 +34,6 @@ class Driver;
 enum class Hydro_RSolver {advect, llf, hlle, hllc, lhllc, hllclm, ausmpup, roe,    // non-relativistic
                           llf_sr, hlle_sr, hllc_sr,        // SR
                           llf_gr, hlle_gr};                // GR
-// constants that enumerate dynamical well-balanced scheme options
-enum WB_Option {isodensity, isothermal, isentropic, adaptive};
 
 //----------------------------------------------------------------------------------------
 //! \struct HydroTaskIDs
@@ -115,14 +113,14 @@ class Hydro {
   DvceArray4D<Real> phicc0;     // cell-centered gravitational potential energy
     
   // following used for well-balanced scheme
-  bool use_wellbalance_static = false;    // flag to enable wellbalance
+  bool use_wellbalance_static = false;    // flag to enable static wellbalance
   bool use_wellbalance_static_reconst_perturb = false;    // flag to enable reconstructing perturbed primitive variables (less robust against large deviations)
   bool use_wellbalance_dynamic = false;    // flag to enable dynamical well-balanced method by Kappeli & Mishra 2014, 2016
   bool use_wb_x1 = false;    // flag for directions
   bool use_wb_x2 = false;    // flag for directions
   bool use_wb_x3 = false;    // flag for directions
   bool use_wb_rho = false;   // flag to enable local well-balanced method also in reconstructing rho
-  WB_Option wb_option;
+  WBOption wb_option;
   DvceArray5D<Real> u0wb;   // background conserved variables
   DvceArray5D<Real> w0wb;   // background primitive variables
   DvceFaceFld5D<Real> w0facewb;   // face-centered background primitive variables
@@ -170,20 +168,7 @@ class Hydro {
   void RemoveWbFlux(const DvceFaceFld5D<Real> &w0facewb, DvceFaceFld5D<Real> &flx);
   void AddWbVar(const DvceArray5D<Real> &varwb, DvceArray5D<Real> &var);
   void RemoveWbVar(const DvceArray5D<Real> &varwb, DvceArray5D<Real> &var);
-////  KOKKOS_INLINE_FUNCTION
-//  void AddWbPrimFace(const Real &qlwb_ip1, const Real &qrwb_i, Real &ql_ip1, Real &qr_i);
-////  KOKKOS_INLINE_FUNCTION
-//  void AddWbPrimFaceX1(TeamMember_t const &member, const int m, const int k, const int j,
-//         const int il, const int iu, const DvceArray5D<Real> &q,
-//                       ScrArray2D<Real> &ql, ScrArray2D<Real> &qr);
-////  KOKKOS_INLINE_FUNCTION
-//  void AddWbPrimFaceX2(TeamMember_t const &member, const int m, const int k, const int j,
-//         const int il, const int iu, const DvceArray5D<Real> &q,
-//                         ScrArray2D<Real> &ql_jp1, ScrArray2D<Real> &qr_j);
-////  KOKKOS_INLINE_FUNCTION
-//  void AddWbPrimFaceX3(TeamMember_t const &member, const int m, const int k, const int j,
-//         const int il, const int iu, const DvceArray5D<Real> &q,
-//                       ScrArray2D<Real> &ql_kp1, ScrArray2D<Real> &qr_k);
+
     //----------------------------------------------------------------------------------------
     //! \fn AddWbPrimFace()
     //! \brief Adds background face-centered variables onto ql(i+1) and qr(i).
@@ -293,7 +278,7 @@ class Hydro {
         }
       }
       return;
-    }
+    };
     
     KOKKOS_INLINE_FUNCTION
     void WbLocalPiecewiseLinearX2(TeamMember_t const &member, const EOS_Data &eos, const int m, const int k, const int j,
@@ -463,7 +448,7 @@ class Hydro {
           }
       }
       return;
-    }
+    };
     
     KOKKOS_INLINE_FUNCTION
     void GridPiecewiseLinearX2(TeamMember_t const &member, const int m, const int k, const int j, const int il, const int iu,
@@ -485,7 +470,7 @@ class Hydro {
         });
       }
       return;
-    }
+    };
     
     KOKKOS_INLINE_FUNCTION
     void GridPiecewiseLinearX3(TeamMember_t const &member, const int m, const int k, const int j, const int il, const int iu,
@@ -507,7 +492,7 @@ class Hydro {
         });
       }
       return;
-    }
+    };
     
     KOKKOS_INLINE_FUNCTION
     void getWBerho(const int &n, const Real &gamma,
@@ -523,22 +508,22 @@ class Hydro {
       Real ig = 1.0/gamma;
         
       switch (wb_option_) {
-        case WB_Option::isodensity:
+        case WBOption::isodensity:
           {
             wb_option_num = 0;
           }
           break;
-        case WB_Option::isothermal:
+        case WBOption::isothermal:
           {
             wb_option_num = 1;
           }
           break;
-        case WB_Option::isentropic:
+        case WBOption::isentropic:
           {
             wb_option_num = 2;
           }
           break;
-        case WB_Option::adaptive:
+        case WBOption::adaptive:
           {
             Real dTdivT = fabs((e_ip1/rho_ip1 - e_im1/rho_im1) / (e_i/rho_i));
             Real dsdivs = fabs((e_ip1/pow(rho_ip1,gamma) - e_im1/pow(rho_im1,gamma)) / (e_i/pow(rho_i,gamma)));

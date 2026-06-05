@@ -163,13 +163,13 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
     // select well-balanced scheme assumption (no default).  Test for compatibility of options
     std::string wb_opt = pin->GetString("hydro","wb_option");
     if (wb_opt.compare("isothermal") == 0) {
-      wb_option = WB_Option::isothermal;
+      wb_option = WBOption::isothermal;
     } else if (wb_opt.compare("isodensity") == 0) {
-      wb_option = WB_Option::isodensity;
+      wb_option = WBOption::isodensity;
     } else if (wb_opt.compare("isentropic") == 0) {
-      wb_option = WB_Option::isentropic;
+      wb_option = WBOption::isentropic;
     } else if (wb_opt.compare("adaptive") == 0) {
-      wb_option = WB_Option::adaptive;
+      wb_option = WBOption::adaptive;
     // Error for anything else
     } else {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__

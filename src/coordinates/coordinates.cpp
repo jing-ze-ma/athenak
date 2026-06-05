@@ -639,7 +639,7 @@ void Coordinates::CoordSphericalPolar() {
       
     // Mignone 2014 correction
     x1v(m,i) = 1.0/4.0*(SQR(SQR(r_r))-SQR(SQR(r_l))) / (1.0/3.0*(r_r*r_r*r_r-r_l*r_l*r_l));
-    x2v(m,j) = ((sinr-thetar*cosr) - (sinl-thetal*cosl)) / fabs(cosr-cosl);
+    x2v(m,j) = ((sinr-thetar*cosr) - (sinl-thetal*cosl)) / fabs(cosr-cosl); // 0.5*(thetar+thetal); //
     x3v(m,k) = 0.5*(phir+phil);
       
     z_ov_rE(m,k,j,i) = (area1r - area.x1f(m,k,j,i)) / volume(m,k,j,i);
@@ -690,7 +690,7 @@ void Coordinates::SrcTermsSphericalPolarHydro(const DvceArray5D<Real> &w0, const
   });
 }
 
-void Coordinates::SrcTermsSphericalPolarMHD(const DvceArray5D<Real> &w0, const DvceArray5D<Real> &bcc0, const DvceFaceFld5D<Real> uflx, const EOS_Data &eos_data, const Real bdt, DvceArray5D<Real> &u0) {
+void Coordinates::SrcTermsSphericalPolarMHD(const DvceArray5D<Real> &w0, const DvceArray5D<Real> &bcc0, const DvceArray5D<Real> &w0wb, const DvceFaceFld5D<Real> uflx, const EOS_Data &eos_data, const Real bdt, DvceArray5D<Real> &u0) {
 
   auto &size = pmy_pack->pmb->mb_size;
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -714,6 +714,7 @@ void Coordinates::SrcTermsSphericalPolarMHD(const DvceArray5D<Real> &w0, const D
     Real v3 = w0(m,IVZ,k,j,i);
     Real rho = w0(m,IDN,k,j,i);
     Real pr = w0(m,IEN,k,j,i)*gm1;
+    if (pmy_pack->pmhd->use_wellbalance_static) pr -= w0wb(m,IEN,k,j,i)*gm1;
     Real m_ii_h = pr + 0.5*rho*(v2*v2+v3*v3);
     Real m_pp = pr + rho*SQR(v3);
     m_ii_h += 0.5*SQR(bcc0(m,IBX,k,j,i));

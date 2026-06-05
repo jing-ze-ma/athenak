@@ -88,7 +88,7 @@ class Coordinates {
     
   void CoordSphericalPolar();
   void SrcTermsSphericalPolarHydro(const DvceArray5D<Real> &w0, const DvceArray5D<Real> &w0wb, const DvceFaceFld5D<Real> uflx, const EOS_Data &eos_data, const Real bdt, DvceArray5D<Real> &u0);
-  void SrcTermsSphericalPolarMHD(const DvceArray5D<Real> &w0, const DvceArray5D<Real> &bcc0,  const DvceFaceFld5D<Real> uflx, const EOS_Data &eos_data, const Real bdt, DvceArray5D<Real> &u0);
+  void SrcTermsSphericalPolarMHD(const DvceArray5D<Real> &w0, const DvceArray5D<Real> &bcc0, const DvceArray5D<Real> &w0wb, const DvceFaceFld5D<Real> uflx, const EOS_Data &eos_data, const Real bdt, DvceArray5D<Real> &u0);
   KOKKOS_INLINE_FUNCTION
   void StretchR(const Real r0, const Real r1, Real &r) {
     Real xi = (r-r0)/(r1-r0);

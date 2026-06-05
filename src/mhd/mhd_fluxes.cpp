@@ -59,6 +59,14 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
   auto &w0_ = w0;
   auto &b0_ = bcc0;
     
+  auto w0facewb_x1f = w0facewb.x1f;
+  auto w0facewb_x2f = w0facewb.x2f;
+  auto w0facewb_x3f = w0facewb.x3f;
+  auto &phicc0_ = phicc0;
+  auto phi0_x1f = phi0.x1f;
+  auto phi0_x2f = phi0.x2f;
+  auto phi0_x3f = phi0.x3f;
+    
   auto &use_cubed_sphere = pmy_pack->pmesh->use_cubed_sphere;
   auto &use_spherical_polar = pmy_pack->pmesh->use_spherical_polar;
 
@@ -96,8 +104,14 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
     ScrArray2D<Real> br(member.team_scratch(scr_level), 3, ncells1);
       
     if (use_spherical_polar) {
-      GridPiecewiseLinearX1(member, m, k, j, il-1, iu, w0_, x1v_, x1f_, wl, wr);
-      GridPiecewiseLinearX1(member, m, k, j, il-1, iu, b0_, x1v_, x1f_, bl, br);
+      GridPiecewiseLinearX1(member, eos_, m, k, j, il-1, iu, w0_, x1v_, x1f_, phicc0_, phi0_x1f, true, wl, wr);
+      GridPiecewiseLinearX1(member, eos_, m, k, j, il-1, iu, b0_, x1v_, x1f_, phicc0_, phi0_x1f, false, bl, br);
+    } else {
+        
+    if (use_wellbalance_dynamic && use_wb_x1)
+    {
+      WbLocalPiecewiseLinearX1(member, eos_, m, k, j, il-1, iu, w0_, phicc0_, phi0_x1f, wl, wr);
+      PiecewiseLinearX1(member, m, k, j, il-1, iu, b0_, bl, br);
     } else {
 
     // Reconstruct qR[i] and qL[i+1], for both W and Bcc
@@ -124,6 +138,11 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
     }
         
     }
+    }
+      
+      if (use_wellbalance_static_reconst_perturb) {
+        AddWbPrimFaceX1(member,m,k,j,il-1,iu,w0facewb_x1f,wl,wr);
+      }
       
     // Sync all threads in the team so that scratch memory is consistent
     member.team_barrier();
@@ -224,6 +243,12 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
           GridPiecewiseLinearX2(member, m, k, j, is-1, ie+1, w0_, x2v_, x2f_, wl_jp1, wr);
           GridPiecewiseLinearX2(member, m, k, j, is-1, ie+1, b0_, x2v_, x2f_, bl_jp1, br);
         } else {
+            
+        if (use_wellbalance_dynamic && use_wb_x2)
+        {
+          WbLocalPiecewiseLinearX2(member, eos_, m, k, j, il, iu, w0_, phicc0_, phi0_x2f, wl_jp1, wr);
+          PiecewiseLinearX2(member, m, k, j, is-1, ie+1, b0_, bl_jp1, br);
+        } else {
 
         // Reconstruct qR[j] and qL[j+1], for both W and Bcc
         switch (recon_method_) {
@@ -249,6 +274,11 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
         }
             
         }
+        }
+          
+          if (use_wellbalance_static_reconst_perturb) {
+            AddWbPrimFaceX2(member,m,k,j,il,iu,w0facewb_x2f,wl_jp1,wr);
+          }
           
         member.team_barrier();
 
@@ -355,6 +385,12 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
           GridPiecewiseLinearX3(member, m, k, j, is-1, ie+1, w0_, x3v_, x3f_, wl_kp1, wr);
           GridPiecewiseLinearX3(member, m, k, j, is-1, ie+1, b0_, x3v_, x3f_, bl_kp1, br);
         } else {
+            
+        if (use_wellbalance_dynamic && use_wb_x3)
+        {
+          WbLocalPiecewiseLinearX3(member, eos_, m, k, j, il, iu, w0_, phicc0_, phi0_x3f, wl_kp1, wr);
+          PiecewiseLinearX3(member, m, k, j, is-1, ie+1, b0_, bl_kp1, br);
+        } else {
 
         // Reconstruct qR[k] and qL[k+1], for both W and Bcc
         switch (recon_method_) {
@@ -380,6 +416,11 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
         }
             
         }
+        }
+          
+          if (use_wellbalance_static_reconst_perturb) {
+            AddWbPrimFaceX3(member,m,k,j,il,iu,w0facewb_x3f,wl_kp1,wr);
+          }
           
         member.team_barrier();
 

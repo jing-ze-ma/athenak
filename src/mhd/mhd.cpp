@@ -53,6 +53,9 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
     e3_cc("e3_cc",1,1,1,1),
     phi0("phi_fc",1,1,1,1),
     phicc0("phi_cc",1,1,1,1,1),
+    u0wb("conswb",1,1,1,1,1),
+    w0wb("primwb",1,1,1,1,1),
+    w0facewb("primfwb",1,1,1,1,1),
     utest("utest",1,1,1,1,1),
     bcctest("bcctest",1,1,1,1,1),
     fofc("fofc",1,1,1,1) {
@@ -180,19 +183,65 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
     psbox_b = nullptr;
   }
         
-  // determine if etotgrav is enabled
-  use_etotgrav = pin->GetOrAddBoolean("mhd","etotgrav",false);
-  // allocate array of flags used with etotgrav
-  if (use_etotgrav) {
-    auto &indcs = pmy_pack->pmesh->mb_indcs;
-    int ncells1 = indcs.nx1 + 2*(indcs.ng);
-    int ncells2 = (indcs.nx2 > 1)? (indcs.nx2 + 2*(indcs.ng)) : 1;
-    int ncells3 = (indcs.nx3 > 1)? (indcs.nx3 + 2*(indcs.ng)) : 1;
-    Kokkos::realloc(phicc0, nmb, ncells3, ncells2, ncells1);
-    Kokkos::realloc(phi0.x1f, nmb, ncells3, ncells2, ncells1+1);
-    Kokkos::realloc(phi0.x2f, nmb, ncells3, ncells2+1, ncells1);
-    Kokkos::realloc(phi0.x3f, nmb, ncells3+1, ncells2, ncells1);
-  }
+    // determine if etotgrav and local well-balanced scheme is enabled
+    use_etotgrav = pin->GetOrAddBoolean("mhd","etotgrav",false);
+    use_wellbalance_dynamic = pin->GetOrAddBoolean("mhd","wellbalance_dynamic",false);
+    use_wb_x1 = pin->GetOrAddBoolean("mhd","wb_x1",false);
+    use_wb_x2 = pin->GetOrAddBoolean("mhd","wb_x2",false);
+    use_wb_x3 = pin->GetOrAddBoolean("mhd","wb_x3",false);
+    use_wb_rho = pin->GetOrAddBoolean("mhd","wb_rho",false);
+    // allocate array of flags used with etotgrav
+    if (use_etotgrav || use_wellbalance_dynamic) {
+      auto &indcs = pmy_pack->pmesh->mb_indcs;
+      int ncells1 = indcs.nx1 + 2*(indcs.ng);
+      int ncells2 = (indcs.nx2 > 1)? (indcs.nx2 + 2*(indcs.ng)) : 1;
+      int ncells3 = (indcs.nx3 > 1)? (indcs.nx3 + 2*(indcs.ng)) : 1;
+      Kokkos::realloc(phicc0, nmb, ncells3, ncells2, ncells1);
+      Kokkos::realloc(phi0.x1f, nmb, ncells3, ncells2, ncells1+1);
+      Kokkos::realloc(phi0.x2f, nmb, ncells3, ncells2+1, ncells1);
+      Kokkos::realloc(phi0.x3f, nmb, ncells3+1, ncells2, ncells1);
+    }
+    if (use_wellbalance_dynamic) {
+      // select well-balanced scheme assumption (no default).  Test for compatibility of options
+      std::string wb_opt = pin->GetString("mhd","wb_option");
+      if (wb_opt.compare("isothermal") == 0) {
+        wb_option = WBOption::isothermal;
+      } else if (wb_opt.compare("isodensity") == 0) {
+        wb_option = WBOption::isodensity;
+      } else if (wb_opt.compare("isentropic") == 0) {
+        wb_option = WBOption::isentropic;
+      } else if (wb_opt.compare("adaptive") == 0) {
+        wb_option = WBOption::adaptive;
+      // Error for anything else
+      } else {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<mhd> wb_option = '" << wb_opt
+                  << "' not implemented for mhd" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+        // select well-balanced scheme direction
+        if (!use_wb_x1 && !use_wb_x2 && !use_wb_x3) {
+          std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                    << std::endl << "<mhd> wb_direction not set!" << std::endl;
+          std::exit(EXIT_FAILURE);
+        }
+    }
+          
+    // determine if static wellbalance is enabled
+    use_wellbalance_static = pin->GetOrAddBoolean("mhd","wellbalance_static",false);
+    use_wellbalance_static_reconst_perturb = pin->GetOrAddBoolean("mhd","wellbalance_static_reconst",false);
+    // allocate array of flags used with wellbalance
+    if (use_wellbalance_static) {
+      auto &indcs = pmy_pack->pmesh->mb_indcs;
+      int ncells1 = indcs.nx1 + 2*(indcs.ng);
+      int ncells2 = (indcs.nx2 > 1)? (indcs.nx2 + 2*(indcs.ng)) : 1;
+      int ncells3 = (indcs.nx3 > 1)? (indcs.nx3 + 2*(indcs.ng)) : 1;
+      Kokkos::realloc(u0wb, nmb, nmhd, ncells3, ncells2, ncells1);
+      Kokkos::realloc(w0wb, nmb, nmhd, ncells3, ncells2, ncells1);
+      Kokkos::realloc(w0facewb.x1f, nmb, nmhd, ncells3, ncells2, ncells1+1);
+      Kokkos::realloc(w0facewb.x2f, nmb, nmhd, ncells3, ncells2+1, ncells1);
+      Kokkos::realloc(w0facewb.x3f, nmb, nmhd, ncells3+1, ncells2, ncells1);
+    }
         
   // for time-evolving problems, continue to construct methods, allocate arrays
   if (evolution_t.compare("stationary") != 0) {

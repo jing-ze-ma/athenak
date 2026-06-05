@@ -89,6 +89,7 @@ add_executable(
         mhd/mhd_tasks.cpp
         mhd/mhd_update.cpp
         mhd/mhd_etotgrav.cpp
+        mhd/mhd_wellbalance.cpp
 
         outputs/io_wrapper.cpp
         outputs/outputs.cpp

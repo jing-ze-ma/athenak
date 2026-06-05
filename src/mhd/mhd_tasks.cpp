@@ -175,6 +175,9 @@ TaskStatus MHD::CopyCons(Driver *pdrive, int stage) {
 //! of conserved variables
 
 TaskStatus MHD::Fluxes(Driver *pdrive, int stage) {
+  if (use_wellbalance_static_reconst_perturb) {
+    RemoveWbVar(w0wb,w0);
+  }
   // select which calculate_flux function to call based on rsolver_method
   if (rsolver_method == MHD_RSolver::advect) {
     CalculateFluxes<MHD_RSolver::advect>(pdrive, stage);
@@ -207,6 +210,9 @@ TaskStatus MHD::Fluxes(Driver *pdrive, int stage) {
     
   if (use_etotgrav) {
     AddGravFlux(phi0,uflx);
+  }
+  if (use_wellbalance_static) {
+    RemoveWbFlux(w0facewb,uflx);
   }
 
   // call FOFC if necessary
@@ -256,6 +262,8 @@ TaskStatus MHD::RecvFlux(Driver *pdrive, int stage) {
 //! variables (u0) have already been partially updated when this fn called.
 
 TaskStatus MHD::MHDSrcTerms(Driver *pdrive, int stage) {
+  if (use_wellbalance_static_reconst_perturb) AddWbVar(w0wb,w0);
+    
   Real beta_dt = (pdrive->beta[stage-1])*(pmy_pack->pmesh->dt);
 
   // Add physics source terms (must be computed from primitives)
@@ -277,7 +285,7 @@ TaskStatus MHD::MHDSrcTerms(Driver *pdrive, int stage) {
     pmy_pack->pcoord->SrcTermsGnomonicEquiangle(w0, uflx, peos->eos_data, beta_dt, u0);
   }
   if (pmy_pack->pmesh->use_spherical_polar) {
-    pmy_pack->pcoord->SrcTermsSphericalPolarMHD(w0, bcc0, uflx, peos->eos_data, beta_dt, u0);
+    pmy_pack->pcoord->SrcTermsSphericalPolarMHD(w0, bcc0, w0wb, uflx, peos->eos_data, beta_dt, u0);
   }
 
   // Add user source terms
