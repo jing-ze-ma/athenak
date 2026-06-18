@@ -47,6 +47,7 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
   auto &nghbr = pmy_pack->pmb->nghbr;
   auto &mbgid = pmy_pack->pmb->mb_gid;
   auto &mblev = pmy_pack->pmb->mb_lev;
+  auto &mbpanel = pmy_pack->pmb->mb_panel;
   auto &sbuf = sendbuf;
   auto &rbuf = recvbuf;
 
@@ -100,6 +101,111 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
         // indices of recv'ing MB and buffer: assumes MB IDs are stored sequentially
         int dm = nghbr.d_view(m,n).gid - mbgid.d_view(0);
         int dn = nghbr.d_view(m,n).dest;
+          
+          const bool do_cs = pmy_pack->pmesh->use_cubed_sphere && (nghbr.d_view(m,n).panel != mbpanel.d_view(m));
+          const bool do_pole = pmy_pack->pmesh->use_polar_boundary && (nghbr.d_view(m,n).polar > 0);
+            
+          if (do_cs || do_pole) {
+              
+            int aj = 1, bj = 0;
+            int ak = 1, bk = 0;
+            int signvar = 1;
+            int sj = 1, sk = nj;
+            int vv = v;
+              
+            if (do_cs) {
+              
+              const auto ngh = nghbr.d_view(m,n);
+              const int my_panel = mbpanel.d_view(m);
+              PanelBoundaries pb;
+              pb = pmy_pack->pmesh->GetPanelBoundary(my_panel, ngh.panel);
+              
+              int map_vy = 1;
+              int map_vz = 2;
+              int sign_vy = 1;
+              int sign_vz = 1;
+              
+              int rev_x2_preswap = (pb.swap_ax == 1) ? pb.rev_x2 : pb.rev_x1;
+              int rev_x3_preswap = (pb.swap_ax == 1) ? pb.rev_x1 : pb.rev_x2;
+              if (pb.swap_ax == 1) {
+                map_vy = 2;
+                map_vz = 1;
+                sj = nk;
+                sk = 1;
+              }
+              if (rev_x2_preswap) {
+                aj = -1;
+                bj = jl + ju;
+              }
+              if (rev_x3_preswap) {
+                ak = -1;
+                bk = kl + ku;
+              }
+              if (pb.rev_x1) sign_vy = -1;
+              if (pb.rev_x2) sign_vz = -1;
+              
+              if (v == 1) vv = map_vy;
+              if (v == 2) vv = map_vz;
+              if (v == 1) signvar = sign_vy;
+              if (v == 2) signvar = sign_vz;
+                
+            } else if (do_pole) {
+                
+              aj = -1;
+              bj = jl + ju;
+              if (v == 1) signvar = -1;
+              if (v == 2) signvar = -1;
+                
+            }
+              
+          // copy field components directly into recv buffer if MeshBlocks on same rank
+          if (nghbr.d_view(m,n).rank == my_rank) {
+            // if neighbor is at same or finer level, load data from b0
+            if (nghbr.d_view(m,n).lev >= mblev.d_view(m)) {
+              Kokkos::parallel_for(Kokkos::TeamThreadRange<>(tmember, nkji),
+              [&](const int idx) {
+                int k = (idx)/nji;
+                int j = (idx - k*nji)/ni;
+                int i = (idx - k*nji - j*ni) + il;
+                k += kl;
+                j += jl;
+                int kk = ak*k + bk;
+                int jj = aj*j + bj;
+                if (vv==0) {
+                  rbuf[dn].vars(dm,i-il + ni*(sj*(j-jl) + sk*(k-kl))) = b.x1f(m,kk,jj,i)*signvar;
+                } else if (vv==1) {
+                  rbuf[dn].vars(dm,ndat*v + i-il + ni*(sj*(j-jl) + sk*(k-kl))) = b.x2f(m,kk,jj,i)*signvar;
+                } else if (vv==2) {
+                  rbuf[dn].vars(dm,ndat*v + i-il + ni*(sj*(j-jl) + sk*(k-kl))) = b.x3f(m,kk,jj,i)*signvar;
+                }
+              });
+            }
+
+          // else copy field components into send buffer for MPI communication below
+          } else {
+            // if neighbor is at same or finer level, load data from b0
+            if (nghbr.d_view(m,n).lev >= mblev.d_view(m)) {
+              Kokkos::parallel_for(Kokkos::TeamThreadRange<>(tmember, nkji),
+              [&](const int idx) {
+                int k = (idx)/nji;
+                int j = (idx - k*nji)/ni;
+                int i = (idx - k*nji - j*ni) + il;
+                k += kl;
+                j += jl;
+                int kk = ak*k + bk;
+                int jj = aj*j + bj;
+                if (vv==0) {
+                  sbuf[n].vars(m,i-il + ni*(sj*(j-jl) + sk*(k-kl))) = b.x1f(m,kk,jj,i)*signvar;
+                } else if (vv==1) {
+                  sbuf[n].vars(m,ndat*v + i-il + ni*(sj*(j-jl) + sk*(k-kl))) = b.x2f(m,kk,jj,i)*signvar;
+                } else if (vv==2) {
+                  sbuf[n].vars(m,ndat*v + i-il + ni*(sj*(j-jl) + sk*(k-kl))) = b.x3f(m,kk,jj,i)*signvar;
+                }
+              });
+            }
+          }
+              
+          } else {   // normal boundary exchange
 
         // copy field components directly into recv buffer if MeshBlocks on same rank
         if (nghbr.d_view(m,n).rank == my_rank) {
@@ -177,6 +283,9 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
             });
           }
         }
+              
+          } // end if-do-cs/do-pole block
+          
       } // end if-neighbor-exists block
       tmember.team_barrier();
     }

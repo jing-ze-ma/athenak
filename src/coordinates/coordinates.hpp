@@ -90,15 +90,16 @@ class Coordinates {
   void SrcTermsSphericalPolarHydro(const DvceArray5D<Real> &w0, const DvceArray5D<Real> &w0wb, const DvceFaceFld5D<Real> uflx, const EOS_Data &eos_data, const Real bdt, DvceArray5D<Real> &u0);
   void SrcTermsSphericalPolarMHD(const DvceArray5D<Real> &w0, const DvceArray5D<Real> &bcc0, const DvceArray5D<Real> &w0wb, const DvceFaceFld5D<Real> uflx, const EOS_Data &eos_data, const Real bdt, DvceArray5D<Real> &u0);
   KOKKOS_INLINE_FUNCTION
-  void StretchR(const Real r0, const Real r1, Real &r) {
+  void StretchR(const Real a, const Real r0, const Real r1, Real &r) {
     Real xi = (r-r0)/(r1-r0);
-    Real a = 2.0;
-    if (fabs(a) < 1e-12) {
-      r = r0 + (r1 - r0)*xi;
-    }
     Real denom = 1.0 - exp(-a);
     r = r0 + (r1 - r0)*(1.0 - exp(-a*xi))/denom;
 //    r = r0*pow(r1/r0,xi);
+  };
+  KOKKOS_INLINE_FUNCTION
+  void StretchTheta(const Real a, Real &t) {
+    Real xi = t/M_PI;
+    t = M_PI/2.0*(1.0+sinh(a*(2.0*xi-1.0))/sinh(a));
   };
     
   void CoordGnomonicEquiangle();

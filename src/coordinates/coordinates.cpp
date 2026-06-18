@@ -551,6 +551,7 @@ void Coordinates::CoordSphericalPolar() {
 
   auto &size = pmy_pack->pmb->mb_size;
   auto &indcs = pmy_pack->pmesh->mb_indcs;
+  auto &mb_bcs = pmy_pack->pmb->mb_bcs;
   int &is = indcs.is; int &ie = indcs.ie;
   int &js = indcs.js; int &je = indcs.je;
   int &ks = indcs.ks; int &ke = indcs.ke;
@@ -569,27 +570,66 @@ void Coordinates::CoordSphericalPolar() {
     r_l  = LeftEdgeX(i-is, indcs.nx1, size.d_view(m).x1min, size.d_view(m).x1max);
     r_r  = LeftEdgeX(i+1-is, indcs.nx1, size.d_view(m).x1min, size.d_view(m).x1max);
     // stretch the radial grid
-    if (pmy_pack->pmesh->use_grid_stretch) {
+    if (pmy_pack->pmesh->use_grid_stretch_r) {
+      Real factor_stretch = pmy_pack->pmesh->fStretchR;
       Real r0 = pmy_pack->pmesh->mesh_size.x1min;
       Real r1 = pmy_pack->pmesh->mesh_size.x1max;
-      StretchR(r0,r1,r_c);
-      StretchR(r0,r1,r_l);
-      StretchR(r0,r1,r_r);
+      StretchR(factor_stretch,r0,r1,r_c);
+      StretchR(factor_stretch,r0,r1,r_l);
+      StretchR(factor_stretch,r0,r1,r_r);
     }
 
     // --- angles ---
     Real theta  = CellCenterX(j-js, indcs.nx2, size.d_view(m).x2min, size.d_view(m).x2max);
-    Real phi    = CellCenterX(k-ks, indcs.nx3, size.d_view(m).x3min, size.d_view(m).x3max);
     Real thetal = LeftEdgeX(j-js, indcs.nx2, size.d_view(m).x2min, size.d_view(m).x2max);
     Real thetar = LeftEdgeX(j+1-js, indcs.nx2, size.d_view(m).x2min, size.d_view(m).x2max);
+    // stretch the radial grid
+    if (pmy_pack->pmesh->use_grid_stretch_theta) {
+      Real factor_stretch = pmy_pack->pmesh->fStretchTheta;
+      StretchTheta(factor_stretch,theta);
+      StretchTheta(factor_stretch,thetal);
+      StretchTheta(factor_stretch,thetar);
+    }
+    Real phi    = CellCenterX(k-ks, indcs.nx3, size.d_view(m).x3min, size.d_view(m).x3max);
     Real phil   = LeftEdgeX(k-ks, indcs.nx3, size.d_view(m).x3min, size.d_view(m).x3max);
     Real phir   = LeftEdgeX(k+1-ks, indcs.nx3, size.d_view(m).x3min, size.d_view(m).x3max);
 
-    Real sinl   = fabs(sin(thetal));
-    Real sinr   = fabs(sin(thetar));
+    Real sintl  = sin(thetal);
+    Real sintr  = sin(thetar);
+    Real sinl   = fabs(sintl);
+    Real sinr   = fabs(sintr);
     Real sinc   = fabs(sin(theta));
     Real cosl   = cos(thetal);
     Real cosr   = cos(thetar);
+      
+    if (mb_bcs.d_view(m,BoundaryFace::inner_x2) == BoundaryFlag::polar) {
+      if (j == js) {
+        thetal = 0.0;
+        sintl = 0.0;
+        sinl = 0.0;
+        cosl = 1.0;
+      }
+      if (j == js-1) {
+        thetar = 0.0;
+        sintr = 0.0;
+        sinr = 0.0;
+        cosr = 1.0;
+      }
+    }
+    if (mb_bcs.d_view(m,BoundaryFace::outer_x2) == BoundaryFlag::polar) {
+      if (j == je) {
+        thetar = M_PI;
+        sintr = 0.0;
+        sinr = 0.0;
+        cosr = -1.0;
+      }
+      if (j == je+1) {
+        thetal = M_PI;
+        sintl = 0.0;
+        sinl = 0.0;
+        cosl = -1.0;
+      }
+    }
       
     // --- radial edge lengths ---
     dxedge.x1e(m,k,j,i) = r_r - r_l;
@@ -633,14 +673,14 @@ void Coordinates::CoordSphericalPolar() {
     // --- volume ---
 
     volume(m,k,j,i) = 1.0/3.0*(r_r*r_r*r_r-r_l*r_l*r_l) * fabs(cosl-cosr) * (phir-phil);
-    dx2(m,k,j,i) = r_c * (thetar-thetal);
-    dx3(m,k,j,i) = r_c * sinc * (phir-phil);
-    dx1(m,k,j,i) = r_r-r_l;
       
     // Mignone 2014 correction
-    x1v(m,i) = 1.0/4.0*(SQR(SQR(r_r))-SQR(SQR(r_l))) / (1.0/3.0*(r_r*r_r*r_r-r_l*r_l*r_l));
-    x2v(m,j) = ((sinr-thetar*cosr) - (sinl-thetal*cosl)) / fabs(cosr-cosl); // 0.5*(thetar+thetal); //
+    x1v(m,i) = 1.0/4.0*(SQR(SQR(r_r))-SQR(SQR(r_l))) / (1.0/3.0*(r_r*r_r*r_r-r_l*r_l*r_l)); //0.5*(r_r+r_l); //
+    x2v(m,j) = -((sintr-thetar*cosr) - (sintl-thetal*cosl)) / (cosr-cosl); // 0.5*(thetar+thetal); // 
     x3v(m,k) = 0.5*(phir+phil);
+    dx2(m,k,j,i) = x1v(m,i) * (thetar-thetal);
+    dx3(m,k,j,i) = x1v(m,i) * fabs(sin(x2v(m,j))) * (phir-phil);
+    dx1(m,k,j,i) = r_r-r_l;
       
     z_ov_rE(m,k,j,i) = (area1r - area.x1f(m,k,j,i)) / volume(m,k,j,i);
     x_ov_rD(m,k,j,i) = (area2r - area.x2f(m,k,j,i)) / volume(m,k,j,i);

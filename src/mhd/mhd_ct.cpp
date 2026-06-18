@@ -40,6 +40,7 @@ TaskStatus MHD::CT(Driver *pdriver, int stage) {
     
   auto &use_cubed_sphere = pmy_pack->pmesh->use_cubed_sphere;
   auto &use_spherical_polar = pmy_pack->pmesh->use_spherical_polar;
+  auto &mb_bcs = pmy_pack->pmb->mb_bcs;
   auto &area1 = pmy_pack->pcoord->area.x1f;
   auto &area2 = pmy_pack->pcoord->area.x2f;
   auto &area3 = pmy_pack->pcoord->area.x3f;
@@ -68,10 +69,16 @@ TaskStatus MHD::CT(Driver *pdriver, int stage) {
       auto bx2f_old = b1.x2f;
       par_for("CT-b2", DevExeSpace(), 0, nmb1, ks, ke, js, je+1, is, ie,
       KOKKOS_LAMBDA(int m, int k, int j, int i) {
+        const bool do_pole = (mb_bcs.d_view(m,BoundaryFace::inner_x2) == BoundaryFlag::polar && j == js) || (mb_bcs.d_view(m,BoundaryFace::outer_x2) == BoundaryFlag::polar && j == je+1);
+        Real a2 = (do_pole) ? 1.0 : area2(m,k,j,i);
+        Real dxe31 = (do_pole) ? 0.0 : dxe3(m,k,j,i+1);
+        Real dxe30 = (do_pole) ? 0.0 : dxe3(m,k,j,i);
         bx2f(m,k,j,i) = gam0*bx2f(m,k,j,i) + gam1*bx2f_old(m,k,j,i);
-        bx2f(m,k,j,i) += beta_dt*(dxe3(m,k,j,i+1)*e3(m,k,j,i+1) - dxe3(m,k,j,i)*e3(m,k,j,i))/area2(m,k,j,i);
+        bx2f(m,k,j,i) += beta_dt*(dxe31*e3(m,k,j,i+1) - dxe30*e3(m,k,j,i))/a2;
         if (three_d) {
-          bx2f(m,k,j,i) -= beta_dt*(dxe1(m,k+1,j,i)*e1(m,k+1,j,i) - dxe1(m,k,j,i)*e1(m,k,j,i))/area2(m,k,j,i);
+          Real dxe11 = (do_pole) ? 0.0 : dxe1(m,k+1,j,i);
+          Real dxe10 = (do_pole) ? 0.0 : dxe1(m,k,j,i);
+          bx2f(m,k,j,i) -= beta_dt*(dxe11*e1(m,k+1,j,i) - dxe10*e1(m,k,j,i))/a2;
         }
       });
 
@@ -128,7 +135,6 @@ TaskStatus MHD::CT(Driver *pdriver, int stage) {
   });
       
   }
-
   return TaskStatus::complete;
 }
 } // namespace mhd

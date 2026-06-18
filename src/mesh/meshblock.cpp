@@ -204,6 +204,7 @@ void MeshBlock::SetNeighbors(int *ranklist) {
       nghbr.h_view(m,n).rank  = -1;
       nghbr.h_view(m,n).dest  = -1;
       nghbr.h_view(m,n).panel = -1;
+      nghbr.h_view(m,n).polar = -1;
     }
   }
 
@@ -220,6 +221,11 @@ void MeshBlock::SetNeighbors(int *ranklist) {
     LogicalLocation lloc = pmy_pack->pmesh->lloc_eachmb[mb_gid.h_view(b)];
     int panel = lloc.panel;
     MeshBlockTree* ptree = pmy_pack->pmesh->panel_trees[panel].get();
+      
+    int ll = lloc.level;
+    std::int32_t num_x1 = pmy_pack->pmesh->nmb_rootx1<<(ll - pmy_pack->pmesh->root_level);
+    std::int32_t num_x2 = pmy_pack->pmesh->nmb_rootx2<<(ll - pmy_pack->pmesh->root_level);
+    std::int32_t num_x3 = pmy_pack->pmesh->nmb_rootx3<<(ll - pmy_pack->pmesh->root_level);
 
     // find location of this MeshBlock relative to XXXX
     int myox1, myox2 = 0, myox3 = 0, myfx1, myfx2, myfx3;
@@ -294,6 +300,10 @@ void MeshBlock::SetNeighbors(int *ranklist) {
                 if (pmy_pack->pmesh->use_cubed_sphere && panel != nt->lloc_.panel) {
                     idest = pmy_pack->pmesh->NeighborIndexPanel(0,-m,0,0,0,panel,nt->lloc_.panel);
                 }
+                if (pmy_pack->pmesh->use_polar_boundary && (lloc.lx2+m<0 || lloc.lx2+m>=num_x2)) {
+                    idest = NeighborIndex(0,m,0,0,0);
+                    nghbr.h_view(b,inghbr).polar = 1;
+                }
             } else { // neighbor at coarser level, set index/destn to appropriate subblock
               inghbr = NeighborIndex(0,m,0,myfx1,myfx3);
               idest = NeighborIndex(0,-m,0,myfx1,myfx3);
@@ -331,6 +341,10 @@ void MeshBlock::SetNeighbors(int *ranklist) {
                 idest = NeighborIndex(-n,-m,0,0,0);
                   if (pmy_pack->pmesh->use_cubed_sphere && panel != nt->lloc_.panel) {
                       idest = pmy_pack->pmesh->NeighborIndexPanel(-n,-m,0,0,0,panel,nt->lloc_.panel);
+                  }
+                  if (pmy_pack->pmesh->use_polar_boundary && (lloc.lx2+m<0 || lloc.lx2+m>=num_x2)) {
+                      idest = NeighborIndex(-n,m,0,0,0);
+                      nghbr.h_view(b,inghbr).polar = 1;
                   }
               } else { // neighbor at coarser level, set indx/dest to appropriate subblock
                 inghbr = NeighborIndex(n,m,0,myfx3,0);
@@ -453,6 +467,10 @@ void MeshBlock::SetNeighbors(int *ranklist) {
                   if (pmy_pack->pmesh->use_cubed_sphere && panel != nt->lloc_.panel) {
                       idest = pmy_pack->pmesh->NeighborIndexPanel(0,-m,-l,0,0,panel,nt->lloc_.panel);
                   }
+                  if (pmy_pack->pmesh->use_polar_boundary && (lloc.lx2+m<0 || lloc.lx2+m>=num_x2)) {
+                      idest = NeighborIndex(0,m,-l,0,0);
+                      nghbr.h_view(b,inghbr).polar = 1;
+                  }
               } else { // neighbor at coarser level, set indx/dest to appropriate subblock
                 inghbr = NeighborIndex(0,m,l,myfx1,0);
                 idest = NeighborIndex(0,-m,-l,myfx1,0);
@@ -493,6 +511,10 @@ void MeshBlock::SetNeighbors(int *ranklist) {
                 nghbr.h_view(b,inghbr).panel = nt->lloc_.panel;
                   if (pmy_pack->pmesh->use_cubed_sphere && panel != nt->lloc_.panel) {
                       nghbr.h_view(b,inghbr).dest = pmy_pack->pmesh->NeighborIndexPanel(-n,-m,-l,0,0,panel,nt->lloc_.panel);
+                  }
+                  if (pmy_pack->pmesh->use_polar_boundary && (lloc.lx2+m<0 || lloc.lx2+m>=num_x2)) {
+                      nghbr.h_view(b,inghbr).dest = NeighborIndex(-n,m,-l,0,0);
+                      nghbr.h_view(b,inghbr).polar = 1;
                   }
               }
             }

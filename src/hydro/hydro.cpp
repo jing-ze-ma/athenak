@@ -35,7 +35,7 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
     u1("cons1",1,1,1,1,1),
     uflx("uflx",1,1,1,1,1),
     phi0("phi_fc",1,1,1,1),
-    phicc0("phi_cc",1,1,1,1,1),
+    phicc0("phi_cc",1,1,1,1),
     u0wb("conswb",1,1,1,1,1),
     w0wb("primwb",1,1,1,1,1),
     w0facewb("primfwb",1,1,1,1,1),

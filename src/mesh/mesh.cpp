@@ -51,7 +51,8 @@ Mesh::Mesh(ParameterInput *pin) :
   strictly_periodic(true),
   use_cubed_sphere(false),
   use_spherical_polar(false),
-  use_grid_stretch(false),
+  use_grid_stretch_r(false),
+  use_grid_stretch_theta(false),
   npanels(1),
   nmb_packs_thisrank(1),
   nprtcl_thisrank(0),
@@ -95,10 +96,23 @@ Mesh::Mesh(ParameterInput *pin) :
     }
   }
   use_spherical_polar = pin->GetOrAddBoolean("mesh", "use_spherical_polar", false);
-  use_grid_stretch = pin->GetOrAddBoolean("mesh", "use_grid_stretch", false);
+  use_grid_stretch_r = pin->GetOrAddBoolean("mesh", "use_grid_stretch_r", false);
+  if (use_grid_stretch_r) fStretchR = pin->GetReal("mesh", "f_stretch_r");
+  use_grid_stretch_theta = pin->GetOrAddBoolean("mesh", "use_grid_stretch_theta", false);
+  if (use_grid_stretch_theta) fStretchTheta = pin->GetReal("mesh", "f_stretch_theta");
+  use_polar_boundary = pin->GetOrAddBoolean("mesh", "use_polar_boundary", false);
   if (use_spherical_polar && pin->GetReal("mesh", "x3min")<0.0 && pin->GetReal("mesh", "x3max")<0.0) {
     mesh_size.x3min = 0.0;
     mesh_size.x3max = 2.0*M_PI;
+  }
+  if (use_polar_boundary) {
+    mesh_size.x2min = 0.0;
+    mesh_size.x2max = M_PI;
+    if (pin->DoesBlockExist("mhd") && (pin->GetInteger("mesh", "nx1") != pin->GetInteger("meshblock", "nx1"))) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
+                << "polar boundary with MHD currently only supports one single meshblock in r direction" << std::endl;
+      exit(EXIT_FAILURE);
+    }
   }
 
   // Set BC flags for ix1/ox1 boundaries and error check
@@ -160,6 +174,11 @@ Mesh::Mesh(ParameterInput *pin) :
                 << std::endl;
       std::exit(EXIT_FAILURE);
     }
+    if (use_polar_boundary && (mesh_bcs[BoundaryFace::inner_x2] != BoundaryFlag::polar || mesh_bcs[BoundaryFace::inner_x2] != BoundaryFlag::polar)) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+          << std::endl << "To use the polar boundary condition, both inner and outer x2 bcs must be polar" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
   } else {
     // ix2/ox2 BC flags set to undef for 1D problems
     mesh_bcs[BoundaryFace::inner_x2] = BoundaryFlag::undef;
@@ -185,6 +204,11 @@ Mesh::Mesh(ParameterInput *pin) :
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                 << std::endl << "Shear Periodic Boundaries cannot be applied in x3"
                 << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    if (use_polar_boundary && (mesh_bcs[BoundaryFace::inner_x3] != BoundaryFlag::periodic || mesh_bcs[BoundaryFace::outer_x3] != BoundaryFlag::periodic)) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+          << std::endl << "To use the polar boundary condition, both inner and outer x3 bcs must be periodic" << std::endl;
       std::exit(EXIT_FAILURE);
     }
   } else {
@@ -302,6 +326,14 @@ Mesh::Mesh(ParameterInput *pin) :
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
       << "Number of cells in MeshBlock must be divisible by two in each dimension for "
       << "SMR/AMR calculations." << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  int32_t num_mb3 = mesh_indcs.nx3 / mb_indcs.nx3;
+  if ( (use_polar_boundary) &&
+         (num_mb3 %2 != 0 && multi_d) ) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
+      << "Number of cells in MeshBlock must be divisible by two in x3 dimension for "
+      << "polar boundaries." << std::endl;
     std::exit(EXIT_FAILURE);
   }
 
@@ -548,6 +580,8 @@ BoundaryFlag Mesh::GetBoundaryFlag(const std::string& input_string) {
     return BoundaryFlag::shear_periodic;
   } else if (input_string == "panel") {
     return BoundaryFlag::panel;
+  } else if (input_string == "polar") {
+    return BoundaryFlag::polar;
   } else if (input_string == "undef") {
     return BoundaryFlag::undef;
   } else {
@@ -584,6 +618,8 @@ std::string Mesh::GetBoundaryString(BoundaryFlag input_flag) {
       return "shear_periodic";
     case BoundaryFlag::panel:
       return "panel";
+    case BoundaryFlag::polar:
+      return "polar";
     case BoundaryFlag::undef:
       return "undef";
     default:

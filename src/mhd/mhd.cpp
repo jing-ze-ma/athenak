@@ -52,7 +52,7 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
     e2_cc("e2_cc",1,1,1,1),
     e3_cc("e3_cc",1,1,1,1),
     phi0("phi_fc",1,1,1,1),
-    phicc0("phi_cc",1,1,1,1,1),
+    phicc0("phi_cc",1,1,1,1),
     u0wb("conswb",1,1,1,1,1),
     w0wb("primwb",1,1,1,1,1),
     w0facewb("primfwb",1,1,1,1,1),

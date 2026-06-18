@@ -46,9 +46,9 @@ void get_picket_fence_Ttau_coeff(const Real &Tint, const Real &Tirr, const Real 
 KOKKOS_INLINE_FUNCTION
 void get_picket_fence_Ttau(const Real &Tint, const Real &Tirr, const Real &mus, const Real &taulim, const Real &A, const Real &B, const Real (&C)[3], const Real (&D)[3], const Real (&E)[3], const Real (&gamv)[3], const Real &tau, Real &T);
 template <typename View1D>
-void get_picket_fence_pT_arr(const Real &Tint, const Real &Tirr, const Real &met, const Real &grav, const Real &mus, const int &N, View1D Tarr, View1D lgparr);
+void get_picket_fence_pT_arr(const Real &gamma, const Real &Tint, const Real &Tirr, const Real &met, const Real &grav, const Real &mus, const int &N, View1D Tarr, View1D lgparr);
 template <typename View1D>
-void adjust_ad_pT_arr(const int &N, View1D Tarr, View1D lgparr);
+void adjust_ad_pT_arr(const Real &gamma, const int &N, View1D Tarr, View1D lgparr);
 
 KOKKOS_INLINE_FUNCTION
 void get_daynight_Tp(const Real &p, Real &Tn, Real &Td);
@@ -99,6 +99,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   int &ks = indcs.ks; int &ke = indcs.ke;
   MeshBlockPack *pmbp = pmy_mesh_->pmb_pack;
   auto &size = pmbp->pmb->mb_size;
+  auto &mb_bcs = pmbp->pmb->mb_bcs;
   int &ng = indcs.ng;
   int n1m1 = indcs.nx1 + 2*ng - 1;
   int n2m1 = (indcs.nx2 > 1)? (indcs.nx2 + 2*ng - 1) : 0;
@@ -110,6 +111,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
 
   // Select either Hydro or MHD
   DvceArray5D<Real> u0_;
+  DvceArray5D<Real> w0_;
     
   DvceArray4D<Real> phi0_x1f;
   DvceArray4D<Real> phi0_x2f;
@@ -137,6 +139,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   Real gamma;
   if (pmbp->phydro != nullptr) {
     u0_ = pmbp->phydro->u0;
+    w0_ = pmbp->phydro->w0;
     gamma = pmbp->phydro->peos->eos_data.gamma;
     use_etotgrav = pmbp->phydro->use_etotgrav;
     use_wellbalance_static = pmbp->phydro->use_wellbalance_static;
@@ -152,12 +155,20 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     w0facewb_x3f = pmbp->phydro->w0facewb.x3f;
   } else if (pmbp->pmhd != nullptr) {
     u0_ = pmbp->pmhd->u0;
+    w0_ = pmbp->pmhd->w0;
     gamma = pmbp->pmhd->peos->eos_data.gamma;
     use_etotgrav = pmbp->pmhd->use_etotgrav;
+    use_wellbalance_static = pmbp->pmhd->use_wellbalance_static;
+    use_wellbalance_dynamic = pmbp->pmhd->use_wellbalance_dynamic;
     phi0_x1f = pmbp->pmhd->phi0.x1f;
     phi0_x2f = pmbp->pmhd->phi0.x2f;
     phi0_x3f = pmbp->pmhd->phi0.x3f;
     phicc0 = pmbp->pmhd->phicc0;
+    u0wb = pmbp->pmhd->u0wb;
+    w0wb = pmbp->pmhd->w0wb;
+    w0facewb_x1f = pmbp->pmhd->w0facewb.x1f;
+    w0facewb_x2f = pmbp->pmhd->w0facewb.x2f;
+    w0facewb_x3f = pmbp->pmhd->w0facewb.x3f;
   }
   Real gm1 = gamma - 1.0;
   Real igm1 = 1.0/gm1;
@@ -199,7 +210,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     
     DualArray1D<Real> Tarr_init("Tarrinit", N);
     DualArray1D<Real> lgparr_init("lgparrinit", N);
-    get_picket_fence_pT_arr(Tint, Tirr, met, grav, mus, N, Tarr_init.h_view, lgparr_init.h_view);
+    get_picket_fence_pT_arr(gamma, Tint, Tirr, met, grav, mus, N, Tarr_init.h_view, lgparr_init.h_view);
     
     Tarr_init.modify_host();
     Tarr_init.sync_device();
@@ -269,6 +280,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       u0_(m,IM2,k,j,i) = 0.0;
       u0_(m,IM3,k,j,i) = 0.0;
       u0_(m,IEN,k,j,i) = p*igm1;
+        
+      w0_(m,IDN,k,j,i) = den;
+      w0_(m,IVX,k,j,i) = 0.0;
+      w0_(m,IVX,k,j,i) = 0.0;
+      w0_(m,IVX,k,j,i) = 0.0;
+      w0_(m,IEN,k,j,i) = p*igm1;
         
         Real phicc = - grav_acc * x1v;// - 0.5*SQR(omega*r*sin(theta));
         if (use_etotgrav) {
@@ -578,6 +595,17 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             Real phicc = - grav_acc * x1v;// - 0.5*SQR(omega*r*sin(theta));
             phicc0(m,k,j,i) = phicc;
         });
+//        par_for("wbgravbc", DevExeSpace(), 0, (pmbp->nmb_thispack-1), 0, n3m1, 0, n2m1,
+//        KOKKOS_LAMBDA(int m, int k, int j) {
+//          if (mb_bcs.d_view(m,BoundaryFace::outer_x1) == BoundaryFlag::reflect) {
+//            for (int i=0; i<ng; ++i) {
+//              phicc0(m,k,j,ie+i+1) = phicc0(m,k,j,ie-i);
+//              u0_(m,IDN,k,j,ie+i+1) = u0_(m,IDN,k,j,ie-i);
+//              u0_(m,IEN,k,j,ie+i+1) = u0_(m,IEN,k,j,ie-i);
+//              phi0_x1f(m,k,j,ie+i+1) = phicc0(m,k,j,ie);
+//            }
+//          }
+//        });
     }
     if (use_wellbalance_static) {
         int &ng = indcs.ng;
@@ -657,12 +685,25 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             Real A3ip = 0.5*bbot*r0*sin(x2fl)/SQR(x1fr/r0);
             Real A3jp = 0.5*bbot*r0*sin(x2fr)/SQR(x1fl/r0);
             Real A3ipjp = 0.5*bbot*r0*sin(x2fr)/SQR(x1fr/r0);
+//            Real A3 = 0.5*bbot*x1fl*sin(x2fl);
+//            Real A3ip = 0.5*bbot*x1fr*sin(x2fl);
+//            Real A3jp = 0.5*bbot*x1fl*sin(x2fr);
+//            Real A3ipjp = 0.5*bbot*x1fr*sin(x2fr);
               
             b0.x1f(m,k,j,i) = (dxe3(m,k,j+1,i)*A3jp - dxe3(m,k,j,i)*A3)/area1(m,k,j,i) - (dxe2(m,k+1,j,i)*A2kp - dxe2(m,k,j,i)*A2)/area1(m,k,j,i);
-            b0.x2f(m,k,j,i) = - (dxe3(m,k,j,i+1)*A3ip - dxe3(m,k,j,i)*A3)/area2(m,k,j,i);
+            if ((mb_bcs.d_view(m,BoundaryFace::inner_x2) == BoundaryFlag::polar && j == js) || (mb_bcs.d_view(m,BoundaryFace::outer_x2) == BoundaryFlag::polar && j == je+1)) {
+              b0.x2f(m,k,j,i) = - ((x1fr*(x3fr-x3fl))*A3ip - (x1fl*(x3fr-x3fl))*A3) / (0.5*(SQR(x1fr)-SQR(x1fl))*(x3fr-x3fl));
+            } else {
+              b0.x2f(m,k,j,i) = - (dxe3(m,k,j,i+1)*A3ip - dxe3(m,k,j,i)*A3)/area2(m,k,j,i);
+            }
             b0.x3f(m,k,j,i) = (dxe2(m,k,j,i+1)*A2ip - dxe2(m,k,j,i)*A2)/area3(m,k,j,i);
             Real b0x1fip = (dxe3(m,k,j+1,i+1)*A3ipjp - dxe3(m,k,j,i+1)*A3ip)/area1(m,k,j,i+1) - (dxe2(m,k+1,j,i+1)*A2ipkp - dxe2(m,k,j,i+1)*A2ip)/area1(m,k,j,i+1);
-            Real b0x2fjp = - (dxe3(m,k,j+1,i+1)*A3ipjp - dxe3(m,k,j+1,i)*A3jp)/area2(m,k,j+1,i);
+            Real b0x2fjp;
+            if ((mb_bcs.d_view(m,BoundaryFace::inner_x2) == BoundaryFlag::polar && j == js-1) || (mb_bcs.d_view(m,BoundaryFace::outer_x2) == BoundaryFlag::polar && j == je)) {
+              b0x2fjp = - ((x1fr*(x3fr-x3fl))*A3ipjp - (x1fl*(x3fr-x3fl))*A3jp) / (0.5*(SQR(x1fr)-SQR(x1fl))*(x3fr-x3fl));
+            } else {
+              b0x2fjp = - (dxe3(m,k,j+1,i+1)*A3ipjp - dxe3(m,k,j+1,i)*A3jp)/area2(m,k,j+1,i);
+            }
             Real b0x3fkp = (dxe2(m,k+1,j,i+1)*A2ipkp - dxe2(m,k+1,j,i)*A2kp)/area3(m,k+1,j,i);
             if (i==n1m1) b0.x1f(m,k,j,i+1) = b0x1fip;
             if (j==n2m1) b0.x2f(m,k,j+1,i) = b0x2fjp;
@@ -720,6 +761,12 @@ void HydrostaticEquilibrium(Mesh *pm) {
     auto &x2f_ = pmbp->pcoord->xx2f;
     auto &x3v_ = pmbp->pcoord->x3v;
     auto &x3f_ = pmbp->pcoord->xx3f;
+    auto &area1 = pmbp->pcoord->area.x1f;
+    auto &area2 = pmbp->pcoord->area.x2f;
+    auto &area3 = pmbp->pcoord->area.x3f;
+    auto &volume = pmbp->pcoord->volume;
+    auto &z_ov_rE = pmbp->pcoord->z_ov_rE;
+    Real grav_acc = -pm->pgen->hot_jupiter_param.grav;
 
     if (pmbp->phydro != nullptr) {
       u0_ = pmbp->phydro->u0;
@@ -734,6 +781,7 @@ void HydrostaticEquilibrium(Mesh *pm) {
       w0_ = pmbp->pmhd->w0;
       gamma = pmbp->pmhd->peos->eos_data.gamma;
       use_etotgrav = pmbp->pmhd->use_etotgrav;
+      use_wellbalance_dynamic = pmbp->pmhd->use_wellbalance_dynamic;
       phi0_x1f = pmbp->pmhd->phi0.x1f;
       phicc0 = pmbp->pmhd->phicc0;
       bcc0 = pmbp->pmhd->bcc0;
@@ -743,112 +791,386 @@ void HydrostaticEquilibrium(Mesh *pm) {
     }
     Real bbot = pm->pgen->hot_jupiter_param.bbot;
     
+    int nvar = u0_.extent_int(1);
+    
     Real igm1 = 1.0/(gamma-1.0);
     Real gigm1 = gamma*igm1;
     Real gm1ig = (gamma-1.0)/gamma;
     Real ig = 1.0/gamma;
     
-//    if (pmbp->pmhd != nullptr) {
-//      par_for("usrboundaryx1_bfield", DevExeSpace(),0,(nmb-1),0,(n3-1),0,(n2-1),
-//      KOKKOS_LAMBDA(int m, int k, int j) {
+    if (pmbp->pmhd != nullptr) {
+      par_for("usrboundaryx1_bfield", DevExeSpace(),0,(nmb-1),0,(n3-1),0,(n2-1),
+      KOKKOS_LAMBDA(int m, int k, int j) {
+          if (mb_bcs.d_view(m,BoundaryFace::inner_x1) == BoundaryFlag::user) {
+            for (int i=0; i<ng; ++i) {
+              int iin = is+i;
+              int iex = is-i-1;
+//              Real fac2 = -area2(m,k,j,iin)/area2(m,k,j,iex);
+//              Real fac2p = -area2(m,k,j+1,iin)/area2(m,k,j+1,iex);
+              Real fac2 = -(SQR(x1f_(m,iin+1))-SQR(x1f_(m,iin)))/(SQR(x1f_(m,iex+1))-SQR(x1f_(m,iex)));
+              Real fac2p = fac2;
+              Real fac3 = -area3(m,k,j,iin)/area3(m,k,j,iex);
+              Real fac3p = -area3(m,k+1,j,iin)/area3(m,k+1,j,iex);
+              b0_x2f(m,k,j,iex) = b0_x2f(m,k,j,iin)*fac2;
+              if (j == n2-1) {b0_x2f(m,k,j+1,iex) = b0_x2f(m,k,j+1,iin)*fac2p;}
+              b0_x3f(m,k,j,iex) = b0_x3f(m,k,j,iin)*fac3;
+              if (k == n3-1) {b0_x3f(m,k+1,j,iex) = b0_x3f(m,k+1,j,iin)*fac3p;}
+              Real fac1 = area1(m,k,j,iin+1)/area1(m,k,j,iex);
+              b0_x1f(m,k,j,iex) = b0_x1f(m,k,j,iin+1)*fac1;
+            }
+//            for (int i=0; i<ng; ++i) {
+//              int iex = is-i-1;
+//              Real div_rest = b0_x1f(m,k,j,iex+1)*area1(m,k,j,iex+1) + (b0_x2f(m,k,j+1,iex)*area2(m,k,j+1,iex)-b0_x2f(m,k,j,iex)*area2(m,k,j,iex)) + (b0_x3f(m,k+1,j,iex)*area3(m,k+1,j,iex)-b0_x3f(m,k,j,iex)*area3(m,k,j,iex));
+//              b0_x1f(m,k,j,iex) = div_rest/area1(m,k,j,iex);
+//            }
+          }
+          if (mb_bcs.d_view(m,BoundaryFace::outer_x1) == BoundaryFlag::user) {
+            for (int i=0; i<ng; ++i) {
+              int iin = ie-i;
+              int iex = ie+i+1;
+//              Real fac2 = -area2(m,k,j,iin)/area2(m,k,j,iex);
+//              Real fac2p = -area2(m,k,j+1,iin)/area2(m,k,j+1,iex);
+              Real fac2 = -(SQR(x1f_(m,iin+1))-SQR(x1f_(m,iin)))/(SQR(x1f_(m,iex+1))-SQR(x1f_(m,iex)));
+              Real fac2p = fac2;
+              Real fac3 = -area3(m,k,j,iin)/area3(m,k,j,iex);
+              Real fac3p = -area3(m,k+1,j,iin)/area3(m,k+1,j,iex);
+              b0_x2f(m,k,j,iex) = b0_x2f(m,k,j,iin)*fac2;
+              if (j == n2-1) {b0_x2f(m,k,j+1,iex) = b0_x2f(m,k,j+1,iin)*fac2p;}
+              b0_x3f(m,k,j,iex) = b0_x3f(m,k,j,iin)*fac3;
+              if (k == n3-1) {b0_x3f(m,k+1,j,iex) = b0_x3f(m,k+1,j,iin)*fac3p;}
+              Real fac1 = area1(m,k,j,iin)/area1(m,k,j,iex+1);
+              b0_x1f(m,k,j,iex+1) = b0_x1f(m,k,j,iin)*fac1;
+            }
+//            for (int i=0; i<ng; ++i) {
+//              int iex = ie+i+1;
+//              Real div_rest = b0_x1f(m,k,j,iex)*area1(m,k,j,iex) - (b0_x2f(m,k,j+1,iex)*area2(m,k,j+1,iex)-b0_x2f(m,k,j,iex)*area2(m,k,j,iex)) - (b0_x3f(m,k+1,j,iex)*area3(m,k+1,j,iex)-b0_x3f(m,k,j,iex)*area3(m,k,j,iex));
+//              b0_x1f(m,k,j,iex+1) = div_rest/area1(m,k,j,iex+1);
+//            }
+//              for (int i=0; i<ng; ++i) {
+//                b0_x1f(m,k,j,ie+i+2) = -b0_x1f(m,k,j,ie-i);
+//                b0_x2f(m,k,j,ie+i+1) =  b0_x2f(m,k,j,ie-i);
+//                if (j == n2-1) {b0_x2f(m,k,j+1,ie+i+1) = b0_x2f(m,k,j+1,ie-i);}
+//                b0_x3f(m,k,j,ie+i+1) =  b0_x3f(m,k,j,ie-i);
+//                if (k == n3-1) {b0_x3f(m,k+1,j,ie+i+1) = b0_x3f(m,k+1,j,ie-i);}
+//              }
+        }
+      });
+    }
+    
+//    if (pmbp->phydro != nullptr) {
+//      if (use_etotgrav) {
+//        pmbp->phydro->RemoveGravEtot(phicc0, u0_, 0, is-1, 0, (n2-1), 0, (n3-1));
+//      }
+//      pmbp->phydro->peos->ConsToPrim(u0_, w0_, false, 0, is-1, 0, (n2-1), 0, (n3-1));
+//      if (use_etotgrav) {
+//        pmbp->phydro->AddGravEtot(phicc0, u0_, 0, is-1, 0, (n2-1), 0, (n3-1));
+//      }
+//    }
+//    else if (pmbp->pmhd != nullptr) {
+//      auto b0 = pmbp->pmhd->b0;
+//      if (use_etotgrav) {
+//        pmbp->pmhd->RemoveGravEtot(phicc0, u0_, 0, is-1, 0, (n2-1), 0, (n3-1));
+//      }
+//      pmbp->pmhd->peos->ConsToPrim(u0_, b0, w0_, bcc0, false, 0, is-1, 0, (n2-1), 0, (n3-1));
+//      if (use_etotgrav) {
+//        pmbp->pmhd->AddGravEtot(phicc0, u0_, 0, is-1, 0, (n2-1), 0, (n3-1));
+//      }
+//    }
+    if (pmbp->phydro != nullptr) {
+      if (use_etotgrav) {
+        pmbp->phydro->RemoveGravEtot(phicc0, u0_, ie, ie, 0, (n2-1), 0, (n3-1));
+      }
+      pmbp->phydro->peos->ConsToPrim(u0_, w0_, false, ie, ie, 0, (n2-1), 0, (n3-1));
+      if (use_etotgrav) {
+        pmbp->phydro->AddGravEtot(phicc0, u0_, ie, ie, 0, (n2-1), 0, (n3-1));
+      }
+    }
+    else if (pmbp->pmhd != nullptr) {
+      auto b0 = pmbp->pmhd->b0;
+      if (use_etotgrav) {
+        pmbp->pmhd->RemoveGravEtot(phicc0, u0_, ie, ie, 0, (n2-1), 0, (n3-1));
+      }
+      pmbp->pmhd->peos->ConsToPrim(u0_, b0, w0_, bcc0, false, ie, ie, 0, (n2-1), 0, (n3-1));
+      if (use_etotgrav) {
+        pmbp->pmhd->AddGravEtot(phicc0, u0_, ie, ie, 0, (n2-1), 0, (n3-1));
+      }
+    }
+
+//    par_for("usrboundaryx1", DevExeSpace(), 0,(nmb-1),0,(nvar-1),0,(n3-1),0,(n2-1),
+//    KOKKOS_LAMBDA(int m, int n, int k, int j) {
 //        if (mb_bcs.d_view(m,BoundaryFace::outer_x1) == BoundaryFlag::user) {
 //          for (int i=0; i<ng; ++i) {
-//            b0_x1f(m,k,j,ie+i+2) = b0_x1f(m,k,j,ie+1);
-//            b0_x2f(m,k,j,ie+i+1) = b0_x2f(m,k,j,ie);
-//            if (j == n2-1) {b0_x2f(m,k,j+1,ie+i+1) = b0_x2f(m,k,j+1,ie);}
-//            b0_x3f(m,k,j,ie+i+1) = b0_x3f(m,k,j,ie);
-//            if (k == n3-1) {b0_x3f(m,k+1,j,ie+i+1) = b0_x3f(m,k+1,j,ie);}
+//            u0_(m,n,k,j,ie+i+1) = u0_(m,n,k,j,ie);
 //          }
 //        }
-//      });
-//    }
+//    });
     
-    par_for("usrboundaryx1", DevExeSpace(),0,(nmb-1),0,(n3-1),0,(n2-1),
+    par_for("usrboundaryx1_bfieldc", DevExeSpace(),0,(nmb-1),0,(n3-1),0,(n2-1),
     KOKKOS_LAMBDA(int m, int k, int j) {
+        if (mb_bcs.d_view(m,BoundaryFace::inner_x1) == BoundaryFlag::user) {
+          Real rho_i = u0_(m,IDN,k,j,is);
+//          Real e_i = w0_(m,IEN,k,j,is);
+//          Real phi_i = phicc0(m,k,j,is);
+//          Real q0_i = log(e_i);
+//          Real factor_i = rho_i/e_i*igm1;
+          for (int i=0; i<ng; ++i) {
+            if (pmbp->pmhd != nullptr) {
+              u0_(m,IEN,k,j,is-i-1) -= 0.5*(SQR(bcc0(m,IBX,k,j,is-i-1))+SQR(bcc0(m,IBY,k,j,is-i-1))+SQR(bcc0(m,IBZ,k,j,is-i-1)));
+              Real lw, rw;
+              lw = (x1f_(m,(is-i-1)+1)-x1v_(m,(is-i-1)))/(x1f_(m,(is-i-1)+1)-x1f_(m,(is-i-1)));
+              rw = (x1v_(m,(is-i-1))-x1f_(m,(is-i-1)))/(x1f_(m,(is-i-1)+1)-x1f_(m,(is-i-1)));
+              bcc0(m,IBX,k,j,(is-i-1)) = lw*b0_x1f(m,k,j,(is-i-1)) + rw*b0_x1f(m,k,j,(is-i-1)+1);
+              lw = (x2f_(m,j+1)-x2v_(m,j))/(x2f_(m,j+1)-x2f_(m,j));
+              rw = (x2v_(m,j)-x2f_(m,j))/(x2f_(m,j+1)-x2f_(m,j));
+              bcc0(m,IBY,k,j,(is-i-1)) = lw*b0_x2f(m,k,j,(is-i-1)) + rw*b0_x2f(m,k,j+1,(is-i-1));
+              lw = (x3f_(m,k+1)-x3v_(m,k))/(x3f_(m,k+1)-x3f_(m,k));
+              rw = (x3v_(m,k)-x3f_(m,k))/(x3f_(m,k+1)-x3f_(m,k));
+              bcc0(m,IBZ,k,j,(is-i-1)) = lw*b0_x3f(m,k,j,(is-i-1)) + rw*b0_x3f(m,k+1,j,(is-i-1));
+              u0_(m,IEN,k,j,is-i-1) += 0.5*(SQR(bcc0(m,IBX,k,j,is-i-1))+SQR(bcc0(m,IBY,k,j,is-i-1))+SQR(bcc0(m,IBZ,k,j,is-i-1)));
+            }
+//              Real rho0_ip = u0_(m,IDN,k,j,(is-i-1));
+//              u0_(m,IM2,k,j,(is-i-1)) = u0_(m,IM2,k,j,is)/rho_i*rho0_ip;
+//              u0_(m,IM3,k,j,(is-i-1)) = u0_(m,IM3,k,j,is)/rho_i*rho0_ip;
+//              u0_(m,IM1,k,j,(is-i-1)) = 0.0;//-u0_(m,IM1,k,j,is)/rho_i*rho0_ip;
+//              u0_(m,IEN,k,j,(is-i-1)) = w0_(m,IEN,k,j,(is-i-1)) + 0.5*(SQR(u0_(m,IM1,k,j,(is-i-1)))+SQR(u0_(m,IM2,k,j,(is-i-1)))+SQR(u0_(m,IM3,k,j,(is-i-1))))/rho0_ip;
+////            Real dphi_i = phicc0(m,k,j,(is-i-1))-phi_i;
+////            Real q0_ip = q0_i - factor_i * dphi_i;
+////            Real e0_ip = exp(q0_ip);
+////            if (e0_ip < 0.0) e0_ip = e_i;
+////            Real rho0_ip = e0_ip/e_i*rho_i;
+////            u0_(m,IDN,k,j,(is-i-1)) = rho0_ip;
+////            u0_(m,IM2,k,j,(is-i-1)) = u0_(m,IM2,k,j,is)/rho_i*rho0_ip;
+////            u0_(m,IM3,k,j,(is-i-1)) = u0_(m,IM3,k,j,is)/rho_i*rho0_ip;
+////            Real mom = u0_(m,IM1,k,j,is)/rho_i*rho0_ip; // fmax(0.0,u0_(m,IM1,k,j,is)/rho_i*rho0_ip); //
+////            u0_(m,IM1,k,j,(is-i-1)) = mom;
+////            u0_(m,IEN,k,j,(is-i-1)) = e0_ip + 0.5*(SQR(u0_(m,IM1,k,j,(is-i-1)))+SQR(u0_(m,IM2,k,j,(is-i-1)))+SQR(u0_(m,IM3,k,j,(is-i-1))))/rho0_ip;
+//            if (use_etotgrav) u0_(m,IEN,k,j,(is-i-1)) += rho0_ip*phicc0(m,k,j,(is-i-1));
+//            if (pmbp->pmhd != nullptr) u0_(m,IEN,k,j,(is-i-1)) +=  0.5*(SQR(bcc0(m,IBX,k,j,(is-i-1)))+SQR(bcc0(m,IBY,k,j,(is-i-1)))+SQR(bcc0(m,IBZ,k,j,(is-i-1))));
+          }
+        }
         if (mb_bcs.d_view(m,BoundaryFace::outer_x1) == BoundaryFlag::user) {
-          Real rho_i = u0_(m,IDN,k,j,ie);
-          Real e_i = u0_(m,IEN,k,j,ie) - 0.5*(SQR(u0_(m,IM1,k,j,ie))+SQR(u0_(m,IM2,k,j,ie))+SQR(u0_(m,IM3,k,j,ie)))/rho_i;
-          if (use_etotgrav) e_i -= rho_i*phicc0(m,k,j,ie);
-          if (pmbp->pmhd != nullptr) e_i -= 0.5*(SQR(bcc0(m,IBX,k,j,ie))+SQR(bcc0(m,IBY,k,j,ie))+SQR(bcc0(m,IBZ,k,j,ie)));
+          Real rho_i = w0_(m,IDN,k,j,ie);
+//          Real e_i = u0_(m,IEN,k,j,ie) - 0.5*(SQR(u0_(m,IM1,k,j,ie))+SQR(u0_(m,IM2,k,j,ie))+SQR(u0_(m,IM3,k,j,ie)))/rho_i;
+//          if (use_etotgrav) e_i -= rho_i*phicc0(m,k,j,ie);
+//          if (pmbp->pmhd != nullptr) e_i -= 0.5*(SQR(bcc0(m,IBX,k,j,ie))+SQR(bcc0(m,IBY,k,j,ie))+SQR(bcc0(m,IBZ,k,j,ie)));
+          Real e_i = w0_(m,IEN,k,j,ie);
           Real phi_i = phicc0(m,k,j,ie);
           Real q0_i = log(e_i);
           Real factor_i = rho_i/e_i*igm1;
           for (int i=0; i<ng; ++i) {
-//            if (pmbp->pmhd != nullptr) {
-//              Real lw, rw;
-//              lw = (x1f_(m,(ie+i+1)+1)-x1v_(m,(ie+i+1)))/(x1f_(m,(ie+i+1)+1)-x1f_(m,(ie+i+1)));
-//              rw = (x1v_(m,(ie+i+1))-x1f_(m,(ie+i+1)))/(x1f_(m,(ie+i+1)+1)-x1f_(m,(ie+i+1)));
-//              bcc0(m,IBX,k,j,(ie+i+1)) = lw*b0_x1f(m,k,j,(ie+i+1)) + rw*b0_x1f(m,k,j,(ie+i+1)+1);
-//              lw = (x2f_(m,j+1)-x2v_(m,j))/(x2f_(m,j+1)-x2f_(m,j));
-//              rw = (x2v_(m,j)-x2f_(m,j))/(x2f_(m,j+1)-x2f_(m,j));
-//              bcc0(m,IBY,k,j,(ie+i+1)) = lw*b0_x2f(m,k,j,(ie+i+1)) + rw*b0_x2f(m,k,j+1,(ie+i+1));
-//              lw = (x3f_(m,k+1)-x3v_(m,k))/(x3f_(m,k+1)-x3f_(m,k));
-//              rw = (x3v_(m,k)-x3f_(m,k))/(x3f_(m,k+1)-x3f_(m,k));
-//              bcc0(m,IBZ,k,j,(ie+i+1)) = lw*b0_x3f(m,k,j,(ie+i+1)) + rw*b0_x3f(m,k+1,j,(ie+i+1));
-//            }
+            Real dM1mag = 0.0;
+            if (pmbp->pmhd != nullptr) {
+//                u0_(m,IEN,k,j,(ie+i+1)) -=  0.5*(SQR(bcc0(m,IBX,k,j,(ie+i+1)))+SQR(bcc0(m,IBY,k,j,(ie+i+1)))+SQR(bcc0(m,IBZ,k,j,(ie+i+1))));
+              Real lw, rw;
+              lw = (x1f_(m,(ie+i+1)+1)-x1v_(m,(ie+i+1)))/(x1f_(m,(ie+i+1)+1)-x1f_(m,(ie+i+1)));
+              rw = (x1v_(m,(ie+i+1))-x1f_(m,(ie+i+1)))/(x1f_(m,(ie+i+1)+1)-x1f_(m,(ie+i+1)));
+              bcc0(m,IBX,k,j,(ie+i+1)) = lw*b0_x1f(m,k,j,(ie+i+1)) + rw*b0_x1f(m,k,j,(ie+i+1)+1);
+              lw = (x2f_(m,j+1)-x2v_(m,j))/(x2f_(m,j+1)-x2f_(m,j));
+              rw = (x2v_(m,j)-x2f_(m,j))/(x2f_(m,j+1)-x2f_(m,j));
+              bcc0(m,IBY,k,j,(ie+i+1)) = lw*b0_x2f(m,k,j,(ie+i+1)) + rw*b0_x2f(m,k,j+1,(ie+i+1));
+              lw = (x3f_(m,k+1)-x3v_(m,k))/(x3f_(m,k+1)-x3f_(m,k));
+              rw = (x3v_(m,k)-x3f_(m,k))/(x3f_(m,k+1)-x3f_(m,k));
+              bcc0(m,IBZ,k,j,(ie+i+1)) = lw*b0_x3f(m,k,j,(ie+i+1)) + rw*b0_x3f(m,k+1,j,(ie+i+1));
+//                u0_(m,IEN,k,j,(ie+i+1)) +=  0.5*(SQR(bcc0(m,IBX,k,j,(ie+i+1)))+SQR(bcc0(m,IBY,k,j,(ie+i+1)))+SQR(bcc0(m,IBZ,k,j,(ie+i+1))));
+
+//              Real pb = 0.5*(SQR(b0_x1f(m,k,j,(ie+i+1)))+SQR(bcc0(m,IBY,k,j,(ie+i+1)))+SQR(bcc0(m,IBZ,k,j,(ie+i+1))));
+//              Real pbp1 = 0.5*(SQR(b0_x1f(m,k,j,(ie+i+2)))+SQR(bcc0(m,IBY,k,j,(ie+i+2)))+SQR(bcc0(m,IBZ,k,j,(ie+i+2))));
+//              Real M11 = pb - SQR(b0_x1f(m,k,j,(ie+i+1)));
+//              Real M11p1 = pbp1 - SQR(b0_x1f(m,k,j,(ie+i+2)));
+//              Real M12 = - b0_x2f(m,k,j,(ie+i+1)) * bcc0(m,IBX,k,j,(ie+i+1));
+//              Real M12p1 = - b0_x2f(m,k,j+1,(ie+i+1)) * bcc0(m,IBX,k,j+1,(ie+i+1));
+//              Real M13 = - b0_x3f(m,k,j,(ie+i+1)) * bcc0(m,IBX,k,j,(ie+i+1));
+//              Real M13p1 = - b0_x3f(m,k+1,j,(ie+i+1)) * bcc0(m,IBX,k+1,j,(ie+i+1));
+//              dM1mag = -( (M11p1*area1(m,k,j,(ie+i+2))-M11*area1(m,k,j,(ie+i+1))) + (M12p1*area2(m,k,j+1,(ie+i+1))-M12*area2(m,k,j,(ie+i+1))) + (M13p1*area3(m,k+1,j,(ie+i+1))-M13*area3(m,k,j,(ie+i+1))) )/volume(m,k,j,(ie+i+1));
+//              dM1mag += z_ov_rE(m,k,j,(ie+i+1)) * 0.5*SQR(bcc0(m,IBX,k,j,(ie+i+1)));
+            }
             Real dphi_i = phicc0(m,k,j,(ie+i+1))-phi_i;
             Real q0_ip = q0_i - factor_i * dphi_i;
             Real e0_ip = exp(q0_ip);
+            e0_ip -= e_i*dM1mag/rho_i/grav_acc;
+            if (e0_ip < 0.0) e0_ip = e_i;
             Real rho0_ip = e0_ip/e_i*rho_i;
+//            rho0_ip = rho_i;
+//            e0_ip = e_i;
             u0_(m,IDN,k,j,(ie+i+1)) = rho0_ip;
             u0_(m,IM2,k,j,(ie+i+1)) = u0_(m,IM2,k,j,ie)/rho_i*rho0_ip;
             u0_(m,IM3,k,j,(ie+i+1)) = u0_(m,IM3,k,j,ie)/rho_i*rho0_ip;
-            Real mom = u0_(m,IM1,k,j,ie)/rho_i*rho0_ip; // fmax(0.0,u0_(m,IM1,k,j,ie)/rho_i*rho0_ip);
+            Real mom = u0_(m,IM1,k,j,ie)/rho_i*rho0_ip; // fmax(0.0,u0_(m,IM1,k,j,ie)/rho_i*rho0_ip); // 
             u0_(m,IM1,k,j,(ie+i+1)) = mom;
             u0_(m,IEN,k,j,(ie+i+1)) = e0_ip + 0.5*(SQR(u0_(m,IM1,k,j,(ie+i+1)))+SQR(u0_(m,IM2,k,j,(ie+i+1)))+SQR(u0_(m,IM3,k,j,(ie+i+1))))/rho0_ip;
             if (use_etotgrav) u0_(m,IEN,k,j,(ie+i+1)) += rho0_ip*phicc0(m,k,j,(ie+i+1));
             if (pmbp->pmhd != nullptr) u0_(m,IEN,k,j,(ie+i+1)) +=  0.5*(SQR(bcc0(m,IBX,k,j,(ie+i+1)))+SQR(bcc0(m,IBY,k,j,(ie+i+1)))+SQR(bcc0(m,IBZ,k,j,(ie+i+1))));
           }
         }
-//        if (mb_bcs.d_view(m,BoundaryFace::inner_x1) == BoundaryFlag::user && pmbp->pmhd != nullptr) {
-//          for (int i=0; i<ng+2; ++i) {
-//              u0_(m,IEN,k,j,i) -= 0.5*u0_(m,IDN,k,j,i)*(SQR(bcc0(m,IBX,k,j,i))+SQR(bcc0(m,IBY,k,j,i))+SQR(bcc0(m,IBZ,k,j,i)));
-//              
-//              Real x1v = x1v_(m,i);
-//              Real x2v = x2v_(m,j);
-//              Real x3v = x3v_(m,k);
-//              Real x1fl = x1f_(m,i);
-//              Real x2fl = x2f_(m,j);
-//              Real x3fl = x3f_(m,k);
-//              Real x1fr = x1f_(m,i+1);
-//              Real x2fr = x2f_(m,j+1);
-//              Real x3fr = x3f_(m,k+1);
-//                
-//              Real A1 = 0.0;
-//              Real A2 = 0.0;
-//              Real A2ip = 0.0;
-//              Real A2kp = 0.0;
-//              Real A2ipkp = 0.0;
-//              Real A3 = 0.5*bbot*r0*sin(x2fl)/SQR(x1fl/r0);
-//              Real A3ip = 0.5*bbot*r0*sin(x2fl)/SQR(x1fr/r0);
-//              Real A3jp = 0.5*bbot*r0*sin(x2fr)/SQR(x1fl/r0);
-//              Real A3ipjp = 0.5*bbot*r0*sin(x2fr)/SQR(x1fr/r0);
-//                
-//              b0.x1f(m,k,j,i) = (dxe3(m,k,j+1,i)*A3jp - dxe3(m,k,j,i)*A3)/area1(m,k,j,i) - (dxe2(m,k+1,j,i)*A2kp - dxe2(m,k,j,i)*A2)/area1(m,k,j,i);
-//              b0.x2f(m,k,j,i) = - (dxe3(m,k,j,i+1)*A3ip - dxe3(m,k,j,i)*A3)/area2(m,k,j,i);
-//              b0.x3f(m,k,j,i) = (dxe2(m,k,j,i+1)*A2ip - dxe2(m,k,j,i)*A2)/area3(m,k,j,i);
-//              Real b0x1fip = (dxe3(m,k,j+1,i+1)*A3ipjp - dxe3(m,k,j,i+1)*A3ip)/area1(m,k,j,i+1) - (dxe2(m,k+1,j,i+1)*A2ipkp - dxe2(m,k,j,i+1)*A2ip)/area1(m,k,j,i+1);
-//              Real b0x2fjp = - (dxe3(m,k,j+1,i+1)*A3ipjp - dxe3(m,k,j+1,i)*A3jp)/area2(m,k,j+1,i);
-//              Real b0x3fkp = (dxe2(m,k+1,j,i+1)*A2ipkp - dxe2(m,k+1,j,i)*A2kp)/area3(m,k+1,j,i);
-//              if (i==ie) b0.x1f(m,k,j,i+1) = b0x1fip;
-//              if (j==je) b0.x2f(m,k,j+1,i) = b0x2fjp;
-//              if (k==ke) b0.x3f(m,k+1,j,i) = b0x3fkp;
-//                
-//              Real lw, rw;
-//              lw = (x1f_(m,i+1)-x1v_(m,i))/(x1f_(m,i+1)-x1f_(m,i));
-//              rw = (x1v_(m,i)-x1f_(m,i))/(x1f_(m,i+1)-x1f_(m,i));
-//              bcc0(m,IBX,k,j,i) = lw*b0.x1f(m,k,j,i) + rw*b0x1fip;
-//              lw = (x2f_(m,j+1)-x2v_(m,j))/(x2f_(m,j+1)-x2f_(m,j));
-//              rw = (x2v_(m,j)-x2f_(m,j))/(x2f_(m,j+1)-x2f_(m,j));
-//              bcc0(m,IBY,k,j,i) = lw*b0.x2f(m,k,j,i) + rw*b0x2fjp;
-//              lw = (x3f_(m,k+1)-x3v_(m,k))/(x3f_(m,k+1)-x3f_(m,k));
-//              rw = (x3v_(m,k)-x3f_(m,k))/(x3f_(m,k+1)-x3f_(m,k));
-//              bcc0(m,IBZ,k,j,i) = lw*b0.x3f(m,k,j,i) + rw*b0x3fkp;
-//                
-//              u0_(m,IEN,k,j,i) += 0.5*u0_(m,IDN,k,j,i)*(SQR(bcc0(m,IBX,k,j,i))+SQR(bcc0(m,IBY,k,j,i))+SQR(bcc0(m,IBZ,k,j,i)));
+    });
+
+////    par_for("usrboundaryx2", DevExeSpace(), 0,(nmb-1),0,(nvar-1),0,(n3-1),0,(n1-1),
+////    KOKKOS_LAMBDA(int m, int n, int k, int i) {
+////        if (mb_bcs.d_view(m,BoundaryFace::inner_x2) == BoundaryFlag::user) {
+////          for (int j=0; j<ng; ++j) {
+////            if (n==(IVY)) {
+////              u0_(m,n,k,js-j-1,i) = -u0_(m,n,k,js+j,i);
+////            } else {
+////              u0_(m,n,k,js-j-1,i) = u0_(m,n,k,js+j,i);
+////            }
+////          }
+////        }
+////        if (mb_bcs.d_view(m,BoundaryFace::outer_x2) == BoundaryFlag::user) {
+////          for (int j=0; j<ng; ++j) {
+////            if (n==(IVY)) {
+////              u0_(m,n,k,je+j+1,i) = -u0_(m,n,k,je-j,i);
+////            } else {
+////              u0_(m,n,k,je+j+1,i) = u0_(m,n,k,je-j,i);
+////            }
+////          }
+////        }
+////    });
+//    par_for("usrboundaryx2", DevExeSpace(), 0,(nmb-1),0,(n3-1),0,(n1-1),
+//    KOKKOS_LAMBDA(int m, int k, int i) {
+//        if (mb_bcs.d_view(m,BoundaryFace::inner_x2) == BoundaryFlag::user) {
+//          for (int j=0; j<ng; ++j) {
+//            u0_(m,IDN,k,js-j-1,i) = u0_(m,IDN,k,js,i);
+//            u0_(m,IM1,k,js-j-1,i) = u0_(m,IM1,k,js,i);
+//            u0_(m,IM3,k,js-j-1,i) = u0_(m,IM3,k,js,i);
+//            u0_(m,IM2,k,js-j-1,i) = fmin(0.0,u0_(m,IM2,k,js,i));
+//            u0_(m,IEN,k,js-j-1,i) = u0_(m,IEN,k,js,i)-0.5*SQR(u0_(m,IM2,k,js,i))+0.5*SQR(u0_(m,IM2,k,js-j-1,i));
 //          }
 //        }
-    });
+//        if (mb_bcs.d_view(m,BoundaryFace::outer_x2) == BoundaryFlag::user) {
+//          for (int j=0; j<ng; ++j) {
+//            u0_(m,IDN,k,je+j+1,i) = u0_(m,IDN,k,je,i);
+//            u0_(m,IM1,k,je+j+1,i) = u0_(m,IM1,k,je,i);
+//            u0_(m,IM3,k,je+j+1,i) = u0_(m,IM3,k,je,i);
+//            u0_(m,IM2,k,je+j+1,i) = fmax(0.0,u0_(m,IM2,k,je,i));
+//            u0_(m,IEN,k,je+j+1,i) = u0_(m,IEN,k,je,i)-0.5*SQR(u0_(m,IM2,k,je,i))+0.5*SQR(u0_(m,IM2,k,je+j+1,i));
+//          }
+//        }
+//    });
+//    if (pmbp->pmhd != nullptr) {
+//      par_for("usrboundaryx2_bfield", DevExeSpace(),0,(nmb-1),0,(n3-1),0,(n1-1),
+//      KOKKOS_LAMBDA(int m, int k, int i) {
+//          if (mb_bcs.d_view(m,BoundaryFace::inner_x2) == BoundaryFlag::user) {
+//              for (int j=0; j<ng; ++j) {
+//                int jin = js+j;
+//                int jex = js-j-1;
+//                Real fac1 = -area1(m,k,jin,i)/area1(m,k,jex,i);
+//                Real fac1p = -area1(m,k,jin,i+1)/area1(m,k,jex,i+1);
+//                Real fac3 = -area3(m,k,jin,i)/area3(m,k,jex,i);
+//                Real fac3p = -area3(m,k+1,jin,i)/area3(m,k+1,jex,i);
+//                b0_x1f(m,k,jex,i) = b0_x1f(m,k,jin,i)*fac1;
+//                if (i == n1-1) {b0_x1f(m,k,jex,i+1) = b0_x1f(m,k,jin,i+1)*fac1p;}
+//                b0_x3f(m,k,jex,i) = b0_x3f(m,k,jin,i)*fac3;
+//                if (k == n3-1) {b0_x3f(m,k+1,jex,i) = b0_x3f(m,k+1,jin,i)*fac3p;}
+//                Real fac2 = area2(m,k,jin+1,i)/area2(m,k,jex,i);
+//                b0_x2f(m,k,jex,i) = b0_x2f(m,k,jin+1,i)*fac2;
+//              }
+////              for (int j=0; j<ng; ++j) {
+////                int jex = js-j-1;
+////                Real div_rest = b0_x2f(m,k,jex+1,i)*area2(m,k,jex+1,i) + (b0_x1f(m,k,jex,i+1)*area1(m,k,jex,i+1)-b0_x1f(m,k,jex,i)*area1(m,k,jex,i)) + (b0_x3f(m,k+1,jex,i)*area3(m,k+1,jex,i)-b0_x3f(m,k,jex,i)*area3(m,k,jex,i));
+////                b0_x2f(m,k,jex,i) = div_rest/area2(m,k,jex,i);
+////              }
+//          }
+//          if (mb_bcs.d_view(m,BoundaryFace::outer_x2) == BoundaryFlag::user) {
+//              for (int j=0; j<ng; ++j) {
+//                int jin = je-j;
+//                int jex = je+j+1;
+//                Real fac1 = -area1(m,k,jin,i)/area1(m,k,jex,i);
+//                Real fac1p = -area1(m,k,jin,i+1)/area1(m,k,jex,i+1);
+//                Real fac3 = -area3(m,k,jin,i)/area3(m,k,jex,i);
+//                Real fac3p = -area3(m,k+1,jin,i)/area3(m,k+1,jex,i);
+//                b0_x1f(m,k,jex,i) = b0_x1f(m,k,jin,i)*fac1;
+//                if (i == n1-1) {b0_x1f(m,k,jex,i+1) = b0_x1f(m,k,jin,i+1)*fac1p;}
+//                b0_x3f(m,k,jex,i) = b0_x3f(m,k,jin,i)*fac3;
+//                if (k == n3-1) {b0_x3f(m,k+1,jex,i) = b0_x3f(m,k+1,jin,i)*fac3p;}
+//                Real fac2 = area2(m,k,jin,i)/area2(m,k,jex+1,i);
+//                b0_x2f(m,k,jex+1,i) = b0_x2f(m,k,jin,i)*fac2;
+//              }
+////              for (int j=0; j<ng; ++j) {
+////                int jex = je+j+1;
+////                Real div_rest = b0_x2f(m,k,jex,i)*area2(m,k,jex,i) - (b0_x1f(m,k,jex,i+1)*area1(m,k,jex,i+1)-b0_x1f(m,k,jex,i)*area1(m,k,jex,i)) - (b0_x3f(m,k+1,jex,i)*area3(m,k+1,jex,i)-b0_x3f(m,k,jex,i)*area3(m,k,jex,i));
+////                b0_x2f(m,k,jex+1,i) = div_rest/area2(m,k,jex+1,i);
+////              }
+//          }
+//      });
+//        par_for("usrboundaryx2_bfieldc", DevExeSpace(),0,(nmb-1),0,(n3-1),0,(n1-1),
+//        KOKKOS_LAMBDA(int m, int k, int i) {
+//            if (mb_bcs.d_view(m,BoundaryFace::inner_x2) == BoundaryFlag::user) {
+//                Real lw, rw;
+//                lw = (x1f_(m,i+1)-x1v_(m,i))/(x1f_(m,i+1)-x1f_(m,i));
+//                rw = (x1v_(m,i)-x1f_(m,i))/(x1f_(m,i+1)-x1f_(m,i));
+//                bcc0(m,IBX,k,js,i) = lw*b0_x1f(m,k,js,i) + rw*b0_x1f(m,k,js,i+1);
+//                lw = (x2f_(m,js+1)-x2v_(m,js))/(x2f_(m,js+1)-x2f_(m,js));
+//                rw = (x2v_(m,js)-x2f_(m,js))/(x2f_(m,js+1)-x2f_(m,js));
+//                bcc0(m,IBY,k,js,i) = lw*b0_x2f(m,k,js,i) + rw*b0_x2f(m,k,js+1,i);
+//                lw = (x3f_(m,k+1)-x3v_(m,k))/(x3f_(m,k+1)-x3f_(m,k));
+//                rw = (x3v_(m,k)-x3f_(m,k))/(x3f_(m,k+1)-x3f_(m,k));
+//                bcc0(m,IBZ,k,js,i) = lw*b0_x3f(m,k,js,i) + rw*b0_x3f(m,k+1,js,i);
+//
+//                lw = (x1f_(m,i+1)-x1v_(m,i))/(x1f_(m,i+1)-x1f_(m,i));
+//                rw = (x1v_(m,i)-x1f_(m,i))/(x1f_(m,i+1)-x1f_(m,i));
+//                bcc0(m,IBX,k,je,i) = lw*b0_x1f(m,k,je,i) + rw*b0_x1f(m,k,je,i+1);
+//                lw = (x2f_(m,je+1)-x2v_(m,je))/(x2f_(m,je+1)-x2f_(m,je));
+//                rw = (x2v_(m,je)-x2f_(m,je))/(x2f_(m,je+1)-x2f_(m,je));
+//                bcc0(m,IBY,k,je,i) = lw*b0_x2f(m,k,je,i) + rw*b0_x2f(m,k,je+1,i);
+//                lw = (x3f_(m,k+1)-x3v_(m,k))/(x3f_(m,k+1)-x3f_(m,k));
+//                rw = (x3v_(m,k)-x3f_(m,k))/(x3f_(m,k+1)-x3f_(m,k));
+//                bcc0(m,IBZ,k,je,i) = lw*b0_x3f(m,k,je,i) + rw*b0_x3f(m,k+1,je,i);
+//
+//              for (int j=0; j<ng; ++j) {
+////                Real lw, rw;
+////                lw = (x1f_(m,i+1)-x1v_(m,i))/(x1f_(m,i+1)-x1f_(m,i));
+////                rw = (x1v_(m,i)-x1f_(m,i))/(x1f_(m,i+1)-x1f_(m,i));
+////                bcc0(m,IBX,k,js+j,i) = lw*b0_x1f(m,k,js+j,i) + rw*b0_x1f(m,k,js+j,i+1);
+////                lw = (x2f_(m,js+j+1)-x2v_(m,js+j))/(x2f_(m,js+j+1)-x2f_(m,js+j));
+////                rw = (x2v_(m,js+j)-x2f_(m,js+j))/(x2f_(m,js+j+1)-x2f_(m,js+j));
+////                bcc0(m,IBY,k,js+j,i) = lw*b0_x2f(m,k,js+j,i) + rw*b0_x2f(m,k,js+j+1,i);
+////                lw = (x3f_(m,k+1)-x3v_(m,k))/(x3f_(m,k+1)-x3f_(m,k));
+////                rw = (x3v_(m,k)-x3f_(m,k))/(x3f_(m,k+1)-x3f_(m,k));
+////                bcc0(m,IBZ,k,js+j,i) = lw*b0_x3f(m,k,js+j,i) + rw*b0_x3f(m,k+1,js+j,i);
+//                u0_(m,IEN,k,js-j-1,i) -= 0.5*(SQR(bcc0(m,IBX,k,js,i))+SQR(bcc0(m,IBY,k,js,i))+SQR(bcc0(m,IBZ,k,js,i)));
+//
+//                Real lw, rw;
+//                lw = (x1f_(m,i+1)-x1v_(m,i))/(x1f_(m,i+1)-x1f_(m,i));
+//                rw = (x1v_(m,i)-x1f_(m,i))/(x1f_(m,i+1)-x1f_(m,i));
+//                bcc0(m,IBX,k,js-j-1,i) = lw*b0_x1f(m,k,js-j-1,i) + rw*b0_x1f(m,k,js-j-1,i+1);
+//                lw = (x2f_(m,js-j-1+1)-x2v_(m,js-j-1))/(x2f_(m,js-j-1+1)-x2f_(m,js-j-1));
+//                rw = (x2v_(m,js-j-1)-x2f_(m,js-j-1))/(x2f_(m,js-j-1+1)-x2f_(m,js-j-1));
+//                bcc0(m,IBY,k,js-j-1,i) = lw*b0_x2f(m,k,js-j-1,i) + rw*b0_x2f(m,k,js-j-1+1,i);
+//                lw = (x3f_(m,k+1)-x3v_(m,k))/(x3f_(m,k+1)-x3f_(m,k));
+//                rw = (x3v_(m,k)-x3f_(m,k))/(x3f_(m,k+1)-x3f_(m,k));
+//                bcc0(m,IBZ,k,js-j-1,i) = lw*b0_x3f(m,k,js-j-1,i) + rw*b0_x3f(m,k+1,js-j-1,i);
+//                u0_(m,IEN,k,js-j-1,i) += 0.5*(SQR(bcc0(m,IBX,k,js-j-1,i))+SQR(bcc0(m,IBY,k,js-j-1,i))+SQR(bcc0(m,IBZ,k,js-j-1,i)));
+//              }
+//            }
+//            if (mb_bcs.d_view(m,BoundaryFace::outer_x2) == BoundaryFlag::user) {
+//              for (int j=0; j<ng; ++j) {
+////                  Real lw, rw;
+////                  lw = (x1f_(m,i+1)-x1v_(m,i))/(x1f_(m,i+1)-x1f_(m,i));
+////                  rw = (x1v_(m,i)-x1f_(m,i))/(x1f_(m,i+1)-x1f_(m,i));
+////                  bcc0(m,IBX,k,je-j,i) = lw*b0_x1f(m,k,je-j,i) + rw*b0_x1f(m,k,je-j,i+1);
+////                  lw = (x2f_(m,je-j+1)-x2v_(m,je-j))/(x2f_(m,je-j+1)-x2f_(m,je-j));
+////                  rw = (x2v_(m,je-j)-x2f_(m,je-j))/(x2f_(m,je-j+1)-x2f_(m,je-j));
+////                  bcc0(m,IBY,k,je-j,i) = lw*b0_x2f(m,k,je-j,i) + rw*b0_x2f(m,k,je-j+1,i);
+////                  lw = (x3f_(m,k+1)-x3v_(m,k))/(x3f_(m,k+1)-x3f_(m,k));
+////                  rw = (x3v_(m,k)-x3f_(m,k))/(x3f_(m,k+1)-x3f_(m,k));
+////                  bcc0(m,IBZ,k,je-j,i) = lw*b0_x3f(m,k,je-j,i) + rw*b0_x3f(m,k+1,je-j,i);
+//                  u0_(m,IEN,k,je+j+1,i) -= 0.5*(SQR(bcc0(m,IBX,k,je,i))+SQR(bcc0(m,IBY,k,je,i))+SQR(bcc0(m,IBZ,k,je,i)));
+//
+//                  Real lw, rw;
+//                  lw = (x1f_(m,i+1)-x1v_(m,i))/(x1f_(m,i+1)-x1f_(m,i));
+//                  rw = (x1v_(m,i)-x1f_(m,i))/(x1f_(m,i+1)-x1f_(m,i));
+//                  bcc0(m,IBX,k,je+j+1,i) = lw*b0_x1f(m,k,je+j+1,i) + rw*b0_x1f(m,k,je+j+1,i+1);
+//                  lw = (x2f_(m,je+j+1+1)-x2v_(m,je+j+1))/(x2f_(m,je+j+1+1)-x2f_(m,je+j+1));
+//                  rw = (x2v_(m,je+j+1)-x2f_(m,je+j+1))/(x2f_(m,je+j+1+1)-x2f_(m,je+j+1));
+//                  bcc0(m,IBY,k,je+j+1,i) = lw*b0_x2f(m,k,je+j+1,i) + rw*b0_x2f(m,k,je+j+1+1,i);
+//                  lw = (x3f_(m,k+1)-x3v_(m,k))/(x3f_(m,k+1)-x3f_(m,k));
+//                  rw = (x3v_(m,k)-x3f_(m,k))/(x3f_(m,k+1)-x3f_(m,k));
+//                  bcc0(m,IBZ,k,je+j+1,i) = lw*b0_x3f(m,k,je+j+1,i) + rw*b0_x3f(m,k+1,je+j+1,i);
+//                  u0_(m,IEN,k,je+j+1,i) += 0.5*(SQR(bcc0(m,IBX,k,je+j+1,i))+SQR(bcc0(m,IBY,k,je+j+1,i))+SQR(bcc0(m,IBZ,k,je+j+1,i)));
+//              }
+//            }
+//        });
+//    }
   return;
 }
 
@@ -889,8 +1211,11 @@ void SourceFunc(Mesh *pm, Real bdt) {
       w0 = pmbp->pmhd->w0;
       gamma = pmbp->pmhd->peos->eos_data.gamma;
       use_etotgrav = pmbp->pmhd->use_etotgrav;
+      use_wellbalance_static = pmbp->pmhd->use_wellbalance_static;
+      use_wellbalance_dynamic = pmbp->pmhd->use_wellbalance_dynamic;
       phi0_x1f = pmbp->pmhd->phi0.x1f;
       phicc0 = pmbp->pmhd->phicc0;
+      w0wb = pmbp->pmhd->w0wb;
     }
     
     const bool use_spherical_polar = pm->use_spherical_polar;
@@ -975,11 +1300,19 @@ void SourceFunc(Mesh *pm, Real bdt) {
         }
         if (use_wellbalance_dynamic) {
           Real e_imh,e_iph,dum1,dum2,dum3;
-          pmbp->phydro->getWBerho(IEN, gamma,
-            w0(m,IDN,k,j,i-1),w0(m,IDN,k,j,i),w0(m,IDN,k,j,i+1),
-            w0(m,IEN,k,j,i-1),w0(m,IEN,k,j,i),w0(m,IEN,k,j,i+1),
-            phicc0(m,k,j,i-1),phi0_x1f(m,k,j,i),phicc0(m,k,j,i),phi0_x1f(m,k,j,i+1),phicc0(m,k,j,i+1),
-            dum1,e_imh,dum2,e_iph,dum3);
+          if (pmbp->phydro != nullptr) {
+              pmbp->phydro->getWBerho(IEN, gamma,
+                w0(m,IDN,k,j,i-1),w0(m,IDN,k,j,i),w0(m,IDN,k,j,i+1),
+                w0(m,IEN,k,j,i-1),w0(m,IEN,k,j,i),w0(m,IEN,k,j,i+1),
+                phicc0(m,k,j,i-1),phi0_x1f(m,k,j,i),phicc0(m,k,j,i),phi0_x1f(m,k,j,i+1),phicc0(m,k,j,i+1),
+                dum1,e_imh,dum2,e_iph,dum3);
+          } else if (pmbp->pmhd != nullptr) {
+              pmbp->pmhd->getWBerho(IEN, gamma,
+                w0(m,IDN,k,j,i-1),w0(m,IDN,k,j,i),w0(m,IDN,k,j,i+1),
+                w0(m,IEN,k,j,i-1),w0(m,IEN,k,j,i),w0(m,IEN,k,j,i+1),
+                phicc0(m,k,j,i-1),phi0_x1f(m,k,j,i),phicc0(m,k,j,i),phi0_x1f(m,k,j,i+1),phicc0(m,k,j,i+1),
+                dum1,e_imh,dum2,e_iph,dum3);
+          }
           Real pl = e_imh*gm1;
           Real pr = e_iph*gm1;
           src = bdt*(area_r*(pr-p)+area_l*(p-pl))/vol;
@@ -1054,6 +1387,18 @@ void SourceFunc(Mesh *pm, Real bdt) {
         itdrag = fdrag/1.0e3;
         fredux = itdrag*bdt; ///(1.0+itdrag*bdt);
         u0(m,IM1,k,j,i) -= u0(m,IM1,k,j,i)*fredux;
+        u0(m,IM2,k,j,i) -= u0(m,IM2,k,j,i)*fredux;
+        u0(m,IM3,k,j,i) -= u0(m,IM3,k,j,i)*fredux;
+        // Bottom sponge layer
+        logpl = log(1.0e2*bar);
+        logpt = log(5.0e1*bar);
+        logp = log(p);
+        fdrag = (logp-logpt)/(logpl-logpt); // high p = 1, low p = 0
+        fdrag = (fdrag < 0.0) ? 0.0 : fdrag;
+        fdrag = (fdrag > 1.0) ? 1.0 : fdrag;
+        itdrag = fdrag/1.0e3;
+        fredux = itdrag*bdt; ///(1.0+itdrag*bdt);
+//        u0(m,IM1,k,j,i) -= u0(m,IM1,k,j,i)*fredux;
         u0(m,IM2,k,j,i) -= u0(m,IM2,k,j,i)*fredux;
         u0(m,IM3,k,j,i) -= u0(m,IM3,k,j,i)*fredux;
     });
@@ -2049,7 +2394,7 @@ void get_picket_fence_Ttau(const Real &Tint, const Real &Tirr, const Real &mus, 
 }
 
 template <typename View1D>
-void get_picket_fence_pT_arr(const Real &Tint, const Real &Tirr, const Real &met, const Real &grav, const Real &mus, const int &N, View1D Tarr, View1D lgparr) {
+void get_picket_fence_pT_arr(const Real &gamma, const Real &Tint, const Real &Tirr, const Real &met, const Real &grav, const Real &mus, const int &N, View1D Tarr, View1D lgparr) {
     Real bar = 1.0e6;
     Real tautop = 1.0e-6;
     Real Ttop;
@@ -2090,15 +2435,15 @@ void get_picket_fence_pT_arr(const Real &Tint, const Real &Tirr, const Real &met
         get_kapr(T, p, met, kapr);
     }
     
-    adjust_ad_pT_arr(N, Tarr, lgparr);
+    adjust_ad_pT_arr(gamma, N, Tarr, lgparr);
     
     return;
 }
 
 template <typename View1D>
-void adjust_ad_pT_arr(const int &N, View1D Tarr, View1D lgparr) {
+void adjust_ad_pT_arr(const Real &gamma, const int &N, View1D Tarr, View1D lgparr) {
 
-  // --- find convective boundary (search from top) ---
+  // --- find convective boundary (search from bottom) ---
   int ic = -1;
 
   for (int ip = 0; ip < N-1; ++ip) {
@@ -2114,7 +2459,7 @@ void adjust_ad_pT_arr(const int &N, View1D Tarr, View1D lgparr) {
     Real nabla = (lgT - lgT1) / (lgp - lgp1);
 
     Real T = Tarr(i_inv);
-    Real nabla_ad = 0.32 - 0.1 * (T / 3000.0);
+    Real nabla_ad = (gamma-1.0)/gamma; // 0.32 - 0.1 * (T / 3000.0);
 
     if (nabla < nabla_ad) {
       ic = i_inv_p1;  // map back to original indexing
@@ -2127,7 +2472,7 @@ void adjust_ad_pT_arr(const int &N, View1D Tarr, View1D lgparr) {
     // --- enforce adiabat downward ---
     for (int ip = ic; ip < N-1; ++ip) {
       Real T = Tarr(ip);
-      Real nabla_ad = 0.32 - 0.1 * (T / 3000.0);
+      Real nabla_ad = (gamma-1.0)/gamma; // 0.32 - 0.1 * (T / 3000.0);
 
       Tarr(ip+1) = pow(10.0,
         nabla_ad * (lgparr(ip+1) - lgparr(ip)) + log10(T)

@@ -69,6 +69,7 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
     
   auto &use_cubed_sphere = pmy_pack->pmesh->use_cubed_sphere;
   auto &use_spherical_polar = pmy_pack->pmesh->use_spherical_polar;
+  auto &mb_bcs = pmy_pack->pmb->mb_bcs;
 
   //--------------------------------------------------------------------------------------
   // i-direction
@@ -159,6 +160,7 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
     auto flx1 = flx1_;
     auto e31 = e31_;
     auto e21 = e21_;
+    const bool do_pole = (mb_bcs.d_view(m,BoundaryFace::inner_x2) == BoundaryFlag::polar && j == js) || (mb_bcs.d_view(m,BoundaryFace::outer_x2) == BoundaryFlag::polar && j == je);
     if constexpr (rsolver_method_ == MHD_RSolver::advect) {
       Advect(member,eos,indcs,size,coord,m,k,j,il,iu,IVX,wl,wr,bl,br,bx,flx1,e31,e21);
     } else if constexpr (rsolver_method_ == MHD_RSolver::llf) {
@@ -166,7 +168,11 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
     } else if constexpr (rsolver_method_ == MHD_RSolver::hlle) {
       HLLE(member,eos,indcs,size,coord,m,k,j,il,iu,IVX,wl,wr,bl,br,bx,flx1,e31,e21);
     } else if constexpr (rsolver_method_ == MHD_RSolver::hlld) {
+      if (do_pole) {
+        HLLE(member,eos,indcs,size,coord,m,k,j,il,iu,IVX,wl,wr,bl,br,bx,flx1,e31,e21);
+      } else {
       HLLD(member,eos,indcs,size,coord,m,k,j,il,iu,IVX,wl,wr,bl,br,bx,flx1,e31,e21);
+      }
     } else if constexpr (rsolver_method_ == MHD_RSolver::llf_sr) {
       LLF_SR(member,eos,indcs,size,coord,m,k,j,il,iu,IVX,wl,wr,bl,br,bx,flx1,e31,e21);
     } else if constexpr (rsolver_method_ == MHD_RSolver::hlle_sr) {
@@ -295,6 +301,7 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
           auto flx2 = flx2_;
           auto e12 = e12_;
           auto e32 = e32_;
+          const bool do_pole = (mb_bcs.d_view(m,BoundaryFace::inner_x2) == BoundaryFlag::polar && (j == js || j == js+1)) || (mb_bcs.d_view(m,BoundaryFace::outer_x2) == BoundaryFlag::polar && (j == je+1 || j == je));
           if constexpr (rsolver_method_ == MHD_RSolver::advect) {
             Advect(member,eos,indcs,size,coord,
                     m,k,j,is-1,ie+1,IVY,wl,wr,bl,br,by,flx2,e12,e32);
@@ -305,6 +312,10 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
             HLLE(member,eos,indcs,size,coord,
                     m,k,j,is-1,ie+1,IVY,wl,wr,bl,br,by,flx2,e12,e32);
           } else if constexpr (rsolver_method_ == MHD_RSolver::hlld) {
+            if (do_pole) {
+              HLLE(member,eos,indcs,size,coord,
+                          m,k,j,is-1,ie+1,IVY,wl,wr,bl,br,by,flx2,e12,e32);
+            } else {
             HLLD(member,eos,indcs,size,coord,
                     m,k,j,is-1,ie+1,IVY,wl,wr,bl,br,by,flx2,e12,e32);
           } else if constexpr (rsolver_method_ == MHD_RSolver::llf_sr) {
@@ -437,6 +448,7 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
           auto flx3 = flx3_;
           auto e23 = e23_;
           auto e13 = e13_;
+          const bool do_pole = (mb_bcs.d_view(m,BoundaryFace::inner_x2) == BoundaryFlag::polar && j == js) || (mb_bcs.d_view(m,BoundaryFace::outer_x2) == BoundaryFlag::polar && j == je);
           if constexpr (rsolver_method_ == MHD_RSolver::advect) {
             Advect(member,eos,indcs,size,coord,
                     m,k,j,is-1,ie+1,IVZ,wl,wr,bl,br,bz,flx3,e23,e13);
@@ -447,6 +459,10 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
             HLLE(member,eos,indcs,size,coord,
                     m,k,j,is-1,ie+1,IVZ,wl,wr,bl,br,bz,flx3,e23,e13);
           } else if constexpr (rsolver_method_ == MHD_RSolver::hlld) {
+            if (do_pole) {
+              HLLE(member,eos,indcs,size,coord,
+                        m,k,j,is-1,ie+1,IVZ,wl,wr,bl,br,bz,flx3,e23,e13);
+            } else {
             HLLD(member,eos,indcs,size,coord,
                     m,k,j,is-1,ie+1,IVZ,wl,wr,bl,br,bz,flx3,e23,e13);
           } else if constexpr (rsolver_method_ == MHD_RSolver::llf_sr) {

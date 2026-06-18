@@ -51,6 +51,7 @@ struct NeighborBlock {
   int rank;    // MPI rank
   int dest;    // index of recv buffer in target NeighborBlocks
   int panel;   // panel ID
+  int polar;   // 1 = polar boundary; -1 = otherwise
 };
 
 //----------------------------------------------------------------------------------------
@@ -133,7 +134,10 @@ class Mesh {
   bool use_cubed_sphere;      // true if using cubed sphere
   int npanels;                // 6 if using cubed sphere; 1 otherwise
   bool use_spherical_polar;   // true if using spherical polar grid
-  bool use_grid_stretch;      // true if using grid stretching
+  bool use_grid_stretch_r;      // true if using grid stretching in r
+  bool use_grid_stretch_theta;  // true if using grid stretching in theta
+  Real fStretchR, fStretchTheta;
+  bool use_polar_boundary;      // true if using polar boundaries
 
   bool one_d, two_d, three_d; // flags to indicate 1D or 2D or 3D calculations
   bool multi_d;               // flag to indicate 2D and 3D calculations
