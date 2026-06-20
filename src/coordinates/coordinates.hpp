@@ -76,6 +76,8 @@ class Coordinates {
   DvceArray2D<Real> xx2f;
   DvceArray2D<Real> xx3f;
   DvceEdgeFld4D<Real> dxedge;
+  DvceFaceFld4D<Real> dxface;
+  DvceEdgeFld4D<Real> areaedge;
   DvceArray3D<Real> sin_cell;
   DvceArray3D<Real> cos_cell;
   DvceArray3D<Real> sin_face1;

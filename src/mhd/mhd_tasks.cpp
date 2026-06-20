@@ -205,7 +205,7 @@ TaskStatus MHD::Fluxes(Driver *pdrive, int stage) {
     pvisc->AddViscousFluxes(w0, peos->eos_data, uflx);
   }
   if ((presist != nullptr) && (peos->eos_data.is_ideal)) {
-    presist->AddResistiveFluxes(b0, uflx);
+    presist->AddResistiveFluxes(b0, bcc0, uflx);
   }
     
   if (use_etotgrav) {
@@ -575,6 +575,9 @@ TaskStatus MHD::ConToPrim(Driver *pdrive, int stage) {
   peos->ConsToPrim(u0, b0, w0, bcc0, false, 0, n1m1, 0, n2m1, 0, n3m1);
   if (use_etotgrav) {
     AddGravEtot(phicc0, u0, 0, n1m1, 0, n2m1, 0, n3m1);
+  }
+  if (presist != nullptr && presist->iso_resist_type.compare("constant") != 0) {
+    presist->SetResistivity(w0, peos->eos_data.gamma, pmy_pack->pmesh->pgen->hot_jupiter_param.Rgas, presist->eta_b, 0, n1m1, 0, n2m1, 0, n3m1);
   }
   return TaskStatus::complete;
 }

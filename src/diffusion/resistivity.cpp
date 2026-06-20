@@ -23,18 +23,35 @@
 // ctor: also calls Resistivity base class constructor
 
 Resistivity::Resistivity(MeshBlockPack *pp, ParameterInput *pin) :
-    pmy_pack(pp) {
+    pmy_pack(pp),
+    efld_resist("efld_resist",1,1,1,1),
+    eta_b("eta_b",1,1,1,1) {
   // Read parameters for Ohmic resistivity (if any)
   if (pin->DoesParameterExist("mhd","ohmic_resistivity")) {
-    iso_resist_type = pin->GetString("mhd","ohmic_resisitivity");
+    iso_resist_type = pin->GetString("mhd","ohmic_resistivity");
     // Check for valid type
-    if (iso_resist_type.compare("constant") != 0) {
+    if (iso_resist_type.compare("constant") != 0 && iso_resist_type.compare("perna") != 0) {
       std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__ << std::endl
                 << "Invalid choice for Ohmic resistivity type" << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    // constant resistivity
-    eta_ohm = pin->GetReal("mhd","eta_ohm");
+      
+    // Total number of MeshBlocks on this rank to be used in array dimensioning
+    int nmb = std::max((pp->nmb_thispack), (pp->pmesh->nmb_maxperrank));
+    auto &indcs = pp->pmesh->mb_indcs;
+    int ncells1 = indcs.nx1 + 2*(indcs.ng);
+    int ncells2 = (indcs.nx2 > 1)? (indcs.nx2 + 2*(indcs.ng)) : 1;
+    int ncells3 = (indcs.nx3 > 1)? (indcs.nx3 + 2*(indcs.ng)) : 1;
+    Kokkos::realloc(efld_resist.x1e, nmb, ncells3+1, ncells2+1, ncells1);
+    Kokkos::realloc(efld_resist.x2e, nmb, ncells3+1, ncells2, ncells1+1);
+    Kokkos::realloc(efld_resist.x3e, nmb, ncells3, ncells2+1, ncells1+1);
+    if (iso_resist_type.compare("constant") == 0) {
+      // constant resistivity
+      eta_ohm_const = pin->GetReal("mhd","eta_ohm_const");
+    } else {
+      min_xe = pin->GetReal("mhd","min_xe");
+      Kokkos::realloc(eta_b, nmb, ncells3, ncells2, ncells1);
+    }
   }
 }
 
@@ -44,6 +61,23 @@ Resistivity::Resistivity(MeshBlockPack *pp, ParameterInput *pin) :
 Resistivity::~Resistivity() {
 }
 
+void Resistivity::SetResistivity(const DvceArray5D<Real> &w, const Real &gamma, const Real &Rgas, DvceArray4D<Real> &eta_b, const int il, const int iu, const int jl, const int ju, const int kl, const int ku) {
+  int &nmb = pmy_pack->nmb_thispack;
+  Real gm1 = gamma - 1.0;
+  par_for("mhd_resistval", DevExeSpace(), 0, (nmb-1), kl, ku, jl, ju, il, iu,
+  KOKKOS_LAMBDA(int m, int k, int j, int i) {
+    Real rho = w(m,IDN,k,j,i);
+    Real p = gm1*w(m,IEN,k,j,i);
+    Real T = p/Rgas/rho;
+    Real kb = 1.380649e-16;
+    Real mh = 1.67262192369e-24;
+    Real mu = kb/mh/Rgas;
+    Real nn = rho/(mu*mh);
+    ResistivityPerna(nn, T, eta_b(m,k,j,i));
+  });
+  return;
+}
+
 //----------------------------------------------------------------------------------------
 //! \fn void AddResistiveEMFs()
 //! \brief Wrapper function that adds electric fields for different types of resistivity
@@ -51,7 +85,8 @@ Resistivity::~Resistivity() {
 
 void Resistivity::AddResistiveEMFs(const DvceFaceFld4D<Real> &b0,
     DvceEdgeFld4D<Real> &efld) {
-  AddEMFConstantResist(b0, efld);
+//  AddEMFConstantResist(b0, efld);
+  AddEMFDirect(efld_resist, efld);
   return;
 }
 
@@ -61,9 +96,9 @@ void Resistivity::AddResistiveEMFs(const DvceFaceFld4D<Real> &b0,
 //! resistivity.
 //! Currently only Ohmic resistivity with constant coefficient is implemented.
 
-void Resistivity::AddResistiveFluxes(const DvceFaceFld4D<Real> &b0,
-    DvceFaceFld5D<Real> &flx) {
-  AddFluxConstantResist(b0, flx);
+void Resistivity::AddResistiveFluxes(const DvceFaceFld4D<Real> &b0, const DvceArray5D<Real> &bc, DvceFaceFld5D<Real> &flx) {
+//  AddFluxConstantGridResist(b0, flx);
+  AddFluxGeneralResist(b0, bc, flx);
   return;
 }
 
@@ -93,7 +128,7 @@ void Resistivity::AddEMFConstantResist(const DvceFaceFld4D<Real> &b0,
     auto e2 = efld.x2e;
     auto e3 = efld.x3e;
     auto &mbsize = pmy_pack->pmb->mb_size;
-    auto eta_o = eta_ohm;
+    auto eta_o = eta_ohm_const;
 
     int scr_level = 0;
     size_t scr_size = ScrArray1D<Real>::shmem_size(ncells1) * 3;
@@ -104,7 +139,7 @@ void Resistivity::AddEMFConstantResist(const DvceFaceFld4D<Real> &b0,
       ScrArray1D<Real> j2(member.team_scratch(scr_level), ncells1);
       ScrArray1D<Real> j3(member.team_scratch(scr_level), ncells1);
 
-      CurrentDensity(member, m, ks, js, is, ie+1, b0, mbsize.d_view(m), j1, j2, j3);
+      CurrentDensity(pmy_pack, member, m, ks, js, is, ie+1, b0, mbsize.d_view(m), j1, j2, j3);
 
       // Add E_{resistive} = \eta J to corner-centered electric fields
       par_for_inner(member, is, ie+1, [&](const int i) {
@@ -124,7 +159,7 @@ void Resistivity::AddEMFConstantResist(const DvceFaceFld4D<Real> &b0,
     auto e2 = efld.x2e;
     auto e3 = efld.x3e;
     auto &mbsize = pmy_pack->pmb->mb_size;
-    auto eta_o = eta_ohm;
+    auto eta_o = eta_ohm_const;
 
     int scr_level = 0;
     size_t scr_size = ScrArray1D<Real>::shmem_size(ncells1) * 3;
@@ -135,7 +170,7 @@ void Resistivity::AddEMFConstantResist(const DvceFaceFld4D<Real> &b0,
       ScrArray1D<Real> j2(member.team_scratch(scr_level), ncells1);
       ScrArray1D<Real> j3(member.team_scratch(scr_level), ncells1);
 
-      CurrentDensity(member, m, ks, j, is, ie+1, b0, mbsize.d_view(m), j1, j2, j3);
+      CurrentDensity(pmy_pack, member, m, ks, j, is, ie+1, b0, mbsize.d_view(m), j1, j2, j3);
 
       // Add E_{resistive} = \eta J to corner-centered electric fields
       par_for_inner(member, is, ie+1, [&](const int i) {
@@ -156,7 +191,7 @@ void Resistivity::AddEMFConstantResist(const DvceFaceFld4D<Real> &b0,
   auto e2 = efld.x2e;
   auto e3 = efld.x3e;
   auto &mbsize = pmy_pack->pmb->mb_size;
-  auto eta_o = eta_ohm;
+  auto eta_o = eta_ohm_const;
 
   int scr_level = 0;
   size_t scr_size = ScrArray1D<Real>::shmem_size(ncells1) * 3;
@@ -167,7 +202,7 @@ void Resistivity::AddEMFConstantResist(const DvceFaceFld4D<Real> &b0,
     ScrArray1D<Real> j2(member.team_scratch(scr_level), ncells1);
     ScrArray1D<Real> j3(member.team_scratch(scr_level), ncells1);
 
-    CurrentDensity(member, m, k, j, is, ie+1, b0, mbsize.d_view(m), j1, j2, j3);
+    CurrentDensity(pmy_pack, member, m, k, j, is, ie+1, b0, mbsize.d_view(m), j1, j2, j3);
 
     // Add E_{resistive} = \eta J to corner-centered electric fields
     par_for_inner(member, is, ie+1, [&](const int i) {
@@ -180,12 +215,125 @@ void Resistivity::AddEMFConstantResist(const DvceFaceFld4D<Real> &b0,
   return;
 }
 
+void Resistivity::AddEMFGeneralResist(const DvceFaceFld4D<Real> &b0,
+    DvceEdgeFld4D<Real> &efld) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  int is = indcs.is, ie = indcs.ie;
+  int js = indcs.js, je = indcs.je;
+  int ks = indcs.ks, ke = indcs.ke;
+  int ncells1 = indcs.nx1 + 2*(indcs.ng);
+  int nmb1 = pmy_pack->nmb_thispack - 1;
+    
+  auto &use_spherical_polar = pmy_pack->pmesh->use_spherical_polar;
+  auto &x1v_ = pmy_pack->pcoord->x1v;
+  auto &x1f_ = pmy_pack->pcoord->xx1f;
+  auto &x2v_ = pmy_pack->pcoord->x2v;
+  auto &x2f_ = pmy_pack->pcoord->xx2f;
+  auto &x3v_ = pmy_pack->pcoord->x3v;
+  auto &x3f_ = pmy_pack->pcoord->xx3f;
+
+  //---- 1-D problem:
+  //  copy face-centered E-fields to edges and return.
+  //  Note e2[is:ie+1,js:je,  ks:ke+1]
+  //       e3[is:ie+1,js:je+1,ks:ke  ]
+
+  if (pmy_pack->pmesh->one_d) {
+    // capture class variables for the kernels
+    auto e2 = efld.x2e;
+    auto e3 = efld.x3e;
+    auto &mbsize = pmy_pack->pmb->mb_size;
+
+    int scr_level = 0;
+    size_t scr_size = ScrArray1D<Real>::shmem_size(ncells1) * 3;
+
+    par_for_outer("ohm1", DevExeSpace(), scr_size, scr_level, 0, nmb1,
+    KOKKOS_LAMBDA(TeamMember_t member, const int m) {
+      ScrArray1D<Real> j1(member.team_scratch(scr_level), ncells1);
+      ScrArray1D<Real> j2(member.team_scratch(scr_level), ncells1);
+      ScrArray1D<Real> j3(member.team_scratch(scr_level), ncells1);
+
+      CurrentDensity(pmy_pack, member, m, ks, js, is, ie+1, b0, mbsize.d_view(m), j1, j2, j3);
+
+      // Add E_{resistive} = \eta J to corner-centered electric fields
+      par_for_inner(member, is, ie+1, [&](const int i) {
+        e2(m,ks,  js  ,i) += 0.5*(eta_b(m,ks,js,i)+eta_b(m,ks,js,i-1))*j2(i);
+        e2(m,ke+1,js  ,i) += 0.5*(eta_b(m,ke+1,js,i)+eta_b(m,ke+1,js,i-1))*j2(i);
+        e3(m,ks  ,js  ,i) += 0.5*(eta_b(m,ks,js,i)+eta_b(m,ks,js,i-1))*j3(i);
+        e3(m,ks  ,je+1,i) += 0.5*(eta_b(m,ks,je+1,i)+eta_b(m,ks,je+1,i-1))*j3(i);
+      });
+    });
+    return;
+  }
+
+  //---- 2-D problem:
+  if (pmy_pack->pmesh->two_d) {
+    // capture class variables for the kernels
+    auto e1 = efld.x1e;
+    auto e2 = efld.x2e;
+    auto e3 = efld.x3e;
+    auto &mbsize = pmy_pack->pmb->mb_size;
+    auto eta_o = eta_ohm_const;
+
+    int scr_level = 0;
+    size_t scr_size = ScrArray1D<Real>::shmem_size(ncells1) * 3;
+
+    par_for_outer("ohm2", DevExeSpace(), scr_size, scr_level, 0, nmb1, js, je+1,
+    KOKKOS_LAMBDA(TeamMember_t member, const int m, const int j) {
+      ScrArray1D<Real> j1(member.team_scratch(scr_level), ncells1);
+      ScrArray1D<Real> j2(member.team_scratch(scr_level), ncells1);
+      ScrArray1D<Real> j3(member.team_scratch(scr_level), ncells1);
+
+      CurrentDensity(pmy_pack, member, m, ks, j, is, ie+1, b0, mbsize.d_view(m), j1, j2, j3);
+
+      // Add E_{resistive} = \eta J to corner-centered electric fields
+      par_for_inner(member, is, ie+1, [&](const int i) {
+        e1(m,ks,  j,i) += 0.5*(eta_b(m,ks,j,i)+eta_b(m,ks,j-1,i))*j1(i);
+        e1(m,ke+1,j,i) += 0.5*(eta_b(m,ke+1,j,i)+eta_b(m,ke+1,j-1,i))*j1(i);
+        e2(m,ks,  j,i) += 0.5*(eta_b(m,ks,j,i)+eta_b(m,ks,j,i-1))*j2(i);
+        e2(m,ke+1,j,i) += 0.5*(eta_b(m,ke+1,j,i)+eta_b(m,ke+1,j,i-1))*j2(i);
+        e3(m,ks  ,j,i) += 0.25*(eta_b(m,ks,j,i)+eta_b(m,ks,j,i-1)+eta_b(m,ks,j-1,i)+eta_b(m,ks,j-1,i-1))*j3(i);
+      });
+    });
+    return;
+  }
+
+  //---- 3-D problem:
+
+  // capture class variables for the kernels
+  auto e1 = efld.x1e;
+  auto e2 = efld.x2e;
+  auto e3 = efld.x3e;
+  auto &mbsize = pmy_pack->pmb->mb_size;
+  auto eta_o = eta_ohm_const;
+
+  int scr_level = 0;
+  size_t scr_size = ScrArray1D<Real>::shmem_size(ncells1) * 3;
+
+  par_for_outer("ohm3", DevExeSpace(), scr_size, scr_level, 0, nmb1, ks, ke+1, js, je+1,
+  KOKKOS_LAMBDA(TeamMember_t member, const int m, const int k, const int j) {
+    ScrArray1D<Real> j1(member.team_scratch(scr_level), ncells1);
+    ScrArray1D<Real> j2(member.team_scratch(scr_level), ncells1);
+    ScrArray1D<Real> j3(member.team_scratch(scr_level), ncells1);
+
+    CurrentDensity(pmy_pack, member, m, k, j, is, ie+1, b0, mbsize.d_view(m), j1, j2, j3);
+
+    // Add E_{resistive} = \eta J to corner-centered electric fields
+    par_for_inner(member, is, ie+1, [&](const int i) {
+      e1(m,k,j,i) += 0.25*(eta_b(m,k,j,i)+eta_b(m,k,j-1,i)+eta_b(m,k-1,j,i)+eta_b(m,k-1,j-1,i))*j1(i);
+      e2(m,k,j,i) += 0.25*(eta_b(m,k,j,i)+eta_b(m,k,j,i-1)+eta_b(m,k-1,j,i)+eta_b(m,k-1,j,i-1))*j2(i);
+      e3(m,k,j,i) += 0.25*(eta_b(m,k,j,i)+eta_b(m,k,j-1,i)+eta_b(m,k,j,i-1)+eta_b(m,k,j-1,i-1))*j3(i);
+    });
+  });
+
+  return;
+}
+
 //----------------------------------------------------------------------------------------
 //! \fn AddResistiveFluxConstantResist()
 //  \brief Adds Poynting flux from Ohmic resistivity to energy flux
 //  Total energy equation is dE/dt = - Div(F) where F = (E X B) = \eta (J X B)
 
-void Resistivity::AddFluxConstantResist(const DvceFaceFld4D<Real> &b,
+void Resistivity::AddFluxConstantGridResist(const DvceFaceFld4D<Real> &b,
                                         DvceFaceFld5D<Real> &flx) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
@@ -195,7 +343,7 @@ void Resistivity::AddFluxConstantResist(const DvceFaceFld4D<Real> &b,
   auto size = pmy_pack->pmb->mb_size;
   bool &multi_d = pmy_pack->pmesh->multi_d;
   bool &three_d = pmy_pack->pmesh->three_d;
-  Real qa = 0.25*eta_ohm;
+  Real qa = 0.25*eta_ohm_const;
 
   //------------------------------
   // energy fluxes in x1-direction
@@ -276,11 +424,363 @@ void Resistivity::AddFluxConstantResist(const DvceFaceFld4D<Real> &b,
   return;
 }
 
+void Resistivity::ClearResistiveEMFs(DvceEdgeFld4D<Real> &efld) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  int is = indcs.is, ie = indcs.ie;
+  int js = indcs.js, je = indcs.je;
+  int ks = indcs.ks, ke = indcs.ke;
+  int nmb1 = pmy_pack->nmb_thispack - 1;
+
+  //---- 1-D problem:
+  //  Note e2[is:ie+1,js:je,  ks:ke+1]
+  //       e3[is:ie+1,js:je+1,ks:ke  ]
+
+  if (pmy_pack->pmesh->one_d) {
+    // capture class variables for the kernels
+    auto e2 = efld.x2e;
+    auto e3 = efld.x3e;
+
+    par_for("ohm10", DevExeSpace(), 0, nmb1, is, ie+1,
+    KOKKOS_LAMBDA(const int m, const int i) {
+      e2(m,ks,  js  ,i) = 0.0;
+      e2(m,ke+1,js  ,i) = 0.0;
+      e3(m,ks  ,js  ,i) = 0.0;
+      e3(m,ks  ,je+1,i) = 0.0;
+    });
+    return;
+  }
+
+  //---- 2-D problem:
+  if (pmy_pack->pmesh->two_d) {
+    // capture class variables for the kernels
+    auto e1 = efld.x1e;
+    auto e2 = efld.x2e;
+    auto e3 = efld.x3e;
+
+    par_for("ohm20", DevExeSpace(), 0, nmb1, js, je+1, is, ie+1,
+    KOKKOS_LAMBDA(const int m, const int j, const int i) {
+      e1(m,ks,  j,i) = 0.0;
+      e1(m,ke+1,j,i) = 0.0;
+      e2(m,ks,  j,i) = 0.0;
+      e2(m,ke+1,j,i) = 0.0;
+      e3(m,ks  ,j,i) = 0.0;
+    });
+    return;
+  }
+
+  //---- 3-D problem:
+
+  // capture class variables for the kernels
+  auto e1 = efld.x1e;
+  auto e2 = efld.x2e;
+  auto e3 = efld.x3e;
+
+  par_for("ohm30", DevExeSpace(), 0, nmb1, ks, ke+1, js, je+1, is, ie+1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    e1(m,k,j,i) = 0.0;
+    e2(m,k,j,i) = 0.0;
+    e3(m,k,j,i) = 0.0;
+  });
+
+  return;
+}
+
+void Resistivity::AddEMFDirect(const DvceEdgeFld4D<Real> &efld_resist, DvceEdgeFld4D<Real> &efld) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  int is = indcs.is, ie = indcs.ie;
+  int js = indcs.js, je = indcs.je;
+  int ks = indcs.ks, ke = indcs.ke;
+  int nmb1 = pmy_pack->nmb_thispack - 1;
+
+  //---- 1-D problem:
+  //  Note e2[is:ie+1,js:je,  ks:ke+1]
+  //       e3[is:ie+1,js:je+1,ks:ke  ]
+
+  if (pmy_pack->pmesh->one_d) {
+    // capture class variables for the kernels
+    auto e2 = efld.x2e;
+    auto e3 = efld.x3e;
+    auto e2r = efld_resist.x2e;
+    auto e3r = efld_resist.x3e;
+
+    par_for("ohm1", DevExeSpace(), 0, nmb1, is, ie+1,
+    KOKKOS_LAMBDA(const int m, const int i) {
+      e2(m,ks,  js  ,i) += e2r(m,ks,  js  ,i);
+      e2(m,ke+1,js  ,i) += e2r(m,ke+1,js  ,i);
+      e3(m,ks  ,js  ,i) += e3r(m,ks  ,js  ,i);
+      e3(m,ks  ,je+1,i) += e3r(m,ks  ,je+1,i);
+    });
+    return;
+  }
+
+  //---- 2-D problem:
+  if (pmy_pack->pmesh->two_d) {
+    // capture class variables for the kernels
+    auto e1 = efld.x1e;
+    auto e2 = efld.x2e;
+    auto e3 = efld.x3e;
+    auto e1r = efld_resist.x1e;
+    auto e2r = efld_resist.x2e;
+    auto e3r = efld_resist.x3e;
+
+    par_for("ohm2", DevExeSpace(), 0, nmb1, js, je+1, is, ie+1,
+    KOKKOS_LAMBDA(const int m, const int j, const int i) {
+      e1(m,ks,  j,i) += e1r(m,ks,  j,i);
+      e1(m,ke+1,j,i) += e1r(m,ke+1,j,i);
+      e2(m,ks,  j,i) += e2r(m,ks,  j,i);
+      e2(m,ke+1,j,i) += e2r(m,ke+1,j,i);
+      e3(m,ks  ,j,i) += e3r(m,ks  ,j,i);
+    });
+    return;
+  }
+
+  //---- 3-D problem:
+
+  // capture class variables for the kernels
+  auto e1 = efld.x1e;
+  auto e2 = efld.x2e;
+  auto e3 = efld.x3e;
+  auto e1r = efld_resist.x1e;
+  auto e2r = efld_resist.x2e;
+  auto e3r = efld_resist.x3e;
+
+  par_for("ohm3", DevExeSpace(), 0, nmb1, ks, ke+1, js, je+1, is, ie+1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    e1(m,k,j,i) += e1r(m,k,j,i);
+    e2(m,k,j,i) += e2r(m,k,j,i);
+    e3(m,k,j,i) += e3r(m,k,j,i);
+  });
+
+  return;
+}
+
+void Resistivity::AddFluxGeneralResist(const DvceFaceFld4D<Real> &b, const DvceArray5D<Real> &bc, DvceFaceFld5D<Real> &flx) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  int is = indcs.is, ie = indcs.ie;
+  int js = indcs.js, je = indcs.je;
+  int ks = indcs.ks, ke = indcs.ke;
+  int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto size = pmy_pack->pmb->mb_size;
+  const bool one_d = pmy_pack->pmesh->one_d;
+  const bool two_d = pmy_pack->pmesh->two_d;
+  const bool three_d = pmy_pack->pmesh->three_d;
+    
+  ClearResistiveEMFs(efld_resist);
+//  if (iso_resist_type.compare("constant") == 0) {
+//    AddEMFConstantResist(b, efld_resist);
+//  } else {
+    AddEMFGeneralResist(b, efld_resist);
+//  }
+  auto &e1 = efld_resist.x1e;
+  auto &e2 = efld_resist.x2e;
+  auto &e3 = efld_resist.x3e;
+    
+  auto &use_spherical_polar = pmy_pack->pmesh->use_spherical_polar;
+  auto &x1v_ = pmy_pack->pcoord->x1v;
+  auto &x1f_ = pmy_pack->pcoord->xx1f;
+  auto &x2v_ = pmy_pack->pcoord->x2v;
+  auto &x2f_ = pmy_pack->pcoord->xx2f;
+  auto &x3v_ = pmy_pack->pcoord->x3v;
+  auto &x3f_ = pmy_pack->pcoord->xx3f;
+
+  //------------------------------
+  // energy fluxes in x1-direction
+  auto &flx1 = flx.x1f;
+  par_for("ohm_heat1", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+
+    Real e3a, e2a;
+    if (one_d) {
+      e3a = e3(m,k,j,i);
+    } else {
+      Real fl2 = 0.5;
+      Real fr2 = 0.5;
+      if (use_spherical_polar) {
+        Real dx2tot = x2f_(m,j+1)-x2f_(m,j);
+        fl2 = (x2f_(m,j+1)-x2v_(m,j))/dx2tot;
+        fr2 = 1.0 - fl2;
+      }
+      e3a = fl2*e3(m,k,j,i) + fr2*e3(m,k,j+1,i);
+    }
+    if (three_d) {
+      Real fl3 = 0.5;
+      Real fr3 = 0.5;
+      if (use_spherical_polar) {
+        Real dx3tot = x3f_(m,k+1)-x3f_(m,k);
+        fl3 = (x3f_(m,k+1)-x3v_(m,k))/dx3tot;
+        fr3 = 1.0 - fl3;
+      }
+      e2a = fl3*e2(m,k,j,i) + fr3*e2(m,k+1,j,i);
+    } else {
+      e2a = e2(m,k,j,i);
+    }
+    Real fr1 = 0.5;
+    Real fl1 = 0.5;
+    if (use_spherical_polar) {
+      Real dx1tot = x1v_(m,i)-x1v_(m,i-1);
+      fl1 = (x1v_(m,i)-x1f_(m,i))/dx1tot;
+      fr1 = 1.0 - fl1;
+    }
+      
+    // flx1 = (E X B)_{1} =  ((\eta J) X B)_{1} = \eta (J2*B3 - J3*B2)
+    flx1(m,IEN,k,j,i) += -(fr1*bc(m,IBY,k,j,i) + fl1*bc(m,IBY,k,j,i-1))*e3a
+      + (fr1*bc(m,IBZ,k,j,i) + fl1*bc(m,IBZ,k,j,i-1))*e2a;
+  });
+  if (one_d) {return;}
+
+  //------------------------------
+  // energy fluxes in x2-direction
+  auto &flx2 = flx.x2f;
+  par_for("ohm_heat2", DevExeSpace(), 0, nmb1, ks, ke, js, je+1, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    Real e1a;
+    Real fl1 = 0.5;
+    Real fr1 = 0.5;
+    if (use_spherical_polar) {
+      Real dx1tot = x1f_(m,i+1)-x1f_(m,i);
+      fl1 = (x1f_(m,i+1)-x1v_(m,i))/dx1tot;
+      fr1 = 1.0 - fl1;
+    }
+    Real e3a = fl1*e3(m,k,j,i) + fr1*e3(m,k,j,i+1);
+    if (three_d) {
+      Real fl3 = 0.5;
+      Real fr3 = 0.5;
+      if (use_spherical_polar) {
+        Real dx3tot = x3f_(m,k+1)-x3f_(m,k);
+        fl3 = (x3f_(m,k+1)-x3v_(m,k))/dx3tot;
+        fr3 = 1.0 - fl3;
+      }
+      e1a = fl3*e1(m,k,j,i) + fr3*e1(m,k+1,j,i);
+    } else {
+      e1a = e1(m,k,j,i);
+    }
+    Real fr2 = 0.5;
+    Real fl2 = 0.5;
+    if (use_spherical_polar) {
+      Real dx2tot = x2v_(m,j)-x2v_(m,j-1);
+      fl2 = (x2v_(m,j)-x2f_(m,j))/dx2tot;
+      fr2 = 1.0 - fl2;
+    }
+      
+    // E2 = \eta (J X B)_{2} = \eta (J3*B1 - J1*B3)
+    flx2(m,IEN,k,j,i) += -(fr2*bc(m,IBZ,k,j,i) + fl2*bc(m,IBZ,k,j-1,i))*e1a
+      + (fr2*bc(m,IBX,k,j,i) + fl2*bc(m,IBX,k,j-1,i))*e3a;
+  });
+  if (two_d) {return;}
+
+  //------------------------------
+  // energy fluxes in x3-direction
+  auto &flx3 = flx.x3f;
+  par_for("ohm_heat3", DevExeSpace(), 0, nmb1, ks, ke+1, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    Real fl1 = 0.5;
+    Real fr1 = 0.5;
+    if (use_spherical_polar) {
+      Real dx1tot = x1f_(m,i+1)-x1f_(m,i);
+      fl1 = (x1f_(m,i+1)-x1v_(m,i))/dx1tot;
+      fr1 = 1.0 - fl1;
+    }
+    Real e2a = fl1*e2(m,k,j,i) + fr1*e2(m,k,j,i+1);
+    Real fl2 = 0.5;
+    Real fr2 = 0.5;
+    if (use_spherical_polar) {
+      Real dx2tot = x2f_(m,j+1)-x2f_(m,j);
+      fl2 = (x2f_(m,j+1)-x2v_(m,j))/dx2tot;
+      fr2 = 1.0 - fl2;
+    }
+    Real e1a = fl2*e1(m,k,j,i) + fr2*e1(m,k,j+1,i);
+    Real fr3 = 0.5;
+    Real fl3 = 0.5;
+    if (use_spherical_polar) {
+      Real dx3tot = x3v_(m,k)-x3v_(m,k-1);
+      fl3 = (x3v_(m,k)-x3f_(m,k))/dx3tot;
+      fr3 = 1.0 - fl3;
+    }
+
+    // E2 = \eta (J X B)_{2} = \eta (J1*B2 - J2*B1)
+    flx3(m,IEN,k,j,i) += -(fr3*bc(m,IBX,k,j,i) + fl3*bc(m,IBX,k-1,j,i))*e2a
+      + (fr3*bc(m,IBY,k,j,i) + fl3*bc(m,IBY,k-1,j,i))*e1a;
+  });
+
+  return;
+}
+
 //----------------------------------------------------------------------------------------
 //! \fn void Resistivity::NewTimeStep()
 //! \brief Compute new time step for resistive MHD
 
 void Resistivity::NewTimeStep(const DvceArray5D<Real> &w0, const EOS_Data &eos_data) {
+  // resistive timestep on MeshBlock(s) in this pack
+//  if (iso_resist_type.compare("constant") == 0 && !pmy_pack->pmesh->use_spherical_polar) {
+//    NewTimeStepConstantGridResist(w0,eos_data);
+//  } else {
+    NewTimeStepGeneralResist(w0,eos_data);
+//  }
+  return;
+}
+
+void Resistivity::NewTimeStepGeneralResist(const DvceArray5D<Real> &w0, const EOS_Data &eos_data) {
+  // resistive timestep on MeshBlock(s) in this pack
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  int is = indcs.is, nx1 = indcs.nx1;
+  int js = indcs.js, nx2 = indcs.nx2;
+  int ks = indcs.ks, nx3 = indcs.nx3;
+
+  Real dt1 = std::numeric_limits<float>::max();
+  Real dt2 = std::numeric_limits<float>::max();
+  Real dt3 = std::numeric_limits<float>::max();
+    
+  auto &mbsize = pmy_pack->pmb->mb_size;
+  const int nmkji = (pmy_pack->nmb_thispack)*nx3*nx2*nx1;
+  const int nkji = nx3*nx2*nx1;
+  const int nji  = nx2*nx1;
+    
+  auto &use_spherical_polar = pmy_pack->pmesh->use_spherical_polar;
+  auto &dx1_ = pmy_pack->pcoord->dx1;
+  auto &dx2_ = pmy_pack->pcoord->dx2;
+  auto &dx3_ = pmy_pack->pcoord->dx3;
+    
+  Real fac;
+  if (pmy_pack->pmesh->three_d) {
+    fac = 1.0/6.0;
+  } else if (pmy_pack->pmesh->two_d) {
+    fac = 0.25;
+  } else {
+    fac = 0.5;
+  }
+  Kokkos::parallel_reduce("MHDdiffdt",Kokkos::RangePolicy<>(DevExeSpace(), 0, nmkji),
+  KOKKOS_LAMBDA(const int &idx, Real &min_dt1, Real &min_dt2, Real &min_dt3) {
+    // compute m,k,j,i indices of thread and call function
+    int m = (idx)/nkji;
+    int k = (idx - m*nkji)/nji;
+    int j = (idx - m*nkji - k*nji)/nx1;
+    int i = (idx - m*nkji - k*nji - j*nx1) + is;
+    k += ks;
+    j += js;
+    Real eta;
+//    if (iso_resist_type.compare("constant") == 0) {
+//      eta = eta_ohm_const;
+//    } else {
+      eta = eta_b(m,k,j,i);
+//    }
+    if (use_spherical_polar) {
+      min_dt1 = fmin(fac*SQR(dx1_(m,k,j,i))/eta, min_dt1);
+      min_dt2 = fmin(fac*SQR(dx2_(m,k,j,i))/eta, min_dt2);
+      min_dt3 = fmin(fac*SQR(dx3_(m,k,j,i))/eta, min_dt3);
+    } else {
+      min_dt1 = fmin(fac*SQR(mbsize.d_view(m).dx1)/eta, min_dt1);
+      min_dt2 = fmin(fac*SQR(mbsize.d_view(m).dx2)/eta, min_dt2);
+      min_dt3 = fmin(fac*SQR(mbsize.d_view(m).dx3)/eta, min_dt3);
+    }
+  }, Kokkos::Min<Real>(dt1), Kokkos::Min<Real>(dt2),Kokkos::Min<Real>(dt3));
+    
+  dtnew = dt1;
+  if (pmy_pack->pmesh->multi_d) { dtnew = std::min(dtnew, dt2); }
+  if (pmy_pack->pmesh->three_d) { dtnew = std::min(dtnew, dt3); }
+  return;
+}
+
+void Resistivity::NewTimeStepConstantGridResist(const DvceArray5D<Real> &w0, const EOS_Data &eos_data) {
   // resistive timestep on MeshBlock(s) in this pack
   dtnew = std::numeric_limits<float>::max();
   auto size = pmy_pack->pmb->mb_size;
@@ -293,12 +793,12 @@ void Resistivity::NewTimeStep(const DvceArray5D<Real> &w0, const EOS_Data &eos_d
     fac = 0.5;
   }
   for (int m=0; m<(pmy_pack->nmb_thispack); ++m) {
-    dtnew = std::min(dtnew, fac*SQR(size.h_view(m).dx1)/eta_ohm);
+    dtnew = std::min(dtnew, fac*SQR(size.h_view(m).dx1)/eta_ohm_const);
     if (pmy_pack->pmesh->multi_d) {
-      dtnew = std::min(dtnew, fac*SQR(size.h_view(m).dx2)/eta_ohm);
+      dtnew = std::min(dtnew, fac*SQR(size.h_view(m).dx2)/eta_ohm_const);
     }
     if (pmy_pack->pmesh->three_d) {
-      dtnew = std::min(dtnew, fac*SQR(size.h_view(m).dx3)/eta_ohm);
+      dtnew = std::min(dtnew, fac*SQR(size.h_view(m).dx3)/eta_ohm_const);
     }
   }
   return;

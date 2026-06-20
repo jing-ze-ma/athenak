@@ -23,6 +23,7 @@
 #include "srcterms/srcterms.hpp"
 #include "utils/random.hpp"
 #include "pgen.hpp"
+#include "diffusion/resistivity.hpp"
 
 #include <Kokkos_Random.hpp>
 
@@ -723,6 +724,20 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             u0_(m,IEN,k,j,i) += 0.5*(SQR(bcc0(m,IBX,k,j,i))+SQR(bcc0(m,IBY,k,j,i))+SQR(bcc0(m,IBZ,k,j,i)));
           }
       });
+    
+        if (pmbp->pmhd->presist != nullptr) {
+          if (pmbp->pmhd->presist->iso_resist_type.compare("constant") != 0) {
+            auto &eta_b = pmbp->pmhd->presist->eta_b;
+            if (use_etotgrav) {
+                pmbp->pmhd->RemoveGravEtot(phicc0, u0_, 0, n1m1, 0, n2m1, 0, n3m1);
+            }
+            pmbp->pmhd->peos->ConsToPrim(u0_, b0, w0_, bcc0, false, 0, n1m1, 0, n2m1, 0, n3m1);
+            if (use_etotgrav) {
+                pmbp->pmhd->AddGravEtot(phicc0, u0_, 0, n1m1, 0, n2m1, 0, n3m1);
+            }
+            pmbp->pmhd->presist->SetResistivity(w0_, pmbp->pmhd->peos->eos_data.gamma, Rgas, eta_b, 0, n1m1, 0, n2m1, 0, n3m1);
+          }
+        }
     }
 
   return;

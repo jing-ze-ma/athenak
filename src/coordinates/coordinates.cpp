@@ -25,10 +25,10 @@ Coordinates::Coordinates(ParameterInput *pin, MeshBlockPack *ppack) :
     excision_floor("excision_floor",1,1,1,1),
     excision_flux("excision_flux",1,1,1,1),
     volume("volume",1,1,1,1),
-    area("area",1,1,1,1),
+    area("area",1,1,1,1), areaedge("areae",1,1,1,1),
     dx1("dx1",1,1,1,1), dx2("dx2",1,1,1,1), dx3("dx3",1,1,1,1),
     x1v("x1v",1,1), x2v("x2v",1,1), x3v("x3v",1,1),
-    xx1f("xx1f",1,1), xx2f("xx2f",1,1), xx3f("xx3f",1,1), dxedge("dxe",1,1,1,1),
+    xx1f("xx1f",1,1), xx2f("xx2f",1,1), xx3f("xx3f",1,1), dxedge("dxe",1,1,1,1), dxface("dxf",1,1,1,1),
     sin_cell("sin_cell",1,1,1), cos_cell("cos_cell",1,1,1),
     sin_face1("sin_face1",1,1,1), cos_face1("cos_face1",1,1,1),
     sin_face2("sin_face2",1,1,1), cos_face2("cos_face2",1,1,1),
@@ -57,6 +57,12 @@ Coordinates::Coordinates(ParameterInput *pin, MeshBlockPack *ppack) :
     Kokkos::realloc(dxedge.x1e, nmb, ncells3+1, ncells2+1, ncells1);
     Kokkos::realloc(dxedge.x2e, nmb, ncells3+1, ncells2, ncells1+1);
     Kokkos::realloc(dxedge.x3e, nmb, ncells3, ncells2+1, ncells1+1);
+    Kokkos::realloc(dxface.x1f, nmb, ncells3, ncells2, ncells1+1);
+    Kokkos::realloc(dxface.x2f, nmb, ncells3, ncells2+1, ncells1);
+    Kokkos::realloc(dxface.x3f, nmb, ncells3+1, ncells2, ncells1);
+    Kokkos::realloc(areaedge.x1e, nmb, ncells3+1, ncells2+1, ncells1);
+    Kokkos::realloc(areaedge.x2e, nmb, ncells3+1, ncells2, ncells1+1);
+    Kokkos::realloc(areaedge.x3e, nmb, ncells3, ncells2+1, ncells1+1);
     Kokkos::realloc(x_ov_rD, nmb, ncells3, ncells2, ncells1);
     Kokkos::realloc(y_ov_rC, nmb, ncells3, ncells2, ncells1);
     Kokkos::realloc(z_ov_rE, nmb, ncells3, ncells2, ncells1);
@@ -685,6 +691,15 @@ void Coordinates::CoordSphericalPolar() {
     z_ov_rE(m,k,j,i) = (area1r - area.x1f(m,k,j,i)) / volume(m,k,j,i);
     x_ov_rD(m,k,j,i) = (area2r - area.x2f(m,k,j,i)) / volume(m,k,j,i);
     y_ov_rC(m,k,j,i) = (sinr-sinl)/(sinr+sinl);
+  });
+  par_for("spcoord_add", DevExeSpace(), 0,nmb1,0,n3m1,0,n2m1,0,n1m1,//ks,ke,js,je,is,ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    if (i > 0) dxface.x1f(m,k,j,i) = x1v(m,i) - x1v(m,i-1);
+    if (j > 0) dxface.x2f(m,k,j,i) = x1v(m,i)*(x2v(m,j)-x2v(m,j-1));
+    if (k > 0) dxface.x3f(m,k,j,i) = x1v(m,i)*fabs(sin(x2v(m,j)))*(x3v(m,k)-x3v(m,k-1));
+    if (j > 0 && k > 0) areaedge.x1e(m,k,j,i) = SQR(x1v(m,i)) * fabs(cos(x2v(m,j))-cos(x2v(m,j-1))) * (x3v(m,k)-x3v(m,k-1));
+    if (k > 0 && i > 0) areaedge.x2e(m,k,j,i) = 0.5 * (SQR(x1v(m,i))-SQR(x1v(m,i-1))) * fabs(sin(x2v(m,j))) * (x3v(m,k)-x3v(m,k-1));
+    if (i > 0 && j > 0) areaedge.x3e(m,k,j,i) = 0.5 * (SQR(x1v(m,i))-SQR(x1v(m,i-1))) * (x2v(m,j)-x2v(m,j-1));
   });
 }
 
