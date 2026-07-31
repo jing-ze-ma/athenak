@@ -29,6 +29,7 @@
 #include "rad_m1/rad_m1.hpp"
 #include "driver.hpp"
 #include "diffusion/resistivity.hpp"
+#include "gravity/gravity.hpp"
 
 #if MPI_PARALLEL_ENABLED
 #include <mpi.h>
@@ -410,6 +411,8 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
   }
 
   if (time_evolution == TimeEvolution::tstatic) {
+    std::cout << "\nStatic time evolution selected, solving steady-state problem...\n"
+              << std::endl;
     // TODO(@user): add work for time static problems here
   } else {
     Real elapsed_time = -1.;
@@ -427,6 +430,10 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       // time-integrator tasks for each stage of integrator
       for (int stage=1; stage<=(nexp_stages); ++stage) {
         ExecuteTaskList(pmesh, "before_stagen", stage);
+        // solve gravity at each RK stage so the potential is consistent
+        // with the current density (required for 2nd-order accuracy)
+        if (pmesh->pmb_pack->pgrav != nullptr)
+            {pmesh->pmb_pack->pgrav->pmgd->Solve(this, stage);}
         ExecuteTaskList(pmesh, "stagen", stage);
         ExecuteTaskList(pmesh, "after_stagen", stage);
       }

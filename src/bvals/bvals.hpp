@@ -16,8 +16,9 @@
 enum BoundaryFace {undef=-1, inner_x1, outer_x1, inner_x2, outer_x2, inner_x3, outer_x3};
 
 // identifiers for boundary conditions
-enum class BoundaryFlag {undef=-1,block, panel, polar, reflect, inflow, outflow, diode, user, periodic,
-                         shear_periodic, vacuum};
+enum class BoundaryFlag {undef=-1,block, panel, polar, reflect, inflow, outflow, diode,
+                         user, periodic, shear_periodic, vacuum,
+                         mg_zerograd, mg_zerofixed, mg_multipole};
 
 #include <algorithm>
 #include <vector>
@@ -27,6 +28,32 @@ enum class BoundaryFlag {undef=-1,block, panel, polar, reflect, inflow, outflow,
 #include "coordinates/coordinates.hpp"
 #include "tasklist/task_list.hpp"
 //#include "particles/particles.hpp"
+
+//----------------------------------------------------------------------------------------
+//! \struct RankPackedVarEntry
+//! \brief metadata for one (MeshBlock,neighbor) var-payload in a rank-packed message
+
+struct RankPackedVarEntry {
+  int m;
+  int n;
+  int lid;
+  int dn;
+  int data_size;
+  int offset;
+};
+
+//----------------------------------------------------------------------------------------
+//! \struct RankPackedVarMessage
+//! \brief metadata for one aggregated MPI vars message between ranks
+
+struct RankPackedVarMessage {
+  int rank;
+  int nentries;
+  int entry_offset;
+  int hdr_offset;
+  int offset;
+  int data_size;
+};
 
 // Forward declarations
 class MeshBlockPack;
