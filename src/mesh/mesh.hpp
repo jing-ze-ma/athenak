@@ -167,6 +167,7 @@ class Mesh {
   int *nprtcl_eachrank;    // number of particles on each rank
 
   Real time, dt, dtold, cfl_no;
+  Real dt_diff;
   int ncycle;
   EventCounters ecounter;
 

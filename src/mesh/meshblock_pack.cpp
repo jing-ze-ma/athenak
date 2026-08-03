@@ -46,6 +46,11 @@ MeshBlockPack::MeshBlockPack(Mesh *pm, int igids, int igide) :
   tl_map.insert(std::make_pair("before_stagen",std::make_shared<TaskList>()));
   tl_map.insert(std::make_pair("stagen",std::make_shared<TaskList>()));
   tl_map.insert(std::make_pair("after_stagen",std::make_shared<TaskList>()));
+  tl_map.insert(std::make_pair("before_rkg_timeintegrator",std::make_shared<TaskList>()));
+  tl_map.insert(std::make_pair("before_rkg_stagen",std::make_shared<TaskList>()));
+  tl_map.insert(std::make_pair("rkg_stagen",std::make_shared<TaskList>()));
+  tl_map.insert(std::make_pair("after_rkg_stagen",std::make_shared<TaskList>()));
+  tl_map.insert(std::make_pair("after_rkg_timeintegrator",std::make_shared<TaskList>()));
 }
 
 //----------------------------------------------------------------------------------------
@@ -133,6 +138,9 @@ void MeshBlockPack::AddPhysics(ParameterInput *pin) {
     if (!(pin->DoesBlockExist("hydro")) && !(pin->DoesBlockExist("radiation")) &&
         !(pin->DoesBlockExist("adm")) && !(pin->DoesBlockExist("z4c")) ) {
       pmhd->AssembleMHDTasks(tl_map);
+    }
+    if (pmhd->presist != nullptr) {
+      if (pmhd->presist->use_rkg_sts) pmhd->presist->AssembleResistRKGTasks(tl_map);
     }
   } else {
     pmhd = nullptr;

@@ -671,7 +671,11 @@ void Mesh::NewTimeStep(const Real tlim) {
     }
     // resistivity timestep
     if (pmb_pack->pmhd->presist != nullptr) {
-      dt = std::min(dt, (cfl_no)*(pmb_pack->pmhd->presist->dtnew) );
+      if (pmb_pack->pmhd->presist->use_rkg_sts) {
+        dt_diff = (cfl_no)*(pmb_pack->pmhd->presist->dtnew);
+      } else {
+        dt = std::min(dt, (cfl_no)*(pmb_pack->pmhd->presist->dtnew) );
+      }
     }
     // thermal conduction timestep
     if (pmb_pack->pmhd->pcond != nullptr) {
@@ -698,6 +702,13 @@ void Mesh::NewTimeStep(const Real tlim) {
 #if MPI_PARALLEL_ENABLED
   // get minimum dt over all MPI ranks
   MPI_Allreduce(MPI_IN_PLACE, &dt, 1, MPI_ATHENA_REAL, MPI_MIN, MPI_COMM_WORLD);
+  if (pmb_pack->pmhd != nullptr) {
+    if (pmb_pack->pmhd->presist != nullptr) {
+      if (pmb_pack->pmhd->presist->use_rkg_sts) {
+        MPI_Allreduce(MPI_IN_PLACE, &dt_diff, 1, MPI_ATHENA_REAL, MPI_MIN, MPI_COMM_WORLD);
+      }
+    }
+  }
 #endif
 
   // limit last time step to stop at tlim *exactly*

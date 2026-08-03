@@ -24,6 +24,7 @@
 #include "ion-neutral/ion-neutral.hpp"
 #include "radiation/radiation.hpp"
 #include "driver.hpp"
+#include "diffusion/resistivity.hpp"
 
 #if MPI_PARALLEL_ENABLED
 #include <mpi.h>
@@ -401,6 +402,23 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
         ExecuteTaskList(pmesh, "stagen", stage);
         ExecuteTaskList(pmesh, "after_stagen", stage);
       }
+        
+      if (pmesh->pmb_pack->pmhd != nullptr) {
+        if (pmesh->pmb_pack->pmhd->presist != nullptr) {
+          if (pmesh->pmb_pack->pmhd->presist->use_rkg_sts) {
+            // Work before time integrator indicated by "0" in stage
+            ExecuteTaskList(pmesh, "before_rkg_timeintegrator", 0);
+            // time-integrator tasks for each stage of integrator (operator-splitted RKG super-stepping method for diffusion)
+            for (int stage=1; stage<=(pmesh->pmb_pack->pmhd->presist->s); ++stage) {
+              ExecuteTaskList(pmesh, "before_rkg_stagen", stage);
+              ExecuteTaskList(pmesh, "rkg_stagen", stage);
+              ExecuteTaskList(pmesh, "after_rkg_stagen", stage);
+            }
+            // Work after time integrator indicated by "1" in stage
+            ExecuteTaskList(pmesh, "after_rkg_timeintegrator", 1);
+          }
+        }
+      }
 
       // Work after time integrator indicated by "1" in stage
       ExecuteTaskList(pmesh, "after_timeintegrator", 1);
@@ -530,6 +548,13 @@ void Driver::OutputCycleDiagnostics(Mesh *pm) {
     std::cout << "elapsed=" << std::scientific << std::setprecision(dtprcsn) << elapsed
               << " cycle=" << pm->ncycle
               << " time=" << pm->time << " dt=" << pm->dt << std::endl;
+    if (pm->pmb_pack->pmhd != nullptr) {
+      if (pm->pmb_pack->pmhd->presist != nullptr) {
+        if (pm->pmb_pack->pmhd->presist->use_rkg_sts) {
+          std::cout << "RKG super-stepping total stage=" << pm->pmb_pack->pmhd->presist->s << " dt_diff=" << pm->dt_diff << std::endl;
+        }
+      }
+    }
   }
   return;
 }

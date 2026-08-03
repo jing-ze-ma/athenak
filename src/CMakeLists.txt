@@ -34,6 +34,9 @@ add_executable(
         diffusion/conduction.cpp
         diffusion/resistivity.cpp
         diffusion/viscosity.cpp
+        diffusion/resistivity_rkg_tasks.cpp
+        diffusion/resistivity_update.cpp
+        diffusion/resistivity_ct.cpp
 
         driver/driver.cpp
 

@@ -51,6 +51,8 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
     e1_cc("e1_cc",1,1,1,1),
     e2_cc("e2_cc",1,1,1,1),
     e3_cc("e3_cc",1,1,1,1),
+    inner_local("inner",1),
+    outer_local("outer",1),
     phi0("phi_fc",1,1,1,1),
     phicc0("phi_cc",1,1,1,1),
     u0wb("conswb",1,1,1,1,1),
@@ -241,6 +243,14 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
       Kokkos::realloc(w0facewb.x1f, nmb, nmhd, ncells3, ncells2, ncells1+1);
       Kokkos::realloc(w0facewb.x2f, nmb, nmhd, ncells3, ncells2+1, ncells1);
       Kokkos::realloc(w0facewb.x3f, nmb, nmhd, ncells3+1, ncells2, ncells1);
+    }
+        
+    bool use_polar_boundary = pin->GetOrAddBoolean("mesh", "use_polar_boundary", false);
+    if (use_polar_boundary) {
+      auto &indcs = pmy_pack->pmesh->mb_indcs;
+      int ncells1 = indcs.nx1 + 2*(indcs.ng);
+      Kokkos::realloc(inner_local, ncells1);
+      Kokkos::realloc(outer_local, ncells1);
     }
         
   // for time-evolving problems, continue to construct methods, allocate arrays

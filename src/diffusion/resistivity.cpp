@@ -18,6 +18,7 @@
 #include "mesh/mesh.hpp"
 #include "resistivity.hpp"
 #include "current_density.hpp"
+#include "mhd/mhd.hpp"
 
 //----------------------------------------------------------------------------------------
 // ctor: also calls Resistivity base class constructor
@@ -25,7 +26,13 @@
 Resistivity::Resistivity(MeshBlockPack *pp, ParameterInput *pin) :
     pmy_pack(pp),
     efld_resist("efld_resist",1,1,1,1),
-    eta_b("eta_b",1,1,1,1) {
+    eta_b("eta_b",1,1,1,1),
+    u_ideal("u_ideal",1,1,1,1,1),
+    b_ideal("b_ideal",1,1,1,1),
+    uflx_ideal("uflx_ideal",1,1,1,1,1),
+    u2("u2",1,1,1,1,1),
+    b2("b2",1,1,1,1),
+    efld_ideal("efld_ideal",1,1,1,1) {
   // Read parameters for Ohmic resistivity (if any)
   if (pin->DoesParameterExist("mhd","ohmic_resistivity")) {
     iso_resist_type = pin->GetString("mhd","ohmic_resistivity");
@@ -35,6 +42,7 @@ Resistivity::Resistivity(MeshBlockPack *pp, ParameterInput *pin) :
                 << "Invalid choice for Ohmic resistivity type" << std::endl;
       std::exit(EXIT_FAILURE);
     }
+    use_rkg_sts = pin->GetOrAddBoolean("mhd", "use_rkg_sts", false);
       
     // Total number of MeshBlocks on this rank to be used in array dimensioning
     int nmb = std::max((pp->nmb_thispack), (pp->pmesh->nmb_maxperrank));
@@ -49,8 +57,36 @@ Resistivity::Resistivity(MeshBlockPack *pp, ParameterInput *pin) :
       // constant resistivity
       eta_ohm_const = pin->GetReal("mhd","eta_ohm_const");
     } else {
-      min_xe = pin->GetReal("mhd","min_xe");
+//      min_xe = pin->GetReal("mhd","min_xe");
+      max_eta = pin->GetReal("mhd","max_eta");
       Kokkos::realloc(eta_b, nmb, ncells3, ncells2, ncells1);
+    }
+    if (use_rkg_sts) {
+        int nmhd;
+        // (1) construct EOS object (no default)
+        std::string eqn_of_state = pin->GetString("mhd","eos");
+        // ideal gas EOS
+        if (eqn_of_state.compare("ideal") == 0) {
+          nmhd = 5;
+        // isothermal EOS
+        } else if (eqn_of_state.compare("isothermal") == 0) {
+          nmhd = 4;
+        }
+        int nscalars = pin->GetOrAddInteger("mhd","nscalars",0);
+        Kokkos::realloc(u_ideal,     nmb, (nmhd+nscalars), ncells3, ncells2, ncells1);
+        Kokkos::realloc(b_ideal.x1f, nmb, ncells3, ncells2, ncells1+1);
+        Kokkos::realloc(b_ideal.x2f, nmb, ncells3, ncells2+1, ncells1);
+        Kokkos::realloc(b_ideal.x3f, nmb, ncells3+1, ncells2, ncells1);
+        Kokkos::realloc(uflx_ideal.x1f, nmb, (nmhd+nscalars), ncells3, ncells2, ncells1+1);
+        Kokkos::realloc(uflx_ideal.x2f, nmb, (nmhd+nscalars), ncells3, ncells2+1, ncells1);
+        Kokkos::realloc(uflx_ideal.x3f, nmb, (nmhd+nscalars), ncells3+1, ncells2, ncells1);
+        Kokkos::realloc(u2,     nmb, (nmhd+nscalars), ncells3, ncells2, ncells1);
+        Kokkos::realloc(b2.x1f, nmb, ncells3, ncells2, ncells1+1);
+        Kokkos::realloc(b2.x2f, nmb, ncells3, ncells2+1, ncells1);
+        Kokkos::realloc(b2.x3f, nmb, ncells3+1, ncells2, ncells1);
+        Kokkos::realloc(efld_ideal.x1e, nmb, ncells3+1, ncells2+1, ncells1);
+        Kokkos::realloc(efld_ideal.x2e, nmb, ncells3+1, ncells2, ncells1+1);
+        Kokkos::realloc(efld_ideal.x3e, nmb, ncells3, ncells2+1, ncells1+1);
     }
   }
 }
@@ -74,6 +110,15 @@ void Resistivity::SetResistivity(const DvceArray5D<Real> &w, const Real &gamma, 
     Real mu = kb/mh/Rgas;
     Real nn = rho/(mu*mh);
     ResistivityPerna(nn, T, eta_b(m,k,j,i));
+//      Real lgrho = log10(rho);
+//      Real lgT = log10(T);
+//      lgrho = (lgrho < -7.0)? -7.0 : lgrho;
+//      lgrho = (lgrho > -2.0)? -2.0 : lgrho;
+//      lgT = (lgT < 3.0) ? 3.0 : lgT;
+//      lgT = (lgT > 4.542780748663102) ?  4.542780748663102 : lgT;
+//      lgrho = (lgrho+7.0)/(-2.0+7.0);
+//      lgT = (lgT-3.0)/(4.542780748663102-3.0);
+//    ResistivityKumar(lgrho, lgT, eta_b(m,k,j,i));
   });
   return;
 }
@@ -503,12 +548,19 @@ void Resistivity::AddEMFDirect(const DvceEdgeFld4D<Real> &efld_resist, DvceEdgeF
     auto e2r = efld_resist.x2e;
     auto e3r = efld_resist.x3e;
 
-    par_for("ohm1", DevExeSpace(), 0, nmb1, is, ie+1,
+    par_for("ohm1add", DevExeSpace(), 0, nmb1, is, ie+1,
     KOKKOS_LAMBDA(const int m, const int i) {
-      e2(m,ks,  js  ,i) += e2r(m,ks,  js  ,i);
-      e2(m,ke+1,js  ,i) += e2r(m,ke+1,js  ,i);
-      e3(m,ks  ,js  ,i) += e3r(m,ks  ,js  ,i);
-      e3(m,ks  ,je+1,i) += e3r(m,ks  ,je+1,i);
+      if (use_rkg_sts) {
+        e2(m,ks,  js  ,i) = e2r(m,ks,  js  ,i);
+        e2(m,ke+1,js  ,i) = e2r(m,ke+1,js  ,i);
+        e3(m,ks  ,js  ,i) = e3r(m,ks  ,js  ,i);
+        e3(m,ks  ,je+1,i) = e3r(m,ks  ,je+1,i);
+      } else {
+        e2(m,ks,  js  ,i) += e2r(m,ks,  js  ,i);
+        e2(m,ke+1,js  ,i) += e2r(m,ke+1,js  ,i);
+        e3(m,ks  ,js  ,i) += e3r(m,ks  ,js  ,i);
+        e3(m,ks  ,je+1,i) += e3r(m,ks  ,je+1,i);
+      }
     });
     return;
   }
@@ -523,13 +575,21 @@ void Resistivity::AddEMFDirect(const DvceEdgeFld4D<Real> &efld_resist, DvceEdgeF
     auto e2r = efld_resist.x2e;
     auto e3r = efld_resist.x3e;
 
-    par_for("ohm2", DevExeSpace(), 0, nmb1, js, je+1, is, ie+1,
+    par_for("ohm2add", DevExeSpace(), 0, nmb1, js, je+1, is, ie+1,
     KOKKOS_LAMBDA(const int m, const int j, const int i) {
-      e1(m,ks,  j,i) += e1r(m,ks,  j,i);
-      e1(m,ke+1,j,i) += e1r(m,ke+1,j,i);
-      e2(m,ks,  j,i) += e2r(m,ks,  j,i);
-      e2(m,ke+1,j,i) += e2r(m,ke+1,j,i);
-      e3(m,ks  ,j,i) += e3r(m,ks  ,j,i);
+      if (use_rkg_sts) {
+        e1(m,ks,  j,i) = e1r(m,ks,  j,i);
+        e1(m,ke+1,j,i) = e1r(m,ke+1,j,i);
+        e2(m,ks,  j,i) = e2r(m,ks,  j,i);
+        e2(m,ke+1,j,i) = e2r(m,ke+1,j,i);
+        e3(m,ks  ,j,i) = e3r(m,ks  ,j,i);
+      } else {
+        e1(m,ks,  j,i) += e1r(m,ks,  j,i);
+        e1(m,ke+1,j,i) += e1r(m,ke+1,j,i);
+        e2(m,ks,  j,i) += e2r(m,ks,  j,i);
+        e2(m,ke+1,j,i) += e2r(m,ke+1,j,i);
+        e3(m,ks  ,j,i) += e3r(m,ks  ,j,i);
+      }
     });
     return;
   }
@@ -544,11 +604,17 @@ void Resistivity::AddEMFDirect(const DvceEdgeFld4D<Real> &efld_resist, DvceEdgeF
   auto e2r = efld_resist.x2e;
   auto e3r = efld_resist.x3e;
 
-  par_for("ohm3", DevExeSpace(), 0, nmb1, ks, ke+1, js, je+1, is, ie+1,
+  par_for("ohm3add", DevExeSpace(), 0, nmb1, ks, ke+1, js, je+1, is, ie+1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    e1(m,k,j,i) += e1r(m,k,j,i);
-    e2(m,k,j,i) += e2r(m,k,j,i);
-    e3(m,k,j,i) += e3r(m,k,j,i);
+    if (use_rkg_sts) {
+      e1(m,k,j,i) = e1r(m,k,j,i);
+      e2(m,k,j,i) = e2r(m,k,j,i);
+      e3(m,k,j,i) = e3r(m,k,j,i);
+    } else {
+      e1(m,k,j,i) += e1r(m,k,j,i);
+      e2(m,k,j,i) += e2r(m,k,j,i);
+      e3(m,k,j,i) += e3r(m,k,j,i);
+    }
   });
 
   return;
@@ -623,8 +689,13 @@ void Resistivity::AddFluxGeneralResist(const DvceFaceFld4D<Real> &b, const DvceA
     }
       
     // flx1 = (E X B)_{1} =  ((\eta J) X B)_{1} = \eta (J2*B3 - J3*B2)
-    flx1(m,IEN,k,j,i) += -(fr1*bc(m,IBY,k,j,i) + fl1*bc(m,IBY,k,j,i-1))*e3a
-      + (fr1*bc(m,IBZ,k,j,i) + fl1*bc(m,IBZ,k,j,i-1))*e2a;
+    if (use_rkg_sts) {
+      flx1(m,IEN,k,j,i) = -(fr1*bc(m,IBY,k,j,i) + fl1*bc(m,IBY,k,j,i-1))*e3a
+        + (fr1*bc(m,IBZ,k,j,i) + fl1*bc(m,IBZ,k,j,i-1))*e2a;
+    } else {
+      flx1(m,IEN,k,j,i) += -(fr1*bc(m,IBY,k,j,i) + fl1*bc(m,IBY,k,j,i-1))*e3a
+        + (fr1*bc(m,IBZ,k,j,i) + fl1*bc(m,IBZ,k,j,i-1))*e2a;
+    }
   });
   if (one_d) {return;}
 
@@ -663,8 +734,13 @@ void Resistivity::AddFluxGeneralResist(const DvceFaceFld4D<Real> &b, const DvceA
     }
       
     // E2 = \eta (J X B)_{2} = \eta (J3*B1 - J1*B3)
-    flx2(m,IEN,k,j,i) += -(fr2*bc(m,IBZ,k,j,i) + fl2*bc(m,IBZ,k,j-1,i))*e1a
-      + (fr2*bc(m,IBX,k,j,i) + fl2*bc(m,IBX,k,j-1,i))*e3a;
+    if (use_rkg_sts) {
+      flx2(m,IEN,k,j,i) = -(fr2*bc(m,IBZ,k,j,i) + fl2*bc(m,IBZ,k,j-1,i))*e1a
+        + (fr2*bc(m,IBX,k,j,i) + fl2*bc(m,IBX,k,j-1,i))*e3a;
+    } else {
+      flx2(m,IEN,k,j,i) += -(fr2*bc(m,IBZ,k,j,i) + fl2*bc(m,IBZ,k,j-1,i))*e1a
+        + (fr2*bc(m,IBX,k,j,i) + fl2*bc(m,IBX,k,j-1,i))*e3a;
+    }
   });
   if (two_d) {return;}
 
@@ -698,8 +774,13 @@ void Resistivity::AddFluxGeneralResist(const DvceFaceFld4D<Real> &b, const DvceA
     }
 
     // E2 = \eta (J X B)_{2} = \eta (J1*B2 - J2*B1)
-    flx3(m,IEN,k,j,i) += -(fr3*bc(m,IBX,k,j,i) + fl3*bc(m,IBX,k-1,j,i))*e2a
-      + (fr3*bc(m,IBY,k,j,i) + fl3*bc(m,IBY,k-1,j,i))*e1a;
+    if (use_rkg_sts) {
+      flx3(m,IEN,k,j,i) = -(fr3*bc(m,IBX,k,j,i) + fl3*bc(m,IBX,k-1,j,i))*e2a
+        + (fr3*bc(m,IBY,k,j,i) + fl3*bc(m,IBY,k-1,j,i))*e1a;
+    } else {
+      flx3(m,IEN,k,j,i) += -(fr3*bc(m,IBX,k,j,i) + fl3*bc(m,IBX,k-1,j,i))*e2a
+        + (fr3*bc(m,IBY,k,j,i) + fl3*bc(m,IBY,k-1,j,i))*e1a;
+    }
   });
 
   return;

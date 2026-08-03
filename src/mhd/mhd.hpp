@@ -217,6 +217,8 @@ class MHD {
   DvceArray5D<Real> utest, bcctest;  // scratch arrays for FOFC
     
     void PolarAzimuthalAverageEr(void);
+    DvceArray1D<Real> inner_local;
+    DvceArray1D<Real> outer_local;
     
     void AddGravFlux(const DvceFaceFld4D<Real> &phi0, DvceFaceFld5D<Real> &flx);
     void AddGravEtot(const DvceArray4D<Real> &phicc0, DvceArray5D<Real> &cons, const int il, const int iu, const int jl, const int ju, const int kl, const int ku);

@@ -724,20 +724,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             u0_(m,IEN,k,j,i) += 0.5*(SQR(bcc0(m,IBX,k,j,i))+SQR(bcc0(m,IBY,k,j,i))+SQR(bcc0(m,IBZ,k,j,i)));
           }
       });
-    
-        if (pmbp->pmhd->presist != nullptr) {
-          if (pmbp->pmhd->presist->iso_resist_type.compare("constant") != 0) {
-            auto &eta_b = pmbp->pmhd->presist->eta_b;
-            if (use_etotgrav) {
-                pmbp->pmhd->RemoveGravEtot(phicc0, u0_, 0, n1m1, 0, n2m1, 0, n3m1);
-            }
-            pmbp->pmhd->peos->ConsToPrim(u0_, b0, w0_, bcc0, false, 0, n1m1, 0, n2m1, 0, n3m1);
-            if (use_etotgrav) {
-                pmbp->pmhd->AddGravEtot(phicc0, u0_, 0, n1m1, 0, n2m1, 0, n3m1);
-            }
-            pmbp->pmhd->presist->SetResistivity(w0_, pmbp->pmhd->peos->eos_data.gamma, Rgas, eta_b, 0, n1m1, 0, n2m1, 0, n3m1);
-          }
-        }
     }
 
   return;
@@ -988,16 +974,16 @@ void HydrostaticEquilibrium(Mesh *pm) {
               bcc0(m,IBZ,k,j,(ie+i+1)) = lw*b0_x3f(m,k,j,(ie+i+1)) + rw*b0_x3f(m,k+1,j,(ie+i+1));
 //                u0_(m,IEN,k,j,(ie+i+1)) +=  0.5*(SQR(bcc0(m,IBX,k,j,(ie+i+1)))+SQR(bcc0(m,IBY,k,j,(ie+i+1)))+SQR(bcc0(m,IBZ,k,j,(ie+i+1))));
 
-//              Real pb = 0.5*(SQR(b0_x1f(m,k,j,(ie+i+1)))+SQR(bcc0(m,IBY,k,j,(ie+i+1)))+SQR(bcc0(m,IBZ,k,j,(ie+i+1))));
-//              Real pbp1 = 0.5*(SQR(b0_x1f(m,k,j,(ie+i+2)))+SQR(bcc0(m,IBY,k,j,(ie+i+2)))+SQR(bcc0(m,IBZ,k,j,(ie+i+2))));
-//              Real M11 = pb - SQR(b0_x1f(m,k,j,(ie+i+1)));
-//              Real M11p1 = pbp1 - SQR(b0_x1f(m,k,j,(ie+i+2)));
-//              Real M12 = - b0_x2f(m,k,j,(ie+i+1)) * bcc0(m,IBX,k,j,(ie+i+1));
-//              Real M12p1 = - b0_x2f(m,k,j+1,(ie+i+1)) * bcc0(m,IBX,k,j+1,(ie+i+1));
-//              Real M13 = - b0_x3f(m,k,j,(ie+i+1)) * bcc0(m,IBX,k,j,(ie+i+1));
-//              Real M13p1 = - b0_x3f(m,k+1,j,(ie+i+1)) * bcc0(m,IBX,k+1,j,(ie+i+1));
-//              dM1mag = -( (M11p1*area1(m,k,j,(ie+i+2))-M11*area1(m,k,j,(ie+i+1))) + (M12p1*area2(m,k,j+1,(ie+i+1))-M12*area2(m,k,j,(ie+i+1))) + (M13p1*area3(m,k+1,j,(ie+i+1))-M13*area3(m,k,j,(ie+i+1))) )/volume(m,k,j,(ie+i+1));
-//              dM1mag += z_ov_rE(m,k,j,(ie+i+1)) * 0.5*SQR(bcc0(m,IBX,k,j,(ie+i+1)));
+              Real pb = 0.5*(SQR(b0_x1f(m,k,j,(ie+i+1)))+SQR(bcc0(m,IBY,k,j,(ie+i+1)))+SQR(bcc0(m,IBZ,k,j,(ie+i+1))));
+              Real pbp1 = 0.5*(SQR(b0_x1f(m,k,j,(ie+i+2)))+SQR(bcc0(m,IBY,k,j,(ie+i+2)))+SQR(bcc0(m,IBZ,k,j,(ie+i+2))));
+              Real M11 = pb - SQR(b0_x1f(m,k,j,(ie+i+1)));
+              Real M11p1 = pbp1 - SQR(b0_x1f(m,k,j,(ie+i+2)));
+              Real M12 = - b0_x2f(m,k,j,(ie+i+1)) * bcc0(m,IBX,k,j,(ie+i+1));
+              Real M12p1 = - b0_x2f(m,k,j+1,(ie+i+1)) * bcc0(m,IBX,k,j+1,(ie+i+1));
+              Real M13 = - b0_x3f(m,k,j,(ie+i+1)) * bcc0(m,IBX,k,j,(ie+i+1));
+              Real M13p1 = - b0_x3f(m,k+1,j,(ie+i+1)) * bcc0(m,IBX,k+1,j,(ie+i+1));
+              dM1mag = -( (M11p1*area1(m,k,j,(ie+i+2))-M11*area1(m,k,j,(ie+i+1))) + (M12p1*area2(m,k,j+1,(ie+i+1))-M12*area2(m,k,j,(ie+i+1))) + (M13p1*area3(m,k+1,j,(ie+i+1))-M13*area3(m,k,j,(ie+i+1))) )/volume(m,k,j,(ie+i+1));
+              dM1mag += z_ov_rE(m,k,j,(ie+i+1)) * 0.5*SQR(bcc0(m,IBX,k,j,(ie+i+1)));
             }
             Real dphi_i = phicc0(m,k,j,(ie+i+1))-phi_i;
             Real q0_ip = q0_i - factor_i * dphi_i;
@@ -2191,7 +2177,7 @@ void get_picket_fence_coeff(const Real &Teq, const Real &Teff, Real &gamv1, Real
   Real ap = -2.36;
   Real bp = 13.92;
   Real cp = -19.38;
-  if (Teff >= 1400.0) { // && Teq < 1800.0) {
+  if (Teff >= 1400.0 && Teq < 1800.0) {
     ap = -12.45;
     bp = 82.25;
     cp = -134.42;
@@ -2204,7 +2190,7 @@ void get_picket_fence_coeff(const Real &Teq, const Real &Teff, Real &gamv1, Real
     ab = 6.21;
     bb = -1.63;
   }
-  if (Teff >= 1400.0) { // && Teq < 1800.0) {
+  if (Teff >= 1400.0 && Teq < 1800.0) {
     ab = 3.0;
     bb = -0.69;
   }
@@ -2252,7 +2238,7 @@ void get_picket_fence_coeff(const Real &Teq, const Real &Teff, Real &gamv1, Real
     a1 = 12.65;
     b1 = -3.27;
   }
-  if (Teff >= 1400.0) { // && Teq < 1800.0) {
+  if (Teff >= 1400.0 && Teq < 1800.0) {
     if (Teff < 2000.0) {
       a3 = 0.02;
       b3 = -0.28;
@@ -2705,12 +2691,16 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
             // down-sweep
             for (int i=ie; i>is-1; --i) {
               Real dtauir = gamir*(tau_down_r_f[i]-tau_down_r_f[i+1]);
-              Real trans = exp(-dtauir/mugg);
-              Real e0 = -expm1(-dtauir/mugg);
-              Real e1 = dtauir/mugg - e0;
-              Real alpa = 0.5*e0*(fb*B[i+1]+fb*B[i])/(fb*B[i+1]);
-              Real alp = (dtauir > 1.0e-3) ? (e0 - e1/(dtauir/mugg)) : alpa;
-              Real bet = (dtauir > 1.0e-3) ? (e1/(dtauir/mugg)) : 0.0;
+//              Real trans = exp(-dtauir/mugg);
+//              Real e0 = -expm1(-dtauir/mugg);
+//              Real e1 = dtauir/mugg - e0;
+//              Real alpa = 0.5*e0*(fb*B[i+1]+fb*B[i])/(fb*B[i+1]);
+//              Real alp = (dtauir > 1.0e-3) ? (e0 - e1/(dtauir/mugg)) : alpa;
+//              Real bet = (dtauir > 1.0e-3) ? (e1/(dtauir/mugg)) : 0.0;
+              Real x = dtauir/mugg;
+              Real e0 = -expm1(-x);
+              Real alp = (x > 1.0e-3) ? (e0 - 1.0 + e0/x) : (x/2.0-SQR(x)/3.0);
+              Real bet = (x > 1.0e-3) ? (1.0 - e0/x) : (x/2.0-SQR(x)/6.0);
               I_ir_down_f[i] = (1.0-e0)*I_ir_down_f[i+1] + alp*fb*B[i+1] + bet*fb*B[i];
             }
               
@@ -2719,12 +2709,16 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
             // up-sweep
             for (int i=is+1; i<ie+2; ++i) {
               Real dtauir = gamir*(tau_down_r_f[i-1]-tau_down_r_f[i]);
-              Real trans = exp(-dtauir/mugg);
-              Real e0 = -expm1(-dtauir/mugg);
-              Real e1 = dtauir/mugg - e0;
-              Real beto = 0.5*e0*(fb*B[i]+fb*B[i-1])/(fb*B[i]);
-              Real bet = (dtauir > 1.0e-3) ? (e1/(dtauir/mugg)) : beto;
-              Real gam = (dtauir > 1.0e-3) ? (e0 - e1/(dtauir/mugg)) : 0.0;
+//              Real trans = exp(-dtauir/mugg);
+//              Real e0 = -expm1(-dtauir/mugg);
+//              Real e1 = dtauir/mugg - e0;
+//              Real beto = 0.5*e0*(fb*B[i]+fb*B[i-1])/(fb*B[i]);
+//              Real bet = (dtauir > 1.0e-3) ? (e1/(dtauir/mugg)) : beto;
+//              Real gam = (dtauir > 1.0e-3) ? (e0 - e1/(dtauir/mugg)) : 0.0;
+              Real x = dtauir/mugg;
+              Real e0 = -expm1(-x);
+              Real bet = (x > 1.0e-3) ? (1.0 - e0/x) : (x/2.0-SQR(x)/6.0);
+              Real gam = (x > 1.0e-3) ? (e0 - 1.0 + e0/x) : (x/2.0-SQR(x)/3.0);
               I_ir_up_f[i] = (1.0-e0)*I_ir_up_f[i-1] + bet*fb*B[i] + gam*fb*B[i-1];
             }
               
@@ -2763,50 +2757,49 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
             src += Q_v[i];
           Real du_flux = src*bdt;
             
-          // source term semi-implicit
-          Real p = w0(m,IEN,k,j,i)*gm1;
-          Real rho = w0(m,IDN,k,j,i);
-          Real T = p/Rgas/rho;
-          Real kapr;
-          get_kapr(T, p, met, kapr);
-          Real cv = Rgas*rho*igm1;
-          Real e0 = cv*T;
-          Real kk = 0.0;
-          Real bb = du_flux + e0;
-//          Real bb = Q_v(i)*bdt + e0;
-          for (int vir=0; vir<2; ++vir) {
-            Real gamir, fb;
-            if (vir == 0) {
-              gamir = gamir1;
-              fb = beta;
-            } else {
-              gamir = gamir2;
-              fb = 1.0-beta;
-            }
-            kk += -4.0*M_PI*gamir*kapr*rho*fb*boltz_sigma/M_PI*bdt;
-            bb += 4.0*M_PI*gamir*kapr*rho*fb*B[i]*bdt;
-          }
-//          bb += 4.0*M_PI*rho*kapJ_ir(i)*bdt;
-          int ierr=0;
-          Real e;
-          // Newton-Raphson
-          for (int n=0; n<100; ++n) {
-            e = cv*T;
-            Real de = e - kk*SQR(SQR(T)) - bb;
-            T -= de / (cv - 4.0*kk*T*T*T);
-            if (T < 0.0) {
-              e = e0;
-              ierr = 1;
-              break;
-            }
-            if (fabs(de) <= 1.0e-10*e)
-              break;
-          }
-          Real du_src = e-e0;
-
-          Real du = (fabs(du_flux) < e0 && ierr == 1) ? du_flux : du_src;
-//          Real du = du_src;
-//          Real du = du_flux;
+//          // source term semi-implicit
+//          Real p = w0(m,IEN,k,j,i)*gm1;
+//          Real rho = w0(m,IDN,k,j,i);
+//          Real T = p/Rgas/rho;
+//          Real kapr;
+//          get_kapr(T, p, met, kapr);
+//          Real cv = Rgas*rho*igm1;
+//          Real e0 = cv*T;
+//          Real kk = 0.0;
+//          Real bb = du_flux + e0;
+////          Real bb = Q_v(i)*bdt + e0;
+//          for (int vir=0; vir<2; ++vir) {
+//            Real gamir, fb;
+//            if (vir == 0) {
+//              gamir = gamir1;
+//              fb = beta;
+//            } else {
+//              gamir = gamir2;
+//              fb = 1.0-beta;
+//            }
+//            kk += -4.0*M_PI*gamir*kapr*rho*fb*boltz_sigma/M_PI*bdt;
+//            bb += 4.0*M_PI*gamir*kapr*rho*fb*B[i]*bdt;
+//          }
+////          bb += 4.0*M_PI*rho*kapJ_ir(i)*bdt;
+//          int ierr=0;
+//          Real e;
+//          // Newton-Raphson
+//          for (int n=0; n<100; ++n) {
+//            e = cv*T;
+//            Real de = e - kk*SQR(SQR(T)) - bb;
+//            T -= de / (cv - 4.0*kk*T*T*T);
+//            if (T < 0.0) {
+//              e = e0;
+//              ierr = 1;
+//              break;
+//            }
+//            if (fabs(de) <= 1.0e-10*e)
+//              break;
+//          }
+//          Real du_src = e-e0;
+//
+//          Real du = (fabs(du_flux) < e0 && ierr == 1) ? du_flux : du_src;
+          Real du = du_flux;
           u0(m,IEN,k,j,i) += du;
         }
 //        });
