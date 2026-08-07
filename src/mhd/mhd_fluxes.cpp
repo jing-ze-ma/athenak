@@ -318,6 +318,7 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
             } else {
             HLLD(member,eos,indcs,size,coord,
                     m,k,j,is-1,ie+1,IVY,wl,wr,bl,br,by,flx2,e12,e32);
+            }
           } else if constexpr (rsolver_method_ == MHD_RSolver::llf_sr) {
             LLF_SR(member,eos,indcs,size,coord,
                     m,k,j,is-1,ie+1,IVY,wl,wr,bl,br,by,flx2,e12,e32);
@@ -465,6 +466,7 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
             } else {
             HLLD(member,eos,indcs,size,coord,
                     m,k,j,is-1,ie+1,IVZ,wl,wr,bl,br,bz,flx3,e23,e13);
+            }
           } else if constexpr (rsolver_method_ == MHD_RSolver::llf_sr) {
             LLF_SR(member,eos,indcs,size,coord,
                     m,k,j,is-1,ie+1,IVZ,wl,wr,bl,br,bz,flx3,e23,e13);

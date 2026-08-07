@@ -1497,7 +1497,7 @@ void two_stream_RT(Mesh *pm, Real bdt) {
           tau_down_r_f[i] = tau_down_r_f[i+1] + kapr*rho*dr;
         }
         
-        // 2 IR Bands
+        // two-stream RT
         for (int i=is; i<ie+2; ++i) {
           F_ir_f[i] = 0.0;
         }

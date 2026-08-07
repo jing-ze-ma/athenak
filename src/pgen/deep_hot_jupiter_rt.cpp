@@ -2460,7 +2460,7 @@ void adjust_ad_pT_arr(const Real &gamma, const int &N, View1D Tarr, View1D lgpar
     Real nabla = (lgT - lgT1) / (lgp - lgp1);
 
     Real T = Tarr(i_inv);
-    Real nabla_ad = (gamma-1.0)/gamma; // 0.32 - 0.1 * (T / 3000.0);
+    Real nabla_ad = 0.9*(gamma-1.0)/gamma; // 0.32 - 0.1 * (T / 3000.0);
 
     if (nabla < nabla_ad) {
       ic = i_inv_p1;  // map back to original indexing
@@ -2473,7 +2473,7 @@ void adjust_ad_pT_arr(const Real &gamma, const int &N, View1D Tarr, View1D lgpar
     // --- enforce adiabat downward ---
     for (int ip = ic; ip < N-1; ++ip) {
       Real T = Tarr(ip);
-      Real nabla_ad = (gamma-1.0)/gamma; // 0.32 - 0.1 * (T / 3000.0);
+      Real nabla_ad = 0.9*(gamma-1.0)/gamma; // 0.32 - 0.1 * (T / 3000.0);
 
       Tarr(ip+1) = pow(10.0,
         nabla_ad * (lgparr(ip+1) - lgparr(ip)) + log10(T)
