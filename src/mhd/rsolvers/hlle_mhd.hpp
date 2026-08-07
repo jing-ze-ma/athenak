@@ -27,7 +27,8 @@ void HLLE(TeamMember_t const &member, const EOS_Data &eos,
      const RegionIndcs &indcs,const DualArray1D<RegionSize> &size,const CoordData &coord,
      const int m, const int k, const int j, const int il, const int iu, const int ivx,
      const ScrArray2D<Real> &wl, const ScrArray2D<Real> &wr,
-     const ScrArray2D<Real> &bl, const ScrArray2D<Real> &br, const DvceArray4D<Real> &bx,
+     const ScrArray2D<Real> &bl, const ScrArray2D<Real> &br,
+     const ScrArray2D<Real> &dl, const ScrArray2D<Real> &dr, const DvceArray4D<Real> &bx,
      DvceArray5D<Real> flx, DvceArray4D<Real> ey, DvceArray4D<Real> ez) {
   int ivy = IVX + ((ivx-IVX)+1)%3;
   int ivz = IVX + ((ivx-IVX)+2)%3;
@@ -54,8 +55,15 @@ void HLLE(TeamMember_t const &member, const EOS_Data &eos,
     Real &wr_iby = br(iby,i);
     Real &wr_ibz = br(ibz,i);
 
-    Real wl_ipr, wr_ipr;
-    if (eos.is_ideal) {
+    // For a general EOS the pressure and Gamma_1 were evaluated once per cell in
+    // ConsToPrim and reconstructed to this interface, so no EOS call is needed here.
+    Real wl_ipr, wr_ipr, g1l, g1r;
+    if (eos.IsGeneral()) {
+      wl_ipr = dl(IDPR,i);
+      wr_ipr = dr(IDPR,i);
+      g1l = dl(IDG1,i);
+      g1r = dr(IDG1,i);
+    } else if (eos.is_ideal) {
       wl_ipr = eos.IdealGasPressure(wl(IEN,i));
       wr_ipr = eos.IdealGasPressure(wr(IEN,i));
     }
@@ -83,7 +91,22 @@ void HLLE(TeamMember_t const &member, const EOS_Data &eos,
     Real pbl = 0.5*(bxi*bxi + SQR(wl_iby) + SQR(wl_ibz));
     Real pbr = 0.5*(bxi*bxi + SQR(wr_iby) + SQR(wr_ibz));
     Real el,er,hroe,cl,cr;
-    if (eos.is_ideal) {
+    if (eos.IsGeneral()) {
+      // internal energy density is a reconstructed primitive; e(p) would be a root find.
+      // Fast speed uses Gamma_1 p in place of gamma p; see EOS_Data::FastSpeed().
+      el = wl(IEN,i) + 0.5*wl_idn*(SQR(wl_ivx)+SQR(wl_ivy)+SQR(wl_ivz)) + pbl;
+      er = wr(IEN,i) + 0.5*wr_idn*(SQR(wr_ivx)+SQR(wr_ivy)+SQR(wr_ivz)) + pbr;
+      Real asq = g1l*wl_ipr;
+      Real ctsq = SQR(wl_iby) + SQR(wl_ibz);
+      Real qsq = bxi*bxi + ctsq + asq;
+      Real tmp = bxi*bxi + ctsq - asq;
+      cl = sqrt(0.5*(qsq + sqrt(tmp*tmp + 4.0*asq*ctsq))/wl_idn);
+      asq = g1r*wr_ipr;
+      ctsq = SQR(wr_iby) + SQR(wr_ibz);
+      qsq = bxi*bxi + ctsq + asq;
+      tmp = bxi*bxi + ctsq - asq;
+      cr = sqrt(0.5*(qsq + sqrt(tmp*tmp + 4.0*asq*ctsq))/wr_idn);
+    } else if (eos.is_ideal) {
       el = wl_ipr*igm1 + 0.5*wl_idn*(SQR(wl_ivx)+SQR(wl_ivy)+SQR(wl_ivz)) + pbl;
       er = wr_ipr*igm1 + 0.5*wr_idn*(SQR(wr_ivx)+SQR(wr_ivy)+SQR(wr_ivz)) + pbr;
       hroe = ((el + wl_ipr + pbl)/sqrtdl + (er + wr_ipr + pbr)/sqrtdr)*isdlpdr;
@@ -97,31 +120,42 @@ void HLLE(TeamMember_t const &member, const EOS_Data &eos,
     //--- Step 3. Compute fast magnetosonic speed in L,R, and Roe-averaged states
 
 
-    // Compute Roe-averaged Cf using eq. B18 (ideal gas) or B39 (isothermal)
-    Real btsq = SQR(wroe_iby) + SQR(wroe_ibz);
-    Real vaxsq = bxi*bxi/wroe_idn;
-    Real bt_starsq, twid_asq;
-    if (eos.is_ideal) {
-      bt_starsq = (gm1 - (gm1 - 1.0)*y)*btsq;
-      Real hp = hroe - (vaxsq + btsq/wroe_idn);
-      Real vsq = SQR(wroe_ivx) + SQR(wroe_ivy) + SQR(wroe_ivz);
-      twid_asq = fmax((gm1*(hp-0.5*vsq)-(gm1-1.0)*x), 0.0);
-    } else {
-      bt_starsq = btsq*y;
-      twid_asq = iso_cs*iso_cs + x;
-    }
-    Real ct2 = bt_starsq/wroe_idn;
-    Real tsum = vaxsq + ct2 + twid_asq;
-    Real tdif = vaxsq + ct2 - twid_asq;
-    Real cf2_cs2 = sqrt(tdif*tdif + 4.0*twid_asq*ct2);
+    // Compute Roe-averaged Cf using eq. B18 (ideal gas) or B39 (isothermal). The Roe
+    // average has no general-EOS analogue without Vinokur-Montagne averaging, so it is
+    // skipped entirely there and Step 4 falls back to the Davis/Einfeldt bound.
+    Real a = 0.0;
+    if (!eos.IsGeneral()) {
+      Real btsq = SQR(wroe_iby) + SQR(wroe_ibz);
+      Real vaxsq = bxi*bxi/wroe_idn;
+      Real bt_starsq, twid_asq;
+      if (eos.is_ideal) {
+        bt_starsq = (gm1 - (gm1 - 1.0)*y)*btsq;
+        Real hp = hroe - (vaxsq + btsq/wroe_idn);
+        Real vsq = SQR(wroe_ivx) + SQR(wroe_ivy) + SQR(wroe_ivz);
+        twid_asq = fmax((gm1*(hp-0.5*vsq)-(gm1-1.0)*x), 0.0);
+      } else {
+        bt_starsq = btsq*y;
+        twid_asq = iso_cs*iso_cs + x;
+      }
+      Real ct2 = bt_starsq/wroe_idn;
+      Real tsum = vaxsq + ct2 + twid_asq;
+      Real tdif = vaxsq + ct2 - twid_asq;
+      Real cf2_cs2 = sqrt(tdif*tdif + 4.0*twid_asq*ct2);
 
-    Real cfsq = 0.5*(tsum + cf2_cs2);
-    Real a = sqrt(cfsq);
+      Real cfsq = 0.5*(tsum + cf2_cs2);
+      a = sqrt(cfsq);
+    }
 
     //--- Step 4. Compute the max/min wave speeds based on L/R and Roe-averaged values
 
-    Real al = fmin((wroe_ivx - a),(wl_ivx - cl));
-    Real ar = fmax((wroe_ivx + a),(wr_ivx + cr));
+    Real al, ar;
+    if (eos.IsGeneral()) {
+      al = fmin((wl_ivx - cl), (wr_ivx - cr));
+      ar = fmax((wl_ivx + cl), (wr_ivx + cr));
+    } else {
+      al = fmin((wroe_ivx - a),(wl_ivx - cl));
+      ar = fmax((wroe_ivx + a),(wr_ivx + cr));
+    }
 
     // following min/max set to TINY_NUMBER to fix bug found in converging supersonic flow
     Real bp = ar > 0.0 ? ar : 1.0e-20;

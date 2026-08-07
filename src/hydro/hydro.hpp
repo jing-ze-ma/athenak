@@ -85,6 +85,15 @@ class Hydro {
   DvceArray5D<Real> coarse_u0;  // conserved variables on 2x coarser grid (for SMR/AMR)
   DvceArray5D<Real> coarse_w0;  // primitive variables on 2x coarser grid (for SMR/AMR)
 
+  // Derived thermodynamic variables (pressure, Gamma_1) for a general EOS. Evaluated once
+  // per cell in ConsToPrim and reconstructed to interfaces, so the Riemann solvers never
+  // call the EOS. Only allocated when the EOS is general; empty for an ideal gas.
+  DvceArray5D<Real> wder;
+  // Cached temperature, used as the warm start for the T(d,e) root find. Retaining the
+  // previous step's value reduces the inversion to 1-2 Newton iterations. Only allocated
+  // when the EOS is general.
+  DvceArray4D<Real> wtemp;
+
   // Boundary communication buffers and functions for u
   MeshBoundaryValuesCC *pbval_u;
 

@@ -77,6 +77,17 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
     }
     nmhd = 5;
 
+  // general EOS (non-relativistic only)
+  } else if (eqn_of_state.compare("general") == 0) {
+    if (pmy_pack->pcoord->is_special_relativistic ||
+        pmy_pack->pcoord->is_general_relativistic) {
+      std::cout <<"### FATAL ERROR in "<< __FILE__ <<" at line "<< __LINE__ << std::endl
+                <<"<mhd> eos = general cannot be used with SR/GR"<< std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    peos = new GeneralMHD(ppack, pin);
+    nmhd = 5;
+
   // isothermal EOS
   } else if (eqn_of_state.compare("isothermal") == 0) {
     if (pmy_pack->pcoord->is_special_relativistic ||
@@ -145,6 +156,11 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
     int ncells3 = (indcs.nx3 > 1)? (indcs.nx3 + 2*(indcs.ng)) : 1;
     Kokkos::realloc(u0,   nmb, (nmhd+nscalars), ncells3, ncells2, ncells1);
     Kokkos::realloc(w0,   nmb, (nmhd+nscalars), ncells3, ncells2, ncells1);
+    // derived thermodynamic variables are only needed for an expensive (general) EOS
+    if (peos->eos_data.IsGeneral()) {
+      Kokkos::realloc(wder, nmb, NDERIVED, ncells3, ncells2, ncells1);
+      Kokkos::realloc(wtemp, nmb, ncells3, ncells2, ncells1);
+    }
 
     // allocate memory for face-centered and cell-centered magnetic fields
     Kokkos::realloc(bcc0,   nmb, 3, ncells3, ncells2, ncells1);

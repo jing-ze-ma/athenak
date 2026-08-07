@@ -59,6 +59,14 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
   auto &coord_ = pmy_pack->pcoord->coord_data;
   auto &w0_ = w0;
 
+  // For a general EOS, pressure and Gamma_1 were evaluated once per cell in ConsToPrim
+  // and are reconstructed to interfaces alongside the primitives, so that the Riemann
+  // solvers consume pressure directly instead of calling the (expensive) EOS. For an
+  // ideal gas nder is 0: no extra scratch is allocated and no extra reconstruction is
+  // performed, leaving the original code path untouched.
+  auto &wder_ = wder;
+  const int nder = eos_.IsGeneral() ? NDERIVED : 0;
+
   auto w0facewb_x1f = w0facewb.x1f;
   auto w0facewb_x2f = w0facewb.x2f;
   auto w0facewb_x3f = w0facewb.x3f;
@@ -73,7 +81,8 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
   //--------------------------------------------------------------------------------------
   // i-direction
 
-  size_t scr_size = ScrArray2D<Real>::shmem_size(nvars, ncells1) * 2;
+  size_t scr_size = (ScrArray2D<Real>::shmem_size(nvars, ncells1) +
+                     ScrArray2D<Real>::shmem_size(nder, ncells1)) * 2;
   int scr_level = 0;
   auto &flx1_ = uflx.x1f;
     
@@ -95,7 +104,9 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
   KOKKOS_LAMBDA(TeamMember_t member, const int m, const int k, const int j) {
     ScrArray2D<Real> wl(member.team_scratch(scr_level), nvars, ncells1);
     ScrArray2D<Real> wr(member.team_scratch(scr_level), nvars, ncells1);
-      
+    ScrArray2D<Real> dl(member.team_scratch(scr_level), nder, ncells1);
+    ScrArray2D<Real> dr(member.team_scratch(scr_level), nder, ncells1);
+
     if (use_spherical_polar)
       {
         GridPiecewiseLinearX1(member, eos_, m, k, j, il-1, iu, w0_, x1v_, x1f_, phicc0_, phi0_x1f, wl, wr);
@@ -128,10 +139,37 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
     }
     }
       
+    // Reconstruct the derived thermodynamic variables (general EOS only). apply_floors is
+    // false: that logic keys off n==IDN/n==IEN, whose values collide with DerivedIndex.
+    if (nder > 0) {
+      switch (recon_method_) {
+        case ReconstructionMethod::dc:
+          DonorCellX1(member, m, k, j, il-1, iu, wder_, dl, dr);
+          break;
+        case ReconstructionMethod::plm:
+          PiecewiseLinearX1(member, m, k, j, il-1, iu, wder_, dl, dr);
+          break;
+        case ReconstructionMethod::ppm4:
+        case ReconstructionMethod::ppmx:
+          PiecewiseParabolicX1(member,eos_,extrema,false,m,k,j,il-1,iu,wder_,dl,dr);
+          break;
+        case ReconstructionMethod::wenoz:
+          WENOZX1(member, eos_, false, m, k, j, il-1, iu, wder_, dl, dr);
+          break;
+        default:
+          break;
+      }
+      // reconstruction can undershoot; keep the interface pressure positive
+      par_for_inner(member, il, iu, [&](const int i) {
+        dl(IDPR,i) = fmax(dl(IDPR,i), eos_.pfloor);
+        dr(IDPR,i) = fmax(dr(IDPR,i), eos_.pfloor);
+      });
+    }
+
       if (use_wellbalance_static_reconst_perturb) {
         AddWbPrimFaceX1(member,m,k,j,il-1,iu,w0facewb_x1f,wl,wr);
       }
-      
+
       if (pmy_pack->pmesh->use_cubed_sphere) {
           pmy_pack->pcoord->GnomonicEquianglePrimFaceX1(member,m,j,il-1,iu,wl,wr);
       }
@@ -149,9 +187,9 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
     if constexpr (rsolver_method_ == Hydro_RSolver::advect) {
       Advect(member, eos, indcs, size, coord, m, k, j, il, iu, IVX, wl, wr, flx1);
     } else if constexpr (rsolver_method_ == Hydro_RSolver::llf) {
-      LLF(member, eos, indcs, size, coord, m, k, j, il, iu, IVX, wl, wr, flx1);
+      LLF(member, eos, indcs, size, coord, m, k, j, il, iu, IVX, wl, wr, dl, dr, flx1);
     } else if constexpr (rsolver_method_ == Hydro_RSolver::hlle) {
-      HLLE(member, eos, indcs, size, coord, m, k, j, il, iu, IVX, wl, wr, flx1);
+      HLLE(member, eos, indcs, size, coord, m, k, j, il, iu, IVX, wl, wr, dl, dr, flx1);
     } else if constexpr (rsolver_method_ == Hydro_RSolver::hllc) {
       HLLC(member, eos, indcs, size, coord, m, k, j, il, iu, IVX, wl, wr, flx1);
     } else if constexpr (rsolver_method_ == Hydro_RSolver::lhllc) {
@@ -197,7 +235,8 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
   // j-direction
 
   if (pmy_pack->pmesh->multi_d) {
-    scr_size = ScrArray2D<Real>::shmem_size(nvars, ncells1) * 3;
+    scr_size = (ScrArray2D<Real>::shmem_size(nvars, ncells1) +
+                ScrArray2D<Real>::shmem_size(nder, ncells1)) * 3;
     auto &flx2_ = uflx.x2f;
       
     auto &x2v_ = pmy_pack->pcoord->x2v;
@@ -219,17 +258,25 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
       ScrArray2D<Real> scr1(member.team_scratch(scr_level), nvars, ncells1);
       ScrArray2D<Real> scr2(member.team_scratch(scr_level), nvars, ncells1);
       ScrArray2D<Real> scr3(member.team_scratch(scr_level), nvars, ncells1);
+      ScrArray2D<Real> dscr1(member.team_scratch(scr_level), nder, ncells1);
+      ScrArray2D<Real> dscr2(member.team_scratch(scr_level), nder, ncells1);
+      ScrArray2D<Real> dscr3(member.team_scratch(scr_level), nder, ncells1);
 
       for (int j=jl; j<=ju; ++j) {
         // Permute scratch arrays.
         auto wl     = scr1;
         auto wl_jp1 = scr2;
         auto wr     = scr3;
+        auto dl     = dscr1;
+        auto dl_jp1 = dscr2;
+        auto dr     = dscr3;
         if ((j%2) == 0) {
           wl     = scr2;
           wl_jp1 = scr1;
+          dl     = dscr2;
+          dl_jp1 = dscr1;
         }
-          
+
         if (use_spherical_polar) {
             GridPiecewiseLinearX2(member, m, k, j, is-1, ie+1, w0_, x2v_, x2f_, wl_jp1, wr);
         } else {
@@ -261,10 +308,35 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
         }
         }
           
+        // Reconstruct the derived thermodynamic variables (general EOS only)
+        if (nder > 0) {
+          switch (recon_method_) {
+            case ReconstructionMethod::dc:
+              DonorCellX2(member, m, k, j, il, iu, wder_, dl_jp1, dr);
+              break;
+            case ReconstructionMethod::plm:
+              PiecewiseLinearX2(member, m, k, j, il, iu, wder_, dl_jp1, dr);
+              break;
+            case ReconstructionMethod::ppm4:
+            case ReconstructionMethod::ppmx:
+              PiecewiseParabolicX2(member,eos_,extrema,false,m,k,j,il,iu,wder_,dl_jp1,dr);
+              break;
+            case ReconstructionMethod::wenoz:
+              WENOZX2(member, eos_, false, m, k, j, il, iu, wder_, dl_jp1, dr);
+              break;
+            default:
+              break;
+          }
+          par_for_inner(member, il, iu, [&](const int i) {
+            dl_jp1(IDPR,i) = fmax(dl_jp1(IDPR,i), eos_.pfloor);
+            dr(IDPR,i) = fmax(dr(IDPR,i), eos_.pfloor);
+          });
+        }
+
           if (use_wellbalance_static_reconst_perturb) {
             AddWbPrimFaceX2(member,m,k,j,il,iu,w0facewb_x2f,wl_jp1,wr);
           }
-          
+
           if (pmy_pack->pmesh->use_cubed_sphere) {
               pmy_pack->pcoord->GnomonicEquianglePrimFaceX2(member,m,j,il,iu,wl_jp1,wr);
           }
@@ -282,9 +354,9 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
           if constexpr (rsolver_method_ == Hydro_RSolver::advect) {
             Advect(member, eos, indcs, size, coord, m, k, j, il, iu, IVY, wl, wr, flx2);
           } else if constexpr (rsolver_method_ == Hydro_RSolver::llf) {
-            LLF(member, eos, indcs, size, coord, m, k, j, il, iu, IVY, wl, wr, flx2);
+            LLF(member,eos,indcs,size,coord,m,k,j,il,iu,IVY,wl,wr,dl,dr,flx2);
           } else if constexpr (rsolver_method_ == Hydro_RSolver::hlle) {
-            HLLE(member, eos, indcs, size, coord, m, k, j, il, iu, IVY, wl, wr, flx2);
+            HLLE(member,eos,indcs,size,coord,m,k,j,il,iu,IVY,wl,wr,dl,dr,flx2);
           } else if constexpr (rsolver_method_ == Hydro_RSolver::hllc) {
             HLLC(member, eos, indcs, size, coord, m, k, j, il, iu, IVY, wl, wr, flx2);
           } else if constexpr (rsolver_method_ == Hydro_RSolver::lhllc) {
@@ -332,7 +404,8 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
   // k-direction. Note order of k,j loops switched
 
   if (pmy_pack->pmesh->three_d) {
-    scr_size = ScrArray2D<Real>::shmem_size(nvars, ncells1) * 3;
+    scr_size = (ScrArray2D<Real>::shmem_size(nvars, ncells1) +
+                ScrArray2D<Real>::shmem_size(nder, ncells1)) * 3;
     auto &flx3_ = uflx.x3f;
       
     auto &x3v_ = pmy_pack->pcoord->x3v;
@@ -347,17 +420,25 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
       ScrArray2D<Real> scr1(member.team_scratch(scr_level), nvars, ncells1);
       ScrArray2D<Real> scr2(member.team_scratch(scr_level), nvars, ncells1);
       ScrArray2D<Real> scr3(member.team_scratch(scr_level), nvars, ncells1);
+      ScrArray2D<Real> dscr1(member.team_scratch(scr_level), nder, ncells1);
+      ScrArray2D<Real> dscr2(member.team_scratch(scr_level), nder, ncells1);
+      ScrArray2D<Real> dscr3(member.team_scratch(scr_level), nder, ncells1);
 
       for (int k=kl; k<=ku; ++k) {
         // Permute scratch arrays.
         auto wl     = scr1;
         auto wl_kp1 = scr2;
         auto wr     = scr3;
+        auto dl     = dscr1;
+        auto dl_kp1 = dscr2;
+        auto dr     = dscr3;
         if ((k%2) == 0) {
           wl     = scr2;
           wl_kp1 = scr1;
+          dl     = dscr2;
+          dl_kp1 = dscr1;
         }
-          
+
         if (use_spherical_polar) {
           GridPiecewiseLinearX3(member, m, k, j, is-1, ie+1, w0_, x3v_, x3f_, wl_kp1, wr);
         } else {
@@ -389,10 +470,35 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
         }
         }
           
+        // Reconstruct the derived thermodynamic variables (general EOS only)
+        if (nder > 0) {
+          switch (recon_method_) {
+            case ReconstructionMethod::dc:
+              DonorCellX3(member, m, k, j, il, iu, wder_, dl_kp1, dr);
+              break;
+            case ReconstructionMethod::plm:
+              PiecewiseLinearX3(member, m, k, j, il, iu, wder_, dl_kp1, dr);
+              break;
+            case ReconstructionMethod::ppm4:
+            case ReconstructionMethod::ppmx:
+              PiecewiseParabolicX3(member,eos_,extrema,false,m,k,j,il,iu,wder_,dl_kp1,dr);
+              break;
+            case ReconstructionMethod::wenoz:
+              WENOZX3(member, eos_, false, m, k, j, il, iu, wder_, dl_kp1, dr);
+              break;
+            default:
+              break;
+          }
+          par_for_inner(member, il, iu, [&](const int i) {
+            dl_kp1(IDPR,i) = fmax(dl_kp1(IDPR,i), eos_.pfloor);
+            dr(IDPR,i) = fmax(dr(IDPR,i), eos_.pfloor);
+          });
+        }
+
           if (use_wellbalance_static_reconst_perturb) {
             AddWbPrimFaceX3(member,m,k,j,il,iu,w0facewb_x3f,wl_kp1,wr);
           }
-          
+
           if (pmy_pack->pmesh->use_cubed_sphere) {
               pmy_pack->pcoord->GnomonicEquianglePrimFaceX3(member,m,j,il,iu,wl_kp1,wr);
           }
@@ -410,9 +516,9 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
           if constexpr (rsolver_method_ == Hydro_RSolver::advect) {
             Advect(member, eos, indcs, size, coord, m, k, j, il, iu, IVZ, wl, wr, flx3);
           } else if constexpr (rsolver_method_ == Hydro_RSolver::llf) {
-            LLF(member, eos, indcs, size, coord, m, k, j, il, iu, IVZ, wl, wr, flx3);
+            LLF(member,eos,indcs,size,coord,m,k,j,il,iu,IVZ,wl,wr,dl,dr,flx3);
           } else if constexpr (rsolver_method_ == Hydro_RSolver::hlle) {
-            HLLE(member, eos, indcs, size, coord, m, k, j, il, iu, IVZ, wl, wr, flx3);
+            HLLE(member,eos,indcs,size,coord,m,k,j,il,iu,IVZ,wl,wr,dl,dr,flx3);
           } else if constexpr (rsolver_method_ == Hydro_RSolver::hllc) {
             HLLC(member, eos, indcs, size, coord, m, k, j, il, iu, IVZ, wl, wr, flx3);
           } else if constexpr (rsolver_method_ == Hydro_RSolver::lhllc) {

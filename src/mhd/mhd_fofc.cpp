@@ -116,6 +116,8 @@ void MHD::FOFC(Driver *pdriver, int stage) {
   bool &is_sr = pmy_pack->pcoord->is_special_relativistic;
   bool &is_gr = pmy_pack->pcoord->is_general_relativistic;
   auto &eos = peos->eos_data;
+  // derived thermodynamic variables (general EOS only; empty if ideal)
+  auto &wder_ = wder;
   auto &use_fofc_ = use_fofc;
   auto fofc_ = fofc;
   auto &use_excise_ = pmy_pack->pcoord->coord_data.bh_excise;
@@ -184,7 +186,13 @@ void MHD::FOFC(Driver *pdriver, int stage) {
         } else if (is_sr) {
           SingleStateLLF_SRMHD(wim1, wi, bxi, eos, flux);
         } else {
-          SingleStateLLF_MHD(wim1, wi, bxi, eos, flux);
+          if (eos.IsGeneral()) {
+            SingleStateLLF_GenMHD(wim1, wi, bxi,
+                wder_(m,IDPR,k,j,i-1), wder_(m,IDPR,k,j,i),
+                wder_(m,IDG1,k,j,i-1), wder_(m,IDG1,k,j,i), flux);
+          } else {
+            SingleStateLLF_MHD(wim1, wi, bxi, eos, flux);
+          }
         }
 
         // store 1st-order fluxes.
@@ -237,7 +245,13 @@ void MHD::FOFC(Driver *pdriver, int stage) {
         } else if (is_sr) {
           SingleStateLLF_SRMHD(wjm1, wj, bxi, eos, flux);
         } else {
-          SingleStateLLF_MHD(wjm1, wj, bxi, eos, flux);
+          if (eos.IsGeneral()) {
+            SingleStateLLF_GenMHD(wjm1, wj, bxi,
+                wder_(m,IDPR,k,j-1,i), wder_(m,IDPR,k,j,i),
+                wder_(m,IDG1,k,j-1,i), wder_(m,IDG1,k,j,i), flux);
+          } else {
+            SingleStateLLF_MHD(wjm1, wj, bxi, eos, flux);
+          }
         }
 
         // store 1st-order fluxes, permutting indices.
@@ -290,7 +304,13 @@ void MHD::FOFC(Driver *pdriver, int stage) {
         } else if (is_sr) {
           SingleStateLLF_SRMHD(wkm1, wk, bxi, eos, flux);
         } else {
-          SingleStateLLF_MHD(wkm1, wk, bxi, eos, flux);
+          if (eos.IsGeneral()) {
+            SingleStateLLF_GenMHD(wkm1, wk, bxi,
+                wder_(m,IDPR,k-1,j,i), wder_(m,IDPR,k,j,i),
+                wder_(m,IDG1,k-1,j,i), wder_(m,IDG1,k,j,i), flux);
+          } else {
+            SingleStateLLF_MHD(wkm1, wk, bxi, eos, flux);
+          }
         }
 
         // store 1st-order fluxes, permutting indices.
@@ -361,7 +381,13 @@ void MHD::FOFC(Driver *pdriver, int stage) {
         } else if (is_sr) {
           SingleStateLLF_SRMHD(wi, wip1, bxi, eos, flux);
         } else {
-          SingleStateLLF_MHD(wi, wip1, bxi, eos, flux);
+          if (eos.IsGeneral()) {
+            SingleStateLLF_GenMHD(wi, wip1, bxi,
+                wder_(m,IDPR,k,j,i), wder_(m,IDPR,k,j,i+1),
+                wder_(m,IDG1,k,j,i), wder_(m,IDG1,k,j,i+1), flux);
+          } else {
+            SingleStateLLF_MHD(wi, wip1, bxi, eos, flux);
+          }
         }
 
         // store 1st-order fluxes.
@@ -414,7 +440,13 @@ void MHD::FOFC(Driver *pdriver, int stage) {
         } else if (is_sr) {
           SingleStateLLF_SRMHD(wj, wjp1, bxi, eos, flux);
         } else {
-          SingleStateLLF_MHD(wj, wjp1, bxi, eos, flux);
+          if (eos.IsGeneral()) {
+            SingleStateLLF_GenMHD(wj, wjp1, bxi,
+                wder_(m,IDPR,k,j,i), wder_(m,IDPR,k,j+1,i),
+                wder_(m,IDG1,k,j,i), wder_(m,IDG1,k,j+1,i), flux);
+          } else {
+            SingleStateLLF_MHD(wj, wjp1, bxi, eos, flux);
+          }
         }
 
         // store 1st-order fluxes, permutting indices.
@@ -467,7 +499,13 @@ void MHD::FOFC(Driver *pdriver, int stage) {
         } else if (is_sr) {
           SingleStateLLF_SRMHD(wk, wkp1, bxi, eos, flux);
         } else {
-          SingleStateLLF_MHD(wk, wkp1, bxi, eos, flux);
+          if (eos.IsGeneral()) {
+            SingleStateLLF_GenMHD(wk, wkp1, bxi,
+                wder_(m,IDPR,k,j,i), wder_(m,IDPR,k+1,j,i),
+                wder_(m,IDG1,k,j,i), wder_(m,IDG1,k+1,j,i), flux);
+          } else {
+            SingleStateLLF_MHD(wk, wkp1, bxi, eos, flux);
+          }
         }
 
         // store 1st-order fluxes, permutting indices.

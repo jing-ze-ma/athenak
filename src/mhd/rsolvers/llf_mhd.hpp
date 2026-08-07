@@ -20,7 +20,8 @@ void LLF(TeamMember_t const &member, const EOS_Data &eos,
      const RegionIndcs &indcs,const DualArray1D<RegionSize> &size,const CoordData &coord,
      const int m, const int k, const int j, const int il, const int iu, const int ivx,
      const ScrArray2D<Real> &wl, const ScrArray2D<Real> &wr,
-     const ScrArray2D<Real> &bl, const ScrArray2D<Real> &br, const DvceArray4D<Real> &bx,
+     const ScrArray2D<Real> &bl, const ScrArray2D<Real> &br,
+     const ScrArray2D<Real> &dl, const ScrArray2D<Real> &dr, const DvceArray4D<Real> &bx,
      DvceArray5D<Real> flx, DvceArray4D<Real> ey, DvceArray4D<Real> ez) {
   int ivy = IVX + ((ivx-IVX) + 1)%3;
   int ivz = IVX + ((ivx-IVX) + 2)%3;
@@ -52,9 +53,15 @@ void LLF(TeamMember_t const &member, const EOS_Data &eos,
     // Extract normal magnetic field
     Real &bxi = bx(m,k,j,i);
 
-    // Call LLF solver on single interface state
+    // Call LLF solver on single interface state. For a general EOS the pressure and
+    // Gamma_1 come from the reconstructed derived variables rather than from the EOS.
     MHDCons1D flux;
-    SingleStateLLF_MHD(wli,wri,bxi,eos,flux);
+    if (eos.IsGeneral()) {
+      SingleStateLLF_GenMHD(wli, wri, bxi, dl(IDPR,i), dr(IDPR,i),
+                            dl(IDG1,i), dr(IDG1,i), flux);
+    } else {
+      SingleStateLLF_MHD(wli,wri,bxi,eos,flux);
+    }
 
     // Store results in 3D array of fluxes
     flx(m,IDN,k,j,i) = flux.d;

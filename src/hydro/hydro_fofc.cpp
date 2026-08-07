@@ -86,6 +86,8 @@ void Hydro::FOFC(Driver *pdriver, int stage) {
   bool &is_sr = pmy_pack->pcoord->is_special_relativistic;
   bool &is_gr = pmy_pack->pcoord->is_general_relativistic;
   auto &eos = peos->eos_data;
+  // derived thermodynamic variables (general EOS only; empty if ideal)
+  auto &wder_ = wder;
   auto &use_fofc_ = use_fofc;
   auto &fofc_ = fofc;
   auto &use_excise = pmy_pack->pcoord->coord_data.bh_excise;
@@ -148,7 +150,13 @@ void Hydro::FOFC(Driver *pdriver, int stage) {
       } else if (is_sr) {
         SingleStateLLF_SRHyd(wim1, wi, eos, flux);
       } else {
-        SingleStateLLF_Hyd(wim1, wi, eos, flux);
+        if (eos.IsGeneral()) {
+          SingleStateLLF_GenHyd(wim1, wi,
+              wder_(m,IDPR,k,j,i-1), wder_(m,IDPR,k,j,i),
+              wder_(m,IDG1,k,j,i-1), wder_(m,IDG1,k,j,i), flux);
+        } else {
+          SingleStateLLF_Hyd(wim1, wi, eos, flux);
+        }
       }
 
       // store 1st-order fluxes
@@ -184,7 +192,13 @@ void Hydro::FOFC(Driver *pdriver, int stage) {
       } else if (is_sr) {
         SingleStateLLF_SRHyd(wi, wip1, eos, flux);
       } else {
-        SingleStateLLF_Hyd(wi, wip1, eos, flux);
+        if (eos.IsGeneral()) {
+          SingleStateLLF_GenHyd(wi, wip1,
+              wder_(m,IDPR,k,j,i), wder_(m,IDPR,k,j,i+1),
+              wder_(m,IDG1,k,j,i), wder_(m,IDG1,k,j,i+1), flux);
+        } else {
+          SingleStateLLF_Hyd(wi, wip1, eos, flux);
+        }
       }
 
       // store 1st-order fluxes
@@ -229,7 +243,13 @@ void Hydro::FOFC(Driver *pdriver, int stage) {
         } else if (is_sr) {
           SingleStateLLF_SRHyd(wjm1, wj, eos, flux);
         } else {
-          SingleStateLLF_Hyd(wjm1, wj, eos, flux);
+          if (eos.IsGeneral()) {
+            SingleStateLLF_GenHyd(wjm1, wj,
+                wder_(m,IDPR,k,j-1,i), wder_(m,IDPR,k,j,i),
+                wder_(m,IDG1,k,j-1,i), wder_(m,IDG1,k,j,i), flux);
+          } else {
+            SingleStateLLF_Hyd(wjm1, wj, eos, flux);
+          }
         }
 
         // store 1st-order fluxes, permutting indices
@@ -266,7 +286,13 @@ void Hydro::FOFC(Driver *pdriver, int stage) {
         } else if (is_sr) {
           SingleStateLLF_SRHyd(wj, wjp1, eos, flux);
         } else {
-          SingleStateLLF_Hyd(wj, wjp1, eos, flux);
+          if (eos.IsGeneral()) {
+            SingleStateLLF_GenHyd(wj, wjp1,
+                wder_(m,IDPR,k,j,i), wder_(m,IDPR,k,j+1,i),
+                wder_(m,IDG1,k,j,i), wder_(m,IDG1,k,j+1,i), flux);
+          } else {
+            SingleStateLLF_Hyd(wj, wjp1, eos, flux);
+          }
         }
 
         // store 1st-order fluxes, permutting indices
@@ -312,7 +338,13 @@ void Hydro::FOFC(Driver *pdriver, int stage) {
         } else if (is_sr) {
           SingleStateLLF_SRHyd(wkm1, wk, eos, flux);
         } else {
-          SingleStateLLF_Hyd(wkm1, wk, eos, flux);
+          if (eos.IsGeneral()) {
+            SingleStateLLF_GenHyd(wkm1, wk,
+                wder_(m,IDPR,k-1,j,i), wder_(m,IDPR,k,j,i),
+                wder_(m,IDG1,k-1,j,i), wder_(m,IDG1,k,j,i), flux);
+          } else {
+            SingleStateLLF_Hyd(wkm1, wk, eos, flux);
+          }
         }
 
         // store 1st-order fluxes, permutting indices
@@ -349,7 +381,13 @@ void Hydro::FOFC(Driver *pdriver, int stage) {
         } else if (is_sr) {
           SingleStateLLF_SRHyd(wk, wkp1, eos, flux);
         } else {
-          SingleStateLLF_Hyd(wk, wkp1, eos, flux);
+          if (eos.IsGeneral()) {
+            SingleStateLLF_GenHyd(wk, wkp1,
+                wder_(m,IDPR,k,j,i), wder_(m,IDPR,k+1,j,i),
+                wder_(m,IDG1,k,j,i), wder_(m,IDG1,k+1,j,i), flux);
+          } else {
+            SingleStateLLF_Hyd(wk, wkp1, eos, flux);
+          }
         }
 
         // store 1st-order fluxes, permutting indices

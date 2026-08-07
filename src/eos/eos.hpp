@@ -19,6 +19,14 @@
 #include "parameter_input.hpp"
 
 //----------------------------------------------------------------------------------------
+//! \enum EOSType
+//! \brief Selects which equation of state the general EOS interface in EOS_Data
+//! evaluates. EOSType::ideal reproduces the ideal-gas expressions identically, so runs
+//! that select it are numerically unchanged by the general interface.
+
+enum class EOSType {ideal, general};
+
+//----------------------------------------------------------------------------------------
 //! \struct EOSData
 //! \brief container for EOS variables and functions needed inside kernels. Storing
 //! everything in a container makes them easier to capture, and pass to inline functions,
@@ -30,6 +38,137 @@ struct EOS_Data {
   bool is_ideal;     // flag to denote ideal gas EOS
   Real dfloor, pfloor, tfloor, sfloor;  // density, pressure, temperature, entropy floors
   Real gamma_max;    // ceiling on Lorentz factor in SR/GR
+  EOSType eos_type = EOSType::ideal;  // EOS evaluated by the general interface below
+
+  // Unit conversion factors, code units -> cgs. An ideal gas is scale free and ignores
+  // these, but a general EOS (ionization, dissociation, radiation pressure) depends on
+  // ABSOLUTE density and temperature, so it must know the physical scale. All three are
+  // 1.0 when the run itself is in cgs units, which is the recommended setup. They are
+  // copied out of the units::Units class at construction because that class is host-only
+  // and cannot be captured in a device lambda.
+  Real dens_cgs = 1.0;   // g/cm^3       per unit code density
+  Real pres_cgs = 1.0;   // erg/cm^3     per unit code pressure or energy density
+  Real temp_cgs = 1.0;   // K            per unit code temperature
+
+  //! \fn bool IsGeneral
+  //! \brief true when the EOS is expensive enough that p and Gamma_1 must be precomputed
+  //! into the derived-variable arrays and reconstructed, rather than evaluated inside the
+  //! Riemann solvers. False for an ideal gas, which keeps the original code path.
+  KOKKOS_INLINE_FUNCTION
+  bool IsGeneral() const {
+    return (eos_type == EOSType::general);
+  }
+
+  //--------------------------------------------------------------------------------------
+  // GENERAL EOS INTERFACE for non-relativistic Hydro and MHD.
+  //
+  // These are the only EOS entry points non-relativistic kernels should call. They are
+  // written in terms of the primitive pair (d, e) = (density, internal energy density),
+  // which is what is actually stored in prim(IDN,...) and prim(IEN,...). Pressure is a
+  // derived quantity: for a general EOS it depends on BOTH d and e, which is why these
+  // take a density argument where the ideal-gas versions below do not.
+  //
+  // Every function reduces exactly to the ideal-gas expression when
+  // eos_type == EOSType::ideal, so existing ideal-gas runs are bitwise unchanged.
+
+  //! \fn Real Pressure
+  //! \brief gas pressure p(d,e)
+  KOKKOS_INLINE_FUNCTION
+  Real Pressure(const Real d, const Real e) const {
+    // TODO(stage3): add EOSType::general branch (analytic partial-ionization EOS)
+    return ((gamma-1.0)*e);
+  }
+
+  //! \fn Real Gamma1
+  //! \brief first adiabatic exponent Gamma_1 = (dln p/dln d) at constant entropy. This is
+  //! the exponent that sets the sound speed, and is what replaces the constant `gamma` in
+  //! the wave-structure algebra of the HLLC/HLLD/Roe solvers. For an ideal gas it is the
+  //! constant ratio of specific heats; for a general EOS it varies with (d,e) and dips
+  //! well below 5/3 inside partial-ionization zones.
+  KOKKOS_INLINE_FUNCTION
+  Real Gamma1(const Real d, const Real e) const {
+    // TODO(stage3): add EOSType::general branch
+    return gamma;
+  }
+
+  //! \fn Real EnergyFromPressure
+  //! \brief internal energy density e(d,p); inverse of Pressure(). Needed for pressure
+  //! floors, which are specified in terms of p but applied to e.
+  KOKKOS_INLINE_FUNCTION
+  Real EnergyFromPressure(const Real d, const Real p) const {
+    // TODO(stage3): add EOSType::general branch
+    return (p/(gamma-1.0));
+  }
+
+  //! \fn Real Temperature
+  //! \brief temperature T(d,e) in code units (p/d for an ideal gas)
+  KOKKOS_INLINE_FUNCTION
+  Real Temperature(const Real d, const Real e) const {
+    // TODO(stage3): add EOSType::general branch
+    return ((gamma-1.0)*e/d);
+  }
+
+  //! \fn Real EnergyFromTemperature
+  //! \brief internal energy density e(d,T); inverse of Temperature(). Needed for the
+  //! temperature floor, which is specified in T but must be applied to e.
+  KOKKOS_INLINE_FUNCTION
+  Real EnergyFromTemperature(const Real d, const Real t) const {
+    // TODO(stage3): add EOSType::general branch
+    return (d*t/(gamma-1.0));
+  }
+
+  //! \fn Real SpecificHeatCv
+  //! \brief specific heat at constant volume c_v(d,e) = (de/dT)/d. Used by thermal
+  //! conduction, which currently hardwires the ideal-gas value 1/(gamma-1).
+  KOKKOS_INLINE_FUNCTION
+  Real SpecificHeatCv(const Real d, const Real e) const {
+    // TODO(stage3): add EOSType::general branch
+    return (1.0/(gamma-1.0));
+  }
+
+  //! \fn Real SoundSpeedFromP
+  //! \brief adiabatic sound speed from an ALREADY EVALUATED pressure and Gamma_1. Used
+  //! wherever those were precomputed in ConsToPrim (timestep, FOFC, Riemann solvers), so
+  //! that the expensive EOS evaluation is not repeated.
+  KOKKOS_INLINE_FUNCTION
+  Real SoundSpeedFromP(const Real d, const Real p, const Real g1) const {
+    return sqrt(g1*p/d);
+  }
+
+  //! \fn Real FastSpeedFromP
+  //! \brief fast magnetosonic speed from an ALREADY EVALUATED pressure and Gamma_1
+  KOKKOS_INLINE_FUNCTION
+  Real FastSpeedFromP(const Real d, const Real p, const Real g1,
+                      const Real bx, const Real by, const Real bz) const {
+    Real asq = g1*p;
+    Real ct2 = by*by + bz*bz;
+    Real qsq = bx*bx + ct2 + asq;
+    Real tmp = bx*bx + ct2 - asq;
+    return sqrt(0.5*(qsq + sqrt(tmp*tmp + 4.0*asq*ct2))/d);
+  }
+
+  //! \fn Real SoundSpeed
+  //! \brief adiabatic sound speed c_s(d,e) = sqrt(Gamma_1 p/d)
+  KOKKOS_INLINE_FUNCTION
+  Real SoundSpeed(const Real d, const Real e) const {
+    return sqrt(Gamma1(d,e)*Pressure(d,e)/d);
+  }
+
+  //! \fn Real FastSpeed
+  //! \brief fast magnetosonic speed for a general EOS, from (d,e) and the field
+  KOKKOS_INLINE_FUNCTION
+  Real FastSpeed(const Real d, const Real e,
+                 const Real bx, const Real by, const Real bz) const {
+    Real asq = Gamma1(d,e)*Pressure(d,e);
+    Real ct2 = by*by + bz*bz;
+    Real qsq = bx*bx + ct2 + asq;
+    Real tmp = bx*bx + ct2 - asq;
+    return sqrt(0.5*(qsq + sqrt(tmp*tmp + 4.0*asq*ct2))/d);
+  }
+
+  //--------------------------------------------------------------------------------------
+  // IDEAL GAS interface. Retained for the SR/GR solvers, which are out of scope for the
+  // general EOS; non-relativistic kernels should use the general interface above.
 
   // IDEAL GAS PRESSURE: converts primitive variable (either internal energy density e
   // or temperature e/d) into pressure.
@@ -265,6 +404,28 @@ class IdealHydro : public EquationOfState {
 };
 
 //----------------------------------------------------------------------------------------
+//! \class GeneralHydro
+//! \brief Derived class for a general EOS in nonrelativistic hydro. Evaluates pressure
+//! and Gamma_1 once per cell in ConsToPrim and stores them in Hydro::wder, from where
+//! they are reconstructed to interfaces.
+
+class GeneralHydro : public EquationOfState {
+ public:
+  // Following suppress warnings that MHD versions are not over-ridden
+  using EquationOfState::ConsToPrim;
+  using EquationOfState::PrimToCons;
+
+  GeneralHydro(MeshBlockPack *pp, ParameterInput *pin);
+  void ConsToPrim(DvceArray5D<Real> &cons, DvceArray5D<Real> &prim,
+                  const bool only_testfloors,
+                  const int il, const int iu, const int jl, const int ju,
+                  const int kl, const int ku) override;
+  void PrimToCons(const DvceArray5D<Real> &prim, DvceArray5D<Real> &cons,
+                  const int il, const int iu, const int jl, const int ju,
+                  const int kl, const int ku) override;
+};
+
+//----------------------------------------------------------------------------------------
 //! \class IdealSRHydro
 //! \brief Derived class for ideal gas EOS in special relativistic Hydro
 
@@ -336,6 +497,29 @@ class IdealMHD : public EquationOfState {
   using EquationOfState::PrimToCons;
 
   IdealMHD(MeshBlockPack *pp, ParameterInput *pin);
+  void ConsToPrim(DvceArray5D<Real> &cons, const DvceFaceFld4D<Real> &b,
+                  DvceArray5D<Real> &prim, DvceArray5D<Real> &bcc,
+                  const bool only_testfloors,
+                  const int il, const int iu, const int jl, const int ju,
+                  const int kl, const int ku) override;
+  void PrimToCons(const DvceArray5D<Real> &prim, const DvceArray5D<Real> &bcc,
+                  DvceArray5D<Real> &cons, const int il, const int iu,
+                  const int jl, const int ju, const int kl, const int ku) override;
+};
+
+//----------------------------------------------------------------------------------------
+//! \class GeneralMHD
+//! \brief Derived class for a general EOS in nonrelativistic MHD. Evaluates pressure and
+//! Gamma_1 once per cell in ConsToPrim and stores them in MHD::wder, from where they are
+//! reconstructed to interfaces.
+
+class GeneralMHD : public EquationOfState {
+ public:
+  // Following suppress warnings that Hydro versions are not over-ridden
+  using EquationOfState::ConsToPrim;
+  using EquationOfState::PrimToCons;
+
+  GeneralMHD(MeshBlockPack *pp, ParameterInput *pin);
   void ConsToPrim(DvceArray5D<Real> &cons, const DvceFaceFld4D<Real> &b,
                   DvceArray5D<Real> &prim, DvceArray5D<Real> &bcc,
                   const bool only_testfloors,

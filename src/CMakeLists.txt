@@ -45,6 +45,8 @@ add_executable(
         dyn_grmhd/dyn_grmhd_fofc.cpp
 
         eos/eos.cpp
+        eos/general_hyd.cpp
+        eos/general_mhd.cpp
         eos/ideal_hyd.cpp
         eos/ideal_mhd.cpp
         eos/isothermal_hyd.cpp

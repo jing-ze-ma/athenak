@@ -58,6 +58,13 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
   auto &coord_ = pmy_pack->pcoord->coord_data;
   auto &w0_ = w0;
   auto &b0_ = bcc0;
+
+  // For a general EOS, pressure and Gamma_1 were evaluated once per cell in ConsToPrim
+  // and are reconstructed to interfaces alongside the primitives, so the Riemann solvers
+  // consume pressure directly instead of calling the (expensive) EOS. nder is 0 for an
+  // ideal gas, leaving the original code path untouched.
+  auto &wder_ = wder;
+  const int nder = eos_.IsGeneral() ? NDERIVED : 0;
     
   auto w0facewb_x1f = w0facewb.x1f;
   auto w0facewb_x2f = w0facewb.x2f;
@@ -75,7 +82,8 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
   // i-direction
 
   size_t scr_size = (ScrArray2D<Real>::shmem_size(nvars, ncells1) +
-                     ScrArray2D<Real>::shmem_size(3, ncells1)) * 2;
+                     ScrArray2D<Real>::shmem_size(3, ncells1) +
+                     ScrArray2D<Real>::shmem_size(nder, ncells1)) * 2;
   int scr_level = 0;
   auto &flx1_ = uflx.x1f;
   auto &e31_ = e3x1;
@@ -103,7 +111,9 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
     ScrArray2D<Real> wr(member.team_scratch(scr_level), nvars, ncells1);
     ScrArray2D<Real> bl(member.team_scratch(scr_level), 3, ncells1);
     ScrArray2D<Real> br(member.team_scratch(scr_level), 3, ncells1);
-      
+    ScrArray2D<Real> dl(member.team_scratch(scr_level), nder, ncells1);
+    ScrArray2D<Real> dr(member.team_scratch(scr_level), nder, ncells1);
+
     if (use_spherical_polar) {
       GridPiecewiseLinearX1(member, eos_, m, k, j, il-1, iu, w0_, x1v_, x1f_, phicc0_, phi0_x1f, true, wl, wr);
       GridPiecewiseLinearX1(member, eos_, m, k, j, il-1, iu, b0_, x1v_, x1f_, phicc0_, phi0_x1f, false, bl, br);
@@ -141,10 +151,37 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
     }
     }
       
+    // Reconstruct the derived thermodynamic variables (general EOS only). apply_floors is
+    // false: that logic keys off n==IDN/n==IEN, whose values collide with DerivedIndex.
+    if (nder > 0) {
+      switch (recon_method_) {
+        case ReconstructionMethod::dc:
+          DonorCellX1(member, m, k, j, il-1, iu, wder_, dl, dr);
+          break;
+        case ReconstructionMethod::plm:
+          PiecewiseLinearX1(member, m, k, j, il-1, iu, wder_, dl, dr);
+          break;
+        case ReconstructionMethod::ppm4:
+        case ReconstructionMethod::ppmx:
+          PiecewiseParabolicX1(member,eos_,extrema,false,m,k,j,il-1,iu,wder_,dl,dr);
+          break;
+        case ReconstructionMethod::wenoz:
+          WENOZX1(member, eos_, false, m, k, j, il-1, iu, wder_, dl, dr);
+          break;
+        default:
+          break;
+      }
+      // reconstruction can undershoot; keep the interface pressure positive
+      par_for_inner(member, il, iu, [&](const int i) {
+        dl(IDPR,i) = fmax(dl(IDPR,i), eos_.pfloor);
+        dr(IDPR,i) = fmax(dr(IDPR,i), eos_.pfloor);
+      });
+    }
+
       if (use_wellbalance_static_reconst_perturb) {
         AddWbPrimFaceX1(member,m,k,j,il-1,iu,w0facewb_x1f,wl,wr);
       }
-      
+
     // Sync all threads in the team so that scratch memory is consistent
     member.team_barrier();
 
@@ -164,12 +201,13 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
     if constexpr (rsolver_method_ == MHD_RSolver::advect) {
       Advect(member,eos,indcs,size,coord,m,k,j,il,iu,IVX,wl,wr,bl,br,bx,flx1,e31,e21);
     } else if constexpr (rsolver_method_ == MHD_RSolver::llf) {
-      LLF(member,eos,indcs,size,coord,m,k,j,il,iu,IVX,wl,wr,bl,br,bx,flx1,e31,e21);
+      LLF(member,eos,indcs,size,coord,m,k,j,il,iu,IVX,wl,wr,bl,br,dl,dr,bx,flx1,e31,e21);
     } else if constexpr (rsolver_method_ == MHD_RSolver::hlle) {
-      HLLE(member,eos,indcs,size,coord,m,k,j,il,iu,IVX,wl,wr,bl,br,bx,flx1,e31,e21);
+      HLLE(member,eos,indcs,size,coord,m,k,j,il,iu,IVX,wl,wr,bl,br,dl,dr,bx,flx1,e31,e21);
     } else if constexpr (rsolver_method_ == MHD_RSolver::hlld) {
       if (do_pole) {
-        HLLE(member,eos,indcs,size,coord,m,k,j,il,iu,IVX,wl,wr,bl,br,bx,flx1,e31,e21);
+        HLLE(member,eos,indcs,size,coord,m,k,j,il,iu,IVX,wl,wr,bl,br,dl,dr,
+             bx,flx1,e31,e21);
       } else {
       HLLD(member,eos,indcs,size,coord,m,k,j,il,iu,IVX,wl,wr,bl,br,bx,flx1,e31,e21);
       }
@@ -203,7 +241,8 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
 
   if (pmy_pack->pmesh->multi_d) {
     scr_size = (ScrArray2D<Real>::shmem_size(nvars, ncells1) +
-                ScrArray2D<Real>::shmem_size(3, ncells1)) * 3;
+                ScrArray2D<Real>::shmem_size(3, ncells1) +
+                ScrArray2D<Real>::shmem_size(nder, ncells1)) * 3;
     auto &flx2_ = uflx.x2f;
     auto &by_ = b0.x2f;
     auto &e12_ = e1x2;
@@ -229,6 +268,9 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
       ScrArray2D<Real> scr4(member.team_scratch(scr_level), 3, ncells1);
       ScrArray2D<Real> scr5(member.team_scratch(scr_level), 3, ncells1);
       ScrArray2D<Real> scr6(member.team_scratch(scr_level), 3, ncells1);
+      ScrArray2D<Real> dscr1(member.team_scratch(scr_level), nder, ncells1);
+      ScrArray2D<Real> dscr2(member.team_scratch(scr_level), nder, ncells1);
+      ScrArray2D<Real> dscr3(member.team_scratch(scr_level), nder, ncells1);
 
       for (int j=jl; j<=ju; ++j) {
         // Permute scratch arrays.
@@ -238,11 +280,16 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
         auto bl     = scr4;
         auto bl_jp1 = scr5;
         auto br     = scr6;
+        auto dl     = dscr1;
+        auto dl_jp1 = dscr2;
+        auto dr     = dscr3;
         if ((j%2) == 0) {
           wl     = scr2;
           wl_jp1 = scr1;
           bl     = scr5;
           bl_jp1 = scr4;
+          dl     = dscr2;
+          dl_jp1 = dscr1;
         }
           
         if (use_spherical_polar) {
@@ -282,6 +329,34 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
         }
         }
           
+        // Reconstruct the derived thermodynamic variables (general EOS only). NOTE the
+        // range is is-1,ie+1 to match what the Riemann solver below actually reads: il,iu
+        // are only ever set for the i-direction sweep and are not reset here.
+        if (nder > 0) {
+          switch (recon_method_) {
+            case ReconstructionMethod::dc:
+              DonorCellX2(member, m, k, j, is-1, ie+1, wder_, dl_jp1, dr);
+              break;
+            case ReconstructionMethod::plm:
+              PiecewiseLinearX2(member, m, k, j, is-1, ie+1, wder_, dl_jp1, dr);
+              break;
+            case ReconstructionMethod::ppm4:
+            case ReconstructionMethod::ppmx:
+              PiecewiseParabolicX2(member,eos_,extrema,false,m,k,j,is-1,ie+1,
+                                   wder_,dl_jp1,dr);
+              break;
+            case ReconstructionMethod::wenoz:
+              WENOZX2(member, eos_, false, m, k, j, is-1, ie+1, wder_, dl_jp1, dr);
+              break;
+            default:
+              break;
+          }
+          par_for_inner(member, is-1, ie+1, [&](const int i) {
+            dl_jp1(IDPR,i) = fmax(dl_jp1(IDPR,i), eos_.pfloor);
+            dr(IDPR,i) = fmax(dr(IDPR,i), eos_.pfloor);
+          });
+        }
+
           if (use_wellbalance_static_reconst_perturb) {
             AddWbPrimFaceX2(member,m,k,j,il,iu,w0facewb_x2f,wl_jp1,wr);
           }
@@ -307,14 +382,14 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
                     m,k,j,is-1,ie+1,IVY,wl,wr,bl,br,by,flx2,e12,e32);
           } else if constexpr (rsolver_method_ == MHD_RSolver::llf) {
             LLF(member,eos,indcs,size,coord,
-                    m,k,j,is-1,ie+1,IVY,wl,wr,bl,br,by,flx2,e12,e32);
+                    m,k,j,is-1,ie+1,IVY,wl,wr,bl,br,dl,dr,by,flx2,e12,e32);
           } else if constexpr (rsolver_method_ == MHD_RSolver::hlle) {
             HLLE(member,eos,indcs,size,coord,
-                    m,k,j,is-1,ie+1,IVY,wl,wr,bl,br,by,flx2,e12,e32);
+                    m,k,j,is-1,ie+1,IVY,wl,wr,bl,br,dl,dr,by,flx2,e12,e32);
           } else if constexpr (rsolver_method_ == MHD_RSolver::hlld) {
             if (do_pole) {
               HLLE(member,eos,indcs,size,coord,
-                          m,k,j,is-1,ie+1,IVY,wl,wr,bl,br,by,flx2,e12,e32);
+                          m,k,j,is-1,ie+1,IVY,wl,wr,bl,br,dl,dr,by,flx2,e12,e32);
             } else {
             HLLD(member,eos,indcs,size,coord,
                     m,k,j,is-1,ie+1,IVY,wl,wr,bl,br,by,flx2,e12,e32);
@@ -356,7 +431,8 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
 
   if (pmy_pack->pmesh->three_d) {
     scr_size = (ScrArray2D<Real>::shmem_size(nvars, ncells1) +
-                ScrArray2D<Real>::shmem_size(3, ncells1)) * 3;
+                ScrArray2D<Real>::shmem_size(3, ncells1) +
+                ScrArray2D<Real>::shmem_size(nder, ncells1)) * 3;
     auto &flx3_ = uflx.x3f;
     auto &bz_ = b0.x3f;
     auto &e23_ = e2x3;
@@ -377,6 +453,9 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
       ScrArray2D<Real> scr4(member.team_scratch(scr_level), 3, ncells1);
       ScrArray2D<Real> scr5(member.team_scratch(scr_level), 3, ncells1);
       ScrArray2D<Real> scr6(member.team_scratch(scr_level), 3, ncells1);
+      ScrArray2D<Real> dscr1(member.team_scratch(scr_level), nder, ncells1);
+      ScrArray2D<Real> dscr2(member.team_scratch(scr_level), nder, ncells1);
+      ScrArray2D<Real> dscr3(member.team_scratch(scr_level), nder, ncells1);
 
       for (int k=kl; k<=ku; ++k) {
         // Permute scratch arrays.
@@ -386,11 +465,16 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
         auto bl     = scr4;
         auto bl_kp1 = scr5;
         auto br     = scr6;
+        auto dl     = dscr1;
+        auto dl_kp1 = dscr2;
+        auto dr     = dscr3;
         if ((k%2) == 0) {
           wl     = scr2;
           wl_kp1 = scr1;
           bl     = scr5;
           bl_kp1 = scr4;
+          dl     = dscr2;
+          dl_kp1 = dscr1;
         }
           
         if (use_spherical_polar) {
@@ -430,6 +514,33 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
         }
         }
           
+        // Reconstruct the derived thermodynamic variables (general EOS only); range
+        // matches the Riemann solver below, as in the j-direction sweep above.
+        if (nder > 0) {
+          switch (recon_method_) {
+            case ReconstructionMethod::dc:
+              DonorCellX3(member, m, k, j, is-1, ie+1, wder_, dl_kp1, dr);
+              break;
+            case ReconstructionMethod::plm:
+              PiecewiseLinearX3(member, m, k, j, is-1, ie+1, wder_, dl_kp1, dr);
+              break;
+            case ReconstructionMethod::ppm4:
+            case ReconstructionMethod::ppmx:
+              PiecewiseParabolicX3(member,eos_,extrema,false,m,k,j,is-1,ie+1,
+                                   wder_,dl_kp1,dr);
+              break;
+            case ReconstructionMethod::wenoz:
+              WENOZX3(member, eos_, false, m, k, j, is-1, ie+1, wder_, dl_kp1, dr);
+              break;
+            default:
+              break;
+          }
+          par_for_inner(member, is-1, ie+1, [&](const int i) {
+            dl_kp1(IDPR,i) = fmax(dl_kp1(IDPR,i), eos_.pfloor);
+            dr(IDPR,i) = fmax(dr(IDPR,i), eos_.pfloor);
+          });
+        }
+
           if (use_wellbalance_static_reconst_perturb) {
             AddWbPrimFaceX3(member,m,k,j,il,iu,w0facewb_x3f,wl_kp1,wr);
           }
@@ -455,14 +566,14 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
                     m,k,j,is-1,ie+1,IVZ,wl,wr,bl,br,bz,flx3,e23,e13);
           } else if constexpr (rsolver_method_ == MHD_RSolver::llf) {
             LLF(member,eos,indcs,size,coord,
-                    m,k,j,is-1,ie+1,IVZ,wl,wr,bl,br,bz,flx3,e23,e13);
+                    m,k,j,is-1,ie+1,IVZ,wl,wr,bl,br,dl,dr,bz,flx3,e23,e13);
           } else if constexpr (rsolver_method_ == MHD_RSolver::hlle) {
             HLLE(member,eos,indcs,size,coord,
-                    m,k,j,is-1,ie+1,IVZ,wl,wr,bl,br,bz,flx3,e23,e13);
+                    m,k,j,is-1,ie+1,IVZ,wl,wr,bl,br,dl,dr,bz,flx3,e23,e13);
           } else if constexpr (rsolver_method_ == MHD_RSolver::hlld) {
             if (do_pole) {
               HLLE(member,eos,indcs,size,coord,
-                        m,k,j,is-1,ie+1,IVZ,wl,wr,bl,br,bz,flx3,e23,e13);
+                        m,k,j,is-1,ie+1,IVZ,wl,wr,bl,br,dl,dr,bz,flx3,e23,e13);
             } else {
             HLLD(member,eos,indcs,size,coord,
                     m,k,j,is-1,ie+1,IVZ,wl,wr,bl,br,bz,flx3,e23,e13);

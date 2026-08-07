@@ -88,6 +88,77 @@ void SingleStateLLF_MHD(const MHDPrim1D &wl, const MHDPrim1D &wr, const Real &bx
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void SingleStateLLF_GenMHD
+//! \brief The LLF Riemann solver for MHD with a GENERAL EOS, for a single L/R state.
+//! Identical algebra to SingleStateLLF_MHD, except that the pressures and first adiabatic
+//! exponents are passed in rather than evaluated from (d,e): they were computed once per
+//! cell in ConsToPrim and reconstructed to this interface. The fast magnetosonic speed
+//! uses Gamma_1 p in place of gamma p, reducing to the ideal result when Gamma_1=gamma.
+
+KOKKOS_INLINE_FUNCTION
+void SingleStateLLF_GenMHD(const MHDPrim1D &wl, const MHDPrim1D &wr, const Real &bxi,
+                           const Real pl, const Real pr, const Real g1l, const Real g1r,
+                           MHDCons1D &flux) {
+  // Compute sum of L/R fluxes
+  Real qa = wl.d*wl.vx;
+  Real qb = wr.d*wr.vx;
+  Real qc = 0.5*(SQR(wl.by) + SQR(wl.bz) - SQR(bxi));
+  Real qd = 0.5*(SQR(wr.by) + SQR(wr.bz) - SQR(bxi));
+
+  MHDCons1D fsum;
+  fsum.d  = qa       + qb;
+  fsum.mx = qa*wl.vx + qb*wr.vx + qc + qd;
+  fsum.my = qa*wl.vy + qb*wr.vy - bxi*(wl.by + wr.by);
+  fsum.mz = qa*wl.vz + qb*wr.vz - bxi*(wl.bz + wr.bz);
+  fsum.by = wl.by*wl.vx + wr.by*wr.vx - bxi*(wl.vy + wr.vy);
+  fsum.bz = wl.bz*wl.vx + wr.bz*wr.vx - bxi*(wl.vz + wr.vz);
+
+  Real el = wl.e + 0.5*wl.d*(SQR(wl.vx)+SQR(wl.vy)+SQR(wl.vz)) + qc + SQR(bxi);
+  Real er = wr.e + 0.5*wr.d*(SQR(wr.vx)+SQR(wr.vy)+SQR(wr.vz)) + qd + SQR(bxi);
+  fsum.mx += (pl + pr);
+  fsum.e  = (el + pl + qc)*wl.vx + (er + pr + qd)*wr.vx;
+  fsum.e  -= bxi*(wl.by*wl.vy + wl.bz*wl.vz);
+  fsum.e  -= bxi*(wr.by*wr.vy + wr.bz*wr.vz);
+
+  // Compute max wave speed in L,R states (see Toro eq. 10.43). Fast magnetosonic speed
+  // with a_sq = Gamma_1*p; see EOS_Data::FastSpeed().
+  Real asq = g1l*pl;
+  Real ct2 = SQR(wl.by) + SQR(wl.bz);
+  Real qsq = SQR(bxi) + ct2 + asq;
+  Real tmp = SQR(bxi) + ct2 - asq;
+  qa = sqrt(0.5*(qsq + sqrt(tmp*tmp + 4.0*asq*ct2))/wl.d);
+
+  asq = g1r*pr;
+  ct2 = SQR(wr.by) + SQR(wr.bz);
+  qsq = SQR(bxi) + ct2 + asq;
+  tmp = SQR(bxi) + ct2 - asq;
+  qb = sqrt(0.5*(qsq + sqrt(tmp*tmp + 4.0*asq*ct2))/wr.d);
+
+  Real a = fmax( (fabs(wl.vx) + qa), (fabs(wr.vx) + qb) );
+
+  // Compute difference in L/R states dU, multiplied by max wave speed
+  MHDCons1D du;
+  du.d  = a*(wr.d       - wl.d);
+  du.mx = a*(wr.d*wr.vx - wl.d*wl.vx);
+  du.my = a*(wr.d*wr.vy - wl.d*wl.vy);
+  du.mz = a*(wr.d*wr.vz - wl.d*wl.vz);
+  du.e  = a*(er - el);
+  du.by = a*(wr.by - wl.by);
+  du.bz = a*(wr.bz - wl.bz);
+
+  // Compute the LLF flux at interface (see Toro eq. 10.42).
+  flux.d  = 0.5*(fsum.d  - du.d);
+  flux.mx = 0.5*(fsum.mx - du.mx);
+  flux.my = 0.5*(fsum.my - du.my);
+  flux.mz = 0.5*(fsum.mz - du.mz);
+  flux.e  = 0.5*(fsum.e  - du.e);
+  flux.by = -0.5*(fsum.by - du.by);
+  flux.bz =  0.5*(fsum.bz - du.bz);
+
+  return;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void SingleStateLLF_SRMHD
 //! \brief The LLF Riemann solver for SR MHD for a single L/R state
 

@@ -108,6 +108,14 @@ class MHD {
   DvceArray5D<Real> coarse_w0;    // primitive variables on 2x coarser grid (for SMR/AMR)
   DvceFaceFld4D<Real> coarse_b0;  // face-centered B-field on 2x coarser grid
 
+  // Derived thermodynamic variables (pressure, Gamma_1) for a general EOS. Evaluated once
+  // per cell in ConsToPrim and reconstructed to interfaces, so the Riemann solvers never
+  // call the EOS. Only allocated when the EOS is general; empty for an ideal gas.
+  DvceArray5D<Real> wder;
+  // Cached temperature, the warm start for the T(d,e) root find. Only allocated when the
+  // EOS is general.
+  DvceArray4D<Real> wtemp;
+
   // Objects containing boundary communication buffers and routines for u and b
   MeshBoundaryValuesCC *pbval_u;
   MeshBoundaryValuesFC *pbval_b;

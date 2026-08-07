@@ -78,6 +78,56 @@ void SingleStateLLF_Hyd(const HydPrim1D &wl, const HydPrim1D &wr, const EOS_Data
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void SingleStateLLF_GenHyd
+//  \brief The LLF Riemann solver for hydrodynamics with a GENERAL EOS, for a single L/R
+//  state. Identical algebra to SingleStateLLF_Hyd, except that the pressures and first
+//  adiabatic exponents are passed in rather than evaluated from (d,e): they were computed
+//  once per cell in ConsToPrim and reconstructed to this interface. The sound speed is
+//  c_s = sqrt(Gamma_1 p/d), which reduces to the ideal-gas expression when Gamma_1=gamma.
+
+KOKKOS_INLINE_FUNCTION
+void SingleStateLLF_GenHyd(const HydPrim1D &wl, const HydPrim1D &wr,
+                           const Real pl, const Real pr, const Real g1l, const Real g1r,
+                           HydCons1D &flux) {
+  Real qa = wl.d*wl.vx;
+  Real qb = wr.d*wr.vx;
+
+  // Compute sum of L/R fluxes
+  HydCons1D fsum;
+  fsum.d  = qa       + qb;
+  fsum.mx = qa*wl.vx + qb*wr.vx;
+  fsum.my = qa*wl.vy + qb*wr.vy;
+  fsum.mz = qa*wl.vz + qb*wr.vz;
+
+  Real el = wl.e + 0.5*wl.d*(SQR(wl.vx) + SQR(wl.vy) + SQR(wl.vz));
+  Real er = wr.e + 0.5*wr.d*(SQR(wr.vx) + SQR(wr.vy) + SQR(wr.vz));
+  fsum.mx += (pl + pr);
+  fsum.e  = (el + pl)*wl.vx + (er + pr)*wr.vx;
+
+  // Compute max wave speed in L,R states (see Toro eq. 10.43)
+  qa = sqrt(g1l*pl/wl.d);
+  qb = sqrt(g1r*pr/wr.d);
+  Real a = fmax( (fabs(wl.vx) + qa), (fabs(wr.vx) + qb) );
+
+  // Compute difference in L/R states dU, multiplied by max wave speed
+  HydCons1D du;
+  du.d  = a*(wr.d       - wl.d);
+  du.mx = a*(wr.d*wr.vx - wl.d*wl.vx);
+  du.my = a*(wr.d*wr.vy - wl.d*wl.vy);
+  du.mz = a*(wr.d*wr.vz - wl.d*wl.vz);
+  du.e  = a*(er - el);
+
+  // Compute the LLF flux at interface (see Toro eq. 10.42).
+  flux.d  = 0.5*(fsum.d  - du.d );
+  flux.mx = 0.5*(fsum.mx - du.mx);
+  flux.my = 0.5*(fsum.my - du.my);
+  flux.mz = 0.5*(fsum.mz - du.mz);
+  flux.e  = 0.5*(fsum.e  - du.e );
+
+  return;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void SingleStateLLF_SRHyd
 //  \brief The LLF Riemann solver for SR hydrodynamics for a single L/R state
 

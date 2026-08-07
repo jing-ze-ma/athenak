@@ -40,7 +40,8 @@ KOKKOS_INLINE_FUNCTION
 void HLLE(TeamMember_t const &member, const EOS_Data &eos,
      const RegionIndcs &indcs,const DualArray1D<RegionSize> &size,const CoordData &coord,
      const int m, const int k, const int j, const int il, const int iu, const int ivx,
-     const ScrArray2D<Real> &wl, const ScrArray2D<Real> &wr, DvceArray5D<Real> flx) {
+     const ScrArray2D<Real> &wl, const ScrArray2D<Real> &wr,
+     const ScrArray2D<Real> &dl, const ScrArray2D<Real> &dr, DvceArray5D<Real> flx) {
   int ivy = IVX + ((ivx-IVX)+1)%3;
   int ivz = IVX + ((ivx-IVX)+2)%3;
   Real gm1 = eos.gamma - 1.0;
@@ -60,8 +61,15 @@ void HLLE(TeamMember_t const &member, const EOS_Data &eos,
     Real &wr_ivy = wr(ivy,i);
     Real &wr_ivz = wr(ivz,i);
 
-    Real wl_ipr, wr_ipr;
-    if (eos.is_ideal) {
+    // For a general EOS the pressure and Gamma_1 were evaluated once per cell in
+    // ConsToPrim and reconstructed to this interface, so no EOS call is needed here.
+    Real wl_ipr, wr_ipr, csl, csr;
+    if (eos.IsGeneral()) {
+      wl_ipr = dl(IDPR,i);
+      wr_ipr = dr(IDPR,i);
+      csl = sqrt(dl(IDG1,i)*wl_ipr/wl_idn);
+      csr = sqrt(dr(IDG1,i)*wr_ipr/wr_idn);
+    } else if (eos.is_ideal) {
       wl_ipr = eos.IdealGasPressure(wl(IEN,i));
       wr_ipr = eos.IdealGasPressure(wr(IEN,i));
     }
@@ -79,7 +87,11 @@ void HLLE(TeamMember_t const &member, const EOS_Data &eos,
     // Following Roe(1981), the enthalpy H=(E+P)/d is averaged for ideal gas EOS,
     // rather than E or P directly.  sqrtdl*hl = sqrtdl*(el+pl)/dl = (el+pl)/sqrtdl
     Real el,er,hroe;
-    if (eos.is_ideal) {
+    if (eos.IsGeneral()) {
+      // internal energy density is a reconstructed primitive; e(p) would be a root find
+      el = wl(IEN,i) + 0.5*wl_idn*(SQR(wl_ivx) + SQR(wl_ivy) + SQR(wl_ivz));
+      er = wr(IEN,i) + 0.5*wr_idn*(SQR(wr_ivx) + SQR(wr_ivy) + SQR(wr_ivz));
+    } else if (eos.is_ideal) {
       el = wl_ipr*igm1 + 0.5*wl_idn*(SQR(wl_ivx) + SQR(wl_ivy) + SQR(wl_ivz));
       er = wr_ipr*igm1 + 0.5*wr_idn*(SQR(wr_ivx) + SQR(wr_ivy) + SQR(wr_ivz));
       hroe = ((el + wl_ipr)/sqrtdl + (er + wr_ipr)/sqrtdr)*isdlpdr;
@@ -89,7 +101,11 @@ void HLLE(TeamMember_t const &member, const EOS_Data &eos,
 
     Real qa,qb;
     Real a  = iso_cs;
-    if (eos.is_ideal) {
+    if (eos.IsGeneral()) {
+      // Roe-averaged enthalpy is not formed for a general EOS; see Step 4
+      qa = csl;
+      qb = csr;
+    } else if (eos.is_ideal) {
       qa = eos.IdealHydroSoundSpeed(wl_idn, wl_ipr);
       qb = eos.IdealHydroSoundSpeed(wr_idn, wr_ipr);
       a = hroe - 0.5*(SQR(wroe_ivx) + SQR(wroe_ivy) + SQR(wroe_ivz));
@@ -101,8 +117,18 @@ void HLLE(TeamMember_t const &member, const EOS_Data &eos,
 
     //--- Step 4. Compute the L/R wave speeds based on L/R and Roe-averaged values
 
-    Real al = fmin((wroe_ivx - a),(wl_ivx - qa));
-    Real ar = fmax((wroe_ivx + a),(wr_ivx + qb));
+    Real al, ar;
+    if (eos.IsGeneral()) {
+      // A proper Roe average for a general EOS requires Vinokur-Montagne averaging, so
+      // the simpler Davis/Einfeldt bound on the L/R states is used instead. This is
+      // robust and EOS agnostic, at the cost of being slightly more diffusive than the
+      // Roe-average estimate taken on the ideal-gas path below.
+      al = fmin((wl_ivx - csl), (wr_ivx - csr));
+      ar = fmax((wl_ivx + csl), (wr_ivx + csr));
+    } else {
+      al = fmin((wroe_ivx - a),(wl_ivx - qa));
+      ar = fmax((wroe_ivx + a),(wr_ivx + qb));
+    }
 
     // following min/max set to TINY_NUMBER to fix bug found in converging supersonic flow
     Real bp = (ar > 0.0) ? ar : 1.0e-20;

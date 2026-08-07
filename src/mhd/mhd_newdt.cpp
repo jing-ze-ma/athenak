@@ -45,6 +45,8 @@ TaskStatus MHD::NewTimeStep(Driver *pdriver, int stage) {
   // capture class variables for kernel
   auto &w0_ = w0;
   auto &eos = pmy_pack->pmhd->peos->eos_data;
+  // derived thermodynamic variables (general EOS only; empty view for an ideal gas)
+  auto &wder_ = pmy_pack->pmhd->wder;
   auto &mbsize = pmy_pack->pmb->mb_size;
   auto &is_special_relativistic_ = pmy_pack->pcoord->is_special_relativistic;
   auto &is_general_relativistic_ = pmy_pack->pcoord->is_general_relativistic;
@@ -139,21 +141,36 @@ TaskStatus MHD::NewTimeStep(Driver *pdriver, int stage) {
         Real &w_bz = bcc0_(m,IBZ,k,j,i);
         Real cf;
         Real p = eos.IdealGasPressure(w0_(m,IEN,k,j,i));
-        if (eos.is_ideal) {
+        // For a general EOS the pressure and Gamma_1 were evaluated once per cell in
+        // ConsToPrim. Using them here matters: with ionization or radiation pressure the
+        // ideal-gas expression gives the wrong fast speed, hence the wrong CFL timestep.
+        Real pg = 0.0, g1 = 0.0;
+        if (eos.IsGeneral()) {
+          pg = wder_(m,IDPR,k,j,i);
+          g1 = wder_(m,IDG1,k,j,i);
+        }
+
+        if (eos.IsGeneral()) {
+          cf = eos.FastSpeedFromP(w_d, pg, g1, w_bx, w_by, w_bz);
+        } else if (eos.is_ideal) {
           cf = eos.IdealMHDFastSpeed(w_d, p, w_bx, w_by, w_bz);
         } else {
           cf = eos.IdealMHDFastSpeed(w_d, w_bx, w_by, w_bz);
         }
         max_dv1 = fabs(w0_(m,IVX,k,j,i)) + cf;
 
-        if (eos.is_ideal) {
+        if (eos.IsGeneral()) {
+          cf = eos.FastSpeedFromP(w_d, pg, g1, w_by, w_bz, w_bx);
+        } else if (eos.is_ideal) {
           cf = eos.IdealMHDFastSpeed(w_d, p, w_by, w_bz, w_bx);
         } else {
           cf = eos.IdealMHDFastSpeed(w_d, w_by, w_bz, w_bx);
         }
         max_dv2 = fabs(w0_(m,IVY,k,j,i)) + cf;
 
-        if (eos.is_ideal) {
+        if (eos.IsGeneral()) {
+          cf = eos.FastSpeedFromP(w_d, pg, g1, w_bz, w_bx, w_by);
+        } else if (eos.is_ideal) {
           cf = eos.IdealMHDFastSpeed(w_d, p, w_bz, w_bx, w_by);
         } else {
           cf = eos.IdealMHDFastSpeed(w_d, w_bz, w_bx, w_by);

@@ -44,6 +44,8 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
   // capture class variables for kernel
   auto &w0_ = w0;
   auto &eos = pmy_pack->phydro->peos->eos_data;
+  // derived thermodynamic variables (general EOS only; empty view for an ideal gas)
+  auto &wder_ = pmy_pack->phydro->wder;
   auto &mbsize = pmy_pack->pmb->mb_size;
   auto &is_special_relativistic_ = pmy_pack->pcoord->is_special_relativistic;
   auto &is_general_relativistic_ = pmy_pack->pcoord->is_general_relativistic;
@@ -115,7 +117,13 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
         max_dv3 = fmax(fabs(lm), lp);
       } else {
         Real cs;
-        if (eos.is_ideal) {
+        if (eos.IsGeneral()) {
+          // pressure and Gamma_1 were evaluated once per cell in ConsToPrim. Using them
+          // here matters: with ionization or radiation pressure the ideal-gas expression
+          // below gives the wrong sound speed, and hence the wrong CFL timestep.
+          cs = eos.SoundSpeedFromP(w0_(m,IDN,k,j,i), wder_(m,IDPR,k,j,i),
+                                   wder_(m,IDG1,k,j,i));
+        } else if (eos.is_ideal) {
           Real p = eos.IdealGasPressure(w0_(m,IEN,k,j,i));
           cs = eos.IdealHydroSoundSpeed(w0_(m,IDN,k,j,i), p);
         } else         {

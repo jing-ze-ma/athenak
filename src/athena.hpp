@@ -58,6 +58,12 @@ using Real = double;
 enum VariableIndex {IDN=0, IM1=1, IVX=1, IM2=2, IVY=2, IM3=3, IVZ=3, IEN=4, IPR=4, IYF=5};
 // array indices for components of magnetic field
 enum BFieldIndex {IBX=0, IBY=1, IBZ=2, NMAG=3};
+// array indices for derived thermodynamic variables used by the general EOS. Unlike an
+// ideal gas, a general EOS cannot cheaply return p or Gamma_1 from (d,e): it requires a
+// root find. These are therefore evaluated ONCE per cell in ConsToPrim, stored, and
+// reconstructed to interfaces alongside the primitives, so the Riemann solvers consume
+// pressure directly and never call the EOS. Unused (and unallocated) for an ideal gas.
+enum DerivedIndex {IDPR=0, IDG1=1, NDERIVED=2};
 // array indices for metric matrices in GR
 enum MetricIndex {I00=0, I01=1, I02=2, I03=3, I11=4, I12=5, I13=6, I22=7, I23=8, I33=9,
                   NMETRIC=10};
