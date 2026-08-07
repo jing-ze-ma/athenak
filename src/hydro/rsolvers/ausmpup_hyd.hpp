@@ -24,7 +24,8 @@ KOKKOS_INLINE_FUNCTION
 void AUSMPUP(TeamMember_t const &member, const EOS_Data &eos,
      const RegionIndcs &indcs,const DualArray1D<RegionSize> &size,const CoordData &coord,
      const int m, const int k, const int j, const int il, const int iu, const int ivx,
-     const ScrArray2D<Real> &wl, const ScrArray2D<Real> &wr, DvceArray5D<Real> flx) {
+     const ScrArray2D<Real> &wl, const ScrArray2D<Real> &wr,
+     const ScrArray2D<Real> &dl, const ScrArray2D<Real> &dr, DvceArray5D<Real> flx) {
   int ivy = IVX + ((ivx-IVX)+1)%3;
   int ivz = IVX + ((ivx-IVX)+2)%3;
 
@@ -47,22 +48,44 @@ void AUSMPUP(TeamMember_t const &member, const EOS_Data &eos,
     Real &wr_ivy = wr(ivy,i);
     Real &wr_ivz = wr(ivz,i);
 
-    Real wl_ipr, wr_ipr;
-    wl_ipr = eos.IdealGasPressure(wl(IEN,i));
-    wr_ipr = eos.IdealGasPressure(wr(IEN,i));
+    // general EOS: p and Gamma_1 were precomputed in ConsToPrim and
+    // reconstructed here; Gamma_1 replaces gamma in the wave structure
+    Real wl_ipr, wr_ipr, g1l, g1r, alpl, alpr;
+    if (eos.IsGeneral()) {
+      wl_ipr = dl(IDPR,i);
+      wr_ipr = dr(IDPR,i);
+      g1l = dl(IDG1,i);
+      g1r = dr(IDG1,i);
+      alpl = 2.0*(g1l - 1.0)/(g1l + 1.0);
+      alpr = 2.0*(g1r - 1.0)/(g1r + 1.0);
+    } else {
+      wl_ipr = eos.IdealGasPressure(wl(IEN,i));
+      wr_ipr = eos.IdealGasPressure(wr(IEN,i));
+      g1l = eos.gamma;
+      g1r = eos.gamma;
+      alpl = alpha;
+      alpr = alpha;
+    }
 
     //--- Step 2.  Dimensionless coefficients (Liou 3.3)
 
     // define 6 registers used below
     Real qa,qb,qc,qd,qe,qf;
-    qa = eos.IdealHydroSoundSpeed(wl_idn, wl_ipr);
-    qb = eos.IdealHydroSoundSpeed(wr_idn, wr_ipr);
-    Real el = wl_ipr*igm1 + 0.5*wl_idn*(SQR(wl_ivx) + SQR(wl_ivy) + SQR(wl_ivz));
-    Real er = wr_ipr*igm1 + 0.5*wr_idn*(SQR(wr_ivx) + SQR(wr_ivy) + SQR(wr_ivz));
+    qa = eos.SoundSpeedFromP(wl_idn, wl_ipr, g1l);
+    qb = eos.SoundSpeedFromP(wr_idn, wr_ipr, g1r);
+    Real el, er;
+    if (eos.IsGeneral()) {
+      // internal energy density is a reconstructed primitive
+      el = wl(IEN,i) + 0.5*wl_idn*(SQR(wl_ivx) + SQR(wl_ivy) + SQR(wl_ivz));
+      er = wr(IEN,i) + 0.5*wr_idn*(SQR(wr_ivx) + SQR(wr_ivy) + SQR(wr_ivz));
+    } else {
+      el = wl_ipr*igm1 + 0.5*wl_idn*(SQR(wl_ivx) + SQR(wl_ivy) + SQR(wl_ivz));
+      er = wr_ipr*igm1 + 0.5*wr_idn*(SQR(wr_ivx) + SQR(wr_ivy) + SQR(wr_ivz));
+    }
       
     // Liou 2.3
-    qc = sqrt(alpha * (el+wl_ipr)/wl_idn);  // a_star left
-    qd = sqrt(alpha * (er+wr_ipr)/wr_idn);  // a_star right
+    qc = sqrt(alpl * (el+wl_ipr)/wl_idn);  // a_star left
+    qd = sqrt(alpr * (er+wr_ipr)/wr_idn);  // a_star right
     qe = SQR(qc)/fmax(qc,wl_ivx);
     qf = SQR(qd)/fmax(qd,-wr_ivx);
     qc = fmin(qe,qf);  // average sound speed

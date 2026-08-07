@@ -361,6 +361,21 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
         }
       // Roe solver
       } else if (rsolver.compare("roe") == 0) {
+        // The Roe solver linearizes the flux Jacobian about a Roe-averaged state whose
+        // construction assumes an ideal gas throughout (see RoeFluxAdb, which is written
+        // entirely in terms of gm1). Substituting a local Gamma_1 would NOT give a valid
+        // Roe average: the linearized matrix would no longer satisfy the jump condition
+        // F_R - F_L = A (U_R - U_L), which is the defining property of the scheme, and
+        // shock speeds would be silently wrong. A correct general-EOS Roe solver needs
+        // Vinokur-Montagne averaging, which is not implemented. Refuse instead.
+        if (peos->eos_data.IsGeneral()) {
+          std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                    << std::endl << "<hydro>/rsolver = roe is not supported with "
+                    << "<hydro>/eos = general: the Roe average is only defined for an "
+                    << "ideal gas. Use llf, hlle, hllc, hllclm, lhllc or ausmpup."
+                    << std::endl;
+          std::exit(EXIT_FAILURE);
+        }
         rsolver_method = Hydro_RSolver::roe;
       // Error for anything else
       } else {

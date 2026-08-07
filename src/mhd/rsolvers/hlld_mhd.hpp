@@ -24,7 +24,9 @@ void HLLD(TeamMember_t const &member, const EOS_Data &eos,
      const RegionIndcs &indcs,const DualArray1D<RegionSize> &size,const CoordData &coord,
      const int m, const int k, const int j, const int il, const int iu, const int ivx,
      const ScrArray2D<Real> &wl, const ScrArray2D<Real> &wr,
-     const ScrArray2D<Real> &bl, const ScrArray2D<Real> &br, const DvceArray4D<Real> &bx,
+     const ScrArray2D<Real> &bl, const ScrArray2D<Real> &br,
+     const ScrArray2D<Real> &dl, const ScrArray2D<Real> &dr,
+     const DvceArray4D<Real> &bx,
      DvceArray5D<Real> flx, DvceArray4D<Real> ey, DvceArray4D<Real> ez) {
   int ivy = IVX + ((ivx-IVX)+1)%3;
   int ivz = IVX + ((ivx-IVX)+2)%3;
@@ -53,9 +55,21 @@ void HLLD(TeamMember_t const &member, const EOS_Data &eos,
       Real &wr_iby=br(iby,i);
       Real &wr_ibz=br(ibz,i);
 
-      Real wl_ipr, wr_ipr;
-      wl_ipr = eos.IdealGasPressure(wl(IEN,i));
-      wr_ipr = eos.IdealGasPressure(wr(IEN,i));
+      // general EOS: p and Gamma_1 were precomputed in ConsToPrim and reconstructed
+      // here. The Miyoshi & Kusano wave structure itself is EOS independent once the
+      // pressure and fast speed are known, so only these inputs change.
+      Real wl_ipr, wr_ipr, g1l, g1r;
+      if (eos.IsGeneral()) {
+        wl_ipr = dl(IDPR,i);
+        wr_ipr = dr(IDPR,i);
+        g1l = dl(IDG1,i);
+        g1r = dr(IDG1,i);
+      } else {
+        wl_ipr = eos.IdealGasPressure(wl(IEN,i));
+        wr_ipr = eos.IdealGasPressure(wr(IEN,i));
+        g1l = eos.gamma;
+        g1r = eos.gamma;
+      }
 
       Real &bxi = bx(m,k,j,i);
 
@@ -72,7 +86,8 @@ void HLLD(TeamMember_t const &member, const EOS_Data &eos,
       ul.mx = wl_ivx*ul.d;
       ul.my = wl_ivy*ul.d;
       ul.mz = wl_ivz*ul.d;
-      ul.e  = wl_ipr*igm1 + kel + pbl;
+      ul.e  = (eos.IsGeneral()) ? (wl(IEN,i) + kel + pbl)
+                                   : (wl_ipr*igm1 + kel + pbl);
       ul.by = wl_iby;
       ul.bz = wl_ibz;
 
@@ -80,14 +95,15 @@ void HLLD(TeamMember_t const &member, const EOS_Data &eos,
       ur.mx = wr_ivx*ur.d;
       ur.my = wr_ivy*ur.d;
       ur.mz = wr_ivz*ur.d;
-      ur.e  = wr_ipr*igm1 + ker + pbr;
+      ur.e  = (eos.IsGeneral()) ? (wr(IEN,i) + ker + pbr)
+                                   : (wr_ipr*igm1 + ker + pbr);
       ur.by = wr_iby;
       ur.bz = wr_ibz;
 
       //--- Step 2.  Compute L & R wave speeds according to Miyoshi & Kusano, eqn. (67)
 
-      Real cfl = eos.IdealMHDFastSpeed(wl_idn, wl_ipr, bxi, wl_iby, wl_ibz);
-      Real cfr = eos.IdealMHDFastSpeed(wr_idn, wr_ipr, bxi, wr_iby, wr_ibz);
+      Real cfl = eos.FastSpeedFromP(wl_idn, wl_ipr, g1l, bxi, wl_iby, wl_ibz);
+      Real cfr = eos.FastSpeedFromP(wr_idn, wr_ipr, g1r, bxi, wr_iby, wr_ibz);
 
       spd[0] = fmin( wl_ivx-cfl, wr_ivx-cfr );
       spd[4] = fmax( wl_ivx+cfl, wr_ivx+cfr );

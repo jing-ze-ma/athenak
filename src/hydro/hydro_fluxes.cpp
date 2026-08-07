@@ -191,13 +191,13 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
     } else if constexpr (rsolver_method_ == Hydro_RSolver::hlle) {
       HLLE(member, eos, indcs, size, coord, m, k, j, il, iu, IVX, wl, wr, dl, dr, flx1);
     } else if constexpr (rsolver_method_ == Hydro_RSolver::hllc) {
-      HLLC(member, eos, indcs, size, coord, m, k, j, il, iu, IVX, wl, wr, flx1);
+      HLLC(member,eos,indcs,size,coord,m,k,j,il,iu,IVX,wl,wr,dl,dr,flx1);
     } else if constexpr (rsolver_method_ == Hydro_RSolver::lhllc) {
-      LHLLC(member, eos, indcs, size, coord, m, k, j, il, iu, IVX, wl, wr, flx1);
+      LHLLC(member,eos,indcs,size,coord,m,k,j,il,iu,IVX,wl,wr,dl,dr,flx1);
     } else if constexpr (rsolver_method_ == Hydro_RSolver::hllclm) {
-      HLLCLM(member, eos, indcs, size, coord, m, k, j, il, iu, IVX, wl, wr, flx1);
+      HLLCLM(member,eos,indcs,size,coord,m,k,j,il,iu,IVX,wl,wr,dl,dr,flx1);
     } else if constexpr (rsolver_method_ == Hydro_RSolver::ausmpup) {
-      AUSMPUP(member, eos, indcs, size, coord, m, k, j, il, iu, IVX, wl, wr, flx1);
+      AUSMPUP(member,eos,indcs,size,coord,m,k,j,il,iu,IVX,wl,wr,dl,dr,flx1);
     } else if constexpr (rsolver_method_ == Hydro_RSolver::roe) {
       Roe(member, eos, indcs, size, coord, m, k, j, il, iu, IVX, wl, wr, flx1);
     } else if constexpr (rsolver_method_ == Hydro_RSolver::llf_sr) {
@@ -358,13 +358,13 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
           } else if constexpr (rsolver_method_ == Hydro_RSolver::hlle) {
             HLLE(member,eos,indcs,size,coord,m,k,j,il,iu,IVY,wl,wr,dl,dr,flx2);
           } else if constexpr (rsolver_method_ == Hydro_RSolver::hllc) {
-            HLLC(member, eos, indcs, size, coord, m, k, j, il, iu, IVY, wl, wr, flx2);
+            HLLC(member,eos,indcs,size,coord,m,k,j,il,iu,IVY,wl,wr,dl,dr,flx2);
           } else if constexpr (rsolver_method_ == Hydro_RSolver::lhllc) {
-            LHLLC(member, eos, indcs, size, coord, m, k, j, il, iu, IVY, wl, wr, flx2);
+            LHLLC(member,eos,indcs,size,coord,m,k,j,il,iu,IVY,wl,wr,dl,dr,flx2);
           } else if constexpr (rsolver_method_ == Hydro_RSolver::hllclm) {
-            HLLCLM(member, eos, indcs, size, coord, m, k, j, il, iu, IVY, wl, wr, flx2);
+            HLLCLM(member,eos,indcs,size,coord,m,k,j,il,iu,IVY,wl,wr,dl,dr,flx2);
           } else if constexpr (rsolver_method_ == Hydro_RSolver::ausmpup) {
-            AUSMPUP(member, eos, indcs, size, coord, m, k, j, il, iu, IVY, wl, wr, flx2);
+            AUSMPUP(member,eos,indcs,size,coord,m,k,j,il,iu,IVY,wl,wr,dl,dr,flx2);
           } else if constexpr (rsolver_method_ == Hydro_RSolver::roe) {
             Roe(member, eos, indcs, size, coord, m, k, j, il, iu, IVY, wl, wr, flx2);
           } else if constexpr (rsolver_method_ == Hydro_RSolver::llf_sr) {
@@ -520,13 +520,13 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
           } else if constexpr (rsolver_method_ == Hydro_RSolver::hlle) {
             HLLE(member,eos,indcs,size,coord,m,k,j,il,iu,IVZ,wl,wr,dl,dr,flx3);
           } else if constexpr (rsolver_method_ == Hydro_RSolver::hllc) {
-            HLLC(member, eos, indcs, size, coord, m, k, j, il, iu, IVZ, wl, wr, flx3);
+            HLLC(member,eos,indcs,size,coord,m,k,j,il,iu,IVZ,wl,wr,dl,dr,flx3);
           } else if constexpr (rsolver_method_ == Hydro_RSolver::lhllc) {
-            LHLLC(member, eos, indcs, size, coord, m, k, j, il, iu, IVZ, wl, wr, flx3);
+            LHLLC(member,eos,indcs,size,coord,m,k,j,il,iu,IVZ,wl,wr,dl,dr,flx3);
           } else if constexpr (rsolver_method_ == Hydro_RSolver::hllclm) {
-            HLLCLM(member, eos, indcs, size, coord, m, k, j, il, iu, IVZ, wl, wr, flx3);
+            HLLCLM(member,eos,indcs,size,coord,m,k,j,il,iu,IVZ,wl,wr,dl,dr,flx3);
           } else if constexpr (rsolver_method_ == Hydro_RSolver::ausmpup) {
-            AUSMPUP(member, eos, indcs, size, coord, m, k, j, il, iu, IVZ, wl, wr, flx3);
+            AUSMPUP(member,eos,indcs,size,coord,m,k,j,il,iu,IVZ,wl,wr,dl,dr,flx3);
           } else if constexpr (rsolver_method_ == Hydro_RSolver::roe) {
             Roe(member, eos, indcs, size, coord, m, k, j, il, iu, IVZ, wl, wr, flx3);
           } else if constexpr (rsolver_method_ == Hydro_RSolver::llf_sr) {
