@@ -220,17 +220,6 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
       Kokkos::realloc(phi0.x3f, nmb, ncells3+1, ncells2, ncells1);
     }
     if (use_wellbalance_dynamic) {
-      // See the matching comment in hydro.cpp: the well-balanced background states are
-      // analytic ideal-gas hydrostatic solutions assuming p = (gamma-1)e, which a general
-      // EOS invalidates and a Gamma_1 substitution cannot repair.
-      if (peos->eos_data.IsGeneral()) {
-        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                  << std::endl << "<mhd>/wellbalance_dynamic is not supported with "
-                  << "<mhd>/eos = general: the well-balanced background states are "
-                  << "analytic ideal-gas hydrostatic solutions and are not valid for a "
-                  << "general EOS." << std::endl;
-        std::exit(EXIT_FAILURE);
-      }
       // select well-balanced scheme assumption (no default).  Test for compatibility of options
       std::string wb_opt = pin->GetString("mhd","wb_option");
       if (wb_opt.compare("isothermal") == 0) {

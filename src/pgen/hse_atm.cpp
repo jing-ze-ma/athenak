@@ -33,6 +33,15 @@
 void HydrostaticEquilibrium(Mesh *pm);
 void GravitySource(Mesh *pm, Real bdt);
 
+namespace {
+// Problem parameters the user boundary condition needs. It is called through a function
+// pointer with no ParameterInput, so UserProblem stashes them here. These used to be
+// hardwired in HydrostaticEquilibrium, which silently imposed the iprob=1 isothermal
+// profile on the boundaries of an iprob=2 polytrope and blew the run up.
+int iprob_ = 1;
+Real nu_ = 1.6;
+} // namespace
+
 //----------------------------------------------------------------------------------------
 //! \fn void ProblemGenerator::UserProblem()
 //  \brief Problem Generator for the HSE atmosphere test
@@ -43,6 +52,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   const bool use_wellbalance_dynamic = pmy_mesh_->pmb_pack->phydro->use_wellbalance_dynamic;
   bool user_srcs = pin->GetOrAddBoolean("problem","user_srcs",false);
   int iprob  = pin->GetReal("problem","iprob");
+  iprob_ = iprob;
   if (user_srcs) user_srcs_func = GravitySource;
   user_bcs_func = HydrostaticEquilibrium;
   if (restart) return;
@@ -97,6 +107,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   Real nu, inum1;
   if (iprob == 2) {
       nu = pin->GetReal("problem","nu");
+      nu_ = nu;
       inum1 = 1.0/(nu-1.0);
       H0 *= nu*inum1;
   }
@@ -369,7 +380,7 @@ void HydrostaticEquilibrium(Mesh *pm) {
   MeshBlockPack *pmbp = pm->pmb_pack;
   auto &size = pmbp->pmb->mb_size;
     
-    int iprob = 1;//2;
+    int iprob = iprob_;
 
     DvceArray5D<Real> u0_;
     const bool use_etotgrav = pmbp->phydro->use_etotgrav;
@@ -395,7 +406,7 @@ void HydrostaticEquilibrium(Mesh *pm) {
     Real iH0 = 1.0/H0;
     Real nu,inum1;
     if (iprob == 2) {
-        nu = 1.6;
+        nu = nu_;
         inum1 = 1.0/(nu-1.0);
         H0 *= nu*inum1;
     }
@@ -476,9 +487,9 @@ void GravitySource(Mesh *pm, Real bdt) {
     const bool use_wellbalance_static = pmbp->phydro->use_wellbalance_static;
     const bool use_wellbalance_dynamic = pmbp->phydro->use_wellbalance_dynamic;
 
-    Real gamma = pmbp->phydro->peos->eos_data.gamma;
-    Real gm1 = gamma-1.0;
-    
+    // by-value copy, capturable in the device lambda below
+    auto eos = pmbp->phydro->peos->eos_data;
+
     par_for("varying_grav", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         Real &x2min = size.d_view(m).x2min;
@@ -494,14 +505,18 @@ void GravitySource(Mesh *pm, Real bdt) {
         src = bdt*g*(w0(m,IDN,k,j,i)-w0wb(m,IDN,k,j,i));
       }
         if (use_wellbalance_dynamic) {
-          Real e_kmh,e_kph,dum1,dum2,dum3;
-          pmbp->phydro->getWBerho(IEN, gamma,
+          // The gravitational source is the background's OWN pressure difference across
+          // the cell, not -rho g dx. That is what makes the scheme well balanced: a state
+          // equal to the background reconstructs to face values whose momentum flux
+          // difference cancels this source identically. It therefore has to ask for the
+          // background through the same entry point the reconstruction uses -- getWBq0,
+          // which dispatches to the ideal-gas closed form or the general-EOS integration.
+          Real pl,pr,dum1,dum2,dum3;
+          pmbp->phydro->getWBq0(eos, WBVar::wb_pres,
               w0(m,IDN,k,j-1,i),w0(m,IDN,k,j,i),w0(m,IDN,k,j+1,i),
               w0(m,IEN,k,j-1,i),w0(m,IEN,k,j,i),w0(m,IEN,k,j+1,i),
               phicc0(m,k,j-1,i),phi0_x2f(m,k,j,i),phicc0(m,k,j,i),phi0_x2f(m,k,j+1,i),phicc0(m,k,j+1,i),
-              dum1,e_kmh,dum2,e_kph,dum3);
-          Real pl = e_kmh*gm1;
-          Real pr = e_kph*gm1;
+              dum1,pl,dum2,pr,dum3);
           src = bdt*(pr-pl)/(size.d_view(m).dx2);
         }
       u0(m,IM2,k,j,i) += src;

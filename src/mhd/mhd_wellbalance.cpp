@@ -28,8 +28,10 @@ void MHD::RemoveWbFlux(const DvceFaceFld5D<Real> &w0facewb, DvceFaceFld5D<Real> 
      int nmb1 = pmy_pack->nmb_thispack - 1;
      auto size = pmy_pack->pmb->mb_size;
     
-     Real gamma = peos->eos_data.gamma;
-     Real gm1 = gamma - 1.0;
+     // background pressure. For a general EOS this is NOT (gamma-1)*e_bg: the background
+     // primitives carry their own density, so ask the EOS. Reduces to the ideal-gas form
+     // exactly when the EOS is ideal.
+     auto eos = peos->eos_data;
 
      //--------------------------------------------------------------------------------------
      // fluxes in x1-direction
@@ -39,7 +41,7 @@ void MHD::RemoveWbFlux(const DvceFaceFld5D<Real> &w0facewb, DvceFaceFld5D<Real> 
 
      par_for("wbremflux1", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-       flx1(m,IM1,k,j,i) -= w0facewb1(m,IEN,k,j,i) * gm1;
+       flx1(m,IM1,k,j,i) -= eos.Pressure(w0facewb1(m,IDN,k,j,i), w0facewb1(m,IEN,k,j,i));
      });
      if (pmy_pack->pmesh->one_d) {return;}
 
@@ -51,7 +53,8 @@ void MHD::RemoveWbFlux(const DvceFaceFld5D<Real> &w0facewb, DvceFaceFld5D<Real> 
 
      par_for("wbremflux2",DevExeSpace(), 0, nmb1, ks, ke, js, je+1, is, ie,
      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-         flx2(m,IM2,k,j,i) -= w0facewb2(m,IEN,k,j,i) * gm1;
+         flx2(m,IM2,k,j,i) -= eos.Pressure(w0facewb2(m,IDN,k,j,i),
+                                           w0facewb2(m,IEN,k,j,i));
      });
      if (pmy_pack->pmesh->two_d) {return;}
 
@@ -63,7 +66,8 @@ void MHD::RemoveWbFlux(const DvceFaceFld5D<Real> &w0facewb, DvceFaceFld5D<Real> 
 
      par_for("wbremflux3",DevExeSpace(), 0, nmb1, ks, ke+1, js, je, is, ie,
      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-         flx3(m,IM3,k,j,i) -= w0facewb3(m,IEN,k,j,i) * gm1;
+         flx3(m,IM3,k,j,i) -= eos.Pressure(w0facewb3(m,IDN,k,j,i),
+                                           w0facewb3(m,IEN,k,j,i));
      });
 
      return;

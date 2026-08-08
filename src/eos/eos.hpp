@@ -126,6 +126,36 @@ struct EOS_Data {
     return (1.0/(gamma-1.0));
   }
 
+  //! \fn Real ChiRho
+  //! \brief chi_rho = (dln p/dln d) at constant TEMPERATURE. Note this is NOT Gamma_1,
+  //! which is the same derivative at constant entropy; the two coincide only for an
+  //! isothermal gas. Needed by the well-balanced scheme, which integrates a hydrostatic
+  //! background at fixed T, and by Gamma_1 itself through
+  //! Gamma_1 = chi_rho + p chi_T^2/(d T c_v).
+  KOKKOS_INLINE_FUNCTION
+  Real ChiRho(const Real d, const Real e) const {
+    // TODO(stage3): add EOSType::general branch
+    return 1.0;
+  }
+
+  //! \fn Real ChiT
+  //! \brief chi_T = (dln p/dln T) at constant density. Unity for an ideal gas; it departs
+  //! from unity wherever the number of particles depends on temperature (dissociation,
+  //! ionization) or radiation pressure contributes.
+  KOKKOS_INLINE_FUNCTION
+  Real ChiT(const Real d, const Real e) const {
+    // TODO(stage3): add EOSType::general branch
+    return 1.0;
+  }
+
+  //! \fn Real Enthalpy
+  //! \brief specific enthalpy h = (e + p)/d. Along a hydrostatic isentrope h + Phi is
+  //! constant, which is what makes the isentropic well-balanced background integrable.
+  KOKKOS_INLINE_FUNCTION
+  Real Enthalpy(const Real d, const Real e) const {
+    return ((e + Pressure(d,e))/d);
+  }
+
   //! \fn Real SoundSpeedFromP
   //! \brief adiabatic sound speed from an ALREADY EVALUATED pressure and Gamma_1. Used
   //! wherever those were precomputed in ConsToPrim (timestep, FOFC, Riemann solvers), so

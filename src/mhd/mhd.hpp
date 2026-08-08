@@ -19,6 +19,7 @@
 #include "reconstruct/plm.hpp"
 #include "eos/eos.hpp"
 #include "coordinates/cell_locations.hpp"
+#include "utils/wb_background.hpp"
 
 // forward declarations
 class EquationOfState;
@@ -315,7 +316,7 @@ class MHD {
           if (n == (IEN) || (n == (IDN) && use_wb_rho)) {
             par_for_inner(member, il, iu, [&](const int i) {
               Real q0_im1, q0_ip1, q0_imh, q0_iph, q0_i;
-              getWBerho(n, eos.gamma,
+              getWBq0(eos, (n == (IEN)) ? WBVar::wb_eint : WBVar::wb_dens,
                        q(m,IDN,k,j,i-1),q(m,IDN,k,j,i),q(m,IDN,k,j,i+1),
                        q(m,IEN,k,j,i-1),q(m,IEN,k,j,i),q(m,IEN,k,j,i+1),
                        phicc(m,k,j,i-1),phi(m,k,j,i),phicc(m,k,j,i),phi(m,k,j,i+1),phicc(m,k,j,i+1),
@@ -357,7 +358,7 @@ class MHD {
           if (n == (IEN) || (n == (IDN) && use_wb_rho)) {
             par_for_inner(member, il, iu, [&](const int i) {
               Real q0_jm1, q0_jp1, q0_jmh, q0_jph, q0_j;
-              getWBerho(n, eos.gamma,
+              getWBq0(eos, (n == (IEN)) ? WBVar::wb_eint : WBVar::wb_dens,
                        q(m,IDN,k,j-1,i),q(m,IDN,k,j,i),q(m,IDN,k,j+1,i),
                        q(m,IEN,k,j-1,i),q(m,IEN,k,j,i),q(m,IEN,k,j+1,i),
                        phicc(m,k,j-1,i),phi(m,k,j,i),phicc(m,k,j,i),phi(m,k,j+1,i),phicc(m,k,j+1,i),
@@ -399,7 +400,7 @@ class MHD {
           if (n == (IEN) || (n == (IDN) && use_wb_rho)) {
             par_for_inner(member, il, iu, [&](const int i) {
               Real q0_km1, q0_kp1, q0_kmh, q0_kph, q0_k;
-              getWBerho(n, eos.gamma,
+              getWBq0(eos, (n == (IEN)) ? WBVar::wb_eint : WBVar::wb_dens,
                        q(m,IDN,k-1,j,i),q(m,IDN,k,j,i),q(m,IDN,k+1,j,i),
                        q(m,IEN,k-1,j,i),q(m,IEN,k,j,i),q(m,IEN,k+1,j,i),
                        phicc(m,k-1,j,i),phi(m,k,j,i),phicc(m,k,j,i),phi(m,k+1,j,i),phicc(m,k+1,j,i),
@@ -431,6 +432,274 @@ class MHD {
         return;
       };
     
+    //------------------------------------------------------------------------------------
+    //! \fn WbStaticPiecewiseLinearDerX1()
+    //! \brief static well-balanced reconstruction of the derived thermodynamic variables.
+    //!
+    //! The static scheme reconstructs the perturbation of the primitives about a
+    //! problem-generator-supplied background and adds the background back at the faces.
+    //! Under a general EOS the pressure the Riemann solver sees comes from wder, not from
+    //! the reconstructed primitives, so it needs the same treatment or the stratified
+    //! part
+    //! of the pressure goes through plain PLM and the deviation reconstruction buys
+    //! nothing. The background pressure is asked of the EOS rather than written as
+    //! (gamma-1)*e_bg, because it depends on the background density too.
+
+    KOKKOS_INLINE_FUNCTION
+    void WbStaticPiecewiseLinearDerX1(TeamMember_t const &member, const EOS_Data &eos,
+         const int m, const int k, const int j, const int il, const int iu,
+         const DvceArray5D<Real> &qwb, const DvceArray5D<Real> &qfwb,
+         const DvceArray5D<Real> &qd, ScrArray2D<Real> &dl, ScrArray2D<Real> &dr) {
+      int nvar = qd.extent_int(1);
+      for (int n=0; n<nvar; ++n) {
+        if (n == (IDPR)) {
+          par_for_inner(member, il, iu, [&](const int i) {
+            Real q0_im1 = eos.Pressure(qwb(m,IDN,k,j,i-1), qwb(m,IEN,k,j,i-1));
+            Real q0_i   = eos.Pressure(qwb(m,IDN,k,j,i), qwb(m,IEN,k,j,i));
+            Real q0_ip1 = eos.Pressure(qwb(m,IDN,k,j,i+1), qwb(m,IEN,k,j,i+1));
+
+            PLM(qd(m,n,k,j,i-1) - q0_im1, qd(m,n,k,j,i) - q0_i,
+                qd(m,n,k,j,i+1) - q0_ip1, dl(n,i+1), dr(n,i));
+
+            dl(n,i+1) += eos.Pressure(qfwb(m,IDN,k,j,i+1), qfwb(m,IEN,k,j,i+1));
+            dr(n,i) += eos.Pressure(qfwb(m,IDN,k,j,i), qfwb(m,IEN,k,j,i));
+          });
+        } else {
+          par_for_inner(member, il, iu, [&](const int i) {
+            PLM(qd(m,n,k,j,i-1), qd(m,n,k,j,i), qd(m,n,k,j,i+1), dl(n,i+1), dr(n,i));
+          });
+        }
+      }
+      return;
+    };
+
+    //------------------------------------------------------------------------------------
+    //! \fn WbStaticPiecewiseLinearDerX2()
+    //! \brief static well-balanced reconstruction of the derived thermodynamic variables.
+    //!
+    //! The static scheme reconstructs the perturbation of the primitives about a
+    //! problem-generator-supplied background and adds the background back at the faces.
+    //! Under a general EOS the pressure the Riemann solver sees comes from wder, not from
+    //! the reconstructed primitives, so it needs the same treatment or the stratified
+    //! part
+    //! of the pressure goes through plain PLM and the deviation reconstruction buys
+    //! nothing. The background pressure is asked of the EOS rather than written as
+    //! (gamma-1)*e_bg, because it depends on the background density too.
+
+    KOKKOS_INLINE_FUNCTION
+    void WbStaticPiecewiseLinearDerX2(TeamMember_t const &member, const EOS_Data &eos,
+         const int m, const int k, const int j, const int il, const int iu,
+         const DvceArray5D<Real> &qwb, const DvceArray5D<Real> &qfwb,
+         const DvceArray5D<Real> &qd, ScrArray2D<Real> &dl, ScrArray2D<Real> &dr) {
+      int nvar = qd.extent_int(1);
+      for (int n=0; n<nvar; ++n) {
+        if (n == (IDPR)) {
+          par_for_inner(member, il, iu, [&](const int i) {
+            Real q0_jm1 = eos.Pressure(qwb(m,IDN,k,j-1,i), qwb(m,IEN,k,j-1,i));
+            Real q0_j   = eos.Pressure(qwb(m,IDN,k,j,i), qwb(m,IEN,k,j,i));
+            Real q0_jp1 = eos.Pressure(qwb(m,IDN,k,j+1,i), qwb(m,IEN,k,j+1,i));
+
+            PLM(qd(m,n,k,j-1,i) - q0_jm1, qd(m,n,k,j,i) - q0_j,
+                qd(m,n,k,j+1,i) - q0_jp1, dl(n,i), dr(n,i));
+
+            dl(n,i) += eos.Pressure(qfwb(m,IDN,k,j+1,i), qfwb(m,IEN,k,j+1,i));
+            dr(n,i) += eos.Pressure(qfwb(m,IDN,k,j,i), qfwb(m,IEN,k,j,i));
+          });
+        } else {
+          par_for_inner(member, il, iu, [&](const int i) {
+            PLM(qd(m,n,k,j-1,i), qd(m,n,k,j,i), qd(m,n,k,j+1,i), dl(n,i), dr(n,i));
+          });
+        }
+      }
+      return;
+    };
+
+    //------------------------------------------------------------------------------------
+    //! \fn WbStaticPiecewiseLinearDerX3()
+    //! \brief static well-balanced reconstruction of the derived thermodynamic variables.
+    //!
+    //! The static scheme reconstructs the perturbation of the primitives about a
+    //! problem-generator-supplied background and adds the background back at the faces.
+    //! Under a general EOS the pressure the Riemann solver sees comes from wder, not from
+    //! the reconstructed primitives, so it needs the same treatment or the stratified
+    //! part
+    //! of the pressure goes through plain PLM and the deviation reconstruction buys
+    //! nothing. The background pressure is asked of the EOS rather than written as
+    //! (gamma-1)*e_bg, because it depends on the background density too.
+
+    KOKKOS_INLINE_FUNCTION
+    void WbStaticPiecewiseLinearDerX3(TeamMember_t const &member, const EOS_Data &eos,
+         const int m, const int k, const int j, const int il, const int iu,
+         const DvceArray5D<Real> &qwb, const DvceArray5D<Real> &qfwb,
+         const DvceArray5D<Real> &qd, ScrArray2D<Real> &dl, ScrArray2D<Real> &dr) {
+      int nvar = qd.extent_int(1);
+      for (int n=0; n<nvar; ++n) {
+        if (n == (IDPR)) {
+          par_for_inner(member, il, iu, [&](const int i) {
+            Real q0_km1 = eos.Pressure(qwb(m,IDN,k-1,j,i), qwb(m,IEN,k-1,j,i));
+            Real q0_k   = eos.Pressure(qwb(m,IDN,k,j,i), qwb(m,IEN,k,j,i));
+            Real q0_kp1 = eos.Pressure(qwb(m,IDN,k+1,j,i), qwb(m,IEN,k+1,j,i));
+
+            PLM(qd(m,n,k-1,j,i) - q0_km1, qd(m,n,k,j,i) - q0_k,
+                qd(m,n,k+1,j,i) - q0_kp1, dl(n,i), dr(n,i));
+
+            dl(n,i) += eos.Pressure(qfwb(m,IDN,k+1,j,i), qfwb(m,IEN,k+1,j,i));
+            dr(n,i) += eos.Pressure(qfwb(m,IDN,k,j,i), qfwb(m,IEN,k,j,i));
+          });
+        } else {
+          par_for_inner(member, il, iu, [&](const int i) {
+            PLM(qd(m,n,k-1,j,i), qd(m,n,k,j,i), qd(m,n,k+1,j,i), dl(n,i), dr(n,i));
+          });
+        }
+      }
+      return;
+    };
+
+    //------------------------------------------------------------------------------------
+    //! \fn WbPiecewiseLinearDerX1/X2/X3()
+    //! \brief well-balanced reconstruction of the DERIVED thermodynamic variables.
+    //!
+    //! Under a general EOS the Riemann solvers do not recompute pressure from the
+    //! reconstructed (d,e); they read it from wder, which is reconstructed to the
+    //! interfaces independently. Reconstructing d and e in deviation form while leaving
+    //! pressure to plain PLM would leave the whole hydrostatic gradient in the pressure
+    //! the solver actually sees, and the scheme would not be balanced at all. So the
+    //! pressure channel gets the same deviation treatment, against the pressure of the
+    //! same background. Gamma_1 is left alone: it is a smooth O(1) quantity that is not
+    //! stratified over many scale heights, so plain PLM is appropriate.
+    //!
+    //! These are only ever called for a general EOS; an ideal gas allocates no wder.
+
+    KOKKOS_INLINE_FUNCTION
+    void WbPiecewiseLinearDerX1(TeamMember_t const &member, const EOS_Data &eos,
+         const int m, const int k, const int j, const int il, const int iu,
+         const DvceArray5D<Real> &q, const DvceArray5D<Real> &qd,
+         const DvceArray4D<Real> &phicc, const DvceArray4D<Real> &phi,
+         ScrArray2D<Real> &dl, ScrArray2D<Real> &dr) {
+      int nvar = qd.extent_int(1);
+      for (int n=0; n<nvar; ++n) {
+        if (n == (IDPR)) {
+          par_for_inner(member, il, iu, [&](const int i) {
+            Real q0_im1, q0_imh, q0_i, q0_iph, q0_ip1;
+            getWBq0(eos, WBVar::wb_pres,
+                    q(m,IDN,k,j,i-1),q(m,IDN,k,j,i),q(m,IDN,k,j,i+1),
+                    q(m,IEN,k,j,i-1),q(m,IEN,k,j,i),q(m,IEN,k,j,i+1),
+                    phicc(m,k,j,i-1),phi(m,k,j,i),phicc(m,k,j,i),
+                    phi(m,k,j,i+1),phicc(m,k,j,i+1),
+                    q0_im1, q0_imh, q0_i, q0_iph, q0_ip1);
+
+            Real q1_im1 = qd(m,n,k,j,i-1) - q0_im1;
+            Real q1_i   = qd(m,n,k,j,i)   - q0_i;
+            Real q1_ip1 = qd(m,n,k,j,i+1) - q0_ip1;
+
+            PLM(q1_im1, q1_i, q1_ip1, dl(n,i+1), dr(n,i));
+
+            dl(n,i+1) += q0_iph;
+            dr(n,i)   += q0_imh;
+
+            // fall back to plain reconstruction where the deviation form misbehaves,
+            // matching what the primitive channels do
+            Real sL = qd(m,n,k,j,i)   - qd(m,n,k,j,i-1);
+            Real sR = qd(m,n,k,j,i+1) - qd(m,n,k,j,i);
+            if (dl(n,i+1) < 0.0 || dr(n,i) < 0.0 || sL * sR <= 0.0) {
+              PLM(qd(m,n,k,j,i-1), qd(m,n,k,j,i), qd(m,n,k,j,i+1), dl(n,i+1), dr(n,i));
+            }
+          });
+        } else {
+          par_for_inner(member, il, iu, [&](const int i) {
+            PLM(qd(m,n,k,j,i-1), qd(m,n,k,j,i), qd(m,n,k,j,i+1), dl(n,i+1), dr(n,i));
+          });
+        }
+      }
+      return;
+    };
+
+    KOKKOS_INLINE_FUNCTION
+    void WbPiecewiseLinearDerX2(TeamMember_t const &member, const EOS_Data &eos,
+         const int m, const int k, const int j, const int il, const int iu,
+         const DvceArray5D<Real> &q, const DvceArray5D<Real> &qd,
+         const DvceArray4D<Real> &phicc, const DvceArray4D<Real> &phi,
+         ScrArray2D<Real> &dl_jp1, ScrArray2D<Real> &dr_j) {
+      int nvar = qd.extent_int(1);
+      for (int n=0; n<nvar; ++n) {
+        if (n == (IDPR)) {
+          par_for_inner(member, il, iu, [&](const int i) {
+            Real q0_jm1, q0_jmh, q0_j, q0_jph, q0_jp1;
+            getWBq0(eos, WBVar::wb_pres,
+                    q(m,IDN,k,j-1,i),q(m,IDN,k,j,i),q(m,IDN,k,j+1,i),
+                    q(m,IEN,k,j-1,i),q(m,IEN,k,j,i),q(m,IEN,k,j+1,i),
+                    phicc(m,k,j-1,i),phi(m,k,j,i),phicc(m,k,j,i),
+                    phi(m,k,j+1,i),phicc(m,k,j+1,i),
+                    q0_jm1, q0_jmh, q0_j, q0_jph, q0_jp1);
+
+            Real q1_jm1 = qd(m,n,k,j-1,i) - q0_jm1;
+            Real q1_j   = qd(m,n,k,j,i)   - q0_j;
+            Real q1_jp1 = qd(m,n,k,j+1,i) - q0_jp1;
+
+            PLM(q1_jm1, q1_j, q1_jp1, dl_jp1(n,i), dr_j(n,i));
+
+            dl_jp1(n,i) += q0_jph;
+            dr_j(n,i)   += q0_jmh;
+
+            Real sL = qd(m,n,k,j,i)   - qd(m,n,k,j-1,i);
+            Real sR = qd(m,n,k,j+1,i) - qd(m,n,k,j,i);
+            if (dl_jp1(n,i) < 0.0 || dr_j(n,i) < 0.0 || sL * sR <= 0.0) {
+              PLM(qd(m,n,k,j-1,i), qd(m,n,k,j,i), qd(m,n,k,j+1,i),
+                  dl_jp1(n,i), dr_j(n,i));
+            }
+          });
+        } else {
+          par_for_inner(member, il, iu, [&](const int i) {
+            PLM(qd(m,n,k,j-1,i), qd(m,n,k,j,i), qd(m,n,k,j+1,i), dl_jp1(n,i), dr_j(n,i));
+          });
+        }
+      }
+      return;
+    };
+
+    KOKKOS_INLINE_FUNCTION
+    void WbPiecewiseLinearDerX3(TeamMember_t const &member, const EOS_Data &eos,
+         const int m, const int k, const int j, const int il, const int iu,
+         const DvceArray5D<Real> &q, const DvceArray5D<Real> &qd,
+         const DvceArray4D<Real> &phicc, const DvceArray4D<Real> &phi,
+         ScrArray2D<Real> &dl_kp1, ScrArray2D<Real> &dr_k) {
+      int nvar = qd.extent_int(1);
+      for (int n=0; n<nvar; ++n) {
+        if (n == (IDPR)) {
+          par_for_inner(member, il, iu, [&](const int i) {
+            Real q0_km1, q0_kmh, q0_k, q0_kph, q0_kp1;
+            getWBq0(eos, WBVar::wb_pres,
+                    q(m,IDN,k-1,j,i),q(m,IDN,k,j,i),q(m,IDN,k+1,j,i),
+                    q(m,IEN,k-1,j,i),q(m,IEN,k,j,i),q(m,IEN,k+1,j,i),
+                    phicc(m,k-1,j,i),phi(m,k,j,i),phicc(m,k,j,i),
+                    phi(m,k+1,j,i),phicc(m,k+1,j,i),
+                    q0_km1, q0_kmh, q0_k, q0_kph, q0_kp1);
+
+            Real q1_km1 = qd(m,n,k-1,j,i) - q0_km1;
+            Real q1_k   = qd(m,n,k,j,i)   - q0_k;
+            Real q1_kp1 = qd(m,n,k+1,j,i) - q0_kp1;
+
+            PLM(q1_km1, q1_k, q1_kp1, dl_kp1(n,i), dr_k(n,i));
+
+            dl_kp1(n,i) += q0_kph;
+            dr_k(n,i)   += q0_kmh;
+
+            Real sL = qd(m,n,k,j,i)   - qd(m,n,k-1,j,i);
+            Real sR = qd(m,n,k+1,j,i) - qd(m,n,k,j,i);
+            if (dl_kp1(n,i) < 0.0 || dr_k(n,i) < 0.0 || sL * sR <= 0.0) {
+              PLM(qd(m,n,k-1,j,i), qd(m,n,k,j,i), qd(m,n,k+1,j,i),
+                  dl_kp1(n,i), dr_k(n,i));
+            }
+          });
+        } else {
+          par_for_inner(member, il, iu, [&](const int i) {
+            PLM(qd(m,n,k-1,j,i), qd(m,n,k,j,i), qd(m,n,k+1,j,i), dl_kp1(n,i), dr_k(n,i));
+          });
+        }
+      }
+      return;
+    };
+
     KOKKOS_INLINE_FUNCTION
     void PLM_nonuniform(const Real &q_im1, const Real &q_i, const Real &q_ip1,
                         const Real &dxL, const Real &dxR, const Real &dxLh, const Real &dxRh,
@@ -475,7 +744,7 @@ class MHD {
               Real dxR = x_ip1-x_i;
                 
               Real q0_im1, q0_ip1, q0_imh, q0_iph, q0_i;
-              getWBerho(n, eos.gamma,
+              getWBq0(eos, (n == (IEN)) ? WBVar::wb_eint : WBVar::wb_dens,
                      q(m,IDN,k,j,i-1),q(m,IDN,k,j,i),q(m,IDN,k,j,i+1),
                      q(m,IEN,k,j,i-1),q(m,IEN,k,j,i),q(m,IEN,k,j,i+1),
                      phicc(m,k,j,i-1),phi(m,k,j,i),phicc(m,k,j,i),phi(m,k,j,i+1),phicc(m,k,j,i+1),
@@ -561,6 +830,116 @@ class MHD {
       return;
     };
     
+    //------------------------------------------------------------------------------------
+    //! \fn GridPiecewiseLinearDerX1()
+    //! \brief non-uniform-grid counterpart of WbPiecewiseLinearDerX1, for the derived
+    //! thermodynamic variables on a spherical-polar mesh. GridPiecewiseLinearX2/X3 are
+    //! already generic in the array they reconstruct and do no well-balancing, so wder
+    //! can
+    //! be passed to them directly; only x1 needs its own version.
+
+    KOKKOS_INLINE_FUNCTION
+    void GridPiecewiseLinearDerX1(TeamMember_t const &member, const EOS_Data &eos,
+         const int m, const int k, const int j, const int il, const int iu,
+         const DvceArray5D<Real> &q, const DvceArray5D<Real> &qd,
+         const DvceArray2D<Real> &xv, const DvceArray2D<Real> &xf,
+         const DvceArray4D<Real> &phicc, const DvceArray4D<Real> &phi,
+         ScrArray2D<Real> &dl, ScrArray2D<Real> &dr) {
+      int nvar = qd.extent_int(1);
+      for (int n=0; n<nvar; ++n) {
+        par_for_inner(member, il, iu, [&](const int i) {
+          Real x_im1  = xv(m,i-1);
+          Real x_imh  = xf(m,i);
+          Real x_i    = xv(m,i);
+          Real x_iph  = xf(m,i+1);
+          Real x_ip1  = xv(m,i+1);
+          Real dxLh = x_i-x_imh;
+          Real dxRh = x_iph-x_i;
+          Real dxL = x_i-x_im1;
+          Real dxR = x_ip1-x_i;
+
+          if (n == (IDPR) && use_wellbalance_dynamic && use_wb_x1) {
+            Real q0_im1, q0_imh, q0_i, q0_iph, q0_ip1;
+            getWBq0(eos, WBVar::wb_pres,
+                    q(m,IDN,k,j,i-1),q(m,IDN,k,j,i),q(m,IDN,k,j,i+1),
+                    q(m,IEN,k,j,i-1),q(m,IEN,k,j,i),q(m,IEN,k,j,i+1),
+                    phicc(m,k,j,i-1),phi(m,k,j,i),phicc(m,k,j,i),
+                    phi(m,k,j,i+1),phicc(m,k,j,i+1),
+                    q0_im1, q0_imh, q0_i, q0_iph, q0_ip1);
+
+            Real q1_im1 = qd(m,n,k,j,i-1) - q0_im1;
+            Real q1_i   = qd(m,n,k,j,i)   - q0_i;
+            Real q1_ip1 = qd(m,n,k,j,i+1) - q0_ip1;
+
+            PLM_nonuniform(q1_im1, q1_i, q1_ip1, dxL, dxR, dxLh, dxRh,
+                           dl(n,i+1), dr(n,i));
+
+            dl(n,i+1) += q0_iph;
+            dr(n,i)   += q0_imh;
+
+            Real sL = (qd(m,n,k,j,i)   - qd(m,n,k,j,i-1)) / dxL;
+            Real sR = (qd(m,n,k,j,i+1) - qd(m,n,k,j,i)  ) / dxR;
+            if (dl(n,i+1) < 0.0 || dr(n,i) < 0.0 || sL * sR <= 0.0) {
+              PLM_nonuniform(qd(m,n,k,j,i-1), qd(m,n,k,j,i), qd(m,n,k,j,i+1),
+                             dxL, dxR, dxLh, dxRh, dl(n,i+1), dr(n,i));
+            }
+          } else {
+            PLM_nonuniform(qd(m,n,k,j,i-1), qd(m,n,k,j,i), qd(m,n,k,j,i+1),
+                           dxL, dxR, dxLh, dxRh, dl(n,i+1), dr(n,i));
+          }
+        });
+      }
+      return;
+    };
+
+    //------------------------------------------------------------------------------------
+    //! \fn getWBq0()
+    //! \brief background values of ONE reconstruction channel at the five stencil points
+    //! {i-1, i-1/2, i, i+1/2, i+1}.  Dispatches to the ideal-gas closed forms in
+    //! getWBerho() below, or, for a general EOS, to the integrated background in
+    //! utils/wb_background.hpp.  Every well-balanced reconstruction and every
+    //! gravitational source term must go through here, so that the background subtracted
+    //! before reconstruction and the background differenced by the source term are the
+    //! same object -- that consistency, not the background's accuracy, is what makes the
+    //! scheme well balanced.
+
+    KOKKOS_INLINE_FUNCTION
+    void getWBq0(const EOS_Data &eos, const int var,
+                const Real &rho_im1, const Real &rho_i, const Real &rho_ip1,
+                const Real &e_im1, const Real &e_i, const Real &e_ip1,
+                const Real &phi_im1, const Real &phi_imh, const Real &phi_i,
+                const Real &phi_iph, const Real &phi_ip1,
+                Real &q0_im1, Real &q0_imh, Real &q0_i, Real &q0_iph, Real &q0_ip1) {
+      if (eos.IsGeneral()) {
+        WBState s_im1, s_imh, s_i, s_iph, s_ip1;
+        WBBackgroundStencil(eos, wb_option, rho_im1, rho_i, rho_ip1, e_im1, e_i, e_ip1,
+                            phi_im1, phi_imh, phi_i, phi_iph, phi_ip1,
+                            s_im1, s_imh, s_i, s_iph, s_ip1);
+        if (var == WBVar::wb_dens) {
+          q0_im1 = s_im1.d; q0_imh = s_imh.d; q0_i = s_i.d;
+          q0_iph = s_iph.d; q0_ip1 = s_ip1.d;
+        } else if (var == WBVar::wb_eint) {
+          q0_im1 = s_im1.e; q0_imh = s_imh.e; q0_i = s_i.e;
+          q0_iph = s_iph.e; q0_ip1 = s_ip1.e;
+        } else {
+          q0_im1 = s_im1.p; q0_imh = s_imh.p; q0_i = s_i.p;
+          q0_iph = s_iph.p; q0_ip1 = s_ip1.p;
+        }
+      } else {
+        // ideal gas: unchanged closed forms.  The pressure channel is never reconstructed
+        // for an ideal gas (nder is 0), but p = (gamma-1)e keeps this total anyway.
+        int n = (var == WBVar::wb_dens) ? IDN : IEN;
+        getWBerho(n, eos.gamma, rho_im1, rho_i, rho_ip1, e_im1, e_i, e_ip1,
+                  phi_im1, phi_imh, phi_i, phi_iph, phi_ip1,
+                  q0_im1, q0_imh, q0_i, q0_iph, q0_ip1);
+        if (var == WBVar::wb_pres) {
+          Real gm1 = eos.gamma - 1.0;
+          q0_im1 *= gm1; q0_imh *= gm1; q0_i *= gm1; q0_iph *= gm1; q0_ip1 *= gm1;
+        }
+      }
+      return;
+    };
+
     KOKKOS_INLINE_FUNCTION
     void getWBerho(const int &n, const Real &gamma,
                 const Real &rho_im1, const Real &rho_i, const Real &rho_ip1,

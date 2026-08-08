@@ -519,8 +519,8 @@ void Coordinates::SrcTermsGnomonicEquiangle(const DvceArray5D<Real> &w0, const D
   int &ks = indcs.ks; int &ke = indcs.ke;
   int nmb1 = pmy_pack->nmb_thispack - 1;
     
-  Real gamma = eos_data.gamma;
-  Real gm1 = gamma - 1.0;
+  // by-value copy of the EOS, capturable in the device lambda below
+  auto eos_ = eos_data;
 
   par_for("cssrc", DevExeSpace(), 0,nmb1,ks,ke,js,je,is,ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -531,7 +531,7 @@ void Coordinates::SrcTermsGnomonicEquiangle(const DvceArray5D<Real> &w0, const D
     Real v1 = w0(m,IVX,k,j,i);
     Real v2 = w0(m,IVY,k,j,i);
     Real v3 = w0(m,IVZ,k,j,i);
-    Real pr = w0(m,IEN,k,j,i)*gm1;
+    Real pr = eos_.Pressure(w0(m,IDN,k,j,i), w0(m,IEN,k,j,i));
     Real rho = w0(m,IDN,k,j,i);
       
     Real cosine = cos_cell(m,j,i);
@@ -712,8 +712,8 @@ void Coordinates::SrcTermsSphericalPolarHydro(const DvceArray5D<Real> &w0, const
   int &ks = indcs.ks; int &ke = indcs.ke;
   int nmb1 = pmy_pack->nmb_thispack - 1;
  
-  Real gamma = eos_data.gamma;
-  Real gm1 = gamma - 1.0;
+  // by-value copy of the EOS, capturable in the device lambda below
+  auto eos_ = eos_data;
 
   par_for("spsrc", DevExeSpace(), 0,nmb1,ks,ke,js,je,is,ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -726,8 +726,12 @@ void Coordinates::SrcTermsSphericalPolarHydro(const DvceArray5D<Real> &w0, const
     Real v2 = w0(m,IVY,k,j,i);
     Real v3 = w0(m,IVZ,k,j,i);
     Real rho = w0(m,IDN,k,j,i);
-    Real pr = w0(m,IEN,k,j,i)*gm1;
-    if (pmy_pack->phydro->use_wellbalance_static) pr -= w0wb(m,IEN,k,j,i)*gm1;
+    Real pr = eos_.Pressure(w0(m,IDN,k,j,i), w0(m,IEN,k,j,i));
+    // subtract the background pressure, which for a general EOS depends on the background
+    // DENSITY as well as its internal energy and so cannot be written as (gamma-1)*e_bg
+    if (pmy_pack->phydro->use_wellbalance_static) {
+      pr -= eos_.Pressure(w0wb(m,IDN,k,j,i), w0wb(m,IEN,k,j,i));
+    }
     Real m_ii_h = pr + 0.5*rho*(v2*v2+v3*v3);
     Real m_pp = pr + rho*SQR(v3);
       
@@ -754,8 +758,8 @@ void Coordinates::SrcTermsSphericalPolarMHD(const DvceArray5D<Real> &w0, const D
   int &ks = indcs.ks; int &ke = indcs.ke;
   int nmb1 = pmy_pack->nmb_thispack - 1;
     
-  Real gamma = eos_data.gamma;
-  Real gm1 = gamma - 1.0;
+  // by-value copy of the EOS, capturable in the device lambda below
+  auto eos_ = eos_data;
 
   par_for("spsrc", DevExeSpace(), 0,nmb1,ks,ke,js,je,is,ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -768,8 +772,12 @@ void Coordinates::SrcTermsSphericalPolarMHD(const DvceArray5D<Real> &w0, const D
     Real v2 = w0(m,IVY,k,j,i);
     Real v3 = w0(m,IVZ,k,j,i);
     Real rho = w0(m,IDN,k,j,i);
-    Real pr = w0(m,IEN,k,j,i)*gm1;
-    if (pmy_pack->pmhd->use_wellbalance_static) pr -= w0wb(m,IEN,k,j,i)*gm1;
+    Real pr = eos_.Pressure(w0(m,IDN,k,j,i), w0(m,IEN,k,j,i));
+    // subtract the background pressure, which for a general EOS depends on the background
+    // DENSITY as well as its internal energy and so cannot be written as (gamma-1)*e_bg
+    if (pmy_pack->pmhd->use_wellbalance_static) {
+      pr -= eos_.Pressure(w0wb(m,IDN,k,j,i), w0wb(m,IEN,k,j,i));
+    }
     Real m_ii_h = pr + 0.5*rho*(v2*v2+v3*v3);
     Real m_pp = pr + rho*SQR(v3);
     m_ii_h += 0.5*SQR(bcc0(m,IBX,k,j,i));

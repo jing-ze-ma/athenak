@@ -67,6 +67,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
   auto &wder_ = wder;
   const int nder = eos_.IsGeneral() ? NDERIVED : 0;
 
+  auto &w0wb_ = w0wb;
   auto w0facewb_x1f = w0facewb.x1f;
   auto w0facewb_x2f = w0facewb.x2f;
   auto w0facewb_x3f = w0facewb.x3f;
@@ -142,6 +143,20 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
     // Reconstruct the derived thermodynamic variables (general EOS only). apply_floors is
     // false: that logic keys off n==IDN/n==IEN, whose values collide with DerivedIndex.
     if (nder > 0) {
+      // the well-balanced scheme must treat pressure in deviation form too: a general EOS
+      // hands the Riemann solver this reconstructed pressure rather than recomputing it
+      // from the reconstructed (d,e), so leaving it to plain PLM would put the entire
+      // hydrostatic gradient back into the solver's pressure and unbalance the scheme.
+      if (use_spherical_polar) {
+        GridPiecewiseLinearDerX1(member, eos_, m, k, j, il-1, iu, w0_, wder_,
+                                 x1v_, x1f_, phicc0_, phi0_x1f, dl, dr);
+      } else if (use_wellbalance_static_reconst_perturb) {
+        WbStaticPiecewiseLinearDerX1(member, eos_, m, k, j, il-1, iu, w0wb_, w0facewb_x1f,
+                                    wder_, dl, dr);
+      } else if (use_wellbalance_dynamic && use_wb_x1) {
+        WbPiecewiseLinearDerX1(member, eos_, m, k, j, il-1, iu, w0_, wder_,
+                               phicc0_, phi0_x1f, dl, dr);
+      } else {
       switch (recon_method_) {
         case ReconstructionMethod::dc:
           DonorCellX1(member, m, k, j, il-1, iu, wder_, dl, dr);
@@ -158,6 +173,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
           break;
         default:
           break;
+      }
       }
       // reconstruction can undershoot; keep the interface pressure positive
       par_for_inner(member, il, iu, [&](const int i) {
@@ -310,6 +326,15 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
           
         // Reconstruct the derived thermodynamic variables (general EOS only)
         if (nder > 0) {
+          if (use_spherical_polar) {
+            GridPiecewiseLinearX2(member, m, k, j, il, iu, wder_, x2v_, x2f_, dl_jp1, dr);
+          } else if (use_wellbalance_static_reconst_perturb) {
+        WbStaticPiecewiseLinearDerX2(member, eos_, m, k, j, il, iu, w0wb_, w0facewb_x2f,
+                                    wder_, dl_jp1, dr);
+      } else if (use_wellbalance_dynamic && use_wb_x2) {
+            WbPiecewiseLinearDerX2(member, eos_, m, k, j, il, iu, w0_, wder_,
+                                   phicc0_, phi0_x2f, dl_jp1, dr);
+          } else {
           switch (recon_method_) {
             case ReconstructionMethod::dc:
               DonorCellX2(member, m, k, j, il, iu, wder_, dl_jp1, dr);
@@ -326,6 +351,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
               break;
             default:
               break;
+          }
           }
           par_for_inner(member, il, iu, [&](const int i) {
             dl_jp1(IDPR,i) = fmax(dl_jp1(IDPR,i), eos_.pfloor);
@@ -472,6 +498,15 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
           
         // Reconstruct the derived thermodynamic variables (general EOS only)
         if (nder > 0) {
+          if (use_spherical_polar) {
+            GridPiecewiseLinearX3(member, m, k, j, il, iu, wder_, x3v_, x3f_, dl_kp1, dr);
+          } else if (use_wellbalance_static_reconst_perturb) {
+        WbStaticPiecewiseLinearDerX3(member, eos_, m, k, j, il, iu, w0wb_, w0facewb_x3f,
+                                    wder_, dl_kp1, dr);
+      } else if (use_wellbalance_dynamic && use_wb_x3) {
+            WbPiecewiseLinearDerX3(member, eos_, m, k, j, il, iu, w0_, wder_,
+                                   phicc0_, phi0_x3f, dl_kp1, dr);
+          } else {
           switch (recon_method_) {
             case ReconstructionMethod::dc:
               DonorCellX3(member, m, k, j, il, iu, wder_, dl_kp1, dr);
@@ -488,6 +523,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
               break;
             default:
               break;
+          }
           }
           par_for_inner(member, il, iu, [&](const int i) {
             dl_kp1(IDPR,i) = fmax(dl_kp1(IDPR,i), eos_.pfloor);
