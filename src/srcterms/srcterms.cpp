@@ -18,10 +18,10 @@
 #include "coordinates/cell_locations.hpp"
 #include "eos/eos.hpp"
 #include "geodesic-grid/geodesic_grid.hpp"
-//#include "hydro/hydro.hpp"
+#include "hydro/hydro.hpp"
 #include "ismcooling.hpp"
 #include "mesh/mesh.hpp"
-//#include "mhd/mhd.hpp"
+#include "mhd/mhd.hpp"
 #include "parameter_input.hpp"
 #include "radiation/radiation.hpp"
 #include "radiation/radiation_tetrad.hpp"
@@ -34,7 +34,7 @@
 // or "rad_srcterms"
 
 SourceTerms::SourceTerms(std::string block, MeshBlockPack *pp, ParameterInput *pin) :
-    pmy_pack(pp) {
+    pmy_pack(pp), my_block(block) {
   // Read flags for each source term implemented (default false)
   const_accel = pin->GetOrAddBoolean(block, "const_accel", false);
   ism_cooling = pin->GetOrAddBoolean(block, "ism_cooling", false);
@@ -143,7 +143,21 @@ void SourceTerms::ISMCooling(const DvceArray5D<Real> &w0, const EOS_Data &eos_da
   Real gamma = eos_data.gamma;
   Real gm1 = gamma - 1.0;
   Real heating_rate = hrate;
-  Real temp_unit = pmy_pack->punit->temperature_cgs();
+  // General EOS: temperature was evaluated once per cell in ConsToPrim, from the same w0
+  // this source term reads, so take it from there rather than repeating the T(d,e) root
+  // find. The code-to-Kelvin factor also differs: the EOS works to the convention
+  // mu_ref = 1, with composition carried inside it, so the conversion is
+  // eos_data.temp_cgs and not
+  // the unit system's temperature_cgs(), which folds in the fixed <units>/mu. The two
+  // agree when mu = 1, which a general-EOS run is required to set.
+  const bool gen = eos_data.IsGeneral();
+  auto &wtemp_ = (my_block.compare("mhd_srcterms") == 0) ? pmy_pack->pmhd->wtemp
+                                                         : pmy_pack->phydro->wtemp;
+  Real temp_unit = gen ? eos_data.temp_cgs : pmy_pack->punit->temperature_cgs();
+  // NOTE: the number density below still uses the fixed <units>/mu. Under the mu_ref = 1
+  // convention that makes it a nucleon number density; a general EOS whose mean molecular
+  // weight varies with ionization state is not reflected here, so pairing ISM cooling
+  // with a partial-ionization EOS needs that mismatch thought through.
   Real n_unit = pmy_pack->punit->density_cgs()/pmy_pack->punit->mu()
                 /pmy_pack->punit->atomic_mass_unit_cgs;
   Real cooling_unit = pmy_pack->punit->pressure_cgs()/pmy_pack->punit->time_cgs()
@@ -153,7 +167,8 @@ void SourceTerms::ISMCooling(const DvceArray5D<Real> &w0, const EOS_Data &eos_da
   par_for("cooling", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     // temperature in cgs unit
-    Real temp = temp_unit*w0(m,IEN,k,j,i)/w0(m,IDN,k,j,i)*gm1;
+    Real temp = temp_unit*(gen ? wtemp_(m,k,j,i)
+                               : w0(m,IEN,k,j,i)/w0(m,IDN,k,j,i)*gm1);
     Real lambda_cooling = ISMCoolFn(temp)/cooling_unit;
     Real gamma_heating = heating_rate/heating_unit;
 
@@ -176,15 +191,17 @@ void SourceTerms::RelCooling(const DvceArray5D<Real> &w0, const EOS_Data &eos_da
   int js = indcs.js, je = indcs.je;
   int ks = indcs.ks, ke = indcs.ke;
   int nmb1 = pmy_pack->nmb_thispack - 1;
-  Real gamma = eos_data.gamma;
-  Real gm1 = gamma - 1.0;
   Real cooling_rate = crate_rel;
   Real cooling_power = cpower_rel;
+  // The general EOS covers non-relativistic hydro and MHD only, so this relativistic term
+  // never sees it; asking the EOS for the temperature rather than writing e*(gamma-1)/d
+  // is the same expression for an ideal gas and keeps the cooling terms consistent.
+  auto eos_ = eos_data;
 
   par_for("cooling", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     // temperature in cgs unit
-    Real temp = w0(m,IEN,k,j,i)/w0(m,IDN,k,j,i)*gm1;
+    Real temp = eos_.Temperature(w0(m,IDN,k,j,i), w0(m,IEN,k,j,i));
 
     auto &ux = w0(m,IVX,k,j,i);
     auto &uy = w0(m,IVY,k,j,i);

@@ -13,6 +13,8 @@
 
 #include "athena.hpp"
 #include "mesh/mesh.hpp"
+#include "hydro/hydro.hpp"
+#include "mhd/mhd.hpp"
 #include "eos/eos.hpp"
 #include "ismcooling.hpp"
 #include "srcterms.hpp"
@@ -36,7 +38,13 @@ void SourceTerms::NewTimeStep(const DvceArray5D<Real> &w0, const EOS_Data &eos_d
     Real gamma = eos_data.gamma;
     Real gm1 = gamma - 1.0;
     Real heating_rate = hrate;
-    Real temp_unit = pmy_pack->punit->temperature_cgs();
+    // see the matching comment in SourceTerms::ISMCooling: for a general EOS take the
+    // temperature ConsToPrim already computed, and convert to Kelvin with the EOS's own
+    // factor rather than the unit system's, which folds in the fixed <units>/mu
+    const bool gen = eos_data.IsGeneral();
+    auto &wtemp_ = (my_block.compare("mhd_srcterms") == 0) ? pmy_pack->pmhd->wtemp
+                                                           : pmy_pack->phydro->wtemp;
+    Real temp_unit = gen ? eos_data.temp_cgs : pmy_pack->punit->temperature_cgs();
     Real n_unit = pmy_pack->punit->density_cgs()/pmy_pack->punit->mu()
                   / pmy_pack->punit->atomic_mass_unit_cgs;
     Real cooling_unit = pmy_pack->punit->pressure_cgs()/pmy_pack->punit->time_cgs()
@@ -57,7 +65,8 @@ void SourceTerms::NewTimeStep(const DvceArray5D<Real> &w0, const EOS_Data &eos_d
       j += js;
 
       // temperature in cgs unit
-      Real temp = temp_unit*w0(m,IEN,k,j,i)/w0(m,IDN,k,j,i)*gm1;
+      Real temp = temp_unit*(gen ? wtemp_(m,k,j,i)
+                                 : w0(m,IEN,k,j,i)/w0(m,IDN,k,j,i)*gm1);
       Real &eint = w0(m,IEN,k,j,i);
 
       Real lambda_cooling = ISMCoolFn(temp)/cooling_unit;
@@ -72,8 +81,7 @@ void SourceTerms::NewTimeStep(const DvceArray5D<Real> &w0, const EOS_Data &eos_d
   }
 
   if (rel_cooling) {
-    Real gamma = eos_data.gamma;
-    Real gm1 = gamma - 1.0;
+    auto eos_ = eos_data;
     Real cooling_rate = crate_rel;
     Real cooling_power = cpower_rel;
 
@@ -90,7 +98,7 @@ void SourceTerms::NewTimeStep(const DvceArray5D<Real> &w0, const EOS_Data &eos_d
       j += js;
 
       // temperature in cgs unit
-      Real temp = w0(m,IEN,k,j,i)/w0(m,IDN,k,j,i)*gm1;
+      Real temp = eos_.Temperature(w0(m,IDN,k,j,i), w0(m,IEN,k,j,i));
       Real &eint = w0(m,IEN,k,j,i);
 
       auto &ux = w0(m, IVX, k, j, i);

@@ -70,6 +70,10 @@ class SourceTerms {
 
  private:
   MeshBlockPack *pmy_pack;
+  // "hydro_srcterms", "mhd_srcterms" or "rad_srcterms": identifies which physics
+  // module owns this object, so that the general EOS cached-temperature array of the
+  // right module can be found.
+  std::string my_block;
 };
 
 #endif  // SRCTERMS_SRCTERMS_HPP_
