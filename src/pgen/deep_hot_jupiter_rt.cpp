@@ -27,6 +27,20 @@
 
 #include <Kokkos_Random.hpp>
 
+namespace {
+//----------------------------------------------------------------------------------------
+//! \fn Real EintFromP
+//! \brief internal energy density from pressure, for this problem generator.
+//! For a general EOS e is not p/(gamma-1) and must be asked of the EOS; the ideal-gas
+//! branch keeps the original p*igm1 arithmetic rather than the EOS's p/(gamma-1), because
+//! multiplying by the reciprocal and dividing differ in the last bit and existing runs
+//! should be reproduced bit for bit.
+KOKKOS_INLINE_FUNCTION
+Real EintFromP(const EOS_Data &eos, const Real igm1, const Real d, const Real p) {
+  return (eos.IsGeneral()) ? eos.EnergyFromPressure(d, p) : p*igm1;
+}
+} // namespace
+
 void HydrostaticEquilibrium(Mesh *pm);
 void SourceFunc(Mesh *pm, Real bdt);
 
@@ -173,6 +187,11 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   }
   Real gm1 = gamma - 1.0;
   Real igm1 = 1.0/gm1;
+  // by-value copy, capturable in the device lambdas below. Every pressure -> internal
+  // energy conversion goes through it: for a general EOS e is not p/(gamma-1), and the
+  // well-balanced background arrays built here feed the static scheme directly.
+  auto eos = (pmbp->phydro != nullptr) ? pmbp->phydro->peos->eos_data
+                                       : pmbp->pmhd->peos->eos_data;
     
 //  Real Teq = 1469.0;
 //  Real grav_acc = -942.0;
@@ -280,13 +299,13 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       u0_(m,IM1,k,j,i) = 0.0;
       u0_(m,IM2,k,j,i) = 0.0;
       u0_(m,IM3,k,j,i) = 0.0;
-      u0_(m,IEN,k,j,i) = p*igm1;
+      u0_(m,IEN,k,j,i) = EintFromP(eos, igm1, den, p);
         
       w0_(m,IDN,k,j,i) = den;
       w0_(m,IVX,k,j,i) = 0.0;
       w0_(m,IVX,k,j,i) = 0.0;
       w0_(m,IVX,k,j,i) = 0.0;
-      w0_(m,IEN,k,j,i) = p*igm1;
+      w0_(m,IEN,k,j,i) = EintFromP(eos, igm1, den, p);
         
         Real phicc = - grav_acc * x1v;// - 0.5*SQR(omega*r*sin(theta));
         if (use_etotgrav) {
@@ -486,7 +505,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             w0facewb_x1f(m,IM1,k,j,i) = 0.0;
             w0facewb_x1f(m,IM2,k,j,i) = 0.0;
             w0facewb_x1f(m,IM3,k,j,i) = 0.0;
-            w0facewb_x1f(m,IEN,k,j,i) = pwb*igm1;
+            w0facewb_x1f(m,IEN,k,j,i) = EintFromP(eos, igm1, denwb, pwb);
             if (i == ie) {
                 if (use_spherical_polar) {
                   x1v = x1f_(m,i+1);
@@ -499,7 +518,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                 w0facewb_x1f(m,IM1,k,j,i+1) = 0.0;
                 w0facewb_x1f(m,IM2,k,j,i+1) = 0.0;
                 w0facewb_x1f(m,IM3,k,j,i+1) = 0.0;
-                w0facewb_x1f(m,IEN,k,j,i+1) = pwb*igm1;
+                w0facewb_x1f(m,IEN,k,j,i+1) = EintFromP(eos, igm1, denwb, pwb);
             }
             
             if (use_spherical_polar) {
@@ -517,13 +536,13 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             w0facewb_x2f(m,IM1,k,j,i) = 0.0;
             w0facewb_x2f(m,IM2,k,j,i) = 0.0;
             w0facewb_x2f(m,IM3,k,j,i) = 0.0;
-            w0facewb_x2f(m,IEN,k,j,i) = pwb*igm1;
+            w0facewb_x2f(m,IEN,k,j,i) = EintFromP(eos, igm1, denwb, pwb);
             if (j == je) {
                 w0facewb_x2f(m,IDN,k,j+1,i) = denwb;
                 w0facewb_x2f(m,IM1,k,j+1,i) = 0.0;
                 w0facewb_x2f(m,IM2,k,j+1,i) = 0.0;
                 w0facewb_x2f(m,IM3,k,j+1,i) = 0.0;
-                w0facewb_x2f(m,IEN,k,j+1,i) = pwb*igm1;
+                w0facewb_x2f(m,IEN,k,j+1,i) = EintFromP(eos, igm1, denwb, pwb);
             }
             
             if (use_spherical_polar) {
@@ -541,13 +560,13 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             w0facewb_x3f(m,IM1,k,j,i) = 0.0;
             w0facewb_x3f(m,IM2,k,j,i) = 0.0;
             w0facewb_x3f(m,IM3,k,j,i) = 0.0;
-            w0facewb_x3f(m,IEN,k,j,i) = pwb*igm1;
+            w0facewb_x3f(m,IEN,k,j,i) = EintFromP(eos, igm1, denwb, pwb);
             if (k == ke) {
                 w0facewb_x3f(m,IDN,k+1,j,i) = denwb;
                 w0facewb_x3f(m,IM1,k+1,j,i) = 0.0;
                 w0facewb_x3f(m,IM2,k+1,j,i) = 0.0;
                 w0facewb_x3f(m,IM3,k+1,j,i) = 0.0;
-                w0facewb_x3f(m,IEN,k+1,j,i) = pwb*igm1;
+                w0facewb_x3f(m,IEN,k+1,j,i) = EintFromP(eos, igm1, denwb, pwb);
             }
         }
     });
@@ -645,7 +664,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
           u0wb(m,IM1,k,j,i) = 0.0;
           u0wb(m,IM2,k,j,i) = 0.0;
           u0wb(m,IM3,k,j,i) = 0.0;
-          u0wb(m,IEN,k,j,i) = pwb*igm1;
+          u0wb(m,IEN,k,j,i) = EintFromP(eos, igm1, denwb, pwb);
           if (use_etotgrav) {
               Real phicc = - grav_acc * x1v;
               u0wb(m,IEN,k,j,i) += denwb*phicc;
@@ -654,7 +673,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
           w0wb(m,IM1,k,j,i) = 0.0;
           w0wb(m,IM2,k,j,i) = 0.0;
           w0wb(m,IM3,k,j,i) = 0.0;
-          w0wb(m,IEN,k,j,i) = pwb*igm1;
+          w0wb(m,IEN,k,j,i) = EintFromP(eos, igm1, denwb, pwb);
         });
     }
 
@@ -769,10 +788,12 @@ void HydrostaticEquilibrium(Mesh *pm) {
     auto &z_ov_rE = pmbp->pcoord->z_ov_rE;
     Real grav_acc = -pm->pgen->hot_jupiter_param.grav;
 
+    EOS_Data eos;
     if (pmbp->phydro != nullptr) {
       u0_ = pmbp->phydro->u0;
       w0_ = pmbp->phydro->w0;
       gamma = pmbp->phydro->peos->eos_data.gamma;
+      eos = pmbp->phydro->peos->eos_data;
       use_etotgrav = pmbp->phydro->use_etotgrav;
       use_wellbalance_dynamic = pmbp->phydro->use_wellbalance_dynamic;
       phi0_x1f = pmbp->phydro->phi0.x1f;
@@ -781,6 +802,7 @@ void HydrostaticEquilibrium(Mesh *pm) {
       u0_ = pmbp->pmhd->u0;
       w0_ = pmbp->pmhd->w0;
       gamma = pmbp->pmhd->peos->eos_data.gamma;
+      eos = pmbp->pmhd->peos->eos_data;
       use_etotgrav = pmbp->pmhd->use_etotgrav;
       use_wellbalance_dynamic = pmbp->pmhd->use_wellbalance_dynamic;
       phi0_x1f = pmbp->pmhd->phi0.x1f;
@@ -985,12 +1007,26 @@ void HydrostaticEquilibrium(Mesh *pm) {
               dM1mag = -( (M11p1*area1(m,k,j,(ie+i+2))-M11*area1(m,k,j,(ie+i+1))) + (M12p1*area2(m,k,j+1,(ie+i+1))-M12*area2(m,k,j,(ie+i+1))) + (M13p1*area3(m,k+1,j,(ie+i+1))-M13*area3(m,k,j,(ie+i+1))) )/volume(m,k,j,(ie+i+1));
               dM1mag += z_ov_rE(m,k,j,(ie+i+1)) * 0.5*SQR(bcc0(m,IBX,k,j,(ie+i+1)));
             }
+            // Hydrostatic extrapolation into the ghost zone, at fixed temperature. The
+            // closed form below is the ideal-gas isothermal background; for a general EOS
+            // the same statement is WBAdvance's isothermal branch, which integrates
+            // dln d/dPhi = -d/(p chi_rho) instead of assuming p = (gamma-1)e.
             Real dphi_i = phicc0(m,k,j,(ie+i+1))-phi_i;
-            Real q0_ip = q0_i - factor_i * dphi_i;
-            Real e0_ip = exp(q0_ip);
-            e0_ip -= e_i*dM1mag/rho_i/grav_acc;
+            Real e0_hyd, rho0_hyd;
+            if (eos.IsGeneral()) {
+              rho0_hyd = rho_i;
+              e0_hyd = e_i;
+              WBAdvance(eos, 1, rho_i, e_i, dphi_i, rho0_hyd, e0_hyd);
+            } else {
+              e0_hyd = exp(q0_i - factor_i * dphi_i);
+              rho0_hyd = e0_hyd/e_i*rho_i;
+            }
+            Real e0_ip = e0_hyd - e_i*dM1mag/rho_i/grav_acc;
             if (e0_ip < 0.0) e0_ip = e_i;
-            Real rho0_ip = e0_ip/e_i*rho_i;
+            // the magnetic correction is carried into the density as the same relative
+            // shift the ideal-gas expression applies, so the two agree for a gamma law
+            Real rho0_ip = (eos.IsGeneral()) ? rho0_hyd*(e0_ip/e0_hyd)
+                                             : e0_ip/e_i*rho_i;
 //            rho0_ip = rho_i;
 //            e0_ip = e_i;
             u0_(m,IDN,k,j,(ie+i+1)) = rho0_ip;
@@ -1197,10 +1233,12 @@ void SourceFunc(Mesh *pm, Real bdt) {
     bool use_wellbalance_static = false;
     bool use_wellbalance_dynamic = false;
     Real gamma;
+    EOS_Data eos;
     if (pmbp->phydro != nullptr) {
       u0 = pmbp->phydro->u0;
       w0 = pmbp->phydro->w0;
       gamma = pmbp->phydro->peos->eos_data.gamma;
+      eos = pmbp->phydro->peos->eos_data;
       use_etotgrav = pmbp->phydro->use_etotgrav;
       use_wellbalance_static = pmbp->phydro->use_wellbalance_static;
       use_wellbalance_dynamic = pmbp->phydro->use_wellbalance_dynamic;
@@ -1211,6 +1249,7 @@ void SourceFunc(Mesh *pm, Real bdt) {
       u0 = pmbp->pmhd->u0;
       w0 = pmbp->pmhd->w0;
       gamma = pmbp->pmhd->peos->eos_data.gamma;
+      eos = pmbp->pmhd->peos->eos_data;
       use_etotgrav = pmbp->pmhd->use_etotgrav;
       use_wellbalance_static = pmbp->pmhd->use_wellbalance_static;
       use_wellbalance_dynamic = pmbp->pmhd->use_wellbalance_dynamic;
@@ -1284,7 +1323,11 @@ void SourceFunc(Mesh *pm, Real bdt) {
           z = x1v;
         }
         Real rho = w0(m,IDN,k,j,i);
-        Real p = w0(m,IEN,k,j,i)*gm1;
+        Real p = eos.Pressure(w0(m,IDN,k,j,i), w0(m,IEN,k,j,i));
+        // NOTE: T here is still the ideal-gas relation with the problem's fixed Rgas, as
+        // is the picket-fence initial condition that sets up the atmosphere. Those are
+        // ideal-gas constructions independent of the well-balanced scheme; converting
+        // them belongs with the analytic EOS itself.
         Real T = p/Rgas/rho;
         
         Real area_r = area1(m,k,j,i+1);
@@ -1300,22 +1343,24 @@ void SourceFunc(Mesh *pm, Real bdt) {
             src = bdt*grav_acc*(w0(m,IDN,k,j,i)-w0wb(m,IDN,k,j,i));
         }
         if (use_wellbalance_dynamic) {
-          Real e_imh,e_iph,dum1,dum2,dum3;
+          // The source is the background's own pressure difference across the cell, so it
+          // has to come from the same entry point the reconstruction uses: getWBq0, which
+          // dispatches to the ideal-gas closed forms or to the general-EOS background and
+          // returns pressure directly, not an energy to be multiplied by (gamma-1).
+          Real pl,pr,dum1,dum2,dum3;
           if (pmbp->phydro != nullptr) {
-              pmbp->phydro->getWBerho(IEN, gamma,
+              pmbp->phydro->getWBq0(eos, WBVar::wb_pres,
                 w0(m,IDN,k,j,i-1),w0(m,IDN,k,j,i),w0(m,IDN,k,j,i+1),
                 w0(m,IEN,k,j,i-1),w0(m,IEN,k,j,i),w0(m,IEN,k,j,i+1),
                 phicc0(m,k,j,i-1),phi0_x1f(m,k,j,i),phicc0(m,k,j,i),phi0_x1f(m,k,j,i+1),phicc0(m,k,j,i+1),
-                dum1,e_imh,dum2,e_iph,dum3);
+                dum1,pl,dum2,pr,dum3);
           } else if (pmbp->pmhd != nullptr) {
-              pmbp->pmhd->getWBerho(IEN, gamma,
+              pmbp->pmhd->getWBq0(eos, WBVar::wb_pres,
                 w0(m,IDN,k,j,i-1),w0(m,IDN,k,j,i),w0(m,IDN,k,j,i+1),
                 w0(m,IEN,k,j,i-1),w0(m,IEN,k,j,i),w0(m,IEN,k,j,i+1),
                 phicc0(m,k,j,i-1),phi0_x1f(m,k,j,i),phicc0(m,k,j,i),phi0_x1f(m,k,j,i+1),phicc0(m,k,j,i+1),
-                dum1,e_imh,dum2,e_iph,dum3);
+                dum1,pl,dum2,pr,dum3);
           }
-          Real pl = e_imh*gm1;
-          Real pr = e_iph*gm1;
           src = bdt*(area_r*(pr-p)+area_l*(p-pl))/vol;
         }
         u0(m,IM1,k,j,i) += src;
