@@ -19,6 +19,8 @@
 #include "eos/eos.hpp"
 #include "eos/ideal_c2p_hyd.hpp"
 #include "eos/ideal_c2p_mhd.hpp"
+#include "eos/general_c2p_hyd.hpp"
+#include "eos/general_c2p_mhd.hpp"
 #include "bvals.hpp"
 
 #include "coordinates/coordinates.hpp"
@@ -155,7 +157,19 @@ void MeshBoundaryValuesCC::ConsToPrimCoarseBndry(const DvceArray5D<Real> &cons,
             w.vz *= factor;
           }
         } else {
-          SingleC2P_IdealHyd(u, eos, w, dfloor_used, efloor_used, tfloor_used);
+          // The energy inversion itself, e = E - KE, needs no EOS. The FLOORS do: pfloor
+          // and tfloor are stated in pressure and temperature and have to be mapped onto
+          // an internal energy, which is not p/(gamma-1) for a general EOS. The derived
+          // quantities are discarded -- there is no coarse wder, and none is needed:
+          // prolongation only produces primitives, which are converted straight back to
+          // conserved variables and re-inverted over the whole block afterwards.
+          if (eos.IsGeneral()) {
+            Real pgas_, g1_;
+            SingleC2P_GeneralHyd(u, eos, w, pgas_, g1_,
+                                 dfloor_used, efloor_used, tfloor_used);
+          } else {
+            SingleC2P_IdealHyd(u, eos, w, dfloor_used, efloor_used, tfloor_used);
+          }
         }
 
         // No need to correct conserved state in coarse boundary arrays if floors used
@@ -429,7 +443,14 @@ void MeshBoundaryValuesCC::ConsToPrimCoarseBndry(const DvceArray5D<Real> &cons,
             w.vz *= factor;
           }
         } else {
-          SingleC2P_IdealMHD(u, eos, w, dfloor_used, efloor_used, tfloor_used);
+          // see the matching comment in the hydro version above
+          if (eos.IsGeneral()) {
+            Real pgas_, g1_;
+            SingleC2P_GeneralMHD(u, eos, w, pgas_, g1_,
+                                 dfloor_used, efloor_used, tfloor_used);
+          } else {
+            SingleC2P_IdealMHD(u, eos, w, dfloor_used, efloor_used, tfloor_used);
+          }
         }
 
         // No need to correct conserved state in coarse boundary arrays if floors used
