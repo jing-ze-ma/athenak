@@ -175,6 +175,23 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
     Kokkos::realloc(phi0.x3f, nmb, ncells3+1, ncells2, ncells1);
   }
   if (use_wellbalance_dynamic) {
+    // The well-balanced reconstruction subtracts an ANALYTIC hydrostatic background built
+    // from the ideal-gas EOS: getWBerho() assumes p = (gamma-1)e throughout, and its
+    // three options are the closed-form solutions of dp/dz = -rho dphi/dz for an ideal
+    // gas (e linear in phi, log(e) linear in phi, and p propto rho^gamma respectively).
+    // None of those forms survives a general EOS, and substituting Gamma_1 for gamma does
+    // NOT repair them, because the very first step p = (gamma-1)e is an ideal-gas
+    // identity rather than something Gamma_1 corrects. A correct general-EOS scheme has
+    // to well-balance against a numerically integrated background instead. Refuse rather
+    // than silently destroying the balance the scheme exists to preserve.
+    if (peos->eos_data.IsGeneral()) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<hydro>/wellbalance_dynamic is not supported with "
+                << "<hydro>/eos = general: the well-balanced background states are "
+                << "analytic ideal-gas hydrostatic solutions and are not valid for a "
+                << "general EOS." << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
     // select well-balanced scheme assumption (no default).  Test for compatibility of options
     std::string wb_opt = pin->GetString("hydro","wb_option");
     if (wb_opt.compare("isothermal") == 0) {
