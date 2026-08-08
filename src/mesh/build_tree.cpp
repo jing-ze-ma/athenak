@@ -52,8 +52,6 @@ void Mesh::BuildTreeFromScratch(ParameterInput *pin) {
   int current_level = root_level;
 
   // Construct tree and create root grid
-//  ptree = std::make_unique<MeshBlockTree>(this);
-//  ptree->CreateRootGrid();
   panel_trees.resize(npanels);
   for (int p = 0; p < npanels; ++p) {
     panel_trees[p] = std::make_unique<MeshBlockTree>(this);
@@ -61,9 +59,20 @@ void Mesh::BuildTreeFromScratch(ParameterInput *pin) {
     panel_trees[p]->SetPanelID(p);
     panel_trees[p]->CreateRootGrid();
   }
+  ptree = panel_trees[0].get();
 
   // Error check properties of input paraemters for SMR/AMR meshes.
   if (adaptive) {
+    // Refinement walks a single tree through ptree, which is panel 0. With six panels
+    // that would silently refine one sixth of the mesh and leave the rest alone, so
+    // refuse rather than produce a quietly wrong grid.
+    if (npanels > 1) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "Adaptive mesh refinement is not implemented for the "
+                << "cubed sphere: refinement operates on a single MeshBlockTree, but a "
+                << "cubed-sphere mesh has one tree per panel." << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
     max_level = pin->GetOrAddInteger("mesh_refinement", "num_levels", 1) + root_level - 1;
     if (max_level > 31) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
@@ -473,9 +482,17 @@ void Mesh::BuildTreeFromRestart(ParameterInput *pin, IOWrapper &resfile,
   delete [] idlist;
   if (!adaptive) max_level = current_level;
 
-  // rebuild the MeshBlockTree
-  ptree = std::make_unique<MeshBlockTree>(this);
-  ptree->CreateRootGrid();
+  // rebuild the MeshBlockTree. Build it through panel_trees, exactly as
+  // BuildTreeFromScratch does: that vector owns the nodes and is what the neighbour
+  // search in MeshBlock uses, so a restart that only populated the bare ptree left it
+  // empty and any panel lookup reading past the end of it.
+  panel_trees.resize(npanels);
+  for (int p = 0; p < npanels; ++p) {
+    panel_trees[p] = std::make_unique<MeshBlockTree>(this);
+    panel_trees[p]->SetPanelID(p);
+    panel_trees[p]->CreateRootGrid();
+  }
+  ptree = panel_trees[0].get();
   for (int i=0; i<nmb_total; i++) {ptree->AddNodeWithoutRefinement(lloc_eachmb[i]);}
 
   // check the tree structure by making sure total # of MBs counted in tree same as the

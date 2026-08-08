@@ -420,8 +420,14 @@ class Mesh {
 
 
  private:
-  std::unique_ptr<MeshBlockTree> ptree;  // pointer to root node in binary/quad/oct-tree
+  // The panel trees OWN every node. There is one panel for an ordinary mesh and six for a
+  // cubed sphere, each with its own root and its own z-ordering.
   std::vector<std::unique_ptr<MeshBlockTree>> panel_trees;
+  // Non-owning pointer to the root of the first panel tree. Most of the code predates the
+  // panel decomposition and reaches the tree through this; it is the whole tree unless
+  // the mesh is a cubed sphere. It MUST be set wherever panel_trees is built -- leaving
+  // it null is what made adaptive refinement segfault in MeshBlockTree::FindMeshBlock.
+  MeshBlockTree *ptree = nullptr;
   void LoadBalance(float *clist, int *rlist, int *slist, int *nlist, int nb);
 };
 #endif  // MESH_MESH_HPP_
