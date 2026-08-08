@@ -484,8 +484,8 @@ void Mesh::BuildTreeFromRestart(ParameterInput *pin, IOWrapper &resfile,
 
   // rebuild the MeshBlockTree. Build it through panel_trees, exactly as
   // BuildTreeFromScratch does: that vector owns the nodes and is what the neighbour
-  // search in MeshBlock uses, so a restart that only populated the bare ptree left it
-  // empty and any panel lookup reading past the end of it.
+  // search in MeshBlock indexes by panel, so a restart that populated only the bare ptree
+  // left it empty and every panel lookup reading past the end of it.
   panel_trees.resize(npanels);
   for (int p = 0; p < npanels; ++p) {
     panel_trees[p] = std::make_unique<MeshBlockTree>(this);
@@ -493,13 +493,29 @@ void Mesh::BuildTreeFromRestart(ParameterInput *pin, IOWrapper &resfile,
     panel_trees[p]->CreateRootGrid();
   }
   ptree = panel_trees[0].get();
-  for (int i=0; i<nmb_total; i++) {ptree->AddNodeWithoutRefinement(lloc_eachmb[i]);}
+  // Each block goes into the tree for its OWN panel. The panel id round-trips through the
+  // restart file as part of LogicalLocation. Putting them all into panel 0 would be right
+  // only for a single-panel mesh: blocks on different panels share logical coordinates,
+  // so they would collide.
+  for (int i=0; i<nmb_total; i++) {
+    int p = lloc_eachmb[i].panel;
+    if (p < 0 || p >= npanels) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+        << std::endl << "MeshBlock " << i << " in the restart file has panel id " << p
+        << ", outside the range [0," << npanels-1 << "]. The file was probably written "
+        << "by a build with a different number of panels." << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    panel_trees[p]->AddNodeWithoutRefinement(lloc_eachmb[i]);
+  }
 
   // check the tree structure by making sure total # of MBs counted in tree same as the
   // number read from the restart file.
   {
-    int nnb;
-    ptree->CreateZOrderedLLList(0, lloc_eachmb, nullptr, nnb);
+    int nnb = 0;
+    for (int p = 0; p < npanels; ++p) {
+      panel_trees[p]->CreateZOrderedLLList(nnb, lloc_eachmb, nullptr, nnb);
+    }
     if (nnb != nmb_total) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
         << std::endl << "Tree reconstruction failed. Total number of blocks in "
