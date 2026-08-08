@@ -62,7 +62,7 @@ Real TempDepKappa(Real temp, Real limit) {
 // not diffusivity. This is different from the coefficient used in Athena++.
 
 Conduction::Conduction(std::string block, MeshBlockPack *pp, ParameterInput *pin) :
-    pmy_pack(pp) {
+    pmy_pack(pp), my_block(block) {
   // Read parameters for isotropic thermal conduction (if any)
   if (pin->DoesParameterExist(block,"isotropic_conduction")) {
     iso_cond_type = pin->GetString(block,"isotropic_conduction");
@@ -119,14 +119,27 @@ void Conduction::AddIsotropicHeatFluxConstCond(const DvceArray5D<Real> &w0,
   int nmb1 = pmy_pack->nmb_thispack - 1;
   auto size = pmy_pack->pmb->mb_size;
   Real gm1 = eos.gamma-1.0;
+  // General EOS: temperature and pressure were evaluated once per cell in ConsToPrim.
+  // Reading the cached values matters here -- T(d,e) is a root find, and the stencils
+  // below touch up to ~30 neighbouring cells per face.
+  const bool gen = eos.IsGeneral();
+  auto &wtemp_ = (my_block.compare("mhd") == 0) ? pmy_pack->pmhd->wtemp
+                                                : pmy_pack->phydro->wtemp;
   Real &kappa_ = kappa_iso;
 
   // fluxes in x1-direction
   auto &flx1 = flx.x1f;
   par_for("conduct1", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    Real dtempdx = (w0(m,IEN,k,j,i)/w0(m,IDN,k,j,i) - w0(m,IEN,k,j,i-1)/w0(m,IDN,k,j,i-1))
-              * gm1 / size.d_view(m).dx1;
+    Real dtempdx;
+    if (gen) {
+      dtempdx = (wtemp_(m,k,j,i) - wtemp_(m,k,j,i-1))
+                / size.d_view(m).dx1;
+    } else {
+      dtempdx = (w0(m,IEN,k,j,i)/w0(m,IDN,k,j,i)
+                 - w0(m,IEN,k,j,i-1)/w0(m,IDN,k,j,i-1))
+                * gm1 / size.d_view(m).dx1;
+    }
     flx1(m,IEN,k,j,i) -= kappa_ * dtempdx;
   });
   if (pmy_pack->pmesh->one_d) {return;}
@@ -135,8 +148,15 @@ void Conduction::AddIsotropicHeatFluxConstCond(const DvceArray5D<Real> &w0,
   auto &flx2 = flx.x2f;
   par_for("conduct2",DevExeSpace(), 0, nmb1, ks, ke, js, je+1, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    Real dtempdx = (w0(m,IEN,k,j,i)/w0(m,IDN,k,j,i) - w0(m,IEN,k,j-1,i)/w0(m,IDN,k,j-1,i))
+    Real dtempdx;
+    if (gen) {
+      dtempdx = (wtemp_(m,k,j,i) - wtemp_(m,k,j-1,i))
+                / size.d_view(m).dx2;
+    } else {
+      dtempdx = (w0(m,IEN,k,j,i)/w0(m,IDN,k,j,i)
+                 - w0(m,IEN,k,j-1,i)/w0(m,IDN,k,j-1,i))
                 * gm1 / size.d_view(m).dx2;
+    }
     flx2(m,IEN,k,j,i) -= kappa_ * dtempdx;
   });
   if (pmy_pack->pmesh->two_d) {return;}
@@ -145,8 +165,15 @@ void Conduction::AddIsotropicHeatFluxConstCond(const DvceArray5D<Real> &w0,
   auto &flx3 = flx.x3f;
   par_for("conduct3",DevExeSpace(), 0, nmb1, ks, ke+1, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    Real dtempdx = (w0(m,IEN,k,j,i)/w0(m,IDN,k,j,i) - w0(m,IEN,k-1,j,i)/w0(m,IDN,k-1,j,i))
+    Real dtempdx;
+    if (gen) {
+      dtempdx = (wtemp_(m,k,j,i) - wtemp_(m,k-1,j,i))
+                / size.d_view(m).dx3;
+    } else {
+      dtempdx = (w0(m,IEN,k,j,i)/w0(m,IDN,k,j,i)
+                 - w0(m,IEN,k-1,j,i)/w0(m,IDN,k-1,j,i))
                 * gm1 / size.d_view(m).dx3;
+    }
     flx3(m,IEN,k,j,i) -= kappa_ * dtempdx;
   });
   return;
@@ -170,6 +197,14 @@ void Conduction::AddIsotropicHeatFluxSpitzerCond(const DvceArray5D<Real> &w0,
   bool &multi_d = pmy_pack->pmesh->multi_d;
   bool &three_d = pmy_pack->pmesh->three_d;
   Real gm1 = eos.gamma-1.0;
+  // General EOS: temperature and pressure were evaluated once per cell in ConsToPrim.
+  // Reading the cached values matters here -- T(d,e) is a root find, and the stencils
+  // below touch up to ~30 neighbouring cells per face.
+  const bool gen = eos.IsGeneral();
+  auto &wtemp_ = (my_block.compare("mhd") == 0) ? pmy_pack->pmhd->wtemp
+                                                : pmy_pack->phydro->wtemp;
+  auto &wder_ = (my_block.compare("mhd") == 0) ? pmy_pack->pmhd->wder
+                                               : pmy_pack->phydro->wder;
   Real kappaceil = kappa_ceiling;
   Real temp_unit = pmy_pack->punit->temperature_cgs();
   Real kappa_unit = pmy_pack->punit->pressure_cgs()*pmy_pack->punit->velocity_cgs()*
@@ -180,10 +215,10 @@ void Conduction::AddIsotropicHeatFluxSpitzerCond(const DvceArray5D<Real> &w0,
   par_for("conduct1", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     // Add heat fluxes into fluxes of conserved variables: energy
-    Real temp_l = w0(m,IEN,k,j,i-1)/w0(m,IDN,k,j,i-1)*gm1;
-    Real temp_r = w0(m,IEN,k,j,i)/w0(m,IDN,k,j,i)*gm1;
-    Real pres_l = w0(m,IEN,k,j,i-1)*gm1;
-    Real pres_r = w0(m,IEN,k,j,i)*gm1;
+    Real temp_l = (gen ? wtemp_(m,k,j,i-1) : w0(m,IEN,k,j,i-1)/w0(m,IDN,k,j,i-1)*gm1);
+    Real temp_r = (gen ? wtemp_(m,k,j,i) : w0(m,IEN,k,j,i)/w0(m,IDN,k,j,i)*gm1);
+    Real pres_l = (gen ? wder_(m,IDPR,k,j,i-1) : w0(m,IEN,k,j,i-1)*gm1);
+    Real pres_r = (gen ? wder_(m,IDPR,k,j,i) : w0(m,IEN,k,j,i)*gm1);
     Real kappaf = 0.5*(TempDepKappa(temp_unit*temp_l,kappaceil)+
                   TempDepKappa(temp_unit*temp_r,kappaceil))/kappa_unit;
     Real dtempdx1 = (temp_r-temp_l)/size.d_view(m).dx1;
@@ -192,18 +227,22 @@ void Conduction::AddIsotropicHeatFluxSpitzerCond(const DvceArray5D<Real> &w0,
     if (sat_hflux_) {
       Real dtempdx2 = 0.0, dtempdx3 = 0.0;
       if (multi_d) {
-        temp_ll = w0(m,IEN,k,j-1,i-1)/w0(m,IDN,k,j-1,i-1)*gm1;
-        temp_lr = w0(m,IEN,k,j+1,i-1)/w0(m,IDN,k,j+1,i-1)*gm1;
-        temp_rl = w0(m,IEN,k,j-1,i)/w0(m,IDN,k,j-1,i)*gm1;
-        temp_rr = w0(m,IEN,k,j+1,i)/w0(m,IDN,k,j+1,i)*gm1;
+        temp_ll = (gen ? wtemp_(m,k,j-1,i-1)
+                       : w0(m,IEN,k,j-1,i-1)/w0(m,IDN,k,j-1,i-1)*gm1);
+        temp_lr = (gen ? wtemp_(m,k,j+1,i-1)
+                       : w0(m,IEN,k,j+1,i-1)/w0(m,IDN,k,j+1,i-1)*gm1);
+        temp_rl = (gen ? wtemp_(m,k,j-1,i) : w0(m,IEN,k,j-1,i)/w0(m,IDN,k,j-1,i)*gm1);
+        temp_rr = (gen ? wtemp_(m,k,j+1,i) : w0(m,IEN,k,j+1,i)/w0(m,IDN,k,j+1,i)*gm1);
         dtempdx2 = VanLeerLimiter4State(temp_rr-temp_r,temp_r-temp_rl,
                                         temp_lr-temp_l,temp_l-temp_ll)/size.d_view(m).dx2;
       }
       if (three_d) {
-        temp_ll = w0(m,IEN,k-1,j,i-1)/w0(m,IDN,k-1,j,i-1)*gm1;
-        temp_lr = w0(m,IEN,k+1,j,i-1)/w0(m,IDN,k+1,j,i-1)*gm1;
-        temp_rl = w0(m,IEN,k-1,j,i)/w0(m,IDN,k-1,j,i)*gm1;
-        temp_rr = w0(m,IEN,k+1,j,i)/w0(m,IDN,k+1,j,i)*gm1;
+        temp_ll = (gen ? wtemp_(m,k-1,j,i-1)
+                       : w0(m,IEN,k-1,j,i-1)/w0(m,IDN,k-1,j,i-1)*gm1);
+        temp_lr = (gen ? wtemp_(m,k+1,j,i-1)
+                       : w0(m,IEN,k+1,j,i-1)/w0(m,IDN,k+1,j,i-1)*gm1);
+        temp_rl = (gen ? wtemp_(m,k-1,j,i) : w0(m,IEN,k-1,j,i)/w0(m,IDN,k-1,j,i)*gm1);
+        temp_rr = (gen ? wtemp_(m,k+1,j,i) : w0(m,IEN,k+1,j,i)/w0(m,IDN,k+1,j,i)*gm1);
         dtempdx3 = VL4Limiter(temp_rr-temp_r,temp_r-temp_rl,
                               temp_lr-temp_l,temp_l-temp_ll)/size.d_view(m).dx3;
       }
@@ -223,10 +262,10 @@ void Conduction::AddIsotropicHeatFluxSpitzerCond(const DvceArray5D<Real> &w0,
     // Add heat fluxes into fluxes of conserved variables: energy
     Real temp_l = 0.0, temp_r = 0.0, pres_l = 0.0, pres_r = 0.0;
     Real temp_ll = 0.0, temp_lr = 0.0, temp_rl = 0.0, temp_rr = 0.0;
-    temp_l = w0(m,IEN,k,j-1,i)/w0(m,IDN,k,j-1,i)*gm1;
-    temp_r = w0(m,IEN,k,j,i)/w0(m,IDN,k,j,i)*gm1;
-    pres_l = w0(m,IEN,k,j-1,i)*gm1;
-    pres_r = w0(m,IEN,k,j,i)*gm1;
+    temp_l = (gen ? wtemp_(m,k,j-1,i) : w0(m,IEN,k,j-1,i)/w0(m,IDN,k,j-1,i)*gm1);
+    temp_r = (gen ? wtemp_(m,k,j,i) : w0(m,IEN,k,j,i)/w0(m,IDN,k,j,i)*gm1);
+    pres_l = (gen ? wder_(m,IDPR,k,j-1,i) : w0(m,IEN,k,j-1,i)*gm1);
+    pres_r = (gen ? wder_(m,IDPR,k,j,i) : w0(m,IEN,k,j,i)*gm1);
     Real kappaf = 0.5*(TempDepKappa(temp_unit*temp_l,kappaceil)+
                   TempDepKappa(temp_unit*temp_r,kappaceil))/kappa_unit;
     Real dtempdx2 = (temp_r-temp_l)/size.d_view(m).dx2;
@@ -234,17 +273,19 @@ void Conduction::AddIsotropicHeatFluxSpitzerCond(const DvceArray5D<Real> &w0,
     // Saturation of thermal conduction
     if (sat_hflux_) {
       Real dtempdx1 = 0.0, dtempdx3 = 0.0;
-      temp_ll = w0(m,IEN,k,j-1,i-1)/w0(m,IDN,k,j-1,i-1)*gm1;
-      temp_lr = w0(m,IEN,k,j-1,i+1)/w0(m,IDN,k,j-1,i+1)*gm1;
-      temp_rl = w0(m,IEN,k,j,i-1)/w0(m,IDN,k,j,i-1)*gm1;
-      temp_rr = w0(m,IEN,k,j,i+1)/w0(m,IDN,k,j,i+1)*gm1;
+      temp_ll = (gen ? wtemp_(m,k,j-1,i-1) : w0(m,IEN,k,j-1,i-1)/w0(m,IDN,k,j-1,i-1)*gm1);
+      temp_lr = (gen ? wtemp_(m,k,j-1,i+1) : w0(m,IEN,k,j-1,i+1)/w0(m,IDN,k,j-1,i+1)*gm1);
+      temp_rl = (gen ? wtemp_(m,k,j,i-1) : w0(m,IEN,k,j,i-1)/w0(m,IDN,k,j,i-1)*gm1);
+      temp_rr = (gen ? wtemp_(m,k,j,i+1) : w0(m,IEN,k,j,i+1)/w0(m,IDN,k,j,i+1)*gm1);
       dtempdx1 = VL4Limiter(temp_rr-temp_r,temp_r-temp_rl,
                             temp_lr-temp_l,temp_l-temp_ll)/size.d_view(m).dx1;
       if (three_d) {
-        temp_ll = w0(m,IEN,k-1,j-1,i)/w0(m,IDN,k-1,j-1,i)*gm1;
-        temp_lr = w0(m,IEN,k+1,j-1,i)/w0(m,IDN,k+1,j-1,i)*gm1;
-        temp_rl = w0(m,IEN,k-1,j,i)/w0(m,IDN,k-1,j,i)*gm1;
-        temp_rr = w0(m,IEN,k+1,j,i)/w0(m,IDN,k+1,j,i)*gm1;
+        temp_ll = (gen ? wtemp_(m,k-1,j-1,i)
+                       : w0(m,IEN,k-1,j-1,i)/w0(m,IDN,k-1,j-1,i)*gm1);
+        temp_lr = (gen ? wtemp_(m,k+1,j-1,i)
+                       : w0(m,IEN,k+1,j-1,i)/w0(m,IDN,k+1,j-1,i)*gm1);
+        temp_rl = (gen ? wtemp_(m,k-1,j,i) : w0(m,IEN,k-1,j,i)/w0(m,IDN,k-1,j,i)*gm1);
+        temp_rr = (gen ? wtemp_(m,k+1,j,i) : w0(m,IEN,k+1,j,i)/w0(m,IDN,k+1,j,i)*gm1);
         dtempdx3 = VL4Limiter(temp_rr-temp_r,temp_r-temp_rl,
                               temp_lr-temp_l,temp_l-temp_ll)/size.d_view(m).dx3;
       }
@@ -264,10 +305,10 @@ void Conduction::AddIsotropicHeatFluxSpitzerCond(const DvceArray5D<Real> &w0,
     // Add heat fluxes into fluxes of conserved variables: energy
     Real temp_l = 0.0, temp_r = 0.0, pres_l = 0.0, pres_r = 0.0;
     Real temp_ll = 0.0, temp_lr = 0.0, temp_rl = 0.0, temp_rr = 0.0;
-    temp_l = w0(m,IEN,k-1,j,i)/w0(m,IDN,k-1,j,i)*gm1;
-    temp_r = w0(m,IEN,k,j,i)/w0(m,IDN,k,j,i)*gm1;
-    pres_l = w0(m,IEN,k-1,j,i)*gm1;
-    pres_r = w0(m,IEN,k,j,i)*gm1;
+    temp_l = (gen ? wtemp_(m,k-1,j,i) : w0(m,IEN,k-1,j,i)/w0(m,IDN,k-1,j,i)*gm1);
+    temp_r = (gen ? wtemp_(m,k,j,i) : w0(m,IEN,k,j,i)/w0(m,IDN,k,j,i)*gm1);
+    pres_l = (gen ? wder_(m,IDPR,k-1,j,i) : w0(m,IEN,k-1,j,i)*gm1);
+    pres_r = (gen ? wder_(m,IDPR,k,j,i) : w0(m,IEN,k,j,i)*gm1);
     Real kappaf = 0.5*(TempDepKappa(temp_unit*temp_l,kappaceil)+
                   TempDepKappa(temp_unit*temp_r,kappaceil))/kappa_unit;
     Real dtempdx3 = (temp_r-temp_l)/size.d_view(m).dx3;
@@ -275,16 +316,16 @@ void Conduction::AddIsotropicHeatFluxSpitzerCond(const DvceArray5D<Real> &w0,
     // Saturation of thermal conduction
     if (sat_hflux_) {
       Real dtempdx1 = 0.0, dtempdx2 = 0.0;
-      temp_ll = w0(m,IEN,k-1,j,i-1)/w0(m,IDN,k-1,j,i-1)*gm1;
-      temp_lr = w0(m,IEN,k-1,j,i+1)/w0(m,IDN,k-1,j,i+1)*gm1;
-      temp_rl = w0(m,IEN,k,j,i-1)/w0(m,IDN,k,j,i-1)*gm1;
-      temp_rr = w0(m,IEN,k,j,i+1)/w0(m,IDN,k,j,i+1)*gm1;
+      temp_ll = (gen ? wtemp_(m,k-1,j,i-1) : w0(m,IEN,k-1,j,i-1)/w0(m,IDN,k-1,j,i-1)*gm1);
+      temp_lr = (gen ? wtemp_(m,k-1,j,i+1) : w0(m,IEN,k-1,j,i+1)/w0(m,IDN,k-1,j,i+1)*gm1);
+      temp_rl = (gen ? wtemp_(m,k,j,i-1) : w0(m,IEN,k,j,i-1)/w0(m,IDN,k,j,i-1)*gm1);
+      temp_rr = (gen ? wtemp_(m,k,j,i+1) : w0(m,IEN,k,j,i+1)/w0(m,IDN,k,j,i+1)*gm1);
       dtempdx1 = VL4Limiter(temp_rr-temp_r,temp_r-temp_rl,
                             temp_lr-temp_l,temp_l-temp_ll)/size.d_view(m).dx1;
-      temp_ll = w0(m,IEN,k-1,j-1,i)/w0(m,IDN,k-1,j-1,i)*gm1;
-      temp_lr = w0(m,IEN,k-1,j+1,i)/w0(m,IDN,k-1,j+1,i)*gm1;
-      temp_rl = w0(m,IEN,k,j-1,i)/w0(m,IDN,k,j-1,i)*gm1;
-      temp_rr = w0(m,IEN,k,j+1,i)/w0(m,IDN,k,j+1,i)*gm1;
+      temp_ll = (gen ? wtemp_(m,k-1,j-1,i) : w0(m,IEN,k-1,j-1,i)/w0(m,IDN,k-1,j-1,i)*gm1);
+      temp_lr = (gen ? wtemp_(m,k-1,j+1,i) : w0(m,IEN,k-1,j+1,i)/w0(m,IDN,k-1,j+1,i)*gm1);
+      temp_rl = (gen ? wtemp_(m,k,j-1,i) : w0(m,IEN,k,j-1,i)/w0(m,IDN,k,j-1,i)*gm1);
+      temp_rr = (gen ? wtemp_(m,k,j+1,i) : w0(m,IEN,k,j+1,i)/w0(m,IDN,k,j+1,i)*gm1);
       dtempdx2 = VL4Limiter(temp_rr-temp_r,temp_r-temp_rl,
                             temp_lr-temp_l,temp_l-temp_ll)/size.d_view(m).dx2;
       Real tempgrad = sqrt(SQR(dtempdx1)+SQR(dtempdx2)+SQR(dtempdx3));
@@ -346,6 +387,13 @@ void Conduction::NewTimeStep(const DvceArray5D<Real> &w0, const EOS_Data &eos_da
   auto &three_d = pmy_pack->pmesh->three_d;
   auto &size = pmy_pack->pmb->mb_size;
   Real gm1 = eos_data.gamma-1.0;
+  // General EOS: temperature and pressure were evaluated once per cell in ConsToPrim.
+  // Reading the cached values matters here -- T(d,e) is a root find, and the stencils
+  // below touch up to ~30 neighbouring cells per face.
+  const bool gen = eos_data.IsGeneral();
+  auto eos_ = eos_data;   // by-value copy, capturable in the device lambda
+  auto &wtemp_ = (my_block.compare("mhd") == 0) ? pmy_pack->pmhd->wtemp
+                                                : pmy_pack->phydro->wtemp;
   Real kappa0 = kappa_iso;
 
   // find smallest timestep for thermal conduction in each cell
@@ -362,16 +410,25 @@ void Conduction::NewTimeStep(const DvceArray5D<Real> &w0, const EOS_Data &eos_da
 
     Real kappa_ = kappa0;
     if (spitzer) {
-      Real temp = w0(m,IEN,k,j,i)/w0(m,IDN,k,j,i)*gm1;
+      Real temp = (gen ? wtemp_(m,k,j,i) : w0(m,IEN,k,j,i)/w0(m,IDN,k,j,i)*gm1);
       kappa_ = TempDepKappa(temp*temp_unit, limit_)/kappa_unit;
     }
 
-    min_dt = fmin(min_dt, SQR(size.d_view(m).dx1)/kappa_*w0_(m,IDN,k,j,i)/gm1);
+    // the heat diffusion time is dx^2 rho c_v / kappa. For an ideal gas c_v = 1/(gamma-1)
+    // which is what the rho/gm1 below amounts to; a general EOS has c_v(d,e), and it can
+    // be an order of magnitude larger inside an ionization zone, so this is not a
+    // cosmetic substitution -- it directly sets the conduction-limited timestep.
+    Real rcv = w0_(m,IDN,k,j,i)/gm1;
+    if (gen) {
+      rcv = w0_(m,IDN,k,j,i)*eos_.SpecificHeatCv(w0_(m,IDN,k,j,i), w0_(m,IEN,k,j,i));
+    }
+
+    min_dt = fmin(min_dt, SQR(size.d_view(m).dx1)/kappa_*rcv);
     if (multi_d) {
-      min_dt = fmin(min_dt, SQR(size.d_view(m).dx2)/kappa_*w0_(m,IDN,k,j,i)/gm1);
+      min_dt = fmin(min_dt, SQR(size.d_view(m).dx2)/kappa_*rcv);
     }
     if (three_d) {
-      min_dt = fmin(min_dt, SQR(size.d_view(m).dx3)/kappa_*w0_(m,IDN,k,j,i)/gm1);
+      min_dt = fmin(min_dt, SQR(size.d_view(m).dx3)/kappa_*rcv);
     }
   }, Kokkos::Min<Real>(dtnew));
   dtnew *= fac;

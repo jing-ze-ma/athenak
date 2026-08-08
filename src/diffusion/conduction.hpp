@@ -40,5 +40,9 @@ class Conduction {
 
  private:
   MeshBlockPack* pmy_pack;
+  // "hydro" or "mhd": identifies which physics module owns this Conduction object, so
+  // that the general EOS derived-variable arrays (cached temperature and pressure) of the
+  // right module can be found.
+  std::string my_block;
 };
 #endif // DIFFUSION_CONDUCTION_HPP_
