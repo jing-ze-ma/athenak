@@ -150,7 +150,14 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   bool user_srcs = pin->GetOrAddBoolean("problem","user_srcs",false);
   if (user_srcs) user_srcs_func = SourceFunc;
   user_bcs_func = HydrostaticEquilibrium;
-  if (restart) return;
+  // NOTE: this function must NOT return early on a restart. Only the initial condition
+  // (the "probini" kernel) and the magnetic field at the end are genuinely one-off;
+  // everything in between builds BACKGROUND state that lives in memory only and is
+  // therefore gone after a restart -- the gravitational potential phicc0/phi0 consumed by
+  // etotgrav and by the well-balanced reconstruction, and the well-balanced reference
+  // atmosphere u0wb/w0wb/w0facewb. Returning here left phi identically zero, which
+  // silently changed the physics at the restart point for any run with etotgrav = true.
+  // The two one-off blocks are guarded with `if (!restart)` individually instead.
   if (pmy_mesh_->one_d || pmy_mesh_->two_d) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
               << "deep hot Jupiter problem generator only works in 3D" << std::endl;
@@ -323,6 +330,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     logparr_init.modify_host();
     logparr_init.sync_device();
   
+    // one-off: the initial condition. Skipped on a restart, where u0/w0 come from file.
+    if (!restart) {
     par_for("probini", DevExeSpace(), 0, (pmbp->nmb_thispack-1), 0, n3m1, 0, n2m1, 0, n1m1,
     KOKKOS_LAMBDA(int m, int k, int j, int i) {
         
@@ -387,7 +396,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             u0_(m,IEN,k,j,i) += den*phicc;
         }
     });
-            
+    }  // end of !restart guard on the initial condition
+
     par_for("probwb", DevExeSpace(), 0,(pmbp->nmb_thispack-1),ks,ke,js,je,is,ie,
     KOKKOS_LAMBDA(int m, int k, int j, int i) {
         
@@ -752,8 +762,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         });
     }
 
-    // initialize magnetic fields if MHD
-    if (pmbp->pmhd != nullptr) {
+    // initialize magnetic fields if MHD. One-off like the initial condition above: on a
+    // restart b0/bcc0 are read from file.
+    if (!restart && pmbp->pmhd != nullptr) {
       // Read magnetic field strength
       Real bbot = pin->GetReal("problem","bbot");
       auto &b0 = pmbp->pmhd->b0;
