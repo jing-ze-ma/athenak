@@ -153,27 +153,41 @@ void SourceTerms::ISMCooling(const DvceArray5D<Real> &w0, const EOS_Data &eos_da
   const bool gen = eos_data.IsGeneral();
   auto &wtemp_ = (my_block.compare("mhd_srcterms") == 0) ? pmy_pack->pmhd->wtemp
                                                          : pmy_pack->phydro->wtemp;
+  auto eos_ = eos_data;
   Real temp_unit = gen ? eos_data.temp_cgs : pmy_pack->punit->temperature_cgs();
-  // NOTE: the number density below still uses the fixed <units>/mu. Under the mu_ref = 1
-  // convention that makes it a nucleon number density; a general EOS whose mean molecular
-  // weight varies with ionization state is not reflected here, so pairing ISM cooling
-  // with a partial-ionization EOS needs that mismatch thought through.
+  // The cooling and heating rates are per particle (n^2 Lambda and n Gamma), so this term
+  // needs a NUMBER density. For an ideal gas the mean molecular weight is the fixed
+  // <units>/mu, so n = rho*n_unit with n_unit a constant that can be folded into
+  // cooling_unit/heating_unit once. A general EOS carries composition itself and mu
+  // varies with the ionization state, so there n has to be formed per cell from
+  // eos.MeanMolecularWeight(). The two agree when <units>/mu = 1, which a general-EOS run
+  // is required to set anyway.
   Real n_unit = pmy_pack->punit->density_cgs()/pmy_pack->punit->mu()
                 /pmy_pack->punit->atomic_mass_unit_cgs;
   Real cooling_unit = pmy_pack->punit->pressure_cgs()/pmy_pack->punit->time_cgs()
                       /n_unit/n_unit;
   Real heating_unit = pmy_pack->punit->pressure_cgs()/pmy_pack->punit->time_cgs()/n_unit;
+  Real dens_cgs = pmy_pack->punit->density_cgs();
+  Real amu_cgs = pmy_pack->punit->atomic_mass_unit_cgs;
+  Real erate_unit = pmy_pack->punit->pressure_cgs()/pmy_pack->punit->time_cgs();
 
   par_for("cooling", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     // temperature in cgs unit
     Real temp = temp_unit*(gen ? wtemp_(m,k,j,i)
                                : w0(m,IEN,k,j,i)/w0(m,IDN,k,j,i)*gm1);
-    Real lambda_cooling = ISMCoolFn(temp)/cooling_unit;
-    Real gamma_heating = heating_rate/heating_unit;
+    if (gen) {
+      // number density in cgs from the EOS's own mean molecular weight
+      Real mu = eos_.MeanMolecularWeight(w0(m,IDN,k,j,i), w0(m,IEN,k,j,i));
+      Real nden = w0(m,IDN,k,j,i)*dens_cgs/(mu*amu_cgs);
+      u0(m,IEN,k,j,i) -= bdt*(nden*nden*ISMCoolFn(temp) - nden*heating_rate)/erate_unit;
+    } else {
+      Real lambda_cooling = ISMCoolFn(temp)/cooling_unit;
+      Real gamma_heating = heating_rate/heating_unit;
 
-    u0(m,IEN,k,j,i) -= bdt * w0(m,IDN,k,j,i) *
-                        (w0(m,IDN,k,j,i) * lambda_cooling - gamma_heating);
+      u0(m,IEN,k,j,i) -= bdt * w0(m,IDN,k,j,i) *
+                          (w0(m,IDN,k,j,i) * lambda_cooling - gamma_heating);
+    }
   });
 
   return;

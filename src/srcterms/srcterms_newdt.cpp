@@ -51,6 +51,12 @@ void SourceTerms::NewTimeStep(const DvceArray5D<Real> &w0, const EOS_Data &eos_d
                         / n_unit/n_unit;
     Real heating_unit = pmy_pack->punit->pressure_cgs()/pmy_pack->punit->time_cgs()
                         / n_unit;
+    // the number density must be formed exactly as ISMCooling forms it, or the timestep
+    // would be limited by a different rate than the one actually applied
+    auto eos_ = eos_data;
+    Real dens_cgs = pmy_pack->punit->density_cgs();
+    Real amu_cgs = pmy_pack->punit->atomic_mass_unit_cgs;
+    Real erate_unit = pmy_pack->punit->pressure_cgs()/pmy_pack->punit->time_cgs();
 
     // find smallest (e/cooling_rate) in each cell
     Kokkos::parallel_reduce("srcterms_cooling_newdt",
@@ -69,12 +75,21 @@ void SourceTerms::NewTimeStep(const DvceArray5D<Real> &w0, const EOS_Data &eos_d
                                  : w0(m,IEN,k,j,i)/w0(m,IDN,k,j,i)*gm1);
       Real &eint = w0(m,IEN,k,j,i);
 
-      Real lambda_cooling = ISMCoolFn(temp)/cooling_unit;
-      Real gamma_heating = heating_rate/heating_unit;
+      Real cooling_heating;
+      if (gen) {
+        Real mu = eos_.MeanMolecularWeight(w0(m,IDN,k,j,i), w0(m,IEN,k,j,i));
+        Real nden = w0(m,IDN,k,j,i)*dens_cgs/(mu*amu_cgs);
+        // add a tiny number
+        cooling_heating = FLT_MIN +
+            fabs((nden*nden*ISMCoolFn(temp) - nden*heating_rate)/erate_unit);
+      } else {
+        Real lambda_cooling = ISMCoolFn(temp)/cooling_unit;
+        Real gamma_heating = heating_rate/heating_unit;
 
-      // add a tiny number
-      Real cooling_heating = FLT_MIN + fabs(w0(m,IDN,k,j,i) *
-                             (w0(m,IDN,k,j,i) * lambda_cooling - gamma_heating));
+        // add a tiny number
+        cooling_heating = FLT_MIN + fabs(w0(m,IDN,k,j,i) *
+                          (w0(m,IDN,k,j,i) * lambda_cooling - gamma_heating));
+      }
 
       min_dt = fmin((eint/cooling_heating), min_dt);
     }, Kokkos::Min<Real>(dtnew));
