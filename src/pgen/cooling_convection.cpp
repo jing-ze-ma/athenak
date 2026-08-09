@@ -34,6 +34,15 @@
 #include "srcterms/srcterms.hpp"
 #include "utils/random.hpp"
 #include "pgen.hpp"
+#include "pgen_eos_utils.hpp"
+
+
+// EOS-aware conversions shared with the other stratified problem generators
+using pgen_eos::EintFromP;
+using pgen_eos::PresFromEint;
+using pgen_eos::TempKelvin;
+using pgen_eos::DensFromPT;
+using pgen_eos::EintFromDensT;
 #include "diffusion/resistivity.hpp"
 
 #include <Kokkos_Random.hpp>
@@ -741,6 +750,7 @@ void HydrostaticEquilibrium(Mesh *pm) {
     DvceArray5D<Real> u0_;
     DvceArray5D<Real> w0_;
     Real gamma;
+    EOS_Data eos;
     bool use_etotgrav = false;
     bool use_wellbalance_dynamic = false;
     
@@ -767,6 +777,7 @@ void HydrostaticEquilibrium(Mesh *pm) {
       u0_ = pmbp->phydro->u0;
       w0_ = pmbp->phydro->w0;
       gamma = pmbp->phydro->peos->eos_data.gamma;
+      eos = pmbp->phydro->peos->eos_data;
       use_etotgrav = pmbp->phydro->use_etotgrav;
       use_wellbalance_dynamic = pmbp->phydro->use_wellbalance_dynamic;
       phi0_x1f = pmbp->phydro->phi0.x1f;
@@ -775,6 +786,7 @@ void HydrostaticEquilibrium(Mesh *pm) {
       u0_ = pmbp->pmhd->u0;
       w0_ = pmbp->pmhd->w0;
       gamma = pmbp->pmhd->peos->eos_data.gamma;
+      eos = pmbp->pmhd->peos->eos_data;
       use_etotgrav = pmbp->pmhd->use_etotgrav;
       use_wellbalance_dynamic = pmbp->pmhd->use_wellbalance_dynamic;
       phi0_x1f = pmbp->pmhd->phi0.x1f;
@@ -1000,10 +1012,12 @@ void SourceFunc(Mesh *pm, Real bdt) {
     bool use_wellbalance_static = false;
     bool use_wellbalance_dynamic = false;
     Real gamma;
+    EOS_Data eos;
     if (pmbp->phydro != nullptr) {
       u0 = pmbp->phydro->u0;
       w0 = pmbp->phydro->w0;
       gamma = pmbp->phydro->peos->eos_data.gamma;
+      eos = pmbp->phydro->peos->eos_data;
       use_etotgrav = pmbp->phydro->use_etotgrav;
       use_wellbalance_static = pmbp->phydro->use_wellbalance_static;
       use_wellbalance_dynamic = pmbp->phydro->use_wellbalance_dynamic;
@@ -1014,6 +1028,7 @@ void SourceFunc(Mesh *pm, Real bdt) {
       u0 = pmbp->pmhd->u0;
       w0 = pmbp->pmhd->w0;
       gamma = pmbp->pmhd->peos->eos_data.gamma;
+      eos = pmbp->pmhd->peos->eos_data;
       use_etotgrav = pmbp->pmhd->use_etotgrav;
       use_wellbalance_static = pmbp->pmhd->use_wellbalance_static;
       use_wellbalance_dynamic = pmbp->pmhd->use_wellbalance_dynamic;
@@ -1099,7 +1114,7 @@ void SourceFunc(Mesh *pm, Real bdt) {
           z = x1v;
         }
         Real rho = w0(m,IDN,k,j,i);
-        Real p = w0(m,IEN,k,j,i)*gm1;
+        Real p = PresFromEint(eos,gm1,w0(m,IDN,k,j,i),w0(m,IEN,k,j,i));
         Real T = p/Rgas/rho;
         
         // gravity
@@ -1111,22 +1126,24 @@ void SourceFunc(Mesh *pm, Real bdt) {
             src = bdt*grav_acc*(w0(m,IDN,k,j,i)-w0wb(m,IDN,k,j,i));
         }
         if (use_wellbalance_dynamic) {
-          Real e_imh,e_iph,dum1,dum2,dum3;
+          // The source is the background's own pressure difference across the cell, so it
+          // must come from the same entry point the reconstruction uses: getWBq0, which
+          // dispatches to the ideal-gas closed forms or to the general-EOS background and
+          // returns pressure directly, not an energy to be scaled by (gamma-1).
+          Real pl,pr,dum1,dum2,dum3;
           if (pmbp->phydro != nullptr) {
-              pmbp->phydro->getWBerho(IEN, gamma,
+              pmbp->phydro->getWBq0(eos, WBVar::wb_pres,
                 w0(m,IDN,k,j,i-1),w0(m,IDN,k,j,i),w0(m,IDN,k,j,i+1),
                 w0(m,IEN,k,j,i-1),w0(m,IEN,k,j,i),w0(m,IEN,k,j,i+1),
                 phicc0(m,k,j,i-1),phi0_x1f(m,k,j,i),phicc0(m,k,j,i),phi0_x1f(m,k,j,i+1),phicc0(m,k,j,i+1),
-                dum1,e_imh,dum2,e_iph,dum3);
+                dum1,pl,dum2,pr,dum3);
           } else if (pmbp->pmhd != nullptr) {
-              pmbp->pmhd->getWBerho(IEN, gamma,
+              pmbp->pmhd->getWBq0(eos, WBVar::wb_pres,
                 w0(m,IDN,k,j,i-1),w0(m,IDN,k,j,i),w0(m,IDN,k,j,i+1),
                 w0(m,IEN,k,j,i-1),w0(m,IEN,k,j,i),w0(m,IEN,k,j,i+1),
                 phicc0(m,k,j,i-1),phi0_x1f(m,k,j,i),phicc0(m,k,j,i),phi0_x1f(m,k,j,i+1),phicc0(m,k,j,i+1),
-                dum1,e_imh,dum2,e_iph,dum3);
+                dum1,pl,dum2,pr,dum3);
           }
-          Real pl = e_imh*gm1;
-          Real pr = e_iph*gm1;
           src = bdt*(area_r*(pr-p)+area_l*(p-pl))/vol;
         }
         u0(m,IM1,k,j,i) += src;
@@ -1524,14 +1541,17 @@ void two_stream_RT(Mesh *pm, Real bdt) {
     const bool use_spherical_polar = pm->use_spherical_polar;
         
     Real gamma;
+    EOS_Data eos;
     if (pmbp->phydro != nullptr) {
       u0 = pmbp->phydro->u0;
       w0 = pmbp->phydro->w0;
       gamma = pmbp->phydro->peos->eos_data.gamma;
+      eos = pmbp->phydro->peos->eos_data;
     } else if (pmbp->pmhd != nullptr) {
       u0 = pmbp->pmhd->u0;
       w0 = pmbp->pmhd->w0;
       gamma = pmbp->pmhd->peos->eos_data.gamma;
+      eos = pmbp->pmhd->peos->eos_data;
     }
     
     Real r0, r1;
@@ -1589,7 +1609,7 @@ void two_stream_RT(Mesh *pm, Real bdt) {
         tau_down_r_f[ie+1] = tau_r_f;
         // down-sweep
         for (int i=ie; i>is-1; --i) {
-          Real p = w0(m,IEN,k,j,i)*gm1;
+          Real p = PresFromEint(eos,gm1,w0(m,IDN,k,j,i),w0(m,IEN,k,j,i));
           Real rho = w0(m,IDN,k,j,i);
           Real T = p/Rgas/rho;
           B[i] = boltz_sigma/M_PI*SQR(SQR(T));
@@ -1662,7 +1682,7 @@ void two_stream_RT(Mesh *pm, Real bdt) {
           // NOTE: implicit (Newton-Raphson) local-emission update temporarily reverted to
           // explicit to isolate its effect on atmospheric cooling. See git history / the
           // commented block below to re-enable.
-          //          Real p = w0(m,IEN,k,j,i)*gm1;
+          //          Real p = PresFromEint(eos,gm1,w0(m,IDN,k,j,i),w0(m,IEN,k,j,i));
           //          Real rho = w0(m,IDN,k,j,i);
           //          Real T = p/Rgas/rho;
           //          Real kapr;

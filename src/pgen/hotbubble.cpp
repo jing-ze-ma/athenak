@@ -27,6 +27,15 @@
 #include "srcterms/srcterms.hpp"
 #include "utils/random.hpp"
 #include "pgen.hpp"
+#include "pgen_eos_utils.hpp"
+
+
+// EOS-aware conversions shared with the other stratified problem generators
+using pgen_eos::EintFromP;
+using pgen_eos::PresFromEint;
+using pgen_eos::TempKelvin;
+using pgen_eos::DensFromPT;
+using pgen_eos::EintFromDensT;
 
 #include <Kokkos_Random.hpp>
 
@@ -518,6 +527,8 @@ void VaryingGravity(Mesh *pm, Real bdt) {
     
     Real gamma = pmbp->phydro->peos->eos_data.gamma;
     Real gm1 = gamma-1.0;
+    // by-value copy, capturable in the device lambda below
+    auto eos = pmbp->phydro->peos->eos_data;
 
     par_for("varying_grav", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -534,14 +545,18 @@ void VaryingGravity(Mesh *pm, Real bdt) {
         src = bdt*g*(w0(m,IDN,k,j,i)-w0wb(m,IDN,k,j,i));
       }
       if (use_wellbalance_dynamic) {
-        Real e_kmh,e_kph,dum1,dum2,dum3;
-        pmbp->phydro->getWBerho(IEN, gamma,
+        // The source is the background's own pressure difference across the cell, so it
+        // must come from the same entry point the reconstruction uses: getWBq0, which
+        // dispatches to the ideal-gas closed forms or to the general-EOS background and
+        // returns pressure directly, not an energy to be scaled by (gamma-1). Calling
+        // getWBerho here instead left the source on the ideal background while the
+        // reconstruction used the general one, which destroys the balance.
+        Real pl,pr,dum1,dum2,dum3;
+        pmbp->phydro->getWBq0(eos, WBVar::wb_pres,
             w0(m,IDN,k,j-1,i),w0(m,IDN,k,j,i),w0(m,IDN,k,j+1,i),
             w0(m,IEN,k,j-1,i),w0(m,IEN,k,j,i),w0(m,IEN,k,j+1,i),
             phicc0(m,k,j-1,i),phi0_x2f(m,k,j,i),phicc0(m,k,j,i),phi0_x2f(m,k,j+1,i),phicc0(m,k,j+1,i),
-            dum1,e_kmh,dum2,e_kph,dum3);
-        Real pl = e_kmh*gm1;
-        Real pr = e_kph*gm1;
+            dum1,pl,dum2,pr,dum3);
         src = bdt*(pr-pl)/(size.d_view(m).dx2);
       }
       u0(m,IM2,k,j,i) += src;
@@ -577,6 +592,8 @@ void ConstGravity(Mesh *pm, Real bdt) {
     
     Real gamma = pmbp->phydro->peos->eos_data.gamma;
     Real gm1 = gamma-1.0;
+    // by-value copy, capturable in the device lambda below
+    auto eos = pmbp->phydro->peos->eos_data;
 
     par_for("varying_grav", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -593,14 +610,18 @@ void ConstGravity(Mesh *pm, Real bdt) {
         src = bdt*g*(w0(m,IDN,k,j,i)-w0wb(m,IDN,k,j,i));
       }
       if (use_wellbalance_dynamic) {
-        Real e_kmh,e_kph,dum1,dum2,dum3;
-        pmbp->phydro->getWBerho(IEN, gamma,
+        // The source is the background's own pressure difference across the cell, so it
+        // must come from the same entry point the reconstruction uses: getWBq0, which
+        // dispatches to the ideal-gas closed forms or to the general-EOS background and
+        // returns pressure directly, not an energy to be scaled by (gamma-1). Calling
+        // getWBerho here instead left the source on the ideal background while the
+        // reconstruction used the general one, which destroys the balance.
+        Real pl,pr,dum1,dum2,dum3;
+        pmbp->phydro->getWBq0(eos, WBVar::wb_pres,
               w0(m,IDN,k,j-1,i),w0(m,IDN,k,j,i),w0(m,IDN,k,j+1,i),
               w0(m,IEN,k,j-1,i),w0(m,IEN,k,j,i),w0(m,IEN,k,j+1,i),
               phicc0(m,k,j-1,i),phi0_x2f(m,k,j,i),phicc0(m,k,j,i),phi0_x2f(m,k,j+1,i),phicc0(m,k,j+1,i),
-              dum1,e_kmh,dum2,e_kph,dum3);
-        Real pl = e_kmh*gm1;
-        Real pr = e_kph*gm1;
+              dum1,pl,dum2,pr,dum3);
         src = bdt*(pr-pl)/(size.d_view(m).dx2);
       }
       u0(m,IM2,k,j,i) += src;

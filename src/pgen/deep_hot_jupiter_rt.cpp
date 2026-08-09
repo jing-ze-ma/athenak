@@ -24,77 +24,17 @@
 #include "srcterms/srcterms.hpp"
 #include "utils/random.hpp"
 #include "pgen.hpp"
+#include "pgen_eos_utils.hpp"
 #include "diffusion/resistivity.hpp"
 
 #include <Kokkos_Random.hpp>
 
-namespace {
-//----------------------------------------------------------------------------------------
-//! \fn Real EintFromP
-//! \brief internal energy density from pressure, for this problem generator.
-//! For a general EOS e is not p/(gamma-1) and must be asked of the EOS; the ideal-gas
-//! branch keeps the original p*igm1 arithmetic rather than the EOS's p/(gamma-1), because
-//! multiplying by the reciprocal and dividing differ in the last bit and existing runs
-//! should be reproduced bit for bit.
-KOKKOS_INLINE_FUNCTION
-Real EintFromP(const EOS_Data &eos, const Real igm1, const Real d, const Real p) {
-  return (eos.IsGeneral()) ? eos.EnergyFromPressure(d, p) : p*igm1;
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn Real PresFromEint
-//! \brief pressure from the primitive pair (d,e). The radiative transfer routines below
-//! read w0(IEN) and multiply by (gamma-1); under a general EOS w0(IEN) is still the
-//! internal energy but pressure is no longer proportional to it.
-KOKKOS_INLINE_FUNCTION
-Real PresFromEint(const EOS_Data &eos, const Real gm1, const Real d, const Real e) {
-  return (eos.IsGeneral()) ? eos.Pressure(d, e) : e*gm1;
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn Real TempKelvin
-//! \brief temperature in KELVIN, which is what the radiative transfer needs (it applies
-//! sigma_SB and opacity fits in cgs directly). The ideal branch is the problem's own
-//! p/(Rgas d) with Rgas carrying the fixed mean molecular weight; the general branch asks
-//! the EOS, where composition lives instead, and converts with eos.temp_cgs. Pressure is
-//! passed in because every call site has already evaluated it.
-KOKKOS_INLINE_FUNCTION
-Real TempKelvin(const EOS_Data &eos, const Real Rgas, const Real d, const Real e,
-                const Real p) {
-  return (eos.IsGeneral()) ? eos.Temperature(d, e)*eos.temp_cgs : p/Rgas/d;
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn Real DensFromPT
-//! \brief density from pressure and a KELVIN temperature. The hydrostatic backgrounds
-//! below are built by marching in (p,T), which is the one direction the general EOS
-//! interface cannot evaluate from the primitive pair -- hence
-//! DensityFromPressureTemperature, which root finds on density. Setup only; never called
-//! inside a time step.
-KOKKOS_INLINE_FUNCTION
-Real DensFromPT(const EOS_Data &eos, const Real Rgas, const Real p, const Real tk) {
-  return (eos.IsGeneral()) ? eos.DensityFromPressureTemperature(p, tk/eos.temp_cgs)
-                           : p/Rgas/tk;
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn Real GradAd
-//! \brief adiabatic temperature gradient (dln T/dln p)_s at a point specified by pressure
-//! and a KELVIN temperature. grad_ad = (Gamma_3-1)/Gamma_1 with Gamma_3-1 =
-//! p chi_T/(d T c_v), which collapses to (gamma-1)/gamma for an ideal gas. It is the one
-//! place in the initial condition where a real EOS changes the answer qualitatively:
-//! grad_ad drops sharply through the H2 dissociation and H ionization zones.
-KOKKOS_INLINE_FUNCTION
-Real GradAd(const EOS_Data &eos, const Real gamma, const Real Rgas, const Real p,
-            const Real tk) {
-  if (!eos.IsGeneral()) return ((gamma-1.0)/gamma);
-  Real tc = tk/eos.temp_cgs;
-  Real d = eos.DensityFromPressureTemperature(p, tc);
-  Real e = eos.EnergyFromTemperature(d, tc);
-  Real g3m1 = p*eos.ChiT(d,e)/(d*tc*eos.SpecificHeatCv(d,e));
-  return (g3m1/eos.Gamma1(d,e));
-}
-} // namespace
+// EOS-aware conversions shared with the other stratified problem generators
+using pgen_eos::EintFromP;
+using pgen_eos::PresFromEint;
+using pgen_eos::TempKelvin;
+using pgen_eos::DensFromPT;
+using pgen_eos::GradAd;
 
 void HydrostaticEquilibrium(Mesh *pm);
 void SourceFunc(Mesh *pm, Real bdt);

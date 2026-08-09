@@ -27,6 +27,15 @@
 #include "srcterms/srcterms.hpp"
 #include "utils/random.hpp"
 #include "pgen.hpp"
+#include "pgen_eos_utils.hpp"
+
+
+// EOS-aware conversions shared with the other stratified problem generators
+using pgen_eos::EintFromP;
+using pgen_eos::PresFromEint;
+using pgen_eos::TempKelvin;
+using pgen_eos::DensFromPT;
+using pgen_eos::EintFromDensT;
 
 #include <Kokkos_Random.hpp>
 
@@ -86,14 +95,17 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     auto w0facewb_x3f = pmbp->phydro->w0facewb.x3f;
 
   Real p0, gamma;
+  EOS_Data eos;
   if (pmbp->phydro != nullptr) {
     u0_ = pmbp->phydro->u0;
     gamma = pmbp->phydro->peos->eos_data.gamma;
+    eos = pmbp->phydro->peos->eos_data;
     p0 = 1.0/(pmbp->phydro->peos->eos_data.gamma);
     p0 = pin->GetOrAddReal("problem", "p0", p0);
   } else if (pmbp->pmhd != nullptr) {
     u0_ = pmbp->pmhd->u0;
     gamma = pmbp->pmhd->peos->eos_data.gamma;
+    eos = pmbp->pmhd->peos->eos_data;
     p0 = 1.0/(pmbp->pmhd->peos->eos_data.gamma);
     p0 = pin->GetOrAddReal("problem", "p0", p0);
   }
@@ -140,7 +152,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       u0_(m,IM1,k,j,i) = 0.0;
       u0_(m,IM2,k,j,i) = 0.0;
       u0_(m,IM3,k,j,i) = 0.0;
-      u0_(m,IEN,k,j,i) = p*igm1;
+      u0_(m,IEN,k,j,i) = EintFromP(eos,igm1,den,p);
       if (use_etotgrav) u0_(m,IEN,k,j,i) += den*phicc;
       if (use_etotgrav || use_wellbalance_dynamic) {
           phi0_x1f(m,k,j,i) = phicc;
@@ -171,7 +183,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             w0facewb_x1f(m,IM1,k,j,i) = 0.0;
             w0facewb_x1f(m,IM2,k,j,i) = 0.0;
             w0facewb_x1f(m,IM3,k,j,i) = 0.0;
-            w0facewb_x1f(m,IEN,k,j,i) = p*igm1;
+            w0facewb_x1f(m,IEN,k,j,i) = EintFromP(eos,igm1,denwb,p);
             if (i == ie) {
                 x1v = LeftEdgeX(i+1-is, nx1, x1min, x1max);
                 x2v = CellCenterX(j-js, nx2, x2min, x2max);
@@ -185,7 +197,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                 w0facewb_x1f(m,IM1,k,j,i+1) = 0.0;
                 w0facewb_x1f(m,IM2,k,j,i+1) = 0.0;
                 w0facewb_x1f(m,IM3,k,j,i+1) = 0.0;
-                w0facewb_x1f(m,IEN,k,j,i+1) = p*igm1;
+                w0facewb_x1f(m,IEN,k,j,i+1) = EintFromP(eos,igm1,denwb,p);
             }
             
             x1v = CellCenterX(i-is, nx1, x1min, x1max);
@@ -200,7 +212,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             w0facewb_x2f(m,IM1,k,j,i) = 0.0;
             w0facewb_x2f(m,IM2,k,j,i) = 0.0;
             w0facewb_x2f(m,IM3,k,j,i) = 0.0;
-            w0facewb_x2f(m,IEN,k,j,i) = p*igm1;
+            w0facewb_x2f(m,IEN,k,j,i) = EintFromP(eos,igm1,denwb,p);
             if (j == je) {
                 x1v = CellCenterX(i-is, nx1, x1min, x1max);
                 x2v = LeftEdgeX(j+1-js, nx2, x2min, x2max);
@@ -214,7 +226,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                 w0facewb_x2f(m,IM1,k,j+1,i) = 0.0;
                 w0facewb_x2f(m,IM2,k,j+1,i) = 0.0;
                 w0facewb_x2f(m,IM3,k,j+1,i) = 0.0;
-                w0facewb_x2f(m,IEN,k,j+1,i) = p*igm1;
+                w0facewb_x2f(m,IEN,k,j+1,i) = EintFromP(eos,igm1,denwb,p);
             }
             
             x1v = CellCenterX(i-is, nx1, x1min, x1max);
@@ -229,7 +241,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             w0facewb_x3f(m,IM1,k,j,i) = 0.0;
             w0facewb_x3f(m,IM2,k,j,i) = 0.0;
             w0facewb_x3f(m,IM3,k,j,i) = 0.0;
-            w0facewb_x3f(m,IEN,k,j,i) = p*igm1;
+            w0facewb_x3f(m,IEN,k,j,i) = EintFromP(eos,igm1,denwb,p);
             if (k == ke) {
                 x1v = CellCenterX(i-is, nx1, x1min, x1max);
                 x2v = CellCenterX(j-js, nx2, x2min, x2max);
@@ -243,7 +255,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                 w0facewb_x3f(m,IM1,k+1,j,i) = 0.0;
                 w0facewb_x3f(m,IM2,k+1,j,i) = 0.0;
                 w0facewb_x3f(m,IM3,k+1,j,i) = 0.0;
-                w0facewb_x3f(m,IEN,k+1,j,i) = p*igm1;
+                w0facewb_x3f(m,IEN,k+1,j,i) = EintFromP(eos,igm1,denwb,p);
             }
         }
     });
@@ -291,7 +303,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
           u0wb(m,IM1,k,j,i) = 0.0;
           u0wb(m,IM2,k,j,i) = 0.0;
           u0wb(m,IM3,k,j,i) = 0.0;
-          u0wb(m,IEN,k,j,i) = p*igm1;
+          u0wb(m,IEN,k,j,i) = EintFromP(eos,igm1,denwb,p);
           if (use_etotgrav) {
               Real phicc = - grav_acc * x2v;
               u0wb(m,IEN,k,j,i) += denwb*phicc;
@@ -300,7 +312,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
           w0wb(m,IM1,k,j,i) = 0.0;
           w0wb(m,IM2,k,j,i) = 0.0;
           w0wb(m,IM3,k,j,i) = 0.0;
-          w0wb(m,IEN,k,j,i) = p*igm1;
+          w0wb(m,IEN,k,j,i) = EintFromP(eos,igm1,denwb,p);
         });
     }
 
@@ -386,14 +398,19 @@ void HydrostaticEquilibrium(Mesh *pm) {
     const bool use_etotgrav = pmbp->phydro->use_etotgrav;
 
     Real p0, gamma;
+    EOS_Data eos;
     if (pmbp->phydro != nullptr) {
       u0_ = pmbp->phydro->u0;
       gamma = pmbp->phydro->peos->eos_data.gamma;
+      eos = pmbp->phydro->peos->eos_data;
+    eos = pmbp->phydro->peos->eos_data;
       p0 = 1.0/(pmbp->phydro->peos->eos_data.gamma);
       p0 = 1.0;
     } else if (pmbp->pmhd != nullptr) {
       u0_ = pmbp->pmhd->u0;
       gamma = pmbp->pmhd->peos->eos_data.gamma;
+      eos = pmbp->pmhd->peos->eos_data;
+    eos = pmbp->pmhd->peos->eos_data;
       p0 = 1.0/(pmbp->pmhd->peos->eos_data.gamma);
       p0 = 1.0;
     }
@@ -431,7 +448,7 @@ void HydrostaticEquilibrium(Mesh *pm) {
         u0_(m,IM1,k,j,i) = 0.0;
         u0_(m,IM2,k,j,i) = 0.0;
         u0_(m,IM3,k,j,i) = 0.0;
-        u0_(m,IEN,k,j,i) = p*igm1;
+        u0_(m,IEN,k,j,i) = EintFromP(eos,igm1,den,p);
         if (use_etotgrav) {
             u0_(m,IEN,k,j,i) += den*phicc;
         }
@@ -452,7 +469,7 @@ void HydrostaticEquilibrium(Mesh *pm) {
         u0_(m,IM1,k,(je+j+1),i) = 0.0;
         u0_(m,IM2,k,(je+j+1),i) = 0.0;
         u0_(m,IM3,k,(je+j+1),i) = 0.0;
-        u0_(m,IEN,k,(je+j+1),i) = p*igm1;
+        u0_(m,IEN,k,(je+j+1),i) = EintFromP(eos,igm1,den,p);
         if (use_etotgrav) {
             u0_(m,IEN,k,(je+j+1),i) += den*phicc;
         }
