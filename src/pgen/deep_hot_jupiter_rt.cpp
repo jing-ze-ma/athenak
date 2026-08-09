@@ -831,6 +831,39 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       });
     }
 
+    // On a restart u0 and b0 are restored exactly, ghost zones included, but bcc0 is a
+    // DERIVED array that the restart file does not carry, so it starts at zero. The
+    // inner-x1 user boundary swaps the magnetic energy of its ghost cells by subtracting
+    // 0.5*bcc0^2 and adding it back from the current face fields; with bcc0 still zero it
+    // subtracts nothing and so double counts the magnetic energy on the very first step.
+    // Fill bcc0 from the restored face fields here, which is exactly the state the
+    // initialisation above leaves on a fresh start. The interpolation must match the one
+    // ConsToPrim uses, hence the split on use_spherical_polar.
+    if (restart && pmbp->pmhd != nullptr) {
+      auto &b0 = pmbp->pmhd->b0;
+      auto &bcc0 = pmbp->pmhd->bcc0;
+      par_for("pgen_bcc_restart", DevExeSpace(), 0, (pmbp->nmb_thispack-1),
+              0, n3m1, 0, n2m1, 0, n1m1,
+      KOKKOS_LAMBDA(int m, int k, int j, int i) {
+        if (use_spherical_polar) {
+          Real lw, rw;
+          lw = (x1f_(m,i+1)-x1v_(m,i))/(x1f_(m,i+1)-x1f_(m,i));
+          rw = (x1v_(m,i)-x1f_(m,i))/(x1f_(m,i+1)-x1f_(m,i));
+          bcc0(m,IBX,k,j,i) = lw*b0.x1f(m,k,j,i) + rw*b0.x1f(m,k,j,i+1);
+          lw = (x2f_(m,j+1)-x2v_(m,j))/(x2f_(m,j+1)-x2f_(m,j));
+          rw = (x2v_(m,j)-x2f_(m,j))/(x2f_(m,j+1)-x2f_(m,j));
+          bcc0(m,IBY,k,j,i) = lw*b0.x2f(m,k,j,i) + rw*b0.x2f(m,k,j+1,i);
+          lw = (x3f_(m,k+1)-x3v_(m,k))/(x3f_(m,k+1)-x3f_(m,k));
+          rw = (x3v_(m,k)-x3f_(m,k))/(x3f_(m,k+1)-x3f_(m,k));
+          bcc0(m,IBZ,k,j,i) = lw*b0.x3f(m,k,j,i) + rw*b0.x3f(m,k+1,j,i);
+        } else {
+          bcc0(m,IBX,k,j,i) = 0.5*(b0.x1f(m,k,j,i) + b0.x1f(m,k,j,i+1));
+          bcc0(m,IBY,k,j,i) = 0.5*(b0.x2f(m,k,j,i) + b0.x2f(m,k,j+1,i));
+          bcc0(m,IBZ,k,j,i) = 0.5*(b0.x3f(m,k,j,i) + b0.x3f(m,k+1,j,i));
+        }
+      });
+    }
+
   return;
 }
 
