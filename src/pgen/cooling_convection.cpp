@@ -42,6 +42,7 @@ using pgen_eos::EintFromP;
 using pgen_eos::PresFromEint;
 using pgen_eos::TempKelvin;
 using pgen_eos::DensFromPT;
+using pgen_eos::GradAd;
 using pgen_eos::EintFromDensT;
 #include "diffusion/resistivity.hpp"
 
@@ -57,9 +58,9 @@ void get_kapr(const Real &rho, const Real &T, const Real &kap0, const Real &kapa
 KOKKOS_INLINE_FUNCTION
 void get_wb_Tp(const Real &p, Real &T);
 template <typename View1D>
-void get_wb_eos_arr(const Real &Rgas, const Real &grav_acc, const Real &gamma, const Real &grad_int, const Real &kap0, const Real &kapa, const Real &kapb, const bool &rad_only, const int &N, const Real &zmax, View1D zarr, View1D logparr, View1D Tarr);
+void get_wb_eos_arr(const EOS_Data &eos, const Real &Rgas, const Real &grav_acc, const Real &gamma, const Real &grad_int, const Real &kap0, const Real &kapa, const Real &kapb, const bool &rad_only, const int &N, const Real &zmax, View1D zarr, View1D logparr, View1D Tarr);
 KOKKOS_INLINE_FUNCTION
-void get_wb_eos(const Real &Rgas, const Real &grav_acc, const DvceArray1D<Real> &zarr, const DvceArray1D<Real> &logparr, const DvceArray1D<Real> &Tarr, const Real &z, Real &rho, Real &p);
+void get_wb_eos(const EOS_Data &eos, const Real &Rgas, const Real &grav_acc, const DvceArray1D<Real> &zarr, const DvceArray1D<Real> &logparr, const DvceArray1D<Real> &Tarr, const Real &z, Real &rho, Real &p);
 
 // Base state (z=0) of the initial stratification, and the sub-adiabatic gradient it was
 // built with.  Filled once by UserProblem (before the restart return, so restarts see it
@@ -105,6 +106,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     MeshBlockPack *pmbp_ic = pmy_mesh_->pmb_pack;
     Real gamma_ic = (pmbp_ic->phydro != nullptr) ? pmbp_ic->phydro->peos->eos_data.gamma
                                                  : pmbp_ic->pmhd->peos->eos_data.gamma;
+    auto eos_ic = (pmbp_ic->phydro != nullptr) ? pmbp_ic->phydro->peos->eos_data
+                                               : pmbp_ic->pmhd->peos->eos_data;
     grad_int_ic = pin->GetOrAddReal("problem","grad_int",(gamma_ic-1.0)/gamma_ic);
     kappa_const_ic = pin->GetOrAddReal("problem","kappa_const",0.0);
     kappa_a_ic = pin->GetOrAddReal("problem","kappa_a",0.0);
@@ -116,7 +119,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     Real z1 = pmy_mesh_->mesh_size.x1max;
     const int Nic = 10000;
     HostArray1D<Real> zic("zic", Nic), lpic("lpic", Nic), Tic("Tic", Nic);
-    get_wb_eos_arr(Rgas_ic, grav_ic, gamma_ic, grad_int_ic, kappa_const_ic, kappa_a_ic, kappa_b_ic, radiative_ic, Nic, (z1-z0)*1.1, zic, lpic, Tic);
+    get_wb_eos_arr(eos_ic, Rgas_ic, grav_ic, gamma_ic, grad_int_ic, kappa_const_ic, kappa_a_ic, kappa_b_ic, radiative_ic, Nic, (z1-z0)*1.1, zic, lpic, Tic);
     p_base_ic   = std::exp(lpic(0));
     T_base_ic   = Tic(0);
     rho_base_ic = p_base_ic/(Rgas_ic*T_base_ic);
@@ -187,6 +190,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   auto &dxe3 = pmbp->pcoord->dxedge.x3e;
 
   Real gamma;
+  EOS_Data eos;
   if (pmbp->phydro != nullptr) {
     u0_ = pmbp->phydro->u0;
     w0_ = pmbp->phydro->w0;
@@ -238,7 +242,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     DualArray1D<Real> zarr("zarr", N);
     DualArray1D<Real> logparr("logparr", N);
     DualArray1D<Real> Tarr("Tarr", N);
-    get_wb_eos_arr(Rgas, grav_acc, gamma, grad_int_ic, kappa_const_ic, kappa_a_ic, kappa_b_ic, radiative_ic, N, (r1-r0)*1.1, zarr.h_view, logparr.h_view, Tarr.h_view);
+    get_wb_eos_arr(eos, Rgas, grav_acc, gamma, grad_int_ic, kappa_const_ic, kappa_a_ic, kappa_b_ic, radiative_ic, N, (r1-r0)*1.1, zarr.h_view, logparr.h_view, Tarr.h_view);
     zarr.modify_host();
     zarr.sync_device();
     logparr.modify_host();
@@ -291,7 +295,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       }
         
       Real pwb, denwb;
-      get_wb_eos(Rgas, grav_acc, zarr.d_view,logparr.d_view,Tarr.d_view,x1v,denwb,pwb);
+      get_wb_eos(eos, Rgas, grav_acc, zarr.d_view,logparr.d_view,Tarr.d_view,x1v,denwb,pwb);
 
       auto rand_gen = rand_pool64.get_state();  // per-thread random state
       Real dden = denwb*seed_amp*2.0*(rand_gen.frand()-0.5);
@@ -495,7 +499,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             }
             if (use_spherical_polar) x1v -= ap;
             Real denwb,pwb;
-            get_wb_eos(Rgas, grav_acc, zarr.d_view,logparr.d_view,Tarr.d_view,x1v,denwb,pwb);
+            get_wb_eos(eos, Rgas, grav_acc, zarr.d_view,logparr.d_view,Tarr.d_view,x1v,denwb,pwb);
             w0facewb_x1f(m,IDN,k,j,i) = denwb;
             w0facewb_x1f(m,IM1,k,j,i) = 0.0;
             w0facewb_x1f(m,IM2,k,j,i) = 0.0;
@@ -508,7 +512,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                   x1v = LeftEdgeX(i+1-is, nx1, x1min, x1max);
                 }
                 if (use_spherical_polar) x1v -= ap;
-                get_wb_eos(Rgas, grav_acc, zarr.d_view,logparr.d_view,Tarr.d_view,x1v,denwb,pwb);
+                get_wb_eos(eos, Rgas, grav_acc, zarr.d_view,logparr.d_view,Tarr.d_view,x1v,denwb,pwb);
                 w0facewb_x1f(m,IDN,k,j,i+1) = denwb;
                 w0facewb_x1f(m,IM1,k,j,i+1) = 0.0;
                 w0facewb_x1f(m,IM2,k,j,i+1) = 0.0;
@@ -526,7 +530,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
               x3v = CellCenterX(k-ks, nx3, x3min, x3max);
             }
             if (use_spherical_polar) x1v -= ap;
-            get_wb_eos(Rgas, grav_acc, zarr.d_view,logparr.d_view,Tarr.d_view,x1v,denwb,pwb);
+            get_wb_eos(eos, Rgas, grav_acc, zarr.d_view,logparr.d_view,Tarr.d_view,x1v,denwb,pwb);
             w0facewb_x2f(m,IDN,k,j,i) = denwb;
             w0facewb_x2f(m,IM1,k,j,i) = 0.0;
             w0facewb_x2f(m,IM2,k,j,i) = 0.0;
@@ -550,7 +554,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
               x3v = LeftEdgeX(k-ks, nx3, x3min, x3max);
             }
             if (use_spherical_polar) x1v -= ap;
-            get_wb_eos(Rgas, grav_acc, zarr.d_view,logparr.d_view,Tarr.d_view,x1v,denwb,pwb);
+            get_wb_eos(eos, Rgas, grav_acc, zarr.d_view,logparr.d_view,Tarr.d_view,x1v,denwb,pwb);
             w0facewb_x3f(m,IDN,k,j,i) = denwb;
             w0facewb_x3f(m,IM1,k,j,i) = 0.0;
             w0facewb_x3f(m,IM2,k,j,i) = 0.0;
@@ -643,7 +647,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
           if (use_spherical_polar) x1v -= ap;
             
           Real pwb, denwb;
-          get_wb_eos(Rgas, grav_acc, zarr.d_view,logparr.d_view,Tarr.d_view,x1v,denwb,pwb);
+          get_wb_eos(eos, Rgas, grav_acc, zarr.d_view,logparr.d_view,Tarr.d_view,x1v,denwb,pwb);
           u0wb(m,IDN,k,j,i) = denwb;
           u0wb(m,IM1,k,j,i) = 0.0;
           u0wb(m,IM2,k,j,i) = 0.0;
@@ -777,6 +781,7 @@ void HydrostaticEquilibrium(Mesh *pm) {
       u0_ = pmbp->phydro->u0;
       w0_ = pmbp->phydro->w0;
       gamma = pmbp->phydro->peos->eos_data.gamma;
+     eos = pmbp->phydro->peos->eos_data;
       eos = pmbp->phydro->peos->eos_data;
       use_etotgrav = pmbp->phydro->use_etotgrav;
       use_wellbalance_dynamic = pmbp->phydro->use_wellbalance_dynamic;
@@ -786,6 +791,7 @@ void HydrostaticEquilibrium(Mesh *pm) {
       u0_ = pmbp->pmhd->u0;
       w0_ = pmbp->pmhd->w0;
       gamma = pmbp->pmhd->peos->eos_data.gamma;
+     eos = pmbp->pmhd->peos->eos_data;
       eos = pmbp->pmhd->peos->eos_data;
       use_etotgrav = pmbp->pmhd->use_etotgrav;
       use_wellbalance_dynamic = pmbp->pmhd->use_wellbalance_dynamic;
@@ -1401,7 +1407,7 @@ void get_wb_Tp(const Real &p, Real &T) {
 // Opacity is the code's own get_kapr, so the photosphere self-consistently lands where tau=2/3.
 // A shooting loop on the top pressure p_top places the photosphere at ~50% of the box height.
 template <typename View1D>
-void get_wb_eos_arr(const Real &Rgas, const Real &grav_acc, const Real &gamma, const Real &grad_int, const Real &kap0, const Real &kapa, const Real &kapb, const bool &rad_only, const int &N, const Real &zmax, View1D zarr, View1D logparr, View1D Tarr) {
+void get_wb_eos_arr(const EOS_Data &eos, const Real &Rgas, const Real &grav_acc, const Real &gamma, const Real &grad_int, const Real &kap0, const Real &kapa, const Real &kapb, const bool &rad_only, const int &N, const Real &zmax, View1D zarr, View1D logparr, View1D Tarr) {
 
     Real g = -grav_acc;                       // positive gravitational acceleration
     Real grad_switch = (gamma-1.0)/gamma;     // true nabla_ad: Schwarzschild threshold
@@ -1420,7 +1426,7 @@ void get_wb_eos_arr(const Real &Rgas, const Real &grav_acc, const Real &gamma, c
         for (int n=N-1; n>=0; --n) {
             if (store) { zarr(n) = n*dz; logparr(n) = std::log(p); Tarr(n) = T; }
             if (n==0) break;
-            Real rho = p/(Rgas*T);
+            Real rho = DensFromPT(eos, Rgas, p, T);
             Real kappa; get_kapr(rho, T, kap0, kapa, kapb, kappa);
             Real dtau = kappa*rho*dz;
             Real tau_new = tau + dtau;
@@ -1436,7 +1442,8 @@ void get_wb_eos_arr(const Real &Rgas, const Real &grav_acc, const Real &gamma, c
             } else if (!convective) {
                 Real T_rad = Teff*std::pow(0.75*(tau_new+2.0/3.0), 0.25);
                 Real grad = (std::log(T_rad)-std::log(T))/(std::log(p_new)-std::log(p));
-                if (grad > grad_switch) { convective = true; p_sw = p; T_sw = T; T_new = T_sw*std::pow(p_new/p_sw, grad_ad); }
+                Real gsw = eos.IsGeneral() ? GradAd(eos, gamma, Rgas, p, T) : grad_switch;
+                if (grad > gsw) { convective = true; p_sw = p; T_sw = T; T_new = T_sw*std::pow(p_new/p_sw, grad_ad); }
                 else { T_new = T_rad; }
             } else {
                 T_new = T_sw*std::pow(p_new/p_sw, grad_ad);
@@ -1459,7 +1466,7 @@ void get_wb_eos_arr(const Real &Rgas, const Real &grav_acc, const Real &gamma, c
 }
 
 KOKKOS_INLINE_FUNCTION
-void get_wb_eos(const Real &Rgas, const Real &grav_acc, const DvceArray1D<Real> &zarr, const DvceArray1D<Real> &logparr, const DvceArray1D<Real> &Tarr, const Real &z, Real &rho, Real &p) {
+void get_wb_eos(const EOS_Data &eos, const Real &Rgas, const Real &grav_acc, const DvceArray1D<Real> &zarr, const DvceArray1D<Real> &logparr, const DvceArray1D<Real> &Tarr, const Real &z, Real &rho, Real &p) {
 
     Real dz = zarr(1)-zarr(0);
     Real T;
@@ -1470,12 +1477,12 @@ void get_wb_eos(const Real &Rgas, const Real &grav_acc, const DvceArray1D<Real> 
         Real logp = logparr(Nt) + (logparr(Nt+1)-logparr(Nt))*w;
         T = Tarr(Nt) + (Tarr(Nt+1)-Tarr(Nt))*w;
         p = std::exp(logp);
-        rho = p/Rgas/T;
+        rho = DensFromPT(eos, Rgas, p, T);
     } else {
         // isothermal hydrostatic extrapolation below the base using the tabulated base state
         Real p0 = std::exp(logparr(0));
         Real T0 = Tarr(0);
-        Real rho0 = p0/Rgas/T0;
+        Real rho0 = DensFromPT(eos, Rgas, p0, T0);
         Real H0 = -p0/rho0/grav_acc;
         Real iH0 = 1.0/H0;
         p = p0 * std::exp(-z*iH0);
