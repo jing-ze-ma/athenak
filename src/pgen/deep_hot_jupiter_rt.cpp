@@ -14,6 +14,7 @@
 
 // Athena++ headers
 #include "athena.hpp"
+#include "globals.hpp"
 #include "parameter_input.hpp"
 #include "coordinates/cell_locations.hpp"
 #include "mesh/mesh.hpp"
@@ -39,6 +40,60 @@ KOKKOS_INLINE_FUNCTION
 Real EintFromP(const EOS_Data &eos, const Real igm1, const Real d, const Real p) {
   return (eos.IsGeneral()) ? eos.EnergyFromPressure(d, p) : p*igm1;
 }
+
+//----------------------------------------------------------------------------------------
+//! \fn Real PresFromEint
+//! \brief pressure from the primitive pair (d,e). The radiative transfer routines below
+//! read w0(IEN) and multiply by (gamma-1); under a general EOS w0(IEN) is still the
+//! internal energy but pressure is no longer proportional to it.
+KOKKOS_INLINE_FUNCTION
+Real PresFromEint(const EOS_Data &eos, const Real gm1, const Real d, const Real e) {
+  return (eos.IsGeneral()) ? eos.Pressure(d, e) : e*gm1;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn Real TempKelvin
+//! \brief temperature in KELVIN, which is what the radiative transfer needs (it applies
+//! sigma_SB and opacity fits in cgs directly). The ideal branch is the problem's own
+//! p/(Rgas d) with Rgas carrying the fixed mean molecular weight; the general branch asks
+//! the EOS, where composition lives instead, and converts with eos.temp_cgs. Pressure is
+//! passed in because every call site has already evaluated it.
+KOKKOS_INLINE_FUNCTION
+Real TempKelvin(const EOS_Data &eos, const Real Rgas, const Real d, const Real e,
+                const Real p) {
+  return (eos.IsGeneral()) ? eos.Temperature(d, e)*eos.temp_cgs : p/Rgas/d;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn Real DensFromPT
+//! \brief density from pressure and a KELVIN temperature. The hydrostatic backgrounds
+//! below are built by marching in (p,T), which is the one direction the general EOS
+//! interface cannot evaluate from the primitive pair -- hence
+//! DensityFromPressureTemperature, which root finds on density. Setup only; never called
+//! inside a time step.
+KOKKOS_INLINE_FUNCTION
+Real DensFromPT(const EOS_Data &eos, const Real Rgas, const Real p, const Real tk) {
+  return (eos.IsGeneral()) ? eos.DensityFromPressureTemperature(p, tk/eos.temp_cgs)
+                           : p/Rgas/tk;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn Real GradAd
+//! \brief adiabatic temperature gradient (dln T/dln p)_s at a point specified by pressure
+//! and a KELVIN temperature. grad_ad = (Gamma_3-1)/Gamma_1 with Gamma_3-1 =
+//! p chi_T/(d T c_v), which collapses to (gamma-1)/gamma for an ideal gas. It is the one
+//! place in the initial condition where a real EOS changes the answer qualitatively:
+//! grad_ad drops sharply through the H2 dissociation and H ionization zones.
+KOKKOS_INLINE_FUNCTION
+Real GradAd(const EOS_Data &eos, const Real gamma, const Real Rgas, const Real p,
+            const Real tk) {
+  if (!eos.IsGeneral()) return ((gamma-1.0)/gamma);
+  Real tc = tk/eos.temp_cgs;
+  Real d = eos.DensityFromPressureTemperature(p, tc);
+  Real e = eos.EnergyFromTemperature(d, tc);
+  Real g3m1 = p*eos.ChiT(d,e)/(d*tc*eos.SpecificHeatCv(d,e));
+  return (g3m1/eos.Gamma1(d,e));
+}
 } // namespace
 
 void HydrostaticEquilibrium(Mesh *pm);
@@ -61,9 +116,9 @@ void get_picket_fence_Ttau_coeff(const Real &Tint, const Real &Tirr, const Real 
 KOKKOS_INLINE_FUNCTION
 void get_picket_fence_Ttau(const Real &Tint, const Real &Tirr, const Real &mus, const Real &taulim, const Real &A, const Real &B, const Real (&C)[3], const Real (&D)[3], const Real (&E)[3], const Real (&gamv)[3], const Real &tau, Real &T);
 template <typename View1D>
-void get_picket_fence_pT_arr(const Real &gamma, const Real &Tint, const Real &Tirr, const Real &met, const Real &grav, const Real &mus, const int &N, View1D Tarr, View1D lgparr);
+void get_picket_fence_pT_arr(const EOS_Data &eos, const Real &Rgas, const Real &gamma, const Real &Tint, const Real &Tirr, const Real &met, const Real &grav, const Real &mus, const int &N, View1D Tarr, View1D lgparr);
 template <typename View1D>
-void adjust_ad_pT_arr(const Real &gamma, const int &N, View1D Tarr, View1D lgparr);
+void adjust_ad_pT_arr(const EOS_Data &eos, const Real &Rgas, const Real &gamma, const int &N, View1D Tarr, View1D lgparr);
 
 KOKKOS_INLINE_FUNCTION
 void get_daynight_Tp(const Real &p, Real &Tn, Real &Td);
@@ -74,13 +129,13 @@ void get_init_Tp(const int &N, const DvceArray1D<Real> &Tarr, const DvceArray1D<
 template <typename View1D>
 void get_init_Tp_host(const int &N, const View1D &Tarr, const View1D &lgparr, const Real &p, Real &T);
 template <typename View1D>
-void get_wb_eos_arr(const Real &Rgas, const Real &grav_acc, const int &N, const Real &zmax, View1D zarr, View1D logparr);
+void get_wb_eos_arr(const EOS_Data &eos, const Real &Rgas, const Real &grav_acc, const int &N, const Real &zmax, View1D zarr, View1D logparr);
 KOKKOS_INLINE_FUNCTION
-void get_wb_eos(const Real &Rgas, const Real &grav_acc, const DvceArray1D<Real> &zarr, const DvceArray1D<Real> &logparr, const Real &z, Real &rho, Real &p);
+void get_wb_eos(const EOS_Data &eos, const Real &Rgas, const Real &grav_acc, const DvceArray1D<Real> &zarr, const DvceArray1D<Real> &logparr, const Real &z, Real &rho, Real &p);
 template <typename View1D>
-void get_init_eos_arr(const Real &Rgas, const Real &grav_acc, const View1D &Tarr, const View1D &lgparr, const int &N, const Real &zmax, View1D zarr, View1D logparr);
+void get_init_eos_arr(const EOS_Data &eos, const Real &Rgas, const Real &grav_acc, const View1D &Tarr, const View1D &lgparr, const int &N, const Real &zmax, View1D zarr, View1D logparr);
 KOKKOS_INLINE_FUNCTION
-void get_init_eos(const Real &Rgas, const Real &grav_acc, const DvceArray1D<Real> &Tarr, const DvceArray1D<Real> &lgparr, const int &N, const DvceArray1D<Real> &zarr, const DvceArray1D<Real> &logparr, const Real &z, Real &rho, Real &p);
+void get_init_eos(const EOS_Data &eos, const Real &Rgas, const Real &grav_acc, const DvceArray1D<Real> &Tarr, const DvceArray1D<Real> &lgparr, const int &N, const DvceArray1D<Real> &zarr, const DvceArray1D<Real> &logparr, const Real &z, Real &rho, Real &p);
 
 
 //----------------------------------------------------------------------------------------
@@ -206,7 +261,27 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     Real omega = pin->GetReal("problem","omega");
     Real Rgas = pin->GetReal("problem","Rgas");
     Real met = pin->GetReal("problem","met");
-  
+
+    // <problem>/Rgas is the ideal-gas R/mu that fixes this atmosphere's mean molecular
+    // weight. Under a general EOS composition lives in the EOS instead, so Rgas is unused
+    // and the Kelvin conversion is eos.temp_cgs = (pres_cgs/dens_cgs) m_u/k_B, which
+    // carries NO mu. The two therefore agree only at mu = 1, i.e. Rgas*temp_cgs = 1. That
+    // is not required for a physical run -- but it is required for the general path to
+    // reproduce the ideal one, which is how this pgen is verified, so say so loudly.
+    if (eos.IsGeneral() && global_variable::my_rank == 0) {
+      Real mu_implied = 1.0/(Rgas*eos.temp_cgs);
+      if (fabs(mu_implied - 1.0) > 1.0e-4) {
+        std::cout << std::endl << "### WARNING! in " << __FILE__ << " at line "
+                  << __LINE__ << std::endl
+                  << "<problem>/Rgas = " << Rgas << " implies mean molecular weight "
+                  << mu_implied << ", but the general EOS supplies its own composition "
+                  << "and is being asked for temperature directly." << std::endl
+                  << "Rgas is now unused; this run will NOT reproduce the eos=ideal run. "
+                  << "Set Rgas = " << 1.0/eos.temp_cgs << " for that comparison."
+                  << std::endl << std::endl;
+      }
+    }
+
     Real iap = 1.0/ap;
     
     Real grav = -grav_acc;
@@ -218,7 +293,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     const int N = 10000;
     DualArray1D<Real> zarr("zarr", N);
     DualArray1D<Real> logparr("logparr", N);
-    get_wb_eos_arr(Rgas, grav_acc, N, (r1-r0)*1.1, zarr.h_view, logparr.h_view);
+    get_wb_eos_arr(eos, Rgas, grav_acc, N, (r1-r0)*1.1, zarr.h_view, logparr.h_view);
 //    zarr.template modify<HostMemSpace>();
 //    zarr.template sync<DevExeSpace>();
 //    logparr.template modify<HostMemSpace>();
@@ -230,7 +305,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     
     DualArray1D<Real> Tarr_init("Tarrinit", N);
     DualArray1D<Real> lgparr_init("lgparrinit", N);
-    get_picket_fence_pT_arr(gamma, Tint, Tirr, met, grav, mus, N, Tarr_init.h_view, lgparr_init.h_view);
+    get_picket_fence_pT_arr(eos, Rgas, gamma, Tint, Tirr, met, grav, mus, N, Tarr_init.h_view, lgparr_init.h_view);
     
     Tarr_init.modify_host();
     Tarr_init.sync_device();
@@ -241,7 +316,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
 //    DvceArray1D<Real> logpinitarr("logpinitarr", N);
     DualArray1D<Real> zarr_init("zarrinit", N);
     DualArray1D<Real> logparr_init("logparrinit", N);
-    get_init_eos_arr(Rgas, grav_acc, Tarr_init.h_view, lgparr_init.h_view, N, (r1-r0)*1.1, zarr_init.h_view, logparr_init.h_view);
+    get_init_eos_arr(eos, Rgas, grav_acc, Tarr_init.h_view, lgparr_init.h_view, N, (r1-r0)*1.1, zarr_init.h_view, logparr_init.h_view);
     
     zarr_init.modify_host();
     zarr_init.sync_device();
@@ -286,10 +361,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       }
         
       Real pwb, denwb;
-      get_wb_eos(Rgas, grav_acc, zarr.d_view,logparr.d_view,x1v,denwb,pwb);
+      get_wb_eos(eos, Rgas, grav_acc, zarr.d_view,logparr.d_view,x1v,denwb,pwb);
         
       Real p, den;
-      get_init_eos(Rgas, grav_acc, Tarr_init.d_view,lgparr_init.d_view,N,zarr_init.d_view,logparr_init.d_view,x1v,den,p);
+      get_init_eos(eos, Rgas, grav_acc, Tarr_init.d_view,lgparr_init.d_view,N,zarr_init.d_view,logparr_init.d_view,x1v,den,p);
 //      get_init_eos_arr(lam, phi, N, zinitarr, logpinitarr);
 //      get_init_eos(zinitarr,logpinitarr,x3v,lam,phi,den,p);
 //      p = pwb;
@@ -351,10 +426,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         }
           
         Real pwb, denwb;
-        get_wb_eos(Rgas, grav_acc, zarr.d_view,logparr.d_view,x1v,denwb,pwb);
+        get_wb_eos(eos, Rgas, grav_acc, zarr.d_view,logparr.d_view,x1v,denwb,pwb);
         
         Real p, den;
-        get_init_eos(Rgas, grav_acc, Tarr_init.d_view,lgparr_init.d_view,N,zarr_init.d_view,logparr_init.d_view,x1v,den,p);
+        get_init_eos(eos, Rgas, grav_acc, Tarr_init.d_view,lgparr_init.d_view,N,zarr_init.d_view,logparr_init.d_view,x1v,den,p);
 //        get_init_eos_arr(lam, phi, N, zinitarr, logpinitarr);
 //        get_init_eos(zinitarr,logpinitarr,x1v,lam,phi,den,p);
 //        p = pwb;
@@ -500,7 +575,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             }
             if (use_spherical_polar) x1v -= ap;
             Real denwb;
-            get_wb_eos(Rgas, grav_acc, zarr.d_view,logparr.d_view,x1v,denwb,pwb);
+            get_wb_eos(eos, Rgas, grav_acc, zarr.d_view,logparr.d_view,x1v,denwb,pwb);
             w0facewb_x1f(m,IDN,k,j,i) = denwb;
             w0facewb_x1f(m,IM1,k,j,i) = 0.0;
             w0facewb_x1f(m,IM2,k,j,i) = 0.0;
@@ -513,7 +588,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                   x1v = LeftEdgeX(i+1-is, nx1, x1min, x1max);
                 }
                 if (use_spherical_polar) x1v -= ap;
-                get_wb_eos(Rgas, grav_acc, zarr.d_view,logparr.d_view,x1v,denwb,pwb);
+                get_wb_eos(eos, Rgas, grav_acc, zarr.d_view,logparr.d_view,x1v,denwb,pwb);
                 w0facewb_x1f(m,IDN,k,j,i+1) = denwb;
                 w0facewb_x1f(m,IM1,k,j,i+1) = 0.0;
                 w0facewb_x1f(m,IM2,k,j,i+1) = 0.0;
@@ -531,7 +606,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
               x3v = CellCenterX(k-ks, nx3, x3min, x3max);
             }
             if (use_spherical_polar) x1v -= ap;
-            get_wb_eos(Rgas, grav_acc, zarr.d_view,logparr.d_view,x1v,denwb,pwb);
+            get_wb_eos(eos, Rgas, grav_acc, zarr.d_view,logparr.d_view,x1v,denwb,pwb);
             w0facewb_x2f(m,IDN,k,j,i) = denwb;
             w0facewb_x2f(m,IM1,k,j,i) = 0.0;
             w0facewb_x2f(m,IM2,k,j,i) = 0.0;
@@ -555,7 +630,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
               x3v = LeftEdgeX(k-ks, nx3, x3min, x3max);
             }
             if (use_spherical_polar) x1v -= ap;
-            get_wb_eos(Rgas, grav_acc, zarr.d_view,logparr.d_view,x1v,denwb,pwb);
+            get_wb_eos(eos, Rgas, grav_acc, zarr.d_view,logparr.d_view,x1v,denwb,pwb);
             w0facewb_x3f(m,IDN,k,j,i) = denwb;
             w0facewb_x3f(m,IM1,k,j,i) = 0.0;
             w0facewb_x3f(m,IM2,k,j,i) = 0.0;
@@ -659,7 +734,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
           if (use_spherical_polar) x1v -= ap;
             
           Real pwb, denwb;
-          get_wb_eos(Rgas, grav_acc, zarr.d_view,logparr.d_view,x1v,denwb,pwb);
+          get_wb_eos(eos, Rgas, grav_acc, zarr.d_view,logparr.d_view,x1v,denwb,pwb);
           u0wb(m,IDN,k,j,i) = denwb;
           u0wb(m,IM1,k,j,i) = 0.0;
           u0wb(m,IM2,k,j,i) = 0.0;
@@ -1324,11 +1399,7 @@ void SourceFunc(Mesh *pm, Real bdt) {
         }
         Real rho = w0(m,IDN,k,j,i);
         Real p = eos.Pressure(w0(m,IDN,k,j,i), w0(m,IEN,k,j,i));
-        // NOTE: T here is still the ideal-gas relation with the problem's fixed Rgas, as
-        // is the picket-fence initial condition that sets up the atmosphere. Those are
-        // ideal-gas constructions independent of the well-balanced scheme; converting
-        // them belongs with the analytic EOS itself.
-        Real T = p/Rgas/rho;
+        Real T = TempKelvin(eos,Rgas,rho,w0(m,IEN,k,j,i),p);
         
         Real area_r = area1(m,k,j,i+1);
         Real area_l = area1(m,k,j,i);
@@ -1476,14 +1547,17 @@ void double_gray_two_stream_RT(Mesh *pm, Real bdt) {
     const bool test_oned = false;
         
     Real gamma;
+    EOS_Data eos;
     if (pmbp->phydro != nullptr) {
       u0 = pmbp->phydro->u0;
       w0 = pmbp->phydro->w0;
       gamma = pmbp->phydro->peos->eos_data.gamma;
+      eos = pmbp->phydro->peos->eos_data;
     } else if (pmbp->pmhd != nullptr) {
       u0 = pmbp->pmhd->u0;
       w0 = pmbp->pmhd->w0;
       gamma = pmbp->pmhd->peos->eos_data.gamma;
+      eos = pmbp->pmhd->peos->eos_data;
     }
     
     Real r0, r1;
@@ -1555,13 +1629,13 @@ void double_gray_two_stream_RT(Mesh *pm, Real bdt) {
         if (test_oned) mu0 = cos(85.0/90.0*M_PI/2.0);
         
         // down-sweep
-        Real p = w0(m,IEN,k,j,ie+1)*gm1;
+        Real p = PresFromEint(eos,gm1,w0(m,IDN,k,j,ie+1),w0(m,IEN,k,j,ie+1));
         Real rho = w0(m,IDN,k,j,ie+1);
-        Real T = p/Rgas/rho;
+        Real T = TempKelvin(eos,Rgas,rho,w0(m,IEN,k,j,ie+1),p);
         B[ie+1] = boltz_sigma/M_PI*SQR(SQR(T));
         Real kap_v = 4.0e-3;
         Real kap_ir = 1.0e-2;
-        Real pm1 = w0(m,IEN,k,j,ie)*gm1;
+        Real pm1 = PresFromEint(eos,gm1,w0(m,IDN,k,j,ie),w0(m,IEN,k,j,ie));
         Real pf = exp((log(p)+log(pm1))/2.0);
         Real tau_v_f = 0.0;//pf/(grav/kap_v);
         Real tau_ir_f = 0.0;//pf/(grav/kap_ir);
@@ -1572,9 +1646,9 @@ void double_gray_two_stream_RT(Mesh *pm, Real bdt) {
         
         // down-sweep
         for (int i=ie; i>is-1; --i) {
-          Real p = w0(m,IEN,k,j,i)*gm1;
+          Real p = PresFromEint(eos,gm1,w0(m,IDN,k,j,i),w0(m,IEN,k,j,i));
           Real rho = w0(m,IDN,k,j,i);
-          Real T = p/Rgas/rho;
+          Real T = TempKelvin(eos,Rgas,rho,w0(m,IEN,k,j,i),p);
           B[i] = boltz_sigma/M_PI*SQR(SQR(T));
           Real kap_v = 4.0e-3; // Rauscher & Menou 2012; Guillot 2010
           Real kap_ir = 2.28e-5*pow(p*cgs2Pa,0.53); // Komocek+2017
@@ -1606,9 +1680,9 @@ void double_gray_two_stream_RT(Mesh *pm, Real bdt) {
           F_v_down_f[i] = F_v_down_f[i+1]*trans*fac;
           tau_ir_down_f[i] = tau_ir_down_f[i+1] + dtau_ir;
         }
-        p = w0(m,IEN,k,j,is-1)*gm1;
+        p = PresFromEint(eos,gm1,w0(m,IDN,k,j,is-1),w0(m,IEN,k,j,is-1));
         rho = w0(m,IDN,k,j,is-1);
-        T = p/Rgas/rho;
+        T = TempKelvin(eos,Rgas,rho,w0(m,IEN,k,j,is-1),p);
         B[is-1] = boltz_sigma/M_PI*SQR(SQR(T));
         
         I_ir_down_f[ie+1] = 0.0;
@@ -1679,14 +1753,17 @@ void double_gray_two_stream_RT_source(Mesh *pm, Real bdt) {
     const bool test_oned = false;
     
     Real gamma;
+    EOS_Data eos;
     if (pmbp->phydro != nullptr) {
       u0 = pmbp->phydro->u0;
       w0 = pmbp->phydro->w0;
       gamma = pmbp->phydro->peos->eos_data.gamma;
+      eos = pmbp->phydro->peos->eos_data;
     } else if (pmbp->pmhd != nullptr) {
       u0 = pmbp->pmhd->u0;
       w0 = pmbp->pmhd->w0;
       gamma = pmbp->pmhd->peos->eos_data.gamma;
+      eos = pmbp->pmhd->peos->eos_data;
     }
     
     Real r0, r1;
@@ -1751,9 +1828,9 @@ void double_gray_two_stream_RT_source(Mesh *pm, Real bdt) {
         if (test_oned) mu0 = cos(50.0/90.0*M_PI/2.0);
         
         // down-sweep
-        Real p = w0(m,IEN,k,j,ie+1)*gm1;
+        Real p = PresFromEint(eos,gm1,w0(m,IDN,k,j,ie+1),w0(m,IEN,k,j,ie+1));
         Real rho = w0(m,IDN,k,j,ie+1);
-        Real T = p/Rgas/rho;
+        Real T = TempKelvin(eos,Rgas,rho,w0(m,IEN,k,j,ie+1),p);
         B[ie+1] = boltz_sigma/M_PI*SQR(SQR(T));
         Real kap_v = 4.0e-3;
         Real kap_ir = 1.0e-2;
@@ -1765,9 +1842,9 @@ void double_gray_two_stream_RT_source(Mesh *pm, Real bdt) {
 //        }
         tau_ir_down[ie+1] = tau_ir;
         for (int i=ie; i>is-1; --i) {
-          Real p = w0(m,IEN,k,j,i)*gm1;
+          Real p = PresFromEint(eos,gm1,w0(m,IDN,k,j,i),w0(m,IEN,k,j,i));
           Real rho = w0(m,IDN,k,j,i);
-          Real T = p/Rgas/rho;
+          Real T = TempKelvin(eos,Rgas,rho,w0(m,IEN,k,j,i),p);
           B[i] = boltz_sigma/M_PI*SQR(SQR(T));
           Real kap_v = 4.0e-3; // Rauscher & Menou 2012; Guillot 2010
             Real kap_ir = 1.0e-2; // 2.28e-5*pow(p*cgs2Pa,0.53); // Komocek+2017
@@ -1807,9 +1884,9 @@ void double_gray_two_stream_RT_source(Mesh *pm, Real bdt) {
           tau_ir += dtau_ir/mu1;
           if (i==is) tau_ir_down[i-1] = tau_ir;
         }
-        p = w0(m,IEN,k,j,is-1)*gm1;
+        p = PresFromEint(eos,gm1,w0(m,IDN,k,j,is-1),w0(m,IEN,k,j,is-1));
         rho = w0(m,IDN,k,j,is-1);
-        T = p/Rgas/rho;
+        T = TempKelvin(eos,Rgas,rho,w0(m,IEN,k,j,is-1),p);
         B[is-1] = boltz_sigma/M_PI*SQR(SQR(T));
         
         Real rtop = x1v_(m,ie+1);
@@ -1839,26 +1916,44 @@ void double_gray_two_stream_RT_source(Mesh *pm, Real bdt) {
           Real Bavg = B[i];//(B(i-1)+B(i))/2.0;
           I_up = (I_up*trans + Bavg*(1.0-trans))*fac;
           Real J = (I_up+I_down[i])/2.0;
-          Real p = w0(m,IEN,k,j,i)*gm1;
+          Real p = PresFromEint(eos,gm1,w0(m,IDN,k,j,i),w0(m,IEN,k,j,i));
           Real rho = w0(m,IDN,k,j,i);
-          Real T = p/Rgas/rho;
+          Real T = TempKelvin(eos,Rgas,rho,w0(m,IEN,k,j,i),p);
             Real kap_ir = 1.0e-2; //2.28e-5*pow(p*cgs2Pa,0.53); // Komocek+2017
           if (test_oned) kap_ir = 1.0e-2;
 //          Real Q_ir = 4.0*M_PI*kap_ir*rho*(J-B(i));
 //          u0(m,IEN,k,j,i) += Q_ir*bdt;
             
-          Real cv = Rgas*rho*igm1;
-          Real e0 = cv*T;
           Real kk = -4.0*M_PI*kap_ir*rho*boltz_sigma/M_PI*bdt;
-          Real bb = 4.0*M_PI*kap_ir*rho*J*bdt + Q_v[i]*bdt + e0;
-          Real e;
-          // Newton-Raphson
-          for (int n=0; n<100; ++n) {
-            e = cv*T;
-            Real de = e - kk*SQR(SQR(T)) - bb;
-            T -= de / (cv - 4.0*kk*T*T*T);
-            if (fabs(de) <= 1.0e-10*e)
-              break;
+          Real e0, e;
+          if (eos.IsGeneral()) {
+            // Same implicit balance e - kk T^4 = bb, but a general EOS has no e = c_v T
+            // with constant c_v, so Newton-Raphson runs on the internal energy directly:
+            // F(e) = e - kk T(e)^4 - bb, with dT/de = 1/(d c_v). c_v is per unit mass in
+            // CODE units while T here is in Kelvin, hence the temp_cgs factor.
+            e0 = w0(m,IEN,k,j,i);
+            Real bb = 4.0*M_PI*kap_ir*rho*J*bdt + Q_v[i]*bdt + e0;
+            e = e0;
+            for (int n=0; n<100; ++n) {
+              Real dTde = eos.temp_cgs/(rho*eos.SpecificHeatCv(rho,e));
+              Real de = e - kk*SQR(SQR(T)) - bb;
+              e -= de / (1.0 - 4.0*kk*T*T*T*dTde);
+              if (fabs(de) <= 1.0e-10*e)
+                break;
+              T = eos.Temperature(rho,e)*eos.temp_cgs;
+            }
+          } else {
+            Real cv = Rgas*rho*igm1;
+            e0 = cv*T;
+            Real bb = 4.0*M_PI*kap_ir*rho*J*bdt + Q_v[i]*bdt + e0;
+            // Newton-Raphson
+            for (int n=0; n<100; ++n) {
+              e = cv*T;
+              Real de = e - kk*SQR(SQR(T)) - bb;
+              T -= de / (cv - 4.0*kk*T*T*T);
+              if (fabs(de) <= 1.0e-10*e)
+                break;
+            }
           }
           u0(m,IEN,k,j,i) += e-e0;
         }
@@ -2076,7 +2171,7 @@ void get_wb_Tp(const Real &p, Real &T) {
 
 
 template <typename View1D>
-void get_wb_eos_arr(const Real &Rgas, const Real &grav_acc, const int &N, const Real &zmax, View1D zarr, View1D logparr) {
+void get_wb_eos_arr(const EOS_Data &eos, const Real &Rgas, const Real &grav_acc, const int &N, const Real &zmax, View1D zarr, View1D logparr) {
     
 //    Real Rgas = 4.593e7;
 //    Real grav_acc = -942.0;
@@ -2096,7 +2191,14 @@ void get_wb_eos_arr(const Real &Rgas, const Real &grav_acc, const int &N, const 
 
         get_wb_Tp(p,T);
 
-        logparr(n+1) = logparr(n) + fac/T;
+        if (eos.IsGeneral()) {
+          // dln p/dz = rho g/p, closed with the EOS's (p,T) -> rho inversion. The ideal
+          // branch is the same thing with rho = p/(Rgas T), kept in its original form.
+          Real rho = DensFromPT(eos, Rgas, p, T);
+          logparr(n+1) = logparr(n) + grav_acc*dz*rho/p;
+        } else {
+          logparr(n+1) = logparr(n) + fac/T;
+        }
     }
 
     
@@ -2104,7 +2206,7 @@ void get_wb_eos_arr(const Real &Rgas, const Real &grav_acc, const int &N, const 
 }
 
 KOKKOS_INLINE_FUNCTION
-void get_wb_eos(const Real &Rgas, const Real &grav_acc, const DvceArray1D<Real> &zarr, const DvceArray1D<Real> &logparr, const Real &z, Real &rho, Real &p) {
+void get_wb_eos(const EOS_Data &eos, const Real &Rgas, const Real &grav_acc, const DvceArray1D<Real> &zarr, const DvceArray1D<Real> &logparr, const Real &z, Real &rho, Real &p) {
     
 //    Real Rgas = 4.593e7;
     Real bar = 1.0e6;
@@ -2117,11 +2219,11 @@ void get_wb_eos(const Real &Rgas, const Real &grav_acc, const DvceArray1D<Real> 
         Real logp = logparr(Nt) + (logparr(Nt+1)-logparr(Nt))/(zarr(Nt+1)-zarr(Nt))*(z-zarr(Nt));
         p = std::exp(logp);
         get_wb_Tp(p,T);
-        rho = p/Rgas/T;
+        rho = DensFromPT(eos, Rgas, p, T);
     } else {
         Real T0;
         get_wb_Tp(p0,T0);
-        Real rho0 = p0/Rgas/T0;
+        Real rho0 = DensFromPT(eos, Rgas, p0, T0);
 //        Real grav_acc = -942.0;
         Real H0 = -p0/rho0/grav_acc;
         Real iH0 = 1.0/H0;
@@ -2133,7 +2235,7 @@ void get_wb_eos(const Real &Rgas, const Real &grav_acc, const DvceArray1D<Real> 
 }
 
 template <typename View1D>
-void get_init_eos_arr(const Real &Rgas, const Real &grav_acc, const View1D &Tarr, const View1D &lgparr, const int &N, const Real &zmax, View1D zarr, View1D logparr) {
+void get_init_eos_arr(const EOS_Data &eos, const Real &Rgas, const Real &grav_acc, const View1D &Tarr, const View1D &lgparr, const int &N, const Real &zmax, View1D zarr, View1D logparr) {
 
 //    Real Rgas = 4.593e7;
 //    Real grav_acc = -942.0;
@@ -2153,7 +2255,14 @@ void get_init_eos_arr(const Real &Rgas, const Real &grav_acc, const View1D &Tarr
 
         get_init_Tp_host(N, Tarr, lgparr, p, T);
 
-        logparr(n+1) = logparr(n) + fac/T;
+        if (eos.IsGeneral()) {
+          // dln p/dz = rho g/p, closed with the EOS's (p,T) -> rho inversion. The ideal
+          // branch is the same thing with rho = p/(Rgas T), kept in its original form.
+          Real rho = DensFromPT(eos, Rgas, p, T);
+          logparr(n+1) = logparr(n) + grav_acc*dz*rho/p;
+        } else {
+          logparr(n+1) = logparr(n) + fac/T;
+        }
     }
 
 
@@ -2161,7 +2270,7 @@ void get_init_eos_arr(const Real &Rgas, const Real &grav_acc, const View1D &Tarr
 }
 
 KOKKOS_INLINE_FUNCTION
-void get_init_eos(const Real &Rgas, const Real &grav_acc, const DvceArray1D<Real> &Tarr, const DvceArray1D<Real> &lgparr, const int &N, const DvceArray1D<Real> &zarr, const DvceArray1D<Real> &logparr, const Real &z, Real &rho, Real &p) {
+void get_init_eos(const EOS_Data &eos, const Real &Rgas, const Real &grav_acc, const DvceArray1D<Real> &Tarr, const DvceArray1D<Real> &lgparr, const int &N, const DvceArray1D<Real> &zarr, const DvceArray1D<Real> &logparr, const Real &z, Real &rho, Real &p) {
 
 //    Real Rgas = 4.593e7;
     Real bar = 1.0e6;
@@ -2174,11 +2283,11 @@ void get_init_eos(const Real &Rgas, const Real &grav_acc, const DvceArray1D<Real
         Real logp = logparr(Nt) + (logparr(Nt+1)-logparr(Nt))/(zarr(Nt+1)-zarr(Nt))*(z-zarr(Nt));
         p = std::exp(logp);
         get_init_Tp(N, Tarr, lgparr, p,T);
-        rho = p/Rgas/T;
+        rho = DensFromPT(eos, Rgas, p, T);
     } else {
         Real T0;
         get_init_Tp(N, Tarr, lgparr, p0,T0);
-        Real rho0 = p0/Rgas/T0;
+        Real rho0 = DensFromPT(eos, Rgas, p0, T0);
 //        Real grav_acc = -942.0;
         Real H0 = -p0/rho0/grav_acc;
         Real iH0 = 1.0/H0;
@@ -2440,7 +2549,7 @@ void get_picket_fence_Ttau(const Real &Tint, const Real &Tirr, const Real &mus, 
 }
 
 template <typename View1D>
-void get_picket_fence_pT_arr(const Real &gamma, const Real &Tint, const Real &Tirr, const Real &met, const Real &grav, const Real &mus, const int &N, View1D Tarr, View1D lgparr) {
+void get_picket_fence_pT_arr(const EOS_Data &eos, const Real &Rgas, const Real &gamma, const Real &Tint, const Real &Tirr, const Real &met, const Real &grav, const Real &mus, const int &N, View1D Tarr, View1D lgparr) {
     Real bar = 1.0e6;
     Real tautop = 1.0e-6;
     Real Ttop;
@@ -2481,13 +2590,13 @@ void get_picket_fence_pT_arr(const Real &gamma, const Real &Tint, const Real &Ti
         get_kapr(T, p, met, kapr);
     }
     
-    adjust_ad_pT_arr(gamma, N, Tarr, lgparr);
+    adjust_ad_pT_arr(eos, Rgas, gamma, N, Tarr, lgparr);
     
     return;
 }
 
 template <typename View1D>
-void adjust_ad_pT_arr(const Real &gamma, const int &N, View1D Tarr, View1D lgparr) {
+void adjust_ad_pT_arr(const EOS_Data &eos, const Real &Rgas, const Real &gamma, const int &N, View1D Tarr, View1D lgparr) {
 
   // --- find convective boundary (search from bottom) ---
   int ic = -1;
@@ -2505,7 +2614,7 @@ void adjust_ad_pT_arr(const Real &gamma, const int &N, View1D Tarr, View1D lgpar
     Real nabla = (lgT - lgT1) / (lgp - lgp1);
 
     Real T = Tarr(i_inv);
-    Real nabla_ad = 0.9*(gamma-1.0)/gamma; // 0.32 - 0.1 * (T / 3000.0);
+    Real nabla_ad = 0.9*GradAd(eos, gamma, Rgas, pow(10.0,lgp), T);
 
     if (nabla < nabla_ad) {
       ic = i_inv_p1;  // map back to original indexing
@@ -2518,7 +2627,7 @@ void adjust_ad_pT_arr(const Real &gamma, const int &N, View1D Tarr, View1D lgpar
     // --- enforce adiabat downward ---
     for (int ip = ic; ip < N-1; ++ip) {
       Real T = Tarr(ip);
-      Real nabla_ad = 0.9*(gamma-1.0)/gamma; // 0.32 - 0.1 * (T / 3000.0);
+      Real nabla_ad = 0.9*GradAd(eos, gamma, Rgas, pow(10.0,lgparr(ip)), T);
 
       Tarr(ip+1) = pow(10.0,
         nabla_ad * (lgparr(ip+1) - lgparr(ip)) + log10(T)
@@ -2555,14 +2664,17 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
     const bool test_oned = false;
         
     Real gamma;
+    EOS_Data eos;
     if (pmbp->phydro != nullptr) {
       u0 = pmbp->phydro->u0;
       w0 = pmbp->phydro->w0;
       gamma = pmbp->phydro->peos->eos_data.gamma;
+      eos = pmbp->phydro->peos->eos_data;
     } else if (pmbp->pmhd != nullptr) {
       u0 = pmbp->pmhd->u0;
       w0 = pmbp->pmhd->w0;
       gamma = pmbp->pmhd->peos->eos_data.gamma;
+      eos = pmbp->pmhd->peos->eos_data;
     }
     
     Real r0, r1;
@@ -2664,9 +2776,9 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
         
         // 3 V Bands
         // top
-        Real p = w0(m,IEN,k,j,ie+1)*gm1;
+        Real p = PresFromEint(eos,gm1,w0(m,IDN,k,j,ie+1),w0(m,IEN,k,j,ie+1));
         Real rho = w0(m,IDN,k,j,ie+1);
-        Real T = p/Rgas/rho;
+        Real T = TempKelvin(eos,Rgas,rho,w0(m,IEN,k,j,ie+1),p);
         B[ie+1] = boltz_sigma/M_PI*SQR(SQR(T));
         Real kapr;
         get_kapr(T, p, met, kapr);
@@ -2684,9 +2796,9 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
 //        F_v_down_f(ie+1) = (mu0 > 0.0)? F_v_down_f(ie+1) : 0.0;
         // down-sweep
         for (int i=ie; i>is-1; --i) {
-          Real p = w0(m,IEN,k,j,i)*gm1;
+          Real p = PresFromEint(eos,gm1,w0(m,IDN,k,j,i),w0(m,IEN,k,j,i));
           Real rho = w0(m,IDN,k,j,i);
-          Real T = p/Rgas/rho;
+          Real T = TempKelvin(eos,Rgas,rho,w0(m,IEN,k,j,i),p);
           B[i] = boltz_sigma/M_PI*SQR(SQR(T));
           Real kapr;
           get_kapr(T, p, met, kapr);
@@ -2803,13 +2915,13 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
           Real du_flux = src*bdt;
             
 //          // source term semi-implicit
-//          Real p = w0(m,IEN,k,j,i)*gm1;
+//          Real p = PresFromEint(eos,gm1,w0(m,IDN,k,j,i),w0(m,IEN,k,j,i));
 //          Real rho = w0(m,IDN,k,j,i);
-//          Real T = p/Rgas/rho;
+//          Real T = TempKelvin(eos,Rgas,rho,w0(m,IEN,k,j,i),p);
 //          Real kapr;
 //          get_kapr(T, p, met, kapr);
 //          Real cv = Rgas*rho*igm1;
-//          Real e0 = cv*T;
+//          Real e0 = eos.IsGeneral() ? w0(m,IEN,k,j,i) : cv*T;
 //          Real kk = 0.0;
 //          Real bb = du_flux + e0;
 ////          Real bb = Q_v(i)*bdt + e0;
@@ -2827,12 +2939,22 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
 //          }
 ////          bb += 4.0*M_PI*rho*kapJ_ir(i)*bdt;
 //          int ierr=0;
-//          Real e;
-//          // Newton-Raphson
+//          Real e = e0;
+//          // Newton-Raphson. A general EOS has no e = c_v T with constant c_v, so the
+//          // iteration runs on the internal energy directly rather than on T:
+//          // F(e) = e - kk T(e)^4 - bb, with dT/de = temp_cgs/(d c_v) since T is in K.
 //          for (int n=0; n<100; ++n) {
-//            e = cv*T;
-//            Real de = e - kk*SQR(SQR(T)) - bb;
-//            T -= de / (cv - 4.0*kk*T*T*T);
+//            Real de;
+//            if (eos.IsGeneral()) {
+//              Real dTde = eos.temp_cgs/(rho*eos.SpecificHeatCv(rho,e));
+//              de = e - kk*SQR(SQR(T)) - bb;
+//              e -= de / (1.0 - 4.0*kk*T*T*T*dTde);
+//              T = eos.Temperature(rho,e)*eos.temp_cgs;
+//            } else {
+//              e = cv*T;
+//              de = e - kk*SQR(SQR(T)) - bb;
+//              T -= de / (cv - 4.0*kk*T*T*T);
+//            }
 //            if (T < 0.0) {
 //              e = e0;
 //              ierr = 1;

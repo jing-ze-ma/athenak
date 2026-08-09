@@ -68,9 +68,18 @@ Resistivity::Resistivity(MeshBlockPack *pp, ParameterInput *pin) :
         // ideal gas EOS
         if (eqn_of_state.compare("ideal") == 0) {
           nmhd = 5;
+        // general EOS: same five conserved variables as an ideal gas, it is only their
+        // relation to the primitives that differs
+        } else if (eqn_of_state.compare("general") == 0) {
+          nmhd = 5;
         // isothermal EOS
         } else if (eqn_of_state.compare("isothermal") == 0) {
           nmhd = 4;
+        } else {
+          std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
+                    << std::endl << "Super-timestepped resistivity does not support "
+                    << "<mhd>/eos = " << eqn_of_state << std::endl;
+          std::exit(EXIT_FAILURE);
         }
         int nscalars = pin->GetOrAddInteger("mhd","nscalars",0);
         Kokkos::realloc(u_ideal,     nmb, (nmhd+nscalars), ncells3, ncells2, ncells1);
@@ -97,18 +106,34 @@ Resistivity::Resistivity(MeshBlockPack *pp, ParameterInput *pin) :
 Resistivity::~Resistivity() {
 }
 
-void Resistivity::SetResistivity(const DvceArray5D<Real> &w, const Real &gamma, const Real &Rgas, DvceArray4D<Real> &eta_b, const int il, const int iu, const int jl, const int ju, const int kl, const int ku) {
+void Resistivity::SetResistivity(const DvceArray5D<Real> &w, const EOS_Data &eos, const Real &Rgas, DvceArray4D<Real> &eta_b, const int il, const int iu, const int jl, const int ju, const int kl, const int ku) {
   int &nmb = pmy_pack->nmb_thispack;
-  Real gm1 = gamma - 1.0;
+  Real gm1 = eos.gamma - 1.0;
+  // ResistivityPerna is a thermal-ionization fit and needs a temperature in KELVIN and a
+  // particle number density. For an ideal gas both come from the problem's Rgas, which
+  // carries a fixed mean molecular weight. A general EOS supplies temperature and
+  // composition itself, so mu is asked of the EOS. The number density is then written as
+  // rho pres_cgs/(mu temp_cgs k_B) rather than rho/(mu m_u): eliminating m_u in favour of
+  // eos.temp_cgs = (pres_cgs/dens_cgs) m_u/k_B ties the number density to the same
+  // normalisation the temperature uses, instead of introducing a second atomic mass unit
+  // that would disagree with this file's k_B in the last digits.
+  const bool gen = eos.IsGeneral();
   par_for("mhd_resistval", DevExeSpace(), 0, (nmb-1), kl, ku, jl, ju, il, iu,
   KOKKOS_LAMBDA(int m, int k, int j, int i) {
     Real rho = w(m,IDN,k,j,i);
-    Real p = gm1*w(m,IEN,k,j,i);
-    Real T = p/Rgas/rho;
+    Real e = w(m,IEN,k,j,i);
     Real kb = 1.380649e-16;
     Real mh = 1.67262192369e-24;
-    Real mu = kb/mh/Rgas;
-    Real nn = rho/(mu*mh);
+    Real T, nn;
+    if (gen) {
+      T = eos.Temperature(rho,e)*eos.temp_cgs;
+      nn = rho*eos.pres_cgs/(eos.MeanMolecularWeight(rho,e)*eos.temp_cgs*kb);
+    } else {
+      Real p = gm1*e;
+      T = p/Rgas/rho;
+      Real mu = kb/mh/Rgas;
+      nn = rho/(mu*mh);
+    }
     ResistivityPerna(nn, T, eta_b(m,k,j,i));
 //      Real lgrho = log10(rho);
 //      Real lgT = log10(T);

@@ -117,6 +117,32 @@ struct EOS_Data {
     return (d*t/(gamma-1.0));
   }
 
+  //! \fn Real MeanMolecularWeight
+  //! \brief mean molecular weight mu(d,e), i.e. mass per particle in units of m_u. This
+  //! is what converts a mass density into a number density, which modules that do
+  //! per-particle microphysics (resistivity, cooling) need. Under the mu_ref = 1
+  //! convention the ideal-gas interface carries no composition at all, so it returns 1;
+  //! a general EOS returns the value its own composition implies, dropping from ~2.3 in
+  //! molecular H2/He to ~0.6 once hydrogen is ionized.
+  KOKKOS_INLINE_FUNCTION
+  Real MeanMolecularWeight(const Real d, const Real e) const {
+    // TODO(stage3): add EOSType::general branch
+    return 1.0;
+  }
+
+  //! \fn Real DensityFromPressureTemperature
+  //! \brief density d(p,T); the (p,T) -> d inversion. Unlike everything else here this is
+  //! NOT a function of the primitive pair, and no kernel needs it: it exists for problem
+  //! generators that build a hydrostatic background by integrating dln p/dz in (p,T)
+  //! space and then have to close it with a density. For an ideal gas p = d T under the
+  //! mu_ref = 1 convention, so the inverse is exact; a general EOS has to root find on d,
+  //! which is why this is used at setup only and never inside a time step.
+  KOKKOS_INLINE_FUNCTION
+  Real DensityFromPressureTemperature(const Real p, const Real t) const {
+    // TODO(stage3): add EOSType::general branch (root find on d at fixed p and T)
+    return (p/t);
+  }
+
   //! \fn Real SpecificHeatCv
   //! \brief specific heat at constant volume c_v(d,e) = (de/dT)/d. Used by thermal
   //! conduction, which currently hardwires the ideal-gas value 1/(gamma-1).

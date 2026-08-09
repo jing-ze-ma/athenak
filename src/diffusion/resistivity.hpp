@@ -99,7 +99,7 @@ class Resistivity {
   void NewTimeStepConstantGridResist(const DvceArray5D<Real> &w, const EOS_Data &eos_data);
   void NewTimeStepGeneralResist(const DvceArray5D<Real> &w, const EOS_Data &eos_data);
   void ClearResistiveEMFs(DvceEdgeFld4D<Real> &efld);
-  void SetResistivity(const DvceArray5D<Real> &w, const Real &gamma, const Real &Rgas, DvceArray4D<Real> &eta_b, const int il, const int iu, const int jl, const int ju, const int kl, const int ku);
+  void SetResistivity(const DvceArray5D<Real> &w, const EOS_Data &eos, const Real &Rgas, DvceArray4D<Real> &eta_b, const int il, const int iu, const int jl, const int ju, const int kl, const int ku);
 
   KOKKOS_INLINE_FUNCTION
   void ResistivityPerna(const Real &nn, const Real &T, Real &eta) {
