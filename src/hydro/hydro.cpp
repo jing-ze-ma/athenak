@@ -39,6 +39,8 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
     u0wb("conswb",1,1,1,1,1),
     w0wb("primwb",1,1,1,1,1),
     w0facewb("primfwb",1,1,1,1,1),
+    pwb("preswb",1,1,1,1),
+    pfacewb("presfwb",1,1,1,1),
     utest("utest",1,1,1,1,1),
     fofc("fofc",1,1,1,1) {
   // Total number of MeshBlocks on this rank to be used in array dimensioning
@@ -214,6 +216,13 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
     Kokkos::realloc(w0facewb.x1f, nmb, nhydro, ncells3, ncells2, ncells1+1);
     Kokkos::realloc(w0facewb.x2f, nmb, nhydro, ncells3, ncells2+1, ncells1);
     Kokkos::realloc(w0facewb.x3f, nmb, nhydro, ncells3+1, ncells2, ncells1);
+    // background pressure: one scalar per cell and per face, filled once (see
+    // SetWbBackgroundPressure) instead of being re-derived from the background every
+    // stage
+    Kokkos::realloc(pwb, nmb, ncells3, ncells2, ncells1);
+    Kokkos::realloc(pfacewb.x1f, nmb, ncells3, ncells2, ncells1+1);
+    Kokkos::realloc(pfacewb.x2f, nmb, ncells3, ncells2+1, ncells1);
+    Kokkos::realloc(pfacewb.x3f, nmb, ncells3+1, ncells2, ncells1);
   }
 
   // for time-evolving problems, continue to construct methods, allocate arrays

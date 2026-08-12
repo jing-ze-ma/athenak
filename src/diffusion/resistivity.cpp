@@ -118,6 +118,10 @@ void Resistivity::SetResistivity(const DvceArray5D<Real> &w, const EOS_Data &eos
   // normalisation the temperature uses, instead of introducing a second atomic mass unit
   // that would disagree with this file's k_B in the last digits.
   const bool gen = eos.IsGeneral();
+  // the temperature is read from the cache ConsToPrim filled for this same primitive
+  // state, not re-derived: T(d,e) is a root find for a general EOS and doing it here
+  // would repeat, per cell per stage, work that has already been done
+  auto &wtemp_ = pmy_pack->pmhd->wtemp;
   par_for("mhd_resistval", DevExeSpace(), 0, (nmb-1), kl, ku, jl, ju, il, iu,
   KOKKOS_LAMBDA(int m, int k, int j, int i) {
     Real rho = w(m,IDN,k,j,i);
@@ -126,8 +130,9 @@ void Resistivity::SetResistivity(const DvceArray5D<Real> &w, const EOS_Data &eos
     Real mh = 1.67262192369e-24;
     Real T, nn;
     if (gen) {
-      T = eos.Temperature(rho,e)*eos.temp_cgs;
-      nn = rho*eos.pres_cgs/(eos.MeanMolecularWeight(rho,e)*eos.temp_cgs*kb);
+      Real tcode = wtemp_(m,k,j,i);
+      T = tcode*eos.temp_cgs;
+      nn = rho*eos.pres_cgs/(eos.MeanMolecularWeight(rho,e,tcode)*eos.temp_cgs*kb);
     } else {
       Real p = gm1*e;
       T = p/Rgas/rho;

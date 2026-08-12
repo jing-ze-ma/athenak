@@ -110,10 +110,12 @@ int WBOptionNumber(const EOS_Data &eos, const WBOption wb_option,
       Real t_i = eos.Temperature(d_i, e_i);
       Real dlnt = log(t_p/t_m);
       Real dlnd = log(d_p/d_m);
-      // entropy difference across the stencil, in units of c_v, evaluated at cell i
-      Real cv = eos.SpecificHeatCv(d_i, e_i);
-      Real p_i = eos.Pressure(d_i, e_i);
-      Real dsdivcv = dlnt - (p_i*eos.ChiT(d_i,e_i)/(d_i*t_i*cv))*dlnd;
+      // entropy difference across the stencil, in units of c_v, evaluated at cell i. All
+      // three coefficients are taken at the temperature already solved for above: asking
+      // for them without it would repeat the same root find three more times.
+      Real cv = eos.SpecificHeatCv(d_i, e_i, t_i);
+      Real p_i = eos.Pressure(d_i, e_i, t_i);
+      Real dsdivcv = dlnt - (p_i*eos.ChiT(d_i,e_i,t_i)/(d_i*t_i*cv))*dlnd;
       return (fabs(dlnt) > fabs(dsdivcv)) ? 2 : 1;
     }
     default:
@@ -142,11 +144,15 @@ Real WBEnergyFromEnthalpy(const EOS_Data &eos, const Real d, const Real h,
                           const Real e_guess) {
   Real e = e_guess;
   for (int it=0; it<10; ++it) {
-    Real p = eos.Pressure(d, e);
+    // One temperature solve per iteration, shared by the residual and the derivative.
+    // This loop is the hottest EOS consumer in the dynamic well-balanced path -- up to
+    // ten iterations per half cell per direction -- so evaluating p, chi_T and c_v
+    // without a temperature would cost four root finds per iteration instead of one.
+    Real t = eos.Temperature(d, e);
+    Real p = eos.Pressure(d, e, t);
     Real f = e + p - d*h;
     if (f == 0.0) {break;}
-    Real t = eos.Temperature(d, e);
-    Real dpde = p*eos.ChiT(d, e)/(d*t*eos.SpecificHeatCv(d, e));
+    Real dpde = p*eos.ChiT(d, e, t)/(d*t*eos.SpecificHeatCv(d, e, t));
     Real de = -f/(1.0 + dpde);
     // keep the iterate positive; a general EOS is undefined at e <= 0
     e = (e + de > 0.0) ? (e + de) : 0.5*e;
@@ -185,8 +191,11 @@ void WBAdvance(const EOS_Data &eos, const int wb_opt,
     // through.  For an ideal gas EnergyFromTemperature makes e scale with d, reproducing
     // the exp() branch of getWBerho exactly.
     Real t_ref = eos.Temperature(d, e);
-    Real p_c = eos.Pressure(d_c, e_c);
-    d *= exp(-d_c*dphi/(p_c*eos.ChiRho(d_c, e_c)));
+    // p and chi_rho are both wanted at the coefficient cell, so its temperature is solved
+    // for once and handed to both
+    Real t_c = eos.Temperature(d_c, e_c);
+    Real p_c = eos.Pressure(d_c, e_c, t_c);
+    d *= exp(-d_c*dphi/(p_c*eos.ChiRho(d_c, e_c, t_c)));
     e = eos.EnergyFromTemperature(d, t_ref);
   } else {
     // ISENTROPIC.  Two steps, neither of which needs an entropy function.
@@ -206,8 +215,10 @@ void WBAdvance(const EOS_Data &eos, const int wb_opt,
     // error of freezing Gamma_1; projecting the energy onto the invariant keeps that error
     // out of the pressure-gravity balance entirely.
     Real h_target = eos.Enthalpy(d, e) - dphi;
-    Real g1 = eos.Gamma1(d_c, e_c);
-    Real p_c = eos.Pressure(d_c, e_c);
+    // Gamma_1 and p are both wanted at the coefficient cell; one temperature serves both
+    Real t_c = eos.Temperature(d_c, e_c);
+    Real g1 = eos.Gamma1(d_c, e_c, t_c);
+    Real p_c = eos.Pressure(d_c, e_c, t_c);
     Real gm1 = g1 - 1.0;
     Real d_new;
     if (fabs(gm1) > 1.0e-8) {
@@ -239,6 +250,14 @@ void WBBackgroundStencil(const EOS_Data &eos, const WBOption wb_option,
                          const Real phi_iph, const Real phi_ip1,
                          WBState &q0_im1, WBState &q0_imh, WBState &q0_i,
                          WBState &q0_iph, WBState &q0_ip1) {
+  // TODO(stage3): the five Pressure() calls below are five temperature solves on states
+  // WBAdvance() has just finished constructing, and each branch of it already knows
+  // enough to hand the pressure back for free (the isodensity branch integrates p
+  // directly, the isothermal branch has T, the isentropic branch has it from the last
+  // Newton iterate). Not done here because the round trip is not bitwise neutral -- p ->
+  // e -> p does not return the same last bit -- and well balancing lives on exactly those
+  // bits. Worth revisiting with a numerical check once the analytic EOS makes the cost
+  // real.
   int wb_opt = WBOptionNumber(eos, wb_option, rho_im1, e_im1, rho_ip1, e_ip1, rho_i, e_i);
 
   q0_i.d = rho_i;

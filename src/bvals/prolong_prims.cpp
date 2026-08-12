@@ -164,8 +164,12 @@ void MeshBoundaryValuesCC::ConsToPrimCoarseBndry(const DvceArray5D<Real> &cons,
           // prolongation only produces primitives, which are converted straight back to
           // conserved variables and re-inverted over the whole block afterwards.
           if (eos.IsGeneral()) {
-            Real pgas_, g1_;
-            SingleC2P_GeneralHyd(u, eos, w, pgas_, g1_,
+            // No coarse wtemp exists, so there is no warm start for the
+            // temperature solve; a non-positive guess tells the EOS to
+            // bracket for itself. Both it and the derived quantities are
+            // discarded here.
+            Real pgas_, g1_, temp_;
+            SingleC2P_GeneralHyd(u, eos, w, -1.0, temp_, pgas_, g1_,
                                  dfloor_used, efloor_used, tfloor_used);
           } else {
             SingleC2P_IdealHyd(u, eos, w, dfloor_used, efloor_used, tfloor_used);
@@ -445,8 +449,12 @@ void MeshBoundaryValuesCC::ConsToPrimCoarseBndry(const DvceArray5D<Real> &cons,
         } else {
           // see the matching comment in the hydro version above
           if (eos.IsGeneral()) {
-            Real pgas_, g1_;
-            SingleC2P_GeneralMHD(u, eos, w, pgas_, g1_,
+            // No coarse wtemp exists, so there is no warm start for the
+            // temperature solve; a non-positive guess tells the EOS to
+            // bracket for itself. Both it and the derived quantities are
+            // discarded here.
+            Real pgas_, g1_, temp_;
+            SingleC2P_GeneralMHD(u, eos, w, -1.0, temp_, pgas_, g1_,
                                  dfloor_used, efloor_used, tfloor_used);
           } else {
             SingleC2P_IdealMHD(u, eos, w, dfloor_used, efloor_used, tfloor_used);

@@ -70,42 +70,126 @@ struct EOS_Data {
   //
   // Every function reduces exactly to the ideal-gas expression when
   // eos_type == EOSType::ideal, so existing ideal-gas runs are bitwise unchanged.
+  //
+  // COST MODEL, and why most of these come in two forms. Under a general EOS the physics
+  // is naturally a function of (d,T), but the code stores (d,e). Recovering T from (d,e)
+  // is a root find and is THE expensive operation; every other quantity is cheap once T
+  // is in hand. So each accessor below has a primary form taking (d,e,T) -- the caller
+  // has already solved for T and pays nothing more -- and a convenience form taking
+  // (d,e), which solves for T itself.
+  //
+  // Kernels on the hot path MUST use the (d,e,T) form, solving for T exactly once per
+  // cell (ConsToPrim does this and caches the result in Hydro/MHD::wtemp). The (d,e) form
+  // is for setup-time callers -- problem generators, one-off diagnostics -- where an
+  // extra root find does not matter. Calling the (d,e) form N times on one cell means N
+  // root finds.
+
+  //! \fn Real Temperature
+  //! \brief temperature T(d,e) in code units (p/d for an ideal gas).
+  //!
+  //! For a general EOS this is the single expensive entry point: it inverts e(d,T) for T.
+  //! `tguess` is an optional warm start -- normally the cached T in the same cell from
+  //! the previous stage -- which cuts the iteration count to a couple of steps. A
+  //! non-positive `tguess` means "no guess available", and the solver must bracket for
+  //! itself. An ideal gas ignores it.
+  KOKKOS_INLINE_FUNCTION
+  Real Temperature(const Real d, const Real e, const Real tguess = -1.0) const {
+    // TODO(stage3): add EOSType::general branch (root find on T, warm started at tguess)
+    return ((gamma-1.0)*e/d);
+  }
 
   //! \fn Real Pressure
-  //! \brief gas pressure p(d,e)
+  //! \brief gas pressure p(d,e), from an already-solved temperature
   KOKKOS_INLINE_FUNCTION
-  Real Pressure(const Real d, const Real e) const {
+  Real Pressure(const Real d, const Real e, const Real t) const {
     // TODO(stage3): add EOSType::general branch (analytic partial-ionization EOS)
     return ((gamma-1.0)*e);
   }
 
-  //! \fn Real Gamma1
-  //! \brief first adiabatic exponent Gamma_1 = (dln p/dln d) at constant entropy. This is
-  //! the exponent that sets the sound speed, and is what replaces the constant `gamma` in
-  //! the wave-structure algebra of the HLLC/HLLD/Roe solvers. For an ideal gas it is the
-  //! constant ratio of specific heats; for a general EOS it varies with (d,e) and dips
-  //! well below 5/3 inside partial-ionization zones.
+  //! \fn Real Pressure
+  //! \brief gas pressure p(d,e); solves for the temperature itself. Setup-time use only.
   KOKKOS_INLINE_FUNCTION
-  Real Gamma1(const Real d, const Real e) const {
+  Real Pressure(const Real d, const Real e) const {
+    return Pressure(d, e, Temperature(d,e));
+  }
+
+  //! \fn Real Gamma1 \brief first adiabatic exponent Gamma_1 = (dln p/dln d) at constant
+  //! entropy, from an already-solved temperature. This is the exponent that sets the
+  //! sound speed, and is what replaces the constant `gamma` in the wave-structure algebra
+  //! of the HLLC/HLLD/Roe solvers. For an ideal gas it is the constant ratio of specific
+  //! heats; for a general EOS it varies with (d,e) and dips well below 5/3 inside
+  //! partial-ionization zones.
+  KOKKOS_INLINE_FUNCTION
+  Real Gamma1(const Real d, const Real e, const Real t) const {
     // TODO(stage3): add EOSType::general branch
     return gamma;
   }
 
-  //! \fn Real EnergyFromPressure
-  //! \brief internal energy density e(d,p); inverse of Pressure(). Needed for pressure
-  //! floors, which are specified in terms of p but applied to e.
+  //! \fn Real Gamma1
+  //! \brief Gamma_1(d,e); solves for the temperature itself. Setup-time use only.
+  KOKKOS_INLINE_FUNCTION
+  Real Gamma1(const Real d, const Real e) const {
+    return Gamma1(d, e, Temperature(d,e));
+  }
+
+  //! \fn Real EnergyFromPressure \brief internal energy density e(d,p); inverse of
+  //! Pressure(). Needed for pressure floors, which are specified in terms of p but
+  //! applied to e. For a general EOS this is a root find (on T at fixed p, then e(d,T)),
+  //! so callers should reach it only when a floor has actually been shown to trip -- see
+  //! the note on TestPressureFloor().
   KOKKOS_INLINE_FUNCTION
   Real EnergyFromPressure(const Real d, const Real p) const {
     // TODO(stage3): add EOSType::general branch
     return (p/(gamma-1.0));
   }
 
-  //! \fn Real Temperature
-  //! \brief temperature T(d,e) in code units (p/d for an ideal gas)
+  //! \fn bool BelowPressureFloor \brief true when the state (d,e) has p < pfloor, given
+  //! an already-solved temperature.
+  //!
+  //! This is the cheap way to test the pressure floor. The obvious test, `e <
+  //! EnergyFromPressure(d,pfloor)`, costs a root find in EVERY cell even though the floor
+  //! trips in almost none; testing p against pfloor instead reuses the temperature that
+  //! ConsToPrim has already solved for and costs nothing. The two tests are equivalent
+  //! because e(d,p) is monotonically increasing in p, so they can disagree only within
+  //! rounding of the floor itself, where either answer sets e to the same value.
   KOKKOS_INLINE_FUNCTION
-  Real Temperature(const Real d, const Real e) const {
-    // TODO(stage3): add EOSType::general branch
-    return ((gamma-1.0)*e/d);
+  bool BelowPressureFloor(const Real d, const Real e, const Real t) const {
+    return (Pressure(d, e, t) < pfloor);
+  }
+
+  //! \fn Real EnergyFloorBound
+  //! \brief a cheap UPPER bound on EnergyFromPressure(d, pfloor), i.e. on the internal
+  //! energy density at the pressure floor.
+  //!
+  //! This exists so that the floor can be applied without paying for the exact inverse in
+  //! every cell: e >= EnergyFloorBound(d) proves e is above the floor, and only cells
+  //! that fail that cheap test need the root find. It is what makes ApplyEnergyFloor()
+  //! viable in reconstruction, where -- unlike in ConsToPrim -- no solved temperature is
+  //! at hand and BelowPressureFloor() would itself cost an inversion.
+  //!
+  //! For an ideal gas the bound is the exact value, so the ideal code path is unchanged.
+  //! A general EOS should return any closed-form bound it can justify -- for instance the
+  //! ideal-gas value at the smallest mean molecular weight its composition can reach,
+  //! plus the radiation contribution -- and must NEVER return something smaller than the
+  //! true value, which would let the floor be skipped in a cell that needed it.
+  KOKKOS_INLINE_FUNCTION
+  Real EnergyFloorBound(const Real d) const {
+    // TODO(stage3): add EOSType::general branch (closed form, no root find)
+    return (pfloor/(gamma-1.0));
+  }
+
+  //! \fn void ApplyEnergyFloor
+  //! \brief raise an internal energy density to e(d,pfloor) if it lies below it.
+  //!
+  //! Used on reconstructed interface states, where an undershoot can drive e below the
+  //! floor. The bound test in front of the inversion is what keeps this cheap under a
+  //! general EOS; for an ideal gas the bound is exact and this reduces to the original
+  //! fmax against a constant.
+  KOKKOS_INLINE_FUNCTION
+  void ApplyEnergyFloor(const Real d, Real &e) const {
+    if (e < EnergyFloorBound(d)) {
+      e = fmax(e, EnergyFromPressure(d, pfloor));
+    }
   }
 
   //! \fn Real EnergyFromTemperature
@@ -125,9 +209,16 @@ struct EOS_Data {
   //! a general EOS returns the value its own composition implies, dropping from ~2.3 in
   //! molecular H2/He to ~0.6 once hydrogen is ionized.
   KOKKOS_INLINE_FUNCTION
-  Real MeanMolecularWeight(const Real d, const Real e) const {
+  Real MeanMolecularWeight(const Real d, const Real e, const Real t) const {
     // TODO(stage3): add EOSType::general branch
     return 1.0;
+  }
+
+  //! \fn Real MeanMolecularWeight
+  //! \brief mu(d,e); solves for the temperature itself. Setup-time use only.
+  KOKKOS_INLINE_FUNCTION
+  Real MeanMolecularWeight(const Real d, const Real e) const {
+    return MeanMolecularWeight(d, e, Temperature(d,e));
   }
 
   //! \fn Real DensityFromPressureTemperature
@@ -147,9 +238,16 @@ struct EOS_Data {
   //! \brief specific heat at constant volume c_v(d,e) = (de/dT)/d. Used by thermal
   //! conduction, which currently hardwires the ideal-gas value 1/(gamma-1).
   KOKKOS_INLINE_FUNCTION
-  Real SpecificHeatCv(const Real d, const Real e) const {
+  Real SpecificHeatCv(const Real d, const Real e, const Real t) const {
     // TODO(stage3): add EOSType::general branch
     return (1.0/(gamma-1.0));
+  }
+
+  //! \fn Real SpecificHeatCv
+  //! \brief c_v(d,e); solves for the temperature itself. Setup-time use only.
+  KOKKOS_INLINE_FUNCTION
+  Real SpecificHeatCv(const Real d, const Real e) const {
+    return SpecificHeatCv(d, e, Temperature(d,e));
   }
 
   //! \fn Real ChiRho
@@ -159,9 +257,16 @@ struct EOS_Data {
   //! background at fixed T, and by Gamma_1 itself through
   //! Gamma_1 = chi_rho + p chi_T^2/(d T c_v).
   KOKKOS_INLINE_FUNCTION
-  Real ChiRho(const Real d, const Real e) const {
+  Real ChiRho(const Real d, const Real e, const Real t) const {
     // TODO(stage3): add EOSType::general branch
     return 1.0;
+  }
+
+  //! \fn Real ChiRho
+  //! \brief chi_rho(d,e); solves for the temperature itself. Setup-time use only.
+  KOKKOS_INLINE_FUNCTION
+  Real ChiRho(const Real d, const Real e) const {
+    return ChiRho(d, e, Temperature(d,e));
   }
 
   //! \fn Real ChiT
@@ -169,17 +274,32 @@ struct EOS_Data {
   //! from unity wherever the number of particles depends on temperature (dissociation,
   //! ionization) or radiation pressure contributes.
   KOKKOS_INLINE_FUNCTION
-  Real ChiT(const Real d, const Real e) const {
+  Real ChiT(const Real d, const Real e, const Real t) const {
     // TODO(stage3): add EOSType::general branch
     return 1.0;
   }
 
+  //! \fn Real ChiT
+  //! \brief chi_T(d,e); solves for the temperature itself. Setup-time use only.
+  KOKKOS_INLINE_FUNCTION
+  Real ChiT(const Real d, const Real e) const {
+    return ChiT(d, e, Temperature(d,e));
+  }
+
   //! \fn Real Enthalpy
-  //! \brief specific enthalpy h = (e + p)/d. Along a hydrostatic isentrope h + Phi is
-  //! constant, which is what makes the isentropic well-balanced background integrable.
+  //! \brief specific enthalpy h = (e + p)/d, from an already-solved temperature. Along a
+  //! hydrostatic isentrope h + Phi is constant, which is what makes the isentropic
+  //! well-balanced background integrable.
+  KOKKOS_INLINE_FUNCTION
+  Real Enthalpy(const Real d, const Real e, const Real t) const {
+    return ((e + Pressure(d,e,t))/d);
+  }
+
+  //! \fn Real Enthalpy
+  //! \brief h(d,e); solves for the temperature itself. Setup-time use only.
   KOKKOS_INLINE_FUNCTION
   Real Enthalpy(const Real d, const Real e) const {
-    return ((e + Pressure(d,e))/d);
+    return Enthalpy(d, e, Temperature(d,e));
   }
 
   //! \fn Real SoundSpeedFromP
@@ -203,19 +323,24 @@ struct EOS_Data {
     return sqrt(0.5*(qsq + sqrt(tmp*tmp + 4.0*asq*ct2))/d);
   }
 
-  //! \fn Real SoundSpeed
-  //! \brief adiabatic sound speed c_s(d,e) = sqrt(Gamma_1 p/d)
+  //! \fn Real SoundSpeed \brief adiabatic sound speed c_s(d,e) = sqrt(Gamma_1 p/d).
+  //! Solves for the temperature once and reuses it for both Gamma_1 and p. Setup-time use
+  //! only: on the hot path both have already been evaluated in ConsToPrim, so use
+  //! SoundSpeedFromP().
   KOKKOS_INLINE_FUNCTION
   Real SoundSpeed(const Real d, const Real e) const {
-    return sqrt(Gamma1(d,e)*Pressure(d,e)/d);
+    Real t = Temperature(d,e);
+    return sqrt(Gamma1(d,e,t)*Pressure(d,e,t)/d);
   }
 
   //! \fn Real FastSpeed
-  //! \brief fast magnetosonic speed for a general EOS, from (d,e) and the field
+  //! \brief fast magnetosonic speed for a general EOS, from (d,e) and the field. As with
+  //! SoundSpeed(), setup-time use only; the hot path has FastSpeedFromP().
   KOKKOS_INLINE_FUNCTION
   Real FastSpeed(const Real d, const Real e,
                  const Real bx, const Real by, const Real bz) const {
-    Real asq = Gamma1(d,e)*Pressure(d,e);
+    Real t = Temperature(d,e);
+    Real asq = Gamma1(d,e,t)*Pressure(d,e,t);
     Real ct2 = by*by + bz*bz;
     Real qsq = bx*bx + ct2 + asq;
     Real tmp = bx*bx + ct2 - asq;

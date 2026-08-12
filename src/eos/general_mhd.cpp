@@ -128,8 +128,11 @@ void GeneralMHD::ConsToPrim(DvceArray5D<Real> &cons, const DvceFaceFld4D<Real> &
     // (inline function in general_c2p_mhd.hpp file)
     HydPrim1D w;
     Real pgas, g1;
+    Real temp;
     bool dfloor_used=false, efloor_used=false, tfloor_used=false;
-    SingleC2P_GeneralMHD(u, eos, w, pgas, g1, dfloor_used, efloor_used, tfloor_used);
+    // the cached temperature in this cell warm starts the T(d,e) root find
+    SingleC2P_GeneralMHD(u, eos, w, wtemp_(m,k,j,i), temp, pgas, g1,
+                         dfloor_used, efloor_used, tfloor_used);
 
     // set FOFC flag and quit loop if this function called only to check floors
     if (only_testfloors) {
@@ -164,8 +167,9 @@ void GeneralMHD::ConsToPrim(DvceArray5D<Real> &cons, const DvceFaceFld4D<Real> &
       // store derived thermodynamic variables for reconstruction
       wder_(m,IDPR,k,j,i) = pgas;
       wder_(m,IDG1,k,j,i) = g1;
-      // cache temperature, used as the warm start for the T(d,e) inversion
-      wtemp_(m,k,j,i) = eos.Temperature(w.d, w.e);
+      // cache the temperature solved for above; it is both the value other modules read
+      // and the warm start for this cell's inversion at the next stage
+      wtemp_(m,k,j,i) = temp;
       // convert scalars (if any), always stored at end of cons and prim arrays.
       for (int n=nmhd; n<(nmhd+nscal); ++n) {
         // apply scalar floor

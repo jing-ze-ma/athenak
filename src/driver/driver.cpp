@@ -618,6 +618,9 @@ void Driver::InitBoundaryValuesAndPrimitives(Mesh *pm) {
     (void) phydro->ApplyPhysicalBCs(this, 0);
     (void) phydro->Prolongate(this, 0);
     (void) phydro->ConToPrim(this, 0);
+    // The well-balanced background is in place by now (the problem generator set it), and
+    // it does not evolve, so its pressure is evaluated once here rather than per stage.
+    phydro->SetWbBackgroundPressure();
   }
 
   // Initialize MHD: ghost zones and primitive variables (everywhere)
@@ -644,6 +647,8 @@ void Driver::InitBoundaryValuesAndPrimitives(Mesh *pm) {
     (void) pmhd->Prolongate(this, 0);
     if (pdyngr == nullptr) {
       (void) pmhd->ConToPrim(this, 0);
+      // see the hydro comment above
+      pmhd->SetWbBackgroundPressure();
     } else {
       if (pz4c != nullptr) {
         (void) pz4c->ConvertZ4cToADM(this, 0);

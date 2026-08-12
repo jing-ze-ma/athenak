@@ -200,7 +200,7 @@ TaskStatus Hydro::Fluxes(Driver *pdrive, int stage) {
     AddGravFlux(phi0,uflx);
   }
   if (use_wellbalance_static) {
-    RemoveWbFlux(w0facewb,uflx);
+    RemoveWbFlux(pfacewb,uflx);
   }
 
   // call FOFC if necessary
@@ -267,10 +267,12 @@ TaskStatus Hydro::HydroSrcTerms(Driver *pdrive, int stage) {
     
   // Add coordinate source terms in curvi-linear grid.  Again, must be computed with only primitives.
   if (pmy_pack->pmesh->use_cubed_sphere) {
-    pmy_pack->pcoord->SrcTermsGnomonicEquiangle(w0, uflx, peos->eos_data, beta_dt, u0);
+    pmy_pack->pcoord->SrcTermsGnomonicEquiangle(w0, wder, uflx, peos->eos_data,
+                                                beta_dt, u0);
   }
   if (pmy_pack->pmesh->use_spherical_polar) {
-    pmy_pack->pcoord->SrcTermsSphericalPolarHydro(w0, w0wb, uflx, peos->eos_data, beta_dt, u0);
+    pmy_pack->pcoord->SrcTermsSphericalPolarHydro(w0, pwb, uflx, peos->eos_data,
+                                                 beta_dt, u0);
   }
 
   // Add user source terms

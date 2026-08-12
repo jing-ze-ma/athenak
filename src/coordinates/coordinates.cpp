@@ -510,7 +510,9 @@ void Coordinates::CoordGnomonicEquiangle() {
   });
 }
 
-void Coordinates::SrcTermsGnomonicEquiangle(const DvceArray5D<Real> &w0, const DvceFaceFld5D<Real> uflx, const EOS_Data &eos_data, const Real bdt, DvceArray5D<Real> &u0) {
+void Coordinates::SrcTermsGnomonicEquiangle(const DvceArray5D<Real> &w0,
+    const DvceArray5D<Real> &wder, const DvceFaceFld5D<Real> uflx,
+    const EOS_Data &eos_data, const Real bdt, DvceArray5D<Real> &u0) {
 
   auto &size = pmy_pack->pmb->mb_size;
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -521,6 +523,13 @@ void Coordinates::SrcTermsGnomonicEquiangle(const DvceArray5D<Real> &w0, const D
     
   // by-value copy of the EOS, capturable in the device lambda below
   auto eos_ = eos_data;
+  // The live gas pressure is read from the derived-variable cache rather than recomputed:
+  // p(d,e) is a root find for a general EOS, and ConsToPrim has already evaluated it once
+  // for this very state. An ideal gas allocates no wder array, and (gamma-1)*e is free.
+  // This routine serves both Hydro and MHD, so it cannot pick the module's wder itself --
+  // a two-fluid run has both -- and takes it as an argument instead.
+  const bool gen_ = eos_.IsGeneral();
+  auto &wder_ = wder;
 
   par_for("cssrc", DevExeSpace(), 0,nmb1,ks,ke,js,je,is,ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -531,7 +540,8 @@ void Coordinates::SrcTermsGnomonicEquiangle(const DvceArray5D<Real> &w0, const D
     Real v1 = w0(m,IVX,k,j,i);
     Real v2 = w0(m,IVY,k,j,i);
     Real v3 = w0(m,IVZ,k,j,i);
-    Real pr = eos_.Pressure(w0(m,IDN,k,j,i), w0(m,IEN,k,j,i));
+    Real pr = gen_ ? wder_(m,IDPR,k,j,i)
+                            : eos_.Pressure(w0(m,IDN,k,j,i), w0(m,IEN,k,j,i));
     Real rho = w0(m,IDN,k,j,i);
       
     Real cosine = cos_cell(m,j,i);
@@ -703,7 +713,9 @@ void Coordinates::CoordSphericalPolar() {
   });
 }
 
-void Coordinates::SrcTermsSphericalPolarHydro(const DvceArray5D<Real> &w0, const DvceArray5D<Real> &w0wb, const DvceFaceFld5D<Real> uflx, const EOS_Data &eos_data, const Real bdt, DvceArray5D<Real> &u0) {
+void Coordinates::SrcTermsSphericalPolarHydro(const DvceArray5D<Real> &w0,
+    const DvceArray4D<Real> &pwb, const DvceFaceFld5D<Real> uflx,
+    const EOS_Data &eos_data, const Real bdt, DvceArray5D<Real> &u0) {
 
   auto &size = pmy_pack->pmb->mb_size;
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -714,6 +726,11 @@ void Coordinates::SrcTermsSphericalPolarHydro(const DvceArray5D<Real> &w0, const
  
   // by-value copy of the EOS, capturable in the device lambda below
   auto eos_ = eos_data;
+  // The live gas pressure is read from the derived-variable cache rather than recomputed:
+  // p(d,e) is a root find for a general EOS, and ConsToPrim has already evaluated it once
+  // for this very state. An ideal gas allocates no wder array, and (gamma-1)*e is free.
+  const bool gen_ = eos_.IsGeneral();
+  auto &wder_ = pmy_pack->phydro->wder;
 
   par_for("spsrc", DevExeSpace(), 0,nmb1,ks,ke,js,je,is,ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -726,11 +743,13 @@ void Coordinates::SrcTermsSphericalPolarHydro(const DvceArray5D<Real> &w0, const
     Real v2 = w0(m,IVY,k,j,i);
     Real v3 = w0(m,IVZ,k,j,i);
     Real rho = w0(m,IDN,k,j,i);
-    Real pr = eos_.Pressure(w0(m,IDN,k,j,i), w0(m,IEN,k,j,i));
-    // subtract the background pressure, which for a general EOS depends on the background
-    // DENSITY as well as its internal energy and so cannot be written as (gamma-1)*e_bg
+    Real pr = gen_ ? wder_(m,IDPR,k,j,i)
+                            : eos_.Pressure(w0(m,IDN,k,j,i), w0(m,IEN,k,j,i));
+    // subtract the background pressure, precomputed once by SetWbBackgroundPressure()
+    // -- for a general EOS it depends on the background DENSITY as well as its internal
+    // energy, so it cannot be written as (gamma-1)*e_bg and is not free to recompute
     if (pmy_pack->phydro->use_wellbalance_static) {
-      pr -= eos_.Pressure(w0wb(m,IDN,k,j,i), w0wb(m,IEN,k,j,i));
+      pr -= pwb(m,k,j,i);
     }
     Real m_ii_h = pr + 0.5*rho*(v2*v2+v3*v3);
     Real m_pp = pr + rho*SQR(v3);
@@ -749,7 +768,10 @@ void Coordinates::SrcTermsSphericalPolarHydro(const DvceArray5D<Real> &w0, const
   });
 }
 
-void Coordinates::SrcTermsSphericalPolarMHD(const DvceArray5D<Real> &w0, const DvceArray5D<Real> &bcc0, const DvceArray5D<Real> &w0wb, const DvceFaceFld5D<Real> uflx, const EOS_Data &eos_data, const Real bdt, DvceArray5D<Real> &u0) {
+void Coordinates::SrcTermsSphericalPolarMHD(const DvceArray5D<Real> &w0,
+    const DvceArray5D<Real> &bcc0, const DvceArray4D<Real> &pwb,
+    const DvceFaceFld5D<Real> uflx, const EOS_Data &eos_data, const Real bdt,
+    DvceArray5D<Real> &u0) {
 
   auto &size = pmy_pack->pmb->mb_size;
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -760,6 +782,11 @@ void Coordinates::SrcTermsSphericalPolarMHD(const DvceArray5D<Real> &w0, const D
     
   // by-value copy of the EOS, capturable in the device lambda below
   auto eos_ = eos_data;
+  // The live gas pressure is read from the derived-variable cache rather than recomputed:
+  // p(d,e) is a root find for a general EOS, and ConsToPrim has already evaluated it once
+  // for this very state. An ideal gas allocates no wder array, and (gamma-1)*e is free.
+  const bool gen_ = eos_.IsGeneral();
+  auto &wder_ = pmy_pack->pmhd->wder;
 
   par_for("spsrc", DevExeSpace(), 0,nmb1,ks,ke,js,je,is,ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -772,11 +799,12 @@ void Coordinates::SrcTermsSphericalPolarMHD(const DvceArray5D<Real> &w0, const D
     Real v2 = w0(m,IVY,k,j,i);
     Real v3 = w0(m,IVZ,k,j,i);
     Real rho = w0(m,IDN,k,j,i);
-    Real pr = eos_.Pressure(w0(m,IDN,k,j,i), w0(m,IEN,k,j,i));
+    Real pr = gen_ ? wder_(m,IDPR,k,j,i)
+                            : eos_.Pressure(w0(m,IDN,k,j,i), w0(m,IEN,k,j,i));
     // subtract the background pressure, which for a general EOS depends on the background
     // DENSITY as well as its internal energy and so cannot be written as (gamma-1)*e_bg
     if (pmy_pack->pmhd->use_wellbalance_static) {
-      pr -= eos_.Pressure(w0wb(m,IDN,k,j,i), w0wb(m,IEN,k,j,i));
+      pr -= pwb(m,k,j,i);
     }
     Real m_ii_h = pr + 0.5*rho*(v2*v2+v3*v3);
     Real m_pp = pr + rho*SQR(v3);

@@ -172,6 +172,15 @@ class MHD {
   DvceArray5D<Real> w0wb;   // background primitive variables
   DvceFaceFld5D<Real> w0facewb;   // face-centered background primitive variables
 
+  // Background gas pressure, evaluated ONCE from the static background (w0wb, w0facewb)
+  // rather than per cell per stage. Under a general EOS p(d,e) is a root find, so asking
+  // the EOS for the background pressure inside the reconstruction, the flux correction
+  // and the coordinate source terms -- roughly twenty calls per cell per stage -- would
+  // cost more than the rest of the well-balanced scheme put together. The background does
+  // not evolve, so none of that work is ever different. See SetWbBackgroundPressure().
+  DvceArray4D<Real> pwb;        // cell-centered background gas pressure
+  DvceFaceFld4D<Real> pfacewb;  // face-centered background gas pressure
+
   // container to hold names of TaskIDs
   MHDTaskIDs id;
 
@@ -233,7 +242,9 @@ class MHD {
     void AddGravEtot(const DvceArray4D<Real> &phicc0, DvceArray5D<Real> &cons, const int il, const int iu, const int jl, const int ju, const int kl, const int ku);
     void RemoveGravEtot(const DvceArray4D<Real> &phicc0, DvceArray5D<Real> &cons, const int il, const int iu, const int jl, const int ju, const int kl, const int ku);
     
-    void RemoveWbFlux(const DvceFaceFld5D<Real> &w0facewb, DvceFaceFld5D<Real> &flx);
+    // evaluate the background pressure from the static background state
+    void SetWbBackgroundPressure();
+    void RemoveWbFlux(const DvceFaceFld4D<Real> &pfacewb, DvceFaceFld5D<Real> &flx);
     void AddWbVar(const DvceArray5D<Real> &varwb, DvceArray5D<Real> &var);
     void RemoveWbVar(const DvceArray5D<Real> &varwb, DvceArray5D<Real> &var);
 
@@ -442,27 +453,30 @@ class MHD {
     //! the reconstructed primitives, so it needs the same treatment or the stratified
     //! part
     //! of the pressure goes through plain PLM and the deviation reconstruction buys
-    //! nothing. The background pressure is asked of the EOS rather than written as
-    //! (gamma-1)*e_bg, because it depends on the background density too.
+    //! nothing. The background pressure is not written as (gamma-1)*e_bg -- it depends on
+    //! the background density too -- but neither is it asked of the EOS here: the
+    //! background is static, so its pressure is evaluated once into pwb/pfwb at startup
+    //! by SetWbBackgroundPressure(). Under a general EOS each of these five reads would
+    //! otherwise be a temperature root find, in every cell of every stage.
 
     KOKKOS_INLINE_FUNCTION
-    void WbStaticPiecewiseLinearDerX1(TeamMember_t const &member, const EOS_Data &eos,
+    void WbStaticPiecewiseLinearDerX1(TeamMember_t const &member,
          const int m, const int k, const int j, const int il, const int iu,
-         const DvceArray5D<Real> &qwb, const DvceArray5D<Real> &qfwb,
+         const DvceArray4D<Real> &pwb, const DvceArray4D<Real> &pfwb,
          const DvceArray5D<Real> &qd, ScrArray2D<Real> &dl, ScrArray2D<Real> &dr) {
       int nvar = qd.extent_int(1);
       for (int n=0; n<nvar; ++n) {
         if (n == (IDPR)) {
           par_for_inner(member, il, iu, [&](const int i) {
-            Real q0_im1 = eos.Pressure(qwb(m,IDN,k,j,i-1), qwb(m,IEN,k,j,i-1));
-            Real q0_i   = eos.Pressure(qwb(m,IDN,k,j,i), qwb(m,IEN,k,j,i));
-            Real q0_ip1 = eos.Pressure(qwb(m,IDN,k,j,i+1), qwb(m,IEN,k,j,i+1));
+            Real q0_im1 = pwb(m,k,j,i-1);
+            Real q0_i   = pwb(m,k,j,i);
+            Real q0_ip1 = pwb(m,k,j,i+1);
 
             PLM(qd(m,n,k,j,i-1) - q0_im1, qd(m,n,k,j,i) - q0_i,
                 qd(m,n,k,j,i+1) - q0_ip1, dl(n,i+1), dr(n,i));
 
-            dl(n,i+1) += eos.Pressure(qfwb(m,IDN,k,j,i+1), qfwb(m,IEN,k,j,i+1));
-            dr(n,i) += eos.Pressure(qfwb(m,IDN,k,j,i), qfwb(m,IEN,k,j,i));
+            dl(n,i+1) += pfwb(m,k,j,i+1);
+            dr(n,i) += pfwb(m,k,j,i);
           });
         } else {
           par_for_inner(member, il, iu, [&](const int i) {
@@ -483,27 +497,30 @@ class MHD {
     //! the reconstructed primitives, so it needs the same treatment or the stratified
     //! part
     //! of the pressure goes through plain PLM and the deviation reconstruction buys
-    //! nothing. The background pressure is asked of the EOS rather than written as
-    //! (gamma-1)*e_bg, because it depends on the background density too.
+    //! nothing. The background pressure is not written as (gamma-1)*e_bg -- it depends on
+    //! the background density too -- but neither is it asked of the EOS here: the
+    //! background is static, so its pressure is evaluated once into pwb/pfwb at startup
+    //! by SetWbBackgroundPressure(). Under a general EOS each of these five reads would
+    //! otherwise be a temperature root find, in every cell of every stage.
 
     KOKKOS_INLINE_FUNCTION
-    void WbStaticPiecewiseLinearDerX2(TeamMember_t const &member, const EOS_Data &eos,
+    void WbStaticPiecewiseLinearDerX2(TeamMember_t const &member,
          const int m, const int k, const int j, const int il, const int iu,
-         const DvceArray5D<Real> &qwb, const DvceArray5D<Real> &qfwb,
+         const DvceArray4D<Real> &pwb, const DvceArray4D<Real> &pfwb,
          const DvceArray5D<Real> &qd, ScrArray2D<Real> &dl, ScrArray2D<Real> &dr) {
       int nvar = qd.extent_int(1);
       for (int n=0; n<nvar; ++n) {
         if (n == (IDPR)) {
           par_for_inner(member, il, iu, [&](const int i) {
-            Real q0_jm1 = eos.Pressure(qwb(m,IDN,k,j-1,i), qwb(m,IEN,k,j-1,i));
-            Real q0_j   = eos.Pressure(qwb(m,IDN,k,j,i), qwb(m,IEN,k,j,i));
-            Real q0_jp1 = eos.Pressure(qwb(m,IDN,k,j+1,i), qwb(m,IEN,k,j+1,i));
+            Real q0_jm1 = pwb(m,k,j-1,i);
+            Real q0_j   = pwb(m,k,j,i);
+            Real q0_jp1 = pwb(m,k,j+1,i);
 
             PLM(qd(m,n,k,j-1,i) - q0_jm1, qd(m,n,k,j,i) - q0_j,
                 qd(m,n,k,j+1,i) - q0_jp1, dl(n,i), dr(n,i));
 
-            dl(n,i) += eos.Pressure(qfwb(m,IDN,k,j+1,i), qfwb(m,IEN,k,j+1,i));
-            dr(n,i) += eos.Pressure(qfwb(m,IDN,k,j,i), qfwb(m,IEN,k,j,i));
+            dl(n,i) += pfwb(m,k,j+1,i);
+            dr(n,i) += pfwb(m,k,j,i);
           });
         } else {
           par_for_inner(member, il, iu, [&](const int i) {
@@ -524,27 +541,30 @@ class MHD {
     //! the reconstructed primitives, so it needs the same treatment or the stratified
     //! part
     //! of the pressure goes through plain PLM and the deviation reconstruction buys
-    //! nothing. The background pressure is asked of the EOS rather than written as
-    //! (gamma-1)*e_bg, because it depends on the background density too.
+    //! nothing. The background pressure is not written as (gamma-1)*e_bg -- it depends on
+    //! the background density too -- but neither is it asked of the EOS here: the
+    //! background is static, so its pressure is evaluated once into pwb/pfwb at startup
+    //! by SetWbBackgroundPressure(). Under a general EOS each of these five reads would
+    //! otherwise be a temperature root find, in every cell of every stage.
 
     KOKKOS_INLINE_FUNCTION
-    void WbStaticPiecewiseLinearDerX3(TeamMember_t const &member, const EOS_Data &eos,
+    void WbStaticPiecewiseLinearDerX3(TeamMember_t const &member,
          const int m, const int k, const int j, const int il, const int iu,
-         const DvceArray5D<Real> &qwb, const DvceArray5D<Real> &qfwb,
+         const DvceArray4D<Real> &pwb, const DvceArray4D<Real> &pfwb,
          const DvceArray5D<Real> &qd, ScrArray2D<Real> &dl, ScrArray2D<Real> &dr) {
       int nvar = qd.extent_int(1);
       for (int n=0; n<nvar; ++n) {
         if (n == (IDPR)) {
           par_for_inner(member, il, iu, [&](const int i) {
-            Real q0_km1 = eos.Pressure(qwb(m,IDN,k-1,j,i), qwb(m,IEN,k-1,j,i));
-            Real q0_k   = eos.Pressure(qwb(m,IDN,k,j,i), qwb(m,IEN,k,j,i));
-            Real q0_kp1 = eos.Pressure(qwb(m,IDN,k+1,j,i), qwb(m,IEN,k+1,j,i));
+            Real q0_km1 = pwb(m,k-1,j,i);
+            Real q0_k   = pwb(m,k,j,i);
+            Real q0_kp1 = pwb(m,k+1,j,i);
 
             PLM(qd(m,n,k-1,j,i) - q0_km1, qd(m,n,k,j,i) - q0_k,
                 qd(m,n,k+1,j,i) - q0_kp1, dl(n,i), dr(n,i));
 
-            dl(n,i) += eos.Pressure(qfwb(m,IDN,k+1,j,i), qfwb(m,IEN,k+1,j,i));
-            dr(n,i) += eos.Pressure(qfwb(m,IDN,k,j,i), qfwb(m,IEN,k,j,i));
+            dl(n,i) += pfwb(m,k+1,j,i);
+            dr(n,i) += pfwb(m,k,j,i);
           });
         } else {
           par_for_inner(member, il, iu, [&](const int i) {

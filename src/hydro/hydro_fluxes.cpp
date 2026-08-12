@@ -67,9 +67,12 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
   auto &wder_ = wder;
   const int nder = eos_.IsGeneral() ? NDERIVED : 0;
 
-  auto &w0wb_ = w0wb;
+  auto &pwb_ = pwb;
+  auto pfacewb_x1f = pfacewb.x1f;
   auto w0facewb_x1f = w0facewb.x1f;
+  auto pfacewb_x2f = pfacewb.x2f;
   auto w0facewb_x2f = w0facewb.x2f;
+  auto pfacewb_x3f = pfacewb.x3f;
   auto w0facewb_x3f = w0facewb.x3f;
   auto &phicc0_ = phicc0;
   auto phi0_x1f = phi0.x1f;
@@ -151,7 +154,8 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
         GridPiecewiseLinearDerX1(member, eos_, m, k, j, il-1, iu, w0_, wder_,
                                  x1v_, x1f_, phicc0_, phi0_x1f, dl, dr);
       } else if (use_wellbalance_static_reconst_perturb) {
-        WbStaticPiecewiseLinearDerX1(member, eos_, m, k, j, il-1, iu, w0wb_, w0facewb_x1f,
+        WbStaticPiecewiseLinearDerX1(member, m, k, j, il-1, iu,
+                                     pwb_, pfacewb_x1f,
                                     wder_, dl, dr);
       } else if (use_wellbalance_dynamic && use_wb_x1) {
         WbPiecewiseLinearDerX1(member, eos_, m, k, j, il-1, iu, w0_, wder_,
@@ -329,7 +333,8 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
           if (use_spherical_polar) {
             GridPiecewiseLinearX2(member, m, k, j, il, iu, wder_, x2v_, x2f_, dl_jp1, dr);
           } else if (use_wellbalance_static_reconst_perturb) {
-        WbStaticPiecewiseLinearDerX2(member, eos_, m, k, j, il, iu, w0wb_, w0facewb_x2f,
+        WbStaticPiecewiseLinearDerX2(member, m, k, j, il, iu,
+                                     pwb_, pfacewb_x2f,
                                     wder_, dl_jp1, dr);
       } else if (use_wellbalance_dynamic && use_wb_x2) {
             WbPiecewiseLinearDerX2(member, eos_, m, k, j, il, iu, w0_, wder_,
@@ -501,7 +506,8 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
           if (use_spherical_polar) {
             GridPiecewiseLinearX3(member, m, k, j, il, iu, wder_, x3v_, x3f_, dl_kp1, dr);
           } else if (use_wellbalance_static_reconst_perturb) {
-        WbStaticPiecewiseLinearDerX3(member, eos_, m, k, j, il, iu, w0wb_, w0facewb_x3f,
+        WbStaticPiecewiseLinearDerX3(member, m, k, j, il, iu,
+                                     pwb_, pfacewb_x3f,
                                     wder_, dl_kp1, dr);
       } else if (use_wellbalance_dynamic && use_wb_x3) {
             WbPiecewiseLinearDerX3(member, eos_, m, k, j, il, iu, w0_, wder_,

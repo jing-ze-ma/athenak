@@ -194,11 +194,6 @@ void PiecewiseParabolicX1(TeamMember_t const &member,
      const DvceArray5D<Real> &q, ScrArray2D<Real> &ql, ScrArray2D<Real> &qr) {
   int nvar = q.extent_int(1);
   const Real &dfloor_ = eos.dfloor;
-  // Energy floor. For a general EOS e(p) depends on density, so it cannot be hoisted
-  // out of the loop as a constant; an ideal gas keeps the hoisted value so that its
-  // code path is unchanged. See EOS_Data::EnergyFromPressure().
-  const bool gen_eos_ = eos.IsGeneral();
-  Real efloor_ = gen_eos_ ? 0.0 : eos.pfloor/(eos.gamma - 1.0);
   for (int n=0; n<nvar; ++n) {
     if (extremum_preserving) {
       par_for_inner(member, il, iu, [&](const int i) {
@@ -214,13 +209,11 @@ void PiecewiseParabolicX1(TeamMember_t const &member,
             qr(IDN,i  ) = fmax(qr(IDN,i  ), dfloor_);
           }
           if (n==IEN) {
-            Real efl_ = efloor_, efr_ = efloor_;
-            if (gen_eos_) {
-              efl_ = eos.EnergyFromPressure(ql(IDN,i+1), eos.pfloor);
-              efr_ = eos.EnergyFromPressure(qr(IDN,i  ), eos.pfloor);
-            }
-            ql(IEN,i+1) = fmax(ql(IEN,i+1), efl_);
-            qr(IEN,i  ) = fmax(qr(IEN,i  ), efr_);
+            // Energy floor: e(d,pfloor) is density dependent, and a root find for a
+            // general EOS, so it is reached only when a cheap bound cannot already
+            // rule the floor out. See EOS_Data::ApplyEnergyFloor().
+            eos.ApplyEnergyFloor(ql(IDN,i+1), ql(IEN,i+1));
+            eos.ApplyEnergyFloor(qr(IDN,i  ), qr(IEN,i  ));
           }
         }
       });
@@ -250,11 +243,6 @@ void PiecewiseParabolicX2(TeamMember_t const &member,
      const DvceArray5D<Real> &q, ScrArray2D<Real> &ql_jp1, ScrArray2D<Real> &qr_j) {
   int nvar = q.extent_int(1);
   const Real &dfloor_ = eos.dfloor;
-  // Energy floor. For a general EOS e(p) depends on density, so it cannot be hoisted
-  // out of the loop as a constant; an ideal gas keeps the hoisted value so that its
-  // code path is unchanged. See EOS_Data::EnergyFromPressure().
-  const bool gen_eos_ = eos.IsGeneral();
-  Real efloor_ = gen_eos_ ? 0.0 : eos.pfloor/(eos.gamma - 1.0);
   for (int n=0; n<nvar; ++n) {
     if (extremum_preserving) {
       par_for_inner(member, il, iu, [&](const int i) {
@@ -270,13 +258,11 @@ void PiecewiseParabolicX2(TeamMember_t const &member,
             qr_j  (IDN,i) = fmax(qr_j  (IDN,i), dfloor_);
           }
           if (n==IEN) {
-            Real efl_ = efloor_, efr_ = efloor_;
-            if (gen_eos_) {
-              efl_ = eos.EnergyFromPressure(ql_jp1(IDN,i), eos.pfloor);
-              efr_ = eos.EnergyFromPressure(qr_j  (IDN,i), eos.pfloor);
-            }
-            ql_jp1(IEN,i) = fmax(ql_jp1(IEN,i), efl_);
-            qr_j  (IEN,i) = fmax(qr_j  (IEN,i), efr_);
+            // Energy floor: e(d,pfloor) is density dependent, and a root find for a
+            // general EOS, so it is reached only when a cheap bound cannot already
+            // rule the floor out. See EOS_Data::ApplyEnergyFloor().
+            eos.ApplyEnergyFloor(ql_jp1(IDN,i), ql_jp1(IEN,i));
+            eos.ApplyEnergyFloor(qr_j(IDN,i), qr_j(IEN,i));
           }
         }
       });
@@ -306,11 +292,6 @@ void PiecewiseParabolicX3(TeamMember_t const &member,
      const DvceArray5D<Real> &q, ScrArray2D<Real> &ql_kp1, ScrArray2D<Real> &qr_k) {
   int nvar = q.extent_int(1);
   const Real &dfloor_ = eos.dfloor;
-  // Energy floor. For a general EOS e(p) depends on density, so it cannot be hoisted
-  // out of the loop as a constant; an ideal gas keeps the hoisted value so that its
-  // code path is unchanged. See EOS_Data::EnergyFromPressure().
-  const bool gen_eos_ = eos.IsGeneral();
-  Real efloor_ = gen_eos_ ? 0.0 : eos.pfloor/(eos.gamma - 1.0);
   for (int n=0; n<nvar; ++n) {
     if (extremum_preserving) {
       par_for_inner(member, il, iu, [&](const int i) {
@@ -326,13 +307,11 @@ void PiecewiseParabolicX3(TeamMember_t const &member,
             qr_k  (IDN,i) = fmax(qr_k  (IDN,i), dfloor_);
           }
           if (n==IEN) {
-            Real efl_ = efloor_, efr_ = efloor_;
-            if (gen_eos_) {
-              efl_ = eos.EnergyFromPressure(ql_kp1(IDN,i), eos.pfloor);
-              efr_ = eos.EnergyFromPressure(qr_k  (IDN,i), eos.pfloor);
-            }
-            ql_kp1(IEN,i) = fmax(ql_kp1(IEN,i), efl_);
-            qr_k  (IEN,i) = fmax(qr_k  (IEN,i), efr_);
+            // Energy floor: e(d,pfloor) is density dependent, and a root find for a
+            // general EOS, so it is reached only when a cheap bound cannot already
+            // rule the floor out. See EOS_Data::ApplyEnergyFloor().
+            eos.ApplyEnergyFloor(ql_kp1(IDN,i), ql_kp1(IEN,i));
+            eos.ApplyEnergyFloor(qr_k(IDN,i), qr_k(IEN,i));
           }
         }
       });

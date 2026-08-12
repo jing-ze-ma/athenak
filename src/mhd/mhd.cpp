@@ -58,6 +58,8 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
     u0wb("conswb",1,1,1,1,1),
     w0wb("primwb",1,1,1,1,1),
     w0facewb("primfwb",1,1,1,1,1),
+    pwb("preswb",1,1,1,1),
+    pfacewb("presfwb",1,1,1,1),
     utest("utest",1,1,1,1,1),
     bcctest("bcctest",1,1,1,1,1),
     fofc("fofc",1,1,1,1) {
@@ -259,6 +261,13 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
       Kokkos::realloc(w0facewb.x1f, nmb, nmhd, ncells3, ncells2, ncells1+1);
       Kokkos::realloc(w0facewb.x2f, nmb, nmhd, ncells3, ncells2+1, ncells1);
       Kokkos::realloc(w0facewb.x3f, nmb, nmhd, ncells3+1, ncells2, ncells1);
+    // background pressure: one scalar per cell and per face, filled once (see
+    // SetWbBackgroundPressure) instead of being re-derived from the background every
+    // stage
+    Kokkos::realloc(pwb, nmb, ncells3, ncells2, ncells1);
+    Kokkos::realloc(pfacewb.x1f, nmb, ncells3, ncells2, ncells1+1);
+    Kokkos::realloc(pfacewb.x2f, nmb, ncells3, ncells2+1, ncells1);
+    Kokkos::realloc(pfacewb.x3f, nmb, ncells3+1, ncells2, ncells1);
     }
         
     bool use_polar_boundary = pin->GetOrAddBoolean("mesh", "use_polar_boundary", false);

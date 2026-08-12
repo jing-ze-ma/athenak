@@ -16,11 +16,13 @@
 //! non-relativistic MHD with a general EOS, and evaluates the derived thermodynamic
 //! quantities that are subsequently reconstructed to interfaces. Note the input CONSERVED
 //! state contains cell-centered magnetic fields, but the PRIMITIVE state returned through
-//! the arguments does not.
+//! the arguments does not. As in the hydro version, `tguess` warm starts the temperature
+//! solve and the solved temperature is returned in `temp`; there is exactly one such
+//! solve per cell in the common case.
 
 KOKKOS_INLINE_FUNCTION
 void SingleC2P_GeneralMHD(MHDCons1D &u, const EOS_Data &eos, HydPrim1D &w,
-                          Real &pgas, Real &g1,
+                          const Real tguess, Real &temp, Real &pgas, Real &g1,
                           bool &dfloor_used, bool &efloor_used, bool &tfloor_used) {
   // apply density floor, without changing momentum or energy
   if (u.d < eos.dfloor) {
@@ -40,20 +42,25 @@ void SingleC2P_GeneralMHD(MHDCons1D &u, const EOS_Data &eos, HydPrim1D &w,
   Real e_m = 0.5*(SQR(u.bx) + SQR(u.by) + SQR(u.bz));
   w.e = (u.e - e_k - e_m);
 
-  // apply pressure floor. Density dependent for a general EOS, so unlike the ideal-gas
-  // path it cannot be precomputed as a constant.
-  Real efloor = eos.EnergyFromPressure(w.d, eos.pfloor);
-  if (w.e < efloor) {
-    w.e = efloor;
-    u.e = efloor + e_k + e_m;
+  // Solve for the temperature, once per cell; see general_c2p_hyd.hpp for why this is the
+  // only expensive EOS call here and why everything below reuses its result.
+  bool e_positive = (w.e > 0.0);
+  temp = e_positive ? eos.Temperature(w.d, w.e, tguess) : -1.0;
+
+  // Apply the pressure floor, testing on p so that the inversion e(d,pfloor) is performed
+  // only in the rare cells where the floor trips.
+  if (!e_positive || eos.BelowPressureFloor(w.d, w.e, temp)) {
+    w.e = eos.EnergyFromPressure(w.d, eos.pfloor);
+    u.e = w.e + e_k + e_m;
+    temp = eos.Temperature(w.d, w.e, temp);
     efloor_used = true;
   }
 
-  // apply temperature floor, likewise density dependent
-  Real e_tfloor = eos.EnergyFromTemperature(w.d, eos.tfloor);
-  if (w.e < e_tfloor) {
-    w.e = e_tfloor;
+  // Apply the temperature floor, now free to test and free to apply.
+  if (temp < eos.tfloor) {
+    w.e = eos.EnergyFromTemperature(w.d, eos.tfloor);
     u.e = w.e + e_k + e_m;
+    temp = eos.tfloor;
     tfloor_used = true;
   }
 
@@ -61,9 +68,9 @@ void SingleC2P_GeneralMHD(MHDCons1D &u, const EOS_Data &eos, HydPrim1D &w,
   // a general-EOS entropy function. Not applied here; with the default sfloor of FLT_MIN
   // it never triggers.
 
-  // Evaluate the derived thermodynamic quantities once per cell (see general_c2p_hyd.hpp)
-  pgas = eos.Pressure(w.d, w.e);
-  g1 = eos.Gamma1(w.d, w.e);
+  // Derived thermodynamic quantities, cheap now that T is known (see general_c2p_hyd.hpp)
+  pgas = eos.Pressure(w.d, w.e, temp);
+  g1 = eos.Gamma1(w.d, w.e, temp);
   return;
 }
 
