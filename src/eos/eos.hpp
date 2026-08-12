@@ -17,6 +17,7 @@
 #include "athena.hpp"
 #include "mesh/meshblock.hpp"
 #include "parameter_input.hpp"
+#include "eos/eos_table.hpp"
 
 //----------------------------------------------------------------------------------------
 //! \enum EOSType
@@ -49,6 +50,12 @@ struct EOS_Data {
   Real dens_cgs = 1.0;   // g/cm^3       per unit code density
   Real pres_cgs = 1.0;   // erg/cm^3     per unit code pressure or energy density
   Real temp_cgs = 1.0;   // K            per unit code temperature
+
+  // The tabulated EOS. `tbl.active` is what actually selects between the two things
+  // `eos_type == general` can mean: with it false the general interface evaluates the
+  // same gamma law as the ideal path (which is what the general-vs-ideal regression tests
+  // rely on, and the default), with it true every accessor below goes to the table.
+  EOSTable tbl;
 
   //! \fn bool IsGeneral
   //! \brief true when the EOS is expensive enough that p and Gamma_1 must be precomputed
@@ -94,7 +101,10 @@ struct EOS_Data {
   //! itself. An ideal gas ignores it.
   KOKKOS_INLINE_FUNCTION
   Real Temperature(const Real d, const Real e, const Real tguess = -1.0) const {
-    // TODO(stage3): add EOSType::general branch (root find on T, warm started at tguess)
+    if (tbl.active) {
+      Real tg = (tguess > 0.0) ? tguess*temp_cgs : -1.0;
+      return tbl.SolveTemperature(d*dens_cgs, e*pres_cgs, tg)/temp_cgs;
+    }
     return ((gamma-1.0)*e/d);
   }
 
@@ -102,7 +112,11 @@ struct EOS_Data {
   //! \brief gas pressure p(d,e), from an already-solved temperature
   KOKKOS_INLINE_FUNCTION
   Real Pressure(const Real d, const Real e, const Real t) const {
-    // TODO(stage3): add EOSType::general branch (analytic partial-ionization EOS)
+    if (tbl.active) {
+      EOSThermoState s;
+      tbl.Eval(d*dens_cgs, t*temp_cgs, s);
+      return (s.p/pres_cgs);
+    }
     return ((gamma-1.0)*e);
   }
 
@@ -121,7 +135,16 @@ struct EOS_Data {
   //! partial-ionization zones.
   KOKKOS_INLINE_FUNCTION
   Real Gamma1(const Real d, const Real e, const Real t) const {
-    // TODO(stage3): add EOSType::general branch
+    if (tbl.active) {
+      EOSThermoState s;
+      Real rho = d*dens_cgs;
+      Real tk = t*temp_cgs;
+      tbl.Eval(rho, tk, s);
+      // The identity Gamma_1 = chi_rho + p chi_T^2/(rho T c_v). Every quantity on the
+      // right comes from the same table evaluation, so this is the true adiabatic
+      // exponent of the interpolated surface rather than an approximation to it.
+      return (s.chi_rho + s.p*s.chi_t*s.chi_t/(rho*tk*s.cv));
+    }
     return gamma;
   }
 
@@ -139,7 +162,13 @@ struct EOS_Data {
   //! the note on TestPressureFloor().
   KOKKOS_INLINE_FUNCTION
   Real EnergyFromPressure(const Real d, const Real p) const {
-    // TODO(stage3): add EOSType::general branch
+    if (tbl.active) {
+      Real rho = d*dens_cgs;
+      Real tk = tbl.SolveTemperatureFromP(rho, p*pres_cgs, -1.0);
+      EOSThermoState s;
+      tbl.Eval(rho, tk, s);
+      return (s.e/pres_cgs);
+    }
     return (p/(gamma-1.0));
   }
 
@@ -174,7 +203,9 @@ struct EOS_Data {
   //! true value, which would let the floor be skipped in a cell that needed it.
   KOKKOS_INLINE_FUNCTION
   Real EnergyFloorBound(const Real d) const {
-    // TODO(stage3): add EOSType::general branch (closed form, no root find)
+    if (tbl.active) {
+      return tbl.EnergyFloorBound(d);
+    }
     return (pfloor/(gamma-1.0));
   }
 
@@ -197,7 +228,11 @@ struct EOS_Data {
   //! temperature floor, which is specified in T but must be applied to e.
   KOKKOS_INLINE_FUNCTION
   Real EnergyFromTemperature(const Real d, const Real t) const {
-    // TODO(stage3): add EOSType::general branch
+    if (tbl.active) {
+      EOSThermoState s;
+      tbl.Eval(d*dens_cgs, t*temp_cgs, s);
+      return (s.e/pres_cgs);
+    }
     return (d*t/(gamma-1.0));
   }
 
@@ -210,7 +245,11 @@ struct EOS_Data {
   //! molecular H2/He to ~0.6 once hydrogen is ionized.
   KOKKOS_INLINE_FUNCTION
   Real MeanMolecularWeight(const Real d, const Real e, const Real t) const {
-    // TODO(stage3): add EOSType::general branch
+    if (tbl.active) {
+      EOSThermoState s;
+      tbl.Eval(d*dens_cgs, t*temp_cgs, s);
+      return s.mu;
+    }
     return 1.0;
   }
 
@@ -230,7 +269,9 @@ struct EOS_Data {
   //! which is why this is used at setup only and never inside a time step.
   KOKKOS_INLINE_FUNCTION
   Real DensityFromPressureTemperature(const Real p, const Real t) const {
-    // TODO(stage3): add EOSType::general branch (root find on d at fixed p and T)
+    if (tbl.active) {
+      return tbl.SolveDensity(p*pres_cgs, t*temp_cgs, -1.0)/dens_cgs;
+    }
     return (p/t);
   }
 
@@ -239,7 +280,13 @@ struct EOS_Data {
   //! conduction, which currently hardwires the ideal-gas value 1/(gamma-1).
   KOKKOS_INLINE_FUNCTION
   Real SpecificHeatCv(const Real d, const Real e, const Real t) const {
-    // TODO(stage3): add EOSType::general branch
+    if (tbl.active) {
+      EOSThermoState s;
+      tbl.Eval(d*dens_cgs, t*temp_cgs, s);
+      // c_v is an energy per unit mass per unit temperature, so converting it back to
+      // code units carries all three scales
+      return (s.cv*dens_cgs*temp_cgs/pres_cgs);
+    }
     return (1.0/(gamma-1.0));
   }
 
@@ -258,7 +305,11 @@ struct EOS_Data {
   //! Gamma_1 = chi_rho + p chi_T^2/(d T c_v).
   KOKKOS_INLINE_FUNCTION
   Real ChiRho(const Real d, const Real e, const Real t) const {
-    // TODO(stage3): add EOSType::general branch
+    if (tbl.active) {
+      EOSThermoState s;
+      tbl.Eval(d*dens_cgs, t*temp_cgs, s);
+      return s.chi_rho;
+    }
     return 1.0;
   }
 
@@ -275,7 +326,11 @@ struct EOS_Data {
   //! ionization) or radiation pressure contributes.
   KOKKOS_INLINE_FUNCTION
   Real ChiT(const Real d, const Real e, const Real t) const {
-    // TODO(stage3): add EOSType::general branch
+    if (tbl.active) {
+      EOSThermoState s;
+      tbl.Eval(d*dens_cgs, t*temp_cgs, s);
+      return s.chi_t;
+    }
     return 1.0;
   }
 
@@ -521,6 +576,11 @@ class EquationOfState {
 
   MeshBlockPack* pmy_pack;
   EOS_Data eos_data;
+
+  // Selects and builds what the general EOS interface actually evaluates: either the
+  // gamma law (which reproduces the ideal path exactly) or the tabulated analytic EOS.
+  // Called from the GeneralHydro/GeneralMHD constructors, after the unit scales are set.
+  void BuildGeneralEOS(std::string block, ParameterInput *pin);
 
   // virtual functions to convert cons to prim in either Hydro or MHD (depending on
   // arguments), overwritten in derived eos classes

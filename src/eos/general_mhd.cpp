@@ -46,6 +46,9 @@ GeneralMHD::GeneralMHD(MeshBlockPack *pp, ParameterInput *pin) :
   eos_data.pres_cgs = pp->punit->pressure_cgs();
   // reference mu divided back out; see general_hyd.cpp
   eos_data.temp_cgs = pp->punit->temperature_cgs()/pp->punit->mu();
+
+  // gamma-law or tabulated; see EquationOfState::BuildGeneralEOS()
+  BuildGeneralEOS("mhd", pin);
 }
 
 //----------------------------------------------------------------------------------------

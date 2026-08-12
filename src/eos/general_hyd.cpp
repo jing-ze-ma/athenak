@@ -53,6 +53,12 @@ GeneralHydro::GeneralHydro(MeshBlockPack *pp, ParameterInput *pin) :
   // the reference mu is divided back out here and the temperature scale is defined with
   // mu_ref = 1, i.e. T_cgs = v_code^2*m_u/k_B.
   eos_data.temp_cgs = pp->punit->temperature_cgs()/pp->punit->mu();
+
+  // Build the interpolation table, unless the run asked for the gamma-law mode. The
+  // gamma law is the default because it makes the general code path reproduce the ideal
+  // one exactly, which is how the general interface is regression tested; a run that
+  // wants real thermodynamics selects general_eos = table.
+  BuildGeneralEOS("hydro", pin);
 }
 
 //----------------------------------------------------------------------------------------
