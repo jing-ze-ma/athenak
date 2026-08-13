@@ -172,6 +172,29 @@ struct EOS_Data {
     return (p/(gamma-1.0));
   }
 
+  //! \fn Real EnergyFromPressure
+  //! \brief as above, but also hands back the temperature the inversion found, in `t`.
+  //!
+  //! The inversion solves for T on its way to e, so a caller needing both -- ConsToPrim
+  //! applying the pressure floor, which must leave a valid cached temperature behind --
+  //! would otherwise re-solve the root find it just paid for. The ideal branch
+  //! is written as e first and then T FROM that e, rather than the algebraically equal
+  //! p/d, so that it reproduces a following Temperature(d,e) bit for bit.
+  KOKKOS_INLINE_FUNCTION
+  Real EnergyFromPressure(const Real d, const Real p, Real &t) const {
+    if (tbl.active) {
+      Real rho = d*dens_cgs;
+      Real tk = tbl.SolveTemperatureFromP(rho, p*pres_cgs, -1.0);
+      EOSThermoState s;
+      tbl.Eval(rho, tk, s);
+      t = tk/temp_cgs;
+      return (s.e/pres_cgs);
+    }
+    Real e = p/(gamma-1.0);
+    t = (gamma-1.0)*e/d;
+    return e;
+  }
+
   //! \fn bool BelowPressureFloor \brief true when the state (d,e) has p < pfloor, given
   //! an already-solved temperature.
   //!
@@ -221,6 +244,35 @@ struct EOS_Data {
     if (e < EnergyFloorBound(d)) {
       e = fmax(e, EnergyFromPressure(d, pfloor));
     }
+  }
+
+  //! \fn bool ApplyEntropyFloor
+  //! \brief raise e so that the entropy variable K = p/d^gamma reaches sfloor, returning
+  //! whether it had to. `di` is 1/d, which every caller already has.
+  //!
+  //! sfloor is a floor on the IDEAL-GAS entropy variable, a well defined thing to
+  //! ask for only while the general EOS is evaluating a gamma law. A tabulated EOS has no
+  //! closed-form adiabat, and p/d^gamma with the input file's nominal gamma is not one of
+  //! its invariants, so applying it there would be a floor on a quantity with no meaning
+  //! -- worse than not applying it. Rather than fake it, BuildGeneralEOS() refuses at
+  //! startup when a run selects general_eos = table AND raises sfloor above its default,
+  //! and this returns false in that mode.
+  //!
+  //! The gamma-law branch is the ideal-gas arithmetic verbatim, INCLUDING its habit of
+  //! adjusting w.e without correcting the total energy the way the pressure and
+  //! temperature floors do. That asymmetry is upstream's; reproducing it keeps the
+  //! general path bitwise identical to the ideal one.
+  KOKKOS_INLINE_FUNCTION
+  bool ApplyEntropyFloor(const Real d, const Real di, Real &e) const {
+    if (tbl.active) return false;
+    Real gm1 = gamma - 1.0;
+    Real spe_over_eps = gm1/pow(d, gm1);
+    Real spe = spe_over_eps*e*di;
+    if (spe <= sfloor) {
+      e = d*sfloor/spe_over_eps;
+      return true;
+    }
+    return false;
   }
 
   //! \fn Real EnergyFromTemperature

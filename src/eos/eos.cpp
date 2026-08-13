@@ -49,6 +49,19 @@ void EquationOfState::BuildGeneralEOS(std::string block, ParameterInput *pin) {
   if (mode.compare("gamma") == 0) {
     eos_data.tbl.active = false;
   } else if (mode.compare("table") == 0) {
+    // The entropy floor is a floor on the ideal-gas entropy variable p/d^gamma, which is
+    // not an invariant of a tabulated EOS and cannot be given a meaning here. Refuse it
+    // rather than apply a floor on a quantity that means nothing, or silently drop one
+    // the user asked for. (The default FLT_MIN can never trigger, so it is allowed
+    // through.) See EOS_Data::ApplyEntropyFloor().
+    if (eos_data.sfloor > static_cast<Real>(FLT_MIN)) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<" << block << ">/sfloor is set, but the entropy floor "
+                << "is defined in terms of the ideal-gas entropy variable p/d^gamma, "
+                << "which a tabulated EOS has no analogue for. Use <" << block
+                << ">/pfloor or tfloor instead." << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
     BuildEOSTable(eos_data.tbl, pin, block, eos_data.dens_cgs, eos_data.pres_cgs,
                   eos_data.temp_cgs, eos_data.pfloor);
   } else {

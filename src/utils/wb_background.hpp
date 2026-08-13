@@ -139,9 +139,14 @@ int WBOptionNumber(const EOS_Data &eos, const WBOption wb_option,
 //! exact, after which the residual is zero and the loop leaves e untouched -- so a gamma
 //! law reproduces the closed-form answer bitwise.
 
+//! `t_out` receives the temperature of the last iterate, which the caller reuses instead
+//! of solving the root find again on the converged e. The two differ only by the residual
+//! the loop stopped at -- 1e-15 relative at most, and exactly zero when it stopped on
+//! f == 0, which is what an ideal gas does on its second pass.
+
 KOKKOS_INLINE_FUNCTION
 Real WBEnergyFromEnthalpy(const EOS_Data &eos, const Real d, const Real h,
-                          const Real e_guess) {
+                          const Real e_guess, Real &t_out) {
   Real e = e_guess;
   for (int it=0; it<10; ++it) {
     // One temperature solve per iteration, shared by the residual and the derivative.
@@ -149,6 +154,7 @@ Real WBEnergyFromEnthalpy(const EOS_Data &eos, const Real d, const Real h,
     // ten iterations per half cell per direction -- so evaluating p, chi_T and c_v
     // without a temperature would cost four root finds per iteration instead of one.
     Real t = eos.Temperature(d, e);
+    t_out = t;
     Real p = eos.Pressure(d, e, t);
     Real f = e + p - d*h;
     if (f == 0.0) {break;}
@@ -175,14 +181,25 @@ Real WBEnergyFromEnthalpy(const EOS_Data &eos, const Real d, const Real h,
 //! backgrounds, integrating everything from the anchor instead inflates the residual
 //! hydrostatic imbalance by about a factor of three.  So the general-EOS background walks
 //! the same two segments, and this is the single-segment step.
+//!
+//! `t` returns the temperature of the state this leaves behind, which every branch knows
+//! for free: the isodensity branch gets it out of the pressure inversion, the isothermal
+//! branch IS the temperature it started from, and the isentropic branch has it from the
+//! last Newton iterate.  It exists so WBBackgroundStencil() can evaluate the pressure
+//! channel without solving for T a second time on a state that was just constructed.
+//! Handing back the PRESSURE instead would be the obvious move and is the wrong one: the
+//! ideal-gas getWBq0() derives its pressure channel as (gamma-1) times the same energy it
+//! reconstructs, so the general path must do the same or it stops reproducing the ideal
+//! path bit for bit -- and the whole verification of this file rests on that.  A
+//! temperature is safe precisely because Pressure(d,e,t) IGNORES t under a gamma law.
 
 KOKKOS_INLINE_FUNCTION
-void WBAdvance(const EOS_Data &eos, const int wb_opt,
-               const Real d_c, const Real e_c, const Real dphi, Real &d, Real &e) {
+void WBAdvance(const EOS_Data &eos, const int wb_opt, const Real d_c, const Real e_c,
+               const Real dphi, Real &d, Real &e, Real &t) {
   if (wb_opt == 0) {
     // ISODENSITY: d is fixed, and dp/dPhi = -d integrates exactly over the segment.
     Real p = eos.Pressure(d, e) - d_c*dphi;
-    e = eos.EnergyFromPressure(d, p);
+    e = eos.EnergyFromPressure(d, p, t);
   } else if (wb_opt == 1) {
     // ISOTHERMAL: dln d/dPhi = -d/(p chi_rho), frozen at the coefficient cell, is exact
     // for an ideal gas (the coefficient is 1/T) and second-order otherwise.  T is the
@@ -197,6 +214,7 @@ void WBAdvance(const EOS_Data &eos, const int wb_opt,
     Real p_c = eos.Pressure(d_c, e_c, t_c);
     d *= exp(-d_c*dphi/(p_c*eos.ChiRho(d_c, e_c, t_c)));
     e = eos.EnergyFromTemperature(d, t_ref);
+    t = t_ref;   // the whole point of this branch: T is what is held fixed
   } else {
     // ISENTROPIC.  Two steps, neither of which needs an entropy function.
     //
@@ -229,7 +247,7 @@ void WBAdvance(const EOS_Data &eos, const int wb_opt,
     } else {
       d_new = d*exp(-dphi*d_c/(g1*p_c));
     }
-    e = WBEnergyFromEnthalpy(eos, d_new, h_target, e*d_new/d);
+    e = WBEnergyFromEnthalpy(eos, d_new, h_target, e*d_new/d, t);
     d = d_new;
   }
   return;
@@ -250,14 +268,13 @@ void WBBackgroundStencil(const EOS_Data &eos, const WBOption wb_option,
                          const Real phi_iph, const Real phi_ip1,
                          WBState &q0_im1, WBState &q0_imh, WBState &q0_i,
                          WBState &q0_iph, WBState &q0_ip1) {
-  // TODO(stage3): the five Pressure() calls below are five temperature solves on states
-  // WBAdvance() has just finished constructing, and each branch of it already knows
-  // enough to hand the pressure back for free (the isodensity branch integrates p
-  // directly, the isothermal branch has T, the isentropic branch has it from the last
-  // Newton iterate). Not done here because the round trip is not bitwise neutral -- p ->
-  // e -> p does not return the same last bit -- and well balancing lives on exactly those
-  // bits. Worth revisiting with a numerical check once the analytic EOS makes the cost
-  // real.
+  // The four advanced points get their pressure from the temperature WBAdvance() hands
+  // back, not from a fresh root find: the states have only just been constructed and
+  // their temperature is already known. Only the anchor, which is not advanced, still
+  // pays for a solve -- one per stencil instead of five. Under a gamma law
+  // Pressure(d,e,t) does not read t at all, so this is bitwise identical there; under the
+  // tabulated EOS it is also more self consistent, since t is the temperature that
+  // actually produced e rather than one re-inferred from it.
   int wb_opt = WBOptionNumber(eos, wb_option, rho_im1, e_im1, rho_ip1, e_ip1, rho_i, e_i);
 
   q0_i.d = rho_i;
@@ -265,21 +282,21 @@ void WBBackgroundStencil(const EOS_Data &eos, const WBOption wb_option,
   q0_i.p = eos.Pressure(rho_i, e_i);
 
   // inner half cells, from the anchor, using the anchor's own coefficient
-  Real dm = rho_i, em = e_i;
-  WBAdvance(eos, wb_opt, rho_i, e_i, phi_imh - phi_i, dm, em);
-  q0_imh.d = dm; q0_imh.e = em; q0_imh.p = eos.Pressure(dm, em);
+  Real dm = rho_i, em = e_i, tm = -1.0;
+  WBAdvance(eos, wb_opt, rho_i, e_i, phi_imh - phi_i, dm, em, tm);
+  q0_imh.d = dm; q0_imh.e = em; q0_imh.p = eos.Pressure(dm, em, tm);
 
-  Real dp = rho_i, ep = e_i;
-  WBAdvance(eos, wb_opt, rho_i, e_i, phi_iph - phi_i, dp, ep);
-  q0_iph.d = dp; q0_iph.e = ep; q0_iph.p = eos.Pressure(dp, ep);
+  Real dp = rho_i, ep = e_i, tp = -1.0;
+  WBAdvance(eos, wb_opt, rho_i, e_i, phi_iph - phi_i, dp, ep, tp);
+  q0_iph.d = dp; q0_iph.e = ep; q0_iph.p = eos.Pressure(dp, ep, tp);
 
   // outer half cells, continuing from the interfaces, now with the neighbour speaking for
   // its own half cell -- the same two-segment walk the ideal-gas closed forms perform
-  WBAdvance(eos, wb_opt, rho_im1, e_im1, phi_im1 - phi_imh, dm, em);
-  q0_im1.d = dm; q0_im1.e = em; q0_im1.p = eos.Pressure(dm, em);
+  WBAdvance(eos, wb_opt, rho_im1, e_im1, phi_im1 - phi_imh, dm, em, tm);
+  q0_im1.d = dm; q0_im1.e = em; q0_im1.p = eos.Pressure(dm, em, tm);
 
-  WBAdvance(eos, wb_opt, rho_ip1, e_ip1, phi_ip1 - phi_iph, dp, ep);
-  q0_ip1.d = dp; q0_ip1.e = ep; q0_ip1.p = eos.Pressure(dp, ep);
+  WBAdvance(eos, wb_opt, rho_ip1, e_ip1, phi_ip1 - phi_iph, dp, ep, tp);
+  q0_ip1.d = dp; q0_ip1.e = ep; q0_ip1.p = eos.Pressure(dp, ep, tp);
   return;
 }
 

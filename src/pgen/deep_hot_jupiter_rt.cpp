@@ -1075,7 +1075,8 @@ void HydrostaticEquilibrium(Mesh *pm) {
             if (eos.IsGeneral()) {
               rho0_hyd = rho_i;
               e0_hyd = e_i;
-              WBAdvance(eos, 1, rho_i, e_i, dphi_i, rho0_hyd, e0_hyd);
+              Real t_hyd = -1.0;   // WBAdvance's temperature hand-off; unused here
+              WBAdvance(eos, 1, rho_i, e_i, dphi_i, rho0_hyd, e0_hyd, t_hyd);
             } else {
               e0_hyd = exp(q0_i - factor_i * dphi_i);
               rho0_hyd = e0_hyd/e_i*rho_i;

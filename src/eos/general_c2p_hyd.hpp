@@ -65,12 +65,10 @@ void SingleC2P_GeneralHyd(HydCons1D &u, const EOS_Data &eos, HydPrim1D &w,
   // only in the rare cells where the floor actually trips, instead of in every cell as a
   // constant would be. See EOS_Data::BelowPressureFloor().
   if (!e_positive || eos.BelowPressureFloor(w.d, w.e, temp)) {
-    w.e = eos.EnergyFromPressure(w.d, eos.pfloor);
+    // the three-argument form hands back the temperature the inversion solved for,
+    // so the floored cell does not pay for a second root find
+    w.e = eos.EnergyFromPressure(w.d, eos.pfloor, temp);
     u.e = w.e + e_k;
-    // TODO(stage3): this re-solve is only needed because EnergyFromPressure() throws away
-    // the temperature it found internally. Cold path, so correctness first; give it a
-    // variant that returns T if profiling ever shows the floor being hit often.
-    temp = eos.Temperature(w.d, w.e, temp);
     efloor_used = true;
   }
 
@@ -83,10 +81,13 @@ void SingleC2P_GeneralHyd(HydCons1D &u, const EOS_Data &eos, HydPrim1D &w,
     tfloor_used = true;
   }
 
-  // TODO(stage3): the ideal-gas path additionally applies an entropy floor using the
-  // ideal-gas specific entropy s = (gamma-1)*e/(d*d^(gamma-1)). A general EOS needs its
-  // own entropy function, so that floor is not applied here. With the default sfloor of
-  // FLT_MIN it never triggers; guard against a user setting it explicitly.
+  // Apply the entropy floor. Only meaningful while the general EOS evaluates a gamma law,
+  // where it is the ideal-gas floor verbatim; under a tabulated EOS this is a no-op and a
+  // run that sets sfloor is refused at startup. See EOS_Data::ApplyEntropyFloor().
+  if (eos.ApplyEntropyFloor(w.d, di, w.e)) {
+    temp = eos.Temperature(w.d, w.e, temp);
+    efloor_used = true;
+  }
 
   // Evaluate the derived thermodynamic quantities that the Riemann solvers will need.
   // Both are cheap: the temperature they depend on has already been solved for above.

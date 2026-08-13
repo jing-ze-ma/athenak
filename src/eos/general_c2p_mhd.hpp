@@ -50,9 +50,10 @@ void SingleC2P_GeneralMHD(MHDCons1D &u, const EOS_Data &eos, HydPrim1D &w,
   // Apply the pressure floor, testing on p so that the inversion e(d,pfloor) is performed
   // only in the rare cells where the floor trips.
   if (!e_positive || eos.BelowPressureFloor(w.d, w.e, temp)) {
-    w.e = eos.EnergyFromPressure(w.d, eos.pfloor);
+    // three-argument form: reuses the temperature the inversion solved for (see
+    // general_c2p_hyd.hpp) instead of re-solving the root find
+    w.e = eos.EnergyFromPressure(w.d, eos.pfloor, temp);
     u.e = w.e + e_k + e_m;
-    temp = eos.Temperature(w.d, w.e, temp);
     efloor_used = true;
   }
 
@@ -64,9 +65,12 @@ void SingleC2P_GeneralMHD(MHDCons1D &u, const EOS_Data &eos, HydPrim1D &w,
     tfloor_used = true;
   }
 
-  // TODO(stage3): the ideal-gas path additionally applies an entropy floor, which needs
-  // a general-EOS entropy function. Not applied here; with the default sfloor of FLT_MIN
-  // it never triggers.
+  // Apply the entropy floor; a no-op under a tabulated EOS, which refuses sfloor at
+  // startup instead. See general_c2p_hyd.hpp and EOS_Data::ApplyEntropyFloor().
+  if (eos.ApplyEntropyFloor(w.d, di, w.e)) {
+    temp = eos.Temperature(w.d, w.e, temp);
+    efloor_used = true;
+  }
 
   // Derived thermodynamic quantities, cheap now that T is known (see general_c2p_hyd.hpp)
   pgas = eos.Pressure(w.d, w.e, temp);
