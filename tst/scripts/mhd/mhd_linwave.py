@@ -49,31 +49,31 @@ def run(**kwargs):
                                  'output5/dt=-1.0']
                     # L-going fast wave
                     args_lf = arguments + ['problem/wave_flag=0',
-                                           'problem/vflow=0.0']
+                                           'problem/vx0=0.0']
                     athena.run('tests/linear_wave_mhd.athinput', args_lf)
                     # R-going fast wave
                     args_rf = arguments + ['problem/wave_flag=6',
-                                           'problem/vflow=0.0']
+                                           'problem/vx0=0.0']
                     athena.run('tests/linear_wave_mhd.athinput', args_rf)
                     # L-going alfven wave
                     args_la = arguments + ['problem/wave_flag=1',
-                                           'problem/vflow=0.0']
+                                           'problem/vx0=0.0']
                     athena.run('tests/linear_wave_mhd.athinput', args_la)
                     # R-going alfven wave
                     args_ra = arguments + ['problem/wave_flag=5',
-                                           'problem/vflow=0.0']
+                                           'problem/vx0=0.0']
                     athena.run('tests/linear_wave_mhd.athinput', args_ra)
                     # L-going slow wave
                     args_ls = arguments + ['problem/wave_flag=2',
-                                           'problem/vflow=0.0']
+                                           'problem/vx0=0.0']
                     athena.run('tests/linear_wave_mhd.athinput', args_ls)
                     # R-going slow wave
                     args_rs = arguments + ['problem/wave_flag=4',
-                                           'problem/vflow=0.0']
+                                           'problem/vx0=0.0']
                     athena.run('tests/linear_wave_mhd.athinput', args_rs)
                     # entropy wave
                     args_entr = arguments + ['problem/wave_flag=3',
-                                             'problem/vflow=1.0']
+                                             'problem/vx0=1.0']
                     athena.run('tests/linear_wave_mhd.athinput', args_entr)
 
 

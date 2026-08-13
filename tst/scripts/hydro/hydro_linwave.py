@@ -46,15 +46,15 @@ def run(**kwargs):
                                  'output3/dt=-1.0']
                     # L-going sound wave
                     args_l = arguments + ['problem/wave_flag=0',
-                                          'problem/vflow=0.0']
+                                          'problem/vx0=0.0']
                     athena.run('tests/linear_wave_hydro.athinput', args_l)
                     # R-going sound wave
                     args_r = arguments + ['problem/wave_flag=4',
-                                          'problem/vflow=0.0']
+                                          'problem/vx0=0.0']
                     athena.run('tests/linear_wave_hydro.athinput', args_r)
                     # entropy wave
                     args_entr = arguments + ['problem/wave_flag=3',
-                                             'problem/vflow=1.0']
+                                             'problem/vx0=1.0']
                     athena.run('tests/linear_wave_hydro.athinput', args_entr)
 
 
