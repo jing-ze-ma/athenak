@@ -1,7 +1,8 @@
 # Regression test for the general EOS interface in non-relativistic hydro
 #
-# The general EOS path (<hydro>/eos = general) evaluates a gamma law for now, so it MUST
-# reproduce the ideal-gas path (<hydro>/eos = ideal) run for run. That is what this test
+# In its default mode (<hydro>/general_eos = gamma) the general EOS path
+# (<hydro>/eos = general) evaluates a gamma law, so it MUST reproduce the ideal-gas path
+# (<hydro>/eos = ideal) run for run. That is what this test
 # pins down: the same linear wave problem is run twice, changing nothing but the EOS, and
 # the L1 errors the executable writes to hydro_gen_eos-errs.dat are required to match.
 #
@@ -13,10 +14,11 @@
 #   * roe   -- refused outright under a general EOS, because the Roe average is only
 #              defined for an ideal gas. The refusal itself is tested.
 #
-# NOTE: when the analytic (partial-ionization) EOS replaces the gamma-law placeholder,
-# the equality checks below stop being meaningful and this test has to be revisited --
-# either by giving the general EOS a gamma-law option to select here, or by replacing
-# these checks with convergence tests against known thermodynamics.
+# NOTE: the general EOS now also has a tabulated partial-ionization mode, but the gamma
+# law is what <hydro>/general_eos defaults to, so the equality checks below remain exactly
+# as meaningful as they were: they test the general-EOS machinery -- reconstruction of p
+# and Gamma_1, the Riemann solvers, refinement -- against an EOS whose answer is known.
+# The table mode is covered separately, by convergence, in hydro_general_eos_table.py.
 
 # Modules
 import logging

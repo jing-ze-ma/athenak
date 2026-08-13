@@ -36,6 +36,7 @@
 #include "dyn_grmhd/dyn_grmhd.hpp"
 #include "driver/driver.hpp"
 #include "pgen/pgen.hpp"
+#include "pgen/pgen_eos_utils.hpp"
 
 //----------------------------------------------------------------------------------------
 //! \struct LinWaveVariables
@@ -53,11 +54,11 @@ void LinearWaveErrors(ParameterInput *pin, Mesh *pm);
 
 // functions to compute eigenvectors of linearized eqns in PRIMITIVE variables
 void HydroEigensystemPrim(const Real d, const Real v1, const Real v2, const Real v3,
-                          const Real p, const EOS_Data &eos,
+                          const Real p, const Real gam1, const EOS_Data &eos,
                           Real eigenvalues[5], Real right_eigenmatrix[5][5]);
 void MHDEigensystemPrim(const Real d, const Real v1, const Real v2, const Real v3,
                         const Real p, const Real b1, const Real b2, const Real b3,
-                        const Real x, const Real y, const EOS_Data &eos,
+                        const Real x, const Real y, const Real gam1, const EOS_Data &eos,
                         Real eigenvalues[7], Real right_eigenmatrix[7][7]);
 // functions to compute linear wave perturbations in relativistic hydro and MHD
 void RelHydroPerturbations(LinWaveVariables lwv, Real u[4],
@@ -358,6 +359,9 @@ void ProblemGenerator::LinearWave(ParameterInput *pin, const bool restart) {
     lwv.gamma_adi = eos.gamma;
     Real gm1 = eos.gamma - 1.0;
     Real gamma_adi_red = eos.gamma / (eos.gamma - 1.0);
+    // Gamma_1 of the background state, which is what sets the sound speed under a general
+    // EOS; eos.gamma for an ideal gas.
+    Real gam1_0 = pgen_eos::HostGamma1FromP(eos, lwv.d0, lwv.p0);
 
     // Calculate linear wave perturbations in hydro
     Real rem[5][5], ev[5];
@@ -377,7 +381,7 @@ void ProblemGenerator::LinearWave(ParameterInput *pin, const bool restart) {
       RelHydroPerturbations(lwv,u,lambda,delta_rho,delta_pgas,delta_v);
     } else {
       // calculate eigenvectors in primitive variables in non-relativistic dynamics
-      HydroEigensystemPrim(lwv.d0, lwv.vx_0, 0.0, 0.0, lwv.p0, eos, ev, rem);
+      HydroEigensystemPrim(lwv.d0, lwv.vx_0, 0.0, 0.0, lwv.p0, gam1_0, eos, ev, rem);
     }
 
     // set new time limit in ParameterInput (to be read by Driver constructor) based on
@@ -435,7 +439,10 @@ void ProblemGenerator::LinearWave(ParameterInput *pin, const bool restart) {
         vx   = lwv.vx_0 + amp*sn*rem[1][lwv.wave_flag];
         vy   = lwv.vy_0 + amp*sn*rem[2][lwv.wave_flag];
         vz   = lwv.vz_0 + amp*sn*rem[3][lwv.wave_flag];
-        egas = (lwv.p0 + amp*sn*rem[4][lwv.wave_flag])/gm1;
+        // rem[4][...] perturbs the PRESSURE; the internal energy that goes with it is
+        // p/(gamma-1) only for an ideal gas
+        Real pgas = lwv.p0 + amp*sn*rem[4][lwv.wave_flag];
+        egas = eos.IsGeneral() ? eos.EnergyFromPressure(rho, pgas) : pgas/gm1;
       }
       // set cell-centered conserved variables
       w0(m,IDN,k,j,i)=rho;
@@ -477,6 +484,8 @@ void ProblemGenerator::LinearWave(ParameterInput *pin, const bool restart) {
     lwv.gamma_adi = eos.gamma;
     Real gm1 = eos.gamma - 1.0;
     Real gamma_adi_red = eos.gamma / (eos.gamma - 1.0);
+    // Gamma_1 of the background state; see the hydro block above
+    Real gam1_0 = pgen_eos::HostGamma1FromP(eos, lwv.d0, lwv.p0);
     int nmb = pmbp->nmb_thispack;
     int nmhd_ = pmbp->pmhd->nmhd;
 
@@ -510,7 +519,7 @@ void ProblemGenerator::LinearWave(ParameterInput *pin, const bool restart) {
       Real xfact = 0.0;
       Real yfact = 1.0;
       MHDEigensystemPrim(lwv.d0, lwv.vx_0, 0.0, 0.0, lwv.p0, lwv.bx_0, lwv.by_0, lwv.bz_0,
-                         xfact, yfact, eos, ev, rem);
+                         xfact, yfact, gam1_0, eos, ev, rem);
       // Set linear wave magnetic field perturbations
       lwv.dby = amp*rem[nmhd_  ][lwv.wave_flag];
       lwv.dbz = amp*rem[nmhd_+1][lwv.wave_flag];
@@ -703,7 +712,9 @@ void ProblemGenerator::LinearWave(ParameterInput *pin, const bool restart) {
         vx   = lwv.vx_0 + amp*sn*rem[1][lwv.wave_flag];
         vy   = lwv.vy_0 + amp*sn*rem[2][lwv.wave_flag];
         vz   = lwv.vz_0 + amp*sn*rem[3][lwv.wave_flag];
-        egas = (lwv.p0 + amp*sn*rem[4][lwv.wave_flag])/gm1;
+        // as in hydro: rem[4][...] perturbs the pressure, not the internal energy
+        Real pgas = lwv.p0 + amp*sn*rem[4][lwv.wave_flag];
+        egas = eos.IsGeneral() ? eos.EnergyFromPressure(rho, pgas) : pgas/gm1;
       }
       // compute cell-centered primitive variables
       w0(m,IDN,k,j,i)=rho;
@@ -785,13 +796,17 @@ void ProblemGenerator::LinearWave(ParameterInput *pin, const bool restart) {
 
 
 void HydroEigensystemPrim(const Real d, const Real v1, const Real v2, const Real v3,
-                          const Real p, const EOS_Data &eos,
+                          const Real p, const Real gam1, const EOS_Data &eos,
                           Real eigenvalues[5], Real right_eigenmatrix[5][5]) {
   //--- Ideal Gas Hydrodynamics ---
   if (eos.is_ideal) {
     Real vsq = v1*v1 + v2*v2 + v3*v3;
     Real h = (p/(eos.gamma - 1.0) + 0.5*d*vsq + p)/d;
-    Real a = std::sqrt(eos.gamma*p/d);
+    // The eigenvectors below are written in the PRIMITIVE variables (d,vx,vy,vz,P), where
+    // the ratio of specific heats enters only through the sound speed. So the general-EOS
+    // acoustic mode is obtained exactly by using Gamma_1 in place of gamma; `gam1` is the
+    // caller's Gamma_1 at the background state, and is eos.gamma for an ideal gas.
+    Real a = std::sqrt(gam1*p/d);
 
     // Compute eigenvalues (eq. B2)
     eigenvalues[0] = v1 - a;
@@ -871,12 +886,15 @@ void HydroEigensystemPrim(const Real d, const Real v1, const Real v2, const Real
 
 void MHDEigensystemPrim(const Real d, const Real v1, const Real v2, const Real v3,
                         const Real p, const Real b1, const Real b2, const Real b3,
-                        const Real x, const Real y, const EOS_Data &eos,
+                        const Real x, const Real y, const Real gam1, const EOS_Data &eos,
                         Real eigenvalues[7], Real right_eigenmatrix[7][7]) {
   // common factors for both ideal gas and isothermal eigenvectors
   Real btsq = b2*b2 + b3*b3;
   Real bt = std::sqrt(btsq);
-  Real asq = (eos.gamma*p/d);
+  // as in the hydro eigensystem above, gamma enters the primitive-variable eigenvectors
+  // only through the sound speed (the remaining gm1's below cancel identically at the
+  // y = 1 this generator passes), so `gam1` = Gamma_1 generalizes them exactly
+  Real asq = (gam1*p/d);
   // beta's (eqs. A17, B28, B40)
   Real bet2,bet3;
   if (bt == 0.0) {

@@ -1,7 +1,8 @@
 # Regression test for the general EOS interface in non-relativistic MHD
 #
-# Companion to hydro/hydro_general_eos.py. The general EOS path (<mhd>/eos = general)
-# evaluates a gamma law for now, so it MUST reproduce the ideal-gas path run for run: the
+# Companion to hydro/hydro_general_eos.py. In its default mode (<mhd>/general_eos = gamma)
+# the general EOS path (<mhd>/eos = general) evaluates a gamma law, so it MUST reproduce
+# the ideal-gas path run for run: the
 # same linear wave problem is run twice, changing nothing but the EOS, and the L1 errors
 # written to mhd_gen_eos-errs.dat are required to match.
 #
@@ -9,8 +10,9 @@
 # that has no general-EOS analogue, so the general path falls back to a Davis/Einfeldt
 # bound and the two differ at truncation level by design.
 #
-# NOTE: these equality checks stop being meaningful once the analytic partial-ionization
-# EOS replaces the gamma-law placeholder, and must be revisited then.
+# NOTE: the gamma law is what <mhd>/general_eos defaults to, so these equality checks stay
+# meaningful now that the tabulated partial-ionization mode exists; that mode is covered
+# separately, by convergence, in mhd_general_eos_table.py.
 
 # Modules
 import logging

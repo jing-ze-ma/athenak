@@ -1,0 +1,103 @@
+# AthenaK input file for the TABULATED general EOS: MHD fast magnetosonic wave.
+#
+# The MHD counterpart of linear_wave_hydro_geneos_table.athinput; see that file for why
+# this is a convergence test rather than a comparison against the ideal-gas path. The
+# extra thing it pins down is the MHD eigensystem: in the primitive variables the ratio of
+# specific heats enters only through the sound speed, so the general-EOS fast wave is the
+# ideal-gas one with Gamma_1 in place of gamma. If that substitution were wrong the
+# initial state would not be an eigenmode and the error would stall instead of converging.
+#
+# The run is in physical cgs. Background: rho = 1e-6 g/cm^3, p = 6.5e5 erg/cm^3 (about
+# 10^4 K), and a field of a few hundred gauss, chosen so the Alfven and sound speeds are
+# comparable. AthenaK's B is in Heaviside-Lorentz units, i.e. the magnetic pressure is
+# B^2/2 with no 4pi.
+
+<comment>
+problem   = MHD linear wave with the tabulated general EOS
+
+<job>
+basename  = LinWaveTabMHD
+
+<mesh>
+nghost    = 2
+nx1       = 64
+x1min     = 0.0
+x1max     = 1.0e9
+ix1_bc    = periodic
+ox1_bc    = periodic
+
+nx2       = 1
+x2min     = 0.0
+x2max     = 1.0e9
+ix2_bc    = periodic
+ox2_bc    = periodic
+
+nx3       = 1
+x3min     = 0.0
+x3max     = 1.0e9
+ix3_bc    = periodic
+ox3_bc    = periodic
+
+<meshblock>
+nx1       = 64
+nx2       = 1
+nx3       = 1
+
+<mesh_refinement>
+refinement = none
+
+<units>
+length_cgs = 1.0
+mass_cgs   = 1.0
+time_cgs   = 1.0
+mu         = 1.0
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim       = -1
+tlim       = 1.0       # interpreted by the pgen as a number of wave periods
+ndiag      = 100000
+
+<mhd>
+eos         = general
+general_eos = table    # gamma | table
+reconstruct = plm
+rsolver     = hlld
+gamma       = 1.66666666667   # unused when general_eos = table
+dfloor      = 1.0e-12
+pfloor      = 1.0e-2
+
+eos_xh         = 0.7381
+eos_yhe        = 0.2485
+eos_h2         = true
+eos_ionization = true
+eos_radiation  = false
+eos_logd_min   = -14.0
+eos_logd_max   = 2.0
+eos_logt_min   = 1.5
+eos_logt_max   = 8.0
+eos_dlogd      = 0.05
+eos_dlogt      = 0.01
+
+<problem>
+pgen_name = linear_wave
+wave_flag = 0           # fast magnetosonic wave
+# as in the hydro version: the eigenvectors are not normalized, so amp is an ABSOLUTE
+# density perturbation and amp/dens = 1e-4 is the relative amplitude
+amp       = 1.0e-10
+dens      = 1.0e-6      # g/cm^3
+pgas      = 6.5e5       # erg/cm^3
+vx0       = 0.0
+vy0       = 0.0
+vz0       = 0.0
+bx0       = 500.0       # gauss
+by0       = 707.1068
+bz0       = 250.0
+along_x1  = true
+along_x2  = false
+along_x3  = false
+
+# NOTE: no <output> blocks. The test reads the L1 errors the linear_wave problem
+# generator writes to <basename>-errs.dat.

@@ -97,6 +97,28 @@ Real EintFromDensT(const EOS_Data &eos, const Real Rgas, const Real igm1, const 
                            : d*Rgas*tk*igm1;
 }
 
+//----------------------------------------------------------------------------------------
+//! \fn Real HostGamma1FromP
+//! \brief Gamma_1 at the state (d,p), evaluated where the EOS lives.
+//!
+//! The helpers above are all KOKKOS_INLINE_FUNCTIONs meant to be called from inside a
+//! kernel. That is not a style preference: the tabulated EOS keeps its table in a
+//! DvceArray, so on an accelerator build it CANNOT be evaluated from host code. A problem
+//! generator that needs one EOS number on the host -- the sound speed of a background
+//! state, to build a wave eigenvector -- has to fetch it through the device, which is
+//! what this does. It launches a one-element kernel, so it is for setup only; never call
+//! it in a loop.
+inline Real HostGamma1FromP(const EOS_Data &eos, const Real d, const Real p) {
+  if (!eos.IsGeneral()) return eos.gamma;
+  DvceArray1D<Real> dout("pgen_eos_scalar", 1);
+  par_for("pgen_eos_eval", DevExeSpace(), 0, 0, KOKKOS_LAMBDA(int) {
+    dout(0) = eos.Gamma1(d, eos.EnergyFromPressure(d, p));
+  });
+  auto hout = Kokkos::create_mirror_view(dout);
+  Kokkos::deep_copy(hout, dout);
+  return hout(0);
+}
+
 }  // namespace pgen_eos
 
 #endif  // PGEN_PGEN_EOS_UTILS_HPP_

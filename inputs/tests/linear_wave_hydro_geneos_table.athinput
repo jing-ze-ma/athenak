@@ -1,0 +1,102 @@
+# AthenaK input file for the TABULATED general EOS: hydro linear (sound) wave.
+#
+# Unlike linear_wave_hydro_geneos.athinput, which selects the gamma-law mode of the
+# general EOS and is compared against the ideal-gas path, this input runs the real
+# tabulated EOS (H2 dissociation + H/He Saha ionization). There is nothing to compare it
+# against, so the test built on it is a CONVERGENCE test: the background state sits in the
+# hydrogen partial-ionization zone, where Gamma_1 ~ 1.3 rather than 5/3, and the wave is
+# only an eigenmode -- and so only converges at the design order -- if the sound speed,
+# the eigenvector and the pressure the solver reconstructs are all the same EOS.
+#
+# The run is in physical cgs (length_cgs = mass_cgs = time_cgs = 1), because a general EOS
+# is not scale free. Background: rho = 1e-6 g/cm^3, p = 6.5e5 erg/cm^3, which is about
+# 10^4 K. The sound speed is then ~1e6 cm/s and the box crossing time ~10^3 s.
+
+<comment>
+problem   = hydro linear wave with the tabulated general EOS
+
+<job>
+basename  = LinWaveTab
+
+<mesh>
+nghost    = 2
+nx1       = 64
+x1min     = 0.0
+x1max     = 1.0e9
+ix1_bc    = periodic
+ox1_bc    = periodic
+
+nx2       = 1
+x2min     = 0.0
+x2max     = 1.0e9
+ix2_bc    = periodic
+ox2_bc    = periodic
+
+nx3       = 1
+x3min     = 0.0
+x3max     = 1.0e9
+ix3_bc    = periodic
+ox3_bc    = periodic
+
+<meshblock>
+nx1       = 64
+nx2       = 1
+nx3       = 1
+
+<mesh_refinement>
+refinement = none
+
+<units>
+length_cgs = 1.0       # the run is already in cgs
+mass_cgs   = 1.0
+time_cgs   = 1.0
+mu         = 1.0       # composition lives in the EOS, so the reference mu is 1
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim       = -1
+tlim       = 1.0       # interpreted by the pgen as a number of wave periods
+ndiag      = 100000
+
+<hydro>
+eos         = general  # the tabulated EOS is only reachable through the general path
+general_eos = table    # gamma | table
+reconstruct = plm
+rsolver     = hllc
+gamma       = 1.66666666667   # unused when general_eos = table
+dfloor      = 1.0e-12
+pfloor      = 1.0e-2
+
+# Composition and table grid. These are the defaults, spelled out so the test is pinned
+# to a definite table rather than to whatever the defaults happen to be.
+eos_xh         = 0.7381
+eos_yhe        = 0.2485
+eos_h2         = true
+eos_ionization = true
+eos_radiation  = false
+eos_logd_min   = -14.0
+eos_logd_max   = 2.0
+eos_logt_min   = 1.5
+eos_logt_max   = 8.0
+eos_dlogd      = 0.05
+eos_dlogt      = 0.01
+
+<problem>
+pgen_name = linear_wave
+wave_flag = 0           # sound wave
+# The eigenvectors are NOT normalized -- the density component is 1, so `amp` is an
+# absolute density perturbation, not a relative one. The usual code-unit tests hide this
+# by taking dens = 1. Here amp/dens = 1e-4 is the relative amplitude, small enough that
+# steepening stays far below the truncation error.
+amp       = 1.0e-10
+dens      = 1.0e-6      # g/cm^3
+pgas      = 6.5e5       # erg/cm^3, i.e. about 10^4 K
+vx0       = 0.0
+along_x1  = true
+along_x2  = false
+along_x3  = false
+
+# NOTE: no <output> blocks. The test reads the L1 errors the linear_wave problem
+# generator writes to <basename>-errs.dat.

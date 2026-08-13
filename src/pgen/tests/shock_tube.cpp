@@ -91,7 +91,11 @@ void ProblemGenerator::ShockTube(ParameterInput *pin, const bool restart) {
     wl.vx = pin->GetReal("problem","ul");
     wl.vy = pin->GetReal("problem","vl");
     wl.vz = pin->GetReal("problem","wl");
-    wl.e  = (pin->GetReal("problem","pl"))/(eos.gamma - 1.0);
+    // <problem>/pl is a PRESSURE. Under a general EOS the internal energy that goes with
+    // it is not p/(gamma-1) and must come from the EOS; that conversion is done inside
+    // the kernel below, because the tabulated EOS lives in device memory.
+    Real pl_ = pin->GetReal("problem","pl");
+    wl.e  = pl_/(eos.gamma - 1.0);
     // compute Lorentz factor (needed for SR/GR)
     Real u0l = 1.0;
     if (pmbp->pcoord->is_special_relativistic || pmbp->pcoord->is_general_relativistic ||
@@ -108,7 +112,8 @@ void ProblemGenerator::ShockTube(ParameterInput *pin, const bool restart) {
     wr.vx = pin->GetReal("problem","ur");
     wr.vy = pin->GetReal("problem","vr");
     wr.vz = pin->GetReal("problem","wr");
-    wr.e  = (pin->GetReal("problem","pr"))/(eos.gamma - 1.0);
+    Real pr_ = pin->GetReal("problem","pr");
+    wr.e  = pr_/(eos.gamma - 1.0);
     // compute Lorentz factor (needed for SR/GR)
     Real u0r = 1.0;
     if (pmbp->pcoord->is_special_relativistic || pmbp->pcoord->is_general_relativistic ||
@@ -149,7 +154,7 @@ void ProblemGenerator::ShockTube(ParameterInput *pin, const bool restart) {
         w0(m,ivx,k,j,i) = wl.vx*u0l;
         w0(m,ivy,k,j,i) = wl.vy*u0l;
         w0(m,ivz,k,j,i) = wl.vz*u0l;
-        w0(m,IEN,k,j,i) = wl.e;
+        w0(m,IEN,k,j,i) = eos.IsGeneral() ? eos.EnergyFromPressure(wl.d, pl_) : wl.e;
         for (int r=0; r<nscal; ++r) {
           w0(m,IYF+r,k,j,i) = yl;
         }
@@ -158,7 +163,7 @@ void ProblemGenerator::ShockTube(ParameterInput *pin, const bool restart) {
         w0(m,ivx,k,j,i) = wr.vx*u0r;
         w0(m,ivy,k,j,i) = wr.vy*u0r;
         w0(m,ivz,k,j,i) = wr.vz*u0r;
-        w0(m,IEN,k,j,i) = wr.e;
+        w0(m,IEN,k,j,i) = eos.IsGeneral() ? eos.EnergyFromPressure(wr.d, pr_) : wr.e;
         for (int r=0; r<nscal; ++r) {
           w0(m,IYF+r,k,j,i) = yr;
         }
@@ -181,7 +186,10 @@ void ProblemGenerator::ShockTube(ParameterInput *pin, const bool restart) {
     wl.vx = pin->GetReal("problem","ul");
     wl.vy = pin->GetReal("problem","vl");
     wl.vz = pin->GetReal("problem","wl");
-    wl.e  = (pin->GetReal("problem","pl"))/(eos.gamma - 1.0);
+    // see the hydro block above: <problem>/pl is a pressure, converted to an internal
+    // energy in the kernel when the EOS is general
+    Real pl_ = pin->GetReal("problem","pl");
+    wl.e  = pl_/(eos.gamma - 1.0);
     wl.by = pin->GetReal("problem","byl");
     wl.bz = pin->GetReal("problem","bzl");
     Real bx_l = pin->GetReal("problem","bxl");
@@ -201,7 +209,8 @@ void ProblemGenerator::ShockTube(ParameterInput *pin, const bool restart) {
     wr.vx = pin->GetReal("problem","ur");
     wr.vy = pin->GetReal("problem","vr");
     wr.vz = pin->GetReal("problem","wr");
-    wr.e  = (pin->GetReal("problem","pr"))/(eos.gamma - 1.0);
+    Real pr_ = pin->GetReal("problem","pr");
+    wr.e  = pr_/(eos.gamma - 1.0);
     wr.by = pin->GetReal("problem","byr");
     wr.bz = pin->GetReal("problem","bzr");
     Real bx_r = pin->GetReal("problem","bxr");
@@ -253,7 +262,7 @@ void ProblemGenerator::ShockTube(ParameterInput *pin, const bool restart) {
         w0(m,ivx,k,j,i) = wl.vx*u0l;
         w0(m,ivy,k,j,i) = wl.vy*u0l;
         w0(m,ivz,k,j,i) = wl.vz*u0l;
-        w0(m,IEN,k,j,i) = wl.e;
+        w0(m,IEN,k,j,i) = eos.IsGeneral() ? eos.EnergyFromPressure(wl.d, pl_) : wl.e;
         for (int r=0; r<nscal; ++r) {
           w0(m,IYF+r,k,j,i) = yl;
         }
@@ -271,7 +280,7 @@ void ProblemGenerator::ShockTube(ParameterInput *pin, const bool restart) {
         w0(m,ivx,k,j,i) = wr.vx*u0r;
         w0(m,ivy,k,j,i) = wr.vy*u0r;
         w0(m,ivz,k,j,i) = wr.vz*u0r;
-        w0(m,IEN,k,j,i) = wr.e;
+        w0(m,IEN,k,j,i) = eos.IsGeneral() ? eos.EnergyFromPressure(wr.d, pr_) : wr.e;
         for (int r=0; r<nscal; ++r) {
           w0(m,IYF+r,k,j,i) = yr;
         }
