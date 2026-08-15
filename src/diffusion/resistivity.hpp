@@ -55,7 +55,7 @@ class Resistivity {
 
   // data
   Real dtnew;
-  std::string iso_resist_type;  // "constant" or "perna"
+  std::string iso_resist_type;  // "constant", "perna" or "eos"
   Real eta_ohm_const;
   DvceArray4D<Real> eta_b; // total resistivity of non-ideal MHD
 //  Real min_xe;
@@ -100,6 +100,30 @@ class Resistivity {
   void NewTimeStepGeneralResist(const DvceArray5D<Real> &w, const EOS_Data &eos_data);
   void ClearResistiveEMFs(DvceEdgeFld4D<Real> &efld);
   void SetResistivity(const DvceArray5D<Real> &w, const EOS_Data &eos, const Real &Rgas, DvceArray4D<Real> &eta_b, const int il, const int iu, const int jl, const int ju, const int kl, const int ku);
+
+  //! \fn void ResistivityEOS
+  //! \brief Ohmic diffusivity from the EOS's own electron fraction.
+  //!
+  //! Two collision channels, added because the collision frequencies add:
+  //!   eta_en = 230 sqrt(T)/x_e   electrons scattering off neutrals (Blaes & Balbus 1994)
+  //!   eta_ei = 5.2e11 lnL/T^1.5  electrons off ions (Spitzer)
+  //! `perna` carries only the first, which is right while the gas is weakly ionized and
+  //! wrong once it is not: above ~7000 K in a hot-Jupiter atmosphere the Spitzer term is
+  //! the larger of the two, so a formula without it overstates the resistivity there.
+  //!
+  //! x_e comes from Saha over H, He and -- if eos_metal_ionization is on -- the alkalis
+  //! and iron. That last part is not optional in practice below ~4000 K, where hydrogen's
+  //! 13.6 eV contributes nothing and the metals supply everything.
+  KOKKOS_INLINE_FUNCTION
+  void ResistivityEOS(const Real &xe, const Real &T, Real &eta) {
+    Real xemin = 230.0*sqrt(T)/max_eta;
+    Real xu = (xe > xemin) ? xe : xemin;
+    Real eta_en = 230.0*sqrt(T)/xu;
+    Real eta_ei = 5.2e11*20.0/(T*sqrt(T));       // Coulomb logarithm folded in at lnL=20
+    eta = eta_en + eta_ei;
+    eta = (eta < max_eta) ? eta : max_eta;
+    return;
+  };
 
   KOKKOS_INLINE_FUNCTION
   void ResistivityPerna(const Real &nn, const Real &T, Real &eta) {

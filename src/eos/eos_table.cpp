@@ -31,11 +31,14 @@ namespace {
 //! \brief the three tabulated surfaces at one (x,y) = (log10 rho, log10 T), in cgs
 
 void SampleModel(const EOSCompositionModel &m, const double x, const double y,
-                 double &fe, double &fp, double &fmu) {
+                 double &fe, double &fp, double &fmu, double &fxe) {
   EOSCompositionState s = m.Evaluate(pow(10.0, x), pow(10.0, y));
   fe = log10(s.e_spec);
   fp = log10(s.p_spec);
   fmu = s.mu;
+  // log10 of the electron fraction: it spans ~20 decades, and the floor keeps the
+  // logarithm finite where ionization is switched off entirely
+  fxe = log10(s.xe > 1.0e-300 ? s.xe : 1.0e-300);
 }
 
 //----------------------------------------------------------------------------------------
@@ -81,6 +84,9 @@ void BuildEOSTable(EOSTable &tbl, ParameterInput *pin, const std::string &block,
   model.a_metal = pin->GetOrAddReal(block, "eos_a_metal", 16.0);
   model.include_h2 = pin->GetOrAddBoolean(block, "eos_h2", true);
   model.include_ion = pin->GetOrAddBoolean(block, "eos_ionization", true);
+  model.include_metal_ion = pin->GetOrAddBoolean(block, "eos_metal_ionization", false);
+  model.metal_scale = pin->GetOrAddReal(block, "eos_metal_scale", 1.0);
+  model.metal_tcond = pin->GetOrAddReal(block, "eos_metal_tcond", 0.0);
   tbl.radiation = pin->GetOrAddBoolean(block, "eos_radiation", false);
 
   if (model.xhyd < 0.0 || model.yhel < 0.0 || (model.xhyd + model.yhel) > 1.0) {
@@ -155,19 +161,20 @@ void BuildEOSTable(EOSTable &tbl, ParameterInput *pin, const std::string &block,
     double y = ylo + j*tbl.dy;
     for (int i=0; i<nx; ++i) {
       double x = xlo + i*tbl.dx;
-      double fe, fp, fmu;
+      double fe, fp, fmu, fxe;
       double exp_, exm, eyp, eym, pxp, pxm, pyp, pym, mxp, mxm, myp, mym;
       double epp, epm, emp, emm, ppp, ppm, pmp, pmm, mpp, mpm, mmp, mmm;
+      double xxp, xxm, xyp, xym, xpp, xpm, xmp, xmm;
 
-      SampleModel(model, x, y, fe, fp, fmu);
-      SampleModel(model, x+h1, y, exp_, pxp, mxp);
-      SampleModel(model, x-h1, y, exm, pxm, mxm);
-      SampleModel(model, x, y+h1, eyp, pyp, myp);
-      SampleModel(model, x, y-h1, eym, pym, mym);
-      SampleModel(model, x+h2, y+h2, epp, ppp, mpp);
-      SampleModel(model, x+h2, y-h2, epm, ppm, mpm);
-      SampleModel(model, x-h2, y+h2, emp, pmp, mmp);
-      SampleModel(model, x-h2, y-h2, emm, pmm, mmm);
+      SampleModel(model, x, y, fe, fp, fmu, fxe);
+      SampleModel(model, x+h1, y, exp_, pxp, mxp, xxp);
+      SampleModel(model, x-h1, y, exm, pxm, mxm, xxm);
+      SampleModel(model, x, y+h1, eyp, pyp, myp, xyp);
+      SampleModel(model, x, y-h1, eym, pym, mym, xym);
+      SampleModel(model, x+h2, y+h2, epp, ppp, mpp, xpp);
+      SampleModel(model, x+h2, y-h2, epm, ppm, mpm, xpm);
+      SampleModel(model, x-h2, y+h2, emp, pmp, mmp, xmp);
+      SampleModel(model, x-h2, y-h2, emm, pmm, mmm, xmm);
 
       const double i2h1 = 0.5/h1;
       const double i4h2 = 0.25/(h2*h2);
@@ -186,6 +193,11 @@ void BuildEOSTable(EOSTable &tbl, ParameterInput *pin, const std::string &block,
       h_tbl(ITMU+1, j,i) = (mxp - mxm)*i2h1;
       h_tbl(ITMU+2, j,i) = (myp - mym)*i2h1;
       h_tbl(ITMU+3, j,i) = (mpp - mpm - mmp + mmm)*i4h2;
+
+      h_tbl(ITXE,   j,i) = fxe;
+      h_tbl(ITXE+1, j,i) = (xxp - xxm)*i2h1;
+      h_tbl(ITXE+2, j,i) = (xyp - xym)*i2h1;
+      h_tbl(ITXE+3, j,i) = (xpp - xpm - xmp + xmm)*i4h2;
     }
   }
 
@@ -222,6 +234,17 @@ void BuildEOSTable(EOSTable &tbl, ParameterInput *pin, const std::string &block,
             << ", H2 " << (model.include_h2 ? "on" : "off")
             << ", ionization " << (model.include_ion ? "on" : "off")
             << ", radiation " << (tbl.radiation ? "on" : "off") << std::endl
-            << "             mu at the grid centre = " << smid.mu << std::endl;
+            << "             metal ionization "
+            << (model.include_metal_ion ? "on" : "off");
+  if (model.include_metal_ion) {
+    std::cout << " (abundance x" << model.metal_scale;
+    if (model.metal_tcond > 0.0) {
+      std::cout << ", rainout below " << model.metal_tcond << " K";
+    }
+    std::cout << ")";
+  }
+  std::cout << std::endl
+            << "             mu at the grid centre = " << smid.mu
+            << ", n_e/n_tot = " << smid.xe << std::endl;
   return;
 }

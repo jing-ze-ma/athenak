@@ -50,12 +50,17 @@
 
 //----------------------------------------------------------------------------------------
 //! \enum EOSTableVar
-//! \brief which slice of the table holds what. Each of the three interpolated surfaces
-//! occupies four consecutive slices, in the order (value, d/dx, d/dy, d2/dxdy), where
+//! \brief which slice of the table holds what. Each interpolated surface occupies four
+//! consecutive slices, in the order (value, d/dx, d/dy, d2/dxdy), where
 //! x = log10(rho[cgs]) and y = log10(T[K]). The surfaces are the SPECIFIC quantities
-//! log10(e_gas/rho) and log10(p_gas/rho), and the mean molecular weight.
+//! log10(e_gas/rho) and log10(p_gas/rho), the mean molecular weight, and log10 of the
+//! free-electron fraction n_e/n_tot.
+//!
+//! ITXE is deliberately NOT read by Eval(): only the resistivity wants it, and charging
+//! every EOS call for a fourth Hermite patch would be a pure loss. ElectronFraction()
+//! reads it on its own.
 
-enum EOSTableVar {ITE=0, ITP=4, ITMU=8, ITNVAR=12};
+enum EOSTableVar {ITE=0, ITP=4, ITMU=8, ITXE=12, ITNVAR=16};
 
 //----------------------------------------------------------------------------------------
 //! \struct EOSThermoState
@@ -351,6 +356,22 @@ struct EOSTable {
                              const Real tguess) const {
     Real zg = (tguess > 0.0) ? log10(tguess) : -1.0e30;
     return Pow10(SolveLog(1, rho, log10(ptarget), zg, ymin - 3.0, ymax + 3.0));
+  }
+
+  //--------------------------------------------------------------------------------------
+  //! \fn Real ElectronFractionCgs
+  //! \brief free electrons per particle, n_e/n_tot, at a density and temperature in CGS.
+  //!
+  //! Kept out of Eval() on purpose: this is a fourth Hermite patch that only the
+  //! resistivity needs, and Eval() runs on every EOS call.
+  //!
+  //! The tabulated surface is log10 of the fraction, because it spans some twenty decades
+  //! across a planetary atmosphere and interpolating it linearly would be meaningless.
+  KOKKOS_INLINE_FUNCTION
+  Real ElectronFractionCgs(const Real rho, const Real t) const {
+    Real f, fx, fy;
+    Interpolate(ITXE, log10(rho), log10(t), f, fx, fy);
+    return Pow10(f);
   }
 
   //--------------------------------------------------------------------------------------

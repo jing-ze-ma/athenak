@@ -312,6 +312,33 @@ struct EOS_Data {
     return MeanMolecularWeight(d, e, Temperature(d,e));
   }
 
+  //! \fn Real ElectronFraction
+  //! \brief free electrons per particle, n_e/n_tot, from the EOS's own composition.
+  //!
+  //! This is what a resistivity needs, and it is not something an ideal gas can answer:
+  //! composition is exactly what the ideal path does not carry, so it returns zero and
+  //! callers must check IsGeneral() first. A general EOS returns the value implied by
+  //! Saha equilibrium over whichever donors are enabled -- note that below ~4000 K the
+  //! electrons come from the metals, not from hydrogen, so the answer is orders of
+  //! magnitude too small unless eos_metal_ionization is on.
+  //!
+  //! Deliberately a separate table read rather than part of the bundled thermodynamic
+  //! state: only non-ideal MHD wants it, and every other EOS call would pay for it.
+  KOKKOS_INLINE_FUNCTION
+  Real ElectronFraction(const Real d, const Real e, const Real t) const {
+    if (tbl.active) {
+      return tbl.ElectronFractionCgs(d*dens_cgs, t*temp_cgs);
+    }
+    return 0.0;
+  }
+
+  //! \fn Real ElectronFraction
+  //! \brief n_e/n_tot at (d,e); solves for the temperature itself. Setup-time use only.
+  KOKKOS_INLINE_FUNCTION
+  Real ElectronFraction(const Real d, const Real e) const {
+    return ElectronFraction(d, e, Temperature(d,e));
+  }
+
   //! \fn Real DensityFromPressureTemperature
   //! \brief density d(p,T); the (p,T) -> d inversion. Unlike everything else here this is
   //! NOT a function of the primitive pair, and no kernel needs it: it exists for problem

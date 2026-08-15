@@ -14,8 +14,9 @@
 //! table is built (see eos_table.{hpp,cpp}) and never on the hot path. Everything the
 //! solver actually calls comes from the table.
 //!
-//! Species: H2, H, H+, He, He+, He++, free electrons, and an inert "metal" component
-//! that contributes particles but neither dissociates nor ionizes. The composition is
+//! Species: H2, H, H+, He, He+, He++, free electrons, and a "metal" component that
+//! contributes particles and, optionally, singly ionizing electron donors. The
+//! composition is
 //! obtained from
 //!   - the Saha equation for H -> H+ + e, He -> He+ + e and He+ -> He++ + e, and
 //!   - the dissociation equilibrium H2 -> 2H,
@@ -66,6 +67,39 @@ constexpr double chi_d = 4.478007*ev;           // H2 dissociation energy from (
 constexpr double theta_rot = 85.4;              // H2 rotational temperature, K
 constexpr double theta_vib = 6332.0;            // H2 vibrational temperature, K
 
+//----------------------------------------------------------------------------------------
+//! \struct MetalDonor
+//! \brief one singly-ionizing metal, as an electron source
+//!
+//! In a cool, weakly ionized atmosphere the free electrons do NOT come from hydrogen:
+//! 13.6 eV is far too high to matter below ~4000 K, while these species sit at 4-8 eV and
+//! are substantially ionized by 2500 K. They set the electrical conductivity, and hence
+//! the Ohmic resistivity, over the whole range where a hot-Jupiter atmosphere lives.
+//!
+//! `abun` is the solar abundance by NUMBER relative to hydrogen nuclei; `gfac` is
+//! 2 g_ion/g_neutral from ground-state statistical weights. Only the first ionization is
+//! tracked -- the second potentials are all above 11 eV and irrelevant here.
+//!
+//! Ground-state weights are a good approximation for the alkalis, whose first excited
+//! states lie ~2 eV up, and a poorer one for Fe, whose many low-lying levels make the
+//! true neutral partition function ~1.5-2x the ground-state 25 near 3000-5000 K. That
+//! biases n_e by tens of percent where iron dominates, small against the orders of
+//! magnitude at stake, but it is not exact.
+struct MetalDonor {
+  double abun;
+  double chi;
+  double gfac;
+};
+constexpr int n_metal_donor = 6;
+constexpr MetalDonor metal_donor[n_metal_donor] = {
+  {2.0e-6, 5.139*ev, 1.0},        // Na
+  {1.2e-7, 4.341*ev, 1.0},        // K
+  {2.2e-6, 6.113*ev, 4.0},        // Ca
+  {3.0e-6, 5.986*ev, 1.0/3.0},    // Al
+  {3.8e-5, 7.646*ev, 4.0},        // Mg
+  {3.2e-5, 7.902*ev, 2.4},        // Fe
+};
+
 }  // namespace eos_cgs
 
 //----------------------------------------------------------------------------------------
@@ -78,6 +112,7 @@ struct EOSCompositionState {
   double mu;        // mean molecular weight, mass per free particle in units of m_u
   double xh2;       // fraction of H nuclei locked in H2 (0 = fully atomic)
   double xhii;      // fraction of H nuclei ionized
+  double xe;        // free electrons per particle, n_e/n_tot -- what resistivity needs
 };
 
 //----------------------------------------------------------------------------------------
@@ -91,6 +126,27 @@ struct EOSCompositionModel {
   double a_metal = 16.0;    // mean atomic weight of the inert metal component
   bool include_h2 = true;   // include H2 formation, dissociation and rot/vib energy
   bool include_ion = true;  // include H and He ionization
+
+  //! Metal ionization. OFF by default, so every existing run is unchanged. The tracked
+  //! species are already inside the inert metal lump and contribute one heavy particle
+  //! each whether ionized or not, so switching this on adds ONLY their electrons: mu
+  //! moves by ~0.01% in a molecular atmosphere and ~0.4% in the fully ionized limit.
+  //! What changes by orders of magnitude is n_e.
+  bool include_metal_ion = false;
+  //! Linear multiplier on the tracked metal abundances. This scales the electron donors
+  //! only; the inert lump is still set by Z = 1 - X - Y, so for a large departure from
+  //! solar adjust xhyd and yhel to match.
+  double metal_scale = 1.0;
+  //! Crude rainout: below this temperature the tracked metals are removed from the gas
+  //! phase over one decade in T, killing their electron donation. 0 disables it.
+  //!
+  //! Real condensation is species-specific and pressure-dependent -- Fe near 1800 K,
+  //! Na2S near 1200 K, KCl near 1000 K at 1 bar, all shifting with pressure -- and this
+  //! single knob captures none of that structure. It exists so that a run which reaches
+  //! into the condensation regime is not silently given full gas-phase abundances, which
+  //! would overstate n_e by orders of magnitude there. Leave it off if the domain stays
+  //! hot.
+  double metal_tcond = 0.0;
 
   //! \fn double MetalFraction
   //! \brief metal mass fraction Z = 1 - X - Y
@@ -189,7 +245,9 @@ struct EOSCompositionModel {
                const bool has_h2, const double kdis,
                const double kh, const double khe1, const double khe2,
                double &nh2, double &nh, double &nhii,
-               double &nhe, double &nheii, double &nheiii) const {
+               double &nhe, double &nheii, double &nheiii,
+               const double *kmet = nullptr, const double nmet_base = 0.0,
+               double *nmion = nullptr) const {
     // hydrogen: n_Htot = 2 n_H2 + n_H + n_H+, with n_H+ = (K_H/n_e) n_H and
     // n_H2 = n_H^2/K_D. Solved as a quadratic in n_H, in the form that stays accurate
     // when the molecular term is negligible. H2 is then recovered from the nuclei budget
@@ -217,6 +275,20 @@ struct EOSCompositionModel {
     nhe = nhe_tot/denom;
     nheii = r1*nhe;
     nheiii = r1*r2*nhe;
+
+    // metals: each singly ionizing off the same electron pool, and each contributing a
+    // term that decreases with n_e, so the charge residual stays monotonic and the
+    // bisection bracket below is still valid
+    if (nmion != nullptr) {
+      double sum = 0.0;
+      if (kmet != nullptr) {
+        for (int s=0; s<eos_cgs::n_metal_donor; ++s) {
+          double rm = kmet[s]/nel;
+          sum += eos_cgs::metal_donor[s].abun*nmet_base*rm/(1.0 + rm);
+        }
+      }
+      *nmion = sum;
+    }
   }
 
   //--------------------------------------------------------------------------------------
@@ -243,6 +315,26 @@ struct EOSCompositionModel {
       khe2 = (b2 > -700.0) ? sf*exp(b2) : 0.0;         // g factor 2*(1/2) = 1
     }
 
+    // metal donors. The T-dependent factors are hoisted out of the bisection below, so
+    // the extra cost inside it is one divide per species per iteration.
+    double kmet[eos_cgs::n_metal_donor];
+    double nmet_base = 0.0;
+    const bool has_metal = include_metal_ion && (nh_tot > 0.0);
+    if (has_metal) {
+      double fcond = 1.0;
+      if (metal_tcond > 0.0) {                  // crude rainout over one decade in T
+        fcond = log10(t/(0.1*metal_tcond));
+        fcond = (fcond < 0.0) ? 0.0 : ((fcond > 1.0) ? 1.0 : fcond);
+      }
+      nmet_base = nh_tot*metal_scale*fcond;
+      for (int s=0; s<eos_cgs::n_metal_donor; ++s) {
+        double bm = -eos_cgs::metal_donor[s].chi/(kboltz*t);
+        kmet[s] = (bm > -700.0) ? eos_cgs::metal_donor[s].gfac*sf*exp(bm) : 0.0;
+      }
+    } else {
+      for (int s=0; s<eos_cgs::n_metal_donor; ++s) kmet[s] = 0.0;
+    }
+
     // Solve charge neutrality for the electron density by bisection in log n_e. The
     // residual n_H+ + n_He+ + 2n_He++ - n_e is positive at small n_e (where the Saha
     // ratios drive everything to the ionized side) and negative at n_e = n_max, so the
@@ -250,17 +342,21 @@ struct EOSCompositionModel {
     // the ionized fraction can ever need to be relevant: below that the electrons make no
     // measurable contribution to mu, p or e, and the bracket floor is returned instead.
     double nmax = nh_tot + 2.0*nhe_tot;
-    double nh2, nh, nhii, nhe, nheii, nheiii;
+    double nh2, nh, nhii, nhe, nheii, nheiii, nmion = 0.0;
     double nel = 0.0;
-    if (kh > 0.0 || khe1 > 0.0) {
+    bool any_ion = (kh > 0.0 || khe1 > 0.0);
+    if (has_metal) {
+      for (int s=0; s<eos_cgs::n_metal_donor; ++s) any_ion = any_ion || (kmet[s] > 0.0);
+    }
+    if (any_ion) {
       double lo = log(nmax) - 40.0*M_LN10;
       double hi = log(nmax);
       for (int it=0; it<80; ++it) {
         double mid = 0.5*(lo + hi);
         double ntry = exp(mid);
         Species(ntry, nh_tot, nhe_tot, include_h2, kdis, kh, khe1, khe2,
-                nh2, nh, nhii, nhe, nheii, nheiii);
-        double res = nhii + nheii + 2.0*nheiii - ntry;
+                nh2, nh, nhii, nhe, nheii, nheiii, kmet, nmet_base, &nmion);
+        double res = nhii + nheii + 2.0*nheiii + nmion - ntry;
         if (res > 0.0) {
           lo = mid;
         } else {
@@ -273,9 +369,9 @@ struct EOSCompositionModel {
       nel = 1.0e-40*nmax;
     }
     Species(nel, nh_tot, nhe_tot, include_h2, kdis, kh, khe1, khe2,
-            nh2, nh, nhii, nhe, nheii, nheiii);
+            nh2, nh, nhii, nhe, nheii, nheiii, kmet, nmet_base, &nmion);
     // the free electrons are whatever the ions supply, not the bisection iterate
-    nel = nhii + nheii + 2.0*nheiii;
+    nel = nhii + nheii + 2.0*nheiii + nmion;
 
     // total free particles, and the pressure and mean molecular weight that follow
     double ntot = nh2 + nh + nhii + nhe + nheii + nheiii + nz + nel;
@@ -297,6 +393,16 @@ struct EOSCompositionModel {
     double e_href = include_h2 ? 0.5*chi_d : 0.0;
     eint += nh*e_href + nhii*(e_href + chi_h)
           + nheii*chi_he1 + nheiii*(chi_he1 + chi_he2);
+    // metal ionization energy, measured from neutral. Worth ~1e-5 of the total, far too
+    // small to matter for p or e, but it is what makes c_v consistent across the metal
+    // ionization zone -- and c_v is differenced out of this model to build the table.
+    if (has_metal) {
+      for (int s=0; s<eos_cgs::n_metal_donor; ++s) {
+        double rm = kmet[s]/nel;
+        eint += eos_cgs::metal_donor[s].abun*nmet_base*(rm/(1.0 + rm))
+                *eos_cgs::metal_donor[s].chi;
+      }
+    }
 
     EOSCompositionState s;
     s.e_spec = eint/rho;
@@ -304,6 +410,7 @@ struct EOSCompositionModel {
     s.mu = rho/(ntot*m_u);
     s.xh2 = (nh_tot > 0.0) ? 2.0*nh2/nh_tot : 0.0;
     s.xhii = (nh_tot > 0.0) ? nhii/nh_tot : 0.0;
+    s.xe = (ntot > 0.0) ? nel/ntot : 0.0;
     return s;
   }
 };

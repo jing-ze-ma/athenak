@@ -37,9 +37,11 @@ Resistivity::Resistivity(MeshBlockPack *pp, ParameterInput *pin) :
   if (pin->DoesParameterExist("mhd","ohmic_resistivity")) {
     iso_resist_type = pin->GetString("mhd","ohmic_resistivity");
     // Check for valid type
-    if (iso_resist_type.compare("constant") != 0 && iso_resist_type.compare("perna") != 0) {
+    if (iso_resist_type.compare("constant") != 0 && iso_resist_type.compare("perna") != 0
+        && iso_resist_type.compare("eos") != 0) {
       std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__ << std::endl
-                << "Invalid choice for Ohmic resistivity type" << std::endl;
+                << "Invalid choice for Ohmic resistivity type '" << iso_resist_type
+                << "'; expected constant, perna or eos" << std::endl;
       std::exit(EXIT_FAILURE);
     }
     use_rkg_sts = pin->GetOrAddBoolean("mhd", "use_rkg_sts", false);
@@ -118,6 +120,17 @@ void Resistivity::SetResistivity(const DvceArray5D<Real> &w, const EOS_Data &eos
   // normalisation the temperature uses, instead of introducing a second atomic mass unit
   // that would disagree with this file's k_B in the last digits.
   const bool gen = eos.IsGeneral();
+  const bool use_eos_xe = (iso_resist_type.compare("eos") == 0);
+  // An ideal gas carries no composition, so it cannot supply an electron fraction. Fail
+  // here rather than silently returning zero and floating every cell to max_eta.
+  if (use_eos_xe && !gen) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
+              << "ohmic_resistivity = eos needs the electron fraction from a general "
+              << "EOS; set eos = general (and eos_metal_ionization = true, or the "
+              << "atmosphere will have essentially no electrons below ~4000 K)"
+              << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
   // the temperature is read from the cache ConsToPrim filled for this same primitive
   // state, not re-derived: T(d,e) is a root find for a general EOS and doing it here
   // would repeat, per cell per stage, work that has already been done
@@ -139,7 +152,11 @@ void Resistivity::SetResistivity(const DvceArray5D<Real> &w, const EOS_Data &eos
       Real mu = kb/mh/Rgas;
       nn = rho/(mu*mh);
     }
-    ResistivityPerna(nn, T, eta_b(m,k,j,i));
+    if (use_eos_xe) {
+      ResistivityEOS(eos.ElectronFraction(rho, e, wtemp_(m,k,j,i)), T, eta_b(m,k,j,i));
+    } else {
+      ResistivityPerna(nn, T, eta_b(m,k,j,i));
+    }
 //      Real lgrho = log10(rho);
 //      Real lgT = log10(T);
 //      lgrho = (lgrho < -7.0)? -7.0 : lgrho;
