@@ -135,8 +135,10 @@ def main():
     tname = sys.argv[3] if len(sys.argv) > 3 else 'table'
     tag = '' if (iname, tname) == ('ideal', 'table') else '_%s_%s' % (iname, tname)
     os.makedirs(PLOTS, exist_ok=True)
-    ideal = analyse(iname, eoslib.IdealEOS(), idx)
-    table = analyse(tname, eoslib.TableEOS(GRID), idx)
+    # EOS per run from its own input file, NOT by position: comparing two tabulated runs
+    # (a control against a variant) would otherwise silently analyse the first as ideal.
+    ideal = analyse(iname, eoslib.eos_for_run(os.path.join(ROOT, iname), GRID), idx)
+    table = analyse(tname, eoslib.eos_for_run(os.path.join(ROOT, tname), GRID), idx)
     runs = [(iname, ideal, 'tab:blue'), (tname, table, 'tab:red')]
 
     # ---- profiles ---------------------------------------------------------------------
