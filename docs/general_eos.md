@@ -119,18 +119,42 @@ explicitly to override; `deep_hot_jupiter_rt` then aborts if it disagrees with i
 **Condensation.** Below roughly 1000–1800 K the donors condense out and gas-phase
 abundances fall by orders of magnitude, taking n_e with them; Saha with full solar
 abundances would make those regions far too conductive. `eos_metal_condensation` removes
-each species below its own condensation curve,
+each species below its own condensation curve, in the standard published form
 
-    T_cond(p, [M/H]) = tc_b / (tc_a - log10(p/1 bar) - 0.5 [M/H])
+    10^4 / T_cond = a - b log10(p_T/bar) + d (log10 p_T)^2 - c [M/H]
 
-which is the right shape — T_cond rises with pressure and, more weakly, with metallicity,
-because both raise the partial pressure of the condensible. The per-species constants live
-in `eos_cgs::metal_donor` and are anchored to the usual 1 bar values:
+with p_T the total pressure. The coefficients are taken from the literature, not fitted
+here, and give
 
-| | Fe | Al | Ca | Mg | Na (Na2S) | K (KCl) |
+| phase | Ca: CaAl4O7 | Al: Al2O3 | Fe | Mg: Mg2SiO4 | Na: Na2S | K: KCl |
 |---|---|---|---|---|---|---|
-| T_cond at 1 bar | 1800 K | 1700 K | 1650 K | 1600 K | 1200 K | 1000 K |
-| per decade of p | +164 K | +155 K | +149 K | +143 K | +100 K | +87 K |
+| T_cond at 1e-3 bar | 1748 K | 1758 K | 1453 K | 1429 K | 819 K | 662 K |
+| T_cond at 1 bar | 2004 K | 1994 K | 1838 K | 1698 K | 996 K | 801 K |
+| T_cond at 10 bar | 2104 K | 2084 K | 2016 K | 1812 K | 1072 K | 862 K |
+
+Sources: Fe and Mg2SiO4 from [Visscher, Lodders & Fegley 2010](https://doi.org/10.1088/0004-637X/716/2/1060)
+(eqs 2 and 18, stated valid 800–2500 K and [Fe/H] ≤ +0.5); Na2S and KCl from
+[Morley et al. 2012](https://doi.org/10.1088/0004-637X/756/2/172); Al2O3 and CaAl4O7 from
+[Wakeford et al. 2017](https://doi.org/10.1093/mnras/stw2639), valid where that phase is
+the highest-temperature Al- or Ca-bearing condensate. `log10 p_T` is clamped to
+[−8, +3] before use, because the refractory fits are quadratic in it and the table grid
+extends far outside any real atmosphere.
+
+These are the analytic curves the field uses — virga, PICASO, and the Ackerman & Marley
+cloud lineage all draw on them. They are not the newest: [virga v1](https://arxiv.org/abs/2508.15102)
+moved Fe, Mg and Al onto Morley et al. 2024 saturation pressures, shifting their T_cond by
+1–2%, while KCl and Na2S are unchanged from Morley+2012. Since K and Na dominate n_e
+wherever the refractories are condensing, that revision does not move the electron budget.
+Full equilibrium condensation with rainout ([FastChem Cond](https://arxiv.org/abs/2309.02337),
+GGchem) is the accuracy ceiling, but it is a Gibbs minimisation per node rather than a
+curve, which is far more machinery than deciding when a donor leaves the gas phase needs.
+
+Two approximations remain, both removing an element slightly too early: Ca is given the
+grossite curve, though grossite and hibonite consume only a few tenths of the Ca inventory
+with the rest following into Ca-silicates over the next few hundred kelvin; and Mg is
+given forsterite, ignoring the enstatite behind it. Neither matters much for the electron
+budget, because below ~1700 K — where all four refractories have gone — n_e is dominated
+by Na and K, which stay in the gas down to ~800–1000 K.
 
 The transition is a tanh over 5% in temperature rather than a step, because the result is
 differenced to build the interpolation table and a discontinuity there would give node
@@ -139,12 +163,11 @@ the condensed material stays in the mass and particle budget, since whether it r
 of the column or remains as cloud is a transport question this local model cannot answer,
 and the mass involved is ~1e-4 of the gas.
 
-**The coefficients are approximate** — anchored to widely quoted condensation temperatures
-with plausible slopes, not a specific published fit, and the real chemistry is a network
-(Na2S and KCl form by reaction with H2S and HCl rather than by simple vaporization). Treat
-T_cond as good to perhaps a hundred kelvin, and replace the constants with a
-Lodders/Visscher fit if that matters; the framework does not change. `eos_metal_tcond` is
-the cruder alternative, a single temperature for every species.
+The net effect on the electron budget is a cliff rather than a gentle taper, because the
+species that dominate n_e at low temperature — K, then Na — are also the last to condense.
+Measured at ρ = 1e-5 g/cm³, n_e is unchanged above 900 K, falls to 0.17× at 700 K, 0.013×
+at 600 K and effectively zero by 400 K. `eos_metal_tcond` remains as a cruder alternative,
+a single temperature applied to every species.
 
 Condensation costs a second pass through the composition model, because it needs the
 pressure and the pressure is an output. That is host-side table-build code, so it costs

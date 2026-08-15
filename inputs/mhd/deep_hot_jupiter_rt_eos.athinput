@@ -100,11 +100,13 @@ eos_yhe              = 0.2485
 #                                # set in ONE place. Overriding it here makes the pgen
 #                                # abort, since the atmosphere would then be opaque at one
 #                                # metallicity and conducting at another.
-eos_metal_condensation = true    # rain the donors out below their own T_cond(p, [M/H]).
-#                                # Fe ~1800 K, Al ~1700, Ca ~1650, Mg ~1600, Na ~1200,
-#                                # K ~1000 at 1 bar, each rising ~100-160 K per decade of
-#                                # pressure.  Costs a second pass through the composition
-#                                # model at table build; nothing at run time.
+eos_metal_condensation = true    # rain the donors out below their own T_cond(p, [M/H]),
+#                                # from Visscher+2010 / Morley+2012 / Wakeford+2017.
+#                                # At 1 bar: Ca 2004 K, Al 1994, Fe 1838, Mg 1698,
+#                                # Na 996, K 801.  Since K and Na both dominate n_e at
+#                                # low T AND condense last, the effect is a cliff below
+#                                # ~800 K rather than a gradual taper.  Costs a second
+#                                # pass at table build; nothing at run time.
 # eos_metal_tcond    = 0.0       # crude alternative: one temperature for all species,
 #                                # overrides the above when positive
 

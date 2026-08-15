@@ -85,39 +85,55 @@ constexpr double theta_vib = 6332.0;            // H2 vibrational temperature, K
 //! true neutral partition function ~1.5-2x the ground-state 25 near 3000-5000 K. That
 //! biases n_e by tens of percent where iron dominates, small against the orders of
 //! magnitude at stake, but it is not exact.
-//! `tc_a` and `tc_b` are the condensation curve, in the Clausius-Clapeyron form
+//! `tc_a..tc_d` give the condensation curve of the phase that removes this element from
+//! the gas, in the standard published form
 //!
-//!     T_cond(p, [M/H]) = tc_b / (tc_a - log10(p/1 bar) - 0.5 [M/H])
+//!     10^4 / T_cond = tc_a - tc_b log10(p_T/bar) + tc_d (log10 p_T)^2 - tc_c [M/H]
 //!
-//! which is the shape these curves actually have: T_cond rises with pressure and, more
-//! weakly, with metallicity, because both raise the partial pressure of the condensible.
+//! with p_T the TOTAL pressure. T_cond rises with pressure and with metallicity because
+//! both raise the partial pressure of the condensible.
 //!
-//! THE COEFFICIENTS ARE APPROXIMATE. They are anchored to the widely quoted 1 bar
-//! condensation temperatures -- Fe ~1800 K, Al (corundum) ~1700 K, Ca ~1650 K, Mg
-//! (forsterite/enstatite) ~1600 K, Na (Na2S) ~1200 K, K (KCl) ~1000 K -- with slopes
-//! chosen to give the usual ~80-150 K per decade of pressure, and a common metallicity
-//! coefficient of 0.5. They are NOT a specific published fit, and the real chemistry is a
-//! network (Na2S and KCl form by reaction with H2S and HCl, not by simple vaporization),
-//! so treat the resulting T_cond as good to perhaps a hundred kelvin. Replace the
-//! constants here with a Lodders/Visscher fit if that accuracy matters; the framework
-//! does not change.
+//! Coefficients are taken from the literature, not fitted here:
+//!   Fe, Mg2SiO4          Visscher, Lodders & Fegley 2010, ApJ 716, 1060 (eqs 2, 18);
+//!                        stated valid 800-2500 K and [Fe/H] <= +0.5
+//!   Na2S, KCl            Morley et al. 2012, ApJ 756, 172
+//!   Al2O3, CaAl4O7       Wakeford et al. 2017, MNRAS 464, 4247; valid where that phase
+//!                        is the highest-temperature Al- or Ca-bearing condensate
+//!
+//! These are the analytic curves the field actually uses (virga, PICASO, and the
+//! Ackerman & Marley cloud lineage). They are not the newest: virga v1 (Batalha et al.
+//! 2026) moved Fe, Mg and Al to Morley et al. 2024 saturation pressures, which shifts
+//! their T_cond by 1-2%. KCl and Na2S -- the only two that matter for the electron budget
+//! here, since K and Na dominate n_e wherever the refractories are condensing -- are
+//! unchanged. Full equilibrium condensation with rainout (FastChem Cond, GGchem) is the
+//! accuracy ceiling, and is a Gibbs minimisation per node rather than a curve.
+//!
+//! Two approximations remain, both in the direction of removing an element slightly too
+//! early. Ca is given the grossite (CaAl4O7) curve, the highest-temperature Ca-bearing
+//! condensate, whereas in reality grossite and hibonite consume only a few tenths of the
+//! Ca inventory and the rest follows into Ca-silicates over the next few hundred kelvin.
+//! Mg is given forsterite, ignoring the enstatite that follows it. Neither matters much
+//! for the electron budget, because below ~1700 K -- where all four refractories have
+//! condensed -- n_e is dominated by Na and K, which stay in the gas down to ~800-1000 K.
 struct MetalDonor {
   double abun;
   double chi;
   double gfac;
   double tc_a;
   double tc_b;
+  double tc_c;
+  double tc_d;
 };
 constexpr int n_metal_donor = 6;
 constexpr MetalDonor metal_donor[n_metal_donor] = {
-  {2.0e-6, 5.139*ev, 1.0,     13.0, 15600.0},   // Na, as Na2S,  ~1200 K at 1 bar
-  {1.2e-7, 4.341*ev, 1.0,     12.5, 12500.0},   // K,  as KCl,   ~1000 K at 1 bar
-  {2.2e-6, 6.113*ev, 4.0,     12.1, 19965.0},   // Ca,           ~1650 K at 1 bar
-  {3.0e-6, 5.986*ev, 1.0/3.0, 12.0, 20400.0},   // Al, corundum, ~1700 K at 1 bar
-  {3.8e-5, 7.646*ev, 4.0,     12.2, 19520.0},   // Mg, silicate, ~1600 K at 1 bar
-  {3.2e-5, 7.902*ev, 2.4,     12.0, 21600.0},   // Fe,           ~1800 K at 1 bar
+  // abundance  chi        2g+/g0     tc_a   tc_b    tc_c   tc_d     phase, T_cond(1 bar)
+  {2.0e-6, 5.139*ev, 1.0,     10.045, 0.72,   1.08,  0.0},        // Na, Na2S       995 K
+  {1.2e-7, 4.341*ev, 1.0,     12.479, 0.879,  0.879, 0.0},        // K,  KCl        801 K
+  {2.2e-6, 6.113*ev, 4.0,      4.990, 0.2394, 0.595, 1.398e-3},   // Ca, CaAl4O7   2004 K
+  {3.0e-6, 5.986*ev, 1.0/3.0,  5.014, 0.2179, 0.580, 2.264e-3},   // Al, Al2O3     1994 K
+  {3.8e-5, 7.646*ev, 4.0,      5.89,  0.37,   0.73,  0.0},        // Mg, Mg2SiO4   1698 K
+  {3.2e-5, 7.902*ev, 2.4,      5.44,  0.48,   0.48,  0.0},        // Fe, metal     1838 K
 };
-constexpr double metal_tc_mh = 0.5;   // rough d/d[M/H] coefficient, common to all
 
 }  // namespace eos_cgs
 
@@ -327,8 +343,8 @@ struct EOSCompositionModel {
   //! \fn void CondensationFactors
   //! \brief gas-phase fraction of each metal donor at a given temperature and pressure.
   //!
-  //! Each species is removed below its own T_cond(p, [M/H]) from the Clausius-Clapeyron
-  //! curve in eos_cgs::metal_donor. The transition is a tanh over 5% in temperature,
+  //! Each species is removed below its own T_cond(p, [M/H]), from the published fits in
+  //! eos_cgs::metal_donor. The transition is a tanh over 5% in temperature,
   //! not a step: the result is tabulated and then differenced to build the interpolation
   //! table, and a discontinuity would give node derivatives that make the bicubic Hermite
   //! patch ring.
@@ -339,13 +355,18 @@ struct EOSCompositionModel {
       for (int s=0; s<eos_cgs::n_metal_donor; ++s) fcond[s] = f;
       return;
     }
-    const double lgp_bar = log10(p_cgs/1.0e6);          // 1 bar = 1e6 barye
+    // The published fits are for planetary atmospheres and are quadratic in log p for the
+    // refractories, so the argument is clamped to 1e-8..1e3 bar. Outside that the
+    // quadratic term would run away, and no real atmosphere is there anyway; the table
+    // grid, however, extends far beyond it and every node gets evaluated.
+    double lgp = log10(p_cgs/1.0e6);                    // 1 bar = 1e6 barye
+    lgp = (lgp < -8.0) ? -8.0 : ((lgp > 3.0) ? 3.0 : lgp);
     for (int s=0; s<eos_cgs::n_metal_donor; ++s) {
-      double denom = eos_cgs::metal_donor[s].tc_a - lgp_bar
-                   - eos_cgs::metal_tc_mh*metal_mh;
+      const eos_cgs::MetalDonor &m = eos_cgs::metal_donor[s];
+      double denom = m.tc_a - m.tc_b*lgp + m.tc_d*lgp*lgp - m.tc_c*metal_mh;
       // a non-positive denominator means the curve has run off its range of validity;
-      // treat it as "no condensation" rather than producing a negative T_cond
-      double tc = (denom > 0.0) ? eos_cgs::metal_donor[s].tc_b/denom : 0.0;
+      // treat that as "no condensation" rather than produce a negative T_cond
+      double tc = (denom > 0.0) ? 1.0e4/denom : 0.0;
       fcond[s] = 0.5*(1.0 + tanh((t - tc)/(0.05*(tc > 0.0 ? tc : 1.0))));
     }
   }
