@@ -18,6 +18,7 @@
 #include <mpi.h>
 #endif
 #include "parameter_input.hpp"
+#include "globals.hpp"
 #include "coordinates/cell_locations.hpp"
 #include "mesh/mesh.hpp"
 #include "eos/eos.hpp"
@@ -54,6 +55,24 @@ void get_wb_eos_arr(const EOS_Data &eos, const Real &Rgas, const Real &grav_acc,
 KOKKOS_INLINE_FUNCTION
 void get_wb_eos(const EOS_Data &eos, const Real &Rgas, const Real &grav_acc, const DvceArray1D<Real> &zarr, const DvceArray1D<Real> &logparr, const DvceArray1D<Real> &Tarr, const Real &z, Real &rho, Real &p);
 
+//----------------------------------------------------------------------------------------
+// State at the BOTTOM of the box (z = x1min), taken from the SAME hydrostatic integration
+// the initial condition is built with. The open bottom boundary and the CO5BOLD
+// inflow-entropy relaxation read these instead of hard-coded literals.
+//
+// This matters most under eos = general: composition then lives in the EOS, so the
+// atmosphere is integrated with the EOS's own mu and the old ideal-gas C=20 constants
+// (p=4.38e6, T=13718, rho=2.31e-6, mu=0.60) no longer describe the base at all. A
+// boundary anchored to a stale base state injects a large spurious entropy flux -- the
+// failure mode that produced the 179718 mass/energy growth. Filled once by UserProblem,
+// BEFORE the restart return, so restarts see them too.
+namespace {
+Real p_base_ic      = 0.0;
+Real rho_base_ic    = 0.0;
+Real T_base_ic      = 0.0;
+Real gradad_base_ic = 0.0;   // (dln T/dln p)_s at the base -- defines the deep adiabat
+}  // namespace
+
 
 //----------------------------------------------------------------------------------------
 //! \fn void ProblemGenerator::UserProblem()
@@ -67,6 +86,32 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   bool user_srcs = pin->GetOrAddBoolean("problem","user_srcs",false);
   if (user_srcs) user_srcs_func = SourceFunc;
   user_bcs_func = HydrostaticEquilibrium;
+  // Base state from the IC integration. Done BEFORE the restart return because the bottom
+  // boundary and the CO5BOLD relaxation need it on restarts as well.
+  {
+    MeshBlockPack *pmbp_ic = pmy_mesh_->pmb_pack;
+    Real gamma_ic = (pmbp_ic->phydro != nullptr) ? pmbp_ic->phydro->peos->eos_data.gamma
+                                                 : pmbp_ic->pmhd->peos->eos_data.gamma;
+    EOS_Data eos_ic = (pmbp_ic->phydro != nullptr) ? pmbp_ic->phydro->peos->eos_data
+                                                   : pmbp_ic->pmhd->peos->eos_data;
+    Real Rgas_ic = 1.38e8;
+    Real grav_ic = -2.74e4;
+    Real z0 = pmy_mesh_->mesh_size.x1min;
+    Real z1 = pmy_mesh_->mesh_size.x1max;
+    const int Nic = 10000;
+    HostArray1D<Real> zic("zic", Nic), lpic("lpic", Nic), Tic("Tic", Nic);
+    get_wb_eos_arr(eos_ic, Rgas_ic, grav_ic, Nic, (z1-z0)*1.1, zic, lpic, Tic);
+    p_base_ic   = std::exp(lpic(0));
+    T_base_ic   = Tic(0);
+    rho_base_ic = DensFromPT(eos_ic, Rgas_ic, p_base_ic, T_base_ic);
+    gradad_base_ic = GradAd(eos_ic, gamma_ic, Rgas_ic, p_base_ic, T_base_ic);
+    if (global_variable::my_rank == 0) {
+      std::cout << "solar_convection: base state  T=" << T_base_ic
+                << " rho=" << rho_base_ic << " p=" << p_base_ic
+                << " grad_ad=" << gradad_base_ic
+                << " K=" << p_base_ic/std::pow(rho_base_ic,gamma_ic) << std::endl;
+    }
+  }
   if (restart) return;
   if (pmy_mesh_->one_d || pmy_mesh_->two_d) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
@@ -240,17 +285,22 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       Real p = pwb;
       Real den = denwb + dden;
 
+      // The perturbation is applied to the DENSITY at fixed pressure, so the internal
+      // energy must be evaluated at the perturbed density: that keeps the pressure
+      // exactly p and carries the 1% noise as an entropy perturbation, which is what
+      // the ideal-gas form p*igm1 did implicitly.
+      Real eint_ic = EintFromP(eos, igm1, den, p);
       u0_(m,IDN,k,j,i) = den;
       u0_(m,IM1,k,j,i) = 0.0;
       u0_(m,IM2,k,j,i) = 0.0;
       u0_(m,IM3,k,j,i) = 0.0;
-      u0_(m,IEN,k,j,i) = p*igm1;
-        
+      u0_(m,IEN,k,j,i) = eint_ic;
+
       w0_(m,IDN,k,j,i) = den;
       w0_(m,IVX,k,j,i) = 0.0;
       w0_(m,IVX,k,j,i) = 0.0;
       w0_(m,IVX,k,j,i) = 0.0;
-      w0_(m,IEN,k,j,i) = p*igm1;
+      w0_(m,IEN,k,j,i) = eint_ic;
         
         Real phicc = - grav_acc * x1v;// - 0.5*SQR(omega*r*sin(theta));
         if (use_etotgrav) {
@@ -440,7 +490,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             w0facewb_x1f(m,IM1,k,j,i) = 0.0;
             w0facewb_x1f(m,IM2,k,j,i) = 0.0;
             w0facewb_x1f(m,IM3,k,j,i) = 0.0;
-            w0facewb_x1f(m,IEN,k,j,i) = pwb*igm1;
+            w0facewb_x1f(m,IEN,k,j,i) = EintFromP(eos, igm1, denwb, pwb);
             if (i == ie) {
                 if (use_spherical_polar) {
                   x1v = x1f_(m,i+1);
@@ -453,7 +503,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                 w0facewb_x1f(m,IM1,k,j,i+1) = 0.0;
                 w0facewb_x1f(m,IM2,k,j,i+1) = 0.0;
                 w0facewb_x1f(m,IM3,k,j,i+1) = 0.0;
-                w0facewb_x1f(m,IEN,k,j,i+1) = pwb*igm1;
+                w0facewb_x1f(m,IEN,k,j,i+1) = EintFromP(eos, igm1, denwb, pwb);
             }
             
             if (use_spherical_polar) {
@@ -471,13 +521,13 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             w0facewb_x2f(m,IM1,k,j,i) = 0.0;
             w0facewb_x2f(m,IM2,k,j,i) = 0.0;
             w0facewb_x2f(m,IM3,k,j,i) = 0.0;
-            w0facewb_x2f(m,IEN,k,j,i) = pwb*igm1;
+            w0facewb_x2f(m,IEN,k,j,i) = EintFromP(eos, igm1, denwb, pwb);
             if (j == je) {
                 w0facewb_x2f(m,IDN,k,j+1,i) = denwb;
                 w0facewb_x2f(m,IM1,k,j+1,i) = 0.0;
                 w0facewb_x2f(m,IM2,k,j+1,i) = 0.0;
                 w0facewb_x2f(m,IM3,k,j+1,i) = 0.0;
-                w0facewb_x2f(m,IEN,k,j+1,i) = pwb*igm1;
+                w0facewb_x2f(m,IEN,k,j+1,i) = EintFromP(eos, igm1, denwb, pwb);
             }
             
             if (use_spherical_polar) {
@@ -495,13 +545,13 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             w0facewb_x3f(m,IM1,k,j,i) = 0.0;
             w0facewb_x3f(m,IM2,k,j,i) = 0.0;
             w0facewb_x3f(m,IM3,k,j,i) = 0.0;
-            w0facewb_x3f(m,IEN,k,j,i) = pwb*igm1;
+            w0facewb_x3f(m,IEN,k,j,i) = EintFromP(eos, igm1, denwb, pwb);
             if (k == ke) {
                 w0facewb_x3f(m,IDN,k+1,j,i) = denwb;
                 w0facewb_x3f(m,IM1,k+1,j,i) = 0.0;
                 w0facewb_x3f(m,IM2,k+1,j,i) = 0.0;
                 w0facewb_x3f(m,IM3,k+1,j,i) = 0.0;
-                w0facewb_x3f(m,IEN,k+1,j,i) = pwb*igm1;
+                w0facewb_x3f(m,IEN,k+1,j,i) = EintFromP(eos, igm1, denwb, pwb);
             }
         }
     });
@@ -588,7 +638,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
           u0wb(m,IM1,k,j,i) = 0.0;
           u0wb(m,IM2,k,j,i) = 0.0;
           u0wb(m,IM3,k,j,i) = 0.0;
-          u0wb(m,IEN,k,j,i) = pwb*igm1;
+          u0wb(m,IEN,k,j,i) = EintFromP(eos, igm1, denwb, pwb);
           if (use_etotgrav) {
               Real phicc = - grav_acc * x1v;
               u0wb(m,IEN,k,j,i) += denwb*phicc;
@@ -597,7 +647,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
           w0wb(m,IM1,k,j,i) = 0.0;
           w0wb(m,IM2,k,j,i) = 0.0;
           w0wb(m,IM3,k,j,i) = 0.0;
-          w0wb(m,IEN,k,j,i) = pwb*igm1;
+          w0wb(m,IEN,k,j,i) = EintFromP(eos, igm1, denwb, pwb);
         });
     }
 
@@ -750,9 +800,9 @@ void HydrostaticEquilibrium(Mesh *pm) {
     // time) so the boundary does NOT feed back on the evolving interior -- an interior-tied
     // extrapolation pressurised the box and ran away (Tbase 13470->95000K).
     Real Rgas_bc = 1.38e8;
-    Real p_base  = 4.38e6;      // IC base pressure at z=0 (C=20 equilibrium)
-    Real T_base  = 13718.0;     // IC base temperature (deep adiabat, unchanged by opacity)
-    Real rho_base = 2.31e-6;    // IC base density (C=20: denser than C=100's 7.92e-7)
+    Real p_base  = p_base_ic;   // IC base pressure at z=0, from the IC integration itself
+    Real T_base  = T_base_ic;   // IC base temperature (deep adiabat)
+    Real rho_base = rho_base_ic;  // IC base density
     Real K_bot = p_base/pow(rho_base, gamma);   // deep-adiabat constant (unused here; bottom is CO5BOLD)
     Real T_top_fix = 3500.0;    // top: internal energy held constant at the temperature minimum
                                 // (lowered from 4860 -> matches the cooler atmospheric top, so the
@@ -856,8 +906,25 @@ void HydrostaticEquilibrium(Mesh *pm) {
             // bottom active layer; velocity zero-gradient. The CO5BOLD relaxation on the is layer
             // (in SourceFunc) sets the inflow entropy and enforces zero net mass flux.
             Real dphi_b = phicc0(m,k,j,igc) - phicc0(m,k,j,is);
-            Real eint_g = exp(log(eint_is) - (rho_is/eint_is*igm1)*dphi_b);   // isothermal hydrostatic
-            Real rho_g = eint_g/eint_is*rho_is;
+            // Isothermal hydrostatic: dln p = -(rho/p) dphi. The exponent is rho/p, and
+            // rho/eint*igm1 IS rho/p only for an ideal gas -- under a general EOS the
+            // internal energy also carries dissociation and ionization latent heat, so
+            // (gamma-1)*eint overestimates the pressure several-fold, the ghosts come out
+            // under-dense, and the box drains steadily through the bottom face. Go
+            // through the EOS pressure instead, and rebuild the ghost state at the
+            // interior temperature (constant specific energy is constant T only for an
+            // ideal gas).
+            Real eint_g, rho_g;
+            if (!eos.IsGeneral()) {
+              eint_g = exp(log(eint_is) - (rho_is/eint_is*igm1)*dphi_b);
+              rho_g = eint_g/eint_is*rho_is;
+            } else {
+              Real p_is = PresFromEint(eos, gm1, rho_is, eint_is);
+              Real t_is = TempKelvin(eos, Rgas_bc, rho_is, eint_is, p_is);
+              Real p_g = p_is*exp(-(rho_is/p_is)*dphi_b);
+              rho_g = DensFromPT(eos, Rgas_bc, p_g, t_is);
+              eint_g = EintFromDensT(eos, Rgas_bc, igm1, rho_g, t_is);
+            }
             Real ke_g = 0.5*rho_g*(vx_is*vx_is + vy_is*vy_is + vz_is*vz_is);
             u0_(m,IDN,k,j,igc) = rho_g;
             u0_(m,IM1,k,j,igc) = rho_g*vx_is;
@@ -905,9 +972,19 @@ void HydrostaticEquilibrium(Mesh *pm) {
             // T_top_fix, specific internal energy held CONSTANT (= cv*T_top_fix) in time & space,
             // velocity zero-gradient (open). The interior-tied isothermal extrapolation drained
             // and went singular (nan); this fixed-T lid is stable.
+            // Under a general EOS the isothermal scale height is set by p/rho at
+            // T_top_fix, not by a fixed Rgas: composition (and hence mu) lives in the
+            // EOS. Evaluate it at the interior density -- one EOS call, then the usual
+            // exponential.
             Real dphi_i = phicc0(m,k,j,(ie+i+1))-phi_i;
-            Real rho0_ip = rho_i*exp(-dphi_i/(Rgas_bc*T_top_fix));
-            Real e0_ip = rho0_ip*Rgas_bc*igm1*T_top_fix;   // internal energy density (const specific e)
+            Real rt_top = Rgas_bc*T_top_fix;
+            if (eos.IsGeneral()) {
+              Real e_top_i = EintFromDensT(eos, Rgas_bc, igm1, rho_i, T_top_fix);
+              rt_top = PresFromEint(eos, gm1, rho_i, e_top_i)/rho_i;
+            }
+            Real rho0_ip = rho_i*exp(-dphi_i/rt_top);
+            // internal energy density at the FIXED top temperature (const specific e)
+            Real e0_ip = EintFromDensT(eos, Rgas_bc, igm1, rho0_ip, T_top_fix);
             (void)q0_i; (void)factor_i; (void)dM1mag;
             u0_(m,IDN,k,j,(ie+i+1)) = rho0_ip;
             u0_(m,IM2,k,j,(ie+i+1)) = u0_(m,IM2,k,j,ie)/rho_i*rho0_ip;
@@ -1052,8 +1129,8 @@ void SourceFunc(Mesh *pm, Real bdt) {
         }
         Real rho = w0(m,IDN,k,j,i);
         Real p = PresFromEint(eos,gm1,w0(m,IDN,k,j,i),w0(m,IEN,k,j,i));
-        Real T = p/Rgas/rho;
-        
+        Real T = TempKelvin(eos,Rgas,rho,w0(m,IEN,k,j,i),p);
+
         // gravity
         Real src = bdt*grav_acc*w0(m,IDN,k,j,i);
         if (!use_etotgrav) {
@@ -1207,7 +1284,9 @@ void SourceFunc(Mesh *pm, Real bdt) {
     {
       Real igm1 = 1.0/gm1;
       Real cv = Rgas*igm1;
-      Real rho_base = 2.31e-6, p_base = 4.38e6;   // C=20 equilibrium deep-adiabat base state
+      // deep-adiabat base state, from the IC integration
+      Real rho_base = rho_base_ic, p_base = p_base_ic;
+      Real T_base = T_base_ic, grad_ad_base = gradad_base_ic;
       Real K_bot = p_base/pow(rho_base, gamma);
       Real s_inflow = cv*log(K_bot);
       Real CsChange = 0.1, CPChange = 0.3;
@@ -1220,7 +1299,7 @@ void SourceFunc(Mesh *pm, Real bdt) {
             Real ke = 0.5*(SQR(u0(m,IM1,k,jj,is))+SQR(u0(m,IM2,k,jj,is))+SQR(u0(m,IM3,k,jj,is)))/r;
             Real ei = u0(m,IEN,k,jj,is) - ke;
             if (use_etotgrav) ei -= r*phicc0(m,k,jj,is);
-            a += r; b += ei*gm1; c += 1.0;
+            a += r; b += PresFromEint(eos,gm1,r,ei); c += 1.0;
           } }
         }
       }, srho0, sumP, sN);
@@ -1239,17 +1318,48 @@ void SourceFunc(Mesh *pm, Real bdt) {
           Real ei = u0(m,IEN,k,jj,is) - 0.5*r*(vx*vx+vy*vy+vz*vz);
           if (use_etotgrav) ei -= r*phicc0(m,k,jj,is);
           Real es = ei/r;
-          Real P = ei*gm1, T = P/(r*Rgas), cs = sqrt(gamma*P/r);
-          Real s = cv*log(P/pow(r,gamma));
-          if (vx > 0.0) {                        // step 2: relax upflow entropy toward s_inflow
-            Real rlx = CsChange*bdt*cs/dz, ss = s_inflow - s;
-            r  += rlx*(-r*r*T*(gamma-1.0)/(P*gamma))*ss;
-            es += rlx*T*(1.0/gamma)*ss;
+          Real P = ei*gm1, T = P/(r*Rgas), g1 = gamma;
+          if (eos.IsGeneral()) {                 // one temperature solve, then everything
+            Real tc = eos.Temperature(r, ei);
+            P  = eos.Pressure(r, ei, tc);
+            T  = tc*eos.temp_cgs;
+            g1 = eos.Gamma1(r, ei, tc);
           }
-          Real P1 = r*es*gm1, cs2 = gamma*P1/r;   // step 3: damp pressure toward <P>
+          Real cs = sqrt(g1*P/r);
+          if (vx > 0.0) {                        // step 2: relax upflow entropy toward s_inflow
+            Real rlx = CsChange*bdt*cs/dz;
+            if (!eos.IsGeneral()) {
+              Real s = cv*log(P/pow(r,gamma));
+              Real ss = s_inflow - s;
+              r  += rlx*(-r*r*T*(gamma-1.0)/(P*gamma))*ss;
+              es += rlx*T*(1.0/gamma)*ss;
+            } else {
+              // A general EOS has no closed-form entropy variable, so relax toward the
+              // deep-adiabat STATE at this cell's pressure instead of toward a value of
+              // cv*ln(p/rho^gamma). The target is the point on the adiabat through the IC
+              // base state at pressure P: T_ad = T_base (P/p_base)^grad_ad, then the EOS
+              // supplies (rho,e) there. At constant pressure a fractional step toward
+              // that state IS the entropy relaxation -- it agrees with the ideal formulas
+              // above to first order in the entropy difference, which is all they are.
+              Real T_ad = T_base*pow(P/p_base, grad_ad_base);
+              Real rho_ad = DensFromPT(eos, Rgas, P, T_ad);
+              Real es_ad = EintFromDensT(eos, Rgas, igm1, rho_ad, T_ad)/rho_ad;
+              r  += rlx*(rho_ad - r);
+              es += rlx*(es_ad - es);
+            }
+          }
+          // step 3: damp pressure toward <P>, adiabatically. drho = dP/cs^2 and
+          // de_s = (P/rho^2) drho = dP/(Gamma_1 rho); Gamma_1 replaces gamma verbatim.
+          Real P1 = r*es*gm1, g1p = gamma;
+          if (eos.IsGeneral()) {
+            Real tc = eos.Temperature(r, r*es);
+            P1 = eos.Pressure(r, r*es, tc);
+            g1p = eos.Gamma1(r, r*es, tc);
+          }
+          Real cs2 = g1p*P1/r;
           Real rlxp = CPChange*bdt*sqrt(cs2)/dz;
           r  += rlxp*(1.0/cs2)*(meanP - P1);
-          es += rlxp*(1.0/(gamma*r))*(meanP - P1);
+          es += rlxp*(1.0/(g1p*r))*(meanP - P1);
           u0(m,IDN,k,jj,is) = r;
           u0(m,IM1,k,jj,is) = r*vx; u0(m,IM2,k,jj,is) = r*vy; u0(m,IM3,k,jj,is) = r*vz;
           Real E = r*es + 0.5*r*(vx*vx+vy*vy+vz*vz);
@@ -1511,9 +1621,9 @@ void two_stream_RT(Mesh *pm, Real bdt) {
         Real F_ir_f[NN];
         
         // top
-        Real p = w0(m,IEN,k,j,ie+1)*gm1;
         Real rho = w0(m,IDN,k,j,ie+1);
-        Real T = p/Rgas/rho;
+        Real p = PresFromEint(eos,gm1,rho,w0(m,IEN,k,j,ie+1));
+        Real T = TempKelvin(eos,Rgas,rho,w0(m,IEN,k,j,ie+1),p);
         B[ie+1] = boltz_sigma/M_PI*SQR(SQR(T));
         Real kapr;
         get_kapr(rho, T, kapr);
@@ -1521,9 +1631,9 @@ void two_stream_RT(Mesh *pm, Real bdt) {
         tau_down_r_f[ie+1] = tau_r_f;
         // down-sweep
         for (int i=ie; i>is-1; --i) {
-          Real p = PresFromEint(eos,gm1,w0(m,IDN,k,j,i),w0(m,IEN,k,j,i));
           Real rho = w0(m,IDN,k,j,i);
-          Real T = p/Rgas/rho;
+          Real p = PresFromEint(eos,gm1,rho,w0(m,IEN,k,j,i));
+          Real T = TempKelvin(eos,Rgas,rho,w0(m,IEN,k,j,i),p);
           B[i] = boltz_sigma/M_PI*SQR(SQR(T));
           Real kapr;
           get_kapr(rho, T, kapr);
