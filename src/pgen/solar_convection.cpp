@@ -97,6 +97,17 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   sponge_on   = pin->GetOrAddBoolean("problem","sponge",false);
   sponge_zbot = pin->GetOrAddReal("problem","sponge_zbot",0.8);
   sponge_c    = pin->GetOrAddReal("problem","sponge_c",0.1);
+  if (global_variable::my_rank == 0) {
+    Real z0 = pmy_mesh_->mesh_size.x1min, z1 = pmy_mesh_->mesh_size.x1max;
+    std::cout << "solar_convection: T_top_fix=" << T_top_fix_par << " K, sponge "
+              << (sponge_on ? "ON" : "off");
+    if (sponge_on) {
+      std::cout << " above z=" << (z0 + sponge_zbot*(z1-z0))
+                << " (zbot=" << sponge_zbot << " of [" << z0 << "," << z1
+                << "]), rate=" << sponge_c << "*cs/dz";
+    }
+    std::cout << std::endl;
+  }
   // Base state from the IC integration. Done BEFORE the restart return because the bottom
   // boundary and the CO5BOLD relaxation need it on restarts as well.
   {
