@@ -1151,6 +1151,15 @@ void SourceFunc(Mesh *pm, Real bdt) {
           lam = x3v*iap;
           phi = x2v*iap;
           z = x1v;
+          // pcoord->area/volume are only allocated for spherical/cubed-sphere meshes. On
+          // a Cartesian mesh the well-balanced source below has to be given the plane-
+          // parallel geometry directly: unit faces and dz as the cell volume, which turns
+          // (area_r*(pr-p)+area_l*(p-pl))/vol into the intended (pr-pl)/dz. Without this
+          // these three stay UNINITIALIZED and the dynamic well-balanced gravity source
+          // reads stack garbage.
+          area_r = 1.0;
+          area_l = 1.0;
+          vol = size.d_view(m).dx1;
         }
         Real rho = w0(m,IDN,k,j,i);
         Real p = PresFromEint(eos,gm1,w0(m,IDN,k,j,i),w0(m,IEN,k,j,i));
