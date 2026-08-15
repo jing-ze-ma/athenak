@@ -83,14 +83,51 @@ All of these live in the `<hydro>` or `<mhd>` block. They are read only when
 |---|---|---|
 | `eos_xh` | `0.7381` | hydrogen mass fraction X |
 | `eos_yhe` | `0.2485` | helium mass fraction Y |
-| `eos_a_metal` | `16.0` | atomic weight of the inert "metal" component (Z = 1 − X − Y). It contributes particles but neither dissociates nor ionizes. |
+| `eos_a_metal` | `16.0` | atomic weight of the "metal" component (Z = 1 − X − Y). It contributes particles, and never dissociates. |
 | `eos_h2` | `true` | include H2 and its dissociation equilibrium, and its rotational/vibrational energy |
 | `eos_ionization` | `true` | include Saha ionization of H, He and He+ |
+| `eos_metal_ionization` | `false` | let Na, K, Ca, Al, Mg and Fe ionize — see below |
+| `eos_metal_mh` | `<problem>/met`, else `0.0` | [M/H] in dex for those donors |
+| `eos_metal_tcond` | `0.0` | crude rainout temperature, K; `0` disables |
 | `eos_radiation` | `false` | add `a T^4` energy and `a T^4/3` pressure on top of the tabulated gas |
 
 `eos_xh` and `eos_yhe` must be non-negative and sum to at most 1; the run aborts
 otherwise. Radiation is added **analytically on top of** the tabulated gas rather than
 being tabulated, which makes the switch exact and keeps the tabulated surfaces smooth.
+
+### Metal ionization, and why it exists
+
+`eos_metal_ionization` is about **n_e, not about p or e**. Below ~4000 K hydrogen supplies
+essentially no free electrons — 13.6 eV is far too high — and the electrons come from
+Na, K, Ca, Al, Mg and Fe at 4–8 eV. Anything that needs an ionization degree, above all
+the Ohmic resistivity, is wrong by orders of magnitude in a cool atmosphere without them.
+
+The thermodynamic cost of switching it on is negligible, by construction: the tracked
+species are already inside the metal lump and contribute one heavy particle each whether
+ionized or not, so the only change to `n_tot` is their electrons. Measured, μ moves by
+~0.004% in a molecular atmosphere and ~0.4% in the fully ionized limit. Their ionization
+energy is carried too — far too small to matter for p or e, but it is what keeps `c_v`
+consistent across the metal ionization zone.
+
+**Metallicity is set in one place.** `eos_metal_mh` defaults to `<problem>/met` when that
+parameter exists, because a problem generator with a metallicity uses it for its opacity,
+and an atmosphere opaque at one metallicity while conducting at another is not a physical
+configuration — it is a parameter that got updated in one place only. Set `eos_metal_mh`
+explicitly to override; `deep_hot_jupiter_rt` then aborts if it disagrees with its `met`.
+
+**Condensation is not modelled.** Below roughly 1500–2000 K the alkalis and iron condense
+out — Fe near 1800 K, Na2S near 1200 K, KCl near 1000 K at 1 bar, all moving with pressure
+— and gas-phase abundances fall by orders of magnitude, taking n_e with them. Saha with
+full solar abundances will make such regions far too conductive. `eos_metal_tcond` is a
+single-temperature switch that removes the donors over one decade in T below it; it
+captures none of the species or pressure structure and exists only so that a run reaching
+into that regime is not silently handed full gas-phase abundances. Leave it off if the
+domain stays hot.
+
+Ground-state statistical weights are used throughout. That is good for the alkalis, whose
+first excited states lie ~2 eV up, and poorer for Fe, whose low-lying levels make the true
+neutral partition function ~1.5–2× the ground-state 25 near 3000–5000 K — worth tens of
+percent in n_e where iron dominates.
 
 ### Table grid
 
@@ -173,15 +210,47 @@ If you add code that touches the EOS, that last point is the one to remember.
 
 ## Validity of the physics model
 
-The composition model covers H2, H, H+, He, He+, He++, free electrons and an inert metal
-component, closed by charge neutrality.
+The composition model covers H2, H, H+, He, He+, He++, free electrons, a metal component
+that contributes particles, and — with `eos_metal_ionization` — Na, K, Ca, Al, Mg and Fe
+as singly ionizing electron donors. It is closed by charge neutrality.
 
 **Not included:** Coulomb (non-ideal) corrections, electron degeneracy and pressure
-ionization, excited bound states beyond ground-state statistical weights, and any
-ionization of the metal component.
+ionization, excited bound states beyond ground-state statistical weights, condensation of
+the metals, and any second ionization of them.
 
 It is therefore valid for the **weakly coupled, non-degenerate** regime — gas-giant and
-stellar envelopes — and not for deep stellar interiors or degenerate objects.
+stellar envelopes — and not for deep stellar interiors or degenerate objects. Measured
+against the analytic fully-ionized limit, the error is +0.7% at the base of the solar
+convection zone and +2.6% at 0.5 R☉, but +40% at 0.3 R☉ and +129% at the centre, where
+the absence of pressure ionization makes Saha recombine hydrogen that should be ionized.
+The temperature at which μ comes within 1% of the ionized limit is 6.3e4 K at
+ρ = 1e-6 g/cm³ and 5.4e6 K at ρ = 1, so a table grid extending to high density contains
+regions the model cannot describe.
+
+---
+
+## The electron fraction, and Ohmic resistivity
+
+`EOS_Data::ElectronFraction(d, e, T)` returns n_e/n_tot. It reads a fourth tabulated
+surface, `log10(n_e/n_tot)`, which is deliberately **not** part of `EOSTable::Eval()`:
+only non-ideal MHD wants it, and charging every EOS call for another Hermite patch would
+be a pure loss. An ideal gas returns 0, since it carries no composition — check
+`IsGeneral()` first.
+
+`<mhd>/ohmic_resistivity = eos` builds the diffusivity from it as
+
+    eta = 230 sqrt(T)/x_e  +  5.2e11 lnL/T^1.5      [cm^2/s]
+
+the electron-neutral (Blaes & Balbus) and Spitzer terms, added because the collision
+frequencies add. The alternative `perna` carries only the first term and fits potassium
+alone: it is good to a factor of ~3 over 1500–5000 K, but it has no saturation ceiling, so
+it over-predicts x_e once the alkalis are fully ionized, and no hydrogen term, so it
+under-predicts above ~6000 K, where the Spitzer term is also the larger of the two.
+Selecting `eos` without a general EOS is a fatal error rather than a silent floor.
+
+Cost is not a reason to avoid it: a table lookup is ~6× **cheaper** than evaluating the
+`perna` fit, which is transcendental-bound (`log10`, `pow`, two `sqrt`). Solving Saha
+per cell instead would be ~17× more expensive — which is the point of tabulating it.
 
 ---
 
