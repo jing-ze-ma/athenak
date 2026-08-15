@@ -71,6 +71,7 @@ Real p_base_ic      = 0.0;
 Real rho_base_ic    = 0.0;
 Real T_base_ic      = 0.0;
 Real gradad_base_ic = 0.0;   // (dln T/dln p)_s at the base -- defines the deep adiabat
+Real T_top_fix_par  = 3500.0;  // problem/T_top_fix: temperature of the fixed-T top lid
 }  // namespace
 
 
@@ -86,6 +87,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   bool user_srcs = pin->GetOrAddBoolean("problem","user_srcs",false);
   if (user_srcs) user_srcs_func = SourceFunc;
   user_bcs_func = HydrostaticEquilibrium;
+  // Temperature of the fixed-T top lid. Read before the restart return so restarts see it.
+  T_top_fix_par = pin->GetOrAddReal("problem","T_top_fix",3500.0);
   // Base state from the IC integration. Done BEFORE the restart return because the bottom
   // boundary and the CO5BOLD relaxation need it on restarts as well.
   {
@@ -804,9 +807,12 @@ void HydrostaticEquilibrium(Mesh *pm) {
     Real T_base  = T_base_ic;   // IC base temperature (deep adiabat)
     Real rho_base = rho_base_ic;  // IC base density
     Real K_bot = p_base/pow(rho_base, gamma);   // deep-adiabat constant (unused here; bottom is CO5BOLD)
-    Real T_top_fix = 3500.0;    // top: internal energy held constant at the temperature minimum
-                                // (lowered from 4860 -> matches the cooler atmospheric top, so the
-                                //  hydrostatic ghost is not over-dense and stops leaking mass in)
+    // top: internal energy held constant at the temperature minimum. 3500 K (lowered from
+    // the IC's 4860 K) matches the cooler atmospheric top of the IDEAL-gas run, so the
+    // hydrostatic ghost is not over-dense and stops leaking mass in. Under a general EOS
+    // the atmosphere is far more rarefied and settles colder still, so the value is a
+    // runtime parameter (problem/T_top_fix) -- see the lid test in the wiki.
+    Real T_top_fix = T_top_fix_par;
     (void)p_base; (void)T_base; (void)rho_base; (void)K_bot;
     
     if (pmbp->pmhd != nullptr) {
