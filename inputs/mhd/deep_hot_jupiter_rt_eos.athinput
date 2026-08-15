@@ -100,8 +100,13 @@ eos_yhe              = 0.2485
 #                                # set in ONE place. Overriding it here makes the pgen
 #                                # abort, since the atmosphere would then be opaque at one
 #                                # metallicity and conducting at another.
-# eos_metal_tcond    = 0.0       # crude rainout; consider ~1500 K if the nightside gets
-#                                # cold enough to condense the alkalis and Fe out
+eos_metal_condensation = true    # rain the donors out below their own T_cond(p, [M/H]).
+#                                # Fe ~1800 K, Al ~1700, Ca ~1650, Mg ~1600, Na ~1200,
+#                                # K ~1000 at 1 bar, each rising ~100-160 K per decade of
+#                                # pressure.  Costs a second pass through the composition
+#                                # model at table build; nothing at run time.
+# eos_metal_tcond    = 0.0       # crude alternative: one temperature for all species,
+#                                # overrides the above when positive
 
 # --- table grid: must bracket the run ---
 eos_logd_min    = -14.0

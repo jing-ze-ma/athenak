@@ -95,6 +95,7 @@ void BuildEOSTable(EOSTable &tbl, ParameterInput *pin, const std::string &block,
     mh_default = pin->GetReal("problem", "met");
   }
   model.metal_mh = pin->GetOrAddReal(block, "eos_metal_mh", mh_default);
+  model.include_metal_cond = pin->GetOrAddBoolean(block, "eos_metal_condensation", false);
   model.metal_tcond = pin->GetOrAddReal(block, "eos_metal_tcond", 0.0);
   tbl.radiation = pin->GetOrAddBoolean(block, "eos_radiation", false);
 
@@ -253,6 +254,8 @@ void BuildEOSTable(EOSTable &tbl, ParameterInput *pin, const std::string &block,
     std::cout << " ([M/H] = " << model.metal_mh;
     if (model.metal_tcond > 0.0) {
       std::cout << ", rainout below " << model.metal_tcond << " K";
+    } else if (model.include_metal_cond) {
+      std::cout << ", condensation on";
     }
     std::cout << ")";
   }

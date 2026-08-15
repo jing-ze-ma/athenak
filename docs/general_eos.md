@@ -88,7 +88,8 @@ All of these live in the `<hydro>` or `<mhd>` block. They are read only when
 | `eos_ionization` | `true` | include Saha ionization of H, He and He+ |
 | `eos_metal_ionization` | `false` | let Na, K, Ca, Al, Mg and Fe ionize — see below |
 | `eos_metal_mh` | `<problem>/met`, else `0.0` | [M/H] in dex for those donors |
-| `eos_metal_tcond` | `0.0` | crude rainout temperature, K; `0` disables |
+| `eos_metal_condensation` | `false` | rain each donor out below its own T_cond(p, [M/H]) |
+| `eos_metal_tcond` | `0.0` | crude alternative: one temperature for all species; overrides the above when positive |
 | `eos_radiation` | `false` | add `a T^4` energy and `a T^4/3` pressure on top of the tabulated gas |
 
 `eos_xh` and `eos_yhe` must be non-negative and sum to at most 1; the run aborts
@@ -115,14 +116,40 @@ and an atmosphere opaque at one metallicity while conducting at another is not a
 configuration — it is a parameter that got updated in one place only. Set `eos_metal_mh`
 explicitly to override; `deep_hot_jupiter_rt` then aborts if it disagrees with its `met`.
 
-**Condensation is not modelled.** Below roughly 1500–2000 K the alkalis and iron condense
-out — Fe near 1800 K, Na2S near 1200 K, KCl near 1000 K at 1 bar, all moving with pressure
-— and gas-phase abundances fall by orders of magnitude, taking n_e with them. Saha with
-full solar abundances will make such regions far too conductive. `eos_metal_tcond` is a
-single-temperature switch that removes the donors over one decade in T below it; it
-captures none of the species or pressure structure and exists only so that a run reaching
-into that regime is not silently handed full gas-phase abundances. Leave it off if the
-domain stays hot.
+**Condensation.** Below roughly 1000–1800 K the donors condense out and gas-phase
+abundances fall by orders of magnitude, taking n_e with them; Saha with full solar
+abundances would make those regions far too conductive. `eos_metal_condensation` removes
+each species below its own condensation curve,
+
+    T_cond(p, [M/H]) = tc_b / (tc_a - log10(p/1 bar) - 0.5 [M/H])
+
+which is the right shape — T_cond rises with pressure and, more weakly, with metallicity,
+because both raise the partial pressure of the condensible. The per-species constants live
+in `eos_cgs::metal_donor` and are anchored to the usual 1 bar values:
+
+| | Fe | Al | Ca | Mg | Na (Na2S) | K (KCl) |
+|---|---|---|---|---|---|---|
+| T_cond at 1 bar | 1800 K | 1700 K | 1650 K | 1600 K | 1200 K | 1000 K |
+| per decade of p | +164 K | +155 K | +149 K | +143 K | +100 K | +87 K |
+
+The transition is a tanh over 5% in temperature rather than a step, because the result is
+differenced to build the interpolation table and a discontinuity there would give node
+derivatives that make the Hermite patch ring. Only the electron donation is suppressed:
+the condensed material stays in the mass and particle budget, since whether it rains out
+of the column or remains as cloud is a transport question this local model cannot answer,
+and the mass involved is ~1e-4 of the gas.
+
+**The coefficients are approximate** — anchored to widely quoted condensation temperatures
+with plausible slopes, not a specific published fit, and the real chemistry is a network
+(Na2S and KCl form by reaction with H2S and HCl rather than by simple vaporization). Treat
+T_cond as good to perhaps a hundred kelvin, and replace the constants with a
+Lodders/Visscher fit if that matters; the framework does not change. `eos_metal_tcond` is
+the cruder alternative, a single temperature for every species.
+
+Condensation costs a second pass through the composition model, because it needs the
+pressure and the pressure is an output. That is host-side table-build code, so it costs
+nothing at run time, and it is exact enough because the donors are ~1e-4 of the particles
+and p is insensitive to whether they have condensed.
 
 Ground-state statistical weights are used throughout. That is good for the alkalis, whose
 first excited states lie ~2 eV up, and poorer for Fe, whose low-lying levels make the true

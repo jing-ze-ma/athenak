@@ -85,20 +85,39 @@ constexpr double theta_vib = 6332.0;            // H2 vibrational temperature, K
 //! true neutral partition function ~1.5-2x the ground-state 25 near 3000-5000 K. That
 //! biases n_e by tens of percent where iron dominates, small against the orders of
 //! magnitude at stake, but it is not exact.
+//! `tc_a` and `tc_b` are the condensation curve, in the Clausius-Clapeyron form
+//!
+//!     T_cond(p, [M/H]) = tc_b / (tc_a - log10(p/1 bar) - 0.5 [M/H])
+//!
+//! which is the shape these curves actually have: T_cond rises with pressure and, more
+//! weakly, with metallicity, because both raise the partial pressure of the condensible.
+//!
+//! THE COEFFICIENTS ARE APPROXIMATE. They are anchored to the widely quoted 1 bar
+//! condensation temperatures -- Fe ~1800 K, Al (corundum) ~1700 K, Ca ~1650 K, Mg
+//! (forsterite/enstatite) ~1600 K, Na (Na2S) ~1200 K, K (KCl) ~1000 K -- with slopes
+//! chosen to give the usual ~80-150 K per decade of pressure, and a common metallicity
+//! coefficient of 0.5. They are NOT a specific published fit, and the real chemistry is a
+//! network (Na2S and KCl form by reaction with H2S and HCl, not by simple vaporization),
+//! so treat the resulting T_cond as good to perhaps a hundred kelvin. Replace the
+//! constants here with a Lodders/Visscher fit if that accuracy matters; the framework
+//! does not change.
 struct MetalDonor {
   double abun;
   double chi;
   double gfac;
+  double tc_a;
+  double tc_b;
 };
 constexpr int n_metal_donor = 6;
 constexpr MetalDonor metal_donor[n_metal_donor] = {
-  {2.0e-6, 5.139*ev, 1.0},        // Na
-  {1.2e-7, 4.341*ev, 1.0},        // K
-  {2.2e-6, 6.113*ev, 4.0},        // Ca
-  {3.0e-6, 5.986*ev, 1.0/3.0},    // Al
-  {3.8e-5, 7.646*ev, 4.0},        // Mg
-  {3.2e-5, 7.902*ev, 2.4},        // Fe
+  {2.0e-6, 5.139*ev, 1.0,     13.0, 15600.0},   // Na, as Na2S,  ~1200 K at 1 bar
+  {1.2e-7, 4.341*ev, 1.0,     12.5, 12500.0},   // K,  as KCl,   ~1000 K at 1 bar
+  {2.2e-6, 6.113*ev, 4.0,     12.1, 19965.0},   // Ca,           ~1650 K at 1 bar
+  {3.0e-6, 5.986*ev, 1.0/3.0, 12.0, 20400.0},   // Al, corundum, ~1700 K at 1 bar
+  {3.8e-5, 7.646*ev, 4.0,     12.2, 19520.0},   // Mg, silicate, ~1600 K at 1 bar
+  {3.2e-5, 7.902*ev, 2.4,     12.0, 21600.0},   // Fe,           ~1800 K at 1 bar
 };
+constexpr double metal_tc_mh = 0.5;   // rough d/d[M/H] coefficient, common to all
 
 }  // namespace eos_cgs
 
@@ -139,8 +158,18 @@ struct EOSCompositionModel {
   //! another. Scales the electron donors only; the inert lump is still set by
   //! Z = 1 - X - Y, so adjust xhyd and yhel too for a large departure from solar.
   double metal_mh = 0.0;
-  //! Crude rainout: below this temperature the tracked metals are removed from the gas
-  //! phase over one decade in T, killing their electron donation. 0 disables it.
+  //! Per-species rainout on the condensation curves in eos_cgs::metal_donor. Each donor
+  //! is removed from the gas phase below its own T_cond(p, [M/H]), which is where it
+  //! stops supplying electrons. Off by default because it costs a second pass through the
+  //! composition model and most runs never get cold enough to need it.
+  //!
+  //! Only the ELECTRON DONATION is suppressed. The condensed material is not removed from
+  //! the mass or the particle count: whether it rains out of the column or stays as cloud
+  //! is a transport question this local model cannot answer, and the mass involved is
+  //! ~1e-4 of the gas, so leaving it in place is both simpler and the smaller error.
+  bool include_metal_cond = false;
+  //! Crude alternative to the above: a single temperature, below which ALL tracked metals
+  //! are removed over one decade in T. Overrides include_metal_cond when positive.
   //!
   //! Real condensation is species-specific and pressure-dependent -- Fe near 1800 K,
   //! Na2S near 1200 K, KCl near 1000 K at 1 bar, all shifting with pressure -- and this
@@ -249,7 +278,7 @@ struct EOSCompositionModel {
                double &nh2, double &nh, double &nhii,
                double &nhe, double &nheii, double &nheiii,
                const double *kmet = nullptr, const double nmet_base = 0.0,
-               double *nmion = nullptr) const {
+               double *nmion = nullptr, const double *fcond = nullptr) const {
     // hydrogen: n_Htot = 2 n_H2 + n_H + n_H+, with n_H+ = (K_H/n_e) n_H and
     // n_H2 = n_H^2/K_D. Solved as a quadratic in n_H, in the form that stays accurate
     // when the molecular term is negligible. H2 is then recovered from the nuclei budget
@@ -286,7 +315,8 @@ struct EOSCompositionModel {
       if (kmet != nullptr) {
         for (int s=0; s<eos_cgs::n_metal_donor; ++s) {
           double rm = kmet[s]/nel;
-          sum += eos_cgs::metal_donor[s].abun*nmet_base*rm/(1.0 + rm);
+          double fc = (fcond != nullptr) ? fcond[s] : 1.0;
+          sum += eos_cgs::metal_donor[s].abun*nmet_base*fc*rm/(1.0 + rm);
         }
       }
       *nmion = sum;
@@ -294,9 +324,56 @@ struct EOSCompositionModel {
   }
 
   //--------------------------------------------------------------------------------------
+  //! \fn void CondensationFactors
+  //! \brief gas-phase fraction of each metal donor at a given temperature and pressure.
+  //!
+  //! Each species is removed below its own T_cond(p, [M/H]) from the Clausius-Clapeyron
+  //! curve in eos_cgs::metal_donor. The transition is a tanh over 5% in temperature,
+  //! not a step: the result is tabulated and then differenced to build the interpolation
+  //! table, and a discontinuity would give node derivatives that make the bicubic Hermite
+  //! patch ring.
+  void CondensationFactors(const double t, const double p_cgs, double *fcond) const {
+    if (metal_tcond > 0.0) {              // crude single-temperature override
+      double f = log10(t/(0.1*metal_tcond));
+      f = (f < 0.0) ? 0.0 : ((f > 1.0) ? 1.0 : f);
+      for (int s=0; s<eos_cgs::n_metal_donor; ++s) fcond[s] = f;
+      return;
+    }
+    const double lgp_bar = log10(p_cgs/1.0e6);          // 1 bar = 1e6 barye
+    for (int s=0; s<eos_cgs::n_metal_donor; ++s) {
+      double denom = eos_cgs::metal_donor[s].tc_a - lgp_bar
+                   - eos_cgs::metal_tc_mh*metal_mh;
+      // a non-positive denominator means the curve has run off its range of validity;
+      // treat it as "no condensation" rather than producing a negative T_cond
+      double tc = (denom > 0.0) ? eos_cgs::metal_donor[s].tc_b/denom : 0.0;
+      fcond[s] = 0.5*(1.0 + tanh((t - tc)/(0.05*(tc > 0.0 ? tc : 1.0))));
+    }
+  }
+
+  //--------------------------------------------------------------------------------------
   //! \fn EOSCompositionState Evaluate
-  //! \brief the model itself: composition, pressure and internal energy at (rho,T) in cgs
+  //! \brief composition, pressure and internal energy at (rho,T) in cgs.
+  //!
+  //! Condensation needs the pressure, and the pressure is an output, so it takes two
+  //! passes: one at full gas-phase abundance to get p, then the real one. That is exact
+  //! enough because the donors are ~1e-4 of the particles, so p is insensitive to whether
+  //! they have condensed -- and this is host-side table-build code, where a factor of two
+  //! costs nothing.
   EOSCompositionState Evaluate(const double rho, const double t) const {
+    if (include_metal_ion && (include_metal_cond || metal_tcond > 0.0)) {
+      EOSCompositionState s0 = EvaluateAt(rho, t, nullptr);
+      double fcond[eos_cgs::n_metal_donor];
+      CondensationFactors(t, rho*s0.p_spec, fcond);
+      return EvaluateAt(rho, t, fcond);
+    }
+    return EvaluateAt(rho, t, nullptr);
+  }
+
+  //--------------------------------------------------------------------------------------
+  //! \fn EOSCompositionState EvaluateAt
+  //! \brief the model itself, at a prescribed gas-phase fraction for each metal donor
+  EOSCompositionState EvaluateAt(const double rho, const double t,
+                                 const double *fcond) const {
     using namespace eos_cgs;  // NOLINT(build/namespaces)
 
     // nuclei per unit volume
@@ -323,12 +400,7 @@ struct EOSCompositionModel {
     double nmet_base = 0.0;
     const bool has_metal = include_metal_ion && (nh_tot > 0.0);
     if (has_metal) {
-      double fcond = 1.0;
-      if (metal_tcond > 0.0) {                  // crude rainout over one decade in T
-        fcond = log10(t/(0.1*metal_tcond));
-        fcond = (fcond < 0.0) ? 0.0 : ((fcond > 1.0) ? 1.0 : fcond);
-      }
-      nmet_base = nh_tot*pow(10.0, metal_mh)*fcond;
+      nmet_base = nh_tot*pow(10.0, metal_mh);
       for (int s=0; s<eos_cgs::n_metal_donor; ++s) {
         double bm = -eos_cgs::metal_donor[s].chi/(kboltz*t);
         kmet[s] = (bm > -700.0) ? eos_cgs::metal_donor[s].gfac*sf*exp(bm) : 0.0;
@@ -357,7 +429,7 @@ struct EOSCompositionModel {
         double mid = 0.5*(lo + hi);
         double ntry = exp(mid);
         Species(ntry, nh_tot, nhe_tot, include_h2, kdis, kh, khe1, khe2,
-                nh2, nh, nhii, nhe, nheii, nheiii, kmet, nmet_base, &nmion);
+                nh2, nh, nhii, nhe, nheii, nheiii, kmet, nmet_base, &nmion, fcond);
         double res = nhii + nheii + 2.0*nheiii + nmion - ntry;
         if (res > 0.0) {
           lo = mid;
@@ -371,7 +443,7 @@ struct EOSCompositionModel {
       nel = 1.0e-40*nmax;
     }
     Species(nel, nh_tot, nhe_tot, include_h2, kdis, kh, khe1, khe2,
-            nh2, nh, nhii, nhe, nheii, nheiii, kmet, nmet_base, &nmion);
+            nh2, nh, nhii, nhe, nheii, nheiii, kmet, nmet_base, &nmion, fcond);
     // the free electrons are whatever the ions supply, not the bisection iterate
     nel = nhii + nheii + 2.0*nheiii + nmion;
 
@@ -401,7 +473,8 @@ struct EOSCompositionModel {
     if (has_metal) {
       for (int s=0; s<eos_cgs::n_metal_donor; ++s) {
         double rm = kmet[s]/nel;
-        eint += eos_cgs::metal_donor[s].abun*nmet_base*(rm/(1.0 + rm))
+        double fc = (fcond != nullptr) ? fcond[s] : 1.0;
+        eint += eos_cgs::metal_donor[s].abun*nmet_base*fc*(rm/(1.0 + rm))
                 *eos_cgs::metal_donor[s].chi;
       }
     }
