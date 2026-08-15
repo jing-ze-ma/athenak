@@ -72,7 +72,7 @@ Real rho_base_ic    = 0.0;
 Real T_base_ic      = 0.0;
 Real gradad_base_ic = 0.0;   // (dln T/dln p)_s at the base -- defines the deep adiabat
 Real T_top_fix_par  = 3500.0;  // problem/T_top_fix: temperature of the fixed-T top lid
-bool sponge_on      = false;   // problem/sponge: absorbing layer below the top boundary
+bool sponge_on      = true;    // problem/sponge: absorbing layer below the top boundary
 Real sponge_zbot    = 0.8;     // problem/sponge_zbot: its bottom, as a box fraction
 Real sponge_c       = 0.1;     // problem/sponge_c: damping rate, in units of cs/dz
 }  // namespace
@@ -92,9 +92,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   user_bcs_func = HydrostaticEquilibrium;
   // Temperature of the fixed-T top lid. Read before the restart return so restarts see it.
   T_top_fix_par = pin->GetOrAddReal("problem","T_top_fix",3500.0);
-  // Absorbing layer below the top boundary, off by default. Also read before the restart
-  // return, since it is a source term the restarted run has to keep applying.
-  sponge_on   = pin->GetOrAddBoolean("problem","sponge",false);
+  // Absorbing layer below the top boundary. ON by default: this pgen has always applied a
+  // damping layer over the top 20% of the box, and that layer is now this one, so leaving
+  // it off by default would silently remove a source term every previous run had. Read
+  // before the restart return, since it is a source term the restarted run has to keep
+  // applying.
+  sponge_on   = pin->GetOrAddBoolean("problem","sponge",true);
   sponge_zbot = pin->GetOrAddReal("problem","sponge_zbot",0.8);
   sponge_c    = pin->GetOrAddReal("problem","sponge_c",0.1);
   if (global_variable::my_rank == 0) {
@@ -1196,29 +1199,8 @@ void SourceFunc(Mesh *pm, Real bdt) {
         }
         u0(m,IM1,k,j,i) += src;
 
-        // Top WAVE-DAMPING layer: relax velocities toward zero in the upper atmosphere so that
-        // convection-driven acoustic/gravity waves are ABSORBED rather than reflected off the
-        // fixed-T top (which was building standing modes -> vx_rms rising to ~2.7 km/s at the top).
-        // Top ~20%, tau=50s (10x stronger + deeper than before) to absorb waves within ~one
-        // crossing; ff^2 ramp avoids an impedance jump. Sits well above the photosphere (~45%).
-        {
-          Real zt = r1;
-          Real zb = r1 - 0.20*(r1-r0);       // sponge covers the top ~20% of the domain
-          Real tau_sponge = 5.0e1;           // velocity damping timescale [s] (was 500)
-          Real ff = (z-zb)/(zt-zb);
-          ff = (ff < 0.0) ? 0.0 : ((ff > 1.0) ? 1.0 : ff);
-          Real fredux = ff*ff*bdt/tau_sponge;
-          fredux = (fredux > 1.0) ? 1.0 : fredux;
-          Real rhoc = u0(m,IDN,k,j,i);
-          Real ke_old = 0.5*(SQR(u0(m,IM1,k,j,i))+SQR(u0(m,IM2,k,j,i))
-                            +SQR(u0(m,IM3,k,j,i)))/rhoc;
-          u0(m,IM1,k,j,i) -= u0(m,IM1,k,j,i)*fredux;
-          u0(m,IM2,k,j,i) -= u0(m,IM2,k,j,i)*fredux;
-          u0(m,IM3,k,j,i) -= u0(m,IM3,k,j,i)*fredux;
-          Real ke_new = 0.5*(SQR(u0(m,IM1,k,j,i))+SQR(u0(m,IM2,k,j,i))
-                            +SQR(u0(m,IM3,k,j,i)))/rhoc;
-          u0(m,IEN,k,j,i) += (ke_new-ke_old);   // drain damped KE from total energy
-        }
+        // (The top wave-damping layer that used to sit here -- top 20%, tau = 50 s --
+        // is now the single parameterised sponge at the end of this function.)
 
         // Bottom convective-flux heating: DISABLED for now. The equilibrium IC already starts
         // balanced; the explicit base heating overheated the low-heat-capacity base before
@@ -1462,13 +1444,35 @@ void SourceFunc(Mesh *pm, Real bdt) {
     // The rate is written as a fraction per cell-crossing time, sponge_c*cs/dz, the same
     // resolution-aware idiom the CO5BOLD relaxation above uses, so the layer behaves the
     // same at 64^2 and 192^2. The implicit form 1/(1 + rate*dt) is always stable.
+    //
+    // This REPLACES the older hard-coded layer that used to live in the source loop above
+    // (top 20%, fixed tau = 50 s, same ff^2 ramp, KE likewise discarded). Same shape, but
+    // the rate now scales with cs/dz instead of being a fixed time, and the extent and
+    // strength are runtime parameters. The layer is on by default so that inputs which
+    // never mentioned a sponge keep getting one; at the defaults (zbot = 0.8, c = 0.1) it
+    // is ~2x stronger at the topmost cell than the fixed 50 s layer was. Set
+    // problem/sponge = false for a genuinely undamped top -- note that NO run before this
+    // change had one, so that is a new configuration, not the historical control.
     if (sponge_on) {
       Real zs = r0 + sponge_zbot*(r1 - r0);
       Real izw = (r1 > zs) ? 1.0/(r1 - zs) : 0.0;
       Real sc = sponge_c;
       par_for("sponge", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
       KOKKOS_LAMBDA(int m, int k, int j, int i) {
-        Real x1v = x1v_(m,i);
+        // pcoord->x1v is only ALLOCATED AND FILLED for cubed-sphere / spherical-polar
+        // meshes (Coordinates::Coordinates); on a Cartesian mesh it is still the 1x1
+        // placeholder View, so x1v_(m,i) reads past its allocation and returns whatever
+        // happens to lie next to it in memory. That is what made this layer damp at
+        // 96x64^2 and do NOTHING at 96x192^2. Take the cell centre the same way the
+        // main source loop above does.
+        Real x1v;
+        if (use_spherical_polar) {
+          x1v = x1v_(m,i);
+        } else {
+          Real &x1min = size.d_view(m).x1min;
+          Real &x1max = size.d_view(m).x1max;
+          x1v = CellCenterX(i-is, indcs.nx1, x1min, x1max);
+        }
         if (x1v > zs) {
           Real ramp = SQR((x1v - zs)*izw);
           Real r = u0(m,IDN,k,j,i);
