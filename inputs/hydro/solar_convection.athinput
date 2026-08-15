@@ -1,0 +1,112 @@
+# AthenaK input: solar_convection, tabulated general EOS + absorbing top layer
+#
+# Build with  -DPROBLEM=solar_convection.  Box is 96 x 64^2 over (2000 km)^3 of the solar
+# surface layers, with the photosphere landing near z/zmax = 0.48.  Runs in ~1.5 h on 16
+# MPI x 4 OpenMP.
+#
+# Two things here are worth copying into other stratified problems:
+#
+#  * <units> with every factor 1, so code units ARE cgs.  The general EOS needs the block
+#    (see docs/general_eos.md); `mu = 1` because mu is divided back out of the temperature
+#    scale and is NOT the composition -- composition lives in the EOS.
+#
+#  * <problem>/sponge.  Under the general EOS, H2 formation raises mu to ~1.26 and halves
+#    the pressure scale height to ~126 km (the solar value; an ideal gas at mu = 0.602
+#    gives 275 km).  The same box then holds ~10 pressure scale heights above the
+#    photosphere instead of ~5, so the convective acoustic flux amplifies ~134x rather
+#    than ~11x on the way up, the waves shock, and with nothing to remove the energy they
+#    accumulate without ever saturating.  The sponge supplies the missing sink.  See
+#    docs/solar_convection.md.
+#
+# Set `eos = ideal` and delete <units> and the eos_* parameters for the ideal-gas control;
+# everything else can stay as it is, which is what makes the two directly comparable.
+
+<comment>
+problem   = solar convection with a general EOS
+reference =
+
+<job>
+basename  = sun
+
+<mesh>
+nghost    = 2
+nx1       = 96            # vertical; the two-stream RT sweeps whole columns
+x1min     = 0.0
+x1max     = 2.0e8
+ix1_bc    = user
+ox1_bc    = user
+
+nx2       = 64
+x2min     = -2.0e8
+x2max     = 2.0e8
+ix2_bc    = periodic
+ox2_bc    = periodic
+
+nx3       = 64
+x3min     = -2.0e8
+x3max     = 2.0e8
+ix3_bc    = periodic
+ox3_bc    = periodic
+
+<meshblock>
+nx1       = 96            # MUST equal mesh/nx1: the RT needs whole vertical columns
+nx2       = 8
+nx3       = 8
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim       = 1000000000
+tlim       = 20000.0
+ndiag      = 100
+
+<units>
+# cgs: every conversion factor is 1, so code density/pressure/length ARE cgs.
+# mu is NOT the composition -- it is divided back out of the temperature scale.
+length_cgs = 1.0
+mass_cgs   = 1.0
+time_cgs   = 1.0
+mu         = 1.0
+
+<hydro>
+eos             = general
+general_eos     = table
+reconstruct     = plm
+rsolver         = hllc
+gamma           = 1.666667       # unused by the table; kept so ideal/general inputs match
+dfloor          = 1.0e-11
+tfloor          = 1.663e10       # = 200 K in code temperature (T_code = 8.3145e7 * T_K)
+etotgrav        = true
+
+# --- tabulated EOS: composition and physics switches ---
+eos_h2          = true           # H2 dissociation + rotational/vibrational energy
+eos_ionization  = true           # Saha ionization of H, He, He+
+eos_radiation   = false          # no radiation pressure/energy
+eos_xh          = 0.7381         # solar hydrogen mass fraction
+eos_yhe         = 0.2485         # solar helium mass fraction
+
+# --- table grid: must bracket the run. This box spans rho ~1e-11..1e-5, T ~1e3..2e4 K.
+# The model is only valid where Saha is (no pressure ionization), so do not reuse this
+# grid above rho ~ 0.1 g/cm^3 -- see docs/general_eos.md.
+eos_logd_min    = -14.0
+eos_logd_max    = 0.0
+eos_logt_min    = 1.5
+eos_logt_max    = 7.0
+eos_dlog        = 0.05           # dlogd = 0.05, dlogt = 0.01 (T grid 5x finer)
+
+<problem>
+user_srcs   = true
+T_top_fix   = 3500.0     # temperature of the fixed-T top lid, K
+sponge      = true       # absorbing layer below the top boundary
+sponge_zbot = 0.8        # its bottom, as a fraction of the box height
+sponge_c    = 0.1        # damping rate, in units of cs/dz
+
+<output1>
+file_type  = hst
+dt         = 500.0
+
+<output2>
+file_type  = bin
+variable   = hydro_w
+dt         = 1000.0

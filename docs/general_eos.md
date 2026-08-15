@@ -204,3 +204,11 @@ carries the input, so a plain restart reproduces the same EOS — but overriding
 
 `hlle` is exempt from the equality checks for the reason given above, and is only required
 to stay within a factor of two of the ideal path.
+
+---
+
+## See also
+
+[`docs/solar_convection.md`](solar_convection.md) — a worked example: what has to change
+in a stratified problem generator when the ideal-gas assumption is dropped, and what the
+halved pressure scale height does to the atmosphere above the photosphere.
