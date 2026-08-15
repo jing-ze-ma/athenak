@@ -1,0 +1,145 @@
+# Ultra-hot Jupiter (deep_hot_jupiter_rt): general EOS with metal ionization, and an
+# Ohmic resistivity built from the EOS's own electron fraction.
+#
+# Build with  -DPROBLEM=deep_hot_jupiter_rt.  This is the ideal-gas spherical-polar MHD
+# setup with three connected changes:
+#
+# 1. eos = general, general_eos = table.  H2 dissociation is the dominant energetic
+#    process in an ultra-hot Jupiter atmosphere: the reservoir is 1.58e12 erg/g, a
+#    16,000 K equivalent for a mu = 1.27 monatomic gas, against a day-night contrast of
+#    order 1000 K.  Dissociating on the dayside and recombining on the nightside is a heat
+#    pipe that flattens the contrast, and a fixed gamma cannot represent it.
+#    Half-dissociation sits near 2900 K at photospheric pressures, ~4300 K at 1 bar.
+#
+# 2. eos_metal_ionization = true.  Below ~4000 K hydrogen supplies essentially no free
+#    electrons (13.6 eV is far too high); Na, K, Ca, Al, Mg and Fe at 4-8 eV supply all of
+#    them.  Without it the electron fraction is orders of magnitude too small over exactly
+#    the range this atmosphere occupies.
+#
+# 3. ohmic_resistivity = eos reads that electron fraction instead of the potassium-only
+#    fit of `perna`.  The fit is good to a factor ~3 over 1500-5000 K, but it has no
+#    saturation ceiling, so it over-predicts x_e at low pressure once the alkalis are
+#    fully ionized, and no hydrogen term, so it under-predicts above ~6000 K.  `eos` also
+#    adds the Spitzer term, which is the larger of the two above ~7000 K.
+#
+# `perna` remains available and needs neither <units> nor an EOS table.
+# See docs/general_eos.md.
+
+<comment>
+problem   = ultra-hot Jupiter, general EOS + metal ionization + EOS resistivity
+reference = Heng et al. MNRAS 413, 2380 (2011); Perna et al. ApJ 719, 1421 (2010)
+
+<job>
+basename  = dhj
+
+<mesh>
+nghost    = 2
+nx1       = 64
+x1min     = 9.44e9
+x1max     = 12.54e9
+ix1_bc    = user
+ox1_bc    = user
+
+nx2       = 56
+x2min     = -1.0        # -1 lets the pgen set the full polar range
+x2max     = -1.0
+ix2_bc    = polar
+ox2_bc    = polar
+
+nx3       = 128
+x3min     = -1.0
+x3max     = -1.0
+ix3_bc    = periodic
+ox3_bc    = periodic
+
+use_spherical_polar    = true
+use_polar_boundary     = true
+use_grid_stretch_theta = true
+f_stretch_theta        = 2.0
+
+<meshblock>
+nx1       = 64
+nx2       = 8
+nx3       = 8
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim       = 1000000000
+tlim       = 8.64e7
+ndiag      = 100
+
+<units>
+# REQUIRED by the general EOS.  All factors 1, so code units ARE cgs -- which this problem
+# already assumed: the mesh is in cm, and the resistivity returns cm^2/s with no
+# conversion.  mu = 1 because mu is divided back out of the temperature scale; the
+# composition lives in the EOS, not here.
+length_cgs = 1.0
+mass_cgs   = 1.0
+time_cgs   = 1.0
+mu         = 1.0
+
+<mhd>
+eos             = general
+general_eos     = table
+reconstruct     = plm
+rsolver         = hlld
+gamma           = 1.4727545958   # unused by the table; kept so ideal/general inputs match
+etotgrav        = true
+
+# --- composition ---
+eos_h2               = true      # H2 dissociation: the heat pipe
+eos_ionization       = true      # Saha for H, He, He+
+eos_metal_ionization = true      # Na, K, Ca, Al, Mg, Fe -- the electron donors
+eos_radiation        = false     # aT^4/3 is ~1e-7 of the gas pressure here
+eos_xh               = 0.7381
+eos_yhe              = 0.2485
+# eos_metal_mh       = 0.0       # [M/H] in dex for the donors. Defaults to <problem>/met
+#                                # below, which feeds the opacity fit, so metallicity is
+#                                # set in ONE place. Overriding it here makes the pgen
+#                                # abort, since the atmosphere would then be opaque at one
+#                                # metallicity and conducting at another.
+# eos_metal_tcond    = 0.0       # crude rainout; consider ~1500 K if the nightside gets
+#                                # cold enough to condense the alkalis and Fe out
+
+# --- table grid: must bracket the run ---
+eos_logd_min    = -14.0
+eos_logd_max    = 0.0
+eos_logt_min    = 1.5
+eos_logt_max    = 6.0
+eos_dlog        = 0.05
+
+# --- non-ideal MHD ---
+ohmic_resistivity = eos          # constant | perna | eos
+max_eta           = 1.0e13       # caps eta [cm^2/s]; floors x_e at 230 sqrt(T)/max_eta
+#use_rkg_sts      = true         # RKG super-time-stepping, if the diffusive dt bites
+
+pfloor = 1.0e-1
+dfloor = 5.44e-12
+# NOTE the change of meaning: tfloor is a floor on the CODE temperature, and under the
+# general EOS with mu_ref = 1 that is T_code = 8.3145e7 * T[K], not p/rho with the
+# problem's Rgas.  1.663e10 is 200 K, a nan guard well below anything this atmosphere
+# should reach.  (The ideal-gas input's tfloor = 400.0 was 400 in p/rho units, i.e.
+# ~1e-5 K with Rgas = 4.593e7 -- effectively no floor at all.)
+tfloor = 1.663e10
+
+<problem>
+user_srcs   = true
+hot_jupiter = true
+Teq   = 2500.0
+omega = 2.06e-5
+grav  = 942.0
+ap    = 9.44e9
+Rgas  = 4.593e7                  # ignored under the general EOS; composition is the EOS's
+met   = 0.0                      # [M/H] dex; also sets the EOS's metal donors
+bbot  = 5.0e0
+
+<output1>
+file_type  = hst
+dt         = 8.64e6
+
+<output2>
+file_type  = bin
+variable   = mhd_w_bcc
+dt         = 2.16e6

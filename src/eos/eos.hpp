@@ -332,6 +332,16 @@ struct EOS_Data {
     return 0.0;
   }
 
+  //! \fn bool MetalIonization
+  //! \brief were the metal electron donors included when the EOS table was built?
+  KOKKOS_INLINE_FUNCTION
+  bool MetalIonization() const { return (tbl.active && tbl.metal_ion); }
+
+  //! \fn Real MetalMetallicity
+  //! \brief [M/H] in dex that those donors were built with
+  KOKKOS_INLINE_FUNCTION
+  Real MetalMetallicity() const { return tbl.metal_mh; }
+
   //! \fn Real ElectronFraction
   //! \brief n_e/n_tot at (d,e); solves for the temperature itself. Setup-time use only.
   KOKKOS_INLINE_FUNCTION

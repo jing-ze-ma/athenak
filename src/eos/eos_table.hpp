@@ -95,6 +95,11 @@ struct EOSTable {
   // self-contained and can be evaluated without one.
   Real dens_cgs = 1.0, pres_cgs = 1.0, temp_cgs = 1.0;
   Real arad = 7.5657332503e-15;   // radiation constant in cgs
+  // composition metadata, so a caller can check its own metallicity against the EOS's.
+  // A problem generator that feeds [M/H] to an opacity fit and an EOS built at a
+  // different [M/H] is opaque at one metallicity and conducting at another, silently.
+  bool metal_ion = false;         // were the metal electron donors included?
+  Real metal_mh = 0.0;            // [M/H] in dex used for those donors
   Real efmax = 0.0;               // global bound on e(rho,pfloor), CODE units
 
   DvceArray3D<Real> tbl;     // (ITNVAR, ny, nx)

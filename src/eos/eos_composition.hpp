@@ -133,10 +133,12 @@ struct EOSCompositionModel {
   //! moves by ~0.01% in a molecular atmosphere and ~0.4% in the fully ionized limit.
   //! What changes by orders of magnitude is n_e.
   bool include_metal_ion = false;
-  //! Linear multiplier on the tracked metal abundances. This scales the electron donors
-  //! only; the inert lump is still set by Z = 1 - X - Y, so for a large departure from
-  //! solar adjust xhyd and yhel to match.
-  double metal_scale = 1.0;
+  //! Metallicity of the tracked donors, [M/H] in DEX, so that it is the same number and
+  //! the same convention as the metallicity a problem generator feeds its opacity -- the
+  //! two must agree or the atmosphere is opaque at one metallicity and conducting at
+  //! another. Scales the electron donors only; the inert lump is still set by
+  //! Z = 1 - X - Y, so adjust xhyd and yhel too for a large departure from solar.
+  double metal_mh = 0.0;
   //! Crude rainout: below this temperature the tracked metals are removed from the gas
   //! phase over one decade in T, killing their electron donation. 0 disables it.
   //!
@@ -326,7 +328,7 @@ struct EOSCompositionModel {
         fcond = log10(t/(0.1*metal_tcond));
         fcond = (fcond < 0.0) ? 0.0 : ((fcond > 1.0) ? 1.0 : fcond);
       }
-      nmet_base = nh_tot*metal_scale*fcond;
+      nmet_base = nh_tot*pow(10.0, metal_mh)*fcond;
       for (int s=0; s<eos_cgs::n_metal_donor; ++s) {
         double bm = -eos_cgs::metal_donor[s].chi/(kboltz*t);
         kmet[s] = (bm > -700.0) ? eos_cgs::metal_donor[s].gfac*sf*exp(bm) : 0.0;

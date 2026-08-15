@@ -85,7 +85,16 @@ void BuildEOSTable(EOSTable &tbl, ParameterInput *pin, const std::string &block,
   model.include_h2 = pin->GetOrAddBoolean(block, "eos_h2", true);
   model.include_ion = pin->GetOrAddBoolean(block, "eos_ionization", true);
   model.include_metal_ion = pin->GetOrAddBoolean(block, "eos_metal_ionization", false);
-  model.metal_scale = pin->GetOrAddReal(block, "eos_metal_scale", 1.0);
+  // [M/H] in dex for the metal donors. It DEFAULTS to <problem>/met when that exists,
+  // because a problem generator that has a metallicity uses it for its opacity, and an
+  // atmosphere that is opaque at one metallicity and conducting at another is not a
+  // physical configuration -- it is a parameter that was updated in one place only. Set
+  // eos_metal_mh explicitly to override, which a pgen may then reject.
+  Real mh_default = 0.0;
+  if (pin->DoesParameterExist("problem", "met")) {
+    mh_default = pin->GetReal("problem", "met");
+  }
+  model.metal_mh = pin->GetOrAddReal(block, "eos_metal_mh", mh_default);
   model.metal_tcond = pin->GetOrAddReal(block, "eos_metal_tcond", 0.0);
   tbl.radiation = pin->GetOrAddBoolean(block, "eos_radiation", false);
 
@@ -144,6 +153,10 @@ void BuildEOSTable(EOSTable &tbl, ParameterInput *pin, const std::string &block,
   tbl.pres_cgs = pres_cgs;
   tbl.temp_cgs = temp_cgs;
   tbl.arad = eos_cgs::a_rad;
+  // recorded so that a problem generator can verify its own metallicity matches the one
+  // the EOS was built with; a mismatch is silent otherwise
+  tbl.metal_ion = model.include_metal_ion;
+  tbl.metal_mh = model.metal_mh;
 
   // ------------------------------------------------------------------------ sample grid
   Kokkos::realloc(tbl.tbl, ITNVAR, ny, nx);
@@ -237,7 +250,7 @@ void BuildEOSTable(EOSTable &tbl, ParameterInput *pin, const std::string &block,
             << "             metal ionization "
             << (model.include_metal_ion ? "on" : "off");
   if (model.include_metal_ion) {
-    std::cout << " (abundance x" << model.metal_scale;
+    std::cout << " ([M/H] = " << model.metal_mh;
     if (model.metal_tcond > 0.0) {
       std::cout << ", rainout below " << model.metal_tcond << " K";
     }

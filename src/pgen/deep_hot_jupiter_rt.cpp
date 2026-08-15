@@ -229,6 +229,24 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       }
     }
 
+    // <problem>/met is [M/H] in dex and feeds the opacity fit in get_kapr(); the EOS
+    // scales its metal electron donors by eos_metal_mh, which DEFAULTS to met and so
+    // normally agrees automatically. It can only differ if it was set explicitly, and the
+    // result would be an atmosphere opaque at one metallicity and conducting at another,
+    // with the electron fraction -- hence the Ohmic resistivity -- wrong by
+    // 10^(met - eos_metal_mh). Refuse rather than let that pass.
+    if (eos.IsGeneral() && eos.MetalIonization()) {
+      if (fabs(met - eos.MetalMetallicity()) > 1.0e-6) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl
+                  << "<problem>/met = " << met << " but the EOS metal donors were built "
+                  << "with eos_metal_mh = " << eos.MetalMetallicity()
+                  << "; both are [M/H] in dex and must agree. Remove the explicit "
+                  << "eos_metal_mh and it will follow met." << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }
+
     Real iap = 1.0/ap;
     
     Real grav = -grav_acc;
