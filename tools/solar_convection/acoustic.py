@@ -92,8 +92,7 @@ DEFAULT = ['ideal', 'table']
 
 
 def eos_for(run):
-    return eoslib.TableEOS(compare.GRID) if 'table' in run or 'lid' in run \
-        else eoslib.IdealEOS()
+    return eoslib.eos_for_run(os.path.join(ROOT, run), compare.GRID)
 
 
 def cv_of(eos, rho, espec, frac=1.0e-3):

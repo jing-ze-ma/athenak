@@ -86,7 +86,7 @@ PANELS = [
 
 def main():
     run = sys.argv[1] if len(sys.argv) > 1 else 'ideal'
-    eos = eoslib.TableEOS(GRID) if run.startswith('table') else eoslib.IdealEOS()
+    eos = eoslib.eos_for_run(os.path.join(ROOT, run), GRID)
     if os.path.exists(STYLE):
         plt.style.use(STYLE)
     color, bg = 'white', 'black'

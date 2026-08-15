@@ -14,6 +14,8 @@ Both EOS choices are exposed through one interface so the analysis script does n
 Every method takes cgs density and cgs SPECIFIC internal energy e/rho and returns cgs.
 """
 
+import os
+
 import numpy as np
 
 # ---------------------------------------------------------------------------------------
@@ -169,3 +171,34 @@ def get_kapr(rho, T):
     kap = np.minimum(kap, kapd)
     kap = kap + np.where(T < 1.0e4, 0.0, 0.34)     # electron scattering
     return np.maximum(kap, 1.0e-2)
+
+
+def eos_for_run(run_dir, grid, athinput='sun.athinput'):
+    """The EOS a run actually used, read from its own input file.
+
+    Guessing from the run's NAME is how a tabulated-EOS run gets silently analysed with
+    ideal-gas formulas -- 'sponge08' contains neither 'table' nor 'ideal'. Parse
+    <hydro>/general_eos instead, and fail loudly rather than fall back to a guess.
+    """
+    path = os.path.join(run_dir, athinput)
+    if not os.path.exists(path):
+        raise RuntimeError('%s not found: cannot tell which EOS %s used'
+                           % (path, run_dir))
+    block, general, kind = None, None, None
+    with open(path) as fh:
+        for line in fh:
+            line = line.split('#')[0].strip()
+            if line.startswith('<') and line.endswith('>'):
+                block = line[1:-1].strip()
+            elif '=' in line and block == 'hydro':
+                key, val = (s.strip() for s in line.split('=', 1))
+                if key == 'eos':
+                    general = val
+                elif key == 'general_eos':
+                    kind = val
+    if general == 'general':
+        if kind != 'table':
+            raise RuntimeError('%s uses general_eos = %r, which eoslib cannot evaluate'
+                               % (run_dir, kind))
+        return TableEOS(grid)
+    return IdealEOS()

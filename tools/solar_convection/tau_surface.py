@@ -86,7 +86,7 @@ def tau_surface(d, eos):
 
 def main():
     run = sys.argv[1] if len(sys.argv) > 1 else 'ideal'
-    eos = eoslib.TableEOS(GRID) if run.startswith('table') else eoslib.IdealEOS()
+    eos = eoslib.eos_for_run(os.path.join(ROOT, run), GRID)
     # TAG appends to the output directory name, so the same run can be rendered twice at
     # different colour limits without either set overwriting the other.
     outdir = os.path.join(ROOT, 'plots', 'tau_surface', run + os.environ.get('TAG', ''))

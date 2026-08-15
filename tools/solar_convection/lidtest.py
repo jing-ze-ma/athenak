@@ -68,7 +68,6 @@ def series(run, eos):
 
 def main():
     runs = sys.argv[1:] or DEFAULT
-    tab = eoslib.TableEOS(compare.GRID)
     res = {}
     lines = []
 
@@ -77,7 +76,7 @@ def main():
         print(s)
 
     for r in runs:
-        res[r] = series(r, tab)
+        res[r] = series(r, eoslib.eos_for_run(os.path.join(ROOT, r), compare.GRID))
 
     w('lid test: does problem/T_top_fix drive the supersonic atmosphere?')
     w('=' * 88)
