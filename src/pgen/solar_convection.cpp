@@ -72,6 +72,9 @@ Real rho_base_ic    = 0.0;
 Real T_base_ic      = 0.0;
 Real gradad_base_ic = 0.0;   // (dln T/dln p)_s at the base -- defines the deep adiabat
 Real T_top_fix_par  = 3500.0;  // problem/T_top_fix: temperature of the fixed-T top lid
+bool sponge_on      = false;   // problem/sponge: absorbing layer below the top boundary
+Real sponge_zbot    = 0.8;     // problem/sponge_zbot: its bottom, as a box fraction
+Real sponge_c       = 0.1;     // problem/sponge_c: damping rate, in units of cs/dz
 }  // namespace
 
 
@@ -89,6 +92,11 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   user_bcs_func = HydrostaticEquilibrium;
   // Temperature of the fixed-T top lid. Read before the restart return so restarts see it.
   T_top_fix_par = pin->GetOrAddReal("problem","T_top_fix",3500.0);
+  // Absorbing layer below the top boundary, off by default. Also read before the restart
+  // return, since it is a source term the restarted run has to keep applying.
+  sponge_on   = pin->GetOrAddBoolean("problem","sponge",false);
+  sponge_zbot = pin->GetOrAddReal("problem","sponge_zbot",0.8);
+  sponge_c    = pin->GetOrAddReal("problem","sponge_c",0.1);
   // Base state from the IC integration. Done BEFORE the restart return because the bottom
   // boundary and the CO5BOLD relaxation need it on restarts as well.
   {
@@ -1405,6 +1413,66 @@ void SourceFunc(Mesh *pm, Real bdt) {
           Real E = r*es + 0.5*r*(vxn*vxn+vy*vy+vz*vz);
           if (use_etotgrav) E += r*phicc0(m,k,jj,is);
           u0(m,IEN,k,jj,is) = E;
+        }
+      });
+    }
+
+    //------------------------------------------------------------------------------------
+    // Absorbing (sponge) layer below the top boundary.
+    //
+    // Convection drives an acoustic flux up through the photosphere that is roughly the
+    // same in every run, ~5-10e9 erg/cm^2/s. What differs is the stratification it climbs
+    // through: a wave amplitude grows as rho^-1/2, and under the general EOS H2 formation
+    // raises mu to ~1.26, halving the scale height, so the same box holds ~10 pressure
+    // scale heights above the photosphere instead of ~5. That is a ~134x amplitude gain
+    // instead of ~11x, the waves reach Mach 1 before they reach the lid, and the
+    // atmosphere becomes shock-dominated. Radiation cannot take the energy back out --
+    // the measured t_rad/t_ac is 11-17 here, i.e. a wave crosses a scale height
+    // essentially adiabatically -- so with a partly reflecting top the wave energy simply
+    // accumulates and never reaches a steady state.
+    //
+    // This layer damps the velocity toward zero over the top (1 - sponge_zbot) of the
+    // box, with a quadratic ramp so it opens smoothly and does not itself reflect. The
+    // kinetic energy removed is DISCARDED, not returned as heat: the layer is meant to
+    // absorb the wave flux the way an unbounded atmosphere would carry it away, and
+    // thermalising it locally would go on inflating the atmosphere, which is the very
+    // problem being fixed. Total energy is therefore deliberately not conserved here, and
+    // the sink shows up in the history file.
+    //
+    // The rate is written as a fraction per cell-crossing time, sponge_c*cs/dz, the same
+    // resolution-aware idiom the CO5BOLD relaxation above uses, so the layer behaves the
+    // same at 64^2 and 192^2. The implicit form 1/(1 + rate*dt) is always stable.
+    if (sponge_on) {
+      Real zs = r0 + sponge_zbot*(r1 - r0);
+      Real izw = (r1 > zs) ? 1.0/(r1 - zs) : 0.0;
+      Real sc = sponge_c;
+      par_for("sponge", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(int m, int k, int j, int i) {
+        Real x1v = x1v_(m,i);
+        if (x1v > zs) {
+          Real ramp = SQR((x1v - zs)*izw);
+          Real r = u0(m,IDN,k,j,i);
+          Real vx = u0(m,IM1,k,j,i)/r;
+          Real vy = u0(m,IM2,k,j,i)/r;
+          Real vz = u0(m,IM3,k,j,i)/r;
+          Real ei = u0(m,IEN,k,j,i) - 0.5*r*(vx*vx + vy*vy + vz*vz);
+          if (use_etotgrav) ei -= r*phicc0(m,k,j,i);
+          Real cs2;
+          if (eos.IsGeneral()) {
+            Real tc = eos.Temperature(r, ei);
+            cs2 = eos.Gamma1(r,ei,tc)*eos.Pressure(r,ei,tc)/r;
+          } else {
+            cs2 = gamma*gm1*ei/r;
+          }
+          Real dz = size.d_view(m).dx1;
+          Real fac = 1.0/(1.0 + sc*ramp*bdt*sqrt(cs2)/dz);
+          vx *= fac;  vy *= fac;  vz *= fac;
+          u0(m,IM1,k,j,i) = r*vx;
+          u0(m,IM2,k,j,i) = r*vy;
+          u0(m,IM3,k,j,i) = r*vz;
+          Real E = ei + 0.5*r*(vx*vx + vy*vy + vz*vz);
+          if (use_etotgrav) E += r*phicc0(m,k,j,i);
+          u0(m,IEN,k,j,i) = E;
         }
       });
     }
