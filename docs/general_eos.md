@@ -126,19 +126,34 @@ each species below its own condensation curve, in the standard published form
 with p_T the total pressure. The coefficients are taken from the literature, not fitted
 here, and give
 
-| phase | Ca: CaAl4O7 | Al: Al2O3 | Fe | Mg: Mg2SiO4 | Na: Na2S | K: KCl |
+Every coefficient is from the literature. Per species, so each row can be checked against
+its own source:
+
+| element | condensate | published fit | source |
+|---|---|---|---|
+| Na | Na2S | 10⁴/T = 10.045 − 0.72 log p − 1.08 [Fe/H] | [Morley+2012](https://doi.org/10.1088/0004-637X/756/2/172), Table 1 |
+| K | KCl | 10⁴/T = 12.479 − 0.879 log p − 0.879 [Fe/H] | [Morley+2012](https://doi.org/10.1088/0004-637X/756/2/172), Table 1 |
+| Ca | CaAl₄O₇ (grossite) | 10⁴/T = 4.990 − 0.2394 log p + 1.398e−3 (log p)² − 0.595 [Fe/H] | [Wakeford+2017](https://doi.org/10.1093/mnras/stw2639) |
+| Al | Al₂O₃ (corundum) | 10⁴/T = 5.014 − 0.2179 log p + 2.264e−3 (log p)² − 0.580 [Fe/H] | [Wakeford+2017](https://doi.org/10.1093/mnras/stw2639) |
+| Mg | Mg₂SiO₄ (forsterite) | 10⁴/T = 5.89 − 0.37 log p − 0.73 [Fe/H] | [Visscher+2010](https://doi.org/10.1088/0004-637X/716/2/1060), eq 18 |
+| Fe | Fe metal | 10⁴/T = 5.44 − 0.48 log p − 0.48 [Fe/H] | [Visscher+2010](https://doi.org/10.1088/0004-637X/716/2/1060), eq 2 |
+
+Pressure is the total pressure in bar. Visscher+2010 state their expressions are valid for
+800–2500 K and [Fe/H] ≤ +0.5; the Wakeford+2017 fits hold where that phase is the
+highest-temperature Al- or Ca-bearing condensate. Behind Morley+2012 sit the
+saturation curves log p'_Na = 8.550 − 13889/T − 0.5[Fe/H] (from
+[Visscher+2006](https://doi.org/10.1086/506245)) and log p'_KCl = 7.611 − 11382/T.
+
+Which gives:
+
+| | Ca | Al | Fe | Mg | Na | K |
 |---|---|---|---|---|---|---|
 | T_cond at 1e-3 bar | 1748 K | 1758 K | 1453 K | 1429 K | 819 K | 662 K |
 | T_cond at 1 bar | 2004 K | 1994 K | 1838 K | 1698 K | 996 K | 801 K |
 | T_cond at 10 bar | 2104 K | 2084 K | 2016 K | 1812 K | 1072 K | 862 K |
 
-Sources: Fe and Mg2SiO4 from [Visscher, Lodders & Fegley 2010](https://doi.org/10.1088/0004-637X/716/2/1060)
-(eqs 2 and 18, stated valid 800–2500 K and [Fe/H] ≤ +0.5); Na2S and KCl from
-[Morley et al. 2012](https://doi.org/10.1088/0004-637X/756/2/172); Al2O3 and CaAl4O7 from
-[Wakeford et al. 2017](https://doi.org/10.1093/mnras/stw2639), valid where that phase is
-the highest-temperature Al- or Ca-bearing condensate. `log10 p_T` is clamped to
-[−8, +3] before use, because the refractory fits are quadratic in it and the table grid
-extends far outside any real atmosphere.
+`log10 p_T` is clamped to [−8, +3] before use: the refractory fits are quadratic in it,
+and the table grid extends far outside any real atmosphere.
 
 These are the analytic curves the field uses — virga, PICASO, and the Ackerman & Marley
 cloud lineage all draw on them. They are not the newest: [virga v1](https://arxiv.org/abs/2508.15102)

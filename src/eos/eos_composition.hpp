@@ -93,12 +93,39 @@ constexpr double theta_vib = 6332.0;            // H2 vibrational temperature, K
 //! with p_T the TOTAL pressure. T_cond rises with pressure and with metallicity because
 //! both raise the partial pressure of the condensible.
 //!
-//! Coefficients are taken from the literature, not fitted here:
-//!   Fe, Mg2SiO4          Visscher, Lodders & Fegley 2010, ApJ 716, 1060 (eqs 2, 18);
-//!                        stated valid 800-2500 K and [Fe/H] <= +0.5
-//!   Na2S, KCl            Morley et al. 2012, ApJ 756, 172
-//!   Al2O3, CaAl4O7       Wakeford et al. 2017, MNRAS 464, 4247; valid where that phase
-//!                        is the highest-temperature Al- or Ca-bearing condensate
+//! COEFFICIENTS ARE TAKEN FROM THE LITERATURE, NOT FITTED HERE. Per species, with the
+//! published equation quoted so each row can be checked against its own source:
+//!
+//!   Na  Na2S       Morley et al. 2012, ApJ 756, 172 (arXiv:1206.4313), Table 1
+//!                    10^4/T_cond(Na2S)  = 10.045 - 0.72  log p_t - 1.08  [Fe/H]
+//!                  from the Visscher, Lodders & Fegley 2006 (ApJ 648, 1181) sulfur
+//!                  chemistry; saturation curve log p'_Na = 8.550 - 13889/T - 0.5 [Fe/H]
+//!
+//!   K   KCl        Morley et al. 2012, ApJ 756, 172 (arXiv:1206.4313), Table 1
+//!                    10^4/T_cond(KCl)   = 12.479 - 0.879 log p_t - 0.879 [Fe/H]
+//!                  saturation curve log p'_KCl = 7.611 - 11382/T; cf. Lodders 1999
+//!
+//!   Ca  CaAl4O7    Wakeford et al. 2017, MNRAS 464, 4247 (arXiv:1610.03325)
+//!                    10^4/T_cond(CaAl4O7) = 4.990 - 0.2394 log P_T
+//!                                            + 1.398e-3 (log P_T)^2 - 0.595 [Fe/H]
+//!                  grossite; valid where it is the highest-T Ca-bearing condensate
+//!
+//!   Al  Al2O3      Wakeford et al. 2017, MNRAS 464, 4247 (arXiv:1610.03325)
+//!                    10^4/T_cond(Al2O3)   = 5.014 - 0.2179 log P_T
+//!                                            + 2.264e-3 (log P_T)^2 - 0.580 [Fe/H]
+//!                  corundum; valid where it is the highest-T Al-bearing condensate
+//!
+//!   Mg  Mg2SiO4    Visscher, Lodders & Fegley 2010, ApJ 716, 1060 (arXiv:1001.3639),
+//!                  eq 18
+//!                    10^4/T_cond(Mg2SiO4) = 5.89 - 0.37 log P_T - 0.73 [Fe/H]
+//!                  forsterite; enstatite (their eq 20) follows at lower T
+//!
+//!   Fe  Fe metal   Visscher, Lodders & Fegley 2010, ApJ 716, 1060 (arXiv:1001.3639) eq 2
+//!                    10^4/T_cond(Fe)      = 5.44 - 0.48 log P_T - 0.48 [Fe/H]
+//!                  saturation curve log X_Fe = 7.23 - 20995/T - log P_T
+//!
+//! The Visscher+2010 expressions are stated valid for 800-2500 K and [Fe/H] <= +0.5.
+//! Pressures are TOTAL pressure in bar throughout.
 //!
 //! These are the analytic curves the field actually uses (virga, PICASO, and the
 //! Ackerman & Marley cloud lineage). They are not the newest: virga v1 (Batalha et al.
@@ -126,13 +153,15 @@ struct MetalDonor {
 };
 constexpr int n_metal_donor = 6;
 constexpr MetalDonor metal_donor[n_metal_donor] = {
-  // abundance  chi        2g+/g0     tc_a   tc_b    tc_c   tc_d     phase, T_cond(1 bar)
-  {2.0e-6, 5.139*ev, 1.0,     10.045, 0.72,   1.08,  0.0},        // Na, Na2S       995 K
-  {1.2e-7, 4.341*ev, 1.0,     12.479, 0.879,  0.879, 0.0},        // K,  KCl        801 K
-  {2.2e-6, 6.113*ev, 4.0,      4.990, 0.2394, 0.595, 1.398e-3},   // Ca, CaAl4O7   2004 K
-  {3.0e-6, 5.986*ev, 1.0/3.0,  5.014, 0.2179, 0.580, 2.264e-3},   // Al, Al2O3     1994 K
-  {3.8e-5, 7.646*ev, 4.0,      5.89,  0.37,   0.73,  0.0},        // Mg, Mg2SiO4   1698 K
-  {3.2e-5, 7.902*ev, 2.4,      5.44,  0.48,   0.48,  0.0},        // Fe, metal     1838 K
+  // abundance  chi        2g+/g0     tc_a   tc_b    tc_c   tc_d   phase / source / 1 bar
+  {2.0e-6, 5.139*ev, 1.0,     10.045, 0.72,   1.08,  0.0},      // Na Na2S    Mo12   995 K
+  {1.2e-7, 4.341*ev, 1.0,     12.479, 0.879,  0.879, 0.0},      // K  KCl     Mo12   801 K
+  {2.2e-6, 6.113*ev, 4.0,      4.990, 0.2394, 0.595, 1.398e-3}, // Ca CaAl4O7 Wa17  2004 K
+  {3.0e-6, 5.986*ev, 1.0/3.0,  5.014, 0.2179, 0.580, 2.264e-3}, // Al Al2O3   Wa17  1994 K
+  {3.8e-5, 7.646*ev, 4.0,      5.89,  0.37,   0.73,  0.0},      // Mg Mg2SiO4 Vi10  1698 K
+  {3.2e-5, 7.902*ev, 2.4,      5.44,  0.48,   0.48,  0.0},      // Fe metal   Vi10  1838 K
+  // Mo12 = Morley et al. 2012; Wa17 = Wakeford et al. 2017; Vi10 = Visscher, Lodders &
+  // Fegley 2010. Full citations and the quoted equations are in the comment above.
 };
 
 }  // namespace eos_cgs
