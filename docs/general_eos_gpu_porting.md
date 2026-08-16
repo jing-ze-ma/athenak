@@ -5,63 +5,90 @@ Porting notes for `deep_hot_jupiter_rt` with `eos = general`, `general_eos = tab
 parameter reference; this file is only about getting it onto an accelerator and knowing
 what has and has not been checked there.
 
-**Everything below was measured on CPU** (a 112-core node, 16 MPI x 7 OpenMP, the
-64 x 64 x 128 spherical-polar grid) unless it says otherwise. **Nothing in this file has
-been run on a GPU.** Where a statement is an inference rather than a measurement it says
-so.
+**Everything measured below was measured on CPU** (a 112-core node, 16 MPI x 7 OpenMP, the
+64 x 64 x 128 spherical-polar grid) unless it says otherwise. The code now **compiles** for
+`gfx942`, but **nothing in this file has been run on a GPU.** Where a statement is an
+inference rather than a measurement it says so.
 
 ---
 
 ## 1. Build
 
-Kokkos is pinned at 4.6.2 in the submodule, which knows `AMD_GFX942` (MI300A/MI300X):
+Kokkos is pinned at 4.6.2 in the submodule, which knows `AMD_GFX942` (MI300A/MI300X). On
+MPCDF Viper, whose `apu` partitions are MI300A, this recipe is verified to build:
 
 ```bash
 git submodule update --init --recursive
-mkdir build && cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=hipcc \
-  -DKokkos_ENABLE_HIP=ON -DKokkos_ARCH_AMD_GFX942=ON \
-  -DAthena_ENABLE_MPI=ON -DPROBLEM=deep_hot_jupiter_rt
-make -j
+module purge
+module load gcc/14 rocm/6.3 openmpi_gpu/5.0 cmake/4.0
+cmake -B build \
+  -DAthena_ENABLE_MPI=ON \
+  -DKokkos_ENABLE_HIP=ON \
+  -DKokkos_ARCH_AMD_GFX942_APU=ON \
+  -DCMAKE_CXX_COMPILER=$ROCM_PATH/bin/hipcc \
+  -DCMAKE_HIP_ARCHITECTURES=gfx942 \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DPROBLEM=deep_hot_jupiter_rt
+make -C build -j
 ```
 
+Two things that will otherwise waste an afternoon:
+
+- **`hipcc` is not on `PATH`** after `module load rocm/6.3`; it lives at
+  `$ROCM_PATH/bin/hipcc`. Passing the bare name fails the compiler check.
+- **The MPI modules are hierarchical.** `openmpi_gpu/5.0` is invisible until a compiler is
+  loaded, so a bare shell configures a no-MPI build — and that build does not compile,
+  because `src/bvals/physics/bfield_bcs.cpp` calls `MPI_Allreduce` unguarded by
+  `MPI_PARALLEL_ENABLED`. Non-MPI builds of this branch are broken for reasons that have
+  nothing to do with the GPU.
+
 For NVIDIA, swap in `-DKokkos_ENABLE_CUDA=On -DKokkos_ARCH_<...>=On` and the
-`kokkos/bin/nvcc_wrapper` compiler — **but read section 2 first, because the resistivity
-module will not work on a discrete GPU.**
+`kokkos/bin/nvcc_wrapper` compiler. Section 2 used to warn that the resistivity module
+would not survive a discrete GPU; that defect is now fixed, but nothing has been *run* on
+one, so treat the first NVIDIA attempt as unexplored.
 
 `-DPROBLEM=deep_hot_jupiter_rt` is required. `deep_hot_jupiter.cpp`, the non-RT one, has no
 general-EOS support and does not compile at HEAD.
 
 ---
 
-## 2. The resistivity module dereferences host pointers on the device
+## 2. Host pointers on the device — FIXED
 
-This is the one real portability defect, and it is worth understanding before choosing
-hardware.
+This was the one real portability defect. It is now repaired; this section records what it
+was, so that the pattern is recognised if it comes back.
 
 `KOKKOS_LAMBDA` is `[=]` (`kokkos/core/src/Kokkos_Macros.hpp`), so a lambda written inside
 a member function that touches a member captures **`this`** — a host pointer — and
-dereferences it on the device. `src/diffusion/resistivity.cpp` does this in roughly a dozen
-kernels, via `eta_b`, `use_rkg_sts` and `pmy_pack`.
+dereferences it on the device. That was happening in four places:
 
-Worse, it is not confined to the lambdas. `CurrentDensity()` in
-`src/diffusion/current_density.hpp` is a `KOKKOS_INLINE_FUNCTION` that takes
-`MeshBlockPack *pmy_pack` and reads `pmy_pack->pmesh->use_spherical_polar` and six
-`pmy_pack->pcoord->...` arrays **on the device**. The host pointer is in the signature of
-the shared helper.
+| where | what it read off the host | fix |
+|---|---|---|
+| `current_density.hpp` | `MeshBlockPack*` in the signature of a `KOKKOS_INLINE_FUNCTION`, then `pmesh->use_spherical_polar`, `two_d`, `three_d` and six `pcoord->` arrays | takes a `CurrentDensityGeom` POD, gathered on the host by `MakeCurrentDensityGeom()` and captured by value |
+| `resistivity.cpp` | `eta_b`, `use_rkg_sts`, and `max_eta` via the non-static member functions `ResistivityEOS`/`ResistivityPerna` | local copies before each `par_for`; the three `Resistivity*()` helpers are now `static` and take `max_eta` as an argument |
+| `resistivity_ct.cpp`, `resistivity_update.cpp` | the RKG weights `mu` and `nu` | local copies `mu_`, `nu_` before the kernels |
+| `deep_hot_jupiter_rt.cpp` | the file-scope `bool bc_outer_maxwell` | local copy `bc_outer_maxwell_` before the `usrboundaryx1_bfieldc` kernel |
 
-- **On an APU with hardware-coherent memory (MI300A), this is legal** and the code runs.
-  That is the only reason it works today.
-- **On a discrete GPU (MI250X, any NVIDIA card) it is not.** Expect a fault or garbage in
-  every kernel that computes a resistive EMF or the resistive timestep. This affects
-  `perna` exactly as much as `eos`; it is not specific to the general EOS.
+The first three were invisible to the compiler: a captured `this` is legal C++ and only
+misbehaves at runtime, on hardware where the device cannot resolve a host address. **On an
+APU with hardware-coherent memory (MI300A) it was legal**, which is why the module worked
+on Viper and nowhere else. On a discrete GPU (MI250X, any NVIDIA card) it would have
+faulted or returned garbage in every resistive-EMF and resistive-timestep kernel — and it
+afflicted `perna` exactly as much as `eos`.
 
-**The fix, if it is ever needed,** is contained: `current_density.hpp` is included by
-`resistivity.cpp` and nothing else. Pass the three mesh flags and six coordinate Views
-explicitly (a small POD built on the host and captured by value) instead of `pmy_pack`, and
-take local copies of `eta_b` / `use_rkg_sts` before each `par_for`. It is mechanical and
-changes no arithmetic, so it can be verified bitwise against a CPU run. Alternatively
-`KOKKOS_CLASS_LAMBDA` (`[=, *this]`) fixes the lambda captures but not `CurrentDensity`.
+The fourth was different: `bc_outer_maxwell` is a namespace-scope variable, not a capture,
+so hipcc rejected it outright — *"reference to `__host__` variable in `__host__ __device__`
+function"*. That error, not the subtle ones, is why `deep_hot_jupiter_rt` had never been
+compiled for a GPU at all.
+
+**Verification.** The change is mechanical and alters no arithmetic, so it was checked
+bitwise on CPU: pre-fix and post-fix binaries produce byte-identical output for
+`inputs/tests/mhd_eos_electrons.athinput`, the same with `use_rkg_sts = true`, and 20
+cycles of the `deep_hot_jupiter_rt_eos` reference input (spherical-polar geometry with
+super-time-stepping engaged — the path that exercises every touched kernel). The whole
+binary then links for `gfx942`.
+
+Note what this does **not** establish: it is a compile-time and a CPU-behaviour result. No
+kernel here has ever executed on a GPU.
 
 ---
 
@@ -159,7 +186,9 @@ just damping it.
 
 ## 7. What is not covered by tests
 
-- **No GPU testing of any kind.** The regression suite runs on CPU.
+- **No GPU testing of any kind.** The regression suite runs on CPU. The code now compiles
+  for `gfx942` and links, which is a real check on the section-2 fix, but a clean compile
+  is not a correct run: nothing here has executed a single kernel on an accelerator.
 - **No regression test for either `deep_hot_jupiter_rt` boundary change.** `tst/` builds with
   the default `PROBLEM`, so a custom pgen is not reachable from the harness. The evidence
   for those changes is a parameter sweep (independence of `dfloor` from 3 to 300 G),

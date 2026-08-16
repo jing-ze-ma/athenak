@@ -1028,6 +1028,11 @@ void HydrostaticEquilibrium(Mesh *pm) {
 //        }
 //    });
     
+    // Local copy of the file-scope flag. Reading the global directly from the kernel is
+    // a reference to a __host__ variable in device code, which hipcc rejects outright --
+    // the switch has to be captured by value like any other host state.
+    const bool bc_outer_maxwell_ = bc_outer_maxwell;
+
     par_for("usrboundaryx1_bfieldc", DevExeSpace(),0,(nmb-1),0,(n3-1),0,(n2-1),
     KOKKOS_LAMBDA(int m, int k, int j) {
         if (mb_bcs.d_view(m,BoundaryFace::inner_x1) == BoundaryFlag::user) {
@@ -1099,7 +1104,7 @@ void HydrostaticEquilibrium(Mesh *pm) {
               // The cell-centred ghost field above is always needed. What follows is the
               // Maxwell-stress correction to the hydrostatic extrapolation, which is
               // optional -- see bc_outer_maxwell.
-              if (bc_outer_maxwell) {
+              if (bc_outer_maxwell_) {
               Real pb = 0.5*(SQR(b0_x1f(m,k,j,(ie+i+1)))+SQR(bcc0(m,IBY,k,j,(ie+i+1)))+SQR(bcc0(m,IBZ,k,j,(ie+i+1))));
               Real pbp1 = 0.5*(SQR(b0_x1f(m,k,j,(ie+i+2)))+SQR(bcc0(m,IBY,k,j,(ie+i+2)))+SQR(bcc0(m,IBZ,k,j,(ie+i+2))));
               Real M11 = pb - SQR(b0_x1f(m,k,j,(ie+i+1)));
@@ -1129,7 +1134,7 @@ void HydrostaticEquilibrium(Mesh *pm) {
             // net outward, which an outward-decaying ghost cannot represent; gmag < -1
             // would compress the ghost without bound. Both ends are held back, so the
             // ghost degrades to "very extended" rather than to nonsense.
-            if (bc_outer_maxwell) {
+            if (bc_outer_maxwell_) {
               Real gmag = dM1mag/(rho_i*fabs(grav_acc));
               gmag = fmin(fmax(gmag, -1.0), 0.9);
               dphi_i *= (1.0 - gmag);

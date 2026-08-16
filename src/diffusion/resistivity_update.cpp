@@ -62,6 +62,10 @@ TaskStatus Resistivity::RKUpdate(Driver *pdriver, int stage) {
     fjm1 = mut;
     f0 = gat;
   }
+  // local copies of the RKG weights: reading the members inside the kernel below would
+  // capture `this` and dereference a host pointer on the device (see current_density.hpp)
+  const Real mu_ = mu;
+  const Real nu_ = nu;
 
   par_for_outer("resmhd_update",DevExeSpace(),scr_size,scr_level,0,nmb1,ks,ke,js,je,
   KOKKOS_LAMBDA(TeamMember_t member, const int m, const int k, const int j) {
@@ -125,7 +129,7 @@ TaskStatus Resistivity::RKUpdate(Driver *pdriver, int stage) {
       if (stage == 1) {
         u0_(m,n,k,j,i) = u0_(m,n,k,j,i) - dt*divf(i);
       } else {
-        u0_(m,n,k,j,i) = mu*u0_(m,n,k,j,i) + nu*u2_(m,n,k,j,i) + (1.0-mu-nu)*u_ideal_(m,n,k,j,i) - dt*divf(i);
+        u0_(m,n,k,j,i) = mu_*u0_(m,n,k,j,i) + nu_*u2_(m,n,k,j,i) + (1.0-mu_-nu_)*u_ideal_(m,n,k,j,i) - dt*divf(i);
       }
     });
   });

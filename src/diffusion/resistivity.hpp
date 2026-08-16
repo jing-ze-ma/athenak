@@ -114,8 +114,14 @@ class Resistivity {
   //! x_e comes from Saha over H, He and -- if eos_metal_ionization is on -- the alkalis
   //! and iron. That last part is not optional in practice below ~4000 K, where hydrogen's
   //! 13.6 eV contributes nothing and the metals supply everything.
+  //!
+  //! STATIC, and max_eta is passed rather than read off the member, because this is
+  //! called from inside a KOKKOS_LAMBDA: a non-static member function would make the
+  //! lambda capture `this` and dereference a host pointer on the device. See
+  //! current_density.hpp.
   KOKKOS_INLINE_FUNCTION
-  void ResistivityEOS(const Real &xe, const Real &T, Real &eta) {
+  static void ResistivityEOS(const Real &xe, const Real &T, const Real &max_eta,
+                             Real &eta) {
     Real xemin = 230.0*sqrt(T)/max_eta;
     Real xu = (xe > xemin) ? xe : xemin;
     Real eta_en = 230.0*sqrt(T)/xu;
@@ -125,8 +131,10 @@ class Resistivity {
     return;
   };
 
+  //! Static and taking max_eta explicitly, for the same reason as ResistivityEOS above.
   KOKKOS_INLINE_FUNCTION
-  void ResistivityPerna(const Real &nn, const Real &T, Real &eta) {
+  static void ResistivityPerna(const Real &nn, const Real &T, const Real &max_eta,
+                               Real &eta) {
       // Perna+2010 <- Balbus & Hawley 2000
       Real ak = 1.0e-7;
       Real td25 = sqrt(sqrt(T/1.0e3));
@@ -138,10 +146,12 @@ class Resistivity {
       return;
   };
 
+    //! Static for the same reason: even though it reads no member, a non-static member
+    //! function called from a KOKKOS_LAMBDA still drags `this` into the capture.
     KOKKOS_INLINE_FUNCTION
-    void ResistivityKumar(const Real &lgrho,
-                          const Real &lgT,
-                          Real &eta)
+    static void ResistivityKumar(const Real &lgrho,
+                                 const Real &lgT,
+                                 Real &eta)
     {
         const int DEG_RHO = 3;
         const int DEG_T   = 10;

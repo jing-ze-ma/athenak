@@ -158,6 +158,8 @@ void Resistivity::SetResistivity(const DvceArray5D<Real> &w, const EOS_Data &eos
   // state, not re-derived: T(d,e) is a root find for a general EOS and doing it here
   // would repeat, per cell per stage, work that has already been done
   auto &wtemp_ = pmy_pack->pmhd->wtemp;
+  // local copy: reading the member inside the kernel would capture `this`
+  const Real max_eta_ = max_eta;
   par_for("mhd_resistval", DevExeSpace(), 0, (nmb-1), kl, ku, jl, ju, il, iu,
   KOKKOS_LAMBDA(int m, int k, int j, int i) {
     Real rho = w(m,IDN,k,j,i);
@@ -179,9 +181,9 @@ void Resistivity::SetResistivity(const DvceArray5D<Real> &w, const EOS_Data &eos
       // T is already in kelvin on both branches above, so the kelvin entry point is the
       // one to use -- the (d,e,T) form would scale by EOS_Data::temp_cgs, which an ideal
       // gas never sets. For a general EOS the two are the same number.
-      ResistivityEOS(eos.ElectronFractionKelvin(rho, T), T, eta_b(m,k,j,i));
+      ResistivityEOS(eos.ElectronFractionKelvin(rho, T), T, max_eta_, eta_b(m,k,j,i));
     } else {
-      ResistivityPerna(nn, T, eta_b(m,k,j,i));
+      ResistivityPerna(nn, T, max_eta_, eta_b(m,k,j,i));
     }
 //      Real lgrho = log10(rho);
 //      Real lgT = log10(T);
@@ -235,6 +237,8 @@ void Resistivity::AddEMFConstantResist(const DvceFaceFld4D<Real> &b0,
   int ks = indcs.ks, ke = indcs.ke;
   int ncells1 = indcs.nx1 + 2*(indcs.ng);
   int nmb1 = pmy_pack->nmb_thispack - 1;
+  // gathered on the host; the kernels must not chase pmy_pack on the device
+  const auto geom = MakeCurrentDensityGeom(pmy_pack);
 
   //---- 1-D problem:
   //  copy face-centered E-fields to edges and return.
@@ -257,7 +261,7 @@ void Resistivity::AddEMFConstantResist(const DvceFaceFld4D<Real> &b0,
       ScrArray1D<Real> j2(member.team_scratch(scr_level), ncells1);
       ScrArray1D<Real> j3(member.team_scratch(scr_level), ncells1);
 
-      CurrentDensity(pmy_pack, member, m, ks, js, is, ie+1, b0, mbsize.d_view(m), j1, j2, j3);
+      CurrentDensity(geom, member, m, ks, js, is, ie+1, b0, mbsize.d_view(m), j1, j2, j3);
 
       // Add E_{resistive} = \eta J to corner-centered electric fields
       par_for_inner(member, is, ie+1, [&](const int i) {
@@ -288,7 +292,7 @@ void Resistivity::AddEMFConstantResist(const DvceFaceFld4D<Real> &b0,
       ScrArray1D<Real> j2(member.team_scratch(scr_level), ncells1);
       ScrArray1D<Real> j3(member.team_scratch(scr_level), ncells1);
 
-      CurrentDensity(pmy_pack, member, m, ks, j, is, ie+1, b0, mbsize.d_view(m), j1, j2, j3);
+      CurrentDensity(geom, member, m, ks, j, is, ie+1, b0, mbsize.d_view(m), j1, j2, j3);
 
       // Add E_{resistive} = \eta J to corner-centered electric fields
       par_for_inner(member, is, ie+1, [&](const int i) {
@@ -320,7 +324,7 @@ void Resistivity::AddEMFConstantResist(const DvceFaceFld4D<Real> &b0,
     ScrArray1D<Real> j2(member.team_scratch(scr_level), ncells1);
     ScrArray1D<Real> j3(member.team_scratch(scr_level), ncells1);
 
-    CurrentDensity(pmy_pack, member, m, k, j, is, ie+1, b0, mbsize.d_view(m), j1, j2, j3);
+    CurrentDensity(geom, member, m, k, j, is, ie+1, b0, mbsize.d_view(m), j1, j2, j3);
 
     // Add E_{resistive} = \eta J to corner-centered electric fields
     par_for_inner(member, is, ie+1, [&](const int i) {
@@ -341,7 +345,11 @@ void Resistivity::AddEMFGeneralResist(const DvceFaceFld4D<Real> &b0,
   int ks = indcs.ks, ke = indcs.ke;
   int ncells1 = indcs.nx1 + 2*(indcs.ng);
   int nmb1 = pmy_pack->nmb_thispack - 1;
-    
+  // gathered on the host; the kernels must not chase pmy_pack on the device
+  const auto geom = MakeCurrentDensityGeom(pmy_pack);
+  // local copy of the member View, so the lambdas do not capture `this`
+  auto eta_b_ = eta_b;
+
   auto &use_spherical_polar = pmy_pack->pmesh->use_spherical_polar;
   auto &x1v_ = pmy_pack->pcoord->x1v;
   auto &x1f_ = pmy_pack->pcoord->xx1f;
@@ -370,7 +378,7 @@ void Resistivity::AddEMFGeneralResist(const DvceFaceFld4D<Real> &b0,
       ScrArray1D<Real> j2(member.team_scratch(scr_level), ncells1);
       ScrArray1D<Real> j3(member.team_scratch(scr_level), ncells1);
 
-      CurrentDensity(pmy_pack, member, m, ks, js, is, ie+1, b0, mbsize.d_view(m), j1, j2, j3);
+      CurrentDensity(geom, member, m, ks, js, is, ie+1, b0, mbsize.d_view(m), j1, j2, j3);
 
       // Add E_{resistive} = \eta J to corner-centered electric fields.
       // The edge fields carry a k = ke+1 and a j = je+1 layer even in 1D, but eta_b is
@@ -378,7 +386,7 @@ void Resistivity::AddEMFGeneralResist(const DvceFaceFld4D<Real> &b0,
       // at ke+1 or je+1 reads past the end of the array. The two edges bound the same
       // cell, so both take that cell's eta.
       par_for_inner(member, is, ie+1, [&](const int i) {
-        Real etaf = 0.5*(eta_b(m,ks,js,i) + eta_b(m,ks,js,i-1));
+        Real etaf = 0.5*(eta_b_(m,ks,js,i) + eta_b_(m,ks,js,i-1));
         e2(m,ks,  js  ,i) += etaf*j2(i);
         e2(m,ke+1,js  ,i) += etaf*j2(i);
         e3(m,ks  ,js  ,i) += etaf*j3(i);
@@ -406,17 +414,17 @@ void Resistivity::AddEMFGeneralResist(const DvceFaceFld4D<Real> &b0,
       ScrArray1D<Real> j2(member.team_scratch(scr_level), ncells1);
       ScrArray1D<Real> j3(member.team_scratch(scr_level), ncells1);
 
-      CurrentDensity(pmy_pack, member, m, ks, j, is, ie+1, b0, mbsize.d_view(m), j1, j2, j3);
+      CurrentDensity(geom, member, m, ks, j, is, ie+1, b0, mbsize.d_view(m), j1, j2, j3);
 
       // Add E_{resistive} = \eta J to corner-centered electric fields.
       // As in the 1D branch: the k = ke+1 edge layer exists but the ke+1 CELL does not,
       // so the eta of the single x3 cell is used on both x3 faces.
       par_for_inner(member, is, ie+1, [&](const int i) {
-        e1(m,ks,  j,i) += 0.5*(eta_b(m,ks,j,i)+eta_b(m,ks,j-1,i))*j1(i);
-        e1(m,ke+1,j,i) += 0.5*(eta_b(m,ks,j,i)+eta_b(m,ks,j-1,i))*j1(i);
-        e2(m,ks,  j,i) += 0.5*(eta_b(m,ks,j,i)+eta_b(m,ks,j,i-1))*j2(i);
-        e2(m,ke+1,j,i) += 0.5*(eta_b(m,ks,j,i)+eta_b(m,ks,j,i-1))*j2(i);
-        e3(m,ks  ,j,i) += 0.25*(eta_b(m,ks,j,i)+eta_b(m,ks,j,i-1)+eta_b(m,ks,j-1,i)+eta_b(m,ks,j-1,i-1))*j3(i);
+        e1(m,ks,  j,i) += 0.5*(eta_b_(m,ks,j,i)+eta_b_(m,ks,j-1,i))*j1(i);
+        e1(m,ke+1,j,i) += 0.5*(eta_b_(m,ks,j,i)+eta_b_(m,ks,j-1,i))*j1(i);
+        e2(m,ks,  j,i) += 0.5*(eta_b_(m,ks,j,i)+eta_b_(m,ks,j,i-1))*j2(i);
+        e2(m,ke+1,j,i) += 0.5*(eta_b_(m,ks,j,i)+eta_b_(m,ks,j,i-1))*j2(i);
+        e3(m,ks  ,j,i) += 0.25*(eta_b_(m,ks,j,i)+eta_b_(m,ks,j,i-1)+eta_b_(m,ks,j-1,i)+eta_b_(m,ks,j-1,i-1))*j3(i);
       });
     });
     return;
@@ -440,13 +448,13 @@ void Resistivity::AddEMFGeneralResist(const DvceFaceFld4D<Real> &b0,
     ScrArray1D<Real> j2(member.team_scratch(scr_level), ncells1);
     ScrArray1D<Real> j3(member.team_scratch(scr_level), ncells1);
 
-    CurrentDensity(pmy_pack, member, m, k, j, is, ie+1, b0, mbsize.d_view(m), j1, j2, j3);
+    CurrentDensity(geom, member, m, k, j, is, ie+1, b0, mbsize.d_view(m), j1, j2, j3);
 
     // Add E_{resistive} = \eta J to corner-centered electric fields
     par_for_inner(member, is, ie+1, [&](const int i) {
-      e1(m,k,j,i) += 0.25*(eta_b(m,k,j,i)+eta_b(m,k,j-1,i)+eta_b(m,k-1,j,i)+eta_b(m,k-1,j-1,i))*j1(i);
-      e2(m,k,j,i) += 0.25*(eta_b(m,k,j,i)+eta_b(m,k,j,i-1)+eta_b(m,k-1,j,i)+eta_b(m,k-1,j,i-1))*j2(i);
-      e3(m,k,j,i) += 0.25*(eta_b(m,k,j,i)+eta_b(m,k,j-1,i)+eta_b(m,k,j,i-1)+eta_b(m,k,j-1,i-1))*j3(i);
+      e1(m,k,j,i) += 0.25*(eta_b_(m,k,j,i)+eta_b_(m,k,j-1,i)+eta_b_(m,k-1,j,i)+eta_b_(m,k-1,j-1,i))*j1(i);
+      e2(m,k,j,i) += 0.25*(eta_b_(m,k,j,i)+eta_b_(m,k,j,i-1)+eta_b_(m,k-1,j,i)+eta_b_(m,k-1,j,i-1))*j2(i);
+      e3(m,k,j,i) += 0.25*(eta_b_(m,k,j,i)+eta_b_(m,k,j-1,i)+eta_b_(m,k,j,i-1)+eta_b_(m,k,j-1,i-1))*j3(i);
     });
   });
 
@@ -616,6 +624,8 @@ void Resistivity::AddEMFDirect(const DvceEdgeFld4D<Real> &efld_resist, DvceEdgeF
   int js = indcs.js, je = indcs.je;
   int ks = indcs.ks, ke = indcs.ke;
   int nmb1 = pmy_pack->nmb_thispack - 1;
+  // local copy: reading the member inside the kernels would capture `this`
+  const bool use_sts = use_rkg_sts;
 
   //---- 1-D problem:
   //  Note e2[is:ie+1,js:je,  ks:ke+1]
@@ -630,7 +640,7 @@ void Resistivity::AddEMFDirect(const DvceEdgeFld4D<Real> &efld_resist, DvceEdgeF
 
     par_for("ohm1add", DevExeSpace(), 0, nmb1, is, ie+1,
     KOKKOS_LAMBDA(const int m, const int i) {
-      if (use_rkg_sts) {
+      if (use_sts) {
         e2(m,ks,  js  ,i) = e2r(m,ks,  js  ,i);
         e2(m,ke+1,js  ,i) = e2r(m,ke+1,js  ,i);
         e3(m,ks  ,js  ,i) = e3r(m,ks  ,js  ,i);
@@ -657,7 +667,7 @@ void Resistivity::AddEMFDirect(const DvceEdgeFld4D<Real> &efld_resist, DvceEdgeF
 
     par_for("ohm2add", DevExeSpace(), 0, nmb1, js, je+1, is, ie+1,
     KOKKOS_LAMBDA(const int m, const int j, const int i) {
-      if (use_rkg_sts) {
+      if (use_sts) {
         e1(m,ks,  j,i) = e1r(m,ks,  j,i);
         e1(m,ke+1,j,i) = e1r(m,ke+1,j,i);
         e2(m,ks,  j,i) = e2r(m,ks,  j,i);
@@ -686,7 +696,7 @@ void Resistivity::AddEMFDirect(const DvceEdgeFld4D<Real> &efld_resist, DvceEdgeF
 
   par_for("ohm3add", DevExeSpace(), 0, nmb1, ks, ke+1, js, je+1, is, ie+1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    if (use_rkg_sts) {
+    if (use_sts) {
       e1(m,k,j,i) = e1r(m,k,j,i);
       e2(m,k,j,i) = e2r(m,k,j,i);
       e3(m,k,j,i) = e3r(m,k,j,i);
@@ -720,7 +730,9 @@ void Resistivity::AddFluxGeneralResist(const DvceFaceFld4D<Real> &b, const DvceA
   auto &e1 = efld_resist.x1e;
   auto &e2 = efld_resist.x2e;
   auto &e3 = efld_resist.x3e;
-    
+  // local copy: reading the member inside the kernels would capture `this`
+  const bool use_sts = use_rkg_sts;
+
   auto &use_spherical_polar = pmy_pack->pmesh->use_spherical_polar;
   auto &x1v_ = pmy_pack->pcoord->x1v;
   auto &x1f_ = pmy_pack->pcoord->xx1f;
@@ -769,7 +781,7 @@ void Resistivity::AddFluxGeneralResist(const DvceFaceFld4D<Real> &b, const DvceA
     }
       
     // flx1 = (E X B)_{1} =  ((\eta J) X B)_{1} = \eta (J2*B3 - J3*B2)
-    if (use_rkg_sts) {
+    if (use_sts) {
       flx1(m,IEN,k,j,i) = -(fr1*bc(m,IBY,k,j,i) + fl1*bc(m,IBY,k,j,i-1))*e3a
         + (fr1*bc(m,IBZ,k,j,i) + fl1*bc(m,IBZ,k,j,i-1))*e2a;
     } else {
@@ -814,7 +826,7 @@ void Resistivity::AddFluxGeneralResist(const DvceFaceFld4D<Real> &b, const DvceA
     }
       
     // E2 = \eta (J X B)_{2} = \eta (J3*B1 - J1*B3)
-    if (use_rkg_sts) {
+    if (use_sts) {
       flx2(m,IEN,k,j,i) = -(fr2*bc(m,IBZ,k,j,i) + fl2*bc(m,IBZ,k,j-1,i))*e1a
         + (fr2*bc(m,IBX,k,j,i) + fl2*bc(m,IBX,k,j-1,i))*e3a;
     } else {
@@ -854,7 +866,7 @@ void Resistivity::AddFluxGeneralResist(const DvceFaceFld4D<Real> &b, const DvceA
     }
 
     // E2 = \eta (J X B)_{2} = \eta (J1*B2 - J2*B1)
-    if (use_rkg_sts) {
+    if (use_sts) {
       flx3(m,IEN,k,j,i) = -(fr3*bc(m,IBX,k,j,i) + fl3*bc(m,IBX,k-1,j,i))*e2a
         + (fr3*bc(m,IBY,k,j,i) + fl3*bc(m,IBY,k-1,j,i))*e1a;
     } else {
@@ -900,7 +912,9 @@ void Resistivity::NewTimeStepGeneralResist(const DvceArray5D<Real> &w0, const EO
   auto &dx1_ = pmy_pack->pcoord->dx1;
   auto &dx2_ = pmy_pack->pcoord->dx2;
   auto &dx3_ = pmy_pack->pcoord->dx3;
-    
+  // local copy: reading the member inside the reduction would capture `this`
+  auto eta_b_ = eta_b;
+
   Real fac;
   if (pmy_pack->pmesh->three_d) {
     fac = 1.0/6.0;
@@ -922,7 +936,7 @@ void Resistivity::NewTimeStepGeneralResist(const DvceArray5D<Real> &w0, const EO
 //    if (iso_resist_type.compare("constant") == 0) {
 //      eta = eta_ohm_const;
 //    } else {
-      eta = eta_b(m,k,j,i);
+      eta = eta_b_(m,k,j,i);
 //    }
     if (use_spherical_polar) {
       min_dt1 = fmin(fac*SQR(dx1_(m,k,j,i))/eta, min_dt1);
