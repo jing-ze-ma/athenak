@@ -78,6 +78,21 @@ KOKKOS_INLINE_FUNCTION
 void get_init_eos(const EOS_Data &eos, const Real &Rgas, const Real &grav_acc, const DvceArray1D<Real> &Tarr, const DvceArray1D<Real> &lgparr, const int &N, const DvceArray1D<Real> &zarr, const DvceArray1D<Real> &logparr, const Real &z, Real &rho, Real &p);
 
 
+namespace {
+// problem/bc_outer_maxwell: whether the outer-x1 ghost extrapolation carries the
+// divergence of the Maxwell stress.
+//
+// The extrapolation is hydrostatic, and this term was added so the ghost sees the
+// magnetic force as well as gravity. It enters as e0 -= e_i*dM1mag/(rho_i*grav_acc), so
+// its size relative to the hydrostatic term is (B^2/dr)/(rho g). At the outermost
+// shell of the standard setup (rho = 4.0e-10, dr = 5.6e7, g = 942) that is 0.03 at 3 G,
+// 0.33 at 10 G, 3.0 at 30 G and 33 at 100 G. Past O(1) it is no longer a correction: it
+// swings the ghost density by its own size, only the e0 < 0 case is guarded, and the
+// result propagates inward as a collapse of the last two active radial shells. DEFAULT
+// OFF for that reason; set true to restore the old behaviour.
+bool bc_outer_maxwell = false;
+}  // namespace
+
 //----------------------------------------------------------------------------------------
 //! \fn void ProblemGenerator::UserProblem()
 //  \brief Problem Generator for the shallow hot Jupiter test
@@ -89,6 +104,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   const bool use_spherical_polar = pmy_mesh_->use_spherical_polar;
   bool user_srcs = pin->GetOrAddBoolean("problem","user_srcs",false);
   if (user_srcs) user_srcs_func = SourceFunc;
+  // read before anything restart-sensitive: the outer BC needs it on restarts too
+  bc_outer_maxwell = pin->GetOrAddBoolean("problem","bc_outer_maxwell",false);
+  if (global_variable::my_rank == 0) {
+    std::cout << "deep_hot_jupiter_rt: outer-x1 Maxwell-stress term in the ghost "
+              << "extrapolation is " << (bc_outer_maxwell ? "ON" : "off") << std::endl;
+  }
   user_bcs_func = HydrostaticEquilibrium;
   // NOTE: this function must NOT return early on a restart. Only the initial condition
   // (the "probini" kernel) and the magnetic field at the end are genuinely one-off;
@@ -1073,6 +1094,10 @@ void HydrostaticEquilibrium(Mesh *pm) {
               bcc0(m,IBZ,k,j,(ie+i+1)) = lw*b0_x3f(m,k,j,(ie+i+1)) + rw*b0_x3f(m,k+1,j,(ie+i+1));
 //                u0_(m,IEN,k,j,(ie+i+1)) +=  0.5*(SQR(bcc0(m,IBX,k,j,(ie+i+1)))+SQR(bcc0(m,IBY,k,j,(ie+i+1)))+SQR(bcc0(m,IBZ,k,j,(ie+i+1))));
 
+              // The cell-centred ghost field above is always needed. What follows is the
+              // Maxwell-stress correction to the hydrostatic extrapolation, which is
+              // optional -- see bc_outer_maxwell.
+              if (bc_outer_maxwell) {
               Real pb = 0.5*(SQR(b0_x1f(m,k,j,(ie+i+1)))+SQR(bcc0(m,IBY,k,j,(ie+i+1)))+SQR(bcc0(m,IBZ,k,j,(ie+i+1))));
               Real pbp1 = 0.5*(SQR(b0_x1f(m,k,j,(ie+i+2)))+SQR(bcc0(m,IBY,k,j,(ie+i+2)))+SQR(bcc0(m,IBZ,k,j,(ie+i+2))));
               Real M11 = pb - SQR(b0_x1f(m,k,j,(ie+i+1)));
@@ -1083,6 +1108,7 @@ void HydrostaticEquilibrium(Mesh *pm) {
               Real M13p1 = - b0_x3f(m,k+1,j,(ie+i+1)) * bcc0(m,IBX,k+1,j,(ie+i+1));
               dM1mag = -( (M11p1*area1(m,k,j,(ie+i+2))-M11*area1(m,k,j,(ie+i+1))) + (M12p1*area2(m,k,j+1,(ie+i+1))-M12*area2(m,k,j,(ie+i+1))) + (M13p1*area3(m,k+1,j,(ie+i+1))-M13*area3(m,k,j,(ie+i+1))) )/volume(m,k,j,(ie+i+1));
               dM1mag += z_ov_rE(m,k,j,(ie+i+1)) * 0.5*SQR(bcc0(m,IBX,k,j,(ie+i+1)));
+              }
             }
             // Hydrostatic extrapolation into the ghost zone, at fixed temperature. The
             // closed form below is the ideal-gas isothermal background; for a general EOS
