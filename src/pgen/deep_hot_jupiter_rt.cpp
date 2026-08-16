@@ -87,10 +87,12 @@ namespace {
 // its size relative to the hydrostatic term is (B^2/dr)/(rho g). At the outermost
 // shell of the standard setup (rho = 4.0e-10, dr = 5.6e7, g = 942) that is 0.03 at 3 G,
 // 0.33 at 10 G, 3.0 at 30 G and 33 at 100 G. Past O(1) it is no longer a correction: it
-// swings the ghost density by its own size, only the e0 < 0 case is guarded, and the
-// result propagates inward as a collapse of the last two active radial shells. DEFAULT
-// OFF for that reason; set true to restore the old behaviour.
-bool bc_outer_maxwell = false;
+// swings the ghost density by its own size and the last two active radial shells go.
+//
+// It is now applied as an effective gravity inside the hydrostatic solve instead, and
+// clamped, so it is bounded at any field strength -- see the use site. DEFAULT ON, since
+// in that form it is the better physics; set false to drop the magnetic force entirely.
+bool bc_outer_maxwell = true;
 }  // namespace
 
 //----------------------------------------------------------------------------------------
@@ -105,7 +107,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   bool user_srcs = pin->GetOrAddBoolean("problem","user_srcs",false);
   if (user_srcs) user_srcs_func = SourceFunc;
   // read before anything restart-sensitive: the outer BC needs it on restarts too
-  bc_outer_maxwell = pin->GetOrAddBoolean("problem","bc_outer_maxwell",false);
+  bc_outer_maxwell = pin->GetOrAddBoolean("problem","bc_outer_maxwell",true);
   if (global_variable::my_rank == 0) {
     std::cout << "deep_hot_jupiter_rt: outer-x1 Maxwell-stress term in the ghost "
               << "extrapolation is " << (bc_outer_maxwell ? "ON" : "off") << std::endl;
@@ -1115,6 +1117,23 @@ void HydrostaticEquilibrium(Mesh *pm) {
             // the same statement is WBAdvance's isothermal branch, which integrates
             // dln d/dPhi = -d/(p chi_rho) instead of assuming p = (gamma-1)e.
             Real dphi_i = phicc0(m,k,j,(ie+i+1))-phi_i;
+            // The magnetic force enters as an EFFECTIVE GRAVITY, not as an additive
+            // shift of the extrapolated energy. dM1mag/rho is an acceleration, so
+            // dphi -> dphi*(1 - dM1mag/(rho |g|)) is the same to first order but stays
+            // inside the exponential (and inside WBAdvance's EOS-consistent
+            // integration), so a magnetic force comparable to gravity changes the SCALE
+            // HEIGHT instead of swinging the answer linearly through zero.
+            //
+            // The clamp is what makes it usable at high field. gmag -> 1 is the
+            // force-free limit where the atmosphere stops falling off, and gmag > 1 is
+            // net outward, which an outward-decaying ghost cannot represent; gmag < -1
+            // would compress the ghost without bound. Both ends are held back, so the
+            // ghost degrades to "very extended" rather than to nonsense.
+            if (bc_outer_maxwell) {
+              Real gmag = dM1mag/(rho_i*fabs(grav_acc));
+              gmag = fmin(fmax(gmag, -1.0), 0.9);
+              dphi_i *= (1.0 - gmag);
+            }
             Real e0_hyd, rho0_hyd;
             if (eos.IsGeneral()) {
               rho0_hyd = rho_i;
@@ -1125,12 +1144,13 @@ void HydrostaticEquilibrium(Mesh *pm) {
               e0_hyd = exp(q0_i - factor_i * dphi_i);
               rho0_hyd = e0_hyd/e_i*rho_i;
             }
-            Real e0_ip = e0_hyd - e_i*dM1mag/rho_i/grav_acc;
+            Real e0_ip = e0_hyd;
             if (e0_ip < 0.0) e0_ip = e_i;
-            // the magnetic correction is carried into the density as the same relative
-            // shift the ideal-gas expression applies, so the two agree for a gamma law
-            Real rho0_ip = (eos.IsGeneral()) ? rho0_hyd*(e0_ip/e0_hyd)
-                                             : e0_ip/e_i*rho_i;
+            // density and energy now come from the SAME hydrostatic solve, so they are
+            // thermodynamically consistent by construction; the old code had to rescale
+            // the density by the energy's relative shift because the magnetic term was
+            // bolted on afterwards
+            Real rho0_ip = rho0_hyd;
 //            rho0_ip = rho_i;
 //            e0_ip = e_i;
             u0_(m,IDN,k,j,(ie+i+1)) = rho0_ip;
