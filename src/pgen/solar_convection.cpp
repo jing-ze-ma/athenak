@@ -75,6 +75,13 @@ Real T_top_fix_par  = 3500.0;  // problem/T_top_fix: temperature of the fixed-T 
 bool sponge_on      = true;    // problem/sponge: absorbing layer below the top boundary
 Real sponge_zbot    = 0.8;     // problem/sponge_zbot: its bottom, as a box fraction
 Real sponge_c       = 0.1;     // problem/sponge_c: damping rate, in units of cs/dz
+// problem/z_ph_frac: where in the box the initial photosphere is placed, as a fraction of
+// the box height. The IC shoots on the top pressure until tau = 2/3 lands here, so this
+// parameter is what decides how the box is DIVIDED between convection zone and
+// atmosphere. It matters as soon as the box height changes: at the historical 0.5 a
+// taller box is a deeper convection zone AND a taller atmosphere, which is two
+// experiments at once. Lower it to buy atmosphere at a fixed convective depth.
+Real z_ph_frac      = 0.5;
 }  // namespace
 
 
@@ -100,6 +107,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   sponge_on   = pin->GetOrAddBoolean("problem","sponge",true);
   sponge_zbot = pin->GetOrAddReal("problem","sponge_zbot",0.8);
   sponge_c    = pin->GetOrAddReal("problem","sponge_c",0.1);
+  z_ph_frac   = pin->GetOrAddReal("problem","z_ph_frac",0.5);
   if (global_variable::my_rank == 0) {
     Real z0 = pmy_mesh_->mesh_size.x1min, z1 = pmy_mesh_->mesh_size.x1max;
     std::cout << "solar_convection: T_top_fix=" << T_top_fix_par << " K, sponge "
@@ -109,7 +117,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                 << " (zbot=" << sponge_zbot << " of [" << z0 << "," << z1
                 << "]), rate=" << sponge_c << "*cs/dz";
     }
-    std::cout << std::endl;
+    std::cout << ", photosphere placed at z=" << (z0 + z_ph_frac*(z1-z0))
+              << " (z_ph_frac=" << z_ph_frac << ")" << std::endl;
   }
   // Base state from the IC integration. Done BEFORE the restart return because the bottom
   // boundary and the CO5BOLD relaxation need it on restarts as well.
@@ -1542,7 +1551,8 @@ void get_wb_eos_arr(const EOS_Data &eos, const Real &Rgas, const Real &grav_acc,
     Real Teff = 5778.0;                       // photosphere effective temperature (matches Fbase)
     Real T_skin = Teff*std::pow(0.5, 0.25);   // Eddington skin temperature at tau=0
     Real dz = zmax/N;
-    Real z_ph_target = 0.50*zmax/1.1;         // put photosphere ~50% up the physical box
+    // where to put the photosphere, as a fraction of the PHYSICAL box (zmax is 1.1x it)
+    Real z_ph_target = z_ph_frac*zmax/1.1;
 
     // one top-down integration for a given p_top; returns z where tau=2/3 (or -1), fills arrays if store
     auto integrate = [&](Real p_top, bool store) -> Real {
