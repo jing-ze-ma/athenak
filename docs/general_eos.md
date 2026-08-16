@@ -227,6 +227,41 @@ accurate rather than second.
 
 The usual `dfloor`, `pfloor` and `tfloor` all work. `sfloor` does not — see below.
 
+#### `tfloor` changes meaning, and `tfloor_kelvin` avoids it
+
+`tfloor` is a floor on the **code** temperature, and which quantity that is depends on the
+EOS:
+
+| | code temperature | kelvin per unit |
+|---|---|---|
+| `eos = ideal` | `p/rho` | `Units::temperature_cgs()`, which **includes** `<units>/mu` |
+| `eos = general` | the EOS's own `T` | the same factor with that `mu` divided back out, because the general EOS works at `mu_ref = 1` and keeps composition inside the EOS |
+
+The two differ by exactly `<units>/mu`. So a `tfloor` copied unchanged from an ideal-gas
+input into a general-EOS one is silently wrong by that factor — and if the ideal input had
+no `<units>` block at all, its `tfloor` was in units of the problem's own `Rgas` and the
+number means nothing here. This is a real trap: `inputs/mhd/deep_hot_jupiter_rt.athinput`
+carried `tfloor = 400.0`, which with `Rgas = 4.593e7` is about `1e-5` K, i.e. no floor.
+
+`<hydro|mhd>/tfloor_kelvin` states the same floor in **kelvin** and converts it at startup,
+so an ideal and a general input can carry the identical number:
+
+```
+tfloor_kelvin = 200.0     # instead of tfloor = 1.663e10 under a cgs general EOS
+```
+
+The conversion is reported at startup. Notes:
+
+- Setting both `tfloor` and `tfloor_kelvin` is a fatal error — they are one floor in two
+  units, so there is no sensible precedence.
+- It needs a `<units>` block, which the general EOS requires anyway. For an **ideal** run
+  the conversion goes through `<units>/mu`, so that must be the mean molecular weight the
+  problem actually assumes (for a pgen carrying `Rgas`, `mu = k_B/(m_u Rgas)`).
+- Supported for the non-relativistic `ideal` and `general` EOSs only. It is refused under
+  `isothermal` (whose C2P has no temperature floor) and under SR/GR (where `tfloor` is not
+  this quantity).
+- `tfloor` itself is completely unchanged, so no existing input behaves differently.
+
 ---
 
 ## What is supported, and what is refused

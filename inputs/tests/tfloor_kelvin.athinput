@@ -1,0 +1,103 @@
+# Drives tst/scripts/hydro/hydro_tfloor_kelvin.py: <block>/tfloor_kelvin, the temperature
+# floor stated in kelvin rather than in code temperature.
+#
+# The whole point of the parameter is that "code temperature" is not one thing. An ideal
+# gas floors p/d, whose kelvin scale carries the fixed <units>/mu; a general EOS runs at
+# mu_ref = 1 with composition inside the EOS, so its scale is the same one with that mu
+# divided back out. The two differ by exactly mu, and this input is built so the test can
+# see that: <units>/mu is deliberately NOT 1, and the same tfloor_kelvin must land on two
+# different code values whose ratio is mu -- while meaning the same physical temperature.
+#
+# mu = 2.32408 is not arbitrary either. It is the mean molecular weight the tabulated EOS
+# reports for this background (rho = 1e-6 g/cm^3, p = 7.1e4 erg/cm^3), so the ideal gas
+# and the table sit at the SAME temperature here, about 1985 K. A floor of 2500 K
+# therefore bites in both, and one of 100 K bites in neither, which is how the test checks
+# that the converted number is actually applied and not merely printed.
+#
+# Everything is cgs: every unit conversion is 1 apart from mu.
+
+<comment>
+problem   = temperature floor stated in kelvin
+
+<job>
+basename  = TfloorKelvin
+
+<mesh>
+nghost    = 2
+nx1       = 32
+x1min     = 0.0
+x1max     = 1.0e8
+ix1_bc    = periodic
+ox1_bc    = periodic
+
+nx2       = 1
+x2min     = 0.0
+x2max     = 1.0e9
+ix2_bc    = periodic
+ox2_bc    = periodic
+
+nx3       = 1
+x3min     = 0.0
+x3max     = 1.0e9
+ix3_bc    = periodic
+ox3_bc    = periodic
+
+<meshblock>
+nx1       = 32
+nx2       = 1
+nx3       = 1
+
+<mesh_refinement>
+refinement = none
+
+<units>
+length_cgs = 1.0
+mass_cgs   = 1.0
+time_cgs   = 1.0
+mu         = 2.32408   # NOT 1: this is what the ideal and general scales differ by
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim       = -1
+tlim       = 1.0       # the pgen reads this as a number of wave periods
+ndiag      = 100000
+
+<hydro>
+eos         = general  # overridden to `ideal` by the test
+general_eos = table
+reconstruct = plm
+rsolver     = llf
+gamma       = 1.66666666667
+dfloor      = 1.0e-12
+pfloor      = 1.0e-2
+# NOTE tfloor is deliberately NOT declared here: setting both it and tfloor_kelvin is a
+# fatal error by design, so an input may name only one of them.
+tfloor_kelvin = 2500.0
+
+eos_xh         = 0.7381
+eos_yhe        = 0.2485
+eos_h2         = true
+eos_ionization = true
+eos_radiation  = false
+eos_logd_min   = -7.0
+eos_logd_max   = -5.0
+eos_logt_min   = 3.0
+eos_logt_max   = 3.602
+eos_dlogd      = 0.05
+eos_dlogt      = 0.01
+
+# declared so the test can select it from the command line and check that it is refused
+iso_sound_speed = 1.0e5
+
+<problem>
+pgen_name = linear_wave
+wave_flag = 0
+amp       = 1.0e-8      # small: the wave is not the observable here, the floor is
+dens      = 1.0e-6      # g/cm^3
+pgas      = 7.1e4       # erg/cm^3  ->  T = 1985 K under BOTH EOSs, given the mu above
+vx0       = 0.0
+along_x1  = true
+along_x2  = false
+along_x3  = false

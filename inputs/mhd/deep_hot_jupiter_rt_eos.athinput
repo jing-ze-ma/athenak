@@ -124,12 +124,13 @@ max_eta           = 1.0e13       # caps eta [cm^2/s]; floors x_e at 230 sqrt(T)/
 
 pfloor = 1.0e-1
 dfloor = 5.44e-12
-# NOTE the change of meaning: tfloor is a floor on the CODE temperature, and under the
-# general EOS with mu_ref = 1 that is T_code = 8.3145e7 * T[K], not p/rho with the
-# problem's Rgas.  1.663e10 is 200 K, a nan guard well below anything this atmosphere
-# should reach.  (The ideal-gas input's tfloor = 400.0 was 400 in p/rho units, i.e.
-# ~1e-5 K with Rgas = 4.593e7 -- effectively no floor at all.)
-tfloor = 1.663e10
+# Stated in KELVIN.  `tfloor` is a floor on the CODE temperature, which is p/rho for an
+# ideal gas but the EOS's own T here, the two scales differing by <units>/mu -- so a value
+# carried across from an ideal-gas input is silently wrong.  (That input's tfloor = 400.0
+# was 400 in p/rho units, i.e. ~1e-5 K with Rgas = 4.593e7: no floor at all.)  200 K is a
+# nan guard well below anything this atmosphere should reach.  Setting tfloor and
+# tfloor_kelvin together is a fatal error; use one.  See docs/general_eos.md.
+tfloor_kelvin = 200.0
 
 <problem>
 user_srcs   = true
