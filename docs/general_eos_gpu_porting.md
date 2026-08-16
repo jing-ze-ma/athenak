@@ -99,15 +99,44 @@ whole radial columns, and the pgen aborts at startup if it does not ("only allow
 meshblock in r direction for the RT to work properly"). So the only decomposition freedom
 is in theta and phi.
 
-The tracked reference input uses `nx2 = nx3 = 8`, giving 128 blocks. That is a CPU shape.
-Accelerators want a few large blocks — at least one per GPU, ideally a small multiple of
-the rank count:
+The tracked reference input uses `nx2 = nx3 = 8`. That is a CPU shape: it gives 112
+blocks, and accelerators want a few large blocks instead — at least one per GPU, ideally a
+small multiple of the rank count. Viper's `apu` nodes carry **two** MI300A each, so the
+target there is a small multiple of 2.
 
-| mesh 64 x 64 x 128 | meshblock | blocks | verdict on a 4-GPU node |
+**Consider raising the mesh to 64 in theta for GPU runs.** The tracked mesh is
+64 x **56** x 128, and `Mesh must be evenly divisible by MeshBlocks` (`mesh.cpp:310`), so
+56 admits only the divisors 1, 2, 4, 7, 8, 14, 28, 56 — the round numbers 16 and 32 are
+*not* among them and abort at startup. Setting `<mesh>/nx2 = 64` restores powers of two in
+every direction and makes the decomposition stop fighting you. It costs 14.3% more cells
+(458752 -> 524288) and it **is a resolution change, not just a decomposition one**, so the
+CPU timings in sections 5 and 6 do not transfer to it unchanged. Verified to run with the
+polar boundaries and theta stretching intact.
+
+Block counts below are as reported by `athena -m`.
+
+**Recommended, with `<mesh>/nx2 = 64`:**
+
+| mesh 64 x 64 x 128 | meshblock | blocks | verdict on a 2-GPU Viper node |
 |---|---|---|---|
-| | 64 x 8 x 8 | 128 | far too many, kernel-launch bound |
-| | 64 x 32 x 32 | 8 | good: 2 per GPU |
-| | 64 x 64 x 64 | 2 | idles half the node |
+| | 64 x 16 x 32 | 16 | 8 per GPU; fine, still smallish blocks |
+| | 64 x 32 x 32 | 8 | **good: 4 per GPU, leaves load-balance slack** |
+| | 64 x 32 x 64 | 4 | good: 2 per GPU |
+| | 64 x 64 x 64 | 2 | one per GPU — saturated, but no slack and no room to grow |
+
+**If you keep the tracked 56-theta mesh**, the usable splits are these instead:
+
+| mesh 64 x 56 x 128 | meshblock | blocks | verdict on a 2-GPU Viper node |
+|---|---|---|---|
+| | 64 x 8 x 8 | 112 | the tracked CPU shape; far too many, kernel-launch bound |
+| | 64 x 14 x 32 | 16 | 8 per GPU |
+| | 64 x 28 x 32 | 8 | best available: 4 per GPU |
+| | 64 x 28 x 64 | 4 | 2 per GPU |
+| | 64 x 32 x 32 | — | **illegal: 56 is not divisible by 32, aborts at startup** |
+
+On a 4-GPU machine shift one row down (8 blocks becomes 2 per GPU, 4 becomes 1). The
+reason to prefer 8 blocks over 2 on Viper is that AthenaK balances whole MeshBlocks, so
+one block per rank leaves nothing to redistribute.
 
 ---
 

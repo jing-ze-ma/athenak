@@ -60,11 +60,26 @@ f_stretch_theta        = 2.0
 <meshblock>
 # nx1 MUST equal the mesh nx1: the two-stream RT sweeps whole radial columns.
 #
-# PORTING TO GPUs: this 8x8 split gives 128 blocks, which suits many CPU ranks and is
-# wrong for accelerators -- you want a few LARGE blocks, at least one per GPU and ideally
-# a small multiple of the rank count.  For 64 x 64 x 128 on a 4-GPU node, nx2 = nx3 = 32
-# gives 8 blocks over 4 ranks; nx2 = nx3 = 64 gives only 2 and would leave half the GPUs
-# idle.  Build with -DPROBLEM=deep_hot_jupiter_rt and the Kokkos HIP/CUDA arch flags.
+# PORTING TO GPUs: this 8x8 split gives 112 blocks (1 x 7 x 16), which suits many CPU
+# ranks and is wrong for accelerators -- you want a few LARGE blocks, at least one per GPU
+# and ideally a small multiple of the rank count.
+#
+# Mind the theta divisor.  The mesh above is 64 x 56 x 128 and must divide evenly into
+# meshblocks, so the legal nx2 are the divisors of 56 -- 1, 2, 4, 7, 8, 14, 28, 56.  The
+# round numbers 16 and 32 are NOT among them and abort at startup.  nx3 takes any power of
+# two up to 128.
+#
+# For a GPU run consider raising <mesh>/nx2 to 64, which puts powers of two in every
+# direction and lets nx2 = nx3 = 32 give 8 blocks.  That is a RESOLUTION change, not just
+# a decomposition one -- 14.3% more cells, and the CPU timings recorded below were taken
+# at 56 -- but it removes the divisor problem entirely.
+#
+# On a 2-GPU node (Viper's apu partitions carry two MI300A each) aim for 8 blocks: at 56
+# that is nx2 = 28, nx3 = 32; at 64 it is nx2 = nx3 = 32.  Either gives 4 per GPU with
+# slack left for load balancing.  Two blocks would saturate the node but leave AthenaK
+# nothing to redistribute.  Shift one row down on a 4-GPU machine.
+#
+# Build with -DPROBLEM=deep_hot_jupiter_rt and the Kokkos HIP/CUDA arch flags.
 nx1       = 64
 nx2       = 8
 nx3       = 8
