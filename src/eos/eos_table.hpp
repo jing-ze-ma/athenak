@@ -307,25 +307,81 @@ struct EOSTable {
   //! \fn void EvalResidual
   //! \brief the residual log10(q) - ltarget and its derivative with respect to z, for the
   //! three inversion modes described on SolveLog()
+  //--------------------------------------------------------------------------------------
+  //! \fn void EvalEOnly
+  //! \brief internal energy density and dln e/dln T, from the ENERGY patch alone.
+  //!
+  //! Eval() interpolates three surfaces because a caller that wants the full
+  //! thermodynamic state needs all three. The temperature root find does not: the
+  //! residual is built from e and dln e/dln T, both of which come out of ITE, so going
+  //! through Eval() would interpolate ITP and ITMU and throw them away on EVERY
+  //! iteration. At two or three iterations per cell that is most of the EOS cost.
+  //!
+  //! The arithmetic below is Eval()'s, restricted to the energy branch, so the two agree
+  //! bit for bit. Keep them in step.
+  KOKKOS_INLINE_FUNCTION
+  void EvalEOnly(const Real rho, const Real t, Real &e, Real &dlne_dlnt) const {
+    Real ev, evx, evy;
+    Interpolate(ITE, log10(rho), log10(t), ev, evx, evy);
+    const Real egas = rho*Pow10(ev);
+    if (radiation) {
+      const Real erad = arad*t*t*t*t;
+      e = egas + erad;
+      dlne_dlnt = (egas*evy + 4.0*erad)/e;
+    } else {
+      e = egas;
+      dlne_dlnt = evy;
+    }
+    return;
+  }
+
+  //--------------------------------------------------------------------------------------
+  //! \fn void EvalPOnly
+  //! \brief pressure and its two logarithmic derivatives, from the PRESSURE patch alone.
+  //! The counterpart of EvalEOnly() for the two inversions that are driven by p; same
+  //! reasoning, same bit-for-bit correspondence with Eval().
+  KOKKOS_INLINE_FUNCTION
+  void EvalPOnly(const Real rho, const Real t,
+                 Real &p, Real &chi_rho, Real &chi_t) const {
+    Real pv, pvx, pvy;
+    Interpolate(ITP, log10(rho), log10(t), pv, pvx, pvy);
+    const Real pgas = rho*Pow10(pv);
+    const Real chir_g = 1.0 + pvx;
+    const Real chit_g = pvy;
+    if (radiation) {
+      const Real erad = arad*t*t*t*t;
+      const Real prad = erad/3.0;
+      p = pgas + prad;
+      chi_rho = pgas*chir_g/p;
+      chi_t = (pgas*chit_g + 4.0*prad)/p;
+    } else {
+      p = pgas;
+      chi_rho = chir_g;
+      chi_t = chit_g;
+    }
+    return;
+  }
+
   KOKKOS_INLINE_FUNCTION
   void EvalResidual(const int mode, const Real fixed, const Real z, const Real ltarget,
                     Real &g, Real &dg) const {
-    EOSThermoState s;
-    if (mode == 2) {
-      Eval(Pow10(z), fixed, s);
-      g = log10(s.p) - ltarget;
-      dg = s.chi_rho;
+    // d log10(q)/dz is the same ratio as dln q/dln T, the base of the logarithm
+    // cancelling between numerator and denominator
+    if (mode == 0) {
+      Real e, dlne_dlnt;
+      EvalEOnly(fixed, Pow10(z), e, dlne_dlnt);
+      g = log10(e) - ltarget;
+      dg = dlne_dlnt;
     } else {
-      Eval(fixed, Pow10(z), s);
-      // d log10(q)/dz is the same ratio as dln q/dln T, the base of the logarithm
-      // cancelling between numerator and denominator
-      if (mode == 0) {
-        g = log10(s.e) - ltarget;
-        dg = s.dlne_dlnt;
+      Real p, chi_rho, chi_t;
+      if (mode == 2) {
+        EvalPOnly(Pow10(z), fixed, p, chi_rho, chi_t);
+        dg = chi_rho;
       } else {
-        g = log10(s.p) - ltarget;
-        dg = s.chi_t;
+        EvalPOnly(fixed, Pow10(z), p, chi_rho, chi_t);
+        dg = chi_t;
       }
+      g = log10(p) - ltarget;
     }
     return;
   }

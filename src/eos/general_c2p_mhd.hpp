@@ -49,12 +49,22 @@ void SingleC2P_GeneralMHD(MHDCons1D &u, const EOS_Data &eos, HydPrim1D &w,
 
   // Apply the pressure floor, testing on p so that the inversion e(d,pfloor) is performed
   // only in the rare cells where the floor trips.
-  if (!e_positive || eos.BelowPressureFloor(w.d, w.e, temp)) {
+  // ONE table evaluation now serves three consumers -- the pressure-floor test below, and
+  // the p and Gamma_1 the Riemann solvers need at the bottom -- because all three are at
+  // the same (d,T). `stale` marks the rare paths where a floor moves the state afterwards
+  // and they have to be redone.
+  bool stale = !e_positive;
+  if (e_positive) {
+    eos.PressureAndGamma1(w.d, w.e, temp, pgas, g1);
+  }
+
+  if (!e_positive || pgas < eos.pfloor) {
     // three-argument form: reuses the temperature the inversion solved for (see
     // general_c2p_hyd.hpp) instead of re-solving the root find
     w.e = eos.EnergyFromPressure(w.d, eos.pfloor, temp);
     u.e = w.e + e_k + e_m;
     efloor_used = true;
+    stale = true;
   }
 
   // Apply the temperature floor, now free to test and free to apply.
@@ -63,6 +73,7 @@ void SingleC2P_GeneralMHD(MHDCons1D &u, const EOS_Data &eos, HydPrim1D &w,
     u.e = w.e + e_k + e_m;
     temp = eos.tfloor;
     tfloor_used = true;
+    stale = true;
   }
 
   // Apply the entropy floor; a no-op under a tabulated EOS, which refuses sfloor at
@@ -70,11 +81,13 @@ void SingleC2P_GeneralMHD(MHDCons1D &u, const EOS_Data &eos, HydPrim1D &w,
   if (eos.ApplyEntropyFloor(w.d, di, w.e)) {
     temp = eos.Temperature(w.d, w.e, temp);
     efloor_used = true;
+    stale = true;
   }
 
   // Derived thermodynamic quantities, cheap now that T is known (see general_c2p_hyd.hpp)
-  pgas = eos.Pressure(w.d, w.e, temp);
-  g1 = eos.Gamma1(w.d, w.e, temp);
+  if (stale) {
+    eos.PressureAndGamma1(w.d, w.e, temp, pgas, g1);
+  }
   return;
 }
 

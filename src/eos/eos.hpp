@@ -195,6 +195,32 @@ struct EOS_Data {
     return e;
   }
 
+  //! \fn void PressureAndGamma1
+  //! \brief gas pressure AND Gamma_1 at an already-solved temperature, from ONE table
+  //! evaluation.
+  //!
+  //! Pressure() and Gamma1() each perform a full Eval(), and ConsToPrim calls them at the
+  //! same (d,T) -- with BelowPressureFloor(), which is Pressure() again, that is three
+  //! evaluations of the identical point per cell per stage. Every quantity the two need
+  //! comes out of one Eval, so this returns both from one. The values are bit for bit
+  //! those of the separate calls.
+  KOKKOS_INLINE_FUNCTION
+  void PressureAndGamma1(const Real d, const Real e, const Real t,
+                         Real &p, Real &g1) const {
+    if (tbl.active) {
+      EOSThermoState s;
+      Real rho = d*dens_cgs;
+      Real tk = t*temp_cgs;
+      tbl.Eval(rho, tk, s);
+      p = s.p/pres_cgs;
+      g1 = (s.chi_rho + s.p*s.chi_t*s.chi_t/(rho*tk*s.cv));
+      return;
+    }
+    p = (gamma-1.0)*e;
+    g1 = gamma;
+    return;
+  }
+
   //! \fn bool BelowPressureFloor \brief true when the state (d,e) has p < pfloor, given
   //! an already-solved temperature.
   //!

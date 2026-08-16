@@ -64,12 +64,22 @@ void SingleC2P_GeneralHyd(HydCons1D &u, const EOS_Data &eos, HydPrim1D &w,
   // e(d,pfloor) -- density dependent, and a root find for a general EOS -- is evaluated
   // only in the rare cells where the floor actually trips, instead of in every cell as a
   // constant would be. See EOS_Data::BelowPressureFloor().
-  if (!e_positive || eos.BelowPressureFloor(w.d, w.e, temp)) {
+  // ONE table evaluation now serves three consumers -- the pressure-floor test below, and
+  // the p and Gamma_1 the Riemann solvers need at the bottom -- because all three are at
+  // the same (d,T). `stale` marks the rare paths where a floor moves the state afterwards
+  // and they have to be redone.
+  bool stale = !e_positive;
+  if (e_positive) {
+    eos.PressureAndGamma1(w.d, w.e, temp, pgas, g1);
+  }
+
+  if (!e_positive || pgas < eos.pfloor) {
     // the three-argument form hands back the temperature the inversion solved for,
     // so the floored cell does not pay for a second root find
     w.e = eos.EnergyFromPressure(w.d, eos.pfloor, temp);
     u.e = w.e + e_k;
     efloor_used = true;
+    stale = true;
   }
 
   // Apply the temperature floor. Free to test now that T is known, and e(d,tfloor) is a
@@ -79,6 +89,7 @@ void SingleC2P_GeneralHyd(HydCons1D &u, const EOS_Data &eos, HydPrim1D &w,
     u.e = w.e + e_k;
     temp = eos.tfloor;
     tfloor_used = true;
+    stale = true;
   }
 
   // Apply the entropy floor. Only meaningful while the general EOS evaluates a gamma law,
@@ -87,12 +98,14 @@ void SingleC2P_GeneralHyd(HydCons1D &u, const EOS_Data &eos, HydPrim1D &w,
   if (eos.ApplyEntropyFloor(w.d, di, w.e)) {
     temp = eos.Temperature(w.d, w.e, temp);
     efloor_used = true;
+    stale = true;
   }
 
   // Evaluate the derived thermodynamic quantities that the Riemann solvers will need.
   // Both are cheap: the temperature they depend on has already been solved for above.
-  pgas = eos.Pressure(w.d, w.e, temp);
-  g1 = eos.Gamma1(w.d, w.e, temp);
+  if (stale) {
+    eos.PressureAndGamma1(w.d, w.e, temp, pgas, g1);
+  }
   return;
 }
 
