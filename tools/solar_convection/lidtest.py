@@ -68,6 +68,8 @@ def series(run, eos):
 
 def main():
     runs = sys.argv[1:] or DEFAULT
+    # tag the outputs by run set, so a second comparison does not overwrite the first
+    tag = '' if runs == DEFAULT else '_' + '_'.join(r.split('/')[-1] for r in runs)
     res = {}
     lines = []
 
@@ -109,11 +111,12 @@ def main():
         ax.legend(fontsize=8)
     fig.suptitle('solar_convection, tabulated EOS: sensitivity to the fixed-T top lid')
     fig.tight_layout()
-    fig.savefig(os.path.join(ROOT, 'plots', 'lidtest.png'), dpi=110)
+    out = os.path.join(ROOT, 'plots', 'lidtest%s.png' % tag)
+    fig.savefig(out, dpi=110)
     plt.close(fig)
     w('')
-    w('plot in %s' % os.path.join(ROOT, 'plots', 'lidtest.png'))
-    with open(os.path.join(ROOT, 'lidtest.txt'), 'w') as fh:
+    w('plot in %s' % out)
+    with open(os.path.join(ROOT, 'lidtest%s.txt' % tag), 'w') as fh:
         fh.write('\n'.join(lines) + '\n')
 
 

@@ -160,6 +160,8 @@ def series(run):
 
 def main():
     runs = sys.argv[1:] or DEFAULT
+    # tag the outputs by run set, so a second comparison does not overwrite the first
+    tag = '' if runs == DEFAULT else '_' + '_'.join(r.split('/')[-1] for r in runs)
     res = {r: series(r) for r in runs}
     lines = []
 
@@ -237,7 +239,7 @@ def main():
     fig.suptitle('solar_convection: is the atmosphere trapping waves, or failing to '
                  'damp them?')
     fig.tight_layout()
-    out = os.path.join(ROOT, 'plots', 'acoustic.png')
+    out = os.path.join(ROOT, 'plots', 'acoustic%s.png' % tag)
     fig.savefig(out, dpi=110)
     plt.close(fig)
     # ---- the amplitude argument, at a common height ------------------------------------
@@ -259,7 +261,7 @@ def main():
                  (ss['t_rad']/ss['t_ac'])[k]))
     w()
     w('plot in %s' % out)
-    with open(os.path.join(ROOT, 'acoustic.txt'), 'w') as fh:
+    with open(os.path.join(ROOT, 'acoustic%s.txt' % tag), 'w') as fh:
         fh.write('\n'.join(lines) + '\n')
 
 
