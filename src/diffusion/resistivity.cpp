@@ -55,13 +55,20 @@ Resistivity::Resistivity(MeshBlockPack *pp, ParameterInput *pin) :
     Kokkos::realloc(efld_resist.x1e, nmb, ncells3+1, ncells2+1, ncells1);
     Kokkos::realloc(efld_resist.x2e, nmb, ncells3+1, ncells2, ncells1+1);
     Kokkos::realloc(efld_resist.x3e, nmb, ncells3, ncells2+1, ncells1+1);
+    // eta_b holds the diffusivity of every cell for EVERY resistivity type, because
+    // AddEMFGeneralResist() is the only EMF routine left and it reads eta_b for every
+    // cell (AddEMFConstantResist is commented out). A constant resistivity therefore has
+    // to fill the array too: leaving it at its 1x1x1x1 placeholder made each read run off
+    // the end of the allocation, which silently returned zero and left eta_ohm_const with
+    // no effect whatsoever.
+    Kokkos::realloc(eta_b, nmb, ncells3, ncells2, ncells1);
     if (iso_resist_type.compare("constant") == 0) {
       // constant resistivity
       eta_ohm_const = pin->GetReal("mhd","eta_ohm_const");
+      Kokkos::deep_copy(eta_b, eta_ohm_const);
     } else {
 //      min_xe = pin->GetReal("mhd","min_xe");
       max_eta = pin->GetReal("mhd","max_eta");
-      Kokkos::realloc(eta_b, nmb, ncells3, ncells2, ncells1);
     }
     if (use_rkg_sts) {
         int nmhd;
@@ -346,12 +353,17 @@ void Resistivity::AddEMFGeneralResist(const DvceFaceFld4D<Real> &b0,
 
       CurrentDensity(pmy_pack, member, m, ks, js, is, ie+1, b0, mbsize.d_view(m), j1, j2, j3);
 
-      // Add E_{resistive} = \eta J to corner-centered electric fields
+      // Add E_{resistive} = \eta J to corner-centered electric fields.
+      // The edge fields carry a k = ke+1 and a j = je+1 layer even in 1D, but eta_b is
+      // cell centered and has only the ONE cell in each of those directions: indexing it
+      // at ke+1 or je+1 reads past the end of the array. The two edges bound the same
+      // cell, so both take that cell's eta.
       par_for_inner(member, is, ie+1, [&](const int i) {
-        e2(m,ks,  js  ,i) += 0.5*(eta_b(m,ks,js,i)+eta_b(m,ks,js,i-1))*j2(i);
-        e2(m,ke+1,js  ,i) += 0.5*(eta_b(m,ke+1,js,i)+eta_b(m,ke+1,js,i-1))*j2(i);
-        e3(m,ks  ,js  ,i) += 0.5*(eta_b(m,ks,js,i)+eta_b(m,ks,js,i-1))*j3(i);
-        e3(m,ks  ,je+1,i) += 0.5*(eta_b(m,ks,je+1,i)+eta_b(m,ks,je+1,i-1))*j3(i);
+        Real etaf = 0.5*(eta_b(m,ks,js,i) + eta_b(m,ks,js,i-1));
+        e2(m,ks,  js  ,i) += etaf*j2(i);
+        e2(m,ke+1,js  ,i) += etaf*j2(i);
+        e3(m,ks  ,js  ,i) += etaf*j3(i);
+        e3(m,ks  ,je+1,i) += etaf*j3(i);
       });
     });
     return;
@@ -377,12 +389,14 @@ void Resistivity::AddEMFGeneralResist(const DvceFaceFld4D<Real> &b0,
 
       CurrentDensity(pmy_pack, member, m, ks, j, is, ie+1, b0, mbsize.d_view(m), j1, j2, j3);
 
-      // Add E_{resistive} = \eta J to corner-centered electric fields
+      // Add E_{resistive} = \eta J to corner-centered electric fields.
+      // As in the 1D branch: the k = ke+1 edge layer exists but the ke+1 CELL does not,
+      // so the eta of the single x3 cell is used on both x3 faces.
       par_for_inner(member, is, ie+1, [&](const int i) {
         e1(m,ks,  j,i) += 0.5*(eta_b(m,ks,j,i)+eta_b(m,ks,j-1,i))*j1(i);
-        e1(m,ke+1,j,i) += 0.5*(eta_b(m,ke+1,j,i)+eta_b(m,ke+1,j-1,i))*j1(i);
+        e1(m,ke+1,j,i) += 0.5*(eta_b(m,ks,j,i)+eta_b(m,ks,j-1,i))*j1(i);
         e2(m,ks,  j,i) += 0.5*(eta_b(m,ks,j,i)+eta_b(m,ks,j,i-1))*j2(i);
-        e2(m,ke+1,j,i) += 0.5*(eta_b(m,ke+1,j,i)+eta_b(m,ke+1,j,i-1))*j2(i);
+        e2(m,ke+1,j,i) += 0.5*(eta_b(m,ks,j,i)+eta_b(m,ks,j,i-1))*j2(i);
         e3(m,ks  ,j,i) += 0.25*(eta_b(m,ks,j,i)+eta_b(m,ks,j,i-1)+eta_b(m,ks,j-1,i)+eta_b(m,ks,j-1,i-1))*j3(i);
       });
     });
