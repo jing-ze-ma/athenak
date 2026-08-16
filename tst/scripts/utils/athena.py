@@ -60,6 +60,31 @@ def run(input_filename, arguments):
         os.chdir(current_dir)
 
 
+# Function for running AthenaK and returning what it wrote to stdout
+#
+# run() above sends stdout into a LogPipe, which is what a test wants when its observable
+# is a data file. Some configuration is reported only in the startup banner, though, and
+# there is no file to read it from; this variant captures the output instead. Everything
+# else about it is the same, including raising AthenaError on a non-zero return code.
+def run_output(input_filename, arguments):
+    current_dir = os.getcwd()
+    exe_dir = current_dir + '/build/src/'
+    os.chdir(exe_dir)
+    try:
+        input_filename_full = '../../' + athena_rel_path + \
+                              'inputs/' + input_filename
+        cmd = ['./athena', '-i', input_filename_full] + arguments
+        logging.getLogger('athena.run').debug('Executing: '+' '.join(cmd))
+        try:
+            out = subprocess.check_output(cmd, stderr=subprocess.STDOUT)
+        except subprocess.CalledProcessError as err:
+            raise AthenaError('Return code {0} from command \'{1}\''
+                              .format(err.returncode, ' '.join(err.cmd)))
+    finally:
+        os.chdir(current_dir)
+    return out.decode('utf-8', errors='replace')
+
+
 # Function for running AthenaK with MPI
 def mpirun(nproc, input_filename, arguments):
     out_log = LogPipe('athena.run', logging.INFO)

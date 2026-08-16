@@ -1,0 +1,129 @@
+# AthenaK input file for the EOS electron fraction and the resistivity built on it.
+#
+# Drives tst/scripts/mhd/mhd_eos_electrons.py, which tests two things that are checked
+# separately because they can fail independently:
+#
+#   the COMPOSITION MODEL -- how many free electrons Saha equilibrium gives at a given
+#   (rho,T), how the metal donors change that, how [M/H] scales it and what condensation
+#   removes. The startup banner reports it, so a zero-cycle run is enough.
+#
+#   the TABULATED SURFACE and its wiring into the resistivity -- log10(n_e/n_tot) is a
+#   fourth Hermite patch that only ohmic_resistivity = eos reads, and nothing about the
+#   banner exercises it. That half is measured from the fluid: an Alfven wave decays as
+#   exp(-eta k^2 t), so the transverse magnetic energy in the history file is a direct
+#   reading of eta and hence of x_e.
+#
+# THE TABLE GRID CENTRE IS DELIBERATELY PLACED ON THE WAVE'S OWN STATE. The background
+# below is rho = 1e-6 g/cm^3 and p = 7.1e4 erg/cm^3, which this composition puts at
+# T = 1985.14 K = 10^3.297756, and eos_logt_min/max are chosen so that 0.5*(min+max) is
+# exactly that. The banner therefore reports the model's x_e AT THE WAVE, and the test can
+# predict the wave's damping rate from it without any hard-coded electron fraction. Do not
+# retune the background without moving the temperature range with it: x_e goes as
+# exp(-chi/2kT), so d ln x_e/d ln T is about 13 here and a one percent drift in the
+# temperature is a thirteen percent error in eta.
+#
+# Everything is in physical cgs (the units block below is the identity). AthenaK's B is in
+# Heaviside-Lorentz units, so the magnetic pressure is B^2/2 with no 4pi: bx0 = 500 over
+# rho = 1e-6 is an Alfven speed of 5e5 cm/s and a wave period of 200 s across the box.
+
+<comment>
+problem   = Alfven wave damped by the EOS electron fraction
+
+<job>
+basename  = MHDEOSElectrons
+
+<mesh>
+nghost    = 2
+nx1       = 64
+x1min     = 0.0
+x1max     = 1.0e8
+ix1_bc    = periodic
+ox1_bc    = periodic
+
+nx2       = 1
+x2min     = 0.0
+x2max     = 1.0e9
+ix2_bc    = periodic
+ox2_bc    = periodic
+
+nx3       = 1
+x3min     = 0.0
+x3max     = 1.0e9
+ix3_bc    = periodic
+ox3_bc    = periodic
+
+<meshblock>
+nx1       = 64
+nx2       = 1
+nx3       = 1
+
+<mesh_refinement>
+refinement = none
+
+<units>
+length_cgs = 1.0
+mass_cgs   = 1.0
+time_cgs   = 1.0
+mu         = 1.0
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim       = -1
+tlim       = 3.0       # interpreted by the pgen as a number of wave periods
+ndiag      = 100000
+
+<mhd>
+eos         = general
+general_eos = table
+reconstruct = plm
+rsolver     = hlld
+gamma       = 1.66666666667   # unused when general_eos = table
+dfloor      = 1.0e-12
+pfloor      = 1.0e-2
+
+# ohmic_resistivity = eos takes x_e from the table; = constant is the reference the test
+# compares it against, at the eta the banner's x_e predicts. max_eta is set far above any
+# eta this state can produce so that it never binds on the metal-bearing runs -- it DOES
+# bind, by design, when the metals are switched off and x_e collapses to 1e-17.
+ohmic_resistivity = eos
+max_eta           = 1.0e20
+eta_ohm_const     = 0.0
+
+eos_xh         = 0.7381
+eos_yhe        = 0.2485
+eos_h2         = true
+eos_ionization = true
+eos_radiation  = false
+eos_logd_min   = -7.0
+eos_logd_max   = -5.0
+eos_logt_min   = 3.0
+eos_logt_max   = 3.595512      # grid centre = 10^3.297756 K = the wave's temperature
+eos_dlogd      = 0.05
+eos_dlogt      = 0.01
+# declared even at their defaults so the test can override them from the command line
+eos_metal_ionization   = true
+eos_metal_mh           = 0.0
+eos_metal_condensation = false
+
+<problem>
+pgen_name = linear_wave
+wave_flag = 1           # Alfven wave: by0 = bz0 = 0 leaves 3-ME purely the perturbation
+# the eigenvectors are not normalized, so amp is an ABSOLUTE density perturbation
+amp       = 1.0e-2
+dens      = 1.0e-6      # g/cm^3
+pgas      = 7.1e4       # erg/cm^3  ->  T = 1985.14 K
+vx0       = 0.0
+vy0       = 0.0
+vz0       = 0.0
+bx0       = 500.0       # gauss
+by0       = 0.0
+bz0       = 0.0
+along_x1  = true
+along_x2  = false
+along_x3  = false
+
+<output1>
+file_type = hst
+dt        = 50.0
