@@ -22,7 +22,10 @@ using UserRefinementFnPtr = void (*)(MeshBlockPack* pmbp);
 using UserHistoryFnPtr = void (*)(HistoryData *pdata, Mesh *pm);
 
 struct HotJupiterParam {
-  Real Teq, omega, grav, ap, Rgas, met, bbot;
+  // Initialised, because these are only filled when <problem>/hot_jupiter is true and the
+  // Ohmic resistivity reads Rgas unconditionally on its ideal-gas branch. Left
+  // uninitialised, a non-hot-Jupiter problem divided by whatever was on the stack.
+  Real Teq = 0.0, omega = 0.0, grav = 0.0, ap = 0.0, Rgas = 0.0, met = 0.0, bbot = 0.0;
 };
 
 //----------------------------------------------------------------------------------------

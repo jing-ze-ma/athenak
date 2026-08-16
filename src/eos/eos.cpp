@@ -137,6 +137,72 @@ void EquationOfState::BuildGeneralEOS(std::string block, ParameterInput *pin) {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void EquationOfState::BuildElectronFractionTable()
+//! \brief build the composition table for an IDEAL-gas run, for its x_e alone
+//!
+//! `ohmic_resistivity = eos` wants n_e/n_tot from Saha over hydrogen and the metal
+//! donors. That normally arrives with the general EOS, but the two are separable: the
+//! general EOS is expensive because ConsToPrim has to invert e(rho,T) for T in every
+//! cell, and an ideal gas never does that. It can therefore have the table's electron
+//! fraction at essentially no cost -- measured at -0.02 ms/cycle against the `perna`
+//! fit, i.e. free, because one bicubic patch is no dearer than perna's
+//! log10 + pow(10,x) + 2 sqrt.
+//!
+//! WHAT IT BUYS. perna is potassium-only sqrt-Saha at a fixed abundance, so it has no
+//! saturation ceiling (over-predicts x_e ~3x above 3500 K at low pressure), no hydrogen
+//! term (under-predicts above ~6000 K), and no condensation or metallicity. The table
+//! has all of it, and ResistivityEOS() adds the Spitzer electron-ion term as well.
+//!
+//! WHAT IT DOES NOT BUY. An ideal gas carries a FIXED mu, so its temperature is
+//! p/(Rgas rho) with that mu baked in, and x_e goes as exp(-chi/2kT) with
+//! dln x_e/dln T of order 13. Wherever the real mean molecular weight departs from the
+//! assumed one -- across H2 dissociation above all -- the temperature is wrong and no
+//! electron-fraction model repairs it. This makes the resistivity the best it can be
+//! GIVEN the ideal thermodynamics; it does not make an ideal run equivalent to a
+//! general-EOS one.
+
+void EquationOfState::BuildElectronFractionTable(std::string block, ParameterInput *pin) {
+  // Nothing to do unless the resistivity actually asks for the EOS electron fraction.
+  // The probe must NOT be GetOrAddString: that would ADD ohmic_resistivity to the input,
+  // and the Resistivity constructor keys off whether the parameter exists at all -- so a
+  // run with no resistivity would acquire one, of an invalid type, and abort.
+  if (!pin->DoesParameterExist(block, "ohmic_resistivity")) {return;}
+  if (pin->GetString(block, "ohmic_resistivity").compare("eos") != 0) {return;}
+
+  if (pmy_pack->punit == nullptr) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
+              << "<" << block << ">/ohmic_resistivity = eos with an ideal gas builds a "
+              << "composition table, which needs a <units> block to know the physical "
+              << "density and temperature scale" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  Real dens_cgs = pmy_pack->punit->density_cgs();
+  Real pres_cgs = pmy_pack->punit->pressure_cgs();
+  Real temp_cgs = pmy_pack->punit->temperature_cgs()/pmy_pack->punit->mu();
+
+  BuildEOSTable(eos_data.tbl, pin, block, dens_cgs, pres_cgs, temp_cgs, eos_data.pfloor);
+
+  // The surfaces are built, but the table must NOT be marked active. `tbl.active` is
+  // what every thermodynamic accessor in EOS_Data tests to choose between the ideal-gas
+  // expression and the table, and this run wants the ideal gas for all of them. Only the
+  // electron fraction comes from the table, and ElectronFractionKelvin() gates on
+  // xe_from_table instead, reading the interpolant directly.
+  eos_data.tbl.active = false;
+  eos_data.xe_from_table = true;
+
+  // The resistivity forms the ideal gas's temperature as p/(Rgas rho), which is kelvin
+  // only if the run is in cgs -- an assumption `perna` already makes. The table is
+  // indexed in physical units, so report the scale rather than let it be silent.
+  if (global_variable::my_rank == 0) {
+    std::cout << "<" << block << ">: ideal gas + tabulated electron fraction for "
+              << "ohmic_resistivity = eos; the thermodynamics stay ideal. Table indexed "
+              << "at " << dens_cgs << " g/cm^3 per code density, and the resistivity's "
+              << "own T = p/(Rgas rho) must already be in kelvin." << std::endl;
+  }
+  return;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void ConsToPrim()
 //! \brief No-Op versions of hydro and MHD conservative to primitive functions.
 //! Required because each derived class overrides only one.

@@ -128,16 +128,32 @@ void Resistivity::SetResistivity(const DvceArray5D<Real> &w, const EOS_Data &eos
   // that would disagree with this file's k_B in the last digits.
   const bool gen = eos.IsGeneral();
   const bool use_eos_xe = (iso_resist_type.compare("eos") == 0);
-  // An ideal gas carries no composition, so it cannot supply an electron fraction. Fail
-  // here rather than silently returning zero and floating every cell to max_eta.
-  if (use_eos_xe && !gen) {
+  // The electron fraction has to come from somewhere: either the general EOS carries it,
+  // or an ideal-gas run had the composition table built for this alone (see
+  // EquationOfState::BuildElectronFractionTable). Fail here rather than silently return
+  // zero and float every cell to max_eta.
+  if (use_eos_xe && !eos.HasElectronFraction()) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
-              << "ohmic_resistivity = eos needs the electron fraction from a general "
-              << "EOS; set eos = general (and eos_metal_ionization = true, or the "
-              << "atmosphere will have essentially no electrons below ~4000 K)"
+              << "ohmic_resistivity = eos found no electron fraction. It needs either "
+              << "eos = general with general_eos = table, or an ideal gas with a <units> "
+              << "block and the eos_* composition parameters so the table can be built "
+              << "for x_e alone. Either way set eos_metal_ionization = true, or the "
+              << "atmosphere will have essentially no electrons below ~4000 K"
               << std::endl;
     std::exit(EXIT_FAILURE);
   }
+  // The ideal-gas branch below forms T = p/(Rgas rho) from <problem>/Rgas, which only a
+  // hot_jupiter problem sets; it is zero for anything else. Catch that here rather than
+  // divide by it per cell.
+  if (!gen && !(Rgas > 0.0)) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
+              << "the Ohmic resistivity needs a temperature, and on the ideal-gas branch "
+              << "that is p/(<problem>/Rgas rho). Rgas is " << Rgas << ", so the "
+              << "problem generator never set it -- only a <problem>/hot_jupiter = true "
+              << "problem does." << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+
   // the temperature is read from the cache ConsToPrim filled for this same primitive
   // state, not re-derived: T(d,e) is a root find for a general EOS and doing it here
   // would repeat, per cell per stage, work that has already been done
@@ -160,7 +176,10 @@ void Resistivity::SetResistivity(const DvceArray5D<Real> &w, const EOS_Data &eos
       nn = rho/(mu*mh);
     }
     if (use_eos_xe) {
-      ResistivityEOS(eos.ElectronFraction(rho, e, wtemp_(m,k,j,i)), T, eta_b(m,k,j,i));
+      // T is already in kelvin on both branches above, so the kelvin entry point is the
+      // one to use -- the (d,e,T) form would scale by EOS_Data::temp_cgs, which an ideal
+      // gas never sets. For a general EOS the two are the same number.
+      ResistivityEOS(eos.ElectronFractionKelvin(rho, T), T, eta_b(m,k,j,i));
     } else {
       ResistivityPerna(nn, T, eta_b(m,k,j,i));
     }

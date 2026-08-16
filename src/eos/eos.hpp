@@ -39,6 +39,14 @@ struct EOS_Data {
   bool is_ideal;     // flag to denote ideal gas EOS
   Real dfloor, pfloor, tfloor, sfloor;  // density, pressure, temperature, entropy floors
   Real gamma_max;    // ceiling on Lorentz factor in SR/GR
+  // Set when an IDEAL-gas run has had the composition table built purely to supply the
+  // electron fraction to ohmic_resistivity = eos. In that case `tbl` holds valid surfaces
+  // but `tbl.active` is deliberately FALSE, because `active` is what every thermodynamic
+  // accessor below tests to choose between the ideal-gas expression and the table -- and
+  // such a run wants the ideal gas everywhere EXCEPT x_e. See
+  // EquationOfState::BuildElectronFractionTable().
+  bool xe_from_table = false;
+
   EOSType eos_type = EOSType::ideal;  // EOS evaluated by the general interface below
 
   // Unit conversion factors, code units -> cgs. An ideal gas is scale free and ignores
@@ -375,6 +383,29 @@ struct EOS_Data {
     return ElectronFraction(d, e, Temperature(d,e));
   }
 
+  //! \fn bool HasElectronFraction
+  //! \brief whether an electron fraction is available at all -- either from a general EOS
+  //! or from a table built solely for it on top of an ideal gas.
+  KOKKOS_INLINE_FUNCTION
+  bool HasElectronFraction() const { return (tbl.active || xe_from_table); }
+
+  //! \fn Real ElectronFractionKelvin
+  //! \brief n_e/n_tot from a CODE density and a temperature already in KELVIN.
+  //!
+  //! The (d,e,T) form above takes a CODE temperature and scales it by EOS_Data::temp_cgs,
+  //! which only a general EOS sets -- an ideal gas leaves it at 1.0, so routing an ideal
+  //! run through it would look up the table at a temperature wrong by that factor. This
+  //! form sidesteps the question: callers that already hold kelvin pass kelvin. It also
+  //! takes the density scale from the TABLE rather than from EOS_Data, for the same
+  //! reason. The resistivity computes T in kelvin on both EOS paths, so it uses this.
+  KOKKOS_INLINE_FUNCTION
+  Real ElectronFractionKelvin(const Real d, const Real t_kelvin) const {
+    if (tbl.active || xe_from_table) {
+      return tbl.ElectronFractionCgs(d*tbl.dens_cgs, t_kelvin);
+    }
+    return 0.0;
+  }
+
   //! \fn Real DensityFromPressureTemperature
   //! \brief density d(p,T); the (p,T) -> d inversion. Unlike everything else here this is
   //! NOT a function of the primitive pair, and no kernel needs it: it exists for problem
@@ -696,6 +727,11 @@ class EquationOfState {
   // gamma law (which reproduces the ideal path exactly) or the tabulated analytic EOS.
   // Called from the GeneralHydro/GeneralMHD constructors, after the unit scales are set.
   void BuildGeneralEOS(std::string block, ParameterInput *pin);
+
+  // Builds the same composition table for an IDEAL-gas run, but only so that
+  // ohmic_resistivity = eos has an electron fraction to read. Called from the IdealMHD
+  // constructor; a no-op unless that resistivity is selected.
+  void BuildElectronFractionTable(std::string block, ParameterInput *pin);
 
   // virtual functions to convert cons to prim in either Hydro or MHD (depending on
   // arguments), overwritten in derived eos classes

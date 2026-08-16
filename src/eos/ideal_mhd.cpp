@@ -19,6 +19,9 @@ IdealMHD::IdealMHD(MeshBlockPack *pp, ParameterInput *pin) :
   eos_data.is_ideal = true;
   eos_data.gamma = pin->GetReal("mhd","gamma");
   eos_data.iso_cs = 0.0;
+  // An ideal gas has no composition of its own, but ohmic_resistivity = eos needs one.
+  // A no-op unless that resistivity is selected; the thermodynamics stay ideal.
+  BuildElectronFractionTable("mhd", pin);
 }
 
 //----------------------------------------------------------------------------------------

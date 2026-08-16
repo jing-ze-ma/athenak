@@ -106,8 +106,23 @@ eos_dlogt      = 0.01
 eos_metal_ionization   = true
 eos_metal_mh           = 0.0
 eos_metal_condensation = false
+iso_sound_speed        = 1.0e5   # declared so the test can select an isothermal EOS
 
 <problem>
+# The Ohmic resistivity takes the ideal gas's temperature as p/(<problem>/Rgas rho), and
+# only a hot_jupiter problem defines Rgas -- so the flag is set here purely to define it.
+# It gates nothing else. Rgas = 3.5765e7 is mu = 2.3247, which puts this background at the
+# same 1985 K the tabulated EOS gives it, so the ideal and general runs can be required to
+# damp the wave identically.
+hot_jupiter = true
+Teq   = 0.0
+omega = 0.0
+grav  = 0.0
+ap    = 0.0
+Rgas  = 3.5765e7
+met   = 0.0
+bbot  = 0.0
+
 pgen_name = linear_wave
 wave_flag = 1           # Alfven wave: by0 = bz0 = 0 leaves 3-ME purely the perturbation
 # the eigenvectors are not normalized, so amp is an ABSOLUTE density perturbation

@@ -56,6 +56,9 @@ _cold_logt = ['mhd/eos_logt_min=2.545', 'mhd/eos_logt_max=3.145']
 # surface at the grid centre and the wave's own truncation error, so it is held to 10%.
 _rtol_ratio = 0.03
 _rtol_abs = 0.10
+# The ideal-gas comparison carries, on top of the above, the small mismatch between the
+# temperature Rgas implies and the one the table gives this background.
+_rtol_ideal = 0.10
 
 # Results are handed from run() to analyze() through these.
 _banner = {}
@@ -116,14 +119,22 @@ def run(**kwargs):
     _decay['mh00'] = _fluid_run('fmh00', ['mhd/eos_metal_mh=0.0'])
     _decay['mh05'] = _fluid_run('fmh05', ['mhd/eos_metal_mh=0.5'])
 
+    # ------------------------------------------------- the same x_e on an IDEAL gas
+    # An ideal gas can have the tabulated electron fraction without the tabulated
+    # thermodynamics: the table is built for x_e alone. The input's Rgas is chosen so the
+    # ideal gas sits at the same 1985 K the table gives this background, so with the same
+    # x_e it must produce the same eta and damp the wave the same way. That is what makes
+    # this a test of the wiring rather than of the ideal gas.
+    _decay['idealgas'] = _fluid_run('fideal', ['mhd/eos=ideal'])
+
     # ------------------------------------------------------------------- the refusals
-    # an ideal gas has no composition and cannot answer for x_e, so asking it to is fatal
-    # rather than silently resistivity-free
-    _decay['ideal_eos_aborts'] = True
+    # An isothermal EOS has no composition and no table is built for it, so asking for the
+    # EOS electron fraction has to be fatal rather than silently resistivity-free.
+    _decay['isothermal_aborts'] = True
     try:
         athena.run(_input, ['job/basename=eosel_abort', 'time/nlim=0',
-                            'mhd/eos=ideal'])
-        _decay['ideal_eos_aborts'] = False
+                            'mhd/eos=isothermal'])
+        _decay['isothermal_aborts'] = False
     except athena.AthenaError:
         pass
 
@@ -225,10 +236,22 @@ def analyze():
                        'tabulated surface'.format(fluid_ratio, ratio))
         status = False
 
+    # ---- an ideal gas reading the same table must damp the same way --------------------
+    damp_ideal = math.log(me_ideal/_decay['idealgas'])
+    err = damp_ideal/damp['mh00'] - 1.0
+    logger.info('ideal gas + tabulated x_e: ohmic log decay {0:g} against {1:g} for the '
+                'general EOS, {2:+.2%}'.format(damp_ideal, damp['mh00'], err))
+    if not abs(err) < _rtol_ideal:
+        logger.warning('an ideal gas at the same temperature reading the same x_e table '
+                       'damps the wave {0:+.2%} differently from the general EOS; the '
+                       'ideal-gas path is not reaching the same electron fraction'
+                       .format(err))
+        status = False
+
     # ---- and the refusal -------------------------------------------------------------
-    if not _decay['ideal_eos_aborts']:
-        logger.warning('ohmic_resistivity = eos with eos = ideal did not abort; an ideal '
-                       'gas has no electron fraction to give')
+    if not _decay['isothermal_aborts']:
+        logger.warning('ohmic_resistivity = eos with eos = isothermal did not abort; no '
+                       'table is built for it, so there is no electron fraction to give')
         status = False
 
     return status
