@@ -58,6 +58,13 @@ use_grid_stretch_theta = true
 f_stretch_theta        = 2.0
 
 <meshblock>
+# nx1 MUST equal the mesh nx1: the two-stream RT sweeps whole radial columns.
+#
+# PORTING TO GPUs: this 8x8 split gives 128 blocks, which suits many CPU ranks and is
+# wrong for accelerators -- you want a few LARGE blocks, at least one per GPU and ideally
+# a small multiple of the rank count.  For 64 x 64 x 128 on a 4-GPU node, nx2 = nx3 = 32
+# gives 8 blocks over 4 ranks; nx2 = nx3 = 64 gives only 2 and would leave half the GPUs
+# idle.  Build with -DPROBLEM=deep_hot_jupiter_rt and the Kokkos HIP/CUDA arch flags.
 nx1       = 64
 nx2       = 8
 nx3       = 8
@@ -119,8 +126,35 @@ eos_dlog        = 0.05
 
 # --- non-ideal MHD ---
 ohmic_resistivity = eos          # constant | perna | eos
-max_eta           = 1.0e13       # caps eta [cm^2/s]; floors x_e at 230 sqrt(T)/max_eta
-#use_rkg_sts      = true         # RKG super-time-stepping, if the diffusive dt bites
+max_eta           = 1.0e14       # caps eta [cm^2/s], and therefore FLOORS the electron
+#                                # fraction at x_e = 230 sqrt(T)/max_eta.  That floor is
+#                                # the reason not to leave the cap low: at 1e12 it is
+#                                # x_e ~ 1e-8, which overrides the tabulated value below
+#                                # ~2000 K in the upper atmosphere and ~3000 K in the deep
+#                                # gas -- most of a Teq = 2500 K domain.  1e14 needs
+#                                # use_rkg_sts below; the two go together.
+use_rkg_sts       = true         # RKG super-time-stepping.  REQUIRED at max_eta = 1e14:
+#                                # the diffusive dt would otherwise sit ~29x below the CFL
+#                                # value.  Measured on a 64x64x128 polar grid with constant
+#                                # eta: 1e13 lifts dt from 4.68 s back to the 13.41 s CFL
+#                                # value, and at 1e15 dt is STILL 13.41 s.
+#                                #
+#                                # It is NOT free.  s = ceil(-a + sqrt((a+1)^2 + tau(3+2a)))
+#                                # sub-stages with a = 0.5 and tau = dt_hydro/dt_diff,
+#                                # FLOORED AT 3 -- so with diffusion not binding it is a
+#                                # pure ~40% loss.  Break-even is tau ~ 1.5-2; measured
+#                                # gains 1.8x at tau=2.9, 10.7x at tau=29, 45x at tau=287.
+#                                # Rule of thumb: if dt sits at the hydro CFL value, turn
+#                                # this OFF.
+#                                #
+#                                # ACCURACY: the super-step runs after the complete RK2
+#                                # step (driver.cpp), i.e. Lie splitting, where with STS off
+#                                # the resistive fluxes sit inside the RK2 stages.  A/B at
+#                                # fixed simulated time: at eta = 1e14 the magnetic energies
+#                                # agree to <= 1.5e-5 and the decay of 1-ME is identical to
+#                                # the 6 digits the .hst carries; only the kinetic energies
+#                                # differ, by <= 0.8%.  Re-check if the resistivity ever
+#                                # shapes the field rather than just damping it.
 
 pfloor = 1.0e-1
 dfloor = 5.44e-12
@@ -134,6 +168,14 @@ tfloor_kelvin = 200.0
 
 <problem>
 user_srcs   = true
+# Outer-x1 ghost extrapolation: include the magnetic force as a bounded effective gravity,
+# dphi -> dphi*(1 - dM1mag/(rho|g|)) clamped to [-1, 0.9], applied inside the hydrostatic
+# solve.  This is the default; false drops the term entirely.  The older form added it to
+# the energy instead and was unbounded -- its size relative to the hydrostatic term is
+# (B^2/dr)/(rho g), which is 0.03 at bbot = 3 G but 3.0 at 30 G and 33 at 100 G, so past
+# O(1) it SET the ghost rather than correcting it and the last two active radial shells
+# collapsed.  In the present form the answer is independent of dfloor from 3 to 300 G.
+bc_outer_maxwell = true
 hot_jupiter = true
 Teq   = 2500.0
 omega = 2.06e-5
