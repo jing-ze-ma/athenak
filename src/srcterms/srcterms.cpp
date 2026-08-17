@@ -178,7 +178,11 @@ void SourceTerms::ISMCooling(const DvceArray5D<Real> &w0, const EOS_Data &eos_da
                                : w0(m,IEN,k,j,i)/w0(m,IDN,k,j,i)*gm1);
     if (gen) {
       // number density in cgs from the EOS's own mean molecular weight
-      Real mu = eos_.MeanMolecularWeight(w0(m,IDN,k,j,i), w0(m,IEN,k,j,i));
+      // wtemp_ is the temperature ConsToPrim already solved for this state, and is read
+      // two lines above; the two-argument MeanMolecularWeight would solve for it AGAIN,
+      // cold, once per cell per stage.
+      Real mu = eos_.MeanMolecularWeight(w0(m,IDN,k,j,i), w0(m,IEN,k,j,i),
+                                         wtemp_(m,k,j,i));
       Real nden = w0(m,IDN,k,j,i)*dens_cgs/(mu*amu_cgs);
       u0(m,IEN,k,j,i) -= bdt*(nden*nden*ISMCoolFn(temp) - nden*heating_rate)/erate_unit;
     } else {

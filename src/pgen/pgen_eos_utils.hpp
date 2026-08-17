@@ -37,9 +37,38 @@ Real EintFromP(const EOS_Data &eos, const Real igm1, const Real d, const Real p)
 //----------------------------------------------------------------------------------------
 //! \fn Real PresFromEint
 //! \brief pressure from the primitive pair (d,e).
+//!
+//! NOTE the general branch is `Pressure(d,e)`, which SOLVES for the temperature. If the
+//! caller also wants T -- radiative transfer and cooling always do -- use
+//! PresTempFromEint below instead, which gets both from one solve, warm started.
 KOKKOS_INLINE_FUNCTION
 Real PresFromEint(const EOS_Data &eos, const Real gm1, const Real d, const Real e) {
   return (eos.IsGeneral()) ? eos.Pressure(d, e) : e*gm1;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void PresTempFromEint
+//! \brief pressure AND kelvin temperature from (d,e), with ONE temperature solve.
+//!
+//! The obvious spelling of this -- `PresFromEint` followed by `TempKelvin` -- costs the
+//! general EOS TWO cold-start root finds per call, because each of `Pressure(d,e)` and
+//! `Temperature(d,e)` inverts e(d,T) independently and neither is given a starting
+//! point. Solving once and passing the temperature to `Pressure(d,e,t)` removes one
+//! inversion outright, and `tguess` (normally Hydro/MHD::wtemp for the cell, which
+//! ConsToPrim has already solved for this very state) cuts the survivor to a couple of
+//! Newton steps. A non-positive or stale guess is safe: SolveTemperature keeps its full
+//! bracket and converges to the same root regardless.
+KOKKOS_INLINE_FUNCTION
+void PresTempFromEint(const EOS_Data &eos, const Real gm1, const Real Rgas, const Real d,
+                      const Real e, const Real tguess, Real &p, Real &tk) {
+  if (eos.IsGeneral()) {
+    Real tc = eos.Temperature(d, e, tguess);
+    p  = eos.Pressure(d, e, tc);
+    tk = tc*eos.temp_cgs;
+  } else {
+    p  = e*gm1;
+    tk = p/Rgas/d;
+  }
 }
 
 //----------------------------------------------------------------------------------------
@@ -49,10 +78,17 @@ Real PresFromEint(const EOS_Data &eos, const Real gm1, const Real d, const Real 
 //! mean molecular weight; the general branch asks the EOS, where composition lives
 //! instead, and converts with eos.temp_cgs. Pressure is passed in because call sites have
 //! normally evaluated it already.
+//!
+//! `tguess` is a CODE-temperature warm start for the general branch, normally
+//! Hydro/MHD::wtemp for the same cell -- the temperature ConsToPrim already solved for
+//! this very state. Without it every call brackets from scratch, which inside a per-cell
+//! radiative-transfer sweep is the difference between two Newton steps and dozens. A
+//! non-positive value means "no guess"; a stale one costs iterations but never accuracy,
+//! since the solver converges to the same root either way. The ideal branch ignores it.
 KOKKOS_INLINE_FUNCTION
 Real TempKelvin(const EOS_Data &eos, const Real Rgas, const Real d, const Real e,
-                const Real p) {
-  return (eos.IsGeneral()) ? eos.Temperature(d, e)*eos.temp_cgs : p/Rgas/d;
+                const Real p, const Real tguess = -1.0) {
+  return (eos.IsGeneral()) ? eos.Temperature(d, e, tguess)*eos.temp_cgs : p/Rgas/d;
 }
 
 //----------------------------------------------------------------------------------------

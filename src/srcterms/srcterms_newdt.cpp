@@ -77,7 +77,9 @@ void SourceTerms::NewTimeStep(const DvceArray5D<Real> &w0, const EOS_Data &eos_d
 
       Real cooling_heating;
       if (gen) {
-        Real mu = eos_.MeanMolecularWeight(w0(m,IDN,k,j,i), w0(m,IEN,k,j,i));
+        // as in srcterms.cpp: reuse the cached temperature instead of re-solving for it
+        Real mu = eos_.MeanMolecularWeight(w0(m,IDN,k,j,i), w0(m,IEN,k,j,i),
+                                           wtemp_(m,k,j,i));
         Real nden = w0(m,IDN,k,j,i)*dens_cgs/(mu*amu_cgs);
         // add a tiny number
         cooling_heating = FLT_MIN +

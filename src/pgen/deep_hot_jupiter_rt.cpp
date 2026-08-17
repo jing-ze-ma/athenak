@@ -33,6 +33,7 @@
 using pgen_eos::EintFromP;
 using pgen_eos::PresFromEint;
 using pgen_eos::TempKelvin;
+using pgen_eos::PresTempFromEint;
 using pgen_eos::DensFromPT;
 using pgen_eos::GradAd;
 
@@ -1602,14 +1603,20 @@ void double_gray_two_stream_RT(Mesh *pm, Real bdt) {
         
     Real gamma;
     EOS_Data eos;
+    // wtemp is the temperature ConsToPrim already solved for the current w0. It is
+    // allocated ONLY for a general EOS, so it is read only on the general branch of
+    // TempKelvin; for an ideal gas it is a zero-size View, captured and never touched.
+    DvceArray4D<Real> wtemp_;
     if (pmbp->phydro != nullptr) {
       u0 = pmbp->phydro->u0;
       w0 = pmbp->phydro->w0;
+      wtemp_ = pmbp->phydro->wtemp;
       gamma = pmbp->phydro->peos->eos_data.gamma;
       eos = pmbp->phydro->peos->eos_data;
     } else if (pmbp->pmhd != nullptr) {
       u0 = pmbp->pmhd->u0;
       w0 = pmbp->pmhd->w0;
+      wtemp_ = pmbp->pmhd->wtemp;
       gamma = pmbp->pmhd->peos->eos_data.gamma;
       eos = pmbp->pmhd->peos->eos_data;
     }
@@ -1700,9 +1707,9 @@ void double_gray_two_stream_RT(Mesh *pm, Real bdt) {
         
         // down-sweep
         for (int i=ie; i>is-1; --i) {
-          Real p = PresFromEint(eos,gm1,w0(m,IDN,k,j,i),w0(m,IEN,k,j,i));
           Real rho = w0(m,IDN,k,j,i);
-          Real T = TempKelvin(eos,Rgas,rho,w0(m,IEN,k,j,i),p);
+          Real p, T;
+          PresTempFromEint(eos,gm1,Rgas,rho,w0(m,IEN,k,j,i),wtemp_(m,k,j,i),p,T);
           B[i] = boltz_sigma/M_PI*SQR(SQR(T));
           Real kap_v = 4.0e-3; // Rauscher & Menou 2012; Guillot 2010
           Real kap_ir = 2.28e-5*pow(p*cgs2Pa,0.53); // Komocek+2017
@@ -1808,14 +1815,20 @@ void double_gray_two_stream_RT_source(Mesh *pm, Real bdt) {
     
     Real gamma;
     EOS_Data eos;
+    // wtemp is the temperature ConsToPrim already solved for the current w0. It is
+    // allocated ONLY for a general EOS, so it is read only on the general branch of
+    // TempKelvin; for an ideal gas it is a zero-size View, captured and never touched.
+    DvceArray4D<Real> wtemp_;
     if (pmbp->phydro != nullptr) {
       u0 = pmbp->phydro->u0;
       w0 = pmbp->phydro->w0;
+      wtemp_ = pmbp->phydro->wtemp;
       gamma = pmbp->phydro->peos->eos_data.gamma;
       eos = pmbp->phydro->peos->eos_data;
     } else if (pmbp->pmhd != nullptr) {
       u0 = pmbp->pmhd->u0;
       w0 = pmbp->pmhd->w0;
+      wtemp_ = pmbp->pmhd->wtemp;
       gamma = pmbp->pmhd->peos->eos_data.gamma;
       eos = pmbp->pmhd->peos->eos_data;
     }
@@ -1896,9 +1909,9 @@ void double_gray_two_stream_RT_source(Mesh *pm, Real bdt) {
 //        }
         tau_ir_down[ie+1] = tau_ir;
         for (int i=ie; i>is-1; --i) {
-          Real p = PresFromEint(eos,gm1,w0(m,IDN,k,j,i),w0(m,IEN,k,j,i));
           Real rho = w0(m,IDN,k,j,i);
-          Real T = TempKelvin(eos,Rgas,rho,w0(m,IEN,k,j,i),p);
+          Real p, T;
+          PresTempFromEint(eos,gm1,Rgas,rho,w0(m,IEN,k,j,i),wtemp_(m,k,j,i),p,T);
           B[i] = boltz_sigma/M_PI*SQR(SQR(T));
           Real kap_v = 4.0e-3; // Rauscher & Menou 2012; Guillot 2010
             Real kap_ir = 1.0e-2; // 2.28e-5*pow(p*cgs2Pa,0.53); // Komocek+2017
@@ -1970,9 +1983,9 @@ void double_gray_two_stream_RT_source(Mesh *pm, Real bdt) {
           Real Bavg = B[i];//(B(i-1)+B(i))/2.0;
           I_up = (I_up*trans + Bavg*(1.0-trans))*fac;
           Real J = (I_up+I_down[i])/2.0;
-          Real p = PresFromEint(eos,gm1,w0(m,IDN,k,j,i),w0(m,IEN,k,j,i));
           Real rho = w0(m,IDN,k,j,i);
-          Real T = TempKelvin(eos,Rgas,rho,w0(m,IEN,k,j,i),p);
+          Real p, T;
+          PresTempFromEint(eos,gm1,Rgas,rho,w0(m,IEN,k,j,i),wtemp_(m,k,j,i),p,T);
             Real kap_ir = 1.0e-2; //2.28e-5*pow(p*cgs2Pa,0.53); // Komocek+2017
           if (test_oned) kap_ir = 1.0e-2;
 //          Real Q_ir = 4.0*M_PI*kap_ir*rho*(J-B(i));
@@ -1988,13 +2001,23 @@ void double_gray_two_stream_RT_source(Mesh *pm, Real bdt) {
             e0 = w0(m,IEN,k,j,i);
             Real bb = 4.0*M_PI*kap_ir*rho*J*bdt + Q_v[i]*bdt + e0;
             e = e0;
+            // `tc` is T in CODE temperature, carried alongside the kelvin `T` so that
+            // neither EOS call has to solve for it. The two-argument SpecificHeatCv(d,e)
+            // and Temperature(d,e) are the COLD-START forms -- the first is documented
+            // "setup-time use only" because it inverts e(d,T) itself, and the second
+            // brackets from scratch -- so using them here cost two full root finds per
+            // Newton step, per cell, per stage. T and e are consistent at the top of
+            // every iteration, so c_v can be evaluated at the temperature already in
+            // hand, and the refresh below only needs the previous T as a warm start.
+            Real tc = T/eos.temp_cgs;
             for (int n=0; n<100; ++n) {
-              Real dTde = eos.temp_cgs/(rho*eos.SpecificHeatCv(rho,e));
+              Real dTde = eos.temp_cgs/(rho*eos.SpecificHeatCv(rho,e,tc));
               Real de = e - kk*SQR(SQR(T)) - bb;
               e -= de / (1.0 - 4.0*kk*T*T*T*dTde);
               if (fabs(de) <= 1.0e-10*e)
                 break;
-              T = eos.Temperature(rho,e)*eos.temp_cgs;
+              tc = eos.Temperature(rho,e,tc);
+              T = tc*eos.temp_cgs;
             }
           } else {
             Real cv = Rgas*rho*igm1;
@@ -2719,14 +2742,20 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
         
     Real gamma;
     EOS_Data eos;
+    // wtemp is the temperature ConsToPrim already solved for the current w0. It is
+    // allocated ONLY for a general EOS, so it is read only on the general branch of
+    // TempKelvin; for an ideal gas it is a zero-size View, captured and never touched.
+    DvceArray4D<Real> wtemp_;
     if (pmbp->phydro != nullptr) {
       u0 = pmbp->phydro->u0;
       w0 = pmbp->phydro->w0;
+      wtemp_ = pmbp->phydro->wtemp;
       gamma = pmbp->phydro->peos->eos_data.gamma;
       eos = pmbp->phydro->peos->eos_data;
     } else if (pmbp->pmhd != nullptr) {
       u0 = pmbp->pmhd->u0;
       w0 = pmbp->pmhd->w0;
+      wtemp_ = pmbp->pmhd->wtemp;
       gamma = pmbp->pmhd->peos->eos_data.gamma;
       eos = pmbp->pmhd->peos->eos_data;
     }
@@ -2850,9 +2879,9 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
 //        F_v_down_f(ie+1) = (mu0 > 0.0)? F_v_down_f(ie+1) : 0.0;
         // down-sweep
         for (int i=ie; i>is-1; --i) {
-          Real p = PresFromEint(eos,gm1,w0(m,IDN,k,j,i),w0(m,IEN,k,j,i));
           Real rho = w0(m,IDN,k,j,i);
-          Real T = TempKelvin(eos,Rgas,rho,w0(m,IEN,k,j,i),p);
+          Real p, T;
+          PresTempFromEint(eos,gm1,Rgas,rho,w0(m,IEN,k,j,i),wtemp_(m,k,j,i),p,T);
           B[i] = boltz_sigma/M_PI*SQR(SQR(T));
           Real kapr;
           get_kapr(T, p, met, kapr);
