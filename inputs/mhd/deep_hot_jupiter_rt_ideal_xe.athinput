@@ -1,0 +1,191 @@
+# Ultra-hot Jupiter (deep_hot_jupiter_rt): IDEAL gas with the EOS's tabulated electron
+# fraction driving the Ohmic resistivity.
+#
+# Build with  -DPROBLEM=deep_hot_jupiter_rt.
+#
+# This is the CHEAP configuration for resistive hot-Jupiter work.  It keeps ideal-gas
+# thermodynamics -- so it pays none of the general EOS's 4.3x per-cycle cost -- while
+# taking the electron fraction from the same Saha composition model the general EOS uses:
+# H, He and the metal donors Na, K, Ca, Al, Mg, Fe, with condensation.  Measured 7% FASTER
+# than the potassium-only `perna` fit as well as more accurate.
+#
+# WHAT IT DOES NOT BUY.  An ideal gas carries a FIXED mu.  With Rgas = 4.593e7 below that
+# is mu = 1.810, while the composition model gives ~1.26 in the same gas, so this run's
+# temperature is ~1.44x the general EOS's there.  Since d ln x_e/d ln T ~ 13 in the alkali
+# ionization range, that is ~2 orders of magnitude in x_e.  This configuration gives the
+# best electron fraction CONSISTENT WITH ITS OWN (rho, T); it does not make an ideal run
+# equivalent to a general-EOS one.  Use eos = general (see deep_hot_jupiter_rt_eos.athinput)
+# when the magnetic coupling itself is the science.
+#
+# Settings below were measured on this problem at bbot = 10 G over one rotation period.
+# See docs/ideal_gas_resistive.md for the numbers and for what was tried and rejected.
+
+<comment>
+problem   = ultra-hot Jupiter, ideal gas + EOS electron fraction + Ohmic resistivity
+reference = Heng et al. MNRAS 413, 2380 (2011); Perna et al. ApJ 719, 1421 (2010)
+
+<job>
+basename  = dhj
+
+<mesh>
+nghost    = 2
+nx1       = 64
+x1min     = 9.44e9
+x1max     = 12.54e9
+ix1_bc    = user
+ox1_bc    = user
+
+nx2       = 56
+x2min     = -1.0        # -1 lets the pgen set the full polar range
+x2max     = -1.0
+ix2_bc    = polar
+ox2_bc    = polar
+
+nx3       = 128
+x3min     = -1.0
+x3max     = -1.0
+ix3_bc    = periodic
+ox3_bc    = periodic
+
+use_spherical_polar    = true
+use_polar_boundary     = true
+use_grid_stretch_theta = true
+f_stretch_theta        = 2.0
+
+<meshblock>
+# nx1 MUST equal the mesh nx1: the two-stream RT sweeps whole radial columns.
+# The mesh is 64 x 56 x 128, so the legal nx2 are the divisors of 56 -- 1, 2, 4, 7, 8, 14,
+# 28, 56.  16 and 32 are NOT among them and abort at startup.  This 8 x 8 split gives 112
+# blocks (1 x 7 x 16), which divides evenly over 16 MPI ranks.  For GPUs see the
+# <meshblock> notes in deep_hot_jupiter_rt_eos.athinput.
+nx1       = 64
+nx2       = 8
+nx3       = 8
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim       = 1000000000
+tlim       = 8.64e7
+ndiag      = 2000
+
+<units>
+# REQUIRED even though the gas is ideal: the composition table that supplies x_e is built
+# in physical units.  All factors 1, so code units ARE cgs -- which this problem already
+# assumed (the mesh is in cm, and the resistivity returns cm^2/s with no conversion).
+#
+# NOTE mu = 1 here is NOT this run's mean molecular weight; it only sets the scale for
+# `tfloor_kelvin`, which this file deliberately does not use.  See <mhd>/tfloor below.
+length_cgs = 1.0
+mass_cgs   = 1.0
+time_cgs   = 1.0
+mu         = 1.0
+
+<mhd>
+eos             = ideal
+reconstruct     = plm
+rsolver         = hlld
+gamma           = 1.4727545958
+etotgrav        = true
+
+# --- composition: read ONLY to build the x_e surface ---
+# These are the same keys the general EOS uses, and they are parsed the same way, but with
+# eos = ideal the table is built for its electron-fraction surface alone: `tbl.active`
+# stays FALSE, every thermodynamic accessor keeps the ideal-gas expression, and only
+# ElectronFractionKelvin() reads the table.  Costs a one-off ~5 s at startup and nothing
+# per cycle -- measured at -0.02 ms/cycle against `perna`.
+eos_h2                 = true    # affects mu/n_tot in the composition, not the thermodynamics
+eos_ionization         = true    # H and He: they matter above ~6000 K
+eos_metal_ionization   = true    # Na, K, Ca, Al, Mg, Fe -- REQUIRED, they supply essentially
+#                                # every free electron below ~4000 K.  Without them x_e
+#                                # collapses and this configuration is pointless.
+eos_radiation          = false
+eos_xh                 = 0.7381
+eos_yhe                = 0.2485
+eos_metal_condensation = true    # rain each donor out below its own T_cond(p, [M/H])
+# eos_metal_mh         = 0.0     # [M/H] in dex; defaults to <problem>/met below
+
+# --- table grid: must bracket the run ---
+# logd_min must sit below dfloor.  -14 is ample for dfloor = 5.44e-12; lower it only if
+# you also lower dfloor, and note that costs table memory for nothing otherwise.
+eos_logd_min    = -14.0
+eos_logd_max    = 0.0
+eos_logt_min    = 1.5
+eos_logt_max    = 6.0
+eos_dlog        = 0.05
+
+# --- non-ideal MHD ---
+ohmic_resistivity = eos          # constant | perna | eos
+#
+# eta = 230 sqrt(T)/x_e  (electron-neutral, Blaes & Balbus 1994)
+#     + 5.2e11 lnL/T^1.5 (Spitzer electron-ion, lnL = 20)
+# with x_e floored at 230 sqrt(T)/max_eta and eta then capped at max_eta.
+#
+# MEASURED at bbot = 10 G over one rotation: 1e13 + no super-stepping is 1.49x FASTER than
+# 1e14 + super-stepping, at the same timestep, and moves the deep atmosphere not at all
+# (shell magnetic energies agree to 1.0000-1.0004 below r/R_p = 1.17; only the outer eight
+# radial shells move, by ~4%).  See docs/ideal_gas_resistive.md.
+max_eta           = 1.0e13
+#
+# What the cap costs, measured against the uncapped Saha eta over a real snapshot:
+#   1e12 -> caps  9.5% of cells, holding 2.68% of the magnetic energy
+#   1e13 -> caps  6.1% of cells, holding 0.87%     <- this file
+#   1e14 -> caps  3.3% of cells, holding 0.26%
+# The cap is unavoidable: uncapped eta has a median of 1.4e9 but a 99th percentile of
+# 3e28, because eta ~ exp(+chi/2kT) once the alkalis recombine.  It is NOT physics, and
+# in the capped cells the field stays frozen in where it should relax freely.
+#
+use_rkg_sts       = false
+# RKG super-time-stepping is a NET LOSS at max_eta = 1e13, because the resistive timestep
+# (dt_diff ~ 9.5 s) never binds and the stage count is floored at s = 3.  Even at 1e14 it
+# only wins while dt_hydro > ~1.5 dt_diff: measured on this problem it was 1.12x ahead at
+# t = 7.5e4, level by t = 1.3e5, and 1.34x BEHIND by t = 2.5e5 as dt_hydro decayed.  Turn
+# it on only if you raise max_eta to 1e14 or beyond AND dt sits well below the CFL value.
+
+pfloor = 1.0e-1
+dfloor = 5.44e-12
+#
+# `tfloor` is stated in CODE units, p/d = T_K * Rgas = 200 K * 4.593e7.  Do NOT use
+# `tfloor_kelvin` here: it converts with <units>/mu, which is 1 above, while this run's
+# Rgas implies mu = 1.797 -- the floor would land 1.8x off.  (Under eos = general the same
+# key IS correct, because there the scale has mu divided back out.)
+tfloor = 9.186e9
+#
+# DO NOT relax pfloor or tfloor.  Cooler gas is MORE resistive here, so a lower temperature
+# floor drives eta to max_eta over a widening region: dt_diff collapses, and the run either
+# stalls (500x slower, super-stepping stage count exploding) or goes NaN outright -- both
+# were measured, at 1e-3x these values, in 95 s of wall time.  pfloor is in any case nearly
+# redundant: dfloor * Rgas * tfloor = 0.050 already bounds p from below.
+#
+# dfloor CAN be relaxed to 5.44e-15 if the upper-atmosphere field structure is the target.
+# It changes nothing below r/R_p = 1.26 (density agrees to 1e-5..3e-4, shell magnetic
+# energy to 0.3%) and the outer eight shells by ~6%, but costs 5.9x in wall time because
+# v_A = B/sqrt(4 pi rho) is what the floor is really bounding.  5.44e-18 goes NaN.
+
+<problem>
+user_srcs   = true
+bc_outer_maxwell = true
+hot_jupiter = true
+Teq   = 2500.0
+omega = 2.06e-5
+grav  = 942.0
+ap    = 9.44e9
+Rgas  = 4.593e7                  # sets mu = 1.810 for the thermodynamics AND the
+#                                # temperature the resistivity feeds to the x_e table
+met   = 0.0                      # [M/H] dex; also sets the EOS's metal donors
+bbot  = 1.0e1
+
+<output1>
+file_type  = hst
+dt         = 3.05e3
+
+<output2>
+file_type  = log                 # floor / C2P event counters -- the diagnostic for whether
+dt         = 3.05e3              # dfloor, pfloor and tfloor are actually firing.  Counters
+#                                # RESET after each write, so each row is per-interval.
+
+<output3>
+file_type  = bin
+variable   = mhd_w_bcc
+dt         = 3.05e4              # 10 dumps per rotation period (2pi/omega = 3.050e5 s)
