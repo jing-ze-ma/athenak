@@ -69,10 +69,27 @@ void EventLogOutput::LoadOutputData(Mesh *pm) {
 //! \brief writes event counter data to log file
 
 void EventLogOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
-  if (header_written && no_output) return;
+  // NOTE there is deliberately no early return when there is nothing to write.
+  //
+  // The schedule has to advance whether or not a row is emitted. `last_time` is what the
+  // driver compares `time` against to decide whether this output is due, so returning
+  // before the increment at the bottom leaves the trigger PERMANENTLY satisfied, and
+  // LoadOutputData -- seven collective MPI_Allreduce calls -- then runs on EVERY cycle
+  // for the rest of the run.
+  //
+  // That was not merely slow, it deadlocked: rank 0 would reach the collective while its
+  // neighbours were still in the task list waiting on its point-to-point sends, and a
+  // blocking collective does not progress those sends. Ranks 1..n-1 sat in
+  // RecvAndUnpackCC and rank 0 sat in MPI_Allreduce, forever.
+  //
+  // The perverse part is which runs it hit: the counters are all zero exactly when
+  // nothing is going wrong, so a clean run deadlocked while one hitting its floors every
+  // cycle sailed through. It also only bites after the first write, since the header
+  // write takes the normal path and does advance the schedule.
+  const bool nothing_to_write = (header_written && no_output);
 
   // only the master rank writes the file
-  if (global_variable::my_rank == 0) {
+  if (!nothing_to_write && global_variable::my_rank == 0) {
     // create filename: "file_basename" + ".log"
     // There is no file number or id in event log output filenames.
     std::string fname;
