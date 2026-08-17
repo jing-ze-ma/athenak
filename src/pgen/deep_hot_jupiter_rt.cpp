@@ -864,6 +864,10 @@ void HydrostaticEquilibrium(Mesh *pm) {
   MeshBlockPack *pmbp = pm->pmb_pack;
   auto &size = pmbp->pmb->mb_size;
 
+    // wtemp holds the temperature ConsToPrim solved for; the outer-x1 ghost extrapolation
+    // warm starts its hydrostatic solve from the last active cell's value. General EOS
+    // only -- a zero-size View otherwise, captured and never read.
+    DvceArray4D<Real> wtemp_;
     DvceArray5D<Real> u0_;
     DvceArray5D<Real> w0_;
     Real gamma;
@@ -893,6 +897,7 @@ void HydrostaticEquilibrium(Mesh *pm) {
     if (pmbp->phydro != nullptr) {
       u0_ = pmbp->phydro->u0;
       w0_ = pmbp->phydro->w0;
+      wtemp_ = pmbp->phydro->wtemp;
       gamma = pmbp->phydro->peos->eos_data.gamma;
       eos = pmbp->phydro->peos->eos_data;
       use_etotgrav = pmbp->phydro->use_etotgrav;
@@ -902,6 +907,7 @@ void HydrostaticEquilibrium(Mesh *pm) {
     } else if (pmbp->pmhd != nullptr) {
       u0_ = pmbp->pmhd->u0;
       w0_ = pmbp->pmhd->w0;
+      wtemp_ = pmbp->pmhd->wtemp;
       gamma = pmbp->pmhd->peos->eos_data.gamma;
       eos = pmbp->pmhd->peos->eos_data;
       use_etotgrav = pmbp->pmhd->use_etotgrav;
@@ -1145,7 +1151,11 @@ void HydrostaticEquilibrium(Mesh *pm) {
               rho0_hyd = rho_i;
               e0_hyd = e_i;
               Real t_hyd = -1.0;   // WBAdvance's temperature hand-off; unused here
-              WBAdvance(eos, 1, rho_i, e_i, dphi_i, rho0_hyd, e0_hyd, t_hyd);
+              // Warm start from cell ie's own temperature, which the ConsToPrim call on
+              // this column above has already solved for and left in wtemp. This runs per
+              // ghost cell per stage, and the isothermal branch inverts twice.
+              WBAdvance(eos, 1, rho_i, e_i, dphi_i, rho0_hyd, e0_hyd, t_hyd,
+                        wtemp_(m,k,j,ie));
             } else {
               e0_hyd = exp(q0_i - factor_i * dphi_i);
               rho0_hyd = e0_hyd/e_i*rho_i;

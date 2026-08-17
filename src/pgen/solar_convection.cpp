@@ -1064,9 +1064,14 @@ void SourceFunc(Mesh *pm, Real bdt) {
     bool use_wellbalance_dynamic = false;
     Real gamma;
     EOS_Data eos;
+    // The temperature ConsToPrim already solved for the current w0. Allocated only for a
+    // general EOS, so it is read only on the general branches below; for an ideal gas it
+    // is a zero-size View that is captured and never touched.
+    DvceArray4D<Real> wtemp_;
     if (pmbp->phydro != nullptr) {
       u0 = pmbp->phydro->u0;
       w0 = pmbp->phydro->w0;
+      wtemp_ = pmbp->phydro->wtemp;
       gamma = pmbp->phydro->peos->eos_data.gamma;
       eos = pmbp->phydro->peos->eos_data;
       use_etotgrav = pmbp->phydro->use_etotgrav;
@@ -1078,6 +1083,7 @@ void SourceFunc(Mesh *pm, Real bdt) {
     } else if (pmbp->pmhd != nullptr) {
       u0 = pmbp->pmhd->u0;
       w0 = pmbp->pmhd->w0;
+      wtemp_ = pmbp->pmhd->wtemp;
       gamma = pmbp->pmhd->peos->eos_data.gamma;
       eos = pmbp->pmhd->peos->eos_data;
       use_etotgrav = pmbp->pmhd->use_etotgrav;
@@ -1345,7 +1351,7 @@ void SourceFunc(Mesh *pm, Real bdt) {
           Real es = ei/r;
           Real P = ei*gm1, T = P/(r*Rgas), g1 = gamma;
           if (eos.IsGeneral()) {                 // one temperature solve, then everything
-            Real tc = eos.Temperature(r, ei);
+            Real tc = eos.Temperature(r, ei, wtemp_(m,k,jj,is));
             P  = eos.Pressure(r, ei, tc);
             T  = tc*eos.temp_cgs;
             g1 = eos.Gamma1(r, ei, tc);
@@ -1377,7 +1383,7 @@ void SourceFunc(Mesh *pm, Real bdt) {
           // de_s = (P/rho^2) drho = dP/(Gamma_1 rho); Gamma_1 replaces gamma verbatim.
           Real P1 = r*es*gm1, g1p = gamma;
           if (eos.IsGeneral()) {
-            Real tc = eos.Temperature(r, r*es);
+            Real tc = eos.Temperature(r, r*es, wtemp_(m,k,jj,is));
             P1 = eos.Pressure(r, r*es, tc);
             g1p = eos.Gamma1(r, r*es, tc);
           }
@@ -1492,7 +1498,7 @@ void SourceFunc(Mesh *pm, Real bdt) {
           if (use_etotgrav) ei -= r*phicc0(m,k,j,i);
           Real cs2;
           if (eos.IsGeneral()) {
-            Real tc = eos.Temperature(r, ei);
+            Real tc = eos.Temperature(r, ei, wtemp_(m,k,j,i));
             cs2 = eos.Gamma1(r,ei,tc)*eos.Pressure(r,ei,tc)/r;
           } else {
             cs2 = gamma*gm1*ei/r;

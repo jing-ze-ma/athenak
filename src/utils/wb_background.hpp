@@ -93,10 +93,15 @@ enum WBVar {wb_dens = 0, wb_eint = 1, wb_pres = 2};
 //! so no absolute entropy function is required.  For an ideal gas this reduces to the
 //! ratio of dT/T to ds/s used by the ideal-gas branch.
 
+//! `tguess` is a temperature to start the inversions from -- the anchor cell's, which
+//! WBBackgroundStencil has already solved for. Every state in the stencil is within a
+//! half cell of the anchor, so it is a good guess; a bad one costs iterations, never
+//! accuracy, and an ideal gas ignores it entirely.
+
 KOKKOS_INLINE_FUNCTION
 int WBOptionNumber(const EOS_Data &eos, const WBOption wb_option,
                    const Real d_m, const Real e_m, const Real d_p, const Real e_p,
-                   const Real d_i, const Real e_i) {
+                   const Real d_i, const Real e_i, const Real tguess = -1.0) {
   switch (wb_option) {
     case WBOption::isodensity:
       return 0;
@@ -105,9 +110,9 @@ int WBOptionNumber(const EOS_Data &eos, const WBOption wb_option,
     case WBOption::isentropic:
       return 2;
     case WBOption::adaptive: {
-      Real t_m = eos.Temperature(d_m, e_m);
-      Real t_p = eos.Temperature(d_p, e_p);
-      Real t_i = eos.Temperature(d_i, e_i);
+      Real t_m = eos.Temperature(d_m, e_m, tguess);
+      Real t_p = eos.Temperature(d_p, e_p, tguess);
+      Real t_i = eos.Temperature(d_i, e_i, tguess);
       Real dlnt = log(t_p/t_m);
       Real dlnd = log(d_p/d_m);
       // entropy difference across the stencil, in units of c_v, evaluated at cell i. All
@@ -146,14 +151,20 @@ int WBOptionNumber(const EOS_Data &eos, const WBOption wb_option,
 
 KOKKOS_INLINE_FUNCTION
 Real WBEnergyFromEnthalpy(const EOS_Data &eos, const Real d, const Real h,
-                          const Real e_guess, Real &t_out) {
+                          const Real e_guess, Real &t_out, const Real tguess = -1.0) {
   Real e = e_guess;
+  // Each iterate is a small step from the last, so the previous iterate's temperature is
+  // very nearly the answer for the next one. Carrying it forward turns every inversion
+  // after the first into a couple of Newton steps instead of a fresh bracket, and the
+  // first one starts from the caller's guess.
+  Real tg = tguess;
   for (int it=0; it<10; ++it) {
     // One temperature solve per iteration, shared by the residual and the derivative.
     // This loop is the hottest EOS consumer in the dynamic well-balanced path -- up to
     // ten iterations per half cell per direction -- so evaluating p, chi_T and c_v
     // without a temperature would cost four root finds per iteration instead of one.
-    Real t = eos.Temperature(d, e);
+    Real t = eos.Temperature(d, e, tg);
+    tg = t;
     t_out = t;
     Real p = eos.Pressure(d, e, t);
     Real f = e + p - d*h;
@@ -195,10 +206,10 @@ Real WBEnergyFromEnthalpy(const EOS_Data &eos, const Real d, const Real h,
 
 KOKKOS_INLINE_FUNCTION
 void WBAdvance(const EOS_Data &eos, const int wb_opt, const Real d_c, const Real e_c,
-               const Real dphi, Real &d, Real &e, Real &t) {
+               const Real dphi, Real &d, Real &e, Real &t, const Real tguess = -1.0) {
   if (wb_opt == 0) {
     // ISODENSITY: d is fixed, and dp/dPhi = -d integrates exactly over the segment.
-    Real p = eos.Pressure(d, e) - d_c*dphi;
+    Real p = eos.Pressure(d, e, eos.Temperature(d, e, tguess)) - d_c*dphi;
     e = eos.EnergyFromPressure(d, p, t);
   } else if (wb_opt == 1) {
     // ISOTHERMAL: dln d/dPhi = -d/(p chi_rho), frozen at the coefficient cell, is exact
@@ -207,10 +218,10 @@ void WBAdvance(const EOS_Data &eos, const int wb_opt, const Real d_c, const Real
     // where the constraint already holds -- no separate reference has to be threaded
     // through.  For an ideal gas EnergyFromTemperature makes e scale with d, reproducing
     // the exp() branch of getWBerho exactly.
-    Real t_ref = eos.Temperature(d, e);
+    Real t_ref = eos.Temperature(d, e, tguess);
     // p and chi_rho are both wanted at the coefficient cell, so its temperature is solved
     // for once and handed to both
-    Real t_c = eos.Temperature(d_c, e_c);
+    Real t_c = eos.Temperature(d_c, e_c, t_ref);
     Real p_c = eos.Pressure(d_c, e_c, t_c);
     d *= exp(-d_c*dphi/(p_c*eos.ChiRho(d_c, e_c, t_c)));
     e = eos.EnergyFromTemperature(d, t_ref);
@@ -232,9 +243,10 @@ void WBAdvance(const EOS_Data &eos, const int wb_opt, const Real d_c, const Real
     // (b) ENERGY, from the exact invariant h + Phi = const.  The density step carries the
     // error of freezing Gamma_1; projecting the energy onto the invariant keeps that error
     // out of the pressure-gravity balance entirely.
-    Real h_target = eos.Enthalpy(d, e) - dphi;
+    Real t_h = eos.Temperature(d, e, tguess);
+    Real h_target = eos.Enthalpy(d, e, t_h) - dphi;
     // Gamma_1 and p are both wanted at the coefficient cell; one temperature serves both
-    Real t_c = eos.Temperature(d_c, e_c);
+    Real t_c = eos.Temperature(d_c, e_c, t_h);
     Real g1 = eos.Gamma1(d_c, e_c, t_c);
     Real p_c = eos.Pressure(d_c, e_c, t_c);
     Real gm1 = g1 - 1.0;
@@ -247,7 +259,7 @@ void WBAdvance(const EOS_Data &eos, const int wb_opt, const Real d_c, const Real
     } else {
       d_new = d*exp(-dphi*d_c/(g1*p_c));
     }
-    e = WBEnergyFromEnthalpy(eos, d_new, h_target, e*d_new/d, t);
+    e = WBEnergyFromEnthalpy(eos, d_new, h_target, e*d_new/d, t, t_c);
     d = d_new;
   }
   return;
@@ -275,27 +287,37 @@ void WBBackgroundStencil(const EOS_Data &eos, const WBOption wb_option,
   // Pressure(d,e,t) does not read t at all, so this is bitwise identical there; under the
   // tabulated EOS it is also more self consistent, since t is the temperature that
   // actually produced e rather than one re-inferred from it.
-  int wb_opt = WBOptionNumber(eos, wb_option, rho_im1, e_im1, rho_ip1, e_ip1, rho_i, e_i);
+  // ONE temperature inversion per stencil, at the anchor. Every other state here is
+  // within a half cell of it, so it seeds every remaining inversion -- the option test,
+  // all four segment advances, and the Newton loop inside the isentropic branch. Before
+  // this, each of those bracketed from scratch, which on the dhj outer boundary meant
+  // dozens of cold-start root finds per ghost cell per stage.
+  Real t_i = eos.Temperature(rho_i, e_i);
+
+  int wb_opt = WBOptionNumber(eos, wb_option, rho_im1, e_im1, rho_ip1, e_ip1, rho_i, e_i,
+                              t_i);
 
   q0_i.d = rho_i;
   q0_i.e = e_i;
-  q0_i.p = eos.Pressure(rho_i, e_i);
+  q0_i.p = eos.Pressure(rho_i, e_i, t_i);
 
   // inner half cells, from the anchor, using the anchor's own coefficient
   Real dm = rho_i, em = e_i, tm = -1.0;
-  WBAdvance(eos, wb_opt, rho_i, e_i, phi_imh - phi_i, dm, em, tm);
+  WBAdvance(eos, wb_opt, rho_i, e_i, phi_imh - phi_i, dm, em, tm, t_i);
   q0_imh.d = dm; q0_imh.e = em; q0_imh.p = eos.Pressure(dm, em, tm);
 
   Real dp = rho_i, ep = e_i, tp = -1.0;
-  WBAdvance(eos, wb_opt, rho_i, e_i, phi_iph - phi_i, dp, ep, tp);
+  WBAdvance(eos, wb_opt, rho_i, e_i, phi_iph - phi_i, dp, ep, tp, t_i);
   q0_iph.d = dp; q0_iph.e = ep; q0_iph.p = eos.Pressure(dp, ep, tp);
 
   // outer half cells, continuing from the interfaces, now with the neighbour speaking for
   // its own half cell -- the same two-segment walk the ideal-gas closed forms perform
-  WBAdvance(eos, wb_opt, rho_im1, e_im1, phi_im1 - phi_imh, dm, em, tm);
+  // these two continue FROM the interfaces, whose temperatures the calls above just
+  // handed back in tm/tp -- a closer guess still than the anchor's
+  WBAdvance(eos, wb_opt, rho_im1, e_im1, phi_im1 - phi_imh, dm, em, tm, tm);
   q0_im1.d = dm; q0_im1.e = em; q0_im1.p = eos.Pressure(dm, em, tm);
 
-  WBAdvance(eos, wb_opt, rho_ip1, e_ip1, phi_ip1 - phi_iph, dp, ep, tp);
+  WBAdvance(eos, wb_opt, rho_ip1, e_ip1, phi_ip1 - phi_iph, dp, ep, tp, tp);
   q0_ip1.d = dp; q0_ip1.e = ep; q0_ip1.p = eos.Pressure(dp, ep, tp);
   return;
 }
