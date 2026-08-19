@@ -237,6 +237,13 @@ class MHD {
     void PolarAzimuthalAverageEr(void);
     DvceArray1D<Real> inner_local;
     DvceArray1D<Real> outer_local;
+    // per-MeshBlock partial sums for the polar average, so the reduction can be spread over
+    // (block, radius) instead of radius alone.  Members, not locals, to keep the polar
+    // average from allocating four Views on every call.
+    DvceArray2D<Real> polar_part_in;
+    DvceArray2D<Real> polar_part_out;
+    HostArray1D<Real> polar_inner_h;
+    HostArray1D<Real> polar_outer_h;
     
     void AddGravFlux(const DvceFaceFld4D<Real> &phi0, DvceFaceFld5D<Real> &flx);
     void AddGravEtot(const DvceArray4D<Real> &phicc0, DvceArray5D<Real> &cons, const int il, const int iu, const int jl, const int ju, const int kl, const int ku);
