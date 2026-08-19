@@ -1040,6 +1040,46 @@ void HydrostaticEquilibrium(Mesh *pm) {
     // the switch has to be captured by value like any other host state.
     const bool bc_outer_maxwell_ = bc_outer_maxwell;
 
+    // The cell-centred field in the OUTER-x1 ghost zones is built here, in its own kernel,
+    // and not in the extrapolation kernel below.  It used to be computed inline there, in
+    // the same launch that reads bcc0 at (k,j+1) and (k+1,j) for the Maxwell stress -- cells
+    // owned by OTHER threads of that launch.  Whether a thread saw its neighbour's new value
+    // or the previous cycle's stale one depended on how the wavefronts happened to be
+    // scheduled, which made the whole run non-reproducible on a GPU: two runs of the same
+    // binary on one rank diverged within a single cycle, worst in the outer half of the
+    // domain, where the two-stream RT then spread it along each radial column.  On a CPU the
+    // ascending j loop always lost the race the same way, so this was deterministic (and
+    // deterministically wrong) until the problem first ran on an accelerator.
+    //
+    // Splitting the write from the read is the whole fix: every bcc0 the stress term reads
+    // is now a completed write from a previous kernel.
+    //
+    // The INNER-x1 ghosts are deliberately NOT hoisted: that branch subtracts the magnetic
+    // energy using the OLD bcc0 and adds it back with the new one, so moving the update
+    // ahead of it would change what it subtracts.  It has no cross-thread read and was
+    // measured deterministic on its own.
+    par_for("usrboundaryx1_bcc_outer", DevExeSpace(),0,(nmb-1),0,(n3-1),0,(n2-1),
+    KOKKOS_LAMBDA(int m, int k, int j) {
+        if (mb_bcs.d_view(m,BoundaryFace::outer_x1) == BoundaryFlag::user &&
+            pmbp->pmhd != nullptr) {
+          for (int i=0; i<ng; ++i) {
+            Real lw, rw;
+            lw = (x1f_(m,(ie+i+1)+1)-x1v_(m,(ie+i+1)))/(x1f_(m,(ie+i+1)+1)-x1f_(m,(ie+i+1)));
+            rw = (x1v_(m,(ie+i+1))-x1f_(m,(ie+i+1)))/(x1f_(m,(ie+i+1)+1)-x1f_(m,(ie+i+1)));
+            bcc0(m,IBX,k,j,(ie+i+1)) = lw*b0_x1f(m,k,j,(ie+i+1))
+                                     + rw*b0_x1f(m,k,j,(ie+i+1)+1);
+            lw = (x2f_(m,j+1)-x2v_(m,j))/(x2f_(m,j+1)-x2f_(m,j));
+            rw = (x2v_(m,j)-x2f_(m,j))/(x2f_(m,j+1)-x2f_(m,j));
+            bcc0(m,IBY,k,j,(ie+i+1)) = lw*b0_x2f(m,k,j,(ie+i+1))
+                                     + rw*b0_x2f(m,k,j+1,(ie+i+1));
+            lw = (x3f_(m,k+1)-x3v_(m,k))/(x3f_(m,k+1)-x3f_(m,k));
+            rw = (x3v_(m,k)-x3f_(m,k))/(x3f_(m,k+1)-x3f_(m,k));
+            bcc0(m,IBZ,k,j,(ie+i+1)) = lw*b0_x3f(m,k,j,(ie+i+1))
+                                     + rw*b0_x3f(m,k+1,j,(ie+i+1));
+          }
+        }
+    });
+
     par_for("usrboundaryx1_bfieldc", DevExeSpace(),0,(nmb-1),0,(n3-1),0,(n2-1),
     KOKKOS_LAMBDA(int m, int k, int j) {
         if (mb_bcs.d_view(m,BoundaryFace::inner_x1) == BoundaryFlag::user) {
@@ -1095,31 +1135,29 @@ void HydrostaticEquilibrium(Mesh *pm) {
           for (int i=0; i<ng; ++i) {
             Real dM1mag = 0.0;
             if (pmbp->pmhd != nullptr) {
-//                u0_(m,IEN,k,j,(ie+i+1)) -=  0.5*(SQR(bcc0(m,IBX,k,j,(ie+i+1)))+SQR(bcc0(m,IBY,k,j,(ie+i+1)))+SQR(bcc0(m,IBZ,k,j,(ie+i+1))));
-              Real lw, rw;
-              lw = (x1f_(m,(ie+i+1)+1)-x1v_(m,(ie+i+1)))/(x1f_(m,(ie+i+1)+1)-x1f_(m,(ie+i+1)));
-              rw = (x1v_(m,(ie+i+1))-x1f_(m,(ie+i+1)))/(x1f_(m,(ie+i+1)+1)-x1f_(m,(ie+i+1)));
-              bcc0(m,IBX,k,j,(ie+i+1)) = lw*b0_x1f(m,k,j,(ie+i+1)) + rw*b0_x1f(m,k,j,(ie+i+1)+1);
-              lw = (x2f_(m,j+1)-x2v_(m,j))/(x2f_(m,j+1)-x2f_(m,j));
-              rw = (x2v_(m,j)-x2f_(m,j))/(x2f_(m,j+1)-x2f_(m,j));
-              bcc0(m,IBY,k,j,(ie+i+1)) = lw*b0_x2f(m,k,j,(ie+i+1)) + rw*b0_x2f(m,k,j+1,(ie+i+1));
-              lw = (x3f_(m,k+1)-x3v_(m,k))/(x3f_(m,k+1)-x3f_(m,k));
-              rw = (x3v_(m,k)-x3f_(m,k))/(x3f_(m,k+1)-x3f_(m,k));
-              bcc0(m,IBZ,k,j,(ie+i+1)) = lw*b0_x3f(m,k,j,(ie+i+1)) + rw*b0_x3f(m,k+1,j,(ie+i+1));
-//                u0_(m,IEN,k,j,(ie+i+1)) +=  0.5*(SQR(bcc0(m,IBX,k,j,(ie+i+1)))+SQR(bcc0(m,IBY,k,j,(ie+i+1)))+SQR(bcc0(m,IBZ,k,j,(ie+i+1))));
-
-              // The cell-centred ghost field above is always needed. What follows is the
-              // Maxwell-stress correction to the hydrostatic extrapolation, which is
-              // optional -- see bc_outer_maxwell.
+              // bcc0 in these ghost cells was built by usrboundaryx1_bcc_outer above.
               if (bc_outer_maxwell_) {
+              // (k,j+1) and (k+1,j) are read here. They belong to other threads, which is
+              // why the write had to move to its own kernel -- see the note on that kernel.
+              // At the outermost ghost row j+1 and k+1 leave the cell-centred array (the
+              // FACE arrays have the extra slot, the cell-centred one does not), so the
+              // index is held at the edge: the correction degenerates to a one-sided
+              // difference in that row rather than reading past the end, which is what the
+              // previous version did.
+              int jp1 = (j+1 < n2) ? (j+1) : j;
+              int kp1 = (k+1 < n3) ? (k+1) : k;
+              // Same one past the end in x1: on the LAST ghost cell (i = ng-1) the cell
+              // centred index ie+i+2 is n1, one beyond the array. The face array b0_x1f has
+              // the extra slot and is indexed as before; only bcc0 is held back.
+              int ip2 = (ie+i+2 < n1) ? (ie+i+2) : (n1-1);
               Real pb = 0.5*(SQR(b0_x1f(m,k,j,(ie+i+1)))+SQR(bcc0(m,IBY,k,j,(ie+i+1)))+SQR(bcc0(m,IBZ,k,j,(ie+i+1))));
-              Real pbp1 = 0.5*(SQR(b0_x1f(m,k,j,(ie+i+2)))+SQR(bcc0(m,IBY,k,j,(ie+i+2)))+SQR(bcc0(m,IBZ,k,j,(ie+i+2))));
+              Real pbp1 = 0.5*(SQR(b0_x1f(m,k,j,(ie+i+2)))+SQR(bcc0(m,IBY,k,j,ip2))+SQR(bcc0(m,IBZ,k,j,ip2)));
               Real M11 = pb - SQR(b0_x1f(m,k,j,(ie+i+1)));
               Real M11p1 = pbp1 - SQR(b0_x1f(m,k,j,(ie+i+2)));
               Real M12 = - b0_x2f(m,k,j,(ie+i+1)) * bcc0(m,IBX,k,j,(ie+i+1));
-              Real M12p1 = - b0_x2f(m,k,j+1,(ie+i+1)) * bcc0(m,IBX,k,j+1,(ie+i+1));
+              Real M12p1 = - b0_x2f(m,k,j+1,(ie+i+1)) * bcc0(m,IBX,k,jp1,(ie+i+1));
               Real M13 = - b0_x3f(m,k,j,(ie+i+1)) * bcc0(m,IBX,k,j,(ie+i+1));
-              Real M13p1 = - b0_x3f(m,k+1,j,(ie+i+1)) * bcc0(m,IBX,k+1,j,(ie+i+1));
+              Real M13p1 = - b0_x3f(m,k+1,j,(ie+i+1)) * bcc0(m,IBX,kp1,j,(ie+i+1));
               dM1mag = -( (M11p1*area1(m,k,j,(ie+i+2))-M11*area1(m,k,j,(ie+i+1))) + (M12p1*area2(m,k,j+1,(ie+i+1))-M12*area2(m,k,j,(ie+i+1))) + (M13p1*area3(m,k+1,j,(ie+i+1))-M13*area3(m,k,j,(ie+i+1))) )/volume(m,k,j,(ie+i+1));
               dM1mag += z_ov_rE(m,k,j,(ie+i+1)) * 0.5*SQR(bcc0(m,IBX,k,j,(ie+i+1)));
               }
