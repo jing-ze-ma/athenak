@@ -10,6 +10,7 @@
 #include <iostream>
 
 #include "athena.hpp"
+#include "globals.hpp"
 #include "mesh/mesh.hpp"
 #include "mhd/mhd.hpp"
 
@@ -303,305 +304,110 @@ void MeshBoundaryValues::BFieldBCs(MeshBlockPack *ppack, DualArray2D<Real> b_in,
   return;
 }
 
-void MeshBoundaryValues::PolarAzimuthalAverageBxBy(MeshBlockPack *ppack, DvceFaceFld4D<Real> b0) {
+void MeshBoundaryValues::PolarAzimuthalAverageBxBy(MeshBlockPack *ppack,
+                                                  DvceFaceFld4D<Real> b0) {
   auto bx2f = b0.x2f;
-  auto bx3f = b0.x3f;
   auto &x2f_ = ppack->pcoord->xx2f;
-  auto &x2v_ = ppack->pcoord->x2v;
-  auto &x3f_ = ppack->pcoord->xx3f;
   auto &x3v_ = ppack->pcoord->x3v;
 
   auto &indcs = ppack->pmesh->mb_indcs;
 
   int nx1 = indcs.nx1;
   int nx3 = indcs.nx3;
-  int &is = indcs.is; int &ie = indcs.ie;
   int &js = indcs.js; int &je = indcs.je;
   int &ks = indcs.ks; int &ke = indcs.ke;
   int &ng = indcs.ng;
-  int n1m1 = nx1 + 2*ng - 1;
-  int n3m1 = nx3 + 2*ng - 1;
+  const int ncells1 = nx1 + 2*ng;
+  const int ncells3 = nx3 + 2*ng;
 
   const int mesh_nx3 = ppack->pmesh->mesh_indcs.nx3;
   const int nmb = ppack->nmb_thispack;
 
   auto &mb_bcs = ppack->pmb->mb_bcs;
 
-  // =====================================================
-  // local device sums
-  // =====================================================
+  // Same rewrite as MHD::PolarAzimuthalAverageEr (see mhd_corner_e.cpp): the sum used to
+  // run on ncells1 threads with the MeshBlock and phi loops serial inside each of them,
+  // and the refill on one thread per MeshBlock.  Four quantities are carried at once --
+  // 0 = inner bx, 1 = outer bx, 2 = inner by, 3 = outer by -- so this needs two
+  // allocations where the old code made eight, plus four host mirrors and four vectors.
+  //
+  // NOTE this function is currently dead: its only call site, in BFieldBCs above, is
+  // commented out.  It is cleaned up rather than left as a trap for whoever re-enables it.
+  DvceArray3D<Real> part("polar_b_part", 4, nmb, ncells1);
+  DvceArray2D<Real> totals("polar_b_totals", 4, ncells1);
 
-  Kokkos::View<Real*> inner_local_bx("inner_local_bx", n1m1+1);
-  Kokkos::View<Real*> outer_local_bx("outer_local_bx", n1m1+1);
-  Kokkos::View<Real*> inner_local_by("inner_local_by", n1m1+1);
-  Kokkos::View<Real*> outer_local_by("outer_local_by", n1m1+1);
-//  Kokkos::View<Real*> inner_local_bxp("inner_local_bxp", n1m1+1);
-//  Kokkos::View<Real*> outer_local_bxp("outer_local_bxp", n1m1+1);
-//  Kokkos::View<Real*> inner_local_byp("inner_local_byp", n1m1+1);
-//  Kokkos::View<Real*> outer_local_byp("outer_local_byp", n1m1+1);
+  par_for("polar_local_sum_b", DevExeSpace(), 0, nmb-1, 0, ncells1-1,
+  KOKKOS_LAMBDA(const int m, const int i) {
+    bool do_inner = (mb_bcs.d_view(m, BoundaryFace::inner_x2) == BoundaryFlag::polar);
+    bool do_outer = (mb_bcs.d_view(m, BoundaryFace::outer_x2) == BoundaryFlag::polar);
 
-  Kokkos::parallel_for(
-      "polar_local_sum_b",
-      Kokkos::RangePolicy<DevExeSpace>(0, n1m1),
-      KOKKOS_LAMBDA(const int i) {
-
-        Real inner_sum_x = 0.0;
-        Real outer_sum_x = 0.0;
-        Real inner_sum_y = 0.0;
-        Real outer_sum_y = 0.0;
-//        Real inner_sum_xp = 0.0;
-//        Real outer_sum_xp = 0.0;
-//        Real inner_sum_yp = 0.0;
-//        Real outer_sum_yp = 0.0;
-
-        for (int m = 0; m < nmb; ++m) {
-
-          bool do_inner =
-              (mb_bcs.d_view(m, BoundaryFace::inner_x2) ==
-               BoundaryFlag::polar);
-
-          bool do_outer =
-              (mb_bcs.d_view(m, BoundaryFace::outer_x2) ==
-               BoundaryFlag::polar);
-            
-          if (!(do_inner || do_outer)) continue;
-
-          for (int k = ks; k <= ke; ++k) {
-            Real bav, dum;
-            if (do_inner) {
-              bav = 0.5*(bx2f(m,k,js-1,i)+bx2f(m,k,js+1,i));
-              inner_sum_x += 2.0*bav*cos(x3v_(m,k));
-              inner_sum_y += 2.0*bav*sin(x3v_(m,k));
-//              Real dxl = x2v_(m,js)-x2v_(m,js-1);
-//              Real dxr = x2v_(m,js+1)-x2v_(m,js);
-//              Real dxlh = x2v_(m,js)-x2f_(m,js);
-//              Real dxrh = x2f_(m,js+1)-x2v_(m,js);
-//              ppack->pmhd->PLM_nonuniform(bx3f(m,k,js-1,i),bx3f(m,k,js,i),bx3f(m,k,js+1,i),dxl,dxr,dxlh,dxrh,bav,dum);
-//              inner_sum_x += -2.0*bav*sin(x3f_(m,k));
-//              inner_sum_y += 2.0*bav*cos(x3f_(m,k));
-//              bav = 0.5*(bx3f(m,k,js-1,i)+bx3f(m,k,js+1,i));
-//              inner_sum_xp += -2.0*bav*sin(x3v_(m,k));
-//              inner_sum_yp += 2.0*bav*cos(x3v_(m,k));
-            }
-            if (do_outer) {
-              bav = 0.5*(bx2f(m,k,je,i)+bx2f(m,k,je+2,i));
-              outer_sum_x += 2.0*bav*cos(x3v_(m,k));
-              outer_sum_y += 2.0*bav*sin(x3v_(m,k));
-//              Real dxl = x2v_(m,je)-x2v_(m,je-1);
-//              Real dxr = x2v_(m,je+1)-x2v_(m,je);
-//              Real dxlh = x2v_(m,je)-x2f_(m,je);
-//              Real dxrh = x2f_(m,je+1)-x2v_(m,je);
-//              ppack->pmhd->PLM_nonuniform(bx3f(m,k,je-1,i),bx3f(m,k,je,i),bx3f(m,k,je+1,i),dxl,dxr,dxlh,dxrh,dum,bav);
-//              outer_sum_x += -2.0*bav*sin(x3f_(m,k));
-//              outer_sum_y += 2.0*bav*cos(x3f_(m,k));
-//              bav = 0.5*(bx3f(m,k,je,i)+bx3f(m,k,je+2,i));
-//              outer_sum_xp += -2.0*bav*sin(x3v_(m,k));
-//              outer_sum_yp += 2.0*bav*cos(x3v_(m,k));
-            }
-          }
+    Real inner_bx = 0.0, outer_bx = 0.0, inner_by = 0.0, outer_by = 0.0;
+    // The old RangePolicy stopped at n1m1 = ncells1-1 exclusive, leaving the last radial
+    // index at the zero the View was initialised with, while the refill below reads it.
+    // Kept exactly so, rather than silently changing what lands in the outermost ghost.
+    if ((do_inner || do_outer) && (i < ncells1-1)) {
+      for (int k=ks; k<=ke; ++k) {
+        Real cosp = cos(x3v_(m,k));
+        Real sinp = sin(x3v_(m,k));
+        if (do_inner) {
+          Real bav = 0.5*(bx2f(m,k,js-1,i)+bx2f(m,k,js+1,i));
+          inner_bx += 2.0*bav*cosp;
+          inner_by += 2.0*bav*sinp;
         }
+        if (do_outer) {
+          Real bav = 0.5*(bx2f(m,k,je,i)+bx2f(m,k,je+2,i));
+          outer_bx += 2.0*bav*cosp;
+          outer_by += 2.0*bav*sinp;
+        }
+      }
+    }
+    part(0,m,i) = inner_bx;
+    part(1,m,i) = outer_bx;
+    part(2,m,i) = inner_by;
+    part(3,m,i) = outer_by;
+  });
 
-        inner_local_bx(i) = inner_sum_x;
-        outer_local_bx(i) = outer_sum_x;
-        inner_local_by(i) = inner_sum_y;
-        outer_local_by(i) = outer_sum_y;
-//        inner_local_bxp(i) = inner_sum_xp;
-//        outer_local_bxp(i) = outer_sum_xp;
-//        inner_local_byp(i) = inner_sum_yp;
-//        outer_local_byp(i) = outer_sum_yp;
-      });
+  par_for("polar_combine_b", DevExeSpace(), 0, 3, 0, ncells1-1,
+  KOKKOS_LAMBDA(const int q, const int i) {
+    Real sum = 0.0;
+    for (int m=0; m<nmb; ++m) {
+      sum += part(q,m,i);
+    }
+    totals(q,i) = sum;
+  });
 
-  Kokkos::fence();
-
-  // =====================================================
-  // copy to host for MPI
-  // =====================================================
-
-  auto inner_h_bx = Kokkos::create_mirror_view(inner_local_bx);
-  auto outer_h_bx = Kokkos::create_mirror_view(outer_local_bx);
-  auto inner_h_by = Kokkos::create_mirror_view(inner_local_by);
-  auto outer_h_by = Kokkos::create_mirror_view(outer_local_by);
-//  auto inner_h_bxp = Kokkos::create_mirror_view(inner_local_bxp);
-//  auto outer_h_bxp = Kokkos::create_mirror_view(outer_local_bxp);
-//  auto inner_h_byp = Kokkos::create_mirror_view(inner_local_byp);
-//  auto outer_h_byp = Kokkos::create_mirror_view(outer_local_byp);
-
-  Kokkos::deep_copy(inner_h_bx, inner_local_bx);
-  Kokkos::deep_copy(outer_h_bx, outer_local_bx);
-  Kokkos::deep_copy(inner_h_by, inner_local_by);
-  Kokkos::deep_copy(outer_h_by, outer_local_by);
-//  Kokkos::deep_copy(inner_h_bxp, inner_local_bxp);
-//  Kokkos::deep_copy(outer_h_bxp, outer_local_bxp);
-//  Kokkos::deep_copy(inner_h_byp, inner_local_byp);
-//  Kokkos::deep_copy(outer_h_byp, outer_local_byp);
-
-  // =====================================================
-  // MPI reduction
-  // =====================================================
-
-  std::vector<Real> inner_global_bx(n1m1+1);
-  std::vector<Real> outer_global_bx(n1m1+1);
-  std::vector<Real> inner_global_by(n1m1+1);
-  std::vector<Real> outer_global_by(n1m1+1);
-//  std::vector<Real> inner_global_bxp(n1m1+1);
-//  std::vector<Real> outer_global_bxp(n1m1+1);
-//  std::vector<Real> inner_global_byp(n1m1+1);
-//  std::vector<Real> outer_global_byp(n1m1+1);
-
-  MPI_Allreduce(inner_h_bx.data(),
-                inner_global_bx.data(),
-                n1m1+1,
-                MPI_DOUBLE,
-                MPI_SUM,
-                MPI_COMM_WORLD);
-
-  MPI_Allreduce(outer_h_bx.data(),
-                outer_global_bx.data(),
-                n1m1+1,
-                MPI_DOUBLE,
-                MPI_SUM,
-                MPI_COMM_WORLD);
-
-  MPI_Allreduce(inner_h_by.data(),
-                inner_global_by.data(),
-                n1m1+1,
-                MPI_DOUBLE,
-                MPI_SUM,
-                MPI_COMM_WORLD);
-
-  MPI_Allreduce(outer_h_by.data(),
-                outer_global_by.data(),
-                n1m1+1,
-                MPI_DOUBLE,
-                MPI_SUM,
-                MPI_COMM_WORLD);
-
-//    MPI_Allreduce(inner_h_bxp.data(),
-//                  inner_global_bxp.data(),
-//                  n1m1+1,
-//                  MPI_DOUBLE,
-//                  MPI_SUM,
-//                  MPI_COMM_WORLD);
-//
-//    MPI_Allreduce(outer_h_bxp.data(),
-//                  outer_global_bxp.data(),
-//                  n1m1+1,
-//                  MPI_DOUBLE,
-//                  MPI_SUM,
-//                  MPI_COMM_WORLD);
-//
-//    MPI_Allreduce(inner_h_byp.data(),
-//                  inner_global_byp.data(),
-//                  n1m1+1,
-//                  MPI_DOUBLE,
-//                  MPI_SUM,
-//                  MPI_COMM_WORLD);
-//
-//    MPI_Allreduce(outer_h_byp.data(),
-//                  outer_global_byp.data(),
-//                  n1m1+1,
-//                  MPI_DOUBLE,
-//                  MPI_SUM,
-//                  MPI_COMM_WORLD);
-
-  // =====================================================
-  // move global sums back to device
-  // =====================================================
-
-  Kokkos::View<Real*> inner_global_d_bx("inner_global_d_bx", n1m1+1);
-  Kokkos::View<Real*> outer_global_d_bx("outer_global_d_bx", n1m1+1);
-  Kokkos::View<Real*> inner_global_d_by("inner_global_d_by", n1m1+1);
-  Kokkos::View<Real*> outer_global_d_by("outer_global_d_by", n1m1+1);
-//    Kokkos::View<Real*> inner_global_d_bxp("inner_global_d_bxp", n1m1+1);
-//    Kokkos::View<Real*> outer_global_d_bxp("outer_global_d_bxp", n1m1+1);
-//    Kokkos::View<Real*> inner_global_d_byp("inner_global_d_byp", n1m1+1);
-//    Kokkos::View<Real*> outer_global_d_byp("outer_global_d_byp", n1m1+1);
-
-  auto inner_global_h_bx = Kokkos::create_mirror_view(inner_global_d_bx);
-  auto outer_global_h_bx = Kokkos::create_mirror_view(outer_global_d_bx);
-  auto inner_global_h_by = Kokkos::create_mirror_view(inner_global_d_by);
-  auto outer_global_h_by = Kokkos::create_mirror_view(outer_global_d_by);
-//    auto inner_global_h_bxp = Kokkos::create_mirror_view(inner_global_d_bxp);
-//    auto outer_global_h_bxp = Kokkos::create_mirror_view(outer_global_d_bxp);
-//    auto inner_global_h_byp = Kokkos::create_mirror_view(inner_global_d_byp);
-//    auto outer_global_h_byp = Kokkos::create_mirror_view(outer_global_d_byp);
-
-  for (int i=0; i<=n1m1; ++i) {
-    inner_global_h_bx(i) = inner_global_bx[i];
-    outer_global_h_bx(i) = outer_global_bx[i];
-    inner_global_h_by(i) = inner_global_by[i];
-    outer_global_h_by(i) = outer_global_by[i];
-//      inner_global_h_bxp(i) = inner_global_bxp[i];
-//      outer_global_h_bxp(i) = outer_global_bxp[i];
-//      inner_global_h_byp(i) = inner_global_byp[i];
-//      outer_global_h_byp(i) = outer_global_byp[i];
+#if MPI_PARALLEL_ENABLED
+  // Only a distributed run needs this; the old code paid the round trip unconditionally.
+  // The Allreduce was also unguarded (breaking non-MPI builds) and hard-coded MPI_DOUBLE.
+  if (global_variable::nranks > 1) {
+    auto totals_h = Kokkos::create_mirror_view(totals);
+    Kokkos::deep_copy(totals_h, totals);
+    MPI_Allreduce(MPI_IN_PLACE, totals_h.data(), 4*ncells1, MPI_ATHENA_REAL, MPI_SUM,
+                  MPI_COMM_WORLD);
+    Kokkos::deep_copy(totals, totals_h);
   }
+#endif
 
-  Kokkos::deep_copy(inner_global_d_bx, inner_global_h_bx);
-  Kokkos::deep_copy(outer_global_d_bx, outer_global_h_bx);
-  Kokkos::deep_copy(inner_global_d_by, inner_global_h_by);
-  Kokkos::deep_copy(outer_global_d_by, outer_global_h_by);
-//    Kokkos::deep_copy(inner_global_d_bxp, inner_global_h_bxp);
-//    Kokkos::deep_copy(outer_global_d_bxp, outer_global_h_bxp);
-//    Kokkos::deep_copy(inner_global_d_byp, inner_global_h_byp);
-//    Kokkos::deep_copy(outer_global_d_byp, outer_global_h_byp);
+  par_for("polar_refill_b", DevExeSpace(), 0, nmb-1, 0, ncells3-1, 0, ncells1-1,
+  KOKKOS_LAMBDA(const int m, const int k, const int i) {
+    bool do_inner = (mb_bcs.d_view(m, BoundaryFace::inner_x2) == BoundaryFlag::polar);
+    bool do_outer = (mb_bcs.d_view(m, BoundaryFace::outer_x2) == BoundaryFlag::polar);
+    if (!(do_inner || do_outer)) return;
 
+    Real cosp = cos(x3v_(m,k));
+    Real sinp = sin(x3v_(m,k));
 
-  // =====================================================
-  // refill polar EMFs
-  // =====================================================
-
-  Kokkos::parallel_for(
-      "polar_refill_b",
-      Kokkos::RangePolicy<DevExeSpace>(0, nmb),
-      KOKKOS_LAMBDA(const int m) {
-
-        bool do_inner =
-            (mb_bcs.d_view(m, BoundaryFace::inner_x2) ==
-             BoundaryFlag::polar);
-
-        bool do_outer =
-            (mb_bcs.d_view(m, BoundaryFace::outer_x2) ==
-             BoundaryFlag::polar);
-
-        if (!(do_inner || do_outer)) return;
-          
-        Real costi = cos(x2f_(m,js+1));
-        Real costo = -cos(x2f_(m,je));
-
-        for (int k=0; k<=n3m1; ++k) {
-          Real cosp = cos(x3v_(m,k));
-          Real sinp = sin(x3v_(m,k));
-          for (int i=0; i<=n1m1; ++i) {
-
-            if (do_inner) {
-//              Real inner_bx_avg =
-//                  (-inner_global_d_bx(i)/costi + 2.0*inner_global_d_bxp(i)) /
-//                  static_cast<Real>(mesh_nx3);
-//              Real inner_by_avg =
-//                  (-inner_global_d_by(i)/costi + 2.0*inner_global_d_byp(i)) /
-//                  static_cast<Real>(mesh_nx3);
-                Real inner_bx_avg =
-                    (inner_global_d_bx(i)/costi) /
-                    static_cast<Real>(mesh_nx3);
-                Real inner_by_avg =
-                    (inner_global_d_by(i)/costi) /
-                    static_cast<Real>(mesh_nx3);
-                bx2f(m,k,js,i) = inner_bx_avg*cosp + inner_by_avg*sinp; // 0.5*(bx2f(m,k,js-1,i)+bx2f(m,k,js+1,i)); //
-            }
-
-            if (do_outer) {
-              Real outer_bx_avg =
-                  (outer_global_d_bx(i)/costo) /
-                  static_cast<Real>(mesh_nx3);
-              Real outer_by_avg =
-                  (outer_global_d_by(i)/costo) /
-                  static_cast<Real>(mesh_nx3);
-                bx2f(m,k,je+1,i) = outer_bx_avg*cosp + outer_by_avg*sinp; // 0.5*(bx2f(m,k,je,i)+bx2f(m,k,je+2,i)); //
-            }
-          }
-        }
-      });
-
-  Kokkos::fence();
+    if (do_inner) {
+      Real costi = cos(x2f_(m,js+1));
+      Real bx_avg = (totals(0,i)/costi)/static_cast<Real>(mesh_nx3);
+      Real by_avg = (totals(2,i)/costi)/static_cast<Real>(mesh_nx3);
+      bx2f(m,k,js,i) = bx_avg*cosp + by_avg*sinp;
+    }
+    if (do_outer) {
+      Real costo = -cos(x2f_(m,je));
+      Real bx_avg = (totals(1,i)/costo)/static_cast<Real>(mesh_nx3);
+      Real by_avg = (totals(3,i)/costo)/static_cast<Real>(mesh_nx3);
+      bx2f(m,k,je+1,i) = bx_avg*cosp + by_avg*sinp;
+    }
+  });
 }

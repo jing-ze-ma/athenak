@@ -8,6 +8,7 @@
 //  Reconstructing corner E with the UCT method (Mignone & Del Zanna 2021)
 
 #include "athena.hpp"
+#include "globals.hpp"
 #include "mesh/mesh.hpp"
 #include "driver/driver.hpp"
 #include "diffusion/resistivity.hpp"
@@ -548,16 +549,6 @@ TaskStatus MHD::CornerE_UCT(Driver *pdriver, int stage) {
 
 void MHD::PolarAzimuthalAverageErUCT() {
   auto e1 = efld.x1e;
-  auto e1cc_ = e1_cc;
-  auto e1x2_ = e1x2;
-  auto e1x3_ = e1x3;
-  auto flx3 = uflx.x3f;
-  auto w0_ = w0;
-  auto bcc_ = bcc0;
-  auto bx2f_ = b0.x2f;
-  auto bx3f_ = b0.x3f;
-  auto &x2f_ = pmy_pack->pcoord->xx2f;
-  auto &x2v_ = pmy_pack->pcoord->x2v;
 
   auto &indcs = pmy_pack->pmesh->mb_indcs;
 
@@ -566,182 +557,83 @@ void MHD::PolarAzimuthalAverageErUCT() {
   int &js = indcs.js; int &je = indcs.je;
   int &ks = indcs.ks; int &ke = indcs.ke;
   int &ng = indcs.ng;
-  int n1m1 = nx1 + 2*ng - 1;
+  const int ncells1 = nx1 + 2*ng;
 
   const int mesh_nx3 = pmy_pack->pmesh->mesh_indcs.nx3;
   const int nmb = pmy_pack->nmb_thispack;
 
   auto &mb_bcs = pmy_pack->pmb->mb_bcs;
 
-  // =====================================================
-  // local device sums
-  // =====================================================
-
-  Kokkos::View<Real*> inner_local("inner_local", n1m1+1);
-  Kokkos::View<Real*> outer_local("outer_local", n1m1+1);
-
-  Kokkos::parallel_for(
-      "polar_local_sum",
-      Kokkos::RangePolicy<DevExeSpace>(0, n1m1),
-      KOKKOS_LAMBDA(const int i) {
-
-        Real inner_sum = 0.0;
-        Real outer_sum = 0.0;
-
-        for (int m = 0; m < nmb; ++m) {
-
-          bool do_inner =
-              (mb_bcs.d_view(m, BoundaryFace::inner_x2) ==
-               BoundaryFlag::polar);
-
-          bool do_outer =
-              (mb_bcs.d_view(m, BoundaryFace::outer_x2) ==
-               BoundaryFlag::polar);
-            
-          if (!(do_inner || do_outer)) continue;
-            
-//          Real faci = (x2v_(m,js)-x2f_(m,js))/(x2f_(m,js+1)-x2v_(m,js));
-//          Real faco = (x2v_(m,je)-x2f_(m,je+1))/(x2f_(m,je)-x2v_(m,je));
-            
-//          Real sinthi = sin(x2v_(m,js));
-//          Real costhi = cos(x2v_(m,js));
-//          Real sintho = sin(x2v_(m,je));
-//          Real costho = cos(x2v_(m,je));
-
-          for (int k = ks+1; k <= ke+1; ++k) {
-//            Real sinp = sin(x3v_(m,k));
-//            Real cosp = cos(x3v_(m,k));
-//            int j;
-//            Real vx,vy,Bx,By;
-//            Real vr = w0_(m,IVX,k,j,i);
-//            Real vt = w0_(m,IVY,k,j,i);
-//            Real vp = w0_(m,IVZ,k,j,i);
-//            Real br = bcc_(m,IBX,k,j,i);
-//            Real bt = bcc_(m,IBY,k,j,i);
-//            Real bp = bcc_(m,IBZ,k,j,i);
-//            if (do_inner) {
-//              j = js;
-//              vx = vr*sinthi*cosp + vt*costhi*cosp - vp*sinp;
-//              vy = vr*sinthi*sinp + vt*costhi*sinp + vp*cosp;
-//              Bx = br*sinthi*cosp + bt*costhi*cosp - bp*sinp;
-//              By = vr*sinthi*sinp + vt*costhi*sinp + bp*cosp;
-//            Real e1dif;
-//            if (do_inner) {
-//              if (flx3(m,IDN,k,js,i) >= 0.0) {
-//                e1dif = e1x2_(m,k-1,js  ,i) - e1cc_(m,k-1,js,i);
-//              } else {
-//                e1dif = e1x2_(m,k  ,js  ,i) - e1cc_(m,k  ,js,i);
-//              }
-//              inner_sum += e1x3_(m,k,js,i) + e1dif;
-//            }
-//            if (do_outer) {
-//              if (flx3(m,IDN,k,je,i) >= 0.0) {
-//                e1dif = e1x2_(m,k-1,je+1,i) - e1cc_(m,k-1,je,i);
-//              } else {
-//                e1dif = e1x2_(m,k  ,je+1,i) - e1cc_(m,k  ,je,i);
-//              }
-//              outer_sum += e1x3_(m,k,je,i) + e1dif;
-//            }
-//            if (do_inner) inner_sum += (1.0+faci)*e1cc_(m,k,js,i) - faci*e1x2_(m,k,js+1,i);
-//            if (do_outer) outer_sum += (1.0+faco)*e1cc_(m,k,je,i) - faco*e1x2_(m,k,je,i);
-              if (do_inner) inner_sum += e1(m,k,js,i); // e1x3_(m,k,js,i);
-              if (do_outer) outer_sum += e1(m,k,je+1,i); // e1x3_(m,k,je,i);
-          }
-        }
-          
-        inner_local(i) = (i >= is && i <= ie) ? inner_sum : 0.0;
-        outer_local(i) = (i >= is && i <= ie) ? outer_sum : 0.0;
-      });
-
-  Kokkos::fence();
-
-  // =====================================================
-  // copy to host for MPI
-  // =====================================================
-
-  auto inner_h = Kokkos::create_mirror_view(inner_local);
-  auto outer_h = Kokkos::create_mirror_view(outer_local);
-
-  Kokkos::deep_copy(inner_h, inner_local);
-  Kokkos::deep_copy(outer_h, outer_local);
-
-  // =====================================================
-  // MPI reduction
-  // =====================================================
-
-  std::vector<Real> inner_global(n1m1+1);
-  std::vector<Real> outer_global(n1m1+1);
-
-  MPI_Allreduce(inner_h.data(),
-                inner_global.data(),
-                n1m1+1,
-                MPI_DOUBLE,
-                MPI_SUM,
-                MPI_COMM_WORLD);
-
-  MPI_Allreduce(outer_h.data(),
-                outer_global.data(),
-                n1m1+1,
-                MPI_DOUBLE,
-                MPI_SUM,
-                MPI_COMM_WORLD);
-
-  // =====================================================
-  // move global sums back to device
-  // =====================================================
-
-  Kokkos::View<Real*> inner_global_d("inner_global_d", n1m1+1);
-  Kokkos::View<Real*> outer_global_d("outer_global_d", n1m1+1);
-
-  auto inner_global_h = Kokkos::create_mirror_view(inner_global_d);
-  auto outer_global_h = Kokkos::create_mirror_view(outer_global_d);
-
-  for (int i=0; i<=n1m1; ++i) {
-    inner_global_h(i) = inner_global[i];
-    outer_global_h(i) = outer_global[i];
+  // Same treatment as PolarAzimuthalAverageEr in mhd_corner_e.cpp -- see that function for
+  // why.  The two share their work arrays: only one of the two corner-E paths runs.
+  if (static_cast<int>(inner_local.extent(0)) != ncells1) {
+    Kokkos::realloc(inner_local, ncells1);
+    Kokkos::realloc(outer_local, ncells1);
+    Kokkos::realloc(polar_inner_h, ncells1);
+    Kokkos::realloc(polar_outer_h, ncells1);
   }
+  if (static_cast<int>(polar_part_in.extent(0)) != nmb ||
+      static_cast<int>(polar_part_in.extent(1)) != ncells1) {
+    Kokkos::realloc(polar_part_in,  nmb, ncells1);
+    Kokkos::realloc(polar_part_out, nmb, ncells1);
+  }
+  auto part_in  = polar_part_in;
+  auto part_out = polar_part_out;
+  auto inner_   = inner_local;
+  auto outer_   = outer_local;
 
-  Kokkos::deep_copy(inner_global_d, inner_global_h);
-  Kokkos::deep_copy(outer_global_d, outer_global_h);
+  // one thread per (MeshBlock, radius); phi stays serial and ascending within a block
+  par_for("polar_partial_uct", DevExeSpace(), 0, nmb-1, 0, ncells1-1,
+  KOKKOS_LAMBDA(const int m, const int i) {
+    bool do_inner = (mb_bcs.d_view(m, BoundaryFace::inner_x2) == BoundaryFlag::polar);
+    bool do_outer = (mb_bcs.d_view(m, BoundaryFace::outer_x2) == BoundaryFlag::polar);
 
-  // =====================================================
-  // refill polar EMFs
-  // =====================================================
+    Real inner_sum = 0.0;
+    Real outer_sum = 0.0;
+    if ((do_inner || do_outer) && (i >= is) && (i <= ie)) {
+      for (int k=ks+1; k<=ke+1; ++k) {
+        if (do_inner) inner_sum += e1(m,k,js,i);
+        if (do_outer) outer_sum += e1(m,k,je+1,i);
+      }
+    }
+    part_in(m,i)  = inner_sum;
+    part_out(m,i) = outer_sum;
+  });
 
-  Kokkos::parallel_for(
-      "polar_refill",
-      Kokkos::RangePolicy<DevExeSpace>(0, nmb),
-      KOKKOS_LAMBDA(const int m) {
+  // combine per-block partials in ascending block order
+  par_for("polar_combine_uct", DevExeSpace(), 0, ncells1-1,
+  KOKKOS_LAMBDA(const int i) {
+    Real inner_sum = 0.0;
+    Real outer_sum = 0.0;
+    for (int m=0; m<nmb; ++m) {
+      inner_sum += part_in(m,i);
+      outer_sum += part_out(m,i);
+    }
+    inner_(i) = inner_sum;
+    outer_(i) = outer_sum;
+  });
 
-        bool do_inner =
-            (mb_bcs.d_view(m, BoundaryFace::inner_x2) ==
-             BoundaryFlag::polar);
+#if MPI_PARALLEL_ENABLED
+  if (global_variable::nranks > 1) {
+    Kokkos::deep_copy(polar_inner_h, inner_local);
+    Kokkos::deep_copy(polar_outer_h, outer_local);
+    MPI_Allreduce(MPI_IN_PLACE, polar_inner_h.data(), ncells1, MPI_ATHENA_REAL, MPI_SUM,
+                  MPI_COMM_WORLD);
+    MPI_Allreduce(MPI_IN_PLACE, polar_outer_h.data(), ncells1, MPI_ATHENA_REAL, MPI_SUM,
+                  MPI_COMM_WORLD);
+    Kokkos::deep_copy(inner_local, polar_inner_h);
+    Kokkos::deep_copy(outer_local, polar_outer_h);
+  }
+#endif
 
-        bool do_outer =
-            (mb_bcs.d_view(m, BoundaryFace::outer_x2) ==
-             BoundaryFlag::polar);
+  par_for("polar_refill_uct", DevExeSpace(), 0, nmb-1, ks, ke+1, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int i) {
+    bool do_inner = (mb_bcs.d_view(m, BoundaryFace::inner_x2) == BoundaryFlag::polar);
+    bool do_outer = (mb_bcs.d_view(m, BoundaryFace::outer_x2) == BoundaryFlag::polar);
 
-        if (!(do_inner || do_outer)) return;
-
-        for (int k=ks; k<=ke+1; ++k) {
-          for (int i=is; i<=ie; ++i) {
-
-            if (do_inner) {
-              e1(m,k,js,i) =
-                  inner_global_d(i) /
-                  static_cast<Real>(mesh_nx3);
-            }
-
-            if (do_outer) {
-              e1(m,k,je+1,i) =
-                  outer_global_d(i) /
-                  static_cast<Real>(mesh_nx3);
-            }
-          }
-        }
-      });
-
-  Kokkos::fence();
+    if (do_inner) e1(m,k,js  ,i) = inner_(i)/static_cast<Real>(mesh_nx3);
+    if (do_outer) e1(m,k,je+1,i) = outer_(i)/static_cast<Real>(mesh_nx3);
+  });
 }
 
 } // namespace mhd
