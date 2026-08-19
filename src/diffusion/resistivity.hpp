@@ -62,7 +62,7 @@ class Resistivity {
   Real max_eta;
   bool use_rkg_sts; // RKG super-stepping (Mattia+2026)
   Real tau, alpha, w1, mu, nu, mut, gat;
-  int s;
+  int s = 0;   // RKG stage count; only set once TotStage() has run for the first time
   Real bjm2, bjm1, bj;
   DvceArray5D<Real> u_ideal;       // conserved variables, third register
   DvceFaceFld4D<Real> b_ideal;     // face-centered magnetic fields, third register
