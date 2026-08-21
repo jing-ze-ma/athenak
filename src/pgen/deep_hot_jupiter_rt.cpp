@@ -155,6 +155,16 @@ DvceArray5D<Real> *rt_Qb_ptr = nullptr;    // (m,blk,k,j,i) stellar heating, one
 // The two that matter here: the data block runs the band index BACKWARDS, and kappa is
 // cgs cm^2/g, which is what this code already works in.
 bool rt_ck = false;
+// problem/ck_dump_file: write one column's RT solution -- level pressures, temperatures,
+// net longwave flux and stellar heating -- straight out of the production kernel, once, at
+// the first RT call. This exists so the kernel ITSELF can be compared against an external
+// code on the same profile, rather than a transcription of it. See
+// bench/exofms_compare/README.md.
+std::string rt_dump_file = "";
+int rt_dump_m = 0;
+int rt_dump_j = -1;
+int rt_dump_k = -1;
+bool rt_dump_done = false;
 Real rt_ck_pcut = 10.0;                    // bar
 // problem/ck_nquad: angular treatment of the longwave. 1 uses a single diffusivity
 // factor, mu = 1/1.66, which is what GCMs normally do and what the chain count in the
@@ -1048,6 +1058,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   rt_ktab = pin->GetOrAddBoolean("problem","rt_ktab",false);
   rt_split = pin->GetOrAddBoolean("problem","rt_split",false);
   rt_ck = pin->GetOrAddBoolean("problem","rt_ck",false);
+  rt_dump_file = pin->GetOrAddString("problem","ck_dump_file","");
+  rt_dump_m = pin->GetOrAddInteger("problem","ck_dump_m",0);
+  rt_dump_j = pin->GetOrAddInteger("problem","ck_dump_j",-1);
+  rt_dump_k = pin->GetOrAddInteger("problem","ck_dump_k",-1);
   rt_ck_pcut = pin->GetOrAddReal("problem","ck_pcut_bar",10.0);
   ck_nq = pin->GetOrAddInteger("problem","ck_nquad",1);
   if (ck_nq != 1 && ck_nq != 2) {
@@ -4109,6 +4123,7 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
           const Real facsw = (mu0 > 0.1) ? (1.0/mu0) : (1.0/0.1);
           const bool lit = (mu0 > 0.0);
           Real tausw[NC];
+          Real transw[NC];      // beam transmission at the face above the current cell
 
           int bandc[NC], gc[NC];
           Real muc[NC], wfc[NC], wgc[NC];
@@ -4151,6 +4166,7 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
               const Real trans = exp(-dtau/muc[cc]);
               I_down[cc][ie+1] = (1.0-trans)*Bb_g(m,bandc[cc],k,j,ie+1);
               tausw[cc] = dtau;               // beam already crossed the column above
+              transw[cc] = exp(-dtau*facsw);
             }
           }
           // down-sweep
@@ -4172,11 +4188,21 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
               const Real bet = (x > 1.0e-3) ? (1.0 - e0/x) : (x/2.0-SQR(x)/6.0);
               I_down[cc][i] = (1.0-e0)*I_down[cc][i+1]
                             + alp*Bb_g(m,b,k,j,i+1) + bet*Bb_g(m,b,k,j,i);
-              // direct beam: accumulate to this cell's lower face, then deposit
+              // Direct beam. Deposit the flux DIFFERENCE across the cell, not
+              // kappa rho F exp(-tau) evaluated at one face. The latter is what the grey
+              // picket fence does, and it under-deposits badly once a layer is not thin:
+              // the ratio of deposited to absorbed is u e^-u/(1 - e^-u) with u = dtau/mu,
+              // which is 0.95 at u = 0.1 but 0.58 at u = 1 and 0.31 at u = 2. Summed down
+              // a column with u ~ 0.5 it loses a quarter of the incident flux -- measured
+              // against Exo-FMS on an identical column, which is how this was found.
+              // Written this way the column integral is F mu (1 - e^-tau_total) by
+              // construction, and it still reduces to the old form as dtau -> 0.
               tausw[cc] += kap*drho;
               if (lit) {
-                Q_v_f[i] += kap*rho*(1.0-albedo)*Fstar*ckswf(b)*wgc[cc]
-                          * exp(-tausw[cc]*facsw);
+                const Real tnew = exp(-tausw[cc]*facsw);
+                Q_v_f[i] += (1.0-albedo)*Fstar*ckswf(b)*wgc[cc]/facsw
+                          * (transw[cc] - tnew)/dx1(m,k,j,i);
+                transw[cc] = tnew;
               }
             }
           }
@@ -4358,6 +4384,55 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
         }
         u0(m,IEN,k,j,i) += src*bdt;
       });
+
+      // ---- one-shot column dump, for cross-code comparison -------------------------
+      if (ck_on && !rt_dump_file.empty() && !rt_dump_done) {
+        rt_dump_done = true;
+        const int jd = (rt_dump_j >= 0) ? rt_dump_j : (js + je)/2;
+        const int kd = (rt_dump_k >= 0) ? rt_dump_k : (ks + ke)/2;
+        const int md = (rt_dump_m <= nmb1) ? rt_dump_m : 0;
+        DvceArray2D<Real> col("rt_col", n1, 5);
+        par_for("rt_dumpcol", DevExeSpace(), is, ie+1, KOKKOS_LAMBDA(const int i) {
+          Real Fs = 0.0;
+          Real Qs = 0.0;
+          for (int b=0; b<nblk; ++b) {
+            Fs += Fb_g(md,b,kd,jd,i);
+            Qs += Qb_g(md,b,kd,jd,i);
+          }
+          col(i,0) = pb_g(md,kd,jd,i);
+          col(i,1) = T_g(md,kd,jd,i);
+          col(i,2) = Fs;
+          col(i,3) = Qs;
+          col(i,4) = x1f_(md,i);
+        });
+        auto hc = Kokkos::create_mirror_view(col);
+        Kokkos::deep_copy(hc, col);
+        auto hcut = Kokkos::create_mirror_view(icut_g);
+        Kokkos::deep_copy(hcut, icut_g);
+        auto hcf = Kokkos::create_mirror_view(cf_g);
+        Kokkos::deep_copy(hcf, cf_g);
+        if (global_variable::my_rank == 0) {
+          std::ofstream f(rt_dump_file);
+          f.precision(10);
+          f << std::scientific;
+          f << "# deep_hot_jupiter_rt correlated-k column dump\n"
+            << "# meshblock " << md << ", k = " << kd << ", j = " << jd
+            << ", mu0 = " << hcf(md,kd,jd,3) << ", icut = " << hcut(md,kd,jd)
+            << " (is = " << is << ", ie = " << ie << ")\n"
+            << "# T_int = " << Tint << " K, T_irr = " << Tirr
+            << " K, grav = " << grav << " cm/s^2\n"
+            << "# fluxes are cgs: 1 erg/s/cm^2 = 1e-3 W/m^2. F_lw is NET (up minus down)\n"
+            << "# i  r_face[cm]  p[bar]  T[K]  F_lw_net[erg/s/cm2]  Q_sw[erg/s/cm3]\n";
+          for (int i=is; i<ie+2; ++i) {
+            f << i << " " << hc(i,4) << " " << hc(i,0) << " " << hc(i,1)
+              << " " << hc(i,2) << " " << hc(i,3) << "\n";
+          }
+          f.close();
+          std::cout << "deep_hot_jupiter_rt: wrote correlated-k column dump to '"
+                    << rt_dump_file << "' (k = " << kd << ", j = " << jd
+                    << ", mu0 = " << hcf(md,kd,jd,3) << ")" << std::endl;
+        }
+      }
       return;
     }
 
