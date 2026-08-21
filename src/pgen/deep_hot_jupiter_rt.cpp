@@ -4573,303 +4573,325 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
 //    par_for_outer("2stream_rt", DevExeSpace(), scr_size, scr_level,
 //                  0, nmb1, ks, ke, js, je,
 //    KOKKOS_LAMBDA(TeamMember_t member, const int m, const int k, const int j) {
-    par_for("2stream_rt", DevExeSpace(), 0, nmb1, ks, ke, js, je,
-    KOKKOS_LAMBDA(const int m, const int k, const int j) {
-//        ScrArray1D<Real> tau_down_r_f(member.team_scratch(scr_level), n1);
-//        ScrArray1D<Real> F_v_down_f(member.team_scratch(scr_level), n1);
-//        ScrArray1D<Real> B(member.team_scratch(scr_level), n1);
-//        ScrArray1D<Real> I_ir_down_f(member.team_scratch(scr_level), n1);
-//        ScrArray1D<Real> I_ir_up_f(member.team_scratch(scr_level), n1);
-//        ScrArray1D<Real> F_ir_f(member.team_scratch(scr_level), n1);
-//        ScrArray1D<Real> Q_v(member.team_scratch(scr_level), n1);
-//        ScrArray1D<Real> kapJ_ir(member.team_scratch(scr_level), n1);
-        constexpr int NN = 270;
-        Real tau_down_r_f[NN];
-//        Real F_v_down_f[NN];
-        Real B[NN];
-        Real F_ir_f[NN];
-        Real Q_v[NN];
-//        Real kapJ_ir[NN];
+    // The private radial arrays here were a flat 270, with no check. Production runs at
+    // nx1 = 256, i.e. n1 = 260, so they were ten cells from silently overrunning per-thread
+    // memory -- and nghost = 4 with the same nx1 would have gone over. Dispatched at run
+    // time over compile-time tiers instead, as the correlated-k chain kernel is.
+    auto launch_grey_rt = [&](auto nn_tag) {
+      constexpr int NN = decltype(nn_tag)::value;
+      par_for("2stream_rt", DevExeSpace(), 0, nmb1, ks, ke, js, je,
+      KOKKOS_LAMBDA(const int m, const int k, const int j) {
+  //        ScrArray1D<Real> tau_down_r_f(member.team_scratch(scr_level), n1);
+  //        ScrArray1D<Real> F_v_down_f(member.team_scratch(scr_level), n1);
+  //        ScrArray1D<Real> B(member.team_scratch(scr_level), n1);
+  //        ScrArray1D<Real> I_ir_down_f(member.team_scratch(scr_level), n1);
+  //        ScrArray1D<Real> I_ir_up_f(member.team_scratch(scr_level), n1);
+  //        ScrArray1D<Real> F_ir_f(member.team_scratch(scr_level), n1);
+  //        ScrArray1D<Real> Q_v(member.team_scratch(scr_level), n1);
+  //        ScrArray1D<Real> kapJ_ir(member.team_scratch(scr_level), n1);
+          Real tau_down_r_f[NN];
+  //        Real F_v_down_f[NN];
+          Real B[NN];
+          Real F_ir_f[NN];
+          Real Q_v[NN];
+  //        Real kapJ_ir[NN];
         
-        Real x2v = x2v_(m,j);
-        Real x3v = x3v_(m,k);
+          Real x2v = x2v_(m,j);
+          Real x3v = x3v_(m,k);
         
-        Real rtop = x1v_(m,ie+1);
-        Real rbot = x1v_(m,is);
+          Real rtop = x1v_(m,ie+1);
+          Real rbot = x1v_(m,is);
         
-        Real lam, phi, theta;
-        if (use_spherical_polar) {
-          theta = x2v;
-          lam = -theta+M_PI/2.0;
-          phi = x3v-M_PI;
-        } else {
-          lam = x3v*iap;
-          theta = -lam+M_PI/2.0;
-          phi = x2v*iap;
-        }
-        Real ex = sin(theta)*cos(phi);
-        Real ex0 = 1.0;
-        Real mu0 = ex*ex0;
-        if (test_oned) mu0 = cos(85.0/90.0*M_PI/2.0);
+          Real lam, phi, theta;
+          if (use_spherical_polar) {
+            theta = x2v;
+            lam = -theta+M_PI/2.0;
+            phi = x3v-M_PI;
+          } else {
+            lam = x3v*iap;
+            theta = -lam+M_PI/2.0;
+            phi = x2v*iap;
+          }
+          Real ex = sin(theta)*cos(phi);
+          Real ex0 = 1.0;
+          Real mu0 = ex*ex0;
+          if (test_oned) mu0 = cos(85.0/90.0*M_PI/2.0);
         
-        Real mus = (mu0 > 0.0) ? mu0 : 0.0;
-        Real Teff = sqrt(sqrt(Tint4+(1.0-albedo)*mus*Tirr4));
-        Real gamv1, gamv2, gamv3, beta, gamir1, gamir2;
-        get_picket_fence_coeff(Teq, Teff, gamv1, gamv2, gamv3, beta, gamir1, gamir2);
+          Real mus = (mu0 > 0.0) ? mu0 : 0.0;
+          Real Teff = sqrt(sqrt(Tint4+(1.0-albedo)*mus*Tirr4));
+          Real gamv1, gamv2, gamv3, beta, gamir1, gamir2;
+          get_picket_fence_coeff(Teq, Teff, gamv1, gamv2, gamv3, beta, gamir1, gamir2);
         
-        // 3 V Bands
-        // top
-        Real p = PresFromEint(eos,gm1,w0(m,IDN,k,j,ie+1),w0(m,IEN,k,j,ie+1));
-        Real rho = w0(m,IDN,k,j,ie+1);
-        Real T = TempKelvin(eos,Rgas,rho,w0(m,IEN,k,j,ie+1),p);
-        B[ie+1] = boltz_sigma/M_PI*SQR(SQR(T));
-        Real kapr;
-        get_kapr(T, p, met, kapr);
-        Real tau_r_f = kapr*p/grav;
-        tau_down_r_f[ie+1] = tau_r_f;
-        Real drtop = tau_r_f/(kapr*rho);
-        Real delta = drtop/rtop;
-        Real fac = (sqrt(SQR(mu0)+2.0*delta+SQR(delta)) - mu0)/delta;
-        fac = (mu0 > 0.1) ? (1.0/mu0) : (1.0/0.1);
-        Real tausl = tau_r_f*fac;
-        Real trans1 = exp(-gamv1*tau_down_r_f[ie+1]*fac);
-        Real trans2 = exp(-gamv2*tau_down_r_f[ie+1]*fac);
-        Real trans3 = exp(-gamv3*tau_down_r_f[ie+1]*fac);
-        // beam transmission at the face ABOVE the cell being filled, carried down the
-        // sweep so that differencing the flux across a cell costs no extra exp
-        Real trp1 = trans1;
-        Real trp2 = trans2;
-        Real trp3 = trans3;
-//        F_v_down_f[ie+1] = (1.0-albedo)*Fstar*mus*1.0/3.0*(trans1+trans2+trans3);
-//        F_v_down_f(ie+1) = (mu0 > 0.0)? F_v_down_f(ie+1) : 0.0;
-        // down-sweep
-        for (int i=ie; i>is-1; --i) {
-          Real rho = w0(m,IDN,k,j,i);
-          Real p, T;
-          PresTempFromEint(eos,gm1,Rgas,rho,w0(m,IEN,k,j,i),wtemp_(m,k,j,i),p,T);
-          B[i] = boltz_sigma/M_PI*SQR(SQR(T));
+          // 3 V Bands
+          // top
+          Real p = PresFromEint(eos,gm1,w0(m,IDN,k,j,ie+1),w0(m,IEN,k,j,ie+1));
+          Real rho = w0(m,IDN,k,j,ie+1);
+          Real T = TempKelvin(eos,Rgas,rho,w0(m,IEN,k,j,ie+1),p);
+          B[ie+1] = boltz_sigma/M_PI*SQR(SQR(T));
           Real kapr;
           get_kapr(T, p, met, kapr);
-          Real dr = dx1(m,k,j,i);
-          tau_down_r_f[i] = tau_down_r_f[i+1] + kapr*rho*dr;
-          Real r = x1f_(m,i);
-////          Real delta = (drtop+(rtop-r))/r;
-//          Real delta = dr/r;
-//          Real fac = (sqrt(SQR(mu0)+2.0*delta+SQR(delta)) - mu0)/delta;
-//          tausl += kapr*rho*r*(sqrt(SQR(mu0)+2.0*delta+SQR(delta)) - mu0);
-          Real fac = (mu0 > 0.1) ? (1.0/mu0) : (1.0/0.1);
-          Real trans1 = exp(-gamv1*tau_down_r_f[i]*fac);
-          Real trans2 = exp(-gamv2*tau_down_r_f[i]*fac);
-          Real trans3 = exp(-gamv3*tau_down_r_f[i]*fac);
-//          Real trans1 = exp(-gamv1*tausl);
-//          Real trans2 = exp(-gamv2*tausl);
-//          Real trans3 = exp(-gamv3*tausl);
-//          F_v_down_f[i] = (1.0-albedo)*Fstar*mus*1.0/3.0*(trans1+trans2+trans3);
-          Real mucr = 0.0; //sqrt(1.0-SQR(r0/r));
-          // Deposit the flux DIFFERENCE across the cell. The old form,
-          // kappa rho F exp(-tau) with tau at the lower face, is right only for a thin
-          // layer: it returns u e^-u / (1 - e^-u) of what the cell actually absorbs, with
-          // u = dtau/mu, which is 0.95 at u = 0.1 but 0.58 at u = 1. On this grid, about
-          // 0.46 scale heights per cell, that put dtau/mu near one wherever it mattered
-          // and lost about 24 % of the incident stellar flux. Found by comparing the
-          // correlated-k version of the same expression against Exo-FMS on an identical
-          // column. Written this way the column integral telescopes to
-          // mu F (1 - e^-tau_total) exactly, and it still reduces to the old expression
-          // as dtau -> 0.
-          Real Qv = (1.0-albedo)*Fstar*(1.0/3.0)
-                  * ((trp1-trans1)+(trp2-trans2)+(trp3-trans3))/(fac*dr);
-          Q_v[i] = (mu0 > -mucr) ? Qv : 0.0;
-          trp1 = trans1;
-          trp2 = trans2;
-          trp3 = trans3;
-        }
-        
-        // 2 IR Bands x two quadrature points, interleaved, in blocks of NC.
-        //
-        // Each (band, quadrature) combination is an independent pair of linear
-        // recurrences in radius, and running them one after another leaves the wavefront
-        // stalled on a single dependency chain: this kernel has only nmb*nx3*nx2/64
-        // wavefronts for 912 SIMDs, so there is no other wave to hide that latency and
-        // VALUBusy sits near 3 %. Stepping NC combinations inside one radial loop gives
-        // the chain NC independent strands to overlap, and blocking keeps the private
-        // I_ir_down_c footprint at NC columns however many chains are requested.
-        //
-        // Chains beyond the first four are the SCALING HARNESS (problem/rt_nchain, see
-        // the note at the head of this function): they do the same lookup, the same two
-        // recurrences and the same flux accumulation, but their weight rt_wgt is zero at
-        // runtime, so the atmosphere is untouched and the run stays on the trajectory of
-        // the production scheme. Multiplying by an exact 1.0 or 0.0 cannot perturb the
-        // sum, so a harness run must stay bitwise identical -- that is the check that
-        // the measurement is honest.
-        constexpr int NC = RT_NB;
-        const int nblk_rt = (nchain_rt + NC - 1)/NC;
-        for (int i=is; i<ie+2; ++i) {
-          F_ir_f[i] = 0.0;
-        }
-
-        for (int blk=0; blk<nblk_rt; ++blk) {
-          Real gamirc[NC], fbc[NC], muggc[NC], wggc[NC], wtc[NC];
-          bool synth[NC];
-          for (int cc=0; cc<NC; ++cc) {
-            const int c = blk*NC + cc;
-            const int n = (c/2) % 2;
-            const int vir = c % 2;
-            muggc[cc] = mug[n];
-            wggc[cc] = wg[n];
-            gamirc[cc] = (vir == 0) ? gamir1 : gamir2;
-            fbc[cc] = (vir == 0) ? beta : (1.0-beta);
-            wtc[cc] = rt_wgt_(c);
-            synth[cc] = (c >= 4);
-          }
-          Real I_ir_down_c[NC][NN];
-
-          // top
-          for (int cc=0; cc<NC; ++cc) {
-            Real dtauir = gamirc[cc]*tau_down_r_f[ie+1];
-            Real trans = exp(-dtauir/muggc[cc]);
-            I_ir_down_c[cc][ie+1] = (1.0-trans)*(fbc[cc]*B[ie+1]);
-          }
+          Real tau_r_f = kapr*p/grav;
+          tau_down_r_f[ie+1] = tau_r_f;
+          Real drtop = tau_r_f/(kapr*rho);
+          Real delta = drtop/rtop;
+          Real fac = (sqrt(SQR(mu0)+2.0*delta+SQR(delta)) - mu0)/delta;
+          fac = (mu0 > 0.1) ? (1.0/mu0) : (1.0/0.1);
+          Real tausl = tau_r_f*fac;
+          Real trans1 = exp(-gamv1*tau_down_r_f[ie+1]*fac);
+          Real trans2 = exp(-gamv2*tau_down_r_f[ie+1]*fac);
+          Real trans3 = exp(-gamv3*tau_down_r_f[ie+1]*fac);
+          // beam transmission at the face ABOVE the cell being filled, carried down the
+          // sweep so that differencing the flux across a cell costs no extra exp
+          Real trp1 = trans1;
+          Real trp2 = trans2;
+          Real trp3 = trans3;
+  //        F_v_down_f[ie+1] = (1.0-albedo)*Fstar*mus*1.0/3.0*(trans1+trans2+trans3);
+  //        F_v_down_f(ie+1) = (mu0 > 0.0)? F_v_down_f(ie+1) : 0.0;
           // down-sweep
           for (int i=ie; i>is-1; --i) {
-            Real dtau_i = tau_down_r_f[i]-tau_down_r_f[i+1];
-            Real ct = 0.0, cp = 0.0;
-            if (use_ktab_) {
-              ct = 1.2*log(1.0 + B[i]);
-              cp = 0.7*log(1.0 + tau_down_r_f[i]);
-            }
-            for (int cc=0; cc<NC; ++cc) {
-              Real gam = gamirc[cc];
-              if (use_ktab_ && synth[cc]) {
-                // Per-cell correlated-k style lookup: bilinear in a (T, p) proxy pair.
-                // This measures the table traffic a real k-table would generate -- the
-                // indices are data dependent and differ per cell, per chain -- it is not
-                // a physical opacity, and it only ever feeds a zero-weight chain.
-                gam = ktab_lookup(ktab_, blk*NC + cc, ct, cp);
-              }
-              Real dtauir = gam*dtau_i;
-              Real x = dtauir/muggc[cc];
-              Real e0 = -expm1(-x);
-              Real alp = (x > 1.0e-3) ? (e0 - 1.0 + e0/x) : (x/2.0-SQR(x)/3.0);
-              Real bet = (x > 1.0e-3) ? (1.0 - e0/x) : (x/2.0-SQR(x)/6.0);
-              I_ir_down_c[cc][i] = (1.0-e0)*I_ir_down_c[cc][i+1]
-                                 + alp*fbc[cc]*B[i+1] + bet*fbc[cc]*B[i];
-            }
+            Real rho = w0(m,IDN,k,j,i);
+            Real p, T;
+            PresTempFromEint(eos,gm1,Rgas,rho,w0(m,IEN,k,j,i),wtemp_(m,k,j,i),p,T);
+            B[i] = boltz_sigma/M_PI*SQR(SQR(T));
+            Real kapr;
+            get_kapr(T, p, met, kapr);
+            Real dr = dx1(m,k,j,i);
+            tau_down_r_f[i] = tau_down_r_f[i+1] + kapr*rho*dr;
+            Real r = x1f_(m,i);
+  ////          Real delta = (drtop+(rtop-r))/r;
+  //          Real delta = dr/r;
+  //          Real fac = (sqrt(SQR(mu0)+2.0*delta+SQR(delta)) - mu0)/delta;
+  //          tausl += kapr*rho*r*(sqrt(SQR(mu0)+2.0*delta+SQR(delta)) - mu0);
+            Real fac = (mu0 > 0.1) ? (1.0/mu0) : (1.0/0.1);
+            Real trans1 = exp(-gamv1*tau_down_r_f[i]*fac);
+            Real trans2 = exp(-gamv2*tau_down_r_f[i]*fac);
+            Real trans3 = exp(-gamv3*tau_down_r_f[i]*fac);
+  //          Real trans1 = exp(-gamv1*tausl);
+  //          Real trans2 = exp(-gamv2*tausl);
+  //          Real trans3 = exp(-gamv3*tausl);
+  //          F_v_down_f[i] = (1.0-albedo)*Fstar*mus*1.0/3.0*(trans1+trans2+trans3);
+            Real mucr = 0.0; //sqrt(1.0-SQR(r0/r));
+            // Deposit the flux DIFFERENCE across the cell. The old form,
+            // kappa rho F exp(-tau) with tau at the lower face, is right only for a thin
+            // layer: it returns u e^-u / (1 - e^-u) of what the cell actually absorbs, with
+            // u = dtau/mu, which is 0.95 at u = 0.1 but 0.58 at u = 1. On this grid, about
+            // 0.46 scale heights per cell, that put dtau/mu near one wherever it mattered
+            // and lost about 24 % of the incident stellar flux. Found by comparing the
+            // correlated-k version of the same expression against Exo-FMS on an identical
+            // column. Written this way the column integral telescopes to
+            // mu F (1 - e^-tau_total) exactly, and it still reduces to the old expression
+            // as dtau -> 0.
+            Real Qv = (1.0-albedo)*Fstar*(1.0/3.0)
+                    * ((trp1-trans1)+(trp2-trans2)+(trp3-trans3))/(fac*dr);
+            Q_v[i] = (mu0 > -mucr) ? Qv : 0.0;
+            trp1 = trans1;
+            trp2 = trans2;
+            trp3 = trans3;
+          }
+        
+          // 2 IR Bands x two quadrature points, interleaved, in blocks of NC.
+          //
+          // Each (band, quadrature) combination is an independent pair of linear
+          // recurrences in radius, and running them one after another leaves the wavefront
+          // stalled on a single dependency chain: this kernel has only nmb*nx3*nx2/64
+          // wavefronts for 912 SIMDs, so there is no other wave to hide that latency and
+          // VALUBusy sits near 3 %. Stepping NC combinations inside one radial loop gives
+          // the chain NC independent strands to overlap, and blocking keeps the private
+          // I_ir_down_c footprint at NC columns however many chains are requested.
+          //
+          // Chains beyond the first four are the SCALING HARNESS (problem/rt_nchain, see
+          // the note at the head of this function): they do the same lookup, the same two
+          // recurrences and the same flux accumulation, but their weight rt_wgt is zero at
+          // runtime, so the atmosphere is untouched and the run stays on the trajectory of
+          // the production scheme. Multiplying by an exact 1.0 or 0.0 cannot perturb the
+          // sum, so a harness run must stay bitwise identical -- that is the check that
+          // the measurement is honest.
+          constexpr int NC = RT_NB;
+          const int nblk_rt = (nchain_rt + NC - 1)/NC;
+          for (int i=is; i<ie+2; ++i) {
+            F_ir_f[i] = 0.0;
           }
 
-          // bottom
-          Real I_ir_up_c[NC];
-          for (int cc=0; cc<NC; ++cc) {
-            I_ir_up_c[cc] = Iint + I_ir_down_c[cc][is];
-            Real F_ir_down_f = 2.0*M_PI*wggc[cc]*muggc[cc]*I_ir_down_c[cc][is];
-            Real F_ir_up_f = 2.0*M_PI*wggc[cc]*muggc[cc]*I_ir_up_c[cc];
-            F_ir_f[is] += wtc[cc]*(F_ir_up_f - F_ir_down_f);
-          }
-          // up-sweep, accumulating the band flux as it goes
-          for (int i=is+1; i<ie+2; ++i) {
-            Real dtau_i = tau_down_r_f[i-1]-tau_down_r_f[i];
-            Real ct = 0.0, cp = 0.0;
-            if (use_ktab_) {
-              ct = 1.2*log(1.0 + B[i-1]);
-              cp = 0.7*log(1.0 + tau_down_r_f[i-1]);
-            }
+          for (int blk=0; blk<nblk_rt; ++blk) {
+            Real gamirc[NC], fbc[NC], muggc[NC], wggc[NC], wtc[NC];
+            bool synth[NC];
             for (int cc=0; cc<NC; ++cc) {
-              Real gam = gamirc[cc];
-              if (use_ktab_ && synth[cc]) {
-                gam = ktab_lookup(ktab_, blk*NC + cc, ct, cp);
+              const int c = blk*NC + cc;
+              const int n = (c/2) % 2;
+              const int vir = c % 2;
+              muggc[cc] = mug[n];
+              wggc[cc] = wg[n];
+              gamirc[cc] = (vir == 0) ? gamir1 : gamir2;
+              fbc[cc] = (vir == 0) ? beta : (1.0-beta);
+              wtc[cc] = rt_wgt_(c);
+              synth[cc] = (c >= 4);
+            }
+            Real I_ir_down_c[NC][NN];
+
+            // top
+            for (int cc=0; cc<NC; ++cc) {
+              Real dtauir = gamirc[cc]*tau_down_r_f[ie+1];
+              Real trans = exp(-dtauir/muggc[cc]);
+              I_ir_down_c[cc][ie+1] = (1.0-trans)*(fbc[cc]*B[ie+1]);
+            }
+            // down-sweep
+            for (int i=ie; i>is-1; --i) {
+              Real dtau_i = tau_down_r_f[i]-tau_down_r_f[i+1];
+              Real ct = 0.0, cp = 0.0;
+              if (use_ktab_) {
+                ct = 1.2*log(1.0 + B[i]);
+                cp = 0.7*log(1.0 + tau_down_r_f[i]);
               }
-              Real dtauir = gam*dtau_i;
-              Real x = dtauir/muggc[cc];
-              Real e0 = -expm1(-x);
-              Real bet = (x > 1.0e-3) ? (1.0 - e0/x) : (x/2.0-SQR(x)/6.0);
-              Real gm = (x > 1.0e-3) ? (e0 - 1.0 + e0/x) : (x/2.0-SQR(x)/3.0);
-              I_ir_up_c[cc] = (1.0-e0)*I_ir_up_c[cc]
-                            + bet*fbc[cc]*B[i] + gm*fbc[cc]*B[i-1];
-              Real F_ir_down_f = 2.0*M_PI*wggc[cc]*muggc[cc]*I_ir_down_c[cc][i];
+              for (int cc=0; cc<NC; ++cc) {
+                Real gam = gamirc[cc];
+                if (use_ktab_ && synth[cc]) {
+                  // Per-cell correlated-k style lookup: bilinear in a (T, p) proxy pair.
+                  // This measures the table traffic a real k-table would generate -- the
+                  // indices are data dependent and differ per cell, per chain -- it is not
+                  // a physical opacity, and it only ever feeds a zero-weight chain.
+                  gam = ktab_lookup(ktab_, blk*NC + cc, ct, cp);
+                }
+                Real dtauir = gam*dtau_i;
+                Real x = dtauir/muggc[cc];
+                Real e0 = -expm1(-x);
+                Real alp = (x > 1.0e-3) ? (e0 - 1.0 + e0/x) : (x/2.0-SQR(x)/3.0);
+                Real bet = (x > 1.0e-3) ? (1.0 - e0/x) : (x/2.0-SQR(x)/6.0);
+                I_ir_down_c[cc][i] = (1.0-e0)*I_ir_down_c[cc][i+1]
+                                   + alp*fbc[cc]*B[i+1] + bet*fbc[cc]*B[i];
+              }
+            }
+
+            // bottom
+            Real I_ir_up_c[NC];
+            for (int cc=0; cc<NC; ++cc) {
+              I_ir_up_c[cc] = Iint + I_ir_down_c[cc][is];
+              Real F_ir_down_f = 2.0*M_PI*wggc[cc]*muggc[cc]*I_ir_down_c[cc][is];
               Real F_ir_up_f = 2.0*M_PI*wggc[cc]*muggc[cc]*I_ir_up_c[cc];
-              F_ir_f[i] += wtc[cc]*(F_ir_up_f - F_ir_down_f);
+              F_ir_f[is] += wtc[cc]*(F_ir_up_f - F_ir_down_f);
+            }
+            // up-sweep, accumulating the band flux as it goes
+            for (int i=is+1; i<ie+2; ++i) {
+              Real dtau_i = tau_down_r_f[i-1]-tau_down_r_f[i];
+              Real ct = 0.0, cp = 0.0;
+              if (use_ktab_) {
+                ct = 1.2*log(1.0 + B[i-1]);
+                cp = 0.7*log(1.0 + tau_down_r_f[i-1]);
+              }
+              for (int cc=0; cc<NC; ++cc) {
+                Real gam = gamirc[cc];
+                if (use_ktab_ && synth[cc]) {
+                  gam = ktab_lookup(ktab_, blk*NC + cc, ct, cp);
+                }
+                Real dtauir = gam*dtau_i;
+                Real x = dtauir/muggc[cc];
+                Real e0 = -expm1(-x);
+                Real bet = (x > 1.0e-3) ? (1.0 - e0/x) : (x/2.0-SQR(x)/6.0);
+                Real gm = (x > 1.0e-3) ? (e0 - 1.0 + e0/x) : (x/2.0-SQR(x)/3.0);
+                I_ir_up_c[cc] = (1.0-e0)*I_ir_up_c[cc]
+                              + bet*fbc[cc]*B[i] + gm*fbc[cc]*B[i-1];
+                Real F_ir_down_f = 2.0*M_PI*wggc[cc]*muggc[cc]*I_ir_down_c[cc][i];
+                Real F_ir_up_f = 2.0*M_PI*wggc[cc]*muggc[cc]*I_ir_up_c[cc];
+                F_ir_f[i] += wtc[cc]*(F_ir_up_f - F_ir_down_f);
+              }
             }
           }
-        }
         
-//        // Sync all threads in the team so that scratch memory is consistent
-//        member.team_barrier();
+  //        // Sync all threads in the team so that scratch memory is consistent
+  //        member.team_barrier();
         
-//        par_for_inner(member, is, ie, [&](const int i) {
-        for (int i=is; i<ie+1; ++i) {
-          // source term as flux divergence
-          Real area_t = area1(m,k,j,i+1);
-          Real area_b = area1(m,k,j,i);
-          Real vol = volume(m,k,j,i);
-            Real Ft = F_ir_f[i+1];//-F_v_down_f(i+1);
-            Real Fb = F_ir_f[i];//-F_v_down_f(i);
-          Real src = -(Ft-Fb)/dx1(m,k,j,i);
-          if (correct_spherical) {
-            src = -(Ft*area_t-Fb*area_b)/vol;
-          }
-            src += Q_v[i];
-          Real du_flux = src*bdt;
+  //        par_for_inner(member, is, ie, [&](const int i) {
+          for (int i=is; i<ie+1; ++i) {
+            // source term as flux divergence
+            Real area_t = area1(m,k,j,i+1);
+            Real area_b = area1(m,k,j,i);
+            Real vol = volume(m,k,j,i);
+              Real Ft = F_ir_f[i+1];//-F_v_down_f(i+1);
+              Real Fb = F_ir_f[i];//-F_v_down_f(i);
+            Real src = -(Ft-Fb)/dx1(m,k,j,i);
+            if (correct_spherical) {
+              src = -(Ft*area_t-Fb*area_b)/vol;
+            }
+              src += Q_v[i];
+            Real du_flux = src*bdt;
             
-//          // source term semi-implicit
-//          Real p = PresFromEint(eos,gm1,w0(m,IDN,k,j,i),w0(m,IEN,k,j,i));
-//          Real rho = w0(m,IDN,k,j,i);
-//          Real T = TempKelvin(eos,Rgas,rho,w0(m,IEN,k,j,i),p);
-//          Real kapr;
-//          get_kapr(T, p, met, kapr);
-//          Real cv = Rgas*rho*igm1;
-//          Real e0 = eos.IsGeneral() ? w0(m,IEN,k,j,i) : cv*T;
-//          Real kk = 0.0;
-//          Real bb = du_flux + e0;
-////          Real bb = Q_v(i)*bdt + e0;
-//          for (int vir=0; vir<2; ++vir) {
-//            Real gamir, fb;
-//            if (vir == 0) {
-//              gamir = gamir1;
-//              fb = beta;
-//            } else {
-//              gamir = gamir2;
-//              fb = 1.0-beta;
-//            }
-//            kk += -4.0*M_PI*gamir*kapr*rho*fb*boltz_sigma/M_PI*bdt;
-//            bb += 4.0*M_PI*gamir*kapr*rho*fb*B[i]*bdt;
-//          }
-////          bb += 4.0*M_PI*rho*kapJ_ir(i)*bdt;
-//          int ierr=0;
-//          Real e = e0;
-//          // Newton-Raphson. A general EOS has no e = c_v T with constant c_v, so the
-//          // iteration runs on the internal energy directly rather than on T:
-//          // F(e) = e - kk T(e)^4 - bb, with dT/de = temp_cgs/(d c_v) since T is in K.
-//          for (int n=0; n<100; ++n) {
-//            Real de;
-//            if (eos.IsGeneral()) {
-//              Real dTde = eos.temp_cgs/(rho*eos.SpecificHeatCv(rho,e));
-//              de = e - kk*SQR(SQR(T)) - bb;
-//              e -= de / (1.0 - 4.0*kk*T*T*T*dTde);
-//              T = eos.Temperature(rho,e)*eos.temp_cgs;
-//            } else {
-//              e = cv*T;
-//              de = e - kk*SQR(SQR(T)) - bb;
-//              T -= de / (cv - 4.0*kk*T*T*T);
-//            }
-//            if (T < 0.0) {
-//              e = e0;
-//              ierr = 1;
-//              break;
-//            }
-//            if (fabs(de) <= 1.0e-10*e)
-//              break;
-//          }
-//          Real du_src = e-e0;
-//
-//          Real du = (fabs(du_flux) < e0 && ierr == 1) ? du_flux : du_src;
-          Real du = du_flux;
-          u0(m,IEN,k,j,i) += du;
-        }
-//        });
+  //          // source term semi-implicit
+  //          Real p = PresFromEint(eos,gm1,w0(m,IDN,k,j,i),w0(m,IEN,k,j,i));
+  //          Real rho = w0(m,IDN,k,j,i);
+  //          Real T = TempKelvin(eos,Rgas,rho,w0(m,IEN,k,j,i),p);
+  //          Real kapr;
+  //          get_kapr(T, p, met, kapr);
+  //          Real cv = Rgas*rho*igm1;
+  //          Real e0 = eos.IsGeneral() ? w0(m,IEN,k,j,i) : cv*T;
+  //          Real kk = 0.0;
+  //          Real bb = du_flux + e0;
+  ////          Real bb = Q_v(i)*bdt + e0;
+  //          for (int vir=0; vir<2; ++vir) {
+  //            Real gamir, fb;
+  //            if (vir == 0) {
+  //              gamir = gamir1;
+  //              fb = beta;
+  //            } else {
+  //              gamir = gamir2;
+  //              fb = 1.0-beta;
+  //            }
+  //            kk += -4.0*M_PI*gamir*kapr*rho*fb*boltz_sigma/M_PI*bdt;
+  //            bb += 4.0*M_PI*gamir*kapr*rho*fb*B[i]*bdt;
+  //          }
+  ////          bb += 4.0*M_PI*rho*kapJ_ir(i)*bdt;
+  //          int ierr=0;
+  //          Real e = e0;
+  //          // Newton-Raphson. A general EOS has no e = c_v T with constant c_v, so the
+  //          // iteration runs on the internal energy directly rather than on T:
+  //          // F(e) = e - kk T(e)^4 - bb, with dT/de = temp_cgs/(d c_v) since T is in K.
+  //          for (int n=0; n<100; ++n) {
+  //            Real de;
+  //            if (eos.IsGeneral()) {
+  //              Real dTde = eos.temp_cgs/(rho*eos.SpecificHeatCv(rho,e));
+  //              de = e - kk*SQR(SQR(T)) - bb;
+  //              e -= de / (1.0 - 4.0*kk*T*T*T*dTde);
+  //              T = eos.Temperature(rho,e)*eos.temp_cgs;
+  //            } else {
+  //              e = cv*T;
+  //              de = e - kk*SQR(SQR(T)) - bb;
+  //              T -= de / (cv - 4.0*kk*T*T*T);
+  //            }
+  //            if (T < 0.0) {
+  //              e = e0;
+  //              ierr = 1;
+  //              break;
+  //            }
+  //            if (fabs(de) <= 1.0e-10*e)
+  //              break;
+  //          }
+  //          Real du_src = e-e0;
+  //
+  //          Real du = (fabs(du_flux) < e0 && ierr == 1) ? du_flux : du_src;
+            Real du = du_flux;
+            u0(m,IEN,k,j,i) += du;
+          }
+  //        });
         
-//        // Sync all threads in the team so that scratch memory is consistent
-//        member.team_barrier();
+  //        // Sync all threads in the team so that scratch memory is consistent
+  //        member.team_barrier();
         
-    });
+      });
+    };
+    if (n1 <= 72) {
+      launch_grey_rt(std::integral_constant<int, 72>{});
+    } else if (n1 <= 136) {
+      launch_grey_rt(std::integral_constant<int, 136>{});
+    } else if (n1 <= 264) {
+      launch_grey_rt(std::integral_constant<int, 264>{});
+    } else if (n1 <= 520) {
+      launch_grey_rt(std::integral_constant<int, 520>{});
+    } else if (n1 <= 1032) {
+      launch_grey_rt(std::integral_constant<int, 1032>{});
+    } else {
+      std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: n1 = " << n1
+                << " exceeds the largest radial tier (1032). Add a tier to the dispatch "
+                << "in picket_fence_two_stream_RT." << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
     
     return;
 }
