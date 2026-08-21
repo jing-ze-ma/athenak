@@ -107,6 +107,28 @@ void get_init_eos(const EOS_Data &eos, const Real &Rgas, const Real &grav_acc, c
 #define RT_CACHE 0
 #endif
 
+// Run the correlated-k chain kernel's recurrence in single precision. MEASURED, and it is
+// NOT worth turning on: rt_chain 1586 -> 1542 ms per 100 cycles, 2.8 %, for a 1.7e-4
+// relative change in the net longwave flux. Kept because it is the cleanest way to show
+// that the FP64 transcendentals are not what this kernel is waiting on either.
+//
+// Accuracy, for the record: the recurrence itself is a contraction and single precision
+// handles it fine. The exposure is the NET flux, which deep down is the difference of
+// I_up and I_down when both are close to B. Measured on a real column, the flux at the
+// cut agrees to 1e-5 and the outgoing flux at the top to 1e-7; the worst level is 1.7e-4.
+#ifndef RT_FP32
+#define RT_FP32 0
+#endif
+#if RT_FP32
+using RtF = float;
+#define RT_EXPM1(x) expm1f(x)
+#define RT_EXP(x)   expf(x)
+#else
+using RtF = Real;
+#define RT_EXPM1(x) expm1(x)
+#define RT_EXP(x)   exp(x)
+#endif
+
 namespace {
 // --- blocked-band RT scaling harness (measurement only) ---------------------------
 // problem/rt_nchain: total (band, quadrature) chains to step, 4 = production picket
@@ -4203,7 +4225,7 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
           // it entirely. That was MEASURED: it cost 22 % (1585 -> 1927 ms) and moved
           // occupancy from 10.59 to 10.85 waves/CU, i.e. nothing. Scratch is not what
           // limits this kernel. Keep the column.
-          Real I_down[NC][NN];
+          RtF I_down[NC][NN];
 
           // Top: the column above the domain, using the top cell's opacity over the
           // hydrostatic column p/g -- the same construction the grey scheme uses.
@@ -4220,10 +4242,11 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
               const Real kap = ck_kappa(cklk, iT, fT, iP, fP, bandc[cc], gc[cc])
                              + kc_g(m,bandc[cc],k,j,ie+1);
               const Real dtau = kap*ptop*1.0e6/grav;
-              const Real trans = exp(-dtau/muc[cc]);
-              I_down[cc][ie+1] = (1.0-trans)*Bb_g(m,bandc[cc],k,j,ie+1);
+              const RtF trans = RT_EXP(-static_cast<RtF>(dtau/muc[cc]));
+              I_down[cc][ie+1] = (static_cast<RtF>(1.0)-trans)
+                               * static_cast<RtF>(Bb_g(m,bandc[cc],k,j,ie+1));
               tausw[cc] = dtau;               // beam already crossed the column above
-              transw[cc] = exp(-dtau*facsw);
+              transw[cc] = RT_EXP(-static_cast<RtF>(dtau*facsw));
             }
           }
           // down-sweep
@@ -4239,12 +4262,16 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
             for (int cc=0; cc<NC; ++cc) {
               const int b = bandc[cc];
               const Real kap = ck_kappa(cklk, iT, fT, iP, fP, b, gc[cc]) + kc_g(m,b,k,j,i);
-              const Real x = kap*drho/muc[cc];
-              const Real e0 = -expm1(-x);
-              const Real alp = (x > 1.0e-3) ? (e0 - 1.0 + e0/x) : (x/2.0-SQR(x)/3.0);
-              const Real bet = (x > 1.0e-3) ? (1.0 - e0/x) : (x/2.0-SQR(x)/6.0);
-              I_down[cc][i] = (1.0-e0)*I_down[cc][i+1]
-                            + alp*Bb_g(m,b,k,j,i+1) + bet*Bb_g(m,b,k,j,i);
+              const RtF x = static_cast<RtF>(kap*drho/muc[cc]);
+              const RtF e0 = -RT_EXPM1(-x);
+              const RtF one = static_cast<RtF>(1.0);
+              const RtF alp = (x > static_cast<RtF>(1.0e-3)) ? (e0 - one + e0/x)
+                                                            : (x/2 - x*x/3);
+              const RtF bet = (x > static_cast<RtF>(1.0e-3)) ? (one - e0/x)
+                                                            : (x/2 - x*x/6);
+              I_down[cc][i] = (one-e0)*I_down[cc][i+1]
+                            + alp*static_cast<RtF>(Bb_g(m,b,k,j,i+1))
+                            + bet*static_cast<RtF>(Bb_g(m,b,k,j,i));
               // Direct beam. Deposit the flux DIFFERENCE across the cell, not
               // kappa rho F exp(-tau) evaluated at one face. The latter is what the grey
               // picket fence does, and it under-deposits badly once a layer is not thin:
@@ -4256,7 +4283,7 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
               // construction, and it still reduces to the old form as dtau -> 0.
               tausw[cc] += kap*drho;
               if (lit) {
-                const Real tnew = exp(-tausw[cc]*facsw);
+                const Real tnew = RT_EXP(-static_cast<RtF>(tausw[cc]*facsw));
                 Q_v_f[i] += (1.0-albedo)*Fstar*ckswf(b)*wgc[cc]/facsw
                           * (transw[cc] - tnew)/dx1(m,k,j,i);
                 transw[cc] = tnew;
@@ -4269,12 +4296,12 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
           // delivered here as an extra band-weighted source. Below the cut nothing
           // radiative is applied -- that region is optically thick and convective, and
           // the flux simply passes through it.
-          Real I_up[NC];
+          RtF I_up[NC];
           for (int cc=0; cc<NC; ++cc) {
             const int b = bandc[cc];
             const Real Iint_b = boltz_sigma/M_PI*Tint4
                               * ck_planck_frac(ckpf, pfl0, pfid, Tint, b);
-            I_up[cc] = Bb_g(m,b,k,j,icut) + Iint_b;
+            I_up[cc] = static_cast<RtF>(Bb_g(m,b,k,j,icut) + Iint_b);
             F_ir_f[icut] += wfc[cc]*(I_up[cc] - I_down[cc][icut]);
           }
           // up-sweep
@@ -4291,12 +4318,16 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
               const int b = bandc[cc];
               const Real kap = ck_kappa(cklk, iT, fT, iP, fP, b, gc[cc])
                              + kc_g(m,b,k,j,i-1);
-              const Real x = kap*drho/muc[cc];
-              const Real e0 = -expm1(-x);
-              const Real bet = (x > 1.0e-3) ? (1.0 - e0/x) : (x/2.0-SQR(x)/6.0);
-              const Real gm = (x > 1.0e-3) ? (e0 - 1.0 + e0/x) : (x/2.0-SQR(x)/3.0);
-              I_up[cc] = (1.0-e0)*I_up[cc]
-                       + bet*Bb_g(m,b,k,j,i) + gm*Bb_g(m,b,k,j,i-1);
+              const RtF x = static_cast<RtF>(kap*drho/muc[cc]);
+              const RtF e0 = -RT_EXPM1(-x);
+              const RtF one = static_cast<RtF>(1.0);
+              const RtF bet = (x > static_cast<RtF>(1.0e-3)) ? (one - e0/x)
+                                                            : (x/2 - x*x/6);
+              const RtF gm = (x > static_cast<RtF>(1.0e-3)) ? (e0 - one + e0/x)
+                                                           : (x/2 - x*x/3);
+              I_up[cc] = (one-e0)*I_up[cc]
+                       + bet*static_cast<RtF>(Bb_g(m,b,k,j,i))
+                       + gm*static_cast<RtF>(Bb_g(m,b,k,j,i-1));
               F_ir_f[i] += wfc[cc]*(I_up[cc] - I_down[cc][i]);
             }
           }
