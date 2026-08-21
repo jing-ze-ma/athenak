@@ -40,7 +40,10 @@ x1max     = 12.54e9
 ix1_bc    = user
 ox1_bc    = user
 
-nx2       = 56
+# 64, not 56, so that every direction is a power of two and the meshblock split is free to
+# use the round numbers -- see the <meshblock> note below.  Costs 14.3% more cells than the
+# 56 this ran at previously.
+nx2       = 64
 x2min     = -1.0        # -1 lets the pgen set the full polar range
 x2max     = -1.0
 ix2_bc    = polar
@@ -199,6 +202,27 @@ ap    = 9.44e9
 Rgas  = 4.593e7                  # ignored under the general EOS; composition is the EOS's
 met   = 0.0                      # [M/H] dex; also sets the EOS's metal donors
 bbot  = 5.0e0
+
+# --- radiative transfer -----------------------------------------------------------
+# Defaults below are the shipped ones, listed explicitly because AthenaK's command-line
+# overrides only MODIFY parameters that already exist: without these lines,
+# `problem/rt_ck=true` on the command line fatals with "not found".
+rt_ck        = false             # false = grey picket fence; true = correlated-k
+ck_pcut_bar  = 10.0              # correlated-k only above this pressure; below it the
+                                 # atmosphere is optically thick (grey tau ~ 1e4 at 10 bar)
+                                 # and convective, and no radiative source is applied
+ck_nquad     = 1                 # 1 = diffusivity factor 1/1.66 (88 column solves);
+                                 # 2 = the 2-point Gauss quadrature (176)
+ck_star_teff = 6000.0            # host T_eff; the stellar spectrum is a blackbody at this
+                                 # temperature. Only its SHAPE is used -- it is renormalised
+                                 # to sigma T_irr^4 -- so nothing else about the star enters.
+                                 # 5500-6500 K is the range Tan+2024 and Parmentier+2018 use.
+# These two are resolved against the WORKING DIRECTORY, not the input file, so they are
+# only right when the run is launched from the repository root. Give absolute paths when
+# running out of a run directory or via -d. The tables are not in git: see
+# data/exo_fms_ck/PROVENANCE.md for where to fetch them.
+ck_table     = data/exo_fms_ck/ck/Premixed_1x_g8_11.txt
+ck_data_dir  = data/exo_fms_ck   # CE_tables/, cia/, ray/, sw_flux/ live here
 
 <output1>
 file_type  = hst

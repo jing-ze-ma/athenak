@@ -188,7 +188,14 @@ bool rt_ck = false;
 // problem/ck_star_teff: host effective temperature. If > 0 the stellar spectrum is a
 // blackbody at this temperature, which needs no external data since only the SHAPE is
 // used. If <= 0, problem/ck_swflux is read instead.
-Real rt_star_teff = -1.0;
+//
+// Default 6000 K, the middle of the range the ultra-hot Jupiter GCM literature actually
+// uses: Tan et al. (2024, MNRAS 528, 1016) grid over host T_eff of 5500, 6000 and 6500 K,
+// and Parmentier et al. (2018, A&A 617, A110) model WASP-121b at 6460 K. That range also
+// keeps the flux falling bluer than the grid's 0.26 um edge down to 1-3 %, which is what
+// makes the 11-band Kataria structure defensible in the first place -- an A-type host
+// would put 18-32 % outside it.
+Real rt_star_teff = 6000.0;
 // problem/ck_dump_file: write one column's RT solution -- level pressures, temperatures,
 // net longwave flux and stellar heating -- straight out of the production kernel, once, at
 // the first RT call. This exists so the kernel ITSELF can be compared against an external
@@ -1124,7 +1131,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   rt_ktab = pin->GetOrAddBoolean("problem","rt_ktab",false);
   rt_split = pin->GetOrAddBoolean("problem","rt_split",false);
   rt_ck = pin->GetOrAddBoolean("problem","rt_ck",false);
-  rt_star_teff = pin->GetOrAddReal("problem","ck_star_teff",-1.0);
+  rt_star_teff = pin->GetOrAddReal("problem","ck_star_teff",6000.0);
   rt_dump_file = pin->GetOrAddString("problem","ck_dump_file","");
   rt_dump_m = pin->GetOrAddInteger("problem","ck_dump_m",0);
   rt_dump_j = pin->GetOrAddInteger("problem","ck_dump_j",-1);
