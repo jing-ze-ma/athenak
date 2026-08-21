@@ -3961,6 +3961,70 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
       const Real pcut = rt_ck_pcut;
       const int ck_nq_ = ck_nq;
 
+      // ---- A (correlated-k): the per-cell work has NO radial dependency, so it does
+      // not belong in a per-column kernel. Splitting it out takes it from 8192 threads at
+      // 0.52 waves/CU and 2.8 % VALUBusy -- the same starvation the monolithic kernel
+      // had -- to one thread per cell. Only mu0 and the cut index are per column, and
+      // with correlated-k on, the grey optical depth sweep, the grey Planck function and
+      // the three-band Q_v that the old rt_pre computed are all dead: nothing reads them.
+      if (ck_on) {
+        par_for("rt_pre_geom", DevExeSpace(), 0, nmb1, ks, ke, js, je,
+        KOKKOS_LAMBDA(const int m, const int k, const int j) {
+          const Real x2v = x2v_(m,j);
+          const Real x3v = x3v_(m,k);
+          Real lam, phi, theta;
+          if (use_spherical_polar) {
+            theta = x2v;
+            lam = -theta+M_PI/2.0;
+            phi = x3v-M_PI;
+          } else {
+            lam = x3v*iap;
+            theta = -lam+M_PI/2.0;
+            phi = x2v*iap;
+          }
+          Real mu0 = sin(theta)*cos(phi);
+          if (test_oned) mu0 = cos(85.0/90.0*M_PI/2.0);
+          cf_g(m,k,j,3) = mu0;
+        });
+        par_for("rt_pre_tp", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
+        KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+          Real pp, TT;
+          PresTempFromEint(eos,gm1,Rgas,w0(m,IDN,k,j,i),w0(m,IEN,k,j,i),
+                           wtemp_(m,k,j,i),pp,TT);
+          T_g(m,k,j,i) = TT;
+          pb_g(m,k,j,i) = pp*1.0e-6;
+        });
+        par_for("rt_pre_cut", DevExeSpace(), 0, nmb1, ks, ke, js, je,
+        KOKKOS_LAMBDA(const int m, const int k, const int j) {
+          // i = is is the bottom, so pressure falls as i rises: the cut is the deepest
+          // cell still shallower than pcut, i.e. the first one scanning up
+          int icut = ie+1;
+          for (int i=is; i<ie+2; ++i) {
+            if (pb_g(m,k,j,i) < pcut) { icut = i; break; }
+          }
+          icut_g(m,k,j) = icut;
+        });
+        par_for("rt_pre_opac", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
+        KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+          if (i < icut_g(m,k,j)) return;          // deeper than the cut: never read
+          const Real TT = T_g(m,k,j,i);
+          const Real pbar = pb_g(m,k,j,i);
+          int iT, iP;
+          Real fT, fP;
+          ck_tp_index(cklT, ckNT, log10(TT), iT, fT);
+          ck_tp_index(cklP, ckNP, log10(pbar), iP, fP);
+          xT_g(m,k,j,i) = static_cast<Real>(iT) + fT;
+          xP_g(m,k,j,i) = static_cast<Real>(iP) + fP;
+          Real kcb[CK_NB];
+          ck_continuum(cece, celT, celP, ceNT, ceNP, cian, ciaT, ciak, rayx, ckwl,
+                       TT, pbar, w0(m,IDN,k,j,i), kcb);
+          const Real sigT4_pi = boltz_sigma/M_PI*SQR(SQR(TT));
+          for (int b=0; b<CK_NB; ++b) {
+            kc_g(m,b,k,j,i) = kcb[b];
+            Bb_g(m,b,k,j,i) = sigT4_pi*ck_planck_frac(ckpf, pfl0, pfid, TT, b);
+          }
+        });
+      } else {
       // ---- A: chain-independent per-column precompute -----------------------------
       par_for("rt_pre", DevExeSpace(), 0, nmb1, ks, ke, js, je,
       KOKKOS_LAMBDA(const int m, const int k, const int j) {
@@ -4065,53 +4129,8 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
         cf_g(m,k,j,1) = gamir2;
         cf_g(m,k,j,2) = beta;
         cf_g(m,k,j,3) = mu0;
-
-        if (ck_on) {
-          // Everything the chain kernel needs that depends only on the cell: T, p, the
-          // band Planck functions and the continuum. The continuum in particular returns
-          // all CK_NB bands at once, so computing it here rather than per chain block
-          // avoids repeating it nblk times per cell.
-          // i = is is the BOTTOM of the column and i = ie+1 the top, so pressure falls
-          // as i rises. The cut is the deepest cell still shallower than pcut, i.e. the
-          // first one found scanning up from the bottom.
-          int icut = ie+1;
-          bool found = false;
-          for (int i=is; i<ie+2; ++i) {
-            Real rho = w0(m,IDN,k,j,i);
-            Real pp, TT;
-            PresTempFromEint(eos,gm1,Rgas,rho,w0(m,IEN,k,j,i),wtemp_(m,k,j,i),pp,TT);
-            const Real pbar = pp*1.0e-6;
-            T_g(m,k,j,i) = TT;
-            pb_g(m,k,j,i) = pbar;
-            if (!found && pbar < pcut) { icut = i; found = true; }
-          }
-          icut_g(m,k,j) = icut;
-          // Second pass, only over the correlated-k region. The continuum is by far the
-          // most expensive thing here -- four CIA searches, H- and eleven bands -- so
-          // building it for the deep column too would be a third of it wasted. The table
-          // index is hoisted here as well: it depends only on the cell, and recomputing
-          // it inside the chain kernel would repeat both searches once per block.
-          for (int i=icut; i<ie+2; ++i) {
-            const Real rho = w0(m,IDN,k,j,i);
-            const Real TT = T_g(m,k,j,i);
-            const Real pbar = pb_g(m,k,j,i);
-            int iT, iP;
-            Real fT, fP;
-            ck_tp_index(cklT, ckNT, log10(TT), iT, fT);
-            ck_tp_index(cklP, ckNP, log10(pbar), iP, fP);
-            xT_g(m,k,j,i) = static_cast<Real>(iT) + fT;
-            xP_g(m,k,j,i) = static_cast<Real>(iP) + fP;
-            Real kcb[CK_NB];
-            ck_continuum(cece, celT, celP, ceNT, ceNP, cian, ciaT, ciak, rayx, ckwl,
-                         TT, pbar, rho, kcb);
-            const Real sigT4_pi = boltz_sigma/M_PI*SQR(SQR(TT));
-            for (int b=0; b<CK_NB; ++b) {
-              kc_g(m,b,k,j,i) = kcb[b];
-              Bb_g(m,b,k,j,i) = sigT4_pi*ck_planck_frac(ckpf, pfl0, pfid, TT, b);
-            }
-          }
-        }
       });
+      }
 
       // ---- B (correlated-k): one thread per (column, chain block) ------------------
       // Chain c decodes as c = ((band*CK_NG) + g)*2 + quad, so a block of RT_NB = 4
@@ -4165,6 +4184,11 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
             // double-count the incident flux
             wgc[cc] = ckgw(gc[cc])/static_cast<Real>(ck_nq_);
           }
+          // Storing the intensity column costs 2304 bytes of scratch per thread, and
+          // accumulating each sweep's flux contribution separately instead would remove
+          // it entirely. That was MEASURED: it cost 22 % (1585 -> 1927 ms) and moved
+          // occupancy from 10.59 to 10.85 waves/CU, i.e. nothing. Scratch is not what
+          // limits this kernel. Keep the column.
           Real I_down[NC][NN];
 
           // Top: the column above the domain, using the top cell's opacity over the
