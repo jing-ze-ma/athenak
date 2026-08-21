@@ -4013,6 +4013,11 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
         Real trans1 = exp(-gamv1*tau_down_r_f[ie+1]*fac);
         Real trans2 = exp(-gamv2*tau_down_r_f[ie+1]*fac);
         Real trans3 = exp(-gamv3*tau_down_r_f[ie+1]*fac);
+        // beam transmission at the face ABOVE the cell being filled, carried down the
+        // sweep so that differencing the flux across a cell costs no extra exp
+        Real trp1 = trans1;
+        Real trp2 = trans2;
+        Real trp3 = trans3;
 //        F_v_down_f[ie+1] = (1.0-albedo)*Fstar*mus*1.0/3.0*(trans1+trans2+trans3);
 //        F_v_down_f(ie+1) = (mu0 > 0.0)? F_v_down_f(ie+1) : 0.0;
         // down-sweep
@@ -4039,8 +4044,22 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
 //          Real trans3 = exp(-gamv3*tausl);
 //          F_v_down_f[i] = (1.0-albedo)*Fstar*mus*1.0/3.0*(trans1+trans2+trans3);
           Real mucr = 0.0; //sqrt(1.0-SQR(r0/r));
-          Real Qv = kapr*rho*(1.0-albedo)*Fstar*1.0/3.0*(gamv1*trans1+gamv2*trans2+gamv3*trans3);
+          // Deposit the flux DIFFERENCE across the cell. The old form,
+          // kappa rho F exp(-tau) with tau at the lower face, is right only for a thin
+          // layer: it returns u e^-u / (1 - e^-u) of what the cell actually absorbs, with
+          // u = dtau/mu, which is 0.95 at u = 0.1 but 0.58 at u = 1. On this grid, about
+          // 0.46 scale heights per cell, that put dtau/mu near one wherever it mattered
+          // and lost about 24 % of the incident stellar flux. Found by comparing the
+          // correlated-k version of the same expression against Exo-FMS on an identical
+          // column. Written this way the column integral telescopes to
+          // mu F (1 - e^-tau_total) exactly, and it still reduces to the old expression
+          // as dtau -> 0.
+          Real Qv = (1.0-albedo)*Fstar*(1.0/3.0)
+                  * ((trp1-trans1)+(trp2-trans2)+(trp3-trans3))/(fac*dr);
           Q_v[i] = (mu0 > -mucr) ? Qv : 0.0;
+          trp1 = trans1;
+          trp2 = trans2;
+          trp3 = trans3;
         }
         cf_g(m,k,j,0) = gamir1;
         cf_g(m,k,j,1) = gamir2;
@@ -4503,6 +4522,11 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
         Real trans1 = exp(-gamv1*tau_down_r_f[ie+1]*fac);
         Real trans2 = exp(-gamv2*tau_down_r_f[ie+1]*fac);
         Real trans3 = exp(-gamv3*tau_down_r_f[ie+1]*fac);
+        // beam transmission at the face ABOVE the cell being filled, carried down the
+        // sweep so that differencing the flux across a cell costs no extra exp
+        Real trp1 = trans1;
+        Real trp2 = trans2;
+        Real trp3 = trans3;
 //        F_v_down_f[ie+1] = (1.0-albedo)*Fstar*mus*1.0/3.0*(trans1+trans2+trans3);
 //        F_v_down_f(ie+1) = (mu0 > 0.0)? F_v_down_f(ie+1) : 0.0;
         // down-sweep
@@ -4529,8 +4553,22 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
 //          Real trans3 = exp(-gamv3*tausl);
 //          F_v_down_f[i] = (1.0-albedo)*Fstar*mus*1.0/3.0*(trans1+trans2+trans3);
           Real mucr = 0.0; //sqrt(1.0-SQR(r0/r));
-          Real Qv = kapr*rho*(1.0-albedo)*Fstar*1.0/3.0*(gamv1*trans1+gamv2*trans2+gamv3*trans3);
+          // Deposit the flux DIFFERENCE across the cell. The old form,
+          // kappa rho F exp(-tau) with tau at the lower face, is right only for a thin
+          // layer: it returns u e^-u / (1 - e^-u) of what the cell actually absorbs, with
+          // u = dtau/mu, which is 0.95 at u = 0.1 but 0.58 at u = 1. On this grid, about
+          // 0.46 scale heights per cell, that put dtau/mu near one wherever it mattered
+          // and lost about 24 % of the incident stellar flux. Found by comparing the
+          // correlated-k version of the same expression against Exo-FMS on an identical
+          // column. Written this way the column integral telescopes to
+          // mu F (1 - e^-tau_total) exactly, and it still reduces to the old expression
+          // as dtau -> 0.
+          Real Qv = (1.0-albedo)*Fstar*(1.0/3.0)
+                  * ((trp1-trans1)+(trp2-trans2)+(trp3-trans3))/(fac*dr);
           Q_v[i] = (mu0 > -mucr) ? Qv : 0.0;
+          trp1 = trans1;
+          trp2 = trans2;
+          trp3 = trans3;
         }
         
         // 2 IR Bands x two quadrature points, interleaved, in blocks of NC.
