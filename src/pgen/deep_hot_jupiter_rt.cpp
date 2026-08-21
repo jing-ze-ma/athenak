@@ -133,6 +133,17 @@ DvceArray4D<Real> *rt_Qv_ptr = nullptr;    // (m,k,j,i) stellar heating rate
 DvceArray4D<Real> *rt_cf_ptr = nullptr;    // (m,k,j,{gamir1,gamir2,beta})
 DvceArray5D<Real> *rt_Fb_ptr = nullptr;    // (m,blk,k,j,i) IR flux, one slot per block
 
+// Correlated-k per-cell fields, filled by rt_pre and read by the chain kernel. Laid out
+// (m,band,k,j,i) so that the radial index is contiguous for a thread sweeping one band --
+// (m,k,j,i,band) would stride every read of the sweep by CK_NB.
+DvceArray5D<Real> *rt_kc_ptr = nullptr;    // (m,b,k,j,i) continuum kappa [cm^2/g]
+DvceArray5D<Real> *rt_Bb_ptr = nullptr;    // (m,b,k,j,i) band Planck intensity
+DvceArray4D<Real> *rt_T_ptr = nullptr;     // (m,k,j,i) temperature [K]
+DvceArray4D<Real> *rt_pb_ptr = nullptr;    // (m,k,j,i) pressure [bar]
+DvceArray4D<Real> *rt_xT_ptr = nullptr;    // (m,k,j,i) continuous k-table index in T
+DvceArray4D<Real> *rt_xP_ptr = nullptr;    // (m,k,j,i) continuous k-table index in p
+DvceArray3D<int>  *rt_icut_ptr = nullptr;  // (m,k,j) deepest cell doing correlated-k
+
 // --- correlated-k (Lee/Exo-FMS premixed tables, Kataria+2013 11-band grid) --------
 // problem/rt_ck turns it on; problem/ck_table is the path to the premixed table and
 // problem/ck_pcut_bar the pressure below which correlated-k is used at all (deeper than
@@ -152,7 +163,16 @@ int ck_nP = 0;
 // would be destroyed after Kokkos::finalize().
 DvceArray1D<Real> *ck_lT_ptr = nullptr;    // log10 T grid [K]
 DvceArray1D<Real> *ck_lP_ptr = nullptr;    // log10 p grid [bar]
-DvceArray4D<Real> *ck_lk_ptr = nullptr;    // (iT,iP,b,g) log10 kappa [cm^2/g], g fastest
+// Layout is (band, g, iT, iP): for one chain the entire (T,p) plane is contiguous and only
+// 38*34*8 = 10 kB, so the four bilinear corners sit 8 and 272 bytes apart rather than the
+// 704 bytes and 24 kB that (iT,iP,band,g) would give.
+//
+// This was expected to be worth about a factor of two in the chain kernel. It was MEASURED
+// AND IT IS NOT: 2725 -> 2711 ms per 100 cycles, half a per cent. The k-table access
+// pattern is simply not the bottleneck, which is the same answer an earlier experiment
+// with a synthetic table gave when it blocked the lookup by band and gained nothing.
+// The layout is kept because it is the more natural one, not because it is faster.
+DvceArray4D<Real> *ck_lk_ptr = nullptr;    // (b,g,iT,iP) log10 kappa [cm^2/g]
 DvceArray1D<Real> *ck_gw_ptr = nullptr;    // g-point weights, sum to 1
 DvceArray1D<Real> *ck_wl_ptr = nullptr;    // band edges [um], descending, CK_NB+1 of them
 
@@ -264,6 +284,21 @@ void build_planck_fractions() {
 //  Planck INTENSITY sigma T^4 / pi split across the bands. Linear in log10 T on a uniform
 //  grid, so the index is analytic and there is no search.
 
+//----------------------------------------------------------------------------------------
+//! \fn Real ck_planck_frac()
+//  \brief f_b(T) for a single band. Uniform log10 T grid, so the index is arithmetic.
+
+KOKKOS_INLINE_FUNCTION
+Real ck_planck_frac(const DvceArray2D<Real> &pf, const Real lTmin, const Real idlT,
+                    const Real &T, const int b) {
+  Real x = (log10(T) - lTmin)*idlT;
+  x = (x < 0.0) ? 0.0 : ((x > CK_NPF-1.0) ? CK_NPF-1.0 : x);
+  int i = static_cast<int>(x);
+  i = (i > CK_NPF-2) ? CK_NPF-2 : i;
+  const Real f = x - static_cast<Real>(i);
+  return (1.0-f)*pf(i,b) + f*pf(i+1,b);
+}
+
 KOKKOS_INLINE_FUNCTION
 void ck_planck_bands(const DvceArray2D<Real> &pf, const Real lTmin, const Real idlT,
                      const Real &sigT4_pi, const Real &T, Real (&Bb)[CK_NB]) {
@@ -309,7 +344,7 @@ void read_ck_table(const std::string &fname) {
   ck_nP = nP;
   ck_lT_ptr = new DvceArray1D<Real>("ck_lT", nT);
   ck_lP_ptr = new DvceArray1D<Real>("ck_lP", nP);
-  ck_lk_ptr = new DvceArray4D<Real>("ck_lk", nT, nP, CK_NB, CK_NG);
+  ck_lk_ptr = new DvceArray4D<Real>("ck_lk", CK_NB, CK_NG, nT, nP);
   ck_gw_ptr = new DvceArray1D<Real>("ck_gw", CK_NG);
   ck_wl_ptr = new DvceArray1D<Real>("ck_wl", CK_NB+1);
   auto hlT = Kokkos::create_mirror_view(*ck_lT_ptr);
@@ -343,7 +378,7 @@ void read_ck_table(const std::string &fname) {
       for (int b=0; b<CK_NB; ++b) {
         for (int g=0; g<CK_NG; ++g) {
           f >> v;
-          hlk(i,j,b,g) = std::log10((v > 1.0e-99) ? v : 1.0e-99);
+          hlk(b,g,i,j) = std::log10((v > 1.0e-99) ? v : 1.0e-99);
         }
       }
     }
@@ -576,10 +611,10 @@ void ck_tp_index(const DvceArray1D<Real> &lg, const int n, const Real &x,
 KOKKOS_INLINE_FUNCTION
 Real ck_kappa(const DvceArray4D<Real> &lk, const int iT, const Real &fT,
               const int iP, const Real &fP, const int b, const int g) {
-  const Real k00 = lk(iT  , iP  , b, g);
-  const Real k01 = lk(iT  , iP+1, b, g);
-  const Real k10 = lk(iT+1, iP  , b, g);
-  const Real k11 = lk(iT+1, iP+1, b, g);
+  const Real k00 = lk(b, g, iT  , iP  );
+  const Real k01 = lk(b, g, iT  , iP+1);
+  const Real k10 = lk(b, g, iT+1, iP  );
+  const Real k11 = lk(b, g, iT+1, iP+1);
   const Real lkap = (1.0-fT)*((1.0-fP)*k00 + fP*k01)
                   +      fT *((1.0-fP)*k10 + fP*k11);
   return exp(2.302585092994046*lkap);       // 10^lkap
@@ -693,14 +728,19 @@ void ck_continuum(const DvceArray3D<Real> &ce, const DvceArray1D<Real> &celT,
       Real xbf = 0.0;
       if (lam < lam0) {
         const Real dk = 1.0/lam - 1.0/lam0;
+        // exponents are n/2, so walk them with a running sqrt instead of six pow()s
+        const Real sdk = sqrt(dk);
+        Real dp = 1.0;
         Real fbf = 0.0;
-        for (int n=0; n<6; ++n) fbf += Cbf[n]*pow(dk, 0.5*n);
-        xbf = 1.0e-18*lam*lam*lam*pow(dk, 1.5)*fbf;
+        for (int n=0; n<6; ++n) { fbf += Cbf[n]*dp; dp *= sdk; }
+        xbf = 1.0e-18*lam*lam*lam*(dk*sdk)*fbf;
       }
       // free-free
       Real sff = 0.0;
       if (lam >= 0.3645 || (lam > 0.1823 && lam < 0.3645)) {
         const bool set2 = (lam >= 0.3645);
+        const Real st = sqrt(T5040);
+        Real tp = T5040;                     // exponent (n+2)/2, walked by sqrt(T5040)
         for (int n=0; n<6; ++n) {
           const Real An = set2 ? Aff2[n] : Aff1[n];
           const Real Bn = set2 ? Bff2[n] : Bff1[n];
@@ -708,8 +748,9 @@ void ck_continuum(const DvceArray3D<Real> &ce, const DvceArray1D<Real> &celT,
           const Real Dn = set2 ? Dff2[n] : Dff1[n];
           const Real En = set2 ? Eff2[n] : Eff1[n];
           const Real Fn = set2 ? Fff2[n] : Fff1[n];
-          sff += pow(T5040, 0.5*(n+2))*(lam*lam*An + Bn + Cn/lam
+          sff += tp*(lam*lam*An + Bn + Cn/lam
                  + Dn/(lam*lam) + En/(lam*lam*lam) + Fn/(lam*lam*lam*lam));
+          tp *= st;
         }
       }
       // xbf is cm^2 per H-, sff*1e-29 is cm^4/dyne and multiplies P(e-) n(H)
@@ -870,6 +911,15 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     read_ck_continuum(pin->GetOrAddString("problem","ck_data_dir",
                                           "data/exo_fms_ck"));
     ck_selftest();
+    // The chain set is fixed by the table once correlated-k is on: every (band, g-point)
+    // for each of the two Gauss points of the two-stream angular quadrature. Note this is
+    // TWICE the 88 usually quoted for an 11 x 8 scheme -- 88 counts band x g, and this
+    // kernel also carries the 2-point angular quadrature the picket fence uses.
+    rt_nchain = CK_NB*CK_NG*2;
+    if (global_variable::my_rank == 0) {
+      std::cout << "  " << CK_NB << " bands x " << CK_NG << " g-points x 2 quadrature "
+                << "points = " << rt_nchain << " column solves per cell" << std::endl;
+    }
   }
   if (rt_nchain < 4) rt_nchain = 4;
   if (rt_ktab_ptr == nullptr) {
@@ -882,9 +932,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       // order-unity, smooth in (T,p), different per chain
       ktab(c,it,ip) = 0.1 + 0.45*(1.0 + sin(0.11*c + 0.3*it)*cos(0.2*ip + 0.07*c));
     });
+    const bool ckon = rt_ck;
+    auto ckgw = (rt_ck) ? *ck_gw_ptr : DvceArray1D<Real>("dummy", 1);
     par_for("rt_wgt_init", DevExeSpace(), 0, rt_nchain-1,
     KOKKOS_LAMBDA(const int c) {
       rtwgt(c) = (c < 4) ? 1.0 : 0.0;
+      if (ckon) rtwgt(c) = ckgw((c/2) % CK_NG);   // correlated-k: the g-point weight
     });
     if (global_variable::my_rank == 0 && rt_nchain > 4) {
       std::cout << "deep_hot_jupiter_rt: RT scaling harness active, " << rt_nchain
@@ -3680,6 +3733,15 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
         rt_Qv_ptr  = new DvceArray4D<Real>("rt_Qv",  nmb, n3, n2, n1);
         rt_cf_ptr  = new DvceArray4D<Real>("rt_cf",  nmb, n3, n2, 3);
         rt_Fb_ptr  = new DvceArray5D<Real>("rt_Fb",  nmb, nblk, n3, n2, n1);
+        if (rt_ck) {
+          rt_kc_ptr = new DvceArray5D<Real>("rt_kc", nmb, CK_NB, n3, n2, n1);
+          rt_Bb_ptr = new DvceArray5D<Real>("rt_Bb", nmb, CK_NB, n3, n2, n1);
+          rt_T_ptr  = new DvceArray4D<Real>("rt_T",  nmb, n3, n2, n1);
+          rt_pb_ptr = new DvceArray4D<Real>("rt_pb", nmb, n3, n2, n1);
+          rt_xT_ptr = new DvceArray4D<Real>("rt_xT", nmb, n3, n2, n1);
+          rt_xP_ptr = new DvceArray4D<Real>("rt_xP", nmb, n3, n2, n1);
+          rt_icut_ptr = new DvceArray3D<int>("rt_icut", nmb, n3, n2);
+        }
         if (global_variable::my_rank == 0) {
           std::cout << "deep_hot_jupiter_rt: RT split path ON, " << nblk
                     << " chain block(s) of " << NC << " -> "
@@ -3692,6 +3754,34 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
       auto Qv_g  = *rt_Qv_ptr;
       auto cf_g  = *rt_cf_ptr;
       auto Fb_g  = *rt_Fb_ptr;
+      const bool ck_on = rt_ck;
+      auto kc_g   = (ck_on) ? *rt_kc_ptr : Fb_g;
+      auto Bb_g   = (ck_on) ? *rt_Bb_ptr : Fb_g;
+      auto T_g    = (ck_on) ? *rt_T_ptr  : tau_g;
+      auto pb_g   = (ck_on) ? *rt_pb_ptr : tau_g;
+      auto xT_g   = (ck_on) ? *rt_xT_ptr : tau_g;
+      auto xP_g   = (ck_on) ? *rt_xP_ptr : tau_g;
+      auto icut_g = (ck_on) ? *rt_icut_ptr : DvceArray3D<int>("dummy",1,1,1);
+      auto cklk = (ck_on) ? *ck_lk_ptr : DvceArray4D<Real>("d",1,1,1,1);
+      auto cklT = (ck_on) ? *ck_lT_ptr : DvceArray1D<Real>("d",1);
+      auto cklP = (ck_on) ? *ck_lP_ptr : DvceArray1D<Real>("d",1);
+      auto ckgw = (ck_on) ? *ck_gw_ptr : DvceArray1D<Real>("d",1);
+      auto ckwl = (ck_on) ? *ck_wl_ptr : DvceArray1D<Real>("d",1);
+      auto ckpf = (ck_on) ? *ck_pf_ptr : DvceArray2D<Real>("d",1,1);
+      auto cece = (ck_on) ? *ce_ptr : DvceArray3D<Real>("d",1,1,1);
+      auto celT = (ck_on) ? *ce_lT_ptr : DvceArray1D<Real>("d",1);
+      auto celP = (ck_on) ? *ce_lP_ptr : DvceArray1D<Real>("d",1);
+      auto cian = (ck_on) ? *cia_nT_ptr : DvceArray1D<int>("d",1);
+      auto ciaT = (ck_on) ? *cia_T_ptr : DvceArray2D<Real>("d",1,1);
+      auto ciak = (ck_on) ? *cia_k_ptr : DvceArray3D<Real>("d",1,1,1);
+      auto rayx = (ck_on) ? *ray_x_ptr : DvceArray2D<Real>("d",1,1);
+      const int ckNT = ck_nT;
+      const int ckNP = ck_nP;
+      const int ceNT = ce_nT;
+      const int ceNP = ce_nP;
+      const Real pfl0 = ck_pf_lTmin;
+      const Real pfid = ck_pf_idlT;
+      const Real pcut = rt_ck_pcut;
 
       // ---- A: chain-independent per-column precompute -----------------------------
       par_for("rt_pre", DevExeSpace(), 0, nmb1, ks, ke, js, je,
@@ -3777,9 +3867,166 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
         cf_g(m,k,j,0) = gamir1;
         cf_g(m,k,j,1) = gamir2;
         cf_g(m,k,j,2) = beta;
+
+        if (ck_on) {
+          // Everything the chain kernel needs that depends only on the cell: T, p, the
+          // band Planck functions and the continuum. The continuum in particular returns
+          // all CK_NB bands at once, so computing it here rather than per chain block
+          // avoids repeating it nblk times per cell.
+          // i = is is the BOTTOM of the column and i = ie+1 the top, so pressure falls
+          // as i rises. The cut is the deepest cell still shallower than pcut, i.e. the
+          // first one found scanning up from the bottom.
+          int icut = ie+1;
+          bool found = false;
+          for (int i=is; i<ie+2; ++i) {
+            Real rho = w0(m,IDN,k,j,i);
+            Real pp, TT;
+            PresTempFromEint(eos,gm1,Rgas,rho,w0(m,IEN,k,j,i),wtemp_(m,k,j,i),pp,TT);
+            const Real pbar = pp*1.0e-6;
+            T_g(m,k,j,i) = TT;
+            pb_g(m,k,j,i) = pbar;
+            if (!found && pbar < pcut) { icut = i; found = true; }
+          }
+          icut_g(m,k,j) = icut;
+          // Second pass, only over the correlated-k region. The continuum is by far the
+          // most expensive thing here -- four CIA searches, H- and eleven bands -- so
+          // building it for the deep column too would be a third of it wasted. The table
+          // index is hoisted here as well: it depends only on the cell, and recomputing
+          // it inside the chain kernel would repeat both searches once per block.
+          for (int i=icut; i<ie+2; ++i) {
+            const Real rho = w0(m,IDN,k,j,i);
+            const Real TT = T_g(m,k,j,i);
+            const Real pbar = pb_g(m,k,j,i);
+            int iT, iP;
+            Real fT, fP;
+            ck_tp_index(cklT, ckNT, log10(TT), iT, fT);
+            ck_tp_index(cklP, ckNP, log10(pbar), iP, fP);
+            xT_g(m,k,j,i) = static_cast<Real>(iT) + fT;
+            xP_g(m,k,j,i) = static_cast<Real>(iP) + fP;
+            Real kcb[CK_NB];
+            ck_continuum(cece, celT, celP, ceNT, ceNP, cian, ciaT, ciak, rayx, ckwl,
+                         TT, pbar, rho, kcb);
+            const Real sigT4_pi = boltz_sigma/M_PI*SQR(SQR(TT));
+            for (int b=0; b<CK_NB; ++b) {
+              kc_g(m,b,k,j,i) = kcb[b];
+              Bb_g(m,b,k,j,i) = sigT4_pi*ck_planck_frac(ckpf, pfl0, pfid, TT, b);
+            }
+          }
+        }
       });
 
-      // ---- B: one thread per (column, chain block) --------------------------------
+      // ---- B (correlated-k): one thread per (column, chain block) ------------------
+      // Chain c decodes as c = ((band*CK_NG) + g)*2 + quad, so a block of RT_NB = 4
+      // consecutive chains is two g-points x two angular quadrature points of ONE band,
+      // which is what lets the block share a band's continuum and Planck function.
+      //
+      // The longwave needs no cumulative optical depth: dtau is kappa*rho*dr, purely
+      // local, so going from a grey tau scaled by gamma to a per-chain kappa is a lookup
+      // and nothing structural. Only the sweep's lower limit changes, from is to icut.
+      if (ck_on) {
+        par_for("rt_chain_ck", DevExeSpace(), 0, nmb1, 0, nblk-1, ks, ke, js, je,
+        KOKKOS_LAMBDA(const int m, const int blk, const int k, const int j) {
+          constexpr int NC = RT_NB;
+          constexpr int NN = RT_NNC;
+          auto F_ir_f = Kokkos::subview(Fb_g, m, blk, k, j, Kokkos::ALL);
+          for (int i=is; i<ie+2; ++i) F_ir_f[i] = 0.0;
+          const int icut = icut_g(m,k,j);
+          if (icut > ie) return;                  // whole column deeper than the cut
+
+          int bandc[NC], gc[NC];
+          Real muc[NC], wqc[NC], wgc[NC];
+          for (int cc=0; cc<NC; ++cc) {
+            const int c = blk*NC + cc;
+            const int nq = c % 2;
+            gc[cc] = (c/2) % CK_NG;
+            bandc[cc] = c/(2*CK_NG);
+            muc[cc] = mug[nq];
+            wqc[cc] = wg[nq];
+            wgc[cc] = ckgw(gc[cc]);
+          }
+          Real I_down[NC][NN];
+
+          // Top: the column above the domain, using the top cell's opacity over the
+          // hydrostatic column p/g -- the same construction the grey scheme uses.
+          {
+            const Real Ttop = T_g(m,k,j,ie+1);
+            const Real ptop = pb_g(m,k,j,ie+1);
+            int iT, iP;
+            Real fT, fP;
+            const Real xTv = xT_g(m,k,j,ie+1);
+            const Real xPv = xP_g(m,k,j,ie+1);
+            iT = static_cast<int>(xTv); fT = xTv - static_cast<Real>(iT);
+            iP = static_cast<int>(xPv); fP = xPv - static_cast<Real>(iP);
+            for (int cc=0; cc<NC; ++cc) {
+              const Real kap = ck_kappa(cklk, iT, fT, iP, fP, bandc[cc], gc[cc])
+                             + kc_g(m,bandc[cc],k,j,ie+1);
+              const Real dtau = kap*ptop*1.0e6/grav;
+              const Real trans = exp(-dtau/muc[cc]);
+              I_down[cc][ie+1] = (1.0-trans)*Bb_g(m,bandc[cc],k,j,ie+1);
+            }
+          }
+          // down-sweep
+          for (int i=ie; i>icut-1; --i) {
+            const Real rho = w0(m,IDN,k,j,i);
+            const Real drho = rho*dx1(m,k,j,i);
+            int iT, iP;
+            Real fT, fP;
+            const Real xTv = xT_g(m,k,j,i);
+            const Real xPv = xP_g(m,k,j,i);
+            iT = static_cast<int>(xTv); fT = xTv - static_cast<Real>(iT);
+            iP = static_cast<int>(xPv); fP = xPv - static_cast<Real>(iP);
+            for (int cc=0; cc<NC; ++cc) {
+              const int b = bandc[cc];
+              const Real kap = ck_kappa(cklk, iT, fT, iP, fP, b, gc[cc]) + kc_g(m,b,k,j,i);
+              const Real x = kap*drho/muc[cc];
+              const Real e0 = -expm1(-x);
+              const Real alp = (x > 1.0e-3) ? (e0 - 1.0 + e0/x) : (x/2.0-SQR(x)/3.0);
+              const Real bet = (x > 1.0e-3) ? (1.0 - e0/x) : (x/2.0-SQR(x)/6.0);
+              I_down[cc][i] = (1.0-e0)*I_down[cc][i+1]
+                            + alp*Bb_g(m,b,k,j,i+1) + bet*Bb_g(m,b,k,j,i);
+            }
+          }
+          // Bottom of the CORRELATED-K DOMAIN, not of the column. At the cut the grey
+          // optical depth is of order 1e4, so the layer is thermalised to e^-tau and the
+          // upward intensity is its own Planck function; the planet's internal flux is
+          // delivered here as an extra band-weighted source. Below the cut nothing
+          // radiative is applied -- that region is optically thick and convective, and
+          // the flux simply passes through it.
+          Real I_up[NC];
+          for (int cc=0; cc<NC; ++cc) {
+            const int b = bandc[cc];
+            const Real Iint_b = boltz_sigma/M_PI*Tint4
+                              * ck_planck_frac(ckpf, pfl0, pfid, Tint, b);
+            I_up[cc] = Bb_g(m,b,k,j,icut) + Iint_b;
+            const Real w = 2.0*M_PI*wqc[cc]*muc[cc]*wgc[cc];
+            F_ir_f[icut] += w*(I_up[cc] - I_down[cc][icut]);
+          }
+          // up-sweep
+          for (int i=icut+1; i<ie+2; ++i) {
+            const Real rho = w0(m,IDN,k,j,i-1);
+            const Real drho = rho*dx1(m,k,j,i-1);
+            int iT, iP;
+            Real fT, fP;
+            const Real xTv = xT_g(m,k,j,i-1);
+            const Real xPv = xP_g(m,k,j,i-1);
+            iT = static_cast<int>(xTv); fT = xTv - static_cast<Real>(iT);
+            iP = static_cast<int>(xPv); fP = xPv - static_cast<Real>(iP);
+            for (int cc=0; cc<NC; ++cc) {
+              const int b = bandc[cc];
+              const Real kap = ck_kappa(cklk, iT, fT, iP, fP, b, gc[cc])
+                             + kc_g(m,b,k,j,i-1);
+              const Real x = kap*drho/muc[cc];
+              const Real e0 = -expm1(-x);
+              const Real bet = (x > 1.0e-3) ? (1.0 - e0/x) : (x/2.0-SQR(x)/6.0);
+              const Real gm = (x > 1.0e-3) ? (e0 - 1.0 + e0/x) : (x/2.0-SQR(x)/3.0);
+              I_up[cc] = (1.0-e0)*I_up[cc]
+                       + bet*Bb_g(m,b,k,j,i) + gm*Bb_g(m,b,k,j,i-1);
+              const Real w = 2.0*M_PI*wqc[cc]*muc[cc]*wgc[cc];
+              F_ir_f[i] += w*(I_up[cc] - I_down[cc][i]);
+            }
+          }
+        });
+      } else {
       par_for("rt_chain", DevExeSpace(), 0, nmb1, 0, nblk-1, ks, ke, js, je,
       KOKKOS_LAMBDA(const int m, const int blk, const int k, const int j) {
         constexpr int NN = RT_NNC;
@@ -3893,6 +4140,7 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
             }
           }
       });
+      }
 
       // ---- C: reduce over blocks in order, then apply ------------------------------
       par_for("rt_apply", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
@@ -3903,6 +4151,7 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
           Fb += Fb_g(m,b,k,j,i);
         }
         Real src = -(Ft-Fb)/dx1(m,k,j,i);
+        if (ck_on && i < icut_g(m,k,j)) src = 0.0;   // deeper than the cut: no IR source
         src += Qv_g(m,k,j,i);
         u0(m,IEN,k,j,i) += src*bdt;
       });
