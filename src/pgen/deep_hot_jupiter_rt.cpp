@@ -11,6 +11,8 @@
 // C++ headers
 #include <cmath>
 #include <iostream> // cout
+#include <fstream>  // ifstream, for the correlated-k table
+#include <string>
 
 // Athena++ headers
 #include "athena.hpp"
@@ -131,6 +133,146 @@ DvceArray4D<Real> *rt_Qv_ptr = nullptr;    // (m,k,j,i) stellar heating rate
 DvceArray4D<Real> *rt_cf_ptr = nullptr;    // (m,k,j,{gamir1,gamir2,beta})
 DvceArray5D<Real> *rt_Fb_ptr = nullptr;    // (m,blk,k,j,i) IR flux, one slot per block
 
+// --- correlated-k (Lee/Exo-FMS premixed tables, Kataria+2013 11-band grid) --------
+// problem/rt_ck turns it on; problem/ck_table is the path to the premixed table and
+// problem/ck_pcut_bar the pressure below which correlated-k is used at all (deeper than
+// that the atmosphere is optically thick -- grey tau ~ 9e3 at 10 bar for this setup --
+// and the interior is far outside any molecular table, up to 12000 K).
+//
+// Table layout and the traps it carries are documented in data/exo_fms_ck/PROVENANCE.md.
+// The two that matter here: the data block runs the band index BACKWARDS, and kappa is
+// cgs cm^2/g, which is what this code already works in.
+bool rt_ck = false;
+Real rt_ck_pcut = 10.0;                    // bar
+constexpr int CK_NB = 11;                  // bands, fixed by the Kataria grid
+constexpr int CK_NG = 8;                   // g-points per band, fixed by the table
+int ck_nT = 0;
+int ck_nP = 0;
+// Deliberately leaked, as with the other tables here: a namespace-scope Kokkos View
+// would be destroyed after Kokkos::finalize().
+DvceArray1D<Real> *ck_lT_ptr = nullptr;    // log10 T grid [K]
+DvceArray1D<Real> *ck_lP_ptr = nullptr;    // log10 p grid [bar]
+DvceArray4D<Real> *ck_lk_ptr = nullptr;    // (iT,iP,b,g) log10 kappa [cm^2/g], g fastest
+DvceArray1D<Real> *ck_gw_ptr = nullptr;    // g-point weights, sum to 1
+DvceArray1D<Real> *ck_wl_ptr = nullptr;    // band edges [um], descending, CK_NB+1 of them
+
+//----------------------------------------------------------------------------------------
+//! \fn void read_ck_table()
+//  \brief host-side reader for the Exo-FMS premixed correlated-k table (the HELIOS-k
+//  format, ck_form == 2 in Exo-FMS's src/ck_opacity_mod.f90). Everything past the first
+//  line is whitespace-separated numbers, so it is read as one token stream.
+//
+//  kappa is stored as log10 with a 1e-99 floor, and the T and p grids as log10, because
+//  that is the space the interpolation has to happen in: kappa spans ~40 decades across
+//  the table and linear interpolation of it is meaningless.
+
+void read_ck_table(const std::string &fname) {
+  std::ifstream f(fname);
+  if (!f.is_open()) {
+    std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: could not open correlated-k "
+              << "table '" << fname << "'. Set problem/ck_table." << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  std::string species;
+  std::getline(f, species);                       // line 1: species list, text
+  int nT, nP, nb, ng;
+  f >> nT >> nP >> nb >> ng;
+  if (nb != CK_NB || ng != CK_NG) {
+    std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: correlated-k table is "
+              << nb << " bands x " << ng << " g-points, but this build is compiled for "
+              << CK_NB << " x " << CK_NG << ". Use the 11-band g8 table." << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  ck_nT = nT;
+  ck_nP = nP;
+  ck_lT_ptr = new DvceArray1D<Real>("ck_lT", nT);
+  ck_lP_ptr = new DvceArray1D<Real>("ck_lP", nP);
+  ck_lk_ptr = new DvceArray4D<Real>("ck_lk", nT, nP, CK_NB, CK_NG);
+  ck_gw_ptr = new DvceArray1D<Real>("ck_gw", CK_NG);
+  ck_wl_ptr = new DvceArray1D<Real>("ck_wl", CK_NB+1);
+  auto hlT = Kokkos::create_mirror_view(*ck_lT_ptr);
+  auto hlP = Kokkos::create_mirror_view(*ck_lP_ptr);
+  auto hlk = Kokkos::create_mirror_view(*ck_lk_ptr);
+  auto hgw = Kokkos::create_mirror_view(*ck_gw_ptr);
+  auto hwl = Kokkos::create_mirror_view(*ck_wl_ptr);
+
+  Real v;
+  for (int i=0; i<nT; ++i) { f >> v; hlT(i) = std::log10(v); }
+  for (int j=0; j<nP; ++j) { f >> v; hlP(j) = std::log10(v); }
+  for (int b=0; b<CK_NB+1; ++b) { f >> v; hwl(b) = v; }        // um, descending
+  for (int b=0; b<CK_NB+1; ++b) { f >> v; }                    // wavenumbers, unused
+  for (int g=0; g<CK_NG; ++g) { f >> v; }                      // g nodes, unused: each
+                                                               // g-point is its own
+                                                               // column solve
+  for (int g=0; g<CK_NG; ++g) { f >> v; hgw(g) = v; }
+  // ORDERING. Records run in the same order as the wl edges, i.e. DESCENDING wavelength:
+  // the first record of each (T,p) block is 324.68-20 um and the last is 0.26-0.42 um.
+  //
+  // Note this is the opposite of what Exo-FMS's own reader appears to do -- its loop is
+  // `do b = nwl, 1, -1` -- so it was checked against the data instead of trusted. The
+  // discriminator is condensation: with band 10 = 0.26-0.42 um the optical opacity at
+  // 0.1 bar goes 1.3e-8, 1.3e-7, 0.71, 31, 60 cm^2/g at T = 300, 800, 1500, 2500,
+  // 3500 K, which is TiO/VO/Fe/Na/K appearing as they vaporise, while band 0 =
+  // 20-324.68 um falls from 14 cm^2/g with T, which is the H2O rotational band. Reversed,
+  // both are physically impossible. Getting this wrong silently swaps the optical and the
+  // far infrared, which looks plausible in a plot and is completely wrong.
+  for (int i=0; i<nT; ++i) {
+    for (int j=0; j<nP; ++j) {
+      for (int b=0; b<CK_NB; ++b) {
+        for (int g=0; g<CK_NG; ++g) {
+          f >> v;
+          hlk(i,j,b,g) = std::log10((v > 1.0e-99) ? v : 1.0e-99);
+        }
+      }
+    }
+  }
+  if (!f) {
+    std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: correlated-k table '" << fname
+              << "' ended early; expected " << nT*nP*CK_NB*CK_NG << " kappa values."
+              << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  Kokkos::deep_copy(*ck_lT_ptr, hlT);
+  Kokkos::deep_copy(*ck_lP_ptr, hlP);
+  Kokkos::deep_copy(*ck_lk_ptr, hlk);
+  Kokkos::deep_copy(*ck_gw_ptr, hgw);
+  Kokkos::deep_copy(*ck_wl_ptr, hwl);
+
+  if (global_variable::my_rank == 0) {
+    Real wsum = 0.0;
+    for (int g=0; g<CK_NG; ++g) wsum += hgw(g);
+    std::cout << "deep_hot_jupiter_rt: correlated-k table '" << fname << "'" << std::endl
+              << "  " << nT << " T x " << nP << " p x " << CK_NB << " bands x " << CK_NG
+              << " g, T = " << std::pow(10.0, hlT(0)) << " .. "
+              << std::pow(10.0, hlT(nT-1)) << " K, p = " << std::pow(10.0, hlP(0))
+              << " .. " << std::pow(10.0, hlP(nP-1)) << " bar" << std::endl
+              << "  bands " << hwl(CK_NB) << " .. " << hwl(0)
+              << " um, g weights sum to " << wsum << std::endl
+              << "  correlated-k applied where p < " << rt_ck_pcut << " bar" << std::endl;
+    // the grids must be increasing: the lookup does a bracketing search on them
+    for (int i=1; i<nT; ++i) {
+      if (hlT(i) <= hlT(i-1)) {
+        std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: ck table T grid is not "
+                  << "increasing at index " << i << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }
+    for (int j=1; j<nP; ++j) {
+      if (hlP(j) <= hlP(j-1)) {
+        std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: ck table p grid is not "
+                  << "increasing at index " << j << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }
+    if (std::fabs(wsum - 1.0) > 1.0e-10) {
+      std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: ck g weights sum to " << wsum
+                << ", not 1" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+  }
+  return;
+}
+
 //----------------------------------------------------------------------------------------
 //! \fn Real ktab_lookup()
 //  \brief bilinear interpolation in a synthetic correlated-k table. The cell coordinates
@@ -198,6 +340,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   rt_nchain = pin->GetOrAddInteger("problem","rt_nchain",4);
   rt_ktab = pin->GetOrAddBoolean("problem","rt_ktab",false);
   rt_split = pin->GetOrAddBoolean("problem","rt_split",false);
+  rt_ck = pin->GetOrAddBoolean("problem","rt_ck",false);
+  rt_ck_pcut = pin->GetOrAddReal("problem","ck_pcut_bar",10.0);
+  if (rt_ck && ck_lk_ptr == nullptr) {
+    read_ck_table(pin->GetOrAddString("problem","ck_table",
+                                      "data/exo_fms_ck/ck/Premixed_1x_g8_11.txt"));
+  }
   if (rt_nchain < 4) rt_nchain = 4;
   if (rt_ktab_ptr == nullptr) {
     rt_ktab_ptr = new DvceArray3D<Real>("rt_ktab", rt_nchain, RT_KT_NT, RT_KT_NP);

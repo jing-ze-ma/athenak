@@ -1,0 +1,7 @@
+# The Exo-FMS tables are third-party data redistributed under no explicit licence
+# (see PROVENANCE.md). They are fetched, not tracked. PROVENANCE.md records where from.
+ck/
+cia/
+ray/
+sw_flux/
+wavelengths_GCM_11.txt
