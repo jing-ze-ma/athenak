@@ -185,6 +185,10 @@ DvceArray5D<Real> *rt_Qb_ptr = nullptr;    // (m,blk,k,j,i) stellar heating, one
 // The two that matter here: the data block runs the band index BACKWARDS, and kappa is
 // cgs cm^2/g, which is what this code already works in.
 bool rt_ck = false;
+// problem/ck_star_teff: host effective temperature. If > 0 the stellar spectrum is a
+// blackbody at this temperature, which needs no external data since only the SHAPE is
+// used. If <= 0, problem/ck_swflux is read instead.
+Real rt_star_teff = -1.0;
 // problem/ck_dump_file: write one column's RT solution -- level pressures, temperatures,
 // net longwave flux and stellar heating -- straight out of the production kernel, once, at
 // the first RT call. This exists so the kernel ITSELF can be compared against an external
@@ -598,26 +602,58 @@ void read_ck_continuum(const std::string &dir, const std::string &swfile) {
   {
     const std::string fn = dir + "/sw_flux/" + swfile;
     std::ifstream f(fn);
-    if (!f.is_open()) {
+    if (rt_star_teff <= 0.0 && !f.is_open()) {
       std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: could not open '" << fn
                 << "'. Set problem/ck_swflux." << std::endl;
       std::exit(EXIT_FAILURE);
     }
     ck_swf_ptr = new DvceArray1D<Real>("ck_swf", CK_NB);
     auto hs = Kokkos::create_mirror_view(*ck_swf_ptr);
-    Real v[CK_NB];
-    Real tot = 0.0;
-    for (int b=0; b<CK_NB; ++b) { f >> v[b]; tot += v[b]; }
-    if (!f || tot <= 0.0) {
-      std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: bad stellar flux file '"
-                << fn << "'" << std::endl;
-      std::exit(EXIT_FAILURE);
+    auto hwl = Kokkos::create_mirror_view(*ck_wl_ptr);
+    Kokkos::deep_copy(hwl, *ck_wl_ptr);
+    Real blue_tail = 0.0;
+    if (rt_star_teff > 0.0) {
+      // Blackbody host at problem/ck_star_teff. Only the SHAPE of the stellar spectrum is
+      // used -- it is renormalised to the code's own sigma T_irr^4 -- so this needs the
+      // host's effective temperature and nothing else, and it needs no external data.
+      // Same tail handling as the Planck fractions: flux outside the grid is folded into
+      // the outermost bands so that all of the insolation is deposited somewhere.
+      Real tot = 0.0;
+      for (int b=0; b<CK_NB; ++b) {
+        hs(b) = planck_fraction_below(hwl(b)*rt_star_teff)
+              - planck_fraction_below(hwl(b+1)*rt_star_teff);
+        tot += hs(b);
+      }
+      blue_tail = planck_fraction_below(hwl(CK_NB)*rt_star_teff);
+      hs(0) += 1.0 - planck_fraction_below(hwl(0)*rt_star_teff);
+      hs(CK_NB-1) += blue_tail;
+    } else {
+      Real v[CK_NB];
+      Real tot = 0.0;
+      for (int b=0; b<CK_NB; ++b) { f >> v[b]; tot += v[b]; }
+      if (!f || tot <= 0.0) {
+        std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: bad stellar flux file '"
+                  << fn << "'" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      for (int b=0; b<CK_NB; ++b) hs(b) = v[CK_NB-1-b]/tot;  // reverse into wl order
     }
-    for (int b=0; b<CK_NB; ++b) hs(b) = v[CK_NB-1-b]/tot;    // reverse into wl order
     Kokkos::deep_copy(*ck_swf_ptr, hs);
     if (global_variable::my_rank == 0) {
-      std::cout << "  stellar spectrum '" << swfile << "', band fractions "
-                << hs(CK_NB-1) << " (bluest) .. " << hs(0) << " (reddest)" << std::endl;
+      if (rt_star_teff > 0.0) {
+        std::cout << "  stellar spectrum: blackbody at T_eff = " << rt_star_teff << " K"
+                  << std::endl;
+        std::cout << "    " << 100.0*blue_tail << " % of it is bluer than the grid's "
+                  << hwl(CK_NB) << " um edge and is folded into the bluest band";
+        if (blue_tail > 0.05) {
+          std::cout << " -- THAT IS A LOT. The band grid does not cover this host; its "
+                    << "UV flux will be deposited with near-UV opacities, hence too deep.";
+        }
+        std::cout << std::endl;
+      } else {
+        std::cout << "  stellar spectrum '" << swfile << "' (file), band fractions "
+                  << hs(CK_NB-1) << " (bluest) .. " << hs(0) << " (reddest)" << std::endl;
+      }
     }
   }
   // ---- Rayleigh: one species name, then CK_NB cross sections in cm^2/molecule.
@@ -1088,6 +1124,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   rt_ktab = pin->GetOrAddBoolean("problem","rt_ktab",false);
   rt_split = pin->GetOrAddBoolean("problem","rt_split",false);
   rt_ck = pin->GetOrAddBoolean("problem","rt_ck",false);
+  rt_star_teff = pin->GetOrAddReal("problem","ck_star_teff",-1.0);
   rt_dump_file = pin->GetOrAddString("problem","ck_dump_file","");
   rt_dump_m = pin->GetOrAddInteger("problem","ck_dump_m",0);
   rt_dump_j = pin->GetOrAddInteger("problem","ck_dump_j",-1);
