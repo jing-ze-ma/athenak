@@ -1,5 +1,6 @@
 # The Exo-FMS tables are third-party data redistributed under no explicit licence
 # (see PROVENANCE.md). They are fetched, not tracked. PROVENANCE.md records where from.
+CE_tables/
 ck/
 cia/
 ray/
