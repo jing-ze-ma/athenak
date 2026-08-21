@@ -88,11 +88,11 @@ void get_init_eos(const EOS_Data &eos, const Real &Rgas, const Real &grav_acc, c
 #define RT_NB 4
 #endif
 
-// Radial extent of the private I_ir_down_c column in the chain-parallel split kernel.
-// The monolithic kernel uses NN = 270 for every private array, which is 18 kB of
-// scratch per thread at 88 chains. That does not bind today because the kernel is
-// occupancy-starved anyway, but the split kernel is meant to put thousands of waves in
-// flight, and then it would. Sized to the real n1 (checked at runtime) instead.
+// Radial extent of the private intensity column in the GREY split kernel. The
+// correlated-k kernel no longer uses this -- it instantiates itself at several sizes and
+// dispatches the smallest that fits n1 at run time, because an oversized column is not
+// free: at n1 = 68 the chain kernel costs 454 ms with a 72-deep column against 540 with a
+// 272-deep one. The grey split path is a test path and keeps the fixed size, guarded.
 #ifndef RT_NNC
 #define RT_NNC 72
 #endif
@@ -3924,12 +3924,6 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
       const int nblk = (nchain_rt + NC - 1)/NC;
       if (rt_tau_ptr == nullptr) {
         const int nmb = pmbp->nmb_thispack;
-        if (n1 > RT_NNC) {
-          std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: problem/rt_split needs "
-                    << "RT_NNC >= n1, but RT_NNC = " << RT_NNC << " and n1 = " << n1
-                    << ". Rebuild with -DRT_NNC=" << n1 << " or larger." << std::endl;
-          std::exit(EXIT_FAILURE);
-        }
         // Deliberately leaked, like the k-table: a namespace-scope View would outlive
         // Kokkos::finalize(). rt_Fb is the only large one, nmb*nblk*n3*n2*n1 Reals.
         rt_tau_ptr = new DvceArray4D<Real>("rt_tau", nmb, n3, n2, n1);
@@ -3994,6 +3988,16 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
       const Real pfid = ck_pf_idlT;
       const Real pcut = rt_ck_pcut;
       const int ck_nq_ = ck_nq;
+
+      if (!rt_ck && n1 > RT_NNC) {
+        // the correlated-k path dispatches its column size at run time; the grey split
+        // path below still uses the fixed RT_NNC, so it has to be checked
+        std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: problem/rt_split with grey "
+                  << "RT needs RT_NNC >= n1, but RT_NNC = " << RT_NNC << " and n1 = " << n1
+                  << ". Rebuild with -DRT_NNC=" << n1 << ", or use the monolithic path "
+                  << "(problem/rt_split=false), which sizes its own arrays." << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
 
       // ---- A (correlated-k): the per-cell work has NO radial dependency, so it does
       // not belong in a per-column kernel. Splitting it out takes it from 8192 threads at
@@ -4175,181 +4179,203 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
       // local, so going from a grey tau scaled by gamma to a per-chain kappa is a lookup
       // and nothing structural. Only the sweep's lower limit changes, from is to icut.
       if (ck_on) {
-        par_for("rt_chain_ck", DevExeSpace(), 0, nmb1, 0, nblk-1, ks, ke, js, je,
-        KOKKOS_LAMBDA(const int m, const int blk, const int k, const int j) {
-          constexpr int NC = RT_NB;
-          constexpr int NN = RT_NNC;
-          for (int i=is; i<ie+2; ++i) {
-            Fb_g(m,blk,i,k,j) = 0.0;
-            Qb_g(m,blk,i,k,j) = 0.0;
-          }
-          const int icut = icut_g(m,k,j);
-          if (icut > ie) return;                  // whole column deeper than the cut
-          // Shortwave. This is the one part of the scheme that genuinely restructures:
-          // the longwave only ever needs a LAYER optical depth, which is local, but the
-          // direct stellar beam needs the CUMULATIVE depth from the top, so each chain
-          // carries its own downward recurrence and it cannot live in the per-column
-          // rt_pre. It rides along in the longwave down-sweep because the two share the
-          // same kappa lookup at every cell -- doing it in a second kernel would pay for
-          // that lookup twice.
-          const Real mu0 = cf_g(m,k,j,3);
-          const Real facsw = (mu0 > 0.1) ? (1.0/mu0) : (1.0/0.1);
-          const bool lit = (mu0 > 0.0);
-          Real tausw[NC];
-          Real transw[NC];      // beam transmission at the face above the current cell
-
-          int bandc[NC], gc[NC];
-          Real muc[NC], wfc[NC], wgc[NC];
-          for (int cc=0; cc<NC; ++cc) {
-            const int c = blk*NC + cc;
-            if (ck_nq_ == 1) {
-              gc[cc] = c % CK_NG;
-              bandc[cc] = c/CK_NG;
-              muc[cc] = 1.0/CK_DIFFUSIVITY;
-              wfc[cc] = M_PI*ckgw(gc[cc]);          // F = pi I
-            } else {
-              const int nq = c % 2;
-              gc[cc] = (c/2) % CK_NG;
-              bandc[cc] = c/(2*CK_NG);
-              muc[cc] = mug[nq];
-              wfc[cc] = 2.0*M_PI*wg[nq]*mug[nq]*ckgw(gc[cc]);
+        // The private intensity column has to be sized at COMPILE time, but the radial
+        // extent is only known at run time, and an oversized one is not free: at n1 = 68
+        // the chain kernel costs 454 ms with a 72-deep column, 503 at 136 and 540 at 272,
+        // because the scratch footprint grows with it. So instead of one generous ceiling
+        // that taxes every run, the kernel is instantiated at a few sizes and the smallest
+        // one that fits is dispatched at run time.
+        auto launch_ck_chain = [&](auto nn_tag) {
+          constexpr int NN = decltype(nn_tag)::value;
+          par_for("rt_chain_ck", DevExeSpace(), 0, nmb1, 0, nblk-1, ks, ke, js, je,
+          KOKKOS_LAMBDA(const int m, const int blk, const int k, const int j) {
+            constexpr int NC = RT_NB;
+            for (int i=is; i<ie+2; ++i) {
+              Fb_g(m,blk,i,k,j) = 0.0;
+              Qb_g(m,blk,i,k,j) = 0.0;
             }
-            // the shortwave weights by the g-point alone: it is a direct beam, not an
-            // angular quadrature, and with nquad = 2 each angular point would otherwise
-            // double-count the incident flux
-            wgc[cc] = ckgw(gc[cc])/static_cast<Real>(ck_nq_);
-          }
-          // A WARNING ABOUT MEASURING THIS KERNEL. Seven optimisations were measured
-          // against it while its per-cell arrays were laid out (m,slot,k,j,i), which put
-          // adjacent lanes 544 bytes apart. All seven failed, and several of those verdicts
-          // were artefacts of that: with the wave starved on scattered loads, nothing done
-          // to the arithmetic could show up. Re-measured on the (m,slot,i,k,j) layout:
-          //
-          //                                     starved layout    coalesced layout
-          //   FP32 recurrence                        +2.8 %            +1.42x
-          //   RT_NB = 2 instead of 4                  -16 %      faster on rt_chain,
-          //                                                      slower on the total
-          //   dropping this private column            -22 %            neutral
-          //   RT_NB = 8                              slower            slower
-          //
-          // So: do not trust a null result on this kernel without checking that memory is
-          // not the thing in the way. Still genuinely useless, both layouts: the k-table
-          // layout (0.5 %), blocking the lookup by band (0.4 %), and precomputing kappa
-          // per (cell, chain) (-1 %, because those four table loads are cache hits).
-          //
-          // Storing the intensity column costs 2304 bytes of scratch per thread, and
-          // accumulating each sweep's flux contribution separately instead would remove
-          // it entirely. On the starved layout that cost 22 % (1585 -> 1927 ms), because
-          // the extra flux traffic it adds was uncoalesced. On the fixed layout it is
-          // neutral (454 vs 457 ms), which confirms the diagnosis. Neutral is not a
-          // reason to change it, so the column stays.
-          RtF I_down[NC][NN];
+            const int icut = icut_g(m,k,j);
+            if (icut > ie) return;                  // whole column deeper than the cut
+            // Shortwave. This is the one part of the scheme that genuinely restructures:
+            // the longwave only ever needs a LAYER optical depth, which is local, but the
+            // direct stellar beam needs the CUMULATIVE depth from the top, so each chain
+            // carries its own downward recurrence and it cannot live in the per-column
+            // rt_pre. It rides along in the longwave down-sweep because the two share the
+            // same kappa lookup at every cell -- doing it in a second kernel would pay for
+            // that lookup twice.
+            const Real mu0 = cf_g(m,k,j,3);
+            const Real facsw = (mu0 > 0.1) ? (1.0/mu0) : (1.0/0.1);
+            const bool lit = (mu0 > 0.0);
+            Real tausw[NC];
+            Real transw[NC];      // beam transmission at the face above the current cell
 
-          // Top: the column above the domain, using the top cell's opacity over the
-          // hydrostatic column p/g -- the same construction the grey scheme uses.
-          {
-            const Real Ttop = T_g(m,k,j,ie+1);
-            const Real ptop = pb_g(m,k,j,ie+1);
-            int iT, iP;
-            Real fT, fP;
-            const Real xTv = xT_g(m,k,j,ie+1);
-            const Real xPv = xP_g(m,k,j,ie+1);
-            iT = static_cast<int>(xTv); fT = xTv - static_cast<Real>(iT);
-            iP = static_cast<int>(xPv); fP = xPv - static_cast<Real>(iP);
+            int bandc[NC], gc[NC];
+            Real muc[NC], wfc[NC], wgc[NC];
             for (int cc=0; cc<NC; ++cc) {
-              const Real kap = ck_kappa(cklk, iT, fT, iP, fP, bandc[cc], gc[cc])
-                             + kc_g(m,bandc[cc],ie+1,k,j);
-              const Real dtau = kap*ptop*1.0e6/grav;
-              const RtF trans = RT_EXP(-static_cast<RtF>(dtau/muc[cc]));
-              I_down[cc][ie+1] = (static_cast<RtF>(1.0)-trans)
-                               * static_cast<RtF>(Bb_g(m,bandc[cc],ie+1,k,j));
-              tausw[cc] = dtau;               // beam already crossed the column above
-              transw[cc] = RT_EXP(-static_cast<RtF>(dtau*facsw));
+              const int c = blk*NC + cc;
+              if (ck_nq_ == 1) {
+                gc[cc] = c % CK_NG;
+                bandc[cc] = c/CK_NG;
+                muc[cc] = 1.0/CK_DIFFUSIVITY;
+                wfc[cc] = M_PI*ckgw(gc[cc]);          // F = pi I
+              } else {
+                const int nq = c % 2;
+                gc[cc] = (c/2) % CK_NG;
+                bandc[cc] = c/(2*CK_NG);
+                muc[cc] = mug[nq];
+                wfc[cc] = 2.0*M_PI*wg[nq]*mug[nq]*ckgw(gc[cc]);
+              }
+              // the shortwave weights by the g-point alone: it is a direct beam, not an
+              // angular quadrature, and with nquad = 2 each angular point would otherwise
+              // double-count the incident flux
+              wgc[cc] = ckgw(gc[cc])/static_cast<Real>(ck_nq_);
             }
-          }
-          // down-sweep
-          for (int i=ie; i>icut-1; --i) {
-            const Real rho = w0(m,IDN,k,j,i);
-            const Real drho = rho*dx1(m,k,j,i);
-            int iT, iP;
-            Real fT, fP;
-            const Real xTv = xT_g(m,k,j,i);
-            const Real xPv = xP_g(m,k,j,i);
-            iT = static_cast<int>(xTv); fT = xTv - static_cast<Real>(iT);
-            iP = static_cast<int>(xPv); fP = xPv - static_cast<Real>(iP);
-            for (int cc=0; cc<NC; ++cc) {
-              const int b = bandc[cc];
-              const Real kap = ck_kappa(cklk, iT, fT, iP, fP, b, gc[cc]) + kc_g(m,b,i,k,j);
-              const RtF x = static_cast<RtF>(kap*drho/muc[cc]);
-              const RtF e0 = -RT_EXPM1(-x);
-              const RtF one = static_cast<RtF>(1.0);
-              const RtF alp = (x > static_cast<RtF>(1.0e-3)) ? (e0 - one + e0/x)
-                                                            : (x/2 - x*x/3);
-              const RtF bet = (x > static_cast<RtF>(1.0e-3)) ? (one - e0/x)
-                                                            : (x/2 - x*x/6);
-              I_down[cc][i] = (one-e0)*I_down[cc][i+1]
-                            + alp*static_cast<RtF>(Bb_g(m,b,i+1,k,j))
-                            + bet*static_cast<RtF>(Bb_g(m,b,i,k,j));
-              // Direct beam. Deposit the flux DIFFERENCE across the cell, not
-              // kappa rho F exp(-tau) evaluated at one face. The latter is what the grey
-              // picket fence does, and it under-deposits badly once a layer is not thin:
-              // the ratio of deposited to absorbed is u e^-u/(1 - e^-u) with u = dtau/mu,
-              // which is 0.95 at u = 0.1 but 0.58 at u = 1 and 0.31 at u = 2. Summed down
-              // a column with u ~ 0.5 it loses a quarter of the incident flux -- measured
-              // against Exo-FMS on an identical column, which is how this was found.
-              // Written this way the column integral is F mu (1 - e^-tau_total) by
-              // construction, and it still reduces to the old form as dtau -> 0.
-              tausw[cc] += kap*drho;
-              if (lit) {
-                const Real tnew = RT_EXP(-static_cast<RtF>(tausw[cc]*facsw));
-                Qb_g(m,blk,i,k,j) += (1.0-albedo)*Fstar*ckswf(b)*wgc[cc]/facsw
-                          * (transw[cc] - tnew)/dx1(m,k,j,i);
-                transw[cc] = tnew;
+            // A WARNING ABOUT MEASURING THIS KERNEL. Seven optimisations were measured
+            // against it while its per-cell arrays were laid out (m,slot,k,j,i), which put
+            // adjacent lanes 544 bytes apart. All seven failed, and several of those verdicts
+            // were artefacts of that: with the wave starved on scattered loads, nothing done
+            // to the arithmetic could show up. Re-measured on the (m,slot,i,k,j) layout:
+            //
+            //                                     starved layout    coalesced layout
+            //   FP32 recurrence                        +2.8 %            +1.42x
+            //   RT_NB = 2 instead of 4                  -16 %      faster on rt_chain,
+            //                                                      slower on the total
+            //   dropping this private column            -22 %            neutral
+            //   RT_NB = 8                              slower            slower
+            //
+            // So: do not trust a null result on this kernel without checking that memory is
+            // not the thing in the way. Still genuinely useless, both layouts: the k-table
+            // layout (0.5 %), blocking the lookup by band (0.4 %), and precomputing kappa
+            // per (cell, chain) (-1 %, because those four table loads are cache hits).
+            //
+            // Storing the intensity column costs 2304 bytes of scratch per thread, and
+            // accumulating each sweep's flux contribution separately instead would remove
+            // it entirely. On the starved layout that cost 22 % (1585 -> 1927 ms), because
+            // the extra flux traffic it adds was uncoalesced. On the fixed layout it is
+            // neutral (454 vs 457 ms), which confirms the diagnosis. Neutral is not a
+            // reason to change it, so the column stays.
+            RtF I_down[NC][NN];
+
+            // Top: the column above the domain, using the top cell's opacity over the
+            // hydrostatic column p/g -- the same construction the grey scheme uses.
+            {
+              const Real Ttop = T_g(m,k,j,ie+1);
+              const Real ptop = pb_g(m,k,j,ie+1);
+              int iT, iP;
+              Real fT, fP;
+              const Real xTv = xT_g(m,k,j,ie+1);
+              const Real xPv = xP_g(m,k,j,ie+1);
+              iT = static_cast<int>(xTv); fT = xTv - static_cast<Real>(iT);
+              iP = static_cast<int>(xPv); fP = xPv - static_cast<Real>(iP);
+              for (int cc=0; cc<NC; ++cc) {
+                const Real kap = ck_kappa(cklk, iT, fT, iP, fP, bandc[cc], gc[cc])
+                               + kc_g(m,bandc[cc],ie+1,k,j);
+                const Real dtau = kap*ptop*1.0e6/grav;
+                const RtF trans = RT_EXP(-static_cast<RtF>(dtau/muc[cc]));
+                I_down[cc][ie+1] = (static_cast<RtF>(1.0)-trans)
+                                 * static_cast<RtF>(Bb_g(m,bandc[cc],ie+1,k,j));
+                tausw[cc] = dtau;               // beam already crossed the column above
+                transw[cc] = RT_EXP(-static_cast<RtF>(dtau*facsw));
               }
             }
-          }
-          // Bottom of the CORRELATED-K DOMAIN, not of the column. At the cut the grey
-          // optical depth is of order 1e4, so the layer is thermalised to e^-tau and the
-          // upward intensity is its own Planck function; the planet's internal flux is
-          // delivered here as an extra band-weighted source. Below the cut nothing
-          // radiative is applied -- that region is optically thick and convective, and
-          // the flux simply passes through it.
-          RtF I_up[NC];
-          for (int cc=0; cc<NC; ++cc) {
-            const int b = bandc[cc];
-            const Real Iint_b = boltz_sigma/M_PI*Tint4
-                              * ck_planck_frac(ckpf, pfl0, pfid, Tint, b);
-            I_up[cc] = static_cast<RtF>(Bb_g(m,b,icut,k,j) + Iint_b);
-            Fb_g(m,blk,icut,k,j) += wfc[cc]*(I_up[cc] - I_down[cc][icut]);
-          }
-          // up-sweep
-          for (int i=icut+1; i<ie+2; ++i) {
-            const Real rho = w0(m,IDN,k,j,i-1);
-            const Real drho = rho*dx1(m,k,j,i-1);
-            int iT, iP;
-            Real fT, fP;
-            const Real xTv = xT_g(m,k,j,i-1);
-            const Real xPv = xP_g(m,k,j,i-1);
-            iT = static_cast<int>(xTv); fT = xTv - static_cast<Real>(iT);
-            iP = static_cast<int>(xPv); fP = xPv - static_cast<Real>(iP);
+            // down-sweep
+            for (int i=ie; i>icut-1; --i) {
+              const Real rho = w0(m,IDN,k,j,i);
+              const Real drho = rho*dx1(m,k,j,i);
+              int iT, iP;
+              Real fT, fP;
+              const Real xTv = xT_g(m,k,j,i);
+              const Real xPv = xP_g(m,k,j,i);
+              iT = static_cast<int>(xTv); fT = xTv - static_cast<Real>(iT);
+              iP = static_cast<int>(xPv); fP = xPv - static_cast<Real>(iP);
+              for (int cc=0; cc<NC; ++cc) {
+                const int b = bandc[cc];
+                const Real kap = ck_kappa(cklk, iT, fT, iP, fP, b, gc[cc]) + kc_g(m,b,i,k,j);
+                const RtF x = static_cast<RtF>(kap*drho/muc[cc]);
+                const RtF e0 = -RT_EXPM1(-x);
+                const RtF one = static_cast<RtF>(1.0);
+                const RtF alp = (x > static_cast<RtF>(1.0e-3)) ? (e0 - one + e0/x)
+                                                              : (x/2 - x*x/3);
+                const RtF bet = (x > static_cast<RtF>(1.0e-3)) ? (one - e0/x)
+                                                              : (x/2 - x*x/6);
+                I_down[cc][i] = (one-e0)*I_down[cc][i+1]
+                              + alp*static_cast<RtF>(Bb_g(m,b,i+1,k,j))
+                              + bet*static_cast<RtF>(Bb_g(m,b,i,k,j));
+                // Direct beam. Deposit the flux DIFFERENCE across the cell, not
+                // kappa rho F exp(-tau) evaluated at one face. The latter is what the grey
+                // picket fence does, and it under-deposits badly once a layer is not thin:
+                // the ratio of deposited to absorbed is u e^-u/(1 - e^-u) with u = dtau/mu,
+                // which is 0.95 at u = 0.1 but 0.58 at u = 1 and 0.31 at u = 2. Summed down
+                // a column with u ~ 0.5 it loses a quarter of the incident flux -- measured
+                // against Exo-FMS on an identical column, which is how this was found.
+                // Written this way the column integral is F mu (1 - e^-tau_total) by
+                // construction, and it still reduces to the old form as dtau -> 0.
+                tausw[cc] += kap*drho;
+                if (lit) {
+                  const Real tnew = RT_EXP(-static_cast<RtF>(tausw[cc]*facsw));
+                  Qb_g(m,blk,i,k,j) += (1.0-albedo)*Fstar*ckswf(b)*wgc[cc]/facsw
+                            * (transw[cc] - tnew)/dx1(m,k,j,i);
+                  transw[cc] = tnew;
+                }
+              }
+            }
+            // Bottom of the CORRELATED-K DOMAIN, not of the column. At the cut the grey
+            // optical depth is of order 1e4, so the layer is thermalised to e^-tau and the
+            // upward intensity is its own Planck function; the planet's internal flux is
+            // delivered here as an extra band-weighted source. Below the cut nothing
+            // radiative is applied -- that region is optically thick and convective, and
+            // the flux simply passes through it.
+            RtF I_up[NC];
             for (int cc=0; cc<NC; ++cc) {
               const int b = bandc[cc];
-              const Real kap = ck_kappa(cklk, iT, fT, iP, fP, b, gc[cc])
-                             + kc_g(m,b,i-1,k,j);
-              const RtF x = static_cast<RtF>(kap*drho/muc[cc]);
-              const RtF e0 = -RT_EXPM1(-x);
-              const RtF one = static_cast<RtF>(1.0);
-              const RtF bet = (x > static_cast<RtF>(1.0e-3)) ? (one - e0/x)
-                                                            : (x/2 - x*x/6);
-              const RtF gm = (x > static_cast<RtF>(1.0e-3)) ? (e0 - one + e0/x)
-                                                           : (x/2 - x*x/3);
-              I_up[cc] = (one-e0)*I_up[cc]
-                       + bet*static_cast<RtF>(Bb_g(m,b,i,k,j))
-                       + gm*static_cast<RtF>(Bb_g(m,b,i-1,k,j));
-              Fb_g(m,blk,i,k,j) += wfc[cc]*(I_up[cc] - I_down[cc][i]);
+              const Real Iint_b = boltz_sigma/M_PI*Tint4
+                                * ck_planck_frac(ckpf, pfl0, pfid, Tint, b);
+              I_up[cc] = static_cast<RtF>(Bb_g(m,b,icut,k,j) + Iint_b);
+              Fb_g(m,blk,icut,k,j) += wfc[cc]*(I_up[cc] - I_down[cc][icut]);
             }
-          }
-        });
+            // up-sweep
+            for (int i=icut+1; i<ie+2; ++i) {
+              const Real rho = w0(m,IDN,k,j,i-1);
+              const Real drho = rho*dx1(m,k,j,i-1);
+              int iT, iP;
+              Real fT, fP;
+              const Real xTv = xT_g(m,k,j,i-1);
+              const Real xPv = xP_g(m,k,j,i-1);
+              iT = static_cast<int>(xTv); fT = xTv - static_cast<Real>(iT);
+              iP = static_cast<int>(xPv); fP = xPv - static_cast<Real>(iP);
+              for (int cc=0; cc<NC; ++cc) {
+                const int b = bandc[cc];
+                const Real kap = ck_kappa(cklk, iT, fT, iP, fP, b, gc[cc])
+                               + kc_g(m,b,i-1,k,j);
+                const RtF x = static_cast<RtF>(kap*drho/muc[cc]);
+                const RtF e0 = -RT_EXPM1(-x);
+                const RtF one = static_cast<RtF>(1.0);
+                const RtF bet = (x > static_cast<RtF>(1.0e-3)) ? (one - e0/x)
+                                                              : (x/2 - x*x/6);
+                const RtF gm = (x > static_cast<RtF>(1.0e-3)) ? (e0 - one + e0/x)
+                                                             : (x/2 - x*x/3);
+                I_up[cc] = (one-e0)*I_up[cc]
+                         + bet*static_cast<RtF>(Bb_g(m,b,i,k,j))
+                         + gm*static_cast<RtF>(Bb_g(m,b,i-1,k,j));
+                Fb_g(m,blk,i,k,j) += wfc[cc]*(I_up[cc] - I_down[cc][i]);
+              }
+            }
+          });
+        };
+        if (n1 <= 72) {
+          launch_ck_chain(std::integral_constant<int, 72>{});
+        } else if (n1 <= 136) {
+          launch_ck_chain(std::integral_constant<int, 136>{});
+        } else if (n1 <= 264) {
+          launch_ck_chain(std::integral_constant<int, 264>{});
+        } else if (n1 <= 520) {
+          launch_ck_chain(std::integral_constant<int, 520>{});
+        } else {
+          std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: n1 = " << n1
+                    << " exceeds the largest correlated-k radial tier (520). Add a tier to "
+                    << "the dispatch in picket_fence_two_stream_RT." << std::endl;
+          std::exit(EXIT_FAILURE);
+        }
       } else {
       par_for("rt_chain", DevExeSpace(), 0, nmb1, 0, nblk-1, ks, ke, js, je,
       KOKKOS_LAMBDA(const int m, const int blk, const int k, const int j) {
