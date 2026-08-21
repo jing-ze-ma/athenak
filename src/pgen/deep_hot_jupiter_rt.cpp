@@ -143,6 +143,7 @@ DvceArray4D<Real> *rt_pb_ptr = nullptr;    // (m,k,j,i) pressure [bar]
 DvceArray4D<Real> *rt_xT_ptr = nullptr;    // (m,k,j,i) continuous k-table index in T
 DvceArray4D<Real> *rt_xP_ptr = nullptr;    // (m,k,j,i) continuous k-table index in p
 DvceArray3D<int>  *rt_icut_ptr = nullptr;  // (m,k,j) deepest cell doing correlated-k
+DvceArray5D<Real> *rt_Qb_ptr = nullptr;    // (m,blk,k,j,i) stellar heating, one per block
 
 // --- correlated-k (Lee/Exo-FMS premixed tables, Kataria+2013 11-band grid) --------
 // problem/rt_ck turns it on; problem/ck_table is the path to the premixed table and
@@ -182,6 +183,7 @@ DvceArray1D<Real> *ck_lP_ptr = nullptr;    // log10 p grid [bar]
 DvceArray4D<Real> *ck_lk_ptr = nullptr;    // (b,g,iT,iP) log10 kappa [cm^2/g]
 DvceArray1D<Real> *ck_gw_ptr = nullptr;    // g-point weights, sum to 1
 DvceArray1D<Real> *ck_wl_ptr = nullptr;    // band edges [um], descending, CK_NB+1 of them
+DvceArray1D<Real> *ck_swf_ptr = nullptr;   // stellar flux FRACTION per band, sums to 1
 
 // Band-integrated Planck function. The grey scheme uses B = sigma T^4 / pi; correlated-k
 // needs B_b(T) = (sigma T^4 / pi) * f_b(T), the fraction of the Planck function falling in
@@ -464,7 +466,7 @@ DvceArray2D<Real> *ray_x_ptr = nullptr;    // (species,band) cm^2/molecule, T in
 //  \brief read the FastChem composition table, the four CIA pair tables and the Rayleigh
 //  cross sections. All are whitespace-separated numbers after a short header.
 
-void read_ck_continuum(const std::string &dir) {
+void read_ck_continuum(const std::string &dir, const std::string &swfile) {
   // ---- FastChem composition: "nT nP nrec nspecies", species names, T grid, p grid,
   // then nrec records of {mu, VMR(H2), VMR(He), VMR(H), VMR(e-), VMR(H-)}. Note SIX
   // columns for five species: mu is prepended.
@@ -546,6 +548,37 @@ void read_ck_continuum(const std::string &dir) {
     Kokkos::deep_copy(*cia_nT_ptr, hn);
     Kokkos::deep_copy(*cia_T_ptr, hT);
     Kokkos::deep_copy(*cia_k_ptr, hk);
+  }
+  // ---- stellar flux per band. Ordered ASCENDING in wavelength, i.e. OPPOSITE to the
+  // k-table and to wl -- verified by reversing it and recovering a 6460 K blackbody to
+  // about 1 % per band, where as listed it is exactly backwards. Only the SHAPE is taken:
+  // the values are renormalised to sum to one and multiplied by the code's own
+  // sigma T_irr^4, so the total insolation matches the grey scheme it replaces and the
+  // file's absolute normalisation never has to be pinned down.
+  {
+    const std::string fn = dir + "/sw_flux/" + swfile;
+    std::ifstream f(fn);
+    if (!f.is_open()) {
+      std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: could not open '" << fn
+                << "'. Set problem/ck_swflux." << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    ck_swf_ptr = new DvceArray1D<Real>("ck_swf", CK_NB);
+    auto hs = Kokkos::create_mirror_view(*ck_swf_ptr);
+    Real v[CK_NB];
+    Real tot = 0.0;
+    for (int b=0; b<CK_NB; ++b) { f >> v[b]; tot += v[b]; }
+    if (!f || tot <= 0.0) {
+      std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: bad stellar flux file '"
+                << fn << "'" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    for (int b=0; b<CK_NB; ++b) hs(b) = v[CK_NB-1-b]/tot;    // reverse into wl order
+    Kokkos::deep_copy(*ck_swf_ptr, hs);
+    if (global_variable::my_rank == 0) {
+      std::cout << "  stellar spectrum '" << swfile << "', band fractions "
+                << hs(CK_NB-1) << " (bluest) .. " << hs(0) << " (reddest)" << std::endl;
+    }
   }
   // ---- Rayleigh: one species name, then CK_NB cross sections in cm^2/molecule.
   {
@@ -922,7 +955,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                                       "data/exo_fms_ck/ck/Premixed_1x_g8_11.txt"));
     build_planck_fractions();
     read_ck_continuum(pin->GetOrAddString("problem","ck_data_dir",
-                                          "data/exo_fms_ck"));
+                                          "data/exo_fms_ck"),
+                      pin->GetOrAddString("problem","ck_swflux",
+                                          "sw_band_flux_W121_11.txt"));
     ck_selftest();
     // The chain set is fixed by the table once correlated-k is on: every (band, g-point)
     // for each of the two Gauss points of the two-stream angular quadrature. Note this is
@@ -3750,7 +3785,7 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
         rt_tau_ptr = new DvceArray4D<Real>("rt_tau", nmb, n3, n2, n1);
         rt_B_ptr   = new DvceArray4D<Real>("rt_B",   nmb, n3, n2, n1);
         rt_Qv_ptr  = new DvceArray4D<Real>("rt_Qv",  nmb, n3, n2, n1);
-        rt_cf_ptr  = new DvceArray4D<Real>("rt_cf",  nmb, n3, n2, 3);
+        rt_cf_ptr  = new DvceArray4D<Real>("rt_cf",  nmb, n3, n2, 4);
         rt_Fb_ptr  = new DvceArray5D<Real>("rt_Fb",  nmb, nblk, n3, n2, n1);
         if (rt_ck) {
           rt_kc_ptr = new DvceArray5D<Real>("rt_kc", nmb, CK_NB, n3, n2, n1);
@@ -3760,6 +3795,7 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
           rt_xT_ptr = new DvceArray4D<Real>("rt_xT", nmb, n3, n2, n1);
           rt_xP_ptr = new DvceArray4D<Real>("rt_xP", nmb, n3, n2, n1);
           rt_icut_ptr = new DvceArray3D<int>("rt_icut", nmb, n3, n2);
+          rt_Qb_ptr = new DvceArray5D<Real>("rt_Qb", nmb, nblk, n3, n2, n1);
         }
         if (global_variable::my_rank == 0) {
           std::cout << "deep_hot_jupiter_rt: RT split path ON, " << nblk
@@ -3781,6 +3817,8 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
       auto xT_g   = (ck_on) ? *rt_xT_ptr : tau_g;
       auto xP_g   = (ck_on) ? *rt_xP_ptr : tau_g;
       auto icut_g = (ck_on) ? *rt_icut_ptr : DvceArray3D<int>("dummy",1,1,1);
+      auto Qb_g   = (ck_on) ? *rt_Qb_ptr : Fb_g;
+      auto ckswf  = (ck_on) ? *ck_swf_ptr : DvceArray1D<Real>("d",1);
       auto cklk = (ck_on) ? *ck_lk_ptr : DvceArray4D<Real>("d",1,1,1,1);
       auto cklT = (ck_on) ? *ck_lT_ptr : DvceArray1D<Real>("d",1);
       auto cklP = (ck_on) ? *ck_lP_ptr : DvceArray1D<Real>("d",1);
@@ -3887,6 +3925,7 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
         cf_g(m,k,j,0) = gamir1;
         cf_g(m,k,j,1) = gamir2;
         cf_g(m,k,j,2) = beta;
+        cf_g(m,k,j,3) = mu0;
 
         if (ck_on) {
           // Everything the chain kernel needs that depends only on the cell: T, p, the
@@ -3949,12 +3988,24 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
           constexpr int NC = RT_NB;
           constexpr int NN = RT_NNC;
           auto F_ir_f = Kokkos::subview(Fb_g, m, blk, k, j, Kokkos::ALL);
-          for (int i=is; i<ie+2; ++i) F_ir_f[i] = 0.0;
+          auto Q_v_f  = Kokkos::subview(Qb_g, m, blk, k, j, Kokkos::ALL);
+          for (int i=is; i<ie+2; ++i) { F_ir_f[i] = 0.0; Q_v_f[i] = 0.0; }
           const int icut = icut_g(m,k,j);
           if (icut > ie) return;                  // whole column deeper than the cut
+          // Shortwave. This is the one part of the scheme that genuinely restructures:
+          // the longwave only ever needs a LAYER optical depth, which is local, but the
+          // direct stellar beam needs the CUMULATIVE depth from the top, so each chain
+          // carries its own downward recurrence and it cannot live in the per-column
+          // rt_pre. It rides along in the longwave down-sweep because the two share the
+          // same kappa lookup at every cell -- doing it in a second kernel would pay for
+          // that lookup twice.
+          const Real mu0 = cf_g(m,k,j,3);
+          const Real facsw = (mu0 > 0.1) ? (1.0/mu0) : (1.0/0.1);
+          const bool lit = (mu0 > 0.0);
+          Real tausw[NC];
 
           int bandc[NC], gc[NC];
-          Real muc[NC], wfc[NC];
+          Real muc[NC], wfc[NC], wgc[NC];
           for (int cc=0; cc<NC; ++cc) {
             const int c = blk*NC + cc;
             if (ck_nq_ == 1) {
@@ -3969,6 +4020,10 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
               muc[cc] = mug[nq];
               wfc[cc] = 2.0*M_PI*wg[nq]*mug[nq]*ckgw(gc[cc]);
             }
+            // the shortwave weights by the g-point alone: it is a direct beam, not an
+            // angular quadrature, and with nquad = 2 each angular point would otherwise
+            // double-count the incident flux
+            wgc[cc] = ckgw(gc[cc])/static_cast<Real>(ck_nq_);
           }
           Real I_down[NC][NN];
 
@@ -3989,6 +4044,7 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
               const Real dtau = kap*ptop*1.0e6/grav;
               const Real trans = exp(-dtau/muc[cc]);
               I_down[cc][ie+1] = (1.0-trans)*Bb_g(m,bandc[cc],k,j,ie+1);
+              tausw[cc] = dtau;               // beam already crossed the column above
             }
           }
           // down-sweep
@@ -4010,6 +4066,12 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
               const Real bet = (x > 1.0e-3) ? (1.0 - e0/x) : (x/2.0-SQR(x)/6.0);
               I_down[cc][i] = (1.0-e0)*I_down[cc][i+1]
                             + alp*Bb_g(m,b,k,j,i+1) + bet*Bb_g(m,b,k,j,i);
+              // direct beam: accumulate to this cell's lower face, then deposit
+              tausw[cc] += kap*drho;
+              if (lit) {
+                Q_v_f[i] += kap*rho*(1.0-albedo)*Fstar*ckswf(b)*wgc[cc]
+                          * exp(-tausw[cc]*facsw);
+              }
             }
           }
           // Bottom of the CORRELATED-K DOMAIN, not of the column. At the cut the grey
@@ -4175,8 +4237,19 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
           Fb += Fb_g(m,b,k,j,i);
         }
         Real src = -(Ft-Fb)/dx1(m,k,j,i);
-        if (ck_on && i < icut_g(m,k,j)) src = 0.0;   // deeper than the cut: no IR source
-        src += Qv_g(m,k,j,i);
+        if (ck_on) {
+          // deeper than the cut nothing radiative is applied: that region is optically
+          // thick and convective, and the stellar beam died decades of optical depth above
+          if (i < icut_g(m,k,j)) {
+            src = 0.0;
+          } else {
+            Real Qs = 0.0;
+            for (int b=0; b<nblk; ++b) Qs += Qb_g(m,b,k,j,i);
+            src += Qs;
+          }
+        } else {
+          src += Qv_g(m,k,j,i);
+        }
         u0(m,IEN,k,j,i) += src*bdt;
       });
       return;
