@@ -155,6 +155,13 @@ DvceArray3D<int>  *rt_icut_ptr = nullptr;  // (m,k,j) deepest cell doing correla
 // cgs cm^2/g, which is what this code already works in.
 bool rt_ck = false;
 Real rt_ck_pcut = 10.0;                    // bar
+// problem/ck_nquad: angular treatment of the longwave. 1 uses a single diffusivity
+// factor, mu = 1/1.66, which is what GCMs normally do and what the chain count in the
+// correlated-k literature assumes. 2 keeps the 2-point Gauss quadrature the picket fence
+// uses, which doubles the number of column solves. Both normalise to F = pi <I>: for the
+// Gauss pair, 2 pi sum w mu = 2 pi (0.5) = pi.
+int ck_nq = 1;
+constexpr Real CK_DIFFUSIVITY = 1.66;
 constexpr int CK_NB = 11;                  // bands, fixed by the Kataria grid
 constexpr int CK_NG = 8;                   // g-points per band, fixed by the table
 int ck_nT = 0;
@@ -904,6 +911,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   rt_split = pin->GetOrAddBoolean("problem","rt_split",false);
   rt_ck = pin->GetOrAddBoolean("problem","rt_ck",false);
   rt_ck_pcut = pin->GetOrAddReal("problem","ck_pcut_bar",10.0);
+  ck_nq = pin->GetOrAddInteger("problem","ck_nquad",1);
+  if (ck_nq != 1 && ck_nq != 2) {
+    std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: problem/ck_nquad must be 1 "
+              << "(diffusivity factor) or 2 (Gauss), got " << ck_nq << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
   if (rt_ck && ck_lk_ptr == nullptr) {
     read_ck_table(pin->GetOrAddString("problem","ck_table",
                                       "data/exo_fms_ck/ck/Premixed_1x_g8_11.txt"));
@@ -915,10 +928,15 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // for each of the two Gauss points of the two-stream angular quadrature. Note this is
     // TWICE the 88 usually quoted for an 11 x 8 scheme -- 88 counts band x g, and this
     // kernel also carries the 2-point angular quadrature the picket fence uses.
-    rt_nchain = CK_NB*CK_NG*2;
+    rt_nchain = CK_NB*CK_NG*ck_nq;
     if (global_variable::my_rank == 0) {
-      std::cout << "  " << CK_NB << " bands x " << CK_NG << " g-points x 2 quadrature "
-                << "points = " << rt_nchain << " column solves per cell" << std::endl;
+      std::cout << "  " << CK_NB << " bands x " << CK_NG << " g-points x " << ck_nq
+                << " angular point(s) = " << rt_nchain << " column solves per cell";
+      if (ck_nq == 1) {
+        std::cout << " (diffusivity factor " << CK_DIFFUSIVITY << ")" << std::endl;
+      } else {
+        std::cout << " (2-point Gauss)" << std::endl;
+      }
     }
   }
   if (rt_nchain < 4) rt_nchain = 4;
@@ -933,11 +951,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       ktab(c,it,ip) = 0.1 + 0.45*(1.0 + sin(0.11*c + 0.3*it)*cos(0.2*ip + 0.07*c));
     });
     const bool ckon = rt_ck;
+    const int cknq = ck_nq;
     auto ckgw = (rt_ck) ? *ck_gw_ptr : DvceArray1D<Real>("dummy", 1);
     par_for("rt_wgt_init", DevExeSpace(), 0, rt_nchain-1,
     KOKKOS_LAMBDA(const int c) {
       rtwgt(c) = (c < 4) ? 1.0 : 0.0;
-      if (ckon) rtwgt(c) = ckgw((c/2) % CK_NG);   // correlated-k: the g-point weight
+      if (ckon) rtwgt(c) = ckgw((c/cknq) % CK_NG);  // correlated-k: the g-point weight
     });
     if (global_variable::my_rank == 0 && rt_nchain > 4) {
       std::cout << "deep_hot_jupiter_rt: RT scaling harness active, " << rt_nchain
@@ -3782,6 +3801,7 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
       const Real pfl0 = ck_pf_lTmin;
       const Real pfid = ck_pf_idlT;
       const Real pcut = rt_ck_pcut;
+      const int ck_nq_ = ck_nq;
 
       // ---- A: chain-independent per-column precompute -----------------------------
       par_for("rt_pre", DevExeSpace(), 0, nmb1, ks, ke, js, je,
@@ -3934,15 +3954,21 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
           if (icut > ie) return;                  // whole column deeper than the cut
 
           int bandc[NC], gc[NC];
-          Real muc[NC], wqc[NC], wgc[NC];
+          Real muc[NC], wfc[NC];
           for (int cc=0; cc<NC; ++cc) {
             const int c = blk*NC + cc;
-            const int nq = c % 2;
-            gc[cc] = (c/2) % CK_NG;
-            bandc[cc] = c/(2*CK_NG);
-            muc[cc] = mug[nq];
-            wqc[cc] = wg[nq];
-            wgc[cc] = ckgw(gc[cc]);
+            if (ck_nq_ == 1) {
+              gc[cc] = c % CK_NG;
+              bandc[cc] = c/CK_NG;
+              muc[cc] = 1.0/CK_DIFFUSIVITY;
+              wfc[cc] = M_PI*ckgw(gc[cc]);          // F = pi I
+            } else {
+              const int nq = c % 2;
+              gc[cc] = (c/2) % CK_NG;
+              bandc[cc] = c/(2*CK_NG);
+              muc[cc] = mug[nq];
+              wfc[cc] = 2.0*M_PI*wg[nq]*mug[nq]*ckgw(gc[cc]);
+            }
           }
           Real I_down[NC][NN];
 
@@ -3998,8 +4024,7 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
             const Real Iint_b = boltz_sigma/M_PI*Tint4
                               * ck_planck_frac(ckpf, pfl0, pfid, Tint, b);
             I_up[cc] = Bb_g(m,b,k,j,icut) + Iint_b;
-            const Real w = 2.0*M_PI*wqc[cc]*muc[cc]*wgc[cc];
-            F_ir_f[icut] += w*(I_up[cc] - I_down[cc][icut]);
+            F_ir_f[icut] += wfc[cc]*(I_up[cc] - I_down[cc][icut]);
           }
           // up-sweep
           for (int i=icut+1; i<ie+2; ++i) {
@@ -4021,8 +4046,7 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
               const Real gm = (x > 1.0e-3) ? (e0 - 1.0 + e0/x) : (x/2.0-SQR(x)/3.0);
               I_up[cc] = (1.0-e0)*I_up[cc]
                        + bet*Bb_g(m,b,k,j,i) + gm*Bb_g(m,b,k,j,i-1);
-              const Real w = 2.0*M_PI*wqc[cc]*muc[cc]*wgc[cc];
-              F_ir_f[i] += w*(I_up[cc] - I_down[cc][i]);
+              F_ir_f[i] += wfc[cc]*(I_up[cc] - I_down[cc][i]);
             }
           }
         });
