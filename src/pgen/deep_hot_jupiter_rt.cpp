@@ -395,6 +395,148 @@ void read_ck_table(const std::string &fname) {
   return;
 }
 
+// --- continuum: CIA, Rayleigh, and the equilibrium composition they need ----------
+// The k-table is line opacity only. CIA and Rayleigh are grey WITHIN a band, so they add
+// to every g-point rather than making new chains:
+//     kappa_tot(b,g) = kappa_ck(b,g) + kappa_CIA(b) + kappa_Ray(b).
+// Both need number densities, so they need the equilibrium composition. That comes from
+// the FastChem table shipped alongside the k-table -- same chemistry the premixed
+// opacities were built with, which is the point: mixing a different chemistry into the
+// continuum than into the lines would be inconsistent.
+constexpr int CK_NCIA = 4;                 // H2-H2, H2-He, H2-H, He-H
+constexpr int CK_CIA_NTMAX = 512;
+constexpr int CK_NRAY = 4;                 // H2, He, H, e-
+constexpr int CK_NCE = 6;                  // mu, then VMR of H2, He, H, e-, H-
+int ce_nT = 0;
+int ce_nP = 0;
+DvceArray1D<Real> *ce_lT_ptr = nullptr;
+DvceArray1D<Real> *ce_lP_ptr = nullptr;
+DvceArray3D<Real> *ce_ptr = nullptr;       // (iT,iP,CK_NCE)
+DvceArray1D<int>  *cia_nT_ptr = nullptr;   // per-pair grid length
+DvceArray2D<Real> *cia_T_ptr = nullptr;    // (pair,iT) -- the four grids differ wildly,
+DvceArray3D<Real> *cia_k_ptr = nullptr;    // (pair,iT,band)   200-3000 K to 200-9900 K
+DvceArray2D<Real> *ray_x_ptr = nullptr;    // (species,band) cm^2/molecule, T independent
+
+//----------------------------------------------------------------------------------------
+//! \fn void read_ck_continuum()
+//  \brief read the FastChem composition table, the four CIA pair tables and the Rayleigh
+//  cross sections. All are whitespace-separated numbers after a short header.
+
+void read_ck_continuum(const std::string &dir) {
+  // ---- FastChem composition: "nT nP nrec nspecies", species names, T grid, p grid,
+  // then nrec records of {mu, VMR(H2), VMR(He), VMR(H), VMR(e-), VMR(H-)}. Note SIX
+  // columns for five species: mu is prepended.
+  {
+    const std::string fn = dir + "/CE_tables/FastChem_ck_1x_int.txt";
+    std::ifstream f(fn);
+    if (!f.is_open()) {
+      std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: could not open '" << fn
+                << "'" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    int nrec, nsp;
+    f >> ce_nT >> ce_nP >> nrec >> nsp;
+    std::string nm;
+    for (int n=0; n<nsp; ++n) f >> nm;
+    ce_lT_ptr = new DvceArray1D<Real>("ce_lT", ce_nT);
+    ce_lP_ptr = new DvceArray1D<Real>("ce_lP", ce_nP);
+    ce_ptr = new DvceArray3D<Real>("ce", ce_nT, ce_nP, CK_NCE);
+    auto hT = Kokkos::create_mirror_view(*ce_lT_ptr);
+    auto hP = Kokkos::create_mirror_view(*ce_lP_ptr);
+    auto hC = Kokkos::create_mirror_view(*ce_ptr);
+    Real v;
+    for (int i=0; i<ce_nT; ++i) { f >> v; hT(i) = std::log10(v); }
+    for (int j=0; j<ce_nP; ++j) { f >> v; hP(j) = std::log10(v); }
+    for (int i=0; i<ce_nT; ++i) {
+      for (int j=0; j<ce_nP; ++j) {
+        for (int n=0; n<CK_NCE; ++n) { f >> v; hC(i,j,n) = v; }
+      }
+    }
+    if (!f) {
+      std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: '" << fn
+                << "' ended early" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    Kokkos::deep_copy(*ce_lT_ptr, hT);
+    Kokkos::deep_copy(*ce_lP_ptr, hP);
+    Kokkos::deep_copy(*ce_ptr, hC);
+  }
+  // ---- CIA pairs: "nT nband", T grid, band wavenumbers, then nT rows of nband values.
+  {
+    const char *pf[CK_NCIA] = {"H2-H2", "H2-He", "H2-H", "He-H"};
+    cia_nT_ptr = new DvceArray1D<int>("cia_nT", CK_NCIA);
+    cia_T_ptr = new DvceArray2D<Real>("cia_T", CK_NCIA, CK_CIA_NTMAX);
+    cia_k_ptr = new DvceArray3D<Real>("cia_k", CK_NCIA, CK_CIA_NTMAX, CK_NB);
+    auto hn = Kokkos::create_mirror_view(*cia_nT_ptr);
+    auto hT = Kokkos::create_mirror_view(*cia_T_ptr);
+    auto hk = Kokkos::create_mirror_view(*cia_k_ptr);
+    Kokkos::deep_copy(hT, 0.0);
+    Kokkos::deep_copy(hk, 0.0);
+    for (int s=0; s<CK_NCIA; ++s) {
+      const std::string fn = dir + "/cia/" + pf[s] + "_reform_11.txt";
+      std::ifstream f(fn);
+      if (!f.is_open()) {
+        std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: could not open '" << fn
+                  << "'" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      int nT, nb;
+      f >> nT >> nb;
+      if (nb != CK_NB || nT > CK_CIA_NTMAX) {
+        std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: CIA table '" << fn
+                  << "' is " << nT << " x " << nb << ", need <= " << CK_CIA_NTMAX
+                  << " x " << CK_NB << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      hn(s) = nT;
+      Real v;
+      for (int i=0; i<nT; ++i) { f >> v; hT(s,i) = v; }
+      for (int b=0; b<CK_NB; ++b) { f >> v; }          // band wavenumbers, unused
+      for (int i=0; i<nT; ++i) {
+        for (int b=0; b<CK_NB; ++b) { f >> v; hk(s,i,b) = v; }
+      }
+      if (!f) {
+        std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: '" << fn << "' ended early"
+                  << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }
+    Kokkos::deep_copy(*cia_nT_ptr, hn);
+    Kokkos::deep_copy(*cia_T_ptr, hT);
+    Kokkos::deep_copy(*cia_k_ptr, hk);
+  }
+  // ---- Rayleigh: one species name, then CK_NB cross sections in cm^2/molecule.
+  {
+    const char *rf[CK_NRAY] = {"H2", "He", "H", "e-"};
+    ray_x_ptr = new DvceArray2D<Real>("ray_x", CK_NRAY, CK_NB);
+    auto hr = Kokkos::create_mirror_view(*ray_x_ptr);
+    for (int s=0; s<CK_NRAY; ++s) {
+      const std::string fn = dir + "/ray/Ray_" + rf[s] + "_11.txt";
+      std::ifstream f(fn);
+      if (!f.is_open()) {
+        std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: could not open '" << fn
+                  << "'" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      std::string nm;
+      std::getline(f, nm);
+      for (int b=0; b<CK_NB; ++b) { f >> hr(s,b); }
+      if (!f) {
+        std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: '" << fn << "' ended early"
+                  << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }
+    Kokkos::deep_copy(*ray_x_ptr, hr);
+  }
+  if (global_variable::my_rank == 0) {
+    std::cout << "  continuum: FastChem composition " << ce_nT << " T x " << ce_nP
+              << " p, " << CK_NCIA << " CIA pairs, " << CK_NRAY << " Rayleigh species"
+              << std::endl;
+  }
+  return;
+}
+
 //----------------------------------------------------------------------------------------
 //! \fn void ck_tp_index()
 //  \brief bracket x in a monotonically increasing grid, returning the lower index and the
@@ -444,6 +586,84 @@ Real ck_kappa(const DvceArray4D<Real> &lk, const int iT, const Real &fT,
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void ck_continuum()
+//  \brief grey-within-band continuum opacity [cm^2/g] for every band at one cell: the four
+//  CIA pairs plus Rayleigh scattering off H2, He, H and e-.
+//
+//  CIA scales as the PRODUCT of the two collider number densities, Rayleigh as one, so
+//  both need the equilibrium composition, taken from the FastChem table. The simulation's
+//  own rho is used for the mass conversion rather than the table's, since that is the
+//  density the rest of the scheme works with.
+//
+//  Every table index is clamped, and the four CIA pairs have grids that stop in very
+//  different places -- 200-3000 K for H2-H2 but 200-9900 K for H2-He -- so clamping is not
+//  an edge case here, it is the normal state of affairs above 3000 K. Held-flat
+//  extrapolation of CIA is what Exo-FMS does too.
+//
+//  NOT included: H- bound-free and free-free. Those dominate the continuum above about
+//  3000 K and are the reason the table's Rosseland mean still falls short of the grey
+//  Freedman opacity there -- see the note in read_ck_table's validation.
+
+KOKKOS_INLINE_FUNCTION
+void ck_continuum(const DvceArray3D<Real> &ce, const DvceArray1D<Real> &celT,
+                  const DvceArray1D<Real> &celP, const int ceNT, const int ceNP,
+                  const DvceArray1D<int> &ciaN, const DvceArray2D<Real> &ciaT,
+                  const DvceArray3D<Real> &ciak, const DvceArray2D<Real> &rayx,
+                  const Real &T, const Real &pbar, const Real &rho, Real (&kc)[CK_NB]) {
+  // composition at this (T,p)
+  int iT, iP;
+  Real fT, fP;
+  ck_tp_index(celT, ceNT, log10(T), iT, fT);
+  ck_tp_index(celP, ceNP, log10(pbar), iP, fP);
+  Real vmr[CK_NCE];
+  for (int n=0; n<CK_NCE; ++n) {
+    vmr[n] = (1.0-fT)*((1.0-fP)*ce(iT  ,iP,n) + fP*ce(iT  ,iP+1,n))
+           +      fT *((1.0-fP)*ce(iT+1,iP,n) + fP*ce(iT+1,iP+1,n));
+  }
+  // total number density, ideal gas. vmr[0] is mu and is not a species.
+  const Real kboltz = 1.380649e-16;
+  const Real ntot = pbar*1.0e6/(kboltz*T);
+  const Real irho = 1.0/rho;
+
+  for (int b=0; b<CK_NB; ++b) kc[b] = 0.0;
+
+  // CIA: pair (i1,i2) indexes into vmr, where 1=H2 2=He 3=H 4=e- 5=H-
+  const int i1[CK_NCIA] = {1, 1, 1, 2};
+  const int i2[CK_NCIA] = {1, 2, 3, 3};
+  for (int s=0; s<CK_NCIA; ++s) {
+    const int n = ciaN(s);
+    int it = 0;
+    Real ft = 0.0;
+    if (T <= ciaT(s,0)) {
+      it = 0; ft = 0.0;
+    } else if (T >= ciaT(s,n-1)) {
+      it = n-2; ft = 1.0;
+    } else {
+      int lo = 0;
+      int hi = n-1;
+      while (hi - lo > 1) {
+        const int mid = (lo + hi)/2;
+        if (T < ciaT(s,mid)) { hi = mid; } else { lo = mid; }
+      }
+      it = lo;
+      ft = (T - ciaT(s,lo))/(ciaT(s,lo+1) - ciaT(s,lo));
+    }
+    const Real nn = vmr[i1[s]]*ntot*vmr[i2[s]]*ntot*irho;
+    for (int b=0; b<CK_NB; ++b) {
+      kc[b] += ((1.0-ft)*ciak(s,it,b) + ft*ciak(s,it+1,b))*nn;
+    }
+  }
+  // Rayleigh: cross section per molecule, no temperature dependence
+  for (int s=0; s<CK_NRAY; ++s) {
+    const Real nn = vmr[s+1]*ntot*irho;
+    for (int b=0; b<CK_NB; ++b) {
+      kc[b] += rayx(s,b)*nn;
+    }
+  }
+  return;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void ck_selftest()
 //  \brief exercise the k-table on the DEVICE at startup and check the one thing that can
 //  go wrong silently: the band ordering.
@@ -462,7 +682,16 @@ void ck_selftest() {
   auto gw = *ck_gw_ptr;
   const int nT = ck_nT;
   const int nP = ck_nP;
-  DvceArray1D<Real> out("ck_selftest", 4);
+  auto ce = *ce_ptr;
+  auto celT = *ce_lT_ptr;
+  auto celP = *ce_lP_ptr;
+  auto ciaN = *cia_nT_ptr;
+  auto ciaT = *cia_T_ptr;
+  auto ciak = *cia_k_ptr;
+  auto rayx = *ray_x_ptr;
+  const int ceNT = ce_nT;
+  const int ceNP = ce_nP;
+  DvceArray1D<Real> out("ck_selftest", 4+CK_NB);
   par_for("ck_selftest", DevExeSpace(), 0, 3, KOKKOS_LAMBDA(const int n) {
     const Real Tv = (n % 2 == 0) ? 800.0 : 2500.0;
     const int b = (n < 2) ? 0 : (CK_NB-1);      // 0 = reddest, CK_NB-1 = bluest
@@ -475,6 +704,14 @@ void ck_selftest() {
       km += gw(g)*ck_kappa(lk, iT, fT, iP, fP, b, g);
     }
     out(n) = km;
+    if (n == 0) {
+      // continuum at the same reference point, with rho = 1 so the printed number is the
+      // volumetric coefficient and can be checked against an independent parse
+      Real kc[CK_NB];
+      ck_continuum(ce, celT, celP, ceNT, ceNP, ciaN, ciaT, ciak, rayx,
+                   1000.0, 0.1, 1.0, kc);
+      for (int b=0; b<CK_NB; ++b) out(4+b) = kc[b];
+    }
   });
   auto h = Kokkos::create_mirror_view(out);
   Kokkos::deep_copy(h, out);
@@ -483,6 +720,10 @@ void ck_selftest() {
               << h(0) << " (800 K) -> " << h(1) << " (2500 K)" << std::endl
               << "                                       bluest band   "
               << h(2) << " (800 K) -> " << h(3) << " (2500 K)" << std::endl;
+    std::cout << "  continuum at 1000 K, 0.1 bar, rho=1 [cm^-1], reddest to bluest:"
+              << std::endl << "   ";
+    for (int b=0; b<CK_NB; ++b) std::cout << " " << h(4+b);
+    std::cout << std::endl;
     if (!(h(3) > 100.0*h(2) && h(0) > h(1))) {
       std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: the correlated-k band ordering "
                 << "looks reversed." << std::endl
@@ -569,6 +810,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     read_ck_table(pin->GetOrAddString("problem","ck_table",
                                       "data/exo_fms_ck/ck/Premixed_1x_g8_11.txt"));
     build_planck_fractions();
+    read_ck_continuum(pin->GetOrAddString("problem","ck_data_dir",
+                                          "data/exo_fms_ck"));
     ck_selftest();
   }
   if (rt_nchain < 4) rt_nchain = 4;
