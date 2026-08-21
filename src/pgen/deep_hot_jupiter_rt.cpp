@@ -4184,6 +4184,20 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
             // double-count the incident flux
             wgc[cc] = ckgw(gc[cc])/static_cast<Real>(ck_nq_);
           }
+          // WHAT HAS BEEN RULED OUT for this kernel, all measured, none of it helped:
+          //   k-table layout, so the (T,p) plane is contiguous per chain    0.5 %
+          //   blocking the table lookup by band, sharing (T,p) weights      0.4 %
+          //   caching the layer coefficients between the two sweeps        -120 %
+          //   dropping the private intensity column (scratch)               -22 %
+          //   more chain blocks: RT_NB 2 and 1                        -16 %, -24 %
+          //   precomputing kappa per (cell, chain) in a parallel kernel      -1 %
+          // The last is the most telling: removing the four table loads, the exp and the
+          // interpolation from the inner loop entirely did NOT make it faster. What is
+          // left is the recurrence, I_down[i] depending on I_down[i+1] through an expm1,
+          // and with the whole grid resident there is nothing to overlap that with. It is
+          // latency-bound on the dependency chain. The untried lever is single precision:
+          // the fluxes do not need FP64 and its transcendentals cost several times more.
+          //
           // Storing the intensity column costs 2304 bytes of scratch per thread, and
           // accumulating each sweep's flux contribution separately instead would remove
           // it entirely. That was MEASURED: it cost 22 % (1585 -> 1927 ms) and moved
