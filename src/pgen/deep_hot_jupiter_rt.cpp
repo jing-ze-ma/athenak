@@ -156,6 +156,128 @@ DvceArray4D<Real> *ck_lk_ptr = nullptr;    // (iT,iP,b,g) log10 kappa [cm^2/g], 
 DvceArray1D<Real> *ck_gw_ptr = nullptr;    // g-point weights, sum to 1
 DvceArray1D<Real> *ck_wl_ptr = nullptr;    // band edges [um], descending, CK_NB+1 of them
 
+// Band-integrated Planck function. The grey scheme uses B = sigma T^4 / pi; correlated-k
+// needs B_b(T) = (sigma T^4 / pi) * f_b(T), the fraction of the Planck function falling in
+// band b. f_b is smooth in log T, so it is tabulated once on a uniform log10 T grid and
+// interpolated -- evaluating the series per cell per band would be absurd.
+constexpr int CK_NPF = 512;
+constexpr Real CK_PF_TMIN = 50.0;
+constexpr Real CK_PF_TMAX = 20000.0;
+DvceArray2D<Real> *ck_pf_ptr = nullptr;    // (iT, band) fractional Planck function
+Real ck_pf_lTmin = 0.0;
+Real ck_pf_idlT = 0.0;                     // 1 / grid spacing in log10 T
+
+//----------------------------------------------------------------------------------------
+//! \fn Real planck_fraction_below()
+//  \brief fraction of blackbody emission at wavelengths SHORTER than lam, as a function of
+//  lam*T in um K. The standard series (Chang & Rhee 1984): with xi = c2/(lam T),
+//    F = 15/pi^4 sum_n e^{-n xi}/n (xi^3 + 3 xi^2/n + 6 xi/n^2 + 6/n^3).
+//  Host side only, evaluated once per table entry at startup.
+
+Real planck_fraction_below(const Real lamT) {
+  const Real c2 = 1.4387769e4;             // hc/k in um K
+  if (lamT <= 0.0) return 0.0;
+  const Real xi = c2/lamT;
+  if (xi > 7.0e2) return 0.0;              // exp underflow: nothing below this lam
+  Real sum = 0.0;
+  for (int n=1; n<=500; ++n) {
+    const Real nx = n*xi;
+    if (nx > 7.0e2) break;
+    const Real e = std::exp(-nx);
+    const Real rn = 1.0/static_cast<Real>(n);
+    sum += e*rn*(xi*xi*xi + 3.0*xi*xi*rn + 6.0*xi*rn*rn + 6.0*rn*rn*rn);
+  }
+  const Real pi4 = M_PI*M_PI*M_PI*M_PI;
+  return 15.0/pi4*sum;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void build_planck_fractions()
+//  \brief tabulate f_b(T) on a uniform log10 T grid, given the band edges already read.
+//
+//  The Kataria grid spans 0.26 to 324.68 um and does NOT capture the whole Planck function:
+//  at high T a real fraction escapes past the blue edge. That flux has to go somewhere or
+//  the scheme silently loses energy, so the two outermost bands are extended to 0 and
+//  infinity -- the sub-0.26 um tail joins the bluest band and the super-324.68 um tail the
+//  reddest. It is an approximation, since those tails get their host band's kappa, but it
+//  is a small one wherever the tails are small, and it makes sum_b f_b = 1 exactly.
+
+void build_planck_fractions() {
+  ck_pf_ptr = new DvceArray2D<Real>("ck_pf", CK_NPF, CK_NB);
+  auto hpf = Kokkos::create_mirror_view(*ck_pf_ptr);
+  auto hwl = Kokkos::create_mirror_view(*ck_wl_ptr);
+  Kokkos::deep_copy(hwl, *ck_wl_ptr);
+
+  const Real lTmin = std::log10(CK_PF_TMIN);
+  const Real lTmax = std::log10(CK_PF_TMAX);
+  const Real dlT = (lTmax - lTmin)/static_cast<Real>(CK_NPF-1);
+  ck_pf_lTmin = lTmin;
+  ck_pf_idlT = 1.0/dlT;
+
+  Real blue1pc_T = -1.0;                   // T above which >1% of the flux is bluer than
+                                           // the grid: the band structure stops capturing
+                                           // the spectrum and the fold-in stops being small
+  Real worst_sum_err = 0.0;
+  for (int i=0; i<CK_NPF; ++i) {
+    const Real T = std::pow(10.0, lTmin + i*dlT);
+    // hwl is descending, so band b runs from hwl(b) (long) to hwl(b+1) (short) and
+    // F(long) > F(short).
+    for (int b=0; b<CK_NB; ++b) {
+      hpf(i,b) = planck_fraction_below(hwl(b)*T) - planck_fraction_below(hwl(b+1)*T);
+    }
+    const Real red_tail = 1.0 - planck_fraction_below(hwl(0)*T);
+    const Real blue_tail = planck_fraction_below(hwl(CK_NB)*T);
+    hpf(i,0) += red_tail;
+    hpf(i,CK_NB-1) += blue_tail;
+    if (blue1pc_T < 0.0 && blue_tail > 0.01) blue1pc_T = T;
+    Real sum = 0.0;
+    for (int b=0; b<CK_NB; ++b) sum += hpf(i,b);
+    worst_sum_err = std::max(worst_sum_err, std::fabs(sum - 1.0));
+  }
+  Kokkos::deep_copy(*ck_pf_ptr, hpf);
+
+  if (global_variable::my_rank == 0) {
+    std::cout << "  Planck fractions tabulated on " << CK_NPF << " points, T = "
+              << CK_PF_TMIN << " .. " << CK_PF_TMAX << " K; worst |sum_b f_b - 1| = "
+              << worst_sum_err << std::endl
+              << "  >1% of the Planck function falls bluer than " << hwl(CK_NB)
+              << " um above T = " << blue1pc_T << " K; beyond that the 11-band grid stops"
+              << std::endl
+              << "  capturing the spectrum and folding the tail into the bluest band is no"
+              << " longer a small correction" << std::endl;
+    if (blue1pc_T > 0.0 && blue1pc_T < CK_PF_TMAX) {
+      std::cout << "  (with the p < " << rt_ck_pcut << " bar cut this setup tops out near "
+                << "4800 K, where the tail is 3e-3)" << std::endl;
+    }
+    if (worst_sum_err > 1.0e-12) {
+      std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: Planck fractions do not sum "
+                << "to 1 (worst error " << worst_sum_err << ")" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+  }
+  return;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void ck_planck_bands()
+//  \brief B_b(T) for all bands at one cell, in the same units as the grey B, i.e. the
+//  Planck INTENSITY sigma T^4 / pi split across the bands. Linear in log10 T on a uniform
+//  grid, so the index is analytic and there is no search.
+
+KOKKOS_INLINE_FUNCTION
+void ck_planck_bands(const DvceArray2D<Real> &pf, const Real lTmin, const Real idlT,
+                     const Real &sigT4_pi, const Real &T, Real (&Bb)[CK_NB]) {
+  Real x = (log10(T) - lTmin)*idlT;
+  x = (x < 0.0) ? 0.0 : ((x > CK_NPF-1.0) ? CK_NPF-1.0 : x);
+  int i = static_cast<int>(x);
+  i = (i > CK_NPF-2) ? CK_NPF-2 : i;
+  const Real f = x - static_cast<Real>(i);
+  for (int b=0; b<CK_NB; ++b) {
+    Bb[b] = sigT4_pi*((1.0-f)*pf(i,b) + f*pf(i+1,b));
+  }
+  return;
+}
+
 //----------------------------------------------------------------------------------------
 //! \fn void read_ck_table()
 //  \brief host-side reader for the Exo-FMS premixed correlated-k table (the HELIOS-k
@@ -345,6 +467,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   if (rt_ck && ck_lk_ptr == nullptr) {
     read_ck_table(pin->GetOrAddString("problem","ck_table",
                                       "data/exo_fms_ck/ck/Premixed_1x_g8_11.txt"));
+    build_planck_fractions();
   }
   if (rt_nchain < 4) rt_nchain = 4;
   if (rt_ktab_ptr == nullptr) {
