@@ -396,6 +396,107 @@ void read_ck_table(const std::string &fname) {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void ck_tp_index()
+//  \brief bracket x in a monotonically increasing grid, returning the lower index and the
+//  interpolation fraction. CLAMPED, not extrapolated, at both ends.
+//
+//  The clamping is the whole point. Clamping only the index and letting the fraction run
+//  free is what made the earlier synthetic-table harness produce a negative opacity, a
+//  sign-flipped optical depth increment, and an intensity recurrence that diverged to inf.
+//  A table lookup that silently extrapolates 40 decades of kappa is not a lookup.
+
+KOKKOS_INLINE_FUNCTION
+void ck_tp_index(const DvceArray1D<Real> &lg, const int n, const Real &x,
+                 int &i, Real &f) {
+  if (x <= lg(0)) { i = 0; f = 0.0; return; }
+  if (x >= lg(n-1)) { i = n-2; f = 1.0; return; }
+  int lo = 0;
+  int hi = n-1;
+  while (hi - lo > 1) {
+    const int mid = (lo + hi)/2;
+    if (x < lg(mid)) { hi = mid; } else { lo = mid; }
+  }
+  i = lo;
+  f = (x - lg(lo))/(lg(lo+1) - lg(lo));
+  return;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn Real ck_kappa()
+//  \brief kappa [cm^2/g] for one (band, g-point), bilinear in log10 kappa over
+//  (log10 T, log10 p). The table is stored as log10 because kappa spans about forty
+//  decades; interpolating it linearly would be meaningless.
+//
+//  (iT, fT, iP, fP) come from ck_tp_index and depend only on the cell, so a caller
+//  handling several chains in one cell computes them once. Measurement says the index
+//  arithmetic is not the cost either way.
+
+KOKKOS_INLINE_FUNCTION
+Real ck_kappa(const DvceArray4D<Real> &lk, const int iT, const Real &fT,
+              const int iP, const Real &fP, const int b, const int g) {
+  const Real k00 = lk(iT  , iP  , b, g);
+  const Real k01 = lk(iT  , iP+1, b, g);
+  const Real k10 = lk(iT+1, iP  , b, g);
+  const Real k11 = lk(iT+1, iP+1, b, g);
+  const Real lkap = (1.0-fT)*((1.0-fP)*k00 + fP*k01)
+                  +      fT *((1.0-fP)*k10 + fP*k11);
+  return exp(2.302585092994046*lkap);       // 10^lkap
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void ck_selftest()
+//  \brief exercise the k-table on the DEVICE at startup and check the one thing that can
+//  go wrong silently: the band ordering.
+//
+//  The discriminator is condensation. TiO, VO, Fe, Na and K are condensed out below about
+//  1000 K and in the gas phase by 2500 K, so the bluest band's opacity has to climb by
+//  orders of magnitude between the two, while the reddest band -- the H2O rotational band
+//  -- falls. If the band index is reversed these swap, which looks entirely plausible in a
+//  plot and is completely wrong. Exo-FMS's own reader loops the other way, so this is not
+//  a hypothetical.
+
+void ck_selftest() {
+  auto lk = *ck_lk_ptr;
+  auto lT = *ck_lT_ptr;
+  auto lP = *ck_lP_ptr;
+  auto gw = *ck_gw_ptr;
+  const int nT = ck_nT;
+  const int nP = ck_nP;
+  DvceArray1D<Real> out("ck_selftest", 4);
+  par_for("ck_selftest", DevExeSpace(), 0, 3, KOKKOS_LAMBDA(const int n) {
+    const Real Tv = (n % 2 == 0) ? 800.0 : 2500.0;
+    const int b = (n < 2) ? 0 : (CK_NB-1);      // 0 = reddest, CK_NB-1 = bluest
+    int iT, iP;
+    Real fT, fP;
+    ck_tp_index(lT, nT, log10(Tv), iT, fT);
+    ck_tp_index(lP, nP, log10(0.1), iP, fP);    // 0.1 bar
+    Real km = 0.0;
+    for (int g=0; g<CK_NG; ++g) {
+      km += gw(g)*ck_kappa(lk, iT, fT, iP, fP, b, g);
+    }
+    out(n) = km;
+  });
+  auto h = Kokkos::create_mirror_view(out);
+  Kokkos::deep_copy(h, out);
+  if (global_variable::my_rank == 0) {
+    std::cout << "  band-mean kappa at 0.1 bar [cm^2/g]:  reddest band  "
+              << h(0) << " (800 K) -> " << h(1) << " (2500 K)" << std::endl
+              << "                                       bluest band   "
+              << h(2) << " (800 K) -> " << h(3) << " (2500 K)" << std::endl;
+    if (!(h(3) > 100.0*h(2) && h(0) > h(1))) {
+      std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: the correlated-k band ordering "
+                << "looks reversed." << std::endl
+                << "  Expected the bluest band to climb steeply from 800 to 2500 K "
+                << "(TiO/VO/Fe/Na/K leaving condensation)" << std::endl
+                << "  and the reddest band (H2O rotational) to fall. See "
+                << "data/exo_fms_ck/PROVENANCE.md." << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+  }
+  return;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn Real ktab_lookup()
 //  \brief bilinear interpolation in a synthetic correlated-k table. The cell coordinates
 //  are computed once per cell by the caller, as a real scheme would compute log T and
@@ -468,6 +569,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     read_ck_table(pin->GetOrAddString("problem","ck_table",
                                       "data/exo_fms_ck/ck/Premixed_1x_g8_11.txt"));
     build_planck_fractions();
+    ck_selftest();
   }
   if (rt_nchain < 4) rt_nchain = 4;
   if (rt_ktab_ptr == nullptr) {
