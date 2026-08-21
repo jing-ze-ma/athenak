@@ -107,15 +107,23 @@ void get_init_eos(const EOS_Data &eos, const Real &Rgas, const Real &grav_acc, c
 #define RT_CACHE 0
 #endif
 
-// Run the correlated-k chain kernel's recurrence in single precision. MEASURED, and it is
-// NOT worth turning on: rt_chain 1586 -> 1542 ms per 100 cycles, 2.8 %, for a 1.7e-4
-// relative change in the net longwave flux. Kept because it is the cleanest way to show
-// that the FP64 transcendentals are not what this kernel is waiting on either.
+// Run the correlated-k chain kernel's recurrence in single precision. Default OFF, but the
+// reason has changed and is worth stating precisely.
 //
-// Accuracy, for the record: the recurrence itself is a contraction and single precision
+// Measured while the kernel was still starved on scattered loads, this bought 2.8 %.
+// Re-measured once the array layout was fixed it buys 1.42x on rt_chain, 457 -> 325 ms per
+// 100 cycles: with the memory fed, the FP64 transcendentals really are the next thing in
+// the way. That is a 25 % saving on RT.
+//
+// It is off anyway because 25 % of RT is only 6 % of the run. RT is 41 % of kernel time
+// and kernel time is less than wall, so the whole trade is 8.62 -> 8.10 s of integration
+// for a 1.7e-4 relative change in the net longwave flux. Judge it on the total, not on the
+// kernel.
+//
+// Accuracy if it is ever wanted: the recurrence is a contraction and single precision
 // handles it fine. The exposure is the NET flux, which deep down is the difference of
-// I_up and I_down when both are close to B. Measured on a real column, the flux at the
-// cut agrees to 1e-5 and the outgoing flux at the top to 1e-7; the worst level is 1.7e-4.
+// I_up and I_down when both are close to B. On a real column the outgoing flux at the top
+// agrees to 1e-7 and the flux at the cut to 1e-5; the worst level is 1.7e-4.
 #ifndef RT_FP32
 #define RT_FP32 0
 #endif
@@ -4211,25 +4219,30 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
             // double-count the incident flux
             wgc[cc] = ckgw(gc[cc])/static_cast<Real>(ck_nq_);
           }
-          // WHAT HAS BEEN RULED OUT for this kernel, all measured, none of it helped:
-          //   k-table layout, so the (T,p) plane is contiguous per chain    0.5 %
-          //   blocking the table lookup by band, sharing (T,p) weights      0.4 %
-          //   caching the layer coefficients between the two sweeps        -120 %
-          //   dropping the private intensity column (scratch)               -22 %
-          //   more chain blocks: RT_NB 2 and 1                        -16 %, -24 %
-          //   precomputing kappa per (cell, chain) in a parallel kernel      -1 %
-          // The last is the most telling: removing the four table loads, the exp and the
-          // interpolation from the inner loop entirely did NOT make it faster. What is
-          // left is the recurrence, I_down[i] depending on I_down[i+1] through an expm1,
-          // and with the whole grid resident there is nothing to overlap that with. It is
-          // latency-bound on the dependency chain. The untried lever is single precision:
-          // the fluxes do not need FP64 and its transcendentals cost several times more.
+          // A WARNING ABOUT MEASURING THIS KERNEL. Seven optimisations were measured
+          // against it while its per-cell arrays were laid out (m,slot,k,j,i), which put
+          // adjacent lanes 544 bytes apart. All seven failed, and several of those verdicts
+          // were artefacts of that: with the wave starved on scattered loads, nothing done
+          // to the arithmetic could show up. Re-measured on the (m,slot,i,k,j) layout:
+          //
+          //                                     starved layout    coalesced layout
+          //   FP32 recurrence                        +2.8 %            +1.42x
+          //   RT_NB = 2 instead of 4                  -16 %      faster on rt_chain,
+          //                                                      slower on the total
+          //   dropping this private column            -22 %            neutral
+          //   RT_NB = 8                              slower            slower
+          //
+          // So: do not trust a null result on this kernel without checking that memory is
+          // not the thing in the way. Still genuinely useless, both layouts: the k-table
+          // layout (0.5 %), blocking the lookup by band (0.4 %), and precomputing kappa
+          // per (cell, chain) (-1 %, because those four table loads are cache hits).
           //
           // Storing the intensity column costs 2304 bytes of scratch per thread, and
           // accumulating each sweep's flux contribution separately instead would remove
-          // it entirely. That was MEASURED: it cost 22 % (1585 -> 1927 ms) and moved
-          // occupancy from 10.59 to 10.85 waves/CU, i.e. nothing. Scratch is not what
-          // limits this kernel. Keep the column.
+          // it entirely. On the starved layout that cost 22 % (1585 -> 1927 ms), because
+          // the extra flux traffic it adds was uncoalesced. On the fixed layout it is
+          // neutral (454 vs 457 ms), which confirms the diagnosis. Neutral is not a
+          // reason to change it, so the column stays.
           RtF I_down[NC][NN];
 
           // Top: the column above the domain, using the top cell's opacity over the
