@@ -1093,6 +1093,15 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   rt_dump_j = pin->GetOrAddInteger("problem","ck_dump_j",-1);
   rt_dump_k = pin->GetOrAddInteger("problem","ck_dump_k",-1);
   rt_ck_pcut = pin->GetOrAddReal("problem","ck_pcut_bar",10.0);
+  if (rt_ck && !rt_split) {
+    // The correlated-k solver only exists inside the split path. Without this, rt_ck=true
+    // with rt_split=false silently ran the GREY picket fence and looked like it worked.
+    rt_split = true;
+    if (global_variable::my_rank == 0) {
+      std::cout << "deep_hot_jupiter_rt: problem/rt_ck implies problem/rt_split; "
+                << "enabling the split RT path" << std::endl;
+    }
+  }
   ck_nq = pin->GetOrAddInteger("problem","ck_nquad",1);
   if (ck_nq != 1 && ck_nq != 2) {
     std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: problem/ck_nquad must be 1 "
