@@ -661,6 +661,111 @@ Real ck_kappa(const DvceArray4D<Real> &lk, const int iT, const Real &fT,
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void ck_rt_selftest()
+//  \brief two exact limits of the two-stream solver, run on the device at startup against
+//  a synthetic column, using the same recurrence the chain kernel uses.
+//
+//  1. ISOTHERMAL INVARIANCE. An isothermal atmosphere bathed in its own Planck function
+//     must stay in equilibrium: the net flux has to vanish identically at every level.
+//     This works because alp + bet = (e0 - 1 + e0/x) + (1 - e0/x) = e0 exactly, so
+//     I = (1-e0) I + e0 B has B as a fixed point. It is the sharpest check there is on the
+//     recurrence coefficients and on the small-x branch, and it catches sign and
+//     normalisation errors in them that a plausible-looking profile would hide.
+//
+//  2. TRANSPARENT SLAB. With the layers made optically thin and a blackbody floor, the
+//     emergent flux must be exactly sigma T^4. That is a different statement: it tests the
+//     WEIGHTS rather than the recurrence -- the g-point weights summing to one, the band
+//     Planck fractions summing to one, and the flux prefactor being pi and not 2 pi.
+//     Test 1 cannot see any of those, since it holds whatever the weights are.
+
+void ck_rt_selftest() {
+  auto lk = *ck_lk_ptr;
+  auto pf = *ck_pf_ptr;
+  auto gwv = *ck_gw_ptr;
+  const Real l0 = ck_pf_lTmin;
+  const Real id = ck_pf_idlT;
+  const int nq = ck_nq;
+  Real mugl[2];
+  Real wgl[2];
+  mugl[0] = 0.21132487;  mugl[1] = 0.78867513;
+  wgl[0] = 0.5;          wgl[1] = 0.5;
+  const Real boltz = 5.6704e-5;
+  DvceArray1D<Real> out("ck_rt_selftest", 2);
+  par_for("ck_rt_selftest", DevExeSpace(), 0, 0, KOKKOS_LAMBDA(const int dummy) {
+    const int NL = 40;                       // synthetic layers
+    const Real Ttest = 2000.0;
+    const Real sigT4_pi = boltz/M_PI*SQR(SQR(Ttest));
+    Real worst_iso = 0.0;
+    Real Fthin = 0.0;
+    for (int tst=0; tst<2; ++tst) {
+      const Real dtau = (tst == 0) ? 0.3 : 1.0e-12;   // thick-ish, then transparent
+      Real Fnet[NL+2];
+      for (int i=0; i<NL+2; ++i) Fnet[i] = 0.0;
+      const int nch = CK_NB*CK_NG*nq;
+      for (int c=0; c<nch; ++c) {
+        int b, g;
+        Real mu, wf;
+        if (nq == 1) {
+          g = c % CK_NG;  b = c/CK_NG;
+          mu = 1.0/CK_DIFFUSIVITY;  wf = M_PI*gwv(g);
+        } else {
+          const int q = c % 2;
+          g = (c/2) % CK_NG;  b = c/(2*CK_NG);
+          mu = mugl[q];  wf = 2.0*M_PI*wgl[q]*mugl[q]*gwv(g);
+        }
+        const Real Bb = sigT4_pi*ck_planck_frac(pf, l0, id, Ttest, b);
+        const Real x = dtau/mu;
+        const Real e0 = -expm1(-x);
+        const Real alp = (x > 1.0e-3) ? (e0 - 1.0 + e0/x) : (x/2.0-SQR(x)/3.0);
+        const Real bet = (x > 1.0e-3) ? (1.0 - e0/x) : (x/2.0-SQR(x)/6.0);
+        // test 1 bathes the top in B, test 2 leaves it dark
+        Real Id[NL+2];
+        Id[NL+1] = (tst == 0) ? Bb : 0.0;
+        for (int i=NL; i>=0; --i) {
+          Id[i] = (1.0-e0)*Id[i+1] + alp*Bb + bet*Bb;
+        }
+        Real Iu = Bb;                        // blackbody floor, no extra internal flux
+        Fnet[0] += wf*(Iu - Id[0]);
+        for (int i=1; i<NL+2; ++i) {
+          Iu = (1.0-e0)*Iu + bet*Bb + alp*Bb;
+          Fnet[i] += wf*(Iu - Id[i]);
+        }
+      }
+      if (tst == 0) {
+        for (int i=0; i<NL+2; ++i) {
+          const Real a = fabs(Fnet[i])/(boltz*SQR(SQR(Ttest)));
+          worst_iso = (a > worst_iso) ? a : worst_iso;
+        }
+      } else {
+        Fthin = Fnet[NL+1]/(boltz*SQR(SQR(Ttest)));
+      }
+    }
+    out(0) = worst_iso;
+    out(1) = Fthin;
+  });
+  auto h = Kokkos::create_mirror_view(out);
+  Kokkos::deep_copy(h, out);
+  if (global_variable::my_rank == 0) {
+    std::cout << "  two-stream self-test: isothermal net flux |F|/sigmaT^4 <= " << h(0)
+              << ", transparent slab F/sigmaT^4 = " << h(1) << std::endl;
+    if (!(h(0) < 1.0e-12)) {
+      std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: the two-stream recurrence does "
+                << "not hold an isothermal atmosphere in equilibrium (worst |F|/sigmaT^4 = "
+                << h(0) << "). Check alp, bet and the small-x branch." << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    if (!(fabs(h(1) - 1.0) < 1.0e-10)) {
+      std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: a transparent slab over a "
+                << "blackbody floor emits " << h(1) << " sigma T^4, not 1. The g-point "
+                << "weights, the band Planck fractions or the flux prefactor are wrong."
+                << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+  }
+  return;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void ck_continuum()
 //  \brief grey-within-band continuum opacity [cm^2/g] for every band at one cell: the four
 //  CIA pairs plus Rayleigh scattering off H2, He, H and e-.
@@ -959,6 +1064,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                       pin->GetOrAddString("problem","ck_swflux",
                                           "sw_band_flux_W121_11.txt"));
     ck_selftest();
+    ck_rt_selftest();
     // The chain set is fixed by the table once correlated-k is on: every (band, g-point)
     // for each of the two Gauss points of the two-stream angular quadrature. Note this is
     // TWICE the 88 usually quoted for an 11 x 8 scheme -- 88 counts band x g, and this
