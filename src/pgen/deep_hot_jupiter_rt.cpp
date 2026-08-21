@@ -609,6 +609,7 @@ void ck_continuum(const DvceArray3D<Real> &ce, const DvceArray1D<Real> &celT,
                   const DvceArray1D<Real> &celP, const int ceNT, const int ceNP,
                   const DvceArray1D<int> &ciaN, const DvceArray2D<Real> &ciaT,
                   const DvceArray3D<Real> &ciak, const DvceArray2D<Real> &rayx,
+                  const DvceArray1D<Real> &wl,
                   const Real &T, const Real &pbar, const Real &rho, Real (&kc)[CK_NB]) {
   // composition at this (T,p)
   int iT, iP;
@@ -660,6 +661,61 @@ void ck_continuum(const DvceArray3D<Real> &ce, const DvceArray1D<Real> &celT,
       kc[b] += rayx(s,b)*nn;
     }
   }
+
+  // H- bound-free and free-free, John (1988). This is the dominant continuum above about
+  // 3000 K, which under the p < 10 bar cut is the BOTTOM of the correlated-k region, so it
+  // is not a refinement. n(H-) is taken straight from the FastChem table rather than
+  // reconstructed from Saha, which keeps it consistent with the line opacities.
+  {
+    const Real lam0 = 1.6419;              // um, H- photodetachment threshold
+    const Real Cbf[6] = {152.519, 49.534, -118.858, 92.536, -34.194, 4.982};
+    // free-free coefficients: set 1 for 0.1823 < lam < 0.3645 um, set 2 for lam >= 0.3645
+    const Real Aff1[6] = {518.1021, 472.2636, -482.2089, 115.5291, 0.0, 0.0};
+    const Real Bff1[6] = {-734.8666, 1443.4137, -737.1616, 169.6374, 0.0, 0.0};
+    const Real Cff1[6] = {1021.1775, -1977.3395, 1096.8827, -245.6490, 0.0, 0.0};
+    const Real Dff1[6] = {-479.0721, 922.3575, -521.1341, 114.2430, 0.0, 0.0};
+    const Real Eff1[6] = {93.1373, -178.9275, 101.7963, -21.9972, 0.0, 0.0};
+    const Real Fff1[6] = {-6.4285, 12.3600, -7.0571, 1.5097, 0.0, 0.0};
+    const Real Aff2[6] = {0.0, 2483.3460, -3449.8890, 2200.0400, -696.2710, 88.2830};
+    const Real Bff2[6] = {0.0, 285.8270, -1158.3820, 2427.7190, -1841.4000, 444.5170};
+    const Real Cff2[6] = {0.0, -2054.2910, 8746.5230, -13651.1050, 8642.9700, -1863.8640};
+    const Real Dff2[6] = {0.0, 2827.7760, -11485.6320, 16755.5240, -10051.5300, 2095.2880};
+    const Real Eff2[6] = {0.0, -1341.5370, 5303.6090, -7510.4940, 4400.0670, -901.7880};
+    const Real Fff2[6] = {0.0, 208.9520, -812.9390, 1132.7380, -655.0200, 132.9850};
+    const Real T5040 = 5040.0/T;
+    const Real nHm = vmr[5]*ntot;                    // H- number density
+    const Real Pe_nH = vmr[4]*ntot*vmr[3]*ntot*kboltz*T;   // P(e-) * n(H)
+    for (int b=0; b<CK_NB; ++b) {
+      // the band's representative wavelength is the one at the mean WAVENUMBER of its
+      // edges, which is what the binned CIA tables were built on
+      const Real lam = 2.0/(1.0/wl(b) + 1.0/wl(b+1));
+      // bound-free: zero longward of the detachment threshold
+      Real xbf = 0.0;
+      if (lam < lam0) {
+        const Real dk = 1.0/lam - 1.0/lam0;
+        Real fbf = 0.0;
+        for (int n=0; n<6; ++n) fbf += Cbf[n]*pow(dk, 0.5*n);
+        xbf = 1.0e-18*lam*lam*lam*pow(dk, 1.5)*fbf;
+      }
+      // free-free
+      Real sff = 0.0;
+      if (lam >= 0.3645 || (lam > 0.1823 && lam < 0.3645)) {
+        const bool set2 = (lam >= 0.3645);
+        for (int n=0; n<6; ++n) {
+          const Real An = set2 ? Aff2[n] : Aff1[n];
+          const Real Bn = set2 ? Bff2[n] : Bff1[n];
+          const Real Cn = set2 ? Cff2[n] : Cff1[n];
+          const Real Dn = set2 ? Dff2[n] : Dff1[n];
+          const Real En = set2 ? Eff2[n] : Eff1[n];
+          const Real Fn = set2 ? Fff2[n] : Fff1[n];
+          sff += pow(T5040, 0.5*(n+2))*(lam*lam*An + Bn + Cn/lam
+                 + Dn/(lam*lam) + En/(lam*lam*lam) + Fn/(lam*lam*lam*lam));
+        }
+      }
+      // xbf is cm^2 per H-, sff*1e-29 is cm^4/dyne and multiplies P(e-) n(H)
+      kc[b] += (xbf*nHm + 1.0e-29*sff*Pe_nH)*irho;
+    }
+  }
   return;
 }
 
@@ -689,6 +745,7 @@ void ck_selftest() {
   auto ciaT = *cia_T_ptr;
   auto ciak = *cia_k_ptr;
   auto rayx = *ray_x_ptr;
+  auto wl = *ck_wl_ptr;
   const int ceNT = ce_nT;
   const int ceNP = ce_nP;
   DvceArray1D<Real> out("ck_selftest", 4+CK_NB);
@@ -708,8 +765,8 @@ void ck_selftest() {
       // continuum at the same reference point, with rho = 1 so the printed number is the
       // volumetric coefficient and can be checked against an independent parse
       Real kc[CK_NB];
-      ck_continuum(ce, celT, celP, ceNT, ceNP, ciaN, ciaT, ciak, rayx,
-                   1000.0, 0.1, 1.0, kc);
+      ck_continuum(ce, celT, celP, ceNT, ceNP, ciaN, ciaT, ciak, rayx, wl,
+                   3500.0, 0.1, 1.0, kc);
       for (int b=0; b<CK_NB; ++b) out(4+b) = kc[b];
     }
   });
@@ -720,7 +777,7 @@ void ck_selftest() {
               << h(0) << " (800 K) -> " << h(1) << " (2500 K)" << std::endl
               << "                                       bluest band   "
               << h(2) << " (800 K) -> " << h(3) << " (2500 K)" << std::endl;
-    std::cout << "  continuum at 1000 K, 0.1 bar, rho=1 [cm^-1], reddest to bluest:"
+    std::cout << "  continuum at 3500 K, 0.1 bar, rho=1 [cm^-1], reddest to bluest:"
               << std::endl << "   ";
     for (int b=0; b<CK_NB; ++b) std::cout << " " << h(4+b);
     std::cout << std::endl;
