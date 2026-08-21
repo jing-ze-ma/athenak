@@ -3928,16 +3928,20 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
         rt_B_ptr   = new DvceArray4D<Real>("rt_B",   nmb, n3, n2, n1);
         rt_Qv_ptr  = new DvceArray4D<Real>("rt_Qv",  nmb, n3, n2, n1);
         rt_cf_ptr  = new DvceArray4D<Real>("rt_cf",  nmb, n3, n2, 4);
-        rt_Fb_ptr  = new DvceArray5D<Real>("rt_Fb",  nmb, nblk, n3, n2, n1);
+        // (m, slot, i, k, j). Threads in a wave vary in j -- see the flattening in
+        // par_for -- so j has to be the FASTEST array index. With j second-slowest, as
+        // (m,slot,k,j,i) had it, adjacent lanes were 544 bytes apart and each one pulled
+        // its own cache line: 8 useful bytes out of every 64 fetched.
+        rt_Fb_ptr  = new DvceArray5D<Real>("rt_Fb",  nmb, nblk, n1, n3, n2);
         if (rt_ck) {
-          rt_kc_ptr = new DvceArray5D<Real>("rt_kc", nmb, CK_NB, n3, n2, n1);
-          rt_Bb_ptr = new DvceArray5D<Real>("rt_Bb", nmb, CK_NB, n3, n2, n1);
+          rt_kc_ptr = new DvceArray5D<Real>("rt_kc", nmb, CK_NB, n1, n3, n2);
+          rt_Bb_ptr = new DvceArray5D<Real>("rt_Bb", nmb, CK_NB, n1, n3, n2);
           rt_T_ptr  = new DvceArray4D<Real>("rt_T",  nmb, n3, n2, n1);
           rt_pb_ptr = new DvceArray4D<Real>("rt_pb", nmb, n3, n2, n1);
           rt_xT_ptr = new DvceArray4D<Real>("rt_xT", nmb, n3, n2, n1);
           rt_xP_ptr = new DvceArray4D<Real>("rt_xP", nmb, n3, n2, n1);
           rt_icut_ptr = new DvceArray3D<int>("rt_icut", nmb, n3, n2);
-          rt_Qb_ptr = new DvceArray5D<Real>("rt_Qb", nmb, nblk, n3, n2, n1);
+          rt_Qb_ptr = new DvceArray5D<Real>("rt_Qb", nmb, nblk, n1, n3, n2);
         }
         if (global_variable::my_rank == 0) {
           std::cout << "deep_hot_jupiter_rt: RT split path ON, " << nblk
@@ -4042,8 +4046,8 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
                        TT, pbar, w0(m,IDN,k,j,i), kcb);
           const Real sigT4_pi = boltz_sigma/M_PI*SQR(SQR(TT));
           for (int b=0; b<CK_NB; ++b) {
-            kc_g(m,b,k,j,i) = kcb[b];
-            Bb_g(m,b,k,j,i) = sigT4_pi*ck_planck_frac(ckpf, pfl0, pfid, TT, b);
+            kc_g(m,b,i,k,j) = kcb[b];
+            Bb_g(m,b,i,k,j) = sigT4_pi*ck_planck_frac(ckpf, pfl0, pfid, TT, b);
           }
         });
       } else {
@@ -4167,9 +4171,10 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
         KOKKOS_LAMBDA(const int m, const int blk, const int k, const int j) {
           constexpr int NC = RT_NB;
           constexpr int NN = RT_NNC;
-          auto F_ir_f = Kokkos::subview(Fb_g, m, blk, k, j, Kokkos::ALL);
-          auto Q_v_f  = Kokkos::subview(Qb_g, m, blk, k, j, Kokkos::ALL);
-          for (int i=is; i<ie+2; ++i) { F_ir_f[i] = 0.0; Q_v_f[i] = 0.0; }
+          for (int i=is; i<ie+2; ++i) {
+            Fb_g(m,blk,i,k,j) = 0.0;
+            Qb_g(m,blk,i,k,j) = 0.0;
+          }
           const int icut = icut_g(m,k,j);
           if (icut > ie) return;                  // whole column deeper than the cut
           // Shortwave. This is the one part of the scheme that genuinely restructures:
@@ -4240,11 +4245,11 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
             iP = static_cast<int>(xPv); fP = xPv - static_cast<Real>(iP);
             for (int cc=0; cc<NC; ++cc) {
               const Real kap = ck_kappa(cklk, iT, fT, iP, fP, bandc[cc], gc[cc])
-                             + kc_g(m,bandc[cc],k,j,ie+1);
+                             + kc_g(m,bandc[cc],ie+1,k,j);
               const Real dtau = kap*ptop*1.0e6/grav;
               const RtF trans = RT_EXP(-static_cast<RtF>(dtau/muc[cc]));
               I_down[cc][ie+1] = (static_cast<RtF>(1.0)-trans)
-                               * static_cast<RtF>(Bb_g(m,bandc[cc],k,j,ie+1));
+                               * static_cast<RtF>(Bb_g(m,bandc[cc],ie+1,k,j));
               tausw[cc] = dtau;               // beam already crossed the column above
               transw[cc] = RT_EXP(-static_cast<RtF>(dtau*facsw));
             }
@@ -4261,7 +4266,7 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
             iP = static_cast<int>(xPv); fP = xPv - static_cast<Real>(iP);
             for (int cc=0; cc<NC; ++cc) {
               const int b = bandc[cc];
-              const Real kap = ck_kappa(cklk, iT, fT, iP, fP, b, gc[cc]) + kc_g(m,b,k,j,i);
+              const Real kap = ck_kappa(cklk, iT, fT, iP, fP, b, gc[cc]) + kc_g(m,b,i,k,j);
               const RtF x = static_cast<RtF>(kap*drho/muc[cc]);
               const RtF e0 = -RT_EXPM1(-x);
               const RtF one = static_cast<RtF>(1.0);
@@ -4270,8 +4275,8 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
               const RtF bet = (x > static_cast<RtF>(1.0e-3)) ? (one - e0/x)
                                                             : (x/2 - x*x/6);
               I_down[cc][i] = (one-e0)*I_down[cc][i+1]
-                            + alp*static_cast<RtF>(Bb_g(m,b,k,j,i+1))
-                            + bet*static_cast<RtF>(Bb_g(m,b,k,j,i));
+                            + alp*static_cast<RtF>(Bb_g(m,b,i+1,k,j))
+                            + bet*static_cast<RtF>(Bb_g(m,b,i,k,j));
               // Direct beam. Deposit the flux DIFFERENCE across the cell, not
               // kappa rho F exp(-tau) evaluated at one face. The latter is what the grey
               // picket fence does, and it under-deposits badly once a layer is not thin:
@@ -4284,7 +4289,7 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
               tausw[cc] += kap*drho;
               if (lit) {
                 const Real tnew = RT_EXP(-static_cast<RtF>(tausw[cc]*facsw));
-                Q_v_f[i] += (1.0-albedo)*Fstar*ckswf(b)*wgc[cc]/facsw
+                Qb_g(m,blk,i,k,j) += (1.0-albedo)*Fstar*ckswf(b)*wgc[cc]/facsw
                           * (transw[cc] - tnew)/dx1(m,k,j,i);
                 transw[cc] = tnew;
               }
@@ -4301,8 +4306,8 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
             const int b = bandc[cc];
             const Real Iint_b = boltz_sigma/M_PI*Tint4
                               * ck_planck_frac(ckpf, pfl0, pfid, Tint, b);
-            I_up[cc] = static_cast<RtF>(Bb_g(m,b,k,j,icut) + Iint_b);
-            F_ir_f[icut] += wfc[cc]*(I_up[cc] - I_down[cc][icut]);
+            I_up[cc] = static_cast<RtF>(Bb_g(m,b,icut,k,j) + Iint_b);
+            Fb_g(m,blk,icut,k,j) += wfc[cc]*(I_up[cc] - I_down[cc][icut]);
           }
           // up-sweep
           for (int i=icut+1; i<ie+2; ++i) {
@@ -4317,7 +4322,7 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
             for (int cc=0; cc<NC; ++cc) {
               const int b = bandc[cc];
               const Real kap = ck_kappa(cklk, iT, fT, iP, fP, b, gc[cc])
-                             + kc_g(m,b,k,j,i-1);
+                             + kc_g(m,b,i-1,k,j);
               const RtF x = static_cast<RtF>(kap*drho/muc[cc]);
               const RtF e0 = -RT_EXPM1(-x);
               const RtF one = static_cast<RtF>(1.0);
@@ -4326,9 +4331,9 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
               const RtF gm = (x > static_cast<RtF>(1.0e-3)) ? (e0 - one + e0/x)
                                                            : (x/2 - x*x/3);
               I_up[cc] = (one-e0)*I_up[cc]
-                       + bet*static_cast<RtF>(Bb_g(m,b,k,j,i))
-                       + gm*static_cast<RtF>(Bb_g(m,b,k,j,i-1));
-              F_ir_f[i] += wfc[cc]*(I_up[cc] - I_down[cc][i]);
+                       + bet*static_cast<RtF>(Bb_g(m,b,i,k,j))
+                       + gm*static_cast<RtF>(Bb_g(m,b,i-1,k,j));
+              Fb_g(m,blk,i,k,j) += wfc[cc]*(I_up[cc] - I_down[cc][i]);
             }
           }
         });
@@ -4345,7 +4350,7 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
         // this block owns its own flux slot, so it starts from zero exactly as the
         // serial accumulator did
         for (int i=is; i<ie+2; ++i) {
-          F_ir_f[i] = 0.0;
+          Fb_g(m,blk,i,k,j) = 0.0;
         }
           Real gamirc[NC], fbc[NC], muggc[NC], wggc[NC], wtc[NC];
           bool synth[NC];
@@ -4409,7 +4414,7 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
             I_ir_up_c[cc] = Iint + I_ir_down_c[cc][is];
             Real F_ir_down_f = 2.0*M_PI*wggc[cc]*muggc[cc]*I_ir_down_c[cc][is];
             Real F_ir_up_f = 2.0*M_PI*wggc[cc]*muggc[cc]*I_ir_up_c[cc];
-            F_ir_f[is] += wtc[cc]*(F_ir_up_f - F_ir_down_f);
+            Fb_g(m,blk,is,k,j) += wtc[cc]*(F_ir_up_f - F_ir_down_f);
           }
           // up-sweep, accumulating the band flux as it goes
           for (int i=is+1; i<ie+2; ++i) {
@@ -4442,7 +4447,7 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
                             + bet*fbc[cc]*B[i] + gm*fbc[cc]*B[i-1];
               Real F_ir_down_f = 2.0*M_PI*wggc[cc]*muggc[cc]*I_ir_down_c[cc][i];
               Real F_ir_up_f = 2.0*M_PI*wggc[cc]*muggc[cc]*I_ir_up_c[cc];
-              F_ir_f[i] += wtc[cc]*(F_ir_up_f - F_ir_down_f);
+              Fb_g(m,blk,i,k,j) += wtc[cc]*(F_ir_up_f - F_ir_down_f);
             }
           }
       });
@@ -4453,8 +4458,8 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         Real Ft = 0.0, Fb = 0.0;
         for (int b=0; b<nblk; ++b) {
-          Ft += Fb_g(m,b,k,j,i+1);
-          Fb += Fb_g(m,b,k,j,i);
+          Ft += Fb_g(m,b,i+1,k,j);
+          Fb += Fb_g(m,b,i,k,j);
         }
         Real src = -(Ft-Fb)/dx1(m,k,j,i);
         if (ck_on) {
@@ -4464,7 +4469,7 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
             src = 0.0;
           } else {
             Real Qs = 0.0;
-            for (int b=0; b<nblk; ++b) Qs += Qb_g(m,b,k,j,i);
+            for (int b=0; b<nblk; ++b) Qs += Qb_g(m,b,i,k,j);
             src += Qs;
           }
         } else {
@@ -4484,8 +4489,8 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
           Real Fs = 0.0;
           Real Qs = 0.0;
           for (int b=0; b<nblk; ++b) {
-            Fs += Fb_g(md,b,kd,jd,i);
-            Qs += Qb_g(md,b,kd,jd,i);
+            Fs += Fb_g(md,b,i,kd,jd);
+            Qs += Qb_g(md,b,i,kd,jd);
           }
           col(i,0) = pb_g(md,kd,jd,i);
           col(i,1) = T_g(md,kd,jd,i);
