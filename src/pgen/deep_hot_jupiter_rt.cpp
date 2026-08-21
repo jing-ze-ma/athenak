@@ -2873,8 +2873,6 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
         Real tau_down_r_f[NN];
 //        Real F_v_down_f[NN];
         Real B[NN];
-        Real I_ir_down_f[NN];
-        Real I_ir_up_f[NN];
         Real F_ir_f[NN];
         Real Q_v[NN];
 //        Real kapJ_ir[NN];
@@ -2953,77 +2951,73 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
           Q_v[i] = (mu0 > -mucr) ? Qv : 0.0;
         }
         
-        // 2 IR Bands
+        // 2 IR Bands x two quadrature points, interleaved.
+        //
+        // Each (band, quadrature) combination is an independent pair of linear
+        // recurrences in radius, and running them one after another leaves the wavefront
+        // stalled on a single dependency chain: this kernel has only nmb*nx3*nx2/64
+        // wavefronts for 912 SIMDs, so there is no other wave to hide that latency and
+        // VALUBusy sits near 3 %. Stepping all four combinations inside one radial loop
+        // gives the chain four independent strands to overlap. The work is identical and
+        // so is the arithmetic -- the fluxes are still summed in combination order
+        // 0,1,2,3 at each interface, which is the order the nested loops used.
+        constexpr int NC = 4;
+        Real gamirc[NC], fbc[NC], muggc[NC], wggc[NC];
+        Real I_ir_down_c[NC][NN];
+        for (int n=0; n<2; ++n) {
+          for (int vir=0; vir<2; ++vir) {
+            const int c = 2*n + vir;
+            muggc[c] = mug[n];
+            wggc[c] = wg[n];
+            gamirc[c] = (vir == 0) ? gamir1 : gamir2;
+            fbc[c] = (vir == 0) ? beta : (1.0-beta);
+          }
+        }
+
         for (int i=is; i<ie+2; ++i) {
           F_ir_f[i] = 0.0;
-//          kapJ_ir[i] = 0.0;
         }
-        // two quadrature
-        for (int n=0; n<2; ++n) {
-          Real mugg = mug[n];
-          Real wgg = wg[n];
-          for (int vir=0; vir<2; ++vir) {
-            Real gamir, fb;
-            if (vir == 0) {
-              gamir = gamir1;
-              fb = beta;
-            } else {
-              gamir = gamir2;
-              fb = 1.0-beta;
-            }
 
-            // top
-            Real dtauir = gamir*tau_down_r_f[ie+1];
-            Real trans = exp(-dtauir/mugg);
-            I_ir_down_f[ie+1] = (1.0-trans)*(fb*B[ie+1]);
-            // down-sweep
-            for (int i=ie; i>is-1; --i) {
-              Real dtauir = gamir*(tau_down_r_f[i]-tau_down_r_f[i+1]);
-//              Real trans = exp(-dtauir/mugg);
-//              Real e0 = -expm1(-dtauir/mugg);
-//              Real e1 = dtauir/mugg - e0;
-//              Real alpa = 0.5*e0*(fb*B[i+1]+fb*B[i])/(fb*B[i+1]);
-//              Real alp = (dtauir > 1.0e-3) ? (e0 - e1/(dtauir/mugg)) : alpa;
-//              Real bet = (dtauir > 1.0e-3) ? (e1/(dtauir/mugg)) : 0.0;
-              Real x = dtauir/mugg;
-              Real e0 = -expm1(-x);
-              Real alp = (x > 1.0e-3) ? (e0 - 1.0 + e0/x) : (x/2.0-SQR(x)/3.0);
-              Real bet = (x > 1.0e-3) ? (1.0 - e0/x) : (x/2.0-SQR(x)/6.0);
-              I_ir_down_f[i] = (1.0-e0)*I_ir_down_f[i+1] + alp*fb*B[i+1] + bet*fb*B[i];
-            }
-              
-            // bottom
-            I_ir_up_f[is] = Iint + I_ir_down_f[is];
-            // up-sweep
-            for (int i=is+1; i<ie+2; ++i) {
-              Real dtauir = gamir*(tau_down_r_f[i-1]-tau_down_r_f[i]);
-//              Real trans = exp(-dtauir/mugg);
-//              Real e0 = -expm1(-dtauir/mugg);
-//              Real e1 = dtauir/mugg - e0;
-//              Real beto = 0.5*e0*(fb*B[i]+fb*B[i-1])/(fb*B[i]);
-//              Real bet = (dtauir > 1.0e-3) ? (e1/(dtauir/mugg)) : beto;
-//              Real gam = (dtauir > 1.0e-3) ? (e0 - e1/(dtauir/mugg)) : 0.0;
-              Real x = dtauir/mugg;
-              Real e0 = -expm1(-x);
-              Real bet = (x > 1.0e-3) ? (1.0 - e0/x) : (x/2.0-SQR(x)/6.0);
-              Real gam = (x > 1.0e-3) ? (e0 - 1.0 + e0/x) : (x/2.0-SQR(x)/3.0);
-              I_ir_up_f[i] = (1.0-e0)*I_ir_up_f[i-1] + bet*fb*B[i] + gam*fb*B[i-1];
-            }
-              
-            for (int i=is; i<ie+2; ++i) {
-              Real F_ir_down_f = 2.0*M_PI*wgg*mugg*I_ir_down_f[i];
-              Real F_ir_up_f = 2.0*M_PI*wgg*mugg*I_ir_up_f[i];
-              F_ir_f[i] += F_ir_up_f - F_ir_down_f;
-            }
-//            for (int i=is; i<ie+1; ++i) {
-//              Real J = wgg*I_ir_down_f[i] + wgg*I_ir_up_f[i];
-//              Real p = w0(m,IEN,k,j,i)*gm1;
-//              Real rho = w0(m,IDN,k,j,i);
-//              Real T = p/Rgas/rho;
-//              Real kapr;
-//              get_kapr(T, p, met, kapr);
-//              kapJ_ir[i] += gamir*kapr*J;
-//            }
+        // top
+        for (int c=0; c<NC; ++c) {
+          Real dtauir = gamirc[c]*tau_down_r_f[ie+1];
+          Real trans = exp(-dtauir/muggc[c]);
+          I_ir_down_c[c][ie+1] = (1.0-trans)*(fbc[c]*B[ie+1]);
+        }
+        // down-sweep
+        for (int i=ie; i>is-1; --i) {
+          for (int c=0; c<NC; ++c) {
+            Real dtauir = gamirc[c]*(tau_down_r_f[i]-tau_down_r_f[i+1]);
+            Real x = dtauir/muggc[c];
+            Real e0 = -expm1(-x);
+            Real alp = (x > 1.0e-3) ? (e0 - 1.0 + e0/x) : (x/2.0-SQR(x)/3.0);
+            Real bet = (x > 1.0e-3) ? (1.0 - e0/x) : (x/2.0-SQR(x)/6.0);
+            I_ir_down_c[c][i] = (1.0-e0)*I_ir_down_c[c][i+1]
+                              + alp*fbc[c]*B[i+1] + bet*fbc[c]*B[i];
+          }
+        }
+
+        // bottom
+        Real I_ir_up_c[NC];
+        for (int c=0; c<NC; ++c) {
+          I_ir_up_c[c] = Iint + I_ir_down_c[c][is];
+          Real F_ir_down_f = 2.0*M_PI*wggc[c]*muggc[c]*I_ir_down_c[c][is];
+          Real F_ir_up_f = 2.0*M_PI*wggc[c]*muggc[c]*I_ir_up_c[c];
+          F_ir_f[is] += F_ir_up_f - F_ir_down_f;
+        }
+        // up-sweep, accumulating the band flux as it goes
+        for (int i=is+1; i<ie+2; ++i) {
+          for (int c=0; c<NC; ++c) {
+            Real dtauir = gamirc[c]*(tau_down_r_f[i-1]-tau_down_r_f[i]);
+            Real x = dtauir/muggc[c];
+            Real e0 = -expm1(-x);
+            Real bet = (x > 1.0e-3) ? (1.0 - e0/x) : (x/2.0-SQR(x)/6.0);
+            Real gam = (x > 1.0e-3) ? (e0 - 1.0 + e0/x) : (x/2.0-SQR(x)/3.0);
+            I_ir_up_c[c] = (1.0-e0)*I_ir_up_c[c]
+                         + bet*fbc[c]*B[i] + gam*fbc[c]*B[i-1];
+            Real F_ir_down_f = 2.0*M_PI*wggc[c]*muggc[c]*I_ir_down_c[c][i];
+            Real F_ir_up_f = 2.0*M_PI*wggc[c]*muggc[c]*I_ir_up_c[c];
+            F_ir_f[i] += F_ir_up_f - F_ir_down_f;
           }
         }
         
