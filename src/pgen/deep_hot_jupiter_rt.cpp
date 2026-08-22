@@ -200,7 +200,7 @@ Real rt_star_teff = 6000.0;
 // net longwave flux and stellar heating -- straight out of the production kernel, once, at
 // the first RT call. This exists so the kernel ITSELF can be compared against an external
 // code on the same profile, rather than a transcription of it. See
-// bench/exofms_compare/README.md.
+// docs/correlated_k_rt.md.
 std::string rt_dump_file = "";
 int rt_dump_m = 0;
 int rt_dump_j = -1;

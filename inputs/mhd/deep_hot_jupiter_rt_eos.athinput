@@ -204,6 +204,7 @@ met   = 0.0                      # [M/H] dex; also sets the EOS's metal donors
 bbot  = 5.0e0
 
 # --- radiative transfer -----------------------------------------------------------
+# The correlated-k scheme is documented in docs/correlated_k_rt.md.
 # Defaults below are the shipped ones, listed explicitly because AthenaK's command-line
 # overrides only MODIFY parameters that already exist: without these lines,
 # `problem/rt_ck=true` on the command line fatals with "not found".
