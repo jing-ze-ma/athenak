@@ -138,20 +138,10 @@ using RtF = Real;
 #endif
 
 namespace {
-// --- blocked-band RT scaling harness (measurement only) ---------------------------
-// problem/rt_nchain: total (band, quadrature) chains to step, 4 = production picket
-// fence. problem/rt_ktab: give the synthetic chains a per-cell table lookup, so the
-// memory traffic of a correlated-k scheme is measured and not just the recurrences.
-// Chains past the first four carry weight zero, so a harness run must remain bitwise
-// identical to production -- see the sweep for why.
+// Column solves ("chains") the RT kernel steps per cell: 4 for the grey picket fence
+// (two IR channels x the two Gauss angles), CK_NB*CK_NG*ck_nquad for correlated-k.
+// Derived from the scheme, not an input.
 int rt_nchain = 4;
-bool rt_ktab = false;
-constexpr int RT_KT_NT = 30;
-constexpr int RT_KT_NP = 20;
-// Deliberately leaked: a Kokkos View at namespace scope would be destroyed after
-// Kokkos::finalize(). One 88x30x20 table is 422 kB, the size of a real k-table.
-DvceArray3D<Real> *rt_ktab_ptr = nullptr;
-DvceArray1D<Real> *rt_wgt_ptr = nullptr;
 
 // problem/rt_split: run the RT as three kernels with the chain-block index promoted to
 // a parallel dimension, instead of one kernel that loops over chains serially. Same
@@ -1063,36 +1053,6 @@ void ck_selftest() {
   return;
 }
 
-//----------------------------------------------------------------------------------------
-//! \fn Real ktab_lookup()
-//  \brief bilinear interpolation in a synthetic correlated-k table. The cell coordinates
-//  are computed once per cell by the caller, as a real scheme would compute log T and
-//  log p once per cell rather than once per chain.
-
-KOKKOS_INLINE_FUNCTION
-Real ktab_lookup(const DvceArray3D<Real> &kt, const int c,
-                 const Real &ct, const Real &cp) {
-  const int nt = RT_KT_NT;
-  const int np = RT_KT_NP;
-  // Clamp the COORDINATE, not just the index. Clamping only the index leaves the
-  // fraction as a huge extrapolation weight, which drives the interpolated opacity
-  // negative, flips the sign of the optical depth increment, and makes the intensity
-  // recurrence diverge to inf -- which then poisons the zero-weight sum as 0*inf = NaN.
-  Real xt = (ct < 0.0) ? 0.0 : ((ct > nt-1.0) ? nt-1.0 : ct);
-  Real xp = (cp < 0.0) ? 0.0 : ((cp > np-1.0) ? np-1.0 : cp);
-  int it = static_cast<int>(xt);
-  int ip = static_cast<int>(xp);
-  it = (it > nt-2) ? nt-2 : it;
-  ip = (ip > np-2) ? np-2 : ip;
-  const Real ft = xt - static_cast<Real>(it);
-  const Real fp = xp - static_cast<Real>(ip);
-  const Real k00 = kt(c,it  ,ip  );
-  const Real k01 = kt(c,it  ,ip+1);
-  const Real k10 = kt(c,it+1,ip  );
-  const Real k11 = kt(c,it+1,ip+1);
-  return (1.0-ft)*((1.0-fp)*k00 + fp*k01) + ft*((1.0-fp)*k10 + fp*k11);
-}
-
 // problem/bc_outer_maxwell: whether the outer-x1 ghost extrapolation carries the
 // divergence of the Maxwell stress.
 //
@@ -1127,8 +1087,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
               << "extrapolation is " << (bc_outer_maxwell ? "ON" : "off") << std::endl;
   }
   // blocked-band RT scaling harness: sized once, before any RT call
-  rt_nchain = pin->GetOrAddInteger("problem","rt_nchain",4);
-  rt_ktab = pin->GetOrAddBoolean("problem","rt_ktab",false);
   rt_split = pin->GetOrAddBoolean("problem","rt_split",false);
   rt_ck = pin->GetOrAddBoolean("problem","rt_ck",false);
   rt_star_teff = pin->GetOrAddReal("problem","ck_star_teff",6000.0);
@@ -1175,32 +1133,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       } else {
         std::cout << " (2-point Gauss)" << std::endl;
       }
-    }
-  }
-  if (rt_nchain < 4) rt_nchain = 4;
-  if (rt_ktab_ptr == nullptr) {
-    rt_ktab_ptr = new DvceArray3D<Real>("rt_ktab", rt_nchain, RT_KT_NT, RT_KT_NP);
-    rt_wgt_ptr = new DvceArray1D<Real>("rt_wgt", rt_nchain);
-    auto ktab = *rt_ktab_ptr;
-    auto rtwgt = *rt_wgt_ptr;
-    par_for("rt_ktab_init", DevExeSpace(), 0, rt_nchain-1, 0, RT_KT_NT-1, 0, RT_KT_NP-1,
-    KOKKOS_LAMBDA(const int c, const int it, const int ip) {
-      // order-unity, smooth in (T,p), different per chain
-      ktab(c,it,ip) = 0.1 + 0.45*(1.0 + sin(0.11*c + 0.3*it)*cos(0.2*ip + 0.07*c));
-    });
-    const bool ckon = rt_ck;
-    const int cknq = ck_nq;
-    auto ckgw = (rt_ck) ? *ck_gw_ptr : DvceArray1D<Real>("dummy", 1);
-    par_for("rt_wgt_init", DevExeSpace(), 0, rt_nchain-1,
-    KOKKOS_LAMBDA(const int c) {
-      rtwgt(c) = (c < 4) ? 1.0 : 0.0;
-      if (ckon) rtwgt(c) = ckgw((c/cknq) % CK_NG);  // correlated-k: the g-point weight
-    });
-    if (global_variable::my_rank == 0 && rt_nchain > 4) {
-      std::cout << "deep_hot_jupiter_rt: RT scaling harness active, " << rt_nchain
-                << " chains in blocks of " << RT_NB << ", table lookup "
-                << (rt_ktab ? "ON" : "off")
-                << " (chains past 4 carry zero weight)" << std::endl;
     }
   }
   user_bcs_func = HydrostaticEquilibrium;
@@ -3934,9 +3866,6 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
     Real Iint = boltz_sigma/M_PI*Tint4;
     
     const int nchain_rt = rt_nchain;
-    const bool use_ktab_ = rt_ktab;
-    auto ktab_ = *rt_ktab_ptr;
-    auto rt_wgt_ = *rt_wgt_ptr;
 
     Real mug[2];
     Real wg[2];
@@ -4444,8 +4373,7 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
         for (int i=is; i<ie+2; ++i) {
           Fb_g(m,blk,i,k,j) = 0.0;
         }
-          Real gamirc[NC], fbc[NC], muggc[NC], wggc[NC], wtc[NC];
-          bool synth[NC];
+          Real gamirc[NC], fbc[NC], muggc[NC], wggc[NC];
           for (int cc=0; cc<NC; ++cc) {
             const int c = blk*NC + cc;
             const int n = (c/2) % 2;
@@ -4454,8 +4382,6 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
             wggc[cc] = wg[n];
             gamirc[cc] = (vir == 0) ? gamir1 : gamir2;
             fbc[cc] = (vir == 0) ? beta : (1.0-beta);
-            wtc[cc] = rt_wgt_(c);
-            synth[cc] = (c >= 4);
           }
           Real I_ir_down_c[NC][NN];
 #if RT_CACHE
@@ -4471,21 +4397,8 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
           // down-sweep
           for (int i=ie; i>is-1; --i) {
             Real dtau_i = tau_down_r_f[i]-tau_down_r_f[i+1];
-            Real ct = 0.0, cp = 0.0;
-            if (use_ktab_) {
-              ct = 1.2*log(1.0 + B[i]);
-              cp = 0.7*log(1.0 + tau_down_r_f[i]);
-            }
             for (int cc=0; cc<NC; ++cc) {
-              Real gam = gamirc[cc];
-              if (use_ktab_ && synth[cc]) {
-                // Per-cell correlated-k style lookup: bilinear in a (T, p) proxy pair.
-                // This measures the table traffic a real k-table would generate -- the
-                // indices are data dependent and differ per cell, per chain -- it is not
-                // a physical opacity, and it only ever feeds a zero-weight chain.
-                gam = ktab_lookup(ktab_, blk*NC + cc, ct, cp);
-              }
-              Real dtauir = gam*dtau_i;
+              Real dtauir = gamirc[cc]*dtau_i;
               Real x = dtauir/muggc[cc];
               Real e0 = -expm1(-x);
               Real alp = (x > 1.0e-3) ? (e0 - 1.0 + e0/x) : (x/2.0-SQR(x)/3.0);
@@ -4506,17 +4419,12 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
             I_ir_up_c[cc] = Iint + I_ir_down_c[cc][is];
             Real F_ir_down_f = 2.0*M_PI*wggc[cc]*muggc[cc]*I_ir_down_c[cc][is];
             Real F_ir_up_f = 2.0*M_PI*wggc[cc]*muggc[cc]*I_ir_up_c[cc];
-            Fb_g(m,blk,is,k,j) += wtc[cc]*(F_ir_up_f - F_ir_down_f);
+            Fb_g(m,blk,is,k,j) += (F_ir_up_f - F_ir_down_f);
           }
           // up-sweep, accumulating the band flux as it goes
           for (int i=is+1; i<ie+2; ++i) {
 #if !RT_CACHE
             Real dtau_i = tau_down_r_f[i-1]-tau_down_r_f[i];
-            Real ct = 0.0, cp = 0.0;
-            if (use_ktab_) {
-              ct = 1.2*log(1.0 + B[i-1]);
-              cp = 0.7*log(1.0 + tau_down_r_f[i-1]);
-            }
 #endif
             for (int cc=0; cc<NC; ++cc) {
 #if RT_CACHE
@@ -4525,11 +4433,7 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
               const Real bet = betc[cc][i-1];
               const Real gm = alpc[cc][i-1];
 #else
-              Real gam = gamirc[cc];
-              if (use_ktab_ && synth[cc]) {
-                gam = ktab_lookup(ktab_, blk*NC + cc, ct, cp);
-              }
-              Real dtauir = gam*dtau_i;
+              Real dtauir = gamirc[cc]*dtau_i;
               Real x = dtauir/muggc[cc];
               Real e0 = -expm1(-x);
               Real bet = (x > 1.0e-3) ? (1.0 - e0/x) : (x/2.0-SQR(x)/6.0);
@@ -4539,7 +4443,7 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
                             + bet*fbc[cc]*B[i] + gm*fbc[cc]*B[i-1];
               Real F_ir_down_f = 2.0*M_PI*wggc[cc]*muggc[cc]*I_ir_down_c[cc][i];
               Real F_ir_up_f = 2.0*M_PI*wggc[cc]*muggc[cc]*I_ir_up_c[cc];
-              Fb_g(m,blk,i,k,j) += wtc[cc]*(F_ir_up_f - F_ir_down_f);
+              Fb_g(m,blk,i,k,j) += (F_ir_up_f - F_ir_down_f);
             }
           }
       });
@@ -4752,13 +4656,8 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
           // the chain NC independent strands to overlap, and blocking keeps the private
           // I_ir_down_c footprint at NC columns however many chains are requested.
           //
-          // Chains beyond the first four are the SCALING HARNESS (problem/rt_nchain, see
-          // the note at the head of this function): they do the same lookup, the same two
-          // recurrences and the same flux accumulation, but their weight rt_wgt is zero at
-          // runtime, so the atmosphere is untouched and the run stays on the trajectory of
-          // the production scheme. Multiplying by an exact 1.0 or 0.0 cannot perturb the
-          // sum, so a harness run must stay bitwise identical -- that is the check that
-          // the measurement is honest.
+          // This is the grey path, so nchain_rt is 4 and there is exactly one block; the
+          // blocking survives because the correlated-k kernel shares the structure.
           constexpr int NC = RT_NB;
           const int nblk_rt = (nchain_rt + NC - 1)/NC;
           for (int i=is; i<ie+2; ++i) {
@@ -4766,8 +4665,7 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
           }
 
           for (int blk=0; blk<nblk_rt; ++blk) {
-            Real gamirc[NC], fbc[NC], muggc[NC], wggc[NC], wtc[NC];
-            bool synth[NC];
+            Real gamirc[NC], fbc[NC], muggc[NC], wggc[NC];
             for (int cc=0; cc<NC; ++cc) {
               const int c = blk*NC + cc;
               const int n = (c/2) % 2;
@@ -4776,8 +4674,6 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
               wggc[cc] = wg[n];
               gamirc[cc] = (vir == 0) ? gamir1 : gamir2;
               fbc[cc] = (vir == 0) ? beta : (1.0-beta);
-              wtc[cc] = rt_wgt_(c);
-              synth[cc] = (c >= 4);
             }
             Real I_ir_down_c[NC][NN];
 
@@ -4790,21 +4686,8 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
             // down-sweep
             for (int i=ie; i>is-1; --i) {
               Real dtau_i = tau_down_r_f[i]-tau_down_r_f[i+1];
-              Real ct = 0.0, cp = 0.0;
-              if (use_ktab_) {
-                ct = 1.2*log(1.0 + B[i]);
-                cp = 0.7*log(1.0 + tau_down_r_f[i]);
-              }
               for (int cc=0; cc<NC; ++cc) {
-                Real gam = gamirc[cc];
-                if (use_ktab_ && synth[cc]) {
-                  // Per-cell correlated-k style lookup: bilinear in a (T, p) proxy pair.
-                  // This measures the table traffic a real k-table would generate -- the
-                  // indices are data dependent and differ per cell, per chain -- it is not
-                  // a physical opacity, and it only ever feeds a zero-weight chain.
-                  gam = ktab_lookup(ktab_, blk*NC + cc, ct, cp);
-                }
-                Real dtauir = gam*dtau_i;
+                Real dtauir = gamirc[cc]*dtau_i;
                 Real x = dtauir/muggc[cc];
                 Real e0 = -expm1(-x);
                 Real alp = (x > 1.0e-3) ? (e0 - 1.0 + e0/x) : (x/2.0-SQR(x)/3.0);
@@ -4820,22 +4703,13 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
               I_ir_up_c[cc] = Iint + I_ir_down_c[cc][is];
               Real F_ir_down_f = 2.0*M_PI*wggc[cc]*muggc[cc]*I_ir_down_c[cc][is];
               Real F_ir_up_f = 2.0*M_PI*wggc[cc]*muggc[cc]*I_ir_up_c[cc];
-              F_ir_f[is] += wtc[cc]*(F_ir_up_f - F_ir_down_f);
+              F_ir_f[is] += (F_ir_up_f - F_ir_down_f);
             }
             // up-sweep, accumulating the band flux as it goes
             for (int i=is+1; i<ie+2; ++i) {
               Real dtau_i = tau_down_r_f[i-1]-tau_down_r_f[i];
-              Real ct = 0.0, cp = 0.0;
-              if (use_ktab_) {
-                ct = 1.2*log(1.0 + B[i-1]);
-                cp = 0.7*log(1.0 + tau_down_r_f[i-1]);
-              }
               for (int cc=0; cc<NC; ++cc) {
-                Real gam = gamirc[cc];
-                if (use_ktab_ && synth[cc]) {
-                  gam = ktab_lookup(ktab_, blk*NC + cc, ct, cp);
-                }
-                Real dtauir = gam*dtau_i;
+                Real dtauir = gamirc[cc]*dtau_i;
                 Real x = dtauir/muggc[cc];
                 Real e0 = -expm1(-x);
                 Real bet = (x > 1.0e-3) ? (1.0 - e0/x) : (x/2.0-SQR(x)/6.0);
@@ -4844,7 +4718,7 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
                               + bet*fbc[cc]*B[i] + gm*fbc[cc]*B[i-1];
                 Real F_ir_down_f = 2.0*M_PI*wggc[cc]*muggc[cc]*I_ir_down_c[cc][i];
                 Real F_ir_up_f = 2.0*M_PI*wggc[cc]*muggc[cc]*I_ir_up_c[cc];
-                F_ir_f[i] += wtc[cc]*(F_ir_up_f - F_ir_down_f);
+                F_ir_f[i] += (F_ir_up_f - F_ir_down_f);
               }
             }
           }

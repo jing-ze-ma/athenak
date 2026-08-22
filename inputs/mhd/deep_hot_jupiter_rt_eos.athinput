@@ -209,6 +209,15 @@ bbot  = 5.0e0
 # overrides only MODIFY parameters that already exist: without these lines,
 # `problem/rt_ck=true` on the command line fatals with "not found".
 rt_ck        = false             # false = grey picket fence; true = correlated-k
+rt_split     = false             # run the RT as chain-parallel kernels instead of one
+                                 # kernel looping over chains serially.  Implied by
+                                 # rt_ck.  Same arithmetic and the same summation
+                                 # order, so the GREY scheme is bitwise identical
+                                 # either way -- that A/B is the check on the split
+                                 # kernel.  Leave it false for grey production runs:
+                                 # with only 4 chains the split path gains no
+                                 # parallelism and pays extra launches (133 vs 167
+                                 # ms/100cyc).
 ck_pcut_bar  = 10.0              # correlated-k only above this pressure; below it the
                                  # atmosphere is optically thick (grey tau ~ 1e4 at 10 bar)
                                  # and convective, and no radiative source is applied
