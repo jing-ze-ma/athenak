@@ -36,6 +36,22 @@ using pgen_eos::EintFromP;
 using pgen_eos::PresFromEint;
 using pgen_eos::TempKelvin;
 using pgen_eos::PresTempFromEint;
+
+//----------------------------------------------------------------------------------------
+//! \fn Real TGuess
+//! \brief the cached temperature of a cell, or "no guess" when there is no cache.
+//!
+//! Hydro/MHD::wtemp is allocated ONLY under a general EOS -- an ideal gas has nothing to
+//! cache, since T is algebraic. Under `eos = ideal` the view is therefore empty, and
+//! indexing it is a read through a null pointer: silent in a Release build until it
+//! happens to land outside the mapped heap, which is what made the shipped ideal-gas
+//! input segfault inside the RT a few cycles in. The consumers all ignore the guess on
+//! the ideal branch anyway, so returning a non-positive "no guess" here is exact.
+KOKKOS_INLINE_FUNCTION
+Real TGuess(const DvceArray4D<Real> &wt, const int m, const int k, const int j,
+            const int i) {
+  return (wt.extent(0) > 0) ? wt(m,k,j,i) : -1.0;
+}
 using pgen_eos::DensFromPT;
 using pgen_eos::GradAd;
 
@@ -2215,7 +2231,7 @@ void HydrostaticEquilibrium(Mesh *pm) {
               // this column above has already solved for and left in wtemp. This runs per
               // ghost cell per stage, and the isothermal branch inverts twice.
               WBAdvance(eos, 1, rho_i, e_i, dphi_i, rho0_hyd, e0_hyd, t_hyd,
-                        wtemp_(m,k,j,ie));
+                        TGuess(wtemp_, m, k, j, ie));
             } else {
               e0_hyd = exp(q0_i - factor_i * dphi_i);
               rho0_hyd = e0_hyd/e_i*rho_i;
@@ -2779,7 +2795,8 @@ void double_gray_two_stream_RT(Mesh *pm, Real bdt) {
         for (int i=ie; i>is-1; --i) {
           Real rho = w0(m,IDN,k,j,i);
           Real p, T;
-          PresTempFromEint(eos,gm1,Rgas,rho,w0(m,IEN,k,j,i),wtemp_(m,k,j,i),p,T);
+          PresTempFromEint(eos,gm1,Rgas,rho,w0(m,IEN,k,j,i),
+                           TGuess(wtemp_, m, k, j, i),p,T);
           B[i] = boltz_sigma/M_PI*SQR(SQR(T));
           Real kap_v = 4.0e-3; // Rauscher & Menou 2012; Guillot 2010
           Real kap_ir = 2.28e-5*pow(p*cgs2Pa,0.53); // Komocek+2017
@@ -2981,7 +2998,8 @@ void double_gray_two_stream_RT_source(Mesh *pm, Real bdt) {
         for (int i=ie; i>is-1; --i) {
           Real rho = w0(m,IDN,k,j,i);
           Real p, T;
-          PresTempFromEint(eos,gm1,Rgas,rho,w0(m,IEN,k,j,i),wtemp_(m,k,j,i),p,T);
+          PresTempFromEint(eos,gm1,Rgas,rho,w0(m,IEN,k,j,i),
+                           TGuess(wtemp_, m, k, j, i),p,T);
           B[i] = boltz_sigma/M_PI*SQR(SQR(T));
           Real kap_v = 4.0e-3; // Rauscher & Menou 2012; Guillot 2010
             Real kap_ir = 1.0e-2; // 2.28e-5*pow(p*cgs2Pa,0.53); // Komocek+2017
@@ -3055,7 +3073,8 @@ void double_gray_two_stream_RT_source(Mesh *pm, Real bdt) {
           Real J = (I_up+I_down[i])/2.0;
           Real rho = w0(m,IDN,k,j,i);
           Real p, T;
-          PresTempFromEint(eos,gm1,Rgas,rho,w0(m,IEN,k,j,i),wtemp_(m,k,j,i),p,T);
+          PresTempFromEint(eos,gm1,Rgas,rho,w0(m,IEN,k,j,i),
+                           TGuess(wtemp_, m, k, j, i),p,T);
             Real kap_ir = 1.0e-2; //2.28e-5*pow(p*cgs2Pa,0.53); // Komocek+2017
           if (test_oned) kap_ir = 1.0e-2;
 //          Real Q_ir = 4.0*M_PI*kap_ir*rho*(J-B(i));
@@ -3338,13 +3357,20 @@ void get_wb_eos_arr(const EOS_Data &eos, const Real &Rgas, const Real &grav_acc,
 
         get_wb_Tp(p,T);
 
-        if (eos.IsGeneral()) {
-          // dln p/dz = rho g/p, closed with the EOS's (p,T) -> rho inversion. The ideal
-          // branch is the same thing with rho = p/(Rgas T), kept in its original form.
-          Real rho = DensFromPT(eos, Rgas, p, T);
-          logparr(n+1) = logparr(n) + grav_acc*dz*rho/p;
-        } else {
-          logparr(n+1) = logparr(n) + fac/T;
+        // n+1 is guarded: logparr holds N entries, so the last pass of this loop used to
+        // integrate one step PAST THE END of it. A one-element write off the end of a
+        // Kokkos allocation is silent in a Release build -- it lands in whatever follows
+        // -- but it is undefined behaviour, a Kokkos Debug build aborts on it, and the
+        // value written was never read. zarr(n) above still has to be set for every n.
+        if (n+1 < N) {
+          if (eos.IsGeneral()) {
+            // dln p/dz = rho g/p, closed with the EOS's (p,T) -> rho inversion. The ideal
+            // branch is the same thing with rho = p/(Rgas T), kept in its original form.
+            Real rho = DensFromPT(eos, Rgas, p, T);
+            logparr(n+1) = logparr(n) + grav_acc*dz*rho/p;
+          } else {
+            logparr(n+1) = logparr(n) + fac/T;
+          }
         }
     }
 
@@ -3402,13 +3428,20 @@ void get_init_eos_arr(const EOS_Data &eos, const Real &Rgas, const Real &grav_ac
 
         get_init_Tp_host(N, Tarr, lgparr, p, T);
 
-        if (eos.IsGeneral()) {
-          // dln p/dz = rho g/p, closed with the EOS's (p,T) -> rho inversion. The ideal
-          // branch is the same thing with rho = p/(Rgas T), kept in its original form.
-          Real rho = DensFromPT(eos, Rgas, p, T);
-          logparr(n+1) = logparr(n) + grav_acc*dz*rho/p;
-        } else {
-          logparr(n+1) = logparr(n) + fac/T;
+        // n+1 is guarded: logparr holds N entries, so the last pass of this loop used to
+        // integrate one step PAST THE END of it. A one-element write off the end of a
+        // Kokkos allocation is silent in a Release build -- it lands in whatever follows
+        // -- but it is undefined behaviour, a Kokkos Debug build aborts on it, and the
+        // value written was never read. zarr(n) above still has to be set for every n.
+        if (n+1 < N) {
+          if (eos.IsGeneral()) {
+            // dln p/dz = rho g/p, closed with the EOS's (p,T) -> rho inversion. The ideal
+            // branch is the same thing with rho = p/(Rgas T), kept in its original form.
+            Real rho = DensFromPT(eos, Rgas, p, T);
+            logparr(n+1) = logparr(n) + grav_acc*dz*rho/p;
+          } else {
+            logparr(n+1) = logparr(n) + fac/T;
+          }
         }
     }
 
@@ -4010,7 +4043,7 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
         KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
           Real pp, TT;
           PresTempFromEint(eos,gm1,Rgas,w0(m,IDN,k,j,i),w0(m,IEN,k,j,i),
-                           wtemp_(m,k,j,i),pp,TT);
+                           TGuess(wtemp_, m, k, j, i),pp,TT);
           T_g(m,k,j,i) = TT;
           pb_g(m,k,j,i) = pp*1.0e-6;
         });
@@ -4108,7 +4141,8 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
         for (int i=ie; i>is-1; --i) {
           Real rho = w0(m,IDN,k,j,i);
           Real p, T;
-          PresTempFromEint(eos,gm1,Rgas,rho,w0(m,IEN,k,j,i),wtemp_(m,k,j,i),p,T);
+          PresTempFromEint(eos,gm1,Rgas,rho,w0(m,IEN,k,j,i),
+                           TGuess(wtemp_, m, k, j, i),p,T);
           B[i] = boltz_sigma/M_PI*SQR(SQR(T));
           Real kapr;
           get_kapr(T, p, met, kapr);
@@ -4608,7 +4642,8 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
           for (int i=ie; i>is-1; --i) {
             Real rho = w0(m,IDN,k,j,i);
             Real p, T;
-            PresTempFromEint(eos,gm1,Rgas,rho,w0(m,IEN,k,j,i),wtemp_(m,k,j,i),p,T);
+            PresTempFromEint(eos,gm1,Rgas,rho,w0(m,IEN,k,j,i),
+                             TGuess(wtemp_, m, k, j, i),p,T);
             B[i] = boltz_sigma/M_PI*SQR(SQR(T));
             Real kapr;
             get_kapr(T, p, met, kapr);
