@@ -2,17 +2,8 @@
 Regression test for the correlated-k radiative transfer in the deep_hot_jupiter_rt
 problem generator.
 
-This test is unlike the rest of the suite in two ways, both forced by what it covers:
-
-  1. The scheme lives in a USER problem generator, so it needs its own binary built with
-     -D PROBLEM=deep_hot_jupiter_rt.  The shared build that run_test_suite.py makes does
-     not contain it, and a test cannot ask that build for a different PROBLEM, so this
-     file configures and compiles a second binary into tst/build_ck and removes it again.
-     That build is the expensive part of the test.
-
-  2. It needs the Exo-FMS correlated-k tables, which are not in git (no upstream licence;
-     data/exo_fms_ck/PROVENANCE.md records where to fetch them).  Without them the test
-     SKIPS rather than fails, which is what happens in CI.
+Why this test builds its own binary and skips without the Exo-FMS tables is explained in
+dhj_ck_common.py, which it shares with the MPI sibling.
 
 What is checked, cheapest and sharpest first:
 
@@ -37,112 +28,48 @@ boundary condition, not to measure accuracy.
 
 # Modules
 import os
-import re
 import shutil
-import subprocess
 import numpy as np
 import pytest
+import test_suite.rad.dhj_ck_common as ck
 
-SIGMA_SB = 5.6704e-5                       # Stefan-Boltzmann, cgs
+BUILD = os.path.join(ck.REPO, "tst", "build_ck")
 
-REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-DATA = os.path.join(REPO, "data", "exo_fms_ck")
-KTABLE = os.path.join(DATA, "ck", "Premixed_1x_g8_11.txt")
-BUILD = os.path.join(REPO, "tst", "build_ck")
-INPUT = os.path.join(REPO, "inputs", "mhd", "deep_hot_jupiter_rt_eos.athinput")
-
-# Smallest grid the problem will run on: nx1 must equal the meshblock nx1 (the two-stream
-# RT sweeps whole radial columns), and the polar boundary needs an even number of
-# meshblocks in x3.  Two blocks of 64 x 8 x 4.
-MESH = [
-    "mesh/nx1=64", "mesh/nx2=8", "mesh/nx3=8",
-    "meshblock/nx1=64", "meshblock/nx2=8", "meshblock/nx3=4",
-    "time/nlim=1",
-]
-
-CK = [
-    "problem/rt_ck=true",
-    "problem/ck_table=" + KTABLE,
-    "problem/ck_data_dir=" + DATA,
-]
+# Smallest grid the problem will run on: two meshblocks of 64 x 8 x 4.
+MESH = ck.mesh(8, 8, 8, 4, 1)
 
 # phi indices of a nightside and a dayside column on this grid (mu0 = -0.92 and +0.92).
 NIGHT_K = 2
 DAY_K = 5
 
 
-def build():
-    """Configure and compile a deep_hot_jupiter_rt binary into tst/build_ck."""
-    subprocess.run(
-        ["cmake", "-S", REPO, "-B", BUILD, "-D", "PROBLEM=deep_hot_jupiter_rt",
-         "-D", "CMAKE_BUILD_TYPE=Release"],
-        check=True, capture_output=True, text=True,
-    )
-    subprocess.run(
-        ["make", "-C", BUILD, "-j", str(os.cpu_count())],
-        check=True, capture_output=True, text=True,
-    )
-    return os.path.join(BUILD, "src", "athena")
-
-
-def run(binary, dumpfile, dump_k):
-    """Run one cycle of the correlated-k scheme, dumping one radial column."""
+def column(binary, name, dump_k):
+    """One cycle of the correlated-k scheme, dumping one radial column."""
     rundir = os.path.join(BUILD, "run")
-    os.makedirs(rundir, exist_ok=True)
-    proc = subprocess.run(
-        [binary, "-i", INPUT] + MESH + CK
-        + ["problem/ck_dump_file=" + dumpfile, "problem/ck_dump_k=" + repr(dump_k)],
-        cwd=rundir, capture_output=True, text=True,
-    )
-    if proc.returncode != 0:
-        pytest.fail(f"correlated-k run failed (k = {dump_k}):\n{proc.stdout[-4000:]}")
-    return proc.stdout, os.path.join(rundir, dumpfile)
+    out = ck.run(binary, rundir, MESH + ck.CK
+                 + ["problem/ck_dump_file=" + name,
+                    "problem/ck_dump_k=" + repr(dump_k)])
+    return out, os.path.join(rundir, name)
 
 
-def read_column(path):
-    """Return (header dict, columns) from a correlated-k column dump."""
-    with open(path) as f:
-        head = "".join([ln for ln in f if ln.startswith("#")])
-    keys = ["mu0", "icut", "T_int", "T_irr"]
-    hdr = {}
-    for k in keys:
-        m = re.search(k + r" = *([-0-9.eE+]+)", head)
-        assert m is not None, f"'{k}' missing from the column dump header"
-        hdr[k] = float(m.group(1))
-    hdr["icut"] = int(hdr["icut"])
-    data = np.loadtxt(path)
-    return hdr, data
-
-
-def grab(stdout, pattern, name):
-    """Pull one float out of the run's diagnostic output."""
-    m = re.search(pattern, stdout)
-    if m is None:
-        pytest.fail(f"{name} not reported by the run; the diagnostic may have moved")
-    return float(m.group(1))
-
-
-@pytest.mark.skipif(
-    not os.path.exists(KTABLE),
-    reason="Exo-FMS correlated-k tables absent; see data/exo_fms_ck/PROVENANCE.md",
-)
+@pytest.mark.skipif(not ck.HAVE_TABLES, reason=ck.NO_TABLES)
 def test_run():
     """Build the problem generator, then check the correlated-k RT on two columns."""
     try:
-        binary = build()
-        out, night = run(binary, "col_night.txt", NIGHT_K)
-        _, day = run(binary, "col_day.txt", DAY_K)
+        binary = ck.build(BUILD)
+        out, night = column(binary, "col_night.txt", NIGHT_K)
+        _, day = column(binary, "col_day.txt", DAY_K)
 
         # --- exact limits the scheme tests on the device at startup ------------------
-        iso = grab(out, r"isothermal net flux \|F\|/sigmaT\^4 <= *([0-9.eE+-]+)",
-                   "isothermal self-test")
-        thin = grab(out, r"transparent slab F/sigmaT\^4 = *([0-9.eE+-]+)",
-                    "transparent-slab self-test")
+        iso = ck.grab(out, r"isothermal net flux \|F\|/sigmaT\^4 <= *([0-9.eE+-]+)",
+                      "isothermal self-test")
+        thin = ck.grab(out, r"transparent slab F/sigmaT\^4 = *([0-9.eE+-]+)",
+                       "transparent-slab self-test")
         assert iso < 1.0e-12, f"isothermal atmosphere carries net flux {iso:g} sigma T^4"
         assert abs(thin - 1.0) < 1.0e-10, f"transparent slab emits {thin:g} sigma T^4"
 
-        planck = grab(out, r"worst \|sum_b f_b - 1\| = *([0-9.eE+-]+)",
-                      "Planck fraction sum")
+        planck = ck.grab(out, r"worst \|sum_b f_b - 1\| = *([0-9.eE+-]+)",
+                         "Planck fraction sum")
         assert planck < 1.0e-12, f"band Planck fractions sum to 1 + {planck:g}"
 
         # --- the run is the scheme we think it is ------------------------------------
@@ -152,7 +79,7 @@ def test_run():
             "correlated-k did not take the split path; it may be running grey (35173e28)"
 
         # --- nightside: the bottom boundary delivers the interior flux ---------------
-        hdr, col = read_column(night)
+        hdr, col = ck.read_column(night)
         assert hdr["mu0"] < 0.0, "column k = %d is not on the nightside" % NIGHT_K
         assert np.all(np.isfinite(col)), "non-finite values in the nightside column"
         p, temp, flw, qsw = col[:, 2], col[:, 3], col[:, 4], col[:, 5]
@@ -161,19 +88,19 @@ def test_run():
         assert np.all(qsw == 0.0), "shortwave heating on the nightside"
         assert np.all(flw[:hdr["icut"] - int(col[0, 0])] == 0.0), \
             "longwave flux below the correlated-k cutoff"
-        fint = SIGMA_SB * hdr["T_int"] ** 4
+        fint = ck.SIGMA_SB * hdr["T_int"] ** 4
         fbase = flw[hdr["icut"] - int(col[0, 0])]
         assert abs(fbase / fint - 1.0) < 0.2, \
             f"net flux at the cutoff is {fbase / fint:g} sigma T_int^4, not ~1"
 
         # --- dayside: the stellar sweep deposits the insolation ----------------------
-        hdr, col = read_column(day)
+        hdr, col = ck.read_column(day)
         assert hdr["mu0"] > 0.0, "column k = %d is not on the dayside" % DAY_K
         assert np.all(np.isfinite(col)), "non-finite values in the dayside column"
         rf, qsw = col[:, 1], col[:, 5]
         assert np.all(qsw >= 0.0), "the shortwave cools somewhere"
         absorbed = np.sum(qsw[:-1] * np.diff(rf))
-        incident = hdr["mu0"] * SIGMA_SB * hdr["T_irr"] ** 4
+        incident = hdr["mu0"] * ck.SIGMA_SB * hdr["T_irr"] ** 4
         assert 0.9 < absorbed / incident < 1.0, \
             f"shortwave absorbs {absorbed / incident:g} of the incident flux"
     finally:
