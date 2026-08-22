@@ -25,7 +25,15 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
     pmy_pack(pp) {
   // Whether the input actually SET tfloor has to be asked before GetOrAddReal below,
   // which adds the parameter with its default and would make the question answer itself.
-  const bool tfloor_set = pin->DoesParameterExist(bk, "tfloor");
+  //
+  // Existence alone is NOT enough, because of restarts. GetOrAddReal records its default
+  // in the parameter list, and the restart file is a dump of that list, so the second leg
+  // of a run sees a `tfloor` this constructor added on the first leg. Reading that as
+  // "the user set both" made every general-EOS run using tfloor_kelvin impossible to
+  // restart -- which is every long run, since a 24 h slot has to be continued. Compare
+  // against the sentinel so an added default does not masquerade as a user value.
+  const bool tfloor_set = pin->DoesParameterExist(bk, "tfloor") &&
+                          !pin->IsParameterDefaulted(bk, "tfloor");
   eos_data.dfloor = pin->GetOrAddReal(bk,"dfloor",(FLT_MIN));
   eos_data.pfloor = pin->GetOrAddReal(bk,"pfloor",(FLT_MIN));
   eos_data.tfloor = pin->GetOrAddReal(bk,"tfloor",(FLT_MIN));

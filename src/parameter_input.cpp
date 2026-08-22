@@ -423,6 +423,24 @@ bool ParameterInput::DoesParameterExist(std::string block, std::string name) {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn bool ParameterInput::IsParameterDefaulted(std::string block, std::string name)
+//  \brief true when the parameter is present ONLY because a GetOrAdd* call added its
+//  default, rather than because the input file or the command line set it.
+//
+//  This matters on a RESTART. The restart file is a dump of the parameter list, defaults
+//  included, so the second leg of a run cannot otherwise tell a value the user chose from
+//  one the first leg invented. Comparing against the default value does not work either:
+//  the dump keeps six significant digits, so the round trip is lossy.
+
+bool ParameterInput::IsParameterDefaulted(std::string block, std::string name) {
+  InputBlock *pb = GetPtrToBlock(block);
+  if (pb == nullptr) return false;
+  InputLine *pl = pb->GetPtrToLine(name);
+  if (pl == nullptr) return false;
+  return (pl->param_comment.compare(default_comment) == 0);
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn int ParameterInput::GetInteger(std::string block, std::string name)
 //  \brief returns integer value of string stored in block/name
 
@@ -594,7 +612,7 @@ int ParameterInput::GetOrAddInteger(std::string block, std::string name, int def
   } else {
     pb = FindOrAddBlock(block);
     ss_value << def_value;
-    AddParameter(pb, name, ss_value.str(), "# Default value added at run time");
+    AddParameter(pb, name, ss_value.str(), default_comment);
     ret = def_value;
   }
   Unlock();
@@ -622,7 +640,7 @@ Real ParameterInput::GetOrAddReal(std::string block, std::string name, Real def_
   } else {
     pb = FindOrAddBlock(block);
     ss_value << def_value;
-    AddParameter(pb, name, ss_value.str(), "# Default value added at run time");
+    AddParameter(pb, name, ss_value.str(), default_comment);
     ret = def_value;
   }
   Unlock();
@@ -656,7 +674,7 @@ bool ParameterInput::GetOrAddBoolean(std::string block,std::string name, bool de
   } else {
     pb = FindOrAddBlock(block);
     ss_value << def_value;
-    AddParameter(pb, name, ss_value.str(), "# Default value added at run time");
+    AddParameter(pb, name, ss_value.str(), default_comment);
     ret = def_value;
   }
   Unlock();

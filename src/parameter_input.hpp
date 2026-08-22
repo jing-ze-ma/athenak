@@ -81,6 +81,10 @@ class ParameterInput {
   void ParameterDump(std::ostream& os);
   bool DoesBlockExist(std::string name);
   bool DoesParameterExist(std::string block, std::string name);
+  bool IsParameterDefaulted(std::string block, std::string name);
+  //! comment stamped on parameters that a GetOrAdd* call added; the marker that lets
+  //! IsParameterDefaulted() tell an invented value from a chosen one across a restart.
+  static constexpr const char *default_comment = "# Default value added at run time";
   int  GetInteger(std::string block, std::string name);
   int  GetOrAddInteger(std::string block, std::string name, int value);
   int  SetInteger(std::string block, std::string name, int value);
