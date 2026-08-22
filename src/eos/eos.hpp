@@ -219,7 +219,7 @@ struct EOS_Data {
       EOSThermoState s;
       Real rho = d*dens_cgs;
       Real tk = t*temp_cgs;
-      tbl.Eval(rho, tk, s);
+      tbl.EvalNoMu(rho, tk, s);
       p = s.p/pres_cgs;
       g1 = (s.chi_rho + s.p*s.chi_t*s.chi_t/(rho*tk*s.cv));
       return;

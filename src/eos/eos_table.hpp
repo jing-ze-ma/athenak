@@ -205,15 +205,21 @@ struct EOSTable {
   //! analytically here. Every derivative returned is the derivative of the value returned
   //! alongside it, so a caller can build Gamma_1 from the standard identity and get an
   //! answer consistent with the p it is about to hand to a Riemann solver.
+  //! `WANT_MU` selects whether the mu surface is interpolated. The hot path -- the
+  //! pressure and Gamma_1 that ConsToPrim reconstructs to interfaces -- does not use mu,
+  //! and interpolating it is a third of this function's table reads and Hermite
+  //! arithmetic thrown away on every cell of every stage. Only resistivity and the
+  //! cooling source term want it, and they ask through MeanMolecularWeight().
+  template <bool WANT_MU>
   KOKKOS_INLINE_FUNCTION
-  void Eval(const Real rho, const Real t, EOSThermoState &s) const {
+  void EvalImpl(const Real rho, const Real t, EOSThermoState &s) const {
     const Real x = log10(rho);
     const Real y = log10(t);
 
-    Real ev, evx, evy, pv, pvx, pvy, muv, mux, muy;
+    Real ev, evx, evy, pv, pvx, pvy, muv = 0.0, mux, muy;
     Interpolate(ITE, x, y, ev, evx, evy);
     Interpolate(ITP, x, y, pv, pvx, pvy);
-    Interpolate(ITMU, x, y, muv, mux, muy);
+    if (WANT_MU) Interpolate(ITMU, x, y, muv, mux, muy);
 
     // The tabulated surfaces are the SPECIFIC quantities, so the density factor and the
     // derivative it contributes are restored here:
@@ -248,6 +254,20 @@ struct EOSTable {
     return;
   }
 
+  //! \fn void Eval
+  //! \brief the full state, mu included.
+  KOKKOS_INLINE_FUNCTION
+  void Eval(const Real rho, const Real t, EOSThermoState &s) const {
+    EvalImpl<true>(rho, t, s);
+  }
+
+  //! \fn void EvalNoMu
+  //! \brief the same, without the mean molecular weight. `s.mu` is left at zero.
+  KOKKOS_INLINE_FUNCTION
+  void EvalNoMu(const Real rho, const Real t, EOSThermoState &s) const {
+    EvalImpl<false>(rho, t, s);
+  }
+
   //--------------------------------------------------------------------------------------
   //! \fn Real SolveLog
   //! \brief the safeguarded root find that all three inversions below are built from.
@@ -270,7 +290,7 @@ struct EOSTable {
   //! which bounds the iteration count by the bisection rate in the worst case while
   //! keeping quadratic convergence in the common one.
   KOKKOS_INLINE_FUNCTION
-  Real SolveLog(const int mode, const Real fixed, const Real ltarget,
+  Real SolveLog(const int mode, const Real xfixed, const Real ltarget,
                 const Real zguess, const Real zlo_in, const Real zhi_in) const {
     Real zlo = zlo_in;
     Real zhi = zhi_in;
@@ -280,7 +300,7 @@ struct EOSTable {
     Real dz = dzold;
 
     Real g, dg;
-    EvalResidual(mode, fixed, z, ltarget, g, dg);
+    EvalResidual(mode, xfixed, z, ltarget, g, dg);
     for (int it=0; it<80; ++it) {
       if (g > 0.0) {
         zhi = z;
@@ -299,7 +319,7 @@ struct EOSTable {
         z -= dz;
       }
       if (fabs(dz) < logtol) break;
-      EvalResidual(mode, fixed, z, ltarget, g, dg);
+      EvalResidual(mode, xfixed, z, ltarget, g, dg);
     }
     return z;
   }
@@ -362,26 +382,48 @@ struct EOSTable {
     return;
   }
 
+  //! `xfixed` is the LOG10 of the quantity held fixed, and `z` the log10 of the unknown,
+  //! so that the whole iteration stays in the log space the table is indexed in.
+  //!
+  //! WHY THAT MATTERS. The tabulated surfaces are log10 of the SPECIFIC quantity, so
+  //! log10(e) = log10(rho) + E(x,y) identically, and the residual is a subtraction. The
+  //! obvious formulation -- exponentiate z to get T, take its log again inside
+  //! Interpolate, exponentiate the interpolated value to get e, then take log10(e) --
+  //! computes two exp and three log10 per iteration whose composition is the identity.
+  //! With three iterations that is fifteen transcendentals per cell, on the one kernel
+  //! every cell goes through, to compute nothing. Radiation is the one case that does not
+  //! cancel, because a T^4 is added in linear space; it keeps the exponentials.
   KOKKOS_INLINE_FUNCTION
-  void EvalResidual(const int mode, const Real fixed, const Real z, const Real ltarget,
+  void EvalResidual(const int mode, const Real xfixed, const Real z, const Real ltarget,
                     Real &g, Real &dg) const {
     // d log10(q)/dz is the same ratio as dln q/dln T, the base of the logarithm
     // cancelling between numerator and denominator
+    const Real x = (mode == 2) ? z : xfixed;      // log10 rho
+    const Real y = (mode == 2) ? xfixed : z;      // log10 T
+    Real qv, qvx, qvy;
+    Interpolate((mode == 0) ? ITE : ITP, x, y, qv, qvx, qvy);
+    // log10 of the volumetric quantity, without ever leaving log space
+    g = x + qv - ltarget;
     if (mode == 0) {
-      Real e, dlne_dlnt;
-      EvalEOnly(fixed, Pow10(z), e, dlne_dlnt);
-      g = log10(e) - ltarget;
-      dg = dlne_dlnt;
+      dg = qvy;
     } else {
-      Real p, chi_rho, chi_t;
+      dg = (mode == 2) ? (1.0 + qvx) : qvy;
+    }
+    if (radiation) {
+      // the radiation term is additive in the linear quantity, so this branch has to
+      // reconstruct it. Kept arithmetically identical to Eval().
+      const Real t = Pow10(y);
+      const Real erad = arad*t*t*t*t;
+      const Real qrad = (mode == 0) ? erad : erad/3.0;
+      const Real qgas = Pow10(g + ltarget);
+      const Real qtot = qgas + qrad;
+      const Real f = (mode == 0) ? 4.0 : ((mode == 2) ? 0.0 : 4.0);
       if (mode == 2) {
-        EvalPOnly(Pow10(z), fixed, p, chi_rho, chi_t);
-        dg = chi_rho;
+        dg = qgas*(1.0 + qvx)/qtot;
       } else {
-        EvalPOnly(fixed, Pow10(z), p, chi_rho, chi_t);
-        dg = chi_t;
+        dg = (qgas*qvy + f*qrad)/qtot;
       }
-      g = log10(p) - ltarget;
+      g = log10(qtot) - ltarget;
     }
     return;
   }
@@ -405,7 +447,7 @@ struct EOSTable {
     // Bracket generously beyond the table: the continuation there is linear in the logs,
     // so a state off the table still has a well defined temperature.
     Real zg = (tguess > 0.0) ? log10(tguess) : -1.0e30;
-    return Pow10(SolveLog(0, rho, log10(etarget), zg, ymin - 3.0, ymax + 3.0));
+    return Pow10(SolveLog(0, log10(rho), log10(etarget), zg, ymin - 3.0, ymax + 3.0));
   }
 
   //--------------------------------------------------------------------------------------
@@ -416,7 +458,7 @@ struct EOSTable {
   Real SolveTemperatureFromP(const Real rho, const Real ptarget,
                              const Real tguess) const {
     Real zg = (tguess > 0.0) ? log10(tguess) : -1.0e30;
-    return Pow10(SolveLog(1, rho, log10(ptarget), zg, ymin - 3.0, ymax + 3.0));
+    return Pow10(SolveLog(1, log10(rho), log10(ptarget), zg, ymin - 3.0, ymax + 3.0));
   }
 
   //--------------------------------------------------------------------------------------
@@ -447,7 +489,7 @@ struct EOSTable {
   KOKKOS_INLINE_FUNCTION
   Real SolveDensity(const Real ptarget, const Real t, const Real dguess) const {
     Real zg = (dguess > 0.0) ? log10(dguess) : -1.0e30;
-    return Pow10(SolveLog(2, t, log10(ptarget), zg, xmin - 4.0, xmax + 4.0));
+    return Pow10(SolveLog(2, log10(t), log10(ptarget), zg, xmin - 4.0, xmax + 4.0));
   }
 
   //--------------------------------------------------------------------------------------
