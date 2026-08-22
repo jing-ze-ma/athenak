@@ -224,6 +224,15 @@ ck_star_teff = 6000.0            # host T_eff; the stellar spectrum is a blackbo
 ck_table     = data/exo_fms_ck/ck/Premixed_1x_g8_11.txt
 ck_data_dir  = data/exo_fms_ck   # CE_tables/, cia/, ray/, sw_flux/ live here
 
+# One-shot dump of a single radial column (level pressures, temperatures, net longwave
+# flux and shortwave heating) the first time the correlated-k source term runs, for
+# cross-code comparison and for the regression test.  Empty = off.  ck_dump_m/j/k pick
+# the column; -1 takes the centre of the meshblock in that direction.
+ck_dump_file = ""
+ck_dump_m    = 0
+ck_dump_j    = -1
+ck_dump_k    = -1
+
 <output1>
 file_type  = hst
 dt         = 8.64e6
