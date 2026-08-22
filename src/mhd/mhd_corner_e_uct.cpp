@@ -566,7 +566,14 @@ void MHD::PolarAzimuthalAverageErUCT() {
 
   // Same treatment as PolarAzimuthalAverageEr in mhd_corner_e.cpp -- see that function for
   // why.  The two share their work arrays: only one of the two corner-E paths runs.
-  if (static_cast<int>(inner_local.extent(0)) != ncells1) {
+  // The host mirrors must be in the SAME guard condition as the device arrays and are
+  // tested separately, because the MHD constructor pre-sizes inner_local/outer_local
+  // (mhd.cpp) but not these two.  A guard on inner_local alone therefore never fires and
+  // leaves the mirrors at their default extent 0.  Nothing notices in serial -- only the
+  // MPI branch below touches them -- so every multi-rank run with polar boundaries died
+  // on the first cycle with "deep_copy extents of views don't match: (0) inner(n)".
+  if (static_cast<int>(inner_local.extent(0)) != ncells1 ||
+      static_cast<int>(polar_inner_h.extent(0)) != ncells1) {
     Kokkos::realloc(inner_local, ncells1);
     Kokkos::realloc(outer_local, ncells1);
     Kokkos::realloc(polar_inner_h, ncells1);
