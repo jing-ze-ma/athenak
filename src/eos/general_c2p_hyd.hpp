@@ -58,7 +58,7 @@ void SingleC2P_GeneralHyd(HydCons1D &u, const EOS_Data &eos, HydPrim1D &w,
   // badly under-resolved cell can leave e non-positive, where the root find has nothing
   // to converge to; that case skips the solve and goes straight to the pressure floor.
   bool e_positive = (w.e > 0.0);
-  temp = e_positive ? eos.Temperature(w.d, w.e, tguess) : -1.0;
+  temp = -1.0;
 
   // Apply the pressure floor. The test is on p rather than on e so that the inverse
   // e(d,pfloor) -- density dependent, and a root find for a general EOS -- is evaluated
@@ -70,7 +70,8 @@ void SingleC2P_GeneralHyd(HydCons1D &u, const EOS_Data &eos, HydPrim1D &w,
   // and they have to be redone.
   bool stale = !e_positive;
   if (e_positive) {
-    eos.PressureAndGamma1(w.d, w.e, temp, pgas, g1);
+    // fused: the inversion and the evaluation that follows it share their logarithms
+    eos.TemperaturePressureGamma1(w.d, w.e, tguess, temp, pgas, g1);
   }
 
   if (!e_positive || pgas < eos.pfloor) {

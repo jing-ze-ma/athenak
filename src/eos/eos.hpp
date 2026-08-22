@@ -229,6 +229,38 @@ struct EOS_Data {
     return;
   }
 
+  //! \fn void TemperaturePressureGamma1
+  //! \brief the whole EOS step ConsToPrim performs: solve e(d,T) for T, then take p and
+  //! Gamma_1 at that T. `t` comes back in code units, as Temperature() returns it.
+  //!
+  //! Fused because the two halves share work that is invisible when they are separate
+  //! calls. The inversion iterates on log10 T and holds log10 rho throughout; the
+  //! evaluation that follows would take both logarithms again, and would recover the
+  //! temperature by multiplying back the same temp_cgs the inversion had just divided
+  //! out. Chaining them in the log domain removes two log10 per cell per stage and the
+  //! unit round trip with them.
+  KOKKOS_INLINE_FUNCTION
+  void TemperaturePressureGamma1(const Real d, const Real e, const Real tguess,
+                                 Real &t, Real &p, Real &g1) const {
+    if (tbl.active) {
+      const Real rho = d*dens_cgs;
+      const Real lrho = log10(rho);
+      const Real zg = (tguess > 0.0) ? log10(tguess*temp_cgs) : -1.0e30;
+      const Real ltk = tbl.SolveLogTemperature(lrho, log10(e*pres_cgs), zg);
+      const Real tk = EOSTable::Pow10(ltk);
+      EOSThermoState s;
+      tbl.EvalFromLogs<false>(lrho, ltk, rho, tk, s);
+      t = tk/temp_cgs;
+      p = s.p/pres_cgs;
+      g1 = (s.chi_rho + s.p*s.chi_t*s.chi_t/(rho*tk*s.cv));
+      return;
+    }
+    t = (gamma-1.0)*e/d;
+    p = (gamma-1.0)*e;
+    g1 = gamma;
+    return;
+  }
+
   //! \fn bool BelowPressureFloor \brief true when the state (d,e) has p < pfloor, given
   //! an already-solved temperature.
   //!

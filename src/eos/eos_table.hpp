@@ -102,7 +102,14 @@ struct EOSTable {
   Real metal_mh = 0.0;            // [M/H] in dex used for those donors
   Real efmax = 0.0;               // global bound on e(rho,pfloor), CODE units
 
-  DvceArray3D<Real> tbl;     // (ITNVAR, ny, nx)
+  //! (ny, nx, ITNVAR) -- the VARIABLE index is fastest, deliberately. A Hermite patch
+  //! reads a surface's value and its three derivatives at one node, which are four
+  //! consecutive entries in this order, and Eval() then wants the pressure group at the
+  //! same node, which is the next four. With the variable index slowest they were
+  //! ny*nx apart -- about a megabyte -- so a single evaluation touched twenty-four cache
+  //! lines and used sixteen bytes of each. Here one node is 128 bytes, the hot ITE and
+  //! ITP groups are the first 64 of them, and the same evaluation touches four.
+  DvceArray3D<Real> tbl;
   DvceArray1D<Real> efbnd;   // per-x-cell upper bound on e(rho, pfloor), CODE units
 
   // ln(10), and the log-space convergence tolerance for the root finds below. The
@@ -126,6 +133,12 @@ struct EOSTable {
   //! and `iy` index the lower corner of the patch and `u`,`v` are the local coordinates
   //! within it,
   //! already clamped to [0,1] by the caller.
+  //! `WANT_FX` / `WANT_FY` drop the derivative accumulations a caller does not read.
+  //! Most callers read only one of the two -- Eval() never uses the energy surface's
+  //! density derivative, and the temperature root find never uses either surface's -- and
+  //! the y derivative in particular costs a whole 4x4 pass. `f` is accumulated
+  //! identically either way, so this is bitwise neutral.
+  template <bool WANT_FX, bool WANT_FY>
   KOKKOS_INLINE_FUNCTION
   void HermitePatch(const int iv, const int ix, const int iy, const Real u, const Real v,
                     Real &f, Real &fx, Real &fy) const {
@@ -137,10 +150,16 @@ struct EOSTable {
                         -2.0*u3 + 3.0*u2, u3 - u2};
     const Real hv[4] = {2.0*v3 - 3.0*v2 + 1.0, v3 - 2.0*v2 + v,
                         -2.0*v3 + 3.0*v2, v3 - v2};
-    const Real du[4] = {6.0*u2 - 6.0*u, 3.0*u2 - 4.0*u + 1.0,
-                        -6.0*u2 + 6.0*u, 3.0*u2 - 2.0*u};
-    const Real dv[4] = {6.0*v2 - 6.0*v, 3.0*v2 - 4.0*v + 1.0,
-                        -6.0*v2 + 6.0*v, 3.0*v2 - 2.0*v};
+    Real du[4] = {0.0, 0.0, 0.0, 0.0};
+    Real dv[4] = {0.0, 0.0, 0.0, 0.0};
+    if (WANT_FX) {
+      du[0] = 6.0*u2 - 6.0*u;   du[1] = 3.0*u2 - 4.0*u + 1.0;
+      du[2] = -6.0*u2 + 6.0*u;  du[3] = 3.0*u2 - 2.0*u;
+    }
+    if (WANT_FY) {
+      dv[0] = 6.0*v2 - 6.0*v;   dv[1] = 3.0*v2 - 4.0*v + 1.0;
+      dv[2] = -6.0*v2 + 6.0*v;  dv[3] = 3.0*v2 - 2.0*v;
+    }
 
     // Gather the sixteen corner data into the Hermite coefficient matrix. The derivative
     // entries are scaled by the cell size because the basis above is written in the local
@@ -150,10 +169,10 @@ struct EOSTable {
       for (int b=0; b<2; ++b) {
         const int i0 = ix + a;
         const int j0 = iy + b;
-        cf[2*a][2*b]     = tbl(iv,   j0, i0);
-        cf[2*a+1][2*b]   = tbl(iv+1, j0, i0)*dx;
-        cf[2*a][2*b+1]   = tbl(iv+2, j0, i0)*dy;
-        cf[2*a+1][2*b+1] = tbl(iv+3, j0, i0)*dx*dy;
+        cf[2*a][2*b]     = tbl(j0, i0, iv  );
+        cf[2*a+1][2*b]   = tbl(j0, i0, iv+1)*dx;
+        cf[2*a][2*b+1]   = tbl(j0, i0, iv+2)*dy;
+        cf[2*a+1][2*b+1] = tbl(j0, i0, iv+3)*dx*dy;
       }
     }
 
@@ -162,11 +181,11 @@ struct EOSTable {
       Real sf = 0.0, sd = 0.0;
       for (int b=0; b<4; ++b) {
         sf += cf[a][b]*hv[b];
-        sd += cf[a][b]*dv[b];
+        if (WANT_FY) sd += cf[a][b]*dv[b];
       }
       f  += hu[a]*sf;
-      fx += du[a]*sf;
-      fy += hu[a]*sd;
+      if (WANT_FX) fx += du[a]*sf;
+      if (WANT_FY) fy += hu[a]*sd;
     }
     fx *= dxi;
     fy *= dyi;
@@ -177,6 +196,7 @@ struct EOSTable {
   //! \fn void Interpolate
   //! \brief bicubic interpolation of one surface at an arbitrary (x,y), with linear
   //! extrapolation outside the table
+  template <bool WANT_FX = true, bool WANT_FY = true>
   KOKKOS_INLINE_FUNCTION
   void Interpolate(const int iv, const Real x, const Real y,
                    Real &f, Real &fx, Real &fy) const {
@@ -190,10 +210,17 @@ struct EOSTable {
     Real v = gy - static_cast<Real>(iy);
     Real uc = (u < 0.0) ? 0.0 : ((u > 1.0) ? 1.0 : u);
     Real vc = (v < 0.0) ? 0.0 : ((v > 1.0) ? 1.0 : v);
-    HermitePatch(iv, ix, iy, uc, vc, f, fx, fy);
-    // linear continuation outside the table, at the boundary slope
-    if (u != uc) f += (u - uc)*dx*fx;
-    if (v != vc) f += (v - vc)*dy*fy;
+    // The continuation below reads BOTH derivatives whatever the caller asked for, so a
+    // point off the table takes the full patch. It is the rare case; on the table the
+    // restricted patch is what runs.
+    if (u != uc || v != vc) {
+      HermitePatch<true, true>(iv, ix, iy, uc, vc, f, fx, fy);
+      // linear continuation outside the table, at the boundary slope
+      if (u != uc) f += (u - uc)*dx*fx;
+      if (v != vc) f += (v - vc)*dy*fy;
+    } else {
+      HermitePatch<WANT_FX, WANT_FY>(iv, ix, iy, uc, vc, f, fx, fy);
+    }
     return;
   }
 
@@ -213,13 +240,19 @@ struct EOSTable {
   template <bool WANT_MU>
   KOKKOS_INLINE_FUNCTION
   void EvalImpl(const Real rho, const Real t, EOSThermoState &s) const {
-    const Real x = log10(rho);
-    const Real y = log10(t);
+    EvalFromLogs<WANT_MU>(log10(rho), log10(t), rho, t, s);
+  }
 
+  //! The body of EvalImpl(), taking the logarithms and the linear values separately so a
+  //! caller that already holds both does not recompute either.
+  template <bool WANT_MU>
+  KOKKOS_INLINE_FUNCTION
+  void EvalFromLogs(const Real x, const Real y, const Real rho, const Real t,
+                    EOSThermoState &s) const {
     Real ev, evx, evy, pv, pvx, pvy, muv = 0.0, mux, muy;
-    Interpolate(ITE, x, y, ev, evx, evy);
-    Interpolate(ITP, x, y, pv, pvx, pvy);
-    if (WANT_MU) Interpolate(ITMU, x, y, muv, mux, muy);
+    Interpolate<false, true>(ITE, x, y, ev, evx, evy);   // evx is never used
+    Interpolate<true, true>(ITP, x, y, pv, pvx, pvy);
+    if (WANT_MU) Interpolate<false, false>(ITMU, x, y, muv, mux, muy);
 
     // The tabulated surfaces are the SPECIFIC quantities, so the density factor and the
     // derivative it contributes are restored here:
@@ -289,8 +322,9 @@ struct EOSTable {
   //! the bracket or fails to at least halve the interval relative to the previous step,
   //! which bounds the iteration count by the bisection rate in the worst case while
   //! keeping quadratic convergence in the common one.
+  template <int MODE>
   KOKKOS_INLINE_FUNCTION
-  Real SolveLog(const int mode, const Real xfixed, const Real ltarget,
+  Real SolveLog(const Real xfixed, const Real ltarget,
                 const Real zguess, const Real zlo_in, const Real zhi_in) const {
     Real zlo = zlo_in;
     Real zhi = zhi_in;
@@ -300,7 +334,7 @@ struct EOSTable {
     Real dz = dzold;
 
     Real g, dg;
-    EvalResidual(mode, xfixed, z, ltarget, g, dg);
+    EvalResidual<MODE>(xfixed, z, ltarget, g, dg);
     for (int it=0; it<80; ++it) {
       if (g > 0.0) {
         zhi = z;
@@ -319,7 +353,7 @@ struct EOSTable {
         z -= dz;
       }
       if (fabs(dz) < logtol) break;
-      EvalResidual(mode, xfixed, z, ltarget, g, dg);
+      EvalResidual<MODE>(xfixed, z, ltarget, g, dg);
     }
     return z;
   }
@@ -342,7 +376,7 @@ struct EOSTable {
   KOKKOS_INLINE_FUNCTION
   void EvalEOnly(const Real rho, const Real t, Real &e, Real &dlne_dlnt) const {
     Real ev, evx, evy;
-    Interpolate(ITE, log10(rho), log10(t), ev, evx, evy);
+    Interpolate<false, true>(ITE, log10(rho), log10(t), ev, evx, evy);
     const Real egas = rho*Pow10(ev);
     if (radiation) {
       const Real erad = arad*t*t*t*t;
@@ -393,32 +427,37 @@ struct EOSTable {
   //! With three iterations that is fifteen transcendentals per cell, on the one kernel
   //! every cell goes through, to compute nothing. Radiation is the one case that does not
   //! cancel, because a T^4 is added in linear space; it keeps the exponentials.
+  //! MODE is a template parameter, not an argument: each inversion knows its own mode at
+  //! the call site, and it selects which single Hermite derivative the patch has to
+  //! accumulate as well as removing the branches from the iteration.
+  template <int MODE>
   KOKKOS_INLINE_FUNCTION
-  void EvalResidual(const int mode, const Real xfixed, const Real z, const Real ltarget,
+  void EvalResidual(const Real xfixed, const Real z, const Real ltarget,
                     Real &g, Real &dg) const {
     // d log10(q)/dz is the same ratio as dln q/dln T, the base of the logarithm
     // cancelling between numerator and denominator
-    const Real x = (mode == 2) ? z : xfixed;      // log10 rho
-    const Real y = (mode == 2) ? xfixed : z;      // log10 T
-    Real qv, qvx, qvy;
-    Interpolate((mode == 0) ? ITE : ITP, x, y, qv, qvx, qvy);
+    const Real x = (MODE == 2) ? z : xfixed;      // log10 rho
+    const Real y = (MODE == 2) ? xfixed : z;      // log10 T
+    Real qv, qvx = 0.0, qvy = 0.0;
+    // mode 2 differentiates in density, the other two in temperature
+    Interpolate<(MODE == 2), (MODE != 2)>((MODE == 0) ? ITE : ITP, x, y, qv, qvx, qvy);
     // log10 of the volumetric quantity, without ever leaving log space
     g = x + qv - ltarget;
-    if (mode == 0) {
+    if (MODE == 0) {
       dg = qvy;
     } else {
-      dg = (mode == 2) ? (1.0 + qvx) : qvy;
+      dg = (MODE == 2) ? (1.0 + qvx) : qvy;
     }
     if (radiation) {
       // the radiation term is additive in the linear quantity, so this branch has to
       // reconstruct it. Kept arithmetically identical to Eval().
       const Real t = Pow10(y);
       const Real erad = arad*t*t*t*t;
-      const Real qrad = (mode == 0) ? erad : erad/3.0;
+      const Real qrad = (MODE == 0) ? erad : erad/3.0;
       const Real qgas = Pow10(g + ltarget);
       const Real qtot = qgas + qrad;
-      const Real f = (mode == 0) ? 4.0 : ((mode == 2) ? 0.0 : 4.0);
-      if (mode == 2) {
+      const Real f = (MODE == 0) ? 4.0 : ((MODE == 2) ? 0.0 : 4.0);
+      if (MODE == 2) {
         dg = qgas*(1.0 + qvx)/qtot;
       } else {
         dg = (qgas*qvy + f*qrad)/qtot;
@@ -442,12 +481,23 @@ struct EOSTable {
   //! Monotonicity of e in T is what makes the bracket valid, and it is a property of the
   //! interpolant, not merely of the physics: the model is monotonic at every node and the
   //! linear continuation outside the table preserves it.
+  //! \fn Real SolveLogTemperature
+  //! \brief the same inversion, taking and returning LOG10 -- log10 of the density in
+  //! and log10 of the temperature out. The caller usually has log10(rho) already and is
+  //! about to evaluate the table at the temperature this returns, so exponentiating here
+  //! and taking the logarithm again there is another round trip worth not making.
+  KOKKOS_INLINE_FUNCTION
+  Real SolveLogTemperature(const Real lrho, const Real letarget,
+                           const Real zguess) const {
+    return SolveLog<0>(lrho, letarget, zguess, ymin - 3.0, ymax + 3.0);
+  }
+
   KOKKOS_INLINE_FUNCTION
   Real SolveTemperature(const Real rho, const Real etarget, const Real tguess) const {
     // Bracket generously beyond the table: the continuation there is linear in the logs,
     // so a state off the table still has a well defined temperature.
     Real zg = (tguess > 0.0) ? log10(tguess) : -1.0e30;
-    return Pow10(SolveLog(0, log10(rho), log10(etarget), zg, ymin - 3.0, ymax + 3.0));
+    return Pow10(SolveLog<0>(log10(rho), log10(etarget), zg, ymin - 3.0, ymax + 3.0));
   }
 
   //--------------------------------------------------------------------------------------
@@ -458,7 +508,7 @@ struct EOSTable {
   Real SolveTemperatureFromP(const Real rho, const Real ptarget,
                              const Real tguess) const {
     Real zg = (tguess > 0.0) ? log10(tguess) : -1.0e30;
-    return Pow10(SolveLog(1, log10(rho), log10(ptarget), zg, ymin - 3.0, ymax + 3.0));
+    return Pow10(SolveLog<1>(log10(rho), log10(ptarget), zg, ymin - 3.0, ymax + 3.0));
   }
 
   //--------------------------------------------------------------------------------------
@@ -489,7 +539,7 @@ struct EOSTable {
   KOKKOS_INLINE_FUNCTION
   Real SolveDensity(const Real ptarget, const Real t, const Real dguess) const {
     Real zg = (dguess > 0.0) ? log10(dguess) : -1.0e30;
-    return Pow10(SolveLog(2, log10(t), log10(ptarget), zg, xmin - 4.0, xmax + 4.0));
+    return Pow10(SolveLog<2>(log10(t), log10(ptarget), zg, xmin - 4.0, xmax + 4.0));
   }
 
   //--------------------------------------------------------------------------------------

@@ -160,7 +160,7 @@ void BuildEOSTable(EOSTable &tbl, ParameterInput *pin, const std::string &block,
   tbl.metal_mh = model.metal_mh;
 
   // ------------------------------------------------------------------------ sample grid
-  Kokkos::realloc(tbl.tbl, ITNVAR, ny, nx);
+  Kokkos::realloc(tbl.tbl, ny, nx, ITNVAR);
   Kokkos::realloc(tbl.efbnd, nx-1);
   auto h_tbl = Kokkos::create_mirror_view(tbl.tbl);
   auto h_efb = Kokkos::create_mirror_view(tbl.efbnd);
@@ -193,25 +193,25 @@ void BuildEOSTable(EOSTable &tbl, ParameterInput *pin, const std::string &block,
       const double i2h1 = 0.5/h1;
       const double i4h2 = 0.25/(h2*h2);
 
-      h_tbl(ITE,   j,i) = fe;
-      h_tbl(ITE+1, j,i) = (exp_ - exm)*i2h1;
-      h_tbl(ITE+2, j,i) = (eyp - eym)*i2h1;
-      h_tbl(ITE+3, j,i) = (epp - epm - emp + emm)*i4h2;
+      h_tbl(j,i, ITE) = fe;
+      h_tbl(j,i, ITE+1) = (exp_ - exm)*i2h1;
+      h_tbl(j,i, ITE+2) = (eyp - eym)*i2h1;
+      h_tbl(j,i, ITE+3) = (epp - epm - emp + emm)*i4h2;
 
-      h_tbl(ITP,   j,i) = fp;
-      h_tbl(ITP+1, j,i) = (pxp - pxm)*i2h1;
-      h_tbl(ITP+2, j,i) = (pyp - pym)*i2h1;
-      h_tbl(ITP+3, j,i) = (ppp - ppm - pmp + pmm)*i4h2;
+      h_tbl(j,i, ITP) = fp;
+      h_tbl(j,i, ITP+1) = (pxp - pxm)*i2h1;
+      h_tbl(j,i, ITP+2) = (pyp - pym)*i2h1;
+      h_tbl(j,i, ITP+3) = (ppp - ppm - pmp + pmm)*i4h2;
 
-      h_tbl(ITMU,   j,i) = fmu;
-      h_tbl(ITMU+1, j,i) = (mxp - mxm)*i2h1;
-      h_tbl(ITMU+2, j,i) = (myp - mym)*i2h1;
-      h_tbl(ITMU+3, j,i) = (mpp - mpm - mmp + mmm)*i4h2;
+      h_tbl(j,i, ITMU) = fmu;
+      h_tbl(j,i, ITMU+1) = (mxp - mxm)*i2h1;
+      h_tbl(j,i, ITMU+2) = (myp - mym)*i2h1;
+      h_tbl(j,i, ITMU+3) = (mpp - mpm - mmp + mmm)*i4h2;
 
-      h_tbl(ITXE,   j,i) = fxe;
-      h_tbl(ITXE+1, j,i) = (xxp - xxm)*i2h1;
-      h_tbl(ITXE+2, j,i) = (xyp - xym)*i2h1;
-      h_tbl(ITXE+3, j,i) = (xpp - xpm - xmp + xmm)*i4h2;
+      h_tbl(j,i, ITXE) = fxe;
+      h_tbl(j,i, ITXE+1) = (xxp - xxm)*i2h1;
+      h_tbl(j,i, ITXE+2) = (xyp - xym)*i2h1;
+      h_tbl(j,i, ITXE+3) = (xpp - xpm - xmp + xmm)*i4h2;
     }
   }
 

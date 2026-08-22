@@ -45,7 +45,7 @@ void SingleC2P_GeneralMHD(MHDCons1D &u, const EOS_Data &eos, HydPrim1D &w,
   // Solve for the temperature, once per cell; see general_c2p_hyd.hpp for why this is the
   // only expensive EOS call here and why everything below reuses its result.
   bool e_positive = (w.e > 0.0);
-  temp = e_positive ? eos.Temperature(w.d, w.e, tguess) : -1.0;
+  temp = -1.0;
 
   // Apply the pressure floor, testing on p so that the inversion e(d,pfloor) is performed
   // only in the rare cells where the floor trips.
@@ -55,7 +55,8 @@ void SingleC2P_GeneralMHD(MHDCons1D &u, const EOS_Data &eos, HydPrim1D &w,
   // and they have to be redone.
   bool stale = !e_positive;
   if (e_positive) {
-    eos.PressureAndGamma1(w.d, w.e, temp, pgas, g1);
+    // fused: the inversion and the evaluation that follows it share their logarithms
+    eos.TemperaturePressureGamma1(w.d, w.e, tguess, temp, pgas, g1);
   }
 
   if (!e_positive || pgas < eos.pfloor) {
