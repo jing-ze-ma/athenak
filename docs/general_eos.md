@@ -315,8 +315,9 @@ that contributes particles, and — with `eos_metal_ionization` — Na, K, Ca, A
 as singly ionizing electron donors. It is closed by charge neutrality.
 
 **Not included:** Coulomb (non-ideal) corrections, electron degeneracy and pressure
-ionization, excited bound states beyond ground-state statistical weights, condensation of
-the metals, and any second ionization of them.
+ionization, excited bound states beyond ground-state statistical weights, and any second
+ionization of the metals. (Condensation of the metals *is* available — see
+[Metal ionization](#metal-ionization-and-why-it-exists) — but is off by default.)
 
 It is therefore valid for the **weakly coupled, non-degenerate** regime — gas-giant and
 stellar envelopes — and not for deep stellar interiors or degenerate objects. Measured
@@ -326,6 +327,44 @@ the absence of pressure ionization makes Saha recombine hydrogen that should be 
 The temperature at which μ comes within 1% of the ionized limit is 6.3e4 K at
 ρ = 1e-6 g/cm³ and 5.4e6 K at ρ = 1, so a table grid extending to high density contains
 regions the model cannot describe.
+
+### Checked against equilibrium chemistry
+
+[Metal ionization](#metal-ionization-and-why-it-exists) names full Gibbs minimisation as
+the accuracy ceiling this model approximates. That comparison has now been made against a
+real table: the `deep_hot_jupiter_rt` correlated-k
+scheme ships a **FastChem** equilibrium table on a 241 × 34 (T, p) grid, 100–6100 K and
+1e-8–1000 bar at 1× solar with equilibrium condensation, and the composition model can be
+evaluated on the same nodes (it is host-only plain C++ — include `eos_composition.hpp`,
+and invert `p = ρ · p_spec(ρ,T)` for ρ by bisection).
+
+Over a hot-Jupiter domain, 4e-6 to 250 bar:
+
+| quantity | this model / FastChem |
+|---|---|
+| μ, everywhere | median 1.005; worst 0.979 at 6100 K, 214 bar |
+| x_e, 1500–2500 K | 1.05 |
+| x_e, 2500–3500 K | 1.07 |
+| x_e, 3500–4800 K | 0.93 |
+| x_e, above 4800 K | 0.94; worst 0.83 |
+| x_e, 1000–1200 K | 1.45 |
+| x_e, 800–1000 K | 290 |
+| x_e, below 800 K | 1e5 – 1e10 |
+
+So **μ is good to 2% against a 33-species equilibrium code**, and the electron fraction to
+25% wherever the gas is hot enough for it to be worth anything. The low-temperature blowup
+is the rainout treatment — analytic condensation curves against a Gibbs minimisation — and
+it is harmless in practice, because `max_eta` floors x_e at `230 sqrt(T)/max_eta`: below
+1500 K, 89% of cells have *both* values under that floor at `max_eta = 1e14` (95% at
+1e13), and there are **no** cells where the two disagree by more than 2× while either is
+above it.
+
+**Using the FastChem table as the EOS instead is not an option**, for two reasons that have
+nothing to do with accuracy. It writes only μ and the volume mixing ratios of H2, He, H,
+e⁻ and H⁻ — **no internal energy**, so it cannot supply `e(ρ,T)`, and μ alone does not
+reconstruct the H2 dissociation reservoir that is the whole reason for a general EOS. And
+it stops at 6100 K, while the deep interior of exactly the problem it was fetched for runs
+to 12000 K.
 
 ---
 
@@ -347,6 +386,10 @@ alone: it is good to a factor of ~3 over 1500–5000 K, but it has no saturation
 it over-predicts x_e once the alkalis are fully ionized, and no hydrogen term, so it
 under-predicts above ~6000 K, where the Spitzer term is also the larger of the two.
 Selecting `eos` without a general EOS is a fatal error rather than a silent floor.
+
+The tabulated x_e agrees with FastChem equilibrium chemistry to 25% above 1500 K, and the
+larger disagreement below that sits under the floor `max_eta` already imposes — see
+[Checked against equilibrium chemistry](#checked-against-equilibrium-chemistry).
 
 Cost is not a reason to avoid it: a table lookup is ~6× **cheaper** than evaluating the
 `perna` fit, which is transcendental-bound (`log10`, `pow`, two `sqrt`). Solving Saha
@@ -377,6 +420,9 @@ to stay within a factor of two of the ideal path.
 ---
 
 ## See also
+
+[`docs/correlated_k_rt.md`](correlated_k_rt.md) — the correlated-k radiative transfer,
+which is where the FastChem table used above comes from and what it is normally for.
 
 [`docs/solar_convection.md`](solar_convection.md) — a worked example: what has to change
 in a stratified problem generator when the ideal-gas assumption is dropped, and what the

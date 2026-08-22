@@ -106,7 +106,11 @@ n(H⁻), n(e⁻) and n(H) — it is not optional. Rosseland means of the k-table
 1.04–1.79 and 1.68–4.37. Below 2000 K it does nothing, as expected.
 
 Composition is **premixed** (equilibrium chemistry at fixed metallicity), matched to the
-EOS table already in use: [M/H] = 0, H₂ on, ionization on.
+EOS table already in use: [M/H] = 0, H₂ on, ionization on. That the two agree is not
+assumed — see
+[Checked against equilibrium chemistry](general_eos.md#checked-against-equilibrium-chemistry),
+where the general EOS's μ and electron fraction are compared against this same FastChem
+table.
 
 ### The deep cutoff
 
