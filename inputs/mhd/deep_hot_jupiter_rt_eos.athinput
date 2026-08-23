@@ -208,6 +208,17 @@ bbot  = 5.0e0
 # Defaults below are the shipped ones, listed explicitly because AthenaK's command-line
 # overrides only MODIFY parameters that already exist: without these lines,
 # `problem/rt_ck=true` on the command line fatals with "not found".
+rt_de_max    = 0.5               # cap on |Delta e_int| per RT source application, as a
+                                 # fraction of the cell's internal energy.  The radiation
+                                 # is operator split and EXPLICIT, so it is stable only
+                                 # while the radiative time e/|src| exceeds the timestep;
+                                 # nothing enforces that, and floors that pin the top of
+                                 # the atmosphere can drive e/|src| to 0.01 timesteps.
+                                 # A hard clamp, so it is the identity wherever the step
+                                 # was legitimate.  Warns once if it ever fires -- which
+                                 # means the floors or the timestep need fixing, not this
+                                 # number.  Set <= 0 to disable.  See
+                                 # docs/correlated_k_rt.md.
 rt_ck        = false             # false = grey picket fence; true = correlated-k
 rt_split     = false             # run the RT as chain-parallel kernels instead of one
                                  # kernel looping over chains serially.  Implied by

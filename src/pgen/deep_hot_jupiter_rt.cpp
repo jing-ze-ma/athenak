@@ -52,6 +52,84 @@ Real TGuess(const DvceArray4D<Real> &wt, const int m, const int k, const int j,
             const int i) {
   return (wt.extent(0) > 0) ? wt(m,k,j,i) : -1.0;
 }
+
+//----------------------------------------------------------------------------------------
+//! \fn Real LimitRTSource
+//! \brief cap one explicit radiative energy update at a fraction of the cell's internal
+//! energy.
+//!
+//! WHY THIS EXISTS. The radiation is operator split and applied EXPLICITLY at the
+//! hydrodynamic timestep: u0(IEN) += src*bdt, with src the net flux divergence plus the
+//! stellar heating. That is stable only while the local radiative time e/|src| exceeds
+//! bdt, and nothing in the code enforces it. Measured on the column that first blew up in
+//! the ideal-gas correlated-k run (see docs/correlated_k_rt.md): a healthy column has
+//! e/|src| between 86 and 570 timesteps, but once the pressure floor pins the top of the
+//! atmosphere at p = pfloor -- which fixes e = pfloor/(gamma-1), 2.1 erg/cm^3 there -- an
+//! unremarkable flux divergence of 29 erg/cm^3/s gives e/|src| = 0.014 timesteps. The
+//! explicit update then drives e far negative, the floor rescues it, and the next step
+//! overshoots harder: adjacent cells at 650, 2081 and 9806 K, and a NaN a few cycles
+//! later.
+//!
+//! WHY A HARD CLAMP, NOT A SMOOTH ONE. A smooth limiter perturbs every cell a little; a
+//! clamp is the IDENTITY wherever |de| < de_max*e, so it cannot move an answer in any
+//! regime where the explicit step was legitimate in the first place. The correlated-k
+//! fluxes are validated against Exo-FMS and that validation has to survive this. At the
+//! default de_max = 0.5 the clamp is 40x looser than the worst healthy cell measured
+//! above and 140x tighter than the runaway, so it separates the two cleanly.
+//!
+//! This bounds the damage; it does not make the step accurate. A run that trips it is
+//! reporting that its floors, or its timestep, put the radiation outside the regime the
+//! scheme is valid in -- which is why tripping it is warned about exactly once.
+KOKKOS_INLINE_FUNCTION
+Real LimitRTSource(const Real de, const Real eint, const Real de_max) {
+  const Real cap = de_max*eint;
+  return (de > cap) ? cap : ((de < -cap) ? -cap : de);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void par_reduce_clip4 / par_reduce_clip3
+//! \brief par_for with an int sum reduction bolted on, flattened exactly the way
+//! athena.hpp's par_for flattens its ranges. These exist only so the source limiter can
+//! report how many cells it clipped without a second pass over the grid; that is why they
+//! live here rather than in athena.hpp.
+
+template <typename Function>
+inline void par_reduce_clip4(const std::string &name, const int ml, const int mu,
+                             const int kl, const int ku, const int jl, const int ju,
+                             const int il, const int iu, int &nclip,
+                             const Function &function) {
+  const int nk = ku-kl+1, nj = ju-jl+1, ni = iu-il+1;
+  const int nkji = nk*nj*ni, nji = nj*ni;
+  int cnt = 0;
+  Kokkos::parallel_reduce(name,
+  Kokkos::RangePolicy<>(DevExeSpace(), 0, (mu-ml+1)*nkji),
+  KOKKOS_LAMBDA(const int &idx, int &sum) {
+    int m = idx/nkji;
+    int k = (idx - m*nkji)/nji;
+    int j = (idx - m*nkji - k*nji)/ni;
+    int i = (idx - m*nkji - k*nji - j*ni) + il;
+    function(m+ml, k+kl, j+jl, i, sum);
+  }, cnt);
+  nclip += cnt;
+}
+
+template <typename Function>
+inline void par_reduce_clip3(const std::string &name, const int ml, const int mu,
+                             const int kl, const int ku, const int jl, const int ju,
+                             int &nclip, const Function &function) {
+  const int nk = ku-kl+1, nj = ju-jl+1;
+  const int nkj = nk*nj;
+  int cnt = 0;
+  Kokkos::parallel_reduce(name,
+  Kokkos::RangePolicy<>(DevExeSpace(), 0, (mu-ml+1)*nkj),
+  KOKKOS_LAMBDA(const int &idx, int &sum) {
+    int m = idx/nkj;
+    int k = (idx - m*nkj)/nj;
+    int j = (idx - m*nkj - k*nj);
+    function(m+ml, k+kl, j+jl, sum);
+  }, cnt);
+  nclip += cnt;
+}
 using pgen_eos::DensFromPT;
 using pgen_eos::GradAd;
 
@@ -213,6 +291,32 @@ int rt_dump_j = -1;
 int rt_dump_k = -1;
 bool rt_dump_done = false;
 Real rt_ck_pcut = 10.0;                    // bar
+// problem/rt_de_max: the cap in LimitRTSource, as a fraction of the cell's internal
+// energy per RT application. Applies to every EXPLICIT radiative update -- grey and
+// correlated-k, split and monolithic. Set <= 0 to disable the limiter entirely.
+Real rt_de_max = 0.5;
+bool rt_srclim_warned = false;             // the one-time warning has been issued
+
+//----------------------------------------------------------------------------------------
+//! \fn void RTSourceLimiterWarn
+//! \brief say ONCE, from rank 0, that LimitRTSource has clipped cells.
+//!
+//! Once, not per call: a run that trips this trips it every cycle, and the message is
+//! about the configuration, not about the individual step.
+void RTSourceLimiterWarn(const int nclip) {
+  if (nclip <= 0 || rt_srclim_warned) return;
+  rt_srclim_warned = true;
+  if (global_variable::my_rank == 0) {
+    std::cout << "### WARNING in deep_hot_jupiter_rt: the explicit radiative source was "
+              << "clipped in " << nclip << " cell(s) by problem/rt_de_max = " << rt_de_max
+              << ".\n    The radiative time e/|src| is shorter than the timestep there, "
+              << "so the radiation is outside\n    the regime this operator-split scheme "
+              << "is valid in. The usual cause is a pressure or\n    density floor "
+              << "pinning the top of the atmosphere; see docs/correlated_k_rt.md.\n"
+              << "    Reported once per run." << std::endl;
+  }
+}
+
 // problem/ck_nquad: angular treatment of the longwave. 1 uses a single diffusivity
 // factor, mu = 1/1.66, which is what GCMs normally do and what the chain count in the
 // correlated-k literature assumes. 2 keeps the 2-point Gauss quadrature the picket fence
@@ -1111,6 +1215,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   rt_dump_j = pin->GetOrAddInteger("problem","ck_dump_j",-1);
   rt_dump_k = pin->GetOrAddInteger("problem","ck_dump_k",-1);
   rt_ck_pcut = pin->GetOrAddReal("problem","ck_pcut_bar",10.0);
+  rt_de_max = pin->GetOrAddReal("problem","rt_de_max",0.5);
   if (rt_ck && !rt_split) {
     // The correlated-k solver only exists inside the split path. Without this, rt_ck=true
     // with rt_split=false silently ran the GREY picket fence and looked like it worked.
@@ -2745,8 +2850,10 @@ void double_gray_two_stream_RT(Mesh *pm, Real bdt) {
 //        ScrArray1D<Real> I_ir_down_f(member.team_scratch(0), n1);
 //        ScrArray1D<Real> I_ir_up_f(member.team_scratch(0), n1);
 //        ScrArray1D<Real> B(member.team_scratch(0), n1);
-    par_for("2stream_rt", DevExeSpace(), 0, nmb1, ks, ke, js, je,
-    KOKKOS_LAMBDA(const int m, const int k, const int j) {
+    int nclip = 0;
+    const Real demax = rt_de_max;
+    par_reduce_clip3("2stream_rt", 0, nmb1, ks, ke, js, je, nclip,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, int &nc) {
         constexpr int NN = 270;
         Real tau_ir_down_f[NN];
         Real F_v_down_f[NN];
@@ -2870,10 +2977,16 @@ void double_gray_two_stream_RT(Mesh *pm, Real bdt) {
           Real vol = volume(m,k,j,i);
           Real src = -(Ft-Fb)/dx1(m,k,j,i);
           if (correct_spherical) src = -(Ft*area_t-Fb*area_b)/vol;
-          u0(m,IEN,k,j,i) += src*bdt;
+          Real de = src*bdt;
+          if (demax > 0.0) {
+            const Real dl = LimitRTSource(de, w0(m,IEN,k,j,i), demax);
+            if (dl != de) { ++nc; de = dl; }
+          }
+          u0(m,IEN,k,j,i) += de;
         }
         
     });
+    RTSourceLimiterWarn(nclip);
     
     return;
 }
@@ -4484,8 +4597,10 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
       }
 
       // ---- C: reduce over blocks in order, then apply ------------------------------
-      par_for("rt_apply", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      int nclip = 0;
+      const Real demax = rt_de_max;
+      par_reduce_clip4("rt_apply", 0, nmb1, ks, ke, js, je, is, ie, nclip,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, int &nc) {
         Real Ft = 0.0, Fb = 0.0;
         for (int b=0; b<nblk; ++b) {
           Ft += Fb_g(m,b,i+1,k,j);
@@ -4505,8 +4620,14 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
         } else {
           src += Qv_g(m,k,j,i);
         }
-        u0(m,IEN,k,j,i) += src*bdt;
+        Real de = src*bdt;
+        if (demax > 0.0) {
+          const Real dl = LimitRTSource(de, w0(m,IEN,k,j,i), demax);
+          if (dl != de) { ++nc; de = dl; }
+        }
+        u0(m,IEN,k,j,i) += de;
       });
+      RTSourceLimiterWarn(nclip);
 
       // ---- one-shot column dump, for cross-code comparison -------------------------
       if (ck_on && !rt_dump_file.empty() && !rt_dump_done) {
@@ -4568,10 +4689,12 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
     // nx1 = 256, i.e. n1 = 260, so they were ten cells from silently overrunning per-thread
     // memory -- and nghost = 4 with the same nx1 would have gone over. Dispatched at run
     // time over compile-time tiers instead, as the correlated-k chain kernel is.
+    int nclip_grey = 0;
+    const Real demax_grey = rt_de_max;
     auto launch_grey_rt = [&](auto nn_tag) {
       constexpr int NN = decltype(nn_tag)::value;
-      par_for("2stream_rt", DevExeSpace(), 0, nmb1, ks, ke, js, je,
-      KOKKOS_LAMBDA(const int m, const int k, const int j) {
+      par_reduce_clip3("2stream_rt", 0, nmb1, ks, ke, js, je, nclip_grey,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, int &nc) {
   //        ScrArray1D<Real> tau_down_r_f(member.team_scratch(scr_level), n1);
   //        ScrArray1D<Real> F_v_down_f(member.team_scratch(scr_level), n1);
   //        ScrArray1D<Real> B(member.team_scratch(scr_level), n1);
@@ -4829,6 +4952,10 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
   //
   //          Real du = (fabs(du_flux) < e0 && ierr == 1) ? du_flux : du_src;
             Real du = du_flux;
+            if (demax_grey > 0.0) {
+              const Real dl = LimitRTSource(du, w0(m,IEN,k,j,i), demax_grey);
+              if (dl != du) { ++nc; du = dl; }
+            }
             u0(m,IEN,k,j,i) += du;
           }
   //        });
@@ -4854,6 +4981,7 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
                 << "in picket_fence_two_stream_RT." << std::endl;
       std::exit(EXIT_FAILURE);
     }
+    RTSourceLimiterWarn(nclip_grey);
     
     return;
 }

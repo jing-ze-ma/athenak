@@ -169,6 +169,58 @@ independent parameters in this kind of model.
 
 ---
 
+## The source limiter (`problem/rt_de_max`)
+
+The radiation is **operator split and explicit**: every RT call ends in
+
+```
+u0(IEN) += src * bdt          // src = -dF/dr + Q_sw
+```
+
+with `bdt` the hydrodynamic timestep. That is stable only while the local radiative time
+`e/|src|` exceeds `bdt`, and nothing in the scheme enforces it. `LimitRTSource` caps each
+update at
+
+```
+|Δe| <= rt_de_max * e_int          (default rt_de_max = 0.5; set <= 0 to disable)
+```
+
+It is a **hard clamp, and therefore the identity** wherever `|Δe| < rt_de_max·e`, so it
+cannot move an answer in any regime where the explicit step was legitimate — the Exo-FMS
+validation below is unaffected. It applies to every explicit radiative update: grey and
+correlated-k, split and monolithic. (`double_gray_two_stream_RT_source` already solves its
+source implicitly by Newton–Raphson and needs no clamp.)
+
+**Why it exists.** Measured on the column that first blew up in an ideal-gas correlated-k
+run, using the column dump below:
+
+| | worst `e/|src|` in the column, in timesteps |
+| --- | --- |
+| healthy | **86** (range 86–570) |
+| 22 s before the NaN | **0.014**, five cells below 1 |
+
+The trigger was the floors, not the radiation. `pfloor = 1.0` dyn/cm² pins the top of the
+atmosphere at `e = pfloor/(γ−1) = 2.1 erg/cm³`, so an unremarkable flux divergence of
+29 erg/cm³/s gives `e/|src| = 0.014` timesteps. The explicit update drove `e` far
+negative, the floor rescued it, the next step overshot harder — adjacent cells at 650,
+2081 and 9806 K — and the run NaN'd a few cycles later. Correlated-k reaches that state before grey
+does because it cools the optically thin top harder.
+
+**Tripping it is a diagnosis, not a fix.** The clamp bounds the damage; it does not make
+the step accurate. A run that trips it is telling you that its floors or its timestep have
+put the radiation outside the regime this scheme is valid in. So it warns **once**:
+
+```
+### WARNING in deep_hot_jupiter_rt: the explicit radiative source was clipped in N cell(s)
+    by problem/rt_de_max = 0.5. ...
+```
+
+The usual cure is the floors. Check whether `pfloor` is doing anything: `dfloor * Rgas *
+tfloor` already bounds the pressure from below, and a `pfloor` above that value invents an
+isothermal top at `T = pfloor/(Rgas·dfloor)` that no atmosphere would have.
+
+---
+
 ## Validation
 
 Four checks, two of them run on every correlated-k start:

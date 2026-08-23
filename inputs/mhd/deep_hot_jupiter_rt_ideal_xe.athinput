@@ -165,6 +165,14 @@ tfloor = 9.186e9
 
 <problem>
 user_srcs   = true
+rt_de_max   = 0.5                # cap on |Delta e_int| per RT source application, as a
+                                 # fraction of the cell's internal energy.  The radiation
+                                 # is operator split and EXPLICIT, so it is stable only
+                                 # while the radiative time e/|src| exceeds the timestep,
+                                 # and nothing enforces that.  A hard clamp, so it is the
+                                 # identity wherever the step was legitimate.  Warns once
+                                 # if it fires.  Set <= 0 to disable.  See
+                                 # docs/correlated_k_rt.md.
 bc_outer_maxwell = true
 hot_jupiter = true
 Teq   = 2500.0
