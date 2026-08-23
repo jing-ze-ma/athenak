@@ -250,6 +250,11 @@ ck_data_dir  = data/exo_fms_ck   # CE_tables/, cia/, ray/, sw_flux/ live here
 # cross-code comparison and for the regression test.  Empty = off.  ck_dump_m/j/k pick
 # the column; -1 takes the centre of the meshblock in that direction.
 ck_dump_file =
+ad_dump_file =                   # if set, dump the initial (p,T) profile with its actual
+                                 # and adiabatic gradients, before and after the
+                                 # convective adjustment.  Test super-adiabaticity with
+                                 # a tolerance:
+                                 # the adjustment sets levels to exactly 0.9*grad_ad.
 ck_dump_m    = 0
 ck_dump_j    = -1
 ck_dump_k    = -1

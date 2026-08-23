@@ -13,6 +13,7 @@
 #include <iostream> // cout
 #include <fstream>  // ifstream, for the correlated-k table
 #include <string>
+#include <vector>
 
 // Athena++ headers
 #include "athena.hpp"
@@ -295,6 +296,16 @@ Real rt_ck_pcut = 10.0;                    // bar
 // energy per RT application. Applies to every EXPLICIT radiative update -- grey and
 // correlated-k, split and monolithic. Set <= 0 to disable the limiter entirely.
 Real rt_de_max = 0.5;
+// problem/ad_dump_file: write the INITIAL (p, T) profile with its actual and adiabatic
+// logarithmic gradients, once, before and after adjust_ad_pT_arr. A diagnostic for
+// whether the starting atmosphere is convectively unstable where the adjustment did not
+// reach.
+// adjust_ad_pT_arr scans from the bottom, breaks at the FIRST crossing and enforces a
+// single adiabat below it, so with a general EOS -- where grad_ad dips at H2 dissociation
+// as well as at H ionization -- a second unstable zone could in principle survive it.
+// Measured on the deep hot Jupiter setup it does not: after the adjustment there are zero
+// super-adiabatic levels, H2 on or off, because there is only one crossing to begin with.
+std::string ad_dump_file = "";
 bool rt_srclim_warned = false;             // the one-time warning has been issued
 
 //----------------------------------------------------------------------------------------
@@ -1216,6 +1227,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   rt_dump_k = pin->GetOrAddInteger("problem","ck_dump_k",-1);
   rt_ck_pcut = pin->GetOrAddReal("problem","ck_pcut_bar",10.0);
   rt_de_max = pin->GetOrAddReal("problem","rt_de_max",0.5);
+  ad_dump_file = pin->GetOrAddString("problem","ad_dump_file","");
   if (rt_ck && !rt_split) {
     // The correlated-k solver only exists inside the split path. Without this, rt_ck=true
     // with rt_split=false silently ran the GREY picket fence and looked like it worked.
@@ -3883,8 +3895,56 @@ void get_picket_fence_pT_arr(const EOS_Data &eos, const Real &Rgas, const Real &
         get_kapr(T, p, met, kapr);
     }
     
+    // Snapshot before the convective adjustment so the dump can show what it changed.
+    std::vector<double> Tpre;
+    if (!ad_dump_file.empty()) {
+      Tpre.resize(N);
+      for (int ip=0; ip<N; ++ip) Tpre[ip] = Tarr(ip);
+    }
+
     adjust_ad_pT_arr(eos, Rgas, gamma, N, Tarr, lgparr);
-    
+
+    if (!ad_dump_file.empty() && global_variable::my_rank == 0) {
+      // index 0 is the TOP (lowest pressure); gradients are forward differences in
+      // log10 p, which is uniform here.  nabla > nabla_ad means convectively unstable.
+      std::ofstream f(ad_dump_file);
+      f.precision(10);
+      f << std::scientific;
+      f << "# deep_hot_jupiter_rt initial (p,T) profile and convective stability\n"
+        << "# N = " << N << ", index 0 = top.  adjust_ad_pT_arr uses 0.9*grad_ad.\n"
+        << "# nabla > nabla_ad_used  =>  CONVECTIVELY UNSTABLE at that level\n"
+        << "# ip  p[bar]  T_before[K]  T_after[K]  nabla_before  nabla_after  "
+        << "grad_ad  nabla_ad_used  unstable_before  unstable_after\n"
+        << "# 'unstable' means nabla exceeds nabla_ad_used by more than 1 % of grad_ad\n";
+      const double bar = 1.0e6;
+      int nub = 0, nua = 0;
+      for (int ip=0; ip<N-1; ++ip) {
+        const double dlgp = lgparr(ip+1) - lgparr(ip);
+        const double nb = (log10(Tpre[ip+1]) - log10(Tpre[ip]))/dlgp;
+        const double na = (log10(Tarr(ip+1)) - log10(Tarr(ip)))/dlgp;
+        const double pp = pow(10.0, lgparr(ip));
+        const double gad = GradAd(eos, gamma, Rgas, pp, Tarr(ip));
+        const double gus = 0.9*gad;
+        // TOLERANCE, not a bare `>`: the adjustment sets every level it touched to
+        // exactly 0.9*grad_ad, so an exact comparison reports round-off on all of them
+        // as instability -- 1169 spurious levels of 9999 on the shipped setup. 1 % of
+        // grad_ad is far below any real super-adiabaticity (the genuine band before the
+        // adjustment exceeds it by up to 0.25) and far above the noise.
+        const double tol = 0.01*gad;
+        const int ub = (nb - gus > tol) ? 1 : 0;
+        const int ua = (na - gus > tol) ? 1 : 0;
+        nub += ub; nua += ua;
+        f << ip << " " << pp/bar << " " << Tpre[ip] << " " << Tarr(ip) << " "
+          << nb << " " << na << " " << gad << " " << gus << " "
+          << ub << " " << ua << "\n";
+      }
+      f.close();
+      std::cout << "deep_hot_jupiter_rt: wrote initial-profile stability dump to '"
+                << ad_dump_file << "'; convectively unstable levels: "
+                << nub << " before the adjustment, " << nua << " after (of " << N-1
+                << ")" << std::endl;
+    }
+
     return;
 }
 
@@ -4635,7 +4695,7 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
         const int jd = (rt_dump_j >= 0) ? rt_dump_j : (js + je)/2;
         const int kd = (rt_dump_k >= 0) ? rt_dump_k : (ks + ke)/2;
         const int md = (rt_dump_m <= nmb1) ? rt_dump_m : 0;
-        DvceArray2D<Real> col("rt_col", n1, 5);
+        DvceArray2D<Real> col("rt_col", n1, 7);
         par_for("rt_dumpcol", DevExeSpace(), is, ie+1, KOKKOS_LAMBDA(const int i) {
           Real Fs = 0.0;
           Real Qs = 0.0;
@@ -4648,6 +4708,15 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
           col(i,2) = Fs;
           col(i,3) = Qs;
           col(i,4) = x1f_(md,i);
+          // Gamma_1 and grad_ad of the CURRENT state. Both collapse to the ideal values
+          // when the EOS is ideal; under the tabulated EOS they dip hard through the H2
+          // dissociation and H ionization bands, and how steeply they vary across a cell
+          // is what the reconstruction has to cope with.
+          const Real dd = w0(md,IDN,kd,jd,i);
+          const Real ee = w0(md,IEN,kd,jd,i);
+          col(i,5) = eos.IsGeneral() ? eos.Gamma1(dd, ee) : eos.gamma;
+          col(i,6) = GradAd(eos, eos.gamma, Rgas, pb_g(md,kd,jd,i)*1.0e6,
+                            T_g(md,kd,jd,i));
         });
         auto hc = Kokkos::create_mirror_view(col);
         Kokkos::deep_copy(hc, col);
@@ -4666,10 +4735,12 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
             << "# T_int = " << Tint << " K, T_irr = " << Tirr
             << " K, grav = " << grav << " cm/s^2\n"
             << "# fluxes are cgs: 1 erg/s/cm^2 = 1e-3 W/m^2. F_lw is NET (up minus down)\n"
-            << "# i  r_face[cm]  p[bar]  T[K]  F_lw_net[erg/s/cm2]  Q_sw[erg/s/cm3]\n";
+            << "# i  r_face[cm]  p[bar]  T[K]  F_lw_net[erg/s/cm2]  Q_sw[erg/s/cm3]"
+            << "  Gamma_1  grad_ad\n";
           for (int i=is; i<ie+2; ++i) {
             f << i << " " << hc(i,4) << " " << hc(i,0) << " " << hc(i,1)
-              << " " << hc(i,2) << " " << hc(i,3) << "\n";
+              << " " << hc(i,2) << " " << hc(i,3)
+              << " " << hc(i,5) << " " << hc(i,6) << "\n";
           }
           f.close();
           std::cout << "deep_hot_jupiter_rt: wrote correlated-k column dump to '"

@@ -173,6 +173,11 @@ rt_de_max   = 0.5                # cap on |Delta e_int| per RT source applicatio
                                  # identity wherever the step was legitimate.  Warns once
                                  # if it fires.  Set <= 0 to disable.  See
                                  # docs/correlated_k_rt.md.
+ad_dump_file =                   # if set, dump the initial (p,T) profile with its actual
+                                 # and adiabatic gradients, before and after the
+                                 # convective adjustment.  Test super-adiabaticity with
+                                 # a tolerance:
+                                 # the adjustment sets levels to exactly 0.9*grad_ad.
 bc_outer_maxwell = true
 hot_jupiter = true
 Teq   = 2500.0
