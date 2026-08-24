@@ -192,6 +192,13 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
       }
       }
       // reconstruction can undershoot; keep the interface pressure positive
+      // The x1 reconstruction writes dl(n,i+1) from the thread that owns i, so the
+      // floor below reads a slot ANOTHER thread wrote.  Successive par_for_inner
+      // loops are not implicitly synchronised, so without this barrier whether the
+      // floor sees the reconstructed value or a stale one is scheduling-dependent,
+      // and the run is not reproducible.  x2/x3 need no barrier: those
+      // reconstructions write index i from thread i.
+      member.team_barrier();
       par_for_inner(member, il, iu, [&](const int i) {
         dl(IDPR,i) = fmax(dl(IDPR,i), eos_.pfloor);
         dr(IDPR,i) = fmax(dr(IDPR,i), eos_.pfloor);
