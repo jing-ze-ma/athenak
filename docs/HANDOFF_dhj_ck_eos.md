@@ -15,7 +15,13 @@ survivals past 0.69.** Members differing only in `output2/dt` (a physics-inert k
 merely shifts the dt sequence) land all over that range. **No single run of this baseline
 is evidence of anything**, in either direction. Every "arm X survived" and every "arm X
 failed" claim below — including the refuted list in section 3 — was called from one or two
-runs and needs ensemble treatment before it can be trusted.
+runs and needs re-running on a fixed binary before it can be trusted.
+
+**That scatter was the race, not chaos.** The spread in (a) was produced by the bug in (c):
+identical inputs gave different answers. With `6e600f12` in place, identical inputs give
+bitwise identical answers again, so single runs are meaningful once more — subject only to
+whatever genuine physical chaos the problem has, which is now measurable instead of being
+confounded with a bug. Every arm in sections 3 and 4 is being re-run on the fixed binary.
 
 **(b) The orion run DID blow up.** `or.gpu`, orion's literal input replayed on a viper
 GPU, passed 0.690 rot clean and then **died at t = 4.464e5 = 1.464 rotations** — mass
@@ -24,10 +30,10 @@ Orion stopped watching at 0.713 rot, which is the only reason it looked like a
 disagreement. **The commit message on `cd2e8815` ("which did NOT blow up") is therefore
 wrong**, and CPU-vs-GPU is NOT the explanation — it reproduces on viper hardware.
 
-**(c) The code is nondeterministic run to run, and that is now the prime suspect.**
-Two byte-identical invocations of the same binary on one GPU rank diverge. `c39b794c`
-fixed one race (the outer-x1 `bcc0` cross-thread read) but did not fix this. **Fix the
-race before drawing any more physics conclusions** — see section 4.
+**(c) The nondeterminism is FOUND AND FIXED — `6e600f12`.** It was a missing
+`member.team_barrier()` in the general-EOS x1 flux kernel, core AthenaK code, not the
+pgen. **Rebuild before running anything from this document**; every result below that
+predates `6e600f12` was produced by a raced binary. See section 4.
 
 ---
 
@@ -100,47 +106,62 @@ signal we have, weak as evidence that dissociation is the *mechanism*.
 
 ## 4. Where the real lead is now: races, and the fact that MHD is required
 
-### The nondeterminism (REOPENED 2026-08-24)
+### The nondeterminism — SOLVED 2026-08-24, commit `6e600f12`
 
-Intermittent; correlated-k runs so far (2 of 3 pairs; grey 0 of 2 over 32 cycles). Bisected
-with byte-identical invocation pairs compared bitwise on every dump and the history:
+**The bug.** `src/hydro/hydro_fluxes.cpp` and `src/mhd/mhd_fluxes.cpp`, general-EOS branch
+of the **x1** direction:
 
-| config | cycles | result |
-|---|---|---|
-| MHD + c-k, polar ON (baseline) | 600 | diverges, first at cycle 40 |
-| MHD + grey / RT off / outflow BCs / `bbot=1e-30`, polar ON | 600 | all diverge |
-| **HYDRO, polar ON, `user_srcs=false`** | 600 | **diverges at cycle 20 — FASTEST REPRODUCER** |
-| **MHD, polar OFF** (`use_polar_boundary=false`) | **3000** | **BITWISE IDENTICAL** |
-| **HYDRO, polar ON, built `-DDHJ_POLE_PACK=0`** | 600 | **BITWISE IDENTICAL** |
-| MHD, polar ON, srcs ON, `-DDHJ_POLE_PACK=0` | 600 | diverges → a SECOND source |
-| HYDRO, polar OFF, srcs ON | 600 | diverges → the second source again |
+```
+PiecewiseLinearX1(member, m, k, j, il-1, iu, wder_, dl, dr);   // thread i writes dl(n,i+1)
+par_for_inner(member, il, iu, [&](const int i) {
+  dl(IDPR,i) = fmax(dl(IDPR,i), eos_.pfloor);                  // thread i reads dl(n,i)
+  ...
+});
+...
+member.team_barrier();      // the only barrier — and it came AFTER the floor
+```
 
-So **at least TWO independent races**:
+The reconstruction writes `dl(n,i+1)` from the thread that owns `i`, so the floor reads a
+scratch slot **another thread wrote**, and successive `par_for_inner` loops are not
+implicitly synchronised. Whether the floor saw the reconstructed value or a stale one was
+scheduling-dependent. x2 and x3 are unaffected — those reconstructions write index `i` from
+thread `i`, which is exactly why only the x1 flux ever differed.
 
-1. In the `do_pole` branch of `MeshBoundaryValuesCC::PackAndSendCC` (`bvals_cc.cpp`
-   ~104–197, and presumably the `bvals_fc` twin). Disabling that branch alone makes an
-   otherwise-identical, equally active hydro+polar run bitwise reproducible.
-2. A second, **not yet isolated** — shows up as MHD+polar with the pack branch disabled,
-   and as hydro+`user_srcs` with polar off. Candidates: `PolarAzimuthalAverageEr`
-   (`mhd_corner_e.cpp:460+`) and `polar_local_sum_b` (`bfield_bcs.cpp:339`, not yet read).
+**Scope:** general EOS only (the floor lives inside `if (nder > 0)`, and `nder` is 0 for an
+ideal gas), and device only (a serial `par_for_inner` runs in order). The fix is one
+`member.team_barrier()` in each file; it costs **1.0 %** (2.363e7 → 2.339e7 zone-cycles/s).
 
-**Already excluded, do not redo.** The pack kernel is internally deterministic (double-pack
-comparison: 0 differing buffer entries over 30 cycles) and the unpack writes no ghost cell
-twice (atomic write-counter, 4 cycles). Physical BCs never touch polar ghosts
-(`hydro_bcs.cpp` has `default: break;` for x2). AthenaK uses a single execution space, so
-kernels cannot overlap. Not an out-of-bounds access — a full Debug build (Kokkos bounds
-checking) runs the fastest reproducer 40 cycles clean. The amplification confound is
-excluded: RMS d(rho)/rho between dumps 0 and 30 is 5.149e+04 in the diverging run and in
-BOTH reproducible ones, identical to four digits — the clean runs are exactly as active.
+**Consequence beyond reproducibility:** a few interfaces per column silently kept an
+UNFLOORED pressure. That is the mechanism behind the scatter in section 0(a).
 
-Both (1) and the double-pack result can only be true together if the race lives in a kernel
-**downstream** that consumes polar ghost data, and is therefore worth hunting without
-reference to the pole at all.
+**How it was found**, after configuration-bisection stalled: per-task checksums. A hook in
+`TaskList::DoAvailable` printing the wrapping integer sum of the raw bit patterns of `u0`,
+`w0`, `wder`, `wtemp` and the three flux arrays after every completed task — exact and
+order-independent, unlike a floating-point sum which can cancel a difference away. Ten
+replicate runs grouped by the hash of their checksum stream: 8 agreed, 2 did not, and the
+first differing line named it — `task=1` (`Hydro::Fluxes`) with `u`, `w`, `wder`, `wtemp`,
+`f2`, `f3` all bitwise identical and **only the x1 flux different**.
 
-**Next instrument, designed but NOT built:** checksum `u0` after every task in the stage,
-run twice, report the first task whose checksum differs. That names the guilty kernel
-directly instead of bisecting configurations. Everything needed is in `driver.cpp`'s task
-loop.
+**Verification** (clean Release build, 3 replicates, 600 cycles, bitwise on every dump and
+every history row): hydro+polar with no source terms, MHD+correlated-k+polar (production),
+and hydro with polar off and sources on — all three diverged before the fix (at cycles 20,
+40 and 120) and are all bitwise identical after it.
+
+**Regression test:** `tst/test_suite/nr/test_nr_geneos_repro_gpu.py`. Runs the same binary
+three times and requires identical histories; validated FAILING without the fix and passing
+with it. **Do not shrink its grid** — detection is very sensitive: the production grid gave
+3 of 3 replicate pairs differing, while 32x32, 16x16 and a general-EOS linear wave gave
+0 of 3. The race needs the pressure floor to bind on SOME interfaces but not all, and
+enough resident teams for the two inner loops to overlap.
+
+**CORRECTION to the earlier version of this section.** It claimed "at least TWO independent
+races", because polar-off and `-DDHJ_POLE_PACK=0` builds looked clean. They were not clean
+— the same single bug was present and merely took longer to grow into the observable. One
+fix makes every configuration reproducible, and the `do_pole` A/B was a false lead:
+disabling that branch changed how fast a perturbation amplified, not whether one was
+created. The exclusions listed there (pack kernel internally deterministic, no double
+writes in the unpack, not an out-of-bounds access, single execution space) all still stand
+and are still worth not redoing.
 
 ### The failure needs MHD — the strongest physics signal
 
