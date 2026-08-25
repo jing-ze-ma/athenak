@@ -207,6 +207,27 @@ The table is in `(log10 rho_cgs, log10 T_K)` and is built once, on the host, at 
 | `eos_dlog` | `0.05` | default spacing, used for whichever of the two below is not set |
 | `eos_dlogd` | `eos_dlog` | node spacing in log10 density |
 | `eos_dlogt` | `0.2*eos_dlog` | node spacing in log10 temperature |
+| `eos_table_dump` | `""` | if set, write the sampled table to this ASCII file and continue |
+
+### Recovering pressure and temperature from a binary dump
+
+Binary outputs of the primitive variables carry `dens`, the velocities and `eint`, and
+under a tabulated EOS there is no constant `gamma - 1` with which to turn `eint` into a
+pressure. `eos_table_dump` closes that gap: it writes the two surfaces a `(rho, e) -> p`
+inversion needs — `log10(e/rho)` and `log10(p/rho)`, both cgs — at every node, so that
+post-processing can invert `e(rho,T)` for `T` and then evaluate `p(rho,T)` using exactly
+the EOS the run used rather than a fit to it.
+
+The grid and the composition are written as `#` comment lines, so the body of the file
+loads with a bare `np.loadtxt`; rows run with the temperature index slowest. Only rank 0
+writes, once, at setup. The Hermite node derivatives are deliberately not written: a
+consumer that wants a smooth field is better served by refining the plot than by
+reimplementing the bicubic patch.
+
+Set it in the input file rather than on the command line — command-line overrides can only
+change parameters that already exist. A serial CPU build is enough to produce the dump,
+since the table is built on the host, and the run can be stopped immediately afterwards
+with `time/tlim=0`.
 
 **The temperature grid is five times finer by default, and that is physics rather than a
 tuning knob.** An ionization or dissociation front is a factor `exp(-chi/kT)`, so its

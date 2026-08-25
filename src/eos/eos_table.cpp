@@ -16,10 +16,12 @@
 #include <math.h>
 
 #include <algorithm>
+#include <fstream>
 #include <iostream>
 #include <string>
 
 #include "athena.hpp"
+#include "globals.hpp"
 #include "parameter_input.hpp"
 #include "eos/eos_composition.hpp"
 #include "eos/eos_table.hpp"
@@ -235,6 +237,36 @@ void BuildEOSTable(EOSTable &tbl, ParameterInput *pin, const std::string &block,
   Kokkos::deep_copy(tbl.tbl, h_tbl);
   Kokkos::deep_copy(tbl.efbnd, h_efb);
   tbl.active = true;
+
+  // ------------------------------------------------------------------- optional dump
+  // <block>/eos_table_dump writes the sampled node values to an ASCII file, so that
+  // post-processing can invert e(rho,T) for T and evaluate p(rho,T) with exactly the
+  // EOS the run used. Only the two surfaces a (rho,e) -> p inversion needs are written;
+  // the Hermite derivatives are not, since bilinear interpolation on this grid is far
+  // more accurate than the plot that consumes it. Writing is rank 0 only and happens
+  // once at setup, so it costs nothing in a production run that leaves it unset.
+  std::string dumpfile = pin->GetOrAddString(block, "eos_table_dump", "");
+  if (!dumpfile.empty() && global_variable::my_rank == 0) {
+    std::ofstream f(dumpfile);
+    // every metadata line is a comment, so the body loads with a bare np.loadtxt
+    f << "# AthenaK general-EOS table dump\n"
+      << "# grid: nx ny xmin dx ymin dy   (x = log10 rho[cgs], y = log10 T[K])\n"
+      << "# " << nx << " " << ny << " " << xlo << " " << tbl.dx << " "
+      << ylo << " " << tbl.dy << "\n"
+      << "# comp: X Y Z H2 ion metal_ion mh\n"
+      << "# " << model.xhyd << " " << model.yhel << " " << model.MetalFraction() << " "
+      << model.include_h2 << " " << model.include_ion << " "
+      << model.include_metal_ion << " " << model.metal_mh << "\n"
+      << "# then ny*nx rows, y (T) slowest: log10(e/rho)[cgs] log10(p/rho)[cgs]\n";
+    f.precision(12);
+    for (int j=0; j<ny; ++j) {
+      for (int i=0; i<nx; ++i) {
+        f << h_tbl(j,i,ITE) << " " << h_tbl(j,i,ITP) << "\n";
+      }
+    }
+    f.close();
+    std::cout << "General EOS: table dumped to '" << dumpfile << "'" << std::endl;
+  }
 
   // ---------------------------------------------------------------------------- report
   EOSCompositionState smid = model.Evaluate(pow(10.0, 0.5*(xlo+xhi)),
