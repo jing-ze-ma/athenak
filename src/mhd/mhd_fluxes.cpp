@@ -327,7 +327,12 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
             
         if (use_wellbalance_dynamic && use_wb_x2)
         {
-          WbLocalPiecewiseLinearX2(member, eos_, m, k, j, il, iu, w0_, phicc0_, phi0_x2f, wl_jp1, wr);
+          // is-1,ie+1, not il,iu -- the b0_ line below, the spherical-polar branch
+          // above, the whole default switch, and the Riemann solver all use
+          // is-1,ie+1.  With il,iu (the x1 sweep's limits, never reset for x2/x3)
+          // this leaves wl_jp1/wr unwritten at i = is-1, which the solver reads.
+          WbLocalPiecewiseLinearX2(member, eos_, m, k, j, is-1, ie+1, w0_,
+                                   phicc0_, phi0_x2f, wl_jp1, wr);
           PiecewiseLinearX2(member, m, k, j, is-1, ie+1, b0_, bl_jp1, br);
         } else {
 
@@ -398,7 +403,19 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
         }
 
           if (use_wellbalance_static_reconst_perturb) {
-            AddWbPrimFaceX2(member,m,k,j,il,iu,w0facewb_x2f,wl_jp1,wr);
+            // is-1,ie+1 -- NOT il,iu.  il/iu are the x1 sweep's limits (set once at
+            // the top of this function) and are never reset for x2/x3, where every
+            // other limit here -- the reconstruction, the pressure floor, the
+            // Riemann solver -- is is-1,ie+1.  Measured to change no answer today:
+            // the only index it adds is the ghost i = is-1, and w0facewb is zero
+            // there because problem generators fill it over active cells only.  It
+            // is fixed because the mismatch is a trap, not because it is a live bug:
+            // a shifted range also remaps par_for_inner's lane->index assignment
+            // relative to the reconstruction above, which would make this
+            // read-modify-write touch a scratch slot another lane wrote with no
+            // team_barrier in between.  Neither symptom reproduced (5 replicates x
+            // 600 cycles, bitwise identical with and without this change).
+            AddWbPrimFaceX2(member,m,k,j,is-1,ie+1,w0facewb_x2f,wl_jp1,wr);
           }
           
         member.team_barrier();
@@ -524,7 +541,12 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
             
         if (use_wellbalance_dynamic && use_wb_x3)
         {
-          WbLocalPiecewiseLinearX3(member, eos_, m, k, j, il, iu, w0_, phicc0_, phi0_x3f, wl_kp1, wr);
+          // is-1,ie+1, not il,iu -- the b0_ line below, the spherical-polar branch
+          // above, the whole default switch, and the Riemann solver all use
+          // is-1,ie+1.  With il,iu (the x1 sweep's limits, never reset for x2/x3)
+          // this leaves wl_kp1/wr unwritten at i = is-1, which the solver reads.
+          WbLocalPiecewiseLinearX3(member, eos_, m, k, j, is-1, ie+1, w0_,
+                                   phicc0_, phi0_x3f, wl_kp1, wr);
           PiecewiseLinearX3(member, m, k, j, is-1, ie+1, b0_, bl_kp1, br);
         } else {
 
@@ -594,7 +616,8 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
         }
 
           if (use_wellbalance_static_reconst_perturb) {
-            AddWbPrimFaceX3(member,m,k,j,il,iu,w0facewb_x3f,wl_kp1,wr);
+            // is-1,ie+1, not il,iu -- see the note on AddWbPrimFaceX2 above.
+            AddWbPrimFaceX3(member,m,k,j,is-1,ie+1,w0facewb_x3f,wl_kp1,wr);
           }
           
         member.team_barrier();
