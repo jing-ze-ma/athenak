@@ -26,6 +26,10 @@ struct HotJupiterParam {
   // Ohmic resistivity reads Rgas unconditionally on its ideal-gas branch. Left
   // uninitialised, a non-hot-Jupiter problem divided by whatever was on the stack.
   Real Teq = 0.0, omega = 0.0, grav = 0.0, ap = 0.0, Rgas = 0.0, met = 0.0, bbot = 0.0;
+  // false = constant gravity g = grav (the historical thin-shell behaviour). true = a
+  // point mass with the same surface gravity at ap, g(r) = grav*(ap/r)^2. See
+  // GravAccAt/GravPotAt in deep_hot_jupiter_rt.cpp.
+  bool grav_point_mass = false;
 };
 
 //----------------------------------------------------------------------------------------

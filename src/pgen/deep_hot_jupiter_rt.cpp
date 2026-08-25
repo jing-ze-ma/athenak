@@ -167,13 +167,53 @@ void get_init_Tp(const int &N, const DvceArray1D<Real> &Tarr, const DvceArray1D<
 template <typename View1D>
 void get_init_Tp_host(const int &N, const View1D &Tarr, const View1D &lgparr, const Real &p, Real &T);
 template <typename View1D>
-void get_wb_eos_arr(const EOS_Data &eos, const Real &Rgas, const Real &grav_acc, const int &N, const Real &zmax, View1D zarr, View1D logparr);
+void get_wb_eos_arr(const EOS_Data &eos, const Real &Rgas, const Real &grav_acc,
+                    const Real &ap, const bool &grav_pmass, const int &N,
+                    const Real &zmax, View1D zarr, View1D logparr);
 KOKKOS_INLINE_FUNCTION
 void get_wb_eos(const EOS_Data &eos, const Real &Rgas, const Real &grav_acc, const DvceArray1D<Real> &zarr, const DvceArray1D<Real> &logparr, const Real &z, Real &rho, Real &p);
 template <typename View1D>
-void get_init_eos_arr(const EOS_Data &eos, const Real &Rgas, const Real &grav_acc, const View1D &Tarr, const View1D &lgparr, const int &N, const Real &zmax, View1D zarr, View1D logparr);
+void get_init_eos_arr(const EOS_Data &eos, const Real &Rgas, const Real &grav_acc,
+                      const Real &ap, const bool &grav_pmass, const View1D &Tarr,
+                      const View1D &lgparr, const int &N, const Real &zmax,
+                      View1D zarr, View1D logparr);
 KOKKOS_INLINE_FUNCTION
 void get_init_eos(const EOS_Data &eos, const Real &Rgas, const Real &grav_acc, const DvceArray1D<Real> &Tarr, const DvceArray1D<Real> &lgparr, const int &N, const DvceArray1D<Real> &zarr, const DvceArray1D<Real> &logparr, const Real &z, Real &rho, Real &p);
+
+//----------------------------------------------------------------------------------------
+//! \fn GravAccAt / GravPotAt
+//! \brief the gravity model. `<problem>/grav` is the SURFACE gravity g0 at r = ap.
+//!
+//! By default gravity is constant, g(r) = g0, and the potential is g0*(r - ap). That is a
+//! thin-shell approximation, and this problem is not thin: the production domain reaches
+//! r/ap = 1.52, where a point mass with the same g0 gives 0.43*g0. Holding g constant
+//! over that range compresses the upper atmosphere -- at 1e-6 bar the level sits ~5 scale
+//! heights too low and H is understated by ~2.7x, which propagates straight into
+//! transmission radii and feature amplitudes.
+//!
+//! `<problem>/grav_point_mass = true` switches to a point mass with the SAME g0 at ap:
+//!     g(r)   = g0 (ap/r)^2
+//!     phi(r) = g0 ap (1 - ap/r)
+//! Both reduce to the constant-g forms as r -> ap, so the potential's zero point and the
+//! shallow-atmosphere limit are unchanged and the flag is a no-op at the inner boundary.
+//!
+//! grav_acc is NEGATIVE throughout this file (it is -g0), hence the sign juggling.
+//!
+//! Every call site carried a commented-out `- 0.5*SQR(omega*r*sin(theta))` after the
+//! potential -- the centrifugal term, never enabled. It is recorded here once rather than
+//! repeated nine times; omega*r at the top is 6 cm/s^2 against g of 400-940, so it is a
+//! sub-percent correction if it is ever wanted.
+
+KOKKOS_INLINE_FUNCTION
+Real GravAccAt(const Real grav_acc, const Real ap, const Real r, const bool pmass) {
+  return pmass ? grav_acc*SQR(ap/r) : grav_acc;
+}
+
+KOKKOS_INLINE_FUNCTION
+Real GravPotAt(const Real grav_acc, const Real ap, const Real r, const Real z,
+               const bool pmass) {
+  return pmass ? (-grav_acc)*ap*(1.0 - ap/r) : (-grav_acc)*z;
+}
 
 
 // Number of (band, quadrature) chains stepped together in the IR sweep. This is the
@@ -1384,6 +1424,18 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     Real Teq = pin->GetReal("problem","Teq");
     Real grav_acc = -pin->GetReal("problem","grav");
     Real ap = pin->GetReal("problem","ap");
+    // Gravity model: constant g (default, historical) or a point mass with the same g0 at
+    // ap. Only meaningful in spherical polar -- in the Cartesian branch x1v is a
+    // height in
+    // a plane-parallel box and there is no r to fall off with.
+    const bool grav_pmass = pin->GetOrAddBoolean("problem","grav_point_mass",false);
+    if (grav_pmass && !use_spherical_polar) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl
+                << "problem/grav_point_mass requires mesh/use_spherical_polar"
+                << std::endl;
+      exit(EXIT_FAILURE);
+    }
     Real omega = pin->GetReal("problem","omega");
     Real Rgas = pin->GetReal("problem","Rgas");
     Real met = pin->GetReal("problem","met");
@@ -1437,7 +1489,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     const int N = 10000;
     DualArray1D<Real> zarr("zarr", N);
     DualArray1D<Real> logparr("logparr", N);
-    get_wb_eos_arr(eos, Rgas, grav_acc, N, (r1-r0)*1.1, zarr.h_view, logparr.h_view);
+    get_wb_eos_arr(eos, Rgas, grav_acc, ap, grav_pmass, N, (r1-r0)*1.1,
+                   zarr.h_view, logparr.h_view);
 //    zarr.template modify<HostMemSpace>();
 //    zarr.template sync<DevExeSpace>();
 //    logparr.template modify<HostMemSpace>();
@@ -1460,7 +1513,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
 //    DvceArray1D<Real> logpinitarr("logpinitarr", N);
     DualArray1D<Real> zarr_init("zarrinit", N);
     DualArray1D<Real> logparr_init("logparrinit", N);
-    get_init_eos_arr(eos, Rgas, grav_acc, Tarr_init.h_view, lgparr_init.h_view, N, (r1-r0)*1.1, zarr_init.h_view, logparr_init.h_view);
+    get_init_eos_arr(eos, Rgas, grav_acc, ap, grav_pmass, Tarr_init.h_view,
+                     lgparr_init.h_view, N, (r1-r0)*1.1, zarr_init.h_view,
+                     logparr_init.h_view);
     
     zarr_init.modify_host();
     zarr_init.sync_device();
@@ -1528,7 +1583,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       w0_(m,IVX,k,j,i) = 0.0;
       w0_(m,IEN,k,j,i) = EintFromP(eos, igm1, den, p);
         
-        Real phicc = - grav_acc * x1v;// - 0.5*SQR(omega*r*sin(theta));
+        Real phicc = GravPotAt(grav_acc, ap, r, x1v, grav_pmass);
         if (use_etotgrav) {
             u0_(m,IEN,k,j,i) += den*phicc;
         }
@@ -1582,7 +1637,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
 //        p = pwb;
 //        den = denwb;
         
-        Real phicc = - grav_acc * x1v;// - 0.5*SQR(omega*r*sin(theta));
+        Real phicc = GravPotAt(grav_acc, ap, r, x1v, grav_pmass);
         
       if (use_etotgrav || use_wellbalance_dynamic) {
           if (use_spherical_polar) {
@@ -1605,7 +1660,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             lam = x3v*iap;
             phi = x2v*iap;
           }
-          phicc = - grav_acc * x1v;// - 0.5*SQR(omega*r*sin(theta));
+          phicc = GravPotAt(grav_acc, ap, r, x1v, grav_pmass);
           phi0_x1f(m,k,j,i) = phicc;
           if (i == ie) {
               if (use_spherical_polar) {
@@ -1624,7 +1679,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                 lam = x3v*iap;
                 phi = x2v*iap;
               }
-              phicc = - grav_acc * x1v;// - 0.5*SQR(omega*r*sin(theta));
+              phicc = GravPotAt(grav_acc, ap, r, x1v, grav_pmass);
               phi0_x1f(m,k,j,i+1) = phicc;
           }
           
@@ -1648,7 +1703,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             lam = x3v*iap;
             phi = x2v*iap;
           }
-          phicc = - grav_acc * x1v;// - 0.5*SQR(omega*r*sin(theta));
+          phicc = GravPotAt(grav_acc, ap, r, x1v, grav_pmass);
           phi0_x2f(m,k,j,i) = phicc;
           if (j == je) {
               if (use_spherical_polar) {
@@ -1665,7 +1720,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                 lam = x3v*iap;
                 phi = x2v*iap;
               }
-              phicc = - grav_acc * x1v;// - 0.5*SQR(omega*r*sin(theta));
+              phicc = GravPotAt(grav_acc, ap, r, x1v, grav_pmass);
               phi0_x2f(m,k,j+1,i) = phicc;
           }
           
@@ -1689,7 +1744,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             lam = x3v*iap;
             phi = x2v*iap;
           }
-          phicc = - grav_acc * x1v;// - 0.5*SQR(omega*r*sin(theta));
+          phicc = GravPotAt(grav_acc, ap, r, x1v, grav_pmass);
           phi0_x3f(m,k,j,i) = phicc;
           if (k == ke) {
               if (use_spherical_polar) {
@@ -1706,7 +1761,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                 lam = x3v*iap;
                 phi = x2v*iap;
               }
-              phicc = - grav_acc * x1v;// - 0.5*SQR(omega*r*sin(theta));
+              phicc = GravPotAt(grav_acc, ap, r, x1v, grav_pmass);
               phi0_x3f(m,k+1,j,i) = phicc;
           }
       }
@@ -1834,7 +1889,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
               phi = x2v*iap;
             }
             
-            Real phicc = - grav_acc * x1v;// - 0.5*SQR(omega*r*sin(theta));
+            Real phicc = GravPotAt(grav_acc, ap, r, x1v, grav_pmass);
             phicc0(m,k,j,i) = phicc;
         });
 //        par_for("wbgravbc", DevExeSpace(), 0, (pmbp->nmb_thispack-1), 0, n3m1, 0, n2m1,
@@ -1888,7 +1943,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
           u0wb(m,IM3,k,j,i) = 0.0;
           u0wb(m,IEN,k,j,i) = EintFromP(eos, igm1, denwb, pwb);
           if (use_etotgrav) {
-              Real phicc = - grav_acc * x1v;
+              Real phicc = GravPotAt(grav_acc, ap, r, x1v, grav_pmass);
               u0wb(m,IEN,k,j,i) += denwb*phicc;
           }
           w0wb(m,IDN,k,j,i) = denwb;
@@ -2047,6 +2102,8 @@ void HydrostaticEquilibrium(Mesh *pm) {
     auto &volume = pmbp->pcoord->volume;
     auto &z_ov_rE = pmbp->pcoord->z_ov_rE;
     Real grav_acc = -pm->pgen->hot_jupiter_param.grav;
+    Real ap = pm->pgen->hot_jupiter_param.ap;
+    const bool grav_pmass = pm->pgen->hot_jupiter_param.grav_point_mass;
 
     EOS_Data eos;
     if (pmbp->phydro != nullptr) {
@@ -2335,7 +2392,9 @@ void HydrostaticEquilibrium(Mesh *pm) {
             // would compress the ghost without bound. Both ends are held back, so the
             // ghost degrades to "very extended" rather than to nonsense.
             if (bc_outer_maxwell_) {
-              Real gmag = dM1mag/(rho_i*fabs(grav_acc));
+              // local gravity, so the clamp means the same fraction of the real weight
+              Real gmag = dM1mag/(rho_i*fabs(GravAccAt(grav_acc, ap,
+                                                       x1v_(m,ie+i+1), grav_pmass)));
               gmag = fmin(fmax(gmag, -1.0), 0.9);
               dphi_i *= (1.0 - gmag);
             }
@@ -2611,6 +2670,7 @@ void SourceFunc(Mesh *pm, Real bdt) {
 //    ParameterInput* pin;
     Real grav_acc = -pm->pgen->hot_jupiter_param.grav;
     Real ap = pm->pgen->hot_jupiter_param.ap;
+    const bool grav_pmass = pm->pgen->hot_jupiter_param.grav_point_mass;
     Real omega = pm->pgen->hot_jupiter_param.omega;
     Real Rgas = pm->pgen->hot_jupiter_param.Rgas;
     
@@ -2664,12 +2724,13 @@ void SourceFunc(Mesh *pm, Real bdt) {
         Real vol = volume(m,k,j,i);
         
         // gravity
-        Real src = bdt*grav_acc*w0(m,IDN,k,j,i);
+        const Real grav_r = GravAccAt(grav_acc, ap, r, grav_pmass);
+        Real src = bdt*grav_r*w0(m,IDN,k,j,i);
         if (!use_etotgrav) {
             u0(m,IEN,k,j,i) += src*w0(m,IVX,k,j,i);
         }
         if (use_wellbalance_static) {
-            src = bdt*grav_acc*(w0(m,IDN,k,j,i)-w0wb(m,IDN,k,j,i));
+            src = bdt*grav_r*(w0(m,IDN,k,j,i)-w0wb(m,IDN,k,j,i));
         }
         if (use_wellbalance_dynamic) {
           // The source is the background's own pressure difference across the cell, so it
@@ -2839,6 +2900,7 @@ void double_gray_two_stream_RT(Mesh *pm, Real bdt) {
 //    ParameterInput* pin;
     Real grav = pm->pgen->hot_jupiter_param.grav;
     Real ap = pm->pgen->hot_jupiter_param.ap;
+    const bool grav_pmass = pm->pgen->hot_jupiter_param.grav_point_mass;
     Real Rgas = pm->pgen->hot_jupiter_param.Rgas;
     Real Teq = pm->pgen->hot_jupiter_param.Teq;
     
@@ -3057,6 +3119,7 @@ void double_gray_two_stream_RT_source(Mesh *pm, Real bdt) {
 //    ParameterInput* pin;
     Real grav = pm->pgen->hot_jupiter_param.grav;
     Real ap = pm->pgen->hot_jupiter_param.ap;
+    const bool grav_pmass = pm->pgen->hot_jupiter_param.grav_point_mass;
     Real Rgas = pm->pgen->hot_jupiter_param.Rgas;
     Real Teq = pm->pgen->hot_jupiter_param.Teq;
     
@@ -3462,7 +3525,9 @@ void get_wb_Tp(const Real &p, Real &T) {
 
 
 template <typename View1D>
-void get_wb_eos_arr(const EOS_Data &eos, const Real &Rgas, const Real &grav_acc, const int &N, const Real &zmax, View1D zarr, View1D logparr) {
+void get_wb_eos_arr(const EOS_Data &eos, const Real &Rgas, const Real &grav_acc,
+                    const Real &ap, const bool &grav_pmass, const int &N,
+                    const Real &zmax, View1D zarr, View1D logparr) {
     
 //    Real Rgas = 4.593e7;
 //    Real grav_acc = -942.0;
@@ -3472,13 +3537,15 @@ void get_wb_eos_arr(const EOS_Data &eos, const Real &Rgas, const Real &grav_acc,
     Real zmin = 0.0;
 //    Real zmax = 1.2e9;
     Real dz = (zmax-zmin)/N;
-    Real fac = grav_acc/Rgas*dz;
     logparr(0) = std::log(p0);
 
     for(int n=0; n<N; n++) {
         Real T;
         Real p = exp(logparr(n));
         zarr(n) = zmin + n*dz;
+        // gravity at THIS height, so the integration is consistent with the source term
+        const Real gz = GravAccAt(grav_acc, ap, ap + zarr(n), grav_pmass);
+        const Real fac = gz/Rgas*dz;
 
         get_wb_Tp(p,T);
 
@@ -3492,7 +3559,7 @@ void get_wb_eos_arr(const EOS_Data &eos, const Real &Rgas, const Real &grav_acc,
             // dln p/dz = rho g/p, closed with the EOS's (p,T) -> rho inversion. The ideal
             // branch is the same thing with rho = p/(Rgas T), kept in its original form.
             Real rho = DensFromPT(eos, Rgas, p, T);
-            logparr(n+1) = logparr(n) + grav_acc*dz*rho/p;
+            logparr(n+1) = logparr(n) + gz*dz*rho/p;
           } else {
             logparr(n+1) = logparr(n) + fac/T;
           }
@@ -3533,7 +3600,10 @@ void get_wb_eos(const EOS_Data &eos, const Real &Rgas, const Real &grav_acc, con
 }
 
 template <typename View1D>
-void get_init_eos_arr(const EOS_Data &eos, const Real &Rgas, const Real &grav_acc, const View1D &Tarr, const View1D &lgparr, const int &N, const Real &zmax, View1D zarr, View1D logparr) {
+void get_init_eos_arr(const EOS_Data &eos, const Real &Rgas, const Real &grav_acc,
+                      const Real &ap, const bool &grav_pmass, const View1D &Tarr,
+                      const View1D &lgparr, const int &N, const Real &zmax,
+                      View1D zarr, View1D logparr) {
 
 //    Real Rgas = 4.593e7;
 //    Real grav_acc = -942.0;
@@ -3543,13 +3613,15 @@ void get_init_eos_arr(const EOS_Data &eos, const Real &Rgas, const Real &grav_ac
     Real zmin = 0.0;
 //    Real zmax = 1.2e9;
     Real dz = (zmax-zmin)/N;
-    Real fac = grav_acc/Rgas*dz;
     logparr(0) = std::log(p0);
 
     for(int n=0; n<N; n++) {
         Real T;
         Real p = exp(logparr(n));
         zarr(n) = zmin + n*dz;
+        // gravity at THIS height, so the integration is consistent with the source term
+        const Real gz = GravAccAt(grav_acc, ap, ap + zarr(n), grav_pmass);
+        const Real fac = gz/Rgas*dz;
 
         get_init_Tp_host(N, Tarr, lgparr, p, T);
 
@@ -3563,7 +3635,7 @@ void get_init_eos_arr(const EOS_Data &eos, const Real &Rgas, const Real &grav_ac
             // dln p/dz = rho g/p, closed with the EOS's (p,T) -> rho inversion. The ideal
             // branch is the same thing with rho = p/(Rgas T), kept in its original form.
             Real rho = DensFromPT(eos, Rgas, p, T);
-            logparr(n+1) = logparr(n) + grav_acc*dz*rho/p;
+            logparr(n+1) = logparr(n) + gz*dz*rho/p;
           } else {
             logparr(n+1) = logparr(n) + fac/T;
           }
@@ -4053,6 +4125,7 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
 //    ParameterInput* pin;
     Real grav = pm->pgen->hot_jupiter_param.grav;
     Real ap = pm->pgen->hot_jupiter_param.ap;
+    const bool grav_pmass = pm->pgen->hot_jupiter_param.grav_point_mass;
     Real Rgas = pm->pgen->hot_jupiter_param.Rgas;
     Real Teq = pm->pgen->hot_jupiter_param.Teq;
     Real met = pm->pgen->hot_jupiter_param.met;
@@ -4293,7 +4366,9 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
         B[ie+1] = boltz_sigma/M_PI*SQR(SQR(T));
         Real kapr;
         get_kapr(T, p, met, kapr);
-        Real tau_r_f = kapr*p/grav;
+        // tau = kappa p / g for the UNRESOLVED column above the domain. g must be the
+        // value at the top, not the surface value: at r/ap = 1.5 they differ by 2.3x.
+        Real tau_r_f = kapr*p/GravAccAt(grav, ap, rtop, grav_pmass);
         tau_down_r_f[ie+1] = tau_r_f;
         Real drtop = tau_r_f/(kapr*rho);
         Real delta = drtop/rtop;
@@ -4459,7 +4534,8 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
               for (int cc=0; cc<NC; ++cc) {
                 const Real kap = ck_kappa(cklk, iT, fT, iP, fP, bandc[cc], gc[cc])
                                + kc_g(m,bandc[cc],ie+1,k,j);
-                const Real dtau = kap*ptop*1.0e6/grav;
+                const Real dtau = kap*ptop*1.0e6/GravAccAt(grav, ap, x1v_(m,ie+1),
+                                                          grav_pmass);
                 const RtF trans = RT_EXP(-static_cast<RtF>(dtau/muc[cc]));
                 I_down[cc][ie+1] = (static_cast<RtF>(1.0)-trans)
                                  * static_cast<RtF>(Bb_g(m,bandc[cc],ie+1,k,j));
@@ -4815,7 +4891,7 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
           B[ie+1] = boltz_sigma/M_PI*SQR(SQR(T));
           Real kapr;
           get_kapr(T, p, met, kapr);
-          Real tau_r_f = kapr*p/grav;
+          Real tau_r_f = kapr*p/GravAccAt(grav, ap, rtop, grav_pmass);
           tau_down_r_f[ie+1] = tau_r_f;
           Real drtop = tau_r_f/(kapr*rho);
           Real delta = drtop/rtop;
