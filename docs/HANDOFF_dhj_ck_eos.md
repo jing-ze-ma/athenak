@@ -1,42 +1,65 @@
 # Handoff: deep_hot_jupiter_rt, tabulated EOS + correlated-k
 
-Branch `polar-average-perf`. **Updated 2026-08-24 (evening).** An earlier version of this
-file, written the same day at `397b49b1`, is superseded in three important ways — read
-section 0 before anything else. Push to `fork`
-(`git@github.com:jing-ze-ma/athenak.git`), never `origin`.
+Branch `polar-average-perf`. **Updated 2026-08-25 — the campaign is CLOSED.** Push to
+`fork` (`git@github.com:jing-ze-ma/athenak.git`), never `origin`.
 
 ---
 
-## 0. READ FIRST — three things that invalidate single-run reasoning
+## 0. READ FIRST — the "general-EOS blow-up" was the data race
 
-**(a) The baseline is a chaotic ensemble, not a repeatable experiment.** Death times on
-the *identical* setup now read **0.370, 0.485, 0.584, 0.685, 1.464 rot — plus at least two
-survivals past 0.69.** Members differing only in `output2/dt` (a physics-inert knob that
-merely shifts the dt sequence) land all over that range. **No single run of this baseline
-is evidence of anything**, in either direction. Every "arm X survived" and every "arm X
-failed" claim below — including the refuted list in section 3 — was called from one or two
-runs and needs re-running on a fixed binary before it can be trusted.
+There is no thermodynamic blow-up. The failure that this whole document was written to
+chase was a **missing `member.team_barrier()` in the general-EOS x1 flux kernel**
+(`6e600f12`, core AthenaK, not the pgen — section 4 has the anatomy). With that barrier in
+place the unmodified baseline runs to `tlim` and conserves mass to 7e-4.
 
-**That scatter was the race, not chaos.** The spread in (a) was produced by the bug in (c):
-identical inputs gave different answers. With `6e600f12` in place, identical inputs give
-bitwise identical answers again, so single runs are meaningful once more — subject only to
-whatever genuine physical chaos the problem has, which is now measurable instead of being
-confounded with a bug. Every arm in sections 3 and 4 is being re-run on the fixed binary.
+Six arms, each 8 h on one apu1 GPU, all on `athena_fixrel` = `6e600f12`, all from
+`inputs/mhd/deep_hot_jupiter_rt_blowup.athinput` (= viper's `blowup.athinput`), all
+`tlim = 1.2e6 s = 3.934 rotations` (rotation = 3.05e5 s):
 
-**(b) The orion run DID blow up.** `or.gpu`, orion's literal input replayed on a viper
-GPU, passed 0.690 rot clean and then **died at t = 4.464e5 = 1.464 rotations** — mass
-1.0002 → 0.105 inside ONE 200 s history interval, from dt = 1.34 s, with no precursor.
-Orion stopped watching at 0.713 rot, which is the only reason it looked like a
-disagreement. **The commit message on `cd2e8815` ("which did NOT blow up") is therefore
-wrong**, and CPU-vs-GPU is NOT the explanation — it reproduces on viper hardware.
+| job | tag | the single change | pre-fix | **post-fix** |
+|---|---|---|---|---|
+| 11006656 | `rf.limoff` | **none — the control**, `rt_de_max = -1` | died 0.370–0.685 rot | **cleared 3.934 rot**, mass 1.00030 |
+| 11006657 | `rf.limon` | `rt_de_max = 0.5` | cleared, via a 33 % mass transient | **cleared**, mass 1.00030, no transient |
+| 11006658 | `rf.noh2` | `mhd/eos_h2 = false` | cleared | **cleared**, mass 1.00238 |
+| 11006659 | `rf.hydro` | pure hydro (`hydro_ck.athinput`) | cleared | **cleared**, mass 1.00070 |
+| 11006660 | `rf.weakb` | `problem/bbot = 1.0e-3` | cleared | **cleared**, mass 1.00030 |
+| 11006661 | `rf.noeta` | resistivity removed | past 1.86 rot, unfinished | **cleared**, mass 1.00030 |
 
-**(c) The nondeterminism is FOUND AND FIXED — `6e600f12`.** It was a missing
-`member.team_barrier()` in the general-EOS x1 flux kernel, core AthenaK code, not the
-pgen. **Rebuild before running anything from this document**; every result below that
-predates `6e600f12` was produced by a raced binary. See section 4.
+All six exited 0 at `time=1.200000e+06`. No NaN, no dt collapse anywhere (`limoff`:
+dt min/median/final = 0.921 / 1.254 / 0.987 s), mass in [0.99992, 1.00068] for the whole
+of `limoff`, and the only warning printed is the benign `Rgas`-vs-general-EOS notice at
+`deep_hot_jupiter_rt.cpp:1401`. `limoff` and `limon` are now near-identical — the limiter
+clipped **4 cells** over the entire run — so the limiter is effectively inert here.
+
+**What this retracts.** Everything below that was measured before `6e600f12`:
+
+- **The 0.370 / 0.485 / 0.584 / 0.685 / 1.464 rotation spread on byte-identical input was
+  the bug, not chaos.** There is no chaotic ensemble to sample; identical inputs now give
+  identical answers.
+- **`rt_de_max` does NOT cure a general-EOS blow-up** — there was nothing to cure. The
+  limiter remains the correct and verified fix for the *ideal* EOS + correlated-k NaN
+  (section 2), which is a genuinely separate failure with a different mechanism.
+- **`eos_h2 = false` is not a cure either**, and neither is weak field, no resistivity, or
+  pure hydro. Those arms "survived" pre-fix because the race, which only bites when the
+  general-EOS pressure floor binds on some x1 interfaces and not others, happened to grow
+  slowly in them. Their apparent significance was an artefact.
+- **"The failure needs MHD"** — retracted. Hydro and MHD both run clean.
+- **The refuted list (section 3) is now moot**, not because those hypotheses were wrong but
+  because there is no longer a phenomenon for them to explain. Do not resurrect any of them.
+- **The commit message on `cd2e8815`** ("which did NOT blow up") turns out to have been
+  right after all, for the wrong reason: that run's binary raced too, it just got lucky.
+
+**What survives.** The race analysis and its regression test (section 4); the ideal+c-k
+limiter fix (section 2); the run recipe and traps (sections 5–6).
+
+**Open, and the only thing left of the physics thread:** `Gamma_1` spans 1.084–1.666 across
+the table and jumps by up to 0.58 between adjacent cells, while `src/mhd/mhd.hpp:588-596`
+asserts it is "a smooth O(1) quantity" when it lets the Riemann solvers read pressure from
+`wder` instead of recomputing it. That is a latent accuracy question, no longer a
+suspected-crash question, and **the user said "let's not go that way" on 2026-08-23 — do
+not open it unless they raise it.**
 
 ---
-
 ## 1. What shipped recently
 
 | commit | what |
@@ -51,60 +74,44 @@ Earlier: `38311a8a` is the correlated-k chain-parallel split kernel, still the l
 RT architecture. Correlated-k itself is finished and documented in
 `docs/correlated_k_rt.md`, with regression tests in `tst/test_suite/rad/`.
 
-## 2. There are TWO blow-ups, not one
+## 2. The one real blow-up: ideal EOS + correlated-k — CLOSED
 
-### Failure one — ideal EOS + correlated-k — **CLOSED, do not reopen**
+NaN at t ~ 5.2e3 s (0.017 rotations). Cause: the RT source is explicit and operator-split
+with **no radiative timestep constraint**, and `pfloor = 1.0` pinned the internal energy at
+2.115 erg/cm^3 at the top, so a single step could overshoot. Fixed by the `rt_de_max`
+limiter (`ea823e3a`) and A/B verified. This is the only genuine blow-up the campaign found,
+and it is unrelated to the EOS table.
 
-NaN at t ≈ 5.2e3 s (0.017 rotations). Cause: the RT source is explicit and
-operator-split with **no radiative timestep constraint**, and `pfloor = 1.0` pinned
-the internal energy at 2.115 erg/cm^3 at the top so a single step could overshoot.
-Fixed by the `rt_de_max` limiter (`ea823e3a`) and A/B verified.
+The other three quadrants of the closing 2x2 all run clean to `tlim = 3.934 rot` on the
+fixed binary: ideal+grey (never failed at any point), general+correlated-k (`rf.limoff`
+above), and general+grey. The pre-fix numbers for those — "general+grey dies at 2.509 rot",
+"general+c-k dies at 0.37-1.46 rot" — were the race.
 
-### Failure two — tabulated/general EOS — **OPEN**
+## 3. Retracted hypotheses — do NOT resurrect
 
-Dies under any RT: general+grey at 2.509 rot, general+correlated-k anywhere in
-0.37–1.46 rot, and sometimes not at all (see section 0a). Rotation = 3.05e5 s. `eos_fail = 0`, `c2p_it = 0`, `vceil = 0`,
-`fofc = 0` in every run — **floors are the symptom, not the disease.**
+These were each proposed and killed with evidence while chasing the general-EOS "blow-up".
+They are listed only so nobody re-derives them; **since the phenomenon itself was a bug,
+none of them is a live question any more.**
 
-The closing 2x2, all at the `xe_long` grid and floors:
+Temperature floor (lowering `tfloor` 200 -> 35 K made it worse, so the floor was
+protecting the run); the resistivity cap (`max_eta` 1e13 and 1e14 both "failed"); RKG
+super-time-stepping (a ~2x delay); radial resolution (`nx1` 64 -> 128 "failed" sooner);
+metal condensation; the choice of floors; a convectively unstable initial condition (the
+`ad_dump_file` diagnostic shows zero genuinely super-adiabatic levels after
+`adjust_ad_pT_arr`, H2 on or off — this measurement is still valid and still useful);
+cells per scale height (the never-failing configuration was the *most* sub-scale-height of
+the four).
 
-| EOS | RT | outcome |
-|---|---|---|
-| ideal | grey | **never fails** — clean to tlim 3.934 rot, mass to 0.15 % |
-| general | grey | dies 2.51 rot |
-| general | correlated-k | dies 0.37–0.58 rot |
-| ideal | correlated-k | dies 0.017 rot — this one is now FIXED, see failure one |
+Two claims from the pre-fix era were themselves wrong and are retracted outright: that the
+RT source limiter cures the general-EOS case, and that the failure "needs MHD". Both were
+one-run-per-arm calls on a raced binary. See section 0.
 
-## 3. Refuted — do NOT re-propose without new evidence
+Also retracted: "denser bin output changed the dt sequence and hence the failure time".
+`Mesh::NewTimeStep` (`mesh.cpp:637-716`) clips dt for `tlim` and nothing else, and outputs
+fire after the step and are read-only. Output cadence cannot move the dt sequence; what
+moved the failure time was the race.
 
-1. **Temperature floor.** Backwards: lowering tfloor 200 → 35 K failed 4x sooner and
-   as a hard NaN. The floor was protecting the run.
-2. **Resistivity cap.** Both `max_eta` 1e13 and 1e14 fail.
-3. **RKG super-time-stepping.** A ~2x delay, not a cure.
-4. **Radial resolution.** `nx1` 64 → 128 failed at 0.395 rot. Kills the
-   "marginally resolved instability" reading.
-5. **Metal condensation.** `eos_metal_condensation = false` failed at 0.932 rot.
-6. **Floor choice.** Shipped floors (pfloor 1e-1, dfloor 5.44e-12) failed at 0.470 rot.
-7. **Convectively unstable initial condition.** The new `ad_dump_file` shows ZERO
-   genuinely super-adiabatic levels after `adjust_ad_pT_arr` (1 %-of-grad_ad
-   tolerance), H2 on or off. It does not start unstable; it develops the front.
-8. **Cells per scale height.** Measured per column from the bin dumps: the run that
-   NEVER fails (ideal+grey) is the *most* sub-scale-height of the four (2.06 % of
-   (col,level) pairs vs 1.87 % for the fastest-dying one). Not the discriminator.
-9. **RT source limiter as a cure — REVISED.** `rt_de_max = 0.5` does clear tlim 3.934 rot
-   with general EOS + correlated-k, against 0.685 rot with it off, and `eos_h2 = false`
-   cures it independently under BOTH grey and c-k. But the limiter arm takes a 33 % mass
-   transient getting there, and both act on the LAST link of the chain (the marginal
-   explicit RT source), not the first — pure hydro survives with the limiter off entirely.
-   Treat them as real but downstream cures.
-
-`eos_h2 = false` runs clean to tlim under BOTH grey and correlated-k — but that is a
-much bigger change than "H2 off": grad_ad's minimum goes 0.0914 → 0.2687 and the
-initial interior goes 6728 K → 14098 K at 300 bar. A factor-of-two hotter, differently
-stratified planet, and also the only perfectly scale-height-resolved case. Strongest
-signal we have, weak as evidence that dissociation is the *mechanism*.
-
-## 4. Where the real lead is now: races, and the fact that MHD is required
+## 4. The race: what it was, how it was found, and what it retracts
 
 ### The nondeterminism — SOLVED 2026-08-24, commit `6e600f12`
 
@@ -163,48 +170,42 @@ created. The exclusions listed there (pack kernel internally deterministic, no d
 writes in the unpack, not an out-of-bounds access, single execution space) all still stand
 and are still worth not redoing.
 
-### The failure needs MHD — the strongest physics signal
+### MHD is NOT required — retracted
 
-| run | config | outcome |
-|---|---|---|
-| `hy.hoff` | **pure hydro**, c-k, limiter OFF | **cleared tlim 3.934 rot, mass +0.068 %** |
-| `hy.hon` | pure hydro, c-k, limiter ON | cleared tlim, same mass to three digits |
-| `mv.weakb` | `bbot` 10 G → **1 mG** | **cleared tlim, mass +0.034 %** |
-| `mv.noeta` | resistivity REMOVED (ideal MHD, 10 G) | past 1.03 rot, healthy |
-| `lt.limoff` | full MHD baseline | died 0.685 rot |
+The pre-fix table here read "pure hydro, weak field and no-resistivity all clear `tlim`,
+full MHD dies at 0.685 rot", and concluded that something magnetic manufactured the state
+that made the RT source marginal. On the fixed binary **full MHD clears `tlim` too**
+(`rf.limoff`), so there is no contrast left to explain. The arms differ now only in how
+fast they run — median dt 1.25 s for full MHD against 6.97 s for hydro and 7.61 s for the
+1 mG field, which is ordinary Alfvenic/resistive timestep behaviour, not a stability signal.
 
-Removing the field cures it outright with the RT limiter OFF, and the hydro mass history is
-flat, not merely survivable. **And it is not a dt effect**: median dt is 6.97 s for hydro
-against 1.28 s for the baseline, so hydro takes ~5x LONGER steps and still lives. Something
-magnetic manufactures the low-e jagged state that makes the RT source marginal. Subject to
-caveat (a) — these are one run each.
+### Gamma_1 — still measured, no longer a suspect
 
-### Gamma_1 — demoted, not dead
+Gamma_1 is identically 1.4728 for the ideal gas but spans 1.084-1.666 for the table, jumping
+by up to **0.58 between ADJACENT cells**. That measurement stands. What has changed is what
+it might explain: nothing crashes any more, so it is at most an accuracy question about
+`src/mhd/mhd.hpp:588-596`, which under a general EOS lets the Riemann solvers read pressure
+from `wder` rather than recomputing it, on the stated assumption that Gamma_1 is "a smooth
+O(1) quantity". The measurement contradicts that assumption.
 
-Gamma_1 is identically 1.4728 for the ideal gas but spans 1.084–1.666 for the table, jumping
-up to **0.58 between ADJACENT cells**, already in the healthy state. Still the only measured
-EOS-side discriminator, but it is entangled with the floored top and is now behind the race
-and the MHD requirement in priority. If tested, the only clean test **holds diffusivity
-fixed**: evaluate Gamma_1 at the interface from the reconstructed state rather than
-reconstructing the stored cell-centred value. **Donor-cell is not a valid test** — it changes
-the scheme's diffusivity, and dissipation alone is known to just delay the failure; the user
-rejected it on exactly that ground.
-
-Related, **fenced off**: `src/mhd/mhd.hpp:588-596` documents that under a general EOS the
-Riemann solvers read pressure from `wder` rather than recomputing it, and asserts Gamma_1 is
-"a smooth O(1) quantity". The measurement contradicts that. **The user said "let's not go
-that way" on 2026-08-23; do not open it without them raising it first.**
+**The user said "let's not go that way" on 2026-08-23; do not open it without them raising
+it first.** If it is ever opened, the only clean test **holds diffusivity fixed**: evaluate
+Gamma_1 at the interface from the reconstructed state rather than reconstructing the stored
+cell-centred value. Donor-cell is not a valid test — it changes the scheme's diffusivity —
+and the user rejected it on exactly that ground.
 
 ## 5. Bars to clear, and traps
 
-- Fast reproducer: general + correlated-k, now IN THE REPO as
-  **`inputs/mhd/deep_hot_jupiter_rt_blowup.athinput`** (`cd2e8815`, pushed from orion).
-  Dies anywhere in 0.37–1.46 rot, or not at all — budget for the long tail, and run an
-  ensemble, not one job.
-- **Set `tlim` past 2.51 rot or the result is unreadable**, and do not stop watching
-  early — a short tlim and an early stop have now EACH produced a wrong call this
-  campaign (the second was orion's, see section 0b). General+grey dies at 2.509. Clean means
-  reaching `tlim = 1.2e6` = 3.934 rot.
+- **`inputs/mhd/deep_hot_jupiter_rt_blowup.athinput`** (`cd2e8815`) is kept as the
+  *reference general-EOS + correlated-k run*, not as a reproducer of anything — nothing to
+  reproduce survives. Repoint `ck_table`/`ck_data_dir` and it runs; 8 h on one apu1 GPU
+  reaches `tlim = 1.2e6` = 3.934 rot (`rf.limoff`: 2.17e4 s of GPU time, 2.32e7
+  zone-cycles/s).
+- Clean means reaching `tlim = 1.2e6` = 3.934 rot with mass flat. Do not stop watching
+  early: a short `tlim` and an early stop each produced a wrong call during this campaign.
+- **Rebuild before comparing anything to a pre-`6e600f12` number.** Every result recorded
+  before that commit came off a raced binary, and none of them is comparable with a fixed
+  one — that is what invalidated an entire campaign's worth of arms.
 - On a restart, do **not** override `time/nlim` — a restart resumes at a large cycle
   number, so a small nlim runs zero cycles and the one-shot dumps never fire.
 - GPU runs need `export HSA_XNACK=1` or they die. On viper, GPU scratch was
@@ -217,7 +218,7 @@ that way" on 2026-08-23; do not open it without them raising it first.**
 ## 6. The exact input
 
 **Easiest path: use `inputs/mhd/deep_hot_jupiter_rt_blowup.athinput`** (`cd2e8815`), which
-is the literal reproducer, and just repoint `ck_table`/`ck_data_dir`. It differs from
+is the reference run, and just repoint `ck_table`/`ck_data_dir`. It differs from
 viper's `/viper/ptmp/jinma/claude_eos_gpu/blowup.athinput` only in `tlim` (8.64e7 vs 1.2e6),
 `rt_de_max` (-1.0 vs 0.5), the two table paths, and one commented-out line — i.e. they are
 the same physics, and `cd2e8815` adds no source change.
@@ -225,44 +226,48 @@ the same physics, and `cd2e8815` adds no source change.
 The delta table below reconstructs the same thing from the shipped
 `inputs/mhd/deep_hot_jupiter_rt_eos.athinput`, and is what documents WHY each knob is set.
 
-| block / param | shipped | reproducer | why |
+| block / param | shipped | reference run | why |
 |---|---|---|---|
 | `mesh/x1max` | `12.54e9` | `13.04e9` | the `xe_long` radial extent |
 | `meshblock/nx2`, `nx3` | `8`, `8` | `16`, `16` | 32 blocks on one GPU — see the decomposition note below |
 | `mhd/max_eta` | `1.0e14` | `1.0e13` | the long-run resistivity cap |
-| `mhd/use_rkg_sts` | `true` | `false` | RKG is required at 1e14, optional at 1e13; leaving it off is what makes this the *fast* reproducer |
+| `mhd/use_rkg_sts` | `true` | `false` | RKG is required at 1e14, optional at 1e13; leaving it off is what makes this the cheap configuration |
 | `mhd/pfloor` | `1.0e-1` | `1.0e0` | the `xe_long` floors |
 | `mhd/dfloor` | `5.44e-12` | `7.26e-12` | " |
 | `problem/bbot` | `5.0e0` | `1.0e1` | " |
 | `problem/rt_ck` | `false` | `true` | correlated-k on |
 | `problem/ck_table`, `ck_data_dir` | relative to `data/exo_fms_ck` | absolute | only because the job ran from a scratch dir; make them resolve, however |
-| `output1/dt` | `8.64e6` | `2.0e2` | fine cadence — it dies inside 0.67 rot |
+| `output1/dt` | `8.64e6` | `2.0e2` | fine cadence, from when this was thought to fail early |
 | `output2/dt` | `2.16e6` | `2.0e3` | " |
 | — | — | add `<output3> file_type=rst, dt=1.0e4` and `<output4> file_type=log, dt=2.0e2` | restarts + the event log |
 
-**Watch `rt_de_max`.** The live `blowup.athinput` carries `rt_de_max = 0.5`, i.e. the
-limiter ON — that is the `lt.limon` variant, which survives to tlim but only by losing
-67 % of its mass and having the density floor refill it. **The baseline that dies at
-0.674 rot has the limiter off** (`rt_de_max` absent, or `<= 0`). Set it deliberately;
-do not inherit it by accident.
+**`rt_de_max` in that file is `0.5`, i.e. the limiter ON.** On the fixed binary it barely
+matters — over the whole 3.934 rot it clipped **4 cells**, and `rt_de_max = -1` gives the
+same mass to five digits. It is still REQUIRED for the ideal-EOS + correlated-k run
+(section 2), which NaNs without it. Set it deliberately rather than inheriting it.
 
-The other variants were all one-line edits of that same file, which is worth reproducing
-as a habit — it is what made the results comparable:
+The variants below were all one-line edits of that same file. Their pre-fix outcomes are
+listed only to mark them as retracted; **all six clear `tlim` on the fixed binary** (section
+0), so none of these knobs is a stability control.
 
-| variant | the single change | outcome |
-|---|---|---|
-| `grey` | `rt_ck = false` | dies 2.509 rot |
-| `v_noh2` | `eos_h2 = false` | clean to tlim |
-| `v_noh2grey` | `eos_h2 = false` + `rt_ck = false` | clean to tlim |
-| `v_hr` | `mesh/nx1` and `meshblock/nx1` 64 → 128 | dies 0.395 rot |
-| `v_nocond` | `eos_metal_condensation = false` | dies 0.932 rot |
-| `v_shipfl` | `pfloor 1.0e-1`, `dfloor 5.44e-12` | dies 0.470 rot |
-| `tfloor` | `tfloor_kelvin` 200 → 35 | fails 4x SOONER, hard NaN |
-| `ideal_ck` / `ideal_grey` | separate ideal-gas files, differing from each other in `rt_ck` ALONE | see failure one |
+| variant | the single change | pre-fix (RACED — not valid) | post-fix |
+|---|---|---|---|
+| `grey` | `rt_ck = false` | "dies 2.509 rot" | clean |
+| `noh2` | `eos_h2 = false` | clean | clean |
+| `hr` | `mesh/nx1` and `meshblock/nx1` 64 -> 128 | "dies 0.395 rot" | not re-run |
+| `nocond` | `eos_metal_condensation = false` | "dies 0.932 rot" | not re-run |
+| `shipfl` | `pfloor 1.0e-1`, `dfloor 5.44e-12` | "dies 0.470 rot" | not re-run |
+| `tfloor` | `tfloor_kelvin` 200 -> 35 | "fails 4x sooner, hard NaN" | not re-run |
+| `weakb` | `bbot = 1.0e-3` | clean | clean |
+| `noeta` | resistivity removed | past 1.86 rot | clean |
+| `hydro` | `hydro_ck.athinput` — pure hydro | clean | clean |
+| `ideal_ck` / `ideal_grey` | separate ideal-gas files, differing in `rt_ck` ALONE | see section 2 | `ideal_ck` needs `rt_de_max` |
 
 The ideal-gas pair is derived from `inputs/mhd/deep_hot_jupiter_rt_ideal_xe.athinput`.
+The four "not re-run" rows would be worth 8 h each only if someone wants the record
+complete; there is no open question they answer.
 
-Also relevant to sizing a job: 32 meshblocks on one GPU beats 2 by 1.35–1.45x, and a
+Also relevant to sizing a job: 32 meshblocks on one GPU beats 2 by 1.35-1.45x, and a
 second APU buys only ~1 %; `nx1` is capped at 264 by MHD LDS (production uses 256), and
 x1 cannot be split because the RT is a column solve.
 
