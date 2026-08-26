@@ -30,6 +30,10 @@ struct HotJupiterParam {
   // point mass with the same surface gravity at ap, g(r) = grav*(ap/r)^2. See
   // GravAccAt/GravPotAt in deep_hot_jupiter_rt.cpp.
   bool grav_point_mass = false;
+  // false = no stellar tide (the historical behaviour). true = add the host star's tidal
+  // acceleration Omega^2 (2x, -y, -z) in the corotating frame. See TideAccR/TideAccT/
+  // TideAccP in deep_hot_jupiter_rt.cpp.
+  bool stellar_tide = false;
 };
 
 //----------------------------------------------------------------------------------------

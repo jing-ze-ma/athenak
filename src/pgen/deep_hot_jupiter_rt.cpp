@@ -216,6 +216,90 @@ Real GravPotAt(const Real grav_acc, const Real ap, const Real r, const Real z,
 }
 
 
+//----------------------------------------------------------------------------------------
+//! \fn TideAccR / TideAccT / TideAccP
+//! \brief the host star's tidal acceleration, in the planet-centred corotating frame.
+//!
+//! `<problem>/stellar_tide = true` adds the term the frame has always been missing. The
+//! full Hill acceleration in a frame corotating with the orbit is
+//!     a = Omega^2 (3x, 0, -z),
+//! with x towards the star and z along the spin axis. The block below already applies the
+//! centrifugal term about the PLANET's own axis, Omega^2 (x, y, 0) -- see `oor`. What
+//! is left to add is the difference,
+//!     a_tide = Omega^2 (2x, -y, -z),
+//! i.e. the stellar tidal tensor proper: outward at the substellar AND antistellar points
+//! (+2 Omega^2 r), inward at the terminators and the poles (-Omega^2 r). A prolate bulge
+//! along the star-planet axis.
+//!
+//! In the spherical basis, with mu = sin(theta) cos(phi) the substellar direction cosine
+//! (the same `mu0` the radiative transfer uses for the stellar beam):
+//!     a_r     = Omega^2 r (3 mu^2 - 1)
+//!     a_theta = 3 Omega^2 r sin(theta) cos(theta) cos^2(phi)
+//!     a_phi   = -3 Omega^2 r sin(theta) sin(phi) cos(phi)
+//!
+//! WHY IT MATTERS HERE: a_tide/g scales as r^3, so it is set by how tall the domain is.
+//! At the old constant-g top (r/ap = 1.52) it is 1.5% of g at the terminator; with
+//! grav_point_mass and r/ap = 2.18 it is 4.4% at the top and 2.9% at the 1e-6 bar
+//! terminator isobar, and 3 Omega^2 r / g reaches 13% at the top. r_L1 = 4.28 ap, so the
+//! domain now reaches half way to L1. A hydrostatic estimate against the run's own
+//! measured H(r) puts the 1e-6 bar level 3.2 cells lower at the terminator and 9.3 cells
+//! higher at the substellar point -- about 0.15 H on the limb observable.
+//!
+//! Like the centrifugal term, this is applied as an explicit momentum source and is NOT
+//! folded into phicc0/phi0_x1f, so the well-balanced reconstruction does not see it. That
+//! is deliberate and matches how `oor` has always been treated: the well-balanced path
+//! balances the spherically symmetric radial potential, and the tidal potential is not
+//! spherically symmetric. So switching this flag on leaves the initial
+//! condition (built hydrostatic WITHOUT the tide) no longer exactly balanced; the
+//! atmosphere adjusts over the first few dynamical times, which the initial Rayleigh drag
+//! damps.
+//!
+//! WHERE IT IS AND IS NOT APPLIED. Applied at four places: the three momentum components
+//! plus the work term in the corotating-frame block, and the radiative transfer's
+//! `tau = kappa p / g` closure over the unresolved column above the domain (three call
+//! sites, via EffGravAt). Deliberately NOT applied at three others:
+//!   * get_wb_eos_arr / get_init_eos_arr, the 1D hydrostatic column integrators behind
+//!     the initial condition and the well-balanced background. They have no angle, and
+//!     the background must stay spherically symmetric for the well-balanced path.
+//!   * the Maxwell outer-BC ghost clamp, which is MHD-only and uses |g| purely as a
+//!     reference weight for a dimensionless ratio; the untided value is the right scale
+//!     there, and theta/phi are not in scope.
+
+KOKKOS_INLINE_FUNCTION
+Real TideAccR(const Real omega, const Real r, const Real mu, const bool tide) {
+  return tide ? SQR(omega)*r*(3.0*SQR(mu) - 1.0) : 0.0;
+}
+
+KOKKOS_INLINE_FUNCTION
+Real TideAccT(const Real omega, const Real r, const Real sinth, const Real costh,
+              const Real cosph, const bool tide) {
+  return tide ? 3.0*SQR(omega)*r*sinth*costh*SQR(cosph) : 0.0;
+}
+
+KOKKOS_INLINE_FUNCTION
+Real TideAccP(const Real omega, const Real r, const Real sinth, const Real sinph,
+              const Real cosph, const bool tide) {
+  return tide ? -3.0*SQR(omega)*r*sinth*sinph*cosph : 0.0;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn EffGravAt
+//! \brief inward gravity including the tidal correction, for the radiative transfer's
+//! `tau = kappa p / g` closure over the unresolved column above the domain.
+//!
+//! `grav` here is POSITIVE (the RT sites pass g0, not -g0). The tidal radial acceleration
+//! is outward-positive, so it is subtracted. Clamped at 10% of the untided value so a
+//! domain taken close to L1 cannot divide by zero; at the production top it is
+//! -8.8% substellar and +4.4% at the terminator, nowhere near the clamp.
+
+KOKKOS_INLINE_FUNCTION
+Real EffGravAt(const Real grav, const Real ap, const Real r, const bool pmass,
+               const Real omega, const Real mu, const bool tide) {
+  const Real g = GravAccAt(grav, ap, r, pmass);
+  return tide ? fmax(g - TideAccR(omega, r, mu, tide), 0.1*g) : g;
+}
+
+
 // Number of (band, quadrature) chains stepped together in the IR sweep. This is the
 // instruction-level parallelism the sweep gets; it also fixes the private I_ir_down_c
 // footprint at NC radial columns, independent of how many chains are requested.
@@ -1433,6 +1517,14 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                 << std::endl
                 << "problem/grav_point_mass requires mesh/use_spherical_polar"
+                << std::endl;
+      exit(EXIT_FAILURE);
+    }
+    const bool tide = pin->GetOrAddBoolean("problem","stellar_tide",false);
+    if (tide && !use_spherical_polar) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl
+                << "problem/stellar_tide requires mesh/use_spherical_polar"
                 << std::endl;
       exit(EXIT_FAILURE);
     }
@@ -2671,6 +2763,7 @@ void SourceFunc(Mesh *pm, Real bdt) {
     Real grav_acc = -pm->pgen->hot_jupiter_param.grav;
     Real ap = pm->pgen->hot_jupiter_param.ap;
     const bool grav_pmass = pm->pgen->hot_jupiter_param.grav_point_mass;
+    const bool tide = pm->pgen->hot_jupiter_param.stellar_tide;
     Real omega = pm->pgen->hot_jupiter_param.omega;
     Real Rgas = pm->pgen->hot_jupiter_param.Rgas;
     
@@ -2769,6 +2862,25 @@ void SourceFunc(Mesh *pm, Real bdt) {
           u0(m,IM1,k,j,i) += rho*(cor+oor)*sine*bdt;
 //          if (!use_etotgrav)
           u0(m,IEN,k,j,i) += rho*oor*(vr*sine+vtheta*cosine)*bdt;
+          // The host star's tidal term, on top of the planet's own centrifugal `oor`.
+          // Together they make up the Hill acceleration Omega^2 (3x, 0, -z); see
+          // TideAccR/TideAccT/TideAccP. mu is the substellar direction cosine, the same
+          // sin(theta)*cos(phi) the radiative transfer uses for the stellar beam.
+          if (tide) {
+            const Real cosph = cos(phi);
+            const Real sinph = sin(phi);
+            const Real mu = sine*cosph;
+            const Real atr = TideAccR(omega, r, mu, tide);
+            const Real att = TideAccT(omega, r, sine, cosine, cosph, tide);
+            const Real atp = TideAccP(omega, r, sine, sinph, cosph, tide);
+            u0(m,IM1,k,j,i) += rho*atr*bdt;
+            u0(m,IM2,k,j,i) += rho*att*bdt;
+            u0(m,IM3,k,j,i) += rho*atp*bdt;
+            // Tidal work. Unconditional, like the centrifugal work above: the tidal
+            // potential is deliberately NOT carried in phicc0, so use_etotgrav does not
+            // already account for it.
+            u0(m,IEN,k,j,i) += rho*(atr*vr + att*vtheta + atp*vphi)*bdt;
+          }
         } else {
           // corotating beta-plane approximation e.g. Fromang+2016
           Real omega1 = omega*lam;
@@ -4126,6 +4238,8 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
     Real grav = pm->pgen->hot_jupiter_param.grav;
     Real ap = pm->pgen->hot_jupiter_param.ap;
     const bool grav_pmass = pm->pgen->hot_jupiter_param.grav_point_mass;
+    const bool tide = pm->pgen->hot_jupiter_param.stellar_tide;
+    Real omega = pm->pgen->hot_jupiter_param.omega;
     Real Rgas = pm->pgen->hot_jupiter_param.Rgas;
     Real Teq = pm->pgen->hot_jupiter_param.Teq;
     Real met = pm->pgen->hot_jupiter_param.met;
@@ -4368,7 +4482,9 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
         get_kapr(T, p, met, kapr);
         // tau = kappa p / g for the UNRESOLVED column above the domain. g must be the
         // value at the top, not the surface value: at r/ap = 1.5 they differ by 2.3x.
-        Real tau_r_f = kapr*p/GravAccAt(grav, ap, rtop, grav_pmass);
+        // The tidal term belongs here too: it is the EFFECTIVE gravity that sets how
+        // much mass the unresolved column above the domain holds. See EffGravAt.
+        Real tau_r_f = kapr*p/EffGravAt(grav, ap, rtop, grav_pmass, omega, mu0, tide);
         tau_down_r_f[ie+1] = tau_r_f;
         Real drtop = tau_r_f/(kapr*rho);
         Real delta = drtop/rtop;
@@ -4534,8 +4650,8 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
               for (int cc=0; cc<NC; ++cc) {
                 const Real kap = ck_kappa(cklk, iT, fT, iP, fP, bandc[cc], gc[cc])
                                + kc_g(m,bandc[cc],ie+1,k,j);
-                const Real dtau = kap*ptop*1.0e6/GravAccAt(grav, ap, x1v_(m,ie+1),
-                                                          grav_pmass);
+                const Real dtau = kap*ptop*1.0e6/EffGravAt(grav, ap, x1v_(m,ie+1),
+                                                           grav_pmass, omega, mu0, tide);
                 const RtF trans = RT_EXP(-static_cast<RtF>(dtau/muc[cc]));
                 I_down[cc][ie+1] = (static_cast<RtF>(1.0)-trans)
                                  * static_cast<RtF>(Bb_g(m,bandc[cc],ie+1,k,j));
@@ -4891,7 +5007,7 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
           B[ie+1] = boltz_sigma/M_PI*SQR(SQR(T));
           Real kapr;
           get_kapr(T, p, met, kapr);
-          Real tau_r_f = kapr*p/GravAccAt(grav, ap, rtop, grav_pmass);
+          Real tau_r_f = kapr*p/EffGravAt(grav, ap, rtop, grav_pmass, omega, mu0, tide);
           tau_down_r_f[ie+1] = tau_r_f;
           Real drtop = tau_r_f/(kapr*rho);
           Real delta = drtop/rtop;
