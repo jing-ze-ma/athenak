@@ -577,6 +577,16 @@ void Coordinates::CoordSphericalPolar() {
   int n3m1 = (indcs.nx3 > 1)? (indcs.nx3 + 2*ng - 1) : 0;
   int nmb1 = pmy_pack->nmb_thispack - 1;
 
+  // Copy everything the lambda needs out of the Mesh before the kernel: dereferencing a
+  // host-side pointer on device only happens to work here under unified memory.
+  const bool str_r = pmy_pack->pmesh->use_grid_stretch_r;
+  const bool str_rp = pmy_pack->pmesh->use_grid_stretch_r_poly;
+  const Real fstr_r = pmy_pack->pmesh->fStretchR;
+  const Real rmin = pmy_pack->pmesh->mesh_size.x1min;
+  const Real rmax = pmy_pack->pmesh->mesh_size.x1max;
+  Real cpoly[NSTRETCH_R_POLY];
+  for (int n=0; n<NSTRETCH_R_POLY; ++n) cpoly[n] = pmy_pack->pmesh->fStretchRPoly[n];
+
   par_for("spcoord", DevExeSpace(), 0,nmb1,0,n3m1,0,n2m1,0,n1m1,//ks,ke,js,je,is,ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
 
@@ -586,13 +596,14 @@ void Coordinates::CoordSphericalPolar() {
     r_l  = LeftEdgeX(i-is, indcs.nx1, size.d_view(m).x1min, size.d_view(m).x1max);
     r_r  = LeftEdgeX(i+1-is, indcs.nx1, size.d_view(m).x1min, size.d_view(m).x1max);
     // stretch the radial grid
-    if (pmy_pack->pmesh->use_grid_stretch_r) {
-      Real factor_stretch = pmy_pack->pmesh->fStretchR;
-      Real r0 = pmy_pack->pmesh->mesh_size.x1min;
-      Real r1 = pmy_pack->pmesh->mesh_size.x1max;
-      StretchR(factor_stretch,r0,r1,r_c);
-      StretchR(factor_stretch,r0,r1,r_l);
-      StretchR(factor_stretch,r0,r1,r_r);
+    if (str_r) {
+      StretchR(fstr_r,rmin,rmax,r_c);
+      StretchR(fstr_r,rmin,rmax,r_l);
+      StretchR(fstr_r,rmin,rmax,r_r);
+    } else if (str_rp) {
+      StretchRPoly(cpoly,rmin,rmax,r_c);
+      StretchRPoly(cpoly,rmin,rmax,r_l);
+      StretchRPoly(cpoly,rmin,rmax,r_r);
     }
 
     // --- angles ---

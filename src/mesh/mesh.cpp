@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cinttypes>
+#include <cmath>
 #include <iostream>
 #include <limits>
 #include <cstdio> // fclose
@@ -52,6 +53,7 @@ Mesh::Mesh(ParameterInput *pin) :
   use_cubed_sphere(false),
   use_spherical_polar(false),
   use_grid_stretch_r(false),
+  use_grid_stretch_r_poly(false),
   use_grid_stretch_theta(false),
   npanels(1),
   nmb_packs_thisrank(1),
@@ -98,6 +100,46 @@ Mesh::Mesh(ParameterInput *pin) :
   use_spherical_polar = pin->GetOrAddBoolean("mesh", "use_spherical_polar", false);
   use_grid_stretch_r = pin->GetOrAddBoolean("mesh", "use_grid_stretch_r", false);
   if (use_grid_stretch_r) fStretchR = pin->GetReal("mesh", "f_stretch_r");
+  // Polynomial radial stretch: an alternative to the exponential f_stretch_r above, able
+  // to represent NON-MONOTONIC spacing (fine at depth, finest across a scale-height
+  // minimum, coarse aloft). See StretchRPoly in coordinates.hpp for the mapping and how
+  // the coefficients are chosen.
+  use_grid_stretch_r_poly = pin->GetOrAddBoolean("mesh","use_grid_stretch_r_poly",false);
+  for (int n=0; n<NSTRETCH_R_POLY; ++n) fStretchRPoly[n] = 0.0;
+  if (use_grid_stretch_r_poly) {
+    if (use_grid_stretch_r) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "mesh/use_grid_stretch_r and mesh/use_grid_stretch_r_poly "
+                << "are mutually exclusive" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    for (int n=0; n<NSTRETCH_R_POLY; ++n) {
+      fStretchRPoly[n] = pin->GetOrAddReal("mesh",
+                             "f_stretch_r_c" + std::to_string(n+1), 0.0);
+    }
+    // The mapping must be strictly increasing, or the grid folds over and cell widths go
+    // negative. A bad coefficient set has to fatal here rather than corrupt the run, so
+    // sample du/dxi densely across [0,1] and require it to stay positive.
+    const int nchk = 4096;
+    Real dumin = std::numeric_limits<Real>::max();
+    for (int q=0; q<=nchk; ++q) {
+      Real xi = static_cast<Real>(q)/static_cast<Real>(nchk);
+      Real du = 1.0;
+      for (int n=0; n<NSTRETCH_R_POLY; ++n) {
+        // d/dxi [ c_k xi^k (1-xi) ] = c_k ( k xi^(k-1) - (k+1) xi^k )
+        Real k = static_cast<Real>(n+1);
+        du += fStretchRPoly[n]*(k*std::pow(xi,k-1.0) - (k+1.0)*std::pow(xi,k));
+      }
+      dumin = std::min(dumin, du);
+    }
+    if (dumin <= 0.0) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "mesh/f_stretch_r_c* give a non-monotonic radial mapping "
+                << "(min du/dxi = " << dumin << " <= 0); the grid would fold over"
+                << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+  }
   use_grid_stretch_theta = pin->GetOrAddBoolean("mesh", "use_grid_stretch_theta", false);
   if (use_grid_stretch_theta) fStretchTheta = pin->GetReal("mesh", "f_stretch_theta");
   use_polar_boundary = pin->GetOrAddBoolean("mesh", "use_polar_boundary", false);

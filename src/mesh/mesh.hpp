@@ -16,6 +16,7 @@
 #include <string>
 
 #include "athena.hpp"
+#include "coordinates/grid_stretch.hpp"
 #include "mesh/nghbr_index.hpp"
 
 // Define following structure before other "include" files to resolve declarations
@@ -135,8 +136,11 @@ class Mesh {
   int npanels;                // 6 if using cubed sphere; 1 otherwise
   bool use_spherical_polar;   // true if using spherical polar grid
   bool use_grid_stretch_r;      // true if using grid stretching in r
+  bool use_grid_stretch_r_poly; // true if using the polynomial radial stretch
   bool use_grid_stretch_theta;  // true if using grid stretching in theta
   Real fStretchR, fStretchTheta;
+  // Coefficients of the polynomial radial stretch. See StretchRPoly in coordinates.hpp.
+  Real fStretchRPoly[NSTRETCH_R_POLY];
   bool use_polar_boundary;      // true if using polar boundaries
 
   bool one_d, two_d, three_d; // flags to indicate 1D or 2D or 3D calculations

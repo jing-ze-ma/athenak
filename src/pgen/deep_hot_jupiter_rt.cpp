@@ -20,6 +20,7 @@
 #include "globals.hpp"
 #include "parameter_input.hpp"
 #include "coordinates/cell_locations.hpp"
+#include "coordinates/grid_stretch.hpp"  // StretchR / StretchRPoly
 #include "mesh/mesh.hpp"
 #include "eos/eos.hpp"
 #include "hydro/hydro.hpp"
@@ -203,6 +204,29 @@ void get_init_eos(const EOS_Data &eos, const Real &Rgas, const Real &grav_acc, c
 //! potential -- the centrifugal term, never enabled. It is recorded here once rather than
 //! repeated nine times; omega*r at the top is 6 cm/s^2 against g of 400-940, so it is a
 //! sub-percent correction if it is ever wanted.
+
+//----------------------------------------------------------------------------------------
+//! \fn ApplyRStretch
+//! \brief map a uniform radial coordinate through whichever radial stretch is active.
+//!
+//! The Coordinates class already stretches x1v/x1f/dx1, so anything reading those arrays
+//! needs nothing. But this file also rebuilds radii directly with CellCenterX/LeftEdgeX
+//! when it lays down the initial condition and the gravitational potential, and those
+//! come out UNSTRETCHED. Without this the coordinates and the initial condition would sit
+//! on different grids -- silently, since both are individually self-consistent.
+//!
+//! StretchR/StretchRPoly are the same file-scope definitions Coordinates uses, so the two
+//! cannot drift apart.
+
+KOKKOS_INLINE_FUNCTION
+void ApplyRStretch(const bool str_r, const Real fstr_r, const bool str_rp, const Real *c,
+                   const Real r0, const Real r1, Real &r) {
+  if (str_r) {
+    StretchR(fstr_r, r0, r1, r);
+  } else if (str_rp) {
+    StretchRPoly(c, r0, r1, r);
+  }
+}
 
 KOKKOS_INLINE_FUNCTION
 Real GravAccAt(const Real grav_acc, const Real ap, const Real r, const bool pmass) {
@@ -1528,6 +1552,18 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                 << std::endl;
       exit(EXIT_FAILURE);
     }
+
+    // Radial grid stretch, copied out of the Mesh so the device lambdas below capture
+    // plain values. This function rebuilds radii with CellCenterX/LeftEdgeX, which are
+    // UNSTRETCHED; each is passed through ApplyRStretch so the initial condition and the
+    // gravitational potential land on the same grid the Coordinates arrays describe.
+    const bool str_r_ = pmy_mesh_->use_grid_stretch_r;
+    const bool str_rp_ = pmy_mesh_->use_grid_stretch_r_poly;
+    const Real fstr_r_ = pmy_mesh_->fStretchR;
+    const Real rmin_ = pmy_mesh_->mesh_size.x1min;
+    const Real rmax_ = pmy_mesh_->mesh_size.x1max;
+    Real cpoly_[NSTRETCH_R_POLY];
+    for (int n=0; n<NSTRETCH_R_POLY; ++n) cpoly_[n] = pmy_mesh_->fStretchRPoly[n];
     Real omega = pin->GetReal("problem","omega");
     Real Rgas = pin->GetReal("problem","Rgas");
     Real met = pin->GetReal("problem","met");
@@ -1636,6 +1672,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         x3v = x3v_(m,k);
       } else {
         x1v = CellCenterX(i-is, nx1, x1min, x1max);
+        ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, x1v);
         x2v = CellCenterX(j-js, nx2, x2min, x2max);
         x3v = CellCenterX(k-ks, nx3, x3min, x3max);
       }
@@ -1702,6 +1739,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
           x3v = x3v_(m,k);
         } else {
           x1v = CellCenterX(i-is, nx1, x1min, x1max);
+          ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, x1v);
           x2v = CellCenterX(j-js, nx2, x2min, x2max);
           x3v = CellCenterX(k-ks, nx3, x3min, x3max);
         }
@@ -1738,6 +1776,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             x3v = x3v_(m,k);
           } else {
             x1v = LeftEdgeX(i-is, nx1, x1min, x1max);
+            ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, x1v);
             x2v = CellCenterX(j-js, nx2, x2min, x2max);
             x3v = CellCenterX(k-ks, nx3, x3min, x3max);
           }
@@ -1759,6 +1798,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                 x1v = x1f_(m,i+1);
               } else {
                 x1v = LeftEdgeX(i+1-is, nx1, x1min, x1max);
+                ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, x1v);
               }
               r = x1v;
               if (use_spherical_polar) x1v -= ap;
@@ -1781,6 +1821,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             x3v = x3v_(m,k);
           } else {
             x1v = CellCenterX(i-is, nx1, x1min, x1max);
+            ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, x1v);
             x2v = LeftEdgeX(j-js, nx2, x2min, x2max);
             x3v = CellCenterX(k-ks, nx3, x3min, x3max);
           }
@@ -1822,6 +1863,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             x3v = x3f_(m,k);
           } else {
             x1v = CellCenterX(i-is, nx1, x1min, x1max);
+            ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, x1v);
             x2v = CellCenterX(j-js, nx2, x2min, x2max);
             x3v = LeftEdgeX(k-ks, nx3, x3min, x3max);
           }
@@ -1864,6 +1906,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
               x3v = x3v_(m,k);
             } else {
               x1v = LeftEdgeX(i-is, nx1, x1min, x1max);
+              ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, x1v);
               x2v = CellCenterX(j-js, nx2, x2min, x2max);
               x3v = CellCenterX(k-ks, nx3, x3min, x3max);
             }
@@ -1880,6 +1923,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                   x1v = x1f_(m,i+1);
                 } else {
                   x1v = LeftEdgeX(i+1-is, nx1, x1min, x1max);
+                  ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, x1v);
                 }
                 if (use_spherical_polar) x1v -= ap;
                 get_wb_eos(eos, Rgas, grav_acc, zarr.d_view,logparr.d_view,x1v,denwb,pwb);
@@ -1896,6 +1940,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
               x3v = x3v_(m,k);
             } else {
               x1v = CellCenterX(i-is, nx1, x1min, x1max);
+              ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, x1v);
               x2v = LeftEdgeX(j-js, nx2, x2min, x2max);
               x3v = CellCenterX(k-ks, nx3, x3min, x3max);
             }
@@ -1920,6 +1965,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
               x3v = x3f_(m,k);
             } else {
               x1v = CellCenterX(i-is, nx1, x1min, x1max);
+              ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, x1v);
               x2v = CellCenterX(j-js, nx2, x2min, x2max);
               x3v = LeftEdgeX(k-ks, nx3, x3min, x3max);
             }
@@ -1964,6 +2010,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
               x3v = x3v_(m,k);
             } else {
               x1v = CellCenterX(i-is, nx1, x1min, x1max);
+              ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, x1v);
               x2v = CellCenterX(j-js, nx2, x2min, x2max);
               x3v = CellCenterX(k-ks, nx3, x3min, x3max);
             }
@@ -2021,6 +2068,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             x3v = x3v_(m,k);
           } else {
             x1v = CellCenterX(i-is, nx1, x1min, x1max);
+            ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, x1v);
             x2v = CellCenterX(j-js, nx2, x2min, x2max);
             x3v = CellCenterX(k-ks, nx3, x3min, x3max);
           }
@@ -2765,6 +2813,17 @@ void SourceFunc(Mesh *pm, Real bdt) {
     const bool grav_pmass = pm->pgen->hot_jupiter_param.grav_point_mass;
     const bool tide = pm->pgen->hot_jupiter_param.stellar_tide;
     Real omega = pm->pgen->hot_jupiter_param.omega;
+
+    // Radial grid stretch, copied out of the Mesh so the device lambdas below capture
+    // plain values. Radii rebuilt here with CellCenterX/LeftEdgeX are UNSTRETCHED, so
+    // each is passed through ApplyRStretch to match the Coordinates arrays.
+    const bool str_r_ = pm->use_grid_stretch_r;
+    const bool str_rp_ = pm->use_grid_stretch_r_poly;
+    const Real fstr_r_ = pm->fStretchR;
+    const Real rmin_ = pm->mesh_size.x1min;
+    const Real rmax_ = pm->mesh_size.x1max;
+    Real cpoly_[NSTRETCH_R_POLY];
+    for (int n=0; n<NSTRETCH_R_POLY; ++n) cpoly_[n] = pm->fStretchRPoly[n];
     Real Rgas = pm->pgen->hot_jupiter_param.Rgas;
     
     Real iap = 1.0/ap;
@@ -2786,6 +2845,7 @@ void SourceFunc(Mesh *pm, Real bdt) {
           Real &x1min = size.d_view(m).x1min;
           Real &x1max = size.d_view(m).x1max;
           Real x1v = CellCenterX(i-is, indcs.nx1, x1min, x1max);
+          ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, x1v);
         
           Real &x2min = size.d_view(m).x2min;
           Real &x2max = size.d_view(m).x2max;
