@@ -26,6 +26,32 @@
 //! MeshBlocks. Buffer data are then sent (via MPI) or copied directly for periodic or
 //! block boundaries.
 
+//! CUBED SPHERE. This exchange is what keeps the magnetic field SINGLE-VALUED on a
+//! panel seam. A seam face is one physical face stored twice, as an active face of each
+//! of the two panels meeting there, and it is never communicated (see InitRecvIndices:
+//! the shared face is deliberately excluded from the halo). Each panel evolves its own
+//! copy with its own EMFs, so the copies stay equal only if every edge bounding that face
+//! carries the same line integral on both -- which is precisely what averaging the EMFs
+//! here achieves. Panel-blind, it did the opposite: the seam copies drifted apart
+//! secularly, reaching 2.1e-3 of |B| after 200 cycles of an exactly static state.
+//!
+//! Unlike the halo field, the EMF needs NO basis transform. The CT update consumes
+//! dxedge*E, the line integral of E along the edge, and a seam edge is the same physical
+//! curve in both charts -- the two charts' along-seam maps coincide on the seam -- so the
+//! integral is a plain scalar. Three things do change: the along-seam INDEX may be
+//! reversed; the along-seam EMF then flips SIGN, because a reversed index means the
+//! reversed unit tangent; and across a swap seam the neighbour reaches this face through
+//! a face of its OTHER tangential axis, so the along-seam EMF must be written into the
+//! buffer slot that neighbour will read it from (x2e <-> x3e). The radial component x1e
+//! is untouched: rhat is common to both charts and so is its orientation.
+//!
+//! Only the FACE buffers are treated. The x2x3 EDGE buffers, which carry x1e on the
+//! radial edge at a panel corner, are left alone: that edge is a CUBE VERTEX shared by
+//! THREE panels, so no pairwise average can make it single-valued, and dropping the
+//! exchange there was MEASURED to be worse than keeping it (4.2e-4 -> 1.4e-3 after 50
+//! cycles). x1x2 and x3x1 edge buffers never exist here -- the radial direction has
+//! physical boundaries at both ends, so a block has no x1-direction neighbour.
+
 TaskStatus MeshBoundaryValuesFC::PackAndSendFluxFC(DvceEdgeFld4D<Real> &flx) {
   // create local references for variables in kernel
   int nmb = pmy_pack->nmb_thispack;
@@ -43,6 +69,8 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFluxFC(DvceEdgeFld4D<Real> &flx) {
   auto &rbuf = recvbuf;
   auto &one_d = pmy_pack->pmesh->one_d;
   auto &two_d = pmy_pack->pmesh->two_d;
+  auto &mbpanel = pmy_pack->pmb->mb_panel;
+  const bool use_cs = pmy_pack->pmesh->use_cubed_sphere;
 
   // Outer loop over (# of MeshBlocks)*(# of neighbors)*(3 field components)
   Kokkos::TeamPolicy<> policy(DevExeSpace(), (3*nmb*nnghbr), Kokkos::AUTO);
@@ -146,17 +174,38 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFluxFC(DvceEdgeFld4D<Real> &flx) {
         // j-index is fixed for flux correction on x2faces
         const int j = jl;
         const int fj = 2*jl - cjs;
+        // CUBED-SPHERE PANEL SEAM; the along-seam index here is k. See the note above
+        // the function for why the EMF value itself needs no basis transform.
+        int vout = v;
+        int ak = 1, bk = 0;
+        Real sgn = 1.0;
+        if (use_cs && (nghbr.d_view(m,n).lev == mblev.d_view(m)) &&
+            (nghbr.d_view(m,n).panel != mbpanel.d_view(m))) {
+          PanelBoundaries pb = pmy_pack->pmesh->GetPanelBoundary(mbpanel.d_view(m),
+                                                            nghbr.d_view(m,n).panel);
+          // pb.rev_a/rev_b are in the DESTINATION's axes; undo the swap to get the
+          // reversal that applies to this block's own k.
+          const int rev_k = (pb.swap_ax == 1) ? pb.rev_a : pb.rev_b;
+          if (rev_k) {ak = -1; bk = kl + ku;}
+          if (v==2) {
+            // Across a swap seam this x2 face is a x3 face of the neighbour, so its
+            // along-seam EMF is stored as x2e (slot 1), not x3e (slot 2).
+            vout = (pb.swap_ax == 1) ? 1 : 2;
+            if (rev_k) {sgn = -1.0;}
+          }
+        }
         Kokkos::parallel_for(Kokkos::TeamThreadRange<>(tmember, nki), [&](const int idx) {
           int k = idx / ni;
           int i = (idx - k * ni) + il;
           k += kl;
           int fk = 2*k - cks;
           int fi = 2*i - cis;
+          const int kk = ak*k + bk;
           if (v==0) {
             Real rflx;
             // if neighbor is at same level, load x1e directly
             if (nghbr.d_view(m,n).lev == mblev.d_view(m)) {
-              rflx = flx.x1e(m,k,j,i);
+              rflx = flx.x1e(m,kk,j,i);
             // if neighbor is at coarser level, restrict x1e
             } else {
               if (two_d) {
@@ -166,15 +215,15 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFluxFC(DvceEdgeFld4D<Real> &flx) {
               }
             }
             if (nghbr.d_view(m,n).rank == my_rank) {
-              rbuf[dn].flux(dm, ndat*v + i-il + ni*(k-kl)) = rflx;
+              rbuf[dn].flux(dm, ndat*vout + i-il + ni*(k-kl)) = rflx;
             } else {
-              sbuf[n].flux(m, ndat*v + i-il + ni*(k-kl)) = rflx;
+              sbuf[n].flux(m, ndat*vout + i-il + ni*(k-kl)) = rflx;
             }
           } else if (v==2) {
             Real rflx;
             // if neighbor is at same level, load x3e directly
             if (nghbr.d_view(m,n).lev == mblev.d_view(m)) {
-              rflx = flx.x3e(m,k,j,i);
+              rflx = sgn*flx.x3e(m,kk,j,i);
             // if neighbor is at coarser level, restrict x3e
             } else {
               if (two_d) {
@@ -184,9 +233,9 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFluxFC(DvceEdgeFld4D<Real> &flx) {
               }
             }
             if (nghbr.d_view(m,n).rank == my_rank) {
-              rbuf[dn].flux(dm, ndat*v + i-il + ni*(k-kl)) = rflx;
+              rbuf[dn].flux(dm, ndat*vout + i-il + ni*(k-kl)) = rflx;
             } else {
-              sbuf[n].flux(m, ndat*v + i-il + ni*(k-kl)) = rflx;
+              sbuf[n].flux(m, ndat*vout + i-il + ni*(k-kl)) = rflx;
             }
           }
         });
@@ -227,39 +276,57 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFluxFC(DvceEdgeFld4D<Real> &flx) {
         // k-index is fixed for flux correction on x3faces
         const int k = kl;
         const int fk = 2*kl - cks;
+        // CUBED-SPHERE PANEL SEAM. The along-seam index here is j.
+        int vout = v;
+        int aj = 1, bj = 0;
+        Real sgn = 1.0;
+        if (use_cs && (nghbr.d_view(m,n).lev == mblev.d_view(m)) &&
+            (nghbr.d_view(m,n).panel != mbpanel.d_view(m))) {
+          PanelBoundaries pb = pmy_pack->pmesh->GetPanelBoundary(mbpanel.d_view(m),
+                                                            nghbr.d_view(m,n).panel);
+          const int rev_j = (pb.swap_ax == 1) ? pb.rev_b : pb.rev_a;
+          if (rev_j) {aj = -1; bj = jl + ju;}
+          if (v==1) {
+            // Across a swap seam this x3 face is a x2 face of the neighbour, so its
+            // along-seam EMF is stored as x3e (slot 2), not x2e (slot 1).
+            vout = (pb.swap_ax == 1) ? 2 : 1;
+            if (rev_j) {sgn = -1.0;}
+          }
+        }
         Kokkos::parallel_for(Kokkos::TeamThreadRange<>(tmember, nji), [&](const int idx) {
           int j = idx / ni;
           int i = (idx - j * ni) + il;
           j += jl;
           int fi = 2*i - cis;
           int fj = 2*j - cjs;
+          const int jj = aj*j + bj;
           if (v==0) {
             Real rflx;
             // if neighbor is at same level, load x1e directly
             if (nghbr.d_view(m,n).lev == mblev.d_view(m)) {
-              rflx = flx.x1e(m,k,j,i);
+              rflx = flx.x1e(m,k,jj,i);
             // if neighbor is at coarser level, restrict x1e
             } else {
               rflx = 0.5*(flx.x1e(m,fk,fj,fi) + flx.x1e(m,fk,fj,fi+1));
             }
             if (nghbr.d_view(m,n).rank == my_rank) {
-              rbuf[dn].flux(dm, ndat*v + i-il + ni*(j-jl)) = rflx;
+              rbuf[dn].flux(dm, ndat*vout + i-il + ni*(j-jl)) = rflx;
             } else {
-              sbuf[n].flux(m, ndat*v + i-il + ni*(j-jl)) = rflx;
+              sbuf[n].flux(m, ndat*vout + i-il + ni*(j-jl)) = rflx;
             }
           } else if (v==1) {
             Real rflx;
             // if neighbor is at same level, load x2e directly
             if (nghbr.d_view(m,n).lev == mblev.d_view(m)) {
-              rflx = flx.x2e(m,k,j,i);
+              rflx = sgn*flx.x2e(m,k,jj,i);
             // if neighbor is at coarser level, restrict x2e
             } else {
               rflx = 0.5*(flx.x2e(m,fk,fj,fi) + flx.x2e(m,fk,fj+1,fi));
             }
             if (nghbr.d_view(m,n).rank == my_rank) {
-              rbuf[dn].flux(dm, ndat*v + i-il + ni*(j-jl)) = rflx;
+              rbuf[dn].flux(dm, ndat*vout + i-il + ni*(j-jl)) = rflx;
             } else {
-              sbuf[n].flux(m, ndat*v + i-il + ni*(j-jl)) = rflx;
+              sbuf[n].flux(m, ndat*vout + i-il + ni*(j-jl)) = rflx;
             }
           }
         });

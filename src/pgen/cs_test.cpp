@@ -47,6 +47,8 @@
 
 #include <cstdio>
 #include <iostream>
+#include <map>
+#include <string>
 #include <sstream>
 #include <cmath>
 
@@ -628,10 +630,16 @@ void CSTestRadialBC(Mesh *pm) {
         if (side == 1 &&
             mb_bcs.d_view(m,BoundaryFace::outer_x1) != BoundaryFlag::user) continue;
         const int i = (side == 0) ? (is-ng+ig) : (ie_i+1+ig);
-        b0f.x1f(m,k,j,i) = br;
         b0f.x2f(m,k,j,i) = bxi;
         b0f.x3f(m,k,j,i) = bet;
-        if (side == 1 && ig == ng-1) b0f.x1f(m,k,j,i+1) = br;
+        // x1f: fill the GHOST faces only. The two DOMAIN faces x1f(is) and x1f(ie+1)
+        // belong to active cells and are updated by CT; overwriting one of them each
+        // step breaks the exact cell-by-cell conservation of sum(area*B) that CT
+        // otherwise guarantees. This wrote x1f(ie+1) and made div B at i = ie grow to
+        // 6e-2 over five steps -- on every panel, seam and interior alike -- which
+        // reads exactly like a seam EMF defect and is not one. The inner side already
+        // left x1f(is) alone; the outer side is now symmetric with it.
+        b0f.x1f(m,k,j,(side == 0) ? i : (i+1)) = br;
         // bcc in the orthonormal frame, matching GnomonicEquiangleRaiseVelMHD
         Real e1[3], e2[3];
         cubed_sphere::PanelTangents(p, x2c, x3c, e1, e2);
@@ -885,6 +893,29 @@ void CSTestGhostCheck(ParameterInput *pin, Mesh *pm) {
           }
         }
         std::printf("  %4d cnr  %12.5e  %12.5e  %12.5e\n", p, c1, c2, c3);
+        // THE SHARED SEAM FACES THEMSELVES, which are ACTIVE on both panels and are
+        // never communicated: each panel evolves its own copy with its own EMFs, so they
+        // stay equal only if the seam EMFs are single-valued. Compared here against the
+        // exact value and against the same quantity on interior faces -- with consistent
+        // seam EMFs both sit at truncation and stay there; with inconsistent ones the
+        // seam copies drift apart, and away from exact, secularly in time.
+        Real sf = 0.0, itf = 0.0;
+        for (int k=ks; k<=ke; ++k) {
+          for (int j=js; j<=je+1; ++j) {
+            const Real e2v = exact(j,k,true,false,1);
+            const Real d = fabs(b2h(m,k,j,i) - e2v);
+            if (j == js || j == je+1) { sf = fmax(sf,d); } else { itf = fmax(itf,d); }
+          }
+        }
+        for (int k=ks; k<=ke+1; ++k) {
+          for (int j=js; j<=je; ++j) {
+            const Real e3v = exact(j,k,false,true,2);
+            const Real d = fabs(b3h(m,k,j,i) - e3v);
+            if (k == ks || k == ke+1) { sf = fmax(sf,d); } else { itf = fmax(itf,d); }
+          }
+        }
+        std::printf("  %4d shr  %12.5e (seam faces)  %12.5e (interior faces)\n",
+                    p, sf, itf);
         g1 = fmax(g1,e1); g2 = fmax(g2,e2); g3 = fmax(g3,e3);
       }
       std::printf("  MAX: x1f %12.5e  x2f %12.5e  x3f %12.5e\n", g1, g2, g3);
@@ -924,6 +955,128 @@ void CSTestGhostCheck(ParameterInput *pin, Mesh *pm) {
     // the interior flux/EMF path with a tangential field is a bulk effect. Run this after
     // ONE step -- later the seam error has propagated everywhere.
     const int nseam = ng;
+    // --- IS THE SHARED SEAM FACE SINGLE-VALUED? --------------------------------------
+    // The definitive gate for seam EMF consistency. A face on a panel seam is ONE
+    // physical face, stored twice -- once as an ACTIVE face of each of the two panels
+    // that meet there -- and it is never communicated: each panel evolves its own copy
+    // with its own EMFs. The copies stay equal if and only if every edge bounding that
+    // face carries the same line integral on both panels. Any mismatch is a magnetic
+    // field that is multi-valued at the seam.
+    //
+    // Found here WITHOUT any index map, by geometry: every panel-boundary face is keyed
+    // on its physical centre, and a key that two different panels both produce is a
+    // shared face. The two panels' outward normals there are the same physical vector up
+    // to sign, so the comparison is b_P - (n_P.n_Q) b_Q.
+    {
+      auto &b0f = pmbp->pmhd->b0;
+      auto b2h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), b0f.x2f);
+      auto b3h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), b0f.x3f);
+      struct SeamFace { Real b; Real n[3]; int panel; };
+      // Split off the faces within ng of a seam END, i.e. a panel corner. Only there do
+      // the two panels average over DIFFERENT sets of contributions.
+      std::map<std::string, SeamFace> seen;
+      Real dmax = 0.0, bmax = 0.0, cmax = 0.0;
+      int npair = 0;
+      for (int m=0; m<pmbp->nmb_thispack; ++m) {
+        const int p = mbpanel.h_view(m);
+        for (int side=0; side<4; ++side) {
+          const bool jface = (side < 2);
+          const int jj = (side == 0) ? js : ((side == 1) ? je+1 : 0);
+          const int kk = (side == 2) ? ks : ((side == 3) ? ke+1 : 0);
+          const int nlo = jface ? ks : js;
+          const int nhi = jface ? ke : je;
+          for (int t=nlo; t<=nhi; ++t) {
+            const int j = jface ? jj : t;
+            const int k = jface ? t  : kk;
+            const Real x2n = size.h_view(m).x2min, x2x = size.h_view(m).x2max;
+            const Real x3n = size.h_view(m).x3min, x3x = size.h_view(m).x3max;
+            const Real xi = 0.25*M_PI*(jface
+                ? LeftEdgeX(j-js, indcs.nx2, x2n, x2x)
+                : CellCenterX(j-js, indcs.nx2, x2n, x2x));
+            const Real et = 0.25*M_PI*(jface
+                ? CellCenterX(k-ks, indcs.nx3, x3n, x3x)
+                : LeftEdgeX(k-ks, indcs.nx3, x3n, x3x));
+            Real n1[3], n2[3], cx, cy, cz;
+            PanelToCart(p, xi, et, cx, cy, cz);
+            PanelNormals(p, xi, et, n1, n2);
+            for (int i=is; i<=ie; ++i) {
+              char key[128];
+              std::snprintf(key, sizeof(key), "%d_%.9f_%.9f_%.9f", i-is, cx, cy, cz);
+              SeamFace f;
+              f.b = jface ? b2h(m,k,j,i) : b3h(m,k,j,i);
+              for (int c=0; c<3; ++c) {f.n[c] = jface ? n1[c] : n2[c];}
+              f.panel = p;
+              auto it = seen.find(std::string(key));
+              if (it == seen.end()) {
+                seen[std::string(key)] = f;
+              } else if (it->second.panel != p) {
+                const Real dot = it->second.n[0]*f.n[0] + it->second.n[1]*f.n[1]
+                               + it->second.n[2]*f.n[2];
+                const Real d = fabs(it->second.b - dot*f.b);
+                if ((t - nlo < ng) || (nhi - t < ng)) {
+                  cmax = fmax(cmax, d);
+                } else {
+                  dmax = fmax(dmax, d);
+                }
+                bmax = fmax(bmax, fabs(f.b));
+                ++npair;
+              }
+            }
+          }
+        }
+      }
+      std::printf("### CS SEAM FACE SINGLE-VALUED: max|b_P - b_Q| = %12.5e away from a"
+                  " panel corner, %12.5e within %d of one; %d shared faces,"
+                  " max|b| %9.3e\n", dmax, cmax, ng, npair, bmax);
+    }
+
+    // --- div B, the quantity SEAM EMF CONSISTENCY controls ---------------------------
+    // CT conserves sum(area*B) over a cell's six faces EXACTLY, provided every edge's
+    // line integral dxedge*E is single-valued. Two panels sharing a seam edge compute it
+    // independently, so any mismatch there shows up here and nowhere else. Reported as
+    // the face-flux imbalance normalised by |B| times the largest face area of the cell,
+    // which is dimensionless and O(1) if the field were discontinuous.
+    {
+      auto &b0f = pmbp->pmhd->b0;
+      auto b1h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), b0f.x1f);
+      auto b2h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), b0f.x2f);
+      auto b3h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), b0f.x3f);
+      auto a1h = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
+                                                     pmbp->pcoord->area.x1f);
+      auto a2h = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
+                                                     pmbp->pcoord->area.x2f);
+      auto a3h = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
+                                                     pmbp->pcoord->area.x3f);
+      std::cout << "### CS DIV B (iprob=8; |sum A.B| / (|B| max A), exact = 0)"
+                << std::endl;
+      std::cout << "  panel     max seam      max interior   location" << std::endl;
+      const Real bmag = sqrt(SQR(cs_bvx) + SQR(cs_bvy) + SQR(cs_bvz));
+      for (int m=0; m<pmbp->nmb_thispack; ++m) {
+        Real ds = 0.0, di = 0.0;
+        int jm = 0, km = 0, im = 0, ii = 0;
+        for (int k=ks; k<=ke; ++k) {
+          for (int j=js; j<=je; ++j) {
+            const bool near = (j-js < ng) || (je-j < ng) ||
+                              (k-ks < ng) || (ke-k < ng);
+            for (int i=is; i<=ie; ++i) {
+              const Real f1 = a1h(m,k,j,i+1)*b1h(m,k,j,i+1) - a1h(m,k,j,i)*b1h(m,k,j,i);
+              const Real f2 = a2h(m,k,j+1,i)*b2h(m,k,j+1,i) - a2h(m,k,j,i)*b2h(m,k,j,i);
+              const Real f3 = a3h(m,k+1,j,i)*b3h(m,k+1,j,i) - a3h(m,k,j,i)*b3h(m,k,j,i);
+              Real amx = fmax(a1h(m,k,j,i+1), fmax(a2h(m,k,j+1,i), a3h(m,k+1,j,i)));
+              const Real d = fabs(f1 + f2 + f3)/(bmag*amx);
+              if (near) {
+                if (d > ds) { ds = d; jm = j-js; km = k-ks; im = i-is; }
+              } else {
+                if (d > di) { di = d; ii = i-is; }
+              }
+            }
+          }
+        }
+        std::printf("  %4d   %12.5e   %12.5e   seam(i=%d,j=%d,k=%d)  int(i=%d)\n",
+                    mbpanel.h_view(m), ds, di, im, jm, km, ii);
+      }
+    }
+
     std::cout << "### CS SEAM LOCALISATION (iprob=8, exact v = 0)" << std::endl;
     std::cout << "  panel   max|v| seam   max|v| interior   mean v^2 seam  interior"
               << "     max|v| corner  (j,k) of seam max" << std::endl;

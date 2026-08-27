@@ -593,5 +593,84 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackCC(DvceArray5D<Real> &a,
     tmember.team_barrier();
   });  // end par_for_outer
 
+  // Every face buffer is unpacked by this point, which is what the corner fill needs.
+  if (pmy_pack->pmesh->use_cubed_sphere) {
+    FillPanelCornersCC(a);
+  }
+
   return TaskStatus::complete;
+}
+
+//----------------------------------------------------------------------------------------
+// \!fn void MeshBoundaryValuesCC::FillPanelCornersCC()
+// \brief Fill the ng x ng corner ghost cells of a cubed-sphere panel corner.
+//
+// The cell-centred twin of MeshBoundaryValuesFC::FillPanelCornersFC, and needed for the
+// same reason: a panel corner is a CUBE VERTEX where only THREE panels meet, so the
+// generic corner buffer -- a rectangular index region of one diagonal neighbour under the
+// face seam's signed permutation -- reaches somewhere meaningless. The value copied there
+// is wrong by O(1) in EVERY variable, density included, so it is not a basis error that
+// TransformMomentum could repair.
+//
+// For hydro this was measured not to matter: a dimensionally split PLM+HLLC sweep never
+// reconstructs through the ng x ng diagonal block. MHD does. The edge-centred EMF at a
+// panel-corner edge is built from fluxes on the faces meeting there, whose reconstruction
+// does read the diagonal cells, so O(1) garbage in these ghosts becomes an O(1) EMF on a
+// corner edge and the CT update then drives the corner field away in a single step. That
+// is what made the uniform-field gate -- an exact static state -- lose 1.3% of its
+// magnetic energy on cycle 1 and blow up on cycle 2.
+//
+// The panel's own gnomonic map is well defined out there and the two flanking face halos
+// are accurate, so each corner ghost is extrapolated quadratically from one, again from
+// the other, and the two are averaged. The stencil reads only the flanking strips, never
+// the corner block being written. Same-panel corners are left entirely alone.
+
+void MeshBoundaryValuesCC::FillPanelCornersCC(DvceArray5D<Real> &a) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int ng = indcs.ng;
+  const int nmb = pmy_pack->nmb_thispack;
+  const int nvar = a.extent_int(1);
+  const int n1 = a.extent_int(4);
+  auto &nghbr = pmy_pack->pmb->nghbr;
+  auto &mbpanel = pmy_pack->pmb->mb_panel;
+  auto a_ = a;
+
+  // par_for takes at most five ranges, so the ng x ng corner block is flattened into g
+  par_for("cs_fill_corners_cc", DevExeSpace(), 0,(nmb-1), 0,3, 0,(nvar-1), 0,(n1-1),
+          0,(ng*ng-1),
+  KOKKOS_LAMBDA(const int m, const int c, const int v, const int i, const int g) {
+    const int gj = g/ng;
+    const int gk = g - gj*ng;
+    const int sj = (c & 1) ? 1 : -1;      // -1 = the -x2 side of the block
+    const int sk = (c & 2) ? 1 : -1;      // -1 = the -x3 side
+    // Buffer ids of the two FACE neighbours flanking this corner (see nghbr_index.hpp).
+    const int nj_id = (sj < 0) ? 8 : 12;
+    const int nk_id = (sk < 0) ? 24 : 28;
+    const int mp = mbpanel.d_view(m);
+    bool seam = false;
+    if (nghbr.d_view(m,nj_id).gid >= 0 && nghbr.d_view(m,nj_id).panel != mp) seam = true;
+    if (nghbr.d_view(m,nk_id).gid >= 0 && nghbr.d_view(m,nk_id).panel != mp) seam = true;
+    if (!seam) return;
+
+    // Quadratic Lagrange extrapolated d cells beyond an anchor, nodes 0,1,2 stepping
+    // inward: w = ((d+1)(d+2)/2, -d(d+2), d(d+1)/2), which sums to 1.
+    const Real dj = static_cast<Real>(gj + 1);
+    const Real dk = static_cast<Real>(gk + 1);
+    const Real wj0 = 0.5*(dj+1.0)*(dj+2.0), wj1 = -dj*(dj+2.0), wj2 = 0.5*dj*(dj+1.0);
+    const Real wk0 = 0.5*(dk+1.0)*(dk+2.0), wk1 = -dk*(dk+2.0), wk2 = 0.5*dk*(dk+1.0);
+    const int stj = -sj, stk = -sk;       // step INWARD from the anchor
+    const int jt = (sj < 0) ? (js-1-gj) : (je+1+gj);
+    const int kt = (sk < 0) ? (ks-1-gk) : (ke+1+gk);
+    const int aj = (sj < 0) ? js : je;
+    const int ak = (sk < 0) ? ks : ke;
+
+    const Real ek = wk0*a_(m,v,ak,jt,i) + wk1*a_(m,v,ak+stk,jt,i)
+                  + wk2*a_(m,v,ak+2*stk,jt,i);
+    const Real ej = wj0*a_(m,v,kt,aj,i) + wj1*a_(m,v,kt,aj+stj,i)
+                  + wj2*a_(m,v,kt,aj+2*stj,i);
+    a_(m,v,kt,jt,i) = 0.5*(ek + ej);
+  });
+  return;
 }
