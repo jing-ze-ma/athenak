@@ -1,0 +1,80 @@
+# Cubed sphere, TEST A-MHD: static uniform state + a radial monopole field.
+# Build with -D PROBLEM=cs_test.
+#
+# rho = 1, p = 1, v = 0 on all six panels, plus B_r = b0r*(r0/r)^2 and no angular field.
+# That field is force-free (curl B = 0 for B_r ~ 1/r^2), so the exact solution is again
+# "unchanged, forever", and it is EXACTLY divergence-free on this grid independently of
+# the panel map: area.x1f carries a factor r^2, so B_r*A is the same on the inner and
+# outer radial face of every cell while the two angular faces carry no flux at all.
+#
+# PASSES (nx1=8, nx2=nx3=32): the angular momenta and kinetic energies stay at round-off
+# (~1e-31) and the magnetic energy is exactly constant at 3.56007.  The radial residual is
+# ordinary truncation error and converges at SECOND ORDER in nx1 -- 1-mom = 5.33e-3 /
+# 1.32e-3 / 3.25e-4 at nx1 = 8/16/32 (ratios 4.05, 4.05, measured at t = 0.1).
+# With b0r = 0 this must reproduce the pure-hydro cubed_sphere_uniform.athinput exactly:
+# mass 24.000000, tot-E 36.000000, dt 8.78109e-03.
+#
+# NOTE ix1_bc/ox1_bc MUST be `user`, not `reflect`.  B_r(r) is not reflection-symmetric,
+# so reflect manufactures a jump at the radial boundary; it gives mass 24 -> 24.72 and a
+# radial KE of 2.8e-2, three orders of magnitude worse, and it looks exactly like an
+# interior bug.  The user BC holds the exact state, including the ghost FACES -- `user` is
+# not one of the cases bfield_bcs.cpp handles, so the pgen fills b0 there itself.
+#
+# AXES: x1 is RADIAL, x2 = xi and x3 = eta are the panel-tangential angles.  Must be 3D.
+
+<comment>
+problem = cubed sphere uniform static state with a radial monopole field
+
+<job>
+basename = cs_mhd
+
+<mesh>
+nghost   = 2
+nx1      = 8            # RADIAL direction
+x1min    = 1.0
+x1max    = 2.0
+ix1_bc   = user
+ox1_bc   = user
+
+nx2      = 32           # xi;  nx2 must equal nx3 (Mesh checks this)
+x2min    = -1.0
+x2max    = 1.0
+ix2_bc   = panel
+ox2_bc   = panel
+
+nx3      = 32           # eta
+x3min    = -1.0
+x3max    = 1.0
+ix3_bc   = panel
+ox3_bc   = panel
+
+use_cubed_sphere = true
+
+<meshblock>
+nx1      = 8
+nx2      = 32
+nx3      = 32
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim       = 100
+tlim       = 100.0
+ndiag      = 50
+
+<mhd>
+eos         = ideal
+reconstruct = plm
+rsolver     = hlld
+gamma       = 1.666667
+
+<problem>
+iprob = 1
+d0    = 1.0
+p0    = 1.0
+b0r   = 1.0
+
+<output1>
+file_type = hst
+dt        = 0.01

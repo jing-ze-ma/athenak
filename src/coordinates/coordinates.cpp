@@ -519,6 +519,33 @@ void Coordinates::CoordGnomonicEquiangle() {
     dx2(m,k,j,i) = r_c * dth_xi;
     dx3(m,k,j,i) = r_c * dth_eta;
 
+    // --- edge lengths, consumed by the curvilinear CT update in mhd_ct.cpp -------------
+    // Without these the CT branch multiplies every EMF by an uninitialised (zero) edge
+    // length, so B is left exactly unchanged and the field silently never evolves.
+    // Each edge takes its length from the SAME arc the adjoining face area uses, so the
+    // two stay consistent by construction:
+    //   x1e is radial, so it is just r_r - r_l and depends on neither angle;
+    //   x2e runs along xi  and is evaluated at an ETA face, hence dth_xi{l,r} -- the same
+    //     arcs that give area.x3f;
+    //   x3e runs along eta and is evaluated at a XI  face, hence dth_eta{l,r} -- the same
+    //     arcs that give area.x2f.
+    // The i / j / k == n*m1 clauses fill the far edge of the last cell, exactly as
+    // CoordSphericalPolar does.
+    dxedge.x1e(m,k,j,i) = r_r - r_l;
+    if (j == n2m1) dxedge.x1e(m,k,j+1,i) = r_r - r_l;
+    if (k == n3m1) dxedge.x1e(m,k+1,j,i) = r_r - r_l;
+    if (j == n2m1 && k == n3m1) dxedge.x1e(m,k+1,j+1,i) = r_r - r_l;
+
+    dxedge.x2e(m,k,j,i) = r_l * dth_xil;
+    if (i == n1m1) dxedge.x2e(m,k,j,i+1) = r_r * dth_xil;
+    if (k == n3m1) dxedge.x2e(m,k+1,j,i) = r_l * dth_xir;
+    if (i == n1m1 && k == n3m1) dxedge.x2e(m,k+1,j,i+1) = r_r * dth_xir;
+
+    dxedge.x3e(m,k,j,i) = r_l * dth_etal;
+    if (i == n1m1) dxedge.x3e(m,k,j,i+1) = r_r * dth_etal;
+    if (j == n2m1) dxedge.x3e(m,k,j+1,i) = r_l * dth_etar;
+    if (i == n1m1 && j == n2m1) dxedge.x3e(m,k,j+1,i+1) = r_r * dth_etar;
+
     // Geometric coefficients consumed by SrcTermsGnomonicEquiangle. z_ov_rE is the RADIAL
     // one, matching its meaning in CoordSphericalPolar/SrcTermsSphericalPolar.
     x_ov_rD(m,k,j,i) = (area2r * sin_face_xir
@@ -613,7 +640,26 @@ void Coordinates::GnomonicEquiangleLowerMom(const DvceArray5D<Real> &w0,
   return;
 }
 
+// Hydro and MHD share one implementation; the MHD entry point differs only in adding the
+// Maxwell stress, so the two are kept in the same kernel rather than duplicated the way
+// SrcTermsSphericalPolar{Hydro,MHD} are.
 void Coordinates::SrcTermsGnomonicEquiangle(const DvceArray5D<Real> &w0,
+    const DvceArray5D<Real> &wder, const DvceFaceFld5D<Real> uflx,
+    const EOS_Data &eos_data, const Real bdt, DvceArray5D<Real> &u0) {
+  SrcTermsGnomonicEquiangleImpl(w0, w0, false, wder, uflx, eos_data, bdt, u0);
+  return;
+}
+
+void Coordinates::SrcTermsGnomonicEquiangleMHD(const DvceArray5D<Real> &w0,
+    const DvceArray5D<Real> &bcc0, const DvceArray5D<Real> &wder,
+    const DvceFaceFld5D<Real> uflx, const EOS_Data &eos_data, const Real bdt,
+    DvceArray5D<Real> &u0) {
+  SrcTermsGnomonicEquiangleImpl(w0, bcc0, true, wder, uflx, eos_data, bdt, u0);
+  return;
+}
+
+void Coordinates::SrcTermsGnomonicEquiangleImpl(const DvceArray5D<Real> &w0,
+    const DvceArray5D<Real> &bcc0, const bool is_mhd,
     const DvceArray5D<Real> &wder, const DvceFaceFld5D<Real> uflx,
     const EOS_Data &eos_data, const Real bdt, DvceArray5D<Real> &u0) {
 
@@ -633,6 +679,8 @@ void Coordinates::SrcTermsGnomonicEquiangle(const DvceArray5D<Real> &w0,
   // a two-fluid run has both -- and takes it as an argument instead.
   const bool gen_ = eos_.IsGeneral();
   auto &wder_ = wder;
+  auto &bcc_ = bcc0;
+  const bool mhd_ = is_mhd;
 
   par_for("cssrc", DevExeSpace(), 0,nmb1,ks,ke,js,je,is,ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -649,17 +697,40 @@ void Coordinates::SrcTermsGnomonicEquiangle(const DvceArray5D<Real> &w0,
                             : eos_.Pressure(w0(m,IDN,k,j,i), w0(m,IEN,k,j,i));
     Real rho = w0(m,IDN,k,j,i);
 
+    Real sine = sin_cell(m,k,j);
     Real cosine = cos_cell(m,k,j);
-    Real sine2 = SQR(sin_cell(m,k,j));
+    Real sine2 = SQR(sine);
     // lower the index on the two ANGULAR components with g = [[1,c],[c,1]]
     Real v_2 = v2 + v3 * cosine;
     Real v_3 = v3 + v2 * cosine;
 
+    // MHD adds the Maxwell stress: T^ij = rho v^i v^j + (p + B^2/2) g^ij - B^i B^j, so
+    // every p that multiplies a metric derivative below becomes the TOTAL pressure and
+    // every Reynolds stress becomes Reynolds minus Maxwell. This is the same substitution
+    // that separates SrcTermsSphericalPolarMHD from ...Hydro.
+    //
+    // bcc holds (B.rhat, s*B^xi, s*B^eta) -- the face-normal convention, see the note on
+    // GnomonicEquiangleFaceBX1 -- so the Maxwell partners of rho*v3^2*sine2 and
+    // rho*v2^2*sine2 are simply bcc(IBZ)^2 and bcc(IBY)^2, the factors of s cancelling.
+    Real ptot = pr;
+    Real b_tsq = 0.0, bb_2 = 0.0, bb_3 = 0.0;
+    if (mhd_) {
+      const Real brad = bcc_(m,IBX,k,j,i);
+      bb_2 = SQR(bcc_(m,IBY,k,j,i));
+      bb_3 = SQR(bcc_(m,IBZ,k,j,i));
+      // contravariant angular components, then |B_tangential|^2 = B^a g_ab B^b
+      const Real b2 = bcc_(m,IBY,k,j,i)/sine;
+      const Real b3 = bcc_(m,IBZ,k,j,i)/sine;
+      b_tsq = b2*b2 + b3*b3 + 2.0*cosine*b2*b3;
+      ptot += 0.5*(SQR(brad) + b_tsq);
+    }
+
     // radial source: (A_out - A_in)/V * (p + angular kinetic energy), the same form as
-    // SrcTermsSphericalPolar's src1
-    Real src1 = z_ov_rE(m,k,j,i) * (pr + 0.5*rho*(v2*v_2+v3*v_3));
-    Real src2 = x_ov_rD(m,k,j,i) * (pr + rho*SQR(v3)*sine2);
-    Real src3 = y_ov_rC(m,k,j,i) * (pr + rho*SQR(v2)*sine2);
+    // SrcTermsSphericalPolar's src1. For MHD the tangential Maxwell stress cancels all
+    // but the RADIAL magnetic pressure, leaving z_ov_rE*(p + B_r^2/2 + rho|v_t|^2/2).
+    Real src1 = z_ov_rE(m,k,j,i) * (ptot + 0.5*(rho*(v2*v_2+v3*v_3) - b_tsq));
+    Real src2 = x_ov_rD(m,k,j,i) * (ptot + rho*SQR(v3)*sine2 - bb_3);
+    Real src3 = y_ov_rC(m,k,j,i) * (ptot + rho*SQR(v2)*sine2 - bb_2);
 
     // the radial-face flux of each ANGULAR momentum, which the r-dependence of the
     // angular basis converts into a source

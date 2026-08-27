@@ -68,6 +68,7 @@ namespace {
 Real cs_d0 = 1.0, cs_p0 = 1.0, cs_omega = 1.0;
 int  cs_iprob = 1;
 Real cs_amp = 0.5, cs_r0 = 1.0;
+Real cs_b0r = 0.0;
 int  cs_exact_panel_ghosts = 0;
 
 //----------------------------------------------------------------------------------------
@@ -179,9 +180,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   if (restart) return;
 
   MeshBlockPack *pmbp = pmy_mesh_->pmb_pack;
-  if (pmbp->phydro == nullptr) {
+  // Either module drives the same states: MHD's w0 shares the IDN/IVX/IEN layout, so the
+  // initial condition below is written once and only the B field is extra.
+  const bool is_mhd = (pmbp->pmhd != nullptr);
+  if (pmbp->phydro == nullptr && !is_mhd) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
-              << "cs_test requires a <hydro> block" << std::endl;
+              << "cs_test requires a <hydro> or <mhd> block" << std::endl;
     std::exit(EXIT_FAILURE);
   }
   if (!pmy_mesh_->use_cubed_sphere) {
@@ -200,7 +204,13 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   cs_exact_panel_ghosts = pin->GetOrAddInteger("problem",
                                               "exact_panel_ghosts", 0);
   cs_r0 = pmy_mesh_->mesh_size.x1min;
-  if (iprob >= 3 && iprob <= 7 && iprob != 4) user_bcs_func = CSTestRadialBC;
+  // iprob=1 is included so that the MHD monopole can be given its EXACT radial state:
+  // reflect is exact for the uniform hydro state but not for B_r(r), which is not
+  // reflection-symmetric, and the jump it manufactures at the radial boundary drives a
+  // spurious radial force. The hook is a no-op unless ix1_bc/ox1_bc are set to `user`.
+  if (iprob == 1 || (iprob >= 3 && iprob <= 7 && iprob != 4)) {
+    user_bcs_func = CSTestRadialBC;
+  }
   if (iprob >= 3 && iprob <= 7 && iprob != 4) pgen_final_func = CSTestGhostCheck;
   const Real blob_w = pin->GetOrAddReal("problem", "blob_width", 0.3);
   const Real amp_ = cs_amp, r0_ = cs_r0;
@@ -211,10 +221,11 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   auto &size = pmbp->pmb->mb_size;
   auto &mbpanel = pmbp->pmb->mb_panel;
 
-  auto &w0 = pmbp->phydro->w0;
-  const Real gm1 = pmbp->phydro->peos->eos_data.gamma - 1.0;
-  const int nhyd = pmbp->phydro->nhydro;
-  const int nscal = pmbp->phydro->nscalars;
+  auto &w0 = is_mhd ? pmbp->pmhd->w0 : pmbp->phydro->w0;
+  const Real gm1 = (is_mhd ? pmbp->pmhd->peos->eos_data.gamma
+                           : pmbp->phydro->peos->eos_data.gamma) - 1.0;
+  const int nhyd = is_mhd ? pmbp->pmhd->nmhd : pmbp->phydro->nhydro;
+  const int nscal = is_mhd ? pmbp->pmhd->nscalars : pmbp->phydro->nscalars;
 
   // The equiangular coordinates are xi = (pi/4) x1, eta = (pi/4) x2, matching
   // Coordinates::CoordGnomonicEquiangle, so x1 and x2 both run over [-1,1].
@@ -350,11 +361,54 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     }
   });
 
+  // --- magnetic field (MHD only) -------------------------------------------------------
+  // A RADIAL MONOPOLE, B_r = b0r*(r0/r)^2, is the natural first field for this grid: the
+  // radial face area carries r^2, so B_r*A is the SAME on the inner and outer face of
+  // every cell while the two angular faces carry no flux at all.  div B is therefore zero
+  // to round-off on every panel, by construction and independently of the panel map --
+  // the monopole's singularity sits at the origin, outside the shell.  Combined with the
+  // iprob=3 rigid rotation it gives a nonzero EMF, so it exercises CT rather than just
+  // sitting there.
+  if (is_mhd) {
+    const Real b0r = pin->GetOrAddReal("problem", "b0r", 1.0);
+    cs_b0r = b0r;
+    auto &b0f = pmbp->pmhd->b0;
+    auto &bcc = pmbp->pmhd->bcc0;
+    par_for("pgen_cs_bfld", DevExeSpace(), 0,(pmbp->nmb_thispack-1),
+            ks,ke+1, js,je+1, is,ie+1,
+    KOKKOS_LAMBDA(int m, int k, int j, int i) {
+      // x1 is RADIAL, so only the x1 faces carry flux.  x1f is indexed by the LEFT edge.
+      if (j <= je && k <= ke) {
+        const Real rf = LeftEdgeX(i-is, indcs.nx1, size.d_view(m).x1min,
+                                                   size.d_view(m).x1max);
+        b0f.x1f(m,k,j,i) = b0r*SQR(r0_/rf);
+      }
+      if (i <= ie && k <= ke) b0f.x2f(m,k,j,i) = 0.0;
+      if (i <= ie && j <= je) b0f.x3f(m,k,j,i) = 0.0;
+    });
+    // cell-centred field: the average of the two opposing faces
+    par_for("pgen_cs_bcc", DevExeSpace(), 0,(pmbp->nmb_thispack-1), ks,ke, js,je, is,ie,
+    KOKKOS_LAMBDA(int m, int k, int j, int i) {
+      bcc(m,IBX,k,j,i) = 0.5*(b0f.x1f(m,k,j,i) + b0f.x1f(m,k,j,i+1));
+      bcc(m,IBY,k,j,i) = 0.5*(b0f.x2f(m,k,j,i) + b0f.x2f(m,k,j+1,i));
+      bcc(m,IBZ,k,j,i) = 0.5*(b0f.x3f(m,k,j,i) + b0f.x3f(m,k+1,j,i));
+    });
+  }
+
   // Convert primitives to conserved.
-  auto &u0 = pmbp->phydro->u0;
+  auto &u0 = is_mhd ? pmbp->pmhd->u0 : pmbp->phydro->u0;
   // NOT peos->PrimToCons: that assumes an orthonormal basis. On the cubed sphere the
   // conserved momentum is the COVARIANT one. See Coordinates::GnomonicEquiangleLowerMom.
   pmbp->pcoord->GnomonicEquiangleLowerMom(w0, u0, is, ie, js, je, ks, ke);
+  // LowerMom knows nothing about B, so add the magnetic energy it left out.
+  if (is_mhd) {
+    auto &bcc = pmbp->pmhd->bcc0;
+    par_for("pgen_cs_emag", DevExeSpace(), 0,(pmbp->nmb_thispack-1), ks,ke, js,je, is,ie,
+    KOKKOS_LAMBDA(int m, int k, int j, int i) {
+      u0(m,IEN,k,j,i) += 0.5*(SQR(bcc(m,IBX,k,j,i)) + SQR(bcc(m,IBY,k,j,i))
+                            + SQR(bcc(m,IBZ,k,j,i)));
+    });
+  }
 
   return;
 }
@@ -379,11 +433,13 @@ void CSTestRadialBC(Mesh *pm) {
   auto &size = pmbp->pmb->mb_size;
   auto &mbpanel = pmbp->pmb->mb_panel;
   auto &mb_bcs = pmbp->pmb->mb_bcs;
-  auto &w0 = pmbp->phydro->w0;
-  auto &u0 = pmbp->phydro->u0;
-  const Real gm1 = pmbp->phydro->peos->eos_data.gamma - 1.0;
-  const int nhyd = pmbp->phydro->nhydro;
-  const int nscal = pmbp->phydro->nscalars;
+  const bool is_mhd = (pmbp->pmhd != nullptr);
+  auto &w0 = is_mhd ? pmbp->pmhd->w0 : pmbp->phydro->w0;
+  auto &u0 = is_mhd ? pmbp->pmhd->u0 : pmbp->phydro->u0;
+  const Real gm1 = (is_mhd ? pmbp->pmhd->peos->eos_data.gamma
+                           : pmbp->phydro->peos->eos_data.gamma) - 1.0;
+  const int nhyd = is_mhd ? pmbp->pmhd->nmhd : pmbp->phydro->nhydro;
+  const int nscal = is_mhd ? pmbp->pmhd->nscalars : pmbp->phydro->nscalars;
 
   const Real d0 = cs_d0, p0 = cs_p0, omega = cs_omega;
   const int iprob = cs_iprob;
@@ -425,6 +481,10 @@ void CSTestRadialBC(Mesh *pm) {
         dn = RadialProfile(rad, d0, amp_, r0_);
         ie_ = p0/gm1;
         v1 = 0.0; v2 = 0.0; v3 = 0.0;
+      } else if (iprob == 1) {
+        dn = d0;
+        ie_ = p0/gm1;
+        v1 = 0.0; v2 = 0.0; v3 = 0.0;
       } else {
         RigidRotState(p, xi, eta, rad, d0, p0, omega, gm1, dn, ie_, v1, v2, v3);
       }
@@ -450,6 +510,46 @@ void CSTestRadialBC(Mesh *pm) {
       }
     }
   });
+
+  // ---------------------------------------------------------------------------------
+  // MHD: the radial ghost FACES. `user` is not one of the cases bfield_bcs.cpp handles,
+  // so b0 in the radial ghosts is whatever was left there unless it is set here. Only the
+  // x1 faces carry flux for the monopole; the two angular face fields stay zero, and the
+  // energy has to be topped up because u0 above was written without the field.
+  if (is_mhd && iprob == 1) {
+    auto &b0f = pmbp->pmhd->b0;
+    auto &bcc = pmbp->pmhd->bcc0;
+    const Real b0r = cs_b0r, r0b = cs_r0;
+    int &ie_i = indcs.ie;
+    par_for("cs_test_rbc_b", DevExeSpace(), 0,(pmbp->nmb_thispack-1), 0,(n3-1),
+            0,(n2-1), 0,(ng-1),
+    KOKKOS_LAMBDA(int m, int k, int j, int ig) {
+      for (int side=0; side<2; ++side) {
+        if (side == 0 &&
+            mb_bcs.d_view(m,BoundaryFace::inner_x1) != BoundaryFlag::user) continue;
+        if (side == 1 &&
+            mb_bcs.d_view(m,BoundaryFace::outer_x1) != BoundaryFlag::user) continue;
+        const int i = (side == 0) ? (is-ng+ig) : (ie_i+1+ig);
+        const Real rf = LeftEdgeX(i-is, indcs.nx1, size.d_view(m).x1min,
+                                                   size.d_view(m).x1max);
+        b0f.x1f(m,k,j,i) = b0r*SQR(r0b/rf);
+        b0f.x2f(m,k,j,i) = 0.0;
+        b0f.x3f(m,k,j,i) = 0.0;
+        if (side == 1 && ig == ng-1) {
+          const Real rfo = LeftEdgeX(i+1-is, indcs.nx1, size.d_view(m).x1min,
+                                                        size.d_view(m).x1max);
+          b0f.x1f(m,k,j,i+1) = b0r*SQR(r0b/rfo);
+        }
+        const Real bc = 0.5*(b0f.x1f(m,k,j,i)
+                           + b0r*SQR(r0b/LeftEdgeX(i+1-is, indcs.nx1,
+                               size.d_view(m).x1min, size.d_view(m).x1max)));
+        bcc(m,IBX,k,j,i) = bc;
+        bcc(m,IBY,k,j,i) = 0.0;
+        bcc(m,IBZ,k,j,i) = 0.0;
+        u0(m,IEN,k,j,i) += 0.5*SQR(bc);
+      }
+    });
+  }
 
   // ---------------------------------------------------------------------------------
   // DIAGNOSTIC MODE problem/exact_panel_ghosts. Overwrite the x2/x3 (panel) ghost zones
@@ -523,7 +623,7 @@ void CSTestGhostCheck(ParameterInput *pin, Mesh *pm) {
   const int ks = indcs.ks, ke = indcs.ke;
   const int ng = indcs.ng;
 
-  auto &w0 = pmbp->phydro->w0;
+  auto &w0 = (pmbp->pmhd != nullptr) ? pmbp->pmhd->w0 : pmbp->phydro->w0;
   auto w0_h = Kokkos::create_mirror_view(w0);
   Kokkos::deep_copy(w0_h, w0);
   auto &size = pmbp->pmb->mb_size;
@@ -552,7 +652,8 @@ void CSTestGhostCheck(ParameterInput *pin, Mesh *pm) {
     std::cout << "  panel     d(rho)        d(v_r)        d(v_xi)       d(v_eta)"
               << std::endl;
     const Real p0_ = cs_p0, om_ = cs_omega;
-    const Real gm1 = pmbp->phydro->peos->eos_data.gamma - 1.0;
+    const Real gm1 = ((pmbp->pmhd != nullptr) ? pmbp->pmhd->peos->eos_data.gamma
+                                              : pmbp->phydro->peos->eos_data.gamma) - 1.0;
     for (int m=0; m<pmbp->nmb_thispack; ++m) {
       const int p = mbpanel.h_view(m);
       Real e[4] = {0.0, 0.0, 0.0, 0.0};

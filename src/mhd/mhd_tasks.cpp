@@ -282,8 +282,8 @@ TaskStatus MHD::MHDSrcTerms(Driver *pdrive, int stage) {
     
   // Add coordinate source terms in curvi-linear grid.  Again, must be computed with only primitives.
   if (pmy_pack->pmesh->use_cubed_sphere) {
-    pmy_pack->pcoord->SrcTermsGnomonicEquiangle(w0, wder, uflx, peos->eos_data,
-                                                beta_dt, u0);
+    pmy_pack->pcoord->SrcTermsGnomonicEquiangleMHD(w0, bcc0, wder, uflx,
+                                                   peos->eos_data, beta_dt, u0);
   }
   if (pmy_pack->pmesh->use_spherical_polar) {
     pmy_pack->pcoord->SrcTermsSphericalPolarMHD(w0, bcc0, pwb, uflx,

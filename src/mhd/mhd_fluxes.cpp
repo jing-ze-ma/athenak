@@ -209,6 +209,17 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
         AddWbPrimFaceX1(member,m,k,j,il-1,iu,w0facewb_x1f,wl,wr);
       }
 
+      // CUBED SPHERE. The gnomonic tangent basis is not orthogonal, so the primitive
+      // velocity (contravariant) has to be put into a locally ORTHONORMAL frame before
+      // the Riemann solver sees it, and the returned momentum flux has to be rotated
+      // back and its index lowered. hydro_fluxes.cpp has done this since the grid was
+      // added; the MHD path never did, which left the fluxes in a different frame from
+      // the geometric source terms that SrcTermsGnomonicEquiangle adds to them.
+      if (use_cubed_sphere) {
+        pmy_pack->pcoord->GnomonicEquianglePrimFaceX1(member,m,k,j,il-1,iu,wl,wr);
+        pmy_pack->pcoord->GnomonicEquiangleFaceBX1(member,m,k,j,il-1,iu,bl,br);
+      }
+
     // Sync all threads in the team so that scratch memory is consistent
     member.team_barrier();
 
@@ -247,6 +258,11 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
       LLF_GR(member,eos,indcs,size,coord,m,k,j,il,iu,IVX,wl,wr,bl,br,bx,flx1,e31,e21);
     } else if constexpr (rsolver_method_ == MHD_RSolver::hlle_gr) {
       HLLE_GR(member,eos,indcs,size,coord,m,k,j,il,iu,IVX,wl,wr,bl,br,bx,flx1,e31,e21);
+    }
+
+    if (use_cubed_sphere) {
+      pmy_pack->pcoord->GnomonicEquiangleFluxX1(member,m,k,j,il,iu,flx1);
+      pmy_pack->pcoord->GnomonicEquiangleEmfX1(member,m,k,j,il,iu,e31,e21);
     }
     member.team_barrier();
 
@@ -417,7 +433,16 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
             // 600 cycles, bitwise identical with and without this change).
             AddWbPrimFaceX2(member,m,k,j,is-1,ie+1,w0facewb_x2f,wl_jp1,wr);
           }
-          
+
+          // CUBED SPHERE -- see the note in the x1 sweep. is-1,ie+1 (not il,iu) is the
+          // range this sweep actually reconstructs and solves over.
+          if (use_cubed_sphere) {
+            pmy_pack->pcoord->GnomonicEquianglePrimFaceX2(member,m,k,j,is-1,ie+1,
+                                                          wl_jp1,wr);
+            pmy_pack->pcoord->GnomonicEquiangleFaceBX2(member,m,k,j,is-1,ie+1,
+                                                       bl_jp1,br);
+          }
+
         member.team_barrier();
 
         // compute fluxes over [js,je+1].  MHD RS also computes electric fields, where
@@ -463,6 +488,10 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
           } else if constexpr (rsolver_method_ == MHD_RSolver::hlle_gr) {
             HLLE_GR(member,eos,indcs,size,coord,
                     m,k,j,is-1,ie+1,IVY,wl,wr,bl,br,by,flx2,e12,e32);
+          }
+
+          if (use_cubed_sphere) {
+            pmy_pack->pcoord->GnomonicEquiangleFluxX2(member,m,k,j,is-1,ie+1,flx2);
           }
           member.team_barrier();
         }
@@ -619,7 +648,15 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
             // is-1,ie+1, not il,iu -- see the note on AddWbPrimFaceX2 above.
             AddWbPrimFaceX3(member,m,k,j,is-1,ie+1,w0facewb_x3f,wl_kp1,wr);
           }
-          
+
+          // CUBED SPHERE -- see the note in the x1 sweep.
+          if (use_cubed_sphere) {
+            pmy_pack->pcoord->GnomonicEquianglePrimFaceX3(member,m,k,j,is-1,ie+1,
+                                                          wl_kp1,wr);
+            pmy_pack->pcoord->GnomonicEquiangleFaceBX3(member,m,k,j,is-1,ie+1,
+                                                       bl_kp1,br);
+          }
+
         member.team_barrier();
 
         // compute fluxes over [ks,ke+1].  MHD RS also computes electric fields, where
@@ -665,6 +702,10 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
           } else if constexpr (rsolver_method_ == MHD_RSolver::hlle_gr) {
             HLLE_GR(member,eos,indcs,size,coord,
                     m,k,j,is-1,ie+1,IVZ,wl,wr,bl,br,bz,flx3,e23,e13);
+          }
+
+          if (use_cubed_sphere) {
+            pmy_pack->pcoord->GnomonicEquiangleFluxX3(member,m,k,j,is-1,ie+1,flx3);
           }
           member.team_barrier();
         }
