@@ -30,8 +30,8 @@ Coordinates::Coordinates(ParameterInput *pin, MeshBlockPack *ppack) :
     x1v("x1v",1,1), x2v("x2v",1,1), x3v("x3v",1,1),
     xx1f("xx1f",1,1), xx2f("xx2f",1,1), xx3f("xx3f",1,1), dxedge("dxe",1,1,1,1), dxface("dxf",1,1,1,1),
     sin_cell("sin_cell",1,1,1), cos_cell("cos_cell",1,1,1),
-    sin_face1("sin_face1",1,1,1), cos_face1("cos_face1",1,1,1),
-    sin_face2("sin_face2",1,1,1), cos_face2("cos_face2",1,1,1),
+    sin_face_xi("sin_face_xi",1,1,1), cos_face_xi("cos_face_xi",1,1,1),
+    sin_face_eta("sin_face_eta",1,1,1), cos_face_eta("cos_face_eta",1,1,1),
     x_ov_rD("x_ov_rD",1,1,1,1), y_ov_rC("y_ov_rC",1,1,1,1), z_ov_rE("z_ov_rC",1,1,1,1) {
         
   if (pmy_pack->pmesh->use_cubed_sphere || pmy_pack->pmesh->use_spherical_polar) {
@@ -67,12 +67,16 @@ Coordinates::Coordinates(ParameterInput *pin, MeshBlockPack *ppack) :
     Kokkos::realloc(y_ov_rC, nmb, ncells3, ncells2, ncells1);
     Kokkos::realloc(z_ov_rE, nmb, ncells3, ncells2, ncells1);
   if (pmy_pack->pmesh->use_cubed_sphere) {
-    Kokkos::realloc(sin_cell, nmb, ncells2, ncells1);
-    Kokkos::realloc(cos_cell, nmb, ncells2, ncells1);
-    Kokkos::realloc(sin_face1, nmb, ncells2, ncells1);
-    Kokkos::realloc(cos_face1, nmb, ncells2, ncells1);
-    Kokkos::realloc(sin_face2, nmb, ncells2, ncells1);
-    Kokkos::realloc(cos_face2, nmb, ncells2, ncells1);
+    // The gnomonic angles depend on the two PANEL-TANGENTIAL axes only -- xi = x2 and
+    // eta = x3 -- so these are 3D arrays indexed (m,k,j), with no i (radial) extent.
+    // +1 in the STAGGERED direction: the xi-face arrays live on x2 faces and are written
+    // at j+1 for the last cell, the eta-face arrays on x3 faces and written at k+1.
+    Kokkos::realloc(sin_cell, nmb, ncells3, ncells2);
+    Kokkos::realloc(cos_cell, nmb, ncells3, ncells2);
+    Kokkos::realloc(sin_face_xi, nmb, ncells3, ncells2+1);
+    Kokkos::realloc(cos_face_xi, nmb, ncells3, ncells2+1);
+    Kokkos::realloc(sin_face_eta, nmb, ncells3+1, ncells2);
+    Kokkos::realloc(cos_face_eta, nmb, ncells3+1, ncells2);
     CoordGnomonicEquiangle();
   }
   if (pmy_pack->pmesh->use_spherical_polar) {
@@ -418,31 +422,41 @@ void Coordinates::CoordGnomonicEquiangle() {
   int &js = indcs.js; int &je = indcs.je;
   int &ks = indcs.ks; int &ke = indcs.ke;
   int nmb1 = pmy_pack->nmb_thispack - 1;
+  (void)ie; (void)je; (void)ke;
 
-  par_for("cscoord", DevExeSpace(), 0,nmb1,ks,ke,js,je,is,ie,
+  // AXES. x1 is the RADIAL direction, matching CoordSphericalPolar; the two
+  // panel-tangential angles are xi = x2 and eta = x3. See the note in mesh.hpp.
+  //
+  // Cover the GHOST zones too: leaving sin/cos_cell, the areas and the volume at zero in
+  // the ghosts breaks reconstruction and the momentum raise, both of which read them.
+  int &ng = indcs.ng;
+  int n1m1 = indcs.nx1 + 2*ng - 1;
+  int n2m1 = (indcs.nx2 > 1)? (indcs.nx2 + 2*ng - 1) : 0;
+  int n3m1 = (indcs.nx3 > 1)? (indcs.nx3 + 2*ng - 1) : 0;
+
+  par_for("cscoord", DevExeSpace(), 0,nmb1,0,n3m1,0,n2m1,0,n1m1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
 
-    Real r_c, r_l, r_r, dxr;
-    if (pmy_pack->pmesh->three_d) {
-        // --- radial ---
-        r_c  = CellCenterX(k-ks, indcs.nx3, size.d_view(m).x3min, size.d_view(m).x3max);
-        r_l  = LeftEdgeX(k-ks, indcs.nx3, size.d_view(m).x3min, size.d_view(m).x3max);
-        r_r  = LeftEdgeX(k+1-ks, indcs.nx3, size.d_view(m).x3min, size.d_view(m).x3max);
-        dxr = size.d_view(m).dx3;
-    } else {
-        r_c = 1.0;
-        r_l = 1.0;
-        r_r = 1.0;
-        dxr = 1.0;
-    }
+    // --- radial (x1) ---
+    // With a single radial cell CellCenterX/LeftEdgeX return the midpoint and the two
+    // ends
+    // of [x1min,x1max], i.e. a shell of finite thickness. Do NOT collapse this to
+    // r_l = r_r: every face area below carries a factor (r_r^2 - r_l^2) and the volume a
+    // factor (r_r^3 - r_l^3), so a zero-thickness shell makes them identically zero and
+    // x_ov_rD / y_ov_rC / z_ov_rE then divide by that zero.
+    Real r_c = CellCenterX(i-is, indcs.nx1, size.d_view(m).x1min, size.d_view(m).x1max);
+    Real r_l = LeftEdgeX(i-is, indcs.nx1, size.d_view(m).x1min, size.d_view(m).x1max);
+    Real r_r = LeftEdgeX(i+1-is, indcs.nx1, size.d_view(m).x1min, size.d_view(m).x1max);
 
-    // --- angles ---
-    Real xi   = M_PI/4.0 * CellCenterX(i-is, indcs.nx1, size.d_view(m).x1min, size.d_view(m).x1max);
-    Real eta  = M_PI/4.0 * CellCenterX(j-js, indcs.nx2, size.d_view(m).x2min, size.d_view(m).x2max);
-    Real xil  = M_PI/4.0 * LeftEdgeX(i-is, indcs.nx1, size.d_view(m).x1min, size.d_view(m).x1max);
-    Real xir  = M_PI/4.0 * LeftEdgeX(i+1-is, indcs.nx1, size.d_view(m).x1min, size.d_view(m).x1max);
-    Real etal = M_PI/4.0 * LeftEdgeX(j-js, indcs.nx2, size.d_view(m).x2min, size.d_view(m).x2max);
-    Real etar = M_PI/4.0 * LeftEdgeX(j+1-js, indcs.nx2, size.d_view(m).x2min, size.d_view(m).x2max);
+    // --- angles: xi on x2, eta on x3 ---
+    Real &x2min = size.d_view(m).x2min; Real &x2max = size.d_view(m).x2max;
+    Real &x3min = size.d_view(m).x3min; Real &x3max = size.d_view(m).x3max;
+    Real xi   = M_PI/4.0 * CellCenterX(j-js, indcs.nx2, x2min, x2max);
+    Real eta  = M_PI/4.0 * CellCenterX(k-ks, indcs.nx3, x3min, x3max);
+    Real xil  = M_PI/4.0 * LeftEdgeX(j-js, indcs.nx2, x2min, x2max);
+    Real xir  = M_PI/4.0 * LeftEdgeX(j+1-js, indcs.nx2, x2min, x2max);
+    Real etal = M_PI/4.0 * LeftEdgeX(k-ks, indcs.nx3, x3min, x3max);
+    Real etar = M_PI/4.0 * LeftEdgeX(k+1-ks, indcs.nx3, x3min, x3max);
 
     Real x  = tan(xi);
     Real y  = tan(eta);
@@ -457,22 +471,22 @@ void Coordinates::CoordGnomonicEquiangle() {
     Real D = sqrt(1.0 + SQR(y));
     Real Dl = sqrt(1.0 + SQR(yl));
     Real Dr = sqrt(1.0 + SQR(yr));
-      
-    sin_cell(m,j,i) = sqrt(1.0 + SQR(x) + SQR(y)) / (C * D);
-    cos_cell(m,j,i) = - x * y / (C * D);
-    sin_face1(m,j,i) = sqrt(1.0 + SQR(xl) + SQR(y)) / (Cl * D);
-    cos_face1(m,j,i) = - xl * y / (Cl * D);
-    sin_face2(m,j,i) = sqrt(1.0 + SQR(x) + SQR(yl)) / (C * Dl);
-    cos_face2(m,j,i) = - x * yl / (C * Dl);
-    Real sin_face1r = sqrt(1.0 + SQR(xr) + SQR(y)) / (Cr * D);
-    Real sin_face2r = sqrt(1.0 + SQR(x) + SQR(yr)) / (C * Dr);
-    if (i == ie) {
-      sin_face1(m,j,i+1) = sin_face1r;
-      cos_face1(m,j,i+1) = - xr * y / (Cr * D);
+
+    sin_cell(m,k,j) = sqrt(1.0 + SQR(x) + SQR(y)) / (C * D);
+    cos_cell(m,k,j) = - x * y / (C * D);
+    sin_face_xi(m,k,j) = sqrt(1.0 + SQR(xl) + SQR(y)) / (Cl * D);
+    cos_face_xi(m,k,j) = - xl * y / (Cl * D);
+    sin_face_eta(m,k,j) = sqrt(1.0 + SQR(x) + SQR(yl)) / (C * Dl);
+    cos_face_eta(m,k,j) = - x * yl / (C * Dl);
+    Real sin_face_xir = sqrt(1.0 + SQR(xr) + SQR(y)) / (Cr * D);
+    Real sin_face_etar = sqrt(1.0 + SQR(x) + SQR(yr)) / (C * Dr);
+    if (j == n2m1) {
+      sin_face_xi(m,k,j+1) = sin_face_xir;
+      cos_face_xi(m,k,j+1) = - xr * y / (Cr * D);
     }
-    if (j == je) {
-      sin_face2(m,j+1,i) = sin_face2r;
-      cos_face2(m,j+1,i) = - x * yr / (C * Dr);
+    if (k == n3m1) {
+      sin_face_eta(m,k+1,j) = sin_face_etar;
+      cos_face_eta(m,k+1,j) = - x * yr / (C * Dr);
     }
 
     // --- angular face widths ---
@@ -483,31 +497,120 @@ void Coordinates::CoordGnomonicEquiangle() {
     Real dth_etal = acos((1.0 + xl*xl + yl*yr) / sqrt(1.0 + xl*xl + yl*yl) / sqrt(1.0 + xl*xl + yr*yr));
     Real dth_etar = acos((1.0 + xr*xr + yl*yr) / sqrt(1.0 + xr*xr + yl*yl) / sqrt(1.0 + xr*xr + yr*yr));
 
-    // --- radial faces ---
-    area.x3f(m,k,j,i) = SQR(r_l) * dth_xi * dth_eta * sin_cell(m,j,i);
-    Real area3r = SQR(r_r) * dth_xi * dth_eta * sin_cell(m,j,i);
-    if (k == ke) area.x3f(m,k+1,j,i) = area3r;
+    // --- radial faces (x1) ---
+    area.x1f(m,k,j,i) = SQR(r_l) * dth_xi * dth_eta * sin_cell(m,k,j);
+    Real area1r = SQR(r_r) * dth_xi * dth_eta * sin_cell(m,k,j);
+    if (i == n1m1) area.x1f(m,k,j,i+1) = area1r;
 
-    // --- xi faces ---
-    area.x1f(m,k,j,i) = 0.5 * (SQR(r_r)-SQR(r_l)) * dth_etal;
-    Real area1r = 0.5 * (SQR(r_r)-SQR(r_l)) * dth_etar;
-    if (i == ie) area.x1f(m,k,j,i+1) = area1r;
+    // --- xi faces (x2) ---
+    area.x2f(m,k,j,i) = 0.5 * (SQR(r_r)-SQR(r_l)) * dth_etal;
+    Real area2r = 0.5 * (SQR(r_r)-SQR(r_l)) * dth_etar;
+    if (j == n2m1) area.x2f(m,k,j+1,i) = area2r;
 
-    // --- eta faces ---
-    area.x2f(m,k,j,i) = 0.5 * (SQR(r_r)-SQR(r_l)) * dth_xil;
-    Real area2r = 0.5 * (SQR(r_r)-SQR(r_l)) * dth_xir;
-    if (j == je) area.x2f(m,k,j+1,i) = area2r;
+    // --- eta faces (x3) ---
+    area.x3f(m,k,j,i) = 0.5 * (SQR(r_r)-SQR(r_l)) * dth_xil;
+    Real area3r = 0.5 * (SQR(r_r)-SQR(r_l)) * dth_xir;
+    if (k == n3m1) area.x3f(m,k+1,j,i) = area3r;
 
     // --- volume (SNAP trapezoidal) ---
+    volume(m,k,j,i) = 1.0/3.0*(r_r*r_r*r_r-r_l*r_l*r_l)
+                      * dth_xi * dth_eta * sin_cell(m,k,j);
+    dx1(m,k,j,i) = r_r - r_l;
+    dx2(m,k,j,i) = r_c * dth_xi;
+    dx3(m,k,j,i) = r_c * dth_eta;
 
-    volume(m,k,j,i) = 1.0/3.0*(r_r*r_r*r_r-r_l*r_l*r_l) * dth_xi * dth_eta * sin_cell(m,j,i);
-    dx1(m,k,j,i) = r_c * dth_xi;
-    dx2(m,k,j,i) = r_c * dth_eta;
-      
-    x_ov_rD(m,k,j,i) = (area1r * sin_face1r - area.x1f(m,k,j,i) * sin_face1(m,j,i)) / volume(m,k,j,i);
-    y_ov_rC(m,k,j,i) = (area2r * sin_face2r - area.x2f(m,k,j,i) * sin_face2(m,j,i)) / volume(m,k,j,i);
-    z_ov_rE(m,k,j,i) = (area3r - area.x3f(m,k,j,i)) / volume(m,k,j,i);
+    // Geometric coefficients consumed by SrcTermsGnomonicEquiangle. z_ov_rE is the RADIAL
+    // one, matching its meaning in CoordSphericalPolar/SrcTermsSphericalPolar.
+    x_ov_rD(m,k,j,i) = (area2r * sin_face_xir
+                        - area.x2f(m,k,j,i) * sin_face_xi(m,k,j)) / volume(m,k,j,i);
+    y_ov_rC(m,k,j,i) = (area3r * sin_face_etar
+                        - area.x3f(m,k,j,i) * sin_face_eta(m,k,j)) / volume(m,k,j,i);
+    z_ov_rE(m,k,j,i) = (area1r - area.x1f(m,k,j,i)) / volume(m,k,j,i);
   });
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn Coordinates::GnomonicEquiangleRaiseVel
+//! \brief Recompute the primitive velocity and internal energy from the conserved state
+//! on the cubed sphere, using the metric of the non-orthogonal gnomonic tangent basis.
+//!
+//! WHY THIS EXISTS. On the cubed sphere the two angular basis vectors are unit vectors
+//! separated by an angle theta with cos(theta) = cos_cell = -xy/(CD), so the metric on
+//! that basis is g = [[1, c],[c, 1]] and is NOT the identity. The rest of the scheme is
+//! built on a consistent split:
+//!   * GnomonicEquianglePrimFaceX* rotate w0's velocity into a locally ORTHONORMAL frame
+//!     before the Riemann solve, treating (IVX,IVY) as CONTRAVARIANT components v^1, v^2;
+//!   * GnomonicEquiangleFluxX* rotate the returned flux back and then LOWER the index, so
+//!     what the update accumulates in u0(IM1,IM2) is the COVARIANT momentum rho*v_i;
+//!   * SrcTermsGnomonicEquiangle reads w0 as contravariant and forms v_i = v^i + c v^j
+//!     itself, i.e. it agrees with both of the above.
+//! The generic EOS does not, and cannot: SingleC2P_IdealHyd sets v = m/rho and subtracts
+//! a kinetic energy 0.5*(m.m)/rho, both of which assume an orthonormal basis. Applying it
+//! unchanged leaves the primitive velocity holding COVARIANT components where every
+//! consumer expects contravariant ones, and the internal energy short by the cross term
+//! rho c v^1 v^2. The resulting scheme is inconsistent, not merely inaccurate: a rigid
+//! rotation, which is an exact steady solution of the Euler equations, drifts by an
+//! amount that does NOT decrease under grid refinement.
+//!
+//! This runs immediately after ConsToPrim and overwrites what it wrote for IVX/IVY/IVZ
+//! and IEN. Density, the floors and the scalars are left exactly as ConsToPrim left them.
+//! Non-relativistic ideal/general hydro only -- the relativistic inversions are coupled
+//! and would need the metric inside the root find, not after it.
+
+void Coordinates::GnomonicEquiangleRaiseVel(const DvceArray5D<Real> &u0,
+    DvceArray5D<Real> &w0, const int il, const int iu, const int jl, const int ju,
+    const int kl, const int ku) {
+  int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto &cos_cell_ = cos_cell;
+
+  par_for("cs_raisev", DevExeSpace(), 0,nmb1, kl,ku, jl,ju, il,iu,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const Real c = cos_cell_(m,k,j);
+    const Real det = 1.0 - c*c;
+    const Real d = u0(m,IDN,k,j,i);
+    const Real m1 = u0(m,IM1,k,j,i);   // radial: orthogonal to both angles
+    const Real m2 = u0(m,IM2,k,j,i);   // xi
+    const Real m3 = u0(m,IM3,k,j,i);   // eta
+    // v^i = g^{ij} m_j / rho, with the metric acting on the ANGULAR pair only
+    const Real v1 = m1/d;
+    const Real v2 = (m2 - c*m3)/(d*det);
+    const Real v3 = (m3 - c*m2)/(d*det);
+    w0(m,IVX,k,j,i) = v1;
+    w0(m,IVY,k,j,i) = v2;
+    w0(m,IVZ,k,j,i) = v3;
+    // KE = 0.5 rho g_ij v^i v^j = 0.5 m_i v^i, which is the cross-term-correct form.
+    w0(m,IEN,k,j,i) = u0(m,IEN,k,j,i) - 0.5*(m1*v1 + m2*v2 + m3*v3);
+  });
+  return;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn Coordinates::GnomonicEquiangleLowerMom
+//! \brief The inverse of GnomonicEquiangleRaiseVel: build the conserved state from
+//! primitives on the cubed sphere. Use this wherever a problem generator would otherwise
+//! call EquationOfState::PrimToCons, which assumes an orthonormal basis.
+
+void Coordinates::GnomonicEquiangleLowerMom(const DvceArray5D<Real> &w0,
+    DvceArray5D<Real> &u0, const int il, const int iu, const int jl, const int ju,
+    const int kl, const int ku) {
+  int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto &cos_cell_ = cos_cell;
+
+  par_for("cs_lowerm", DevExeSpace(), 0,nmb1, kl,ku, jl,ju, il,iu,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const Real c = cos_cell_(m,k,j);
+    const Real d = w0(m,IDN,k,j,i);
+    const Real v1 = w0(m,IVX,k,j,i);
+    const Real v2 = w0(m,IVY,k,j,i);
+    const Real v3 = w0(m,IVZ,k,j,i);
+    u0(m,IDN,k,j,i) = d;
+    u0(m,IM1,k,j,i) = d*v1;            // m_i = rho g_ij v^j
+    u0(m,IM2,k,j,i) = d*(v2 + c*v3);
+    u0(m,IM3,k,j,i) = d*(v3 + c*v2);
+    u0(m,IEN,k,j,i) = w0(m,IEN,k,j,i)
+                    + 0.5*d*(v1*v1 + v2*v2 + v3*v3 + 2.0*c*v2*v3);
+  });
+  return;
 }
 
 void Coordinates::SrcTermsGnomonicEquiangle(const DvceArray5D<Real> &w0,
@@ -534,31 +637,40 @@ void Coordinates::SrcTermsGnomonicEquiangle(const DvceArray5D<Real> &w0,
   par_for("cssrc", DevExeSpace(), 0,nmb1,ks,ke,js,je,is,ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       
-    Real radius = CellCenterX(k-ks, indcs.nx3, size.d_view(m).x3min, size.d_view(m).x3max);
-    Real dr = size.d_view(m).dx3;
-      
-    Real v1 = w0(m,IVX,k,j,i);
-    Real v2 = w0(m,IVY,k,j,i);
-    Real v3 = w0(m,IVZ,k,j,i);
+    // x1 is RADIAL; xi = x2 and eta = x3 are the panel-tangential angles.
+    Real radius = CellCenterX(i-is, indcs.nx1,
+                              size.d_view(m).x1min, size.d_view(m).x1max);
+    Real dr = size.d_view(m).dx1;
+
+    Real v1 = w0(m,IVX,k,j,i);   // radial
+    Real v2 = w0(m,IVY,k,j,i);   // xi
+    Real v3 = w0(m,IVZ,k,j,i);   // eta
     Real pr = gen_ ? wder_(m,IDPR,k,j,i)
                             : eos_.Pressure(w0(m,IDN,k,j,i), w0(m,IEN,k,j,i));
     Real rho = w0(m,IDN,k,j,i);
-      
-    Real cosine = cos_cell(m,j,i);
-    Real sine2 = SQR(sin_cell(m,j,i));
-    Real v_1 = v1 + v2 * cosine;
-    Real v_2 = v2 + v1 * cosine;
-      
-    Real src3 = z_ov_rE(m,k,j,i) * (pr + 0.5*rho*(v1*v_1+v2*v_2));
-    Real src1 = x_ov_rD(m,k,j,i) * (pr + rho*SQR(v2)*sine2);// - rho*v3*v_1 / radius;
-    Real src2 = y_ov_rC(m,k,j,i) * (pr + rho*SQR(v1)*sine2);// - rho*v3*v_2 / radius;
-      
-    src1 -= dr/2.0/radius * (uflx.x3f(m,IM1,k,j,i)*area.x3f(m,k,j,i)+uflx.x3f(m,IM1,k+1,j,i)*area.x3f(m,k+1,j,i))/volume(m,k,j,i);
-    src2 -= dr/2.0/radius * (uflx.x3f(m,IM2,k,j,i)*area.x3f(m,k,j,i)+uflx.x3f(m,IM2,k+1,j,i)*area.x3f(m,k+1,j,i))/volume(m,k,j,i);
-      
-    u0(m,IVX,k,j,i) += src1*bdt;
-    u0(m,IVY,k,j,i) += src2*bdt;
-    u0(m,IVZ,k,j,i) += src3*bdt;
+
+    Real cosine = cos_cell(m,k,j);
+    Real sine2 = SQR(sin_cell(m,k,j));
+    // lower the index on the two ANGULAR components with g = [[1,c],[c,1]]
+    Real v_2 = v2 + v3 * cosine;
+    Real v_3 = v3 + v2 * cosine;
+
+    // radial source: (A_out - A_in)/V * (p + angular kinetic energy), the same form as
+    // SrcTermsSphericalPolar's src1
+    Real src1 = z_ov_rE(m,k,j,i) * (pr + 0.5*rho*(v2*v_2+v3*v_3));
+    Real src2 = x_ov_rD(m,k,j,i) * (pr + rho*SQR(v3)*sine2);
+    Real src3 = y_ov_rC(m,k,j,i) * (pr + rho*SQR(v2)*sine2);
+
+    // the radial-face flux of each ANGULAR momentum, which the r-dependence of the
+    // angular basis converts into a source
+    src2 -= dr/2.0/radius * (uflx.x1f(m,IM2,k,j,i)*area.x1f(m,k,j,i)
+             + uflx.x1f(m,IM2,k,j,i+1)*area.x1f(m,k,j,i+1))/volume(m,k,j,i);
+    src3 -= dr/2.0/radius * (uflx.x1f(m,IM3,k,j,i)*area.x1f(m,k,j,i)
+             + uflx.x1f(m,IM3,k,j,i+1)*area.x1f(m,k,j,i+1))/volume(m,k,j,i);
+
+    u0(m,IM1,k,j,i) += src1*bdt;
+    u0(m,IM2,k,j,i) += src2*bdt;
+    u0(m,IM3,k,j,i) += src3*bdt;
     
   });
 }

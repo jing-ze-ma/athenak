@@ -16,6 +16,8 @@
 #include "globals.hpp"
 #include "parameter_input.hpp"
 #include "mesh/mesh.hpp"
+#include "coordinates/cell_locations.hpp"
+#include "coordinates/cubed_sphere.hpp"
 #include "bvals.hpp"
 
 //----------------------------------------------------------------------------------------
@@ -50,6 +52,9 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
   auto &mbgid = pmy_pack->pmb->mb_gid;
   auto &mblev = pmy_pack->pmb->mb_lev;
   auto &mbpanel = pmy_pack->pmb->mb_panel;
+  // needed only on the cubed sphere, to give a source cell its (xi,eta)
+  auto &mbsize = pmy_pack->pmb->mb_size;
+  auto &cs_indcs = pmy_pack->pmesh->mb_indcs;
   auto &sbuf = sendbuf;
   auto &rbuf = recvbuf;
   auto &is_z4c = is_z4c_;
@@ -99,63 +104,147 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
       // in MeshBlockPacks, so array index equals (target_id - first_id)
       int dm = nghbr.d_view(m,n).gid - mbgid.d_view(0);
       int dn = nghbr.d_view(m,n).dest;
-        
-      const bool do_cs = pmy_pack->pmesh->use_cubed_sphere && (nghbr.d_view(m,n).panel != mbpanel.d_view(m));
-      const bool do_pole = pmy_pack->pmesh->use_polar_boundary && (nghbr.d_view(m,n).polar > 0);
-        
+
+      const bool do_cs = pmy_pack->pmesh->use_cubed_sphere &&
+                         (nghbr.d_view(m,n).panel != mbpanel.d_view(m));
+      const bool do_pole = pmy_pack->pmesh->use_polar_boundary &&
+                           (nghbr.d_view(m,n).polar > 0);
+
       if (do_cs || do_pole) {
-          
         int aj = 1, bj = 0;
         int ak = 1, bk = 0;
         int signvar = 1;
         int sj = 1, sk = nj;
         int vv = v;
-          
+        bool cs_xform = false;
+        int cs_srcpanel = 0, cs_dstpanel = 0;
+        // 0 = no along-seam resample; 2 = x2-face seam (resample in k);
+        // 3 = x3-face seam (resample in j). See the note on seamval below.
+        int cs_seam = 0;
+
         if (do_cs) {
-          
           const auto ngh = nghbr.d_view(m,n);
           const int my_panel = mbpanel.d_view(m);
           PanelBoundaries pb;
           pb = pmy_pack->pmesh->GetPanelBoundary(my_panel, ngh.panel);
-          
-          int map_vy = IVY;
-          int map_vz = IVZ;
-          int sign_vy = 1;
-          int sign_vz = 1;
-          
-          int rev_x2_preswap = (pb.swap_ax == 1) ? pb.rev_x2 : pb.rev_x1;
-          int rev_x3_preswap = (pb.swap_ax == 1) ? pb.rev_x1 : pb.rev_x2;
+
+          // x1 is RADIAL on the cubed sphere and no seam crosses it, so i and IVX pass
+          // through untouched. The panel-tangential pair is a = x2 (j, IVY) and
+          // b = x3 (k, IVZ). See the axis note in mesh.hpp.
+          // The INDEX map across a seam is a signed permutation and is handled below.
+          // The VECTOR COMPONENTS are not: the two charts carry different tangent bases
+          // at the same physical point, differing by a shear that is O(1) away from the
+          // seam midline. They are transformed properly, per source cell, by
+          // cubed_sphere::TransformMomentum -- see the note there. IVX is radial and
+          // common to both charts, so it passes through.
+          cs_xform = (v == IVY) || (v == IVZ);
+          cs_dstpanel = ngh.panel;
+          cs_srcpanel = my_panel;
+
+          // pb.rev_a/rev_b are expressed in the DESTINATION panel's axes, so undo the
+          // swap to get the reversal that applies to this block's own j and k.
+          int rev_a_preswap = (pb.swap_ax == 1) ? pb.rev_b : pb.rev_a;
+          int rev_b_preswap = (pb.swap_ax == 1) ? pb.rev_a : pb.rev_b;
           if (pb.swap_ax == 1) {
-            map_vy = IVZ;
-            map_vz = IVY;
+            // Transpose the two tangential axes IN THE BUFFER, so the receiver's generic
+            // unpack lands them on its own j,k. The receiver's (nj,nk) are this block's
+            // (nk,nj), which is why the i stride ni and the per-variable stride are the
+            // same either way.
             sj = nk;
             sk = 1;
           }
-          if (rev_x2_preswap) {
+          if (rev_a_preswap) {
             aj = -1;
             bj = jl + ju;
           }
-          if (rev_x3_preswap) {
+          if (rev_b_preswap) {
             ak = -1;
             bk = kl + ku;
           }
-          if (pb.rev_x1) sign_vy = -1;
-          if (pb.rev_x2) sign_vz = -1;
-          
-          if (v == IVY) vv = map_vy;
-          if (v == IVZ) vv = map_vz;
-          if (v == IVY) signvar = sign_vy;
-          if (v == IVZ) signvar = sign_vz;
-            
+
+          // Which buffer is this? A same-level FACE buffer is ng cells deep in its own
+          // normal direction and spans the full active range in the other tangential
+          // one; that is the only case the along-seam resample applies to. The edge and
+          // corner buffers (ng x ng) are left as a plain copy -- a dimensionally split
+          // PLM+HLLC sweep never reconstructs through them.
+          const int ngh_ = cs_indcs.ng;
+          if (nj == ngh_ && nk > ngh_) {
+            cs_seam = 2;
+          } else if (nk == ngh_ && nj > ngh_) {
+            cs_seam = 3;
+          }
         } else if (do_pole) {
-            
           aj = -1;
           bj = jl + ju;
           if (v == IVY) signvar = -1;
           if (v == IVZ) signvar = -1;
-            
         }
-      
+
+        // Value of variable v at the source cell, with the seam transform applied. Both
+        // tangential momenta of the source cell are needed to produce either one, so
+        // this reads two components and selects; IVX and every scalar take the plain
+        // copy path. Away from a panel seam it is exactly the old `a(...)*signvar`.
+        auto srcval = [&](const int kk, const int jj, const int i) {
+          if (!cs_xform) return a(m,vv,kk,jj,i)*signvar;
+          const int js_ = cs_indcs.js, ks_ = cs_indcs.ks;
+          const Real xi = 0.25*M_PI*CellCenterX(jj-js_, cs_indcs.nx2,
+                            mbsize.d_view(m).x2min, mbsize.d_view(m).x2max);
+          const Real eta = 0.25*M_PI*CellCenterX(kk-ks_, cs_indcs.nx3,
+                            mbsize.d_view(m).x3min, mbsize.d_view(m).x3max);
+          Real m2o, m3o;
+          cubed_sphere::TransformMomentum(cs_srcpanel, cs_dstpanel, xi, eta,
+                                          a(m,IVY,kk,jj,i), a(m,IVZ,kk,jj,i), m2o, m3o);
+          return (v == IVY) ? m2o : m3o;
+        };
+
+        // ALONG-SEAM RESAMPLE. Across a panel seam the two charts share the seam-normal
+        // coordinate exactly but NOT the seam-parallel one. Writing the seam-normal
+        // angle of a source cell as n and its seam-parallel angle as a, the physical
+        // point of that cell sits at seam-parallel angle atan(tan(a)/tan|n|) in the
+        // DESTINATION chart, not at a. So the plain index copy hands each ghost cell the
+        // state of a point up to half a cell (layer 0) or ~1.5 cells (layer 1) away
+        // along the seam -- an offset that does NOT shrink with resolution in cell
+        // units, which makes the ghost value O(dx) wrong and the acceleration it drives
+        // O(1)... i.e. the seam is only first-order accurate.
+        //
+        // Inverting that map, the value a ghost needs is the source field at
+        // seam-parallel angle atan(tan(a)*tan|n|), which is always INSIDE the source
+        // cell's own angle (|tan n| < 1), so the stencil never leaves the source block.
+        // The same formula covers both orientations: a reversed seam flips the sign of
+        // both a and the target, and the index reversal above already carries that.
+        // Quadratic (3-point) Lagrange keeps the ghost error O(dx^3), which is what the
+        // second-order flux difference needs.
+        auto seamval = [&](const int kk, const int jj, const int i) {
+          if (cs_seam == 0) return srcval(kk,jj,i);
+          const int js_ = cs_indcs.js, ks_ = cs_indcs.ks;
+          const Real x2mn = mbsize.d_view(m).x2min, x2mx = mbsize.d_view(m).x2max;
+          const Real x3mn = mbsize.d_view(m).x3min, x3mx = mbsize.d_view(m).x3max;
+          const Real xi  = 0.25*M_PI*CellCenterX(jj-js_, cs_indcs.nx2, x2mn, x2mx);
+          const Real eta = 0.25*M_PI*CellCenterX(kk-ks_, cs_indcs.nx3, x3mn, x3mx);
+          Real ang, nrm, dang;
+          int sc, blo, bhi;
+          if (cs_seam == 2) {
+            ang = eta; nrm = xi;
+            dang = 0.25*M_PI*(x3mx - x3mn)/static_cast<Real>(cs_indcs.nx3);
+            sc = kk; blo = kl; bhi = ku - 2;
+          } else {
+            ang = xi; nrm = eta;
+            dang = 0.25*M_PI*(x2mx - x2mn)/static_cast<Real>(cs_indcs.nx2);
+            sc = jj; blo = jl; bhi = ju - 2;
+          }
+          const Real pos = sc + (atan(tan(ang)*tan(fabs(nrm))) - ang)/dang;
+          int b = static_cast<int>(floor(pos + 0.5)) - 1;
+          b = (b < blo) ? blo : ((b > bhi) ? bhi : b);
+          const Real u = pos - static_cast<Real>(b + 1);
+          const Real wm = 0.5*u*(u - 1.0);
+          const Real w0 = 1.0 - u*u;
+          const Real wp = 0.5*u*(u + 1.0);
+          if (cs_seam == 2) {
+            return wm*srcval(b,jj,i) + w0*srcval(b+1,jj,i) + wp*srcval(b+2,jj,i);
+          }
+          return wm*srcval(kk,b,i) + w0*srcval(kk,b+1,i) + wp*srcval(kk,b+2,i);
+        };
+
         // Middle loop over k,j
         Kokkos::parallel_for(Kokkos::TeamThreadRange<>(tmember, nkj), [&](const int idx) {
           int k = idx / nj;
@@ -172,8 +261,7 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
             if (nghbr.d_view(m,n).lev >= mblev.d_view(m)) {
               Kokkos::parallel_for(Kokkos::ThreadVectorRange(tmember,il,iu+1),
               [&](const int i) {
-                Real val = a(m,vv,kk,jj,i);
-                val *= signvar;
+                Real val = seamval(kk,jj,i);
                 int index = i-il + ni*(sj*(j-jl) + sk*(k-kl) + nk*nj*v);
                 rbuf[dn].vars(dm, index) = val;
               });
@@ -187,8 +275,7 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
             if (nghbr.d_view(m,n).lev >= mblev.d_view(m)) {
               Kokkos::parallel_for(Kokkos::ThreadVectorRange(tmember,il,iu+1),
               [&](const int i) {
-                Real val = a(m,vv,kk,jj,i);
-                val *= signvar;
+                Real val = seamval(kk,jj,i);
                 int index = i-il + ni*(sj*(j-jl) + sk*(k-kl) + nk*nj*v);
                 sbuf[n].vars(m,index) = val;
               });
@@ -196,9 +283,8 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
             }
           }
         });
-          
+
       } else {   // normal boundary exchange
-          
       // Middle loop over k,j
       Kokkos::parallel_for(Kokkos::TeamThreadRange<>(tmember, nkj), [&](const int idx) {
         int k = idx / nj;
@@ -241,10 +327,8 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
           }
         }
       });
-          
-      } // end if-do-cs/do-pole block
-        
-    } // end if-neighbor-exists block
+      }  // end if-do-cs/do-pole block
+    }  // end if-neighbor-exists block
     tmember.team_barrier();
   }); // end par_for_outer
 

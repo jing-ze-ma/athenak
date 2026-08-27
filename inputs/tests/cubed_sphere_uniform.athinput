@@ -1,0 +1,74 @@
+# Cubed sphere, TEST A: static uniform state.  Build with -D PROBLEM=cs_test.
+#
+# rho = 1, p = 1, v = 0 on all six panels.  The exact solution is "unchanged, forever", so
+# this isolates the GEOMETRY and the inter-panel exchange from the velocity representation:
+# every velocity rotation in coordinates.hpp is identically zero when v = 0.
+#
+# PASSES: mass stays 24.000000, total energy 36.000000, the momenta stay at round-off
+# (~1e-16) and the kinetic energies at ~1e-30 for the whole run, with dt = 8.78109e-03.
+# Treat any drift here as a regression in the geometry, the geometric source terms, or the
+# panel boundary exchange.
+#
+# AXES: x1 is RADIAL (matching CoordSphericalPolar), x2 = xi and x3 = eta are the two
+# panel-tangential angles, each spanning [-1,1] with `panel` BCs.  Mesh requires
+# nx2 == nx3; the radial resolution is free.
+#
+# NOTE this must be 3D.  The face areas carry a factor (r_r^2 - r_l^2) and the volume
+# carries (r_r^3 - r_l^3), so a shell of zero thickness makes every area and volume
+# identically zero.
+
+<comment>
+problem = cubed sphere uniform static state
+
+<job>
+basename = cs_uniform
+
+<mesh>
+nghost   = 2
+nx1      = 8            # RADIAL direction
+x1min    = 1.0
+x1max    = 2.0
+ix1_bc   = reflect
+ox1_bc   = reflect
+
+nx2      = 32           # xi;  nx2 must equal nx3 (Mesh checks this)
+x2min    = -1.0
+x2max    = 1.0
+ix2_bc   = panel
+ox2_bc   = panel
+
+nx3      = 32           # eta
+x3min    = -1.0
+x3max    = 1.0
+ix3_bc   = panel
+ox3_bc   = panel
+
+use_cubed_sphere = true
+
+<meshblock>
+nx1      = 8
+nx2      = 32
+nx3      = 32
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim       = 100
+tlim       = 100.0
+ndiag      = 50
+
+<hydro>
+eos         = ideal
+reconstruct = plm
+rsolver     = hllc
+gamma       = 1.666667
+
+<problem>
+iprob = 1
+d0    = 1.0
+p0    = 1.0
+
+<output1>
+file_type = hst
+dt        = 0.01

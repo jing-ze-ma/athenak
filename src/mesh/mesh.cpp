@@ -92,8 +92,11 @@ Mesh::Mesh(ParameterInput *pin) :
       std::cout << "### FATAL ERROR: Cubed sphere requires 2D/3D mesh\n";
       std::exit(EXIT_FAILURE);
     }
-    if (mesh_indcs.nx1 != mesh_indcs.nx2) {
-      std::cout << "### FATAL ERROR: Cubed sphere requires xy indices to be the same size\n";
+    // x1 is RADIAL; the two panel-tangential axes x2 (xi) and x3 (eta) must match, since
+    // a seam glues an x2 face of one panel to an x3 face of another.
+    if (mesh_indcs.nx2 != mesh_indcs.nx3) {
+      std::cout << "### FATAL ERROR: Cubed sphere requires nx2 == nx3 (the two "
+                << "panel-tangential axes)\n";
       std::exit(EXIT_FAILURE);
     }
   }
@@ -453,7 +456,8 @@ Mesh::~Mesh() {
 void Mesh::PrintMeshDiagnostics() {
   std::cout << std::endl;
   if (use_cubed_sphere) {
-    std::cout <<"Cubed sphere: Root grid = "<< npanels <<" x ("<< nmb_rootx1 <<" x "<< nmb_rootx2 <<") x "<< nmb_rootx3
+    std::cout <<"Cubed sphere: Root grid = "<< npanels <<" x "<< nmb_rootx1
+              <<" x ("<< nmb_rootx2 <<" x "<< nmb_rootx3 <<")"
               <<" MeshBlocks"<< std::endl;
   } else {
   std::cout <<"Root grid = "<< nmb_rootx1 <<" x "<< nmb_rootx2 <<" x "<< nmb_rootx3

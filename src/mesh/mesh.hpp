@@ -81,18 +81,27 @@ struct EventCounters {
 //! \struct PanelNeighbors
 //! \brief stores connectivity table
 //!
+// NOTE ON AXES. On the cubed sphere x1 is the RADIAL direction, matching
+// CoordSphericalPolar, and the two PANEL-TANGENTIAL axes are x2 (xi) and x3 (eta). A
+// panel seam therefore permutes and reflects x2 and x3 only; x1 is never touched by
+// one. The two tangential axes are named `a` (= x2) and `b` (= x3) throughout the
+// panel tables below, deliberately NOT `x1`/`x2`: they used to be, under an earlier
+// convention in which the radius was x3, and reading those names as mesh axes is what
+// silently reversed the radial index across every seam.
+// Face ordering everywhere in the panel tables: 0:-x2, 1:+x2, 2:-x3, 3:+x3.
+
 struct PanelNeighbors {
   int nb_panel;   // neighbor panel id (0-6)
-  int nb_face;    // which face of neighbor we enter (0:-x1, 1:+x1, 2:-x2, 3:+x2)
+  int nb_face;    // which face of neighbor we enter (0:-x2, 1:+x2, 2:-x3, 3:+x3)
   int rev_ax;     // whether along-edge index is reversed (0/1)
-  int swap_ax;    // whether to swap the xy axis (0/1)
+  int swap_ax;    // whether to swap the two tangential axes a,b (0/1)
 };
 
 struct PanelBoundaries {
-  int swap_ax;    // whether to swap the xy axis (0/1)
-  int rev_x1;     // whether (after being swapped) x1 index is reversed (0/1)
-  int rev_x2;     // whether (after being swapped) x2 index is reversed (0/1)
-  int end_face;   // which face of the starting panel (0:-x1, 1:+x1, 2:-x2, 3:+x2)
+  int swap_ax;    // whether to swap the two tangential axes a,b (0/1)
+  int rev_a;      // whether (after being swapped) the a = x2 index is reversed (0/1)
+  int rev_b;      // whether (after being swapped) the b = x3 index is reversed (0/1)
+  int end_face;   // which face of the starting panel (0:-x2, 1:+x2, 2:-x3, 3:+x3)
 };
 
 // Forward declarations required due to recursive definitions amongst mesh classes
@@ -194,13 +203,16 @@ class Mesh {
     KOKKOS_INLINE_FUNCTION
     int NeighborIndexPanel(int ix, int iy, int iz, int n1, int n2, int panel_start, int panel_end) {
         
+        // ix is the RADIAL (x1) offset and is passed through untouched: a panel seam
+        // never crosses it. Only the tangential pair a = x2 (iy), b = x3 (iz) is
+        // remapped.
         const PanelBoundaries pb = GetPanelBoundary(panel_start, panel_end);
-        int iix = (pb.swap_ax == 1) ? iy : ix;
-        int iiy = (pb.swap_ax == 1) ? ix : iy;
-        if (pb.rev_x1 == 1) iix = -iix;
-        if (pb.rev_x2 == 1) iiy = -iiy;
+        int iia = (pb.swap_ax == 1) ? iz : iy;
+        int iib = (pb.swap_ax == 1) ? iy : iz;
+        if (pb.rev_a == 1) iia = -iia;
+        if (pb.rev_b == 1) iib = -iib;
         
-        return NeighborIndex(iix,iiy,iz,n1,n2);
+        return NeighborIndex(ix,iia,iib,n1,n2);
     }
 
   // comparison function for sorting LogicalLocations based on level
@@ -263,8 +275,8 @@ class Mesh {
     *
     */
     
-    // Face ordering:
-    // 0:-x1, 1:+x1, 2:-x2, 3:+x2, 4:-x3, 5:+x3
+    // Face ordering (panel-tangential faces only; a = x2, b = x3):
+    // 0:-x2, 1:+x2, 2:-x3, 3:+x3
 
     static constexpr PanelNeighbors panel_neighbors[6][4] = {
       // panel 0: neighbors 4(L),1(R),5(B),3(T)

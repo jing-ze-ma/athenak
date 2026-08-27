@@ -125,24 +125,24 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
               int sign_vy = 1;
               int sign_vz = 1;
               
-              int rev_x2_preswap = (pb.swap_ax == 1) ? pb.rev_x2 : pb.rev_x1;
-              int rev_x3_preswap = (pb.swap_ax == 1) ? pb.rev_x1 : pb.rev_x2;
+              int rev_a_preswap = (pb.swap_ax == 1) ? pb.rev_b : pb.rev_a;
+              int rev_b_preswap = (pb.swap_ax == 1) ? pb.rev_a : pb.rev_b;
               if (pb.swap_ax == 1) {
                 map_vy = 2;
                 map_vz = 1;
                 sj = nk;
                 sk = 1;
               }
-              if (rev_x2_preswap) {
+              if (rev_a_preswap) {
                 aj = -1;
                 bj = jl + ju;
               }
-              if (rev_x3_preswap) {
+              if (rev_b_preswap) {
                 ak = -1;
                 bk = kl + ku;
               }
-              if (pb.rev_x1) sign_vy = -1;
-              if (pb.rev_x2) sign_vz = -1;
+              if (pb.rev_a) sign_vy = -1;
+              if (pb.rev_b) sign_vz = -1;
               
               if (v == 1) vv = map_vy;
               if (v == 2) vv = map_vz;

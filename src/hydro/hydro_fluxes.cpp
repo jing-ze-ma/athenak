@@ -198,7 +198,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
       }
 
       if (pmy_pack->pmesh->use_cubed_sphere) {
-          pmy_pack->pcoord->GnomonicEquianglePrimFaceX1(member,m,j,il-1,iu,wl,wr);
+          pmy_pack->pcoord->GnomonicEquianglePrimFaceX1(member,m,k,j,il-1,iu,wl,wr);
       }
       
     // Sync all threads in the team so that scratch memory is consistent
@@ -376,7 +376,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
           }
 
           if (pmy_pack->pmesh->use_cubed_sphere) {
-              pmy_pack->pcoord->GnomonicEquianglePrimFaceX2(member,m,j,il,iu,wl_jp1,wr);
+              pmy_pack->pcoord->GnomonicEquianglePrimFaceX2(member,m,k,j,il,iu,wl_jp1,wr);
           }
           
         member.team_barrier();
@@ -549,7 +549,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
           }
 
           if (pmy_pack->pmesh->use_cubed_sphere) {
-              pmy_pack->pcoord->GnomonicEquianglePrimFaceX3(member,m,j,il,iu,wl_kp1,wr);
+              pmy_pack->pcoord->GnomonicEquianglePrimFaceX3(member,m,k,j,il,iu,wl_kp1,wr);
           }
           
         member.team_barrier();

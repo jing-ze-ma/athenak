@@ -428,6 +428,13 @@ TaskStatus Hydro::ConToPrim(Driver *pdrive, int stage) {
     RemoveGravEtot(phicc0, u0, 0, n1m1, 0, n2m1, 0, n3m1);
   }
   peos->ConsToPrim(u0, w0, false, 0, n1m1, 0, n2m1, 0, n3m1);
+  // On the cubed sphere the conserved momentum is COVARIANT while the primitive velocity
+  // must be CONTRAVARIANT, and the two differ by the non-orthogonal metric of the
+  // gnomonic tangent basis. ConsToPrim cannot know that, so redo the velocity and the
+  // internal energy with the metric. See Coordinates::GnomonicEquiangleRaiseVel.
+  if (pmy_pack->pmesh->use_cubed_sphere) {
+    pmy_pack->pcoord->GnomonicEquiangleRaiseVel(u0, w0, 0, n1m1, 0, n2m1, 0, n3m1);
+  }
   if (use_etotgrav) {
     AddGravEtot(phicc0, u0, 0, n1m1, 0, n2m1, 0, n3m1);
   }

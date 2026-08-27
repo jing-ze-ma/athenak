@@ -1,0 +1,79 @@
+# Cubed sphere, TEST B: rigid-rotation equilibrium.  Build with -D PROBLEM=cs_test.
+#
+# A barotropic fluid in rigid rotation v = Omega zhat x r is an EXACT steady solution of
+# the compressible Euler equations with no gravity, provided the pressure supplies the
+# centripetal force: p = p0 + 0.5 rho Omega^2 R^2 with R the cylindrical radius.  v.rhat is
+# zero everywhere, so nothing crosses the radial boundaries; the user BC in cs_test.cpp
+# holds the exact state there.
+#
+# Unlike TEST A this has a real velocity, so it exercises the contravariant/covariant
+# momentum handling, the tangent-basis transform across panel seams, and the along-seam
+# resample in the halo.
+#
+# STATUS: PASSES, second order.  The spurious RADIAL kinetic energy (column [8] of the
+# .hst -- x1 is radial -- and identically zero in the exact solution) at t = 1 under JOINT
+# refinement (nx1, nx2=nx3) = (8,16) / (16,32) / (32,64) is
+#     5.58e-08 / 2.39e-09 / 9.44e-11,
+# ratios 23-25.  Refine the ANGULAR axes alone and it stalls at first order: the residual
+# is then ordinary radial truncation error, so nx1 must be refined too.
+#
+# AXES: x1 is RADIAL; x2 = xi and x3 = eta are the panel-tangential angles.  Mesh requires
+# nx2 == nx3.
+
+<comment>
+problem = cubed sphere rigid rotation
+
+<job>
+basename = cs_rigidrot
+
+<mesh>
+nghost   = 2
+nx1      = 8            # RADIAL direction
+x1min    = 1.0
+x1max    = 2.0
+ix1_bc   = user
+ox1_bc   = user
+
+nx2      = 16           # xi;  nx2 must equal nx3 (Mesh checks this)
+x2min    = -1.0
+x2max    = 1.0
+ix2_bc   = panel
+ox2_bc   = panel
+
+nx3      = 16           # eta
+x3min    = -1.0
+x3max    = 1.0
+ix3_bc   = panel
+ox3_bc   = panel
+
+use_cubed_sphere = true
+
+<meshblock>
+nx1      = 8
+nx2      = 16
+nx3      = 16
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim       = 1000000
+tlim       = 1.0
+ndiag      = 10
+
+<hydro>
+eos         = ideal
+reconstruct = plm
+rsolver     = hllc
+gamma       = 1.666667
+
+<problem>
+iprob = 3
+d0    = 1.0
+p0    = 1.0
+omega = 0.2
+user_bcs = true
+
+<output1>
+file_type = hst
+dt        = 0.01

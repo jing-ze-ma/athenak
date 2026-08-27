@@ -387,6 +387,14 @@ void MeshBlock::SetNeighbors(int *ranklist) {
             if (nt->lloc_.level == lloc.level) { // neighbor at same level
               inghbr = NeighborIndex(0,0,l,0,0);
               idest = NeighborIndex(0,0,-l,0,0);
+              // x3 is a PANEL-TANGENTIAL axis on the cubed sphere (x1 is radial), so an
+              // x3 face can be a panel seam and its destination index must go through the
+              // panel transform, exactly like the x2 face above. This branch had no such
+              // call while the radius was x3 and no seam could cross it.
+              if (pmy_pack->pmesh->use_cubed_sphere && panel != nt->lloc_.panel) {
+                idest = pmy_pack->pmesh->NeighborIndexPanel(0,0,-l,0,0,panel,
+                                                            nt->lloc_.panel);
+              }
             } else { // neighbor at coarser level, set index/destn to appropriate subblock
               inghbr = NeighborIndex(0,0,l,myfx1,myfx2);
               idest = NeighborIndex(0,0,-l,myfx1,myfx2);

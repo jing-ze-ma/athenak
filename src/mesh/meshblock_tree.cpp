@@ -485,27 +485,28 @@ LogicalLocation MeshBlockTree::TransformToPanel(
 
   int ll = lloc.level;
 
-  std::int32_t num_x1 = pmesh_->nmb_rootx1<<(ll - pmesh_->root_level);
   std::int32_t num_x2 = pmesh_->nmb_rootx2<<(ll - pmesh_->root_level);
   std::int32_t num_x3 = pmesh_->nmb_rootx3<<(ll - pmesh_->root_level);
     
-  // Face ordering:
-  // 0:-x1, 1:+x1, 2:-x2, 3:+x2, 4:-x3, 5:+x3
+  // x1 is RADIAL on the cubed sphere and a seam never crosses it, so lx1 is carried over
+  // unchanged. The tangential pair is a = x2, b = x3.
+  // Face ordering: 0:-x2, 1:+x2, 2:-x3, 3:+x3
     
   if (swap_ax) {
-    newlloc.lx1 = lloc.lx2;
-    newlloc.lx2 = lloc.lx1;
+    newlloc.lx2 = lloc.lx3;
+    newlloc.lx3 = lloc.lx2;
   }
   if (rev_ax == 1)
   {
-    if (neighbor_face < 2)  newlloc.lx2 = num_x2-1-newlloc.lx2;
-    if (neighbor_face >= 2) newlloc.lx1 = num_x1-1-newlloc.lx1;
+    // entering through an x2 face, the along-edge axis is x3, and vice versa
+    if (neighbor_face < 2)  newlloc.lx3 = num_x3-1-newlloc.lx3;
+    if (neighbor_face >= 2) newlloc.lx2 = num_x2-1-newlloc.lx2;
   }
   
-  if (neighbor_face == 0) newlloc.lx1 = 0;
-  if (neighbor_face == 1) newlloc.lx1 = num_x1-1;
-  if (neighbor_face == 2) newlloc.lx2 = 0;
-  if (neighbor_face == 3) newlloc.lx2 = num_x2-1;
+  if (neighbor_face == 0) newlloc.lx2 = 0;
+  if (neighbor_face == 1) newlloc.lx2 = num_x2-1;
+  if (neighbor_face == 2) newlloc.lx3 = 0;
+  if (neighbor_face == 3) newlloc.lx3 = num_x3-1;
 
   return newlloc;
 }
@@ -516,55 +517,57 @@ MeshBlockTree* MeshBlockTree::FindNeighborGlobal(LogicalLocation lloc, int ox1, 
     MeshBlockTree* nt = this->FindNeighbor(lloc, ox1, ox2, ox3, amrflag);
     if (!mesh->use_cubed_sphere || nt != nullptr) return nt;
     
-    // 2. Not within the local panel. First, move in x3 direction
-    MeshBlockTree* nt3 = this->FindNeighbor(lloc, 0, 0, ox3, amrflag);
-    if (nt3 == nullptr) return nt3; // if null -> boundary, else inside the panel
+    // 2. Not within the local panel. Move first in the RADIAL (x1) direction, which no
+    //    seam crosses, then in the two panel-tangential axes a = x2 and b = x3.
+    MeshBlockTree* nt_r = this->FindNeighbor(lloc, ox1, 0, 0, amrflag);
+    if (nt_r == nullptr) return nt_r; // if null -> boundary, else inside the panel
     
-    // 3. Try moving in x1 then
-    MeshBlockTree* nt31 = nt3->FindNeighbor(nt3->lloc_, ox1, 0, 0, amrflag);
+    // 3. Try moving in x2 then
+    MeshBlockTree* nt_ra = nt_r->FindNeighbor(nt_r->lloc_, 0, ox2, 0, amrflag);
     MeshBlockTree* nt312;
-    if (nt31 != nullptr) {
-      // inside the panel -> accept, then must cross the panel in x2
-      nt312 = nt31->FindNeighborCrossPanel(nt31->lloc_, 0, ox2, 0, mesh, amrflag);
+    if (nt_ra != nullptr) {
+      // inside the panel -> accept, then must cross the panel in x3
+      nt312 = nt_ra->FindNeighborCrossPanel(nt_ra->lloc_, 0, 0, ox3, mesh, amrflag);
     } else {
-      // outside the panel -> cross the panel in x1
-        MeshBlockTree* nt31 = nt3->FindNeighborCrossPanel(nt3->lloc_, ox1, 0, 0, mesh, amrflag);
-        if (std::abs(ox1)+std::abs(ox2) == 2) {
-          // if x1x2 edge or x1x2x3 corner, then x1 has been crossed, move in x2 in the following
-          // Take a step back and get panel neighbor before crossing the panel in x1
+      // outside the panel -> cross the panel in x2
+        nt_ra = nt_r->FindNeighborCrossPanel(nt_r->lloc_, 0, ox2, 0, mesh, amrflag);
+        if (std::abs(ox2)+std::abs(ox3) == 2) {
+          // if an x2x3 edge or an x1x2x3 corner, then x2 has been crossed and x3 must be
+          // taken in the NEW panel's axes. Take a step back and get the panel neighbor
+          // before crossing the panel in x2.
           // 1. Which face to cross the panel
           int face = -1;
-          if (ox1 < 0) face = 0;   // -x1
-          if (ox1 > 0) face = 1;   // +x1
-          if (face < 0) return nullptr; // only ox3: no cross-panel motion -> boundary
+          if (ox2 < 0) face = 0;   // -x2
+          if (ox2 > 0) face = 1;   // +x2
+          if (face < 0) return nullptr; // only ox1: no cross-panel motion -> boundary
 
           // 2. Lookup neighbor panel
-          int panel = nt3->lloc_.panel;
+          int panel = nt_r->lloc_.panel;
           PanelNeighbors pn = mesh->panel_neighbors[panel][face];
             
-          int dx1, dx2;
+          int da, db;
           if (pn.swap_ax) {
-            dx1 = ox2;
-            dx2 = 0;
+            da = ox3;
+            db = 0;
           }
           else {
-            dx1 = 0;
-            dx2 = ox2;
+            da = 0;
+            db = ox3;
           }
           if (pn.rev_ax == 1)
           {
-            dx1 = -dx1;
-            dx2 = -dx2;
+            da = -da;
+            db = -db;
           }
-          // Try moving in x2
-          nt312 = nt31->FindNeighbor(nt31->lloc_, dx1, dx2, 0, amrflag);
+          // Try moving in x3
+          nt312 = nt_ra->FindNeighbor(nt_ra->lloc_, 0, da, db, amrflag);
           if (nt312 == nullptr) {
-            // outside the new panel -> cross the panel in x2
-            nt312 = nt31->FindNeighborCrossPanel(nt31->lloc_, dx1, dx2, 0, mesh, amrflag);
+            // outside the new panel -> cross the panel in x3
+            nt312 = nt_ra->FindNeighborCrossPanel(nt_ra->lloc_, 0, da, db, mesh, amrflag);
           }
         } else {
-          // no need to move in x2
-            nt312 = nt31;
+          // no need to move in x3
+            nt312 = nt_ra;
         }
     }
     if (nt312 == nullptr) {
@@ -582,13 +585,14 @@ MeshBlockTree* MeshBlockTree::FindNeighborGlobal(LogicalLocation lloc, int ox1, 
 
 MeshBlockTree* MeshBlockTree::FindNeighborCrossPanel(LogicalLocation lloc, int ox1, int ox2, int ox3, Mesh *mesh, bool amrflag) {
     
-    // 1. Which face to cross the panel
+    // 1. Which face to cross the panel. x1 is RADIAL: an ox1-only offset can never leave
+    //    the panel, so it is a physical boundary rather than a seam.
     int face = -1;
-    if (ox1 < 0) face = 0;   // -x1
-    if (ox1 > 0) face = 1;   // +x1
-    if (ox2 < 0) face = 2;   // -x2
-    if (ox2 > 0) face = 3;   // +x2
-    if (face < 0) return nullptr; // only ox3: no cross-panel motion -> boundary
+    if (ox2 < 0) face = 0;   // -x2
+    if (ox2 > 0) face = 1;   // +x2
+    if (ox3 < 0) face = 2;   // -x3
+    if (ox3 > 0) face = 3;   // +x3
+    if (face < 0) return nullptr; // only ox1: no cross-panel motion -> boundary
 
     // 2. Lookup neighbor panel
     int panel = lloc.panel;

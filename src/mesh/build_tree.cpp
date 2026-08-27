@@ -36,8 +36,12 @@ void Mesh::BuildTreeFromScratch(ParameterInput *pin) {
   nmb_rootx3 = mesh_indcs.nx3/mb_indcs.nx3;
 
   if (use_cubed_sphere) {
-    if (nmb_rootx1 != nmb_rootx2) {
-      std::cout << "### FATAL ERROR: Cubed sphere requires xy mesh blocks to be the same size\n";
+    // The two PANEL-TANGENTIAL axes are x2 (xi) and x3 (eta) -- x1 is radial -- and a
+    // seam glues an x2 face of one panel to an x3 face of another, so the root grid must
+    // carry the same number of MeshBlocks along each. The radial direction is free.
+    if (nmb_rootx2 != nmb_rootx3) {
+      std::cout << "### FATAL ERROR: Cubed sphere requires the same number of MeshBlocks "
+                << "along x2 and x3 (the two panel-tangential axes)\n";
       std::exit(EXIT_FAILURE);
     }
   }

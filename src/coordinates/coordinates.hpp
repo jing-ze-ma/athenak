@@ -79,12 +79,15 @@ class Coordinates {
   DvceEdgeFld4D<Real> dxedge;
   DvceFaceFld4D<Real> dxface;
   DvceEdgeFld4D<Real> areaedge;
+  // Gnomonic-equiangle geometry. These depend on the two PANEL-TANGENTIAL angles only --
+  // xi = x2 and eta = x3 -- so they are indexed (m,k,j) with no radial extent. The
+  // _xi arrays live on x2 faces (staggered in j), the _eta arrays on x3 faces (in k).
   DvceArray3D<Real> sin_cell;
   DvceArray3D<Real> cos_cell;
-  DvceArray3D<Real> sin_face1;
-  DvceArray3D<Real> cos_face1;
-  DvceArray3D<Real> sin_face2;
-  DvceArray3D<Real> cos_face2;
+  DvceArray3D<Real> sin_face_xi;
+  DvceArray3D<Real> cos_face_xi;
+  DvceArray3D<Real> sin_face_eta;
+  DvceArray3D<Real> cos_face_eta;
   DvceArray4D<Real> x_ov_rD;
   DvceArray4D<Real> y_ov_rC;
   DvceArray4D<Real> z_ov_rE;
@@ -98,76 +101,99 @@ class Coordinates {
       const DvceFaceFld5D<Real> uflx, const EOS_Data &eos_data, const Real bdt,
       DvceArray5D<Real> &u0);
   void CoordGnomonicEquiangle();
+  // The gnomonic tangent basis is NOT orthogonal, so the conserved momentum (covariant,
+  // which is what GnomonicEquiangleFluxX* produces) and the primitive velocity
+  // (contravariant, which is what GnomonicEquianglePrimFaceX* and the gnomonic source
+  // terms consume) are different objects. These two convert between them with the metric
+  // g = [[1, cos],[cos, 1]] on the unit-normalised basis, plus g_33 = 1 radially.
+  void GnomonicEquiangleRaiseVel(const DvceArray5D<Real> &u0, DvceArray5D<Real> &w0,
+                                 const int il, const int iu, const int jl, const int ju,
+                                 const int kl, const int ku);
+  void GnomonicEquiangleLowerMom(const DvceArray5D<Real> &w0, DvceArray5D<Real> &u0,
+                                 const int il, const int iu, const int jl, const int ju,
+                                 const int kl, const int ku);
   void SrcTermsGnomonicEquiangle(const DvceArray5D<Real> &w0,
       const DvceArray5D<Real> &wder, const DvceFaceFld5D<Real> uflx,
       const EOS_Data &eos_data, const Real bdt, DvceArray5D<Real> &u0);
     
+    // GNOMONIC EQUIANGLE, x1 = RADIAL, xi = x2, eta = x3.
+    //
+    // The two angular basis vectors e_xi, e_eta are unit vectors separated by an angle
+    // theta with cos(theta) = cos_cell, so the angular metric is g = [[1,c],[c,1]] and is
+    // NOT the identity. The PrimFace* routines rotate the CONTRAVARIANT velocity held in
+    // w0 into the locally ORTHONORMAL frame the Riemann solver needs; the Flux* routines
+    // invert that rotation on the returned flux and then LOWER the index, so what the
+    // update accumulates in u0(IM1,IM2,IM3) is the COVARIANT momentum. The radial
+    // component is orthogonal to both angles and is never touched by these rotations.
+    // See Coordinates::GnomonicEquiangleRaiseVel for the matching inversion.
+
+    // --- x1 sweep: RADIAL face. Its normal is r-hat, so the normal component IVX passes
+    // through untouched and only the angular pair is put in an orthonormal frame. The
+    // coefficients depend on (k,j) alone, so they are loop-invariant in i.
     KOKKOS_INLINE_FUNCTION
-    void GnomonicEquianglePrimFaceX1(TeamMember_t const &member, const int m, const int j, const int il, const int iu,
-         ScrArray2D<Real> &ql, ScrArray2D<Real> &qr) {
+    void GnomonicEquianglePrimFaceX1(TeamMember_t const &member, const int m, const int k,
+         const int j, const int il, const int iu, ScrArray2D<Real> &ql,
+         ScrArray2D<Real> &qr) {
+        const Real sin_theta = sin_cell(m,k,j);
+        const Real cos_theta = cos_cell(m,k,j);
         par_for_inner(member, il, iu, [&](const int i) {
-          Real sin_theta = sin_face1(m,j,i+1);
-          Real cos_theta = cos_face1(m,j,i+1);
-          Real T11 = sin_theta;
-          Real T21 = cos_theta;
-          ql(IVY,i+1) += T21 * ql(IVX,i+1);
-          ql(IVX,i+1) *= T11;
-          sin_theta = sin_face1(m,j,i);
-          cos_theta = cos_face1(m,j,i);
-          T11 = sin_theta;
-          T21 = cos_theta;
-          qr(IVY,i)   += T21 * qr(IVX,i);
-          qr(IVX,i)   *= T11;
+          ql(IVY,i+1) += cos_theta * ql(IVZ,i+1);
+          ql(IVZ,i+1) *= sin_theta;
+          qr(IVY,i)   += cos_theta * qr(IVZ,i);
+          qr(IVZ,i)   *= sin_theta;
         });
       return;
     };
 
+    // --- x2 sweep: XI face, normal component is IVY, tangential is IVZ
     KOKKOS_INLINE_FUNCTION
-    void GnomonicEquianglePrimFaceX2(TeamMember_t const &member, const int m, const int j, const int il, const int iu,
-         ScrArray2D<Real> &ql_jp1, ScrArray2D<Real> &qr_j) {
+    void GnomonicEquianglePrimFaceX2(TeamMember_t const &member, const int m, const int k,
+         const int j, const int il, const int iu, ScrArray2D<Real> &ql_jp1,
+         ScrArray2D<Real> &qr_j) {
+        const Real sin_jp1 = sin_face_xi(m,k,j+1);
+        const Real cos_jp1 = cos_face_xi(m,k,j+1);
+        const Real sin_j = sin_face_xi(m,k,j);
+        const Real cos_j = cos_face_xi(m,k,j);
         par_for_inner(member, il, iu, [&](const int i) {
-          Real sin_theta = sin_face2(m,j+1,i);
-          Real cos_theta = cos_face2(m,j+1,i);
-          Real T12 = cos_theta;
-          Real T22 = sin_theta;
-          ql_jp1(IVX,i) += T12 * ql_jp1(IVY,i);
-          ql_jp1(IVY,i) *= T22;
-          sin_theta = sin_face2(m,j,i);
-          cos_theta = cos_face2(m,j,i);
-          T12 = cos_theta;
-          T22 = sin_theta;
-          qr_j(IVX,i)   += T12 * qr_j(IVY,i);
-          qr_j(IVY,i)   *= T22;
+          ql_jp1(IVZ,i) += cos_jp1 * ql_jp1(IVY,i);
+          ql_jp1(IVY,i) *= sin_jp1;
+          qr_j(IVZ,i)   += cos_j * qr_j(IVY,i);
+          qr_j(IVY,i)   *= sin_j;
         });
       return;
     };
 
+    // --- x3 sweep: ETA face, normal component is IVZ, tangential is IVY
     KOKKOS_INLINE_FUNCTION
-    void GnomonicEquianglePrimFaceX3(TeamMember_t const &member, const int m, const int j, const int il, const int iu,
-         ScrArray2D<Real> &ql_kp1, ScrArray2D<Real> &qr_k) {
+    void GnomonicEquianglePrimFaceX3(TeamMember_t const &member, const int m, const int k,
+         const int j, const int il, const int iu, ScrArray2D<Real> &ql_kp1,
+         ScrArray2D<Real> &qr_k) {
+        const Real sin_kp1 = sin_face_eta(m,k+1,j);
+        const Real cos_kp1 = cos_face_eta(m,k+1,j);
+        const Real sin_k = sin_face_eta(m,k,j);
+        const Real cos_k = cos_face_eta(m,k,j);
         par_for_inner(member, il, iu, [&](const int i) {
-          Real sin_theta = sin_cell(m,j,i);
-          Real cos_theta = cos_cell(m,j,i);
-          ql_kp1(IVX,i) += cos_theta * ql_kp1(IVY,i);
-          ql_kp1(IVY,i) *= sin_theta;
-          qr_k(IVX,i)   += cos_theta * qr_k(IVY,i);
-          qr_k(IVY,i)   *= sin_theta;
+          ql_kp1(IVY,i) += cos_kp1 * ql_kp1(IVZ,i);
+          ql_kp1(IVZ,i) *= sin_kp1;
+          qr_k(IVY,i)   += cos_k * qr_k(IVZ,i);
+          qr_k(IVZ,i)   *= sin_k;
         });
       return;
     };
 
+    // --- x1 flux: radial. IM2 comes back unchanged, which is correct: the orthonormal
+    // frame used above is {e_xi, n-hat} with n-hat perpendicular to e_xi, so the first
+    // component already IS the covariant m_2.
     KOKKOS_INLINE_FUNCTION
     void GnomonicEquiangleFluxX1(TeamMember_t const &member, const int m, const int k, const int j, const int il, const int iu,
                                  DvceArray5D<Real> flx) {
+        const Real sin_theta = sin_cell(m,k,j);
+        const Real cos_theta = cos_cell(m,k,j);
         par_for_inner(member, il, iu, [&](const int i) {
-          Real sin_theta = sin_face1(m,j,i);
-          Real cos_theta = cos_face1(m,j,i);
-          Real T11 = 1.0/sin_theta;
-          Real T21 = -1.0/sin_theta*cos_theta;
-          Real fy = flx(m,IM2,k,j,i) + T21 * flx(m,IM1,k,j,i);
-          Real fx = T11 * flx(m,IM1,k,j,i);
-          flx(m,IM1,k,j,i) = fx + fy*cos_theta;
-          flx(m,IM2,k,j,i) = fy + fx*cos_theta;
+          Real fb = flx(m,IM3,k,j,i)/sin_theta;
+          Real fa = flx(m,IM2,k,j,i) - fb*cos_theta;
+          flx(m,IM2,k,j,i) = fa + fb*cos_theta;
+          flx(m,IM3,k,j,i) = fb + fa*cos_theta;
         });
       return;
     };
@@ -175,15 +201,15 @@ class Coordinates {
     KOKKOS_INLINE_FUNCTION
     void GnomonicEquiangleFluxX2(TeamMember_t const &member, const int m, const int k, const int j, const int il, const int iu,
                                  DvceArray5D<Real> flx) {
+        const Real sin_theta = sin_face_xi(m,k,j);
+        const Real cos_theta = cos_face_xi(m,k,j);
+        const Real T22 = 1.0/sin_theta;
+        const Real T32 = -cos_theta/sin_theta;
         par_for_inner(member, il, iu, [&](const int i) {
-          Real sin_theta = sin_face2(m,j,i);
-          Real cos_theta = cos_face2(m,j,i);
-          Real T12 = -1.0/sin_theta*cos_theta;
-          Real T22 = 1.0/sin_theta;
-          Real fx = flx(m,IM1,k,j,i) + T12 * flx(m,IM2,k,j,i);
-          Real fy = T22 * flx(m,IM2,k,j,i);
-          flx(m,IM1,k,j,i) = fx + fy*cos_theta;
-          flx(m,IM2,k,j,i) = fy + fx*cos_theta;
+          Real fb = flx(m,IM3,k,j,i) + T32 * flx(m,IM2,k,j,i);
+          Real fa = T22 * flx(m,IM2,k,j,i);
+          flx(m,IM2,k,j,i) = fa + fb*cos_theta;
+          flx(m,IM3,k,j,i) = fb + fa*cos_theta;
         });
       return;
     };
@@ -191,13 +217,15 @@ class Coordinates {
     KOKKOS_INLINE_FUNCTION
     void GnomonicEquiangleFluxX3(TeamMember_t const &member, const int m, const int k, const int j, const int il, const int iu,
                                  DvceArray5D<Real> flx) {
+        const Real sin_theta = sin_face_eta(m,k,j);
+        const Real cos_theta = cos_face_eta(m,k,j);
+        const Real T23 = -cos_theta/sin_theta;
+        const Real T33 = 1.0/sin_theta;
         par_for_inner(member, il, iu, [&](const int i) {
-          Real sin_theta = sin_cell(m,j,i);
-          Real cos_theta = cos_cell(m,j,i);
-          Real fy = flx(m,IM2,k,j,i)/sin_theta;
-          Real fx = flx(m,IM1,k,j,i) - fy*cos_theta;
-          flx(m,IM1,k,j,i) = fx + fy*cos_theta;
-          flx(m,IM2,k,j,i) = fy + fx*cos_theta;
+          Real fa = flx(m,IM2,k,j,i) + T23 * flx(m,IM3,k,j,i);
+          Real fb = T33 * flx(m,IM3,k,j,i);
+          flx(m,IM2,k,j,i) = fa + fb*cos_theta;
+          flx(m,IM3,k,j,i) = fb + fa*cos_theta;
         });
       return;
     };
