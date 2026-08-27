@@ -145,6 +145,18 @@ Mesh::Mesh(ParameterInput *pin) :
   }
   use_grid_stretch_theta = pin->GetOrAddBoolean("mesh", "use_grid_stretch_theta", false);
   if (use_grid_stretch_theta) fStretchTheta = pin->GetReal("mesh", "f_stretch_theta");
+  // Every grid stretch is applied inside CoordSphericalPolar and nowhere else, so on the
+  // cubed sphere they would be silently IGNORED by the solver while still being recorded
+  // in the input file -- and analysis scripts, which have to re-apply the map to x1v
+  // themselves, would then mis-map the grid. Fatal rather than let the two disagree.
+  if (use_cubed_sphere &&
+      (use_grid_stretch_r || use_grid_stretch_r_poly || use_grid_stretch_theta)) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+              << std::endl << "mesh/use_grid_stretch_r, use_grid_stretch_r_poly and "
+              << "use_grid_stretch_theta are not implemented for mesh/use_cubed_sphere; "
+              << "the gnomonic metric would ignore them" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
   use_polar_boundary = pin->GetOrAddBoolean("mesh", "use_polar_boundary", false);
   if (use_spherical_polar && pin->GetReal("mesh", "x3min")<0.0 && pin->GetReal("mesh", "x3max")<0.0) {
     mesh_size.x3min = 0.0;
