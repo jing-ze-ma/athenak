@@ -69,6 +69,7 @@ Real cs_d0 = 1.0, cs_p0 = 1.0, cs_omega = 1.0;
 int  cs_iprob = 1;
 Real cs_amp = 0.5, cs_r0 = 1.0;
 Real cs_b0r = 0.0;
+Real cs_bvx = 0.0, cs_bvy = 0.0, cs_bvz = 0.0;
 int  cs_exact_panel_ghosts = 0;
 
 //----------------------------------------------------------------------------------------
@@ -228,7 +229,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // reflect is exact for the uniform hydro state but not for B_r(r), which is not
   // reflection-symmetric, and the jump it manufactures at the radial boundary drives a
   // spurious radial force. The hook is a no-op unless ix1_bc/ox1_bc are set to `user`.
-  if (iprob == 1 || (iprob >= 3 && iprob <= 7 && iprob != 4)) {
+  if (iprob == 1 || iprob == 8 || (iprob >= 3 && iprob <= 7 && iprob != 4)) {
     user_bcs_func = CSTestRadialBC;
   }
   if (iprob == 8 || (iprob >= 3 && iprob <= 7 && iprob != 4)) {
@@ -406,6 +407,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     const Real bn = std::sqrt(bhx*bhx + bhy*bhy + bhz*bhz);
     const Real bvx = b0c*bhx/bn, bvy = b0c*bhy/bn, bvz = b0c*bhz/bn;
     cs_b0r = b0c;
+    cs_bvx = bvx; cs_bvy = bvy; cs_bvz = bvz;
     auto &b0f = pmbp->pmhd->b0;
     par_for("pgen_cs_bfld8", DevExeSpace(), 0,(pmbp->nmb_thispack-1),
             ks,ke+1, js,je+1, is,ie+1,
@@ -558,7 +560,7 @@ void CSTestRadialBC(Mesh *pm) {
         dn = RadialProfile(rad, d0, amp_, r0_);
         ie_ = p0/gm1;
         v1 = 0.0; v2 = 0.0; v3 = 0.0;
-      } else if (iprob == 1) {
+      } else if (iprob == 1 || iprob == 8) {
         dn = d0;
         ie_ = p0/gm1;
         v1 = 0.0; v2 = 0.0; v3 = 0.0;
@@ -593,6 +595,56 @@ void CSTestRadialBC(Mesh *pm) {
   // so b0 in the radial ghosts is whatever was left there unless it is set here. Only the
   // x1 faces carry flux for the monopole; the two angular face fields stay zero, and the
   // energy has to be topped up because u0 above was written without the field.
+  if (is_mhd && iprob == 8) {
+    // The uniform Cartesian field is no more reflection-symmetric than the monopole, so
+    // its radial ghosts get the exact state too -- faces, cell centres and the analytic
+    // magnetic energy.
+    auto &b0f = pmbp->pmhd->b0;
+    auto &bcc = pmbp->pmhd->bcc0;
+    const Real bvx = cs_bvx, bvy = cs_bvy, bvz = cs_bvz, bsq = SQR(cs_b0r);
+    int &ie_i = indcs.ie;
+    par_for("cs_test_rbc_b8", DevExeSpace(), 0,(pmbp->nmb_thispack-1), 0,(n3-1),
+            0,(n2-1), 0,(ng-1),
+    KOKKOS_LAMBDA(int m, int k, int j, int ig) {
+      const Real x2c = 0.25*M_PI*CellCenterX(j-js, indcs.nx2, size.d_view(m).x2min,
+                                                              size.d_view(m).x2max);
+      const Real x3c = 0.25*M_PI*CellCenterX(k-ks, indcs.nx3, size.d_view(m).x3min,
+                                                              size.d_view(m).x3max);
+      const Real x2f = 0.25*M_PI*LeftEdgeX(j-js, indcs.nx2, size.d_view(m).x2min,
+                                                            size.d_view(m).x2max);
+      const Real x3f = 0.25*M_PI*LeftEdgeX(k-ks, indcs.nx3, size.d_view(m).x3min,
+                                                            size.d_view(m).x3max);
+      const int p = mbpanel.d_view(m);
+      Real n1[3], n2[3], cx, cy, cz;
+      PanelToCart(p, x2c, x3c, cx, cy, cz);
+      const Real br = bvx*cx + bvy*cy + bvz*cz;
+      PanelNormals(p, x2f, x3c, n1, n2);
+      const Real bxi = bvx*n1[0] + bvy*n1[1] + bvz*n1[2];
+      PanelNormals(p, x2c, x3f, n1, n2);
+      const Real bet = bvx*n2[0] + bvy*n2[1] + bvz*n2[2];
+      for (int side=0; side<2; ++side) {
+        if (side == 0 &&
+            mb_bcs.d_view(m,BoundaryFace::inner_x1) != BoundaryFlag::user) continue;
+        if (side == 1 &&
+            mb_bcs.d_view(m,BoundaryFace::outer_x1) != BoundaryFlag::user) continue;
+        const int i = (side == 0) ? (is-ng+ig) : (ie_i+1+ig);
+        b0f.x1f(m,k,j,i) = br;
+        b0f.x2f(m,k,j,i) = bxi;
+        b0f.x3f(m,k,j,i) = bet;
+        if (side == 1 && ig == ng-1) b0f.x1f(m,k,j,i+1) = br;
+        // bcc in the orthonormal frame, matching GnomonicEquiangleRaiseVelMHD
+        Real e1[3], e2[3];
+        cubed_sphere::PanelTangents(p, x2c, x3c, e1, e2);
+        const Real cc = e1[0]*e2[0] + e1[1]*e2[1] + e1[2]*e2[2];
+        const Real ss = sqrt(1.0 - cc*cc);
+        bcc(m,IBX,k,j,i) = br;
+        bcc(m,IBY,k,j,i) = (bxi + cc*bet)/ss;
+        bcc(m,IBZ,k,j,i) = bet;
+        u0(m,IEN,k,j,i) += 0.5*bsq;
+      }
+    });
+  }
+
   if (is_mhd && iprob == 1) {
     auto &b0f = pmbp->pmhd->b0;
     auto &bcc = pmbp->pmhd->bcc0;
@@ -741,6 +793,133 @@ void CSTestGhostCheck(ParameterInput *pin, Mesh *pm) {
       gmax = fmax(gmax, e); gvmax = fmax(gvmax, ev);
     }
     std::printf("  MAX over panels: dp/p %12.5e   |v| %12.5e\n", gmax, gvmax);
+
+    // --- what did the FACE HALO actually deliver? ------------------------------------
+    // Every ghost face has a KNOWN exact value: the uniform field projected on the
+    // normal of that face, on THIS panel's own gnomonic map extended past the seam. That
+    // is what a perfect halo would produce, so this separates the halo from the scheme,
+    // and separates the two failure modes from each other:
+    //   O(1) error, flat in resolution -> the INDEX MAP is reaching the wrong face, or
+    //     the wrong orientation;
+    //   O(dx) error, halving with resolution -> the map is right and only the along-seam
+    //     offset is left, i.e. the halo needs interpolation.
+    // Corner ghosts are excluded: j,k are held in the active range.
+    {
+      auto &b0f = pmbp->pmhd->b0;
+      auto b1h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), b0f.x1f);
+      auto b2h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), b0f.x2f);
+      auto b3h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), b0f.x3f);
+      const Real bvx = cs_bvx, bvy = cs_bvy, bvz = cs_bvz;
+      std::cout << "### CS FIELD HALO CHECK (iprob=8, ghost faces vs exact)" << std::endl;
+      std::cout << "  panel seam   d(b.x1f)      d(b.x2f)      d(b.x3f)" << std::endl;
+      Real g1 = 0.0, g2 = 0.0, g3 = 0.0;
+      for (int m=0; m<pmbp->nmb_thispack; ++m) {
+        const int p = mbpanel.h_view(m);
+        Real e1 = 0.0, e2 = 0.0, e3 = 0.0;
+        auto ang = [&](int idx, int nx, Real mn, Real mx, bool face) {
+          return 0.25*M_PI*(face ? LeftEdgeX(idx, nx, mn, mx)
+                                 : CellCenterX(idx, nx, mn, mx));
+        };
+        // exact projections at (xi,eta) given as index positions
+        auto exact = [&](int j, int k, bool jface, bool kface, int comp) {
+          const Real xi = ang(j-js, indcs.nx2, size.h_view(m).x2min,
+                                               size.h_view(m).x2max, jface);
+          const Real et = ang(k-ks, indcs.nx3, size.h_view(m).x3min,
+                                               size.h_view(m).x3max, kface);
+          Real n1[3], n2[3], cx, cy, cz;
+          if (comp == 0) {
+            PanelToCart(p, xi, et, cx, cy, cz);
+            return bvx*cx + bvy*cy + bvz*cz;
+          }
+          PanelNormals(p, xi, et, n1, n2);
+          return (comp == 1) ? (bvx*n1[0] + bvy*n1[1] + bvz*n1[2])
+                             : (bvx*n2[0] + bvy*n2[1] + bvz*n2[2]);
+        };
+        const int i = is;
+        // report PER SEAM: an axis-swap seam (equatorial<->polar) and a plain one behave
+        // differently, and a max over all four hides which
+        for (int f=0; f<4; ++f) {
+          Real f1 = 0.0, f2 = 0.0, f3 = 0.0;
+          for (int g=0; g<ng; ++g) {
+            if (f < 2) {
+              const int jc = (f == 0) ? (js-1-g) : (je+1+g);
+              const int jf = (f == 0) ? (js-1-g) : (je+2+g);
+              for (int k=ks; k<=ke; ++k) {
+                f1 = fmax(f1, fabs(b1h(m,k,jc,i) - exact(jc,k,false,false,0)));
+                f3 = fmax(f3, fabs(b3h(m,k,jc,i) - exact(jc,k,false,true, 2)));
+                f2 = fmax(f2, fabs(b2h(m,k,jf,i) - exact(jf,k,true, false,1)));
+              }
+            } else {
+              const int kc = (f == 2) ? (ks-1-g) : (ke+1+g);
+              const int kf = (f == 2) ? (ks-1-g) : (ke+2+g);
+              for (int j=js; j<=je; ++j) {
+                f1 = fmax(f1, fabs(b1h(m,kc,j,i) - exact(j,kc,false,false,0)));
+                f2 = fmax(f2, fabs(b2h(m,kc,j,i) - exact(j,kc,true, false,1)));
+                f3 = fmax(f3, fabs(b3h(m,kf,j,i) - exact(j,kf,false,true, 2)));
+              }
+            }
+          }
+          std::printf("  %4d %s  %12.5e  %12.5e  %12.5e\n", p,
+                      (f==0?"-x2":(f==1?"+x2":(f==2?"-x3":"+x3"))), f1, f2, f3);
+          e1 = fmax(e1,f1); e2 = fmax(e2,f2); e3 = fmax(e3,f3);
+        }
+        g1 = fmax(g1,e1); g2 = fmax(g2,e2); g3 = fmax(g3,e3);
+      }
+      std::printf("  MAX: x1f %12.5e  x2f %12.5e  x3f %12.5e\n", g1, g2, g3);
+
+      // Panel 0, -x3 seam, ghost layer 0: the in-seam component b.x2f, delivered vs
+      // exact, sampled along the seam. actual ~ -exact means a sign; actual ~ exact one
+      // index over means the map is off by a cell; neither means the transform itself.
+      for (int m=0; m<pmbp->nmb_thispack; ++m) {
+        if (mbpanel.h_view(m) != 0) continue;
+        const int kc = ks-1;
+        std::cout << "  P0 -x3 g0 b.x2f:   j    delivered        exact"
+                  << "        exact(j-1)     exact(j+1)" << std::endl;
+        for (int t=0; t<5; ++t) {
+          const int j = js + t*(indcs.nx2/4);
+          auto ex = [&](int jj) {
+            const Real xi = 0.25*M_PI*LeftEdgeX(jj-js, indcs.nx2, size.h_view(m).x2min,
+                                                                  size.h_view(m).x2max);
+            const Real et = 0.25*M_PI*CellCenterX(kc-ks, indcs.nx3, size.h_view(m).x3min,
+                                                                    size.h_view(m).x3max);
+            Real n1[3], n2[3];
+            PanelNormals(0, xi, et, n1, n2);
+            return cs_bvx*n1[0] + cs_bvy*n1[1] + cs_bvz*n1[2];
+          };
+          std::printf("                   %4d  %12.5e  %12.5e  %12.5e  %12.5e\n",
+                      j-js, b2h(m,kc,j,is), ex(j), ex(j-1), ex(j+1));
+        }
+        break;
+      }
+    }
+
+    // WHERE is the error? v = 0 is exact here, so |v| is a pure error field. A defect in
+    // the panel halo is confined to a band a few cells wide along each seam; a defect in
+    // the interior flux/EMF path with a tangential field is a bulk effect. Run this after
+    // ONE step -- later the seam error has propagated everywhere.
+    const int nseam = ng;
+    std::cout << "### CS SEAM LOCALISATION (iprob=8, exact v = 0)" << std::endl;
+    std::cout << "  panel   max|v| seam   max|v| interior   mean v^2 seam  interior"
+              << std::endl;
+    for (int m=0; m<pmbp->nmb_thispack; ++m) {
+      Real vs = 0.0, vi = 0.0, ss = 0.0, si = 0.0;
+      int ns = 0, ni = 0;
+      for (int k=ks; k<=ke; ++k) {
+        for (int j=js; j<=je; ++j) {
+          const bool near = (j-js < nseam) || (je-j < nseam) ||
+                            (k-ks < nseam) || (ke-k < nseam);
+          for (int i=is; i<=ie; ++i) {
+            const Real v2 = SQR(w0_h(m,IVX,k,j,i)) + SQR(w0_h(m,IVY,k,j,i))
+                          + SQR(w0_h(m,IVZ,k,j,i));
+            const Real vm = sqrt(v2);
+            if (near) { vs = fmax(vs,vm); ss += v2; ++ns; }
+            else      { vi = fmax(vi,vm); si += v2; ++ni; }
+          }
+        }
+      }
+      std::printf("  %4d   %12.5e   %12.5e   %12.5e  %12.5e\n", mbpanel.h_view(m),
+                  vs, vi, (ns>0?ss/ns:0.0), (ni>0?si/ni:0.0));
+    }
     return;
   }
 

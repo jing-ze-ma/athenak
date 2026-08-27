@@ -86,6 +86,10 @@ iprob = 1
 d0    = 1.0
 p0    = 1.0
 b0r   = 1.0
+b0c   = 1.0        # iprob=8: uniform Cartesian field strength
+bhx   = 0.37       # iprob=8: field direction.  Deliberately TILTED -- an axis-aligned
+bhy   = 0.61       # field is accidentally invariant under some of the panel maps, so a
+bhz   = 0.70       # broken halo can copy it exactly and look correct.
 
 <output1>
 file_type = hst

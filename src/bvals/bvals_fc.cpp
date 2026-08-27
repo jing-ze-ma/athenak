@@ -17,6 +17,8 @@
 #include "globals.hpp"
 #include "parameter_input.hpp"
 #include "mesh/mesh.hpp"
+#include "coordinates/cell_locations.hpp"
+#include "coordinates/cubed_sphere.hpp"
 #include "bvals.hpp"
 
 //----------------------------------------------------------------------------------------
@@ -48,6 +50,8 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
   auto &mbgid = pmy_pack->pmb->mb_gid;
   auto &mblev = pmy_pack->pmb->mb_lev;
   auto &mbpanel = pmy_pack->pmb->mb_panel;
+  auto &mbsize = pmy_pack->pmb->mb_size;
+  auto &cs_indcs = pmy_pack->pmesh->mb_indcs;
   auto &sbuf = sendbuf;
   auto &rbuf = recvbuf;
 
@@ -65,31 +69,53 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
         // if neighbor is at coarser level, use cindices to pack buffer
         // Note indices can be different for each component of face-centered field.
         int il, iu, jl, ju, kl, ku, ndat;
+
+        // WHICH COMPONENT'S INDEX RANGE DO WE READ THE SOURCE WITH?
+        //
+        // v is the RECEIVER's component: the packer writes into buffer slot v but reads
+        // this block's array vv, and the two differ on a panel seam whose tangential axes
+        // are interchanged (swap_ax) -- every equatorial-to-polar seam. The ranges are per
+        // component and genuinely different: for a -x2 neighbour isame[1] (x2f) is ng
+        // FACES in j by nx3 CELLS in k, while isame[2] (x3f) is ng CELLS in j by nx3+1
+        // FACES in k. Reading array vv over isame[v] therefore took the wrong index set
+        // AND the wrong NUMBER of elements, so the receiver unpacked a differently sized
+        // region -- an O(1) error that did not converge under refinement. Read the source
+        // with its OWN component's range; the sj/sk transposition below still lays it out
+        // the way the receiver expects, and the counts match because nx2 == nx3 here.
+        int vsrc = v;
+        if (pmy_pack->pmesh->use_cubed_sphere &&
+            nghbr.d_view(m,n).panel != mbpanel.d_view(m) && v > 0) {
+          PanelBoundaries pb0;
+          pb0 = pmy_pack->pmesh->GetPanelBoundary(mbpanel.d_view(m),
+                                                  nghbr.d_view(m,n).panel);
+          if (pb0.swap_ax == 1) vsrc = (v == 1) ? 2 : 1;
+        }
+
         if (nghbr.d_view(m,n).lev < mblev.d_view(m)) {
-          il = sbuf[n].icoar[v].bis;
-          iu = sbuf[n].icoar[v].bie;
-          jl = sbuf[n].icoar[v].bjs;
-          ju = sbuf[n].icoar[v].bje;
-          kl = sbuf[n].icoar[v].bks;
-          ku = sbuf[n].icoar[v].bke;
+          il = sbuf[n].icoar[vsrc].bis;
+          iu = sbuf[n].icoar[vsrc].bie;
+          jl = sbuf[n].icoar[vsrc].bjs;
+          ju = sbuf[n].icoar[vsrc].bje;
+          kl = sbuf[n].icoar[vsrc].bks;
+          ku = sbuf[n].icoar[vsrc].bke;
           ndat = sbuf[n].icoar_ndat;
         // if neighbor is at same level, use sindices to pack buffer
         } else if (nghbr.d_view(m,n).lev == mblev.d_view(m)) {
-          il = sbuf[n].isame[v].bis;
-          iu = sbuf[n].isame[v].bie;
-          jl = sbuf[n].isame[v].bjs;
-          ju = sbuf[n].isame[v].bje;
-          kl = sbuf[n].isame[v].bks;
-          ku = sbuf[n].isame[v].bke;
+          il = sbuf[n].isame[vsrc].bis;
+          iu = sbuf[n].isame[vsrc].bie;
+          jl = sbuf[n].isame[vsrc].bjs;
+          ju = sbuf[n].isame[vsrc].bje;
+          kl = sbuf[n].isame[vsrc].bks;
+          ku = sbuf[n].isame[vsrc].bke;
           ndat = sbuf[n].isame_ndat;
         // if neighbor is at finer level, use findices to pack buffer
         } else {
-          il = sbuf[n].ifine[v].bis;
-          iu = sbuf[n].ifine[v].bie;
-          jl = sbuf[n].ifine[v].bjs;
-          ju = sbuf[n].ifine[v].bje;
-          kl = sbuf[n].ifine[v].bks;
-          ku = sbuf[n].ifine[v].bke;
+          il = sbuf[n].ifine[vsrc].bis;
+          iu = sbuf[n].ifine[vsrc].bie;
+          jl = sbuf[n].ifine[vsrc].bjs;
+          ju = sbuf[n].ifine[vsrc].bje;
+          kl = sbuf[n].ifine[vsrc].bks;
+          ku = sbuf[n].ifine[vsrc].bke;
           ndat = sbuf[n].ifine_ndat;
         }
         const int ni = iu - il + 1;
@@ -106,25 +132,24 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
           const bool do_pole = pmy_pack->pmesh->use_polar_boundary && (nghbr.d_view(m,n).polar > 0);
             
           if (do_cs || do_pole) {
-              
+
             int aj = 1, bj = 0;
             int ak = 1, bk = 0;
             int signvar = 1;
             int sj = 1, sk = nj;
             int vv = v;
-              
+            bool cs_xform = false;
+            int cs_srcpanel = 0, cs_dstpanel = 0;
+
             if (do_cs) {
-              
               const auto ngh = nghbr.d_view(m,n);
               const int my_panel = mbpanel.d_view(m);
               PanelBoundaries pb;
               pb = pmy_pack->pmesh->GetPanelBoundary(my_panel, ngh.panel);
-              
+
               int map_vy = 1;
               int map_vz = 2;
-              int sign_vy = 1;
-              int sign_vz = 1;
-              
+
               int rev_a_preswap = (pb.swap_ax == 1) ? pb.rev_b : pb.rev_a;
               int rev_b_preswap = (pb.swap_ax == 1) ? pb.rev_a : pb.rev_b;
               if (pb.swap_ax == 1) {
@@ -141,23 +166,66 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
                 ak = -1;
                 bk = kl + ku;
               }
-              if (pb.rev_a) sign_vy = -1;
-              if (pb.rev_b) sign_vz = -1;
-              
               if (v == 1) vv = map_vy;
               if (v == 2) vv = map_vz;
-              if (v == 1) signvar = sign_vy;
-              if (v == 2) signvar = sign_vz;
-                
+
+              // x1 is RADIAL and rhat is common to both charts, so b.x1f crosses a seam
+              // as a SCALAR: index map only. The two angular components do not. They are
+              // projections on the panel's own FACE NORMALS, and the two charts carry
+              // different normals at the same physical point -- differing by a shear that
+              // is O(1) away from the seam midline, exactly as for the cell-centred
+              // momentum (see cubed_sphere::TransformMomentum). A signed axis permutation
+              // is exact for the INDICES and exact for the components only on the seam
+              // midline, so it left an O(1) error in the halo field. Measured: it made a
+              // uniform Cartesian field, an exact static state, blow up in one step.
+              cs_xform = (v == 1) || (v == 2);
+              cs_srcpanel = my_panel;
+              cs_dstpanel = ngh.panel;
             } else if (do_pole) {
-                
               aj = -1;
               bj = jl + ju;
               if (v == 1) signvar = -1;
               if (v == 2) signvar = -1;
-                
             }
-              
+
+            // Value of destination component v, read from the source at (kk,jj,i).
+            //
+            // Producing either angular component needs BOTH source angular components at
+            // the SAME point, and they are staggered differently: b.x2f sits on a xi face
+            // and b.x3f on an eta face. The one the index map selects (vv) is taken where
+            // it lives and the other is averaged onto that location from its four
+            // neighbours, which is second order. The radial component is untouched.
+            const int js_ = cs_indcs.js, ks_ = cs_indcs.ks;
+            auto seamval = [&](const int kk, const int jj, const int i) {
+              if (!cs_xform) {
+                if (vv == 0) return b.x1f(m,kk,jj,i)*signvar;
+                if (vv == 1) return b.x2f(m,kk,jj,i)*signvar;
+                return b.x3f(m,kk,jj,i)*signvar;
+              }
+              const Real x2mn = mbsize.d_view(m).x2min, x2mx = mbsize.d_view(m).x2max;
+              const Real x3mn = mbsize.d_view(m).x3min, x3mx = mbsize.d_view(m).x3max;
+              Real xi, eta, bxi, bet;
+              if (vv == 1) {
+                // primary on a XI face: (xi face jj, eta centre kk)
+                xi  = 0.25*M_PI*LeftEdgeX(jj-js_, cs_indcs.nx2, x2mn, x2mx);
+                eta = 0.25*M_PI*CellCenterX(kk-ks_, cs_indcs.nx3, x3mn, x3mx);
+                bxi = b.x2f(m,kk,jj,i);
+                bet = 0.25*(b.x3f(m,kk,jj-1,i) + b.x3f(m,kk,jj,i)
+                          + b.x3f(m,kk+1,jj-1,i) + b.x3f(m,kk+1,jj,i));
+              } else {
+                // primary on an ETA face: (xi centre jj, eta face kk)
+                xi  = 0.25*M_PI*CellCenterX(jj-js_, cs_indcs.nx2, x2mn, x2mx);
+                eta = 0.25*M_PI*LeftEdgeX(kk-ks_, cs_indcs.nx3, x3mn, x3mx);
+                bet = b.x3f(m,kk,jj,i);
+                bxi = 0.25*(b.x2f(m,kk-1,jj,i) + b.x2f(m,kk-1,jj+1,i)
+                          + b.x2f(m,kk,jj,i) + b.x2f(m,kk,jj+1,i));
+              }
+              Real oxi, oet;
+              cubed_sphere::TransformFieldToDstNormals(cs_srcpanel, cs_dstpanel, xi, eta,
+                                                       bxi, bet, oxi, oet);
+              return (v == 1) ? oxi : oet;
+            };
+
           // copy field components directly into recv buffer if MeshBlocks on same rank
           if (nghbr.d_view(m,n).rank == my_rank) {
             // if neighbor is at same or finer level, load data from b0
@@ -171,13 +239,8 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
                 j += jl;
                 int kk = ak*k + bk;
                 int jj = aj*j + bj;
-                if (vv==0) {
-                  rbuf[dn].vars(dm,i-il + ni*(sj*(j-jl) + sk*(k-kl))) = b.x1f(m,kk,jj,i)*signvar;
-                } else if (vv==1) {
-                  rbuf[dn].vars(dm,ndat*v + i-il + ni*(sj*(j-jl) + sk*(k-kl))) = b.x2f(m,kk,jj,i)*signvar;
-                } else if (vv==2) {
-                  rbuf[dn].vars(dm,ndat*v + i-il + ni*(sj*(j-jl) + sk*(k-kl))) = b.x3f(m,kk,jj,i)*signvar;
-                }
+                rbuf[dn].vars(dm, ndat*v + i-il + ni*(sj*(j-jl) + sk*(k-kl)))
+                  = seamval(kk,jj,i);
               });
             }
 
@@ -194,17 +257,12 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
                 j += jl;
                 int kk = ak*k + bk;
                 int jj = aj*j + bj;
-                if (vv==0) {
-                  sbuf[n].vars(m,i-il + ni*(sj*(j-jl) + sk*(k-kl))) = b.x1f(m,kk,jj,i)*signvar;
-                } else if (vv==1) {
-                  sbuf[n].vars(m,ndat*v + i-il + ni*(sj*(j-jl) + sk*(k-kl))) = b.x2f(m,kk,jj,i)*signvar;
-                } else if (vv==2) {
-                  sbuf[n].vars(m,ndat*v + i-il + ni*(sj*(j-jl) + sk*(k-kl))) = b.x3f(m,kk,jj,i)*signvar;
-                }
+                sbuf[n].vars(m, ndat*v + i-il + ni*(sj*(j-jl) + sk*(k-kl)))
+                  = seamval(kk,jj,i);
               });
             }
           }
-              
+
           } else {   // normal boundary exchange
 
         // copy field components directly into recv buffer if MeshBlocks on same rank

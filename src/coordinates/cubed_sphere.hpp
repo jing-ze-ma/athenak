@@ -201,5 +201,58 @@ void TransformMomentum(const int psrc, const int pdst, const Real xi, const Real
   return;
 }
 
+//----------------------------------------------------------------------------------------
+//! \fn cubed_sphere::TransformFieldToDstNormals
+//! \brief Re-express a tangential MAGNETIC FIELD known on panel `psrc` at (xi,eta) as its
+//! projections on the destination panel's two FACE NORMALS at the same physical point.
+//!
+//! This is the face-centred counterpart of TransformMomentum, and it differs from it in
+//! both what it takes and what it returns, because the field is not stored the way the
+//! momentum is. The input is the pair of source FACE-NORMAL projections
+//! (B.nhat_xi, B.nhat_eta) -- what b0.x2f/x3f hold -- and the output is the same pair in
+//! the destination chart, which is what the destination's ghost x2f/x3f need. The two
+//! charts share rhat, so the radial component is a plain copy and is not handled here.
+//!
+//! Neither pair is an orthonormal frame: nhat_xi.nhat_eta = -c on both panels. The route
+//! is therefore normals -> contravariant on the source unit basis -> Cartesian ->
+//! projections on the destination normals. The source cos/sin are recomputed here from
+//! PanelTangents rather than read from the geometry arrays, so the caller cannot pass the
+//! wrong staggering by accident.
+
+KOKKOS_INLINE_FUNCTION
+void TransformFieldToDstNormals(const int psrc, const int pdst, const Real xi,
+                                const Real eta, const Real bn_xi, const Real bn_eta,
+                                Real &bn_xi_out, Real &bn_eta_out) {
+  Real s1[3], s2[3];
+  PanelTangents(psrc, xi, eta, s1, s2);
+  const Real css = s1[0]*s2[0] + s1[1]*s2[1] + s1[2]*s2[2];
+  const Real sns = sqrt(1.0 - css*css);
+  // B.nhat_xi = sn * B^xi, so the contravariant pair on the unit basis is just this
+  const Real p2 = bn_xi/sns;
+  const Real p3 = bn_eta/sns;
+
+  Real q[3];
+  PanelToCart(psrc, xi, eta, q);
+  Real xid, etad;
+  CartToPanel(pdst, q, xid, etad);
+  Real d1[3], d2[3];
+  PanelTangents(pdst, xid, etad, d1, d2);
+  const Real csd = d1[0]*d2[0] + d1[1]*d2[1] + d1[2]*d2[2];
+  const Real snd = sqrt(1.0 - csd*csd);
+
+  // V = p2*s1 + p3*s2, then project on the destination normals
+  // nhat_xi' = (d1 - csd d2)/snd,  nhat_eta' = (d2 - csd d1)/snd
+  bn_xi_out = 0.0;
+  bn_eta_out = 0.0;
+  for (int c=0; c<3; ++c) {
+    const Real vc = p2*s1[c] + p3*s2[c];
+    bn_xi_out  += vc*(d1[c] - csd*d2[c]);
+    bn_eta_out += vc*(d2[c] - csd*d1[c]);
+  }
+  bn_xi_out /= snd;
+  bn_eta_out /= snd;
+  return;
+}
+
 } // namespace cubed_sphere
 #endif // COORDINATES_CUBED_SPHERE_HPP_
