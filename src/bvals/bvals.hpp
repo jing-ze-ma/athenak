@@ -209,6 +209,8 @@ class MeshBoundaryValuesFC : public MeshBoundaryValues {
                          DvceArray2D<int> &nflx);
   void ZeroFluxesAtBoundaryWithFiner(DvceEdgeFld4D<Real> &flx, DvceArray2D<int> &nflx);
   void AverageBoundaryFluxes(DvceEdgeFld4D<Real> &flx, DvceArray2D<int> &nflx);
+  void SavePanelCornerEMF(DvceEdgeFld4D<Real> &flx, DvceArray3D<Real> &save);
+  void AveragePanelCornerEMF(DvceEdgeFld4D<Real> &flx, DvceArray3D<Real> &save);
 };
 
 //----------------------------------------------------------------------------------------

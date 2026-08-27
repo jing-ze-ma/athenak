@@ -487,6 +487,12 @@ TaskStatus MeshBoundaryValuesFC::RecvAndUnpackFluxFC(DvceEdgeFld4D<Real> &flx) {
     nflx(m,n) = 1;
   });
 
+  // Stash the cube-vertex x1e before it is summed over; see AveragePanelCornerEMF.
+  DvceArray3D<Real> corner_e1("cnr_e1", nmb, 4, pmy_pack->pmesh->mb_indcs.nx1);
+  if (pmy_pack->pmesh->use_cubed_sphere) {
+    SavePanelCornerEMF(flx, corner_e1);
+  }
+
   // Unpack and sum fluxes from the same level
   SumBoundaryFluxes(flx, true, nflx);
 
@@ -500,7 +506,104 @@ TaskStatus MeshBoundaryValuesFC::RecvAndUnpackFluxFC(DvceEdgeFld4D<Real> &flx) {
   // perform appropriate averaging depending on how many fluxes contributed to sums
   AverageBoundaryFluxes(flx, nflx);
 
+  // and then redo the cube-vertex edges, which the generic machinery cannot get right
+  if (pmy_pack->pmesh->use_cubed_sphere) {
+    AveragePanelCornerEMF(flx, corner_e1);
+  }
+
   return TaskStatus::complete;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn  void MeshBoundaryValuesFC::SavePanelCornerEMF
+//! \brief Stash this block's OWN x1e on each cube-vertex radial edge, before
+//! SumBoundaryFluxes overwrites it with a sum. See AveragePanelCornerEMF.
+
+void MeshBoundaryValuesFC::SavePanelCornerEMF(DvceEdgeFld4D<Real> &flx,
+                                              DvceArray3D<Real> &save) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie;
+  const int js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb = pmy_pack->nmb_thispack;
+  auto &nghbr = pmy_pack->pmb->nghbr;
+  auto &mbpanel = pmy_pack->pmb->mb_panel;
+  auto e1 = flx.x1e;
+  auto sv = save;
+
+  par_for("cs_save_cnr_emf", DevExeSpace(), 0,(nmb-1), 0,3, is,ie,
+  KOKKOS_LAMBDA(const int m, const int c, const int i) {
+    const int sj = (c & 1) ? 1 : -1;
+    const int sk = (c & 2) ? 1 : -1;
+    const int nj_id = (sj < 0) ? 8 : 12;
+    const int nk_id = (sk < 0) ? 24 : 28;
+    const int mp = mbpanel.d_view(m);
+    // a CUBE VERTEX is a corner whose BOTH flanking face neighbours are a different panel
+    if (!(nghbr.d_view(m,nj_id).gid >= 0 && nghbr.d_view(m,nj_id).panel != mp &&
+          nghbr.d_view(m,nk_id).gid >= 0 && nghbr.d_view(m,nk_id).panel != mp)) return;
+    const int jc = (sj < 0) ? js : (je+1);
+    const int kc = (sk < 0) ? ks : (ke+1);
+    sv(m,c,i-is) = e1(m,kc,jc,i);
+  });
+  return;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn  void MeshBoundaryValuesFC::AveragePanelCornerEMF
+//! \brief Make the radial EMF on a cube-vertex edge single-valued, by a genuine THREE-WAY
+//! average of the three panels that meet there.
+//!
+//! A panel corner is a cube vertex: only THREE panels meet, and its radial edge belongs
+//! to all three. The generic edge machinery cannot express that. It pairs the corner with
+//! ONE diagonal neighbour, and on this grid that pairing is to the WRONG CORNER of the
+//! right panel -- panel 0's (-x2,-x3) edge at (0.577,-0.577,-0.577) is paired with panel
+//! 5's (+x2,+x3) edge at (0.577,+0.577,-0.577), which is a different vertex -- so the
+//! value it mixes in is not even from the same edge. Measured spread among the three
+//! panels sharing a vertex: 4.6e-5 of |E|, and identical whether that diagonal buffer is
+//! used or dropped, so it contributes nothing but noise.
+//!
+//! The two FACE buffers, however, already carry exactly what is needed: each spans its
+//! whole seam INCLUDING both end edges, so a block's two seam buffers hold the other two
+//! panels' values on this very edge, correctly index-mapped by the seam packer. Averaging
+//! own + those two gives all three panels the mean of the SAME three numbers, which is
+//! single-valued by construction. Its own value has to be stashed first, because
+//! SumBoundaryFluxes has already replaced x1e by a sum by the time this runs.
+
+void MeshBoundaryValuesFC::AveragePanelCornerEMF(DvceEdgeFld4D<Real> &flx,
+                                                 DvceArray3D<Real> &save) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie;
+  const int js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int ni = ie - is + 1;
+  const int nmb = pmy_pack->nmb_thispack;
+  auto &nghbr = pmy_pack->pmb->nghbr;
+  auto &mblev = pmy_pack->pmb->mb_lev;
+  auto &mbpanel = pmy_pack->pmb->mb_panel;
+  auto &rbuf = recvbuf;
+  auto e1 = flx.x1e;
+  auto sv = save;
+
+  par_for("cs_cnr_emf", DevExeSpace(), 0,(nmb-1), 0,3, is,ie,
+  KOKKOS_LAMBDA(const int m, const int c, const int i) {
+    const int sj = (c & 1) ? 1 : -1;
+    const int sk = (c & 2) ? 1 : -1;
+    const int nj_id = (sj < 0) ? 8 : 12;
+    const int nk_id = (sk < 0) ? 24 : 28;
+    const int mp = mbpanel.d_view(m);
+    if (!(nghbr.d_view(m,nj_id).gid >= 0 && nghbr.d_view(m,nj_id).panel != mp &&
+          nghbr.d_view(m,nk_id).gid >= 0 && nghbr.d_view(m,nk_id).panel != mp)) return;
+    if (nghbr.d_view(m,nj_id).lev != mblev.d_view(m)) return;
+    if (nghbr.d_view(m,nk_id).lev != mblev.d_view(m)) return;
+    const int jc = (sj < 0) ? js : (je+1);
+    const int kc = (sk < 0) ? ks : (ke+1);
+    // x1e on a x2-face buffer is laid out (i-is) + ni*(k-ks); on a x3-face buffer,
+    // (i-is) + ni*(j-js). Component 0 sits at the start of the buffer either way.
+    const Real bj = rbuf[nj_id].flux(m, (i-is) + ni*(kc-ks));
+    const Real bk = rbuf[nk_id].flux(m, (i-is) + ni*(jc-js));
+    e1(m,kc,jc,i) = (sv(m,c,i-is) + bj + bk)/3.0;
+  });
+  return;
 }
 
 //----------------------------------------------------------------------------------------

@@ -49,6 +49,7 @@
 #include <iostream>
 #include <map>
 #include <string>
+#include <utility>
 #include <sstream>
 #include <cmath>
 
@@ -955,6 +956,57 @@ void CSTestGhostCheck(ParameterInput *pin, Mesh *pm) {
     // the interior flux/EMF path with a tangential field is a bulk effect. Run this after
     // ONE step -- later the seam error has propagated everywhere.
     const int nseam = ng;
+    // --- IS THE CUBE-VERTEX EMF SINGLE-VALUED? ---------------------------------------
+    // The radial edge at a panel corner is one physical edge shared by THREE panels, and
+    // CT consumes dxedge*E along it. Keyed by geometry like the face check below, so no
+    // index map is involved. Reports the max spread among the panels sharing each vertex.
+    {
+      auto &ef = pmbp->pmhd->efld;
+      auto e1h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), ef.x1e);
+      std::map<std::string, std::pair<Real,Real>> lo_hi;   // min, max over panels
+      for (int m=0; m<pmbp->nmb_thispack; ++m) {
+        const int p = mbpanel.h_view(m);
+        for (int cj=0; cj<2; ++cj) {
+          for (int ck=0; ck<2; ++ck) {
+            const int jc = cj ? je+1 : js;
+            const int kc = ck ? ke+1 : ks;
+            const Real xi = 0.25*M_PI*LeftEdgeX(jc-js, indcs.nx2, size.h_view(m).x2min,
+                                                                  size.h_view(m).x2max);
+            const Real et = 0.25*M_PI*LeftEdgeX(kc-ks, indcs.nx3, size.h_view(m).x3min,
+                                                                  size.h_view(m).x3max);
+            Real cx, cy, cz;
+            PanelToCart(p, xi, et, cx, cy, cz);
+            // A CUBE VERTEX has |x| = |y| = |z|. With several MeshBlocks per panel a
+            // block corner is usually just an ordinary interior edge, which is shared by
+            // four blocks and is not what this check is about.
+            if (fabs(fabs(cx) - fabs(cy)) > 1.0e-9 ||
+                fabs(fabs(cx) - fabs(cz)) > 1.0e-9) continue;
+            for (int i=is; i<=ie; ++i) {
+              char key[128];
+              std::snprintf(key, sizeof(key), "%d_%.9f_%.9f_%.9f", i-is, cx, cy, cz);
+              const Real e = e1h(m,kc,jc,i);
+              auto it = lo_hi.find(std::string(key));
+              if (it == lo_hi.end()) {
+                lo_hi[std::string(key)] = std::make_pair(e,e);
+              } else {
+                it->second.first  = fmin(it->second.first, e);
+                it->second.second = fmax(it->second.second, e);
+              }
+            }
+          }
+        }
+      }
+      Real spread = 0.0, emag = 0.0;
+      int nvert = 0;
+      for (auto &kv : lo_hi) {
+        spread = fmax(spread, kv.second.second - kv.second.first);
+        emag = fmax(emag, fabs(kv.second.second));
+        ++nvert;
+      }
+      std::printf("### CS CUBE-VERTEX EMF SPREAD: %12.5e over %d vertex edges"
+                  " (max|e1| %10.3e)\n", spread, nvert, emag);
+    }
+
     // --- IS THE SHARED SEAM FACE SINGLE-VALUED? --------------------------------------
     // The definitive gate for seam EMF consistency. A face on a panel seam is ONE
     // physical face, stored twice -- once as an ACTIVE face of each of the two panels
@@ -1013,7 +1065,19 @@ void CSTestGhostCheck(ParameterInput *pin, Mesh *pm) {
                 const Real dot = it->second.n[0]*f.n[0] + it->second.n[1]*f.n[1]
                                + it->second.n[2]*f.n[2];
                 const Real d = fabs(it->second.b - dot*f.b);
-                if ((t - nlo < ng) || (nhi - t < ng)) {
+                // "near a corner" must mean near a CUBE VERTEX, tested geometrically:
+                // with several MeshBlocks per panel the ends of a block's seam are
+                // mostly ordinary interior edges, and bucketing by index would count
+                // those too and hide which faces are actually at issue.
+                Real vdot = 0.0;
+                for (int vv=0; vv<8; ++vv) {
+                  const Real vx = ((vv&1)?1.0:-1.0)/sqrt(3.0);
+                  const Real vy = ((vv&2)?1.0:-1.0)/sqrt(3.0);
+                  const Real vz = ((vv&4)?1.0:-1.0)/sqrt(3.0);
+                  vdot = fmax(vdot, cx*vx + cy*vy + cz*vz);
+                }
+                const Real dang = 0.5*M_PI/static_cast<Real>(indcs.nx2);
+                if (acos(fmin(1.0,vdot)) < (ng + 0.5)*dang) {
                   cmax = fmax(cmax, d);
                 } else {
                   dmax = fmax(dmax, d);
@@ -1026,7 +1090,7 @@ void CSTestGhostCheck(ParameterInput *pin, Mesh *pm) {
         }
       }
       std::printf("### CS SEAM FACE SINGLE-VALUED: max|b_P - b_Q| = %12.5e away from a"
-                  " panel corner, %12.5e within %d of one; %d shared faces,"
+                  " cube vertex, %12.5e within %d cells of one; %d shared faces,"
                   " max|b| %9.3e\n", dmax, cmax, ng, npair, bmax);
     }
 
