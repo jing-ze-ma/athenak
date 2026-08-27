@@ -612,6 +612,73 @@ void Coordinates::GnomonicEquiangleRaiseVel(const DvceArray5D<Real> &u0,
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn Coordinates::GnomonicEquiangleRaiseVelMHD
+//! \brief The MHD counterpart of GnomonicEquiangleRaiseVel: it does everything that
+//! routine does, and additionally puts the CELL-CENTRED FIELD into an orthonormal frame
+//! and subtracts the correct magnetic energy.
+//!
+//! WHY THE FIELD NEEDS THIS TOO. b0.x*f holds the flux density B.nhat through its own
+//! face -- the convention forced by the curvilinear CT update in mhd_ct.cpp, which uses
+//! area/dxedge -- so the plain face average that ConsToPrim forms is
+//! (B.rhat, B.nhat_xi, B.nhat_eta). Those three directions are NOT mutually orthogonal:
+//! nhat_xi.nhat_eta = -c. Summing their squares therefore does not give |B|^2, and the
+//! error is O(1) near a panel corner where c is largest. Every consumer that squares and
+//! sums bcc -- the magnetic energy here, PrimToCons, the fast speed in mhd_newdt -- is
+//! wrong by that amount.
+//!
+//! The fix is to store bcc in the ORTHONORMAL frame {rhat, e_xi, (e_eta - c e_xi)/s}
+//! instead, which costs one rotation of a single component and makes every one of those
+//! sums correct with no further change. It also SIMPLIFIES the flux path: the x1 and x3
+//! sweeps then need no field rotation at all, and only the x2 sweep does.
+//!
+//! Recomputing bcc from the faces rather than transforming what ConsToPrim wrote keeps
+//! this idempotent. As in the hydro version, the floors are left exactly as ConsToPrim
+//! applied them -- it tested them against an internal energy that lacked both the metric
+//! cross term and the corrected magnetic energy.
+
+void Coordinates::GnomonicEquiangleRaiseVelMHD(const DvceArray5D<Real> &u0,
+    const DvceFaceFld4D<Real> &b0, DvceArray5D<Real> &bcc0, DvceArray5D<Real> &w0,
+    const int il, const int iu, const int jl, const int ju, const int kl, const int ku) {
+  int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto &cos_cell_ = cos_cell;
+  auto &sin_cell_ = sin_cell;
+
+  par_for("cs_raisev_mhd", DevExeSpace(), 0,nmb1, kl,ku, jl,ju, il,iu,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const Real c = cos_cell_(m,k,j);
+    const Real sn = sin_cell_(m,k,j);
+    const Real det = 1.0 - c*c;
+
+    // cell-centred field, then into the orthonormal frame. The eta slot already IS the
+    // third axis of that frame (B.(e_eta - c e_xi)/s = s B^eta), so only the xi slot
+    // moves: B.e_xi = B^xi + c B^eta = (b_xi + c b_eta)/s.
+    const Real bx = 0.5*(b0.x1f(m,k,j,i) + b0.x1f(m,k,j,i+1));
+    const Real by_n = 0.5*(b0.x2f(m,k,j,i) + b0.x2f(m,k,j+1,i));
+    const Real bz_n = 0.5*(b0.x3f(m,k,j,i) + b0.x3f(m,k+1,j,i));
+    const Real by = (by_n + c*bz_n)/sn;
+    const Real bz = bz_n;
+    bcc0(m,IBX,k,j,i) = bx;
+    bcc0(m,IBY,k,j,i) = by;
+    bcc0(m,IBZ,k,j,i) = bz;
+
+    const Real d = u0(m,IDN,k,j,i);
+    const Real m1 = u0(m,IM1,k,j,i);   // radial: orthogonal to both angles
+    const Real m2 = u0(m,IM2,k,j,i);   // xi
+    const Real m3 = u0(m,IM3,k,j,i);   // eta
+    const Real v1 = m1/d;
+    const Real v2 = (m2 - c*m3)/(d*det);
+    const Real v3 = (m3 - c*m2)/(d*det);
+    w0(m,IVX,k,j,i) = v1;
+    w0(m,IVY,k,j,i) = v2;
+    w0(m,IVZ,k,j,i) = v3;
+    // the frame is orthonormal, so the magnetic energy IS the sum of squares
+    w0(m,IEN,k,j,i) = u0(m,IEN,k,j,i) - 0.5*(m1*v1 + m2*v2 + m3*v3)
+                                      - 0.5*(bx*bx + by*by + bz*bz);
+  });
+  return;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn Coordinates::GnomonicEquiangleLowerMom
 //! \brief The inverse of GnomonicEquiangleRaiseVel: build the conserved state from
 //! primitives on the cubed sphere. Use this wherever a problem generator would otherwise
@@ -708,21 +775,20 @@ void Coordinates::SrcTermsGnomonicEquiangleImpl(const DvceArray5D<Real> &w0,
     // every p that multiplies a metric derivative below becomes the TOTAL pressure and
     // every Reynolds stress becomes Reynolds minus Maxwell. This is the same substitution
     // that separates SrcTermsSphericalPolarMHD from ...Hydro.
-    //
-    // bcc holds (B.rhat, s*B^xi, s*B^eta) -- the face-normal convention, see the note on
-    // GnomonicEquiangleFaceBX1 -- so the Maxwell partners of rho*v3^2*sine2 and
-    // rho*v2^2*sine2 are simply bcc(IBZ)^2 and bcc(IBY)^2, the factors of s cancelling.
     Real ptot = pr;
     Real b_tsq = 0.0, bb_2 = 0.0, bb_3 = 0.0;
     if (mhd_) {
-      const Real brad = bcc_(m,IBX,k,j,i);
-      bb_2 = SQR(bcc_(m,IBY,k,j,i));
-      bb_3 = SQR(bcc_(m,IBZ,k,j,i));
-      // contravariant angular components, then |B_tangential|^2 = B^a g_ab B^b
-      const Real b2 = bcc_(m,IBY,k,j,i)/sine;
-      const Real b3 = bcc_(m,IBZ,k,j,i)/sine;
-      b_tsq = b2*b2 + b3*b3 + 2.0*cosine*b2*b3;
-      ptot += 0.5*(SQR(brad) + b_tsq);
+      // bcc is the ORTHONORMAL triple (B.rhat, B.e_xi, B.(e_eta - c e_xi)/s) -- see
+      // GnomonicEquiangleRaiseVelMHD -- so |B|^2 really is the sum of squares. The
+      // Maxwell partners of rho*v3^2*sine2 and rho*v2^2*sine2 are (s*B^eta)^2 and
+      // (s*B^xi)^2, and B^eta = b3/s while s*B^xi = s*b2 - c*b3.
+      const Real b1 = bcc_(m,IBX,k,j,i);
+      const Real b2 = bcc_(m,IBY,k,j,i);
+      const Real b3 = bcc_(m,IBZ,k,j,i);
+      b_tsq = b2*b2 + b3*b3;
+      bb_2 = SQR(sine*b2 - cosine*b3);
+      bb_3 = b3*b3;
+      ptot += 0.5*(b1*b1 + b_tsq);
     }
 
     // radial source: (A_out - A_in)/V * (p + angular kinetic energy), the same form as

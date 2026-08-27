@@ -144,6 +144,26 @@ void CartToPanelVec(const int p, const Real xi, const Real eta,
 }
 
 //----------------------------------------------------------------------------------------
+//! \brief The two panel FACE NORMALS at a point: nhat_xi is perpendicular to e_eta (and
+//! to rhat), nhat_eta perpendicular to e_xi. They are what b0.x2f/x3f are projections on,
+//! and they are NOT parallel to the tangent vectors, nor orthogonal to each other
+//! (nhat_xi.nhat_eta = -c). Gram-Schmidt on the tangent pair.
+
+KOKKOS_INLINE_FUNCTION
+void PanelNormals(const int p, const Real xi, const Real eta,
+                  Real n1[3], Real n2[3]) {
+  Real e1[3], e2[3];
+  cubed_sphere::PanelTangents(p, xi, eta, e1, e2);
+  const Real c = e1[0]*e2[0] + e1[1]*e2[1] + e1[2]*e2[2];
+  const Real s = std::sqrt(1.0 - c*c);
+  for (int q=0; q<3; ++q) {
+    n1[q] = (e1[q] - c*e2[q])/s;
+    n2[q] = (e2[q] - c*e1[q])/s;
+  }
+  return;
+}
+
+//----------------------------------------------------------------------------------------
 //! \brief The exact rigid-rotation equilibrium (iprob = 3) at one point.
 //! r is the spherical radius, (xi,eta) the equiangular coordinates on panel p.
 
@@ -211,7 +231,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   if (iprob == 1 || (iprob >= 3 && iprob <= 7 && iprob != 4)) {
     user_bcs_func = CSTestRadialBC;
   }
-  if (iprob >= 3 && iprob <= 7 && iprob != 4) pgen_final_func = CSTestGhostCheck;
+  if (iprob == 8 || (iprob >= 3 && iprob <= 7 && iprob != 4)) {
+    pgen_final_func = CSTestGhostCheck;
+  }
   const Real blob_w = pin->GetOrAddReal("problem", "blob_width", 0.3);
   const Real amp_ = cs_amp, r0_ = cs_r0;
 
@@ -369,7 +391,52 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // the monopole's singularity sits at the origin, outside the shell.  Combined with the
   // iprob=3 rigid rotation it gives a nonzero EMF, so it exercises CT rather than just
   // sitting there.
-  if (is_mhd) {
+  if (is_mhd && iprob == 8) {
+    // iprob = 8: a UNIFORM CARTESIAN field B = b0c * bhat, with v = 0 and uniform p.
+    // A uniform field has curl B = 0, so it exerts no force and this is again an exact
+    // static state -- but unlike the monopole it has TANGENTIAL components on every
+    // panel, which is what makes it the test of the non-orthogonal basis. |B|^2 = b0c^2
+    // exactly and everywhere, so the total energy below is analytic, and the pressure
+    // ConsToPrim recovers from it is a direct measurement of the magnetic energy the
+    // inversion subtracted. See CSTestGhostCheck.
+    const Real b0c = pin->GetOrAddReal("problem", "b0c", 1.0);
+    const Real bhx = pin->GetOrAddReal("problem", "bhx", 0.0);
+    const Real bhy = pin->GetOrAddReal("problem", "bhy", 0.0);
+    const Real bhz = pin->GetOrAddReal("problem", "bhz", 1.0);
+    const Real bn = std::sqrt(bhx*bhx + bhy*bhy + bhz*bhz);
+    const Real bvx = b0c*bhx/bn, bvy = b0c*bhy/bn, bvz = b0c*bhz/bn;
+    cs_b0r = b0c;
+    auto &b0f = pmbp->pmhd->b0;
+    par_for("pgen_cs_bfld8", DevExeSpace(), 0,(pmbp->nmb_thispack-1),
+            ks,ke+1, js,je+1, is,ie+1,
+    KOKKOS_LAMBDA(int m, int k, int j, int i) {
+      const Real x2c = 0.25*M_PI*CellCenterX(j-js, indcs.nx2, size.d_view(m).x2min,
+                                                              size.d_view(m).x2max);
+      const Real x3c = 0.25*M_PI*CellCenterX(k-ks, indcs.nx3, size.d_view(m).x3min,
+                                                              size.d_view(m).x3max);
+      const Real x2f = 0.25*M_PI*LeftEdgeX(j-js, indcs.nx2, size.d_view(m).x2min,
+                                                            size.d_view(m).x2max);
+      const Real x3f = 0.25*M_PI*LeftEdgeX(k-ks, indcs.nx3, size.d_view(m).x3min,
+                                                            size.d_view(m).x3max);
+      const int p = mbpanel.d_view(m);
+      Real n1[3], n2[3], cx, cy, cz;
+      // x1 face: normal is rhat, evaluated at the (j,k) cell centre
+      if (j <= je && k <= ke) {
+        PanelToCart(p, x2c, x3c, cx, cy, cz);
+        b0f.x1f(m,k,j,i) = bvx*cx + bvy*cy + bvz*cz;
+      }
+      // x2 face: normal is nhat_xi, evaluated at the xi FACE
+      if (i <= ie && k <= ke) {
+        PanelNormals(p, x2f, x3c, n1, n2);
+        b0f.x2f(m,k,j,i) = bvx*n1[0] + bvy*n1[1] + bvz*n1[2];
+      }
+      // x3 face: normal is nhat_eta, evaluated at the eta FACE
+      if (i <= ie && j <= je) {
+        PanelNormals(p, x2c, x3f, n1, n2);
+        b0f.x3f(m,k,j,i) = bvx*n2[0] + bvy*n2[1] + bvz*n2[2];
+      }
+    });
+  } else if (is_mhd) {
     const Real b0r = pin->GetOrAddReal("problem", "b0r", 1.0);
     cs_b0r = b0r;
     auto &b0f = pmbp->pmhd->b0;
@@ -401,7 +468,17 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // conserved momentum is the COVARIANT one. See Coordinates::GnomonicEquiangleLowerMom.
   pmbp->pcoord->GnomonicEquiangleLowerMom(w0, u0, is, ie, js, je, ks, ke);
   // LowerMom knows nothing about B, so add the magnetic energy it left out.
-  if (is_mhd) {
+  if (is_mhd && iprob == 8) {
+    // ANALYTIC, deliberately: |B|^2 = b0c^2 exactly for a uniform Cartesian field. Adding
+    // a magnetic energy built from the same bcc that ConsToPrim will subtract would make
+    // the pressure check below self-consistent instead of correct, and would pass under
+    // any convention.
+    const Real bsq = SQR(cs_b0r);
+    par_for("pgen_cs_emag8", DevExeSpace(), 0,(pmbp->nmb_thispack-1), ks,ke, js,je, is,ie,
+    KOKKOS_LAMBDA(int m, int k, int j, int i) {
+      u0(m,IEN,k,j,i) += 0.5*bsq;
+    });
+  } else if (is_mhd) {
     auto &bcc = pmbp->pmhd->bcc0;
     par_for("pgen_cs_emag", DevExeSpace(), 0,(pmbp->nmb_thispack-1), ks,ke, js,je, is,ie,
     KOKKOS_LAMBDA(int m, int k, int j, int i) {
@@ -632,6 +709,40 @@ void CSTestGhostCheck(ParameterInput *pin, Mesh *pm) {
   mbpanel.template sync<HostMemSpace>();
 
   const Real d0 = cs_d0, amp = cs_amp, r0 = cs_r0;
+
+  // --- iprob = 8: is the MAGNETIC ENERGY the inversion subtracted the right one? -------
+  // u0(IEN) was seeded with the ANALYTIC 0.5*b0c^2, so whatever ConsToPrim subtracted
+  // shows up directly as an error in the recovered pressure. On the gnomonic basis the
+  // cell-centred field is a triple of NON-ORTHOGONAL face-normal components, so summing
+  // their squares is not |B|^2 at all: the error is O(1) and largest at the panel corners
+  // where cos_cell is largest. Storing bcc in an orthonormal frame instead
+  // (Coordinates::GnomonicEquiangleRaiseVelMHD) makes it O(dx^2) and convergent.
+  // The velocity is a second, independent probe: v = 0 exactly in this state.
+  if (cs_iprob == 8) {
+    const Real gam_ = (pmbp->pmhd != nullptr) ? pmbp->pmhd->peos->eos_data.gamma
+                                              : pmbp->phydro->peos->eos_data.gamma;
+    const Real gm1_ = gam_ - 1.0;
+    const Real ie_exact = cs_p0/gm1_;
+    std::cout << "### CS MHD ENERGY CHECK (iprob=8, uniform Cartesian B)" << std::endl;
+    std::cout << "  panel   max|dp/p|      max|v|      (active cells)" << std::endl;
+    Real gmax = 0.0, gvmax = 0.0;
+    for (int m=0; m<pmbp->nmb_thispack; ++m) {
+      Real e = 0.0, ev = 0.0;
+      for (int k=ks; k<=ke; ++k) {
+        for (int j=js; j<=je; ++j) {
+          for (int i=is; i<=ie; ++i) {
+            e = fmax(e, fabs(w0_h(m,IEN,k,j,i) - ie_exact)/ie_exact);
+            ev = fmax(ev, fmax(fabs(w0_h(m,IVX,k,j,i)),
+                          fmax(fabs(w0_h(m,IVY,k,j,i)), fabs(w0_h(m,IVZ,k,j,i)))));
+          }
+        }
+      }
+      std::printf("  %4d   %12.5e  %12.5e\n", mbpanel.h_view(m), e, ev);
+      gmax = fmax(gmax, e); gvmax = fmax(gvmax, ev);
+    }
+    std::printf("  MAX over panels: dp/p %12.5e   |v| %12.5e\n", gmax, gvmax);
+    return;
+  }
 
   // --- iprob = 3: LOCALISE the spurious radial velocity ------------------------------
   // The exact rigid-rotation solution has v1 = 0 identically (x1 is radial), so v1 is a

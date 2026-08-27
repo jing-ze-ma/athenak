@@ -21,6 +21,18 @@
 # not one of the cases bfield_bcs.cpp handles, so the pgen fills b0 there itself.
 #
 # AXES: x1 is RADIAL, x2 = xi and x3 = eta are the panel-tangential angles.  Must be 3D.
+#
+# problem/iprob = 8 is the companion test of the NON-ORTHOGONAL BASIS, which the monopole
+# cannot see because a purely radial field has no tangential components.  It is a uniform
+# CARTESIAN field b0c*(bhx,bhy,bhz), also force-free and so also exactly static, whose
+# |B|^2 = b0c^2 analytically everywhere.  The pgen seeds u0(IEN) with that analytic value,
+# so the pressure ConsToPrim recovers measures the magnetic energy the inversion actually
+# subtracted.  Run it with nlim = 0 and reflect radial BCs:
+#   athena -i cubed_sphere_mhd.athinput problem/iprob=8 time/nlim=0 \
+#          mesh/ix1_bc=reflect mesh/ox1_bc=reflect
+# PASSES: max|dp/p| = 8.01e-4 / 2.01e-4 / 5.02e-5 at nx2 = nx3 = 16/32/64 (ratios 3.99,
+# 4.00, i.e. second order) and |v| identically zero.  Storing bcc as the raw face-normal
+# triple instead gives 9.3e-2 / 1.02e-1 / 1.07e-1 -- ~10 %, and NOT convergent.
 
 <comment>
 problem = cubed sphere uniform static state with a radial monopole field

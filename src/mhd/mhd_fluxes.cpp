@@ -216,8 +216,9 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
       // added; the MHD path never did, which left the fluxes in a different frame from
       // the geometric source terms that SrcTermsGnomonicEquiangle adds to them.
       if (use_cubed_sphere) {
+        // the field needs no rotation in this sweep: bcc is already stored in this
+        // frame. See the note at GnomonicEquiangleFaceBX2.
         pmy_pack->pcoord->GnomonicEquianglePrimFaceX1(member,m,k,j,il-1,iu,wl,wr);
-        pmy_pack->pcoord->GnomonicEquiangleFaceBX1(member,m,k,j,il-1,iu,bl,br);
       }
 
     // Sync all threads in the team so that scratch memory is consistent
@@ -651,10 +652,9 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
 
           // CUBED SPHERE -- see the note in the x1 sweep.
           if (use_cubed_sphere) {
+            // the field needs no rotation in this sweep either.
             pmy_pack->pcoord->GnomonicEquianglePrimFaceX3(member,m,k,j,is-1,ie+1,
                                                           wl_kp1,wr);
-            pmy_pack->pcoord->GnomonicEquiangleFaceBX3(member,m,k,j,is-1,ie+1,
-                                                       bl_kp1,br);
           }
 
         member.team_barrier();

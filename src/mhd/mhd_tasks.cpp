@@ -575,6 +575,16 @@ TaskStatus MHD::ConToPrim(Driver *pdrive, int stage) {
     RemoveGravEtot(phicc0, u0, 0, n1m1, 0, n2m1, 0, n3m1);
   }
   peos->ConsToPrim(u0, b0, w0, bcc0, false, 0, n1m1, 0, n2m1, 0, n3m1);
+
+  // On the cubed sphere the conserved momentum is COVARIANT on a non-orthogonal tangent
+  // basis, and the cell-centred field as ConsToPrim averages it is a triple of
+  // non-orthogonal face-normal components. ConsToPrim cannot know either, so redo the
+  // velocity, the field and the internal energy with the metric. This is the MHD
+  // counterpart of the GnomonicEquiangleRaiseVel call in hydro_tasks.cpp.
+  if (pmy_pack->pmesh->use_cubed_sphere) {
+    pmy_pack->pcoord->GnomonicEquiangleRaiseVelMHD(u0, b0, bcc0, w0,
+                                                   0, n1m1, 0, n2m1, 0, n3m1);
+  }
   if (use_etotgrav) {
     AddGravEtot(phicc0, u0, 0, n1m1, 0, n2m1, 0, n3m1);
   }

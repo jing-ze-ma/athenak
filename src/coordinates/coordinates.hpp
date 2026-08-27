@@ -109,6 +109,11 @@ class Coordinates {
   void GnomonicEquiangleRaiseVel(const DvceArray5D<Real> &u0, DvceArray5D<Real> &w0,
                                  const int il, const int iu, const int jl, const int ju,
                                  const int kl, const int ku);
+  void GnomonicEquiangleRaiseVelMHD(const DvceArray5D<Real> &u0,
+                                    const DvceFaceFld4D<Real> &b0,
+                                    DvceArray5D<Real> &bcc0, DvceArray5D<Real> &w0,
+                                    const int il, const int iu, const int jl,
+                                    const int ju, const int kl, const int ku);
   void GnomonicEquiangleLowerMom(const DvceArray5D<Real> &w0, DvceArray5D<Real> &u0,
                                  const int il, const int iu, const int jl, const int ju,
                                  const int kl, const int ku);
@@ -189,37 +194,21 @@ class Coordinates {
       return;
     };
 
-    // --- MAGNETIC FIELD into the same orthonormal frames ------------------------------
+    // --- MAGNETIC FIELD into the sweep's orthonormal frame ----------------------------
     //
-    // The face-centred field is stored as the FLUX DENSITY through its own face, i.e.
-    // b.x2f = B.nhat_xi and b.x3f = B.nhat_eta, which is what makes  sum(area*b)  the
-    // physical flux and lets the curvilinear CT update in mhd_ct.cpp use area/dxedge
-    // unchanged. bcc is the average of two opposing faces, so it carries the same
-    // convention: bcc = (B.rhat, B.nhat_xi, B.nhat_eta) = (B^r, s*B^xi, s*B^eta).
+    // bcc holds the ORTHONORMAL triple (B.rhat, B.e_xi, B.f2), f2 = (e_eta - c e_xi)/s
+    // -- see Coordinates::GnomonicEquiangleRaiseVelMHD for why the field is stored that
+    // way and not as the raw face-normal average. Slot ordering matches wl/wr.
     //
-    // That differs from w0, which holds the CONTRAVARIANT velocity, by exactly one
-    // factor of s -- so B is put into the sweep's orthonormal frame by dividing by s and
-    // then applying the same rotation the velocity gets. In every sweep the NORMAL
-    // component comes from b.x*f and is already correct, and the frame's two orthonormal
-    // face-parallel axes are the two edge directions, so only ONE of the three slots the
-    // Riemann solver reads is actually wrong. Slot ordering matches wl/wr: 0,1,2 = r,
-    // xi, eta.
+    // Each sweep's frame is {nhat, then its two face-parallel axes}, and in every sweep
+    // the NORMAL component is taken from b0.x*f rather than from bcc, so only the two
+    // face-parallel slots matter:
+    //   x1, frame {rhat, e_xi, f2}      -> slots 1,2 are already exactly right;
+    //   x2, frame {nhat_xi, e_eta, rhat} -> slot 0 is right, slot 2 must become B.e_eta;
+    //   x3, frame {nhat_eta, rhat, e_xi} -> slots 0,1 are already exactly right.
+    // So x1 and x3 need nothing at all, and only this one routine exists.
     //
-    // x1 sweep, frame {rhat, e_xi, (e_eta - c e_xi)/s}: slot 1 must be B.e_xi.
-    KOKKOS_INLINE_FUNCTION
-    void GnomonicEquiangleFaceBX1(TeamMember_t const &member, const int m, const int k,
-         const int j, const int il, const int iu, ScrArray2D<Real> &bl,
-         ScrArray2D<Real> &br) {
-        const Real sin_theta = sin_cell(m,k,j);
-        const Real cos_theta = cos_cell(m,k,j);
-        par_for_inner(member, il, iu, [&](const int i) {
-          bl(1,i+1) = (bl(1,i+1) + cos_theta*bl(2,i+1))/sin_theta;
-          br(1,i)   = (br(1,i)   + cos_theta*br(2,i))/sin_theta;
-        });
-      return;
-    };
-
-    // x2 sweep, frame {nhat_xi, e_eta, rhat}: slot 2 must be B.e_eta.
+    // B.e_eta = c*(B.e_xi) + s*(B.f2), the same projection the x1 EMF needs below.
     KOKKOS_INLINE_FUNCTION
     void GnomonicEquiangleFaceBX2(TeamMember_t const &member, const int m, const int k,
          const int j, const int il, const int iu, ScrArray2D<Real> &bl_jp1,
@@ -229,24 +218,8 @@ class Coordinates {
         const Real sin_j = sin_face_xi(m,k,j);
         const Real cos_j = cos_face_xi(m,k,j);
         par_for_inner(member, il, iu, [&](const int i) {
-          bl_jp1(2,i) = (cos_jp1*bl_jp1(1,i) + bl_jp1(2,i))/sin_jp1;
-          br_j(2,i)   = (cos_j*br_j(1,i)     + br_j(2,i))/sin_j;
-        });
-      return;
-    };
-
-    // x3 sweep, frame {nhat_eta, rhat, e_xi}: slot 1 must be B.e_xi.
-    KOKKOS_INLINE_FUNCTION
-    void GnomonicEquiangleFaceBX3(TeamMember_t const &member, const int m, const int k,
-         const int j, const int il, const int iu, ScrArray2D<Real> &bl_kp1,
-         ScrArray2D<Real> &br_k) {
-        const Real sin_kp1 = sin_face_eta(m,k+1,j);
-        const Real cos_kp1 = cos_face_eta(m,k+1,j);
-        const Real sin_k = sin_face_eta(m,k,j);
-        const Real cos_k = cos_face_eta(m,k,j);
-        par_for_inner(member, il, iu, [&](const int i) {
-          bl_kp1(1,i) = (bl_kp1(1,i) + cos_kp1*bl_kp1(2,i))/sin_kp1;
-          br_k(1,i)   = (br_k(1,i)   + cos_k*br_k(2,i))/sin_k;
+          bl_jp1(2,i) = cos_jp1*bl_jp1(1,i) + sin_jp1*bl_jp1(2,i);
+          br_j(2,i)   = cos_j*br_j(1,i)     + sin_j*br_j(2,i);
         });
       return;
     };
