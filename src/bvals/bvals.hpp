@@ -199,6 +199,7 @@ class MeshBoundaryValuesFC : public MeshBoundaryValues {
   TaskStatus PackAndSendFC(DvceFaceFld4D<Real> &b, DvceFaceFld4D<Real> &cb);
   TaskStatus RecvAndUnpackFC(DvceFaceFld4D<Real> &b, DvceFaceFld4D<Real> &cb);
   void FillCoarseInBndryFC(DvceFaceFld4D<Real> &b, DvceFaceFld4D<Real> &cb);
+  void FillPanelCornersFC(DvceFaceFld4D<Real> &b);
   void ProlongateFC(DvceFaceFld4D<Real> &b, DvceFaceFld4D<Real> &cb);
 
   TaskStatus PackAndSendFluxFC(DvceEdgeFld4D<Real> &flx);

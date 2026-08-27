@@ -74,7 +74,7 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
         //
         // v is the RECEIVER's component: the packer writes into buffer slot v but reads
         // this block's array vv, and the two differ on a panel seam whose tangential axes
-        // are interchanged (swap_ax) -- every equatorial-to-polar seam. The ranges are per
+        // are interchanged (swap_ax) -- every equatorial-to-polar seam. Ranges are per
         // component and genuinely different: for a -x2 neighbour isame[1] (x2f) is ng
         // FACES in j by nx3 CELLS in k, while isame[2] (x3f) is ng CELLS in j by nx3+1
         // FACES in k. Reading array vv over isame[v] therefore took the wrong index set
@@ -127,12 +127,13 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
         // indices of recv'ing MB and buffer: assumes MB IDs are stored sequentially
         int dm = nghbr.d_view(m,n).gid - mbgid.d_view(0);
         int dn = nghbr.d_view(m,n).dest;
-          
-          const bool do_cs = pmy_pack->pmesh->use_cubed_sphere && (nghbr.d_view(m,n).panel != mbpanel.d_view(m));
-          const bool do_pole = pmy_pack->pmesh->use_polar_boundary && (nghbr.d_view(m,n).polar > 0);
-            
-          if (do_cs || do_pole) {
 
+          const bool do_cs = pmy_pack->pmesh->use_cubed_sphere &&
+                             (nghbr.d_view(m,n).panel != mbpanel.d_view(m));
+          const bool do_pole = pmy_pack->pmesh->use_polar_boundary &&
+                               (nghbr.d_view(m,n).polar > 0);
+
+          if (do_cs || do_pole) {
             int aj = 1, bj = 0;
             int ak = 1, bk = 0;
             int signvar = 1;
@@ -140,6 +141,9 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
             int vv = v;
             bool cs_xform = false;
             int cs_srcpanel = 0, cs_dstpanel = 0;
+            // 0 = no along-seam resample; 2 = x2-face seam (resample in k);
+            // 3 = x3-face seam (resample in j). See the note on seamval below.
+            int cs_seam = 0;
 
             if (do_cs) {
               const auto ngh = nghbr.d_view(m,n);
@@ -181,6 +185,17 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
               cs_xform = (v == 1) || (v == 2);
               cs_srcpanel = my_panel;
               cs_dstpanel = ngh.panel;
+
+              // Which buffer is this? A same-level FACE buffer is ng deep in its own
+              // normal direction and spans the full active range in the other tangential
+              // one; that is the only case the along-seam resample applies to. The edge
+              // and corner buffers (ng x ng) stay a plain copy, as in bvals_cc.cpp.
+              const int ngh_ = cs_indcs.ng;
+              if (nj == ngh_ && nk > ngh_) {
+                cs_seam = 2;
+              } else if (nk == ngh_ && nj > ngh_) {
+                cs_seam = 3;
+              }
             } else if (do_pole) {
               aj = -1;
               bj = jl + ju;
@@ -193,37 +208,119 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
             // Producing either angular component needs BOTH source angular components at
             // the SAME point, and they are staggered differently: b.x2f sits on a xi face
             // and b.x3f on an eta face. The one the index map selects (vv) is taken where
-            // it lives and the other is averaged onto that location from its four
-            // neighbours, which is second order. The radial component is untouched.
+            // it lives and the other is interpolated onto that location, which is second
+            // order. The radial component is untouched.
+            //
+            // THAT INTERPOLATION MUST NOT REACH INTO THE SOURCE BLOCK'S OWN GHOSTS. The
+            // secondary component is averaged across the ALONG-SEAM index, and the packed
+            // range spans the whole seam, so at its two END faces one of the two cells is
+            // the source block's ghost -- which on a panel seam is itself halo data, in
+            // general stale and in a first exchange uninitialised. That produced an O(1)
+            // error at exactly the two end faces of every seam and nowhere else
+            // (measured: interior faces 3e-3..1.7e-2 at nx=32, end faces 0.38), and
+            // since the halo check maxes over the seam that made all 24 seams look
+            // O(1) and non-convergent.
+            // At an end face the two nearest ACTIVE cells are extrapolated instead, which
+            // keeps the same second-order accuracy without leaving the active zone.
             const int js_ = cs_indcs.js, ks_ = cs_indcs.ks;
-            auto seamval = [&](const int kk, const int jj, const int i) {
+            const int je_ = cs_indcs.je, ke_ = cs_indcs.ke;
+            // b.x3f at (eta face kf, xi FACE jf), interpolated across xi
+            auto x3f_at_xiface = [&](const int kf, const int jf, const int i) {
+              if (jf-1 < js_) {
+                return 1.5*b.x3f(m,kf,js_,i) - 0.5*b.x3f(m,kf,js_+1,i);
+              } else if (jf > je_) {
+                return 1.5*b.x3f(m,kf,je_,i) - 0.5*b.x3f(m,kf,je_-1,i);
+              }
+              return 0.5*(b.x3f(m,kf,jf-1,i) + b.x3f(m,kf,jf,i));
+            };
+            // b.x2f at (eta FACE kf, xi face jf), interpolated across eta
+            auto x2f_at_etaface = [&](const int kf, const int jf, const int i) {
+              if (kf-1 < ks_) {
+                return 1.5*b.x2f(m,ks_,jf,i) - 0.5*b.x2f(m,ks_+1,jf,i);
+              } else if (kf > ke_) {
+                return 1.5*b.x2f(m,ke_,jf,i) - 0.5*b.x2f(m,ke_-1,jf,i);
+              }
+              return 0.5*(b.x2f(m,kf-1,jf,i) + b.x2f(m,kf,jf,i));
+            };
+            //
+            // The (xi,eta) of a source sample, with the STAGGERING of component vv:
+            // b.x2f sits on a xi face and b.x3f on an eta face, b.x1f on neither.
+            const Real x2mn = mbsize.d_view(m).x2min, x2mx = mbsize.d_view(m).x2max;
+            const Real x3mn = mbsize.d_view(m).x3min, x3mx = mbsize.d_view(m).x3max;
+            auto angles = [&](const int kk, const int jj, Real &xi, Real &eta) {
+              xi  = 0.25*M_PI*((vv == 1) ? LeftEdgeX(jj-js_, cs_indcs.nx2, x2mn, x2mx)
+                                         : CellCenterX(jj-js_, cs_indcs.nx2, x2mn, x2mx));
+              eta = 0.25*M_PI*((vv == 2) ? LeftEdgeX(kk-ks_, cs_indcs.nx3, x3mn, x3mx)
+                                         : CellCenterX(kk-ks_, cs_indcs.nx3, x3mn, x3mx));
+            };
+            auto srcval = [&](const int kk, const int jj, const int i) {
               if (!cs_xform) {
                 if (vv == 0) return b.x1f(m,kk,jj,i)*signvar;
                 if (vv == 1) return b.x2f(m,kk,jj,i)*signvar;
                 return b.x3f(m,kk,jj,i)*signvar;
               }
-              const Real x2mn = mbsize.d_view(m).x2min, x2mx = mbsize.d_view(m).x2max;
-              const Real x3mn = mbsize.d_view(m).x3min, x3mx = mbsize.d_view(m).x3max;
               Real xi, eta, bxi, bet;
+              angles(kk, jj, xi, eta);
               if (vv == 1) {
                 // primary on a XI face: (xi face jj, eta centre kk)
-                xi  = 0.25*M_PI*LeftEdgeX(jj-js_, cs_indcs.nx2, x2mn, x2mx);
-                eta = 0.25*M_PI*CellCenterX(kk-ks_, cs_indcs.nx3, x3mn, x3mx);
                 bxi = b.x2f(m,kk,jj,i);
-                bet = 0.25*(b.x3f(m,kk,jj-1,i) + b.x3f(m,kk,jj,i)
-                          + b.x3f(m,kk+1,jj-1,i) + b.x3f(m,kk+1,jj,i));
+                bet = 0.5*(x3f_at_xiface(kk,jj,i) + x3f_at_xiface(kk+1,jj,i));
               } else {
                 // primary on an ETA face: (xi centre jj, eta face kk)
-                xi  = 0.25*M_PI*CellCenterX(jj-js_, cs_indcs.nx2, x2mn, x2mx);
-                eta = 0.25*M_PI*LeftEdgeX(kk-ks_, cs_indcs.nx3, x3mn, x3mx);
                 bet = b.x3f(m,kk,jj,i);
-                bxi = 0.25*(b.x2f(m,kk-1,jj,i) + b.x2f(m,kk-1,jj+1,i)
-                          + b.x2f(m,kk,jj,i) + b.x2f(m,kk,jj+1,i));
+                bxi = 0.5*(x2f_at_etaface(kk,jj,i) + x2f_at_etaface(kk,jj+1,i));
               }
               Real oxi, oet;
               cubed_sphere::TransformFieldToDstNormals(cs_srcpanel, cs_dstpanel, xi, eta,
                                                        bxi, bet, oxi, oet);
               return (v == 1) ? oxi : oet;
+            };
+
+            // ALONG-SEAM RESAMPLE, the face-centred twin of the one in bvals_cc.cpp.
+            // Across a seam the two charts share the seam-NORMAL coordinate exactly but
+            // not the seam-PARALLEL one: a source sample at seam-normal angle n and
+            // seam-parallel angle a sits at seam-parallel angle atan(tan(a)/tan|n|) in
+            // the destination chart. Inverting that, the value a ghost needs is the
+            // source field at atan(tan(a)*tan|n|), always closer to the seam midline than
+            // the sample's own angle, so the stencil never leaves the source block. The
+            // offset is a fixed fraction of a cell -- resolution-INDEPENDENT in cell
+            // units -- so the plain index copy leaves the halo field O(dx) wrong on every
+            // component, b.x1f included, even though b.x1f crosses the seam as a scalar.
+            // Quadratic (3-point) Lagrange, on the source's own index axis; the reversal
+            // needs no special case because the map is odd in a and the index reversal
+            // already carries the sign.
+            //
+            // The staggering matters here and it is not the same for the two angular
+            // components: on a x3-face seam the along-seam axis is xi, which b.x2f
+            // samples on FACES and b.x1f/b.x3f on cell CENTRES. The offset in INDEX units
+            // is the same either way, so only the angle that enters the map changes,
+            // which `angles` already knows.
+            auto seamval = [&](const int kk, const int jj, const int i) {
+              if (cs_seam == 0) return srcval(kk,jj,i);
+              Real xi, eta;
+              angles(kk, jj, xi, eta);
+              Real ang, nrm, dang;
+              int sc, blo, bhi;
+              if (cs_seam == 2) {
+                ang = eta; nrm = xi;
+                dang = 0.25*M_PI*(x3mx - x3mn)/static_cast<Real>(cs_indcs.nx3);
+                sc = kk; blo = kl; bhi = ku - 2;
+              } else {
+                ang = xi; nrm = eta;
+                dang = 0.25*M_PI*(x2mx - x2mn)/static_cast<Real>(cs_indcs.nx2);
+                sc = jj; blo = jl; bhi = ju - 2;
+              }
+              const Real pos = sc + (atan(tan(ang)*tan(fabs(nrm))) - ang)/dang;
+              int bs = static_cast<int>(floor(pos + 0.5)) - 1;
+              bs = (bs < blo) ? blo : ((bs > bhi) ? bhi : bs);
+              const Real u = pos - static_cast<Real>(bs + 1);
+              const Real wm = 0.5*u*(u - 1.0);
+              const Real w0 = 1.0 - u*u;
+              const Real wp = 0.5*u*(u + 1.0);
+              if (cs_seam == 2) {
+                return wm*srcval(bs,jj,i) + w0*srcval(bs+1,jj,i) + wp*srcval(bs+2,jj,i);
+              }
+              return wm*srcval(kk,bs,i) + w0*srcval(kk,bs+1,i) + wp*srcval(kk,bs+2,i);
             };
 
           // copy field components directly into recv buffer if MeshBlocks on same rank
@@ -262,9 +359,7 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
               });
             }
           }
-
           } else {   // normal boundary exchange
-
         // copy field components directly into recv buffer if MeshBlocks on same rank
         if (nghbr.d_view(m,n).rank == my_rank) {
           // if neighbor is at same or finer level, load data from b0
@@ -341,9 +436,7 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
             });
           }
         }
-              
           } // end if-do-cs/do-pole block
-          
       } // end if-neighbor-exists block
       tmember.team_barrier();
     }
@@ -393,6 +486,102 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
   }
 #endif
   return TaskStatus::complete;
+}
+
+
+//----------------------------------------------------------------------------------------
+// \!fn void MeshBoundaryValuesFC::FillPanelCornersFC()
+// \brief Fill the ng x ng corner ghost blocks of a cubed-sphere panel corner.
+//
+// A panel corner is a CUBE VERTEX, where only THREE panels meet. There is no fourth
+// block diagonally across it, so the generic corner buffer -- which assumes a rectangular
+// index region of a single neighbour and applies the face seam's signed permutation to it
+// -- reaches somewhere meaningless. Measured on the uniform-Cartesian-field gate: the
+// corner ghosts were wrong by ~0.7 of |B| on EVERY component, the radial one included and
+// flat in resolution, i.e. not a basis error but garbage. That is what drove the residual
+// one-step velocity after the face halo was fixed: the max was in a corner cell on all
+// six panels.
+//
+// The panel's own gnomonic map is perfectly well defined out there, though -- the ghost
+// zone IS that map extended -- and the two face halos flanking the corner are now
+// accurate. So each corner ghost is extrapolated quadratically from the face halo on one
+// side, again from the one on the other side, and the two are averaged. Quadratic keeps
+// the O(dx^3) local error the face halo already has, and the stencil only ever reads the
+// two flanking face-halo strips, never the corner block being written.
+//
+// Called once at the end of RecvAndUnpackFC, when every face buffer is guaranteed
+// unpacked. Same-panel corners are left entirely alone.
+
+void MeshBoundaryValuesFC::FillPanelCornersFC(DvceFaceFld4D<Real> &b) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie;
+  const int js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int ng = indcs.ng;
+  const int nmb = pmy_pack->nmb_thispack;
+  auto &nghbr = pmy_pack->pmb->nghbr;
+  auto &mbpanel = pmy_pack->pmb->mb_panel;
+  auto b_ = b;
+
+  par_for("cs_fill_corners", DevExeSpace(), 0,(nmb-1), 0,3, is,ie+1, 0,(ng-1), 0,(ng-1),
+  KOKKOS_LAMBDA(const int m, const int c, const int i, const int gj, const int gk) {
+    const int sj = (c & 1) ? 1 : -1;      // -1 = the -x2 side of the block
+    const int sk = (c & 2) ? 1 : -1;      // -1 = the -x3 side
+    // Buffer ids of the two FACE neighbours flanking this corner (see nghbr_index.hpp).
+    const int nj_id = (sj < 0) ? 8 : 12;
+    const int nk_id = (sk < 0) ? 24 : 28;
+    const int mp = mbpanel.d_view(m);
+    bool seam = false;
+    if (nghbr.d_view(m,nj_id).gid >= 0 && nghbr.d_view(m,nj_id).panel != mp) seam = true;
+    if (nghbr.d_view(m,nk_id).gid >= 0 && nghbr.d_view(m,nk_id).panel != mp) seam = true;
+    if (!seam) return;
+
+    // Quadratic Lagrange extrapolated d cells beyond an anchor, nodes 0,1,2 stepping
+    // inward: w = ((d+1)(d+2)/2, -d(d+2), d(d+1)/2), which sums to 1.
+    const Real dj = static_cast<Real>(gj + 1);
+    const Real dk = static_cast<Real>(gk + 1);
+    const Real wj0 = 0.5*(dj+1.0)*(dj+2.0), wj1 = -dj*(dj+2.0), wj2 = 0.5*dj*(dj+1.0);
+    const Real wk0 = 0.5*(dk+1.0)*(dk+2.0), wk1 = -dk*(dk+2.0), wk2 = 0.5*dk*(dk+1.0);
+    const int stj = -sj, stk = -sk;       // step INWARD from the anchor
+
+    // cell-index targets and anchors
+    const int jtc = (sj < 0) ? (js-1-gj) : (je+1+gj);
+    const int ktc = (sk < 0) ? (ks-1-gk) : (ke+1+gk);
+    const int ajc = (sj < 0) ? js : je;
+    const int akc = (sk < 0) ? ks : ke;
+    // face-index targets and anchors (one more face than cells on the outer side)
+    const int jtf = (sj < 0) ? (js-1-gj) : (je+2+gj);
+    const int ktf = (sk < 0) ? (ks-1-gk) : (ke+2+gk);
+    const int ajf = (sj < 0) ? js : (je+1);
+    const int akf = (sk < 0) ? ks : (ke+1);
+
+    // b.x1f: cell indices in both j and k, faces in i
+    {
+      const Real ek = wk0*b_.x1f(m,akc,jtc,i) + wk1*b_.x1f(m,akc+stk,jtc,i)
+                    + wk2*b_.x1f(m,akc+2*stk,jtc,i);
+      const Real ej = wj0*b_.x1f(m,ktc,ajc,i) + wj1*b_.x1f(m,ktc,ajc+stj,i)
+                    + wj2*b_.x1f(m,ktc,ajc+2*stj,i);
+      b_.x1f(m,ktc,jtc,i) = 0.5*(ek + ej);
+    }
+    if (i > ie) return;
+    // b.x2f: FACE index in j, cell index in k
+    {
+      const Real ek = wk0*b_.x2f(m,akc,jtf,i) + wk1*b_.x2f(m,akc+stk,jtf,i)
+                    + wk2*b_.x2f(m,akc+2*stk,jtf,i);
+      const Real ej = wj0*b_.x2f(m,ktc,ajf,i) + wj1*b_.x2f(m,ktc,ajf+stj,i)
+                    + wj2*b_.x2f(m,ktc,ajf+2*stj,i);
+      b_.x2f(m,ktc,jtf,i) = 0.5*(ek + ej);
+    }
+    // b.x3f: cell index in j, FACE index in k
+    {
+      const Real ek = wk0*b_.x3f(m,akf,jtc,i) + wk1*b_.x3f(m,akf+stk,jtc,i)
+                    + wk2*b_.x3f(m,akf+2*stk,jtc,i);
+      const Real ej = wj0*b_.x3f(m,ktf,ajc,i) + wj1*b_.x3f(m,ktf,ajc+stj,i)
+                    + wj2*b_.x3f(m,ktf,ajc+2*stj,i);
+      b_.x3f(m,ktf,jtc,i) = 0.5*(ek + ej);
+    }
+  });
+  return;
 }
 
 //----------------------------------------------------------------------------------------
@@ -523,6 +712,11 @@ TaskStatus MeshBoundaryValuesFC::RecvAndUnpackFC(DvceFaceFld4D<Real> &b,
       }  // end if-neighbor-exists block
     }
   });  // end par_for_outer
+
+  // Every face buffer is unpacked by this point, which is what the corner fill needs.
+  if (pmy_pack->pmesh->use_cubed_sphere) {
+    FillPanelCornersFC(b);
+  }
 
   return TaskStatus::complete;
 }

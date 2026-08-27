@@ -863,6 +863,28 @@ void CSTestGhostCheck(ParameterInput *pin, Mesh *pm) {
                       (f==0?"-x2":(f==1?"+x2":(f==2?"-x3":"+x3"))), f1, f2, f3);
           e1 = fmax(e1,f1); e2 = fmax(e2,f2); e3 = fmax(e3,f3);
         }
+        // THE FOUR CORNER GHOST BLOCKS, ng x ng each, fed by the diagonal (edge/corner)
+        // buffers rather than the face ones. Reported separately because they are filled
+        // by a different code path -- a plain signed permutation, with neither the basis
+        // transform nor the along-seam resample -- and because at a cube VERTEX only
+        // three panels meet, so a "diagonal neighbour" is not even well defined there.
+        Real c1 = 0.0, c2 = 0.0, c3 = 0.0;
+        for (int cj=0; cj<2; ++cj) {
+          for (int ck=0; ck<2; ++ck) {
+            for (int gj=0; gj<ng; ++gj) {
+              for (int gk=0; gk<ng; ++gk) {
+                const int jc = cj ? (je+1+gj) : (js-1-gj);
+                const int kc = ck ? (ke+1+gk) : (ks-1-gk);
+                const int jf = cj ? (je+2+gj) : (js-1-gj);
+                const int kf = ck ? (ke+2+gk) : (ks-1-gk);
+                c1 = fmax(c1, fabs(b1h(m,kc,jc,i) - exact(jc,kc,false,false,0)));
+                c2 = fmax(c2, fabs(b2h(m,kc,jf,i) - exact(jf,kc,true, false,1)));
+                c3 = fmax(c3, fabs(b3h(m,kf,jc,i) - exact(jc,kf,false,true, 2)));
+              }
+            }
+          }
+        }
+        std::printf("  %4d cnr  %12.5e  %12.5e  %12.5e\n", p, c1, c2, c3);
         g1 = fmax(g1,e1); g2 = fmax(g2,e2); g3 = fmax(g3,e3);
       }
       std::printf("  MAX: x1f %12.5e  x2f %12.5e  x3f %12.5e\n", g1, g2, g3);
@@ -875,8 +897,12 @@ void CSTestGhostCheck(ParameterInput *pin, Mesh *pm) {
         const int kc = ks-1;
         std::cout << "  P0 -x3 g0 b.x2f:   j    delivered        exact"
                   << "        exact(j-1)     exact(j+1)" << std::endl;
-        for (int t=0; t<5; ++t) {
-          const int j = js + t*(indcs.nx2/4);
+        const int nsmp = 12;
+        int smp[nsmp] = {0,1,2,3,4, indcs.nx2/2,
+                         indcs.nx2-4, indcs.nx2-3, indcs.nx2-2, indcs.nx2-1,
+                         indcs.nx2, indcs.nx2};
+        for (int t=0; t<nsmp; ++t) {
+          const int j = js + smp[t];
           auto ex = [&](int jj) {
             const Real xi = 0.25*M_PI*LeftEdgeX(jj-js, indcs.nx2, size.h_view(m).x2min,
                                                                   size.h_view(m).x2max);
@@ -900,25 +926,50 @@ void CSTestGhostCheck(ParameterInput *pin, Mesh *pm) {
     const int nseam = ng;
     std::cout << "### CS SEAM LOCALISATION (iprob=8, exact v = 0)" << std::endl;
     std::cout << "  panel   max|v| seam   max|v| interior   mean v^2 seam  interior"
-              << std::endl;
+              << "     max|v| corner  (j,k) of seam max" << std::endl;
+    // A seam cell is split further into CORNER (within nseam of two panel edges at
+    // once, i.e. the region the ng x ng edge/corner halo buffers feed) and EDGE (one
+    // seam only, fed by the face buffers). They fail for different reasons: only the
+    // face buffers carry the basis transform and the along-seam resample, so a max that
+    // lives in the corners is not evidence about the face halo at all.
     for (int m=0; m<pmbp->nmb_thispack; ++m) {
-      Real vs = 0.0, vi = 0.0, ss = 0.0, si = 0.0;
-      int ns = 0, ni = 0;
+      Real vs = 0.0, vi = 0.0, vc = 0.0, ss = 0.0, si = 0.0;
+      int ns = 0, ni = 0, jm = 0, km = 0;
       for (int k=ks; k<=ke; ++k) {
         for (int j=js; j<=je; ++j) {
-          const bool near = (j-js < nseam) || (je-j < nseam) ||
-                            (k-ks < nseam) || (ke-k < nseam);
+          const bool nj_ = (j-js < nseam) || (je-j < nseam);
+          const bool nk_ = (k-ks < nseam) || (ke-k < nseam);
+          const bool near = nj_ || nk_;
           for (int i=is; i<=ie; ++i) {
             const Real v2 = SQR(w0_h(m,IVX,k,j,i)) + SQR(w0_h(m,IVY,k,j,i))
                           + SQR(w0_h(m,IVZ,k,j,i));
             const Real vm = sqrt(v2);
-            if (near) { vs = fmax(vs,vm); ss += v2; ++ns; }
-            else      { vi = fmax(vi,vm); si += v2; ++ni; }
+            if (nj_ && nk_) vc = fmax(vc,vm);
+            if (near) {
+              if (vm > vs) { vs = vm; jm = j-js; km = k-ks; }
+              ss += v2; ++ns;
+            } else {
+              vi = fmax(vi,vm); si += v2; ++ni;
+            }
           }
         }
       }
-      std::printf("  %4d   %12.5e   %12.5e   %12.5e  %12.5e\n", mbpanel.h_view(m),
-                  vs, vi, (ns>0?ss/ns:0.0), (ni>0?si/ni:0.0));
+      Real dmn = 1.0e30, pmn = 1.0e30;
+      int pi = 0, pj = 0, pk = 0;
+      for (int k=ks; k<=ke; ++k) {
+        for (int j=js; j<=je; ++j) {
+          for (int i=is; i<=ie; ++i) {
+            dmn = fmin(dmn, w0_h(m,IDN,k,j,i));
+            if (w0_h(m,IEN,k,j,i) < pmn) {
+              pmn = w0_h(m,IEN,k,j,i); pi = i-is; pj = j-js; pk = k-ks;
+            }
+          }
+        }
+      }
+      std::printf("  %4d   %12.5e   %12.5e   %12.5e  %12.5e   %12.5e  (%d,%d)"
+                  "  minrho %11.4e  minie %11.4e at (%d,%d,%d)\n",
+                  mbpanel.h_view(m), vs, vi, (ns>0?ss/ns:0.0), (ni>0?si/ni:0.0), vc,
+                  jm, km, dmn, pmn, pi, pj, pk);
     }
     return;
   }
