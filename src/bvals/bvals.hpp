@@ -35,6 +35,42 @@ class Particles;
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn bool IsCubeVertexCorner(nghbr, mbpanel, m, n)
+//! \brief Is x2x3-edge buffer index n (40..47) of MeshBlock m a cubed-sphere CUBE VERTEX?
+//!
+//! True when BOTH flanking FACE neighbours are on a different panel, which happens
+//! only at a corner of the cube. Only THREE panels meet there, so no fourth block sits
+//! diagonally across it and the generic pairing is meaningless: it points at the WRONG
+//! CORNER of the right panel. A reciprocity audit of the whole neighbour table found
+//! these to be the ONLY non-reciprocal slots -- every face and non-vertex diagonal pairs
+//! correctly -- and non-reciprocal is fatal under MPI, because a send is tagged with the
+//! RECEIVER's (lid, dest): the vertex slot is a posted receive that nobody satisfies, and
+//! its own send collides with the legitimate sender for the slot it targets. That is a
+//! guaranteed hang in ClearRecv, and it is why a cubed-sphere run on more than one rank
+//! never got past cycle 0.
+//!
+//! So the exchange is skipped there, on the send and receive sides together. Nothing is
+//! lost: FillPanelCornersCC / FillPanelCornersFC overwrite exactly that ng x ng corner
+//! block afterwards by extrapolating from the two flanking face halos, and
+//! flux_correct_fc's AveragePanelCornerEMF does the same for the corner EMF. The
+//! predicate is local and symmetric, so every surviving slot has exactly one sender.
+//!
+//! Written as a template so it can be called with either the device or the host mirror.
+
+template <class NghbrView, class PanelView>
+KOKKOS_INLINE_FUNCTION
+bool IsCubeVertexCorner(const NghbrView &nghbr, const PanelView &mbpanel,
+                        const int m, const int n) {
+  if (n < 40 || n >= 48) return false;
+  const int c = (n - 40)/2;                        // 0..3 over (sign x2, sign x3)
+  const int nj_id = (c & 1) ? 12 : 8;              // flanking x2 face
+  const int nk_id = (c & 2) ? 28 : 24;             // flanking x3 face
+  const int mp = mbpanel(m);
+  return (nghbr(m,nj_id).gid >= 0 && nghbr(m,nj_id).panel != mp &&
+          nghbr(m,nk_id).gid >= 0 && nghbr(m,nk_id).panel != mp);
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn int CreateBvals_MPI_Tag(int lid, int bufid)
 //! \brief calculate an MPI tag for boundary buffer communications.  Note maximum size of
 //! lid that can be encoded is set by (NUM_BITS_LID) macro defined in athena.hpp.

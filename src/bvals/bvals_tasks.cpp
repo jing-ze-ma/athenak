@@ -33,12 +33,16 @@ TaskStatus MeshBoundaryValues::InitRecv(const int nvars) {
   int &nmb = pmy_pack->nmb_thispack;
   int &nnghbr = pmy_pack->pmb->nnghbr;
   auto &nghbr = pmy_pack->pmb->nghbr;
+  auto &mbpanel = pmy_pack->pmb->mb_panel;
+  const bool use_cs = pmy_pack->pmesh->use_cubed_sphere;
 
   // Initialize communications of variables
   bool no_errors=true;
   for (int m=0; m<nmb; ++m) {
     for (int n=0; n<nnghbr; ++n) {
-      if (nghbr.h_view(m,n).gid >= 0) {
+      // CUBED-SPHERE CUBE VERTEX: nothing is sent here, so post no receive for it
+      if (nghbr.h_view(m,n).gid >= 0 &&
+          !(use_cs && IsCubeVertexCorner(nghbr.h_view, mbpanel.h_view, m, n))) {
         // rank of destination buffer
         int drank = nghbr.h_view(m,n).rank;
 
@@ -91,12 +95,15 @@ TaskStatus MeshBoundaryValues::ClearRecv() {
   int &nmb = pmy_pack->nmb_thispack;
   int &nnghbr = pmy_pack->pmb->nnghbr;
   auto &nghbr = pmy_pack->pmb->nghbr;
+  auto &mbpanel = pmy_pack->pmb->mb_panel;
+  const bool use_cs = pmy_pack->pmesh->use_cubed_sphere;
 
   // wait for all non-blocking receives for vars to finish before continuing
   for (int m=0; m<nmb; ++m) {
     for (int n=0; n<nnghbr; ++n) {
       if ( (nghbr.h_view(m,n).gid >= 0) &&
-           (nghbr.h_view(m,n).rank != global_variable::my_rank) ) {
+           (nghbr.h_view(m,n).rank != global_variable::my_rank) &&
+           !(use_cs && IsCubeVertexCorner(nghbr.h_view, mbpanel.h_view, m, n)) ) {
         int ierr = MPI_Wait(&(recvbuf[n].vars_req[m]), MPI_STATUS_IGNORE);
         if (ierr != MPI_SUCCESS) {no_errors=false;}
       }
@@ -123,12 +130,15 @@ TaskStatus MeshBoundaryValues::ClearSend() {
   int &nmb = pmy_pack->nmb_thispack;
   int &nnghbr = pmy_pack->pmb->nnghbr;
   auto &nghbr = pmy_pack->pmb->nghbr;
+  auto &mbpanel = pmy_pack->pmb->mb_panel;
+  const bool use_cs = pmy_pack->pmesh->use_cubed_sphere;
 
   // wait for all non-blocking sends for vars to finish before continuing
   for (int m=0; m<nmb; ++m) {
     for (int n=0; n<nnghbr; ++n) {
       if ( (nghbr.h_view(m,n).gid >= 0) &&
-           (nghbr.h_view(m,n).rank != global_variable::my_rank) ) {
+           (nghbr.h_view(m,n).rank != global_variable::my_rank) &&
+           !(use_cs && IsCubeVertexCorner(nghbr.h_view, mbpanel.h_view, m, n)) ) {
         int ierr = MPI_Wait(&(sendbuf[n].vars_req[m]), MPI_STATUS_IGNORE);
         if (ierr != MPI_SUCCESS) {no_errors=false;}
       }

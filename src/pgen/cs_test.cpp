@@ -1007,6 +1007,52 @@ void CSTestGhostCheck(ParameterInput *pin, Mesh *pm) {
                   " (max|e1| %10.3e)\n", spread, nvert, emag);
     }
 
+    // TEMP AUDIT: is every neighbour pairing RECIPROCAL?  Under MPI a send uses the
+    // receiver's (lid, dest) as its tag, so a slot whose partner does not point back is
+    // a receive nobody satisfies -> MPI_Wait hangs in ClearRecv.
+    {
+      auto &ng = pmbp->pmb->nghbr;
+      ng.template sync<HostMemSpace>();
+      auto &gid = pmbp->pmb->mb_gid;
+      const int nn = pmbp->pmb->nnghbr;
+      std::printf("### CS NEIGHBOUR RECIPROCITY AUDIT (nnghbr=%d)\n", nn);
+      int bad[7] = {0,0,0,0,0,0,0}, good[7] = {0,0,0,0,0,0,0};
+      const char *cls[7] = {"x1face", "x2face", "x1x2edge", "x3face",
+                            "x3x1edge", "x2x3edge", "corner"};
+      for (int m=0; m<pmbp->nmb_thispack; ++m) {
+        for (int n=0; n<nn; ++n) {
+          if (ng.h_view(m,n).gid < 0) continue;
+          int c = (n<8) ? 0 : (n<16) ? 1 : (n<24) ? 2 : (n<32) ? 3
+                                    : (n<40) ? 4 : (n<48) ? 5 : 6;
+          int mn = -1;
+          for (int mm=0; mm<pmbp->nmb_thispack; ++mm) {
+            if (gid.h_view(mm) == ng.h_view(m,n).gid) {
+              mn = mm;
+              break;
+            }
+          }
+          if (mn < 0) continue;
+          const int d = ng.h_view(m,n).dest;
+          if (d < 0 || d >= nn || ng.h_view(mn,d).gid != gid.h_view(m)) {
+            if (bad[c] < 3) {
+              std::printf("   NON-RECIPROCAL m=%2d(gid %3d,pan %d) n=%2d -> gid %3d"
+                          "(pan %d) dest=%2d, but that slot holds gid %3d\n",
+                          m, gid.h_view(m), mbpanel.h_view(m), n,
+                          ng.h_view(m,n).gid, mbpanel.h_view(mn), d,
+                          (d>=0 && d<nn) ? ng.h_view(mn,d).gid : -999);
+            }
+            ++bad[c];
+          } else {
+            ++good[c];
+          }
+        }
+      }
+      for (int c=0; c<7; ++c) {
+        std::printf("   %-9s  %5d reciprocal, %5d NON-reciprocal\n",
+                    cls[c], good[c], bad[c]);
+      }
+    }
+
     // --- IS THE x1e ON EVERY BLOCK CORNER SINGLE-VALUED? -----------------------------
     // Generalises the vertex check above to EVERY block-corner radial edge, bucketed by
     // GEOMETRY into the three cases that fail for different reasons: a cube vertex (three

@@ -48,7 +48,7 @@
 //! Only the FACE buffers get that treatment. The x2x3 EDGE buffers, which carry x1e on
 //! the radial edge at a block corner, need no transform at all -- x1e is a plain scalar
 //! and the buffer is a bare 1D array over the radial index -- but the exchange is SKIPPED
-//! outright when the corner is a CUBE VERTEX (IsCubeVertexCorner below).
+//! outright when the corner is a CUBE VERTEX (IsCubeVertexCorner, in bvals.hpp).
 //!
 //! A cube vertex is a corner where only THREE panels meet, so there is no fourth block
 //! diagonally across it and the generic pairing is meaningless: it points at the WRONG
@@ -68,26 +68,6 @@
 //!
 //! x1x2 and x3x1 edge buffers never exist here -- the radial direction has physical
 //! boundaries at both ends, so a block has no x1-direction neighbour.
-
-namespace {
-//----------------------------------------------------------------------------------------
-//! \brief Is x2x3-edge buffer index n (40..47) of MeshBlock m a CUBE VERTEX corner?
-//! True when BOTH flanking FACE neighbours are on a different panel, which on a cubed
-//! sphere happens only at a corner of the cube. Same test as SavePanelCornerEMF. Written
-//! as a template so it can be called with either the device or the host mirror of nghbr.
-
-template <class NghbrView, class PanelView>
-KOKKOS_INLINE_FUNCTION
-bool IsCubeVertexCorner(const NghbrView &nghbr, const PanelView &mbpanel,
-                        const int m, const int n) {
-  const int c = (n - 40)/2;                        // 0..3 over (sign x2, sign x3)
-  const int nj_id = (c & 1) ? 12 : 8;              // flanking x2 face
-  const int nk_id = (c & 2) ? 28 : 24;             // flanking x3 face
-  const int mp = mbpanel(m);
-  return (nghbr(m,nj_id).gid >= 0 && nghbr(m,nj_id).panel != mp &&
-          nghbr(m,nk_id).gid >= 0 && nghbr(m,nk_id).panel != mp);
-}
-}  // namespace
 
 TaskStatus MeshBoundaryValuesFC::PackAndSendFluxFC(DvceEdgeFld4D<Real> &flx) {
   // create local references for variables in kernel
