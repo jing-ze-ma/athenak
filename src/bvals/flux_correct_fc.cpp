@@ -45,12 +45,49 @@
 //! buffer slot that neighbour will read it from (x2e <-> x3e). The radial component x1e
 //! is untouched: rhat is common to both charts and so is its orientation.
 //!
-//! Only the FACE buffers are treated. The x2x3 EDGE buffers, which carry x1e on the
-//! radial edge at a panel corner, are left alone: that edge is a CUBE VERTEX shared by
-//! THREE panels, so no pairwise average can make it single-valued, and dropping the
-//! exchange there was MEASURED to be worse than keeping it (4.2e-4 -> 1.4e-3 after 50
-//! cycles). x1x2 and x3x1 edge buffers never exist here -- the radial direction has
-//! physical boundaries at both ends, so a block has no x1-direction neighbour.
+//! Only the FACE buffers get that treatment. The x2x3 EDGE buffers, which carry x1e on
+//! the radial edge at a block corner, need no transform at all -- x1e is a plain scalar
+//! and the buffer is a bare 1D array over the radial index -- but the exchange is SKIPPED
+//! outright when the corner is a CUBE VERTEX (IsCubeVertexCorner below).
+//!
+//! A cube vertex is a corner where only THREE panels meet, so there is no fourth block
+//! diagonally across it and the generic pairing is meaningless: it points at the WRONG
+//! CORNER of the right panel. What makes that fatal rather than merely noisy is where the
+//! bogus value LANDS. The pairing still carries a destination slot, and that slot is a
+//! legitimate four-block seam edge of the receiving block -- so the vertex send COLLIDES
+//! with the correct sender for that edge, and one of the two is lost. That is why the
+//! four-block seam edges were multi-valued (7.5e-5 in x1e, 6.7e-4 in the seam field) with
+//! several MeshBlocks per panel, while both cube vertices and four-block edges in a
+//! panel's INTERIOR were already exact. Under MPI the same collision is two sends racing
+//! for one posted receive on the same tag.
+//!
+//! Skipping costs nothing: the vertex edge itself is fixed afterwards by
+//! AveragePanelCornerEMF, which needs only the two FACE buffers. The predicate is purely
+//! local and symmetric, so a slot is skipped on the send and receive sides together and
+//! every surviving slot has exactly one sender.
+//!
+//! x1x2 and x3x1 edge buffers never exist here -- the radial direction has physical
+//! boundaries at both ends, so a block has no x1-direction neighbour.
+
+namespace {
+//----------------------------------------------------------------------------------------
+//! \brief Is x2x3-edge buffer index n (40..47) of MeshBlock m a CUBE VERTEX corner?
+//! True when BOTH flanking FACE neighbours are on a different panel, which on a cubed
+//! sphere happens only at a corner of the cube. Same test as SavePanelCornerEMF. Written
+//! as a template so it can be called with either the device or the host mirror of nghbr.
+
+template <class NghbrView, class PanelView>
+KOKKOS_INLINE_FUNCTION
+bool IsCubeVertexCorner(const NghbrView &nghbr, const PanelView &mbpanel,
+                        const int m, const int n) {
+  const int c = (n - 40)/2;                        // 0..3 over (sign x2, sign x3)
+  const int nj_id = (c & 1) ? 12 : 8;              // flanking x2 face
+  const int nk_id = (c & 2) ? 28 : 24;             // flanking x3 face
+  const int mp = mbpanel(m);
+  return (nghbr(m,nj_id).gid >= 0 && nghbr(m,nj_id).panel != mp &&
+          nghbr(m,nk_id).gid >= 0 && nghbr(m,nk_id).panel != mp);
+}
+}  // namespace
 
 TaskStatus MeshBoundaryValuesFC::PackAndSendFluxFC(DvceEdgeFld4D<Real> &flx) {
   // create local references for variables in kernel
@@ -363,7 +400,11 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFluxFC(DvceEdgeFld4D<Real> &flx) {
         const int k = kl;
         const int fj = 2*jl - cjs;
         const int fk = 2*kl - cks;
-        if (v==0) {
+        // CUBED-SPHERE CUBE VERTEX: no fourth block exists diagonally across it, and the
+        // bogus pairing would land on a legitimate four-block seam edge of the receiver.
+        const bool cs_vtx = use_cs &&
+            IsCubeVertexCorner(nghbr.d_view, mbpanel.d_view, m, n);
+        if (v==0 && !cs_vtx) {
           Kokkos::parallel_for(Kokkos::TeamThreadRange<>(tmember,ni),[&](const int idx) {
             int i = idx + il;
             int fi = 2*i - cis;
@@ -396,7 +437,9 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFluxFC(DvceEdgeFld4D<Real> &flx) {
     for (int n=0; n<nnghbr; ++n) {
       if ( (nghbr.h_view(m,n).gid >=0) &&
            (nghbr.h_view(m,n).lev <= mblev.h_view(m)) &&
-           (n<48) ) {
+           (n<48) &&
+           !(use_cs && n>=40 &&
+             IsCubeVertexCorner(nghbr.h_view, mbpanel.h_view, m, n)) ) {
         // index and rank of destination Neighbor
         int dn = nghbr.h_view(m,n).dest;
         int drank = nghbr.h_view(m,n).rank;
@@ -621,6 +664,8 @@ void MeshBoundaryValuesFC::SumBoundaryFluxes(DvceEdgeFld4D<Real> &flx,
   auto &rbuf = recvbuf;
   auto &mblev = pmy_pack->pmb->mb_lev;
   auto &mbbcs = pmy_pack->pmb->mb_bcs;
+  auto &mbpanel = pmy_pack->pmb->mb_panel;
+  const bool use_cs = pmy_pack->pmesh->use_cubed_sphere;
 
   // Sum recieve buffers into EMFs stored on MeshBlocks
   // Outer loop over (# of MeshBlocks)*(3 field components)
@@ -797,7 +842,9 @@ void MeshBoundaryValuesFC::SumBoundaryFluxes(DvceEdgeFld4D<Real> &flx,
 
         // x2x3 edges
         } else if (n<48) {
-          if (v==0) {
+          // CUBED-SPHERE CUBE VERTEX: nothing was sent here, so neither add nor count it
+          if (v==0 && !(use_cs &&
+                        IsCubeVertexCorner(nghbr.d_view, mbpanel.d_view, m, n))) {
             Kokkos::single(Kokkos::PerTeam(tmember), [&] () {
               nflx(m,n) += 1;
             });
@@ -1226,7 +1273,9 @@ TaskStatus MeshBoundaryValuesFC::InitFluxRecv(const int nvars) {
       // this is the only thing different from BoundaryValuesCC::InitRecvFlux()
       if ( (nghbr.h_view(m,n).gid >=0) &&
            (nghbr.h_view(m,n).lev >= pmy_pack->pmb->mb_lev.h_view(m)) &&
-           (n<48) ) {
+           (n<48) &&
+           !(pmy_pack->pmesh->use_cubed_sphere && n>=40 &&
+             IsCubeVertexCorner(nghbr.h_view, pmy_pack->pmb->mb_panel.h_view, m, n)) ) {
         // rank of destination buffer
         int drank = nghbr.h_view(m,n).rank;
 

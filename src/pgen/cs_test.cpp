@@ -1007,6 +1007,64 @@ void CSTestGhostCheck(ParameterInput *pin, Mesh *pm) {
                   " (max|e1| %10.3e)\n", spread, nvert, emag);
     }
 
+    // --- IS THE x1e ON EVERY BLOCK CORNER SINGLE-VALUED? -----------------------------
+    // Generalises the vertex check above to EVERY block-corner radial edge, bucketed by
+    // GEOMETRY into the three cases that fail for different reasons: a cube vertex (three
+    // panels, fixed by AveragePanelCornerEMF), a four-block edge lying ON a seam (two
+    // panels and four blocks -- this is what the cube-vertex buffer collision used to
+    // corrupt), and a four-block edge in a panel's interior (the generic machinery, which
+    // was always right). Splitting them is what localised the seam defect: the aggregate
+    // number alone cannot tell "the seam is broken" from "corners are broken".
+    {
+      auto &ef = pmbp->pmhd->efld;
+      auto e1h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), ef.x1e);
+      std::map<std::string, std::pair<std::pair<Real,Real>,int>> tb;
+      for (int m=0; m<pmbp->nmb_thispack; ++m) {
+        const int p = mbpanel.h_view(m);
+        for (int cj=0; cj<2; ++cj) {
+          for (int ck=0; ck<2; ++ck) {
+            const int jc = cj ? je+1 : js;
+            const int kc = ck ? ke+1 : ks;
+            const Real xi = 0.25*M_PI*LeftEdgeX(jc-js, indcs.nx2, size.h_view(m).x2min,
+                                                                  size.h_view(m).x2max);
+            const Real et = 0.25*M_PI*LeftEdgeX(kc-ks, indcs.nx3, size.h_view(m).x3min,
+                                                                  size.h_view(m).x3max);
+            Real cx, cy, cz;
+            PanelToCart(p, xi, et, cx, cy, cz);
+            const bool vtx = (fabs(fabs(cx)-fabs(cy)) < 1.0e-9 &&
+                              fabs(fabs(cx)-fabs(cz)) < 1.0e-9);
+            const bool seam = (fabs(fabs(xi) - 0.25*M_PI) < 1.0e-9 ||
+                               fabs(fabs(et) - 0.25*M_PI) < 1.0e-9);
+            const int bkt = vtx ? 0 : (seam ? 1 : 2);
+            for (int i=is; i<=ie; ++i) {
+              char key[128];
+              std::snprintf(key, sizeof(key), "%d_%.9f_%.9f_%.9f", i-is, cx, cy, cz);
+              const Real e = e1h(m,kc,jc,i);
+              auto it = tb.find(std::string(key));
+              if (it == tb.end()) {
+                tb[std::string(key)] = std::make_pair(std::make_pair(e,e), bkt);
+              } else {
+                it->second.first.first  = fmin(it->second.first.first, e);
+                it->second.first.second = fmax(it->second.first.second, e);
+              }
+            }
+          }
+        }
+      }
+      Real sp[3] = {0.0, 0.0, 0.0};
+      int nb[3] = {0, 0, 0};
+      for (auto &kv : tb) {
+        const int b = kv.second.second;
+        sp[b] = fmax(sp[b], kv.second.first.second - kv.second.first.first);
+        nb[b] += 1;
+      }
+      const char *nm[3] = {"cube vertex   ", "four-block seam", "panel interior"};
+      std::printf("### CS BLOCK-CORNER x1e SPREAD by geometry\n");
+      for (int b=0; b<3; ++b) {
+        std::printf("   %s  %12.5e   (%d edges)\n", nm[b], sp[b], nb[b]);
+      }
+    }
+
     // --- IS THE SHARED SEAM FACE SINGLE-VALUED? --------------------------------------
     // The definitive gate for seam EMF consistency. A face on a panel seam is ONE
     // physical face, stored twice -- once as an ACTIVE face of each of the two panels
