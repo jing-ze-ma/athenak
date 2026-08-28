@@ -45,6 +45,7 @@
 //! Both are run in 2D (nx3 = 1), where Coordinates::CoordGnomonicEquiangle sets the
 //! radius to 1 and the mesh is the unit sphere.
 
+#include <cstdint>
 #include <cstdio>
 #include <iostream>
 #include <map>
@@ -168,6 +169,31 @@ void PanelNormals(const int p, const Real xi, const Real eta,
 }
 
 //----------------------------------------------------------------------------------------
+//! \brief The EXACT magnetic field of iprob = 9 at time t.
+//!
+//! A uniform field is force-free (curl B = 0), so it rides passively on the iprob=3 rigid
+//! rotation without disturbing it, and flux freezing carries it round with the flow. For
+//! a SPATIALLY UNIFORM B0 that transport is exactly a rigid rotation of the vector:
+//!     B(x,t) = Rz(omega t) B0(Rz(-omega t) x) = Rz(omega t) B0,
+//! so B stays uniform for all time and only its DIRECTION precesses about z. Check it
+//! against the induction equation directly: d/dt [Rz(wt) B0] = omega zhat x B, and
+//!     curl(v x B) = (B.grad)v - (v.grad)B = omega zhat x B - 0
+//! for uniform B and v = omega zhat x r, which is the same thing. Equivalently: in the
+//! frame rotating at omega the entire state is STATIC (v' = 0 kills the Coriolis term and
+//! the centrifugal term is balanced by the iprob=3 pressure), and ideal MHD is
+//! rotationally covariant.
+
+KOKKOS_INLINE_FUNCTION
+void RotatingUniformField(const Real omega, const Real t,
+                          const Real bx0, const Real by0, const Real bz0,
+                          Real &bx, Real &by, Real &bz) {
+  const Real cw = cos(omega*t), sw = sin(omega*t);
+  bx = cw*bx0 - sw*by0;
+  by = sw*bx0 + cw*by0;
+  bz = bz0;
+}
+
+//----------------------------------------------------------------------------------------
 //! \brief The exact rigid-rotation equilibrium (iprob = 3) at one point.
 //! r is the spherical radius, (xi,eta) the equiangular coordinates on panel p.
 
@@ -195,6 +221,7 @@ void RigidRotState(const int p, const Real xi, const Real eta, const Real r,
 
 void CSTestRadialBC(Mesh *pm);
 void CSTestGhostCheck(ParameterInput *pin, Mesh *pm);
+void CSTestConvErrors(ParameterInput *pin, Mesh *pm);
 
 //----------------------------------------------------------------------------------------
 //! \fn ProblemGenerator::UserProblem
@@ -232,11 +259,17 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // reflect is exact for the uniform hydro state but not for B_r(r), which is not
   // reflection-symmetric, and the jump it manufactures at the radial boundary drives a
   // spurious radial force. The hook is a no-op unless ix1_bc/ox1_bc are set to `user`.
-  if (iprob == 1 || iprob == 8 || (iprob >= 3 && iprob <= 7 && iprob != 4)) {
+  if (iprob == 1 || iprob == 8 || iprob == 9 ||
+      (iprob >= 3 && iprob <= 7 && iprob != 4)) {
     user_bcs_func = CSTestRadialBC;
   }
   if (iprob == 8 || (iprob >= 3 && iprob <= 7 && iprob != 4)) {
     pgen_final_func = CSTestGhostCheck;
+  }
+  // iprob = 9 is the CONVERGENCE test and has its own exact solution at every time, so it
+  // reports L1 errors rather than the single-state gates CSTestGhostCheck runs.
+  if (iprob == 9) {
+    pgen_final_func = CSTestConvErrors;
   }
   const Real blob_w = pin->GetOrAddReal("problem", "blob_width", 0.3);
   const Real amp_ = cs_amp, r0_ = cs_r0;
@@ -301,7 +334,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       return;
     }
 
-    if (iprob == 3) {
+    if (iprob == 3 || iprob == 9) {
       Real dn, ie_, v1, v2, v3;
       RigidRotState(mbpanel.d_view(m), xi, eta, rad, d0, p0, omega, gm1,
                     dn, ie_, v1, v2, v3);
@@ -395,8 +428,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // the monopole's singularity sits at the origin, outside the shell.  Combined with the
   // iprob=3 rigid rotation it gives a nonzero EMF, so it exercises CT rather than just
   // sitting there.
-  if (is_mhd && iprob == 8) {
+  if (is_mhd && (iprob == 8 || iprob == 9)) {
     // iprob = 8: a UNIFORM CARTESIAN field B = b0c * bhat, with v = 0 and uniform p.
+    // iprob = 9: the SAME field, but on top of the iprob=3 rigid rotation, so that it is
+    // carried round by the flow instead of sitting still. See RotatingUniformField.
     // A uniform field has curl B = 0, so it exerts no force and this is again an exact
     // static state -- but unlike the monopole it has TANGENTIAL components on every
     // panel, which is what makes it the test of the non-orthogonal basis. |B|^2 = b0c^2
@@ -473,7 +508,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // conserved momentum is the COVARIANT one. See Coordinates::GnomonicEquiangleLowerMom.
   pmbp->pcoord->GnomonicEquiangleLowerMom(w0, u0, is, ie, js, je, ks, ke);
   // LowerMom knows nothing about B, so add the magnetic energy it left out.
-  if (is_mhd && iprob == 8) {
+  if (is_mhd && (iprob == 8 || iprob == 9)) {
     // ANALYTIC, deliberately: |B|^2 = b0c^2 exactly for a uniform Cartesian field. Adding
     // a magnetic energy built from the same bcc that ConsToPrim will subtract would make
     // the pressure check below self-consistent instead of correct, and would pass under
@@ -598,13 +633,20 @@ void CSTestRadialBC(Mesh *pm) {
   // so b0 in the radial ghosts is whatever was left there unless it is set here. Only the
   // x1 faces carry flux for the monopole; the two angular face fields stay zero, and the
   // energy has to be topped up because u0 above was written without the field.
-  if (is_mhd && iprob == 8) {
+  if (is_mhd && (iprob == 8 || iprob == 9)) {
     // The uniform Cartesian field is no more reflection-symmetric than the monopole, so
     // its radial ghosts get the exact state too -- faces, cell centres and the analytic
-    // magnetic energy.
+    // magnetic energy. For iprob = 9 the exact field is TIME DEPENDENT: it precesses
+    // about z with the flow, so the ghosts must precess with it or the boundary holds the
+    // t = 0 field against an interior that has moved on, which is a first-order error
+    // confined to the radial boundary and destroys the convergence being measured.
     auto &b0f = pmbp->pmhd->b0;
     auto &bcc = pmbp->pmhd->bcc0;
-    const Real bvx = cs_bvx, bvy = cs_bvy, bvz = cs_bvz, bsq = SQR(cs_b0r);
+    Real bvx = cs_bvx, bvy = cs_bvy, bvz = cs_bvz;
+    if (iprob == 9) {
+      RotatingUniformField(omega, pm->time, cs_bvx, cs_bvy, cs_bvz, bvx, bvy, bvz);
+    }
+    const Real bsq = SQR(cs_b0r);
     int &ie_i = indcs.ie;
     par_for("cs_test_rbc_b8", DevExeSpace(), 0,(pmbp->nmb_thispack-1), 0,(n3-1),
             0,(n2-1), 0,(ng-1),
@@ -753,6 +795,128 @@ void CSTestRadialBC(Mesh *pm) {
 //!     index. Corner ghosts are excluded (j,k held in the active range) because they are
 //!     filled from edge neighbours and are not the thing under test.
 
+//----------------------------------------------------------------------------------------
+//! \fn CSTestConvErrors
+//! \brief L1 errors against the EXACT iprob = 9 solution, for the convergence test.
+//!
+//! iprob = 9 is the rigid rotation of iprob = 3 carrying the uniform force-free field of
+//! iprob = 8. The exact solution is known at EVERY time (see RotatingUniformField), not
+//! just at a return period, so the errors below are a genuine measure of the evolved
+//! solution rather than of the initial condition -- which is what separates this from the
+//! static gates. It exercises the seam EMF hard: E = -v x B is large and varies across
+//! every panel boundary, yet its curl must reproduce a field that stays exactly UNIFORM,
+//! so any seam inconsistency shows up directly as structure in B.
+//!
+//! The FACE fields are compared, not bcc: they are what CT actually evolves, so this
+//! avoids folding in the cell-centring average's own convention and error. Each cell
+//! contributes its three lower faces, each projected onto the exact Cartesian field with
+//! the same PanelNormals used to seed it.
+//!
+//! The norm is the arithmetic mean of |error| over active cells, normalised by b0c (and
+//! by the local value for the hydro variables). On a grid uniform in (r, xi, eta) that is
+//! the volume-weighted L1 norm with the smooth O(1) volume factor replaced by 1, which
+//! leaves the convergence ORDER unchanged; it is a convergence measure, not a physical
+//! norm. Errors are APPENDED to <basename>-cs-errs.dat so a resolution sweep accumulates
+//! in one file.
+
+void CSTestConvErrors(ParameterInput *pin, Mesh *pm) {
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  if (pmbp->pmhd == nullptr) return;
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie;
+  const int js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  auto &size = pmbp->pmb->mb_size;
+  size.template sync<HostMemSpace>();
+  auto &mbpanel = pmbp->pmb->mb_panel;
+  mbpanel.template sync<HostMemSpace>();
+
+  // the exact field at the final time
+  Real ex, ey, ez;
+  RotatingUniformField(cs_omega, pm->time, cs_bvx, cs_bvy, cs_bvz, ex, ey, ez);
+
+  auto &b0f = pmbp->pmhd->b0;
+  auto b1h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), b0f.x1f);
+  auto b2h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), b0f.x2f);
+  auto b3h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), b0f.x3f);
+  auto &w0 = pmbp->pmhd->w0;
+  auto w0h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), w0);
+  const Real gm1 = pmbp->pmhd->peos->eos_data.gamma - 1.0;
+
+  Real l1b = 0.0, lib = 0.0, l1v = 0.0, l1p = 0.0;
+  std::int64_t ncell = 0;
+  for (int m=0; m<pmbp->nmb_thispack; ++m) {
+    const int p = mbpanel.h_view(m);
+    for (int k=ks; k<=ke; ++k) {
+      const Real x3c = 0.25*M_PI*CellCenterX(k-ks, indcs.nx3, size.h_view(m).x3min,
+                                                              size.h_view(m).x3max);
+      const Real x3f = 0.25*M_PI*LeftEdgeX(k-ks, indcs.nx3, size.h_view(m).x3min,
+                                                            size.h_view(m).x3max);
+      for (int j=js; j<=je; ++j) {
+        const Real x2c = 0.25*M_PI*CellCenterX(j-js, indcs.nx2, size.h_view(m).x2min,
+                                                                size.h_view(m).x2max);
+        const Real x2f = 0.25*M_PI*LeftEdgeX(j-js, indcs.nx2, size.h_view(m).x2min,
+                                                              size.h_view(m).x2max);
+        // exact face-normal components, seeded exactly as the initial condition was
+        Real n1[3], n2[3], cx, cy, cz;
+        PanelToCart(p, x2c, x3c, cx, cy, cz);
+        const Real br_ex = ex*cx + ey*cy + ez*cz;
+        PanelNormals(p, x2f, x3c, n1, n2);
+        const Real b2_ex = ex*n1[0] + ey*n1[1] + ez*n1[2];
+        PanelNormals(p, x2c, x3f, n1, n2);
+        const Real b3_ex = ex*n2[0] + ey*n2[1] + ez*n2[2];
+        for (int i=is; i<=ie; ++i) {
+          const Real e1 = fabs(b1h(m,k,j,i) - br_ex);
+          const Real e2 = fabs(b2h(m,k,j,i) - b2_ex);
+          const Real e3 = fabs(b3h(m,k,j,i) - b3_ex);
+          l1b += (e1 + e2 + e3)/3.0;
+          lib = fmax(lib, fmax(e1, fmax(e2, e3)));
+          // the hydro state is STEADY, so its error is measured against the exact
+          // rigid-rotation equilibrium at this point
+          const Real rad = CellCenterX(i-is, indcs.nx1, size.h_view(m).x1min,
+                                                        size.h_view(m).x1max);
+          Real dn, iex, v1, v2, v3;
+          RigidRotState(p, x2c, x3c, rad, cs_d0, cs_p0, cs_omega, gm1,
+                        dn, iex, v1, v2, v3);
+          l1v += fabs(w0h(m,IVX,k,j,i) - v1) + fabs(w0h(m,IVY,k,j,i) - v2)
+               + fabs(w0h(m,IVZ,k,j,i) - v3);
+          l1p += fabs(w0h(m,IEN,k,j,i) - iex)/iex;
+          ++ncell;
+        }
+      }
+    }
+  }
+  const Real nrm = (ncell > 0) ? 1.0/static_cast<Real>(ncell) : 0.0;
+  const Real b0c = (cs_b0r != 0.0) ? cs_b0r : 1.0;
+  l1b *= nrm/b0c;
+  lib /= b0c;
+  l1v *= nrm;
+  l1p *= nrm;
+
+  std::printf("### CS MHD CONVERGENCE (iprob=9): nx2=%d t=%.6f  L1(B)=%.6e"
+              "  Linf(B)=%.6e  L1(v)=%.6e  L1(p)=%.6e\n",
+              indcs.nx2, pm->time, l1b, lib, l1v, l1p);
+
+  // append so that a resolution sweep accumulates in one file
+  std::string fname = pin->GetString("job", "basename") + "-cs-errs.dat";
+  FILE *pf = std::fopen(fname.c_str(), "r");
+  if (pf == nullptr) {
+    pf = std::fopen(fname.c_str(), "w");
+    if (pf == nullptr) return;
+    std::fprintf(pf, "# AthenaK cubed-sphere MHD convergence (cs_test iprob=9)\n");
+    std::fprintf(pf, "# nx1  nx2  nx3  time  L1_B  Linf_B  L1_v  L1_p\n");
+  } else {
+    std::fclose(pf);
+    pf = std::fopen(fname.c_str(), "a");
+    if (pf == nullptr) return;
+  }
+  std::fprintf(pf, "%d  %d  %d  %.8e  %.8e  %.8e  %.8e  %.8e\n",
+               indcs.nx1, indcs.nx2, indcs.nx3, pm->time, l1b, lib, l1v, l1p);
+  std::fclose(pf);
+  return;
+}
+
+//----------------------------------------------------------------------------------------
 void CSTestGhostCheck(ParameterInput *pin, Mesh *pm) {
   MeshBlockPack *pmbp = pm->pmb_pack;
   auto &indcs = pm->mb_indcs;

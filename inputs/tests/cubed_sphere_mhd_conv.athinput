@@ -1,0 +1,94 @@
+# Cubed sphere, TEST B-MHD: the CONVERGENCE test.  Build with -D PROBLEM=cs_test.
+#
+# problem/iprob = 9 is the rigid-rotation equilibrium of iprob=3 CARRYING the uniform
+# force-free field of iprob=8.  A uniform field has curl B = 0, so it exerts no force and
+# rides passively on the rotation; flux freezing then carries it round with the flow, and
+# because B is spatially uniform that transport is exactly a rigid rotation of the vector:
+#
+#     B(x,t) = Rz(omega t) B0,   rho, v and p unchanged.
+#
+# So the exact solution is known at EVERY time, not just at a return period.  That is what
+# makes this a convergence test of the EVOLVED solution rather than of the initial
+# condition, which is all the static gates (iprob = 1 and 8) can measure.
+#
+# WHY IT IS THE RIGHT TEST FOR THE SEAM.  E = -v x B is large, varies over each panel and
+# is nonzero across every seam, yet its curl must produce a field that stays exactly
+# UNIFORM.  Any inconsistency in the seam EMF therefore shows up directly as structure in
+# B, with nothing to hide behind.  The field is deliberately TILTED for the same reason
+# iprob=8's is: an axis-aligned field is invariant under the rotation and under some of
+# the panel maps, so it would let a broken scheme look correct.
+#
+# The errors are written by CSTestConvErrors, APPENDED to cs_conv-cs-errs.dat so that a
+# resolution sweep accumulates in one file, and printed as
+#   ### CS MHD CONVERGENCE (iprob=9): nx2=..  L1(B)=..  Linf(B)=..  L1(v)=..  L1(p)=..
+# L1(B) compares the FACE fields -- what CT actually evolves -- against the exact
+# face-normal projections.  Expect second order: the ratio between successive nx2 should
+# approach 4.
+#
+# NOTE ix1_bc/ox1_bc MUST be `user`.  The exact field is time dependent, so the radial
+# ghosts have to precess with it; holding the t=0 field there is a first-order error on
+# the boundary that destroys the convergence being measured.
+#
+# AXES: x1 is RADIAL, x2 = xi and x3 = eta are the panel-tangential angles.  Must be 3D.
+
+<comment>
+problem = cubed sphere rigid rotation carrying a uniform force-free field
+
+<job>
+basename = cs_conv
+
+<mesh>
+nghost   = 2
+nx1      = 8            # RADIAL direction
+x1min    = 1.0
+x1max    = 2.0
+ix1_bc   = user
+ox1_bc   = user
+
+nx2      = 32           # xi;  nx2 must equal nx3 (Mesh checks this)
+x2min    = -1.0
+x2max    = 1.0
+ix2_bc   = panel
+ox2_bc   = panel
+
+nx3      = 32           # eta
+x3min    = -1.0
+x3max    = 1.0
+ix3_bc   = panel
+ox3_bc   = panel
+
+use_cubed_sphere = true
+
+<meshblock>
+nx1      = 8
+nx2      = 32
+nx3      = 32
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim       = -1
+tlim       = 1.0
+ndiag      = 100
+
+<mhd>
+eos         = ideal
+reconstruct = plm
+rsolver     = hlld
+gamma       = 1.666667
+
+<problem>
+iprob    = 9
+d0       = 1.0
+p0       = 1.0
+omega    = 0.2       # rotation rate; the field precesses about z at this rate
+b0c      = 1.0       # uniform field strength
+bhx      = 0.37      # field direction.  Deliberately TILTED -- see the note above.
+bhy      = 0.61
+bhz      = 0.70
+user_bcs = true
+
+<output1>
+file_type = hst
+dt        = 0.1
