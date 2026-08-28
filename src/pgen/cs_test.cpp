@@ -895,6 +895,13 @@ void CSTestConvErrors(ParameterInput *pin, Mesh *pm) {
   Real ata[3][3] = {};
   Real atb[3] = {0.0, 0.0, 0.0};
   Real l1res = 0.0;
+  // Is the FLOW itself turning at the right rate? A rigid rotation is linear in omega,
+  // so if the numerical velocity is still a rigid rotation but at omega_fit, then
+  // v_num = (omega_fit/omega) v_exact everywhere. One least-squares scalar recovers that
+  // ratio, with no need to leave the gnomonic basis: s = <v_num.v_ex>/<v_ex.v_ex>. If
+  // (s-1) matches the field's phase lag divided by omega*t, the field is simply frozen
+  // into a flow that is slow, and the induction is not the culprit.
+  Real vdotv = 0.0, vdote = 0.0;
   for (int m=0; m<pmbp->nmb_thispack; ++m) {
     const int p = mbpanel.h_view(m);
     for (int k=ks; k<=ke; ++k) {
@@ -966,6 +973,8 @@ void CSTestConvErrors(ParameterInput *pin, Mesh *pm) {
                         dn, iex, v1, v2, v3);
           l1v += fabs(w0h(m,IVX,k,j,i) - v1) + fabs(w0h(m,IVY,k,j,i) - v2)
                + fabs(w0h(m,IVZ,k,j,i) - v3);
+          vdote += w0h(m,IVY,k,j,i)*v2 + w0h(m,IVZ,k,j,i)*v3;
+          vdotv += v2*v2 + v3*v3;
           l1p += fabs(w0h(m,IEN,k,j,i) - iex)/iex;
           ++ncell;
         }
@@ -1037,6 +1046,13 @@ void CSTestConvErrors(ParameterInput *pin, Mesh *pm) {
     std::printf("\n");
     std::printf("###   Linf(B) at panel %d  (i,j,k) = (%d,%d,%d)  of block %d\n",
                 mx_p, mx_i, mx_j, mx_k, mx_m);
+  }
+
+  {
+    const Real sfit = (vdotv > 0.0) ? vdote/vdotv : 1.0;
+    std::printf("###   flow rate omega_fit/omega = %.9f  (s-1 = %+.4e);"
+                "  a field frozen into it would lag by %.4e rad at t=%.3f\n",
+                sfit, sfit-1.0, (1.0-sfit)*cs_omega*pm->time, pm->time);
   }
 
   // append so that a resolution sweep accumulates in one file
