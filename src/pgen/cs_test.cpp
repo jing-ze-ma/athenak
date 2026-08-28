@@ -73,6 +73,7 @@ Real cs_d0 = 1.0, cs_p0 = 1.0, cs_omega = 1.0;
 int  cs_iprob = 1;
 Real cs_amp = 0.5, cs_r0 = 1.0;
 Real cs_b0r = 0.0;
+Real cs_bc_tfrac = 0.0;   // ghost time offset, in units of dt (problem/bc_time_frac)
 Real cs_bvx = 0.0, cs_bvy = 0.0, cs_bvz = 0.0;
 int  cs_exact_panel_ghosts = 0;
 
@@ -252,6 +253,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   cs_d0 = d0; cs_p0 = p0; cs_omega = omega;
   cs_iprob = iprob;
   cs_amp = pin->GetOrAddReal("problem", "amp", 0.5);
+  cs_bc_tfrac = pin->GetOrAddReal("problem", "bc_time_frac", 0.0);
   cs_exact_panel_ghosts = pin->GetOrAddInteger("problem",
                                               "exact_panel_ghosts", 0);
   cs_r0 = pmy_mesh_->mesh_size.x1min;
@@ -644,7 +646,16 @@ void CSTestRadialBC(Mesh *pm) {
     auto &bcc = pmbp->pmhd->bcc0;
     Real bvx = cs_bvx, bvy = cs_bvy, bvz = cs_bvz;
     if (iprob == 9) {
-      RotatingUniformField(omega, pm->time, cs_bvx, cs_bvy, cs_bvz, bvx, bvy, bvz);
+      // The ghosts are set to the exact field at t^n + bc_time_frac*dt. Mesh::time is
+      // advanced only at the END of a cycle, while ApplyPhysicalBCs runs inside each RK
+      // stage, so which time the ghosts should carry is not obvious and it MATTERS: the
+      // residual error of this test is an O(dt) rotation PHASE LAG, and it varies by 3x
+      // over bc_time_frac in [0,1]. Measured monotonic, so the default 0 (= plain
+      // pm->time) is the best of that family -- t^n + dt is 3.2x WORSE and stops being a
+      // pure rotation. The mechanism is therefore NOT simply "the ghosts hold the wrong
+      // time", and is still open; the knob exists to keep measuring it.
+      RotatingUniformField(omega, pm->time + cs_bc_tfrac*pm->dt, cs_bvx, cs_bvy, cs_bvz,
+                           bvx, bvy, bvz);
     }
     const Real bsq = SQR(cs_b0r);
     int &ie_i = indcs.ie;
@@ -869,8 +880,13 @@ void CSTestConvErrors(ParameterInput *pin, Mesh *pm) {
   // few cells inward; only a profile that stays flat deep inside a panel shows a real
   // INTERIOR error rather than seam error that has been advected.
   const int NBIN = 6;
-  Real l1_bin[NBIN] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
-  std::int64_t n_bin[NBIN] = {0, 0, 0, 0, 0, 0};
+  Real l1_bin[NBIN] = {};
+  std::int64_t n_bin[NBIN] = {};
+  // The same profile against distance from the RADIAL boundary. A boundary-condition
+  // error shows up as a profile that decays inward from i = 0; an error made by the
+  // interior scheme does not.
+  Real l1_rbin[NBIN] = {};
+  std::int64_t n_rbin[NBIN] = {};
   // Least-squares fit of the face data to a single UNIFORM Cartesian vector: every face
   // value is one equation b_num = Bfit . n in the same normal n used to seed it. This
   // splits the error into a SYSTEMATIC part (Bfit - B_exact: the field is still uniform
@@ -929,6 +945,10 @@ void CSTestConvErrors(ParameterInput *pin, Mesh *pm) {
             int bn = 0;
             while (bn < NBIN-1 && dsm >= (1 << bn)) { ++bn; }
             l1_bin[bn] += ec; ++n_bin[bn];
+            const int drd = fmin(i-is, ie-i);
+            int rb = 0;
+            while (rb < NBIN-1 && drd >= (1 << rb)) { ++rb; }
+            l1_rbin[rb] += ec; ++n_rbin[rb];
             if (seam) {
               l1_seam += ec; ++n_seam;
             } else if (radb) {
@@ -1004,6 +1024,14 @@ void CSTestConvErrors(ParameterInput *pin, Mesh *pm) {
       if (n_bin[q] > 0) {
         std::printf("  d%d:%.3e", (q == 0) ? 0 : (1 << (q-1)),
                     l1_bin[q]/static_cast<Real>(n_bin[q])/b0c);
+      }
+    }
+    std::printf("\n");
+    std::printf("###   L1(B) per cell vs RADIAL-boundary distance:");
+    for (int q=0; q<NBIN; ++q) {
+      if (n_rbin[q] > 0) {
+        std::printf("  r%d:%.3e", (q == 0) ? 0 : (1 << (q-1)),
+                    l1_rbin[q]/static_cast<Real>(n_rbin[q])/b0c);
       }
     }
     std::printf("\n");
