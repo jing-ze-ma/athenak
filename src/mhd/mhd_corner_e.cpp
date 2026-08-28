@@ -34,6 +34,7 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
   auto &flat = pmy_pack->pcoord->coord_data.is_minkowski;
   auto &spin = pmy_pack->pcoord->coord_data.bh_spin;
   auto &mb_bcs = pmy_pack->pmb->mb_bcs;
+  auto &use_cubed_sphere = pmy_pack->pmesh->use_cubed_sphere;
 
   //---- 1-D problem:
   //  copy face-centered E-fields to edges and return.
@@ -337,6 +338,27 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
     //  Note e1[is:ie,  js:je+1,ks:ke+1]
     //       e2[is:ie+1,js:je,  ks:ke+1]
     //       e3[is:ie+1,js:je+1,ks:ke  ]
+    // CUBED SPHERE. The GS07 upwind correction is built from CELL-CENTRED EMFs, which
+    // e_cc_3d forms with the flat-space cross product v x B. That is not valid here: the
+    // gnomonic tangent basis is non-orthogonal, w0's velocity is CONTRAVARIANT and bcc0
+    // is in the ORTHONORMAL frame, so the product mixes two frames and needs the metric.
+    // The FACE EMFs, by contrast, come from the Riemann solver and have been rotated into
+    // the edge frame by GnomonicEquiangleEmfX*. Until the cell-centred EMF is given its
+    // own gnomonic form, use the plain four-face average, which is frame-correct.
+    if (use_cubed_sphere) {
+      par_for("emf3_cs", DevExeSpace(), 0, nmb1, ks, ke+1, js, je+1, is, ie+1,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        e1(m,k,j,i) = 0.25*(e1x2_(m,k-1,j,i) + e1x2_(m,k,j,i) +
+                            e1x3_(m,k,j-1,i) + e1x3_(m,k,j,i));
+        e2(m,k,j,i) = 0.25*(e2x3_(m,k,j,i-1) + e2x3_(m,k,j,i) +
+                            e2x1_(m,k-1,j,i) + e2x1_(m,k,j,i));
+        e3(m,k,j,i) = 0.25*(e3x2_(m,k,j,i-1) + e3x2_(m,k,j,i) +
+                            e3x1_(m,k,j-1,i) + e3x1_(m,k,j,i));
+      });
+      if (pmy_pack->pmesh->use_polar_boundary) PolarAzimuthalAverageEr();
+      return TaskStatus::complete;
+    }
+
     par_for("emf3", DevExeSpace(), 0, nmb1, ks, ke+1, js, je+1, is, ie+1,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       // integrate E1 to corner using SG07

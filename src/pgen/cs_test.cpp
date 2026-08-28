@@ -268,7 +268,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   }
   // iprob = 9 is the CONVERGENCE test and has its own exact solution at every time, so it
   // reports L1 errors rather than the single-state gates CSTestGhostCheck runs.
-  if (iprob == 9) {
+  if (iprob == 9 || pin->GetOrAddInteger("problem", "conv_errors", 0) != 0) {
     pgen_final_func = CSTestConvErrors;
   }
   const Real blob_w = pin->GetOrAddReal("problem", "blob_width", 0.3);
@@ -821,7 +821,11 @@ void CSTestRadialBC(Mesh *pm) {
 
 void CSTestConvErrors(ParameterInput *pin, Mesh *pm) {
   MeshBlockPack *pmbp = pm->pmb_pack;
-  if (pmbp->pmhd == nullptr) return;
+  // The field errors are only defined for iprob = 9. Any other setup (in practice the
+  // FIELD-FREE iprob = 3 rigid rotation, which is the control for this test) reports the
+  // hydro errors alone, against the same exact steady equilibrium.
+  const bool has_b = (pmbp->pmhd != nullptr) && (cs_iprob == 9);
+  if (pmbp->pmhd == nullptr && pmbp->phydro == nullptr) return;
   auto &indcs = pm->mb_indcs;
   const int is = indcs.is, ie = indcs.ie;
   const int js = indcs.js, je = indcs.je;
@@ -835,16 +839,46 @@ void CSTestConvErrors(ParameterInput *pin, Mesh *pm) {
   Real ex, ey, ez;
   RotatingUniformField(cs_omega, pm->time, cs_bvx, cs_bvy, cs_bvz, ex, ey, ez);
 
-  auto &b0f = pmbp->pmhd->b0;
-  auto b1h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), b0f.x1f);
-  auto b2h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), b0f.x2f);
-  auto b3h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), b0f.x3f);
-  auto &w0 = pmbp->pmhd->w0;
+  DvceArray4D<Real> b1d, b2d, b3d;
+  if (has_b) {
+    b1d = pmbp->pmhd->b0.x1f;
+    b2d = pmbp->pmhd->b0.x2f;
+    b3d = pmbp->pmhd->b0.x3f;
+  }
+  auto b1h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), b1d);
+  auto b2h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), b2d);
+  auto b3h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), b3d);
+  const bool is_mhd = (pmbp->pmhd != nullptr);
+  auto &w0 = is_mhd ? pmbp->pmhd->w0 : pmbp->phydro->w0;
   auto w0h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), w0);
-  const Real gm1 = pmbp->pmhd->peos->eos_data.gamma - 1.0;
+  const Real gm1 = (is_mhd ? pmbp->pmhd->peos->eos_data.gamma
+                           : pmbp->phydro->peos->eos_data.gamma) - 1.0;
 
   Real l1b = 0.0, lib = 0.0, l1v = 0.0, l1p = 0.0;
   std::int64_t ncell = 0;
+  // Localisation: split the L1(B) budget between cells adjacent to a panel SEAM (within
+  // nband of the tangential block edge), cells adjacent to the RADIAL boundary, and the
+  // panel interior, and record where the maximum sits. A flat L1 with a doubling Linf
+  // means the error lives on a set that thins as the grid refines -- this says which.
+  const int nband = 2;
+  Real l1_seam = 0.0, l1_rad = 0.0, l1_int = 0.0;
+  std::int64_t n_seam = 0, n_rad = 0, n_int = 0;
+  int mx_m = -1, mx_p = -1, mx_i = -1, mx_j = -1, mx_k = -1;
+  // Profile of the error against DISTANCE from the panel seam, in cells. The flow advects
+  // ~omega*t/(pi/2) of a panel width in the run, so error created at a seam is carried a
+  // few cells inward; only a profile that stays flat deep inside a panel shows a real
+  // INTERIOR error rather than seam error that has been advected.
+  const int NBIN = 6;
+  Real l1_bin[NBIN] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+  std::int64_t n_bin[NBIN] = {0, 0, 0, 0, 0, 0};
+  // Least-squares fit of the face data to a single UNIFORM Cartesian vector: every face
+  // value is one equation b_num = Bfit . n in the same normal n used to seed it. This
+  // splits the error into a SYSTEMATIC part (Bfit - B_exact: the field is still uniform
+  // but points the wrong way, i.e. it was rotated by the wrong angle) and a STRUCTURED
+  // part (the residual about Bfit). Which one dominates says what kind of bug this is.
+  Real ata[3][3] = {};
+  Real atb[3] = {0.0, 0.0, 0.0};
+  Real l1res = 0.0;
   for (int m=0; m<pmbp->nmb_thispack; ++m) {
     const int p = mbpanel.h_view(m);
     for (int k=ks; k<=ke; ++k) {
@@ -861,16 +895,48 @@ void CSTestConvErrors(ParameterInput *pin, Mesh *pm) {
         Real n1[3], n2[3], cx, cy, cz;
         PanelToCart(p, x2c, x3c, cx, cy, cz);
         const Real br_ex = ex*cx + ey*cy + ez*cz;
+        Real nv[3][3];
+        nv[0][0] = cx; nv[0][1] = cy; nv[0][2] = cz;
         PanelNormals(p, x2f, x3c, n1, n2);
         const Real b2_ex = ex*n1[0] + ey*n1[1] + ez*n1[2];
+        for (int c=0; c<3; ++c) { nv[1][c] = n1[c]; }
         PanelNormals(p, x2c, x3f, n1, n2);
         const Real b3_ex = ex*n2[0] + ey*n2[1] + ez*n2[2];
+        for (int c=0; c<3; ++c) { nv[2][c] = n2[c]; }
         for (int i=is; i<=ie; ++i) {
-          const Real e1 = fabs(b1h(m,k,j,i) - br_ex);
-          const Real e2 = fabs(b2h(m,k,j,i) - b2_ex);
-          const Real e3 = fabs(b3h(m,k,j,i) - b3_ex);
-          l1b += (e1 + e2 + e3)/3.0;
-          lib = fmax(lib, fmax(e1, fmax(e2, e3)));
+          if (has_b) {
+            const Real e1 = fabs(b1h(m,k,j,i) - br_ex);
+            const Real e2 = fabs(b2h(m,k,j,i) - b2_ex);
+            const Real e3 = fabs(b3h(m,k,j,i) - b3_ex);
+            const Real ec = (e1 + e2 + e3)/3.0;
+            const Real em = fmax(e1, fmax(e2, e3));
+            l1b += ec;
+            if (em > lib) {
+              lib = em;
+              mx_m = m; mx_p = p; mx_i = i-is; mx_j = j-js; mx_k = k-ks;
+            }
+            const bool seam = (j-js < nband) || (je-j < nband)
+                           || (k-ks < nband) || (ke-k < nband);
+            const bool radb = (i-is < nband) || (ie-i < nband);
+            const Real bnum[3] = {b1h(m,k,j,i), b2h(m,k,j,i), b3h(m,k,j,i)};
+            for (int f=0; f<3; ++f) {
+              for (int c=0; c<3; ++c) {
+                atb[c] += bnum[f]*nv[f][c];
+                for (int d=0; d<3; ++d) { ata[c][d] += nv[f][c]*nv[f][d]; }
+              }
+            }
+            const int dsm = fmin(fmin(j-js, je-j), fmin(k-ks, ke-k));
+            int bn = 0;
+            while (bn < NBIN-1 && dsm >= (1 << bn)) { ++bn; }
+            l1_bin[bn] += ec; ++n_bin[bn];
+            if (seam) {
+              l1_seam += ec; ++n_seam;
+            } else if (radb) {
+              l1_rad += ec; ++n_rad;
+            } else {
+              l1_int += ec; ++n_int;
+            }
+          }
           // the hydro state is STEADY, so its error is measured against the exact
           // rigid-rotation equilibrium at this point
           const Real rad = CellCenterX(i-is, indcs.nx1, size.h_view(m).x1min,
@@ -893,9 +959,57 @@ void CSTestConvErrors(ParameterInput *pin, Mesh *pm) {
   l1v *= nrm;
   l1p *= nrm;
 
-  std::printf("### CS MHD CONVERGENCE (iprob=9): nx2=%d t=%.6f  L1(B)=%.6e"
+  std::printf("### CS CONVERGENCE (iprob=%d): nx2=%d t=%.6f  L1(B)=%.6e"
               "  Linf(B)=%.6e  L1(v)=%.6e  L1(p)=%.6e\n",
-              indcs.nx2, pm->time, l1b, lib, l1v, l1p);
+              cs_iprob, indcs.nx2, pm->time, l1b, lib, l1v, l1p);
+
+  if (has_b) {
+    // solve the 3x3 normal equations by Gaussian elimination with partial pivoting
+    Real a[3][4];
+    for (int r=0; r<3; ++r) {
+      for (int c=0; c<3; ++c) { a[r][c] = ata[r][c]; }
+      a[r][3] = atb[r];
+    }
+    for (int c=0; c<3; ++c) {
+      int piv = c;
+      for (int r=c+1; r<3; ++r) {
+        if (fabs(a[r][c]) > fabs(a[piv][c])) piv = r;
+      }
+      for (int q=c; q<4; ++q) {
+        const Real tmp = a[c][q]; a[c][q] = a[piv][q]; a[piv][q] = tmp;
+      }
+      for (int r=0; r<3; ++r) {
+        if (r == c || a[c][c] == 0.0) continue;
+        const Real f = a[r][c]/a[c][c];
+        for (int q=c; q<4; ++q) { a[r][q] -= f*a[c][q]; }
+      }
+    }
+    const Real bf[3] = {a[0][3]/a[0][0], a[1][3]/a[1][1], a[2][3]/a[2][2]};
+    const Real dsys = (fabs(bf[0]-ex) + fabs(bf[1]-ey) + fabs(bf[2]-ez))/3.0/b0c;
+    std::printf("###   best-fit UNIFORM B = (%.6e,%.6e,%.6e)\n", bf[0], bf[1], bf[2]);
+    std::printf("###   exact           B = (%.6e,%.6e,%.6e)\n", ex, ey, ez);
+    std::printf("###   systematic |Bfit-Bex|/3/b0c = %.6e   vs  L1(B) = %.6e\n",
+                dsys, l1b);
+  }
+
+  if (has_b) {
+    const Real tot = (l1_seam + l1_rad + l1_int > 0.0) ? l1_seam+l1_rad+l1_int : 1.0;
+    std::printf("###   L1(B) budget: seam %.1f%% (%lld cells)  radial %.1f%% (%lld)"
+                "  interior %.1f%% (%lld)\n",
+                100.0*l1_seam/tot, static_cast<long long>(n_seam),
+                100.0*l1_rad/tot,  static_cast<long long>(n_rad),
+                100.0*l1_int/tot,  static_cast<long long>(n_int));
+    std::printf("###   L1(B) per cell vs seam distance (cells):");
+    for (int q=0; q<NBIN; ++q) {
+      if (n_bin[q] > 0) {
+        std::printf("  d%d:%.3e", (q == 0) ? 0 : (1 << (q-1)),
+                    l1_bin[q]/static_cast<Real>(n_bin[q])/b0c);
+      }
+    }
+    std::printf("\n");
+    std::printf("###   Linf(B) at panel %d  (i,j,k) = (%d,%d,%d)  of block %d\n",
+                mx_p, mx_i, mx_j, mx_k, mx_m);
+  }
 
   // append so that a resolution sweep accumulates in one file
   std::string fname = pin->GetString("job", "basename") + "-cs-errs.dat";
