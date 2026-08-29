@@ -82,6 +82,19 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFluxFC(DvceEdgeFld4D<Real> &flx) {
   auto &nghbr = pmy_pack->pmb->nghbr;
   auto &mbgid = pmy_pack->pmb->mb_gid;
   auto &mblev = pmy_pack->pmb->mb_lev;
+  // The CT update consumes dxedge*E, not E, so on a curvilinear grid restricting the
+  // EMF to a coarse edge is a LENGTH-weighted sum, not an average: send sum(L_f E_f)
+  // and let the coarse side divide by its own edge length. The coarse update then
+  // multiplies by that same length, so the coarse edge receives exactly the line
+  // integral the two fine edges carried -- and, as with the cell-centred flux
+  // correction, this is exact without the coarse length having to equal the sum of the
+  // fine ones. The same-level (panel seam) branch above is a direct copy and is left
+  // alone: that edge is not restricted, it is shared.
+  const bool curvi_ = (pmy_pack->pmesh->use_cubed_sphere ||
+                       pmy_pack->pmesh->use_spherical_polar);
+  auto dxe1_ = pmy_pack->pcoord->dxedge.x1e;
+  auto dxe2_ = pmy_pack->pcoord->dxedge.x2e;
+  auto dxe3_ = pmy_pack->pcoord->dxedge.x3e;
   auto &sbuf = sendbuf;
   auto &rbuf = recvbuf;
   auto &one_d = pmy_pack->pmesh->one_d;
@@ -151,9 +164,15 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFluxFC(DvceEdgeFld4D<Real> &flx) {
               if (one_d) {
                 rflx = flx.x2e(m,0,0,fi);
               } else if (two_d) {
-                rflx = 0.5*(flx.x2e(m,0,fj,fi) + flx.x2e(m,0,fj+1,fi));
+                rflx = curvi_
+                     ? (flx.x2e(m,0,fj,fi)*dxe2_(m,0,fj,fi)
+                      + flx.x2e(m,0,fj+1,fi)*dxe2_(m,0,fj+1,fi))
+                     : 0.5*(flx.x2e(m,0,fj,fi) + flx.x2e(m,0,fj+1,fi));
               } else {
-                rflx = 0.5*(flx.x2e(m,fk,fj,fi) + flx.x2e(m,fk,fj+1,fi));
+                rflx = curvi_
+                     ? (flx.x2e(m,fk,fj,fi)*dxe2_(m,fk,fj,fi)
+                      + flx.x2e(m,fk,fj+1,fi)*dxe2_(m,fk,fj+1,fi))
+                     : 0.5*(flx.x2e(m,fk,fj,fi) + flx.x2e(m,fk,fj+1,fi));
               }
             }
             // copy directly into recv buffer if MeshBlocks on same rank
@@ -175,7 +194,10 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFluxFC(DvceEdgeFld4D<Real> &flx) {
               } else if (two_d) {
                 rflx = flx.x3e(m,0,fj,fi);
               } else {
-                rflx = 0.5*(flx.x3e(m,fk,fj,fi) + flx.x3e(m,fk+1,fj,fi));
+                rflx = curvi_
+                     ? (flx.x3e(m,fk,fj,fi)*dxe3_(m,fk,fj,fi)
+                      + flx.x3e(m,fk+1,fj,fi)*dxe3_(m,fk+1,fj,fi))
+                     : 0.5*(flx.x3e(m,fk,fj,fi) + flx.x3e(m,fk+1,fj,fi));
               }
             }
             if (nghbr.d_view(m,n).rank == my_rank) {
@@ -226,9 +248,15 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFluxFC(DvceEdgeFld4D<Real> &flx) {
             // if neighbor is at coarser level, restrict x1e
             } else {
               if (two_d) {
-                rflx = 0.5*(flx.x1e(m,0,fj,fi) + flx.x1e(m,0,fj,fi+1));
+                rflx = curvi_
+                     ? (flx.x1e(m,0,fj,fi)*dxe1_(m,0,fj,fi)
+                      + flx.x1e(m,0,fj,fi+1)*dxe1_(m,0,fj,fi+1))
+                     : 0.5*(flx.x1e(m,0,fj,fi) + flx.x1e(m,0,fj,fi+1));
               } else {
-                rflx = 0.5*(flx.x1e(m,fk,fj,fi) + flx.x1e(m,fk,fj,fi+1));
+                rflx = curvi_
+                     ? (flx.x1e(m,fk,fj,fi)*dxe1_(m,fk,fj,fi)
+                      + flx.x1e(m,fk,fj,fi+1)*dxe1_(m,fk,fj,fi+1))
+                     : 0.5*(flx.x1e(m,fk,fj,fi) + flx.x1e(m,fk,fj,fi+1));
               }
             }
             if (nghbr.d_view(m,n).rank == my_rank) {
@@ -246,7 +274,10 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFluxFC(DvceEdgeFld4D<Real> &flx) {
               if (two_d) {
                 rflx = flx.x3e(m,0,fj,fi);
               } else {
-                rflx = 0.5*(flx.x3e(m,fk,fj,fi) + flx.x3e(m,fk+1,fj,fi));
+                rflx = curvi_
+                     ? (flx.x3e(m,fk,fj,fi)*dxe3_(m,fk,fj,fi)
+                      + flx.x3e(m,fk+1,fj,fi)*dxe3_(m,fk+1,fj,fi))
+                     : 0.5*(flx.x3e(m,fk,fj,fi) + flx.x3e(m,fk+1,fj,fi));
               }
             }
             if (nghbr.d_view(m,n).rank == my_rank) {
@@ -277,7 +308,10 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFluxFC(DvceEdgeFld4D<Real> &flx) {
               if (two_d) {
                 rflx = flx.x3e(m,0,fj,fi);
               } else {
-                rflx = 0.5*(flx.x3e(m,fk,fj,fi) + flx.x3e(m,fk+1,fj,fi));
+                rflx = curvi_
+                     ? (flx.x3e(m,fk,fj,fi)*dxe3_(m,fk,fj,fi)
+                      + flx.x3e(m,fk+1,fj,fi)*dxe3_(m,fk+1,fj,fi))
+                     : 0.5*(flx.x3e(m,fk,fj,fi) + flx.x3e(m,fk+1,fj,fi));
               }
             }
             if (nghbr.d_view(m,n).rank == my_rank) {
@@ -324,7 +358,10 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFluxFC(DvceEdgeFld4D<Real> &flx) {
               rflx = flx.x1e(m,k,jj,i);
             // if neighbor is at coarser level, restrict x1e
             } else {
-              rflx = 0.5*(flx.x1e(m,fk,fj,fi) + flx.x1e(m,fk,fj,fi+1));
+              rflx = curvi_
+                   ? (flx.x1e(m,fk,fj,fi)*dxe1_(m,fk,fj,fi)
+                    + flx.x1e(m,fk,fj,fi+1)*dxe1_(m,fk,fj,fi+1))
+                   : 0.5*(flx.x1e(m,fk,fj,fi) + flx.x1e(m,fk,fj,fi+1));
             }
             if (nghbr.d_view(m,n).rank == my_rank) {
               rbuf[dn].flux(dm, ndat*vout + i-il + ni*(j-jl)) = rflx;
@@ -338,7 +375,10 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFluxFC(DvceEdgeFld4D<Real> &flx) {
               rflx = sgn*flx.x2e(m,k,jj,i);
             // if neighbor is at coarser level, restrict x2e
             } else {
-              rflx = 0.5*(flx.x2e(m,fk,fj,fi) + flx.x2e(m,fk,fj+1,fi));
+              rflx = curvi_
+                   ? (flx.x2e(m,fk,fj,fi)*dxe2_(m,fk,fj,fi)
+                    + flx.x2e(m,fk,fj+1,fi)*dxe2_(m,fk,fj+1,fi))
+                   : 0.5*(flx.x2e(m,fk,fj,fi) + flx.x2e(m,fk,fj+1,fi));
             }
             if (nghbr.d_view(m,n).rank == my_rank) {
               rbuf[dn].flux(dm, ndat*vout + i-il + ni*(j-jl)) = rflx;
@@ -364,7 +404,10 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFluxFC(DvceEdgeFld4D<Real> &flx) {
               rflx = flx.x2e(m,k,j,i);
             // if neighbor is at coarser level, restrict x2e
             } else {
-              rflx = 0.5*(flx.x2e(m,fk,fj,fi) + flx.x2e(m,fk,fj+1,fi));
+              rflx = curvi_
+                   ? (flx.x2e(m,fk,fj,fi)*dxe2_(m,fk,fj,fi)
+                    + flx.x2e(m,fk,fj+1,fi)*dxe2_(m,fk,fj+1,fi))
+                   : 0.5*(flx.x2e(m,fk,fj,fi) + flx.x2e(m,fk,fj+1,fi));
             }
             if (nghbr.d_view(m,n).rank == my_rank) {
               rbuf[dn].flux(dm, ndat*v + (j-jl)) = rflx;
@@ -394,7 +437,10 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFluxFC(DvceEdgeFld4D<Real> &flx) {
               rflx = flx.x1e(m,k,j,i);
             // if neighbor is at coarser level, restrict x1e
             } else {
-              rflx = 0.5*(flx.x1e(m,fk,fj,fi) + flx.x1e(m,fk,fj,fi+1));
+              rflx = curvi_
+                   ? (flx.x1e(m,fk,fj,fi)*dxe1_(m,fk,fj,fi)
+                    + flx.x1e(m,fk,fj,fi+1)*dxe1_(m,fk,fj,fi+1))
+                   : 0.5*(flx.x1e(m,fk,fj,fi) + flx.x1e(m,fk,fj,fi+1));
             }
             if (nghbr.d_view(m,n).rank == my_rank) {
               rbuf[dn].flux(dm, ndat*v + i-il) = rflx;
@@ -646,6 +692,16 @@ void MeshBoundaryValuesFC::SumBoundaryFluxes(DvceEdgeFld4D<Real> &flx,
   auto &mbbcs = pmy_pack->pmb->mb_bcs;
   auto &mbpanel = pmy_pack->pmb->mb_panel;
   const bool use_cs = pmy_pack->pmesh->use_cubed_sphere;
+  // A buffer from a FINER neighbour carries the length-weighted sum sum(L_f E_f) that
+  // PackAndSendFluxFC restricted (see the note there), so turn it back into an EMF with
+  // THIS block's own edge length. Same-level buffers carry an EMF already and are left
+  // alone. On a Cartesian grid both are the same thing and nothing changes.
+  const bool curvi_ = (pmy_pack->pmesh->use_cubed_sphere ||
+                       pmy_pack->pmesh->use_spherical_polar);
+  const bool rescale_ = curvi_ && !same_level;
+  auto dxe1_ = pmy_pack->pcoord->dxedge.x1e;
+  auto dxe2_ = pmy_pack->pcoord->dxedge.x2e;
+  auto dxe3_ = pmy_pack->pcoord->dxedge.x3e;
 
   // Sum recieve buffers into EMFs stored on MeshBlocks
   // Outer loop over (# of MeshBlocks)*(3 field components)
@@ -731,9 +787,11 @@ void MeshBoundaryValuesFC::SumBoundaryFluxes(DvceEdgeFld4D<Real> &flx,
               int j = (idx - k * nj) + jl;
               k += kl;
               if (v==1) {
-                flx.x2e(m,k,j,il) += rbuf[n].flux(m,ndat*v + (j-jl + nj*(k-kl)));
+                { const Real rf_ = rbuf[n].flux(m,ndat*v + (j-jl + nj*(k-kl)));
+                  flx.x2e(m,k,j,il) += rescale_ ? rf_/dxe2_(m,k,j,il) : rf_; }
               } else if (v==2) {
-                flx.x3e(m,k,j,il) += rbuf[n].flux(m,ndat*v + (j-jl + nj*(k-kl)));
+                { const Real rf_ = rbuf[n].flux(m,ndat*v + (j-jl + nj*(k-kl)));
+                  flx.x3e(m,k,j,il) += rescale_ ? rf_/dxe3_(m,k,j,il) : rf_; }
               }
             });
           }
@@ -759,9 +817,11 @@ void MeshBoundaryValuesFC::SumBoundaryFluxes(DvceEdgeFld4D<Real> &flx,
             int i = (idx - k * ni) + il;
             k += kl;
             if (v==0) {
-              flx.x1e(m,k,jl,i) += rbuf[n].flux(m,ndat*v + i-il + ni*(k-kl));
+              { const Real rf_ = rbuf[n].flux(m,ndat*v + i-il + ni*(k-kl));
+                flx.x1e(m,k,jl,i) += rescale_ ? rf_/dxe1_(m,k,jl,i) : rf_; }
             } else if (v==2) {
-              flx.x3e(m,k,jl,i) += rbuf[n].flux(m,ndat*v + i-il + ni*(k-kl));
+              { const Real rf_ = rbuf[n].flux(m,ndat*v + i-il + ni*(k-kl));
+                flx.x3e(m,k,jl,i) += rescale_ ? rf_/dxe3_(m,k,jl,i) : rf_; }
             }
           });
 
@@ -775,7 +835,8 @@ void MeshBoundaryValuesFC::SumBoundaryFluxes(DvceEdgeFld4D<Real> &flx,
           } else if (v==2) {
             Kokkos::parallel_for(Kokkos::TeamThreadRange<>(tmember,nk),[&](const int idx){
               int k = idx + kl;
-              flx.x3e(m,k,jl,il) += rbuf[n].flux(m,ndat*v + (k-kl));
+              { const Real rf_ = rbuf[n].flux(m,ndat*v + (k-kl));
+                flx.x3e(m,k,jl,il) += rescale_ ? rf_/dxe3_(m,k,jl,il) : rf_; }
             });
           }
 
@@ -800,9 +861,11 @@ void MeshBoundaryValuesFC::SumBoundaryFluxes(DvceEdgeFld4D<Real> &flx,
             int i = (idx - j * ni) + il;
             j += jl;
             if (v==0) {
-              flx.x1e(m,kl,j,i) += rbuf[n].flux(m,ndat*v + i-il + ni*(j-jl));
+              { const Real rf_ = rbuf[n].flux(m,ndat*v + i-il + ni*(j-jl));
+                flx.x1e(m,kl,j,i) += rescale_ ? rf_/dxe1_(m,kl,j,i) : rf_; }
             } else if (v==1) {
-              flx.x2e(m,kl,j,i) += rbuf[n].flux(m,ndat*v + i-il + ni*(j-jl));
+              { const Real rf_ = rbuf[n].flux(m,ndat*v + i-il + ni*(j-jl));
+                flx.x2e(m,kl,j,i) += rescale_ ? rf_/dxe2_(m,kl,j,i) : rf_; }
             }
           });
 
@@ -816,7 +879,8 @@ void MeshBoundaryValuesFC::SumBoundaryFluxes(DvceEdgeFld4D<Real> &flx,
           } else if (v==1) {
             Kokkos::parallel_for(Kokkos::TeamThreadRange<>(tmember,nj),[&](const int idx){
               int j = idx + jl;
-              flx.x2e(m,kl,j,il) += rbuf[n].flux(m,ndat*v + (j-jl));
+              { const Real rf_ = rbuf[n].flux(m,ndat*v + (j-jl));
+                flx.x2e(m,kl,j,il) += rescale_ ? rf_/dxe2_(m,kl,j,il) : rf_; }
             });
           }
 
@@ -830,7 +894,8 @@ void MeshBoundaryValuesFC::SumBoundaryFluxes(DvceEdgeFld4D<Real> &flx,
             });
             Kokkos::parallel_for(Kokkos::TeamThreadRange<>(tmember,ni),[&](const int idx){
               int i = idx + il;
-              flx.x1e(m,kl,jl,i) += rbuf[n].flux(m,ndat*v + i-il);
+              { const Real rf_ = rbuf[n].flux(m,ndat*v + i-il);
+                flx.x1e(m,kl,jl,i) += rescale_ ? rf_/dxe1_(m,kl,jl,i) : rf_; }
             });
           }
         }
