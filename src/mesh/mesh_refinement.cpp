@@ -1230,6 +1230,17 @@ void MeshRefinement::RestrictCC(DvceArray5D<Real> &u, DvceArray5D<Real> &cu,
 void MeshRefinement::RestrictFC(DvceFaceFld4D<Real> &b, DvceFaceFld4D<Real> &cb) {
   int nmb  = b.x1f.extent_int(0);  // TODO(@user): 1st idx from L of in array must be NMB
 
+  // On a curvilinear grid the four fine faces covering one coarse face do not have equal
+  // areas, so a plain average is not the mean field over the coarse face. What matters
+  // for the field is the FLUX A*B -- that is the quantity the divergence sums -- so
+  // weight by area and normalise by the SUM of the four fine areas. The sum is what the
+  // fine faces actually carry, and using it needs no coarse-mesh geometry, which
+  // Coordinates does not compute.
+  const bool curvi_ = (pmy_mesh->use_cubed_sphere || pmy_mesh->use_spherical_polar);
+  auto a1_ = pmy_mesh->pmb_pack->pcoord->area.x1f;
+  auto a2_ = pmy_mesh->pmb_pack->pcoord->area.x2f;
+  auto a3_ = pmy_mesh->pmb_pack->pcoord->area.x3f;
+
   auto &cis = pmy_mesh->mb_indcs.cis;
   auto &cie = pmy_mesh->mb_indcs.cie;
   auto &cjs = pmy_mesh->mb_indcs.cjs;
@@ -1290,31 +1301,109 @@ void MeshRefinement::RestrictFC(DvceFaceFld4D<Real> &b, DvceFaceFld4D<Real> &cb)
       int finej = 2*j - cjs;  // correct when cjs=js
       int finek = 2*k - cks;  // correct when cks=ks
       // restrict B1
+      if (curvi_) {
+        cb.x1f(m,k,j,i) =
+            (b.x1f(m,finek  ,finej,finei)*a1_(m,finek  ,finej,finei)
+           + b.x1f(m,finek  ,finej+1,finei)*a1_(m,finek  ,finej+1,finei)
+           + b.x1f(m,finek+1,finej,finei)*a1_(m,finek+1,finej,finei)
+           + b.x1f(m,finek+1,finej+1,finei)*a1_(m,finek+1,finej+1,finei)
+            ) / (a1_(m,finek  ,finej,finei)
+                + a1_(m,finek  ,finej+1,finei)
+                + a1_(m,finek+1,finej,finei)
+                + a1_(m,finek+1,finej+1,finei)
+                );
+      } else {
       cb.x1f(m,k,j,i) =
         0.25*(b.x1f(m,finek  ,finej,finei) + b.x1f(m,finek  ,finej+1,finei)
             + b.x1f(m,finek+1,finej,finei) + b.x1f(m,finek+1,finej+1,finei));
+      }
       if (i==cie) {
+        if (curvi_) {
+          cb.x1f(m,k,j,i+1) =
+              (b.x1f(m,finek  ,finej,finei+2)*a1_(m,finek  ,finej,finei+2)
+             + b.x1f(m,finek  ,finej+1,finei+2)*a1_(m,finek  ,finej+1,finei+2)
+             + b.x1f(m,finek+1,finej,finei+2)*a1_(m,finek+1,finej,finei+2)
+             + b.x1f(m,finek+1,finej+1,finei+2)*a1_(m,finek+1,finej+1,finei+2)
+              ) / (a1_(m,finek  ,finej,finei+2)
+                  + a1_(m,finek  ,finej+1,finei+2)
+                  + a1_(m,finek+1,finej,finei+2)
+                  + a1_(m,finek+1,finej+1,finei+2)
+                  );
+        } else {
         cb.x1f(m,k,j,i+1) =
           0.25*(b.x1f(m,finek  ,finej,finei+2) + b.x1f(m,finek  ,finej+1,finei+2)
               + b.x1f(m,finek+1,finej,finei+2) + b.x1f(m,finek+1,finej+1,finei+2));
+        }
       }
       // restrict B2
+      if (curvi_) {
+        cb.x2f(m,k,j,i) =
+            (b.x2f(m,finek  ,finej,finei)*a2_(m,finek  ,finej,finei)
+           + b.x2f(m,finek  ,finej,finei+1)*a2_(m,finek  ,finej,finei+1)
+           + b.x2f(m,finek+1,finej,finei)*a2_(m,finek+1,finej,finei)
+           + b.x2f(m,finek+1,finej,finei+1)*a2_(m,finek+1,finej,finei+1)
+            ) / (a2_(m,finek  ,finej,finei)
+                + a2_(m,finek  ,finej,finei+1)
+                + a2_(m,finek+1,finej,finei)
+                + a2_(m,finek+1,finej,finei+1)
+                );
+      } else {
       cb.x2f(m,k,j,i) =
         0.25*(b.x2f(m,finek  ,finej,finei) + b.x2f(m,finek  ,finej,finei+1)
             + b.x2f(m,finek+1,finej,finei) + b.x2f(m,finek+1,finej,finei+1));
+      }
       if (j==cje) {
+        if (curvi_) {
+          cb.x2f(m,k,j+1,i) =
+              (b.x2f(m,finek  ,finej+2,finei)*a2_(m,finek  ,finej+2,finei)
+             + b.x2f(m,finek  ,finej+2,finei+1)*a2_(m,finek  ,finej+2,finei+1)
+             + b.x2f(m,finek+1,finej+2,finei)*a2_(m,finek+1,finej+2,finei)
+             + b.x2f(m,finek+1,finej+2,finei+1)*a2_(m,finek+1,finej+2,finei+1)
+              ) / (a2_(m,finek  ,finej+2,finei)
+                  + a2_(m,finek  ,finej+2,finei+1)
+                  + a2_(m,finek+1,finej+2,finei)
+                  + a2_(m,finek+1,finej+2,finei+1)
+                  );
+        } else {
         cb.x2f(m,k,j+1,i) =
           0.25*(b.x2f(m,finek  ,finej+2,finei) + b.x2f(m,finek  ,finej+2,finei+1)
               + b.x2f(m,finek+1,finej+2,finei) + b.x2f(m,finek+1,finej+2,finei+1));
+        }
       }
       // restrict B3
+      if (curvi_) {
+        cb.x3f(m,k,j,i) =
+            (b.x3f(m,finek,finej  ,finei)*a3_(m,finek,finej  ,finei)
+           + b.x3f(m,finek,finej  ,finei+1)*a3_(m,finek,finej  ,finei+1)
+           + b.x3f(m,finek,finej+1,finei)*a3_(m,finek,finej+1,finei)
+           + b.x3f(m,finek,finej+1,finei+1)*a3_(m,finek,finej+1,finei+1)
+            ) / (a3_(m,finek,finej  ,finei)
+                + a3_(m,finek,finej  ,finei+1)
+                + a3_(m,finek,finej+1,finei)
+                + a3_(m,finek,finej+1,finei+1)
+                );
+      } else {
       cb.x3f(m,k,j,i) =
         0.25*(b.x3f(m,finek,finej  ,finei) + b.x3f(m,finek,finej  ,finei+1)
             + b.x3f(m,finek,finej+1,finei) + b.x3f(m,finek,finej+1,finei+1));
+      }
       if (k==cke) {
+        if (curvi_) {
+          cb.x3f(m,k+1,j,i) =
+              (b.x3f(m,finek+2,finej  ,finei)*a3_(m,finek+2,finej  ,finei)
+             + b.x3f(m,finek+2,finej  ,finei+1)*a3_(m,finek+2,finej  ,finei+1)
+             + b.x3f(m,finek+2,finej+1,finei)*a3_(m,finek+2,finej+1,finei)
+             + b.x3f(m,finek+2,finej+1,finei+1)*a3_(m,finek+2,finej+1,finei+1)
+              ) / (a3_(m,finek+2,finej  ,finei)
+                  + a3_(m,finek+2,finej  ,finei+1)
+                  + a3_(m,finek+2,finej+1,finei)
+                  + a3_(m,finek+2,finej+1,finei+1)
+                  );
+        } else {
         cb.x3f(m,k+1,j,i) =
           0.25*(b.x3f(m,finek+2,finej  ,finei) + b.x3f(m,finek+2,finej  ,finei+1)
               + b.x3f(m,finek+2,finej+1,finei) + b.x3f(m,finek+2,finej+1,finei+1));
+        }
       }
     });
   }
