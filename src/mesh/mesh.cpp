@@ -281,6 +281,49 @@ Mesh::Mesh(ParameterInput *pin) :
   multilevel = (adaptive || pin->GetString("mesh_refinement","refinement") == "static")
     ?  true : false;
 
+  // ---------------------------------------------------------------------------------
+  // WHAT THE CUBED SPHERE DOES NOT SUPPORT.
+  //
+  // Every one of these runs to completion and returns a WRONG ANSWER rather than
+  // failing, because each is written for an orthogonal basis and the gnomonic tangent
+  // basis is not one: the face-normal directions nhat_xi and nhat_eta are not the edge
+  // directions e_xi and e_eta, so a formula that treats b0.x2f as B.e_xi, or divides by
+  // mb_size.dx2 (an index spacing on [-1,1], not a length), is wrong by O(1) and not by
+  // O(h). Resistivity was in this list until resistivity_gnomonic.cpp; the rest are
+  // fatal here until someone does the same work for them.
+  if (use_cubed_sphere) {
+    std::string missing;
+    if (multilevel) {
+      missing = "mesh refinement (mesh_refinement/refinement): prolongation and "
+                "restriction have no cubed-sphere path, and across a seam they would "
+                "need the tangent-basis transform the halo applies";
+    // NB: GetOrAdd would CREATE <hydro>, and AddPhysics constructs a module for every
+    // block that exists -- so only ever ask whether the parameter is already there.
+    } else if ((pin->DoesParameterExist("hydro", "fofc") &&
+                pin->GetBoolean("hydro", "fofc")) ||
+               (pin->DoesParameterExist("mhd", "fofc") &&
+                pin->GetBoolean("mhd", "fofc"))) {
+      missing = "first-order flux correction (hydro/fofc, mhd/fofc): the trial update "
+                "in {hydro,mhd}_fofc.cpp divides by the Cartesian mb_size.dx1/2/3 "
+                "instead of area/dxedge, and its single-state solvers apply none of the "
+                "gnomonic rotations";
+    } else if (pin->DoesParameterExist("hydro", "isotropic_viscosity") ||
+               pin->DoesParameterExist("mhd", "isotropic_viscosity")) {
+      missing = "viscosity (isotropic_viscosity): diffusion/viscosity.cpp has no "
+                "curvilinear form at all";
+    } else if (pin->DoesParameterExist("hydro", "isotropic_conduction") ||
+               pin->DoesParameterExist("mhd", "isotropic_conduction")) {
+      missing = "thermal conduction (isotropic_conduction): diffusion/conduction.cpp "
+                "has no curvilinear form at all";
+    }
+    if (!missing.empty()) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "mesh/use_cubed_sphere does not support " << missing
+                << "." << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+  }
+
   // FIXME: The shearing box is not currently compatible with SMR/AMR
   if (multilevel && pin->DoesBlockExist("shearing_box")) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
