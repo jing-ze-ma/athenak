@@ -230,6 +230,7 @@ void CSTestConvErrors(ParameterInput *pin, Mesh *pm);
 void CSTestResistCheck(ParameterInput *pin, Mesh *pm);
 void CSTestSeamFluxCheck(Mesh *pm);
 void CSTestConsSums(Mesh *pm);
+void CSTestHistory(HistoryData *pdata, Mesh *pm);
 
 //----------------------------------------------------------------------------------------
 //! \fn ProblemGenerator::UserProblem
@@ -276,6 +277,11 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   }
   if (iprob == 8 || (iprob >= 3 && iprob <= 7 && iprob != 4)) {
     pgen_final_func = CSTestGhostCheck;
+  }
+  // Grid-imprinting time series. iprob=3 is exactly steady, so the deviation from the
+  // initial state IS the error at any time. Enable with <problem>/user_hist = true.
+  if (iprob == 3) {
+    user_hist_func = CSTestHistory;
   }
   // iprob = 9 is the CONVERGENCE test and has its own exact solution at every time, so it
   // reports L1 errors rather than the single-state gates CSTestGhostCheck runs.
@@ -1578,6 +1584,95 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
   std::printf("###   x1e worst at panel %d (i,j,k)=(%d,%d,%d);"
               "  L1 over the %d-cell panel-edge ring = %.4e, panel interior = %.4e\n",
               mxloc[0], mxloc[1], mxloc[2], mxloc[3], nseam, l1s, l1i);
+  return;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void CSTestHistory(HistoryData *pdata, Mesh *pm)
+//! \brief GRID IMPRINTING over time: the error near a panel seam and far from it, as a
+//! time series in the .hst.
+//!
+//! Every cubed-sphere error measurement in this pgen so far is a single number at the
+//! END of a short run, which cannot distinguish an error that saturates from one that
+//! grows secularly and eventually contaminates the whole field. That distinction is what
+//! the FV3 duo-grid work calls GRID IMPRINTING, and it is the reason they track wave
+//! symmetry out to 100+ days rather than quoting one L1. This writes the same kind of
+//! diagnostic here.
+//!
+//! iprob = 3 is the right vehicle: the rigid-rotation equilibrium is EXACTLY steady, so
+//! the error at any time is simply the deviation from the initial exact state, with no
+//! reference solution to evolve and no phase error to disentangle.
+//!
+//! Reported as SUMS with their cell COUNTS, because the history reduction adds across
+//! ranks and only sums are meaningful there; divide afterwards. Two disjoint sets:
+//!   SEAM     -- within 2 cells of a panel edge, tested GEOMETRICALLY on |xi| and |eta|
+//!               so it is independent of how panels are split into MeshBlocks;
+//!   INTERIOR -- everything else.
+//! Both EXCLUDE the two cell layers next to each radial boundary, so that the radial BC's
+//! own error (which is first order in the ghost clock, see the mhd convergence note)
+//! cannot leak into either bucket and be mistaken for imprinting.
+//!
+//! Both quantities are chosen so that no reference solution has to be evaluated in the
+//! kernel: the exact density of iprob=3 is uniformly d0, and the exact v_r is
+//! IDENTICALLY ZERO, so sum(v_r^2) is a pure error norm with no cancellation and no
+//! normalisation choice. v_r is the sharper of the two.
+
+void CSTestHistory(HistoryData *pdata, Mesh *pm) {
+  pdata->nhist = 6;
+  pdata->label[0] = "sm-drho";   // sum |rho-rho_ex| over seam cells
+  pdata->label[1] = "sm-n";      // number of seam cells
+  pdata->label[2] = "sm-vr2";    // sum v_r^2 over seam cells
+  pdata->label[3] = "in-drho";   // the same three over interior cells
+  pdata->label[4] = "in-n";
+  pdata->label[5] = "in-vr2";
+
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  auto &w0_ = (pmbp->pmhd != nullptr) ? pmbp->pmhd->w0 : pmbp->phydro->w0;
+  auto &size = pmbp->pmb->mb_size;
+  auto &mbpanel = pmbp->pmb->mb_panel;
+  auto &indcs = pm->pmb_pack->pmesh->mb_indcs;
+  const int is = indcs.is, js = indcs.js, ks = indcs.ks;
+  const int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
+  const Real d0 = cs_d0;   // the exact density of iprob=3 is uniformly d0
+
+  const int nmkji = (pmbp->nmb_thispack)*nx3*nx2*nx1;
+  const int nkji = nx3*nx2*nx1;
+  const int nji  = nx2*nx1;
+  array_sum::GlobalSum sum_this_mb;
+  Kokkos::parallel_reduce("CSHist", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmkji),
+  KOKKOS_LAMBDA(const int &idx, array_sum::GlobalSum &mb_sum) {
+    int m = (idx)/nkji;
+    int k = (idx - m*nkji)/nji;
+    int j = (idx - m*nkji - k*nji)/nx1;
+    int i = (idx - m*nkji - k*nji - j*nx1);
+    array_sum::GlobalSum hv;
+    for (int n=0; n<NHISTORY_VARIABLES; ++n) {hv.the_array[n] = 0.0;}
+
+    // skip the two layers next to each radial boundary
+    if (i >= 2 && i <= nx1-3) {
+      const Real x2mn = size.d_view(m).x2min, x2mx = size.d_view(m).x2max;
+      const Real x3mn = size.d_view(m).x3min, x3mx = size.d_view(m).x3max;
+      const Real xi  = 0.25*M_PI*CellCenterX(j, nx2, x2mn, x2mx);
+      const Real eta = 0.25*M_PI*CellCenterX(k, nx3, x3mn, x3mx);
+      const Real dxi  = 0.25*M_PI*(x2mx - x2mn)/static_cast<Real>(nx2);
+      const Real deta = 0.25*M_PI*(x3mx - x3mn)/static_cast<Real>(nx3);
+      const Real edge = 0.25*M_PI;
+      const bool near_seam = (fabs(xi)  > edge - 2.0*dxi) ||
+                             (fabs(eta) > edge - 2.0*deta);
+
+      const int kk = k + ks, jj = j + js, ii = i + is;
+      const Real drho = fabs(w0_(m,IDN,kk,jj,ii) - d0);
+      const Real vr2  = SQR(w0_(m,IVX,kk,jj,ii));   // exact v_r is identically zero
+      if (near_seam) {
+        hv.the_array[0] = drho; hv.the_array[1] = 1.0; hv.the_array[2] = vr2;
+      } else {
+        hv.the_array[3] = drho; hv.the_array[4] = 1.0; hv.the_array[5] = vr2;
+      }
+    }
+    mb_sum += hv;
+  }, Kokkos::Sum<array_sum::GlobalSum>(sum_this_mb));
+
+  for (int n=0; n<pdata->nhist; ++n) {pdata->hdata[n] = sum_this_mb.the_array[n];}
   return;
 }
 
