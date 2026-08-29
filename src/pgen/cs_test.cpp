@@ -1998,16 +1998,20 @@ void CSTestGhostCheck(ParameterInput *pin, Mesh *pm) {
     Real gmax = 0.0, gvmax = 0.0;
     for (int m=0; m<pmbp->nmb_thispack; ++m) {
       Real e = 0.0, ev = 0.0;
+      int ei = -1, ej = -1, ek = -1;   // WHERE the worst cell is, not just how bad
       for (int k=ks; k<=ke; ++k) {
         for (int j=js; j<=je; ++j) {
           for (int i=is; i<=ie; ++i) {
-            e = fmax(e, fabs(w0_h(m,IEN,k,j,i) - ie_exact)/ie_exact);
+            const Real ee = fabs(w0_h(m,IEN,k,j,i) - ie_exact)/ie_exact;
+            if (ee > e) { e = ee; ei = i-is; ej = j-js; ek = k-ks; }
             ev = fmax(ev, fmax(fabs(w0_h(m,IVX,k,j,i)),
                           fmax(fabs(w0_h(m,IVY,k,j,i)), fabs(w0_h(m,IVZ,k,j,i)))));
           }
         }
       }
-      std::printf("  %4d   %12.5e  %12.5e\n", mbpanel.h_view(m), e, ev);
+      std::printf("  %4d   %12.5e  %12.5e   at (i,j,k)=(%d,%d,%d) of (%d,%d,%d)\n",
+                  mbpanel.h_view(m), e, ev, ei, ej, ek,
+                  indcs.nx1, indcs.nx2, indcs.nx3);
       gmax = fmax(gmax, e); gvmax = fmax(gvmax, ev);
     }
     std::printf("  MAX over panels: dp/p %12.5e   |v| %12.5e\n", gmax, gvmax);
@@ -2024,6 +2028,12 @@ void CSTestGhostCheck(ParameterInput *pin, Mesh *pm) {
     // Corner ghosts are excluded: j,k are held in the active range.
     {
       auto &b0f = pmbp->pmhd->b0;
+      auto ah1 = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
+                                                     pmbp->pcoord->area.x1f);
+      auto ah2 = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
+                                                     pmbp->pcoord->area.x2f);
+      auto ah3 = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
+                                                     pmbp->pcoord->area.x3f);
       auto b1h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), b0f.x1f);
       auto b2h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), b0f.x2f);
       auto b3h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), b0f.x3f);
@@ -2053,6 +2063,59 @@ void CSTestGhostCheck(ParameterInput *pin, Mesh *pm) {
           return (comp == 1) ? (bvx*n1[0] + bvy*n1[1] + bvz*n1[2])
                              : (bvx*n2[0] + bvy*n2[1] + bvz*n2[2]);
         };
+        // --- RADIAL ghost faces, which is where a coarse/fine interface lives -------
+        // For a uniform Cartesian field the exact face-normal projections depend on the
+        // ANGLES only, not on r, so a radial ghost has the same exact value as the
+        // active face at the same (j,k). That makes this a clean probe of whatever
+        // filled those ghosts -- the physical BC, or prolongation from a coarser
+        // neighbour when the block sits at a level boundary.
+        {
+          Real r1 = 0.0, r2 = 0.0, r3 = 0.0;
+          for (int k=ks; k<=ke; ++k) {
+            for (int j=js; j<=je; ++j) {
+              for (int g=1; g<=ng; ++g) {
+                r1 = fmax(r1, fabs(b1h(m,k,j,ie+1+g) - exact(j,k,false,false,0)));
+                r1 = fmax(r1, fabs(b1h(m,k,j,is-g)   - exact(j,k,false,false,0)));
+                r2 = fmax(r2, fabs(b2h(m,k,j,ie+g)   - exact(j,k,true ,false,1)));
+                r2 = fmax(r2, fabs(b2h(m,k,j,is-g)   - exact(j,k,true ,false,1)));
+                r3 = fmax(r3, fabs(b3h(m,k,j,ie+g)   - exact(j,k,false,true ,2)));
+                r3 = fmax(r3, fabs(b3h(m,k,j,is-g)   - exact(j,k,false,true ,2)));
+              }
+            }
+          }
+          std::printf("  %4d rad   %12.5e  %12.5e  %12.5e   (radial ghosts)\n",
+                      p, r1, r2, r3);
+        }
+
+        // --- and the SOLENOIDAL constraint in those same ghost cells ---------------
+        // CT keeps div B = 0 in ACTIVE cells whatever the ghosts hold, so an active-cell
+        // check cannot see a bad prolongation.  A ghost cell that carries a monopole is
+        // still read by reconstruction and the Riemann solve, and shows up as an O(1)
+        // spurious Lorentz force.  Report sum(area*B) over the six faces, normalised by
+        // the sum of the magnitudes, so it is dimensionless and grid-independent.
+        {
+          auto dvb = [&](int k, int j, int i) {
+            Real f[6] = {-ah1(m,k,j,i)*b1h(m,k,j,i),   ah1(m,k,j,i+1)*b1h(m,k,j,i+1),
+                         -ah2(m,k,j,i)*b2h(m,k,j,i),   ah2(m,k,j+1,i)*b2h(m,k,j+1,i),
+                         -ah3(m,k,j,i)*b3h(m,k,j,i),   ah3(m,k+1,j,i)*b3h(m,k+1,j,i)};
+            Real sum = 0.0, mag = 0.0;
+            for (int q=0; q<6; ++q) { sum += f[q]; mag += fabs(f[q]); }
+            return (mag > 0.0) ? fabs(sum)/mag : 0.0;
+          };
+          Real dg = 0.0, da = 0.0;
+          for (int k=ks; k<=ke; ++k) {
+            for (int j=js; j<=je; ++j) {
+              for (int g=1; g<=ng-1; ++g) {
+                dg = fmax(dg, dvb(k,j,ie+g));
+                dg = fmax(dg, dvb(k,j,is-g));
+              }
+              for (int i=is; i<=ie; ++i) da = fmax(da, dvb(k,j,i));
+            }
+          }
+          std::printf("  %4d divB  %12.5e (radial ghosts)  %12.5e (active)\n",
+                      p, dg, da);
+        }
+
         const int i = is;
         // report PER SEAM: an axis-swap seam (equatorial<->polar) and a plain one behave
         // differently, and a max over all four hides which

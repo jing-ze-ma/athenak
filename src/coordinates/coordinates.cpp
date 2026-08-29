@@ -271,6 +271,39 @@ void Coordinates::CoordSrcTerms(const DvceArray5D<Real> &prim, const EOS_Data &e
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn GnomonicCornerOmega / GnomonicSolidAngle
+//! \brief EXACT solid angle of the gnomonic cell bounded by X = xl,xr and Y = yl,yr,
+//! where X = tan(xi) and Y = tan(eta).
+//!
+//! A cell of the equiangular cubed sphere is a spherical quadrilateral bounded by four
+//! GREAT circles (a curve of constant xi spans the plane through the origin containing
+//! (1,X,0) and (0,0,1)), so its area is the classical solid angle of a rectangular
+//! pyramid: one potential evaluated at the four corners.  Being a corner difference it
+//! TELESCOPES -- subdividing a cell gives sub-areas summing to the parent to round-off.
+//!
+//! That property is the whole point.  The midpoint form this replaces,
+//! dth_xi*dth_eta*sin_cell, is a perfectly good O(h^2) quadrature but is NOT additive
+//! across a refinement level: four fine faces overshoot their parent by ~3e-4 relative
+//! at nx2 = 32.  On a uniform grid that is invisible -- the radial momentum balance
+//! cancels identically for ANY area values, because the geometric source term is built
+//! as z_ov_rE = (area1r - area.x1f)/volume.  At a coarse/fine boundary it does not:
+//! conservative flux correction hands the coarse cell sum(A_fine*F), while its source
+//! term still uses A_coarse, and the leftover p*(sum(A_fine) - A_coarse)/V drives a
+//! spurious radial acceleration out of a state that ought to be exactly static.
+//! With the exact solid angle the two agree, and Omega cancels out of z_ov_rE entirely.
+
+KOKKOS_INLINE_FUNCTION
+Real GnomonicCornerOmega(Real X, Real Y) {
+  return atan(X*Y/sqrt(1.0 + X*X + Y*Y));
+}
+
+KOKKOS_INLINE_FUNCTION
+Real GnomonicSolidAngle(Real xl, Real xr, Real yl, Real yr) {
+  return GnomonicCornerOmega(xr,yr) - GnomonicCornerOmega(xl,yr)
+       - GnomonicCornerOmega(xr,yl) + GnomonicCornerOmega(xl,yl);
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn
 // Coordinate (geometric) source term function for GR MHD
 //
@@ -515,8 +548,11 @@ void Coordinates::CoordGnomonicEquiangle() {
     Real dth_etar = acos((1.0 + xr*xr + yl*yr) / sqrt(1.0 + xr*xr + yl*yl) / sqrt(1.0 + xr*xr + yr*yr));
 
     // --- radial faces (x1) ---
-    area_.x1f(m,k,j,i) = SQR(r_l) * dth_xi * dth_eta * sin_cell_(m,k,j);
-    Real area1r = SQR(r_r) * dth_xi * dth_eta * sin_cell_(m,k,j);
+    // EXACT solid angle, not dth_xi*dth_eta*sin_cell: only the exact form is additive
+    // across a refinement level.  See GnomonicSolidAngle above.
+    const Real domega = GnomonicSolidAngle(xl, xr, yl, yr);
+    area_.x1f(m,k,j,i) = SQR(r_l) * domega;
+    Real area1r = SQR(r_r) * domega;
     if (i == n1m1) area_.x1f(m,k,j,i+1) = area1r;
 
     // --- xi faces (x2) ---
@@ -529,9 +565,8 @@ void Coordinates::CoordGnomonicEquiangle() {
     Real area3r = 0.5 * (SQR(r_r)-SQR(r_l)) * dth_xir;
     if (k == n3m1) area_.x3f(m,k+1,j,i) = area3r;
 
-    // --- volume_ (SNAP trapezoidal) ---
-    volume_(m,k,j,i) = 1.0/3.0*(r_r*r_r*r_r-r_l*r_l*r_l)
-                      * dth_xi * dth_eta * sin_cell_(m,k,j);
+    // --- volume_ (exact solid angle x exact radial shell) ---
+    volume_(m,k,j,i) = 1.0/3.0*(r_r*r_r*r_r-r_l*r_l*r_l) * domega;
     dx1_(m,k,j,i) = r_r - r_l;
     dx2_(m,k,j,i) = r_c * dth_xi;
     dx3_(m,k,j,i) = r_c * dth_eta;
