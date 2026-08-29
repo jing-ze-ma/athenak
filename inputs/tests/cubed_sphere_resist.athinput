@@ -24,6 +24,15 @@
 # TO MEASURE THE CURRENT DENSITY ALONE, set a tiny cfl_number with nlim = 1.  Otherwise
 # the one-step evolution of the field contaminates the EMF error, amplified by 1/dr.
 #
+# RKG SUPER-TIME-STEPPING is validated with this same problem: add mhd/use_rkg_sts = true.
+# It routes through the same AddEMFGeneralResist, and resistivity_ct.cpp and
+# resistivity_update.cpp already had cubed-sphere branches.  At nx2 = 32, tlim = 0.2,
+# eta = 0.5 it gives heating ratio 0.9966 against the direct path's 1.0006, with EMF
+# errors agreeing to under 1% -- for 61x fewer MeshBlock-cycles and 10x less CPU.  That
+# 0.34%% is the SUPER-STEPPING's own temporal error, not a geometry error: at fixed grid
+# it falls 0.99661 / 0.99862 / 0.99965 as the CFL is halved twice, i.e. second order in
+# dt.  Both null tests (no current, and no resistivity) match the direct path exactly.
+#
 # AXES: x1 is RADIAL, x2 = xi and x3 = eta are the panel-tangential angles.  Must be 3D.
 
 <comment>
