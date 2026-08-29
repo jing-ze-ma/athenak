@@ -155,31 +155,31 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendFluxSeamCC(DvceFaceFld5D<Real> &flx)
   auto &mbpanel = pmy_pack->pmb->mb_panel;
   auto &mbsize = pmy_pack->pmb->mb_size;
   auto &cs_indcs = pmy_pack->pmesh->mb_indcs;
-  auto &sbuf = sendbuf;
   auto &rbuf = recvbuf;
 
   Kokkos::TeamPolicy<> policy(DevExeSpace(), (nmb*nnghbr*nvar), Kokkos::AUTO);
-  Kokkos::parallel_for("SeamFluxSend", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
+  Kokkos::parallel_for("SeamFluxSendLocal", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
     const int m = (tmember.league_rank())/(nnghbr*nvar);
     const int n = (tmember.league_rank() - m*(nnghbr*nvar))/nvar;
     const int v = (tmember.league_rank() - m*(nnghbr*nvar) - n*nvar);
 
     if (nghbr.d_view(m,n).gid < 0) {return;}
     bool x2face; Real sgn;
-    if (!SeamFaceGeom(sbuf[n].iflux_same[0], cs_indcs.is, cs_indcs.ie,
+    if (!SeamFaceGeom(rbuf[n].iflux_same[0], cs_indcs.is, cs_indcs.ie,
                       cs_indcs.js, cs_indcs.ks, x2face, sgn)) {
       return;
     }
     const int my_panel = mbpanel.d_view(m);
     const int dst_panel = nghbr.d_view(m,n).panel;
     if (dst_panel == my_panel) {return;}
+    if (nghbr.d_view(m,n).rank != my_rank) {return;}   // off-rank: second kernel
 
-    const int il = sbuf[n].iflux_same[0].bis;
-    const int iu = sbuf[n].iflux_same[0].bie;
-    const int jl = sbuf[n].iflux_same[0].bjs;
-    const int ju = sbuf[n].iflux_same[0].bje;
-    const int kl = sbuf[n].iflux_same[0].bks;
-    const int ku = sbuf[n].iflux_same[0].bke;
+    const int il = rbuf[n].iflux_same[0].bis;
+    const int iu = rbuf[n].iflux_same[0].bie;
+    const int jl = rbuf[n].iflux_same[0].bjs;
+    const int ju = rbuf[n].iflux_same[0].bje;
+    const int kl = rbuf[n].iflux_same[0].bks;
+    const int ku = rbuf[n].iflux_same[0].bke;
     const int ni = iu - il + 1;
     const int nj = ju - jl + 1;
     const int nk = ku - kl + 1;
@@ -230,14 +230,98 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendFluxSeamCC(DvceFaceFld5D<Real> &flx)
           val = (v == IM2) ? f2o : f3o;
         }
         const int index = i-il + ni*(sj*(j-jl) + sk*(k-kl) + nk*nj*v);
-        if (nghbr.d_view(m,n).rank == my_rank) {
-          rbuf[dn].flux(dm, index) = sgn*val;
-        } else {
-          sbuf[n].flux(m, index) = sgn*val;
-        }
+        rbuf[dn].flux(dm, index) = sgn*val;
       });
     });
   });
+
+#if MPI_PARALLEL_ENABLED
+  // The off-rank half, as a SEPARATE kernel, so that neither closure carries both buffer
+  // arrays. `sendbuf` and `recvbuf` are MeshBoundaryBuffer[56], and each element holds
+  // several Views and six index triples, so each array is tens of kilobytes: capturing
+  // BOTH pushed this launch's functor over what it can carry and the run died
+  // intermittently (10 of 20) with "Memory access fault by GPU node-2 ... Reason:
+  // Unknown", only once a panel was split into several MeshBlocks. Capturing either one
+  // alone is clean (0 of 20), including the version that keeps writing across blocks --
+  // so it is the captured state, not the cross-block write. Same lesson as the gnomonic
+  // trig POD: give a kernel only what it uses.
+  auto &sbuf = sendbuf;
+  Kokkos::parallel_for("SeamFluxSendMPI", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
+    const int m = (tmember.league_rank())/(nnghbr*nvar);
+    const int n = (tmember.league_rank() - m*(nnghbr*nvar))/nvar;
+    const int v = (tmember.league_rank() - m*(nnghbr*nvar) - n*nvar);
+
+    if (nghbr.d_view(m,n).gid < 0) {return;}
+    bool x2face; Real sgn;
+    if (!SeamFaceGeom(sbuf[n].iflux_same[0], cs_indcs.is, cs_indcs.ie,
+                      cs_indcs.js, cs_indcs.ks, x2face, sgn)) {
+      return;
+    }
+    const int my_panel = mbpanel.d_view(m);
+    const int dst_panel = nghbr.d_view(m,n).panel;
+    if (dst_panel == my_panel) {return;}
+    if (nghbr.d_view(m,n).rank == my_rank) {return;}   // on-rank: first kernel
+
+    const int il = sbuf[n].iflux_same[0].bis;
+    const int iu = sbuf[n].iflux_same[0].bie;
+    const int jl = sbuf[n].iflux_same[0].bjs;
+    const int ju = sbuf[n].iflux_same[0].bje;
+    const int kl = sbuf[n].iflux_same[0].bks;
+    const int ku = sbuf[n].iflux_same[0].bke;
+    const int ni = iu - il + 1;
+    const int nj = ju - jl + 1;
+    const int nk = ku - kl + 1;
+    const int nkj = nk*nj;
+
+
+    // the seam index map, exactly as in MeshBoundaryValuesCC::PackAndSendCC
+    const PanelBoundaries pb = GetPanelBoundary(my_panel, dst_panel);
+    int aj = 1, bj = 0, ak = 1, bk = 0, sj = 1, sk = nj;
+    const int rev_a_preswap = (pb.swap_ax == 1) ? pb.rev_b : pb.rev_a;
+    const int rev_b_preswap = (pb.swap_ax == 1) ? pb.rev_a : pb.rev_b;
+    if (pb.swap_ax == 1) {sj = nk; sk = 1;}
+    if (rev_a_preswap) {aj = -1; bj = jl + ju;}
+    if (rev_b_preswap) {ak = -1; bk = kl + ku;}
+
+    // Mass and energy fluxes are true scalars, and so is the RADIAL momentum flux since
+    // rhat is common to both charts. Only the two tangential momentum fluxes are
+    // components on a basis the seam changes.
+    const bool xform = (v == IM2) || (v == IM3);
+
+    Kokkos::parallel_for(Kokkos::TeamThreadRange<>(tmember, nkj), [&](const int idx) {
+      int k = idx / nj;
+      int j = (idx - k * nj) + jl;
+      k += kl;
+      const int jj = aj*j + bj;
+      const int kk = ak*k + bk;
+      Kokkos::parallel_for(Kokkos::ThreadVectorRange(tmember,il,iu+1), [&](const int i) {
+        Real val;
+        if (!xform) {
+          val = x2face ? flx.x2f(m,v,kk,jj,i) : flx.x3f(m,v,kk,jj,i);
+        } else {
+          // (xi,eta) of the FACE CENTRE: the seam-normal coordinate is a cell EDGE.
+          const int js_ = cs_indcs.js, ks_ = cs_indcs.ks;
+          const Real x2mn = mbsize.d_view(m).x2min, x2mx = mbsize.d_view(m).x2max;
+          const Real x3mn = mbsize.d_view(m).x3min, x3mx = mbsize.d_view(m).x3max;
+          const Real xi = 0.25*M_PI*(x2face
+              ? LeftEdgeX(jj-js_, cs_indcs.nx2, x2mn, x2mx)
+              : CellCenterX(jj-js_, cs_indcs.nx2, x2mn, x2mx));
+          const Real eta = 0.25*M_PI*(x2face
+              ? CellCenterX(kk-ks_, cs_indcs.nx3, x3mn, x3mx)
+              : LeftEdgeX(kk-ks_, cs_indcs.nx3, x3mn, x3mx));
+          const Real f2 = x2face ? flx.x2f(m,IM2,kk,jj,i) : flx.x3f(m,IM2,kk,jj,i);
+          const Real f3 = x2face ? flx.x2f(m,IM3,kk,jj,i) : flx.x3f(m,IM3,kk,jj,i);
+          Real f2o, f3o;
+          cubed_sphere::TransformMomentum(my_panel, dst_panel, xi, eta, f2, f3, f2o, f3o);
+          val = (v == IM2) ? f2o : f3o;
+        }
+        const int index = i-il + ni*(sj*(j-jl) + sk*(k-kl) + nk*nj*v);
+        sbuf[n].flux(m, index) = sgn*val;
+      });
+    });
+  });
+
+#endif
 
 #if MPI_PARALLEL_ENABLED
   Kokkos::fence();
