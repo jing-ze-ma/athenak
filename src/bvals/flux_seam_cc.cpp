@@ -72,11 +72,18 @@ namespace {
 //! `x2face` says which of the two it is, and `sgn` is the sign that turns the stored flux
 //! (always the flux in the +x2 or +x3 direction) into the OUTWARD flux.
 KOKKOS_INLINE_FUNCTION
-bool SeamFaceGeom(const MeshBufferIndcs &ix, const int js, const int ks,
-                  bool &x2face, Real &sgn) {
+bool SeamFaceGeom(const MeshBufferIndcs &ix, const int is, const int ie,
+                  const int js, const int ks, bool &x2face, Real &sgn) {
+  // A face buffer spans the FULL active range in x1. Testing only "thin in j XOR thin in
+  // k" is not enough: an x1x2 edge buffer is thin in j and full in k, and so looks
+  // exactly like an x2 face. That costs nothing while x1 is a single MeshBlock -- the
+  // radial direction is bounded by physical boundaries, so those edge buffers have no
+  // neighbour -- but it would hand an edge buffer to the face packer the moment x1 is
+  // split, with the wrong extents and the wrong flux array.
+  if (ix.bis != is || ix.bie != ie) {return false;}
   const bool jthin = (ix.bjs == ix.bje);
   const bool kthin = (ix.bks == ix.bke);
-  if (jthin == kthin) {return false;}     // x1 face, edge or corner
+  if (jthin == kthin) {return false;}     // x1 face, or an x2x3 edge
   x2face = jthin;
   sgn = (x2face ? (ix.bjs == js) : (ix.bks == ks)) ? -1.0 : 1.0;
   return true;
@@ -93,6 +100,8 @@ TaskStatus MeshBoundaryValuesCC::InitFluxSeamRecv(const int nvars) {
   int &nnghbr = pmy_pack->pmb->nnghbr;
   auto &nghbr = pmy_pack->pmb->nghbr;
   auto &mbpanel = pmy_pack->pmb->mb_panel;
+  const int is_ = pmy_pack->pmesh->mb_indcs.is;
+  const int ie_ = pmy_pack->pmesh->mb_indcs.ie;
   const int js_ = pmy_pack->pmesh->mb_indcs.js;
   const int ks_ = pmy_pack->pmesh->mb_indcs.ks;
 
@@ -101,7 +110,7 @@ TaskStatus MeshBoundaryValuesCC::InitFluxSeamRecv(const int nvars) {
   for (int m=0; m<nmb; ++m) {
     for (int n=0; n<nnghbr; ++n) {
       if ((nghbr.h_view(m,n).gid >= 0) &&
-          SeamFaceGeom(recvbuf[n].iflux_same[0], js_, ks_, x2f, sg) &&
+          SeamFaceGeom(recvbuf[n].iflux_same[0], is_, ie_, js_, ks_, x2f, sg) &&
           (nghbr.h_view(m,n).panel != mbpanel.h_view(m))) {
         int drank = nghbr.h_view(m,n).rank;
         if (drank != global_variable::my_rank) {
@@ -157,7 +166,8 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendFluxSeamCC(DvceFaceFld5D<Real> &flx)
 
     if (nghbr.d_view(m,n).gid < 0) {return;}
     bool x2face; Real sgn;
-    if (!SeamFaceGeom(sbuf[n].iflux_same[0], cs_indcs.js, cs_indcs.ks, x2face, sgn)) {
+    if (!SeamFaceGeom(sbuf[n].iflux_same[0], cs_indcs.is, cs_indcs.ie,
+                      cs_indcs.js, cs_indcs.ks, x2face, sgn)) {
       return;
     }
     const int my_panel = mbpanel.d_view(m);
@@ -234,13 +244,15 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendFluxSeamCC(DvceFaceFld5D<Real> &flx)
   bool no_errors=true;
   auto &nghbr_h = pmy_pack->pmb->nghbr;
   auto &mbpanel_h = pmy_pack->pmb->mb_panel;
+  const int is_h = pmy_pack->pmesh->mb_indcs.is;
+  const int ie_h = pmy_pack->pmesh->mb_indcs.ie;
   const int js_h = pmy_pack->pmesh->mb_indcs.js;
   const int ks_h = pmy_pack->pmesh->mb_indcs.ks;
   bool x2f_h; Real sg_h;
   for (int m=0; m<nmb; ++m) {
     for (int n=0; n<nnghbr; ++n) {
       if ((nghbr_h.h_view(m,n).gid >= 0) &&
-          SeamFaceGeom(sendbuf[n].iflux_same[0], js_h, ks_h, x2f_h, sg_h) &&
+          SeamFaceGeom(sendbuf[n].iflux_same[0], is_h, ie_h, js_h, ks_h, x2f_h, sg_h) &&
           (nghbr_h.h_view(m,n).panel != mbpanel_h.h_view(m))) {
         int dn = nghbr_h.h_view(m,n).dest;
         int drank = nghbr_h.h_view(m,n).rank;
@@ -289,7 +301,8 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackFluxSeamCC(DvceFaceFld5D<Real> &fl
   for (int m=0; m<nmb; ++m) {
     for (int n=0; n<nnghbr; ++n) {
       if ((nghbr.h_view(m,n).gid >= 0) &&
-          SeamFaceGeom(recvbuf[n].iflux_same[0], cs_indcs.js, cs_indcs.ks, x2f_h, sg_h) &&
+          SeamFaceGeom(recvbuf[n].iflux_same[0], cs_indcs.is, cs_indcs.ie,
+                       cs_indcs.js, cs_indcs.ks, x2f_h, sg_h) &&
           (nghbr.h_view(m,n).panel != mbpanel.h_view(m)) &&
           (nghbr.h_view(m,n).rank != global_variable::my_rank)) {
         int test;
@@ -316,7 +329,8 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackFluxSeamCC(DvceFaceFld5D<Real> &fl
 
     if (nghbr.d_view(m,n).gid < 0) {return;}
     bool x2face; Real sgn;
-    if (!SeamFaceGeom(rbuf[n].iflux_same[0], cs_indcs.js, cs_indcs.ks, x2face, sgn)) {
+    if (!SeamFaceGeom(rbuf[n].iflux_same[0], cs_indcs.is, cs_indcs.ie,
+                      cs_indcs.js, cs_indcs.ks, x2face, sgn)) {
       return;
     }
     if (nghbr.d_view(m,n).panel == mbpanel.d_view(m)) {return;}

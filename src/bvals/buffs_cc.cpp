@@ -157,7 +157,16 @@ void MeshBoundaryValuesCC::InitSendIndices(MeshBoundaryBuffer &buf,
   // one-to-one, so the buffer is a single layer of the full active face, on the fine
   // mesh. Only x2/x3 faces can be a seam -- x1 is radial and no seam crosses it.
   {auto &iflxs = buf.iflux_same[0];
-  iflxs.bis = mb_indcs.is;              iflxs.bie = mb_indcs.ie;
+  // x1 must follow ox1 like the other two axes. Setting it to the full active range
+  // unconditionally would make an x1x2 EDGE buffer -- thin in j, full in k, and thin in
+  // x1 -- indistinguishable from an x2 FACE to any test that looks only at j and k.
+  if (ox1 == 0) {
+    iflxs.bis = mb_indcs.is;            iflxs.bie = mb_indcs.ie;
+  } else if (ox1 > 0) {
+    iflxs.bis = mb_indcs.ie + 1;        iflxs.bie = mb_indcs.ie + 1;
+  } else {
+    iflxs.bis = mb_indcs.is;            iflxs.bie = mb_indcs.is;
+  }
   if (ox2 == 0) {
     iflxs.bjs = mb_indcs.js;            iflxs.bje = mb_indcs.je;
   } else if (ox2 > 0) {
@@ -515,7 +524,16 @@ void MeshBoundaryValuesCC::InitRecvIndices(MeshBoundaryBuffer &buf,
   // one-to-one, so the buffer is a single layer of the full active face, on the fine
   // mesh. Only x2/x3 faces can be a seam -- x1 is radial and no seam crosses it.
   {auto &iflxs = buf.iflux_same[0];
-  iflxs.bis = mb_indcs.is;              iflxs.bie = mb_indcs.ie;
+  // x1 must follow ox1 like the other two axes. Setting it to the full active range
+  // unconditionally would make an x1x2 EDGE buffer -- thin in j, full in k, and thin in
+  // x1 -- indistinguishable from an x2 FACE to any test that looks only at j and k.
+  if (ox1 == 0) {
+    iflxs.bis = mb_indcs.is;            iflxs.bie = mb_indcs.ie;
+  } else if (ox1 > 0) {
+    iflxs.bis = mb_indcs.ie + 1;        iflxs.bie = mb_indcs.ie + 1;
+  } else {
+    iflxs.bis = mb_indcs.is;            iflxs.bie = mb_indcs.is;
+  }
   if (ox2 == 0) {
     iflxs.bjs = mb_indcs.js;            iflxs.bje = mb_indcs.je;
   } else if (ox2 > 0) {
