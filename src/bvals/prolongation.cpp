@@ -218,6 +218,14 @@ void MeshBoundaryValuesCC::ProlongateCC(DvceArray5D<Real> &a, DvceArray5D<Real> 
 
 void MeshBoundaryValuesFC::FillCoarseInBndryFC(DvceFaceFld4D<Real> &b,
                                            DvceFaceFld4D<Real> &cb) {
+  // Same area weighting as RestrictFC: this is a SECOND, independent restriction path,
+  // the one that fills the coarse array in the boundary region that prolongation then
+  // reads, so leaving it as a plain average would undo the weighting done there.
+  const bool curvi2_ = (pmy_pack->pmesh->use_cubed_sphere ||
+                        pmy_pack->pmesh->use_spherical_polar);
+  auto fa1_ = pmy_pack->pcoord->area.x1f;
+  auto fa2_ = pmy_pack->pcoord->area.x2f;
+  auto fa3_ = pmy_pack->pcoord->area.x3f;
   // create local references for variables in kernel
   int nmb = pmy_pack->nmb_thispack;
   int nnghbr = pmy_pack->pmb->nnghbr;
@@ -290,14 +298,44 @@ void MeshBoundaryValuesFC::FillCoarseInBndryFC(DvceFaceFld4D<Real> &b,
           // restrict in 3D
           } else {
             if (v==0) {
+              if (curvi2_) {
+                cb.x1f(m,k,j,i) =
+                    (b.x1f(m,fk  ,fj  ,fi)*fa1_(m,fk  ,fj  ,fi)
+                   + b.x1f(m,fk  ,fj+1,fi)*fa1_(m,fk  ,fj+1,fi)
+                   + b.x1f(m,fk+1,fj  ,fi)*fa1_(m,fk+1,fj  ,fi)
+                   + b.x1f(m,fk+1,fj+1,fi)*fa1_(m,fk+1,fj+1,fi))
+                  / (fa1_(m,fk  ,fj  ,fi) + fa1_(m,fk  ,fj+1,fi)
+                   + fa1_(m,fk+1,fj  ,fi) + fa1_(m,fk+1,fj+1,fi));
+              } else {
               cb.x1f(m,k,j,i) = 0.25*(b.x1f(m,fk  ,fj,fi) + b.x1f(m,fk  ,fj+1,fi)
                                     + b.x1f(m,fk+1,fj,fi) + b.x1f(m,fk+1,fj+1,fi));
+              }
             } else if (v==1) {
+              if (curvi2_) {
+                cb.x2f(m,k,j,i) =
+                    (b.x2f(m,fk  ,fj,fi  )*fa2_(m,fk  ,fj,fi  )
+                   + b.x2f(m,fk  ,fj,fi+1)*fa2_(m,fk  ,fj,fi+1)
+                   + b.x2f(m,fk+1,fj,fi  )*fa2_(m,fk+1,fj,fi  )
+                   + b.x2f(m,fk+1,fj,fi+1)*fa2_(m,fk+1,fj,fi+1))
+                  / (fa2_(m,fk  ,fj,fi  ) + fa2_(m,fk  ,fj,fi+1)
+                   + fa2_(m,fk+1,fj,fi  ) + fa2_(m,fk+1,fj,fi+1));
+              } else {
               cb.x2f(m,k,j,i) = 0.25*(b.x2f(m,fk  ,fj,fi) + b.x2f(m,fk  ,fj,fi+1)
                                     + b.x2f(m,fk+1,fj,fi) + b.x2f(m,fk+1,fj,fi+1));
+              }
             } else {
+              if (curvi2_) {
+                cb.x3f(m,k,j,i) =
+                    (b.x3f(m,fk,fj  ,fi  )*fa3_(m,fk,fj  ,fi  )
+                   + b.x3f(m,fk,fj  ,fi+1)*fa3_(m,fk,fj  ,fi+1)
+                   + b.x3f(m,fk,fj+1,fi  )*fa3_(m,fk,fj+1,fi  )
+                   + b.x3f(m,fk,fj+1,fi+1)*fa3_(m,fk,fj+1,fi+1))
+                  / (fa3_(m,fk,fj  ,fi  ) + fa3_(m,fk,fj  ,fi+1)
+                   + fa3_(m,fk,fj+1,fi  ) + fa3_(m,fk,fj+1,fi+1));
+              } else {
               cb.x3f(m,k,j,i) = 0.25*(b.x3f(m,fk,fj  ,fi) + b.x3f(m,fk,fj  ,fi+1)
                                     + b.x3f(m,fk,fj+1,fi) + b.x3f(m,fk,fj+1,fi+1));
+              }
             }
           }
         });
