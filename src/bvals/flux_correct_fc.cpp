@@ -198,7 +198,7 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFluxFC(DvceEdgeFld4D<Real> &flx) {
         Real sgn = 1.0;
         if (use_cs && (nghbr.d_view(m,n).lev == mblev.d_view(m)) &&
             (nghbr.d_view(m,n).panel != mbpanel.d_view(m))) {
-          PanelBoundaries pb = pmy_pack->pmesh->GetPanelBoundary(mbpanel.d_view(m),
+          PanelBoundaries pb = GetPanelBoundary(mbpanel.d_view(m),
                                                             nghbr.d_view(m,n).panel);
           // pb.rev_a/rev_b are in the DESTINATION's axes; undo the swap to get the
           // reversal that applies to this block's own k.
@@ -299,7 +299,7 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFluxFC(DvceEdgeFld4D<Real> &flx) {
         Real sgn = 1.0;
         if (use_cs && (nghbr.d_view(m,n).lev == mblev.d_view(m)) &&
             (nghbr.d_view(m,n).panel != mbpanel.d_view(m))) {
-          PanelBoundaries pb = pmy_pack->pmesh->GetPanelBoundary(mbpanel.d_view(m),
+          PanelBoundaries pb = GetPanelBoundary(mbpanel.d_view(m),
                                                             nghbr.d_view(m,n).panel);
           const int rev_j = (pb.swap_ax == 1) ? pb.rev_b : pb.rev_a;
           if (rev_j) {aj = -1; bj = jl + ju;}

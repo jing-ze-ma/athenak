@@ -53,6 +53,7 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
   auto &mblev = pmy_pack->pmb->mb_lev;
   auto &mbpanel = pmy_pack->pmb->mb_panel;
   const bool use_cs = pmy_pack->pmesh->use_cubed_sphere;
+  const bool use_pole = pmy_pack->pmesh->use_polar_boundary;
   // needed only on the cubed sphere, to give a source cell its (xi,eta)
   auto &mbsize = pmy_pack->pmb->mb_size;
   auto &cs_indcs = pmy_pack->pmesh->mb_indcs;
@@ -108,9 +109,9 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
       int dm = nghbr.d_view(m,n).gid - mbgid.d_view(0);
       int dn = nghbr.d_view(m,n).dest;
 
-      const bool do_cs = pmy_pack->pmesh->use_cubed_sphere &&
+      const bool do_cs = use_cs &&
                          (nghbr.d_view(m,n).panel != mbpanel.d_view(m));
-      const bool do_pole = pmy_pack->pmesh->use_polar_boundary &&
+      const bool do_pole = use_pole &&
                            (nghbr.d_view(m,n).polar > 0);
 
       if (do_cs || do_pole) {
@@ -129,7 +130,7 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
           const auto ngh = nghbr.d_view(m,n);
           const int my_panel = mbpanel.d_view(m);
           PanelBoundaries pb;
-          pb = pmy_pack->pmesh->GetPanelBoundary(my_panel, ngh.panel);
+          pb = GetPanelBoundary(my_panel, ngh.panel);
 
           // x1 is RADIAL on the cubed sphere and no seam crosses it, so i and IVX pass
           // through untouched. The panel-tangential pair is a = x2 (j, IVY) and

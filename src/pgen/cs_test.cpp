@@ -1166,9 +1166,9 @@ void CSTestConvErrors(ParameterInput *pin, Mesh *pm) {
   const int js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke;
   auto &size = pmbp->pmb->mb_size;
-  size.template sync<HostMemSpace>();
+  size.sync_host();
   auto &mbpanel = pmbp->pmb->mb_panel;
-  mbpanel.template sync<HostMemSpace>();
+  mbpanel.sync_host();
 
   // the exact field at the final time
   Real ex, ey, ez;
@@ -1618,9 +1618,9 @@ void CSTestConsSums(Mesh *pm) {
   auto uh = Kokkos::create_mirror_view_and_copy(HostMemSpace(), u0);
   auto vh = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->volume);
   auto &size = pmbp->pmb->mb_size;
-  size.template sync<HostMemSpace>();
+  size.sync_host();
   auto &mbpanel = pmbp->pmb->mb_panel;
-  mbpanel.template sync<HostMemSpace>();
+  mbpanel.sync_host();
 
   Real sm = 0.0, se = 0.0, sp[3] = {0.0, 0.0, 0.0}, svol = 0.0;
   Real sl[3] = {0.0, 0.0, 0.0};
@@ -1729,9 +1729,9 @@ void CSTestSeamFluxCheck(Mesh *pm) {
   auto a2h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->area.x2f);
   auto a3h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->area.x3f);
   auto &size = pmbp->pmb->mb_size;
-  size.template sync<HostMemSpace>();
+  size.sync_host();
   auto &mbpanel = pmbp->pmb->mb_panel;
-  mbpanel.template sync<HostMemSpace>();
+  mbpanel.sync_host();
 
   // One copy of a seam face: the OUTWARD mass and energy flux this panel sees through it,
   // already multiplied by this panel's own stored area, which is what the update adds.
@@ -1879,9 +1879,9 @@ void CSTestGhostCheck(ParameterInput *pin, Mesh *pm) {
   auto w0_h = Kokkos::create_mirror_view(w0);
   Kokkos::deep_copy(w0_h, w0);
   auto &size = pmbp->pmb->mb_size;
-  size.template sync<HostMemSpace>();
+  size.sync_host();
   auto &mbpanel = pmbp->pmb->mb_panel;
-  mbpanel.template sync<HostMemSpace>();
+  mbpanel.sync_host();
 
   const Real d0 = cs_d0, amp = cs_amp, r0 = cs_r0;
 
@@ -2126,7 +2126,7 @@ void CSTestGhostCheck(ParameterInput *pin, Mesh *pm) {
     // a receive nobody satisfies -> MPI_Wait hangs in ClearRecv.
     {
       auto &ng = pmbp->pmb->nghbr;
-      ng.template sync<HostMemSpace>();
+      ng.sync_host();
       auto &gid = pmbp->pmb->mb_gid;
       const int nn = pmbp->pmb->nnghbr;
       std::printf("### CS NEIGHBOUR RECIPROCITY AUDIT (nnghbr=%d)\n", nn);

@@ -104,6 +104,86 @@ struct PanelBoundaries {
   int end_face;   // which face of the starting panel (0:-x2, 1:+x2, 2:-x3, 3:+x3)
 };
 
+//----------------------------------------------------------------------------------------
+//! \fn GetPanelBoundary
+//! \brief How panel `ps` meets panel `pe`: whether the two tangential axes swap, and
+//! whether either index reverses.
+//!
+//! A FREE function, not a member of Mesh, and deliberately so: every caller is a device
+//! kernel, and reaching it through `pmy_pack->pmesh->` made the lambda capture `this` and
+//! dereference a host pointer on the device -- which hipcc warns about
+//! (-Wgpu-maybe-wrong-side) and which is an illegal access on any GPU that does not share
+//! memory with the host. It reads nothing but its two arguments, so it never needed to be
+//! a member. See also cubed_sphere::PanelTangents, which is a free function for the same
+//! reason.
+KOKKOS_INLINE_FUNCTION
+constexpr PanelBoundaries GetPanelBoundary(int ps, int pe) {
+  constexpr PanelBoundaries table[6][6] = {
+    // … your SAME initializer …
+      // [i][j]: transforming from i panel to j panel
+      // panel 0:
+      {
+        {0, 0, 0, -1}, // 00
+        {0, 0, 0, 1},  // 01
+        {0, 0, 0, -1}, // 02
+        {0, 0, 0, 3},  // 03
+        {0, 0, 0, 0},  // 04
+        {0, 0, 0, 2}   // 05
+      },
+
+      // panel 1:
+      {
+        {0, 0, 0, 0},  // 10
+        {0, 0, 0, -1}, // 11
+        {0, 0, 0, 1},  // 12
+        {1, 1, 0, 3},  // 13
+        {0, 0, 0, -1}, // 14
+        {1, 0, 1, 2}   // 15
+      },
+
+      // panel 2:
+      {
+        {0, 0, 0, -1}, // 20
+        {0, 0, 0, 0},  // 21
+        {0, 0, 0, -1}, // 22
+        {0, 1, 1, 3},  // 23
+        {0, 0, 0, 1},  // 24
+        {0, 1, 1, 2}   // 25
+      },
+
+      // panel 3:
+      {
+        {0, 0, 0, 2},  // 30
+        {1, 0, 1, 1},  // 31
+        {0, 1, 1, 3},  // 32
+        {0, 0, 0, -1}, // 33
+        {1, 1, 0, 0},  // 34
+        {0, 0, 0, -1}  // 35
+      },
+
+      // panel 4:
+      {
+        {0, 0, 0, 1},  // 40
+        {0, 0, 0, -1}, // 41
+        {0, 0, 0, 0},  // 42
+        {1, 0, 1, 3},  // 43
+        {0, 0, 0, -1}, // 44
+        {1, 1, 0, 2}   // 45
+      },
+
+      // panel 5:
+      {
+        {0, 0, 0, 3},  // 50
+        {1, 1, 0, 1},  // 51
+        {0, 1, 1, 2},  // 52
+        {0, 0, 0, -1}, // 53
+        {1, 0, 1, 0},  // 54
+        {0, 0, 0, -1}   // 55
+      }
+  };
+  return table[ps][pe];
+}
+
 // Forward declarations required due to recursive definitions amongst mesh classes
 class MeshBlock;
 class MeshBlockPack;
@@ -366,74 +446,6 @@ class Mesh {
 //      return table[ps][pe];
 //    }
     
-    KOKKOS_INLINE_FUNCTION
-    constexpr PanelBoundaries GetPanelBoundary(int ps, int pe) const {
-      constexpr PanelBoundaries table[6][6] = {
-        // … your SAME initializer …
-          // [i][j]: transforming from i panel to j panel
-          // panel 0:
-          {
-            {0, 0, 0, -1}, // 00
-            {0, 0, 0, 1},  // 01
-            {0, 0, 0, -1}, // 02
-            {0, 0, 0, 3},  // 03
-            {0, 0, 0, 0},  // 04
-            {0, 0, 0, 2}   // 05
-          },
-
-          // panel 1:
-          {
-            {0, 0, 0, 0},  // 10
-            {0, 0, 0, -1}, // 11
-            {0, 0, 0, 1},  // 12
-            {1, 1, 0, 3},  // 13
-            {0, 0, 0, -1}, // 14
-            {1, 0, 1, 2}   // 15
-          },
-
-          // panel 2:
-          {
-            {0, 0, 0, -1}, // 20
-            {0, 0, 0, 0},  // 21
-            {0, 0, 0, -1}, // 22
-            {0, 1, 1, 3},  // 23
-            {0, 0, 0, 1},  // 24
-            {0, 1, 1, 2}   // 25
-          },
-
-          // panel 3:
-          {
-            {0, 0, 0, 2},  // 30
-            {1, 0, 1, 1},  // 31
-            {0, 1, 1, 3},  // 32
-            {0, 0, 0, -1}, // 33
-            {1, 1, 0, 0},  // 34
-            {0, 0, 0, -1}  // 35
-          },
-
-          // panel 4:
-          {
-            {0, 0, 0, 1},  // 40
-            {0, 0, 0, -1}, // 41
-            {0, 0, 0, 0},  // 42
-            {1, 0, 1, 3},  // 43
-            {0, 0, 0, -1}, // 44
-            {1, 1, 0, 2}   // 45
-          },
-
-          // panel 5:
-          {
-            {0, 0, 0, 3},  // 50
-            {1, 1, 0, 1},  // 51
-            {0, 1, 1, 2},  // 52
-            {0, 0, 0, -1}, // 53
-            {1, 0, 1, 0},  // 54
-            {0, 0, 0, -1}   // 55
-          }
-      };
-      return table[ps][pe];
-    }
-
 
  private:
   // The panel trees OWN every node. There is one panel for an ordinary mesh and six for a

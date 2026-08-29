@@ -79,6 +79,18 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
   auto phi0_x3f = phi0.x3f;
     
   auto &use_cubed_sphere = pmy_pack->pmesh->use_cubed_sphere;
+  const auto wb_option_ = wb_option;
+  const bool use_wb_rho_ = use_wb_rho;
+  const bool use_wb_x1_ = use_wb_x1;
+  const bool use_wb_x2_ = use_wb_x2;
+  const bool use_wb_x3_ = use_wb_x3;
+  const bool use_wellbalance_dynamic_ = use_wellbalance_dynamic;
+  const bool use_wellbalance_static_reconst_perturb_ =
+      use_wellbalance_static_reconst_perturb;
+  // The gnomonic rotations read six Views and nothing else, so hand the kernels those
+  // Views rather than the Coordinates object: reaching them through `pmy_pack->pcoord->`
+  // made the lambda capture `this` and dereference a host pointer on the device.
+  auto gtrig = pmy_pack->pcoord->GnomonicTrigData();
   auto &use_spherical_polar = pmy_pack->pmesh->use_spherical_polar;
   auto &mb_bcs = pmy_pack->pmb->mb_bcs;
 
@@ -119,13 +131,19 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
     ScrArray2D<Real> dr(member.team_scratch(scr_level), nder, ncells1);
 
     if (use_spherical_polar) {
-      GridPiecewiseLinearX1(member, eos_, m, k, j, il-1, iu, w0_, x1v_, x1f_, phicc0_, phi0_x1f, true, wl, wr);
-      GridPiecewiseLinearX1(member, eos_, m, k, j, il-1, iu, b0_, x1v_, x1f_, phicc0_, phi0_x1f, false, bl, br);
+      GridPiecewiseLinearX1(member, eos_, wb_option_, use_wb_rho_,
+                            use_wellbalance_dynamic_,
+                            use_wb_x1_, m, k, j, il-1, iu, w0_, x1v_, x1f_, phicc0_,
+                            phi0_x1f, true, wl, wr);
+      GridPiecewiseLinearX1(member, eos_, wb_option_, use_wb_rho_,
+                            use_wellbalance_dynamic_,
+                            use_wb_x1_, m, k, j, il-1, iu, b0_, x1v_, x1f_, phicc0_,
+                            phi0_x1f, false, bl, br);
     } else {
         
-    if (use_wellbalance_dynamic && use_wb_x1)
+    if (use_wellbalance_dynamic_ && use_wb_x1_)
     {
-      WbLocalPiecewiseLinearX1(member, eos_, m, k, j, il-1, iu, w0_, phicc0_, phi0_x1f, wl, wr);
+      WbLocalPiecewiseLinearX1(member, eos_, wb_option_, use_wb_rho_, m, k, j, il-1, iu, w0_, phicc0_, phi0_x1f, wl, wr);
       PiecewiseLinearX1(member, m, k, j, il-1, iu, b0_, bl, br);
     } else {
 
@@ -165,11 +183,11 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
       if (use_spherical_polar) {
         GridPiecewiseLinearDerX1(member, eos_, m, k, j, il-1, iu, w0_, wder_,
                                  x1v_, x1f_, phicc0_, phi0_x1f, dl, dr);
-      } else if (use_wellbalance_static_reconst_perturb) {
+      } else if (use_wellbalance_static_reconst_perturb_) {
         WbStaticPiecewiseLinearDerX1(member, m, k, j, il-1, iu,
                                      pwb_, pfacewb_x1f,
                                     wder_, dl, dr);
-      } else if (use_wellbalance_dynamic && use_wb_x1) {
+      } else if (use_wellbalance_dynamic_ && use_wb_x1_) {
         WbPiecewiseLinearDerX1(member, eos_, m, k, j, il-1, iu, w0_, wder_,
                                phicc0_, phi0_x1f, dl, dr);
       } else {
@@ -205,7 +223,7 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
       });
     }
 
-      if (use_wellbalance_static_reconst_perturb) {
+      if (use_wellbalance_static_reconst_perturb_) {
         AddWbPrimFaceX1(member,m,k,j,il-1,iu,w0facewb_x1f,wl,wr);
       }
 
@@ -218,7 +236,7 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
       if (use_cubed_sphere) {
         // the field needs no rotation in this sweep: bcc is already stored in this
         // frame. See the note at GnomonicEquiangleFaceBX2.
-        pmy_pack->pcoord->GnomonicEquianglePrimFaceX1(member,m,k,j,il-1,iu,wl,wr);
+        GnomonicEquianglePrimFaceX1(gtrig,member,m,k,j,il-1,iu,wl,wr);
       }
 
     // Sync all threads in the team so that scratch memory is consistent
@@ -262,8 +280,8 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
     }
 
     if (use_cubed_sphere) {
-      pmy_pack->pcoord->GnomonicEquiangleFluxX1(member,m,k,j,il,iu,flx1);
-      pmy_pack->pcoord->GnomonicEquiangleEmfX1(member,m,k,j,il,iu,e31,e21);
+      GnomonicEquiangleFluxX1(gtrig,member,m,k,j,il,iu,flx1);
+      GnomonicEquiangleEmfX1(gtrig,member,m,k,j,il,iu,e31,e21);
     }
     member.team_barrier();
 
@@ -342,13 +360,13 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
           GridPiecewiseLinearX2(member, m, k, j, is-1, ie+1, b0_, x2v_, x2f_, bl_jp1, br);
         } else {
             
-        if (use_wellbalance_dynamic && use_wb_x2)
+        if (use_wellbalance_dynamic_ && use_wb_x2_)
         {
           // is-1,ie+1, not il,iu -- the b0_ line below, the spherical-polar branch
           // above, the whole default switch, and the Riemann solver all use
           // is-1,ie+1.  With il,iu (the x1 sweep's limits, never reset for x2/x3)
           // this leaves wl_jp1/wr unwritten at i = is-1, which the solver reads.
-          WbLocalPiecewiseLinearX2(member, eos_, m, k, j, is-1, ie+1, w0_,
+          WbLocalPiecewiseLinearX2(member, eos_, wb_option_, use_wb_rho_, m, k, j, is-1, ie+1, w0_,
                                    phicc0_, phi0_x2f, wl_jp1, wr);
           PiecewiseLinearX2(member, m, k, j, is-1, ie+1, b0_, bl_jp1, br);
         } else {
@@ -386,11 +404,11 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
           if (use_spherical_polar) {
             GridPiecewiseLinearX2(member, m, k, j, is-1, ie+1, wder_, x2v_, x2f_,
                                   dl_jp1, dr);
-          } else if (use_wellbalance_static_reconst_perturb) {
+          } else if (use_wellbalance_static_reconst_perturb_) {
         WbStaticPiecewiseLinearDerX2(member, m, k, j, is-1, ie+1,
                                      pwb_, pfacewb_x2f,
                                     wder_, dl_jp1, dr);
-      } else if (use_wellbalance_dynamic && use_wb_x2) {
+      } else if (use_wellbalance_dynamic_ && use_wb_x2_) {
             WbPiecewiseLinearDerX2(member, eos_, m, k, j, is-1, ie+1, w0_, wder_,
                                    phicc0_, phi0_x2f, dl_jp1, dr);
           } else {
@@ -419,7 +437,7 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
           });
         }
 
-          if (use_wellbalance_static_reconst_perturb) {
+          if (use_wellbalance_static_reconst_perturb_) {
             // is-1,ie+1 -- NOT il,iu.  il/iu are the x1 sweep's limits (set once at
             // the top of this function) and are never reset for x2/x3, where every
             // other limit here -- the reconstruction, the pressure floor, the
@@ -438,9 +456,9 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
           // CUBED SPHERE -- see the note in the x1 sweep. is-1,ie+1 (not il,iu) is the
           // range this sweep actually reconstructs and solves over.
           if (use_cubed_sphere) {
-            pmy_pack->pcoord->GnomonicEquianglePrimFaceX2(member,m,k,j,is-1,ie+1,
+            GnomonicEquianglePrimFaceX2(gtrig,member,m,k,j,is-1,ie+1,
                                                           wl_jp1,wr);
-            pmy_pack->pcoord->GnomonicEquiangleFaceBX2(member,m,k,j,is-1,ie+1,
+            GnomonicEquiangleFaceBX2(gtrig,member,m,k,j,is-1,ie+1,
                                                        bl_jp1,br);
           }
 
@@ -492,7 +510,7 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
           }
 
           if (use_cubed_sphere) {
-            pmy_pack->pcoord->GnomonicEquiangleFluxX2(member,m,k,j,is-1,ie+1,flx2);
+            GnomonicEquiangleFluxX2(gtrig,member,m,k,j,is-1,ie+1,flx2);
           }
           member.team_barrier();
         }
@@ -569,13 +587,13 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
           GridPiecewiseLinearX3(member, m, k, j, is-1, ie+1, b0_, x3v_, x3f_, bl_kp1, br);
         } else {
             
-        if (use_wellbalance_dynamic && use_wb_x3)
+        if (use_wellbalance_dynamic_ && use_wb_x3_)
         {
           // is-1,ie+1, not il,iu -- the b0_ line below, the spherical-polar branch
           // above, the whole default switch, and the Riemann solver all use
           // is-1,ie+1.  With il,iu (the x1 sweep's limits, never reset for x2/x3)
           // this leaves wl_kp1/wr unwritten at i = is-1, which the solver reads.
-          WbLocalPiecewiseLinearX3(member, eos_, m, k, j, is-1, ie+1, w0_,
+          WbLocalPiecewiseLinearX3(member, eos_, wb_option_, use_wb_rho_, m, k, j, is-1, ie+1, w0_,
                                    phicc0_, phi0_x3f, wl_kp1, wr);
           PiecewiseLinearX3(member, m, k, j, is-1, ie+1, b0_, bl_kp1, br);
         } else {
@@ -612,11 +630,11 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
           if (use_spherical_polar) {
             GridPiecewiseLinearX3(member, m, k, j, is-1, ie+1, wder_, x3v_, x3f_,
                                   dl_kp1, dr);
-          } else if (use_wellbalance_static_reconst_perturb) {
+          } else if (use_wellbalance_static_reconst_perturb_) {
         WbStaticPiecewiseLinearDerX3(member, m, k, j, is-1, ie+1,
                                      pwb_, pfacewb_x3f,
                                     wder_, dl_kp1, dr);
-      } else if (use_wellbalance_dynamic && use_wb_x3) {
+      } else if (use_wellbalance_dynamic_ && use_wb_x3_) {
             WbPiecewiseLinearDerX3(member, eos_, m, k, j, is-1, ie+1, w0_, wder_,
                                    phicc0_, phi0_x3f, dl_kp1, dr);
           } else {
@@ -645,7 +663,7 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
           });
         }
 
-          if (use_wellbalance_static_reconst_perturb) {
+          if (use_wellbalance_static_reconst_perturb_) {
             // is-1,ie+1, not il,iu -- see the note on AddWbPrimFaceX2 above.
             AddWbPrimFaceX3(member,m,k,j,is-1,ie+1,w0facewb_x3f,wl_kp1,wr);
           }
@@ -653,7 +671,7 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
           // CUBED SPHERE -- see the note in the x1 sweep.
           if (use_cubed_sphere) {
             // the field needs no rotation in this sweep either.
-            pmy_pack->pcoord->GnomonicEquianglePrimFaceX3(member,m,k,j,is-1,ie+1,
+            GnomonicEquianglePrimFaceX3(gtrig,member,m,k,j,is-1,ie+1,
                                                           wl_kp1,wr);
           }
 
@@ -705,7 +723,7 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
           }
 
           if (use_cubed_sphere) {
-            pmy_pack->pcoord->GnomonicEquiangleFluxX3(member,m,k,j,is-1,ie+1,flx3);
+            GnomonicEquiangleFluxX3(gtrig,member,m,k,j,is-1,ie+1,flx3);
           }
           member.team_barrier();
         }

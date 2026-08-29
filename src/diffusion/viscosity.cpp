@@ -82,6 +82,7 @@ void Viscosity::AddIsotropicViscousFluxConstVisc(const DvceArray5D<Real> &w0,
   size_t scr_size = (ScrArray1D<Real>::shmem_size(ncells1)) * 3;
   auto flx1 = flx.x1f;
 
+  const Real nu_iso_ = nu_iso;   // alias: naming the member captures `this`
   par_for_outer("visc1",DevExeSpace(), scr_size, scr_level, 0, nmb1, ks, ke, js, je,
   KOKKOS_LAMBDA(TeamMember_t member, const int m, const int k, const int j) {
     ScrArray1D<Real> fvx(member.team_scratch(scr_level), ncells1);
@@ -117,7 +118,7 @@ void Viscosity::AddIsotropicViscousFluxConstVisc(const DvceArray5D<Real> &w0,
 
     // Sum viscous fluxes into fluxes of conserved variables; including energy fluxes
     par_for_inner(member, is, ie+1, [&](const int i) {
-      Real nud = 0.5*nu_iso*(w0(m,IDN,k,j,i) + w0(m,IDN,k,j,i-1));
+      Real nud = 0.5*nu_iso_*(w0(m,IDN,k,j,i) + w0(m,IDN,k,j,i-1));
       flx1(m,IVX,k,j,i) -= nud*fvx(i);
       flx1(m,IVY,k,j,i) -= nud*fvy(i);
       flx1(m,IVZ,k,j,i) -= nud*fvz(i);
@@ -162,7 +163,7 @@ void Viscosity::AddIsotropicViscousFluxConstVisc(const DvceArray5D<Real> &w0,
 
     // Sum viscous fluxes into fluxes of conserved variables; including energy fluxes
     par_for_inner(member, is, ie, [&](const int i) {
-      Real nud = 0.5*nu_iso*(w0(m,IDN,k,j,i) + w0(m,IDN,k,j-1,i));
+      Real nud = 0.5*nu_iso_*(w0(m,IDN,k,j,i) + w0(m,IDN,k,j-1,i));
       flx2(m,IVX,k,j,i) -= nud*fvx(i);
       flx2(m,IVY,k,j,i) -= nud*fvy(i);
       flx2(m,IVZ,k,j,i) -= nud*fvz(i);
@@ -201,7 +202,7 @@ void Viscosity::AddIsotropicViscousFluxConstVisc(const DvceArray5D<Real> &w0,
 
     // Sum viscous fluxes into fluxes of conserved variables; including energy fluxes
     par_for_inner(member, is, ie, [&](const int i) {
-      Real nud = 0.5*nu_iso*(w0(m,IDN,k,j,i) + w0(m,IDN,k-1,j,i));
+      Real nud = 0.5*nu_iso_*(w0(m,IDN,k,j,i) + w0(m,IDN,k-1,j,i));
       flx3(m,IVX,k,j,i) -= nud*fvx(i);
       flx3(m,IVY,k,j,i) -= nud*fvy(i);
       flx3(m,IVZ,k,j,i) -= nud*fvz(i);

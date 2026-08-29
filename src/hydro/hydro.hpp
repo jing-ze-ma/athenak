@@ -195,7 +195,7 @@ class Hydro {
     //! \brief Adds background face-centered variables onto ql(i+1) and qr(i).
 
     KOKKOS_INLINE_FUNCTION
-    void AddWbPrimFace(const Real &qlwb_ip1, const Real &qrwb_i,
+    static void AddWbPrimFace(const Real &qlwb_ip1, const Real &qrwb_i,
              Real &ql_ip1, Real &qr_i) {
       ql_ip1 += qlwb_ip1;
       qr_i   += qrwb_i;
@@ -208,7 +208,7 @@ class Hydro {
     //! This function should be called over [is-1,ie+1] to get BOTH L/R states over [is,ie]
 
     KOKKOS_INLINE_FUNCTION
-    void AddWbPrimFaceX1(TeamMember_t const &member, const int m, const int k, const int j,
+    static void AddWbPrimFaceX1(TeamMember_t const &member, const int m, const int k, const int j,
          const int il, const int iu, const DvceArray5D<Real> &q,
          ScrArray2D<Real> &ql, ScrArray2D<Real> &qr) {
       int nvar = q.extent_int(1);
@@ -226,7 +226,7 @@ class Hydro {
     //! This function should be called over [js-1,je+1] to get BOTH L/R states over [js,je]
 
     KOKKOS_INLINE_FUNCTION
-    void AddWbPrimFaceX2(TeamMember_t const &member, const int m, const int k, const int j,
+    static void AddWbPrimFaceX2(TeamMember_t const &member, const int m, const int k, const int j,
          const int il, const int iu, const DvceArray5D<Real> &q,
          ScrArray2D<Real> &ql_jp1, ScrArray2D<Real> &qr_j) {
       int nvar = q.extent_int(1);
@@ -244,7 +244,7 @@ class Hydro {
     //! This function should be called over [ks-1,ke+1] to get BOTH L/R states over [ks,ke]
 
     KOKKOS_INLINE_FUNCTION
-    void AddWbPrimFaceX3(TeamMember_t const &member, const int m, const int k, const int j,
+    static void AddWbPrimFaceX3(TeamMember_t const &member, const int m, const int k, const int j,
          const int il, const int iu, const DvceArray5D<Real> &q,
          ScrArray2D<Real> &ql_kp1, ScrArray2D<Real> &qr_k) {
       int nvar = q.extent_int(1);
@@ -257,7 +257,9 @@ class Hydro {
     };
 
     KOKKOS_INLINE_FUNCTION
-    void WbLocalPiecewiseLinearX1(TeamMember_t const &member, const EOS_Data &eos, const int m, const int k, const int j,
+    static void WbLocalPiecewiseLinearX1(TeamMember_t const &member,
+         const EOS_Data &eos, const WBOption wb_option, const bool use_wb_rho,
+         const int m, const int k, const int j,
          const int il, const int iu, const DvceArray5D<Real> &q, const DvceArray4D<Real> &phicc, const DvceArray4D<Real> &phi,
          ScrArray2D<Real> &ql, ScrArray2D<Real> &qr) {
         
@@ -269,7 +271,7 @@ class Hydro {
         if (n == (IEN) || (n == (IDN) && use_wb_rho)) {
           par_for_inner(member, il, iu, [&](const int i) {
             Real q0_im1, q0_ip1, q0_imh, q0_iph, q0_i;
-            getWBq0(eos, (n == (IEN)) ? WBVar::wb_eint : WBVar::wb_dens,
+            getWBq0(eos, wb_option, (n == (IEN)) ? WBVar::wb_eint : WBVar::wb_dens,
                      q(m,IDN,k,j,i-1),q(m,IDN,k,j,i),q(m,IDN,k,j,i+1),
                      q(m,IEN,k,j,i-1),q(m,IEN,k,j,i),q(m,IEN,k,j,i+1),
                      phicc(m,k,j,i-1),phi(m,k,j,i),phicc(m,k,j,i),phi(m,k,j,i+1),phicc(m,k,j,i+1),
@@ -302,7 +304,9 @@ class Hydro {
     };
     
     KOKKOS_INLINE_FUNCTION
-    void WbLocalPiecewiseLinearX2(TeamMember_t const &member, const EOS_Data &eos, const int m, const int k, const int j,
+    static void WbLocalPiecewiseLinearX2(TeamMember_t const &member,
+         const EOS_Data &eos, const WBOption wb_option, const bool use_wb_rho,
+         const int m, const int k, const int j,
          const int il, const int iu, const DvceArray5D<Real> &q, const DvceArray4D<Real> &phicc, const DvceArray4D<Real> &phi,
          ScrArray2D<Real> &ql_jp1, ScrArray2D<Real> &qr_j) {
       Real igm1 = 1.0/(eos.gamma-1.0);
@@ -311,7 +315,7 @@ class Hydro {
         if (n == (IEN) || (n == (IDN) && use_wb_rho)) {
           par_for_inner(member, il, iu, [&](const int i) {
             Real q0_jm1, q0_jp1, q0_jmh, q0_jph, q0_j;
-            getWBq0(eos, (n == (IEN)) ? WBVar::wb_eint : WBVar::wb_dens,
+            getWBq0(eos, wb_option, (n == (IEN)) ? WBVar::wb_eint : WBVar::wb_dens,
                      q(m,IDN,k,j-1,i),q(m,IDN,k,j,i),q(m,IDN,k,j+1,i),
                      q(m,IEN,k,j-1,i),q(m,IEN,k,j,i),q(m,IEN,k,j+1,i),
                      phicc(m,k,j-1,i),phi(m,k,j,i),phicc(m,k,j,i),phi(m,k,j+1,i),phicc(m,k,j+1,i),
@@ -344,7 +348,9 @@ class Hydro {
     };
     
     KOKKOS_INLINE_FUNCTION
-    void WbLocalPiecewiseLinearX3(TeamMember_t const &member, const EOS_Data &eos, const int m, const int k, const int j,
+    static void WbLocalPiecewiseLinearX3(TeamMember_t const &member,
+         const EOS_Data &eos, const WBOption wb_option, const bool use_wb_rho,
+         const int m, const int k, const int j,
          const int il, const int iu, const DvceArray5D<Real> &q, const DvceArray4D<Real> &phicc, const DvceArray4D<Real> &phi,
          ScrArray2D<Real> &ql_kp1, ScrArray2D<Real> &qr_k) {
       Real igm1 = 1.0/(eos.gamma-1.0);
@@ -353,7 +359,7 @@ class Hydro {
         if (n == (IEN) || (n == (IDN) && use_wb_rho)) {
           par_for_inner(member, il, iu, [&](const int i) {
             Real q0_km1, q0_kp1, q0_kmh, q0_kph, q0_k;
-            getWBq0(eos, (n == (IEN)) ? WBVar::wb_eint : WBVar::wb_dens,
+            getWBq0(eos, wb_option, (n == (IEN)) ? WBVar::wb_eint : WBVar::wb_dens,
                      q(m,IDN,k-1,j,i),q(m,IDN,k,j,i),q(m,IDN,k+1,j,i),
                      q(m,IEN,k-1,j,i),q(m,IEN,k,j,i),q(m,IEN,k+1,j,i),
                      phicc(m,k-1,j,i),phi(m,k,j,i),phicc(m,k,j,i),phi(m,k+1,j,i),phicc(m,k+1,j,i),
@@ -663,7 +669,7 @@ class Hydro {
     };
 
     KOKKOS_INLINE_FUNCTION
-    void PLM_nonuniform(const Real &q_im1, const Real &q_i, const Real &q_ip1,
+    static void PLM_nonuniform(const Real &q_im1, const Real &q_i, const Real &q_ip1,
                         const Real &dxL, const Real &dxR, const Real &dxLh, const Real &dxRh,
                         Real &ql_ip1, Real &qr_i) {
       Real cL = dxL/dxLh;
@@ -684,12 +690,12 @@ class Hydro {
     };
     
     KOKKOS_INLINE_FUNCTION
-    void GridPiecewiseLinearX1(TeamMember_t const &member, const EOS_Data &eos, const int m, const int k, const int j,
+    static void GridPiecewiseLinearX1(TeamMember_t const &member, const EOS_Data &eos,
+         const WBOption wb_option,
+         const bool use_wb_rho, const bool use_wellbalance_dynamic, const bool use_wb_x1,
+         const int m, const int k, const int j,
          const int il, const int iu, const DvceArray5D<Real> &q, const DvceArray2D<Real> &xv, const DvceArray2D<Real> &xf, const DvceArray4D<Real> &phicc, const DvceArray4D<Real> &phi,
         ScrArray2D<Real> &ql, ScrArray2D<Real> &qr) {
-      auto &size = pmy_pack->pmb->mb_size;
-      auto &indcs = pmy_pack->pmesh->mb_indcs;
-      int is = indcs.is;
       Real gamma = eos.gamma;
       int nvar = q.extent_int(1);
       for (int n=0; n<nvar; ++n) {
@@ -706,7 +712,7 @@ class Hydro {
               Real dxR = x_ip1-x_i;
                 
               Real q0_im1, q0_ip1, q0_imh, q0_iph, q0_i;
-              getWBq0(eos, (n == (IEN)) ? WBVar::wb_eint : WBVar::wb_dens,
+              getWBq0(eos, wb_option, (n == (IEN)) ? WBVar::wb_eint : WBVar::wb_dens,
                      q(m,IDN,k,j,i-1),q(m,IDN,k,j,i),q(m,IDN,k,j,i+1),
                      q(m,IEN,k,j,i-1),q(m,IEN,k,j,i),q(m,IEN,k,j,i+1),
                      phicc(m,k,j,i-1),phi(m,k,j,i),phicc(m,k,j,i),phi(m,k,j,i+1),phicc(m,k,j,i+1),
@@ -749,7 +755,7 @@ class Hydro {
     };
     
     KOKKOS_INLINE_FUNCTION
-    void GridPiecewiseLinearX2(TeamMember_t const &member, const int m, const int k, const int j, const int il, const int iu,
+    static void GridPiecewiseLinearX2(TeamMember_t const &member, const int m, const int k, const int j, const int il, const int iu,
         const DvceArray5D<Real> &q, const DvceArray2D<Real> &xv, const DvceArray2D<Real> &xf,
         ScrArray2D<Real> &ql_jp1, ScrArray2D<Real> &qr_j) {
       Real x_jm1  = xv(m,j-1);
@@ -771,7 +777,7 @@ class Hydro {
     };
     
     KOKKOS_INLINE_FUNCTION
-    void GridPiecewiseLinearX3(TeamMember_t const &member, const int m, const int k, const int j, const int il, const int iu,
+    static void GridPiecewiseLinearX3(TeamMember_t const &member, const int m, const int k, const int j, const int il, const int iu,
         const DvceArray5D<Real> &q, const DvceArray2D<Real> &xv, const DvceArray2D<Real> &xf,
         ScrArray2D<Real> &ql_kp1, ScrArray2D<Real> &qr_k) {
       Real x_km1  = xv(m,k-1);
@@ -865,8 +871,26 @@ class Hydro {
     //! same object -- that consistency, not the background's accuracy, is what makes the
     //! scheme well balanced.
 
+    //! The static overload takes `wb_option` explicitly, so that a caller which is
+    //! itself static -- GridPiecewiseLinearX1, which a device kernel calls -- does not
+    //! need an object, and so the kernel's lambda does not capture `this`. The member
+    //! version below just supplies the object's own wb_option, leaving every existing
+    //! call site unchanged.
     KOKKOS_INLINE_FUNCTION
     void getWBq0(const EOS_Data &eos, const int var,
+                const Real &rho_im1, const Real &rho_i, const Real &rho_ip1,
+                const Real &e_im1, const Real &e_i, const Real &e_ip1,
+                const Real &phi_im1, const Real &phi_imh, const Real &phi_i,
+                const Real &phi_iph, const Real &phi_ip1,
+                Real &q0_im1, Real &q0_imh, Real &q0_i, Real &q0_iph,
+                Real &q0_ip1) const {
+      getWBq0(eos, wb_option, var, rho_im1, rho_i, rho_ip1, e_im1, e_i, e_ip1,
+              phi_im1, phi_imh, phi_i, phi_iph, phi_ip1,
+              q0_im1, q0_imh, q0_i, q0_iph, q0_ip1);
+    }
+
+    KOKKOS_INLINE_FUNCTION
+    static void getWBq0(const EOS_Data &eos, const WBOption wb_option, const int var,
                 const Real &rho_im1, const Real &rho_i, const Real &rho_ip1,
                 const Real &e_im1, const Real &e_i, const Real &e_ip1,
                 const Real &phi_im1, const Real &phi_imh, const Real &phi_i,
@@ -891,7 +915,7 @@ class Hydro {
         // ideal gas: unchanged closed forms.  The pressure channel is never reconstructed
         // for an ideal gas (nder is 0), but p = (gamma-1)e keeps this total anyway.
         int n = (var == WBVar::wb_dens) ? IDN : IEN;
-        getWBerho(n, eos.gamma, rho_im1, rho_i, rho_ip1, e_im1, e_i, e_ip1,
+        getWBerho(n, eos.gamma, wb_option, rho_im1, rho_i, rho_ip1, e_im1, e_i, e_ip1,
                   phi_im1, phi_imh, phi_i, phi_iph, phi_ip1,
                   q0_im1, q0_imh, q0_i, q0_iph, q0_ip1);
         if (var == WBVar::wb_pres) {
@@ -902,8 +926,23 @@ class Hydro {
       return;
     };
 
+    //! As with getWBq0, the static overload takes wb_option explicitly so that a static
+    //! caller needs no object; the member version supplies the object's own.
     KOKKOS_INLINE_FUNCTION
     void getWBerho(const int &n, const Real &gamma,
+                const Real &rho_im1, const Real &rho_i, const Real &rho_ip1,
+                const Real &e_im1, const Real &e_i, const Real &e_ip1,
+                const Real &phi_im1, const Real &phi_imh, const Real &phi_i,
+                const Real &phi_iph, const Real &phi_ip1,
+                Real &q0_im1, Real &q0_imh, Real &q0_i, Real &q0_iph,
+                Real &q0_ip1) const {
+      getWBerho(n, gamma, wb_option, rho_im1, rho_i, rho_ip1, e_im1, e_i, e_ip1,
+                phi_im1, phi_imh, phi_i, phi_iph, phi_ip1,
+                q0_im1, q0_imh, q0_i, q0_iph, q0_ip1);
+    }
+
+    KOKKOS_INLINE_FUNCTION
+    static void getWBerho(const int &n, const Real &gamma, const WBOption wb_option,
                 const Real &rho_im1, const Real &rho_i, const Real &rho_ip1,
                 const Real &e_im1, const Real &e_i, const Real &e_ip1,
                 const Real &phi_im1, const Real &phi_imh, const Real &phi_i, const Real &phi_iph, const Real &phi_ip1,

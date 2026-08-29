@@ -179,7 +179,7 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendFluxSeamCC(DvceFaceFld5D<Real> &flx)
     const int dn = nghbr.d_view(m,n).dest;
 
     // the seam index map, exactly as in MeshBoundaryValuesCC::PackAndSendCC
-    const PanelBoundaries pb = pmy_pack->pmesh->GetPanelBoundary(my_panel, dst_panel);
+    const PanelBoundaries pb = GetPanelBoundary(my_panel, dst_panel);
     int aj = 1, bj = 0, ak = 1, bk = 0, sj = 1, sk = nj;
     const int rev_a_preswap = (pb.swap_ax == 1) ? pb.rev_b : pb.rev_a;
     const int rev_b_preswap = (pb.swap_ax == 1) ? pb.rev_a : pb.rev_b;

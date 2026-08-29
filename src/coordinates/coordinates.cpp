@@ -434,6 +434,23 @@ void Coordinates::CoordGnomonicEquiangle() {
   int n2m1 = (indcs.nx2 > 1)? (indcs.nx2 + 2*ng - 1) : 0;
   int n3m1 = (indcs.nx3 > 1)? (indcs.nx3 + 2*ng - 1) : 0;
 
+  auto volume_ = volume;
+  auto area_ = area;
+  auto dx1_ = dx1;
+  auto dx2_ = dx2;
+  auto dx3_ = dx3;
+  auto dxedge_ = dxedge;
+  auto dxface_ = dxface;
+  auto areaedge_ = areaedge;
+  auto sin_cell_ = sin_cell;
+  auto cos_cell_ = cos_cell;
+  auto sin_face_xi_ = sin_face_xi;
+  auto cos_face_xi_ = cos_face_xi;
+  auto sin_face_eta_ = sin_face_eta;
+  auto cos_face_eta_ = cos_face_eta;
+  auto x_ov_rD_ = x_ov_rD;
+  auto y_ov_rC_ = y_ov_rC;
+  auto z_ov_rE_ = z_ov_rE;
   par_for("cscoord", DevExeSpace(), 0,nmb1,0,n3m1,0,n2m1,0,n1m1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
 
@@ -472,21 +489,21 @@ void Coordinates::CoordGnomonicEquiangle() {
     Real Dl = sqrt(1.0 + SQR(yl));
     Real Dr = sqrt(1.0 + SQR(yr));
 
-    sin_cell(m,k,j) = sqrt(1.0 + SQR(x) + SQR(y)) / (C * D);
-    cos_cell(m,k,j) = - x * y / (C * D);
-    sin_face_xi(m,k,j) = sqrt(1.0 + SQR(xl) + SQR(y)) / (Cl * D);
-    cos_face_xi(m,k,j) = - xl * y / (Cl * D);
-    sin_face_eta(m,k,j) = sqrt(1.0 + SQR(x) + SQR(yl)) / (C * Dl);
-    cos_face_eta(m,k,j) = - x * yl / (C * Dl);
+    sin_cell_(m,k,j) = sqrt(1.0 + SQR(x) + SQR(y)) / (C * D);
+    cos_cell_(m,k,j) = - x * y / (C * D);
+    sin_face_xi_(m,k,j) = sqrt(1.0 + SQR(xl) + SQR(y)) / (Cl * D);
+    cos_face_xi_(m,k,j) = - xl * y / (Cl * D);
+    sin_face_eta_(m,k,j) = sqrt(1.0 + SQR(x) + SQR(yl)) / (C * Dl);
+    cos_face_eta_(m,k,j) = - x * yl / (C * Dl);
     Real sin_face_xir = sqrt(1.0 + SQR(xr) + SQR(y)) / (Cr * D);
     Real sin_face_etar = sqrt(1.0 + SQR(x) + SQR(yr)) / (C * Dr);
     if (j == n2m1) {
-      sin_face_xi(m,k,j+1) = sin_face_xir;
-      cos_face_xi(m,k,j+1) = - xr * y / (Cr * D);
+      sin_face_xi_(m,k,j+1) = sin_face_xir;
+      cos_face_xi_(m,k,j+1) = - xr * y / (Cr * D);
     }
     if (k == n3m1) {
-      sin_face_eta(m,k+1,j) = sin_face_etar;
-      cos_face_eta(m,k+1,j) = - x * yr / (C * Dr);
+      sin_face_eta_(m,k+1,j) = sin_face_etar;
+      cos_face_eta_(m,k+1,j) = - x * yr / (C * Dr);
     }
 
     // --- angular face widths ---
@@ -498,26 +515,26 @@ void Coordinates::CoordGnomonicEquiangle() {
     Real dth_etar = acos((1.0 + xr*xr + yl*yr) / sqrt(1.0 + xr*xr + yl*yl) / sqrt(1.0 + xr*xr + yr*yr));
 
     // --- radial faces (x1) ---
-    area.x1f(m,k,j,i) = SQR(r_l) * dth_xi * dth_eta * sin_cell(m,k,j);
-    Real area1r = SQR(r_r) * dth_xi * dth_eta * sin_cell(m,k,j);
-    if (i == n1m1) area.x1f(m,k,j,i+1) = area1r;
+    area_.x1f(m,k,j,i) = SQR(r_l) * dth_xi * dth_eta * sin_cell_(m,k,j);
+    Real area1r = SQR(r_r) * dth_xi * dth_eta * sin_cell_(m,k,j);
+    if (i == n1m1) area_.x1f(m,k,j,i+1) = area1r;
 
     // --- xi faces (x2) ---
-    area.x2f(m,k,j,i) = 0.5 * (SQR(r_r)-SQR(r_l)) * dth_etal;
+    area_.x2f(m,k,j,i) = 0.5 * (SQR(r_r)-SQR(r_l)) * dth_etal;
     Real area2r = 0.5 * (SQR(r_r)-SQR(r_l)) * dth_etar;
-    if (j == n2m1) area.x2f(m,k,j+1,i) = area2r;
+    if (j == n2m1) area_.x2f(m,k,j+1,i) = area2r;
 
     // --- eta faces (x3) ---
-    area.x3f(m,k,j,i) = 0.5 * (SQR(r_r)-SQR(r_l)) * dth_xil;
+    area_.x3f(m,k,j,i) = 0.5 * (SQR(r_r)-SQR(r_l)) * dth_xil;
     Real area3r = 0.5 * (SQR(r_r)-SQR(r_l)) * dth_xir;
-    if (k == n3m1) area.x3f(m,k+1,j,i) = area3r;
+    if (k == n3m1) area_.x3f(m,k+1,j,i) = area3r;
 
-    // --- volume (SNAP trapezoidal) ---
-    volume(m,k,j,i) = 1.0/3.0*(r_r*r_r*r_r-r_l*r_l*r_l)
-                      * dth_xi * dth_eta * sin_cell(m,k,j);
-    dx1(m,k,j,i) = r_r - r_l;
-    dx2(m,k,j,i) = r_c * dth_xi;
-    dx3(m,k,j,i) = r_c * dth_eta;
+    // --- volume_ (SNAP trapezoidal) ---
+    volume_(m,k,j,i) = 1.0/3.0*(r_r*r_r*r_r-r_l*r_l*r_l)
+                      * dth_xi * dth_eta * sin_cell_(m,k,j);
+    dx1_(m,k,j,i) = r_r - r_l;
+    dx2_(m,k,j,i) = r_c * dth_xi;
+    dx3_(m,k,j,i) = r_c * dth_eta;
 
     // --- edge lengths, consumed by the curvilinear CT update in mhd_ct.cpp -------------
     // Without these the CT branch multiplies every EMF by an uninitialised (zero) edge
@@ -526,34 +543,34 @@ void Coordinates::CoordGnomonicEquiangle() {
     // two stay consistent by construction:
     //   x1e is radial, so it is just r_r - r_l and depends on neither angle;
     //   x2e runs along xi  and is evaluated at an ETA face, hence dth_xi{l,r} -- the same
-    //     arcs that give area.x3f;
+    //     arcs that give area_.x3f;
     //   x3e runs along eta and is evaluated at a XI  face, hence dth_eta{l,r} -- the same
-    //     arcs that give area.x2f.
+    //     arcs that give area_.x2f.
     // The i / j / k == n*m1 clauses fill the far edge of the last cell, exactly as
     // CoordSphericalPolar does.
-    dxedge.x1e(m,k,j,i) = r_r - r_l;
-    if (j == n2m1) dxedge.x1e(m,k,j+1,i) = r_r - r_l;
-    if (k == n3m1) dxedge.x1e(m,k+1,j,i) = r_r - r_l;
-    if (j == n2m1 && k == n3m1) dxedge.x1e(m,k+1,j+1,i) = r_r - r_l;
+    dxedge_.x1e(m,k,j,i) = r_r - r_l;
+    if (j == n2m1) dxedge_.x1e(m,k,j+1,i) = r_r - r_l;
+    if (k == n3m1) dxedge_.x1e(m,k+1,j,i) = r_r - r_l;
+    if (j == n2m1 && k == n3m1) dxedge_.x1e(m,k+1,j+1,i) = r_r - r_l;
 
-    dxedge.x2e(m,k,j,i) = r_l * dth_xil;
-    if (i == n1m1) dxedge.x2e(m,k,j,i+1) = r_r * dth_xil;
-    if (k == n3m1) dxedge.x2e(m,k+1,j,i) = r_l * dth_xir;
-    if (i == n1m1 && k == n3m1) dxedge.x2e(m,k+1,j,i+1) = r_r * dth_xir;
+    dxedge_.x2e(m,k,j,i) = r_l * dth_xil;
+    if (i == n1m1) dxedge_.x2e(m,k,j,i+1) = r_r * dth_xil;
+    if (k == n3m1) dxedge_.x2e(m,k+1,j,i) = r_l * dth_xir;
+    if (i == n1m1 && k == n3m1) dxedge_.x2e(m,k+1,j,i+1) = r_r * dth_xir;
 
-    dxedge.x3e(m,k,j,i) = r_l * dth_etal;
-    if (i == n1m1) dxedge.x3e(m,k,j,i+1) = r_r * dth_etal;
-    if (j == n2m1) dxedge.x3e(m,k,j+1,i) = r_l * dth_etar;
-    if (i == n1m1 && j == n2m1) dxedge.x3e(m,k,j+1,i+1) = r_r * dth_etar;
+    dxedge_.x3e(m,k,j,i) = r_l * dth_etal;
+    if (i == n1m1) dxedge_.x3e(m,k,j,i+1) = r_r * dth_etal;
+    if (j == n2m1) dxedge_.x3e(m,k,j+1,i) = r_l * dth_etar;
+    if (i == n1m1 && j == n2m1) dxedge_.x3e(m,k,j+1,i+1) = r_r * dth_etar;
 
     // --- DUAL mesh: edge-centred areas and centre-to-centre lengths ------------------
     // Consumed by the resistive current density (diffusion/current_density.hpp), which
     // applies Stokes' theorem on the loop joining the four cell CENTRES around an edge.
     // Every side of that loop passes through a face centre, so its length is the
-    // centre-to-centre distance stored in dxface, and the area it encloses is areaedge.
+    // centre-to-centre distance stored in dxface, and the area it encloses is areaedge_.
     // The x1 loop lies in the tangent surface, where the two basis vectors are NOT
     // orthogonal, so its area carries the sin of the angle between them -- exactly as
-    // area.x1f does. The x2 and x3 loops each contain rhat, which IS orthogonal to both
+    // area_.x1f does. The x2 and x3 loops each contain rhat, which IS orthogonal to both
     // tangent directions, so they carry no such factor.
     Real r_cm = CellCenterX(i-1-is, indcs.nx1, size.d_view(m).x1min,
                                             size.d_view(m).x1max);
@@ -570,27 +587,27 @@ void Coordinates::CoordGnomonicEquiangle() {
       return acos((1.0 + xx*xx + ya*yb)/sqrt(1.0 + xx*xx + ya*ya)
                                        /sqrt(1.0 + xx*xx + yb*yb));
     };
-    if (i > 0) dxface.x1f(m,k,j,i) = r_c - r_cm;
-    if (j > 0) dxface.x2f(m,k,j,i) = r_c * arc_xi(xm, x, y);
-    if (k > 0) dxface.x3f(m,k,j,i) = r_c * arc_eta(ym, y, x);
+    if (i > 0) dxface_.x1f(m,k,j,i) = r_c - r_cm;
+    if (j > 0) dxface_.x2f(m,k,j,i) = r_c * arc_xi(xm, x, y);
+    if (k > 0) dxface_.x3f(m,k,j,i) = r_c * arc_eta(ym, y, x);
     if (j > 0 && k > 0) {
-      areaedge.x1e(m,k,j,i) = SQR(r_c) * arc_xi(xm, x, yl) * arc_eta(ym, y, xl)
+      areaedge_.x1e(m,k,j,i) = SQR(r_c) * arc_xi(xm, x, yl) * arc_eta(ym, y, xl)
                               * sqrt(1.0 + SQR(xl) + SQR(yl)) / (Cl * Dl);
     }
     if (i > 0 && k > 0) {
-      areaedge.x2e(m,k,j,i) = 0.5*(SQR(r_c) - SQR(r_cm)) * arc_eta(ym, y, x);
+      areaedge_.x2e(m,k,j,i) = 0.5*(SQR(r_c) - SQR(r_cm)) * arc_eta(ym, y, x);
     }
     if (i > 0 && j > 0) {
-      areaedge.x3e(m,k,j,i) = 0.5*(SQR(r_c) - SQR(r_cm)) * arc_xi(xm, x, y);
+      areaedge_.x3e(m,k,j,i) = 0.5*(SQR(r_c) - SQR(r_cm)) * arc_xi(xm, x, y);
     }
 
     // Geometric coefficients consumed by SrcTermsGnomonicEquiangle. z_ov_rE is the RADIAL
     // one, matching its meaning in CoordSphericalPolar/SrcTermsSphericalPolar.
-    x_ov_rD(m,k,j,i) = (area2r * sin_face_xir
-                        - area.x2f(m,k,j,i) * sin_face_xi(m,k,j)) / volume(m,k,j,i);
-    y_ov_rC(m,k,j,i) = (area3r * sin_face_etar
-                        - area.x3f(m,k,j,i) * sin_face_eta(m,k,j)) / volume(m,k,j,i);
-    z_ov_rE(m,k,j,i) = (area1r - area.x1f(m,k,j,i)) / volume(m,k,j,i);
+    x_ov_rD_(m,k,j,i) = (area2r * sin_face_xir
+                        - area_.x2f(m,k,j,i) * sin_face_xi_(m,k,j)) / volume_(m,k,j,i);
+    y_ov_rC_(m,k,j,i) = (area3r * sin_face_etar
+                        - area_.x3f(m,k,j,i) * sin_face_eta_(m,k,j)) / volume_(m,k,j,i);
+    z_ov_rE_(m,k,j,i) = (area1r - area_.x1f(m,k,j,i)) / volume_(m,k,j,i);
   });
 }
 
@@ -787,6 +804,13 @@ void Coordinates::SrcTermsGnomonicEquiangleImpl(const DvceArray5D<Real> &w0,
   auto &bcc_ = bcc0;
   const bool mhd_ = is_mhd;
 
+  auto volume_ = volume;
+  auto area_ = area;
+  auto sin_cell_ = sin_cell;
+  auto cos_cell_ = cos_cell;
+  auto x_ov_rD_ = x_ov_rD;
+  auto y_ov_rC_ = y_ov_rC;
+  auto z_ov_rE_ = z_ov_rE;
   par_for("cssrc", DevExeSpace(), 0,nmb1,ks,ke,js,je,is,ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       
@@ -802,8 +826,8 @@ void Coordinates::SrcTermsGnomonicEquiangleImpl(const DvceArray5D<Real> &w0,
                             : eos_.Pressure(w0(m,IDN,k,j,i), w0(m,IEN,k,j,i));
     Real rho = w0(m,IDN,k,j,i);
 
-    Real sine = sin_cell(m,k,j);
-    Real cosine = cos_cell(m,k,j);
+    Real sine = sin_cell_(m,k,j);
+    Real cosine = cos_cell_(m,k,j);
     Real sine2 = SQR(sine);
     // lower the index on the two ANGULAR components with g = [[1,c],[c,1]]
     Real v_2 = v2 + v3 * cosine;
@@ -832,16 +856,16 @@ void Coordinates::SrcTermsGnomonicEquiangleImpl(const DvceArray5D<Real> &w0,
     // radial source: (A_out - A_in)/V * (p + angular kinetic energy), the same form as
     // SrcTermsSphericalPolar's src1. For MHD the tangential Maxwell stress cancels all
     // but the RADIAL magnetic pressure, leaving z_ov_rE*(p + B_r^2/2 + rho|v_t|^2/2).
-    Real src1 = z_ov_rE(m,k,j,i) * (ptot + 0.5*(rho*(v2*v_2+v3*v_3) - b_tsq));
-    Real src2 = x_ov_rD(m,k,j,i) * (ptot + rho*SQR(v3)*sine2 - bb_3);
-    Real src3 = y_ov_rC(m,k,j,i) * (ptot + rho*SQR(v2)*sine2 - bb_2);
+    Real src1 = z_ov_rE_(m,k,j,i) * (ptot + 0.5*(rho*(v2*v_2+v3*v_3) - b_tsq));
+    Real src2 = x_ov_rD_(m,k,j,i) * (ptot + rho*SQR(v3)*sine2 - bb_3);
+    Real src3 = y_ov_rC_(m,k,j,i) * (ptot + rho*SQR(v2)*sine2 - bb_2);
 
     // the radial-face flux of each ANGULAR momentum, which the r-dependence of the
     // angular basis converts into a source
-    src2 -= dr/2.0/radius * (uflx.x1f(m,IM2,k,j,i)*area.x1f(m,k,j,i)
-             + uflx.x1f(m,IM2,k,j,i+1)*area.x1f(m,k,j,i+1))/volume(m,k,j,i);
-    src3 -= dr/2.0/radius * (uflx.x1f(m,IM3,k,j,i)*area.x1f(m,k,j,i)
-             + uflx.x1f(m,IM3,k,j,i+1)*area.x1f(m,k,j,i+1))/volume(m,k,j,i);
+    src2 -= dr/2.0/radius * (uflx.x1f(m,IM2,k,j,i)*area_.x1f(m,k,j,i)
+             + uflx.x1f(m,IM2,k,j,i+1)*area_.x1f(m,k,j,i+1))/volume_(m,k,j,i);
+    src3 -= dr/2.0/radius * (uflx.x1f(m,IM3,k,j,i)*area_.x1f(m,k,j,i)
+             + uflx.x1f(m,IM3,k,j,i+1)*area_.x1f(m,k,j,i+1))/volume_(m,k,j,i);
 
     u0(m,IM1,k,j,i) += src1*bdt;
     u0(m,IM2,k,j,i) += src2*bdt;
@@ -874,6 +898,23 @@ void Coordinates::CoordSphericalPolar() {
   Real cpoly[NSTRETCH_R_POLY];
   for (int n=0; n<NSTRETCH_R_POLY; ++n) cpoly[n] = pmy_pack->pmesh->fStretchRPoly[n];
 
+  auto volume_ = volume;
+  auto area_ = area;
+  auto dx1_ = dx1;
+  auto dx2_ = dx2;
+  auto dx3_ = dx3;
+  auto x1v_ = x1v;
+  auto x2v_ = x2v;
+  auto x3v_ = x3v;
+  auto xx1f_ = xx1f;
+  auto xx2f_ = xx2f;
+  auto xx3f_ = xx3f;
+  auto dxedge_ = dxedge;
+  auto x_ov_rD_ = x_ov_rD;
+  auto y_ov_rC_ = y_ov_rC;
+  auto z_ov_rE_ = z_ov_rE;
+  const bool use_stretch_theta = pmy_pack->pmesh->use_grid_stretch_theta;
+  const Real f_stretch_theta = pmy_pack->pmesh->fStretchTheta;
   par_for("spcoord", DevExeSpace(), 0,nmb1,0,n3m1,0,n2m1,0,n1m1,//ks,ke,js,je,is,ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
 
@@ -898,8 +939,8 @@ void Coordinates::CoordSphericalPolar() {
     Real thetal = LeftEdgeX(j-js, indcs.nx2, size.d_view(m).x2min, size.d_view(m).x2max);
     Real thetar = LeftEdgeX(j+1-js, indcs.nx2, size.d_view(m).x2min, size.d_view(m).x2max);
     // stretch the radial grid
-    if (pmy_pack->pmesh->use_grid_stretch_theta) {
-      Real factor_stretch = pmy_pack->pmesh->fStretchTheta;
+    if (use_stretch_theta) {
+      Real factor_stretch = f_stretch_theta;
       StretchTheta(factor_stretch,theta);
       StretchTheta(factor_stretch,thetal);
       StretchTheta(factor_stretch,thetar);
@@ -946,68 +987,72 @@ void Coordinates::CoordSphericalPolar() {
     }
       
     // --- radial edge lengths ---
-    dxedge.x1e(m,k,j,i) = r_r - r_l;
-    if (j == n2m1) dxedge.x1e(m,k,j+1,i) = r_r - r_l;
-    if (k == n3m1) dxedge.x1e(m,k+1,j,i) = r_r - r_l;
-    if (j == n2m1 && k == n3m1) dxedge.x1e(m,k+1,j+1,i) = r_r - r_l;
+    dxedge_.x1e(m,k,j,i) = r_r - r_l;
+    if (j == n2m1) dxedge_.x1e(m,k,j+1,i) = r_r - r_l;
+    if (k == n3m1) dxedge_.x1e(m,k+1,j,i) = r_r - r_l;
+    if (j == n2m1 && k == n3m1) dxedge_.x1e(m,k+1,j+1,i) = r_r - r_l;
       
     // --- theta edge lengths ---
-    dxedge.x2e(m,k,j,i) = r_l * (thetar-thetal);
-    if (i == n1m1) dxedge.x2e(m,k,j,i+1) = r_r * (thetar-thetal);
-    if (k == n3m1) dxedge.x2e(m,k+1,j,i) = r_l * (thetar-thetal);
-    if (i == n1m1 && k == n3m1) dxedge.x2e(m,k+1,j,i+1) = r_r * (thetar-thetal);
+    dxedge_.x2e(m,k,j,i) = r_l * (thetar-thetal);
+    if (i == n1m1) dxedge_.x2e(m,k,j,i+1) = r_r * (thetar-thetal);
+    if (k == n3m1) dxedge_.x2e(m,k+1,j,i) = r_l * (thetar-thetal);
+    if (i == n1m1 && k == n3m1) dxedge_.x2e(m,k+1,j,i+1) = r_r * (thetar-thetal);
       
     // --- phi edge lengths ---
-    dxedge.x3e(m,k,j,i) = r_l * sinl * (phir-phil);
-    if (i == n1m1) dxedge.x3e(m,k,j,i+1) = r_r * sinl * (phir-phil);
-    if (j == n2m1) dxedge.x3e(m,k,j+1,i) = r_l * sinr * (phir-phil);
-    if (i == n1m1 && j == n2m1) dxedge.x3e(m,k,j+1,i+1) = r_r * sinr * (phir-phil);
+    dxedge_.x3e(m,k,j,i) = r_l * sinl * (phir-phil);
+    if (i == n1m1) dxedge_.x3e(m,k,j,i+1) = r_r * sinl * (phir-phil);
+    if (j == n2m1) dxedge_.x3e(m,k,j+1,i) = r_l * sinr * (phir-phil);
+    if (i == n1m1 && j == n2m1) dxedge_.x3e(m,k,j+1,i+1) = r_r * sinr * (phir-phil);
 
     // --- radial faces ---
-    area.x1f(m,k,j,i) = SQR(r_l) * fabs(cosl-cosr) * (phir-phil);
+    area_.x1f(m,k,j,i) = SQR(r_l) * fabs(cosl-cosr) * (phir-phil);
     Real area1r = SQR(r_r) * fabs(cosl-cosr) * (phir-phil);
-    if (i == n1m1) area.x1f(m,k,j,i+1) = area1r;
-    xx1f(m,i) = r_l;
-    if (i == n1m1) xx1f(m,i+1) = r_r;
+    if (i == n1m1) area_.x1f(m,k,j,i+1) = area1r;
+    xx1f_(m,i) = r_l;
+    if (i == n1m1) xx1f_(m,i+1) = r_r;
 
     // --- theta faces ---
-    area.x2f(m,k,j,i) = 0.5 * (SQR(r_r)-SQR(r_l)) * sinl * (phir-phil);
+    area_.x2f(m,k,j,i) = 0.5 * (SQR(r_r)-SQR(r_l)) * sinl * (phir-phil);
     Real area2r = 0.5 * (SQR(r_r)-SQR(r_l)) * sinr * (phir-phil);
-    if (j == n2m1) area.x2f(m,k,j+1,i) = area2r;
-    xx2f(m,j) = thetal;
-    if (j == n2m1) xx2f(m,j+1) = thetar;
+    if (j == n2m1) area_.x2f(m,k,j+1,i) = area2r;
+    xx2f_(m,j) = thetal;
+    if (j == n2m1) xx2f_(m,j+1) = thetar;
 
     // --- phi faces ---
-    area.x3f(m,k,j,i) = 0.5 * (SQR(r_r)-SQR(r_l)) * (thetar-thetal);
+    area_.x3f(m,k,j,i) = 0.5 * (SQR(r_r)-SQR(r_l)) * (thetar-thetal);
     Real area3r = 0.5 * (SQR(r_r)-SQR(r_l)) * (thetar-thetal);
-    if (k == n3m1) area.x3f(m,k+1,j,i) = area3r;
-    xx3f(m,k) = phil;
-    if (k == n3m1) xx3f(m,k+1) = phir;
+    if (k == n3m1) area_.x3f(m,k+1,j,i) = area3r;
+    xx3f_(m,k) = phil;
+    if (k == n3m1) xx3f_(m,k+1) = phir;
 
     // --- volume ---
 
-    volume(m,k,j,i) = 1.0/3.0*(r_r*r_r*r_r-r_l*r_l*r_l) * fabs(cosl-cosr) * (phir-phil);
+    volume_(m,k,j,i) = 1.0/3.0*(r_r*r_r*r_r-r_l*r_l*r_l) * fabs(cosl-cosr) * (phir-phil);
       
     // Mignone 2014 correction
-    x1v(m,i) = 1.0/4.0*(SQR(r_l/r_r)+1.0) / (1.0/3.0*(SQR(r_l/r_r)+(r_l/r_r)+1.0)) *(r_r+r_l); // 1.0/4.0*(SQR(SQR(r_r))-SQR(SQR(r_l))) / (1.0/3.0*(r_r*r_r*r_r-r_l*r_l*r_l)); //0.5*(r_r+r_l); //
-    x2v(m,j) = -((sintr-thetar*cosr) - (sintl-thetal*cosl)) / (cosr-cosl); // 0.5*(thetar+thetal); // 
-    x3v(m,k) = 0.5*(phir+phil);
-    dx2(m,k,j,i) = x1v(m,i) * (thetar-thetal);
-    dx3(m,k,j,i) = x1v(m,i) * fabs(sin(x2v(m,j))) * (phir-phil);
-    dx1(m,k,j,i) = r_r-r_l;
+    x1v_(m,i) = 1.0/4.0*(SQR(r_l/r_r)+1.0) / (1.0/3.0*(SQR(r_l/r_r)+(r_l/r_r)+1.0)) *(r_r+r_l); // 1.0/4.0*(SQR(SQR(r_r))-SQR(SQR(r_l))) / (1.0/3.0*(r_r*r_r*r_r-r_l*r_l*r_l)); //0.5*(r_r+r_l); //
+    x2v_(m,j) = -((sintr-thetar*cosr) - (sintl-thetal*cosl)) / (cosr-cosl); // 0.5*(thetar+thetal); // 
+    x3v_(m,k) = 0.5*(phir+phil);
+    dx2_(m,k,j,i) = x1v_(m,i) * (thetar-thetal);
+    dx3_(m,k,j,i) = x1v_(m,i) * fabs(sin(x2v_(m,j))) * (phir-phil);
+    dx1_(m,k,j,i) = r_r-r_l;
       
-    z_ov_rE(m,k,j,i) = (area1r - area.x1f(m,k,j,i)) / volume(m,k,j,i);
-    x_ov_rD(m,k,j,i) = (area2r - area.x2f(m,k,j,i)) / volume(m,k,j,i);
-    y_ov_rC(m,k,j,i) = (sinr-sinl)/(sinr+sinl);
+    z_ov_rE_(m,k,j,i) = (area1r - area_.x1f(m,k,j,i)) / volume_(m,k,j,i);
+    x_ov_rD_(m,k,j,i) = (area2r - area_.x2f(m,k,j,i)) / volume_(m,k,j,i);
+    y_ov_rC_(m,k,j,i) = (sinr-sinl)/(sinr+sinl);
   });
+  auto dxface_ = dxface;
+  auto areaedge_ = areaedge;
   par_for("spcoord_add", DevExeSpace(), 0,nmb1,0,n3m1,0,n2m1,0,n1m1,//ks,ke,js,je,is,ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    if (i > 0) dxface.x1f(m,k,j,i) = x1v(m,i) - x1v(m,i-1);
-    if (j > 0) dxface.x2f(m,k,j,i) = x1v(m,i)*(x2v(m,j)-x2v(m,j-1));
-    if (k > 0) dxface.x3f(m,k,j,i) = x1v(m,i)*fabs(sin(x2v(m,j)))*(x3v(m,k)-x3v(m,k-1));
-    if (j > 0 && k > 0) areaedge.x1e(m,k,j,i) = SQR(x1v(m,i)) * fabs(cos(x2v(m,j))-cos(x2v(m,j-1))) * (x3v(m,k)-x3v(m,k-1));
-    if (k > 0 && i > 0) areaedge.x2e(m,k,j,i) = 0.5 * (SQR(x1v(m,i))-SQR(x1v(m,i-1))) * fabs(sin(x2v(m,j))) * (x3v(m,k)-x3v(m,k-1));
-    if (i > 0 && j > 0) areaedge.x3e(m,k,j,i) = 0.5 * (SQR(x1v(m,i))-SQR(x1v(m,i-1))) * (x2v(m,j)-x2v(m,j-1));
+    if (i > 0) dxface_.x1f(m,k,j,i) = x1v_(m,i) - x1v_(m,i-1);
+    if (j > 0) dxface_.x2f(m,k,j,i) = x1v_(m,i)*(x2v_(m,j)-x2v_(m,j-1));
+    if (k > 0) {
+      dxface_.x3f(m,k,j,i) = x1v_(m,i)*fabs(sin(x2v_(m,j)))*(x3v_(m,k)-x3v_(m,k-1));
+    }
+    if (j > 0 && k > 0) areaedge_.x1e(m,k,j,i) = SQR(x1v_(m,i)) * fabs(cos(x2v_(m,j))-cos(x2v_(m,j-1))) * (x3v_(m,k)-x3v_(m,k-1));
+    if (k > 0 && i > 0) areaedge_.x2e(m,k,j,i) = 0.5 * (SQR(x1v_(m,i))-SQR(x1v_(m,i-1))) * fabs(sin(x2v_(m,j))) * (x3v_(m,k)-x3v_(m,k-1));
+    if (i > 0 && j > 0) areaedge_.x3e(m,k,j,i) = 0.5 * (SQR(x1v_(m,i))-SQR(x1v_(m,i-1))) * (x2v_(m,j)-x2v_(m,j-1));
   });
 }
 
@@ -1030,11 +1075,18 @@ void Coordinates::SrcTermsSphericalPolarHydro(const DvceArray5D<Real> &w0,
   const bool gen_ = eos_.IsGeneral();
   auto &wder_ = pmy_pack->phydro->wder;
 
+  auto volume_ = volume;
+  auto area_ = area;
+  auto xx1f_ = xx1f;
+  auto x_ov_rD_ = x_ov_rD;
+  auto y_ov_rC_ = y_ov_rC;
+  auto z_ov_rE_ = z_ov_rE;
+  const bool use_wb_static_ = pmy_pack->phydro->use_wellbalance_static;
   par_for("spsrc", DevExeSpace(), 0,nmb1,ks,ke,js,je,is,ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       
-    Real r_l = xx1f(m,i);
-    Real r_r = xx1f(m,i+1);
+    Real r_l = xx1f_(m,i);
+    Real r_r = xx1f_(m,i+1);
     Real factor = (r_r-r_l)/(r_r+r_l);
       
     Real v1 = w0(m,IVX,k,j,i);
@@ -1046,18 +1098,18 @@ void Coordinates::SrcTermsSphericalPolarHydro(const DvceArray5D<Real> &w0,
     // subtract the background pressure, precomputed once by SetWbBackgroundPressure()
     // -- for a general EOS it depends on the background DENSITY as well as its internal
     // energy, so it cannot be written as (gamma-1)*e_bg and is not free to recompute
-    if (pmy_pack->phydro->use_wellbalance_static) {
+    if (use_wb_static_) {
       pr -= pwb(m,k,j,i);
     }
     Real m_ii_h = pr + 0.5*rho*(v2*v2+v3*v3);
     Real m_pp = pr + rho*SQR(v3);
       
-    Real src1 = z_ov_rE(m,k,j,i) * m_ii_h;
-    Real src2 = x_ov_rD(m,k,j,i) * m_pp;
-    Real src3 = -y_ov_rC(m,k,j,i) * (uflx.x2f(m,IM3,k,j,i)*area.x2f(m,k,j,i)+uflx.x2f(m,IM3,k,j+1,i)*area.x2f(m,k,j+1,i))/volume(m,k,j,i);
+    Real src1 = z_ov_rE_(m,k,j,i) * m_ii_h;
+    Real src2 = x_ov_rD_(m,k,j,i) * m_pp;
+    Real src3 = -y_ov_rC_(m,k,j,i) * (uflx.x2f(m,IM3,k,j,i)*area_.x2f(m,k,j,i)+uflx.x2f(m,IM3,k,j+1,i)*area_.x2f(m,k,j+1,i))/volume_(m,k,j,i);
       
-    src2 -= factor * (uflx.x1f(m,IM2,k,j,i)*area.x1f(m,k,j,i)+uflx.x1f(m,IM2,k,j,i+1)*area.x1f(m,k,j,i+1))/volume(m,k,j,i);
-    src3 -= factor * (uflx.x1f(m,IM3,k,j,i)*area.x1f(m,k,j,i)+uflx.x1f(m,IM3,k,j,i+1)*area.x1f(m,k,j,i+1))/volume(m,k,j,i);
+    src2 -= factor * (uflx.x1f(m,IM2,k,j,i)*area_.x1f(m,k,j,i)+uflx.x1f(m,IM2,k,j,i+1)*area_.x1f(m,k,j,i+1))/volume_(m,k,j,i);
+    src3 -= factor * (uflx.x1f(m,IM3,k,j,i)*area_.x1f(m,k,j,i)+uflx.x1f(m,IM3,k,j,i+1)*area_.x1f(m,k,j,i+1))/volume_(m,k,j,i);
       
     u0(m,IM1,k,j,i) += src1*bdt;
     u0(m,IM2,k,j,i) += src2*bdt;
@@ -1086,11 +1138,18 @@ void Coordinates::SrcTermsSphericalPolarMHD(const DvceArray5D<Real> &w0,
   const bool gen_ = eos_.IsGeneral();
   auto &wder_ = pmy_pack->pmhd->wder;
 
+  auto volume_ = volume;
+  auto area_ = area;
+  auto xx1f_ = xx1f;
+  auto x_ov_rD_ = x_ov_rD;
+  auto y_ov_rC_ = y_ov_rC;
+  auto z_ov_rE_ = z_ov_rE;
+  const bool use_wb_static_ = pmy_pack->pmhd->use_wellbalance_static;
   par_for("spsrc", DevExeSpace(), 0,nmb1,ks,ke,js,je,is,ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       
-    Real r_l = xx1f(m,i);
-    Real r_r = xx1f(m,i+1);
+    Real r_l = xx1f_(m,i);
+    Real r_r = xx1f_(m,i+1);
     Real factor = (r_r-r_l)/(r_r+r_l);
       
     Real v1 = w0(m,IVX,k,j,i);
@@ -1101,7 +1160,7 @@ void Coordinates::SrcTermsSphericalPolarMHD(const DvceArray5D<Real> &w0,
                             : eos_.Pressure(w0(m,IDN,k,j,i), w0(m,IEN,k,j,i));
     // subtract the background pressure, which for a general EOS depends on the background
     // DENSITY as well as its internal energy and so cannot be written as (gamma-1)*e_bg
-    if (pmy_pack->pmhd->use_wellbalance_static) {
+    if (use_wb_static_) {
       pr -= pwb(m,k,j,i);
     }
     Real m_ii_h = pr + 0.5*rho*(v2*v2+v3*v3);
@@ -1109,12 +1168,12 @@ void Coordinates::SrcTermsSphericalPolarMHD(const DvceArray5D<Real> &w0,
     m_ii_h += 0.5*SQR(bcc0(m,IBX,k,j,i));
     m_pp += 0.5*( SQR(bcc0(m,IBX,k,j,i)) + SQR(bcc0(m,IBY,k,j,i)) - SQR(bcc0(m,IBZ,k,j,i)) );
       
-    Real src1 = z_ov_rE(m,k,j,i) * m_ii_h;
-    Real src2 = x_ov_rD(m,k,j,i) * m_pp;
-    Real src3 = -y_ov_rC(m,k,j,i) * (uflx.x2f(m,IM3,k,j,i)*area.x2f(m,k,j,i)+uflx.x2f(m,IM3,k,j+1,i)*area.x2f(m,k,j+1,i))/volume(m,k,j,i);
+    Real src1 = z_ov_rE_(m,k,j,i) * m_ii_h;
+    Real src2 = x_ov_rD_(m,k,j,i) * m_pp;
+    Real src3 = -y_ov_rC_(m,k,j,i) * (uflx.x2f(m,IM3,k,j,i)*area_.x2f(m,k,j,i)+uflx.x2f(m,IM3,k,j+1,i)*area_.x2f(m,k,j+1,i))/volume_(m,k,j,i);
       
-    src2 -= factor * (uflx.x1f(m,IM2,k,j,i)*area.x1f(m,k,j,i)+uflx.x1f(m,IM2,k,j,i+1)*area.x1f(m,k,j,i+1))/volume(m,k,j,i);
-    src3 -= factor * (uflx.x1f(m,IM3,k,j,i)*area.x1f(m,k,j,i)+uflx.x1f(m,IM3,k,j,i+1)*area.x1f(m,k,j,i+1))/volume(m,k,j,i);
+    src2 -= factor * (uflx.x1f(m,IM2,k,j,i)*area_.x1f(m,k,j,i)+uflx.x1f(m,IM2,k,j,i+1)*area_.x1f(m,k,j,i+1))/volume_(m,k,j,i);
+    src3 -= factor * (uflx.x1f(m,IM3,k,j,i)*area_.x1f(m,k,j,i)+uflx.x1f(m,IM3,k,j,i+1)*area_.x1f(m,k,j,i+1))/volume_(m,k,j,i);
       
     u0(m,IM1,k,j,i) += src1*bdt;
     u0(m,IM2,k,j,i) += src2*bdt;

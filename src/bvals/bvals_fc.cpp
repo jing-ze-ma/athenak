@@ -51,6 +51,7 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
   auto &mblev = pmy_pack->pmb->mb_lev;
   auto &mbpanel = pmy_pack->pmb->mb_panel;
   const bool use_cs = pmy_pack->pmesh->use_cubed_sphere;
+  const bool use_pole = pmy_pack->pmesh->use_polar_boundary;
   auto &mbsize = pmy_pack->pmb->mb_size;
   auto &cs_indcs = pmy_pack->pmesh->mb_indcs;
   auto &sbuf = sendbuf;
@@ -86,10 +87,10 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
         // with its OWN component's range; the sj/sk transposition below still lays it out
         // the way the receiver expects, and the counts match because nx2 == nx3 here.
         int vsrc = v;
-        if (pmy_pack->pmesh->use_cubed_sphere &&
+        if (use_cs &&
             nghbr.d_view(m,n).panel != mbpanel.d_view(m) && v > 0) {
           PanelBoundaries pb0;
-          pb0 = pmy_pack->pmesh->GetPanelBoundary(mbpanel.d_view(m),
+          pb0 = GetPanelBoundary(mbpanel.d_view(m),
                                                   nghbr.d_view(m,n).panel);
           if (pb0.swap_ax == 1) vsrc = (v == 1) ? 2 : 1;
         }
@@ -131,9 +132,9 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
         int dm = nghbr.d_view(m,n).gid - mbgid.d_view(0);
         int dn = nghbr.d_view(m,n).dest;
 
-          const bool do_cs = pmy_pack->pmesh->use_cubed_sphere &&
+          const bool do_cs = use_cs &&
                              (nghbr.d_view(m,n).panel != mbpanel.d_view(m));
-          const bool do_pole = pmy_pack->pmesh->use_polar_boundary &&
+          const bool do_pole = use_pole &&
                                (nghbr.d_view(m,n).polar > 0);
 
           if (do_cs || do_pole) {
@@ -152,7 +153,7 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
               const auto ngh = nghbr.d_view(m,n);
               const int my_panel = mbpanel.d_view(m);
               PanelBoundaries pb;
-              pb = pmy_pack->pmesh->GetPanelBoundary(my_panel, ngh.panel);
+              pb = GetPanelBoundary(my_panel, ngh.panel);
 
               int map_vy = 1;
               int map_vz = 2;
