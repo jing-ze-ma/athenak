@@ -40,9 +40,9 @@ void CheckCubedSphereRefinement(MeshBlockPack *pmbp) {
   auto &nghbr = pmbp->pmb->nghbr;
   auto &mblev = pmbp->pmb->mb_lev;
   auto &mbpanel = pmbp->pmb->mb_panel;
-  nghbr.template sync<HostMemSpace>();
-  mblev.template sync<HostMemSpace>();
-  mbpanel.template sync<HostMemSpace>();
+  nghbr.sync_host();
+  mblev.sync_host();
+  mbpanel.sync_host();
   for (int m=0; m<pmbp->nmb_thispack; ++m) {
     for (int n=0; n<pmbp->pmb->nnghbr; ++n) {
       if (nghbr.h_view(m,n).gid < 0) continue;

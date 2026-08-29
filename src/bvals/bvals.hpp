@@ -71,6 +71,48 @@ bool IsCubeVertexCorner(const NghbrView &nghbr, const PanelView &mbpanel,
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn bool IsSkippedPanelDiagonal(nghbr, mbpanel, mblev, m, n)
+//! \brief Is buffer n of MeshBlock m a cubed-sphere EDGE or CORNER slot whose neighbour
+//! is on another panel AND at another refinement level?
+//!
+//! Such a slot cannot be paired reliably. The cross-panel corner and edge pairing was
+//! only ever made reciprocal for the CUBE VERTEX (IsCubeVertexCorner); the generic
+//! diagonal was left alone because with one MeshBlock per panel almost every cross-panel
+//! diagonal IS a vertex. Refine a panel and that stops being true: many ordinary
+//! cross-panel diagonals appear, at the same level and at mixed levels, and a
+//! reciprocity audit shows they are NOT reciprocal. Since a send is tagged with the
+//! RECEIVER's (lid, dest), a non-reciprocal slot is a posted receive nobody satisfies --
+//! a guaranteed hang in ClearRecv, which is exactly what a refined cubed sphere did on
+//! more than one rank.
+//!
+//! Gated on `multilevel` so that the UNREFINED cubed sphere, which is validated and
+//! whose non-vertex diagonals do pair, keeps its existing behaviour untouched.
+//!
+//! FACES are excluded here on purpose -- a face at mixed level across a seam is a level
+//! boundary lying on a seam, which prolongation and restriction cannot do at all, and
+//! CheckCubedSphereRefinement refuses it at startup instead of silently skipping it.
+//!
+//! Skipping is safe for the same reason it is at a cube vertex: these ng x ng edge and
+//! corner ghosts are never reconstructed through by a dimensionally split PLM + HLLC
+//! sweep, which reads only face ghosts along the sweep direction, and FillPanelCornersCC
+//! rewrites the tangential corner block afterwards from the flanking face halos. A
+//! higher-order or unsplit reconstruction WOULD read them, and would need this solved
+//! properly rather than skipped.
+//!
+//! The predicate is local and symmetric -- both sides see the same panels and levels --
+//! so every surviving slot still has exactly one sender.
+
+template <class NghbrView, class PanelView>
+KOKKOS_INLINE_FUNCTION
+bool IsSkippedPanelDiagonal(const NghbrView &nghbr, const PanelView &mbpanel,
+                            const bool multilevel, const int m, const int n) {
+  if (!multilevel) return false;
+  const bool is_face = (n < 16) || (n >= 24 && n < 32);
+  if (is_face) return false;
+  return (nghbr(m,n).gid >= 0 && nghbr(m,n).panel != mbpanel(m));
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn int CreateBvals_MPI_Tag(int lid, int bufid)
 //! \brief calculate an MPI tag for boundary buffer communications.  Note maximum size of
 //! lid that can be encoded is set by (NUM_BITS_LID) macro defined in athena.hpp.

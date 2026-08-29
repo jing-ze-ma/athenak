@@ -34,7 +34,9 @@ TaskStatus MeshBoundaryValues::InitRecv(const int nvars) {
   int &nnghbr = pmy_pack->pmb->nnghbr;
   auto &nghbr = pmy_pack->pmb->nghbr;
   auto &mbpanel = pmy_pack->pmb->mb_panel;
+  auto &mblev = pmy_pack->pmb->mb_lev;
   const bool use_cs = pmy_pack->pmesh->use_cubed_sphere;
+  const bool ml_ = pmy_pack->pmesh->multilevel;
 
   // Initialize communications of variables
   bool no_errors=true;
@@ -42,7 +44,8 @@ TaskStatus MeshBoundaryValues::InitRecv(const int nvars) {
     for (int n=0; n<nnghbr; ++n) {
       // CUBED-SPHERE CUBE VERTEX: nothing is sent here, so post no receive for it
       if (nghbr.h_view(m,n).gid >= 0 &&
-          !(use_cs && IsCubeVertexCorner(nghbr.h_view, mbpanel.h_view, m, n))) {
+          !(use_cs && (IsCubeVertexCorner(nghbr.h_view, mbpanel.h_view, m, n) ||
+            IsSkippedPanelDiagonal(nghbr.h_view, mbpanel.h_view, ml_, m, n)))) {
         // rank of destination buffer
         int drank = nghbr.h_view(m,n).rank;
 
@@ -96,14 +99,17 @@ TaskStatus MeshBoundaryValues::ClearRecv() {
   int &nnghbr = pmy_pack->pmb->nnghbr;
   auto &nghbr = pmy_pack->pmb->nghbr;
   auto &mbpanel = pmy_pack->pmb->mb_panel;
+  auto &mblev = pmy_pack->pmb->mb_lev;
   const bool use_cs = pmy_pack->pmesh->use_cubed_sphere;
+  const bool ml_ = pmy_pack->pmesh->multilevel;
 
   // wait for all non-blocking receives for vars to finish before continuing
   for (int m=0; m<nmb; ++m) {
     for (int n=0; n<nnghbr; ++n) {
       if ( (nghbr.h_view(m,n).gid >= 0) &&
            (nghbr.h_view(m,n).rank != global_variable::my_rank) &&
-           !(use_cs && IsCubeVertexCorner(nghbr.h_view, mbpanel.h_view, m, n)) ) {
+           !(use_cs && (IsCubeVertexCorner(nghbr.h_view, mbpanel.h_view, m, n) ||
+            IsSkippedPanelDiagonal(nghbr.h_view, mbpanel.h_view, ml_, m, n))) ) {
         int ierr = MPI_Wait(&(recvbuf[n].vars_req[m]), MPI_STATUS_IGNORE);
         if (ierr != MPI_SUCCESS) {no_errors=false;}
       }
@@ -131,14 +137,17 @@ TaskStatus MeshBoundaryValues::ClearSend() {
   int &nnghbr = pmy_pack->pmb->nnghbr;
   auto &nghbr = pmy_pack->pmb->nghbr;
   auto &mbpanel = pmy_pack->pmb->mb_panel;
+  auto &mblev = pmy_pack->pmb->mb_lev;
   const bool use_cs = pmy_pack->pmesh->use_cubed_sphere;
+  const bool ml_ = pmy_pack->pmesh->multilevel;
 
   // wait for all non-blocking sends for vars to finish before continuing
   for (int m=0; m<nmb; ++m) {
     for (int n=0; n<nnghbr; ++n) {
       if ( (nghbr.h_view(m,n).gid >= 0) &&
            (nghbr.h_view(m,n).rank != global_variable::my_rank) &&
-           !(use_cs && IsCubeVertexCorner(nghbr.h_view, mbpanel.h_view, m, n)) ) {
+           !(use_cs && (IsCubeVertexCorner(nghbr.h_view, mbpanel.h_view, m, n) ||
+            IsSkippedPanelDiagonal(nghbr.h_view, mbpanel.h_view, ml_, m, n))) ) {
         int ierr = MPI_Wait(&(sendbuf[n].vars_req[m]), MPI_STATUS_IGNORE);
         if (ierr != MPI_SUCCESS) {no_errors=false;}
       }
