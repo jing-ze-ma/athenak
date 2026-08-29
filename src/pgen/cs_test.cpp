@@ -2127,9 +2127,16 @@ void CSTestGhostCheck(ParameterInput *pin, Mesh *pm) {
         // neighbour when the block sits at a level boundary.
         {
           Real r1 = 0.0, r2 = 0.0, r3 = 0.0;
+          // L1 as well as Linf: a slope limiter clipping at an extremum gives FIRST
+          // order in the max norm while staying second order in the mean, which is
+          // ordinary behaviour and not a defect.  Only both being first order is.
+          Real s1 = 0.0; int n1c = 0;
           for (int k=ks; k<=ke; ++k) {
             for (int j=js; j<=je; ++j) {
               for (int g=1; g<=ng; ++g) {
+                s1 += fabs(b1h(m,k,j,ie+1+g) - exact(j,k,false,false,0));
+                s1 += fabs(b1h(m,k,j,is-g)   - exact(j,k,false,false,0));
+                n1c += 2;
                 r1 = fmax(r1, fabs(b1h(m,k,j,ie+1+g) - exact(j,k,false,false,0)));
                 r1 = fmax(r1, fabs(b1h(m,k,j,is-g)   - exact(j,k,false,false,0)));
                 r2 = fmax(r2, fabs(b2h(m,k,j,ie+g)   - exact(j,k,true ,false,1)));
@@ -2151,8 +2158,8 @@ void CSTestGhostCheck(ParameterInput *pin, Mesh *pm) {
             }
           }
           std::printf("  %4d rad   %12.5e  %12.5e  %12.5e   (radial ghosts)"
-                      "   INTERFACE FACE b.x1f: outer %12.5e  inner %12.5e\n",
-                      p, r1, r2, r3, f1, f0);
+                      "   L1(b.x1f) %12.5e   INTERFACE FACE b.x1f: %12.5e %12.5e\n",
+                      p, r1, r2, r3, (n1c > 0) ? s1/n1c : 0.0, f1, f0);
         }
 
         // --- and the SOLENOIDAL constraint in those same ghost cells ---------------
