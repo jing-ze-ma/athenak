@@ -148,12 +148,16 @@ class Coordinates {
     // coordinates/gnomonic_kernels.hpp, taking the GnomonicTrig below. Reaching them
     // through `pmy_pack->pcoord->` made every flux kernel capture `this` and dereference
     // a host pointer on the device; see the note in that header.
-    GnomonicTrig GnomonicTrigData() const {
-      GnomonicTrig gt;
-      gt.sin_cell = sin_cell;          gt.cos_cell = cos_cell;
-      gt.sin_face_xi = sin_face_xi;    gt.cos_face_xi = cos_face_xi;
-      gt.sin_face_eta = sin_face_eta;  gt.cos_face_eta = cos_face_eta;
-      return gt;
+    // One pair per sweep -- see the note in gnomonic_kernels.hpp on why a kernel must not
+    // be handed all six.
+    GnomonicTrig GnomonicTrigCell() const {
+      GnomonicTrig gt; gt.sn = sin_cell; gt.cs = cos_cell; return gt;
+    }
+    GnomonicTrig GnomonicTrigFaceXi() const {
+      GnomonicTrig gt; gt.sn = sin_face_xi; gt.cs = cos_face_xi; return gt;
+    }
+    GnomonicTrig GnomonicTrigFaceEta() const {
+      GnomonicTrig gt; gt.sn = sin_face_eta; gt.cs = cos_face_eta; return gt;
     }
 
   // functions

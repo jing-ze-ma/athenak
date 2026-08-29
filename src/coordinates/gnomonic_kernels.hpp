@@ -29,13 +29,19 @@
 //! \brief the gnomonic-equiangle trig a device kernel needs, capturable by value.
 //!
 //! Indexed (m,k,j): these depend on the two PANEL-TANGENTIAL angles only -- xi = x2 and
-//! eta = x3 -- so they have no radial extent. The _xi arrays live on x2 faces (staggered
-//! in j), the _eta arrays on x3 faces (staggered in k).
+//! eta = x3 -- so they have no radial extent.
+//!
+//! It holds just ONE (sin, cos) pair, not all six arrays, because each sweep needs
+//! exactly one pair: the x1 sweep the CELL-centred pair, the x2 sweep the xi-FACE pair
+//! (staggered in j), the x3 sweep the eta-FACE pair (staggered in k). That is not merely
+//! tidier. Everything a kernel captures travels in the launch's constant-memory buffer,
+//! which is size-limited, and MHD::CalculateFluxes already captures a great many Views:
+//! handing it all six pushed that buffer over the edge and the x1 sweep died with
+//! HSA_STATUS_ERROR_MEMORY_APERTURE_VIOLATION on the first cycle. Two Views fit; six did
+//! not. Build the one you need with Coordinates::GnomonicTrig{Cell,FaceXi,FaceEta}().
 
 struct GnomonicTrig {
-  DvceArray3D<Real> sin_cell, cos_cell;
-  DvceArray3D<Real> sin_face_xi, cos_face_xi;
-  DvceArray3D<Real> sin_face_eta, cos_face_eta;
+  DvceArray3D<Real> sn, cs;
 };
 
 KOKKOS_INLINE_FUNCTION
@@ -43,8 +49,8 @@ void GnomonicEquianglePrimFaceX1(const GnomonicTrig &gt, TeamMember_t const &mem
      const int m, const int k, const int j, const int il, const int iu,
      ScrArray2D<Real> &ql,
      ScrArray2D<Real> &qr) {
-    const Real sin_theta = gt.sin_cell(m,k,j);
-    const Real cos_theta = gt.cos_cell(m,k,j);
+    const Real sin_theta = gt.sn(m,k,j);
+    const Real cos_theta = gt.cs(m,k,j);
     par_for_inner(member, il, iu, [&](const int i) {
       ql(IVY,i+1) += cos_theta * ql(IVZ,i+1);
       ql(IVZ,i+1) *= sin_theta;
@@ -60,10 +66,10 @@ void GnomonicEquianglePrimFaceX2(const GnomonicTrig &gt, TeamMember_t const &mem
      const int m, const int k, const int j, const int il, const int iu,
      ScrArray2D<Real> &ql_jp1,
      ScrArray2D<Real> &qr_j) {
-    const Real sin_jp1 = gt.sin_face_xi(m,k,j+1);
-    const Real cos_jp1 = gt.cos_face_xi(m,k,j+1);
-    const Real sin_j = gt.sin_face_xi(m,k,j);
-    const Real cos_j = gt.cos_face_xi(m,k,j);
+    const Real sin_jp1 = gt.sn(m,k,j+1);
+    const Real cos_jp1 = gt.cs(m,k,j+1);
+    const Real sin_j = gt.sn(m,k,j);
+    const Real cos_j = gt.cs(m,k,j);
     par_for_inner(member, il, iu, [&](const int i) {
       ql_jp1(IVZ,i) += cos_jp1 * ql_jp1(IVY,i);
       ql_jp1(IVY,i) *= sin_jp1;
@@ -79,10 +85,10 @@ void GnomonicEquianglePrimFaceX3(const GnomonicTrig &gt, TeamMember_t const &mem
      const int m, const int k, const int j, const int il, const int iu,
      ScrArray2D<Real> &ql_kp1,
      ScrArray2D<Real> &qr_k) {
-    const Real sin_kp1 = gt.sin_face_eta(m,k+1,j);
-    const Real cos_kp1 = gt.cos_face_eta(m,k+1,j);
-    const Real sin_k = gt.sin_face_eta(m,k,j);
-    const Real cos_k = gt.cos_face_eta(m,k,j);
+    const Real sin_kp1 = gt.sn(m,k+1,j);
+    const Real cos_kp1 = gt.cs(m,k+1,j);
+    const Real sin_k = gt.sn(m,k,j);
+    const Real cos_k = gt.cs(m,k,j);
     par_for_inner(member, il, iu, [&](const int i) {
       ql_kp1(IVY,i) += cos_kp1 * ql_kp1(IVZ,i);
       ql_kp1(IVZ,i) *= sin_kp1;
@@ -112,10 +118,10 @@ void GnomonicEquiangleFaceBX2(const GnomonicTrig &gt, TeamMember_t const &member
      const int m, const int k, const int j, const int il, const int iu,
      ScrArray2D<Real> &bl_jp1,
      ScrArray2D<Real> &br_j) {
-    const Real sin_jp1 = gt.sin_face_xi(m,k,j+1);
-    const Real cos_jp1 = gt.cos_face_xi(m,k,j+1);
-    const Real sin_j = gt.sin_face_xi(m,k,j);
-    const Real cos_j = gt.cos_face_xi(m,k,j);
+    const Real sin_jp1 = gt.sn(m,k,j+1);
+    const Real cos_jp1 = gt.cs(m,k,j+1);
+    const Real sin_j = gt.sn(m,k,j);
+    const Real cos_j = gt.cs(m,k,j);
     par_for_inner(member, il, iu, [&](const int i) {
       bl_jp1(2,i) = cos_jp1*bl_jp1(1,i) + sin_jp1*bl_jp1(2,i);
       br_j(2,i)   = cos_j*br_j(1,i)     + sin_j*br_j(2,i);
@@ -136,8 +142,8 @@ void GnomonicEquiangleEmfX1(const GnomonicTrig &gt, TeamMember_t const &member,
      const int m, const int k, const int j, const int il, const int iu,
      DvceArray4D<Real> e31,
      DvceArray4D<Real> e21) {
-    const Real sin_theta = gt.sin_cell(m,k,j);
-    const Real cos_theta = gt.cos_cell(m,k,j);
+    const Real sin_theta = gt.sn(m,k,j);
+    const Real cos_theta = gt.cs(m,k,j);
     par_for_inner(member, il, iu, [&](const int i) {
       e31(m,k,j,i) = cos_theta*e21(m,k,j,i) + sin_theta*e31(m,k,j,i);
     });
@@ -151,8 +157,8 @@ KOKKOS_INLINE_FUNCTION
 void GnomonicEquiangleFluxX1(const GnomonicTrig &gt, TeamMember_t const &member,
      const int m, const int k, const int j, const int il, const int iu,
                              DvceArray5D<Real> flx) {
-    const Real sin_theta = gt.sin_cell(m,k,j);
-    const Real cos_theta = gt.cos_cell(m,k,j);
+    const Real sin_theta = gt.sn(m,k,j);
+    const Real cos_theta = gt.cs(m,k,j);
     par_for_inner(member, il, iu, [&](const int i) {
       Real fb = flx(m,IM3,k,j,i)/sin_theta;
       Real fa = flx(m,IM2,k,j,i) - fb*cos_theta;
@@ -166,8 +172,8 @@ KOKKOS_INLINE_FUNCTION
 void GnomonicEquiangleFluxX2(const GnomonicTrig &gt, TeamMember_t const &member,
      const int m, const int k, const int j, const int il, const int iu,
                              DvceArray5D<Real> flx) {
-    const Real sin_theta = gt.sin_face_xi(m,k,j);
-    const Real cos_theta = gt.cos_face_xi(m,k,j);
+    const Real sin_theta = gt.sn(m,k,j);
+    const Real cos_theta = gt.cs(m,k,j);
     const Real T22 = 1.0/sin_theta;
     const Real T32 = -cos_theta/sin_theta;
     par_for_inner(member, il, iu, [&](const int i) {
@@ -183,8 +189,8 @@ KOKKOS_INLINE_FUNCTION
 void GnomonicEquiangleFluxX3(const GnomonicTrig &gt, TeamMember_t const &member,
      const int m, const int k, const int j, const int il, const int iu,
                              DvceArray5D<Real> flx) {
-    const Real sin_theta = gt.sin_face_eta(m,k,j);
-    const Real cos_theta = gt.cos_face_eta(m,k,j);
+    const Real sin_theta = gt.sn(m,k,j);
+    const Real cos_theta = gt.cs(m,k,j);
     const Real T23 = -cos_theta/sin_theta;
     const Real T33 = 1.0/sin_theta;
     par_for_inner(member, il, iu, [&](const int i) {

@@ -473,7 +473,7 @@ class MHD {
     //! otherwise be a temperature root find, in every cell of every stage.
 
     KOKKOS_INLINE_FUNCTION
-    void WbStaticPiecewiseLinearDerX1(TeamMember_t const &member,
+    static void WbStaticPiecewiseLinearDerX1(TeamMember_t const &member,
          const int m, const int k, const int j, const int il, const int iu,
          const DvceArray4D<Real> &pwb, const DvceArray4D<Real> &pfwb,
          const DvceArray5D<Real> &qd, ScrArray2D<Real> &dl, ScrArray2D<Real> &dr) {
@@ -517,7 +517,7 @@ class MHD {
     //! otherwise be a temperature root find, in every cell of every stage.
 
     KOKKOS_INLINE_FUNCTION
-    void WbStaticPiecewiseLinearDerX2(TeamMember_t const &member,
+    static void WbStaticPiecewiseLinearDerX2(TeamMember_t const &member,
          const int m, const int k, const int j, const int il, const int iu,
          const DvceArray4D<Real> &pwb, const DvceArray4D<Real> &pfwb,
          const DvceArray5D<Real> &qd, ScrArray2D<Real> &dl, ScrArray2D<Real> &dr) {
@@ -561,7 +561,7 @@ class MHD {
     //! otherwise be a temperature root find, in every cell of every stage.
 
     KOKKOS_INLINE_FUNCTION
-    void WbStaticPiecewiseLinearDerX3(TeamMember_t const &member,
+    static void WbStaticPiecewiseLinearDerX3(TeamMember_t const &member,
          const int m, const int k, const int j, const int il, const int iu,
          const DvceArray4D<Real> &pwb, const DvceArray4D<Real> &pfwb,
          const DvceArray5D<Real> &qd, ScrArray2D<Real> &dl, ScrArray2D<Real> &dr) {
@@ -604,7 +604,8 @@ class MHD {
     //! These are only ever called for a general EOS; an ideal gas allocates no wder.
 
     KOKKOS_INLINE_FUNCTION
-    void WbPiecewiseLinearDerX1(TeamMember_t const &member, const EOS_Data &eos,
+    static void WbPiecewiseLinearDerX1(TeamMember_t const &member,
+         const EOS_Data &eos, const WBOption wb_option,
          const int m, const int k, const int j, const int il, const int iu,
          const DvceArray5D<Real> &q, const DvceArray5D<Real> &qd,
          const DvceArray4D<Real> &phicc, const DvceArray4D<Real> &phi,
@@ -614,7 +615,7 @@ class MHD {
         if (n == (IDPR)) {
           par_for_inner(member, il, iu, [&](const int i) {
             Real q0_im1, q0_imh, q0_i, q0_iph, q0_ip1;
-            getWBq0(eos, WBVar::wb_pres,
+            getWBq0(eos, wb_option, WBVar::wb_pres,
                     q(m,IDN,k,j,i-1),q(m,IDN,k,j,i),q(m,IDN,k,j,i+1),
                     q(m,IEN,k,j,i-1),q(m,IEN,k,j,i),q(m,IEN,k,j,i+1),
                     phicc(m,k,j,i-1),phi(m,k,j,i),phicc(m,k,j,i),
@@ -648,7 +649,8 @@ class MHD {
     };
 
     KOKKOS_INLINE_FUNCTION
-    void WbPiecewiseLinearDerX2(TeamMember_t const &member, const EOS_Data &eos,
+    static void WbPiecewiseLinearDerX2(TeamMember_t const &member,
+         const EOS_Data &eos, const WBOption wb_option,
          const int m, const int k, const int j, const int il, const int iu,
          const DvceArray5D<Real> &q, const DvceArray5D<Real> &qd,
          const DvceArray4D<Real> &phicc, const DvceArray4D<Real> &phi,
@@ -658,7 +660,7 @@ class MHD {
         if (n == (IDPR)) {
           par_for_inner(member, il, iu, [&](const int i) {
             Real q0_jm1, q0_jmh, q0_j, q0_jph, q0_jp1;
-            getWBq0(eos, WBVar::wb_pres,
+            getWBq0(eos, wb_option, WBVar::wb_pres,
                     q(m,IDN,k,j-1,i),q(m,IDN,k,j,i),q(m,IDN,k,j+1,i),
                     q(m,IEN,k,j-1,i),q(m,IEN,k,j,i),q(m,IEN,k,j+1,i),
                     phicc(m,k,j-1,i),phi(m,k,j,i),phicc(m,k,j,i),
@@ -691,7 +693,8 @@ class MHD {
     };
 
     KOKKOS_INLINE_FUNCTION
-    void WbPiecewiseLinearDerX3(TeamMember_t const &member, const EOS_Data &eos,
+    static void WbPiecewiseLinearDerX3(TeamMember_t const &member,
+         const EOS_Data &eos, const WBOption wb_option,
          const int m, const int k, const int j, const int il, const int iu,
          const DvceArray5D<Real> &q, const DvceArray5D<Real> &qd,
          const DvceArray4D<Real> &phicc, const DvceArray4D<Real> &phi,
@@ -701,7 +704,7 @@ class MHD {
         if (n == (IDPR)) {
           par_for_inner(member, il, iu, [&](const int i) {
             Real q0_km1, q0_kmh, q0_k, q0_kph, q0_kp1;
-            getWBq0(eos, WBVar::wb_pres,
+            getWBq0(eos, wb_option, WBVar::wb_pres,
                     q(m,IDN,k-1,j,i),q(m,IDN,k,j,i),q(m,IDN,k+1,j,i),
                     q(m,IEN,k-1,j,i),q(m,IEN,k,j,i),q(m,IEN,k+1,j,i),
                     phicc(m,k-1,j,i),phi(m,k,j,i),phicc(m,k,j,i),
@@ -872,7 +875,9 @@ class MHD {
     //! be passed to them directly; only x1 needs its own version.
 
     KOKKOS_INLINE_FUNCTION
-    void GridPiecewiseLinearDerX1(TeamMember_t const &member, const EOS_Data &eos,
+    static void GridPiecewiseLinearDerX1(TeamMember_t const &member,
+         const EOS_Data &eos, const WBOption wb_option,
+         const bool use_wellbalance_dynamic, const bool use_wb_x1,
          const int m, const int k, const int j, const int il, const int iu,
          const DvceArray5D<Real> &q, const DvceArray5D<Real> &qd,
          const DvceArray2D<Real> &xv, const DvceArray2D<Real> &xf,
@@ -893,7 +898,7 @@ class MHD {
 
           if (n == (IDPR) && use_wellbalance_dynamic && use_wb_x1) {
             Real q0_im1, q0_imh, q0_i, q0_iph, q0_ip1;
-            getWBq0(eos, WBVar::wb_pres,
+            getWBq0(eos, wb_option, WBVar::wb_pres,
                     q(m,IDN,k,j,i-1),q(m,IDN,k,j,i),q(m,IDN,k,j,i+1),
                     q(m,IEN,k,j,i-1),q(m,IEN,k,j,i),q(m,IEN,k,j,i+1),
                     phicc(m,k,j,i-1),phi(m,k,j,i),phicc(m,k,j,i),

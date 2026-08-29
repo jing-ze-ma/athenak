@@ -88,10 +88,13 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
   const bool use_wellbalance_dynamic_ = use_wellbalance_dynamic;
   const bool use_wellbalance_static_reconst_perturb_ =
       use_wellbalance_static_reconst_perturb;
-  // The gnomonic rotations read six Views and nothing else, so hand the kernels those
-  // Views rather than the Coordinates object: reaching them through `pmy_pack->pcoord->`
-  // made the lambda capture `this` and dereference a host pointer on the device.
-  auto gtrig = pmy_pack->pcoord->GnomonicTrigData();
+  // The gnomonic rotations need one (sin, cos) pair each, so hand the kernels that pair
+  // rather than the Coordinates object: reaching them through `pmy_pack->pcoord->` made
+  // the lambda capture `this` and dereference a host pointer on the device. ONE pair per
+  // sweep, never all six -- see the note in gnomonic_kernels.hpp.
+  auto gtrig_cell = pmy_pack->pcoord->GnomonicTrigCell();
+  auto gtrig_xi   = pmy_pack->pcoord->GnomonicTrigFaceXi();
+  auto gtrig_eta  = pmy_pack->pcoord->GnomonicTrigFaceEta();
   auto &use_spherical_polar = pmy_pack->pmesh->use_spherical_polar;
 
   //--------------------------------------------------------------------------------------
@@ -133,7 +136,8 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
 
     if (use_wellbalance_dynamic_ && use_wb_x1_)
     {
-      WbLocalPiecewiseLinearX1(member, eos_, wb_option_, use_wb_rho_, m, k, j, il-1, iu, w0_, phicc0_, phi0_x1f, wl, wr);
+      WbLocalPiecewiseLinearX1(member, eos_, wb_option_, use_wb_rho_,
+          m, k, j, il-1, iu, w0_, phicc0_, phi0_x1f, wl, wr);
     } else {
           
     // Reconstruct qR[i] and qL[i+1]
@@ -166,14 +170,16 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
       // from the reconstructed (d,e), so leaving it to plain PLM would put the entire
       // hydrostatic gradient back into the solver's pressure and unbalance the scheme.
       if (use_spherical_polar) {
-        GridPiecewiseLinearDerX1(member, eos_, m, k, j, il-1, iu, w0_, wder_,
+        GridPiecewiseLinearDerX1(member, eos_, wb_option_, use_wellbalance_dynamic_,
+                                 use_wb_x1_, m, k, j, il-1, iu, w0_, wder_,
                                  x1v_, x1f_, phicc0_, phi0_x1f, dl, dr);
       } else if (use_wellbalance_static_reconst_perturb_) {
         WbStaticPiecewiseLinearDerX1(member, m, k, j, il-1, iu,
                                      pwb_, pfacewb_x1f,
                                     wder_, dl, dr);
       } else if (use_wellbalance_dynamic_ && use_wb_x1_) {
-        WbPiecewiseLinearDerX1(member, eos_, m, k, j, il-1, iu, w0_, wder_,
+        WbPiecewiseLinearDerX1(member, eos_, wb_option_,
+            m, k, j, il-1, iu, w0_, wder_,
                                phicc0_, phi0_x1f, dl, dr);
       } else {
       switch (recon_method_) {
@@ -213,7 +219,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
       }
 
       if (use_cubed_sphere) {
-          GnomonicEquianglePrimFaceX1(gtrig,member,m,k,j,il-1,iu,wl,wr);
+          GnomonicEquianglePrimFaceX1(gtrig_cell,member,m,k,j,il-1,iu,wl,wr);
       }
       
     // Sync all threads in the team so that scratch memory is consistent
@@ -255,7 +261,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
     }
       
       if (use_cubed_sphere) {
-          GnomonicEquiangleFluxX1(gtrig,member,m,k,j,il,iu,flx1);
+          GnomonicEquiangleFluxX1(gtrig_cell,member,m,k,j,il,iu,flx1);
       }
     member.team_barrier();
 
@@ -325,7 +331,8 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
             
         if (use_wellbalance_dynamic_ && use_wb_x2_)
         {
-          WbLocalPiecewiseLinearX2(member, eos_, wb_option_, use_wb_rho_, m, k, j, il, iu, w0_, phicc0_, phi0_x2f, wl_jp1, wr);
+          WbLocalPiecewiseLinearX2(member, eos_, wb_option_, use_wb_rho_,
+              m, k, j, il, iu, w0_, phicc0_, phi0_x2f, wl_jp1, wr);
         } else {
 
         // Reconstruct qR[j] and qL[j+1]
@@ -359,7 +366,8 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
                                      pwb_, pfacewb_x2f,
                                     wder_, dl_jp1, dr);
       } else if (use_wellbalance_dynamic_ && use_wb_x2_) {
-            WbPiecewiseLinearDerX2(member, eos_, m, k, j, il, iu, w0_, wder_,
+            WbPiecewiseLinearDerX2(member, eos_, wb_option_,
+                m, k, j, il, iu, w0_, wder_,
                                    phicc0_, phi0_x2f, dl_jp1, dr);
           } else {
           switch (recon_method_) {
@@ -391,7 +399,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
           }
 
           if (use_cubed_sphere) {
-              GnomonicEquianglePrimFaceX2(gtrig,member,m,k,j,il,iu,wl_jp1,wr);
+              GnomonicEquianglePrimFaceX2(gtrig_xi,member,m,k,j,il,iu,wl_jp1,wr);
           }
           
         member.team_barrier();
@@ -432,7 +440,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
             HLLE_GR(member, eos, indcs, size, coord, m, k, j, il, iu, IVY, wl, wr, flx2);
           }
             if (use_cubed_sphere) {
-                GnomonicEquiangleFluxX2(gtrig,member,m,k,j,il,iu,flx2);
+                GnomonicEquiangleFluxX2(gtrig_xi,member,m,k,j,il,iu,flx2);
             }
           member.team_barrier();
         }
@@ -498,7 +506,8 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
           
         if (use_wellbalance_dynamic_ && use_wb_x3_)
         {
-          WbLocalPiecewiseLinearX3(member, eos_, wb_option_, use_wb_rho_, m, k, j, il, iu, w0_, phicc0_, phi0_x3f, wl_kp1, wr);
+          WbLocalPiecewiseLinearX3(member, eos_, wb_option_, use_wb_rho_,
+              m, k, j, il, iu, w0_, phicc0_, phi0_x3f, wl_kp1, wr);
         } else {
 
         // Reconstruct qR[k] and qL[k+1]
@@ -532,7 +541,8 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
                                      pwb_, pfacewb_x3f,
                                     wder_, dl_kp1, dr);
       } else if (use_wellbalance_dynamic_ && use_wb_x3_) {
-            WbPiecewiseLinearDerX3(member, eos_, m, k, j, il, iu, w0_, wder_,
+            WbPiecewiseLinearDerX3(member, eos_, wb_option_,
+                m, k, j, il, iu, w0_, wder_,
                                    phicc0_, phi0_x3f, dl_kp1, dr);
           } else {
           switch (recon_method_) {
@@ -564,7 +574,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
           }
 
           if (use_cubed_sphere) {
-              GnomonicEquianglePrimFaceX3(gtrig,member,m,k,j,il,iu,wl_kp1,wr);
+              GnomonicEquianglePrimFaceX3(gtrig_eta,member,m,k,j,il,iu,wl_kp1,wr);
           }
           
         member.team_barrier();
@@ -605,7 +615,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
             HLLE_GR(member, eos, indcs, size, coord, m, k, j, il, iu, IVZ, wl, wr, flx3);
           }
             if (use_cubed_sphere) {
-                GnomonicEquiangleFluxX3(gtrig,member,m,k,j,il,iu,flx3);
+                GnomonicEquiangleFluxX3(gtrig_eta,member,m,k,j,il,iu,flx3);
             }
           member.team_barrier();
         }
