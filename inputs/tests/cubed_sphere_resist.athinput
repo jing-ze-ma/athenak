@@ -28,10 +28,18 @@
 # It routes through the same AddEMFGeneralResist, and resistivity_ct.cpp and
 # resistivity_update.cpp already had cubed-sphere branches.  At nx2 = 32, tlim = 0.2,
 # eta = 0.5 it gives heating ratio 0.9966 against the direct path's 1.0006, with EMF
-# errors agreeing to under 1% -- for 61x fewer MeshBlock-cycles and 10x less CPU.  That
-# 0.34%% is the SUPER-STEPPING's own temporal error, not a geometry error: at fixed grid
-# it falls 0.99661 / 0.99862 / 0.99965 as the CFL is halved twice, i.e. second order in
-# dt.  Both null tests (no current, and no resistivity) match the direct path exactly.
+# errors agreeing to under 1% -- for 61x fewer MeshBlock-cycles and 10x less CPU.  Both
+# null tests (no current, and no resistivity) match the direct path exactly.
+#
+# THE SUPER-STEPPING IS FIRST ORDER IN TIME, and only in the ENERGY.  Refining dt at FIXED
+# grid over a 16x range (cfl 0.3 -> 0.01875) gives heating ratios
+#   0.996605 / 0.998619 / 0.999654 / 1.000177 / 1.000440
+# whose deviations from the dt -> 0 asymptote 1.000706 halve with dt: measured orders
+# 0.975 / 0.988 / 0.992 / 0.992.  Over the same scan the EMF errors and max|v| are
+# dt-INDEPENDENT and converge to the direct path's values, so the induction and the
+# momentum are fine; it is the Ohmic heating that is applied to first order.  Do not
+# measure this against the ANALYTIC value: the grid's own dt-independent error (+5.7e-4
+# here) then sits in the residual and makes the sequence look second order.
 #
 # AXES: x1 is RADIAL, x2 = xi and x3 = eta are the panel-tangential angles.  Must be 3D.
 
