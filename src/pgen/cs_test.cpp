@@ -228,6 +228,8 @@ void CSTestRadialBC(Mesh *pm);
 void CSTestGhostCheck(ParameterInput *pin, Mesh *pm);
 void CSTestConvErrors(ParameterInput *pin, Mesh *pm);
 void CSTestResistCheck(ParameterInput *pin, Mesh *pm);
+void CSTestSeamFluxCheck(Mesh *pm);
+void CSTestConsSums(Mesh *pm);
 
 //----------------------------------------------------------------------------------------
 //! \fn ProblemGenerator::UserProblem
@@ -1152,6 +1154,8 @@ void CSTestRadialBC(Mesh *pm) {
 
 void CSTestConvErrors(ParameterInput *pin, Mesh *pm) {
   MeshBlockPack *pmbp = pm->pmb_pack;
+  CSTestConsSums(pm);
+  CSTestSeamFluxCheck(pm);
   // The field errors are only defined for iprob = 9. Any other setup (in practice the
   // FIELD-FREE iprob = 3 rigid rotation, which is the control for this test) reports the
   // hydro errors alone, against the same exact steady equilibrium.
@@ -1578,8 +1582,293 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void CSTestConsSums(Mesh *pm)
+//! \brief The GLOBAL CONSERVED SUMS, printed at full precision.
+//!
+//! The `.hst` output cannot be used for this. `HistoryOutput::Load{Hydro,MHD}HistoryData`
+//! weights every cell by `dx1*dx2*dx3` -- the CARTESIAN coordinate volume -- and never by
+//! `Coordinates::volume`, so on the cubed sphere its "mass" is not sum(rho dV) but a
+//! differently weighted sum that the finite-volume update does not conserve; and its
+//! "1-mom/2-mom/3-mom" adds up components on the local gnomonic basis, which point in a
+//! different physical direction in every cell. Neither can measure conservation. (Its
+//! default `%12.5e` also quantises the answer at the level being measured.)
+//!
+//! Here mass and total energy are weighted by the true cell volume, and the momentum is
+//! rotated into the FIXED Cartesian frame first, which is the frame in which it is
+//! actually a conserved vector: u(IM1..IM3) are the components on (rhat, e1hat, e2hat),
+//! so P = u1*rhat + u2*e1hat + u3*e2hat cell by cell.
+//!
+//! ANGULAR momentum L = sum(r x P dV) is reported too, and on a sphere it is the one that
+//! matters. In the rigid-rotation equilibria the net LINEAR momentum is identically zero
+//! by symmetry -- P comes out at 1e-15 whatever the scheme does -- so it is a vacuous
+//! test, while Lz is O(1). These sums are all exactly constant in the iprob = 3 / 9
+//! steady equilibria, so any change is scheme error.
+//!
+//! These sums are RANK-LOCAL and each rank prints its own; under MPI read the `.hst`,
+//! which is reduced across ranks (and, since the volume fix, correctly weighted).
+
+void CSTestConsSums(Mesh *pm) {
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  if (pmbp->pmhd == nullptr && pmbp->phydro == nullptr) return;
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie;
+  const int js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  auto &u0 = (pmbp->pmhd != nullptr) ? pmbp->pmhd->u0 : pmbp->phydro->u0;
+  auto uh = Kokkos::create_mirror_view_and_copy(HostMemSpace(), u0);
+  auto vh = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->volume);
+  auto &size = pmbp->pmb->mb_size;
+  size.template sync<HostMemSpace>();
+  auto &mbpanel = pmbp->pmb->mb_panel;
+  mbpanel.template sync<HostMemSpace>();
+
+  Real sm = 0.0, se = 0.0, sp[3] = {0.0, 0.0, 0.0}, svol = 0.0;
+  Real sl[3] = {0.0, 0.0, 0.0};
+  for (int m=0; m<pmbp->nmb_thispack; ++m) {
+    const int p = mbpanel.h_view(m);
+    for (int k=ks; k<=ke; ++k) {
+      const Real et = 0.25*M_PI*CellCenterX(k-ks, indcs.nx3, size.h_view(m).x3min,
+                                                             size.h_view(m).x3max);
+      for (int j=js; j<=je; ++j) {
+        const Real xi = 0.25*M_PI*CellCenterX(j-js, indcs.nx2, size.h_view(m).x2min,
+                                                               size.h_view(m).x2max);
+        Real e1[3], e2[3], rx, ry, rz;
+        cubed_sphere::PanelTangents(p, xi, et, e1, e2);
+        PanelToCart(p, xi, et, rx, ry, rz);
+        const Real rh[3] = {rx, ry, rz};
+        for (int i=is; i<=ie; ++i) {
+          const Real dv = vh(m,k,j,i);
+          const Real rad = CellCenterX(i-is, indcs.nx1, size.h_view(m).x1min,
+                                                        size.h_view(m).x1max);
+          svol += dv;
+          sm += dv*uh(m,IDN,k,j,i);
+          se += dv*uh(m,IEN,k,j,i);
+          // u0(IM1..IM3) are the COVARIANT components rho*v_i on (rhat, e1hat, e2hat)
+          // -- see Coordinates::GnomonicEquiangleRaiseVel. The tangent pair is NOT
+          // orthogonal, so they must be RAISED with g^{-1}, g = [[1,c],[c,1]], before
+          // they can be used as coefficients of e1hat and e2hat. Treating them as
+          // contravariant is wrong by up to ~46% of |V|, vanishing on the seam midline
+          // and worst at the panel corners. rhat is orthogonal to both and unit, so the
+          // radial component needs no raising.
+          const Real cg = e1[0]*e2[0] + e1[1]*e2[1] + e1[2]*e2[2];
+          const Real dg = 1.0 - cg*cg;
+          const Real q2 = (uh(m,IM2,k,j,i) - cg*uh(m,IM3,k,j,i))/dg;
+          const Real q3 = (uh(m,IM3,k,j,i) - cg*uh(m,IM2,k,j,i))/dg;
+          Real pc[3];
+          for (int q=0; q<3; ++q) {
+            pc[q] = uh(m,IM1,k,j,i)*rh[q] + q2*e1[q] + q3*e2[q];
+            sp[q] += dv*pc[q];
+          }
+          // L = r x p, with r = rad*rhat.  This is the momentum-like quantity that
+          // matters on a sphere: the rigid-rotation equilibria carry a large Lz and no
+          // net linear momentum at all, so P is identically zero by symmetry and can
+          // measure nothing, while Lz is O(1) and any loss shows up directly.
+          for (int q=0; q<3; ++q) {
+            const int a = (q+1)%3, b = (q+2)%3;
+            sl[q] += dv*rad*(rh[a]*pc[b] - rh[b]*pc[a]);
+          }
+        }
+      }
+    }
+  }
+  std::printf("### CS CONSERVED SUMS at t = %.17e  (ncyc %d)\n", pm->time, pm->ncycle);
+  std::printf("###   volume %.17e\n", svol);
+  std::printf("###   mass   %.17e\n", sm);
+  std::printf("###   energy %.17e\n", se);
+  std::printf("###   Px     %.17e\n", sp[0]);
+  std::printf("###   Py     %.17e\n", sp[1]);
+  std::printf("###   Pz     %.17e\n", sp[2]);
+  std::printf("###   Lx     %.17e\n", sl[0]);
+  std::printf("###   Ly     %.17e\n", sl[1]);
+  std::printf("###   Lz     %.17e\n", sl[2]);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void CSTestSeamFluxCheck(Mesh *pm)
+//! \brief Is the flux through a shared SEAM FACE single-valued?
+//!
+//! The cell-centred counterpart of `CS SEAM FACE SINGLE-VALUED`, and the gate that says
+//! whether the seam is CONSERVATIVE. A finite-volume update telescopes exactly -- what
+//! leaves one cell enters its neighbour -- only because both cells multiply the SAME
+//! stored flux by the SAME stored area. Inside a panel that holds by construction, and it
+//! holds between MeshBlocks of one panel too, because their ghost states are copies and
+//! so reproduce the neighbour's flux bit for bit. At a panel seam it does NOT: the ghosts
+//! are INTERPOLATED, so the two panels reconstruct slightly different states either side
+//! of the one physical face and their Riemann solves disagree. Whatever the difference
+//! is, it is mass and energy created out of nothing.
+//!
+//! Only the SCALAR fluxes are tested. Mass and total energy flux densities are true
+//! scalars -- rho v.nhat and (E+p) v.nhat -- so the two panels' values must agree up to
+//! the sign of the outward normal with no basis transform. The momentum fluxes are
+//! components on the local gnomonic basis and are not comparable this way.
+//!
+//! As in the FC gate the shared faces are found BY GEOMETRY, keyed on the physical face
+//! centre, so the test cannot inherit a bug from the index map it is testing; two keys
+//! that agree while the panels differ are the two copies of one seam face. Results are
+//! split by distance to a CUBE VERTEX, where three panels meet and the halo has the least
+//! to work with.
+//!
+//! UNDER MPI THIS GATE UNDER-COUNTS, and each rank prints its own line. Pairing is by
+//! geometry within one rank's blocks, so a seam whose two copies live on DIFFERENT ranks
+//! contributes nothing -- a rank can even report an exact zero because it holds no
+//! complete pair (seen with 2 ranks). Run it on one rank to gate the seam itself; to
+//! check the exchange under MPI, compare the GLOBAL conserved sums in the `.hst` across
+//! rank counts instead, which are properly reduced.
+
+void CSTestSeamFluxCheck(Mesh *pm) {
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  if (pmbp->pmhd == nullptr && pmbp->phydro == nullptr) return;
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie;
+  const int js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int ng = indcs.ng;
+  auto &uflx = (pmbp->pmhd != nullptr) ? pmbp->pmhd->uflx : pmbp->phydro->uflx;
+  auto f2h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), uflx.x2f);
+  auto f3h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), uflx.x3f);
+  auto a2h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->area.x2f);
+  auto a3h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->area.x3f);
+  auto &size = pmbp->pmb->mb_size;
+  size.template sync<HostMemSpace>();
+  auto &mbpanel = pmbp->pmb->mb_panel;
+  mbpanel.template sync<HostMemSpace>();
+
+  // One copy of a seam face: the OUTWARD mass and energy flux this panel sees through it,
+  // already multiplied by this panel's own stored area, which is what the update adds.
+  struct SeamFlux { Real fm, fe, area, fp[3]; int panel; };
+  std::map<std::string, SeamFlux> seen;
+  Real smass[2] = {0.0, 0.0}, sener[2] = {0.0, 0.0};   // [0] away from a vertex, [1] near
+  Real dmax[2] = {0.0, 0.0}, fmax_ = 0.0, damax = 0.0;
+  int npair[2] = {0, 0};
+  // The NULL control for this gate. A face shared by two MeshBlocks of the SAME panel is
+  // the identical situation minus the seam: the ghosts there are copies, so both blocks
+  // must produce the same flux to round-off. If this is not at round-off then the gate
+  // itself -- its keying, its sign convention or its areas -- is wrong and the seam
+  // numbers mean nothing. Empty unless there are several MeshBlocks per panel.
+  Real snull = 0.0, dnull = 0.0;
+  int nnull = 0;
+  // The spurious TORQUE about z. The momentum flux is a VECTOR, so unlike mass and energy
+  // it is only comparable between the two panels once both are rotated into the common
+  // Cartesian frame; done there, conservation demands the two outward vectors cancel just
+  // as the scalars do. Summing r x (what does not cancel) gives the rate at which the
+  // seam manufactures angular momentum, which is what dLz/dt should be compared against.
+  Real storq[3] = {0.0, 0.0, 0.0};
+
+  for (int m=0; m<pmbp->nmb_thispack; ++m) {
+    const int p = mbpanel.h_view(m);
+    for (int side=0; side<4; ++side) {
+      const bool jface = (side < 2);
+      const int jj = (side == 0) ? js : ((side == 1) ? je+1 : 0);
+      const int kk = (side == 2) ? ks : ((side == 3) ? ke+1 : 0);
+      const Real sgn = (side == 0 || side == 2) ? -1.0 : 1.0;  // outward from this block
+      const int nlo = jface ? ks : js;
+      const int nhi = jface ? ke : je;
+      for (int t=nlo; t<=nhi; ++t) {
+        const int j = jface ? jj : t;
+        const int k = jface ? t  : kk;
+        const Real x2n = size.h_view(m).x2min, x2x = size.h_view(m).x2max;
+        const Real x3n = size.h_view(m).x3min, x3x = size.h_view(m).x3max;
+        const Real xi = 0.25*M_PI*(jface
+            ? LeftEdgeX(j-js, indcs.nx2, x2n, x2x)
+            : CellCenterX(j-js, indcs.nx2, x2n, x2x));
+        const Real et = 0.25*M_PI*(jface
+            ? CellCenterX(k-ks, indcs.nx3, x3n, x3x)
+            : LeftEdgeX(k-ks, indcs.nx3, x3n, x3x));
+        Real cx, cy, cz;
+        PanelToCart(p, xi, et, cx, cy, cz);
+        // How close is this face to a cube vertex?  Geometrically, never by index: with
+        // several MeshBlocks per panel a block's seam ends are mostly interior edges.
+        Real vdot = 0.0;
+        for (int vv=0; vv<8; ++vv) {
+          const Real vx = ((vv&1)?1.0:-1.0)/sqrt(3.0);
+          const Real vy = ((vv&2)?1.0:-1.0)/sqrt(3.0);
+          const Real vz = ((vv&4)?1.0:-1.0)/sqrt(3.0);
+          vdot = fmax(vdot, cx*vx + cy*vy + cz*vz);
+        }
+        // The angular width of ONE cell. It must come from this block's own x2 extent:
+        // indcs.nx2 counts the cells in a MESHBLOCK, so 0.5*pi/nx2 is the cell width only
+        // when a panel is a single block, and splitting the panel would otherwise widen
+        // the "near a vertex" set and change what the buckets mean.
+        const Real dang = 0.25*M_PI*(x2x - x2n)/static_cast<Real>(indcs.nx2);
+        const int b = (acos(fmin(1.0,vdot)) < (ng + 0.5)*dang) ? 1 : 0;
+        for (int i=is; i<=ie; ++i) {
+          const Real rad = CellCenterX(i-is, indcs.nx1, size.h_view(m).x1min,
+                                                       size.h_view(m).x1max);
+          char key[160];
+          std::snprintf(key, sizeof(key), "%.9f_%.9f_%.9f_%.9f", rad, cx, cy, cz);
+          SeamFlux f;
+          f.area = jface ? a2h(m,k,j,i) : a3h(m,k,j,i);
+          f.fm = sgn*f.area*(jface ? f2h(m,IDN,k,j,i) : f3h(m,IDN,k,j,i));
+          f.fe = sgn*f.area*(jface ? f2h(m,IEN,k,j,i) : f3h(m,IEN,k,j,i));
+          f.panel = p;
+          // the outward momentum flux as a Cartesian vector
+          {Real e1[3], e2[3];
+          cubed_sphere::PanelTangents(p, xi, et, e1, e2);
+          const Real g1 = jface ? f2h(m,IM1,k,j,i) : f3h(m,IM1,k,j,i);
+          const Real g2 = jface ? f2h(m,IM2,k,j,i) : f3h(m,IM2,k,j,i);
+          const Real g3 = jface ? f2h(m,IM3,k,j,i) : f3h(m,IM3,k,j,i);
+          // COVARIANT, like u0(IM*) itself: raise before using as basis coefficients.
+          const Real cg = e1[0]*e2[0] + e1[1]*e2[1] + e1[2]*e2[2];
+          const Real dg = 1.0 - cg*cg;
+          const Real h2 = (g2 - cg*g3)/dg, h3 = (g3 - cg*g2)/dg;
+          const Real rh[3] = {cx, cy, cz};
+          for (int q=0; q<3; ++q) {
+            f.fp[q] = sgn*f.area*(g1*rh[q] + h2*e1[q] + h3*e2[q]);
+          }}
+          auto it = seen.find(std::string(key));
+          if (it == seen.end()) {
+            seen[std::string(key)] = f;
+          } else if (it->second.panel == p) {
+            const Real dm = it->second.fm + f.fm;
+            snull += dm;
+            dnull = fmax(dnull, fabs(dm));
+            ++nnull;
+          } else {
+            // Conservation demands what leaves one panel enters the other: fm_P + fm_Q
+            // must vanish.  What it actually is, is the spurious source.
+            const Real dm = it->second.fm + f.fm;
+            smass[b] += dm;
+            sener[b] += it->second.fe + f.fe;
+            {Real dp[3];
+            for (int q=0; q<3; ++q) {dp[q] = it->second.fp[q] + f.fp[q];}
+            const Real rad = CellCenterX(i-is, indcs.nx1, size.h_view(m).x1min,
+                                                          size.h_view(m).x1max);
+            const Real rr[3] = {rad*cx, rad*cy, rad*cz};
+            for (int q=0; q<3; ++q) {
+              const int a = (q+1)%3, bb = (q+2)%3;
+              storq[q] += rr[a]*dp[bb] - rr[bb]*dp[a];
+            }}
+            dmax[b] = fmax(dmax[b], fabs(dm));
+            fmax_ = fmax(fmax_, fabs(f.fm));
+            damax = fmax(damax, fabs(it->second.area - f.area)/f.area);
+            ++npair[b];
+          }
+        }
+      }
+    }
+  }
+  const Real mtot = smass[0] + smass[1], etot = sener[0] + sener[1];
+  std::printf("### CS SEAM FLUX MISMATCH (spurious source rate, sum over shared"
+              " faces)\n");
+  std::printf("###   dM/dt = %12.5e  (away %12.5e, cube vertex %12.5e)\n",
+              mtot, smass[0], smass[1]);
+  std::printf("###   dE/dt = %12.5e  (away %12.5e, cube vertex %12.5e)\n",
+              etot, sener[0], sener[1]);
+  std::printf("###   per-face max |dFm| = %12.5e away, %12.5e at a vertex;"
+              "  max|area*Fm| = %12.5e\n", dmax[0], dmax[1], fmax_);
+  std::printf("###   shared faces: %d away + %d within %d cells of a vertex;"
+              "  max area mismatch %9.3e\n", npair[0], npair[1], ng, damax);
+  std::printf("###   NULL (same-panel block faces): sum %12.5e  max %12.5e  over %d\n",
+              snull, dnull, nnull);
+  std::printf("###   spurious TORQUE (dL/dt): x %12.5e  y %12.5e  z %12.5e\n",
+              -storq[0], -storq[1], -storq[2]);
+}
+
+//----------------------------------------------------------------------------------------
 void CSTestGhostCheck(ParameterInput *pin, Mesh *pm) {
   MeshBlockPack *pmbp = pm->pmb_pack;
+  CSTestConsSums(pm);
+  CSTestSeamFluxCheck(pm);
   auto &indcs = pm->mb_indcs;
   const int is = indcs.is, ie = indcs.ie;
   const int js = indcs.js, je = indcs.je;
