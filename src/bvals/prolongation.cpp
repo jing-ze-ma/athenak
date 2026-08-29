@@ -313,6 +313,14 @@ void MeshBoundaryValuesFC::FillCoarseInBndryFC(DvceFaceFld4D<Real> &b,
 //! \brief Prolongate data at boundaries for face-centered data (e.g. magnetic fields).
 
 void MeshBoundaryValuesFC::ProlongateFC(DvceFaceFld4D<Real> &b, DvceFaceFld4D<Real> &cb) {
+  // On a curvilinear grid the divergence constraint is sum(+/-A*B) = 0, not sum(+/-B),
+  // so both halves of the FC prolongation work on the face FLUX A*B. See the notes on
+  // ProlongFCSharedX1FaceCurvi and ProlongFCInternalCurvi in mesh/prolongation.hpp.
+  const bool curvi_ = (pmy_pack->pmesh->use_cubed_sphere ||
+                       pmy_pack->pmesh->use_spherical_polar);
+  auto ca1_ = pmy_pack->pcoord->area.x1f;
+  auto ca2_ = pmy_pack->pcoord->area.x2f;
+  auto ca3_ = pmy_pack->pcoord->area.x3f;
   // create local references for variables in kernel
   int nmb = pmy_pack->nmb_thispack;
   int nnghbr = pmy_pack->pmb->nnghbr;
@@ -365,11 +373,24 @@ void MeshBoundaryValuesFC::ProlongateFC(DvceFaceFld4D<Real> &b, DvceFaceFld4D<Re
         // Prolongate face-centered fields at shared faces betwen fine and coarse cells
         // by calling inlined prolongation operator for FC variables
         if (v==0) {
-          ProlongFCSharedX1Face(m,k,j,i,fk,fj,fi,multi_d,three_d,cb.x1f,b.x1f);
+          if (curvi_) {
+            ProlongFCSharedX1FaceCurvi(m,k,j,i,fk,fj,fi,multi_d,three_d,
+                                       cb.x1f,b.x1f,ca1_);
+          } else {
+            ProlongFCSharedX1Face(m,k,j,i,fk,fj,fi,multi_d,three_d,cb.x1f,b.x1f);
+          }
         } else if (v==1) {
-          ProlongFCSharedX2Face(m,k,j,i,fk,fj,fi,three_d,cb.x2f,b.x2f);
+          if (curvi_) {
+            ProlongFCSharedX2FaceCurvi(m,k,j,i,fk,fj,fi,three_d,cb.x2f,b.x2f,ca2_);
+          } else {
+            ProlongFCSharedX2Face(m,k,j,i,fk,fj,fi,three_d,cb.x2f,b.x2f);
+          }
         } else {
-          ProlongFCSharedX3Face(m,k,j,i,fk,fj,fi,multi_d,cb.x3f,b.x3f);
+          if (curvi_) {
+            ProlongFCSharedX3FaceCurvi(m,k,j,i,fk,fj,fi,multi_d,cb.x3f,b.x3f,ca3_);
+          } else {
+            ProlongFCSharedX3Face(m,k,j,i,fk,fj,fi,multi_d,cb.x3f,b.x3f);
+          }
         }
       });
     }
@@ -422,7 +443,11 @@ void MeshBoundaryValuesFC::ProlongateFC(DvceFaceFld4D<Real> &b, DvceFaceFld4D<Re
           b.x1f(m,fk,fj,fi+1) = 0.5*(b.x1f(m,fk,fj,fi) + b.x1f(m,fk,fj,fi+2));
         } else {
           // in multi-D call inlined prolongation operator for FC fields at internal faces
-          ProlongFCInternal(m,fk,fj,fi,three_d,b);
+          if (curvi_) {
+            ProlongFCInternalCurvi(m,fk,fj,fi,three_d,b,ca1_,ca2_,ca3_);
+          } else {
+            ProlongFCInternal(m,fk,fj,fi,three_d,b);
+          }
         }
       });
     }
