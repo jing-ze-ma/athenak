@@ -37,6 +37,7 @@ add_executable(
         diffusion/resistivity_rkg_tasks.cpp
         diffusion/resistivity_update.cpp
         diffusion/resistivity_ct.cpp
+        diffusion/resistivity_gnomonic.cpp
 
         driver/driver.cpp
 

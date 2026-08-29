@@ -71,6 +71,8 @@ class Resistivity {
   DvceFaceFld4D<Real> b2;     // face-centered magnetic fields, fourth register
     
   DvceEdgeFld4D<Real> efld_resist;   // edge-centered electric fields due to non-ideal effects (E_{resistive} = \eta J)
+  DvceEdgeFld4D<Real> jnorm;   // cubed sphere only: J in the FACE-NORMAL frame, the
+                               // intermediate of the two-pass curl (resistivity_gnomonic.cpp)
   DvceEdgeFld4D<Real> efld_ideal;   // edge-centered electric fields
     
     // container to hold names of TaskIDs
@@ -92,6 +94,7 @@ class Resistivity {
   void AddResistiveFluxes(const DvceFaceFld4D<Real> &b0, const DvceArray5D<Real> &bc, DvceFaceFld5D<Real> &flx);
   void AddEMFConstantResist(const DvceFaceFld4D<Real> &b0, DvceEdgeFld4D<Real> &efld);
   void AddEMFGeneralResist(const DvceFaceFld4D<Real> &b0, DvceEdgeFld4D<Real> &efld);
+  void AddEMFGnomonicResist(const DvceFaceFld4D<Real> &b0, DvceEdgeFld4D<Real> &efld);
   void AddEMFDirect(const DvceEdgeFld4D<Real> &efld_resist, DvceEdgeFld4D<Real> &efld);
   void AddFluxConstantGridResist(const DvceFaceFld4D<Real> &b, DvceFaceFld5D<Real> &flx);
   void AddFluxGeneralResist(const DvceFaceFld4D<Real> &b, const DvceArray5D<Real> &bc, DvceFaceFld5D<Real> &flx);

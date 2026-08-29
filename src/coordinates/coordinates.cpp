@@ -546,6 +546,44 @@ void Coordinates::CoordGnomonicEquiangle() {
     if (j == n2m1) dxedge.x3e(m,k,j+1,i) = r_l * dth_etar;
     if (i == n1m1 && j == n2m1) dxedge.x3e(m,k,j+1,i+1) = r_r * dth_etar;
 
+    // --- DUAL mesh: edge-centred areas and centre-to-centre lengths ------------------
+    // Consumed by the resistive current density (diffusion/current_density.hpp), which
+    // applies Stokes' theorem on the loop joining the four cell CENTRES around an edge.
+    // Every side of that loop passes through a face centre, so its length is the
+    // centre-to-centre distance stored in dxface, and the area it encloses is areaedge.
+    // The x1 loop lies in the tangent surface, where the two basis vectors are NOT
+    // orthogonal, so its area carries the sin of the angle between them -- exactly as
+    // area.x1f does. The x2 and x3 loops each contain rhat, which IS orthogonal to both
+    // tangent directions, so they carry no such factor.
+    Real r_cm = CellCenterX(i-1-is, indcs.nx1, size.d_view(m).x1min,
+                                            size.d_view(m).x1max);
+    Real xim  = M_PI/4.0 * CellCenterX(j-1-js, indcs.nx2, x2min, x2max);
+    Real etam = M_PI/4.0 * CellCenterX(k-1-ks, indcs.nx3, x3min, x3max);
+    Real xm = tan(xim);
+    Real ym = tan(etam);
+    // angle subtended between two directions on the same panel, at fixed other angle
+    auto arc_xi = [](Real xa, Real xb, Real yy) {
+      return acos((1.0 + xa*xb + yy*yy)/sqrt(1.0 + xa*xa + yy*yy)
+                                       /sqrt(1.0 + xb*xb + yy*yy));
+    };
+    auto arc_eta = [](Real ya, Real yb, Real xx) {
+      return acos((1.0 + xx*xx + ya*yb)/sqrt(1.0 + xx*xx + ya*ya)
+                                       /sqrt(1.0 + xx*xx + yb*yb));
+    };
+    if (i > 0) dxface.x1f(m,k,j,i) = r_c - r_cm;
+    if (j > 0) dxface.x2f(m,k,j,i) = r_c * arc_xi(xm, x, y);
+    if (k > 0) dxface.x3f(m,k,j,i) = r_c * arc_eta(ym, y, x);
+    if (j > 0 && k > 0) {
+      areaedge.x1e(m,k,j,i) = SQR(r_c) * arc_xi(xm, x, yl) * arc_eta(ym, y, xl)
+                              * sqrt(1.0 + SQR(xl) + SQR(yl)) / (Cl * Dl);
+    }
+    if (i > 0 && k > 0) {
+      areaedge.x2e(m,k,j,i) = 0.5*(SQR(r_c) - SQR(r_cm)) * arc_eta(ym, y, x);
+    }
+    if (i > 0 && j > 0) {
+      areaedge.x3e(m,k,j,i) = 0.5*(SQR(r_c) - SQR(r_cm)) * arc_xi(xm, x, y);
+    }
+
     // Geometric coefficients consumed by SrcTermsGnomonicEquiangle. z_ov_rE is the RADIAL
     // one, matching its meaning in CoordSphericalPolar/SrcTermsSphericalPolar.
     x_ov_rD(m,k,j,i) = (area2r * sin_face_xir

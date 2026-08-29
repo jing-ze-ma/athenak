@@ -26,6 +26,7 @@
 Resistivity::Resistivity(MeshBlockPack *pp, ParameterInput *pin) :
     pmy_pack(pp),
     efld_resist("efld_resist",1,1,1,1),
+    jnorm("jnorm",1,1,1,1),
     eta_b("eta_b",1,1,1,1),
     u_ideal("u_ideal",1,1,1,1,1),
     b_ideal("b_ideal",1,1,1,1),
@@ -55,6 +56,13 @@ Resistivity::Resistivity(MeshBlockPack *pp, ParameterInput *pin) :
     Kokkos::realloc(efld_resist.x1e, nmb, ncells3+1, ncells2+1, ncells1);
     Kokkos::realloc(efld_resist.x2e, nmb, ncells3+1, ncells2, ncells1+1);
     Kokkos::realloc(efld_resist.x3e, nmb, ncells3, ncells2+1, ncells1+1);
+    // the cubed sphere takes the curl in two passes and needs somewhere to put the
+    // face-normal-frame current between them; see resistivity_gnomonic.cpp
+    if (pp->pmesh->use_cubed_sphere) {
+      Kokkos::realloc(jnorm.x1e, nmb, ncells3+1, ncells2+1, ncells1);
+      Kokkos::realloc(jnorm.x2e, nmb, ncells3+1, ncells2, ncells1+1);
+      Kokkos::realloc(jnorm.x3e, nmb, ncells3, ncells2+1, ncells1+1);
+    }
     // eta_b holds the diffusivity of every cell for EVERY resistivity type, because
     // AddEMFGeneralResist() is the only EMF routine left and it reads eta_b for every
     // cell (AddEMFConstantResist is commented out). A constant resistivity therefore has
@@ -339,6 +347,12 @@ void Resistivity::AddEMFConstantResist(const DvceFaceFld4D<Real> &b0,
 
 void Resistivity::AddEMFGeneralResist(const DvceFaceFld4D<Real> &b0,
     DvceEdgeFld4D<Real> &efld) {
+  // the cubed sphere needs a two-pass curl on a non-orthogonal basis; see
+  // resistivity_gnomonic.cpp for why the formulae below cannot simply be given a metric
+  if (pmy_pack->pmesh->use_cubed_sphere) {
+    AddEMFGnomonicResist(b0, efld);
+    return;
+  }
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
   int js = indcs.js, je = indcs.je;
@@ -741,6 +755,19 @@ void Resistivity::AddFluxGeneralResist(const DvceFaceFld4D<Real> &b, const DvceA
   auto &x3v_ = pmy_pack->pcoord->x3v;
   auto &x3f_ = pmy_pack->pcoord->xx3f;
 
+  // CUBED SPHERE. The Poynting flux is a cross product, so both operands have to be in
+  // the SAME frame. `bc` is in the orthonormal frame {rhat, e_xi, (e_eta - c e_xi)/s}
+  // (GnomonicEquiangleRaiseVelMHD) while the edge EMFs are the COVARIANT components
+  // E.that along each edge, so the eta slot must be rotated, E_orth3 = (E3 - c E2)/s,
+  // before the cross product and the result projected onto the face NORMAL afterwards.
+  // Only the x1 and x2 faces need work: nhat_eta IS the third orthonormal axis, so the
+  // x3 flux below is already (ExB).nhat_eta as written.
+  const bool cs_ = pmy_pack->pmesh->use_cubed_sphere;
+  auto &ccell = pmy_pack->pcoord->cos_cell;
+  auto &scell = pmy_pack->pcoord->sin_cell;
+  auto &cfxi = pmy_pack->pcoord->cos_face_xi;
+  auto &sfxi = pmy_pack->pcoord->sin_face_xi;
+
   //------------------------------
   // energy fluxes in x1-direction
   auto &flx1 = flx.x1f;
@@ -781,6 +808,7 @@ void Resistivity::AddFluxGeneralResist(const DvceFaceFld4D<Real> &b, const DvceA
     }
       
     // flx1 = (E X B)_{1} =  ((\eta J) X B)_{1} = \eta (J2*B3 - J3*B2)
+    if (cs_) { e3a = (e3a - ccell(m,k,j)*e2a)/scell(m,k,j); }
     if (use_sts) {
       flx1(m,IEN,k,j,i) = -(fr1*bc(m,IBY,k,j,i) + fl1*bc(m,IBY,k,j,i-1))*e3a
         + (fr1*bc(m,IBZ,k,j,i) + fl1*bc(m,IBZ,k,j,i-1))*e2a;
@@ -826,12 +854,27 @@ void Resistivity::AddFluxGeneralResist(const DvceFaceFld4D<Real> &b, const DvceA
     }
       
     // E2 = \eta (J X B)_{2} = \eta (J3*B1 - J1*B3)
-    if (use_sts) {
-      flx2(m,IEN,k,j,i) = -(fr2*bc(m,IBZ,k,j,i) + fl2*bc(m,IBZ,k,j-1,i))*e1a
-        + (fr2*bc(m,IBX,k,j,i) + fl2*bc(m,IBX,k,j-1,i))*e3a;
+    Real fx2;
+    if (cs_) {
+      // the eight x2 edges around this face average to its centre
+      const Real e2a = 0.125*(e2(m,k,j-1,i) + e2(m,k,j-1,i+1) + e2(m,k,j,i)
+                            + e2(m,k,j,i+1) + e2(m,k+1,j-1,i) + e2(m,k+1,j-1,i+1)
+                            + e2(m,k+1,j,i) + e2(m,k+1,j,i+1));
+      const Real c = cfxi(m,k,j), sn = sfxi(m,k,j);
+      const Real eo3 = (e3a - c*e2a)/sn;
+      const Real b1 = fr2*bc(m,IBX,k,j,i) + fl2*bc(m,IBX,k,j-1,i);
+      const Real b2 = fr2*bc(m,IBY,k,j,i) + fl2*bc(m,IBY,k,j-1,i);
+      const Real b3 = fr2*bc(m,IBZ,k,j,i) + fl2*bc(m,IBZ,k,j-1,i);
+      // (ExB).nhat_xi = s (ExB)_2 - c (ExB)_3 in the orthonormal frame
+      fx2 = sn*(eo3*b1 - e1a*b3) - c*(e1a*b2 - e2a*b1);
     } else {
-      flx2(m,IEN,k,j,i) += -(fr2*bc(m,IBZ,k,j,i) + fl2*bc(m,IBZ,k,j-1,i))*e1a
+      fx2 = -(fr2*bc(m,IBZ,k,j,i) + fl2*bc(m,IBZ,k,j-1,i))*e1a
         + (fr2*bc(m,IBX,k,j,i) + fl2*bc(m,IBX,k,j-1,i))*e3a;
+    }
+    if (use_sts) {
+      flx2(m,IEN,k,j,i) = fx2;
+    } else {
+      flx2(m,IEN,k,j,i) += fx2;
     }
   });
   if (two_d) {return;}
@@ -908,7 +951,11 @@ void Resistivity::NewTimeStepGeneralResist(const DvceArray5D<Real> &w0, const EO
   const int nkji = nx3*nx2*nx1;
   const int nji  = nx2*nx1;
     
-  auto &use_spherical_polar = pmy_pack->pmesh->use_spherical_polar;
+  // Coordinates::dx{1,2,3} are PHYSICAL lengths for both curvilinear systems, while
+  // mb_size.dx* are index spacings -- on the cubed sphere x2 and x3 are angles on [-1,1],
+  // so the Cartesian branch would overestimate the diffusive dt by orders of magnitude.
+  const bool use_curvilinear = pmy_pack->pmesh->use_spherical_polar ||
+                               pmy_pack->pmesh->use_cubed_sphere;
   auto &dx1_ = pmy_pack->pcoord->dx1;
   auto &dx2_ = pmy_pack->pcoord->dx2;
   auto &dx3_ = pmy_pack->pcoord->dx3;
@@ -938,7 +985,7 @@ void Resistivity::NewTimeStepGeneralResist(const DvceArray5D<Real> &w0, const EO
 //    } else {
       eta = eta_b_(m,k,j,i);
 //    }
-    if (use_spherical_polar) {
+    if (use_curvilinear) {
       min_dt1 = fmin(fac*SQR(dx1_(m,k,j,i))/eta, min_dt1);
       min_dt2 = fmin(fac*SQR(dx2_(m,k,j,i))/eta, min_dt2);
       min_dt3 = fmin(fac*SQR(dx3_(m,k,j,i))/eta, min_dt3);

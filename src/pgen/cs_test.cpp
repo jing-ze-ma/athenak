@@ -61,6 +61,7 @@
 #include "eos/eos.hpp"
 #include "hydro/hydro.hpp"
 #include "mhd/mhd.hpp"
+#include "diffusion/resistivity.hpp"
 #include "coordinates/cubed_sphere.hpp"
 #include "pgen.hpp"
 
@@ -76,6 +77,7 @@ Real cs_b0r = 0.0;
 Real cs_bc_tfrac = 0.0;   // ghost time offset, in units of dt (problem/bc_time_frac)
 int  cs_bc_bcc_match = 0; // ghost x1f matched to bcc (problem/bc_bcc_match)
 int  cs_bc_probe = 0;     // print the interior boundary-layer PHASE (problem/bc_probe)
+Real cs_bazi = 0.0;       // iprob=11 azimuthal amplitude; curl B = 2*cs_bazi*zhat
 Real cs_bvx = 0.0, cs_bvy = 0.0, cs_bvz = 0.0;
 int  cs_exact_panel_ghosts = 0;
 
@@ -225,6 +227,7 @@ void RigidRotState(const int p, const Real xi, const Real eta, const Real r,
 void CSTestRadialBC(Mesh *pm);
 void CSTestGhostCheck(ParameterInput *pin, Mesh *pm);
 void CSTestConvErrors(ParameterInput *pin, Mesh *pm);
+void CSTestResistCheck(ParameterInput *pin, Mesh *pm);
 
 //----------------------------------------------------------------------------------------
 //! \fn ProblemGenerator::UserProblem
@@ -265,7 +268,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // reflect is exact for the uniform hydro state but not for B_r(r), which is not
   // reflection-symmetric, and the jump it manufactures at the radial boundary drives a
   // spurious radial force. The hook is a no-op unless ix1_bc/ox1_bc are set to `user`.
-  if (iprob == 1 || iprob == 8 || iprob == 9 ||
+  if (iprob == 1 || iprob == 8 || iprob == 9 || iprob == 11 ||
       (iprob >= 3 && iprob <= 7 && iprob != 4)) {
     user_bcs_func = CSTestRadialBC;
   }
@@ -277,6 +280,29 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   if (iprob == 9 || pin->GetOrAddInteger("problem", "conv_errors", 0) != 0) {
     pgen_final_func = CSTestConvErrors;
   }
+  if (iprob == 11) {
+    pgen_final_func = CSTestResistCheck;
+  }
+  // iprob = 11: B = b0c*(-y,x,0) + a uniform tilted field. Its curl is the UNIFORM
+  // vector 2*b0c*zhat while the field itself is not uniform, which is what makes it a
+  // quantitative test of the resistive current: the uniform part contributes nothing to
+  // curl B but DOES make every term of the discrete Stokes loop nonzero, so a term that
+  // is dropped or mis-rotated cannot hide. J x B is a pure gradient, so with
+  // p = p0 - b0c^2 R^2 + F.r, F = 2*b0c*(zhat x Bunif), the whole state is static in
+  // both ideal and resistive MHD.
+  Real bazi = 0.0, bux = 0.0, buy = 0.0, buz = 0.0;
+  if (iprob == 11) {
+    bazi = pin->GetOrAddReal("problem", "b0c", 0.1);
+    const Real bu = pin->GetOrAddReal("problem", "bunif", 0.1);
+    const Real hx = pin->GetOrAddReal("problem", "bhx", 0.37);
+    const Real hy = pin->GetOrAddReal("problem", "bhy", 0.61);
+    const Real hz = pin->GetOrAddReal("problem", "bhz", 0.70);
+    const Real hn = std::sqrt(hx*hx + hy*hy + hz*hz);
+    bux = bu*hx/hn; buy = bu*hy/hn; buz = bu*hz/hn;
+    cs_bazi = bazi;
+    cs_bvx = bux; cs_bvy = buy; cs_bvz = buz;
+  }
+
   const Real blob_w = pin->GetOrAddReal("problem", "blob_width", 0.3);
   const Real amp_ = cs_amp, r0_ = cs_r0;
 
@@ -334,6 +360,20 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     if (iprob == 5) {
       w0(m,IDN,k,j,i) = RadialProfile(rad, d0, amp_, r0_);
       w0(m,IEN,k,j,i) = p0/gm1;
+      w0(m,IVX,k,j,i) = 0.0;
+      w0(m,IVY,k,j,i) = 0.0;
+      w0(m,IVZ,k,j,i) = 0.0;
+      return;
+    }
+
+    if (iprob == 11) {
+      // static: J x B = grad(-b0c^2 R^2 + F.r) is balanced by the pressure
+      Real cx, cy, cz;
+      PanelToCart(mbpanel.d_view(m), xi, eta, cx, cy, cz);
+      const Real px = rad*cx, py = rad*cy;
+      w0(m,IDN,k,j,i) = d0;
+      w0(m,IEN,k,j,i) = (p0 - SQR(bazi)*(px*px + py*py)
+                         + 2.0*bazi*(-buy*px + bux*py))/gm1;
       w0(m,IVX,k,j,i) = 0.0;
       w0(m,IVY,k,j,i) = 0.0;
       w0(m,IVZ,k,j,i) = 0.0;
@@ -482,6 +522,48 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         b0f.x3f(m,k,j,i) = bvx*n2[0] + bvy*n2[1] + bvz*n2[2];
       }
     });
+  } else if (is_mhd && iprob == 11) {
+    // Face-normal projections of B(x) at each face centre. Unlike iprob = 8 the field
+    // varies in space, so each face needs its own POSITION as well as its own normal.
+    auto &b0f = pmbp->pmhd->b0;
+    par_for("pgen_cs_bfld11", DevExeSpace(), 0,(pmbp->nmb_thispack-1),
+            ks,ke+1, js,je+1, is,ie+1,
+    KOKKOS_LAMBDA(int m, int k, int j, int i) {
+      const Real x2c = 0.25*M_PI*CellCenterX(j-js, indcs.nx2, size.d_view(m).x2min,
+                                                              size.d_view(m).x2max);
+      const Real x3c = 0.25*M_PI*CellCenterX(k-ks, indcs.nx3, size.d_view(m).x3min,
+                                                              size.d_view(m).x3max);
+      const Real x2f = 0.25*M_PI*LeftEdgeX(j-js, indcs.nx2, size.d_view(m).x2min,
+                                                            size.d_view(m).x2max);
+      const Real x3f = 0.25*M_PI*LeftEdgeX(k-ks, indcs.nx3, size.d_view(m).x3min,
+                                                            size.d_view(m).x3max);
+      const Real rc = CellCenterX(i-is, indcs.nx1, size.d_view(m).x1min,
+                                                   size.d_view(m).x1max);
+      const Real rl = LeftEdgeX(i-is, indcs.nx1, size.d_view(m).x1min,
+                                                 size.d_view(m).x1max);
+      const int p = mbpanel.d_view(m);
+      Real n1[3], n2[3], cx, cy, cz;
+      if (j <= je && k <= ke) {
+        PanelToCart(p, x2c, x3c, cx, cy, cz);
+        const Real bx = -bazi*rl*cy + bux;
+        const Real by =  bazi*rl*cx + buy;
+        b0f.x1f(m,k,j,i) = bx*cx + by*cy + buz*cz;
+      }
+      if (i <= ie && k <= ke) {
+        PanelToCart(p, x2f, x3c, cx, cy, cz);
+        PanelNormals(p, x2f, x3c, n1, n2);
+        const Real bx = -bazi*rc*cy + bux;
+        const Real by =  bazi*rc*cx + buy;
+        b0f.x2f(m,k,j,i) = bx*n1[0] + by*n1[1] + buz*n1[2];
+      }
+      if (i <= ie && j <= je) {
+        PanelToCart(p, x2c, x3f, cx, cy, cz);
+        PanelNormals(p, x2c, x3f, n1, n2);
+        const Real bx = -bazi*rc*cy + bux;
+        const Real by =  bazi*rc*cx + buy;
+        b0f.x3f(m,k,j,i) = bx*n2[0] + by*n2[1] + buz*n2[2];
+      }
+    });
   } else if (is_mhd) {
     const Real b0r = pin->GetOrAddReal("problem", "b0r", 1.0);
     cs_b0r = b0r;
@@ -514,7 +596,26 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // conserved momentum is the COVARIANT one. See Coordinates::GnomonicEquiangleLowerMom.
   pmbp->pcoord->GnomonicEquiangleLowerMom(w0, u0, is, ie, js, je, ks, ke);
   // LowerMom knows nothing about B, so add the magnetic energy it left out.
-  if (is_mhd && (iprob == 8 || iprob == 9)) {
+  if (is_mhd && iprob == 11) {
+    // ANALYTIC too, and it matters: the pressure is in force balance against the ANALYTIC
+    // |B|^2/2, so taking the magnetic energy from the face-averaged bcc instead would
+    // leave the state out of balance by that difference and set the shell ringing.
+    par_for("pgen_cs_emag11", DevExeSpace(), 0,(pmbp->nmb_thispack-1), ks,ke, js,je,
+            is,ie,
+    KOKKOS_LAMBDA(int m, int k, int j, int i) {
+      const Real x2v = CellCenterX(j-js, indcs.nx2, size.d_view(m).x2min,
+                                                    size.d_view(m).x2max);
+      const Real x3v = CellCenterX(k-ks, indcs.nx3, size.d_view(m).x3min,
+                                                    size.d_view(m).x3max);
+      const Real rad = CellCenterX(i-is, indcs.nx1, size.d_view(m).x1min,
+                                                    size.d_view(m).x1max);
+      Real cx, cy, cz;
+      PanelToCart(mbpanel.d_view(m), 0.25*M_PI*x2v, 0.25*M_PI*x3v, cx, cy, cz);
+      const Real px = rad*cx, py = rad*cy;
+      const Real bx = -bazi*py + bux, by = bazi*px + buy;
+      u0(m,IEN,k,j,i) += 0.5*(bx*bx + by*by + buz*buz);
+    });
+  } else if (is_mhd && (iprob == 8 || iprob == 9)) {
     // ANALYTIC, deliberately: |B|^2 = b0c^2 exactly for a uniform Cartesian field. Adding
     // a magnetic energy built from the same bcc that ConsToPrim will subtract would make
     // the pressure check below self-consistent instead of correct, and would pass under
@@ -565,6 +666,17 @@ void CSTestRadialBC(Mesh *pm) {
   const int nscal = is_mhd ? pmbp->pmhd->nscalars : pmbp->phydro->nscalars;
 
   const Real d0 = cs_d0, p0 = cs_p0, omega = cs_omega;
+  const Real bazi = cs_bazi;
+  // iprob = 11 heats at eta*|J|^2 everywhere, so the ghosts must heat with it. Holding
+  // the t = 0 pressure instead leaves the heated interior pushing against a cold
+  // boundary: that leaks energy at a rate proportional to the heat already deposited,
+  // which shows up as a heating deficit growing like t^2 and diluting as 1/L.
+  Real dp_ohm = 0.0;
+  if (cs_iprob == 11 && pmbp->pmhd != nullptr && pmbp->pmhd->presist != nullptr) {
+    const Real gmm1 = pmbp->pmhd->peos->eos_data.gamma - 1.0;
+    dp_ohm = gmm1*(pmbp->pmhd->presist->eta_ohm_const)*SQR(2.0*cs_bazi)*pm->time;
+  }
+  const Real bux = cs_bvx, buy = cs_bvy, buz = cs_bvz;
   const int iprob = cs_iprob;
   const Real amp_ = cs_amp, r0_ = cs_r0;
 
@@ -590,7 +702,15 @@ void CSTestRadialBC(Mesh *pm) {
       const Real rad = CellCenterX(i-is, indcs.nx1, size.d_view(m).x1min,
                                                     size.d_view(m).x1max);
       Real dn, ie_, v1, v2, v3;
-      if (iprob == 7) {
+      if (iprob == 11) {
+        Real cx, cy, cz;
+        PanelToCart(p, xi, eta, cx, cy, cz);
+        const Real px = rad*cx, py = rad*cy;
+        dn = d0;
+        ie_ = (p0 - SQR(bazi)*(px*px + py*py)
+               + 2.0*bazi*(-buy*px + bux*py) + dp_ohm)/gm1;
+        v1 = 0.0; v2 = 0.0; v3 = 0.0;
+      } else if (iprob == 7) {
         dn = 1000.0*p + (j-js) + 0.001*(k-ks);
         ie_ = p0/gm1;
         v1 = 0.0; v2 = 0.0; v3 = 0.0;
@@ -853,6 +973,58 @@ void CSTestRadialBC(Mesh *pm) {
         }
       });
     }
+  }
+
+  // iprob = 11: the exact static field in the radial ghosts. As in the iprob = 8/9 block
+  // the two DOMAIN faces x1f(is) and x1f(ie+1) are left to CT.
+  if (is_mhd && iprob == 11) {
+    auto &b0f = pmbp->pmhd->b0;
+    int &ie_i = indcs.ie;
+    par_for("cs_test_rbc_b11", DevExeSpace(), 0,(pmbp->nmb_thispack-1), 0,(n3-1),
+            0,(n2-1), 0,(ng-1),
+    KOKKOS_LAMBDA(int m, int k, int j, int ig) {
+      const Real x2c = 0.25*M_PI*CellCenterX(j-js, indcs.nx2, size.d_view(m).x2min,
+                                                              size.d_view(m).x2max);
+      const Real x3c = 0.25*M_PI*CellCenterX(k-ks, indcs.nx3, size.d_view(m).x3min,
+                                                              size.d_view(m).x3max);
+      const Real x2f = 0.25*M_PI*LeftEdgeX(j-js, indcs.nx2, size.d_view(m).x2min,
+                                                            size.d_view(m).x2max);
+      const Real x3f = 0.25*M_PI*LeftEdgeX(k-ks, indcs.nx3, size.d_view(m).x3min,
+                                                            size.d_view(m).x3max);
+      const int p = mbpanel.d_view(m);
+      for (int side=0; side<2; ++side) {
+        if (side == 0 &&
+            mb_bcs.d_view(m,BoundaryFace::inner_x1) != BoundaryFlag::user) continue;
+        if (side == 1 &&
+            mb_bcs.d_view(m,BoundaryFace::outer_x1) != BoundaryFlag::user) continue;
+        const int i = (side == 0) ? (is-ng+ig) : (ie_i+1+ig);
+        const Real rc = CellCenterX(i-is, indcs.nx1, size.d_view(m).x1min,
+                                                     size.d_view(m).x1max);
+        const int ir = (side == 0) ? i : (i+1);
+        const Real rf = LeftEdgeX(ir-is, indcs.nx1, size.d_view(m).x1min,
+                                                    size.d_view(m).x1max);
+        Real n1[3], n2[3], cx, cy, cz;
+        PanelToCart(p, x2c, x3c, cx, cy, cz);
+        Real bx = -bazi*rf*cy + bux;
+        Real by =  bazi*rf*cx + buy;
+        b0f.x1f(m,k,j,ir) = bx*cx + by*cy + buz*cz;
+        PanelToCart(p, x2f, x3c, cx, cy, cz);
+        PanelNormals(p, x2f, x3c, n1, n2);
+        bx = -bazi*rc*cy + bux;
+        by =  bazi*rc*cx + buy;
+        b0f.x2f(m,k,j,i) = bx*n1[0] + by*n1[1] + buz*n1[2];
+        PanelToCart(p, x2c, x3f, cx, cy, cz);
+        PanelNormals(p, x2c, x3f, n1, n2);
+        bx = -bazi*rc*cy + bux;
+        by =  bazi*rc*cx + buy;
+        b0f.x3f(m,k,j,i) = bx*n2[0] + by*n2[1] + buz*n2[2];
+        // magnetic energy at the ghost cell centre, analytic
+        PanelToCart(p, x2c, x3c, cx, cy, cz);
+        const Real px = rc*cx, py = rc*cy;
+        const Real bxc = -bazi*py + bux, byc = bazi*px + buy;
+        u0(m,IEN,k,j,i) += 0.5*(bxc*bxc + byc*byc + buz*buz);
+      }
+    });
   }
 
   if (is_mhd && iprob == 1) {
@@ -1219,6 +1391,155 @@ void CSTestConvErrors(ParameterInput *pin, Mesh *pm) {
   std::fprintf(pf, "%d  %d  %d  %.8e  %.8e  %.8e  %.8e  %.8e\n",
                indcs.nx1, indcs.nx2, indcs.nx3, pm->time, l1b, lib, l1v, l1p);
   std::fclose(pf);
+  return;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn CSTestResistCheck
+//! \brief iprob = 11: compare the RESISTIVE EMF the code built with the analytic one.
+//!
+//! The field B = b0c*(-y,x,0) + Bunif has curl B = 2*b0c*zhat EXACTLY and everywhere, so
+//! the resistive EMF eta*J must be eta*2*b0c times the projection of zhat onto each
+//! edge's own unit tangent -- rhat on an x1 edge, e_xi on an x2 edge, e_eta on an x3
+//! edge. That projection is the whole point: the three edge directions are not mutually
+//! orthogonal and two of them are not the face normals the field is stored on, so a
+//! current density that skips the metric fails this check by O(1), not by O(h).
+//! Errors are reported relative to |eta*2*b0c| and should converge at second order.
+
+void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  if (pmbp->pmhd == nullptr || pmbp->pmhd->presist == nullptr) {
+    std::cout << "### CS RESIST CHECK: iprob=11 needs <mhd> with ohmic_resistivity"
+              << std::endl;
+    return;
+  }
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie;
+  const int js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  auto pres = pmbp->pmhd->presist;
+  const Real eta = pres->eta_ohm_const;
+  const Real jz = 2.0*cs_bazi;
+  const Real scale = fabs(eta*jz);
+  if (scale == 0.0) {
+    std::cout << "### CS RESIST CHECK: eta*2*b0c = 0, nothing to compare" << std::endl;
+    return;
+  }
+  auto e1 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pres->efld_resist.x1e);
+  auto e2 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pres->efld_resist.x2e);
+  auto e3 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pres->efld_resist.x3e);
+  auto &size = pmbp->pmb->mb_size;
+  auto &mbpanel = pmbp->pmb->mb_panel;
+
+  Real mx[3] = {0.0, 0.0, 0.0}, l1[3] = {0.0, 0.0, 0.0};
+  std::int64_t nc[3] = {0, 0, 0};
+  // where the worst x1 edge sits, and how the error splits between the panel EDGE ring
+  // (the outermost `nseam` cells of a panel, where the halo supplies the stencil) and
+  // the panel interior
+  int mxloc[4] = {-1, -1, -1, -1};
+  const int nseam = 2;
+  Real l1s = 0.0, l1i = 0.0;
+  std::int64_t ncs = 0, nci = 0;
+  for (int m=0; m<pmbp->nmb_thispack; ++m) {
+    const int p = mbpanel.h_view(m);
+    const Real x2min = size.h_view(m).x2min, x2max = size.h_view(m).x2max;
+    const Real x3min = size.h_view(m).x3min, x3max = size.h_view(m).x3max;
+    for (int k=ks; k<=ke+1; ++k) {
+      const Real ec = 0.25*M_PI*CellCenterX(k-ks, indcs.nx3, x3min, x3max);
+      const Real ef = 0.25*M_PI*LeftEdgeX(k-ks, indcs.nx3, x3min, x3max);
+      for (int j=js; j<=je+1; ++j) {
+        const Real xc = 0.25*M_PI*CellCenterX(j-js, indcs.nx2, x2min, x2max);
+        const Real xf = 0.25*M_PI*LeftEdgeX(j-js, indcs.nx2, x2min, x2max);
+        Real t1[3], t2[3], cx, cy, cz;
+        // x1 edge: (cell centre in r, xi face, eta face); tangent is rhat
+        if (k <= ke+1 && j <= je+1) {
+          PanelToCart(p, xf, ef, cx, cy, cz);
+          const Real ex = eta*jz*cz;
+          const bool seam = (j-js < nseam) || (je+1-j < nseam) ||
+                            (k-ks < nseam) || (ke+1-k < nseam);
+          for (int i=is; i<=ie; ++i) {
+            const Real d = fabs(e1(m,k,j,i) - ex)/scale;
+            if (d > mx[0]) { mxloc[0]=p; mxloc[1]=i; mxloc[2]=j; mxloc[3]=k; }
+            mx[0] = fmax(mx[0], d); l1[0] += d; ++nc[0];
+            if (seam) { l1s += d; ++ncs; } else { l1i += d; ++nci; }
+          }
+        }
+        // x2 edge: (r face, xi centre, eta face); tangent is e_xi there
+        if (k <= ke+1 && j <= je) {
+          cubed_sphere::PanelTangents(p, xc, ef, t1, t2);
+          const Real ex = eta*jz*t1[2];
+          for (int i=is; i<=ie+1; ++i) {
+            const Real d = fabs(e2(m,k,j,i) - ex)/scale;
+            mx[1] = fmax(mx[1], d); l1[1] += d; ++nc[1];
+          }
+        }
+        // x3 edge: (r face, xi face, eta centre); tangent is e_eta there
+        if (k <= ke && j <= je+1) {
+          cubed_sphere::PanelTangents(p, xf, ec, t1, t2);
+          const Real ex = eta*jz*t2[2];
+          for (int i=is; i<=ie+1; ++i) {
+            const Real d = fabs(e3(m,k,j,i) - ex)/scale;
+            mx[2] = fmax(mx[2], d); l1[2] += d; ++nc[2];
+          }
+        }
+      }
+    }
+  }
+  for (int q=0; q<3; ++q) {
+    if (nc[q] > 0) l1[q] /= static_cast<Real>(nc[q]);
+  }
+  std::printf("### CS RESISTIVE EMF CHECK (iprob=11): nx1=%d nx2=%d  eta=%.3e"
+              "  |2*eta*b0c|=%.3e\n", indcs.nx1, indcs.nx2, eta, scale);
+  std::printf("###   relative error vs the analytic eta*J:"
+              "  x1e L1=%.4e max=%.4e | x2e L1=%.4e max=%.4e | x3e L1=%.4e max=%.4e\n",
+              l1[0], mx[0], l1[1], mx[1], l1[2], mx[2]);
+  if (ncs > 0) l1s /= static_cast<Real>(ncs);
+  if (nci > 0) l1i /= static_cast<Real>(nci);
+
+  // ---- Ohmic heating: the only quantitative check on the POYNTING flux ---------------
+  // div(E x B) = B.curl E - E.curl J's parent = -E.J = -eta |J|^2, so this exact
+  // solution is static in B but heats UNIFORMLY at eta*|J|^2. With v = 0 all of it goes
+  // into internal energy, so the volume-averaged pressure must rise by
+  // (gamma-1)*eta*|J|^2*t and by nothing else. A Poynting flux built by crossing two
+  // vectors held in different frames gets this wrong at O(cos_cell).
+  auto &w0 = pmbp->pmhd->w0;
+  auto wh = Kokkos::create_mirror_view_and_copy(HostMemSpace(), w0);
+  auto vol = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->volume);
+  const Real gm1 = pmbp->pmhd->peos->eos_data.gamma - 1.0;
+  Real dpv = 0.0, vtot = 0.0, vmax = 0.0;
+  for (int m=0; m<pmbp->nmb_thispack; ++m) {
+    const int p = mbpanel.h_view(m);
+    for (int k=ks; k<=ke; ++k) {
+      const Real ec = 0.25*M_PI*CellCenterX(k-ks, indcs.nx3, size.h_view(m).x3min,
+                                                             size.h_view(m).x3max);
+      for (int j=js; j<=je; ++j) {
+        const Real xc = 0.25*M_PI*CellCenterX(j-js, indcs.nx2, size.h_view(m).x2min,
+                                                               size.h_view(m).x2max);
+        Real cx, cy, cz;
+        PanelToCart(p, xc, ec, cx, cy, cz);
+        for (int i=is; i<=ie; ++i) {
+          const Real rad = CellCenterX(i-is, indcs.nx1, size.h_view(m).x1min,
+                                                        size.h_view(m).x1max);
+          const Real px = rad*cx, py = rad*cy;
+          const Real p_ini = cs_p0 - SQR(cs_bazi)*(px*px + py*py)
+                             + 2.0*cs_bazi*(-cs_bvy*px + cs_bvx*py);
+          const Real dv = vol(m,k,j,i);
+          dpv += dv*(gm1*wh(m,IEN,k,j,i) - p_ini);
+          vtot += dv;
+          vmax = fmax(vmax, sqrt(SQR(wh(m,IVX,k,j,i)) + SQR(wh(m,IVY,k,j,i))
+                                 + SQR(wh(m,IVZ,k,j,i))));
+        }
+      }
+    }
+  }
+  const Real dp_meas = (vtot > 0.0) ? dpv/vtot : 0.0;
+  const Real dp_exact = gm1*eta*jz*jz*pm->time;
+  std::printf("###   Ohmic heating: <dp> measured %.6e  exact (gam-1)*eta*J^2*t %.6e"
+              "  ratio %.6f   max|v| %.3e\n", dp_meas, dp_exact,
+              (dp_exact != 0.0) ? dp_meas/dp_exact : 0.0, vmax);
+  std::printf("###   x1e worst at panel %d (i,j,k)=(%d,%d,%d);"
+              "  L1 over the %d-cell panel-edge ring = %.4e, panel interior = %.4e\n",
+              mxloc[0], mxloc[1], mxloc[2], mxloc[3], nseam, l1s, l1i);
   return;
 }
 
