@@ -19,6 +19,7 @@ add_executable(
         bvals/bvals_part.cpp
         bvals/bvals_tasks.cpp
         bvals/flux_correct_cc.cpp
+        bvals/flux_seam_cc.cpp
         bvals/flux_correct_fc.cpp
         bvals/prolongation.cpp
         bvals/prolong_prims.cpp

@@ -149,6 +149,32 @@ void MeshBoundaryValuesCC::InitSendIndices(MeshBoundaryBuffer &buf,
   buf.iflxc_ndat = (iflux.bie - iflux.bis + 1)*(iflux.bje - iflux.bjs + 1)*
                    (iflux.bke - iflux.bks + 1);
   }
+
+  // set indices for the SAME-LEVEL flux exchange across a cubed-sphere PANEL SEAM.
+  // A seam face is ONE physical face that both panels hold as an active face of their
+  // own, and each computes its own flux there from interpolated ghosts. Unlike the
+  // coarse/fine correction above there is no restriction: the two panels' faces coincide
+  // one-to-one, so the buffer is a single layer of the full active face, on the fine
+  // mesh. Only x2/x3 faces can be a seam -- x1 is radial and no seam crosses it.
+  {auto &iflxs = buf.iflux_same[0];
+  iflxs.bis = mb_indcs.is;              iflxs.bie = mb_indcs.ie;
+  if (ox2 == 0) {
+    iflxs.bjs = mb_indcs.js;            iflxs.bje = mb_indcs.je;
+  } else if (ox2 > 0) {
+    iflxs.bjs = mb_indcs.je + 1;        iflxs.bje = mb_indcs.je + 1;
+  } else {
+    iflxs.bjs = mb_indcs.js;            iflxs.bje = mb_indcs.js;
+  }
+  if (ox3 == 0) {
+    iflxs.bks = mb_indcs.ks;            iflxs.bke = mb_indcs.ke;
+  } else if (ox3 > 0) {
+    iflxs.bks = mb_indcs.ke + 1;        iflxs.bke = mb_indcs.ke + 1;
+  } else {
+    iflxs.bks = mb_indcs.ks;            iflxs.bke = mb_indcs.ks;
+  }
+  buf.iflxs_ndat = (iflxs.bie - iflxs.bis + 1)*(iflxs.bje - iflxs.bjs + 1)*
+                   (iflxs.bke - iflxs.bks + 1);
+  }
 }
 
 //----------------------------------------------------------------------------------------
@@ -480,5 +506,31 @@ void MeshBoundaryValuesCC::InitRecvIndices(MeshBoundaryBuffer &buf,
   }
   buf.iflxc_ndat = (iflux.bie - iflux.bis + 1)*(iflux.bje - iflux.bjs + 1)*
                    (iflux.bke - iflux.bks + 1);
+  }
+
+  // set indices for the SAME-LEVEL flux exchange across a cubed-sphere PANEL SEAM.
+  // A seam face is ONE physical face that both panels hold as an active face of their
+  // own, and each computes its own flux there from interpolated ghosts. Unlike the
+  // coarse/fine correction above there is no restriction: the two panels' faces coincide
+  // one-to-one, so the buffer is a single layer of the full active face, on the fine
+  // mesh. Only x2/x3 faces can be a seam -- x1 is radial and no seam crosses it.
+  {auto &iflxs = buf.iflux_same[0];
+  iflxs.bis = mb_indcs.is;              iflxs.bie = mb_indcs.ie;
+  if (ox2 == 0) {
+    iflxs.bjs = mb_indcs.js;            iflxs.bje = mb_indcs.je;
+  } else if (ox2 > 0) {
+    iflxs.bjs = mb_indcs.je + 1;        iflxs.bje = mb_indcs.je + 1;
+  } else {
+    iflxs.bjs = mb_indcs.js;            iflxs.bje = mb_indcs.js;
+  }
+  if (ox3 == 0) {
+    iflxs.bks = mb_indcs.ks;            iflxs.bke = mb_indcs.ke;
+  } else if (ox3 > 0) {
+    iflxs.bks = mb_indcs.ke + 1;        iflxs.bke = mb_indcs.ke + 1;
+  } else {
+    iflxs.bks = mb_indcs.ks;            iflxs.bke = mb_indcs.ks;
+  }
+  buf.iflxs_ndat = (iflxs.bie - iflxs.bis + 1)*(iflxs.bje - iflxs.bjs + 1)*
+                   (iflxs.bke - iflxs.bks + 1);
   }
 }

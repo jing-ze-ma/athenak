@@ -94,6 +94,10 @@ TaskStatus Hydro::InitRecv(Driver *pdrive, int stage) {
   if (pmy_pack->pmesh->multilevel && (stage >= 0)) {
     tstat = pbval_u->InitFluxRecv(nhydro+nscalars);
   }
+  // see the note in SendFlux
+  if (pmy_pack->pmesh->use_cubed_sphere && (stage >= 0)) {
+    tstat = pbval_u->InitFluxSeamRecv(nhydro+nscalars);
+  }
   if (tstat != TaskStatus::complete) return tstat;
 
   // with orbital advection post receives for U
@@ -226,6 +230,14 @@ TaskStatus Hydro::SendFlux(Driver *pdrive, int stage) {
   if (pmy_pack->pmesh->multilevel) {
     tstat = pbval_u->PackAndSendFluxCC(uflx);
   }
+  // On the cubed sphere, reconcile the flux through a PANEL SEAM instead. A seam face is
+  // one physical face held by two panels, each computing its own flux there from
+  // interpolated ghosts; without this the update does not telescope across a seam and
+  // mass and energy drift secularly. Mutually exclusive with the above: refinement and
+  // the cubed sphere cannot both be on.
+  if (pmy_pack->pmesh->use_cubed_sphere) {
+    tstat = pbval_u->PackAndSendFluxSeamCC(uflx);
+  }
   return tstat;
 }
 
@@ -239,6 +251,10 @@ TaskStatus Hydro::RecvFlux(Driver *pdrive, int stage) {
   // Only execute BoundaryValues function with SMR/SMR
   if (pmy_pack->pmesh->multilevel) {
     tstat = pbval_u->RecvAndUnpackFluxCC(uflx);
+  }
+  // see the note in SendFlux
+  if (pmy_pack->pmesh->use_cubed_sphere) {
+    tstat = pbval_u->RecvAndUnpackFluxSeamCC(uflx);
   }
   return tstat;
 }

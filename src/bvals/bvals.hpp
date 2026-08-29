@@ -207,6 +207,10 @@ class MeshBoundaryValuesCC : public MeshBoundaryValues {
   // functions to communicate fluxes of CC data
   TaskStatus PackAndSendFluxCC(DvceFaceFld5D<Real> &flx);
   TaskStatus RecvAndUnpackFluxCC(DvceFaceFld5D<Real> &flx);
+  // functions to make the flux through a cubed-sphere PANEL SEAM single-valued
+  TaskStatus InitFluxSeamRecv(const int nvar);
+  TaskStatus PackAndSendFluxSeamCC(DvceFaceFld5D<Real> &flx);
+  TaskStatus RecvAndUnpackFluxSeamCC(DvceFaceFld5D<Real> &flx);
 
   // functions to prolongate conserved and primitive CC variables
   void FillCoarseInBndryCC(DvceArray5D<Real> &a, DvceArray5D<Real> &ca,

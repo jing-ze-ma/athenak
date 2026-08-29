@@ -119,6 +119,11 @@ TaskStatus MHD::InitRecv(Driver *pdrive, int stage) {
       tstat = pbval_u->InitFluxRecv(nmhd+nscalars);
       if (tstat != TaskStatus::complete) return tstat;
     }
+    // see the note in SendFlux
+    if (pmy_pack->pmesh->use_cubed_sphere) {
+      tstat = pbval_u->InitFluxSeamRecv(nmhd+nscalars);
+      if (tstat != TaskStatus::complete) return tstat;
+    }
     // post receives for fluxes of B, which are used even with uniform grids
     tstat = pbval_b->InitFluxRecv(3);
     if (tstat != TaskStatus::complete) return tstat;
@@ -238,6 +243,15 @@ TaskStatus MHD::SendFlux(Driver *pdrive, int stage) {
   if (pmy_pack->pmesh->multilevel)  {
     tstat = pbval_u->PackAndSendFluxCC(uflx);
   }
+  // On the cubed sphere, reconcile the flux through a PANEL SEAM instead. A seam face is
+  // one physical face held by two panels, each computing its own flux there from
+  // interpolated ghosts; without this the update does not telescope across a seam and
+  // mass and energy drift secularly. This is the cell-centred counterpart of the seam
+  // EMF exchange that already makes the field single-valued. Mutually exclusive with the
+  // above: refinement and the cubed sphere cannot both be on.
+  if (pmy_pack->pmesh->use_cubed_sphere) {
+    tstat = pbval_u->PackAndSendFluxSeamCC(uflx);
+  }
   return tstat;
 }
 
@@ -251,6 +265,10 @@ TaskStatus MHD::RecvFlux(Driver *pdrive, int stage) {
   // Only execute BoundaryValues function with SMR/SMR
   if (pmy_pack->pmesh->multilevel) {
     tstat = pbval_u->RecvAndUnpackFluxCC(uflx);
+  }
+  // see the note in SendFlux
+  if (pmy_pack->pmesh->use_cubed_sphere) {
+    tstat = pbval_u->RecvAndUnpackFluxSeamCC(uflx);
   }
   return tstat;
 }
