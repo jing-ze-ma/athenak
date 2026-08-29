@@ -43,10 +43,14 @@
 //! `CS SEAM FLUX MISMATCH` gate in `pgen/cs_test.cpp`, which pairs faces by physical
 //! position and reports a max area mismatch at round-off.)
 //!
-//! It is safe to reuse the `flux` buffers, `comm_flux` and `flux_req` here: mesh
-//! refinement and the cubed sphere are mutually exclusive (a startup FATAL in
-//! `mesh.cpp`), so the fine/coarse path in `flux_correct_cc.cpp` can never be live at the
-//! same time as this one.
+//! It is safe to share the `flux` buffers, `comm_flux` and `flux_req` with the
+//! fine/coarse path in `flux_correct_cc.cpp`, which CAN now be live at the same time
+//! (hydro static refinement is supported on the cubed sphere). The two never touch the
+//! same slot: a given (MeshBlock, neighbour) is either a cross-panel SAME-LEVEL seam,
+//! handled here, or a level boundary, handled there -- and one that lies on a seam is
+//! refused at startup by CheckCubedSphereRefinement. The buffers are sized for the
+//! larger of the two, and the requests are indexed by the same (m, n), so the neighbour
+//! sets keep the requests disjoint too.
 
 #include <cstdlib>
 #include <iostream>

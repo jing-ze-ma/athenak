@@ -293,10 +293,23 @@ Mesh::Mesh(ParameterInput *pin) :
   // fatal here until someone does the same work for them.
   if (use_cubed_sphere) {
     std::string missing;
-    if (multilevel) {
-      missing = "mesh refinement (mesh_refinement/refinement): prolongation and "
-                "restriction have no cubed-sphere path, and across a seam they would "
-                "need the tangent-basis transform the halo applies";
+    // Refinement is supported for HYDRO with level boundaries that do not touch a panel
+    // seam; see the note in BuildTreeFromScratch, which checks the seam condition once
+    // the tree exists. What is still missing is the FACE-CENTRED half -- RestrictFC and
+    // the Toth & Roe divergence-preserving prolongation are derived for a uniform
+    // Cartesian mesh, and on a gnomonic grid the constraint is sum(area*B), not sum(B),
+    // so they would keep div B only to truncation error -- and prolongation across a
+    // seam, which would need the tangent-basis transform and along-seam resample the
+    // halo applies.
+    if (multilevel && pin->DoesBlockExist("mhd")) {
+      missing = "mesh refinement together with <mhd>: RestrictFC and the "
+                "divergence-preserving FC prolongation are derived for a uniform "
+                "Cartesian mesh and would not keep div B on a gnomonic grid. Hydro "
+                "refinement is supported";
+    } else if (adaptive) {
+      missing = "ADAPTIVE mesh refinement (mesh_refinement = adaptive): refinement "
+                "flags are walked through a single MeshBlockTree and a cubed sphere has "
+                "one tree per panel. Static refinement is supported";
     // NB: GetOrAdd would CREATE <hydro>, and AddPhysics constructs a module for every
     // block that exists -- so only ever ask whether the parameter is already there.
     } else if ((pin->DoesParameterExist("hydro", "fofc") &&

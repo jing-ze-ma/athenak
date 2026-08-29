@@ -1157,6 +1157,13 @@ void MeshRefinement::RestrictCC(DvceArray5D<Real> &u, DvceArray5D<Real> &cu,
   auto& restrict_2nd = weights.restrict_2nd;
   auto& restrict_4th = weights.restrict_4th;
   auto& restrict_4th_edge = weights.restrict_4th_edge;
+  // On a curvilinear grid the eight fine cells do NOT have equal volumes, so the plain
+  // 1/8 average below is not the mean of the conserved quantity over the coarse cell.
+  // Weight by volume instead, normalising by the SUM of the eight fine volumes rather
+  // than by a coarse volume: the sum is what the fine cells actually hold, and it needs
+  // no coarse-mesh geometry, which Coordinates does not compute.
+  const bool curvi_ = (pmy_mesh->use_cubed_sphere || pmy_mesh->use_spherical_polar);
+  auto vol_ = pmy_mesh->pmb_pack->pcoord->volume;
   // restrict in 1D
   if (pmy_mesh->one_d) {
     par_for("restrictCC-1D",DevExeSpace(), 0,nmb-1, 0,nvar-1, cis,cie,
@@ -1182,11 +1189,25 @@ void MeshRefinement::RestrictCC(DvceArray5D<Real> &u, DvceArray5D<Real> &cu,
       int finej = 2*j - cjs;  // correct when cjs=js
       int finek = 2*k - cks;  // correct when cks=ks
       if (!is_z4c) {
+        if (curvi_) {
+          Real sv = 0.0, su = 0.0;
+          for (int dk=0; dk<2; ++dk) {
+            for (int dj=0; dj<2; ++dj) {
+              for (int di=0; di<2; ++di) {
+                const Real vv = vol_(m,finek+dk,finej+dj,finei+di);
+                sv += vv;
+                su += vv*u(m,n,finek+dk,finej+dj,finei+di);
+              }
+            }
+          }
+          cu(m,n,k,j,i) = su/sv;
+        } else {
         cu(m,n,k,j,i) =
             0.125*(u(m,n,finek  ,finej  ,finei) + u(m,n,finek  ,finej  ,finei+1)
                 + u(m,n,finek  ,finej+1,finei) + u(m,n,finek  ,finej+1,finei+1)
                 + u(m,n,finek+1,finej,  finei) + u(m,n,finek+1,finej,  finei+1)
                 + u(m,n,finek+1,finej+1,finei) + u(m,n,finek+1,finej+1,finei+1));
+        }
       } else {
         switch (indcs.ng) {
           case 2: cu(m,n,k,j,i) = RestrictInterpolation<2>(m,n,finek,finej,finei,

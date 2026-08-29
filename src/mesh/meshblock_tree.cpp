@@ -601,9 +601,21 @@ MeshBlockTree* MeshBlockTree::FindNeighborCrossPanel(LogicalLocation lloc, int o
     // 3. Transform logical location to neighbor panel
     LogicalLocation lloc_other = TransformToPanel(lloc, pn.nb_panel, pn.nb_face, pn.rev_ax, pn.swap_ax);
     
-    // 4. Get block tree in neighbor panel
-    MeshBlockTree* nr = mesh->panel_trees[pn.nb_panel]->FindNeighbor(lloc_other, 0, 0, 0, amrflag);
-    
+    // 4. Get block tree in neighbor panel.
+    //    DESCEND to the transformed location rather than asking FindNeighbor for a
+    //    zero offset: called on the neighbour panel's ROOT, FindNeighbor stops at the
+    //    root node, so on a refined mesh it hands back a coarse ancestor and a seam
+    //    between two blocks that are both refined looks like a level boundary.
+    //    FindMeshBlock walks down to lloc_other.level: it returns the node AT that level
+    //    when the neighbour is at the same level (whose pleaf_ is non-null if the
+    //    neighbour is finer, which the caller already handles), and nullptr when the
+    //    neighbour panel is COARSER there. That last case is a level boundary lying on a
+    //    seam, which is unsupported; fall back so that CheckCubedSphereRefinement sees a
+    //    neighbour and can refuse it with a clear message rather than a null.
+    MeshBlockTree* nr = mesh->panel_trees[pn.nb_panel]->FindMeshBlock(lloc_other);
+    if (nr == nullptr) {
+      nr = mesh->panel_trees[pn.nb_panel]->FindNeighbor(lloc_other, 0, 0, 0, amrflag);
+    }
     return nr;
 }
 

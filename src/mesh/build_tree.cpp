@@ -24,6 +24,57 @@
 #endif
 
 //----------------------------------------------------------------------------------------
+//! \fn CheckCubedSphereRefinement
+//! \brief Refuse a refined cubed-sphere mesh whose level boundaries touch a panel seam.
+//!
+//! Refinement is supported on the cubed sphere only where the coarse/fine interfaces are
+//! RADIAL. A level boundary that lies on a seam would have to prolongate and restrict
+//! ACROSS the seam, and the halo there is not a copy: it applies a tangent-basis
+//! transform and an along-seam resample (see bvals_cc.cpp). Neither operator does, so
+//! the ghost data would be wrong by O(1) in the velocity and the run would look
+//! plausible while being inconsistent. Checked here rather than from the input file
+//! because it is a property of the built tree, and refuses rather than produces a
+//! quietly wrong grid.
+
+void CheckCubedSphereRefinement(MeshBlockPack *pmbp) {
+  auto &nghbr = pmbp->pmb->nghbr;
+  auto &mblev = pmbp->pmb->mb_lev;
+  auto &mbpanel = pmbp->pmb->mb_panel;
+  nghbr.template sync<HostMemSpace>();
+  mblev.template sync<HostMemSpace>();
+  mbpanel.template sync<HostMemSpace>();
+  for (int m=0; m<pmbp->nmb_thispack; ++m) {
+    for (int n=0; n<pmbp->pmb->nnghbr; ++n) {
+      if (nghbr.h_view(m,n).gid < 0) continue;
+      if (nghbr.h_view(m,n).panel == mbpanel.h_view(m)) continue;
+      // FACE buffers only. x1 faces (n < 8) are radial and never cross a seam; the x2
+      // and x3 face buffers are 8-15 and 24-31. An EDGE or CORNER neighbour can be both
+      // across a seam and across a level boundary even when every level boundary is
+      // radial -- the block at the outer edge of a refined shell meets, diagonally, the
+      // coarse block of the next panel -- and refusing those would rule out radial
+      // refinement altogether. Those ng x ng buffers are plain copies that a
+      // dimensionally split PLM + HLLC sweep never reconstructs through, which is the
+      // same ground on which the halo already leaves them untransformed
+      // (see the note in bvals_cc.cpp). A higher-order reconstruction would need them.
+      const bool is_face = ((n >= 8 && n < 16) || (n >= 24 && n < 32));
+      if (!is_face) continue;
+      if (nghbr.h_view(m,n).lev != mblev.h_view(m)) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+          << std::endl << "mesh/use_cubed_sphere supports refinement only where the "
+          << "coarse/fine interfaces are RADIAL, but MeshBlock gid="
+          << pmbp->pmb->mb_gid.h_view(m) << " on panel " << mbpanel.h_view(m)
+          << " (level " << mblev.h_view(m) << ") meets a block on panel "
+          << nghbr.h_view(m,n).panel << " at level " << nghbr.h_view(m,n).lev
+          << " across a SEAM. Prolongation and restriction have no seam path."
+          << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }
+  }
+  return;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void Mesh::BuildTreeFromScratch():
 //! Constructs MeshBlockTree, creates MeshBlockPack (containing the physics modules), and
 //! divides grid into MeshBlock(s) for new runs (starting from scratch), using parameters
@@ -316,6 +367,7 @@ void Mesh::BuildTreeFromScratch(ParameterInput *pin) {
   pmb_pack->AddMeshBlocks(pin);
 //  pmb_pack->pmb->SetNeighbors(ptree, rank_eachmb);
   pmb_pack->pmb->SetNeighbors(rank_eachmb);
+  if (use_cubed_sphere && multilevel) {CheckCubedSphereRefinement(pmb_pack);}
 
   // Fix maximum number of MeshBlocks per rank with AMR
   nmb_maxperrank = nmb_thisrank;
@@ -552,6 +604,7 @@ void Mesh::BuildTreeFromRestart(ParameterInput *pin, IOWrapper &resfile,
   pmb_pack->AddMeshBlocks(pin);
 //  pmb_pack->pmb->SetNeighbors(ptree, rank_eachmb);
   pmb_pack->pmb->SetNeighbors(rank_eachmb);
+  if (use_cubed_sphere && multilevel) {CheckCubedSphereRefinement(pmb_pack);}
 
   // Fix maximum number of MeshBlocks per rank with AMR
   nmb_maxperrank = nmb_thisrank;

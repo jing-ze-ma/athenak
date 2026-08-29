@@ -1,0 +1,97 @@
+# Cubed sphere, STATIC MESH REFINEMENT.  Build with -D PROBLEM=cs_test.
+#
+# Refinement is supported on the cubed sphere for HYDRO, and only where the coarse/fine
+# interfaces are RADIAL: a level boundary lying on a panel seam would have to prolongate
+# and restrict ACROSS the seam, where the halo is not a copy but applies a tangent-basis
+# transform and an along-seam resample.  Startup refuses anything else -- <mhd> with
+# refinement, adaptive refinement, and a level boundary on a seam each fatal with their
+# own message.  The <refined_region> below spans the full tangential extent of every
+# panel and half the radial range, so every interface it creates is a sphere.
+#
+# WHAT MAKES IT CONSERVATIVE.  On a curvilinear grid the four fine faces covering one
+# coarse face do not have equal areas, and the eight fine cells do not have equal
+# volumes, so the plain averages the Cartesian path uses are wrong here.  The flux
+# correction sends the AREA-WEIGHTED sum and the coarse side divides by its own face
+# area; restriction is VOLUME-weighted.  Measured with reflecting radial boundaries,
+# which pass exactly zero physical flux, at t = 0.25:
+#
+#     relative mass drift    -9.6e-14      (without the weighting: 9.1e-09)
+#     relative energy drift   1.0e-13      (without the weighting: 1.5e-08)
+#
+# i.e. conservation is at round-off, five orders of magnitude better than the unweighted
+# operators.  Angular momentum is NOT exact and cannot be -- the gnomonic momentum
+# equations carry geometric source terms, so Lz is not a telescoping invariant.
+#
+# AXES: x1 is RADIAL; x2 = xi and x3 = eta are the panel-tangential angles.
+#
+<comment>
+problem = cubed sphere rigid rotation
+
+<job>
+basename = cs_rigidrot
+
+<mesh>
+nghost   = 2
+nx1      = 8            # RADIAL direction
+x1min    = 1.0
+x1max    = 2.0
+ix1_bc   = user
+ox1_bc   = user
+
+nx2      = 16           # xi;  nx2 must equal nx3 (Mesh checks this)
+x2min    = -1.0
+x2max    = 1.0
+ix2_bc   = panel
+ox2_bc   = panel
+
+nx3      = 16           # eta
+x3min    = -1.0
+x3max    = 1.0
+ix3_bc   = panel
+ox3_bc   = panel
+
+use_cubed_sphere = true
+
+<mesh_refinement>
+refinement = static
+num_levels = 2
+
+<refined_region1>
+level = 1
+x1min = 1.0
+x1max = 1.5
+x2min = -1.0
+x2max =  1.0
+x3min = -1.0
+x3max =  1.0
+
+<meshblock>
+nx1      = 8
+nx2      = 16
+nx3      = 16
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim       = 1000000
+tlim       = 0.25
+ndiag      = 10
+
+<hydro>
+eos         = ideal
+reconstruct = plm
+rsolver     = hllc
+gamma       = 1.666667
+
+<problem>
+iprob = 3
+d0    = 1.0
+p0    = 1.0
+omega = 0.2
+user_bcs = true
+
+<output1>
+file_type = hst
+dt        = 0.05
+data_format = %26.17e

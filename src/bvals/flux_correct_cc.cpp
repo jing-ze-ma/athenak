@@ -44,6 +44,19 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendFluxCC(DvceFaceFld5D<Real> &flx) {
   auto &rbuf = recvbuf;
   auto &one_d = pmy_pack->pmesh->one_d;
   auto &two_d = pmy_pack->pmesh->two_d;
+  // On a curvilinear grid the four fine faces that cover one coarse face do NOT have
+  // equal areas, and the coarse cell's update multiplies by ITS OWN area. So send the
+  // AREA-WEIGHTED SUM sum(A_f F_f) here and divide by the coarse face's own area on
+  // unpack: the coarse cell then removes exactly what the four fine cells removed, and
+  // conservation across the level boundary is exact WITHOUT requiring the coarse area to
+  // equal the sum of the fine ones (it does not -- the gnomonic solid angle is not
+  // additive under tangential refinement). The plain averages below assume equal areas
+  // and are kept for Cartesian.
+  const bool curvi_ = (pmy_pack->pmesh->use_cubed_sphere ||
+                       pmy_pack->pmesh->use_spherical_polar);
+  auto area1_ = pmy_pack->pcoord->area.x1f;
+  auto area2_ = pmy_pack->pcoord->area.x2f;
+  auto area3_ = pmy_pack->pcoord->area.x3f;
 
   // Outer loop over (# of MeshBlocks)*(# of neighbors)*(# of variables)
   Kokkos::TeamPolicy<> policy(DevExeSpace(), (nmb*nnghbr*nvar), Kokkos::AUTO);
@@ -87,10 +100,22 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendFluxCC(DvceFaceFld5D<Real> &flx) {
           if (one_d) {
             rflx = flx.x1f(m,v,0,0,fi);
           } else if (two_d) {
+            if (curvi_) {
+              rflx = flx.x1f(m,v,0,fj  ,fi)*area1_(m,0,fj  ,fi)
+                   + flx.x1f(m,v,0,fj+1,fi)*area1_(m,0,fj+1,fi);
+            } else {
             rflx = 0.5*(flx.x1f(m,v,0,fj,fi) + flx.x1f(m,v,0,fj+1,fi));
+            }
           } else {
+            if (curvi_) {
+              rflx = flx.x1f(m,v,fk  ,fj  ,fi)*area1_(m,fk  ,fj  ,fi)
+                   + flx.x1f(m,v,fk  ,fj+1,fi)*area1_(m,fk  ,fj+1,fi)
+                   + flx.x1f(m,v,fk+1,fj  ,fi)*area1_(m,fk+1,fj  ,fi)
+                   + flx.x1f(m,v,fk+1,fj+1,fi)*area1_(m,fk+1,fj+1,fi);
+            } else {
             rflx = 0.25*(flx.x1f(m,v,fk  ,fj,fi) + flx.x1f(m,v,fk  ,fj+1,fi) +
                          flx.x1f(m,v,fk+1,fj,fi) + flx.x1f(m,v,fk+1,fj+1,fi));
+            }
           }
           // copy directly into recv buffer if MeshBlocks on same rank
           if (nghbr.d_view(m,n).rank == my_rank) {
@@ -113,10 +138,22 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendFluxCC(DvceFaceFld5D<Real> &flx) {
           int fk = 2*k - cks;
           Real rflx;
           if (two_d) {
+            if (curvi_) {
+              rflx = flx.x2f(m,v,0,fj,fi  )*area2_(m,0,fj,fi  )
+                   + flx.x2f(m,v,0,fj,fi+1)*area2_(m,0,fj,fi+1);
+            } else {
             rflx = 0.5*(flx.x2f(m,v,0,fj,fi) + flx.x2f(m,v,0,fj,fi+1));
+            }
           } else {
+            if (curvi_) {
+              rflx = flx.x2f(m,v,fk  ,fj,fi  )*area2_(m,fk  ,fj,fi  )
+                   + flx.x2f(m,v,fk  ,fj,fi+1)*area2_(m,fk  ,fj,fi+1)
+                   + flx.x2f(m,v,fk+1,fj,fi  )*area2_(m,fk+1,fj,fi  )
+                   + flx.x2f(m,v,fk+1,fj,fi+1)*area2_(m,fk+1,fj,fi+1);
+            } else {
             rflx = 0.25*(flx.x2f(m,v,fk  ,fj,fi) + flx.x2f(m,v,fk  ,fj,fi+1) +
                          flx.x2f(m,v,fk+1,fj,fi) + flx.x2f(m,v,fk+1,fj,fi+1));
+            }
           }
           // copy directly into recv buffer if MeshBlocks on same rank
           if (nghbr.d_view(m,n).rank == my_rank) {
@@ -137,8 +174,16 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendFluxCC(DvceFaceFld5D<Real> &flx) {
           j += jl;
           int fi = 2*i - cis;
           int fj = 2*j - cjs;
-          Real rflx = 0.25*(flx.x3f(m,v,fk,fj  ,fi) + flx.x3f(m,v,fk,fj  ,fi+1) +
-                            flx.x3f(m,v,fk,fj+1,fi) + flx.x3f(m,v,fk,fj+1,fi+1));
+          Real rflx;
+          if (curvi_) {
+            rflx = flx.x3f(m,v,fk,fj  ,fi  )*area3_(m,fk,fj  ,fi  )
+                 + flx.x3f(m,v,fk,fj  ,fi+1)*area3_(m,fk,fj  ,fi+1)
+                 + flx.x3f(m,v,fk,fj+1,fi  )*area3_(m,fk,fj+1,fi  )
+                 + flx.x3f(m,v,fk,fj+1,fi+1)*area3_(m,fk,fj+1,fi+1);
+          } else {
+            rflx = 0.25*(flx.x3f(m,v,fk,fj  ,fi) + flx.x3f(m,v,fk,fj  ,fi+1) +
+                         flx.x3f(m,v,fk,fj+1,fi) + flx.x3f(m,v,fk,fj+1,fi+1));
+          }
           // copy directly into recv buffer if MeshBlocks on same rank
           if (nghbr.d_view(m,n).rank == my_rank) {
             rbuf[dn].flux(dm, (i-il + ni*(j-jl + nj*v)) ) = rflx;
@@ -240,6 +285,14 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackFluxCC(DvceFaceFld5D<Real> &flx) {
 
   int nvar = flx.x1f.extent_int(1); // TODO(@user): 2nd idx from L of in arr must be NVAR
 
+  // see the note in PackAndSendFluxCC: the buffer carries sum(A_f F_f), so divide by THIS
+  // block's own face area to turn it back into the flux density the update multiplies by.
+  const bool curvi_ = (pmy_pack->pmesh->use_cubed_sphere ||
+                       pmy_pack->pmesh->use_spherical_polar);
+  auto area1_ = pmy_pack->pcoord->area.x1f;
+  auto area2_ = pmy_pack->pcoord->area.x2f;
+  auto area3_ = pmy_pack->pcoord->area.x3f;
+
   // Outer loop over (# of MeshBlocks)*(# of neighbors)*(# of variables)
   Kokkos::TeamPolicy<> policy(DevExeSpace(), (nmb*nnghbr*nvar), Kokkos::AUTO);
   Kokkos::parallel_for("RecvBuff", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
@@ -269,7 +322,8 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackFluxCC(DvceFaceFld5D<Real> &flx) {
           int k = idx / nj;
           int j = (idx - k * nj) + jl;
           k += kl;
-          flx.x1f(m,v,k,j,il) = rbuf[n].flux(m,(j-jl + nj*(k-kl + nk*v)));
+          const Real rf = rbuf[n].flux(m,(j-jl + nj*(k-kl + nk*v)));
+          flx.x1f(m,v,k,j,il) = curvi_ ? rf/area1_(m,k,j,il) : rf;
         });
       // x2faces
       } else if (n<16) {
@@ -277,7 +331,8 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackFluxCC(DvceFaceFld5D<Real> &flx) {
           int k = idx / ni;
           int i = (idx - k * ni) + il;
           k += kl;
-          flx.x2f(m,v,k,jl,i) = rbuf[n].flux(m,(i-il + ni*(k-kl + nk*v)));
+          const Real rf = rbuf[n].flux(m,(i-il + ni*(k-kl + nk*v)));
+          flx.x2f(m,v,k,jl,i) = curvi_ ? rf/area2_(m,k,jl,i) : rf;
         });
       // x3faces
       } else if ((n>=24) && (n<32)) {
@@ -285,7 +340,8 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackFluxCC(DvceFaceFld5D<Real> &flx) {
           int j = idx / ni;
           int i = (idx - j * ni) + il;
           j += jl;
-          flx.x3f(m,v,kl,j,i) = rbuf[n].flux(m,(i-il + ni*(j-jl + nj*v)));
+          const Real rf = rbuf[n].flux(m,(i-il + ni*(j-jl + nj*v)));
+          flx.x3f(m,v,kl,j,i) = curvi_ ? rf/area3_(m,kl,j,i) : rf;
         });
       }
     }  // end if-neighbor-exists block
