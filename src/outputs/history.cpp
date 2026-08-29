@@ -21,6 +21,7 @@
 #include "hydro/hydro.hpp"
 #include "mhd/mhd.hpp"
 #include "z4c/z4c.hpp"
+#include "coordinates/coordinates.hpp"
 #include "coordinates/adm.hpp"
 #include "outputs.hpp"
 
@@ -100,6 +101,14 @@ void HistoryOutput::LoadHydroHistoryData(HistoryData *pdata, Mesh *pm) {
   auto &u0_ = pm->pmb_pack->phydro->u0;
   auto &size = pm->pmb_pack->pmb->mb_size;
   int &nhist_ = pdata->nhist;
+  // On a curvilinear grid dx1*dx2*dx3 is the COORDINATE volume, not the cell volume, so
+  // weighting by it makes "mass" something other than sum(rho dV) -- a sum the update
+  // does not conserve, which makes the history useless for exactly the drift it is most
+  // often read for. Weight by the same volume the update divides by. (The momentum
+  // columns are still components on the LOCAL basis there, which points a different way
+  // in every cell, so summing them is meaningful only on a Cartesian grid.)
+  const bool curvi_ = (pm->use_cubed_sphere || pm->use_spherical_polar);
+  auto &vol_ = pm->pmb_pack->pcoord->volume;
 
   // loop over all MeshBlocks in this pack
   auto &indcs = pm->pmb_pack->pmesh->mb_indcs;
@@ -120,7 +129,8 @@ void HistoryOutput::LoadHydroHistoryData(HistoryData *pdata, Mesh *pm) {
     k += ks;
     j += js;
 
-    Real vol = size.d_view(m).dx1*size.d_view(m).dx2*size.d_view(m).dx3;
+    Real vol = curvi_ ? vol_(m,k,j,i)
+                      : size.d_view(m).dx1*size.d_view(m).dx2*size.d_view(m).dx3;
 
     // Hydro conserved variables:
     array_sum::GlobalSum hvars;
@@ -286,6 +296,9 @@ void HistoryOutput::LoadMHDHistoryData(HistoryData *pdata, Mesh *pm) {
   auto &bx3f = pm->pmb_pack->pmhd->b0.x3f;
   auto &size = pm->pmb_pack->pmb->mb_size;
   int &nhist_ = pdata->nhist;
+  // see the note in LoadHydroHistoryData
+  const bool curvi_ = (pm->use_cubed_sphere || pm->use_spherical_polar);
+  auto &vol_ = pm->pmb_pack->pcoord->volume;
 
   // loop over all MeshBlocks in this pack
   auto &indcs = pm->pmb_pack->pmesh->mb_indcs;
@@ -306,7 +319,8 @@ void HistoryOutput::LoadMHDHistoryData(HistoryData *pdata, Mesh *pm) {
     k += ks;
     j += js;
 
-    Real vol = size.d_view(m).dx1*size.d_view(m).dx2*size.d_view(m).dx3;
+    Real vol = curvi_ ? vol_(m,k,j,i)
+                      : size.d_view(m).dx1*size.d_view(m).dx2*size.d_view(m).dx3;
 
     // MHD conserved variables:
     array_sum::GlobalSum hvars;
