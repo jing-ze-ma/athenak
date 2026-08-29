@@ -1532,6 +1532,40 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
       }
     }
   }
+  // ---- div B: the gate on the SEAM ---------------------------------------------------
+  // CT conserves sum(area*B) per cell EXACTLY, whatever the EMF is, PROVIDED each edge
+  // carries ONE value shared by every cell and every panel touching it. The resistive EMF
+  // is added inside MHD::EField, i.e. before SendE, so it should ride the same seam
+  // exchange the ideal EMF does -- and if it did not, div B would grow at the seams and
+  // nowhere else. This is the one thing the analytic-EMF check above cannot see.
+  auto b1h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pmhd->b0.x1f);
+  auto b2h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pmhd->b0.x2f);
+  auto b3h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pmhd->b0.x3f);
+  auto a1h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->area.x1f);
+  auto a2h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->area.x2f);
+  auto a3h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->area.x3f);
+  Real dvb_seam = 0.0, dvb_int = 0.0;
+  const int nsm = 2;
+  for (int m=0; m<pmbp->nmb_thispack; ++m) {
+    for (int k=ks; k<=ke; ++k) {
+      for (int j=js; j<=je; ++j) {
+        const bool seam = (j-js < nsm) || (je-j < nsm) || (k-ks < nsm) || (ke-k < nsm);
+        for (int i=is; i<=ie; ++i) {
+          const Real fl = b1h(m,k,j,i+1)*a1h(m,k,j,i+1) - b1h(m,k,j,i)*a1h(m,k,j,i)
+                        + b2h(m,k,j+1,i)*a2h(m,k,j+1,i) - b2h(m,k,j,i)*a2h(m,k,j,i)
+                        + b3h(m,k+1,j,i)*a3h(m,k+1,j,i) - b3h(m,k,j,i)*a3h(m,k,j,i);
+          const Real amx = fmax(a1h(m,k,j,i+1), fmax(a2h(m,k,j+1,i), a3h(m,k+1,j,i)));
+          const Real bmg = sqrt(SQR(wh(m,IDN,k,j,i))*0.0 + 1.0e-300)
+                         + fabs(cs_bazi) + sqrt(SQR(cs_bvx)+SQR(cs_bvy)+SQR(cs_bvz));
+          const Real d = fabs(fl)/(bmg*amx);
+          if (seam) { dvb_seam = fmax(dvb_seam, d); } else { dvb_int = fmax(dvb_int, d); }
+        }
+      }
+    }
+  }
+  std::printf("###   max |sum A.B| / (|B| max A):  seam %.3e   interior %.3e\n",
+              dvb_seam, dvb_int);
+
   const Real dp_meas = (vtot > 0.0) ? dpv/vtot : 0.0;
   const Real dp_exact = gm1*eta*jz*jz*pm->time;
   std::printf("###   Ohmic heating: <dp> measured %.6e  exact (gam-1)*eta*J^2*t %.6e"

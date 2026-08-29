@@ -239,6 +239,17 @@ void Resistivity::AddResistiveFluxes(const DvceFaceFld4D<Real> &b0, const DvceAr
 
 void Resistivity::AddEMFConstantResist(const DvceFaceFld4D<Real> &b0,
     DvceEdgeFld4D<Real> &efld) {
+  // DEAD CODE TRIPWIRE. Nothing calls this (the call in AddResistiveFluxes is commented
+  // out), but it reaches CurrentDensity(), whose only curvilinear branch is the
+  // spherical-polar one -- so on the cubed sphere it would take the CARTESIAN curl and
+  // be wrong by O(1), which is exactly the bug AddEMFGnomonicResist exists to fix. If
+  // this is ever re-enabled it must be given the same two-pass treatment.
+  if (pmy_pack->pmesh->use_cubed_sphere) {
+    std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__ << std::endl
+              << "AddEMFConstantResist has no cubed-sphere form; see "
+              << "diffusion/resistivity_gnomonic.cpp" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
   int js = indcs.js, je = indcs.je;
@@ -482,6 +493,14 @@ void Resistivity::AddEMFGeneralResist(const DvceFaceFld4D<Real> &b0,
 
 void Resistivity::AddFluxConstantGridResist(const DvceFaceFld4D<Real> &b,
                                         DvceFaceFld5D<Real> &flx) {
+  // DEAD CODE TRIPWIRE, as in AddEMFConstantResist: this crosses the edge EMFs with the
+  // cell-centred field with no regard for the frame each is held in.
+  if (pmy_pack->pmesh->use_cubed_sphere) {
+    std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__ << std::endl
+              << "AddFluxConstantGridResist has no cubed-sphere form; see "
+              << "AddFluxGeneralResist" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
   int js = indcs.js, je = indcs.je;
