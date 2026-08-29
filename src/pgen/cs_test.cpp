@@ -1996,25 +1996,81 @@ void CSTestGhostCheck(ParameterInput *pin, Mesh *pm) {
     std::cout << "### CS MHD ENERGY CHECK (iprob=8, uniform Cartesian B)" << std::endl;
     std::cout << "  panel   max|dp/p|      max|v|      (active cells)" << std::endl;
     Real gmax = 0.0, gvmax = 0.0;
+    int gnbad = 0;
     for (int m=0; m<pmbp->nmb_thispack; ++m) {
       Real e = 0.0, ev = 0.0;
       int ei = -1, ej = -1, ek = -1;   // WHERE the worst cell is, not just how bad
+      // fmax(NaN, x) returns x, so a run that has already gone non-finite reports a
+      // SMALL max and reads as healthy.  That happened: a blown-up run printed 5.08e-05.
+      int nbad = 0;
       for (int k=ks; k<=ke; ++k) {
         for (int j=js; j<=je; ++j) {
           for (int i=is; i<=ie; ++i) {
             const Real ee = fabs(w0_h(m,IEN,k,j,i) - ie_exact)/ie_exact;
+            if (!std::isfinite(ee)) ++nbad;
             if (ee > e) { e = ee; ei = i-is; ej = j-js; ek = k-ks; }
             ev = fmax(ev, fmax(fabs(w0_h(m,IVX,k,j,i)),
                           fmax(fabs(w0_h(m,IVY,k,j,i)), fabs(w0_h(m,IVZ,k,j,i)))));
           }
         }
       }
-      std::printf("  %4d   %12.5e  %12.5e   at (i,j,k)=(%d,%d,%d) of (%d,%d,%d)\n",
+      std::printf("  %4d   %12.5e  %12.5e   at (i,j,k)=(%d,%d,%d) of (%d,%d,%d)%s\n",
                   mbpanel.h_view(m), e, ev, ei, ej, ek,
-                  indcs.nx1, indcs.nx2, indcs.nx3);
+                  indcs.nx1, indcs.nx2, indcs.nx3,
+                  (nbad > 0) ? "   *** NON-FINITE CELLS ***" : "");
+      gnbad += nbad;
       gmax = fmax(gmax, e); gvmax = fmax(gvmax, ev);
     }
-    std::printf("  MAX over panels: dp/p %12.5e   |v| %12.5e\n", gmax, gvmax);
+    std::printf("  MAX over panels: dp/p %12.5e   |v| %12.5e%s\n", gmax, gvmax,
+                (gnbad > 0) ? "   *** RUN IS NON-FINITE, the max above is MEANINGLESS ***"
+                            : "");
+
+    // --- the EMF, which for this problem must be numerical diffusion ONLY --------------
+    // v = 0 exactly everywhere (u0 is a global constant with zero momentum, and the
+    // prolongation of zero is zero), so the ideal EMF -v x B vanishes identically.  What
+    // survives is the Riemann solver's diffusive term, proportional to the jump in B
+    // across the face.  It is therefore a direct, dimensionless read-out of how far from
+    // single-valued the field is -- and comparing the last radial cell against the
+    // interior says whether a coarse/fine interface is worse than ordinary truncation.
+    {
+      auto e1h = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
+                                                     pmbp->pmhd->efld.x1e);
+      auto e2h = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
+                                                     pmbp->pmhd->efld.x2e);
+      auto e3h = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
+                                                     pmbp->pmhd->efld.x3e);
+      std::cout << "### CS EMF (must be diffusion only; v = 0 identically)" << std::endl;
+      // Each component has its OWN valid range: x1e runs ALONG x1 so it is a cell index
+      // in i and a corner index in j,k, and cyclically for the other two.  Scanning all
+      // three to +1 in every index reads memory the update never wrote, which shows up
+      // as ~1e12 garbage and looks exactly like a catastrophic bug.
+      for (int m=0; m<pmbp->nmb_thispack; ++m) {
+        Real eint = 0.0, eend = 0.0;
+        int wi = -1, wj = -1, wk = -1, wc = -1;
+        auto scan = [&](int c, int i0, int i1, int j0, int j1, int k0, int k1) {
+          for (int k=k0; k<=k1; ++k) {
+            for (int j=j0; j<=j1; ++j) {
+              for (int i=i0; i<=i1; ++i) {
+                const Real e = fabs((c==1) ? e1h(m,k,j,i)
+                                   : (c==2) ? e2h(m,k,j,i) : e3h(m,k,j,i));
+                if (i >= ie) {
+                  if (e > eend) { eend = e; wi=i-is; wj=j-js; wk=k-ks; wc=c; }
+                } else {
+                  eint = fmax(eint, e);
+                }
+              }
+            }
+          }
+        };
+        scan(1, is,ie,   js,je+1, ks,ke+1);
+        scan(2, is,ie+1, js,je,   ks,ke+1);
+        scan(3, is,ie+1, js,je+1, ks,ke);
+        std::printf("  m=%3d p%d lev%d  interior %12.5e   last radial %12.5e"
+                    "  ratio %9.2e   worst: x%de at (i,j,k)=(%d,%d,%d)\n",
+                    m, mbpanel.h_view(m), pmbp->pmb->mb_lev.h_view(m),
+                    eint, eend, (eint > 0.0) ? eend/eint : 0.0, wc, wi, wj, wk);
+      }
+    }
 
     // --- what did the FACE HALO actually deliver? ------------------------------------
     // Every ghost face has a KNOWN exact value: the uniform field projected on the
@@ -2083,8 +2139,20 @@ void CSTestGhostCheck(ParameterInput *pin, Mesh *pm) {
               }
             }
           }
-          std::printf("  %4d rad   %12.5e  %12.5e  %12.5e   (radial ghosts)\n",
-                      p, r1, r2, r3);
+          // The INTERFACE FACE ITSELF, i = ie+1 / is.  This is not a ghost: it is a
+          // face the fine block owns, but ProlongFCSharedX1Face overwrites it from the
+          // coarse face so that the two levels agree.  The ghost sweep above starts at
+          // ie+2 and never looks at it.
+          Real f1 = 0.0, f0 = 0.0;
+          for (int k=ks; k<=ke; ++k) {
+            for (int j=js; j<=je; ++j) {
+              f1 = fmax(f1, fabs(b1h(m,k,j,ie+1) - exact(j,k,false,false,0)));
+              f0 = fmax(f0, fabs(b1h(m,k,j,is)   - exact(j,k,false,false,0)));
+            }
+          }
+          std::printf("  %4d rad   %12.5e  %12.5e  %12.5e   (radial ghosts)"
+                      "   INTERFACE FACE b.x1f: outer %12.5e  inner %12.5e\n",
+                      p, r1, r2, r3, f1, f0);
         }
 
         // --- and the SOLENOIDAL constraint in those same ghost cells ---------------

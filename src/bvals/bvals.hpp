@@ -107,6 +107,15 @@ bool IsCubeVertexCorner(const NghbrView &nghbr, const PanelView &mbpanel,
 //! must deal with this**: the ghosts would be stale, and the run would complete looking
 //! plausible rather than fail.
 //!
+//! That warning is now MEASURED, not predicted. Lifting the MHD refinement FATAL and
+//! running the static uniform field (cs_test iprob=8) with a radial level boundary puts
+//! the corner EMF at 1.3e-2 where the field itself is 1e-2 -- an O(1) EMF out of a state
+//! whose exact EMF is identically zero, and 1e8 times the interior value. It appears
+//! ONLY where the level boundary meets a tangential block boundary; the interior of the
+//! same interface face is clean at 1e-14. Restoring these slots (predicate forced to
+//! false, serial) drops it to 1.2e-8, a factor of 1e6. So making cubed-sphere MHD
+//! refinement work requires making these diagonals reciprocal, not skipping them.
+//!
 //! The predicate is local and symmetric -- both sides see the same panels and levels --
 //! so every surviving slot still has exactly one sender.
 
