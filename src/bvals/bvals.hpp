@@ -92,12 +92,20 @@ bool IsCubeVertexCorner(const NghbrView &nghbr, const PanelView &mbpanel,
 //! boundary lying on a seam, which prolongation and restriction cannot do at all, and
 //! CheckCubedSphereRefinement refuses it at startup instead of silently skipping it.
 //!
-//! Skipping is safe for the same reason it is at a cube vertex: these ng x ng edge and
-//! corner ghosts are never reconstructed through by a dimensionally split PLM + HLLC
-//! sweep, which reads only face ghosts along the sweep direction, and FillPanelCornersCC
-//! rewrites the tangential corner block afterwards from the flanking face halos. A
-//! higher-order or unsplit reconstruction WOULD read them, and would need this solved
-//! properly rather than skipped.
+//! Skipping is safe for the same reason it is at a cube vertex: a DIMENSIONALLY SPLIT
+//! sweep reconstructs along one axis at a time, reading a straight line of cells, so it
+//! touches face ghosts only and never these diagonal blocks. FillPanelCornersCC also
+//! rewrites the tangential panel-corner block afterwards from the flanking face halos.
+//!
+//! Note it is the SPLITTING that makes this safe, not the order of reconstruction: PPM
+//! or WENO still read along one axis, just a longer line. What DOES read diagonally is
+//! the corner EMF of the CT update (see the note on FillPanelCornersCC, where O(1)
+//! garbage there cost 1.3% of the magnetic energy on cycle 1) and the cross-derivatives
+//! of viscosity and conduction. Both are moot today -- MHD with refinement, and
+//! viscosity and conduction at all, are startup FATALs on the cubed sphere -- so nothing
+//! that survives those guards looks at these cells. **Whoever lifts one of those guards
+//! must deal with this**: the ghosts would be stale, and the run would complete looking
+//! plausible rather than fail.
 //!
 //! The predicate is local and symmetric -- both sides see the same panels and levels --
 //! so every surviving slot still has exactly one sender.

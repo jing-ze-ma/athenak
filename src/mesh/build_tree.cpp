@@ -52,10 +52,12 @@ void CheckCubedSphereRefinement(MeshBlockPack *pmbp) {
       // across a seam and across a level boundary even when every level boundary is
       // radial -- the block at the outer edge of a refined shell meets, diagonally, the
       // coarse block of the next panel -- and refusing those would rule out radial
-      // refinement altogether. Those ng x ng buffers are plain copies that a
-      // dimensionally split PLM + HLLC sweep never reconstructs through, which is the
-      // same ground on which the halo already leaves them untransformed
-      // (see the note in bvals_cc.cpp). A higher-order reconstruction would need them.
+      // refinement altogether. A dimensionally split sweep reconstructs along one axis
+      // at a time and so never reads those ng x ng diagonal blocks, which is the same
+      // ground on which the halo already leaves them untransformed (see the note in
+      // bvals_cc.cpp). See IsSkippedPanelDiagonal in bvals.hpp for what WOULD read them
+      // -- the corner EMF and the diffusion cross-derivatives, both currently FATAL on
+      // the cubed sphere.
       const bool is_face = ((n >= 8 && n < 16) || (n >= 24 && n < 32));
       if (!is_face) continue;
       if (nghbr.h_view(m,n).lev != mblev.h_view(m)) {
