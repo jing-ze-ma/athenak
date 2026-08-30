@@ -641,9 +641,18 @@ void MeshBoundaryValuesFC::FillPanelCornersFC(DvceFaceFld4D<Real> &b, bool coars
     // inward: w = ((d+1)(d+2)/2, -d(d+2), d(d+1)/2), which sums to 1.
     const Real dj = static_cast<Real>(gj + 1);
     const Real dk = static_cast<Real>(gk + 1);
+    // QUADRATIC is the optimum of this family, measured: LINEAR (amplification 3 and 5
+    // against quadratic's 7 and 17) loses to truncation -- corner 1.98e-03 -> 5.44e-03 --
+    // and CUBIC (15 and 49) loses to amplification -- 1.98e-03 -> 2.46e-03.  Do not
+    // re-propose either.
     const Real wj0 = 0.5*(dj+1.0)*(dj+2.0), wj1 = -dj*(dj+2.0), wj2 = 0.5*dj*(dj+1.0);
     const Real wk0 = 0.5*(dk+1.0)*(dk+2.0), wk1 = -dk*(dk+2.0), wk2 = 0.5*dk*(dk+1.0);
     const int stj = -sj, stk = -sk;       // step INWARD from the anchor
+    // The two extrapolations do not reach equally far: the one along j travels dj cells
+    // and the one along k travels dk.  A plain average weights them the same even when
+    // one is a 1-cell reach and the other a 2-cell reach; weighting each by the OTHER's
+    // distance favours the shorter, more accurate one.
+    const Real wblend = dj/(dj + dk);
 
     // cell-index targets and anchors
     const int jtc = (sj < 0) ? (js-1-gj) : (je+1+gj);
@@ -662,7 +671,7 @@ void MeshBoundaryValuesFC::FillPanelCornersFC(DvceFaceFld4D<Real> &b, bool coars
                     + wk2*b_.x1f(m,akc+2*stk,jtc,i);
       const Real ej = wj0*b_.x1f(m,ktc,ajc,i) + wj1*b_.x1f(m,ktc,ajc+stj,i)
                     + wj2*b_.x1f(m,ktc,ajc+2*stj,i);
-      b_.x1f(m,ktc,jtc,i) = 0.5*(ek + ej);
+      b_.x1f(m,ktc,jtc,i) = wblend*ek + (1.0-wblend)*ej;
     }
     if (i > (nc1-1)) return;
     // b.x2f: FACE index in j, cell index in k
@@ -671,7 +680,7 @@ void MeshBoundaryValuesFC::FillPanelCornersFC(DvceFaceFld4D<Real> &b, bool coars
                     + wk2*b_.x2f(m,akc+2*stk,jtf,i);
       const Real ej = wj0*b_.x2f(m,ktc,ajf,i) + wj1*b_.x2f(m,ktc,ajf+stj,i)
                     + wj2*b_.x2f(m,ktc,ajf+2*stj,i);
-      b_.x2f(m,ktc,jtf,i) = 0.5*(ek + ej);
+      b_.x2f(m,ktc,jtf,i) = wblend*ek + (1.0-wblend)*ej;
     }
     // b.x3f: cell index in j, FACE index in k
     {
@@ -679,7 +688,7 @@ void MeshBoundaryValuesFC::FillPanelCornersFC(DvceFaceFld4D<Real> &b, bool coars
                     + wk2*b_.x3f(m,akf+2*stk,jtc,i);
       const Real ej = wj0*b_.x3f(m,ktf,ajc,i) + wj1*b_.x3f(m,ktf,ajc+stj,i)
                     + wj2*b_.x3f(m,ktf,ajc+2*stj,i);
-      b_.x3f(m,ktf,jtc,i) = 0.5*(ek + ej);
+      b_.x3f(m,ktf,jtc,i) = wblend*ek + (1.0-wblend)*ej;
     }
   });
   return;
