@@ -55,6 +55,10 @@
 #include <cmath>
 
 #include "athena.hpp"
+#if MPI_PARALLEL_ENABLED
+#include <mpi.h>
+#endif
+#include "globals.hpp"
 #include "parameter_input.hpp"
 #include "coordinates/cell_locations.hpp"
 #include "mesh/mesh.hpp"
@@ -1314,6 +1318,82 @@ void CSTestConvErrors(ParameterInput *pin, Mesh *pm) {
       }
     }
   }
+  // EVERY sum, count and maximum above is RANK-LOCAL: the loop visits only the
+  // MeshBlocks in this rank's MeshBlockPack. Reporting them unreduced makes the norms
+  // depend on the DECOMPOSITION -- one identical solution then prints a different L1 at
+  // every rank count, which reads exactly like an MPI bug and is not one. (It cost this
+  // file a false "refined runs are rank-dependent" finding; the binary dumps were
+  // bitwise identical at 1, 2, 3 and 6 ranks the whole time.) Reduce first, report on
+  // rank 0 only.
+  //
+  // The Linf LOCATION cannot be reduced numerically -- it names a block, and block ids
+  // are local -- so each rank formats its own line and MAXLOC says whose to broadcast.
+  char linfline[256];
+  linfline[0] = '\0';
+  if (mx_m >= 0) {
+    auto &mlev = pmbp->pmb->mb_lev;
+    auto &ngh = pmbp->pmb->nghbr;
+    ngh.sync_host();
+    int nlo = -1, nhi = -1;
+    for (int q=0; q<4; ++q) {
+      if (ngh.h_view(mx_m,q).gid   >= 0) nlo = ngh.h_view(mx_m,q).lev;
+      if (ngh.h_view(mx_m,4+q).gid >= 0) nhi = ngh.h_view(mx_m,4+q).lev;
+    }
+    std::snprintf(linfline, sizeof(linfline),
+                  "###   Linf(B) at panel %d  (i,j,k) = (%d,%d,%d)  of block %d"
+                  " [lev %d, x1 nghbr lev %d / %d, x1 = %g..%g]\n",
+                  mx_p, mx_i, mx_j, mx_k, mx_m, mlev.h_view(mx_m), nlo, nhi,
+                  size.h_view(mx_m).x1min, size.h_view(mx_m).x1max);
+  }
+#if MPI_PARALLEL_ENABLED
+  {
+    const int nrl = 6 + 2*NBIN + 12 + 2;
+    Real rsum[6 + 2*NBIN + 12 + 2];
+    int q = 0;
+    rsum[q++] = l1b; rsum[q++] = l1v; rsum[q++] = l1p;
+    rsum[q++] = l1_seam; rsum[q++] = l1_rad; rsum[q++] = l1_int;
+    for (int b=0; b<NBIN; ++b) { rsum[q++] = l1_bin[b]; }
+    for (int b=0; b<NBIN; ++b) { rsum[q++] = l1_rbin[b]; }
+    for (int r=0; r<3; ++r) {
+      for (int c=0; c<3; ++c) { rsum[q++] = ata[r][c]; }
+    }
+    for (int r=0; r<3; ++r) { rsum[q++] = atb[r]; }
+    rsum[q++] = vdotv; rsum[q++] = vdote;
+    MPI_Allreduce(MPI_IN_PLACE, rsum, nrl, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+    q = 0;
+    l1b = rsum[q++]; l1v = rsum[q++]; l1p = rsum[q++];
+    l1_seam = rsum[q++]; l1_rad = rsum[q++]; l1_int = rsum[q++];
+    for (int b=0; b<NBIN; ++b) { l1_bin[b] = rsum[q++]; }
+    for (int b=0; b<NBIN; ++b) { l1_rbin[b] = rsum[q++]; }
+    for (int r=0; r<3; ++r) {
+      for (int c=0; c<3; ++c) { ata[r][c] = rsum[q++]; }
+    }
+    for (int r=0; r<3; ++r) { atb[r] = rsum[q++]; }
+    vdotv = rsum[q++]; vdote = rsum[q++];
+
+    const int nil = 4 + 2*NBIN;
+    std::int64_t isum[4 + 2*NBIN];
+    q = 0;
+    isum[q++] = ncell; isum[q++] = n_seam; isum[q++] = n_rad; isum[q++] = n_int;
+    for (int b=0; b<NBIN; ++b) { isum[q++] = n_bin[b]; }
+    for (int b=0; b<NBIN; ++b) { isum[q++] = n_rbin[b]; }
+    MPI_Allreduce(MPI_IN_PLACE, isum, nil, MPI_INT64_T, MPI_SUM, MPI_COMM_WORLD);
+    q = 0;
+    ncell = isum[q++]; n_seam = isum[q++]; n_rad = isum[q++]; n_int = isum[q++];
+    for (int b=0; b<NBIN; ++b) { n_bin[b] = isum[q++]; }
+    for (int b=0; b<NBIN; ++b) { n_rbin[b] = isum[q++]; }
+
+    struct { double val; int rnk; } mxin, mxout;
+    mxin.val = static_cast<double>(lib);
+    mxin.rnk = global_variable::my_rank;
+    MPI_Allreduce(&mxin, &mxout, 1, MPI_DOUBLE_INT, MPI_MAXLOC, MPI_COMM_WORLD);
+    lib = static_cast<Real>(mxout.val);
+    MPI_Bcast(linfline, sizeof(linfline), MPI_CHAR, mxout.rnk, MPI_COMM_WORLD);
+  }
+#endif
+  // only rank 0 reports; every rank appending to one file also raced
+  if (global_variable::my_rank != 0) return;
+
   const Real nrm = (ncell > 0) ? 1.0/static_cast<Real>(ncell) : 0.0;
   const Real b0c = (cs_b0r != 0.0) ? cs_b0r : 1.0;
   l1b *= nrm/b0c;
@@ -1379,21 +1459,9 @@ void CSTestConvErrors(ParameterInput *pin, Mesh *pm) {
     std::printf("\n");
     // WHERE the worst cell sits matters more than its value: on a refined mesh, "at the
     // block's inner radial face, on a block one level finer than its x1 neighbour" is a
-    // level-boundary defect, and "in the middle of a block" is not.
-    {
-      auto &mlev = pmbp->pmb->mb_lev;
-      auto &ngh = pmbp->pmb->nghbr;
-      ngh.sync_host();
-      int nlo = -1, nhi = -1;
-      for (int q=0; q<4; ++q) {
-        if (ngh.h_view(mx_m,q).gid   >= 0) nlo = ngh.h_view(mx_m,q).lev;
-        if (ngh.h_view(mx_m,4+q).gid >= 0) nhi = ngh.h_view(mx_m,4+q).lev;
-      }
-      std::printf("###   Linf(B) at panel %d  (i,j,k) = (%d,%d,%d)  of block %d"
-                  " [lev %d, x1 nghbr lev %d / %d, x1 = %g..%g]\n",
-                  mx_p, mx_i, mx_j, mx_k, mx_m, mlev.h_view(mx_m), nlo, nhi,
-                  size.h_view(mx_m).x1min, size.h_view(mx_m).x1max);
-    }
+    // level-boundary defect, and "in the middle of a block" is not.  Formatted above,
+    // by whichever rank owns the maximum.
+    std::printf("%s", linfline);
   }
 
   {
@@ -1784,6 +1852,20 @@ void CSTestConsSums(Mesh *pm) {
       }
     }
   }
+  // These are totals over the WHOLE mesh, so they must be reduced: the loop above walks
+  // only this rank's MeshBlockPack. Unreduced they are per-rank subtotals that look like
+  // a conservation failure the moment the decomposition changes.
+#if MPI_PARALLEL_ENABLED
+  {
+    Real rsum[11] = {svol, sm, se, sp[0], sp[1], sp[2], sl[0], sl[1], sl[2], 0.0, 0.0};
+    MPI_Allreduce(MPI_IN_PLACE, rsum, 9, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+    svol = rsum[0]; sm = rsum[1]; se = rsum[2];
+    sp[0] = rsum[3]; sp[1] = rsum[4]; sp[2] = rsum[5];
+    sl[0] = rsum[6]; sl[1] = rsum[7]; sl[2] = rsum[8];
+  }
+#endif
+  if (global_variable::my_rank != 0) return;
+
   std::printf("### CS CONSERVED SUMS at t = %.17e  (ncyc %d)\n", pm->time, pm->ncycle);
   std::printf("###   volume %.17e\n", svol);
   std::printf("###   mass   %.17e\n", sm);
