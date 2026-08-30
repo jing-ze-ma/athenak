@@ -122,6 +122,14 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
         int sj = 1, sk = nj;
         int vv = v;
         bool cs_xform = false;
+        // A cross-panel neighbour at a COARSER level is served from the restricted
+        // array ca, not a.  Before this existed the whole branch packed NOTHING, so the
+        // buffer kept its zero-initialised contents and the coarse block read a ghost
+        // state of exactly ZERO across the seam.  Invisible to any gate with v = 0
+        // (zero IS the right answer there) and invisible to hydro (a dimensionally
+        // split PLM sweep never reconstructs through a corner ghost), but the corner
+        // EMF of the CT update reads DIAGONALLY, which is why it only showed in MHD.
+        const bool cs_coar = (nghbr.d_view(m,n).lev < mblev.d_view(m));
         int cs_srcpanel = 0, cs_dstpanel = 0;
         // 0 = no along-seam resample; 2 = x2-face seam (resample in k);
         // 3 = x3-face seam (resample in j). See the note on seamval below.
@@ -190,15 +198,22 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
         // this reads two components and selects; IVX and every scalar take the plain
         // copy path. Away from a panel seam it is exactly the old `a(...)*signvar`.
         auto srcval = [&](const int kk, const int jj, const int i) {
-          if (!cs_xform) return a(m,vv,kk,jj,i)*signvar;
-          const int js_ = cs_indcs.js, ks_ = cs_indcs.ks;
-          const Real xi = 0.25*M_PI*CellCenterX(jj-js_, cs_indcs.nx2,
+          if (!cs_xform) {
+            return (cs_coar ? ca(m,vv,kk,jj,i) : a(m,vv,kk,jj,i))*signvar;
+          }
+          const int js_ = cs_coar ? cs_indcs.cjs : cs_indcs.js;
+          const int ks_ = cs_coar ? cs_indcs.cks : cs_indcs.ks;
+          const int nx2_ = cs_coar ? cs_indcs.cnx2 : cs_indcs.nx2;
+          const int nx3_ = cs_coar ? cs_indcs.cnx3 : cs_indcs.nx3;
+          const Real xi = 0.25*M_PI*CellCenterX(jj-js_, nx2_,
                             mbsize.d_view(m).x2min, mbsize.d_view(m).x2max);
-          const Real eta = 0.25*M_PI*CellCenterX(kk-ks_, cs_indcs.nx3,
+          const Real eta = 0.25*M_PI*CellCenterX(kk-ks_, nx3_,
                             mbsize.d_view(m).x3min, mbsize.d_view(m).x3max);
           Real m2o, m3o;
+          const Real my_ = cs_coar ? ca(m,IVY,kk,jj,i) : a(m,IVY,kk,jj,i);
+          const Real mz_ = cs_coar ? ca(m,IVZ,kk,jj,i) : a(m,IVZ,kk,jj,i);
           cubed_sphere::TransformMomentum(cs_srcpanel, cs_dstpanel, xi, eta,
-                                          a(m,IVY,kk,jj,i), a(m,IVZ,kk,jj,i), m2o, m3o);
+                                          my_, mz_, m2o, m3o);
           return (v == IVY) ? m2o : m3o;
         };
 
@@ -221,20 +236,23 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
         // second-order flux difference needs.
         auto seamval = [&](const int kk, const int jj, const int i) {
           if (cs_seam == 0) return srcval(kk,jj,i);
-          const int js_ = cs_indcs.js, ks_ = cs_indcs.ks;
+          const int js_ = cs_coar ? cs_indcs.cjs : cs_indcs.js;
+          const int ks_ = cs_coar ? cs_indcs.cks : cs_indcs.ks;
+          const int nx2_ = cs_coar ? cs_indcs.cnx2 : cs_indcs.nx2;
+          const int nx3_ = cs_coar ? cs_indcs.cnx3 : cs_indcs.nx3;
           const Real x2mn = mbsize.d_view(m).x2min, x2mx = mbsize.d_view(m).x2max;
           const Real x3mn = mbsize.d_view(m).x3min, x3mx = mbsize.d_view(m).x3max;
-          const Real xi  = 0.25*M_PI*CellCenterX(jj-js_, cs_indcs.nx2, x2mn, x2mx);
-          const Real eta = 0.25*M_PI*CellCenterX(kk-ks_, cs_indcs.nx3, x3mn, x3mx);
+          const Real xi  = 0.25*M_PI*CellCenterX(jj-js_, nx2_, x2mn, x2mx);
+          const Real eta = 0.25*M_PI*CellCenterX(kk-ks_, nx3_, x3mn, x3mx);
           Real ang, nrm, dang;
           int sc, blo, bhi;
           if (cs_seam == 2) {
             ang = eta; nrm = xi;
-            dang = 0.25*M_PI*(x3mx - x3mn)/static_cast<Real>(cs_indcs.nx3);
+            dang = 0.25*M_PI*(x3mx - x3mn)/static_cast<Real>(nx3_);
             sc = kk; blo = kl; bhi = ku - 2;
           } else {
             ang = xi; nrm = eta;
-            dang = 0.25*M_PI*(x2mx - x2mn)/static_cast<Real>(cs_indcs.nx2);
+            dang = 0.25*M_PI*(x2mx - x2mn)/static_cast<Real>(nx2_);
             sc = jj; blo = jl; bhi = ju - 2;
           }
           const Real pos = sc + (atan(tan(ang)*tan(fabs(nrm))) - ang)/dang;
@@ -261,31 +279,25 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
           // Inner (vector) loop over i
           // copy directly into recv buffer if MeshBlocks on same rank
 
+          // seamval() reads u0 or coarse_u0 according to cs_coar, so one expression
+          // serves a neighbour at ANY level.
           if (nghbr.d_view(m,n).rank == my_rank) {
-            // if neighbor is at same or finer level, load data from u0
-            if (nghbr.d_view(m,n).lev >= mblev.d_view(m)) {
-              Kokkos::parallel_for(Kokkos::ThreadVectorRange(tmember,il,iu+1),
-              [&](const int i) {
-                Real val = seamval(kk,jj,i);
-                int index = i-il + ni*(sj*(j-jl) + sk*(k-kl) + nk*nj*v);
-                rbuf[dn].vars(dm, index) = val;
-              });
-            // if neighbor is at coarser level, load data from coarse_u0
-            }
+            Kokkos::parallel_for(Kokkos::ThreadVectorRange(tmember,il,iu+1),
+            [&](const int i) {
+              Real val = seamval(kk,jj,i);
+              int index = i-il + ni*(sj*(j-jl) + sk*(k-kl) + nk*nj*v);
+              rbuf[dn].vars(dm, index) = val;
+            });
 
           // else copy into send buffer for MPI communication below
 
           } else {
-            // if neighbor is at same or finer level, load data from u0
-            if (nghbr.d_view(m,n).lev >= mblev.d_view(m)) {
-              Kokkos::parallel_for(Kokkos::ThreadVectorRange(tmember,il,iu+1),
-              [&](const int i) {
-                Real val = seamval(kk,jj,i);
-                int index = i-il + ni*(sj*(j-jl) + sk*(k-kl) + nk*nj*v);
-                sbuf[n].vars(m,index) = val;
-              });
-            // if neighbor is at coarser level, load data from coarse_u0
-            }
+            Kokkos::parallel_for(Kokkos::ThreadVectorRange(tmember,il,iu+1),
+            [&](const int i) {
+              Real val = seamval(kk,jj,i);
+              int index = i-il + ni*(sj*(j-jl) + sk*(k-kl) + nk*nj*v);
+              sbuf[n].vars(m,index) = val;
+            });
           }
         });
 

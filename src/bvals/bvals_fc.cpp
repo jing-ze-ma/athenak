@@ -145,6 +145,11 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
             int sj = 1, sk = nj;
             int vv = v;
             bool cs_xform = false;
+            // A cross-panel neighbour at a COARSER level is served from the restricted
+            // field cb, not b.  Before this existed the branch packed NOTHING, so the
+            // buffer kept its zero-initialised contents and the coarse block read a
+            // ghost field of exactly ZERO across the seam.  See the note in bvals_cc.cpp.
+            const bool cs_coar = (nghbr.d_view(m,n).lev < mblev.d_view(m));
             int cs_srcpanel = 0, cs_dstpanel = 0;
             // 0 = no along-seam resample; 2 = x2-face seam (resample in k);
             // 3 = x3-face seam (resample in j). See the note on seamval below.
@@ -227,25 +232,40 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
             // O(1) and non-convergent.
             // At an end face the two nearest ACTIVE cells are extrapolated instead, which
             // keeps the same second-order accuracy without leaving the active zone.
-            const int js_ = cs_indcs.js, ks_ = cs_indcs.ks;
-            const int je_ = cs_indcs.je, ke_ = cs_indcs.ke;
+            const int js_ = cs_coar ? cs_indcs.cjs : cs_indcs.js;
+            const int ks_ = cs_coar ? cs_indcs.cks : cs_indcs.ks;
+            const int je_ = cs_coar ? cs_indcs.cje : cs_indcs.je;
+            const int ke_ = cs_coar ? cs_indcs.cke : cs_indcs.ke;
+            const int nx2_ = cs_coar ? cs_indcs.cnx2 : cs_indcs.nx2;
+            const int nx3_ = cs_coar ? cs_indcs.cnx3 : cs_indcs.nx3;
+            // Every read below goes through these, so the whole seam transform works on
+            // the restricted field cb unchanged when the neighbour is coarser.
+            auto bx1 = [&](const int kk, const int jj, const int i) {
+              return cs_coar ? cb.x1f(m,kk,jj,i) : b.x1f(m,kk,jj,i);
+            };
+            auto bx2 = [&](const int kk, const int jj, const int i) {
+              return cs_coar ? cb.x2f(m,kk,jj,i) : b.x2f(m,kk,jj,i);
+            };
+            auto bx3 = [&](const int kk, const int jj, const int i) {
+              return cs_coar ? cb.x3f(m,kk,jj,i) : b.x3f(m,kk,jj,i);
+            };
             // b.x3f at (eta face kf, xi FACE jf), interpolated across xi
             auto x3f_at_xiface = [&](const int kf, const int jf, const int i) {
               if (jf-1 < js_) {
-                return 1.5*b.x3f(m,kf,js_,i) - 0.5*b.x3f(m,kf,js_+1,i);
+                return 1.5*bx3(kf,js_,i) - 0.5*bx3(kf,js_+1,i);
               } else if (jf > je_) {
-                return 1.5*b.x3f(m,kf,je_,i) - 0.5*b.x3f(m,kf,je_-1,i);
+                return 1.5*bx3(kf,je_,i) - 0.5*bx3(kf,je_-1,i);
               }
-              return 0.5*(b.x3f(m,kf,jf-1,i) + b.x3f(m,kf,jf,i));
+              return 0.5*(bx3(kf,jf-1,i) + bx3(kf,jf,i));
             };
             // b.x2f at (eta FACE kf, xi face jf), interpolated across eta
             auto x2f_at_etaface = [&](const int kf, const int jf, const int i) {
               if (kf-1 < ks_) {
-                return 1.5*b.x2f(m,ks_,jf,i) - 0.5*b.x2f(m,ks_+1,jf,i);
+                return 1.5*bx2(ks_,jf,i) - 0.5*bx2(ks_+1,jf,i);
               } else if (kf > ke_) {
-                return 1.5*b.x2f(m,ke_,jf,i) - 0.5*b.x2f(m,ke_-1,jf,i);
+                return 1.5*bx2(ke_,jf,i) - 0.5*bx2(ke_-1,jf,i);
               }
-              return 0.5*(b.x2f(m,kf-1,jf,i) + b.x2f(m,kf,jf,i));
+              return 0.5*(bx2(kf-1,jf,i) + bx2(kf,jf,i));
             };
             //
             // The (xi,eta) of a source sample, with the STAGGERING of component vv:
@@ -253,26 +273,26 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
             const Real x2mn = mbsize.d_view(m).x2min, x2mx = mbsize.d_view(m).x2max;
             const Real x3mn = mbsize.d_view(m).x3min, x3mx = mbsize.d_view(m).x3max;
             auto angles = [&](const int kk, const int jj, Real &xi, Real &eta) {
-              xi  = 0.25*M_PI*((vv == 1) ? LeftEdgeX(jj-js_, cs_indcs.nx2, x2mn, x2mx)
-                                         : CellCenterX(jj-js_, cs_indcs.nx2, x2mn, x2mx));
-              eta = 0.25*M_PI*((vv == 2) ? LeftEdgeX(kk-ks_, cs_indcs.nx3, x3mn, x3mx)
-                                         : CellCenterX(kk-ks_, cs_indcs.nx3, x3mn, x3mx));
+              xi  = 0.25*M_PI*((vv == 1) ? LeftEdgeX(jj-js_, nx2_, x2mn, x2mx)
+                                         : CellCenterX(jj-js_, nx2_, x2mn, x2mx));
+              eta = 0.25*M_PI*((vv == 2) ? LeftEdgeX(kk-ks_, nx3_, x3mn, x3mx)
+                                         : CellCenterX(kk-ks_, nx3_, x3mn, x3mx));
             };
             auto srcval = [&](const int kk, const int jj, const int i) {
               if (!cs_xform) {
-                if (vv == 0) return b.x1f(m,kk,jj,i)*signvar;
-                if (vv == 1) return b.x2f(m,kk,jj,i)*signvar;
-                return b.x3f(m,kk,jj,i)*signvar;
+                if (vv == 0) return bx1(kk,jj,i)*signvar;
+                if (vv == 1) return bx2(kk,jj,i)*signvar;
+                return bx3(kk,jj,i)*signvar;
               }
               Real xi, eta, bxi, bet;
               angles(kk, jj, xi, eta);
               if (vv == 1) {
                 // primary on a XI face: (xi face jj, eta centre kk)
-                bxi = b.x2f(m,kk,jj,i);
+                bxi = bx2(kk,jj,i);
                 bet = 0.5*(x3f_at_xiface(kk,jj,i) + x3f_at_xiface(kk+1,jj,i));
               } else {
                 // primary on an ETA face: (xi centre jj, eta face kk)
-                bet = b.x3f(m,kk,jj,i);
+                bet = bx3(kk,jj,i);
                 bxi = 0.5*(x2f_at_etaface(kk,jj,i) + x2f_at_etaface(kk,jj+1,i));
               }
               Real oxi, oet;
@@ -308,11 +328,11 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
               int sc, blo, bhi;
               if (cs_seam == 2) {
                 ang = eta; nrm = xi;
-                dang = 0.25*M_PI*(x3mx - x3mn)/static_cast<Real>(cs_indcs.nx3);
+                dang = 0.25*M_PI*(x3mx - x3mn)/static_cast<Real>(nx3_);
                 sc = kk; blo = kl; bhi = ku - 2;
               } else {
                 ang = xi; nrm = eta;
-                dang = 0.25*M_PI*(x2mx - x2mn)/static_cast<Real>(cs_indcs.nx2);
+                dang = 0.25*M_PI*(x2mx - x2mn)/static_cast<Real>(nx2_);
                 sc = jj; blo = jl; bhi = ju - 2;
               }
               const Real pos = sc + (atan(tan(ang)*tan(fabs(nrm))) - ang)/dang;
@@ -329,40 +349,36 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
             };
 
           // copy field components directly into recv buffer if MeshBlocks on same rank
+          // seamval() reads b0 or coarse_b0 according to cs_coar, so one expression
+          // serves a neighbour at ANY level.
           if (nghbr.d_view(m,n).rank == my_rank) {
-            // if neighbor is at same or finer level, load data from b0
-            if (nghbr.d_view(m,n).lev >= mblev.d_view(m)) {
-              Kokkos::parallel_for(Kokkos::TeamThreadRange<>(tmember, nkji),
-              [&](const int idx) {
-                int k = (idx)/nji;
-                int j = (idx - k*nji)/ni;
-                int i = (idx - k*nji - j*ni) + il;
-                k += kl;
-                j += jl;
-                int kk = ak*k + bk;
-                int jj = aj*j + bj;
-                rbuf[dn].vars(dm, ndat*v + i-il + ni*(sj*(j-jl) + sk*(k-kl)))
-                  = seamval(kk,jj,i);
-              });
-            }
+            Kokkos::parallel_for(Kokkos::TeamThreadRange<>(tmember, nkji),
+            [&](const int idx) {
+              int k = (idx)/nji;
+              int j = (idx - k*nji)/ni;
+              int i = (idx - k*nji - j*ni) + il;
+              k += kl;
+              j += jl;
+              int kk = ak*k + bk;
+              int jj = aj*j + bj;
+              rbuf[dn].vars(dm, ndat*v + i-il + ni*(sj*(j-jl) + sk*(k-kl)))
+                = seamval(kk,jj,i);
+            });
 
           // else copy field components into send buffer for MPI communication below
           } else {
-            // if neighbor is at same or finer level, load data from b0
-            if (nghbr.d_view(m,n).lev >= mblev.d_view(m)) {
-              Kokkos::parallel_for(Kokkos::TeamThreadRange<>(tmember, nkji),
-              [&](const int idx) {
-                int k = (idx)/nji;
-                int j = (idx - k*nji)/ni;
-                int i = (idx - k*nji - j*ni) + il;
-                k += kl;
-                j += jl;
-                int kk = ak*k + bk;
-                int jj = aj*j + bj;
-                sbuf[n].vars(m, ndat*v + i-il + ni*(sj*(j-jl) + sk*(k-kl)))
-                  = seamval(kk,jj,i);
-              });
-            }
+            Kokkos::parallel_for(Kokkos::TeamThreadRange<>(tmember, nkji),
+            [&](const int idx) {
+              int k = (idx)/nji;
+              int j = (idx - k*nji)/ni;
+              int i = (idx - k*nji - j*ni) + il;
+              k += kl;
+              j += jl;
+              int kk = ak*k + bk;
+              int jj = aj*j + bj;
+              sbuf[n].vars(m, ndat*v + i-il + ni*(sj*(j-jl) + sk*(k-kl)))
+                = seamval(kk,jj,i);
+            });
           }
           } else {   // normal boundary exchange
         // copy field components directly into recv buffer if MeshBlocks on same rank

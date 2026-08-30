@@ -66,8 +66,12 @@
 //! local and symmetric, so a slot is skipped on the send and receive sides together and
 //! every surviving slot has exactly one sender.
 //!
-//! x1x2 and x3x1 edge buffers never exist here -- the radial direction has physical
-//! boundaries at both ends, so a block has no x1-direction neighbour.
+//! x1x2 and x3x1 edge buffers exist ONLY when the radial direction is split across
+//! MeshBlocks, which on this grid means refinement: with one block spanning x1 the
+//! radial physical boundaries leave a block with no x1-direction neighbour at all, so
+//! those slots have no partner. That is why they carried no seam transform for so long;
+//! they now do (see the branches below), because a radial level boundary creates them
+//! and they land exactly on the ring where the level boundary meets a seam.
 
 TaskStatus MeshBoundaryValuesFC::PackAndSendFluxFC(DvceEdgeFld4D<Real> &flx) {
   // create local references for variables in kernel
@@ -295,14 +299,38 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFluxFC(DvceEdgeFld4D<Real> &flx) {
         const int j = jl;
         const int fi = 2*il - cis;
         const int fj = 2*jl - cjs;
+        // CUBED-SPHERE PANEL SEAM. The edge runs along x3, so k is the along-seam index
+        // and the seam being crossed is the x2 one -- the same geometry as the x1face
+        // branch above, and the transform is the same: reverse the along-edge index,
+        // flip the SIGN of the along-edge EMF with it, and write it into whichever slot
+        // the neighbour will read it from.
+        //
+        // These edge slots EXIST ONLY WHEN THE RADIAL DIRECTION IS SPLIT: with one block
+        // spanning x1 a block has no x1-direction neighbour, so an x1x2 (or x3x1) edge
+        // has no partner at all. That is why the seam was never handled here, and why
+        // the gap could not show up until refinement put a level boundary in x1.
+        int vout = v;
+        int ak = 1, bk = 0;
+        Real sgn = 1.0;
+        if (use_cs && (nghbr.d_view(m,n).panel != mbpanel.d_view(m))) {
+          PanelBoundaries pb = GetPanelBoundary(mbpanel.d_view(m),
+                                                            nghbr.d_view(m,n).panel);
+          const int rev_k = (pb.swap_ax == 1) ? pb.rev_a : pb.rev_b;
+          if (rev_k) {ak = -1; bk = kl + ku;}
+          if (v==2) {
+            vout = (pb.swap_ax == 1) ? 1 : 2;
+            if (rev_k) {sgn = -1.0;}
+          }
+        }
         if (v==2) {
           Kokkos::parallel_for(Kokkos::TeamThreadRange<>(tmember,nk),[&](const int idx) {
             int k = idx + kl;
-            int fk = 2*k - cks;
+            const int kk = ak*k + bk;
+            int fk = 2*kk - cks;
             Real rflx;
             // if neighbor is at same level, load x3e directly
             if (nghbr.d_view(m,n).lev == mblev.d_view(m)) {
-              rflx = flx.x3e(m,k,j,i);
+              rflx = flx.x3e(m,kk,j,i);
             // if neighbor is at coarser level, restrict x3e
             } else {
               if (two_d) {
@@ -314,10 +342,11 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFluxFC(DvceEdgeFld4D<Real> &flx) {
                      : 0.5*(flx.x3e(m,fk,fj,fi) + flx.x3e(m,fk+1,fj,fi));
               }
             }
+            rflx *= sgn;
             if (nghbr.d_view(m,n).rank == my_rank) {
-              rbuf[dn].flux(dm, ndat*v + (k-kl)) = rflx;
+              rbuf[dn].flux(dm, ndat*vout + (k-kl)) = rflx;
             } else {
-              sbuf[n].flux(m, ndat*v + (k-kl)) = rflx;
+              sbuf[n].flux(m, ndat*vout + (k-kl)) = rflx;
             }
           });
         }
@@ -394,14 +423,31 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFluxFC(DvceEdgeFld4D<Real> &flx) {
         const int k = kl;
         const int fi = 2*il - cis;
         const int fk = 2*kl - cks;
+        // CUBED-SPHERE PANEL SEAM. The twin of the x1x2 branch above: this edge runs
+        // along x2, so j is the along-seam index and the x3 seam is the one crossed --
+        // the same geometry as the x3face branch below. Exists only when x1 is split.
+        int vout = v;
+        int aj = 1, bj = 0;
+        Real sgn = 1.0;
+        if (use_cs && (nghbr.d_view(m,n).panel != mbpanel.d_view(m))) {
+          PanelBoundaries pb = GetPanelBoundary(mbpanel.d_view(m),
+                                                            nghbr.d_view(m,n).panel);
+          const int rev_j = (pb.swap_ax == 1) ? pb.rev_b : pb.rev_a;
+          if (rev_j) {aj = -1; bj = jl + ju;}
+          if (v==1) {
+            vout = (pb.swap_ax == 1) ? 2 : 1;
+            if (rev_j) {sgn = -1.0;}
+          }
+        }
         if (v==1) {
           Kokkos::parallel_for(Kokkos::TeamThreadRange<>(tmember,nj),[&](const int idx) {
             int j = idx + jl;
-            int fj = 2*j - cjs;
+            const int jj = aj*j + bj;
+            int fj = 2*jj - cjs;
             Real rflx;
             // if neighbor is at same level, load x2e directly
             if (nghbr.d_view(m,n).lev == mblev.d_view(m)) {
-              rflx = flx.x2e(m,k,j,i);
+              rflx = flx.x2e(m,k,jj,i);
             // if neighbor is at coarser level, restrict x2e
             } else {
               rflx = curvi_
@@ -409,10 +455,11 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFluxFC(DvceEdgeFld4D<Real> &flx) {
                     + flx.x2e(m,fk,fj+1,fi)*dxe2_(m,fk,fj+1,fi))
                    : 0.5*(flx.x2e(m,fk,fj,fi) + flx.x2e(m,fk,fj+1,fi));
             }
+            rflx *= sgn;
             if (nghbr.d_view(m,n).rank == my_rank) {
-              rbuf[dn].flux(dm, ndat*v + (j-jl)) = rflx;
+              rbuf[dn].flux(dm, ndat*vout + (j-jl)) = rflx;
             } else {
-              sbuf[n].flux(m, ndat*v + (j-jl)) = rflx;
+              sbuf[n].flux(m, ndat*vout + (j-jl)) = rflx;
             }
           });
         }
