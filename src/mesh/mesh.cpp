@@ -311,22 +311,25 @@ Mesh::Mesh(ParameterInput *pin) :
     // Linf(B) and the same Ohmic heating ratio at 1, 2 and 4 radial MeshBlocks, and
     // refinement now meets the bar that certified ideal MHD (cf0eb77c):
     //
-    //   converges at the control's rate and lands below it -- Linf(B) 5.8397e-04 ->
-    //     2.3016e-04 over nx2 16 -> 32 against a control of 5.8850e-04 -> 2.3112e-04,
-    //     with the heating ratio 1.019298 -> 1.004858 against 1.025324 -> 1.006358;
+    //   converges at the control's rate and lands below it -- Linf(B) 5.6991e-04 ->
+    //     2.2986e-04 over nx2 16 -> 32 against a control of 5.8850e-04 -> 2.3112e-04,
+    //     with the heating ratio 1.019298 -> 1.004858 against 1.025324 -> 1.006358
+    //     (the refined figures are post-a01ace75; the control is unchanged by it);
     //   level-boundary flux telescoping at round-off (max|dM| 5.3e-23 on 1536 coarse/fine
     //     faces, scale 3.2e-07) and the seam flux likewise (dM/dt 2.6e-19);
     //   BITWISE identical over all five binary dumps at 1, 2, 3 and 6 MPI ranks, and on
     //     1 and 2 MI300A GPUs, matching CPU in every printed digit.
     //
     // KNOWN LIMITATION, and it is NOT specific to resistivity.  A halo region that is
-    // BOTH a panel seam and a level boundary -- the x1x2 / x3x1 edge buffers and the
-    // cube-vertex corner downstream of them -- is only FIRST order there (Linf 1.82e-02
-    // -> 8.62e-03 over nx2 16 -> 32), against 2.7e-04 for a same-panel level boundary and
-    // 3.9e-04 for a same-level seam.  It is a property of the FIELD halo, identical in a
-    // run with eta = 1e-10, so the already-supported ideal refinement path has carried it
-    // all along; ideal stencils simply never reach those cells.  The domain norms above
-    // are unaffected because the region shrinks with h.  See cs_test's GHOST SCAN.
+    // BOTH a panel seam and a level boundary is still FIRST order, even after a01ace75
+    // removed one of the two mechanisms behind it: over nx2 16 -> 32 the x1x2 / x3x1 edge
+    // halo goes 2.3278e-03 -> 1.1447e-03 and the cube-vertex corner downstream of it
+    // 1.8152e-02 -> 9.0263e-03, both ratio ~2.0, against 2.7e-04 for a same-panel level
+    // boundary and 3.9e-04 for a same-level seam.  It is a property of the FACE-CENTRED
+    // halo -- identical with eta = 1e-10, and the cell-centred path is verifiably not
+    // affected -- so the already-supported ideal refinement path has carried it all
+    // along; ideal stencils simply never reach those cells.  The domain norms above are
+    // unaffected because the region shrinks with h.  See cs_test's GHOST SCAN.
     if (adaptive) {
       missing = "ADAPTIVE mesh refinement (mesh_refinement = adaptive): refinement "
                 "flags are walked through a single MeshBlockTree and a cubed sphere has "

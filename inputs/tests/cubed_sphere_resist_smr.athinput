@@ -20,8 +20,8 @@
 # WHAT WAS MEASURED (tlim = 0.02, against the unrefined control at the same nx2):
 #
 #            refined Linf(B) / heating       control Linf(B) / heating
-#   nx2=16   5.8397e-04 / 1.019298           5.8850e-04 / 1.025324
-#   nx2=32   2.3016e-04 / 1.004858           2.3112e-04 / 1.006358
+#   nx2=16   5.6991e-04 / 1.019298           5.8850e-04 / 1.025324
+#   nx2=32   2.2986e-04 / 1.004858           2.3112e-04 / 1.006358
 #
 # i.e. refinement converges at the control's own rate, lands below it, and heats more
 # accurately.  Level-boundary flux telescoping is at round-off (max|dM| 5.3e-23 over 1536
@@ -30,12 +30,15 @@
 # and on 1 and 2 MI300A GPUs.
 #
 # KNOWN LIMITATION, not specific to resistivity: a halo region that is BOTH a panel seam
-# and a level boundary is only FIRST order (Linf 1.82e-02 -> 8.62e-03 over nx2 16 -> 32,
-# against 2.7e-04 for a same-panel level boundary and 3.9e-04 for a same-level seam).  It
-# is a property of the FIELD halo -- identical with eta = 1e-10 -- so ideal MHD with
-# refinement has carried it all along; its stencils simply never reach those cells.  The
-# domain norms are unaffected because the region shrinks with h.  cs_test's GHOST SCAN
-# reports it, split by category, and it is the thing to fix next in this area.
+# and a level boundary is still FIRST order, even after a01ace75 removed one of the two
+# mechanisms behind it.  Over nx2 16 -> 32 the edge halo goes 2.3278e-03 -> 1.1447e-03 and
+# the cube-vertex corner downstream of it 1.8152e-02 -> 9.0263e-03, both ratio ~2.0,
+# against 2.7e-04 for a same-panel level boundary and 3.9e-04 for a same-level seam.  It
+# is a property of the FACE-CENTRED halo -- identical with eta = 1e-10, and the
+# cell-centred path is verifiably unaffected -- so ideal MHD with refinement has carried
+# it all along; its stencils simply never reach those cells.  The domain norms are
+# unaffected because the region shrinks with h.  cs_test's GHOST SCAN reports it, split by
+# category, and it is the thing to fix next in this area.
 #
 # NOTE ix1_bc/ox1_bc MUST be `user`: the ghosts have to heat with the interior, or the
 # heated shell pushes against a cold boundary and the leak reads as a heating deficit.
