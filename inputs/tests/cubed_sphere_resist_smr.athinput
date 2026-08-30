@@ -1,0 +1,119 @@
+# Cubed sphere, RESISTIVITY + STATIC REFINEMENT.  Build with -D PROBLEM=cs_test.
+#
+# The refined twin of cubed_sphere_resist.athinput, and the input the resistivity +
+# refinement support decision was made on.  problem/iprob = 11 is the current-density
+# test: B = b0c*(-y,x,0) plus a uniform tilted field, so curl B = 2*b0c*zhat EXACTLY.
+# Read that file first -- it explains why this state is the right probe for a current
+# density on a non-orthogonal basis, and lists the three traps the measurement has.
+#
+# WHY REFINEMENT NEEDS ITS OWN INPUT.  eta*J is a CONSTANT vector here, so curl(eta*J) = 0
+# and the resistive term cannot move B at all.  B(t) = B(0) to the accuracy of the -v x B
+# drift, so |B - B_exact| is a PHYSICAL error with no reference to any block, and it must
+# therefore be the same under ANY decomposition.  That is the gate: a level boundary may
+# change it only by what the extra resolution buys, never by how the mesh is cut.
+#
+# <meshblock>/nx1 is HALF <mesh>/nx1, so the root grid has two blocks in radius, and
+# <refined_region1> covers the inner one -- the interface is the sphere r = 1.5, exactly
+# as in cubed_sphere_mhd_smr.athinput.  Level boundaries must be RADIAL; one lying on a
+# panel seam is refused once the tree is built, and ADAPTIVE refinement is refused too.
+#
+# WHAT WAS MEASURED (tlim = 0.02, against the unrefined control at the same nx2):
+#
+#            refined Linf(B) / heating       control Linf(B) / heating
+#   nx2=16   5.8397e-04 / 1.019298           5.8850e-04 / 1.025324
+#   nx2=32   2.3016e-04 / 1.004858           2.3112e-04 / 1.006358
+#
+# i.e. refinement converges at the control's own rate, lands below it, and heats more
+# accurately.  Level-boundary flux telescoping is at round-off (max|dM| 5.3e-23 over 1536
+# coarse/fine faces against a scale of 3.2e-07), the seam flux likewise (dM/dt 2.6e-19),
+# and the run is BITWISE identical over all five binary dumps at 1, 2, 3 and 6 MPI ranks
+# and on 1 and 2 MI300A GPUs.
+#
+# KNOWN LIMITATION, not specific to resistivity: a halo region that is BOTH a panel seam
+# and a level boundary is only FIRST order (Linf 1.82e-02 -> 8.62e-03 over nx2 16 -> 32,
+# against 2.7e-04 for a same-panel level boundary and 3.9e-04 for a same-level seam).  It
+# is a property of the FIELD halo -- identical with eta = 1e-10 -- so ideal MHD with
+# refinement has carried it all along; its stencils simply never reach those cells.  The
+# domain norms are unaffected because the region shrinks with h.  cs_test's GHOST SCAN
+# reports it, split by category, and it is the thing to fix next in this area.
+#
+# NOTE ix1_bc/ox1_bc MUST be `user`: the ghosts have to heat with the interior, or the
+# heated shell pushes against a cold boundary and the leak reads as a heating deficit.
+#
+# AXES: x1 is RADIAL, x2 = xi and x3 = eta are the panel-tangential angles.  Must be 3D.
+
+<comment>
+problem = cubed sphere resistivity with a radial static level boundary
+
+<job>
+basename = cs_res_smr
+
+<mesh>
+nghost   = 2
+nx1      = 8            # RADIAL direction
+x1min    = 1.0
+x1max    = 2.0
+ix1_bc   = user
+ox1_bc   = user
+
+nx2      = 16           # xi;  nx2 must equal nx3 (Mesh checks this)
+x2min    = -1.0
+x2max    = 1.0
+ix2_bc   = panel
+ox2_bc   = panel
+
+nx3      = 16           # eta
+x3min    = -1.0
+x3max    = 1.0
+ix3_bc   = panel
+ox3_bc   = panel
+
+use_cubed_sphere = true
+
+<meshblock>
+nx1      = 4
+nx2      = 16
+nx3      = 16
+
+<mesh_refinement>
+refinement = static
+num_levels = 2
+
+# The region must lie inside the root mesh, so x2/x3 span the FULL tangential extent
+# exactly; it then refines the same logical location on every panel, which is what makes
+# the inner radial shell come out as a sphere.
+<refined_region1>
+level = 1
+x1min = 1.0
+x1max = 1.5
+x2min = -1.0
+x2max = 1.0
+x3min = -1.0
+x3max = 1.0
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim       = -1
+tlim       = 0.02
+ndiag      = 1000
+
+<mhd>
+eos               = ideal
+reconstruct       = plm
+rsolver           = hlld
+gamma             = 1.666667
+ohmic_resistivity = constant
+eta_ohm_const     = 0.5      # deliberately large: the heating must beat the ideal drift
+
+<problem>
+iprob    = 11
+d0       = 1.0
+p0       = 1.0
+b0c      = 0.1       # azimuthal amplitude; curl B = 2*b0c*zhat
+bunif    = 0.1       # uniform part, curl-free but present in every stencil term
+bhx      = 0.37      # its direction.  Deliberately TILTED.
+bhy      = 0.61
+bhz      = 0.70
+user_bcs = true

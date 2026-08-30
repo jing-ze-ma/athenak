@@ -302,22 +302,32 @@ Mesh::Mesh(ParameterInput *pin) :
     // The former `mesh/cs_dev_allow_mhd_refinement` development switch is GONE: it
     // existed only to run the diagnostics that were chasing the defect, and that defect
     // is fixed (74cbc8df).  An input that still sets it is simply ignored.
-    // RESISTIVITY + REFINEMENT is not validated and is refused. Ohmic resistivity works
-    // on a cubed sphere with ONE radial MeshBlock (resistivity_gnomonic.cpp), but its
-    // EMF has never been shown correct across a radial block interface, which is exactly
-    // what refinement creates. Measured on iprob=11 at nx2=16, splitting x1 into two
-    // blocks with NO refinement already moves the pre-exchange eta*J on the tangential
-    // edges (x2e L1 1.73e-4 -> 3.45e-4); that array is read before SendE/RecvE average
-    // the two sides, so it is not by itself proof of a defect -- but nothing yet shows
-    // the evolved field is right there either, and until the new EVOLVED FIELD gate in
-    // CSTestResistCheck says so, refusing beats running something unvalidated.
-    if (multilevel && (pin->DoesParameterExist("mhd", "ohmic_resistivity") ||
-                       pin->DoesParameterExist("hydro", "ohmic_resistivity"))) {
-      missing = "mesh refinement together with ohmic_resistivity: the resistive EMF is "
-                "validated only for a single radial MeshBlock, and refinement puts a "
-                "coarse/fine interface in exactly the place it has not been checked. "
-                "Ideal MHD with refinement IS supported";
-    } else if (adaptive) {
+    // RESISTIVITY + REFINEMENT was refused here, and the refusal is now LIFTED.  It
+    // rested on one observation, that splitting x1 moved the answer, and that turned out
+    // to be a halo bug with nothing to do with the resistive EMF: the cube-vertex corner
+    // extrapolation ran only over the ACTIVE radial range, so a radial split left its
+    // radial-ghost layers written by nothing (397b4ad3).  Ideal MHD never reads that
+    // block; the gnomonic resistive curl does.  With it fixed, iprob=11 gives the SAME
+    // Linf(B) and the same Ohmic heating ratio at 1, 2 and 4 radial MeshBlocks, and
+    // refinement now meets the bar that certified ideal MHD (cf0eb77c):
+    //
+    //   converges at the control's rate and lands below it -- Linf(B) 5.8397e-04 ->
+    //     2.3016e-04 over nx2 16 -> 32 against a control of 5.8850e-04 -> 2.3112e-04,
+    //     with the heating ratio 1.019298 -> 1.004858 against 1.025324 -> 1.006358;
+    //   level-boundary flux telescoping at round-off (max|dM| 5.3e-23 on 1536 coarse/fine
+    //     faces, scale 3.2e-07) and the seam flux likewise (dM/dt 2.6e-19);
+    //   BITWISE identical over all five binary dumps at 1, 2, 3 and 6 MPI ranks, and on
+    //     1 and 2 MI300A GPUs, matching CPU in every printed digit.
+    //
+    // KNOWN LIMITATION, and it is NOT specific to resistivity.  A halo region that is
+    // BOTH a panel seam and a level boundary -- the x1x2 / x3x1 edge buffers and the
+    // cube-vertex corner downstream of them -- is only FIRST order there (Linf 1.82e-02
+    // -> 8.62e-03 over nx2 16 -> 32), against 2.7e-04 for a same-panel level boundary and
+    // 3.9e-04 for a same-level seam.  It is a property of the FIELD halo, identical in a
+    // run with eta = 1e-10, so the already-supported ideal refinement path has carried it
+    // all along; ideal stencils simply never reach those cells.  The domain norms above
+    // are unaffected because the region shrinks with h.  See cs_test's GHOST SCAN.
+    if (adaptive) {
       missing = "ADAPTIVE mesh refinement (mesh_refinement = adaptive): refinement "
                 "flags are walked through a single MeshBlockTree and a cubed sphere has "
                 "one tree per panel. Static refinement is supported";

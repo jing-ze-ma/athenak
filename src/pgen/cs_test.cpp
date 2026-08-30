@@ -1509,6 +1509,15 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
               << std::endl;
     return;
   }
+  // The mesh-level gates, exactly as CSTestConvErrors runs them.  iprob=11 did not have
+  // them because it began life as a single-block current-density test; they are what
+  // certifies REFINEMENT (level-boundary flux telescoping) and the seam (shared-face
+  // flux reconciliation), so a refined resistive run needs them just as the ideal one
+  // did.
+  CSTestConsSums(pm);
+  CSTestSeamFluxCheck(pm);
+  CSTestLevelFluxCheck(pm);
+
   auto &indcs = pm->mb_indcs;
   const int is = indcs.is, ie = indcs.ie;
   const int js = indcs.js, je = indcs.je;
@@ -1749,12 +1758,17 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
   // only gate here that sees a halo region no interior norm reaches.
   {
     const int ng = indcs.ng;
-    const int NCAT = 5;
-    Real gmx[NCAT] = {0.0, 0.0, 0.0, 0.0, 0.0};
+    const int NCAT = 7;
+    Real gmx[NCAT] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
     int gi_[NCAT], gj_[NCAT], gk_[NCAT], gc_[NCAT], gm_[NCAT], gn_[NCAT];
     for (int c=0; c<NCAT; ++c) {
       gi_[c] = -1; gj_[c] = -1; gk_[c] = -1; gc_[c] = -1; gm_[c] = -1; gn_[c] = 0;
     }
+    // The same maxima restricted to the FIRST ghost layer.  A 2-cell stencil reads both
+    // layers, but if only the outer one is bad the cause is the halo's own end-of-stencil
+    // handling rather than the transform itself.
+    Real gd1[NCAT];
+    for (int c=0; c<NCAT; ++c) { gd1[c] = 0.0; }
     for (int m=0; m<pmbp->nmb_thispack; ++m) {
       const int p = mbpanel.h_view(m);
       const Real x2min = size.h_view(m).x2min, x2max = size.h_view(m).x2max;
@@ -1773,8 +1787,26 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
             const Real rc = CellCenterX(i-is, indcs.nx1, x1min, x1max);
             const Real rl = LeftEdgeX(i-is, indcs.nx1, x1min, x1max);
             const bool gi = (i < is || i > ie);
+            // Is the TANGENTIAL side of this ghost a panel SEAM or an ordinary block
+            // boundary within one panel?  That is the discriminator between the seam
+            // transform and plain prolongation/restriction, and it needs more than one
+            // MeshBlock per panel tangentially to be non-degenerate.
+            bool seam = false;
+            if (gj) {
+              const int nb = (j < js) ? 8 : 12;
+              if (nghbr.h_view(m,nb).gid >= 0 && nghbr.h_view(m,nb).panel != p) {
+                seam = true;
+              }
+            }
+            if (gk) {
+              const int nb = (k < ks) ? 24 : 28;
+              if (nghbr.h_view(m,nb).gid >= 0 && nghbr.h_view(m,nb).panel != p) {
+                seam = true;
+              }
+            }
             const int cat = (!gi && !gj && !gk) ? 0 : (gi && !(gj||gk)) ? 1
-                          : (!gi && (gj||gk)) ? 2 : ((gj && gk) ? 4 : 3);
+                          : (!gi && (gj||gk)) ? 2
+                          : ((gj && gk) ? (seam ? 6 : 5) : (seam ? 4 : 3));
             Real dd[3];
             PanelToCart(p, xc, ec, cx, cy, cz);
             dd[0] = fabs(bf1h(m,k,j,i)
@@ -1787,7 +1819,14 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
             PanelNormals(p, xc, ef, n1, n2);
             dd[2] = fabs(bf3h(m,k,j,i) - ((-bazi*rc*cy + bux)*n2[0]
                     + (bazi*rc*cx + buy)*n2[1] + buz*n2[2]));
+            int dep = 0;
+            if (i < is) { dep = is-i; } else if (i > ie) { dep = i-ie; }
+            if (j < js) { dep = (js-j > dep) ? js-j : dep; }
+            if (j > je) { dep = (j-je > dep) ? j-je : dep; }
+            if (k < ks) { dep = (ks-k > dep) ? ks-k : dep; }
+            if (k > ke) { dep = (k-ke > dep) ? k-ke : dep; }
             for (int c=0; c<3; ++c) {
+              if (dep <= 1 && dd[c] > gd1[cat]) { gd1[cat] = dd[c]; }
               if (dd[c] > 1.0e-2) { ++gn_[cat]; }
               if (dd[c] > gmx[cat]) {
                 gmx[cat] = dd[c];
@@ -1805,20 +1844,33 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
     for (int c=0; c<NCAT; ++c) { gloc[c] = gmx[c]; }
 #if MPI_PARALLEL_ENABLED
     MPI_Allreduce(MPI_IN_PLACE, gmx, NCAT, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+    MPI_Allreduce(MPI_IN_PLACE, gd1, NCAT, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
     MPI_Allreduce(MPI_IN_PLACE, gn_, NCAT, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
 #endif
     const char *gn[NCAT] = {"interior      ", "radial ghost  ", "tangent ghost ",
-                            "r x EDGE ghost", "r x CORNER    "};
+                            "r x EDGE  same", "r x EDGE  SEAM",
+                            "r x CORNER same", "r x CORNER SEAM"};
     const char *cn2[3] = {"x1f", "x2f", "x3f"};
     for (int c=0; c<NCAT; ++c) {
       if (gloc[c] < gmx[c]) {
-        std::printf("###   GHOST SCAN %s Linf=%.4e (n>1e-2: %d)\n",
-                    gn[c], gmx[c], gn_[c]);
+        std::printf("###   GHOST SCAN %s Linf=%.4e (d1 %.4e) (n>1e-2: %d)\n",
+                    gn[c], gmx[c], gd1[c], gn_[c]);
       } else {
-        std::printf("###   GHOST SCAN %s Linf=%.4e (n>1e-2: %d) on %s at (i,j,k)="
-                    "(%d,%d,%d) of block %d panel %d\n", gn[c], gmx[c], gn_[c],
+        std::printf("###   GHOST SCAN %s Linf=%.4e (d1 %.4e) (n>1e-2: %d) on %s at"
+                    " (i,j,k)=(%d,%d,%d) of block %d panel %d\n",
+                    gn[c], gmx[c], gd1[c], gn_[c],
                     (gc_[c]>=0)?cn2[gc_[c]]:"---", gi_[c], gj_[c], gk_[c], gm_[c],
                     (gm_[c]>=0)?mbpanel.h_view(gm_[c]):-1);
+        // Which side of a level boundary the owner sits on, and what the x1 neighbour it
+        // takes that ghost FROM is: a coarser one means the halo was PROLONGATED, a finer
+        // one means it was RESTRICTED, and the two are different machinery.
+        if (gm_[c] >= 0) {
+          const int mm = gm_[c];
+          const int nin = (gi_[c] < 0) ? 0 : 4;
+          std::printf("###        owner lev %d,  x1 neighbour (slot %d) lev %d\n",
+                      mblev.h_view(mm), nin,
+                      (nghbr.h_view(mm,nin).gid >= 0) ? nghbr.h_view(mm,nin).lev : -99);
+        }
       }
     }
   }
