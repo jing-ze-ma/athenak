@@ -70,9 +70,7 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
       // only load buffers when neighbor exists.  CUBED-SPHERE CUBE VERTEX: skipped on
       // both sides; FillPanelCornersFC overwrites this corner block. See bvals.hpp.
       if (nghbr.d_view(m,n).gid >= 0 &&
-        !(use_cs && (IsCubeVertexCorner(nghbr.d_view, mbpanel.d_view, m, n) ||
-           IsSkippedPanelDiagonal(nghbr.d_view, mbpanel.d_view, mblev.d_view,
-                                  ml_, m, n)))) {
+        !(use_cs && IsCubeVertexCorner(nghbr.d_view, mbpanel.d_view, m, n))) {
         // if neighbor is at coarser level, use cindices to pack buffer
         // Note indices can be different for each component of face-centered field.
         int il, iu, jl, ju, kl, ku, ndat;
@@ -463,9 +461,7 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
   for (int m=0; m<nmb; ++m) {
     for (int n=0; n<nnghbr; ++n) {
       if (nghbr.h_view(m,n).gid >= 0 &&
-          !(use_cs && (IsCubeVertexCorner(nghbr.h_view, mbpanel.h_view, m, n) ||
-           IsSkippedPanelDiagonal(nghbr.h_view, mbpanel.h_view, mblev.h_view,
-                                  ml_, m, n)))) {
+          !(use_cs && IsCubeVertexCorner(nghbr.h_view, mbpanel.h_view, m, n))) {
         // index and rank of destination Neighbor
         int dn = nghbr.h_view(m,n).dest;
         int drank = nghbr.h_view(m,n).rank;
@@ -598,121 +594,6 @@ void MeshBoundaryValuesFC::FillPanelCornersFC(DvceFaceFld4D<Real> &b) {
   return;
 }
 
-//----------------------------------------------------------------------------------------
-// \!fn void MeshBoundaryValuesFC::FillSeamLevelDiagonalsFC()
-// \brief The face-centred twin of FillSeamLevelDiagonalsCC: fill the radial-tangential
-// diagonal ghost blocks whose exchange IsSkippedPanelDiagonal drops.
-//
-// See the note on the cell-centred version for why those regions are empty and why that
-// matters. Measured on cs_test iprob=8 with a radial level boundary: 1050 face-field
-// ghost cells per block sitting at EXACTLY ZERO against |B| = 1e-2 -- an error flat in
-// resolution (9.999e-3, 9.996e-3, 9.989e-3 at nx2 = 16, 32, 64), which is the signature
-// of a cell that is never written rather than one that is interpolated badly.
-//
-// Each ghost is extrapolated quadratically along the tangential direction from the
-// radial ghost strip at ACTIVE tangential index, again along the radial direction from
-// the seam halo at ACTIVE radial index, and the two are averaged -- the same recipe
-// FillPanelCornersFC uses at a cube vertex, and it reads only those two strips.
-
-void MeshBoundaryValuesFC::FillSeamLevelDiagonalsFC(DvceFaceFld4D<Real> &b) {
-  auto &indcs = pmy_pack->pmesh->mb_indcs;
-  const int is = indcs.is, ie = indcs.ie;
-  const int js = indcs.js, je = indcs.je;
-  const int ks = indcs.ks, ke = indcs.ke;
-  const int ng = indcs.ng;
-  const int nmb = pmy_pack->nmb_thispack;
-  auto &nghbr = pmy_pack->pmb->nghbr;
-  auto &mbpanel = pmy_pack->pmb->mb_panel;
-  auto &mblev = pmy_pack->pmb->mb_lev;
-  const bool ml_ = pmy_pack->pmesh->multilevel;
-  const int nt = ke - ks + 2;            // active third axis, plus its extra FACE
-  auto b_ = b;
-
-  par_for("cs_fill_lvl_diag_fc", DevExeSpace(), 0,(nmb-1), 0,7, 0,2, 0,(nt-1),
-          0,(ng*ng-1),
-  KOKKOS_LAMBDA(const int m, const int c, const int v, const int t, const int g) {
-    const int si  = (c & 1) ? 1 : -1;        // +1 = the +x1 (outer radial) side
-    const bool a2 = ((c & 2) == 0);          // tangential axis is x2, else x3
-    const int st  = (c & 4) ? 1 : -1;        // +1 = the +x2 (or +x3) side
-    const int base = a2 ? (16 + (si + 1) + 2*(st + 1))
-                        : (24 + (si + 9)*(si > 0) + 8*(si < 0) + 2*(st + 1));
-    bool any = false, covered = false;
-    for (int q=0; q<2; ++q) {
-      if (nghbr.d_view(m,base+q).gid < 0) continue;
-      any = true;
-      if (!IsSkippedPanelDiagonal(nghbr.d_view, mbpanel.d_view, mblev.d_view,
-                                  ml_, m, base+q)) covered = true;
-    }
-    if (!any || covered) return;
-
-    const int gi = g/ng, gt = g - (g/ng)*ng;
-    const Real di = static_cast<Real>(gi + 1), dt = static_cast<Real>(gt + 1);
-    const Real wi0 = 0.5*(di+1.0)*(di+2.0), wi1 = -di*(di+2.0), wi2 = 0.5*di*(di+1.0);
-    const Real wt0 = 0.5*(dt+1.0)*(dt+2.0), wt1 = -dt*(dt+2.0), wt2 = 0.5*dt*(dt+1.0);
-    const int sti = -si, stt = -st;
-    // radial target/anchor, as a CELL index and as a FACE index
-    const int itc = (si < 0) ? (is-1-gi) : (ie+1+gi);
-    const int itf = (si < 0) ? (is-1-gi) : (ie+2+gi);
-    const int aic = (si < 0) ? is : ie;
-    const int aif = (si < 0) ? is : (ie+1);
-    // tangential target/anchor, likewise
-    const int ttc = (st < 0) ? ((a2 ? js : ks)-1-gt) : ((a2 ? je : ke)+1+gt);
-    const int ttf = (st < 0) ? ((a2 ? js : ks)-1-gt) : ((a2 ? je : ke)+2+gt);
-    const int atc = (st < 0) ? (a2 ? js : ks) : (a2 ? je : ke);
-    const int atf = (st < 0) ? (a2 ? js : ks) : ((a2 ? je : ke)+1);
-
-    // The third (ACTIVE) axis carries one more FACE than cell, so the extra index is
-    // used only by the component staggered along it.
-    if (a2) {
-      const int k = ks + t;
-      if (v == 0) {                                   // b.x1f: face in i, cell in j,k
-        if (k > ke) return;
-        const Real et = wt0*b_.x1f(m,k,atc,itf) + wt1*b_.x1f(m,k,atc+stt,itf)
-                      + wt2*b_.x1f(m,k,atc+2*stt,itf);
-        const Real ei = wi0*b_.x1f(m,k,ttc,aif) + wi1*b_.x1f(m,k,ttc,aif+sti)
-                      + wi2*b_.x1f(m,k,ttc,aif+2*sti);
-        b_.x1f(m,k,ttc,itf) = 0.5*(et + ei);
-      } else if (v == 1) {                            // b.x2f: face in j
-        if (k > ke) return;
-        const Real et = wt0*b_.x2f(m,k,atf,itc) + wt1*b_.x2f(m,k,atf+stt,itc)
-                      + wt2*b_.x2f(m,k,atf+2*stt,itc);
-        const Real ei = wi0*b_.x2f(m,k,ttf,aic) + wi1*b_.x2f(m,k,ttf,aic+sti)
-                      + wi2*b_.x2f(m,k,ttf,aic+2*sti);
-        b_.x2f(m,k,ttf,itc) = 0.5*(et + ei);
-      } else {                                        // b.x3f: face in k
-        const Real et = wt0*b_.x3f(m,k,atc,itc) + wt1*b_.x3f(m,k,atc+stt,itc)
-                      + wt2*b_.x3f(m,k,atc+2*stt,itc);
-        const Real ei = wi0*b_.x3f(m,k,ttc,aic) + wi1*b_.x3f(m,k,ttc,aic+sti)
-                      + wi2*b_.x3f(m,k,ttc,aic+2*sti);
-        b_.x3f(m,k,ttc,itc) = 0.5*(et + ei);
-      }
-    } else {
-      const int j = js + t;
-      if (v == 0) {                                   // b.x1f: face in i, cell in j,k
-        if (j > je) return;
-        const Real et = wt0*b_.x1f(m,atc,j,itf) + wt1*b_.x1f(m,atc+stt,j,itf)
-                      + wt2*b_.x1f(m,atc+2*stt,j,itf);
-        const Real ei = wi0*b_.x1f(m,ttc,j,aif) + wi1*b_.x1f(m,ttc,j,aif+sti)
-                      + wi2*b_.x1f(m,ttc,j,aif+2*sti);
-        b_.x1f(m,ttc,j,itf) = 0.5*(et + ei);
-      } else if (v == 1) {                            // b.x2f: face in j
-        const Real et = wt0*b_.x2f(m,atc,j,itc) + wt1*b_.x2f(m,atc+stt,j,itc)
-                      + wt2*b_.x2f(m,atc+2*stt,j,itc);
-        const Real ei = wi0*b_.x2f(m,ttc,j,aic) + wi1*b_.x2f(m,ttc,j,aic+sti)
-                      + wi2*b_.x2f(m,ttc,j,aic+2*sti);
-        b_.x2f(m,ttc,j,itc) = 0.5*(et + ei);
-      } else {                                        // b.x3f: face in k
-        if (j > je) return;
-        const Real et = wt0*b_.x3f(m,atf,j,itc) + wt1*b_.x3f(m,atf+stt,j,itc)
-                      + wt2*b_.x3f(m,atf+2*stt,j,itc);
-        const Real ei = wi0*b_.x3f(m,ttf,j,aic) + wi1*b_.x3f(m,ttf,j,aic+sti)
-                      + wi2*b_.x3f(m,ttf,j,aic+2*sti);
-        b_.x3f(m,ttf,j,itc) = 0.5*(et + ei);
-      }
-    }
-  });
-  return;
-}
 
 //----------------------------------------------------------------------------------------
 // \!fn void RecvBuffers()
@@ -737,9 +618,7 @@ TaskStatus MeshBoundaryValuesFC::RecvAndUnpackFC(DvceFaceFld4D<Real> &b,
   for (int m=0; m<nmb; ++m) {
     for (int n=0; n<nnghbr; ++n) {
       if (nghbr.h_view(m,n).gid >= 0 &&
-          !(use_cs && (IsCubeVertexCorner(nghbr.h_view, mbpanel.h_view, m, n) ||
-           IsSkippedPanelDiagonal(nghbr.h_view, mbpanel.h_view, mblev.h_view,
-                                  ml_, m, n)))) {
+          !(use_cs && IsCubeVertexCorner(nghbr.h_view, mbpanel.h_view, m, n))) {
         if (nghbr.h_view(m,n).rank != global_variable::my_rank) {
           int test;
           int ierr = MPI_Test(&(rbuf[n].vars_req[m]), &test, MPI_STATUS_IGNORE);
@@ -774,9 +653,7 @@ TaskStatus MeshBoundaryValuesFC::RecvAndUnpackFC(DvceFaceFld4D<Real> &b,
     for (int n=0; n<nnghbr; ++n) {
       // only unpack buffers when neighbor exists (cube vertex skipped -- see bvals.hpp)
       if (nghbr.d_view(m,n).gid >= 0 &&
-        !(use_cs && (IsCubeVertexCorner(nghbr.d_view, mbpanel.d_view, m, n) ||
-           IsSkippedPanelDiagonal(nghbr.d_view, mbpanel.d_view, mblev.d_view,
-                                  ml_, m, n)))) {
+        !(use_cs && IsCubeVertexCorner(nghbr.d_view, mbpanel.d_view, m, n))) {
         // if neighbor is at coarser level, use cindices to unpack buffer
         int il, iu, jl, ju, kl, ku, ndat;
         if (nghbr.d_view(m,n).lev < mblev.d_view(m)) {

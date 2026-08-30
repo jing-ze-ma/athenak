@@ -101,7 +101,6 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFluxFC(DvceEdgeFld4D<Real> &flx) {
   auto &two_d = pmy_pack->pmesh->two_d;
   auto &mbpanel = pmy_pack->pmb->mb_panel;
   const bool use_cs = pmy_pack->pmesh->use_cubed_sphere;
-  const bool ml_ = pmy_pack->pmesh->multilevel;
 
   // Outer loop over (# of MeshBlocks)*(# of neighbors)*(3 field components)
   Kokkos::TeamPolicy<> policy(DevExeSpace(), (3*nmb*nnghbr), Kokkos::AUTO);
@@ -427,9 +426,7 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFluxFC(DvceEdgeFld4D<Real> &flx) {
         // CUBED-SPHERE CUBE VERTEX: no fourth block exists diagonally across it, and the
         // bogus pairing would land on a legitimate four-block seam edge of the receiver.
         const bool cs_vtx = use_cs &&
-            (IsCubeVertexCorner(nghbr.d_view, mbpanel.d_view, m, n) ||
-             IsSkippedPanelDiagonal(nghbr.d_view, mbpanel.d_view, mblev.d_view,
-                                    ml_, m, n));
+            IsCubeVertexCorner(nghbr.d_view, mbpanel.d_view, m, n);
         if (v==0 && !cs_vtx) {
           Kokkos::parallel_for(Kokkos::TeamThreadRange<>(tmember,ni),[&](const int idx) {
             int i = idx + il;
@@ -467,10 +464,8 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFluxFC(DvceEdgeFld4D<Real> &flx) {
       if ( (nghbr.h_view(m,n).gid >=0) &&
            (nghbr.h_view(m,n).lev <= mblev.h_view(m)) &&
            (n<48) &&
-           !(use_cs && ((n>=40 &&
-             IsCubeVertexCorner(nghbr.h_view, mbpanel.h_view, m, n)) ||
-             IsSkippedPanelDiagonal(nghbr.h_view, mbpanel.h_view, mblev.h_view,
-                                    ml_, m, n))) ) {
+           !(use_cs && n>=40 &&
+             IsCubeVertexCorner(nghbr.h_view, mbpanel.h_view, m, n)) ) {
         // index and rank of destination Neighbor
         int dn = nghbr.h_view(m,n).dest;
         int drank = nghbr.h_view(m,n).rank;
@@ -697,7 +692,6 @@ void MeshBoundaryValuesFC::SumBoundaryFluxes(DvceEdgeFld4D<Real> &flx,
   auto &mbbcs = pmy_pack->pmb->mb_bcs;
   auto &mbpanel = pmy_pack->pmb->mb_panel;
   const bool use_cs = pmy_pack->pmesh->use_cubed_sphere;
-  const bool ml_ = pmy_pack->pmesh->multilevel;
   // A buffer from a FINER neighbour carries the length-weighted sum sum(L_f E_f) that
   // PackAndSendFluxFC restricted (see the note there), so turn it back into an EMF with
   // THIS block's own edge length. Same-level buffers carry an EMF already and are left
@@ -894,9 +888,7 @@ void MeshBoundaryValuesFC::SumBoundaryFluxes(DvceEdgeFld4D<Real> &flx,
         } else if (n<48) {
           // CUBED-SPHERE CUBE VERTEX: nothing was sent here, so neither add nor count it
           if (v==0 && !(use_cs &&
-                        (IsCubeVertexCorner(nghbr.d_view, mbpanel.d_view, m, n) ||
-                         IsSkippedPanelDiagonal(nghbr.d_view, mbpanel.d_view,
-                                                mblev.d_view, ml_, m, n)))) {
+                        IsCubeVertexCorner(nghbr.d_view, mbpanel.d_view, m, n))) {
             Kokkos::single(Kokkos::PerTeam(tmember), [&] () {
               nflx(m,n) += 1;
             });
@@ -1327,11 +1319,8 @@ TaskStatus MeshBoundaryValuesFC::InitFluxRecv(const int nvars) {
       if ( (nghbr.h_view(m,n).gid >=0) &&
            (nghbr.h_view(m,n).lev >= pmy_pack->pmb->mb_lev.h_view(m)) &&
            (n<48) &&
-           !(pmy_pack->pmesh->use_cubed_sphere && ((n>=40 &&
-             IsCubeVertexCorner(nghbr.h_view, pmy_pack->pmb->mb_panel.h_view, m, n)) ||
-             IsSkippedPanelDiagonal(nghbr.h_view, pmy_pack->pmb->mb_panel.h_view,
-                                    pmy_pack->pmb->mb_lev.h_view,
-                                    pmy_pack->pmesh->multilevel, m, n))) ) {
+           !(pmy_pack->pmesh->use_cubed_sphere && n>=40 &&
+             IsCubeVertexCorner(nghbr.h_view, pmy_pack->pmb->mb_panel.h_view, m, n)) ) {
         // rank of destination buffer
         int drank = nghbr.h_view(m,n).rank;
 

@@ -137,10 +137,10 @@ void MeshBoundaryValuesCC::ProlongateCC(DvceArray5D<Real> &a, DvceArray5D<Real> 
   int nmb = pmy_pack->nmb_thispack;
   int nnghbr = pmy_pack->pmb->nnghbr;
   auto &mbpanel = pmy_pack->pmb->mb_panel;
-  // A slot whose exchange was SKIPPED (a cube vertex, or a cross-panel diagonal at
-  // another level) has an EMPTY coarse buffer, so prolongating it writes ZEROS into the
+  // A CUBE VERTEX slot is never exchanged (no fourth block exists diagonally across
+  // it), so its coarse buffer is EMPTY and prolongating it would write ZEROS into the
   // ghost zone -- measured as a floored density of 1.2e-38 in exactly those cells.
-  // FillSeamLevelDiagonalsCC fills those regions from the flanking halos instead.
+  // Nothing reads them: FillPanelCornersCC rewrites that corner block instead.
   const bool use_cs = pmy_pack->pmesh->use_cubed_sphere;
   const bool ml_ = pmy_pack->pmesh->multilevel;
 
@@ -170,9 +170,7 @@ void MeshBoundaryValuesCC::ProlongateCC(DvceArray5D<Real> &a, DvceArray5D<Real> 
 
     // only prolongate when neighbor exists and is at coarser level
     if ((nghbr.d_view(m,n).gid >= 0) && (nghbr.d_view(m,n).lev < mblev.d_view(m)) &&
-        !(use_cs && (IsCubeVertexCorner(nghbr.d_view, mbpanel.d_view, m, n) ||
-          IsSkippedPanelDiagonal(nghbr.d_view, mbpanel.d_view, mblev.d_view,
-                                 ml_, m, n)))) {
+        !(use_cs && IsCubeVertexCorner(nghbr.d_view, mbpanel.d_view, m, n))) {
       // loop over indices for prolongation on this buffer
       int il = rbuf[n].iprol[0].bis;
       int iu = rbuf[n].iprol[0].bie;
@@ -217,12 +215,11 @@ void MeshBoundaryValuesCC::ProlongateCC(DvceArray5D<Real> &a, DvceArray5D<Real> 
     tmember.team_barrier();
   });
 
-  // The cubed-sphere corner fills must run AGAIN here, not only in RecvAndUnpackCC: at a
-  // level boundary their stencil reads the RADIAL ghost strip, which prolongation only
-  // just wrote. And the diagonals whose exchange was skipped have no other source at all.
+  // The cubed-sphere corner fill must run AGAIN here, not only in RecvAndUnpackCC: at a
+  // level boundary its stencil reads the RADIAL ghost strip, which prolongation has only
+  // just written.
   if (pmy_pack->pmesh->use_cubed_sphere) {
     FillPanelCornersCC(a);
-    FillSeamLevelDiagonalsCC(a);
   }
   return;
 }
@@ -381,8 +378,8 @@ void MeshBoundaryValuesFC::ProlongateFC(DvceFaceFld4D<Real> &b, DvceFaceFld4D<Re
   int nmb = pmy_pack->nmb_thispack;
   int nnghbr = pmy_pack->pmb->nnghbr;
   auto &mbpanel = pmy_pack->pmb->mb_panel;
-  // As in ProlongateCC: a slot whose exchange was skipped has an EMPTY coarse buffer, so
-  // prolongating it would write zeros. FillSeamLevelDiagonalsFC fills it instead.
+  // As in ProlongateCC: a cube-vertex slot has an EMPTY coarse buffer, so prolongating
+  // it would write zeros over what FillPanelCornersFC puts there.
   const bool use_cs = pmy_pack->pmesh->use_cubed_sphere;
   const bool ml_ = pmy_pack->pmesh->multilevel;
 
@@ -407,9 +404,7 @@ void MeshBoundaryValuesFC::ProlongateFC(DvceFaceFld4D<Real> &b, DvceFaceFld4D<Re
 
     // only prolongate when neighbor exists and is at coarser level
     if ((nghbr.d_view(m,n).gid >= 0) && (nghbr.d_view(m,n).lev < mblev.d_view(m)) &&
-        !(use_cs && (IsCubeVertexCorner(nghbr.d_view, mbpanel.d_view, m, n) ||
-          IsSkippedPanelDiagonal(nghbr.d_view, mbpanel.d_view, mblev.d_view,
-                                 ml_, m, n)))) {
+        !(use_cs && IsCubeVertexCorner(nghbr.d_view, mbpanel.d_view, m, n))) {
       int il = rbuf[n].iprol[v].bis;
       int iu = rbuf[n].iprol[v].bie;
       int jl = rbuf[n].iprol[v].bjs;
@@ -518,11 +513,10 @@ void MeshBoundaryValuesFC::ProlongateFC(DvceFaceFld4D<Real> &b, DvceFaceFld4D<Re
     tmember.team_barrier();
   });}
 
-  // As in ProlongateCC: re-run the cubed-sphere corner fills now that prolongation has
-  // written the radial ghost strip their stencil reads, and fill the skipped diagonals.
+  // As in ProlongateCC: re-run the cubed-sphere corner fill now that prolongation has
+  // written the radial ghost strip its stencil reads.
   if (pmy_pack->pmesh->use_cubed_sphere) {
     FillPanelCornersFC(b);
-    FillSeamLevelDiagonalsFC(b);
   }
   return;
 }

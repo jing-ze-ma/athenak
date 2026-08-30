@@ -325,13 +325,29 @@ void MeshBlock::SetNeighbors(int *ranklist) {
             if (nt->pleaf_ != nullptr) {  // neighbor at finer level -- requires subblocks
               int ffx = 1 - (n + 1)/2; // 0 for BoundaryFace::outer_x1, 1 for inner_x1
               int ffy = 1 - (m + 1)/2; // 0 for BoundaryFace::outer_x2, 1 for inner_x2
-              for (int fz=0; fz<nfz; fz++) {
-                MeshBlockTree* nf = nt->GetLeaf(ffx, ffy, fz);
-                int inghbr = NeighborIndex(n,m,0,fz,0);
+              const bool cs_ = pmy_pack->pmesh->use_cubed_sphere &&
+                               (panel != nt->lloc_.panel);
+              // c is the child index along the NEIGHBOUR's free axis; f the subblock
+              // index along OURS. They differ across a seam. See PanelEdgeMap.
+              for (int c=0; c<nfz; c++) {
+                int cx = ffx, cy = ffy, cz = c, f = c, cdest = c;
+                if (cs_) {
+                  const PanelEdgeMap pm = GetPanelEdgeMap(n,m,0,panel,nt->lloc_.panel);
+                  cx = (pm.ox1r + 1)/2;
+                  cy = (pm.free_axis == 2) ? c : ((pm.ox2r + 1)/2);
+                  cz = (pm.free_axis == 3) ? c : ((pm.ox3r + 1)/2);
+                  f = (pm.rev_free == 1) ? (nfz - 1 - c) : c;
+                  cdest = c;
+                }
+                MeshBlockTree* nf = nt->GetLeaf(cx, cy, cz);
+                int inghbr = NeighborIndex(n,m,0,f,0);
                 nghbr.h_view(b,inghbr).gid = nf->gid_;
                 nghbr.h_view(b,inghbr).lev = nf->lloc_.level;
                 nghbr.h_view(b,inghbr).rank = ranklist[nf->gid_];
-                nghbr.h_view(b,inghbr).dest = NeighborIndex(-n,-m,0,fz,0);
+                nghbr.h_view(b,inghbr).dest = cs_ ?
+                    pmy_pack->pmesh->NeighborIndexPanel(-n,-m,0,cdest,0,
+                                                        panel,nf->lloc_.panel)
+                  : NeighborIndex(-n,-m,0,f,0);
                 nghbr.h_view(b,inghbr).panel = nf->lloc_.panel;
               }
             } else {   // neighbor at same or coarser level
@@ -349,6 +365,12 @@ void MeshBlock::SetNeighbors(int *ranklist) {
               } else { // neighbor at coarser level, set indx/dest to appropriate subblock
                 inghbr = NeighborIndex(n,m,0,myfx3,0);
                 idest = NeighborIndex(-n,-m,0,myfx3,0);
+                if (pmy_pack->pmesh->use_cubed_sphere && panel != nt->lloc_.panel) {
+                  const PanelEdgeMap pm = GetPanelEdgeMap(n,m,0,panel,nt->lloc_.panel);
+                  const int c = (pm.rev_free == 1) ? (1 - myfx3) : myfx3;
+                  idest = pmy_pack->pmesh->NeighborIndexPanel(-n,-m,0,c,0,
+                                                        panel,nt->lloc_.panel);
+                }
               }
               // only set neighbor for exterior edges of coarser face
               if (nt->lloc_.level >= lloc.level || (myox1 == n && myox2 == m)) {
@@ -416,13 +438,27 @@ void MeshBlock::SetNeighbors(int *ranklist) {
             if (nt->pleaf_ != nullptr) {  // neighbor at finer level -- requires subblocks
               int ffx = 1 - (n + 1)/2; // 0 for BoundaryFace::outer_x1, 1 for inner_x1
               int ffz = 1 - (l + 1)/2; // 0 for BoundaryFace::outer_x3, 1 for inner_x3
-              for (int fy=0; fy<nfy; fy++) {
-                MeshBlockTree* nf = nt->GetLeaf(ffx, fy, ffz);
-                int inghbr = NeighborIndex(n,0,l,fy,0);
+              const bool cs_ = pmy_pack->pmesh->use_cubed_sphere &&
+                               (panel != nt->lloc_.panel);
+              for (int c=0; c<nfy; c++) {
+                int cx = ffx, cy = c, cz = ffz, f = c, cdest = c;
+                if (cs_) {
+                  const PanelEdgeMap pm = GetPanelEdgeMap(n,0,l,panel,nt->lloc_.panel);
+                  cx = (pm.ox1r + 1)/2;
+                  cy = (pm.free_axis == 2) ? c : ((pm.ox2r + 1)/2);
+                  cz = (pm.free_axis == 3) ? c : ((pm.ox3r + 1)/2);
+                  f = (pm.rev_free == 1) ? (nfy - 1 - c) : c;
+                  cdest = c;
+                }
+                MeshBlockTree* nf = nt->GetLeaf(cx, cy, cz);
+                int inghbr = NeighborIndex(n,0,l,f,0);
                 nghbr.h_view(b,inghbr).gid = nf->gid_;
                 nghbr.h_view(b,inghbr).lev = nf->lloc_.level;
                 nghbr.h_view(b,inghbr).rank = ranklist[nf->gid_];
-                nghbr.h_view(b,inghbr).dest = NeighborIndex(-n,0,-l,fy,0);
+                nghbr.h_view(b,inghbr).dest = cs_ ?
+                    pmy_pack->pmesh->NeighborIndexPanel(-n,0,-l,cdest,0,
+                                                        panel,nf->lloc_.panel)
+                  : NeighborIndex(-n,0,-l,f,0);
                 nghbr.h_view(b,inghbr).panel = nf->lloc_.panel;
               }
             } else {   // neighbor at same or coarser level -- no subblocks
@@ -436,6 +472,12 @@ void MeshBlock::SetNeighbors(int *ranklist) {
               } else { // neighbor at coarser level, set indx/dest to appropriate subblock
                 inghbr = NeighborIndex(n,0,l,myfx2,0);
                 idest = NeighborIndex(-n,0,-l,myfx2,0);
+                if (pmy_pack->pmesh->use_cubed_sphere && panel != nt->lloc_.panel) {
+                  const PanelEdgeMap pm = GetPanelEdgeMap(n,0,l,panel,nt->lloc_.panel);
+                  const int c = (pm.rev_free == 1) ? (1 - myfx2) : myfx2;
+                  idest = pmy_pack->pmesh->NeighborIndexPanel(-n,0,-l,c,0,
+                                                        panel,nt->lloc_.panel);
+                }
               }
               // only set neighbor for exterior edges of coarser face
               if (nt->lloc_.level >= lloc.level || (myox1 == n && myox3 == l)) {
@@ -458,13 +500,24 @@ void MeshBlock::SetNeighbors(int *ranklist) {
             if (nt->pleaf_ != nullptr) {  // neighbor at finer level -- requires subblocks
               int ffy = 1 - (m + 1)/2; // 0 for BoundaryFace::outer_x2, 1 for inner_x2
               int ffz = 1 - (l + 1)/2; // 0 for BoundaryFace::outer_x3, 1 for inner_x3
+              const bool cs_ = pmy_pack->pmesh->use_cubed_sphere &&
+                               (panel != nt->lloc_.panel);
               for (int fx=0; fx<nfy; fx++) {
-                MeshBlockTree* nf = nt->GetLeaf(fx, ffy, ffz);
+                int cy = ffy, cz = ffz;
+                if (cs_) {   // the edge runs along x1, which no seam crosses: f == c
+                  const PanelEdgeMap pm = GetPanelEdgeMap(0,m,l,panel,nt->lloc_.panel);
+                  cy = (pm.ox2r + 1)/2;
+                  cz = (pm.ox3r + 1)/2;
+                }
+                MeshBlockTree* nf = nt->GetLeaf(fx, cy, cz);
                 int inghbr = NeighborIndex(0,m,l,fx,0);
                 nghbr.h_view(b,inghbr).gid = nf->gid_;
                 nghbr.h_view(b,inghbr).lev = nf->lloc_.level;
                 nghbr.h_view(b,inghbr).rank = ranklist[nf->gid_];
-                nghbr.h_view(b,inghbr).dest = NeighborIndex(0,-m,-l,fx,0);
+                nghbr.h_view(b,inghbr).dest = cs_ ?
+                    pmy_pack->pmesh->NeighborIndexPanel(0,-m,-l,fx,0,
+                                                        panel,nf->lloc_.panel)
+                  : NeighborIndex(0,-m,-l,fx,0);
                 nghbr.h_view(b,inghbr).panel = nf->lloc_.panel;
               }
             } else {   // neighbor at same or coarser level -- no subblocks
@@ -482,6 +535,10 @@ void MeshBlock::SetNeighbors(int *ranklist) {
               } else { // neighbor at coarser level, set indx/dest to appropriate subblock
                 inghbr = NeighborIndex(0,m,l,myfx1,0);
                 idest = NeighborIndex(0,-m,-l,myfx1,0);
+                if (pmy_pack->pmesh->use_cubed_sphere && panel != nt->lloc_.panel) {
+                  idest = pmy_pack->pmesh->NeighborIndexPanel(0,-m,-l,myfx1,0,
+                                                        panel,nt->lloc_.panel);
+                }
               }
               // only set neighbor for exterior edges of coarser face
               if (nt->lloc_.level >= lloc.level || (myox2 == m && myox3 == l)) {
@@ -506,6 +563,12 @@ void MeshBlock::SetNeighbors(int *ranklist) {
                 int ffx = 1 - (n + 1)/2; // 0 for BoundaryFace::outer_x1, 1 for inner_x1
                 int ffy = 1 - (m + 1)/2; // 0 for BoundaryFace::outer_x2, 1 for inner_x2
                 int ffz = 1 - (l + 1)/2; // 0 for BoundaryFace::outer_x3, 1 for inner_x3
+                if (pmy_pack->pmesh->use_cubed_sphere && panel != nt->lloc_.panel) {
+                  const PanelEdgeMap pm = GetPanelEdgeMap(n,m,l,panel,nt->lloc_.panel);
+                  ffx = (pm.ox1r + 1)/2;
+                  ffy = (pm.ox2r + 1)/2;
+                  ffz = (pm.ox3r + 1)/2;
+                }
                 nt = nt->GetLeaf(ffx, ffy, ffz);
               }
               int nlevel = nt->lloc_.level;

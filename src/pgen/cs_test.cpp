@@ -2833,12 +2833,10 @@ void CSTestGhostCheck(ParameterInput *pin, Mesh *pm) {
             }
             ++bad[c];
             // The only thing that MATTERS is whether a non-reciprocal slot is actually
-            // exchanged. Both predicates are local and symmetric, so a slot they skip
-            // has neither a send nor a posted receive and cannot hang.
-            const bool ml_ = pm->multilevel;
-            if (!(IsCubeVertexCorner(ng.h_view, mbpanel.h_view, m, n) ||
-                  IsSkippedPanelDiagonal(ng.h_view, mbpanel.h_view,
-                                         pmbp->pmb->mb_lev.h_view, ml_, m, n))) {
+            // EXCHANGED. A cube vertex is skipped on both sides at once, so it has
+            // neither a send nor a posted receive and cannot hang. Anything else that
+            // shows up here is a real bug: it will hang ClearRecv under MPI.
+            if (!IsCubeVertexCorner(ng.h_view, mbpanel.h_view, m, n)) {
               ++uncovered;
               if (uncovered <= 5) {
                 std::printf("   !! UNCOVERED non-reciprocal slot m=%d n=%d\n", m, n);

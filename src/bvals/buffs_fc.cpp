@@ -93,8 +93,8 @@ void MeshBoundaryValuesFC::InitSendIndices(MeshBoundaryBuffer &buf,
     // MEASURED (cs_test iprob=8, b0c=1e-2, a static uniform field, block-boundary flux
     // telescoping via CSTestLevelFluxCheck): with the expansion the TANGENTIAL same-level
     // faces leak max|dM| 4.6e-10 against a flux scale of 2.8e-9; without it they are
-    // EXACTLY zero. The radial faces are untouched by this and are a separate defect --
-    // the cross-panel diagonals that IsSkippedPanelDiagonal drops.
+    // EXACTLY zero. The radial faces were a separate defect, in the cross-panel diagonal
+    // pairing, and are fixed in meshblock.cpp.
     const bool ml_ovl = pmy_pack->pmesh->multilevel &&
                         !(pmy_pack->pmesh->use_cubed_sphere);
     // x1f component on x1-faces

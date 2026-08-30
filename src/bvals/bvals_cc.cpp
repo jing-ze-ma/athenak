@@ -73,9 +73,7 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
     // only load buffers when neighbor exists.  CUBED-SPHERE CUBE VERTEX: skipped on
     // both sides; FillPanelCornersCC overwrites exactly this corner block. See bvals.hpp.
     if (nghbr.d_view(m,n).gid >= 0 &&
-        !(use_cs && (IsCubeVertexCorner(nghbr.d_view, mbpanel.d_view, m, n) ||
-           IsSkippedPanelDiagonal(nghbr.d_view, mbpanel.d_view, mblev.d_view,
-                                  ml_, m, n)))) {
+        !(use_cs && IsCubeVertexCorner(nghbr.d_view, mbpanel.d_view, m, n))) {
       // if neighbor is at coarser level, use coar indices to pack buffer
       int il, iu, jl, ju, kl, ku;
       if (nghbr.d_view(m,n).lev < mblev.d_view(m)) {
@@ -347,9 +345,7 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
     // only load buffers when neighbor exists.  CUBED-SPHERE CUBE VERTEX: skipped on
     // both sides; FillPanelCornersCC overwrites exactly this corner block. See bvals.hpp.
     if (nghbr.d_view(m,n).gid >= 0 &&
-        !(use_cs && (IsCubeVertexCorner(nghbr.d_view, mbpanel.d_view, m, n) ||
-           IsSkippedPanelDiagonal(nghbr.d_view, mbpanel.d_view, mblev.d_view,
-                                  ml_, m, n)))) {
+        !(use_cs && IsCubeVertexCorner(nghbr.d_view, mbpanel.d_view, m, n))) {
       int il, iu, jl, ju, kl, ku;
       // If neighbor is at same level and data is for Z4c module, append data from coarse
       // array for higher-order prolongation
@@ -415,9 +411,7 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
   for (int m=0; m<nmb; ++m) {
     for (int n=0; n<nnghbr; ++n) {
       if (nghbr.h_view(m,n).gid >= 0 &&
-          !(use_cs && (IsCubeVertexCorner(nghbr.h_view, mbpanel.h_view, m, n) ||
-           IsSkippedPanelDiagonal(nghbr.h_view, mbpanel.h_view, mblev.h_view,
-                                  ml_, m, n)))) {
+          !(use_cs && IsCubeVertexCorner(nghbr.h_view, mbpanel.h_view, m, n))) {
         // index and rank of destination Neighbor
         int dn = nghbr.h_view(m,n).dest;
         int drank = nghbr.h_view(m,n).rank;
@@ -483,9 +477,7 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackCC(DvceArray5D<Real> &a,
   for (int m=0; m<nmb; ++m) {
     for (int n=0; n<nnghbr; ++n) {
       if (nghbr.h_view(m,n).gid >= 0 &&
-          !(use_cs && (IsCubeVertexCorner(nghbr.h_view, mbpanel.h_view, m, n) ||
-           IsSkippedPanelDiagonal(nghbr.h_view, mbpanel.h_view, mblev.h_view,
-                                  ml_, m, n)))) {
+          !(use_cs && IsCubeVertexCorner(nghbr.h_view, mbpanel.h_view, m, n))) {
         if (nghbr.h_view(m,n).rank != global_variable::my_rank) {
           int test;
           int ierr = MPI_Test(&(rbuf[n].vars_req[m]), &test, MPI_STATUS_IGNORE);
@@ -521,9 +513,7 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackCC(DvceArray5D<Real> &a,
 
     // only unpack buffers when neighbor exists (cube vertex skipped -- see bvals.hpp)
     if (nghbr.d_view(m,n).gid >= 0 &&
-        !(use_cs && (IsCubeVertexCorner(nghbr.d_view, mbpanel.d_view, m, n) ||
-           IsSkippedPanelDiagonal(nghbr.d_view, mbpanel.d_view, mblev.d_view,
-                                  ml_, m, n)))) {
+        !(use_cs && IsCubeVertexCorner(nghbr.d_view, mbpanel.d_view, m, n))) {
       int il, iu, jl, ju, kl, ku;
       // if neighbor is at coarser level, use coar indices to unpack buffer
       if (nghbr.d_view(m,n).lev < mblev.d_view(m)) {
@@ -587,9 +577,7 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackCC(DvceArray5D<Real> &a,
     const int v = (tmember.league_rank() - m*(nnghbr*nvar) - n*nvar);
     // only unpack buffers when neighbor exists (cube vertex skipped -- see bvals.hpp)
     if (nghbr.d_view(m,n).gid >= 0 &&
-        !(use_cs && (IsCubeVertexCorner(nghbr.d_view, mbpanel.d_view, m, n) ||
-           IsSkippedPanelDiagonal(nghbr.d_view, mbpanel.d_view, mblev.d_view,
-                                  ml_, m, n)))) {
+        !(use_cs && IsCubeVertexCorner(nghbr.d_view, mbpanel.d_view, m, n))) {
       int il, iu, jl, ju, kl, ku;
       // If neighbor is at same level and data is for Z4c module, unpack data from coarse
       // array for higher-order prolongation
@@ -706,99 +694,3 @@ void MeshBoundaryValuesCC::FillPanelCornersCC(DvceArray5D<Real> &a) {
   return;
 }
 
-//----------------------------------------------------------------------------------------
-// \!fn void MeshBoundaryValuesCC::FillSeamLevelDiagonalsCC()
-// \brief Fill the RADIAL-tangential diagonal ghost blocks that IsSkippedPanelDiagonal
-// leaves empty, by extrapolating from the two flanking face halos.
-//
-// IsSkippedPanelDiagonal drops the cross-panel diagonals whose neighbour is at ANOTHER
-// LEVEL, because those are genuinely non-reciprocal and hang ClearRecv under MPI.
-// Nothing else writes those ghosts. FillPanelCornersCC does not: it fills the TANGENTIAL
-// (x2,x3) corner block, at every i, and these regions have one tangential index ACTIVE.
-// So they keep whatever they were initialised with -- zero. Measured on cs_test iprob=8
-// with a radial level boundary: 1050 face-field ghost cells per block sitting at exactly
-// 0 against |B| = 1e-2, and the density in the same cells FLOORED to 1.2e-38 instead of
-// 1. That is what the CT corner EMF then reads, and it is why the interface EMF is
-// O(|B|) on the EDGE RING of the interface face (3.3e-2) while the interior of the same
-// face is clean at 5e-9 -- and why the run dies at cycle 25.
-//
-// The region is filled the way a cube-vertex corner is: the panel's own gnomonic map
-// extends perfectly well out there, and the two flanking halos are accurate -- one is
-// the radial ghost at ACTIVE tangential index (the level-boundary prolongation), the
-// other the tangential seam halo at ACTIVE radial index. Each ghost is extrapolated
-// quadratically from one, again from the other, and the two are averaged. The stencil
-// only ever reads those two strips, never the block being written.
-//
-// Only regions whose every REGISTERED slot is skipped are touched: an edge that is
-// exchanged normally, or one with no neighbour at all (an ordinary AMR case where
-// prolongation covers the region), is left exactly alone. The three-dimensional corners
-// are deliberately not filled -- an edge-centred EMF reads two-dimensional diagonals
-// only, never the cell with all three indices in the ghost zone.
-
-void MeshBoundaryValuesCC::FillSeamLevelDiagonalsCC(DvceArray5D<Real> &a) {
-  auto &indcs = pmy_pack->pmesh->mb_indcs;
-  const int is = indcs.is, ie = indcs.ie;
-  const int js = indcs.js, je = indcs.je;
-  const int ks = indcs.ks, ke = indcs.ke;
-  const int ng = indcs.ng;
-  const int nmb = pmy_pack->nmb_thispack;
-  const int nvar = a.extent_int(1);
-  auto &nghbr = pmy_pack->pmb->nghbr;
-  auto &mbpanel = pmy_pack->pmb->mb_panel;
-  auto &mblev = pmy_pack->pmb->mb_lev;
-  const bool ml_ = pmy_pack->pmesh->multilevel;
-  const int nk = ke - ks + 1;
-  auto a_ = a;
-
-  // c enumerates the eight radial-tangential edge regions: radial side, which tangential
-  // axis, and its side.  t runs over the active third axis, g over the ng x ng block.
-  par_for("cs_fill_lvl_diag_cc", DevExeSpace(), 0,(nmb-1), 0,7, 0,(nvar-1), 0,(nk-1),
-          0,(ng*ng-1),
-  KOKKOS_LAMBDA(const int m, const int c, const int v, const int t, const int g) {
-    const int si  = (c & 1) ? 1 : -1;        // +1 = the +x1 (outer radial) side
-    const bool a2 = ((c & 2) == 0);          // tangential axis is x2, else x3
-    const int st  = (c & 4) ? 1 : -1;        // +1 = the +x2 (or +x3) side
-    // buffer ids of the two subblock slots of this edge (see nghbr_index.hpp)
-    const int base = a2 ? (16 + (si + 1) + 2*(st + 1))
-                        : (24 + (si + 9)*(si > 0) + 8*(si < 0) + 2*(st + 1));
-    bool any = false, covered = false;
-    for (int q=0; q<2; ++q) {
-      if (nghbr.d_view(m,base+q).gid < 0) continue;
-      any = true;
-      if (!IsSkippedPanelDiagonal(nghbr.d_view, mbpanel.d_view, mblev.d_view,
-                                  ml_, m, base+q)) covered = true;
-    }
-    if (!any || covered) return;
-
-    const int gi = g/ng, gt = g - (g/ng)*ng;
-    const Real di = static_cast<Real>(gi + 1), dt = static_cast<Real>(gt + 1);
-    const Real wi0 = 0.5*(di+1.0)*(di+2.0), wi1 = -di*(di+2.0), wi2 = 0.5*di*(di+1.0);
-    const Real wt0 = 0.5*(dt+1.0)*(dt+2.0), wt1 = -dt*(dt+2.0), wt2 = 0.5*dt*(dt+1.0);
-    const int it = (si < 0) ? (is-1-gi) : (ie+1+gi);   // target radial ghost cell
-    const int ai = (si < 0) ? is : ie;                 // radial anchor, step inward
-    const int sti = -si;
-
-    if (a2) {
-      const int jt = (st < 0) ? (js-1-gt) : (je+1+gt);
-      const int aj = (st < 0) ? js : je;
-      const int stj = -st;
-      const int k = ks + t;
-      const Real ej = wt0*a_(m,v,k,aj,it) + wt1*a_(m,v,k,aj+stj,it)
-                    + wt2*a_(m,v,k,aj+2*stj,it);
-      const Real ei = wi0*a_(m,v,k,jt,ai) + wi1*a_(m,v,k,jt,ai+sti)
-                    + wi2*a_(m,v,k,jt,ai+2*sti);
-      a_(m,v,k,jt,it) = 0.5*(ej + ei);
-    } else {
-      const int kt = (st < 0) ? (ks-1-gt) : (ke+1+gt);
-      const int ak = (st < 0) ? ks : ke;
-      const int stk = -st;
-      const int j = js + t;
-      const Real ek = wt0*a_(m,v,ak,j,it) + wt1*a_(m,v,ak+stk,j,it)
-                    + wt2*a_(m,v,ak+2*stk,j,it);
-      const Real ei = wi0*a_(m,v,kt,j,ai) + wi1*a_(m,v,kt,j,ai+sti)
-                    + wi2*a_(m,v,kt,j,ai+2*sti);
-      a_(m,v,kt,j,it) = 0.5*(ek + ei);
-    }
-  });
-  return;
-}

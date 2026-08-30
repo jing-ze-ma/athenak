@@ -42,11 +42,11 @@ class Particles;
 //! True when BOTH flanking FACE neighbours are on a different panel, which happens
 //! only at a corner of the cube. Only THREE panels meet there, so no fourth block sits
 //! diagonally across it and the generic pairing is meaningless: it points at the WRONG
-//! CORNER of the right panel. A reciprocity audit of the whole neighbour table found
-//! these, together with the MIXED-LEVEL cross-panel diagonals that
-//! IsSkippedPanelDiagonal drops, to be the ONLY non-reciprocal slots -- every face and
-//! every same-level diagonal pairs
-//! correctly -- and non-reciprocal is fatal under MPI, because a send is tagged with the
+//! CORNER of the right panel. A reciprocity audit of the whole neighbour table finds
+//! these to be the ONLY non-reciprocal slots -- every face and every diagonal pairs
+//! correctly, at one level and across a level boundary alike, once the cross-panel
+//! child selection in meshblock.cpp goes through the panel map (see PanelEdgeMap) --
+//! and non-reciprocal is fatal under MPI, because a send is tagged with the
 //! RECEIVER's (lid, dest): the vertex slot is a posted receive that nobody satisfies, and
 //! its own send collides with the legitimate sender for the slot it targets. That is a
 //! guaranteed hang in ClearRecv, and it is why a cubed-sphere run on more than one rank
@@ -86,72 +86,6 @@ bool IsCubeVertexCorner(const NghbrView &nghbr, const PanelView &mbpanel,
           nghbr(m,nk_id).gid >= 0 && nghbr(m,nk_id).panel != mp);
 }
 
-//----------------------------------------------------------------------------------------
-//! \fn bool IsSkippedPanelDiagonal(nghbr, mbpanel, mblev, multilevel, m, n)
-//! \brief Is buffer n of MeshBlock m a cubed-sphere EDGE or CORNER slot whose neighbour
-//! is on another panel AND at another refinement level?
-//!
-//! Only those. This predicate USED to drop every cross-panel diagonal once `multilevel`
-//! was set, because a reciprocity audit of a refined mesh found many of them
-//! non-reciprocal, and a non-reciprocal slot is fatal under MPI: a send is tagged with
-//! the RECEIVER's (lid, dest), so the slot is a posted receive nobody satisfies and
-//! ClearRecv hangs. That blanket skip was too wide, and it cost accuracy.
-//!
-//! Re-running the audit slot by slot separates the non-reciprocal ones into exactly two
-//! families, and NEITHER is the generic same-level diagonal:
-//!
-//!   * CUBE VERTICES -- x2x3 edges AND the three-dimensional corners. Only three panels
-//!     meet there, so no fourth block sits diagonally across; the partner lists us as a
-//!     FACE neighbour instead. IsCubeVertexCorner already skipped the edges; the CORNER
-//!     half was missing and could not be seen until a mesh split the RADIAL direction,
-//!     since with one MeshBlock spanning x1 a corner slot has no neighbour at all. That
-//!     omission -- not the generic diagonal -- is what made "skip only mixed level" look
-//!     like it was not enough when it was tried before.
-//!   * MIXED-LEVEL cross-panel diagonals, where a level boundary meets a seam
-//!     diagonally. Those are what this predicate skips.
-//!
-//! Every SAME-LEVEL cross-panel diagonal pairs correctly (audited: 0 non-reciprocal in
-//! both a refined and an unrefined-but-multilevel cubed sphere), so they are exchanged.
-//! That matters: the corner EMF of the CT update reads DIAGONALLY, and dropping these
-//! slots left the ghosts stale. Measured on the static uniform field (cs_test iprob=8,
-//! b0c=1e-2, a radial level boundary, CSTestLevelFluxCheck): with the blanket skip the
-//! RADIAL same-level block faces failed to telescope by max|dM| 7.3e-10 against a flux
-//! scale of 2.8e-9 -- 26% of the flux created out of nothing at an ordinary same-level
-//! boundary -- and with the diagonals restored they telescope EXACTLY. The corner EMF
-//! itself goes from 1.3e-2, i.e. O(|B|) out of a state whose exact EMF is identically
-//! zero, to 1.2e-8.
-//!
-//! FACES are excluded here on purpose -- a face at mixed level across a seam is a level
-//! boundary lying on a seam, which prolongation and restriction cannot do at all, and
-//! CheckCubedSphereRefinement refuses it at startup instead of silently skipping it.
-//!
-//! Gated on `multilevel` so the UNREFINED cubed sphere is bit-identical.
-//!
-//! Skipping the mixed-level ones is safe for the reconstruction, for the same reason it
-//! is at a cube vertex: a DIMENSIONALLY SPLIT sweep reads a straight line of cells along
-//! one axis and never touches a diagonal block. It is NOT safe for the corner EMF, which
-//! does read diagonally, nor for the cross-derivatives of viscosity and conduction. So
-//! the ghosts at a diagonal where a level boundary meets a seam are stale, and the run
-//! completes looking plausible rather than failing -- **whoever makes cubed-sphere MHD
-//! refinement work must deal with that**; MHD with refinement is a startup FATAL today.
-//!
-//! Note it is the SPLITTING that makes the reconstruction safe, not the order of
-//! reconstruction: PPM or WENO still read along one axis, just a longer line.
-//!
-//! The predicate is local and symmetric -- both sides see the same panels and levels --
-//! so every surviving slot still has exactly one sender.
-
-template <class NghbrView, class PanelView, class LevView>
-KOKKOS_INLINE_FUNCTION
-bool IsSkippedPanelDiagonal(const NghbrView &nghbr, const PanelView &mbpanel,
-                            const LevView &mblev,
-                            const bool multilevel, const int m, const int n) {
-  if (!multilevel) return false;
-  const bool is_face = (n < 16) || (n >= 24 && n < 32);
-  if (is_face) return false;
-  if (nghbr(m,n).gid < 0 || nghbr(m,n).panel == mbpanel(m)) return false;
-  return (nghbr(m,n).lev != mblev(m));
-}
 
 //----------------------------------------------------------------------------------------
 //! \fn int CreateBvals_MPI_Tag(int lid, int bufid)
@@ -287,7 +221,6 @@ class MeshBoundaryValuesCC : public MeshBoundaryValues {
   TaskStatus PackAndSendCC(DvceArray5D<Real> &a, DvceArray5D<Real> &ca);
   TaskStatus RecvAndUnpackCC(DvceArray5D<Real> &a, DvceArray5D<Real> &ca);
   void FillPanelCornersCC(DvceArray5D<Real> &a);
-  void FillSeamLevelDiagonalsCC(DvceArray5D<Real> &a);
   // functions to communicate fluxes of CC data
   TaskStatus PackAndSendFluxCC(DvceFaceFld5D<Real> &flx);
   TaskStatus RecvAndUnpackFluxCC(DvceFaceFld5D<Real> &flx);
@@ -325,7 +258,6 @@ class MeshBoundaryValuesFC : public MeshBoundaryValues {
   TaskStatus RecvAndUnpackFC(DvceFaceFld4D<Real> &b, DvceFaceFld4D<Real> &cb);
   void FillCoarseInBndryFC(DvceFaceFld4D<Real> &b, DvceFaceFld4D<Real> &cb);
   void FillPanelCornersFC(DvceFaceFld4D<Real> &b);
-  void FillSeamLevelDiagonalsFC(DvceFaceFld4D<Real> &b);
   void ProlongateFC(DvceFaceFld4D<Real> &b, DvceFaceFld4D<Real> &cb);
 
   TaskStatus PackAndSendFluxFC(DvceEdgeFld4D<Real> &flx);

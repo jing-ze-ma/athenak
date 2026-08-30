@@ -44,9 +44,7 @@ TaskStatus MeshBoundaryValues::InitRecv(const int nvars) {
     for (int n=0; n<nnghbr; ++n) {
       // CUBED-SPHERE CUBE VERTEX: nothing is sent here, so post no receive for it
       if (nghbr.h_view(m,n).gid >= 0 &&
-          !(use_cs && (IsCubeVertexCorner(nghbr.h_view, mbpanel.h_view, m, n) ||
-            IsSkippedPanelDiagonal(nghbr.h_view, mbpanel.h_view, mblev.h_view,
-                                  ml_, m, n)))) {
+          !(use_cs && IsCubeVertexCorner(nghbr.h_view, mbpanel.h_view, m, n))) {
         // rank of destination buffer
         int drank = nghbr.h_view(m,n).rank;
 
@@ -109,9 +107,7 @@ TaskStatus MeshBoundaryValues::ClearRecv() {
     for (int n=0; n<nnghbr; ++n) {
       if ( (nghbr.h_view(m,n).gid >= 0) &&
            (nghbr.h_view(m,n).rank != global_variable::my_rank) &&
-           !(use_cs && (IsCubeVertexCorner(nghbr.h_view, mbpanel.h_view, m, n) ||
-            IsSkippedPanelDiagonal(nghbr.h_view, mbpanel.h_view, mblev.h_view,
-                                  ml_, m, n))) ) {
+           !(use_cs && IsCubeVertexCorner(nghbr.h_view, mbpanel.h_view, m, n)) ) {
         int ierr = MPI_Wait(&(recvbuf[n].vars_req[m]), MPI_STATUS_IGNORE);
         if (ierr != MPI_SUCCESS) {no_errors=false;}
       }
@@ -148,9 +144,7 @@ TaskStatus MeshBoundaryValues::ClearSend() {
     for (int n=0; n<nnghbr; ++n) {
       if ( (nghbr.h_view(m,n).gid >= 0) &&
            (nghbr.h_view(m,n).rank != global_variable::my_rank) &&
-           !(use_cs && (IsCubeVertexCorner(nghbr.h_view, mbpanel.h_view, m, n) ||
-            IsSkippedPanelDiagonal(nghbr.h_view, mbpanel.h_view, mblev.h_view,
-                                  ml_, m, n))) ) {
+           !(use_cs && IsCubeVertexCorner(nghbr.h_view, mbpanel.h_view, m, n)) ) {
         int ierr = MPI_Wait(&(sendbuf[n].vars_req[m]), MPI_STATUS_IGNORE);
         if (ierr != MPI_SUCCESS) {no_errors=false;}
       }

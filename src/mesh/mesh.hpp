@@ -197,6 +197,52 @@ class Mesh;
 #include "mesh_refinement.hpp"
 
 //----------------------------------------------------------------------------------------
+//! \struct PanelEdgeMap
+//! \brief How a cubed-sphere EDGE direction looks from the neighbouring panel.
+//!
+//! Everything a mixed-level cross-panel diagonal needs and did not have. Three things
+//! differ across a seam and all three were previously ignored at a level boundary:
+//!
+//!   * the OFFSETS pointing back at this block, which decide which of the neighbour's
+//!     children touch it (`GetLeaf` is indexed in the NEIGHBOUR's axes, not ours);
+//!   * WHICH of the neighbour's axes is the free one along the edge -- a seam can send
+//!     our x2 to their x3, so enumerating their children along the wrong axis picks the
+//!     wrong two blocks entirely. That is what made a coarse block list the two fine
+//!     blocks stacked in x3 when its actual neighbours were the two stacked in x2, and
+//!     it is the reason those slots did not pair;
+//!   * whether that free axis is REVERSED, which swaps the two subblock halves.
+//!
+//! Reduces to the identity when the two panels share a chart, so the same-panel path is
+//! untouched.
+
+struct PanelEdgeMap {
+  int ox1r, ox2r, ox3r;   // offsets in the NEIGHBOUR's axes, pointing back at us
+  int free_axis;          // which of the NEIGHBOUR's axes runs ALONG the edge (1, 2, 3)
+  int rev_free;           // 1 if our free axis maps to a reversed neighbour axis
+};
+
+KOKKOS_INLINE_FUNCTION
+PanelEdgeMap GetPanelEdgeMap(int ox1, int ox2, int ox3, int ps, int pe) {
+  const PanelBoundaries pb = GetPanelBoundary(ps, pe);
+  PanelEdgeMap pm;
+  int ia = (pb.swap_ax == 1) ? (-ox3) : (-ox2);
+  int ib = (pb.swap_ax == 1) ? (-ox2) : (-ox3);
+  if (pb.rev_a == 1) ia = -ia;
+  if (pb.rev_b == 1) ib = -ib;
+  pm.ox1r = -ox1;   pm.ox2r = ia;   pm.ox3r = ib;
+  pm.free_axis = 1;                          // x2x3 edge: the edge runs along x1
+  pm.rev_free = 0;                           // and x1 is radial, which no seam crosses
+  if (ox2 == 0 && ox3 != 0) {                // x3x1 edge: our free axis is x2
+    pm.free_axis = (pb.swap_ax == 1) ? 3 : 2;
+    pm.rev_free = (pb.swap_ax == 1) ? pb.rev_b : pb.rev_a;
+  } else if (ox3 == 0 && ox2 != 0) {         // x1x2 edge: our free axis is x3
+    pm.free_axis = (pb.swap_ax == 1) ? 2 : 3;
+    pm.rev_free = (pb.swap_ax == 1) ? pb.rev_a : pb.rev_b;
+  }
+  return pm;
+}
+
+//----------------------------------------------------------------------------------------
 //! \class Mesh
 //! \brief data/functions associated with the overall mesh
 

@@ -55,7 +55,7 @@ void CheckCubedSphereRefinement(MeshBlockPack *pmbp) {
       // refinement altogether. A dimensionally split sweep reconstructs along one axis
       // at a time and so never reads those ng x ng diagonal blocks, which is the same
       // ground on which the halo already leaves them untransformed (see the note in
-      // bvals_cc.cpp). See IsSkippedPanelDiagonal in bvals.hpp for what WOULD read them
+      // bvals_cc.cpp). See IsCubeVertexCorner in bvals.hpp for what WOULD read them
       // -- the corner EMF and the diffusion cross-derivatives, both currently FATAL on
       // the cubed sphere.
       const bool is_face = ((n >= 8 && n < 16) || (n >= 24 && n < 32));
