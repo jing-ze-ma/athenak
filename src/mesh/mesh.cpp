@@ -302,7 +302,22 @@ Mesh::Mesh(ParameterInput *pin) :
     // The former `mesh/cs_dev_allow_mhd_refinement` development switch is GONE: it
     // existed only to run the diagnostics that were chasing the defect, and that defect
     // is fixed (74cbc8df).  An input that still sets it is simply ignored.
-    if (adaptive) {
+    // RESISTIVITY + REFINEMENT is not validated and is refused. Ohmic resistivity works
+    // on a cubed sphere with ONE radial MeshBlock (resistivity_gnomonic.cpp), but its
+    // EMF has never been shown correct across a radial block interface, which is exactly
+    // what refinement creates. Measured on iprob=11 at nx2=16, splitting x1 into two
+    // blocks with NO refinement already moves the pre-exchange eta*J on the tangential
+    // edges (x2e L1 1.73e-4 -> 3.45e-4); that array is read before SendE/RecvE average
+    // the two sides, so it is not by itself proof of a defect -- but nothing yet shows
+    // the evolved field is right there either, and until the new EVOLVED FIELD gate in
+    // CSTestResistCheck says so, refusing beats running something unvalidated.
+    if (multilevel && (pin->DoesParameterExist("mhd", "ohmic_resistivity") ||
+                       pin->DoesParameterExist("hydro", "ohmic_resistivity"))) {
+      missing = "mesh refinement together with ohmic_resistivity: the resistive EMF is "
+                "validated only for a single radial MeshBlock, and refinement puts a "
+                "coarse/fine interface in exactly the place it has not been checked. "
+                "Ideal MHD with refinement IS supported";
+    } else if (adaptive) {
       missing = "ADAPTIVE mesh refinement (mesh_refinement = adaptive): refinement "
                 "flags are walked through a single MeshBlockTree and a cubed sphere has "
                 "one tree per panel. Static refinement is supported";

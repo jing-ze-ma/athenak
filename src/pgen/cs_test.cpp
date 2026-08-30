@@ -1592,6 +1592,113 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
   if (ncs > 0) l1s /= static_cast<Real>(ncs);
   if (nci > 0) l1i /= static_cast<Real>(nci);
 
+  // ---- EVOLVED FIELD ERROR: the decomposition-independent gate -----------------------
+  //
+  // WHY THIS EXISTS. Everything above reads `efld_resist`, which is the block's OWN
+  // eta*J as the gnomonic curl built it -- BEFORE AddEMFDirect merges it into efld and
+  // before SendE/RecvE average the two sides of a shared block face. Two different
+  // values there are EXPECTED, and say nothing on their own about the evolved solution:
+  // the averaging exists precisely to reconcile them. Quoting that array's block-face
+  // maximum as if it were a defect is a measurement error, and it was made once.
+  //
+  // This is the gate that means something. eta*J is a CONSTANT vector for this problem
+  // (curl B = 2*b0c*zhat everywhere), so curl(eta*J) = 0 and the resistive term cannot
+  // move B at all. The field drifts only through -v x B, and v stays at ~1e-4, so
+  // B(t) = B(0) to that accuracy and the norm below is a PHYSICAL error with no
+  // reference to any block. It must therefore be the same under any decomposition:
+  // splitting x1, or refining, may change it only at round-off. That is the same gate
+  // that certified ideal MHD, and it is the one to trust here.
+  auto bf1h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pmhd->b0.x1f);
+  auto bf2h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pmhd->b0.x2f);
+  auto bf3h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pmhd->b0.x3f);
+  const Real bazi = cs_bazi;
+  const Real bux = cs_bvx, buy = cs_bvy, buz = cs_bvz;
+  // WHERE the maximum sits, and which component it is. A radial split must not change
+  // the answer at all -- ideal MHD reproduces its L1(B) to all SEVEN printed digits
+  // under the same test -- so any Linf that moves is a defect, and the first thing to
+  // know about it is whether it sits ON the radial block interface.
+  Real l1f = 0.0, mxf = 0.0, bmax = 0.0;
+  int mxc = -1, mxi = -1, mxj = -1, mxk = -1, mxp = -1, mxm = -1;
+  std::int64_t ncf = 0;
+  for (int m=0; m<pmbp->nmb_thispack; ++m) {
+    const int p = mbpanel.h_view(m);
+    const Real x2min = size.h_view(m).x2min, x2max = size.h_view(m).x2max;
+    const Real x3min = size.h_view(m).x3min, x3max = size.h_view(m).x3max;
+    const Real x1min = size.h_view(m).x1min, x1max = size.h_view(m).x1max;
+    for (int k=ks; k<=ke+1; ++k) {
+      const Real ec = 0.25*M_PI*CellCenterX(k-ks, indcs.nx3, x3min, x3max);
+      const Real ef = 0.25*M_PI*LeftEdgeX(k-ks, indcs.nx3, x3min, x3max);
+      for (int j=js; j<=je+1; ++j) {
+        const Real xc = 0.25*M_PI*CellCenterX(j-js, indcs.nx2, x2min, x2max);
+        const Real xf = 0.25*M_PI*LeftEdgeX(j-js, indcs.nx2, x2min, x2max);
+        Real n1[3], n2[3], cx, cy, cz;
+        for (int i=is; i<=ie+1; ++i) {
+          const Real rc = CellCenterX(i-is, indcs.nx1, x1min, x1max);
+          const Real rl = LeftEdgeX(i-is, indcs.nx1, x1min, x1max);
+          // exactly the three expressions the initial condition used
+          if (j <= je && k <= ke) {
+            PanelToCart(p, xc, ec, cx, cy, cz);
+            const Real ex = (-bazi*rl*cy + bux)*cx + (bazi*rl*cx + buy)*cy + buz*cz;
+            const Real d = fabs(bf1h(m,k,j,i) - ex);
+            if (d > mxf) {
+              mxc = 0; mxm = m; mxp = p; mxi = i-is; mxj = j-js; mxk = k-ks;
+            }
+            l1f += d; ++ncf; mxf = fmax(mxf, d); bmax = fmax(bmax, fabs(ex));
+          }
+          if (i <= ie && k <= ke) {
+            PanelToCart(p, xf, ec, cx, cy, cz);
+            PanelNormals(p, xf, ec, n1, n2);
+            const Real ex = (-bazi*rc*cy + bux)*n1[0] + (bazi*rc*cx + buy)*n1[1]
+                          + buz*n1[2];
+            const Real d = fabs(bf2h(m,k,j,i) - ex);
+            if (d > mxf) {
+              mxc = 1; mxm = m; mxp = p; mxi = i-is; mxj = j-js; mxk = k-ks;
+            }
+            l1f += d; ++ncf; mxf = fmax(mxf, d); bmax = fmax(bmax, fabs(ex));
+          }
+          if (i <= ie && j <= je) {
+            PanelToCart(p, xc, ef, cx, cy, cz);
+            PanelNormals(p, xc, ef, n1, n2);
+            const Real ex = (-bazi*rc*cy + bux)*n2[0] + (bazi*rc*cx + buy)*n2[1]
+                          + buz*n2[2];
+            const Real d = fabs(bf3h(m,k,j,i) - ex);
+            if (d > mxf) {
+              mxc = 2; mxm = m; mxp = p; mxi = i-is; mxj = j-js; mxk = k-ks;
+            }
+            l1f += d; ++ncf; mxf = fmax(mxf, d); bmax = fmax(bmax, fabs(ex));
+          }
+        }
+      }
+    }
+  }
+#if MPI_PARALLEL_ENABLED
+  {
+    Real r_[2] = {l1f, 0.0};
+    MPI_Allreduce(MPI_IN_PLACE, r_, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+    l1f = r_[0];
+    Real m_[2] = {mxf, bmax};
+    MPI_Allreduce(MPI_IN_PLACE, m_, 2, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+    mxf = m_[0]; bmax = m_[1];
+    std::int64_t n_ = ncf;
+    MPI_Allreduce(MPI_IN_PLACE, &n_, 1, MPI_INT64_T, MPI_SUM, MPI_COMM_WORLD);
+    ncf = n_;
+  }
+#endif
+  {
+    const Real bs = (bmax > 0.0) ? bmax : 1.0;
+    const Real l1n = (ncf > 0) ? l1f/static_cast<Real>(ncf)/bs : 0.0;
+    std::printf("###   EVOLVED FIELD error vs the exact static B (all three face"
+                " components):  L1=%.4e  Linf=%.4e  (over %lld faces)\n",
+                l1n, mxf/bs, static_cast<long long>(ncf));
+    const char *cn[3] = {"x1f", "x2f", "x3f"};
+    if (mxc >= 0) {
+      std::printf("###     Linf on %s at panel %d (i,j,k)=(%d,%d,%d) of block %d;"
+                  "  block x1 = %g..%g%s\n", cn[mxc], mxp, mxi, mxj, mxk, mxm,
+                  size.h_view(mxm).x1min, size.h_view(mxm).x1max,
+                  (mxi == 0) ? "   [ON the block's INNER RADIAL face]" : "");
+    }
+  }
+
   // ---- Ohmic heating: the only quantitative check on the POYNTING flux ---------------
   // div(E x B) = B.curl E - E.curl J's parent = -E.J = -eta |J|^2, so this exact
   // solution is static in B but heats UNIFORMLY at eta*|J|^2. With v = 0 all of it goes
