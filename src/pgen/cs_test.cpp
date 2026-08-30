@@ -1377,8 +1377,23 @@ void CSTestConvErrors(ParameterInput *pin, Mesh *pm) {
       }
     }
     std::printf("\n");
-    std::printf("###   Linf(B) at panel %d  (i,j,k) = (%d,%d,%d)  of block %d\n",
-                mx_p, mx_i, mx_j, mx_k, mx_m);
+    // WHERE the worst cell sits matters more than its value: on a refined mesh, "at the
+    // block's inner radial face, on a block one level finer than its x1 neighbour" is a
+    // level-boundary defect, and "in the middle of a block" is not.
+    {
+      auto &mlev = pmbp->pmb->mb_lev;
+      auto &ngh = pmbp->pmb->nghbr;
+      ngh.sync_host();
+      int nlo = -1, nhi = -1;
+      for (int q=0; q<4; ++q) {
+        if (ngh.h_view(mx_m,q).gid   >= 0) nlo = ngh.h_view(mx_m,q).lev;
+        if (ngh.h_view(mx_m,4+q).gid >= 0) nhi = ngh.h_view(mx_m,4+q).lev;
+      }
+      std::printf("###   Linf(B) at panel %d  (i,j,k) = (%d,%d,%d)  of block %d"
+                  " [lev %d, x1 nghbr lev %d / %d, x1 = %g..%g]\n",
+                  mx_p, mx_i, mx_j, mx_k, mx_m, mlev.h_view(mx_m), nlo, nhi,
+                  size.h_view(mx_m).x1min, size.h_view(mx_m).x1max);
+    }
   }
 
   {
