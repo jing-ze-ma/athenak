@@ -633,8 +633,10 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackCC(DvceArray5D<Real> &a,
   });  // end par_for_outer
 
   // Every face buffer is unpacked by this point, which is what the corner fill needs.
+  // The COARSE array needs it too -- see the note in bvals_fc.cpp's RecvAndUnpackFC.
   if (pmy_pack->pmesh->use_cubed_sphere) {
-    FillPanelCornersCC(a);
+    FillPanelCornersCC(a, false);
+    if (pmy_pack->pmesh->multilevel) { FillPanelCornersCC(ca, true); }
   }
 
   return TaskStatus::complete;
@@ -664,10 +666,12 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackCC(DvceArray5D<Real> &a,
 // the other, and the two are averaged. The stencil reads only the flanking strips, never
 // the corner block being written. Same-panel corners are left entirely alone.
 
-void MeshBoundaryValuesCC::FillPanelCornersCC(DvceArray5D<Real> &a) {
+void MeshBoundaryValuesCC::FillPanelCornersCC(DvceArray5D<Real> &a, bool coarse) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
-  const int js = indcs.js, je = indcs.je;
-  const int ks = indcs.ks, ke = indcs.ke;
+  const int js = coarse ? indcs.cjs : indcs.js;
+  const int je = coarse ? indcs.cje : indcs.je;
+  const int ks = coarse ? indcs.cks : indcs.ks;
+  const int ke = coarse ? indcs.cke : indcs.ke;
   const int ng = indcs.ng;
   const int nmb = pmy_pack->nmb_thispack;
   const int nvar = a.extent_int(1);

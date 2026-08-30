@@ -220,7 +220,7 @@ class MeshBoundaryValuesCC : public MeshBoundaryValues {
   // functions to communicate CC data
   TaskStatus PackAndSendCC(DvceArray5D<Real> &a, DvceArray5D<Real> &ca);
   TaskStatus RecvAndUnpackCC(DvceArray5D<Real> &a, DvceArray5D<Real> &ca);
-  void FillPanelCornersCC(DvceArray5D<Real> &a);
+  void FillPanelCornersCC(DvceArray5D<Real> &a, bool coarse = false);
   // functions to communicate fluxes of CC data
   TaskStatus PackAndSendFluxCC(DvceFaceFld5D<Real> &flx);
   TaskStatus RecvAndUnpackFluxCC(DvceFaceFld5D<Real> &flx);
@@ -257,7 +257,7 @@ class MeshBoundaryValuesFC : public MeshBoundaryValues {
   TaskStatus PackAndSendFC(DvceFaceFld4D<Real> &b, DvceFaceFld4D<Real> &cb);
   TaskStatus RecvAndUnpackFC(DvceFaceFld4D<Real> &b, DvceFaceFld4D<Real> &cb);
   void FillCoarseInBndryFC(DvceFaceFld4D<Real> &b, DvceFaceFld4D<Real> &cb);
-  void FillPanelCornersFC(DvceFaceFld4D<Real> &b);
+  void FillPanelCornersFC(DvceFaceFld4D<Real> &b, bool coarse = false);
   void ProlongateFC(DvceFaceFld4D<Real> &b, DvceFaceFld4D<Real> &cb);
 
   TaskStatus PackAndSendFluxFC(DvceEdgeFld4D<Real> &flx);

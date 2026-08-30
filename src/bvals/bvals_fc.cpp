@@ -573,13 +573,15 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
 // this block, but the resistive curl does: it is why cubed-sphere resistivity did not
 // reproduce its Linf under a plain radial split.
 
-void MeshBoundaryValuesFC::FillPanelCornersFC(DvceFaceFld4D<Real> &b) {
+void MeshBoundaryValuesFC::FillPanelCornersFC(DvceFaceFld4D<Real> &b, bool coarse) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
-  const int js = indcs.js, je = indcs.je;
-  const int ks = indcs.ks, ke = indcs.ke;
+  const int js = coarse ? indcs.cjs : indcs.js;
+  const int je = coarse ? indcs.cje : indcs.je;
+  const int ks = coarse ? indcs.cks : indcs.ks;
+  const int ke = coarse ? indcs.cke : indcs.ke;
   const int ng = indcs.ng;
   const int nmb = pmy_pack->nmb_thispack;
-  const int nc1 = indcs.nx1 + 2*ng;      // cells in x1; x1f carries one face more
+  const int nc1 = (coarse ? indcs.cnx1 : indcs.nx1) + 2*ng;
   auto &nghbr = pmy_pack->pmb->nghbr;
   auto &mbpanel = pmy_pack->pmb->mb_panel;
   auto b_ = b;
@@ -781,8 +783,20 @@ TaskStatus MeshBoundaryValuesFC::RecvAndUnpackFC(DvceFaceFld4D<Real> &b,
   });  // end par_for_outer
 
   // Every face buffer is unpacked by this point, which is what the corner fill needs.
+  //
+  // THE COARSE ARRAY NEEDS THE SAME FILL.  cb's cube-vertex corner is written by NOTHING:
+  // its exchange is skipped as non-reciprocal exactly like the fine array's, but the fill
+  // only ever ran on b.  ProlongateFC then interpolates that block into the fine ghosts.
+  // A poison test -- setting cb's cube-vertex corner to 1e30 -- moves the prolongated
+  // fine EDGE halo by 24% and the fine corner likewise, so it IS read; nothing blew up
+  // only because the prolongation limiter clips it.  Measured on the refined iprob=11
+  // halo, cb's corner goes 2.09e-01 (i.e. |B| -- garbage) to 1.86e-03, and the fine halo
+  // follows: r x EDGE SEAM 2.3278e-03 -> 4.6508e-04, r x CORNER SEAM 1.8152e-02 ->
+  // 2.0911e-03.  Both then land at the SAME-LEVEL halo's own accuracy, which is the
+  // statement that a level boundary no longer degrades the seam halo.
   if (pmy_pack->pmesh->use_cubed_sphere) {
-    FillPanelCornersFC(b);
+    FillPanelCornersFC(b, false);
+    if (pmy_pack->pmesh->multilevel) { FillPanelCornersFC(cb, true); }
   }
 
   return TaskStatus::complete;
