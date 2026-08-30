@@ -293,26 +293,16 @@ Mesh::Mesh(ParameterInput *pin) :
   // fatal here until someone does the same work for them.
   if (use_cubed_sphere) {
     std::string missing;
-    // Refinement is supported for HYDRO with level boundaries that do not touch a panel
-    // seam; see the note in BuildTreeFromScratch, which checks the seam condition once
-    // the tree exists. What is still missing is the FACE-CENTRED half -- RestrictFC and
-    // the Toth & Roe divergence-preserving prolongation are derived for a uniform
-    // Cartesian mesh, and on a gnomonic grid the constraint is sum(area*B), not sum(B),
-    // so they would keep div B only to truncation error -- and prolongation across a
-    // seam, which would need the tangent-basis transform and along-seam resample the
-    // halo applies.
-    // `mesh/cs_dev_allow_mhd_refinement` lifts this guard. It is a DEVELOPMENT switch
-    // for the diagnostics that are chasing the remaining defect (CSTestLevelFluxCheck
-    // and the reciprocity audit in cs_test.cpp), not a supported mode: with it set, the
-    // static-uniform-field test iprob=8 runs clean for ~40 cycles and then goes
-    // non-finite. Do not use it for physics.
-    if (multilevel && pin->DoesBlockExist("mhd") &&
-        !pin->GetOrAddBoolean("mesh", "cs_dev_allow_mhd_refinement", false)) {
-      missing = "mesh refinement together with <mhd>: RestrictFC and the "
-                "divergence-preserving FC prolongation are derived for a uniform "
-                "Cartesian mesh and would not keep div B on a gnomonic grid. Hydro "
-                "refinement is supported";
-    } else if (adaptive) {
+    // STATIC refinement is supported, for HYDRO and for MHD, where the level boundaries
+    // do not touch a panel seam; see the note in BuildTreeFromScratch, which checks the
+    // seam condition once the tree exists.  The face-centred half is curvilinear
+    // throughout -- RestrictFC and the flux correction are AREA-weighted, the EMF
+    // restriction LENGTH-weighted, the Toth & Roe prolongation works on the face flux
+    // A*B -- so the constraint it preserves is sum(area*B), which is the right one here.
+    // The former `mesh/cs_dev_allow_mhd_refinement` development switch is GONE: it
+    // existed only to run the diagnostics that were chasing the defect, and that defect
+    // is fixed (74cbc8df).  An input that still sets it is simply ignored.
+    if (adaptive) {
       missing = "ADAPTIVE mesh refinement (mesh_refinement = adaptive): refinement "
                 "flags are walked through a single MeshBlockTree and a cubed sphere has "
                 "one tree per panel. Static refinement is supported";

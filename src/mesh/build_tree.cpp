@@ -52,12 +52,13 @@ void CheckCubedSphereRefinement(MeshBlockPack *pmbp) {
       // across a seam and across a level boundary even when every level boundary is
       // radial -- the block at the outer edge of a refined shell meets, diagonally, the
       // coarse block of the next panel -- and refusing those would rule out radial
-      // refinement altogether. A dimensionally split sweep reconstructs along one axis
-      // at a time and so never reads those ng x ng diagonal blocks, which is the same
-      // ground on which the halo already leaves them untransformed (see the note in
-      // bvals_cc.cpp). See IsCubeVertexCorner in bvals.hpp for what WOULD read them
-      // -- the corner EMF and the diffusion cross-derivatives, both currently FATAL on
-      // the cubed sphere.
+      // refinement altogether. Those mixed-level cross-panel diagonals ARE exchanged,
+      // with the seam transform, on both the halo and the flux-correction side
+      // (0626f1c9, 74cbc8df); the CT corner EMF reads them and needs them to be right.
+      // What is still missing, and what this check is really about, is PROLONGATION and
+      // RESTRICTION across a seam: those operators have no tangent-basis transform and
+      // no along-seam resample, so a level boundary lying ON a seam would be wrong by
+      // O(1) in the velocity and the field.
       const bool is_face = ((n >= 8 && n < 16) || (n >= 24 && n < 32));
       if (!is_face) continue;
       if (nghbr.h_view(m,n).lev != mblev.h_view(m)) {

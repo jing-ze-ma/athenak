@@ -62,6 +62,17 @@ ox3_bc   = panel
 
 use_cubed_sphere = true
 
+# SPLITTING THE RADIAL DIRECTION.  <meshblock>/nx1 may be smaller than <mesh>/nx1, and
+# on a correct scheme that must change the answer only at round-off -- "same answer under
+# a different block decomposition" is the cheapest strong gate available on this grid,
+# and it is sensitive to exactly the class of bug that has dominated the cubed-sphere
+# work.  It is worth running: splitting x1 is the ONLY way, short of refinement, to give
+# a block an x1-direction neighbour, which is what brings the x1x2 and x3x1 EDGE flux
+# buffers into existence.  Those carry the tangential EMFs across a panel seam and need
+# the same index reversal, sign flip and slot swap as the face buffers; they had none
+# until 74cbc8df, which cost a plain two-radial-block run 2.4x in L1(B) and 36x in
+# Linf(B) with no refinement anywhere.  Every input in this directory uses ONE radial
+# block, which is why none of them caught it.
 <meshblock>
 nx1      = 8
 nx2      = 32

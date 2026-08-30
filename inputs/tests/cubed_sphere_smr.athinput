@@ -1,12 +1,13 @@
 # Cubed sphere, STATIC MESH REFINEMENT.  Build with -D PROBLEM=cs_test.
 #
-# Refinement is supported on the cubed sphere for HYDRO, and only where the coarse/fine
-# interfaces are RADIAL: a level boundary lying on a panel seam would have to prolongate
-# and restrict ACROSS the seam, where the halo is not a copy but applies a tangent-basis
-# transform and an along-seam resample.  Startup refuses anything else -- <mhd> with
-# refinement, adaptive refinement, and a level boundary on a seam each fatal with their
-# own message.  The <refined_region> below spans the full tangential extent of every
-# panel and half the radial range, so every interface it creates is a sphere.
+# Refinement is supported on the cubed sphere for HYDRO and for MHD, and only where the
+# coarse/fine interfaces are RADIAL: a level boundary lying on a panel seam would have to
+# prolongate and restrict ACROSS the seam, where the halo is not a copy but applies a
+# tangent-basis transform and an along-seam resample.  Startup refuses anything else --
+# ADAPTIVE refinement and a level boundary on a seam each fatal with their own message.
+# The <refined_region> below spans the full tangential extent of every panel and half the
+# radial range, so every interface it creates is a sphere.  This file is the HYDRO case;
+# cubed_sphere_mhd_smr.athinput is the MHD one and carries the convergence measurement.
 #
 # WHAT MAKES IT CONSERVATIVE.  On a curvilinear grid the four fine faces covering one
 # coarse face do not have equal areas, and the eight fine cells do not have equal

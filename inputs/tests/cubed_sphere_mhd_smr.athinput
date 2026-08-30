@@ -1,0 +1,130 @@
+# Cubed sphere, MHD + STATIC MESH REFINEMENT.  Build with -D PROBLEM=cs_test.
+#
+# The MHD twin of cubed_sphere_smr.athinput, and the input the refinement convergence
+# measurement was made on.  problem/iprob = 9 is the rigid-rotation equilibrium carrying
+# a uniform force-free field (see cubed_sphere_mhd_conv.athinput for why that field is
+# the right probe: E = -v x B is large and varies across every seam, yet its curl must
+# leave B exactly uniform, so any inconsistency shows up directly as structure in B).
+# The exact solution is known at EVERY time, so this measures the EVOLVED solution.
+#
+# WHAT IS SUPPORTED.  Level boundaries must be RADIAL.  A level boundary lying on a panel
+# seam would have to prolongate and restrict ACROSS the seam, and neither operator has
+# the tangent-basis transform or the along-seam resample the halo applies; that case is
+# refused once the tree is built (CheckCubedSphereRefinement).  ADAPTIVE refinement is
+# refused too -- refinement flags are walked through a single MeshBlockTree and a cubed
+# sphere has one tree per panel.
+#
+# <meshblock>/nx1 is HALF <mesh>/nx1, so the root grid has two blocks in radius, and
+# <refined_region1> covers the inner one.  The interface is then the sphere r = 1.5.
+#
+# WHAT MAKES IT WORK ON A CURVILINEAR GRID.  Every restriction and correction is
+# WEIGHTED, because the four fine faces covering a coarse face do not have equal areas
+# and the eight fine cells do not have equal volumes:
+#
+#   cell-centred flux correction   AREA-weighted, sum(A_f F_f), divided by A_coarse
+#   RestrictFC                     AREA-weighted
+#   EMF restriction                LENGTH-weighted -- CT consumes dxedge*E, not E
+#   FC prolongation                Toth & Roe applied to the face FLUX A*B, not to B
+#
+# so the constraint preserved is sum(area*B), which is the correct one here.  The panel
+# seam adds one more requirement that only appears once the RADIAL direction is split:
+# the x1x2 and x3x1 EDGE flux buffers exist, and they carry the tangential EMFs across a
+# seam, so they need the same index reversal, sign flip and slot swap as the face buffers
+# (they had none until 74cbc8df, which is what stopped refined MHD converging).
+#
+# MEASURED, scaling nx1 with nx2, against the unrefined control on the same input:
+#
+#   nx2                        16         32        ratio
+#   L1(B) unrefined control  5.278e-4   2.067e-4    2.55
+#   L1(B) with refinement    2.931e-4   1.077e-4    2.72
+#
+# i.e. refinement CONVERGES at the control's own rate and lands below it, which is what
+# the extra resolution should buy.  (Neither is clean 2nd order; that is the separate,
+# understood radial-BC phase lag, not a refinement effect -- see cubed_sphere_mhd_conv.)
+# Level-boundary flux telescoping is at round-off, div B is preserved, and the run is
+# BITWISE identical at 1/2/3/6 MPI ranks and on 1 and 2 MI300A GPUs.
+#
+# NOTE ix1_bc/ox1_bc MUST be `user`.  The exact field is time dependent, so the radial
+# ghosts have to precess with it.
+#
+# AXES: x1 is RADIAL; x2 = xi and x3 = eta are the panel-tangential angles.  Must be 3D.
+
+<comment>
+problem = cubed sphere MHD with a radial static level boundary
+
+<job>
+basename = cs_mhd_smr
+
+<mesh>
+nghost   = 2
+nx1      = 8            # RADIAL direction
+x1min    = 1.0
+x1max    = 2.0
+ix1_bc   = user
+ox1_bc   = user
+
+nx2      = 16           # xi;  nx2 must equal nx3 (Mesh checks this)
+x2min    = -1.0
+x2max    = 1.0
+ix2_bc   = panel
+ox2_bc   = panel
+
+nx3      = 16           # eta
+x3min    = -1.0
+x3max    = 1.0
+ix3_bc   = panel
+ox3_bc   = panel
+
+use_cubed_sphere = true
+
+<mesh_refinement>
+refinement = static
+num_levels = 2
+
+# The region must lie inside the root mesh, so x2/x3 span the FULL tangential extent
+# exactly; it then refines the same logical location on every panel, which is what makes
+# the inner radial shell come out as a sphere.
+<refined_region1>
+level = 1
+x1min = 1.0
+x1max = 1.5
+x2min = -1.0
+x2max =  1.0
+x3min = -1.0
+x3max =  1.0
+
+<meshblock>
+nx1      = 4            # half of mesh/nx1 -> two root blocks in radius
+nx2      = 16
+nx3      = 16
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim       = -1
+tlim       = 1.0
+ndiag      = 100
+
+<mhd>
+eos         = ideal
+reconstruct = plm
+rsolver     = hlld
+gamma       = 1.666667
+
+<problem>
+iprob    = 9
+d0       = 1.0
+p0       = 1.0
+omega    = 0.2       # rotation rate; the field precesses about z at this rate
+b0c      = 1.0       # uniform field strength
+bhx      = 0.37      # field direction.  Deliberately TILTED.
+bhy      = 0.61
+bhz      = 0.70
+conv_errors = 1
+user_bcs = true
+
+<output1>
+file_type = hst
+dt        = 0.1
+data_format = %26.17e
