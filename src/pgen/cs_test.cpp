@@ -2389,7 +2389,7 @@ void CSTestGhostCheck(ParameterInput *pin, Mesh *pm) {
       auto b2h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pmhd->b0.x2f);
       auto b3h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pmhd->b0.x3f);
       const Real bvx = cs_bvx, bvy = cs_bvy, bvz = cs_bvz;
-      Real dg[2][3] = {{0.0,0.0,0.0},{0.0,0.0,0.0}};   // [face|diagonal][component]
+      Real dg[3][3] = {{0.0,0.0,0.0},{0.0,0.0,0.0},{0.0,0.0,0.0}};
       int dwm = -1, dwi[3] = {-1,-1,-1}, dwc = -1, nzero = 0;
       for (int m=0; m<pmbp->nmb_thispack; ++m) {
         bool at_lvl = false;
@@ -2425,7 +2425,9 @@ void CSTestGhostCheck(ParameterInput *pin, Mesh *pm) {
           for (int k=ks-indcs.ng; k<=ke+indcs.ng; ++k) {
             for (int j=js-indcs.ng; j<=je+indcs.ng; ++j) {
               const bool jg = (j < js || j > je), kg = (k < ks || k > ke);
-              const int b = (jg || kg) ? 1 : 0;    // 1 = DIAGONAL ghost
+              // 0 = on the face; 1 = a TWO-dimensional diagonal (the filled ones);
+              // 2 = a THREE-dimensional corner, which is deliberately not filled.
+              const int b = (jg && kg) ? 2 : ((jg || kg) ? 1 : 0);
               if (j > je+1 || k > ke+1) continue;
               const Real d1 = fabs(b1h(m,k,j,i1) - exact(j,k,false,false,0));
               const Real d2 = fabs(b2h(m,k,j,ic) - exact(j,k,true ,false,1));
@@ -2433,7 +2435,7 @@ void CSTestGhostCheck(ParameterInput *pin, Mesh *pm) {
               if (d1 > dg[b][0]) dg[b][0] = d1;
               if (d2 > dg[b][1]) dg[b][1] = d2;
               if (d3 > dg[b][2]) dg[b][2] = d3;
-              if (b == 1 && b1h(m,k,j,i1) == 0.0 && b2h(m,k,j,ic) == 0.0) {
+              if (b >= 1 && b1h(m,k,j,i1) == 0.0 && b2h(m,k,j,ic) == 0.0) {
                 ++nzero;
                 if (nzero <= 6) {
                   // Which neighbour slot owns this ghost cell, and is it registered?
@@ -2463,9 +2465,10 @@ void CSTestGhostCheck(ParameterInput *pin, Mesh *pm) {
       }
       std::printf("   ghosts BEYOND the interface, vs exact:  ON the face (j,k active)"
                   " %11.4e %11.4e %11.4e\n", dg[0][0], dg[0][1], dg[0][2]);
-      std::printf("                                          DIAGONAL (j or k ghost)"
-                  " %11.4e %11.4e %11.4e   (worst m=%d b.x%df at %d,%d,%d)\n",
-                  dg[1][0], dg[1][1], dg[1][2], dwm, dwc, dwi[0], dwi[1], dwi[2]);
+      std::printf("                                          2-D DIAGONAL (filled) "
+                  " %11.4e %11.4e %11.4e\n", dg[1][0], dg[1][1], dg[1][2]);
+      std::printf("                                          3-D CORNER (not filled)"
+                  " %11.4e %11.4e %11.4e\n", dg[2][0], dg[2][1], dg[2][2]);
       std::printf("   diagonal ghost cells left at EXACTLY ZERO: %d\n", nzero);
       // And the CELL-CENTRED state in the same cells? The corner EMF reads velocities
       // there too, and a zero density is not a small error.
