@@ -175,15 +175,24 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
             bk = kl + ku;
           }
 
-          // Which buffer is this? A same-level FACE buffer is ng cells deep in its own
-          // normal direction and spans the full active range in the other tangential
-          // one; that is the only case the along-seam resample applies to. The edge and
-          // corner buffers (ng x ng) are left as a plain copy -- a dimensionally split
-          // PLM+HLLC sweep never reconstructs through them.
-          const int ngh_ = cs_indcs.ng;
-          if (nj == ngh_ && nk > ngh_) {
+          // WHICH BUFFER IS THIS, and therefore which way does the along-seam resample
+          // run?  Read it off the SLOT INDEX.  Slots are laid out (nghbr_index.hpp):
+          // 0-7 x1 faces, 8-15 x2 faces, 16-23 x1x2 edges, 24-31 x3 faces, 32-39 x3x1
+          // edges, 40-47 x2x3 edges, 48-55 corners.  A buffer whose only tangential
+          // ghost direction is x2 has its seam normal along x2 and resamples in x3
+          // (cs_seam = 2), and vice versa; one that is ghost in BOTH tangential
+          // directions -- the x2x3 edges and the corners -- has no single along-seam
+          // axis and stays a plain copy.
+          //
+          // This used to be inferred from the buffer EXTENTS, as `nj == ng && nk > ng`.
+          // For cell-centred data that happens to give the same answer, but the identical
+          // test in bvals_fc.cpp did NOT: a face-centred buffer at a coarse/fine boundary
+          // carries one extra layer in the direction its component is staggered in, so
+          // the equality failed and the resample was silently skipped there.  Both are
+          // written the same way now so the two cannot drift apart again.
+          if (n >= 8 && n < 24) {
             cs_seam = 2;
-          } else if (nk == ngh_ && nj > ngh_) {
+          } else if (n >= 24 && n < 40) {
             cs_seam = 3;
           }
         } else if (do_pole) {

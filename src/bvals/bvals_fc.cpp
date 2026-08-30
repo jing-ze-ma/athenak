@@ -200,10 +200,30 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
               // normal direction and spans the full active range in the other tangential
               // one; that is the only case the along-seam resample applies to. The edge
               // and corner buffers (ng x ng) stay a plain copy, as in bvals_cc.cpp.
-              const int ngh_ = cs_indcs.ng;
-              if (nj == ngh_ && nk > ngh_) {
+              // WHICH BUFFER IS THIS, and therefore which way does the along-seam
+              // resample run?  Read it off the SLOT INDEX, not off the buffer extents.
+              // Slots are laid out (nghbr_index.hpp): 0-7 x1 faces, 8-15 x2 faces,
+              // 16-23 x1x2 edges, 24-31 x3 faces, 32-39 x3x1 edges, 40-47 x2x3 edges,
+              // 48-55 corners.  A buffer whose only tangential ghost direction is x2 has
+              // its seam normal along x2 and resamples in x3 (cs_seam = 2), and vice
+              // versa; one that is ghost in BOTH tangential directions -- the x2x3 edges
+              // and the corners -- has no single along-seam axis and stays a plain copy.
+              //
+              // This USED TO BE INFERRED from the extents, as `nj == ng && nk > ng`.
+              // That test is only valid at a SAME-LEVEL boundary.  At a coarse/fine
+              // boundary a face-centred buffer carries one EXTRA layer in the direction
+              // its component is staggered in, so the ghost-direction extent is ng+1 = 3
+              // rather than ng, the equality fails, and cs_seam silently fell to 0 --
+              // skipping the resample for exactly ONE of the two angular components on
+              // every cross-level seam edge buffer.  Measured: the resampled source
+              // sample then sat 1.82 CELLS away from the destination cell it fed (against
+              // 0.0000 whenever the resample does run), which is O(h) and was the whole
+              // of the first-order cross-level seam halo error.  The radial component is
+              // not staggered in either tangential direction, kept its extent of ng, and
+              // so kept the resample -- which is exactly why it was ten times less wrong.
+              if (n >= 8 && n < 24) {
                 cs_seam = 2;
-              } else if (nk == ngh_ && nj > ngh_) {
+              } else if (n >= 24 && n < 40) {
                 cs_seam = 3;
               }
             } else if (do_pole) {
