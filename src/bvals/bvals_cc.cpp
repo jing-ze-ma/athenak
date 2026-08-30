@@ -693,10 +693,16 @@ void MeshBoundaryValuesCC::FillPanelCornersCC(DvceArray5D<Real> &a, bool coarse)
     const int nj_id = (sj < 0) ? 8 : 12;
     const int nk_id = (sk < 0) ? 24 : 28;
     const int mp = mbpanel.d_view(m);
-    bool seam = false;
-    if (nghbr.d_view(m,nj_id).gid >= 0 && nghbr.d_view(m,nj_id).panel != mp) seam = true;
-    if (nghbr.d_view(m,nk_id).gid >= 0 && nghbr.d_view(m,nk_id).panel != mp) seam = true;
-    if (!seam) return;
+    // ONLY A TRUE CUBE VERTEX.  The condition is that BOTH flanking faces are panel
+    // seams -- exactly IsCubeVertexCorner's test, and exactly the case whose exchange is
+    // skipped.  It used to fire when EITHER face was a seam, which with more than one
+    // MeshBlock per panel also caught ordinary corners that DO have a real diagonal
+    // neighbour, overwriting properly exchanged, seam-transformed data with a one-sided
+    // extrapolation.
+    bool seamj = false, seamk = false;
+    if (nghbr.d_view(m,nj_id).gid >= 0 && nghbr.d_view(m,nj_id).panel != mp) seamj = true;
+    if (nghbr.d_view(m,nk_id).gid >= 0 && nghbr.d_view(m,nk_id).panel != mp) seamk = true;
+    if (!(seamj && seamk)) return;
 
     // Quadratic Lagrange extrapolated d cells beyond an anchor, nodes 0,1,2 stepping
     // inward: w = ((d+1)(d+2)/2, -d(d+2), d(d+1)/2), which sums to 1.

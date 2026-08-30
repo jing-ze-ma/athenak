@@ -226,6 +226,33 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
               } else if (n >= 24 && n < 40) {
                 cs_seam = 3;
               }
+              // DOUBLY-GHOST BUFFERS (x2x3 edges 40-47, corners 48-55) are ghost in
+              // BOTH tangential directions, so the slot alone does not name an along-seam
+              // axis -- but the NEIGHBOUR TABLE does.  Only one of the two flanking faces
+              // is a panel seam (if both were, this is a cube vertex whose exchange is
+              // skipped as non-reciprocal), and that one fixes the seam normal exactly as
+              // for a face buffer.
+              if (n >= 40 && n < 56) {
+                int sjc, skc;
+                if (n < 48) {
+                  const int cq = (n - 40)/2;
+                  sjc = cq & 1;  skc = (cq >> 1) & 1;
+                } else {
+                  const int cq = n - 48;
+                  sjc = (cq >> 1) & 1;  skc = (cq >> 2) & 1;
+                }
+                const int njid = sjc ? 12 : 8;
+                const int nkid = skc ? 28 : 24;
+                const bool sj_ = (nghbr.d_view(m,njid).gid >= 0 &&
+                                  nghbr.d_view(m,njid).panel != my_panel);
+                const bool sk_ = (nghbr.d_view(m,nkid).gid >= 0 &&
+                                  nghbr.d_view(m,nkid).panel != my_panel);
+                if (sj_ && !sk_) {
+                  cs_seam = 2;
+                } else if (sk_ && !sj_) {
+                  cs_seam = 3;
+                }
+              }
             } else if (do_pole) {
               aj = -1;
               bj = jl + ju;
@@ -349,11 +376,16 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
               if (cs_seam == 2) {
                 ang = eta; nrm = xi;
                 dang = 0.25*M_PI*(x3mx - x3mn)/static_cast<Real>(nx3_);
-                sc = kk; blo = kl; bhi = ku - 2;
+                // Bounds from the SOURCE'S ACTIVE range, not the buffer's.  For a face
+                // or x1-edge buffer the two coincide, so this is a no-op there; for a
+                // doubly-ghost buffer the along-seam direction is only ng deep in the
+                // BUFFER and clamping to that would extrapolate from two cells when the
+                // source block holds the data.
+                sc = kk; blo = ks_; bhi = ke_ + ((vv == 2) ? 1 : 0) - 2;
               } else {
                 ang = xi; nrm = eta;
                 dang = 0.25*M_PI*(x2mx - x2mn)/static_cast<Real>(nx2_);
-                sc = jj; blo = jl; bhi = ju - 2;
+                sc = jj; blo = js_; bhi = je_ + ((vv == 1) ? 1 : 0) - 2;
               }
               const Real pos = sc + (atan(tan(ang)*tan(fabs(nrm))) - ang)/dang;
               int bs = static_cast<int>(floor(pos + 0.5)) - 1;
@@ -594,10 +626,16 @@ void MeshBoundaryValuesFC::FillPanelCornersFC(DvceFaceFld4D<Real> &b, bool coars
     const int nj_id = (sj < 0) ? 8 : 12;
     const int nk_id = (sk < 0) ? 24 : 28;
     const int mp = mbpanel.d_view(m);
-    bool seam = false;
-    if (nghbr.d_view(m,nj_id).gid >= 0 && nghbr.d_view(m,nj_id).panel != mp) seam = true;
-    if (nghbr.d_view(m,nk_id).gid >= 0 && nghbr.d_view(m,nk_id).panel != mp) seam = true;
-    if (!seam) return;
+    // ONLY A TRUE CUBE VERTEX.  The condition is that BOTH flanking faces are panel
+    // seams -- exactly IsCubeVertexCorner's test, and exactly the case whose exchange is
+    // skipped.  It used to fire when EITHER face was a seam, which with more than one
+    // MeshBlock per panel also caught ordinary corners that DO have a real diagonal
+    // neighbour, overwriting properly exchanged, seam-transformed data with a one-sided
+    // extrapolation.
+    bool seamj = false, seamk = false;
+    if (nghbr.d_view(m,nj_id).gid >= 0 && nghbr.d_view(m,nj_id).panel != mp) seamj = true;
+    if (nghbr.d_view(m,nk_id).gid >= 0 && nghbr.d_view(m,nk_id).panel != mp) seamk = true;
+    if (!(seamj && seamk)) return;
 
     // Quadratic Lagrange extrapolated d cells beyond an anchor, nodes 0,1,2 stepping
     // inward: w = ((d+1)(d+2)/2, -d(d+2), d(d+1)/2), which sums to 1.
