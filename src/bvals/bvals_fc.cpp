@@ -537,19 +537,34 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
 //
 // Called once at the end of RecvAndUnpackFC, when every face buffer is guaranteed
 // unpacked. Same-panel corners are left entirely alone.
+//
+// THE RADIAL GHOST LAYERS ARE PART OF THIS CORNER BLOCK. The i loop below runs over the
+// whole array, ghost zones included, not just the active radial range -- exactly as the
+// cell-centred FillPanelCornersCC always has. With ONE MeshBlock spanning the radial
+// direction the difference is invisible: x1 ends on a physical boundary at both ends, the
+// corner slot has no neighbour at all, and the physical BC fills those cells afterwards.
+// Split the radial direction and the (radial ghost) x (cube-vertex corner) block is a
+// real ghost region that nothing else writes -- the generic 3D corner buffer that would
+// have served it is skipped as non-reciprocal (see IsCubeVertexCorner in bvals.hpp) --
+// so it kept whatever stale values it happened to hold, ~0.2 of |B| off the exact
+// solution on the uniform-field gate against 6e-4 for the same block unsplit. The
+// flanking strips the extrapolation reads there are the x1x2 and x3x1 EDGE halos, which
+// are filled by their own buffers and were measured accurate. Ideal MHD never reaches
+// this block, but the resistive curl does: it is why cubed-sphere resistivity did not
+// reproduce its Linf under a plain radial split.
 
 void MeshBoundaryValuesFC::FillPanelCornersFC(DvceFaceFld4D<Real> &b) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
-  const int is = indcs.is, ie = indcs.ie;
   const int js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke;
   const int ng = indcs.ng;
   const int nmb = pmy_pack->nmb_thispack;
+  const int nc1 = indcs.nx1 + 2*ng;      // cells in x1; x1f carries one face more
   auto &nghbr = pmy_pack->pmb->nghbr;
   auto &mbpanel = pmy_pack->pmb->mb_panel;
   auto b_ = b;
 
-  par_for("cs_fill_corners", DevExeSpace(), 0,(nmb-1), 0,3, is,ie+1, 0,(ng-1), 0,(ng-1),
+  par_for("cs_fill_corners", DevExeSpace(), 0,(nmb-1), 0,3, 0,nc1, 0,(ng-1), 0,(ng-1),
   KOKKOS_LAMBDA(const int m, const int c, const int i, const int gj, const int gk) {
     const int sj = (c & 1) ? 1 : -1;      // -1 = the -x2 side of the block
     const int sk = (c & 2) ? 1 : -1;      // -1 = the -x3 side
@@ -589,7 +604,7 @@ void MeshBoundaryValuesFC::FillPanelCornersFC(DvceFaceFld4D<Real> &b) {
                     + wj2*b_.x1f(m,ktc,ajc+2*stj,i);
       b_.x1f(m,ktc,jtc,i) = 0.5*(ek + ej);
     }
-    if (i > ie) return;
+    if (i > (nc1-1)) return;
     // b.x2f: FACE index in j, cell index in k
     {
       const Real ek = wk0*b_.x2f(m,akc,jtf,i) + wk1*b_.x2f(m,akc+stk,jtf,i)

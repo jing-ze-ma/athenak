@@ -1699,6 +1699,99 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
     }
   }
 
+  // ---- The same exact-solution error in the GHOST ZONES, split by which directions are
+  // ghost.  B is static, so every halo cell has a known exact value too, and the halo is
+  // where a decomposition can differ without the interior showing it yet.  The categories
+  // matter because they name different pieces of machinery: the pure radial ghost is a
+  // plain x1 face buffer, the tangent ghost is the panel-seam halo, "r x EDGE" is an
+  // x1x2 / x3x1 edge buffer, and "r x CORNER" is the ng x ng x ng block where a radial
+  // neighbour meets a CUBE VERTEX.
+  //
+  // That last one is why this scan exists.  Its exchange is skipped as non-reciprocal
+  // (IsCubeVertexCorner) and MeshBoundaryValuesFC::FillPanelCornersFC extrapolates it
+  // instead -- but that routine used to run only over the ACTIVE radial range, so with x1
+  // split the radial-ghost layers of the corner were written by nothing at all and held
+  // stale values: Linf 2.1e-01 against 6.4e-04 for the same mesh unsplit.  Ideal MHD
+  // never reads that block, which is why it reproduced its L1 to seven digits regardless;
+  // the gnomonic resistive curl does read it, through BcovXi/BcovEta at (i-1, j-1), and
+  // that was the whole of the "radial block interface" defect.  Keep the scan: it is the
+  // only gate here that sees a halo region no interior norm reaches.
+  {
+    const int ng = indcs.ng;
+    const int NCAT = 5;
+    Real gmx[NCAT] = {0.0, 0.0, 0.0, 0.0, 0.0};
+    int gi_[NCAT], gj_[NCAT], gk_[NCAT], gc_[NCAT], gm_[NCAT], gn_[NCAT];
+    for (int c=0; c<NCAT; ++c) {
+      gi_[c] = -1; gj_[c] = -1; gk_[c] = -1; gc_[c] = -1; gm_[c] = -1; gn_[c] = 0;
+    }
+    for (int m=0; m<pmbp->nmb_thispack; ++m) {
+      const int p = mbpanel.h_view(m);
+      const Real x2min = size.h_view(m).x2min, x2max = size.h_view(m).x2max;
+      const Real x3min = size.h_view(m).x3min, x3max = size.h_view(m).x3max;
+      const Real x1min = size.h_view(m).x1min, x1max = size.h_view(m).x1max;
+      for (int k=ks-ng; k<=ke+ng; ++k) {
+        const Real ec = 0.25*M_PI*CellCenterX(k-ks, indcs.nx3, x3min, x3max);
+        const Real ef = 0.25*M_PI*LeftEdgeX(k-ks, indcs.nx3, x3min, x3max);
+        const bool gk = (k < ks || k > ke);
+        for (int j=js-ng; j<=je+ng; ++j) {
+          const Real xc = 0.25*M_PI*CellCenterX(j-js, indcs.nx2, x2min, x2max);
+          const Real xf = 0.25*M_PI*LeftEdgeX(j-js, indcs.nx2, x2min, x2max);
+          const bool gj = (j < js || j > je);
+          Real n1[3], n2[3], cx, cy, cz;
+          for (int i=is-ng; i<=ie+ng; ++i) {
+            const Real rc = CellCenterX(i-is, indcs.nx1, x1min, x1max);
+            const Real rl = LeftEdgeX(i-is, indcs.nx1, x1min, x1max);
+            const bool gi = (i < is || i > ie);
+            const int cat = (!gi && !gj && !gk) ? 0 : (gi && !(gj||gk)) ? 1
+                          : (!gi && (gj||gk)) ? 2 : ((gj && gk) ? 4 : 3);
+            Real dd[3];
+            PanelToCart(p, xc, ec, cx, cy, cz);
+            dd[0] = fabs(bf1h(m,k,j,i)
+                    - ((-bazi*rl*cy + bux)*cx + (bazi*rl*cx + buy)*cy + buz*cz));
+            PanelToCart(p, xf, ec, cx, cy, cz);
+            PanelNormals(p, xf, ec, n1, n2);
+            dd[1] = fabs(bf2h(m,k,j,i) - ((-bazi*rc*cy + bux)*n1[0]
+                    + (bazi*rc*cx + buy)*n1[1] + buz*n1[2]));
+            PanelToCart(p, xc, ef, cx, cy, cz);
+            PanelNormals(p, xc, ef, n1, n2);
+            dd[2] = fabs(bf3h(m,k,j,i) - ((-bazi*rc*cy + bux)*n2[0]
+                    + (bazi*rc*cx + buy)*n2[1] + buz*n2[2]));
+            for (int c=0; c<3; ++c) {
+              if (dd[c] > 1.0e-2) { ++gn_[cat]; }
+              if (dd[c] > gmx[cat]) {
+                gmx[cat] = dd[c];
+                gc_[cat] = c; gm_[cat] = m;
+                gi_[cat] = i-is; gj_[cat] = j-js; gk_[cat] = k-ks;
+              }
+            }
+          }
+        }
+      }
+    }
+    // Reduce, or this is a RANK-LOCAL norm -- the error this project has now made three
+    // times.  The location is printed by whichever rank owns the global maximum.
+    Real gloc[NCAT];
+    for (int c=0; c<NCAT; ++c) { gloc[c] = gmx[c]; }
+#if MPI_PARALLEL_ENABLED
+    MPI_Allreduce(MPI_IN_PLACE, gmx, NCAT, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+    MPI_Allreduce(MPI_IN_PLACE, gn_, NCAT, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
+#endif
+    const char *gn[NCAT] = {"interior      ", "radial ghost  ", "tangent ghost ",
+                            "r x EDGE ghost", "r x CORNER    "};
+    const char *cn2[3] = {"x1f", "x2f", "x3f"};
+    for (int c=0; c<NCAT; ++c) {
+      if (gloc[c] < gmx[c]) {
+        std::printf("###   GHOST SCAN %s Linf=%.4e (n>1e-2: %d)\n",
+                    gn[c], gmx[c], gn_[c]);
+      } else {
+        std::printf("###   GHOST SCAN %s Linf=%.4e (n>1e-2: %d) on %s at (i,j,k)="
+                    "(%d,%d,%d) of block %d panel %d\n", gn[c], gmx[c], gn_[c],
+                    (gc_[c]>=0)?cn2[gc_[c]]:"---", gi_[c], gj_[c], gk_[c], gm_[c],
+                    (gm_[c]>=0)?mbpanel.h_view(gm_[c]):-1);
+      }
+    }
+  }
+
   // ---- Ohmic heating: the only quantitative check on the POYNTING flux ---------------
   // div(E x B) = B.curl E - E.curl J's parent = -E.J = -eta |J|^2, so this exact
   // solution is static in B but heats UNIFORMLY at eta*|J|^2. With v = 0 all of it goes
