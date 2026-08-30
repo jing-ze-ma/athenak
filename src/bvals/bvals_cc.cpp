@@ -74,7 +74,8 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
     // both sides; FillPanelCornersCC overwrites exactly this corner block. See bvals.hpp.
     if (nghbr.d_view(m,n).gid >= 0 &&
         !(use_cs && (IsCubeVertexCorner(nghbr.d_view, mbpanel.d_view, m, n) ||
-           IsSkippedPanelDiagonal(nghbr.d_view, mbpanel.d_view, ml_, m, n)))) {
+           IsSkippedPanelDiagonal(nghbr.d_view, mbpanel.d_view, mblev.d_view,
+                                  ml_, m, n)))) {
       // if neighbor is at coarser level, use coar indices to pack buffer
       int il, iu, jl, ju, kl, ku;
       if (nghbr.d_view(m,n).lev < mblev.d_view(m)) {
@@ -347,7 +348,8 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
     // both sides; FillPanelCornersCC overwrites exactly this corner block. See bvals.hpp.
     if (nghbr.d_view(m,n).gid >= 0 &&
         !(use_cs && (IsCubeVertexCorner(nghbr.d_view, mbpanel.d_view, m, n) ||
-           IsSkippedPanelDiagonal(nghbr.d_view, mbpanel.d_view, ml_, m, n)))) {
+           IsSkippedPanelDiagonal(nghbr.d_view, mbpanel.d_view, mblev.d_view,
+                                  ml_, m, n)))) {
       int il, iu, jl, ju, kl, ku;
       // If neighbor is at same level and data is for Z4c module, append data from coarse
       // array for higher-order prolongation
@@ -414,7 +416,8 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
     for (int n=0; n<nnghbr; ++n) {
       if (nghbr.h_view(m,n).gid >= 0 &&
           !(use_cs && (IsCubeVertexCorner(nghbr.h_view, mbpanel.h_view, m, n) ||
-           IsSkippedPanelDiagonal(nghbr.h_view, mbpanel.h_view, ml_, m, n)))) {
+           IsSkippedPanelDiagonal(nghbr.h_view, mbpanel.h_view, mblev.h_view,
+                                  ml_, m, n)))) {
         // index and rank of destination Neighbor
         int dn = nghbr.h_view(m,n).dest;
         int drank = nghbr.h_view(m,n).rank;
@@ -481,7 +484,8 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackCC(DvceArray5D<Real> &a,
     for (int n=0; n<nnghbr; ++n) {
       if (nghbr.h_view(m,n).gid >= 0 &&
           !(use_cs && (IsCubeVertexCorner(nghbr.h_view, mbpanel.h_view, m, n) ||
-           IsSkippedPanelDiagonal(nghbr.h_view, mbpanel.h_view, ml_, m, n)))) {
+           IsSkippedPanelDiagonal(nghbr.h_view, mbpanel.h_view, mblev.h_view,
+                                  ml_, m, n)))) {
         if (nghbr.h_view(m,n).rank != global_variable::my_rank) {
           int test;
           int ierr = MPI_Test(&(rbuf[n].vars_req[m]), &test, MPI_STATUS_IGNORE);
@@ -518,7 +522,8 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackCC(DvceArray5D<Real> &a,
     // only unpack buffers when neighbor exists (cube vertex skipped -- see bvals.hpp)
     if (nghbr.d_view(m,n).gid >= 0 &&
         !(use_cs && (IsCubeVertexCorner(nghbr.d_view, mbpanel.d_view, m, n) ||
-           IsSkippedPanelDiagonal(nghbr.d_view, mbpanel.d_view, ml_, m, n)))) {
+           IsSkippedPanelDiagonal(nghbr.d_view, mbpanel.d_view, mblev.d_view,
+                                  ml_, m, n)))) {
       int il, iu, jl, ju, kl, ku;
       // if neighbor is at coarser level, use coar indices to unpack buffer
       if (nghbr.d_view(m,n).lev < mblev.d_view(m)) {
@@ -583,7 +588,8 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackCC(DvceArray5D<Real> &a,
     // only unpack buffers when neighbor exists (cube vertex skipped -- see bvals.hpp)
     if (nghbr.d_view(m,n).gid >= 0 &&
         !(use_cs && (IsCubeVertexCorner(nghbr.d_view, mbpanel.d_view, m, n) ||
-           IsSkippedPanelDiagonal(nghbr.d_view, mbpanel.d_view, ml_, m, n)))) {
+           IsSkippedPanelDiagonal(nghbr.d_view, mbpanel.d_view, mblev.d_view,
+                                  ml_, m, n)))) {
       int il, iu, jl, ju, kl, ku;
       // If neighbor is at same level and data is for Z4c module, unpack data from coarse
       // array for higher-order prolongation

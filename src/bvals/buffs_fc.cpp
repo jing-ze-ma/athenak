@@ -77,18 +77,38 @@ void MeshBoundaryValuesFC::InitSendIndices(MeshBoundaryBuffer &buf,
       isame[2].bks = mb_indcs.ks + 1,       isame[2].bke = mb_indcs.ks + ng;
     }
     // for SMR/AMR, always include the overlapping faces in edge and corner boundaries
+    // ON A CUBED SPHERE THIS EXPANSION IS WRONG, and it is skipped.
+    //
+    // The extra layer is REDUNDANT even in Cartesian: the shared face it adds to an edge
+    // or corner buffer is already written, at the same (i,j,k), by the FACE buffer of the
+    // block that owns it -- an edge buffer with ox1 != 0, ox2 != 0 lands on the same
+    // cells the pure-x2 face buffer covers, since that buffer spans the full active range
+    // in x1 including the shared face. Two sources for one location, and which one wins
+    // is only the order of the unpacks. In Cartesian both hold the identical value, so
+    // nothing is visible. Across a panel seam they do NOT: the face buffer applies the
+    // tangent-basis transform and the along-seam resample, the diagonal buffer is a plain
+    // (transformed) copy from a different chart, and the diagonal value overwrites the
+    // correct one.
+    //
+    // MEASURED (cs_test iprob=8, b0c=1e-2, a static uniform field, block-boundary flux
+    // telescoping via CSTestLevelFluxCheck): with the expansion the TANGENTIAL same-level
+    // faces leak max|dM| 4.6e-10 against a flux scale of 2.8e-9; without it they are
+    // EXACTLY zero. The radial faces are untouched by this and are a separate defect --
+    // the cross-panel diagonals that IsSkippedPanelDiagonal drops.
+    const bool ml_ovl = pmy_pack->pmesh->multilevel &&
+                        !(pmy_pack->pmesh->use_cubed_sphere);
     // x1f component on x1-faces
-    if (pmy_pack->pmesh->multilevel && (ox2 != 0 || ox3 != 0)) {
+    if (ml_ovl && (ox2 != 0 || ox3 != 0)) {
       if (ox1 > 0) {isame[0].bie++;}
       if (ox1 < 0) {isame[0].bis--;}
     }
     // x2f component on x2-faces
-    if (pmy_pack->pmesh->multilevel && (ox1 != 0 || ox3 != 0)) {
+    if (ml_ovl && (ox1 != 0 || ox3 != 0)) {
       if (ox2 > 0) {isame[1].bje++;}
       if (ox2 < 0) {isame[1].bjs--;}
     }
     // x3f component on x3-faces
-    if (pmy_pack->pmesh->multilevel && (ox1 != 0 || ox2 != 0)) {
+    if (ml_ovl && (ox1 != 0 || ox2 != 0)) {
       if (ox3 > 0) {isame[2].bke++;}
       if (ox3 < 0) {isame[2].bks--;}
     }
@@ -434,18 +454,21 @@ void MeshBoundaryValuesFC::InitRecvIndices(MeshBoundaryBuffer &buf,
       isame[2].bks = mb_indcs.ks - ng,     isame[2].bke = mb_indcs.ks - 1;
     }
     // for SMR/AMR, always include the overlapping faces in edge and corner boundaries
+    // (skipped on a cubed sphere -- see the note on the matching send indices above)
+    const bool ml_ovl = pmy_pack->pmesh->multilevel &&
+                        !(pmy_pack->pmesh->use_cubed_sphere);
     // x1f component on x1-faces
-    if (pmy_pack->pmesh->multilevel && (ox2 != 0 || ox3 != 0)) {
+    if (ml_ovl && (ox2 != 0 || ox3 != 0)) {
       if (ox1 > 0) {isame[0].bis--;}
       if (ox1 < 0) {isame[0].bie++;}
     }
     // x2f component on x2-faces
-    if (pmy_pack->pmesh->multilevel && (ox1 != 0 || ox3 != 0)) {
+    if (ml_ovl && (ox1 != 0 || ox3 != 0)) {
       if (ox2 > 0) {isame[1].bjs--;}
       if (ox2 < 0) {isame[1].bje++;}
     }
     // x3f component on x3-faces
-    if (pmy_pack->pmesh->multilevel && (ox1 != 0 || ox2 != 0)) {
+    if (ml_ovl && (ox1 != 0 || ox2 != 0)) {
       if (ox3 > 0) {isame[2].bks--;}
       if (ox3 < 0) {isame[2].bke++;}
     }

@@ -58,6 +58,7 @@
 #include "parameter_input.hpp"
 #include "coordinates/cell_locations.hpp"
 #include "mesh/mesh.hpp"
+#include "bvals/bvals.hpp"
 #include "eos/eos.hpp"
 #include "hydro/hydro.hpp"
 #include "mhd/mhd.hpp"
@@ -1844,7 +1845,8 @@ void CSTestLevelFluxCheck(Mesh *pm) {
   if (dxi_key <= 0.0) return;
   const Real rq = 0.01*dr_min;
 
-  struct Bucket { Real sm, se, scale; int n, nlev, npos, nneg; };
+  struct Bucket { Real sm, se, scale; int n, nlev, npos, nneg;
+                  int d, p, m0, m1; int64_t q1, q2, q3; };
   std::map<int64_t, Bucket> buck;
   auto a2h = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
                                                  pmbp->pcoord->area.x2f);
@@ -1884,11 +1886,13 @@ void CSTestLevelFluxCheck(Mesh *pm) {
       auto it = buck.find(key);
       if (it == buck.end()) {
         buck[key] = {sgn*am, sgn*ae, fabs(am), 1, lev,
-                     (sgn > 0.0) ? 1 : 0, (sgn > 0.0) ? 0 : 1};
+                     (sgn > 0.0) ? 1 : 0, (sgn > 0.0) ? 0 : 1,
+                     d, p, m, -1, q1, q2, q3};
       } else {
         it->second.sm += sgn*am;  it->second.se += sgn*ae;
         it->second.scale = fmax(it->second.scale, fabs(am));
         it->second.n += 1;
+        if (m != it->second.m0 && it->second.m1 < 0) it->second.m1 = m;
         if (sgn > 0.0) { it->second.npos += 1; } else { it->second.nneg += 1; }
         if (lev != it->second.nlev) it->second.nlev = -1;
       }
@@ -1933,6 +1937,9 @@ void CSTestLevelFluxCheck(Mesh *pm) {
     }
   }
 
+  Real dmax_[4] = {0.0}, dsum_[4] = {0.0}, lmax_[2] = {0.0}, lsum_[2] = {0.0};
+  int dcnt_[4] = {0}, lcnt_[2] = {0};
+  Bucket wb = {0.0, 0.0, 0.0, 0, 0, 0, 0, 0, 0, -1, -1, 0, 0, 0};
   Real sm2 = 0.0, se2 = 0.0, smL = 0.0, seL = 0.0, sc2 = 0.0, scL = 0.0;
   Real tm2 = 0.0, tmL = 0.0;
   int n2 = 0, nL = 0;
@@ -1947,6 +1954,17 @@ void CSTestLevelFluxCheck(Mesh *pm) {
     if (b.second.nlev >= 0) {                     // same level: the NULL CONTROL
       sm2 = fmax(sm2, fabs(b.second.sm)); se2 = fmax(se2, fabs(b.second.se));
       sc2 = fmax(sc2, b.second.scale); tm2 += b.second.sm; ++n2;
+      // BREAKDOWN of the same-level failure: by DIRECTION, by the LEVEL the two blocks
+      // sit at, and the identity of the single worst bucket. What telescopes for a
+      // same-level face is that both sides reconstruct from ghosts that are exact
+      // COPIES; this says which family of copies has stopped being exact.
+      const int dd = b.second.d;
+      dmax_[dd] = fmax(dmax_[dd], fabs(b.second.sm));  dsum_[dd] += b.second.sm;
+      dcnt_[dd] += 1;
+      const int li = (b.second.nlev == lmin) ? 0 : 1;
+      lmax_[li] = fmax(lmax_[li], fabs(b.second.sm));  lsum_[li] += b.second.sm;
+      lcnt_[li] += 1;
+      if (fabs(b.second.sm) > fabs(wb.sm)) wb = b.second;
     } else {
       smL = fmax(smL, fabs(b.second.sm)); seL = fmax(seL, fabs(b.second.se));
       scL = fmax(scL, b.second.scale); tmL += b.second.sm; ++nL;
@@ -1961,6 +1979,34 @@ void CSTestLevelFluxCheck(Mesh *pm) {
               nL, smL, seL, scL);
   std::printf("   summed spurious mass source:  same level %11.4e   coarse/fine %11.4e\n",
               tm2, tmL);
+  const char *dn[4] = {"--", "x1(r)", "x2(xi)", "x3(eta)"};
+  for (int d=1; d<=3; ++d) {
+    std::printf("     same-level by direction %-8s n %6d  max|dM| %11.4e  sum %11.4e\n",
+                dn[d], dcnt_[d], dmax_[d], dsum_[d]);
+  }
+  for (int l=0; l<2; ++l) {
+    std::printf("     same-level on %s blocks   n %6d  max|dM| %11.4e  sum %11.4e\n",
+                (l == 0) ? "COARSE" : "FINE  ", lcnt_[l], lmax_[l], lsum_[l]);
+  }
+  if (wb.m0 >= 0) {
+    std::printf("     WORST same-level bucket: dir %s panel %d lev %d  blocks %d,%d"
+                "  q=(%lld,%lld,%lld)  dM %11.4e  scale %11.4e  nfaces %d\n",
+                dn[wb.d], wb.p, wb.nlev, wb.m0, wb.m1,
+                static_cast<long long>(wb.q1), static_cast<long long>(wb.q2),
+                static_cast<long long>(wb.q3), wb.sm, wb.scale, wb.n);
+    std::printf("     block %d: lev %d panel %d x1 [%g,%g] x2 [%g,%g] x3 [%g,%g]\n",
+                wb.m0, mblev.h_view(wb.m0), mbpanel.h_view(wb.m0),
+                size.h_view(wb.m0).x1min, size.h_view(wb.m0).x1max,
+                size.h_view(wb.m0).x2min, size.h_view(wb.m0).x2max,
+                size.h_view(wb.m0).x3min, size.h_view(wb.m0).x3max);
+    if (wb.m1 >= 0) {
+      std::printf("     block %d: lev %d panel %d x1 [%g,%g] x2 [%g,%g] x3 [%g,%g]\n",
+                  wb.m1, mblev.h_view(wb.m1), mbpanel.h_view(wb.m1),
+                  size.h_view(wb.m1).x1min, size.h_view(wb.m1).x1max,
+                  size.h_view(wb.m1).x2min, size.h_view(wb.m1).x2max,
+                  size.h_view(wb.m1).x3min, size.h_view(wb.m1).x3max);
+    }
+  }
   return;
 }
 
@@ -2551,6 +2597,7 @@ void CSTestGhostCheck(ParameterInput *pin, Mesh *pm) {
       const int nn = pmbp->pmb->nnghbr;
       std::printf("### CS NEIGHBOUR RECIPROCITY AUDIT (nnghbr=%d)\n", nn);
       int bad[7] = {0,0,0,0,0,0,0}, good[7] = {0,0,0,0,0,0,0};
+      int uncovered = 0;   // non-reciprocal AND not skipped: the MPI hang condition
       const char *cls[7] = {"x1face", "x2face", "x1x2edge", "x3face",
                             "x3x1edge", "x2x3edge", "corner"};
       for (int m=0; m<pmbp->nmb_thispack; ++m) {
@@ -2568,14 +2615,40 @@ void CSTestGhostCheck(ParameterInput *pin, Mesh *pm) {
           if (mn < 0) continue;
           const int d = ng.h_view(m,n).dest;
           if (d < 0 || d >= nn || ng.h_view(mn,d).gid != gid.h_view(m)) {
-            if (bad[c] < 3) {
-              std::printf("   NON-RECIPROCAL m=%2d(gid %3d,pan %d) n=%2d -> gid %3d"
-                          "(pan %d) dest=%2d, but that slot holds gid %3d\n",
-                          m, gid.h_view(m), mbpanel.h_view(m), n,
-                          ng.h_view(m,n).gid, mbpanel.h_view(mn), d,
-                          (d>=0 && d<nn) ? ng.h_view(mn,d).gid : -999);
+            // Does the partner list us AT ALL, just in another slot?  That separates a
+            // `dest` bookkeeping error (it does, at slot rslot) from a genuine SEARCH
+            // asymmetry (it does not list us anywhere), which need different fixes.
+            int rslot = -1;
+            for (int nn2=0; nn2<nn; ++nn2) {
+              if (ng.h_view(mn,nn2).gid == gid.h_view(m)) { rslot = nn2; break; }
+            }
+            if (bad[c] < 6) {
+              const LogicalLocation &la = pm->lloc_eachmb[gid.h_view(m)];
+              const LogicalLocation &lb = pm->lloc_eachmb[ng.h_view(m,n).gid];
+              std::printf("   NON-RECIP %-8s m=%2d gid %3d pan %d lev %d l=(%d,%d,%d)"
+                          " n=%2d -> gid %3d pan %d lev %d l=(%d,%d,%d)"
+                          "  dest=%2d holds %3d;  reverse slot = %d\n",
+                          cls[c], m, gid.h_view(m), mbpanel.h_view(m), la.level,
+                          static_cast<int>(la.lx1), static_cast<int>(la.lx2),
+                          static_cast<int>(la.lx3), n,
+                          ng.h_view(m,n).gid, mbpanel.h_view(mn), lb.level,
+                          static_cast<int>(lb.lx1), static_cast<int>(lb.lx2),
+                          static_cast<int>(lb.lx3), d,
+                          (d>=0 && d<nn) ? ng.h_view(mn,d).gid : -999, rslot);
             }
             ++bad[c];
+            // The only thing that MATTERS is whether a non-reciprocal slot is actually
+            // exchanged. Both predicates are local and symmetric, so a slot they skip
+            // has neither a send nor a posted receive and cannot hang.
+            const bool ml_ = pm->multilevel;
+            if (!(IsCubeVertexCorner(ng.h_view, mbpanel.h_view, m, n) ||
+                  IsSkippedPanelDiagonal(ng.h_view, mbpanel.h_view,
+                                         pmbp->pmb->mb_lev.h_view, ml_, m, n))) {
+              ++uncovered;
+              if (uncovered <= 5) {
+                std::printf("   !! UNCOVERED non-reciprocal slot m=%d n=%d\n", m, n);
+              }
+            }
           } else {
             ++good[c];
           }
@@ -2585,6 +2658,8 @@ void CSTestGhostCheck(ParameterInput *pin, Mesh *pm) {
         std::printf("   %-9s  %5d reciprocal, %5d NON-reciprocal\n",
                     cls[c], good[c], bad[c]);
       }
+      std::printf("   non-reciprocal slots that are still EXCHANGED (must be 0): %d\n",
+                  uncovered);
     }
 
     // --- IS THE x1e ON EVERY BLOCK CORNER SINGLE-VALUED? -----------------------------

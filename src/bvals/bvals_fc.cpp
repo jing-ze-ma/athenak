@@ -71,7 +71,8 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
       // both sides; FillPanelCornersFC overwrites this corner block. See bvals.hpp.
       if (nghbr.d_view(m,n).gid >= 0 &&
         !(use_cs && (IsCubeVertexCorner(nghbr.d_view, mbpanel.d_view, m, n) ||
-           IsSkippedPanelDiagonal(nghbr.d_view, mbpanel.d_view, ml_, m, n)))) {
+           IsSkippedPanelDiagonal(nghbr.d_view, mbpanel.d_view, mblev.d_view,
+                                  ml_, m, n)))) {
         // if neighbor is at coarser level, use cindices to pack buffer
         // Note indices can be different for each component of face-centered field.
         int il, iu, jl, ju, kl, ku, ndat;
@@ -455,6 +456,7 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
   int my_rank = global_variable::my_rank;
   auto &nghbr = pmy_pack->pmb->nghbr;
   auto &mbpanel = pmy_pack->pmb->mb_panel;
+  auto &mblev = pmy_pack->pmb->mb_lev;
   const bool use_cs = pmy_pack->pmesh->use_cubed_sphere;
   const bool ml_ = pmy_pack->pmesh->multilevel;
   bool no_errors=true;
@@ -462,7 +464,8 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
     for (int n=0; n<nnghbr; ++n) {
       if (nghbr.h_view(m,n).gid >= 0 &&
           !(use_cs && (IsCubeVertexCorner(nghbr.h_view, mbpanel.h_view, m, n) ||
-           IsSkippedPanelDiagonal(nghbr.h_view, mbpanel.h_view, ml_, m, n)))) {
+           IsSkippedPanelDiagonal(nghbr.h_view, mbpanel.h_view, mblev.h_view,
+                                  ml_, m, n)))) {
         // index and rank of destination Neighbor
         int dn = nghbr.h_view(m,n).dest;
         int drank = nghbr.h_view(m,n).rank;
@@ -609,6 +612,7 @@ TaskStatus MeshBoundaryValuesFC::RecvAndUnpackFC(DvceFaceFld4D<Real> &b,
   auto &mbpanel = pmy_pack->pmb->mb_panel;
   const bool use_cs = pmy_pack->pmesh->use_cubed_sphere;
   const bool ml_ = pmy_pack->pmesh->multilevel;
+  auto &mblev = pmy_pack->pmb->mb_lev;
 #if MPI_PARALLEL_ENABLED
   //----- STEP 1: check that recv boundary buffer communications have all completed
 
@@ -618,7 +622,8 @@ TaskStatus MeshBoundaryValuesFC::RecvAndUnpackFC(DvceFaceFld4D<Real> &b,
     for (int n=0; n<nnghbr; ++n) {
       if (nghbr.h_view(m,n).gid >= 0 &&
           !(use_cs && (IsCubeVertexCorner(nghbr.h_view, mbpanel.h_view, m, n) ||
-           IsSkippedPanelDiagonal(nghbr.h_view, mbpanel.h_view, ml_, m, n)))) {
+           IsSkippedPanelDiagonal(nghbr.h_view, mbpanel.h_view, mblev.h_view,
+                                  ml_, m, n)))) {
         if (nghbr.h_view(m,n).rank != global_variable::my_rank) {
           int test;
           int ierr = MPI_Test(&(rbuf[n].vars_req[m]), &test, MPI_STATUS_IGNORE);
@@ -643,7 +648,6 @@ TaskStatus MeshBoundaryValuesFC::RecvAndUnpackFC(DvceFaceFld4D<Real> &b,
 
   //----- STEP 2: buffers have all completed, so unpack 3-components of field
 
-  auto &mblev = pmy_pack->pmb->mb_lev;
   // Outer loop over (# of MeshBlocks)*(# of buffers)*(three field components)
   Kokkos::TeamPolicy<> policy(DevExeSpace(), (3*nmb), Kokkos::AUTO);
   Kokkos::parallel_for("RecvBuff", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
@@ -655,7 +659,8 @@ TaskStatus MeshBoundaryValuesFC::RecvAndUnpackFC(DvceFaceFld4D<Real> &b,
       // only unpack buffers when neighbor exists (cube vertex skipped -- see bvals.hpp)
       if (nghbr.d_view(m,n).gid >= 0 &&
         !(use_cs && (IsCubeVertexCorner(nghbr.d_view, mbpanel.d_view, m, n) ||
-           IsSkippedPanelDiagonal(nghbr.d_view, mbpanel.d_view, ml_, m, n)))) {
+           IsSkippedPanelDiagonal(nghbr.d_view, mbpanel.d_view, mblev.d_view,
+                                  ml_, m, n)))) {
         // if neighbor is at coarser level, use cindices to unpack buffer
         int il, iu, jl, ju, kl, ku, ndat;
         if (nghbr.d_view(m,n).lev < mblev.d_view(m)) {

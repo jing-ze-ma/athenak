@@ -301,7 +301,13 @@ Mesh::Mesh(ParameterInput *pin) :
     // so they would keep div B only to truncation error -- and prolongation across a
     // seam, which would need the tangent-basis transform and along-seam resample the
     // halo applies.
-    if (multilevel && pin->DoesBlockExist("mhd")) {
+    // `mesh/cs_dev_allow_mhd_refinement` lifts this guard. It is a DEVELOPMENT switch
+    // for the diagnostics that are chasing the remaining defect (CSTestLevelFluxCheck
+    // and the reciprocity audit in cs_test.cpp), not a supported mode: with it set, the
+    // static-uniform-field test iprob=8 runs clean for ~40 cycles and then goes
+    // non-finite. Do not use it for physics.
+    if (multilevel && pin->DoesBlockExist("mhd") &&
+        !pin->GetOrAddBoolean("mesh", "cs_dev_allow_mhd_refinement", false)) {
       missing = "mesh refinement together with <mhd>: RestrictFC and the "
                 "divergence-preserving FC prolongation are derived for a uniform "
                 "Cartesian mesh and would not keep div B on a gnomonic grid. Hydro "
