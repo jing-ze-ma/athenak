@@ -1581,6 +1581,24 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
       }
     }
   }
+  // Reduce BEFORE dividing. Everything above is a sum, a count or a maximum over the
+  // whole mesh, not over this rank's share of it: left rank-local these read exactly like
+  // physical errors while changing with the rank count, and that has faked a defect in
+  // this project three times (a rank-local convergence norm, a rank-local conservation
+  // sum, and the pre-exchange efld_resist). The location of the worst x1 edge cannot be
+  // reduced, so it is printed by whichever rank turns out to own the global maximum.
+  const Real mx0_local = mx[0];
+#if MPI_PARALLEL_ENABLED
+  {
+    Real s_[5] = {l1[0], l1[1], l1[2], l1s, l1i};
+    MPI_Allreduce(MPI_IN_PLACE, s_, 5, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+    l1[0] = s_[0]; l1[1] = s_[1]; l1[2] = s_[2]; l1s = s_[3]; l1i = s_[4];
+    MPI_Allreduce(MPI_IN_PLACE, mx, 3, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+    std::int64_t n_[5] = {nc[0], nc[1], nc[2], ncs, nci};
+    MPI_Allreduce(MPI_IN_PLACE, n_, 5, MPI_INT64_T, MPI_SUM, MPI_COMM_WORLD);
+    nc[0] = n_[0]; nc[1] = n_[1]; nc[2] = n_[2]; ncs = n_[3]; nci = n_[4];
+  }
+#endif
   for (int q=0; q<3; ++q) {
     if (nc[q] > 0) l1[q] /= static_cast<Real>(nc[q]);
   }
@@ -1617,11 +1635,24 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
   // the answer at all -- ideal MHD reproduces its L1(B) to all SEVEN printed digits
   // under the same test -- so any Linf that moves is a defect, and the first thing to
   // know about it is whether it sits ON the radial block interface.
+  // THE x1f LAYER ON A SHARED RADIAL BLOCK FACE BELONGS TO BOTH BLOCKS, so counting
+  // i = is..ie+1 on every block counts it TWICE and the L1 below is then an average over
+  // a different set of faces for every decomposition -- 39936 faces on one radial block
+  // against 41472 on two, the 1536 difference being exactly the 6 x 16 x 16 duplicated
+  // x1 faces. That is enough on its own to move L1 (1.4292e-05 vs 1.3847e-05) with an
+  // identical solution, so the norm could not be used to compare decompositions at all.
+  // Skip the layer on the block that has a SAME-LEVEL inner x1 neighbour (buffer slot 0)
+  // and each face is counted once. A COARSER neighbour is not skipped: four fine faces
+  // there are not a duplicate of the one coarse face.
+  auto &nghbr = pmbp->pmb->nghbr;
+  auto &mblev = pmbp->pmb->mb_lev;
   Real l1f = 0.0, mxf = 0.0, bmax = 0.0;
   int mxc = -1, mxi = -1, mxj = -1, mxk = -1, mxp = -1, mxm = -1;
   std::int64_t ncf = 0;
   for (int m=0; m<pmbp->nmb_thispack; ++m) {
     const int p = mbpanel.h_view(m);
+    const bool skip_x1f_is = (nghbr.h_view(m,0).gid >= 0 &&
+                              nghbr.h_view(m,0).lev == mblev.h_view(m));
     const Real x2min = size.h_view(m).x2min, x2max = size.h_view(m).x2max;
     const Real x3min = size.h_view(m).x3min, x3max = size.h_view(m).x3max;
     const Real x1min = size.h_view(m).x1min, x1max = size.h_view(m).x1max;
@@ -1636,7 +1667,7 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
           const Real rc = CellCenterX(i-is, indcs.nx1, x1min, x1max);
           const Real rl = LeftEdgeX(i-is, indcs.nx1, x1min, x1max);
           // exactly the three expressions the initial condition used
-          if (j <= je && k <= ke) {
+          if (j <= je && k <= ke && !(i == is && skip_x1f_is)) {
             PanelToCart(p, xc, ec, cx, cy, cz);
             const Real ex = (-bazi*rl*cy + bux)*cx + (bazi*rl*cx + buy)*cy + buz*cz;
             const Real d = fabs(bf1h(m,k,j,i) - ex);
@@ -1859,6 +1890,19 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
       }
     }
   }
+  // Same reduction, same reason: <dp> is a VOLUME-WEIGHTED mean and max|v| and the div B
+  // maxima are global maxima. Unreduced, a 2-rank run printed heating ratios of 1.011584
+  // and 1.039064 for the run whose true value is 1.025324.
+#if MPI_PARALLEL_ENABLED
+  {
+    Real s_[2] = {dpv, vtot};
+    MPI_Allreduce(MPI_IN_PLACE, s_, 2, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+    dpv = s_[0]; vtot = s_[1];
+    Real m_[3] = {vmax, dvb_seam, dvb_int};
+    MPI_Allreduce(MPI_IN_PLACE, m_, 3, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+    vmax = m_[0]; dvb_seam = m_[1]; dvb_int = m_[2];
+  }
+#endif
   std::printf("###   max |sum A.B| / (|B| max A):  seam %.3e   interior %.3e\n",
               dvb_seam, dvb_int);
 
@@ -1867,9 +1911,14 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
   std::printf("###   Ohmic heating: <dp> measured %.6e  exact (gam-1)*eta*J^2*t %.6e"
               "  ratio %.6f   max|v| %.3e\n", dp_meas, dp_exact,
               (dp_exact != 0.0) ? dp_meas/dp_exact : 0.0, vmax);
-  std::printf("###   x1e worst at panel %d (i,j,k)=(%d,%d,%d);"
-              "  L1 over the %d-cell panel-edge ring = %.4e, panel interior = %.4e\n",
-              mxloc[0], mxloc[1], mxloc[2], mxloc[3], nseam, l1s, l1i);
+  if (mx0_local < mx[0]) {
+    std::printf("###   L1 over the %d-cell panel-edge ring = %.4e,"
+                " panel interior = %.4e\n", nseam, l1s, l1i);
+  } else {
+    std::printf("###   x1e worst at panel %d (i,j,k)=(%d,%d,%d);"
+                "  L1 over the %d-cell panel-edge ring = %.4e, panel interior = %.4e\n",
+                mxloc[0], mxloc[1], mxloc[2], mxloc[3], nseam, l1s, l1i);
+  }
   return;
 }
 
