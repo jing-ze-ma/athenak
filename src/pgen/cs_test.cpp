@@ -229,6 +229,7 @@ void CSTestGhostCheck(ParameterInput *pin, Mesh *pm);
 void CSTestConvErrors(ParameterInput *pin, Mesh *pm);
 void CSTestResistCheck(ParameterInput *pin, Mesh *pm);
 void CSTestSeamFluxCheck(Mesh *pm);
+void CSTestLevelFluxCheck(Mesh *pm);
 void CSTestConsSums(Mesh *pm);
 void CSTestHistory(HistoryData *pdata, Mesh *pm);
 
@@ -1162,6 +1163,7 @@ void CSTestConvErrors(ParameterInput *pin, Mesh *pm) {
   MeshBlockPack *pmbp = pm->pmb_pack;
   CSTestConsSums(pm);
   CSTestSeamFluxCheck(pm);
+  CSTestLevelFluxCheck(pm);
   // The field errors are only defined for iprob = 9. Any other setup (in practice the
   // FIELD-FREE iprob = 3 rigid rotation, which is the control for this test) reports the
   // hydro errors alone, against the same exact steady equilibrium.
@@ -1779,6 +1781,190 @@ void CSTestConsSums(Mesh *pm) {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void CSTestLevelFluxCheck(Mesh *pm)
+//! \brief Does the radial flux TELESCOPE across a coarse/fine LEVEL BOUNDARY?
+//!
+//! The level-boundary twin of CSTestSeamFluxCheck. A finite-volume update conserves for
+//! exactly one reason: what leaves one cell enters its neighbour, because both cells
+//! multiply the SAME stored flux by the SAME stored area. Between MeshBlocks at one level
+//! that holds bit for bit. Across a level boundary it holds only because the flux
+//! correction replaces the coarse face's flux by the area-weighted sum of the four fine
+//! ones, so that A_c*F_c == sum(A_f*F_f). If that identity fails, the difference is mass
+//! and energy created out of nothing -- which is what refined MHD does (+1.7e-7 in mass
+//! over five cycles with reflecting walls, against hydro's -3.5e-14).
+//!
+//! Faces are paired BY GEOMETRY, not by neighbour index, so the gate is independent of
+//! the buffer machinery it is auditing. Each radial block-boundary face is bucketed by
+//! its panel, its radius, and the angular cell of the COARSEST block present -- a bucket
+//! wide enough that a coarse face and its four fine children land together. Each face
+//! contributes +A*F when it is its block's OUTER face and -A*F when it is the INNER one,
+//! so a bucket that telescopes sums to zero.
+//!
+//! Only the SCALAR fluxes are meaningful: rho*v.nhat and (E+p)*v.nhat are true scalars.
+//!
+//! The NULL CONTROL is what makes this a measurement: buckets holding exactly two faces
+//! are ordinary same-level block boundaries and MUST come out at round-off. If they do
+//! not, the gate itself is wrong and its level-boundary numbers mean nothing.
+//!
+//! RANK-LOCAL, like the seam gate: under MPI a face whose two sides live on different
+//! ranks is invisible. Run it on one rank.
+
+void CSTestLevelFluxCheck(Mesh *pm) {
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  const bool is_mhd = (pmbp->pmhd != nullptr);
+  if (!is_mhd && pmbp->phydro == nullptr) return;
+  auto &fx = is_mhd ? pmbp->pmhd->uflx : pmbp->phydro->uflx;
+
+  auto f1h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), fx.x1f);
+  auto a1h = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
+                                                 pmbp->pcoord->area.x1f);
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie;
+  const int js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  auto &size = pmbp->pmb->mb_size;
+  auto &mblev = pmbp->pmb->mb_lev;
+  auto &mbpanel = pmbp->pmb->mb_panel;
+  const int nmb = pmbp->nmb_thispack;
+
+  // bucket width: the angular cell of the COARSEST block present, and a radial tolerance
+  // far below the finest cell. Both sides of a shared face compute the same radius from
+  // the same mesh bounds, so they agree to round-off.
+  int lmin = 1 << 30;
+  for (int m=0; m<nmb; ++m) lmin = std::min(lmin, mblev.h_view(m));
+  Real dxi_key = 0.0, dr_key = 0.0, dr_min = 1.0e30;
+  for (int m=0; m<nmb; ++m) {
+    const Real dxi = 0.25*M_PI*(size.h_view(m).x2max - size.h_view(m).x2min)/indcs.nx2;
+    if (mblev.h_view(m) == lmin) {
+      dxi_key = dxi;
+      dr_key = (size.h_view(m).x1max - size.h_view(m).x1min)/indcs.nx1;
+    }
+    dr_min = fmin(dr_min, (size.h_view(m).x1max - size.h_view(m).x1min)/indcs.nx1);
+  }
+  if (dxi_key <= 0.0) return;
+  const Real rq = 0.01*dr_min;
+
+  struct Bucket { Real sm, se, scale; int n, nlev, npos, nneg; };
+  std::map<int64_t, Bucket> buck;
+  auto a2h = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
+                                                 pmbp->pcoord->area.x2f);
+  auto a3h = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
+                                                 pmbp->pcoord->area.x3f);
+  auto f2h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), fx.x2f);
+  auto f3h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), fx.x3f);
+  const Real rmin = pm->mesh_size.x1min;
+
+  // A face coordinate is shared exactly by both sides, so quantise it finely; a
+  // cell-centre coordinate differs between a coarse cell and its children, so bucket it
+  // at the COARSEST level's width.
+  auto qface = [&](Real x, Real h) { return llround(x/(0.01*h)); };
+  auto qcell = [&](Real x, Real x0, Real h) {
+    return static_cast<int64_t>(floor((x - x0)/h));
+  };
+
+  for (int m=0; m<nmb; ++m) {
+    const int p = mbpanel.h_view(m);
+    const int lev = mblev.h_view(m);
+    const Real x1mn = size.h_view(m).x1min, x1mx = size.h_view(m).x1max;
+    const Real x2mn = size.h_view(m).x2min, x2mx = size.h_view(m).x2max;
+    const Real x3mn = size.h_view(m).x3min, x3mx = size.h_view(m).x3max;
+    auto rc  = [&](int i) { return CellCenterX(i-is, indcs.nx1, x1mn, x1mx); };
+    auto xic = [&](int j) { return 0.25*M_PI*CellCenterX(j-js, indcs.nx2, x2mn, x2mx); };
+    auto etc = [&](int k) { return 0.25*M_PI*CellCenterX(k-ks, indcs.nx3, x3mn, x3mx); };
+    auto xif = [&](int j) { return 0.25*M_PI*LeftEdgeX(j-js, indcs.nx2, x2mn, x2mx); };
+    auto etf = [&](int k) { return 0.25*M_PI*LeftEdgeX(k-ks, indcs.nx3, x3mn, x3mx); };
+
+    // The DIRECTION has to be part of the key. Without it an x1 bucket and an x2 bucket
+    // can land on the same value and pool unrelated faces, which makes even hydro -- a
+    // case known to telescope to round-off -- look 100% wrong.
+    auto add = [&](int d, int64_t q1, int64_t q2, int64_t q3,
+                   Real sgn, Real am, Real ae) {
+      const int64_t key = (((((static_cast<int64_t>(p)*4 + d)*8000000
+                          + (q1 + 4000000))*8192) + (q2 + 4096))*8192) + (q3 + 4096);
+      auto it = buck.find(key);
+      if (it == buck.end()) {
+        buck[key] = {sgn*am, sgn*ae, fabs(am), 1, lev,
+                     (sgn > 0.0) ? 1 : 0, (sgn > 0.0) ? 0 : 1};
+      } else {
+        it->second.sm += sgn*am;  it->second.se += sgn*ae;
+        it->second.scale = fmax(it->second.scale, fabs(am));
+        it->second.n += 1;
+        if (sgn > 0.0) { it->second.npos += 1; } else { it->second.nneg += 1; }
+        if (lev != it->second.nlev) it->second.nlev = -1;
+      }
+    };
+
+    // x1 (radial) block-boundary faces
+    for (int side=0; side<2; ++side) {
+      const int i = (side == 0) ? is : (ie+1);
+      const Real sgn = (side == 0) ? -1.0 : 1.0;
+      const int64_t q1 = qface((side == 0) ? x1mn : x1mx, dr_min);
+      for (int k=ks; k<=ke; ++k) {
+        for (int j=js; j<=je; ++j) {
+          add(1, q1, qcell(xic(j), -0.25*M_PI, dxi_key),
+              qcell(etc(k), -0.25*M_PI, dxi_key), sgn,
+              a1h(m,k,j,i)*f1h(m,IDN,k,j,i), a1h(m,k,j,i)*f1h(m,IEN,k,j,i));
+        }
+      }
+    }
+    // x2 (xi) block-boundary faces
+    for (int side=0; side<2; ++side) {
+      const int j = (side == 0) ? js : (je+1);
+      const Real sgn = (side == 0) ? -1.0 : 1.0;
+      const int64_t q2 = qface(xif(j), dxi_key);
+      for (int k=ks; k<=ke; ++k) {
+        for (int i=is; i<=ie; ++i) {
+          add(2, q2, qcell(rc(i), rmin, dr_key), qcell(etc(k), -0.25*M_PI, dxi_key),
+              sgn, a2h(m,k,j,i)*f2h(m,IDN,k,j,i), a2h(m,k,j,i)*f2h(m,IEN,k,j,i));
+        }
+      }
+    }
+    // x3 (eta) block-boundary faces
+    for (int side=0; side<2; ++side) {
+      const int k = (side == 0) ? ks : (ke+1);
+      const Real sgn = (side == 0) ? -1.0 : 1.0;
+      const int64_t q3 = qface(etf(k), dxi_key);
+      for (int j=js; j<=je; ++j) {
+        for (int i=is; i<=ie; ++i) {
+          add(3, q3, qcell(rc(i), rmin, dr_key), qcell(xic(j), -0.25*M_PI, dxi_key),
+              sgn, a3h(m,k,j,i)*f3h(m,IDN,k,j,i), a3h(m,k,j,i)*f3h(m,IEN,k,j,i));
+        }
+      }
+    }
+  }
+
+  Real sm2 = 0.0, se2 = 0.0, smL = 0.0, seL = 0.0, sc2 = 0.0, scL = 0.0;
+  Real tm2 = 0.0, tmL = 0.0;
+  int n2 = 0, nL = 0;
+  for (auto &b : buck) {
+    // A bucket needs contributions of BOTH signs to be a shared face at all. One-sided
+    // buckets are PHYSICAL DOMAIN boundaries, where nothing is supposed to cancel, and
+    // counting them reports the wall's own flux as a telescoping failure.
+    if (b.second.npos == 0 || b.second.nneg == 0) continue;
+    // Classify by whether the bucket actually MIXES levels. Counting faces does not
+    // work: the bucket is a coarse angular cell, so a same-level interface already puts
+    // four face-cells from each side into it.
+    if (b.second.nlev >= 0) {                     // same level: the NULL CONTROL
+      sm2 = fmax(sm2, fabs(b.second.sm)); se2 = fmax(se2, fabs(b.second.se));
+      sc2 = fmax(sc2, b.second.scale); tm2 += b.second.sm; ++n2;
+    } else {
+      smL = fmax(smL, fabs(b.second.sm)); seL = fmax(seL, fabs(b.second.se));
+      scL = fmax(scL, b.second.scale); tmL += b.second.sm; ++nL;
+    }
+  }
+  std::cout << "### CS LEVEL-BOUNDARY FLUX TELESCOPING" << std::endl;
+  std::printf("   same level (NULL CONTROL, must be round-off): %d faces"
+              "  max|dM| %11.4e  max|dE| %11.4e  (scale %11.4e)\n",
+              n2, sm2, se2, sc2);
+  std::printf("   coarse/fine boundary:                         %d faces"
+              "  max|dM| %11.4e  max|dE| %11.4e  (scale %11.4e)\n",
+              nL, smL, seL, scL);
+  std::printf("   summed spurious mass source:  same level %11.4e   coarse/fine %11.4e\n",
+              tm2, tmL);
+  return;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void CSTestSeamFluxCheck(Mesh *pm)
 //! \brief Is the flux through a shared SEAM FACE single-valued?
 //!
@@ -1964,6 +2150,7 @@ void CSTestGhostCheck(ParameterInput *pin, Mesh *pm) {
   MeshBlockPack *pmbp = pm->pmb_pack;
   CSTestConsSums(pm);
   CSTestSeamFluxCheck(pm);
+  CSTestLevelFluxCheck(pm);
   auto &indcs = pm->mb_indcs;
   const int is = indcs.is, ie = indcs.ie;
   const int js = indcs.js, je = indcs.je;
