@@ -136,6 +136,13 @@ void MeshBoundaryValuesCC::ProlongateCC(DvceArray5D<Real> &a, DvceArray5D<Real> 
   // create local references for variables in kernel
   int nmb = pmy_pack->nmb_thispack;
   int nnghbr = pmy_pack->pmb->nnghbr;
+  auto &mbpanel = pmy_pack->pmb->mb_panel;
+  // A slot whose exchange was SKIPPED (a cube vertex, or a cross-panel diagonal at
+  // another level) has an EMPTY coarse buffer, so prolongating it writes ZEROS into the
+  // ghost zone -- measured as a floored density of 1.2e-38 in exactly those cells.
+  // FillSeamLevelDiagonalsCC fills those regions from the flanking halos instead.
+  const bool use_cs = pmy_pack->pmesh->use_cubed_sphere;
+  const bool ml_ = pmy_pack->pmesh->multilevel;
 
   // ptr to z4c, which requires different prolongation/restriction scheme
   //bool not_z4c = (pmbp->pz4c == nullptr)? true : false;
@@ -162,7 +169,10 @@ void MeshBoundaryValuesCC::ProlongateCC(DvceArray5D<Real> &a, DvceArray5D<Real> 
     const int v = (tmember.league_rank() - m*(nnghbr*nvar) - n*nvar);
 
     // only prolongate when neighbor exists and is at coarser level
-    if ((nghbr.d_view(m,n).gid >= 0) && (nghbr.d_view(m,n).lev < mblev.d_view(m))) {
+    if ((nghbr.d_view(m,n).gid >= 0) && (nghbr.d_view(m,n).lev < mblev.d_view(m)) &&
+        !(use_cs && (IsCubeVertexCorner(nghbr.d_view, mbpanel.d_view, m, n) ||
+          IsSkippedPanelDiagonal(nghbr.d_view, mbpanel.d_view, mblev.d_view,
+                                 ml_, m, n)))) {
       // loop over indices for prolongation on this buffer
       int il = rbuf[n].iprol[0].bis;
       int iu = rbuf[n].iprol[0].bie;
@@ -206,6 +216,14 @@ void MeshBoundaryValuesCC::ProlongateCC(DvceArray5D<Real> &a, DvceArray5D<Real> 
     }
     tmember.team_barrier();
   });
+
+  // The cubed-sphere corner fills must run AGAIN here, not only in RecvAndUnpackCC: at a
+  // level boundary their stencil reads the RADIAL ghost strip, which prolongation only
+  // just wrote. And the diagonals whose exchange was skipped have no other source at all.
+  if (pmy_pack->pmesh->use_cubed_sphere) {
+    FillPanelCornersCC(a);
+    FillSeamLevelDiagonalsCC(a);
+  }
   return;
 }
 
@@ -362,6 +380,11 @@ void MeshBoundaryValuesFC::ProlongateFC(DvceFaceFld4D<Real> &b, DvceFaceFld4D<Re
   // create local references for variables in kernel
   int nmb = pmy_pack->nmb_thispack;
   int nnghbr = pmy_pack->pmb->nnghbr;
+  auto &mbpanel = pmy_pack->pmb->mb_panel;
+  // As in ProlongateCC: a slot whose exchange was skipped has an EMPTY coarse buffer, so
+  // prolongating it would write zeros. FillSeamLevelDiagonalsFC fills it instead.
+  const bool use_cs = pmy_pack->pmesh->use_cubed_sphere;
+  const bool ml_ = pmy_pack->pmesh->multilevel;
 
   auto &nghbr = pmy_pack->pmb->nghbr;
   auto &indcs  = pmy_pack->pmesh->mb_indcs;
@@ -383,7 +406,10 @@ void MeshBoundaryValuesFC::ProlongateFC(DvceFaceFld4D<Real> &b, DvceFaceFld4D<Re
     const int v = (tmember.league_rank() - m*(3*nnghbr) - 3*n);
 
     // only prolongate when neighbor exists and is at coarser level
-    if ((nghbr.d_view(m,n).gid >= 0) && (nghbr.d_view(m,n).lev < mblev.d_view(m))) {
+    if ((nghbr.d_view(m,n).gid >= 0) && (nghbr.d_view(m,n).lev < mblev.d_view(m)) &&
+        !(use_cs && (IsCubeVertexCorner(nghbr.d_view, mbpanel.d_view, m, n) ||
+          IsSkippedPanelDiagonal(nghbr.d_view, mbpanel.d_view, mblev.d_view,
+                                 ml_, m, n)))) {
       int il = rbuf[n].iprol[v].bis;
       int iu = rbuf[n].iprol[v].bie;
       int jl = rbuf[n].iprol[v].bjs;
@@ -492,5 +518,11 @@ void MeshBoundaryValuesFC::ProlongateFC(DvceFaceFld4D<Real> &b, DvceFaceFld4D<Re
     tmember.team_barrier();
   });}
 
+  // As in ProlongateCC: re-run the cubed-sphere corner fills now that prolongation has
+  // written the radial ghost strip their stencil reads, and fill the skipped diagonals.
+  if (pmy_pack->pmesh->use_cubed_sphere) {
+    FillPanelCornersFC(b);
+    FillSeamLevelDiagonalsFC(b);
+  }
   return;
 }

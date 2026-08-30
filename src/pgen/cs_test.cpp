@@ -2280,6 +2280,7 @@ void CSTestGhostCheck(ParameterInput *pin, Mesh *pm) {
       for (int m=0; m<pmbp->nmb_thispack; ++m) {
         Real eint = 0.0, eend = 0.0;
         int wi = -1, wj = -1, wk = -1, wc = -1;
+        int vi = -1, vj = -1, vk = -1, vc = -1;
         auto scan = [&](int c, int i0, int i1, int j0, int j1, int k0, int k1) {
           for (int k=k0; k<=k1; ++k) {
             for (int j=j0; j<=j1; ++j) {
@@ -2288,8 +2289,8 @@ void CSTestGhostCheck(ParameterInput *pin, Mesh *pm) {
                                    : (c==2) ? e2h(m,k,j,i) : e3h(m,k,j,i));
                 if (i >= ie) {
                   if (e > eend) { eend = e; wi=i-is; wj=j-js; wk=k-ks; wc=c; }
-                } else {
-                  eint = fmax(eint, e);
+                } else if (e > eint) {
+                  eint = e;  vi=i-is; vj=j-js; vk=k-ks; vc=c;
                 }
               }
             }
@@ -2298,10 +2299,201 @@ void CSTestGhostCheck(ParameterInput *pin, Mesh *pm) {
         scan(1, is,ie,   js,je+1, ks,ke+1);
         scan(2, is,ie+1, js,je,   ks,ke+1);
         scan(3, is,ie+1, js,je+1, ks,ke);
-        std::printf("  m=%3d p%d lev%d  interior %12.5e   last radial %12.5e"
-                    "  ratio %9.2e   worst: x%de at (i,j,k)=(%d,%d,%d)\n",
+        std::printf("  m=%3d p%d lev%d  interior %12.5e at x%de (%d,%d,%d)"
+                    "   last radial %12.5e at x%de (%d,%d,%d)   ratio %9.2e\n",
                     m, mbpanel.h_view(m), pmbp->pmb->mb_lev.h_view(m),
-                    eint, eend, (eint > 0.0) ? eend/eint : 0.0, wc, wi, wj, wk);
+                    eint, vc, vi, vj, vk, eend, wc, wi, wj, wk,
+                    (eint > 0.0) ? eend/eint : 0.0);
+      }
+    }
+
+    // --- THE COARSE/FINE INTERFACE EMF, split by where on the interface it sits ------
+    // For this state the exact EMF is identically zero (v = 0 everywhere, ghosts
+    // included), so every number here is pure error. The split is the point: the
+    // INTERIOR of an interface face and its own BOUNDARY EDGE -- the ring where the
+    // level boundary meets an ordinary same-level tangential block boundary -- are
+    // filled by different machinery, and only one of them is broken.
+    {
+      auto e1h = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
+                                                     pmbp->pmhd->efld.x1e);
+      auto e2h = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
+                                                     pmbp->pmhd->efld.x2e);
+      auto e3h = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
+                                                     pmbp->pmhd->efld.x3e);
+      auto &ngh = pmbp->pmb->nghbr;
+      ngh.sync_host();
+      auto &mlev = pmbp->pmb->mb_lev;
+      Real fin[2] = {0.0, 0.0}, cin[2] = {0.0, 0.0};   // [0] face interior, [1] its edge
+      int fwi[3] = {-1,-1,-1}, cwi[3] = {-1,-1,-1}, fwm = -1, cwm = -1, fwc = 0, cwc = 0;
+      int nfine = 0, ncoar = 0;
+      for (int m=0; m<pmbp->nmb_thispack; ++m) {
+        for (int side=0; side<2; ++side) {         // 0 = -x1 face, 1 = +x1 face
+          const int nid = (side == 0) ? 0 : 4;
+          if (ngh.h_view(m,nid).gid < 0) continue;
+          const int nlev = ngh.h_view(m,nid).lev;
+          if (nlev == mlev.h_view(m)) continue;
+          const bool amfine = (nlev < mlev.h_view(m));
+          const int iface = (side == 0) ? is : (ie+1);
+          if (amfine) { ++nfine; } else { ++ncoar; }
+          for (int c=1; c<=3; ++c) {
+            const int j1 = (c == 1 || c == 3) ? (je+1) : je;
+            const int k1 = (c == 1 || c == 2) ? (ke+1) : ke;
+            for (int k=ks; k<=k1; ++k) {
+              for (int j=js; j<=j1; ++j) {
+                // x1e does not live on an x1 FACE at all (it runs along x1), so only the
+                // two transverse components sit on this interface.
+                if (c == 1) continue;
+                const Real e = fabs((c==2) ? e2h(m,k,j,iface) : e3h(m,k,j,iface));
+                // "edge" = the outermost ring of the face, where the interface meets a
+                // tangential block boundary.
+                const bool edge = (j <= js || j >= j1 || k <= ks || k >= k1);
+                const int b = edge ? 1 : 0;
+                if (amfine) {
+                  if (e > fin[b]) {
+                    fin[b] = e;
+                    if (b == 1) {
+                      fwm=m; fwc=c;
+                      fwi[0]=iface-is; fwi[1]=j-js; fwi[2]=k-ks;
+                    }
+                  }
+                } else {
+                  if (e > cin[b]) {
+                    cin[b] = e;
+                    if (b == 1) {
+                      cwm=m; cwc=c;
+                      cwi[0]=iface-is; cwi[1]=j-js; cwi[2]=k-ks;
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+      std::printf("### CS INTERFACE EMF (exact = 0; %d fine-side, %d coarse-side)\n",
+                  nfine, ncoar);
+      std::printf("   FINE   side: face interior %11.4e   face EDGE ring %11.4e"
+                  "  (worst m=%d x%de at %d,%d,%d)\n",
+                  fin[0], fin[1], fwm, fwc, fwi[0], fwi[1], fwi[2]);
+      std::printf("   COARSE side: face interior %11.4e   face EDGE ring %11.4e"
+                  "  (worst m=%d x%de at %d,%d,%d)\n",
+                  cin[0], cin[1], cwm, cwc, cwi[0], cwi[1], cwi[2]);
+
+      // Where does the edge ring get its data? The EMF there reads the DIAGONAL ghost
+      // block beyond the interface -- i past the level boundary AND j or k past a
+      // tangential block boundary -- which no gate has ever looked at: the halo check
+      // holds j,k in the active range on purpose. For this field the exact value of any
+      // ghost face is the same projection as the active face at the same angles, so the
+      // comparison is exact and needs no interpolation.
+      auto b1h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pmhd->b0.x1f);
+      auto b2h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pmhd->b0.x2f);
+      auto b3h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pmhd->b0.x3f);
+      const Real bvx = cs_bvx, bvy = cs_bvy, bvz = cs_bvz;
+      Real dg[2][3] = {{0.0,0.0,0.0},{0.0,0.0,0.0}};   // [face|diagonal][component]
+      int dwm = -1, dwi[3] = {-1,-1,-1}, dwc = -1, nzero = 0;
+      for (int m=0; m<pmbp->nmb_thispack; ++m) {
+        bool at_lvl = false;
+        int iside = 0;
+        for (int nn=0; nn<8; ++nn) {
+          if (ngh.h_view(m,nn).gid >= 0 && ngh.h_view(m,nn).lev < mlev.h_view(m)) {
+            at_lvl = true;  iside = (nn < 4) ? -1 : 1;
+          }
+        }
+        if (!at_lvl) continue;
+        const int p = mbpanel.h_view(m);
+        auto ang = [&](int idx, int nx, Real mn, Real mx, bool face) {
+          return 0.25*M_PI*(face ? LeftEdgeX(idx, nx, mn, mx)
+                                 : CellCenterX(idx, nx, mn, mx));
+        };
+        auto exact = [&](int j, int k, bool jf, bool kf, int comp) {
+          const Real xi = ang(j-js, indcs.nx2, size.h_view(m).x2min,
+                                               size.h_view(m).x2max, jf);
+          const Real et = ang(k-ks, indcs.nx3, size.h_view(m).x3min,
+                                               size.h_view(m).x3max, kf);
+          Real n1[3], n2[3], cx, cy, cz;
+          if (comp == 0) {
+            PanelToCart(p, xi, et, cx, cy, cz);
+            return bvx*cx + bvy*cy + bvz*cz;
+          }
+          PanelNormals(p, xi, et, n1, n2);
+          return (comp == 1) ? (bvx*n1[0] + bvy*n1[1] + bvz*n1[2])
+                             : (bvx*n2[0] + bvy*n2[1] + bvz*n2[2]);
+        };
+        for (int g=1; g<=indcs.ng; ++g) {
+          const int i1 = (iside > 0) ? (ie+1+g) : (is-g);      // b.x1f index
+          const int ic = (iside > 0) ? (ie+g)   : (is-g);      // cell index in i
+          for (int k=ks-indcs.ng; k<=ke+indcs.ng; ++k) {
+            for (int j=js-indcs.ng; j<=je+indcs.ng; ++j) {
+              const bool jg = (j < js || j > je), kg = (k < ks || k > ke);
+              const int b = (jg || kg) ? 1 : 0;    // 1 = DIAGONAL ghost
+              if (j > je+1 || k > ke+1) continue;
+              const Real d1 = fabs(b1h(m,k,j,i1) - exact(j,k,false,false,0));
+              const Real d2 = fabs(b2h(m,k,j,ic) - exact(j,k,true ,false,1));
+              const Real d3 = fabs(b3h(m,k,j,ic) - exact(j,k,false,true ,2));
+              if (d1 > dg[b][0]) dg[b][0] = d1;
+              if (d2 > dg[b][1]) dg[b][1] = d2;
+              if (d3 > dg[b][2]) dg[b][2] = d3;
+              if (b == 1 && b1h(m,k,j,i1) == 0.0 && b2h(m,k,j,ic) == 0.0) {
+                ++nzero;
+                if (nzero <= 6) {
+                  // Which neighbour slot owns this ghost cell, and is it registered?
+                  const int ox1 = iside;
+                  const int ox2 = (j < js) ? -1 : ((j > je) ? 1 : 0);
+                  const int ox3 = (k < ks) ? -1 : ((k > ke) ? 1 : 0);
+                  int nid = -1;
+                  for (int nn=0; nn<pmbp->pmb->nnghbr; ++nn) {
+                    if (ngh.h_view(m,nn).gid >= 0) continue;
+                  }
+                  std::printf("   ZERO ghost m=%2d(lev %d,pan %d) cell (%d,%d,%d)"
+                              " offset (%d,%d,%d)  slots:", m, mlev.h_view(m),
+                              mbpanel.h_view(m), ic-is, j-js, k-ks, ox1, ox2, ox3);
+                  const int base = (ox3 == 0) ? (16 + (ox1+1) + 2*(ox2+1))
+                                 : ((ox2 == 0) ? (24 + (ox1+9)*(ox1!=0) + 2*(ox3+1))
+                                               : (48 + (ox1+1)/2 + (ox2+1) + 2*(ox3+1)));
+                  for (int q=0; q<2; ++q) {
+                    std::printf(" [%d]=gid %d lev %d;", base+q,
+                                ngh.h_view(m,base+q).gid, ngh.h_view(m,base+q).lev);
+                  }
+                  std::printf("  nid %d\n", nid);
+                }
+              }
+            }
+          }
+        }
+      }
+      std::printf("   ghosts BEYOND the interface, vs exact:  ON the face (j,k active)"
+                  " %11.4e %11.4e %11.4e\n", dg[0][0], dg[0][1], dg[0][2]);
+      std::printf("                                          DIAGONAL (j or k ghost)"
+                  " %11.4e %11.4e %11.4e   (worst m=%d b.x%df at %d,%d,%d)\n",
+                  dg[1][0], dg[1][1], dg[1][2], dwm, dwc, dwi[0], dwi[1], dwi[2]);
+      std::printf("   diagonal ghost cells left at EXACTLY ZERO: %d\n", nzero);
+      // And the CELL-CENTRED state in the same cells? The corner EMF reads velocities
+      // there too, and a zero density is not a small error.
+      {
+        auto u0h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pmhd->u0);
+        int nz = 0, ntot = 0;  Real dmin = 1.0e300;
+        for (int m=0; m<pmbp->nmb_thispack; ++m) {
+          bool at_lvl = false;  int iside = 0;
+          for (int nn=0; nn<8; ++nn) {
+            if (ngh.h_view(m,nn).gid >= 0 && ngh.h_view(m,nn).lev < mlev.h_view(m)) {
+              at_lvl = true;  iside = (nn < 4) ? -1 : 1;
+            }
+          }
+          if (!at_lvl) continue;
+          for (int g=1; g<=indcs.ng; ++g) {
+            const int ic = (iside > 0) ? (ie+g) : (is-g);
+            for (int k=ks-indcs.ng; k<=ke+indcs.ng; ++k) {
+              for (int j=js-indcs.ng; j<=je+indcs.ng; ++j) {
+                if (j >= js && j <= je && k >= ks && k <= ke) continue;
+                ++ntot;
+                if (u0h(m,IDN,k,j,ic) == 0.0) ++nz;
+                dmin = fmin(dmin, u0h(m,IDN,k,j,ic));
+              }
+            }
+          }
+        }
+        std::printf("   CELL-CENTRED in the same cells: %d of %d have rho == 0"
+                    " exactly;  min rho %11.4e\n", nz, ntot, dmin);
       }
     }
 
