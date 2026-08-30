@@ -1847,6 +1847,67 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
     MPI_Allreduce(MPI_IN_PLACE, gd1, NCAT, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
     MPI_Allreduce(MPI_IN_PLACE, gn_, NCAT, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
 #endif
+    // RECIPROCITY + BUFFER-SIZE AUDIT of the face-centred halo.  For every neighbour
+    // slot, the SENDER packs with its own index set and the RECEIVER unpacks slot `dest`
+    // with its own; if the two disagree in extent, correct values land at wrong indices,
+    // which is exactly what "the data is right but mis-placed" looks like.  Same-level
+    // slots are symmetric by construction; a LEVEL BOUNDARY has no such symmetry, and
+    // nothing has ever checked it.
+    {
+      auto *pbb = pmbp->pmhd->pbval_b;
+      auto &gid_ = pmbp->pmb->mb_gid;
+      const int gid0 = gid_.h_view(0);
+      int nrecip = 0, nsize = 0, nchecked = 0;
+      for (int m=0; m<pmbp->nmb_thispack; ++m) {
+        for (int n=0; n<pmbp->pmb->nnghbr; ++n) {
+          const int g = nghbr.h_view(m,n).gid;
+          if (g < 0) continue;
+          const int mm = g - gid0;
+          if (mm < 0 || mm >= pmbp->nmb_thispack) continue;   // off-rank, skip
+          const int nn = nghbr.h_view(m,n).dest;
+          ++nchecked;
+          if (IsCubeVertexCorner(nghbr.h_view, mbpanel.h_view, m, n)) continue;
+          if (nghbr.h_view(mm,nn).gid != gid_.h_view(m)) {
+            if (nrecip < 8) {
+              std::printf("###   AUDIT non-reciprocal: block %d slot %d -> block %d"
+                          " slot %d, which points back at gid %d (expected %d)\n",
+                          m, n, mm, nn, nghbr.h_view(mm,nn).gid, gid_.h_view(m));
+            }
+            ++nrecip;
+            continue;
+          }
+          const int slev = nghbr.h_view(m,n).lev  - mblev.h_view(m);
+          int stot = 0, rtot = 0;
+          for (int v=0; v<3; ++v) {
+            MeshBufferIndcs sb = (slev < 0) ? pbb->sendbuf[n].icoar[v]
+                               : ((slev == 0) ? pbb->sendbuf[n].isame[v]
+                                              : pbb->sendbuf[n].ifine[v]);
+            const int rlev = mblev.h_view(m) - mblev.h_view(mm);
+            MeshBufferIndcs rb = (rlev < 0) ? pbb->recvbuf[nn].icoar[v]
+                               : ((rlev == 0) ? pbb->recvbuf[nn].isame[v]
+                                              : pbb->recvbuf[nn].ifine[v]);
+            const int sn[3] = {sb.bie-sb.bis+1, sb.bje-sb.bjs+1, sb.bke-sb.bks+1};
+            const int rn[3] = {rb.bie-rb.bis+1, rb.bje-rb.bjs+1, rb.bke-rb.bks+1};
+            stot += sn[0]*sn[1]*sn[2];
+            rtot += rn[0]*rn[1]*rn[2];
+          }
+          // Compare the TOTAL over the three components, which is independent of the
+          // component map a swap_ax seam applies (comp 1 <-> comp 2).  A per-component
+          // comparison flags every equatorial-to-polar seam, working ones included.
+          if (stot != rtot) {
+            if (nsize < 12) {
+              std::printf("###   AUDIT size mismatch: block %d (lev %d panel %d) slot %d"
+                          " packs %d values -> block %d (lev %d panel %d) slot %d unpacks"
+                          " %d\n", m, mblev.h_view(m), mbpanel.h_view(m), n, stot,
+                          mm, mblev.h_view(mm), mbpanel.h_view(mm), nn, rtot);
+            }
+            ++nsize;
+          }
+        }
+      }
+      std::printf("###   AUDIT of %d on-rank neighbour slots: %d non-reciprocal,"
+                  " %d size mismatches\n", nchecked, nrecip, nsize);
+    }
     const char *gn[NCAT] = {"interior      ", "radial ghost  ", "tangent ghost ",
                             "r x EDGE  same", "r x EDGE  SEAM",
                             "r x CORNER same", "r x CORNER SEAM"};
