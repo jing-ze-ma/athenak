@@ -54,6 +54,12 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
   const bool ml_ = pmy_pack->pmesh->multilevel;
   const bool use_pole = pmy_pack->pmesh->use_polar_boundary;
   auto &mbsize = pmy_pack->pmb->mb_size;
+  // Sign/enable switch for the seam SHEAR CORRECTION, while its orientation is being
+  // pinned down empirically.  The derivation fixes the magnitude; which way the
+  // receiver's face tilts relative to the source's depends on the seam orientation and
+  // reversal, and the seam-jump gate settles it in one run.  0 disables it entirely.
+  static const Real cs_shear_sgn = (std::getenv("CS_SHEAR") != nullptr)
+                                 ? std::atof(std::getenv("CS_SHEAR")) : 0.0;
   auto &cs_indcs = pmy_pack->pmesh->mb_indcs;
   auto &sbuf = sendbuf;
   auto &rbuf = recvbuf;
@@ -358,6 +364,71 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
                 // primary on an ETA face: (xi centre jj, eta face kk)
                 bet = bx3(kk,jj,i);
                 bxi = 0.5*(x2f_at_etaface(kk,jj,i) + x2f_at_etaface(kk,jj+1,i));
+              }
+              // ---- SHEAR CORRECTION: the two charts' faces are not the same surface --
+              //
+              // The stored quantity is a FACE AVERAGE, and the receiver's ghost face is
+              // not the source face that feeds it.  Take the non-swap +x / +y seam.  The
+              // seam-NORMAL coordinate maps exactly -- xi_A + xi_B = pi/2 -- so the ghost
+              // LAYERS coincide with the source's active layers and nothing is wrong in
+              // that direction.  The faces are bounded in the other one, and there the
+              // receiver's face is a surface of constant eta_A = atan(z/x) while the
+              // source's is constant eta_B = atan(z/y).  Off the seam those are DIFFERENT
+              // SURFACES, sheared relative to each other.
+              //
+              // Write the receiver's face in the source's chart: constant eta_A means
+              // Y_B = X_B*tan(eta_A), so along the face eta_B drifts with xi_B at a rate
+              //     sigma = d eta_B / d xi_B = sin(2 eta_B) / sin(2 xi_B),
+              // which is ZERO at the seam midpoint (eta_B = 0) and grows monotonically to
+              // 1 at the cube vertex.  Averaging f over a line tilted by sigma instead of
+              // a flat one gives, with the linear term killed by centring,
+               //  <f>_recv - <f>_src = sigma*(dxi^2/12)*d2f/dxi deta + O(sigma^2 h^2)
+               //  <f>_recv - <f>_src = sigma*(dxi^2/12)*d2f/dxi deta + O(sigma^2 h^2)
+              //
+              // MEASURED before this was written (cs_test's seam-jump gate, nlim=0, so
+              // the halo machinery alone): the component whose face is the SHARED seam
+              // surface reaches 3.13/3.13, while the other one sits at 1.77/1.89 and its
+              // error grows 7.5x monotonically from the seam midpoint to the cube vertex
+              // -- the sigma profile.  A halo that is second order in VALUE is a FIRST
+              // order current, because the resistive curl differences it over h.
+              //
+              // Only the component whose face NORMAL is the ALONG-SEAM direction needs
+              // this: the other tangential face IS the seam surface, shared by both
+              // charts, and b.x1f's radial face is r = const in every chart.
+              if (cs_seam != 0) {
+                const bool corr_et = (cs_seam == 2) && (vv == 2);
+                const bool corr_xi = (cs_seam == 3) && (vv == 1);
+                // THE SOURCE CELLS SIT AT THE EDGE OF THE ACTIVE RANGE -- that is what
+                // a seam buffer packs -- so a CENTRED difference in the seam-NORMAL
+                // direction reaches outside the data and never fires.  Use a ONE-SIDED
+                // difference there, stepping INWARD, and keep the centred one along the
+                // seam where the full range is available.  One-sided is first order, but
+                // the whole term is already O(h^2), so the residual is O(h^3).
+                const int jn = (jj-1 >= js_) ? (jj-1) : (jj+1);
+                const int kn = (kk-1 >= ks_) ? (kk-1) : (kk+1);
+                const bool okj = (jn >= js_ && jn <= je_);
+                const bool okk = (kn >= ks_ && kn <= ke_);
+                if ((corr_et || corr_xi) && okj && okk &&
+                    kk-1 >= ks_ && kk+1 <= ke_) {
+                  const Real ang_ = (cs_seam == 2) ? eta : xi;
+                  const Real nrm_ = (cs_seam == 2) ? xi : eta;
+                  const Real sden = sin(2.0*nrm_);
+                  if (fabs(sden) > 1.0e-8) {
+                    const Real sig = sin(2.0*ang_)/sden;
+                    // centred mixed difference; /4 makes it dxi*deta*d2f/dxi deta
+                    // d2f/dxi deta: centred along the seam, one-sided across it.
+                    // sgnj undoes the sign of the inward step so the derivative keeps its
+                    // orientation whichever end of the block the source cells sit at.
+                    const Real sgnj = (jj-1 >= js_) ? 1.0 : -1.0;
+                    const Real mx = corr_et
+                        ? sgnj*((bx3(kk+1,jj,i) - bx3(kk-1,jj,i))
+                              - (bx3(kk+1,jn,i) - bx3(kk-1,jn,i)))
+                        : sgnj*((bx2(kk+1,jj,i) - bx2(kk-1,jj,i))
+                              - (bx2(kk+1,jn,i) - bx2(kk-1,jn,i)));
+                    const Real dsh = cs_shear_sgn*sig*mx/24.0;
+                    if (corr_et) { bet += dsh; } else { bxi += dsh; }
+                  }
+                }
               }
               Real oxi, oet;
               cubed_sphere::TransformFieldToDstNormals(cs_srcpanel, cs_dstpanel, xi, eta,
