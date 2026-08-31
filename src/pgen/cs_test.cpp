@@ -2218,6 +2218,106 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
     }
   }
 
+  // ---- THE ERROR JUMP ACROSS A SEAM: the coefficient route (b) has to cancel ---------
+  //
+  // WHY THIS EXISTS.  The resistive current density differences the halo, and the paper
+  // analysis says its O(h) seam error is not interpolation but the JUMP in the
+  // TRUNCATION-ERROR FIELD between the two charts:  writing the discrete solution on
+  // panel P as B + h^2*phi_P with phi_P SMOOTH, opposite sides of the Stokes loop at an
+  // interior edge give h*[e(x+h) - e(x)] = O(h^4) and J comes out second order, while at
+  // a seam they give h*[e_A - e_B] = h^3*(phi_A - phi_B) and J is O(h)*dphi.  Every cheap
+  // fix (higher-order interpolation, a partial-circulation exchange, averaging the two
+  // panels) reproduces the SAME combination phi_A - phi_B and cannot move it.
+  //
+  // SO MEASURE dphi.  The first ghost layer holds the NEIGHBOUR panel's solution, the
+  // first active cell holds this panel's, and they straddle the shared face.  If the
+  // error were one smooth field the difference would be h*de/dx = O(h^3); a genuine jump
+  // makes it O(h^2).  **The order of this difference is the whole question**: 3 means
+  // there is no jump and the mechanism is something else, 2 means dphi != 0 and names
+  // exactly what a reflection-equivariant stencil would have to cancel.
+  //
+  // THE CONTROL IS THE POINT.  The same difference is taken at an ordinary block boundary
+  // WITHIN one panel, where both sides are the same chart and no jump can exist.  It must
+  // come out one order better.  Needs more than one MeshBlock per panel tangentially to
+  // be non-degenerate.  Uses b.x1f, the RADIAL component, because it is B.rhat -- a
+  // chart-independent scalar, so the two sides are directly comparable with no basis
+  // transform in the way.
+  {
+    Real js_l1 = 0.0, js_mx = 0.0, jc_l1 = 0.0, jc_mx = 0.0;
+    std::int64_t js_n = 0, jc_n = 0;
+    const int ng = indcs.ng;
+    for (int m=0; m<pmbp->nmb_thispack; ++m) {
+      const int p = mbpanel.h_view(m);
+      const Real x2min = size.h_view(m).x2min, x2max = size.h_view(m).x2max;
+      const Real x3min = size.h_view(m).x3min, x3max = size.h_view(m).x3max;
+      const Real x1min = size.h_view(m).x1min, x1max = size.h_view(m).x1max;
+      // b.x1f at (i, j, k) is B.rhat at the cell centre in the two tangential indices
+      auto err_r = [&](int k, int j, int i) {
+        const Real xc = 0.25*M_PI*CellCenterX(j-js, indcs.nx2, x2min, x2max);
+        const Real ec = 0.25*M_PI*CellCenterX(k-ks, indcs.nx3, x3min, x3max);
+        const Real rl = LeftEdgeX(i-is, indcs.nx1, x1min, x1max);
+        Real cx, cy, cz;
+        PanelToCart(p, xc, ec, cx, cy, cz);
+        const Real ex = (-cs_bazi*rl*cy + cs_bvx)*cx + (cs_bazi*rl*cx + cs_bvy)*cy
+                      + cs_bvz*cz;
+        return bf1h(m,k,j,i) - ex;
+      };
+      // the four tangential sides, as (buffer slot, is-it-the-minus-side, along-x2?)
+      const int sides[4][3] = {{8,1,1}, {12,0,1}, {24,1,0}, {28,0,0}};
+      for (int sd=0; sd<4; ++sd) {
+        const int nb = sides[sd][0];
+        if (nghbr.h_view(m,nb).gid < 0) continue;
+        if (nghbr.h_view(m,nb).lev != mblev.h_view(m)) continue;   // same level only
+        const bool seam = (nghbr.h_view(m,nb).panel != p);
+        const bool minus = (sides[sd][1] == 1);
+        const bool alongx2 = (sides[sd][2] == 1);
+        for (int i=is+1; i<=ie; ++i) {
+          // skip the ng cells at each end of the seam: those are the CUBE VERTEX corner,
+          // a different and worse problem (see the REGION split above)
+          const int lo = (alongx2 ? ks : js) + ng;
+          const int hi = (alongx2 ? ke : je) - ng;
+          for (int t=lo; t<=hi; ++t) {
+            Real ein, egh;
+            if (alongx2) {
+              const int ja = minus ? js : je;
+              const int jg = minus ? js-1 : je+1;
+              ein = err_r(t, ja, i);  egh = err_r(t, jg, i);
+            } else {
+              const int ka = minus ? ks : ke;
+              const int kg = minus ? ks-1 : ke+1;
+              ein = err_r(ka, t, i);  egh = err_r(kg, t, i);
+            }
+            const Real d = fabs(egh - ein);
+            if (seam) { js_l1 += d; ++js_n; js_mx = fmax(js_mx, d); }
+            else      { jc_l1 += d; ++jc_n; jc_mx = fmax(jc_mx, d); }
+          }
+        }
+      }
+    }
+#if MPI_PARALLEL_ENABLED
+    {
+      Real sv[2] = {js_l1, jc_l1};
+      MPI_Allreduce(MPI_IN_PLACE, sv, 2, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+      js_l1 = sv[0]; jc_l1 = sv[1];
+      Real mv[2] = {js_mx, jc_mx};
+      MPI_Allreduce(MPI_IN_PLACE, mv, 2, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+      js_mx = mv[0]; jc_mx = mv[1];
+      std::int64_t nv[2] = {js_n, jc_n};
+      MPI_Allreduce(MPI_IN_PLACE, nv, 2, MPI_INT64_T, MPI_SUM, MPI_COMM_WORLD);
+      js_n = nv[0]; jc_n = nv[1];
+    }
+#endif
+    if (global_variable::my_rank == 0) {
+      std::printf("###   ERROR JUMP in B.rhat across a shared face (ghost - active):\n");
+      std::printf("###     PANEL SEAM      L1=%.4e  max=%.4e  over %lld faces\n",
+                  (js_n > 0) ? js_l1/static_cast<Real>(js_n) : 0.0, js_mx,
+                  static_cast<long long>(js_n));
+      std::printf("###     same-panel CTRL L1=%.4e  max=%.4e  over %lld faces\n",
+                  (jc_n > 0) ? jc_l1/static_cast<Real>(jc_n) : 0.0, jc_mx,
+                  static_cast<long long>(jc_n));
+    }
+  }
+
   // ---- Ohmic heating: the only quantitative check on the POYNTING flux ---------------
   // div(E x B) = B.curl E - E.curl J's parent = -E.J = -eta |J|^2, so this exact
   // solution is static in B but heats UNIFORMLY at eta*|J|^2. With v = 0 all of it goes
