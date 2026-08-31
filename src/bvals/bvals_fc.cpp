@@ -253,6 +253,23 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
                   cs_seam = 3;
                 }
               }
+
+              // THE RESAMPLE NEEDS 3 CELLS ALONG THE SEAM.  Its quadratic stencil is
+              // clamped to [blo, bhi] = [start, start + extent - 3], which INVERTS when
+              // the source's along-seam ACTIVE extent is under 3 -- the clamp then pins
+              // the stencil one cell outside the active zone and it reads unfilled ghost.
+              // That happens on the COARSE array as soon as cnx = nx/2 < 3, i.e. for a
+              // MeshBlock under 6 cells wide, and MeshBlocks are allowed down to 4.
+              // Measured on a refined 4x4 block: halo Linf 7.7e-01 against 2.4e-02 before
+              // the resample was extended to these buffers -- the degeneracy predates
+              // this session, but a01ace75 and e4be92c0 widened its blast radius by
+              // resampling many more buffers, so it has to be guarded here.  Falling back
+              // to the plain index copy costs the O(dx) seam offset the resample exists
+              // to remove, which is bad but bounded; reading unfilled memory is not.
+              const int seam_extent = cs_coar
+                  ? ((cs_seam == 2) ? cs_indcs.cnx3 : cs_indcs.cnx2)
+                  : ((cs_seam == 2) ? cs_indcs.nx3 : cs_indcs.nx2);
+              if (cs_seam != 0 && seam_extent < 3) { cs_seam = 0; }
             } else if (do_pole) {
               aj = -1;
               bj = jl + ju;

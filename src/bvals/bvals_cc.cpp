@@ -195,6 +195,16 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
           } else if (n >= 24 && n < 40) {
             cs_seam = 3;
           }
+          // THE RESAMPLE NEEDS 3 CELLS ALONG THE SEAM -- see the note in bvals_fc.cpp,
+          // where this degeneracy was measured.  The stencil bounds invert when the
+          // source's along-seam ACTIVE extent is under 3, which happens on the COARSE
+          // array as soon as cnx = nx/2 < 3, and MeshBlocks are allowed down to 4 cells.
+          // No cell-centred gate resolves a difference here, but the code shape is the
+          // same and reading unfilled ghost is not something to leave to luck.
+          const int seam_extent = cs_coar
+              ? ((cs_seam == 2) ? cs_indcs.cnx3 : cs_indcs.cnx2)
+              : ((cs_seam == 2) ? cs_indcs.nx3 : cs_indcs.nx2);
+          if (cs_seam != 0 && seam_extent < 3) { cs_seam = 0; }
         } else if (do_pole) {
           aj = -1;
           bj = jl + ju;
