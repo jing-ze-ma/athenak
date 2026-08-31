@@ -132,10 +132,17 @@ void MeshBoundaryValuesFC::InitSendIndices(MeshBoundaryBuffer &buf,
     if (cs_wire) {
       const int wng = (std::getenv("CS_WIRE_NG") != nullptr)
                     ? std::atoi(std::getenv("CS_WIRE_NG")) : ng;
+      // The x1x2 and x3x1 EDGE buffers are widened by the same rule, which is what
+      // carries the wire into the corner block's RADIAL GHOST layers -- the buffer that
+      // reaches a triply-ghost cell has to be ghost in x1 already.  Their seam normal is
+      // the same as the flanking face's (bvals_fc.cpp reads cs_seam off the slot index,
+      // and 16-23 go with the x2 faces, 32-39 with the x3 faces), so the along-seam
+      // resample carries them unchanged.  The x2x3 edges and the corners are ghost in
+      // BOTH tangential directions and have no along-seam axis -- they are never widened.
       for (int i=0; i<=2; ++i) {
-        if (ox1 == 0 && ox2 != 0 && ox3 == 0) {       // x2 face: widen along x3
+        if (ox2 != 0 && ox3 == 0) {          // x2 face or x1x2 edge: widen along x3
           isame[i].bks -= wng;  isame[i].bke += wng;
-        } else if (ox1 == 0 && ox2 == 0 && ox3 != 0) {  // x3 face: widen along x2
+        } else if (ox3 != 0 && ox2 == 0) {   // x3 face or x3x1 edge: widen along x2
           isame[i].bjs -= wng;  isame[i].bje += wng;
         }
       }
@@ -520,10 +527,17 @@ void MeshBoundaryValuesFC::InitRecvIndices(MeshBoundaryBuffer &buf,
     if (cs_wire) {
       const int wng = (std::getenv("CS_WIRE_NG") != nullptr)
                     ? std::atoi(std::getenv("CS_WIRE_NG")) : ng;
+      // The x1x2 and x3x1 EDGE buffers are widened by the same rule, which is what
+      // carries the wire into the corner block's RADIAL GHOST layers -- the buffer that
+      // reaches a triply-ghost cell has to be ghost in x1 already.  Their seam normal is
+      // the same as the flanking face's (bvals_fc.cpp reads cs_seam off the slot index,
+      // and 16-23 go with the x2 faces, 32-39 with the x3 faces), so the along-seam
+      // resample carries them unchanged.  The x2x3 edges and the corners are ghost in
+      // BOTH tangential directions and have no along-seam axis -- they are never widened.
       for (int i=0; i<=2; ++i) {
-        if (ox1 == 0 && ox2 != 0 && ox3 == 0) {       // x2 face: widen along x3
+        if (ox2 != 0 && ox3 == 0) {          // x2 face or x1x2 edge: widen along x3
           isame[i].bks -= wng;  isame[i].bke += wng;
-        } else if (ox1 == 0 && ox2 == 0 && ox3 != 0) {  // x3 face: widen along x2
+        } else if (ox3 != 0 && ox2 == 0) {   // x3 face or x3x1 edge: widen along x2
           isame[i].bjs -= wng;  isame[i].bje += wng;
         }
       }

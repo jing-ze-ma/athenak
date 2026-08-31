@@ -1896,6 +1896,16 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
     // handling rather than the transform itself.
     Real gd1[NCAT];
     for (int c=0; c<NCAT; ++c) { gd1[c] = 0.0; }
+    // "r x CORNER SEAM" SPLIT BY WHAT COULD POSSIBLY FILL IT.  Category 6 pools two
+    // regions that are not the same problem.  Where the radial neighbour EXISTS the cell
+    // is an interior halo and a real exchange can supply it; where it does not, the cell
+    // is outside the domain, only the physical BC and the corner extrapolation ever touch
+    // it, and no amount of neighbour data will help.  The physical-boundary cells are the
+    // larger of the two, so they set the category's maximum and MASK any change in the
+    // interior ones -- which is exactly what a cube-vertex fill moves.  Reported
+    // separately; the seven categories keep their original meaning.
+    Real gci = 0.0, gcp = 0.0;
+    int gci_i = -1, gci_j = -1, gci_k = -1, gci_c = -1, gci_m = -1;
     for (int m=0; m<pmbp->nmb_thispack; ++m) {
       const int p = mbpanel.h_view(m);
       const Real x2min = size.h_view(m).x2min, x2max = size.h_view(m).x2max;
@@ -1959,6 +1969,18 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
                 gmx[cat] = dd[c];
                 gc_[cat] = c; gm_[cat] = m;
                 gi_[cat] = i-is; gj_[cat] = j-js; gk_[cat] = k-ks;
+              }
+              if (cat == 6) {
+                const int nin = (i < is) ? 0 : 4;
+                if (nghbr.h_view(m,nin).gid >= 0) {
+                  if (dd[c] > gci) {
+                    gci = dd[c];
+                    gci_c = c; gci_m = m;
+                    gci_i = i-is; gci_j = j-js; gci_k = k-ks;
+                  }
+                } else {
+                  if (dd[c] > gcp) { gcp = dd[c]; }
+                }
               }
             }
           }
@@ -2059,6 +2081,37 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
                       mblev.h_view(mm), nin,
                       (nghbr.h_view(mm,nin).gid >= 0) ? nghbr.h_view(mm,nin).lev : -99);
         }
+      }
+    }
+
+    {
+      Real gcl = gci, gc2[2] = {gci, gcp};
+#if MPI_PARALLEL_ENABLED
+      MPI_Allreduce(MPI_IN_PLACE, gc2, 2, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+#endif
+      if (gcl < gc2[0] || gci_m < 0) {
+        std::printf("###   GHOST SCAN r x CORNER SEAM split: x1 INTERIOR %.4e,"
+                    "  x1 PHYSICAL %.4e\n", gc2[0], gc2[1]);
+      } else {
+        std::printf("###   GHOST SCAN r x CORNER SEAM split: x1 INTERIOR %.4e on %s at"
+                    " (i,j,k)=(%d,%d,%d) of block %d panel %d,  x1 PHYSICAL %.4e\n",
+                    gc2[0], (gci_c >= 0) ? cn2[gci_c] : "---", gci_i, gci_j, gci_k,
+                    gci_m, (gci_m >= 0) ? mbpanel.h_view(gci_m) : -1, gc2[1]);
+        // WHAT COULD HAVE FILLED IT.  A triply-ghost cell can only be reached by a
+        // buffer that is already ghost in x1: the x1x2 edge (16-23) and the x3x1 edge
+        // (32-39) on the same radial side.  Print their gid and level, because that is
+        // exactly the gate FillPanelCornersFC uses to decide between a real exchange and
+        // the corner extrapolation.
+        const int s1x = (gci_i < 0) ? -1 : 1;
+        const int sjx = (gci_j < 0) ? -1 : 1;
+        const int skx = (gci_k < 0) ? -1 : 1;
+        const int e12 = 16 + (s1x + 1) + 2*(sjx + 1);
+        const int e31 = 24 + (s1x + 9) + 2*(skx + 1);
+        std::printf("###        owner lev %d;  x1x2 edge slot %d gid %d lev %d;"
+                    "  x3x1 edge slot %d gid %d lev %d\n",
+                    mblev.h_view(gci_m), e12, nghbr.h_view(gci_m,e12).gid,
+                    nghbr.h_view(gci_m,e12).lev, e31, nghbr.h_view(gci_m,e31).gid,
+                    nghbr.h_view(gci_m,e31).lev);
       }
     }
   }

@@ -688,22 +688,31 @@ void MeshBoundaryValuesFC::FillPanelCornersFC(DvceFaceFld4D<Real> &b, bool coars
     if (nghbr.d_view(m,nj_id).gid >= 0 && nghbr.d_view(m,nj_id).panel != mp) seamj = true;
     if (nghbr.d_view(m,nk_id).gid >= 0 && nghbr.d_view(m,nk_id).panel != mp) seamk = true;
     if (!(seamj && seamk)) return;
-    // THE WIRE FILL SUPERSEDES THIS.  When both flanking face neighbours are at the SAME
+    // THE WIRE FILL SUPERSEDES THIS.  When the flanking neighbours are at the SAME
     // level their widened buffers have already written this corner block with REAL data
     // sampled from the two panels that cover it (see buffs_fc.cpp), which is strictly
     // better than any extrapolation -- so do not overwrite it.  At a level boundary the
-    // widening does not apply (only `isame` was widened), and the extrapolation below is
+    // widening does not apply (only `isame` was widened) and the extrapolation below is
     // still the best available.
-    // THE WIRE REACHES ONLY THE ACTIVE RADIAL RANGE.  The face buffer's i range is
-    // [is,ie] (+1 face for x1f), so the corner block's RADIAL GHOST layers are NOT
-    // supplied by it and must still be extrapolated here -- the same trap as 397b4ad3.
-    // Disabling the whole fill left them unwritten and put 0.2 of |B| in the r x CORNER
-    // SEAM category.  So gate PER COMPONENT on whether i is radially active.
+    //
+    // WHICH BUFFER REACHES WHICH RADIAL LAYER.  Over the ACTIVE radial range the two
+    // widened FACE buffers cover the block.  A RADIAL GHOST layer is triply ghost, so
+    // only a buffer that is already ghost in x1 can reach it: the x1x2 and x3x1 EDGE
+    // buffers, widened by the same rule.  Both must exist and be at this level, because
+    // ownership splits the block between them along the diagonal and one alone would
+    // leave half of it written by NOTHING -- the same trap as 397b4ad3, which put 0.2 of
+    // |B| in the r x CORNER SEAM category.
     const bool wire_here = (wire_ && !coar_ &&
         nghbr.d_view(m,nj_id).lev == mblev_.d_view(m) &&
         nghbr.d_view(m,nk_id).lev == mblev_.d_view(m));
-    const bool wire_cc = wire_here && (i >= is_ && i <= ie_);
-    const bool wire_x1 = wire_here && (i >= is_ && i <= ie_ + 1);
+    const int s1 = (i < is_) ? -1 : 1;                 // radial side of a ghost layer
+    const int e12 = 16 + (s1 + 1) + 2*(sj + 1);        // x1x2 edge (nghbr_index.hpp)
+    const int e31 = 24 + (s1 + 9) + 2*(sk + 1);        // x3x1 edge
+    const bool wire_rg = wire_here &&
+        nghbr.d_view(m,e12).gid >= 0 && nghbr.d_view(m,e12).lev == mblev_.d_view(m) &&
+        nghbr.d_view(m,e31).gid >= 0 && nghbr.d_view(m,e31).lev == mblev_.d_view(m);
+    const bool wire_cc = wire_here && ((i >= is_ && i <= ie_) ? true : wire_rg);
+    const bool wire_x1 = wire_here && ((i >= is_ && i <= ie_ + 1) ? true : wire_rg);
 
     // Quadratic Lagrange extrapolated d cells beyond an anchor, nodes 0,1,2 stepping
     // inward: w = ((d+1)(d+2)/2, -d(d+2), d(d+1)/2), which sums to 1.
@@ -883,13 +892,15 @@ TaskStatus MeshBoundaryValuesFC::RecvAndUnpackFC(DvceFaceFld4D<Real> &b,
             // actually contains that direction.  Decided here, from the RECEIVER's own
             // geometry, which needs nothing from the sender.  Cells outside the corner
             // block are unaffected, and a non-cubed-sphere run never enters this.
-            // ONLY the x2/x3 FACE slots were widened (8-15 and 24-31; see
-            // nghbr_index.hpp).  This test MUST NOT reach the x2x3 edge (40-47)
-            // or corner (48-55) buffers: their destinations are legitimately
-            // doubly-ghost, and gating them here SUPPRESSES the real edge and
-            // corner exchange -- which is exactly the bug that made a widening of
-            // ZERO cells still destroy the solution.
-            const bool face_wide = ((n >= 8 && n < 16) || (n >= 24 && n < 32));
+            // ONLY the slots that were actually widened (buffs_fc.cpp): the x2 faces
+            // 8-15 and the x1x2 edges 16-23, whose seam normal is x2, and the x3 faces
+            // 24-31 and the x3x1 edges 32-39, whose seam normal is x3.  The edges are the
+            // ones that carry the wire into the corner's RADIAL GHOST layers.
+            // This test MUST NOT reach the x2x3 edge (40-47) or corner (48-55) buffers:
+            // their destinations are legitimately doubly-ghost, and gating them here
+            // SUPPRESSES the real edge and corner exchange -- which is exactly the bug
+            // that made a widening of ZERO cells still destroy the solution.
+            const bool face_wide = (n >= 8 && n < 40);
             // STAGGERING.  b.x2f lives on x2 FACES and b.x3f on x3 faces, so for those
             // components je+1 / ke+1 is a REAL interior face, not a ghost.  Testing the
             // cell bounds alone misclassifies it and suppresses a legitimate write --
@@ -901,14 +912,47 @@ TaskStatus MeshBoundaryValuesFC::RecvAndUnpackFC(DvceFaceFld4D<Real> &b,
               // wlvl_ == 1 is the NO-OP control: widen the buffers but write nothing
               // extra, which must reproduce the unwidened answer bit for bit.
               if (wlvl_ < 2) return;
-              const Real xi  = 0.25*M_PI*CellCenterX(j-js_, nx2_, mbsz.d_view(m).x2min,
-                                                                  mbsz.d_view(m).x2max);
-              const Real eta = 0.25*M_PI*CellCenterX(k-ks_, nx3_, mbsz.d_view(m).x3min,
-                                                                  mbsz.d_view(m).x3max);
-              Real q[3];
-              cubed_sphere::PanelToCart(mbpanel.d_view(m), xi, eta, q);
-              if (wlvl_ < 3 &&
-                  cubed_sphere::FindPanel(q) != nghbr.d_view(m,n).panel) return;
+              // ONLY a CUBE VERTEX needs the wire.  At an ordinary corner the diagonal
+              // neighbour exists and its own buffer (40..55, unpacked LATER in this same
+              // scalar n loop) is the correct filler; the panel-edge geometry used below
+              // is not even valid there, because the block edge is not the panel edge.
+              const int sj = (j < js_) ? 0 : 1;
+              const int sk = (k < ks_) ? 0 : 1;
+              if (!IsCubeVertexCorner(nghbr.d_view, mbpanel.d_view, m,
+                                      40 + 2*(sj + 2*sk))) return;
+              // OWNERSHIP, exactly.  The corner ghost block is covered by the two
+              // flanking panels, split by the seam BETWEEN THEM, and in this panel's own
+              // gnomonic chart that seam is exactly the DIAGONAL.  Take P0 = +z, so
+              // tan(xi) = x/z and tan(eta) = y/z; the +x/+y panel boundary is the plane
+              // x = y, i.e. xi = eta.  So with a = s2*xi - pi/4 and b = s3*eta - pi/4
+              // measuring how far the cell lies beyond each panel edge, a > b means the
+              // direction belongs to the panel across the x2 face and a < b to the one
+              // across the x3 face.  The other seven vertices follow by reflection, which
+              // is what the s2, s3 signs are.  The test is COMPLEMENTARY by construction:
+              // one of the two flanking buffers writes every cell of the block, and
+              // neither writes a cell the other owns.  That matters because
+              // FillPanelCornersFC stops extrapolating the whole block once the wire is
+              // on -- a predicate with a gap would leave cells written by NOTHING.
+              //
+              // STAGGERING: b.x2f lives on x2 faces and b.x3f on x3 faces, so the
+              // component being written decides whether its own index is a face or a
+              // cell centre.  Half a cell is not negligible here: the two panels meet
+              // AT this diagonal.
+              const Real xi  = 0.25*M_PI*((v == 1)
+                             ? LeftEdgeX(j-js_, nx2_, mbsz.d_view(m).x2min,
+                                                      mbsz.d_view(m).x2max)
+                             : CellCenterX(j-js_, nx2_, mbsz.d_view(m).x2min,
+                                                        mbsz.d_view(m).x2max));
+              const Real eta = 0.25*M_PI*((v == 2)
+                             ? LeftEdgeX(k-ks_, nx3_, mbsz.d_view(m).x3min,
+                                                      mbsz.d_view(m).x3max)
+                             : CellCenterX(k-ks_, nx3_, mbsz.d_view(m).x3min,
+                                                        mbsz.d_view(m).x3max));
+              const Real a = (sj ? xi : -xi) - 0.25*M_PI;
+              const Real b = (sk ? eta : -eta) - 0.25*M_PI;
+              // wlvl_ >= 3 keeps the old "no ownership at all" control: both flanking
+              // buffers write the whole block and the later slot (x3) wins.
+              if (wlvl_ < 3 && ((n < 24) != (a >= b))) return;
             }
             if (v==0) {
               b.x1f(m,k,j,i) = rbuf[n].vars(m,i-il + ni*(j-jl + nj*(k-kl)));
