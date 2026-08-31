@@ -2119,7 +2119,7 @@ void CSTestBlastCheck(ParameterInput *pin, Mesh *pm) {
   std::vector<std::int64_t> pn(NB, 0), pn_s(NB, 0);
   Real minp = 1.0e30, mind = 1.0e30;
   Real pmax_all = -1.0e30, pmax_seam = -1.0e30, angmax_shock = 0.0;
-  std::int64_t nnan = 0, ntot = 0;
+  std::int64_t nnan = 0, ntot = 0, nnan_s = 0, ntot_s = 0;
   const Real nseam = 2;        // "near a seam" = within 2 cells of a panel edge
   for (int m=0; m<pmbp->nmb_thispack; ++m) {
     const int p = mbpanel.h_view(m);
@@ -2143,7 +2143,19 @@ void CSTestBlastCheck(ParameterInput *pin, Mesh *pm) {
           const Real pr = wh(m,IEN,k,j,i);
           const Real dn = wh(m,IDN,k,j,i);
           ++ntot;
-          if (!std::isfinite(pr) || !std::isfinite(dn)) { ++nnan; continue; }
+          if (seam) { ++ntot_s; }
+          if (!std::isfinite(pr) || !std::isfinite(dn)) {
+            ++nnan;
+            if (seam) { ++nnan_s; }
+            if (nnan <= 12) {
+              // WHERE the first bad cells are, in the panel's own angular coordinates:
+              // |xi| and |eta| near pi/4 means an EDGE, both near pi/4 means a CORNER.
+              std::printf("@@NAN panel %d  i=%d j=%d k=%d  |xi|/(pi/4)=%.3f"
+                          "  |eta|/(pi/4)=%.3f\n", p, i-is, j-js, k-ks,
+                          fabs(xc)/(0.25*M_PI), fabs(ec)/(0.25*M_PI));
+            }
+            continue;
+          }
           minp = fmin(minp, pr);  mind = fmin(mind, dn);
           pmax_all = fmax(pmax_all, pr);
           if (seam) { pmax_seam = fmax(pmax_seam, pr); }
@@ -2209,8 +2221,10 @@ void CSTestBlastCheck(ParameterInput *pin, Mesh *pm) {
   std::printf("###   max p domain %.4e   max p within 2 cells of a seam %.4e"
               "   front reached %.3f rad (seam at 0.785)\n",
               pmax_all, pmax_seam, angmax_shock);
-  std::printf("###   NON-FINITE cells: %lld of %lld\n",
-              static_cast<long long>(nnan), static_cast<long long>(ntot));
+  std::printf("###   NON-FINITE cells: %lld of %lld   (within 2 cells of a seam:"
+              " %lld of %lld)\n",
+              static_cast<long long>(nnan), static_cast<long long>(ntot),
+              static_cast<long long>(nnan_s), static_cast<long long>(ntot_s));
   return;
 }
 

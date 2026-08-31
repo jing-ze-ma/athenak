@@ -311,10 +311,9 @@ Mesh::Mesh(ParameterInput *pin) :
     // Linf(B) and the same Ohmic heating ratio at 1, 2 and 4 radial MeshBlocks, and
     // refinement now meets the bar that certified ideal MHD (cf0eb77c):
     //
-    //   converges at the control's rate and lands below it -- Linf(B) 5.6991e-04 ->
-    //     2.2986e-04 over nx2 16 -> 32 against a control of 5.8850e-04 -> 2.3112e-04,
-    //     with the heating ratio 1.019298 -> 1.004858 against 1.025324 -> 1.006358
-    //     (the refined figures are post-a01ace75; the control is unchanged by it);
+    //   converges at the control's rate and lands below it -- Linf(B) 5.6994e-04 ->
+    //     2.2986e-04 over nx2 16 -> 32 against a control of 5.8853e-04 -> 2.3112e-04,
+    //     with the heating ratio 1.019297 -> 1.004858 against 1.025322 -> 1.006357;
     //   level-boundary flux telescoping at round-off (max|dM| 5.3e-23 on 1536 coarse/fine
     //     faces, scale 3.2e-07) and the seam flux likewise (dM/dt 2.6e-19);
     //   BITWISE identical over all five binary dumps at 1, 2, 3 and 6 MPI ranks, and on

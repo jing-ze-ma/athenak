@@ -26,7 +26,7 @@
 # as well as the wide ones.
 #
 # It also runs to tlim = 0.02 without trouble, which is the other half of the check:
-#   EVOLVED FIELD  L1 = 9.9710e-05, Linf = 2.1959e-03;  heating ratio 1.079615;  the
+#   EVOLVED FIELD  L1 = 9.9756e-05, Linf = 2.2170e-03;  heating ratio 1.079611;  the
 #   reciprocity/buffer-size audit reports 0 non-reciprocal and 0 size mismatches.
 # The heating ratio is further from 1 than the wide mesh's 1.019298 simply because this
 # grid is half the resolution -- it is not a symptom.

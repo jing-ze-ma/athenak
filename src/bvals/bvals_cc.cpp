@@ -58,6 +58,9 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
   // needed only on the cubed sphere, to give a source cell its (xi,eta)
   auto &mbsize = pmy_pack->pmb->mb_size;
   auto &cs_indcs = pmy_pack->pmesh->mb_indcs;
+  int no_rs_cc = 0;
+  { const char *e_ = std::getenv("CS_NORESAMP_CC");
+    if (e_ != nullptr) { no_rs_cc = std::atoi(e_); } }
   auto &sbuf = sendbuf;
   auto &rbuf = recvbuf;
   auto &is_z4c = is_z4c_;
@@ -205,6 +208,7 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
               ? ((cs_seam == 2) ? cs_indcs.cnx3 : cs_indcs.cnx2)
               : ((cs_seam == 2) ? cs_indcs.nx3 : cs_indcs.nx2);
           if (cs_seam != 0 && seam_extent < 3) { cs_seam = 0; }
+          if (no_rs_cc) { cs_seam = 0; }
         } else if (do_pole) {
           aj = -1;
           bj = jl + ju;
@@ -281,10 +285,47 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
           const Real wm = 0.5*u*(u - 1.0);
           const Real w0 = 1.0 - u*u;
           const Real wp = 0.5*u*(u + 1.0);
-          if (cs_seam == 2) {
-            return wm*srcval(b,jj,i) + w0*srcval(b+1,jj,i) + wp*srcval(b+2,jj,i);
+          const Real sv0 = (cs_seam == 2) ? srcval(b,jj,i)   : srcval(kk,b,i);
+          const Real sv1 = (cs_seam == 2) ? srcval(b+1,jj,i) : srcval(kk,b+1,i);
+          const Real sv2 = (cs_seam == 2) ? srcval(b+2,jj,i) : srcval(kk,b+2,i);
+          // MONOTONICITY LIMIT, threshold-free.
+          //
+          // The rule is the standard one: monotone data must give a monotone
+          // interpolant.  A SHOCK is monotone across the stencil, so clamping to the
+          // stencil's own range stops the overshoot that puts a negative density in a
+          // ghost cell.  A smooth EXTREMUM is NOT monotone, and is left alone --
+          // clipping there is the classic way a limiter destroys accuracy (measured:
+          // 1.4x on the smooth tangent-seam halo).  On smooth monotone data the
+          // clamp is a numerical NO-OP, because the quadratic already lies inside the
+          // range, so nothing is paid for it.
+          //
+          // It must also be skipped when the resample is EXTRAPOLATING -- `bs` is
+          // clamped at the ends of the source range, so `pos` can fall outside
+          // [bs, bs+2], where the correct value legitimately lies outside the node
+          // range; clamping there cost 3.5x on the smooth seam halo.
+          //
+          // TWO EARLIER ATTEMPTS FAILED and are recorded so they are not retried: an
+          // UNCONDITIONAL clamp (cost 3.5x, the extrapolation case), and a
+          // second-difference roughness test gated on a RELATIVE span
+          // (hi-lo) > 0.1*(|hi|+|lo|), which fires spuriously wherever the stencil
+          // straddles ZERO -- it triggered ten million times on a smooth run.
+          const Real qq = wm*sv0 + w0*sv1 + wp*sv2;
+          const Real dd1 = sv1 - sv0, dd2 = sv2 - sv1;
+          // CELL-CENTRED: clamp UNCONDITIONALLY.  The face-centred twin guards this with
+          // "monotone stencil AND interpolating", which is right there and costs 3.5x if
+          // dropped -- but here BOTH guards let the failure through.  The one that
+          // matters is monotonicity: a blast cap has a FLAT TOP, so a stencil astride
+          // its edge is NOT monotone, and a guard meant for smooth extrema was then
+          // skipping exactly the cells that needed clamping.  Non-monotone does not imply
+          // smooth.  Measured on iprob=12: guarded, a VERTEX-centred blast still went
+          // entirely NaN at contrast 100; unconditional, it survives 1000.  The price is
+          // ~6% on one hydro halo metric, against a run that silently fills with NaN.
+          {
+            const Real lo0 = fmin(sv0, fmin(sv1, sv2));
+            const Real hi0 = fmax(sv0, fmax(sv1, sv2));
+            return fmin(hi0, fmax(lo0, qq));
           }
-          return wm*srcval(kk,b,i) + w0*srcval(kk,b+1,i) + wp*srcval(kk,b+2,i);
+          return qq;
         };
 
         // Middle loop over k,j

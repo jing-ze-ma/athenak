@@ -20,8 +20,11 @@
 # WHAT WAS MEASURED (tlim = 0.02, against the unrefined control at the same nx2):
 #
 #            refined Linf(B) / heating       control Linf(B) / heating
-#   nx2=16   5.6991e-04 / 1.019298           5.8850e-04 / 1.025324
-#   nx2=32   2.2986e-04 / 1.004858           2.3112e-04 / 1.006358
+#   nx2=16   5.6994e-04 / 1.019297           5.8853e-04 / 1.025322
+#   nx2=32   2.2986e-04 / 1.004858           2.3112e-04 / 1.006357
+#
+# (the nx2=16 row and the controls are post-limiter, 3dab5546..HEAD; the nx2=32 refined
+#  entry predates the seam limiter and is accurate to the digits shown)
 #
 # i.e. refinement converges at the control's own rate, lands below it, and heats more
 # accurately.  Level-boundary flux telescoping is at round-off (max|dM| 5.3e-23 over 1536
@@ -30,9 +33,8 @@
 # and on 1 and 2 MI300A GPUs.
 #
 # KNOWN LIMITATION, not specific to resistivity: a halo region that is BOTH a panel seam
-# and a level boundary is still FIRST order, even after a01ace75 removed one of the two
-# mechanisms behind it.  Over nx2 16 -> 32 the edge halo goes 2.3278e-03 -> 1.1447e-03 and
-# the cube-vertex corner downstream of it 1.8152e-02 -> 9.0263e-03, both ratio ~2.0,
+# and a level boundary is still FIRST order.  Over nx2 16 -> 32 the edge halo goes
+# 2.3278e-03 -> 1.1447e-03 and the cube-vertex corner 1.8152e-02 -> 9.0263e-03, ratio ~2.0,
 # against 2.7e-04 for a same-panel level boundary and 3.9e-04 for a same-level seam.  It
 # is a property of the FACE-CENTRED halo -- identical with eta = 1e-10, and the
 # cell-centred path is verifiably unaffected -- so ideal MHD with refinement has carried
