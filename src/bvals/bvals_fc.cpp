@@ -663,9 +663,7 @@ void MeshBoundaryValuesFC::FillPanelCornersFC(DvceFaceFld4D<Real> &b, bool coars
   auto &nghbr = pmy_pack->pmb->nghbr;
   auto &mbpanel = pmy_pack->pmb->mb_panel;
   auto b_ = b;
-  static const int wire_lvl = (std::getenv("CS_WIRE") != nullptr)
-                            ? std::atoi(std::getenv("CS_WIRE")) : 0;
-  const bool wire_ = pmy_pack->pmesh->use_cubed_sphere && (wire_lvl >= 2);
+  const bool vfill_ = pmy_pack->pmesh->cs_vertex_fill;
   const bool coar_ = coarse;
   const int is_ = indcs.is, ie_ = indcs.ie;
   auto &mblev_ = pmy_pack->pmb->mb_lev;
@@ -688,7 +686,7 @@ void MeshBoundaryValuesFC::FillPanelCornersFC(DvceFaceFld4D<Real> &b, bool coars
     if (nghbr.d_view(m,nj_id).gid >= 0 && nghbr.d_view(m,nj_id).panel != mp) seamj = true;
     if (nghbr.d_view(m,nk_id).gid >= 0 && nghbr.d_view(m,nk_id).panel != mp) seamk = true;
     if (!(seamj && seamk)) return;
-    // THE WIRE FILL SUPERSEDES THIS.  When the flanking neighbours are at the SAME
+    // THE CORNER FILL SUPERSEDES THIS.  When the flanking neighbours are at the SAME
     // level their widened buffers have already written this corner block with REAL data
     // sampled from the two panels that cover it (see buffs_fc.cpp), which is strictly
     // better than any extrapolation -- so do not overwrite it.  At a level boundary the
@@ -702,17 +700,17 @@ void MeshBoundaryValuesFC::FillPanelCornersFC(DvceFaceFld4D<Real> &b, bool coars
     // ownership splits the block between them along the diagonal and one alone would
     // leave half of it written by NOTHING -- the same trap as 397b4ad3, which put 0.2 of
     // |B| in the r x CORNER SEAM category.
-    const bool wire_here = (wire_ && !coar_ &&
+    const bool vfill_here = (vfill_ && !coar_ &&
         nghbr.d_view(m,nj_id).lev == mblev_.d_view(m) &&
         nghbr.d_view(m,nk_id).lev == mblev_.d_view(m));
     const int s1 = (i < is_) ? -1 : 1;                 // radial side of a ghost layer
     const int e12 = 16 + (s1 + 1) + 2*(sj + 1);        // x1x2 edge (nghbr_index.hpp)
     const int e31 = 24 + (s1 + 9) + 2*(sk + 1);        // x3x1 edge
-    const bool wire_rg = wire_here &&
+    const bool vfill_rg = vfill_here &&
         nghbr.d_view(m,e12).gid >= 0 && nghbr.d_view(m,e12).lev == mblev_.d_view(m) &&
         nghbr.d_view(m,e31).gid >= 0 && nghbr.d_view(m,e31).lev == mblev_.d_view(m);
-    const bool wire_cc = wire_here && ((i >= is_ && i <= ie_) ? true : wire_rg);
-    const bool wire_x1 = wire_here && ((i >= is_ && i <= ie_ + 1) ? true : wire_rg);
+    const bool vfill_cc = vfill_here && ((i >= is_ && i <= ie_) ? true : vfill_rg);
+    const bool vfill_x1 = vfill_here && ((i >= is_ && i <= ie_ + 1) ? true : vfill_rg);
 
     // Quadratic Lagrange extrapolated d cells beyond an anchor, nodes 0,1,2 stepping
     // inward: w = ((d+1)(d+2)/2, -d(d+2), d(d+1)/2), which sums to 1.
@@ -743,7 +741,7 @@ void MeshBoundaryValuesFC::FillPanelCornersFC(DvceFaceFld4D<Real> &b, bool coars
     const int akf = (sk < 0) ? ks : (ke+1);
 
     // b.x1f: cell indices in both j and k, faces in i
-    if (!wire_x1) {
+    if (!vfill_x1) {
       const Real ek = wk0*b_.x1f(m,akc,jtc,i) + wk1*b_.x1f(m,akc+stk,jtc,i)
                     + wk2*b_.x1f(m,akc+2*stk,jtc,i);
       const Real ej = wj0*b_.x1f(m,ktc,ajc,i) + wj1*b_.x1f(m,ktc,ajc+stj,i)
@@ -752,7 +750,7 @@ void MeshBoundaryValuesFC::FillPanelCornersFC(DvceFaceFld4D<Real> &b, bool coars
     }
     if (i > (nc1-1)) return;
     // b.x2f: FACE index in j, cell index in k
-    if (!wire_cc) {
+    if (!vfill_cc) {
       const Real ek = wk0*b_.x2f(m,akc,jtf,i) + wk1*b_.x2f(m,akc+stk,jtf,i)
                     + wk2*b_.x2f(m,akc+2*stk,jtf,i);
       const Real ej = wj0*b_.x2f(m,ktc,ajf,i) + wj1*b_.x2f(m,ktc,ajf+stj,i)
@@ -760,7 +758,7 @@ void MeshBoundaryValuesFC::FillPanelCornersFC(DvceFaceFld4D<Real> &b, bool coars
       b_.x2f(m,ktc,jtf,i) = wblend*ek + (1.0-wblend)*ej;
     }
     // b.x3f: cell index in j, FACE index in k
-    if (!wire_cc) {
+    if (!vfill_cc) {
       const Real ek = wk0*b_.x3f(m,akf,jtc,i) + wk1*b_.x3f(m,akf+stk,jtc,i)
                     + wk2*b_.x3f(m,akf+2*stk,jtc,i);
       const Real ej = wj0*b_.x3f(m,ktf,ajc,i) + wj1*b_.x3f(m,ktf,ajc+stj,i)
@@ -787,11 +785,8 @@ TaskStatus MeshBoundaryValuesFC::RecvAndUnpackFC(DvceFaceFld4D<Real> &b,
   const bool use_cs = pmy_pack->pmesh->use_cubed_sphere;
   const bool ml_ = pmy_pack->pmesh->multilevel;
   auto &mblev = pmy_pack->pmb->mb_lev;
-  // For the cube-vertex wire fill's ownership test (see the note at its use below).
-  static const int wire_on = (std::getenv("CS_WIRE") != nullptr)
-                           ? std::atoi(std::getenv("CS_WIRE")) : 0;
-  const bool cs_wire_ = use_cs && (wire_on > 0);
-  const int wlvl_ = wire_on;
+  // For the cube-vertex corner fill's ownership test (see the note at its use below).
+  const bool cs_vfill_ = pmy_pack->pmesh->cs_vertex_fill;
   auto &wi_ = pmy_pack->pmesh->mb_indcs;
   const int js_ = wi_.js, je_ = wi_.je, ks_ = wi_.ks, ke_ = wi_.ke;
   const int nx2_ = wi_.nx2, nx3_ = wi_.nx3;
@@ -884,7 +879,7 @@ TaskStatus MeshBoundaryValuesFC::RecvAndUnpackFC(DvceFaceFld4D<Real> &b,
             int i = (idx - k*nji - j*ni) + il;
             k += kl;
             j += jl;
-            // CUBE-VERTEX WIRE FILL: OWNERSHIP.  The face buffers were widened by ng
+            // CUBE-VERTEX CORNER FILL: OWNERSHIP.  The face buffers were widened by ng
             // along the seam (see buffs_fc.cpp) so the doubly-ghost corner block rides
             // the face exchange.  Both flanking face buffers reach that block, but each
             // panel only genuinely COVERS the half of it on its own side of the diagonal
@@ -895,7 +890,7 @@ TaskStatus MeshBoundaryValuesFC::RecvAndUnpackFC(DvceFaceFld4D<Real> &b,
             // ONLY the slots that were actually widened (buffs_fc.cpp): the x2 faces
             // 8-15 and the x1x2 edges 16-23, whose seam normal is x2, and the x3 faces
             // 24-31 and the x3x1 edges 32-39, whose seam normal is x3.  The edges are the
-            // ones that carry the wire into the corner's RADIAL GHOST layers.
+            // ones that carry the fill into the corner's RADIAL GHOST layers.
             // This test MUST NOT reach the x2x3 edge (40-47) or corner (48-55) buffers:
             // their destinations are legitimately doubly-ghost, and gating them here
             // SUPPRESSES the real edge and corner exchange -- which is exactly the bug
@@ -907,12 +902,9 @@ TaskStatus MeshBoundaryValuesFC::RecvAndUnpackFC(DvceFaceFld4D<Real> &b,
             // which is why a widening of ZERO cells still destroyed the solution.
             const int jghi = je_ + ((v == 1) ? 1 : 0);
             const int kghi = ke_ + ((v == 2) ? 1 : 0);
-            if (cs_wire_ && face_wide &&
+            if (cs_vfill_ && face_wide &&
                 (j < js_ || j > jghi) && (k < ks_ || k > kghi)) {
-              // wlvl_ == 1 is the NO-OP control: widen the buffers but write nothing
-              // extra, which must reproduce the unwidened answer bit for bit.
-              if (wlvl_ < 2) return;
-              // ONLY a CUBE VERTEX needs the wire.  At an ordinary corner the diagonal
+              // ONLY a CUBE VERTEX needs the fill.  At an ordinary corner the diagonal
               // neighbour exists and its own buffer (40..55, unpacked LATER in this same
               // scalar n loop) is the correct filler; the panel-edge geometry used below
               // is not even valid there, because the block edge is not the panel edge.
@@ -931,7 +923,7 @@ TaskStatus MeshBoundaryValuesFC::RecvAndUnpackFC(DvceFaceFld4D<Real> &b,
               // is what the s2, s3 signs are.  The test is COMPLEMENTARY by construction:
               // one of the two flanking buffers writes every cell of the block, and
               // neither writes a cell the other owns.  That matters because
-              // FillPanelCornersFC stops extrapolating the whole block once the wire is
+              // FillPanelCornersFC stops extrapolating the whole block once the fill is
               // on -- a predicate with a gap would leave cells written by NOTHING.
               //
               // STAGGERING: b.x2f lives on x2 faces and b.x3f on x3 faces, so the
@@ -950,9 +942,7 @@ TaskStatus MeshBoundaryValuesFC::RecvAndUnpackFC(DvceFaceFld4D<Real> &b,
                                                         mbsz.d_view(m).x3max));
               const Real a = (sj ? xi : -xi) - 0.25*M_PI;
               const Real b = (sk ? eta : -eta) - 0.25*M_PI;
-              // wlvl_ >= 3 keeps the old "no ownership at all" control: both flanking
-              // buffers write the whole block and the later slot (x3) wins.
-              if (wlvl_ < 3 && ((n < 24) != (a >= b))) return;
+              if ((n < 24) != (a >= b)) return;
             }
             if (v==0) {
               b.x1f(m,k,j,i) = rbuf[n].vars(m,i-il + ni*(j-jl + nj*(k-kl)));

@@ -20,11 +20,12 @@
 # WHAT WAS MEASURED (tlim = 0.02, against the unrefined control at the same nx2):
 #
 #            refined Linf(B) / heating       control Linf(B) / heating
-#   nx2=16   5.6994e-04 / 1.019297           5.8853e-04 / 1.025322
-#   nx2=32   2.2986e-04 / 1.004858           2.3112e-04 / 1.006357
+#   nx2=16   5.4221e-04 / 1.019295           5.8853e-04 / 1.025322
+#   nx2=32   2.2247e-04 / 1.004442           2.3112e-04 / 1.006357
 #
-# (the nx2=16 row and the controls are post-limiter, 3dab5546..HEAD; the nx2=32 refined
-#  entry predates the seam limiter and is accurate to the digits shown)
+# (the controls are post-limiter, 3dab5546..HEAD.  BOTH refined entries are with
+#  mesh/cs_vertex_fill at its default of TRUE; with it false they read 5.6994e-04 /
+#  1.019297 and 2.2986e-04 / 1.004858, which is what every earlier record here shows)
 #
 # i.e. refinement converges at the control's own rate, lands below it, and heats more
 # accurately.  Level-boundary flux telescoping is at round-off (max|dM| 5.3e-23 over 1536
@@ -40,7 +41,16 @@
 # cell-centred path is verifiably unaffected -- so ideal MHD with refinement has carried
 # it all along; its stencils simply never reach those cells.  The domain norms are
 # unaffected because the region shrinks with h.  cs_test's GHOST SCAN reports it, split by
-# category, and it is the thing to fix next in this area.
+# category.
+#
+# PARTLY ADDRESSED by mesh/cs_vertex_fill (default TRUE): the ng x ng CUBE-VERTEX corner
+# block, which has no diagonal neighbour and used to be extrapolated, now rides the
+# widened face and x1-edge buffers as real data from the two panels that cover it.  On
+# THIS mesh only the tangential half applies, because every radial interface here is also
+# a LEVEL boundary and only the same-level buffers are widened -- so the tangent ghost
+# improves 1.6455e-03 -> 4.1699e-04 while `r x CORNER SEAM` barely moves.  On a PLAIN
+# radial split (cubed_sphere_resist.athinput with meshblock/nx1 halved) the corner moves
+# too: 1.1176e-03 -> 3.7000e-04.  Widening the coarse/fine buffers is what is left.
 #
 # NOTE ix1_bc/ox1_bc MUST be `user`: the ghosts have to heat with the interior, or the
 # heated shell pushes against a cold boundary and the leak reads as a heating deficit.

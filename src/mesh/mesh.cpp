@@ -113,6 +113,19 @@ Mesh::Mesh(ParameterInput *pin) :
   }
       
   use_cubed_sphere = pin->GetOrAddBoolean("mesh", "use_cubed_sphere", false);
+  // CUBE-VERTEX CORNER FILL.  At a cube vertex only THREE panels meet, so the ng x ng
+  // corner ghost block has no diagonal neighbour and its exchange is skipped as
+  // non-reciprocal (IsCubeVertexCorner, bvals.hpp).  With this on, the buffers that
+  // already cross the seam are widened by ng along it so the corner rides the existing
+  // face and x1-edge exchange -- real data from the two panels that cover the block,
+  // instead of the one-sided extrapolation FillPanelCorners*FC falls back to.  The two
+  // panels are split by the DIAGONAL of the receiving panel's own chart, which is what
+  // decides ownership (bvals_fc.cpp).  Measured: the cube-vertex corner halo improves
+  // 3-4x and the evolved Linf 3-5% on the resistive gate; the cost is 2*ng extra cells
+  // on every x2/x3 face and x1x2/x3x1 edge message, ~25% on a 16-cell block and ~6% on
+  // a 64-cell one.  Turn it OFF to reproduce the pre-fill answers exactly.
+  cs_vertex_fill = use_cubed_sphere &&
+                   pin->GetOrAddBoolean("mesh", "cs_vertex_fill", true);
   npanels = (use_cubed_sphere ? 6 : 1);
   if (use_cubed_sphere) {
     strictly_periodic = false;

@@ -31,8 +31,7 @@ void MeshBoundaryValuesFC::InitSendIndices(MeshBoundaryBuffer &buf,
   auto &mb_indcs  = pmy_pack->pmesh->mb_indcs;
   int ng  = mb_indcs.ng;
   int ng1 = ng - 1;
-  const bool cs_wire = pmy_pack->pmesh->use_cubed_sphere &&
-                       (std::getenv("CS_WIRE") != nullptr);
+  const bool cs_vfill = pmy_pack->pmesh->cs_vertex_fill;
 
   // set indices for sends to neighbors on SAME level
   // Formulae same as in LoadBoundaryBufferSameLevel() in src/bvals/fc/bvals_fc.cpp
@@ -114,7 +113,7 @@ void MeshBoundaryValuesFC::InitSendIndices(MeshBoundaryBuffer &buf,
       if (ox3 > 0) {isame[2].bke++;}
       if (ox3 < 0) {isame[2].bks--;}
     }
-    // CUBE-VERTEX WIRE FILL.  A cubed-sphere panel corner is a CUBE VERTEX where only
+    // CUBE-VERTEX CORNER FILL.  A cubed-sphere panel corner is a CUBE VERTEX where only
     // THREE panels meet, so its ng x ng corner ghost block has no diagonal neighbour and
     // its exchange is skipped (see IsCubeVertexCorner).  That block is covered by the
     // TWO FLANKING panels, split by a diagonal, and each flanking panel's data for it
@@ -129,11 +128,9 @@ void MeshBoundaryValuesFC::InitSendIndices(MeshBoundaryBuffer &buf,
     // resample clamps its stencil to the source's active bounds (see `bs` in
     // bvals_fc.cpp).  Ownership -- which of the two flanking panels supplies a given
     // corner cell -- is decided at UNPACK from the receiver's own geometry.
-    if (cs_wire) {
-      const int wng = (std::getenv("CS_WIRE_NG") != nullptr)
-                    ? std::atoi(std::getenv("CS_WIRE_NG")) : ng;
+    if (cs_vfill) {
       // The x1x2 and x3x1 EDGE buffers are widened by the same rule, which is what
-      // carries the wire into the corner block's RADIAL GHOST layers -- the buffer that
+      // carries the fill into the corner block's RADIAL GHOST layers -- the buffer that
       // reaches a triply-ghost cell has to be ghost in x1 already.  Their seam normal is
       // the same as the flanking face's (bvals_fc.cpp reads cs_seam off the slot index,
       // and 16-23 go with the x2 faces, 32-39 with the x3 faces), so the along-seam
@@ -141,9 +138,9 @@ void MeshBoundaryValuesFC::InitSendIndices(MeshBoundaryBuffer &buf,
       // BOTH tangential directions and have no along-seam axis -- they are never widened.
       for (int i=0; i<=2; ++i) {
         if (ox2 != 0 && ox3 == 0) {          // x2 face or x1x2 edge: widen along x3
-          isame[i].bks -= wng;  isame[i].bke += wng;
+          isame[i].bks -= ng;  isame[i].bke += ng;
         } else if (ox3 != 0 && ox2 == 0) {   // x3 face or x3x1 edge: widen along x2
-          isame[i].bjs -= wng;  isame[i].bje += wng;
+          isame[i].bjs -= ng;  isame[i].bje += ng;
         }
       }
     }
@@ -444,8 +441,7 @@ void MeshBoundaryValuesFC::InitRecvIndices(MeshBoundaryBuffer &buf,
                                            int ox1, int ox2, int ox3, int f1, int f2) {
   auto &mb_indcs  = pmy_pack->pmesh->mb_indcs;
   int ng = mb_indcs.ng;
-  const bool cs_wire = pmy_pack->pmesh->use_cubed_sphere &&
-                       (std::getenv("CS_WIRE") != nullptr);
+  const bool cs_vfill = pmy_pack->pmesh->cs_vertex_fill;
 
   // set indices for receives from neighbors on SAME level
   // Formulae same as in SetBoundarySameLevel() in src/bvals/fc/bvals_fc.cpp
@@ -509,7 +505,7 @@ void MeshBoundaryValuesFC::InitRecvIndices(MeshBoundaryBuffer &buf,
       if (ox3 > 0) {isame[2].bks--;}
       if (ox3 < 0) {isame[2].bke++;}
     }
-    // CUBE-VERTEX WIRE FILL.  A cubed-sphere panel corner is a CUBE VERTEX where only
+    // CUBE-VERTEX CORNER FILL.  A cubed-sphere panel corner is a CUBE VERTEX where only
     // THREE panels meet, so its ng x ng corner ghost block has no diagonal neighbour and
     // its exchange is skipped (see IsCubeVertexCorner).  That block is covered by the
     // TWO FLANKING panels, split by a diagonal, and each flanking panel's data for it
@@ -524,11 +520,9 @@ void MeshBoundaryValuesFC::InitRecvIndices(MeshBoundaryBuffer &buf,
     // resample clamps its stencil to the source's active bounds (see `bs` in
     // bvals_fc.cpp).  Ownership -- which of the two flanking panels supplies a given
     // corner cell -- is decided at UNPACK from the receiver's own geometry.
-    if (cs_wire) {
-      const int wng = (std::getenv("CS_WIRE_NG") != nullptr)
-                    ? std::atoi(std::getenv("CS_WIRE_NG")) : ng;
+    if (cs_vfill) {
       // The x1x2 and x3x1 EDGE buffers are widened by the same rule, which is what
-      // carries the wire into the corner block's RADIAL GHOST layers -- the buffer that
+      // carries the fill into the corner block's RADIAL GHOST layers -- the buffer that
       // reaches a triply-ghost cell has to be ghost in x1 already.  Their seam normal is
       // the same as the flanking face's (bvals_fc.cpp reads cs_seam off the slot index,
       // and 16-23 go with the x2 faces, 32-39 with the x3 faces), so the along-seam
@@ -536,9 +530,9 @@ void MeshBoundaryValuesFC::InitRecvIndices(MeshBoundaryBuffer &buf,
       // BOTH tangential directions and have no along-seam axis -- they are never widened.
       for (int i=0; i<=2; ++i) {
         if (ox2 != 0 && ox3 == 0) {          // x2 face or x1x2 edge: widen along x3
-          isame[i].bks -= wng;  isame[i].bke += wng;
+          isame[i].bks -= ng;  isame[i].bke += ng;
         } else if (ox3 != 0 && ox2 == 0) {   // x3 face or x3x1 edge: widen along x2
-          isame[i].bjs -= wng;  isame[i].bje += wng;
+          isame[i].bjs -= ng;  isame[i].bje += ng;
         }
       }
     }

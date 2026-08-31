@@ -1330,6 +1330,7 @@ void CSTestConvErrors(ParameterInput *pin, Mesh *pm) {
                            : pmbp->phydro->peos->eos_data.gamma) - 1.0;
 
   Real l1b = 0.0, lib = 0.0, l1v = 0.0, l1p = 0.0;
+  Real livm = 0.0, lipm = 0.0;      // MAX norms of the hydro error; see their use below
   std::int64_t ncell = 0;
   // Localisation: split the L1(B) budget between cells adjacent to a panel SEAM (within
   // nband of the tangential block edge), cells adjacent to the RADIAL boundary, and the
@@ -1435,11 +1436,20 @@ void CSTestConvErrors(ParameterInput *pin, Mesh *pm) {
           Real dn, iex, v1, v2, v3;
           RigidRotState(p, x2c, x3c, rad, cs_d0, cs_p0, cs_omega, gm1,
                         dn, iex, v1, v2, v3);
-          l1v += fabs(w0h(m,IVX,k,j,i) - v1) + fabs(w0h(m,IVY,k,j,i) - v2)
-               + fabs(w0h(m,IVZ,k,j,i) - v3);
+          const Real ev = fabs(w0h(m,IVX,k,j,i) - v1) + fabs(w0h(m,IVY,k,j,i) - v2)
+                        + fabs(w0h(m,IVZ,k,j,i) - v3);
+          l1v += ev;
           vdote += w0h(m,IVY,k,j,i)*v2 + w0h(m,IVZ,k,j,i)*v3;
           vdotv += v2*v2 + v3*v3;
-          l1p += fabs(w0h(m,IEN,k,j,i) - iex)/iex;
+          const Real ep = fabs(w0h(m,IEN,k,j,i) - iex)/iex;
+          l1p += ep;
+          // MAX norms as well as means.  An L1 that converges at 2nd order says nothing
+          // about whether the order holds EVERYWHERE: a region that is first order but
+          // shrinks with h -- which is what every seam and cube-vertex halo defect in
+          // this file has looked like -- leaves L1 clean and shows only in Linf.  These
+          // are over ACTIVE cells; the GHOST SCAN in CSTestResistCheck does the halo.
+          if (ev > livm) { livm = ev; }
+          if (ep > lipm) { lipm = ep; }
           ++ncell;
         }
       }
@@ -1498,6 +1508,13 @@ void CSTestConvErrors(ParameterInput *pin, Mesh *pm) {
     for (int r=0; r<3; ++r) { atb[r] = rsum[q++]; }
     vdotv = rsum[q++]; vdote = rsum[q++];
 
+    // A MAXIMUM is not a sum.  Reducing it with MPI_SUM would report a number that is
+    // not any cell's error and that changes with the decomposition -- the rank-local
+    // norm mistake this file has made three times.
+    Real rmax[2] = {livm, lipm};
+    MPI_Allreduce(MPI_IN_PLACE, rmax, 2, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+    livm = rmax[0]; lipm = rmax[1];
+
     const int nil = 4 + 2*NBIN;
     std::int64_t isum[4 + 2*NBIN];
     q = 0;
@@ -1531,6 +1548,8 @@ void CSTestConvErrors(ParameterInput *pin, Mesh *pm) {
   std::printf("### CS CONVERGENCE (iprob=%d): nx2=%d t=%.6f  L1(B)=%.6e"
               "  Linf(B)=%.6e  L1(v)=%.6e  L1(p)=%.6e\n",
               cs_iprob, indcs.nx2, pm->time, l1b, lib, l1v, l1p);
+  std::printf("###   MAX norms over active cells:  Linf(v)=%.6e  Linf(p)=%.6e\n",
+              livm, lipm);
 
   if (has_b) {
     // solve the 3x3 normal equations by Gaussian elimination with partial pivoting
@@ -2244,6 +2263,14 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
 void CSTestBlastCheck(ParameterInput *pin, Mesh *pm) {
   MeshBlockPack *pmbp = pm->pmb_pack;
   if (pmbp->phydro == nullptr && pmbp->pmhd == nullptr) { return; }
+  // CONSERVATION UNDER A SHOCK.  The other gates that print these sums are all SMOOTH
+  // flows, and conservation is a property of the flux differencing, not of the solution
+  // -- so a shock must not change it.  This input's radial boundaries are reflecting and
+  // pass exactly zero physical flux, so with `time/nlim = 0` giving the initial values,
+  // mass and energy must return to round-off.  Lz must NOT: the gnomonic momentum
+  // equations carry geometric source terms, so it is not a telescoping invariant (see
+  // cubed_sphere_smr.athinput) and its drift is a TRUNCATION error that converges away.
+  CSTestConsSums(pm);
   auto &indcs = pm->mb_indcs;
   const int is = indcs.is, ie = indcs.ie;
   const int js = indcs.js, je = indcs.je;

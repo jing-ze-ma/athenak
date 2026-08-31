@@ -26,8 +26,14 @@
 # as well as the wide ones.
 #
 # It also runs to tlim = 0.02 without trouble, which is the other half of the check:
-#   EVOLVED FIELD  L1 = 9.9756e-05, Linf = 2.2170e-03;  heating ratio 1.079611;  the
+#   EVOLVED FIELD  L1 = 9.9210e-05, Linf = 2.2422e-03;  heating ratio 1.079615;  the
 #   reciprocity/buffer-size audit reports 0 non-reciprocal and 0 size mismatches.
+# The three GHOST SCAN numbers above are UNCHANGED by mesh/cs_vertex_fill (default TRUE);
+# the evolved ones move slightly, and the Linf is 1% WORSE with it on -- the only place
+# measured where it is.  This mesh is deliberately degenerate: MeshBlocks four cells wide,
+# where the along-seam resample falls back to a plain index copy, so the data the fill
+# carries is itself first order here.  With the fill off they read L1 = 9.9756e-05,
+# Linf = 2.2170e-03, heating 1.079612.
 # The heating ratio is further from 1 than the wide mesh's 1.019298 simply because this
 # grid is half the resolution -- it is not a symptom.
 #
