@@ -83,6 +83,9 @@ Real cs_bc_tfrac = 0.0;   // ghost time offset, in units of dt (problem/bc_time_
 int  cs_bc_bcc_match = 0; // ghost x1f matched to bcc (problem/bc_bcc_match)
 int  cs_bc_probe = 0;     // print the interior boundary-layer PHASE (problem/bc_probe)
 Real cs_bazi = 0.0;       // iprob=11 azimuthal amplitude; curl B = 2*cs_bazi*zhat
+// iprob=12 blast: centre direction (unit), angular radius, and interior pressure
+Real cs_blx = 0.0, cs_bly = 0.0, cs_blz = 1.0;
+Real cs_blang = 0.2, cs_blp = 10.0;
 Real cs_bvx = 0.0, cs_bvy = 0.0, cs_bvz = 0.0;
 int  cs_exact_panel_ghosts = 0;
 
@@ -233,6 +236,7 @@ void CSTestRadialBC(Mesh *pm);
 void CSTestGhostCheck(ParameterInput *pin, Mesh *pm);
 void CSTestConvErrors(ParameterInput *pin, Mesh *pm);
 void CSTestResistCheck(ParameterInput *pin, Mesh *pm);
+void CSTestBlastCheck(ParameterInput *pin, Mesh *pm);
 void CSTestSeamFluxCheck(Mesh *pm);
 void CSTestLevelFluxCheck(Mesh *pm);
 void CSTestConsSums(Mesh *pm);
@@ -305,6 +309,17 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // p = p0 - b0c^2 R^2 + F.r, F = 2*b0c*(zhat x Bunif), the whole state is static in
   // both ideal and resistive MHD.
   Real bazi = 0.0, bux = 0.0, buy = 0.0, buz = 0.0;
+  if (iprob == 12) {
+    const Real hx = pin->GetOrAddReal("problem", "blast_x", 1.0);
+    const Real hy = pin->GetOrAddReal("problem", "blast_y", 1.0);
+    const Real hz = pin->GetOrAddReal("problem", "blast_z", 1.0);
+    const Real hn = std::sqrt(hx*hx + hy*hy + hz*hz);
+    cs_blx = hx/hn;  cs_bly = hy/hn;  cs_blz = hz/hn;
+    cs_blang = pin->GetOrAddReal("problem", "blast_ang", 0.2);
+    cs_blp   = pin->GetOrAddReal("problem", "blast_p", 10.0);
+    pgen_final_func = CSTestBlastCheck;
+  }
+
   if (iprob == 11) {
     bazi = pin->GetOrAddReal("problem", "b0c", 0.1);
     const Real bu = pin->GetOrAddReal("problem", "bunif", 0.1);
@@ -345,6 +360,30 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     const Real eta = 0.25*M_PI*x3v;
     const Real rad = CellCenterX(i-is, indcs.nx1, size.d_view(m).x1min,
                                                   size.d_view(m).x1max);
+
+    if (iprob == 12) {
+      // BLAST ON THE SPHERE.  A geodesic cap of overpressure, uniform in radius, on an
+      // otherwise uniform medium at rest.  The shock then runs TANGENTIALLY across the
+      // grid, which is what puts it through a panel seam and a cube vertex.
+      //
+      // THE GATE NEEDS NO EXACT SOLUTION.  On a sphere the problem is invariant under
+      // rotation, so the SAME blast is the same problem wherever its centre is put -- in
+      // a panel interior, on a seam, or on a cube vertex.  Every difference between those
+      // placements is grid imprinting, and within one run every departure from spherical
+      // symmetry about the blast centre is the same thing.  That is the whole design:
+      // no analytic solution to argue about, and a control that differs ONLY in where the
+      // grid sits under the physics.
+      Real cx, cy, cz;
+      PanelToCart(mbpanel.d_view(m), xi, eta, cx, cy, cz);
+      const Real cdot = cx*cs_blx + cy*cs_bly + cz*cs_blz;
+      const Real ang = acos(fmin(1.0, fmax(-1.0, cdot)));
+      w0(m,IDN,k,j,i) = d0;
+      w0(m,IEN,k,j,i) = ((ang < cs_blang) ? cs_blp : p0)/gm1;
+      w0(m,IVX,k,j,i) = 0.0;
+      w0(m,IVY,k,j,i) = 0.0;
+      w0(m,IVZ,k,j,i) = 0.0;
+      return;
+    }
 
     if (iprob == 7) {
       // TAG FIELD. v = 0 and uniform p make ANY rho an exact steady state, so rho can
@@ -2032,6 +2071,146 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
                 "  L1 over the %d-cell panel-edge ring = %.4e, panel interior = %.4e\n",
                 mxloc[0], mxloc[1], mxloc[2], mxloc[3], nseam, l1s, l1i);
   }
+  return;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn CSTestBlastCheck
+//! \brief Does a SHOCK survive a panel seam and a cube vertex?
+//!
+//! Every other gate in this file is a SMOOTH field, and several are exact equilibria, so
+//! none of them says anything about shock capturing.  This one is the discontinuous test
+//! the cubed-sphere path never had.
+//!
+//! THE GATE.  On a sphere the blast problem is invariant under rotation, so the solution
+//! is spherically symmetric about the blast centre no matter where that centre sits
+//! relative to the grid.  Two consequences, and neither needs an exact solution:
+//!
+//!   WITHIN one run  -- bin every cell by its geodesic angle from the centre; the spread
+//!                      inside a bin is pure grid imprinting, zero for a perfect scheme.
+//!   BETWEEN runs    -- the same blast centred in a panel INTERIOR, on a SEAM and on a
+//!                      cube VERTEX must give the same profile.  The interior run is the
+//!                      control; the seam and vertex runs differ from it ONLY in where
+//!                      the grid sits under identical physics.
+//!
+//! Also reported: min pressure and min density, because the failure mode this is really
+//! hunting for is not inaccuracy but a NEGATIVE state at a corner -- the seam resample
+//! and the cube-vertex extrapolation are both unlimited (a 3-point Lagrange quadratic,
+//! and an extrapolation amplifying its strip error by 7 to 17), which is exactly what
+//! overshoots on a jump.  `negative internal energy at panel corners` is already a known
+//! pre-existing symptom on SMOOTH problems.
+
+void CSTestBlastCheck(ParameterInput *pin, Mesh *pm) {
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  if (pmbp->phydro == nullptr && pmbp->pmhd == nullptr) { return; }
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie;
+  const int js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  auto &size = pmbp->pmb->mb_size;
+  auto &mbpanel = pmbp->pmb->mb_panel;
+  auto &w0_ = (pmbp->pmhd != nullptr) ? pmbp->pmhd->w0 : pmbp->phydro->w0;
+  auto wh = Kokkos::create_mirror_view_and_copy(HostMemSpace(), w0_);
+
+  const Real p0_amb = pin->GetOrAddReal("problem", "p0", 1.0);
+  const int NB = 48;                       // geodesic-angle bins over [0, pi]
+  std::vector<Real> psum(NB, 0.0), pmax(NB, -1.0e30), pmin(NB, 1.0e30);
+  std::vector<Real> psum_s(NB, 0.0), pmax_s(NB, -1.0e30), pmin_s(NB, 1.0e30);
+  std::vector<std::int64_t> pn(NB, 0), pn_s(NB, 0);
+  Real minp = 1.0e30, mind = 1.0e30;
+  Real pmax_all = -1.0e30, pmax_seam = -1.0e30, angmax_shock = 0.0;
+  std::int64_t nnan = 0, ntot = 0;
+  const Real nseam = 2;        // "near a seam" = within 2 cells of a panel edge
+  for (int m=0; m<pmbp->nmb_thispack; ++m) {
+    const int p = mbpanel.h_view(m);
+    for (int k=ks; k<=ke; ++k) {
+      const Real ec = 0.25*M_PI*CellCenterX(k-ks, indcs.nx3, size.h_view(m).x3min,
+                                                             size.h_view(m).x3max);
+      for (int j=js; j<=je; ++j) {
+        const Real xc = 0.25*M_PI*CellCenterX(j-js, indcs.nx2, size.h_view(m).x2min,
+                                                               size.h_view(m).x2max);
+        // GEOMETRIC seam test, on the angles themselves, so it does not depend on how
+        // panels happen to be cut into MeshBlocks.
+        const Real dxi = 0.25*M_PI*2.0/indcs.nx2;
+        const bool seam = (fabs(fabs(xc) - 0.25*M_PI) < nseam*dxi) ||
+                          (fabs(fabs(ec) - 0.25*M_PI) < nseam*dxi);
+        Real cx, cy, cz;
+        PanelToCart(p, xc, ec, cx, cy, cz);
+        const Real cd = cx*cs_blx + cy*cs_bly + cz*cs_blz;
+        const Real ang = acos(fmin(1.0, fmax(-1.0, cd)));
+        const int b = fmin(NB-1, static_cast<int>(ang/M_PI*NB));
+        for (int i=is; i<=ie; ++i) {
+          const Real pr = wh(m,IEN,k,j,i);
+          const Real dn = wh(m,IDN,k,j,i);
+          ++ntot;
+          if (!std::isfinite(pr) || !std::isfinite(dn)) { ++nnan; continue; }
+          minp = fmin(minp, pr);  mind = fmin(mind, dn);
+          pmax_all = fmax(pmax_all, pr);
+          if (seam) { pmax_seam = fmax(pmax_seam, pr); }
+          // how far the front has run: the largest geodesic angle at which the pressure
+          // is still clearly above ambient
+          if (pr > 1.5*p0_amb) { angmax_shock = fmax(angmax_shock, ang); }
+          psum[b] += pr;  ++pn[b];
+          pmax[b] = fmax(pmax[b], pr);  pmin[b] = fmin(pmin[b], pr);
+          if (seam) {
+            psum_s[b] += pr;  ++pn_s[b];
+            pmax_s[b] = fmax(pmax_s[b], pr);  pmin_s[b] = fmin(pmin_s[b], pr);
+          }
+        }
+      }
+    }
+  }
+#if MPI_PARALLEL_ENABLED
+  {
+    std::int64_t nn[2] = {nnan, ntot};
+    MPI_Allreduce(MPI_IN_PLACE, nn, 2, MPI_INT64_T, MPI_SUM, MPI_COMM_WORLD);
+    nnan = nn[0];  ntot = nn[1];
+  }
+  MPI_Allreduce(MPI_IN_PLACE, psum.data(), NB, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, psum_s.data(), NB, MPI_ATHENA_REAL, MPI_SUM,MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, pmax.data(), NB, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, pmax_s.data(), NB, MPI_ATHENA_REAL, MPI_MAX,MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, pmin.data(), NB, MPI_ATHENA_REAL, MPI_MIN, MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, pmin_s.data(), NB, MPI_ATHENA_REAL, MPI_MIN,MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, pn.data(), NB, MPI_INT64_T, MPI_SUM, MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, pn_s.data(), NB, MPI_INT64_T, MPI_SUM, MPI_COMM_WORLD);
+  {
+    Real mm[2] = {minp, mind};
+    MPI_Allreduce(MPI_IN_PLACE, mm, 2, MPI_ATHENA_REAL, MPI_MIN, MPI_COMM_WORLD);
+    minp = mm[0];  mind = mm[1];
+  }
+#endif
+  // The asymmetry of a bin, relative to that bin's own mean: 0 for a perfect scheme.
+  Real amax = 0.0, amax_s = 0.0, l1 = 0.0, l1_s = 0.0;
+  int nb_used = 0, nb_used_s = 0, abin = -1;
+  for (int b=0; b<NB; ++b) {
+    if (pn[b] > 0) {
+      const Real mean = psum[b]/static_cast<Real>(pn[b]);
+      const Real a = (pmax[b] - pmin[b])/fmax(mean, 1.0e-30);
+      if (a > amax) { amax = a; abin = b; }
+      l1 += a;  ++nb_used;
+    }
+    if (pn_s[b] > 0) {
+      const Real mean = psum_s[b]/static_cast<Real>(pn_s[b]);
+      const Real a = (pmax_s[b] - pmin_s[b])/fmax(mean, 1.0e-30);
+      amax_s = fmax(amax_s, a);
+      l1_s += a;  ++nb_used_s;
+    }
+  }
+  std::printf("### CS BLAST (iprob=12): centre (%.4f,%.4f,%.4f)  cap %.3f rad  p_in %.3g"
+              "  t %.4f\n", cs_blx, cs_bly, cs_blz, cs_blang, cs_blp, pm->time);
+  std::printf("###   SPHERICAL-SYMMETRY residual (max-min)/mean per geodesic bin:"
+              "  Linf=%.4e (bin %d of %d)  mean=%.4e\n",
+              amax, abin, NB, (nb_used > 0) ? l1/nb_used : 0.0);
+  std::printf("###     restricted to cells within %g cells of a panel seam:"
+              "  Linf=%.4e  mean=%.4e\n", nseam, amax_s,
+              (nb_used_s > 0) ? l1_s/nb_used_s : 0.0);
+  std::printf("###   min pressure %.6e   min density %.6e\n", minp, mind);
+  std::printf("###   max p domain %.4e   max p within 2 cells of a seam %.4e"
+              "   front reached %.3f rad (seam at 0.785)\n",
+              pmax_all, pmax_seam, angmax_shock);
+  std::printf("###   NON-FINITE cells: %lld of %lld\n",
+              static_cast<long long>(nnan), static_cast<long long>(ntot));
   return;
 }
 
