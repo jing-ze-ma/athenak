@@ -2560,6 +2560,131 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
     }
     std::printf("\n");
   }
+
+  // ---- TERM-BY-TERM STOKES LOOP: is it the INPUTS or the OPERATOR? -------------------
+  //
+  // The standing puzzle: at nlim=1 the interior is EXACT and the halo is third order in
+  // two components and second (halved) in the third -- yet the seam current converges at
+  // ~1.2-1.4 at EVERY physical distance from the vertex.  Halo VALUE accuracy cannot
+  // explain that.  This instrument separates the two remaining possibilities in one run
+  // by recomputing each x1-edge loop TWICE, exactly as resistivity_gnomonic.cpp does:
+  //
+  //   Jd  with the DISCRETE field (b0, ghosts included) -- the code's own current;
+  //   Je  with the EXACT ANALYTIC field evaluated at the stencil's own sample points
+  //       (the extended-chart formulas hold beyond pi/4), same geometry factors;
+  //   Jx  the truth, 2*b0c*(zhat.rhat).
+  //
+  //   |Je - Jx| is the OPERATOR's own consistency error -- geometry factors, the
+  //             BcovXi/BcovEta construction, the loop itself -- with perfect inputs;
+  //   |Jd - Je| is what the INPUT errors propagate to.
+  //
+  // If |Je - Jx| is first order on the ring but second in the interior, the operator is
+  // inconsistent in the ghost region and NO halo improvement can ever fix the seam.  If
+  // it is second order everywhere, the inputs are guilty after all and the third-order
+  // halo measurement is missing something the loop sees.
+  {
+    auto b2h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pmhd->b0.x2f);
+    auto b3h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pmhd->b0.x3f);
+    auto cxih = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
+                                                    pmbp->pcoord->cos_face_xi);
+    auto sxih = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
+                                                    pmbp->pcoord->sin_face_xi);
+    auto ceth = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
+                                                    pmbp->pcoord->cos_face_eta);
+    auto seth = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
+                                                    pmbp->pcoord->sin_face_eta);
+    auto df2h = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
+                                                    pmbp->pcoord->dxface.x2f);
+    auto df3h = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
+                                                    pmbp->pcoord->dxface.x3f);
+    auto ae1h = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
+                                                    pmbp->pcoord->areaedge.x1e);
+    // total / operator / input, each over the 2-cell ring and the panel interior
+    Real tt[2][3] = {{0.0, 0.0, 0.0}, {0.0, 0.0, 0.0}};
+    std::int64_t tn[2] = {0, 0};
+    const Real bux = cs_bvx, buy = cs_bvy, buz = cs_bvz, bazi = cs_bazi;
+    for (int m=0; m<pmbp->nmb_thispack; ++m) {
+      const int p = mbpanel.h_view(m);
+      const Real x2min = size.h_view(m).x2min, x2max = size.h_view(m).x2max;
+      const Real x3min = size.h_view(m).x3min, x3max = size.h_view(m).x3max;
+      const Real x1min = size.h_view(m).x1min, x1max = size.h_view(m).x1max;
+      // the exact analytic face-normal components at ANY index, ghosts included --
+      // exactly the expressions the initial condition used, on the extended chart
+      auto ex2f = [&](int k, int j, int i) {
+        const Real xf = 0.25*M_PI*LeftEdgeX(j-js, indcs.nx2, x2min, x2max);
+        const Real ec = 0.25*M_PI*CellCenterX(k-ks, indcs.nx3, x3min, x3max);
+        const Real rc = CellCenterX(i-is, indcs.nx1, x1min, x1max);
+        Real n1[3], n2[3], cx, cy, cz;
+        PanelToCart(p, xf, ec, cx, cy, cz);
+        PanelNormals(p, xf, ec, n1, n2);
+        return (-bazi*rc*cy + bux)*n1[0] + (bazi*rc*cx + buy)*n1[1] + buz*n1[2];
+      };
+      auto ex3f = [&](int k, int j, int i) {
+        const Real xc = 0.25*M_PI*CellCenterX(j-js, indcs.nx2, x2min, x2max);
+        const Real ef = 0.25*M_PI*LeftEdgeX(k-ks, indcs.nx3, x3min, x3max);
+        const Real rc = CellCenterX(i-is, indcs.nx1, x1min, x1max);
+        Real n1[3], n2[3], cx, cy, cz;
+        PanelToCart(p, xc, ef, cx, cy, cz);
+        PanelNormals(p, xc, ef, n1, n2);
+        return (-bazi*rc*cy + bux)*n2[0] + (bazi*rc*cx + buy)*n2[1] + buz*n2[2];
+      };
+      // BcovXi / BcovEta, verbatim from resistivity_gnomonic.cpp, once on the discrete
+      // field and once on the analytic one
+      auto bcx = [&](bool exact, int k, int j, int i) {
+        const Real b3a = exact
+            ? 0.25*(ex3f(k,j,i) + ex3f(k+1,j,i) + ex3f(k,j-1,i) + ex3f(k+1,j-1,i))
+            : 0.25*(b3h(m,k,j,i) + b3h(m,k+1,j,i) + b3h(m,k,j-1,i) + b3h(m,k+1,j-1,i));
+        const Real b2 = exact ? ex2f(k,j,i) : b2h(m,k,j,i);
+        return (b2 + cxih(m,k,j)*b3a)/sxih(m,k,j);
+      };
+      auto bce = [&](bool exact, int k, int j, int i) {
+        const Real b2a = exact
+            ? 0.25*(ex2f(k,j,i) + ex2f(k,j+1,i) + ex2f(k-1,j,i) + ex2f(k-1,j+1,i))
+            : 0.25*(b2h(m,k,j,i) + b2h(m,k,j+1,i) + b2h(m,k-1,j,i) + b2h(m,k-1,j+1,i));
+        const Real b3 = exact ? ex3f(k,j,i) : b3h(m,k,j,i);
+        return (b3 + ceth(m,k,j)*b2a)/seth(m,k,j);
+      };
+      auto loop = [&](bool exact, int k, int j, int i) {
+        return (df3h(m,k,j,i)*bce(exact,k,j,i) - df3h(m,k,j-1,i)*bce(exact,k,j-1,i)
+              - df2h(m,k,j,i)*bcx(exact,k,j,i) + df2h(m,k-1,j,i)*bcx(exact,k-1,j,i))
+              / ae1h(m,k,j,i);
+      };
+      for (int k=ks; k<=ke+1; ++k) {
+        for (int j=js; j<=je+1; ++j) {
+          const Real xf = 0.25*M_PI*LeftEdgeX(j-js, indcs.nx2, x2min, x2max);
+          const Real ef = 0.25*M_PI*LeftEdgeX(k-ks, indcs.nx3, x3min, x3max);
+          Real cx, cy, cz;
+          PanelToCart(p, xf, ef, cx, cy, cz);
+          const Real jx = 2.0*bazi*cz;
+          const bool ring = (j-js < nseam) || (je+1-j < nseam) ||
+                            (k-ks < nseam) || (ke+1-k < nseam);
+          const int r = ring ? 0 : 1;
+          for (int i=is; i<=ie; ++i) {
+            const Real jd = loop(false, k, j, i);
+            const Real je_ = loop(true, k, j, i);
+            tt[r][0] += fabs(jd - jx);
+            tt[r][1] += fabs(je_ - jx);
+            tt[r][2] += fabs(jd - je_);
+            ++tn[r];
+          }
+        }
+      }
+    }
+#if MPI_PARALLEL_ENABLED
+    MPI_Allreduce(MPI_IN_PLACE, &tt[0][0], 6, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(MPI_IN_PLACE, tn, 2, MPI_INT64_T, MPI_SUM, MPI_COMM_WORLD);
+#endif
+    if (global_variable::my_rank == 0) {
+      const Real sc = fabs(2.0*bazi);
+      const char *rn[2] = {"RING    ", "interior"};
+      for (int r=0; r<2; ++r) {
+        const Real w = (tn[r] > 0) ? 1.0/static_cast<Real>(tn[r])/sc : 0.0;
+        std::printf("###   LOOP SPLIT %s  total=%.4e  OPERATOR=%.4e  input=%.4e"
+                    "  (%lld edges)\n", rn[r], tt[r][0]*w, tt[r][1]*w, tt[r][2]*w,
+                    static_cast<long long>(tn[r]));
+      }
+    }
+  }
   return;
 }
 
