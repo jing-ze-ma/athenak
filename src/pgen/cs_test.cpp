@@ -1869,6 +1869,14 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
   const int nbr = 2;
   Real l1f_r[3] = {0.0, 0.0, 0.0}, mxf_r[3] = {0.0, 0.0, 0.0};
   std::int64_t ncf_r[3] = {0, 0, 0};
+  // The same error binned by DISTANCE from the nearest panel edge, in cells.  The region
+  // split says the seam is worse; this says how far in the damage reaches, which is what
+  // separates "the UPDATE of the seam-adjacent cells is at fault" (confined to the first
+  // cell or two) from "the halo poisons a growing region" (a slow decay).  Bin 5 is
+  // everything at distance >= 5.
+  const int NDB = 6;
+  Real l1f_d[NDB]; std::int64_t ncf_d[NDB];
+  for (int q=0; q<NDB; ++q) { l1f_d[q] = 0.0; ncf_d[q] = 0; }
   for (int m=0; m<pmbp->nmb_thispack; ++m) {
     const int p = mbpanel.h_view(m);
     const bool skip_x1f_is = (nghbr.h_view(m,0).gid >= 0 &&
@@ -1888,6 +1896,11 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
         const bool nrx = ((0.25*M_PI - fabs(xc))/dg2) < static_cast<Real>(nbr);
         const bool nre = ((0.25*M_PI - fabs(ec))/dg3) < static_cast<Real>(nbr);
         const int rg = (nrx && nre) ? 2 : ((nrx || nre) ? 1 : 0);
+        const Real dcx = (0.25*M_PI - fabs(xc))/dg2;
+        const Real dce = (0.25*M_PI - fabs(ec))/dg3;
+        int db = static_cast<int>(floor(fmin(dcx, dce)));
+        if (db < 0) { db = 0; }
+        if (db > NDB-1) { db = NDB-1; }
         for (int i=is; i<=ie+1; ++i) {
           const Real rc = CellCenterX(i-is, indcs.nx1, x1min, x1max);
           const Real rl = LeftEdgeX(i-is, indcs.nx1, x1min, x1max);
@@ -1901,6 +1914,7 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
             }
             l1f += d; ++ncf; mxf = fmax(mxf, d); bmax = fmax(bmax, fabs(ex));
             l1f_r[rg] += d; ++ncf_r[rg]; mxf_r[rg] = fmax(mxf_r[rg], d);
+            l1f_d[db] += d; ++ncf_d[db];
           }
           if (i <= ie && k <= ke) {
             PanelToCart(p, xf, ec, cx, cy, cz);
@@ -1913,6 +1927,7 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
             }
             l1f += d; ++ncf; mxf = fmax(mxf, d); bmax = fmax(bmax, fabs(ex));
             l1f_r[rg] += d; ++ncf_r[rg]; mxf_r[rg] = fmax(mxf_r[rg], d);
+            l1f_d[db] += d; ++ncf_d[db];
           }
           if (i <= ie && j <= je) {
             PanelToCart(p, xc, ef, cx, cy, cz);
@@ -1925,6 +1940,7 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
             }
             l1f += d; ++ncf; mxf = fmax(mxf, d); bmax = fmax(bmax, fabs(ex));
             l1f_r[rg] += d; ++ncf_r[rg]; mxf_r[rg] = fmax(mxf_r[rg], d);
+            l1f_d[db] += d; ++ncf_d[db];
           }
         }
       }
@@ -1944,6 +1960,8 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
     MPI_Allreduce(MPI_IN_PLACE, l1f_r, 3, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
     MPI_Allreduce(MPI_IN_PLACE, mxf_r, 3, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
     MPI_Allreduce(MPI_IN_PLACE, ncf_r, 3, MPI_INT64_T, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(MPI_IN_PLACE, l1f_d, NDB, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(MPI_IN_PLACE, ncf_d, NDB, MPI_INT64_T, MPI_SUM, MPI_COMM_WORLD);
   }
 #endif
   {
@@ -1966,6 +1984,12 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
       std::printf("###     REGION %s (%9lld faces)  L1=%.4e  Linf=%.4e\n", rn[r],
                   static_cast<long long>(ncf_r[r]), l1f_r[r]*w, mxf_r[r]/bs);
     }
+    std::printf("###     BY DISTANCE from the panel edge (cells):");
+    for (int q=0; q<NDB; ++q) {
+      const Real w = (ncf_d[q] > 0) ? 1.0/static_cast<Real>(ncf_d[q])/bs : 0.0;
+      std::printf("  d%d=%.3e", q, l1f_d[q]*w);
+    }
+    std::printf("\n");
   }
 
   // ---- The same exact-solution error in the GHOST ZONES, split by which directions are
