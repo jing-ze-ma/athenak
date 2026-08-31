@@ -1,0 +1,107 @@
+# Cubed sphere, RESISTIVITY + REFINEMENT, at the MINIMUM legal MeshBlock size.
+#
+# This input exists for one reason: NOTHING ELSE IN inputs/tests/ USES BLOCKS THIS NARROW,
+# and a whole class of cubed-sphere bug only appears when they are.  It is the same physics
+# as cubed_sphere_resist_smr.athinput -- read that file for the problem and the gates --
+# with <meshblock>/nx2 = nx3 = 4, the smallest `Mesh` allows.
+#
+# WHAT IT CATCHES.  Stencils in the seam machinery are sized in CELLS, and the array they
+# run on at a level boundary is the COARSE one, whose extent is cnx = nx/2.  With nx = 4
+# that is TWO cells, narrower than the 3-point along-seam resample stencil, whose clamp
+# then INVERTS and reads unfilled ghost memory.  Measured before the guard in 3dab5546:
+# halo Linf 7.7e-01 against |B| ~ 0.2, i.e. garbage, on a mesh that no test ran.  The two
+# commits that widened the resample's reach (a01ace75, e4be92c0) made this configuration
+# 4-31x worse while making every tested mesh much better, and nothing noticed.
+#
+# EXPECTED (time/nlim=0, the GHOST SCAN lines; these are HALO norms, not domain norms, and
+# they are large here because the guard falls back to a plain index copy on a grid this
+# coarse -- the point is that they are BOUNDED, not that they are small):
+#
+#   tangent ghost    2.4471e-02
+#   r x EDGE SEAM    6.2278e-02
+#   r x CORNER SEAM  6.2446e-02
+#
+# If any of those returns to O(1) -- ~2e-01 or above -- a stencil has outgrown its array
+# again.  THE RULE: when a change touches stencil bounds or ghost indexing, run this input
+# as well as the wide ones.
+#
+# It also runs to tlim = 0.02 without trouble, which is the other half of the check:
+#   EVOLVED FIELD  L1 = 9.9710e-05, Linf = 2.1959e-03;  heating ratio 1.079615;  the
+#   reciprocity/buffer-size audit reports 0 non-reciprocal and 0 size mismatches.
+# The heating ratio is further from 1 than the wide mesh's 1.019298 simply because this
+# grid is half the resolution -- it is not a symptom.
+#
+# AXES: x1 is RADIAL, x2 = xi and x3 = eta are the panel-tangential angles.  Must be 3D.
+
+<comment>
+problem = cubed sphere resistivity + refinement at the minimum MeshBlock size
+
+<job>
+basename = cs_res_narrow
+
+<mesh>
+nghost   = 2
+nx1      = 8            # RADIAL direction
+x1min    = 1.0
+x1max    = 2.0
+ix1_bc   = user
+ox1_bc   = user
+
+nx2      = 8            # xi;  nx2 must equal nx3 (Mesh checks this)
+x2min    = -1.0
+x2max    = 1.0
+ix2_bc   = panel
+ox2_bc   = panel
+
+nx3      = 8            # eta
+x3min    = -1.0
+x3max    = 1.0
+ix3_bc   = panel
+ox3_bc   = panel
+
+use_cubed_sphere = true
+
+<meshblock>
+nx1      = 4
+nx2      = 4            # the MINIMUM Mesh allows; coarse extent is then only 2 cells
+nx3      = 4
+
+<mesh_refinement>
+refinement = static
+num_levels = 2
+
+<refined_region1>
+level = 1
+x1min = 1.0
+x1max = 1.5
+x2min = -1.0
+x2max = 1.0
+x3min = -1.0
+x3max = 1.0
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim       = -1
+tlim       = 0.02
+ndiag      = 1000
+
+<mhd>
+eos               = ideal
+reconstruct       = plm
+rsolver           = hlld
+gamma             = 1.666667
+ohmic_resistivity = constant
+eta_ohm_const     = 0.5
+
+<problem>
+iprob    = 11
+d0       = 1.0
+p0       = 1.0
+b0c      = 0.1
+bunif    = 0.1
+bhx      = 0.37
+bhy      = 0.61
+bhz      = 0.70
+user_bcs = true
