@@ -2269,22 +2269,42 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
   {
     Real js_l1 = 0.0, js_mx = 0.0, jc_l1 = 0.0, jc_mx = 0.0;
     std::int64_t js_n = 0, jc_n = 0;
+    Real jsc_l1[3] = {0.0, 0.0, 0.0}, jcc_l1[3] = {0.0, 0.0, 0.0};
+    std::int64_t jsc_n[3] = {0, 0, 0}, jcc_n[3] = {0, 0, 0};
     const int ng = indcs.ng;
     for (int m=0; m<pmbp->nmb_thispack; ++m) {
       const int p = mbpanel.h_view(m);
       const Real x2min = size.h_view(m).x2min, x2max = size.h_view(m).x2max;
       const Real x3min = size.h_view(m).x3min, x3max = size.h_view(m).x3max;
       const Real x1min = size.h_view(m).x1min, x1max = size.h_view(m).x1max;
-      // b.x1f at (i, j, k) is B.rhat at the cell centre in the two tangential indices
-      auto err_r = [&](int k, int j, int i) {
+      // PER COMPONENT.  b.x1f is B.rhat, a chart-independent scalar that crosses a seam
+      // as a plain number; b.x2f and b.x3f are flux densities on the two TANGENTIAL faces
+      // and are the ones the seam transform has to rotate, and whose partner component it
+      // has to interpolate.  Splitting the jump by component says whether the halo's
+      // accuracy is limited by the transform or is uniform across components -- which is
+      // what decides whether an average-to-point correction could be the missing piece.
+      auto err_c = [&](int cmp, int k, int j, int i) {
         const Real xc = 0.25*M_PI*CellCenterX(j-js, indcs.nx2, x2min, x2max);
+        const Real xf = 0.25*M_PI*LeftEdgeX(j-js, indcs.nx2, x2min, x2max);
         const Real ec = 0.25*M_PI*CellCenterX(k-ks, indcs.nx3, x3min, x3max);
+        const Real ef = 0.25*M_PI*LeftEdgeX(k-ks, indcs.nx3, x3min, x3max);
+        const Real rc = CellCenterX(i-is, indcs.nx1, x1min, x1max);
         const Real rl = LeftEdgeX(i-is, indcs.nx1, x1min, x1max);
-        Real cx, cy, cz;
-        PanelToCart(p, xc, ec, cx, cy, cz);
-        const Real ex = (-cs_bazi*rl*cy + cs_bvx)*cx + (cs_bazi*rl*cx + cs_bvy)*cy
-                      + cs_bvz*cz;
-        return bf1h(m,k,j,i) - ex;
+        Real cx, cy, cz, n1[3], n2[3];
+        if (cmp == 0) {
+          PanelToCart(p, xc, ec, cx, cy, cz);
+          return bf1h(m,k,j,i) - ((-cs_bazi*rl*cy + cs_bvx)*cx
+                 + (cs_bazi*rl*cx + cs_bvy)*cy + cs_bvz*cz);
+        } else if (cmp == 1) {
+          PanelToCart(p, xf, ec, cx, cy, cz);
+          PanelNormals(p, xf, ec, n1, n2);
+          return bf2h(m,k,j,i) - ((-cs_bazi*rc*cy + cs_bvx)*n1[0]
+                 + (cs_bazi*rc*cx + cs_bvy)*n1[1] + cs_bvz*n1[2]);
+        }
+        PanelToCart(p, xc, ef, cx, cy, cz);
+        PanelNormals(p, xc, ef, n1, n2);
+        return bf3h(m,k,j,i) - ((-cs_bazi*rc*cy + cs_bvx)*n2[0]
+               + (cs_bazi*rc*cx + cs_bvy)*n2[1] + cs_bvz*n2[2]);
       };
       // the four tangential sides, as (buffer slot, is-it-the-minus-side, along-x2?)
       const int sides[4][3] = {{8,1,1}, {12,0,1}, {24,1,0}, {28,0,0}};
@@ -2301,19 +2321,25 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
           const int lo = (alongx2 ? ks : js) + ng;
           const int hi = (alongx2 ? ke : je) - ng;
           for (int t=lo; t<=hi; ++t) {
-            Real ein, egh;
-            if (alongx2) {
-              const int ja = minus ? js : je;
-              const int jg = minus ? js-1 : je+1;
-              ein = err_r(t, ja, i);  egh = err_r(t, jg, i);
-            } else {
-              const int ka = minus ? ks : ke;
-              const int kg = minus ? ks-1 : ke+1;
-              ein = err_r(ka, t, i);  egh = err_r(kg, t, i);
+            for (int cmp=0; cmp<3; ++cmp) {
+              Real ein, egh;
+              if (alongx2) {
+                const int ja = minus ? js : je;
+                const int jg = minus ? js-1 : je+1;
+                ein = err_c(cmp, t, ja, i);  egh = err_c(cmp, t, jg, i);
+              } else {
+                const int ka = minus ? ks : ke;
+                const int kg = minus ? ks-1 : ke+1;
+                ein = err_c(cmp, ka, t, i);  egh = err_c(cmp, kg, t, i);
+              }
+              const Real dc = fabs(egh - ein);
+              if (seam) { jsc_l1[cmp] += dc; ++jsc_n[cmp]; }
+              else      { jcc_l1[cmp] += dc; ++jcc_n[cmp]; }
+              if (cmp == 0) {
+                if (seam) { js_l1 += dc; ++js_n; js_mx = fmax(js_mx, dc); }
+                else      { jc_l1 += dc; ++jc_n; jc_mx = fmax(jc_mx, dc); }
+              }
             }
-            const Real d = fabs(egh - ein);
-            if (seam) { js_l1 += d; ++js_n; js_mx = fmax(js_mx, d); }
-            else      { jc_l1 += d; ++jc_n; jc_mx = fmax(jc_mx, d); }
           }
         }
       }
@@ -2329,6 +2355,10 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
       std::int64_t nv[2] = {js_n, jc_n};
       MPI_Allreduce(MPI_IN_PLACE, nv, 2, MPI_INT64_T, MPI_SUM, MPI_COMM_WORLD);
       js_n = nv[0]; jc_n = nv[1];
+      MPI_Allreduce(MPI_IN_PLACE, jsc_l1, 3, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+      MPI_Allreduce(MPI_IN_PLACE, jcc_l1, 3, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+      MPI_Allreduce(MPI_IN_PLACE, jsc_n, 3, MPI_INT64_T, MPI_SUM, MPI_COMM_WORLD);
+      MPI_Allreduce(MPI_IN_PLACE, jcc_n, 3, MPI_INT64_T, MPI_SUM, MPI_COMM_WORLD);
     }
 #endif
     if (global_variable::my_rank == 0) {
@@ -2339,6 +2369,12 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
       std::printf("###     same-panel CTRL L1=%.4e  max=%.4e  over %lld faces\n",
                   (jc_n > 0) ? jc_l1/static_cast<Real>(jc_n) : 0.0, jc_mx,
                   static_cast<long long>(jc_n));
+      const char *cnm[3] = {"x1f(B.rhat)", "x2f", "x3f"};
+      for (int cmp=0; cmp<3; ++cmp) {
+        std::printf("###       %-11s seam L1=%.4e   ctrl L1=%.4e\n", cnm[cmp],
+                    (jsc_n[cmp] > 0) ? jsc_l1[cmp]/static_cast<Real>(jsc_n[cmp]) : 0.0,
+                    (jcc_n[cmp] > 0) ? jcc_l1[cmp]/static_cast<Real>(jcc_n[cmp]) : 0.0);
+      }
     }
   }
 
