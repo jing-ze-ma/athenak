@@ -31,6 +31,8 @@ void MeshBoundaryValuesFC::InitSendIndices(MeshBoundaryBuffer &buf,
   auto &mb_indcs  = pmy_pack->pmesh->mb_indcs;
   int ng  = mb_indcs.ng;
   int ng1 = ng - 1;
+  const bool cs_wire = pmy_pack->pmesh->use_cubed_sphere &&
+                       (std::getenv("CS_WIRE") != nullptr);
 
   // set indices for sends to neighbors on SAME level
   // Formulae same as in LoadBoundaryBufferSameLevel() in src/bvals/fc/bvals_fc.cpp
@@ -111,6 +113,32 @@ void MeshBoundaryValuesFC::InitSendIndices(MeshBoundaryBuffer &buf,
     if (ml_ovl && (ox1 != 0 || ox2 != 0)) {
       if (ox3 > 0) {isame[2].bke++;}
       if (ox3 < 0) {isame[2].bks--;}
+    }
+    // CUBE-VERTEX WIRE FILL.  A cubed-sphere panel corner is a CUBE VERTEX where only
+    // THREE panels meet, so its ng x ng corner ghost block has no diagonal neighbour and
+    // its exchange is skipped (see IsCubeVertexCorner).  That block is covered by the
+    // TWO FLANKING panels, split by a diagonal, and each flanking panel's data for it
+    // lies INSIDE that panel's own active corner block -- but the face buffer's
+    // destination stops at the active along-seam range, so it is never sent and the
+    // corner has to be extrapolated.  Widen the x2/x3 FACE buffers by ng at BOTH ends of
+    // the along-seam direction so the corner block rides the existing face exchange:
+    // MPI-safe by construction, no new slot, no new tag.
+    //
+    // Send and receive apply the SAME rule, so ndat matches on both sides.  The pack
+    // reads only ACTIVE source data even for these cells, because the along-seam
+    // resample clamps its stencil to the source's active bounds (see `bs` in
+    // bvals_fc.cpp).  Ownership -- which of the two flanking panels supplies a given
+    // corner cell -- is decided at UNPACK from the receiver's own geometry.
+    if (cs_wire) {
+      const int wng = (std::getenv("CS_WIRE_NG") != nullptr)
+                    ? std::atoi(std::getenv("CS_WIRE_NG")) : ng;
+      for (int i=0; i<=2; ++i) {
+        if (ox1 == 0 && ox2 != 0 && ox3 == 0) {       // x2 face: widen along x3
+          isame[i].bks -= wng;  isame[i].bke += wng;
+        } else if (ox1 == 0 && ox2 == 0 && ox3 != 0) {  // x3 face: widen along x2
+          isame[i].bjs -= wng;  isame[i].bje += wng;
+        }
+      }
     }
     for (int i=0; i<=2; ++i) {
       int ndat = (isame[i].bie - isame[i].bis + 1)*(isame[i].bje - isame[i].bjs + 1)*
@@ -409,6 +437,8 @@ void MeshBoundaryValuesFC::InitRecvIndices(MeshBoundaryBuffer &buf,
                                            int ox1, int ox2, int ox3, int f1, int f2) {
   auto &mb_indcs  = pmy_pack->pmesh->mb_indcs;
   int ng = mb_indcs.ng;
+  const bool cs_wire = pmy_pack->pmesh->use_cubed_sphere &&
+                       (std::getenv("CS_WIRE") != nullptr);
 
   // set indices for receives from neighbors on SAME level
   // Formulae same as in SetBoundarySameLevel() in src/bvals/fc/bvals_fc.cpp
@@ -471,6 +501,32 @@ void MeshBoundaryValuesFC::InitRecvIndices(MeshBoundaryBuffer &buf,
     if (ml_ovl && (ox1 != 0 || ox2 != 0)) {
       if (ox3 > 0) {isame[2].bks--;}
       if (ox3 < 0) {isame[2].bke++;}
+    }
+    // CUBE-VERTEX WIRE FILL.  A cubed-sphere panel corner is a CUBE VERTEX where only
+    // THREE panels meet, so its ng x ng corner ghost block has no diagonal neighbour and
+    // its exchange is skipped (see IsCubeVertexCorner).  That block is covered by the
+    // TWO FLANKING panels, split by a diagonal, and each flanking panel's data for it
+    // lies INSIDE that panel's own active corner block -- but the face buffer's
+    // destination stops at the active along-seam range, so it is never sent and the
+    // corner has to be extrapolated.  Widen the x2/x3 FACE buffers by ng at BOTH ends of
+    // the along-seam direction so the corner block rides the existing face exchange:
+    // MPI-safe by construction, no new slot, no new tag.
+    //
+    // Send and receive apply the SAME rule, so ndat matches on both sides.  The pack
+    // reads only ACTIVE source data even for these cells, because the along-seam
+    // resample clamps its stencil to the source's active bounds (see `bs` in
+    // bvals_fc.cpp).  Ownership -- which of the two flanking panels supplies a given
+    // corner cell -- is decided at UNPACK from the receiver's own geometry.
+    if (cs_wire) {
+      const int wng = (std::getenv("CS_WIRE_NG") != nullptr)
+                    ? std::atoi(std::getenv("CS_WIRE_NG")) : ng;
+      for (int i=0; i<=2; ++i) {
+        if (ox1 == 0 && ox2 != 0 && ox3 == 0) {       // x2 face: widen along x3
+          isame[i].bks -= wng;  isame[i].bke += wng;
+        } else if (ox1 == 0 && ox2 == 0 && ox3 != 0) {  // x3 face: widen along x2
+          isame[i].bjs -= wng;  isame[i].bje += wng;
+        }
+      }
     }
     for (int i=0; i<=2; ++i) {
       int ndat = (isame[i].bie - isame[i].bis + 1)*(isame[i].bje - isame[i].bjs + 1)*

@@ -663,6 +663,12 @@ void MeshBoundaryValuesFC::FillPanelCornersFC(DvceFaceFld4D<Real> &b, bool coars
   auto &nghbr = pmy_pack->pmb->nghbr;
   auto &mbpanel = pmy_pack->pmb->mb_panel;
   auto b_ = b;
+  static const int wire_lvl = (std::getenv("CS_WIRE") != nullptr)
+                            ? std::atoi(std::getenv("CS_WIRE")) : 0;
+  const bool wire_ = pmy_pack->pmesh->use_cubed_sphere && (wire_lvl >= 2);
+  const bool coar_ = coarse;
+  const int is_ = indcs.is, ie_ = indcs.ie;
+  auto &mblev_ = pmy_pack->pmb->mb_lev;
 
   par_for("cs_fill_corners", DevExeSpace(), 0,(nmb-1), 0,3, 0,nc1, 0,(ng-1), 0,(ng-1),
   KOKKOS_LAMBDA(const int m, const int c, const int i, const int gj, const int gk) {
@@ -682,6 +688,22 @@ void MeshBoundaryValuesFC::FillPanelCornersFC(DvceFaceFld4D<Real> &b, bool coars
     if (nghbr.d_view(m,nj_id).gid >= 0 && nghbr.d_view(m,nj_id).panel != mp) seamj = true;
     if (nghbr.d_view(m,nk_id).gid >= 0 && nghbr.d_view(m,nk_id).panel != mp) seamk = true;
     if (!(seamj && seamk)) return;
+    // THE WIRE FILL SUPERSEDES THIS.  When both flanking face neighbours are at the SAME
+    // level their widened buffers have already written this corner block with REAL data
+    // sampled from the two panels that cover it (see buffs_fc.cpp), which is strictly
+    // better than any extrapolation -- so do not overwrite it.  At a level boundary the
+    // widening does not apply (only `isame` was widened), and the extrapolation below is
+    // still the best available.
+    // THE WIRE REACHES ONLY THE ACTIVE RADIAL RANGE.  The face buffer's i range is
+    // [is,ie] (+1 face for x1f), so the corner block's RADIAL GHOST layers are NOT
+    // supplied by it and must still be extrapolated here -- the same trap as 397b4ad3.
+    // Disabling the whole fill left them unwritten and put 0.2 of |B| in the r x CORNER
+    // SEAM category.  So gate PER COMPONENT on whether i is radially active.
+    const bool wire_here = (wire_ && !coar_ &&
+        nghbr.d_view(m,nj_id).lev == mblev_.d_view(m) &&
+        nghbr.d_view(m,nk_id).lev == mblev_.d_view(m));
+    const bool wire_cc = wire_here && (i >= is_ && i <= ie_);
+    const bool wire_x1 = wire_here && (i >= is_ && i <= ie_ + 1);
 
     // Quadratic Lagrange extrapolated d cells beyond an anchor, nodes 0,1,2 stepping
     // inward: w = ((d+1)(d+2)/2, -d(d+2), d(d+1)/2), which sums to 1.
@@ -712,7 +734,7 @@ void MeshBoundaryValuesFC::FillPanelCornersFC(DvceFaceFld4D<Real> &b, bool coars
     const int akf = (sk < 0) ? ks : (ke+1);
 
     // b.x1f: cell indices in both j and k, faces in i
-    {
+    if (!wire_x1) {
       const Real ek = wk0*b_.x1f(m,akc,jtc,i) + wk1*b_.x1f(m,akc+stk,jtc,i)
                     + wk2*b_.x1f(m,akc+2*stk,jtc,i);
       const Real ej = wj0*b_.x1f(m,ktc,ajc,i) + wj1*b_.x1f(m,ktc,ajc+stj,i)
@@ -721,7 +743,7 @@ void MeshBoundaryValuesFC::FillPanelCornersFC(DvceFaceFld4D<Real> &b, bool coars
     }
     if (i > (nc1-1)) return;
     // b.x2f: FACE index in j, cell index in k
-    {
+    if (!wire_cc) {
       const Real ek = wk0*b_.x2f(m,akc,jtf,i) + wk1*b_.x2f(m,akc+stk,jtf,i)
                     + wk2*b_.x2f(m,akc+2*stk,jtf,i);
       const Real ej = wj0*b_.x2f(m,ktc,ajf,i) + wj1*b_.x2f(m,ktc,ajf+stj,i)
@@ -729,7 +751,7 @@ void MeshBoundaryValuesFC::FillPanelCornersFC(DvceFaceFld4D<Real> &b, bool coars
       b_.x2f(m,ktc,jtf,i) = wblend*ek + (1.0-wblend)*ej;
     }
     // b.x3f: cell index in j, FACE index in k
-    {
+    if (!wire_cc) {
       const Real ek = wk0*b_.x3f(m,akf,jtc,i) + wk1*b_.x3f(m,akf+stk,jtc,i)
                     + wk2*b_.x3f(m,akf+2*stk,jtc,i);
       const Real ej = wj0*b_.x3f(m,ktf,ajc,i) + wj1*b_.x3f(m,ktf,ajc+stj,i)
@@ -756,6 +778,15 @@ TaskStatus MeshBoundaryValuesFC::RecvAndUnpackFC(DvceFaceFld4D<Real> &b,
   const bool use_cs = pmy_pack->pmesh->use_cubed_sphere;
   const bool ml_ = pmy_pack->pmesh->multilevel;
   auto &mblev = pmy_pack->pmb->mb_lev;
+  // For the cube-vertex wire fill's ownership test (see the note at its use below).
+  static const int wire_on = (std::getenv("CS_WIRE") != nullptr)
+                           ? std::atoi(std::getenv("CS_WIRE")) : 0;
+  const bool cs_wire_ = use_cs && (wire_on > 0);
+  const int wlvl_ = wire_on;
+  auto &wi_ = pmy_pack->pmesh->mb_indcs;
+  const int js_ = wi_.js, je_ = wi_.je, ks_ = wi_.ks, ke_ = wi_.ke;
+  const int nx2_ = wi_.nx2, nx3_ = wi_.nx3;
+  auto &mbsz = pmy_pack->pmb->mb_size;
 #if MPI_PARALLEL_ENABLED
   //----- STEP 1: check that recv boundary buffer communications have all completed
 
@@ -844,6 +875,41 @@ TaskStatus MeshBoundaryValuesFC::RecvAndUnpackFC(DvceFaceFld4D<Real> &b,
             int i = (idx - k*nji - j*ni) + il;
             k += kl;
             j += jl;
+            // CUBE-VERTEX WIRE FILL: OWNERSHIP.  The face buffers were widened by ng
+            // along the seam (see buffs_fc.cpp) so the doubly-ghost corner block rides
+            // the face exchange.  Both flanking face buffers reach that block, but each
+            // panel only genuinely COVERS the half of it on its own side of the diagonal
+            // -- so write a doubly-ghost cell only from the neighbour whose panel
+            // actually contains that direction.  Decided here, from the RECEIVER's own
+            // geometry, which needs nothing from the sender.  Cells outside the corner
+            // block are unaffected, and a non-cubed-sphere run never enters this.
+            // ONLY the x2/x3 FACE slots were widened (8-15 and 24-31; see
+            // nghbr_index.hpp).  This test MUST NOT reach the x2x3 edge (40-47)
+            // or corner (48-55) buffers: their destinations are legitimately
+            // doubly-ghost, and gating them here SUPPRESSES the real edge and
+            // corner exchange -- which is exactly the bug that made a widening of
+            // ZERO cells still destroy the solution.
+            const bool face_wide = ((n >= 8 && n < 16) || (n >= 24 && n < 32));
+            // STAGGERING.  b.x2f lives on x2 FACES and b.x3f on x3 faces, so for those
+            // components je+1 / ke+1 is a REAL interior face, not a ghost.  Testing the
+            // cell bounds alone misclassifies it and suppresses a legitimate write --
+            // which is why a widening of ZERO cells still destroyed the solution.
+            const int jghi = je_ + ((v == 1) ? 1 : 0);
+            const int kghi = ke_ + ((v == 2) ? 1 : 0);
+            if (cs_wire_ && face_wide &&
+                (j < js_ || j > jghi) && (k < ks_ || k > kghi)) {
+              // wlvl_ == 1 is the NO-OP control: widen the buffers but write nothing
+              // extra, which must reproduce the unwidened answer bit for bit.
+              if (wlvl_ < 2) return;
+              const Real xi  = 0.25*M_PI*CellCenterX(j-js_, nx2_, mbsz.d_view(m).x2min,
+                                                                  mbsz.d_view(m).x2max);
+              const Real eta = 0.25*M_PI*CellCenterX(k-ks_, nx3_, mbsz.d_view(m).x3min,
+                                                                  mbsz.d_view(m).x3max);
+              Real q[3];
+              cubed_sphere::PanelToCart(mbpanel.d_view(m), xi, eta, q);
+              if (wlvl_ < 3 &&
+                  cubed_sphere::FindPanel(q) != nghbr.d_view(m,n).panel) return;
+            }
             if (v==0) {
               b.x1f(m,k,j,i) = rbuf[n].vars(m,i-il + ni*(j-jl + nj*(k-kl)));
             } else if (v==1) {
