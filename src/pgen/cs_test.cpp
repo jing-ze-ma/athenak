@@ -1747,6 +1747,14 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
   const int nseam = 2;
   Real l1s = 0.0, l1i = 0.0;
   std::int64_t ncs = 0, nci = 0;
+  // The ring, SPLIT BY DISTANCE TO THE NEAREST CUBE VERTEX (in cells along the seam).
+  // The ring above has no vertex exclusion, so its L1 can be dominated by the corner
+  // neighbourhoods -- where the fill is an extrapolation converging at ~0.65 -- while
+  // the mid-seam is far better.  A 2x cut in the one second-order mid-seam halo
+  // component moved this ring by only 10%, which is what a vertex-dominated ring would
+  // do.  These bins separate the two questions.
+  Real l1v[4] = {0.0, 0.0, 0.0, 0.0};
+  std::int64_t ncv[4] = {0, 0, 0, 0};
   for (int m=0; m<pmbp->nmb_thispack; ++m) {
     const int p = mbpanel.h_view(m);
     const Real x2min = size.h_view(m).x2min, x2max = size.h_view(m).x2max;
@@ -1768,7 +1776,17 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
             const Real d = fabs(e1(m,k,j,i) - ex)/scale;
             if (d > mx[0]) { mxloc[0]=p; mxloc[1]=i; mxloc[2]=j; mxloc[3]=k; }
             mx[0] = fmax(mx[0], d); l1[0] += d; ++nc[0];
-            if (seam) { l1s += d; ++ncs; } else { l1i += d; ++nci; }
+            if (seam) {
+              l1s += d; ++ncs;
+              // FIXED PHYSICAL distance to the vertex, as a fraction of the half-seam.
+              // Bins in CELLS track a shrinking neighbourhood of the vertex as h drops
+              // and confound the order with the error's spatial profile; these do not.
+              const Real a1 = 0.25*M_PI - fabs(xf);
+              const Real a2 = 0.25*M_PI - fabs(ef);
+              const Real uv = ((a1 > a2) ? a1 : a2)/(0.25*M_PI);
+              const int b = (uv < 0.125) ? 0 : ((uv < 0.25) ? 1 : ((uv < 0.5) ? 2 : 3));
+              l1v[b] += d; ++ncv[b];
+            } else { l1i += d; ++nci; }
           }
         }
         // x2 edge: (r face, xi centre, eta face); tangent is e_xi there
@@ -1801,6 +1819,8 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
   const Real mx0_local = mx[0];
 #if MPI_PARALLEL_ENABLED
   {
+    MPI_Allreduce(MPI_IN_PLACE, l1v, 4, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(MPI_IN_PLACE, ncv, 4, MPI_INT64_T, MPI_SUM, MPI_COMM_WORLD);
     Real s_[5] = {l1[0], l1[1], l1[2], l1s, l1i};
     MPI_Allreduce(MPI_IN_PLACE, s_, 5, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
     l1[0] = s_[0]; l1[1] = s_[1]; l1[2] = s_[2]; l1s = s_[3]; l1i = s_[4];
@@ -2284,7 +2304,8 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
     // POSITION ALONG THE SEAM, on NON-SWAP seams only, in four bins of
     // u = |along-seam angle| / (pi/4):  0 is the seam MIDPOINT, 1 the CUBE VERTEX.
     // The two charts' transverse-tangential directions are antiparallel at u = 0 and
-    // diverge monotonically toward u = 1 (worked out on paper), so if the average-to-point
+    // diverge monotonically toward u = 1 (worked out on paper), so if the
+    // average-to-point
     // mismatch is what limits the non-shared-face component, its error must VANISH at the
     // midpoint and grow toward the vertex.  A flat profile refutes it.
     Real jpb_l1[4][3]; std::int64_t jpb_n[4][3];
@@ -2529,6 +2550,15 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
     std::printf("###   x1e worst at panel %d (i,j,k)=(%d,%d,%d);"
                 "  L1 over the %d-cell panel-edge ring = %.4e, panel interior = %.4e\n",
                 mxloc[0], mxloc[1], mxloc[2], mxloc[3], nseam, l1s, l1i);
+  }
+  if (global_variable::my_rank == 0) {
+    std::printf("###     ring by distance to the nearest VERTEX (cells):");
+    const char *bl[4] = {"<.125", ".125-.25", ".25-.5", ">.5"};
+    for (int b=0; b<4; ++b) {
+      std::printf("  v%s=%.3e", bl[b],
+                  (ncv[b] > 0) ? l1v[b]/static_cast<Real>(ncv[b]) : 0.0);
+    }
+    std::printf("\n");
   }
   return;
 }
