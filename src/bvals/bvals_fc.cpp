@@ -60,6 +60,7 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
   // reversal, and the seam-jump gate settles it in one run.  0 disables it entirely.
   static const Real cs_shear_sgn = (std::getenv("CS_SHEAR") != nullptr)
                                  ? std::atof(std::getenv("CS_SHEAR")) : 0.0;
+
   auto &cs_indcs = pmy_pack->pmesh->mb_indcs;
   auto &sbuf = sendbuf;
   auto &rbuf = recvbuf;
@@ -396,35 +397,79 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
               // this: the other tangential face IS the seam surface, shared by both
               // charts, and b.x1f's radial face is r = const in every chart.
               if (cs_seam != 0) {
-                const bool corr_et = (cs_seam == 2) && (vv == 2);
-                const bool corr_xi = (cs_seam == 3) && (vv == 1);
-                // THE SOURCE CELLS SIT AT THE EDGE OF THE ACTIVE RANGE -- that is what
-                // a seam buffer packs -- so a CENTRED difference in the seam-NORMAL
-                // direction reaches outside the data and never fires.  Use a ONE-SIDED
-                // difference there, stepping INWARD, and keep the centred one along the
-                // seam where the full range is available.  One-sided is first order, but
-                // the whole term is already O(h^2), so the residual is O(h^3).
-                const int jn = (jj-1 >= js_) ? (jj-1) : (jj+1);
-                const int kn = (kk-1 >= ks_) ? (kk-1) : (kk+1);
-                const bool okj = (jn >= js_ && jn <= je_);
-                const bool okk = (kn >= ks_ && kn <= ke_);
-                if ((corr_et || corr_xi) && okj && okk &&
-                    kk-1 >= ks_ && kk+1 <= ke_) {
-                  const Real ang_ = (cs_seam == 2) ? eta : xi;
-                  const Real nrm_ = (cs_seam == 2) ? xi : eta;
+                // WHICH AXIS IS ALONG THE SEAM, IN THE SOURCE'S FRAME.  cs_seam is read
+                // off the DESTINATION's slot, and across a SWAP seam the neighbour
+                // reaches this face through a face of its OTHER tangential axis, so the
+                // source's normal and along-seam roles are exchanged.  A swap is exactly
+                // vv != v (the component index the source is read with, set above).
+                // Getting this wrong silently corrects the WRONG component -- which is
+                // why the first version fired on only 4 of the 12 seams and moved the
+                // ring EMF by 10%.
+                // THE ANGLE AND INDEX ROLES COME FROM cs_seam, NOT FROM THE SWAP.  The
+                // buffer's index map already absorbs the axis exchange, and the
+                // along-seam resample -- validated to place its samples exactly -- reads
+                // its normal and along-seam angles straight off cs_seam in the SOURCE's
+                // (jj,kk) space.  Swapping the roles here instead made nrm the angle that
+                // is NOT pinned at +-pi/4, so sin(2*nrm) went small and sigma blew up:
+                // both signs then made the swap seams WORSE by the same amount, which is
+                // an over-large term rather than a sign error.
+                const bool along_eta = (cs_seam == 2);
+                // The corrected component is the one whose face NORMAL is the along-seam
+                // direction; the other tangential face IS the shared seam surface.
+                // ONLY THE COMPONENT FLIPS.  The face that must be corrected is the one
+                // whose normal is the along-seam direction -- but the transform maps
+                // source components to destination components THROUGH the swap, so on a
+                // swap seam it is the source's OTHER tangential face that lands on it.
+                // MEASURED: the component rule does NOT change across a swap seam, and
+                // neither does the sign.  Flipping it (the obvious guess, since the
+                // transform maps components through the swap) measured WORSE on the swap
+                // seams with either sign.  What had made the swap seams look untouched
+                // was the stencil bug above, not the component choice.
+                const int vwant = along_eta ? 2 : 1;
+                const bool corr_et = (vwant == 2) && (vv == 2);
+                const bool corr_xi = (vwant == 1) && (vv == 1);
+                // THE SOURCE CELLS SIT AT THE EDGE OF THE ACTIVE RANGE -- that is what a
+                // seam buffer packs -- so a CENTRED difference in the seam-NORMAL
+                // direction reaches outside the data and never fires, silently and at any
+                // amplitude.  One-sided stepping INWARD there, centred along the seam
+                // where the full range is available.  One-sided is first order, but the
+                // whole term is already O(h^2), so the residual is O(h^3).
+                //
+                // The NORMAL index is jj when the along-seam axis is eta, and kk when it
+                // is xi -- it follows `along_eta`, not the slot.
+                // THE STENCIL FOLLOWS THE AXIS ROLES, THE COMPONENT IS CHOSEN
+                // SEPARATELY.  Keying the difference on which COMPONENT is corrected
+                // instead silently indexes a j-neighbour as a k-neighbour the moment the
+                // two disagree, which is exactly what the swap case does.
+                //   along index  a = kk when along_eta, else jj
+                //   normal index n = jj when along_eta, else kk
+                const int an0 = along_eta ? kk : jj;          // along index, centre
+                const int nn0 = along_eta ? jj : kk;          // normal index, at the edge
+                const int alo = along_eta ? ks_ : js_;
+                const int ahi = along_eta ? ke_ : je_;
+                const int nlo = along_eta ? js_ : ks_;
+                const int nhi = along_eta ? je_ : ke_;
+                const int nn1 = (nn0-1 >= nlo) ? (nn0-1) : (nn0+1);
+                const Real sgn_n = (nn0-1 >= nlo) ? 1.0 : -1.0;
+                const bool ok_n = (nn1 >= nlo && nn1 <= nhi);
+                const bool ok_a = (an0-1 >= alo && an0+1 <= ahi);
+                if ((corr_et || corr_xi) && ok_n && ok_a) {
+                  const Real ang_ = along_eta ? eta : xi;
+                  const Real nrm_ = along_eta ? xi : eta;
                   const Real sden = sin(2.0*nrm_);
                   if (fabs(sden) > 1.0e-8) {
                     const Real sig = sin(2.0*ang_)/sden;
-                    // centred mixed difference; /4 makes it dxi*deta*d2f/dxi deta
-                    // d2f/dxi deta: centred along the seam, one-sided across it.
-                    // sgnj undoes the sign of the inward step so the derivative keeps its
+                    // f at (along index, normal index), whichever way round they are
+                    auto fv = [&](const int aa, const int nn) {
+                      const int kq = along_eta ? aa : nn;
+                      const int jq = along_eta ? nn : aa;
+                      return corr_et ? bx3(kq,jq,i) : bx2(kq,jq,i);
+                    };
+                    // d2f/dn da: centred ALONG the seam, one-sided ACROSS it.  sgn_n
+                    // undoes the sign of the inward step so the derivative keeps its
                     // orientation whichever end of the block the source cells sit at.
-                    const Real sgnj = (jj-1 >= js_) ? 1.0 : -1.0;
-                    const Real mx = corr_et
-                        ? sgnj*((bx3(kk+1,jj,i) - bx3(kk-1,jj,i))
-                              - (bx3(kk+1,jn,i) - bx3(kk-1,jn,i)))
-                        : sgnj*((bx2(kk+1,jj,i) - bx2(kk-1,jj,i))
-                              - (bx2(kk+1,jn,i) - bx2(kk-1,jn,i)));
+                    const Real mx = sgn_n*((fv(an0+1,nn0) - fv(an0-1,nn0))
+                                         - (fv(an0+1,nn1) - fv(an0-1,nn1)));
                     const Real dsh = cs_shear_sgn*sig*mx/24.0;
                     if (corr_et) { bet += dsh; } else { bxi += dsh; }
                   }
