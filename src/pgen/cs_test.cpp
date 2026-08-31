@@ -1331,6 +1331,20 @@ void CSTestConvErrors(ParameterInput *pin, Mesh *pm) {
 
   Real l1b = 0.0, lib = 0.0, l1v = 0.0, l1p = 0.0;
   Real livm = 0.0, lipm = 0.0;      // MAX norms of the hydro error; see their use below
+  // BY REGION: panel INTERIOR / panel SEAM / CUBE VERTEX.  A domain norm cannot answer
+  // "is it second order EVERYWHERE" -- the seam is a codim-1 set and the vertex a
+  // codim-2 one, so a region that is first order but only a few cells wide contributes a
+  // vanishing share of L1 and converges away in the total at the FULL rate while being
+  // first order where it lives.  The classification is by ANGLE, not by block index, so
+  // it is independent of how many MeshBlocks span a panel: a cell is near an edge when
+  // it lies within `nband` cells of |xi| = pi/4 (or |eta| = pi/4), and it is a VERTEX
+  // cell when it is near BOTH.  A fixed number of CELLS is the right width for a
+  // convergence test -- it is the region the seam stencils actually touch.
+  Real l1v_r[3] = {0.0, 0.0, 0.0}, l1p_r[3] = {0.0, 0.0, 0.0};
+  Real l1b_r[3] = {0.0, 0.0, 0.0};
+  Real liv_r[3] = {0.0, 0.0, 0.0}, lip_r[3] = {0.0, 0.0, 0.0};
+  Real lib_r[3] = {0.0, 0.0, 0.0};
+  std::int64_t n_r[3] = {0, 0, 0};
   std::int64_t ncell = 0;
   // Localisation: split the L1(B) budget between cells adjacent to a panel SEAM (within
   // nband of the tangential block edge), cells adjacent to the RADIAL boundary, and the
@@ -1391,7 +1405,16 @@ void CSTestConvErrors(ParameterInput *pin, Mesh *pm) {
         PanelNormals(p, x2c, x3f, n1, n2);
         const Real b3_ex = ex*n2[0] + ey*n2[1] + ez*n2[2];
         for (int c=0; c<3; ++c) { nv[2][c] = n2[c]; }
+        // which region does this (xi, eta) column sit in?  See the note by l1v_r.
+        const Real dang2 = 0.25*M_PI*(size.h_view(m).x2max - size.h_view(m).x2min)
+                         / static_cast<Real>(indcs.nx2);
+        const Real dang3 = 0.25*M_PI*(size.h_view(m).x3max - size.h_view(m).x3min)
+                         / static_cast<Real>(indcs.nx3);
+        const bool nr_xi  = ((0.25*M_PI - fabs(x2c))/dang2) < static_cast<Real>(nband);
+        const bool nr_eta = ((0.25*M_PI - fabs(x3c))/dang3) < static_cast<Real>(nband);
+        const int reg = (nr_xi && nr_eta) ? 2 : ((nr_xi || nr_eta) ? 1 : 0);
         for (int i=is; i<=ie; ++i) {
+          ++n_r[reg];
           if (has_b) {
             const Real e1 = fabs(b1h(m,k,j,i) - br_ex);
             const Real e2 = fabs(b2h(m,k,j,i) - b2_ex);
@@ -1403,6 +1426,8 @@ void CSTestConvErrors(ParameterInput *pin, Mesh *pm) {
               lib = em;
               mx_m = m; mx_p = p; mx_i = i-is; mx_j = j-js; mx_k = k-ks;
             }
+            l1b_r[reg] += ec;
+            if (em > lib_r[reg]) { lib_r[reg] = em; }
             const bool seam = (j-js < nband) || (je-j < nband)
                            || (k-ks < nband) || (ke-k < nband);
             const bool radb = (i-is < nband) || (ie-i < nband);
@@ -1450,6 +1475,9 @@ void CSTestConvErrors(ParameterInput *pin, Mesh *pm) {
           // are over ACTIVE cells; the GHOST SCAN in CSTestResistCheck does the halo.
           if (ev > livm) { livm = ev; }
           if (ep > lipm) { lipm = ep; }
+          l1v_r[reg] += ev;  l1p_r[reg] += ep;
+          if (ev > liv_r[reg]) { liv_r[reg] = ev; }
+          if (ep > lip_r[reg]) { lip_r[reg] = ep; }
           ++ncell;
         }
       }
@@ -1514,6 +1542,13 @@ void CSTestConvErrors(ParameterInput *pin, Mesh *pm) {
     Real rmax[2] = {livm, lipm};
     MPI_Allreduce(MPI_IN_PLACE, rmax, 2, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
     livm = rmax[0]; lipm = rmax[1];
+    MPI_Allreduce(MPI_IN_PLACE, l1v_r, 3, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(MPI_IN_PLACE, l1p_r, 3, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(MPI_IN_PLACE, l1b_r, 3, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(MPI_IN_PLACE, liv_r, 3, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+    MPI_Allreduce(MPI_IN_PLACE, lip_r, 3, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+    MPI_Allreduce(MPI_IN_PLACE, lib_r, 3, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+    MPI_Allreduce(MPI_IN_PLACE, n_r, 3, MPI_INT64_T, MPI_SUM, MPI_COMM_WORLD);
 
     const int nil = 4 + 2*NBIN;
     std::int64_t isum[4 + 2*NBIN];
@@ -1550,6 +1585,18 @@ void CSTestConvErrors(ParameterInput *pin, Mesh *pm) {
               cs_iprob, indcs.nx2, pm->time, l1b, lib, l1v, l1p);
   std::printf("###   MAX norms over active cells:  Linf(v)=%.6e  Linf(p)=%.6e\n",
               livm, lipm);
+  {
+    // Per-region MEANS, so the three numbers are comparable to each other and to the
+    // domain norm; a per-region SUM would just track how many cells the region has.
+    const char *rn[3] = {"panel INTERIOR", "panel SEAM    ", "CUBE VERTEX   "};
+    for (int r=0; r<3; ++r) {
+      const Real w = (n_r[r] > 0) ? 1.0/static_cast<Real>(n_r[r]) : 0.0;
+      std::printf("###   REGION %s (%9lld cells)  L1(v)=%.4e L1(p)=%.4e L1(B)=%.4e"
+                  "  Linf(v)=%.4e Linf(p)=%.4e Linf(B)=%.4e\n", rn[r],
+                  static_cast<long long>(n_r[r]), l1v_r[r]*w, l1p_r[r]*w, l1b_r[r]*w,
+                  liv_r[r], lip_r[r], lib_r[r]);
+    }
+  }
 
   if (has_b) {
     // solve the 3x3 normal equations by Gaussian elimination with partial pivoting
@@ -1650,19 +1697,28 @@ void CSTestConvErrors(ParameterInput *pin, Mesh *pm) {
 
 void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
   MeshBlockPack *pmbp = pm->pmb_pack;
-  if (pmbp->pmhd == nullptr || pmbp->pmhd->presist == nullptr) {
-    std::cout << "### CS RESIST CHECK: iprob=11 needs <mhd> with ohmic_resistivity"
-              << std::endl;
-    return;
-  }
+  if (pmbp->pmhd == nullptr) { return; }
   // The mesh-level gates, exactly as CSTestConvErrors runs them.  iprob=11 did not have
   // them because it began life as a single-block current-density test; they are what
   // certifies REFINEMENT (level-boundary flux telescoping) and the seam (shared-face
   // flux reconciliation), so a refined resistive run needs them just as the ideal one
   // did.
+  //
+  // THEY RUN BEFORE THE RESISTIVITY GUARD, because none of them needs resistivity and
+  // iprob=11 is the only CLOSED MHD problem here: with `problem/bunif = 0` the field is
+  // purely AZIMUTHAL, B.rhat = 0 exactly, so reflecting radial walls pass no flux and a
+  // global conservation budget is meaningful.  A uniform field THREADS those walls, which
+  // is not a closed system in MHD at all and leaks mass at O(B^2) -- on any grid, a plain
+  // Cartesian one included.  Dropping <mhd>/ohmic_resistivity then makes this the IDEAL
+  // MHD conservation test; keeping it makes it the resistive one.
   CSTestConsSums(pm);
   CSTestSeamFluxCheck(pm);
   CSTestLevelFluxCheck(pm);
+  if (pmbp->pmhd->presist == nullptr) {
+    std::cout << "### CS RESIST CHECK: skipped (no <mhd>/ohmic_resistivity); the"
+              << " conservation, seam and level gates above still ran" << std::endl;
+    return;
+  }
 
   auto &indcs = pm->mb_indcs;
   const int is = indcs.is, ie = indcs.ie;
@@ -1804,6 +1860,15 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
   Real l1f = 0.0, mxf = 0.0, bmax = 0.0;
   int mxc = -1, mxi = -1, mxj = -1, mxk = -1, mxp = -1, mxm = -1;
   std::int64_t ncf = 0;
+  // BY REGION: panel INTERIOR / panel SEAM / CUBE VERTEX.  A domain norm cannot answer
+  // "is it second order EVERYWHERE": the seam is codim-1 and the vertex codim-2, so a
+  // region that is first order but a fixed few cells wide holds a VANISHING share of L1
+  // and the total still converges at the full rate.  Classified by ANGLE so it does not
+  // depend on how many MeshBlocks span a panel -- within `nbr` cells of |xi| = pi/4 or
+  // |eta| = pi/4, and a VERTEX cell is within that of BOTH.
+  const int nbr = 2;
+  Real l1f_r[3] = {0.0, 0.0, 0.0}, mxf_r[3] = {0.0, 0.0, 0.0};
+  std::int64_t ncf_r[3] = {0, 0, 0};
   for (int m=0; m<pmbp->nmb_thispack; ++m) {
     const int p = mbpanel.h_view(m);
     const bool skip_x1f_is = (nghbr.h_view(m,0).gid >= 0 &&
@@ -1818,6 +1883,11 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
         const Real xc = 0.25*M_PI*CellCenterX(j-js, indcs.nx2, x2min, x2max);
         const Real xf = 0.25*M_PI*LeftEdgeX(j-js, indcs.nx2, x2min, x2max);
         Real n1[3], n2[3], cx, cy, cz;
+        const Real dg2 = 0.25*M_PI*(x2max - x2min)/static_cast<Real>(indcs.nx2);
+        const Real dg3 = 0.25*M_PI*(x3max - x3min)/static_cast<Real>(indcs.nx3);
+        const bool nrx = ((0.25*M_PI - fabs(xc))/dg2) < static_cast<Real>(nbr);
+        const bool nre = ((0.25*M_PI - fabs(ec))/dg3) < static_cast<Real>(nbr);
+        const int rg = (nrx && nre) ? 2 : ((nrx || nre) ? 1 : 0);
         for (int i=is; i<=ie+1; ++i) {
           const Real rc = CellCenterX(i-is, indcs.nx1, x1min, x1max);
           const Real rl = LeftEdgeX(i-is, indcs.nx1, x1min, x1max);
@@ -1830,6 +1900,7 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
               mxc = 0; mxm = m; mxp = p; mxi = i-is; mxj = j-js; mxk = k-ks;
             }
             l1f += d; ++ncf; mxf = fmax(mxf, d); bmax = fmax(bmax, fabs(ex));
+            l1f_r[rg] += d; ++ncf_r[rg]; mxf_r[rg] = fmax(mxf_r[rg], d);
           }
           if (i <= ie && k <= ke) {
             PanelToCart(p, xf, ec, cx, cy, cz);
@@ -1841,6 +1912,7 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
               mxc = 1; mxm = m; mxp = p; mxi = i-is; mxj = j-js; mxk = k-ks;
             }
             l1f += d; ++ncf; mxf = fmax(mxf, d); bmax = fmax(bmax, fabs(ex));
+            l1f_r[rg] += d; ++ncf_r[rg]; mxf_r[rg] = fmax(mxf_r[rg], d);
           }
           if (i <= ie && j <= je) {
             PanelToCart(p, xc, ef, cx, cy, cz);
@@ -1852,6 +1924,7 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
               mxc = 2; mxm = m; mxp = p; mxi = i-is; mxj = j-js; mxk = k-ks;
             }
             l1f += d; ++ncf; mxf = fmax(mxf, d); bmax = fmax(bmax, fabs(ex));
+            l1f_r[rg] += d; ++ncf_r[rg]; mxf_r[rg] = fmax(mxf_r[rg], d);
           }
         }
       }
@@ -1868,6 +1941,9 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
     std::int64_t n_ = ncf;
     MPI_Allreduce(MPI_IN_PLACE, &n_, 1, MPI_INT64_T, MPI_SUM, MPI_COMM_WORLD);
     ncf = n_;
+    MPI_Allreduce(MPI_IN_PLACE, l1f_r, 3, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(MPI_IN_PLACE, mxf_r, 3, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+    MPI_Allreduce(MPI_IN_PLACE, ncf_r, 3, MPI_INT64_T, MPI_SUM, MPI_COMM_WORLD);
   }
 #endif
   {
@@ -1882,6 +1958,13 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
                   "  block x1 = %g..%g%s\n", cn[mxc], mxp, mxi, mxj, mxk, mxm,
                   size.h_view(mxm).x1min, size.h_view(mxm).x1max,
                   (mxi == 0) ? "   [ON the block's INNER RADIAL face]" : "");
+    }
+    // Per-region MEANS, comparable with each other and with the domain norm above.
+    const char *rn[3] = {"panel INTERIOR", "panel SEAM    ", "CUBE VERTEX   "};
+    for (int r=0; r<3; ++r) {
+      const Real w = (ncf_r[r] > 0) ? 1.0/static_cast<Real>(ncf_r[r])/bs : 0.0;
+      std::printf("###     REGION %s (%9lld faces)  L1=%.4e  Linf=%.4e\n", rn[r],
+                  static_cast<long long>(ncf_r[r]), l1f_r[r]*w, mxf_r[r]/bs);
     }
   }
 
