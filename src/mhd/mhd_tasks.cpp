@@ -600,7 +600,8 @@ TaskStatus MHD::ConToPrim(Driver *pdrive, int stage) {
   // velocity, the field and the internal energy with the metric. This is the MHD
   // counterpart of the GnomonicEquiangleRaiseVel call in hydro_tasks.cpp.
   if (pmy_pack->pmesh->use_cubed_sphere) {
-    pmy_pack->pcoord->GnomonicEquiangleRaiseVelMHD(u0, b0, bcc0, w0,
+    pmy_pack->pcoord->GnomonicEquiangleRaiseVelMHD(u0, b0, bcc0, w0, peos->eos_data,
+                                                   wder, wtemp,
                                                    0, n1m1, 0, n2m1, 0, n3m1);
   }
   if (use_etotgrav) {

@@ -449,7 +449,8 @@ TaskStatus Hydro::ConToPrim(Driver *pdrive, int stage) {
   // gnomonic tangent basis. ConsToPrim cannot know that, so redo the velocity and the
   // internal energy with the metric. See Coordinates::GnomonicEquiangleRaiseVel.
   if (pmy_pack->pmesh->use_cubed_sphere) {
-    pmy_pack->pcoord->GnomonicEquiangleRaiseVel(u0, w0, 0, n1m1, 0, n2m1, 0, n3m1);
+    pmy_pack->pcoord->GnomonicEquiangleRaiseVel(u0, w0, peos->eos_data, wder, wtemp,
+                                                0, n1m1, 0, n2m1, 0, n3m1);
   }
   if (use_etotgrav) {
     AddGravEtot(phicc0, u0, 0, n1m1, 0, n2m1, 0, n3m1);

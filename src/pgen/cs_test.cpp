@@ -236,6 +236,7 @@ void CSTestRadialBC(Mesh *pm);
 void CSTestGhostCheck(ParameterInput *pin, Mesh *pm);
 void CSTestConvErrors(ParameterInput *pin, Mesh *pm);
 void CSTestResistCheck(ParameterInput *pin, Mesh *pm);
+void CSTestEosCacheCheck(Mesh *pm);
 void CSTestBlastCheck(ParameterInput *pin, Mesh *pm);
 void CSTestSeamFluxCheck(Mesh *pm);
 void CSTestLevelFluxCheck(Mesh *pm);
@@ -1293,6 +1294,7 @@ void CSTestRadialBC(Mesh *pm) {
 
 void CSTestConvErrors(ParameterInput *pin, Mesh *pm) {
   MeshBlockPack *pmbp = pm->pmb_pack;
+  CSTestEosCacheCheck(pm);
   CSTestConsSums(pm);
   CSTestSeamFluxCheck(pm);
   CSTestLevelFluxCheck(pm);
@@ -1681,6 +1683,80 @@ void CSTestConvErrors(ParameterInput *pin, Mesh *pm) {
                indcs.nx1, indcs.nx2, indcs.nx3, pm->time, l1b, lib, l1v, l1p);
   std::fclose(pf);
   return;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void CSTestEosCacheCheck(Mesh *pm)
+//! \brief Does a GENERAL EOS's cached p, Gamma_1 and T agree with the state w0 holds?
+//!
+//! NEEDS A FLOW.  The discrepancy is O(cos_cell) x tangential KINETIC energy, so on a
+//! static problem (iprob = 11 has v = 0) it is identically zero and the gate is vacuous.
+//! Run it on iprob = 9, the rigid rotation, where the tangential velocity is O(1).
+
+void CSTestEosCacheCheck(Mesh *pm) {
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie;
+  const int js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  // ---- GENERAL-EOS CACHE CONSISTENCY on the cubed sphere -----------------------------
+  //
+  // A general EOS caches p, Gamma_1 and T in wder/wtemp, and ConsToPrim solves for them
+  // BEFORE Coordinates::GnomonicEquiangleRaiseVel* corrects the internal energy with the
+  // metric -- its inversion subtracts an ORTHONORMAL kinetic (and magnetic) energy, which
+  // on the non-orthogonal gnomonic basis is wrong by the cross term.  wder and wtemp are
+  // written NOWHERE ELSE, so left unrefreshed they disagree with w0(IEN) by exactly that
+  // amount, and they are read by the fluxes, the timestep, FOFC, prolongation and the
+  // geometric source term.  The error is O(cos_cell) x tangential KE: ZERO on the panel
+  // midlines and largest at the panel CORNERS, which is why a domain average hides it.
+  //
+  // THE GATE: recompute p and T from the state w0 actually holds and compare with the
+  // cache.  Consistent means round-off.  Split by |cos_cell| so the corner cells, where
+  // the discrepancy lives, cannot be diluted by the midlines.
+  if (pmbp->pmhd != nullptr && pmbp->pmhd->peos->eos_data.IsGeneral()) {
+    auto &eosd = pmbp->pmhd->peos->eos_data;
+    auto wh = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pmhd->w0);
+    auto dh = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pmhd->wder);
+    auto th = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pmhd->wtemp);
+    auto cch = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
+                                                   pmbp->pcoord->cos_cell);
+    Real mxp[2] = {0.0, 0.0}, mxt[2] = {0.0, 0.0};
+    std::int64_t nn[2] = {0, 0};
+    for (int m=0; m<pmbp->nmb_thispack; ++m) {
+      for (int k=ks; k<=ke; ++k) {
+        for (int j=js; j<=je; ++j) {
+          // near a panel corner the two tangent axes are most skew; |cos_cell| is the
+          // exact measure of that, and it is what the discrepancy is proportional to
+          const int b = (fabs(cch(m,k,j)) > 0.2) ? 1 : 0;
+          for (int i=is; i<=ie; ++i) {
+            const Real d = wh(m,IDN,k,j,i);
+            const Real e = wh(m,IEN,k,j,i);
+            if (!(d > 0.0) || !(e > 0.0)) continue;
+            Real tt, pp, gg;
+            eosd.TemperaturePressureGamma1(d, e, th(m,k,j,i), tt, pp, gg);
+            const Real dp = fabs(pp - dh(m,IDPR,k,j,i))/fmax(fabs(pp), 1.0e-300);
+            const Real dt = fabs(tt - th(m,k,j,i))/fmax(fabs(tt), 1.0e-300);
+            if (dp > mxp[b]) { mxp[b] = dp; }
+            if (dt > mxt[b]) { mxt[b] = dt; }
+            ++nn[b];
+          }
+        }
+      }
+    }
+#if MPI_PARALLEL_ENABLED
+    MPI_Allreduce(MPI_IN_PLACE, mxp, 2, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+    MPI_Allreduce(MPI_IN_PLACE, mxt, 2, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+    MPI_Allreduce(MPI_IN_PLACE, nn, 2, MPI_INT64_T, MPI_SUM, MPI_COMM_WORLD);
+#endif
+    if (global_variable::my_rank == 0) {
+      std::printf("###   GENERAL-EOS CACHE vs w0:  near midline |cos|<=0.2 dp=%.3e"
+                  " dT=%.3e (%lld cells);  near CORNER |cos|>0.2 dp=%.3e dT=%.3e"
+                  " (%lld cells)\n", mxp[0], mxt[0],
+                  static_cast<long long>(nn[0]), mxp[1], mxt[1],
+                  static_cast<long long>(nn[1]));
+    }
+  }
+
 }
 
 //----------------------------------------------------------------------------------------
@@ -2560,6 +2636,8 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
     }
     std::printf("\n");
   }
+
+  CSTestEosCacheCheck(pm);
 
   // ---- TERM-BY-TERM STOKES LOOP: is it the INPUTS or the OPERATOR? -------------------
   //

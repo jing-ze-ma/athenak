@@ -675,10 +675,23 @@ void Coordinates::CoordGnomonicEquiangle() {
 //! and would need the metric inside the root find, not after it.
 
 void Coordinates::GnomonicEquiangleRaiseVel(const DvceArray5D<Real> &u0,
-    DvceArray5D<Real> &w0, const int il, const int iu, const int jl, const int ju,
-    const int kl, const int ku) {
+    DvceArray5D<Real> &w0, const EOS_Data &eos_data, const DvceArray5D<Real> &wder,
+    const DvceArray4D<Real> &wtemp, const int il, const int iu, const int jl,
+    const int ju, const int kl, const int ku) {
   int nmb1 = pmy_pack->nmb_thispack - 1;
   auto &cos_cell_ = cos_cell;
+  // A GENERAL EOS CACHES p, Gamma_1 AND T, AND ConsToPrim SOLVED FOR THEM BEFORE THIS
+  // CORRECTION.  Its inversion subtracts an ORTHONORMAL kinetic energy, so the internal
+  // energy it inverted is wrong by the metric cross term -- exactly the amount corrected
+  // below -- and wder/wtemp are written NOWHERE ELSE.  Left stale they are read by the
+  // fluxes, the timestep, FOFC, prolongation and the geometric source term itself, so the
+  // error is O(cos_cell) x tangential KE: zero on the panel midlines and largest at the
+  // panel corners.  Re-solve them here from the CORRECTED internal energy, warm-started
+  // on the temperature ConsToPrim already found, which makes the root find cheap.
+  const bool gen_ = eos_data.IsGeneral();
+  auto eos_ = eos_data;
+  auto wder_ = wder;
+  auto wtemp_ = wtemp;
 
   par_for("cs_raisev", DevExeSpace(), 0,nmb1, kl,ku, jl,ju, il,iu,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -696,7 +709,15 @@ void Coordinates::GnomonicEquiangleRaiseVel(const DvceArray5D<Real> &u0,
     w0(m,IVY,k,j,i) = v2;
     w0(m,IVZ,k,j,i) = v3;
     // KE = 0.5 rho g_ij v^i v^j = 0.5 m_i v^i, which is the cross-term-correct form.
-    w0(m,IEN,k,j,i) = u0(m,IEN,k,j,i) - 0.5*(m1*v1 + m2*v2 + m3*v3);
+    const Real eint = u0(m,IEN,k,j,i) - 0.5*(m1*v1 + m2*v2 + m3*v3);
+    w0(m,IEN,k,j,i) = eint;
+    if (gen_) {
+      Real tnew, pnew, g1new;
+      eos_.TemperaturePressureGamma1(d, eint, wtemp_(m,k,j,i), tnew, pnew, g1new);
+      wder_(m,IDPR,k,j,i) = pnew;
+      wder_(m,IDG1,k,j,i) = g1new;
+      wtemp_(m,k,j,i) = tnew;
+    }
   });
   return;
 }
@@ -728,10 +749,20 @@ void Coordinates::GnomonicEquiangleRaiseVel(const DvceArray5D<Real> &u0,
 
 void Coordinates::GnomonicEquiangleRaiseVelMHD(const DvceArray5D<Real> &u0,
     const DvceFaceFld4D<Real> &b0, DvceArray5D<Real> &bcc0, DvceArray5D<Real> &w0,
-    const int il, const int iu, const int jl, const int ju, const int kl, const int ku) {
+    const EOS_Data &eos_data, const DvceArray5D<Real> &wder,
+    const DvceArray4D<Real> &wtemp, const int il, const int iu, const int jl,
+    const int ju, const int kl, const int ku) {
   int nmb1 = pmy_pack->nmb_thispack - 1;
   auto &cos_cell_ = cos_cell;
   auto &sin_cell_ = sin_cell;
+  // See the note in GnomonicEquiangleRaiseVel: a general EOS's cached p, Gamma_1 and T
+  // were solved for BEFORE this correction and are written nowhere else, so they have to
+  // be re-solved from the corrected internal energy.  Here the magnetic energy is also
+  // rebuilt, since ConsToPrim formed it from the NON-ORTHOGONAL face-normal triple.
+  const bool gen_ = eos_data.IsGeneral();
+  auto eos_ = eos_data;
+  auto wder_ = wder;
+  auto wtemp_ = wtemp;
 
   par_for("cs_raisev_mhd", DevExeSpace(), 0,nmb1, kl,ku, jl,ju, il,iu,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -762,8 +793,16 @@ void Coordinates::GnomonicEquiangleRaiseVelMHD(const DvceArray5D<Real> &u0,
     w0(m,IVY,k,j,i) = v2;
     w0(m,IVZ,k,j,i) = v3;
     // the frame is orthonormal, so the magnetic energy IS the sum of squares
-    w0(m,IEN,k,j,i) = u0(m,IEN,k,j,i) - 0.5*(m1*v1 + m2*v2 + m3*v3)
+    const Real eint = u0(m,IEN,k,j,i) - 0.5*(m1*v1 + m2*v2 + m3*v3)
                                       - 0.5*(bx*bx + by*by + bz*bz);
+    w0(m,IEN,k,j,i) = eint;
+    if (gen_) {
+      Real tnew, pnew, g1new;
+      eos_.TemperaturePressureGamma1(d, eint, wtemp_(m,k,j,i), tnew, pnew, g1new);
+      wder_(m,IDPR,k,j,i) = pnew;
+      wder_(m,IDG1,k,j,i) = g1new;
+      wtemp_(m,k,j,i) = tnew;
+    }
   });
   return;
 }

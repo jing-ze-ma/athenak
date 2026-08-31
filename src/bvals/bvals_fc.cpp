@@ -58,8 +58,13 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
   // pinned down empirically.  The derivation fixes the magnitude; which way the
   // receiver's face tilts relative to the source's depends on the seam orientation and
   // reversal, and the seam-jump gate settles it in one run.  0 disables it entirely.
-  static const Real cs_shear_sgn = (std::getenv("CS_SHEAR") != nullptr)
+  // Read the environment ONCE on the host, then take a LOCAL copy: a function-scope
+  // `static` is a host variable, and a device lambda that references one fails to compile
+  // on HIP/CUDA ("reference to __host__ variable in __host__ __device__ function").  The
+  // local const is captured BY VALUE and works on every backend.  Same trap as f493c209.
+  static const Real cs_shear_env = (std::getenv("CS_SHEAR") != nullptr)
                                  ? std::atof(std::getenv("CS_SHEAR")) : 0.0;
+  const Real cs_shear_sgn = cs_shear_env;
 
   auto &cs_indcs = pmy_pack->pmesh->mb_indcs;
   auto &sbuf = sendbuf;
