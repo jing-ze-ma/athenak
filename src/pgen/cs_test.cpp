@@ -2271,6 +2271,16 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
     std::int64_t js_n = 0, jc_n = 0;
     Real jsc_l1[3] = {0.0, 0.0, 0.0}, jcc_l1[3] = {0.0, 0.0, 0.0};
     std::int64_t jsc_n[3] = {0, 0, 0}, jcc_n[3] = {0, 0, 0};
+    // SWAP vs NON-SWAP seam.  On an equatorial-to-polar seam the neighbour reaches this
+    // face through a face of its OTHER tangential axis (swap_ax; see bvals_fc.cpp), so
+    // the destination face's two in-face directions are NOT the source face's.  On an
+    // equatorial-to-equatorial seam they coincide at the seam -- radial is shared and the
+    // along-seam direction is the same great circle.  If the tangential halo is limited
+    // by treating a face AVERAGE as a POINT value, the mismatch can only appear where the
+    // in-face directions differ, i.e. on SWAP seams alone.  Panels 3 and 5 are the polar
+    // ones; 4, 0, 1, 2 are equatorial.
+    Real jsw_l1[2][3] = {{0.0, 0.0, 0.0}, {0.0, 0.0, 0.0}};
+    std::int64_t jsw_n[2][3] = {{0, 0, 0}, {0, 0, 0}};
     const int ng = indcs.ng;
     for (int m=0; m<pmbp->nmb_thispack; ++m) {
       const int p = mbpanel.h_view(m);
@@ -2313,6 +2323,10 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
         if (nghbr.h_view(m,nb).gid < 0) continue;
         if (nghbr.h_view(m,nb).lev != mblev.h_view(m)) continue;   // same level only
         const bool seam = (nghbr.h_view(m,nb).panel != p);
+        const int pn = nghbr.h_view(m,nb).panel;
+        const bool pol_a = (p == 3 || p == 5);
+        const bool pol_b = (pn == 3 || pn == 5);
+        const int sw = (pol_a != pol_b) ? 1 : 0;      // 1 = swap seam
         const bool minus = (sides[sd][1] == 1);
         const bool alongx2 = (sides[sd][2] == 1);
         for (int i=is+1; i<=ie; ++i) {
@@ -2333,7 +2347,10 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
                 ein = err_c(cmp, ka, t, i);  egh = err_c(cmp, kg, t, i);
               }
               const Real dc = fabs(egh - ein);
-              if (seam) { jsc_l1[cmp] += dc; ++jsc_n[cmp]; }
+              if (seam) {
+                jsc_l1[cmp] += dc; ++jsc_n[cmp];
+                jsw_l1[sw][cmp] += dc; ++jsw_n[sw][cmp];
+              }
               else      { jcc_l1[cmp] += dc; ++jcc_n[cmp]; }
               if (cmp == 0) {
                 if (seam) { js_l1 += dc; ++js_n; js_mx = fmax(js_mx, dc); }
@@ -2359,6 +2376,9 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
       MPI_Allreduce(MPI_IN_PLACE, jcc_l1, 3, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
       MPI_Allreduce(MPI_IN_PLACE, jsc_n, 3, MPI_INT64_T, MPI_SUM, MPI_COMM_WORLD);
       MPI_Allreduce(MPI_IN_PLACE, jcc_n, 3, MPI_INT64_T, MPI_SUM, MPI_COMM_WORLD);
+      MPI_Allreduce(MPI_IN_PLACE, &jsw_l1[0][0], 6, MPI_ATHENA_REAL, MPI_SUM,
+                    MPI_COMM_WORLD);
+      MPI_Allreduce(MPI_IN_PLACE, &jsw_n[0][0], 6, MPI_INT64_T, MPI_SUM, MPI_COMM_WORLD);
     }
 #endif
     if (global_variable::my_rank == 0) {
@@ -2371,9 +2391,14 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
                   static_cast<long long>(jc_n));
       const char *cnm[3] = {"x1f(B.rhat)", "x2f", "x3f"};
       for (int cmp=0; cmp<3; ++cmp) {
-        std::printf("###       %-11s seam L1=%.4e   ctrl L1=%.4e\n", cnm[cmp],
+        std::printf("###       %-11s seam L1=%.4e   ctrl L1=%.4e   NONswap=%.4e"
+                    "   SWAP=%.4e\n", cnm[cmp],
                     (jsc_n[cmp] > 0) ? jsc_l1[cmp]/static_cast<Real>(jsc_n[cmp]) : 0.0,
-                    (jcc_n[cmp] > 0) ? jcc_l1[cmp]/static_cast<Real>(jcc_n[cmp]) : 0.0);
+                    (jcc_n[cmp] > 0) ? jcc_l1[cmp]/static_cast<Real>(jcc_n[cmp]) : 0.0,
+                    (jsw_n[0][cmp] > 0) ? jsw_l1[0][cmp]/static_cast<Real>(jsw_n[0][cmp])
+                                        : 0.0,
+                    (jsw_n[1][cmp] > 0) ? jsw_l1[1][cmp]/static_cast<Real>(jsw_n[1][cmp])
+                                        : 0.0);
       }
     }
   }
