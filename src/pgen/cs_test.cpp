@@ -2281,6 +2281,15 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
     // ones; 4, 0, 1, 2 are equatorial.
     Real jsw_l1[2][3] = {{0.0, 0.0, 0.0}, {0.0, 0.0, 0.0}};
     std::int64_t jsw_n[2][3] = {{0, 0, 0}, {0, 0, 0}};
+    // POSITION ALONG THE SEAM, on NON-SWAP seams only, in four bins of
+    // u = |along-seam angle| / (pi/4):  0 is the seam MIDPOINT, 1 the CUBE VERTEX.
+    // The two charts' transverse-tangential directions are antiparallel at u = 0 and
+    // diverge monotonically toward u = 1 (worked out on paper), so if the average-to-point
+    // mismatch is what limits the non-shared-face component, its error must VANISH at the
+    // midpoint and grow toward the vertex.  A flat profile refutes it.
+    Real jpb_l1[4][3]; std::int64_t jpb_n[4][3];
+    for (int a=0; a<4; ++a) { for (int b=0; b<3; ++b) { jpb_l1[a][b] = 0.0;
+                                                        jpb_n[a][b] = 0; } }
     const int ng = indcs.ng;
     for (int m=0; m<pmbp->nmb_thispack; ++m) {
       const int p = mbpanel.h_view(m);
@@ -2350,6 +2359,16 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
               if (seam) {
                 jsc_l1[cmp] += dc; ++jsc_n[cmp];
                 jsw_l1[sw][cmp] += dc; ++jsw_n[sw][cmp];
+                if (sw == 0) {
+                  // the ALONG-seam coordinate is the tangential one the seam does not cut
+                  const Real ang = alongx2
+                      ? 0.25*M_PI*CellCenterX(t-ks, indcs.nx3, x3min, x3max)
+                      : 0.25*M_PI*CellCenterX(t-js, indcs.nx2, x2min, x2max);
+                  int ub = static_cast<int>(4.0*fabs(ang)/(0.25*M_PI));
+                  if (ub < 0) { ub = 0; }
+                  if (ub > 3) { ub = 3; }
+                  jpb_l1[ub][cmp] += dc; ++jpb_n[ub][cmp];
+                }
               }
               else      { jcc_l1[cmp] += dc; ++jcc_n[cmp]; }
               if (cmp == 0) {
@@ -2379,6 +2398,9 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
       MPI_Allreduce(MPI_IN_PLACE, &jsw_l1[0][0], 6, MPI_ATHENA_REAL, MPI_SUM,
                     MPI_COMM_WORLD);
       MPI_Allreduce(MPI_IN_PLACE, &jsw_n[0][0], 6, MPI_INT64_T, MPI_SUM, MPI_COMM_WORLD);
+      MPI_Allreduce(MPI_IN_PLACE, &jpb_l1[0][0], 12, MPI_ATHENA_REAL, MPI_SUM,
+                    MPI_COMM_WORLD);
+      MPI_Allreduce(MPI_IN_PLACE, &jpb_n[0][0], 12, MPI_INT64_T, MPI_SUM, MPI_COMM_WORLD);
     }
 #endif
     if (global_variable::my_rank == 0) {
@@ -2399,6 +2421,15 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
                                         : 0.0,
                     (jsw_n[1][cmp] > 0) ? jsw_l1[1][cmp]/static_cast<Real>(jsw_n[1][cmp])
                                         : 0.0);
+      }
+      for (int cmp=0; cmp<3; ++cmp) {
+        std::printf("###       %-11s NONswap by position (0=midpoint 3=vertex):",
+                    cnm[cmp]);
+        for (int a=0; a<4; ++a) {
+          std::printf("  u%d=%.3e", a, (jpb_n[a][cmp] > 0)
+                      ? jpb_l1[a][cmp]/static_cast<Real>(jpb_n[a][cmp]) : 0.0);
+        }
+        std::printf("\n");
       }
     }
   }
