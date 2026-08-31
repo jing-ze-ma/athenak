@@ -35,6 +35,34 @@
 #include <mpi.h>
 #endif
 
+namespace {
+
+//----------------------------------------------------------------------------------------
+//! \fn CSSrcTermOn / CSConstAccelOffRadial
+//! Helpers for the cubed-sphere support gate below.  Source-term switches are read with
+//! GetOrAddBoolean, so they are legitimately PRESENT AND FALSE in an input that spells
+//! out what it is not using; testing DoesParameterExist alone would refuse such a run.
+//! Test the VALUE, and only for the blocks SrcTerms is actually constructed with.
+
+bool CSSrcTermOn(ParameterInput *pin, const std::string &name) {
+  for (const char *blk : {"hydro_srcterms", "mhd_srcterms"}) {
+    if (pin->DoesParameterExist(blk, name) && pin->GetBoolean(blk, name)) return true;
+  }
+  return false;
+}
+
+//! Constant acceleration is only supported along x1, which is RADIAL.  Directions 2 and
+//! 3 are panel-tangential.  An input naming a direction it never enables is not an error.
+
+bool CSConstAccelOffRadial(ParameterInput *pin, const std::string &blk) {
+  if (!(pin->DoesParameterExist(blk, "const_accel") &&
+        pin->GetBoolean(blk, "const_accel"))) return false;
+  return (pin->DoesParameterExist(blk, "const_accel_dir") &&
+          pin->GetInteger(blk, "const_accel_dir") != 1);
+}
+
+}  // namespace
+
 //----------------------------------------------------------------------------------------
 //! Mesh constructor:
 //! initializes some mesh variables using parameters in input file.
@@ -351,7 +379,47 @@ Mesh::Mesh(ParameterInput *pin) :
                pin->DoesParameterExist("mhd", "isotropic_conduction")) {
       missing = "thermal conduction (isotropic_conduction): diffusion/conduction.cpp "
                 "has no curvilinear form at all";
+    // RADIATION.  src/radiation/ contains not one mention of use_cubed_sphere, and not
+    // even the use_spherical_polar branch other modules carry -- it is written for an
+    // orthogonal grid throughout.  Unlike fofc/viscosity/conduction this was never
+    // refused, so a <radiation> block on this grid ran to completion and returned a
+    // wrong answer, which is exactly how the resistive curl behaved before 4bfacdd8.
+    } else if (pin->DoesBlockExist("radiation")) {
+      missing = "radiation (<radiation>): src/radiation/ has no cubed-sphere support of "
+                "any kind -- no gnomonic areas or volumes in the flux divergence, and no "
+                "tangent-basis handling. It is not merely untested, it is unwritten";
+    // NB turbulence driving needs no guard here: <turb_driving> is not in
+    // ParameterInput::CheckBlockNames' whitelist, so an input carrying that block is
+    // rejected before this runs -- on every grid, which looks like a separate
+    // pre-existing oddity given srcterms/turb_driver.cpp reads exactly that name.
+    // SOURCE TERMS, and only the ones that are ACTUALLY geometry-dependent -- see below
+    // for the two that are not, which are deliberately still allowed.  NOTE the block is
+    // <hydro_srcterms> / <mhd_srcterms>, NOT <hydro> / <mhd>: probing the latter is a
+    // guard that can never fire, and a test that puts the parameter in the wrong block
+    // agrees with it and looks like a pass.
+    } else if (CSSrcTermOn(pin, "rel_cooling")) {
+      missing = "relativistic cooling (rel_cooling): it forms the Lorentz factor as "
+                "sqrt(1 + ux^2 + uy^2 + uz^2), a NORM, and the gnomonic tangent basis is "
+                "not orthonormal, so that expression needs the metric";
+    } else if (CSSrcTermOn(pin, "rad_beam")) {
+      missing = "the radiation beam source (rad_beam): its position and direction are "
+                "Cartesian and it writes angular momentum components directly";
+    } else if (CSConstAccelOffRadial(pin, "hydro_srcterms") ||
+               CSConstAccelOffRadial(pin, "mhd_srcterms")) {
+      missing = "constant acceleration along x2 or x3 (const_accel_dir != 1): those are "
+                "the panel-tangential directions, whose basis vectors are neither "
+                "orthogonal nor of unit physical length, so a 'constant' acceleration "
+                "there is not constant and not in the direction meant. Direction 1 is "
+                "RADIAL and is allowed";
     }
+    // DELIBERATELY STILL ALLOWED, because they are basis-INDEPENDENT:
+    //   const_accel with dir = 1  -- x1 is radial and rhat is orthogonal to the tangent
+    //     plane, so this is an honest radial gravity.
+    //   ism_cooling               -- the drag it applies is -k*rho*v, whose components
+    //     are -k*rho*v_i in ANY basis, and its temperature comes from the EOS pointwise.
+    //   the EOS itself            -- p(rho,e) is pointwise, so geometry never enters.
+    // None of the three has been VALIDATED on this grid; they are allowed because their
+    // expressions carry no geometry, not because anyone has measured them.
     if (!missing.empty()) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                 << std::endl << "mesh/use_cubed_sphere does not support " << missing

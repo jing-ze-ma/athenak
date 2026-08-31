@@ -623,6 +623,88 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         b0f.x3f(m,k,j,i) = bx*n2[0] + by*n2[1] + buz*n2[2];
       }
     });
+  } else if (is_mhd && iprob == 12) {
+    // BLAST WITH A UNIFORM TILTED FIELD, BUILT FROM A VECTOR POTENTIAL.
+    //
+    // A uniform B0 has the vector potential A = 0.5 * (B0 x r), and B is then taken as
+    // the DISCRETE curl -- each face value is the circulation of A around that face's own
+    // edges, divided by the face area, using the very same `dxedge` and `area` arrays
+    // mhd_ct.cpp consumes.  That makes div B vanish to ROUND-OFF by construction rather
+    // than to truncation: CT preserves whatever divergence it is handed, so an initial
+    // field projected face-by-face (which is what iprob = 8 does) starts with a small but
+    // permanent monopole on a curvilinear grid.  This follows pole_mhd_blast.cpp.
+    //
+    // A.rhat = 0.5*(B0 x r).r_hat = 0 identically, so the RADIAL edge potential A1
+    // vanishes and only the two tangential edge components are needed -- the same
+    // simplification the spherical-polar version uses.
+    //
+    // Unlike the radial split monopole the generic branch below supplies, this field has
+    // finite TANGENTIAL components on every panel, so it is the one that actually
+    // exercises the face-centred seam halo, the corner EMF and the CT update when a shock
+    // arrives.  The hydro blast tests none of that.
+    const Real b0c = pin->GetOrAddReal("problem", "b0c", 0.1);
+    const Real bhx = pin->GetOrAddReal("problem", "bhx", 0.37);
+    const Real bhy = pin->GetOrAddReal("problem", "bhy", 0.61);
+    const Real bhz = pin->GetOrAddReal("problem", "bhz", 0.70);
+    const Real bn = std::sqrt(bhx*bhx + bhy*bhy + bhz*bhz);
+    const Real bvx = b0c*bhx/bn, bvy = b0c*bhy/bn, bvz = b0c*bhz/bn;
+    cs_b0r = b0c;
+    cs_bvx = bvx; cs_bvy = bvy; cs_bvz = bvz;
+    auto &b0f = pmbp->pmhd->b0;
+    auto &ar1 = pmbp->pcoord->area.x1f;
+    auto &ar2 = pmbp->pcoord->area.x2f;
+    auto &ar3 = pmbp->pcoord->area.x3f;
+    auto &dxe2 = pmbp->pcoord->dxedge.x2e;
+    auto &dxe3 = pmbp->pcoord->dxedge.x3e;
+    auto &mbp = pmbp->pmb->mb_panel;
+    par_for("pgen_cs_bfld12", DevExeSpace(), 0,(pmbp->nmb_thispack-1),
+            ks,ke+1, js,je+1, is,ie+1,
+    KOKKOS_LAMBDA(int m, int k, int j, int i) {
+      const int p = mbp.d_view(m);
+      const Real x2mn = size.d_view(m).x2min, x2mx = size.d_view(m).x2max;
+      const Real x3mn = size.d_view(m).x3min, x3mx = size.d_view(m).x3max;
+      const Real x1mn = size.d_view(m).x1min, x1mx = size.d_view(m).x1max;
+      // A along the x2 edge (r face, xi CENTRE, eta face) and along the x3 edge
+      // (r face, xi face, eta CENTRE): the component on that edge's own UNIT tangent,
+      // which is what dxedge*A consumes.
+      auto Aedge = [&](const int ii, const int jj, const int kk, const bool along_xi) {
+        const Real rf = LeftEdgeX(ii-is, indcs.nx1, x1mn, x1mx);
+        const Real xi = 0.25*M_PI*(along_xi
+            ? CellCenterX(jj-js, indcs.nx2, x2mn, x2mx)
+            : LeftEdgeX(jj-js, indcs.nx2, x2mn, x2mx));
+        const Real et = 0.25*M_PI*(along_xi
+            ? LeftEdgeX(kk-ks, indcs.nx3, x3mn, x3mx)
+            : CellCenterX(kk-ks, indcs.nx3, x3mn, x3mx));
+        Real qh[3], e1[3], e2[3];
+        cubed_sphere::PanelToCart(p, xi, et, qh);
+        cubed_sphere::PanelTangents(p, xi, et, e1, e2);
+        // A = 0.5 * (B0 x r), r = rf * rhat
+        const Real ax = 0.5*rf*(bvy*qh[2] - bvz*qh[1]);
+        const Real ay = 0.5*rf*(bvz*qh[0] - bvx*qh[2]);
+        const Real az = 0.5*rf*(bvx*qh[1] - bvy*qh[0]);
+        const Real *t = along_xi ? e1 : e2;
+        const Real tn = sqrt(t[0]*t[0] + t[1]*t[1] + t[2]*t[2]);
+        return (ax*t[0] + ay*t[1] + az*t[2])/tn;
+      };
+      // B.n = (1/area) * circulation of A around the face, exactly as mhd_ct.cpp does it
+      if (j <= je && k <= ke) {
+        b0f.x1f(m,k,j,i) =
+            (dxe3(m,k,j+1,i)*Aedge(i,j+1,k,false) - dxe3(m,k,j,i)*Aedge(i,j,k,false)
+           - dxe2(m,k+1,j,i)*Aedge(i,j,k+1,true) + dxe2(m,k,j,i)*Aedge(i,j,k,true))
+            /ar1(m,k,j,i);
+      }
+      if (i <= ie && k <= ke) {
+        b0f.x2f(m,k,j,i) =
+            -(dxe3(m,k,j,i+1)*Aedge(i+1,j,k,false) - dxe3(m,k,j,i)*Aedge(i,j,k,false))
+            /ar2(m,k,j,i);
+      }
+      if (i <= ie && j <= je) {
+        b0f.x3f(m,k,j,i) =
+            (dxe2(m,k,j,i+1)*Aedge(i+1,j,k,true) - dxe2(m,k,j,i)*Aedge(i,j,k,true))
+            /ar3(m,k,j,i);
+      }
+    });
+
   } else if (is_mhd) {
     const Real b0r = pin->GetOrAddReal("problem", "b0r", 1.0);
     cs_b0r = b0r;
@@ -2224,9 +2306,84 @@ void CSTestBlastCheck(ParameterInput *pin, Mesh *pm) {
               "  Linf=%.4e  mean=%.4e\n", nseam, amax_s,
               (nb_used_s > 0) ? l1_s/nb_used_s : 0.0);
   std::printf("###   min pressure %.6e   min density %.6e\n", minp, mind);
+  // THE PROFILE ITSELF.  "Not NaN" and "div B at round-off" say nothing about whether the
+  // thing still looks like a blast wave.  The solution is spherically symmetric about the
+  // centre, so p(angle) must collapse onto ONE curve: print the bin mean with the spread
+  // inside the bin.  Comparing this between the INTERIOR, SEAM and VERTEX placements is a
+  // direct read of grid imprinting -- same physics, only the grid moved underneath.
+  // Per-cell scatter at ONE radial index, for plotting: on a spherically symmetric
+  // solution p(angle) must collapse to a single curve, so visible scatter IS the
+  // imprinting.  Enabled by CS_SCATTER to keep normal runs quiet.
+  if (std::getenv("CS_SCATTER") != nullptr) {
+    const int imid = (is + ie)/2;
+    for (int m=0; m<pmbp->nmb_thispack; ++m) {
+      const int p = mbpanel.h_view(m);
+      for (int k=ks; k<=ke; ++k) {
+        const Real ec = 0.25*M_PI*CellCenterX(k-ks, indcs.nx3, size.h_view(m).x3min,
+                                                               size.h_view(m).x3max);
+        for (int j=js; j<=je; ++j) {
+          const Real xc = 0.25*M_PI*CellCenterX(j-js, indcs.nx2, size.h_view(m).x2min,
+                                                                 size.h_view(m).x2max);
+          Real cx, cy, cz;
+          PanelToCart(p, xc, ec, cx, cy, cz);
+          const Real cd = cx*cs_blx + cy*cs_bly + cz*cs_blz;
+          const Real an = acos(fmin(1.0, fmax(-1.0, cd)));
+          const Real dxi = 0.25*M_PI*2.0/indcs.nx2;
+          const int sm = ((fabs(fabs(xc) - 0.25*M_PI) < 2*dxi) ||
+                          (fabs(fabs(ec) - 0.25*M_PI) < 2*dxi)) ? 1 : 0;
+          std::printf("@@PT %.6f %.6e %.6e %d %d\n", an, wh(m,IEN,k,j,imid),
+                      wh(m,IDN,k,j,imid), sm, p);
+        }
+      }
+    }
+  }
+  std::printf("###   PROFILE  bin  angle      mean_p        min_p         max_p\n");
+  for (int b=0; b<NB; ++b) {
+    if (pn[b] == 0) {
+      continue;
+    }
+    std::printf("###   PROF %3d %8.4f %13.5e %13.5e %13.5e\n", b,
+                (b + 0.5)*M_PI/NB, psum[b]/static_cast<Real>(pn[b]), pmin[b], pmax[b]);
+  }
   std::printf("###   max p domain %.4e   max p within 2 cells of a seam %.4e"
               "   front reached %.3f rad (seam at 0.785)\n",
               pmax_all, pmax_seam, angmax_shock);
+  // div B, the gate on the VECTOR-POTENTIAL construction.  B was built as the discrete
+  // curl of A on the very edges CT uses, so sum(area*B) over a cell must vanish to
+  // ROUND-OFF at t=0 -- and CT then preserves it.  A field projected face-by-face instead
+  // (iprob=8) starts with a small permanent monopole on this curvilinear grid.
+  if (pmbp->pmhd != nullptr) {
+    auto b1 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pmhd->b0.x1f);
+    auto b2 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pmhd->b0.x2f);
+    auto b3 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pmhd->b0.x3f);
+    auto a1 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->area.x1f);
+    auto a2 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->area.x2f);
+    auto a3 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->area.x3f);
+    Real dvb = 0.0, bscale = 0.0;
+    for (int m=0; m<pmbp->nmb_thispack; ++m) {
+      for (int k=ks; k<=ke; ++k) {
+        for (int j=js; j<=je; ++j) {
+          for (int i=is; i<=ie; ++i) {
+            const Real fl = b1(m,k,j,i+1)*a1(m,k,j,i+1) - b1(m,k,j,i)*a1(m,k,j,i)
+                          + b2(m,k,j+1,i)*a2(m,k,j+1,i) - b2(m,k,j,i)*a2(m,k,j,i)
+                          + b3(m,k+1,j,i)*a3(m,k+1,j,i) - b3(m,k,j,i)*a3(m,k,j,i);
+            const Real amx = fmax(a1(m,k,j,i+1), fmax(a2(m,k,j+1,i), a3(m,k+1,j,i)));
+            const Real bmg = fmax(fabs(b1(m,k,j,i)),
+                                  fmax(fabs(b2(m,k,j,i)), fabs(b3(m,k,j,i))));
+            bscale = fmax(bscale, bmg);
+            dvb = fmax(dvb, fabs(fl)/fmax(bmg*amx, 1.0e-300));
+          }
+        }
+      }
+    }
+#if MPI_PARALLEL_ENABLED
+    Real dd_[2] = {dvb, bscale};
+    MPI_Allreduce(MPI_IN_PLACE, dd_, 2, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+    dvb = dd_[0];  bscale = dd_[1];
+#endif
+    std::printf("###   max |sum A.B| / (|B| max A) = %.4e   (|B|max %.4e)\n",
+                dvb, bscale);
+  }
   std::printf("###   NON-FINITE cells: %lld of %lld   (within 2 cells of a seam:"
               " %lld of %lld)\n",
               static_cast<long long>(nnan), static_cast<long long>(ntot),
