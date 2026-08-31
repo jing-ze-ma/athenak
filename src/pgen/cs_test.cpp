@@ -349,6 +349,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
 
   // The equiangular coordinates are xi = (pi/4) x1, eta = (pi/4) x2, matching
   // Coordinates::CoordGnomonicEquiangle, so x1 and x2 both run over [-1,1].
+  // iprob=12 blast parameters, copied into locals: `cs_bl*` are file-scope HOST
+  // variables and a device lambda may not reference them (nvcc/hipcc reject it outright;
+  // a CPU build compiles happily, which is why this only showed on the GPU).
+  const Real blx_ = cs_blx, bly_ = cs_bly, blz_ = cs_blz;
+  const Real blang_ = cs_blang, blp_ = cs_blp;
+
   par_for("pgen_cs_test", DevExeSpace(), 0,(pmbp->nmb_thispack-1), ks,ke, js,je, is,ie,
   KOKKOS_LAMBDA(int m, int k, int j, int i) {
     // x1 is RADIAL; xi = x2 and eta = x3, matching CoordGnomonicEquiangle.
@@ -375,10 +381,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       // grid sits under the physics.
       Real cx, cy, cz;
       PanelToCart(mbpanel.d_view(m), xi, eta, cx, cy, cz);
-      const Real cdot = cx*cs_blx + cy*cs_bly + cz*cs_blz;
+      const Real cdot = cx*blx_ + cy*bly_ + cz*blz_;
       const Real ang = acos(fmin(1.0, fmax(-1.0, cdot)));
       w0(m,IDN,k,j,i) = d0;
-      w0(m,IEN,k,j,i) = ((ang < cs_blang) ? cs_blp : p0)/gm1;
+      w0(m,IEN,k,j,i) = ((ang < blang_) ? blp_ : p0)/gm1;
       w0(m,IVX,k,j,i) = 0.0;
       w0(m,IVY,k,j,i) = 0.0;
       w0(m,IVZ,k,j,i) = 0.0;
