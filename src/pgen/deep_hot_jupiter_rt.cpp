@@ -650,7 +650,14 @@ KOKKOS_INLINE_FUNCTION
 Real ck_planck_frac(const DvceArray2D<Real> &pf, const Real lTmin, const Real idlT,
                     const Real &T, const int b) {
   Real x = (log10(T) - lTmin)*idlT;
-  x = (x < 0.0) ? 0.0 : ((x > CK_NPF-1.0) ? CK_NPF-1.0 : x);
+  // NaN DEFEATS AN ORDINARY CLAMP.  `NaN < 0` and `NaN > hi` are BOTH false, so a
+  // two-sided ternary passes NaN straight through, and static_cast<int>(NaN) is INT_MIN:
+  // the lookup then indexes the table at -2147483648 and SEGFAULTS.  Measured -- a
+  // cubed-sphere run whose upper atmosphere underflowed below the EOS table's 71 K floor
+  // died exactly here, while spherical polar merely produced NaN and kept going.  Writing
+  // the low test as !(x > 0) makes NaN take the low branch, which turns a crash into a
+  // clamped value the surrounding NaN checks can still notice.
+  x = !(x > 0.0) ? 0.0 : ((x > CK_NPF-1.0) ? CK_NPF-1.0 : x);
   int i = static_cast<int>(x);
   i = (i > CK_NPF-2) ? CK_NPF-2 : i;
   const Real f = x - static_cast<Real>(i);
@@ -661,7 +668,8 @@ KOKKOS_INLINE_FUNCTION
 void ck_planck_bands(const DvceArray2D<Real> &pf, const Real lTmin, const Real idlT,
                      const Real &sigT4_pi, const Real &T, Real (&Bb)[CK_NB]) {
   Real x = (log10(T) - lTmin)*idlT;
-  x = (x < 0.0) ? 0.0 : ((x > CK_NPF-1.0) ? CK_NPF-1.0 : x);
+  // NaN-safe, for the reason spelled out in ck_planck_frac above.
+  x = !(x > 0.0) ? 0.0 : ((x > CK_NPF-1.0) ? CK_NPF-1.0 : x);
   int i = static_cast<int>(x);
   i = (i > CK_NPF-2) ? CK_NPF-2 : i;
   const Real f = x - static_cast<Real>(i);
@@ -1006,7 +1014,10 @@ void read_ck_continuum(const std::string &dir, const std::string &swfile) {
 KOKKOS_INLINE_FUNCTION
 void ck_tp_index(const DvceArray1D<Real> &lg, const int n, const Real &x,
                  int &i, Real &f) {
-  if (x <= lg(0)) { i = 0; f = 0.0; return; }
+  // !(x > lg(0)) rather than x <= lg(0), so a NaN takes this branch instead of falling
+  // through to the bisection, which would return a valid index with a NaN FRACTION and
+  // quietly poison kappa. See the note in ck_planck_frac.
+  if (!(x > lg(0))) { i = 0; f = 0.0; return; }
   if (x >= lg(n-1)) { i = n-2; f = 1.0; return; }
   int lo = 0;
   int hi = n-1;
