@@ -2228,8 +2228,123 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             bcc0(m,IBZ,k,j,i) = lw*b0.x3f(m,k,j,i) + rw*b0x3fkp;
               
             u0_(m,IEN,k,j,i) += 0.5*(SQR(bcc0(m,IBX,k,j,i))+SQR(bcc0(m,IBY,k,j,i))+SQR(bcc0(m,IBZ,k,j,i)));
+          } else if (use_cubed_sphere_) {
+            // CUBED SPHERE.  The same dipole, built the same way: each face value is the
+            // circulation of A around that face's own edges divided by the face area,
+            // using the very `dxedge` and `area` arrays mhd_ct.cpp consumes.  That makes
+            // div B vanish to ROUND-OFF rather than to truncation -- CT preserves the
+            // divergence it is handed, so a field projected face by face would keep a
+            // small permanent monopole on this grid.  Follows cs_test iprob = 12.
+            //
+            // A = A_phi phihat with A_phi = 0.5*bbot*r0*sin(theta)/(r/r0)^2, which is the
+            // spherical-polar expression above.  In Cartesian components
+            // sin(theta)*phihat is (-y,x,0)/r, so no angle is ever formed and the axis
+            // is not special:
+            //   A = 0.5*bbot*r0/(rf/r0)^2 * (-qhat_y, qhat_x, 0).
+            // A.rhat = 0 identically, so the RADIAL edge potential vanishes and only the
+            // two tangential edge components are needed.  Unlike spherical polar, where
+            // phihat IS the x3 direction, both panel tangents see the field here, so the
+            // x2-edge component is not zero.
+            const int p = mbpanel_.d_view(m);
+            // The component of A on an edge's own UNIT tangent, which is what dxedge*A
+            // consumes.  `along_xi` selects the x2 edge (radial face, xi CENTRE, eta
+            // face) over the x3 edge (radial face, xi face, eta CENTRE).  x2/x3 are PANEL
+            // coordinates on [-1,1], not angles: the angle is pi/4 times the coordinate.
+            auto Aedge = [&](const int ii, const int jj, const int kk,
+                             const bool along_xi) {
+              const Real rf = x1f_(m,ii);
+              const Real xi = 0.25*M_PI*(along_xi ? x2v_(m,jj) : x2f_(m,jj));
+              const Real et = 0.25*M_PI*(along_xi ? x3f_(m,kk) : x3v_(m,kk));
+              Real qh[3], e1[3], e2[3];
+              cubed_sphere::PanelToCart(p, xi, et, qh);
+              cubed_sphere::PanelTangents(p, xi, et, e1, e2);
+              const Real aphi = 0.5*bbot*r0/SQR(rf/r0);
+              const Real ax = -aphi*qh[1];
+              const Real ay =  aphi*qh[0];
+              const Real *t = along_xi ? e1 : e2;
+              const Real tn = sqrt(t[0]*t[0] + t[1]*t[1] + t[2]*t[2]);
+              return (ax*t[0] + ay*t[1])/tn;
+            };
+            b0.x1f(m,k,j,i) =
+                (dxe3(m,k,j+1,i)*Aedge(i,j+1,k,false) - dxe3(m,k,j,i)*Aedge(i,j,k,false)
+               - dxe2(m,k+1,j,i)*Aedge(i,j,k+1,true) + dxe2(m,k,j,i)*Aedge(i,j,k,true))
+                /area1(m,k,j,i);
+            b0.x2f(m,k,j,i) =
+                -(dxe3(m,k,j,i+1)*Aedge(i+1,j,k,false)
+                - dxe3(m,k,j,i)*Aedge(i,j,k,false))/area2(m,k,j,i);
+            b0.x3f(m,k,j,i) =
+                (dxe2(m,k,j,i+1)*Aedge(i+1,j,k,true)
+               - dxe2(m,k,j,i)*Aedge(i,j,k,true))/area3(m,k,j,i);
+            // the far faces of the last cell in each direction, which no cell owns
+            Real b0x1fip = (dxe3(m,k,j+1,i+1)*Aedge(i+1,j+1,k,false)
+                          - dxe3(m,k,j,i+1)*Aedge(i+1,j,k,false)
+                          - dxe2(m,k+1,j,i+1)*Aedge(i+1,j,k+1,true)
+                          + dxe2(m,k,j,i+1)*Aedge(i+1,j,k,true))/area1(m,k,j,i+1);
+            Real b0x2fjp = -(dxe3(m,k,j+1,i+1)*Aedge(i+1,j+1,k,false)
+                           - dxe3(m,k,j+1,i)*Aedge(i,j+1,k,false))/area2(m,k,j+1,i);
+            Real b0x3fkp = (dxe2(m,k+1,j,i+1)*Aedge(i+1,j,k+1,true)
+                          - dxe2(m,k+1,j,i)*Aedge(i,j,k+1,true))/area3(m,k+1,j,i);
+            if (i==n1m1) b0.x1f(m,k,j,i+1) = b0x1fip;
+            if (j==n2m1) b0.x2f(m,k,j+1,i) = b0x2fjp;
+            if (k==n3m1) b0.x3f(m,k+1,j,i) = b0x3fkp;
+
+            // bcc must be formed the way ConsToPrim forms it on THIS grid -- the plain
+            // average (the non-spherical-polar branch of general_mhd.cpp), not the
+            // volume-centroid weights -- or the magnetic energy added here and the one
+            // subtracted on the first C2P disagree.
+            bcc0(m,IBX,k,j,i) = 0.5*(b0.x1f(m,k,j,i) + b0x1fip);
+            bcc0(m,IBY,k,j,i) = 0.5*(b0.x2f(m,k,j,i) + b0x2fjp);
+            bcc0(m,IBZ,k,j,i) = 0.5*(b0.x3f(m,k,j,i) + b0x3fkp);
+
+            u0_(m,IEN,k,j,i) += 0.5*(SQR(bcc0(m,IBX,k,j,i))
+                                   + SQR(bcc0(m,IBY,k,j,i))
+                                   + SQR(bcc0(m,IBZ,k,j,i)));
           }
       });
+
+      // GATE ON THE CONSTRUCTION, printed once.  Two numbers, because div B alone is
+      // satisfied by a ZERO field -- which is exactly what the cubed sphere silently had
+      // before this branch existed.  B is the discrete curl of A on the very edges CT
+      // uses, so sum(area*B) over a cell must vanish to ROUND-OFF at t=0, and |B|max must
+      // be of order bbot.
+      {
+        auto b1 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), b0.x1f);
+        auto b2 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), b0.x2f);
+        auto b3 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), b0.x3f);
+        auto a1 = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
+                                                      pmbp->pcoord->area.x1f);
+        auto a2 = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
+                                                      pmbp->pcoord->area.x2f);
+        auto a3 = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
+                                                      pmbp->pcoord->area.x3f);
+        Real dvb = 0.0, bscale = 0.0;
+        for (int m=0; m<pmbp->nmb_thispack; ++m) {
+          for (int k=ks; k<=ke; ++k) {
+            for (int j=js; j<=je; ++j) {
+              for (int i=is; i<=ie; ++i) {
+                Real fl = b1(m,k,j,i+1)*a1(m,k,j,i+1) - b1(m,k,j,i)*a1(m,k,j,i)
+                        + b2(m,k,j+1,i)*a2(m,k,j+1,i) - b2(m,k,j,i)*a2(m,k,j,i)
+                        + b3(m,k+1,j,i)*a3(m,k+1,j,i) - b3(m,k,j,i)*a3(m,k,j,i);
+                Real amx = fmax(a1(m,k,j,i+1), fmax(a2(m,k,j+1,i), a3(m,k+1,j,i)));
+                Real bmg = fmax(fabs(b1(m,k,j,i)),
+                                fmax(fabs(b2(m,k,j,i)), fabs(b3(m,k,j,i))));
+                bscale = fmax(bscale, bmg);
+                dvb = fmax(dvb, fabs(fl)/fmax(bmg*amx, 1.0e-300));
+              }
+            }
+          }
+        }
+#if MPI_PARALLEL_ENABLED
+        Real dd_[2] = {dvb, bscale};
+        MPI_Allreduce(MPI_IN_PLACE, dd_, 2, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+        dvb = dd_[0];  bscale = dd_[1];
+#endif
+        if (global_variable::my_rank == 0) {
+          std::cout << "deep_hot_jupiter_rt: initial B -- max |sum area*B|"
+                    << " / (|B| max area) = " << dvb << ", max |B| = " << bscale
+                    << " G (bbot = " << bbot << ")" << std::endl;
+        }
+      }
     }
 
     // On a restart u0 and b0 are restored exactly, ghost zones included, but bcc0 is a
