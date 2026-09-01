@@ -325,23 +325,99 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
             auto bx3 = [&](const int kk, const int jj, const int i) {
               return cs_coar ? cb.x3f(m,kk,jj,i) : b.x3f(m,kk,jj,i);
             };
-            // b.x3f at (eta face kf, xi FACE jf), interpolated across xi
+            //
+            // CO-LOCATING THE PARTNER COMPONENT MUST BE 4th ORDER ON *BOTH* AXES.
+            //
+            // The partner is moved onto the primary's location by two successive
+            // interpolations on ORTHOGONAL axes (see `srcval`). A 2-point midpoint
+            // average is second order in VALUE, and the resistive curl differences the
+            // halo over h, so an O(h^2) ghost value is a FIRST ORDER current -- which is
+            // exactly the measured seam order of 1.00. Two comparable O(h^2) terms on
+            // orthogonal axes means raising ONE of them halves the amplitude and cannot
+            // move the order; that was measured, and it is why the earlier one-axis
+            // experiment failed. Both axes are raised here.
+            //
+            // PROVED BEFORE IT WAS WRITTEN, by an oracle A/B that replaced only the
+            // partner with the analytic field at the primary's own (xi,eta): every
+            // category that sat at 1.75-1.90 -- including the two SWAP ones that were
+            // immune to every earlier switch -- went to 2.92-3.26, with the amplitude
+            // down 9-78x, while x1f (which has no partner) stayed bitwise identical.
+            // So the co-location is the WHOLE binding term in the seam halo.
+            //
+            // A CENTRED wide stencil is NOT ENOUGH, and the reason is structural: a
+            // seam buffer packs the cells at the EDGE of the active range, so in the
+            // seam-NORMAL direction a centred 4-point formula never fits and silently
+            // degrades to the 2-point average over the WHOLE packed range -- which
+            // measured 1.80/1.90, i.e. exactly the baseline, for a strictly more
+            // expensive stencil. What is needed is a fourth-order interpolation whose
+            // WINDOW SLIDES INWARD instead of degrading.
+            //
+            // `lag4` is the cubic through four consecutive samples starting at index w,
+            // evaluated at offset t = target - w. The window is CLAMPED into the active
+            // range, so it never reads the source block's own ghosts -- which on a panel
+            // seam are themselves halo data, in general stale and uninitialised in a
+            // first exchange -- and it stays fourth order right up to the edge, becoming
+            // one-sided rather than low order. At the two ends of a seam the target lies
+            // outside the active samples and the same window extrapolates, still cubic.
+            auto lag4 = [](const Real t, const Real f0, const Real f1,
+                                         const Real f2, const Real f3) {
+              return -(t-1.0)*(t-2.0)*(t-3.0)/6.0*f0
+                     + t*(t-2.0)*(t-3.0)/2.0*f1
+                     - t*(t-1.0)*(t-3.0)/2.0*f2
+                     + t*(t-1.0)*(t-2.0)/6.0*f3;
+            };
+            // Fewer than four samples on an axis leaves no cubic window; fall back to
+            // the original second-order forms there. Same degeneracy the along-seam
+            // resample guards against, and for the same reason.
+            const bool wide2 = (je_ - js_ >= 3);
+            const bool wide3 = (ke_ - ks_ >= 3);
+            // b.x3f at (eta face kf, xi FACE jf), interpolated across xi. b.x3f lives at
+            // xi CELL CENTRES, and xi face jf sits at cell-index jf-0.5.
             auto x3f_at_xiface = [&](const int kf, const int jf, const int i) {
-              if (jf-1 < js_) {
-                return 1.5*bx3(kf,js_,i) - 0.5*bx3(kf,js_+1,i);
-              } else if (jf > je_) {
-                return 1.5*bx3(kf,je_,i) - 0.5*bx3(kf,je_-1,i);
+              if (!wide2) {
+                if (jf-1 < js_) { return 1.5*bx3(kf,js_,i) - 0.5*bx3(kf,js_+1,i); }
+                if (jf   > je_) { return 1.5*bx3(kf,je_,i) - 0.5*bx3(kf,je_-1,i); }
+                return 0.5*(bx3(kf,jf-1,i) + bx3(kf,jf,i));
               }
-              return 0.5*(bx3(kf,jf-1,i) + bx3(kf,jf,i));
+              int w = jf-2;
+              w = (w < js_) ? js_ : ((w > je_-3) ? je_-3 : w);
+              return lag4(static_cast<Real>(jf) - 0.5 - static_cast<Real>(w),
+                          bx3(kf,w,i), bx3(kf,w+1,i), bx3(kf,w+2,i), bx3(kf,w+3,i));
             };
             // b.x2f at (eta FACE kf, xi face jf), interpolated across eta
             auto x2f_at_etaface = [&](const int kf, const int jf, const int i) {
-              if (kf-1 < ks_) {
-                return 1.5*bx2(ks_,jf,i) - 0.5*bx2(ks_+1,jf,i);
-              } else if (kf > ke_) {
-                return 1.5*bx2(ke_,jf,i) - 0.5*bx2(ke_-1,jf,i);
+              if (!wide3) {
+                if (kf-1 < ks_) { return 1.5*bx2(ks_,jf,i) - 0.5*bx2(ks_+1,jf,i); }
+                if (kf   > ke_) { return 1.5*bx2(ke_,jf,i) - 0.5*bx2(ke_-1,jf,i); }
+                return 0.5*(bx2(kf-1,jf,i) + bx2(kf,jf,i));
               }
-              return 0.5*(bx2(kf-1,jf,i) + bx2(kf,jf,i));
+              int w = kf-2;
+              w = (w < ks_) ? ks_ : ((w > ke_-3) ? ke_-3 : w);
+              return lag4(static_cast<Real>(kf) - 0.5 - static_cast<Real>(w),
+                          bx2(w,jf,i), bx2(w+1,jf,i), bx2(w+2,jf,i), bx2(w+3,jf,i));
+            };
+            // The OUTER interpolation, on the axis ORTHOGONAL to the one above: it takes
+            // values living on the eta FACES (index range ks_..ke_+1) to the eta CENTRE
+            // of cell kk, which sits at face-index kk+0.5. Same clamped cubic window.
+            auto x3f_at_etacentre = [&](const int kk, const int jj, const int i) {
+              if (!wide3) {
+                return 0.5*(x3f_at_xiface(kk,jj,i) + x3f_at_xiface(kk+1,jj,i));
+              }
+              int w = kk-1;
+              w = (w < ks_) ? ks_ : ((w > ke_-2) ? ke_-2 : w);
+              return lag4(static_cast<Real>(kk) + 0.5 - static_cast<Real>(w),
+                          x3f_at_xiface(w,jj,i),   x3f_at_xiface(w+1,jj,i),
+                          x3f_at_xiface(w+2,jj,i), x3f_at_xiface(w+3,jj,i));
+            };
+            auto x2f_at_xicentre = [&](const int kk, const int jj, const int i) {
+              if (!wide2) {
+                return 0.5*(x2f_at_etaface(kk,jj,i) + x2f_at_etaface(kk,jj+1,i));
+              }
+              int w = jj-1;
+              w = (w < js_) ? js_ : ((w > je_-2) ? je_-2 : w);
+              return lag4(static_cast<Real>(jj) + 0.5 - static_cast<Real>(w),
+                          x2f_at_etaface(kk,w,i),   x2f_at_etaface(kk,w+1,i),
+                          x2f_at_etaface(kk,w+2,i), x2f_at_etaface(kk,w+3,i));
             };
             //
             // The (xi,eta) of a source sample, with the STAGGERING of component vv:
@@ -365,11 +441,11 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
               if (vv == 1) {
                 // primary on a XI face: (xi face jj, eta centre kk)
                 bxi = bx2(kk,jj,i);
-                bet = 0.5*(x3f_at_xiface(kk,jj,i) + x3f_at_xiface(kk+1,jj,i));
+                bet = x3f_at_etacentre(kk,jj,i);
               } else {
                 // primary on an ETA face: (xi centre jj, eta face kk)
                 bet = bx3(kk,jj,i);
-                bxi = 0.5*(x2f_at_etaface(kk,jj,i) + x2f_at_etaface(kk,jj+1,i));
+                bxi = x2f_at_xicentre(kk,jj,i);
               }
               // ---- SHEAR CORRECTION: the two charts' faces are not the same surface --
               //
@@ -388,8 +464,7 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
               // which is ZERO at the seam midpoint (eta_B = 0) and grows monotonically to
               // 1 at the cube vertex.  Averaging f over a line tilted by sigma instead of
               // a flat one gives, with the linear term killed by centring,
-               //  <f>_recv - <f>_src = sigma*(dxi^2/12)*d2f/dxi deta + O(sigma^2 h^2)
-               //  <f>_recv - <f>_src = sigma*(dxi^2/12)*d2f/dxi deta + O(sigma^2 h^2)
+              //  <f>_recv - <f>_src = sigma*(dxi^2/12)*d2f/dxi deta + O(sigma^2 h^2)
               //
               // MEASURED before this was written (cs_test's seam-jump gate, nlim=0, so
               // the halo machinery alone): the component whose face is the SHARED seam
