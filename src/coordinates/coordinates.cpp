@@ -750,11 +750,15 @@ void Coordinates::CoordGnomonicEquiangle() {
 //! amount that does NOT decrease under grid refinement.
 //!
 //! This runs immediately after ConsToPrim and overwrites what it wrote for IVX/IVY/IVZ
-//! and IEN. Density, the floors and the scalars are left exactly as ConsToPrim left them.
+//! and IEN. Density and the scalars are left exactly as ConsToPrim left them. The ENERGY
+//! FLOORS are re-applied here rather than inherited: ConsToPrim floored an internal
+//! energy computed with an orthonormal kinetic energy, and the metric cross term added
+//! below moves it, so the floor has to be retested against the corrected value (and u0
+//! updated to match). See the note at the floor itself.
 //! Non-relativistic ideal/general hydro only -- the relativistic inversions are coupled
 //! and would need the metric inside the root find, not after it.
 
-void Coordinates::GnomonicEquiangleRaiseVel(const DvceArray5D<Real> &u0,
+void Coordinates::GnomonicEquiangleRaiseVel(DvceArray5D<Real> &u0,
     DvceArray5D<Real> &w0, const EOS_Data &eos_data, const DvceArray5D<Real> &wder,
     const DvceArray4D<Real> &wtemp, const int il, const int iu, const int jl,
     const int ju, const int kl, const int ku) {
@@ -789,15 +793,51 @@ void Coordinates::GnomonicEquiangleRaiseVel(const DvceArray5D<Real> &u0,
     w0(m,IVY,k,j,i) = v2;
     w0(m,IVZ,k,j,i) = v3;
     // KE = 0.5 rho g_ij v^i v^j = 0.5 m_i v^i, which is the cross-term-correct form.
-    const Real eint = u0(m,IEN,k,j,i) - 0.5*(m1*v1 + m2*v2 + m3*v3);
-    w0(m,IEN,k,j,i) = eint;
+    Real eint = u0(m,IEN,k,j,i) - 0.5*(m1*v1 + m2*v2 + m3*v3);
+    // ---------------------------------------------------------------------------------
+    // RE-APPLY THE FLOORS.  ConsToPrim floored the state it inverted, but that state
+    // carried an ORTHONORMAL kinetic energy; the metric cross term above MOVES the
+    // internal energy, so a cell ConsToPrim left comfortably above the floor can land
+    // below it -- or below zero -- here.  Leaving that unfloored hands a non-positive
+    // internal energy straight to the tabulated inversion below, which is undefined
+    // there and returns NaN in T, p and Gamma_1; the NaN then leaves the cell through
+    // the reconstruction stencil and takes the whole grid down within ~100 cycles.
+    // The sequence deliberately mirrors SingleC2P_GeneralHyd, including its guard
+    // against inverting a non-positive energy.  NOTE the pressure floor alone is NOT
+    // sufficient under a tabulated EOS: at upper-atmosphere densities e(d,pfloor) lies
+    // far below the table's lowest temperature, so it is the TEMPERATURE floor that
+    // actually keeps the lookup in range.  u0 is updated in step, exactly as ConsToPrim
+    // updates cons when a floor fires, so the conserved energy cannot keep sinking and
+    // re-trip the floor on every cycle.
     if (gen_) {
-      Real tnew, pnew, g1new;
-      eos_.TemperaturePressureGamma1(d, eint, wtemp_(m,k,j,i), tnew, pnew, g1new);
+      Real temp = -1.0, pnew = 0.0, g1new = 0.0;
+      const bool e_positive = (eint > 0.0);
+      bool stale = !e_positive;
+      if (e_positive) {
+        eos_.TemperaturePressureGamma1(d, eint, wtemp_(m,k,j,i), temp, pnew, g1new);
+      }
+      if (!e_positive || pnew < eos_.pfloor) {
+        eint = eos_.EnergyFromPressure(d, eos_.pfloor, temp);
+        stale = true;
+      }
+      if (temp < eos_.tfloor) {
+        eint = eos_.EnergyFromTemperature(d, eos_.tfloor);
+        temp = eos_.tfloor;
+        stale = true;
+      }
+      if (stale) {
+        eos_.PressureAndGamma1(d, eint, temp, pnew, g1new);
+        u0(m,IEN,k,j,i) = eint + 0.5*(m1*v1 + m2*v2 + m3*v3);
+      }
       wder_(m,IDPR,k,j,i) = pnew;
       wder_(m,IDG1,k,j,i) = g1new;
-      wtemp_(m,k,j,i) = tnew;
+      wtemp_(m,k,j,i) = temp;
+    } else {
+      const Real eold = eint;
+      eos_.ApplyEnergyFloor(d, eint);
+      if (eint != eold) { u0(m,IEN,k,j,i) = eint + 0.5*(m1*v1+m2*v2+m3*v3); }
     }
+    w0(m,IEN,k,j,i) = eint;
   });
   return;
 }
@@ -827,7 +867,7 @@ void Coordinates::GnomonicEquiangleRaiseVel(const DvceArray5D<Real> &u0,
 //! applied them -- it tested them against an internal energy that lacked both the metric
 //! cross term and the corrected magnetic energy.
 
-void Coordinates::GnomonicEquiangleRaiseVelMHD(const DvceArray5D<Real> &u0,
+void Coordinates::GnomonicEquiangleRaiseVelMHD(DvceArray5D<Real> &u0,
     const DvceFaceFld4D<Real> &b0, DvceArray5D<Real> &bcc0, DvceArray5D<Real> &w0,
     const EOS_Data &eos_data, const DvceArray5D<Real> &wder,
     const DvceArray4D<Real> &wtemp, const int il, const int iu, const int jl,
@@ -872,17 +912,48 @@ void Coordinates::GnomonicEquiangleRaiseVelMHD(const DvceArray5D<Real> &u0,
     w0(m,IVX,k,j,i) = v1;
     w0(m,IVY,k,j,i) = v2;
     w0(m,IVZ,k,j,i) = v3;
-    // the frame is orthonormal, so the magnetic energy IS the sum of squares
-    const Real eint = u0(m,IEN,k,j,i) - 0.5*(m1*v1 + m2*v2 + m3*v3)
-                                      - 0.5*(bx*bx + by*by + bz*bz);
-    w0(m,IEN,k,j,i) = eint;
+    // the frame is orthonormal, so the magnetic energy IS the sum of squares.
+    // Keep the two subtractions separate and in this order: folding them into a single
+    // (kinetic + magnetic) sum re-associates the rounding and perturbs every ideal-EOS
+    // cubed-sphere answer in the last bits, for nothing.
+    Real eint = u0(m,IEN,k,j,i) - 0.5*(m1*v1 + m2*v2 + m3*v3)
+                                - 0.5*(bx*bx + by*by + bz*bz);
+    // Re-apply the floors to the CORRECTED internal energy; see the extended note in
+    // GnomonicEquiangleRaiseVel above. Without this the tabulated inversion below is
+    // handed a non-positive energy and returns NaN.
     if (gen_) {
-      Real tnew, pnew, g1new;
-      eos_.TemperaturePressureGamma1(d, eint, wtemp_(m,k,j,i), tnew, pnew, g1new);
+      Real temp = -1.0, pnew = 0.0, g1new = 0.0;
+      const bool e_positive = (eint > 0.0);
+      bool stale = !e_positive;
+      if (e_positive) {
+        eos_.TemperaturePressureGamma1(d, eint, wtemp_(m,k,j,i), temp, pnew, g1new);
+      }
+      if (!e_positive || pnew < eos_.pfloor) {
+        eint = eos_.EnergyFromPressure(d, eos_.pfloor, temp);
+        stale = true;
+      }
+      if (temp < eos_.tfloor) {
+        eint = eos_.EnergyFromTemperature(d, eos_.tfloor);
+        temp = eos_.tfloor;
+        stale = true;
+      }
+      if (stale) {
+        eos_.PressureAndGamma1(d, eint, temp, pnew, g1new);
+        u0(m,IEN,k,j,i) = eint + 0.5*(m1*v1 + m2*v2 + m3*v3)
+                                 + 0.5*(bx*bx + by*by + bz*bz);
+      }
       wder_(m,IDPR,k,j,i) = pnew;
       wder_(m,IDG1,k,j,i) = g1new;
-      wtemp_(m,k,j,i) = tnew;
+      wtemp_(m,k,j,i) = temp;
+    } else {
+      const Real eold = eint;
+      eos_.ApplyEnergyFloor(d, eint);
+      if (eint != eold) {
+        u0(m,IEN,k,j,i) = eint + 0.5*(m1*v1 + m2*v2 + m3*v3)
+                               + 0.5*(bx*bx + by*by + bz*bz);
+      }
     }
+    w0(m,IEN,k,j,i) = eint;
   });
   return;
 }

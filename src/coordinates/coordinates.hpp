@@ -107,13 +107,13 @@ class Coordinates {
   // (contravariant, which is what GnomonicEquianglePrimFaceX* and the gnomonic source
   // terms consume) are different objects. These two convert between them with the metric
   // g = [[1, cos],[cos, 1]] on the unit-normalised basis, plus g_33 = 1 radially.
-  void GnomonicEquiangleRaiseVel(const DvceArray5D<Real> &u0, DvceArray5D<Real> &w0,
+  void GnomonicEquiangleRaiseVel(DvceArray5D<Real> &u0, DvceArray5D<Real> &w0,
                                  const EOS_Data &eos_data,
                                  const DvceArray5D<Real> &wder,
                                  const DvceArray4D<Real> &wtemp,
                                  const int il, const int iu, const int jl, const int ju,
                                  const int kl, const int ku);
-  void GnomonicEquiangleRaiseVelMHD(const DvceArray5D<Real> &u0,
+  void GnomonicEquiangleRaiseVelMHD(DvceArray5D<Real> &u0,
                                     const DvceFaceFld4D<Real> &b0,
                                     DvceArray5D<Real> &bcc0, DvceArray5D<Real> &w0,
                                     const EOS_Data &eos_data,
