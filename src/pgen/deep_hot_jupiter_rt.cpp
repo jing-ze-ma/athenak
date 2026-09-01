@@ -2914,18 +2914,24 @@ void SourceFunc(Mesh *pm, Real bdt) {
           x2v = x2v_(m,j);
           x3v = x3v_(m,k);
         } else {
+          // ASSIGN the x1v/x2v/x3v declared above -- do NOT redeclare them.  These three
+          // lines used to read `Real x1v = ...`, which SHADOWED the outer variables and
+          // threw the values away at the closing brace, leaving the outer ones
+          // uninitialised for every non-spherical-polar grid.  Nothing exercised that
+          // path until the cubed sphere did, and the result was the whole domain going
+          // NaN on the first source-term application.
           Real &x1min = size.d_view(m).x1min;
           Real &x1max = size.d_view(m).x1max;
-          Real x1v = CellCenterX(i-is, indcs.nx1, x1min, x1max);
+          x1v = CellCenterX(i-is, indcs.nx1, x1min, x1max);
           ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, x1v);
-        
+
           Real &x2min = size.d_view(m).x2min;
           Real &x2max = size.d_view(m).x2max;
-          Real x2v = CellCenterX(j-js, indcs.nx2, x2min, x2max);
-        
+          x2v = CellCenterX(j-js, indcs.nx2, x2min, x2max);
+
           Real &x3min = size.d_view(m).x3min;
           Real &x3max = size.d_view(m).x3max;
-          Real x3v = CellCenterX(k-ks, indcs.nx3, x3min, x3max);
+          x3v = CellCenterX(k-ks, indcs.nx3, x3min, x3max);
         }
         
         Real lam, phi, z, theta, r;
