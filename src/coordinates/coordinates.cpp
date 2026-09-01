@@ -467,6 +467,19 @@ void Coordinates::CoordGnomonicEquiangle() {
   int n2m1 = (indcs.nx2 > 1)? (indcs.nx2 + 2*ng - 1) : 0;
   int n3m1 = (indcs.nx3 > 1)? (indcs.nx3 + 2*ng - 1) : 0;
 
+  // THE RADIAL GRID STRETCH.  x1 is radial on this grid exactly as it is in spherical
+  // polar, so the SAME 1-D map applies -- it is a function of the radial coordinate
+  // alone and knows nothing about the angular grid, which is why it transplants
+  // unchanged.  Only use_grid_stretch_theta stays refused (mesh.cpp): theta is not a
+  // coordinate of this grid.
+  const bool str_r_ = pmy_pack->pmesh->use_grid_stretch_r;
+  const bool str_rp_ = pmy_pack->pmesh->use_grid_stretch_r_poly;
+  const Real fstr_r_ = pmy_pack->pmesh->fStretchR;
+  const Real rmin_ = pmy_pack->pmesh->mesh_size.x1min;
+  const Real rmax_ = pmy_pack->pmesh->mesh_size.x1max;
+  Real cpoly_[NSTRETCH_R_POLY];
+  for (int n=0; n<NSTRETCH_R_POLY; ++n) { cpoly_[n] = pmy_pack->pmesh->fStretchRPoly[n]; }
+
   // THE 1-D COORDINATE ARRAYS.  They are ALLOCATED for the cubed sphere (the constructor
   // guard covers both curvilinear grids) but were never FILLED here, so every consumer
   // read ZEROS.  That is not a quiet inaccuracy: the hot-Jupiter pgen's hydrostatic outer
@@ -484,10 +497,17 @@ void Coordinates::CoordGnomonicEquiangle() {
     auto x3v_ = x3v;  auto xx3f_ = xx3f;
     par_for("cs_coord1d_1", DevExeSpace(), 0,nmb1, 0,n1m1,
     KOKKOS_LAMBDA(const int m, const int i) {
-      const Real r_l = LeftEdgeX(i-is, indcs.nx1, size.d_view(m).x1min,
-                                                  size.d_view(m).x1max);
-      const Real r_r = LeftEdgeX(i-is+1, indcs.nx1, size.d_view(m).x1min,
-                                                    size.d_view(m).x1max);
+      Real r_l = LeftEdgeX(i-is, indcs.nx1, size.d_view(m).x1min,
+                                            size.d_view(m).x1max);
+      Real r_r = LeftEdgeX(i-is+1, indcs.nx1, size.d_view(m).x1min,
+                                              size.d_view(m).x1max);
+      if (str_r_) {
+        StretchR(fstr_r_, rmin_, rmax_, r_l);
+        StretchR(fstr_r_, rmin_, rmax_, r_r);
+      } else if (str_rp_) {
+        StretchRPoly(cpoly_, rmin_, rmax_, r_l);
+        StretchRPoly(cpoly_, rmin_, rmax_, r_r);
+      }
       const Real q = r_l/r_r;
       x1v_(m,i) = 0.25*(q*q + 1.0)/((1.0/3.0)*(q*q + q + 1.0))*(r_r + r_l);
       xx1f_(m,i) = r_l;
@@ -547,6 +567,16 @@ void Coordinates::CoordGnomonicEquiangle() {
     Real r_c = CellCenterX(i-is, indcs.nx1, size.d_view(m).x1min, size.d_view(m).x1max);
     Real r_l = LeftEdgeX(i-is, indcs.nx1, size.d_view(m).x1min, size.d_view(m).x1max);
     Real r_r = LeftEdgeX(i+1-is, indcs.nx1, size.d_view(m).x1min, size.d_view(m).x1max);
+    // the radial stretch, applied exactly as CoordSphericalPolar applies it
+    if (str_r_) {
+      StretchR(fstr_r_, rmin_, rmax_, r_c);
+      StretchR(fstr_r_, rmin_, rmax_, r_l);
+      StretchR(fstr_r_, rmin_, rmax_, r_r);
+    } else if (str_rp_) {
+      StretchRPoly(cpoly_, rmin_, rmax_, r_c);
+      StretchRPoly(cpoly_, rmin_, rmax_, r_l);
+      StretchRPoly(cpoly_, rmin_, rmax_, r_r);
+    }
 
     // --- angles: xi on x2, eta on x3 ---
     Real &x2min = size.d_view(m).x2min; Real &x2max = size.d_view(m).x2max;

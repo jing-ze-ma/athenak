@@ -190,12 +190,13 @@ Mesh::Mesh(ParameterInput *pin) :
   // cubed sphere they would be silently IGNORED by the solver while still being recorded
   // in the input file -- and analysis scripts, which have to re-apply the map to x1v
   // themselves, would then mis-map the grid. Fatal rather than let the two disagree.
-  if (use_cubed_sphere &&
-      (use_grid_stretch_r || use_grid_stretch_r_poly || use_grid_stretch_theta)) {
+  // The RADIAL stretch is now applied by CoordGnomonicEquiangle too, so it is allowed.
+  // use_grid_stretch_theta is not and cannot be: theta is not a coordinate of this grid.
+  if (use_cubed_sphere && use_grid_stretch_theta) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-              << std::endl << "mesh/use_grid_stretch_r, use_grid_stretch_r_poly and "
-              << "use_grid_stretch_theta are not implemented for mesh/use_cubed_sphere; "
-              << "the gnomonic metric would ignore them" << std::endl;
+              << std::endl << "mesh/use_grid_stretch_theta is not meaningful for "
+              << "mesh/use_cubed_sphere: theta is not a coordinate of that grid. The "
+              << "RADIAL stretches are supported." << std::endl;
     std::exit(EXIT_FAILURE);
   }
   use_polar_boundary = pin->GetOrAddBoolean("mesh", "use_polar_boundary", false);
