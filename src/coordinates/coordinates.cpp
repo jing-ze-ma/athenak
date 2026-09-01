@@ -467,6 +467,56 @@ void Coordinates::CoordGnomonicEquiangle() {
   int n2m1 = (indcs.nx2 > 1)? (indcs.nx2 + 2*ng - 1) : 0;
   int n3m1 = (indcs.nx3 > 1)? (indcs.nx3 + 2*ng - 1) : 0;
 
+  // THE 1-D COORDINATE ARRAYS.  They are ALLOCATED for the cubed sphere (the constructor
+  // guard covers both curvilinear grids) but were never FILLED here, so every consumer
+  // read ZEROS.  That is not a quiet inaccuracy: the hot-Jupiter pgen's hydrostatic outer
+  // boundary forms (x1f[i+1] - x1v[i])/(x1f[i+1] - x1f[i]), which is 0/0, and it turned
+  // the entire domain to NaN in ONE cycle while the run reported a normal exit.
+  //
+  // x1 is the RADIUS, exactly as in CoordSphericalPolar, so it gets the same volume-
+  // centroid definition (Mignone 2014) and the two grids agree cell for cell.  x2 and x3
+  // are the PANEL coordinates on [-1,1] and are NOT angles -- anything that needs an
+  // angle must go through the panel chart, because the direction depends on which panel
+  // the cell is on.
+  {
+    auto x1v_ = x1v;  auto xx1f_ = xx1f;
+    auto x2v_ = x2v;  auto xx2f_ = xx2f;
+    auto x3v_ = x3v;  auto xx3f_ = xx3f;
+    par_for("cs_coord1d_1", DevExeSpace(), 0,nmb1, 0,n1m1,
+    KOKKOS_LAMBDA(const int m, const int i) {
+      const Real r_l = LeftEdgeX(i-is, indcs.nx1, size.d_view(m).x1min,
+                                                  size.d_view(m).x1max);
+      const Real r_r = LeftEdgeX(i-is+1, indcs.nx1, size.d_view(m).x1min,
+                                                    size.d_view(m).x1max);
+      const Real q = r_l/r_r;
+      x1v_(m,i) = 0.25*(q*q + 1.0)/((1.0/3.0)*(q*q + q + 1.0))*(r_r + r_l);
+      xx1f_(m,i) = r_l;
+      if (i == n1m1) { xx1f_(m,i+1) = r_r; }
+    });
+    par_for("cs_coord1d_2", DevExeSpace(), 0,nmb1, 0,n2m1,
+    KOKKOS_LAMBDA(const int m, const int j) {
+      x2v_(m,j) = CellCenterX(j-js, indcs.nx2, size.d_view(m).x2min,
+                                               size.d_view(m).x2max);
+      xx2f_(m,j) = LeftEdgeX(j-js, indcs.nx2, size.d_view(m).x2min,
+                                              size.d_view(m).x2max);
+      if (j == n2m1) {
+        xx2f_(m,j+1) = LeftEdgeX(j-js+1, indcs.nx2, size.d_view(m).x2min,
+                                                    size.d_view(m).x2max);
+      }
+    });
+    par_for("cs_coord1d_3", DevExeSpace(), 0,nmb1, 0,n3m1,
+    KOKKOS_LAMBDA(const int m, const int k) {
+      x3v_(m,k) = CellCenterX(k-ks, indcs.nx3, size.d_view(m).x3min,
+                                               size.d_view(m).x3max);
+      xx3f_(m,k) = LeftEdgeX(k-ks, indcs.nx3, size.d_view(m).x3min,
+                                              size.d_view(m).x3max);
+      if (k == n3m1) {
+        xx3f_(m,k+1) = LeftEdgeX(k-ks+1, indcs.nx3, size.d_view(m).x3min,
+                                                    size.d_view(m).x3max);
+      }
+    });
+  }
+
   auto volume_ = volume;
   auto area_ = area;
   auto dx1_ = dx1;

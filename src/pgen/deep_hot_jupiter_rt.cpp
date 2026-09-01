@@ -30,6 +30,7 @@
 #include "pgen.hpp"
 #include "pgen_eos_utils.hpp"
 #include "diffusion/resistivity.hpp"
+#include "coordinates/cubed_sphere.hpp"
 
 #include <Kokkos_Random.hpp>
 
@@ -82,6 +83,34 @@ Real TGuess(const DvceArray4D<Real> &wt, const int m, const int k, const int j,
 //! This bounds the damage; it does not make the step accurate. A run that trips it is
 //! reporting that its floors, or its timestep, put the radiation outside the regime the
 //! scheme is valid in -- which is why tripping it is warned about exactly once.
+//----------------------------------------------------------------------------------------
+//! \fn void CSCellAngles
+//! \brief The cell's spherical direction on the CUBED SPHERE, in the same convention the
+//! spherical-polar branch uses: theta the COLATITUDE, lam the LATITUDE, phi the LONGITUDE
+//! measured from the SUBSTELLAR point.
+//!
+//! On the cubed sphere x2 and x3 are the two panel-tangential coordinates on [-1,1], not
+//! angles, so there is no expression in them alone -- the direction depends on WHICH
+//! PANEL the cell is on.  Go through the chart: xi = pi/4 * x2, eta = pi/4 * x3, then
+//! PanelToCart gives the unit direction and the angles follow from it.
+//!
+//! THE LONGITUDE ORIGIN MUST MATCH.  The spherical-polar branch uses phi = x3v - M_PI, so
+//! the substellar point sits at coordinate longitude pi, i.e. along -x.  atan2(-cy,-cx)
+//! is atan2(cy,cx) rotated by pi and already lands in (-pi, pi], which is the same
+//! interval that branch produces -- no wrapping needed.
+KOKKOS_INLINE_FUNCTION
+void CSCellAngles(const int panel, const Real x2v, const Real x3v,
+                  Real &theta, Real &lam, Real &phi) {
+  Real q[3];
+  cubed_sphere::PanelToCart(panel, 0.25*M_PI*x2v, 0.25*M_PI*x3v, q);
+  const Real cx = q[0], cy = q[1], cz = q[2];
+  const Real cr = sqrt(cx*cx + cy*cy + cz*cz);
+  const Real cth = (cr > 0.0) ? (cz/cr) : 0.0;
+  theta = acos(fmin(1.0, fmax(-1.0, cth)));
+  lam = 0.5*M_PI - theta;
+  phi = atan2(-cy, -cx);
+}
+
 KOKKOS_INLINE_FUNCTION
 Real LimitRTSource(const Real de, const Real eint, const Real de_max) {
   const Real cap = de_max*eint;
@@ -1357,6 +1386,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   bool use_wellbalance_static = false;
   bool use_wellbalance_dynamic = false;
   const bool use_spherical_polar = pmy_mesh_->use_spherical_polar;
+  // The cubed sphere needs the cell's PANEL to turn (x2,x3) into a direction; see
+  // CSCellAngles.  Captured by value / as a DualArray so the device lambdas below can
+  // read it without touching `this`.
+  const bool use_cubed_sphere_ = pmy_mesh_->use_cubed_sphere;
   bool user_srcs = pin->GetOrAddBoolean("problem","user_srcs",false);
   if (user_srcs) user_srcs_func = SourceFunc;
   // read before anything restart-sensitive: the outer BC needs it on restarts too
@@ -1442,6 +1475,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   int &js = indcs.js; int &je = indcs.je;
   int &ks = indcs.ks; int &ke = indcs.ke;
   MeshBlockPack *pmbp = pmy_mesh_->pmb_pack;
+  // the cell's PANEL, which is what turns (x2,x3) into a direction on the cubed sphere
+  auto &mbpanel_ = pmbp->pmb->mb_panel;
   auto &size = pmbp->pmb->mb_size;
   auto &mb_bcs = pmbp->pmb->mb_bcs;
   int &ng = indcs.ng;
@@ -1533,17 +1568,22 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     Real grav_acc = -pin->GetReal("problem","grav");
     Real ap = pin->GetReal("problem","ap");
     // Gravity model: constant g (default, historical) or a point mass with the same g0 at
-    // ap. Only meaningful in spherical polar -- in the Cartesian branch x1v is a
-    // height in
-    // a plane-parallel box and there is no r to fall off with.
+    // ap. Needs a RADIAL x1, which spherical polar and the CUBED SPHERE both have -- in
+    // the Cartesian branch x1v is a height in a plane-parallel box and there is no r to
+    // fall off with.
     const bool grav_pmass = pin->GetOrAddBoolean("problem","grav_point_mass",false);
-    if (grav_pmass && !use_spherical_polar) {
+    if (grav_pmass && !(use_spherical_polar || use_cubed_sphere_)) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                 << std::endl
-                << "problem/grav_point_mass requires mesh/use_spherical_polar"
+                << "problem/grav_point_mass requires a radial x1: "
+                << "mesh/use_spherical_polar or mesh/use_cubed_sphere"
                 << std::endl;
       exit(EXIT_FAILURE);
     }
+    // The stellar tide is NOT extended to the cubed sphere: it writes acceleration
+    // components in the spherical (r, theta, phi) basis, and the gnomonic tangent pair is
+    // neither that basis nor orthonormal, so the expressions would be silently wrong
+    // rather than merely untested. It is deliberately off in production anyway.
     const bool tide = pin->GetOrAddBoolean("problem","stellar_tide",false);
     if (tide && !use_spherical_polar) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
@@ -1677,13 +1717,15 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         x3v = CellCenterX(k-ks, nx3, x3min, x3max);
       }
       Real r = x1v;
-      if (use_spherical_polar) x1v -= ap;
+      if (use_spherical_polar || use_cubed_sphere_) x1v -= ap;
         
       Real lam, theta, phi;
       if (use_spherical_polar) {
         theta = x2v;
         lam = -x2v+M_PI/2.0;
         phi = x3v-M_PI;
+      } else if (use_cubed_sphere_) {
+        CSCellAngles(mbpanel_.d_view(m), x2v, x3v, theta, lam, phi);
       } else {
         theta = -(x2v*iap-M_PI/2.0);
         lam = x2v*iap;
@@ -1744,13 +1786,15 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
           x3v = CellCenterX(k-ks, nx3, x3min, x3max);
         }
         Real r = x1v;
-        if (use_spherical_polar) x1v -= ap;
+        if (use_spherical_polar || use_cubed_sphere_) x1v -= ap;
           
         Real lam, theta, phi;
         if (use_spherical_polar) {
           theta = x2v;
           lam = -x2v+M_PI/2.0;
           phi = x3v-M_PI;
+        } else if (use_cubed_sphere_) {
+          CSCellAngles(mbpanel_.d_view(m), x2v, x3v, theta, lam, phi);
         } else {
           theta = -(x3v*iap-M_PI/2.0);
           lam = x3v*iap;
@@ -1781,11 +1825,13 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             x3v = CellCenterX(k-ks, nx3, x3min, x3max);
           }
           r = x1v;
-          if (use_spherical_polar) x1v -= ap;
+          if (use_spherical_polar || use_cubed_sphere_) x1v -= ap;
           if (use_spherical_polar) {
             theta = x2v;
             lam = -x2v+M_PI/2.0;
             phi = x3v-M_PI;
+          } else if (use_cubed_sphere_) {
+            CSCellAngles(mbpanel_.d_view(m), x2v, x3v, theta, lam, phi);
           } else {
             theta = -(x3v*iap-M_PI/2.0);
             lam = x3v*iap;
@@ -1801,11 +1847,13 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                 ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, x1v);
               }
               r = x1v;
-              if (use_spherical_polar) x1v -= ap;
+              if (use_spherical_polar || use_cubed_sphere_) x1v -= ap;
               if (use_spherical_polar) {
                 theta = x2v;
                 lam = -x2v+M_PI/2.0;
                 phi = x3v-M_PI;
+              } else if (use_cubed_sphere_) {
+                CSCellAngles(mbpanel_.d_view(m), x2v, x3v, theta, lam, phi);
               } else {
                 theta = -(x3v*iap-M_PI/2.0);
                 lam = x3v*iap;
@@ -1826,11 +1874,13 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             x3v = CellCenterX(k-ks, nx3, x3min, x3max);
           }
           r = x1v;
-          if (use_spherical_polar) x1v -= ap;
+          if (use_spherical_polar || use_cubed_sphere_) x1v -= ap;
           if (use_spherical_polar) {
             theta = x2v;
             lam = -x2v+M_PI/2.0;
             phi = x3v-M_PI;
+          } else if (use_cubed_sphere_) {
+            CSCellAngles(mbpanel_.d_view(m), x2v, x3v, theta, lam, phi);
           } else {
             theta = -(x3v*iap-M_PI/2.0);
             lam = x3v*iap;
@@ -1848,6 +1898,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                 theta = x2v;
                 lam = -x2v+M_PI/2.0;
                 phi = x3v-M_PI;
+              } else if (use_cubed_sphere_) {
+                CSCellAngles(mbpanel_.d_view(m), x2v, x3v, theta, lam, phi);
               } else {
                 theta = -(x3v*iap-M_PI/2.0);
                 lam = x3v*iap;
@@ -1868,11 +1920,13 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             x3v = LeftEdgeX(k-ks, nx3, x3min, x3max);
           }
           r = x1v;
-          if (use_spherical_polar) x1v -= ap;
+          if (use_spherical_polar || use_cubed_sphere_) x1v -= ap;
           if (use_spherical_polar) {
             theta = x2v;
             lam = -x2v+M_PI/2.0;
             phi = x3v-M_PI;
+          } else if (use_cubed_sphere_) {
+            CSCellAngles(mbpanel_.d_view(m), x2v, x3v, theta, lam, phi);
           } else {
             theta = -(x3v*iap-M_PI/2.0);
             lam = x3v*iap;
@@ -1890,6 +1944,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                 theta = x2v;
                 lam = -x2v+M_PI/2.0;
                 phi = x3v-M_PI;
+              } else if (use_cubed_sphere_) {
+                CSCellAngles(mbpanel_.d_view(m), x2v, x3v, theta, lam, phi);
               } else {
                 theta = -(x3v*iap-M_PI/2.0);
                 lam = x3v*iap;
@@ -1910,7 +1966,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
               x2v = CellCenterX(j-js, nx2, x2min, x2max);
               x3v = CellCenterX(k-ks, nx3, x3min, x3max);
             }
-            if (use_spherical_polar) x1v -= ap;
+            if (use_spherical_polar || use_cubed_sphere_) x1v -= ap;
             Real denwb;
             get_wb_eos(eos, Rgas, grav_acc, zarr.d_view,logparr.d_view,x1v,denwb,pwb);
             w0facewb_x1f(m,IDN,k,j,i) = denwb;
@@ -1925,7 +1981,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                   x1v = LeftEdgeX(i+1-is, nx1, x1min, x1max);
                   ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, x1v);
                 }
-                if (use_spherical_polar) x1v -= ap;
+                if (use_spherical_polar || use_cubed_sphere_) x1v -= ap;
                 get_wb_eos(eos, Rgas, grav_acc, zarr.d_view,logparr.d_view,x1v,denwb,pwb);
                 w0facewb_x1f(m,IDN,k,j,i+1) = denwb;
                 w0facewb_x1f(m,IM1,k,j,i+1) = 0.0;
@@ -1944,7 +2000,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
               x2v = LeftEdgeX(j-js, nx2, x2min, x2max);
               x3v = CellCenterX(k-ks, nx3, x3min, x3max);
             }
-            if (use_spherical_polar) x1v -= ap;
+            if (use_spherical_polar || use_cubed_sphere_) x1v -= ap;
             get_wb_eos(eos, Rgas, grav_acc, zarr.d_view,logparr.d_view,x1v,denwb,pwb);
             w0facewb_x2f(m,IDN,k,j,i) = denwb;
             w0facewb_x2f(m,IM1,k,j,i) = 0.0;
@@ -1969,7 +2025,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
               x2v = CellCenterX(j-js, nx2, x2min, x2max);
               x3v = LeftEdgeX(k-ks, nx3, x3min, x3max);
             }
-            if (use_spherical_polar) x1v -= ap;
+            if (use_spherical_polar || use_cubed_sphere_) x1v -= ap;
             get_wb_eos(eos, Rgas, grav_acc, zarr.d_view,logparr.d_view,x1v,denwb,pwb);
             w0facewb_x3f(m,IDN,k,j,i) = denwb;
             w0facewb_x3f(m,IM1,k,j,i) = 0.0;
@@ -2015,13 +2071,15 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
               x3v = CellCenterX(k-ks, nx3, x3min, x3max);
             }
             Real r = x1v;
-            if (use_spherical_polar) x1v -= ap;
+            if (use_spherical_polar || use_cubed_sphere_) x1v -= ap;
               
             Real lam, theta, phi;
             if (use_spherical_polar) {
               theta = x2v;
               lam = -x2v+M_PI/2.0;
               phi = x3v-M_PI;
+            } else if (use_cubed_sphere_) {
+              CSCellAngles(mbpanel_.d_view(m), x2v, x3v, theta, lam, phi);
             } else {
               theta = -(x3v*iap-M_PI/2.0);
               lam = x3v*iap;
@@ -2073,7 +2131,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             x3v = CellCenterX(k-ks, nx3, x3min, x3max);
           }
           Real r = x1v;
-          if (use_spherical_polar) x1v -= ap;
+          if (use_spherical_polar || use_cubed_sphere_) x1v -= ap;
             
           Real pwb, denwb;
           get_wb_eos(eos, Rgas, grav_acc, zarr.d_view,logparr.d_view,x1v,denwb,pwb);
@@ -2745,6 +2803,9 @@ void HydrostaticEquilibrium(Mesh *pm) {
 
 
 void SourceFunc(Mesh *pm, Real bdt) {
+  // the cubed sphere needs the cell's PANEL to turn (x2,x3) into a direction
+  const bool use_cubed_sphere_ = pm->use_cubed_sphere;
+  auto &mbpanel_ = pm->pmb_pack->pmb->mb_panel;
     auto &indcs = pm->mb_indcs;
     int &ng = indcs.ng;
     int n1 = indcs.nx1 + 2*ng;
@@ -2861,6 +2922,10 @@ void SourceFunc(Mesh *pm, Real bdt) {
           theta = x2v;
           lam = -theta+M_PI/2.0;
           phi = x3v-M_PI;
+          z = x1v-ap;
+          r = x1v;
+        } else if (use_cubed_sphere_) {
+          CSCellAngles(mbpanel_.d_view(m), x2v, x3v, theta, lam, phi);
           z = x1v-ap;
           r = x1v;
         } else {
@@ -3015,6 +3080,9 @@ void SourceFunc(Mesh *pm, Real bdt) {
 }
 
 void double_gray_two_stream_RT(Mesh *pm, Real bdt) {
+  // the cubed sphere needs the cell's PANEL to turn (x2,x3) into a direction
+  const bool use_cubed_sphere_ = pm->use_cubed_sphere;
+  auto &mbpanel_ = pm->pmb_pack->pmb->mb_panel;
     auto &indcs = pm->mb_indcs;
     int &ng = indcs.ng;
     int n1 = indcs.nx1 + 2*ng;
@@ -3118,6 +3186,8 @@ void double_gray_two_stream_RT(Mesh *pm, Real bdt) {
           theta = x2v;
           lam = -theta+M_PI/2.0;
           phi = x3v-M_PI;
+        } else if (use_cubed_sphere_) {
+          CSCellAngles(mbpanel_.d_view(m), x2v, x3v, theta, lam, phi);
         } else {
           lam = x3v*iap;
           theta = -lam+M_PI/2.0;
@@ -3238,6 +3308,9 @@ void double_gray_two_stream_RT(Mesh *pm, Real bdt) {
 }
 
 void double_gray_two_stream_RT_source(Mesh *pm, Real bdt) {
+  // the cubed sphere needs the cell's PANEL to turn (x2,x3) into a direction
+  const bool use_cubed_sphere_ = pm->use_cubed_sphere;
+  auto &mbpanel_ = pm->pmb_pack->pmb->mb_panel;
     auto &indcs = pm->mb_indcs;
     int &ng = indcs.ng;
     int n1 = indcs.nx1 + 2*ng;
@@ -3331,6 +3404,8 @@ void double_gray_two_stream_RT_source(Mesh *pm, Real bdt) {
           theta = x2v;
           lam = -theta+M_PI/2.0;
           phi = x3v-M_PI;
+        } else if (use_cubed_sphere_) {
+          CSCellAngles(mbpanel_.d_view(m), x2v, x3v, theta, lam, phi);
         } else {
           lam = x3v*iap;
           theta = -lam+M_PI/2.0;
@@ -4236,6 +4311,9 @@ void adjust_ad_pT_arr(const EOS_Data &eos, const Real &Rgas, const Real &gamma, 
 }
 
 void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
+  // the cubed sphere needs the cell's PANEL to turn (x2,x3) into a direction
+  const bool use_cubed_sphere_ = pm->use_cubed_sphere;
+  auto &mbpanel_ = pm->pmb_pack->pmb->mb_panel;
     // Noti+2023; Lee+2021
     
     auto &indcs = pm->mb_indcs;
@@ -4450,6 +4528,8 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
             theta = x2v;
             lam = -theta+M_PI/2.0;
             phi = x3v-M_PI;
+          } else if (use_cubed_sphere_) {
+            CSCellAngles(mbpanel_.d_view(m), x2v, x3v, theta, lam, phi);
           } else {
             lam = x3v*iap;
             theta = -lam+M_PI/2.0;
@@ -4517,6 +4597,8 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
           theta = x2v;
           lam = -theta+M_PI/2.0;
           phi = x3v-M_PI;
+        } else if (use_cubed_sphere_) {
+          CSCellAngles(mbpanel_.d_view(m), x2v, x3v, theta, lam, phi);
         } else {
           lam = x3v*iap;
           theta = -lam+M_PI/2.0;
@@ -5044,6 +5126,8 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
             theta = x2v;
             lam = -theta+M_PI/2.0;
             phi = x3v-M_PI;
+          } else if (use_cubed_sphere_) {
+            CSCellAngles(mbpanel_.d_view(m), x2v, x3v, theta, lam, phi);
           } else {
             lam = x3v*iap;
             theta = -lam+M_PI/2.0;
