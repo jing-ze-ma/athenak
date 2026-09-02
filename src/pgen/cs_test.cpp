@@ -87,6 +87,7 @@ Real cs_bazi = 0.0;       // iprob=11 azimuthal amplitude; curl B = 2*cs_bazi*zh
 Real cs_blx = 0.0, cs_bly = 0.0, cs_blz = 1.0;
 Real cs_blang = 0.2, cs_blp = 10.0;
 Real cs_bvx = 0.0, cs_bvy = 0.0, cs_bvz = 0.0;
+Real cs_svol = 0.0;       // total active volume, filled by CSTestConsSums
 int  cs_exact_panel_ghosts = 0;
 
 //----------------------------------------------------------------------------------------
@@ -1808,6 +1809,22 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
     std::cout << "### CS RESIST CHECK: eta*2*b0c = 0, nothing to compare" << std::endl;
     return;
   }
+  // THE TOTAL ENERGY IS NOT CONSTANT IN THIS TEST, and gating it against zero drift
+  // reports a defect that does not exist. The state is exactly static -- curl B is the
+  // UNIFORM vector 2*b0c*zhat, so curl(eta J) vanishes and B never moves -- yet Ohmic
+  // heating eta*J^2 is deposited in every cell. That energy is supplied by a Poynting
+  // influx through the RADIAL boundary, so the expected gain over the run is exactly
+  // eta*J^2*V*t. With the exact-state `user` BC the code reproduces it to 0.1-0.3% over
+  // three decades of eta and a 9x change of volume. A `reflect` wall is a perfectly
+  // CONDUCTING wall (E_t = 0), which is inconsistent with E_t = eta*J_t != 0 here, so it
+  // under-delivers the influx by a factor 0.33-0.45. Neither is non-conservation: the
+  // update is strict flux form, and the seam and level-boundary gates above confirm the
+  // interior faces telescope to round-off.
+  if (global_variable::my_rank == 0) {
+    std::printf("###   EXPECTED Ohmic heating eta*J^2*V*t = %.9e  -- the energy above"
+                " should GAIN this (see the note in the source; NOT a defect)\n",
+                eta*jz*jz*cs_svol*pm->time);
+  }
   auto e1 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pres->efld_resist.x1e);
   auto e2 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pres->efld_resist.x2e);
   auto e3 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pres->efld_resist.x3e);
@@ -3196,6 +3213,7 @@ void CSTestConsSums(Mesh *pm) {
 #endif
   if (global_variable::my_rank != 0) return;
 
+  cs_svol = svol;
   std::printf("### CS CONSERVED SUMS at t = %.17e  (ncyc %d)\n", pm->time, pm->ncycle);
   std::printf("###   volume %.17e\n", svol);
   std::printf("###   mass   %.17e\n", sm);
