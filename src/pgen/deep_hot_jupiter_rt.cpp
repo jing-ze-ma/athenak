@@ -12,6 +12,7 @@
 #include <cmath>
 #include <iostream> // cout
 #include <fstream>  // ifstream, for the correlated-k table
+#include <sstream>  // ostringstream, for the photosphere dump
 #include <string>
 #include <vector>
 
@@ -187,6 +188,8 @@ template <typename View1D>
 void get_picket_fence_pT_arr(const EOS_Data &eos, const Real &Rgas, const Real &gamma, const Real &Tint, const Real &Tirr, const Real &met, const Real &grav, const Real &mus, const int &N, View1D Tarr, View1D lgparr);
 template <typename View1D>
 void adjust_ad_pT_arr(const EOS_Data &eos, const Real &Rgas, const Real &gamma, const int &N, View1D Tarr, View1D lgparr);
+
+void DhjPhotosphereDump(ParameterInput *pin, Mesh *pm);
 
 KOKKOS_INLINE_FUNCTION
 void get_daynight_Tp(const Real &p, Real &Tn, Real &Td);
@@ -646,8 +649,11 @@ void build_planck_fractions() {
 //! \fn Real ck_planck_frac()
 //  \brief f_b(T) for a single band. Uniform log10 T grid, so the index is arithmetic.
 
+// Templated on the view type so the SAME lookup serves the device kernels and the
+// host-side photosphere diagnostic, whose mirrors live in a different memory space.
+template <typename PFView>
 KOKKOS_INLINE_FUNCTION
-Real ck_planck_frac(const DvceArray2D<Real> &pf, const Real lTmin, const Real idlT,
+Real ck_planck_frac(const PFView &pf, const Real lTmin, const Real idlT,
                     const Real &T, const int b) {
   Real x = (log10(T) - lTmin)*idlT;
   // NaN DEFEATS AN ORDINARY CLAMP.  `NaN < 0` and `NaN > hi` are BOTH false, so a
@@ -664,8 +670,9 @@ Real ck_planck_frac(const DvceArray2D<Real> &pf, const Real lTmin, const Real id
   return (1.0-f)*pf(i,b) + f*pf(i+1,b);
 }
 
+template <typename PFView>
 KOKKOS_INLINE_FUNCTION
-void ck_planck_bands(const DvceArray2D<Real> &pf, const Real lTmin, const Real idlT,
+void ck_planck_bands(const PFView &pf, const Real lTmin, const Real idlT,
                      const Real &sigT4_pi, const Real &T, Real (&Bb)[CK_NB]) {
   Real x = (log10(T) - lTmin)*idlT;
   // NaN-safe, for the reason spelled out in ck_planck_frac above.
@@ -1040,8 +1047,9 @@ void ck_tp_index(const DvceArray1D<Real> &lg, const int n, const Real &x,
 //  handling several chains in one cell computes them once. Measurement says the index
 //  arithmetic is not the cost either way.
 
+template <typename LKView>
 KOKKOS_INLINE_FUNCTION
-Real ck_kappa(const DvceArray4D<Real> &lk, const int iT, const Real &fT,
+Real ck_kappa(const LKView &lk, const int iT, const Real &fT,
               const int iP, const Real &fP, const int b, const int g) {
   const Real k00 = lk(b, g, iT  , iP  );
   const Real k01 = lk(b, g, iT  , iP+1);
@@ -1403,6 +1411,13 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   const bool use_cubed_sphere_ = pmy_mesh_->use_cubed_sphere;
   bool user_srcs = pin->GetOrAddBoolean("problem","user_srcs",false);
   if (user_srcs) user_srcs_func = SourceFunc;
+  // problem/photosphere_dump = <file> writes the tau = 2/3 level per band and per
+  // g-point at the end of the run, using the run's own correlated-k opacity.  Needs one
+  // RT evaluation first (the per-cell tables are allocated lazily), so restart and take a
+  // single cycle rather than running it at nlim = 0.
+  if (!pin->GetOrAddString("problem", "photosphere_dump", "").empty()) {
+    pgen_final_func = DhjPhotosphereDump;
+  }
   // read before anything restart-sensitive: the outer BC needs it on restarts too
   bc_outer_maxwell = pin->GetOrAddBoolean("problem","bc_outer_maxwell",true);
   if (global_variable::my_rank == 0) {
@@ -3696,6 +3711,200 @@ void double_gray_two_stream_RT_source(Mesh *pm, Real bdt) {
     return;
 }
 
+
+//----------------------------------------------------------------------------------------
+//! \fn void DhjPhotosphereDump
+//! \brief The tau = 2/3 PHOTOSPHERE, per band and g-point, from the run's OWN opacity.
+//!
+//! WHY THIS EXISTS.  An isobar is not the observed surface.  What a telescope sees is the
+//! level where the vertical optical depth reaches ~2/3, and on an ultra-hot Jupiter that
+//! level is not one surface: it sits DEEP in a window between water bands and HIGH in a
+//! band centre, and it rises on the dayside where H- opacity climbs with temperature.
+//! Presenting a single pressure level as "the observed surface" hides all three effects.
+//!
+//! The opacity is not re-derived here.  It is the identical lookup the longwave sweep
+//! uses -- `ck_kappa(...) + rt_kc` -- so the photosphere reported is the one the run's
+//! own radiative transfer saw, not a model of it.  Requires the correlated-k path and
+//! at least one RT evaluation, because the per-cell tables are allocated lazily: restart
+//! and take a single cycle.
+//!
+//! DEFINITION, stated because it is a choice.  Optical depth is accumulated VERTICALLY
+//! (kappa*rho*dr, with no 1/mu slant factor) downwards from the top, starting from the
+//! hydrostatic column above the domain that the sweep's own top boundary term adds.  For
+//! each (band, g-point) the crossing tau = 2/3 is located by interpolating in log tau
+//! against log p.  A band's reported level is the g-WEIGHTED MEAN of log p over its
+//! g-points, i.e. the emission-weighted level; the spread between its lowest and
+//! g-point is the window-to-line-core range, which is the point of the diagnostic.  The
+//! broadband level weights bands by the local Planck fraction f_b(T).
+//!
+//! A g-point whose tau = 2/3 lies ABOVE the domain top is reported as p = 0: the model
+//! does not contain that emitting level, which is a fact about the grid worth seeing
+//! rather than clamping silently away.
+
+void DhjPhotosphereDump(ParameterInput *pin, Mesh *pm) {
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  const std::string fname = pin->GetOrAddString("problem", "photosphere_dump", "");
+  if (fname.empty()) return;
+  if (!rt_ck || ck_lk_ptr == nullptr || rt_xT_ptr == nullptr || rt_kc_ptr == nullptr) {
+    if (global_variable::my_rank == 0) {
+      std::cout << "### photosphere_dump: needs the correlated-k path AND at least one RT"
+                << " evaluation (the per-cell tables are allocated lazily) -- restart and"
+                << " run one cycle. Nothing written." << std::endl;
+    }
+    return;
+  }
+  const Real TAU_PH = 2.0/3.0;
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie;
+  const int js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb = pmbp->nmb_thispack;
+
+  auto xT = Kokkos::create_mirror_view_and_copy(HostMemSpace(), *rt_xT_ptr);
+  auto xP = Kokkos::create_mirror_view_and_copy(HostMemSpace(), *rt_xP_ptr);
+  auto pbr = Kokkos::create_mirror_view_and_copy(HostMemSpace(), *rt_pb_ptr);
+  auto Tc = Kokkos::create_mirror_view_and_copy(HostMemSpace(), *rt_T_ptr);
+  auto kc = Kokkos::create_mirror_view_and_copy(HostMemSpace(), *rt_kc_ptr);
+  auto cf = Kokkos::create_mirror_view_and_copy(HostMemSpace(), *rt_cf_ptr);
+  auto lk = Kokkos::create_mirror_view_and_copy(HostMemSpace(), *ck_lk_ptr);
+  auto gw = Kokkos::create_mirror_view_and_copy(HostMemSpace(), *ck_gw_ptr);
+  auto wl = Kokkos::create_mirror_view_and_copy(HostMemSpace(), *ck_wl_ptr);
+  auto pf = Kokkos::create_mirror_view_and_copy(HostMemSpace(), *ck_pf_ptr);
+  auto w0h = Kokkos::create_mirror_view_and_copy(HostMemSpace(),
+                 (pmbp->phydro != nullptr) ? pmbp->phydro->w0 : pmbp->pmhd->w0);
+  auto dx1 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->dx1);
+  auto x1v = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->x1v);
+  auto x2v = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->x2v);
+  auto x3v = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->x3v);
+
+  const HotJupiterParam &hj = pm->pgen->hot_jupiter_param;
+  std::ostringstream os;
+  os.precision(7);
+  os << std::scientific;
+  if (global_variable::my_rank == 0) {
+    os << "# AthenaK tau=2/3 photosphere, from the run's own correlated-k opacity\n"
+       << "# t = " << pm->time << " s   cycle " << pm->ncycle << "\n"
+       << "# bands " << CK_NB << "  g-points " << CK_NG << "\n"
+       << "# band edges [um], descending:";
+    for (int b=0; b<=CK_NB; ++b) os << " " << wl(b);
+    os << "\n# lat_deg lon_deg band lam_lo_um lam_hi_um p_eff_bar p_deep_bar p_high_bar"
+       << " r_eff_cm\n"
+       << "# p = 0 means tau=2/3 lies above the domain top; band index " << CK_NB
+       << " is the broadband, Planck-weighted level\n";
+  }
+
+  Real tau[CK_NG], plev[CK_NG], rlev[CK_NG];
+  for (int m=0; m<nmb; ++m) {
+    for (int k=ks; k<=ke; ++k) {
+      const Real lon = (x3v(m,k) - M_PI)*180.0/M_PI;
+      for (int j=js; j<=je; ++j) {
+        const Real lat = 90.0 - x2v(m,j)*180.0/M_PI;
+        const Real mu0 = cf(m,k,j,3);
+        Real pbb[CK_NB+1], rbb[CK_NB+1], pdeep[CK_NB+1], phigh[CK_NB+1];
+        for (int b=0; b<CK_NB; ++b) {
+          // start each g-point from the hydrostatic column ABOVE the domain, exactly as
+          // the sweep's own top boundary term does
+          const Real ptop = pbr(m,k,j,ie+1);
+          const int iT0 = static_cast<int>(xT(m,k,j,ie+1));
+          const int iP0 = static_cast<int>(xP(m,k,j,ie+1));
+          const Real fT0 = xT(m,k,j,ie+1) - static_cast<Real>(iT0);
+          const Real fP0 = xP(m,k,j,ie+1) - static_cast<Real>(iP0);
+          const Real gtop = EffGravAt(hj.grav, hj.ap, x1v(m,ie+1), hj.grav_point_mass,
+                                      hj.omega, mu0, hj.stellar_tide);
+          for (int g=0; g<CK_NG; ++g) {
+            const Real kap = ck_kappa(lk, iT0, fT0, iP0, fP0, b, g) + kc(m,b,ie+1,k,j);
+            tau[g] = kap*ptop*1.0e6/gtop;
+            plev[g] = 0.0;
+            rlev[g] = 0.0;
+          }
+          for (int i=ie; i>=is; --i) {
+            const int iT = static_cast<int>(xT(m,k,j,i));
+            const int iP = static_cast<int>(xP(m,k,j,i));
+            const Real fT = xT(m,k,j,i) - static_cast<Real>(iT);
+            const Real fP = xP(m,k,j,i) - static_cast<Real>(iP);
+            const Real drho = w0h(m,IDN,k,j,i)*dx1(m,k,j,i);
+            for (int g=0; g<CK_NG; ++g) {
+              if (plev[g] != 0.0) continue;
+              const Real t0 = tau[g];
+              tau[g] += (ck_kappa(lk, iT, fT, iP, fP, b, g) + kc(m,b,i,k,j))*drho;
+              if (tau[g] >= TAU_PH && t0 < TAU_PH) {
+                const Real f = (t0 > 0.0)
+                    ? (std::log(TAU_PH) - std::log(t0))/(std::log(tau[g]) - std::log(t0))
+                    : 1.0;
+                const Real lp0 = std::log(pbr(m,k,j,i+1));
+                const Real lp1 = std::log(pbr(m,k,j,i));
+                plev[g] = std::exp(lp0 + f*(lp1 - lp0));
+                rlev[g] = x1v(m,i+1) + f*(x1v(m,i) - x1v(m,i+1));
+              }
+            }
+          }
+          Real sw = 0.0, slp = 0.0, sr = 0.0, lo = 0.0, hi = 0.0;
+          for (int g=0; g<CK_NG; ++g) {
+            if (plev[g] <= 0.0) continue;
+            sw += gw(g);
+            slp += gw(g)*std::log(plev[g]);
+            sr += gw(g)*rlev[g];
+            lo = (lo == 0.0) ? plev[g] : fmax(lo, plev[g]);
+            hi = (hi == 0.0) ? plev[g] : fmin(hi, plev[g]);
+          }
+          pbb[b] = (sw > 0.0) ? std::exp(slp/sw) : 0.0;
+          rbb[b] = (sw > 0.0) ? sr/sw : 0.0;
+          pdeep[b] = lo;
+          phigh[b] = hi;
+        }
+        Real Bb[CK_NB], swb = 0.0, slb = 0.0, srb = 0.0;
+        ck_planck_bands(pf, ck_pf_lTmin, ck_pf_idlT, 1.0, Tc(m,k,j,ie), Bb);
+        for (int b=0; b<CK_NB; ++b) {
+          if (pbb[b] <= 0.0) continue;
+          swb += Bb[b];
+          slb += Bb[b]*std::log(pbb[b]);
+          srb += Bb[b]*rbb[b];
+        }
+        pbb[CK_NB] = (swb > 0.0) ? std::exp(slb/swb) : 0.0;
+        rbb[CK_NB] = (swb > 0.0) ? srb/swb : 0.0;
+        pdeep[CK_NB] = pbb[CK_NB];
+        phigh[CK_NB] = pbb[CK_NB];
+        for (int b=0; b<=CK_NB; ++b) {
+          os << lat << " " << lon << " " << b << " "
+             << ((b < CK_NB) ? wl(b+1) : 0.0) << " " << ((b < CK_NB) ? wl(b) : 0.0) << " "
+             << pbb[b] << " " << pdeep[b] << " " << phigh[b] << " " << rbb[b] << "\n";
+        }
+      }
+    }
+  }
+
+#if MPI_PARALLEL_ENABLED
+  {
+    // gather the per-rank text on rank 0, in rank order
+    std::string mine = os.str();
+    int len = static_cast<int>(mine.size());
+    int nrank = global_variable::nranks;
+    std::vector<int> lens(nrank), offs(nrank, 0);
+    MPI_Gather(&len, 1, MPI_INT, lens.data(), 1, MPI_INT, 0, MPI_COMM_WORLD);
+    int tot = 0;
+    if (global_variable::my_rank == 0) {
+      for (int r=0; r<nrank; ++r) { offs[r] = tot; tot += lens[r]; }
+    }
+    std::vector<char> all((global_variable::my_rank == 0) ? tot : 1);
+    MPI_Gatherv(mine.data(), len, MPI_CHAR, all.data(), lens.data(), offs.data(),
+                MPI_CHAR, 0, MPI_COMM_WORLD);
+    if (global_variable::my_rank == 0) {
+      std::ofstream f(fname);
+      f.write(all.data(), tot);
+      f.close();
+      std::cout << "photosphere: written to '" << fname << "'" << std::endl;
+    }
+  }
+#else
+  {
+    std::ofstream f(fname);
+    f << os.str();
+    f.close();
+    std::cout << "photosphere: written to '" << fname << "'" << std::endl;
+  }
+#endif
+  return;
+}
 
 KOKKOS_INLINE_FUNCTION
 void get_daynight_Tp(const Real &p, Real &Tn, Real &Td) {
