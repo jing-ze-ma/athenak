@@ -645,6 +645,16 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // exercises the face-centred seam halo, the corner EMF and the CT update when a shock
     // arrives.  The hydro blast tests none of that.
     const Real b0c = pin->GetOrAddReal("problem", "b0c", 0.1);
+    // AZIMUTHAL amplitude, default 0 (the historical uniform-only field).  Its curl is
+    // bazi*(-y, x, 0) -- the same purely azimuthal field iprob = 11 carries, which has
+    // B.rhat = 0 EVERYWHERE, so
+    // with `b0c = 0` and reflecting radial walls the blast becomes a CLOSED MHD system
+    // and its mass/energy budget is meaningful.  The uniform part cannot do that: a
+    // field with a normal component THREADS the wall, which is not a closed system in
+    // MHD and leaks mass at O(B^2) on any grid, a plain Cartesian one included.
+    // NOT named `bazi`: that name is already live in this scope for iprob = 11, and a
+    // shadowed declaration here is the exact bug 6afde979 fixed elsewhere in this file.
+    const Real blazi = pin->GetOrAddReal("problem", "bazi", 0.0);
     const Real bhx = pin->GetOrAddReal("problem", "bhx", 0.37);
     const Real bhy = pin->GetOrAddReal("problem", "bhy", 0.61);
     const Real bhz = pin->GetOrAddReal("problem", "bhz", 0.70);
@@ -680,10 +690,27 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         Real qh[3], e1[3], e2[3];
         cubed_sphere::PanelToCart(p, xi, et, qh);
         cubed_sphere::PanelTangents(p, xi, et, e1, e2);
-        // A = 0.5 * (B0 x r), r = rf * rhat
-        const Real ax = 0.5*rf*(bvy*qh[2] - bvz*qh[1]);
-        const Real ay = 0.5*rf*(bvz*qh[0] - bvx*qh[2]);
-        const Real az = 0.5*rf*(bvx*qh[1] - bvy*qh[0]);
+        // A = 0.5 * (B0 x r), r = rf * rhat, plus the azimuthal part.
+        //
+        // THE AZIMUTHAL POTENTIAL MUST BE IN THE A.rhat = 0 GAUGE.  The obvious choice
+        // A = -0.5*bazi*(x^2 + y^2) zhat has A.rhat = A_z cos(theta) != 0, and the two
+        // TANGENTIAL faces below take the circulation over their tangential edges only
+        // -- they omit the two RADIAL edges, which is exact for the uniform field and
+        // silently WRONG for anything with a radial A.  The result is still
+        // divergence-free (it is the curl of A with A1 dropped) so div B cannot catch
+        // it; it is simply a different field, and |B| came out 1.45x too big.
+        //
+        // Gauge-transform it instead: A + grad(chi) with chi = (1/6)*bazi*r^3*
+        // sin^2(theta)*cos(theta) gives A = (1/3)*bazi*r^2*sin(theta) thetahat, i.e.
+        //     A = (1/3)*bazi*rf^2 * (x*z, y*z, -(x^2 + y^2)) / r^2   (unit qh below),
+        // whose curl is the same bazi*(-y, x, 0) and whose A.rhat vanishes IDENTICALLY,
+        // by inspection: qh0^2*qh2 + qh1^2*qh2 - qh2*(qh0^2 + qh1^2) = 0.  It is also
+        // regular on the polar axis -- the sin(theta) cancels the thetahat singularity.
+        const Real aazi = blazi*rf*rf/3.0;
+        const Real ax = 0.5*rf*(bvy*qh[2] - bvz*qh[1]) + aazi*qh[0]*qh[2];
+        const Real ay = 0.5*rf*(bvz*qh[0] - bvx*qh[2]) + aazi*qh[1]*qh[2];
+        const Real az = 0.5*rf*(bvx*qh[1] - bvy*qh[0])
+                      - aazi*(qh[0]*qh[0] + qh[1]*qh[1]);
         const Real *t = along_xi ? e1 : e2;
         const Real tn = sqrt(t[0]*t[0] + t[1]*t[1] + t[2]*t[2]);
         return (ax*t[0] + ay*t[1] + az*t[2])/tn;
@@ -3012,6 +3039,33 @@ void CSTestBlastCheck(ParameterInput *pin, Mesh *pm) {
 #endif
     std::printf("###   max |sum A.B| / (|B| max A) = %.4e   (|B|max %.4e)\n",
                 dvb, bscale);
+    // THE CLOSURE GATE.  The conserved sums above are only a conservation test if the
+    // radial walls pass no flux, and in MHD that needs B.rhat = 0 AT THE WALL.  A field
+    // with a normal component threads a reflecting wall: that is not a closed system,
+    // and it leaks mass at O(B^2) on ANY grid, a plain Cartesian one included, with ZERO
+    // floor events to warn you.  The uniform tilted field (`b0c`) does thread it; the
+    // azimuthal field (`bazi`, with b0c = 0) does not.  Report the number so the premise
+    // is CHECKED and not assumed -- reading a mass drift as a defect when the test was
+    // never closed is the trap this gate exists to stop.
+    auto &nghbr = pmbp->pmb->nghbr;
+    nghbr.sync_host();
+    Real bwall = 0.0;
+    for (int m=0; m<pmbp->nmb_thispack; ++m) {
+      const bool inner = (nghbr.h_view(m,0).gid < 0);   // no x1 neighbour = a real wall
+      const bool outer = (nghbr.h_view(m,4).gid < 0);
+      for (int k=ks; k<=ke; ++k) {
+        for (int j=js; j<=je; ++j) {
+          if (inner) bwall = fmax(bwall, fabs(b1(m,k,j,is)));
+          if (outer) bwall = fmax(bwall, fabs(b1(m,k,j,ie+1)));
+        }
+      }
+    }
+#if MPI_PARALLEL_ENABLED
+    MPI_Allreduce(MPI_IN_PLACE, &bwall, 1, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+#endif
+    std::printf("###   max |B.rhat| at a RADIAL WALL = %.4e  (/|B|max = %.4e) -- the"
+                " conserved sums are a CLOSED budget only if this is ~0\n",
+                bwall, bwall/fmax(bscale, 1.0e-300));
   }
   std::printf("###   NON-FINITE cells: %lld of %lld   (within 2 cells of a seam:"
               " %lld of %lld)\n",
