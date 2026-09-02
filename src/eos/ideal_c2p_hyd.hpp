@@ -46,13 +46,13 @@ void SingleC2P_IdealHyd(HydCons1D &u, const EOS_Data &eos,
   w.e = (u.e - e_k);
   if (w.e < efloor) {
     w.e = efloor;
-    u.e = efloor + e_k;
+    if (!eos.defer_cons_floors) u.e = efloor + e_k;
     efloor_used = true;
   }
   // apply temperature floor
   if (gm1*w.e*di < tfloor) {
     w.e = w.d*tfloor/gm1;
-    u.e = w.e + e_k;
+    if (!eos.defer_cons_floors) u.e = w.e + e_k;
     tfloor_used = true;
   }
   // apply entropy floor

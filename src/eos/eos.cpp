@@ -38,6 +38,9 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
   eos_data.pfloor = pin->GetOrAddReal(bk,"pfloor",(FLT_MIN));
   eos_data.tfloor = pin->GetOrAddReal(bk,"tfloor",(FLT_MIN));
   eos_data.sfloor = pin->GetOrAddReal(bk,"sfloor",(FLT_MIN));
+  // See the note on defer_cons_floors in eos.hpp.  Set for the cubed sphere, where
+  // GnomonicEquiangleRaiseVel{,MHD} re-applies the floors to the corrected energy.
+  eos_data.defer_cons_floors = pp->pmesh->use_cubed_sphere;
 
   // <block>/tfloor_kelvin -- the SAME floor, stated in kelvin instead of code units.
   //

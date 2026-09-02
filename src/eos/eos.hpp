@@ -38,6 +38,27 @@ struct EOS_Data {
   Real iso_cs;       // isothermal sound speed
   bool is_ideal;     // flag to denote ideal gas EOS
   Real dfloor, pfloor, tfloor, sfloor;  // density, pressure, temperature, entropy floors
+  // CUBED SPHERE: ConsToPrim cannot form the KINETIC or MAGNETIC energy correctly there.
+  // The conserved momentum is COVARIANT on a non-orthogonal tangent basis, so |m|^2/d is
+  // not the kinetic energy; and for MHD, b0.x*f
+  // holds face-NORMAL projections and those three directions are not orthogonal, so the
+  // sum of their squares is not |B|^2 (the error is O(1) at a panel corner).  A floor
+  // tested against that wrong energy must NOT write back to the conserved energy: at low
+  // beta it fires and freezes the mistake into u.e, and the later correction in
+  // Coordinates::GnomonicEquiangleRaiseVelMHD -- which rebuilds bcc in an orthonormal
+  // frame and RE-APPLIES the floors properly -- can no longer recover it.  Measured: the
+  // per-step error at a cube vertex stops converging entirely (order -0.04 at beta = 0.1)
+  // and the recovered pressure is wrong by 3600% at beta = 0.01.  With the write deferred
+  // both are second order again (+1.97).  The primitive is still clamped here; only the
+  // conserved write is deferred, and Coordinates::GnomonicEquiangleRaiseVel{,MHD} then
+  // re-applies the floors to the corrected energy and updates cons itself.
+  //
+  // The HYDRO half is MEASURED to be benign: with 15904 floor firings in one step the
+  // cube-vertex order is +1.08 against the interior's +1.31, so no consistency is lost.
+  // It is guarded for structural uniformity, not for a demonstrated accuracy gain, and
+  // the guarded and unguarded results are bit-identical there -- when a cell ends up
+  // floored either way, deferring the write lands on the same value.
+  bool defer_cons_floors = false;
   Real gamma_max;    // ceiling on Lorentz factor in SR/GR
   // Set when an IDEAL-gas run has had the composition table built purely to supply the
   // electron fraction to ohmic_resistivity = eos. In that case `tbl` holds valid surfaces

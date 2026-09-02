@@ -63,7 +63,7 @@ void SingleC2P_GeneralMHD(MHDCons1D &u, const EOS_Data &eos, HydPrim1D &w,
     // three-argument form: reuses the temperature the inversion solved for (see
     // general_c2p_hyd.hpp) instead of re-solving the root find
     w.e = eos.EnergyFromPressure(w.d, eos.pfloor, temp);
-    u.e = w.e + e_k + e_m;
+    if (!eos.defer_cons_floors) u.e = w.e + e_k + e_m;
     efloor_used = true;
     stale = true;
   }
@@ -71,7 +71,7 @@ void SingleC2P_GeneralMHD(MHDCons1D &u, const EOS_Data &eos, HydPrim1D &w,
   // Apply the temperature floor, now free to test and free to apply.
   if (temp < eos.tfloor) {
     w.e = eos.EnergyFromTemperature(w.d, eos.tfloor);
-    u.e = w.e + e_k + e_m;
+    if (!eos.defer_cons_floors) u.e = w.e + e_k + e_m;
     temp = eos.tfloor;
     tfloor_used = true;
     stale = true;

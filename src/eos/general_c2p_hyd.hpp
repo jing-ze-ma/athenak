@@ -78,7 +78,7 @@ void SingleC2P_GeneralHyd(HydCons1D &u, const EOS_Data &eos, HydPrim1D &w,
     // the three-argument form hands back the temperature the inversion solved for,
     // so the floored cell does not pay for a second root find
     w.e = eos.EnergyFromPressure(w.d, eos.pfloor, temp);
-    u.e = w.e + e_k;
+    if (!eos.defer_cons_floors) u.e = w.e + e_k;
     efloor_used = true;
     stale = true;
   }
@@ -87,7 +87,7 @@ void SingleC2P_GeneralHyd(HydCons1D &u, const EOS_Data &eos, HydPrim1D &w,
   // direct evaluation rather than an inversion, so this costs no root find either.
   if (temp < eos.tfloor) {
     w.e = eos.EnergyFromTemperature(w.d, eos.tfloor);
-    u.e = w.e + e_k;
+    if (!eos.defer_cons_floors) u.e = w.e + e_k;
     temp = eos.tfloor;
     tfloor_used = true;
     stale = true;
