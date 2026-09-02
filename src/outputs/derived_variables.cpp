@@ -986,14 +986,39 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
 
     auto dv = derived_var;
     auto b0 = pm->pmb_pack->pmhd->b0;
+    // On a CURVILINEAR grid the difference of face fields over a Cartesian block spacing
+    // is not the divergence of anything -- size.dx1 is the block's uniform x1 extent,
+    // which on a cubed-sphere or spherical-polar mesh bears no relation to the cell.  The
+    // quantity constrained transport actually conserves is the FINITE-VOLUME divergence,
+    // sum(area * B_face) / volume, so that is what is reported there.  Reporting the
+    // Cartesian form on those grids gives a number that is nonzero everywhere by
+    // geometry alone and hides exactly the monopole the diagnostic exists to find.
+    const bool curvi = (pm->use_cubed_sphere || pm->use_spherical_polar);
+    auto &area_ = pm->pmb_pack->pcoord->area;
+    auto &vol_ = pm->pmb_pack->pcoord->volume;
     par_for("divb", DevExeSpace(), 0, (nmb-1), kl, ku, jl, ju, (is-ng), (ie+ng),
     KOKKOS_LAMBDA(int m, int k, int j, int i) {
-      Real divb = (b0.x1f(m,k,j,i+1) - b0.x1f(m,k,j,i))/size.d_view(m).dx1;
-      if (multi_d) {
-        divb += (b0.x2f(m,k,j+1,i) - b0.x2f(m,k,j,i))/size.d_view(m).dx2;
-      }
-      if (three_d) {
-        divb += (b0.x3f(m,k+1,j,i) - b0.x3f(m,k,j,i))/size.d_view(m).dx3;
+      Real divb;
+      if (curvi) {
+        divb = area_.x1f(m,k,j,i+1)*b0.x1f(m,k,j,i+1)
+             - area_.x1f(m,k,j,i  )*b0.x1f(m,k,j,i  );
+        if (multi_d) {
+          divb += area_.x2f(m,k,j+1,i)*b0.x2f(m,k,j+1,i)
+                - area_.x2f(m,k,j  ,i)*b0.x2f(m,k,j  ,i);
+        }
+        if (three_d) {
+          divb += area_.x3f(m,k+1,j,i)*b0.x3f(m,k+1,j,i)
+                - area_.x3f(m,k  ,j,i)*b0.x3f(m,k  ,j,i);
+        }
+        divb /= vol_(m,k,j,i);
+      } else {
+        divb = (b0.x1f(m,k,j,i+1) - b0.x1f(m,k,j,i))/size.d_view(m).dx1;
+        if (multi_d) {
+          divb += (b0.x2f(m,k,j+1,i) - b0.x2f(m,k,j,i))/size.d_view(m).dx2;
+        }
+        if (three_d) {
+          divb += (b0.x3f(m,k+1,j,i) - b0.x3f(m,k,j,i))/size.d_view(m).dx3;
+        }
       }
       dv(m,i_dv,k,j,i) = divb;
     });

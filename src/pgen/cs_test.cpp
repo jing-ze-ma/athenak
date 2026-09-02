@@ -235,6 +235,7 @@ void RigidRotState(const int p, const Real xi, const Real eta, const Real r,
 
 void CSTestRadialBC(Mesh *pm);
 void CSTestGhostCheck(ParameterInput *pin, Mesh *pm);
+void CSCornerHaloSmoothness(MeshBlockPack *pmbp);
 void CSTestConvErrors(ParameterInput *pin, Mesh *pm);
 void CSTestResistCheck(ParameterInput *pin, Mesh *pm);
 void CSTestEosCacheCheck(Mesh *pm);
@@ -1801,6 +1802,7 @@ void CSTestEosCacheCheck(Mesh *pm) {
 
 void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
   MeshBlockPack *pmbp = pm->pmb_pack;
+  CSCornerHaloSmoothness(pmbp);
   if (pmbp->pmhd == nullptr) { return; }
   // The mesh-level gates, exactly as CSTestConvErrors runs them.  iprob=11 did not have
   // them because it began life as a single-block current-density test; they are what
@@ -3691,6 +3693,151 @@ void CSTestSeamFluxCheck(Mesh *pm) {
 }
 
 //----------------------------------------------------------------------------------------
+//----------------------------------------------------------------------------------------
+//! \fn CSCornerHaloSmoothness
+//! \brief Is the halo a SMOOTH CONTINUATION of the active cells IN INDEX SPACE?
+//!
+//! The halo VALUES are exact at their own physical locations (the seam transform and the
+//! along-seam resample were each verified to ~1e-16 separately). But PLM never sees
+//! locations -- it sees a SEQUENCE on an index axis, and limits second differences of
+//! that sequence. A sequence can be pointwise exact and still have a kink in index space,
+//! which is what makes PLM of the FIELD (and only the field) misbehave near a cube vertex
+//! at low plasma beta.
+//!
+//! Metric: |d2 f| = |f(n-1) - 2f(n) + f(n+1)| along the j index across the active->ghost
+//! crossing, against the same stencil deep inside the panel. Pure sequence properties, so
+//! no analytic solution is needed.
+//!
+//! CAVEAT ON THE DENOMINATOR: for a UNIFORM field the interior d2 can be degenerately
+//! zero (b0.x3f is exactly linear in j there), which inflates the ratio to ~1e9 and says
+//! nothing about severity. Run this on a VARYING field (iprob = 11) for a meaningful
+//! reference.
+
+void CSCornerHaloSmoothness(MeshBlockPack *pmbp) {
+  auto &indcs = pmbp->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie;
+  const int js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  auto &mbpanel = pmbp->pmb->mb_panel;
+  mbpanel.sync_host();
+  if (pmbp->pmhd == nullptr) return;
+  auto bcc_h = Kokkos::create_mirror_view(pmbp->pmhd->bcc0);
+  Kokkos::deep_copy(bcc_h, pmbp->pmhd->bcc0);
+  const int imid = (is + ie)/2;
+  std::cout << "### CS CORNER-HALO bcc SMOOTHNESS IN INDEX SPACE" << std::endl;
+  std::cout << "  |d2| = |f(n-1) - 2f(n) + f(n+1)| along the j index, at i=mid."
+            << std::endl;
+  std::cout << "  panel  comp   d2 at CORNER crossing   d2 deep INTERIOR   ratio"
+            << std::endl;
+  for (int m=0; m<pmbp->nmb_thispack; ++m) {
+    for (int c=0; c<3; ++c) {
+      // crossing: j runs js-1, js, js+1 at the corner k = ks (both indices at an edge)
+      const Real d2c = fabs(bcc_h(m,c,ks,js-1,imid) - 2.0*bcc_h(m,c,ks,js,imid)
+                            + bcc_h(m,c,ks,js+1,imid));
+      // interior reference: the same stencil at mid-panel in BOTH angular indices
+      const int jm = (js+je)/2, km = (ks+ke)/2;
+      const Real d2i = fabs(bcc_h(m,c,km,jm-1,imid) - 2.0*bcc_h(m,c,km,jm,imid)
+                            + bcc_h(m,c,km,jm+1,imid));
+      std::printf("  %4d   %s   %18.6e   %16.6e   %8.1f\n",
+                  mbpanel.h_view(m), (c==0?"B.r ":(c==1?"B.xi":"B.f2")),
+                  d2c, d2i, (d2i > 0.0 ? d2c/d2i : -1.0));
+    }
+  }
+  // WHERE does the kink enter?  Three candidates on the same index line:
+  //   the halo FACE fields (if kinked, the exchange is at fault);
+  //   the TRIG arrays sin_cell/cos_cell (if kinked, the geometry in the corner ghost);
+  //   bcc.f2 = (B.e_eta - c B.e_xi)/s, which is the only component using the trig.
+  auto b2h = Kokkos::create_mirror_view(pmbp->pmhd->b0.x2f);
+  Kokkos::deep_copy(b2h, pmbp->pmhd->b0.x2f);
+  auto b3h = Kokkos::create_mirror_view(pmbp->pmhd->b0.x3f);
+  Kokkos::deep_copy(b3h, pmbp->pmhd->b0.x3f);
+  auto snh = Kokkos::create_mirror_view(pmbp->pcoord->sin_cell);
+  Kokkos::deep_copy(snh, pmbp->pcoord->sin_cell);
+  auto csh = Kokkos::create_mirror_view(pmbp->pcoord->cos_cell);
+  Kokkos::deep_copy(csh, pmbp->pcoord->cos_cell);
+  std::cout << "  --- where does the kink enter? same index line, panel 0 ---"
+            << std::endl;
+  std::cout << "  quantity     d2 at CORNER crossing   d2 deep INTERIOR" << std::endl;
+  {
+    const int m = 0, jm = (js+je)/2, km = (ks+ke)/2;
+    auto rep = [&](const char *nm, Real a, Real b) {
+      std::printf("  %-10s %18.6e   %16.6e\n", nm, a, b);
+    };
+    rep("b0.x2f", fabs(b2h(m,ks,js-1,imid) - 2.0*b2h(m,ks,js,imid)
+                      + b2h(m,ks,js+1,imid)),
+                 fabs(b2h(m,km,jm-1,imid) - 2.0*b2h(m,km,jm,imid)
+                      + b2h(m,km,jm+1,imid)));
+    rep("b0.x3f", fabs(b3h(m,ks,js-1,imid) - 2.0*b3h(m,ks,js,imid)
+                      + b3h(m,ks,js+1,imid)),
+                 fabs(b3h(m,km,jm-1,imid) - 2.0*b3h(m,km,jm,imid)
+                      + b3h(m,km,jm+1,imid)));
+    // Is the x3f kink a property of the WHOLE seam, or only of its end at the vertex?
+    // Same j crossing (active -> x2 ghost), but at three along-seam positions k.
+    std::printf("  b0.x3f across the SAME j crossing, by along-seam position k:\n");
+    const int kq[3] = {ks, (ks+ke)/2, ke};
+    const char *kn[3] = {"k=ks (AT the vertex)", "k=mid-seam", "k=ke (other vertex)"};
+    for (int q = 0; q < 3; ++q) {
+      std::printf("    %-22s d2 = %14.6e\n", kn[q],
+                  fabs(b3h(m,kq[q],js-1,imid) - 2.0*b3h(m,kq[q],js,imid)
+                       + b3h(m,kq[q],js+1,imid)));
+    }
+    rep("sin_cell", fabs(snh(m,ks,js-1) - 2.0*snh(m,ks,js) + snh(m,ks,js+1)),
+                    fabs(snh(m,km,jm-1) - 2.0*snh(m,km,jm) + snh(m,km,jm+1)));
+    rep("cos_cell", fabs(csh(m,ks,js-1) - 2.0*csh(m,ks,js) + csh(m,ks,js+1)),
+                    fabs(csh(m,km,jm-1) - 2.0*csh(m,km,jm) + csh(m,km,jm+1)));
+  }
+
+  // ---- DIRECT halo accuracy: stored bcc against the ANALYTIC value -----------------
+  //
+  // A substitution experiment (swap in donor cell and see what moves) only
+  // discriminates when the substitute is MORE accurate than the effect being chased;
+  // for this defect it is not, so it cannot isolate anything.  This is the direct
+  // measurement instead.  For a UNIFORM Cartesian field the analytic bcc is known in
+  // the GHOSTS too: project B_cart on the chart-CONTINUED basis (rhat, e_xi, f2) at
+  // the ghost's own (xi,eta).  Any departure is the halo's own error, measured where
+  // it happens, with nothing whose accuracy has to be assumed.
+  const Real bux = cs_bvx, buy = cs_bvy, buz = cs_bvz;
+  const Real bun = sqrt(bux*bux + buy*buy + buz*buz);
+  if (bun > 0.0) {
+    auto &size = pmbp->pmb->mb_size;
+    size.sync_host();
+    std::cout << "  --- DIRECT: |stored bcc - analytic| in the ghosts, |B| = "
+              << bun << " ---" << std::endl;
+    std::cout << "  region              B.r          B.e_xi       B.f2" << std::endl;
+    // three probes on panel 0: a mid-seam ghost, a ghost at the seam END (vertex),
+    // and an ACTIVE interior cell as the reference.
+    const int m = 0;
+    struct Probe { const char *nm; int j; int k; };
+    const Probe pr[3] = { {"active interior  ", (js+je)/2, (ks+ke)/2},
+                          {"ghost, mid-seam  ", js-1,      (ks+ke)/2},
+                          {"ghost, AT VERTEX ", js-1,      ks-1} };
+    for (int q = 0; q < 3; ++q) {
+      const int jq = pr[q].j, kq = pr[q].k;
+      const Real x2v = CellCenterX(jq-js, indcs.nx2, size.h_view(m).x2min,
+                                   size.h_view(m).x2max);
+      const Real x3v = CellCenterX(kq-ks, indcs.nx3, size.h_view(m).x3min,
+                                   size.h_view(m).x3max);
+      const Real xi = 0.25*M_PI*x2v, eta = 0.25*M_PI*x3v;
+      Real e1[3], e2[3], qh[3];
+      cubed_sphere::PanelTangents(mbpanel.h_view(m), xi, eta, e1, e2);
+      cubed_sphere::PanelToCart(mbpanel.h_view(m), xi, eta, qh);
+      const Real cc = e1[0]*e2[0] + e1[1]*e2[1] + e1[2]*e2[2];
+      const Real ss = sqrt(1.0 - cc*cc);
+      Real ex[3];
+      for (int c = 0; c < 3; ++c) ex[c] = (e2[c] - cc*e1[c])/ss;   // f2
+      Real br = 0.0, bx = 0.0, bf = 0.0;
+      const Real bc[3] = {bux, buy, buz};
+      for (int c = 0; c < 3; ++c) {
+        br += bc[c]*qh[c];  bx += bc[c]*e1[c];  bf += bc[c]*ex[c];
+      }
+      std::printf("  %s %12.5e %12.5e %12.5e\n", pr[q].nm,
+                  fabs(bcc_h(m,0,kq,jq,imid) - br),
+                  fabs(bcc_h(m,1,kq,jq,imid) - bx),
+                  fabs(bcc_h(m,2,kq,jq,imid) - bf));
+    }
+  }
+}
+
 void CSTestGhostCheck(ParameterInput *pin, Mesh *pm) {
   MeshBlockPack *pmbp = pm->pmb_pack;
   CSTestConsSums(pm);
@@ -4593,6 +4740,9 @@ void CSTestGhostCheck(ParameterInput *pin, Mesh *pm) {
                   mbpanel.h_view(m), vs, vi, (ns>0?ss/ns:0.0), (ni>0?si/ni:0.0), vc,
                   jm, km, dmn, pmn, pi, pj, pk);
     }
+
+  CSCornerHaloSmoothness(pmbp);
+
     return;
   }
 
