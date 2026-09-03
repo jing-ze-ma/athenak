@@ -86,6 +86,12 @@ cs_diag_no_coordsrc = false   # drop the geometric source -> the step measures -
 cs_diag_no_divf     = false   # drop the flux divergence  -> the step measures the source
 cs_diag_no_magsrc   = false   # drop the MAGNETIC terms of the geometric source only
 
+# THE WELL-BALANCED GEOMETRIC SOURCE.  Builds the source as the face sum
+# (1/V) sum_f A_f (T_cell.nhat_f).e_i(x_f) with CARTESIAN vectors, which is what the flux
+# divergence forms, so the two cancel to round-off whenever the face states equal the cell
+# state -- instead of only for the ISOTROPIC part, as the analytic form manages.
+cs_wellbalanced_src = false
+
 <problem>
 iprob    = 13
 d0       = 1.0

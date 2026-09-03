@@ -14,6 +14,7 @@
 #include "cartesian_ks.hpp"
 #include "coordinates.hpp"
 #include "cell_locations.hpp"
+#include "cubed_sphere.hpp"
 #include "hydro/hydro.hpp"
 #include "mhd/mhd.hpp"
 
@@ -38,6 +39,7 @@ Coordinates::Coordinates(ParameterInput *pin, MeshBlockPack *ppack) :
   // MeshBlockPack::AddPhysics decides which modules to build from which blocks exist.
   if (pin->DoesBlockExist("mhd")) {
     cs_diag_no_magsrc = pin->GetOrAddBoolean("mhd","cs_diag_no_magsrc",false);
+    cs_wellbalanced_src = pin->GetOrAddBoolean("mhd","cs_wellbalanced_src",false);
   }
 
   if (pmy_pack->pmesh->use_cubed_sphere || pmy_pack->pmesh->use_spherical_polar) {
@@ -1011,6 +1013,171 @@ void Coordinates::SrcTermsGnomonicEquiangleMHD(const DvceArray5D<Real> &w0,
   return;
 }
 
+//----------------------------------------------------------------------------------------
+//! \fn Coordinates::SrcTermsGnomonicEquiangleWB
+//! \brief the WELL-BALANCED form of the gnomonic geometric source term.
+//!
+//! WHY.  The momentum RHS on this grid is a flux divergence plus a geometric source, each
+//! of size |T| ~ p + B^2/2, whose difference is the physical force.  Measured, the two
+//! cancel to about 1 part in 1800 in a panel interior and 1 part in 500 at a cube vertex.
+//! At beta = 2p/B^2 << 1 the physical force is itself only O(beta) of each half -- an
+//! equilibrium field at low beta is force-free to within O(beta), because the Lorentz
+//! force it exerts can be no larger than the pressure gradient balancing it -- so once
+//! beta drops below the relative error of that cancellation, the leftover is larger than
+//! anything physical and the scheme goes unstable.  Crossovers measured on
+//! inputs/tests/cubed_sphere_mhd_strat.athinput: beta ~ 2e-3 (nx=16) to 2e-4 (nx=64) in a
+//! panel interior, 3x worse at a vertex.
+//!
+//! WHAT THE OLD FORM GETS RIGHT, AND WHERE IT STOPS.  For the ISOTROPIC part of the
+//! stress the coefficients are already built as exact face differences --
+//! x_ov_rD = (A2r*sin_r - A2l*sin_l)/V and its two partners -- so a uniform pressure
+//! cancels the flux divergence identically, which is why the field-free null of that test
+//! is 1e-18.  The ANISOTROPIC part, rho v v - B B, has no such construction: the source
+//! contracts it with CELL-CENTRE trig while the fluxes carry each FACE's own, and the two
+//! quadratures do not agree.
+//!
+//! THE IDENTITY THIS USES.  The source is exactly S_i = (1/V) Int T:grad(e_i) dV, and for
+//! a CONSTANT CARTESIAN T the divergence theorem turns that into a surface integral,
+//!
+//!     S_i = T_ab (1/V) Int d_a e_ib dV = (1/V) Oint (T.nhat) . e_i(x) dA,
+//!
+//! i.e. into the very same face sum the flux divergence forms.  So evaluating that sum
+//! with the CELL's stress makes the two cancel to round-off whenever the face states
+//! equal the cell state, for ANY grid, with no metric identity required of the areas.
+//! The residual becomes (1/V) sum_f A_f ((T_f - T_cell).nhat_f).e_i(x_f) -- proportional
+//! to the VARIATION of the stress, which is the physical force, instead of to |T| itself.
+//! (Checked in spherical polar, where the same sum reproduces the textbook Christoffel
+//! source -T_rtheta/r + cot(theta) T_phiphi/r term by term.)
+//!
+//! Everything is done with CARTESIAN vectors, which is what makes it exact: the cell's
+//! velocity and field are assembled on the cell's own tangent triad, and each face's
+//! normal and basis vectors are evaluated at THAT face's (xi,eta) from the panel map.
+//! Re-using the cell's chart COMPONENTS at a face instead -- which is what the flux
+//! rotations do -- is a different tensor and gives the wrong source; the two agree only
+//! for the isotropic part, which is exactly why the old form worked for pressure alone.
+//!
+//! For the isotropic part this reduces ALGEBRAICALLY to the old coefficients, since
+//! nhat_xi . e_xi = sin, nhat_xi . e_eta = 0 and rhat . e_xi = 0, so the pressure balance
+//! is carried over unchanged rather than re-derived.
+
+void Coordinates::SrcTermsGnomonicEquiangleWB(const DvceArray5D<Real> &w0,
+    const DvceArray5D<Real> &bcc0, const bool is_mhd,
+    const DvceArray5D<Real> &wder, const EOS_Data &eos_data, const Real bdt,
+    DvceArray5D<Real> &u0) {
+  auto &size = pmy_pack->pmb->mb_size;
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  int &is = indcs.is; int &ie = indcs.ie;
+  int &js = indcs.js; int &je = indcs.je;
+  int &ks = indcs.ks; int &ke = indcs.ke;
+  int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto eos_ = eos_data;
+  const bool gen_ = eos_.IsGeneral();
+  auto &wder_ = wder;
+  auto &bcc_ = bcc0;
+  const bool mhd_ = is_mhd && !cs_diag_no_magsrc;
+  auto volume_ = volume;
+  auto area_ = area;
+  auto &mbpanel = pmy_pack->pmb->mb_panel;
+
+  par_for("cssrc_wb", DevExeSpace(), 0,nmb1,ks,ke,js,je,is,ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const Real x2min = size.d_view(m).x2min, x2max = size.d_view(m).x2max;
+    const Real x3min = size.d_view(m).x3min, x3max = size.d_view(m).x3max;
+    const Real xi_c  = M_PI/4.0 * CellCenterX(j-js, indcs.nx2, x2min, x2max);
+    const Real xi_l  = M_PI/4.0 * LeftEdgeX(j-js, indcs.nx2, x2min, x2max);
+    const Real xi_r  = M_PI/4.0 * LeftEdgeX(j+1-js, indcs.nx2, x2min, x2max);
+    const Real et_c  = M_PI/4.0 * CellCenterX(k-ks, indcs.nx3, x3min, x3max);
+    const Real et_l  = M_PI/4.0 * LeftEdgeX(k-ks, indcs.nx3, x3min, x3max);
+    const Real et_r  = M_PI/4.0 * LeftEdgeX(k+1-ks, indcs.nx3, x3min, x3max);
+    const int p = mbpanel.d_view(m);
+
+    // the cell's own triad, and its state as CARTESIAN vectors
+    Real rc[3], e1c[3], e2c[3];
+    cubed_sphere::PanelToCart(p, xi_c, et_c, rc);
+    cubed_sphere::PanelTangents(p, xi_c, et_c, e1c, e2c);
+    const Real cc = e1c[0]*e2c[0] + e1c[1]*e2c[1] + e1c[2]*e2c[2];
+    const Real ss = sqrt(fmax(1.0e-16, 1.0 - cc*cc));
+
+    const Real rho = w0(m,IDN,k,j,i);
+    const Real pr = gen_ ? wder_(m,IDPR,k,j,i)
+                         : eos_.Pressure(w0(m,IDN,k,j,i), w0(m,IEN,k,j,i));
+    // velocity: CONTRAVARIANT on the (non-orthogonal) unit tangent basis
+    const Real v1 = w0(m,IVX,k,j,i), v2 = w0(m,IVY,k,j,i), v3 = w0(m,IVZ,k,j,i);
+    Real vv[3], bb[3];
+    for (int c=0; c<3; ++c) vv[c] = v1*rc[c] + v2*e1c[c] + v3*e2c[c];
+    Real bsq = 0.0;
+    if (mhd_) {
+      // bcc is the ORTHONORMAL triple (B.rhat, B.e_xi, B.f2), f2 = (e_eta - c e_xi)/s
+      const Real b1 = bcc_(m,IBX,k,j,i);
+      const Real b2 = bcc_(m,IBY,k,j,i);
+      const Real b3 = bcc_(m,IBZ,k,j,i);
+      for (int c=0; c<3; ++c) {
+        bb[c] = b1*rc[c] + b2*e1c[c] + b3*(e2c[c] - cc*e1c[c])/ss;
+      }
+      bsq = b1*b1 + b2*b2 + b3*b3;
+    } else {
+      bb[0] = 0.0; bb[1] = 0.0; bb[2] = 0.0;
+    }
+    const Real ptot = pr + 0.5*bsq;
+
+    // one face's contribution to all three momentum slots:
+    //   sig*A * [ ptot*(n.e_i) + rho*(v.n)*(v.e_i) - (B.n)*(B.e_i) ]
+    Real src[3] = {0.0, 0.0, 0.0};
+    auto addface = [&](const Real sig, const Real ar, const Real nh[3],
+                       const Real f1[3], const Real f2[3], const Real f3[3]) {
+      Real vn = 0.0, bn = 0.0;
+      for (int c=0; c<3; ++c) { vn += vv[c]*nh[c]; bn += bb[c]*nh[c]; }
+      const Real *ee[3] = {f1, f2, f3};
+      for (int d=0; d<3; ++d) {
+        Real ne = 0.0, ve = 0.0, be = 0.0;
+        for (int c=0; c<3; ++c) {
+          ne += nh[c]*ee[d][c];
+          ve += vv[c]*ee[d][c];
+          be += bb[c]*ee[d][c];
+        }
+        src[d] += sig*ar*(ptot*ne + rho*vn*ve - bn*be);
+      }
+    };
+
+    // RADIAL faces: normal is rhat, and the triad depends on the angles alone, so both
+    // faces share this cell's own triad and differ only in area.
+    addface( 1.0, area_.x1f(m,k,j,i+1), rc, rc, e1c, e2c);
+    addface(-1.0, area_.x1f(m,k,j,i  ), rc, rc, e1c, e2c);
+
+    // XI faces (x2) at (xi_face, eta_centre): nhat = (e_xi - c e_eta)/s
+    for (int f=0; f<2; ++f) {
+      Real rf[3], e1f[3], e2f[3], nh[3];
+      const Real xf = (f == 0) ? xi_l : xi_r;
+      cubed_sphere::PanelToCart(p, xf, et_c, rf);
+      cubed_sphere::PanelTangents(p, xf, et_c, e1f, e2f);
+      const Real cf = e1f[0]*e2f[0] + e1f[1]*e2f[1] + e1f[2]*e2f[2];
+      const Real sf = sqrt(fmax(1.0e-16, 1.0 - cf*cf));
+      for (int c=0; c<3; ++c) nh[c] = (e1f[c] - cf*e2f[c])/sf;
+      const Real ar = (f == 0) ? area_.x2f(m,k,j,i) : area_.x2f(m,k,j+1,i);
+      addface((f == 0) ? -1.0 : 1.0, ar, nh, rf, e1f, e2f);
+    }
+
+    // ETA faces (x3) at (xi_centre, eta_face): nhat = (e_eta - c e_xi)/s
+    for (int f=0; f<2; ++f) {
+      Real rf[3], e1f[3], e2f[3], nh[3];
+      const Real ef = (f == 0) ? et_l : et_r;
+      cubed_sphere::PanelToCart(p, xi_c, ef, rf);
+      cubed_sphere::PanelTangents(p, xi_c, ef, e1f, e2f);
+      const Real cf = e1f[0]*e2f[0] + e1f[1]*e2f[1] + e1f[2]*e2f[2];
+      const Real sf = sqrt(fmax(1.0e-16, 1.0 - cf*cf));
+      for (int c=0; c<3; ++c) nh[c] = (e2f[c] - cf*e1f[c])/sf;
+      const Real ar = (f == 0) ? area_.x3f(m,k,j,i) : area_.x3f(m,k+1,j,i);
+      addface((f == 0) ? -1.0 : 1.0, ar, nh, rf, e1f, e2f);
+    }
+
+    const Real ivol = 1.0/volume_(m,k,j,i);
+    u0(m,IM1,k,j,i) += src[0]*ivol*bdt;
+    u0(m,IM2,k,j,i) += src[1]*ivol*bdt;
+    u0(m,IM3,k,j,i) += src[2]*ivol*bdt;
+  });
+}
+
+//----------------------------------------------------------------------------------------
 void Coordinates::SrcTermsGnomonicEquiangleImpl(const DvceArray5D<Real> &w0,
     const DvceArray5D<Real> &bcc0, const bool is_mhd,
     const DvceArray5D<Real> &wder, const DvceFaceFld5D<Real> uflx,
@@ -1034,6 +1201,11 @@ void Coordinates::SrcTermsGnomonicEquiangleImpl(const DvceArray5D<Real> &w0,
   auto &wder_ = wder;
   auto &bcc_ = bcc0;
   const bool mhd_ = is_mhd && !cs_diag_no_magsrc;
+
+  if (cs_wellbalanced_src) {
+    SrcTermsGnomonicEquiangleWB(w0, bcc0, is_mhd, wder, eos_data, bdt, u0);
+    return;
+  }
 
   auto volume_ = volume;
   auto area_ = area;

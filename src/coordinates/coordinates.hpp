@@ -131,6 +131,10 @@ class Coordinates {
       const DvceArray5D<Real> &bcc0, const DvceArray5D<Real> &wder,
       const DvceFaceFld5D<Real> uflx, const EOS_Data &eos_data, const Real bdt,
       DvceArray5D<Real> &u0);
+  void SrcTermsGnomonicEquiangleWB(const DvceArray5D<Real> &w0,
+       const DvceArray5D<Real> &bcc0, const bool is_mhd,
+       const DvceArray5D<Real> &wder, const EOS_Data &eos_data, const Real bdt,
+       DvceArray5D<Real> &u0);
   void SrcTermsGnomonicEquiangleImpl(const DvceArray5D<Real> &w0,
       const DvceArray5D<Real> &bcc0, const bool is_mhd,
       const DvceArray5D<Real> &wder, const DvceFaceFld5D<Real> uflx,
@@ -171,6 +175,10 @@ class Coordinates {
   // source, leaving the hydro ones. The scheme is then inconsistent for MHD -- this is
   // a probe for whether the low-beta instability's feedback lives in that source.
   bool cs_diag_no_magsrc = false;
+
+  // WELL-BALANCED gnomonic geometric source (<mhd>/cs_wellbalanced_src).  See the long
+  // note at SrcTermsGnomonicEquiangleWB.
+  bool cs_wellbalanced_src = false;
 
   void CoordSrcTerms(const DvceArray5D<Real> &w0, const EOS_Data &eos, const Real dt,
                      DvceArray5D<Real> &u0);
