@@ -60,6 +60,16 @@ TaskStatus MHD::NewTimeStep(Driver *pdriver, int stage) {
   auto &dx1_ = pmy_pack->pcoord->dx1;
   auto &dx2_ = pmy_pack->pcoord->dx2;
   auto &dx3_ = pmy_pack->pcoord->dx3;
+  // CUBED SPHERE: the signal speed NORMAL to an angular face is not the stored velocity
+  // component.  dx2 is the arc length along e_xi while the face separation is
+  // dx2*sin_cell, and w0(IVY) is CONTRAVARIANT on the unit basis so the normal advection
+  // speed is sin_cell*v^xi -- the two sin_cell factors CANCEL in dx2/|v2|, which is why
+  // the kinematic branch below needs no correction.  The FAST SPEED does not scale that
+  // way: cf is a physical speed, so the constraint is dx2/(|v2| + cf/sin_cell).  Leaving
+  // it out overstates dt by up to 13.7% at a cube vertex (sin_cell = 0.88 there) and not
+  // at all on the panel axes.  sp and Cartesian are untouched.
+  const bool cs_ = pmy_pack->pmesh->use_cubed_sphere;
+  auto &sncell_ = pmy_pack->pcoord->sin_cell;
 
   if (pdriver->time_evolution == TimeEvolution::kinematic) {
     // find smallest (dx/v) in each direction for advection problems
@@ -166,7 +176,8 @@ TaskStatus MHD::NewTimeStep(Driver *pdriver, int stage) {
         } else {
           cf = eos.IdealMHDFastSpeed(w_d, w_by, w_bz, w_bx);
         }
-        max_dv2 = fabs(w0_(m,IVY,k,j,i)) + cf;
+        max_dv2 = fabs(w0_(m,IVY,k,j,i))
+                 + (cs_ ? cf/sncell_(m,k,j) : cf);
 
         if (eos.IsGeneral()) {
           cf = eos.FastSpeedFromP(w_d, pg, g1, w_bz, w_bx, w_by);
@@ -175,7 +186,8 @@ TaskStatus MHD::NewTimeStep(Driver *pdriver, int stage) {
         } else {
           cf = eos.IdealMHDFastSpeed(w_d, w_bz, w_bx, w_by);
         }
-        max_dv3 = fabs(w0_(m,IVZ,k,j,i)) + cf;
+        max_dv3 = fabs(w0_(m,IVZ,k,j,i))
+                 + (cs_ ? cf/sncell_(m,k,j) : cf);
       }
 
       if (use_cubed_sphere || use_spherical_polar) {

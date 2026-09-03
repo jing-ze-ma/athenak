@@ -59,6 +59,16 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
   auto &dx1_ = pmy_pack->pcoord->dx1;
   auto &dx2_ = pmy_pack->pcoord->dx2;
   auto &dx3_ = pmy_pack->pcoord->dx3;
+  // CUBED SPHERE: the signal speed NORMAL to an angular face is not the stored velocity
+  // component.  dx2 is the arc length along e_xi while the face separation is
+  // dx2*sin_cell, and w0(IVY) is CONTRAVARIANT on the unit basis so the normal advection
+  // speed is sin_cell*v^xi -- the two sin_cell factors CANCEL in dx2/|v2|, which is why
+  // the kinematic branch below needs no correction.  The SOUND SPEED does not scale that
+  // way: it is a physical speed, so the constraint is dx2/(|v2| + cs/sin_cell).  Leaving
+  // it out overstates dt by up to 13.7% at a cube vertex (sin_cell = 0.88 there) and not
+  // at all on the panel axes.  sp and Cartesian are untouched.
+  const bool cs_ = pmy_pack->pmesh->use_cubed_sphere;
+  auto &sncell_ = pmy_pack->pcoord->sin_cell;
 
   if (pdrive->time_evolution == TimeEvolution::kinematic) {
     // find smallest (dx/v) in each direction for advection problems
@@ -130,8 +140,10 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
           cs = eos.iso_cs;
         }
         max_dv1 = fabs(w0_(m,IVX,k,j,i)) + cs;
-        max_dv2 = fabs(w0_(m,IVY,k,j,i)) + cs;
-        max_dv3 = fabs(w0_(m,IVZ,k,j,i)) + cs;
+        max_dv2 = fabs(w0_(m,IVY,k,j,i))
+                 + (cs_ ? cs/sncell_(m,k,j) : cs);
+        max_dv3 = fabs(w0_(m,IVZ,k,j,i))
+                 + (cs_ ? cs/sncell_(m,k,j) : cs);
       }
       if (use_cubed_sphere || use_spherical_polar) {
         min_dt1 = fmin((dx1_(m,k,j,i)/max_dv1), min_dt1);
