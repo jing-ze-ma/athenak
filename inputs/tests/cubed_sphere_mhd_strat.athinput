@@ -92,6 +92,11 @@ cs_diag_no_magsrc   = false   # drop the MAGNETIC terms of the geometric source 
 # state -- instead of only for the ISOTROPIC part, as the analytic form manages.
 cs_wellbalanced_src = false
 
+# THE CORNER EMF.  false = the plain four-face average (Balsara-Spicer), which does not
+# reduce to the upwind flux in 1D and leaves the odd-even field mode undamped; true = the
+# GS07 upwind correction, using the gnomonic cell-centred EMF.
+cs_gs07_emf = false
+
 <problem>
 iprob    = 13
 d0       = 1.0

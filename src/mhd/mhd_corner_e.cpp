@@ -35,6 +35,7 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
   auto &spin = pmy_pack->pcoord->coord_data.bh_spin;
   auto &mb_bcs = pmy_pack->pmb->mb_bcs;
   auto &use_cubed_sphere = pmy_pack->pmesh->use_cubed_sphere;
+  const bool use_cs_gs07 = use_cs_gs07_emf;
 
   //---- 1-D problem:
   //  copy face-centered E-fields to edges and return.
@@ -307,6 +308,39 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
         e3cc_(m,k,j,i) = (u2 * bcc_(m,IBX,k,j,i) - u1 * bcc_(m,IBY,k,j,i)) / u0;
       });
 
+    // CUBED SPHERE, the gnomonic form of the same thing.  v x B is only a cross product
+    // in an ORTHONORMAL frame, and w0's velocity is CONTRAVARIANT on the non-orthogonal
+    // unit tangent basis while bcc is already in the orthonormal triple
+    // (B.rhat, B.e_xi, B.f2), f2 = (e_eta - c e_xi)/s.  So put the velocity in that same
+    // triple first -- u = (v1, v2 + c v3, s v3), exactly what GnomonicEquianglePrimFaceX1
+    // does -- take the cross product there, and project the result onto the EDGE
+    // directions, which is what the face EMFs carry and what the corner EMF must be: the
+    // r and xi axes ARE edges, and E.e_eta = c*E.e_xi + s*E.f2, the same rotation
+    // GnomonicEquiangleEmfX1 applies to the x1-sweep EMF.
+    //
+    // (rhat, e_xi, f2) is right-handed, so the cross product needs no extra sign:
+    // e_xi x f2 = e_xi x (e_eta - c e_xi)/s = (e_xi x e_eta)/s = rhat.
+    } else if (use_cubed_sphere) {
+      auto sin_ = pmy_pack->pcoord->sin_cell;
+      auto cos_ = pmy_pack->pcoord->cos_cell;
+      par_for("e_cc_3d_cs", DevExeSpace(), 0, nmb1, ks-1, ke+1, js-1, je+1, is-1, ie+1,
+      KOKKOS_LAMBDA(int m, int k, int j, int i) {
+        const Real sn = sin_(m,k,j);
+        const Real cs = cos_(m,k,j);
+        const Real u1 = w0_(m,IVX,k,j,i);
+        const Real u2 = w0_(m,IVY,k,j,i) + cs*w0_(m,IVZ,k,j,i);
+        const Real u3 = sn*w0_(m,IVZ,k,j,i);
+        const Real b1 = bcc_(m,IBX,k,j,i);
+        const Real b2 = bcc_(m,IBY,k,j,i);
+        const Real b3 = bcc_(m,IBZ,k,j,i);
+        const Real er  = u3*b2 - u2*b3;
+        const Real exi = u1*b3 - u3*b1;
+        const Real ef2 = u2*b1 - u1*b2;
+        e1cc_(m,k,j,i) = er;
+        e2cc_(m,k,j,i) = exi;
+        e3cc_(m,k,j,i) = cs*exi + sn*ef2;
+      });
+
     // compute cell-centered EMFs in Newtonian MHD
     } else {
       par_for("e_cc_3d", DevExeSpace(), 0, nmb1, ks-1, ke+1, js-1, je+1, is-1, ie+1,
@@ -345,7 +379,11 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
     // The FACE EMFs, by contrast, come from the Riemann solver and have been rotated into
     // the edge frame by GnomonicEquiangleEmfX*. Until the cell-centred EMF is given its
     // own gnomonic form, use the plain four-face average, which is frame-correct.
-    if (use_cubed_sphere) {
+    // THAT AVERAGE IS BALSARA-SPICER: it does not reduce to the upwind flux in the 1D
+    // limit and leaves the odd-even field mode undamped.  The cell-centred EMF now HAS a
+    // gnomonic form (e_cc_3d_cs above), so <mhd>/cs_gs07_emf takes the GS07 branch below
+    // instead.
+    if (use_cubed_sphere && !use_cs_gs07) {
       par_for("emf3_cs", DevExeSpace(), 0, nmb1, ks, ke+1, js, je+1, is, ie+1,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         e1(m,k,j,i) = 0.25*(e1x2_(m,k-1,j,i) + e1x2_(m,k,j,i) +

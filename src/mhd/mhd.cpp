@@ -286,6 +286,7 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
     // cubed-sphere RHS-split diagnostics (see mhd.hpp); both default off
     cs_diag_no_coordsrc = pin->GetOrAddBoolean("mhd","cs_diag_no_coordsrc",false);
     cs_diag_no_divf = pin->GetOrAddBoolean("mhd","cs_diag_no_divf",false);
+    use_cs_gs07_emf = pin->GetOrAddBoolean("mhd","cs_gs07_emf",false);
 
     // select reconstruction method (default PLM)
     std::string xorder = pin->GetOrAddString("mhd","reconstruct","plm");

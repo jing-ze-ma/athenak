@@ -160,6 +160,10 @@ class MHD {
   // its own. They change the answer and are for measurement only.
   bool cs_diag_no_coordsrc = false;  // skip SrcTermsGnomonicEquiangleMHD
   bool cs_diag_no_divf = false;      // skip the flux divergence in the RK update
+
+  // CUBED SPHERE: use the GS07 upwind corner EMF instead of the plain four-face average.
+  // Needs the gnomonic cell-centred EMF, e_cc_3d_cs in mhd_corner_e.cpp.
+  bool use_cs_gs07_emf = false;
     
   // following only used for including time-independent gravity in the conserved energy equation
   bool use_etotgrav = false;   // flag to enable etotgrav
