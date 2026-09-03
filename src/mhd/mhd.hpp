@@ -166,7 +166,7 @@ class MHD {
   bool use_cs_gs07_emf = false;
 
   // CUBED SPHERE: plasma beta below which the flux falls back from HLLD to HLLE, per
-  // CELL.  <= 0 disables it.  See rsolvers/cs_lowbeta_fallback.hpp for why this exists.
+  // FACE.  <= 0 disables it.  See rsolvers/cs_lowbeta_fallback.hpp for why this exists.
   Real cs_lowbeta_fallback = 0.0;
     
   // following only used for including time-independent gravity in the conserved energy equation

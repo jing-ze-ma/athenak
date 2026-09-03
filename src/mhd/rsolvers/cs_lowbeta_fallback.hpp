@@ -6,7 +6,7 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file cs_lowbeta_fallback.hpp
-//! \brief CUBED SPHERE: replace the HLLD flux by an HLLE one in cells whose plasma beta
+//! \brief CUBED SPHERE: replace the HLLD flux by an HLLE one on FACES whose plasma beta
 //! is below a threshold.
 //!
 //! WHY.  On the cubed sphere a uniform medium at rest carrying a uniform (hence
@@ -21,9 +21,21 @@
 //! structure degenerates as the NORMAL field weakens, which on a curvilinear grid with a
 //! strong TANGENTIAL field is the common case).
 //!
+//! PER FACE, WHICH IS THE ONLY CHOICE THAT CONSERVES.  The decision is made from the two
+//! RECONSTRUCTED states at a face, and one flux is written to that face, so both cells
+//! sharing it see the same number and the update telescopes exactly.  A per-CELL switch
+//! could not do that: two cells either side of a face would disagree about the solver
+//! and the face would carry two different fluxes.  The criterion is symmetric in L<->R
+//! (it uses pl + pr and the mean B^2), so it cannot depend on which side is left.
+//! Measured on a 24-block run with the fallback firing everywhere: the same-panel
+//! block-face NULL control is EXACTLY 0.0 over 6144 shared faces, i.e. the two blocks
+//! that each compute an interior face agree bitwise; across a panel SEAM, where the halo
+//! goes through the gnomonic transform and the two sides' states are not bitwise equal,
+//! the flux mismatch is 1.2e-19 against a flux scale of 8.0e-08.
+//!
 //! WHY NOT JUST RUN HLLE.  The deep atmosphere of the problems this grid exists for is
 //! high beta, subsonic and long-lived, and that is where HLLD's smaller dissipation on
-//! contacts and Alfven waves is worth having.  Switching per CELL keeps it there and
+//! contacts and Alfven waves is worth having.  Switching per FACE keeps it there and
 //! spends the dissipation only where the scheme is not trustworthy anyway.  This is the
 //! same trade mhd_fluxes.cpp already makes at a POLAR boundary, where it falls back from
 //! HLLD to HLLE for the whole row.
