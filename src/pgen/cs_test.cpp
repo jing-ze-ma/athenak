@@ -1553,7 +1553,12 @@ void CSTestConvErrors(ParameterInput *pin, Mesh *pm) {
   // nband of the tangential block edge), cells adjacent to the RADIAL boundary, and the
   // panel interior, and record where the maximum sits. A flat L1 with a doubling Linf
   // means the error lives on a set that thins as the grid refines -- this says which.
-  const int nband = 2;
+  // WIDTH IN CELLS, overridable with problem/conv_nband.  A fixed number of cells is a
+  // region that SHRINKS as the grid refines, and an L1 taken over a shrinking region is
+  // not a convergence rate -- that is exactly the trap that once read the seam as first
+  // order.  To measure an order, hold the band's PHYSICAL width fixed by doubling
+  // conv_nband with the resolution (2 at nx=16, 4 at 32, 8 at 64).
+  const int nband = pin->GetOrAddInteger("problem", "conv_nband", 2);
   Real l1_seam = 0.0, l1_rad = 0.0, l1_int = 0.0;
   std::int64_t n_seam = 0, n_rad = 0, n_int = 0;
   int mx_m = -1, mx_p = -1, mx_i = -1, mx_j = -1, mx_k = -1;

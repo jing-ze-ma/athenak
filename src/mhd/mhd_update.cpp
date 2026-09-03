@@ -41,6 +41,8 @@ TaskStatus MHD::RKUpdate(Driver *pdriver, int stage) {
   auto flx2 = uflx.x2f;
   auto flx3 = uflx.x3f;
   auto &mbsize = pmy_pack->pmb->mb_size;
+  // cubed-sphere RHS-split diagnostic: drop the flux divergence entirely
+  const Real dfac = cs_diag_no_divf ? 0.0 : 1.0;
     
   auto &use_cubed_sphere = pmy_pack->pmesh->use_cubed_sphere;
   auto &use_spherical_polar = pmy_pack->pmesh->use_spherical_polar;
@@ -114,7 +116,8 @@ TaskStatus MHD::RKUpdate(Driver *pdriver, int stage) {
     }
 
     par_for_inner(member, is, ie, [&](const int i) {
-      u0_(m,n,k,j,i) = gam0*u0_(m,n,k,j,i) + gam1*u1_(m,n,k,j,i) - beta_dt*divf(i);
+      u0_(m,n,k,j,i) = gam0*u0_(m,n,k,j,i) + gam1*u1_(m,n,k,j,i)
+                       - dfac*beta_dt*divf(i);
     });
   });
   return TaskStatus::complete;

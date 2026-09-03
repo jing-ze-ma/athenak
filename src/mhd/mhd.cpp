@@ -283,6 +283,10 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
     // determine if FOFC is enabled
     use_fofc = pin->GetOrAddBoolean("mhd","fofc",false);
 
+    // cubed-sphere RHS-split diagnostics (see mhd.hpp); both default off
+    cs_diag_no_coordsrc = pin->GetOrAddBoolean("mhd","cs_diag_no_coordsrc",false);
+    cs_diag_no_divf = pin->GetOrAddBoolean("mhd","cs_diag_no_divf",false);
+
     // select reconstruction method (default PLM)
     std::string xorder = pin->GetOrAddString("mhd","reconstruct","plm");
     if (xorder.compare("dc") == 0) {

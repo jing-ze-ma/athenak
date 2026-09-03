@@ -153,6 +153,13 @@ class MHD {
   // following used for FOFC algorithm
   DvceArray4D<bool> fofc;  // flag for each cell to indicate if FOFC is needed
   bool use_fofc = false;   // flag to enable FOFC
+
+  // CUBED-SPHERE DIAGNOSTICS. The momentum RHS on a gnomonic grid is the sum of a flux
+  // divergence and a geometric source term that must cancel to the accuracy of the
+  // scheme; these two flags drop one half each so a single step measures each half on
+  // its own. They change the answer and are for measurement only.
+  bool cs_diag_no_coordsrc = false;  // skip SrcTermsGnomonicEquiangleMHD
+  bool cs_diag_no_divf = false;      // skip the flux divergence in the RK update
     
   // following only used for including time-independent gravity in the conserved energy equation
   bool use_etotgrav = false;   // flag to enable etotgrav

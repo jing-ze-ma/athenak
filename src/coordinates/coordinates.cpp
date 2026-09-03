@@ -34,6 +34,12 @@ Coordinates::Coordinates(ParameterInput *pin, MeshBlockPack *ppack) :
     sin_face_eta("sin_face_eta",1,1,1), cos_face_eta("cos_face_eta",1,1,1),
     x_ov_rD("x_ov_rD",1,1,1,1), y_ov_rC("y_ov_rC",1,1,1,1), z_ov_rE("z_ov_rC",1,1,1,1) {
         
+  // Read only if <mhd> already exists: GetOrAdd would CREATE the block, and
+  // MeshBlockPack::AddPhysics decides which modules to build from which blocks exist.
+  if (pin->DoesBlockExist("mhd")) {
+    cs_diag_no_magsrc = pin->GetOrAddBoolean("mhd","cs_diag_no_magsrc",false);
+  }
+
   if (pmy_pack->pmesh->use_cubed_sphere || pmy_pack->pmesh->use_spherical_polar) {
     // Total number of MeshBlocks on this rank to be used in array dimensioning
     int nmb = std::max((pmy_pack->nmb_thispack), (pmy_pack->pmesh->nmb_maxperrank));
@@ -1027,7 +1033,7 @@ void Coordinates::SrcTermsGnomonicEquiangleImpl(const DvceArray5D<Real> &w0,
   const bool gen_ = eos_.IsGeneral();
   auto &wder_ = wder;
   auto &bcc_ = bcc0;
-  const bool mhd_ = is_mhd;
+  const bool mhd_ = is_mhd && !cs_diag_no_magsrc;
 
   auto volume_ = volume;
   auto area_ = area;

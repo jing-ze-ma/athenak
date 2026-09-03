@@ -167,6 +167,11 @@ class Coordinates {
     }
 
   // functions
+  // CUBED-SPHERE DIAGNOSTIC: drop the MAGNETIC terms from the gnomonic geometric
+  // source, leaving the hydro ones. The scheme is then inconsistent for MHD -- this is
+  // a probe for whether the low-beta instability's feedback lives in that source.
+  bool cs_diag_no_magsrc = false;
+
   void CoordSrcTerms(const DvceArray5D<Real> &w0, const EOS_Data &eos, const Real dt,
                      DvceArray5D<Real> &u0);
   void CoordSrcTerms(const DvceArray5D<Real> &w0, const DvceArray5D<Real> &bcc,

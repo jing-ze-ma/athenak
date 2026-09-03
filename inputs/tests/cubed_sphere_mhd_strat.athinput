@@ -78,6 +78,14 @@ reconstruct = plm
 rsolver     = hlld
 gamma       = 1.666667
 
+# RHS-SPLIT DIAGNOSTICS.  The tangential momentum RHS on this grid is a flux divergence
+# plus a geometric source term which must cancel; set exactly one of these to true to
+# measure one half of that cancellation on its own at nlim = 1.  Both change the answer
+# and are declared here only so they can be overridden on the command line.
+cs_diag_no_coordsrc = false   # drop the geometric source -> the step measures -div F
+cs_diag_no_divf     = false   # drop the flux divergence  -> the step measures the source
+cs_diag_no_magsrc   = false   # drop the MAGNETIC terms of the geometric source only
+
 <problem>
 iprob    = 13
 d0       = 1.0
@@ -94,6 +102,13 @@ conv_errors = 0     # force CSTestConvErrors on another iprob (the unstratified 
 exact_panel_ghosts = 0  # 1 = replace the panel ghosts with the ANALYTIC halo (state and
                         #     face fields); 2 = face ghosts only.  The halo-vs-operator
                         #     discriminator -- see CSTestRadialBC.
+b0r      = 1.0          # RADIAL MONOPOLE strength, used only by the iprob = 1 control:
+                        # B_r = b0r*(r0/r)^2 is force-free too, but has NO tangential
+                        # component, so it isolates the angular operators.
+conv_nband = 2          # width, IN CELLS, of the seam and cube-vertex error bins.  A
+                        # fixed cell count shrinks physically as the grid refines, so to
+                        # read an ORDER off a bin, double it with the resolution
+                        # (2 at nx2=16, 4 at 32, 8 at 64).
 
 <output1>
 file_type = hst
