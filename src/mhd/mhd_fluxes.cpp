@@ -20,7 +20,7 @@
 #include "reconstruct/ppm.hpp"
 #include "reconstruct/wenoz.hpp"
 #include "mhd/rsolvers/advect_mhd.hpp"
-#include "mhd/rsolvers/cs_lowbeta_llf.hpp"
+#include "mhd/rsolvers/cs_lowbeta_fallback.hpp"
 #include "mhd/rsolvers/llf_mhd.hpp"
 #include "mhd/rsolvers/hlle_mhd.hpp"
 #include "mhd/rsolvers/hlld_mhd.hpp"
@@ -80,7 +80,7 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
   auto phi0_x3f = phi0.x3f;
     
   auto &use_cubed_sphere = pmy_pack->pmesh->use_cubed_sphere;
-  const Real cs_lb_beta = cs_lowbeta_llf;
+  const Real cs_lb_beta = cs_lowbeta_fallback;
   const auto wb_option_ = wb_option;
   const bool use_wb_rho_ = use_wb_rho;
   const bool use_wb_x1_ = use_wb_x1;
@@ -290,7 +290,7 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
     if (use_cubed_sphere) {
       // low-beta dissipation fallback, BEFORE the rotation into covariant slots
       if (cs_lb_beta > 0.0) {
-        CSLowBetaLLF(member,eos,eos.IsGeneral(),m,k,j,il,iu,IVX,cs_lb_beta,
+        CSLowBetaFallback(member,eos,eos.IsGeneral(),m,k,j,il,iu,IVX,cs_lb_beta,
                      wl,wr,bl,br,dl,dr,bx,flx1,e31,e21);
         member.team_barrier();
       }
@@ -527,7 +527,7 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
 
           if (use_cubed_sphere) {
             if (cs_lb_beta > 0.0) {
-              CSLowBetaLLF(member,eos,eos.IsGeneral(),m,k,j,is-1,ie+1,IVY,cs_lb_beta,
+              CSLowBetaFallback(member,eos,eos.IsGeneral(),m,k,j,is-1,ie+1,IVY,cs_lb_beta,
                            wl,wr,bl,br,dl,dr,by,flx2,e12,e32);
               member.team_barrier();
             }
@@ -747,7 +747,7 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
 
           if (use_cubed_sphere) {
             if (cs_lb_beta > 0.0) {
-              CSLowBetaLLF(member,eos,eos.IsGeneral(),m,k,j,is-1,ie+1,IVZ,cs_lb_beta,
+              CSLowBetaFallback(member,eos,eos.IsGeneral(),m,k,j,is-1,ie+1,IVZ,cs_lb_beta,
                            wl,wr,bl,br,dl,dr,bz,flx3,e23,e13);
               member.team_barrier();
             }

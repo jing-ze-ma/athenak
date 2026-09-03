@@ -165,9 +165,9 @@ class MHD {
   // Needs the gnomonic cell-centred EMF, e_cc_3d_cs in mhd_corner_e.cpp.
   bool use_cs_gs07_emf = false;
 
-  // CUBED SPHERE: plasma beta below which the flux falls back from HLLD to LLF, per CELL.
-  // <= 0 disables it.  See rsolvers/cs_lowbeta_llf.hpp for why this exists.
-  Real cs_lowbeta_llf = 0.0;
+  // CUBED SPHERE: plasma beta below which the flux falls back from HLLD to HLLE, per
+  // CELL.  <= 0 disables it.  See rsolvers/cs_lowbeta_fallback.hpp for why this exists.
+  Real cs_lowbeta_fallback = 0.0;
     
   // following only used for including time-independent gravity in the conserved energy equation
   bool use_etotgrav = false;   // flag to enable etotgrav

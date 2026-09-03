@@ -1,13 +1,13 @@
-#ifndef MHD_RSOLVERS_CS_LOWBETA_LLF_HPP_
-#define MHD_RSOLVERS_CS_LOWBETA_LLF_HPP_
+#ifndef MHD_RSOLVERS_CS_LOWBETA_FALLBACK_HPP_
+#define MHD_RSOLVERS_CS_LOWBETA_FALLBACK_HPP_
 //========================================================================================
 // AthenaXXX astrophysical plasma code
 // Copyright(C) 2020 James M. Stone <jmstone@ias.edu> and the Athena code team
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
-//! \file cs_lowbeta_llf.hpp
-//! \brief CUBED SPHERE: replace the HLLD flux by an LLF one in cells whose plasma beta is
-//! below a threshold.
+//! \file cs_lowbeta_fallback.hpp
+//! \brief CUBED SPHERE: replace the HLLD flux by an HLLE one in cells whose plasma beta
+//! is below a threshold.
 //!
 //! WHY.  On the cubed sphere a uniform medium at rest carrying a uniform (hence
 //! force-free) field is linearly UNSTABLE below beta ~ 0.05: kinetic energy grows out of
@@ -28,24 +28,31 @@
 //! same trade mhd_fluxes.cpp already makes at a POLAR boundary, where it falls back from
 //! HLLD to HLLE for the whole row.
 //!
+//! WHY HLLE AND NOT LLF.  Either stabilises it -- for a state at REST they are identical,
+//! because with v = 0 and symmetric states HLLE's fan is +/- c_f and degenerates to
+//! Rusanov -- but they part company as soon as the flow moves, and the atmospheres this
+//! grid is for have fast zonal winds.  LLF spreads both sides at |v| + c_f regardless of
+//! direction; HLLE keeps the signed fan and reduces to full upwinding once the flow is
+//! supersonic.  Same stabilisation, less smearing of everything else.
+//!
 //! The L/R states are the RECONSTRUCTED ones, so the switch costs dissipation, not order.
 
 #include "athena.hpp"
 #include "eos/eos.hpp"
-#include "llf_mhd_singlestate.hpp"
+#include "hlle_mhd_singlestate.hpp"
 
 namespace mhd {
 //----------------------------------------------------------------------------------------
-//! \fn void CSLowBetaLLF
-//! \brief overwrite flx/ey/ez with the LLF flux wherever beta < beta_thresh.
+//! \fn void CSLowBetaFallback
+//! \brief overwrite flx/ey/ez with the HLLE flux wherever beta < beta_thresh.
 //!
 //! Must run AFTER the Riemann solver and BEFORE GnomonicEquiangleFlux*, which rotates the
 //! momentum flux into the covariant slots: everything here is in the face frame the
 //! solver worked in.  Slot mapping and the sign convention on ey/ez follow mhd_fofc.cpp,
-//! which calls the same single-state solver.
+//! which calls the LLF twin of the same single-state solver.
 
 KOKKOS_INLINE_FUNCTION
-void CSLowBetaLLF(TeamMember_t const &member, const EOS_Data &eos, const bool gen,
+void CSLowBetaFallback(TeamMember_t const &member, const EOS_Data &eos, const bool gen,
      const int m, const int k, const int j, const int il, const int iu, const int ivx,
      const Real beta_thresh,
      const ScrArray2D<Real> &wl, const ScrArray2D<Real> &wr,
@@ -79,9 +86,9 @@ void CSLowBetaLLF(TeamMember_t const &member, const EOS_Data &eos, const bool ge
 
     MHDCons1D flux;
     if (gen) {
-      SingleStateLLF_GenMHD(wli, wri, bxi, pl, pr, dl(IDG1,i), dr(IDG1,i), flux);
+      SingleStateHLLE_GenMHD(wli, wri, bxi, pl, pr, dl(IDG1,i), dr(IDG1,i), flux);
     } else {
-      SingleStateLLF_MHD(wli, wri, bxi, eos, flux);
+      SingleStateHLLE_MHD(wli, wri, bxi, eos, flux);
     }
     flx(m,IDN,k,j,i) = flux.d;
     flx(m,ivx,k,j,i) = flux.mx;
@@ -94,4 +101,4 @@ void CSLowBetaLLF(TeamMember_t const &member, const EOS_Data &eos, const bool ge
   return;
 }
 }  // namespace mhd
-#endif  // MHD_RSOLVERS_CS_LOWBETA_LLF_HPP_
+#endif  // MHD_RSOLVERS_CS_LOWBETA_FALLBACK_HPP_

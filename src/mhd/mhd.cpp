@@ -290,7 +290,7 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
     // On the cubed sphere the scheme is UNSTABLE below beta ~ 0.05 and the fallback is
     // what stops it, so this defaults ON there -- there is no correct answer below that
     // beta to preserve.  It is a no-op on every other grid.
-    cs_lowbeta_llf = pin->GetOrAddReal("mhd","cs_lowbeta_llf",
+    cs_lowbeta_fallback = pin->GetOrAddReal("mhd","cs_lowbeta_fallback",
                      (pmy_pack->pmesh->use_cubed_sphere ? 0.5 : 0.0));
 
     // select reconstruction method (default PLM)

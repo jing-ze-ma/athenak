@@ -98,9 +98,9 @@ cs_wellbalanced_src = false
 cs_gs07_emf = false
 
 # THE LOW-BETA FALLBACK, and the reason this test exists.  Plasma beta below which the
-# flux falls back per CELL from HLLD to LLF.  Defaults to 0.5 on the cubed sphere (0 =
-# off); it is what makes this test stable.  See src/mhd/rsolvers/cs_lowbeta_llf.hpp.
-cs_lowbeta_llf = 0.5
+# flux falls back per CELL from HLLD to HLLE.  Defaults to 0.5 on the cubed sphere (0 =
+# off); it is what makes this test stable.  See rsolvers/cs_lowbeta_fallback.hpp.
+cs_lowbeta_fallback = 0.5
 
 <problem>
 iprob    = 13
