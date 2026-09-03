@@ -287,6 +287,11 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
     cs_diag_no_coordsrc = pin->GetOrAddBoolean("mhd","cs_diag_no_coordsrc",false);
     cs_diag_no_divf = pin->GetOrAddBoolean("mhd","cs_diag_no_divf",false);
     use_cs_gs07_emf = pin->GetOrAddBoolean("mhd","cs_gs07_emf",false);
+    // On the cubed sphere the scheme is UNSTABLE below beta ~ 0.05 and the fallback is
+    // what stops it, so this defaults ON there -- there is no correct answer below that
+    // beta to preserve.  It is a no-op on every other grid.
+    cs_lowbeta_llf = pin->GetOrAddReal("mhd","cs_lowbeta_llf",
+                     (pmy_pack->pmesh->use_cubed_sphere ? 0.5 : 0.0));
 
     // select reconstruction method (default PLM)
     std::string xorder = pin->GetOrAddString("mhd","reconstruct","plm");
