@@ -1,0 +1,100 @@
+# Cubed sphere, MHD: the STRATIFIED LOW-BETA test.  Build with -D PROBLEM=cs_test.
+#
+# WHY THIS EXISTS.  Every other cubed-sphere MHD test in this directory is UNSTRATIFIED,
+# and the hot-Jupiter run that fails on this grid is a stratified low-beta atmosphere.
+# iprob = 13 is the smallest problem carrying both.
+#
+#   * constant inward gravity g, applied as a user source term (<srcterms> is refused on
+#     the cubed sphere; a purely RADIAL source needs none -- see CSTestGravSrc)
+#   * an isothermal profile rho = d0 exp(-(r-r0)/H), H = (p0/d0)/g
+#   * the same UNIFORM CARTESIAN field iprob = 8 uses, so curl B = 0 and it exerts no
+#     force at any beta.
+#
+# THE EXACT SOLUTION IS THE INITIAL CONDITION, FOREVER, and v is exactly zero in it -- so
+# |v| IS the error and there is no reference solution to argue about.
+#
+# ONE RUN SWEEPS BETA.  p falls by exp(-5) = 6.7e-3 over the domain while |B| does not, so
+# beta = 2 p / b0c^2 runs from 2.0 at the base to 1.3e-2 at the top, straddling the
+# beta ~ 1 threshold at which the cubed-sphere vertex operator was measured to lose
+# consistency.  Change b0c to move the whole ladder.
+#
+# HOW TO USE IT.  The gate is the PER-STEP error by region at nlim = 1, refining nx2:
+#
+#   for n in 16 32 64; do
+#     build_cs/src/athena -i inputs/tests/cubed_sphere_mhd_strat.athinput -d . \
+#       mesh/nx2=$n mesh/nx3=$n meshblock/nx2=$n meshblock/nx3=$n time/nlim=1
+#   done
+#
+# and read the CUBE VERTEX row of the per-region table.  It must be ~2nd order.  Do NOT
+# gate on a many-step run, where accumulation muddies the order, and do not read an order
+# off the panel INTERIOR alone -- the defect this test exists for is codim-2.
+#
+# AXES: x1 is RADIAL, x2 = xi and x3 = eta are the panel-tangential angles.  Must be 3D.
+
+<comment>
+problem = cubed sphere hydrostatic atmosphere carrying a uniform force-free field
+
+<job>
+basename = cs_strat
+
+<mesh>
+nghost   = 2
+nx1      = 32           # RADIAL.  H = 0.1 and the domain is 5 H, so 6.4 cells per H.
+x1min    = 1.0
+x1max    = 1.5
+ix1_bc   = user
+ox1_bc   = user
+
+nx2      = 32           # xi;  nx2 must equal nx3 (Mesh checks this)
+x2min    = -1.0
+x2max    = 1.0
+ix2_bc   = panel
+ox2_bc   = panel
+
+nx3      = 32           # eta
+x3min    = -1.0
+x3max    = 1.0
+ix3_bc   = panel
+ox3_bc   = panel
+
+use_cubed_sphere = true
+
+<meshblock>
+nx1      = 32
+nx2      = 32
+nx3      = 32
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim       = -1
+tlim       = 1.0
+ndiag      = 100
+
+<mhd>
+eos         = ideal
+reconstruct = plm
+rsolver     = hlld
+gamma       = 1.666667
+
+<problem>
+iprob    = 13
+d0       = 1.0
+p0       = 0.1       # with d0 = 1 and grav = 1 this makes H = 0.1
+omega    = 0.0       # the exact state is at rest; iprob=13 forces this to zero anyway
+grav     = 1.0       # constant inward g.  H = (p0/d0)/grav
+b0c      = 0.3162    # beta = 2 p0 / b0c^2 = 2.0 at the base, 1.3e-2 at the top
+bhx      = 0.37      # field direction.  Deliberately TILTED, as in iprob = 8/9: an
+bhy      = 0.61      # axis-aligned field is invariant under some of the panel maps and
+bhz      = 0.70      # would let a broken scheme look correct.
+user_bcs = true
+user_srcs = true
+conv_errors = 0     # force CSTestConvErrors on another iprob (the unstratified control)
+exact_panel_ghosts = 0  # 1 = replace the panel ghosts with the ANALYTIC halo (state and
+                        #     face fields); 2 = face ghosts only.  The halo-vs-operator
+                        #     discriminator -- see CSTestRadialBC.
+
+<output1>
+file_type = hst
+dt        = 0.1

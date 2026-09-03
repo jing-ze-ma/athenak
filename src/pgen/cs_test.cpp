@@ -88,6 +88,11 @@ Real cs_blx = 0.0, cs_bly = 0.0, cs_blz = 1.0;
 Real cs_blang = 0.2, cs_blp = 10.0;
 Real cs_bvx = 0.0, cs_bvy = 0.0, cs_bvz = 0.0;
 Real cs_svol = 0.0;       // total active volume, filled by CSTestConsSums
+// iprob=13 STRATIFIED atmosphere. cs_hscl is the isothermal pressure scale height and
+// doubles as the ENABLE flag: every site that needs the exact hydro state overrides the
+// uniform one only when cs_hscl > 0, so no other iprob can be perturbed by accident.
+Real cs_hscl = 0.0;       // pressure scale height H = (p0/d0)/g
+Real cs_gacc = 0.0;       // inward gravitational acceleration g (constant)
 int  cs_exact_panel_ghosts = 0;
 
 //----------------------------------------------------------------------------------------
@@ -231,9 +236,33 @@ void RigidRotState(const int p, const Real xi, const Real eta, const Real r,
   v3 = b;                              // eta  (x3)
 }
 
+//----------------------------------------------------------------------------------------
+//! \brief iprob = 13: the exact ISOTHERMAL HYDROSTATIC atmosphere at one radius.
+//!
+//! WHY THIS PROBLEM EXISTS. Every cubed-sphere MHD test before it was UNSTRATIFIED, and
+//! the hot-Jupiter run that fails is a stratified low-beta atmosphere. This is the
+//! smallest problem that has both: constant inward gravity g, an isothermal profile
+//! rho = d0 exp(-(r-r0)/H) with H = (p0/d0)/g, and a UNIFORM Cartesian field on top.
+//!
+//! The field is uniform, so curl B = 0 and it exerts NO force at any beta -- the exact
+//! solution is the atmosphere sitting still, forever, at every beta. That makes the gate
+//! free of any reference solution: v is exactly zero in the exact state, so |v| IS the
+//! error. And because p falls exponentially with height while |B| does not, ONE run
+//! sweeps beta over several decades, the top of the domain reaching the 1e-3 of the
+//! failing run. Choose the domain in scale heights and beta at the base follows from
+//! 2 p0 / b0c^2.
+
+KOKKOS_INLINE_FUNCTION
+void StaticAtmState(const Real r, const Real d0, const Real p0, const Real hs,
+                    const Real r0, const Real gm1, Real &dn, Real &ie) {
+  dn = d0*exp(-(r - r0)/hs);
+  ie = (p0/d0)*dn/gm1;      // isothermal: p/rho is the same constant everywhere
+}
+
 } // namespace
 
 void CSTestRadialBC(Mesh *pm);
+void CSTestGravSrc(Mesh *pm, const Real bdt);
 void CSTestGhostCheck(ParameterInput *pin, Mesh *pm);
 void CSCornerHaloSmoothness(MeshBlockPack *pmbp);
 void CSTestConvErrors(ParameterInput *pin, Mesh *pm);
@@ -304,6 +333,20 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   if (iprob == 11) {
     pgen_final_func = CSTestResistCheck;
   }
+  // iprob = 13: the STRATIFIED low-beta test. Gravity is a user source term because
+  // <srcterms> is refused on the cubed sphere (it has no gnomonic form); this one is
+  // purely radial, and rhat is orthogonal to both angular directions on every grid, so
+  // it needs no metric factor and is exact on cs.
+  if (iprob == 13) {
+    cs_gacc = pin->GetOrAddReal("problem", "grav", 1.0);
+    cs_hscl = (p0/d0)/cs_gacc;
+    // the exact state is hydrostatic and AT REST; a nonzero omega would leave the
+    // checker comparing against a rigid rotation this problem does not carry.
+    cs_omega = 0.0;
+    user_srcs_func = CSTestGravSrc;
+    user_bcs_func = CSTestRadialBC;
+    pgen_final_func = CSTestConvErrors;
+  }
   // iprob = 11: B = b0c*(-y,x,0) + a uniform tilted field. Its curl is the UNIFORM
   // vector 2*b0c*zhat while the field itself is not uniform, which is what makes it a
   // quantitative test of the resistive current: the uniform part contributes nothing to
@@ -357,6 +400,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // a CPU build compiles happily, which is why this only showed on the GPU).
   const Real blx_ = cs_blx, bly_ = cs_bly, blz_ = cs_blz;
   const Real blang_ = cs_blang, blp_ = cs_blp;
+  const Real hs_ = cs_hscl;
 
   par_for("pgen_cs_test", DevExeSpace(), 0,(pmbp->nmb_thispack-1), ks,ke, js,je, is,ie,
   KOKKOS_LAMBDA(int m, int k, int j, int i) {
@@ -439,6 +483,19 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       w0(m,IVX,k,j,i) = 0.0;
       w0(m,IVY,k,j,i) = 0.0;
       w0(m,IVZ,k,j,i) = 0.0;
+      return;
+    }
+
+    if (iprob == 13) {
+      // hydrostatic, at rest. See StaticAtmState.
+      Real dn, ie_;
+      StaticAtmState(rad, d0, p0, hs_, r0_, gm1, dn, ie_);
+      w0(m,IDN,k,j,i) = dn;
+      w0(m,IEN,k,j,i) = ie_;
+      w0(m,IVX,k,j,i) = 0.0;
+      w0(m,IVY,k,j,i) = 0.0;
+      w0(m,IVZ,k,j,i) = 0.0;
+      if (nscal > 0) w0(m,nhyd,k,j,i) = 1.0;
       return;
     }
 
@@ -536,7 +593,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // the monopole's singularity sits at the origin, outside the shell.  Combined with the
   // iprob=3 rigid rotation it gives a nonzero EMF, so it exercises CT rather than just
   // sitting there.
-  if (is_mhd && (iprob == 8 || iprob == 9)) {
+  if (is_mhd && (iprob == 8 || iprob == 9 || iprob == 13)) {
     // iprob = 8: a UNIFORM CARTESIAN field B = b0c * bhat, with v = 0 and uniform p.
     // iprob = 9: the SAME field, but on top of the iprob=3 rigid rotation, so that it is
     // carried round by the flow instead of sitting still. See RotatingUniformField.
@@ -786,7 +843,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       const Real bx = -bazi*py + bux, by = bazi*px + buy;
       u0(m,IEN,k,j,i) += 0.5*(bx*bx + by*by + buz*buz);
     });
-  } else if (is_mhd && (iprob == 8 || iprob == 9)) {
+  } else if (is_mhd && (iprob == 8 || iprob == 9 || iprob == 13)) {
     // ANALYTIC, deliberately: |B|^2 = b0c^2 exactly for a uniform Cartesian field. Adding
     // a magnetic energy built from the same bcc that ConsToPrim will subtract would make
     // the pressure check below self-consistent instead of correct, and would pass under
@@ -850,6 +907,7 @@ void CSTestRadialBC(Mesh *pm) {
   const Real bux = cs_bvx, buy = cs_bvy, buz = cs_bvz;
   const int iprob = cs_iprob;
   const Real amp_ = cs_amp, r0_ = cs_r0;
+  const Real hs_ = cs_hscl;
 
   // The RADIAL direction is x1. The lateral (x2/x3) ghosts are filled by the panel
   // exchange; only the two radial boundaries are physical here.
@@ -895,6 +953,9 @@ void CSTestRadialBC(Mesh *pm) {
         dn = RadialProfile(rad, d0, amp_, r0_);
         ie_ = p0/gm1;
         v1 = 0.0; v2 = 0.0; v3 = 0.0;
+      } else if (iprob == 13) {
+        StaticAtmState(rad, d0, p0, hs_, r0_, gm1, dn, ie_);
+        v1 = 0.0; v2 = 0.0; v3 = 0.0;
       } else if (iprob == 1 || iprob == 8) {
         dn = d0;
         ie_ = p0/gm1;
@@ -930,7 +991,7 @@ void CSTestRadialBC(Mesh *pm) {
   // so b0 in the radial ghosts is whatever was left there unless it is set here. Only the
   // x1 faces carry flux for the monopole; the two angular face fields stay zero, and the
   // energy has to be topped up because u0 above was written without the field.
-  if (is_mhd && (iprob == 8 || iprob == 9)) {
+  if (is_mhd && (iprob == 8 || iprob == 9 || iprob == 13)) {
     // The uniform Cartesian field is no more reflection-symmetric than the monopole, so
     // its radial ghosts get the exact state too -- faces, cell centres and the analytic
     // magnetic energy. For iprob = 9 the exact field is TIME DEPENDENT: it precesses
@@ -1240,6 +1301,78 @@ void CSTestRadialBC(Mesh *pm) {
   // would produce, so it isolates the halo exchange from the rest of the scheme: any
   // residual left over is NOT the seam.
   const int pgmode = cs_exact_panel_ghosts;
+  // MHD FORM, for the uniform-Cartesian-field problems (iprob = 8 and the stratified
+  // 13). THIS IS THE HALO-vs-OPERATOR DISCRIMINATOR. It replaces the panel ghosts --
+  // hydro state AND the two angular face fields -- with the analytic values at the
+  // ghost's OWN chart-continued (xi, eta), i.e. with a perfect halo. If a convergence
+  // order measured on the active cells is unchanged by this, the halo exchange is not
+  // what limits it and the defect is in the interior operator; if it jumps to 2, it is
+  // the halo. Nothing else in the run differs.
+  //
+  // The chart formulae are pure tan(), so they continue analytically past |xi| = pi/4
+  // and give the ghost's own position and normals with no reference to the neighbour
+  // panel -- which is exactly the halo the exchange is trying to approximate.
+  if (pgmode > 0 && is_mhd && (iprob == 8 || iprob == 13)) {
+    int n1 = indcs.nx1 + 2*ng;
+    int &je = indcs.je; int &ke = indcs.ke;
+    auto &b0f = pmbp->pmhd->b0;
+    auto &bcc = pmbp->pmhd->bcc0;
+    const Real bvx = cs_bvx, bvy = cs_bvy, bvz = cs_bvz;
+    const Real bsq = SQR(cs_b0r);
+    par_for("cs_test_pghost_mhd", DevExeSpace(), 0,(pmbp->nmb_thispack-1), 0,(n3-1),
+            0,(n2-1), 0,(n1-1),
+    KOKKOS_LAMBDA(int m, int k, int j, int i) {
+      const bool joff = (j < js) || (j > je);
+      const bool koff = (k < ks) || (k > ke);
+      if (!joff && !koff) return;
+      if (pgmode == 2 && joff && koff) return;   // face ghosts only; leave the corners
+      const Real x2c = 0.25*M_PI*CellCenterX(j-js, indcs.nx2, size.d_view(m).x2min,
+                                                              size.d_view(m).x2max);
+      const Real x3c = 0.25*M_PI*CellCenterX(k-ks, indcs.nx3, size.d_view(m).x3min,
+                                                              size.d_view(m).x3max);
+      const Real x2f = 0.25*M_PI*LeftEdgeX(j-js, indcs.nx2, size.d_view(m).x2min,
+                                                            size.d_view(m).x2max);
+      const Real x3f = 0.25*M_PI*LeftEdgeX(k-ks, indcs.nx3, size.d_view(m).x3min,
+                                                            size.d_view(m).x3max);
+      const Real rad = CellCenterX(i-is, indcs.nx1, size.d_view(m).x1min,
+                                                    size.d_view(m).x1max);
+      const int p = mbpanel.d_view(m);
+      Real n1v[3], n2v[3], cx, cy, cz;
+      // hydro: at rest, uniform or stratified
+      Real dn = d0, ie_ = p0/gm1;
+      if (hs_ > 0.0) { StaticAtmState(rad, d0, p0, hs_, r0_, gm1, dn, ie_); }
+      w0(m,IDN,k,j,i) = dn;
+      w0(m,IEN,k,j,i) = ie_;
+      w0(m,IVX,k,j,i) = 0.0;
+      w0(m,IVY,k,j,i) = 0.0;
+      w0(m,IVZ,k,j,i) = 0.0;
+      u0(m,IDN,k,j,i) = dn;
+      u0(m,IM1,k,j,i) = 0.0;
+      u0(m,IM2,k,j,i) = 0.0;
+      u0(m,IM3,k,j,i) = 0.0;
+      u0(m,IEN,k,j,i) = ie_ + 0.5*bsq;
+      // the two ANGULAR face fields, each at its own face position
+      PanelNormals(p, x2f, x3c, n1v, n2v);
+      b0f.x2f(m,k,j,i) = bvx*n1v[0] + bvy*n1v[1] + bvz*n1v[2];
+      PanelNormals(p, x2c, x3f, n1v, n2v);
+      b0f.x3f(m,k,j,i) = bvx*n2v[0] + bvy*n2v[1] + bvz*n2v[2];
+      // the RADIAL face field, and bcc in the orthonormal frame
+      PanelToCart(p, x2c, x3c, cx, cy, cz);
+      const Real br = bvx*cx + bvy*cy + bvz*cz;
+      b0f.x1f(m,k,j,i) = br;
+      PanelNormals(p, x2f, x3c, n1v, n2v);
+      const Real bxi = bvx*n1v[0] + bvy*n1v[1] + bvz*n1v[2];
+      PanelNormals(p, x2c, x3f, n1v, n2v);
+      const Real bet = bvx*n2v[0] + bvy*n2v[1] + bvz*n2v[2];
+      Real e1[3], e2[3];
+      cubed_sphere::PanelTangents(p, x2c, x3c, e1, e2);
+      const Real cc = e1[0]*e2[0] + e1[1]*e2[1] + e1[2]*e2[2];
+      const Real ss = sqrt(1.0 - cc*cc);
+      bcc(m,IBX,k,j,i) = br;
+      bcc(m,IBY,k,j,i) = (bxi + cc*bet)/ss;
+      bcc(m,IBZ,k,j,i) = bet;
+    });
+  }
   if (pgmode > 0 && iprob == 3) {
     int n1 = indcs.nx1 + 2*ng;
     int &je = indcs.je; int &ke = indcs.ke;
@@ -1321,6 +1454,38 @@ void CSTestRadialBC(Mesh *pm) {
 //! norm. Errors are APPENDED to <basename>-cs-errs.dat so a resolution sweep accumulates
 //! in one file.
 
+//----------------------------------------------------------------------------------------
+//! \fn CSTestGravSrc
+//! \brief Constant inward gravity for iprob = 13, as a user source term.
+//!
+//! <srcterms> is REFUSED on the cubed sphere because its terms have no gnomonic form.
+//! This one does not need one: g is along -rhat, and rhat is orthogonal to BOTH angular
+//! basis vectors everywhere on the gnomonic chart (only the two angular directions are
+//! skew). So the radial slot of the covariant momentum takes -rho g with no metric
+//! factor, and the energy takes -rho g v.rhat -- exact on cs, with no cos_cell anywhere.
+
+void CSTestGravSrc(Mesh *pm, const Real bdt) {
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  auto &indcs = pm->mb_indcs;
+  int &is = indcs.is; int &ie = indcs.ie;
+  int &js = indcs.js; int &je = indcs.je;
+  int &ks = indcs.ks; int &ke = indcs.ke;
+  const bool is_mhd = (pmbp->pmhd != nullptr);
+  auto u0 = is_mhd ? pmbp->pmhd->u0 : pmbp->phydro->u0;
+  auto w0 = is_mhd ? pmbp->pmhd->w0 : pmbp->phydro->w0;
+  const Real gacc = cs_gacc;
+
+  par_for("cs_test_grav", DevExeSpace(), 0,(pmbp->nmb_thispack-1), ks,ke, js,je, is,ie,
+  KOKKOS_LAMBDA(int m, int k, int j, int i) {
+    const Real src = bdt*gacc*u0(m,IDN,k,j,i);
+    // energy first, so it uses the velocity BEFORE this update
+    u0(m,IEN,k,j,i) -= src*w0(m,IVX,k,j,i);
+    u0(m,IM1,k,j,i) -= src;
+  });
+  return;
+}
+
+//----------------------------------------------------------------------------------------
 void CSTestConvErrors(ParameterInput *pin, Mesh *pm) {
   MeshBlockPack *pmbp = pm->pmb_pack;
   CSTestEosCacheCheck(pm);
@@ -1374,6 +1539,13 @@ void CSTestConvErrors(ParameterInput *pin, Mesh *pm) {
   Real l1v_r[3] = {0.0, 0.0, 0.0}, l1p_r[3] = {0.0, 0.0, 0.0};
   Real l1b_r[3] = {0.0, 0.0, 0.0};
   Real liv_r[3] = {0.0, 0.0, 0.0}, lip_r[3] = {0.0, 0.0, 0.0};
+  // TANGENTIAL velocity error, split out from the radial one. On a stratified problem
+  // (iprob = 13) the dominant error is the RADIAL hydrostatic imbalance -- a cell-centred
+  // gravity source does not exactly cancel the finite-volume pressure gradient -- and it
+  // is the SAME in every region, so it buries any vertex signal in the combined norm.
+  // That imbalance drives v.rhat only. A defect in the ANGULAR operators drives
+  // tangential flow, which the exact solution has none of, so |v_t| is the instrument.
+  Real l1vt_r[3] = {0.0, 0.0, 0.0}, livt_r[3] = {0.0, 0.0, 0.0};
   Real lib_r[3] = {0.0, 0.0, 0.0};
   std::int64_t n_r[3] = {0, 0, 0};
   std::int64_t ncell = 0;
@@ -1492,6 +1664,13 @@ void CSTestConvErrors(ParameterInput *pin, Mesh *pm) {
           Real dn, iex, v1, v2, v3;
           RigidRotState(p, x2c, x3c, rad, cs_d0, cs_p0, cs_omega, gm1,
                         dn, iex, v1, v2, v3);
+          if (cs_hscl > 0.0) {
+            // iprob = 13: the exact state is the hydrostatic atmosphere AT REST, so the
+            // density and pressure come from the stratified profile instead. cs_omega is
+            // forced to zero for this iprob, so v1/v2/v3 above are already exactly zero
+            // -- which is what makes |v| itself the error, with no reference solution.
+            StaticAtmState(rad, cs_d0, cs_p0, cs_hscl, cs_r0, gm1, dn, iex);
+          }
           const Real ev = fabs(w0h(m,IVX,k,j,i) - v1) + fabs(w0h(m,IVY,k,j,i) - v2)
                         + fabs(w0h(m,IVZ,k,j,i) - v3);
           l1v += ev;
@@ -1506,6 +1685,9 @@ void CSTestConvErrors(ParameterInput *pin, Mesh *pm) {
           // are over ACTIVE cells; the GHOST SCAN in CSTestResistCheck does the halo.
           if (ev > livm) { livm = ev; }
           if (ep > lipm) { lipm = ep; }
+          const Real evt = fabs(w0h(m,IVY,k,j,i) - v2) + fabs(w0h(m,IVZ,k,j,i) - v3);
+          l1vt_r[reg] += evt;
+          if (evt > livt_r[reg]) { livt_r[reg] = evt; }
           l1v_r[reg] += ev;  l1p_r[reg] += ep;
           if (ev > liv_r[reg]) { liv_r[reg] = ev; }
           if (ep > lip_r[reg]) { lip_r[reg] = ep; }
@@ -1573,9 +1755,11 @@ void CSTestConvErrors(ParameterInput *pin, Mesh *pm) {
     Real rmax[2] = {livm, lipm};
     MPI_Allreduce(MPI_IN_PLACE, rmax, 2, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
     livm = rmax[0]; lipm = rmax[1];
+    MPI_Allreduce(MPI_IN_PLACE, l1vt_r, 3, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
     MPI_Allreduce(MPI_IN_PLACE, l1v_r, 3, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
     MPI_Allreduce(MPI_IN_PLACE, l1p_r, 3, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
     MPI_Allreduce(MPI_IN_PLACE, l1b_r, 3, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(MPI_IN_PLACE, livt_r, 3, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
     MPI_Allreduce(MPI_IN_PLACE, liv_r, 3, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
     MPI_Allreduce(MPI_IN_PLACE, lip_r, 3, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
     MPI_Allreduce(MPI_IN_PLACE, lib_r, 3, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
@@ -1626,6 +1810,14 @@ void CSTestConvErrors(ParameterInput *pin, Mesh *pm) {
                   "  Linf(v)=%.4e Linf(p)=%.4e Linf(B)=%.4e\n", rn[r],
                   static_cast<long long>(n_r[r]), l1v_r[r]*w, l1p_r[r]*w, l1b_r[r]*w,
                   liv_r[r], lip_r[r], lib_r[r]);
+    }
+    // TANGENTIAL velocity alone. See the note by l1vt_r: on a stratified problem this is
+    // the region-discriminating norm, because the radial hydrostatic imbalance is common
+    // to every region while a defect in the angular operators is not.
+    for (int r=0; r<3; ++r) {
+      const Real w = (n_r[r] > 0) ? 1.0/static_cast<Real>(n_r[r]) : 0.0;
+      std::printf("###   REGION %s  TANGENTIAL ONLY   L1(v_t)=%.4e  Linf(v_t)=%.4e\n",
+                  rn[r], l1vt_r[r]*w, livt_r[r]);
     }
   }
 
