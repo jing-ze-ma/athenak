@@ -1,0 +1,82 @@
+# Spherical polar, MHD: the LOW-BETA STABILITY test.  Build with -D PROBLEM=sp_lowbeta.
+#
+# THE TWIN of cs_test iprob = 8 on inputs/tests/cubed_sphere_mhd_strat.athinput, and it
+# exists to answer one question: is the cubed sphere's low-beta instability a property of
+# the GNOMONIC machinery, or of AthenaK's curvilinear MHD source terms generally?
+#
+# Everything that can be held fixed is: the same shell r = 1..1.5 at nx1 = 16, the same
+# uniform medium at rest (d0 = 1, p0 = 0.1), the same tilted uniform Cartesian field, the
+# same gamma, plm, hlld, rk2, cfl.  What differs is the grid, which is orthogonal here.
+#
+# The exact solution is the initial condition forever and v is exactly zero in it, so the
+# kinetic energy in the .hst file IS the error.  The gate is whether it GROWS.
+#
+#   for b in 1.0 2.0 3.162; do
+#     build_sp/src/athena -i inputs/tests/spherical_polar_mhd_lowbeta.athinput -d . \
+#       problem/b0c=$b job/basename=s$b
+#   done
+#   # rate = 0.5 * d/dt ln(KE);  beta = 2*p0/b0c^2 = 0.2, 0.05, 0.02.
+#
+# theta is a WEDGE with exact boundaries, deliberately: the polar axis has no cubed-sphere
+# analogue and would confound the comparison.  phi spans the full 2 pi and is periodic.
+
+<comment>
+problem = spherical polar, uniform medium at rest carrying a uniform force-free field
+
+<job>
+basename = sp_lowbeta
+
+<mesh>
+nghost   = 2
+nx1      = 16           # RADIAL, matching the cubed-sphere test
+x1min    = 1.0
+x1max    = 1.5
+ix1_bc   = user
+ox1_bc   = user
+
+nx2      = 16           # theta, a wedge about the equator
+x2min    = 1.0471975512     # pi/3
+x2max    = 2.0943951024     # 2 pi/3
+ix2_bc   = user
+ox2_bc   = user
+
+nx3      = 48           # phi, full 2 pi.  dphi ~ dtheta at the equator
+x3min    = 0.0
+x3max    = 6.2831853072
+ix3_bc   = periodic
+ox3_bc   = periodic
+
+use_spherical_polar = true
+
+<meshblock>
+nx1      = 16
+nx2      = 16
+nx3      = 48
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim       = -1
+tlim       = 3.0
+ndiag      = 100
+
+<mhd>
+eos         = ideal
+reconstruct = plm
+rsolver     = hlld
+gamma       = 1.666667
+
+<problem>
+iprob    = 1            # 1 = uniform Cartesian field;  2 = radial monopole (the control)
+d0       = 1.0
+p0       = 0.1
+b0c      = 3.162        # beta = 2 p0 / b0c^2 = 0.02
+bhx      = 0.37         # the same tilted direction the cubed-sphere test uses
+bhy      = 0.61
+bhz      = 0.70
+user_bcs = true
+
+<output1>
+file_type = hst
+dt        = 0.01
