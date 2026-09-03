@@ -102,6 +102,16 @@ conv_errors = 0     # force CSTestConvErrors on another iprob (the unstratified 
 exact_panel_ghosts = 0  # 1 = replace the panel ghosts with the ANALYTIC halo (state and
                         #     face fields); 2 = face ghosts only.  The halo-vs-operator
                         #     discriminator -- see CSTestRadialBC.
+bazi     = 0.0          # AZIMUTHAL amplitude, used only by iprob = 11: adds
+                        # bazi*(-y,x,0), whose curl is uniform, so the field carries a
+                        # REAL CURRENT and the pressure has to balance a real J x B.
+bunif    = 0.1          # UNIFORM amplitude for iprob = 11 ONLY.  Careful: on that iprob
+                        # b0c is the AZIMUTHAL amplitude of bazi*(-y,x,0), whose curl is
+                        # the uniform 2*bazi*zhat -- so that field carries a REAL CURRENT
+                        # and the pressure balances a real J x B.  For a LOW-BETA
+                        # current-carrying equilibrium make bunif strong and b0c weak, and
+                        # keep p0 above the cross term 2*b0c*|Bunif|*r_max or the pressure
+                        # goes negative.
 b0r      = 1.0          # RADIAL MONOPOLE strength, used only by the iprob = 1 control:
                         # B_r = b0r*(r0/r)^2 is force-free too, but has NO tangential
                         # component, so it isolates the angular operators.
