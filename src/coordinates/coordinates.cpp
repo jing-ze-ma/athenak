@@ -891,6 +891,15 @@ void Coordinates::GnomonicEquiangleRaiseVelMHD(DvceArray5D<Real> &u0,
   auto eos_ = eos_data;
   auto wder_ = wder;
   auto wtemp_ = wtemp;
+  // On a STRETCHED radial grid the cell centre is not the midpoint of its two faces, so
+  // the radial field at the centre is a weighted interpolation, not the plain average --
+  // see CellCenteredRadialFld.  Only when the grid really is stretched: on a uniform one
+  // the weighted form differs from 0.5*(bl+br) only by round-off, and paying that would
+  // perturb every unstretched cubed-sphere answer in the last bits for nothing.
+  const bool str_x1_ = (pmy_pack->pmesh->use_grid_stretch_r ||
+                        pmy_pack->pmesh->use_grid_stretch_r_poly);
+  auto &x1v_ = x1v;
+  auto &x1f_ = xx1f;
 
   par_for("cs_raisev_mhd", DevExeSpace(), 0,nmb1, kl,ku, jl,ju, il,iu,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -901,7 +910,12 @@ void Coordinates::GnomonicEquiangleRaiseVelMHD(DvceArray5D<Real> &u0,
     // cell-centred field, then into the orthonormal frame. The eta slot already IS the
     // third axis of that frame (B.(e_eta - c e_xi)/s = s B^eta), so only the xi slot
     // moves: B.e_xi = B^xi + c B^eta = (b_xi + c b_eta)/s.
-    const Real bx = 0.5*(b0.x1f(m,k,j,i) + b0.x1f(m,k,j,i+1));
+    // x2/x3 stay plain averages: the panel coordinates are uniform (mesh.cpp refuses
+    // use_grid_stretch_theta), so a weighted form there would return the same number.
+    const Real bx = str_x1_ ?
+        CellCenteredRadialFld(b0.x1f(m,k,j,i), b0.x1f(m,k,j,i+1),
+                              x1f_(m,i), x1f_(m,i+1), x1v_(m,i)) :
+        0.5*(b0.x1f(m,k,j,i) + b0.x1f(m,k,j,i+1));
     const Real by_n = 0.5*(b0.x2f(m,k,j,i) + b0.x2f(m,k,j+1,i));
     const Real bz_n = 0.5*(b0.x3f(m,k,j,i) + b0.x3f(m,k+1,j,i));
     const Real by = (by_n + c*bz_n)/sn;

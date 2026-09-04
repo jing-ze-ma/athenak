@@ -49,4 +49,34 @@ static int CellCenterIndex(Real x, int n, Real xmin, Real xmax) {
   return static_cast<int>(((x-xmin)/(xmax-xmin))*static_cast<Real>(n));
 }
 
+//----------------------------------------------------------------------------------------
+//! \fn Real CellCenteredRadialFld()
+//! \brief the cell-centred value of a face-centred field in the RADIAL direction, as a
+//! linear interpolation to the cell centre rather than the plain average of its faces.
+//!
+//! WHY THIS IS NOT 0.5*(bl + br).  On a STRETCHED radial grid the cell centre is not the
+//! midpoint of its two faces: x1v is S(midpoint of the uniform cell) while the faces are
+//! S(left) and S(right), and S is nonlinear, so S(mid) != 0.5*(S(l) + S(r)).  The plain
+//! average therefore returns the field at the FACE MIDPOINT, not at x1v.  Spherical polar
+//! has always used the weighted form; the cubed sphere used the plain average even though
+//! its x1 is radial and stretched in exactly the same way.
+//!
+//! HOW BIG.  On the production hot-Jupiter grid (128 radial cells, 4.07x spread in cell
+//! width, the 4-coefficient polynomial stretch) the weight departs from 0.5 by at most
+//! 4.4e-3 and on average 1.9e-3.  This is a second-order accuracy fix, not a bug fix --
+//! it will not move a dynamical result.  The reason to make it is CONSISTENCY: everything
+//! that rebuilds bcc must agree cell for cell, or the difference reappears as an energy
+//! mismatch that the C2P floors then bake into u.e.
+//!
+//! Reduces to exactly 0.5*(bl + br) only up to round-off on a uniform grid, so it is
+//! applied ONLY where x1 really is a stretched radial coordinate; everywhere else keeps
+//! the plain average and its bit-for-bit answers.
+
+KOKKOS_INLINE_FUNCTION
+static Real CellCenteredRadialFld(const Real bl, const Real br, const Real x1f_l,
+                                  const Real x1f_r, const Real x1v) {
+  const Real idx = 1.0/(x1f_r - x1f_l);
+  return ((x1f_r - x1v)*idx)*bl + ((x1v - x1f_l)*idx)*br;
+}
+
 #endif // COORDINATES_CELL_LOCATIONS_HPP_

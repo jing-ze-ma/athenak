@@ -16,6 +16,7 @@
 #include <string>
 
 #include "athena.hpp"
+#include "coordinates/cell_locations.hpp"
 #include "mhd/mhd.hpp"
 #include "units/units.hpp"
 #include "eos/eos.hpp"
@@ -71,6 +72,11 @@ void GeneralMHD::ConsToPrim(DvceArray5D<Real> &cons, const DvceFaceFld4D<Real> &
   auto &wtemp_ = pmy_pack->pmhd->wtemp;
 
   auto &use_spherical_polar = pmy_pack->pmesh->use_spherical_polar;
+  // cubed sphere AND a stretched radial grid: the one case where the plain face
+  // average is not the field at the cell centre.  See CellCenteredRadialFld.
+  const bool cs_str_x1_ = pmy_pack->pmesh->use_cubed_sphere &&
+                          (pmy_pack->pmesh->use_grid_stretch_r ||
+                           pmy_pack->pmesh->use_grid_stretch_r_poly);
   auto &x1v_ = pmy_pack->pcoord->x1v;
   auto &x1f_ = pmy_pack->pcoord->xx1f;
   auto &x2v_ = pmy_pack->pcoord->x2v;
@@ -121,7 +127,16 @@ void GeneralMHD::ConsToPrim(DvceArray5D<Real> &cons, const DvceFaceFld4D<Real> &
         rw = (x3v_(m,k)-x3f_(m,k))/(x3f_(m,k+1)-x3f_(m,k));
         u.bz = lw*b.x3f(m,k,j,i) + rw*b.x3f(m,k+1,j,i);
       } else {
-        u.bx = 0.5*(b.x1f(m,k,j,i) + b.x1f(m,k,j,i+1));
+        // The cubed sphere's x1 is radial and stretched exactly as spherical polar's is,
+        // so its centre is not the midpoint of its two faces either; see
+        // CellCenteredRadialFld.  This must MATCH what
+        // Coordinates::GnomonicEquiangleRaiseVelMHD rebuilds bcc with a moment later --
+        // a mismatch between the two is an energy difference the C2P floors then bake
+        // into u.e.  Every other grid keeps the plain average, bit for bit.
+        u.bx = cs_str_x1_ ?
+            CellCenteredRadialFld(b.x1f(m,k,j,i), b.x1f(m,k,j,i+1),
+                                  x1f_(m,i), x1f_(m,i+1), x1v_(m,i)) :
+            0.5*(b.x1f(m,k,j,i) + b.x1f(m,k,j,i+1));
         u.by = 0.5*(b.x2f(m,k,j,i) + b.x2f(m,k,j+1,i));
         u.bz = 0.5*(b.x3f(m,k,j,i) + b.x3f(m,k+1,j,i));
       }
