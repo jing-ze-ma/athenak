@@ -201,6 +201,8 @@ Mesh::Mesh(ParameterInput *pin) :
   }
   use_polar_boundary = pin->GetOrAddBoolean("mesh", "use_polar_boundary", false);
   use_polar_average_b = pin->GetOrAddBoolean("mesh", "use_polar_average_b", false);
+  use_polar_average_eresist = pin->GetOrAddBoolean("mesh", "use_polar_average_eresist",
+                                                    false);
   if (use_spherical_polar && pin->GetReal("mesh", "x3min")<0.0 && pin->GetReal("mesh", "x3max")<0.0) {
     mesh_size.x3min = 0.0;
     mesh_size.x3max = 2.0*M_PI;

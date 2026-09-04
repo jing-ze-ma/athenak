@@ -426,7 +426,16 @@ TaskStatus MHD::EField(Driver *pdrive, int stage) {
 
   // Add resistive electric field (if needed)
   if (presist != nullptr) {
-    if (!presist->use_rkg_sts) presist->AddResistiveEMFs(b0, efld);
+    if (!presist->use_rkg_sts) {
+      presist->AddResistiveEMFs(b0, efld);
+      // CornerE averaged E_r azimuthally at the pole BEFORE the resistive EMF went in, so
+      // the resistive part at the axis is still un-averaged.  Re-apply it (idempotent on
+      // the ideal part it already covered).  See mesh.hpp.
+      if (pmy_pack->pmesh->use_polar_boundary &&
+          pmy_pack->pmesh->use_polar_average_eresist) {
+        PolarAzimuthalAverageEr();
+      }
+    }
   }
   // TODO(@user): Add more resistive effects here
 

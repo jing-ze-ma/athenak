@@ -285,6 +285,13 @@ class Mesh {
   // non-axisymmetric than axisymmetric without it.  Default OFF so existing
   // spherical-polar answers are unchanged.
   bool use_polar_average_b;
+  // SPHERICAL POLAR + RESISTIVITY: the polar azimuthal average of the edge EMF E_r runs
+  // at the end of CornerE, but the RESISTIVE EMF is added to the same array afterwards,
+  // so the resistive part of E_r at the axis was never averaged and is free to be
+  // multi-valued there.  On the cubed sphere the order is the other way round.  This
+  // re-applies the average after the resistive add.  Default OFF: it changes every
+  // spherical-polar resistive answer, and sp_polavg was launched without it.
+  bool use_polar_average_eresist;
 
   bool one_d, two_d, three_d; // flags to indicate 1D or 2D or 3D calculations
   bool multi_d;               // flag to indicate 2D and 3D calculations
