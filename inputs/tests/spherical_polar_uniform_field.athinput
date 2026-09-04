@@ -36,6 +36,7 @@ eos = ideal
 reconstruct = plm
 rsolver = hlld
 gamma = 1.6666666666666667
+sp_wellbalanced_src = false
 <problem>
 d0 = 1.0
 p0 = 1.0

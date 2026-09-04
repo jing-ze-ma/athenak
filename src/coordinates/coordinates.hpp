@@ -131,10 +131,12 @@ class Coordinates {
       const DvceArray5D<Real> &bcc0, const DvceArray5D<Real> &wder,
       const DvceFaceFld5D<Real> uflx, const EOS_Data &eos_data, const Real bdt,
       DvceArray5D<Real> &u0);
-  void SrcTermsGnomonicEquiangleWB(const DvceArray5D<Real> &w0,
+  // The face-sum (well-balanced) geometric source, shared by the cubed sphere and the
+  // spherical-polar grid; the grid enters only through the geometry cache.
+  void SrcTermsCurvilinearWB(const DvceArray5D<Real> &w0,
        const DvceArray5D<Real> &bcc0, const bool is_mhd,
        const DvceArray5D<Real> &wder, const EOS_Data &eos_data, const Real bdt,
-       DvceArray5D<Real> &u0);
+       DvceArray5D<Real> &u0, const DvceArray4D<Real> &pwb, const bool use_wb_static);
   void SrcTermsGnomonicEquiangleImpl(const DvceArray5D<Real> &w0,
       const DvceArray5D<Real> &bcc0, const bool is_mhd,
       const DvceArray5D<Real> &wder, const DvceFaceFld5D<Real> uflx,
@@ -176,9 +178,11 @@ class Coordinates {
   // a probe for whether the low-beta instability's feedback lives in that source.
   bool cs_diag_no_magsrc = false;
 
-  // WELL-BALANCED gnomonic geometric source (<mhd>/cs_wellbalanced_src).  See the long
-  // note at SrcTermsGnomonicEquiangleWB.
+  // WELL-BALANCED geometric source (<mhd>/cs_wellbalanced_src on the cubed sphere,
+  // <mhd>/sp_wellbalanced_src on the spherical-polar grid).  See the long note at
+  // SrcTermsCurvilinearWB.
   bool cs_wellbalanced_src = false;
+  bool sp_wellbalanced_src = false;
   // Its per-(MeshBlock,k,j) geometry cache: the cell triad and the four tangential faces'
   // normals and triads depend on the angles alone, so they are built once per mesh (on
   // every call under AMR) instead of ten panel-map evaluations per cell per stage.

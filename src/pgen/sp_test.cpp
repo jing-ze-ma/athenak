@@ -40,6 +40,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   const Real d0 = pin->GetOrAddReal("problem", "d0", 1.0);
   const Real p0 = pin->GetOrAddReal("problem", "p0", 1.0);
   const Real b0 = pin->GetOrAddReal("problem", "b0", 1.0);
+  // econsistent = true: the magnetic energy is built from the SAME cell-centred bcc that
+  // ConsToPrim subtracts, so the recovered pressure is exactly uniform and only the
+  // geometric-source/flux-divergence mismatch survives.  false (cs_test's choice): the
+  // analytic b0^2/2, so the |bcc|^2 - b0^2 defect appears as an O(dtheta^2) pressure
+  // ripple, largest in the polar rows -- which then dominates the one-step force.
+  const bool econs = pin->GetOrAddBoolean("problem", "econsistent", true);
   const Real gm1 = pmbp->pmhd->peos->eos_data.gamma - 1.0;
 
   auto &indcs = pmy_mesh_->mb_indcs;
@@ -71,11 +77,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     u0(m,IM1,k,j,i) = 0.0;
     u0(m,IM2,k,j,i) = 0.0;
     u0(m,IM3,k,j,i) = 0.0;
-    // |B|^2 = b0^2 exactly for a uniform field: the energy is analytic on purpose
-    u0(m,IEN,k,j,i) = p0/gm1 + 0.5*b0*b0;
     bcc(m,IBX,k,j,i) = 0.5*(b0f.x1f(m,k,j,i) + b0f.x1f(m,k,j,i+1));
     bcc(m,IBY,k,j,i) = 0.5*(b0f.x2f(m,k,j,i) + b0f.x2f(m,k,j+1,i));
     bcc(m,IBZ,k,j,i) = 0.5*(b0f.x3f(m,k,j,i) + b0f.x3f(m,k+1,j,i));
+    const Real bsq = econs ? (SQR(bcc(m,IBX,k,j,i)) + SQR(bcc(m,IBY,k,j,i))
+                             + SQR(bcc(m,IBZ,k,j,i))) : b0*b0;
+    u0(m,IEN,k,j,i) = p0/gm1 + 0.5*bsq;
   });
   return;
 }

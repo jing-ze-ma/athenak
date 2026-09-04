@@ -40,6 +40,9 @@ Coordinates::Coordinates(ParameterInput *pin, MeshBlockPack *ppack) :
   if (pin->DoesBlockExist("mhd")) {
     cs_diag_no_magsrc = pin->GetOrAddBoolean("mhd","cs_diag_no_magsrc",false);
     cs_wellbalanced_src = pin->GetOrAddBoolean("mhd","cs_wellbalanced_src",false);
+    sp_wellbalanced_src = pin->GetOrAddBoolean("mhd","sp_wellbalanced_src",false);
+  } else if (pin->DoesBlockExist("hydro")) {
+    sp_wellbalanced_src = pin->GetOrAddBoolean("hydro","sp_wellbalanced_src",false);
   }
 
   if (pmy_pack->pmesh->use_cubed_sphere || pmy_pack->pmesh->use_spherical_polar) {
@@ -1028,8 +1031,9 @@ void Coordinates::SrcTermsGnomonicEquiangleMHD(const DvceArray5D<Real> &w0,
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn Coordinates::SrcTermsGnomonicEquiangleWB
-//! \brief the WELL-BALANCED form of the gnomonic geometric source term.
+//! \fn Coordinates::SrcTermsCurvilinearWB
+//! \brief the WELL-BALANCED (face-sum) form of the geometric source term, for the
+//! cubed sphere AND the spherical-polar grid (the grid enters only via BuildWBGeometry).
 //!
 //! WHY.  The momentum RHS on this grid is a flux divergence plus a geometric source, each
 //! of size |T| ~ p + B^2/2, whose difference is the physical force.  Measured, the two
@@ -1094,6 +1098,54 @@ void Coordinates::BuildWBGeometry() {
   // tangential faces f = xi_l, xi_r, eta_l, eta_r at 11+12f:  nh[3] rf[3] e1f[3] e2f[3].
   // Every quantity is computed by exactly the operations the old per-cell kernel used, so
   // the cached kernel is bitwise identical to it.
+  if (pmy_pack->pmesh->use_spherical_polar) {
+    // SPHERICAL POLAR: the same layout with the orthonormal triad (rhat, thhat, phhat).
+    // The cell basis sits at the cell's (theta_c, phi_c) = (x2v, x3v); a theta-face's
+    // normal and triad at (theta_f, phi_c), a phi-face's at (theta_c, phi_f).  cc = 0 and
+    // ss = 1 make the kernel's non-orthogonal assembly reduce to the plain one.
+    auto x2v_ = x2v;  auto xx2f_ = xx2f;
+    auto x3v_ = x3v;  auto xx3f_ = xx3f;
+    par_for("spsrc_wb_geom", DevExeSpace(), 0,nmb-1,ks,ke,js,je,
+    KOKKOS_LAMBDA(const int m, const int k, const int j) {
+      auto triad = [](const Real th, const Real ph, Real rh[3], Real tt[3], Real pp[3]) {
+        const Real st = sin(th), ct = cos(th), sp = sin(ph), cp = cos(ph);
+        rh[0] = st*cp; rh[1] = st*sp; rh[2] = ct;
+        tt[0] = ct*cp; tt[1] = ct*sp; tt[2] = -st;
+        pp[0] = -sp;   pp[1] = cp;    pp[2] = 0.0;
+      };
+      const Real th_c = x2v_(m,j), th_l = xx2f_(m,j), th_r = xx2f_(m,j+1);
+      const Real ph_c = x3v_(m,k), ph_l = xx3f_(m,k), ph_r = xx3f_(m,k+1);
+      Real rc[3], e1c[3], e2c[3];
+      triad(th_c, ph_c, rc, e1c, e2c);
+      for (int c=0; c<3; ++c) {
+        geom(m,k,j,c) = rc[c]; geom(m,k,j,3+c) = e1c[c]; geom(m,k,j,6+c) = e2c[c];
+      }
+      geom(m,k,j,9) = 0.0;
+      geom(m,k,j,10) = 1.0;
+      // theta faces: normal = thhat(theta_f, phi_c)
+      for (int f=0; f<2; ++f) {
+        Real rf[3], e1f[3], e2f[3];
+        triad((f == 0) ? th_l : th_r, ph_c, rf, e1f, e2f);
+        const int b = 11 + 12*f;
+        for (int c=0; c<3; ++c) {
+          geom(m,k,j,b+c) = e1f[c];   geom(m,k,j,b+3+c) = rf[c];
+          geom(m,k,j,b+6+c) = e1f[c]; geom(m,k,j,b+9+c) = e2f[c];
+        }
+      }
+      // phi faces: normal = phhat(phi_f)
+      for (int f=0; f<2; ++f) {
+        Real rf[3], e1f[3], e2f[3];
+        triad(th_c, (f == 0) ? ph_l : ph_r, rf, e1f, e2f);
+        const int b = 11 + 12*(2+f);
+        for (int c=0; c<3; ++c) {
+          geom(m,k,j,b+c) = e2f[c];   geom(m,k,j,b+3+c) = rf[c];
+          geom(m,k,j,b+6+c) = e1f[c]; geom(m,k,j,b+9+c) = e2f[c];
+        }
+      }
+    });
+    return;
+  }
+
   par_for("cssrc_wb_geom", DevExeSpace(), 0,nmb-1,ks,ke,js,je,
   KOKKOS_LAMBDA(const int m, const int k, const int j) {
     const Real x2min = size.d_view(m).x2min, x2max = size.d_view(m).x2max;
@@ -1151,10 +1203,10 @@ void Coordinates::BuildWBGeometry() {
   });
 }
 
-void Coordinates::SrcTermsGnomonicEquiangleWB(const DvceArray5D<Real> &w0,
+void Coordinates::SrcTermsCurvilinearWB(const DvceArray5D<Real> &w0,
     const DvceArray5D<Real> &bcc0, const bool is_mhd,
     const DvceArray5D<Real> &wder, const EOS_Data &eos_data, const Real bdt,
-    DvceArray5D<Real> &u0) {
+    DvceArray5D<Real> &u0, const DvceArray4D<Real> &pwb, const bool use_wb_static) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int &is = indcs.is; int &ie = indcs.ie;
   int &js = indcs.js; int &je = indcs.je;
@@ -1167,6 +1219,8 @@ void Coordinates::SrcTermsGnomonicEquiangleWB(const DvceArray5D<Real> &w0,
   const bool mhd_ = is_mhd && !cs_diag_no_magsrc;
   auto volume_ = volume;
   auto area_ = area;
+  auto pwb_ = pwb;
+  const bool wbs_ = use_wb_static;
 
   // The geometry is a function of (m,k,j) only.  Under AMR the blocks can change between
   // calls, so rebuild every time; otherwise once, and again if the pack changes size.
@@ -1187,9 +1241,14 @@ void Coordinates::SrcTermsGnomonicEquiangleWB(const DvceArray5D<Real> &w0,
     const Real ss = geom(m,k,j,10);
 
     const Real rho = w0(m,IDN,k,j,i);
-    const Real pr = gen_ ? wder_(m,IDPR,k,j,i)
-                         : eos_.Pressure(w0(m,IDN,k,j,i), w0(m,IEN,k,j,i));
-    // velocity: CONTRAVARIANT on the (non-orthogonal) unit tangent basis
+    Real pr = gen_ ? wder_(m,IDPR,k,j,i)
+                   : eos_.Pressure(w0(m,IDN,k,j,i), w0(m,IEN,k,j,i));
+    // the static well-balanced background is removed from the source exactly as the
+    // Christoffel form removes it (spherical polar only; the cubed sphere passes false)
+    if (wbs_) pr -= pwb_(m,k,j,i);
+    // velocity: CONTRAVARIANT on the (non-orthogonal) unit tangent basis; on the
+    // spherical-polar grid the basis is orthonormal (cc = 0, ss = 1) and these are the
+    // ordinary (v_r, v_theta, v_phi)
     const Real v1 = w0(m,IVX,k,j,i), v2 = w0(m,IVY,k,j,i), v3 = w0(m,IVZ,k,j,i);
     Real vv[3], bb[3];
     for (int c=0; c<3; ++c) vv[c] = v1*rc[c] + v2*e1c[c] + v3*e2c[c];
@@ -1278,7 +1337,8 @@ void Coordinates::SrcTermsGnomonicEquiangleImpl(const DvceArray5D<Real> &w0,
   const bool mhd_ = is_mhd && !cs_diag_no_magsrc;
 
   if (cs_wellbalanced_src) {
-    SrcTermsGnomonicEquiangleWB(w0, bcc0, is_mhd, wder, eos_data, bdt, u0);
+    SrcTermsCurvilinearWB(w0, bcc0, is_mhd, wder, eos_data, bdt, u0,
+                          DvceArray4D<Real>(), false);
     return;
   }
 
@@ -1552,6 +1612,11 @@ void Coordinates::SrcTermsSphericalPolarHydro(const DvceArray5D<Real> &w0,
   // for this very state. An ideal gas allocates no wder array, and (gamma-1)*e is free.
   const bool gen_ = eos_.IsGeneral();
   auto &wder_ = pmy_pack->phydro->wder;
+  if (sp_wellbalanced_src) {
+    SrcTermsCurvilinearWB(w0, DvceArray5D<Real>(), false, wder_, eos_data, bdt, u0, pwb,
+                          pmy_pack->phydro->use_wellbalance_static);
+    return;
+  }
 
   auto volume_ = volume;
   auto area_ = area;
@@ -1615,6 +1680,11 @@ void Coordinates::SrcTermsSphericalPolarMHD(const DvceArray5D<Real> &w0,
   // for this very state. An ideal gas allocates no wder array, and (gamma-1)*e is free.
   const bool gen_ = eos_.IsGeneral();
   auto &wder_ = pmy_pack->pmhd->wder;
+  if (sp_wellbalanced_src) {
+    SrcTermsCurvilinearWB(w0, bcc0, true, wder_, eos_data, bdt, u0, pwb,
+                          pmy_pack->pmhd->use_wellbalance_static);
+    return;
+  }
 
   auto volume_ = volume;
   auto area_ = area;
