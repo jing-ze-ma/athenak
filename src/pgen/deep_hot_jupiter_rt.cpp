@@ -2590,6 +2590,9 @@ void HydrostaticEquilibrium(Mesh *pm) {
     // a reference to a __host__ variable in device code, which hipcc rejects outright --
     // the switch has to be captured by value like any other host state.
     const bool bc_outer_maxwell_ = bc_outer_maxwell;
+    // for the metric-correct ghost kinetic energy below (cubed sphere only)
+    const bool cs_bc_ = pm->use_cubed_sphere;
+    auto &ccell_bc_ = pmbp->pcoord->cos_cell;
 
     // The cell-centred field in the OUTER-x1 ghost zones is built here, in its own kernel,
     // and not in the extrapolation kernel below.  It used to be computed inline there, in
@@ -2765,7 +2768,29 @@ void HydrostaticEquilibrium(Mesh *pm) {
             u0_(m,IM3,k,j,(ie+i+1)) = u0_(m,IM3,k,j,ie)/rho_i*rho0_ip;
             Real mom = u0_(m,IM1,k,j,ie)/rho_i*rho0_ip; // fmax(0.0,u0_(m,IM1,k,j,ie)/rho_i*rho0_ip); // 
             u0_(m,IM1,k,j,(ie+i+1)) = mom;
-            u0_(m,IEN,k,j,(ie+i+1)) = e0_ip + 0.5*(SQR(u0_(m,IM1,k,j,(ie+i+1)))+SQR(u0_(m,IM2,k,j,(ie+i+1)))+SQR(u0_(m,IM3,k,j,(ie+i+1))))/rho0_ip;
+            // Kinetic energy of the ghost cell.  On the CUBED SPHERE IM2/IM3 are
+            // COVARIANT components on a non-orthogonal tangent basis, so
+            // KE = 0.5 m_i G^{ij} m_j / rho with G^{-1} = [[1,-c],[-c,1]]/(1-c^2) --
+            // the contraction GnomonicEquiangleRaiseVelMHD uses.  The plain sum of
+            // squares (kept, bit for bit, for every other grid) drops the -2c m2 m3
+            // cross term, up to 50 % of the tangential KE at a panel corner where
+            // |c| = 1/2, and ConsToPrim then reads that error back out of E as
+            // internal energy.  Same bug class as the rotation source that used to
+            // fall through into the beta-plane.
+            Real ke_g;
+            {
+              const Real m1g = u0_(m,IM1,k,j,(ie+i+1));
+              const Real m2g = u0_(m,IM2,k,j,(ie+i+1));
+              const Real m3g = u0_(m,IM3,k,j,(ie+i+1));
+              if (cs_bc_) {
+                const Real cg = ccell_bc_(m,k,j);
+                ke_g = 0.5*(m1g*m1g + (m2g*m2g - 2.0*cg*m2g*m3g + m3g*m3g)/(1.0 - cg*cg))
+                       /rho0_ip;
+              } else {
+                ke_g = 0.5*(SQR(m1g)+SQR(m2g)+SQR(m3g))/rho0_ip;
+              }
+            }
+            u0_(m,IEN,k,j,(ie+i+1)) = e0_ip + ke_g;
             if (use_etotgrav) u0_(m,IEN,k,j,(ie+i+1)) += rho0_ip*phicc0(m,k,j,(ie+i+1));
             if (pmbp->pmhd != nullptr) u0_(m,IEN,k,j,(ie+i+1)) +=  0.5*(SQR(bcc0(m,IBX,k,j,(ie+i+1)))+SQR(bcc0(m,IBY,k,j,(ie+i+1)))+SQR(bcc0(m,IBZ,k,j,(ie+i+1))));
           }
