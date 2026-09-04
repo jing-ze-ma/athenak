@@ -288,6 +288,17 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
     cs_diag_no_coordsrc = pin->GetOrAddBoolean("mhd","cs_diag_no_coordsrc",false);
     cs_diag_no_divf = pin->GetOrAddBoolean("mhd","cs_diag_no_divf",false);
     use_cs_gs07_emf = pin->GetOrAddBoolean("mhd","cs_gs07_emf",false);
+    // Diagnostic: the plain four-face average in place of the GS05 upwind corner EMF.
+    // The GS05 derivative terms are fed by the transverse-face EMFs, which DO see the
+    // (-1)^(i+k) CT null mode that the cell-centred field cannot; in a radial outflow
+    // that biases the corner EMF downwind and grows the mode at ~v_r/dr in a polar row.
+    use_bs_emf = pin->GetOrAddBoolean("mhd","bs_emf",false);
+    // Fix for the above at the source: in the two POLAR cell rows (the only place the
+    // (-1)^(i+k) mode closes on itself, because the polar ghost row is the k+N/2 image of
+    // the row) add the UCT/Rusanov face-field dissipation to the corner e2, with the local
+    // fast speed. Damps the face checkerboard at ~2 c_f/dx, which bcc-based upwinding
+    // cannot do at all.
+    use_polar_emf_diss = pin->GetOrAddBoolean("mhd","polar_emf_diss",false);
     // On the cubed sphere the scheme is UNSTABLE below beta ~ 0.05 and the fallback is
     // what stops it, so this defaults ON there -- there is no correct answer below that
     // beta to preserve.  It is a no-op on every other grid.

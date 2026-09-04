@@ -166,6 +166,8 @@ class MHD {
   // CUBED SPHERE: use the GS07 upwind corner EMF instead of the plain four-face average.
   // Needs the gnomonic cell-centred EMF, e_cc_3d_cs in mhd_corner_e.cpp.
   bool use_cs_gs07_emf = false;
+  bool use_bs_emf = false;
+  bool use_polar_emf_diss = false; // Rusanov face-field dissipation on e2 in the polar rows        // plain 4-face average corner EMF (Balsara-Spicer) on ANY grid
 
   // CUBED SPHERE: plasma beta below which the flux falls back from HLLD to HLLE, per
   // FACE.  <= 0 disables it.  See rsolvers/cs_lowbeta_fallback.hpp for why this exists.

@@ -36,6 +36,7 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
   auto &mb_bcs = pmy_pack->pmb->mb_bcs;
   auto &use_cubed_sphere = pmy_pack->pmesh->use_cubed_sphere;
   const bool use_cs_gs07 = use_cs_gs07_emf;
+  const bool use_bs = use_bs_emf;
 
   //---- 1-D problem:
   //  copy face-centered E-fields to edges and return.
@@ -367,6 +368,12 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
     auto flx1 = uflx.x1f;
     auto flx2 = uflx.x2f;
     auto flx3 = uflx.x3f;
+    // polar-row face-field dissipation (see <mhd>/polar_emf_diss in mhd.cpp)
+    const bool polar_diss = use_polar_emf_diss && pmy_pack->pmesh->use_polar_boundary;
+    auto b1_ = b0.x1f;
+    auto b3_ = b0.x3f;
+    auto &eos = peos->eos_data;
+    auto wder_ = wder;
 
     // Integrate E1, E2, E3 to corners
     //  Note e1[is:ie,  js:je+1,ks:ke+1]
@@ -383,7 +390,7 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
     // limit and leaves the odd-even field mode undamped.  The cell-centred EMF now HAS a
     // gnomonic form (e_cc_3d_cs above), so <mhd>/cs_gs07_emf takes the GS07 branch below
     // instead.
-    if (use_cubed_sphere && !use_cs_gs07) {
+    if ((use_cubed_sphere && !use_cs_gs07) || use_bs) {
       par_for("emf3_cs", DevExeSpace(), 0, nmb1, ks, ke+1, js, je+1, is, ie+1,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         e1(m,k,j,i) = 0.25*(e1x2_(m,k-1,j,i) + e1x2_(m,k,j,i) +
@@ -448,6 +455,45 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
       }
       e2(m,k,j,i) = 0.25*(e2_l3 + e2_r3 + e2_l1 + e2_r1 +
                 e2x3_(m,k,j,i-1) + e2x3_(m,k,j,i) + e2x1_(m,k-1,j,i) + e2x1_(m,k,j,i));
+
+      // In a polar cell row, add Rusanov dissipation built from the FACE fields on either
+      // side of this edge: -a_r/2 * [B3(i) - B3(i-1)] and +a_phi/2 * [B1(k) - B1(k-1)],
+      // signs fixed by the CT update (bx3f -= d(e2)/dx1, bx1f += d(e2)/dx3). The GS05
+      // terms above see the (-1)^(i+k) face checkerboard only through the phi-face EMF
+      // and bias the corner value DOWNWIND for it; this term restores an upwind bias.
+      if (polar_diss) {
+        const bool do_pole =
+            (j == js && mb_bcs.d_view(m,BoundaryFace::inner_x2) == BoundaryFlag::polar) ||
+            (j == je && mb_bcs.d_view(m,BoundaryFace::outer_x2) == BoundaryFlag::polar);
+        if (do_pole) {
+          Real ar = 0.0, ap = 0.0;
+          for (int dk=-1; dk<=0; ++dk) {
+            for (int di=-1; di<=0; ++di) {
+              // thermodynamics from ACTIVE cells only (wder is not filled in the ghosts)
+              int ic = (i+di < is) ? is : ((i+di > ie) ? ie : i+di);
+              int kc = (k+dk < ks) ? ks : ((k+dk > ke) ? ke : k+dk);
+              Real d = w0_(m,IDN,kc,j,ic);
+              Real bx = bcc_(m,IBX,kc,j,ic);
+              Real by = bcc_(m,IBY,kc,j,ic);
+              Real bz = bcc_(m,IBZ,kc,j,ic);
+              Real cf;
+              if (eos.IsGeneral()) {
+                cf = eos.FastSpeedFromP(d, wder_(m,IDPR,kc,j,ic), wder_(m,IDG1,kc,j,ic),
+                                        bx, by, bz);
+              } else if (eos.is_ideal) {
+                Real p = eos.IdealGasPressure(w0_(m,IEN,kc,j,ic));
+                cf = eos.IdealMHDFastSpeed(d, p, bx, by, bz);
+              } else {
+                cf = eos.IdealMHDFastSpeed(d, bx, by, bz);
+              }
+              ar = fmax(ar, fabs(w0_(m,IVX,kc,j,ic)) + cf);
+              ap = fmax(ap, fabs(w0_(m,IVZ,kc,j,ic)) + cf);
+            }
+          }
+          e2(m,k,j,i) -= 0.5*ar*(b3_(m,k,j,i) - b3_(m,k,j,i-1));
+          e2(m,k,j,i) += 0.5*ap*(b1_(m,k,j,i) - b1_(m,k-1,j,i));
+        }
+      }
 
       // integrate E3 to corner using SG07
       Real e3_l2, e3_r2, e3_l1, e3_r1;
