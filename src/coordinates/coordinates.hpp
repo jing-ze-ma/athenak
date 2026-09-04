@@ -179,6 +179,12 @@ class Coordinates {
   // WELL-BALANCED gnomonic geometric source (<mhd>/cs_wellbalanced_src).  See the long
   // note at SrcTermsGnomonicEquiangleWB.
   bool cs_wellbalanced_src = false;
+  // Its per-(MeshBlock,k,j) geometry cache: the cell triad and the four tangential faces'
+  // normals and triads depend on the angles alone, so they are built once per mesh (on
+  // every call under AMR) instead of ten panel-map evaluations per cell per stage.
+  static constexpr int NWBGEOM = 60;
+  DvceArray4D<Real> wb_geom;   // (nmb, ncells3, ncells2, NWBGEOM)
+  void BuildWBGeometry();
 
   void CoordSrcTerms(const DvceArray5D<Real> &w0, const EOS_Data &eos, const Real dt,
                      DvceArray5D<Real> &u0);

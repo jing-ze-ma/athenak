@@ -1074,11 +1074,87 @@ void Coordinates::SrcTermsGnomonicEquiangleMHD(const DvceArray5D<Real> &w0,
 //! nhat_xi . e_xi = sin, nhat_xi . e_eta = 0 and rhat . e_xi = 0, so the pressure balance
 //! is carried over unchanged rather than re-derived.
 
+void Coordinates::BuildWBGeometry() {
+  auto &size = pmy_pack->pmb->mb_size;
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb = pmy_pack->nmb_thispack;
+  const int ncells2 = indcs.nx2 + 2*indcs.ng;
+  const int ncells3 = indcs.nx3 + 2*indcs.ng;
+  if (static_cast<int>(wb_geom.extent(0)) != nmb ||
+      static_cast<int>(wb_geom.extent(1)) != ncells3 ||
+      static_cast<int>(wb_geom.extent(2)) != ncells2) {
+    Kokkos::realloc(wb_geom, nmb, ncells3, ncells2, NWBGEOM);
+  }
+  auto geom = wb_geom;
+  auto &mbpanel = pmy_pack->pmb->mb_panel;
+
+  // Layout per (m,k,j):  0-2 rc  3-5 e1c  6-8 e2c  9 cc  10 ss, then for each of the four
+  // tangential faces f = xi_l, xi_r, eta_l, eta_r at 11+12f:  nh[3] rf[3] e1f[3] e2f[3].
+  // Every quantity is computed by exactly the operations the old per-cell kernel used, so
+  // the cached kernel is bitwise identical to it.
+  par_for("cssrc_wb_geom", DevExeSpace(), 0,nmb-1,ks,ke,js,je,
+  KOKKOS_LAMBDA(const int m, const int k, const int j) {
+    const Real x2min = size.d_view(m).x2min, x2max = size.d_view(m).x2max;
+    const Real x3min = size.d_view(m).x3min, x3max = size.d_view(m).x3max;
+    const Real xi_c  = M_PI/4.0 * CellCenterX(j-js, indcs.nx2, x2min, x2max);
+    const Real xi_l  = M_PI/4.0 * LeftEdgeX(j-js, indcs.nx2, x2min, x2max);
+    const Real xi_r  = M_PI/4.0 * LeftEdgeX(j+1-js, indcs.nx2, x2min, x2max);
+    const Real et_c  = M_PI/4.0 * CellCenterX(k-ks, indcs.nx3, x3min, x3max);
+    const Real et_l  = M_PI/4.0 * LeftEdgeX(k-ks, indcs.nx3, x3min, x3max);
+    const Real et_r  = M_PI/4.0 * LeftEdgeX(k+1-ks, indcs.nx3, x3min, x3max);
+    const int p = mbpanel.d_view(m);
+
+    Real rc[3], e1c[3], e2c[3];
+    cubed_sphere::PanelToCart(p, xi_c, et_c, rc);
+    cubed_sphere::PanelTangents(p, xi_c, et_c, e1c, e2c);
+    const Real cc = e1c[0]*e2c[0] + e1c[1]*e2c[1] + e1c[2]*e2c[2];
+    const Real ss = sqrt(fmax(1.0e-16, 1.0 - cc*cc));
+    for (int c=0; c<3; ++c) {
+      geom(m,k,j,c) = rc[c]; geom(m,k,j,3+c) = e1c[c]; geom(m,k,j,6+c) = e2c[c];
+    }
+    geom(m,k,j,9) = cc;
+    geom(m,k,j,10) = ss;
+
+    // XI faces (x2) at (xi_face, eta_centre): nhat = (e_xi - c e_eta)/s
+    for (int f=0; f<2; ++f) {
+      Real rf[3], e1f[3], e2f[3], nh[3];
+      const Real xf = (f == 0) ? xi_l : xi_r;
+      cubed_sphere::PanelToCart(p, xf, et_c, rf);
+      cubed_sphere::PanelTangents(p, xf, et_c, e1f, e2f);
+      const Real cf = e1f[0]*e2f[0] + e1f[1]*e2f[1] + e1f[2]*e2f[2];
+      const Real sf = sqrt(fmax(1.0e-16, 1.0 - cf*cf));
+      for (int c=0; c<3; ++c) nh[c] = (e1f[c] - cf*e2f[c])/sf;
+      const int b = 11 + 12*f;
+      for (int c=0; c<3; ++c) {
+        geom(m,k,j,b+c) = nh[c];    geom(m,k,j,b+3+c) = rf[c];
+        geom(m,k,j,b+6+c) = e1f[c]; geom(m,k,j,b+9+c) = e2f[c];
+      }
+    }
+
+    // ETA faces (x3) at (xi_centre, eta_face): nhat = (e_eta - c e_xi)/s
+    for (int f=0; f<2; ++f) {
+      Real rf[3], e1f[3], e2f[3], nh[3];
+      const Real ef = (f == 0) ? et_l : et_r;
+      cubed_sphere::PanelToCart(p, xi_c, ef, rf);
+      cubed_sphere::PanelTangents(p, xi_c, ef, e1f, e2f);
+      const Real cf = e1f[0]*e2f[0] + e1f[1]*e2f[1] + e1f[2]*e2f[2];
+      const Real sf = sqrt(fmax(1.0e-16, 1.0 - cf*cf));
+      for (int c=0; c<3; ++c) nh[c] = (e2f[c] - cf*e1f[c])/sf;
+      const int b = 11 + 12*(2+f);
+      for (int c=0; c<3; ++c) {
+        geom(m,k,j,b+c) = nh[c];    geom(m,k,j,b+3+c) = rf[c];
+        geom(m,k,j,b+6+c) = e1f[c]; geom(m,k,j,b+9+c) = e2f[c];
+      }
+    }
+  });
+}
+
 void Coordinates::SrcTermsGnomonicEquiangleWB(const DvceArray5D<Real> &w0,
     const DvceArray5D<Real> &bcc0, const bool is_mhd,
     const DvceArray5D<Real> &wder, const EOS_Data &eos_data, const Real bdt,
     DvceArray5D<Real> &u0) {
-  auto &size = pmy_pack->pmb->mb_size;
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int &is = indcs.is; int &ie = indcs.ie;
   int &js = indcs.js; int &je = indcs.je;
@@ -1091,26 +1167,24 @@ void Coordinates::SrcTermsGnomonicEquiangleWB(const DvceArray5D<Real> &w0,
   const bool mhd_ = is_mhd && !cs_diag_no_magsrc;
   auto volume_ = volume;
   auto area_ = area;
-  auto &mbpanel = pmy_pack->pmb->mb_panel;
+
+  // The geometry is a function of (m,k,j) only.  Under AMR the blocks can change between
+  // calls, so rebuild every time; otherwise once, and again if the pack changes size.
+  if (pmy_pack->pmesh->adaptive ||
+      static_cast<int>(wb_geom.extent(0)) != pmy_pack->nmb_thispack) {
+    BuildWBGeometry();
+  }
+  auto geom = wb_geom;
 
   par_for("cssrc_wb", DevExeSpace(), 0,nmb1,ks,ke,js,je,is,ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    const Real x2min = size.d_view(m).x2min, x2max = size.d_view(m).x2max;
-    const Real x3min = size.d_view(m).x3min, x3max = size.d_view(m).x3max;
-    const Real xi_c  = M_PI/4.0 * CellCenterX(j-js, indcs.nx2, x2min, x2max);
-    const Real xi_l  = M_PI/4.0 * LeftEdgeX(j-js, indcs.nx2, x2min, x2max);
-    const Real xi_r  = M_PI/4.0 * LeftEdgeX(j+1-js, indcs.nx2, x2min, x2max);
-    const Real et_c  = M_PI/4.0 * CellCenterX(k-ks, indcs.nx3, x3min, x3max);
-    const Real et_l  = M_PI/4.0 * LeftEdgeX(k-ks, indcs.nx3, x3min, x3max);
-    const Real et_r  = M_PI/4.0 * LeftEdgeX(k+1-ks, indcs.nx3, x3min, x3max);
-    const int p = mbpanel.d_view(m);
-
     // the cell's own triad, and its state as CARTESIAN vectors
     Real rc[3], e1c[3], e2c[3];
-    cubed_sphere::PanelToCart(p, xi_c, et_c, rc);
-    cubed_sphere::PanelTangents(p, xi_c, et_c, e1c, e2c);
-    const Real cc = e1c[0]*e2c[0] + e1c[1]*e2c[1] + e1c[2]*e2c[2];
-    const Real ss = sqrt(fmax(1.0e-16, 1.0 - cc*cc));
+    for (int c=0; c<3; ++c) {
+      rc[c] = geom(m,k,j,c); e1c[c] = geom(m,k,j,3+c); e2c[c] = geom(m,k,j,6+c);
+    }
+    const Real cc = geom(m,k,j,9);
+    const Real ss = geom(m,k,j,10);
 
     const Real rho = w0(m,IDN,k,j,i);
     const Real pr = gen_ ? wder_(m,IDPR,k,j,i)
@@ -1158,30 +1232,17 @@ void Coordinates::SrcTermsGnomonicEquiangleWB(const DvceArray5D<Real> &w0,
     addface( 1.0, area_.x1f(m,k,j,i+1), rc, rc, e1c, e2c);
     addface(-1.0, area_.x1f(m,k,j,i  ), rc, rc, e1c, e2c);
 
-    // XI faces (x2) at (xi_face, eta_centre): nhat = (e_xi - c e_eta)/s
-    for (int f=0; f<2; ++f) {
-      Real rf[3], e1f[3], e2f[3], nh[3];
-      const Real xf = (f == 0) ? xi_l : xi_r;
-      cubed_sphere::PanelToCart(p, xf, et_c, rf);
-      cubed_sphere::PanelTangents(p, xf, et_c, e1f, e2f);
-      const Real cf = e1f[0]*e2f[0] + e1f[1]*e2f[1] + e1f[2]*e2f[2];
-      const Real sf = sqrt(fmax(1.0e-16, 1.0 - cf*cf));
-      for (int c=0; c<3; ++c) nh[c] = (e1f[c] - cf*e2f[c])/sf;
-      const Real ar = (f == 0) ? area_.x2f(m,k,j,i) : area_.x2f(m,k,j+1,i);
-      addface((f == 0) ? -1.0 : 1.0, ar, nh, rf, e1f, e2f);
-    }
-
-    // ETA faces (x3) at (xi_centre, eta_face): nhat = (e_eta - c e_xi)/s
-    for (int f=0; f<2; ++f) {
-      Real rf[3], e1f[3], e2f[3], nh[3];
-      const Real ef = (f == 0) ? et_l : et_r;
-      cubed_sphere::PanelToCart(p, xi_c, ef, rf);
-      cubed_sphere::PanelTangents(p, xi_c, ef, e1f, e2f);
-      const Real cf = e1f[0]*e2f[0] + e1f[1]*e2f[1] + e1f[2]*e2f[2];
-      const Real sf = sqrt(fmax(1.0e-16, 1.0 - cf*cf));
-      for (int c=0; c<3; ++c) nh[c] = (e2f[c] - cf*e1f[c])/sf;
-      const Real ar = (f == 0) ? area_.x3f(m,k,j,i) : area_.x3f(m,k+1,j,i);
-      addface((f == 0) ? -1.0 : 1.0, ar, nh, rf, e1f, e2f);
+    // XI faces (x2) then ETA faces (x3), normals and triads from the cache
+    for (int f=0; f<4; ++f) {
+      Real nh[3], rf[3], e1f[3], e2f[3];
+      const int b = 11 + 12*f;
+      for (int c=0; c<3; ++c) {
+        nh[c] = geom(m,k,j,b+c);    rf[c] = geom(m,k,j,b+3+c);
+        e1f[c] = geom(m,k,j,b+6+c); e2f[c] = geom(m,k,j,b+9+c);
+      }
+      const Real ar = (f == 0) ? area_.x2f(m,k,j,i) : (f == 1) ? area_.x2f(m,k,j+1,i) :
+                      (f == 2) ? area_.x3f(m,k,j,i) : area_.x3f(m,k+1,j,i);
+      addface((f % 2 == 0) ? -1.0 : 1.0, ar, nh, rf, e1f, e2f);
     }
 
     const Real ivol = 1.0/volume_(m,k,j,i);
