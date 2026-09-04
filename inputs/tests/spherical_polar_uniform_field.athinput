@@ -37,10 +37,12 @@ reconstruct = plm
 rsolver = hlld
 gamma = 1.6666666666666667
 sp_wellbalanced_src = false
+sp_cart_polar_momentum = false
 <problem>
 d0 = 1.0
 p0 = 1.0
 b0 = 1.0
+bdir = 2
 <output1>
 file_type = bin
 variable = mhd_w_bcc

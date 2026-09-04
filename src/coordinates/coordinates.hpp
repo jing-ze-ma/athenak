@@ -183,6 +183,15 @@ class Coordinates {
   // SrcTermsCurvilinearWB.
   bool cs_wellbalanced_src = false;
   bool sp_wellbalanced_src = false;
+  // CARTESIAN momentum update in the two POLAR cell rows (<mhd>/sp_cart_polar_momentum):
+  // the momentum balance there is formed from the face fluxes rotated to Cartesian
+  // vectors with a vector-area correction, instead of local components plus the
+  // cot(theta) source.  See SrcTermsSphericalPolarCartRows.
+  bool sp_cart_polar_momentum = false;
+  void SrcTermsSphericalPolarCartRows(const DvceArray5D<Real> &w0,
+       const DvceArray5D<Real> &bcc0, const bool is_mhd,
+       const DvceArray5D<Real> &wder, const DvceFaceFld5D<Real> uflx,
+       const EOS_Data &eos_data, const Real bdt, DvceArray5D<Real> &u0);
   // Its per-(MeshBlock,k,j) geometry cache: the cell triad and the four tangential faces'
   // normals and triads depend on the angles alone, so they are built once per mesh (on
   // every call under AMR) instead of ten panel-map evaluations per cell per stage.

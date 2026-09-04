@@ -40,6 +40,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   const Real d0 = pin->GetOrAddReal("problem", "d0", 1.0);
   const Real p0 = pin->GetOrAddReal("problem", "p0", 1.0);
   const Real b0 = pin->GetOrAddReal("problem", "b0", 1.0);
+  // field direction: bdir = 2 (default) is b0 zhat, bdir = 0 is b0 xhat.  For xhat the
+  // face averages are B_r = b0 <sin th> cos-average, B_th = b0 cos(th_f) <cos ph>,
+  // B_ph = -b0 sin(ph_f); each is the exact area-weighted mean over its face.
+  const int bdir = pin->GetOrAddInteger("problem", "bdir", 2);
   // econsistent = true: the magnetic energy is built from the SAME cell-centred bcc that
   // ConsToPrim subtracts, so the recovered pressure is exactly uniform and only the
   // geometric-source/flux-divergence mismatch survives.  false (cs_test's choice): the
@@ -57,17 +61,37 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   auto &b0f = pmbp->pmhd->b0;
   auto &bcc = pmbp->pmhd->bcc0;
   auto &x2f_ = pmbp->pcoord->xx2f;   // theta at the theta-faces, (m, j)
+  auto &x3f_ = pmbp->pcoord->xx3f;   // phi at the phi-faces, (m, k)
 
   par_for("sp_test_b", DevExeSpace(), 0,nmb1, ks,ke+1, js,je+1, is,ie+1,
   KOKKOS_LAMBDA(int m, int k, int j, int i) {
-    if (j <= je && k <= ke) {
-      b0f.x1f(m,k,j,i) = b0*0.5*(std::cos(x2f_(m,j)) + std::cos(x2f_(m,j+1)));
-    }
-    if (i <= ie && k <= ke) {
-      b0f.x2f(m,k,j,i) = -b0*std::sin(x2f_(m,j));
-    }
-    if (i <= ie && j <= je) {
-      b0f.x3f(m,k,j,i) = 0.0;
+    if (bdir == 2) {
+      if (j <= je && k <= ke) {
+        b0f.x1f(m,k,j,i) = b0*0.5*(std::cos(x2f_(m,j)) + std::cos(x2f_(m,j+1)));
+      }
+      if (i <= ie && k <= ke) {
+        b0f.x2f(m,k,j,i) = -b0*std::sin(x2f_(m,j));
+      }
+      if (i <= ie && j <= je) {
+        b0f.x3f(m,k,j,i) = 0.0;
+      }
+    } else {
+      // B = b0 xhat: B_r = b0 sin(th) cos(ph), B_th = b0 cos(th) cos(ph),
+      // B_ph = -b0 sin(ph)
+      const Real tl = x2f_(m,j), tr = x2f_(m,(j <= je) ? j+1 : j);
+      const Real pl = x3f_(m,k), pr = x3f_(m,(k <= ke) ? k+1 : k);
+      if (j <= je && k <= ke) {
+        // <sin th>_area = Int sin^2 / Int sin ; <cos ph> = (sin pr - sin pl)/(pr - pl)
+        const Real isin2 = 0.5*(tr - tl) - 0.25*(std::sin(2.0*tr) - std::sin(2.0*tl));
+        const Real isin  = std::cos(tl) - std::cos(tr);
+        b0f.x1f(m,k,j,i) = b0*(isin2/isin)*(std::sin(pr) - std::sin(pl))/(pr - pl);
+      }
+      if (i <= ie && k <= ke) {
+        b0f.x2f(m,k,j,i) = b0*std::cos(tl)*(std::sin(pr) - std::sin(pl))/(pr - pl);
+      }
+      if (i <= ie && j <= je) {
+        b0f.x3f(m,k,j,i) = -b0*std::sin(pl);
+      }
     }
   });
 

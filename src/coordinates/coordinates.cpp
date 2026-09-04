@@ -41,8 +41,11 @@ Coordinates::Coordinates(ParameterInput *pin, MeshBlockPack *ppack) :
     cs_diag_no_magsrc = pin->GetOrAddBoolean("mhd","cs_diag_no_magsrc",false);
     cs_wellbalanced_src = pin->GetOrAddBoolean("mhd","cs_wellbalanced_src",false);
     sp_wellbalanced_src = pin->GetOrAddBoolean("mhd","sp_wellbalanced_src",false);
+    sp_cart_polar_momentum = pin->GetOrAddBoolean("mhd","sp_cart_polar_momentum",false);
   } else if (pin->DoesBlockExist("hydro")) {
     sp_wellbalanced_src = pin->GetOrAddBoolean("hydro","sp_wellbalanced_src",false);
+    sp_cart_polar_momentum = pin->GetOrAddBoolean("hydro","sp_cart_polar_momentum",
+                                                  false);
   }
 
   if (pmy_pack->pmesh->use_cubed_sphere || pmy_pack->pmesh->use_spherical_polar) {
@@ -1105,7 +1108,7 @@ void Coordinates::BuildWBGeometry() {
     // ss = 1 make the kernel's non-orthogonal assembly reduce to the plain one.
     auto x2v_ = x2v;  auto xx2f_ = xx2f;
     auto x3v_ = x3v;  auto xx3f_ = xx3f;
-    par_for("spsrc_wb_geom", DevExeSpace(), 0,nmb-1,ks,ke,js,je,
+    par_for("spsrc_wb_geom", DevExeSpace(), 0,nmb-1,0,ncells3-1,0,ncells2-1,
     KOKKOS_LAMBDA(const int m, const int k, const int j) {
       auto triad = [](const Real th, const Real ph, Real rh[3], Real tt[3], Real pp[3]) {
         const Real st = sin(th), ct = cos(th), sp = sin(ph), cp = cos(ph);
@@ -1146,7 +1149,7 @@ void Coordinates::BuildWBGeometry() {
     return;
   }
 
-  par_for("cssrc_wb_geom", DevExeSpace(), 0,nmb-1,ks,ke,js,je,
+  par_for("cssrc_wb_geom", DevExeSpace(), 0,nmb-1,0,ncells3-1,0,ncells2-1,
   KOKKOS_LAMBDA(const int m, const int k, const int j) {
     const Real x2min = size.d_view(m).x2min, x2max = size.d_view(m).x2max;
     const Real x3min = size.d_view(m).x3min, x3max = size.d_view(m).x3max;
@@ -1221,6 +1224,8 @@ void Coordinates::SrcTermsCurvilinearWB(const DvceArray5D<Real> &w0,
   auto area_ = area;
   auto pwb_ = pwb;
   const bool wbs_ = use_wb_static;
+  const bool cart_ = sp_cart_polar_momentum && pmy_pack->pmesh->use_spherical_polar;
+  auto &mb_bcs_ = pmy_pack->pmb->mb_bcs;
 
   // The geometry is a function of (m,k,j) only.  Under AMR the blocks can change between
   // calls, so rebuild every time; otherwise once, and again if the pack changes size.
@@ -1304,6 +1309,11 @@ void Coordinates::SrcTermsCurvilinearWB(const DvceArray5D<Real> &w0,
       addface((f % 2 == 0) ? -1.0 : 1.0, ar, nh, rf, e1f, e2f);
     }
 
+    if (cart_ &&
+        ((j == js && mb_bcs_.d_view(m,BoundaryFace::inner_x2) == BoundaryFlag::polar) ||
+         (j == je && mb_bcs_.d_view(m,BoundaryFace::outer_x2) == BoundaryFlag::polar))) {
+      return;   // the Cartesian polar-row update replaces this source there
+    }
     const Real ivol = 1.0/volume_(m,k,j,i);
     u0(m,IM1,k,j,i) += src[0]*ivol*bdt;
     u0(m,IM2,k,j,i) += src[1]*ivol*bdt;
@@ -1594,6 +1604,184 @@ void Coordinates::CoordSphericalPolar() {
   });
 }
 
+//----------------------------------------------------------------------------------------
+//! \fn Coordinates::SrcTermsSphericalPolarCartRows
+//! \brief CARTESIAN momentum update for the two polar cell rows.
+//!
+//! In a polar row the geometric source is cot(theta) T_phiphi / r ~ T/(r dtheta): the
+//! flux divergence and the source are each 1/dtheta larger than the physical force, and
+//! their O(dtheta^2) cancellation error leaves a spurious force of ~0.65 dtheta (B^2/2)/r
+//! on a UNIFORM field, 14x the interior (sp_test, 2026-09-05).  No form of the source
+//! removes it, because it comes from forming the balance in a basis that turns by O(1)
+//! across the cell.  So do not form it there: rotate each face's momentum flux (which
+//! the Riemann solver produced in THAT face's basis) to a Cartesian vector, sum with the
+//! face areas, and project onto the cell basis afterwards.  The RK update has already
+//! applied the local-component divergence, so this kernel adds the DIFFERENCE and the
+//! geometric source is masked out in the callers.
+//!
+//! Closure.  With scalar areas and point normals, sum_f A_f nhat_f is only O(dtheta^2)
+//! from zero, which for the isotropic part would be a ~dtheta^2/dr pressure-force error
+//! -- fatal for hydrostatic balance.  Hence the correction  T~_f . (Avec_f - A_f nhat_f)
+//! with Avec_f the EXACT vector area (Int nhat dA, analytic on this grid) and T~_f the
+//! mean Cartesian stress of the two cells sharing the face.  A uniform stress then cancels
+//! to round-off, and in general the correction is a second-order-small tensor times a
+//! second-order-small vector.  phi-faces are planar, so their correction vanishes.
+
+void Coordinates::SrcTermsSphericalPolarCartRows(const DvceArray5D<Real> &w0,
+    const DvceArray5D<Real> &bcc0, const bool is_mhd,
+    const DvceArray5D<Real> &wder, const DvceFaceFld5D<Real> uflx,
+    const EOS_Data &eos_data, const Real bdt, DvceArray5D<Real> &u0) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  int &is = indcs.is; int &ie = indcs.ie;
+  int &js = indcs.js; int &je = indcs.je;
+  int &ks = indcs.ks; int &ke = indcs.ke;
+  int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto eos_ = eos_data;
+  const bool gen_ = eos_.IsGeneral();
+  auto &wder_ = wder;
+  auto &bcc_ = bcc0;
+  const bool mhd_ = is_mhd;
+  auto volume_ = volume;
+  auto area_ = area;
+  auto xx1f_ = xx1f;
+  auto xx2f_ = xx2f;
+  auto xx3f_ = xx3f;
+  auto &mb_bcs_ = pmy_pack->pmb->mb_bcs;
+  if (pmy_pack->pmesh->adaptive ||
+      static_cast<int>(wb_geom.extent(0)) != pmy_pack->nmb_thispack) {
+    BuildWBGeometry();
+  }
+  auto geom = wb_geom;
+
+  par_for("spsrc_cartrows", DevExeSpace(), 0,nmb1,ks,ke,js,je,is,ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const bool pole =
+        (j == js && mb_bcs_.d_view(m,BoundaryFace::inner_x2) == BoundaryFlag::polar) ||
+        (j == je && mb_bcs_.d_view(m,BoundaryFace::outer_x2) == BoundaryFlag::polar);
+    if (!pole) return;
+
+    // Cartesian stress tensor of cell (kk,jj,ii), on that cell's own triad
+    auto stress = [&](const int kk, const int jj, const int ii, Real T[3][3]) {
+      Real rh[3], th[3], ph[3];
+      for (int c=0; c<3; ++c) {
+        rh[c] = geom(m,kk,jj,c); th[c] = geom(m,kk,jj,3+c); ph[c] = geom(m,kk,jj,6+c);
+      }
+      const Real rho = w0(m,IDN,kk,jj,ii);
+      const Real pr = gen_ ? wder_(m,IDPR,kk,jj,ii)
+                           : eos_.Pressure(w0(m,IDN,kk,jj,ii), w0(m,IEN,kk,jj,ii));
+      Real vv[3], bb[3] = {0.0, 0.0, 0.0};
+      for (int c=0; c<3; ++c) {
+        vv[c] = w0(m,IVX,kk,jj,ii)*rh[c] + w0(m,IVY,kk,jj,ii)*th[c]
+              + w0(m,IVZ,kk,jj,ii)*ph[c];
+      }
+      Real bsq = 0.0;
+      if (mhd_) {
+        const Real b1 = bcc_(m,IBX,kk,jj,ii), b2 = bcc_(m,IBY,kk,jj,ii);
+        const Real b3 = bcc_(m,IBZ,kk,jj,ii);
+        for (int c=0; c<3; ++c) bb[c] = b1*rh[c] + b2*th[c] + b3*ph[c];
+        bsq = b1*b1 + b2*b2 + b3*b3;
+      }
+      const Real ptot = pr + 0.5*bsq;
+      for (int a=0; a<3; ++a) {
+        for (int b=0; b<3; ++b) {
+          T[a][b] = ((a == b) ? ptot : 0.0) + rho*vv[a]*vv[b] - bb[a]*bb[b];
+        }
+      }
+    };
+
+    // exact vector areas: r-face at radius rr over the cell's (theta,phi) patch, and
+    // theta-face at theta tf over [r_l,r_r] x [phi_l,phi_r]
+    const Real th_l = xx2f_(m,j), th_r = xx2f_(m,j+1);
+    const Real ph_l = xx3f_(m,k), ph_r = xx3f_(m,k+1);
+    const Real r_l = xx1f_(m,i), r_r = xx1f_(m,i+1);
+    const Real dph = ph_r - ph_l;
+    const Real sph = sin(ph_r) - sin(ph_l), cph = -(cos(ph_r) - cos(ph_l));
+    auto avec_r = [&](const Real rr, Real A[3]) {
+      const Real i2 = 0.5*(th_r - th_l) - 0.25*(sin(2.0*th_r) - sin(2.0*th_l));
+      const Real iz = 0.5*(sin(th_r)*sin(th_r) - sin(th_l)*sin(th_l));
+      A[0] = rr*rr*i2*sph; A[1] = rr*rr*i2*cph; A[2] = rr*rr*iz*dph;
+    };
+    auto avec_th = [&](const Real tf, Real A[3]) {
+      const Real fr = 0.5*(r_r*r_r - r_l*r_l);
+      A[0] = fr*sin(tf)*cos(tf)*sph; A[1] = fr*sin(tf)*cos(tf)*cph;
+      A[2] = -fr*sin(tf)*sin(tf)*dph;
+    };
+
+    Real dcart[3] = {0.0, 0.0, 0.0};   // sum_f sig [A_f Fvec_f + T~_f.(Avec_f - A_f n_f)]
+    Real dloc[3]  = {0.0, 0.0, 0.0};   // what the RK update applied: sum_f sig A_f F_i(f)
+
+    auto addface = [&](const Real sig, const Real ar, const Real fl[3],
+                       const Real rf[3], const Real e1f[3], const Real e2f[3],
+                       const Real nh[3], const Real av[3],
+                       const int ka, const int ja, const int ia,
+                       const int kb, const int jb, const int ib) {
+      Real Ta[3][3], Tb[3][3];
+      stress(ka, ja, ia, Ta);
+      stress(kb, jb, ib, Tb);
+      for (int c=0; c<3; ++c) {
+        const Real fvec = fl[0]*rf[c] + fl[1]*e1f[c] + fl[2]*e2f[c];
+        Real corr = 0.0;
+        for (int d=0; d<3; ++d) corr += 0.5*(Ta[c][d] + Tb[c][d])*(av[d] - ar*nh[d]);
+        dcart[c] += sig*(ar*fvec + corr);
+        dloc[c]  += sig*ar*fl[c];
+      }
+    };
+
+    Real rc[3], e1c[3], e2c[3];
+    for (int c=0; c<3; ++c) {
+      rc[c] = geom(m,k,j,c); e1c[c] = geom(m,k,j,3+c); e2c[c] = geom(m,k,j,6+c);
+    }
+    Real av[3], fl[3];
+    // radial faces: triad = the cell's, normal = rhat
+    for (int f=0; f<2; ++f) {
+      const int ii = i + f;
+      for (int c=0; c<3; ++c) fl[c] = uflx.x1f(m,IM1+c,k,j,ii);
+      avec_r((f == 0) ? r_l : r_r, av);
+      addface((f == 0) ? -1.0 : 1.0, area_.x1f(m,k,j,ii), fl, rc, e1c, e2c, rc, av,
+              k, j, ii-1, k, j, ii);
+    }
+    // theta faces: cache slots 11 (face j) and 23 (face j+1)
+    for (int f=0; f<2; ++f) {
+      const int jj = j + f;
+      const int b = 11 + 12*f;
+      Real nh[3], rf[3], e1f[3], e2f[3];
+      for (int c=0; c<3; ++c) {
+        nh[c] = geom(m,k,j,b+c);    rf[c] = geom(m,k,j,b+3+c);
+        e1f[c] = geom(m,k,j,b+6+c); e2f[c] = geom(m,k,j,b+9+c);
+      }
+      for (int c=0; c<3; ++c) fl[c] = uflx.x2f(m,IM1+c,k,jj,i);
+      avec_th((f == 0) ? th_l : th_r, av);
+      addface((f == 0) ? -1.0 : 1.0, area_.x2f(m,k,jj,i), fl, rf, e1f, e2f, nh, av,
+              k, jj-1, i, k, jj, i);
+    }
+    // phi faces: planar, so the point normal closes exactly
+    for (int f=0; f<2; ++f) {
+      const int kk = k + f;
+      const int b = 11 + 12*(2+f);
+      Real nh[3], rf[3], e1f[3], e2f[3];
+      for (int c=0; c<3; ++c) {
+        nh[c] = geom(m,k,j,b+c);    rf[c] = geom(m,k,j,b+3+c);
+        e1f[c] = geom(m,k,j,b+6+c); e2f[c] = geom(m,k,j,b+9+c);
+      }
+      for (int c=0; c<3; ++c) fl[c] = uflx.x3f(m,IM1+c,kk,j,i);
+      const Real ar = area_.x3f(m,kk,j,i);
+      for (int c=0; c<3; ++c) av[c] = ar*nh[c];
+      addface((f == 0) ? -1.0 : 1.0, ar, fl, rf, e1f, e2f, nh, av,
+              kk-1, j, i, kk, j, i);
+    }
+
+    const Real ivol = 1.0/volume_(m,k,j,i);
+    Real dc1 = 0.0, dc2 = 0.0, dc3 = 0.0;
+    for (int c=0; c<3; ++c) {
+      dc1 += dcart[c]*rc[c]; dc2 += dcart[c]*e1c[c]; dc3 += dcart[c]*e2c[c];
+    }
+    // remove the local-component divergence the RK update applied, add the Cartesian one
+    u0(m,IM1,k,j,i) += bdt*ivol*(dloc[0] - dc1);
+    u0(m,IM2,k,j,i) += bdt*ivol*(dloc[1] - dc2);
+    u0(m,IM3,k,j,i) += bdt*ivol*(dloc[2] - dc3);
+  });
+}
+
 void Coordinates::SrcTermsSphericalPolarHydro(const DvceArray5D<Real> &w0,
     const DvceArray4D<Real> &pwb, const DvceFaceFld5D<Real> uflx,
     const EOS_Data &eos_data, const Real bdt, DvceArray5D<Real> &u0) {
@@ -1615,6 +1803,10 @@ void Coordinates::SrcTermsSphericalPolarHydro(const DvceArray5D<Real> &w0,
   if (sp_wellbalanced_src) {
     SrcTermsCurvilinearWB(w0, DvceArray5D<Real>(), false, wder_, eos_data, bdt, u0, pwb,
                           pmy_pack->phydro->use_wellbalance_static);
+    if (sp_cart_polar_momentum) {
+      SrcTermsSphericalPolarCartRows(w0, DvceArray5D<Real>(), false, wder_, uflx,
+                                     eos_data, bdt, u0);
+    }
     return;
   }
 
@@ -1625,6 +1817,8 @@ void Coordinates::SrcTermsSphericalPolarHydro(const DvceArray5D<Real> &w0,
   auto y_ov_rC_ = y_ov_rC;
   auto z_ov_rE_ = z_ov_rE;
   const bool use_wb_static_ = pmy_pack->phydro->use_wellbalance_static;
+  const bool cart_ = sp_cart_polar_momentum;
+  auto &mb_bcs_ = pmy_pack->pmb->mb_bcs;
   par_for("spsrc", DevExeSpace(), 0,nmb1,ks,ke,js,je,is,ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       
@@ -1654,11 +1848,19 @@ void Coordinates::SrcTermsSphericalPolarHydro(const DvceArray5D<Real> &w0,
     src2 -= factor * (uflx.x1f(m,IM2,k,j,i)*area_.x1f(m,k,j,i)+uflx.x1f(m,IM2,k,j,i+1)*area_.x1f(m,k,j,i+1))/volume_(m,k,j,i);
     src3 -= factor * (uflx.x1f(m,IM3,k,j,i)*area_.x1f(m,k,j,i)+uflx.x1f(m,IM3,k,j,i+1)*area_.x1f(m,k,j,i+1))/volume_(m,k,j,i);
       
+    if (cart_ &&
+        ((j == js && mb_bcs_.d_view(m,BoundaryFace::inner_x2) == BoundaryFlag::polar) ||
+         (j == je && mb_bcs_.d_view(m,BoundaryFace::outer_x2) == BoundaryFlag::polar))) {
+      return;   // the Cartesian polar-row update replaces this source there
+    }
     u0(m,IM1,k,j,i) += src1*bdt;
     u0(m,IM2,k,j,i) += src2*bdt;
     u0(m,IM3,k,j,i) += src3*bdt;
     
   });
+  if (cart_) {
+    SrcTermsSphericalPolarCartRows(w0, DvceArray5D<Real>(), false, wder_, uflx, eos_data, bdt, u0);
+  }
 }
 
 void Coordinates::SrcTermsSphericalPolarMHD(const DvceArray5D<Real> &w0,
@@ -1683,6 +1885,9 @@ void Coordinates::SrcTermsSphericalPolarMHD(const DvceArray5D<Real> &w0,
   if (sp_wellbalanced_src) {
     SrcTermsCurvilinearWB(w0, bcc0, true, wder_, eos_data, bdt, u0, pwb,
                           pmy_pack->pmhd->use_wellbalance_static);
+    if (sp_cart_polar_momentum) {
+      SrcTermsSphericalPolarCartRows(w0, bcc0, true, wder_, uflx, eos_data, bdt, u0);
+    }
     return;
   }
 
@@ -1693,6 +1898,8 @@ void Coordinates::SrcTermsSphericalPolarMHD(const DvceArray5D<Real> &w0,
   auto y_ov_rC_ = y_ov_rC;
   auto z_ov_rE_ = z_ov_rE;
   const bool use_wb_static_ = pmy_pack->pmhd->use_wellbalance_static;
+  const bool cart_ = sp_cart_polar_momentum;
+  auto &mb_bcs_ = pmy_pack->pmb->mb_bcs;
   par_for("spsrc", DevExeSpace(), 0,nmb1,ks,ke,js,je,is,ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       
@@ -1723,9 +1930,17 @@ void Coordinates::SrcTermsSphericalPolarMHD(const DvceArray5D<Real> &w0,
     src2 -= factor * (uflx.x1f(m,IM2,k,j,i)*area_.x1f(m,k,j,i)+uflx.x1f(m,IM2,k,j,i+1)*area_.x1f(m,k,j,i+1))/volume_(m,k,j,i);
     src3 -= factor * (uflx.x1f(m,IM3,k,j,i)*area_.x1f(m,k,j,i)+uflx.x1f(m,IM3,k,j,i+1)*area_.x1f(m,k,j,i+1))/volume_(m,k,j,i);
       
+    if (cart_ &&
+        ((j == js && mb_bcs_.d_view(m,BoundaryFace::inner_x2) == BoundaryFlag::polar) ||
+         (j == je && mb_bcs_.d_view(m,BoundaryFace::outer_x2) == BoundaryFlag::polar))) {
+      return;   // the Cartesian polar-row update replaces this source there
+    }
     u0(m,IM1,k,j,i) += src1*bdt;
     u0(m,IM2,k,j,i) += src2*bdt;
     u0(m,IM3,k,j,i) += src3*bdt;
     
   });
+  if (cart_) {
+    SrcTermsSphericalPolarCartRows(w0, bcc0, true, wder_, uflx, eos_data, bdt, u0);
+  }
 }
