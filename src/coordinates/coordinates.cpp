@@ -42,10 +42,12 @@ Coordinates::Coordinates(ParameterInput *pin, MeshBlockPack *ppack) :
     cs_wellbalanced_src = pin->GetOrAddBoolean("mhd","cs_wellbalanced_src",false);
     sp_wellbalanced_src = pin->GetOrAddBoolean("mhd","sp_wellbalanced_src",false);
     sp_cart_polar_momentum = pin->GetOrAddBoolean("mhd","sp_cart_polar_momentum",false);
+    cs_cart_momentum = pin->GetOrAddBoolean("mhd","cs_cart_momentum",false);
   } else if (pin->DoesBlockExist("hydro")) {
     sp_wellbalanced_src = pin->GetOrAddBoolean("hydro","sp_wellbalanced_src",false);
     sp_cart_polar_momentum = pin->GetOrAddBoolean("hydro","sp_cart_polar_momentum",
                                                   false);
+    cs_cart_momentum = pin->GetOrAddBoolean("hydro","cs_cart_momentum",false);
   }
 
   if (pmy_pack->pmesh->use_cubed_sphere || pmy_pack->pmesh->use_spherical_polar) {
@@ -1346,6 +1348,10 @@ void Coordinates::SrcTermsGnomonicEquiangleImpl(const DvceArray5D<Real> &w0,
   auto &bcc_ = bcc0;
   const bool mhd_ = is_mhd && !cs_diag_no_magsrc;
 
+  if (cs_cart_momentum) {
+    SrcTermsGnomonicCartMomentum(w0, bcc0, is_mhd, wder, uflx, eos_data, bdt, u0);
+    return;
+  }
   if (cs_wellbalanced_src) {
     SrcTermsCurvilinearWB(w0, bcc0, is_mhd, wder, eos_data, bdt, u0,
                           DvceArray4D<Real>(), false);
@@ -1776,6 +1782,154 @@ void Coordinates::SrcTermsSphericalPolarCartRows(const DvceArray5D<Real> &w0,
       dc1 += dcart[c]*rc[c]; dc2 += dcart[c]*e1c[c]; dc3 += dcart[c]*e2c[c];
     }
     // remove the local-component divergence the RK update applied, add the Cartesian one
+    u0(m,IM1,k,j,i) += bdt*ivol*(dloc[0] - dc1);
+    u0(m,IM2,k,j,i) += bdt*ivol*(dloc[1] - dc2);
+    u0(m,IM3,k,j,i) += bdt*ivol*(dloc[2] - dc3);
+  });
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn Coordinates::SrcTermsGnomonicCartMomentum
+//! \brief CARTESIAN momentum update on the cubed sphere, every cell: the counterpart of
+//! SrcTermsSphericalPolarCartRows.  The RK update applied the covariant flux divergence
+//! sum_f sig A_f F_i(f) and this kernel adds the difference to the Cartesian balance
+//!   sum_f sig [ A_f Fvec_f + T~_f . (Avec_f - A_f nhat_f) ]  projected on the cell basis,
+//! with NO geometric source.  Fvec_f is the face's covariant momentum flux raised with the
+//! face metric g = [[1,c],[c,1]] and assembled on the face triad; T~_f is the mean
+//! Cartesian stress of the two cells sharing the face.  The angular faces of a gnomonic
+//! cell are PLANAR (great-circle planes), so their point normal closes exactly and the
+//! correction is zero there; the radial faces' vector areas follow from closure,
+//!   (r_r^2 - r_l^2) Omega = - sum_sides sig A_s N_s,   Avec_r(r) = r^2 Omega.
+//! A uniform stress therefore cancels to round-off and hydrostatic balance is untouched.
+
+void Coordinates::SrcTermsGnomonicCartMomentum(const DvceArray5D<Real> &w0,
+    const DvceArray5D<Real> &bcc0, const bool is_mhd,
+    const DvceArray5D<Real> &wder, const DvceFaceFld5D<Real> uflx,
+    const EOS_Data &eos_data, const Real bdt, DvceArray5D<Real> &u0) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  int &is = indcs.is; int &ie = indcs.ie;
+  int &js = indcs.js; int &je = indcs.je;
+  int &ks = indcs.ks; int &ke = indcs.ke;
+  int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto eos_ = eos_data;
+  const bool gen_ = eos_.IsGeneral();
+  auto &wder_ = wder;
+  auto &bcc_ = bcc0;
+  const bool mhd_ = is_mhd && !cs_diag_no_magsrc;
+  auto volume_ = volume;
+  auto area_ = area;
+  auto xx1f_ = xx1f;
+  if (pmy_pack->pmesh->adaptive ||
+      static_cast<int>(wb_geom.extent(0)) != pmy_pack->nmb_thispack) {
+    BuildWBGeometry();
+  }
+  auto geom = wb_geom;
+
+  par_for("cssrc_cart", DevExeSpace(), 0,nmb1,ks,ke,js,je,is,ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    // Cartesian stress of cell (kk,jj,ii) on its own triad
+    auto stress = [&](const int kk, const int jj, const int ii, Real T[3][3]) {
+      Real rh[3], e1[3], e2[3];
+      for (int c=0; c<3; ++c) {
+        rh[c] = geom(m,kk,jj,c); e1[c] = geom(m,kk,jj,3+c); e2[c] = geom(m,kk,jj,6+c);
+      }
+      const Real c2 = geom(m,kk,jj,9), s2 = geom(m,kk,jj,10);
+      const Real rho = w0(m,IDN,kk,jj,ii);
+      const Real pr = gen_ ? wder_(m,IDPR,kk,jj,ii)
+                           : eos_.Pressure(w0(m,IDN,kk,jj,ii), w0(m,IEN,kk,jj,ii));
+      Real vv[3], bb[3] = {0.0, 0.0, 0.0};
+      for (int c=0; c<3; ++c) {
+        vv[c] = w0(m,IVX,kk,jj,ii)*rh[c] + w0(m,IVY,kk,jj,ii)*e1[c]
+              + w0(m,IVZ,kk,jj,ii)*e2[c];
+      }
+      Real bsq = 0.0;
+      if (mhd_) {
+        const Real b1 = bcc_(m,IBX,kk,jj,ii), b2 = bcc_(m,IBY,kk,jj,ii);
+        const Real b3 = bcc_(m,IBZ,kk,jj,ii);
+        for (int c=0; c<3; ++c) bb[c] = b1*rh[c] + b2*e1[c] + b3*(e2[c] - c2*e1[c])/s2;
+        bsq = b1*b1 + b2*b2 + b3*b3;
+      }
+      const Real ptot = pr + 0.5*bsq;
+      for (int a=0; a<3; ++a) {
+        for (int b=0; b<3; ++b) {
+          T[a][b] = ((a == b) ? ptot : 0.0) + rho*vv[a]*vv[b] - bb[a]*bb[b];
+        }
+      }
+    };
+
+    Real dcart[3] = {0.0, 0.0, 0.0};
+    Real dloc[3]  = {0.0, 0.0, 0.0};
+    // one face: covariant flux fl[3], triad (rf,e1f,e2f) with e1f.e2f = cf, area ar,
+    // point normal nh, exact vector area av, and the two cells sharing it
+    auto addface = [&](const Real sig, const Real ar, const Real fl[3],
+                       const Real rf[3], const Real e1f[3], const Real e2f[3],
+                       const Real nh[3], const Real av[3],
+                       const int ka, const int ja, const int ia,
+                       const int kb, const int jb, const int ib) {
+      const Real cf = e1f[0]*e2f[0] + e1f[1]*e2f[1] + e1f[2]*e2f[2];
+      const Real isf2 = 1.0/fmax(1.0e-16, 1.0 - cf*cf);
+      // raise the covariant tangential components with the face metric
+      const Real f2 = (fl[1] - cf*fl[2])*isf2, f3 = (fl[2] - cf*fl[1])*isf2;
+      Real Ta[3][3], Tb[3][3];
+      stress(ka, ja, ia, Ta);
+      stress(kb, jb, ib, Tb);
+      for (int c=0; c<3; ++c) {
+        const Real fvec = fl[0]*rf[c] + f2*e1f[c] + f3*e2f[c];
+        Real corr = 0.0;
+        for (int d=0; d<3; ++d) corr += 0.5*(Ta[c][d] + Tb[c][d])*(av[d] - ar*nh[d]);
+        dcart[c] += sig*(ar*fvec + corr);
+        dloc[c]  += sig*ar*fl[c];
+      }
+    };
+
+    Real rc[3], e1c[3], e2c[3];
+    for (int c=0; c<3; ++c) {
+      rc[c] = geom(m,k,j,c); e1c[c] = geom(m,k,j,3+c); e2c[c] = geom(m,k,j,6+c);
+    }
+    // side faces first: planar, av = ar*nh; accumulate the closure sum for the r-faces
+    Real omega[3] = {0.0, 0.0, 0.0};
+    Real fl[3], av[3];
+    for (int f=0; f<4; ++f) {
+      const int b = 11 + 12*f;
+      Real nh[3], rf[3], e1f[3], e2f[3];
+      for (int c=0; c<3; ++c) {
+        nh[c] = geom(m,k,j,b+c);    rf[c] = geom(m,k,j,b+3+c);
+        e1f[c] = geom(m,k,j,b+6+c); e2f[c] = geom(m,k,j,b+9+c);
+      }
+      const Real sig = (f % 2 == 0) ? -1.0 : 1.0;
+      Real ar;
+      int ka, ja, ia, kb, jb, ib;
+      if (f < 2) {
+        const int jj = j + f;
+        ar = area_.x2f(m,k,jj,i);
+        for (int c=0; c<3; ++c) fl[c] = uflx.x2f(m,IM1+c,k,jj,i);
+        ka = k; ja = jj-1; ia = i; kb = k; jb = jj; ib = i;
+      } else {
+        const int kk = k + (f - 2);
+        ar = area_.x3f(m,kk,j,i);
+        for (int c=0; c<3; ++c) fl[c] = uflx.x3f(m,IM1+c,kk,j,i);
+        ka = kk-1; ja = j; ia = i; kb = kk; jb = j; ib = i;
+      }
+      for (int c=0; c<3; ++c) { av[c] = ar*nh[c]; omega[c] -= sig*ar*nh[c]; }
+      addface(sig, ar, fl, rf, e1f, e2f, nh, av, ka, ja, ia, kb, jb, ib);
+    }
+    // radial faces: Avec(r) = r^2 Omega with Omega from closure of this cell
+    const Real r_l = xx1f_(m,i), r_r = xx1f_(m,i+1);
+    const Real inv = 1.0/(r_r*r_r - r_l*r_l);
+    for (int f=0; f<2; ++f) {
+      const int ii = i + f;
+      const Real rr = (f == 0) ? r_l : r_r;
+      for (int c=0; c<3; ++c) { fl[c] = uflx.x1f(m,IM1+c,k,j,ii); av[c] = rr*rr*omega[c]*inv; }
+      addface((f == 0) ? -1.0 : 1.0, area_.x1f(m,k,j,ii), fl, rc, e1c, e2c, rc, av,
+              k, j, ii-1, k, j, ii);
+    }
+
+    const Real ivol = 1.0/volume_(m,k,j,i);
+    // covariant components of the Cartesian balance = dot products with the cell basis
+    Real dc1 = 0.0, dc2 = 0.0, dc3 = 0.0;
+    for (int c=0; c<3; ++c) {
+      dc1 += dcart[c]*rc[c]; dc2 += dcart[c]*e1c[c]; dc3 += dcart[c]*e2c[c];
+    }
     u0(m,IM1,k,j,i) += bdt*ivol*(dloc[0] - dc1);
     u0(m,IM2,k,j,i) += bdt*ivol*(dloc[1] - dc2);
     u0(m,IM3,k,j,i) += bdt*ivol*(dloc[2] - dc3);

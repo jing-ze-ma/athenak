@@ -188,6 +188,13 @@ class Coordinates {
   // vectors with a vector-area correction, instead of local components plus the
   // cot(theta) source.  See SrcTermsSphericalPolarCartRows.
   bool sp_cart_polar_momentum = false;
+  // CARTESIAN momentum update on the WHOLE cubed sphere (<mhd>/cs_cart_momentum): no
+  // geometric source at all; see SrcTermsGnomonicCartMomentum.
+  bool cs_cart_momentum = false;
+  void SrcTermsGnomonicCartMomentum(const DvceArray5D<Real> &w0,
+       const DvceArray5D<Real> &bcc0, const bool is_mhd,
+       const DvceArray5D<Real> &wder, const DvceFaceFld5D<Real> uflx,
+       const EOS_Data &eos_data, const Real bdt, DvceArray5D<Real> &u0);
   void SrcTermsSphericalPolarCartRows(const DvceArray5D<Real> &w0,
        const DvceArray5D<Real> &bcc0, const bool is_mhd,
        const DvceArray5D<Real> &wder, const DvceFaceFld5D<Real> uflx,
