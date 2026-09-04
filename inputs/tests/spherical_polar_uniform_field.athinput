@@ -21,6 +21,7 @@ ix3_bc = periodic
 ox3_bc = periodic
 use_spherical_polar = true
 use_polar_boundary = true
+polar_quadratic_recon = false
 <meshblock>
 nx1 = 8
 nx2 = 32
@@ -43,6 +44,8 @@ d0 = 1.0
 p0 = 1.0
 b0 = 1.0
 bdir = 2
+user_srcs = false
+flux_probe = 0
 <output1>
 file_type = bin
 variable = mhd_w_bcc

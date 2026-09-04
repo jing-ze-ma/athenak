@@ -278,6 +278,11 @@ class Mesh {
   // Coefficients of the polynomial radial stretch. See StretchRPoly in coordinates.hpp.
   Real fStretchRPoly[NSTRETCH_R_POLY];
   bool use_polar_boundary;      // true if using polar boundaries
+  // polar_quadratic_recon: in the two polar cell rows reconstruct with the UNLIMITED
+  // quadratic through the mirror ghost, the cell and its neighbour (clamped to their
+  // range).  A limited slope sees every even profile as an extremum at the pole and
+  // flattens the cell, which makes the polar theta-flux first order.
+  bool use_polar_quadratic_recon;
   // SPHERICAL POLAR: keep the theta-face field at the pole single-valued by
   // azimuthally averaging it into one Cartesian vector each step
   // (PolarAzimuthalAverageBxBy).  Its call had been commented out since the polar

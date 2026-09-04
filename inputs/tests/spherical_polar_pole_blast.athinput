@@ -1,0 +1,53 @@
+<comment>
+problem = hydro blast straddling the pole (the blast generator treats (r,theta,phi) as Cartesian, so a
+          blob at small sqrt(r^2+theta^2+phi^2) sits on the polar axis near the inner radius)
+<job>
+basename = pb
+<mesh>
+nghost = 2
+nx1 = 64
+x1min = 0.5
+x1max = 1.5
+ix1_bc = outflow
+ox1_bc = outflow
+nx2 = 64
+x2min = -1.0
+x2max = -1.0
+ix2_bc = polar
+ox2_bc = polar
+nx3 = 16
+x3min = -1.0
+x3max = -1.0
+ix3_bc = periodic
+ox3_bc = periodic
+use_spherical_polar = true
+use_polar_boundary = true
+polar_quadratic_recon = false
+<meshblock>
+nx1 = 64
+nx2 = 64
+nx3 = 8
+<time>
+evolution = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim = -1
+tlim = 0.3
+<hydro>
+eos = ideal
+reconstruct = plm
+rsolver = hllc
+gamma = 1.6666666666666667
+<problem>
+outer_radius = 1.0
+inner_radius = 0.3
+prat = 100.0
+dn_amb = 1.0
+pn_amb = 1.0
+<output1>
+file_type = hst
+dt = 0.05
+<output2>
+file_type = bin
+variable = hydro_w
+dt = 0.3

@@ -877,7 +877,7 @@ class MHD {
     KOKKOS_INLINE_FUNCTION
     static void GridPiecewiseLinearX2(TeamMember_t const &member, const int m, const int k, const int j, const int il, const int iu,
         const DvceArray5D<Real> &q, const DvceArray2D<Real> &xv, const DvceArray2D<Real> &xf,
-        ScrArray2D<Real> &ql_jp1, ScrArray2D<Real> &qr_j) {
+        ScrArray2D<Real> &ql_jp1, ScrArray2D<Real> &qr_j, const bool polar = false) {
       Real x_jm1  = xv(m,j-1);
       Real x_jmh  = xf(m,j);
       Real x_j    = xv(m,j);
@@ -888,6 +888,51 @@ class MHD {
       Real dxL = x_j-x_jm1;
       Real dxR = x_jp1-x_j;
       int nvar = q.extent_int(1);
+      if (polar) {
+        // POLAR ROW: the mirror ghost sits at -x_j, so every profile even across the pole
+        // has q(j-1) == q(j) and a limited slope reads that as an extremum and flattens
+        // the cell -- first order at the pole for B_r of an axial field, B_phi of a
+        // transverse one, rho, p, ...  When the cell IS an extremum, use the quadratic
+        // through the three cell values at their centroids, with its curvature limited
+        // (Colella & Sekora 2008 style) by the curvature of the next triple (j, j+1, j+2):
+        // a smooth extremum keeps its parabola, a discontinuity is clipped to the limited
+        // slope.  Monotone profiles keep the ordinary limited slope.  Face values are
+        // clamped to the range of the three cells, so no new extremum is created.
+        const Real x_jp2 = xv(m,j+2), x_jm2 = xv(m,j-2);
+        // quadratic through (x_jm1,qm),(x_j,q0),(x_jp1,qp): slope and curvature at x_j
+        const Real dl = x_j - x_jm1, dr = x_jp1 - x_j;
+        const Real dl2 = x_jp1 - x_j, dr2 = x_jp2 - x_jp1;   // for the (j,j+1,j+2) triple
+        const Real dl0 = x_jm1 - x_jm2, dr0 = x_j - x_jm1;   // for the (j-2,j-1,j) triple
+        for (int n=0; n<nvar; ++n) {
+          par_for_inner(member, il, iu, [&](const int i) {
+            const Real qm = q(m,n,k,j-1,i), q0 = q(m,n,k,j,i), qp = q(m,n,k,j+1,i);
+            const bool extremum = ((qm - q0)*(qp - q0) >= 0.0);
+            if (!extremum) {
+              PLM_nonuniform(qm, q0, qp, dxL, dxR, dxLh, dxRh, ql_jp1(n,i), qr_j(n,i));
+              return;
+            }
+            const Real qpp = q(m,n,k,j+2,i), qmm = q(m,n,k,j-2,i);
+            // second derivatives of the central, left- and right-shifted quadratics; the
+            // parabola is kept only if all three agree in sign (a smooth extremum), with
+            // its curvature bounded by the neighbours' (C = 1.25, Colella & Sekora 2008)
+            const Real d2c = 2.0*((qp - q0)/dr - (q0 - qm)/dl)/(dl + dr);
+            const Real d2r = 2.0*((qpp - qp)/dr2 - (qp - q0)/dl2)/(dl2 + dr2);
+            const Real d2l = 2.0*((q0 - qm)/dr0 - (qm - qmm)/dl0)/(dl0 + dr0);
+            Real d2 = 0.0;
+            if (d2c*d2r > 0.0 && d2c*d2l > 0.0) {
+              d2 = (d2c > 0.0 ? 1.0 : -1.0)*fmin(fabs(d2c), 1.25*fmin(fabs(d2l), fabs(d2r)));
+            }
+            // slope of the central quadratic at x_j, scaled with the curvature it kept
+            const Real s_c = ((qp - q0)/dr*dl + (q0 - qm)/dl*dr)/(dl + dr);
+            const Real s = (d2c != 0.0) ? s_c*(d2/d2c) + 0.0 : 0.0;
+            const Real qmin = fmin(qm, fmin(q0, qp)), qmax = fmax(qm, fmax(q0, qp));
+            const Real dml = x_jmh - x_j, dpr = x_jph - x_j;
+            qr_j(n,i)   = fmin(qmax, fmax(qmin, q0 + s*dml + 0.5*d2*dml*dml));
+            ql_jp1(n,i) = fmin(qmax, fmax(qmin, q0 + s*dpr + 0.5*d2*dpr*dpr));
+          });
+        }
+        return;
+      }
       for (int n=0; n<nvar; ++n) {
         par_for_inner(member, il, iu, [&](const int i) {
           PLM_nonuniform(q(m,n,k,j-1,i), q(m,n,k,j,i), q(m,n,k,j+1,i), dxL, dxR, dxLh, dxRh, ql_jp1(n,i), qr_j(n,i));

@@ -119,6 +119,7 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
   auto gtrig_eta  = pmy_pack->pcoord->GnomonicTrigFaceEta();
   auto &use_spherical_polar = pmy_pack->pmesh->use_spherical_polar;
   auto &mb_bcs = pmy_pack->pmb->mb_bcs;
+  const bool pquad_ = pmy_pack->pmesh->use_polar_quadratic_recon;
 
   //--------------------------------------------------------------------------------------
   // i-direction
@@ -390,9 +391,14 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
           dl_jp1 = dscr1;
         }
           
+        const bool pq = pquad_ &&
+          ((j == js && mb_bcs.d_view(m,BoundaryFace::inner_x2) == BoundaryFlag::polar) ||
+           (j == je && mb_bcs.d_view(m,BoundaryFace::outer_x2) == BoundaryFlag::polar));
         if (use_spherical_polar) {
-          GridPiecewiseLinearX2(member, m, k, j, is-1, ie+1, w0_, x2v_, x2f_, wl_jp1, wr);
-          GridPiecewiseLinearX2(member, m, k, j, is-1, ie+1, b0_, x2v_, x2f_, bl_jp1, br);
+          GridPiecewiseLinearX2(member, m, k, j, is-1, ie+1, w0_, x2v_, x2f_, wl_jp1, wr,
+                                pq);
+          GridPiecewiseLinearX2(member, m, k, j, is-1, ie+1, b0_, x2v_, x2f_, bl_jp1, br,
+                                pq);
         } else {
             
         if (use_wellbalance_dynamic_ && use_wb_x2_)
@@ -439,7 +445,8 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
         if (nder > 0) {
           if (use_spherical_polar) {
             GridPiecewiseLinearX2(member, m, k, j, is-1, ie+1, wder_, x2v_, x2f_,
-                                  dl_jp1, dr);
+                                  dl_jp1, dr,
+                                  pq);
           } else if (use_wellbalance_static_reconst_perturb_) {
         WbStaticPiecewiseLinearDerX2(member, m, k, j, is-1, ie+1,
                                      pwb_, pfacewb_x2f,

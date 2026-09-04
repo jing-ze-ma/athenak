@@ -200,6 +200,8 @@ Mesh::Mesh(ParameterInput *pin) :
     std::exit(EXIT_FAILURE);
   }
   use_polar_boundary = pin->GetOrAddBoolean("mesh", "use_polar_boundary", false);
+  use_polar_quadratic_recon = pin->GetOrAddBoolean("mesh", "polar_quadratic_recon",
+                                                    false);
   use_polar_average_b = pin->GetOrAddBoolean("mesh", "use_polar_average_b", false);
   use_polar_average_eresist = pin->GetOrAddBoolean("mesh", "use_polar_average_eresist",
                                                     false);
