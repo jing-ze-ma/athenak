@@ -108,6 +108,11 @@ cs_lowbeta_fallback = 0.5
 # all-hit at the radius where beta crosses the threshold, and the min-beta column must
 # reproduce the analytic profile.
 cs_lowbeta_diag = 0
+# MEASUREMENT ONLY: the seam-halo internal-energy consistency test (mhd_seam_diag.cpp).
+# NOTE: it needs MORE THAN ONE MeshBlock PER PANEL, or every tangential boundary is a seam
+# and the same-panel block-face NULL CONTROL row comes back empty.  With nx2=nx3=32 use
+# meshblock/nx2=16 meshblock/nx3=16 to get 2x2 blocks per panel.
+cs_seam_diag = 0
 
 <problem>
 iprob    = 13

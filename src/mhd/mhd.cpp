@@ -322,6 +322,17 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
       Kokkos::realloc(lb_diag, bindcs.nx1, LBD_NSLOT);
     }
 
+    // MEASUREMENT ONLY (mhd_seam_diag.cpp): the seam-halo internal-energy consistency
+    // test.  Refused off the cubed sphere, where there are no seams to measure and the
+    // "seam" row would silently count nothing.
+    cs_seam_diag = pin->GetOrAddInteger("mhd","cs_seam_diag",0);
+    if (cs_seam_diag > 0 && !(pmy_pack->pmesh->use_cubed_sphere)) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+        << std::endl << "<mhd>/cs_seam_diag measures panel-SEAM ghost cells, but this is "
+        << "not a cubed-sphere mesh, so it would report an empty seam row." << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+
     // select reconstruction method (default PLM)
     std::string xorder = pin->GetOrAddString("mhd","reconstruct","plm");
     if (xorder.compare("dc") == 0) {

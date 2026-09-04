@@ -604,6 +604,13 @@ TaskStatus MHD::ConToPrim(Driver *pdrive, int stage) {
                                                    wder, wtemp,
                                                    0, n1m1, 0, n2m1, 0, n3m1);
   }
+  // MEASUREMENT ONLY: run here, where w0 and bcc0 have just been filled over the ghost
+  // zones and before anything consumes them.  Stage 1 only, so the printed numbers are
+  // one sweep rather than a running mixture of stages.
+  if (cs_seam_diag > 0 && stage == 1 &&
+      (pmy_pack->pmesh->ncycle % cs_seam_diag) == 0) {
+    SeamHaloDiag();
+  }
   if (use_etotgrav) {
     AddGravEtot(phicc0, u0, 0, n1m1, 0, n2m1, 0, n3m1);
   }

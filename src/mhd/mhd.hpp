@@ -176,6 +176,11 @@ class MHD {
   // threshold of 0.5, so it should be on everywhere in that shell -- and if the growth
   // happens anyway, added dissipation is not the cure for THIS route.
   int cs_lowbeta_diag = 0;
+
+  // CUBED SPHERE, MEASUREMENT ONLY: every N cycles, test whether a SEAM ghost cell's
+  // internal energy is consistent with its own ghost field.  See mhd_seam_diag.cpp for
+  // the hypothesis, the null control and what would falsify it.  0 = off.
+  int cs_seam_diag = 0;
   // (nx1, LBD_NSLOT), binned by RADIAL CELL INDEX: faces examined, faces switched to
   // HLLE, and the smallest beta seen on any face in the bin.  Zeroed and refilled by the
   // one stage-1 sweep that reports, so it is a snapshot of that sweep, not a running sum.
@@ -251,6 +256,7 @@ class MHD {
   TaskStatus ApplyPhysicalBCs(Driver* pdrive, int stage);
   TaskStatus Prolongate(Driver* pdrive, int stage);
   TaskStatus ConToPrim(Driver *d, int stage);
+  void SeamHaloDiag();   // measurement only; see mhd_seam_diag.cpp
   TaskStatus NewTimeStep(Driver *d, int stage);
   // ...in "after_stagen_tl" task list
   TaskStatus ClearSend(Driver *d, int stage);
