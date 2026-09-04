@@ -91,6 +91,7 @@ add_executable(
         mhd/mhd.cpp
         mhd/mhd_corner_e.cpp
         mhd/mhd_seam_diag.cpp
+        mhd/mhd_seam_econsist.cpp
         mhd/mhd_ct.cpp
         mhd/mhd_fluxes.cpp
         mhd/mhd_fofc.cpp

@@ -75,6 +75,8 @@ struct MHDTaskIDs {
   TaskID recvb;
   TaskID sendb_shr;
   TaskID recvb_shr;
+  TaskID sendme;
+  TaskID recvme;
   TaskID bcs;
   TaskID prol;
   TaskID c2p;
@@ -181,6 +183,16 @@ class MHD {
   // internal energy is consistent with its own ghost field.  See mhd_seam_diag.cpp for
   // the hypothesis, the null control and what would falsify it.  0 = off.
   int cs_seam_diag = 0;
+
+  // CUBED SPHERE: make a seam ghost cell's TOTAL ENERGY consistent with its own ghost
+  // field, by exchanging 0.5|B_cc|^2 across the seam and swapping the resampled source
+  // value for the ghost's own.  See mhd_seam_econsist.cpp.  Default OFF: it changes
+  // answers and costs one extra cell-centred halo exchange per stage.
+  bool cs_seam_econsist = false;
+  DvceArray5D<Real> me0, coarse_me0;   // (m,0,k,j,i) = 0.5|B_cc|^2, the exchanged scalar
+  MeshBoundaryValuesCC *pbval_me = nullptr;
+  void FillSeamME();
+  void SeamEnergyFix();
   // (nx1, LBD_NSLOT), binned by RADIAL CELL INDEX: faces examined, faces switched to
   // HLLE, and the smallest beta seen on any face in the bin.  Zeroed and refilled by the
   // one stage-1 sweep that reports, so it is a snapshot of that sweep, not a running sum.
@@ -257,6 +269,8 @@ class MHD {
   TaskStatus Prolongate(Driver* pdrive, int stage);
   TaskStatus ConToPrim(Driver *d, int stage);
   void SeamHaloDiag();   // measurement only; see mhd_seam_diag.cpp
+  TaskStatus SendME(Driver *d, int stage);
+  TaskStatus RecvME(Driver *d, int stage);
   TaskStatus NewTimeStep(Driver *d, int stage);
   // ...in "after_stagen_tl" task list
   TaskStatus ClearSend(Driver *d, int stage);

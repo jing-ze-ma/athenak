@@ -11,6 +11,7 @@
 #include <algorithm>
 
 #include "athena.hpp"
+#include "globals.hpp"
 #include "parameter_input.hpp"
 #include "mesh/mesh.hpp"
 #include "eos/eos.hpp"
@@ -332,6 +333,48 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
         << "not a cubed-sphere mesh, so it would report an empty seam row." << std::endl;
       std::exit(EXIT_FAILURE);
     }
+
+    // CUBED SPHERE: the seam-halo energy-consistency correction (mhd_seam_econsist.cpp).
+    // Refused off the cubed sphere: there are no seams, the correction is identically
+    // zero, and switching it on would only buy an extra halo exchange per stage.
+    cs_seam_econsist = pin->GetOrAddBoolean("mhd","cs_seam_econsist",false);
+    if (cs_seam_econsist && !(pmy_pack->pmesh->use_cubed_sphere)) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+        << std::endl << "<mhd>/cs_seam_econsist corrects panel-SEAM ghost cells, but "
+        << "is not a cubed-sphere mesh, so it would correct nothing." << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    // NOT MPI-SAFE YET.  On one rank this is validated end to end (the diagnostic it
+    // exists to move does move, nothing else changes, and the flag off is bit-identical).
+    // On TWO ranks the run hangs during SETUP -- before any stage executes, so it is in
+    // this object's construction or its first InitRecv, not in the correction kernels.
+    // Unresolved.  Refused rather than left switchable, because every production run is
+    // multi-rank and a hang there would be blamed on the physics.
+    if (cs_seam_econsist && global_variable::nranks > 1) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+        << std::endl << "<mhd>/cs_seam_econsist is not MPI-safe yet: on more than one "
+        << "rank the run hangs during setup.  It is validated on a single rank only."
+        << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    // The seam magnetic-energy scalar gets its own exchange.  Its own MeshBoundaryValues
+    // object means its own MPI_Comm_dup'd communicator, so its tags -- which encode only
+    // receiver lid and bufid -- cannot collide with the u0 or b0 traffic in flight.
+    if (cs_seam_econsist) {
+      // ncells*/n_ccells* above are block-scoped, so recompute them here
+      auto &ind_ = ppack->pmesh->mb_indcs;
+      const int nc1 = ind_.nx1 + 2*(ind_.ng);
+      const int nc2 = (ind_.nx2 > 1) ? (ind_.nx2 + 2*(ind_.ng)) : 1;
+      const int nc3 = (ind_.nx3 > 1) ? (ind_.nx3 + 2*(ind_.ng)) : 1;
+      const int cc1 = ind_.cnx1 + 2*(ind_.ng);
+      const int cc2 = (ind_.cnx2 > 1) ? (ind_.cnx2 + 2*(ind_.ng)) : 1;
+      const int cc3 = (ind_.cnx3 > 1) ? (ind_.cnx3 + 2*(ind_.ng)) : 1;
+      Kokkos::realloc(me0, nmb, 1, nc3, nc2, nc1);
+      Kokkos::realloc(coarse_me0, nmb, 1, cc3, cc2, cc1);
+      pbval_me = new MeshBoundaryValuesCC(ppack, pin, false);
+      pbval_me->InitializeBuffers(1);
+    }
+
 
     // select reconstruction method (default PLM)
     std::string xorder = pin->GetOrAddString("mhd","reconstruct","plm");

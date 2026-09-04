@@ -69,7 +69,12 @@ void MHD::AssembleMHDTasks(std::map<std::string, std::shared_ptr<TaskList>> tl) 
   id.recvb     = tl["stagen"]->AddTask(&MHD::RecvB, this, id.sendb);
   id.sendb_shr = tl["stagen"]->AddTask(&MHD::SendB_Shr, this, id.recvb);
   id.recvb_shr = tl["stagen"]->AddTask(&MHD::RecvB_Shr, this, id.sendb_shr);
-  id.bcs       = tl["stagen"]->AddTask(&MHD::ApplyPhysicalBCs, this, id.recvb_shr);
+  // CUBED SPHERE seam energy consistency: must sit AFTER RecvB, because the magnetic
+  // energy that belongs inside E^{n+1} is the one built from B^{n+1}, and CT does not run
+  // until after SendU.  See mhd_seam_econsist.cpp.
+  id.sendme    = tl["stagen"]->AddTask(&MHD::SendME, this, id.recvb_shr);
+  id.recvme    = tl["stagen"]->AddTask(&MHD::RecvME, this, id.sendme);
+  id.bcs       = tl["stagen"]->AddTask(&MHD::ApplyPhysicalBCs, this, id.recvme);
   id.prol      = tl["stagen"]->AddTask(&MHD::Prolongate, this, id.bcs);
   id.c2p       = tl["stagen"]->AddTask(&MHD::ConToPrim, this, id.prol);
   id.newdt     = tl["stagen"]->AddTask(&MHD::NewTimeStep, this, id.c2p);
@@ -109,6 +114,8 @@ TaskStatus MHD::InitRecv(Driver *pdrive, int stage) {
   if (tstat != TaskStatus::complete) return tstat;
   // post receives for B
   tstat = pbval_b->InitRecv(3);
+  if (tstat != TaskStatus::complete) return tstat;
+  if (cs_seam_econsist) { tstat = pbval_me->InitRecv(1); }
   if (tstat != TaskStatus::complete) return tstat;
 
   // with SMR/AMR post receives for fluxes of U, always post receives for fluxes of B
@@ -580,6 +587,30 @@ TaskStatus MHD::Prolongate(Driver *pdrive, int stage) {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn TaskStatus MHD::SendME
+//! \brief fill the seam magnetic-energy scalar and start its exchange.  A no-op unless
+//! <mhd>/cs_seam_econsist is on; see mhd_seam_econsist.cpp.
+
+TaskStatus MHD::SendME(Driver *pdrive, int stage) {
+  if (!cs_seam_econsist) return TaskStatus::complete;
+  FillSeamME();
+  return pbval_me->PackAndSendCC(me0, coarse_me0);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn TaskStatus MHD::RecvME
+//! \brief finish that exchange, then swap each ghost cell's resampled source magnetic
+//! energy for its own.
+
+TaskStatus MHD::RecvME(Driver *pdrive, int stage) {
+  if (!cs_seam_econsist) return TaskStatus::complete;
+  TaskStatus tstat = pbval_me->RecvAndUnpackCC(me0, coarse_me0);
+  if (tstat != TaskStatus::complete) return tstat;
+  SeamEnergyFix();
+  return TaskStatus::complete;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn TaskStatus MHD::ConToPrim
 //! \brief Wrapper task list function to call ConsToPrim over entire mesh (including gz)
 
@@ -632,6 +663,10 @@ TaskStatus MHD::ConToPrim(Driver *pdrive, int stage) {
 //! If stage=(-4):              clears                                 U_Shr, B_Shr
 
 TaskStatus MHD::ClearSend(Driver *pdrive, int stage) {
+  if (cs_seam_econsist) {
+    TaskStatus tst = pbval_me->ClearSend();
+    if (tst != TaskStatus::complete) return tst;
+  }
   TaskStatus tstat;
   if ((stage >= 0) || (stage == -1)) {
     // check sends of U complete
@@ -692,6 +727,10 @@ TaskStatus MHD::ClearSend(Driver *pdrive, int stage) {
 //! If stage=(-4):              clears                                 U_Shr, B_Shr
 
 TaskStatus MHD::ClearRecv(Driver *pdrive, int stage) {
+  if (cs_seam_econsist) {
+    TaskStatus tst = pbval_me->ClearRecv();
+    if (tst != TaskStatus::complete) return tst;
+  }
   TaskStatus tstat;
   if ((stage >= 0) || (stage == -1)) {
     // check receives of U complete

@@ -113,6 +113,10 @@ cs_lowbeta_diag = 0
 # and the same-panel block-face NULL CONTROL row comes back empty.  With nx2=nx3=32 use
 # meshblock/nx2=16 meshblock/nx3=16 to get 2x2 blocks per panel.
 cs_seam_diag = 0
+# THE FIX the diagnostic above exists to gate: exchange 0.5|B_cc|^2 across the seam and
+# swap the resampled source value for the ghost cell's own, so the ghost's total energy is
+# consistent with the field the ghost actually carries.  See mhd_seam_econsist.cpp.
+cs_seam_econsist = false
 
 <problem>
 iprob    = 13
