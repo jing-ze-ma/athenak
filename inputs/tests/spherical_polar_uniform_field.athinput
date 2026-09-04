@@ -1,0 +1,46 @@
+<comment>
+problem = uniform Cartesian field at rest on the spherical-polar grid: the spurious force
+<job>
+basename = sp_test
+<mesh>
+nghost = 2
+nx1 = 8
+x1min = 1.0
+x1max = 2.0
+ix1_bc = outflow
+ox1_bc = outflow
+nx2 = 32
+x2min = -1.0
+x2max = -1.0
+ix2_bc = polar
+ox2_bc = polar
+nx3 = 64
+x3min = -1.0
+x3max = -1.0
+ix3_bc = periodic
+ox3_bc = periodic
+use_spherical_polar = true
+use_polar_boundary = true
+<meshblock>
+nx1 = 8
+nx2 = 32
+nx3 = 64
+<time>
+evolution = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim = 1
+tlim = 1.0
+<mhd>
+eos = ideal
+reconstruct = plm
+rsolver = hlld
+gamma = 1.6666666666666667
+<problem>
+d0 = 1.0
+p0 = 1.0
+b0 = 1.0
+<output1>
+file_type = bin
+variable = mhd_w_bcc
+dt = 1.0e-12
