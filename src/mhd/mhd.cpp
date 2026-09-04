@@ -298,7 +298,11 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
     // the row) add the UCT/Rusanov face-field dissipation to the corner e2, with the local
     // fast speed. Damps the face checkerboard at ~2 c_f/dx, which bcc-based upwinding
     // cannot do at all.
-    use_polar_emf_diss = pin->GetOrAddBoolean("mhd","polar_emf_diss",false);
+    // Default ON wherever there is a polar boundary: verified on CPU (bench/sp_cpu_ablate/
+    // diss, 50 G -> 3e-4 G in 300 s) and on the GPU from scratch (bench/sp_diss, clean to
+    // rot 1.13 where the control jumped 100x at rot 0.8).
+    use_polar_emf_diss = pin->GetOrAddBoolean("mhd","polar_emf_diss",
+                                              pmy_pack->pmesh->use_polar_boundary);
     // On the cubed sphere the scheme is UNSTABLE below beta ~ 0.05 and the fallback is
     // what stops it, so this defaults ON there -- there is no correct answer below that
     // beta to preserve.  It is a no-op on every other grid.
