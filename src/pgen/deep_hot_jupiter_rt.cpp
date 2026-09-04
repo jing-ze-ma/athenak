@@ -3014,6 +3014,7 @@ void SourceFunc(Mesh *pm, Real bdt) {
     Real ap = pm->pgen->hot_jupiter_param.ap;
     const bool grav_pmass = pm->pgen->hot_jupiter_param.grav_point_mass;
     const bool tide = pm->pgen->hot_jupiter_param.stellar_tide;
+    const bool cs_full_rot = pm->pgen->hot_jupiter_param.cs_full_rotation;
     Real omega = pm->pgen->hot_jupiter_param.omega;
 
     // Radial grid stretch, copied out of the Mesh so the device lambdas below capture
@@ -3153,6 +3154,55 @@ void SourceFunc(Mesh *pm, Real bdt) {
             // already account for it.
             u0(m,IEN,k,j,i) += rho*(atr*vr + att*vtheta + atp*vphi)*bdt;
           }
+        } else if (use_cubed_sphere_ && cs_full_rot) {
+          // CUBED SPHERE: the same corotating-frame forces the spherical-polar branch
+          // above applies -- full Coriolis AND centrifugal -- instead of the equatorial
+          // beta-plane below, which is written for the CARTESIAN BOX and which the cubed
+          // sphere used to fall through into.  The coordinate block a few lines up
+          // branches three ways; this one branched only two, so the omission was silent.
+          //
+          // The beta-plane itself is not wrong -- f = 2 omega lam IS the standard
+          // equatorial form (f = beta*y with beta = 2 omega/R and y = R lam) -- but it is
+          // an EQUATORIAL approximation on a GLOBAL grid: against the correct 2 omega
+          // sin(lam) it is 11 % too strong at 45 deg, 21 % at 60 deg and 57 % at the
+          // pole, it drops the centrifugal term entirely, and its two terms assume an
+          // orthonormal (x,y) pair while IM2/IM3 here are COVARIANT components on the
+          // non-orthogonal gnomonic tangent basis.  Every cubed-sphere vs spherical-polar
+          // comparison of this problem was confounded by that difference.
+          //
+          // Done in CARTESIAN and then projected, which avoids writing the curvilinear
+          // Coriolis by hand in a non-orthogonal basis:
+          //     a = -2 Omega x v + Omega^2 (x, y, 0),   Omega = omega zhat,
+          // and since m_i = V.e_i is COVARIANT, the momentum source is rho (a.e_i) with
+          // e_i = (rhat, e_xi, e_eta).  w0's two angular velocities are CONTRAVARIANT on
+          // that same pair -- see Coordinates::GnomonicEquiangleRaiseVelMHD, which builds
+          // them as v2 = (m2 - c m3)/(d det) -- so V is their plain combination with the
+          // basis vectors, with no metric factor.  zhat is the rotation axis on both
+          // grids: CSCellAngles takes the colatitude from the Cartesian z of the same
+          // chart, in the convention the spherical-polar branch uses.
+          const Real xi_c = 0.25*M_PI*x2v;
+          const Real eta_c = 0.25*M_PI*x3v;
+          const int pnl = mbpanel_.d_view(m);
+          Real qc[3], e1[3], e2[3];
+          cubed_sphere::PanelToCart(pnl, xi_c, eta_c, qc);
+          cubed_sphere::PanelTangents(pnl, xi_c, eta_c, e1, e2);
+          const Real qn = 1.0/sqrt(qc[0]*qc[0] + qc[1]*qc[1] + qc[2]*qc[2]);
+          const Real rh0 = qc[0]*qn, rh1 = qc[1]*qn, rh2 = qc[2]*qn;
+          const Real v1 = w0(m,IVX,k,j,i);
+          const Real v2 = w0(m,IVY,k,j,i);
+          const Real v3 = w0(m,IVZ,k,j,i);
+          const Real vcx = v1*rh0 + v2*e1[0] + v3*e2[0];
+          const Real vcy = v1*rh1 + v2*e1[1] + v3*e2[1];
+          const Real xx = r*rh0;
+          const Real yy = r*rh1;
+          const Real acx =  2.0*omega*vcy + SQR(omega)*xx;
+          const Real acy = -2.0*omega*vcx + SQR(omega)*yy;
+          u0(m,IM1,k,j,i) += rho*(acx*rh0 + acy*rh1)*bdt;
+          u0(m,IM2,k,j,i) += rho*(acx*e1[0] + acy*e1[1])*bdt;
+          u0(m,IM3,k,j,i) += rho*(acx*e2[0] + acy*e2[1])*bdt;
+          // Only the centrifugal part does work -- Coriolis is perpendicular to v -- and
+          // this is the same term the spherical-polar branch adds unconditionally.
+          u0(m,IEN,k,j,i) += rho*SQR(omega)*(xx*vcx + yy*vcy)*bdt;
         } else {
           // corotating beta-plane approximation e.g. Fromang+2016
           Real omega1 = omega*lam;
