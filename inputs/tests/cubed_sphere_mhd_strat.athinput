@@ -92,10 +92,9 @@ cs_diag_no_magsrc   = false   # drop the MAGNETIC terms of the geometric source 
 # state -- instead of only for the ISOTROPIC part, as the analytic form manages.
 cs_wellbalanced_src = false
 
-# THE CORNER EMF.  false = the plain four-face average (Balsara-Spicer), which does not
-# reduce to the upwind flux in 1D and leaves the odd-even field mode undamped; true = the
-# GS07 upwind correction, using the gnomonic cell-centred EMF.
-cs_gs07_emf = false
+# THE CORNER EMF is the GS07 upwind reconstruction on every grid (no switch since
+# 2026-09-05).  bs_emf = true would substitute the plain four-face average for diagnosis.
+bs_emf = false
 
 # THE LOW-BETA FALLBACK, and the reason this test exists.  Plasma beta below which the
 # flux falls back per FACE from HLLD to HLLE.  Defaults to 0.5 on the cubed sphere (0 =

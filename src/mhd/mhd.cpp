@@ -287,7 +287,6 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
     // cubed-sphere RHS-split diagnostics (see mhd.hpp); both default off
     cs_diag_no_coordsrc = pin->GetOrAddBoolean("mhd","cs_diag_no_coordsrc",false);
     cs_diag_no_divf = pin->GetOrAddBoolean("mhd","cs_diag_no_divf",false);
-    use_cs_gs07_emf = pin->GetOrAddBoolean("mhd","cs_gs07_emf",false);
     // Diagnostic: the plain four-face average in place of the GS05 upwind corner EMF.
     // The GS05 derivative terms are fed by the transverse-face EMFs, which DO see the
     // (-1)^(i+k) CT null mode that the cell-centred field cannot; in a radial outflow
