@@ -4,11 +4,11 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file sp_test.cpp
-//! \brief SPHERICAL-POLAR counterpart of cs_test iprob=8: a uniform gas AT REST threaded by
-//! a UNIFORM Cartesian field B = b0 zhat.  curl B = 0, so the exact evolution is nothing;
-//! after one step the momentum per cell is the spurious force of the geometric source
-//! term against the flux divergence (the cancellation the cubed sphere's well-balanced
-//! source was built for).  Measure it from two consecutive dumps.
+//! \brief SPHERICAL-POLAR counterpart of cs_test iprob=8: a uniform gas AT REST threaded
+//! by a UNIFORM Cartesian field B = b0 zhat.  curl B = 0, so the exact evolution is
+//! nothing; after one step the momentum per cell is the spurious force of the geometric
+//! source term against the flux divergence (the cancellation the cubed sphere's
+//! well-balanced source was built for).  Measure it from two consecutive dumps.
 //!
 //! The face-normal components are FACE AVERAGES, not point values: on an r-face the
 //! area-weighted mean of b0 cos(theta) is b0 (cos th_l + cos th_r)/2, and on a theta-face
