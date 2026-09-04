@@ -34,13 +34,6 @@ struct HotJupiterParam {
   // acceleration Omega^2 (2x, -y, -z) in the corotating frame. See TideAccR/TideAccT/
   // TideAccP in deep_hot_jupiter_rt.cpp.
   bool stellar_tide = false;
-  // false = the equatorial beta-plane the CARTESIAN box uses, which the cubed sphere used
-  // to fall through into (the coordinate block branches three ways, the force block only
-  // two). true = the same full corotating-frame Coriolis + centrifugal that the
-  // spherical-polar branch applies. Kept as a switch so the old cubed-sphere answers
-  // stay reproducible;
-  // see the note in SourceFunc in deep_hot_jupiter_rt.cpp.
-  bool cs_full_rotation = true;
 };
 
 //----------------------------------------------------------------------------------------

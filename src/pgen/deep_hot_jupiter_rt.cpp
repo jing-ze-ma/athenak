@@ -3039,7 +3039,6 @@ void SourceFunc(Mesh *pm, Real bdt) {
     Real ap = pm->pgen->hot_jupiter_param.ap;
     const bool grav_pmass = pm->pgen->hot_jupiter_param.grav_point_mass;
     const bool tide = pm->pgen->hot_jupiter_param.stellar_tide;
-    const bool cs_full_rot = pm->pgen->hot_jupiter_param.cs_full_rotation;
     Real omega = pm->pgen->hot_jupiter_param.omega;
 
     // Radial grid stretch, copied out of the Mesh so the device lambdas below capture
@@ -3179,7 +3178,7 @@ void SourceFunc(Mesh *pm, Real bdt) {
             // already account for it.
             u0(m,IEN,k,j,i) += rho*(atr*vr + att*vtheta + atp*vphi)*bdt;
           }
-        } else if (use_cubed_sphere_ && cs_full_rot) {
+        } else if (use_cubed_sphere_) {
           // CUBED SPHERE: the same corotating-frame forces the spherical-polar branch
           // above applies -- full Coriolis AND centrifugal -- instead of the equatorial
           // beta-plane below, which is written for the CARTESIAN BOX and which the cubed
