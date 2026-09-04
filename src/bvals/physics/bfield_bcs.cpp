@@ -213,7 +213,10 @@ void MeshBoundaryValues::BFieldBCs(MeshBlockPack *ppack, DualArray2D<Real> b_in,
       }
     });
   }
-//  if (ppack->pmesh->use_polar_boundary) PolarAzimuthalAverageBxBy(ppack,b0);
+  // Re-enabled behind <mesh>/use_polar_average_b (see mesh.hpp).  Must run after the
+  // per-block polar case above has set x2f at the pole face, and needs every block's
+  // contribution, hence the mesh-wide sum inside it.
+  if (ppack->pmesh->use_polar_average_b) PolarAzimuthalAverageBxBy(ppack,b0);
   if (pm->two_d) return;
 
   // only apply BCs if not periodic

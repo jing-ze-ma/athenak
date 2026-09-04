@@ -278,6 +278,13 @@ class Mesh {
   // Coefficients of the polynomial radial stretch. See StretchRPoly in coordinates.hpp.
   Real fStretchRPoly[NSTRETCH_R_POLY];
   bool use_polar_boundary;      // true if using polar boundaries
+  // SPHERICAL POLAR: keep the theta-face field at the pole single-valued by
+  // azimuthally averaging it into one Cartesian vector each step
+  // (PolarAzimuthalAverageBxBy).  Its call had been commented out since the polar
+  // boundary was introduced; measured on sp_dhj_ctl, B_r at the axis is ~200x more
+  // non-axisymmetric than axisymmetric without it.  Default OFF so existing
+  // spherical-polar answers are unchanged.
+  bool use_polar_average_b;
 
   bool one_d, two_d, three_d; // flags to indicate 1D or 2D or 3D calculations
   bool multi_d;               // flag to indicate 2D and 3D calculations
