@@ -101,6 +101,13 @@ cs_gs07_emf = false
 # flux falls back per FACE from HLLD to HLLE.  Defaults to 0.5 on the cubed sphere (0 =
 # off); it is what makes this test stable.  See rsolvers/cs_lowbeta_fallback.hpp.
 cs_lowbeta_fallback = 0.5
+# MEASUREMENT ONLY: print, every N cycles, the fraction of faces the fallback above
+# actually fired on and the smallest beta it saw, binned by radial index.  0 = off, and it
+# changes no answer either way.  This problem is the natural gate for it: beta is 2.0 at
+# the base and 1.3e-2 at the top, so the printed profile must switch from all-miss to
+# all-hit at the radius where beta crosses the threshold, and the min-beta column must
+# reproduce the analytic profile.
+cs_lowbeta_diag = 0
 
 <problem>
 iprob    = 13

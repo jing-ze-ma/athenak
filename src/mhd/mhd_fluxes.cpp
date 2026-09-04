@@ -10,8 +10,13 @@
 //! e1x2,e3x2 on x2-faces; e1x3,e2x3 on x3-faces.
 
 #include <iostream>
+#include <cstdint>
+#include <iomanip>
+#include <limits>
+#include <vector>
 
 #include "athena.hpp"
+#include "globals.hpp"
 #include "mesh/mesh.hpp"
 #include "mhd.hpp"
 #include "eos/eos.hpp"
@@ -31,6 +36,9 @@
 // #include "mhd/rsolvers/roe_mhd.hpp"
 
 namespace mhd {
+
+void ReportLowBetaDiag(const DvceArray2D<Real> &lbd, const int nbin, const Real thresh);
+
 //----------------------------------------------------------------------------------------
 //! \fn void MHD::CalculateFlux
 //! \brief Calculate fluxes of conserved variables, and face-centered area-averaged EMFs
@@ -81,6 +89,19 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
     
   auto &use_cubed_sphere = pmy_pack->pmesh->use_cubed_sphere;
   const Real cs_lb_beta = cs_lowbeta_fallback;
+  // MEASUREMENT ONLY: count the fallback's hits on ONE stage-1 sweep every N cycles, so
+  // the printed profile is a snapshot of a single sweep rather than a running sum whose
+  // denominator depends on how long the run has been going.
+  const int lbd_on = (cs_lowbeta_diag > 0 && stage == 1 &&
+                      (pmy_pack->pmesh->ncycle % cs_lowbeta_diag) == 0) ? 1 : 0;
+  const int lbd_nbin = indcs_.nx1;
+  auto lbd_ = lb_diag;
+  if (lbd_on) {
+    const Real big = std::numeric_limits<Real>::max();
+    par_for("lbdiag_zero", DevExeSpace(), 0, lbd_nbin-1, KOKKOS_LAMBDA(const int b) {
+      lbd_(b,0) = 0.0; lbd_(b,1) = 0.0; lbd_(b,2) = big;
+    });
+  }
   const auto wb_option_ = wb_option;
   const bool use_wb_rho_ = use_wb_rho;
   const bool use_wb_x1_ = use_wb_x1;
@@ -291,7 +312,7 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
       // low-beta dissipation fallback, BEFORE the rotation into covariant slots
       if (cs_lb_beta > 0.0) {
         CSLowBetaFallback(member,eos,eos.IsGeneral(),m,k,j,il,iu,IVX,cs_lb_beta,
-                     wl,wr,bl,br,dl,dr,bx,flx1,e31,e21);
+                     wl,wr,bl,br,dl,dr,bx,flx1,e31,e21,lbd_on,is,lbd_nbin,lbd_);
         member.team_barrier();
       }
       GnomonicEquiangleFluxX1(gtrig_cell,member,m,k,j,il,iu,flx1);
@@ -528,7 +549,7 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
           if (use_cubed_sphere) {
             if (cs_lb_beta > 0.0) {
               CSLowBetaFallback(member,eos,eos.IsGeneral(),m,k,j,is-1,ie+1,IVY,cs_lb_beta,
-                           wl,wr,bl,br,dl,dr,by,flx2,e12,e32);
+                           wl,wr,bl,br,dl,dr,by,flx2,e12,e32,lbd_on,is,lbd_nbin,lbd_);
               member.team_barrier();
             }
             GnomonicEquiangleFluxX2(gtrig_xi,member,m,k,j,is-1,ie+1,flx2);
@@ -748,7 +769,7 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
           if (use_cubed_sphere) {
             if (cs_lb_beta > 0.0) {
               CSLowBetaFallback(member,eos,eos.IsGeneral(),m,k,j,is-1,ie+1,IVZ,cs_lb_beta,
-                           wl,wr,bl,br,dl,dr,bz,flx3,e23,e13);
+                           wl,wr,bl,br,dl,dr,bz,flx3,e23,e13,lbd_on,is,lbd_nbin,lbd_);
               member.team_barrier();
             }
             GnomonicEquiangleFluxX3(gtrig_eta,member,m,k,j,is-1,ie+1,flx3);
@@ -772,7 +793,64 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
     });
   }
 
+  if (lbd_on) { ReportLowBetaDiag(lbd_, lbd_nbin, cs_lb_beta); }
+
   return;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void ReportLowBetaDiag
+//! \brief print the low-beta fallback's hit rate as a profile in radius.
+//!
+//! MEASUREMENT ONLY; see mhd.hpp and rsolvers/cs_lowbeta_fallback.hpp.  The counters are
+//! summed over every MeshBlock and all three flux directions on this sweep, so "faces" is
+//! the number of faces the switch examined, not the number of cells.  Radial bins are
+//! grouped for printing: nx1 = 128 rows would bury the answer.
+
+void ReportLowBetaDiag(const DvceArray2D<Real> &lbd, const int nbin, const Real thresh) {
+  auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), lbd);
+  std::vector<double> nface(nbin), nsw(nbin), bmin(nbin);
+  for (int b=0; b<nbin; ++b) {
+    nface[b] = h(b,0); nsw[b] = h(b,1); bmin[b] = h(b,2);
+  }
+#if MPI_PARALLEL_ENABLED
+  MPI_Allreduce(MPI_IN_PLACE, nface.data(), nbin, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, nsw.data(),   nbin, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, bmin.data(),  nbin, MPI_DOUBLE, MPI_MIN, MPI_COMM_WORLD);
+#endif
+  if (global_variable::my_rank != 0) return;
+
+  const int ngroup = (nbin < 16) ? nbin : 16;
+  const Real big = 0.5*static_cast<Real>(std::numeric_limits<Real>::max());
+  double tface = 0.0, tsw = 0.0;
+  std::cout << "## cs_lowbeta_diag (threshold beta < " << thresh
+            << "): faces examined / switched to HLLE, by radial index" << std::endl;
+  std::cout << "##   i-range        faces      switched   frac     min beta" << std::endl;
+  for (int g=0; g<ngroup; ++g) {
+    const int lo = (g*nbin)/ngroup, hi = ((g+1)*nbin)/ngroup;
+    double f = 0.0, w = 0.0, bm = std::numeric_limits<double>::max();
+    for (int b=lo; b<hi; ++b) {
+      f += nface[b]; w += nsw[b];
+      if (bmin[b] < bm) { bm = bmin[b]; }
+    }
+    tface += f; tsw += w;
+    std::cout << "##  " << std::setw(4) << lo << "-" << std::setw(4) << hi
+              << std::setw(14) << static_cast<std::int64_t>(f)
+              << std::setw(14) << static_cast<std::int64_t>(w)
+              << std::setw(9) << std::fixed << std::setprecision(4)
+              << ((f > 0.0) ? w/f : 0.0);
+    // a bin with no field anywhere never recorded a beta at all
+    if (bm < big) {
+      std::cout << "  " << std::scientific << std::setprecision(3) << bm << std::endl;
+    } else {
+      std::cout << "        --" << std::endl;
+    }
+  }
+  std::cout << "##  total" << std::setw(18) << static_cast<std::int64_t>(tface)
+            << std::setw(14) << static_cast<std::int64_t>(tsw)
+            << std::setw(9) << std::fixed << std::setprecision(4)
+            << ((tface > 0.0) ? tsw/tface : 0.0) << std::endl;
+  std::cout.unsetf(std::ios_base::floatfield);
 }
 
 // function definitions for each template parameter

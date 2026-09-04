@@ -168,6 +168,22 @@ class MHD {
   // CUBED SPHERE: plasma beta below which the flux falls back from HLLD to HLLE, per
   // FACE.  <= 0 disables it.  See rsolvers/cs_lowbeta_fallback.hpp for why this exists.
   Real cs_lowbeta_fallback = 0.0;
+
+  // CUBED SPHERE, MEASUREMENT ONLY: report how often that fallback actually FIRES, as a
+  // profile in radius, every N cycles (0 = off).  It changes no answer.  The question it
+  // exists to settle is whether the fallback is engaged in the shell where a round-off
+  // perturbation is observed to grow: beta there is ~1e-2, two decades below the default
+  // threshold of 0.5, so it should be on everywhere in that shell -- and if the growth
+  // happens anyway, added dissipation is not the cure for THIS route.
+  int cs_lowbeta_diag = 0;
+  // (nx1, LBD_NSLOT), binned by RADIAL CELL INDEX: faces examined, faces switched to
+  // HLLE, and the smallest beta seen on any face in the bin.  Zeroed and refilled by the
+  // one stage-1 sweep that reports, so it is a snapshot of that sweep, not a running sum.
+  DvceArray2D<Real> lb_diag;
+  static constexpr int LBD_NFACE = 0;
+  static constexpr int LBD_NSWITCH = 1;
+  static constexpr int LBD_MINBETA = 2;
+  static constexpr int LBD_NSLOT = 3;
     
   // following only used for including time-independent gravity in the conserved energy equation
   bool use_etotgrav = false;   // flag to enable etotgrav

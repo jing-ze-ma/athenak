@@ -48,6 +48,10 @@
 //! supersonic.  Same stabilisation, less smearing of everything else.
 //!
 //! The L/R states are the RECONSTRUCTED ones, so the switch costs dissipation, not order.
+//!
+//! MEASURING IT.  <mhd>/cs_lowbeta_diag = N prints, every N cycles, the fraction of faces
+//! this fired on and the minimum beta seen, binned by radial index.  It changes nothing:
+//! the counters are written under `if (diag)` and read by nobody in the update.
 
 #include "athena.hpp"
 #include "eos/eos.hpp"
@@ -71,7 +75,8 @@ void CSLowBetaFallback(TeamMember_t const &member, const EOS_Data &eos, const bo
      const ScrArray2D<Real> &bl, const ScrArray2D<Real> &br,
      const ScrArray2D<Real> &dl, const ScrArray2D<Real> &dr,
      const DvceArray4D<Real> &bx,
-     DvceArray5D<Real> flx, DvceArray4D<Real> ey, DvceArray4D<Real> ez) {
+     DvceArray5D<Real> flx, DvceArray4D<Real> ey, DvceArray4D<Real> ez,
+     const int diag, const int ibin0, const int nbin, const DvceArray2D<Real> &lbd) {
   const int ivy = IVX + ((ivx-IVX)+1)%3;
   const int ivz = IVX + ((ivx-IVX)+2)%3;
   const int iby = ((ivx-IVX) + 1)%3;
@@ -94,7 +99,23 @@ void CSLowBetaFallback(TeamMember_t const &member, const EOS_Data &eos, const bo
     const Real bsqr = SQR(bxi) + SQR(wri.by) + SQR(wri.bz);
     const Real bsq = 0.5*(bsql + bsqr);
     // beta = 2p/B^2, written as a product so a vanishing field never divides
-    if ((pl + pr) >= beta_thresh*bsq) return;
+    const bool fire = ((pl + pr) < beta_thresh*bsq);
+
+    // MEASUREMENT ONLY: which faces were examined, which switched, and how much margin
+    // there was.  Counted BEFORE the early return, so the denominator is every face the
+    // switch looked at and the reported fraction is the fraction it actually fired on.
+    if (diag) {
+      const int b = i - ibin0;
+      if (b >= 0 && b < nbin) {
+        Kokkos::atomic_add(&lbd(b, 0), 1.0);
+        if (fire) { Kokkos::atomic_add(&lbd(b, 1), 1.0); }
+        // With no field there is no beta; such a face is not low-beta and is left out of
+        // the minimum rather than dividing by zero or being recorded as beta = 0.
+        if (bsq > 0.0) { Kokkos::atomic_min(&lbd(b, 2), (pl + pr)/bsq); }
+      }
+    }
+
+    if (!fire) return;
 
     MHDCons1D flux;
     if (gen) {

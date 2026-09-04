@@ -293,6 +293,35 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
     cs_lowbeta_fallback = pin->GetOrAddReal("mhd","cs_lowbeta_fallback",
                      (pmy_pack->pmesh->use_cubed_sphere ? 0.5 : 0.0));
 
+    // MEASUREMENT ONLY (mhd.hpp): a radial profile of how often that fallback fires,
+    // printed every N cycles.  Refused rather than silently mis-reported when it could
+    // not mean what it says.
+    cs_lowbeta_diag = pin->GetOrAddInteger("mhd","cs_lowbeta_diag",0);
+    if (cs_lowbeta_diag > 0) {
+      if (cs_lowbeta_fallback <= 0.0) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+          << std::endl << "<mhd>/cs_lowbeta_diag counts how often the low-beta fallback "
+          << "fires, but <mhd>/cs_lowbeta_fallback=" << cs_lowbeta_fallback
+          << " disables it, so the count could only ever be zero." << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      auto &mindcs = pmy_pack->pmesh->mesh_indcs;
+      auto &bindcs = pmy_pack->pmesh->mb_indcs;
+      // The bin is the cell's index WITHIN its MeshBlock, which is the global radial
+      // index only while x1 is not split.  For the problems this grid is for it never is
+      // (RT is a column solve in x1), but a split would silently fold every radial shell
+      // onto the wrong bin, so check instead of assuming.
+      if (mindcs.nx1 != bindcs.nx1) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+          << std::endl << "<mhd>/cs_lowbeta_diag bins by the radial index within a "
+          << "MeshBlock, which is the global radial index only if x1 is not split, but "
+          << "mesh nx1=" << mindcs.nx1 << " and meshblock nx1=" << bindcs.nx1 << "."
+          << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      Kokkos::realloc(lb_diag, bindcs.nx1, LBD_NSLOT);
+    }
+
     // select reconstruction method (default PLM)
     std::string xorder = pin->GetOrAddString("mhd","reconstruct","plm");
     if (xorder.compare("dc") == 0) {
