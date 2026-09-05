@@ -486,8 +486,18 @@ TaskStatus MHD::CornerE(Driver *pdriver, int stage) {
               ap = fmax(ap, fabs(w0_(m,IVZ,kc,j,ic)) + cf);
             }
           }
-          e2(m,k,j,i) -= 0.5*ar*(b3_(m,k,j,i) - b3_(m,k,j,i-1));
-          e2(m,k,j,i) += 0.5*ap*(b1_(m,k,j,i) - b1_(m,k-1,j,i));
+          // THIRD differences, not first.  The first-difference (Rusanov) form damps a
+          // mode of wavenumber kappa at the rate a*kappa^2*dx/2, and in the polar row
+          // dx_phi = r sin(theta) dphi ~ dtheta*dphi while the smooth m = 1 pattern of
+          // B_r has kappa ~ 1/(r sin theta): the rate is a*dphi/(2 r sin theta) = O(1),
+          // INDEPENDENT of resolution.  That distorted every smooth field threading the
+          // pole (sp_test iprob=11: polar-row v_r error 2.5e-2 at nx2 = 16 AND 32, and
+          // 100x smaller with the term off).  -D3/4 equals D1 exactly on the (-1)^k
+          // checkerboard this term exists to damp and is O(kappa^3 dx^3) on smooth modes.
+          e2(m,k,j,i) -= 0.5*ar*0.25*(-b3_(m,k,j,i+1) + 3.0*b3_(m,k,j,i)
+                                      - 3.0*b3_(m,k,j,i-1) + b3_(m,k,j,i-2));
+          e2(m,k,j,i) += 0.5*ap*0.25*(-b1_(m,k+1,j,i) + 3.0*b1_(m,k,j,i)
+                                      - 3.0*b1_(m,k-1,j,i) + b1_(m,k-2,j,i));
         }
       }
 
