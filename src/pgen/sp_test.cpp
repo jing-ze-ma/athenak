@@ -135,6 +135,18 @@ void FFVecPot(Real r, Real th, Real ph, Real b0, Real alpha,
   aph = -ax*sp + ay*cp;
 }
 
+//! spherical components of the force-free FIELD itself at a point (for the current check)
+KOKKOS_INLINE_FUNCTION
+void FFField(Real r, Real th, Real ph, Real b0, Real alpha,
+             Real &br, Real &bt, Real &bph) {
+  const Real z = r*cos(th);
+  const Real bx = b0*sin(alpha*z), by = b0*cos(alpha*z);
+  const Real st = sin(th), ct = cos(th), sp = sin(ph), cp = cos(ph);
+  br  = bx*st*cp + by*st*sp;
+  bt  = bx*ct*cp + by*ct*sp;
+  bph = -bx*sp + by*cp;
+}
+
 //! line integrals of A along the three edge types (exact to Gauss-Legendre 4)
 KOKKOS_INLINE_FUNCTION
 Real FFEdge1(Real rl, Real rr, Real th, Real ph, Real b0, Real alpha) {
@@ -837,6 +849,86 @@ void SPTestErrors(ParameterInput *pin, Mesh *pm) {
   if (is_mhd) {
     std::printf("###   max |div B| L/b0 = %.3e  (round-off expected: the faces come from"
                 " Stokes loops)\n", mxdivb);
+  }
+
+  // iprob 11: the code's resistive EMF eta*J on every edge against the exact
+  // eta*alpha*B (curl B = alpha B), in units of eta*alpha*b0*decay, polar rows vs
+  // interior, with the north and south maxima
+  if (iprob == 11 && is_mhd && pmbp->pmhd->presist != nullptr) {
+    auto pres = pmbp->pmhd->presist;
+    auto e1 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pres->efld_resist.x1e);
+    auto e2 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pres->efld_resist.x2e);
+    auto e3 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pres->efld_resist.x3e);
+    const Real eta = pres->eta_ohm_const;
+    const Real scale = eta*alpha*b0;
+    Real l1[3][2] = {}, mx[3][2] = {};
+    std::int64_t nc[3][2] = {};
+    int mxj[3] = {-1, -1, -1}, mxi[3] = {-1, -1, -1};
+    Real mxn[3] = {0.0, 0.0, 0.0}, mxs[3] = {0.0, 0.0, 0.0};   // north / south pole rows
+    const int nbp = nband;
+    for (int m=0; m<pmbp->nmb_thispack; ++m) {
+      for (int k=ks; k<=ke+1; ++k) {
+        for (int j=js; j<=je+1; ++j) {
+          for (int i=is; i<=ie+1; ++i) {
+            const Real rl = x1f(m,i), rr = x1f(m,(i <= ie) ? i+1 : i);
+            const Real tl = x2f(m,j), tr = x2f(m,(j <= je) ? j+1 : j);
+            const Real pl = x3f(m,k), pr = x3f(m,(k <= ke) ? k+1 : k);
+            Real br, bt, bph;
+            // x1 edge: along r at (theta_f(j), phi_f(k)), cells i <= ie
+            if (i <= ie) {
+              FFField(0.5*(rl + rr), tl, pl, b0, alpha, br, bt, bph);
+              const bool pol = (j - js < nbp) || (je + 1 - j < nbp);
+              const Real d = std::fabs(e1(m,k,j,i) - eta*alpha*br)/scale;
+              l1[0][pol] += d; nc[0][pol]++;
+              if (d > mx[0][pol]) {
+                mx[0][pol] = d;
+                if (pol) { mxj[0] = j - js; mxi[0] = i - is; }
+              }
+              if ((j - js < nbp)) mxn[0] = std::fmax(mxn[0], d);
+              if ((je + 1 - j < nbp)) mxs[0] = std::fmax(mxs[0], d);
+            }
+            // x2 edge: along theta at (r_f(i), phi_f(k)), cells j <= je
+            if (j <= je) {
+              FFField(rl, 0.5*(tl + tr), pl, b0, alpha, br, bt, bph);
+              const bool pol = (j - js < nbp) || (je - j < nbp);
+              const Real d = std::fabs(e2(m,k,j,i) - eta*alpha*bt)/scale;
+              l1[1][pol] += d; nc[1][pol]++;
+              if (d > mx[1][pol]) {
+                mx[1][pol] = d;
+                if (pol) { mxj[1] = j - js; mxi[1] = i - is; }
+              }
+              if ((j - js < nbp)) mxn[1] = std::fmax(mxn[1], d);
+              if ((je - j < nbp)) mxs[1] = std::fmax(mxs[1], d);
+            }
+            // x3 edge: along phi at (r_f(i), theta_f(j)), cells k <= ke; skip the pole
+            if (k <= ke && std::fabs(std::sin(tl)) > 1.0e-12) {
+              FFField(rl, tl, 0.5*(pl + pr), b0, alpha, br, bt, bph);
+              const bool pol = (j - js < nbp) || (je + 1 - j < nbp);
+              const Real d = std::fabs(e3(m,k,j,i) - eta*alpha*bph)/scale;
+              l1[2][pol] += d; nc[2][pol]++;
+              if (d > mx[2][pol]) {
+                mx[2][pol] = d;
+                if (pol) { mxj[2] = j - js; mxi[2] = i - is; }
+              }
+              if ((j - js < nbp)) mxn[2] = std::fmax(mxn[2], d);
+              if ((je + 1 - j < nbp)) mxs[2] = std::fmax(mxs[2], d);
+            }
+          }
+        }
+      }
+    }
+    if (global_variable::my_rank == 0) {
+      const char *nm[3] = {"E1 (r edges)   ", "E2 (theta edges)", "E3 (phi edges) "};
+      std::printf("###   RESISTIVE EMF vs exact eta*alpha*B, in units eta*alpha*b0"
+                  " (this rank):\n");
+      for (int c=0; c<3; ++c) {
+        std::printf("###     %s  interior L1 %.3e Linf %.3e | polar L1 %.3e Linf %.3e"
+                    " (max at j-js=%d i-is=%d; north %.3e south %.3e)\n", nm[c],
+                    (nc[c][0] > 0) ? l1[c][0]/nc[c][0] : 0.0, mx[c][0],
+                    (nc[c][1] > 0) ? l1[c][1]/nc[c][1] : 0.0, mx[c][1], mxj[c], mxi[c],
+                    mxn[c], mxs[c]);
+      }
+    }
   }
 
   std::string fname = pin->GetString("job", "basename") + "-errs.dat";
