@@ -188,6 +188,20 @@ class Coordinates {
   // vectors with a vector-area correction, instead of local components plus the
   // cot(theta) source.  See SrcTermsSphericalPolarCartRows.
   bool sp_cart_polar_momentum = false;
+  // CARTESIAN momentum update on EVERY spherical-polar cell plus fourth-order face
+  // averages of the x2/x3 fluxes (<mhd>/sp_cart_all_momentum): the only formulation in
+  // which the polar cells can be second order -- no geometric source exists to be
+  // inconsistent with the face averages.  Implies sp_cart_polar_momentum.  See
+  // SphericalPolarFaceAverageFluxes.
+  bool sp_cart_all_momentum = false;
+  // Fourth-order face averages of the x2/x3 fluxes for sp_cart_all_momentum
+  // (<mhd>/sp_face_avg, default OFF: MEASURED to make every test worse, e.g. the
+  // through-pole rotation's polar rows 6.1e-4 -> 8.4e-4 at nx2 = 32; kept as a
+  // diagnostic).  sp_face_avg_terms is a bitmask: 1 = radial terms, 2 = transverse.
+  bool sp_face_avg = false;
+  int sp_face_avg_terms = 3;
+  void SphericalPolarFaceAverageFluxes(DvceFaceFld5D<Real> &uflx, const int nvar);
+  DvceArray5D<Real> sp_favg2, sp_favg3;   // scratch for the face-average corrections
   // CARTESIAN momentum update on the WHOLE cubed sphere (<mhd>/cs_cart_momentum): no
   // geometric source at all; see SrcTermsGnomonicCartMomentum.
   bool cs_cart_momentum = false;

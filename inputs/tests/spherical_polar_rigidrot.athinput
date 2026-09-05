@@ -53,6 +53,9 @@ ndiag      = 10
 eos         = ideal
 reconstruct = plm
 rsolver     = hllc
+sp_cart_all_momentum = false   # whole-mesh Cartesian momentum + face-averaged fluxes
+sp_face_avg = false
+sp_face_avg_terms = 3
 gamma       = 1.666667
 
 <problem>

@@ -842,6 +842,12 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
 
   if (lbd_on) { ReportLowBetaDiag(lbd_, lbd_nbin, cs_lb_beta); }
 
+  // whole-mesh Cartesian momentum on spherical polar: fourth-order face averages of the
+  // hydrodynamic fluxes (see Coordinates::SphericalPolarFaceAverageFluxes)
+  if (pmy_pack->pcoord->sp_cart_all_momentum) {
+    pmy_pack->pcoord->SphericalPolarFaceAverageFluxes(uflx, IEN+1);
+  }
+
   return;
 }
 

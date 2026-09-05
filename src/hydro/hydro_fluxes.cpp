@@ -115,6 +115,8 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
   auto &x1v_ = pmy_pack->pcoord->x1v;
   auto &x1f_ = pmy_pack->pcoord->xx1f;
 
+  const bool sp_favg_ = pmy_pack->pcoord->sp_cart_all_momentum &&
+                        pmy_pack->pcoord->sp_face_avg;
   // set the loop limits for 1D/2D/3D problems
   int il = is, iu = ie+1, jl = js, ju = je, kl = ks, ku = ke;
   if (use_fofc) {
@@ -306,6 +308,10 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
       } else {
         il = is-1, iu = ie+1, kl = ks-1, ku = ke+1;
       }
+    } else if (sp_favg_) {
+      // the face-average stencils read the x2 fluxes at i +- 1 and k +- 1
+      il = is-1, iu = ie+1;
+      if (!pmy_pack->pmesh->two_d) { kl = ks-1, ku = ke+1; }
     }
 
     par_for_outer("hflux_x2",DevExeSpace(), scr_size, scr_level, 0, nmb1, kl, ku,
@@ -491,6 +497,9 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
     // set the loop limits
     il = is, iu = ie, jl = js, ju = je, kl = ks-1, ku = ke+1;
     if (use_fofc) { il = is-1, iu = ie+1, jl = js-1, ju = je+1, kl = ks-2, ku = ke+2; }
+    // the face-average stencils read the x3 fluxes at i +- 1 and j +- 1 (the polar
+    // ghost row included)
+    else if (sp_favg_) { il = is-1, iu = ie+1, jl = js-1, ju = je+1; }
 
     par_for_outer("hflux_x3",DevExeSpace(), scr_size, scr_level, 0, nmb1, jl, ju,
     KOKKOS_LAMBDA(TeamMember_t member, const int m, const int j) {
@@ -667,6 +676,12 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
         }
       } // end loop over k
     });
+  }
+
+  // whole-mesh Cartesian momentum on spherical polar: fourth-order face averages of the
+  // fluxes (see Coordinates::SphericalPolarFaceAverageFluxes)
+  if (pmy_pack->pcoord->sp_cart_all_momentum) {
+    pmy_pack->pcoord->SphericalPolarFaceAverageFluxes(uflx, nhydro);
   }
 
   return;
