@@ -705,6 +705,15 @@ void Coordinates::CoordGnomonicEquiangle() {
     // tangent directions, so they carry no such factor.
     Real r_cm = CellCenterX(i-1-is, indcs.nx1, size.d_view(m).x1min,
                                             size.d_view(m).x1max);
+    // the SAME radial stretch r_c received above: with it left out, dxface.x1f and the
+    // x2e/x3e loop areas mixed a stretched centre with an unstretched one, and on the
+    // production stretch the centre-to-centre length even changed sign near the top
+    // (anti-diffusive resistive EMF; cs_test iprob=11 + use_grid_stretch_r_poly blew up)
+    if (str_r_) {
+      StretchR(fstr_r_, rmin_, rmax_, r_cm);
+    } else if (str_rp_) {
+      StretchRPoly(cpoly_, rmin_, rmax_, r_cm);
+    }
     Real xim  = M_PI/4.0 * CellCenterX(j-1-js, indcs.nx2, x2min, x2max);
     Real etam = M_PI/4.0 * CellCenterX(k-1-ks, indcs.nx3, x3min, x3max);
     Real xm = tan(xim);
