@@ -63,6 +63,21 @@ void StretchRPoly(const Real *c, const Real r0, const Real r1, Real &r) {
   }
   r = r0 + (r1-r0)*u;
 }
+//----------------------------------------------------------------------------------------
+//! \fn ApplyRStretch()
+//! \brief Apply whichever radial stretch is active to a position built by
+//! CellCenterX/LeftEdgeX (which always come out UNSTRETCHED). Same definitions as
+//! Coordinates uses, so a problem generator and the coordinate arrays cannot drift apart.
+KOKKOS_INLINE_FUNCTION
+void ApplyRStretch(const bool str_r, const Real fstr_r, const bool str_rp, const Real *c,
+                   const Real r0, const Real r1, Real &r) {
+  if (str_r) {
+    StretchR(fstr_r, r0, r1, r);
+  } else if (str_rp) {
+    StretchRPoly(c, r0, r1, r);
+  }
+}
+
 KOKKOS_INLINE_FUNCTION
 void StretchTheta(const Real a, Real &t) {
   Real xi = t/M_PI;

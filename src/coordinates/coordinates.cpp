@@ -1374,13 +1374,17 @@ void Coordinates::SrcTermsGnomonicEquiangleImpl(const DvceArray5D<Real> &w0,
   auto x_ov_rD_ = x_ov_rD;
   auto y_ov_rC_ = y_ov_rC;
   auto z_ov_rE_ = z_ov_rE;
+  auto xx1f_ = xx1f;
   par_for("cssrc", DevExeSpace(), 0,nmb1,ks,ke,js,je,is,ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       
     // x1 is RADIAL; xi = x2 and eta = x3 are the panel-tangential angles.
-    Real radius = CellCenterX(i-is, indcs.nx1,
-                              size.d_view(m).x1min, size.d_view(m).x1max);
-    Real dr = size.d_view(m).dx1;
+    // the STRETCHED faces, exactly as SrcTermsSphericalPolar{Hydro,MHD} take them:
+    // CellCenterX and size.dx1 are index-space quantities, and on the production stretch
+    // the factor below was off by 0.57x to 2.1x across the radial grid
+    const Real r_l = xx1f_(m,i);
+    const Real r_r = xx1f_(m,i+1);
+    const Real factor = (r_r-r_l)/(r_r+r_l);
 
     Real v1 = w0(m,IVX,k,j,i);   // radial
     Real v2 = w0(m,IVY,k,j,i);   // xi
@@ -1425,9 +1429,9 @@ void Coordinates::SrcTermsGnomonicEquiangleImpl(const DvceArray5D<Real> &w0,
 
     // the radial-face flux of each ANGULAR momentum, which the r-dependence of the
     // angular basis converts into a source
-    src2 -= dr/2.0/radius * (uflx.x1f(m,IM2,k,j,i)*area_.x1f(m,k,j,i)
+    src2 -= factor * (uflx.x1f(m,IM2,k,j,i)*area_.x1f(m,k,j,i)
              + uflx.x1f(m,IM2,k,j,i+1)*area_.x1f(m,k,j,i+1))/volume_(m,k,j,i);
-    src3 -= dr/2.0/radius * (uflx.x1f(m,IM3,k,j,i)*area_.x1f(m,k,j,i)
+    src3 -= factor * (uflx.x1f(m,IM3,k,j,i)*area_.x1f(m,k,j,i)
              + uflx.x1f(m,IM3,k,j,i+1)*area_.x1f(m,k,j,i+1))/volume_(m,k,j,i);
 
     u0(m,IM1,k,j,i) += src1*bdt;

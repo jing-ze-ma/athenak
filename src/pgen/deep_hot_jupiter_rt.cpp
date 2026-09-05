@@ -250,15 +250,7 @@ void get_init_eos(const EOS_Data &eos, const Real &Rgas, const Real &grav_acc, c
 //! StretchR/StretchRPoly are the same file-scope definitions Coordinates uses, so the two
 //! cannot drift apart.
 
-KOKKOS_INLINE_FUNCTION
-void ApplyRStretch(const bool str_r, const Real fstr_r, const bool str_rp, const Real *c,
-                   const Real r0, const Real r1, Real &r) {
-  if (str_r) {
-    StretchR(fstr_r, r0, r1, r);
-  } else if (str_rp) {
-    StretchRPoly(c, r0, r1, r);
-  }
-}
+// ApplyRStretch now lives in coordinates/grid_stretch.hpp, shared with cs_test.
 
 KOKKOS_INLINE_FUNCTION
 Real GravAccAt(const Real grav_acc, const Real ap, const Real r, const bool pmass) {
