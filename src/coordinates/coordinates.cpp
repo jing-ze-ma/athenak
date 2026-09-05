@@ -1123,7 +1123,7 @@ void Coordinates::BuildWBGeometry() {
   if (pmy_pack->pmesh->use_spherical_polar) {
     // SPHERICAL POLAR: the same layout with the orthonormal triad (rhat, thhat, phhat).
     // The cell basis sits at the cell's (theta_c, phi_c) = (x2v, x3v); a theta-face's
-    // normal and triad at (theta_f, phi_c), a phi-face's at (theta_c, phi_f).  cc = 0 and
+    // normal and triad at (theta_f, phi_c), a phi-face's at (theta_mid, phi_f).  cc = 0 and
     // ss = 1 make the kernel's non-orthogonal assembly reduce to the plain one.
     auto x2v_ = x2v;  auto xx2f_ = xx2f;
     auto x3v_ = x3v;  auto xx3f_ = xx3f;
@@ -1154,10 +1154,14 @@ void Coordinates::BuildWBGeometry() {
           geom(m,k,j,b+6+c) = e1f[c]; geom(m,k,j,b+9+c) = e2f[c];
         }
       }
-      // phi faces: normal = phhat(phi_f)
+      // phi faces: normal = phhat(phi_f).  The triad sits at the face's own theta
+      // centroid, the MIDPOINT (area element r dr dtheta), not the cell's volume centroid
+      // x2v: the x3 Riemann fluxes are produced in that basis (mhd_fluxes.cpp, x3 sweep),
+      // and in the polar row the two differ at O(1) in the sin(theta)-sized components.
+      const Real th_m = 0.5*(th_l + th_r);
       for (int f=0; f<2; ++f) {
         Real rf[3], e1f[3], e2f[3];
-        triad(th_c, (f == 0) ? ph_l : ph_r, rf, e1f, e2f);
+        triad(th_m, (f == 0) ? ph_l : ph_r, rf, e1f, e2f);
         const int b = 11 + 12*(2+f);
         for (int c=0; c<3; ++c) {
           geom(m,k,j,b+c) = e2f[c];   geom(m,k,j,b+3+c) = rf[c];
