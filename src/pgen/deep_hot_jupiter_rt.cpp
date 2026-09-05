@@ -2005,7 +2005,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                 } else {
                   x1v = LeftEdgeX(i+1-is, nx1, x1min, x1max);
                   ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, x1v);
-                  if (use_cubed_sphere_) x1v = x1f_(m,i+1);   // stored centroid/face, as sp
+                  if (use_cubed_sphere_) x1v = x1f_(m,i+1);   // as sp
                 }
                 if (use_spherical_polar || use_cubed_sphere_) x1v -= ap;
                 get_wb_eos(eos, Rgas, grav_acc, zarr.d_view,logparr.d_view,x1v,denwb,pwb);
