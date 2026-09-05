@@ -594,7 +594,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
           }
           
         // SPHERICAL POLAR: shift every reconstructed variable from the cell's volume
-        // centroid theta to the x3 face's midpoint theta with the centred theta-derivative
+        // centroid theta to the x3 face's midpoint theta with the centred theta derivative
         // of the cell values -- see the note in mhd_fluxes.cpp.  Includes the basis
         // rotation of (v_r, v_theta); fixes the O(1) polar-cell phi-force error of a
         // scalar gradient across the pole.
