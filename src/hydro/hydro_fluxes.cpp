@@ -98,8 +98,9 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
   auto &use_spherical_polar = pmy_pack->pmesh->use_spherical_polar;
   // A STRETCHED radial grid on the cubed sphere takes the same position-aware x1
   // reconstruction as spherical polar; on a uniform radial grid nothing changes.
-  const bool str_r1_ = pmy_pack->pmesh->use_cubed_sphere &&
-      (pmy_pack->pmesh->use_grid_stretch_r || pmy_pack->pmesh->use_grid_stretch_r_poly);
+  // (x1v is the volume centroid on both spherical grids, so the plain uniform stencil
+  // is off-centre even without a stretch; `reconstruct` governs the ANGULAR sweeps)
+  const bool str_r1_ = pmy_pack->pmesh->use_cubed_sphere;
   auto &mb_bcs_pq = pmy_pack->pmb->mb_bcs;
   const bool pquad_ = pmy_pack->pmesh->use_polar_quadratic_recon;
 

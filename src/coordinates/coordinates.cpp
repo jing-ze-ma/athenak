@@ -593,6 +593,10 @@ void Coordinates::CoordGnomonicEquiangle() {
       StretchRPoly(cpoly_, rmin_, rmax_, r_l);
       StretchRPoly(cpoly_, rmin_, rmax_, r_r);
     }
+    // the cell CENTRE is the volume centroid of the shell, exactly as x1v stores it and
+    // as CoordSphericalPolar uses it for every radial length below; the stretch-mapped
+    // midpoint computed above is not where a cell value lives
+    r_c = RadialCentroid(r_l, r_r);
 
     // --- angles: xi on x2, eta on x3 ---
     Real &x2min = size.d_view(m).x2min; Real &x2max = size.d_view(m).x2max;
@@ -709,11 +713,14 @@ void Coordinates::CoordGnomonicEquiangle() {
     // x2e/x3e loop areas mixed a stretched centre with an unstretched one, and on the
     // production stretch the centre-to-centre length even changed sign near the top
     // (anti-diffusive resistive EMF; cs_test iprob=11 + use_grid_stretch_r_poly blew up)
+    Real r_lm = LeftEdgeX(i-1-is, indcs.nx1, size.d_view(m).x1min,
+                                             size.d_view(m).x1max);
     if (str_r_) {
-      StretchR(fstr_r_, rmin_, rmax_, r_cm);
+      StretchR(fstr_r_, rmin_, rmax_, r_lm);
     } else if (str_rp_) {
-      StretchRPoly(cpoly_, rmin_, rmax_, r_cm);
+      StretchRPoly(cpoly_, rmin_, rmax_, r_lm);
     }
+    r_cm = RadialCentroid(r_lm, r_l);   // the centroid of cell i-1, as x1v(i-1) is
     Real xim  = M_PI/4.0 * CellCenterX(j-1-js, indcs.nx2, x2min, x2max);
     Real etam = M_PI/4.0 * CellCenterX(k-1-ks, indcs.nx3, x3min, x3max);
     Real xm = tan(xim);
@@ -913,8 +920,9 @@ void Coordinates::GnomonicEquiangleRaiseVelMHD(DvceArray5D<Real> &u0,
   // see CellCenteredRadialFld.  Only when the grid really is stretched: on a uniform one
   // the weighted form differs from 0.5*(bl+br) only by round-off, and paying that would
   // perturb every unstretched cubed-sphere answer in the last bits for nothing.
-  const bool str_x1_ = (pmy_pack->pmesh->use_grid_stretch_r ||
-                        pmy_pack->pmesh->use_grid_stretch_r_poly);
+  // x1v is the volume CENTROID, never the midpoint of the two faces, on every radial
+  // grid -- so the weighted form is the right one unconditionally, as on spherical polar
+  const bool str_x1_ = true;
   auto &x1v_ = x1v;
   auto &x1f_ = xx1f;
 

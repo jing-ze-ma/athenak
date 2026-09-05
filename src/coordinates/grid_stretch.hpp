@@ -78,6 +78,16 @@ void ApplyRStretch(const bool str_r, const Real fstr_r, const bool str_rp, const
   }
 }
 
+//----------------------------------------------------------------------------------------
+//! \fn RadialCentroid()
+//! \brief The volume centroid of the shell [r_l, r_r] -- what Coordinates::x1v stores on
+//! BOTH spherical grids, and hence where a cell value lives.  NOT the midpoint.
+KOKKOS_INLINE_FUNCTION
+Real RadialCentroid(const Real r_l, const Real r_r) {
+  const Real q = r_l/r_r;
+  return 0.25*(q*q + 1.0)/((1.0/3.0)*(q*q + q + 1.0))*(r_r + r_l);
+}
+
 KOKKOS_INLINE_FUNCTION
 void StretchTheta(const Real a, Real &t) {
   Real xi = t/M_PI;

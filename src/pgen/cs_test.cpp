@@ -420,8 +420,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                                                   size.d_view(m).x3max);
     const Real xi  = 0.25*M_PI*x2v;
     const Real eta = 0.25*M_PI*x3v;
-    Real rad = CellCenterX(i-is, indcs.nx1, size.d_view(m).x1min, size.d_view(m).x1max);
+    Real rad = LeftEdgeX(i-is, indcs.nx1, size.d_view(m).x1min, size.d_view(m).x1max);
+    Real rad_rr = LeftEdgeX(i+1-is, indcs.nx1,
+        size.d_view(m).x1min, size.d_view(m).x1max);
     ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rad);
+    ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rad_rr);
+    rad = RadialCentroid(rad, rad_rr);
 
     if (iprob == 12) {
       // BLAST ON THE SPHERE.  A geodesic cap of overpressure, uniform in radius, on an
@@ -665,8 +669,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                                                             size.d_view(m).x2max);
       const Real x3f = 0.25*M_PI*LeftEdgeX(k-ks, indcs.nx3, size.d_view(m).x3min,
                                                             size.d_view(m).x3max);
-      Real rc = CellCenterX(i-is, indcs.nx1, size.d_view(m).x1min, size.d_view(m).x1max);
+      Real rc = LeftEdgeX(i-is, indcs.nx1, size.d_view(m).x1min, size.d_view(m).x1max);
+      Real rc_rr = LeftEdgeX(i+1-is, indcs.nx1,
+          size.d_view(m).x1min, size.d_view(m).x1max);
       ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rc);
+      ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rc_rr);
+      rc = RadialCentroid(rc, rc_rr);
       Real rl = LeftEdgeX(i-is, indcs.nx1, size.d_view(m).x1min, size.d_view(m).x1max);
       ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rl);
       const int p = mbpanel.d_view(m);
@@ -845,8 +853,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                                                     size.d_view(m).x2max);
       const Real x3v = CellCenterX(k-ks, indcs.nx3, size.d_view(m).x3min,
                                                     size.d_view(m).x3max);
-      Real rad = CellCenterX(i-is, indcs.nx1, size.d_view(m).x1min, size.d_view(m).x1max);
+      Real rad = LeftEdgeX(i-is, indcs.nx1, size.d_view(m).x1min, size.d_view(m).x1max);
+      Real rad_rr = LeftEdgeX(i+1-is, indcs.nx1,
+          size.d_view(m).x1min, size.d_view(m).x1max);
       ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rad);
+      ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rad_rr);
+      rad = RadialCentroid(rad, rad_rr);
       Real cx, cy, cz;
       PanelToCart(mbpanel.d_view(m), 0.25*M_PI*x2v, 0.25*M_PI*x3v, cx, cy, cz);
       const Real px = rad*cx, py = rad*cy;
@@ -946,8 +958,12 @@ void CSTestRadialBC(Mesh *pm) {
       if (side == 1 &&
           mb_bcs.d_view(m,BoundaryFace::outer_x1) != BoundaryFlag::user) continue;
       const int i = (side == 0) ? (is-ng+ig) : (ie+1+ig);
-      Real rad = CellCenterX(i-is, indcs.nx1, size.d_view(m).x1min, size.d_view(m).x1max);
+      Real rad = LeftEdgeX(i-is, indcs.nx1, size.d_view(m).x1min, size.d_view(m).x1max);
+      Real rad_rr = LeftEdgeX(i+1-is, indcs.nx1,
+          size.d_view(m).x1min, size.d_view(m).x1max);
       ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rad);
+      ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rad_rr);
+      rad = RadialCentroid(rad, rad_rr);
       Real dn, ie_, v1, v2, v3;
       if (iprob == 11) {
         Real cx, cy, cz;
@@ -1248,9 +1264,12 @@ void CSTestRadialBC(Mesh *pm) {
         if (side == 1 &&
             mb_bcs.d_view(m,BoundaryFace::outer_x1) != BoundaryFlag::user) continue;
         const int i = (side == 0) ? (is-ng+ig) : (ie_i+1+ig);
-        Real rc = CellCenterX(i-is, indcs.nx1,
+        Real rc = LeftEdgeX(i-is, indcs.nx1, size.d_view(m).x1min, size.d_view(m).x1max);
+        Real rc_rr = LeftEdgeX(i+1-is, indcs.nx1,
             size.d_view(m).x1min, size.d_view(m).x1max);
         ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rc);
+        ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rc_rr);
+        rc = RadialCentroid(rc, rc_rr);
         const int ir = (side == 0) ? i : (i+1);
         Real rf = LeftEdgeX(ir-is, indcs.nx1, size.d_view(m).x1min, size.d_view(m).x1max);
         ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rf);
@@ -1355,8 +1374,12 @@ void CSTestRadialBC(Mesh *pm) {
                                                             size.d_view(m).x2max);
       const Real x3f = 0.25*M_PI*LeftEdgeX(k-ks, indcs.nx3, size.d_view(m).x3min,
                                                             size.d_view(m).x3max);
-      Real rad = CellCenterX(i-is, indcs.nx1, size.d_view(m).x1min, size.d_view(m).x1max);
+      Real rad = LeftEdgeX(i-is, indcs.nx1, size.d_view(m).x1min, size.d_view(m).x1max);
+      Real rad_rr = LeftEdgeX(i+1-is, indcs.nx1,
+          size.d_view(m).x1min, size.d_view(m).x1max);
       ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rad);
+      ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rad_rr);
+      rad = RadialCentroid(rad, rad_rr);
       const int p = mbpanel.d_view(m);
       Real n1v[3], n2v[3], cx, cy, cz;
       // hydro: at rest, uniform or stratified
@@ -1412,8 +1435,12 @@ void CSTestRadialBC(Mesh *pm) {
       const Real xi  = 0.25*M_PI*x2v;
       const Real eta = 0.25*M_PI*x3v;
       const int p = mbpanel.d_view(m);
-      Real rad = CellCenterX(i-is, indcs.nx1, size.d_view(m).x1min, size.d_view(m).x1max);
+      Real rad = LeftEdgeX(i-is, indcs.nx1, size.d_view(m).x1min, size.d_view(m).x1max);
+      Real rad_rr = LeftEdgeX(i+1-is, indcs.nx1,
+          size.d_view(m).x1min, size.d_view(m).x1max);
       ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rad);
+      ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rad_rr);
+      rad = RadialCentroid(rad, rad_rr);
       Real dn, ie_, v1, v2, v3;
       RigidRotState(p, xi, eta, rad, d0, p0, omega, gm1, dn, ie_, v1, v2, v3);
       Real ca, cb, ccos;
@@ -1693,9 +1720,13 @@ void CSTestConvErrors(ParameterInput *pin, Mesh *pm) {
           }
           // the hydro state is STEADY, so its error is measured against the exact
           // rigid-rotation equilibrium at this point
-          Real rad = CellCenterX(i-is, indcs.nx1,
+          Real rad = LeftEdgeX(i-is, indcs.nx1,
+              size.h_view(m).x1min, size.h_view(m).x1max);
+          Real rad_rr = LeftEdgeX(i+1-is, indcs.nx1,
               size.h_view(m).x1min, size.h_view(m).x1max);
           ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rad);
+          ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rad_rr);
+          rad = RadialCentroid(rad, rad_rr);
           Real dn, iex, v1, v2, v3;
           RigidRotState(p, x2c, x3c, rad, cs_d0, cs_p0, cs_omega, gm1,
                         dn, iex, v1, v2, v3);
@@ -2279,8 +2310,11 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
         if (db < 0) { db = 0; }
         if (db > NDB-1) { db = NDB-1; }
         for (int i=is; i<=ie+1; ++i) {
-          Real rc = CellCenterX(i-is, indcs.nx1, x1min, x1max);
+          Real rc = LeftEdgeX(i-is, indcs.nx1, x1min, x1max);
+          Real rc_rr = LeftEdgeX(i+1-is, indcs.nx1, x1min, x1max);
           ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rc);
+          ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rc_rr);
+          rc = RadialCentroid(rc, rc_rr);
           Real rl = LeftEdgeX(i-is, indcs.nx1, x1min, x1max);
           ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rl);
           // exactly the three expressions the initial condition used
@@ -2426,8 +2460,11 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
           const bool gj = (j < js || j > je);
           Real n1[3], n2[3], cx, cy, cz;
           for (int i=is-ng; i<=ie+ng; ++i) {
-            Real rc = CellCenterX(i-is, indcs.nx1, x1min, x1max);
+            Real rc = LeftEdgeX(i-is, indcs.nx1, x1min, x1max);
+            Real rc_rr = LeftEdgeX(i+1-is, indcs.nx1, x1min, x1max);
             ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rc);
+            ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rc_rr);
+            rc = RadialCentroid(rc, rc_rr);
             Real rl = LeftEdgeX(i-is, indcs.nx1, x1min, x1max);
             ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rl);
             const bool gi = (i < is || i > ie);
@@ -2689,8 +2726,11 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
         const Real xf = 0.25*M_PI*LeftEdgeX(j-js, indcs.nx2, x2min, x2max);
         const Real ec = 0.25*M_PI*CellCenterX(k-ks, indcs.nx3, x3min, x3max);
         const Real ef = 0.25*M_PI*LeftEdgeX(k-ks, indcs.nx3, x3min, x3max);
-        Real rc = CellCenterX(i-is, indcs.nx1, x1min, x1max);
+        Real rc = LeftEdgeX(i-is, indcs.nx1, x1min, x1max);
+        Real rc_rr = LeftEdgeX(i+1-is, indcs.nx1, x1min, x1max);
         ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rc);
+        ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rc_rr);
+        rc = RadialCentroid(rc, rc_rr);
         Real rl = LeftEdgeX(i-is, indcs.nx1, x1min, x1max);
         ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rl);
         Real cx, cy, cz, n1[3], n2[3];
@@ -2840,9 +2880,13 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
         Real cx, cy, cz;
         PanelToCart(p, xc, ec, cx, cy, cz);
         for (int i=is; i<=ie; ++i) {
-          Real rad = CellCenterX(i-is, indcs.nx1,
+          Real rad = LeftEdgeX(i-is, indcs.nx1,
+              size.h_view(m).x1min, size.h_view(m).x1max);
+          Real rad_rr = LeftEdgeX(i+1-is, indcs.nx1,
               size.h_view(m).x1min, size.h_view(m).x1max);
           ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rad);
+          ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rad_rr);
+          rad = RadialCentroid(rad, rad_rr);
           const Real px = rad*cx, py = rad*cy;
           const Real p_ini = cs_p0 - SQR(cs_bazi)*(px*px + py*py)
                              + 2.0*cs_bazi*(-cs_bvy*px + cs_bvx*py);
@@ -2979,8 +3023,11 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
       auto ex2f = [&](int k, int j, int i) {
         const Real xf = 0.25*M_PI*LeftEdgeX(j-js, indcs.nx2, x2min, x2max);
         const Real ec = 0.25*M_PI*CellCenterX(k-ks, indcs.nx3, x3min, x3max);
-        Real rc = CellCenterX(i-is, indcs.nx1, x1min, x1max);
+        Real rc = LeftEdgeX(i-is, indcs.nx1, x1min, x1max);
+        Real rc_rr = LeftEdgeX(i+1-is, indcs.nx1, x1min, x1max);
         ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rc);
+        ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rc_rr);
+        rc = RadialCentroid(rc, rc_rr);
         Real n1[3], n2[3], cx, cy, cz;
         PanelToCart(p, xf, ec, cx, cy, cz);
         PanelNormals(p, xf, ec, n1, n2);
@@ -2989,8 +3036,11 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
       auto ex3f = [&](int k, int j, int i) {
         const Real xc = 0.25*M_PI*CellCenterX(j-js, indcs.nx2, x2min, x2max);
         const Real ef = 0.25*M_PI*LeftEdgeX(k-ks, indcs.nx3, x3min, x3max);
-        Real rc = CellCenterX(i-is, indcs.nx1, x1min, x1max);
+        Real rc = LeftEdgeX(i-is, indcs.nx1, x1min, x1max);
+        Real rc_rr = LeftEdgeX(i+1-is, indcs.nx1, x1min, x1max);
         ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rc);
+        ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rc_rr);
+        rc = RadialCentroid(rc, rc_rr);
         Real n1[3], n2[3], cx, cy, cz;
         PanelToCart(p, xc, ef, cx, cy, cz);
         PanelNormals(p, xc, ef, n1, n2);
@@ -3490,9 +3540,13 @@ void CSTestConsSums(Mesh *pm) {
         const Real rh[3] = {rx, ry, rz};
         for (int i=is; i<=ie; ++i) {
           const Real dv = vh(m,k,j,i);
-          Real rad = CellCenterX(i-is, indcs.nx1,
+          Real rad = LeftEdgeX(i-is, indcs.nx1,
+              size.h_view(m).x1min, size.h_view(m).x1max);
+          Real rad_rr = LeftEdgeX(i+1-is, indcs.nx1,
               size.h_view(m).x1min, size.h_view(m).x1max);
           ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rad);
+          ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rad_rr);
+          rad = RadialCentroid(rad, rad_rr);
           svol += dv;
           sm += dv*uh(m,IDN,k,j,i);
           se += dv*uh(m,IEN,k,j,i);
@@ -3649,8 +3703,11 @@ void CSTestLevelFluxCheck(Mesh *pm) {
     const Real x2mn = size.h_view(m).x2min, x2mx = size.h_view(m).x2max;
     const Real x3mn = size.h_view(m).x3min, x3mx = size.h_view(m).x3max;
     auto rc  = [&](int i) {
-      Real r = CellCenterX(i-is, indcs.nx1, x1mn, x1mx);
+      Real r = LeftEdgeX(i-is, indcs.nx1, x1mn, x1mx);
+      Real r_rr = LeftEdgeX(i+1-is, indcs.nx1, x1mn, x1mx);
       ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, r);
+      ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, r_rr);
+      r = RadialCentroid(r, r_rr);
       return r;
     };
     auto xic = [&](int j) { return 0.25*M_PI*CellCenterX(j-js, indcs.nx2, x2mn, x2mx); };
@@ -3909,9 +3966,13 @@ void CSTestSeamFluxCheck(Mesh *pm) {
         const Real dang = 0.25*M_PI*(x2x - x2n)/static_cast<Real>(indcs.nx2);
         const int b = (acos(fmin(1.0,vdot)) < (ng + 0.5)*dang) ? 1 : 0;
         for (int i=is; i<=ie; ++i) {
-          Real rad = CellCenterX(i-is, indcs.nx1,
+          Real rad = LeftEdgeX(i-is, indcs.nx1,
+              size.h_view(m).x1min, size.h_view(m).x1max);
+          Real rad_rr = LeftEdgeX(i+1-is, indcs.nx1,
               size.h_view(m).x1min, size.h_view(m).x1max);
           ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rad);
+          ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rad_rr);
+          rad = RadialCentroid(rad, rad_rr);
           char key[160];
           std::snprintf(key, sizeof(key), "%.9f_%.9f_%.9f_%.9f", rad, cx, cy, cz);
           SeamFlux f;
@@ -3949,9 +4010,13 @@ void CSTestSeamFluxCheck(Mesh *pm) {
             sener[b] += it->second.fe + f.fe;
             {Real dp[3];
             for (int q=0; q<3; ++q) {dp[q] = it->second.fp[q] + f.fp[q];}
-            Real rad = CellCenterX(i-is, indcs.nx1,
+            Real rad = LeftEdgeX(i-is, indcs.nx1,
+                size.h_view(m).x1min, size.h_view(m).x1max);
+            Real rad_rr = LeftEdgeX(i+1-is, indcs.nx1,
                 size.h_view(m).x1min, size.h_view(m).x1max);
             ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rad);
+            ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rad_rr);
+            rad = RadialCentroid(rad, rad_rr);
             const Real rr[3] = {rad*cx, rad*cy, rad*cz};
             for (int q=0; q<3; ++q) {
               const int a = (q+1)%3, bb = (q+2)%3;
@@ -5078,9 +5143,12 @@ void CSTestGhostCheck(ParameterInput *pin, Mesh *pm) {
       const int p = mbpanel.h_view(m);
       Real e[4] = {0.0, 0.0, 0.0, 0.0};
       for (int i=is; i<=ie; ++i) {
-        Real rad = CellCenterX(i-is, indcs.nx1,
+        Real rad = LeftEdgeX(i-is, indcs.nx1, size.h_view(m).x1min, size.h_view(m).x1max);
+        Real rad_rr = LeftEdgeX(i+1-is, indcs.nx1,
             size.h_view(m).x1min, size.h_view(m).x1max);
         ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rad);
+        ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rad_rr);
+        rad = RadialCentroid(rad, rad_rr);
         auto probe = [&](int j, int k) {
           const Real xi  = 0.25*M_PI*CellCenterX(j-js, indcs.nx2, size.h_view(m).x2min,
                                                                   size.h_view(m).x2max);
@@ -5212,9 +5280,12 @@ void CSTestGhostCheck(ParameterInput *pin, Mesh *pm) {
       Real eact = 0.0, ef[4] = {0.0, 0.0, 0.0, 0.0};
       int ai=-1, aj=-1, ak=-1; Real eahave=0.0, eawant=0.0;
       for (int i=is; i<=ie; ++i) {
-        Real rad = CellCenterX(i-is, indcs.nx1,
+        Real rad = LeftEdgeX(i-is, indcs.nx1, size.h_view(m).x1min, size.h_view(m).x1max);
+        Real rad_rr = LeftEdgeX(i+1-is, indcs.nx1,
             size.h_view(m).x1min, size.h_view(m).x1max);
         ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rad);
+        ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rad_rr);
+        rad = RadialCentroid(rad, rad_rr);
         // exact value at the cell (j,k) of THIS panel, ghost indices included
         auto exact = [&](int j, int k) {
           const Real xi  = 0.25*M_PI*CellCenterX(j-js, indcs.nx2, size.h_view(m).x2min,
@@ -5262,8 +5333,12 @@ void CSTestGhostCheck(ParameterInput *pin, Mesh *pm) {
   for (int m=0; m<pmbp->nmb_thispack; ++m) {
     Real eact = 0.0, eg2 = 0.0, eg3 = 0.0;
     for (int i=is; i<=ie; ++i) {
-      Real rad = CellCenterX(i-is, indcs.nx1, size.h_view(m).x1min, size.h_view(m).x1max);
+      Real rad = LeftEdgeX(i-is, indcs.nx1, size.h_view(m).x1min, size.h_view(m).x1max);
+      Real rad_rr = LeftEdgeX(i+1-is, indcs.nx1,
+          size.h_view(m).x1min, size.h_view(m).x1max);
       ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rad);
+      ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rad_rr);
+      rad = RadialCentroid(rad, rad_rr);
       const Real ex = RadialProfile(rad, d0, amp, r0);
       for (int k=ks; k<=ke; ++k) {
         for (int j=js; j<=je; ++j) {

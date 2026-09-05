@@ -74,9 +74,7 @@ void GeneralMHD::ConsToPrim(DvceArray5D<Real> &cons, const DvceFaceFld4D<Real> &
   auto &use_spherical_polar = pmy_pack->pmesh->use_spherical_polar;
   // cubed sphere AND a stretched radial grid: the one case where the plain face
   // average is not the field at the cell centre.  See CellCenteredRadialFld.
-  const bool cs_str_x1_ = pmy_pack->pmesh->use_cubed_sphere &&
-                          (pmy_pack->pmesh->use_grid_stretch_r ||
-                           pmy_pack->pmesh->use_grid_stretch_r_poly);
+  const bool cs_str_x1_ = pmy_pack->pmesh->use_cubed_sphere;   // x1v is the centroid
   auto &x1v_ = pmy_pack->pcoord->x1v;
   auto &x1f_ = pmy_pack->pcoord->xx1f;
   auto &x2v_ = pmy_pack->pcoord->x2v;

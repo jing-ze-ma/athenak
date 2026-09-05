@@ -784,8 +784,7 @@ void Resistivity::AddFluxGeneralResist(const DvceFaceFld4D<Real> &b, const DvceA
   const bool cs_ = pmy_pack->pmesh->use_cubed_sphere;
   // a STRETCHED radial grid on the cubed sphere uses the same position weights as
   // spherical polar for the radial edge-to-face interpolation of the resistive EMF
-  const bool str_r1_ = cs_ && (pmy_pack->pmesh->use_grid_stretch_r ||
-                               pmy_pack->pmesh->use_grid_stretch_r_poly);
+  const bool str_r1_ = cs_;   // x1v is the centroid on every radial grid, as on sp
   auto &ccell = pmy_pack->pcoord->cos_cell;
   auto &scell = pmy_pack->pcoord->sin_cell;
   auto &cfxi = pmy_pack->pcoord->cos_face_xi;
