@@ -478,16 +478,22 @@ void Resistivity::AddEMFGeneralResist(const DvceFaceFld4D<Real> &b0,
         (j == js && mb_bcs_.d_view(m,BoundaryFace::inner_x2) == BoundaryFlag::polar) ? 1 :
         ((j == je+1 && mb_bcs_.d_view(m,BoundaryFace::outer_x2) == BoundaryFlag::polar)
          ? 2 : 0);
-    Real pole_c = 0.0;
-    if (pole_edge == 1) {
-      const Real a = x2v_(m,js) - x2f_(m,js), dth = x2f_(m,js+1) - x2f_(m,js);
+    Real pole_c = 0.0, pole_c1 = 0.0, pole_s = 1.0, pole_a = 1.0, pole_l = 1.0;
+    if (pole_edge != 0) {
+      // av: the centroid's distance from the pole; a: the phi-face's (half the cell)
+      const Real av = (pole_edge == 1) ? x2v_(m,js) - x2f_(m,js)
+                                       : x2f_(m,je+1) - x2v_(m,je);
+      const Real dth = (pole_edge == 1) ? x2f_(m,js+1) - x2f_(m,js)
+                                        : x2f_(m,je+1) - x2f_(m,je);
+      const Real a = 0.5*dth;
       pole_c = (a*a/3.0 - dth*dth)/(3.0*dth*dth);
-    } else if (pole_edge == 2) {
-      const Real a = x2f_(m,je+1) - x2v_(m,je), dth = x2f_(m,je+1) - x2f_(m,je);
-      pole_c = (a*a/3.0 - dth*dth)/(3.0*dth*dth);
+      pole_c1 = a/(4.0*dth);
+      pole_s = sin(a)/sin(av);
+      pole_a = (1.0 - cos(a))/(1.0 - cos(av));
+      pole_l = a/av;
     }
     CurrentDensity(geom, member, m, k, j, is, ie+1, b0, mbsize.d_view(m), j1, j2, j3,
-                   pole_edge, pole_c);
+                   pole_edge, pole_c, pole_c1, pole_s, pole_a, pole_l);
 
     // Add E_{resistive} = \eta J to corner-centered electric fields
     par_for_inner(member, is, ie+1, [&](const int i) {

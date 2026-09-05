@@ -81,31 +81,33 @@ void CurrentDensity(const CurrentDensityGeom &geom, TeamMember_t const &member,
      const int m, const int k, const int j,
      const int il, const int iu, const DvceFaceFld4D<Real> &b, const RegionSize &size,
      ScrArray1D<Real> &j1, ScrArray1D<Real> &j2, ScrArray1D<Real> &j3,
-     const int pole_edge = 0, const Real pole_c = 0.0) {
+     const int pole_edge = 0, const Real pole_c = 0.0, const Real pole_c1 = 0.0,
+     const Real pole_s = 1.0, const Real pole_a = 1.0, const Real pole_l = 1.0) {
   const bool use_spherical_polar = geom.use_spherical_polar;
-  // POLE EDGE (spherical polar, x1 edges ON the axis).  The Stokes loop around it runs
-  // through the polar ghost row, i.e. through the pole to the far side of the axis, and
-  // the exchange stores the ghost's B_phi with its sign FLIPPED (phihat reverses through
-  // the pole).  The far-side segment of the loop therefore enters with the opposite sign
-  // to an ordinary row: without this the loop does not close for a curl-free field and
-  // the residual, divided by the small cap area, is a spurious J_r ~ 3 B sin(phi)/(r
-  // dtheta) that GROWS with resolution (sp_test iprob=11: polar-row E1 error 0.9 -> 2.1
-  // eta*alpha*b0 from nx2 = 8 to 16, its Ohmic heating an m = 2 pressure pattern).
-  // pole_edge = 1: the north pole edge (j = js), the ghost row is j-1; = 2: the south
-  // pole edge (j = je+1), the ghost row is j itself.
-  const Real sgn_m = (pole_edge == 1) ? -1.0 : 1.0;
-  const Real sgn_p = (pole_edge == 2) ? -1.0 : 1.0;
-  // The loop's theta-segments run THROUGH the pole, from the mirror centroid -a to the
-  // centroid +a, and carry B_theta at the pole face only (a trapezoid with one point,
-  // first order after the 1/area amplification).  The pole face is by construction the
-  // mean of the faces at -dtheta and +dtheta, so those two add no curvature; the
-  // parabola through the faces at -dtheta (ghost), +dtheta and +2 dtheta does:
-  //   Int_{-a}^{a} B dtheta = 2a [B0 + c2 (a^2/3 - dtheta^2)],
-  //   c2 = [B(2 dtheta) - 1.5 B(dtheta) + 0.5 B(-dtheta)] / (3 dtheta^2),
-  // and pole_c = (a^2/3 - dtheta^2)/(3 dtheta^2) (-23/81 on a uniform grid) is passed
-  // by the caller.  pole_edge = 1: the ghost face is j-1, the near face j+1, the next
-  // j+2; = 2 (south): ghost j+1, near j-1, next j-2.
+  // POLE EDGE (spherical polar, x1 edges ON the axis).  The ordinary dual loop of an
+  // r-edge, through the four neighbouring centroids, does not exist here: the "row j-1"
+  // is the polar ghost row, i.e. the far side of the axis, and a loop through the pole
+  // and back is a figure-eight enclosing zero net area (its two phi-arcs cancel for an
+  // axisymmetric B_phi, returning J_r = 0 for a uniform axial current; with the ghost's
+  // sign-flipped B_phi taken as an ordinary row it did not even close for a curl-free
+  // field, a spurious J_r ~ 3 B sin(phi)/(r dtheta) growing with resolution).  The dual
+  // face of the pole edge is ONE SECTOR of the polar cap, bounded by the polar cell's
+  // phi-face: the arc at that face's own latitude a = dtheta/2 (the face value is a
+  // face AVERAGE centred there, NOT at the volume centroid 2 dtheta/3 -- placing the arc
+  // at the centroid gives 3/4 of a uniform axial current) and the two half-meridians
+  // from the pole, over the sector area r^2 (1 - cos a) dphi.  The azimuthal average of
+  // E_r that follows then gives the cap current, Sum_k B_phi dl / A_cap.  The caller
+  // passes the ratios to the stored centroid geometry: pole_s = sin(a)/sin(theta_v),
+  // pole_a = (1 - cos a)/(1 - cos theta_v), pole_l = a/theta_v.  The half-meridian
+  // carries the mean of B_theta over [0, a] from the parabola through the faces at
+  // -dtheta (ghost), +dtheta and +2 dtheta:
+  //   mean = B0 + c1 a/2 + c2 (a^2/3 - dtheta^2),  B0 the pole-face value,
+  //   c1 = (B+ - B-)/(2 dtheta),  c2 = (B++ - 1.5 B+ + 0.5 B-)/(3 dtheta^2);
+  // pole_c1 = a/(4 dtheta) and pole_c = (a^2/3 - dtheta^2)/(3 dtheta^2).
+  // pole_edge = 1: north (ghost face j-1, near j+1, next j+2, arc = row j);
+  // = 2: south (ghost j+1, near j-1, next j-2, arc = row j-1).
   const Real pc = (pole_edge != 0) ? pole_c : 0.0;
+  const Real pc1 = (pole_edge != 0) ? pole_c1 : 0.0;
   const int jg = (pole_edge == 2) ? j+1 : j-1;
   const int jn = (pole_edge == 2) ? j-1 : j+1;
   const int jx = (pole_edge == 2) ? j-2 : j+2;
@@ -125,8 +127,14 @@ void CurrentDensity(const CurrentDensityGeom &geom, TeamMember_t const &member,
 
       if (geom.multi_d) {
         par_for_inner(member, il, iu, [&](const int i) {
-          j1(i) += (sgn_p*dx3(m,k,j,i)*b.x3f(m,k,j,i)
-                    - sgn_m*dx3(m,k,j-1,i)*b.x3f(m,k,j-1,i))/area1(m,k,j,i);
+          if (pole_edge == 1) {
+            j1(i) += pole_s*dx3(m,k,j,i)*b.x3f(m,k,j,i)/(0.5*pole_a*area1(m,k,j,i));
+          } else if (pole_edge == 2) {
+            j1(i) -= pole_s*dx3(m,k,j-1,i)*b.x3f(m,k,j-1,i)/(0.5*pole_a*area1(m,k,j,i));
+          } else {
+            j1(i) += (dx3(m,k,j,i)*b.x3f(m,k,j,i)
+                      - dx3(m,k,j-1,i)*b.x3f(m,k,j-1,i))/area1(m,k,j,i);
+          }
           j3(i) -= (dx1(m,k,j,i)*b.x1f(m,k,j,i) - dx1(m,k,j-1,i)*b.x1f(m,k,j-1,i))/area3(m,k,j,i);
         });
         member.team_barrier();
@@ -134,11 +142,21 @@ void CurrentDensity(const CurrentDensityGeom &geom, TeamMember_t const &member,
 
       if (geom.three_d) {
         par_for_inner(member, il, iu, [&](const int i) {
-          const Real b2k  = b.x2f(m,k,j,i)
-              + pc*(b.x2f(m,k,jx,i) - 1.5*b.x2f(m,k,jn,i) + 0.5*b.x2f(m,k,jg,i));
-          const Real b2km = b.x2f(m,k-1,j,i)
-              + pc*(b.x2f(m,k-1,jx,i) - 1.5*b.x2f(m,k-1,jn,i) + 0.5*b.x2f(m,k-1,jg,i));
-          j1(i) -= (dx2(m,k,j,i)*b2k - dx2(m,k-1,j,i)*b2km)/area1(m,k,j,i);
+          if (pole_edge != 0) {
+            // mean of B_theta over the half-meridian [0, a], both phi sides of the sector
+            const Real b2k  = b.x2f(m,k,j,i)
+                + pc1*(b.x2f(m,k,jn,i) - b.x2f(m,k,jg,i))
+                + pc*(b.x2f(m,k,jx,i) - 1.5*b.x2f(m,k,jn,i) + 0.5*b.x2f(m,k,jg,i));
+            const Real b2km = b.x2f(m,k-1,j,i)
+                + pc1*(b.x2f(m,k-1,jn,i) - b.x2f(m,k-1,jg,i))
+                + pc*(b.x2f(m,k-1,jx,i) - 1.5*b.x2f(m,k-1,jn,i) + 0.5*b.x2f(m,k-1,jg,i));
+            // dx2 spans mirror -> active centroid; the sector uses pole -> face latitude
+            j1(i) -= pole_l*(0.5*dx2(m,k,j,i)*b2k - 0.5*dx2(m,k-1,j,i)*b2km)
+                     /(0.5*pole_a*area1(m,k,j,i));
+          } else {
+            j1(i) -= (dx2(m,k,j,i)*b.x2f(m,k,j,i)
+                      - dx2(m,k-1,j,i)*b.x2f(m,k-1,j,i))/area1(m,k,j,i);
+          }
           j2(i) += (dx1(m,k,j,i)*b.x1f(m,k,j,i) - dx1(m,k-1,j,i)*b.x1f(m,k-1,j,i))/area2(m,k,j,i);
         });
         member.team_barrier();
