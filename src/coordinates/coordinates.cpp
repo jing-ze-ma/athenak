@@ -1625,7 +1625,21 @@ void Coordinates::CoordSphericalPolar() {
     if (k > 0) {
       dxface_.x3f(m,k,j,i) = x1v_(m,i)*fabs(sin(x2v_(m,j)))*(x3v_(m,k)-x3v_(m,k-1));
     }
-    if (j > 0 && k > 0) areaedge_.x1e(m,k,j,i) = SQR(x1v_(m,i)) * fabs(cos(x2v_(m,j))-cos(x2v_(m,j-1))) * (x3v_(m,k)-x3v_(m,k-1));
+    if (j > 0 && k > 0) {
+      // The dual face around an r-edge spans theta from the centroid of cell j-1 to
+      // that of cell j.  At a POLE the two centroids are mirror images through the
+      // axis (the ghost centroid is the negative of the active one), so the plain
+      // |cos a - cos b| is IDENTICALLY ZERO there and the resistive current
+      // J_r = circulation/area at the polar edge divided by zero (NaN in the first
+      // cycle of any resistive run with a tangential field at the pole).  The dual
+      // face straddling the pole is two caps-slices, r^2 [(1-|cos a|)+(1-|cos b|)] dphi.
+      const Real ca = cos(x2v_(m,j)), cb = cos(x2v_(m,j-1));
+      const bool pole =
+          (mb_bcs.d_view(m,BoundaryFace::inner_x2) == BoundaryFlag::polar && j == js) ||
+          (mb_bcs.d_view(m,BoundaryFace::outer_x2) == BoundaryFlag::polar && j == je+1);
+      const Real dcos = pole ? (2.0 - fabs(ca) - fabs(cb)) : fabs(ca - cb);
+      areaedge_.x1e(m,k,j,i) = SQR(x1v_(m,i)) * dcos * (x3v_(m,k)-x3v_(m,k-1));
+    }
     if (k > 0 && i > 0) areaedge_.x2e(m,k,j,i) = 0.5 * (SQR(x1v_(m,i))-SQR(x1v_(m,i-1))) * fabs(sin(x2v_(m,j))) * (x3v_(m,k)-x3v_(m,k-1));
     if (i > 0 && j > 0) areaedge_.x3e(m,k,j,i) = 0.5 * (SQR(x1v_(m,i))-SQR(x1v_(m,i-1))) * (x2v_(m,j)-x2v_(m,j-1));
   });
