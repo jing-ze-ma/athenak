@@ -467,13 +467,27 @@ void Resistivity::AddEMFGeneralResist(const DvceFaceFld4D<Real> &b0,
   int scr_level = 0;
   size_t scr_size = ScrArray1D<Real>::shmem_size(ncells1) * 3;
 
+  auto &mb_bcs_ = pmy_pack->pmb->mb_bcs;
   par_for_outer("ohm3", DevExeSpace(), scr_size, scr_level, 0, nmb1, ks, ke+1, js, je+1,
   KOKKOS_LAMBDA(TeamMember_t member, const int m, const int k, const int j) {
     ScrArray1D<Real> j1(member.team_scratch(scr_level), ncells1);
     ScrArray1D<Real> j2(member.team_scratch(scr_level), ncells1);
     ScrArray1D<Real> j3(member.team_scratch(scr_level), ncells1);
 
-    CurrentDensity(geom, member, m, k, j, is, ie+1, b0, mbsize.d_view(m), j1, j2, j3);
+    const int pole_edge =
+        (j == js && mb_bcs_.d_view(m,BoundaryFace::inner_x2) == BoundaryFlag::polar) ? 1 :
+        ((j == je+1 && mb_bcs_.d_view(m,BoundaryFace::outer_x2) == BoundaryFlag::polar)
+         ? 2 : 0);
+    Real pole_c = 0.0;
+    if (pole_edge == 1) {
+      const Real a = x2v_(m,js) - x2f_(m,js), dth = x2f_(m,js+1) - x2f_(m,js);
+      pole_c = (a*a/3.0 - dth*dth)/(3.0*dth*dth);
+    } else if (pole_edge == 2) {
+      const Real a = x2f_(m,je+1) - x2v_(m,je), dth = x2f_(m,je+1) - x2f_(m,je);
+      pole_c = (a*a/3.0 - dth*dth)/(3.0*dth*dth);
+    }
+    CurrentDensity(geom, member, m, k, j, is, ie+1, b0, mbsize.d_view(m), j1, j2, j3,
+                   pole_edge, pole_c);
 
     // Add E_{resistive} = \eta J to corner-centered electric fields
     par_for_inner(member, is, ie+1, [&](const int i) {
