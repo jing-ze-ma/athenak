@@ -96,6 +96,10 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
   auto gtrig_xi   = pmy_pack->pcoord->GnomonicTrigFaceXi();
   auto gtrig_eta  = pmy_pack->pcoord->GnomonicTrigFaceEta();
   auto &use_spherical_polar = pmy_pack->pmesh->use_spherical_polar;
+  // A STRETCHED radial grid on the cubed sphere takes the same position-aware x1
+  // reconstruction as spherical polar; on a uniform radial grid nothing changes.
+  const bool str_r1_ = pmy_pack->pmesh->use_cubed_sphere &&
+      (pmy_pack->pmesh->use_grid_stretch_r || pmy_pack->pmesh->use_grid_stretch_r_poly);
   auto &mb_bcs_pq = pmy_pack->pmb->mb_bcs;
   const bool pquad_ = pmy_pack->pmesh->use_polar_quadratic_recon;
 
@@ -128,7 +132,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
     ScrArray2D<Real> dl(member.team_scratch(scr_level), nder, ncells1);
     ScrArray2D<Real> dr(member.team_scratch(scr_level), nder, ncells1);
 
-    if (use_spherical_polar)
+    if (use_spherical_polar || str_r1_)
       {
         GridPiecewiseLinearX1(member, eos_, wb_option_, use_wb_rho_,
                               use_wellbalance_dynamic_,
@@ -171,7 +175,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
       // hands the Riemann solver this reconstructed pressure rather than recomputing it
       // from the reconstructed (d,e), so leaving it to plain PLM would put the entire
       // hydrostatic gradient back into the solver's pressure and unbalance the scheme.
-      if (use_spherical_polar) {
+      if (use_spherical_polar || str_r1_) {
         GridPiecewiseLinearDerX1(member, eos_, wb_option_, use_wellbalance_dynamic_,
                                  use_wb_x1_, m, k, j, il-1, iu, w0_, wder_,
                                  x1v_, x1f_, phicc0_, phi0_x1f, dl, dr);

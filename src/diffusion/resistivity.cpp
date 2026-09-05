@@ -782,6 +782,10 @@ void Resistivity::AddFluxGeneralResist(const DvceFaceFld4D<Real> &b, const DvceA
   // Only the x1 and x2 faces need work: nhat_eta IS the third orthonormal axis, so the
   // x3 flux below is already (ExB).nhat_eta as written.
   const bool cs_ = pmy_pack->pmesh->use_cubed_sphere;
+  // a STRETCHED radial grid on the cubed sphere uses the same position weights as
+  // spherical polar for the radial edge-to-face interpolation of the resistive EMF
+  const bool str_r1_ = cs_ && (pmy_pack->pmesh->use_grid_stretch_r ||
+                               pmy_pack->pmesh->use_grid_stretch_r_poly);
   auto &ccell = pmy_pack->pcoord->cos_cell;
   auto &scell = pmy_pack->pcoord->sin_cell;
   auto &cfxi = pmy_pack->pcoord->cos_face_xi;
@@ -820,7 +824,7 @@ void Resistivity::AddFluxGeneralResist(const DvceFaceFld4D<Real> &b, const DvceA
     }
     Real fr1 = 0.5;
     Real fl1 = 0.5;
-    if (use_spherical_polar) {
+    if (use_spherical_polar || str_r1_) {
       Real dx1tot = x1v_(m,i)-x1v_(m,i-1);
       fl1 = (x1v_(m,i)-x1f_(m,i))/dx1tot;
       fr1 = 1.0 - fl1;
@@ -846,7 +850,7 @@ void Resistivity::AddFluxGeneralResist(const DvceFaceFld4D<Real> &b, const DvceA
     Real e1a;
     Real fl1 = 0.5;
     Real fr1 = 0.5;
-    if (use_spherical_polar) {
+    if (use_spherical_polar || str_r1_) {
       Real dx1tot = x1f_(m,i+1)-x1f_(m,i);
       fl1 = (x1f_(m,i+1)-x1v_(m,i))/dx1tot;
       fr1 = 1.0 - fl1;
@@ -905,7 +909,7 @@ void Resistivity::AddFluxGeneralResist(const DvceFaceFld4D<Real> &b, const DvceA
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     Real fl1 = 0.5;
     Real fr1 = 0.5;
-    if (use_spherical_polar) {
+    if (use_spherical_polar || str_r1_) {
       Real dx1tot = x1f_(m,i+1)-x1f_(m,i);
       fl1 = (x1f_(m,i+1)-x1v_(m,i))/dx1tot;
       fr1 = 1.0 - fl1;
