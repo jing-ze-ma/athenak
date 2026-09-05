@@ -60,6 +60,8 @@ iprob    = 3
 d0       = 1.0
 p0       = 1.0
 omega    = 0.2
+rot_axis = 2            # 2 = about zhat (axisymmetric); 0 = about xhat: the flow runs THROUGH
+                        # the poles and p is not axisymmetric -- the polar-row test (hydro only)
 b0       = 0.1          # only used with <mhd>
 user_bcs = true
 user_hist = true

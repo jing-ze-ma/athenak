@@ -79,17 +79,30 @@
 namespace {
 Real sp_b0 = 1.0, sp_p0 = 1.0, sp_d0 = 1.0, sp_omega = 0.2, sp_alpha = 1.0;
 Real sp_eta = 0.0, sp_bc_tfrac = 0.0, sp_svol = 1.0;
-int sp_bdir = 2, sp_probe_done = 0, sp_iprob = 8;
+int sp_bdir = 2, sp_probe_done = 0, sp_iprob = 8, sp_axis = 2;
 
 //----------------------------------------------------------------------------------------
 // The exact states.
 
-//! rigid rotation about zhat at (r, theta): v_phi, and the pressure that balances it
+//! rigid rotation v = omega ahat x r about ahat = zhat (axis 2) or xhat (axis 0), at
+//! (r, theta, phi): (v_theta, v_phi) and the pressure p0 + d0 omega^2 R^2 / 2 with R the
+//! distance from the axis.  About xhat the flow runs THROUGH the poles (v_theta =
+//! -omega r sin(phi), v_phi = -omega r cos(theta) cos(phi)) and p is not axisymmetric:
+//! the polar-row test for a scalar gradient across the axis.
 KOKKOS_INLINE_FUNCTION
-void RigidRotState(Real r, Real th, Real d0, Real p0, Real omega, Real &vphi, Real &p) {
-  const Real rcyl = r*sin(th);
-  vphi = omega*rcyl;
-  p = p0 + 0.5*d0*omega*omega*rcyl*rcyl;
+void RigidRotState(Real r, Real th, Real ph, int axis, Real d0, Real p0, Real omega,
+                   Real &vth, Real &vphi, Real &p) {
+  Real rcyl2;
+  if (axis == 0) {
+    vth = -omega*r*sin(ph);
+    vphi = -omega*r*cos(th)*cos(ph);
+    rcyl2 = r*r*(SQR(sin(th)*sin(ph)) + SQR(cos(th)));
+  } else {
+    vth = 0.0;
+    vphi = omega*r*sin(th);
+    rcyl2 = SQR(r*sin(th));
+  }
+  p = p0 + 0.5*d0*omega*omega*rcyl2;
 }
 
 //! face averages of the uniform axial field b0 zhat: B_r over [thl, thr], B_th at thl
@@ -236,6 +249,15 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // face averages are B_r = b0 <sin th> cos-average, B_th = b0 cos(th_f) <cos ph>,
   // B_ph = -b0 sin(ph_f); each is the exact area-weighted mean over its face.
   const int bdir = pin->GetOrAddInteger("problem", "bdir", 2);
+  // iprob 3: rotation axis, 2 = zhat (default), 0 = xhat (flow through the poles; HYDRO
+  // only: with a field it would need B along xhat, which the MHD branch does not build)
+  const int axis = pin->GetOrAddInteger("problem", "rot_axis", 2);
+  if (iprob == 3 && axis != 2 && is_mhd) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
+              << "sp_test iprob = 3 with rot_axis != 2 is hydro only" << std::endl;
+    exit(EXIT_FAILURE);
+  }
+  sp_axis = axis;
   sp_b0 = b0; sp_p0 = p0; sp_d0 = d0; sp_bdir = bdir; sp_iprob = iprob;
   sp_omega = omega; sp_alpha = alpha;
   // the time the radial ghosts of iprob = 11 are evaluated at is t^n + bc_time_frac*dt;
@@ -369,12 +391,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   }
   par_for("sp_test_u", DevExeSpace(), 0,nmb1, 0,n3-1, 0,n2-1, 0,n1-1,
   KOKKOS_LAMBDA(int m, int k, int j, int i) {
-    const Real r = x1v_(m,i), th = x2v_(m,j);
-    Real dn = d0, pgas = p0, vphi = 0.0;
-    if (iprob == 3) RigidRotState(r, th, d0, p0, omega, vphi, pgas);
+    const Real r = x1v_(m,i), th = x2v_(m,j), ph = x3v_(m,k);
+    Real dn = d0, pgas = p0, vth = 0.0, vphi = 0.0;
+    if (iprob == 3) RigidRotState(r, th, ph, axis, d0, p0, omega, vth, vphi, pgas);
     u0(m,IDN,k,j,i) = dn;
     u0(m,IM1,k,j,i) = 0.0;
-    u0(m,IM2,k,j,i) = 0.0;
+    u0(m,IM2,k,j,i) = dn*vth;
     u0(m,IM3,k,j,i) = dn*vphi;
     Real bsq = 0.0;
     if (is_mhd) {
@@ -393,7 +415,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       bsq = (econs || iprob != 8) ? (SQR(bcc(m,IBX,k,j,i)) + SQR(bcc(m,IBY,k,j,i))
                                     + SQR(bcc(m,IBZ,k,j,i))) : b0*b0;
     }
-    u0(m,IEN,k,j,i) = pgas/gm1 + 0.5*dn*vphi*vphi + 0.5*bsq;
+    u0(m,IEN,k,j,i) = pgas/gm1 + 0.5*dn*(vth*vth + vphi*vphi) + 0.5*bsq;
   });
   return;
 }
@@ -429,6 +451,7 @@ void SPTestRadialBC(Mesh *pm) {
   auto &x3v_ = pmbp->pcoord->x3v;
   const int iprob = sp_iprob;
   const Real d0 = sp_d0, p0 = sp_p0, omega = sp_omega, alpha = sp_alpha;
+  const int axis = sp_axis;
   const Real tbc = pm->time + sp_bc_tfrac*pm->dt;
   const Real decay = (iprob == 11) ? FFDecay(sp_eta, alpha, tbc) : 1.0;
   const Real b0 = sp_b0*decay;
@@ -499,10 +522,10 @@ void SPTestRadialBC(Mesh *pm) {
       if (side == 1 &&
           mb_bcs.d_view(m,BoundaryFace::outer_x1) != BoundaryFlag::user) continue;
       const int i = (side == 0) ? (is-ng+ig) : (ie+1+ig);
-      const Real r = x1v_(m,i), th = x2v_(m,j);
-      Real dn = d0, pgas = p0, vphi = 0.0;
+      const Real r = x1v_(m,i), th = x2v_(m,j), ph = x3v_(m,k);
+      Real dn = d0, pgas = p0, vth = 0.0, vphi = 0.0;
       if (iprob == 3) {
-        RigidRotState(r, th, d0, p0, omega, vphi, pgas);
+        RigidRotState(r, th, ph, axis, d0, p0, omega, vth, vphi, pgas);
       } else {
         pgas = p11;
       }
@@ -522,14 +545,14 @@ void SPTestRadialBC(Mesh *pm) {
       }
       w0(m,IDN,k,j,i) = dn;
       w0(m,IVX,k,j,i) = 0.0;
-      w0(m,IVY,k,j,i) = 0.0;
+      w0(m,IVY,k,j,i) = vth;
       w0(m,IVZ,k,j,i) = vphi;
       w0(m,IEN,k,j,i) = pgas/gm1;
       u0(m,IDN,k,j,i) = dn;
       u0(m,IM1,k,j,i) = 0.0;
-      u0(m,IM2,k,j,i) = 0.0;
+      u0(m,IM2,k,j,i) = dn*vth;
       u0(m,IM3,k,j,i) = dn*vphi;
-      u0(m,IEN,k,j,i) = pgas/gm1 + 0.5*dn*vphi*vphi + 0.5*bsq;
+      u0(m,IEN,k,j,i) = pgas/gm1 + 0.5*dn*(vth*vth + vphi*vphi) + 0.5*bsq;
       for (int n=nhyd; n<nhyd+nscal; ++n) {
         w0(m,n,k,j,i) = 1.0;
         u0(m,n,k,j,i) = dn;
@@ -572,6 +595,7 @@ void SPTestHistory(HistoryData *pdata, Mesh *pm) {
                            : pmbp->phydro->peos->eos_data.gamma) - 1.0;
   const int iprob = sp_iprob;
   const Real d0 = sp_d0, p0 = sp_p0, omega = sp_omega, alpha = sp_alpha;
+  const int axis = sp_axis;
   const Real decay = (iprob == 11) ? FFDecay(sp_eta, alpha, pm->time) : 1.0;
   const Real b0 = sp_b0*decay;
   const Real p11 = FFPressure(p0, sp_b0, gm1, decay);
@@ -588,14 +612,14 @@ void SPTestHistory(HistoryData *pdata, Mesh *pm) {
     int j = (idx - m*nkji - k*nji)/nx1;
     int i = (idx - m*nkji - k*nji - j*nx1) + is;
     k += ks; j += js;
-    const Real r = x1v_(m,i), th = x2v_(m,j);
-    Real pex = p0, vphi = 0.0;
+    const Real r = x1v_(m,i), th = x2v_(m,j), ph = x3v_(m,k);
+    Real pex = p0, vth = 0.0, vphi = 0.0;
     if (iprob == 3) {
-      RigidRotState(r, th, d0, p0, omega, vphi, pex);
+      RigidRotState(r, th, ph, axis, d0, p0, omega, vth, vphi, pex);
     } else {
       pex = p11;
     }
-    const Real dv = sqrt(SQR(w0_(m,IVX,k,j,i)) + SQR(w0_(m,IVY,k,j,i))
+    const Real dv = sqrt(SQR(w0_(m,IVX,k,j,i)) + SQR(w0_(m,IVY,k,j,i) - vth)
                          + SQR(w0_(m,IVZ,k,j,i) - vphi));
     const Real dp = fabs(gm1*w0_(m,IEN,k,j,i) - pex);
     const Real dd = fabs(w0_(m,IDN,k,j,i) - d0);
@@ -671,6 +695,7 @@ void SPTestErrors(ParameterInput *pin, Mesh *pm) {
   auto x3f = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->xx3f);
   auto x1v = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->x1v);
   auto x2v = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->x2v);
+  auto x3v = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->x3v);
   DvceArray4D<Real> b1d, b2d, b3d;
   if (is_mhd) {
     b1d = pmbp->pmhd->b0.x1f; b2d = pmbp->pmhd->b0.x2f; b3d = pmbp->pmhd->b0.x3f;
@@ -681,6 +706,7 @@ void SPTestErrors(ParameterInput *pin, Mesh *pm) {
 
   const int iprob = sp_iprob;
   const Real d0 = sp_d0, p0 = sp_p0, omega = sp_omega, alpha = sp_alpha;
+  const int axis = sp_axis;
   const Real decay = (iprob == 11) ? FFDecay(sp_eta, alpha, pm->time) : 1.0;
   const Real b0 = sp_b0*decay;
   const Real p11 = FFPressure(p0, sp_b0, gm1, decay);
@@ -703,14 +729,14 @@ void SPTestErrors(ParameterInput *pin, Mesh *pm) {
         const bool polar = (th < dth_pole) || (th > M_PI - dth_pole);
         Real *s = polar ? sP : sI;
         for (int i=is; i<=ie; ++i) {
-          const Real r = x1v(m,i);
-          Real pex = p0, vphi = 0.0;
+          const Real r = x1v(m,i), ph = x3v(m,k);
+          Real pex = p0, vth = 0.0, vphi = 0.0;
           if (iprob == 3) {
-            RigidRotState(r, th, d0, p0, omega, vphi, pex);
+            RigidRotState(r, th, ph, axis, d0, p0, omega, vth, vphi, pex);
           } else {
             pex = p11;
           }
-          const Real dv = std::sqrt(SQR(w0(m,IVX,k,j,i)) + SQR(w0(m,IVY,k,j,i))
+          const Real dv = std::sqrt(SQR(w0(m,IVX,k,j,i)) + SQR(w0(m,IVY,k,j,i) - vth)
                                     + SQR(w0(m,IVZ,k,j,i) - vphi));
           const Real dp = std::fabs(gm1*w0(m,IEN,k,j,i) - pex);
           const Real dd = std::fabs(w0(m,IDN,k,j,i) - d0);
