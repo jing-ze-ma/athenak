@@ -733,29 +733,37 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
                                                           wl_kp1,wr);
           }
 
-        // SPHERICAL POLAR: the reconstructed states sit at the cell's volume centroid
-        // theta = x2v, but an x3 face (area element r dr dtheta) is centred at the theta
-        // MIDPOINT of the cell.  The two differ by O(dtheta^2 cot theta), negligible in
-        // the interior; in the polar row the midpoint is dtheta/2 against a centroid of
-        // 2 dtheta/3, and the r-components of v and B scale as sin(theta) there, so the
-        // flux T_phi,r = rho v_phi v_r - B_phi B_r through the polar cell's phi-faces
-        // came out 4/3 too large: a resolution-INDEPENDENT spurious radial force of
-        // ~0.5 (B^2/2)/r in the polar cells (sp_test iprob=11, v_r growing at the same
-        // rate at nx2 = 16 and 32).  Rotate the (r, theta) pairs of every reconstructed
-        // vector into the face's own local basis: rhat' = rhat cos d + thhat sin d.
+        // SPHERICAL POLAR: the states were reconstructed along phi at the cell's volume
+        // centroid theta = x2v, but an x3 face (area element r dr dtheta) is centred at
+        // the theta MIDPOINT of the cell.  The two differ by O(dtheta^2 cot theta),
+        // negligible in the interior, but in the polar row the midpoint is dtheta/2
+        // against a centroid of 2 dtheta/3 and the phi-face fluxes enter the balance
+        // with weight ~2/(r dtheta dphi): the r-components of v and B (~ sin theta) were
+        // 4/3 too large -- a resolution-independent spurious radial force of ~0.5
+        // (B^2/2)/r (sp_test iprob=11) -- and any scalar with a gradient across the pole
+        // (p = p0 + g x, say) was read dtheta/6 off, an O(1) error in the polar cell's
+        // phi-force.  Shift EVERY reconstructed variable to the midpoint with the
+        // centred theta-derivative of the cell values; the polar ghosts hold the analytic
+        // continuation through the axis (the exchange flips the tangential components),
+        // so the centred difference is valid in the polar row too.  For a vector this
+        // shift includes the basis rotation rhat' = rhat cos d + thhat sin d.
         if (use_spherical_polar) {
-          const Real dang = 0.5*(x2f3_(m,j) + x2f3_(m,j+1)) - x2v3_(m,j);
-          const Real cd = cos(dang), sd = sin(dang);
-          par_for_inner(member, is-1, ie+1, [&](const int i) {
-            Real a = wl_kp1(IVX,i), b = wl_kp1(IVY,i);
-            wl_kp1(IVX,i) = a*cd + b*sd;  wl_kp1(IVY,i) = -a*sd + b*cd;
-            a = wr(IVX,i); b = wr(IVY,i);
-            wr(IVX,i) = a*cd + b*sd;  wr(IVY,i) = -a*sd + b*cd;
-            a = bl_kp1(0,i); b = bl_kp1(1,i);
-            bl_kp1(0,i) = a*cd + b*sd;  bl_kp1(1,i) = -a*sd + b*cd;
-            a = br(0,i); b = br(1,i);
-            br(0,i) = a*cd + b*sd;  br(1,i) = -a*sd + b*cd;
-          });
+          const Real fac = (0.5*(x2f3_(m,j) + x2f3_(m,j+1)) - x2v3_(m,j))
+                           /(x2v3_(m,j+1) - x2v3_(m,j-1));
+          for (int n=0; n<nvars; ++n) {
+            par_for_inner(member, is-1, ie+1, [&](const int i) {
+              const Real sh = fac*(w0_(m,n,k,j+1,i) - w0_(m,n,k,j-1,i));
+              wl_kp1(n,i) += sh;
+              wr(n,i) += sh;
+            });
+          }
+          for (int n=0; n<3; ++n) {
+            par_for_inner(member, is-1, ie+1, [&](const int i) {
+              const Real sh = fac*(b0_(m,n,k,j+1,i) - b0_(m,n,k,j-1,i));
+              bl_kp1(n,i) += sh;
+              br(n,i) += sh;
+            });
+          }
         }
 
         member.team_barrier();

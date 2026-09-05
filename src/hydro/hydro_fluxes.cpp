@@ -593,19 +593,21 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
               GnomonicEquianglePrimFaceX3(gtrig_eta,member,m,k,j,il,iu,wl_kp1,wr);
           }
           
-        // SPHERICAL POLAR: rotate the reconstructed (v_r, v_theta) into the basis at the
-        // x3 face's own theta centroid (the cell MIDPOINT, not the volume centroid x2v).
-        // See the note in mhd_fluxes.cpp: in the polar row the two differ at O(1) in the
-        // small r-component, which left a resolution-independent spurious radial force.
+        // SPHERICAL POLAR: shift every reconstructed variable from the cell's volume
+        // centroid theta to the x3 face's midpoint theta with the centred theta-derivative
+        // of the cell values -- see the note in mhd_fluxes.cpp.  Includes the basis
+        // rotation of (v_r, v_theta); fixes the O(1) polar-cell phi-force error of a
+        // scalar gradient across the pole.
         if (use_spherical_polar) {
-          const Real dang = 0.5*(x2f3_(m,j) + x2f3_(m,j+1)) - x2v3_(m,j);
-          const Real cd = cos(dang), sd = sin(dang);
-          par_for_inner(member, il, iu, [&](const int i) {
-            Real a = wl_kp1(IVX,i), b = wl_kp1(IVY,i);
-            wl_kp1(IVX,i) = a*cd + b*sd;  wl_kp1(IVY,i) = -a*sd + b*cd;
-            a = wr(IVX,i); b = wr(IVY,i);
-            wr(IVX,i) = a*cd + b*sd;  wr(IVY,i) = -a*sd + b*cd;
-          });
+          const Real fac = (0.5*(x2f3_(m,j) + x2f3_(m,j+1)) - x2v3_(m,j))
+                           /(x2v3_(m,j+1) - x2v3_(m,j-1));
+          for (int n=0; n<nvars; ++n) {
+            par_for_inner(member, il, iu, [&](const int i) {
+              const Real sh = fac*(w0_(m,n,k,j+1,i) - w0_(m,n,k,j-1,i));
+              wl_kp1(n,i) += sh;
+              wr(n,i) += sh;
+            });
+          }
         }
 
         member.team_barrier();
