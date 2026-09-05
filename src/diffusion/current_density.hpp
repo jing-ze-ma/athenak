@@ -30,8 +30,8 @@
 
 struct CurrentDensityGeom {
   bool use_spherical_polar;
-  bool two_d;
-  bool three_d;
+  bool multi_d;     // nx2 > 1: the x2-derivative terms of J1 and J3 exist (2D AND 3D)
+  bool three_d;     // nx3 > 1: the x3-derivative terms of J1 and J2 exist
   DvceArray4D<Real> area1, area2, area3;  // Coordinates::areaedge.x{1,2,3}e
   DvceArray4D<Real> dx1, dx2, dx3;        // Coordinates::dxface.x{1,2,3}f
 };
@@ -44,7 +44,13 @@ struct CurrentDensityGeom {
 inline CurrentDensityGeom MakeCurrentDensityGeom(MeshBlockPack *pmy_pack) {
   CurrentDensityGeom geom;
   geom.use_spherical_polar = pmy_pack->pmesh->use_spherical_polar;
-  geom.two_d = pmy_pack->pmesh->two_d;
+  // Mesh::two_d is EXCLUSIVE (nx2 > 1 and nx3 == 1), so a 3D run has two_d == false.
+  // Gating the x2-derivative terms on it dropped d(B3)/dx2 from J1 and d(B1)/dx2 from J3
+  // in every 3D run between 1123736f (2026-06-20) and this fix: curl B was missing two
+  // of its six terms on the Cartesian and spherical-polar grids (the cubed sphere has
+  // its own curl in resistivity_gnomonic.cpp).  Found by sp_test iprob = 11, whose
+  // force-free field decayed at half the exact rate, slower still with resolution.
+  geom.multi_d = pmy_pack->pmesh->multi_d;
   geom.three_d = pmy_pack->pmesh->three_d;
   geom.area1 = pmy_pack->pcoord->areaedge.x1e;
   geom.area2 = pmy_pack->pcoord->areaedge.x2e;
@@ -90,7 +96,7 @@ void CurrentDensity(const CurrentDensityGeom &geom, TeamMember_t const &member,
       });
       member.team_barrier();
 
-      if (geom.two_d) {
+      if (geom.multi_d) {
         par_for_inner(member, il, iu, [&](const int i) {
           j1(i) += (dx3(m,k,j,i)*b.x3f(m,k,j,i) - dx3(m,k,j-1,i)*b.x3f(m,k,j-1,i))/area1(m,k,j,i);
           j3(i) -= (dx1(m,k,j,i)*b.x1f(m,k,j,i) - dx1(m,k,j-1,i)*b.x1f(m,k,j-1,i))/area3(m,k,j,i);
@@ -113,7 +119,7 @@ void CurrentDensity(const CurrentDensityGeom &geom, TeamMember_t const &member,
   });
   member.team_barrier();
 
-  if (geom.two_d) {
+  if (geom.multi_d) {
     par_for_inner(member, il, iu, [&](const int i) {
       j1(i) += (b.x3f(m,k,j,i) - b.x3f(m,k,j-1,i))/size.dx2;
       j3(i) -= (b.x1f(m,k,j,i) - b.x1f(m,k,j-1,i))/size.dx2;
