@@ -38,7 +38,21 @@
 //!       convergence test for all three face fields and the pressure.  <mhd> with
 //!       ohmic_resistivity = constant required.
 //!
-//! iprob 3 and 11 report L1 / Linf errors against the exact state at the end of the run
+//!   12 = TOROIDAL FIELD (cs_test iprob=11's azimuthal part).  B = b0c R phihat with
+//!       R = r sin(theta), i.e. b0c (-y, x, 0): curl B = 2 b0c zhat is a UNIFORM current,
+//!       J x B = -2 b0c^2 R Rhat is balanced by p = p0 - b0c^2 R^2, and B_r = B_theta = 0
+//!       everywhere, so nothing crosses the radial walls in the exact solution: the
+//!       CLOSED
+//!       conservation gate for MHD (mass, energy, L_z), which the force-free field cannot
+//!       give because it threads the walls.  With constant eta the field is STILL static
+//!       (curl of the uniform eta J vanishes) while the uniform Ohmic heating raises p by
+//!       (gamma-1) 4 eta b0c^2 t everywhere; the total energy must rise by exactly
+//!       eta J^2 V t, which the finalizer checks against the code's own energy sum, and
+//!       the resistive EMF on every edge is checked against eta J.  <mhd>, resistivity
+//!       optional.
+//!
+//! iprob 3, 11 and 12 report L1 / Linf errors against the exact state at the end of
+//!       the run
 //! (pgen_final_func), split into the POLAR rows and the interior, and append them to
 //! <basename>-errs.dat; with problem/user_hist = true the same L1 errors are written to
 //! the history file every dt.
@@ -78,7 +92,7 @@
 // with each face's area/volume weight.  Tells which face carries the polar-row residual.
 namespace {
 Real sp_b0 = 1.0, sp_p0 = 1.0, sp_d0 = 1.0, sp_omega = 0.2, sp_alpha = 1.0;
-Real sp_eta = 0.0, sp_bc_tfrac = 0.0, sp_svol = 1.0;
+Real sp_eta = 0.0, sp_bc_tfrac = 0.0, sp_svol = 1.0, sp_b0c = 0.3, sp_e0 = 0.0;
 int sp_bdir = 2, sp_probe_done = 0, sp_iprob = 8, sp_axis = 2;
 
 //----------------------------------------------------------------------------------------
@@ -223,6 +237,18 @@ Real FFPoleFaceB2(Real rl, Real rr, Real thn, Real phl, Real phr, Real b0, Real 
               - FFFaceB2(rl, rr, thn, phl + M_PI, phr + M_PI, b0, alpha));
 }
 
+//! iprob 12: the phi-face average of B_phi = b0c r sin(theta) (area element r dr dtheta)
+KOKKOS_INLINE_FUNCTION
+Real TorFaceB3(Real rl, Real rr, Real tl, Real tr, Real b0c) {
+  return b0c*((rr*rr*rr - rl*rl*rl)/3.0)*(cos(tl) - cos(tr))
+         /(0.5*(rr*rr - rl*rl)*(tr - tl));
+}
+//! iprob 12: the exact pressure p0 - b0c^2 R^2 + (gamma-1) eta J^2 t, J = 2 b0c
+KOKKOS_INLINE_FUNCTION
+Real TorPressure(Real r, Real th, Real t, Real p0, Real b0c, Real eta, Real gm1) {
+  return p0 - b0c*b0c*SQR(r*sin(th)) + gm1*eta*4.0*b0c*b0c*t;
+}
+
 //! exact decay factor and pressure of iprob = 11 at time t
 KOKKOS_INLINE_FUNCTION
 Real FFDecay(Real eta, Real alpha, Real t) { return exp(-eta*alpha*alpha*t); }
@@ -257,6 +283,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   const Real b0 = pin->GetOrAddReal("problem", "b0", 1.0);
   const Real omega = pin->GetOrAddReal("problem", "omega", 0.2);
   const Real alpha = pin->GetOrAddReal("problem", "alpha", 0.5*M_PI);
+  const Real b0c = pin->GetOrAddReal("problem", "b0c", 0.3);   // iprob 12 amplitude
+  sp_b0c = b0c;
   // field direction: bdir = 2 (default) is b0 zhat, bdir = 0 is b0 xhat.  For xhat the
   // face averages are B_r = b0 <sin th> cos-average, B_th = b0 cos(th_f) <cos ph>,
   // B_ph = -b0 sin(ph_f); each is the exact area-weighted mean over its face.
@@ -296,7 +324,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     }
     sp_eta = pmbp->pmhd->presist->eta_ohm_const;
   }
-  if (iprob == 3 || iprob == 11) {
+  if (iprob == 12) {
+    sp_eta = (pmbp->pmhd->presist != nullptr) ? pmbp->pmhd->presist->eta_ohm_const : 0.0;
+  }
+  if (iprob == 3 || iprob == 11 || iprob == 12) {
     user_bcs_func = SPTestRadialBC;
     user_hist_func = SPTestHistory;
     pgen_final_func = SPTestErrors;
@@ -369,6 +400,11 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         if (i < n1 && j < n2) {
           b0f.x3f(m,k,j,i) = FFFaceB3(rl, rr, tl, tr, pl, b0, alpha);
         }
+      } else if (iprob == 12) {
+        const Real rl = x1f_(m,i), rr = x1f_(m,(i < n1) ? i+1 : i);
+        if (j < n2 && k < n3) { b0f.x1f(m,k,j,i) = 0.0; }
+        if (i < n1 && k < n3) { b0f.x2f(m,k,j,i) = 0.0; }
+        if (i < n1 && j < n2) { b0f.x3f(m,k,j,i) = TorFaceB3(rl, rr, tl, tr, b0c); }
       } else if (bdir == 2 || iprob == 3) {
         Real b1, b2;
         UniformZFaces(b0, tl, tr, b1, b2);
@@ -406,6 +442,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     const Real r = x1v_(m,i), th = x2v_(m,j), ph = x3v_(m,k);
     Real dn = d0, pgas = p0, vth = 0.0, vphi = 0.0;
     if (iprob == 3) RigidRotState(r, th, ph, axis, d0, p0, omega, vth, vphi, pgas);
+    if (iprob == 12) pgas = TorPressure(r, th, 0.0, p0, b0c, 0.0, gm1);
     u0(m,IDN,k,j,i) = dn;
     u0(m,IM1,k,j,i) = 0.0;
     u0(m,IM2,k,j,i) = dn*vth;
@@ -429,6 +466,26 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     }
     u0(m,IEN,k,j,i) = pgas/gm1 + 0.5*dn*(vth*vth + vphi*vphi) + 0.5*bsq;
   });
+  // the initial total energy, for the iprob 12 Ohmic budget (same sum as history.cpp)
+  {
+    auto &vol_ = pmbp->pcoord->volume;
+    Real e0 = 0.0;
+    const int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
+    const int nkji = nx3*nx2*nx1, nji = nx2*nx1;
+    Kokkos::parallel_reduce("sp_test_e0", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                            (nmb1+1)*nkji),
+    KOKKOS_LAMBDA(const int &idx, Real &sum) {
+      const int m = idx/nkji;
+      const int k = (idx - m*nkji)/nji;
+      const int j = (idx - m*nkji - k*nji)/nx1;
+      const int i = idx - m*nkji - k*nji - j*nx1;
+      sum += vol_(m, k+ks, j+js, i+is)*u0(m, IEN, k+ks, j+js, i+is);
+    }, Kokkos::Sum<Real>(e0));
+#if MPI_PARALLEL_ENABLED
+    MPI_Allreduce(MPI_IN_PLACE, &e0, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
+    sp_e0 = e0;
+  }
   return;
 }
 
@@ -464,6 +521,7 @@ void SPTestRadialBC(Mesh *pm) {
   const int iprob = sp_iprob;
   const Real d0 = sp_d0, p0 = sp_p0, omega = sp_omega, alpha = sp_alpha;
   const int axis = sp_axis;
+  const Real b0c = sp_b0c, eta_ = sp_eta;
   const Real tbc = pm->time + sp_bc_tfrac*pm->dt;
   const Real decay = (iprob == 11) ? FFDecay(sp_eta, alpha, tbc) : 1.0;
   const Real b0 = sp_b0*decay;
@@ -506,6 +564,12 @@ void SPTestRadialBC(Mesh *pm) {
           if (k == n3-1) {
             b0f.x3f(m,k+1,j,i) = FFFaceB3(rl, rr, tl, tr, pr, b0, alpha);
           }
+        } else if (iprob == 12) {
+          b0f.x1f(m,k,j,ifc) = 0.0;
+          b0f.x2f(m,k,j,i) = 0.0;
+          b0f.x3f(m,k,j,i) = TorFaceB3(rl, rr, tl, tr, b0c);
+          if (j == n2-1) { b0f.x2f(m,k,j+1,i) = 0.0; }
+          if (k == n3-1) { b0f.x3f(m,k+1,j,i) = TorFaceB3(rl, rr, tl, tr, b0c); }
         } else {
           Real b1, b2;
           UniformZFaces(b0, tl, tr, b1, b2);
@@ -538,6 +602,8 @@ void SPTestRadialBC(Mesh *pm) {
       Real dn = d0, pgas = p0, vth = 0.0, vphi = 0.0;
       if (iprob == 3) {
         RigidRotState(r, th, ph, axis, d0, p0, omega, vth, vphi, pgas);
+      } else if (iprob == 12) {
+        pgas = TorPressure(r, th, tbc, p0, b0c, eta_, gm1);
       } else {
         pgas = p11;
       }
@@ -581,11 +647,14 @@ void SPTestRadialBC(Mesh *pm) {
 //! faces at the cell centroid, the SAME interpolation ConsToPrim uses).
 
 void SPTestHistory(HistoryData *pdata, Mesh *pm) {
-  pdata->nhist = 4;
+  pdata->nhist = 5;
   pdata->label[0] = "L1-v";
   pdata->label[1] = "L1-p";
   pdata->label[2] = "L1-rho";
   pdata->label[3] = "L1-b";
+  // z angular momentum: the cell-average momentum times the EXACT cell integral of the
+  // lever arm, Int r sin(theta) dV = (r_r^4 - r_l^4)/4 * Int sin^2 * dphi
+  pdata->label[4] = "Lz";
 
   MeshBlockPack *pmbp = pm->pmb_pack;
   const bool is_mhd = (pmbp->pmhd != nullptr);
@@ -608,6 +677,7 @@ void SPTestHistory(HistoryData *pdata, Mesh *pm) {
   const int iprob = sp_iprob;
   const Real d0 = sp_d0, p0 = sp_p0, omega = sp_omega, alpha = sp_alpha;
   const int axis = sp_axis;
+  const Real b0c = sp_b0c, eta_ = sp_eta;
   const Real decay = (iprob == 11) ? FFDecay(sp_eta, alpha, pm->time) : 1.0;
   const Real b0 = sp_b0*decay;
   const Real p11 = FFPressure(p0, sp_b0, gm1, decay);
@@ -628,6 +698,8 @@ void SPTestHistory(HistoryData *pdata, Mesh *pm) {
     Real pex = p0, vth = 0.0, vphi = 0.0;
     if (iprob == 3) {
       RigidRotState(r, th, ph, axis, d0, p0, omega, vth, vphi, pex);
+    } else if (iprob == 12) {
+      pex = TorPressure(r, th, pm->time, p0, b0c, eta_, gm1);
     } else {
       pex = p11;
     }
@@ -654,6 +726,9 @@ void SPTestHistory(HistoryData *pdata, Mesh *pm) {
                     : FFFaceB2(rl, rr, tr, pl, pr, b0, alpha);
         f3l = FFFaceB3(rl, rr, tl, tr, pl, b0, alpha);
         f3r = FFFaceB3(rl, rr, tl, tr, pr, b0, alpha);
+      } else if (iprob == 12) {
+        f1l = 0.0; f1r = 0.0; f2l = 0.0; f2r = 0.0;
+        f3l = TorFaceB3(rl, rr, tl, tr, b0c); f3r = f3l;
       } else {
         UniformZFaces(b0, tl, tr, f1l, f2l);
         f1r = f1l; f2r = -b0*sin(tr); f3l = 0.0; f3r = 0.0;
@@ -675,7 +750,14 @@ void SPTestHistory(HistoryData *pdata, Mesh *pm) {
     hv.the_array[1] = w*dp;
     hv.the_array[2] = w*dd;
     hv.the_array[3] = w*db;
-    for (int n=4; n<NREDUCTION_VARIABLES; ++n) { hv.the_array[n] = 0.0; }
+    {
+      const Real rl = x1f_(m,i), rr = x1f_(m,i+1);
+      const Real tl = x2f_(m,j), tr = x2f_(m,j+1);
+      const Real isin2 = 0.5*(tr - tl) - 0.25*(sin(2.0*tr) - sin(2.0*tl));
+      const Real lever = 0.25*(rr*rr*rr*rr - rl*rl*rl*rl)*isin2*(x3f_(m,k+1) - x3f_(m,k));
+      hv.the_array[4] = w0_(m,IDN,k,j,i)*w0_(m,IVZ,k,j,i)*lever;
+    }
+    for (int n=5; n<NREDUCTION_VARIABLES; ++n) { hv.the_array[n] = 0.0; }
     mb_sum += hv;
   }, Kokkos::Sum<array_sum::GlobalSum>(sum_this_mb));
   for (int n=0; n<pdata->nhist; ++n) { pdata->hdata[n] = sum_this_mb.the_array[n]; }
@@ -719,6 +801,7 @@ void SPTestErrors(ParameterInput *pin, Mesh *pm) {
   const int iprob = sp_iprob;
   const Real d0 = sp_d0, p0 = sp_p0, omega = sp_omega, alpha = sp_alpha;
   const int axis = sp_axis;
+  const Real b0c = sp_b0c, eta_ = sp_eta;
   const Real decay = (iprob == 11) ? FFDecay(sp_eta, alpha, pm->time) : 1.0;
   const Real b0 = sp_b0*decay;
   const Real p11 = FFPressure(p0, sp_b0, gm1, decay);
@@ -745,6 +828,8 @@ void SPTestErrors(ParameterInput *pin, Mesh *pm) {
           Real pex = p0, vth = 0.0, vphi = 0.0;
           if (iprob == 3) {
             RigidRotState(r, th, ph, axis, d0, p0, omega, vth, vphi, pex);
+          } else if (iprob == 12) {
+            pex = TorPressure(r, th, pm->time, p0, b0c, eta_, gm1);
           } else {
             pex = p11;
           }
@@ -788,18 +873,21 @@ void SPTestErrors(ParameterInput *pin, Mesh *pm) {
               if (f == 0 || f == 3) {
                 const Real rf = (f == 0) ? rl : rr;
                 if (iprob == 11) { ex = FFFaceB1(rf, tl, tr, pl, pr, b0, alpha); }
+                else if (iprob == 12) { ex = 0.0; }
                 else { Real bb; UniformZFaces(b0, tl, tr, ex, bb); }
                 code = b1(m,k,j,(f == 0) ? i : i+1);
                 area = rf*rf*std::fabs(std::cos(tl) - std::cos(tr))*(pr - pl);
               } else if (f == 1 || f == 4) {
                 const Real tf = (f == 1) ? tl : tr;
                 if (iprob == 11) { ex = FFFaceB2(rl, rr, tf, pl, pr, b0, alpha); }
+                else if (iprob == 12) { ex = 0.0; }
                 else { ex = -b0*std::sin(tf); }
                 code = b2(m,k,(f == 1) ? j : j+1,i);
                 area = 0.5*(rr*rr - rl*rl)*std::fabs(std::sin(tf))*(pr - pl);
               } else {
                 const Real pf = (f == 2) ? pl : pr;
-                ex = (iprob == 11) ? FFFaceB3(rl, rr, tl, tr, pf, b0, alpha) : 0.0;
+                ex = (iprob == 11) ? FFFaceB3(rl, rr, tl, tr, pf, b0, alpha)
+                   : ((iprob == 12) ? TorFaceB3(rl, rr, tl, tr, b0c) : 0.0);
                 code = b3(m,(f == 2) ? k : k+1,j,i);
                 area = 0.5*(rr*rr - rl*rl)*(tr - tl);
               }
@@ -854,13 +942,22 @@ void SPTestErrors(ParameterInput *pin, Mesh *pm) {
   // iprob 11: the code's resistive EMF eta*J on every edge against the exact
   // eta*alpha*B (curl B = alpha B), in units of eta*alpha*b0*decay, polar rows vs
   // interior, with the north and south maxima
-  if (iprob == 11 && is_mhd && pmbp->pmhd->presist != nullptr) {
+  if ((iprob == 11 || iprob == 12) && is_mhd && pmbp->pmhd->presist != nullptr) {
     auto pres = pmbp->pmhd->presist;
     auto e1 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pres->efld_resist.x1e);
     auto e2 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pres->efld_resist.x2e);
     auto e3 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pres->efld_resist.x3e);
     const Real eta = pres->eta_ohm_const;
-    const Real scale = eta*alpha*b0;
+    const Real scale = (iprob == 12) ? eta*2.0*b0c : eta*alpha*b0;
+    // exact J on an edge: alpha*B (iprob 11) or 2 b0c zhat (iprob 12), then eta*J.t
+    auto exactJ = [&](Real r, Real th, Real ph, Real &jr, Real &jt, Real &jp) {
+      if (iprob == 12) {
+        jr = 2.0*b0c*std::cos(th); jt = -2.0*b0c*std::sin(th); jp = 0.0;
+      } else {
+        FFField(r, th, ph, b0, alpha, jr, jt, jp);
+        jr *= alpha; jt *= alpha; jp *= alpha;
+      }
+    };
     Real l1[3][2] = {}, mx[3][2] = {};
     std::int64_t nc[3][2] = {};
     int mxj[3] = {-1, -1, -1}, mxi[3] = {-1, -1, -1};
@@ -876,9 +973,9 @@ void SPTestErrors(ParameterInput *pin, Mesh *pm) {
             Real br, bt, bph;
             // x1 edge: along r at (theta_f(j), phi_f(k)), cells i <= ie
             if (i <= ie) {
-              FFField(0.5*(rl + rr), tl, pl, b0, alpha, br, bt, bph);
+              exactJ(0.5*(rl + rr), tl, pl, br, bt, bph);
               const bool pol = (j - js < nbp) || (je + 1 - j < nbp);
-              const Real d = std::fabs(e1(m,k,j,i) - eta*alpha*br)/scale;
+              const Real d = std::fabs(e1(m,k,j,i) - eta*br)/scale;
               l1[0][pol] += d; nc[0][pol]++;
               if (d > mx[0][pol]) {
                 mx[0][pol] = d;
@@ -889,9 +986,9 @@ void SPTestErrors(ParameterInput *pin, Mesh *pm) {
             }
             // x2 edge: along theta at (r_f(i), phi_f(k)), cells j <= je
             if (j <= je) {
-              FFField(rl, 0.5*(tl + tr), pl, b0, alpha, br, bt, bph);
+              exactJ(rl, 0.5*(tl + tr), pl, br, bt, bph);
               const bool pol = (j - js < nbp) || (je - j < nbp);
-              const Real d = std::fabs(e2(m,k,j,i) - eta*alpha*bt)/scale;
+              const Real d = std::fabs(e2(m,k,j,i) - eta*bt)/scale;
               l1[1][pol] += d; nc[1][pol]++;
               if (d > mx[1][pol]) {
                 mx[1][pol] = d;
@@ -902,9 +999,9 @@ void SPTestErrors(ParameterInput *pin, Mesh *pm) {
             }
             // x3 edge: along phi at (r_f(i), theta_f(j)), cells k <= ke; skip the pole
             if (k <= ke && std::fabs(std::sin(tl)) > 1.0e-12) {
-              FFField(rl, tl, 0.5*(pl + pr), b0, alpha, br, bt, bph);
+              exactJ(rl, tl, 0.5*(pl + pr), br, bt, bph);
               const bool pol = (j - js < nbp) || (je + 1 - j < nbp);
-              const Real d = std::fabs(e3(m,k,j,i) - eta*alpha*bph)/scale;
+              const Real d = std::fabs(e3(m,k,j,i) - eta*bph)/scale;
               l1[2][pol] += d; nc[2][pol]++;
               if (d > mx[2][pol]) {
                 mx[2][pol] = d;
@@ -919,8 +1016,7 @@ void SPTestErrors(ParameterInput *pin, Mesh *pm) {
     }
     if (global_variable::my_rank == 0) {
       const char *nm[3] = {"E1 (r edges)   ", "E2 (theta edges)", "E3 (phi edges) "};
-      std::printf("###   RESISTIVE EMF vs exact eta*alpha*B, in units eta*alpha*b0"
-                  " (this rank):\n");
+      std::printf("###   RESISTIVE EMF vs exact eta*J, in units eta*|J| (this rank):\n");
       for (int c=0; c<3; ++c) {
         std::printf("###     %s  interior L1 %.3e Linf %.3e | polar L1 %.3e Linf %.3e"
                     " (max at j-js=%d i-is=%d; north %.3e south %.3e)\n", nm[c],
@@ -928,6 +1024,30 @@ void SPTestErrors(ParameterInput *pin, Mesh *pm) {
                     (nc[c][1] > 0) ? l1[c][1]/nc[c][1] : 0.0, mx[c][1], mxj[c], mxi[c],
                     mxn[c], mxs[c]);
       }
+    }
+  }
+
+  // iprob 12: the Ohmic energy budget.  The exact solution gains eta J^2 V t; compare
+  // with the code's own total-energy sum (the same sum history.cpp forms).
+  if (iprob == 12 && is_mhd) {
+    auto u0h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pmhd->u0);
+    Real etot = 0.0;
+    for (int m=0; m<pmbp->nmb_thispack; ++m) {
+      for (int k=ks; k<=ke; ++k) {
+        for (int j=js; j<=je; ++j) {
+          for (int i=is; i<=ie; ++i) { etot += vol(m,k,j,i)*u0h(m,IEN,k,j,i); }
+        }
+      }
+    }
+#if MPI_PARALLEL_ENABLED
+    MPI_Allreduce(MPI_IN_PLACE, &etot, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
+    const Real gain = eta_*4.0*b0c*b0c*sp_svol*pm->time;
+    if (global_variable::my_rank == 0) {
+      std::printf("###   OHMIC BUDGET: E(0) %.10e  E(t) %.10e  gained %.6e  exact"
+                  " eta J^2 V t %.6e  ratio %.6f  (eta=0: dE/E = %.3e)\n", sp_e0, etot,
+                  etot - sp_e0, gain, (gain != 0.0) ? (etot - sp_e0)/gain : 0.0,
+                  (etot - sp_e0)/sp_e0);
     }
   }
 

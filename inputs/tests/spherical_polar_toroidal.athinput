@@ -1,0 +1,74 @@
+# Spherical polar, TOROIDAL FIELD: B = b0c r sin(theta) phihat, i.e. b0c (-y, x, 0), with the
+# balancing pressure p0 - b0c^2 R^2.  Build with -D PROBLEM=sp_test.  curl B = 2 b0c zhat is
+# a UNIFORM current, so with constant eta the field stays static while the uniform Ohmic
+# heating raises p by (gamma-1) 4 eta b0c^2 t; the total energy must rise by exactly
+# eta J^2 V t (printed as the OHMIC BUDGET at the end, with the resistive EMF checked edge
+# by edge against eta J).  B_r = B_theta = 0, so nothing crosses the radial walls in the
+# exact solution: the CLOSED conservation gate for MHD (mass, energy, L_z in the history
+# and sp_toroidal.user.hst), which a field threading the walls cannot give.
+# Set eta_ohm_const = 1e-12 for the ideal (exactly static) version.  b0c must keep
+# p0 - b0c^2 x1max^2 positive.
+
+<comment>
+problem = spherical polar toroidal field
+
+<job>
+basename = sp_toroidal
+
+<mesh>
+nghost   = 2
+nx1      = 8            # RADIAL
+x1min    = 1.0
+x1max    = 2.0
+ix1_bc   = user         # the exact (decaying) field and pressure in the radial ghosts
+ox1_bc   = user
+nx2      = 16           # theta, full 0..pi
+x2min    = -1.0
+x2max    = -1.0
+ix2_bc   = polar
+ox2_bc   = polar
+nx3      = 32           # phi, full 2 pi
+x3min    = -1.0
+x3max    = -1.0
+ix3_bc   = periodic
+ox3_bc   = periodic
+use_spherical_polar = true
+use_polar_boundary  = true
+
+<meshblock>
+nx1      = 8
+nx2      = 16
+nx3      = 16           # the polar boundary needs an EVEN number of blocks around phi
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim       = 1000000
+tlim       = 2.0
+ndiag      = 100
+
+<mhd>
+eos               = ideal
+reconstruct       = plm
+rsolver           = hlld
+sp_cart_all_momentum = false   # whole-mesh Cartesian momentum + face-averaged fluxes
+sp_face_avg = false
+sp_face_avg_terms = 3
+gamma             = 1.666667
+ohmic_resistivity = constant
+eta_ohm_const     = 0.05
+
+<problem>
+iprob    = 12
+d0       = 1.0
+p0       = 1.0
+b0c      = 0.3          # B_phi = b0c r sin(theta); p0 - b0c^2 x1max^2 = 0.64 > 0
+bc_time_frac = 0.0      # ghosts evaluated at t^n + frac*dt inside the RK stages
+user_bcs = true
+user_hist = true
+err_nband = 2
+
+<output1>
+file_type = hst
+dt        = 0.05
