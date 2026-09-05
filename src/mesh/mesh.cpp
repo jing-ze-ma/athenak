@@ -203,8 +203,11 @@ Mesh::Mesh(ParameterInput *pin) :
   use_polar_quadratic_recon = pin->GetOrAddBoolean("mesh", "polar_quadratic_recon",
                                                     false);
   use_polar_average_b = pin->GetOrAddBoolean("mesh", "use_polar_average_b", false);
+  // default ON: without it the resistive E_r at the one physical pole edge differs
+  // between the phi cells that share it and the polar-row div B grows to ~1e-3 b0/L
+  // (sp_test iprob=11); with it div B stays at round-off and the errors are unchanged.
   use_polar_average_eresist = pin->GetOrAddBoolean("mesh", "use_polar_average_eresist",
-                                                    false);
+                                                    true);
   if (use_spherical_polar && pin->GetReal("mesh", "x3min")<0.0 && pin->GetReal("mesh", "x3max")<0.0) {
     mesh_size.x3min = 0.0;
     mesh_size.x3max = 2.0*M_PI;
