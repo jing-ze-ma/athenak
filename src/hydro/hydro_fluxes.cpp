@@ -485,6 +485,8 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
       
     auto &x3v_ = pmy_pack->pcoord->x3v;
     auto &x3f_ = pmy_pack->pcoord->xx3f;
+    auto &x2v3_ = pmy_pack->pcoord->x2v;
+    auto &x2f3_ = pmy_pack->pcoord->xx2f;
 
     // set the loop limits
     il = is, iu = ie, jl = js, ju = je, kl = ks-1, ku = ke+1;
@@ -591,6 +593,21 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
               GnomonicEquianglePrimFaceX3(gtrig_eta,member,m,k,j,il,iu,wl_kp1,wr);
           }
           
+        // SPHERICAL POLAR: rotate the reconstructed (v_r, v_theta) into the basis at the
+        // x3 face's own theta centroid (the cell MIDPOINT, not the volume centroid x2v).
+        // See the note in mhd_fluxes.cpp: in the polar row the two differ at O(1) in the
+        // small r-component, which left a resolution-independent spurious radial force.
+        if (use_spherical_polar) {
+          const Real dang = 0.5*(x2f3_(m,j) + x2f3_(m,j+1)) - x2v3_(m,j);
+          const Real cd = cos(dang), sd = sin(dang);
+          par_for_inner(member, il, iu, [&](const int i) {
+            Real a = wl_kp1(IVX,i), b = wl_kp1(IVY,i);
+            wl_kp1(IVX,i) = a*cd + b*sd;  wl_kp1(IVY,i) = -a*sd + b*cd;
+            a = wr(IVX,i); b = wr(IVY,i);
+            wr(IVX,i) = a*cd + b*sd;  wr(IVY,i) = -a*sd + b*cd;
+          });
+        }
+
         member.team_barrier();
 
         // compute fluxes over [ks,ke+1].  RS returns flux in input wr array

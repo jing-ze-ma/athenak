@@ -599,6 +599,8 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
       
     auto &x3v_ = pmy_pack->pcoord->x3v;
     auto &x3f_ = pmy_pack->pcoord->xx3f;
+    auto &x2v3_ = pmy_pack->pcoord->x2v;
+    auto &x2f3_ = pmy_pack->pcoord->xx2f;
 
     // set the loop limits
     kl = ks-1, ku = ke+1;
@@ -730,6 +732,31 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
             GnomonicEquianglePrimFaceX3(gtrig_eta,member,m,k,j,is-1,ie+1,
                                                           wl_kp1,wr);
           }
+
+        // SPHERICAL POLAR: the reconstructed states sit at the cell's volume centroid
+        // theta = x2v, but an x3 face (area element r dr dtheta) is centred at the theta
+        // MIDPOINT of the cell.  The two differ by O(dtheta^2 cot theta), negligible in
+        // the interior; in the polar row the midpoint is dtheta/2 against a centroid of
+        // 2 dtheta/3, and the r-components of v and B scale as sin(theta) there, so the
+        // flux T_phi,r = rho v_phi v_r - B_phi B_r through the polar cell's phi-faces
+        // came out 4/3 too large: a resolution-INDEPENDENT spurious radial force of
+        // ~0.5 (B^2/2)/r in the polar cells (sp_test iprob=11, v_r growing at the same
+        // rate at nx2 = 16 and 32).  Rotate the (r, theta) pairs of every reconstructed
+        // vector into the face's own local basis: rhat' = rhat cos d + thhat sin d.
+        if (use_spherical_polar) {
+          const Real dang = 0.5*(x2f3_(m,j) + x2f3_(m,j+1)) - x2v3_(m,j);
+          const Real cd = cos(dang), sd = sin(dang);
+          par_for_inner(member, is-1, ie+1, [&](const int i) {
+            Real a = wl_kp1(IVX,i), b = wl_kp1(IVY,i);
+            wl_kp1(IVX,i) = a*cd + b*sd;  wl_kp1(IVY,i) = -a*sd + b*cd;
+            a = wr(IVX,i); b = wr(IVY,i);
+            wr(IVX,i) = a*cd + b*sd;  wr(IVY,i) = -a*sd + b*cd;
+            a = bl_kp1(0,i); b = bl_kp1(1,i);
+            bl_kp1(0,i) = a*cd + b*sd;  bl_kp1(1,i) = -a*sd + b*cd;
+            a = br(0,i); b = br(1,i);
+            br(0,i) = a*cd + b*sd;  br(1,i) = -a*sd + b*cd;
+          });
+        }
 
         member.team_barrier();
 
