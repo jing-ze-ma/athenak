@@ -1,0 +1,70 @@
+# Spherical polar, RIGID ROTATION: the exact steady state v = omega zhat x r with
+# p = p0 + d0 omega^2 R^2 / 2.  Build with -D PROBLEM=sp_test.  The twin of
+# inputs/tests/cubed_sphere_rigidrot.athinput (same shell, omega, tlim, gamma, plm/hllc,
+# rk2, cfl) on the ORTHOGONAL grid: the deviation from the initial state IS the error and
+# is written to the history (L1-v, L1-p, L1-rho, L1-b) and to sp_rigidrot-errs.dat at
+# the end, split into the polar rows and the interior.
+#
+# Hydro as written.  For the MHD version replace <hydro> by
+#   <mhd>  eos = ideal  reconstruct = plm  rsolver = hlld  gamma = 1.666667
+# and set problem/b0: a uniform axial field b0 zhat is then added, which is exactly
+# steady too (v x B = omega b0 R Rhat is curl-free, J = 0).
+
+<comment>
+problem = spherical polar rigid rotation
+
+<job>
+basename = sp_rigidrot
+
+<mesh>
+nghost   = 2
+nx1      = 8            # RADIAL
+x1min    = 1.0
+x1max    = 2.0
+ix1_bc   = user         # the exact state in the radial ghosts (p varies with r)
+ox1_bc   = user
+nx2      = 16           # theta, full 0..pi
+x2min    = -1.0         # -1: set by use_polar_boundary
+x2max    = -1.0
+ix2_bc   = polar
+ox2_bc   = polar
+nx3      = 32           # phi, full 2 pi
+x3min    = -1.0
+x3max    = -1.0
+ix3_bc   = periodic
+ox3_bc   = periodic
+use_spherical_polar = true
+use_polar_boundary  = true
+
+<meshblock>
+nx1      = 8
+nx2      = 16
+nx3      = 16           # the polar boundary needs an EVEN number of blocks around phi
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim       = 1000000
+tlim       = 1.0
+ndiag      = 10
+
+<hydro>
+eos         = ideal
+reconstruct = plm
+rsolver     = hllc
+gamma       = 1.666667
+
+<problem>
+iprob    = 3
+d0       = 1.0
+p0       = 1.0
+omega    = 0.2
+b0       = 0.1          # only used with <mhd>
+user_bcs = true
+user_hist = true
+err_nband = 2           # "polar rows" = within this many cells of either pole
+
+<output1>
+file_type = hst
+dt        = 0.01

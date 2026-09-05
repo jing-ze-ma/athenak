@@ -1,0 +1,74 @@
+# Spherical polar, RESISTIVE DECAY of a force-free field.  Build with -D PROBLEM=sp_test.
+# B = b0 (sin(alpha z), cos(alpha z), 0) has curl B = alpha B, so J x B = 0, |B| is uniform
+# and with constant eta the EXACT solution is B(t) = B(0) exp(-eta alpha^2 t) with the gas
+# at rest and p(t) = p0 + (gamma-1) b0^2 (1 - exp(-2 eta alpha^2 t))/2 uniform: the Ohmic
+# heat goes into a uniform pressure rise and the total energy is exactly constant.
+# The face fields come from Stokes loops of A = B/alpha, so div B = 0 to round-off.
+# Errors against the exact state at tlim are printed and appended to sp_resist-errs.dat;
+# the history carries L1-v, L1-p, L1-rho, L1-b every dt.  Double nx1, nx2, nx3 together
+# for the convergence test (2nd order expected in B and p; v should stay ~0).
+#
+# alpha = pi/2: one full wavelength across the shell's z range [-2, 2].  Decay rate
+# eta alpha^2 = 0.123 at eta = 0.05, so B falls by 22 % by tlim = 2 and p rises by 1.5 %.
+
+<comment>
+problem = spherical polar resistive decay
+
+<job>
+basename = sp_resist
+
+<mesh>
+nghost   = 2
+nx1      = 8            # RADIAL
+x1min    = 1.0
+x1max    = 2.0
+ix1_bc   = user         # the exact (decaying) field and pressure in the radial ghosts
+ox1_bc   = user
+nx2      = 16           # theta, full 0..pi
+x2min    = -1.0
+x2max    = -1.0
+ix2_bc   = polar
+ox2_bc   = polar
+nx3      = 32           # phi, full 2 pi
+x3min    = -1.0
+x3max    = -1.0
+ix3_bc   = periodic
+ox3_bc   = periodic
+use_spherical_polar = true
+use_polar_boundary  = true
+
+<meshblock>
+nx1      = 8
+nx2      = 16
+nx3      = 16           # the polar boundary needs an EVEN number of blocks around phi
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim       = 1000000
+tlim       = 2.0
+ndiag      = 100
+
+<mhd>
+eos               = ideal
+reconstruct       = plm
+rsolver           = hlld
+gamma             = 1.666667
+ohmic_resistivity = constant
+eta_ohm_const     = 0.05
+
+<problem>
+iprob    = 11
+d0       = 1.0
+p0       = 1.0
+b0       = 0.5
+alpha    = 1.5707963267948966
+bc_time_frac = 0.0      # ghosts evaluated at t^n + frac*dt inside the RK stages
+user_bcs = true
+user_hist = true
+err_nband = 2
+
+<output1>
+file_type = hst
+dt        = 0.05
