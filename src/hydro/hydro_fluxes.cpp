@@ -75,6 +75,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
   auto pfacewb_x3f = pfacewb.x3f;
   auto w0facewb_x3f = w0facewb.x3f;
   auto &phicc0_ = phicc0;
+  auto &wbq0_ = wbq0;     // the per-cell well-balanced background, built just below
   auto phi0_x1f = phi0.x1f;
   auto phi0_x2f = phi0.x2f;
   auto phi0_x3f = phi0.x3f;
@@ -128,6 +129,11 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
     }
   }
 
+  // the well-balanced background of every cell in this sweep, walked once
+
+  if (use_wellbalance_dynamic && use_wb_x1) {BuildWBCache(jl, ju, kl, ku);}
+
+
   par_for_outer("hflux_x1",DevExeSpace(), scr_size, scr_level, 0, nmb1, kl, ku, jl, ju,
   KOKKOS_LAMBDA(TeamMember_t member, const int m, const int k, const int j) {
     ScrArray2D<Real> wl(member.team_scratch(scr_level), nvars, ncells1);
@@ -140,13 +146,13 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
         GridPiecewiseLinearX1(member, eos_, wb_option_, use_wb_rho_,
                               use_wellbalance_dynamic_,
                               use_wb_x1_, m, k, j, il-1, iu, w0_, x1v_, x1f_, phicc0_,
-                              phi0_x1f, wl, wr);
+                              phi0_x1f, wbq0_, wl, wr);
       } else {
 
     if (use_wellbalance_dynamic_ && use_wb_x1_)
     {
       WbLocalPiecewiseLinearX1(member, eos_, wb_option_, use_wb_rho_,
-          m, k, j, il-1, iu, w0_, phicc0_, phi0_x1f, wl, wr);
+          m, k, j, il-1, iu, w0_, phicc0_, phi0_x1f, wbq0_, wl, wr);
     } else {
           
     // Reconstruct qR[i] and qL[i+1]
@@ -181,7 +187,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
       if (use_spherical_polar || str_r1_) {
         GridPiecewiseLinearDerX1(member, eos_, wb_option_, use_wellbalance_dynamic_,
                                  use_wb_x1_, m, k, j, il-1, iu, w0_, wder_,
-                                 x1v_, x1f_, phicc0_, phi0_x1f, dl, dr);
+                                 x1v_, x1f_, phicc0_, phi0_x1f, wbq0_, dl, dr);
       } else if (use_wellbalance_static_reconst_perturb_) {
         WbStaticPiecewiseLinearDerX1(member, m, k, j, il-1, iu,
                                      pwb_, pfacewb_x1f,
@@ -189,7 +195,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
       } else if (use_wellbalance_dynamic_ && use_wb_x1_) {
         WbPiecewiseLinearDerX1(member, eos_, wb_option_,
             m, k, j, il-1, iu, w0_, wder_,
-                               phicc0_, phi0_x1f, dl, dr);
+                               phicc0_, phi0_x1f, wbq0_, dl, dr);
       } else {
       switch (recon_method_) {
         case ReconstructionMethod::dc:

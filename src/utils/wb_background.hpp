@@ -81,6 +81,28 @@ struct WBState {
 
 enum WBVar {wb_dens = 0, wb_eint = 1, wb_pres = 2};
 
+//! \fn void WBReadCache
+//! \brief the five background states of one channel from the per-cell cache
+//! (Hydro/MHD::wbq0, layout (m, 5*var + {im1,imh,i,iph,ip1}, k, j, i)), built once per
+//! stage by BuildWBCache() so the density, energy and pressure channels and the source
+//! term all read the same walk instead of each repeating it.
+KOKKOS_INLINE_FUNCTION
+void WBReadCache(const DvceArray5D<Real> &c, const int var, const int m, const int k,
+                 const int j, const int i, Real &q0_im1, Real &q0_imh, Real &q0_i,
+                 Real &q0_iph, Real &q0_ip1) {
+  const int b = 5*var;
+  q0_im1 = c(m,b,k,j,i); q0_imh = c(m,b+1,k,j,i); q0_i = c(m,b+2,k,j,i);
+  q0_iph = c(m,b+3,k,j,i); q0_ip1 = c(m,b+4,k,j,i);
+}
+
+//! \fn Real WBT
+//! \brief the cached temperature of a cell (Hydro/MHD::wtemp, solved once by ConsToPrim),
+//! or -1 ("unknown, solve for it") when the array is not allocated -- an ideal gas.
+KOKKOS_INLINE_FUNCTION
+Real WBT(const DvceArray4D<Real> &w, const int m, const int k, const int j, const int i) {
+  return (w.extent_int(0) > 0) ? w(m,k,j,i) : -1.0;
+}
+
 //----------------------------------------------------------------------------------------
 //! \fn int WBOptionNumber
 //! \brief maps the WBOption enum onto the integer branch used below, resolving `adaptive`
@@ -101,7 +123,8 @@ enum WBVar {wb_dens = 0, wb_eint = 1, wb_pres = 2};
 KOKKOS_INLINE_FUNCTION
 int WBOptionNumber(const EOS_Data &eos, const WBOption wb_option,
                    const Real d_m, const Real e_m, const Real d_p, const Real e_p,
-                   const Real d_i, const Real e_i, const Real tguess = -1.0) {
+                   const Real d_i, const Real e_i, const Real tguess = -1.0,
+                   const Real t_mc = -1.0, const Real t_pc = -1.0) {
   switch (wb_option) {
     case WBOption::isodensity:
       return 0;
@@ -112,9 +135,10 @@ int WBOptionNumber(const EOS_Data &eos, const WBOption wb_option,
     case WBOption::polytropic:
       return 3;
     case WBOption::adaptive: {
-      Real t_m = eos.Temperature(d_m, e_m, tguess);
-      Real t_p = eos.Temperature(d_p, e_p, tguess);
-      Real t_i = eos.Temperature(d_i, e_i, tguess);
+      // the three temperatures are ConsToPrim's cached ones when the caller has them
+      Real t_m = (t_mc > 0.0) ? t_mc : eos.Temperature(d_m, e_m, tguess);
+      Real t_p = (t_pc > 0.0) ? t_pc : eos.Temperature(d_p, e_p, tguess);
+      Real t_i = (tguess > 0.0) ? tguess : eos.Temperature(d_i, e_i);
       Real dlnt = log(t_p/t_m);
       Real dlnd = log(d_p/d_m);
       // entropy difference across the stencil, in units of c_v, evaluated at cell i. All
@@ -214,7 +238,13 @@ Real WBEnergyFromEnthalpy(const EOS_Data &eos, const Real d, const Real h,
 KOKKOS_INLINE_FUNCTION
 void WBAdvance(const EOS_Data &eos, const int wb_opt, const Real d_c, const Real e_c,
                const Real dphi, Real &d, Real &e, Real &t, const Real tguess = -1.0,
-               const Real dlntdphi = 0.0) {
+               const Real dlntdphi = 0.0, const Real tstart = -1.0,
+               const Real t_cc = -1.0) {
+  // `tstart` is the temperature of the state the segment starts from and `t_cc` that of
+  // the coefficient cell, when the caller KNOWS them (the anchor's cached T, the
+  // interface T the previous segment handed back, the neighbour's cached T).  Either
+  // non-positive means "solve for it".  With both known, the isothermal, polytropic and
+  // isodensity branches do no root find at all.
   if (wb_opt == 3) {
     // LOCAL POLYTROPE: T follows the gradient the stencil actually has,
     //     ln T(Phi) = ln T_0 + a (Phi - Phi_0),   a = dlntdphi,
@@ -230,7 +260,7 @@ void WBAdvance(const EOS_Data &eos, const int wb_opt, const Real d_c, const Real
     // The segment is integrated with the midpoint rule (coefficient re-evaluated at the
     // half-way state), so the O(dphi^2) truncation of a single frozen-coefficient
     // exponential does not eat the order the closure just bought.
-    const Real t0 = eos.Temperature(d, e, tguess);
+    const Real t0 = (tstart > 0.0) ? tstart : eos.Temperature(d, e, tguess);
     const Real p0 = eos.Pressure(d, e, t0);
     const Real k1 = -(d + dlntdphi*p0*eos.ChiT(d, e, t0))/(p0*eos.ChiRho(d, e, t0));
     const Real dm = d*exp(0.5*k1*dphi);
@@ -243,7 +273,8 @@ void WBAdvance(const EOS_Data &eos, const int wb_opt, const Real d_c, const Real
     e = eos.EnergyFromTemperature(d, t);
   } else if (wb_opt == 0) {
     // ISODENSITY: d is fixed, and dp/dPhi = -d integrates exactly over the segment.
-    Real p = eos.Pressure(d, e, eos.Temperature(d, e, tguess)) - d_c*dphi;
+    Real p = eos.Pressure(d, e, (tstart > 0.0) ? tstart : eos.Temperature(d, e, tguess))
+             - d_c*dphi;
     e = eos.EnergyFromPressure(d, p, t);
   } else if (wb_opt == 1) {
     // ISOTHERMAL: dln d/dPhi = -d/(p chi_rho), frozen at the coefficient cell, is exact
@@ -252,10 +283,10 @@ void WBAdvance(const EOS_Data &eos, const int wb_opt, const Real d_c, const Real
     // where the constraint already holds -- no separate reference has to be threaded
     // through.  For an ideal gas EnergyFromTemperature makes e scale with d, reproducing
     // the exp() branch of getWBerho exactly.
-    Real t_ref = eos.Temperature(d, e, tguess);
+    Real t_ref = (tstart > 0.0) ? tstart : eos.Temperature(d, e, tguess);
     // p and chi_rho are both wanted at the coefficient cell, so its temperature is solved
     // for once and handed to both
-    Real t_c = eos.Temperature(d_c, e_c, t_ref);
+    Real t_c = (t_cc > 0.0) ? t_cc : eos.Temperature(d_c, e_c, t_ref);
     Real p_c = eos.Pressure(d_c, e_c, t_c);
     d *= exp(-d_c*dphi/(p_c*eos.ChiRho(d_c, e_c, t_c)));
     e = eos.EnergyFromTemperature(d, t_ref);
@@ -277,10 +308,10 @@ void WBAdvance(const EOS_Data &eos, const int wb_opt, const Real d_c, const Real
     // (b) ENERGY, from the exact invariant h + Phi = const.  The density step carries the
     // error of freezing Gamma_1; projecting the energy onto the invariant keeps that error
     // out of the pressure-gravity balance entirely.
-    Real t_h = eos.Temperature(d, e, tguess);
+    Real t_h = (tstart > 0.0) ? tstart : eos.Temperature(d, e, tguess);
     Real h_target = eos.Enthalpy(d, e, t_h) - dphi;
     // Gamma_1 and p are both wanted at the coefficient cell; one temperature serves both
-    Real t_c = eos.Temperature(d_c, e_c, t_h);
+    Real t_c = (t_cc > 0.0) ? t_cc : eos.Temperature(d_c, e_c, t_h);
     Real g1 = eos.Gamma1(d_c, e_c, t_c);
     Real p_c = eos.Pressure(d_c, e_c, t_c);
     Real gm1 = g1 - 1.0;
@@ -313,7 +344,10 @@ void WBBackgroundStencil(const EOS_Data &eos, const WBOption wb_option,
                          const Real phi_im1, const Real phi_imh, const Real phi_i,
                          const Real phi_iph, const Real phi_ip1,
                          WBState &q0_im1, WBState &q0_imh, WBState &q0_i,
-                         WBState &q0_iph, WBState &q0_ip1) {
+                         WBState &q0_iph, WBState &q0_ip1,
+                         const Real t_im1c = -1.0, const Real t_ic = -1.0,
+                         const Real t_ip1c = -1.0) {
+  // t_*c: the cached temperatures of the three cells (WBT), or -1 to solve.
   // The four advanced points get their pressure from the temperature WBAdvance() hands
   // back, not from a fresh root find: the states have only just been constructed and
   // their temperature is already known. Only the anchor, which is not advanced, still
@@ -326,10 +360,10 @@ void WBBackgroundStencil(const EOS_Data &eos, const WBOption wb_option,
   // all four segment advances, and the Newton loop inside the isentropic branch. Before
   // this, each of those bracketed from scratch, which on the dhj outer boundary meant
   // dozens of cold-start root finds per ghost cell per stage.
-  Real t_i = eos.Temperature(rho_i, e_i);
+  Real t_i = (t_ic > 0.0) ? t_ic : eos.Temperature(rho_i, e_i);
 
   int wb_opt = WBOptionNumber(eos, wb_option, rho_im1, e_im1, rho_ip1, e_ip1, rho_i, e_i,
-                              t_i);
+                              t_i, t_im1c, t_ip1c);
   // the local polytrope's gradient, d ln T / d Phi across the whole stencil.  Two more
   // inversions, seeded by the anchor's temperature.  Zero when the stencil does not
   // span any potential (a tangential sweep), which reduces the branch to isothermal.
@@ -337,8 +371,8 @@ void WBBackgroundStencil(const EOS_Data &eos, const WBOption wb_option,
   if (wb_opt == 3) {
     const Real dphis = phi_ip1 - phi_im1;
     if (fabs(dphis) > 0.0) {
-      const Real t_m = eos.Temperature(rho_im1, e_im1, t_i);
-      const Real t_p = eos.Temperature(rho_ip1, e_ip1, t_i);
+      const Real t_m = (t_im1c > 0.0) ? t_im1c : eos.Temperature(rho_im1, e_im1, t_i);
+      const Real t_p = (t_ip1c > 0.0) ? t_ip1c : eos.Temperature(rho_ip1, e_ip1, t_i);
       dlntdphi = log(t_p/t_m)/dphis;
     }
   }
@@ -349,21 +383,25 @@ void WBBackgroundStencil(const EOS_Data &eos, const WBOption wb_option,
 
   // inner half cells, from the anchor, using the anchor's own coefficient
   Real dm = rho_i, em = e_i, tm = -1.0;
-  WBAdvance(eos, wb_opt, rho_i, e_i, phi_imh - phi_i, dm, em, tm, t_i, dlntdphi);
+  WBAdvance(eos, wb_opt, rho_i, e_i, phi_imh - phi_i, dm, em, tm, t_i, dlntdphi,
+            t_i, t_i);
   q0_imh.d = dm; q0_imh.e = em; q0_imh.p = eos.Pressure(dm, em, tm);
 
   Real dp = rho_i, ep = e_i, tp = -1.0;
-  WBAdvance(eos, wb_opt, rho_i, e_i, phi_iph - phi_i, dp, ep, tp, t_i, dlntdphi);
+  WBAdvance(eos, wb_opt, rho_i, e_i, phi_iph - phi_i, dp, ep, tp, t_i, dlntdphi,
+            t_i, t_i);
   q0_iph.d = dp; q0_iph.e = ep; q0_iph.p = eos.Pressure(dp, ep, tp);
 
   // outer half cells, continuing from the interfaces, now with the neighbour speaking for
   // its own half cell -- the same two-segment walk the ideal-gas closed forms perform
   // these two continue FROM the interfaces, whose temperatures the calls above just
   // handed back in tm/tp -- a closer guess still than the anchor's
-  WBAdvance(eos, wb_opt, rho_im1, e_im1, phi_im1 - phi_imh, dm, em, tm, tm, dlntdphi);
+  WBAdvance(eos, wb_opt, rho_im1, e_im1, phi_im1 - phi_imh, dm, em, tm, tm, dlntdphi,
+            tm, t_im1c);
   q0_im1.d = dm; q0_im1.e = em; q0_im1.p = eos.Pressure(dm, em, tm);
 
-  WBAdvance(eos, wb_opt, rho_ip1, e_ip1, phi_ip1 - phi_iph, dp, ep, tp, tp, dlntdphi);
+  WBAdvance(eos, wb_opt, rho_ip1, e_ip1, phi_ip1 - phi_iph, dp, ep, tp, tp, dlntdphi,
+            tp, t_ip1c);
   q0_ip1.d = dp; q0_ip1.e = ep; q0_ip1.p = eos.Pressure(dp, ep, tp);
   return;
 }

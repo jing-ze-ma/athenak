@@ -207,6 +207,7 @@ class MHD {
   bool use_etotgrav = false;   // flag to enable etotgrav
   DvceFaceFld4D<Real> phi0;     // face-centered gravitational potential energy
   DvceArray4D<Real> phicc0;     // cell-centered gravitational potential energy
+  DvceArray5D<Real> wbq0;       // per-cell well-balanced background (BuildWBCache)
     
   // following used for well-balanced scheme
   bool use_wellbalance_static = false;    // flag to enable static wellbalance
@@ -303,6 +304,7 @@ class MHD {
     
     // evaluate the background pressure from the static background state
     void SetWbBackgroundPressure();
+    void BuildWBCache(const int jl, const int ju, const int kl, const int ku);
     void RemoveWbFlux(const DvceFaceFld4D<Real> &pfacewb, DvceFaceFld5D<Real> &flx);
     void AddWbVar(const DvceArray5D<Real> &varwb, DvceArray5D<Real> &var);
     void RemoveWbVar(const DvceArray5D<Real> &varwb, DvceArray5D<Real> &var);
@@ -378,6 +380,7 @@ class MHD {
            const EOS_Data &eos, const WBOption wb_option, const bool use_wb_rho,
            const int m, const int k, const int j,
            const int il, const int iu, const DvceArray5D<Real> &q, const DvceArray4D<Real> &phicc, const DvceArray4D<Real> &phi,
+         const DvceArray5D<Real> &wbq0,
            ScrArray2D<Real> &ql, ScrArray2D<Real> &qr) {
           
         const auto wb_option_ = wb_option;
@@ -388,11 +391,9 @@ class MHD {
           if (n == (IEN) || (n == (IDN) && use_wb_rho)) {
             par_for_inner(member, il, iu, [&](const int i) {
               Real q0_im1, q0_ip1, q0_imh, q0_iph, q0_i;
-              getWBq0(eos, wb_option, (n == (IEN)) ? WBVar::wb_eint : WBVar::wb_dens,
-                       q(m,IDN,k,j,i-1),q(m,IDN,k,j,i),q(m,IDN,k,j,i+1),
-                       q(m,IEN,k,j,i-1),q(m,IEN,k,j,i),q(m,IEN,k,j,i+1),
-                       phicc(m,k,j,i-1),phi(m,k,j,i),phicc(m,k,j,i),phi(m,k,j,i+1),phicc(m,k,j,i+1),
-                       q0_im1, q0_imh, q0_i, q0_iph, q0_ip1);
+              WBReadCache(wbq0, (n == (IEN)) ? WBVar::wb_eint : WBVar::wb_dens,
+                     m, k, j, i,
+                     q0_im1, q0_imh, q0_i, q0_iph, q0_ip1);
                 
               Real q1_im1 = q(m,n,k,j,i-1) - q0_im1;
               Real q1_i = q(m,n,k,j,i) - q0_i;
@@ -661,18 +662,15 @@ class MHD {
          const int m, const int k, const int j, const int il, const int iu,
          const DvceArray5D<Real> &q, const DvceArray5D<Real> &qd,
          const DvceArray4D<Real> &phicc, const DvceArray4D<Real> &phi,
+         const DvceArray5D<Real> &wbq0,
          ScrArray2D<Real> &dl, ScrArray2D<Real> &dr) {
       int nvar = qd.extent_int(1);
       for (int n=0; n<nvar; ++n) {
         if (n == (IDPR)) {
           par_for_inner(member, il, iu, [&](const int i) {
             Real q0_im1, q0_imh, q0_i, q0_iph, q0_ip1;
-            getWBq0(eos, wb_option, WBVar::wb_pres,
-                    q(m,IDN,k,j,i-1),q(m,IDN,k,j,i),q(m,IDN,k,j,i+1),
-                    q(m,IEN,k,j,i-1),q(m,IEN,k,j,i),q(m,IEN,k,j,i+1),
-                    phicc(m,k,j,i-1),phi(m,k,j,i),phicc(m,k,j,i),
-                    phi(m,k,j,i+1),phicc(m,k,j,i+1),
-                    q0_im1, q0_imh, q0_i, q0_iph, q0_ip1);
+            WBReadCache(wbq0, WBVar::wb_pres, m, k, j, i,
+                     q0_im1, q0_imh, q0_i, q0_iph, q0_ip1);
 
             Real q1_im1 = qd(m,n,k,j,i-1) - q0_im1;
             Real q1_i   = qd(m,n,k,j,i)   - q0_i;
@@ -814,7 +812,10 @@ class MHD {
          const WBOption wb_option,
          const bool use_wb_rho, const bool use_wellbalance_dynamic, const bool use_wb_x1,
          const int m, const int k, const int j,
-         const int il, const int iu, const DvceArray5D<Real> &q, const DvceArray2D<Real> &xv, const DvceArray2D<Real> &xf, const DvceArray4D<Real> &phicc, const DvceArray4D<Real> &phi, const bool hyd,
+         const int il, const int iu, const DvceArray5D<Real> &q,
+         const DvceArray2D<Real> &xv, const DvceArray2D<Real> &xf,
+         const DvceArray4D<Real> &phicc, const DvceArray4D<Real> &phi,
+         const DvceArray5D<Real> &wbq0, const bool hyd,
         ScrArray2D<Real> &ql, ScrArray2D<Real> &qr) {
       Real gamma = eos.gamma;
       int nvar = q.extent_int(1);
@@ -832,10 +833,8 @@ class MHD {
               Real dxR = x_ip1-x_i;
                 
               Real q0_im1, q0_ip1, q0_imh, q0_iph, q0_i;
-              getWBq0(eos, wb_option, (n == (IEN)) ? WBVar::wb_eint : WBVar::wb_dens,
-                     q(m,IDN,k,j,i-1),q(m,IDN,k,j,i),q(m,IDN,k,j,i+1),
-                     q(m,IEN,k,j,i-1),q(m,IEN,k,j,i),q(m,IEN,k,j,i+1),
-                     phicc(m,k,j,i-1),phi(m,k,j,i),phicc(m,k,j,i),phi(m,k,j,i+1),phicc(m,k,j,i+1),
+              WBReadCache(wbq0, (n == (IEN)) ? WBVar::wb_eint : WBVar::wb_dens,
+                     m, k, j, i,
                      q0_im1, q0_imh, q0_i, q0_iph, q0_ip1);
                 
               Real q1_im1 = q(m,n,k,j,i-1) - q0_im1;
@@ -979,6 +978,7 @@ class MHD {
          const DvceArray5D<Real> &q, const DvceArray5D<Real> &qd,
          const DvceArray2D<Real> &xv, const DvceArray2D<Real> &xf,
          const DvceArray4D<Real> &phicc, const DvceArray4D<Real> &phi,
+         const DvceArray5D<Real> &wbq0,
          ScrArray2D<Real> &dl, ScrArray2D<Real> &dr) {
       int nvar = qd.extent_int(1);
       for (int n=0; n<nvar; ++n) {
@@ -995,12 +995,8 @@ class MHD {
 
           if (n == (IDPR) && use_wellbalance_dynamic && use_wb_x1) {
             Real q0_im1, q0_imh, q0_i, q0_iph, q0_ip1;
-            getWBq0(eos, wb_option, WBVar::wb_pres,
-                    q(m,IDN,k,j,i-1),q(m,IDN,k,j,i),q(m,IDN,k,j,i+1),
-                    q(m,IEN,k,j,i-1),q(m,IEN,k,j,i),q(m,IEN,k,j,i+1),
-                    phicc(m,k,j,i-1),phi(m,k,j,i),phicc(m,k,j,i),
-                    phi(m,k,j,i+1),phicc(m,k,j,i+1),
-                    q0_im1, q0_imh, q0_i, q0_iph, q0_ip1);
+            WBReadCache(wbq0, WBVar::wb_pres, m, k, j, i,
+                     q0_im1, q0_imh, q0_i, q0_iph, q0_ip1);
 
             Real q1_im1 = qd(m,n,k,j,i-1) - q0_im1;
             Real q1_i   = qd(m,n,k,j,i)   - q0_i;
@@ -1050,10 +1046,11 @@ class MHD {
                 const Real &phi_im1, const Real &phi_imh, const Real &phi_i,
                 const Real &phi_iph, const Real &phi_ip1,
                 Real &q0_im1, Real &q0_imh, Real &q0_i, Real &q0_iph,
-                Real &q0_ip1) const {
+                Real &q0_ip1, const Real t_im1c = -1.0,
+                const Real t_ic = -1.0, const Real t_ip1c = -1.0) const {
       getWBq0(eos, wb_option, var, rho_im1, rho_i, rho_ip1, e_im1, e_i, e_ip1,
               phi_im1, phi_imh, phi_i, phi_iph, phi_ip1,
-              q0_im1, q0_imh, q0_i, q0_iph, q0_ip1);
+              q0_im1, q0_imh, q0_i, q0_iph, q0_ip1, t_im1c, t_ic, t_ip1c);
     }
 
     KOKKOS_INLINE_FUNCTION
@@ -1062,12 +1059,14 @@ class MHD {
                 const Real &e_im1, const Real &e_i, const Real &e_ip1,
                 const Real &phi_im1, const Real &phi_imh, const Real &phi_i,
                 const Real &phi_iph, const Real &phi_ip1,
-                Real &q0_im1, Real &q0_imh, Real &q0_i, Real &q0_iph, Real &q0_ip1) {
+                Real &q0_im1, Real &q0_imh, Real &q0_i, Real &q0_iph, Real &q0_ip1,
+                const Real t_im1c = -1.0, const Real t_ic = -1.0,
+                const Real t_ip1c = -1.0) {
       if (eos.IsGeneral()) {
         WBState s_im1, s_imh, s_i, s_iph, s_ip1;
         WBBackgroundStencil(eos, wb_option, rho_im1, rho_i, rho_ip1, e_im1, e_i, e_ip1,
                             phi_im1, phi_imh, phi_i, phi_iph, phi_ip1,
-                            s_im1, s_imh, s_i, s_iph, s_ip1);
+                            s_im1, s_imh, s_i, s_iph, s_ip1, t_im1c, t_ic, t_ip1c);
         if (var == WBVar::wb_dens) {
           q0_im1 = s_im1.d; q0_imh = s_imh.d; q0_i = s_i.d;
           q0_iph = s_iph.d; q0_ip1 = s_ip1.d;

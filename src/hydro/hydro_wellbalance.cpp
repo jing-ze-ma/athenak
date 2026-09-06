@@ -233,4 +233,69 @@ void Hydro::RemoveWbVar(const DvceArray5D<Real> &varwb, DvceArray5D<Real> &var) 
 //  return;
 //}
         
+
+//----------------------------------------------------------------------------------------
+//! \fn void Hydro::BuildWBCache
+//! \brief walks the local hydrostatic background once per cell and stage and stores the
+//! five stencil states of its density, energy and pressure channels in wbq0.
+//!
+//! Before this, the walk was repeated for the density channel, the energy channel, the
+//! pressure channel and once more in the problem generator's source term -- four full
+//! stencils per cell per stage, each of them, under a tabulated EOS, a dozen table
+//! evaluations.  The reconstruction and the source now read this cache instead.  Built
+//! for i in [is-1, ie+1] (the x1 sweep reconstructs those cells) over the rows the sweep
+//! covers (passed in); the
+//! stencil reaches one cell further, which is inside the ghost zone.  ConsToPrim's cached
+//! temperature seeds every inversion, so the isothermal, polytropic and isodensity
+//! backgrounds do no root find at all.  Bitwise identical to the uncached path: the same
+//! calls in the same order, just once.
+
+void Hydro::BuildWBCache(const int jl, const int ju, const int kl, const int ku) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto eos = peos->eos_data;
+  const WBOption wbo = wb_option;
+  const bool gen = eos.IsGeneral();
+  auto &w0_ = w0;
+  auto &phicc = phicc0;
+  auto &phi = phi0.x1f;
+  auto &wt = wtemp;
+  auto &c = wbq0;
+  par_for("wbcache", DevExeSpace(), 0, nmb1, kl, ku, jl, ju, is-1, ie+1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    if (gen) {
+      // ONE walk gives all three channels
+      WBState s_im1, s_imh, s_i, s_iph, s_ip1;
+      WBBackgroundStencil(eos, wbo,
+              w0_(m,IDN,k,j,i-1), w0_(m,IDN,k,j,i), w0_(m,IDN,k,j,i+1),
+              w0_(m,IEN,k,j,i-1), w0_(m,IEN,k,j,i), w0_(m,IEN,k,j,i+1),
+              phicc(m,k,j,i-1), phi(m,k,j,i), phicc(m,k,j,i), phi(m,k,j,i+1),
+              phicc(m,k,j,i+1), s_im1, s_imh, s_i, s_iph, s_ip1,
+              WBT(wt,m,k,j,i-1), WBT(wt,m,k,j,i), WBT(wt,m,k,j,i+1));
+      c(m,0,k,j,i) = s_im1.d; c(m,1,k,j,i) = s_imh.d; c(m,2,k,j,i) = s_i.d;
+      c(m,3,k,j,i) = s_iph.d; c(m,4,k,j,i) = s_ip1.d;
+      c(m,5,k,j,i) = s_im1.e; c(m,6,k,j,i) = s_imh.e; c(m,7,k,j,i) = s_i.e;
+      c(m,8,k,j,i) = s_iph.e; c(m,9,k,j,i) = s_ip1.e;
+      c(m,10,k,j,i) = s_im1.p; c(m,11,k,j,i) = s_imh.p; c(m,12,k,j,i) = s_i.p;
+      c(m,13,k,j,i) = s_iph.p; c(m,14,k,j,i) = s_ip1.p;
+    } else {
+      // ideal gas: the closed forms, density and energy; pressure is (gamma-1) e
+      for (int var=0; var<2; ++var) {
+        Real a, b, cc, d, e;
+        getWBq0(eos, wbo, var,
+                w0_(m,IDN,k,j,i-1), w0_(m,IDN,k,j,i), w0_(m,IDN,k,j,i+1),
+                w0_(m,IEN,k,j,i-1), w0_(m,IEN,k,j,i), w0_(m,IEN,k,j,i+1),
+                phicc(m,k,j,i-1), phi(m,k,j,i), phicc(m,k,j,i), phi(m,k,j,i+1),
+                phicc(m,k,j,i+1), a, b, cc, d, e);
+        c(m,5*var,k,j,i) = a; c(m,5*var+1,k,j,i) = b; c(m,5*var+2,k,j,i) = cc;
+        c(m,5*var+3,k,j,i) = d; c(m,5*var+4,k,j,i) = e;
+      }
+      const Real gm1 = eos.gamma - 1.0;
+      for (int q=0; q<5; ++q) c(m,10+q,k,j,i) = gm1*c(m,5+q,k,j,i);
+    }
+  });
+  return;
+}
+
 } // namespace hydro

@@ -3050,6 +3050,7 @@ void SourceFunc(Mesh *pm, Real bdt) {
     bool use_etotgrav = false;
     bool use_wellbalance_static = false;
     bool use_wellbalance_dynamic = false;
+    DvceArray5D<Real> wbq0_;    // the well-balanced background cache (BuildWBCache)
     Real gamma;
     EOS_Data eos;
     if (pmbp->phydro != nullptr) {
@@ -3060,6 +3061,7 @@ void SourceFunc(Mesh *pm, Real bdt) {
       use_etotgrav = pmbp->phydro->use_etotgrav;
       use_wellbalance_static = pmbp->phydro->use_wellbalance_static;
       use_wellbalance_dynamic = pmbp->phydro->use_wellbalance_dynamic;
+      wbq0_ = pmbp->phydro->wbq0;
       phi0_x1f = pmbp->phydro->phi0.x1f;
       phicc0 = pmbp->phydro->phicc0;
       w0wb = pmbp->phydro->w0wb;
@@ -3071,6 +3073,7 @@ void SourceFunc(Mesh *pm, Real bdt) {
       use_etotgrav = pmbp->pmhd->use_etotgrav;
       use_wellbalance_static = pmbp->pmhd->use_wellbalance_static;
       use_wellbalance_dynamic = pmbp->pmhd->use_wellbalance_dynamic;
+      wbq0_ = pmbp->pmhd->wbq0;
       phi0_x1f = pmbp->pmhd->phi0.x1f;
       phicc0 = pmbp->pmhd->phicc0;
       w0wb = pmbp->pmhd->w0wb;
@@ -3189,17 +3192,9 @@ void SourceFunc(Mesh *pm, Real bdt) {
           // returns pressure directly, not an energy to be multiplied by (gamma-1).
           Real pl,pr,dum1,dum2,dum3;
           if (pmbp->phydro != nullptr) {
-              pmbp->phydro->getWBq0(eos, WBVar::wb_pres,
-                w0(m,IDN,k,j,i-1),w0(m,IDN,k,j,i),w0(m,IDN,k,j,i+1),
-                w0(m,IEN,k,j,i-1),w0(m,IEN,k,j,i),w0(m,IEN,k,j,i+1),
-                phicc0(m,k,j,i-1),phi0_x1f(m,k,j,i),phicc0(m,k,j,i),phi0_x1f(m,k,j,i+1),phicc0(m,k,j,i+1),
-                dum1,pl,dum2,pr,dum3);
+              WBReadCache(wbq0_, WBVar::wb_pres, m, k, j, i, dum1, pl, dum2, pr, dum3);
           } else if (pmbp->pmhd != nullptr) {
-              pmbp->pmhd->getWBq0(eos, WBVar::wb_pres,
-                w0(m,IDN,k,j,i-1),w0(m,IDN,k,j,i),w0(m,IDN,k,j,i+1),
-                w0(m,IEN,k,j,i-1),w0(m,IEN,k,j,i),w0(m,IEN,k,j,i+1),
-                phicc0(m,k,j,i-1),phi0_x1f(m,k,j,i),phicc0(m,k,j,i),phi0_x1f(m,k,j,i+1),phicc0(m,k,j,i+1),
-                dum1,pl,dum2,pr,dum3);
+              WBReadCache(wbq0_, WBVar::wb_pres, m, k, j, i, dum1, pl, dum2, pr, dum3);
           }
           src = bdt*(area_r*(pr-p)+area_l*(p-pl))/vol;
         }

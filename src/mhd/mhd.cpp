@@ -221,6 +221,10 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
       Kokkos::realloc(phi0.x1f, nmb, ncells3, ncells2, ncells1+1);
       Kokkos::realloc(phi0.x2f, nmb, ncells3, ncells2+1, ncells1);
       Kokkos::realloc(phi0.x3f, nmb, ncells3+1, ncells2, ncells1);
+    if (use_wellbalance_dynamic) {
+      // 5 stencil states x 3 channels (d, e, p) of the local hydrostatic background
+      Kokkos::realloc(wbq0, nmb, 15, ncells3, ncells2, ncells1);
+    }
     }
     if (use_wellbalance_dynamic) {
       // select well-balanced scheme assumption (no default).  Test for compatibility of options
