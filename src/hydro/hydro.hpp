@@ -1026,24 +1026,27 @@ class Hydro {
           break;
         case WBOption::polytropic:
           {
-            // LOCAL POLYTROPE, closed form for a gamma law, T = p/d = (gamma-1) e/d:
-            //   ln T = ln T_i + a (Phi - Phi_i),  a from the two neighbours,
-            //   dln d/dPhi = -1/T - a
-            //   =>  ln d = ln d_i - a dPhi - (1 - e^{-a dPhi})/(a T_i)
-            // which is the isothermal exp() branch when a -> 0.  Walked in two segments
-            // like the other branches: anchor -> interface with the anchor's T, then
+            // LOCAL POLYTROPE, closed form for a gamma law, T = p/d = (gamma-1) e/d.
+            // Walked in two segments like the other branches: anchor -> interface, then
             // interface -> neighbour continuing from the interface state.
+            // T LINEAR in Phi with slope b from the two neighbours is the exact
+            // polytrope:  d(dT)/dPhi = -d  =>  dln d/dPhi = -(1 + b)/T
+            //             =>  d = d_0 (T/T_0)^(-(1+b)/b)
+            // (isothermal, b -> 0: d = d_0 exp(-dPhi/T_0)); e = d T/(gamma-1).
             const Real dphis = phi_ip1 - phi_im1;
-            const Real a = (fabs(dphis) > 0.0) ?
-                log((e_ip1/rho_ip1)/(e_im1/rho_im1))/dphis : 0.0;
-            const Real t_i = (gamma-1.0)*e_i/rho_i;
+            const Real gm1_ = gamma - 1.0;
+            const Real b = (fabs(dphis) > 0.0) ?
+                gm1_*(e_ip1/rho_ip1 - e_im1/rho_im1)/dphis : 0.0;
+            const Real t_i = gm1_*e_i/rho_i;
             auto step = [&](const Real d0, const Real t0, const Real dphi,
                             Real &d1, Real &t1) {
-              const Real x = a*dphi;
-              // (1 - exp(-x))/a, with its a -> 0 limit dphi (1 - x/2)
-              const Real f = (fabs(x) > 1.0e-8) ? -expm1(-x)/a : dphi*(1.0 - 0.5*x);
-              d1 = d0*exp(-x - f/t0);
-              t1 = t0*exp(x);
+              t1 = t0 + b*dphi;
+              if (fabs(b) > 1.0e-10 && t1 > 0.0) {
+                d1 = d0*pow(t1/t0, -(1.0 + b)/b);
+              } else {
+                t1 = t0;
+                d1 = d0*exp(-dphi/t0);
+              }
             };
             Real d_imh, t_imh, d_iph, t_iph, d_im1, t_im1, d_ip1, t_ip1;
             step(rho_i, t_i, phi_imh - phi_i, d_imh, t_imh);

@@ -252,8 +252,8 @@ Real WBEnergyFromEnthalpy(const EOS_Data &eos, const Real d, const Real h,
 //! path bit for bit -- and the whole verification of this file rests on that.  A
 //! temperature is safe precisely because Pressure(d,e,t) IGNORES t under a gamma law.
 
-//! `dlntdphi` is the local logarithmic temperature gradient with respect to the
-//! potential, d ln T / d Phi, measured across the stencil by WBBackgroundStencil(); it is
+//! `dlntdphi` is the local temperature gradient with respect to the potential, dT/dPhi,
+//! measured across the stencil by WBBackgroundStencil(); it is
 //! only read by the POLYTROPIC branch (wb_opt == 3) and defaults to zero, which makes
 //! that branch the isothermal one.
 
@@ -297,13 +297,13 @@ void WBAdvance(const EOS_Data &eos, const int wb_opt, const Real d_c, const Real
     if (p_end != nullptr) {*p_end = pe;}
   } else if (wb_opt == 3) {
     // LOCAL POLYTROPE: T follows the gradient the stencil actually has,
-    //     ln T(Phi) = ln T_0 + a (Phi - Phi_0),   a = dlntdphi,
+    //     T(Phi) = T_0 + a (Phi - Phi_0),   a = dlntdphi = dT/dPhi,
     // and the density follows hydrostatic balance with p = p(d,T):
     //     dp = p chi_rho dln d + p chi_T dln T  and  dp/dPhi = -d
-    //     =>  dln d/dPhi = -(d + a p chi_T)/(p chi_rho).
-    // For a gamma law this is the polytrope d ~ T^n with n = -1/(a T) - 1, which contains
-    // the isothermal (a = 0) and isentropic (a = -(gamma-1)/gamma) backgrounds as
-    // members -- so a radiative profile, which is neither, is reproduced to one order
+    //     =>  dln d/dPhi = -(d + (a/T) p chi_T)/(p chi_rho).
+    // For a gamma law this is EXACTLY the polytrope d ~ T^n, n = -(1 + a)/a, which
+    // contains the isothermal (a = 0) and isentropic (a = -(gamma-1)/gamma) backgrounds
+    // as members -- so a radiative profile, which is neither, is reproduced to one order
     // higher than either of them.  The walk stays in (d,T): the coefficients p, chi_rho
     // and chi_T at a known temperature are direct table reads, no root find, which is
     // what makes this branch cheaper than the isentropic one despite the midpoint step.
@@ -313,13 +313,13 @@ void WBAdvance(const EOS_Data &eos, const int wb_opt, const Real d_c, const Real
     const Real t0 = (tstart > 0.0) ? tstart : eos.Temperature(d, e, tguess);
     Real e0, p0, chir0, chit0, em, pm, chirm, chitm, pe, chire, chite;
     eos.ThermoAt(d, t0, e0, p0, chir0, chit0, dum);
-    const Real k1 = -(d + dlntdphi*p0*chit0)/(p0*chir0);
+    const Real k1 = -(d + (dlntdphi/t0)*p0*chit0)/(p0*chir0);
     const Real dm = d*exp(0.5*k1*dphi);
-    const Real tm = t0*exp(0.5*dlntdphi*dphi);
+    const Real tm = t0 + 0.5*dlntdphi*dphi;
     eos.ThermoAt(dm, tm, em, pm, chirm, chitm, dum);
-    const Real k2 = -(dm + dlntdphi*pm*chitm)/(pm*chirm);
+    const Real k2 = -(dm + (dlntdphi/tm)*pm*chitm)/(pm*chirm);
     d *= exp(k2*dphi);
-    t = t0*exp(dlntdphi*dphi);
+    t = t0 + dlntdphi*dphi;
     eos.ThermoAt(d, t, e, pe, chire, chite, dum);
     if (p_end != nullptr) {*p_end = pe;}
   } else if (wb_opt == 0) {
@@ -422,7 +422,7 @@ void WBBackgroundStencil(const EOS_Data &eos, const WBOption wb_option,
 
   int wb_opt = WBOptionNumber(eos, wb_option, rho_im1, e_im1, rho_ip1, e_ip1, rho_i, e_i,
                               t_i, t_im1c, t_ip1c);
-  // the local polytrope's gradient, d ln T / d Phi across the whole stencil.  Two more
+  // the local polytrope's gradient, dT/dPhi across the whole stencil.  Two more
   // inversions, seeded by the anchor's temperature.  Zero when the stencil does not
   // span any potential (a tangential sweep), which reduces the branch to isothermal.
   Real dlntdphi = 0.0;
@@ -431,7 +431,7 @@ void WBBackgroundStencil(const EOS_Data &eos, const WBOption wb_option,
     if (fabs(dphis) > 0.0) {
       const Real t_m = (t_im1c > 0.0) ? t_im1c : eos.Temperature(rho_im1, e_im1, t_i);
       const Real t_p = (t_ip1c > 0.0) ? t_ip1c : eos.Temperature(rho_ip1, e_ip1, t_i);
-      dlntdphi = log(t_p/t_m)/dphis;
+      dlntdphi = (t_p - t_m)/dphis;   // dT/dPhi: T LINEAR in Phi, the true polytrope
     }
   }
 
@@ -449,7 +449,7 @@ void WBBackgroundStencil(const EOS_Data &eos, const WBOption wb_option,
     Real ei_t, p_i, chir, chit;
     eos.ThermoAt(rho_i, t_i, ei_t, p_i, chir, chit, dum_cv);
     q0_i.p = p_i;
-    const Real a = dlntdphi;
+    const Real a = dlntdphi;   // dT/dPhi
     // one segment: predictor with the start coefficient k0, ONE table evaluation at the
     // predicted end point (its e, p and chi's), trapezoidal corrector on ln d with the
     // end coefficient, and e, p moved to the corrected density with the evaluated
@@ -459,18 +459,18 @@ void WBBackgroundStencil(const EOS_Data &eos, const WBOption wb_option,
     auto seg = [&](const Real d0, const Real t0, const Real k0, const Real dph,
                    Real &d1, Real &t1, Real &e1, Real &p1, Real &k1) {
       const Real dpred = d0*exp(k0*dph);
-      t1 = t0*exp(a*dph);
+      t1 = t0 + a*dph;
       Real ep, pp, cr, ct;
       eos.ThermoAt(dpred, t1, ep, pp, cr, ct, dum_cv);
-      const Real kend = -(dpred + a*pp*ct)/(pp*cr);
+      const Real kend = -(dpred + (a/t1)*pp*ct)/(pp*cr);
       d1 = d0*exp(0.5*(k0 + kend)*dph);
       // r - 1 is O(dphi^2), so first order in it is enough (and saves a pow)
       const Real r = d1/dpred;
       p1 = pp*(1.0 + cr*(r - 1.0));
       e1 = ep*r;
-      k1 = -(d1 + a*p1*ct)/(p1*cr);
+      k1 = -(d1 + (a/t1)*p1*ct)/(p1*cr);
     };
-    const Real k0 = -(rho_i + a*p_i*chit)/(p_i*chir);
+    const Real k0 = -(rho_i + (a/t_i)*p_i*chit)/(p_i*chir);
     Real d1, t1, e1, p1, k1, d2, t2, e2, p2, k2;
     seg(rho_i, t_i, k0, phi_imh - phi_i, d1, t1, e1, p1, k1);
     q0_imh.d = d1; q0_imh.e = e1; q0_imh.p = p1;
