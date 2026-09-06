@@ -51,6 +51,18 @@
 //!       the resistive EMF on every edge is checked against eta J.  <mhd>, resistivity
 //!       optional.
 //!
+//!   13 = BLAST ON THE SPHERE (cs_test iprob=12).  A geodesic cap of overpressure of
+//!       half-angle blast_ang about zhat (blast_dir = 2, ON the pole) or xhat (blast_dir
+//!       = 0, on the equator), uniform in radius, so the shock runs tangentially.  No
+//!       exact solution: the GATE is rotational invariance -- the two placements are the
+//!       same physics, and every difference between them is grid imprinting, the pole's
+//!       in particular.  With <mhd> a uniform field b0 along the blast axis is added
+//!       (zhat or xhat), so both placements stay one rotation apart and the problem is
+//!       axisymmetric about the blast axis; with resistivity the same eta in both.  The
+//!       finalizer bins the state in (radial cell, angular distance from the blast
+//!       centre) and writes <basename>-blast.dat for the two runs to be compared.  The
+//!       radial ghosts hold the AMBIENT state.  <hydro> or <mhd>.
+//!
 //! iprob 3, 11 and 12 report L1 / Linf errors against the exact state at the end of
 //!       the run
 //! (pgen_final_func), split into the POLAR rows and the interior, and append them to
@@ -69,6 +81,7 @@
 #include <cstdint>
 #include <iostream>
 #include <string>
+#include <vector>
 
 #include "athena.hpp"
 #if MPI_PARALLEL_ENABLED
@@ -93,6 +106,8 @@
 namespace {
 Real sp_b0 = 1.0, sp_p0 = 1.0, sp_d0 = 1.0, sp_omega = 0.2, sp_alpha = 1.0;
 Real sp_eta = 0.0, sp_bc_tfrac = 0.0, sp_svol = 1.0, sp_b0c = 0.3, sp_e0 = 0.0;
+Real sp_bl_ang = 0.3, sp_bl_p = 10.0;
+int sp_bl_dir = 2;
 int sp_bdir = 2, sp_probe_done = 0, sp_iprob = 8, sp_axis = 2;
 
 //----------------------------------------------------------------------------------------
@@ -117,6 +132,20 @@ void RigidRotState(Real r, Real th, Real ph, int axis, Real d0, Real p0, Real om
     rcyl2 = SQR(r*sin(th));
   }
   p = p0 + 0.5*d0*omega*omega*rcyl2;
+}
+
+//! face averages of the uniform field b0 xhat: B_r = b0 sin(th) cos(ph) over the r-face
+//! [thl,thr]x[phl,phr], B_th = b0 cos(th) cos(ph) on the theta-face at thl over
+//! [phl,phr], B_ph = -b0 sin(ph) on the phi-face at phl; each the exact area mean
+KOKKOS_INLINE_FUNCTION
+void UniformXFaces(Real b0, Real thl, Real thr, Real phl, Real phr,
+                   Real &b1, Real &b2, Real &b3) {
+  const Real isin2 = 0.5*(thr - thl) - 0.25*(sin(2.0*thr) - sin(2.0*thl));
+  const Real isin  = cos(thl) - cos(thr);
+  const Real cph = (sin(phr) - sin(phl))/(phr - phl);
+  b1 = b0*(isin2/isin)*cph;
+  b2 = b0*cos(thl)*cph;
+  b3 = -b0*sin(phl);
 }
 
 //! face averages of the uniform axial field b0 zhat: B_r over [thl, thr], B_th at thl
@@ -262,6 +291,7 @@ void SPTestFluxProbe(Mesh *pm, const Real bdt);
 void SPTestRadialBC(Mesh *pm);
 void SPTestHistory(HistoryData *pdata, Mesh *pm);
 void SPTestErrors(ParameterInput *pin, Mesh *pm);
+void SPTestBlastProfile(ParameterInput *pin, Mesh *pm);
 
 //----------------------------------------------------------------------------------------
 //! \fn ProblemGenerator::UserProblem
@@ -272,7 +302,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   const int iprob = pin->GetOrAddInteger("problem", "iprob", 8);
   const bool is_mhd = (pmbp->pmhd != nullptr);
   if (!pmy_mesh_->use_spherical_polar
-      || (pmbp->pmhd == nullptr && pmbp->phydro == nullptr) || (iprob != 3 && !is_mhd)) {
+      || (pmbp->pmhd == nullptr && pmbp->phydro == nullptr)
+      || (iprob != 3 && iprob != 13 && !is_mhd)) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
               << "sp_test requires mesh/use_spherical_polar = true and an <mhd> block"
               << " (iprob = 3 also accepts <hydro>)" << std::endl;
@@ -288,7 +319,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // field direction: bdir = 2 (default) is b0 zhat, bdir = 0 is b0 xhat.  For xhat the
   // face averages are B_r = b0 <sin th> cos-average, B_th = b0 cos(th_f) <cos ph>,
   // B_ph = -b0 sin(ph_f); each is the exact area-weighted mean over its face.
-  const int bdir = pin->GetOrAddInteger("problem", "bdir", 2);
+  // iprob 13: the blast axis (2 = zhat, on the pole; 0 = xhat, on the equator) is also
+  // the field direction, so it takes over bdir
+  sp_bl_dir = pin->GetOrAddInteger("problem", "blast_dir", 2);
+  sp_bl_ang = pin->GetOrAddReal("problem", "blast_ang", 0.3);
+  sp_bl_p = pin->GetOrAddReal("problem", "blast_p", 10.0);
+  const int bdir = (iprob == 13) ? sp_bl_dir : pin->GetOrAddInteger("problem", "bdir", 2);
   // iprob 3: rotation axis, 2 = zhat (default), 0 = xhat (flow through the poles; HYDRO
   // only: with a field it would need B along xhat, which the MHD branch does not build)
   const int axis = pin->GetOrAddInteger("problem", "rot_axis", 2);
@@ -326,6 +362,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   }
   if (iprob == 12) {
     sp_eta = (pmbp->pmhd->presist != nullptr) ? pmbp->pmhd->presist->eta_ohm_const : 0.0;
+  }
+  if (iprob == 13) {
+    user_bcs_func = SPTestRadialBC;
+    pgen_final_func = SPTestBlastProfile;
   }
   if (iprob == 3 || iprob == 11 || iprob == 12) {
     user_bcs_func = SPTestRadialBC;
@@ -412,23 +452,16 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         if (i < n1 && k < n3) { b0f.x2f(m,k,j,i) = b2; }
         if (i < n1 && j < n2) { b0f.x3f(m,k,j,i) = 0.0; }
       } else {
-        // B = b0 xhat: B_r = b0 sin(th) cos(ph), B_th = b0 cos(th) cos(ph),
-        // B_ph = -b0 sin(ph)
-        if (j < n2 && k < n3) {
-          // <sin th>_area = Int sin^2 / Int sin ; <cos ph> = (sin pr - sin pl)/(pr - pl)
-          const Real isin2 = 0.5*(tr - tl) - 0.25*(sin(2.0*tr) - sin(2.0*tl));
-          const Real isin  = cos(tl) - cos(tr);
-          b0f.x1f(m,k,j,i) = b0*(isin2/isin)*(sin(pr) - sin(pl))/(pr - pl);
-        }
-        if (i < n1 && k < n3) {
-          b0f.x2f(m,k,j,i) = b0*cos(tl)*(sin(pr) - sin(pl))/(pr - pl);
-        }
-        if (i < n1 && j < n2) {
-          b0f.x3f(m,k,j,i) = -b0*sin(pl);
-        }
+        Real b1, b2, b3;
+        UniformXFaces(b0, tl, tr, pl, pr, b1, b2, b3);
+        if (j < n2 && k < n3) { b0f.x1f(m,k,j,i) = b1; }
+        if (i < n1 && k < n3) { b0f.x2f(m,k,j,i) = b2; }
+        if (i < n1 && j < n2) { b0f.x3f(m,k,j,i) = b3; }
       }
     });
   }
+  const int bldir = sp_bl_dir;
+  const Real blang = sp_bl_ang, blp = sp_bl_p;
 
   auto &u0 = is_mhd ? pmbp->pmhd->u0 : pmbp->phydro->u0;
   DvceArray5D<Real> bcc;
@@ -443,6 +476,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     Real dn = d0, pgas = p0, vth = 0.0, vphi = 0.0;
     if (iprob == 3) RigidRotState(r, th, ph, axis, d0, p0, omega, vth, vphi, pgas);
     if (iprob == 12) pgas = TorPressure(r, th, 0.0, p0, b0c, 0.0, gm1);
+    if (iprob == 13) {
+      const Real cd = (bldir == 2) ? cos(th) : sin(th)*cos(ph);
+      if (acos(fmin(1.0, fmax(-1.0, cd))) < blang) pgas = blp;
+    }
     u0(m,IDN,k,j,i) = dn;
     u0(m,IM1,k,j,i) = 0.0;
     u0(m,IM2,k,j,i) = dn*vth;
@@ -522,6 +559,7 @@ void SPTestRadialBC(Mesh *pm) {
   const Real d0 = sp_d0, p0 = sp_p0, omega = sp_omega, alpha = sp_alpha;
   const int axis = sp_axis;
   const Real b0c = sp_b0c, eta_ = sp_eta;
+  const int bldir_ = sp_bl_dir;
   const Real tbc = pm->time + sp_bc_tfrac*pm->dt;
   const Real decay = (iprob == 11) ? FFDecay(sp_eta, alpha, tbc) : 1.0;
   const Real b0 = sp_b0*decay;
@@ -570,6 +608,16 @@ void SPTestRadialBC(Mesh *pm) {
           b0f.x3f(m,k,j,i) = TorFaceB3(rl, rr, tl, tr, b0c);
           if (j == n2-1) { b0f.x2f(m,k,j+1,i) = 0.0; }
           if (k == n3-1) { b0f.x3f(m,k+1,j,i) = TorFaceB3(rl, rr, tl, tr, b0c); }
+        } else if (iprob == 13 && bldir_ == 0) {
+          Real b1, b2, b3;
+          UniformXFaces(b0, tl, tr, pl, pr, b1, b2, b3);
+          b0f.x1f(m,k,j,ifc) = b1;
+          b0f.x2f(m,k,j,i) = b2;
+          b0f.x3f(m,k,j,i) = b3;
+          if (j == n2-1) {
+            b0f.x2f(m,k,j+1,i) = b0*cos(tr)*(sin(pr) - sin(pl))/(pr - pl);
+          }
+          if (k == n3-1) { b0f.x3f(m,k+1,j,i) = -b0*sin(pr); }
         } else {
           Real b1, b2;
           UniformZFaces(b0, tl, tr, b1, b2);
@@ -678,6 +726,7 @@ void SPTestHistory(HistoryData *pdata, Mesh *pm) {
   const Real d0 = sp_d0, p0 = sp_p0, omega = sp_omega, alpha = sp_alpha;
   const int axis = sp_axis;
   const Real b0c = sp_b0c, eta_ = sp_eta;
+  const int bldir_ = sp_bl_dir;
   const Real decay = (iprob == 11) ? FFDecay(sp_eta, alpha, pm->time) : 1.0;
   const Real b0 = sp_b0*decay;
   const Real p11 = FFPressure(p0, sp_b0, gm1, decay);
@@ -802,6 +851,7 @@ void SPTestErrors(ParameterInput *pin, Mesh *pm) {
   const Real d0 = sp_d0, p0 = sp_p0, omega = sp_omega, alpha = sp_alpha;
   const int axis = sp_axis;
   const Real b0c = sp_b0c, eta_ = sp_eta;
+  const int bldir_ = sp_bl_dir;
   const Real decay = (iprob == 11) ? FFDecay(sp_eta, alpha, pm->time) : 1.0;
   const Real b0 = sp_b0*decay;
   const Real p11 = FFPressure(p0, sp_b0, gm1, decay);
@@ -1142,4 +1192,86 @@ void SPTestFluxProbe(Mesh *pm, const Real bdt) {
                 (f2(m,IM1,k,jf,i)-exr)*a2(m,k,jf,i)/vol(m,k,jc,i)/(0.5*b0*b0/x1f(m,i)),
                 (f2(m,IM2,k,jf,i)-exth)*a2(m,k,jf,i)/vol(m,k,jc,i)/(0.5*b0*b0/x1f(m,i)));
   }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn SPTestBlastProfile
+//! \brief iprob 13: bin the state in (radial cell, angular distance from the blast
+//! centre) and write <basename>-blast.dat: i  dbin  volume  <rho>  <p>  <|v|>  <|B|>.  The two
+//! placements (pole, equator) are compared with vis/python or the session script.
+
+void SPTestBlastProfile(ParameterInput *pin, Mesh *pm) {
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  const bool is_mhd = (pmbp->pmhd != nullptr);
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie;
+  const int js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const Real gm1 = (is_mhd ? pmbp->pmhd->peos->eos_data.gamma
+                           : pmbp->phydro->peos->eos_data.gamma) - 1.0;
+  auto &w0d = is_mhd ? pmbp->pmhd->w0 : pmbp->phydro->w0;
+  auto w0 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), w0d);
+  auto vol = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->volume);
+  auto x2v = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->x2v);
+  auto x3v = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->x3v);
+  DvceArray5D<Real> bccd;
+  if (is_mhd) bccd = pmbp->pmhd->bcc0;
+  auto bcc = Kokkos::create_mirror_view_and_copy(HostMemSpace(), bccd);
+  // the radial index is global only for a single block in r (the polar MHD constraint);
+  // bins in i use the block-local index offset by the block's position in the mesh
+  const int nx1 = pm->mesh_indcs.nx1, nbin = pm->mesh_indcs.nx2;
+  const Real dbin = M_PI/nbin;
+  const int nrow = nx1*nbin, ncol = 5;
+  std::vector<Real> acc(nrow*ncol, 0.0);
+  auto &size = pmbp->pmb->mb_size;
+  size.sync_host();
+  const Real x1min_mesh = pm->mesh_size.x1min, x1max_mesh = pm->mesh_size.x1max;
+  for (int m=0; m<pmbp->nmb_thispack; ++m) {
+    // block offset in i, from its x1min (uniform radial grid assumed for the binning)
+    const int ioff = static_cast<int>(std::lround((size.h_view(m).x1min - x1min_mesh)
+                                      /(x1max_mesh - x1min_mesh)*nx1));
+    for (int k=ks; k<=ke; ++k) {
+      for (int j=js; j<=je; ++j) {
+        const Real th = x2v(m,j), ph = x3v(m,k);
+        const Real cd = (sp_bl_dir == 2) ? std::cos(th) : std::sin(th)*std::cos(ph);
+        int b = static_cast<int>(std::acos(std::fmin(1.0, std::fmax(-1.0, cd)))/dbin);
+        if (b >= nbin) b = nbin - 1;
+        for (int i=is; i<=ie; ++i) {
+          const int row = (ioff + i - is)*nbin + b;
+          const Real v = vol(m,k,j,i);
+          const Real vabs = std::sqrt(SQR(w0(m,IVX,k,j,i)) + SQR(w0(m,IVY,k,j,i))
+                                      + SQR(w0(m,IVZ,k,j,i)));
+          Real babs = 0.0;
+          if (is_mhd) {
+            babs = std::sqrt(SQR(bcc(m,IBX,k,j,i)) + SQR(bcc(m,IBY,k,j,i))
+                             + SQR(bcc(m,IBZ,k,j,i)));
+          }
+          acc[row*ncol+0] += v;
+          acc[row*ncol+1] += v*w0(m,IDN,k,j,i);
+          acc[row*ncol+2] += v*gm1*w0(m,IEN,k,j,i);
+          acc[row*ncol+3] += v*vabs;
+          acc[row*ncol+4] += v*babs;
+        }
+      }
+    }
+  }
+#if MPI_PARALLEL_ENABLED
+  MPI_Allreduce(MPI_IN_PLACE, acc.data(), nrow*ncol, MPI_ATHENA_REAL, MPI_SUM,
+                MPI_COMM_WORLD);
+#endif
+  if (global_variable::my_rank != 0) return;
+  std::string fname = pin->GetString("job", "basename") + "-blast.dat";
+  FILE *pfile = std::fopen(fname.c_str(), "w");
+  if (pfile == nullptr) return;
+  std::fprintf(pfile, "# blast_dir %d t %.6e  columns: i dbin vol rho p |v| |B|\n",
+               sp_bl_dir, pm->time);
+  for (int r=0; r<nrow; ++r) {
+    const Real v = acc[r*ncol];
+    if (v <= 0.0) continue;
+    std::fprintf(pfile, "%d %d %.6e %.8e %.8e %.8e %.8e\n", r/nbin, r%nbin, v,
+                 acc[r*ncol+1]/v, acc[r*ncol+2]/v, acc[r*ncol+3]/v, acc[r*ncol+4]/v);
+  }
+  std::fclose(pfile);
+  std::printf("### SP BLAST PROFILE written to %s (blast_dir %d)\n", fname.c_str(),
+              sp_bl_dir);
 }

@@ -1,0 +1,71 @@
+# Spherical polar, BLAST ON THE SPHERE (sp_test iprob = 13; twin of cs_test iprob 12).
+# A geodesic cap of overpressure blast_p, half-angle blast_ang, uniform in radius, on a
+# uniform medium at rest, so the shock runs tangentially.  No exact solution: the GATE is
+# rotational invariance.  Run it twice, blast_dir = 2 (the cap ON the north pole) and
+# blast_dir = 0 (the cap on the equator at phi = 0): the same physics, and every difference
+# between the two <basename>-blast.dat profiles (binned in radial cell and angular distance
+# from the blast centre) is grid imprinting.  With the <mhd> block a uniform field b0 along
+# the blast axis is added (zhat or xhat), which keeps the two placements one rotation apart;
+# add ohmic_resistivity for the resistive version (same eta in both).  The radial ghosts
+# hold the ambient state.  Build with -D PROBLEM=sp_test.
+
+<comment>
+problem = spherical polar blast across the pole
+
+<job>
+basename = sp_blast_mhd
+
+<mesh>
+nghost   = 2
+nx1      = 8            # RADIAL
+x1min    = 1.0
+x1max    = 2.0
+ix1_bc   = user         # ambient state in the radial ghosts
+ox1_bc   = user
+nx2      = 16           # theta, full 0..pi
+x2min    = -1.0
+x2max    = -1.0
+ix2_bc   = polar
+ox2_bc   = polar
+nx3      = 32           # phi, full 2 pi
+x3min    = -1.0
+x3max    = -1.0
+ix3_bc   = periodic
+ox3_bc   = periodic
+use_spherical_polar = true
+use_polar_boundary  = true
+
+<meshblock>
+nx1      = 8
+nx2      = 16
+nx3      = 16           # the polar boundary needs an EVEN number of blocks around phi
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim       = 1000000
+tlim       = 0.2
+ndiag      = 100
+
+<mhd>
+eos               = ideal
+reconstruct       = plm
+rsolver           = hlld
+gamma             = 1.666667
+ohmic_resistivity = constant
+eta_ohm_const     = 1e-12   # 1e-12: ideal MHD; 0.05: the resistive version
+
+<problem>
+iprob     = 13
+d0        = 1.0
+p0        = 1.0
+b0        = 1.0         # uniform field along the blast axis (ambient beta = 2)
+blast_dir = 2           # 2 = cap on the pole (zhat); 0 = on the equator (xhat)
+blast_ang = 0.3         # half-angle of the cap [rad]
+blast_p   = 10.0
+user_bcs  = true
+
+<output1>
+file_type = hst
+dt        = 0.01
