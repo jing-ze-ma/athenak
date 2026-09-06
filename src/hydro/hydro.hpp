@@ -1020,6 +1020,42 @@ class Hydro {
             wb_option_num = 2;
           }
           break;
+        case WBOption::polytropic:
+          {
+            // LOCAL POLYTROPE, closed form for a gamma law, T = p/d = (gamma-1) e/d:
+            //   ln T = ln T_i + a (Phi - Phi_i),  a from the two neighbours,
+            //   dln d/dPhi = -1/T - a
+            //   =>  ln d = ln d_i - a dPhi - (1 - e^{-a dPhi})/(a T_i)
+            // which is the isothermal exp() branch when a -> 0.  Walked in two segments
+            // like the other branches: anchor -> interface with the anchor's T, then
+            // interface -> neighbour continuing from the interface state.
+            const Real dphis = phi_ip1 - phi_im1;
+            const Real a = (fabs(dphis) > 0.0) ?
+                log((e_ip1/rho_ip1)/(e_im1/rho_im1))/dphis : 0.0;
+            const Real t_i = (gamma-1.0)*e_i/rho_i;
+            auto step = [&](const Real d0, const Real t0, const Real dphi,
+                            Real &d1, Real &t1) {
+              const Real x = a*dphi;
+              // (1 - exp(-x))/a, with its a -> 0 limit dphi (1 - x/2)
+              const Real f = (fabs(x) > 1.0e-8) ? -expm1(-x)/a : dphi*(1.0 - 0.5*x);
+              d1 = d0*exp(-x - f/t0);
+              t1 = t0*exp(x);
+            };
+            Real d_imh, t_imh, d_iph, t_iph, d_im1, t_im1, d_ip1, t_ip1;
+            step(rho_i, t_i, phi_imh - phi_i, d_imh, t_imh);
+            step(rho_i, t_i, phi_iph - phi_i, d_iph, t_iph);
+            step(d_imh, t_imh, phi_im1 - phi_imh, d_im1, t_im1);
+            step(d_iph, t_iph, phi_ip1 - phi_iph, d_ip1, t_ip1);
+            if (n == (IEN)) {
+              q0_i = e_i;
+              q0_imh = d_imh*t_imh*igm1; q0_iph = d_iph*t_iph*igm1;
+              q0_im1 = d_im1*t_im1*igm1; q0_ip1 = d_ip1*t_ip1*igm1;
+            } else {
+              q0_i = rho_i;
+              q0_imh = d_imh; q0_iph = d_iph; q0_im1 = d_im1; q0_ip1 = d_ip1;
+            }
+            return;
+          }
         case WBOption::adaptive:
           {
             Real dTdivT = fabs((e_ip1/rho_ip1 - e_im1/rho_im1) / (e_i/rho_i));

@@ -233,6 +233,8 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
         wb_option = WBOption::isentropic;
       } else if (wb_opt.compare("adaptive") == 0) {
         wb_option = WBOption::adaptive;
+      } else if (wb_opt.compare("polytropic") == 0) {
+        wb_option = WBOption::polytropic;
       // Error for anything else
       } else {
         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__

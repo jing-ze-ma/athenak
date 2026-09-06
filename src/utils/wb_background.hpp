@@ -109,6 +109,8 @@ int WBOptionNumber(const EOS_Data &eos, const WBOption wb_option,
       return 1;
     case WBOption::isentropic:
       return 2;
+    case WBOption::polytropic:
+      return 3;
     case WBOption::adaptive: {
       Real t_m = eos.Temperature(d_m, e_m, tguess);
       Real t_p = eos.Temperature(d_p, e_p, tguess);
@@ -204,10 +206,42 @@ Real WBEnergyFromEnthalpy(const EOS_Data &eos, const Real d, const Real h,
 //! path bit for bit -- and the whole verification of this file rests on that.  A
 //! temperature is safe precisely because Pressure(d,e,t) IGNORES t under a gamma law.
 
+//! `dlntdphi` is the local logarithmic temperature gradient with respect to the
+//! potential, d ln T / d Phi, measured across the stencil by WBBackgroundStencil(); it is
+//! only read by the POLYTROPIC branch (wb_opt == 3) and defaults to zero, which makes
+//! that branch the isothermal one.
+
 KOKKOS_INLINE_FUNCTION
 void WBAdvance(const EOS_Data &eos, const int wb_opt, const Real d_c, const Real e_c,
-               const Real dphi, Real &d, Real &e, Real &t, const Real tguess = -1.0) {
-  if (wb_opt == 0) {
+               const Real dphi, Real &d, Real &e, Real &t, const Real tguess = -1.0,
+               const Real dlntdphi = 0.0) {
+  if (wb_opt == 3) {
+    // LOCAL POLYTROPE: T follows the gradient the stencil actually has,
+    //     ln T(Phi) = ln T_0 + a (Phi - Phi_0),   a = dlntdphi,
+    // and the density follows hydrostatic balance with p = p(d,T):
+    //     dp = p chi_rho dln d + p chi_T dln T  and  dp/dPhi = -d
+    //     =>  dln d/dPhi = -(d + a p chi_T)/(p chi_rho).
+    // For a gamma law this is the polytrope d ~ T^n with n = -1/(a T) - 1, which contains
+    // the isothermal (a = 0) and isentropic (a = -(gamma-1)/gamma) backgrounds as
+    // members -- so a radiative profile, which is neither, is reproduced to one order
+    // higher than either of them.  The walk stays in (d,T): the coefficients p, chi_rho
+    // and chi_T at a known temperature are direct table reads, no root find, which is
+    // what makes this branch cheaper than the isentropic one despite the midpoint step.
+    // The segment is integrated with the midpoint rule (coefficient re-evaluated at the
+    // half-way state), so the O(dphi^2) truncation of a single frozen-coefficient
+    // exponential does not eat the order the closure just bought.
+    const Real t0 = eos.Temperature(d, e, tguess);
+    const Real p0 = eos.Pressure(d, e, t0);
+    const Real k1 = -(d + dlntdphi*p0*eos.ChiT(d, e, t0))/(p0*eos.ChiRho(d, e, t0));
+    const Real dm = d*exp(0.5*k1*dphi);
+    const Real tm = t0*exp(0.5*dlntdphi*dphi);
+    const Real em = eos.EnergyFromTemperature(dm, tm);
+    const Real pm = eos.Pressure(dm, em, tm);
+    const Real k2 = -(dm + dlntdphi*pm*eos.ChiT(dm, em, tm))/(pm*eos.ChiRho(dm, em, tm));
+    d *= exp(k2*dphi);
+    t = t0*exp(dlntdphi*dphi);
+    e = eos.EnergyFromTemperature(d, t);
+  } else if (wb_opt == 0) {
     // ISODENSITY: d is fixed, and dp/dPhi = -d integrates exactly over the segment.
     Real p = eos.Pressure(d, e, eos.Temperature(d, e, tguess)) - d_c*dphi;
     e = eos.EnergyFromPressure(d, p, t);
@@ -296,6 +330,18 @@ void WBBackgroundStencil(const EOS_Data &eos, const WBOption wb_option,
 
   int wb_opt = WBOptionNumber(eos, wb_option, rho_im1, e_im1, rho_ip1, e_ip1, rho_i, e_i,
                               t_i);
+  // the local polytrope's gradient, d ln T / d Phi across the whole stencil.  Two more
+  // inversions, seeded by the anchor's temperature.  Zero when the stencil does not
+  // span any potential (a tangential sweep), which reduces the branch to isothermal.
+  Real dlntdphi = 0.0;
+  if (wb_opt == 3) {
+    const Real dphis = phi_ip1 - phi_im1;
+    if (fabs(dphis) > 0.0) {
+      const Real t_m = eos.Temperature(rho_im1, e_im1, t_i);
+      const Real t_p = eos.Temperature(rho_ip1, e_ip1, t_i);
+      dlntdphi = log(t_p/t_m)/dphis;
+    }
+  }
 
   q0_i.d = rho_i;
   q0_i.e = e_i;
@@ -303,21 +349,21 @@ void WBBackgroundStencil(const EOS_Data &eos, const WBOption wb_option,
 
   // inner half cells, from the anchor, using the anchor's own coefficient
   Real dm = rho_i, em = e_i, tm = -1.0;
-  WBAdvance(eos, wb_opt, rho_i, e_i, phi_imh - phi_i, dm, em, tm, t_i);
+  WBAdvance(eos, wb_opt, rho_i, e_i, phi_imh - phi_i, dm, em, tm, t_i, dlntdphi);
   q0_imh.d = dm; q0_imh.e = em; q0_imh.p = eos.Pressure(dm, em, tm);
 
   Real dp = rho_i, ep = e_i, tp = -1.0;
-  WBAdvance(eos, wb_opt, rho_i, e_i, phi_iph - phi_i, dp, ep, tp, t_i);
+  WBAdvance(eos, wb_opt, rho_i, e_i, phi_iph - phi_i, dp, ep, tp, t_i, dlntdphi);
   q0_iph.d = dp; q0_iph.e = ep; q0_iph.p = eos.Pressure(dp, ep, tp);
 
   // outer half cells, continuing from the interfaces, now with the neighbour speaking for
   // its own half cell -- the same two-segment walk the ideal-gas closed forms perform
   // these two continue FROM the interfaces, whose temperatures the calls above just
   // handed back in tm/tp -- a closer guess still than the anchor's
-  WBAdvance(eos, wb_opt, rho_im1, e_im1, phi_im1 - phi_imh, dm, em, tm, tm);
+  WBAdvance(eos, wb_opt, rho_im1, e_im1, phi_im1 - phi_imh, dm, em, tm, tm, dlntdphi);
   q0_im1.d = dm; q0_im1.e = em; q0_im1.p = eos.Pressure(dm, em, tm);
 
-  WBAdvance(eos, wb_opt, rho_ip1, e_ip1, phi_ip1 - phi_iph, dp, ep, tp, tp);
+  WBAdvance(eos, wb_opt, rho_ip1, e_ip1, phi_ip1 - phi_iph, dp, ep, tp, tp, dlntdphi);
   q0_ip1.d = dp; q0_ip1.e = ep; q0_ip1.p = eos.Pressure(dp, ep, tp);
   return;
 }
