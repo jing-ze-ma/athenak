@@ -22,6 +22,8 @@
 #include "mhd/mhd.hpp"
 #include "eos/eos.hpp"
 #include "conduction.hpp"
+#include "utils/rosseland.hpp"
+#include "coordinates/coordinates.hpp"
 #include "units/units.hpp"
 
 // VanLeer Limiter which takes 2 slopes
@@ -69,7 +71,8 @@ Conduction::Conduction(std::string block, MeshBlockPack *pp, ParameterInput *pin
     // Check for valid type
     if ((iso_cond_type.compare("constant") != 0) &&
         (iso_cond_type.compare("spitzer") != 0) &&
-        (iso_cond_type.compare("spitzer_limited") != 0)) {
+        (iso_cond_type.compare("spitzer_limited") != 0) &&
+        (iso_cond_type.compare("radiative") != 0)) {
       std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__ << std::endl
                 << "Invalid choice for isotropic thermal conduction type" << std::endl;
       std::exit(EXIT_FAILURE);
@@ -80,6 +83,22 @@ Conduction::Conduction(std::string block, MeshBlockPack *pp, ParameterInput *pin
     }
     kappa_iso_limit = pin->GetOrAddReal(block,"kappa_iso_limit",
                       static_cast<Real>(std::numeric_limits<float>::max()));
+    if (iso_cond_type.compare("radiative") == 0) {
+      if (pp->punit == nullptr) {
+        std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
+                  << std::endl << "radiative conduction needs a <units> block"
+                  << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      rad_met = pin->GetOrAddReal(block,"rad_met",0.0);
+      // pressure cut in bar; the flux through the wall in erg/cm^2/s
+      rad_pcut = pin->GetOrAddReal(block,"rad_pcut_bar",0.0)*1.0e6
+                 /pp->punit->pressure_cgs();
+      rad_flux_inner = pin->GetOrAddReal(block,"rad_flux_inner",0.0)
+                       /(pp->punit->pressure_cgs()*pp->punit->velocity_cgs());
+      rad_kappa_fac = pin->GetOrAddReal(block,"rad_kappa_fac",1.0);
+      rad_flux_limit = pin->GetOrAddBoolean(block,"rad_flux_limit",true);
+    }
   }
 }
 
@@ -101,7 +120,131 @@ void Conduction::AddHeatFluxes(const DvceArray5D<Real> &w0, const EOS_Data &eos,
   } else if ((iso_cond_type.compare("spitzer") == 0) ||
              (iso_cond_type.compare("spitzer_limited") == 0)) {
     AddIsotropicHeatFluxSpitzerCond(w0, eos, flx);
+  } else if (iso_cond_type.compare("radiative") == 0) {
+    AddIsotropicHeatFluxRadiative(w0, eos, flx);
   }
+  return;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn Real RadiativeKappa
+//! \brief the radiative conductivity 16 sigma T^3/(3 kappa_R rho) in cgs, T in K, p in
+//! dyn/cm^2, rho in g/cm^3
+
+KOKKOS_INLINE_FUNCTION
+Real RadiativeKappa(const Real tk, const Real pcgs, const Real rhocgs, const Real met,
+                    const Real kfac) {
+  const Real sigma_sb = 5.670374419e-5;
+  const Real kr = kfac*RosselandFreedman2014(tk, pcgs, met);
+  return 16.0*sigma_sb*tk*tk*tk/(3.0*kr*rhocgs);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void AddIsotropicHeatFluxRadiative()
+//! \brief the diffusion approximation to radiative transport in the optically thick
+//! layers: heat flux -kappa_rad grad T on every face at or below the pressure cut, with
+//! a smooth saturation at the free-streaming limit sigma T^4, and the imposed internal
+//! flux
+//! through the inner x1 wall.  On a curvilinear grid the radial gradient uses the
+//! centroid spacing; the tangential gradients are negligible in an atmosphere and use
+//! the cell widths.
+
+void Conduction::AddIsotropicHeatFluxRadiative(const DvceArray5D<Real> &w0,
+                                               const EOS_Data &eos,
+                                               DvceFaceFld5D<Real> &flx) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  int is = indcs.is, ie = indcs.ie;
+  int js = indcs.js, je = indcs.je;
+  int ks = indcs.ks, ke = indcs.ke;
+  int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto size = pmy_pack->pmb->mb_size;
+  auto &mb_bcs = pmy_pack->pmb->mb_bcs;
+  const bool multi_d = pmy_pack->pmesh->multi_d;
+  const bool three_d = pmy_pack->pmesh->three_d;
+  const bool curv = pmy_pack->pmesh->use_spherical_polar
+                    || pmy_pack->pmesh->use_cubed_sphere;
+  auto &x1v_ = pmy_pack->pcoord->x1v;
+  auto &dx2_ = pmy_pack->pcoord->dx2;
+  auto &dx3_ = pmy_pack->pcoord->dx3;
+  Real gm1 = eos.gamma-1.0;
+  const bool gen = eos.IsGeneral();
+  auto &wtemp_ = (my_block.compare("mhd") == 0) ? pmy_pack->pmhd->wtemp
+                                                : pmy_pack->phydro->wtemp;
+  auto &wder_ = (my_block.compare("mhd") == 0) ? pmy_pack->pmhd->wder
+                                               : pmy_pack->phydro->wder;
+  const Real temp_unit = pmy_pack->punit->temperature_cgs();
+  const Real pres_unit = pmy_pack->punit->pressure_cgs();
+  const Real dens_unit = pmy_pack->punit->density_cgs();
+  const Real len_unit  = pmy_pack->punit->length_cgs();
+  const Real eflx_unit = pres_unit*pmy_pack->punit->velocity_cgs();   // erg/cm^2/s
+  const Real met = rad_met, pcut = rad_pcut, kfac = rad_kappa_fac, fin = rad_flux_inner;
+  const bool limit = rad_flux_limit;
+  const Real sigma_sb = 5.670374419e-5;
+
+  // the heat flux across one face in CODE units, from the two adjacent cell states and
+  // the centroid distance dl (code units); zero above the pressure cut
+  auto face_flux = [=] (const Real tl, const Real tr, const Real pl, const Real pr,
+                        const Real dl_, const Real dr_, const Real dl) {
+    const Real pf = 0.5*(pl + pr);
+    if (pf < pcut) return 0.0;
+    const Real tk = 0.5*(tl + tr)*temp_unit;
+    const Real kap = RadiativeKappa(tk, pf*pres_unit, 0.5*(dl_ + dr_)*dens_unit, met,
+                                    kfac);
+    Real f = -kap*(tr - tl)*temp_unit/(dl*len_unit);     // erg/cm^2/s, positive outward
+    if (limit) {
+      // saturate smoothly at the free-streaming flux sigma T^4: 0.3 % at F = 0.08 sigma
+      // T^4,
+      // where the diffusion approximation is still exact, and never above sigma T^4
+      const Real ffree = sigma_sb*tk*tk*tk*tk;
+      f /= sqrt(1.0 + SQR(f/ffree));
+    }
+    return f/eflx_unit;
+  };
+
+  auto &flx1 = flx.x1f;
+  par_for("radcond1", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    // the imposed internal flux through the inner wall replaces the gradient there
+    if (i == is && fin != 0.0 &&
+        (mb_bcs.d_view(m,BoundaryFace::inner_x1) == BoundaryFlag::user ||
+         mb_bcs.d_view(m,BoundaryFace::inner_x1) == BoundaryFlag::reflect)) {
+      flx1(m,IEN,k,j,i) += fin;
+      return;
+    }
+    const Real tl = (gen ? wtemp_(m,k,j,i-1) : w0(m,IEN,k,j,i-1)/w0(m,IDN,k,j,i-1)*gm1);
+    const Real tr = (gen ? wtemp_(m,k,j,i) : w0(m,IEN,k,j,i)/w0(m,IDN,k,j,i)*gm1);
+    const Real pl = (gen ? wder_(m,IDPR,k,j,i-1) : w0(m,IEN,k,j,i-1)*gm1);
+    const Real pr = (gen ? wder_(m,IDPR,k,j,i) : w0(m,IEN,k,j,i)*gm1);
+    const Real dl = curv ? (x1v_(m,i) - x1v_(m,i-1)) : size.d_view(m).dx1;
+    flx1(m,IEN,k,j,i) += face_flux(tl, tr, pl, pr, w0(m,IDN,k,j,i-1), w0(m,IDN,k,j,i),
+                                   dl);
+  });
+  if (!multi_d) return;
+
+  auto &flx2 = flx.x2f;
+  par_for("radcond2", DevExeSpace(), 0, nmb1, ks, ke, js, je+1, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const Real tl = (gen ? wtemp_(m,k,j-1,i) : w0(m,IEN,k,j-1,i)/w0(m,IDN,k,j-1,i)*gm1);
+    const Real tr = (gen ? wtemp_(m,k,j,i) : w0(m,IEN,k,j,i)/w0(m,IDN,k,j,i)*gm1);
+    const Real pl = (gen ? wder_(m,IDPR,k,j-1,i) : w0(m,IEN,k,j-1,i)*gm1);
+    const Real pr = (gen ? wder_(m,IDPR,k,j,i) : w0(m,IEN,k,j,i)*gm1);
+    const Real dl = curv ? 0.5*(dx2_(m,k,j-1,i) + dx2_(m,k,j,i)) : size.d_view(m).dx2;
+    flx2(m,IEN,k,j,i) += face_flux(tl, tr, pl, pr, w0(m,IDN,k,j-1,i), w0(m,IDN,k,j,i),
+                                   dl);
+  });
+  if (!three_d) return;
+
+  auto &flx3 = flx.x3f;
+  par_for("radcond3", DevExeSpace(), 0, nmb1, ks, ke+1, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const Real tl = (gen ? wtemp_(m,k-1,j,i) : w0(m,IEN,k-1,j,i)/w0(m,IDN,k-1,j,i)*gm1);
+    const Real tr = (gen ? wtemp_(m,k,j,i) : w0(m,IEN,k,j,i)/w0(m,IDN,k,j,i)*gm1);
+    const Real pl = (gen ? wder_(m,IDPR,k-1,j,i) : w0(m,IEN,k-1,j,i)*gm1);
+    const Real pr = (gen ? wder_(m,IDPR,k,j,i) : w0(m,IEN,k,j,i)*gm1);
+    const Real dl = curv ? 0.5*(dx3_(m,k-1,j,i) + dx3_(m,k,j,i)) : size.d_view(m).dx3;
+    flx3(m,IEN,k,j,i) += face_flux(tl, tr, pl, pr, w0(m,IDN,k-1,j,i), w0(m,IDN,k,j,i),
+                                   dl);
+  });
   return;
 }
 
@@ -366,13 +509,20 @@ void Conduction::NewTimeStep(const DvceArray5D<Real> &w0, const EOS_Data &eos_da
     spitzer = true;
   }
   Real limit_ = kappa_iso_limit;
-  Real temp_unit=0.0, kappa_unit=0.0;
+  Real temp_unit=0.0, kappa_unit=0.0, pres_unit=1.0, dens_unit=1.0;
+  const bool radiative = (iso_cond_type.compare("radiative") == 0);
+  const Real met = rad_met, pcut = rad_pcut, kfac = rad_kappa_fac;
 
-  if (spitzer) {
-    Real temp_unit = pmy_pack->punit->temperature_cgs();
-    Real kappa_unit = pmy_pack->punit->pressure_cgs()*pmy_pack->punit->velocity_cgs()*
-                      pmy_pack->punit->length_cgs()/pmy_pack->punit->temperature_cgs();
+  if (spitzer || radiative) {
+    temp_unit = pmy_pack->punit->temperature_cgs();
+    kappa_unit = pmy_pack->punit->pressure_cgs()*pmy_pack->punit->velocity_cgs()*
+                 pmy_pack->punit->length_cgs()/pmy_pack->punit->temperature_cgs();
+    pres_unit = pmy_pack->punit->pressure_cgs();
+    dens_unit = pmy_pack->punit->density_cgs();
   }
+  const bool curv = pmy_pack->pmesh->use_spherical_polar
+                    || pmy_pack->pmesh->use_cubed_sphere;
+  auto &dx1_ = pmy_pack->pcoord->dx1;
 
   // capture variables for kernel
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -394,6 +544,8 @@ void Conduction::NewTimeStep(const DvceArray5D<Real> &w0, const EOS_Data &eos_da
   auto eos_ = eos_data;   // by-value copy, capturable in the device lambda
   auto &wtemp_ = (my_block.compare("mhd") == 0) ? pmy_pack->pmhd->wtemp
                                                 : pmy_pack->phydro->wtemp;
+  auto &wder_ = (my_block.compare("mhd") == 0) ? pmy_pack->pmhd->wder
+                                               : pmy_pack->phydro->wder;
   Real kappa0 = kappa_iso;
 
   // find smallest timestep for thermal conduction in each cell
@@ -412,6 +564,12 @@ void Conduction::NewTimeStep(const DvceArray5D<Real> &w0, const EOS_Data &eos_da
     if (spitzer) {
       Real temp = (gen ? wtemp_(m,k,j,i) : w0(m,IEN,k,j,i)/w0(m,IDN,k,j,i)*gm1);
       kappa_ = TempDepKappa(temp*temp_unit, limit_)/kappa_unit;
+    } else if (radiative) {
+      Real temp = (gen ? wtemp_(m,k,j,i) : w0(m,IEN,k,j,i)/w0(m,IDN,k,j,i)*gm1);
+      Real pres = (gen ? wder_(m,IDPR,k,j,i) : w0(m,IEN,k,j,i)*gm1);
+      if (pres < pcut) return;   // no flux above the cut: no constraint
+      kappa_ = RadiativeKappa(temp*temp_unit, pres*pres_unit, w0_(m,IDN,k,j,i)*dens_unit,
+                              met, kfac)/kappa_unit;
     }
 
     // the heat diffusion time is dx^2 rho c_v / kappa. For an ideal gas c_v = 1/(gamma-1)
@@ -423,7 +581,8 @@ void Conduction::NewTimeStep(const DvceArray5D<Real> &w0, const EOS_Data &eos_da
       rcv = w0_(m,IDN,k,j,i)*eos_.SpecificHeatCv(w0_(m,IDN,k,j,i), w0_(m,IEN,k,j,i));
     }
 
-    min_dt = fmin(min_dt, SQR(size.d_view(m).dx1)/kappa_*rcv);
+    const Real d1 = (curv && radiative) ? dx1_(m,k,j,i) : size.d_view(m).dx1;
+    min_dt = fmin(min_dt, SQR(d1)/kappa_*rcv);
     if (multi_d) {
       min_dt = fmin(min_dt, SQR(size.d_view(m).dx2)/kappa_*rcv);
     }

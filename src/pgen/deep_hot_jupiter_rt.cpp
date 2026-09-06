@@ -29,6 +29,7 @@
 #include "srcterms/srcterms.hpp"
 #include "utils/random.hpp"
 #include "pgen.hpp"
+#include "utils/rosseland.hpp"
 #include "pgen_eos_utils.hpp"
 #include "diffusion/resistivity.hpp"
 #include "coordinates/cubed_sphere.hpp"
@@ -492,6 +493,12 @@ Real rt_ck_pcut = 10.0;                    // bar
 // energy per RT application. Applies to every EXPLICIT radiative update -- grey and
 // correlated-k, split and monolithic. Set <= 0 to disable the limiter entirely.
 Real rt_de_max = 0.5;
+// problem/ck_int_at_cut: deliver the planet's internal flux sigma T_int^4 as an extra
+// upward source at the correlated-k cut (the historical behaviour, true). Set false when
+// the layers below the cut carry it themselves -- <mhd|hydro>/isotropic_conduction =
+// radiative with rad_flux_inner at the bottom wall -- so the cut's upward intensity is
+// just the thermalised Planck function and nothing is counted twice.
+bool rt_int_at_cut = true;
 // problem/ad_dump_file: write the INITIAL (p, T) profile with its actual and adiabatic
 // logarithmic gradients, once, before and after adjust_ad_pT_arr. A diagnostic for
 // whether the starting atmosphere is convectively unstable where the adjustment did not
@@ -1450,6 +1457,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   rt_dump_k = pin->GetOrAddInteger("problem","ck_dump_k",-1);
   rt_ck_pcut = pin->GetOrAddReal("problem","ck_pcut_bar",10.0);
   rt_de_max = pin->GetOrAddReal("problem","rt_de_max",0.5);
+  rt_int_at_cut = pin->GetOrAddBoolean("problem","ck_int_at_cut",true);
   ad_dump_file = pin->GetOrAddString("problem","ad_dump_file","");
   if (rt_ck && !rt_split) {
     // The correlated-k solver only exists inside the split path. Without this, rt_ck=true
@@ -4607,44 +4615,8 @@ void get_picket_fence_coeff(const Real &Teq, const Real &Teff, Real &gamv1, Real
 
 KOKKOS_INLINE_FUNCTION
 void get_kapr(const Real &T, const Real &p, const Real &met, Real &kapr) {
-  // Freedman+2014
-  Real T1 = T;
-  Real p1 = p;
-  if (T > 4000.0) T1 = 4000.0;
-  if (T < 75.0) T1 = 75.0;
-  if (p > 3.0e8) p1 = 3.0e8;
-  if (p < 1.0) p1 = 1.0;
-  Real lgT = log10(T1);
-  Real lgp = log10(p1);
-  Real c1 = 10.602;
-  Real c2 = 2.882;
-  Real c3 = 6.09e-15;
-  Real c4 = 2.954;
-  Real c5 = -2.526;
-  Real c6 = 0.843;
-  Real c7 = -5.490;
-  Real c8, c9, c10, c11, c12, c13;
-  if (T1 < 800.0) {
-    c8 = -14.051;
-    c9 = 3.055;
-    c10 = 0.024;
-    c11 = 1.877;
-    c12 = -0.445;
-    c13 = 0.8321;
-  } else {
-    c8 = 82.241;
-    c9 = -55.456;
-    c10 = 8.754;
-    c11 = 0.7048;
-    c12 = -0.0414;
-    c13 = 0.8321;
-  }
-    
-  Real lgkl = c1*atan(lgT-c2) - c3/(lgp+c4)*exp(SQR(lgT-c5)) + c6*met + c7;
-  Real lgkh = c8 + c9*lgT + c10*SQR(lgT) + lgp*(c11+c12*lgT) + c13*met*(0.5+1.0/M_PI*atan((lgT-2.5)/0.2));
-  Real kl = pow(10.0,lgkl);
-  Real kh = pow(10.0,lgkh);
-  kapr = kl + kh;
+  // Freedman+2014, shared with the conduction module (utils/rosseland.hpp)
+  kapr = RosselandFreedman2014(T, p, met);
   return;
 }
 
@@ -4948,6 +4920,7 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
     Real Tint;
     get_Tint(Teq, Tint);
     Real Tint4 = SQR(SQR(Tint));
+    const bool int_at_cut = rt_int_at_cut;
     Real Iint = boltz_sigma/M_PI*Tint4;
     
     const int nchain_rt = rt_nchain;
@@ -5405,8 +5378,8 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
             RtF I_up[NC];
             for (int cc=0; cc<NC; ++cc) {
               const int b = bandc[cc];
-              const Real Iint_b = boltz_sigma/M_PI*Tint4
-                                * ck_planck_frac(ckpf, pfl0, pfid, Tint, b);
+              const Real Iint_b = (int_at_cut ? boltz_sigma/M_PI*Tint4
+                                * ck_planck_frac(ckpf, pfl0, pfid, Tint, b) : 0.0);
               I_up[cc] = static_cast<RtF>(Bb_g(m,b,icut,k,j) + Iint_b);
               Fb_g(m,blk,icut,k,j) += wfc[cc]*(I_up[cc] - I_down[cc][icut]);
             }

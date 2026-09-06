@@ -1,0 +1,90 @@
+# Plane-parallel hydrostatic column (pgen wb_column): the dynamic well-balanced scheme
+# along x1 (default) or x3.  Build with -D PROBLEM=wb_column.
+
+<comment>
+problem   = radiative-conduction column (cgs)
+
+<job>
+basename  = radcol
+
+<mesh>
+nghost    = 2
+nx1       = 64
+x1min     = 0.0
+x1max     = 2.5e8
+ix1_bc    = user
+ox1_bc    = user
+nx2       = 8
+x2min     = 0.0
+x2max     = 3.0e7
+ix2_bc    = periodic
+ox2_bc    = periodic
+nx3       = 8
+x3min     = 0.0
+x3max     = 3.0e7
+ix3_bc    = periodic
+ox3_bc    = periodic
+
+<meshblock>
+nx1       = 64
+nx2       = 8
+nx3       = 8
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim       = 100000
+tlim       = 600.0
+ndiag      = 50
+
+<hydro>
+eos         = ideal
+reconstruct = plm
+rsolver     = hllc
+gamma       = 1.4
+etotgrav    = true
+wellbalance_dynamic = true
+wb_x1       = true
+wb_x3       = false
+wb_option   = polytropic
+wb_cache_every = 0
+# radiative conduction: kappa_rad = 16 sigma T^3/(3 kappa_R rho), Freedman+2014 kappa_R
+isotropic_conduction = radiative
+rad_met        = 0.0
+rad_pcut_bar   = 0.0        # everywhere (no two-stream RT in this test)
+rad_flux_inner = 3.5e6      # erg/cm^2/s through the bottom wall = sigma (500 K)^4
+rad_kappa_fac  = 1.0e-3       # scaled opacity: keeps the radiative gradient subadiabatic
+rad_flux_limit = true
+
+<units>
+length_cgs = 1.0
+mass_cgs   = 1.0
+time_cgs   = 1.0
+mu         = 2.3
+
+<problem>
+user_srcs = true
+user_bcs  = true
+axis      = 1
+g0        = 942.0
+ap        = 0.0
+rho0      = 1.0e-2
+t0        = 1.0
+t0_kelvin = 3000.0        # bottom temperature in K (overrides t0 when > 0)
+tgrad     = -2.0e2        # linear profile only (code T per cm): -5e10 over the box
+tprof     = 1             # 1 = radiative equilibrium with fint and the Freedman opacity
+fint      = 3.5e6
+rad_met   = 0.0
+rad_kappa_fac = 1.0e-3
+b0        = 0.0
+gsrc_fac  = 1.0     # source gravity = gsrc_fac x the potential's (a test body force)
+
+<output1>
+file_type = hst
+dt        = 20.0
+
+<output2>
+file_type = bin
+variable  = hydro_w
+dt        = 100.0

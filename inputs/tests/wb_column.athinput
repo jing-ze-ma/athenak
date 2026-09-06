@@ -60,7 +60,7 @@ rho0      = 1.0
 t0        = 1.0
 tgrad     = -0.3
 b0        = 0.0
-gsrc_fac  = 1.0     # source gravity = gsrc_fac x the potential gravity (a test body force)
+gsrc_fac  = 1.0     # source gravity = gsrc_fac x the potential's (a test body force)
 
 <output1>
 file_type = hst

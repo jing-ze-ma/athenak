@@ -15,6 +15,12 @@
 //!   problem/tgrad    dT/dz: a LINEAR temperature profile, so neither the isothermal nor
 //!                    the isentropic background is exact and the polytropic one is
 //!   problem/b0       MHD only: uniform field along x2 (code units), 0 = none
+//!   problem/tprof    0: T linear (tgrad); 1: RADIATIVE EQUILIBRIUM, dT/dz set by the
+//!                    diffusion flux F_int through the Freedman Rosseland opacity,
+//!                    dT/dz = -3 kappa_R rho F_int/(16 sigma T^3) -- the steady state of
+//!                    the conduction module's `radiative` branch.  Needs a <units> block;
+//!                    t0 is then in KELVIN (t0_kelvin), fint in erg/cm^2/s.
+//!   problem/fint, rad_met, rad_kappa_fac  the radiative profile's flux and opacity
 //!   problem/user_srcs must be true (the gravity source lives here)
 //!
 //! The initial column is integrated on a fine host grid, dln p/dz = -g/T, and evaluated
@@ -39,6 +45,8 @@
 #include "hydro/hydro.hpp"
 #include "mhd/mhd.hpp"
 #include "utils/wb_background.hpp"
+#include "utils/rosseland.hpp"
+#include "units/units.hpp"
 #include "pgen.hpp"
 
 void WBColumnGravity(Mesh *pm, Real bdt);
@@ -50,7 +58,7 @@ int axis_ = 1;
 Real g0_ = 1.0, ap_ = 0.0;
 Real gsrc_fac_ = 1.0;   // the SOURCE gravity is gsrc_fac x the potential's: a test force
 // the column profile and everything the user boundary needs (it gets only a Mesh*)
-DvceArray1D<Real> lnp_d_;
+DvceArray1D<Real> lnp_d_, tfine_d_;
 Real zlo_ = 0.0, dzf_ = 1.0, zmin_ = 0.0, t0_ = 1.0, tgrad_ = 0.0, gm1_ = 0.4, b0_ = 0.0;
 int nfine_ = 0;
 bool etotgrav_ = false;
@@ -86,6 +94,18 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   const Real rho0 = pin->GetOrAddReal("problem", "rho0", 1.0);
   const Real t0 = pin->GetOrAddReal("problem", "t0", 1.0);
   const Real tgrad = pin->GetOrAddReal("problem", "tgrad", 0.0);
+  const int tprof = pin->GetOrAddInteger("problem", "tprof", 0);
+  const Real fint = pin->GetOrAddReal("problem", "fint", 0.0);
+  const Real rad_met = pin->GetOrAddReal("problem", "rad_met", 0.0);
+  const Real rad_kfac = pin->GetOrAddReal("problem", "rad_kappa_fac", 1.0);
+  Real tunit = 1.0, punit_ = 1.0, dunit = 1.0, lunit = 1.0;
+  if (pmbp->punit != nullptr) {
+    tunit = pmbp->punit->temperature_cgs(); punit_ = pmbp->punit->pressure_cgs();
+    dunit = pmbp->punit->density_cgs(); lunit = pmbp->punit->length_cgs();
+  }
+  // t0_kelvin (radiative profile): the bottom temperature in K, converted to code units
+  const Real t0k = pin->GetOrAddReal("problem", "t0_kelvin", 0.0);
+  const Real t0c = (t0k > 0.0) ? t0k/tunit : t0;
   const Real b0 = pin->GetOrAddReal("problem", "b0", 0.0);
   const int axis = axis_;
   const Real g0 = g0_, ap = ap_;
@@ -112,21 +132,48 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   DualArray1D<Real> lnp("lnp", nfine);
   // integrate from the bottom of the ACTIVE column, both ways
   int i0 = static_cast<int>((zmin - zlo)/dzf + 0.5);
-  auto tprof = [&](const Real z) { return t0 + tgrad*(z - zmin); };
-  lnp.h_view(i0) = std::log(rho0*t0);
+  // T(z) on the same fine grid: linear (tprof 0) or radiative equilibrium (tprof 1),
+  // the latter integrated together with hydrostatic balance:
+  //   dp/dz = -rho g,  dT/dz = -3 kappa_R rho F_int/(16 sigma T^3),  rho = p/T (ideal)
+  DualArray1D<Real> tfine("tfine", nfine);
+  const Real sigma_sb = 5.670374419e-5;
+  auto dTdz = [&](const Real tc, const Real pc) {   // code units in, code dT/dz out
+    if (tprof == 0) return tgrad;
+    const Real tk = tc*tunit, pcgs = pc*punit_, rhocgs = (pc/tc)*dunit;
+    const Real kr = rad_kfac*RosselandFreedman2014(tk, pcgs, rad_met);
+    const Real dTdz_cgs = -3.0*kr*rhocgs*fint/(16.0*sigma_sb*tk*tk*tk);   // K/cm
+    return dTdz_cgs*lunit/tunit;
+  };
+  tfine.h_view(i0) = t0c;
+  lnp.h_view(i0) = std::log(rho0*t0c);
   for (int i = i0+1; i < nfine; ++i) {
-    const Real za = zlo + (i-1)*dzf, zb = zlo + i*dzf, zm = 0.5*(za + zb);
-    lnp.h_view(i) = lnp.h_view(i-1) - dzf*GravAt(g0, ap, zm - zmin)/tprof(zm);
+    // midpoint step in both
+    const Real za = zlo + (i-1)*dzf, zm = za + 0.5*dzf;
+    const Real t_a = tfine.h_view(i-1), p_a = std::exp(lnp.h_view(i-1));
+    const Real g_m = GravAt(g0, ap, zm - zmin);
+    const Real t_m = t_a + 0.5*dzf*dTdz(t_a, p_a);
+    const Real p_m = p_a*std::exp(-0.5*dzf*g_m/t_a);
+    tfine.h_view(i) = t_a + dzf*dTdz(t_m, p_m);
+    lnp.h_view(i) = lnp.h_view(i-1) - dzf*g_m/t_m;
   }
   for (int i = i0-1; i >= 0; --i) {
-    const Real za = zlo + i*dzf, zb = zlo + (i+1)*dzf, zm = 0.5*(za + zb);
-    lnp.h_view(i) = lnp.h_view(i+1) + dzf*GravAt(g0, ap, zm - zmin)/tprof(zm);
+    const Real zb = zlo + (i+1)*dzf, zm = zb - 0.5*dzf;
+    const Real t_b = tfine.h_view(i+1), p_b = std::exp(lnp.h_view(i+1));
+    const Real g_m = GravAt(g0, ap, zm - zmin);
+    const Real t_m = t_b - 0.5*dzf*dTdz(t_b, p_b);
+    const Real p_m = p_b*std::exp(0.5*dzf*g_m/t_b);
+    tfine.h_view(i) = t_b - dzf*dTdz(t_m, p_m);
+    lnp.h_view(i) = lnp.h_view(i+1) + dzf*g_m/t_m;
   }
+  tfine.template modify<HostMemSpace>();
+  tfine.template sync<DevExeSpace>();
+  auto tfine_d = tfine.d_view;
   lnp.template modify<HostMemSpace>();
   lnp.template sync<DevExeSpace>();
   auto lnp_d = lnp.d_view;
   const Real gm1 = gamma - 1.0;
-  lnp_d_ = lnp.d_view; zlo_ = zlo; dzf_ = dzf; zmin_ = zmin; t0_ = t0; tgrad_ = tgrad;
+  lnp_d_ = lnp.d_view; tfine_d_ = tfine.d_view; zlo_ = zlo; dzf_ = dzf; zmin_ = zmin;
+  t0_ = t0c; tgrad_ = tgrad;
   gm1_ = gm1; b0_ = b0; nfine_ = nfine; etotgrav_ = etotgrav;
   if (restart) return;
 
@@ -153,7 +200,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     ii = (ii < 0) ? 0 : ((ii > nfine-2) ? nfine-2 : ii);
     const Real f = s - ii;
     const Real p = exp(lnp_d(ii)*(1.0 - f) + lnp_d(ii+1)*f);
-    const Real t = t0 + tgrad*(z - zmin);
+    const Real t = tfine_d(ii)*(1.0 - f) + tfine_d(ii+1)*f;
     const Real d = p/t;
     u0(m,IDN,k,j,i) = d;
     u0(m,IM1,k,j,i) = 0.0;
@@ -289,6 +336,7 @@ void WBColumnBC(Mesh *pm) {
   const int nfine = nfine_;
   const bool etotgrav = etotgrav_;
   auto lnp_d = lnp_d_;
+  auto tfine_d = tfine_d_;
   auto fill = KOKKOS_LAMBDA(const int m, const int k, const int j,
                                           const int i, const int km, const int jm,
                                           const int im) {
@@ -302,7 +350,7 @@ void WBColumnBC(Mesh *pm) {
     ii = (ii < 0) ? 0 : ((ii > nfine-2) ? nfine-2 : ii);
     const Real f = s - ii;
     const Real p = exp(lnp_d(ii)*(1.0 - f) + lnp_d(ii+1)*f);
-    const Real t = t0 + tgrad*(z - zmin);
+    const Real t = tfine_d(ii)*(1.0 - f) + tfine_d(ii+1)*f;
     const Real d = p/t;
     const int iv = (axis == 1) ? IVX : IVZ;
     Real v1 = w0(m,IVX,km,jm,im), v2 = w0(m,IVY,km,jm,im), v3 = w0(m,IVZ,km,jm,im);
@@ -359,5 +407,6 @@ void WBColumnBC(Mesh *pm) {
 
 void WBColumnFinal(ParameterInput *pin, Mesh *pm) {
   lnp_d_ = DvceArray1D<Real>();
+  tfine_d_ = DvceArray1D<Real>();
   return;
 }
