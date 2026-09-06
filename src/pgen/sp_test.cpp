@@ -283,7 +283,8 @@ Real TorPressure(Real r, Real th, Real t, Real p0, Real b0c, Real eta, Real gm1)
 }
 
 //! UNIFORM field B = bx xhat + bz zhat from the vector potential A = (B x r)/2 = (-bz y,
-//! bz x - bx z, bx y)/2: the same Stokes-loop construction as the force-free field, so the
+//! bz x - bx z, bx y)/2: the same Stokes-loop construction as the force-free field, so
+//! the
 //! discrete div B is zero to round-off (iprob 13).
 KOKKOS_INLINE_FUNCTION
 void UVecPot(Real r, Real th, Real ph, Real bx, Real bz,
