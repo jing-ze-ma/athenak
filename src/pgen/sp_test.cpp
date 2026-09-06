@@ -1112,11 +1112,13 @@ void SPTestErrors(ParameterInput *pin, Mesh *pm) {
   }
   if (!exists) {
     std::fprintf(pfile, "# iprob nx1 nx2 nx3 time  L1v L1p L1rho L1b  Linfv Linfp Linfb"
-                        "  L1v_polar L1b_polar Linfv_polar Linfb_polar  L1v_int L1b_int\n");
+                        "  L1v_polar L1b_polar Linfv_polar Linfb_polar  L1v_int"
+                        " L1b_int\n");
   }
   std::fprintf(pfile, "%d %d %d %d %.6e  %.6e %.6e %.6e %.6e  %.6e %.6e %.6e"
                       "  %.6e %.6e %.6e %.6e  %.6e %.6e\n",
-               iprob, pm->mesh_indcs.nx1, pm->mesh_indcs.nx2, pm->mesh_indcs.nx3, pm->time,
+               iprob, pm->mesh_indcs.nx1, pm->mesh_indcs.nx2, pm->mesh_indcs.nx3,
+               pm->time,
                l1(sT,0), l1(sT,1), l1(sT,2), l1(sT,3), mxv, mxp, mxb,
                l1(sP,0), l1(sP,3), mxv_pol, mxb_pol, l1(sI,0), l1(sI,3));
   std::fclose(pfile);
