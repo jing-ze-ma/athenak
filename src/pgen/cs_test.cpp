@@ -93,6 +93,7 @@ Real cs_axx = 0.0, cs_axy = 0.0, cs_axz = 1.0;
 Real cs_blx = 0.0, cs_bly = 0.0, cs_blz = 1.0;
 Real cs_blang = 0.2, cs_blp = 10.0;
 Real cs_bvx = 0.0, cs_bvy = 0.0, cs_bvz = 0.0;
+Real cs_blazi = 0.0;      // iprob=12 azimuthal amplitude (bazi), in the A.rhat = 0 gauge
 Real cs_svol = 0.0;       // total active volume, filled by CSTestConsSums
 // iprob=13 STRATIFIED atmosphere. cs_hscl is the isothermal pressure scale height and
 // doubles as the ENABLE flag: every site that needs the exact hydro state overrides the
@@ -380,6 +381,7 @@ void StaticAtmState(const Real r, const Real d0, const Real p0, const Real hs,
 } // namespace
 
 void CSTestRadialBC(Mesh *pm);
+void CSTestBlastFaces(MeshBlockPack *pmbp, const int side);
 void CSTestGravSrc(Mesh *pm, const Real bdt);
 void CSTestGhostCheck(ParameterInput *pin, Mesh *pm);
 void CSCornerHaloSmoothness(MeshBlockPack *pmbp);
@@ -514,6 +516,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     cs_blang = pin->GetOrAddReal("problem", "blast_ang", 0.2);
     cs_blp   = pin->GetOrAddReal("problem", "blast_p", 10.0);
     pgen_final_func = CSTestBlastCheck;
+    // with ix1_bc = user the radial ghosts hold the ambient state, field included
+    if (user_bcs) user_bcs_func = CSTestRadialBC;
   }
 
   if (iprob == 11) {
@@ -806,6 +810,15 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         b0f.x3f(m,k,j,i) = bvx*n2[0] + bvy*n2[1] + bvz*n2[2];
       }
     });
+  } else if (is_mhd && iprob == 11 &&
+             pin->GetOrAddBoolean("problem", "faces_from_potential", true)) {
+    // The same field as the discrete curl of its vector potential on the CT edges (the
+    // uniform part from A = 0.5*(B0 x r), the azimuthal part in the A.rhat = 0 gauge),
+    // so div B is round-off on every cell instead of truncation-level: what the
+    // spherical-polar toroidal test does.  faces_from_potential = false keeps the older
+    // face-centre projection.
+    cs_blazi = bazi;
+    CSTestBlastFaces(pmbp, -1);
   } else if (is_mhd && iprob == 11) {
     // Face-normal projections of B(x) at each face centre. Unlike iprob = 8 the field
     // varies in space, so each face needs its own POSITION as well as its own normal.
@@ -889,79 +902,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     const Real bvx = b0c*bhx/bn, bvy = b0c*bhy/bn, bvz = b0c*bhz/bn;
     cs_b0r = b0c;
     cs_bvx = bvx; cs_bvy = bvy; cs_bvz = bvz;
-    auto &b0f = pmbp->pmhd->b0;
-    auto &ar1 = pmbp->pcoord->area.x1f;
-    auto &ar2 = pmbp->pcoord->area.x2f;
-    auto &ar3 = pmbp->pcoord->area.x3f;
-    auto &dxe2 = pmbp->pcoord->dxedge.x2e;
-    auto &dxe3 = pmbp->pcoord->dxedge.x3e;
-    auto &mbp = pmbp->pmb->mb_panel;
-    par_for("pgen_cs_bfld12", DevExeSpace(), 0,(pmbp->nmb_thispack-1),
-            ks,ke+1, js,je+1, is,ie+1,
-    KOKKOS_LAMBDA(int m, int k, int j, int i) {
-      const int p = mbp.d_view(m);
-      const Real x2mn = size.d_view(m).x2min, x2mx = size.d_view(m).x2max;
-      const Real x3mn = size.d_view(m).x3min, x3mx = size.d_view(m).x3max;
-      const Real x1mn = size.d_view(m).x1min, x1mx = size.d_view(m).x1max;
-      // A along the x2 edge (r face, xi CENTRE, eta face) and along the x3 edge
-      // (r face, xi face, eta CENTRE): the component on that edge's own UNIT tangent,
-      // which is what dxedge*A consumes.
-      auto Aedge = [&](const int ii, const int jj, const int kk, const bool along_xi) {
-        Real rf = LeftEdgeX(ii-is, indcs.nx1, x1mn, x1mx);
-        ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rf);
-        const Real xi = 0.25*M_PI*(along_xi
-            ? CellCenterX(jj-js, indcs.nx2, x2mn, x2mx)
-            : LeftEdgeX(jj-js, indcs.nx2, x2mn, x2mx));
-        const Real et = 0.25*M_PI*(along_xi
-            ? LeftEdgeX(kk-ks, indcs.nx3, x3mn, x3mx)
-            : CellCenterX(kk-ks, indcs.nx3, x3mn, x3mx));
-        Real qh[3], e1[3], e2[3];
-        cubed_sphere::PanelToCart(p, xi, et, qh);
-        cubed_sphere::PanelTangents(p, xi, et, e1, e2);
-        // A = 0.5 * (B0 x r), r = rf * rhat, plus the azimuthal part.
-        //
-        // THE AZIMUTHAL POTENTIAL MUST BE IN THE A.rhat = 0 GAUGE.  The obvious choice
-        // A = -0.5*bazi*(x^2 + y^2) zhat has A.rhat = A_z cos(theta) != 0, and the two
-        // TANGENTIAL faces below take the circulation over their tangential edges only
-        // -- they omit the two RADIAL edges, which is exact for the uniform field and
-        // silently WRONG for anything with a radial A.  The result is still
-        // divergence-free (it is the curl of A with A1 dropped) so div B cannot catch
-        // it; it is simply a different field, and |B| came out 1.45x too big.
-        //
-        // Gauge-transform it instead: A + grad(chi) with chi = (1/6)*bazi*r^3*
-        // sin^2(theta)*cos(theta) gives A = (1/3)*bazi*r^2*sin(theta) thetahat, i.e.
-        //     A = (1/3)*bazi*rf^2 * (x*z, y*z, -(x^2 + y^2)) / r^2   (unit qh below),
-        // whose curl is the same bazi*(-y, x, 0) and whose A.rhat vanishes IDENTICALLY,
-        // by inspection: qh0^2*qh2 + qh1^2*qh2 - qh2*(qh0^2 + qh1^2) = 0.  It is also
-        // regular on the polar axis -- the sin(theta) cancels the thetahat singularity.
-        const Real aazi = blazi*rf*rf/3.0;
-        const Real ax = 0.5*rf*(bvy*qh[2] - bvz*qh[1]) + aazi*qh[0]*qh[2];
-        const Real ay = 0.5*rf*(bvz*qh[0] - bvx*qh[2]) + aazi*qh[1]*qh[2];
-        const Real az = 0.5*rf*(bvx*qh[1] - bvy*qh[0])
-                      - aazi*(qh[0]*qh[0] + qh[1]*qh[1]);
-        const Real *t = along_xi ? e1 : e2;
-        const Real tn = sqrt(t[0]*t[0] + t[1]*t[1] + t[2]*t[2]);
-        return (ax*t[0] + ay*t[1] + az*t[2])/tn;
-      };
-      // B.n = (1/area) * circulation of A around the face, exactly as mhd_ct.cpp does it
-      if (j <= je && k <= ke) {
-        b0f.x1f(m,k,j,i) =
-            (dxe3(m,k,j+1,i)*Aedge(i,j+1,k,false) - dxe3(m,k,j,i)*Aedge(i,j,k,false)
-           - dxe2(m,k+1,j,i)*Aedge(i,j,k+1,true) + dxe2(m,k,j,i)*Aedge(i,j,k,true))
-            /ar1(m,k,j,i);
-      }
-      if (i <= ie && k <= ke) {
-        b0f.x2f(m,k,j,i) =
-            -(dxe3(m,k,j,i+1)*Aedge(i+1,j,k,false) - dxe3(m,k,j,i)*Aedge(i,j,k,false))
-            /ar2(m,k,j,i);
-      }
-      if (i <= ie && j <= je) {
-        b0f.x3f(m,k,j,i) =
-            (dxe2(m,k,j,i+1)*Aedge(i+1,j,k,true) - dxe2(m,k,j,i)*Aedge(i,j,k,true))
-            /ar3(m,k,j,i);
-      }
-    });
-
+    cs_blazi = blazi;
+    // every face of every cell, ghost layers included, so the radial ghosts start
+    // consistent with what CSTestRadialBC will keep writing there (side = -1)
+    CSTestBlastFaces(pmbp, -1);
   } else if (is_mhd && iprob == 14) {
     // FORCE-FREE FIELD from Stokes loops of A = B/alpha on the physical edges (see the
     // helpers above), every face including the ghost layers so the state is consistent
@@ -1066,6 +1010,30 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     KOKKOS_LAMBDA(int m, int k, int j, int i) {
       u0(m,IEN,k,j,i) += 0.5*bsq;
     });
+  } else if (is_mhd && iprob == 12) {
+    // ANALYTIC as well: |B0 + bazi*(-y,x,0)|^2 at the cell centroid.  bcc0 is NOT yet
+    // built at this point for the blast field (only the monopole branch above fills it),
+    // so the generic bcc-based branch below silently added ZERO magnetic energy here and
+    // ConsToPrim then took the whole B^2/2 out of the ambient pressure (p0 = 1, b0c = 1
+    // started at p = 0.67).  This is what the sp blast does, from the same exact field.
+    const Real bvx = cs_bvx, bvy = cs_bvy, bvz = cs_bvz, blazi = cs_blazi;
+    par_for("pgen_cs_emag12", DevExeSpace(), 0,(pmbp->nmb_thispack-1),
+            ks,ke, js,je, is,ie,
+    KOKKOS_LAMBDA(int m, int k, int j, int i) {
+      const Real x2c = 0.25*M_PI*CellCenterX(j-js, indcs.nx2, size.d_view(m).x2min,
+                                                              size.d_view(m).x2max);
+      const Real x3c = 0.25*M_PI*CellCenterX(k-ks, indcs.nx3, size.d_view(m).x3min,
+                                                              size.d_view(m).x3max);
+      Real rl = LeftEdgeX(i-is, indcs.nx1, size.d_view(m).x1min, size.d_view(m).x1max);
+      Real rr = LeftEdgeX(i+1-is, indcs.nx1, size.d_view(m).x1min, size.d_view(m).x1max);
+      ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rl);
+      ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rr);
+      const Real rc = RadialCentroid(rl, rr);
+      Real cx, cy, cz;
+      PanelToCart(mbpanel.d_view(m), x2c, x3c, cx, cy, cz);
+      const Real bx = bvx - blazi*rc*cy, by = bvy + blazi*rc*cx, bz = bvz;
+      u0(m,IEN,k,j,i) += 0.5*(bx*bx + by*by + bz*bz);
+    });
   } else if (is_mhd) {
     auto &bcc = pmbp->pmhd->bcc0;
     par_for("pgen_cs_emag", DevExeSpace(), 0,(pmbp->nmb_thispack-1), ks,ke, js,je, is,ie,
@@ -1076,6 +1044,115 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   }
 
   return;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn CSTestBlastFaces
+//! \brief iprob 12: the ambient field B = B0 + bazi*(-y,x,0) as the DISCRETE curl of its
+//! vector potential on the edges CT uses, so div B is round-off by construction.
+//! side = -1 fills every face of the pack (ghost layers included, at initialisation);
+//! side = 0 / 1 fills only the inner / outer radial ghost zones of blocks whose x1
+//! boundary is `user`, and tops the ghost energy up with the field's.  The x1 faces
+//! written for side >= 0 are the GHOST faces only: x1f(is) and x1f(ie+1) belong to CT.
+
+void CSTestBlastFaces(MeshBlockPack *pmbp, const int side) {
+  auto &indcs = pmbp->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, ks = indcs.ks, ng = indcs.ng;
+  const int n1 = indcs.nx1 + 2*ng, n2 = indcs.nx2 + 2*ng, n3 = indcs.nx3 + 2*ng;
+  auto &size = pmbp->pmb->mb_size;
+  auto &mb_bcs = pmbp->pmb->mb_bcs;
+  const bool str_r_ = pmbp->pmesh->use_grid_stretch_r;
+  const bool str_rp_ = pmbp->pmesh->use_grid_stretch_r_poly;
+  const Real fstr_r_ = pmbp->pmesh->fStretchR;
+  const Real rmin_ = pmbp->pmesh->mesh_size.x1min;
+  const Real rmax_ = pmbp->pmesh->mesh_size.x1max;
+  Real cpoly_[NSTRETCH_R_POLY];
+  for (int n=0; n<NSTRETCH_R_POLY; ++n) cpoly_[n] = pmbp->pmesh->fStretchRPoly[n];
+  const Real bvx = cs_bvx, bvy = cs_bvy, bvz = cs_bvz, blazi = cs_blazi;
+  auto &b0f = pmbp->pmhd->b0;
+  auto &u0 = pmbp->pmhd->u0;
+  auto &ar1 = pmbp->pcoord->area.x1f;
+  auto &ar2 = pmbp->pcoord->area.x2f;
+  auto &ar3 = pmbp->pcoord->area.x3f;
+  auto &dxe2 = pmbp->pcoord->dxedge.x2e;
+  auto &dxe3 = pmbp->pcoord->dxedge.x3e;
+  auto &mbp = pmbp->pmb->mb_panel;
+  const int qmax = (side < 0) ? n1 : ng-1;
+  par_for("cs_blast_faces", DevExeSpace(), 0,(pmbp->nmb_thispack-1), 0,n3, 0,n2, 0,qmax,
+  KOKKOS_LAMBDA(int m, int k, int j, int q) {
+    if (side == 0 && mb_bcs.d_view(m,BoundaryFace::inner_x1) != BoundaryFlag::user) {
+      return;
+    }
+    if (side == 1 && mb_bcs.d_view(m,BoundaryFace::outer_x1) != BoundaryFlag::user) {
+      return;
+    }
+    // the cell index i and the x1 face index ifc this thread owns
+    const int i = (side < 0) ? q : ((side == 0) ? (is-ng+q) : (ie+1+q));
+    const int ifc = (side == 1) ? i+1 : i;
+    const int p = mbp.d_view(m);
+    const Real x2mn = size.d_view(m).x2min, x2mx = size.d_view(m).x2max;
+    const Real x3mn = size.d_view(m).x3min, x3mx = size.d_view(m).x3max;
+    const Real x1mn = size.d_view(m).x1min, x1mx = size.d_view(m).x1max;
+    // A along the x2 edge (r face, xi CENTRE, eta face) and along the x3 edge
+    // (r face, xi face, eta CENTRE): the component on that edge's own UNIT tangent,
+    // which is what dxedge*A consumes.
+    auto Aedge = [&](const int ii, const int jj, const int kk, const bool along_xi) {
+      Real rf = LeftEdgeX(ii-is, indcs.nx1, x1mn, x1mx);
+      ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rf);
+      const Real xi = 0.25*M_PI*(along_xi
+          ? CellCenterX(jj-js, indcs.nx2, x2mn, x2mx)
+          : LeftEdgeX(jj-js, indcs.nx2, x2mn, x2mx));
+      const Real et = 0.25*M_PI*(along_xi
+          ? LeftEdgeX(kk-ks, indcs.nx3, x3mn, x3mx)
+          : CellCenterX(kk-ks, indcs.nx3, x3mn, x3mx));
+      Real qh[3], e1[3], e2[3];
+      cubed_sphere::PanelToCart(p, xi, et, qh);
+      cubed_sphere::PanelTangents(p, xi, et, e1, e2);
+      // A = 0.5 * (B0 x r), r = rf * rhat, plus the azimuthal part in the A.rhat = 0
+      // gauge A = (1/3)*bazi*r^2*sin(theta) thetahat (see the note at iprob 12 above):
+      // the tangential faces below take the circulation over their tangential edges
+      // only, which is exact only when A has no radial component.
+      const Real aazi = blazi*rf*rf/3.0;
+      const Real ax = 0.5*rf*(bvy*qh[2] - bvz*qh[1]) + aazi*qh[0]*qh[2];
+      const Real ay = 0.5*rf*(bvz*qh[0] - bvx*qh[2]) + aazi*qh[1]*qh[2];
+      const Real az = 0.5*rf*(bvx*qh[1] - bvy*qh[0])
+                    - aazi*(qh[0]*qh[0] + qh[1]*qh[1]);
+      const Real *t = along_xi ? e1 : e2;
+      const Real tn = sqrt(t[0]*t[0] + t[1]*t[1] + t[2]*t[2]);
+      return (ax*t[0] + ay*t[1] + az*t[2])/tn;
+    };
+    // B.n = (1/area) * circulation of A around the face, exactly as mhd_ct.cpp does it
+    if (j < n2 && k < n3 && ifc <= n1) {
+      b0f.x1f(m,k,j,ifc) =
+          (dxe3(m,k,j+1,ifc)*Aedge(ifc,j+1,k,false) - dxe3(m,k,j,ifc)*Aedge(ifc,j,k,false)
+         - dxe2(m,k+1,j,ifc)*Aedge(ifc,j,k+1,true) + dxe2(m,k,j,ifc)*Aedge(ifc,j,k,true))
+          /ar1(m,k,j,ifc);
+    }
+    if (i < n1 && k < n3) {
+      b0f.x2f(m,k,j,i) =
+          -(dxe3(m,k,j,i+1)*Aedge(i+1,j,k,false) - dxe3(m,k,j,i)*Aedge(i,j,k,false))
+          /ar2(m,k,j,i);
+    }
+    if (i < n1 && j < n2) {
+      b0f.x3f(m,k,j,i) =
+          (dxe2(m,k,j,i+1)*Aedge(i+1,j,k,true) - dxe2(m,k,j,i)*Aedge(i,j,k,true))
+          /ar3(m,k,j,i);
+    }
+    if (side >= 0 && i < n1 && j < n2 && k < n3) {
+      // the ghost energy: u0(IEN) was written without the field by the prims kernel
+      Real rl = LeftEdgeX(i-is, indcs.nx1, x1mn, x1mx);
+      Real rr = LeftEdgeX(i+1-is, indcs.nx1, x1mn, x1mx);
+      ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rl);
+      ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rr);
+      const Real rc = RadialCentroid(rl, rr);
+      const Real xc = 0.25*M_PI*CellCenterX(j-js, indcs.nx2, x2mn, x2mx);
+      const Real ec = 0.25*M_PI*CellCenterX(k-ks, indcs.nx3, x3mn, x3mx);
+      Real qh[3];
+      cubed_sphere::PanelToCart(p, xc, ec, qh);
+      const Real bx = bvx - blazi*rc*qh[1], by = bvy + blazi*rc*qh[0], bz = bvz;
+      u0(m,IEN,k,j,i) += 0.5*(bx*bx + by*by + bz*bz);
+    }
+  });
 }
 
 //----------------------------------------------------------------------------------------
@@ -1186,7 +1263,7 @@ void CSTestRadialBC(Mesh *pm) {
       } else if (iprob == 13) {
         StaticAtmState(rad, d0, p0, hs_, r0_, gm1, dn, ie_);
         v1 = 0.0; v2 = 0.0; v3 = 0.0;
-      } else if (iprob == 1 || iprob == 8) {
+      } else if (iprob == 1 || iprob == 8 || iprob == 12) {
         dn = d0;
         ie_ = p0/gm1;
         v1 = 0.0; v2 = 0.0; v3 = 0.0;
@@ -1288,6 +1365,12 @@ void CSTestRadialBC(Mesh *pm) {
         u0(m,IEN,k,j,i) += 0.5*bd*bd;
       }
     });
+  } else if (is_mhd && iprob == 12) {
+    // the ambient blast field (uniform tilted + azimuthal) in the radial ghosts, from
+    // the same discrete curl of A that built it, plus its energy; bcc is rebuilt by
+    // ConToPrim from the faces so it is not written here
+    CSTestBlastFaces(pmbp, 0);
+    CSTestBlastFaces(pmbp, 1);
   } else if (is_mhd && (iprob == 8 || iprob == 9 || iprob == 13)) {
     // The uniform Cartesian field is no more reflection-symmetric than the monopole, so
     // its radial ghosts get the exact state too -- faces, cell centres and the analytic
@@ -2344,10 +2427,12 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
   CSTestConsSums(pm);
   CSTestSeamFluxCheck(pm);
   CSTestLevelFluxCheck(pm);
-  if (pmbp->pmhd->presist == nullptr) {
-    std::cout << "### CS RESIST CHECK: skipped (no <mhd>/ohmic_resistivity); the"
-              << " conservation, seam and level gates above still ran" << std::endl;
-    return;
+  // Without <mhd>/ohmic_resistivity this is the IDEAL static-field test: the EMF and
+  // Ohmic-heating checks are skipped, the evolved-field error and the halo scans run.
+  const bool has_res = (pmbp->pmhd->presist != nullptr);
+  if (!has_res && global_variable::my_rank == 0) {
+    std::cout << "### CS RESIST CHECK: no <mhd>/ohmic_resistivity -- EMF and Ohmic"
+              << " checks skipped; the static-field error below still runs" << std::endl;
   }
 
   auto &indcs = pm->mb_indcs;
@@ -2355,10 +2440,10 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
   const int js = indcs.js, je = indcs.je;
   const int ks = indcs.ks, ke = indcs.ke;
   auto pres = pmbp->pmhd->presist;
-  const Real eta = pres->eta_ohm_const;
+  const Real eta = has_res ? pres->eta_ohm_const : 0.0;
   const Real jz = 2.0*cs_bazi;
-  const Real scale = fabs(eta*jz);
-  if (scale == 0.0) {
+  const Real scale = has_res ? fabs(eta*jz) : 1.0;
+  if (has_res && scale == 0.0) {
     std::cout << "### CS RESIST CHECK: eta*2*b0c = 0, nothing to compare" << std::endl;
     return;
   }
@@ -2373,14 +2458,18 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
   // under-delivers the influx by a factor 0.33-0.45. Neither is non-conservation: the
   // update is strict flux form, and the seam and level-boundary gates above confirm the
   // interior faces telescope to round-off.
-  if (global_variable::my_rank == 0) {
+  if (has_res && global_variable::my_rank == 0) {
     std::printf("###   EXPECTED Ohmic heating eta*J^2*V*t = %.9e  -- the energy above"
                 " should GAIN this (see the note in the source; NOT a defect)\n",
                 eta*jz*jz*cs_svol*pm->time);
   }
-  auto e1 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pres->efld_resist.x1e);
-  auto e2 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pres->efld_resist.x2e);
-  auto e3 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pres->efld_resist.x3e);
+  DvceArray4D<Real> ex1, ex2, ex3;   // empty (zero-size mirrors) without resistivity
+  if (has_res) {
+    ex1 = pres->efld_resist.x1e; ex2 = pres->efld_resist.x2e; ex3 = pres->efld_resist.x3e;
+  }
+  auto e1 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), ex1);
+  auto e2 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), ex2);
+  auto e3 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), ex3);
   auto &size = pmbp->pmb->mb_size;
   // the radial stretch: CellCenterX/LeftEdgeX come out UNSTRETCHED (see grid_stretch.hpp)
   const bool str_r_ = pmbp->pmesh->use_grid_stretch_r;
@@ -2409,6 +2498,8 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
   // do.  These bins separate the two questions.
   Real l1v[4] = {0.0, 0.0, 0.0, 0.0};
   std::int64_t ncv[4] = {0, 0, 0, 0};
+  Real mx0_local = 0.0;
+  if (has_res) {
   for (int m=0; m<pmbp->nmb_thispack; ++m) {
     const int p = mbpanel.h_view(m);
     const Real x2min = size.h_view(m).x2min, x2max = size.h_view(m).x2max;
@@ -2470,7 +2561,7 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
   // this project three times (a rank-local convergence norm, a rank-local conservation
   // sum, and the pre-exchange efld_resist). The location of the worst x1 edge cannot be
   // reduced, so it is printed by whichever rank turns out to own the global maximum.
-  const Real mx0_local = mx[0];
+  mx0_local = mx[0];
 #if MPI_PARALLEL_ENABLED
   {
     MPI_Allreduce(MPI_IN_PLACE, l1v, 4, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
@@ -2511,6 +2602,7 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
   // reference to any block. It must therefore be the same under any decomposition:
   // splitting x1, or refining, may change it only at round-off. That is the same gate
   // that certified ideal MHD, and it is the one to trust here.
+  }   // has_res
   auto bf1h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pmhd->b0.x1f);
   auto bf2h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pmhd->b0.x2f);
   auto bf3h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pmhd->b0.x3f);
@@ -3130,6 +3222,7 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
   // into internal energy, so the volume-averaged pressure must rise by
   // (gamma-1)*eta*|J|^2*t and by nothing else. A Poynting flux built by crossing two
   // vectors held in different frames gets this wrong at O(cos_cell).
+  if (!has_res) return;
   auto &w0 = pmbp->pmhd->w0;
   auto wh = Kokkos::create_mirror_view_and_copy(HostMemSpace(), w0);
   auto vol = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->volume);
@@ -3641,6 +3734,103 @@ void CSTestBlastCheck(ParameterInput *pin, Mesh *pm) {
               " %lld of %lld)\n",
               static_cast<long long>(nnan), static_cast<long long>(ntot),
               static_cast<long long>(nnan_s), static_cast<long long>(ntot_s));
+  // THE PROFILE FILE, in the format sp_test's SPTestBlastProfile writes so the two grids
+  // can be compared bin for bin: volume-weighted rho, p, |v|, |B| binned in the radial
+  // index, the geodesic angle from the blast centre (one bin per angular cell) and the
+  // azimuth about the centre measured from the ambient field's projection.
+  {
+    const bool is_mhd = (pmbp->pmhd != nullptr);
+    const Real gm1 = (is_mhd ? pmbp->pmhd->peos->eos_data.gamma
+                             : pmbp->phydro->peos->eos_data.gamma) - 1.0;
+    auto vol = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->volume);
+    DvceArray5D<Real> bccd;
+    if (is_mhd) bccd = pmbp->pmhd->bcc0;
+    auto bcc = Kokkos::create_mirror_view_and_copy(HostMemSpace(), bccd);
+    // frame about the centre c: e1 = the field's projection perpendicular to c (or an
+    // arbitrary perpendicular when the field is along c or absent), e2 = c x e1
+    const Real c[3] = {cs_blx, cs_bly, cs_blz};
+    Real e1[3] = {cs_bvx, cs_bvy, cs_bvz};
+    Real bc = e1[0]*c[0] + e1[1]*c[1] + e1[2]*c[2];
+    for (int d=0; d<3; ++d) e1[d] -= bc*c[d];
+    Real en = std::sqrt(e1[0]*e1[0] + e1[1]*e1[1] + e1[2]*e1[2]);
+    if (en < 1.0e-8) {
+      const Real ax[3] = {(std::fabs(c[0]) < 0.9) ? 1.0 : 0.0,
+                          (std::fabs(c[0]) < 0.9) ? 0.0 : 1.0, 0.0};
+      bc = ax[0]*c[0] + ax[1]*c[1] + ax[2]*c[2];
+      for (int d=0; d<3; ++d) e1[d] = ax[d] - bc*c[d];
+      en = std::sqrt(e1[0]*e1[0] + e1[1]*e1[1] + e1[2]*e1[2]);
+    }
+    for (int d=0; d<3; ++d) e1[d] /= en;
+    const Real e2[3] = {c[1]*e1[2] - c[2]*e1[1], c[2]*e1[0] - c[0]*e1[2],
+                        c[0]*e1[1] - c[1]*e1[0]};
+    const int nx1 = pm->mesh_indcs.nx1, nbin = 2*pm->mesh_indcs.nx2;
+    const Real dbin = M_PI/nbin;
+    const int npsi = 8;
+    const int nrow = nx1*nbin*npsi, ncol = 5;
+    std::vector<Real> acc(nrow*ncol, 0.0);
+    size.sync_host();
+    const Real x1min_mesh = pm->mesh_size.x1min, x1max_mesh = pm->mesh_size.x1max;
+    for (int m=0; m<pmbp->nmb_thispack; ++m) {
+      const int p = mbpanel.h_view(m);
+      const int ioff = static_cast<int>(std::lround((size.h_view(m).x1min - x1min_mesh)
+                                        /(x1max_mesh - x1min_mesh)*nx1));
+      for (int k=ks; k<=ke; ++k) {
+        const Real ec = 0.25*M_PI*CellCenterX(k-ks, indcs.nx3, size.h_view(m).x3min,
+                                                               size.h_view(m).x3max);
+        for (int j=js; j<=je; ++j) {
+          const Real xc = 0.25*M_PI*CellCenterX(j-js, indcs.nx2, size.h_view(m).x2min,
+                                                                 size.h_view(m).x2max);
+          Real q[3];
+          cubed_sphere::PanelToCart(p, xc, ec, q);
+          const Real cd = q[0]*c[0] + q[1]*c[1] + q[2]*c[2];
+          int b = static_cast<int>(std::acos(std::fmin(1.0, std::fmax(-1.0, cd)))/dbin);
+          if (b >= nbin) b = nbin - 1;
+          const Real psi = std::atan2(q[0]*e2[0] + q[1]*e2[1] + q[2]*e2[2],
+                                      q[0]*e1[0] + q[1]*e1[1] + q[2]*e1[2]);
+          int qq = static_cast<int>((psi + M_PI)/(2.0*M_PI)*npsi);
+          if (qq >= npsi) qq = npsi - 1;
+          if (qq < 0) qq = 0;
+          for (int i=is; i<=ie; ++i) {
+            const int row = ((ioff + i - is)*nbin + b)*npsi + qq;
+            const Real v = vol(m,k,j,i);
+            const Real vabs = std::sqrt(SQR(wh(m,IVX,k,j,i)) + SQR(wh(m,IVY,k,j,i))
+                                        + SQR(wh(m,IVZ,k,j,i)));
+            Real babs = 0.0;
+            if (is_mhd) {
+              babs = std::sqrt(SQR(bcc(m,IBX,k,j,i)) + SQR(bcc(m,IBY,k,j,i))
+                               + SQR(bcc(m,IBZ,k,j,i)));
+            }
+            acc[row*ncol+0] += v;
+            acc[row*ncol+1] += v*wh(m,IDN,k,j,i);
+            acc[row*ncol+2] += v*gm1*wh(m,IEN,k,j,i);
+            acc[row*ncol+3] += v*vabs;
+            acc[row*ncol+4] += v*babs;
+          }
+        }
+      }
+    }
+#if MPI_PARALLEL_ENABLED
+    MPI_Allreduce(MPI_IN_PLACE, acc.data(), nrow*ncol, MPI_ATHENA_REAL, MPI_SUM,
+                  MPI_COMM_WORLD);
+#endif
+    if (global_variable::my_rank == 0) {
+      std::string fname = pin->GetString("job", "basename") + "-blast.dat";
+      FILE *pfile = std::fopen(fname.c_str(), "w");
+      if (pfile != nullptr) {
+        std::fprintf(pfile, "# cs blast centre (%.4f,%.4f,%.4f) t %.6e  columns: i dbin"
+                     " psibin vol rho p |v| |B|\n", cs_blx, cs_bly, cs_blz, pm->time);
+        for (int r=0; r<nrow; ++r) {
+          const Real v = acc[r*ncol];
+          if (v <= 0.0) continue;
+          std::fprintf(pfile, "%d %d %d %.6e %.8e %.8e %.8e %.8e\n", r/(nbin*npsi),
+                       (r/npsi)%nbin, r%npsi, v, acc[r*ncol+1]/v, acc[r*ncol+2]/v,
+                       acc[r*ncol+3]/v, acc[r*ncol+4]/v);
+        }
+        std::fclose(pfile);
+        std::printf("### CS BLAST PROFILE written to %s\n", fname.c_str());
+      }
+    }
+  }
   return;
 }
 

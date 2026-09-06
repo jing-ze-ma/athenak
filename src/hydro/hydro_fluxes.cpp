@@ -231,6 +231,27 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
           GnomonicEquianglePrimFaceX1(gtrig_cell,member,m,k,j,il-1,iu,wl,wr);
       }
       
+    // A REFLECTING radial wall passes exactly zero mass flux only if the two states the
+    // Riemann solver sees at the wall face are mirror images.  The position-aware x1
+    // reconstruction (spherical polar and, since the radial unification, the cubed
+    // sphere) is not mirror-symmetric about the wall -- the ghost centroids do not mirror
+    // the interior ones -- so the ghost-side state differed from the interior one at
+    // O(dx^2) and a strong blast leaked 2-3e-4 of the mass through a "closed" wall.  Make
+    // the ghost-side state the exact mirror of the interior-side one: any solver then
+    // returns a zero mass flux (S_M = 0 by symmetry) to round-off.
+    if (use_spherical_polar || str_r1_) {
+      member.team_barrier();
+      Kokkos::single(Kokkos::PerTeam(member), [&]() {
+        if (mb_bcs_pq.d_view(m,BoundaryFace::inner_x1) == BoundaryFlag::reflect) {
+          for (int n=0; n<nvars; ++n) { wl(n,is) = wr(n,is); }
+          wl(IVX,is) = -wr(IVX,is);
+        }
+        if (mb_bcs_pq.d_view(m,BoundaryFace::outer_x1) == BoundaryFlag::reflect) {
+          for (int n=0; n<nvars; ++n) { wr(n,ie+1) = wl(n,ie+1); }
+          wr(IVX,ie+1) = -wl(IVX,ie+1);
+        }
+      });
+    }
     // Sync all threads in the team so that scratch memory is consistent
     member.team_barrier();
 

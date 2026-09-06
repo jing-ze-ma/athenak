@@ -128,3 +128,4 @@ blast_ang  = 0.25       # angular radius of the overpressure cap, radians
 blast_x    = 1.0        # centre direction; DEFAULT here is the CUBE VERTEX
 blast_y    = 1.0
 blast_z    = 1.0
+user_bcs   = false      # true with ix1_bc = user holds the ambient state in the radial ghosts
