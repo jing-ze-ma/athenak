@@ -929,11 +929,10 @@ class Hydro {
                 const Real &phi_im1, const Real &phi_imh, const Real &phi_i,
                 const Real &phi_iph, const Real &phi_ip1,
                 Real &q0_im1, Real &q0_imh, Real &q0_i, Real &q0_iph,
-                Real &q0_ip1, const Real t_im1c = -1.0,
-                const Real t_ic = -1.0, const Real t_ip1c = -1.0) const {
+                Real &q0_ip1) const {
       getWBq0(eos, wb_option, var, rho_im1, rho_i, rho_ip1, e_im1, e_i, e_ip1,
               phi_im1, phi_imh, phi_i, phi_iph, phi_ip1,
-              q0_im1, q0_imh, q0_i, q0_iph, q0_ip1, t_im1c, t_ic, t_ip1c);
+              q0_im1, q0_imh, q0_i, q0_iph, q0_ip1, -1.0, -1.0, -1.0);
     }
 
     KOKKOS_INLINE_FUNCTION
