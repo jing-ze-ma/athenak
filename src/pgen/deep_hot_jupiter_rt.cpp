@@ -2117,6 +2117,26 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             
             Real phicc = GravPotAt(grav_acc, ap, r, x1v, grav_pmass);
             phicc0(m,k,j,i) = phicc;
+            // The FACE potentials on every face, ghost faces included.  The initial
+            // condition above fills only the active faces, but the well-balanced
+            // background of the outermost ghost cells (which the x1 sweep reconstructs)
+            // reads the ghost faces too; left at zero they made that background diverge.
+            Real x1fl, x1fr;
+            if (use_spherical_polar || use_cubed_sphere_) {
+              x1fl = x1f_(m,i);
+              x1fr = x1f_(m,i+1);
+            } else {
+              x1fl = LeftEdgeX(i-is, nx1, x1min, x1max);
+              ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, x1fl);
+              x1fr = LeftEdgeX(i+1-is, nx1, x1min, x1max);
+              ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, x1fr);
+            }
+            Real zl = x1fl, zr = x1fr;
+            if (use_spherical_polar || use_cubed_sphere_) { zl -= ap; zr -= ap; }
+            phi0_x1f(m,k,j,i) = GravPotAt(grav_acc, ap, x1fl, zl, grav_pmass);
+            if (i == n1m1) {
+              phi0_x1f(m,k,j,i+1) = GravPotAt(grav_acc, ap, x1fr, zr, grav_pmass);
+            }
         });
 //        par_for("wbgravbc", DevExeSpace(), 0, (pmbp->nmb_thispack-1), 0, n3m1, 0, n2m1,
 //        KOKKOS_LAMBDA(int m, int k, int j) {

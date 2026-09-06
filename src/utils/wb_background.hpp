@@ -81,6 +81,19 @@ struct WBState {
 
 enum WBVar {wb_dens = 0, wb_eint = 1, wb_pres = 2};
 
+//! \fn void WBGuard
+//! \brief if any walked state is non-finite or non-positive (a walk into a floored or
+//! unfilled ghost cell), flatten the background to the anchor's own state: the deviation
+//! then carries the whole profile and the reconstruction reduces to the plain one there.
+KOKKOS_INLINE_FUNCTION
+void WBGuard(WBState &a, WBState &b, WBState &c, WBState &d, WBState &e) {
+  auto bad = [](const WBState &s) {
+    return !(isfinite(s.d) && isfinite(s.e) && isfinite(s.p)) || s.d <= 0.0 || s.e <= 0.0
+           || s.p <= 0.0;
+  };
+  if (bad(a) || bad(b) || bad(d) || bad(e)) { a = c; b = c; d = c; e = c; }
+}
+
 //! \fn void WBReadCache
 //! \brief the five background states of one channel from the per-cell cache
 //! (Hydro/MHD::wbq0, layout (m, 5*var + {im1,imh,i,iph,ip1}, k, j, i)), built once per
@@ -467,6 +480,7 @@ void WBBackgroundStencil(const EOS_Data &eos, const WBOption wb_option,
     q0_iph.d = d1; q0_iph.e = e1; q0_iph.p = p1;
     seg(d1, t1, k1, phi_ip1 - phi_iph, d2, t2, e2, p2, k2);
     q0_ip1.d = d2; q0_ip1.e = e2; q0_ip1.p = p2;
+    WBGuard(q0_im1, q0_imh, q0_i, q0_iph, q0_ip1);
     return;
   }
   q0_i.p = eos.Pressure(rho_i, e_i, t_i);
@@ -493,6 +507,7 @@ void WBBackgroundStencil(const EOS_Data &eos, const WBOption wb_option,
   WBAdvance(eos, wb_opt, rho_ip1, e_ip1, phi_ip1 - phi_iph, dp, ep, tp, tp, dlntdphi,
             tp, t_ip1c, &pp);
   q0_ip1.d = dp; q0_ip1.e = ep; q0_ip1.p = pp;
+  WBGuard(q0_im1, q0_imh, q0_i, q0_iph, q0_ip1);
   return;
 }
 
