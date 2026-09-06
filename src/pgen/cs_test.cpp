@@ -2641,6 +2641,9 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
   // cell or two) from "the halo poisons a growing region" (a slow decay).  Bin 5 is
   // everything at distance >= 5.
   const int NDB = 6;
+  // and by RADIAL index, to tell a wall or radial-stencil error from an angular one
+  std::vector<Real> l1f_i(indcs.nx1, 0.0);
+  std::vector<std::int64_t> ncf_i(indcs.nx1, 0);
   Real l1f_d[NDB]; std::int64_t ncf_d[NDB];
   for (int q=0; q<NDB; ++q) { l1f_d[q] = 0.0; ncf_d[q] = 0; }
   for (int m=0; m<pmbp->nmb_thispack; ++m) {
@@ -2686,6 +2689,7 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
             l1f += d; ++ncf; mxf = fmax(mxf, d); bmax = fmax(bmax, fabs(ex));
             l1f_r[rg] += d; ++ncf_r[rg]; mxf_r[rg] = fmax(mxf_r[rg], d);
             l1f_d[db] += d; ++ncf_d[db];
+            l1f_i[i-is] += d; ++ncf_i[i-is];
           }
           if (i <= ie && k <= ke) {
             PanelToCart(p, xf, ec, cx, cy, cz);
@@ -2699,6 +2703,7 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
             l1f += d; ++ncf; mxf = fmax(mxf, d); bmax = fmax(bmax, fabs(ex));
             l1f_r[rg] += d; ++ncf_r[rg]; mxf_r[rg] = fmax(mxf_r[rg], d);
             l1f_d[db] += d; ++ncf_d[db];
+            l1f_i[i-is] += d; ++ncf_i[i-is];
           }
           if (i <= ie && j <= je) {
             PanelToCart(p, xc, ef, cx, cy, cz);
@@ -2712,6 +2717,7 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
             l1f += d; ++ncf; mxf = fmax(mxf, d); bmax = fmax(bmax, fabs(ex));
             l1f_r[rg] += d; ++ncf_r[rg]; mxf_r[rg] = fmax(mxf_r[rg], d);
             l1f_d[db] += d; ++ncf_d[db];
+            l1f_i[i-is] += d; ++ncf_i[i-is];
           }
         }
       }
@@ -2755,6 +2761,11 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
       std::printf("###     REGION %s (%9lld faces)  L1=%.4e  Linf=%.4e\n", rn[r],
                   static_cast<long long>(ncf_r[r]), l1f_r[r]*w, mxf_r[r]/bs);
     }
+    std::printf("###     BY RADIAL INDEX:");
+    for (int q=0; q<indcs.nx1; ++q) {
+      std::printf(" i%d=%.3e", q, (ncf_i[q] > 0) ? l1f_i[q]/ncf_i[q] : 0.0);
+    }
+    std::printf("\n");
     std::printf("###     BY DISTANCE from the panel edge (cells):");
     for (int q=0; q<NDB; ++q) {
       const Real w = (ncf_d[q] > 0) ? 1.0/static_cast<Real>(ncf_d[q])/bs : 0.0;

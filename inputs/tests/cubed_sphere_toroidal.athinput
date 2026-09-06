@@ -1,0 +1,80 @@
+# Cubed sphere, TOROIDAL FIELD: B = b0c r sin(theta) phihat = b0c (-y, x, 0) with the balancing
+# pressure p0 - b0c^2 R^2 -- the twin of spherical_polar_toroidal.athinput.  Build with
+# -D PROBLEM=cs_test.  This is cs_test iprob = 11 with its uniform part OFF (bunif = 0): the
+# field is purely azimuthal, so B.rhat = 0 everywhere, reflecting radial walls pass no flux
+# and mass / energy / angular momentum are a CLOSED budget.  Unlike spherical polar, where
+# this field is grid-aligned (pure x3f), on the cubed sphere it cuts every panel obliquely,
+# so it exercises the full non-orthogonal MHD update and the seam field transform.
+# The faces come from the vector potential (div B at round-off).
+#
+# Finalizer: the evolved face field against the exact static one by region (panel interior /
+# seam / cube vertex, and by radial index), the conserved sums, and with resistivity the
+# resistive EMF on every edge against eta*J and the Ohmic energy budget.
+#   ideal (no <mhd>/ohmic_resistivity): 2nd order in B (1.94, 1.95 global at n8-16-32),
+#     mass round-off on reflecting walls.
+#   resistive, ix1_bc = user (the heated exact state in the ghosts): B 2.1, Ohmic ratio
+#     1.017 / 1.006 / 1.002.  With REFLECTING walls (E_t = 0, a perfect conductor) the state
+#     is not the resistive solution and the error does not converge -- the same on sp.
+#
+# b0c MUST keep p0 - b0c^2 R^2 > 0 over the whole shell: R <= x1max, so b0c < sqrt(p0)/x1max.
+# b0c = 0.5 in r <= 2 puts p = 0 on the outer equator and the outer layer goes first order.
+#
+# AXES: x1 is RADIAL, x2 = xi and x3 = eta are the panel-tangential angles.  Must be 3D.
+
+<comment>
+problem = cubed sphere toroidal field
+
+<job>
+basename = cs_toroidal
+
+<mesh>
+nghost   = 2
+nx1      = 8            # RADIAL direction
+x1min    = 1.0
+x1max    = 2.0
+ix1_bc   = reflect      # closed; use `user` (with user_bcs = true) for the resistive test
+ox1_bc   = reflect
+
+nx2      = 16           # xi;  nx2 must equal nx3 (Mesh checks this)
+x2min    = -1.0
+x2max    = 1.0
+ix2_bc   = panel
+ox2_bc   = panel
+
+nx3      = 16           # eta
+x3min    = -1.0
+x3max    = 1.0
+ix3_bc   = panel
+ox3_bc   = panel
+
+use_cubed_sphere = true
+
+<meshblock>
+nx1      = 8
+nx2      = 16
+nx3      = 16
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim       = -1
+tlim       = 0.5
+ndiag      = 100
+
+<mhd>
+eos         = ideal
+reconstruct = plm
+rsolver     = hlld
+gamma       = 1.666667
+# ohmic_resistivity = constant     # uncomment both for the resistive test
+# eta_ohm_const     = 0.05
+
+<problem>
+iprob    = 11
+d0       = 1.0
+p0       = 1.0
+b0c      = 0.3       # azimuthal amplitude; curl B = 2*b0c*zhat
+bunif    = 0.0       # NO uniform part: B.rhat = 0, the box is closed
+faces_from_potential = true
+user_bcs = true
