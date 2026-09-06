@@ -208,6 +208,7 @@ class MHD {
   DvceFaceFld4D<Real> phi0;     // face-centered gravitational potential energy
   DvceArray4D<Real> phicc0;     // cell-centered gravitational potential energy
   DvceArray5D<Real> wbq0;       // per-cell well-balanced background (BuildWBCache)
+  int wb_cache_every = 0;       // rebuild wbq0 every stage (0) or every N-th cycle
     
   // following used for well-balanced scheme
   bool use_wellbalance_static = false;    // flag to enable static wellbalance
@@ -1136,6 +1137,11 @@ class MHD {
             wb_option_num = 2;
           }
           break;
+        case WBOption::isentropic_dt:
+          {
+            wb_option_num = 2;   // gamma law: the closed-form isentrope is exact
+          }
+          break;
         case WBOption::polytropic:
           {
             // LOCAL POLYTROPE, closed form for a gamma law, T = p/d = (gamma-1) e/d:
@@ -1173,6 +1179,7 @@ class MHD {
             return;
           }
         case WBOption::adaptive:
+        case WBOption::adaptive_fast:
           {
             Real dTdivT = fabs((e_ip1/rho_ip1 - e_im1/rho_im1) / (e_i/rho_i));
             Real dsdivs = fabs((e_ip1/pow(rho_ip1,gamma) - e_im1/pow(rho_im1,gamma)) / (e_i/pow(rho_i,gamma)));

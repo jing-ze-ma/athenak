@@ -74,7 +74,8 @@ enum ParticlesIndex {PGID=0, PTAG=1, IPX=0, IPVX=1, IPY=2, IPVY=3, IPZ=4, IPVZ=5
 enum ReconstructionMethod {dc, plm, ppm4, ppmx, wenoz};
 
 // constants that enumerate dynamical well-balanced scheme options
-enum WBOption {isodensity, isothermal, isentropic, adaptive, polytropic};
+enum WBOption {isodensity, isothermal, isentropic, adaptive, polytropic, isentropic_dt,
+               adaptive_fast};
 
 // constants that enumerate time evolution options
 enum TimeEvolution {tstatic, kinematic, dynamic};

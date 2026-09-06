@@ -365,6 +365,32 @@ struct EOS_Data {
   //! \fn Real EnergyFromTemperature
   //! \brief internal energy density e(d,T); inverse of Temperature(). Needed for the
   //! temperature floor, which is specified in T but must be applied to e.
+  //! \fn void ThermoAt
+  //! \brief e, p, chi_rho, chi_T and c_v at (d,T), code units, from ONE table evaluation.
+  //! The single-quantity accessors above each evaluate the table and discard the rest;
+  //! a caller that needs several of them at the same point (the well-balanced
+  //! background walk) pays once here.  Values are identical to the individual accessors.
+  KOKKOS_INLINE_FUNCTION
+  void ThermoAt(const Real d, const Real t, Real &e, Real &p, Real &chi_rho,
+                Real &chi_t, Real &cv) const {
+    if (tbl.active) {
+      EOSThermoState s;
+      tbl.EvalNoMu(d*dens_cgs, t*temp_cgs, s);   // mu is not wanted: one surface fewer
+      e = s.e/pres_cgs;
+      p = s.p/pres_cgs;
+      chi_rho = s.chi_rho;
+      chi_t = s.chi_t;
+      cv = s.cv*dens_cgs*temp_cgs/pres_cgs;
+      return;
+    }
+    e = d*t/(gamma-1.0);
+    p = (gamma-1.0)*e;
+    chi_rho = 1.0;
+    chi_t = 1.0;
+    cv = 1.0/(gamma-1.0);
+    return;
+  }
+
   KOKKOS_INLINE_FUNCTION
   Real EnergyFromTemperature(const Real d, const Real t) const {
     if (tbl.active) {

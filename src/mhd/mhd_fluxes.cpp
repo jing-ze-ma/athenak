@@ -156,7 +156,12 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
 
   // the well-balanced background of every cell in this sweep, walked once
 
-  if (use_wellbalance_dynamic && use_wb_x1) {BuildWBCache(jl, ju, kl, ku);}
+  if (use_wellbalance_dynamic && use_wb_x1) {
+    const int ncyc = pmy_pack->pmesh->ncycle;
+    if (wb_cache_every <= 0 || (stage == 1 && (ncyc % wb_cache_every) == 0)) {
+      BuildWBCache(jl, ju, kl, ku);
+    }
+  }
 
 
   par_for_outer("mhd_flux1",DevExeSpace(), scr_size, scr_level, 0, nmb1, kl, ku, jl, ju,

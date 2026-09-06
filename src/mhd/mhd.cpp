@@ -208,6 +208,12 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
     use_etotgrav = pin->GetOrAddBoolean("mhd","etotgrav",false);
     use_wellbalance_dynamic = pin->GetOrAddBoolean("mhd","wellbalance_dynamic",false);
     use_wb_x1 = pin->GetOrAddBoolean("mhd","wb_x1",false);
+    // rebuild the well-balanced background cache at stage 1 of every N-th cycle instead
+    // of every stage (0 = every stage).  A balanced state is unaffected; an evolving one
+    // reconstructs against a background up to N cycles old, which is nothing against the
+    // radiative timescale the profile changes on.  N = 1 halves the walk cost, N = 10
+    // removes it.
+    wb_cache_every = pin->GetOrAddInteger("mhd","wb_cache_every",0);
     use_wb_x2 = pin->GetOrAddBoolean("mhd","wb_x2",false);
     use_wb_x3 = pin->GetOrAddBoolean("mhd","wb_x3",false);
     use_wb_rho = pin->GetOrAddBoolean("mhd","wb_rho",false);
@@ -239,6 +245,10 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
         wb_option = WBOption::adaptive;
       } else if (wb_opt.compare("polytropic") == 0) {
         wb_option = WBOption::polytropic;
+      } else if (wb_opt.compare("isentropic_dt") == 0) {
+        wb_option = WBOption::isentropic_dt;
+      } else if (wb_opt.compare("adaptive_fast") == 0) {
+        wb_option = WBOption::adaptive_fast;
       // Error for anything else
       } else {
         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
