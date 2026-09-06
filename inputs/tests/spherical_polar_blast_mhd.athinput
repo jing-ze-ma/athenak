@@ -64,6 +64,7 @@ b0        = 1.0         # uniform field along the blast axis (ambient beta = 2)
 blast_dir = 2           # 2 = cap on the pole (zhat); 0 = on the equator (xhat)
 blast_ang = 0.3         # half-angle of the cap [rad]
 blast_p   = 10.0
+blast_tilt = 0.0        # field tilt from the blast axis [deg]; 90 = tangential through the pole
 user_bcs  = true
 
 <output1>

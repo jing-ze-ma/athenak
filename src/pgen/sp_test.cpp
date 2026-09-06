@@ -56,12 +56,16 @@
 //!       = 0, on the equator), uniform in radius, so the shock runs tangentially.  No
 //!       exact solution: the GATE is rotational invariance -- the two placements are the
 //!       same physics, and every difference between them is grid imprinting, the pole's
-//!       in particular.  With <mhd> a uniform field b0 along the blast axis is added
-//!       (zhat or xhat), so both placements stay one rotation apart and the problem is
-//!       axisymmetric about the blast axis; with resistivity the same eta in both.  The
-//!       finalizer bins the state in (radial cell, angular distance from the blast
-//!       centre) and writes <basename>-blast.dat for the two runs to be compared.  The
-//!       radial ghosts hold the AMBIENT state.  <hydro> or <mhd>.
+//!       in particular.  With <mhd> a uniform field b0 is added, tilted by blast_tilt
+//!       [deg] from the blast axis in the x-z plane: (sin t, 0, cos t) for the pole run
+//!       and its rotation (cos t, 0, -sin t) for the equator run, so both placements stay
+//!       one rotation apart (t = 0: the field along the axis, axisymmetric; t = 90: the
+//!       field crosses the blast centre TANGENTIALLY, through the pole in the pole run --
+//!       the demanding case).  With resistivity the same eta in both.  The finalizer bins
+//!       the state in (radial cell, angular distance from the centre, azimuth about the
+//!       axis measured from the field's projection) and writes <basename>-blast.dat for
+//!       the two runs to be compared.  The radial ghosts hold the AMBIENT state.
+//!       <hydro> or <mhd>.
 //!
 //! iprob 3, 11 and 12 report L1 / Linf errors against the exact state at the end of
 //!       the run
@@ -106,7 +110,7 @@
 namespace {
 Real sp_b0 = 1.0, sp_p0 = 1.0, sp_d0 = 1.0, sp_omega = 0.2, sp_alpha = 1.0;
 Real sp_eta = 0.0, sp_bc_tfrac = 0.0, sp_svol = 1.0, sp_b0c = 0.3, sp_e0 = 0.0;
-Real sp_bl_ang = 0.3, sp_bl_p = 10.0;
+Real sp_bl_ang = 0.3, sp_bl_p = 10.0, sp_bl_tilt = 0.0;
 int sp_bl_dir = 2;
 int sp_bdir = 2, sp_probe_done = 0, sp_iprob = 8, sp_axis = 2;
 
@@ -278,6 +282,80 @@ Real TorPressure(Real r, Real th, Real t, Real p0, Real b0c, Real eta, Real gm1)
   return p0 - b0c*b0c*SQR(r*sin(th)) + gm1*eta*4.0*b0c*b0c*t;
 }
 
+//! UNIFORM field B = bx xhat + bz zhat from the vector potential A = (B x r)/2 = (-bz y,
+//! bz x - bx z, bx y)/2: the same Stokes-loop construction as the force-free field, so the
+//! discrete div B is zero to round-off (iprob 13).
+KOKKOS_INLINE_FUNCTION
+void UVecPot(Real r, Real th, Real ph, Real bx, Real bz,
+             Real &ar, Real &at, Real &aph) {
+  const Real st = sin(th), ct = cos(th), sp = sin(ph), cp = cos(ph);
+  const Real x = r*st*cp, y = r*st*sp, z = r*ct;
+  const Real ax = -0.5*bz*y, ay = 0.5*(bz*x - bx*z), az = 0.5*bx*y;
+  ar  = ax*st*cp + ay*st*sp + az*ct;
+  at  = ax*ct*cp + ay*ct*sp - az*st;
+  aph = -ax*sp + ay*cp;
+}
+KOKKOS_INLINE_FUNCTION
+Real UEdge1(Real rl, Real rr, Real th, Real ph, Real bx, Real bz) {
+  Real s = 0.0;
+  for (int n=0; n<4; ++n) {
+    Real x, w; GL4(n, x, w);
+    Real ar, at, aph;
+    UVecPot(0.5*(rl + rr) + 0.5*(rr - rl)*x, th, ph, bx, bz, ar, at, aph);
+    s += w*ar;
+  }
+  return 0.5*(rr - rl)*s;
+}
+KOKKOS_INLINE_FUNCTION
+Real UEdge2(Real r, Real thl, Real thr, Real ph, Real bx, Real bz) {
+  Real s = 0.0;
+  for (int n=0; n<4; ++n) {
+    Real x, w; GL4(n, x, w);
+    Real ar, at, aph;
+    UVecPot(r, 0.5*(thl + thr) + 0.5*(thr - thl)*x, ph, bx, bz, ar, at, aph);
+    s += w*at*r;
+  }
+  return 0.5*(thr - thl)*s;
+}
+KOKKOS_INLINE_FUNCTION
+Real UEdge3(Real r, Real th, Real phl, Real phr, Real bx, Real bz) {
+  Real s = 0.0;
+  for (int n=0; n<4; ++n) {
+    Real x, w; GL4(n, x, w);
+    Real ar, at, aph;
+    UVecPot(r, th, 0.5*(phl + phr) + 0.5*(phr - phl)*x, bx, bz, ar, at, aph);
+    s += w*aph*r*sin(th);
+  }
+  return 0.5*(phr - phl)*s;
+}
+KOKKOS_INLINE_FUNCTION
+Real UFaceB1(Real r, Real thl, Real thr, Real phl, Real phr, Real bx, Real bz) {
+  const Real flux = UEdge2(r, thl, thr, phl, bx, bz) + UEdge3(r, thr, phl, phr, bx, bz)
+                  - UEdge2(r, thl, thr, phr, bx, bz) - UEdge3(r, thl, phl, phr, bx, bz);
+  const Real area = r*r*fabs(cos(thl) - cos(thr))*(phr - phl);
+  return (area > 0.0) ? flux/area : 0.0;
+}
+KOKKOS_INLINE_FUNCTION
+Real UFaceB2(Real rl, Real rr, Real th, Real phl, Real phr, Real bx, Real bz) {
+  const Real flux = UEdge3(rl, th, phl, phr, bx, bz) + UEdge1(rl, rr, th, phr, bx, bz)
+                  - UEdge3(rr, th, phl, phr, bx, bz) - UEdge1(rl, rr, th, phl, bx, bz);
+  const Real area = 0.5*(rr*rr - rl*rl)*fabs(sin(th))*(phr - phl);
+  return (area > 0.0) ? flux/area : 0.0;
+}
+KOKKOS_INLINE_FUNCTION
+Real UFaceB3(Real rl, Real rr, Real thl, Real thr, Real ph, Real bx, Real bz) {
+  const Real flux = UEdge1(rl, rr, thl, ph, bx, bz) + UEdge2(rr, thl, thr, ph, bx, bz)
+                  - UEdge1(rl, rr, thr, ph, bx, bz) - UEdge2(rl, thl, thr, ph, bx, bz);
+  const Real area = 0.5*(rr*rr - rl*rl)*(thr - thl);
+  return (area > 0.0) ? flux/area : 0.0;
+}
+//! the pole face, as bfield_bcs.cpp sets it (see FFPoleFaceB2)
+KOKKOS_INLINE_FUNCTION
+Real UPoleFaceB2(Real rl, Real rr, Real thn, Real phl, Real phr, Real bx, Real bz) {
+  return 0.5*(UFaceB2(rl, rr, thn, phl, phr, bx, bz)
+              - UFaceB2(rl, rr, thn, phl + M_PI, phr + M_PI, bx, bz));
+}
+
 //! exact decay factor and pressure of iprob = 11 at time t
 KOKKOS_INLINE_FUNCTION
 Real FFDecay(Real eta, Real alpha, Real t) { return exp(-eta*alpha*alpha*t); }
@@ -324,6 +402,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   sp_bl_dir = pin->GetOrAddInteger("problem", "blast_dir", 2);
   sp_bl_ang = pin->GetOrAddReal("problem", "blast_ang", 0.3);
   sp_bl_p = pin->GetOrAddReal("problem", "blast_p", 10.0);
+  sp_bl_tilt = pin->GetOrAddReal("problem", "blast_tilt", 0.0)*M_PI/180.0;
   const int bdir = (iprob == 13) ? sp_bl_dir : pin->GetOrAddInteger("problem", "bdir", 2);
   // iprob 3: rotation axis, 2 = zhat (default), 0 = xhat (flow through the poles; HYDRO
   // only: with a field it would need B along xhat, which the MHD branch does not build)
@@ -412,6 +491,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     sp_svol = svol;
   }
 
+  const int bldir_ = sp_bl_dir;
+  const Real tilt_ = sp_bl_tilt;
   if (is_mhd) {
     auto &b0f = pmbp->pmhd->b0;
     par_for("sp_test_b", DevExeSpace(), 0,nmb1, 0,n3, 0,n2, 0,n1,
@@ -445,6 +526,27 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         if (j < n2 && k < n3) { b0f.x1f(m,k,j,i) = 0.0; }
         if (i < n1 && k < n3) { b0f.x2f(m,k,j,i) = 0.0; }
         if (i < n1 && j < n2) { b0f.x3f(m,k,j,i) = TorFaceB3(rl, rr, tl, tr, b0c); }
+      } else if (iprob == 13) {
+        // uniform field bx xhat + bz zhat, the tilted field of this placement, from its
+        // vector potential (div B = 0 to round-off), the pole face as the BC sets it
+        const Real bx = (bldir_ == 2) ? b0*sin(tilt_) : b0*cos(tilt_);
+        const Real bz = (bldir_ == 2) ? b0*cos(tilt_) : -b0*sin(tilt_);
+        const Real rl = x1f_(m,i), rr = x1f_(m,(i < n1) ? i+1 : i);
+        if (j < n2 && k < n3) { b0f.x1f(m,k,j,i) = UFaceB1(rl, tl, tr, pl, pr, bx, bz); }
+        if (i < n1 && k < n3) {
+          const bool npole = (j == js) &&
+              (mb_bcs.d_view(m,BoundaryFace::inner_x2) == BoundaryFlag::polar);
+          const bool spole = (j == je+1) &&
+              (mb_bcs.d_view(m,BoundaryFace::outer_x2) == BoundaryFlag::polar);
+          if (npole) {
+            b0f.x2f(m,k,j,i) = UPoleFaceB2(rl, rr, x2f_(m,j+1), pl, pr, bx, bz);
+          } else if (spole) {
+            b0f.x2f(m,k,j,i) = UPoleFaceB2(rl, rr, x2f_(m,j-1), pl, pr, bx, bz);
+          } else {
+            b0f.x2f(m,k,j,i) = UFaceB2(rl, rr, tl, pl, pr, bx, bz);
+          }
+        }
+        if (i < n1 && j < n2) { b0f.x3f(m,k,j,i) = UFaceB3(rl, rr, tl, tr, pl, bx, bz); }
       } else if (bdir == 2 || iprob == 3) {
         Real b1, b2;
         UniformZFaces(b0, tl, tr, b1, b2);
@@ -560,6 +662,7 @@ void SPTestRadialBC(Mesh *pm) {
   const int axis = sp_axis;
   const Real b0c = sp_b0c, eta_ = sp_eta;
   const int bldir_ = sp_bl_dir;
+  const Real tilt_ = sp_bl_tilt;
   const Real tbc = pm->time + sp_bc_tfrac*pm->dt;
   const Real decay = (iprob == 11) ? FFDecay(sp_eta, alpha, tbc) : 1.0;
   const Real b0 = sp_b0*decay;
@@ -608,16 +711,24 @@ void SPTestRadialBC(Mesh *pm) {
           b0f.x3f(m,k,j,i) = TorFaceB3(rl, rr, tl, tr, b0c);
           if (j == n2-1) { b0f.x2f(m,k,j+1,i) = 0.0; }
           if (k == n3-1) { b0f.x3f(m,k+1,j,i) = TorFaceB3(rl, rr, tl, tr, b0c); }
-        } else if (iprob == 13 && bldir_ == 0) {
-          Real b1, b2, b3;
-          UniformXFaces(b0, tl, tr, pl, pr, b1, b2, b3);
-          b0f.x1f(m,k,j,ifc) = b1;
-          b0f.x2f(m,k,j,i) = b2;
-          b0f.x3f(m,k,j,i) = b3;
-          if (j == n2-1) {
-            b0f.x2f(m,k,j+1,i) = b0*cos(tr)*(sin(pr) - sin(pl))/(pr - pl);
+        } else if (iprob == 13) {
+          const Real bx = (bldir_ == 2) ? b0*sin(tilt_) : b0*cos(tilt_);
+          const Real bz = (bldir_ == 2) ? b0*cos(tilt_) : -b0*sin(tilt_);
+          const bool npole = (j == js) &&
+              (mb_bcs.d_view(m,BoundaryFace::inner_x2) == BoundaryFlag::polar);
+          const bool spole = (j == je+1) &&
+              (mb_bcs.d_view(m,BoundaryFace::outer_x2) == BoundaryFlag::polar);
+          b0f.x1f(m,k,j,ifc) = UFaceB1(x1f_(m,ifc), tl, tr, pl, pr, bx, bz);
+          if (npole) {
+            b0f.x2f(m,k,j,i) = UPoleFaceB2(rl, rr, tr, pl, pr, bx, bz);
+          } else if (spole) {
+            b0f.x2f(m,k,j,i) = UPoleFaceB2(rl, rr, x2f_(m,j-1), pl, pr, bx, bz);
+          } else {
+            b0f.x2f(m,k,j,i) = UFaceB2(rl, rr, tl, pl, pr, bx, bz);
           }
-          if (k == n3-1) { b0f.x3f(m,k+1,j,i) = -b0*sin(pr); }
+          b0f.x3f(m,k,j,i) = UFaceB3(rl, rr, tl, tr, pl, bx, bz);
+          if (j == n2-1) { b0f.x2f(m,k,j+1,i) = UFaceB2(rl, rr, tr, pl, pr, bx, bz); }
+          if (k == n3-1) { b0f.x3f(m,k+1,j,i) = UFaceB3(rl, rr, tl, tr, pr, bx, bz); }
         } else {
           Real b1, b2;
           UniformZFaces(b0, tl, tr, b1, b2);
@@ -727,6 +838,7 @@ void SPTestHistory(HistoryData *pdata, Mesh *pm) {
   const int axis = sp_axis;
   const Real b0c = sp_b0c, eta_ = sp_eta;
   const int bldir_ = sp_bl_dir;
+  const Real tilt_ = sp_bl_tilt;
   const Real decay = (iprob == 11) ? FFDecay(sp_eta, alpha, pm->time) : 1.0;
   const Real b0 = sp_b0*decay;
   const Real p11 = FFPressure(p0, sp_b0, gm1, decay);
@@ -852,6 +964,7 @@ void SPTestErrors(ParameterInput *pin, Mesh *pm) {
   const int axis = sp_axis;
   const Real b0c = sp_b0c, eta_ = sp_eta;
   const int bldir_ = sp_bl_dir;
+  const Real tilt_ = sp_bl_tilt;
   const Real decay = (iprob == 11) ? FFDecay(sp_eta, alpha, pm->time) : 1.0;
   const Real b0 = sp_b0*decay;
   const Real p11 = FFPressure(p0, sp_b0, gm1, decay);
@@ -1219,11 +1332,49 @@ void SPTestBlastProfile(ParameterInput *pin, Mesh *pm) {
   DvceArray5D<Real> bccd;
   if (is_mhd) bccd = pmbp->pmhd->bcc0;
   auto bcc = Kokkos::create_mirror_view_and_copy(HostMemSpace(), bccd);
+  // the discrete divergence, the gate that the potential-based construction is exact
+  Real mxdivb = 0.0;
+  if (is_mhd) {
+    auto b1 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pmhd->b0.x1f);
+    auto b2 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pmhd->b0.x2f);
+    auto b3 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pmhd->b0.x3f);
+    auto x1f = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->xx1f);
+    auto x2f = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->xx2f);
+    auto x3f = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->xx3f);
+    const Real lshell = pm->mesh_size.x1max - pm->mesh_size.x1min;
+    for (int m=0; m<pmbp->nmb_thispack; ++m) {
+      for (int k=ks; k<=ke; ++k) {
+        for (int j=js; j<=je; ++j) {
+          for (int i=is; i<=ie; ++i) {
+            const Real rl = x1f(m,i), rr = x1f(m,i+1);
+            const Real tl = x2f(m,j), tr = x2f(m,j+1);
+            const Real pl = x3f(m,k), pr = x3f(m,k+1);
+            const Real a1l = rl*rl*std::fabs(std::cos(tl) - std::cos(tr))*(pr - pl);
+            const Real a1r = rr*rr*std::fabs(std::cos(tl) - std::cos(tr))*(pr - pl);
+            const Real a2l = 0.5*(rr*rr - rl*rl)*std::fabs(std::sin(tl))*(pr - pl);
+            const Real a2r = 0.5*(rr*rr - rl*rl)*std::fabs(std::sin(tr))*(pr - pl);
+            const Real a3 = 0.5*(rr*rr - rl*rl)*(tr - tl);
+            const Real divb = (a1r*b1(m,k,j,i+1) - a1l*b1(m,k,j,i)
+                               + a2r*b2(m,k,j+1,i) - a2l*b2(m,k,j,i)
+                               + a3*(b3(m,k+1,j,i) - b3(m,k,j,i)))/vol(m,k,j,i);
+            mxdivb = std::fmax(mxdivb, std::fabs(divb)*lshell/std::fmax(sp_b0, 1e-30));
+          }
+        }
+      }
+    }
+#if MPI_PARALLEL_ENABLED
+    MPI_Allreduce(MPI_IN_PLACE, &mxdivb, 1, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+#endif
+    if (global_variable::my_rank == 0) {
+      std::printf("###   BLAST: max |div B| L/b0 = %.3e at t = %.4f\n", mxdivb, pm->time);
+    }
+  }
   // the radial index is global only for a single block in r (the polar MHD constraint);
   // bins in i use the block-local index offset by the block's position in the mesh
   const int nx1 = pm->mesh_indcs.nx1, nbin = pm->mesh_indcs.nx2;
   const Real dbin = M_PI/nbin;
-  const int nrow = nx1*nbin, ncol = 5;
+  const int npsi = 8;   // azimuth about the blast axis, from the field's projection
+  const int nrow = nx1*nbin*npsi, ncol = 5;
   std::vector<Real> acc(nrow*ncol, 0.0);
   auto &size = pmbp->pmb->mb_size;
   size.sync_host();
@@ -1235,11 +1386,21 @@ void SPTestBlastProfile(ParameterInput *pin, Mesh *pm) {
     for (int k=ks; k<=ke; ++k) {
       for (int j=js; j<=je; ++j) {
         const Real th = x2v(m,j), ph = x3v(m,k);
-        const Real cd = (sp_bl_dir == 2) ? std::cos(th) : std::sin(th)*std::cos(ph);
+        // the cell's unit vector n; d = angle from the centre c; psi = azimuth about c
+        // measured from the field's projection: pole run c = zhat, projection xhat,
+        // psi = atan2(y, x); equator run c = xhat, projection -zhat (the rotated xhat),
+        // c x (-zhat) = yhat, psi = atan2(y, -z).  The two coincide under the rotation.
+        const Real nx = std::sin(th)*std::cos(ph), ny = std::sin(th)*std::sin(ph);
+        const Real nz = std::cos(th);
+        const Real cd = (sp_bl_dir == 2) ? nz : nx;
         int b = static_cast<int>(std::acos(std::fmin(1.0, std::fmax(-1.0, cd)))/dbin);
         if (b >= nbin) b = nbin - 1;
+        const Real psi = (sp_bl_dir == 2) ? std::atan2(ny, nx) : std::atan2(ny, -nz);
+        int q = static_cast<int>((psi + M_PI)/(2.0*M_PI)*npsi);
+        if (q >= npsi) q = npsi - 1;
+        if (q < 0) q = 0;
         for (int i=is; i<=ie; ++i) {
-          const int row = (ioff + i - is)*nbin + b;
+          const int row = ((ioff + i - is)*nbin + b)*npsi + q;
           const Real v = vol(m,k,j,i);
           const Real vabs = std::sqrt(SQR(w0(m,IVX,k,j,i)) + SQR(w0(m,IVY,k,j,i))
                                       + SQR(w0(m,IVZ,k,j,i)));
@@ -1265,13 +1426,14 @@ void SPTestBlastProfile(ParameterInput *pin, Mesh *pm) {
   std::string fname = pin->GetString("job", "basename") + "-blast.dat";
   FILE *pfile = std::fopen(fname.c_str(), "w");
   if (pfile == nullptr) return;
-  std::fprintf(pfile, "# blast_dir %d t %.6e  columns: i dbin vol rho p |v| |B|\n",
-               sp_bl_dir, pm->time);
+  std::fprintf(pfile, "# blast_dir %d tilt %.1f deg t %.6e  columns: i dbin psibin vol"
+               " rho p |v| |B|\n", sp_bl_dir, sp_bl_tilt*180.0/M_PI, pm->time);
   for (int r=0; r<nrow; ++r) {
     const Real v = acc[r*ncol];
     if (v <= 0.0) continue;
-    std::fprintf(pfile, "%d %d %.6e %.8e %.8e %.8e %.8e\n", r/nbin, r%nbin, v,
-                 acc[r*ncol+1]/v, acc[r*ncol+2]/v, acc[r*ncol+3]/v, acc[r*ncol+4]/v);
+    std::fprintf(pfile, "%d %d %d %.6e %.8e %.8e %.8e %.8e\n", r/(nbin*npsi),
+                 (r/npsi)%nbin, r%npsi, v, acc[r*ncol+1]/v, acc[r*ncol+2]/v,
+                 acc[r*ncol+3]/v, acc[r*ncol+4]/v);
   }
   std::fclose(pfile);
   std::printf("### SP BLAST PROFILE written to %s (blast_dir %d)\n", fname.c_str(),
