@@ -2597,6 +2597,7 @@ void HydrostaticEquilibrium(Mesh *pm) {
     // for the metric-correct ghost kinetic energy below (cubed sphere only)
     const bool cs_bc_ = pm->use_cubed_sphere;
     auto &ccell_bc_ = pmbp->pcoord->cos_cell;
+    auto &scell_bc_ = pmbp->pcoord->sin_cell;
 
     // The cell-centred field in the OUTER-x1 ghost zones is built here, in its own kernel,
     // and not in the extrapolation kernel below.  It used to be computed inline there, in
@@ -2630,10 +2631,22 @@ void HydrostaticEquilibrium(Mesh *pm) {
             rw = (x2v_(m,j)-x2f_(m,j))/(x2f_(m,j+1)-x2f_(m,j));
             bcc0(m,IBY,k,j,(ie+i+1)) = lw*b0_x2f(m,k,j,(ie+i+1))
                                      + rw*b0_x2f(m,k,j+1,(ie+i+1));
+            // (the cubed-sphere frame rotation is applied after IBZ below)
             lw = (x3f_(m,k+1)-x3v_(m,k))/(x3f_(m,k+1)-x3f_(m,k));
             rw = (x3v_(m,k)-x3f_(m,k))/(x3f_(m,k+1)-x3f_(m,k));
             bcc0(m,IBZ,k,j,(ie+i+1)) = lw*b0_x3f(m,k,j,(ie+i+1))
                                      + rw*b0_x3f(m,k+1,j,(ie+i+1));
+            if (cs_bc_) {
+              // CUBED SPHERE: bcc is stored in the ORTHONORMAL frame that
+              // GnomonicEquiangleRaiseVelMHD builds (B.e_xi = (b_xi + c b_eta)/s, eta slot
+              // unchanged), and ConsToPrim subtracts 0.5*|bcc|^2 in that frame.  The
+              // plain face averages are components on the non-orthogonal tangent pair,
+              // whose sum of squares is NOT |B|^2: the two differ by the cross term
+              // (c^2 (b2^2 + b3^2) + 2 c b2 b3)/s^2, of order B_tan^2 at a panel corner.
+              const Real cg = ccell_bc_(m,k,j), sg = scell_bc_(m,k,j);
+              bcc0(m,IBY,k,j,(ie+i+1)) = (bcc0(m,IBY,k,j,(ie+i+1))
+                                          + cg*bcc0(m,IBZ,k,j,(ie+i+1)))/sg;
+            }
           }
         }
     });
@@ -2659,6 +2672,21 @@ void HydrostaticEquilibrium(Mesh *pm) {
               lw = (x3f_(m,k+1)-x3v_(m,k))/(x3f_(m,k+1)-x3f_(m,k));
               rw = (x3v_(m,k)-x3f_(m,k))/(x3f_(m,k+1)-x3f_(m,k));
               bcc0(m,IBZ,k,j,(is-i-1)) = lw*b0_x3f(m,k,j,(is-i-1)) + rw*b0_x3f(m,k+1,j,(is-i-1));
+              if (cs_bc_) {
+                // CUBED SPHERE: same orthonormal-frame rotation as the outer ghosts.  THIS
+                // ONE MATTERED.  The energy update above subtracts 0.5*|bcc0|^2 with the
+                // bcc0 that ConsToPrim left here (orthonormal) and adds it back with the
+                // one built here (plain averages): on cs the two differ by the cross term,
+                // so the ghost TOTAL energy drifted by that mismatch on every call.  The
+                // ghost internal energy, uniform over (j,k) at each depth by construction,
+                // had a spread of 1e-3 at rot 6, 8 % at rot 16 and ranged 3e8-2e9 around
+                // 1.5e9 by rot 26 of cs_prod_mhd_rot -- bottom cells under a low-pressure
+                // ghost drained at 2 km/s into the boundary, the domain lost 1 % of its
+                // mass and the run went NaN at rot 32.  Spherical polar has c = 0.
+                const Real cg = ccell_bc_(m,k,j), sg = scell_bc_(m,k,j);
+                bcc0(m,IBY,k,j,(is-i-1)) = (bcc0(m,IBY,k,j,(is-i-1))
+                                            + cg*bcc0(m,IBZ,k,j,(is-i-1)))/sg;
+              }
               u0_(m,IEN,k,j,is-i-1) += 0.5*(SQR(bcc0(m,IBX,k,j,is-i-1))+SQR(bcc0(m,IBY,k,j,is-i-1))+SQR(bcc0(m,IBZ,k,j,is-i-1)));
             }
 //              Real rho0_ip = u0_(m,IDN,k,j,(is-i-1));
