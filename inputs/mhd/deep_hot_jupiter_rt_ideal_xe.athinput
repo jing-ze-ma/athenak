@@ -88,6 +88,18 @@ reconstruct     = plm
 rsolver         = hlld
 gamma           = 1.4727545958
 etotgrav        = true
+# THE WELL-BALANCED SCHEME (2026-09-07, default ON for this problem): the radial
+# reconstruction subtracts a local hydrostatic background walked from each cell's own
+# state (a local polytrope, T linear in the potential, which contains isothermal and
+# isentropic columns), and the gravity source is that background's pressure difference,
+# so a column at rest stays at rest to the closure error instead of the O(dx^2)
+# discretisation error: deep-band spurious v_r 16 m/s -> 1 m/s at production resolution.
+# One walk per cell every 10 cycles (wb_cache_every): 1.03x the cost of a plain run.
+# Cubed sphere and spherical polar agree to four digits. See src/utils/wb_background.hpp.
+wellbalance_dynamic = true
+wb_x1               = true
+wb_option           = polytropic
+wb_cache_every      = 10
 
 # --- composition: read ONLY to build the x_e surface ---
 # These are the same keys the general EOS uses, and they are parsed the same way, but with
@@ -182,6 +194,12 @@ bc_outer_maxwell = true
 hot_jupiter = true
 Teq   = 2500.0
 omega = 2.06e-5
+# rot_potential: the centrifugal potential joins the gravitational one in the initial
+# column, the ghost column and the well-balanced background (a barotropic equilibrium of
+# the total potential, balanced in r and theta), and its radial part leaves the explicit
+# source. Removes the initial 6e-3 g centrifugal adjustment. Needs wellbalance_dynamic;
+# NOT restart-compatible with a run that started without it.
+rot_potential = true
 grav  = 942.0
 ap    = 9.44e9
 Rgas  = 4.593e7                  # sets mu = 1.810 for the thermodynamics AND the
