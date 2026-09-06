@@ -263,6 +263,30 @@ Real GravPotAt(const Real grav_acc, const Real ap, const Real r, const Real z,
   return pmass ? (-grav_acc)*ap*(1.0 - ap/r) : (-grav_acc)*z;
 }
 
+//! \fn TotPotAt
+//! \brief the gravitational plus centrifugal potential, -Omega^2 (r sin theta)^2 / 2 on
+//! top of GravPotAt (Phi increases outward here, and rotation lowers it at the equator).
+//! om2 = 0 (problem/rot_potential = false) returns the gravitational potential alone.
+KOKKOS_INLINE_FUNCTION
+Real TotPotAt(const Real grav_acc, const Real ap, const Real r, const Real z,
+              const bool pmass, const Real om2, const Real theta) {
+  return GravPotAt(grav_acc, ap, r, z, pmass) - 0.5*om2*SQR(r*sin(theta));
+}
+
+//! \fn ZEffFromPot
+//! \brief the height at which the gravitational potential alone equals `phi`: the
+//! equivalent height of an equipotential surface.  The 1D column p(z), rho(z) integrated
+//! in the gravitational potential is a function of Phi_grav; sampling it at
+//! z_eff(Phi_tot)
+//! makes the initial state (and the ghost column, filled by the same kernel) a barotropic
+//! equilibrium of the total potential, balanced in r AND theta.
+KOKKOS_INLINE_FUNCTION
+Real ZEffFromPot(const Real grav_acc, const Real ap, const Real phi, const bool pmass) {
+  const Real g = -grav_acc;
+  if (!pmass) return phi/g;
+  return ap/(1.0 - phi/(g*ap)) - ap;
+}
+
 
 //----------------------------------------------------------------------------------------
 //! \fn TideAccR / TideAccT / TideAccP
@@ -1623,6 +1647,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     Real cpoly_[NSTRETCH_R_POLY];
     for (int n=0; n<NSTRETCH_R_POLY; ++n) cpoly_[n] = pmy_mesh_->fStretchRPoly[n];
     Real omega = pin->GetReal("problem","omega");
+    // problem/rot_potential: the centrifugal potential joins the gravitational one in
+    // the column, the ghosts and the well-balanced arrays (see TotPotAt / ZEffFromPot)
+    const bool rot_potential = pin->GetOrAddBoolean("problem","rot_potential",false);
+    const Real om2_ = rot_potential ? SQR(omega) : 0.0;
     Real Rgas = pin->GetReal("problem","Rgas");
     Real met = pin->GetReal("problem","met");
 
@@ -1752,10 +1780,16 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       }
         
       Real pwb, denwb;
-      get_wb_eos(eos, Rgas, grav_acc, zarr.d_view,logparr.d_view,x1v,denwb,pwb);
+      // rot_potential: sample the column at the equivalent height of this cell's total
+      // potential (barotropic in Phi_tot); otherwise at its geometric height
+      const Real zs = (om2_ > 0.0) ?
+          ZEffFromPot(grav_acc, ap,
+                      TotPotAt(grav_acc, ap, r, x1v, grav_pmass, om2_, theta),
+                      grav_pmass) : x1v;
+      get_wb_eos(eos, Rgas, grav_acc, zarr.d_view,logparr.d_view,zs,denwb,pwb);
         
       Real p, den;
-      get_init_eos(eos, Rgas, grav_acc, Tarr_init.d_view,lgparr_init.d_view,N,zarr_init.d_view,logparr_init.d_view,x1v,den,p);
+      get_init_eos(eos, Rgas, grav_acc, Tarr_init.d_view,lgparr_init.d_view,N,zarr_init.d_view,logparr_init.d_view,zs,den,p);
 //      get_init_eos_arr(lam, phi, N, zinitarr, logpinitarr);
 //      get_init_eos(zinitarr,logpinitarr,x3v,lam,phi,den,p);
 //      p = pwb;
@@ -1773,7 +1807,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       w0_(m,IVZ,k,j,i) = 0.0;
       w0_(m,IEN,k,j,i) = EintFromP(eos, igm1, den, p);
         
-        Real phicc = GravPotAt(grav_acc, ap, r, x1v, grav_pmass);
+        Real phicc = TotPotAt(grav_acc, ap, r, x1v, grav_pmass, om2_, theta);
         if (use_etotgrav) {
             u0_(m,IEN,k,j,i) += den*phicc;
         }
@@ -1822,16 +1856,20 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         }
           
         Real pwb, denwb;
-        get_wb_eos(eos, Rgas, grav_acc, zarr.d_view,logparr.d_view,x1v,denwb,pwb);
+        const Real zs = (om2_ > 0.0) ?
+            ZEffFromPot(grav_acc, ap,
+                        TotPotAt(grav_acc, ap, r, x1v, grav_pmass, om2_, theta),
+                        grav_pmass) : x1v;
+        get_wb_eos(eos, Rgas, grav_acc, zarr.d_view,logparr.d_view,zs,denwb,pwb);
         
         Real p, den;
-        get_init_eos(eos, Rgas, grav_acc, Tarr_init.d_view,lgparr_init.d_view,N,zarr_init.d_view,logparr_init.d_view,x1v,den,p);
+        get_init_eos(eos, Rgas, grav_acc, Tarr_init.d_view,lgparr_init.d_view,N,zarr_init.d_view,logparr_init.d_view,zs,den,p);
 //        get_init_eos_arr(lam, phi, N, zinitarr, logpinitarr);
 //        get_init_eos(zinitarr,logpinitarr,x1v,lam,phi,den,p);
 //        p = pwb;
 //        den = denwb;
         
-        Real phicc = GravPotAt(grav_acc, ap, r, x1v, grav_pmass);
+        Real phicc = TotPotAt(grav_acc, ap, r, x1v, grav_pmass, om2_, theta);
         
       if (use_etotgrav || use_wellbalance_dynamic) {
           if (use_spherical_polar) {
@@ -1858,7 +1896,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             lam = x3v*iap;
             phi = x2v*iap;
           }
-          phicc = GravPotAt(grav_acc, ap, r, x1v, grav_pmass);
+          phicc = TotPotAt(grav_acc, ap, r, x1v, grav_pmass, om2_, theta);
           phi0_x1f(m,k,j,i) = phicc;
           if (i == ie) {
               if (use_spherical_polar) {
@@ -1881,7 +1919,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                 lam = x3v*iap;
                 phi = x2v*iap;
               }
-              phicc = GravPotAt(grav_acc, ap, r, x1v, grav_pmass);
+              phicc = TotPotAt(grav_acc, ap, r, x1v, grav_pmass, om2_, theta);
               phi0_x1f(m,k,j,i+1) = phicc;
           }
           
@@ -1909,7 +1947,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             lam = x3v*iap;
             phi = x2v*iap;
           }
-          phicc = GravPotAt(grav_acc, ap, r, x1v, grav_pmass);
+          phicc = TotPotAt(grav_acc, ap, r, x1v, grav_pmass, om2_, theta);
           phi0_x2f(m,k,j,i) = phicc;
           if (j == je) {
               if (use_spherical_polar) {
@@ -1928,7 +1966,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                 lam = x3v*iap;
                 phi = x2v*iap;
               }
-              phicc = GravPotAt(grav_acc, ap, r, x1v, grav_pmass);
+              phicc = TotPotAt(grav_acc, ap, r, x1v, grav_pmass, om2_, theta);
               phi0_x2f(m,k,j+1,i) = phicc;
           }
           
@@ -1956,7 +1994,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             lam = x3v*iap;
             phi = x2v*iap;
           }
-          phicc = GravPotAt(grav_acc, ap, r, x1v, grav_pmass);
+          phicc = TotPotAt(grav_acc, ap, r, x1v, grav_pmass, om2_, theta);
           phi0_x3f(m,k,j,i) = phicc;
           if (k == ke) {
               if (use_spherical_polar) {
@@ -1975,7 +2013,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                 lam = x3v*iap;
                 phi = x2v*iap;
               }
-              phicc = GravPotAt(grav_acc, ap, r, x1v, grav_pmass);
+              phicc = TotPotAt(grav_acc, ap, r, x1v, grav_pmass, om2_, theta);
               phi0_x3f(m,k+1,j,i) = phicc;
           }
       }
@@ -2115,7 +2153,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
               phi = x2v*iap;
             }
             
-            Real phicc = GravPotAt(grav_acc, ap, r, x1v, grav_pmass);
+            Real phicc = TotPotAt(grav_acc, ap, r, x1v, grav_pmass, om2_, theta);
             phicc0(m,k,j,i) = phicc;
             // The FACE potentials on every face, ghost faces included.  The initial
             // condition above fills only the active faces, but the well-balanced
@@ -2133,9 +2171,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             }
             Real zl = x1fl, zr = x1fr;
             if (use_spherical_polar || use_cubed_sphere_) { zl -= ap; zr -= ap; }
-            phi0_x1f(m,k,j,i) = GravPotAt(grav_acc, ap, x1fl, zl, grav_pmass);
+            phi0_x1f(m,k,j,i) = TotPotAt(grav_acc, ap, x1fl, zl, grav_pmass, om2_, theta);
             if (i == n1m1) {
-              phi0_x1f(m,k,j,i+1) = GravPotAt(grav_acc, ap, x1fr, zr, grav_pmass);
+              phi0_x1f(m,k,j,i+1) = TotPotAt(grav_acc, ap, x1fr, zr, grav_pmass, om2_,
+                                              theta);
             }
         });
 //        par_for("wbgravbc", DevExeSpace(), 0, (pmbp->nmb_thispack-1), 0, n3m1, 0, n2m1,
@@ -2191,7 +2230,16 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
           u0wb(m,IM3,k,j,i) = 0.0;
           u0wb(m,IEN,k,j,i) = EintFromP(eos, igm1, denwb, pwb);
           if (use_etotgrav) {
-              Real phicc = GravPotAt(grav_acc, ap, r, x1v, grav_pmass);
+              Real theta;
+              if (use_spherical_polar) {
+                theta = x2v;
+              } else if (use_cubed_sphere_) {
+                Real lam_, phi_;
+                CSCellAngles(mbpanel_.d_view(m), x2v, x3v, theta, lam_, phi_);
+              } else {
+                theta = -(x3v*iap-M_PI/2.0);
+              }
+              Real phicc = TotPotAt(grav_acc, ap, r, x1v, grav_pmass, om2_, theta);
               u0wb(m,IEN,k,j,i) += denwb*phicc;
           }
           w0wb(m,IDN,k,j,i) = denwb;
@@ -3122,6 +3170,13 @@ void SourceFunc(Mesh *pm, Real bdt) {
     const bool grav_pmass = pm->pgen->hot_jupiter_param.grav_point_mass;
     const bool tide = pm->pgen->hot_jupiter_param.stellar_tide;
     Real omega = pm->pgen->hot_jupiter_param.omega;
+    // rot_potential: the radial centrifugal force is carried by the potential ONLY
+    // through
+    // the well-balanced source (the plain gravity source knows gravity alone), so the
+    // explicit radial term is dropped only when that scheme is on; with etotgrav the
+    // energy flux carries the potential either way
+    const bool rotpot = pm->pgen->hot_jupiter_param.rot_potential;
+    const bool rotpot_src = rotpot && use_wellbalance_dynamic;
 
     // Radial grid stretch, copied out of the Mesh so the device lambdas below capture
     // plain values. Radii rebuilt here with CellCenterX/LeftEdgeX are UNSTRETCHED, so
@@ -3231,9 +3286,13 @@ void SourceFunc(Mesh *pm, Real bdt) {
           Real cor = 2.0*omega*vphi;
           u0(m,IM2,k,j,i) += rho*(cor+oor)*cosine*bdt;
           u0(m,IM3,k,j,i) += -rho*2.0*omega*(vr*sine+vtheta*cosine)*bdt;
-          u0(m,IM1,k,j,i) += rho*(cor+oor)*sine*bdt;
+          // rot_potential: the RADIAL centrifugal force lives in the potential (the
+          // well-balanced source and, with etotgrav, the energy flux carry it); only the
+          // theta part and Coriolis stay explicit here
+          u0(m,IM1,k,j,i) += rho*(cor + (rotpot_src ? 0.0 : oor))*sine*bdt;
 //          if (!use_etotgrav)
-          u0(m,IEN,k,j,i) += rho*oor*(vr*sine+vtheta*cosine)*bdt;
+          u0(m,IEN,k,j,i) += rho*oor*(((rotpot && use_etotgrav) ? 0.0 : vr*sine)
+                                      + vtheta*cosine)*bdt;
           // The host star's tidal term, on top of the planet's own centrifugal `oor`.
           // Together they make up the Hill acceleration Omega^2 (3x, 0, -z); see
           // TideAccR/TideAccT/TideAccP. mu is the substellar direction cosine, the same
@@ -3296,12 +3355,17 @@ void SourceFunc(Mesh *pm, Real bdt) {
           const Real yy = r*rh1;
           const Real acx =  2.0*omega*vcy + SQR(omega)*xx;
           const Real acy = -2.0*omega*vcx + SQR(omega)*yy;
-          u0(m,IM1,k,j,i) += rho*(acx*rh0 + acy*rh1)*bdt;
+          // rot_potential: drop the radial projection of the centrifugal acceleration,
+          // Omega^2 r sin^2(theta) = Omega^2 (x rh0 + y rh1), which the potential carries
+          const Real acr_rot = rotpot_src ? SQR(omega)*(xx*rh0 + yy*rh1) : 0.0;
+          u0(m,IM1,k,j,i) += rho*(acx*rh0 + acy*rh1 - acr_rot)*bdt;
           u0(m,IM2,k,j,i) += rho*(acx*e1[0] + acy*e1[1])*bdt;
           u0(m,IM3,k,j,i) += rho*(acx*e2[0] + acy*e2[1])*bdt;
           // Only the centrifugal part does work -- Coriolis is perpendicular to v -- and
           // this is the same term the spherical-polar branch adds unconditionally.
-          u0(m,IEN,k,j,i) += rho*SQR(omega)*(xx*vcx + yy*vcy)*bdt;
+          u0(m,IEN,k,j,i) += rho*(SQR(omega)*(xx*vcx + yy*vcy)
+                                  - ((rotpot && use_etotgrav) ?
+                                     SQR(omega)*(xx*rh0 + yy*rh1)*v1 : 0.0))*bdt;
         } else {
           // corotating beta-plane approximation e.g. Fromang+2016
           Real omega1 = omega*lam;

@@ -34,6 +34,11 @@ struct HotJupiterParam {
   // acceleration Omega^2 (2x, -y, -z) in the corotating frame. See TideAccR/TideAccT/
   // TideAccP in deep_hot_jupiter_rt.cpp.
   bool stellar_tide = false;
+  // true = the centrifugal potential -Omega^2 R^2/2 is part of the potential the initial
+  // column, the ghost column and the well-balanced background are built on (a barotropic
+  // equilibrium of the TOTAL potential), and its radial part leaves the explicit source.
+  // The theta part stays an explicit source. See TotPotAt/ZEffFromPot.
+  bool rot_potential = false;
 };
 
 //----------------------------------------------------------------------------------------
