@@ -48,6 +48,7 @@ void WBColumnFinal(ParameterInput *pin, Mesh *pm);
 namespace {
 int axis_ = 1;
 Real g0_ = 1.0, ap_ = 0.0;
+Real gsrc_fac_ = 1.0;   // the SOURCE gravity is gsrc_fac x the potential's: a test force
 // the column profile and everything the user boundary needs (it gets only a Mesh*)
 DvceArray1D<Real> lnp_d_;
 Real zlo_ = 0.0, dzf_ = 1.0, zmin_ = 0.0, t0_ = 1.0, tgrad_ = 0.0, gm1_ = 0.4, b0_ = 0.0;
@@ -81,6 +82,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   axis_ = pin->GetOrAddInteger("problem", "axis", 1);
   g0_ = pin->GetOrAddReal("problem", "g0", 1.0);
   ap_ = pin->GetOrAddReal("problem", "ap", 0.0);
+  gsrc_fac_ = pin->GetOrAddReal("problem", "gsrc_fac", 1.0);
   const Real rho0 = pin->GetOrAddReal("problem", "rho0", 1.0);
   const Real t0 = pin->GetOrAddReal("problem", "t0", 1.0);
   const Real tgrad = pin->GetOrAddReal("problem", "tgrad", 0.0);
@@ -218,7 +220,7 @@ void WBColumnGravity(Mesh *pm, Real bdt) {
   DvceArray4D<Real> ph3 = is_mhd ? pmbp->pmhd->phi0.x3f : pmbp->phydro->phi0.x3f;
   DvceArray5D<Real> wbq0 = is_mhd ? pmbp->pmhd->wbq0 : pmbp->phydro->wbq0;
   const int axis = axis_;
-  const Real g0 = g0_, ap = ap_;
+  const Real g0 = g0_, ap = ap_, gfac = gsrc_fac_;
   const bool use_cache = (axis == 1) && wbx1;
 
   par_for("wbcol_grav", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
@@ -233,7 +235,7 @@ void WBColumnGravity(Mesh *pm, Real bdt) {
     const int im = (axis == 1) ? IM1 : IM3;
     const Real d = w0(m,IDN,k,j,i);
     const Real gz = GravAt(g0, ap, z - zmin);
-    Real src = -bdt*gz*d;
+    Real src = -bdt*gz*gfac*d;
     if (!etotgrav) u0(m,IEN,k,j,i) += src*w0(m,iv,k,j,i);
     if (wbdyn) {
       Real pl, pr, d1, d2, d3;
@@ -252,8 +254,9 @@ void WBColumnGravity(Mesh *pm, Real bdt) {
             phicc(m,k-1,j,i), ph3(m,k,j,i), phicc(m,k,j,i), ph3(m,k+1,j,i),
             phicc(m,k+1,j,i), d1, pl, d2, pr, d3);
       }
-      // Cartesian: equal face areas, so the background's pressure difference over dz
-      src = bdt*(pr - pl)/dzc;
+      // Cartesian: equal face areas, so the background's pressure difference over dz,
+      // plus whatever part of the force the potential does not carry (gsrc_fac != 1)
+      src = bdt*(pr - pl)/dzc - bdt*gz*(gfac - 1.0)*d;
     }
     u0(m,im,k,j,i) += src;
   });
