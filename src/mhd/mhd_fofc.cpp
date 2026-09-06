@@ -61,6 +61,11 @@ void MHD::FOFC(Driver *pdriver, int stage) {
     auto &utest_ = utest;
     auto &bcctest_ = bcctest;
     auto &b1_ = b1;
+    const bool cs_fofc_ = pmy_pack->pmesh->use_cubed_sphere;
+    auto &ccs_fofc_ = pmy_pack->pcoord->cos_cell;
+    auto &scs_fofc_ = pmy_pack->pcoord->sin_cell;
+    auto &x1v_fofc_ = pmy_pack->pcoord->x1v;
+    auto &x1f_fofc_ = pmy_pack->pcoord->xx1f;
 
     // Index bounds
     int il = is-1, iu = ie+1, jl = js, ju = je, kl = ks, ku = ke;
@@ -90,6 +95,16 @@ void MHD::FOFC(Driver *pdriver, int stage) {
       Real b1old = 0.5*(b1_.x1f(m,k,j,i) + b1_.x1f(m,k,j,i+1));
       Real b2old = 0.5*(b1_.x2f(m,k,j,i) + b1_.x2f(m,k,j+1,i));
       Real b3old = 0.5*(b1_.x3f(m,k,j,i) + b1_.x3f(m,k+1,j,i));
+      if (cs_fofc_) {
+        // CUBED SPHERE: bcc0 is stored in the orthonormal frame with the radial
+        // component at the centroid (GnomonicEquiangleRaiseVelMHD); the plain averages
+        // are components on the non-orthogonal tangent pair.  Mixing the two in bcctest
+        // mis-states the test state's magnetic energy by the cross term.
+        b1old = CellCenteredRadialFld(b1_.x1f(m,k,j,i), b1_.x1f(m,k,j,i+1),
+                                      x1f_fofc_(m,i), x1f_fofc_(m,i+1), x1v_fofc_(m,i));
+        const Real c = ccs_fofc_(m,k,j), sn = scs_fofc_(m,k,j);
+        b2old = (b2old + c*b3old)/sn;
+      }
 
       bcctest_(m,IBX,k,j,i) = gam0*bcc0_(m,IBX,k,j,i) + gam1*b1old;
       bcctest_(m,IBY,k,j,i) = gam0*bcc0_(m,IBY,k,j,i) + gam1*b2old;

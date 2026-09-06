@@ -62,6 +62,17 @@ MeshRefinement::MeshRefinement(Mesh *pm, ParameterInput *pin) :
     // read prolongate primitives flag
     if (pin->DoesParameterExist("mesh_refinement", "prolong_primitives")) {
       prolong_prims = pin->GetBoolean("mesh_refinement", "prolong_primitives");
+      // prolong_prims.cpp converts cons <-> prims with the Cartesian relations: on the
+      // cubed sphere the momenta are covariant on a non-orthogonal tangent pair and bcc
+      // lives in an orthonormal frame (GnomonicEquiangleRaiseVelMHD), so both the
+      // velocities and the magnetic energy it would form there are wrong.  Refuse it.
+      if (prolong_prims && pm->use_cubed_sphere) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "mesh_refinement/prolong_primitives is not supported on"
+                  << " the cubed sphere (cons<->prim conversions there are Cartesian)"
+                  << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
     }
   }
 
