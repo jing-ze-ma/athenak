@@ -2182,6 +2182,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         });
     }
 
+    // the cubed-sphere tangent-pair trig, for the orthonormal-frame bcc below
+    auto &ccell_ic_ = pmbp->pcoord->cos_cell;
+    auto &scell_ic_ = pmbp->pcoord->sin_cell;
     // initialize magnetic fields if MHD. One-off like the initial condition above: on a
     // restart b0/bcc0 are read from file.
     if (!restart && pmbp->pmhd != nullptr) {
@@ -2307,13 +2310,27 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             if (j==n2m1) b0.x2f(m,k,j+1,i) = b0x2fjp;
             if (k==n3m1) b0.x3f(m,k+1,j,i) = b0x3fkp;
 
-            // bcc must be formed the way ConsToPrim forms it on THIS grid -- the plain
-            // average (the non-spherical-polar branch of general_mhd.cpp), not the
-            // volume-centroid weights -- or the magnetic energy added here and the one
-            // subtracted on the first C2P disagree.
-            bcc0(m,IBX,k,j,i) = 0.5*(b0.x1f(m,k,j,i) + b0x1fip);
-            bcc0(m,IBY,k,j,i) = 0.5*(b0.x2f(m,k,j,i) + b0x2fjp);
-            bcc0(m,IBZ,k,j,i) = 0.5*(b0.x3f(m,k,j,i) + b0x3fkp);
+            // bcc must be formed the way ConsToPrim forms it on THIS grid, or the
+            // magnetic energy added here and the one subtracted on the first C2P
+            // disagree.  On the cubed sphere that is GnomonicEquiangleRaiseVelMHD: the
+            // radial component interpolated to the centroid x1v, and the tangential pair
+            // rotated into the ORTHONORMAL frame, B.e_xi = (b_xi + c b_eta)/s with the
+            // eta slot unchanged.  The plain averages used before are components on the
+            // non-orthogonal tangent pair, whose sum of squares differs from |B|^2 by
+            // (c^2 (b2^2 + b3^2) + 2 c b2 b3)/s^2 -- a few percent of the internal
+            // energy in the top cells, where the gas energy is ~1 erg/cm^3.
+            {
+              const Real lw = (x1f_(m,i+1)-x1v_(m,i))/(x1f_(m,i+1)-x1f_(m,i));
+              const Real rw = (x1v_(m,i)-x1f_(m,i))/(x1f_(m,i+1)-x1f_(m,i));
+              bcc0(m,IBX,k,j,i) = lw*b0.x1f(m,k,j,i) + rw*b0x1fip;
+            }
+            {
+              const Real cg = ccell_ic_(m,k,j), sg = scell_ic_(m,k,j);
+              const Real by_n = 0.5*(b0.x2f(m,k,j,i) + b0x2fjp);
+              const Real bz_n = 0.5*(b0.x3f(m,k,j,i) + b0x3fkp);
+              bcc0(m,IBY,k,j,i) = (by_n + cg*bz_n)/sg;
+              bcc0(m,IBZ,k,j,i) = bz_n;
+            }
 
             u0_(m,IEN,k,j,i) += 0.5*(SQR(bcc0(m,IBX,k,j,i))
                                    + SQR(bcc0(m,IBY,k,j,i))
@@ -2391,6 +2408,16 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
           lw = (x3f_(m,k+1)-x3v_(m,k))/(x3f_(m,k+1)-x3f_(m,k));
           rw = (x3v_(m,k)-x3f_(m,k))/(x3f_(m,k+1)-x3f_(m,k));
           bcc0(m,IBZ,k,j,i) = lw*b0.x3f(m,k,j,i) + rw*b0.x3f(m,k+1,j,i);
+        } else if (use_cubed_sphere_) {
+          // as GnomonicEquiangleRaiseVelMHD: centroid-weighted radial, orthonormal frame
+          Real lw = (x1f_(m,i+1)-x1v_(m,i))/(x1f_(m,i+1)-x1f_(m,i));
+          Real rw = (x1v_(m,i)-x1f_(m,i))/(x1f_(m,i+1)-x1f_(m,i));
+          bcc0(m,IBX,k,j,i) = lw*b0.x1f(m,k,j,i) + rw*b0.x1f(m,k,j,i+1);
+          const Real cg = ccell_ic_(m,k,j), sg = scell_ic_(m,k,j);
+          const Real by_n = 0.5*(b0.x2f(m,k,j,i) + b0.x2f(m,k,j+1,i));
+          const Real bz_n = 0.5*(b0.x3f(m,k,j,i) + b0.x3f(m,k+1,j,i));
+          bcc0(m,IBY,k,j,i) = (by_n + cg*bz_n)/sg;
+          bcc0(m,IBZ,k,j,i) = bz_n;
         } else {
           bcc0(m,IBX,k,j,i) = 0.5*(b0.x1f(m,k,j,i) + b0.x1f(m,k,j,i+1));
           bcc0(m,IBY,k,j,i) = 0.5*(b0.x2f(m,k,j,i) + b0.x2f(m,k,j+1,i));
