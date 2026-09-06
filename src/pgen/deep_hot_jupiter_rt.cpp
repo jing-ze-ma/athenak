@@ -1769,8 +1769,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         
       w0_(m,IDN,k,j,i) = den;
       w0_(m,IVX,k,j,i) = 0.0;
-      w0_(m,IVX,k,j,i) = 0.0;
-      w0_(m,IVX,k,j,i) = 0.0;
+      w0_(m,IVY,k,j,i) = 0.0;   // was IVX three times; harmless, ConsToPrim rebuilt w0
+      w0_(m,IVZ,k,j,i) = 0.0;
       w0_(m,IEN,k,j,i) = EintFromP(eos, igm1, den, p);
         
         Real phicc = GravPotAt(grav_acc, ap, r, x1v, grav_pmass);
