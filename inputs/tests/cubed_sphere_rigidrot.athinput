@@ -72,7 +72,10 @@ iprob = 3
 d0    = 1.0
 p0    = 1.0
 omega = 0.2
+rot_axis = z          # z (through two panel centres), edge (through two cube-edge
+                      # midpoints), vertex (through two cube vertices), custom (rot_ax,ay,az)
 user_bcs = true
+conv_errors = 1       # L1 errors vs the exact state by region, appended to cs_rigidrot-cs-errs.dat
 
 <output1>
 file_type = hst

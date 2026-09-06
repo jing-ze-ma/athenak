@@ -84,6 +84,11 @@ Real cs_bc_tfrac = 0.0;   // ghost time offset, in units of dt (problem/bc_time_
 int  cs_bc_bcc_match = 0; // ghost x1f matched to bcc (problem/bc_bcc_match)
 int  cs_bc_probe = 0;     // print the interior boundary-layer PHASE (problem/bc_probe)
 Real cs_bazi = 0.0;       // iprob=11 azimuthal amplitude; curl B = 2*cs_bazi*zhat
+// iprob=14 (force-free resistive decay): B = ffb0 (sin az, cos az, 0), curl B = a B
+Real cs_ffb0 = 0.5, cs_alpha = 0.5*M_PI, cs_eta = 0.0;
+// iprob=3 rotation axis (unit vector); zhat is through two panel centres, (1,1,1)/sqrt3
+// through two cube vertices -- the cubed sphere's analogue of the spherical-polar pole
+Real cs_axx = 0.0, cs_axy = 0.0, cs_axz = 1.0;
 // iprob=12 blast: centre direction (unit), angular radius, and interior pressure
 Real cs_blx = 0.0, cs_bly = 0.0, cs_blz = 1.0;
 Real cs_blang = 0.2, cs_blp = 10.0;
@@ -220,21 +225,133 @@ void RotatingUniformField(const Real omega, const Real t,
 KOKKOS_INLINE_FUNCTION
 void RigidRotState(const int p, const Real xi, const Real eta, const Real r,
                    const Real d0, const Real p0, const Real omega, const Real gm1,
-                   Real &dn, Real &ie, Real &v1, Real &v2, Real &v3) {
+                   Real &dn, Real &ie, Real &v1, Real &v2, Real &v3,
+                   const Real nx = 0.0, const Real ny = 0.0, const Real nz = 1.0) {
   Real cx, cy, cz;
   PanelToCart(p, xi, eta, cx, cy, cz);
-  // Cartesian position and the rigid-rotation velocity there.
-  const Real px = r*cx, py = r*cy;
-  const Real vx = -omega*py;
-  const Real vy =  omega*px;
-  const Real R2 = px*px + py*py;      // cylindrical radius squared
+  // Cartesian position and the rigid-rotation velocity v = omega nhat x r there; the
+  // axis nhat is zhat unless the caller says otherwise (problem/rot_axis for iprob 3).
+  const Real px = r*cx, py = r*cy, pz = r*cz;
+  const Real vx = omega*(ny*pz - nz*py);
+  const Real vy = omega*(nz*px - nx*pz);
+  const Real vz = omega*(nx*py - ny*px);
+  const Real rn = px*nx + py*ny + pz*nz;
+  const Real R2 = px*px + py*py + pz*pz - rn*rn;   // distance from the axis, squared
   dn = d0;
   ie = (p0 + 0.5*d0*omega*omega*R2)/gm1;
   Real a, b, cs;
-  CartToPanelVec(p, xi, eta, vx, vy, 0.0, a, b, cs);
-  v1 = 0.0;                            // v.rhat = 0 for rotation about the z axis
+  CartToPanelVec(p, xi, eta, vx, vy, vz, a, b, cs);
+  v1 = 0.0;                            // v.rhat = 0 for any rotation about the origin
   v2 = a;                              // xi   (x2)
   v3 = b;                              // eta  (x3)
+}
+
+//----------------------------------------------------------------------------------------
+//! iprob = 14: the FORCE-FREE field B = b0 (sin(alpha z), cos(alpha z), 0), curl B =
+//! alpha B, |B| = b0 uniform, J x B = 0.  With constant eta the exact resistive
+//! solution is B(t) = B(0) exp(-eta alpha^2 t) at rest with the uniform pressure
+//! p(t) = p0 + (gamma-1) b0^2 (1 - exp(-2 eta alpha^2 t))/2 (total energy constant).
+//! The twin of sp_test iprob 11.  Faces come from Stokes loops of A = B/alpha along the
+//! PHYSICAL edges of every cell (Gauss-Legendre 4 per edge, the x1 edges along r at a
+//! panel-grid vertex, the x2/x3 edges along the great-circle arcs xi = const or
+//! eta = const at a radial face), divided by the code's own face areas, so div B is
+//! zero to round-off and the same construction scaled by the decay gives the exact
+//! field at any time -- in the radial ghosts and in the final check.
+
+KOKKOS_INLINE_FUNCTION
+void FFCartA(const Real x, const Real y, const Real z, const Real b0, const Real al,
+             Real &ax, Real &ay, Real &az) {
+  ax = (b0/al)*sin(al*z); ay = (b0/al)*cos(al*z); az = 0.0;
+}
+KOKKOS_INLINE_FUNCTION
+void FFCartB(const Real x, const Real y, const Real z, const Real b0, const Real al,
+             Real &bx, Real &by, Real &bz) {
+  bx = b0*sin(al*z); by = b0*cos(al*z); bz = 0.0;
+}
+KOKKOS_INLINE_FUNCTION
+void CSGL4(const int n, Real &x, Real &w) {
+  const Real xa = 0.3399810435848563, xb = 0.8611363115940526;
+  const Real wa = 0.6521451548625461, wb = 0.3478548451374538;
+  if (n == 0) {
+    x = -xb; w = wb;
+  } else if (n == 1) {
+    x = -xa; w = wa;
+  } else if (n == 2) {
+    x = xa; w = wa;
+  } else {
+    x = xb; w = wb;
+  }
+}
+//! Int A.dl along the x1 edge (along r) at panel point (xi, eta), r in [rl, rr]
+KOKKOS_INLINE_FUNCTION
+Real CSFFEdge1(const int p, const Real xi, const Real eta, const Real rl, const Real rr,
+               const Real b0, const Real al) {
+  Real q[3]; cubed_sphere::PanelToCart(p, xi, eta, q);
+  Real sum = 0.0;
+  for (int n=0; n<4; ++n) {
+    Real x, w; CSGL4(n, x, w);
+    const Real r = 0.5*(rl + rr) + 0.5*(rr - rl)*x;
+    Real ax, ay, az; FFCartA(r*q[0], r*q[1], r*q[2], b0, al, ax, ay, az);
+    sum += w*(ax*q[0] + ay*q[1] + az*q[2]);
+  }
+  return 0.5*(rr - rl)*sum;
+}
+//! Int A.dl along the x2 edge (along xi) at radius rf and eta, xi in [xl, xr]
+KOKKOS_INLINE_FUNCTION
+Real CSFFEdge2(const int p, const Real xl, const Real xr, const Real eta, const Real rf,
+               const Real b0, const Real al) {
+  Real sum = 0.0;
+  const Real h = 1.0e-6;
+  for (int n=0; n<4; ++n) {
+    Real x, w; CSGL4(n, x, w);
+    const Real xi = 0.5*(xl + xr) + 0.5*(xr - xl)*x;
+    Real q[3], qp[3], qm[3];
+    cubed_sphere::PanelToCart(p, xi, eta, q);
+    cubed_sphere::PanelToCart(p, xi + h, eta, qp);
+    cubed_sphere::PanelToCart(p, xi - h, eta, qm);
+    Real ax, ay, az; FFCartA(rf*q[0], rf*q[1], rf*q[2], b0, al, ax, ay, az);
+    // dx/dxi = rf dq/dxi
+    sum += w*rf*(ax*(qp[0] - qm[0]) + ay*(qp[1] - qm[1]) + az*(qp[2] - qm[2]))/(2.0*h);
+  }
+  return 0.5*(xr - xl)*sum;
+}
+//! Int A.dl along the x3 edge (along eta) at radius rf and xi, eta in [el, er]
+KOKKOS_INLINE_FUNCTION
+Real CSFFEdge3(const int p, const Real xi, const Real el, const Real er, const Real rf,
+               const Real b0, const Real al) {
+  Real sum = 0.0;
+  const Real h = 1.0e-6;
+  for (int n=0; n<4; ++n) {
+    Real x, w; CSGL4(n, x, w);
+    const Real eta = 0.5*(el + er) + 0.5*(er - el)*x;
+    Real q[3], qp[3], qm[3];
+    cubed_sphere::PanelToCart(p, xi, eta, q);
+    cubed_sphere::PanelToCart(p, xi, eta + h, qp);
+    cubed_sphere::PanelToCart(p, xi, eta - h, qm);
+    Real ax, ay, az; FFCartA(rf*q[0], rf*q[1], rf*q[2], b0, al, ax, ay, az);
+    sum += w*rf*(ax*(qp[0] - qm[0]) + ay*(qp[1] - qm[1]) + az*(qp[2] - qm[2]))/(2.0*h);
+  }
+  return 0.5*(er - el)*sum;
+}
+//! the circulation of A around each face type (the orientation of mhd_ct / the iprob 12
+//! construction: rhat = e_xi x e_eta); divide by the code's face area for B.n
+KOKKOS_INLINE_FUNCTION
+Real CSFFCirc1(const int p, const Real rf, const Real xl, const Real xr, const Real el,
+               const Real er, const Real b0, const Real al) {
+  return CSFFEdge3(p, xr, el, er, rf, b0, al) - CSFFEdge3(p, xl, el, er, rf, b0, al)
+       - CSFFEdge2(p, xl, xr, er, rf, b0, al) + CSFFEdge2(p, xl, xr, el, rf, b0, al);
+}
+KOKKOS_INLINE_FUNCTION
+Real CSFFCirc2(const int p, const Real xf, const Real rl, const Real rr, const Real el,
+               const Real er, const Real b0, const Real al) {
+  return -CSFFEdge3(p, xf, el, er, rr, b0, al) + CSFFEdge3(p, xf, el, er, rl, b0, al)
+       + CSFFEdge1(p, xf, er, rl, rr, b0, al) - CSFFEdge1(p, xf, el, rl, rr, b0, al);
+}
+KOKKOS_INLINE_FUNCTION
+Real CSFFCirc3(const int p, const Real ef, const Real rl, const Real rr, const Real xl,
+               const Real xr, const Real b0, const Real al) {
+  return CSFFEdge2(p, xl, xr, ef, rr, b0, al) - CSFFEdge2(p, xl, xr, ef, rl, b0, al)
+       - CSFFEdge1(p, xr, ef, rl, rr, b0, al) + CSFFEdge1(p, xl, ef, rl, rr, b0, al);
 }
 
 //----------------------------------------------------------------------------------------
@@ -267,6 +384,7 @@ void CSTestGravSrc(Mesh *pm, const Real bdt);
 void CSTestGhostCheck(ParameterInput *pin, Mesh *pm);
 void CSCornerHaloSmoothness(MeshBlockPack *pmbp);
 void CSTestConvErrors(ParameterInput *pin, Mesh *pm);
+void CSTestFFCheck(ParameterInput *pin, Mesh *pm);
 void CSTestResistCheck(ParameterInput *pin, Mesh *pm);
 void CSTestEosCacheCheck(Mesh *pm);
 void CSTestBlastCheck(ParameterInput *pin, Mesh *pm);
@@ -302,6 +420,37 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   const Real p0 = pin->GetOrAddReal("problem", "p0", 1.0);
   const Real omega = pin->GetOrAddReal("problem", "omega", 1.0);
   cs_d0 = d0; cs_p0 = p0; cs_omega = omega;
+  {
+    // iprob 3: the rotation axis.  "z" through two panel centres (default), "edge"
+    // (1,1,0)/sqrt2 through two cube-edge midpoints, "vertex" (1,1,1)/sqrt3 through two
+    // cube vertices (the pole's analogue), or explicit problem/rot_ax,ay,az.
+    std::string rax = pin->GetOrAddString("problem", "rot_axis", "z");
+    Real ax = 0.0, ay = 0.0, az = 1.0;
+    if (rax == "edge") {
+      ax = 1.0; ay = 1.0; az = 0.0;
+    } else if (rax == "vertex") {
+      ax = 1.0; ay = 1.0; az = 1.0;
+    } else if (rax == "custom") {
+      ax = pin->GetReal("problem", "rot_ax"); ay = pin->GetReal("problem", "rot_ay");
+      az = pin->GetReal("problem", "rot_az");
+    }
+    const Real an = std::sqrt(ax*ax + ay*ay + az*az);
+    cs_axx = ax/an; cs_axy = ay/an; cs_axz = az/an;
+  }
+  if (iprob == 14) {
+    cs_ffb0 = pin->GetOrAddReal("problem", "b0c", 0.5);
+    cs_alpha = pin->GetOrAddReal("problem", "alpha", 0.5*M_PI);
+    cs_b0r = cs_ffb0;
+    if (pmy_mesh_->pmb_pack->pmhd == nullptr) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "cs_test iprob = 14 needs an <mhd> block" << std::endl;
+      exit(EXIT_FAILURE);
+    }
+    cs_eta = (pmy_mesh_->pmb_pack->pmhd->presist != nullptr)
+             ? pmy_mesh_->pmb_pack->pmhd->presist->eta_ohm_const : 0.0;
+    user_bcs_func = CSTestRadialBC;
+    pgen_final_func = CSTestFFCheck;
+  }
   cs_iprob = iprob;
   cs_amp = pin->GetOrAddReal("problem", "amp", 0.5);
   cs_bc_tfrac = pin->GetOrAddReal("problem", "bc_time_frac", 0.0);
@@ -410,6 +559,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   const Real blx_ = cs_blx, bly_ = cs_bly, blz_ = cs_blz;
   const Real blang_ = cs_blang, blp_ = cs_blp;
   const Real hs_ = cs_hscl;
+  // the rotation axis of iprob 3 (iprob 9 keeps zhat: its field precesses about z)
+  const Real axx_ = (iprob == 3) ? cs_axx : 0.0, axy_ = (iprob == 3) ? cs_axy : 0.0;
+  const Real axz_ = (iprob == 3) ? cs_axz : 1.0;
 
   par_for("pgen_cs_test", DevExeSpace(), 0,(pmbp->nmb_thispack-1), ks,ke, js,je, is,ie,
   KOKKOS_LAMBDA(int m, int k, int j, int i) {
@@ -515,7 +667,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     if (iprob == 3 || iprob == 9) {
       Real dn, ie_, v1, v2, v3;
       RigidRotState(mbpanel.d_view(m), xi, eta, rad, d0, p0, omega, gm1,
-                    dn, ie_, v1, v2, v3);
+                    dn, ie_, v1, v2, v3, axx_, axy_, axz_);
       w0(m,IDN,k,j,i) = dn;
       w0(m,IEN,k,j,i) = ie_;
       w0(m,IVX,k,j,i) = v1;
@@ -810,6 +962,44 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       }
     });
 
+  } else if (is_mhd && iprob == 14) {
+    // FORCE-FREE FIELD from Stokes loops of A = B/alpha on the physical edges (see the
+    // helpers above), every face including the ghost layers so the state is consistent
+    // before the first BC call.  The x2/x3 loops carry the RADIAL edges too: A.rhat is
+    // not zero for this field, unlike the uniform field of iprob 12.
+    const Real ffb0 = cs_ffb0, al = cs_alpha;
+    auto &b0f = pmbp->pmhd->b0;
+    auto &ar1 = pmbp->pcoord->area.x1f;
+    auto &ar2 = pmbp->pcoord->area.x2f;
+    auto &ar3 = pmbp->pcoord->area.x3f;
+    auto &mbp = pmbp->pmb->mb_panel;
+    const int ng = indcs.ng;
+    par_for("pgen_cs_bfld14", DevExeSpace(), 0,(pmbp->nmb_thispack-1),
+            ks-ng,ke+ng+1, js-ng,je+ng+1, is-ng,ie+ng+1,
+    KOKKOS_LAMBDA(int m, int k, int j, int i) {
+      const int p = mbp.d_view(m);
+      const Real x2mn = size.d_view(m).x2min, x2mx = size.d_view(m).x2max;
+      const Real x3mn = size.d_view(m).x3min, x3mx = size.d_view(m).x3max;
+      const Real x1mn = size.d_view(m).x1min, x1mx = size.d_view(m).x1max;
+      const Real xl = 0.25*M_PI*LeftEdgeX(j-js, indcs.nx2, x2mn, x2mx);
+      const Real xr = 0.25*M_PI*LeftEdgeX(j+1-js, indcs.nx2, x2mn, x2mx);
+      const Real el = 0.25*M_PI*LeftEdgeX(k-ks, indcs.nx3, x3mn, x3mx);
+      const Real er = 0.25*M_PI*LeftEdgeX(k+1-ks, indcs.nx3, x3mn, x3mx);
+      Real rl = LeftEdgeX(i-is, indcs.nx1, x1mn, x1mx);
+      Real rr = LeftEdgeX(i+1-is, indcs.nx1, x1mn, x1mx);
+      ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rl);
+      ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rr);
+      const int nk = indcs.nx3 + 2*ng, nj = indcs.nx2 + 2*ng, ni = indcs.nx1 + 2*ng;
+      if (k < nk && j < nj) {
+        b0f.x1f(m,k,j,i) = CSFFCirc1(p, rl, xl, xr, el, er, ffb0, al)/ar1(m,k,j,i);
+      }
+      if (k < nk && i < ni) {
+        b0f.x2f(m,k,j,i) = CSFFCirc2(p, xl, rl, rr, el, er, ffb0, al)/ar2(m,k,j,i);
+      }
+      if (j < nj && i < ni) {
+        b0f.x3f(m,k,j,i) = CSFFCirc3(p, el, rl, rr, xl, xr, ffb0, al)/ar3(m,k,j,i);
+      }
+    });
   } else if (is_mhd) {
     const Real b0r = pin->GetOrAddReal("problem", "b0r", 1.0);
     cs_b0r = b0r;
@@ -865,8 +1055,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       const Real bx = -bazi*py + bux, by = bazi*px + buy;
       u0(m,IEN,k,j,i) += 0.5*(bx*bx + by*by + buz*buz);
     });
-  } else if (is_mhd && (iprob == 8 || iprob == 9 || iprob == 13)) {
-    // ANALYTIC, deliberately: |B|^2 = b0c^2 exactly for a uniform Cartesian field. Adding
+  } else if (is_mhd && (iprob == 8 || iprob == 9 || iprob == 13 || iprob == 14)) {
+    // ANALYTIC, deliberately: |B|^2 = b0c^2 exactly for a uniform Cartesian field (and
+    // for the force-free field of iprob 14, |B| = b0 everywhere). Adding
     // a magnetic energy built from the same bcc that ConsToPrim will subtract would make
     // the pressure check below self-consistent instead of correct, and would pass under
     // any convention.
@@ -938,6 +1129,11 @@ void CSTestRadialBC(Mesh *pm) {
   const int iprob = cs_iprob;
   const Real amp_ = cs_amp, r0_ = cs_r0;
   const Real hs_ = cs_hscl;
+  const Real axx_ = (iprob == 3) ? cs_axx : 0.0, axy_ = (iprob == 3) ? cs_axy : 0.0;
+  const Real axz_ = (iprob == 3) ? cs_axz : 1.0;
+  // iprob 14: the exact field decays; the ghosts carry it at t^n + bc_time_frac*dt
+  const Real ffb0_ = cs_ffb0, ffal_ = cs_alpha;
+  const Real ffdec_ = exp(-cs_eta*cs_alpha*cs_alpha*(pm->time + cs_bc_tfrac*pm->dt));
 
   // The RADIAL direction is x1. The lateral (x2/x3) ghosts are filled by the panel
   // exchange; only the two radial boundaries are physical here.
@@ -994,8 +1190,13 @@ void CSTestRadialBC(Mesh *pm) {
         dn = d0;
         ie_ = p0/gm1;
         v1 = 0.0; v2 = 0.0; v3 = 0.0;
+      } else if (iprob == 14) {
+        dn = d0;
+        ie_ = (p0 + 0.5*gm1*ffb0_*ffb0_*(1.0 - ffdec_*ffdec_))/gm1;
+        v1 = 0.0; v2 = 0.0; v3 = 0.0;
       } else {
-        RigidRotState(p, xi, eta, rad, d0, p0, omega, gm1, dn, ie_, v1, v2, v3);
+        RigidRotState(p, xi, eta, rad, d0, p0, omega, gm1, dn, ie_, v1, v2, v3,
+                      axx_, axy_, axz_);
       }
       w0(m,IDN,k,j,i) = dn;
       w0(m,IEN,k,j,i) = ie_;
@@ -1025,7 +1226,69 @@ void CSTestRadialBC(Mesh *pm) {
   // so b0 in the radial ghosts is whatever was left there unless it is set here. Only the
   // x1 faces carry flux for the monopole; the two angular face fields stay zero, and the
   // energy has to be topped up because u0 above was written without the field.
-  if (is_mhd && (iprob == 8 || iprob == 9 || iprob == 13)) {
+  if (is_mhd && iprob == 14) {
+    // the decayed force-free field in the radial ghosts: faces from the same Stokes
+    // loops (ghost x1 faces only -- the domain faces belong to CT, see the note in the
+    // uniform-field block below), bcc from the exact field at the centroid in the
+    // orthonormal frame, and the analytic magnetic energy.
+    auto &b0f = pmbp->pmhd->b0;
+    auto &bcc = pmbp->pmhd->bcc0;
+    auto &ar1 = pmbp->pcoord->area.x1f;
+    auto &ar2 = pmbp->pcoord->area.x2f;
+    auto &ar3 = pmbp->pcoord->area.x3f;
+    const Real bd = ffb0_*ffdec_, al = ffal_;
+    int &ie_i = indcs.ie;
+    par_for("cs_test_rbc_b14", DevExeSpace(), 0,(pmbp->nmb_thispack-1), 0,(n3-1),
+            0,(n2-1), 0,(ng-1),
+    KOKKOS_LAMBDA(int m, int k, int j, int ig) {
+      const int p = mbpanel.d_view(m);
+      const Real x2mn = size.d_view(m).x2min, x2mx = size.d_view(m).x2max;
+      const Real x3mn = size.d_view(m).x3min, x3mx = size.d_view(m).x3max;
+      const Real x1mn = size.d_view(m).x1min, x1mx = size.d_view(m).x1max;
+      const Real xl = 0.25*M_PI*LeftEdgeX(j-js, indcs.nx2, x2mn, x2mx);
+      const Real xr = 0.25*M_PI*LeftEdgeX(j+1-js, indcs.nx2, x2mn, x2mx);
+      const Real el = 0.25*M_PI*LeftEdgeX(k-ks, indcs.nx3, x3mn, x3mx);
+      const Real er = 0.25*M_PI*LeftEdgeX(k+1-ks, indcs.nx3, x3mn, x3mx);
+      const Real xc = 0.25*M_PI*CellCenterX(j-js, indcs.nx2, x2mn, x2mx);
+      const Real ec = 0.25*M_PI*CellCenterX(k-ks, indcs.nx3, x3mn, x3mx);
+      for (int side=0; side<2; ++side) {
+        if (side == 0 &&
+            mb_bcs.d_view(m,BoundaryFace::inner_x1) != BoundaryFlag::user) continue;
+        if (side == 1 &&
+            mb_bcs.d_view(m,BoundaryFace::outer_x1) != BoundaryFlag::user) continue;
+        const int i = (side == 0) ? (is-ng+ig) : (ie_i+1+ig);
+        Real rl = LeftEdgeX(i-is, indcs.nx1, x1mn, x1mx);
+        Real rr = LeftEdgeX(i+1-is, indcs.nx1, x1mn, x1mx);
+        ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rl);
+        ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rr);
+        const int ifc = (side == 0) ? i : i+1;
+        const Real rfc = (side == 0) ? rl : rr;
+        b0f.x1f(m,k,j,ifc) = CSFFCirc1(p, rfc, xl, xr, el, er, bd, al)/ar1(m,k,j,ifc);
+        b0f.x2f(m,k,j,i) = CSFFCirc2(p, xl, rl, rr, el, er, bd, al)/ar2(m,k,j,i);
+        b0f.x3f(m,k,j,i) = CSFFCirc3(p, el, rl, rr, xl, xr, bd, al)/ar3(m,k,j,i);
+        if (j == n2-1) {
+          b0f.x2f(m,k,j+1,i) = CSFFCirc2(p, xr, rl, rr, el, er, bd, al)/ar2(m,k,j+1,i);
+        }
+        if (k == n3-1) {
+          b0f.x3f(m,k+1,j,i) = CSFFCirc3(p, er, rl, rr, xl, xr, bd, al)/ar3(m,k+1,j,i);
+        }
+        // cell-centred field: the exact B at the centroid on the orthonormal frame
+        const Real rc = RadialCentroid(rl, rr);
+        Real q[3], e1[3], e2[3];
+        cubed_sphere::PanelToCart(p, xc, ec, q);
+        cubed_sphere::PanelTangents(p, xc, ec, e1, e2);
+        Real bx, by, bz; FFCartB(rc*q[0], rc*q[1], rc*q[2], bd, al, bx, by, bz);
+        const Real cc = e1[0]*e2[0] + e1[1]*e2[1] + e1[2]*e2[2];
+        const Real ss = sqrt(1.0 - cc*cc);
+        const Real b1 = bx*e1[0] + by*e1[1] + bz*e1[2];
+        const Real b2 = bx*e2[0] + by*e2[1] + bz*e2[2];
+        bcc(m,IBX,k,j,i) = bx*q[0] + by*q[1] + bz*q[2];
+        bcc(m,IBY,k,j,i) = (b1 - cc*b2)/ss;
+        bcc(m,IBZ,k,j,i) = b2;
+        u0(m,IEN,k,j,i) += 0.5*bd*bd;
+      }
+    });
+  } else if (is_mhd && (iprob == 8 || iprob == 9 || iprob == 13)) {
     // The uniform Cartesian field is no more reflection-symmetric than the monopole, so
     // its radial ghosts get the exact state too -- faces, cell centres and the analytic
     // magnetic energy. For iprob = 9 the exact field is TIME DEPENDENT: it precesses
@@ -1442,7 +1705,8 @@ void CSTestRadialBC(Mesh *pm) {
       ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rad_rr);
       rad = RadialCentroid(rad, rad_rr);
       Real dn, ie_, v1, v2, v3;
-      RigidRotState(p, xi, eta, rad, d0, p0, omega, gm1, dn, ie_, v1, v2, v3);
+      RigidRotState(p, xi, eta, rad, d0, p0, omega, gm1, dn, ie_, v1, v2, v3,
+                    axx_, axy_, axz_);
       Real ca, cb, ccos;
       CartToPanelVec(p, xi, eta, 1.0, 0.0, 0.0, ca, cb, ccos);
       w0(m,IDN,k,j,i) = dn;
@@ -1729,7 +1993,9 @@ void CSTestConvErrors(ParameterInput *pin, Mesh *pm) {
           rad = RadialCentroid(rad, rad_rr);
           Real dn, iex, v1, v2, v3;
           RigidRotState(p, x2c, x3c, rad, cs_d0, cs_p0, cs_omega, gm1,
-                        dn, iex, v1, v2, v3);
+                        dn, iex, v1, v2, v3,
+                        (cs_iprob == 3) ? cs_axx : 0.0, (cs_iprob == 3) ? cs_axy : 0.0,
+                        (cs_iprob == 3) ? cs_axz : 1.0);
           if (cs_hscl > 0.0) {
             // iprob = 13: the exact state is the hydrostatic atmosphere AT REST, so the
             // density and pressure come from the stratified profile instead. cs_omega is
@@ -5155,7 +5421,8 @@ void CSTestGhostCheck(ParameterInput *pin, Mesh *pm) {
           const Real eta = 0.25*M_PI*CellCenterX(k-ks, indcs.nx3, size.h_view(m).x3min,
                                                                   size.h_view(m).x3max);
           Real dn, ie_, v1, v2, v3;
-          RigidRotState(p, xi, eta, rad, d0, p0_, om_, gm1, dn, ie_, v1, v2, v3);
+          RigidRotState(p, xi, eta, rad, d0, p0_, om_, gm1, dn, ie_, v1, v2, v3,
+                        cs_axx, cs_axy, cs_axz);
           e[0] = fmax(e[0], fabs(w0_h(m,IDN,k,j,i) - dn));
           e[1] = fmax(e[1], fabs(w0_h(m,IVX,k,j,i) - v1));
           e[2] = fmax(e[2], fabs(w0_h(m,IVY,k,j,i) - v2));
@@ -5360,4 +5627,217 @@ void CSTestGhostCheck(ParameterInput *pin, Mesh *pm) {
                 mbpanel.h_view(m), eact, eg2, eg3);
   }
   return;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn CSTestFFCheck
+//! \brief iprob 14: errors against the exact decaying force-free state, by region
+//! (panel interior / seam / cube vertex, by angle), the discrete div B, and the resistive
+//! EMF on every edge against eta*alpha*B.  The twin of sp_test's iprob 11 finalizer.
+
+void CSTestFFCheck(ParameterInput *pin, Mesh *pm) {
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  if (pmbp->pmhd == nullptr) return;
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie;
+  const int js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  auto &size = pmbp->pmb->mb_size;
+  size.sync_host();
+  auto &mbpanel = pmbp->pmb->mb_panel;
+  mbpanel.sync_host();
+  const bool str_r_ = pmbp->pmesh->use_grid_stretch_r;
+  const bool str_rp_ = pmbp->pmesh->use_grid_stretch_r_poly;
+  const Real fstr_r_ = pmbp->pmesh->fStretchR;
+  const Real rmin_ = pmbp->pmesh->mesh_size.x1min;
+  const Real rmax_ = pmbp->pmesh->mesh_size.x1max;
+  Real cpoly_[NSTRETCH_R_POLY];
+  for (int n=0; n<NSTRETCH_R_POLY; ++n) cpoly_[n] = pmbp->pmesh->fStretchRPoly[n];
+  const Real gm1 = pmbp->pmhd->peos->eos_data.gamma - 1.0;
+  auto w0 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pmhd->w0);
+  auto b1 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pmhd->b0.x1f);
+  auto b2 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pmhd->b0.x2f);
+  auto b3 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pmhd->b0.x3f);
+  auto a1 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->area.x1f);
+  auto a2 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->area.x2f);
+  auto a3 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->area.x3f);
+  auto vol = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->volume);
+  const Real b0 = cs_ffb0, al = cs_alpha;
+  const Real dec = std::exp(-cs_eta*al*al*pm->time);
+  const Real bd = b0*dec;
+  const Real pex = cs_p0 + 0.5*gm1*b0*b0*(1.0 - dec*dec);
+  const int nb = pin->GetOrAddInteger("problem", "conv_nband", 2);
+  // sums by region 0 interior / 1 seam / 2 vertex: [0] vol, [1] v, [2] p, [3] B, [4] area
+  Real sr[3][5] = {};
+  Real mxv = 0.0, mxp = 0.0, mxb[3] = {0.0, 0.0, 0.0}, mxdiv = 0.0;
+  const Real lsh = rmax_ - rmin_;
+  for (int m=0; m<pmbp->nmb_thispack; ++m) {
+    const int p = mbpanel.h_view(m);
+    const Real x2mn = size.h_view(m).x2min, x2mx = size.h_view(m).x2max;
+    const Real x3mn = size.h_view(m).x3min, x3mx = size.h_view(m).x3max;
+    const Real x1mn = size.h_view(m).x1min, x1mx = size.h_view(m).x1max;
+    for (int k=ks; k<=ke; ++k) {
+      for (int j=js; j<=je; ++j) {
+        // region by ANGLE: within nb cells of a panel edge (seam), of two edges (vertex)
+        const bool sx = (j - js < nb) || (je - j < nb);
+        const bool se = (k - ks < nb) || (ke - k < nb);
+        const int reg = (sx && se) ? 2 : ((sx || se) ? 1 : 0);
+        const Real xl = 0.25*M_PI*LeftEdgeX(j-js, indcs.nx2, x2mn, x2mx);
+        const Real xr = 0.25*M_PI*LeftEdgeX(j+1-js, indcs.nx2, x2mn, x2mx);
+        const Real el = 0.25*M_PI*LeftEdgeX(k-ks, indcs.nx3, x3mn, x3mx);
+        const Real er = 0.25*M_PI*LeftEdgeX(k+1-ks, indcs.nx3, x3mn, x3mx);
+        for (int i=is; i<=ie; ++i) {
+          Real rl = LeftEdgeX(i-is, indcs.nx1, x1mn, x1mx);
+          Real rr = LeftEdgeX(i+1-is, indcs.nx1, x1mn, x1mx);
+          ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rl);
+          ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rr);
+          const Real v = vol(m,k,j,i);
+          const Real ev = std::sqrt(SQR(w0(m,IVX,k,j,i)) + SQR(w0(m,IVY,k,j,i))
+                                    + SQR(w0(m,IVZ,k,j,i)));
+          const Real ep = std::fabs(gm1*w0(m,IEN,k,j,i) - pex);
+          sr[reg][0] += v; sr[reg][1] += v*ev; sr[reg][2] += v*ep;
+          mxv = std::fmax(mxv, ev); mxp = std::fmax(mxp, ep);
+          // faces: low faces of every cell + the high faces on the last cell of a row
+          for (int f=0; f<6; ++f) {
+            if (f == 3 && i != ie) continue;
+            if (f == 4 && j != je) continue;
+            if (f == 5 && k != ke) continue;
+            Real ex, code, ar;
+            if (f == 0 || f == 3) {
+              const int ii = (f == 0) ? i : i+1;
+              ar = a1(m,k,j,ii);
+              ex = CSFFCirc1(p, (f == 0) ? rl : rr, xl, xr, el, er, bd, al)/ar;
+              code = b1(m,k,j,ii);
+            } else if (f == 1 || f == 4) {
+              const int jj = (f == 1) ? j : j+1;
+              ar = a2(m,k,jj,i);
+              ex = CSFFCirc2(p, (f == 1) ? xl : xr, rl, rr, el, er, bd, al)/ar;
+              code = b2(m,k,jj,i);
+            } else {
+              const int kk = (f == 2) ? k : k+1;
+              ar = a3(m,kk,j,i);
+              ex = CSFFCirc3(p, (f == 2) ? el : er, rl, rr, xl, xr, bd, al)/ar;
+              code = b3(m,kk,j,i);
+            }
+            const Real d = std::fabs(code - ex);
+            sr[reg][3] += ar*d; sr[reg][4] += ar;
+            mxb[reg] = std::fmax(mxb[reg], d);
+          }
+          const Real divb = (a1(m,k,j,i+1)*b1(m,k,j,i+1) - a1(m,k,j,i)*b1(m,k,j,i)
+                             + a2(m,k,j+1,i)*b2(m,k,j+1,i) - a2(m,k,j,i)*b2(m,k,j,i)
+                             + a3(m,k+1,j,i)*b3(m,k+1,j,i) - a3(m,k,j,i)*b3(m,k,j,i))/v;
+          mxdiv = std::fmax(mxdiv, std::fabs(divb)*lsh/b0);
+        }
+      }
+    }
+  }
+  // resistive EMF on every edge against eta*alpha*B.that, in units eta*alpha*b0
+  Real le[3][2] = {}, me[3][2] = {};
+  Real ne[3][2] = {};
+  const bool has_res = (pmbp->pmhd->presist != nullptr);
+  if (has_res) {
+    auto pres = pmbp->pmhd->presist;
+    auto e1 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pres->efld_resist.x1e);
+    auto e2 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pres->efld_resist.x2e);
+    auto e3 = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pres->efld_resist.x3e);
+    const Real eta = pres->eta_ohm_const, scale = eta*al*bd;
+    for (int m=0; m<pmbp->nmb_thispack; ++m) {
+      const int p = mbpanel.h_view(m);
+      const Real x2mn = size.h_view(m).x2min, x2mx = size.h_view(m).x2max;
+      const Real x3mn = size.h_view(m).x3min, x3mx = size.h_view(m).x3max;
+      const Real x1mn = size.h_view(m).x1min, x1mx = size.h_view(m).x1max;
+      for (int k=ks; k<=ke+1; ++k) {
+        for (int j=js; j<=je+1; ++j) {
+          const bool sx = (j - js < nb) || (je + 1 - j < nb);
+          const bool se = (k - ks < nb) || (ke + 1 - k < nb);
+          const int reg = (sx || se) ? 1 : 0;   // 0 interior, 1 seam or vertex
+          const Real xf = 0.25*M_PI*LeftEdgeX(j-js, indcs.nx2, x2mn, x2mx);
+          const Real xc = 0.25*M_PI*CellCenterX(j-js, indcs.nx2, x2mn, x2mx);
+          const Real ef = 0.25*M_PI*LeftEdgeX(k-ks, indcs.nx3, x3mn, x3mx);
+          const Real ec = 0.25*M_PI*CellCenterX(k-ks, indcs.nx3, x3mn, x3mx);
+          for (int i=is; i<=ie+1; ++i) {
+            Real rl = LeftEdgeX(i-is, indcs.nx1, x1mn, x1mx);
+            Real rr = LeftEdgeX(i+1-is, indcs.nx1, x1mn, x1mx);
+            ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rl);
+            ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rr);
+            Real q[3], t1[3], t2[3], bx, by, bz;
+            if (i <= ie) {   // x1 edge along r at (xf, ef)
+              cubed_sphere::PanelToCart(p, xf, ef, q);
+              const Real rc = 0.5*(rl + rr);
+              FFCartB(rc*q[0], rc*q[1], rc*q[2], bd, al, bx, by, bz);
+              const Real d = std::fabs(e1(m,k,j,i)
+                                       - eta*al*(bx*q[0] + by*q[1] + bz*q[2]))/scale;
+              le[0][reg] += d; ne[0][reg] += 1.0; me[0][reg] = std::fmax(me[0][reg], d);
+            }
+            if (j <= je) {   // x2 edge along xi at (rl, ef), centre xc
+              cubed_sphere::PanelToCart(p, xc, ef, q);
+              cubed_sphere::PanelTangents(p, xc, ef, t1, t2);
+              FFCartB(rl*q[0], rl*q[1], rl*q[2], bd, al, bx, by, bz);
+              const Real d = std::fabs(e2(m,k,j,i)
+                                       - eta*al*(bx*t1[0] + by*t1[1] + bz*t1[2]))/scale;
+              le[1][reg] += d; ne[1][reg] += 1.0; me[1][reg] = std::fmax(me[1][reg], d);
+            }
+            if (k <= ke) {   // x3 edge along eta at (rl, xf), centre ec
+              cubed_sphere::PanelToCart(p, xf, ec, q);
+              cubed_sphere::PanelTangents(p, xf, ec, t1, t2);
+              FFCartB(rl*q[0], rl*q[1], rl*q[2], bd, al, bx, by, bz);
+              const Real d = std::fabs(e3(m,k,j,i)
+                                       - eta*al*(bx*t2[0] + by*t2[1] + bz*t2[2]))/scale;
+              le[2][reg] += d; ne[2][reg] += 1.0; me[2][reg] = std::fmax(me[2][reg], d);
+            }
+          }
+        }
+      }
+    }
+  }
+#if MPI_PARALLEL_ENABLED
+  MPI_Allreduce(MPI_IN_PLACE, &sr[0][0], 15, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+  Real mxs[6] = {mxv, mxp, mxb[0], mxb[1], mxb[2], mxdiv};
+  MPI_Allreduce(MPI_IN_PLACE, mxs, 6, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+  mxv = mxs[0]; mxp = mxs[1]; mxb[0] = mxs[2]; mxb[1] = mxs[3]; mxb[2] = mxs[4];
+  mxdiv = mxs[5];
+  MPI_Allreduce(MPI_IN_PLACE, &le[0][0], 6, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, &me[0][0], 6, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, &ne[0][0], 6, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
+  if (global_variable::my_rank != 0) return;
+  Real tot[5] = {};
+  for (int r=0; r<3; ++r) {
+    for (int c=0; c<5; ++c) tot[c] += sr[r][c];
+  }
+  auto l1 = [](const Real *q, int c) {
+    if (c == 3) return (q[4] > 0) ? q[3]/q[4] : 0.0;
+    return (q[0] > 0) ? q[c]/q[0] : 0.0;
+  };
+  std::printf("### CS FF CHECK (iprob=14) nx1=%d nx2=%d t=%.4f decay=%.6e exact p=%.9e"
+              " nband=%d\n", pm->mesh_indcs.nx1, pm->mesh_indcs.nx2, pm->time, dec, pex,
+              nb);
+  std::printf("###   GLOBAL   L1 v %.6e  p %.6e  B %.6e  | Linf v %.6e p %.6e\n",
+              l1(tot,1), l1(tot,2), l1(tot,3), mxv, mxp);
+  const char *nm[3] = {"INTERIOR", "SEAM    ", "VERTEX  "};
+  for (int r=0; r<3; ++r) {
+    std::printf("###   %s L1 v %.6e  p %.6e  B %.6e  Linf B %.6e  (%.1f%% of volume)\n",
+                nm[r], l1(sr[r],1), l1(sr[r],2), l1(sr[r],3), mxb[r],
+                100.0*sr[r][0]/tot[0]);
+  }
+  std::printf("###   max |div B| L/b0 = %.3e\n", mxdiv);
+  if (has_res) {
+    const char *en[3] = {"E1 (r edges)   ", "E2 (xi edges)  ", "E3 (eta edges) "};
+    std::printf("###   RESISTIVE EMF vs exact eta*alpha*B (units eta*alpha*b0):\n");
+    for (int c=0; c<3; ++c) {
+      std::printf("###     %s  interior L1 %.3e Linf %.3e | seam+vertex L1 %.3e"
+                  " Linf %.3e\n", en[c], (ne[c][0] > 0) ? le[c][0]/ne[c][0] : 0.0,
+                  me[c][0], (ne[c][1] > 0) ? le[c][1]/ne[c][1] : 0.0, me[c][1]);
+    }
+  }
+  std::string fname = pin->GetString("job", "basename") + "-errs.dat";
+  FILE *pf = std::fopen(fname.c_str(), "a");
+  if (pf != nullptr) {
+    std::fprintf(pf, "%d %d %.6e  %.6e %.6e %.6e  %.6e %.6e %.6e  %.6e %.6e %.6e"
+                 "  %.6e %.6e %.6e  %.3e\n", pm->mesh_indcs.nx1, pm->mesh_indcs.nx2,
+                 pm->time, l1(tot,1), l1(tot,2), l1(tot,3), l1(sr[0],1), l1(sr[0],2),
+                 l1(sr[0],3), l1(sr[1],1), l1(sr[1],2), l1(sr[1],3), l1(sr[2],1),
+                 l1(sr[2],2), l1(sr[2],3), mxdiv);
+    std::fclose(pf);
+  }
 }

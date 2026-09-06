@@ -1,0 +1,79 @@
+# Cubed sphere, RESISTIVE DECAY of a force-free field.  Build with -D PROBLEM=cs_test.
+# The twin of spherical_polar_resist.athinput (sp_test iprob=11) on the cubed sphere:
+# B = b0 (sin(alpha z), cos(alpha z), 0) has curl B = alpha B, so J x B = 0, |B| is uniform
+# and with constant eta the EXACT solution is B(t) = B(0) exp(-eta alpha^2 t) with the gas
+# at rest and p(t) = p0 + (gamma-1) b0^2 (1 - exp(-2 eta alpha^2 t))/2 uniform.
+# The face fields come from Stokes loops of A = B/alpha (GL4 edge integrals of the exact
+# potential along every panel edge), so div B = 0 to round-off on every panel.
+# Errors against the exact state at tlim are printed by region (panel interior / seam /
+# cube vertex, by angle) and appended to cs_ffdecay-errs.dat, with the resistive EMF on
+# every edge checked against eta*alpha*B.  Double nx1, nx2, nx3 together for the
+# convergence test (2nd order expected in B and p; v should stay ~0).
+#
+# alpha = pi/2: one full wavelength across the shell's z range [-2, 2].  Decay rate
+# eta alpha^2 = 0.123 at eta = 0.05, so B falls by 22 % by tlim = 2 and p rises by 1.5 %.
+#
+# AXES: x1 is RADIAL, x2 = xi and x3 = eta are the panel-tangential angles.  Must be 3D.
+
+<comment>
+problem = cubed sphere force-free resistive decay
+
+<job>
+basename = cs_ffdecay
+
+<mesh>
+nghost   = 2
+nx1      = 8            # RADIAL direction
+x1min    = 1.0
+x1max    = 2.0
+ix1_bc   = user         # the exact (decaying) field and pressure in the radial ghosts
+ox1_bc   = user
+
+nx2      = 16           # xi;  nx2 must equal nx3 (Mesh checks this)
+x2min    = -1.0
+x2max    = 1.0
+ix2_bc   = panel
+ox2_bc   = panel
+
+nx3      = 16           # eta
+x3min    = -1.0
+x3max    = 1.0
+ix3_bc   = panel
+ox3_bc   = panel
+
+use_cubed_sphere = true
+
+<meshblock>
+nx1      = 8
+nx2      = 16
+nx3      = 16
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim       = -1
+tlim       = 2.0
+ndiag      = 100
+
+<mhd>
+eos               = ideal
+reconstruct       = plm
+rsolver           = hlld
+gamma             = 1.666667
+ohmic_resistivity = constant
+eta_ohm_const     = 0.05
+
+<problem>
+iprob    = 14
+d0       = 1.0
+p0       = 1.0
+b0c      = 0.5
+alpha    = 1.5707963267948966
+bc_time_frac = 0.0      # ghosts evaluated at t^n + frac*dt inside the RK stages
+user_bcs = true
+conv_nband = 2          # cells from a panel edge that count as "seam"
+
+<output1>
+file_type = hst
+dt        = 0.05
