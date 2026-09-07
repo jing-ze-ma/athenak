@@ -107,9 +107,13 @@ kappa_fac   = 1.0
 kappa_const = 0.0
 mlt_alpha   = 0.0
 mlt_dump    =                # if set: dump one column's MLT faces at the first call
-# --- the correlated-k two-stream for the optically thin layers (off by default: the grey
-# Eddington relaxation carries them instead).  Self-luminous: no irradiation, T_int = teff.
-rt_ck       = false
+# --- the correlated-k two-stream for the optically thin layers.  DEFAULT ON here: the
+# grey Eddington relaxation it replaces cannot represent the line blanketing that sets a
+# cool giant's atmospheric structure, and measured over 200 cycles from the same state it
+# let the top run away by ~70x in density where the band solver held it to 0.7.  Set false
+# to fall back to the relaxation, which is cheaper and is the only path the 1-D column
+# tests can use.  Self-luminous: no irradiation, T_int = teff.
+rt_ck       = true
 ck_table    = /orion/u/jinma/ATHENAK/athenak/data/exo_fms_ck/ck/Premixed_1x_g8_11.txt
 ck_data_dir = /orion/u/jinma/ATHENAK/athenak/data/exo_fms_ck
 ck_swflux   = sw_band_flux_W121_11.txt

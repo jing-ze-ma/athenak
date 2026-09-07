@@ -41,7 +41,11 @@ def read_aesopus(fn):
 
 
 def interp2(lT, lR, K, T, R):
-    """bilinear in (logT, logR), clamped to the grid"""
+    """bilinear in (logT, logR).  Points outside the grid take the EDGE value: the
+    interpolation has to stay finite, or a valid node next to an invalid one would
+    interpolate against a NaN.  Which nodes those are is reported, written into the
+    header as the valid logR window, and checked against the run's own column at
+    start-up by the problem generator -- so the fill can no longer pass unnoticed."""
     T = np.clip(T, lT[0], lT[-1])
     R = np.clip(R, lR[0], lR[-1])
     i = np.clip(np.searchsorted(lT, T) - 1, 0, len(lT)-2)
@@ -74,8 +78,8 @@ kl = interp2(Tl, Rl, Kl, TT, RR)
 w = np.clip((TT - a.tlo)/(a.thi - a.tlo), 0.0, 1.0)     # 0 = low-T table, 1 = atomic
 K = (1.0 - w)*kl + w*kh
 # report the join
-sel = ((TT >= a.tlo) & (TT <= a.thi)
-       & (RR >= max(Rh[0], Rl[0])) & (RR <= min(Rh[-1], Rl[-1])))
+rlo_v, rhi_v = max(Rh[0], Rl[0]), min(Rh[-1], Rl[-1])
+sel = (TT >= a.tlo) & (TT <= a.thi) & (RR >= rlo_v) & (RR <= rhi_v)
 d = np.abs(kh - kl)[sel]
 print('join %.2f-%.2f: |log kappa(atomic) - log kappa(low-T)| median %.3f, '
       '90%% %.3f, max %.3f over %d nodes'
@@ -86,10 +90,23 @@ with open(a.out, 'w') as f:
     f.write('# sources: %s (atomic, T >= %.2f) + %s (molecular+grains, T <= %.2f), '
             'linear blend in log T between\n'
             % (a.oplib.split('/')[-1], a.thi, a.aesopus.split('/')[-1], a.tlo))
+    f.write('# valid_logR %g %g   (outside this window the values are EDGE-FILLED,\n'
+            '# not data: both sources are tabulated in logR = log rho - 3 log T + 18)\n'
+            % (rlo_v, rhi_v))
     f.write('# grid: nT nD lTmin dlT lDmin dlD\n')
     f.write('# %d %d %g %g %g %g\n' % (len(lT), len(lD), lT[0], a.lt[2], lD[0], a.ld[2]))
     f.write('# then nT*nD rows, T slowest: log10 kappa_R\n')
     for i in range(len(lT)):
         for j in range(len(lD)):
             f.write('%.5f\n' % K[i, j])
+# WHERE THIS TABLE IS NOT DATA.  Both sources are tabulated against
+# logR = log rho - 3 log T + 18 over a finite window; outside it every value above is
+# the edge value, i.e. constant in density, which is not physics.  A stellar envelope
+# stays inside, but the thin top of one can wander out, and that is exactly the region
+# the two-stream owns.
+bad = (RR < rlo_v) | (RR > rhi_v)
+print('valid logR window %.1f .. %.1f ; %.1f %% of the output nodes lie OUTSIDE it and '
+      'carry the edge value' % (rlo_v, rhi_v, 100*bad.mean()))
+print('the header records the window; red_giant checks its own column against it and '
+      'fails at start-up rather than using a filled value')
 print('wrote', a.out, K.shape)

@@ -131,6 +131,11 @@ DvceArray1D<Real> klT_, klD_;
 int knT_ = 0, knD_ = 0;
 Real teff_ = 0.0;
 Real kfac_ = 1.0;        // problem/kappa_fac, applied to every table lookup
+// The window in logR = log10 rho - 3 log10 T + 18 over which the opacity table is DATA.
+// Both of its sources are tabulated in that variable over a finite range; outside it the
+// merge fills with the edge value, which is constant in density and is not physics.  The
+// table's header records the window and the initial column is checked against it below.
+Real opac_lR_lo_ = -1.0e30, opac_lR_hi_ = 1.0e30;
 bool relax_ = false;     // the optically thin relaxation is on (radiative + tau blend)
 bool rt_ck_ = false;     // problem/rt_ck: the band solver replaces that relaxation
 // problem/ck_dump_t2, ck_dump_file2: re-arm the solver's one-shot column dump once the
@@ -169,6 +174,18 @@ KOKKOS_INLINE_FUNCTION void ColumnAt(const DvceArray1D<Real> &lnp,
   lp = lnp(ii)*(1.0 - f) + lnp(ii+1)*f;
   t = tk(ii)*(1.0 - f) + tk(ii+1)*f;
 }
+// the same as ColumnAt, on host mirrors, for the start-up checks
+template <typename V1>
+void ColumnAtHost(const V1 &lnp, const V1 &tk, const int nfine, const Real rlo,
+                  const Real drf, const Real r, Real &lp, Real &t) {
+  Real s = (r - rlo)/drf;
+  int ii = static_cast<int>(s);
+  ii = (ii < 0) ? 0 : ((ii > nfine-2) ? nfine-2 : ii);
+  const Real f = s - ii;
+  lp = lnp(ii)*(1.0 - f) + lnp(ii+1)*f;
+  t = tk(ii)*(1.0 - f) + tk(ii+1)*f;
+}
+
 // log-bilinear kappa_R(T, rho) on the (log10 T, log10 rho) table, clamped
 KOKKOS_INLINE_FUNCTION Real KappaTab(const DvceArray2D<Real> &tab,
                                      const DvceArray1D<Real> &lT,
@@ -220,6 +237,13 @@ void ReadOpacityTable(const std::string &fname, DvceArray2D<Real> &tab,
   while (std::getline(f, line)) {
     if (line.empty()) continue;
     if (line[0] == '#') {
+      // "# valid_logR lo hi": outside that window the table is edge-filled, not data
+      const std::size_t vp = line.find("valid_logR");
+      if (vp != std::string::npos) {
+        std::istringstream vs(line.substr(vp + 10));
+        Real lo, hi;
+        if (vs >> lo >> hi) { opac_lR_lo_ = lo; opac_lR_hi_ = hi; }
+      }
       if (!have_grid) {
         std::istringstream ss(line.substr(1));
         int a, b;
@@ -572,6 +596,48 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       }
     }
     const int ibot = static_cast<int>((rin - rlo)/drf + 0.5);
+    // THE OPACITY TABLE MUST BE DATA WHERE THIS STAR LIVES.  Outside the recorded logR
+    // window the merge filled with the edge value, constant in density; a run there is
+    // not using an opacity at all.  Checked on the ACTUAL radial grid including the
+    // ghosts, since the boundary cells feed the wall flux -- not merely on the domain.
+    // A first line of defence, not a guarantee: cells can still wander out as the
+    // atmosphere relaxes.
+    if (opac_lR_lo_ > -1.0e29) {
+      auto &x1v_chk = pmbp->pcoord->x1v;
+      auto hx1v = Kokkos::create_mirror_view(x1v_chk);
+      Kokkos::deep_copy(hx1v, x1v_chk);
+      int nbad = 0;
+      Real wl = 0.0, wh = 0.0, wr = 0.0;
+      for (int m = 0; m <= nmb1; ++m) {
+        for (int i = 0; i <= n1m1; ++i) {
+          const Real rr_ = curv ? hx1v(m,i) : rin;
+          if (!(rr_ > 0.0)) continue;
+          Real lp, tt;
+          ColumnAtHost(hlnp, htk, nfine, rlo, drf, rr_, lp, tt);
+          const Real dd = DensFromPT(eos, rgas, exp(lp), tt)*dunit;
+          if (!(dd > 0.0)) continue;
+          const Real lR = log10(dd) - 3.0*log10(tt) + 18.0;
+          if (lR < opac_lR_lo_ || lR > opac_lR_hi_) {
+            if (nbad == 0) { wl = lR; wh = lR; wr = rr_*lunit; }
+            wl = fmin(wl, lR);
+            wh = fmax(wh, lR);
+            ++nbad;
+          }
+        }
+      }
+      if (nbad > 0) {
+        std::cout << "### FATAL ERROR in red_giant: " << nbad << " cells (ghosts "
+                  << "included) lie OUTSIDE the opacity table's valid window logR = ["
+                  << opac_lR_lo_ << ", " << opac_lR_hi_ << "]: they reach logR " << wl
+                  << " .. " << wh << ", first at r = " << wr << " cm. There the table is "
+                  << "edge-filled, not data. Move the domain, or extend the tables."
+                  << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      std::cout << "red_giant: every cell (ghosts included) is inside the opacity "
+                << "table's valid window logR = [" << opac_lR_lo_ << ", "
+                << opac_lR_hi_ << "]" << std::endl;
+    }
     // the top state must have a gas solution: under a general EOS with radiation the
     // total pressure cannot fall below a T^4/3, and SolveDensity then hands back the
     // table floor -- a column of floor density that looks like a run and is not one
@@ -579,7 +645,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       const Real p_t = exp(hlnp(itop)), t_t = htk(itop);
       const Real rho_t = DensFromPT(eos, rgas, p_t, t_t)*dunit;
       const Real prad = kArad*t_t*t_t*t_t*t_t/3.0;
-      const bool eos_rad = eos.IsGeneral() && eos.tbl.radiation;
       const bool eos_rad = eos.IsGeneral() && eos.tbl.radiation;
       if (!(rho_t > 1.0e-30) || !std::isfinite(rho_t)
           || (eos_rad && prad > 0.9*ptop_cgs)) {

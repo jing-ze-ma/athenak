@@ -80,8 +80,10 @@ kappa_fac   = 1.0            # TEST knob: scale kappa_R in the column and the op
 kappa_const = 0.0            # > 0: constant kappa_R [cm^2/g] instead of the table (grey test)
 mlt_alpha   = 0.0            # > 0: mixing-length convective flux, l = alpha H_p (1-D needs it)
 mlt_dump    =                # if set: dump one column's MLT faces at the first call
-# --- the correlated-k two-stream for the optically thin layers (off by default: the grey
-# Eddington relaxation carries them instead).  Self-luminous: no irradiation, T_int = teff.
+# --- the correlated-k two-stream.  OFF in the 1-D column tests: the solver takes its
+# direction from the spherical geometry, and the grey relaxation is what makes the
+# closed-form validation (problem/kappa_const) possible.  ON by default in
+# red_giant_cs.athinput, which is the 3-D case.
 rt_ck       = false
 ck_table    = /orion/u/jinma/ATHENAK/athenak/data/exo_fms_ck/ck/Premixed_1x_g8_11.txt
 ck_data_dir = /orion/u/jinma/ATHENAK/athenak/data/exo_fms_ck
