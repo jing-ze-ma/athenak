@@ -397,8 +397,14 @@ Mesh::Mesh(ParameterInput *pin) :
                pin->DoesParameterExist("mhd", "isotropic_viscosity")) {
       missing = "viscosity (isotropic_viscosity): diffusion/viscosity.cpp has no "
                 "curvilinear form at all";
-    } else if (pin->DoesParameterExist("hydro", "isotropic_conduction") ||
-               pin->DoesParameterExist("mhd", "isotropic_conduction")) {
+    // the RADIATIVE branch is the exception: it reads the physical widths from the
+    // coordinates (dr exact; r dtheta-like widths in x2/x3, whose gradients it treats
+    // as orthogonal -- an approximation on the gnomonic grid, but the horizontal
+    // radiative flux is negligible against the radial one it exists for)
+    } else if ((pin->DoesParameterExist("hydro", "isotropic_conduction") &&
+                pin->GetString("hydro", "isotropic_conduction") != "radiative") ||
+               (pin->DoesParameterExist("mhd", "isotropic_conduction") &&
+                pin->GetString("mhd", "isotropic_conduction") != "radiative")) {
       missing = "thermal conduction (isotropic_conduction): diffusion/conduction.cpp "
                 "has no curvilinear form at all";
     // RADIATION.  src/radiation/ contains not one mention of use_cubed_sphere, and not
