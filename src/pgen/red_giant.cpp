@@ -440,8 +440,18 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     ts::rt_split = true;             // implied by rt_ck
     ts::rt_ck_pcut = pin->GetOrAddReal("problem", "ck_pcut_bar", 1.0e30);
     ts::rt_de_max = pin->GetOrAddReal("problem", "rt_de_max", 0.5);
-    ts::rt_int_at_cut = false;       // the inner wall carries L, not the ck cut
-    ts::rt_tint_override = teff;     // SELF-LUMINOUS: T_int is the star's own T_eff
+    // THE SOLVER INJECTS NO ENERGY, and cannot: its upward intensity at the cut is the
+    // local band Planck function, which is the right handover to an optically thick,
+    // diffusive interior.  The internal-flux term is off twice over -- set false here,
+    // and forced false by the tau blend, which this problem generator requires above.
+    // So the only energy input is the inner boundary: rad_flux_inner through a wall, or
+    // the entropy of the inflow through an open one.
+    ts::rt_int_at_cut = false;
+    // T_int reaches only the grey picket-fence path and the albedo, neither of which runs
+    // with rt_ck and the blend on, and the albedo multiplies a stellar flux that is zero.
+    // It is set to a sane value rather than left at 0 so those helpers, which are
+    // evaluated unconditionally, are not handed a degenerate temperature.
+    ts::rt_tint_override = teff;
     ts::rt_dump_file = pin->GetOrAddString("problem", "ck_dump_file", "");
     ts::rt_dump_m = pin->GetOrAddInteger("problem", "ck_dump_m", 0);
     ts::rt_dump_j = pin->GetOrAddInteger("problem", "ck_dump_j", -1);
