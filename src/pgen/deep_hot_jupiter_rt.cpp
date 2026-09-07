@@ -1204,9 +1204,10 @@ void ck_rt_selftest() {
 //  an edge case here, it is the normal state of affairs above 3000 K. Held-flat
 //  extrapolation of CIA is what Exo-FMS does too.
 //
-//  NOT included: H- bound-free and free-free. Those dominate the continuum above about
-//  3000 K and are the reason the table's Rosseland mean still falls short of the grey
-//  Freedman opacity there -- see the note in read_ck_table's validation.
+//  H- bound-free and free-free (John 1988) ARE included below, from the FastChem n(H-),
+//  n(e-) and n(H); they dominate the continuum above about 3000 K. With them and CIA in,
+//  the table's Rosseland mean is 1.0-1.8x Freedman+2014 at 3500 K (docs/correlated_k_rt.md).
+//  NOT included: the H2- and He- free-free files that ship in cia/ (unread).
 
 KOKKOS_INLINE_FUNCTION
 void ck_continuum(const DvceArray3D<Real> &ce, const DvceArray1D<Real> &celT,
