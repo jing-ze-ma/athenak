@@ -65,3 +65,32 @@ is cgs throughout, so the values are used as read. Interpolate log10(kappa) in
 
 **Continuum:** CIA and Rayleigh are NOT in the k-table. They are grey within a band and
 add to every g-point: `k_tot(g,b) = k_ck(g,b) + k_cont(b) + k_Ray(b)`.
+
+## Known defects in the upstream files (checked 2026-08-23)
+
+The files here are byte-for-byte upstream. Two things in them are wrong, and are recorded
+rather than silently patched, so that this directory stays a faithful copy of what was
+downloaded.
+
+1. **`cia/H2-_ff.txt`, row `4142`, second column reads `8.43e02` where it should be
+   `8.43e-2`** — a factor of 1e4, obvious from its neighbours `5.84e-2` and `1.01e-1` and
+   from the smooth Theta dependence of every other row. **It does not affect any run:**
+   the continuum reader opens only `cia/{H2-H2,H2-He,H2-H,He-H}_reform_11.txt`,
+   `ray/Ray_{H2,He,H,e-}_11.txt`, `CE_tables/FastChem_ck_1x_int.txt` and the k-table.
+   `H2-_ff.txt` and `He-_ff.txt` ship unused — H2- and He- free-free are deliberately not
+   modelled (see docs/correlated_k_rt.md). Fix the value if that ever changes.
+
+2. **`wavelengths_GCM_11.txt` is a count line `12` followed by ASCENDING edges**
+   (0.260 ... 324.68), not the descending list the table above describes. Also unused: the
+   band edges are read from the k-table itself.
+
+Everything else was checked and is clean:
+
+| check | result |
+| --- | --- |
+| k-table value count | 113696 = 38 x 34 x 11 x 8, exact |
+| k-table monotonic in g (required of a k-distribution) | all 14212 chains pass |
+| k-table negatives | none; range 2.6e-175 .. 2.0e4 |
+| FastChem records | 8194 as declared, no leftover tokens |
+| FastChem mu | 0.8006 .. 2.3267, no negative VMRs, none summing > 1.5 |
+| `cia/He-_ff.txt`, CIA and Rayleigh tables | no order-of-magnitude outliers beyond the 1e-99 no-data sentinels and genuine Rayleigh falloff |
