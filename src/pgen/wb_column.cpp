@@ -107,6 +107,11 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   const Real t0k = pin->GetOrAddReal("problem", "t0_kelvin", 0.0);
   const Real t0c = (t0k > 0.0) ? t0k/tunit : t0;
   const Real b0 = pin->GetOrAddReal("problem", "b0", 0.0);
+  // velocity seed at rest: Mach number of a smooth (one-wavelength sine in each
+  // direction) plus vpert_grid x a grid-scale (-1)^(i+j+k) component, all three
+  // components -- the low-Mach solver stability test
+  const Real vpert = pin->GetOrAddReal("problem", "vpert", 0.0);
+  const Real vgrid = pin->GetOrAddReal("problem", "vpert_grid", 0.0);
   const int axis = axis_;
   const Real g0 = g0_, ap = ap_;
   if (axis != 1 && axis != 3) {
@@ -207,6 +212,20 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     u0(m,IM2,k,j,i) = 0.0;
     u0(m,IM3,k,j,i) = 0.0;
     u0(m,IEN,k,j,i) = p/gm1 + 0.5*b0*b0;
+    if (vpert > 0.0) {
+      const Real x2min = size.d_view(m).x2min, x2max = size.d_view(m).x2max;
+      const Real x2v = CellCenterX(j-js, indcs.nx2, x2min, x2max);
+      const Real cs = sqrt((gm1 + 1.0)*p/d);
+      const Real sgn = ((i + j + k) % 2 == 0) ? 1.0 : -1.0;
+      const Real tp = 2.0*M_PI;
+      const Real v1 = vpert*cs*(sin(tp*(x1v - x1min)/(x1max - x1min)) + vgrid*sgn);
+      const Real v2 = vpert*cs*(sin(tp*(x2v - x2min)/(x2max - x2min)) + vgrid*sgn);
+      const Real v3 = vpert*cs*(sin(tp*(x3v - x3min)/(x3max - x3min)) + vgrid*sgn);
+      u0(m,IM1,k,j,i) = d*v1;
+      u0(m,IM2,k,j,i) = d*v2;
+      u0(m,IM3,k,j,i) = d*v3;
+      u0(m,IEN,k,j,i) += 0.5*d*(v1*v1 + v2*v2 + v3*v3);
+    }
     if (have_phi) {
       const Real phi_c = PotAt(g0, ap, z - zmin);
       phicc(m,k,j,i) = phi_c;
