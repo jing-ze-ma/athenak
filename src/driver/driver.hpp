@@ -35,7 +35,8 @@ class Driver {
   // folowing data only relevant for runs involving time evolution
   Real tlim;      // stopping time
   int nlim;       // cycle-limit
-  int ndiag;      // cycles between output of diagnostic information
+  int ndiag;              // cycles between output of diagnostic information
+  int nan_check_cycles;   // scan u0 for NaN every N cycles (time/nan_check_cycles; 0 = off)
   // variables for various SSP and ImEx RK integrators
   std::string integrator;          // integrator name (rk1, rk2, rk3)
   int nimp_stages;                 // number of implicit stages (ImEx only)

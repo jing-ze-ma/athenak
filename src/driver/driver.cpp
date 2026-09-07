@@ -11,6 +11,8 @@
 #include <limits>
 #include <algorithm>
 #include <string> // string
+#include <cmath>  // std::isfinite
+#include <cstdlib>  // std::_Exit
 
 #include "athena.hpp"
 #include "globals.hpp"
@@ -88,6 +90,7 @@ Driver::Driver(ParameterInput *pin, Mesh *pmesh, Real wtlim, Kokkos::Timer* ptim
     tlim = pin->GetReal("time", "tlim");
     nlim = pin->GetOrAddInteger("time", "nlim", -1);
     ndiag = pin->GetOrAddInteger("time", "ndiag", 1);
+    nan_check_cycles = pin->GetOrAddInteger("time", "nan_check_cycles", 100);
 
     if (integrator == "rk1") {
       // RK1: first-order Runge-Kutta / the forward Euler (FE) method
@@ -458,6 +461,56 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       if (pmesh->adaptive) {pmesh->pmr->AdaptiveMeshRefinement(this, pin);}
       // compute new timestep AFTER all Meshblocks refined/derefined
       pmesh->NewTimeStep(tlim);
+
+      // NaN guard (time/nan_check_cycles, default 100; 0 = off): a run whose state has
+      // gone non-finite keeps stepping -- fmin() drops NaN, so the time step stays
+      // finite -- and can burn a whole allocation on nothing (cs_mhd_prod ran 13
+      // rotations on NaN). Scan the conserved density and energy every N cycles and
+      // abort with the count. One reduction over the pack, negligible cost.
+      if (nan_check_cycles > 0 && pmesh->ncycle % nan_check_cycles == 0) {
+        int nbad = 0;
+        auto count = [&](const DvceArray5D<Real> &u) {
+          const int nmb = static_cast<int>(u.extent_int(0));
+          const int n3 = static_cast<int>(u.extent_int(2));
+          const int n2 = static_cast<int>(u.extent_int(3));
+          const int n1 = static_cast<int>(u.extent_int(4));
+          const int ntot = nmb*n3*n2*n1;
+          int nb = 0;
+          Kokkos::parallel_reduce("nan_check",
+                                  Kokkos::RangePolicy<>(DevExeSpace(), 0, ntot),
+          KOKKOS_LAMBDA(const int idx, int &sum) {
+            const int m = idx/(n3*n2*n1);
+            const int k = (idx - m*n3*n2*n1)/(n2*n1);
+            const int j = (idx - m*n3*n2*n1 - k*n2*n1)/n1;
+            const int i = idx - m*n3*n2*n1 - k*n2*n1 - j*n1;
+            if (!Kokkos::isfinite(u(m,IDN,k,j,i))
+                || !Kokkos::isfinite(u(m,IEN,k,j,i))) sum++;
+          }, Kokkos::Sum<int>(nb));
+          return nb;
+        };
+        auto pp = pmesh->pmb_pack;
+        if (pp->phydro != nullptr) nbad += count(pp->phydro->u0);
+        if (pp->pmhd != nullptr) nbad += count(pp->pmhd->u0);
+#if MPI_PARALLEL_ENABLED
+        MPI_Allreduce(MPI_IN_PLACE, &nbad, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
+#endif
+        if (nbad > 0) {
+          if (global_variable::my_rank == 0) {
+            std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                      << std::endl << "non-finite conserved density or energy in " << nbad
+                      << " cell(s) at cycle " << pmesh->ncycle << ", time = "
+                      << pmesh->time << " (time/nan_check_cycles = " << nan_check_cycles
+                      << ")" << std::endl;
+          }
+          // std::exit would run static destructors with Kokkos still live (segfault) and
+          // leave the other ranks waiting; leave hard
+#if MPI_PARALLEL_ENABLED
+          MPI_Abort(MPI_COMM_WORLD, EXIT_FAILURE);
+#else
+          std::_Exit(EXIT_FAILURE);
+#endif
+        }
+      }
 
       // Update wall clock time if needed.
       if (wall_time > 0.) {
