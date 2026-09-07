@@ -1,0 +1,1006 @@
+//========================================================================================
+// AthenaXXX astrophysical plasma code
+// Copyright(C) 2020 James M. Stone <jmstone@ias.edu> and the Athena code team
+// Licensed under the 3-clause BSD License (the "LICENSE")
+//========================================================================================
+//! \file red_giant.cpp
+//! \brief A self-luminous stellar envelope: the outer shell of a red giant (or any cool
+//! giant) between an inner wall that injects the stellar luminosity and an outer wall
+//! above the photosphere.  Point-mass gravity, stellar Rosseland opacities, and the
+//! radiative-conduction operator carrying the flux; the initial column is the
+//! radiative-convective hydrostatic equilibrium of that same operator.
+//!
+//! Runs on the cubed sphere and on spherical polar (x1 = r), and as a Cartesian x1
+//! column for one-dimensional tests (x1 is then r - rin + mesh x1min).
+//!
+//!   problem/mstar        mass inside the inner wall [g] (point mass; g = G M / r^2)
+//!   problem/lstar        luminosity injected through the inner wall [erg/s]
+//!   problem/teff         effective temperature [K]: the top of the column has
+//!                        T^4 = Teff^4/2 (Eddington grey at tau = 0)
+//!   problem/ptop         pressure at the outer wall [dyn/cm^2]
+//!   problem/opac_table   log10 kappa_R on (log10 T, log10 rho): the file written by
+//!                        tools/stellar_opac/merge_rosseland.py
+//!   problem/mu           mean molecular weight for an IDEAL gas (ignored by a general
+//!                        EOS, which carries its own composition)
+//!   problem/vpert        velocity seed, in units of the local sound speed (0 = rest)
+//!   problem/kappa_fac    scales kappa_R everywhere (the column here AND the conduction
+//!                        operator, which is told).  A TEST knob: a giant envelope is
+//!                        convective from tau ~ 10 down, so radiation carries only
+//!                        grad_ad/grad_rad of L there and a 1-D column, which cannot
+//!                        convect, cannot be steady.  kappa_fac ~ 1e-3 makes the
+//!                        whole envelope radiative, and then the column must sit still.
+//!   problem/kappa_const  > 0: a CONSTANT kappa_R [cm^2/g] replaces the table (column and
+//!                        operator).  The grey Eddington atmosphere with constant
+//!                        opacity has kappa p = g tau exactly, so grad_rad = tau/(4 tau +
+//!                        8/3) < 0.25 < grad_ad: the whole ideal-gas column is RADIATIVE
+//!                        and its equilibrium is known in closed form,
+//!                        T^4 = (3/4) Teff^4 (tau + 2/3), p = g tau/kappa -- the 1-D
+//!                        validation of the operator, the walls and the relaxation.
+//!                        (kappa_fac cannot do this: scaling a T-dependent kappa leaves
+//!                        kappa p / (g tau), and with it the convection zone, unchanged.)
+//!   problem/mlt_alpha    > 0: a MIXING-LENGTH convective flux on the radial faces, with
+//!                        l = alpha H_p (Boehm-Vitense; Kippenhahn et al. eq. 7.6),
+//!                        wherever grad > grad_ad.  A giant envelope is convective from
+//!                        just below the photosphere down, so a column that cannot
+//!                        convect cannot be steady; this carries L - F_rad in 1-D, and
+//!                        is a sub-grid option in 3-D (default 0 = off: resolve it).
+//!   problem/rt_ck        true: the CORRELATED-K two-stream carries the optically thin
+//!                        layers instead of the grey relaxation below.  The tables are
+//!                        the Exo-FMS ones (problem/ck_table, ck_data_dir), the stellar
+//!                        sweep is off (Teq = 0) and the internal temperature is teff,
+//!                        so the band solver sees a self-luminous atmosphere.  The tau
+//!                        blend hands over to radiative diffusion underneath exactly as
+//!                        it does for the hot Jupiter.
+//!   problem/column_dump  if set, rank 0 writes the initial column to this file
+//!   problem/user_srcs    must be true (the gravity source lives here)
+//!
+//! <hydro|mhd>/isotropic_conduction = radiative with rad_kappa_src = table_rho makes the
+//! conduction operator read the same opacity table; rad_flux_inner < 0 lets this file
+//! set the inner flux to L/(4 pi rin^2).  Use ix1_bc = ox1_bc = user: both walls are
+//! reflecting, with the ghost column continued hydrostatically from the initial state.
+//!
+//! THE INITIAL COLUMN.  From the outer wall inward (and outward through the ghosts):
+//!     d ln p / dr = -rho g / p,     d ln T / d ln p = min(grad_rad, grad_ad),
+//!     grad_rad = 3 kappa_R p L / (16 pi a c G M T^4),
+//! with rho(p, T) and grad_ad from the run's own EOS and kappa_R from the table.  The
+//! diffusion form of grad_rad is exactly the Eddington grey slope, so the only thing the
+//! optically thin top adds is the boundary value T^4(tau = 0) = Teff^4/2.  Where the
+//! radiative gradient exceeds the adiabatic one the column follows the adiabat -- the
+//! Schwarzschild criterion, mixing length omitted, which is what a resolved convection
+//! zone is supposed to supply.  The result is the steady state of the conduction operator
+//! in the radiative layers and of adiabatic convection below, so the run starts from
+//! its own equilibrium rather than relaxing to it.
+
+#include <cmath>
+#include <fstream>
+#include <iostream>
+#include <sstream>
+#include <string>
+#include <vector>
+
+#include "athena.hpp"
+#include "globals.hpp"
+#include "parameter_input.hpp"
+#include "coordinates/cell_locations.hpp"
+#include "mesh/mesh.hpp"
+#include "eos/eos.hpp"
+#include "hydro/hydro.hpp"
+#include "mhd/mhd.hpp"
+#include "diffusion/conduction.hpp"
+#include "utils/wb_background.hpp"
+#include "units/units.hpp"
+#include "pgen.hpp"
+#include "pgen_eos_utils.hpp"
+#include "utils/correlated_k.hpp"
+#include "utils/two_stream_rt.hpp"
+
+using pgen_eos::DensFromPT;
+using pgen_eos::EintFromDensT;
+using pgen_eos::GradAd;
+using pgen_eos::TempKelvin;
+
+void RedGiantGravity(Mesh *pm, Real bdt);
+void RedGiantBC(Mesh *pm);
+void RedGiantFinal(ParameterInput *pin, Mesh *pm);
+
+namespace {
+// physical constants, cgs
+constexpr Real kGrav = 6.674e-8;
+constexpr Real kBoltz = 1.380649e-16;
+constexpr Real kMH = 1.6726e-24;
+constexpr Real kArad = 7.5657e-15;
+constexpr Real kClight = 2.99792458e10;
+constexpr Real kSigmaSB = 5.670374419e-5;
+
+// the star and the grid, code units unless said otherwise
+Real gm_ = 0.0;          // G M, code units
+Real rin_ = 1.0;         // radius of the inner wall
+Real x1min_ = 0.0;       // mesh x1min (the Cartesian column maps x1 -> r)
+bool curv_ = false;      // spherical polar or cubed sphere: x1 IS r
+Real rgas_ = 1.0;        // k/(mu m_H) for an ideal gas, code units
+Real gm1_ = 0.4;
+bool etotgrav_ = false;
+
+// the initial column on a fine uniform grid in r: ln p [code] and T [K]
+DvceArray1D<Real> lnp_d_, tk_d_;
+Real rlo_ = 0.0, drf_ = 1.0;
+int nfine_ = 0;
+// the opacity table (for the thin-layer relaxation) and the star's Teff
+DvceArray2D<Real> ktab_;
+DvceArray1D<Real> klT_, klD_;
+int knT_ = 0, knD_ = 0;
+Real teff_ = 0.0;
+Real kfac_ = 1.0;        // problem/kappa_fac, applied to every table lookup
+bool relax_ = false;     // the optically thin relaxation is on (radiative + tau blend)
+bool rt_ck_ = false;     // problem/rt_ck: the band solver replaces that relaxation
+// problem/ck_dump_t2, ck_dump_file2: re-arm the solver's one-shot column dump once the
+// run reaches t2, so the emergent flux can be compared BEFORE and AFTER the atmosphere
+// has adjusted to the band opacities.  The global energy budget cannot do this: the
+// envelope holds ~1e48 erg while the flux imbalance integrates to ~1e40 over a short run.
+Real ck_dump_t2_ = -1.0;
+std::string ck_dump_file2_;
+bool ck_dumped2_ = false;
+Real mlt_alpha_ = 0.0;   // problem/mlt_alpha; > 0 turns the convective flux on
+std::string mlt_dump_ = "";  // problem/mlt_dump: write the faces of one column once
+bool mlt_dumped_ = false;
+DvceArray2D<Real> fdiag_;   // (i, 8): grad, grad_ad, H_p, c_p, v, F, F_cap, F_used
+DvceArray4D<Real> fconv_; // its radial face flux, code units, (m,k,j,i) on x1 faces
+
+KOKKOS_INLINE_FUNCTION Real GravAt(const Real gm, const Real r) {
+  return gm/(r*r);
+}
+// increasing outward, zero at the inner wall (the code's sign convention for phi)
+KOKKOS_INLINE_FUNCTION Real PotAt(const Real gm, const Real rin, const Real r) {
+  return gm*(1.0/rin - 1.0/r);
+}
+KOKKOS_INLINE_FUNCTION Real RadiusOf(const bool curv, const Real x1, const Real rin,
+                                     const Real x1min) {
+  return curv ? x1 : (rin + x1 - x1min);
+}
+// the column at radius r: ln p (code) and T (K), linear in r between fine nodes
+KOKKOS_INLINE_FUNCTION void ColumnAt(const DvceArray1D<Real> &lnp,
+                                     const DvceArray1D<Real> &tk, const int nfine,
+                                     const Real rlo, const Real drf, const Real r,
+                                     Real &lp, Real &t) {
+  Real s = (r - rlo)/drf;
+  int ii = static_cast<int>(s);
+  ii = (ii < 0) ? 0 : ((ii > nfine-2) ? nfine-2 : ii);
+  const Real f = s - ii;
+  lp = lnp(ii)*(1.0 - f) + lnp(ii+1)*f;
+  t = tk(ii)*(1.0 - f) + tk(ii+1)*f;
+}
+// log-bilinear kappa_R(T, rho) on the (log10 T, log10 rho) table, clamped
+KOKKOS_INLINE_FUNCTION Real KappaTab(const DvceArray2D<Real> &tab,
+                                     const DvceArray1D<Real> &lT,
+                                     const DvceArray1D<Real> &lD, const int nT,
+                                     const int nD, const Real tk, const Real rho) {
+  const Real x = log10(tk), y = log10(rho);
+  int i = 0, j = 0;
+  Real fx = 0.0, fy = 0.0;
+  if (x > lT(0)) {
+    if (x >= lT(nT-1)) {
+      i = nT-2; fx = 1.0;
+    } else {
+      i = static_cast<int>((x - lT(0))/(lT(1) - lT(0)));
+      i = (i < 0) ? 0 : ((i > nT-2) ? nT-2 : i);
+      fx = (x - lT(i))/(lT(i+1) - lT(i));
+    }
+  }
+  if (y > lD(0)) {
+    if (y >= lD(nD-1)) {
+      j = nD-2; fy = 1.0;
+    } else {
+      j = static_cast<int>((y - lD(0))/(lD(1) - lD(0)));
+      j = (j < 0) ? 0 : ((j > nD-2) ? nD-2 : j);
+      fy = (y - lD(j))/(lD(j+1) - lD(j));
+    }
+  }
+  const Real lk = (1.0-fx)*((1.0-fy)*tab(i,j) + fy*tab(i,j+1))
+                +      fx *((1.0-fy)*tab(i+1,j) + fy*tab(i+1,j+1));
+  return pow(10.0, lk);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn ReadOpacityTable
+//! \brief the merged Rosseland table: comment lines, one of them "# nT nD lTmin dlT
+//! lDmin dlD", then nT*nD values of log10 kappa_R with T slowest
+
+void ReadOpacityTable(const std::string &fname, DvceArray2D<Real> &tab,
+                      DvceArray1D<Real> &lT, DvceArray1D<Real> &lD, int &nT, int &nD) {
+  std::ifstream f(fname);
+  if (!f.good()) {
+    std::cout << "### FATAL ERROR in red_giant: cannot open problem/opac_table '"
+              << fname << "'" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  std::string line;
+  Real lt0 = 0.0, dlt = 0.0, ld0 = 0.0, dld = 0.0;
+  bool have_grid = false;
+  std::vector<Real> vals;
+  while (std::getline(f, line)) {
+    if (line.empty()) continue;
+    if (line[0] == '#') {
+      if (!have_grid) {
+        std::istringstream ss(line.substr(1));
+        int a, b;
+        Real c, d, e, g;
+        if (ss >> a >> b >> c >> d >> e >> g) {
+          nT = a; nD = b; lt0 = c; dlt = d; ld0 = e; dld = g;
+          have_grid = true;
+        }
+      }
+      continue;
+    }
+    vals.push_back(std::stod(line));
+  }
+  if (!have_grid || static_cast<int>(vals.size()) != nT*nD) {
+    std::cout << "### FATAL ERROR in red_giant: opacity table '" << fname
+              << "' has no grid line or " << vals.size() << " values for "
+              << nT << " x " << nD << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  Kokkos::realloc(tab, nT, nD);
+  Kokkos::realloc(lT, nT);
+  Kokkos::realloc(lD, nD);
+  auto htab = Kokkos::create_mirror_view(tab);
+  auto hlT = Kokkos::create_mirror_view(lT);
+  auto hlD = Kokkos::create_mirror_view(lD);
+  for (int i=0; i<nT; ++i) {
+    hlT(i) = lt0 + i*dlt;
+    for (int j=0; j<nD; ++j) htab(i,j) = vals[i*nD + j];
+  }
+  for (int j=0; j<nD; ++j) hlD(j) = ld0 + j*dld;
+  Kokkos::deep_copy(tab, htab);
+  Kokkos::deep_copy(lT, hlT);
+  Kokkos::deep_copy(lD, hlD);
+  std::cout << "red_giant: opacity table '" << fname << "', " << nT << " x " << nD
+            << " nodes, log10 T " << lt0 << ".." << lt0 + (nT-1)*dlt
+            << ", log10 rho " << ld0 << ".." << ld0 + (nD-1)*dld << std::endl;
+}
+} // namespace
+
+//----------------------------------------------------------------------------------------
+//! \fn void ProblemGenerator::UserProblem()
+
+void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
+  user_srcs_func = RedGiantGravity;
+  user_bcs_func = RedGiantBC;
+  pgen_final_func = RedGiantFinal;
+  MeshBlockPack *pmbp = pmy_mesh_->pmb_pack;
+  auto &indcs = pmy_mesh_->mb_indcs;
+  const int ng = indcs.ng;
+  const int is = indcs.is, js = indcs.js, ks = indcs.ks;
+  const int n1m1 = indcs.nx1 + 2*ng - 1;
+  const int n2m1 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*ng - 1) : 0;
+  const int n3m1 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*ng - 1) : 0;
+  const int nmb1 = pmbp->nmb_thispack - 1;
+  auto &size = pmbp->pmb->mb_size;
+  const bool is_mhd = (pmbp->pmhd != nullptr);
+  auto &u0 = is_mhd ? pmbp->pmhd->u0 : pmbp->phydro->u0;
+  auto eos = is_mhd ? pmbp->pmhd->peos->eos_data : pmbp->phydro->peos->eos_data;
+  const Real gamma = eos.gamma;
+  const Real gm1 = gamma - 1.0, igm1 = 1.0/gm1;
+  const bool etotgrav = is_mhd ? pmbp->pmhd->use_etotgrav : pmbp->phydro->use_etotgrav;
+  const bool wbdyn = is_mhd ? pmbp->pmhd->use_wellbalance_dynamic
+                            : pmbp->phydro->use_wellbalance_dynamic;
+  if (pmbp->punit == nullptr) {
+    std::cout << "### FATAL ERROR in red_giant: a <units> block is required" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  const Real lunit = pmbp->punit->length_cgs();
+  const Real dunit = pmbp->punit->density_cgs();
+  const Real punit_ = pmbp->punit->pressure_cgs();
+  const Real vunit = pmbp->punit->velocity_cgs();
+  const bool curv = pmy_mesh_->use_spherical_polar || pmy_mesh_->use_cubed_sphere;
+  if (!curv && !(pmy_mesh_->one_d)) {
+    std::cout << "### FATAL ERROR in red_giant: on a Cartesian mesh only a 1D x1 column "
+              << "is supported (or use spherical polar / the cubed sphere)" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+
+  // --- the star
+  const Real mstar = pin->GetReal("problem", "mstar");
+  const Real lstar = pin->GetReal("problem", "lstar");
+  const Real teff = pin->GetReal("problem", "teff");
+  const Real ptop_cgs = pin->GetReal("problem", "ptop");
+  const Real mu = pin->GetOrAddReal("problem", "mu", 0.62);
+  const Real vpert = pin->GetOrAddReal("problem", "vpert", 0.0);
+  const Real kfac = pin->GetOrAddReal("problem", "kappa_fac", 1.0);
+  const Real kconst = pin->GetOrAddReal("problem", "kappa_const", 0.0);
+  mlt_alpha_ = pin->GetOrAddReal("problem", "mlt_alpha", 0.0);
+  mlt_dump_ = pin->GetOrAddString("problem", "mlt_dump", "");
+  const std::string opac = pin->GetString("problem", "opac_table");
+  const std::string dump = pin->GetOrAddString("problem", "column_dump", "");
+  x1min_ = pmy_mesh_->mesh_size.x1min;
+  const Real x1max = pmy_mesh_->mesh_size.x1max;
+  rin_ = curv ? x1min_ : pin->GetReal("problem", "rin")/lunit;
+  const Real rout = curv ? x1max : rin_ + (x1max - x1min_);
+  gm_ = kGrav*mstar/(lunit*lunit*lunit)*(pmbp->punit->time_cgs()
+                                         *pmbp->punit->time_cgs());
+  // ideal gas only: p = rho Rgas T with T in KELVIN (pgen_eos_utils convention), so
+  // Rgas carries velocity^2 per kelvin in code units
+  rgas_ = kBoltz/(mu*kMH)/(vunit*vunit);
+  curv_ = curv; gm1_ = gm1; etotgrav_ = etotgrav;
+  const Real gm = gm_, rin = rin_, x1min = x1min_, rgas = rgas_;
+
+  // --- the opacity table, for the column here and for the conduction operator
+  DvceArray2D<Real> ktab;
+  DvceArray1D<Real> klT, klD;
+  int knT = 0, knD = 0;
+  ReadOpacityTable(opac, ktab, klT, klD, knT, knD);
+  if (kconst > 0.0) {
+    auto h = Kokkos::create_mirror_view(ktab);
+    for (int i=0; i<knT; ++i) {
+      for (int j=0; j<knD; ++j) h(i,j) = log10(kconst);
+    }
+    Kokkos::deep_copy(ktab, h);
+    std::cout << "red_giant: kappa_const = " << kconst << " cm^2/g REPLACES the table"
+              << std::endl;
+  }
+  Conduction *pc = is_mhd ? pmbp->pmhd->pcond : pmbp->phydro->pcond;
+  if (pc != nullptr && pc->iso_cond_type.compare("radiative") == 0) {
+    if (pc->rad_kappa_tab && !pc->rad_kappa_rho) {
+      std::cout << "### FATAL ERROR in red_giant: use rad_kappa_src = table_rho, the "
+                << "stellar table is on (T, rho)" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    pc->rad_kappa_fac = kfac;
+    if (pc->rad_kappa_rho) {
+      pc->rad_kr_tab = ktab;
+      pc->rad_kr_lT = klT;
+      pc->rad_kr_lP = klD;
+      pc->rad_kr_nT = knT;
+      pc->rad_kr_nP = knD;
+    }
+    if (pc->rad_flux_inner < 0.0) {
+      const Real fin = lstar/(4.0*M_PI*SQR(rin*lunit));       // erg/cm^2/s
+      pc->rad_flux_inner = fin/(punit_*vunit);
+      std::cout << "red_giant: inner flux L/(4 pi rin^2) = " << fin
+                << " erg/cm^2/s = sigma (" << pow(fin/kSigmaSB, 0.25) << " K)^4"
+                << std::endl;
+    }
+    // THE OPTICALLY THIN LAYERS.  Diffusion is the wrong physics above tau ~ 1 and,
+    // worse, explicitly stiff there: kappa_rad = 16 sigma T^3/(3 kappa_R rho) diverges
+    // as kappa_R rho -> 0 while the layer's heat capacity vanishes, so the explicit
+    // diffusion step collapses to microseconds even with the flux limiter (which does
+    // nothing where the gradient is flat).  So the tau blend is REQUIRED: diffusion
+    // carries the flux with weight w(tau) and, with weight 1 - w, each thin cell relaxes
+    // toward the grey Eddington temperature of its own optical depth,
+    //     T_eq^4 = (3/4) Teff^4 (tau + 2/3),
+    // on its radiative time  t_rad = (rho c_v) / (4 kappa_P rho sigma T^3), applied as
+    // the exact exponential decay so it is stable at any timestep.  In radiative
+    // equilibrium that profile IS what the diffusion delivers below, so the two hand
+    // over consistently for the luminosity Teff encodes.  See RedGiantGravity.
+    if (!pc->rad_tau_mode) {
+      std::cout << "### FATAL ERROR in red_giant: radiative conduction needs the tau "
+                << "blend here (set rad_tau_lo/rad_tau_hi, e.g. 1 and 10): the optically "
+                << "thin layers are relaxed toward the Eddington profile, not diffused"
+                << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    relax_ = true;
+  }
+
+  // --- the CORRELATED-K two-stream for the optically thin layers
+  // (utils/two_stream_rt.hpp)
+  rt_ck_ = pin->GetOrAddBoolean("problem", "rt_ck", false);
+  if (rt_ck_) {
+    namespace ck = correlated_k;
+    namespace ts = two_stream_rt;
+    ts::rt_ck = true;
+    ts::rt_split = true;             // implied by rt_ck
+    ts::rt_ck_pcut = pin->GetOrAddReal("problem", "ck_pcut_bar", 1.0e30);
+    ts::rt_de_max = pin->GetOrAddReal("problem", "rt_de_max", 0.5);
+    ts::rt_int_at_cut = false;       // the inner wall carries L, not the ck cut
+    ts::rt_tint_override = teff;     // SELF-LUMINOUS: T_int is the star's own T_eff
+    ts::rt_dump_file = pin->GetOrAddString("problem", "ck_dump_file", "");
+    ts::rt_dump_m = pin->GetOrAddInteger("problem", "ck_dump_m", 0);
+    ts::rt_dump_j = pin->GetOrAddInteger("problem", "ck_dump_j", -1);
+    ts::rt_dump_k = pin->GetOrAddInteger("problem", "ck_dump_k", -1);
+    ck_dump_t2_ = pin->GetOrAddReal("problem", "ck_dump_t2", -1.0);
+    ck_dump_file2_ = pin->GetOrAddString("problem", "ck_dump_file2", "");
+    ts::rt_star_teff = 0.0;          // no host: the stellar band fractions are unused
+    ts::rt_nchain = ck::CK_NB*ck::CK_NG*pin->GetOrAddInteger("problem", "ck_nquad", 1);
+    ck::ck_nq = pin->GetOrAddInteger("problem", "ck_nquad", 1);
+    ck::read_ck_table(pin->GetString("problem", "ck_table"), ts::rt_ck_pcut);
+    ck::build_planck_fractions(ts::rt_ck_pcut);
+    ck::read_ck_continuum(pin->GetString("problem", "ck_data_dir"),
+                          pin->GetOrAddString("problem", "ck_swflux",
+                                              "sw_band_flux_W121_11.txt"), 0.0);
+    ck::ck_selftest();
+    ck::ck_rt_selftest();
+    // problem/opac_compare: write the Rosseland mean DERIVED FROM THE CK TABLE on its own
+    // (T, p) grid, so it can be compared against the stellar table the diffusion uses.
+    // The blend hands over between the two, and they are different data for the same gas:
+    // if they disagree where they overlap, the handover is not conservative.  Built into
+    // the conduction object and then undone, since the run must keep the stellar table.
+    {
+      const std::string ocmp = pin->GetOrAddString("problem", "opac_compare", "");
+      if (!ocmp.empty() && pc != nullptr && pc->rad_kappa_tab) {
+        auto sv_tab = pc->rad_kr_tab;
+        auto sv_lT = pc->rad_kr_lT;
+        auto sv_lP = pc->rad_kr_lP;
+        const int sv_nT = pc->rad_kr_nT, sv_nP = pc->rad_kr_nP;
+        const bool sv_rho = pc->rad_kappa_rho;
+        pc->rad_kappa_rho = false;
+        ck::ck_build_rosseland_table(pc);
+        auto hk = Kokkos::create_mirror_view(pc->rad_kr_tab);
+        auto hT = Kokkos::create_mirror_view(pc->rad_kr_lT);
+        auto hP = Kokkos::create_mirror_view(pc->rad_kr_lP);
+        Kokkos::deep_copy(hk, pc->rad_kr_tab);
+        Kokkos::deep_copy(hT, pc->rad_kr_lT);
+        Kokkos::deep_copy(hP, pc->rad_kr_lP);
+        if (global_variable::my_rank == 0) {
+          std::ofstream f(ocmp);
+          f.precision(10);
+          f << "# Rosseland mean from the CORRELATED-K table + continuum\n"
+            << "# nT nP, then nT values of log10 T[K], nP of log10 p[dyn/cm^2], then\n"
+            << "# nT*nP values of log10 kappa_R [cm^2/g], T slowest\n"
+            << pc->rad_kr_nT << " " << pc->rad_kr_nP << "\n";
+          for (int i = 0; i < pc->rad_kr_nT; ++i) f << hT(i) << "\n";
+          for (int j = 0; j < pc->rad_kr_nP; ++j) f << hP(j) << "\n";
+          for (int i = 0; i < pc->rad_kr_nT; ++i) {
+            for (int j = 0; j < pc->rad_kr_nP; ++j) f << hk(i, j) << "\n";
+          }
+          std::cout << "red_giant: ck-derived Rosseland table written to '" << ocmp
+                    << "'" << std::endl;
+        }
+        pc->rad_kr_tab = sv_tab;
+        pc->rad_kr_lT = sv_lT;
+        pc->rad_kr_lP = sv_lP;
+        pc->rad_kr_nT = sv_nT;
+        pc->rad_kr_nP = sv_nP;
+        pc->rad_kappa_rho = sv_rho;
+      }
+    }
+    // the star and grid numbers the solver reads; Teq = 0 switches the stellar sweep off
+    hot_jupiter_param.Teq = 0.0;
+    hot_jupiter_param.omega = 0.0;
+    hot_jupiter_param.grav = kGrav*mstar/SQR(rin*lunit);
+    hot_jupiter_param.ap = rin;
+    hot_jupiter_param.Rgas = rgas_;
+    hot_jupiter_param.met = pin->GetOrAddReal("problem", "met", 0.0);
+    hot_jupiter_param.grav_point_mass = true;
+    hot_jupiter_param.stellar_tide = false;
+    hot_jupiter_param.rot_potential = false;
+    std::cout << "red_giant: correlated-k two-stream ON, T_int = " << teff
+              << " K, no irradiation" << std::endl;
+  }
+  ktab_ = ktab; klT_ = klT; klD_ = klD; knT_ = knT; knD_ = knD; teff_ = teff;
+  kfac_ = kfac;
+  if (mlt_alpha_ > 0.0) {
+    Kokkos::realloc(fconv_, pmbp->nmb_thispack, n3m1+1, n2m1+1, n1m1+2);
+    Kokkos::realloc(fdiag_, n1m1+2, 8);
+  }
+
+  // --- the initial column: fine grid in r from below the inner ghosts to above the
+  // outer ones (10 % margins cover any stretch), integrated from the outer wall
+  const int nfine = 40*pmy_mesh_->mesh_indcs.nx1 + 2*ng*40;
+  const Real rlo = rin - 0.1*(rout - rin), rhi = rout + 0.1*(rout - rin);
+  const Real drf = (rhi - rlo)/(nfine - 1);
+  const int itop = static_cast<int>((rout - rlo)/drf + 0.5);
+  DvceArray1D<Real> lnp("rg_lnp", nfine), tk("rg_tk", nfine);
+  DvceArray1D<Real> kap("rg_kap", nfine), grad("rg_grad", nfine), tau("rg_tau", nfine);
+  {
+    const Real ttop = teff*pow(0.5, 0.25);
+    const Real ptop = ptop_cgs/punit_;
+    const Real lum = lstar, mass = mstar, lun = lunit, dun = dunit, pun = punit_;
+    const Real tun = pmbp->punit->temperature_cgs();
+    // one serial sweep on the device (the EOS and the table live there); RK2 in r
+    // where the thin-layer relaxation acts (tau < rad_tau_hi) the column is RADIATIVE
+    // whatever the Schwarzschild criterion says: the relaxation targets the Eddington
+    // profile there, and an adiabatic start would be cooled toward it from the first
+    // step (in a real star convection is inefficient that far out anyway)
+    const Real tauhi = (pc != nullptr && pc->rad_tau_mode) ? pc->rad_tau_hi : 0.0;
+    par_for("rg_column", DevExeSpace(), 0, 0, KOKKOS_LAMBDA(const int dummy) {
+      // gradient at (p [code], T [K], tau): d ln T / d ln p and the state
+      auto nabla = [&](const Real p, const Real t, const Real ta, Real &rho, Real &kr,
+                       Real &gr) {
+        rho = DensFromPT(eos, rgas, p, t);
+        kr = kfac*KappaTab(ktab, klT, klD, knT, knD, t, rho*dun);
+        const Real grad_rad = 3.0*kr*(p*pun)*lum
+                              /(16.0*M_PI*kArad*kClight*kGrav*mass*t*t*t*t);
+        const Real grad_ad = GradAd(eos, gamma, rgas, p, t);
+        gr = (ta < tauhi || grad_rad < grad_ad) ? grad_rad : grad_ad;
+        return gr;
+      };
+      // a hydrostatic RK2 step from (r, lnp, T, tau) over dr (signed; tau grows inward)
+      auto step = [&](const Real r, const Real lp0, const Real t0, const Real dr,
+                      Real &lp1, Real &t1, Real &ta) {
+        Real rho, kr, gr;
+        const Real p0 = exp(lp0);
+        nabla(p0, t0, ta, rho, kr, gr);
+        const Real dlnp_a = -rho*GravAt(gm, r)/p0;
+        const Real lpm = lp0 + 0.5*dr*dlnp_a;
+        const Real tm = t0*exp(0.5*dr*dlnp_a*gr);
+        const Real rm = r + 0.5*dr;
+        nabla(exp(lpm), tm, ta, rho, kr, gr);
+        const Real dlnp_m = -rho*GravAt(gm, rm)/exp(lpm);
+        lp1 = lp0 + dr*dlnp_m;
+        t1 = t0*exp(dr*dlnp_m*gr);
+        ta -= kr*rho*dun*dr*lun;        // dr < 0 inward: tau increases
+        if (ta < 0.0) ta = 0.0;
+      };
+      lnp(itop) = log(ptop);
+      tk(itop) = ttop;
+      Real ta = 0.0;
+      for (int i = itop+1; i < nfine; ++i) {
+        step(rlo + (i-1)*drf, lnp(i-1), tk(i-1), drf, lnp(i), tk(i), ta);
+      }
+      ta = 0.0;
+      for (int i = itop-1; i >= 0; --i) {
+        step(rlo + (i+1)*drf, lnp(i+1), tk(i+1), -drf, lnp(i), tk(i), ta);
+      }
+      // diagnostics: tau from the top down, kappa, and the gradient actually used
+      Real tsum = 0.0;
+      for (int i = nfine-1; i >= 0; --i) {
+        Real rho, kr, gr;
+        nabla(exp(lnp(i)), tk(i), tsum, rho, kr, gr);
+        kap(i) = kr; grad(i) = gr;
+        tau(i) = tsum;
+        tsum += kr*rho*dun*drf*lun;
+      }
+      (void) tun;
+    });
+  }
+  lnp_d_ = lnp; tk_d_ = tk; rlo_ = rlo; drf_ = drf; nfine_ = nfine;
+
+  // --- report the column, and dump it if asked
+  {
+    auto hlnp = Kokkos::create_mirror_view(lnp);
+    auto htk = Kokkos::create_mirror_view(tk);
+    auto hkap = Kokkos::create_mirror_view(kap);
+    auto hgrad = Kokkos::create_mirror_view(grad);
+    auto htau = Kokkos::create_mirror_view(tau);
+    Kokkos::deep_copy(hlnp, lnp);
+    Kokkos::deep_copy(htk, tk);
+    Kokkos::deep_copy(hkap, kap);
+    Kokkos::deep_copy(hgrad, grad);
+    Kokkos::deep_copy(htau, tau);
+    int iphot = nfine-1, iconv = -1;
+    for (int i = nfine-1; i >= 0; --i) {
+      if (htau(i) >= 2.0/3.0 && iphot == nfine-1) iphot = i;
+    }
+    // the outermost point (below the wall) where the column is on the adiabat, i.e.
+    // where the radiative gradient EXCEEDS the one used (which is then grad_ad)
+    for (int i = itop; i >= 0; --i) {
+      Real p = exp(hlnp(i)), t = htk(i);
+      Real grad_rad = 3.0*hkap(i)*(p*punit_)*lstar
+                      /(16.0*M_PI*kArad*kClight*kGrav*mstar*t*t*t*t);
+      if (grad_rad > hgrad(i)*(1.0 + 1.0e-6) && iconv < 0) {
+        iconv = i;
+      }
+    }
+    const int ibot = static_cast<int>((rin - rlo)/drf + 0.5);
+    // the top state must have a gas solution: under a general EOS with radiation the
+    // total pressure cannot fall below a T^4/3, and SolveDensity then hands back the
+    // table floor -- a column of floor density that looks like a run and is not one
+    {
+      const Real p_t = exp(hlnp(itop)), t_t = htk(itop);
+      const Real rho_t = DensFromPT(eos, rgas, p_t, t_t)*dunit;
+      const Real prad = kArad*t_t*t_t*t_t*t_t/3.0;
+      if (!(rho_t > 1.0e-30) || !std::isfinite(rho_t) || prad > 0.9*ptop_cgs) {
+        std::cout << "### FATAL ERROR in red_giant: no gas solution at the outer wall: "
+                  << "problem/ptop = " << ptop_cgs << " dyn/cm^2 against a radiation "
+                  << "pressure a T^4/3 = " << prad << " at T = " << t_t << " K (rho = "
+                  << rho_t << " g/cm^3). Raise ptop above a T^4/3, or switch "
+                  << "eos_radiation off." << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }
+    if (global_variable::my_rank == 0) {
+      std::cout << "red_giant: M = " << mstar << " g, L = " << lstar << " erg/s, Teff = "
+                << teff << " K, rin = " << rin*lunit << " cm, rout = " << rout*lunit
+                << " cm" << std::endl
+                << "           wall p/T: outer " << ptop_cgs << " / " << htk(itop)
+                << " K, inner " << exp(hlnp(ibot))*punit_ << " / " << htk(ibot) << " K"
+                << std::endl
+                << "           tau = 2/3 at r = " << (rlo + iphot*drf)*lunit
+                << " cm, T = " << htk(iphot)
+                << " K; radiative-convective boundary at r = "
+                << ((iconv >= 0) ? (rlo + iconv*drf)*lunit : -1.0) << " cm"
+                << std::endl;
+      if (!dump.empty()) {
+        std::ofstream df(dump);
+        df.precision(10);
+        df << std::scientific;
+        df << "# red_giant initial column\n# r[cm] p[dyn/cm2] T[K] rho[g/cm3] kappa_R "
+           << "grad tau\n";
+        for (int i = 0; i < nfine; ++i) {
+          Real p = exp(hlnp(i)), t = htk(i);
+          df << (rlo + i*drf)*lunit << " " << p*punit_ << " " << t << " "
+             << DensFromPT(eos, rgas, p, t)*dunit << " " << hkap(i) << " " << hgrad(i)
+             << " " << htau(i) << "\n";
+        }
+      }
+    }
+  }
+
+  // --- the potential, needed on restarts too (rebuilt here, not stored)
+  DvceArray4D<Real> phicc = is_mhd ? pmbp->pmhd->phicc0 : pmbp->phydro->phicc0;
+  DvceArray4D<Real> ph1 = is_mhd ? pmbp->pmhd->phi0.x1f : pmbp->phydro->phi0.x1f;
+  DvceArray4D<Real> ph2 = is_mhd ? pmbp->pmhd->phi0.x2f : pmbp->phydro->phi0.x2f;
+  DvceArray4D<Real> ph3 = is_mhd ? pmbp->pmhd->phi0.x3f : pmbp->phydro->phi0.x3f;
+  const bool have_phi = (etotgrav || wbdyn);
+  auto &x1v_ = pmbp->pcoord->x1v;
+  auto &x1f_ = pmbp->pcoord->xx1f;
+  if (have_phi) {
+    par_for("rg_phi", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1, 0, n1m1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real x1lo = size.d_view(m).x1min, x1hi = size.d_view(m).x1max;
+      const Real xc = curv ? x1v_(m,i) : CellCenterX(i-is, indcs.nx1, x1lo, x1hi);
+      const Real xl = curv ? x1f_(m,i) : LeftEdgeX(i-is, indcs.nx1, x1lo, x1hi);
+      const Real xr = curv ? x1f_(m,i+1) : LeftEdgeX(i+1-is, indcs.nx1, x1lo, x1hi);
+      const Real phi_c = PotAt(gm, rin, RadiusOf(curv, xc, rin, x1min));
+      phicc(m,k,j,i) = phi_c;
+      ph1(m,k,j,i) = PotAt(gm, rin, RadiusOf(curv, xl, rin, x1min));
+      if (i == n1m1) ph1(m,k,j,i+1) = PotAt(gm, rin, RadiusOf(curv, xr, rin, x1min));
+      ph2(m,k,j,i) = phi_c;
+      ph3(m,k,j,i) = phi_c;
+      if (j == n2m1) ph2(m,k,j+1,i) = phi_c;
+      if (k == n3m1) ph3(m,k+1,j,i) = phi_c;
+    });
+  }
+  if (restart) return;
+
+  // --- the initial state
+  const int nf = nfine;
+  par_for("rg_ic", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1, 0, n1m1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const Real x1lo = size.d_view(m).x1min, x1hi = size.d_view(m).x1max;
+    const Real x2lo = size.d_view(m).x2min, x2hi = size.d_view(m).x2max;
+    const Real x3lo = size.d_view(m).x3min, x3hi = size.d_view(m).x3max;
+    const Real xc = curv ? x1v_(m,i) : CellCenterX(i-is, indcs.nx1, x1lo, x1hi);
+    const Real r = RadiusOf(curv, xc, rin, x1min);
+    Real lp, t;
+    ColumnAt(lnp, tk, nf, rlo, drf, r, lp, t);
+    const Real p = exp(lp);
+    const Real d = DensFromPT(eos, rgas, p, t);
+    const Real e = EintFromDensT(eos, rgas, igm1, d, t);
+    Real v1 = 0.0, v2 = 0.0, v3 = 0.0;
+    if (vpert > 0.0) {
+      const Real x2v = CellCenterX(j-js, indcs.nx2, x2lo, x2hi);
+      const Real x3v = CellCenterX(k-ks, indcs.nx3, x3lo, x3hi);
+      const Real cs = sqrt(gamma*p/d);
+      const Real tp = 2.0*M_PI;
+      v1 = vpert*cs*sin(3.0*tp*(xc - x1lo)/(x1hi - x1lo))
+           *cos(2.0*tp*(x2v - x2lo)/(x2hi - x2lo))*cos(tp*(x3v - x3lo)/(x3hi - x3lo));
+      v2 = vpert*cs*sin(2.0*tp*(x2v - x2lo)/(x2hi - x2lo))
+           *cos(tp*(x3v - x3lo)/(x3hi - x3lo));
+      v3 = vpert*cs*sin(tp*(x3v - x3lo)/(x3hi - x3lo))
+           *cos(2.0*tp*(x2v - x2lo)/(x2hi - x2lo));
+    }
+    u0(m,IDN,k,j,i) = d;
+    u0(m,IM1,k,j,i) = d*v1;
+    u0(m,IM2,k,j,i) = d*v2;
+    u0(m,IM3,k,j,i) = d*v3;
+    u0(m,IEN,k,j,i) = e + 0.5*d*(v1*v1 + v2*v2 + v3*v3);
+    if (etotgrav) u0(m,IEN,k,j,i) += d*PotAt(gm, rin, r);
+  });
+  if (is_mhd) {
+    auto &b = pmbp->pmhd->b0;
+    par_for("rg_b", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1, 0, n1m1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      b.x1f(m,k,j,i) = 0.0;
+      b.x2f(m,k,j,i) = 0.0;
+      b.x3f(m,k,j,i) = 0.0;
+      if (i == n1m1) b.x1f(m,k,j,i+1) = 0.0;
+      if (j == n2m1) b.x2f(m,k,j+1,i) = 0.0;
+      if (k == n3m1) b.x3f(m,k+1,j,i) = 0.0;
+    });
+  }
+  return;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RedGiantGravity
+//! \brief the radial gravity source, -rho G M / r^2, or under wellbalance_dynamic the
+//! background's own pressure difference across the cell (face-sum form on the
+//! curvilinear grids, which carries the geometric term; plain difference on the column)
+
+void RedGiantGravity(Mesh *pm, Real bdt) {
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmbp->nmb_thispack - 1;
+  auto &size = pmbp->pmb->mb_size;
+  const bool is_mhd = (pmbp->pmhd != nullptr);
+  auto &u0 = is_mhd ? pmbp->pmhd->u0 : pmbp->phydro->u0;
+  auto &w0 = is_mhd ? pmbp->pmhd->w0 : pmbp->phydro->w0;
+  auto eos = is_mhd ? pmbp->pmhd->peos->eos_data : pmbp->phydro->peos->eos_data;
+  const bool etotgrav = is_mhd ? pmbp->pmhd->use_etotgrav : pmbp->phydro->use_etotgrav;
+  const bool wbdyn = is_mhd ? pmbp->pmhd->use_wellbalance_dynamic
+                            : pmbp->phydro->use_wellbalance_dynamic;
+  const bool wbx1 = is_mhd ? pmbp->pmhd->use_wb_x1 : pmbp->phydro->use_wb_x1;
+  const WBOption wbo = is_mhd ? pmbp->pmhd->wb_option : pmbp->phydro->wb_option;
+  DvceArray4D<Real> phicc = is_mhd ? pmbp->pmhd->phicc0 : pmbp->phydro->phicc0;
+  DvceArray4D<Real> ph1 = is_mhd ? pmbp->pmhd->phi0.x1f : pmbp->phydro->phi0.x1f;
+  DvceArray5D<Real> wbq0 = is_mhd ? pmbp->pmhd->wbq0 : pmbp->phydro->wbq0;
+  auto &x1v_ = pmbp->pcoord->x1v;
+  auto &area1 = pmbp->pcoord->area.x1f;
+  auto &volume = pmbp->pcoord->volume;
+  const bool curv = curv_;
+  const Real gm = gm_, rin = rin_, x1min = x1min_;
+  par_for("rg_grav", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const Real x1lo = size.d_view(m).x1min, x1hi = size.d_view(m).x1max;
+    const Real xc = curv ? x1v_(m,i) : CellCenterX(i-is, indcs.nx1, x1lo, x1hi);
+    const Real r = RadiusOf(curv, xc, rin, x1min);
+    const Real d = w0(m,IDN,k,j,i);
+    const Real g = GravAt(gm, r);
+    Real src = -bdt*g*d;
+    if (!etotgrav) u0(m,IEN,k,j,i) += src*w0(m,IVX,k,j,i);
+    if (wbdyn) {
+      Real pl, pr, d1, d2, d3;
+      if (wbx1) {
+        WBReadCache(wbq0, WBVar::wb_pres, m, k, j, i, d1, pl, d2, pr, d3);
+      } else {
+        hydro::Hydro::getWBq0(eos, wbo, WBVar::wb_pres,
+            w0(m,IDN,k,j,i-1), w0(m,IDN,k,j,i), w0(m,IDN,k,j,i+1),
+            w0(m,IEN,k,j,i-1), w0(m,IEN,k,j,i), w0(m,IEN,k,j,i+1),
+            phicc(m,k,j,i-1), ph1(m,k,j,i), phicc(m,k,j,i), ph1(m,k,j,i+1),
+            phicc(m,k,j,i+1), d1, pl, d2, pr, d3);
+      }
+      if (curv) {
+        const Real p = eos.Pressure(d, w0(m,IEN,k,j,i));
+        src = bdt*(area1(m,k,j,i+1)*(pr - p) + area1(m,k,j,i)*(p - pl))/volume(m,k,j,i);
+      } else {
+        src = bdt*(pr - pl)/((x1hi - x1lo)/indcs.nx1);
+      }
+    }
+    u0(m,IM1,k,j,i) += src;
+  });
+
+  // --- the mixing-length convective flux (see the header): on each interior radial
+  // face, where the face's d ln T / d ln p exceeds grad_ad,
+  //     F_conv = rho c_p T sqrt(g delta) l^2 (grad - grad_ad)^(3/2)
+  //              / (4 sqrt2 H_p^(3/2)),
+  // l = alpha H_p, H_p = p/(rho g), delta = chi_T/chi_rho, c_p = c_v Gamma_1/chi_rho, all
+  // in cgs then converted; zero on both walls.  Capped so one step moves at most a tenth
+  // of the smaller neighbour's internal energy.
+  if (mlt_alpha_ > 0.0) {
+    auto fconv = fconv_;
+    auto fdiag = fdiag_;
+    const Real alpha = mlt_alpha_, rgas = rgas_, igm1 = 1.0/gm1_, gamma = gm1_ + 1.0;
+    const Real dunit = pmbp->punit->density_cgs();
+    const Real punit_ = pmbp->punit->pressure_cgs();
+    const Real vunit = pmbp->punit->velocity_cgs();
+    const Real lunit = pmbp->punit->length_cgs();
+    const Real tunit = pmbp->punit->time_cgs();
+    auto &x1f_ = pmbp->pcoord->xx1f;
+    par_for("rg_mlt_flux", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      fconv(m,k,j,i) = 0.0;
+      if (m == 0 && k == ks && j == js) {
+        for (int q = 0; q < 8; ++q) fdiag(i,q) = 0.0;
+      }
+      if (i == is || i == ie+1) return;
+      const Real x1lo = size.d_view(m).x1min, x1hi = size.d_view(m).x1max;
+      const Real xf = curv ? x1f_(m,i) : LeftEdgeX(i-is, indcs.nx1, x1lo, x1hi);
+      const Real rf = RadiusOf(curv, xf, rin, x1min);
+      const Real dl = w0(m,IDN,k,j,i-1), dr_ = w0(m,IDN,k,j,i);
+      const Real el = w0(m,IEN,k,j,i-1), er = w0(m,IEN,k,j,i);
+      const Real pl = eos.Pressure(dl, el), pr = eos.Pressure(dr_, er);
+      const Real tl = TempKelvin(eos, rgas, dl, el, pl);
+      const Real tr = TempKelvin(eos, rgas, dr_, er, pr);
+      if (!(pl > pr) || !(tl > tr)) return;             // not stratified the right way
+      const Real grad = log(tl/tr)/log(pl/pr);
+      const Real pf = 0.5*(pl + pr), tf = 0.5*(tl + tr), df = 0.5*(dl + dr_);
+      const Real grad_ad = GradAd(eos, gamma, rgas, pf, tf);
+      if (!(grad > grad_ad)) return;
+      const Real ef = 0.5*(el + er);
+      // thermodynamics at the face, cgs
+      const Real g = GravAt(gm, rf)*lunit/(tunit*tunit);
+      const Real hp = pf*punit_/(df*dunit*g);
+      const Real ell = alpha*hp;
+      Real cv = (EintFromDensT(eos, rgas, igm1, df, 1.01*tf)
+                 - EintFromDensT(eos, rgas, igm1, df, tf))/(0.01*tf)*punit_/(df*dunit);
+      if (!(cv > 0.0)) cv = 1.5*pf*punit_/(df*dunit*tf);
+      Real delta = 1.0, cp = gamma*cv;
+      if (eos.IsGeneral()) {
+        const Real chit = eos.ChiT(df, ef), chir = eos.ChiRho(df, ef);
+        delta = chit/chir;
+        cp = cv*eos.Gamma1(df, ef)/chir;
+      }
+      const Real x = grad - grad_ad;
+      const Real vc = sqrt(g*delta*ell*ell*x/(8.0*hp));
+      Real f = df*dunit*cp*tf*sqrt(g*delta)*ell*ell*x*sqrt(x)
+               /(4.0*sqrt(2.0)*hp*sqrt(hp));
+      f /= (punit_*vunit);                                // code flux
+      // STABILITY.  This is an explicit nonlinear diffusion of T with diffusivity
+      //   chi = (dF/d(dT/dr)) / (rho c_p) = (3/2) (F/x) (H_p/T) / (rho c_p),
+      // which is unbounded as the superadiabaticity x grows and rho falls (the
+      // tabulated column blew up 1e6-fold this way).  An explicit step is stable for
+      // chi <= dx^2/(2 dt); the flux is scaled down to hold chi at half that, so a
+      // strongly superadiabatic layer under-transports rather than explodes.  A tenth
+      // of the smaller internal energy per step caps it as well.
+      const Real dxl = curv ? (x1f_(m,i) - x1f_(m,i-1)) : (x1hi - x1lo)/indcs.nx1;
+      const Real dxc = dxl*lunit;
+      const Real chi = 1.5*(f*punit_*vunit/x)*(hp/tf)/(df*dunit*cp);   // cm^2/s
+      const Real chimax = 0.25*dxc*dxc/(bdt*tunit);
+      if (chi > chimax) f *= chimax/chi;
+      const Real fmax_ = 0.1*fmin(el, er)*dxl/bdt;
+      fconv(m,k,j,i) = fmin(f, fmax_);
+      if (m == 0 && k == ks && j == js) {
+        fdiag(i,0) = grad; fdiag(i,1) = grad_ad; fdiag(i,2) = hp; fdiag(i,3) = cp;
+        fdiag(i,4) = vc; fdiag(i,5) = f*punit_*vunit; fdiag(i,6) = fmax_*punit_*vunit;
+        fdiag(i,7) = fconv(m,k,j,i)*punit_*vunit;
+      }
+    });
+    if (!mlt_dumped_ && !mlt_dump_.empty() && global_variable::my_rank == 0) {
+      mlt_dumped_ = true;
+      auto hd = Kokkos::create_mirror_view(fdiag);
+      Kokkos::deep_copy(hd, fdiag);
+      std::ofstream df(mlt_dump_);
+      df.precision(6);
+      df << std::scientific;
+      df << "# red_giant MLT faces, block 0, first column, first source call (cgs)\n"
+         << "# i grad grad_ad H_p c_p v_conv F_mlt F_cap F_used\n";
+      for (int i = is; i <= ie+1; ++i) {
+        df << i;
+        for (int q = 0; q < 8; ++q) df << " " << hd(i,q);
+        df << "\n";
+      }
+    }
+    par_for("rg_mlt_div", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real x1lo = size.d_view(m).x1min, x1hi = size.d_view(m).x1max;
+      Real div;
+      if (curv) {
+        div = (area1(m,k,j,i)*fconv(m,k,j,i) - area1(m,k,j,i+1)*fconv(m,k,j,i+1))
+              /volume(m,k,j,i);
+      } else {
+        div = (fconv(m,k,j,i) - fconv(m,k,j,i+1))/((x1hi - x1lo)/indcs.nx1);
+      }
+      u0(m,IEN,k,j,i) += bdt*div;
+    });
+  }
+
+  // --- the optically thin layers: the correlated-k two-stream if it is on, else the
+  // grey Eddington relaxation
+  if (rt_ck_) {
+    if (!ck_dumped2_ && ck_dump_t2_ >= 0.0 && !ck_dump_file2_.empty() &&
+        pm->time >= ck_dump_t2_) {
+      ck_dumped2_ = true;
+      two_stream_rt::rt_dump_file = ck_dump_file2_;
+      two_stream_rt::rt_dump_done = false;      // re-arm the one-shot dump
+    }
+    two_stream_rt::picket_fence_two_stream_RT(pm, bdt);
+  }
+  // --- the grey relaxation (see UserProblem): with weight 1 - w each cell
+  // decays toward the Eddington temperature of its optical depth on its radiative time
+  if (relax_ && !rt_ck_) {
+    Conduction *pc = is_mhd ? pmbp->pmhd->pcond : pmbp->phydro->pcond;
+    auto &wf = pc->rad_w;
+    auto &tf = pc->rad_tauf;
+    auto ktab = ktab_;
+    auto klT = klT_;
+    auto klD = klD_;
+    const int knT = knT_, knD = knD_;
+    const Real teff4 = SQR(SQR(teff_));
+    const Real kfac = kfac_;
+    const Real rgas = rgas_, igm1 = 1.0/gm1_, gm1 = gm1_;
+    const Real dunit = pmbp->punit->density_cgs();
+    const Real punit_ = pmbp->punit->pressure_cgs();
+    const Real dt_cgs = bdt*pmbp->punit->time_cgs();
+    par_for("rg_relax", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real wc = 0.5*(wf(m,k,j,i) + wf(m,k,j,i+1));
+      if (wc >= 1.0) return;
+      const Real tauc = 0.5*(tf(m,k,j,i) + tf(m,k,j,i+1));
+      const Real d = w0(m,IDN,k,j,i);
+      const Real e = w0(m,IEN,k,j,i);
+      const Real p = eos.Pressure(d, e);
+      const Real t = TempKelvin(eos, rgas, d, e, p);
+      const Real teq = pow(0.75*teff4*(tauc + 2.0/3.0), 0.25);
+      const Real eeq = EintFromDensT(eos, rgas, igm1, d, teq);
+      // rho c_v [erg/cm^3/K] by a finite difference of the EOS's own e(rho, T)
+      const Real e1 = EintFromDensT(eos, rgas, igm1, d, 1.01*t);
+      const Real e0 = EintFromDensT(eos, rgas, igm1, d, t);
+      // fall back to the ideal-gas value if the table's finite difference misbehaves
+      Real rcv = (e1 - e0)/(0.01*t)*punit_;
+      if (!(rcv > 0.0)) rcv = 1.5*p*punit_/t;
+      const Real kp = kfac*KappaTab(ktab, klT, klD, knT, knD, t, d*dunit);
+      const Real trad = rcv/(4.0*kp*(d*dunit)*kSigmaSB*t*t*t);
+      if (!(trad > 0.0)) return;
+      const Real de = -(1.0 - wc)*(e - eeq)*(1.0 - exp(-dt_cgs/trad));
+      u0(m,IEN,k,j,i) += de;
+      (void) gm1;
+    });
+  }
+  return;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RedGiantBC
+//! \brief both radial walls: the ghost cells hold the initial column at their own
+//! radius, with the radial velocity mirrored (a reflecting wall whose ghost state is in
+//! hydrostatic balance with the interior, so the well-balanced scheme sees no jump)
+
+void RedGiantBC(Mesh *pm) {
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  auto &indcs = pm->mb_indcs;
+  const int ng = indcs.ng;
+  const int is = indcs.is, ie = indcs.ie;
+  const int n2m1 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*ng - 1) : 0;
+  const int n3m1 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*ng - 1) : 0;
+  const int nmb1 = pmbp->nmb_thispack - 1;
+  auto &size = pmbp->pmb->mb_size;
+  auto &mb_bcs = pmbp->pmb->mb_bcs;
+  const bool is_mhd = (pmbp->pmhd != nullptr);
+  auto &u0 = is_mhd ? pmbp->pmhd->u0 : pmbp->phydro->u0;
+  auto &w0 = is_mhd ? pmbp->pmhd->w0 : pmbp->phydro->w0;
+  auto eos = is_mhd ? pmbp->pmhd->peos->eos_data : pmbp->phydro->peos->eos_data;
+  auto &x1v_ = pmbp->pcoord->x1v;
+  const bool curv = curv_, etotgrav = etotgrav_;
+  const Real gm = gm_, rin = rin_, x1min = x1min_, rgas = rgas_, igm1 = 1.0/gm1_;
+  const Real rlo = rlo_, drf = drf_;
+  const int nfine = nfine_;
+  auto lnp = lnp_d_;
+  auto tk = tk_d_;
+  auto fill = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i,
+                            const int im) {
+    const Real x1lo = size.d_view(m).x1min, x1hi = size.d_view(m).x1max;
+    const Real xc = curv ? x1v_(m,i) : CellCenterX(i-is, indcs.nx1, x1lo, x1hi);
+    const Real r = RadiusOf(curv, xc, rin, x1min);
+    Real lp, t;
+    ColumnAt(lnp, tk, nfine, rlo, drf, r, lp, t);
+    const Real p = exp(lp);
+    const Real d = DensFromPT(eos, rgas, p, t);
+    const Real e = EintFromDensT(eos, rgas, igm1, d, t);
+    const Real v1 = -w0(m,IVX,k,j,im), v2 = w0(m,IVY,k,j,im), v3 = w0(m,IVZ,k,j,im);
+    w0(m,IDN,k,j,i) = d;
+    w0(m,IEN,k,j,i) = e;
+    w0(m,IVX,k,j,i) = v1;
+    w0(m,IVY,k,j,i) = v2;
+    w0(m,IVZ,k,j,i) = v3;
+    u0(m,IDN,k,j,i) = d;
+    u0(m,IM1,k,j,i) = d*v1;
+    u0(m,IM2,k,j,i) = d*v2;
+    u0(m,IM3,k,j,i) = d*v3;
+    Real et = e + 0.5*d*(v1*v1 + v2*v2 + v3*v3);
+    if (etotgrav) et += d*PotAt(gm, rin, r);
+    u0(m,IEN,k,j,i) = et;
+  };
+  par_for("rg_bc_x1", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1, 0, ng-1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int n) {
+    if (mb_bcs.d_view(m,BoundaryFace::inner_x1) == BoundaryFlag::user) {
+      fill(m, k, j, is-1-n, is+n);
+    }
+    if (mb_bcs.d_view(m,BoundaryFace::outer_x1) == BoundaryFlag::user) {
+      fill(m, k, j, ie+1+n, ie-n);
+    }
+  });
+  if (is_mhd) {
+    auto &b = pmbp->pmhd->b0;
+    const int n1m1 = indcs.nx1 + 2*ng - 1;
+    par_for("rg_bc_b", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1, 0, n1m1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      if (i < is || i > ie) {
+        b.x1f(m,k,j,i) = 0.0;
+        b.x2f(m,k,j,i) = 0.0;
+        b.x3f(m,k,j,i) = 0.0;
+        if (i == n1m1) b.x1f(m,k,j,i+1) = 0.0;
+        if (j == n2m1) b.x2f(m,k,j+1,i) = 0.0;
+        if (k == n3m1) b.x3f(m,k+1,j,i) = 0.0;
+      }
+    });
+  }
+  return;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RedGiantFinal
+
+void RedGiantFinal(ParameterInput *pin, Mesh *pm) {
+  // every file-scope View must be released before Kokkos::finalize, or it aborts
+  lnp_d_ = DvceArray1D<Real>();
+  tk_d_ = DvceArray1D<Real>();
+  ktab_ = DvceArray2D<Real>();
+  fconv_ = DvceArray4D<Real>();
+  fdiag_ = DvceArray2D<Real>();
+  klT_ = DvceArray1D<Real>();
+  klD_ = DvceArray1D<Real>();
+  return;
+}
