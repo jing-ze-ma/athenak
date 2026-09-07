@@ -44,6 +44,12 @@ class Conduction {
   // operators overlap and hand over conservatively.  rad_w and rad_tauf sit on x1 faces.
   Real rad_tau_lo = 0.0, rad_tau_hi = 0.0;
   bool rad_tau_mode = false;
+  // rad_blend_radial (default true): the blend weight applies to the x1 faces too.
+  // False keeps the radial diffusion at full weight everywhere and applies w only to
+  // the angular faces -- for a SELF-LUMINOUS object with no two-stream above the
+  // blend, where flux-limited radial diffusion is the surface treatment and the
+  // horizontal exchange in the optically thin layers is what is switched off.
+  bool rad_blend_radial = true;
   // rad_kappa_src = freedman (default) | table: with table, kappa_R(T,p) is a bilinear
   // lookup of log10 kappa_R over (log10 T, log10 p[cgs]) in a table the problem
   // generator hands over ONCE at start-up (deep_hot_jupiter_rt tabulates the Rosseland
@@ -51,6 +57,13 @@ class Conduction {
   // diffusion and the two-stream share one opacity). Same cost as the Freedman fit.
   // Until the table is set (rad_kr_nT == 0) the Freedman fit is used.
   bool rad_kappa_tab = false;
+  // rad_kappa_src = table_rho: the same lookup with log10 rho [g/cm^3] as the second
+  // axis instead of log10 p.  Stellar opacity tables (OPAL/OPLIB, AESOPUS, Ferguson) are
+  // tabulated in (T, rho) -- via logR = log rho - 3 log T6 -- and a (T, p) axis would
+  // need the equation of state to convert, on the table's grid, once per node.  With
+  // this mode the pgen hands over (T, rho) directly and every lookup site already has
+  // the face or cell density.  rad_kr_lP then holds log10 rho.
+  bool rad_kappa_rho = false;
   // rad_cs_exact (default true): the exact face-normal derivative on the cubed sphere;
   // false drops the metric cross term and the 1/sin(alpha) -- DIAGNOSTIC only
   bool rad_cs_exact = true;

@@ -105,13 +105,17 @@ Conduction::Conduction(std::string block, MeshBlockPack *pp, ParameterInput *pin
       rad_tau_hi = pin->GetOrAddReal(block,"rad_tau_hi",0.0);
       rad_tau_mode = (rad_tau_hi > 0.0);
       rad_cs_exact = pin->GetOrAddBoolean(block,"rad_cs_exact",true);
+      rad_blend_radial = pin->GetOrAddBoolean(block,"rad_blend_radial",true);
       {
         std::string ksrc = pin->GetOrAddString(block,"rad_kappa_src","freedman");
         if (ksrc.compare("table") == 0) {
           rad_kappa_tab = true;
+        } else if (ksrc.compare("table_rho") == 0) {
+          rad_kappa_tab = true;
+          rad_kappa_rho = true;
         } else if (ksrc.compare("freedman") != 0) {
           std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
-                    << std::endl << "rad_kappa_src must be freedman or table"
+                    << std::endl << "rad_kappa_src must be freedman, table or table_rho"
                     << std::endl;
           std::exit(EXIT_FAILURE);
         }
@@ -190,6 +194,7 @@ void Conduction::BuildRadWeights(const DvceArray5D<Real> &w0, const EOS_Data &eo
   auto &wf = rad_w;
   auto &tf = rad_tauf;
   const bool ktab = (rad_kappa_tab && rad_kr_nT > 0);
+  const bool krho = rad_kappa_rho;   // table axis is log rho, not log p
   auto &krt = rad_kr_tab;
   auto &krlT = rad_kr_lT;
   auto &krlP = rad_kr_lP;
@@ -205,7 +210,8 @@ void Conduction::BuildRadWeights(const DvceArray5D<Real> &w0, const EOS_Data &eo
       const Real rho = w0(m,IDN,k,j,i)*dens_unit;
       const Real dr = (curv ? dx1_(m,k,j,i) : size.d_view(m).dx1)*len_unit;
       const Real kr = ktab
-          ? RosselandTable(krt, krlT, krlP, krnT, krnP, t*temp_unit, p*pres_unit)
+          ? RosselandTable(krt, krlT, krlP, krnT, krnP, t*temp_unit,
+                           krho ? rho : p*pres_unit)
           : RosselandFreedman2014(t*temp_unit, p*pres_unit, met);
       tau += kfac*kr*rho*dr;
       tf(m,k,j,i) = tau;
@@ -277,6 +283,7 @@ void Conduction::AddIsotropicHeatFluxRadiative(const DvceArray5D<Real> &w0,
   // pressure cut, or the tau blend: with the blend every face is masked by its weight
   const Real pcut = rad_tau_mode ? -1.0 : rad_pcut;
   const bool taumode = rad_tau_mode;
+  const bool blend_r = rad_blend_radial;
   auto &wf = rad_w;
   const bool limit = rad_flux_limit;
   const Real sigma_sb = 5.670374419e-5;
@@ -284,6 +291,7 @@ void Conduction::AddIsotropicHeatFluxRadiative(const DvceArray5D<Real> &w0,
   // the heat flux across one face in CODE units, from the two adjacent cell states and
   // the centroid distance dl (code units); zero above the pressure cut
   const bool ktab = (rad_kappa_tab && rad_kr_nT > 0);
+  const bool krho = rad_kappa_rho;   // table axis is log rho, not log p
   auto &krt = rad_kr_tab;
   auto &krlT = rad_kr_lT;
   auto &krlP = rad_kr_lP;
@@ -298,7 +306,8 @@ void Conduction::AddIsotropicHeatFluxRadiative(const DvceArray5D<Real> &w0,
     const Real rhof = 0.5*(dl_ + dr_)*dens_unit;
     const Real kap = ktab
         ? RadiativeKappaKR(tk, rhof, kfac,
-                           RosselandTable(krt, krlT, krlP, krnT, krnP, tk, pf*pres_unit))
+                           RosselandTable(krt, krlT, krlP, krnT, krnP, tk,
+                                          krho ? rhof : pf*pres_unit))
         : RadiativeKappa(tk, pf*pres_unit, rhof, met, kfac);
     Real f = -kap*gradn*temp_unit/len_unit;     // erg/cm^2/s, positive outward
     if (limit) {
@@ -339,7 +348,7 @@ void Conduction::AddIsotropicHeatFluxRadiative(const DvceArray5D<Real> &w0,
     const Real pl = (gen ? wder_(m,IDPR,k,j,i-1) : w0(m,IEN,k,j,i-1)*gm1);
     const Real pr = (gen ? wder_(m,IDPR,k,j,i) : w0(m,IEN,k,j,i)*gm1);
     const Real dl = curv ? (x1v_(m,i) - x1v_(m,i-1)) : size.d_view(m).dx1;
-    const Real wt = taumode ? wf(m,k,j,i) : 1.0;
+    const Real wt = (taumode && blend_r) ? wf(m,k,j,i) : 1.0;
     flx1(m,IEN,k,j,i) += wt*face_flux(tl, tr, pl, pr, w0(m,IDN,k,j,i-1),
                                       w0(m,IDN,k,j,i), (tr - tl)/dl);
   });
@@ -660,12 +669,16 @@ void Conduction::NewTimeStep(const DvceArray5D<Real> &w0, const EOS_Data &eos_da
   }
   Real limit_ = kappa_iso_limit;
   Real temp_unit=0.0, kappa_unit=0.0, pres_unit=1.0, dens_unit=1.0;
+  Real vel_unit = 1.0;
   const bool radiative = (iso_cond_type.compare("radiative") == 0);
   const Real met = rad_met, kfac = rad_kappa_fac;
   const Real pcut = rad_tau_mode ? -1.0 : rad_pcut;
   const bool taumode = rad_tau_mode;
+  const bool blend_r = rad_blend_radial;
+  const bool limit = rad_flux_limit;
   auto &wf = rad_w;
   const bool ktab = (rad_kappa_tab && rad_kr_nT > 0);
+  const bool krho = rad_kappa_rho;   // table axis is log rho, not log p
   auto &krt = rad_kr_tab;
   auto &krlT = rad_kr_lT;
   auto &krlP = rad_kr_lP;
@@ -677,6 +690,7 @@ void Conduction::NewTimeStep(const DvceArray5D<Real> &w0, const EOS_Data &eos_da
                  pmy_pack->punit->length_cgs()/pmy_pack->punit->temperature_cgs();
     pres_unit = pmy_pack->punit->pressure_cgs();
     dens_unit = pmy_pack->punit->density_cgs();
+    vel_unit = pmy_pack->punit->velocity_cgs();
   }
   const bool curv = pmy_pack->pmesh->use_spherical_polar
                     || pmy_pack->pmesh->use_cubed_sphere;
@@ -723,6 +737,7 @@ void Conduction::NewTimeStep(const DvceArray5D<Real> &w0, const EOS_Data &eos_da
     j += js;
 
     Real kappa_ = kappa0;
+    Real wmax = 1.0;
     if (spitzer) {
       Real temp = (gen ? wtemp_(m,k,j,i) : w0(m,IEN,k,j,i)/w0(m,IDN,k,j,i)*gm1);
       kappa_ = TempDepKappa(temp*temp_unit, limit_)/kappa_unit;
@@ -733,15 +748,15 @@ void Conduction::NewTimeStep(const DvceArray5D<Real> &w0, const EOS_Data &eos_da
       kappa_ = (ktab
           ? RadiativeKappaKR(temp*temp_unit, w0_(m,IDN,k,j,i)*dens_unit, kfac,
                              RosselandTable(krt, krlT, krlP, krnT, krnP, temp*temp_unit,
-                                            pres*pres_unit))
+                                            krho ? w0_(m,IDN,k,j,i)*dens_unit
+                                                 : pres*pres_unit))
           : RadiativeKappa(temp*temp_unit, pres*pres_unit, w0_(m,IDN,k,j,i)*dens_unit,
                            met, kfac))/kappa_unit;
       // the blend: the face flux is w*kappa*grad T, so the explicit limit is on w*kappa,
       // and a cell whose faces carry no weight carries no constraint
       if (taumode) {
-        const Real wmax = fmax(wf(m,k,j,i), wf(m,k,j,i+1));
-        if (wmax == 0.0) return;
-        kappa_ *= wmax;
+        wmax = fmax(wf(m,k,j,i), wf(m,k,j,i+1));
+        if (wmax == 0.0 && blend_r) return;
       }
     }
 
@@ -754,18 +769,48 @@ void Conduction::NewTimeStep(const DvceArray5D<Real> &w0, const EOS_Data &eos_da
       rcv = w0_(m,IDN,k,j,i)*eos_.SpecificHeatCv(w0_(m,IDN,k,j,i), w0_(m,IEN,k,j,i));
     }
 
+    // THE FLUX-LIMITED DIFFUSIVITY.  With the limiter the face flux is
+    //   F = kappa g / sqrt(1 + (kappa g / F_free)^2),   g = |grad T|,
+    // and what an explicit step has to resolve is its linearisation
+    //   dF/dg = kappa (1 + s^2)^(-3/2),   s = kappa g / F_free,
+    // not kappa itself, which is unbounded where kappa_R rho -> 0: in the optically
+    // thin atmosphere of a star kappa is ~1e8 x the limited value and the timestep
+    // collapsed to microseconds.  Central differences of the cell temperature give g
+    // per direction (the ghosts are filled when this runs).
+    Real ffree = 0.0;
+    if (radiative && limit) {
+      const Real tk = (gen ? wtemp_(m,k,j,i) : w0(m,IEN,k,j,i)/w0(m,IDN,k,j,i)*gm1)
+                      *temp_unit;
+      ffree = 5.670374419e-5*tk*tk*tk*tk/(pres_unit*vel_unit);   // code units
+    }
+    auto tc = [&] (const int kk, const int jj, const int ii) {
+      return (gen ? wtemp_(m,kk,jj,ii) : w0(m,IEN,kk,jj,ii)/w0(m,IDN,kk,jj,ii)*gm1);
+    };
+    auto keff = [&] (const Real dl, const Real tm, const Real tp) {
+      if (!(radiative && limit) || !(ffree > 0.0)) return kappa_;
+      const Real s = kappa_*fabs(tp - tm)/(2.0*dl)/ffree;
+      return kappa_/((1.0 + s*s)*sqrt(1.0 + s*s));
+    };
+
     const Real d1 = (curv && radiative) ? dx1_(m,k,j,i) : size.d_view(m).dx1;
-    min_dt = fmin(min_dt, SQR(d1)/kappa_*rcv);
+    {
+      const Real w1 = (taumode && blend_r) ? wmax : 1.0;
+      const Real k1 = w1*keff(d1, tc(k,j,i-1), tc(k,j,i+1));
+      if (k1 > 0.0) min_dt = fmin(min_dt, SQR(d1)/k1*rcv);
+    }
     // on a curvilinear grid size.dx2/dx3 are ANGLES; the physical widths are pcoord's
     // cubed sphere: the exact operator's angular diffusivity is kappa/sin^2(alpha)
     const Real s2 = (cs && radiative) ? SQR(sinc_(m,k,j)) : 1.0;
+    const Real wa = taumode ? wmax : 1.0;
     if (multi_d) {
       const Real d2 = (curv && radiative) ? dx2_(m,k,j,i) : size.d_view(m).dx2;
-      min_dt = fmin(min_dt, SQR(d2)*s2/kappa_*rcv);
+      const Real k2 = wa*keff(d2, tc(k,j-1,i), tc(k,j+1,i));
+      if (k2 > 0.0) min_dt = fmin(min_dt, SQR(d2)*s2/k2*rcv);
     }
     if (three_d) {
       const Real d3 = (curv && radiative) ? dx3_(m,k,j,i) : size.d_view(m).dx3;
-      min_dt = fmin(min_dt, SQR(d3)*s2/kappa_*rcv);
+      const Real k3 = wa*keff(d3, tc(k-1,j,i), tc(k+1,j,i));
+      if (k3 > 0.0) min_dt = fmin(min_dt, SQR(d3)*s2/k3*rcv);
     }
   }, Kokkos::Min<Real>(dtnew));
   dtnew *= fac;
