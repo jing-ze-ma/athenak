@@ -378,6 +378,10 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
       } else if (rsolver.compare("ausmpup") == 0) {
         if (peos->eos_data.is_ideal) {
           rsolver_method = Hydro_RSolver::ausmpup;
+          peos->eos_data.ausm_mcut = pin->GetOrAddReal("hydro","ausm_mcut",1.0e-13);
+          peos->eos_data.ausm_mcut_p = pin->GetOrAddReal("hydro","ausm_mcut_p",1.0);
+          peos->eos_data.ausm_wall_hllc = pin->GetOrAddBoolean("hydro","ausm_wall_hllc",
+                                                                 false);
         } else {
           std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                     << std::endl << "<hydro>/rsolver = ausmpup cannot be used with "

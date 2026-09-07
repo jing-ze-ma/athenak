@@ -60,6 +60,17 @@ struct EOS_Data {
   // floored either way, deferring the write lands on the same value.
   bool defer_cons_floors = false;
   Real gamma_max;    // ceiling on Lorentz factor in SR/GR
+  // AUSM+-up cut-off Mach numbers (hydro/ausm_mcut, ausm_mcut_p): f_a = M_o(2 - M_o)
+  // with M_o = min(1, max(M_bar, mcut)) scales the velocity-diffusion pressure term
+  // p_u, and f_a^p (mcut_p) the 1/f_a of the pressure-diffusion term M_p. Liou 2006 has
+  // one cut-off for both (mcut_p = mcut, the "original" AUSM+-up, M_p ~ 1/M at low
+  // Mach); Edelmann+2021 decouple them, and mcut_p = 1 (the default here) removes the
+  // 1/f_a from M_p altogether.
+  Real ausm_mcut = 1.0e-13, ausm_mcut_p = 1.0;
+  // hydro/ausm_wall_hllc: re-solve the physical reflecting/user x1 wall faces with HLLC,
+  // whose wall mass flux is exactly zero; AUSM+-up's pressure-diffusion term makes a
+  // wall leak mass in proportion to the adjacent pressure perturbation
+  bool ausm_wall_hllc = false;
   // Set when an IDEAL-gas run has had the composition table built purely to supply the
   // electron fraction to ohmic_resistivity = eos. In that case `tbl` holds valid surfaces
   // but `tbl.active` is deliberately FALSE, because `active` is what every thermodynamic

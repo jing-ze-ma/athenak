@@ -33,7 +33,8 @@ void AUSMPUP(TeamMember_t const &member, const EOS_Data &eos,
   Real igm1 = 1.0/gm1;
   Real alpha = 2.0*gm1/(eos.gamma+1.0);
     
-  const Real Mref = 1.0;
+  const Real Mcut = eos.ausm_mcut;      // cut-off of f_a (p_u term)
+  const Real Mref = eos.ausm_mcut_p;    // cut-off of f_a^p (M_p term); 1 = no 1/f_a
 
   par_for_inner(member, il, iu, [&](const int i) {
     //--- Step 1.  Create local references for L/R states (helps compiler vectorize)
@@ -93,7 +94,7 @@ void AUSMPUP(TeamMember_t const &member, const EOS_Data &eos,
     qd = 0.5 * (wl_idn + wr_idn);  // average density
     
     qe = sqrt((SQR(wl_ivx)+SQR(wr_ivx))/(2.0*SQR(qc))); // M_bar
-    qf = fmin(1.0,fmax(qe,1.0e-13)); // M_o
+    qf = fmin(1.0,fmax(qe,Mcut)); // M_o
     Real fa = qf * (2.0 - qf);
     qf = fmin(1.0,fmax(qe,Mref)); // M_o^p (Edelmann et al. 2021)
     Real fap = qf * (2.0 - qf);

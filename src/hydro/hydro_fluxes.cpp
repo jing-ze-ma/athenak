@@ -287,6 +287,19 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
       HLLCLM(member,eos,indcs,size,coord,m,k,j,il,iu,IVX,wl,wr,dl,dr,flx1);
     } else if constexpr (rsolver_method_ == Hydro_RSolver::ausmpup) {
       AUSMPUP(member,eos,indcs,size,coord,m,k,j,il,iu,IVX,wl,wr,dl,dr,flx1);
+      // hybrid: HLLC on the physical x1 wall faces (zero wall mass flux by construction)
+      if (eos.ausm_wall_hllc) {
+        const BoundaryFlag bi = mb_bcs_pq.d_view(m,BoundaryFace::inner_x1);
+        const BoundaryFlag bo = mb_bcs_pq.d_view(m,BoundaryFace::outer_x1);
+        if (bi == BoundaryFlag::reflect || bi == BoundaryFlag::user) {
+          member.team_barrier();
+          HLLC(member,eos,indcs,size,coord,m,k,j,is,is,IVX,wl,wr,dl,dr,flx1);
+        }
+        if (bo == BoundaryFlag::reflect || bo == BoundaryFlag::user) {
+          member.team_barrier();
+          HLLC(member,eos,indcs,size,coord,m,k,j,ie+1,ie+1,IVX,wl,wr,dl,dr,flx1);
+        }
+      }
     } else if constexpr (rsolver_method_ == Hydro_RSolver::roe) {
       Roe(member, eos, indcs, size, coord, m, k, j, il, iu, IVX, wl, wr, flx1);
     } else if constexpr (rsolver_method_ == Hydro_RSolver::llf_sr) {
