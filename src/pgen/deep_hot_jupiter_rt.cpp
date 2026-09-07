@@ -30,6 +30,7 @@
 #include "utils/random.hpp"
 #include "pgen.hpp"
 #include "utils/rosseland.hpp"
+#include "diffusion/conduction.hpp"
 #include "pgen_eos_utils.hpp"
 #include "diffusion/resistivity.hpp"
 #include "coordinates/cubed_sphere.hpp"
@@ -4920,7 +4921,7 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
     Real Tint;
     get_Tint(Teq, Tint);
     Real Tint4 = SQR(SQR(Tint));
-    const bool int_at_cut = rt_int_at_cut;
+    bool int_at_cut = rt_int_at_cut;
     Real Iint = boltz_sigma/M_PI*Tint4;
     
     const int nchain_rt = rt_nchain;
@@ -4998,6 +4999,16 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
       auto cf_g  = *rt_cf_ptr;
       auto Fb_g  = *rt_Fb_ptr;
       const bool ck_on = rt_ck;
+      // the optical-depth blend with the conduction module's radiative diffusion: its
+      // x1-face weight w (rad_w) says how much of each face's longwave flux the
+      // two-stream still owns (1 - w); the column's RT bottom is the first face with
+      // w = 1, and no internal flux is injected there (the diffusion carries it)
+      Conduction *pcond_rt = (pm->pmb_pack->pmhd != nullptr) ? pm->pmb_pack->pmhd->pcond
+                                                            : pm->pmb_pack->phydro->pcond;
+      const bool taublend = (ck_on && pcond_rt != nullptr && pcond_rt->rad_tau_mode);
+      auto w_g = taublend ? pcond_rt->rad_w : DvceArray4D<Real>("rt_w_dummy",1,1,1,1);
+      auto tauf_g = taublend ? pcond_rt->rad_tauf : DvceArray4D<Real>("rt_tau_dummy",1,1,1,1);
+      if (taublend) int_at_cut = false;
       auto kc_g   = (ck_on) ? *rt_kc_ptr : Fb_g;
       auto Bb_g   = (ck_on) ? *rt_Bb_ptr : Fb_g;
       auto T_g    = (ck_on) ? *rt_T_ptr  : tau_g;
@@ -5079,8 +5090,15 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
           // i = is is the bottom, so pressure falls as i rises: the cut is the deepest
           // cell still shallower than pcut, i.e. the first one scanning up
           int icut = ie+1;
-          for (int i=is; i<ie+2; ++i) {
-            if (pb_g(m,k,j,i) < pcut) { icut = i; break; }
+          if (taublend) {
+            // the RT reaches down to the first face it still owns a share of
+            for (int i=is; i<ie+2; ++i) {
+              if (w_g(m,k,j,i) < 1.0) { icut = i; break; }
+            }
+          } else {
+            for (int i=is; i<ie+2; ++i) {
+              if (pb_g(m,k,j,i) < pcut) { icut = i; break; }
+            }
           }
           icut_g(m,k,j) = icut;
         });
@@ -5527,6 +5545,11 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
           Ft += Fb_g(m,b,i+1,k,j);
           Fb += Fb_g(m,b,i,k,j);
         }
+        // the two-stream's share of each face in the tau blend
+        if (taublend) {
+          Ft *= (1.0 - w_g(m,k,j,i+1));
+          Fb *= (1.0 - w_g(m,k,j,i));
+        }
         Real src = -(Ft-Fb)/dx1(m,k,j,i);
         if (ck_on) {
           // deeper than the cut nothing radiative is applied: that region is optically
@@ -5556,7 +5579,7 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
         const int jd = (rt_dump_j >= 0) ? rt_dump_j : (js + je)/2;
         const int kd = (rt_dump_k >= 0) ? rt_dump_k : (ks + ke)/2;
         const int md = (rt_dump_m <= nmb1) ? rt_dump_m : 0;
-        DvceArray2D<Real> col("rt_col", n1, 7);
+        DvceArray2D<Real> col("rt_col", n1, 9);
         par_for("rt_dumpcol", DevExeSpace(), is, ie+1, KOKKOS_LAMBDA(const int i) {
           Real Fs = 0.0;
           Real Qs = 0.0;
@@ -5578,6 +5601,8 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
           col(i,5) = eos.IsGeneral() ? eos.Gamma1(dd, ee) : eos.gamma;
           col(i,6) = GradAd(eos, eos.gamma, Rgas, pb_g(md,kd,jd,i)*1.0e6,
                             T_g(md,kd,jd,i));
+          col(i,7) = taublend ? tauf_g(md,kd,jd,i) : 0.0;
+          col(i,8) = taublend ? w_g(md,kd,jd,i) : 0.0;
         });
         auto hc = Kokkos::create_mirror_view(col);
         Kokkos::deep_copy(hc, col);
@@ -5597,11 +5622,12 @@ void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
             << " K, grav = " << grav << " cm/s^2\n"
             << "# fluxes are cgs: 1 erg/s/cm^2 = 1e-3 W/m^2. F_lw is NET (up minus down)\n"
             << "# i  r_face[cm]  p[bar]  T[K]  F_lw_net[erg/s/cm2]  Q_sw[erg/s/cm3]"
-            << "  Gamma_1  grad_ad\n";
+            << "  Gamma_1  grad_ad  tau_R(face)  w_diff(face)\n";
           for (int i=is; i<ie+2; ++i) {
             f << i << " " << hc(i,4) << " " << hc(i,0) << " " << hc(i,1)
               << " " << hc(i,2) << " " << hc(i,3)
-              << " " << hc(i,5) << " " << hc(i,6) << "\n";
+              << " " << hc(i,5) << " " << hc(i,6)
+              << " " << hc(i,7) << " " << hc(i,8) << "\n";
           }
           f.close();
           std::cout << "deep_hot_jupiter_rt: wrote correlated-k column dump to '"
