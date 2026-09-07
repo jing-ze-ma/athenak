@@ -25,6 +25,8 @@ class Conduction {
 
   // data
   Real dtnew;
+  // the cell that set dtnew, for the collapse report in Mesh::NewTimeStep
+  int dtnew_m = -1, dtnew_k = -1, dtnew_j = -1, dtnew_i = -1;
   std::string iso_cond_type; // "constant", "spitzer", "spitzer_limited", "radiative"
   // radiative conductivity kappa_rad = 16 sigma T^3/(3 kappa_R rho), kappa_R the
   // Freedman+2014 Rosseland mean (utils/rosseland.hpp), applied on faces whose pressure

@@ -726,8 +726,14 @@ void Conduction::NewTimeStep(const DvceArray5D<Real> &w0, const EOS_Data &eos_da
 
   // find smallest timestep for thermal conduction in each cell
   // Note loop over all cells needed even for constant conductivity
+  // MinLOC, not Min: when this timestep collapses the only question that matters is
+  // WHICH cell did it, and reconstructing that afterwards from a dump means redoing the
+  // opacity lookup, the tau blend and the flux limiter outside the code.  The location
+  // rides along for free.
+  Kokkos::ValLocScalar<Real, int> mloc;
   Kokkos::parallel_reduce("cond_newdt", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmkji),
-  KOKKOS_LAMBDA(const int &idx, Real &min_dt) {
+  KOKKOS_LAMBDA(const int &idx, Kokkos::ValLocScalar<Real, int> &mres) {
+    Real min_dt = mres.val;
     // compute m,k,j,i indices of thread and call function
     int m = (idx)/nkji;
     int k = (idx - m*nkji)/nji;
@@ -812,8 +818,18 @@ void Conduction::NewTimeStep(const DvceArray5D<Real> &w0, const EOS_Data &eos_da
       const Real k3 = wa*keff(d3, tc(k-1,j,i), tc(k+1,j,i));
       if (k3 > 0.0) min_dt = fmin(min_dt, SQR(d3)*s2/k3*rcv);
     }
-  }, Kokkos::Min<Real>(dtnew));
-  dtnew *= fac;
+    if (min_dt < mres.val) { mres.val = min_dt; mres.loc = idx; }
+  }, Kokkos::MinLoc<Real, int>(mloc));
+  dtnew = mloc.val*fac;
+  // decode the winning cell, for the collapse report in Mesh::NewTimeStep
+  if (mloc.loc >= 0 && mloc.loc < nmkji) {
+    dtnew_m = (mloc.loc)/nkji;
+    dtnew_k = (mloc.loc - dtnew_m*nkji)/nji + ks;
+    dtnew_j = (mloc.loc - dtnew_m*nkji - (dtnew_k-ks)*nji)/nx1 + js;
+    dtnew_i = (mloc.loc - dtnew_m*nkji - (dtnew_k-ks)*nji - (dtnew_j-js)*nx1) + is;
+  } else {
+    dtnew_m = dtnew_k = dtnew_j = dtnew_i = -1;
+  }
 
   return;
 }

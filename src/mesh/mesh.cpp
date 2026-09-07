@@ -979,6 +979,13 @@ void Mesh::NewTimeStep(const Real tlim) {
                   << " | hydro=" << dbg_hyd << " cond=" << dbg_cnd
                   << " visc=" << dbg_vis << " srcterms=" << dbg_src
                   << "  (rank " << global_variable::my_rank << ")" << std::endl;
+        Conduction *pc = (pmb_pack->phydro != nullptr) ? pmb_pack->phydro->pcond
+                       : ((pmb_pack->pmhd != nullptr) ? pmb_pack->pmhd->pcond : nullptr);
+        if (pc != nullptr && dbg_cnd > 0.0 && dbg_cnd <= dt) {
+          std::cout << "    conduction dt is set by cell (m,k,j,i) = ("
+                    << pc->dtnew_m << "," << pc->dtnew_k << "," << pc->dtnew_j
+                    << "," << pc->dtnew_i << ")" << std::endl;
+        }
       }
     }
   }
