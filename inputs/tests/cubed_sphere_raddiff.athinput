@@ -1,0 +1,76 @@
+<comment>
+problem = cubed sphere scalar (radiative) diffusion: cs_test iprob 15
+# Uniform density at rest with T = T0 (1 + amp f), f a combination of l = 2 harmonics in
+# the direction cosines and no radial dependence, so Laplacian T = -6 (T - T0)/r^2 exactly
+# and the energy source of the radiative diffusion (kappa_rad ~ constant for small amp)
+# can be checked cell by cell against -6 kappa (T - T0)/r^2 read off the dump itself.
+# The radial fluxes vanish identically, so this exercises the ANGULAR operator alone:
+# on the gnomonic grid the face-normal derivative needs the metric cross term and the
+# 1/sin(alpha) (hydro/rad_cs_exact, default true); the orthogonal form is wrong by
+# 24-30 % in L1 and up to 1.7x at the panel edges.  Units make T0 = 1 read as ~1000 K
+# and p0 = 1 as 0.036 bar, inside the Freedman+2014 fit's range; rad_kappa_fac = 0.01
+# makes the diffusion step the binding one so the hydro response stays negligible.
+
+<job>
+basename = lap
+
+<mesh>
+nghost   = 2
+nx1      = 8
+x1min    = 1.0
+x1max    = 2.0
+ix1_bc   = reflect
+ox1_bc   = reflect
+nx2      = 16
+x2min    = -1.0
+x2max    = 1.0
+ix2_bc   = panel
+ox2_bc   = panel
+nx3      = 16
+x3min    = -1.0
+x3max    = 1.0
+ix3_bc   = panel
+ox3_bc   = panel
+use_cubed_sphere = true
+
+<meshblock>
+nx1      = 8
+nx2      = 16
+nx3      = 16
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim       = 20
+tlim       = 100.0
+
+<hydro>
+eos         = ideal
+reconstruct = plm
+rsolver     = hllc
+gamma       = 1.666667
+isotropic_conduction = radiative
+rad_pcut_bar   = 0.0
+rad_flux_limit = false
+rad_kappa_fac  = 0.01
+rad_flux_inner = 0.0
+rad_met        = 0.0
+rad_cs_exact   = true
+
+<units>
+length_cgs = 1.0e8
+mass_cgs   = 1.0e18
+time_cgs   = 527.0
+mu         = 2.3
+
+<problem>
+iprob = 15
+d0    = 1.0
+p0    = 1.0
+amp   = 0.01
+
+<output1>
+file_type = bin
+variable  = hydro_w
+dt        = 1.0e-9

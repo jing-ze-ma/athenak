@@ -51,6 +51,9 @@ class Conduction {
   // diffusion and the two-stream share one opacity). Same cost as the Freedman fit.
   // Until the table is set (rad_kr_nT == 0) the Freedman fit is used.
   bool rad_kappa_tab = false;
+  // rad_cs_exact (default true): the exact face-normal derivative on the cubed sphere;
+  // false drops the metric cross term and the 1/sin(alpha) -- DIAGNOSTIC only
+  bool rad_cs_exact = true;
   int rad_kr_nT = 0, rad_kr_nP = 0;
   DvceArray2D<Real> rad_kr_tab;            // (iT, iP) log10 kappa_R [cm^2/g]
   DvceArray1D<Real> rad_kr_lT, rad_kr_lP;  // log10 T [K], log10 p [dyn/cm^2], ascending

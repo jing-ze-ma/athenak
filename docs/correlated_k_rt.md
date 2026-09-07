@@ -112,21 +112,46 @@ assumed — see
 where the general EOS's μ and electron fraction are compared against this same FastChem
 table.
 
-### The deep cutoff
+### The deep cutoff, and the radiative diffusion below it
 
-Correlated-k runs only where **p < `ck_pcut_bar`** (default 10 bar); deeper than that no
-radiative source is applied at all. Two independent reasons, both measured on this setup:
+Correlated-k runs only where the column is not yet optically thick in the Rosseland
+sense; deeper than that the energy transport is a **radiative diffusion**,
+`F = -16 sigma T^3/(3 kappa_R rho) grad T`, carried by the conduction module
+(`<mhd>/isotropic_conduction = radiative`, `src/diffusion/conduction.cpp`). The two are
+blended by optical depth rather than cut: every radial face carries a weight `w(tau_R)`,
+0 below `rad_tau_lo` (30) and 1 above `rad_tau_hi` (300), a raised cosine in log tau
+between. The diffusion flux is multiplied by `w`, the two-stream flux by `1 - w`, and the
+two-stream's column bottom is the first face with `w < 1`. `tau_R` is the column's
+Rosseland depth from the top, one fixed-length top-down sweep per column, so every column
+does the same work; on the production grids the `tau_R = 300` face sits at 1.6-2.1 bar in
+every column, one cell of spread.
 
-* It is optically thick and convective there. The photosphere (grey τ = 1) sits near
-  0.05 bar and the median grey τ is ~9200 at 10 bar, so a Planck bottom boundary at the
-  cut is exact to e^-τ.
-* The deep interior is 5100–12000 K, far outside any molecular table, and above 5572 K
-  more than 1 % of the Planck function falls bluer than the grid's 0.26 µm edge — at
-  12000 K it is 30 %. The cut keeps the correlated-k region under ~4800 K, where that
-  tail is 3e-3.
+The handover is consistent because both operators use **one opacity**:
+`rad_kappa_src = table` tabulates the Rosseland mean of this k-table plus its continuum
+(CIA, Rayleigh, H-) on the table's own 38 x 34 (T, p) grid at start-up, and the diffusion
+looks it up log-bilinearly at every face, the same cost as the Freedman fit it replaces.
+Measured on the dhj column at rest, the two-stream's net flux in the overlap is within
+10 % of the diffusion flux (the two-stream's diffusion limit is 2/D against the exact
+4/3 with D = 1.66); with the Freedman fit on the diffusion side it was off by 1.7x. The
+table is printed against Freedman+2014 at eight points at start-up: 0.74-1.7x below
+3700 K, 4.5-4.8x at 4900 K (where the fit is clamped at 4000 K while H- keeps rising).
 
-The cut is per column (`i_cut(m,k,j)`), since pressure varies day to night. It is where
-about a third of the cost saving comes from: p < 10 bar is 65.6 % of cells.
+The interior flux `sigma T_int^4` enters through the inner wall as a diffusion flux
+(`rad_flux_inner < 0` lets the problem generator set it from `Teq`), and no longer as an
+injection at the cut (`ck_int_at_cut` is forced off in blend mode). The conduction time
+step is on `w kappa`, so it vanishes with the flux at the top of the overlap; it does not
+bind on the production grids (dt unchanged, cost +9.5 % on spherical polar and +5.8 % on
+the cubed sphere for the whole package, 1000-cycle GPU runs). On the cubed sphere the
+face-normal derivative is the exact one, `(dT/dl_xi - cos(alpha) dT/dl_eta)/sin(alpha)`
+with alpha the local angle between the coordinate lines; the orthogonal form
+(`rad_cs_exact = false`, diagnostic) is wrong by 24-30 % in L1 and by up to 1.7x at the
+panel edges on an l = 2 test field (`cs_test iprob = 15`), the exact one converges to the
+analytic Laplacian at second order.
+
+The older hard cut (`ck_pcut_bar`, default 10 bar, no diffusion) is what runs when the
+conduction block is absent; the reasons it was placed at 10 bar still hold for where the
+blend lands (grey tau ~ 9200 at 10 bar; the interior is 5100-12000 K, outside any
+molecular table, and the table's Rosseland mean is held at its 6100 K edge below that).
 
 ### Boundary conditions
 

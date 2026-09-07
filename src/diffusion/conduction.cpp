@@ -94,13 +94,17 @@ Conduction::Conduction(std::string block, MeshBlockPack *pp, ParameterInput *pin
       // pressure cut in bar; the flux through the wall in erg/cm^2/s
       rad_pcut = pin->GetOrAddReal(block,"rad_pcut_bar",0.0)*1.0e6
                  /pp->punit->pressure_cgs();
-      rad_flux_inner = pin->GetOrAddReal(block,"rad_flux_inner",0.0)
-                       /(pp->punit->pressure_cgs()*pp->punit->velocity_cgs());
+      // negative: the problem generator sets it (deep_hot_jupiter_rt: sigma T_int^4)
+      rad_flux_inner = pin->GetOrAddReal(block,"rad_flux_inner",0.0);
+      if (rad_flux_inner > 0.0) {
+        rad_flux_inner /= (pp->punit->pressure_cgs()*pp->punit->velocity_cgs());
+      }
       rad_kappa_fac = pin->GetOrAddReal(block,"rad_kappa_fac",1.0);
       rad_flux_limit = pin->GetOrAddBoolean(block,"rad_flux_limit",true);
       rad_tau_lo = pin->GetOrAddReal(block,"rad_tau_lo",0.0);
       rad_tau_hi = pin->GetOrAddReal(block,"rad_tau_hi",0.0);
       rad_tau_mode = (rad_tau_hi > 0.0);
+      rad_cs_exact = pin->GetOrAddBoolean(block,"rad_cs_exact",true);
       {
         std::string ksrc = pin->GetOrAddString(block,"rad_kappa_src","freedman");
         if (ksrc.compare("table") == 0) {
@@ -284,8 +288,10 @@ void Conduction::AddIsotropicHeatFluxRadiative(const DvceArray5D<Real> &w0,
   auto &krlT = rad_kr_lT;
   auto &krlP = rad_kr_lP;
   const int krnT = rad_kr_nT, krnP = rad_kr_nP;
+  // gradn is the FACE-NORMAL temperature derivative in code units (T per length); the
+  // caller forms it, which is where the grid enters
   auto face_flux = [=] (const Real tl, const Real tr, const Real pl, const Real pr,
-                        const Real dl_, const Real dr_, const Real dl) {
+                        const Real dl_, const Real dr_, const Real gradn) {
     const Real pf = 0.5*(pl + pr);
     if (pf < pcut) return 0.0;
     const Real tk = 0.5*(tl + tr)*temp_unit;
@@ -294,7 +300,7 @@ void Conduction::AddIsotropicHeatFluxRadiative(const DvceArray5D<Real> &w0,
         ? RadiativeKappaKR(tk, rhof, kfac,
                            RosselandTable(krt, krlT, krlP, krnT, krnP, tk, pf*pres_unit))
         : RadiativeKappa(tk, pf*pres_unit, rhof, met, kfac);
-    Real f = -kap*(tr - tl)*temp_unit/(dl*len_unit);     // erg/cm^2/s, positive outward
+    Real f = -kap*gradn*temp_unit/len_unit;     // erg/cm^2/s, positive outward
     if (limit) {
       // saturate smoothly at the free-streaming flux sigma T^4: 0.3 % at F = 0.08 sigma
       // T^4,
@@ -303,6 +309,19 @@ void Conduction::AddIsotropicHeatFluxRadiative(const DvceArray5D<Real> &w0,
       f /= sqrt(1.0 + SQR(f/ffree));
     }
     return f/eflx_unit;
+  };
+
+  // CUBED SPHERE: the xi and eta coordinate lines meet at an angle alpha (cos_cell,
+  // sin_cell), so the face-normal derivative on a xi-face is
+  //   dT/dn = (dT/dl_xi - cos(alpha) dT/dl_eta) / sin(alpha)
+  // with dl the arc lengths -- the second term is the metric cross term, the 1/sin the
+  // normalisation of grad(xi). The transverse derivative is centred across the two
+  // cells the face separates. Radial faces are orthogonal to both and need nothing.
+  const bool cs = pmy_pack->pmesh->use_cubed_sphere && rad_cs_exact;
+  auto &sinc_ = pmy_pack->pcoord->sin_cell;
+  auto &cosc_ = pmy_pack->pcoord->cos_cell;
+  auto tcell = [=] (const int m, const int k, const int j, const int i) {
+    return gen ? wtemp_(m,k,j,i) : w0(m,IEN,k,j,i)/w0(m,IDN,k,j,i)*gm1;
   };
 
   auto &flx1 = flx.x1f;
@@ -322,7 +341,7 @@ void Conduction::AddIsotropicHeatFluxRadiative(const DvceArray5D<Real> &w0,
     const Real dl = curv ? (x1v_(m,i) - x1v_(m,i-1)) : size.d_view(m).dx1;
     const Real wt = taumode ? wf(m,k,j,i) : 1.0;
     flx1(m,IEN,k,j,i) += wt*face_flux(tl, tr, pl, pr, w0(m,IDN,k,j,i-1),
-                                      w0(m,IDN,k,j,i), dl);
+                                      w0(m,IDN,k,j,i), (tr - tl)/dl);
   });
   if (!multi_d) return;
 
@@ -336,8 +355,19 @@ void Conduction::AddIsotropicHeatFluxRadiative(const DvceArray5D<Real> &w0,
     const Real dl = curv ? 0.5*(dx2_(m,k,j-1,i) + dx2_(m,k,j,i)) : size.d_view(m).dx2;
     const Real wt = taumode ? 0.25*(wf(m,k,j-1,i) + wf(m,k,j-1,i+1)
                                     + wf(m,k,j,i) + wf(m,k,j,i+1)) : 1.0;
+    Real gradn = (tr - tl)/dl;
+    if (cs && three_d) {
+      const Real c = 0.5*(cosc_(m,k,j-1) + cosc_(m,k,j));
+      const Real sn = 0.5*(sinc_(m,k,j-1) + sinc_(m,k,j));
+      const Real ge = 0.5*((tcell(m,k+1,j-1,i) - tcell(m,k-1,j-1,i))
+                            /(0.5*dx3_(m,k-1,j-1,i) + dx3_(m,k,j-1,i)
+                              + 0.5*dx3_(m,k+1,j-1,i))
+                         + (tcell(m,k+1,j,i) - tcell(m,k-1,j,i))
+                            /(0.5*dx3_(m,k-1,j,i) + dx3_(m,k,j,i) + 0.5*dx3_(m,k+1,j,i)));
+      gradn = (gradn - c*ge)/sn;
+    }
     flx2(m,IEN,k,j,i) += wt*face_flux(tl, tr, pl, pr, w0(m,IDN,k,j-1,i),
-                                      w0(m,IDN,k,j,i), dl);
+                                      w0(m,IDN,k,j,i), gradn);
   });
   if (!three_d) return;
 
@@ -351,8 +381,19 @@ void Conduction::AddIsotropicHeatFluxRadiative(const DvceArray5D<Real> &w0,
     const Real dl = curv ? 0.5*(dx3_(m,k-1,j,i) + dx3_(m,k,j,i)) : size.d_view(m).dx3;
     const Real wt = taumode ? 0.25*(wf(m,k-1,j,i) + wf(m,k-1,j,i+1)
                                     + wf(m,k,j,i) + wf(m,k,j,i+1)) : 1.0;
+    Real gradn = (tr - tl)/dl;
+    if (cs) {
+      const Real c = 0.5*(cosc_(m,k-1,j) + cosc_(m,k,j));
+      const Real sn = 0.5*(sinc_(m,k-1,j) + sinc_(m,k,j));
+      const Real gx = 0.5*((tcell(m,k-1,j+1,i) - tcell(m,k-1,j-1,i))
+                            /(0.5*dx2_(m,k-1,j-1,i) + dx2_(m,k-1,j,i)
+                              + 0.5*dx2_(m,k-1,j+1,i))
+                         + (tcell(m,k,j+1,i) - tcell(m,k,j-1,i))
+                            /(0.5*dx2_(m,k,j-1,i) + dx2_(m,k,j,i) + 0.5*dx2_(m,k,j+1,i)));
+      gradn = (gradn - c*gx)/sn;
+    }
     flx3(m,IEN,k,j,i) += wt*face_flux(tl, tr, pl, pr, w0(m,IDN,k-1,j,i),
-                                      w0(m,IDN,k,j,i), dl);
+                                      w0(m,IDN,k,j,i), gradn);
   });
   return;
 }
@@ -642,6 +683,8 @@ void Conduction::NewTimeStep(const DvceArray5D<Real> &w0, const EOS_Data &eos_da
   auto &dx1_ = pmy_pack->pcoord->dx1;
   auto &dx2_ = pmy_pack->pcoord->dx2;
   auto &dx3_ = pmy_pack->pcoord->dx3;
+  const bool cs = pmy_pack->pmesh->use_cubed_sphere && rad_cs_exact;
+  auto &sinc_ = pmy_pack->pcoord->sin_cell;
 
   // capture variables for kernel
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -714,13 +757,15 @@ void Conduction::NewTimeStep(const DvceArray5D<Real> &w0, const EOS_Data &eos_da
     const Real d1 = (curv && radiative) ? dx1_(m,k,j,i) : size.d_view(m).dx1;
     min_dt = fmin(min_dt, SQR(d1)/kappa_*rcv);
     // on a curvilinear grid size.dx2/dx3 are ANGLES; the physical widths are pcoord's
+    // cubed sphere: the exact operator's angular diffusivity is kappa/sin^2(alpha)
+    const Real s2 = (cs && radiative) ? SQR(sinc_(m,k,j)) : 1.0;
     if (multi_d) {
       const Real d2 = (curv && radiative) ? dx2_(m,k,j,i) : size.d_view(m).dx2;
-      min_dt = fmin(min_dt, SQR(d2)/kappa_*rcv);
+      min_dt = fmin(min_dt, SQR(d2)*s2/kappa_*rcv);
     }
     if (three_d) {
       const Real d3 = (curv && radiative) ? dx3_(m,k,j,i) : size.d_view(m).dx3;
-      min_dt = fmin(min_dt, SQR(d3)/kappa_*rcv);
+      min_dt = fmin(min_dt, SQR(d3)*s2/kappa_*rcv);
     }
   }, Kokkos::Min<Real>(dtnew));
   dtnew *= fac;

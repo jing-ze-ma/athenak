@@ -31,6 +31,7 @@
 #include "pgen.hpp"
 #include "utils/rosseland.hpp"
 #include "diffusion/conduction.hpp"
+#include "units/units.hpp"
 #include "pgen_eos_utils.hpp"
 #include "diffusion/resistivity.hpp"
 #include "coordinates/cubed_sphere.hpp"
@@ -2508,6 +2509,32 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // the correlated-k Rosseland table for the radiative diffusion (no-op unless
   // <mhd>/rad_kappa_src = table)
   ck_build_rosseland_table(pmy_mesh_);
+  {
+    MeshBlockPack *pmbp_ = pmy_mesh_->pmb_pack;
+    Conduction *pc = (pmbp_->pmhd != nullptr) ? pmbp_->pmhd->pcond : pmbp_->phydro->pcond;
+    if (pc != nullptr && pc->iso_cond_type.compare("radiative") == 0) {
+      // the tau blend hands the deep column over between the diffusion and the
+      // correlated-k two-stream; the grey scheme has no cut and would double count
+      if (pc->rad_tau_mode && !rt_ck) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "rad_tau_hi > 0 (the optical-depth blend) needs "
+                  << "problem/rt_ck = true" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      // rad_flux_inner < 0: the planet's internal flux sigma T_int^4 through the wall
+      if (pc->rad_flux_inner < 0.0) {
+        Real Tint;
+        get_Tint(hot_jupiter_param.Teq, Tint);
+        const Real fint = 5.670374419e-5*SQR(SQR(Tint));
+        pc->rad_flux_inner = fint/(pmbp_->punit->pressure_cgs()
+                                   *pmbp_->punit->velocity_cgs());
+        if (global_variable::my_rank == 0) {
+          std::cout << "  radiative diffusion: wall flux sigma T_int^4 = " << fint
+                    << " erg/s/cm^2 (T_int = " << Tint << " K)" << std::endl;
+        }
+      }
+    }
+  }
 
   return;
 }

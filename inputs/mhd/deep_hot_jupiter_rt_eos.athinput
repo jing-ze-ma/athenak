@@ -106,6 +106,15 @@ time_cgs   = 1.0
 mu         = 1.0
 
 <mhd>
+isotropic_conduction = radiative   # RADIATIVE DIFFUSION below the two-stream region: kappa_rad =
+                                   # 16 sigma T^3/(3 kappa_R rho), blended with the correlated-k
+                                   # two-stream by Rosseland optical depth (docs/correlated_k_rt.md)
+rad_tau_lo     = 30.0              # face weight w(tau_R): 0 below tau_lo ...
+rad_tau_hi     = 300.0             # ... 1 above tau_hi; the two-stream carries 1 - w
+rad_kappa_src  = table             # kappa_R tabulated from the ck table + continuum at start-up,
+                                   # so both operators use ONE opacity (needs rt_ck = true)
+rad_flux_inner = -1.0              # < 0: sigma T_int^4 through the inner wall, T_int from Teq
+rad_met        = 0.0
 eos             = general
 general_eos     = table
 reconstruct     = plm
@@ -237,7 +246,7 @@ rt_de_max    = 0.5               # cap on |Delta e_int| per RT source applicatio
                                  # means the floors or the timestep need fixing, not this
                                  # number.  Set <= 0 to disable.  See
                                  # docs/correlated_k_rt.md.
-rt_ck        = false             # false = grey picket fence; true = correlated-k
+rt_ck        = true              # false = grey picket fence; true = correlated-k
 rt_split     = false             # run the RT as chain-parallel kernels instead of one
                                  # kernel looping over chains serially.  Implied by
                                  # rt_ck.  Same arithmetic and the same summation

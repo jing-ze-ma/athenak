@@ -633,6 +633,24 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       return;
     }
 
+    if (iprob == 15) {
+      // SCALAR DIFFUSION test: uniform density at rest, T = T0 (1 + amp f) with f a
+      // combination of l = 2 harmonics in the direction cosines and no radial
+      // dependence, so Laplacian T = -6 (T - T0)/r^2 EXACTLY, cell by cell, with no
+      // geometry needed in the check: the energy source of the radiative diffusion
+      // (kappa ~ constant for small amp) is compared to -6 kappa (T - T0)/r^2 read off
+      // the dump itself. Uses p0 as T0 (R = 1).
+      Real cx, cy, cz;
+      PanelToCart(mbpanel.d_view(m), xi, eta, cx, cy, cz);
+      const Real f = cx*cy + 0.7*cz*cx - 0.4*(cz*cz - 1.0/3.0);
+      w0(m,IDN,k,j,i) = d0;
+      w0(m,IEN,k,j,i) = d0*p0*(1.0 + amp_*f)/gm1;
+      w0(m,IVX,k,j,i) = 0.0;
+      w0(m,IVY,k,j,i) = 0.0;
+      w0(m,IVZ,k,j,i) = 0.0;
+      return;
+    }
+
     if (iprob == 5) {
       w0(m,IDN,k,j,i) = RadialProfile(rad, d0, amp_, r0_);
       w0(m,IEN,k,j,i) = p0/gm1;

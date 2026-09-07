@@ -88,10 +88,42 @@ def test_run():
         assert np.all(qsw == 0.0), "shortwave heating on the nightside"
         assert np.all(flw[:hdr["icut"] - int(col[0, 0])] == 0.0), \
             "longwave flux below the correlated-k cutoff"
-        fint = ck.SIGMA_SB * hdr["T_int"] ** 4
-        fbase = flw[hdr["icut"] - int(col[0, 0])]
-        assert abs(fbase / fint - 1.0) < 0.2, \
-            f"net flux at the cutoff is {fbase / fint:g} sigma T_int^4, not ~1"
+
+        # --- the optical-depth blend with the radiative diffusion (default in the
+        # dhj inputs): the two-stream owns 1 - w of every face, the diffusion w, with
+        # w(tau_R) rising from 0 to 1 over the overlap.  The two operators share the
+        # ck-table opacity, so in the overlap the two-stream's net flux must sit near
+        # the diffusion flux -16 sigma T^3/(3 kappa_R rho) dT/dr, which the dump's own
+        # tau_R column gives (kappa_R rho dr = -d tau_R).  A 30 % gate: the two-stream's
+        # diffusion limit is 2/D = 1.20 against the exact 4/3 with the diffusivity
+        # factor D = 1.66, and the face averaging adds a few percent more.
+        rf, tau, w = col[:, 1], col[:, 8], col[:, 9]
+        assert w[0] == 1.0 and w[-1] == 0.0, \
+            "the blend weight must run 1 (wall) -> 0 (top)"
+        assert np.all(np.diff(tau) <= 0.0), "tau_R does not fall outwards"
+        # faces the two-stream still carries at least a tenth of; at its very bottom
+        # (w ~ 1) its net flux is set by its Planck bottom boundary, not the gradient
+        ov = np.where((w > 0.02) & (w < 0.9))[0]
+        assert ov.size >= 3, "the diffusion / two-stream overlap is fewer than 3 faces"
+        assert 0.0 < w[hdr["icut"] - int(col[0, 0])] < 1.0, \
+            "the two-stream bottom is not inside the overlap"
+        kr_rho = -np.diff(tau) / np.diff(rf)                 # per cell, 1/cm
+        tc = 0.5 * (temp[1:] + temp[:-1])
+        rc = 0.5 * (rf[1:] + rf[:-1])
+        ratios = []
+        for f in ov:
+            if f < 1 or f >= len(rf) - 1:
+                continue
+            kr = 0.5 * (kr_rho[f - 1] + kr_rho[f])
+            dtdr = (tc[f] - tc[f - 1]) / (rc[f] - rc[f - 1])
+            fdiff = -16.0 * ck.SIGMA_SB * temp[f] ** 3 / (3.0 * kr) * dtdr
+            ratios.append(flw[f] / fdiff)
+        ratios = np.array(ratios)
+        assert np.all(np.abs(ratios - 1.0) < 0.3), \
+            f"two-stream / diffusion flux in the overlap: {ratios}"
+        # the wall still delivers the interior flux, now through the diffusion: the
+        # column dump reports it in the run's own words
+        assert "wall flux sigma T_int^4" in out, "the wall flux was not set from T_int"
 
         # --- dayside: the stellar sweep deposits the insolation ----------------------
         hdr, col = ck.read_column(day)

@@ -382,7 +382,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   const bool is_mhd = (pmbp->pmhd != nullptr);
   if (!pmy_mesh_->use_spherical_polar
       || (pmbp->pmhd == nullptr && pmbp->phydro == nullptr)
-      || (iprob != 3 && iprob != 13 && !is_mhd)) {
+      || (iprob != 3 && iprob != 13 && iprob != 15 && !is_mhd)) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
               << "sp_test requires mesh/use_spherical_polar = true and an <mhd> block"
               << " (iprob = 3 also accepts <hydro>)" << std::endl;
@@ -390,6 +390,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   }
   const Real d0 = pin->GetOrAddReal("problem", "d0", 1.0);
   const Real p0 = pin->GetOrAddReal("problem", "p0", 1.0);
+  const Real amp15 = pin->GetOrAddReal("problem", "amp", 0.0);   // iprob 15
   const Real b0 = pin->GetOrAddReal("problem", "b0", 1.0);
   const Real omega = pin->GetOrAddReal("problem", "omega", 0.2);
   const Real alpha = pin->GetOrAddReal("problem", "alpha", 0.5*M_PI);
@@ -578,6 +579,13 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     const Real r = x1v_(m,i), th = x2v_(m,j), ph = x3v_(m,k);
     Real dn = d0, pgas = p0, vth = 0.0, vphi = 0.0;
     if (iprob == 3) RigidRotState(r, th, ph, axis, d0, p0, omega, vth, vphi, pgas);
+    if (iprob == 15) {
+      // scalar diffusion test, the twin of cs_test iprob 15: T = T0 (1 + amp f) with
+      // f an l = 2 combination in DIRECTION cosines, uniform density at rest
+      const Real cx = sin(th)*cos(ph), cy = sin(th)*sin(ph), cz = cos(th);
+      const Real f = cx*cy + 0.7*cz*cx - 0.4*(cz*cz - 1.0/3.0);
+      pgas = d0*p0*(1.0 + amp15*f);
+    }
     if (iprob == 12) pgas = TorPressure(r, th, 0.0, p0, b0c, 0.0, gm1);
     if (iprob == 13) {
       const Real cd = (bldir == 2) ? cos(th) : sin(th)*cos(ph);
