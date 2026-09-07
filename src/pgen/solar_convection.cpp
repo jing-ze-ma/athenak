@@ -146,7 +146,13 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                 << " K=" << p_base_ic/std::pow(rho_base_ic,gamma_ic) << std::endl;
     }
   }
-  if (restart) return;
+  // NOTE: the restart return is NOT here. A restarted run still has to rebuild the
+  // gravitational potential (phi0, phicc0) and the well-balanced background: those
+  // arrays are allocated by Hydro/MHD but filled ONLY here, and Hydro leaves them
+  // zero. Returning before the kernels below therefore restarted the run with NO
+  // gravity while the state was still a stratified atmosphere -- the pressure
+  // gradient went unbalanced and dt collapsed on the first cycle. The return is now
+  // after the potential is filled; only the initial-condition kernels are skipped.
   if (pmy_mesh_->one_d || pmy_mesh_->two_d) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
               << "solar convection problem generator only works in 3D" << std::endl;
@@ -271,6 +277,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     Real z_seed = 0.45*(r1-r0);   // seed perturbations in the CZ (below the ~50%-height photosphere)
   
     Kokkos::Random_XorShift64_Pool<> rand_pool64(pmbp->gids);
+  if (!restart) {
     par_for("probini", DevExeSpace(), 0, (pmbp->nmb_thispack-1), 0, n3m1, 0, n2m1, 0, n1m1,
     KOKKOS_LAMBDA(int m, int k, int j, int i) {
         
@@ -589,6 +596,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             }
         }
     });
+  }  // end of the initial-condition kernels (skipped on restarts)
     if (use_etotgrav || use_wellbalance_dynamic) {
         int &ng = indcs.ng;
         int n1m1 = indcs.nx1 + 2*ng - 1;
@@ -684,6 +692,49 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
           w0wb(m,IEN,k,j,i) = EintFromP(eos, igm1, denwb, pwb);
         });
     }
+
+    // The face-centered potential is written inside probwb, which a restart skips, so
+    // fill it here as well. phi = -g*x1 exactly as there (the rotation term is commented
+    // out in probwb, so the potential depends on x1 alone); same loop bounds and same
+    // upper-face special cases, so a fresh run gets identical values written twice.
+    if (use_etotgrav || use_wellbalance_dynamic) {
+        par_for("gravfaces", DevExeSpace(), 0, (pmbp->nmb_thispack-1),
+                ks, ke, js, je, is, ie,
+        KOKKOS_LAMBDA(int m, int k, int j, int i) {
+            Real &x1min = size.d_view(m).x1min;
+            Real &x1max = size.d_view(m).x1max;
+            int nx1 = indcs.nx1;
+
+            Real x1c = use_spherical_polar ? (x1v_(m,i) - ap)
+                                           : CellCenterX(i-is, nx1, x1min, x1max);
+            Real x1f = use_spherical_polar ? (x1f_(m,i) - ap)
+                                           : LeftEdgeX(i-is, nx1, x1min, x1max);
+            phi0_x1f(m,k,j,i) = -grav_acc*x1f;
+            if (i == ie) {
+                Real x1fp = use_spherical_polar ? (x1f_(m,i+1) - ap)
+                                                : LeftEdgeX(i+1-is, nx1, x1min, x1max);
+                phi0_x1f(m,k,j,i+1) = -grav_acc*x1fp;
+            }
+            phi0_x2f(m,k,j,i) = -grav_acc*x1c;
+            if (j == je) { phi0_x2f(m,k,j+1,i) = -grav_acc*x1c; }
+            phi0_x3f(m,k,j,i) = -grav_acc*x1c;
+            if (k == ke) { phi0_x3f(m,k+1,j,i) = -grav_acc*x1c; }
+        });
+    }
+
+    // The well-balanced FACE background (w0facewb) is built inside probwb and has no
+    // equivalent here, so a restart cannot reconstruct it. Fail loudly rather than run
+    // with a zeroed background.
+    if (restart && (use_wellbalance_static || use_wellbalance_dynamic)) {
+      std::cout << "### FATAL ERROR in " << __FILE__
+                << " at line " << __LINE__ << std::endl
+                << "solar_convection cannot restart with wellbalance_static/dynamic: the "
+                << "well-balanced face background is only built by the initial-condition "
+                << "kernels." << std::endl;
+      exit(EXIT_FAILURE);
+    }
+    if (restart) return;
+
 
     // initialize magnetic fields if MHD
     if (pmbp->pmhd != nullptr) {
