@@ -579,12 +579,17 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       const Real p_t = exp(hlnp(itop)), t_t = htk(itop);
       const Real rho_t = DensFromPT(eos, rgas, p_t, t_t)*dunit;
       const Real prad = kArad*t_t*t_t*t_t*t_t/3.0;
-      if (!(rho_t > 1.0e-30) || !std::isfinite(rho_t) || prad > 0.9*ptop_cgs) {
+      const bool eos_rad = eos.IsGeneral() && eos.tbl.radiation;
+      const bool eos_rad = eos.IsGeneral() && eos.tbl.radiation;
+      if (!(rho_t > 1.0e-30) || !std::isfinite(rho_t)
+          || (eos_rad && prad > 0.9*ptop_cgs)) {
         std::cout << "### FATAL ERROR in red_giant: no gas solution at the outer wall: "
                   << "problem/ptop = " << ptop_cgs << " dyn/cm^2 against a radiation "
                   << "pressure a T^4/3 = " << prad << " at T = " << t_t << " K (rho = "
-                  << rho_t << " g/cm^3). Raise ptop above a T^4/3, or switch "
-                  << "eos_radiation off." << std::endl;
+                  << rho_t << " g/cm^3, eos_radiation "
+                  << (eos_rad ? "on" : "off")
+                  << "). Raise ptop above a T^4/3, or switch eos_radiation off."
+                  << std::endl;
         std::exit(EXIT_FAILURE);
       }
     }

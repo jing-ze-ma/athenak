@@ -59,7 +59,8 @@ gamma           = 1.6666666667   # unused by the table
 eos_h2               = true
 eos_ionization       = true
 eos_metal_ionization = true
-eos_radiation        = true      # a giant envelope reaches P_rad ~ P_gas by 3e5 K
+eos_radiation        = false    # the radiation field is NOT thermalised in the thin layers,
+                                 # and aT^4/3 is < 0.1 % of p below the photosphere here
 eos_xh               = 0.70     # the opacity table is tabulated at X = 0.70
 eos_yhe              = 0.286    # Y = 1 - X - Z with Z = 0.014, matching the opacity table
 eos_logd_min    = -14.0
