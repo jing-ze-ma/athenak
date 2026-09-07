@@ -63,24 +63,27 @@ f_stretch_theta        = 2.0
 <meshblock>
 # nx1 MUST equal the mesh nx1: the two-stream RT sweeps whole radial columns.
 #
-# PORTING TO GPUs: this 8x8 split gives 112 blocks (1 x 7 x 16), which suits many CPU
+# PORTING TO GPUs: this 8x8 split gives 128 blocks (1 x 8 x 16), which suits many CPU
 # ranks and is wrong for accelerators -- you want a few LARGE blocks, at least one per GPU
 # and ideally a small multiple of the rank count.
 #
-# Mind the theta divisor.  The mesh above is 64 x 56 x 128 and must divide evenly into
-# meshblocks, so the legal nx2 are the divisors of 56 -- 1, 2, 4, 7, 8, 14, 28, 56.  The
-# round numbers 16 and 32 are NOT among them and abort at startup.  nx3 takes any power of
-# two up to 128.
+# The theta divisor is no longer a trap: <mesh>/nx2 is 64 above, so every power of two up
+# to 64 is legal, as is any power of two up to 128 for nx3.  (It WAS a trap while the mesh
+# ran at nx2 = 56, where the legal nx2 were the divisors of 56 -- 1, 2, 4, 7, 8, 14, 28,
+# 56 -- and the round numbers 16 and 32 aborted at startup.  That is what the 56-era CPU
+# timings below were taken at.)
 #
-# For a GPU run consider raising <mesh>/nx2 to 64, which puts powers of two in every
-# direction and lets nx2 = nx3 = 32 give 8 blocks.  That is a RESOLUTION change, not just
-# a decomposition one -- 14.3% more cells, and the CPU timings recorded below were taken
-# at 56 -- but it removes the divisor problem entirely.
+# CPU RANKS x THREADS, measured 2026-08-24 on one orion node (112 PHYSICAL cores; the 224
+# in scontrol are hyperthreads), 200 cycles, general EOS + correlated-k, this 8x8 split,
+# in zone-cycles/s: 1x112 3.86e6, 2x56 4.25e6, 4x28 4.30e6, 8x14 4.52e6, 16x7 4.49e6,
+# 28x4 4.27e6, 56x2 3.71e6, 112x1 3.20e6.  Broad plateau over 4-28 ranks; use 8x14 or
+# 16x7.  Pure OpenMP loses 15% (one rank straddles both sockets), pure MPI loses 29%.
 #
-# On a 2-GPU node (Viper's apu partitions carry two MI300A each) aim for 8 blocks: at 56
-# that is nx2 = 28, nx3 = 32; at 64 it is nx2 = nx3 = 32.  Either gives 4 per GPU with
-# slack left for load balancing.  Two blocks would saturate the node but leave AthenaK
-# nothing to redistribute.  Shift one row down on a 4-GPU machine.
+# On a 2-GPU node (Viper's apu partitions carry two MI300A each) aim for 8 blocks, which
+# at the current nx2 = 64 is nx2 = nx3 = 32.  That gives 4 per GPU with slack left for
+# load balancing.  Two blocks would saturate the node but leave AthenaK nothing to
+# redistribute -- and on a CPU node two blocks cap you at two ranks, i.e. half a node.
+# Shift one row down on a 4-GPU machine.
 #
 # Build with -DPROBLEM=deep_hot_jupiter_rt and the Kokkos HIP/CUDA arch flags.
 nx1       = 64
@@ -294,3 +297,10 @@ dt         = 8.64e6
 file_type  = bin
 variable   = mhd_w_bcc
 dt         = 2.16e6
+
+<output3>
+# Checkpoints, so a run that blows up leaves a state from just before it to restart from
+# and bisect with.  Not enabled by dt alone: this block has to EXIST for a command-line
+# override to reach it.
+file_type  = rst
+dt         = 4.32e5
