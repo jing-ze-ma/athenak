@@ -51,6 +51,24 @@
 //!                        so the band solver sees a self-luminous atmosphere.  The tau
 //!                        blend hands over to radiative diffusion underneath exactly as
 //!                        it does for the hot Jupiter.
+//!   problem/inner_bc     wall (default) or open.  THE INNER WALL SITS INSIDE THE
+//!                        CONVECTION ZONE -- for this star the radiative-convective
+//!                        boundary is at 0.97 of the outer edge, so 94 % of the domain
+//!                        convects and the wall is 12 density scale heights inside it.
+//!                        A reflecting wall there bounces plumes, forces the convective
+//!                        flux to zero and pins the envelope entropy at its initial
+//!                        value.  `open` replaces it with the Stein-Nordlund / CO5BOLD
+//!                        (Freytag+ 2012) treatment that solar_convection.cpp already
+//!                        uses: the ghosts continue hydrostatically at the interior
+//!                        temperature with the velocity copied, so plumes pass through,
+//!                        and the lowest active layer is relaxed each step -- upflows
+//!                        toward a prescribed deep adiabat (this is the energy input and
+//!                        it sets the emergent flux), pressure toward the shell mean,
+//!                        the mean density restored, and the net mass flux driven to
+//!                        zero.  With `open` the luminosity is an OUTPUT, so
+//!                        rad_flux_inner must be 0: the inflow entropy carries the
+//!                        energy, not a diffusive flux through a wall.
+//!   problem/s_relax_cs, problem/s_relax_cp   the two relaxation rates (0.1, 0.3)
 //!   problem/column_dump  if set, rank 0 writes the initial column to this file
 //!   problem/user_srcs    must be true (the gravity source lives here)
 //!
@@ -79,6 +97,9 @@
 #include <vector>
 
 #include "athena.hpp"
+#if MPI_PARALLEL_ENABLED
+#include <mpi.h>
+#endif
 #include "globals.hpp"
 #include "parameter_input.hpp"
 #include "coordinates/cell_locations.hpp"
@@ -136,6 +157,10 @@ Real kfac_ = 1.0;        // problem/kappa_fac, applied to every table lookup
 // merge fills with the edge value, which is constant in density and is not physics.  The
 // table's header records the window and the initial column is checked against it below.
 Real opac_lR_lo_ = -1.0e30, opac_lR_hi_ = 1.0e30;
+// the open inner boundary (problem/inner_bc = open) and the deep adiabat it relaxes to
+bool open_inner_ = false;
+Real p_base_ = 0.0, t_base_ = 0.0;      // the initial column AT the inner wall, cgs
+Real cs_change_ = 0.1, cp_change_ = 0.3;
 bool relax_ = false;     // the optically thin relaxation is on (radiative + tau blend)
 bool rt_ck_ = false;     // problem/rt_ck: the band solver replaces that relaxation
 // problem/ck_dump_t2, ck_dump_file2: re-arm the solver's one-shot column dump once the
@@ -638,6 +663,35 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                 << "table's valid window logR = [" << opac_lR_lo_ << ", "
                 << opac_lR_hi_ << "]" << std::endl;
     }
+
+    // --- the inner boundary, and the deep adiabat an OPEN one relaxes toward
+    {
+      const std::string ibc = pin->GetOrAddString("problem", "inner_bc", "wall");
+      if (ibc.compare("open") == 0) {
+        open_inner_ = true;
+      } else if (ibc.compare("wall") != 0) {
+        std::cout << "### FATAL ERROR in red_giant: problem/inner_bc must be wall or open"
+                  << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      cs_change_ = pin->GetOrAddReal("problem", "s_relax_cs", 0.1);
+      cp_change_ = pin->GetOrAddReal("problem", "s_relax_cp", 0.3);
+      p_base_ = exp(hlnp(ibot))*punit_;
+      t_base_ = htk(ibot);
+      if (open_inner_) {
+        if (pc != nullptr && pc->rad_flux_inner != 0.0) {
+          std::cout << "### FATAL ERROR in red_giant: inner_bc = open carries the energy "
+                    << "in as the ENTROPY of the inflow, so <block>/rad_flux_inner must "
+                    << "be 0. It is " << pc->rad_flux_inner << ". With both, the "
+                    << "luminosity is double counted." << std::endl;
+          std::exit(EXIT_FAILURE);
+        }
+        std::cout << "red_giant: OPEN inner boundary (Stein-Nordlund / CO5BOLD). The "
+                  << "deep adiabat is anchored at p = " << p_base_ << " dyn/cm^2, T = "
+                  << t_base_ << " K; the emergent luminosity is now an OUTPUT."
+                  << std::endl;
+      }
+    }
     // the top state must have a gas solution: under a general EOS with radiation the
     // total pressure cannot fall below a T^4/3, and SolveDensity then hands back the
     // table floor -- a column of floor density that looks like a run and is not one
@@ -927,6 +981,129 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
     });
   }
 
+  // --- OPEN INNER BOUNDARY: the CO5BOLD (Freytag+ 2012) relaxation of the lowest active
+  // layer, the same treatment solar_convection.cpp uses, on a spherical shell.  Four
+  // steps: relax UPFLOWING gas toward the deep adiabat (this is the energy input and it
+  // sets the emergent luminosity), damp pressure toward the shell mean, restore the mean
+  // density, and remove the net radial mass flux.  The means are global over the whole
+  // shell at i = is, so they need a reduction across ranks.
+  if (open_inner_) {
+    auto &mb_bcs = pmbp->pmb->mb_bcs;
+    const Real rgas = rgas_, igm1 = 1.0/gm1_, gamma = gm1_ + 1.0;
+    const Real punit_ = pmbp->punit->pressure_cgs();
+    const Real p_base = p_base_/punit_, t_base = t_base_;
+    const Real ccs = cs_change_, ccp = cp_change_;
+    auto &x1f_r = pmbp->pcoord->xx1f;
+    // Pass A: shell means of density and pressure
+    Real srho0 = 0.0, sumP = 0.0, sN = 0.0;
+    Kokkos::parallel_reduce("rg_co5A", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb1+1),
+    KOKKOS_LAMBDA(const int m, Real &a, Real &b, Real &c) {
+      if (mb_bcs.d_view(m,BoundaryFace::inner_x1) == BoundaryFlag::user) {
+        for (int k=ks; k<=ke; ++k) {
+          for (int j=js; j<=je; ++j) {
+            const Real r = w0(m,IDN,k,j,is);
+            a += r;
+            b += eos.Pressure(r, w0(m,IEN,k,j,is));
+            c += 1.0;
+          }
+        }
+      }
+    }, srho0, sumP, sN);
+#if MPI_PARALLEL_ENABLED
+    {
+      Real g[3] = {srho0, sumP, sN};
+      MPI_Allreduce(MPI_IN_PLACE, g, 3, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+      srho0 = g[0]; sumP = g[1]; sN = g[2];
+    }
+#endif
+    const Real meanP = (sN > 0.0) ? sumP/sN : 0.0;
+    // Pass B: the inflow entropy relaxation, then the pressure damping
+    par_for("rg_co5B", DevExeSpace(), 0, nmb1, ks, ke, js, je,
+    KOKKOS_LAMBDA(const int m, const int k, const int j) {
+      if (mb_bcs.d_view(m,BoundaryFace::inner_x1) != BoundaryFlag::user) return;
+      const Real dr_ = x1f_r(m,is+1) - x1f_r(m,is);
+      Real r = u0(m,IDN,k,j,is);
+      const Real v1 = u0(m,IM1,k,j,is)/r, v2 = u0(m,IM2,k,j,is)/r;
+      const Real v3 = u0(m,IM3,k,j,is)/r;
+      Real ei = u0(m,IEN,k,j,is) - 0.5*r*(v1*v1 + v2*v2 + v3*v3);
+      if (etotgrav) ei -= r*phicc(m,k,j,is);
+      Real es = ei/r;
+      Real P = eos.Pressure(r, ei);
+      Real g1 = eos.Gamma1(r, ei);
+      const Real cs = sqrt(g1*P/r);
+      if (v1 > 0.0) {
+        // the point on the adiabat through the base state AT THIS CELL'S PRESSURE; a
+        // fractional step toward it at constant pressure IS the entropy relaxation
+        const Real gad = GradAd(eos, gamma, rgas, p_base*punit_, t_base);
+        const Real T_ad = t_base*pow(P/p_base, gad);
+        const Real r_ad = DensFromPT(eos, rgas, P, T_ad);
+        if (r_ad > 0.0) {
+          const Real es_ad = EintFromDensT(eos, rgas, igm1, r_ad, T_ad)/r_ad;
+          const Real rlx = ccs*bdt*cs/dr_;
+          r  += rlx*(r_ad - r);
+          es += rlx*(es_ad - es);
+        }
+      }
+      // damp pressure toward the shell mean, adiabatically
+      Real P1 = eos.Pressure(r, r*es);
+      Real g1p = eos.Gamma1(r, r*es);
+      const Real cs2 = g1p*P1/r;
+      const Real rlxp = ccp*bdt*sqrt(cs2)/dr_;
+      r  += rlxp*(1.0/cs2)*(meanP - P1);
+      es += rlxp*(1.0/(g1p*r))*(meanP - P1);
+      u0(m,IDN,k,j,is) = r;
+      u0(m,IM1,k,j,is) = r*v1;
+      u0(m,IM2,k,j,is) = r*v2;
+      u0(m,IM3,k,j,is) = r*v3;
+      Real E = r*es + 0.5*r*(v1*v1 + v2*v2 + v3*v3);
+      if (etotgrav) E += r*phicc(m,k,j,is);
+      u0(m,IEN,k,j,is) = E;
+    });
+    // Pass C: the shell means again, after those two steps
+    Real srho2 = 0.0, srho2v = 0.0, sv = 0.0;
+    Kokkos::parallel_reduce("rg_co5C", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb1+1),
+    KOKKOS_LAMBDA(const int m, Real &a, Real &b, Real &c) {
+      if (mb_bcs.d_view(m,BoundaryFace::inner_x1) == BoundaryFlag::user) {
+        for (int k=ks; k<=ke; ++k) {
+          for (int j=js; j<=je; ++j) {
+            const Real r = u0(m,IDN,k,j,is);
+            const Real v1 = u0(m,IM1,k,j,is)/r;
+            a += r; b += r*v1; c += v1;
+          }
+        }
+      }
+    }, srho2, srho2v, sv);
+#if MPI_PARALLEL_ENABLED
+    {
+      Real g[3] = {srho2, srho2v, sv};
+      MPI_Allreduce(MPI_IN_PLACE, g, 3, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+      srho2 = g[0]; srho2v = g[1]; sv = g[2];
+    }
+#endif
+    const Real drho4 = (sN > 0.0) ? (srho0 - srho2)/sN : 0.0;
+    const Real cvel = (srho0 > 0.0) ? (srho2v + drho4*sv)/srho0 : 0.0;
+    // Pass D: restore the mean density, and drive the net radial mass flux to zero
+    par_for("rg_co5D", DevExeSpace(), 0, nmb1, ks, ke, js, je,
+    KOKKOS_LAMBDA(const int m, const int k, const int j) {
+      if (mb_bcs.d_view(m,BoundaryFace::inner_x1) != BoundaryFlag::user) return;
+      const Real r0 = u0(m,IDN,k,j,is);
+      const Real v1 = u0(m,IM1,k,j,is)/r0 - cvel;
+      const Real v2 = u0(m,IM2,k,j,is)/r0, v3 = u0(m,IM3,k,j,is)/r0;
+      Real ei = u0(m,IEN,k,j,is) - 0.5*r0*(SQR(u0(m,IM1,k,j,is)/r0) + v2*v2 + v3*v3);
+      if (etotgrav) ei -= r0*phicc(m,k,j,is);
+      const Real es = ei/r0;
+      const Real r = r0 + drho4;
+      if (!(r > 0.0)) return;
+      u0(m,IDN,k,j,is) = r;
+      u0(m,IM1,k,j,is) = r*v1;
+      u0(m,IM2,k,j,is) = r*v2;
+      u0(m,IM3,k,j,is) = r*v3;
+      Real E = r*es + 0.5*r*(v1*v1 + v2*v2 + v3*v3);
+      if (etotgrav) E += r*phicc(m,k,j,is);
+      u0(m,IEN,k,j,is) = E;
+    });
+  }
+
   // --- the optically thin layers: the correlated-k two-stream if it is on, else the
   // grey Eddington relaxation
   if (rt_ck_) {
@@ -1005,10 +1182,41 @@ void RedGiantBC(Mesh *pm) {
   auto &x1v_ = pmbp->pcoord->x1v;
   const bool curv = curv_, etotgrav = etotgrav_;
   const Real gm = gm_, rin = rin_, x1min = x1min_, rgas = rgas_, igm1 = 1.0/gm1_;
+  DvceArray4D<Real> phicc = is_mhd ? pmbp->pmhd->phicc0 : pmbp->phydro->phicc0;
   const Real rlo = rlo_, drf = drf_;
   const int nfine = nfine_;
   auto lnp = lnp_d_;
   auto tk = tk_d_;
+  // OPEN inner boundary: continue the interior hydrostatically at ITS OWN temperature and
+  // copy the velocity, so a plume crosses the boundary instead of bouncing off it.  The
+  // pressure follows d ln p = -(rho/p) dPhi from the lowest active cell, which keeps the
+  // ghost in balance with the interior rather than with the initial column -- tying it to
+  // the column would fight the relaxation and pressurise the envelope.
+  const bool open_in = open_inner_;
+  auto fill_open = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i,
+                                 const int im) {
+    const Real d_i = w0(m,IDN,k,j,im);
+    const Real e_i = w0(m,IEN,k,j,im);
+    const Real p_i = eos.Pressure(d_i, e_i);
+    const Real t_i = TempKelvin(eos, rgas, d_i, e_i, p_i);
+    const Real dphi = phicc(m,k,j,i) - phicc(m,k,j,im);
+    const Real p_g = p_i*exp(-(d_i/p_i)*dphi);
+    const Real d_g = DensFromPT(eos, rgas, p_g, t_i);
+    const Real e_g = EintFromDensT(eos, rgas, igm1, d_g, t_i);
+    const Real v1 = w0(m,IVX,k,j,im), v2 = w0(m,IVY,k,j,im), v3 = w0(m,IVZ,k,j,im);
+    w0(m,IDN,k,j,i) = d_g;
+    w0(m,IEN,k,j,i) = e_g;
+    w0(m,IVX,k,j,i) = v1;
+    w0(m,IVY,k,j,i) = v2;
+    w0(m,IVZ,k,j,i) = v3;
+    u0(m,IDN,k,j,i) = d_g;
+    u0(m,IM1,k,j,i) = d_g*v1;
+    u0(m,IM2,k,j,i) = d_g*v2;
+    u0(m,IM3,k,j,i) = d_g*v3;
+    Real et = e_g + 0.5*d_g*(v1*v1 + v2*v2 + v3*v3);
+    if (etotgrav) et += d_g*phicc(m,k,j,i);
+    u0(m,IEN,k,j,i) = et;
+  };
   auto fill = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i,
                             const int im) {
     const Real x1lo = size.d_view(m).x1min, x1hi = size.d_view(m).x1max;
@@ -1036,7 +1244,11 @@ void RedGiantBC(Mesh *pm) {
   par_for("rg_bc_x1", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1, 0, ng-1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int n) {
     if (mb_bcs.d_view(m,BoundaryFace::inner_x1) == BoundaryFlag::user) {
-      fill(m, k, j, is-1-n, is+n);
+      if (open_in) {
+        fill_open(m, k, j, is-1-n, is);      // always from the lowest ACTIVE cell
+      } else {
+        fill(m, k, j, is-1-n, is+n);
+      }
     }
     if (mb_bcs.d_view(m,BoundaryFace::outer_x1) == BoundaryFlag::user) {
       fill(m, k, j, ie+1+n, ie-n);
