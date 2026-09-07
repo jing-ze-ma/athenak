@@ -44,6 +44,16 @@ class Conduction {
   // operators overlap and hand over conservatively.  rad_w and rad_tauf sit on x1 faces.
   Real rad_tau_lo = 0.0, rad_tau_hi = 0.0;
   bool rad_tau_mode = false;
+  // rad_kappa_src = freedman (default) | table: with table, kappa_R(T,p) is a bilinear
+  // lookup of log10 kappa_R over (log10 T, log10 p[cgs]) in a table the problem
+  // generator hands over ONCE at start-up (deep_hot_jupiter_rt tabulates the Rosseland
+  // mean of its own correlated-k table + continuum on that table's grid, so the
+  // diffusion and the two-stream share one opacity). Same cost as the Freedman fit.
+  // Until the table is set (rad_kr_nT == 0) the Freedman fit is used.
+  bool rad_kappa_tab = false;
+  int rad_kr_nT = 0, rad_kr_nP = 0;
+  DvceArray2D<Real> rad_kr_tab;            // (iT, iP) log10 kappa_R [cm^2/g]
+  DvceArray1D<Real> rad_kr_lT, rad_kr_lP;  // log10 T [K], log10 p [dyn/cm^2], ascending
   DvceArray4D<Real> rad_w, rad_tauf;
   void BuildRadWeights(const DvceArray5D<Real> &w, const EOS_Data &eos);
   Real kappa_iso;            // isotropic thermal conductivity
@@ -67,6 +77,36 @@ class Conduction {
   // right module can be found.
   std::string my_block;
 };
+//! \fn Real RosselandTable
+//! \brief log-bilinear lookup of a tabulated kappa_R(T,p), indices clamped to the grid
+KOKKOS_INLINE_FUNCTION
+Real RosselandTable(const DvceArray2D<Real> &tab, const DvceArray1D<Real> &lT,
+                    const DvceArray1D<Real> &lP, const int nT, const int nP,
+                    const Real tk, const Real pcgs) {
+  const Real x = log10(tk), y = log10(pcgs);
+  int i = 0, j = 0;
+  Real fx = 0.0, fy = 0.0;
+  if (!(x > lT(0))) {
+    i = 0; fx = 0.0;
+  } else if (x >= lT(nT-1)) {
+    i = nT-2; fx = 1.0;
+  } else {
+    while (i < nT-2 && lT(i+1) <= x) ++i;
+    fx = (x - lT(i))/(lT(i+1) - lT(i));
+  }
+  if (!(y > lP(0))) {
+    j = 0; fy = 0.0;
+  } else if (y >= lP(nP-1)) {
+    j = nP-2; fy = 1.0;
+  } else {
+    while (j < nP-2 && lP(j+1) <= y) ++j;
+    fy = (y - lP(j))/(lP(j+1) - lP(j));
+  }
+  const Real lk = (1.0-fx)*((1.0-fy)*tab(i,j) + fy*tab(i,j+1))
+                +      fx *((1.0-fy)*tab(i+1,j) + fy*tab(i+1,j+1));
+  return pow(10.0, lk);
+}
+
 //! \fn Real RadBlendWeight
 //! \brief the diffusion weight of a face: 0 for tau <= lo, 1 for tau >= hi, a raised
 //! cosine in log tau between

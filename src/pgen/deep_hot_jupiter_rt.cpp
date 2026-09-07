@@ -169,6 +169,7 @@ using pgen_eos::GradAd;
 
 void HydrostaticEquilibrium(Mesh *pm);
 void SourceFunc(Mesh *pm, Real bdt);
+void ck_build_rosseland_table(Mesh *pm);
 
 void double_gray_two_stream_RT_source(Mesh *pm, Real bdt);
 void double_gray_two_stream_RT(Mesh *pm, Real bdt);
@@ -2504,6 +2505,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       });
     }
 
+  // the correlated-k Rosseland table for the radiative diffusion (no-op unless
+  // <mhd>/rad_kappa_src = table)
+  ck_build_rosseland_table(pmy_mesh_);
+
   return;
 }
 
@@ -3105,6 +3110,107 @@ void HydrostaticEquilibrium(Mesh *pm) {
 }
 
 
+//----------------------------------------------------------------------------------------
+//! \fn void ck_build_rosseland_table()
+//  \brief the Rosseland mean of the correlated-k table + continuum, tabulated ONCE on the
+//  table's own (T, p) grid and handed to the conduction module, so the radiative
+//  diffusion below the two-stream region uses the SAME opacity as the two-stream above
+//  it (<mhd>/rad_kappa_src = table). 1/kappa_R = sum_b w_b sum_g gw_g/(k_bg + kc_b) /
+//  sum_b w_b with w_b = d(sigma T^4 f_b)/dT from the band Planck-fraction table (centred
+//  difference at +-1 % in T); the continuum (CIA, Rayleigh, H-) counts as extinction and
+//  is evaluated at the equilibrium density p mu m_H/(k T) with mu from the FastChem table.
+//  Outside the grid the conduction module holds the edge value.
+
+void ck_build_rosseland_table(Mesh *pm) {
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  Conduction *pc = (pmbp->pmhd != nullptr) ? pmbp->pmhd->pcond : pmbp->phydro->pcond;
+  if (pc == nullptr || !pc->rad_kappa_tab) return;
+  if (!rt_ck) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
+              << "rad_kappa_src = table needs problem/rt_ck = true" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  const int nT = ck_nT, nP = ck_nP;
+  DvceArray2D<Real> tab("ck_kR", nT, nP);
+  DvceArray1D<Real> lPcgs("ck_kR_lP", nP);
+  auto cklk = *ck_lk_ptr;
+  auto cklT = *ck_lT_ptr;
+  auto cklP = *ck_lP_ptr;
+  auto ckgw = *ck_gw_ptr;
+  auto ckwl = *ck_wl_ptr;
+  auto ckpf = *ck_pf_ptr;
+  auto cece = *ce_ptr;
+  auto celT = *ce_lT_ptr;
+  auto celP = *ce_lP_ptr;
+  auto cian = *cia_nT_ptr;
+  auto ciaT = *cia_T_ptr;
+  auto ciak = *cia_k_ptr;
+  auto rayx = *ray_x_ptr;
+  const int ceNT = ce_nT, ceNP = ce_nP;
+  const Real pfl0 = ck_pf_lTmin, pfid = ck_pf_idlT;
+  const Real boltz_sigma = 5.670374419e-5;
+  par_for("ck_rosseland_tab", DevExeSpace(), 0, nT-1, 0, nP-1,
+  KOKKOS_LAMBDA(const int it, const int ip) {
+    const Real TT = pow(10.0, cklT(it));
+    const Real pbar = pow(10.0, cklP(ip));
+    if (it == 0) lPcgs(ip) = cklP(ip) + 6.0;
+    // equilibrium mean molecular weight at this grid point -> density for the continuum
+    int jT, jP;
+    Real gT, gP;
+    ck_tp_index(celT, ceNT, log10(TT), jT, gT);
+    ck_tp_index(celP, ceNP, log10(pbar), jP, gP);
+    const Real mu = (1.0-gT)*((1.0-gP)*cece(jT,jP,0) + gP*cece(jT,jP+1,0))
+                  +      gT *((1.0-gP)*cece(jT+1,jP,0) + gP*cece(jT+1,jP+1,0));
+    const Real rho = pbar*1.0e6*mu*1.6726e-24/(1.380649e-16*TT);
+    Real kcb[CK_NB];
+    ck_continuum(cece, celT, celP, ceNT, ceNP, cian, ciaT, ciak, rayx, ckwl,
+                 TT, pbar, rho, kcb);
+    const Real Tp = 1.01*TT, Tm = 0.99*TT;
+    const Real sp = boltz_sigma*SQR(SQR(Tp)), sm = boltz_sigma*SQR(SQR(Tm));
+    Real num = 0.0, den = 0.0;
+    for (int b=0; b<CK_NB; ++b) {
+      const Real wb = sp*ck_planck_frac(ckpf, pfl0, pfid, Tp, b)
+                    - sm*ck_planck_frac(ckpf, pfl0, pfid, Tm, b);
+      if (!(wb > 0.0)) continue;
+      Real inv = 0.0;
+      for (int g=0; g<CK_NG; ++g) {
+        inv += ckgw(g)/(ck_kappa(cklk, it, 0.0, ip, 0.0, b, g) + kcb[b]);
+      }
+      num += wb*inv;
+      den += wb;
+    }
+    tab(it,ip) = log10(den/num);
+  });
+  pc->rad_kr_tab = tab;
+  pc->rad_kr_lT = cklT;
+  pc->rad_kr_lP = lPcgs;
+  pc->rad_kr_nT = nT;
+  pc->rad_kr_nP = nP;
+  // a few values against the Freedman fit, so a wrong band order or unit shows here
+  auto htab = Kokkos::create_mirror_view(tab);
+  Kokkos::deep_copy(htab, tab);
+  auto hlT = Kokkos::create_mirror_view(cklT);
+  Kokkos::deep_copy(hlT, cklT);
+  auto hlP = Kokkos::create_mirror_view(cklP);
+  Kokkos::deep_copy(hlP, cklP);
+  if (global_variable::my_rank == 0) {
+    std::cout << "  Rosseland table for the radiative diffusion (ck + continuum), "
+              << nT << " T x " << nP << " p; kappa_R / Freedman+2014:" << std::endl;
+    const int its[4] = {9, 19, 25, 31}, ips[2] = {24, 28};   // 1000/2500/3700/4900 K
+    for (int a=0; a<4; ++a) {
+      for (int c=0; c<2; ++c) {
+        const Real T = std::pow(10.0, hlT(its[a])), pb = std::pow(10.0, hlP(ips[c]));
+        const Real kr = std::pow(10.0, htab(its[a],ips[c]));
+        std::cout << "    T = " << T << " K, p = " << pb << " bar: " << kr << " / "
+                  << RosselandFreedman2014(T, pb*1.0e6, 0.0) << " = "
+                  << kr/RosselandFreedman2014(T, pb*1.0e6, 0.0) << std::endl;
+      }
+    }
+  }
+  return;
+}
+
+//----------------------------------------------------------------------------------------
 void SourceFunc(Mesh *pm, Real bdt) {
   // the cubed sphere needs the cell's PANEL to turn (x2,x3) into a direction
   const bool use_cubed_sphere_ = pm->use_cubed_sphere;

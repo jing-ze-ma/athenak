@@ -101,6 +101,17 @@ Conduction::Conduction(std::string block, MeshBlockPack *pp, ParameterInput *pin
       rad_tau_lo = pin->GetOrAddReal(block,"rad_tau_lo",0.0);
       rad_tau_hi = pin->GetOrAddReal(block,"rad_tau_hi",0.0);
       rad_tau_mode = (rad_tau_hi > 0.0);
+      {
+        std::string ksrc = pin->GetOrAddString(block,"rad_kappa_src","freedman");
+        if (ksrc.compare("table") == 0) {
+          rad_kappa_tab = true;
+        } else if (ksrc.compare("freedman") != 0) {
+          std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
+                    << std::endl << "rad_kappa_src must be freedman or table"
+                    << std::endl;
+          std::exit(EXIT_FAILURE);
+        }
+      }
       if (rad_tau_mode) {
         if (!(rad_tau_lo > 0.0 && rad_tau_lo < rad_tau_hi)) {
           std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
@@ -174,6 +185,11 @@ void Conduction::BuildRadWeights(const DvceArray5D<Real> &w0, const EOS_Data &eo
   const Real met = rad_met, kfac = rad_kappa_fac, lo = rad_tau_lo, hi = rad_tau_hi;
   auto &wf = rad_w;
   auto &tf = rad_tauf;
+  const bool ktab = (rad_kappa_tab && rad_kr_nT > 0);
+  auto &krt = rad_kr_tab;
+  auto &krlT = rad_kr_lT;
+  auto &krlP = rad_kr_lP;
+  const int krnT = rad_kr_nT, krnP = rad_kr_nP;
   par_for("radtau", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1,
   KOKKOS_LAMBDA(const int m, const int k, const int j) {
     Real tau = 0.0;
@@ -184,7 +200,10 @@ void Conduction::BuildRadWeights(const DvceArray5D<Real> &w0, const EOS_Data &eo
       const Real p = (gen ? wder_(m,IDPR,k,j,i) : w0(m,IEN,k,j,i)*gm1);
       const Real rho = w0(m,IDN,k,j,i)*dens_unit;
       const Real dr = (curv ? dx1_(m,k,j,i) : size.d_view(m).dx1)*len_unit;
-      tau += kfac*RosselandFreedman2014(t*temp_unit, p*pres_unit, met)*rho*dr;
+      const Real kr = ktab
+          ? RosselandTable(krt, krlT, krlP, krnT, krnP, t*temp_unit, p*pres_unit)
+          : RosselandFreedman2014(t*temp_unit, p*pres_unit, met);
+      tau += kfac*kr*rho*dr;
       tf(m,k,j,i) = tau;
       wf(m,k,j,i) = RadBlendWeight(tau, lo, hi);
     }
@@ -203,6 +222,13 @@ Real RadiativeKappa(const Real tk, const Real pcgs, const Real rhocgs, const Rea
   const Real sigma_sb = 5.670374419e-5;
   const Real kr = kfac*RosselandFreedman2014(tk, pcgs, met);
   return 16.0*sigma_sb*tk*tk*tk/(3.0*kr*rhocgs);
+}
+
+//! \brief the same from a supplied kappa_R [cm^2/g]
+KOKKOS_INLINE_FUNCTION
+Real RadiativeKappaKR(const Real tk, const Real rhocgs, const Real kfac, const Real kr) {
+  const Real sigma_sb = 5.670374419e-5;
+  return 16.0*sigma_sb*tk*tk*tk/(3.0*kfac*kr*rhocgs);
 }
 
 //----------------------------------------------------------------------------------------
@@ -253,13 +279,21 @@ void Conduction::AddIsotropicHeatFluxRadiative(const DvceArray5D<Real> &w0,
 
   // the heat flux across one face in CODE units, from the two adjacent cell states and
   // the centroid distance dl (code units); zero above the pressure cut
+  const bool ktab = (rad_kappa_tab && rad_kr_nT > 0);
+  auto &krt = rad_kr_tab;
+  auto &krlT = rad_kr_lT;
+  auto &krlP = rad_kr_lP;
+  const int krnT = rad_kr_nT, krnP = rad_kr_nP;
   auto face_flux = [=] (const Real tl, const Real tr, const Real pl, const Real pr,
                         const Real dl_, const Real dr_, const Real dl) {
     const Real pf = 0.5*(pl + pr);
     if (pf < pcut) return 0.0;
     const Real tk = 0.5*(tl + tr)*temp_unit;
-    const Real kap = RadiativeKappa(tk, pf*pres_unit, 0.5*(dl_ + dr_)*dens_unit, met,
-                                    kfac);
+    const Real rhof = 0.5*(dl_ + dr_)*dens_unit;
+    const Real kap = ktab
+        ? RadiativeKappaKR(tk, rhof, kfac,
+                           RosselandTable(krt, krlT, krlP, krnT, krnP, tk, pf*pres_unit))
+        : RadiativeKappa(tk, pf*pres_unit, rhof, met, kfac);
     Real f = -kap*(tr - tl)*temp_unit/(dl*len_unit);     // erg/cm^2/s, positive outward
     if (limit) {
       // saturate smoothly at the free-streaming flux sigma T^4: 0.3 % at F = 0.08 sigma
@@ -590,6 +624,11 @@ void Conduction::NewTimeStep(const DvceArray5D<Real> &w0, const EOS_Data &eos_da
   const Real pcut = rad_tau_mode ? -1.0 : rad_pcut;
   const bool taumode = rad_tau_mode;
   auto &wf = rad_w;
+  const bool ktab = (rad_kappa_tab && rad_kr_nT > 0);
+  auto &krt = rad_kr_tab;
+  auto &krlT = rad_kr_lT;
+  auto &krlP = rad_kr_lP;
+  const int krnT = rad_kr_nT, krnP = rad_kr_nP;
 
   if (spitzer || radiative) {
     temp_unit = pmy_pack->punit->temperature_cgs();
@@ -648,8 +687,12 @@ void Conduction::NewTimeStep(const DvceArray5D<Real> &w0, const EOS_Data &eos_da
       Real temp = (gen ? wtemp_(m,k,j,i) : w0(m,IEN,k,j,i)/w0(m,IDN,k,j,i)*gm1);
       Real pres = (gen ? wder_(m,IDPR,k,j,i) : w0(m,IEN,k,j,i)*gm1);
       if (pres < pcut) return;   // no flux above the cut: no constraint
-      kappa_ = RadiativeKappa(temp*temp_unit, pres*pres_unit, w0_(m,IDN,k,j,i)*dens_unit,
-                              met, kfac)/kappa_unit;
+      kappa_ = (ktab
+          ? RadiativeKappaKR(temp*temp_unit, w0_(m,IDN,k,j,i)*dens_unit, kfac,
+                             RosselandTable(krt, krlT, krlP, krnT, krnP, temp*temp_unit,
+                                            pres*pres_unit))
+          : RadiativeKappa(temp*temp_unit, pres*pres_unit, w0_(m,IDN,k,j,i)*dens_unit,
+                           met, kfac))/kappa_unit;
       // the blend: the face flux is w*kappa*grad T, so the explicit limit is on w*kappa,
       // and a cell whose faces carry no weight carries no constraint
       if (taumode) {
