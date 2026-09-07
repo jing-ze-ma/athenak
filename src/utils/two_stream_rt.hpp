@@ -230,6 +230,11 @@ inline DvceArray4D<Real> *rt_xP_ptr = nullptr;
 inline DvceArray3D<int>  *rt_icut_ptr = nullptr;
 // (m,blk,k,j,i) stellar heating, one per block
 inline DvceArray5D<Real> *rt_Qb_ptr = nullptr;
+// (m,blk,i,k,j) the LOCAL thermal emission rate per unit volume [erg/cm^3/s] that each
+// chain block puts into cell i.  Summed over blocks this is 4 sigma kappa_P rho T^4, the
+// only part of the radiative source that depends on the cell's OWN temperature.  It is
+// what turns the explicit update into a stable exponential one; see the apply kernel.
+inline DvceArray5D<Real> *rt_Em_ptr = nullptr;
 
 // --- correlated-k (Lee/Exo-FMS premixed tables, Kataria+2013 11-band grid) --------
 // problem/rt_ck turns it on; problem/ck_table is the path to the premixed table and
@@ -634,6 +639,7 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
         // (m,slot,k,j,i) had it, adjacent lanes were 544 bytes apart and each one pulled
         // its own cache line: 8 useful bytes out of every 64 fetched.
         rt_Fb_ptr  = new DvceArray5D<Real>("rt_Fb",  nmb, nblk, n1, n3, n2);
+        rt_Em_ptr  = new DvceArray5D<Real>("rt_Em",  nmb, nblk, n1, n3, n2);
         if (rt_ck) {
           rt_kc_ptr = new DvceArray5D<Real>("rt_kc", nmb, CK_NB, n1, n3, n2);
           rt_Bb_ptr = new DvceArray5D<Real>("rt_Bb", nmb, CK_NB, n1, n3, n2);
@@ -656,6 +662,7 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
       auto Qv_g  = *rt_Qv_ptr;
       auto cf_g  = *rt_cf_ptr;
       auto Fb_g  = *rt_Fb_ptr;
+      auto Em_g  = *rt_Em_ptr;
       const bool ck_on = rt_ck;
       // the optical-depth blend with the conduction module's radiative diffusion: its
       // x1-face weight w (rad_w) says how much of each face's longwave flux the
@@ -921,6 +928,7 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
             for (int i=is; i<ie+2; ++i) {
               Fb_g(m,blk,i,k,j) = 0.0;
               Qb_g(m,blk,i,k,j) = 0.0;
+              Em_g(m,blk,i,k,j) = 0.0;
             }
             const int icut = icut_g(m,k,j);
             if (icut > ie) return;                  // whole column deeper than the cut
@@ -1101,6 +1109,14 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
                          + bet*static_cast<RtF>(Bb_g(m,b,i,k,j))
                          + gm*static_cast<RtF>(Bb_g(m,b,i-1,k,j));
                 Fb_g(m,blk,i,k,j) += wfc[cc]*(I_up[cc] - I_down[cc][i]);
+                // the cell's OWN emission, both hemispheres: in the thin limit each
+                // stream adds wfc*(kap*rho*dr/mu)*B over the layer, so per unit volume
+                // the two together give 2*(wfc/mu)*kap*rho*B.  Summed over bands and g
+                // this is 2*CK_DIFFUSIVITY*sigma*kappa_P*rho*T^4, i.e. the exact
+                // 4 sigma kappa_P rho T^4 with 1.66 in place of 2 for the hemispheric
+                // mean.  17 % low, which is well inside what a rate estimate needs.
+                Em_g(m,blk,i-1,k,j) += 2.0*(wfc[cc]/muc[cc])*kap*rho
+                                     * 0.5*(Bb_g(m,b,i,k,j) + Bb_g(m,b,i-1,k,j));
               }
             }
           });
@@ -1134,6 +1150,7 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
         // serial accumulator did
         for (int i=is; i<ie+2; ++i) {
           Fb_g(m,blk,i,k,j) = 0.0;
+          Em_g(m,blk,i,k,j) = 0.0;
         }
           Real gamirc[NC], fbc[NC], muggc[NC], wggc[NC];
           for (int cc=0; cc<NC; ++cc) {
@@ -1206,6 +1223,12 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
               Real F_ir_down_f = 2.0*M_PI*wggc[cc]*muggc[cc]*I_ir_down_c[cc][i];
               Real F_ir_up_f = 2.0*M_PI*wggc[cc]*muggc[cc]*I_ir_up_c[cc];
               Fb_g(m,blk,i,k,j) += (F_ir_up_f - F_ir_down_f);
+              // the cell's own emission per unit volume, both hemispheres.  dtau_i is
+              // kappa rho dr for this layer, so dtau_i/dr = kappa rho and the layer
+              // thickness cancels out of the volumetric rate.
+              const Real dtau_ly = tau_down_r_f[i-1]-tau_down_r_f[i];
+              Em_g(m,blk,i-1,k,j) += 2.0*(2.0*M_PI*wggc[cc])*gamirc[cc]*dtau_ly
+                                   / dx1(m,k,j,i-1)*fbc[cc]*0.5*(B[i]+B[i-1]);
             }
           }
       });
@@ -1241,7 +1264,32 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
         } else {
           src += Qv_g(m,k,j,i);
         }
+        // SEMI-IMPLICIT APPLICATION.  The source splits as src = A - E(T), A being the
+        // absorption of the field from elsewhere, fixed on this step, and E the cell's
+        // own emission, which is 4 sigma kappa_P rho T^4 and so scales as T^4.  Treating
+        // E implicitly and A explicitly, and using de/dT = rho c_v ~ e/T (exact for an
+        // ideal gas, and an UNDER-estimate of rho c_v wherever H2 or H is partly
+        // dissociated, which only makes the step more damped), gives a linear relaxation
+        // with rate lambda = dE/de = (4E/T)/(rho c_v) = 4E/e.  The exact solution over
+        // bdt is the exponential below; it reduces to src*bdt when lambda*bdt << 1 and to
+        // the equilibrium offset src/lambda when lambda*bdt >> 1, and it can never
+        // overshoot the equilibrium.  Pure cooling is then bounded by e/4 per step
+        // whatever the timestep, which is what rt_de_max used to impose by hand.
         Real de = src*bdt;
+        {
+          Real Em = 0.0;
+          for (int b=0; b<nblk; ++b) Em += Em_g(m,b,i,k,j);
+          if (taublend) {
+            Em *= 1.0 - 0.5*(w_g(m,k,j,i) + w_g(m,k,j,i+1));
+          }
+          if (ck_on && i < icut_g(m,k,j)) Em = 0.0;
+          const Real ei = w0(m,IEN,k,j,i);
+          if (Em > 0.0 && ei > 0.0) {
+            const Real lam = 4.0*Em/ei;
+            const Real x = lam*bdt;
+            de = (x > 1.0e-4) ? (src/lam)*(-expm1(-x)) : src*bdt;
+          }
+        }
         if (demax > 0.0) {
           const Real dl = LimitRTSource(de, w0(m,IEN,k,j,i), demax);
           if (dl != de) { ++nc; de = dl; }

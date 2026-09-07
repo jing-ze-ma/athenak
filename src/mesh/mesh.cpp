@@ -879,6 +879,23 @@ void Mesh::NewTimeStep(const Real tlim) {
   // limit increase in timestep to 2x old value
   dt = 2.0*dt;
 
+  // A dt that falls off a cliff is nearly always one physics module going unstable, and
+  // the cycle line alone does not say which.  Keep each candidate so a collapse can name
+  // its owner; the report is at the end of this function.
+  Real dbg_hyd = -1.0, dbg_cnd = -1.0, dbg_vis = -1.0, dbg_src = -1.0;
+  if (pmb_pack->phydro != nullptr) {
+    dbg_hyd = (cfl_no)*(pmb_pack->phydro->dtnew);
+    if (pmb_pack->phydro->pcond != nullptr) {
+      dbg_cnd = (cfl_no)*(pmb_pack->phydro->pcond->dtnew);
+    }
+    if (pmb_pack->phydro->pvisc != nullptr) {
+      dbg_vis = (cfl_no)*(pmb_pack->phydro->pvisc->dtnew);
+    }
+    if (pmb_pack->phydro->psrc != nullptr) {
+      dbg_src = (cfl_no)*(pmb_pack->phydro->psrc->dtnew);
+    }
+  }
+
   // Hydro timestep
   if (pmb_pack->phydro != nullptr) {
     dt = std::min(dt, (cfl_no)*(pmb_pack->phydro->dtnew) );
@@ -943,6 +960,28 @@ void Mesh::NewTimeStep(const Real tlim) {
     }
   }
 #endif
+
+  // If dt just collapsed, say which module owns it.  Only the rank holding the
+  // global minimum reports, so the components printed are the ones that actually set
+  // dt; every other rank's candidates are larger and would mislead.  At most 20 lines.
+  {
+    static int ndbg = 0;
+    if (dtold > 0.0 && dt < 0.25*dtold && ndbg < 20) {
+      Real mine = std::numeric_limits<Real>::max();
+      if (dbg_hyd > 0.0) mine = std::min(mine, dbg_hyd);
+      if (dbg_cnd > 0.0) mine = std::min(mine, dbg_cnd);
+      if (dbg_vis > 0.0) mine = std::min(mine, dbg_vis);
+      if (dbg_src > 0.0) mine = std::min(mine, dbg_src);
+      if (mine <= dt) {
+        ++ndbg;
+        std::cout << "### dt COLLAPSE cycle=" << ncycle << " time=" << time
+                  << " dtold=" << dtold << " dt=" << dt
+                  << " | hydro=" << dbg_hyd << " cond=" << dbg_cnd
+                  << " visc=" << dbg_vis << " srcterms=" << dbg_src
+                  << "  (rank " << global_variable::my_rank << ")" << std::endl;
+      }
+    }
+  }
 
   // limit last time step to stop at tlim *exactly*
   if ( (time < tlim) && ((time + dt) > tlim) ) {dt = tlim - time;}
