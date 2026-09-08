@@ -300,6 +300,17 @@ inline Real rt_de_max = 0.5;
 // radiative with rad_flux_inner at the bottom wall -- so the cut's upward intensity is
 // just the thermalised Planck function and nothing is counted twice.
 inline bool rt_int_at_cut = true;
+// problem/rt_top_re: what the unresolved column ABOVE the domain sends back down.
+// false (historical) makes it radiate at the ghost cell's own temperature. That is safe
+// only while the ghost is pinned to something outside the solution: with an open outer
+// boundary the ghost IS the top active cell, the column hands back exactly what that cell
+// emitted, and the net flux through the top face goes to zero as the column thickens --
+// the atmosphere isothermalises and the object stops radiating (measured on the red
+// giant: emergent flux 0.3 % of L, top density 22x). true treats the column as a slab in
+// RADIATIVE EQUILIBRIUM instead: it absorbs (1-e^-dtau) I_up from below and re-emits half
+// up to space and half back down, so its source is I_up/2 whatever its optical depth and
+// the face always keeps at least half of its outgoing flux. Grey path only so far.
+inline bool rt_top_re = false;
 // SELF-LUMINOUS objects: > 0 uses this internal temperature directly instead of the
 // Thorngren+2019 T_int(T_eq) relation, which is a fit for IRRADIATED giant planets and
 // floors at 100 K.  A star or a brown dwarf sets it to its own T_eff (and Teq = 0, which
@@ -613,6 +624,7 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
     }
     Real Tint4 = SQR(SQR(Tint));
     bool int_at_cut = rt_int_at_cut;
+    const bool top_re = rt_top_re;
     Real Iint = boltz_sigma/M_PI*Tint4;
 
     const int nchain_rt = rt_nchain;
@@ -1024,8 +1036,36 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
               const Real dtau = kap*pb_g(m,k,j,ie+1)*1.0e6
                               / EffGravAt(grav, ap, x1v_(m,ie+1), grav_pmass, omega,
                                           mu0, tide);
+              // The source of that column: the ghost's own Planck function, or -- with
+              // rt_top_re -- the radiative-equilibrium value I_up/2, which is what a slab
+              // with nothing but space above it must emit downward.  See rt_top_re.
+              //
+              // I_up at the top face does not depend on I_down anywhere: the up-sweep
+              // reads only the intensity it starts with at the cut and the Planck
+              // function.  So the equilibrium source can be had EXACTLY, with a scalar
+              // probe sweep here and no lag and no stored state -- one extra pass over
+              // the column, run only when this boundary is selected.
+              Real bsrc[2];
               for (int q=0; q<nq; ++q) {
-                I_down[q][ie+1] = (1.0 - exp(-dtau/muq[q]))*Bb_g(m,0,ie+1,k,j);
+                bsrc[q] = Bb_g(m,0,ie+1,k,j);
+              }
+              if (top_re) {
+                for (int q=0; q<nq; ++q) {
+                  Real ip = Bb_g(m,0,icut,k,j) + (int_at_cut ? Iint : 0.0);
+                  for (int i=icut+1; i<ie+2; ++i) {
+                    const Real x = kc_g(m,0,i-1,k,j)*w0(m,IDN,k,j,i-1)*dx1(m,k,j,i-1)
+                                 / muq[q];
+                    const Real e0 = -expm1(-x);
+                    const Real bet = (x > 1.0e-3) ? (1.0 - e0/x) : (x/2.0 - SQR(x)/6.0);
+                    const Real gm  = (x > 1.0e-3) ? (e0 - 1.0 + e0/x)
+                                                  : (x/2.0 - SQR(x)/3.0);
+                    ip = (1.0-e0)*ip + bet*Bb_g(m,0,i,k,j) + gm*Bb_g(m,0,i-1,k,j);
+                  }
+                  bsrc[q] = 0.5*ip;
+                }
+              }
+              for (int q=0; q<nq; ++q) {
+                I_down[q][ie+1] = (1.0 - exp(-dtau/muq[q]))*bsrc[q];
               }
             }
             // down-sweep

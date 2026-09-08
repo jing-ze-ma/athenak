@@ -566,6 +566,11 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     ts::rt_split = true;             // implied: the grey kernel lives on the split path
     ts::rt_de_max = pin->GetOrAddReal("problem", "rt_de_max", 0.5);
     ts::rt_int_at_cut = false;       // the same handover argument as rt_ck below
+    // The column above the domain radiates to space instead of mirroring the ghost back
+    // down.  Default ON here because a star has nothing above it: with outer_bc = open
+    // the mirroring column sealed the atmosphere -- 6650 K isothermal, emergent flux
+    // 0.3 % of L.  Set problem/rt_top_re = false to get the old boundary back.
+    ts::rt_top_re = pin->GetOrAddBoolean("problem", "rt_top_re", true);
     ts::rt_tint_override = teff;
     ts::rt_star_teff = 0.0;
     ts::rt_dump_file = pin->GetOrAddString("problem", "ck_dump_file", "");
@@ -583,6 +588,11 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       std::cout << "red_giant: GREY two-stream (problem/rt_grey), opacity from the "
                 << "conduction module's table, " << pin->GetOrAddInteger("problem",
                    "ck_nquad", 1) << "-point angular quadrature" << std::endl;
+      std::cout << "           column above the domain: "
+                << (two_stream_rt::rt_top_re
+                    ? "radiative equilibrium, it radiates to space"
+                    : "the ghost's own Planck function (it mirrors the top cell back)")
+                << std::endl;
     }
   }
   if (rt_ck_) {
