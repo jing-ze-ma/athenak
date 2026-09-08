@@ -24,6 +24,12 @@ ap.add_argument('column')
 ap.add_argument('r0', type=float)
 ap.add_argument('r1', type=float)
 ap.add_argument('--nc', type=int, default=4, help='number of coefficients (must be 4)')
+ap.add_argument('--dumin', type=float, default=0.0,
+                help='constrain du/dxi >= this (needs scipy).  The plain least-squares '
+                     'fit is not monotonic once the domain spans many scale heights, and '
+                     'Mesh refuses a folded map; this also sets the SMALLEST cell, so it '
+                     'sets the hydro timestep.  0.2 was the working value for a red '
+                     'giant envelope over 22 scale heights.')
 ap.add_argument('--nx', type=int, default=128, help='radial cells, for the report')
 a = ap.parse_args()
 
@@ -58,6 +64,20 @@ coef, *_ = np.linalg.lstsq(A, u_t - xi_t, rcond=None)
 def u_of(xi, cf):
     return xi + sum(cf[kk-1]*xi**kk*(1.0 - xi) for kk in range(1, len(cf) + 1))
 
+
+if a.dumin > 0.0:
+    # Monotone fit.  Least squares on u alone overshoots at the steep end and comes back
+    # with du/dxi < 0, at every polynomial order tried (4, 5, 6, 8, 10) -- more freedom
+    # does not help, the constraint has to be imposed.  Minimise the same residual
+    # subject to du/dxi >= dumin on a dense grid.
+    from scipy.optimize import minimize
+    xg = np.linspace(0.0, 1.0, 400)
+    D = np.stack([kk*xg**(kk - 1.0) - (kk + 1.0)*xg**kk
+                  for kk in range(1, a.nc + 1)], axis=1)
+    res = minimize(lambda cc: np.sum((A@cc - (u_t - xi_t))**2), coef, method="SLSQP",
+                   constraints=[{'type': 'ineq', 'fun': lambda cc: 1.0 + D@cc - a.dumin}],
+                   options={'maxiter': 1000, 'ftol': 1e-15})
+    coef = res.x
 
 # the map must be strictly increasing, or Mesh refuses it
 xs = np.linspace(0, 1, 20001)
