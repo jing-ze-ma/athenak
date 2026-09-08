@@ -153,6 +153,13 @@ DvceArray1D<Real> lnp_d_, tk_d_;
 // multiplies v_c instead of c_s.
 DvceArray1D<Real> vc_d_;
 bool vpert_mlt_ = true;
+// problem/ic_tau_rad: the optical depth above which the INITIAL COLUMN follows grad_rad
+// rather than the convective gradient.  It used to be <hydro>/rad_tau_hi, which made the
+// initial star depend on where the RT/diffusion handover was put: moving the handover to
+// tau = 300 for stability also built the column radiative down to tau = 300, where
+// grad_rad/grad_ad ~ 1e3, i.e. a different and far hotter star.  Defaults to rad_tau_hi,
+// so nothing changes unless it is set.
+Real ic_tau_rad_ = -1.0;
 // problem/vpert_mach_max (default 0.3): cap the seed at this fraction of the local sound
 // speed.  v_c peaks just under the photosphere, where convection is least efficient and
 // the density is lowest, and there it is TRANSONIC -- seeding a single smooth mode at
@@ -430,6 +437,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   const Real mu = pin->GetOrAddReal("problem", "mu", 0.62);
   const Real vpert = pin->GetOrAddReal("problem", "vpert", 0.0);
   vpert_mlt_ = pin->GetOrAddBoolean("problem", "vpert_mlt", true);
+  ic_tau_rad_ = pin->GetOrAddReal("problem", "ic_tau_rad", -1.0);
   vpert_mach_max_ = pin->GetOrAddReal("problem", "vpert_mach_max", 0.3);
   const Real kfac = pin->GetOrAddReal("problem", "kappa_fac", 1.0);
   const Real kconst = pin->GetOrAddReal("problem", "kappa_const", 0.0);
@@ -638,7 +646,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // whatever the Schwarzschild criterion says: the relaxation targets the Eddington
     // profile there, and an adiabatic start would be cooled toward it from the first
     // step (in a real star convection is inefficient that far out anyway)
-    const Real tauhi = (pc != nullptr && pc->rad_tau_mode) ? pc->rad_tau_hi : 0.0;
+    const Real tauhi_blend = (pc != nullptr && pc->rad_tau_mode) ? pc->rad_tau_hi : 0.0;
+    const Real tauhi = (ic_tau_rad_ >= 0.0) ? ic_tau_rad_ : tauhi_blend;
     par_for("rg_column", DevExeSpace(), 0, 0, KOKKOS_LAMBDA(const int dummy) {
       // gradient at (p [code], T [K], tau): d ln T / d ln p and the state
       auto nabla = [&](const Real r, const Real p, const Real t, const Real ta,
