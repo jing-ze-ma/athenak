@@ -179,6 +179,16 @@ bool open_conserve_ = true;
 // same face, and nothing else in the code reports it.  Sampled once per cycle, at the
 // first stage, times dt: an O(dt) estimate of the cycle's transfer, which is all that
 // is needed to compare a suspected sink against L.
+// problem/open_nomassflux (default true with inner_bc = open): hold the NET mass flux
+// through the inner FACE at zero.  The boundary's fourth pass drives the shell-mean
+// radial velocity at the lowest cell CENTRE to zero, but the mass leaves across the
+// face, and measured (problem/face_budget) that face drained 3.0e30 g and 2.0e44 erg --
+// the whole of the run's energy loss -- in 2.3e4 s.  Each stage this removes the net
+// mass the face just delivered, uniformly over the base shell, together with the energy
+// and momentum that mass carried at the shell-mean specific enthalpy and velocity.  A
+// zero-net-mass convective enthalpy flux, which is the luminosity the boundary is meant
+// to supply, passes through untouched.
+bool open_nomassflux_ = true;
 int face_budget_ = 0;
 int face_cycle_ = -1;
 Real face_E_in_ = 0.0, face_E_out_ = 0.0, face_M_in_ = 0.0, face_M_out_ = 0.0;
@@ -713,6 +723,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       cp_change_ = pin->GetOrAddReal("problem", "s_relax_cp", 0.3);
       open_budget_ = pin->GetOrAddInteger("problem", "open_budget", 0);
       face_budget_ = pin->GetOrAddInteger("problem", "face_budget", 0);
+      open_nomassflux_ = pin->GetOrAddBoolean("problem", "open_nomassflux", true);
       open_conserve_ = pin->GetOrAddBoolean("problem", "open_conserve", true);
       open_lstar_ = lstar;
       p_base_ = exp(hlnp(ibot))*punit_;
@@ -1104,6 +1115,54 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
     const Real p_base = p_base_/punit_, t_base = t_base_;
     const Real ccs = cs_change_, ccp = cp_change_;
     auto &x1f_r = pmbp->pcoord->xx1f;
+    // Pass 0: cancel the NET mass the inner face delivered this stage.  The fluxes the
+    // RKUpdate just applied are still in uflx, so this is exact per stage rather than a
+    // correction chasing a drift.
+    if (open_nomassflux_) {
+      auto &flx1 = is_mhd ? pmbp->pmhd->uflx.x1f : pmbp->phydro->uflx.x1f;
+      auto &area1_ = pmbp->pcoord->area.x1f;
+      auto &vol0_ = pmbp->pcoord->volume;
+      Real sM = 0.0, sV = 0.0, sH = 0.0, sD = 0.0, sPv = 0.0;
+      Kokkos::parallel_reduce("rg_co50", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb1+1),
+      KOKKOS_LAMBDA(const int m, Real &aM, Real &aV, Real &aH, Real &aD, Real &aPv) {
+        if (mb_bcs.d_view(m,BoundaryFace::inner_x1) != BoundaryFlag::user) return;
+        for (int k=ks; k<=ke; ++k) {
+          for (int j=js; j<=je; ++j) {
+            const Real vol = vol0_(m,k,j,is);
+            const Real d = u0(m,IDN,k,j,is);
+            Real ei = u0(m,IEN,k,j,is)
+                      - 0.5*(SQR(u0(m,IM1,k,j,is)) + SQR(u0(m,IM2,k,j,is))
+                             + SQR(u0(m,IM3,k,j,is)))/d;
+            if (etotgrav) ei -= d*phicc(m,k,j,is);
+            aM += area1_(m,k,j,is)*flx1(m,IDN,k,j,is);
+            aV += vol;
+            aH += (u0(m,IEN,k,j,is) + eos.Pressure(d, ei))*vol;   // total enthalpy
+            aD += d*vol;
+            aPv += u0(m,IM1,k,j,is)*vol;
+          }
+        }
+      }, sM, sV, sH, sD, sPv);
+#if MPI_PARALLEL_ENABLED
+      {
+        Real g[5] = {sM, sV, sH, sD, sPv};
+        MPI_Allreduce(MPI_IN_PLACE, g, 5, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+        sM = g[0]; sV = g[1]; sH = g[2]; sD = g[3]; sPv = g[4];
+      }
+#endif
+      if (sV > 0.0 && sD > 0.0) {
+        const Real dd = -bdt*sM/sV;      // code density, the same in every base cell
+        const Real hbar = sH/sD;         // shell-mean specific total enthalpy
+        const Real vbar = sPv/sD;        // shell-mean radial velocity
+        par_for("rg_co50b", DevExeSpace(), 0, nmb1, ks, ke, js, je,
+        KOKKOS_LAMBDA(const int m, const int k, const int j) {
+          if (mb_bcs.d_view(m,BoundaryFace::inner_x1) != BoundaryFlag::user) return;
+          if (u0(m,IDN,k,j,is) + dd <= 0.0) return;
+          u0(m,IDN,k,j,is) += dd;
+          u0(m,IM1,k,j,is) += dd*vbar;
+          u0(m,IEN,k,j,is) += dd*hbar;
+        });
+      }
+    }
     // Pass A: shell means of density and pressure
     Real srho0 = 0.0, sumP = 0.0, sN = 0.0;
     Kokkos::parallel_reduce("rg_co5A", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb1+1),
