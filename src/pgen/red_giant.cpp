@@ -392,6 +392,11 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   const Real kfac = pin->GetOrAddReal("problem", "kappa_fac", 1.0);
   const Real kconst = pin->GetOrAddReal("problem", "kappa_const", 0.0);
   mlt_alpha_ = pin->GetOrAddReal("problem", "mlt_alpha", 0.0);
+  // problem/mlt_alpha_ic: the mixing length used to build the INITIAL COLUMN, which is
+  // a separate question from whether the MLT flux runs as a source term.  Defaults to
+  // mlt_alpha, so setting one knob does both; set it alone (with mlt_alpha = 0) to start
+  // a RESOLVED-convection run from a stratification that already carries L.
+  const Real mlt_alpha_ic = pin->GetOrAddReal("problem", "mlt_alpha_ic", mlt_alpha_);
   mlt_dump_ = pin->GetOrAddString("problem", "mlt_dump", "");
   const std::string opac = pin->GetString("problem", "opac_table");
   const std::string dump = pin->GetOrAddString("problem", "column_dump", "");
@@ -579,6 +584,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     const Real ttop = teff*pow(0.5, 0.25);
     const Real ptop = ptop_cgs/punit_;
     const Real lum = lstar, mass = mstar, lun = lunit, dun = dunit, pun = punit_;
+    const Real alpha_ic = mlt_alpha_ic;
     const Real tun = pmbp->punit->temperature_cgs();
     // one serial sweep on the device (the EOS and the table live there); RK2 in r
     // where the thin-layer relaxation acts (tau < rad_tau_hi) the column is RADIATIVE
@@ -588,14 +594,63 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     const Real tauhi = (pc != nullptr && pc->rad_tau_mode) ? pc->rad_tau_hi : 0.0;
     par_for("rg_column", DevExeSpace(), 0, 0, KOKKOS_LAMBDA(const int dummy) {
       // gradient at (p [code], T [K], tau): d ln T / d ln p and the state
-      auto nabla = [&](const Real p, const Real t, const Real ta, Real &rho, Real &kr,
-                       Real &gr) {
+      auto nabla = [&](const Real r, const Real p, const Real t, const Real ta,
+                       Real &rho, Real &kr, Real &gr) {
         rho = DensFromPT(eos, rgas, p, t);
         kr = kfac*KappaTab(ktab, klT, klD, knT, knD, t, rho*dun);
         const Real grad_rad = 3.0*kr*(p*pun)*lum
                               /(16.0*M_PI*kArad*kClight*kGrav*mass*t*t*t*t);
         const Real grad_ad = GradAd(eos, gamma, rgas, p, t);
-        gr = (ta < tauhi || grad_rad < grad_ad) ? grad_rad : grad_ad;
+        if (ta < tauhi || grad_rad < grad_ad) {
+          gr = grad_rad;                       // radiative, or the two-stream's domain
+          return gr;
+        }
+        if (!(alpha_ic > 0.0)) {
+          gr = grad_ad;             // perfectly efficient convection: no driving at all
+          return gr;
+        }
+        // MIXING LENGTH.  grad_ad is the limit of infinitely efficient convection: it
+        // carries the flux at zero superadiabaticity, so a column built on it is
+        // marginally stable, has no convective flux, and cannot start convecting.  The
+        // gradient that actually carries F = L/(4 pi r^2) splits it between radiation
+        // and the same MLT closure the source term uses (see the rg_mlt_flux kernel),
+        //   F (1 - grad/grad_rad) = rho cp T sqrt(g delta) l^2 x^(3/2)
+        //                           / (4 sqrt2 Hp^(3/2)),   x = grad - grad_ad,
+        // whose left side falls and right side rises in grad, so the root in
+        // [grad_ad, grad_rad] is unique; bisect for it.  Deep down the convection is
+        // efficient and it sits a hair above grad_ad, which is why this changes nothing
+        // there and everything in the superadiabatic layer below the photosphere.
+        const Real rcm = r*lun;
+        const Real g = kGrav*mass/(rcm*rcm);                    // cgs
+        const Real dcgs = rho*dun, pcgs = p*pun;
+        const Real ftot = lum/(4.0*M_PI*rcm*rcm);               // erg/cm^2/s
+        const Real hp = pcgs/(dcgs*g);
+        const Real ell = alpha_ic*hp;
+        const Real e = EintFromDensT(eos, rgas, igm1, rho, t);
+        Real cv = (EintFromDensT(eos, rgas, igm1, rho, 1.01*t) - e)/(0.01*t)*pun/dcgs;
+        if (!(cv > 0.0)) cv = 1.5*pcgs/(dcgs*t);
+        Real delta = 1.0, cp = gamma*cv;
+        if (eos.IsGeneral()) {
+          const Real chit = eos.ChiT(rho, e), chir = eos.ChiRho(rho, e);
+          delta = chit/chir;
+          cp = cv*eos.Gamma1(rho, e)/chir;
+        }
+        const Real cmlt = dcgs*cp*t*sqrt(g*delta)*ell*ell/(4.0*sqrt(2.0)*hp*sqrt(hp));
+        if (!(cmlt > 0.0) || !(ftot > 0.0)) {
+          gr = grad_ad;
+          return gr;
+        }
+        Real lo = grad_ad, hi = grad_rad;
+        for (int it = 0; it < 60; ++it) {
+          const Real mid = 0.5*(lo + hi);
+          const Real x = mid - grad_ad;
+          if (ftot*(1.0 - mid/grad_rad) > cmlt*x*sqrt(x)) {
+            lo = mid;
+          } else {
+            hi = mid;
+          }
+        }
+        gr = 0.5*(lo + hi);
         return gr;
       };
       // a hydrostatic RK2 step from (r, lnp, T, tau) over dr (signed; tau grows inward)
@@ -603,12 +658,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                       Real &lp1, Real &t1, Real &ta) {
         Real rho, kr, gr;
         const Real p0 = exp(lp0);
-        nabla(p0, t0, ta, rho, kr, gr);
+        nabla(r, p0, t0, ta, rho, kr, gr);
         const Real dlnp_a = -rho*GravAt(gm, r)/p0;
         const Real lpm = lp0 + 0.5*dr*dlnp_a;
         const Real tm = t0*exp(0.5*dr*dlnp_a*gr);
         const Real rm = r + 0.5*dr;
-        nabla(exp(lpm), tm, ta, rho, kr, gr);
+        nabla(rm, exp(lpm), tm, ta, rho, kr, gr);
         const Real dlnp_m = -rho*GravAt(gm, rm)/exp(lpm);
         lp1 = lp0 + dr*dlnp_m;
         t1 = t0*exp(dr*dlnp_m*gr);
@@ -629,7 +684,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       Real tsum = 0.0;
       for (int i = nfine-1; i >= 0; --i) {
         Real rho, kr, gr;
-        nabla(exp(lnp(i)), tk(i), tsum, rho, kr, gr);
+        nabla(rlo + i*drf, exp(lnp(i)), tk(i), tsum, rho, kr, gr);
         kap(i) = kr; grad(i) = gr;
         tau(i) = tsum;
         tsum += kr*rho*dun*drf*lun;
