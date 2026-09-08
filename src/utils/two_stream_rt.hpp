@@ -294,6 +294,13 @@ inline Real rt_tint_override = 0.0;
 // Measured on the deep hot Jupiter setup it does not: after the adjustment there are zero
 // super-adiabatic levels, H2 on or off, because there is only one crossing to begin with.
 inline std::string ad_dump_file = "";
+// problem/rt_apply_debug: print the energy balance the applied source actually sees, for
+// the top rt_apply_debug_n cells of the (rt_dump_m, rt_dump_k, rt_dump_j) column, on the
+// first N calls.  The column dump says what the SWEEP produced; this says what the CELL
+// then did with it, which is where a thin top layer that will not sit at its equilibrium
+// temperature has to be caught.
+inline int rt_apply_debug = 0;
+inline int rt_apply_debug_n = 8;
 inline bool rt_srclim_warned = false;             // the one-time warning has been issued
 
 //----------------------------------------------------------------------------------------
@@ -1237,6 +1244,13 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
       // ---- C: reduce over blocks in order, then apply ------------------------------
       int nclip = 0;
       const Real demax = rt_de_max;
+      // see rt_apply_debug: which column, and how many calls are left to print
+      const bool dbg_on = (rt_apply_debug > 0);
+      const int dbg_m = rt_dump_m;
+      const int dbg_j = (rt_dump_j >= 0) ? rt_dump_j : (js + je)/2;
+      const int dbg_k = (rt_dump_k >= 0) ? rt_dump_k : (ks + ke)/2;
+      const int dbg_n = rt_apply_debug_n;
+      if (dbg_on) --rt_apply_debug;
       par_reduce_clip4("rt_apply", 0, nmb1, ks, ke, js, je, is, ie, nclip,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, int &nc) {
         Real Ft = 0.0, Fb = 0.0;
@@ -1293,6 +1307,19 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
         if (demax > 0.0) {
           const Real dl = LimitRTSource(de, w0(m,IEN,k,j,i), demax);
           if (dl != de) { ++nc; de = dl; }
+        }
+        if (dbg_on && m == dbg_m && k == dbg_k && j == dbg_j && i > ie - dbg_n) {
+          Real Em = 0.0, Qs = 0.0;
+          for (int b=0; b<nblk; ++b) { Em += Em_g(m,b,i,k,j); Qs += Qb_g(m,b,i,k,j); }
+          const Real ei = w0(m,IEN,k,j,i);
+          Kokkos::printf("rt_apply i=%d T=%.4e d=%.4e e=%.4e Fb=%.6e Ft=%.6e "
+                         "divF=%.4e Qs=%.4e Em=%.4e lamdt=%.4e de=%.4e de/e=%.4e "
+                         "tau=%.4e w=%.4e dx=%.4e\n",
+                         i, T_g(m,k,j,i), w0(m,IDN,k,j,i), ei, Fb, Ft,
+                         -(Ft-Fb)/dx1(m,k,j,i), Qs, Em,
+                         (Em > 0.0 && ei > 0.0) ? 4.0*Em/ei*bdt : 0.0,
+                         de, de/ei, taublend ? tauf_g(m,k,j,i) : 0.0,
+                         taublend ? w_g(m,k,j,i) : 0.0, dx1(m,k,j,i));
         }
         u0(m,IEN,k,j,i) += de;
       });

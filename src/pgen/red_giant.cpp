@@ -549,6 +549,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     ts::rt_dump_m = pin->GetOrAddInteger("problem", "ck_dump_m", 0);
     ts::rt_dump_j = pin->GetOrAddInteger("problem", "ck_dump_j", -1);
     ts::rt_dump_k = pin->GetOrAddInteger("problem", "ck_dump_k", -1);
+    ts::rt_apply_debug = pin->GetOrAddInteger("problem", "rt_apply_debug", 0);
+    ts::rt_apply_debug_n = pin->GetOrAddInteger("problem", "rt_apply_debug_n", 8);
     ck_dump_t2_ = pin->GetOrAddReal("problem", "ck_dump_t2", -1.0);
     ck_dump_file2_ = pin->GetOrAddString("problem", "ck_dump_file2", "");
     ts::rt_star_teff = 0.0;          // no host: the stellar band fractions are unused
