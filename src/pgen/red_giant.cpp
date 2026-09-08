@@ -189,6 +189,8 @@ bool open_conserve_ = true;
 // zero-net-mass convective enthalpy flux, which is the luminosity the boundary is meant
 // to supply, passes through untouched.
 bool open_nomassflux_ = true;
+int open_debug_ = 0;          // problem/open_debug: boundary calls to trace, 0 = off
+int open_dbg_calls_ = 0;
 int face_budget_ = 0;
 int face_cycle_ = -1;
 Real face_E_in_ = 0.0, face_E_out_ = 0.0, face_M_in_ = 0.0, face_M_out_ = 0.0;
@@ -778,6 +780,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       cp_change_ = pin->GetOrAddReal("problem", "s_relax_cp", 0.3);
       open_budget_ = pin->GetOrAddInteger("problem", "open_budget", 0);
       face_budget_ = pin->GetOrAddInteger("problem", "face_budget", 0);
+      open_debug_ = pin->GetOrAddInteger("problem", "open_debug", 0);
       open_nomassflux_ = pin->GetOrAddBoolean("problem", "open_nomassflux", true);
       open_conserve_ = pin->GetOrAddBoolean("problem", "open_conserve", true);
       open_lstar_ = lstar;
@@ -1497,6 +1500,10 @@ void RedGiantBC(Mesh *pm) {
   // ghost in balance with the interior rather than with the initial column -- tying it to
   // the column would fight the relaxation and pressurise the envelope.
   const bool open_in = open_inner_;
+  // problem/open_debug: print the open ghost's inputs and outputs for one column on the
+  // first few boundary calls.  A ghost that comes out non-finite says nothing about
+  // which of the four EOS calls did it.
+  const bool open_dbg = (open_debug_ > 0) && (open_dbg_calls_++ < open_debug_);
   auto fill_open = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i,
                                  const int im) {
     const Real d_i = w0(m,IDN,k,j,im);
@@ -1508,6 +1515,11 @@ void RedGiantBC(Mesh *pm) {
     const Real d_g = DensFromPT(eos, rgas, p_g, t_i);
     const Real e_g = EintFromDensT(eos, rgas, igm1, d_g, t_i);
     const Real v1 = w0(m,IVX,k,j,im), v2 = w0(m,IVY,k,j,im), v3 = w0(m,IVZ,k,j,im);
+    if (open_dbg && m == 0 && k == 2 && j == 2) {
+      Kokkos::printf("rg_open_bc i=%d im=%d: d_i=%.6e e_i=%.6e p_i=%.6e t_i=%.6e "
+                     "dphi=%.6e p_g=%.6e d_g=%.6e e_g=%.6e v1=%.6e\n",
+                     i, im, d_i, e_i, p_i, t_i, dphi, p_g, d_g, e_g, v1);
+    }
     w0(m,IDN,k,j,i) = d_g;
     w0(m,IEN,k,j,i) = e_g;
     w0(m,IVX,k,j,i) = v1;

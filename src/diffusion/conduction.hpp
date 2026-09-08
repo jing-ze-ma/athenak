@@ -80,6 +80,12 @@ class Conduction {
   DvceArray2D<Real> rad_kr_tab;            // (iT, iP) log10 kappa_R [cm^2/g]
   DvceArray1D<Real> rad_kr_lT, rad_kr_lP;  // log10 T [K], log10 p [dyn/cm^2], ascending
   DvceArray4D<Real> rad_w, rad_tauf;
+  // rad_w is filled by BuildRadWeights, which runs as a task inside the stage.  Until
+  // it has, every weight is zero and the timestep below reads that as "no face carries
+  // any diffusive flux" -- so the FIRST cycle would run at the hydro timestep with the
+  // conduction operator fully on.  NewTimeStep builds the weights itself if this is
+  // still false, which is the case at initialisation.
+  bool rad_w_built = false;
   void BuildRadWeights(const DvceArray5D<Real> &w, const EOS_Data &eos);
   Real kappa_iso;            // isotropic thermal conductivity
   Real kappa_iso_limit;      // limit to isotropic thermal conductivity

@@ -219,6 +219,7 @@ void Conduction::BuildRadWeights(const DvceArray5D<Real> &w0, const EOS_Data &eo
       wf(m,k,j,i) = RadBlendWeight(tau, lo, hi);
     }
   });
+  rad_w_built = true;
   return;
 }
 
@@ -649,6 +650,11 @@ void Conduction::AddIsotropicHeatFluxSpitzerCond(const DvceArray5D<Real> &w0,
 
 void Conduction::NewTimeStep(const DvceArray5D<Real> &w0, const EOS_Data &eos_data) {
   dtnew = static_cast<Real>(std::numeric_limits<float>::max());
+  // at initialisation the blend weights do not exist yet; without them this timestep is
+  // unconstrained and the first cycle runs the operator far past its stability limit
+  if (rad_tau_mode && !rad_w_built) {
+    BuildRadWeights(w0, eos_data);
+  }
   Real fac;
   if (pmy_pack->pmesh->three_d) {
     fac = 1.0/6.0;

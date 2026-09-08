@@ -469,6 +469,8 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       // abort with the count. One reduction over the pack, negligible cost.
       if (nan_check_cycles > 0 && pmesh->ncycle % nan_check_cycles == 0) {
         int nbad = 0;
+        int bad_m = -1, bad_k = -1, bad_j = -1, bad_i = -1;
+        int bad_ilo = -1, bad_ihi = -1;
         auto count = [&](const DvceArray5D<Real> &u) {
           const int nmb = static_cast<int>(u.extent_int(0));
           const int n3 = static_cast<int>(u.extent_int(2));
@@ -476,16 +478,48 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
           const int n1 = static_cast<int>(u.extent_int(4));
           const int ntot = nmb*n3*n2*n1;
           int nb = 0;
+          // ...and WHERE the first one is.  "N cells are NaN" does not say whether the
+          // run went unstable in the interior or a boundary condition wrote a bad ghost,
+          // and those need opposite things done to them.
+          Kokkos::MinLoc<int, int>::value_type bloc;
           Kokkos::parallel_reduce("nan_check",
                                   Kokkos::RangePolicy<>(DevExeSpace(), 0, ntot),
-          KOKKOS_LAMBDA(const int idx, int &sum) {
+          KOKKOS_LAMBDA(const int idx, int &sum,
+                        Kokkos::ValLocScalar<int, int> &mres) {
             const int m = idx/(n3*n2*n1);
             const int k = (idx - m*n3*n2*n1)/(n2*n1);
             const int j = (idx - m*n3*n2*n1 - k*n2*n1)/n1;
             const int i = idx - m*n3*n2*n1 - k*n2*n1 - j*n1;
             if (!Kokkos::isfinite(u(m,IDN,k,j,i))
-                || !Kokkos::isfinite(u(m,IEN,k,j,i))) sum++;
-          }, Kokkos::Sum<int>(nb));
+                || !Kokkos::isfinite(u(m,IEN,k,j,i))) {
+              sum++;
+              if (idx < mres.val) { mres.val = idx; mres.loc = idx; }
+            }
+          }, Kokkos::Sum<int>(nb), Kokkos::MinLoc<int, int>(bloc));
+          // the radial extent of the damage, which separates a bad ghost fill from an
+          // interior blow-up that has since spread into the ghosts
+          int imin = n1, imax = -1;
+          Kokkos::parallel_reduce("nan_irange",
+                                  Kokkos::RangePolicy<>(DevExeSpace(), 0, ntot),
+          KOKKOS_LAMBDA(const int idx, int &lo, int &hi) {
+            const int m = idx/(n3*n2*n1);
+            const int k = (idx - m*n3*n2*n1)/(n2*n1);
+            const int j = (idx - m*n3*n2*n1 - k*n2*n1)/n1;
+            const int i = idx - m*n3*n2*n1 - k*n2*n1 - j*n1;
+            if (!Kokkos::isfinite(u(m,IDN,k,j,i))
+                || !Kokkos::isfinite(u(m,IEN,k,j,i))) {
+              lo = (i < lo) ? i : lo;
+              hi = (i > hi) ? i : hi;
+            }
+          }, Kokkos::Min<int>(imin), Kokkos::Max<int>(imax));
+          if (nb > 0 && bad_ilo < 0) { bad_ilo = imin; bad_ihi = imax; }
+          if (nb > 0 && bad_m < 0) {
+            const int idx = bloc.loc;
+            bad_m = idx/(n3*n2*n1);
+            bad_k = (idx - bad_m*n3*n2*n1)/(n2*n1);
+            bad_j = (idx - bad_m*n3*n2*n1 - bad_k*n2*n1)/n1;
+            bad_i = idx - bad_m*n3*n2*n1 - bad_k*n2*n1 - bad_j*n1;
+          }
           return nb;
         };
         auto pp = pmesh->pmb_pack;
@@ -501,6 +535,15 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
                       << " cell(s) at cycle " << pmesh->ncycle << ", time = "
                       << pmesh->time << " (time/nan_check_cycles = " << nan_check_cycles
                       << ")" << std::endl;
+          }
+          if (bad_m >= 0) {
+            std::cout << "    first non-finite cell (m,k,j,i) = (" << bad_m << ","
+                      << bad_k << "," << bad_j << "," << bad_i << ") on rank "
+                      << global_variable::my_rank << "; active cells are i = "
+                      << pmesh->mb_indcs.is << ".." << pmesh->mb_indcs.ie << ", j = "
+                      << pmesh->mb_indcs.js << ".." << pmesh->mb_indcs.je << ", k = "
+                      << pmesh->mb_indcs.ks << ".." << pmesh->mb_indcs.ke
+                      << "; bad i span " << bad_ilo << ".." << bad_ihi << std::endl;
           }
           // std::exit would run static destructors with Kokkos still live (segfault) and
           // leave the other ranks waiting; leave hard
