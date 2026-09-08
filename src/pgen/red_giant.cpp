@@ -68,14 +68,22 @@
 //!                        zero.  With `open` the luminosity is an OUTPUT, so
 //!                        rad_flux_inner must be 0: the inflow entropy carries the
 //!                        energy, not a diffusive flux through a wall.
+//!   problem/outer_bc     wall (default) or open.  A wall fills its ghosts from the
+//!                        INITIAL column, which stops being the interior's own state as
+//!                        soon as the thin top adjusts; the standing jump that leaves at
+//!                        the top face drains the top layer.  `open` continues the top
+//!                        active cell hydrostatically at its own temperature, outflow
+//!                        only unless problem/open_outer_noinflow is false.  Mass and
+//!                        energy can then leave; problem/face_budget reports how much.
 //!   problem/s_relax_cs, problem/s_relax_cp   the two relaxation rates (0.1, 0.3)
 //!   problem/column_dump  if set, rank 0 writes the initial column to this file
 //!   problem/user_srcs    must be true (the gravity source lives here)
 //!
 //! <hydro|mhd>/isotropic_conduction = radiative with rad_kappa_src = table_rho makes the
 //! conduction operator read the same opacity table; rad_flux_inner < 0 lets this file
-//! set the inner flux to L/(4 pi rin^2).  Use ix1_bc = ox1_bc = user: both walls are
-//! reflecting, with the ghost column continued hydrostatically from the initial state.
+//! set the inner flux to L/(4 pi rin^2).  Use ix1_bc = ox1_bc = user: each radial
+//! boundary is then either a reflecting wall whose ghosts come from the initial column,
+//! or open (problem/inner_bc, problem/outer_bc).
 //!
 //! THE INITIAL COLUMN.  From the outer wall inward (and outward through the ghosts):
 //!     d ln p / dr = -rho g / p,     d ln T / d ln p = min(grad_rad, grad_ad),
@@ -181,6 +189,22 @@ Real kfac_ = 1.0;        // problem/kappa_fac, applied to every table lookup
 Real opac_lR_lo_ = -1.0e30, opac_lR_hi_ = 1.0e30;
 // the open inner boundary (problem/inner_bc = open) and the deep adiabat it relaxes to
 bool open_inner_ = false;
+// problem/outer_bc = wall (default) or open.  A `wall` outer boundary fills its ghosts
+// from the INITIAL column, so once the top layers have adjusted -- and they do, the
+// optically thin top is exactly where the atmosphere is free to move -- the ghost holds
+// a t = 0 density above a cell that no longer has it.  Dense over rarefied, at a face
+// the Riemann solver then reads as a standing pressure jump: it pumps the top layer,
+// which is the drain and the supersonic top cell seen in every run so far.  `open`
+// continues the interior hydrostatically at ITS OWN temperature instead, so a settled
+// atmosphere gives no flux through the face at all and the top is free to find its own
+// stratification.
+bool open_outer_ = false;
+// problem/open_outer_noinflow (default true): with an open top, clamp the ghost's radial
+// velocity to outflow.  The ghost is an extrapolation, not a reservoir; letting it push
+// mass back down invents material the domain never had.  False copies the velocity as the
+// inner boundary does, which is the right choice only if something above is being
+// modelled.
+bool open_outer_noinflow_ = true;
 Real p_base_ = 0.0, t_base_ = 0.0;      // the initial column AT the inner wall, cgs
 Real cs_change_ = 0.1, cp_change_ = 0.3;
 // problem/open_budget (cycles, 0 = off): the open boundary is meant to be the star's
@@ -870,6 +894,22 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         std::cout << "### FATAL ERROR in red_giant: problem/inner_bc must be wall or open"
                   << std::endl;
         std::exit(EXIT_FAILURE);
+      }
+      const std::string obc = pin->GetOrAddString("problem", "outer_bc", "wall");
+      if (obc.compare("open") == 0) {
+        open_outer_ = true;
+      } else if (obc.compare("wall") != 0) {
+        std::cout << "### FATAL ERROR in red_giant: problem/outer_bc must be wall or open"
+                  << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      open_outer_noinflow_ = pin->GetOrAddBoolean("problem", "open_outer_noinflow", true);
+      if (open_outer_ && global_variable::my_rank == 0) {
+        std::cout << "red_giant: OPEN outer boundary -- the ghosts continue the top "
+                  << "active cell hydrostatically at its own temperature"
+                  << (open_outer_noinflow_ ? ", outflow only." : ", velocity copied.")
+                  << " Mass and energy CAN leave the domain; problem/face_budget "
+                  << "reports how much." << std::endl;
       }
       cs_change_ = pin->GetOrAddReal("problem", "s_relax_cs", 0.1);
       cp_change_ = pin->GetOrAddReal("problem", "s_relax_cp", 0.3);
@@ -1678,6 +1718,9 @@ void RedGiantBC(Mesh *pm) {
   // ghost in balance with the interior rather than with the initial column -- tying it to
   // the column would fight the relaxation and pressurise the envelope.
   const bool open_in = open_inner_;
+  // OPEN outer boundary: the same continuation at the other end.  See open_outer_.
+  const bool open_out = open_outer_;
+  const bool open_out_noin = open_outer_noinflow_;
   // problem/open_debug: print the open ghost's inputs and outputs for one column on the
   // first few boundary calls.  A ghost that comes out non-finite says nothing about
   // which of the four EOS calls did it.
@@ -1698,6 +1741,36 @@ void RedGiantBC(Mesh *pm) {
                      "dphi=%.6e p_g=%.6e d_g=%.6e e_g=%.6e v1=%.6e\n",
                      i, im, d_i, e_i, p_i, t_i, dphi, p_g, d_g, e_g, v1);
     }
+    w0(m,IDN,k,j,i) = d_g;
+    w0(m,IEN,k,j,i) = e_g;
+    w0(m,IVX,k,j,i) = v1;
+    w0(m,IVY,k,j,i) = v2;
+    w0(m,IVZ,k,j,i) = v3;
+    u0(m,IDN,k,j,i) = d_g;
+    u0(m,IM1,k,j,i) = d_g*v1;
+    u0(m,IM2,k,j,i) = d_g*v2;
+    u0(m,IM3,k,j,i) = d_g*v3;
+    Real et = e_g + 0.5*d_g*(v1*v1 + v2*v2 + v3*v3);
+    if (etotgrav) et += d_g*phicc(m,k,j,i);
+    u0(m,IEN,k,j,i) = et;
+  };
+  // The OUTER open ghost.  The same hydrostatic continuation as fill_open, kept separate
+  // because the two ends want different things of the velocity: the inner boundary copies
+  // it so plumes cross, this one clamps it to outflow so an extrapolated ghost cannot
+  // push mass back in.  dphi is positive going up, so the exponential thins the ghost.
+  auto fill_open_out = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i,
+                                     const int im) {
+    const Real d_i = w0(m,IDN,k,j,im);
+    const Real e_i = w0(m,IEN,k,j,im);
+    const Real p_i = eos.Pressure(d_i, e_i);
+    const Real t_i = TempKelvin(eos, rgas, d_i, e_i, p_i);
+    const Real dphi = phicc(m,k,j,i) - phicc(m,k,j,im);
+    const Real p_g = p_i*exp(-(d_i/p_i)*dphi);
+    const Real d_g = DensFromPT(eos, rgas, p_g, t_i);
+    const Real e_g = EintFromDensT(eos, rgas, igm1, d_g, t_i);
+    Real v1 = w0(m,IVX,k,j,im);
+    const Real v2 = w0(m,IVY,k,j,im), v3 = w0(m,IVZ,k,j,im);
+    if (open_out_noin && v1 < 0.0) v1 = 0.0;
     w0(m,IDN,k,j,i) = d_g;
     w0(m,IEN,k,j,i) = e_g;
     w0(m,IVX,k,j,i) = v1;
@@ -1745,7 +1818,11 @@ void RedGiantBC(Mesh *pm) {
       }
     }
     if (mb_bcs.d_view(m,BoundaryFace::outer_x1) == BoundaryFlag::user) {
-      fill(m, k, j, ie+1+n, ie-n);
+      if (open_out) {
+        fill_open_out(m, k, j, ie+1+n, ie);   // always from the highest ACTIVE cell
+      } else {
+        fill(m, k, j, ie+1+n, ie-n);
+      }
     }
   });
   if (is_mhd) {
