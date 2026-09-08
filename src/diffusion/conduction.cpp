@@ -136,6 +136,7 @@ Conduction::Conduction(std::string block, MeshBlockPack *pp, ParameterInput *pin
       }
     }
   }
+  Kokkos::realloc(dt_diag, ndtdiag);
 }
 
 //----------------------------------------------------------------------------------------
@@ -830,6 +831,82 @@ void Conduction::NewTimeStep(const DvceArray5D<Real> &w0, const EOS_Data &eos_da
   } else {
     dtnew_m = dtnew_k = dtnew_j = dtnew_i = -1;
   }
+
+  // THE STATE OF THAT CELL.  Where the cell is does not say why it is slow: the blend
+  // weight, the flux limiter's s and the heat capacity all set the number and none of
+  // them appears in any output.  Recompute them for the one winning cell, and only when
+  // dtnew has just collapsed (or on the first call), so a healthy run pays nothing.
+  dt_diag_valid = false;
+  if (radiative && dtnew_m >= 0 && (dtnew_prev < 0.0 || dtnew < 0.25*dtnew_prev)) {
+    auto dd = dt_diag;
+    const int dm = dtnew_m, dk = dtnew_k, dj = dtnew_j, di = dtnew_i;
+    auto &x1v_ = pmy_pack->pcoord->x1v;
+    auto &tfd = rad_tauf;
+    par_for("cond_dtdiag", DevExeSpace(), 0, 0, KOKKOS_LAMBDA(const int) {
+      const Real temp = (gen ? wtemp_(dm,dk,dj,di)
+                             : w0_(dm,IEN,dk,dj,di)/w0_(dm,IDN,dk,dj,di)*gm1);
+      const Real pres = (gen ? wder_(dm,IDPR,dk,dj,di) : w0_(dm,IEN,dk,dj,di)*gm1);
+      const Real dens = w0_(dm,IDN,dk,dj,di);
+      const Real kr = (ktab ? RosselandTable(krt, krlT, krlP, krnT, krnP, temp*temp_unit,
+                                             krho ? dens*dens_unit : pres*pres_unit)
+                            : -1.0);
+      const Real kappa_ = (ktab
+          ? RadiativeKappaKR(temp*temp_unit, dens*dens_unit, kfac, kr)
+          : RadiativeKappa(temp*temp_unit, pres*pres_unit, dens*dens_unit, met, kfac))
+          /kappa_unit;
+      Real rcv = dens/gm1;
+      if (gen) {
+        rcv = dens*eos_.SpecificHeatCv(dens, w0_(dm,IEN,dk,dj,di));
+      }
+      Real ffree = 0.0;
+      if (limit) {
+        const Real tk = temp*temp_unit;
+        ffree = 5.670374419e-5*tk*tk*tk*tk/(pres_unit*vel_unit);
+      }
+      auto tc = [&] (const int kk, const int jj, const int ii) {
+        return (gen ? wtemp_(dm,kk,jj,ii)
+                    : w0_(dm,IEN,kk,jj,ii)/w0_(dm,IDN,kk,jj,ii)*gm1);
+      };
+      auto sof = [&] (const Real dl, const Real tm, const Real tp) {
+        return (limit && ffree > 0.0) ? kappa_*fabs(tp - tm)/(2.0*dl)/ffree : 0.0;
+      };
+      auto keff = [&] (const Real s) {
+        return (limit && ffree > 0.0) ? kappa_/((1.0 + s*s)*sqrt(1.0 + s*s)) : kappa_;
+      };
+      const Real wmax = taumode ? fmax(wf(dm,dk,dj,di), wf(dm,dk,dj,di+1)) : 1.0;
+      const Real d1 = curv ? dx1_(dm,dk,dj,di) : size.d_view(dm).dx1;
+      const Real d2 = curv ? dx2_(dm,dk,dj,di) : size.d_view(dm).dx2;
+      const Real d3 = curv ? dx3_(dm,dk,dj,di) : size.d_view(dm).dx3;
+      const Real s2 = cs ? SQR(sinc_(dm,dk,dj)) : 1.0;
+      const Real s1v = sof(d1, tc(dk,dj,di-1), tc(dk,dj,di+1));
+      const Real s2v = sof(d2, tc(dk,dj-1,di), tc(dk,dj+1,di));
+      const Real s3v = sof(d3, tc(dk-1,dj,di), tc(dk+1,dj,di));
+      const Real w1 = (taumode && blend_r) ? wmax : 1.0;
+      const Real wa = taumode ? wmax : 1.0;
+      dd.d_view(0)  = x1v_(dm,di);
+      dd.d_view(1)  = dens*dens_unit;
+      dd.d_view(2)  = temp*temp_unit;
+      dd.d_view(3)  = pres*pres_unit;
+      dd.d_view(4)  = kr;
+      dd.d_view(5)  = kappa_;
+      dd.d_view(6)  = rcv;
+      dd.d_view(7)  = taumode ? wf(dm,dk,dj,di)   : 1.0;
+      dd.d_view(8)  = taumode ? wf(dm,dk,dj,di+1) : 1.0;
+      dd.d_view(9)  = taumode ? tfd(dm,dk,dj,di)  : -1.0;
+      dd.d_view(10) = taumode ? tfd(dm,dk,dj,di+1): -1.0;
+      dd.d_view(11) = s1v;
+      dd.d_view(12) = (w1*keff(s1v) > 0.0) ? SQR(d1)/(w1*keff(s1v))*rcv*fac : -1.0;
+      dd.d_view(13) = (multi_d && wa*keff(s2v) > 0.0)
+                      ? SQR(d2)*s2/(wa*keff(s2v))*rcv*fac : -1.0;
+      dd.d_view(14) = (three_d && wa*keff(s3v) > 0.0)
+                      ? SQR(d3)*s2/(wa*keff(s3v))*rcv*fac : -1.0;
+      dd.d_view(15) = ffree;
+    });
+    dt_diag.template modify<DevExeSpace>();
+    dt_diag.template sync<HostMemSpace>();
+    dt_diag_valid = true;
+  }
+  dtnew_prev = dtnew;
 
   return;
 }

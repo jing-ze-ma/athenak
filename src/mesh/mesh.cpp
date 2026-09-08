@@ -985,6 +985,19 @@ void Mesh::NewTimeStep(const Real tlim) {
           std::cout << "    conduction dt is set by cell (m,k,j,i) = ("
                     << pc->dtnew_m << "," << pc->dtnew_k << "," << pc->dtnew_j
                     << "," << pc->dtnew_i << ")" << std::endl;
+          if (pc->dt_diag_valid) {
+            auto &d = pc->dt_diag;
+            std::cout << "    r=" << d.h_view(0) << " rho=" << d.h_view(1)
+                      << " T=" << d.h_view(2) << " p=" << d.h_view(3)
+                      << " kappa_R=" << d.h_view(4) << " kappa_rad=" << d.h_view(5)
+                      << " rho*cv=" << d.h_view(6) << std::endl
+                      << "    w=" << d.h_view(7) << "," << d.h_view(8)
+                      << " tau=" << d.h_view(9) << "," << d.h_view(10)
+                      << " s1=" << d.h_view(11) << " F_free=" << d.h_view(15)
+                      << " | dt1=" << cfl_no*d.h_view(12)
+                      << " dt2=" << cfl_no*d.h_view(13)
+                      << " dt3=" << cfl_no*d.h_view(14) << std::endl;
+          }
         }
       }
     }

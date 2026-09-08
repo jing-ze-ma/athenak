@@ -161,6 +161,21 @@ Real opac_lR_lo_ = -1.0e30, opac_lR_hi_ = 1.0e30;
 bool open_inner_ = false;
 Real p_base_ = 0.0, t_base_ = 0.0;      // the initial column AT the inner wall, cgs
 Real cs_change_ = 0.1, cp_change_ = 0.3;
+// problem/open_budget (cycles, 0 = off): the open boundary is meant to be the star's
+// ENERGY SOURCE, but each of its three passes rewrites the base shell's total energy and
+// none of them is conservative by construction.  Accumulate what each one adds, in erg,
+// and report it against L so a drain of the size of the luminosity cannot hide.
+int open_budget_ = 0;
+// problem/open_conserve (default true): make the density-restoring pass energy neutral.
+// That pass adds the SAME drho to every cell of the base shell at the cell's own
+// specific energy, so it moves mass between hot and cold columns and the total energy
+// changes by drho * sum_i e_i V_i -- a sink of thousands of L once the shell has any
+// entropy contrast (measured: -4e3 L, against the +1 L the boundary is meant to supply).
+// With this on, whatever it adds is removed again uniformly over the shell.
+bool open_conserve_ = true;
+Real open_dE_ent_ = 0.0, open_dE_prs_ = 0.0, open_dE_den_ = 0.0;
+Real open_lstar_ = 0.0, open_t_last_ = 0.0;
+Real open_dE_ent_l_ = 0.0, open_dE_prs_l_ = 0.0, open_dE_den_l_ = 0.0;
 bool relax_ = false;     // the optically thin relaxation is on (radiative + tau blend)
 bool rt_ck_ = false;     // problem/rt_ck: the band solver replaces that relaxation
 // problem/ck_dump_t2, ck_dump_file2: re-arm the solver's one-shot column dump once the
@@ -686,6 +701,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       }
       cs_change_ = pin->GetOrAddReal("problem", "s_relax_cs", 0.1);
       cp_change_ = pin->GetOrAddReal("problem", "s_relax_cp", 0.3);
+      open_budget_ = pin->GetOrAddInteger("problem", "open_budget", 0);
+      open_conserve_ = pin->GetOrAddBoolean("problem", "open_conserve", true);
+      open_lstar_ = lstar;
       p_base_ = exp(hlnp(ibot))*punit_;
       t_base_ = htk(ibot);
       if (open_inner_) {
@@ -1027,14 +1045,23 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
     }
 #endif
     const Real meanP = (sN > 0.0) ? sumP/sN : 0.0;
-    // Pass B: the inflow entropy relaxation, then the pressure damping
-    par_for("rg_co5B", DevExeSpace(), 0, nmb1, ks, ke, js, je,
-    KOKKOS_LAMBDA(const int m, const int k, const int j) {
+    // Pass B: the inflow entropy relaxation, then the pressure damping.  Both rewrite
+    // u0(IEN); the budget (problem/open_budget) accumulates each one separately, which
+    // is the only way to see which of them is the star's energy source and which is not.
+    auto &vol_ = pmbp->pcoord->volume;
+    const Real eunit = pmbp->punit->pressure_cgs()
+                       *SQR(pmbp->punit->length_cgs())*pmbp->punit->length_cgs();
+    Real dEent = 0.0, dEprs = 0.0;
+    Kokkos::parallel_reduce("rg_co5B", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb1+1),
+    KOKKOS_LAMBDA(const int m, Real &sEent, Real &sEprs) {
       if (mb_bcs.d_view(m,BoundaryFace::inner_x1) != BoundaryFlag::user) return;
+      for (int k=ks; k<=ke; ++k) {
+      for (int j=js; j<=je; ++j) {
       const Real dr_ = x1f_r(m,is+1) - x1f_r(m,is);
       Real r = u0(m,IDN,k,j,is);
       const Real v1 = u0(m,IM1,k,j,is)/r, v2 = u0(m,IM2,k,j,is)/r;
       const Real v3 = u0(m,IM3,k,j,is)/r;
+      const Real Ein = u0(m,IEN,k,j,is);
       Real ei = u0(m,IEN,k,j,is) - 0.5*r*(v1*v1 + v2*v2 + v3*v3);
       if (etotgrav) ei -= r*phicc(m,k,j,is);
       Real es = ei/r;
@@ -1054,6 +1081,12 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
           es += rlx*(es_ad - es);
         }
       }
+      {
+        Real Em = r*es + 0.5*r*(v1*v1 + v2*v2 + v3*v3);
+        if (etotgrav) Em += r*phicc(m,k,j,is);
+        sEent += (Em - Ein)*vol_(m,k,j,is)*eunit;
+        sEprs -= Em*vol_(m,k,j,is)*eunit;    // completed after the pressure damping
+      }
       // damp pressure toward the shell mean, adiabatically
       Real P1 = eos.Pressure(r, r*es);
       Real g1p = eos.Gamma1(r, r*es);
@@ -1068,7 +1101,9 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
       Real E = r*es + 0.5*r*(v1*v1 + v2*v2 + v3*v3);
       if (etotgrav) E += r*phicc(m,k,j,is);
       u0(m,IEN,k,j,is) = E;
-    });
+      sEprs += E*vol_(m,k,j,is)*eunit;
+      }}
+    }, dEent, dEprs);
     // Pass C: the shell means again, after those two steps
     Real srho2 = 0.0, srho2v = 0.0, sv = 0.0;
     Kokkos::parallel_reduce("rg_co5C", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb1+1),
@@ -1093,9 +1128,13 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
     const Real drho4 = (sN > 0.0) ? (srho0 - srho2)/sN : 0.0;
     const Real cvel = (srho0 > 0.0) ? (srho2v + drho4*sv)/srho0 : 0.0;
     // Pass D: restore the mean density, and drive the net radial mass flux to zero
-    par_for("rg_co5D", DevExeSpace(), 0, nmb1, ks, ke, js, je,
-    KOKKOS_LAMBDA(const int m, const int k, const int j) {
+    Real dEden = 0.0;
+    Kokkos::parallel_reduce("rg_co5D", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb1+1),
+    KOKKOS_LAMBDA(const int m, Real &sEden) {
       if (mb_bcs.d_view(m,BoundaryFace::inner_x1) != BoundaryFlag::user) return;
+      for (int k=ks; k<=ke; ++k) {
+      for (int j=js; j<=je; ++j) {
+      const Real Ein = u0(m,IEN,k,j,is);
       const Real r0 = u0(m,IDN,k,j,is);
       const Real v1 = u0(m,IM1,k,j,is)/r0 - cvel;
       const Real v2 = u0(m,IM2,k,j,is)/r0, v3 = u0(m,IM3,k,j,is)/r0;
@@ -1103,7 +1142,7 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
       if (etotgrav) ei -= r0*phicc(m,k,j,is);
       const Real es = ei/r0;
       const Real r = r0 + drho4;
-      if (!(r > 0.0)) return;
+      if (!(r > 0.0)) continue;
       u0(m,IDN,k,j,is) = r;
       u0(m,IM1,k,j,is) = r*v1;
       u0(m,IM2,k,j,is) = r*v2;
@@ -1111,7 +1150,66 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
       Real E = r*es + 0.5*r*(v1*v1 + v2*v2 + v3*v3);
       if (etotgrav) E += r*phicc(m,k,j,is);
       u0(m,IEN,k,j,is) = E;
-    });
+      sEden += (E - Ein)*vol_(m,k,j,is)*eunit;
+      }}
+    }, dEden);
+    // The report.  Rates over the interval since the last one, and the running totals,
+    // both in units of L: the boundary is supposed to feed the star, so anything that
+    // is not O(L) is a bug in one of the three passes above.
+#if MPI_PARALLEL_ENABLED
+    {
+      Real g[3] = {dEent, dEprs, dEden};
+      MPI_Allreduce(MPI_IN_PLACE, g, 3, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+      dEent = g[0]; dEprs = g[1]; dEden = g[2];
+    }
+#endif
+    // Pass E: give back what Pass D took.  Uniformly in volume, so the shell's own
+    // structure is untouched and only the spurious global term goes away.
+    if (open_conserve_ && dEden != 0.0) {
+      Real svol = 0.0;
+      Kokkos::parallel_reduce("rg_co5Evol", Kokkos::RangePolicy<>(DevExeSpace(),0,nmb1+1),
+      KOKKOS_LAMBDA(const int m, Real &a) {
+        if (mb_bcs.d_view(m,BoundaryFace::inner_x1) == BoundaryFlag::user) {
+          for (int k=ks; k<=ke; ++k) {
+            for (int j=js; j<=je; ++j) { a += vol_(m,k,j,is); }
+          }
+        }
+      }, svol);
+#if MPI_PARALLEL_ENABLED
+      MPI_Allreduce(MPI_IN_PLACE, &svol, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
+      if (svol > 0.0) {
+        const Real de = -dEden/(svol*eunit);      // code energy density
+        par_for("rg_co5E", DevExeSpace(), 0, nmb1, ks, ke, js, je,
+        KOKKOS_LAMBDA(const int m, const int k, const int j) {
+          if (mb_bcs.d_view(m,BoundaryFace::inner_x1) != BoundaryFlag::user) return;
+          u0(m,IEN,k,j,is) += de;
+        });
+        dEden = 0.0;
+      }
+    }
+    if (open_budget_ > 0) {
+      open_dE_ent_ += dEent;
+      open_dE_prs_ += dEprs;
+      open_dE_den_ += dEden;
+      if (pm->ncycle % open_budget_ == 0 && global_variable::my_rank == 0) {
+        const Real tnow = pm->time*pmbp->punit->time_cgs();
+        const Real dtw = tnow - open_t_last_;
+        const Real iL = 1.0/open_lstar_;
+        if (dtw > 0.0) {
+          std::cout << "open BC budget: rate/L  entropy="
+                    << (open_dE_ent_ - open_dE_ent_l_)/dtw*iL << " pressure="
+                    << (open_dE_prs_ - open_dE_prs_l_)/dtw*iL << " density="
+                    << (open_dE_den_ - open_dE_den_l_)/dtw*iL
+                    << " | total erg = " << open_dE_ent_ + open_dE_prs_ + open_dE_den_
+                    << " (t = " << tnow << " s)" << std::endl;
+        }
+        open_t_last_ = tnow;
+        open_dE_ent_l_ = open_dE_ent_;
+        open_dE_prs_l_ = open_dE_prs_;
+        open_dE_den_l_ = open_dE_den_;
+      }
+    }
   }
 
   // --- the optically thin layers: the correlated-k two-stream if it is on, else the
