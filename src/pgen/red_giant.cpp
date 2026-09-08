@@ -144,6 +144,21 @@ bool etotgrav_ = false;
 
 // the initial column on a fine uniform grid in r: ln p [code] and T [K]
 DvceArray1D<Real> lnp_d_, tk_d_;
+// The MIXING-LENGTH convective velocity on the same fine column, for the velocity seed.
+// problem/vpert_mlt (default true when the column is built with MLT): the seed amplitude
+// is v_c(r) rather than a Mach number.  A red giant's surface convection is transonic --
+// v_c ~ (F/rho)^(1/3) is 1.4e6 cm/s against c_s = 5.4e5 at the photosphere -- so a Mach
+// 1e-3 seed starts three orders of magnitude below the amplitude the flow has to reach,
+// and the layers cool faster than that many e-foldings take.  problem/vpert then
+// multiplies v_c instead of c_s.
+DvceArray1D<Real> vc_d_;
+bool vpert_mlt_ = true;
+// problem/vpert_mach_max (default 0.3): cap the seed at this fraction of the local sound
+// speed.  v_c peaks just under the photosphere, where convection is least efficient and
+// the density is lowest, and there it is TRANSONIC -- seeding a single smooth mode at
+// that amplitude drove the top 50 radial cells non-finite within 3400 cycles.  Deep down
+// v_c/c_s ~ 1e-4 and the cap never binds, so this only tames the surface.
+Real vpert_mach_max_ = 0.3;
 Real rlo_ = 0.0, drf_ = 1.0;
 int nfine_ = 0;
 // the opacity table (for the thin-layer relaxation) and the star's Teff
@@ -414,6 +429,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   const Real ptop_cgs = pin->GetReal("problem", "ptop");
   const Real mu = pin->GetOrAddReal("problem", "mu", 0.62);
   const Real vpert = pin->GetOrAddReal("problem", "vpert", 0.0);
+  vpert_mlt_ = pin->GetOrAddBoolean("problem", "vpert_mlt", true);
+  vpert_mach_max_ = pin->GetOrAddReal("problem", "vpert_mach_max", 0.3);
   const Real kfac = pin->GetOrAddReal("problem", "kappa_fac", 1.0);
   const Real kconst = pin->GetOrAddReal("problem", "kappa_const", 0.0);
   mlt_alpha_ = pin->GetOrAddReal("problem", "mlt_alpha", 0.0);
@@ -608,11 +625,13 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   const int itop = static_cast<int>((rout - rlo)/drf + 0.5);
   DvceArray1D<Real> lnp("rg_lnp", nfine), tk("rg_tk", nfine);
   DvceArray1D<Real> kap("rg_kap", nfine), grad("rg_grad", nfine), tau("rg_tau", nfine);
+  DvceArray1D<Real> vcc("rg_vc", nfine);
   {
     const Real ttop = teff*pow(0.5, 0.25);
     const Real ptop = ptop_cgs/punit_;
     const Real lum = lstar, mass = mstar, lun = lunit, dun = dunit, pun = punit_;
     const Real alpha_ic = mlt_alpha_ic;
+    const Real vunit_c = vunit;
     const Real tun = pmbp->punit->temperature_cgs();
     // one serial sweep on the device (the EOS and the table live there); RK2 in r
     // where the thin-layer relaxation acts (tau < rad_tau_hi) the column is RADIATIVE
@@ -623,7 +642,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     par_for("rg_column", DevExeSpace(), 0, 0, KOKKOS_LAMBDA(const int dummy) {
       // gradient at (p [code], T [K], tau): d ln T / d ln p and the state
       auto nabla = [&](const Real r, const Real p, const Real t, const Real ta,
-                       Real &rho, Real &kr, Real &gr) {
+                       Real &rho, Real &kr, Real &gr, Real &vc) {
+        vc = 0.0;
         rho = DensFromPT(eos, rgas, p, t);
         kr = kfac*KappaTab(ktab, klT, klD, knT, knD, t, rho*dun);
         const Real grad_rad = 3.0*kr*(p*pun)*lum
@@ -679,19 +699,22 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
           }
         }
         gr = 0.5*(lo + hi);
+        // the convective velocity that carries the rest of the flux, the same expression
+        // the rg_mlt_flux source term uses.  This is what the seed is scaled to.
+        vc = sqrt(g*delta*ell*ell*(gr - grad_ad)/(8.0*hp))/vunit_c;
         return gr;
       };
       // a hydrostatic RK2 step from (r, lnp, T, tau) over dr (signed; tau grows inward)
       auto step = [&](const Real r, const Real lp0, const Real t0, const Real dr,
                       Real &lp1, Real &t1, Real &ta) {
-        Real rho, kr, gr;
+        Real rho, kr, gr, vcd;
         const Real p0 = exp(lp0);
-        nabla(r, p0, t0, ta, rho, kr, gr);
+        nabla(r, p0, t0, ta, rho, kr, gr, vcd);
         const Real dlnp_a = -rho*GravAt(gm, r)/p0;
         const Real lpm = lp0 + 0.5*dr*dlnp_a;
         const Real tm = t0*exp(0.5*dr*dlnp_a*gr);
         const Real rm = r + 0.5*dr;
-        nabla(rm, exp(lpm), tm, ta, rho, kr, gr);
+        nabla(rm, exp(lpm), tm, ta, rho, kr, gr, vcd);
         const Real dlnp_m = -rho*GravAt(gm, rm)/exp(lpm);
         lp1 = lp0 + dr*dlnp_m;
         t1 = t0*exp(dr*dlnp_m*gr);
@@ -711,16 +734,16 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       // diagnostics: tau from the top down, kappa, and the gradient actually used
       Real tsum = 0.0;
       for (int i = nfine-1; i >= 0; --i) {
-        Real rho, kr, gr;
-        nabla(rlo + i*drf, exp(lnp(i)), tk(i), tsum, rho, kr, gr);
-        kap(i) = kr; grad(i) = gr;
+        Real rho, kr, gr, vcd;
+        nabla(rlo + i*drf, exp(lnp(i)), tk(i), tsum, rho, kr, gr, vcd);
+        kap(i) = kr; grad(i) = gr; vcc(i) = vcd;
         tau(i) = tsum;
         tsum += kr*rho*dun*drf*lun;
       }
       (void) tun;
     });
   }
-  lnp_d_ = lnp; tk_d_ = tk; rlo_ = rlo; drf_ = drf; nfine_ = nfine;
+  lnp_d_ = lnp; tk_d_ = tk; vc_d_ = vcc; rlo_ = rlo; drf_ = drf; nfine_ = nfine;
 
   // --- report the column, and dump it if asked
   {
@@ -863,13 +886,15 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         std::ofstream df(dump);
         df.precision(10);
         df << std::scientific;
+        auto hvc = Kokkos::create_mirror_view(vcc);
+        Kokkos::deep_copy(hvc, vcc);
         df << "# red_giant initial column\n# r[cm] p[dyn/cm2] T[K] rho[g/cm3] kappa_R "
-           << "grad tau\n";
+           << "grad tau v_mlt[cm/s]\n";
         for (int i = 0; i < nfine; ++i) {
           Real p = exp(hlnp(i)), t = htk(i);
           df << (rlo + i*drf)*lunit << " " << p*punit_ << " " << t << " "
              << DensFromPT(eos, rgas, p, t)*dunit << " " << hkap(i) << " " << hgrad(i)
-             << " " << htau(i) << "\n";
+             << " " << htau(i) << " " << hvc(i)*vunit << "\n";
         }
       }
     }
@@ -904,6 +929,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
 
   // --- the initial state
   const int nf = nfine;
+  auto vcd = vc_d_;
+  const bool vpert_mlt = vpert_mlt_ && (mlt_alpha_ic > 0.0);
+  const Real vmachmax = vpert_mach_max_;
   par_for("rg_ic", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1, 0, n1m1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real x1lo = size.d_view(m).x1min, x1hi = size.d_view(m).x1max;
@@ -920,7 +948,25 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     if (vpert > 0.0) {
       const Real x2v = CellCenterX(j-js, indcs.nx2, x2lo, x2hi);
       const Real x3v = CellCenterX(k-ks, indcs.nx3, x3lo, x3hi);
-      const Real cs = sqrt(gamma*p/d);
+      // the amplitude: the MLT convective velocity where the column has one, else the
+      // sound speed (the historical Mach-number seed)
+      const Real csl = sqrt(gamma*p/d);
+      // With the MLT seed, a cell the column gives no convective velocity -- the
+      // radiative interior below the RCB, and the optically thin top -- gets NO seed.
+      // Falling back to the sound speed there means seeding the densest material in the
+      // star at Mach vpert, which with vpert = 1 is a transonic slug in the radiative
+      // core: 8 orders of magnitude more kinetic energy than the rest of the seed put
+      // together, and the upper domain went non-finite within 3400 cycles.
+      Real amp = vpert_mlt ? 0.0 : csl;
+      if (vpert_mlt) {
+        const Real xf = (r - rlo)/drf;
+        int i0 = static_cast<int>(xf);
+        i0 = (i0 < 0) ? 0 : ((i0 > nf-2) ? nf-2 : i0);
+        const Real f = xf - static_cast<Real>(i0);
+        const Real vcl = vcd(i0)*(1.0 - f) + vcd(i0+1)*f;
+        if (vcl > 0.0) amp = fmin(vcl, vmachmax*csl);
+      }
+      const Real cs = amp;
       const Real tp = 2.0*M_PI;
       v1 = vpert*cs*sin(3.0*tp*(xc - x1lo)/(x1hi - x1lo))
            *cos(2.0*tp*(x2v - x2lo)/(x2hi - x2lo))*cos(tp*(x3v - x3lo)/(x3hi - x3lo));
