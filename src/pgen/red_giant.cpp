@@ -173,6 +173,16 @@ int open_budget_ = 0;
 // entropy contrast (measured: -4e3 L, against the +1 L the boundary is meant to supply).
 // With this on, whatever it adds is removed again uniformly over the shell.
 bool open_conserve_ = true;
+// problem/face_budget (cycles, 0 = off): the energy and mass the RADIAL FACES of the
+// domain carry, integrated over each shell.  The open boundary's own passes are only
+// half of its budget -- the other half is what the Riemann solver advects across the
+// same face, and nothing else in the code reports it.  Sampled once per cycle, at the
+// first stage, times dt: an O(dt) estimate of the cycle's transfer, which is all that
+// is needed to compare a suspected sink against L.
+int face_budget_ = 0;
+int face_cycle_ = -1;
+Real face_E_in_ = 0.0, face_E_out_ = 0.0, face_M_in_ = 0.0, face_M_out_ = 0.0;
+Real face_E_in_l_ = 0.0, face_E_out_l_ = 0.0, face_t_last_ = 0.0;
 Real open_dE_ent_ = 0.0, open_dE_prs_ = 0.0, open_dE_den_ = 0.0;
 Real open_lstar_ = 0.0, open_t_last_ = 0.0;
 Real open_dE_ent_l_ = 0.0, open_dE_prs_l_ = 0.0, open_dE_den_l_ = 0.0;
@@ -702,6 +712,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       cs_change_ = pin->GetOrAddReal("problem", "s_relax_cs", 0.1);
       cp_change_ = pin->GetOrAddReal("problem", "s_relax_cp", 0.3);
       open_budget_ = pin->GetOrAddInteger("problem", "open_budget", 0);
+      face_budget_ = pin->GetOrAddInteger("problem", "face_budget", 0);
       open_conserve_ = pin->GetOrAddBoolean("problem", "open_conserve", true);
       open_lstar_ = lstar;
       p_base_ = exp(hlnp(ibot))*punit_;
@@ -845,6 +856,76 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void RedGiantFaceBudget
+//! \brief what the two radial faces of the domain carry, in erg/s and g/s against L.
+//! The update adds +area(is) F(is) at the bottom and -area(ie+1) F(ie+1) at the top, so
+//! both numbers below are signed as a GAIN by the domain.  Called from the source term,
+//! which runs after the fluxes and before the next stage overwrites them.
+
+void RedGiantFaceBudget(Mesh *pm) {
+  if (face_budget_ <= 0 || pm->ncycle == face_cycle_) return;
+  face_cycle_ = pm->ncycle;
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmbp->nmb_thispack - 1;
+  const bool is_mhd = (pmbp->pmhd != nullptr);
+  auto &flx1 = is_mhd ? pmbp->pmhd->uflx.x1f : pmbp->phydro->uflx.x1f;
+  auto &area1 = pmbp->pcoord->area.x1f;
+  auto &mb_bcs = pmbp->pmb->mb_bcs;
+  const Real dt = pm->dt;
+  Real sEi = 0.0, sEo = 0.0, sMi = 0.0, sMo = 0.0;
+  Kokkos::parallel_reduce("rg_facebud", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmb1+1),
+  KOKKOS_LAMBDA(const int m, Real &aEi, Real &aEo, Real &aMi, Real &aMo) {
+    const bool inb = (mb_bcs.d_view(m,BoundaryFace::inner_x1) == BoundaryFlag::user);
+    const bool oub = (mb_bcs.d_view(m,BoundaryFace::outer_x1) == BoundaryFlag::user);
+    for (int k=ks; k<=ke; ++k) {
+      for (int j=js; j<=je; ++j) {
+        if (inb) {
+          aEi += area1(m,k,j,is)*flx1(m,IEN,k,j,is);
+          aMi += area1(m,k,j,is)*flx1(m,IDN,k,j,is);
+        }
+        if (oub) {
+          aEo -= area1(m,k,j,ie+1)*flx1(m,IEN,k,j,ie+1);
+          aMo -= area1(m,k,j,ie+1)*flx1(m,IDN,k,j,ie+1);
+        }
+      }
+    }
+  }, sEi, sEo, sMi, sMo);
+#if MPI_PARALLEL_ENABLED
+  {
+    Real g[4] = {sEi, sEo, sMi, sMo};
+    MPI_Allreduce(MPI_IN_PLACE, g, 4, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+    sEi = g[0]; sEo = g[1]; sMi = g[2]; sMo = g[3];
+  }
+#endif
+  const Real eunit = pmbp->punit->pressure_cgs()*SQR(pmbp->punit->length_cgs())
+                     *pmbp->punit->length_cgs();
+  const Real munit = pmbp->punit->density_cgs()*SQR(pmbp->punit->length_cgs())
+                     *pmbp->punit->length_cgs();
+  face_E_in_  += sEi*dt*eunit;
+  face_E_out_ += sEo*dt*eunit;
+  face_M_in_  += sMi*dt*munit;
+  face_M_out_ += sMo*dt*munit;
+  if (pm->ncycle % face_budget_ == 0 && global_variable::my_rank == 0) {
+    const Real tnow = pm->time*pmbp->punit->time_cgs();
+    const Real dtw = tnow - face_t_last_;
+    if (dtw > 0.0) {
+      const Real iL = 1.0/open_lstar_;
+      std::cout << "face budget: gain/L  inner=" << (face_E_in_ - face_E_in_l_)/dtw*iL
+                << " outer=" << (face_E_out_ - face_E_out_l_)/dtw*iL
+                << " | erg in=" << face_E_in_ << " out=" << face_E_out_
+                << " | g in=" << face_M_in_ << " out=" << face_M_out_
+                << " (t = " << tnow << " s)" << std::endl;
+    }
+    face_t_last_ = tnow;
+    face_E_in_l_ = face_E_in_;
+    face_E_out_l_ = face_E_out_;
+  }
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RedGiantGravity
 //! \brief the radial gravity source, -rho G M / r^2, or under wellbalance_dynamic the
 //! background's own pressure difference across the cell (face-sum form on the
@@ -858,6 +939,7 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
   const int nmb1 = pmbp->nmb_thispack - 1;
   auto &size = pmbp->pmb->mb_size;
   const bool is_mhd = (pmbp->pmhd != nullptr);
+  RedGiantFaceBudget(pm);
   auto &u0 = is_mhd ? pmbp->pmhd->u0 : pmbp->phydro->u0;
   auto &w0 = is_mhd ? pmbp->pmhd->w0 : pmbp->phydro->w0;
   auto eos = is_mhd ? pmbp->pmhd->peos->eos_data : pmbp->phydro->peos->eos_data;
