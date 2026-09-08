@@ -82,6 +82,18 @@ Real sponge_c       = 0.1;     // problem/sponge_c: damping rate, in units of cs
 // taller box is a deeper convection zone AND a taller atmosphere, which is two
 // experiments at once. Lower it to buy atmosphere at a fixed convective depth.
 Real z_ph_frac      = 0.5;
+// problem/open_nomassflux (default true): hold the NET mass flux through the bottom
+// FACE at zero.  Step 5 below subtracts <rho v>/<rho> from the vertical velocity at the
+// lowest cell CENTRE, but the mass that enters or leaves crosses the FACE, and the two
+// are not the same number.  Measured on a red giant envelope, which runs the same five
+// passes on a spherical shell, that face drained the whole of the run's energy loss;
+// measured here, sunmovie/spinup gained 4.7 % of the box's mass and 2.9 % of its energy
+// in 1.2e4 s, the same defect with the opposite sign.  This removes the net mass the
+// face delivered this stage, uniformly over the bottom plane, with the energy and
+// momentum that mass carried at the plane-mean specific total enthalpy and velocity, so
+// a zero-net-mass convective enthalpy flux -- the energy input the boundary exists for
+// -- passes through untouched.
+bool open_nomassflux = true;
 }  // namespace
 
 
@@ -105,6 +117,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // before the restart return, since it is a source term the restarted run has to keep
   // applying.
   sponge_on   = pin->GetOrAddBoolean("problem","sponge",true);
+  open_nomassflux = pin->GetOrAddBoolean("problem","open_nomassflux",true);
   sponge_zbot = pin->GetOrAddReal("problem","sponge_zbot",0.8);
   sponge_c    = pin->GetOrAddReal("problem","sponge_c",0.1);
   z_ph_frac   = pin->GetOrAddReal("problem","z_ph_frac",0.5);
@@ -1372,6 +1385,53 @@ void SourceFunc(Mesh *pm, Real bdt) {
       Real K_bot = p_base/pow(rho_base, gamma);
       Real s_inflow = cv*log(K_bot);
       Real CsChange = 0.1, CPChange = 0.3;
+      // Pass 0: cancel the NET mass the bottom face delivered this stage.  The fluxes
+      // the RKUpdate has just applied are still in uflx, so this is exact per stage
+      // rather than a correction chasing a drift.  The mesh here is Cartesian, where
+      // pcoord's area and volume arrays are 1x1 placeholders, so the face area and cell
+      // volume come from the MeshBlock size.
+      if (open_nomassflux) {
+        DvceFaceFld5D<Real> uflx_ = (pmbp->phydro != nullptr) ? pmbp->phydro->uflx
+                                                             : pmbp->pmhd->uflx;
+        auto flx1 = uflx_.x1f;
+        Real sM=0.0, sV=0.0, sH=0.0, sD=0.0, sPv=0.0;
+        Kokkos::parallel_reduce("co50", nmb1+1,
+        KOKKOS_LAMBDA(int m, Real &aM, Real &aV, Real &aH, Real &aD, Real &aPv) {
+          if (mb_bcs.d_view(m,BoundaryFace::inner_x1) != BoundaryFlag::user) return;
+          Real da = size.d_view(m).dx2*size.d_view(m).dx3;
+          Real dv = da*size.d_view(m).dx1;
+          for (int k=ks; k<=ke; ++k) { for (int jj=js; jj<=je; ++jj) {
+            Real r = u0(m,IDN,k,jj,is);
+            Real ke_ = 0.5*(SQR(u0(m,IM1,k,jj,is))+SQR(u0(m,IM2,k,jj,is))
+                            +SQR(u0(m,IM3,k,jj,is)))/r;
+            Real ei = u0(m,IEN,k,jj,is) - ke_;
+            if (use_etotgrav) ei -= r*phicc0(m,k,jj,is);
+            aM += da*flx1(m,IDN,k,jj,is);
+            aV += dv;
+            aH += (u0(m,IEN,k,jj,is) + PresFromEint(eos,gm1,r,ei))*dv;
+            aD += r*dv;
+            aPv += u0(m,IM1,k,jj,is)*dv;
+          } }
+        }, sM, sV, sH, sD, sPv);
+#if MPI_PARALLEL_ENABLED
+        { Real g[5]={sM,sV,sH,sD,sPv};
+          MPI_Allreduce(MPI_IN_PLACE,g,5,MPI_ATHENA_REAL,MPI_SUM,MPI_COMM_WORLD);
+          sM=g[0]; sV=g[1]; sH=g[2]; sD=g[3]; sPv=g[4]; }
+#endif
+        if (sV > 0.0 && sD > 0.0) {
+          Real dd = -bdt*sM/sV;          // code density, the same in every bottom cell
+          Real hbar = sH/sD;             // plane-mean specific total enthalpy
+          Real vbar = sPv/sD;            // plane-mean vertical velocity
+          par_for("co50b", DevExeSpace(), 0, nmb1, ks, ke, js, je,
+          KOKKOS_LAMBDA(int m, int k, int jj) {
+            if (mb_bcs.d_view(m,BoundaryFace::inner_x1) != BoundaryFlag::user) return;
+            if (u0(m,IDN,k,jj,is) + dd <= 0.0) return;
+            u0(m,IDN,k,jj,is) += dd;
+            u0(m,IM1,k,jj,is) += dd*vbar;
+            u0(m,IEN,k,jj,is) += dd*hbar;
+          });
+        }
+      }
       // Pass A: global <rho0>, <P>, N over the bottom plane
       Real srho0=0.0, sumP=0.0, sN=0.0;
       Kokkos::parallel_reduce("co5A", nmb1+1, KOKKOS_LAMBDA(int m, Real &a, Real &b, Real &c) {
