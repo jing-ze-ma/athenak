@@ -1771,6 +1771,11 @@ void RedGiantBC(Mesh *pm) {
     Real v1 = w0(m,IVX,k,j,im);
     const Real v2 = w0(m,IVY,k,j,im), v3 = w0(m,IVZ,k,j,im);
     if (open_out_noin && v1 < 0.0) v1 = 0.0;
+    if (open_dbg && m == 0 && k == 2 && j == 2) {
+      Kokkos::printf("rg_open_bc_out i=%d im=%d: d_i=%.6e e_i=%.6e p_i=%.6e t_i=%.6e "
+                     "dphi=%.6e p_g=%.6e d_g=%.6e e_g=%.6e v1=%.6e\n",
+                     i, im, d_i, e_i, p_i, t_i, dphi, p_g, d_g, e_g, v1);
+    }
     w0(m,IDN,k,j,i) = d_g;
     w0(m,IEN,k,j,i) = e_g;
     w0(m,IVX,k,j,i) = v1;
@@ -1810,15 +1815,24 @@ void RedGiantBC(Mesh *pm) {
   };
   par_for("rg_bc_x1", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1, 0, ng-1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int n) {
+    // AN OPEN GHOST NEEDS AN INTERIOR TO CONTINUE.  The boundary function runs before the
+    // problem generator has filled w0 -- twice, on the calls that set up the mesh -- and
+    // the primitives are then exactly zero.  Continuing THAT hydrostatically gives a
+    // pressure of NaN, and SolveDensity answers a NaN pressure with its 1e6 g/cm^3
+    // sentinel: a ghost 17 orders of magnitude denser than the cell it sits against,
+    // which destroys the outermost active cell on the first step and collapses the
+    // timestep by 2e4 before the run has produced a single output.  Fall back to the
+    // initial column whenever the neighbouring active cell has no state yet; once it
+    // has, the continuation is used and at t = 0 it reproduces the column anyway.
     if (mb_bcs.d_view(m,BoundaryFace::inner_x1) == BoundaryFlag::user) {
-      if (open_in) {
+      if (open_in && w0(m,IDN,k,j,is) > 0.0) {
         fill_open(m, k, j, is-1-n, is);      // always from the lowest ACTIVE cell
       } else {
         fill(m, k, j, is-1-n, is+n);
       }
     }
     if (mb_bcs.d_view(m,BoundaryFace::outer_x1) == BoundaryFlag::user) {
-      if (open_out) {
+      if (open_out && w0(m,IDN,k,j,ie) > 0.0) {
         fill_open_out(m, k, j, ie+1+n, ie);   // always from the highest ACTIVE cell
       } else {
         fill(m, k, j, ie+1+n, ie-n);
