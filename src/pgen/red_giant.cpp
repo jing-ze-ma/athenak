@@ -189,6 +189,29 @@ bool open_conserve_ = true;
 // zero-net-mass convective enthalpy flux, which is the luminosity the boundary is meant
 // to supply, passes through untouched.
 bool open_nomassflux_ = true;
+// problem/wall_noflux (default true, inner_bc = wall): make the reflecting wall exactly
+// impermeable.  The ghost carries the INITIAL COLUMN's density and pressure with only
+// v_r mirrored -- which is what keeps it in balance with the well-balanced background --
+// so once the interior drifts from the column the Riemann problem at the wall is no
+// longer symmetric, HLLC's contact speed is not zero, and the face advects mass.
+// Measured on the cubed sphere it reached -100 L and was still growing.  Each stage this
+// removes the mass the face just delivered, cell by cell (a wall is impermeable
+// locally, not on average), together with the energy that mass carried at the cell's own
+// specific total enthalpy.  It does NOT touch the momentum flux, whose pressure term is
+// what holds the star up, and it does NOT touch the conduction flux: the wall's imposed
+// luminosity is added to the same flx1(IEN) and must survive.
+bool wall_noflux_ = true;
+// problem/sponge (default true), sponge_zbot (0.96, as a fraction of the radial domain),
+// sponge_c (0.1, in units of cs/dr): an absorbing layer under the outer wall.  Both
+// radial walls are reflecting, so the acoustic flux convection drives up through the
+// photosphere has nowhere to go; a wave amplitude grows as rho^-1/2 and this envelope is
+// far more stratified than the solar box that needed the same layer.  The default zbot
+// sits ABOVE tau = 2/3 (0.952 of the domain for the standard input) so the layer never
+// damps the convection zone itself.  The kinetic energy removed is DISCARDED, not
+// thermalised -- the layer stands in for an atmosphere that carries the flux away, and
+// depositing it locally would keep inflating the top, which is the problem being fixed.
+bool sponge_on_ = true;
+Real sponge_zbot_ = 0.96, sponge_c_ = 0.1;
 int open_debug_ = 0;          // problem/open_debug: boundary calls to trace, 0 = off
 int open_dbg_calls_ = 0;
 int face_budget_ = 0;
@@ -400,6 +423,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // a RESOLVED-convection run from a stratification that already carries L.
   const Real mlt_alpha_ic = pin->GetOrAddReal("problem", "mlt_alpha_ic", mlt_alpha_);
   mlt_dump_ = pin->GetOrAddString("problem", "mlt_dump", "");
+  sponge_on_ = pin->GetOrAddBoolean("problem", "sponge", true);
+  sponge_zbot_ = pin->GetOrAddReal("problem", "sponge_zbot", 0.96);
+  sponge_c_ = pin->GetOrAddReal("problem", "sponge_c", 0.1);
   const std::string opac = pin->GetString("problem", "opac_table");
   const std::string dump = pin->GetOrAddString("problem", "column_dump", "");
   x1min_ = pmy_mesh_->mesh_size.x1min;
@@ -781,6 +807,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       open_budget_ = pin->GetOrAddInteger("problem", "open_budget", 0);
       face_budget_ = pin->GetOrAddInteger("problem", "face_budget", 0);
       open_debug_ = pin->GetOrAddInteger("problem", "open_debug", 0);
+      wall_noflux_ = pin->GetOrAddBoolean("problem", "wall_noflux", true);
       open_nomassflux_ = pin->GetOrAddBoolean("problem", "open_nomassflux", true);
       open_conserve_ = pin->GetOrAddBoolean("problem", "open_conserve", true);
       open_lstar_ = lstar;
@@ -1409,6 +1436,65 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
         open_dE_den_l_ = open_dE_den_;
       }
     }
+  }
+
+  // --- THE WALL IS IMPERMEABLE.  See wall_noflux_ above: cancel the mass the inner face
+  // advected this stage and the energy it carried, cell by cell, leaving the momentum
+  // flux (its pressure term holds the star up) and the conduction flux (it carries the
+  // imposed luminosity through the same face) alone.
+  if (!open_inner_ && wall_noflux_) {
+    auto &flx1w = is_mhd ? pmbp->pmhd->uflx.x1f : pmbp->phydro->uflx.x1f;
+    auto &area1w = pmbp->pcoord->area.x1f;
+    auto &volw = pmbp->pcoord->volume;
+    auto &mb_bcs = pmbp->pmb->mb_bcs;
+    par_for("rg_wallflux", DevExeSpace(), 0, nmb1, ks, ke, js, je,
+    KOKKOS_LAMBDA(const int m, const int k, const int j) {
+      if (mb_bcs.d_view(m,BoundaryFace::inner_x1) != BoundaryFlag::user) return;
+      const Real dm = bdt*area1w(m,k,j,is)*flx1w(m,IDN,k,j,is)/volw(m,k,j,is);
+      if (dm == 0.0) return;
+      const Real d = u0(m,IDN,k,j,is);
+      if (!(d - dm > 0.0)) return;
+      Real ei = u0(m,IEN,k,j,is)
+                - 0.5*(SQR(u0(m,IM1,k,j,is)) + SQR(u0(m,IM2,k,j,is))
+                       + SQR(u0(m,IM3,k,j,is)))/d;
+      if (etotgrav) ei -= d*phicc(m,k,j,is);
+      const Real h = (u0(m,IEN,k,j,is) + eos.Pressure(d, ei))/d;   // specific total
+      u0(m,IDN,k,j,is) -= dm;
+      u0(m,IEN,k,j,is) -= dm*h;
+    });
+  }
+
+  // --- THE SPONGE under the outer wall.  See sponge_on_ above.
+  if (sponge_on_) {
+    const Real r0s = pm->mesh_size.x1min, r1s = pm->mesh_size.x1max;
+    const Real zs = r0s + sponge_zbot_*(r1s - r0s);
+    const Real izw = (r1s > zs) ? 1.0/(r1s - zs) : 0.0;
+    const Real sc = sponge_c_;
+    auto &x1vs = pmbp->pcoord->x1v;
+    auto &dx1s = pmbp->pcoord->dx1;
+    const Real gamma_ = gm1_ + 1.0;
+    par_for("rg_sponge", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real x1lo = size.d_view(m).x1min, x1hi = size.d_view(m).x1max;
+      const Real xc = curv ? x1vs(m,i) : CellCenterX(i-is, indcs.nx1, x1lo, x1hi);
+      if (!(xc > zs)) return;
+      const Real ramp = SQR((xc - zs)*izw);
+      const Real d = u0(m,IDN,k,j,i);
+      Real v1 = u0(m,IM1,k,j,i)/d, v2 = u0(m,IM2,k,j,i)/d, v3 = u0(m,IM3,k,j,i)/d;
+      Real ei = u0(m,IEN,k,j,i) - 0.5*d*(v1*v1 + v2*v2 + v3*v3);
+      if (etotgrav) ei -= d*phicc(m,k,j,i);
+      const Real cs2 = eos.IsGeneral() ? eos.Gamma1(d, ei)*eos.Pressure(d, ei)/d
+                                       : gamma_*gm1_*ei/d;
+      const Real dz = curv ? dx1s(m,k,j,i) : (x1hi - x1lo)/indcs.nx1;
+      const Real fac = 1.0/(1.0 + sc*ramp*bdt*sqrt(cs2)/dz);
+      v1 *= fac; v2 *= fac; v3 *= fac;
+      u0(m,IM1,k,j,i) = d*v1;
+      u0(m,IM2,k,j,i) = d*v2;
+      u0(m,IM3,k,j,i) = d*v3;
+      Real E = ei + 0.5*d*(v1*v1 + v2*v2 + v3*v3);
+      if (etotgrav) E += d*phicc(m,k,j,i);
+      u0(m,IEN,k,j,i) = E;
+    });
   }
 
   // --- the optically thin layers: the correlated-k two-stream if it is on, else the
