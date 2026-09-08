@@ -269,6 +269,27 @@ inline int rt_dump_j = -1;
 inline int rt_dump_k = -1;
 inline bool rt_dump_done = false;
 inline Real rt_ck_pcut = 10.0;                    // bar
+// problem/rt_grey: the GREY two-stream, built on the correlated-k machinery rather than
+// on the old picket-fence path.  One band, one opacity, taken from the conduction
+// module's own kappa table (<hydro|mhd>/rad_kappa_src) so that the two-stream and the
+// radiative diffusion it blends with cannot disagree about the opacity, and the full
+// Planck function sigma T^4/pi as the source.
+//
+// WHY IT EXISTS, and why it is not the old grey path.  The old one is the Parmentier
+// picket fence with the Freedman fit: two IR channels whose split (gamma_1, gamma_2,
+// beta) is a fit to IRRADIATED giant planets, and an analytic opacity that is 1.7x off
+// the stellar table on a cool giant.  This one shares every structural fix the
+// correlated-k path got -- the layer-integrated two-stream coefficients, the flux
+// DIFFERENCE deposition, the tau blend, the icut handover, the semi-implicit source --
+// and differs from it in exactly one way: emission and absorption use the SAME opacity,
+// so kappa cancels out of the local radiative balance and the equilibrium temperature of
+// a thin layer is a fixed point no matter how the opacity varies.  A correlated-k layer
+// weights its absorption by the incident spectrum and its emission by its own, so a
+// layer that drifts cold can absorb less than it emits and keep drifting; that is the red
+// giant top-layer runaway.  Grey cannot do that.  It also cannot represent line
+// blanketing, which is the reason the band solver exists -- so this is the control, and
+// the diagnosis, not automatically the production choice.
+inline bool rt_grey = false;
 // problem/rt_de_max: the cap in LimitRTSource, as a fraction of the cell's internal
 // energy per RT application. Applies to every EXPLICIT radiative update -- grey and
 // correlated-k, split and monolithic. Set <= 0 to disable the limiter entirely.
@@ -632,7 +653,8 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
     // is what makes the speed-up measurable against an unchanged answer.
     if (rt_split) {
       constexpr int NC = RT_NB;
-      const int nblk = (nchain_rt + NC - 1)/NC;
+      // grey runs one chain: one band, one column sweep, whatever the angular quadrature
+      const int nblk = rt_grey ? 1 : (nchain_rt + NC - 1)/NC;
       if (rt_tau_ptr == nullptr) {
         const int nmb = pmbp->nmb_thispack;
         // Deliberately leaked, like the k-table: a namespace-scope View would outlive
@@ -647,9 +669,10 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
         // its own cache line: 8 useful bytes out of every 64 fetched.
         rt_Fb_ptr  = new DvceArray5D<Real>("rt_Fb",  nmb, nblk, n1, n3, n2);
         rt_Em_ptr  = new DvceArray5D<Real>("rt_Em",  nmb, nblk, n1, n3, n2);
-        if (rt_ck) {
-          rt_kc_ptr = new DvceArray5D<Real>("rt_kc", nmb, CK_NB, n1, n3, n2);
-          rt_Bb_ptr = new DvceArray5D<Real>("rt_Bb", nmb, CK_NB, n1, n3, n2);
+        if (rt_ck || rt_grey) {
+          const int nb_a = rt_ck ? CK_NB : 1;
+          rt_kc_ptr = new DvceArray5D<Real>("rt_kc", nmb, nb_a, n1, n3, n2);
+          rt_Bb_ptr = new DvceArray5D<Real>("rt_Bb", nmb, nb_a, n1, n3, n2);
           rt_T_ptr  = new DvceArray4D<Real>("rt_T",  nmb, n3, n2, n1);
           rt_pb_ptr = new DvceArray4D<Real>("rt_pb", nmb, n3, n2, n1);
           rt_xT_ptr = new DvceArray4D<Real>("rt_xT", nmb, n3, n2, n1);
@@ -671,25 +694,42 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
       auto Fb_g  = *rt_Fb_ptr;
       auto Em_g  = *rt_Em_ptr;
       const bool ck_on = rt_ck;
+      // the grey path shares the correlated-k scaffolding: the per-cell (T, p) and
+      // opacity precompute, the cut, the tau blend and the semi-implicit application.
+      // band_on says "one of the two band solvers is running", ck_on says which.
+      const bool grey_on = rt_grey;
+      const bool band_on = ck_on || grey_on;
       // the optical-depth blend with the conduction module's radiative diffusion: its
       // x1-face weight w (rad_w) says how much of each face's longwave flux the
       // two-stream still owns (1 - w); the column's RT bottom is the first face with
       // w = 1, and no internal flux is injected there (the diffusion carries it)
       Conduction *pcond_rt = (pm->pmb_pack->pmhd != nullptr) ? pm->pmb_pack->pmhd->pcond
                                                             : pm->pmb_pack->phydro->pcond;
-      const bool taublend = (ck_on && pcond_rt != nullptr && pcond_rt->rad_tau_mode);
+      const bool taublend = (band_on && pcond_rt != nullptr &&
+                             pcond_rt->rad_tau_mode);
       auto w_g = taublend ? pcond_rt->rad_w : DvceArray4D<Real>("rt_w_dummy",1,1,1,1);
       auto tauf_g = taublend ? pcond_rt->rad_tauf
                              : DvceArray4D<Real>("rt_tau_dummy",1,1,1,1);
       if (taublend) int_at_cut = false;
-      auto kc_g   = (ck_on) ? *rt_kc_ptr : Fb_g;
-      auto Bb_g   = (ck_on) ? *rt_Bb_ptr : Fb_g;
-      auto T_g    = (ck_on) ? *rt_T_ptr  : tau_g;
-      auto pb_g   = (ck_on) ? *rt_pb_ptr : tau_g;
-      auto xT_g   = (ck_on) ? *rt_xT_ptr : tau_g;
-      auto xP_g   = (ck_on) ? *rt_xP_ptr : tau_g;
-      auto icut_g = (ck_on) ? *rt_icut_ptr : DvceArray3D<int>("dummy",1,1,1);
-      auto Qb_g   = (ck_on) ? *rt_Qb_ptr : Fb_g;
+      auto kc_g   = (band_on) ? *rt_kc_ptr : Fb_g;
+      auto Bb_g   = (band_on) ? *rt_Bb_ptr : Fb_g;
+      auto T_g    = (band_on) ? *rt_T_ptr  : tau_g;
+      auto pb_g   = (band_on) ? *rt_pb_ptr : tau_g;
+      auto xT_g   = (band_on) ? *rt_xT_ptr : tau_g;
+      auto xP_g   = (band_on) ? *rt_xP_ptr : tau_g;
+      auto icut_g = (band_on) ? *rt_icut_ptr : DvceArray3D<int>("dummy",1,1,1);
+      auto Qb_g   = (band_on) ? *rt_Qb_ptr : Fb_g;
+      // the grey opacity: the conduction module's own table if it has one, else the
+      // Freedman fit, which is what the old grey path used unconditionally
+      const bool grey_ktab = grey_on && pcond_rt != nullptr &&
+                             pcond_rt->rad_kappa_tab && pcond_rt->rad_kr_nT > 0;
+      const bool grey_krho = grey_ktab && pcond_rt->rad_kappa_rho;
+      auto grey_kt  = grey_ktab ? pcond_rt->rad_kr_tab : DvceArray2D<Real>("d",1,1);
+      auto grey_klT = grey_ktab ? pcond_rt->rad_kr_lT : DvceArray1D<Real>("d",1);
+      auto grey_klP = grey_ktab ? pcond_rt->rad_kr_lP : DvceArray1D<Real>("d",1);
+      const int grey_nT = grey_ktab ? pcond_rt->rad_kr_nT : 0;
+      const int grey_nP = grey_ktab ? pcond_rt->rad_kr_nP : 0;
+      const Real grey_kfac = (pcond_rt != nullptr) ? pcond_rt->rad_kappa_fac : 1.0;
       auto ckswf  = (ck_on) ? *ck_swf_ptr : DvceArray1D<Real>("d",1);
       auto cklk = (ck_on) ? *ck_lk_ptr : DvceArray4D<Real>("d",1,1,1,1);
       auto cklT = (ck_on) ? *ck_lT_ptr : DvceArray1D<Real>("d",1);
@@ -713,7 +753,7 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
       const Real pcut = rt_ck_pcut;
       const int ck_nq_ = ck_nq;
 
-      if (!rt_ck && n1 > RT_NNC) {
+      if (!band_on && n1 > RT_NNC) {
         // the correlated-k path dispatches its column size at run time; the grey split
         // path below still uses the fixed RT_NNC, so it has to be checked
         std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: problem/rt_split with grey "
@@ -730,7 +770,7 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
       // had -- to one thread per cell. Only mu0 and the cut index are per column, and
       // with correlated-k on, the grey optical depth sweep, the grey Planck function and
       // the three-band Q_v that the old rt_pre computed are all dead: nothing reads them.
-      if (ck_on) {
+      if (band_on) {
         par_for("rt_pre_geom", DevExeSpace(), 0, nmb1, ks, ke, js, je,
         KOKKOS_LAMBDA(const int m, const int k, const int j) {
           const Real x2v = x2v_(m,j);
@@ -776,6 +816,21 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
           }
           icut_g(m,k,j) = icut;
         });
+        if (grey_on) {
+          par_for("rt_pre_opac_grey", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
+          KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+            if (i < icut_g(m,k,j)) return;        // deeper than the cut: never read
+            const Real TT = T_g(m,k,j,i);
+            const Real pcgs = pb_g(m,k,j,i)*1.0e6;
+            const Real rho = w0(m,IDN,k,j,i);
+            const Real kr = grey_ktab
+                ? RosselandTable(grey_kt, grey_klT, grey_klP, grey_nT, grey_nP, TT,
+                                 grey_krho ? rho : pcgs)
+                : RosselandFreedman2014(TT, pcgs, met);
+            kc_g(m,0,i,k,j) = grey_kfac*kr;
+            Bb_g(m,0,i,k,j) = boltz_sigma/M_PI*SQR(SQR(TT));
+          });
+        } else {
         par_for("rt_pre_opac", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
         KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
           if (i < icut_g(m,k,j)) return;          // deeper than the cut: never read
@@ -796,6 +851,7 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
             Bb_g(m,b,i,k,j) = sigT4_pi*ck_planck_frac(ckpf, pfl0, pfid, TT, b);
           }
         });
+        }
       } else {
       // ---- A: chain-independent per-column precompute -----------------------------
       par_for("rt_pre", DevExeSpace(), 0, nmb1, ks, ke, js, je,
@@ -919,7 +975,112 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
       // The longwave needs no cumulative optical depth: dtau is kappa*rho*dr, purely
       // local, so going from a grey tau scaled by gamma to a per-chain kappa is a lookup
       // and nothing structural. Only the sweep's lower limit changes, from is to icut.
-      if (ck_on) {
+      if (grey_on) {
+        // ---- B (grey): one thread per column.  One band, one opacity, one sweep.
+        //
+        // Structurally this is the correlated-k kernel with the chain loop collapsed to
+        // the angular quadrature: the same layer-integrated coefficients (alpha, beta on
+        // the linear-in-tau source), the same column-above-the-domain top boundary, the
+        // same thermalised intensity at the cut, and the same flux accumulation.  What it
+        // does NOT carry is the band structure, and that is the point: with one opacity
+        // the cell's emission and its absorption of the field scale together, so the
+        // local balance has a stable fixed point.
+        //
+        // Em is the cell's own emission per unit volume and it is written EXACTLY here,
+        // 4 sigma kappa rho T^4, rather than through the hemispheric-mean quadrature the
+        // band kernel uses (17 % low).  It only sets the implicit relaxation rate, but
+        // the rate is what decides whether a thin cell can be integrated at the
+        // hydrodynamic timestep, so it is worth having right.
+        auto launch_grey_chain = [&](auto nn_tag) {
+          constexpr int NN = decltype(nn_tag)::value;
+          par_for("rt_chain_grey", DevExeSpace(), 0, nmb1, ks, ke, js, je,
+          KOKKOS_LAMBDA(const int m, const int k, const int j) {
+            for (int i=is; i<ie+2; ++i) {
+              Fb_g(m,0,i,k,j) = 0.0;
+              Qb_g(m,0,i,k,j) = 0.0;
+              Em_g(m,0,i,k,j) = 0.0;
+            }
+            const int icut = icut_g(m,k,j);
+            if (icut > ie) return;                  // whole column deeper than the cut
+            // ck_nquad = 1 is the hemispheric mean (mu = 1/1.66), 2 the two-point
+            // Gauss-Legendre quadrature the band solver offers on the same switch
+            const int nq = (ck_nq_ > 1) ? 2 : 1;
+            Real muq[2], wfq[2];
+            if (nq == 1) {
+              muq[0] = 1.0/CK_DIFFUSIVITY;
+              wfq[0] = M_PI;                        // F = pi I
+            } else {
+              for (int q=0; q<2; ++q) {
+                muq[q] = mug[q];
+                wfq[q] = 2.0*M_PI*wg[q]*mug[q];
+              }
+            }
+            Real I_down[2][NN];
+            // Top: the unresolved hydrostatic column above the domain, p/g of it, at the
+            // top cell's opacity -- the same construction the band solver uses.
+            {
+              const Real kap = kc_g(m,0,ie+1,k,j);
+              const Real mu0 = cf_g(m,k,j,3);
+              const Real dtau = kap*pb_g(m,k,j,ie+1)*1.0e6
+                              / EffGravAt(grav, ap, x1v_(m,ie+1), grav_pmass, omega,
+                                          mu0, tide);
+              for (int q=0; q<nq; ++q) {
+                I_down[q][ie+1] = (1.0 - exp(-dtau/muq[q]))*Bb_g(m,0,ie+1,k,j);
+              }
+            }
+            // down-sweep
+            for (int i=ie; i>icut-1; --i) {
+              const Real dtau_i = kc_g(m,0,i,k,j)*w0(m,IDN,k,j,i)*dx1(m,k,j,i);
+              for (int q=0; q<nq; ++q) {
+                const Real x = dtau_i/muq[q];
+                const Real e0 = -expm1(-x);
+                const Real alp = (x > 1.0e-3) ? (e0 - 1.0 + e0/x) : (x/2.0 - SQR(x)/3.0);
+                const Real bet = (x > 1.0e-3) ? (1.0 - e0/x) : (x/2.0 - SQR(x)/6.0);
+                I_down[q][i] = (1.0-e0)*I_down[q][i+1]
+                             + alp*Bb_g(m,0,i+1,k,j) + bet*Bb_g(m,0,i,k,j);
+              }
+            }
+            // Bottom of the RT domain: thermalised, plus the internal flux if the layers
+            // below are not carrying it themselves (see rt_int_at_cut).
+            Real I_up[2];
+            for (int q=0; q<nq; ++q) {
+              I_up[q] = Bb_g(m,0,icut,k,j) + (int_at_cut ? Iint : 0.0);
+              Fb_g(m,0,icut,k,j) += wfq[q]*(I_up[q] - I_down[q][icut]);
+            }
+            // up-sweep
+            for (int i=icut+1; i<ie+2; ++i) {
+              const Real kap = kc_g(m,0,i-1,k,j);
+              const Real rho = w0(m,IDN,k,j,i-1);
+              const Real dtau_i = kap*rho*dx1(m,k,j,i-1);
+              for (int q=0; q<nq; ++q) {
+                const Real x = dtau_i/muq[q];
+                const Real e0 = -expm1(-x);
+                const Real bet = (x > 1.0e-3) ? (1.0 - e0/x) : (x/2.0 - SQR(x)/6.0);
+                const Real gm  = (x > 1.0e-3) ? (e0 - 1.0 + e0/x) : (x/2.0 - SQR(x)/3.0);
+                I_up[q] = (1.0-e0)*I_up[q]
+                        + bet*Bb_g(m,0,i,k,j) + gm*Bb_g(m,0,i-1,k,j);
+                Fb_g(m,0,i,k,j) += wfq[q]*(I_up[q] - I_down[q][i]);
+              }
+              Em_g(m,0,i-1,k,j) = 4.0*M_PI*kap*rho
+                                * 0.5*(Bb_g(m,0,i,k,j) + Bb_g(m,0,i-1,k,j));
+            }
+          });
+        };
+        if (n1 <= 72) {
+          launch_grey_chain(std::integral_constant<int, 72>{});
+        } else if (n1 <= 136) {
+          launch_grey_chain(std::integral_constant<int, 136>{});
+        } else if (n1 <= 264) {
+          launch_grey_chain(std::integral_constant<int, 264>{});
+        } else if (n1 <= 520) {
+          launch_grey_chain(std::integral_constant<int, 520>{});
+        } else {
+          std::cout << "### FATAL ERROR in two_stream_rt: n1 = " << n1
+                    << " exceeds the largest grey radial tier (520). Add a tier to the "
+                    << "dispatch in picket_fence_two_stream_RT." << std::endl;
+          std::exit(EXIT_FAILURE);
+        }
+      } else if (ck_on) {
         // The private intensity column has to be sized at COMPILE time, but the radial
         // extent is only known at run time, and an oversized one is not free: at n1 = 68
         // the chain kernel costs 454 ms with a 72-deep column, 503 at 136 and 540 at 272,
@@ -1264,7 +1425,7 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
           Fb *= (1.0 - w_g(m,k,j,i));
         }
         Real src = -(Ft-Fb)/dx1(m,k,j,i);
-        if (ck_on) {
+        if (band_on) {
           // deeper than the cut nothing radiative is applied: that region is optically
           // thick and convective, and the stellar beam died decades of optical depth
           // above
@@ -1296,7 +1457,7 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
           if (taublend) {
             Em *= 1.0 - 0.5*(w_g(m,k,j,i) + w_g(m,k,j,i+1));
           }
-          if (ck_on && i < icut_g(m,k,j)) Em = 0.0;
+          if (band_on && i < icut_g(m,k,j)) Em = 0.0;
           const Real ei = w0(m,IEN,k,j,i);
           if (Em > 0.0 && ei > 0.0) {
             const Real lam = 4.0*Em/ei;
@@ -1326,7 +1487,7 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
       RTSourceLimiterWarn(nclip);
 
       // ---- one-shot column dump, for cross-code comparison -------------------------
-      if (ck_on && !rt_dump_file.empty() && !rt_dump_done) {
+      if (band_on && !rt_dump_file.empty() && !rt_dump_done) {
         rt_dump_done = true;
         const int jd = (rt_dump_j >= 0) ? rt_dump_j : (js + je)/2;
         const int kd = (rt_dump_k >= 0) ? rt_dump_k : (ks + ke)/2;
@@ -1366,7 +1527,8 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
           std::ofstream f(rt_dump_file);
           f.precision(10);
           f << std::scientific;
-          f << "# deep_hot_jupiter_rt correlated-k column dump\n"
+          f << (grey_on ? "# two_stream_rt GREY column dump\n"
+                        : "# deep_hot_jupiter_rt correlated-k column dump\n")
             << "# meshblock " << md << ", k = " << kd << ", j = " << jd
             << ", mu0 = " << hcf(md,kd,jd,3) << ", icut = " << hcut(md,kd,jd)
             << " (is = " << is << ", ie = " << ie << ")\n"
@@ -1383,7 +1545,8 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
               << " " << hc(i,7) << " " << hc(i,8) << "\n";
           }
           f.close();
-          std::cout << "deep_hot_jupiter_rt: wrote correlated-k column dump to '"
+          std::cout << "two_stream_rt: wrote "
+                    << (grey_on ? "grey" : "correlated-k") << " column dump to '"
                     << rt_dump_file << "' (k = " << kd << ", j = " << jd
                     << ", mu0 = " << hcf(md,kd,jd,3) << ")" << std::endl;
         }

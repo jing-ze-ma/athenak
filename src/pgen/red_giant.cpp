@@ -245,6 +245,10 @@ Real open_lstar_ = 0.0, open_t_last_ = 0.0;
 Real open_dE_ent_l_ = 0.0, open_dE_prs_l_ = 0.0, open_dE_den_l_ = 0.0;
 bool relax_ = false;     // the optically thin relaxation is on (radiative + tau blend)
 bool rt_ck_ = false;     // problem/rt_ck: the band solver replaces that relaxation
+// problem/rt_grey: the GREY two-stream on the same machinery, sharing the conduction
+// module's opacity table.  Mutually exclusive with rt_ck; it replaces the same
+// relaxation.  See two_stream_rt::rt_grey for why a grey control exists at all.
+bool rt_grey_ = false;
 // problem/ck_dump_t2, ck_dump_file2: re-arm the solver's one-shot column dump once the
 // run reaches t2, so the emergent flux can be compared BEFORE and AFTER the atmosphere
 // has adjusted to the band opacities.  The global energy budget cannot do this: the
@@ -526,6 +530,37 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // --- the CORRELATED-K two-stream for the optically thin layers
   // (utils/two_stream_rt.hpp)
   rt_ck_ = pin->GetOrAddBoolean("problem", "rt_ck", false);
+  rt_grey_ = pin->GetOrAddBoolean("problem", "rt_grey", false);
+  if (rt_ck_ && rt_grey_) {
+    std::cout << "### FATAL ERROR in red_giant: problem/rt_ck and problem/rt_grey are "
+              << "two solvers for the same layers. Pick one." << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  if (rt_grey_) {
+    namespace ts = two_stream_rt;
+    ts::rt_grey = true;
+    ts::rt_split = true;             // implied: the grey kernel lives on the split path
+    ts::rt_de_max = pin->GetOrAddReal("problem", "rt_de_max", 0.5);
+    ts::rt_int_at_cut = false;       // the same handover argument as rt_ck below
+    ts::rt_tint_override = teff;
+    ts::rt_star_teff = 0.0;
+    ts::rt_dump_file = pin->GetOrAddString("problem", "ck_dump_file", "");
+    ts::rt_dump_m = pin->GetOrAddInteger("problem", "ck_dump_m", 0);
+    ts::rt_dump_j = pin->GetOrAddInteger("problem", "ck_dump_j", -1);
+    ts::rt_dump_k = pin->GetOrAddInteger("problem", "ck_dump_k", -1);
+    ts::rt_apply_debug = pin->GetOrAddInteger("problem", "rt_apply_debug", 0);
+    ts::rt_apply_debug_n = pin->GetOrAddInteger("problem", "rt_apply_debug_n", 8);
+    ck_dump_t2_ = pin->GetOrAddReal("problem", "ck_dump_t2", -1.0);
+    ck_dump_file2_ = pin->GetOrAddString("problem", "ck_dump_file2", "");
+    // ck_nquad picks the angular quadrature for the grey sweep too: 1 = hemispheric
+    // mean, 2 = two-point Gauss
+    correlated_k::ck_nq = pin->GetOrAddInteger("problem", "ck_nquad", 1);
+    if (global_variable::my_rank == 0) {
+      std::cout << "red_giant: GREY two-stream (problem/rt_grey), opacity from the "
+                << "conduction module's table, " << pin->GetOrAddInteger("problem",
+                   "ck_nquad", 1) << "-point angular quadrature" << std::endl;
+    }
+  }
   if (rt_ck_) {
     namespace ck = correlated_k;
     namespace ts = two_stream_rt;
@@ -1554,9 +1589,9 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
     });
   }
 
-  // --- the optically thin layers: the correlated-k two-stream if it is on, else the
-  // grey Eddington relaxation
-  if (rt_ck_) {
+  // --- the optically thin layers: the correlated-k or the grey two-stream if one of
+  // them is on, else the old grey Eddington relaxation
+  if (rt_ck_ || rt_grey_) {
     if (!ck_dumped2_ && ck_dump_t2_ >= 0.0 && !ck_dump_file2_.empty() &&
         pm->time >= ck_dump_t2_) {
       ck_dumped2_ = true;
@@ -1567,7 +1602,7 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
   }
   // --- the grey relaxation (see UserProblem): with weight 1 - w each cell
   // decays toward the Eddington temperature of its optical depth on its radiative time
-  if (relax_ && !rt_ck_) {
+  if (relax_ && !rt_ck_ && !rt_grey_) {
     Conduction *pc = is_mhd ? pmbp->pmhd->pcond : pmbp->phydro->pcond;
     auto &wf = pc->rad_w;
     auto &tf = pc->rad_tauf;
