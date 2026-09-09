@@ -10,6 +10,7 @@
 
 // C++ headers
 #include <cmath>
+#include <cstdint>
 #include <iostream> // cout
 #include <fstream>  // ifstream, for the correlated-k table
 #include <sstream>  // ostringstream, for the photosphere dump
@@ -335,6 +336,21 @@ using correlated_k::ck_build_rosseland_table;
 // clamped, so it is bounded at any field strength -- see the use site. DEFAULT ON, since
 // in that form it is the better physics; set false to drop the magnetic force entirely.
 bool bc_outer_maxwell = true;
+
+//----------------------------------------------------------------------------------------
+//! \fn KOKKOS_INLINE_FUNCTION std::uint64_t SplitMix64Mix()
+//! \brief splitmix64 finalizer: an integer hash built from xor-shifts and multiplies.
+//! Used to turn (seed, global cell index) into a reproducible pseudo-random number, so
+//! the initial-condition perturbation below is a pure function of the GLOBAL cell,
+//! independent of the MeshBlock decomposition and of the number of MPI ranks.
+
+KOKKOS_INLINE_FUNCTION
+std::uint64_t SplitMix64Mix(std::uint64_t x) {
+  x += 0x9e3779b97f4a7c15ULL;
+  x = (x ^ (x >> 30)) * 0xbf58476d1ce4e5b9ULL;
+  x = (x ^ (x >> 27)) * 0x94d049bb133111ebULL;
+  return x ^ (x >> 31);
+}
 
 //----------------------------------------------------------------------------------------
 //! \fn void ProblemGenerator::UserProblem()
@@ -741,6 +757,59 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         }
     });
     }  // end of !restart guard on the initial condition
+
+    // problem/seed + problem/seed_amp: a deterministic density perturbation on the
+    // from-scratch initial condition.  It exists to build ENSEMBLES: the cubed-sphere
+    // flow amplifies round-off to O(1) within 0.1 rotation, so distinct realizations
+    // need only a 1e-10 kick, and events like the vertex dt collapse can only be studied
+    // as a rate over many of them.  The random number is a hash of (seed, global cell
+    // index), so it is identical for any MeshBlock decomposition or MPI rank count.
+    const int ic_seed = pin->GetOrAddInteger("problem","seed",0);
+    const Real seed_amp = pin->GetOrAddReal("problem","seed_amp",0.0);
+    if (!restart && seed_amp > 0.0) {
+      // global index offset of each MeshBlock, from its LogicalLocation on the host
+      // (panel, global i/j/k of the block's first active cell). The LEVEL is
+      // deliberately NOT hashed: the root level shifts when the MeshBlock size changes,
+      // which would make the perturbation decomposition-dependent.
+      DualArray2D<int> gidx("ic_seed_gidx", pmbp->nmb_thispack, 4);
+      for (int m=0; m<pmbp->nmb_thispack; ++m) {
+        LogicalLocation &loc = pmy_mesh_->lloc_eachmb[pmbp->gids + m];
+        gidx.h_view(m,0) = loc.panel;
+        gidx.h_view(m,1) = loc.lx1*indcs.nx1;
+        gidx.h_view(m,2) = loc.lx2*indcs.nx2;
+        gidx.h_view(m,3) = loc.lx3*indcs.nx3;
+      }
+      gidx.modify_host();
+      gidx.sync_device();
+
+      if (global_variable::my_rank == 0) {
+        std::cout << "deep_hot_jupiter_rt: IC density perturbation seed = " << ic_seed
+                  << ", amplitude = " << seed_amp << std::endl;
+      }
+      auto u0seed = u0_;
+      auto w0seed = w0_;
+      auto gidx_ = gidx;
+      const std::uint64_t sd = static_cast<std::uint64_t>(
+                                 static_cast<std::int64_t>(ic_seed));
+      const Real amp = seed_amp;
+      par_for("probseed", DevExeSpace(), 0, (pmbp->nmb_thispack-1), ks, ke, js, je,
+      is, ie,
+      KOKKOS_LAMBDA(int m, int k, int j, int i) {
+        std::uint64_t h = SplitMix64Mix(sd);
+        h = SplitMix64Mix(h ^ static_cast<std::uint64_t>(gidx_.d_view(m,0)));
+        h = SplitMix64Mix(h ^ static_cast<std::uint64_t>(gidx_.d_view(m,1) + (i-is)));
+        h = SplitMix64Mix(h ^ static_cast<std::uint64_t>(gidx_.d_view(m,2) + (j-js)));
+        h = SplitMix64Mix(h ^ static_cast<std::uint64_t>(gidx_.d_view(m,3) + (k-ks)));
+        // top 53 bits -> double in [0,1)
+        Real rr = static_cast<Real>(h >> 11)*(1.0/9007199254740992.0);
+        Real fac = 1.0 + amp*(2.0*rr - 1.0);
+        u0seed(m,IDN,k,j,i) *= fac;
+        u0seed(m,IM1,k,j,i) *= fac;
+        u0seed(m,IM2,k,j,i) *= fac;
+        u0seed(m,IM3,k,j,i) *= fac;
+        w0seed(m,IDN,k,j,i) *= fac;
+      });
+    }
 
     par_for("probwb", DevExeSpace(), 0,(pmbp->nmb_thispack-1),ks,ke,js,je,is,ie,
     KOKKOS_LAMBDA(int m, int k, int j, int i) {
