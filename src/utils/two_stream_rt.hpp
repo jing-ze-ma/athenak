@@ -294,6 +294,14 @@ inline bool rt_grey = false;
 // energy per RT application. Applies to every EXPLICIT radiative update -- grey and
 // correlated-k, split and monolithic. Set <= 0 to disable the limiter entirely.
 inline Real rt_de_max = 0.5;
+// problem/rt_semi_implicit: apply the split two-stream source semi-implicitly, relaxing
+// the cell toward radiative equilibrium instead of stepping explicitly (see the apply
+// kernel).  Default true, which is the behaviour since 048dff30.  The flag exists
+// because the semi-implicit step is NOT answer-preserving in general: on the cubed
+// sphere deep_hot_jupiter 09-07 configuration it moves the kinetic energy by 3 % in 20
+// cycles (A/B 2026-09-09).  Runs that must reproduce pre-048dff30 results set it false,
+// which restores the plain explicit de = src*bdt.
+inline bool rt_semi_implicit = true;
 // problem/ck_int_at_cut: deliver the planet's internal flux sigma T_int^4 as an extra
 // upward source at the correlated-k cut (the historical behaviour, true). Set false when
 // the layers below the cut carry it themselves -- <mhd|hydro>/isotropic_conduction =
@@ -1445,6 +1453,7 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
       // ---- C: reduce over blocks in order, then apply ------------------------------
       int nclip = 0;
       const Real demax = rt_de_max;
+      const bool semi_imp = rt_semi_implicit;
       // see rt_apply_debug: which column, and how many calls are left to print
       const bool dbg_on = (rt_apply_debug > 0);
       const int dbg_m = rt_dump_m;
@@ -1491,7 +1500,7 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
         // overshoot the equilibrium.  Pure cooling is then bounded by e/4 per step
         // whatever the timestep, which is what rt_de_max used to impose by hand.
         Real de = src*bdt;
-        {
+        if (semi_imp) {
           Real Em = 0.0;
           for (int b=0; b<nblk; ++b) Em += Em_g(m,b,i,k,j);
           if (taublend) {

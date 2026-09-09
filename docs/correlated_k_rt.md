@@ -258,6 +258,12 @@ source overshooting, the clamp bounding it, and the next step overshooting harde
 reproduced identically with a wall and with an open inner boundary, which is what ruled
 the boundary out. With the semi-implicit step the same run keeps its timestep.
 
+**`problem/rt_semi_implicit`** (default `true`) turns the step above off. It is not
+answer-preserving everywhere: on the cubed-sphere `deep_hot_jupiter` 09-07 configuration
+(`rt_ck`, `ck_pcut_bar = 10`) it moves the kinetic energy by 3e-4 at cycle 1 and by 3 %
+by cycle 20 (A/B 2026-09-09), with mass exact and total energy differing by 3e-6. Set it
+`false` to recover the plain explicit `de = src*bdt` and reproduce pre-048dff30 results.
+
 ### The clamp (`problem/rt_de_max`)
 
 `LimitRTSource` still runs, now as a backstop behind the relaxation rather than the

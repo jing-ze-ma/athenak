@@ -83,6 +83,7 @@ using two_stream_rt::rt_int_at_cut;
 using two_stream_rt::rt_kc_ptr;
 using two_stream_rt::rt_nchain;
 using two_stream_rt::rt_pb_ptr;
+using two_stream_rt::rt_semi_implicit;
 using two_stream_rt::rt_split;
 using two_stream_rt::rt_srclim_warned;
 using two_stream_rt::rt_star_teff;
@@ -373,6 +374,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   rt_dump_k = pin->GetOrAddInteger("problem","ck_dump_k",-1);
   rt_ck_pcut = pin->GetOrAddReal("problem","ck_pcut_bar",10.0);
   rt_de_max = pin->GetOrAddReal("problem","rt_de_max",0.5);
+  rt_semi_implicit = pin->GetOrAddBoolean("problem","rt_semi_implicit",true);
   rt_int_at_cut = pin->GetOrAddBoolean("problem","ck_int_at_cut",true);
   ad_dump_file = pin->GetOrAddString("problem","ad_dump_file","");
   if (rt_ck && !rt_split) {
