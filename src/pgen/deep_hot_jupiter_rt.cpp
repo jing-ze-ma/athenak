@@ -391,6 +391,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   rt_ck_pcut = pin->GetOrAddReal("problem","ck_pcut_bar",10.0);
   rt_de_max = pin->GetOrAddReal("problem","rt_de_max",0.5);
   rt_semi_implicit = pin->GetOrAddBoolean("problem","rt_semi_implicit",true);
+  if (global_variable::my_rank == 0) {
+    std::cout << "deep_hot_jupiter_rt: RT two-stream source is "
+              << (rt_semi_implicit ? "SEMI-IMPLICIT" : "EXPLICIT") << std::endl;
+  }
   rt_int_at_cut = pin->GetOrAddBoolean("problem","ck_int_at_cut",true);
   ad_dump_file = pin->GetOrAddString("problem","ad_dump_file","");
   if (rt_ck && !rt_split) {
