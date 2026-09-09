@@ -38,6 +38,26 @@ worth a look but not a basis bug).
 
 **The deep hot Jupiter runs are not affected by anything in this note.**
 
+### deep_hot_jupiter_rt.cpp: not a basis bug, but two things to decide (verified 21:30)
+
+The Rayleigh drag and the top/bottom sponges (deep_hot_jupiter_rt.cpp ~2347-2394) only do
+`u0(IMn) -= u0(IMn)*fredux` on the momentum components and never form a kinetic energy, so
+they are exact on any basis (the lowering is linear; the bottom sponge scales the angular
+pair only, which maps onto itself). The outer radial ghost (~1851-1879) already uses a
+cs-aware KE. Two flags, physics not geometry:
+
+1. **The removed kinetic energy is THERMALISED.** `u0(IEN)` is left untouched, so every
+   erg of KE the drag/sponge removes becomes internal energy in the same cell. In the top
+   sponge (1e-7 to 1e-6 bar) with 15 km/s day-night flow this is a real heating term
+   in the thinnest layer. The red giant sponge instead sets E = e_int + fac^2 KE (energy
+   removed). Decide which is wanted; if removal, subtract `CsKinetic`-style KE before
+   and add fac^2 of it after (with cos_cell -- that is where the red giant bug came from).
+2. **The damping is EXPLICIT**: `fredux = itdrag*bdt`, the implicit form
+   `itdrag*bdt/(1+itdrag*bdt)` is commented out. Harmless at tau = 1e3 s against dt of
+   order seconds (fredux ~ 1e-3), but it over-damps and flips sign if tau is ever set
+   within a factor ~2 of dt (the initial relaxation tau1 = P_rot/10 is far from that).
+   Restoring the implicit form is free and makes the sponge unconditionally stable.
+
 ## Fixed on orion (working tree; commit + push pending — see "status" below)
 
 `src/pgen/red_giant.cpp`:
