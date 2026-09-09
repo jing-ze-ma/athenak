@@ -65,6 +65,19 @@ All latent: none is in a configuration currently being run.
 | `src/pgen/red_giant.cpp` `rg_co5B` ~2235-2286, `rg_co5D` ~2312-2340 | `u0(IM2)/rho` treated as contravariant v2, orthonormal KE, `r*v2` written back | needs the full raise `v2 = (m2 - c m3)/(d(1-c^2))` then LowerMom; partly self-cancelling, small residual |
 | `src/pgen/red_giant.cpp` `rg_mlt_shell` ~1801 | orthogonal sum in a shell-mean diagnostic | add the cross term (mlt is off in production) |
 
+### How complete is this list? (checked 2026-09-09 21:00)
+
+A grep over all of `src/` for the tell-tale forms (`d*v2` into `u0(IM2)`, `SQR(IM2)+SQR(IM3)`
+from `u0`, `v2*v2+v3*v3` / `SQR(v2)+SQR(v3)` from `w0`) hits, besides the sites above:
+`pgen/{solar_convection,cooling_convection,turb,wb_column,field_loop,slotted_cyl,
+disk-magnetosphere,sp_test}.cpp`, `pgen/tests/{linear_wave,diffusion,orszag_tang}.cpp`,
+`srcterms/turb_driver.cpp`, `rsolvers/roe_hyd.hpp`, `coordinates.cpp:2137,2218`,
+`cs_test.cpp:2112,5915`. All ruled out: the pgens and turb_driver never run on the cubed
+sphere (no `use_cubed_sphere` path), roe_hyd gets the orthonormal state, coordinates.cpp
+2137/2218 are the SPHERICAL-POLAR source (`spsrc`, orthogonal grid), and the two cs_test
+lines are error norms of a static (v = 0) test. `deep_hot_jupiter_rt.cpp` has no hit.
+So the table above is the complete list of cubed-sphere-relevant sites.
+
 Proposed shared helpers (not written yet), to stop this recurring: in
 `src/coordinates/gnomonic_kernels.hpp` device functions
 `GnomonicKineticFromMom(d,m1,m2,m3,c)`, `GnomonicKineticFromVel(d,v1,v2,v3,c)`,
