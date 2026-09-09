@@ -97,6 +97,7 @@ cfl_number = 0.3
 nlim       = 1000000000
 tlim       = 1.2e6
 ndiag      = 100
+dt_min     = 1.0e-2      # abort on timestep collapse (healthy dt is 5-20 s)
 
 <units>
 # REQUIRED by the general EOS.  All factors 1, so code units ARE cgs -- which this problem

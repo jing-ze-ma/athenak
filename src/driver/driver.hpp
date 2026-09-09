@@ -37,6 +37,7 @@ class Driver {
   int nlim;       // cycle-limit
   int ndiag;              // cycles between output of diagnostic information
   int nan_check_cycles;   // scan u0 for NaN every N cycles (0 = off)
+  Real dt_min;            // abort if dt drops below this value (0 = off)
   // variables for various SSP and ImEx RK integrators
   std::string integrator;          // integrator name (rk1, rk2, rk3)
   int nimp_stages;                 // number of implicit stages (ImEx only)
