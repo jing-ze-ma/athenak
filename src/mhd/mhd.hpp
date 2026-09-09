@@ -209,6 +209,14 @@ class MHD {
   DvceArray4D<Real> phicc0;     // cell-centered gravitational potential energy
   DvceArray5D<Real> wbq0;       // per-cell well-balanced background (BuildWBCache)
   int wb_cache_every = 0;       // rebuild wbq0 every stage (0) or every N-th cycle
+  // Has wbq0 ever been filled in this process?  With wb_cache_every > 1 the rebuild is
+  // gated on (ncycle % wb_cache_every == 0), and ncycle is RESTORED from the restart
+  // file -- so a restart at a cycle that is not a multiple of wb_cache_every ran up to
+  // wb_cache_every-1 cycles against a freshly allocated (all-zero) background.  The
+  // reconstruction then subtracts nothing and the scheme silently stops being
+  // well-balanced for those cycles, which kicks a deep hydrostatic star hard.  Force the
+  // first call after start OR restart to build it.
+  bool wb_cache_built = false;
     
   // following used for well-balanced scheme
   bool use_wellbalance_static = false;    // flag to enable static wellbalance

@@ -133,8 +133,10 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
 
   if (use_wellbalance_dynamic && use_wb_x1) {
     const int ncyc = pmy_pack->pmesh->ncycle;
-    if (wb_cache_every <= 0 || (stage == 1 && (ncyc % wb_cache_every) == 0)) {
+    if (wb_cache_every <= 0 || !wb_cache_built ||
+        (stage == 1 && (ncyc % wb_cache_every) == 0)) {
       BuildWBCache(jl, ju, kl, ku);
+      wb_cache_built = true;
     }
   }
 
