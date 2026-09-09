@@ -908,8 +908,8 @@ void Conduction::NewTimeStep(const DvceArray5D<Real> &w0, const EOS_Data &eos_da
                       ? SQR(d3)*s2/(wa*keff(s3v))*rcv*fac : -1.0;
       dd.d_view(15) = ffree;
     });
-    dt_diag.template modify<DevExeSpace>();
-    dt_diag.template sync<HostMemSpace>();
+    dt_diag.modify_device();
+    dt_diag.sync_host();
     dt_diag_valid = true;
   }
   dtnew_prev = dtnew;
