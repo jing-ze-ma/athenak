@@ -82,6 +82,18 @@ Real sponge_c       = 0.1;     // problem/sponge_c: damping rate, in units of cs
 // taller box is a deeper convection zone AND a taller atmosphere, which is two
 // experiments at once. Lower it to buy atmosphere at a fixed convective depth.
 Real z_ph_frac      = 0.5;
+// problem/open_nomassflux (default true): hold the NET mass flux through the bottom
+// FACE at zero.  Step 5 below subtracts <rho v>/<rho> from the vertical velocity at the
+// lowest cell CENTRE, but the mass that enters or leaves crosses the FACE, and the two
+// are not the same number.  Measured on a red giant envelope, which runs the same five
+// passes on a spherical shell, that face drained the whole of the run's energy loss;
+// measured here, sunmovie/spinup gained 4.7 % of the box's mass and 2.9 % of its energy
+// in 1.2e4 s, the same defect with the opposite sign.  This removes the net mass the
+// face delivered this stage, uniformly over the bottom plane, with the energy and
+// momentum that mass carried at the plane-mean specific total enthalpy and velocity, so
+// a zero-net-mass convective enthalpy flux -- the energy input the boundary exists for
+// -- passes through untouched.
+bool open_nomassflux = true;
 }  // namespace
 
 
@@ -105,6 +117,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // before the restart return, since it is a source term the restarted run has to keep
   // applying.
   sponge_on   = pin->GetOrAddBoolean("problem","sponge",true);
+  open_nomassflux = pin->GetOrAddBoolean("problem","open_nomassflux",true);
   sponge_zbot = pin->GetOrAddReal("problem","sponge_zbot",0.8);
   sponge_c    = pin->GetOrAddReal("problem","sponge_c",0.1);
   z_ph_frac   = pin->GetOrAddReal("problem","z_ph_frac",0.5);
@@ -146,7 +159,13 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                 << " K=" << p_base_ic/std::pow(rho_base_ic,gamma_ic) << std::endl;
     }
   }
-  if (restart) return;
+  // NOTE: the restart return is NOT here. A restarted run still has to rebuild the
+  // gravitational potential (phi0, phicc0) and the well-balanced background: those
+  // arrays are allocated by Hydro/MHD but filled ONLY here, and Hydro leaves them
+  // zero. Returning before the kernels below therefore restarted the run with NO
+  // gravity while the state was still a stratified atmosphere -- the pressure
+  // gradient went unbalanced and dt collapsed on the first cycle. The return is now
+  // after the potential is filled; only the initial-condition kernels are skipped.
   if (pmy_mesh_->one_d || pmy_mesh_->two_d) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
               << "solar convection problem generator only works in 3D" << std::endl;
@@ -271,6 +290,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     Real z_seed = 0.45*(r1-r0);   // seed perturbations in the CZ (below the ~50%-height photosphere)
   
     Kokkos::Random_XorShift64_Pool<> rand_pool64(pmbp->gids);
+  if (!restart) {
     par_for("probini", DevExeSpace(), 0, (pmbp->nmb_thispack-1), 0, n3m1, 0, n2m1, 0, n1m1,
     KOKKOS_LAMBDA(int m, int k, int j, int i) {
         
@@ -589,6 +609,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
             }
         }
     });
+  }  // end of the initial-condition kernels (skipped on restarts)
     if (use_etotgrav || use_wellbalance_dynamic) {
         int &ng = indcs.ng;
         int n1m1 = indcs.nx1 + 2*ng - 1;
@@ -684,6 +705,49 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
           w0wb(m,IEN,k,j,i) = EintFromP(eos, igm1, denwb, pwb);
         });
     }
+
+    // The face-centered potential is written inside probwb, which a restart skips, so
+    // fill it here as well. phi = -g*x1 exactly as there (the rotation term is commented
+    // out in probwb, so the potential depends on x1 alone); same loop bounds and same
+    // upper-face special cases, so a fresh run gets identical values written twice.
+    if (use_etotgrav || use_wellbalance_dynamic) {
+        par_for("gravfaces", DevExeSpace(), 0, (pmbp->nmb_thispack-1),
+                ks, ke, js, je, is, ie,
+        KOKKOS_LAMBDA(int m, int k, int j, int i) {
+            Real &x1min = size.d_view(m).x1min;
+            Real &x1max = size.d_view(m).x1max;
+            int nx1 = indcs.nx1;
+
+            Real x1c = use_spherical_polar ? (x1v_(m,i) - ap)
+                                           : CellCenterX(i-is, nx1, x1min, x1max);
+            Real x1f = use_spherical_polar ? (x1f_(m,i) - ap)
+                                           : LeftEdgeX(i-is, nx1, x1min, x1max);
+            phi0_x1f(m,k,j,i) = -grav_acc*x1f;
+            if (i == ie) {
+                Real x1fp = use_spherical_polar ? (x1f_(m,i+1) - ap)
+                                                : LeftEdgeX(i+1-is, nx1, x1min, x1max);
+                phi0_x1f(m,k,j,i+1) = -grav_acc*x1fp;
+            }
+            phi0_x2f(m,k,j,i) = -grav_acc*x1c;
+            if (j == je) { phi0_x2f(m,k,j+1,i) = -grav_acc*x1c; }
+            phi0_x3f(m,k,j,i) = -grav_acc*x1c;
+            if (k == ke) { phi0_x3f(m,k+1,j,i) = -grav_acc*x1c; }
+        });
+    }
+
+    // The well-balanced FACE background (w0facewb) is built inside probwb and has no
+    // equivalent here, so a restart cannot reconstruct it. Fail loudly rather than run
+    // with a zeroed background.
+    if (restart && (use_wellbalance_static || use_wellbalance_dynamic)) {
+      std::cout << "### FATAL ERROR in " << __FILE__
+                << " at line " << __LINE__ << std::endl
+                << "solar_convection cannot restart with wellbalance_static/dynamic: the "
+                << "well-balanced face background is only built by the initial-condition "
+                << "kernels." << std::endl;
+      exit(EXIT_FAILURE);
+    }
+    if (restart) return;
+
 
     // initialize magnetic fields if MHD
     if (pmbp->pmhd != nullptr) {
@@ -1321,6 +1385,53 @@ void SourceFunc(Mesh *pm, Real bdt) {
       Real K_bot = p_base/pow(rho_base, gamma);
       Real s_inflow = cv*log(K_bot);
       Real CsChange = 0.1, CPChange = 0.3;
+      // Pass 0: cancel the NET mass the bottom face delivered this stage.  The fluxes
+      // the RKUpdate has just applied are still in uflx, so this is exact per stage
+      // rather than a correction chasing a drift.  The mesh here is Cartesian, where
+      // pcoord's area and volume arrays are 1x1 placeholders, so the face area and cell
+      // volume come from the MeshBlock size.
+      if (open_nomassflux) {
+        DvceFaceFld5D<Real> uflx_ = (pmbp->phydro != nullptr) ? pmbp->phydro->uflx
+                                                             : pmbp->pmhd->uflx;
+        auto flx1 = uflx_.x1f;
+        Real sM=0.0, sV=0.0, sH=0.0, sD=0.0, sPv=0.0;
+        Kokkos::parallel_reduce("co50", nmb1+1,
+        KOKKOS_LAMBDA(int m, Real &aM, Real &aV, Real &aH, Real &aD, Real &aPv) {
+          if (mb_bcs.d_view(m,BoundaryFace::inner_x1) != BoundaryFlag::user) return;
+          Real da = size.d_view(m).dx2*size.d_view(m).dx3;
+          Real dv = da*size.d_view(m).dx1;
+          for (int k=ks; k<=ke; ++k) { for (int jj=js; jj<=je; ++jj) {
+            Real r = u0(m,IDN,k,jj,is);
+            Real ke_ = 0.5*(SQR(u0(m,IM1,k,jj,is))+SQR(u0(m,IM2,k,jj,is))
+                            +SQR(u0(m,IM3,k,jj,is)))/r;
+            Real ei = u0(m,IEN,k,jj,is) - ke_;
+            if (use_etotgrav) ei -= r*phicc0(m,k,jj,is);
+            aM += da*flx1(m,IDN,k,jj,is);
+            aV += dv;
+            aH += (u0(m,IEN,k,jj,is) + PresFromEint(eos,gm1,r,ei))*dv;
+            aD += r*dv;
+            aPv += u0(m,IM1,k,jj,is)*dv;
+          } }
+        }, sM, sV, sH, sD, sPv);
+#if MPI_PARALLEL_ENABLED
+        { Real g[5]={sM,sV,sH,sD,sPv};
+          MPI_Allreduce(MPI_IN_PLACE,g,5,MPI_ATHENA_REAL,MPI_SUM,MPI_COMM_WORLD);
+          sM=g[0]; sV=g[1]; sH=g[2]; sD=g[3]; sPv=g[4]; }
+#endif
+        if (sV > 0.0 && sD > 0.0) {
+          Real dd = -bdt*sM/sV;          // code density, the same in every bottom cell
+          Real hbar = sH/sD;             // plane-mean specific total enthalpy
+          Real vbar = sPv/sD;            // plane-mean vertical velocity
+          par_for("co50b", DevExeSpace(), 0, nmb1, ks, ke, js, je,
+          KOKKOS_LAMBDA(int m, int k, int jj) {
+            if (mb_bcs.d_view(m,BoundaryFace::inner_x1) != BoundaryFlag::user) return;
+            if (u0(m,IDN,k,jj,is) + dd <= 0.0) return;
+            u0(m,IDN,k,jj,is) += dd;
+            u0(m,IM1,k,jj,is) += dd*vbar;
+            u0(m,IEN,k,jj,is) += dd*hbar;
+          });
+        }
+      }
       // Pass A: global <rho0>, <P>, N over the bottom plane
       Real srho0=0.0, sumP=0.0, sN=0.0;
       Kokkos::parallel_reduce("co5A", nmb1+1, KOKKOS_LAMBDA(int m, Real &a, Real &b, Real &c) {

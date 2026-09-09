@@ -1,0 +1,151 @@
+# red_giant on the CUBED SPHERE: the envelope of a 1.5 Msun, 500 Lsun, Teff 4000 K red
+# giant branch star (R ~ 3.2e12 cm) from 0.5 R to 1.1 R, tabulated EOS with radiation,
+# stellar Rosseland opacities, radiative diffusion with the tau blend and the thin-layer
+# relaxation, point-mass gravity, well-balanced.  Build with -DPROBLEM=red_giant.
+#
+# A SMOKE resolution: 6 panels x 16 x 16 with 128 radial cells.  Convection is resolved
+# here, not modelled: mlt_alpha stays 0 and vpert seeds the flow.
+
+<comment>
+problem   = red giant envelope, cubed sphere
+reference = tools/stellar_opac/merge_rosseland.py for the opacity
+
+<job>
+basename  = rg
+
+<mesh>
+nghost    = 2
+nx1       = 192              # RADIAL
+x1min     = 1.6e12           # 0.5 R
+x1max     = 3.52e12          # 1.1 R
+# The polynomial radial stretch, fitted to THIS star's own density scale height with
+# tools/grid/fit_radial_stretch.py (see src/coordinates/grid_stretch.hpp for the map).
+# A uniform grid is hopeless here: the domain spans 19.2 density scale heights but the
+# photosphere is a small part of it, so uniform 192 cells give 1.3 cells per scale height
+# at the worst place against 45 at the best. Fitted, that becomes 5.0 / 10.1 / 18.2
+# (min/median/max), i.e. roughly constant resolution in ln rho, which is what the
+# two-stream needs across the photosphere. Refit if the star or the domain changes.
+use_grid_stretch_r_poly = true
+f_stretch_r_c1 = +3.987282
+f_stretch_r_c2 = -9.092134
+f_stretch_r_c3 = +10.974423
+f_stretch_r_c4 = -5.139823
+ix1_bc    = user
+ox1_bc    = user
+nx2       = 16               # xi: nx2 must equal nx3
+x2min     = -1.0
+x2max     = 1.0
+ix2_bc    = panel
+ox2_bc    = panel
+nx3       = 16               # eta
+x3min     = -1.0
+x3max     = 1.0
+ix3_bc    = panel
+ox3_bc    = panel
+use_cubed_sphere = true
+
+<meshblock>
+nx1       = 192
+nx2       = 16
+nx3       = 16
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim       = -1
+tlim       = 1.0e30
+ndiag      = 100
+nan_check_cycles = 100
+
+<units>
+length_cgs = 1.0
+mass_cgs   = 1.0
+time_cgs   = 1.0
+mu         = 1.0
+
+<hydro>
+eos             = general
+general_eos     = table
+gamma           = 1.6666666667   # unused by the table
+eos_h2               = true
+eos_ionization       = true
+eos_metal_ionization = true
+eos_radiation        = false    # the radiation field is NOT thermalised in the thin layers,
+                                 # and aT^4/3 is < 0.1 % of p below the photosphere here
+eos_xh               = 0.70     # the opacity table is tabulated at X = 0.70
+eos_yhe              = 0.286    # Y = 1 - X - Z with Z = 0.014, matching the opacity table
+eos_logd_min    = -14.0
+eos_logd_max    = 0.0
+eos_logt_min    = 2.0
+eos_logt_max    = 6.5
+eos_dlog        = 0.05
+reconstruct = plm
+rsolver     = hllc
+etotgrav    = true
+wellbalance_dynamic = true
+wb_x1               = true
+wb_option           = polytropic
+wb_cache_every      = 10
+isotropic_conduction = radiative
+rad_kappa_src        = table_rho
+rad_flux_inner       = -1.0
+rad_flux_limit       = true
+rad_tau_lo           = 1.0
+rad_tau_hi           = 10.0
+dfloor = 1.0e-18
+pfloor = 1.0e-12
+
+<problem>
+user_srcs   = true
+mstar       = 2.983e33
+lstar       = 1.914e36
+teff        = 4000.0
+ptop        = 3.0
+vpert       = 1.0e-3         # Mach 1e-3 seed to break the symmetry
+kappa_fac   = 1.0
+kappa_const = 0.0
+mlt_alpha   = 0.0
+# the inner boundary sits INSIDE the convection zone (see the pgen header): `open` gives
+# it the Stein-Nordlund / CO5BOLD treatment so plumes pass through and the energy enters
+# as the entropy of the inflow.  With open, set rad_flux_inner = 0.
+inner_bc    = wall
+s_relax_cs  = 0.1
+s_relax_cp  = 0.3
+mlt_dump    =                # if set: dump one column's MLT faces at the first call
+# --- the correlated-k two-stream for the optically thin layers.  DEFAULT ON here: the
+# grey Eddington relaxation it replaces cannot represent the line blanketing that sets a
+# cool giant's atmospheric structure, and measured over 200 cycles from the same state it
+# let the top run away by ~70x in density where the band solver held it to 0.7.  Set false
+# to fall back to the relaxation, which is cheaper and is the only path the 1-D column
+# tests can use.  Self-luminous: no irradiation, T_int = teff.
+rt_ck       = true
+ck_table    = /orion/u/jinma/ATHENAK/athenak/data/exo_fms_ck/ck/Premixed_1x_g8_11.txt
+ck_data_dir = /orion/u/jinma/ATHENAK/athenak/data/exo_fms_ck
+ck_swflux   = sw_band_flux_W121_11.txt
+ck_nquad    = 1
+ck_pcut_bar = 1.0e30         # no pressure cut: the tau blend decides the handover
+rt_de_max   = 0.5
+met         = 0.0
+ck_dump_file =               # if set: one column's RT solution at the first call
+ck_dump_m   = 0
+ck_dump_j   = -1             # -1 = the meshblock centre in that direction
+ck_dump_k   = -1
+ck_dump_t2  = -1.0           # >= 0: dump a SECOND column once t reaches this
+ck_dump_file2 =
+opac_compare  =              # if set: write the ck-derived Rosseland table for comparison
+opac_table  = /orion/u/jinma/ATHENAK/athenak/data/stellar_opac/rosseland_gs98_x0.7_z0.014.txt
+column_dump = column.txt
+
+<output1>
+file_type  = hst
+dt         = 1.0e4
+
+<output2>
+file_type  = bin
+variable   = hydro_w
+dt         = 2.0e5
+
+<output3>
+file_type  = rst
+dt         = 2.0e6

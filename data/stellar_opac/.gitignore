@@ -1,0 +1,4 @@
+# third-party tables, fetched not tracked (PROVENANCE.md records where from)
+*.data
+*.tab
+*.txt

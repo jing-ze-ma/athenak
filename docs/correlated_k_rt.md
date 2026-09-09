@@ -194,17 +194,74 @@ independent parameters in this kind of model.
 
 ---
 
-## The source limiter (`problem/rt_de_max`)
+## How the source is applied, and the limiter behind it
 
-The radiation is **operator split and explicit**: every RT call ends in
+The radiation is **operator split**, and the source it produces is
 
 ```
-u0(IEN) += src * bdt          // src = -dF/dr + Q_sw
+src = -dF/dr + Q_sw
 ```
 
-with `bdt` the hydrodynamic timestep. That is stable only while the local radiative time
-`e/|src|` exceeds `bdt`, and nothing in the scheme enforces it. `LimitRTSource` caps each
-update at
+with `bdt` the hydrodynamic timestep.
+
+### The semi-implicit step
+
+Applying that explicitly, as `u0(IEN) += src*bdt`, is stable only while the local
+radiative time `e/|src|` exceeds `bdt`. In the optically thin top of an atmosphere it
+does not, and the scheme used to rely on a hard clamp to survive there. It no longer
+does.
+
+Split the source into the part that depends on the cell's own temperature and the part
+that does not:
+
+```
+src = A - E(T),      E = 4 sigma kappa_P rho T^4
+```
+
+`A` is the absorption of radiation produced elsewhere and is fixed over the step; `E` is
+the cell's own thermal emission, and it is the only stiff term. The chain kernels
+accumulate `E` directly into `rt_Em` as they sweep, at the cost of two extra flops per
+band and g-point, because each stream already has `kappa*rho` and the band Planck
+function in registers at that point. Treating `E` implicitly and `A` explicitly, and
+using `de/dT = rho c_v ~ e/T`, gives a linear relaxation of rate
+
+```
+lambda = dE/de = (4E/T) / (rho c_v) = 4E/e
+```
+
+whose exact solution over the step is
+
+```
+de = (src/lambda) * (1 - exp(-lambda*bdt))
+```
+
+This is what the code applies. It reduces to `src*bdt` when `lambda*bdt << 1`, so it is
+**the identity wherever the explicit step was already valid** — a 200-cycle
+`deep_hot_jupiter_rt` run is bitwise identical across the change. When `lambda*bdt >> 1`
+it returns the equilibrium offset `src/lambda` instead, so the cell relaxes toward
+radiative equilibrium and can never overshoot it. Pure cooling is bounded by `e/4` per
+step at any timestep, which is what `rt_de_max` used to impose by hand.
+
+Using `e/T` for `rho c_v` is exact for an ideal gas and an under-estimate wherever H2 or
+H is partly dissociated, which only over-estimates `lambda` and damps the step further.
+
+The estimate is masked exactly as the flux is: by `1-w` in the tau blend, and to zero
+below the correlated-k cut, so a cell whose source the blend has handed to the diffusion
+operator gets no spurious relaxation rate.
+
+**What this fixed.** A red giant envelope (`red_giant`, cubed sphere, correlated-k plus
+the tau blend) ran healthily for 1400 cycles and then lost its timestep in under a
+hundred, from 32 s to 2e-3 s, at `t ~ 2.94e4` s. The immediate limiter was the
+*conduction* timestep, but the cause was three cells at the top of the atmosphere
+oscillating cold-hot-cold by a factor of 20 in shell-mean temperature: the explicit
+source overshooting, the clamp bounding it, and the next step overshooting harder. It
+reproduced identically with a wall and with an open inner boundary, which is what ruled
+the boundary out. With the semi-implicit step the same run keeps its timestep.
+
+### The clamp (`problem/rt_de_max`)
+
+`LimitRTSource` still runs, now as a backstop behind the relaxation rather than the
+primary defence. It caps each update at
 
 ```
 |Δe| <= rt_de_max * e_int          (default rt_de_max = 0.5; set <= 0 to disable)
@@ -212,7 +269,9 @@ update at
 
 It is a **hard clamp, and therefore the identity** wherever `|Δe| < rt_de_max·e`, so it
 cannot move an answer in any regime where the explicit step was legitimate — the Exo-FMS
-validation below is unaffected. It applies to every explicit radiative update: grey and
+validation below is unaffected. With the semi-implicit step above it should now be the
+identity everywhere; if it still warns, the emission estimate is not capturing the stiff
+term and that is worth understanding rather than clamping away. It applies to every explicit radiative update: grey and
 correlated-k, split and monolithic. (`double_gray_two_stream_RT_source` already solves its
 source implicitly by Newton–Raphson and needs no clamp.)
 

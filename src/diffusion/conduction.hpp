@@ -25,6 +25,15 @@ class Conduction {
 
   // data
   Real dtnew;
+  // the cell that set dtnew, for the collapse report in Mesh::NewTimeStep
+  int dtnew_m = -1, dtnew_k = -1, dtnew_j = -1, dtnew_i = -1;
+  // ...and its state, so the report says WHY that cell is slow rather than only where
+  // it is.  Filled by one extra single-cell kernel, and only when dtnew has just
+  // collapsed (or on the first call), so it costs nothing in a healthy run.
+  static constexpr int ndtdiag = 16;
+  DualArray1D<Real> dt_diag;
+  bool dt_diag_valid = false;
+  Real dtnew_prev = -1.0;
   std::string iso_cond_type; // "constant", "spitzer", "spitzer_limited", "radiative"
   // radiative conductivity kappa_rad = 16 sigma T^3/(3 kappa_R rho), kappa_R the
   // Freedman+2014 Rosseland mean (utils/rosseland.hpp), applied on faces whose pressure
@@ -44,6 +53,12 @@ class Conduction {
   // operators overlap and hand over conservatively.  rad_w and rad_tauf sit on x1 faces.
   Real rad_tau_lo = 0.0, rad_tau_hi = 0.0;
   bool rad_tau_mode = false;
+  // rad_blend_radial (default true): the blend weight applies to the x1 faces too.
+  // False keeps the radial diffusion at full weight everywhere and applies w only to
+  // the angular faces -- for a SELF-LUMINOUS object with no two-stream above the
+  // blend, where flux-limited radial diffusion is the surface treatment and the
+  // horizontal exchange in the optically thin layers is what is switched off.
+  bool rad_blend_radial = true;
   // rad_kappa_src = freedman (default) | table: with table, kappa_R(T,p) is a bilinear
   // lookup of log10 kappa_R over (log10 T, log10 p[cgs]) in a table the problem
   // generator hands over ONCE at start-up (deep_hot_jupiter_rt tabulates the Rosseland
@@ -51,6 +66,13 @@ class Conduction {
   // diffusion and the two-stream share one opacity). Same cost as the Freedman fit.
   // Until the table is set (rad_kr_nT == 0) the Freedman fit is used.
   bool rad_kappa_tab = false;
+  // rad_kappa_src = table_rho: the same lookup with log10 rho [g/cm^3] as the second
+  // axis instead of log10 p.  Stellar opacity tables (OPAL/OPLIB, AESOPUS, Ferguson) are
+  // tabulated in (T, rho) -- via logR = log rho - 3 log T6 -- and a (T, p) axis would
+  // need the equation of state to convert, on the table's grid, once per node.  With
+  // this mode the pgen hands over (T, rho) directly and every lookup site already has
+  // the face or cell density.  rad_kr_lP then holds log10 rho.
+  bool rad_kappa_rho = false;
   // rad_cs_exact (default true): the exact face-normal derivative on the cubed sphere;
   // false drops the metric cross term and the 1/sin(alpha) -- DIAGNOSTIC only
   bool rad_cs_exact = true;
@@ -58,6 +80,12 @@ class Conduction {
   DvceArray2D<Real> rad_kr_tab;            // (iT, iP) log10 kappa_R [cm^2/g]
   DvceArray1D<Real> rad_kr_lT, rad_kr_lP;  // log10 T [K], log10 p [dyn/cm^2], ascending
   DvceArray4D<Real> rad_w, rad_tauf;
+  // rad_w is filled by BuildRadWeights, which runs as a task inside the stage.  Until
+  // it has, every weight is zero and the timestep below reads that as "no face carries
+  // any diffusive flux" -- so the FIRST cycle would run at the hydro timestep with the
+  // conduction operator fully on.  NewTimeStep builds the weights itself if this is
+  // still false, which is the case at initialisation.
+  bool rad_w_built = false;
   void BuildRadWeights(const DvceArray5D<Real> &w, const EOS_Data &eos);
   Real kappa_iso;            // isotropic thermal conductivity
   Real kappa_iso_limit;      // limit to isotropic thermal conductivity

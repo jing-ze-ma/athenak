@@ -186,6 +186,27 @@ rt_de_max   = 0.5                # cap on |Delta e_int| per RT source applicatio
                                  # identity wherever the step was legitimate.  Warns once
                                  # if it fires.  Set <= 0 to disable.  See
                                  # docs/correlated_k_rt.md.
+rt_ck        = false             # false = grey picket fence; true = correlated-k.  The
+                                 # scheme is EOS-agnostic, so these are listed here as
+                                 # well as in deep_hot_jupiter_rt_eos.athinput: an
+                                 # ideal-vs-table comparison of the SAME radiation needs
+                                 # both inputs able to switch it on, and command-line
+                                 # overrides only modify parameters that already exist.
+rt_split     = false             # chain-parallel RT kernels instead of one serial loop.
+                                 # Implied by rt_ck.  Bitwise identical for grey.
+ck_pcut_bar  = 10.0              # correlated-k only where p < this [bar]
+ck_nquad     = 1                 # 1 = diffusivity factor 1/1.66 (88 column solves);
+                                 # 2 = the 2-point Gauss quadrature (176)
+ck_star_teff = 6000.0            # host T_eff; the stellar spectrum is a blackbody at this
+                                 # temperature, renormalised to sigma T_irr^4.
+# Resolved against the WORKING DIRECTORY, not the input file.  Give absolute paths when
+# running via -d.  Not in git: see data/exo_fms_ck/PROVENANCE.md.
+ck_table     = data/exo_fms_ck/ck/Premixed_1x_g8_11.txt
+ck_data_dir  = data/exo_fms_ck   # CE_tables/, cia/, ray/, sw_flux/ live here
+ck_dump_file =                   # one-shot dump of one radial column at the first RT call
+ck_dump_m    = 0
+ck_dump_j    = -1                # -1 = centre of the meshblock in that direction
+ck_dump_k    = -1
 ad_dump_file =                   # if set, dump the initial (p,T) profile with its actual
                                  # and adiabatic gradients, before and after the
                                  # convective adjustment.  Test super-adiabaticity with

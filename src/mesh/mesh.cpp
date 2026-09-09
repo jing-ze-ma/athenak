@@ -879,6 +879,23 @@ void Mesh::NewTimeStep(const Real tlim) {
   // limit increase in timestep to 2x old value
   dt = 2.0*dt;
 
+  // A dt that falls off a cliff is nearly always one physics module going unstable, and
+  // the cycle line alone does not say which.  Keep each candidate so a collapse can name
+  // its owner; the report is at the end of this function.
+  Real dbg_hyd = -1.0, dbg_cnd = -1.0, dbg_vis = -1.0, dbg_src = -1.0;
+  if (pmb_pack->phydro != nullptr) {
+    dbg_hyd = (cfl_no)*(pmb_pack->phydro->dtnew);
+    if (pmb_pack->phydro->pcond != nullptr) {
+      dbg_cnd = (cfl_no)*(pmb_pack->phydro->pcond->dtnew);
+    }
+    if (pmb_pack->phydro->pvisc != nullptr) {
+      dbg_vis = (cfl_no)*(pmb_pack->phydro->pvisc->dtnew);
+    }
+    if (pmb_pack->phydro->psrc != nullptr) {
+      dbg_src = (cfl_no)*(pmb_pack->phydro->psrc->dtnew);
+    }
+  }
+
   // Hydro timestep
   if (pmb_pack->phydro != nullptr) {
     dt = std::min(dt, (cfl_no)*(pmb_pack->phydro->dtnew) );
@@ -943,6 +960,48 @@ void Mesh::NewTimeStep(const Real tlim) {
     }
   }
 #endif
+
+  // If dt just collapsed, say which module owns it.  Only the rank holding the
+  // global minimum reports, so the components printed are the ones that actually set
+  // dt; every other rank's candidates are larger and would mislead.  At most 20 lines.
+  {
+    static int ndbg = 0;
+    if (dtold > 0.0 && dt < 0.25*dtold && ndbg < 20) {
+      Real mine = std::numeric_limits<Real>::max();
+      if (dbg_hyd > 0.0) mine = std::min(mine, dbg_hyd);
+      if (dbg_cnd > 0.0) mine = std::min(mine, dbg_cnd);
+      if (dbg_vis > 0.0) mine = std::min(mine, dbg_vis);
+      if (dbg_src > 0.0) mine = std::min(mine, dbg_src);
+      if (mine <= dt) {
+        ++ndbg;
+        std::cout << "### dt COLLAPSE cycle=" << ncycle << " time=" << time
+                  << " dtold=" << dtold << " dt=" << dt
+                  << " | hydro=" << dbg_hyd << " cond=" << dbg_cnd
+                  << " visc=" << dbg_vis << " srcterms=" << dbg_src
+                  << "  (rank " << global_variable::my_rank << ")" << std::endl;
+        Conduction *pc = (pmb_pack->phydro != nullptr) ? pmb_pack->phydro->pcond
+                       : ((pmb_pack->pmhd != nullptr) ? pmb_pack->pmhd->pcond : nullptr);
+        if (pc != nullptr && dbg_cnd > 0.0 && dbg_cnd <= dt) {
+          std::cout << "    conduction dt is set by cell (m,k,j,i) = ("
+                    << pc->dtnew_m << "," << pc->dtnew_k << "," << pc->dtnew_j
+                    << "," << pc->dtnew_i << ")" << std::endl;
+          if (pc->dt_diag_valid) {
+            auto &d = pc->dt_diag;
+            std::cout << "    r=" << d.h_view(0) << " rho=" << d.h_view(1)
+                      << " T=" << d.h_view(2) << " p=" << d.h_view(3)
+                      << " kappa_R=" << d.h_view(4) << " kappa_rad=" << d.h_view(5)
+                      << " rho*cv=" << d.h_view(6) << std::endl
+                      << "    w=" << d.h_view(7) << "," << d.h_view(8)
+                      << " tau=" << d.h_view(9) << "," << d.h_view(10)
+                      << " s1=" << d.h_view(11) << " F_free=" << d.h_view(15)
+                      << " | dt1=" << cfl_no*d.h_view(12)
+                      << " dt2=" << cfl_no*d.h_view(13)
+                      << " dt3=" << cfl_no*d.h_view(14) << std::endl;
+          }
+        }
+      }
+    }
+  }
 
   // limit last time step to stop at tlim *exactly*
   if ( (time < tlim) && ((time + dt) > tlim) ) {dt = tlim - time;}
