@@ -16,6 +16,7 @@
 
 // Athena++ headers
 #include "athena.hpp"
+#include "globals.hpp"
 #include "parameter_input.hpp"
 #include "mesh/mesh.hpp"
 #include "hydro/hydro.hpp"
@@ -104,6 +105,12 @@ Conduction::Conduction(std::string block, MeshBlockPack *pp, ParameterInput *pin
       rad_tau_lo = pin->GetOrAddReal(block,"rad_tau_lo",0.0);
       rad_tau_hi = pin->GetOrAddReal(block,"rad_tau_hi",0.0);
       rad_tau_mode = (rad_tau_hi > 0.0);
+      // ceiling on the temperature entering kappa_rad; 0 = off (bitwise inert)
+      rad_tmax = pin->GetOrAddReal(block,"rad_tmax_kappa",0.0);
+      if (rad_tmax > 0.0 && global_variable::my_rank == 0) {
+        std::cout << "Conduction: radiative kappa temperature ceiling rad_tmax_kappa = "
+                  << rad_tmax << " K" << std::endl;
+      }
       rad_cs_exact = pin->GetOrAddBoolean(block,"rad_cs_exact",true);
       rad_blend_radial = pin->GetOrAddBoolean(block,"rad_blend_radial",true);
       {
@@ -295,6 +302,7 @@ void Conduction::AddIsotropicHeatFluxRadiative(const DvceArray5D<Real> &w0,
   const Real len_unit  = pmy_pack->punit->length_cgs();
   const Real eflx_unit = pres_unit*pmy_pack->punit->velocity_cgs();   // erg/cm^2/s
   const Real met = rad_met, kfac = rad_kappa_fac, fin = rad_flux_inner;
+  const Real tmax = rad_tmax;   // temperature ceiling in kappa_rad only (0 = off)
   // pressure cut, or the tau blend: with the blend every face is masked by its weight
   const Real pcut = rad_tau_mode ? -1.0 : rad_pcut;
   const bool taumode = rad_tau_mode;
@@ -319,11 +327,14 @@ void Conduction::AddIsotropicHeatFluxRadiative(const DvceArray5D<Real> &w0,
     if (pf < pcut) return 0.0;
     const Real tk = 0.5*(tl + tr)*temp_unit;
     const Real rhof = 0.5*(dl_ + dr_)*dens_unit;
+    // the CAPPED temperature enters kappa_rad only; the gradient below and the
+    // free-streaming limit use the true face temperature tk
+    const Real tkap = KappaTemp(tk, tmax);
     const Real kap = ktab
-        ? RadiativeKappaKR(tk, rhof, kfac,
-                           RosselandTable(krt, krlT, krlP, krnT, krnP, tk,
+        ? RadiativeKappaKR(tkap, rhof, kfac,
+                           RosselandTable(krt, krlT, krlP, krnT, krnP, tkap,
                                           krho ? rhof : pf*pres_unit))
-        : RadiativeKappa(tk, pf*pres_unit, rhof, met, kfac);
+        : RadiativeKappa(tkap, pf*pres_unit, rhof, met, kfac);
     Real f = -kap*gradn*temp_unit/len_unit;     // erg/cm^2/s, positive outward
     if (limit) {
       // saturate smoothly at the free-streaming flux sigma T^4: 0.3 % at F = 0.08 sigma
@@ -703,6 +714,7 @@ void Conduction::NewTimeStep(const DvceArray5D<Real> &w0, const EOS_Data &eos_da
   Real vel_unit = 1.0;
   const bool radiative = (iso_cond_type.compare("radiative") == 0);
   const Real met = rad_met, kfac = rad_kappa_fac;
+  const Real tmax = rad_tmax;   // temperature ceiling in kappa_rad only (0 = off)
   const Real pcut = rad_tau_mode ? -1.0 : rad_pcut;
   const bool taumode = rad_tau_mode;
   const bool blend_r = rad_blend_radial;
@@ -795,12 +807,13 @@ void Conduction::NewTimeStep(const DvceArray5D<Real> &w0, const EOS_Data &eos_da
       Real temp = (gen ? wtemp_(m,k,j,i) : w0(m,IEN,k,j,i)/w0(m,IDN,k,j,i)*gm1);
       Real pres = (gen ? wder_(m,IDPR,k,j,i) : w0(m,IEN,k,j,i)*gm1);
       if (pres < pcut) return;   // no flux above the cut: no constraint
+      const Real tkap = KappaTemp(temp*temp_unit, tmax);
       kappa_ = (ktab
-          ? RadiativeKappaKR(temp*temp_unit, w0_(m,IDN,k,j,i)*dens_unit, kfac,
-                             RosselandTable(krt, krlT, krlP, krnT, krnP, temp*temp_unit,
+          ? RadiativeKappaKR(tkap, w0_(m,IDN,k,j,i)*dens_unit, kfac,
+                             RosselandTable(krt, krlT, krlP, krnT, krnP, tkap,
                                             krho ? w0_(m,IDN,k,j,i)*dens_unit
                                                  : pres*pres_unit))
-          : RadiativeKappa(temp*temp_unit, pres*pres_unit, w0_(m,IDN,k,j,i)*dens_unit,
+          : RadiativeKappa(tkap, pres*pres_unit, w0_(m,IDN,k,j,i)*dens_unit,
                            met, kfac))/kappa_unit;
       // the blend: the face flux is w*kappa*grad T, so the explicit limit is on w*kappa,
       // and a cell whose faces carry no weight carries no constraint
@@ -906,12 +919,13 @@ void Conduction::NewTimeStep(const DvceArray5D<Real> &w0, const EOS_Data &eos_da
                              : w0_(dm,IEN,dk,dj,di)/w0_(dm,IDN,dk,dj,di)*gm1);
       const Real pres = (gen ? wder_(dm,IDPR,dk,dj,di) : w0_(dm,IEN,dk,dj,di)*gm1);
       const Real dens = w0_(dm,IDN,dk,dj,di);
-      const Real kr = (ktab ? RosselandTable(krt, krlT, krlP, krnT, krnP, temp*temp_unit,
+      const Real tkap = KappaTemp(temp*temp_unit, tmax);
+      const Real kr = (ktab ? RosselandTable(krt, krlT, krlP, krnT, krnP, tkap,
                                              krho ? dens*dens_unit : pres*pres_unit)
                             : -1.0);
       const Real kappa_ = (ktab
-          ? RadiativeKappaKR(temp*temp_unit, dens*dens_unit, kfac, kr)
-          : RadiativeKappa(temp*temp_unit, pres*pres_unit, dens*dens_unit, met, kfac))
+          ? RadiativeKappaKR(tkap, dens*dens_unit, kfac, kr)
+          : RadiativeKappa(tkap, pres*pres_unit, dens*dens_unit, met, kfac))
           /kappa_unit;
       Real rcv = dens/gm1;
       if (gen) {

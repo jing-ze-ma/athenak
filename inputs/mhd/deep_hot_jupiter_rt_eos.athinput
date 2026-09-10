@@ -115,6 +115,7 @@ isotropic_conduction = radiative   # RADIATIVE DIFFUSION below the two-stream re
                                    # two-stream by Rosseland optical depth (docs/correlated_k_rt.md)
 rad_tau_lo     = 30.0              # face weight w(tau_R): 0 below tau_lo ...
 rad_tau_hi     = 300.0             # ... 1 above tau_hi; the two-stream carries 1 - w
+rad_tmax_kappa = 0.0               # K; >0 caps T in kappa_rad (see docs), 0 = off
 rad_kappa_src  = table             # kappa_R tabulated from the ck table + continuum at start-up,
                                    # so both operators use ONE opacity (needs rt_ck = true)
 rad_flux_inner = -1.0              # < 0: sigma T_int^4 through the inner wall, T_int from Teq
