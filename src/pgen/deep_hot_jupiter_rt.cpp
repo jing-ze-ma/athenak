@@ -8,12 +8,16 @@
 //!
 //! REFERENCE: Heng, Menou, Phillipps, MNRAS, 413, 2380 (2011); Deitrick, Mendonça, Schroffenegger, Grimm, Tsai, Heng, ApJS, 248, 30 (2020)
 
+#include <sys/stat.h>  // mkdir, for the cyclediag/ subdirectory
+
 // C++ headers
 #include <cmath>
 #include <cstdint>
+#include <cstdio>   // snprintf, for the cycle-diagnostic file name
 #include <iostream> // cout
 #include <fstream>  // ifstream, for the correlated-k table
 #include <sstream>  // ostringstream, for the photosphere dump
+#include <iomanip>  // setw/setfill, for the cycle-diagnostic file name
 #include <string>
 #include <vector>
 
@@ -74,6 +78,8 @@ using two_stream_rt::rt_cf_ptr;
 using two_stream_rt::rt_ck;
 using two_stream_rt::rt_ck_pcut;
 using two_stream_rt::rt_de_max;
+using two_stream_rt::rt_diag;
+using two_stream_rt::rt_diag_ptr;
 using two_stream_rt::rt_dump_done;
 using two_stream_rt::rt_dump_file;
 using two_stream_rt::rt_dump_j;
@@ -121,6 +127,20 @@ template <typename View1D>
 void adjust_ad_pT_arr(const EOS_Data &eos, const Real &Rgas, const Real &gamma, const int &N, View1D Tarr, View1D lgparr);
 
 void DhjPhotosphereDump(ParameterInput *pin, Mesh *pm);
+void DhjCycleDiag(Mesh *pm);
+
+// PER-CYCLE SINGLE-MESHBLOCK DIAGNOSTIC (problem/diag_gid, default -1 = off).  Which
+// global meshblock to dump, and the inclusive cycle window.  File-scope because the
+// per-cycle hook takes only the Mesh.
+namespace {
+int diag_gid = -1;
+int diag_cycle_min = 0;
+int diag_cycle_max = 2147483647;
+// a char buffer, not a std::string: a global string is a style violation, and the
+// name is only ever used to build the dump file name
+char diag_basename[256] = "athena";
+bool diag_dir_made = false;
+}  // namespace
 
 KOKKOS_INLINE_FUNCTION
 void get_daynight_Tp(const Real &p, Real &Tn, Real &Td);
@@ -395,6 +415,22 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     std::cout << "deep_hot_jupiter_rt: RT two-stream source is "
               << (rt_semi_implicit ? "SEMI-IMPLICIT" : "EXPLICIT") << std::endl;
   }
+  // per-cycle single-meshblock diagnostic dump. Read here, which is the one place both
+  // the from-scratch and the restart path go through (CallProblemGenerator is called by
+  // BOTH ProblemGenerator constructors), so the two can never drift apart -- see the
+  // rot_potential restart bug for what happens when they do.
+  diag_gid = pin->GetOrAddInteger("problem","diag_gid",-1);
+  diag_cycle_min = pin->GetOrAddInteger("problem","diag_cycle_min",0);
+  diag_cycle_max = pin->GetOrAddInteger("problem","diag_cycle_max",2147483647);
+  {
+    const std::string bn = pin->GetOrAddString("job","basename","athena");
+    std::snprintf(diag_basename, sizeof(diag_basename), "%s", bn.c_str());
+  }
+  if (diag_gid >= 0 && global_variable::my_rank == 0) {
+    std::cout << "deep_hot_jupiter_rt: cycle diagnostic dump for gid " << diag_gid
+              << ", cycles [" << diag_cycle_min << "," << diag_cycle_max << "]"
+              << std::endl;
+  }
   rt_int_at_cut = pin->GetOrAddBoolean("problem","ck_int_at_cut",true);
   ad_dump_file = pin->GetOrAddString("problem","ad_dump_file","");
   if (rt_ck && !rt_split) {
@@ -474,6 +510,20 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   int n2m1 = (indcs.nx2 > 1)? (indcs.nx2 + 2*ng - 1) : 0;
   int n3m1 = (indcs.nx3 > 1)? (indcs.nx3 + 2*ng - 1) : 0;
     
+  // enrol the per-cycle diagnostic. The RT array is sized on the first RT call (which
+  // happens before the first hook call); the conduction one has to be sized here,
+  // because Conduction was built by AddPhysics before this pgen ran.
+  if (diag_gid >= 0) {
+    rt_diag = true;
+    Conduction *pc = (pmbp->phydro != nullptr) ? pmbp->phydro->pcond
+                                               : ((pmbp->pmhd != nullptr)
+                                                  ? pmbp->pmhd->pcond : nullptr);
+    if (pc != nullptr) {
+      pc->EnableDiag(pmbp->nmb_thispack, n3m1+1, n2m1+1, n1m1+1);
+    }
+    user_cycle_func = DhjCycleDiag;
+  }
+
   Real r0, r1;
   r0 = pmy_mesh_->mesh_size.x1min;
   r1 = pmy_mesh_->mesh_size.x1max;
@@ -3721,3 +3771,211 @@ void adjust_ad_pT_arr(const EOS_Data &eos, const Real &Rgas, const Real &gamma, 
 }
 
 
+
+//----------------------------------------------------------------------------------------
+//! \fn void DhjCycleDiag
+//! \brief PER-CYCLE, SINGLE-MESHBLOCK dump of everything that touches the energy of a
+//! cell: the RT two-stream source (rate, applied de, clip flag), the radiative-conduction
+//! face fluxes with the kappa / effective diffusivity / dt candidate behind them, the
+//! optical-depth blend weights, and the hydro state.
+//!
+//! WHY.  A dt collapse in a cubed-sphere vertex column is a competition between the
+//! explicit RT source and the flux-limited radiative conduction, and neither operator
+//! appears in any output: the bin dumps carry only the state, at a cadence of a rotation.
+//! One meshblock every cycle is ~10 MB and answers the question directly -- which of the
+//! two put the energy in, and whether the source limiter was already saturated.
+//!
+//! Off unless problem/diag_gid >= 0, and then it costs one host copy of one meshblock.
+//! Anything not allocated (the RT arrays before the first RT call, the conduction arrays
+//! with no conduction module) is written as zeros, so the record layout is fixed.
+
+void DhjCycleDiag(Mesh *pm) {
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  if (diag_gid < pmbp->gids || diag_gid > pmbp->gide) return;   // not this rank
+  if (pm->ncycle < diag_cycle_min || pm->ncycle > diag_cycle_max) return;
+  const int m = diag_gid - pmbp->gids;
+
+  auto &indcs = pm->mb_indcs;
+  const int ng = indcs.ng;
+  const int n1 = indcs.nx1 + 2*ng;
+  const int n2 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*ng) : 1;
+  const int n3 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*ng) : 1;
+  const int nf = n1 + 1;
+
+  auto &u0 = (pmbp->phydro != nullptr) ? pmbp->phydro->u0 : pmbp->pmhd->u0;
+  auto &w0 = (pmbp->phydro != nullptr) ? pmbp->phydro->w0 : pmbp->pmhd->w0;
+  Conduction *pc = (pmbp->phydro != nullptr) ? pmbp->phydro->pcond
+                                             : ((pmbp->pmhd != nullptr)
+                                                ? pmbp->pmhd->pcond : nullptr);
+  const int nw = static_cast<int>(w0.extent_int(1));
+  const int nu = static_cast<int>(u0.extent_int(1));
+
+  if (!diag_dir_made) {
+    mkdir("cyclediag", 0775);
+    diag_dir_made = true;
+  }
+  std::ostringstream fn;
+  fn << "cyclediag/" << diag_basename << ".cyclediag." << std::setw(8)
+     << std::setfill('0') << pm->ncycle << ".dat";
+  // write to <name>.tmp and rename() only after close(): a rank killed part-way through
+  // by another rank's MPI_Abort then leaves no truncated file under the final name
+  const std::string fname = fn.str();
+  const std::string ftmp = fname + ".tmp";
+  std::ofstream f(ftmp.c_str(), std::ios::binary);
+  if (!f.is_open()) {
+    std::cout << "### cyclediag: could not open '" << ftmp << "'" << std::endl;
+    return;
+  }
+
+  // ---- the variable list, fixed whatever is allocated -------------------------------
+  std::vector<std::string> names;
+  const char *wn[5] = {"w_dens", "w_velx", "w_vely", "w_velz", "w_eint"};
+  const char *un[5] = {"u_dens", "u_m1", "u_m2", "u_m3", "u_ener"};
+  for (int n=0; n<nw; ++n) {
+    if (n < 5) {
+      names.push_back(wn[n]);
+    } else {
+      names.push_back("w_" + std::to_string(n));
+    }
+  }
+  for (int n=0; n<nu; ++n) {
+    if (n < 5) {
+      names.push_back(un[n]);
+    } else {
+      names.push_back("u_" + std::to_string(n));
+    }
+  }
+  names.push_back("rt_src");
+  names.push_back("rt_de");
+  names.push_back("rt_clip");
+  names.push_back("cond_f1");
+  names.push_back("cond_f2");
+  names.push_back("cond_f3");
+  names.push_back("cond_kappa");
+  names.push_back("cond_keff");
+  names.push_back("cond_dtcell");
+  names.push_back("rt_T");
+  names.push_back("rt_icut");
+  names.push_back("rad_w");
+  names.push_back("rad_tauf");
+  // appended AFTER the v1 set, so a 23-variable and a 27-variable file share their
+  // first 23 variables byte for byte and one name-driven reader handles both
+  names.push_back("rt_Ft");
+  names.push_back("rt_Fb");
+  names.push_back("rt_Qs");
+  names.push_back("rt_Em");
+
+  std::ostringstream hd;
+  hd.precision(17);
+  hd << "cyclediag v1 cycle=" << pm->ncycle << " time=" << pm->time
+     << " dt=" << pm->dt << " gid=" << diag_gid
+     << " n1=" << n1 << " n2=" << n2 << " n3=" << n3
+     << " is=" << indcs.is << " ie=" << indcs.ie
+     << " js=" << indcs.js << " je=" << indcs.je
+     << " ks=" << indcs.ks << " ke=" << indcs.ke
+     << " nvar=" << names.size() << " nface=" << nf << "\n";
+  f << hd.str();
+  for (size_t n=0; n<names.size(); ++n) {
+    f << names[n] << ((n+1 == names.size()) ? "\n" : " ");
+  }
+
+  // ---- writers ----------------------------------------------------------------------
+  std::vector<double> buf;
+  auto put3 = [&](const int nk, const int nj, const int ni, auto hv) {
+    buf.assign(static_cast<size_t>(nk)*nj*ni, 0.0);
+    size_t p = 0;
+    for (int k=0; k<nk; ++k) {
+      for (int j=0; j<nj; ++j) {
+        for (int i=0; i<ni; ++i) {
+          buf[p++] = static_cast<double>(hv(k,j,i));
+        }
+      }
+    }
+    f.write(reinterpret_cast<const char*>(buf.data()),
+            static_cast<std::streamsize>(buf.size()*sizeof(double)));
+  };
+  auto zeros = [&](const size_t nel) {
+    buf.assign(nel, 0.0);
+    f.write(reinterpret_cast<const char*>(buf.data()),
+            static_cast<std::streamsize>(buf.size()*sizeof(double)));
+  };
+  // one variable out of a (m,n,k,j,i) device array, via a host mirror of the subview
+  auto put5 = [&](const DvceArray5D<Real> &a, const int n) {
+    auto s = Kokkos::subview(a, m, n, Kokkos::ALL(), Kokkos::ALL(), Kokkos::ALL());
+    auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), s);
+    put3(static_cast<int>(h.extent_int(0)), static_cast<int>(h.extent_int(1)),
+         static_cast<int>(h.extent_int(2)), h);
+  };
+
+  const size_t ncell = static_cast<size_t>(n3)*n2*n1;
+  for (int n=0; n<nw; ++n) put5(w0, n);
+  for (int n=0; n<nu; ++n) put5(u0, n);
+
+  if (rt_diag_ptr != nullptr) {
+    for (int n=0; n<3; ++n) put5(*rt_diag_ptr, n);
+  } else {
+    zeros(3*ncell);
+  }
+
+  if (pc != nullptr && pc->diag && pc->cond_diag.extent_int(0) > m) {
+    for (int n=0; n<6; ++n) put5(pc->cond_diag, n);
+  } else {
+    zeros(6*ncell);
+  }
+
+  // temperature [K], from the RT's own per-cell table
+  if (rt_T_ptr != nullptr) {
+    auto s = Kokkos::subview(*rt_T_ptr, m, Kokkos::ALL(), Kokkos::ALL(), Kokkos::ALL());
+    auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), s);
+    put3(static_cast<int>(h.extent_int(0)), static_cast<int>(h.extent_int(1)),
+         static_cast<int>(h.extent_int(2)), h);
+  } else {
+    zeros(ncell);
+  }
+
+  // the correlated-k cut index, one per column, promoted to Real
+  if (rt_icut_ptr != nullptr) {
+    auto s = Kokkos::subview(*rt_icut_ptr, m, Kokkos::ALL(), Kokkos::ALL());
+    auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), s);
+    buf.assign(static_cast<size_t>(n3)*n2, 0.0);
+    size_t p = 0;
+    for (int k=0; k<static_cast<int>(h.extent_int(0)); ++k) {
+      for (int j=0; j<static_cast<int>(h.extent_int(1)); ++j) {
+        buf[p++] = static_cast<double>(h(k,j));
+      }
+    }
+    f.write(reinterpret_cast<const char*>(buf.data()),
+            static_cast<std::streamsize>(buf.size()*sizeof(double)));
+  } else {
+    zeros(static_cast<size_t>(n3)*n2);
+  }
+
+  // the blend weight and the face optical depth, both on x1 faces (n3,n2,n1+1)
+  const size_t nfc = static_cast<size_t>(n3)*n2*nf;
+  if (pc != nullptr && pc->rad_tau_mode && pc->rad_w.extent_int(0) > m) {
+    auto sw = Kokkos::subview(pc->rad_w, m, Kokkos::ALL(), Kokkos::ALL(), Kokkos::ALL());
+    auto hw = Kokkos::create_mirror_view_and_copy(HostMemSpace(), sw);
+    put3(static_cast<int>(hw.extent_int(0)), static_cast<int>(hw.extent_int(1)),
+         static_cast<int>(hw.extent_int(2)), hw);
+    auto st = Kokkos::subview(pc->rad_tauf, m, Kokkos::ALL(), Kokkos::ALL(),
+                              Kokkos::ALL());
+    auto ht = Kokkos::create_mirror_view_and_copy(HostMemSpace(), st);
+    put3(static_cast<int>(ht.extent_int(0)), static_cast<int>(ht.extent_int(1)),
+         static_cast<int>(ht.extent_int(2)), ht);
+  } else {
+    zeros(2*nfc);
+  }
+
+  // the flux components behind rt_src: Ft, Fb, Qs, Em (v2, appended at the end)
+  if (rt_diag_ptr != nullptr && rt_diag_ptr->extent_int(1) >= 7) {
+    for (int n=3; n<7; ++n) put5(*rt_diag_ptr, n);
+  } else {
+    zeros(4*ncell);
+  }
+
+  f.close();
+  if (std::rename(ftmp.c_str(), fname.c_str()) != 0) {
+    std::cout << "### cyclediag: could not rename '" << ftmp << "'" << std::endl;
+  }
+  return;
+}

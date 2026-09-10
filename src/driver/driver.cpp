@@ -463,6 +463,12 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       // compute new timestep AFTER all Meshblocks refined/derefined
       pmesh->NewTimeStep(tlim);
 
+      // per-cycle problem-generator hook (problem/diag_gid in deep_hot_jupiter_rt).
+      // Runs with the state at the end of the cycle and the new dt already set.
+      if (pmesh->pgen->user_cycle_func != nullptr) {
+        (pmesh->pgen->user_cycle_func)(pmesh);
+      }
+
       // Timestep-collapse guard (time/dt_min, default 0 = off): a run whose dt has
       // collapsed makes no further progress but keeps consuming the allocation.
       if (dt_min > 0.0 && pmesh->dt < dt_min) {

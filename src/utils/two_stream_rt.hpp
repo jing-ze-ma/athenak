@@ -207,6 +207,20 @@ inline int rt_nchain = 4;
 // a parallel dimension, instead of one kernel that loops over chains serially. Same
 // arithmetic, same block-summation order -- see the use site.
 inline bool rt_split = false;
+// PER-CYCLE RT DIAGNOSTIC (deep_hot_jupiter_rt's problem/diag_gid).  Off by default and
+// costing nothing when off: the array is not even allocated.  (m,slot,k,j,i) with
+// slot 0 = the source RATE src [code units, erg/cm^3/s] BEFORE the limiter and before
+// multiplying by bdt, slot 1 = the de actually added to u0(IEN) after the semi-implicit
+// relaxation and the clip, slot 2 = 1.0 if the limiter changed de on this call,
+// slot 3 = Ft, the block-summed net flux on the TOP face i+1 after the taublend factor,
+// slot 4 = Fb, the same on the BOTTOM face i -- exactly the two values that make up
+// src = -(Ft-Fb)/dx1 -- slot 5 = Qs, the block-summed stellar heating (0 below icut),
+// slot 6 = Em, the block-summed emission rate with the semi-implicit branch's taublend
+// factor, computed for the diagnostic even when the source is applied explicitly.
+inline bool rt_diag = false;
+inline DvceArray5D<Real> *rt_diag_ptr = nullptr;
+// number of cells the RT source limiter clipped on the LAST call (host side, free)
+inline int rt_nclip_last = 0;
 // (m,k,j,i) face optical depth from the top
 inline DvceArray4D<Real> *rt_tau_ptr = nullptr;
 inline DvceArray4D<Real> *rt_B_ptr = nullptr;     // (m,k,j,i) Planck function
@@ -699,6 +713,9 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
           rt_xP_ptr = new DvceArray4D<Real>("rt_xP", nmb, n3, n2, n1);
           rt_icut_ptr = new DvceArray3D<int>("rt_icut", nmb, n3, n2);
           rt_Qb_ptr = new DvceArray5D<Real>("rt_Qb", nmb, nblk, n1, n3, n2);
+        }
+        if (rt_diag) {
+          rt_diag_ptr = new DvceArray5D<Real>("rt_diag", nmb, 7, n3, n2, n1);
         }
         if (global_variable::my_rank == 0) {
           std::cout << "deep_hot_jupiter_rt: RT split path ON, " << nblk
@@ -1461,6 +1478,11 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
       const int dbg_k = (rt_dump_k >= 0) ? rt_dump_k : (ks + ke)/2;
       const int dbg_n = rt_apply_debug_n;
       if (dbg_on) --rt_apply_debug;
+      // per-cycle diagnostic: an empty View captures fine, so the lambda needs no
+      // branch on the pointer itself
+      const bool diag = rt_diag;
+      DvceArray5D<Real> dg;
+      if (diag) dg = *rt_diag_ptr;
       par_reduce_clip4("rt_apply", 0, nmb1, ks, ke, js, je, is, ie, nclip,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, int &nc) {
         Real Ft = 0.0, Fb = 0.0;
@@ -1474,6 +1496,7 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
           Fb *= (1.0 - w_g(m,k,j,i));
         }
         Real src = -(Ft-Fb)/dx1(m,k,j,i);
+        Real Qs_d = 0.0;   // the stellar heating that entered src, for the diagnostic
         if (band_on) {
           // deeper than the cut nothing radiative is applied: that region is optically
           // thick and convective, and the stellar beam died decades of optical depth
@@ -1484,9 +1507,11 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
             Real Qs = 0.0;
             for (int b=0; b<nblk; ++b) Qs += Qb_g(m,b,i,k,j);
             src += Qs;
+            Qs_d = Qs;
           }
         } else {
-          src += Qv_g(m,k,j,i);
+          Qs_d = Qv_g(m,k,j,i);
+          src += Qs_d;
         }
         // SEMI-IMPLICIT APPLICATION.  The source splits as src = A - E(T), A being the
         // absorption of the field from elsewhere, fixed on this step, and E the cell's
@@ -1514,9 +1539,25 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
             de = (x > 1.0e-4) ? (src/lam)*(-expm1(-x)) : src*bdt;
           }
         }
+        const Real de_pre = de;
         if (demax > 0.0) {
           const Real dl = LimitRTSource(de, w0(m,IEN,k,j,i), demax);
           if (dl != de) { ++nc; de = dl; }
+        }
+        if (diag) {
+          Real Em_d = 0.0;
+          for (int b=0; b<nblk; ++b) Em_d += Em_g(m,b,i,k,j);
+          if (taublend) {
+            Em_d *= 1.0 - 0.5*(w_g(m,k,j,i) + w_g(m,k,j,i+1));
+          }
+          if (band_on && i < icut_g(m,k,j)) Em_d = 0.0;
+          dg(m,0,k,j,i) = src;
+          dg(m,1,k,j,i) = de;
+          dg(m,2,k,j,i) = (de != de_pre) ? 1.0 : 0.0;
+          dg(m,3,k,j,i) = Ft;
+          dg(m,4,k,j,i) = Fb;
+          dg(m,5,k,j,i) = Qs_d;
+          dg(m,6,k,j,i) = Em_d;
         }
         if (dbg_on && m == dbg_m && k == dbg_k && j == dbg_j && i > ie - dbg_n) {
           Real Em = 0.0, Qs = 0.0;
@@ -1533,6 +1574,7 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
         }
         u0(m,IEN,k,j,i) += de;
       });
+      rt_nclip_last = nclip;
       RTSourceLimiterWarn(nclip);
 
       // ---- one-shot column dump, for cross-code comparison -------------------------

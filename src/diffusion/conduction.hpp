@@ -87,6 +87,17 @@ class Conduction {
   // still false, which is the case at initialisation.
   bool rad_w_built = false;
   void BuildRadWeights(const DvceArray5D<Real> &w, const EOS_Data &eos);
+  // PER-CYCLE DIAGNOSTIC (deep_hot_jupiter_rt's problem/diag_gid).  Off by default, and
+  // cond_diag is not allocated until EnableDiag is called, so it costs nothing when off.
+  // (m,slot,k,j,i) with slot 0/1/2 = the energy flux this module ADDS to
+  // flx1/flx2/flx3(m,IEN,k,j,i) on the x1/x2/x3 face of index i/j/k, slot 3 = the
+  // radiative conductivity kappa_rad at the cell exactly as NewTimeStep forms it (code
+  // units), slot 4 = the flux-limited effective diffusivity keff on the x1 direction,
+  // slot 5 = the cell's own conduction dt candidate, the minimum over the three
+  // directions BEFORE the dimensional factor fac and before the CFL number.
+  bool diag = false;
+  DvceArray5D<Real> cond_diag;
+  void EnableDiag(int nmb, int n3, int n2, int n1);
   Real kappa_iso;            // isotropic thermal conductivity
   Real kappa_iso_limit;      // limit to isotropic thermal conductivity
 

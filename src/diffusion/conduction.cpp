@@ -146,6 +146,19 @@ Conduction::~Conduction() {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void Conduction::EnableDiag()
+//! \brief Allocate the per-cycle diagnostic array.  NOT done in the constructor: the
+//! diagnostic is a problem-generator option, and the pgen runs after AddPhysics has
+//! built this object.  With AMR the pack size can change and this array would be stale,
+//! but the runs this exists for (cubed-sphere deep hot Jupiter) have no AMR.
+
+void Conduction::EnableDiag(int nmb, int n3, int n2, int n1) {
+  diag = true;
+  Kokkos::realloc(cond_diag, nmb, 6, n3, n2, n1);
+  Kokkos::deep_copy(cond_diag, 0.0);
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void AddHeatFluxes()
 //! \brief Wrapper function that adds heat fluxes for different types of thermal
 //! conduction to face-centered fluxes of conserved variables
@@ -335,6 +348,10 @@ void Conduction::AddIsotropicHeatFluxRadiative(const DvceArray5D<Real> &w0,
     return gen ? wtemp_(m,k,j,i) : w0(m,IEN,k,j,i)/w0(m,IDN,k,j,i)*gm1;
   };
 
+  // per-cycle diagnostic (problem/diag_gid): locals only, never `this`
+  const bool diag_ = diag;
+  auto cdg = cond_diag;
+
   auto &flx1 = flx.x1f;
   par_for("radcond1", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -343,6 +360,7 @@ void Conduction::AddIsotropicHeatFluxRadiative(const DvceArray5D<Real> &w0,
         (mb_bcs.d_view(m,BoundaryFace::inner_x1) == BoundaryFlag::user ||
          mb_bcs.d_view(m,BoundaryFace::inner_x1) == BoundaryFlag::reflect)) {
       flx1(m,IEN,k,j,i) += fin;
+      if (diag_) cdg(m,0,k,j,i) = fin;
       return;
     }
     const Real tl = (gen ? wtemp_(m,k,j,i-1) : w0(m,IEN,k,j,i-1)/w0(m,IDN,k,j,i-1)*gm1);
@@ -351,8 +369,10 @@ void Conduction::AddIsotropicHeatFluxRadiative(const DvceArray5D<Real> &w0,
     const Real pr = (gen ? wder_(m,IDPR,k,j,i) : w0(m,IEN,k,j,i)*gm1);
     const Real dl = curv ? (x1v_(m,i) - x1v_(m,i-1)) : size.d_view(m).dx1;
     const Real wt = (taumode && blend_r) ? wf(m,k,j,i) : 1.0;
-    flx1(m,IEN,k,j,i) += wt*face_flux(tl, tr, pl, pr, w0(m,IDN,k,j,i-1),
-                                      w0(m,IDN,k,j,i), (tr - tl)/dl);
+    const Real fadd = wt*face_flux(tl, tr, pl, pr, w0(m,IDN,k,j,i-1),
+                                   w0(m,IDN,k,j,i), (tr - tl)/dl);
+    flx1(m,IEN,k,j,i) += fadd;
+    if (diag_) cdg(m,0,k,j,i) = fadd;
   });
   if (!multi_d) return;
 
@@ -377,8 +397,10 @@ void Conduction::AddIsotropicHeatFluxRadiative(const DvceArray5D<Real> &w0,
                             /(0.5*dx3_(m,k-1,j,i) + dx3_(m,k,j,i) + 0.5*dx3_(m,k+1,j,i)));
       gradn = (gradn - c*ge)/sn;
     }
-    flx2(m,IEN,k,j,i) += wt*face_flux(tl, tr, pl, pr, w0(m,IDN,k,j-1,i),
-                                      w0(m,IDN,k,j,i), gradn);
+    const Real fadd = wt*face_flux(tl, tr, pl, pr, w0(m,IDN,k,j-1,i),
+                                   w0(m,IDN,k,j,i), gradn);
+    flx2(m,IEN,k,j,i) += fadd;
+    if (diag_) cdg(m,1,k,j,i) = fadd;
   });
   if (!three_d) return;
 
@@ -403,8 +425,10 @@ void Conduction::AddIsotropicHeatFluxRadiative(const DvceArray5D<Real> &w0,
                             /(0.5*dx2_(m,k,j-1,i) + dx2_(m,k,j,i) + 0.5*dx2_(m,k,j+1,i)));
       gradn = (gradn - c*gx)/sn;
     }
-    flx3(m,IEN,k,j,i) += wt*face_flux(tl, tr, pl, pr, w0(m,IDN,k-1,j,i),
-                                      w0(m,IDN,k,j,i), gradn);
+    const Real fadd = wt*face_flux(tl, tr, pl, pr, w0(m,IDN,k-1,j,i),
+                                   w0(m,IDN,k,j,i), gradn);
+    flx3(m,IEN,k,j,i) += fadd;
+    if (diag_) cdg(m,2,k,j,i) = fadd;
   });
   return;
 }
@@ -737,6 +761,11 @@ void Conduction::NewTimeStep(const DvceArray5D<Real> &w0, const EOS_Data &eos_da
   // WHICH cell did it, and reconstructing that afterwards from a dump means redoing the
   // opacity lookup, the tau blend and the flux limiter outside the code.  The location
   // rides along for free.
+  // per-cycle diagnostic (problem/diag_gid): locals only, never `this`
+  const bool diag_ = diag;
+  auto cdg = cond_diag;
+  const Real dt_huge = static_cast<Real>(std::numeric_limits<float>::max());
+
   Kokkos::ValLocScalar<Real, int> mloc;
   Kokkos::parallel_reduce("cond_newdt", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmkji),
   KOKKOS_LAMBDA(const int &idx, Kokkos::ValLocScalar<Real, int> &mres) {
@@ -748,6 +777,14 @@ void Conduction::NewTimeStep(const DvceArray5D<Real> &w0, const EOS_Data &eos_da
     int i = (idx - m*nkji - k*nji - j*nx1) + is;
     k += ks;
     j += js;
+
+    // the diagnostic slots for cells that take one of the early returns below stay at
+    // zero, which is what "this cell puts no constraint on the timestep" means
+    if (diag_) {
+      cdg(m,3,k,j,i) = 0.0;
+      cdg(m,4,k,j,i) = 0.0;
+      cdg(m,5,k,j,i) = 0.0;
+    }
 
     Real kappa_ = kappa0;
     Real wmax = 1.0;
@@ -805,11 +842,20 @@ void Conduction::NewTimeStep(const DvceArray5D<Real> &w0, const EOS_Data &eos_da
       return kappa_/((1.0 + s*s)*sqrt(1.0 + s*s));
     };
 
+    // the cell's OWN dt candidate, kept separate from the running reduction minimum
+    Real dtc = dt_huge;
     const Real d1 = (curv && radiative) ? dx1_(m,k,j,i) : size.d_view(m).dx1;
     {
       const Real w1 = (taumode && blend_r) ? wmax : 1.0;
       const Real k1 = w1*keff(d1, tc(k,j,i-1), tc(k,j,i+1));
-      if (k1 > 0.0) min_dt = fmin(min_dt, SQR(d1)/k1*rcv);
+      if (k1 > 0.0) {
+        min_dt = fmin(min_dt, SQR(d1)/k1*rcv);
+        dtc = fmin(dtc, SQR(d1)/k1*rcv);
+      }
+      if (diag_) {
+        cdg(m,3,k,j,i) = kappa_;
+        cdg(m,4,k,j,i) = keff(d1, tc(k,j,i-1), tc(k,j,i+1));
+      }
     }
     // on a curvilinear grid size.dx2/dx3 are ANGLES; the physical widths are pcoord's
     // cubed sphere: the exact operator's angular diffusivity is kappa/sin^2(alpha)
@@ -818,13 +864,20 @@ void Conduction::NewTimeStep(const DvceArray5D<Real> &w0, const EOS_Data &eos_da
     if (multi_d) {
       const Real d2 = (curv && radiative) ? dx2_(m,k,j,i) : size.d_view(m).dx2;
       const Real k2 = wa*keff(d2, tc(k,j-1,i), tc(k,j+1,i));
-      if (k2 > 0.0) min_dt = fmin(min_dt, SQR(d2)*s2/k2*rcv);
+      if (k2 > 0.0) {
+        min_dt = fmin(min_dt, SQR(d2)*s2/k2*rcv);
+        dtc = fmin(dtc, SQR(d2)*s2/k2*rcv);
+      }
     }
     if (three_d) {
       const Real d3 = (curv && radiative) ? dx3_(m,k,j,i) : size.d_view(m).dx3;
       const Real k3 = wa*keff(d3, tc(k-1,j,i), tc(k+1,j,i));
-      if (k3 > 0.0) min_dt = fmin(min_dt, SQR(d3)*s2/k3*rcv);
+      if (k3 > 0.0) {
+        min_dt = fmin(min_dt, SQR(d3)*s2/k3*rcv);
+        dtc = fmin(dtc, SQR(d3)*s2/k3*rcv);
+      }
     }
+    if (diag_) cdg(m,5,k,j,i) = dtc;
     if (min_dt < mres.val) { mres.val = min_dt; mres.loc = idx; }
   }, Kokkos::MinLoc<Real, int>(mloc));
   dtnew = mloc.val*fac;
