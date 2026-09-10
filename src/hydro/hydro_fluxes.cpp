@@ -104,6 +104,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
   const bool str_r1_ = pmy_pack->pmesh->use_cubed_sphere;
   auto &mb_bcs_pq = pmy_pack->pmb->mb_bcs;
   const bool pquad_ = pmy_pack->pmesh->use_polar_quadratic_recon;
+  const int px3_ = pmy_pack->pmesh->polar_x3_shift;
 
   //--------------------------------------------------------------------------------------
   // i-direction
@@ -649,20 +650,36 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
               GnomonicEquianglePrimFaceX3(gtrig_eta,member,m,k,j,il,iu,wl_kp1,wr);
           }
           
-        // SPHERICAL POLAR: shift every reconstructed variable from the cell's volume
-        // centroid theta to the x3 face's midpoint theta with the centred theta
-        // derivative of the cell values (see mhd_fluxes.cpp).  Includes the basis
-        // rotation of (v_r, v_theta); fixes the O(1) polar-cell phi-force error of a
-        // scalar gradient across the pole.
+        // SPHERICAL POLAR: correct the reconstructed x3-face states from the cell's
+        // volume centroid theta to the x3 face's midpoint theta (see the long note in
+        // mhd_fluxes.cpp).  <mesh>/polar_x3_shift selects the form: 1 = "rotate", the
+        // exact basis rotation of the (r,theta) vector pair; 2 = "shift", the unlimited
+        // centred-difference theta shift of every variable, which also carries the
+        // scalar gradient but was BISECTED to the polar-row radial-field blow-up of the
+        // sp MHD production run (2026-09-10); 3 = "scalar", rotate the vectors and shift
+        // only the remaining variables; 0 = "off".
         if (use_spherical_polar) {
-          const Real fac = (0.5*(x2f3_(m,j) + x2f3_(m,j+1)) - x2v3_(m,j))
-                           /(x2v3_(m,j+1) - x2v3_(m,j-1));
-          for (int n=0; n<nvars; ++n) {
+          if (px3_ == 1 || px3_ == 3) {
+            const Real dang = 0.5*(x2f3_(m,j) + x2f3_(m,j+1)) - x2v3_(m,j);
+            const Real cd = cos(dang), sd = sin(dang);
             par_for_inner(member, il, iu, [&](const int i) {
-              const Real sh = fac*(w0_(m,n,k,j+1,i) - w0_(m,n,k,j-1,i));
-              wl_kp1(n,i) += sh;
-              wr(n,i) += sh;
+              Real a = wl_kp1(IVX,i), b = wl_kp1(IVY,i);
+              wl_kp1(IVX,i) = a*cd + b*sd;  wl_kp1(IVY,i) = -a*sd + b*cd;
+              a = wr(IVX,i); b = wr(IVY,i);
+              wr(IVX,i) = a*cd + b*sd;  wr(IVY,i) = -a*sd + b*cd;
             });
+          }
+          if (px3_ == 2 || px3_ == 3) {
+            const Real fac = (0.5*(x2f3_(m,j) + x2f3_(m,j+1)) - x2v3_(m,j))
+                             /(x2v3_(m,j+1) - x2v3_(m,j-1));
+            for (int n=0; n<nvars; ++n) {
+              if (px3_ == 3 && (n == IVX || n == IVY)) continue;
+              par_for_inner(member, il, iu, [&](const int i) {
+                const Real sh = fac*(w0_(m,n,k,j+1,i) - w0_(m,n,k,j-1,i));
+                wl_kp1(n,i) += sh;
+                wr(n,i) += sh;
+              });
+            }
           }
         }
 
