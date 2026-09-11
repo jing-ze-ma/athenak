@@ -91,7 +91,21 @@ void WBGuard(WBState &a, WBState &b, WBState &c, WBState &d, WBState &e) {
     return !(isfinite(s.d) && isfinite(s.e) && isfinite(s.p)) || s.d <= 0.0 || s.e <= 0.0
            || s.p <= 0.0;
   };
-  if (bad(a) || bad(b) || bad(d) || bad(e)) { a = c; b = c; d = c; e = c; }
+  // A walk can also come back FINITE but absurd: the polytropic branch's exponential
+  // overflows to ~1e191-1e295 rather than to inf when the temperature extrapolation
+  // heads for zero, and the deviation w0 - bg ~ -1e302 that the reconstruction then
+  // forms turns into inf - inf = NaN after limiting and re-adding.  Nothing physical
+  // moves the background by six decades over a single cell, so treat such a state
+  // exactly as the non-finite case and flatten to the anchor.  (The anchor itself is
+  // only a meaningful yardstick if it is sane, hence the bad(c) test.)
+  auto absurd = [&c](const WBState &s) {
+    return !(s.d > 1.0e-6*c.d && s.d < 1.0e6*c.d && s.e > 1.0e-6*c.e &&
+             s.e < 1.0e6*c.e && s.p > 1.0e-6*c.p && s.p < 1.0e6*c.p);
+  };
+  if (bad(a) || bad(b) || bad(d) || bad(e) ||
+      (!bad(c) && (absurd(a) || absurd(b) || absurd(d) || absurd(e)))) {
+    a = c; b = c; d = c; e = c;
+  }
 }
 
 //! \fn void WBReadCache
@@ -313,13 +327,26 @@ void WBAdvance(const EOS_Data &eos, const int wb_opt, const Real d_c, const Real
     const Real t0 = (tstart > 0.0) ? tstart : eos.Temperature(d, e, tguess);
     Real e0, p0, chir0, chit0, em, pm, chirm, chitm, pe, chire, chite;
     eos.ThermoAt(d, t0, e0, p0, chir0, chit0, dum);
-    const Real k1 = -(d + (dlntdphi/t0)*p0*chit0)/(p0*chir0);
+    // BOUND THE TEMPERATURE EXTRAPOLATION.  `a = dlntdphi` is the stencil's own dT/dPhi:
+    // across a one-cell cold spike (T 8941 -> 2874 K) the segment's temperature change
+    // a*dphi is comparable to -t0, the midpoint tm = t0 + 0.5*a*dphi passes through
+    // zero, (a/tm) diverges and exp(k2*dphi) overflows to a FINITE ~1e295 that the old
+    // WBGuard accepted; the deviation reconstruction then forms w0 - bg ~ -1e295,
+    // PLM-limits it and re-adds it -> inf - inf = NaN at the interface.  Limit only the
+    // DECREASE of T over the segment, to half the starting temperature (an increase can
+    // never drive tm to zero, so it needs no clamp).  This mirrors the isentropic
+    // sibling's `(u > 0.0) ? pow(...) : d*exp(...)` guard: where the stencil's
+    // temperature gradient is unresolvable the branch degrades smoothly toward its
+    // isothermal member instead of walking through zero temperature.  When the clamp
+    // does not bite, a_eff IS dlntdphi bit for bit, so healthy cells are untouched.
+    const Real a_eff = (dlntdphi*dphi < -0.5*t0) ? (-0.5*t0/dphi) : dlntdphi;
+    const Real k1 = -(d + (a_eff/t0)*p0*chit0)/(p0*chir0);
     const Real dm = d*exp(0.5*k1*dphi);
-    const Real tm = t0 + 0.5*dlntdphi*dphi;
+    const Real tm = t0 + 0.5*a_eff*dphi;
     eos.ThermoAt(dm, tm, em, pm, chirm, chitm, dum);
-    const Real k2 = -(dm + (dlntdphi/tm)*pm*chitm)/(pm*chirm);
+    const Real k2 = -(dm + (a_eff/tm)*pm*chitm)/(pm*chirm);
     d *= exp(k2*dphi);
-    t = t0 + dlntdphi*dphi;
+    t = t0 + a_eff*dphi;
     eos.ThermoAt(d, t, e, pe, chire, chite, dum);
     if (p_end != nullptr) {*p_end = pe;}
   } else if (wb_opt == 0) {
