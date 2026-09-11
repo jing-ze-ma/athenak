@@ -92,6 +92,7 @@ Driver::Driver(ParameterInput *pin, Mesh *pmesh, Real wtlim, Kokkos::Timer* ptim
     nlim = pin->GetOrAddInteger("time", "nlim", -1);
     ndiag = pin->GetOrAddInteger("time", "ndiag", 1);
     nan_check_cycles = pin->GetOrAddInteger("time", "nan_check_cycles", 100);
+    dt_min = pin->GetOrAddReal("time", "dt_min", 0.0);
 
     if (integrator == "rk1") {
       // RK1: first-order Runge-Kutta / the forward Euler (FE) method
@@ -462,6 +463,29 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       if (pmesh->adaptive) {pmesh->pmr->AdaptiveMeshRefinement(this, pin);}
       // compute new timestep AFTER all Meshblocks refined/derefined
       pmesh->NewTimeStep(tlim);
+
+      // per-cycle problem-generator hook (problem/diag_gid in deep_hot_jupiter_rt).
+      // Runs with the state at the end of the cycle and the new dt already set.
+      if (pmesh->pgen->user_cycle_func != nullptr) {
+        (pmesh->pgen->user_cycle_func)(pmesh);
+      }
+
+      // Timestep-collapse guard (time/dt_min, default 0 = off): a run whose dt has
+      // collapsed makes no further progress but keeps consuming the allocation.
+      if (dt_min > 0.0 && pmesh->dt < dt_min) {
+        if (global_variable::my_rank == 0) {
+          std::cout << "### FATAL: timestep collapsed: dt = " << pmesh->dt
+                    << " < time/dt_min = " << dt_min << " at cycle " << pmesh->ncycle
+                    << ", time " << pmesh->time << std::endl;
+        }
+        // std::exit would run static destructors with Kokkos still live (segfault) and
+        // leave the other ranks waiting; leave hard
+#if MPI_PARALLEL_ENABLED
+        MPI_Abort(MPI_COMM_WORLD, EXIT_FAILURE);
+#else
+        std::_Exit(EXIT_FAILURE);
+#endif
+      }
 
       // NaN guard (time/nan_check_cycles, default 100; 0 = off): a run whose state has
       // gone non-finite keeps stepping -- fmin() drops NaN, so the time step stays

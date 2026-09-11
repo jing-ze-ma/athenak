@@ -127,6 +127,8 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
         pin->GetOrAddBoolean("problem","grav_point_mass",false);
     hot_jupiter_param.stellar_tide =
         pin->GetOrAddBoolean("problem","stellar_tide",false);
+    hot_jupiter_param.rot_potential =
+        pin->GetOrAddBoolean("problem","rot_potential",false);
   }
         
   // check for user-defined boundary conditions

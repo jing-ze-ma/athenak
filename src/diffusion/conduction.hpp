@@ -56,6 +56,13 @@ class Conduction {
   // operators overlap and hand over conservatively.  rad_w and rad_tauf sit on x1 faces.
   Real rad_tau_lo = 0.0, rad_tau_hi = 0.0;
   bool rad_tau_mode = false;
+  // rad_tmax_kappa (0 = off): a CEILING on the temperature that enters kappa_rad, both
+  // its T^3 and the kappa_R lookup.  kappa_rad ~ T^3/(kappa_R rho) explodes when a
+  // single drained cell runs away to 1e5-1e7 K, and the explicit diffusive dt collapses
+  // with it -- conduction reports the runaway rather than causing it, and capping T here
+  // keeps the timestep survivable while the column refills.  The temperature GRADIENT
+  // and the flux limiter's sigma T^4 are left at the true temperature.
+  Real rad_tmax = 0.0;         // K; <= 0 disables the cap
   // rad_blend_radial (default true): the blend weight applies to the x1 faces too.
   // False keeps the radial diffusion at full weight everywhere and applies w only to
   // the angular faces -- for a SELF-LUMINOUS object with no two-stream above the
@@ -172,6 +179,17 @@ class Conduction {
   // still false, which is the case at initialisation.
   bool rad_w_built = false;
   void BuildRadWeights(const DvceArray5D<Real> &w, const EOS_Data &eos);
+  // PER-CYCLE DIAGNOSTIC (deep_hot_jupiter_rt's problem/diag_gid).  Off by default, and
+  // cond_diag is not allocated until EnableDiag is called, so it costs nothing when off.
+  // (m,slot,k,j,i) with slot 0/1/2 = the energy flux this module ADDS to
+  // flx1/flx2/flx3(m,IEN,k,j,i) on the x1/x2/x3 face of index i/j/k, slot 3 = the
+  // radiative conductivity kappa_rad at the cell exactly as NewTimeStep forms it (code
+  // units), slot 4 = the flux-limited effective diffusivity keff on the x1 direction,
+  // slot 5 = the cell's own conduction dt candidate, the minimum over the three
+  // directions BEFORE the dimensional factor fac and before the CFL number.
+  bool diag = false;
+  DvceArray5D<Real> cond_diag;
+  void EnableDiag(int nmb, int n3, int n2, int n1);
   Real kappa_iso;            // isotropic thermal conductivity
   Real kappa_iso_limit;      // limit to isotropic thermal conductivity
 
@@ -221,6 +239,14 @@ Real RosselandTable(const DvceArray2D<Real> &tab, const DvceArray1D<Real> &lT,
   const Real lk = (1.0-fx)*((1.0-fy)*tab(i,j) + fy*tab(i,j+1))
                 +      fx *((1.0-fy)*tab(i+1,j) + fy*tab(i+1,j+1));
   return pow(10.0, lk);
+}
+
+//! \fn Real KappaTemp
+//! \brief the temperature used in the radiative conductivity: the cell temperature,
+//! capped at tmax when tmax > 0 (see Conduction::rad_tmax).  Bitwise identity when off.
+KOKKOS_INLINE_FUNCTION
+Real KappaTemp(const Real tk, const Real tmax) {
+  return (tmax > 0.0) ? fmin(tk, tmax) : tk;
 }
 
 //! \fn Real RadGate

@@ -1,0 +1,59 @@
+=== si/s05 (semi-implicit RT, seed 5)  job 11551411, node vipa1308, 2 APU GPUs ===
+run dir: /viper/u2/jinma/ATHENAK/bench/cs_ens/si/s05   log: log.out.11551411
+
+--- ABORT ---
+### FATAL: timestep collapsed: dt = 8.875321e-03 < time/dt_min = 1.000000e-02 at cycle 135014, time 1.628648e+06
+rot = 1.628648e6/3.05e5 = 5.3398
+
+--- dt COLLAPSE blocks ---
+count = 0   (this binary, /viper/u2/jinma/ATHENAK/bench/cs_ens/si/s05/athena of Sep 10 01:56,
+ predates the dt-COLLAPSE report; the abort cell was NOT recorded by the run)
+
+--- startup lines ---
+2:Cubed sphere: Root grid = 6 x 1 x (2 x 2) MeshBlocks
+3:Total number of MeshBlocks = 24
+6:Number of parallel ranks = 2
+7:  Rank = 0: 12 MeshBlocks, cost = 12
+8:  Rank = 1: 12 MeshBlocks, cost = 12
+21:deep_hot_jupiter_rt: RT two-stream source is SEMI-IMPLICIT
+45:deep_hot_jupiter_rt: IC density perturbation seed = 5, amplitude = 1e-10
+cs_vertex_fill (from the restart file's PAR_DUMP): 1  (default)
+
+--- clip warning ---
+### WARNING in deep_hot_jupiter_rt: the explicit radiative source was clipped in 1 cell(s) by problem/rt_de_max = 5.000000e-01.
+    The radiative time e/|src| is shorter than the timestep there, so the radiation is outside
+    the regime this operator-split scheme is valid in. The usual cause is a pressure or
+    density floor pinning the top of the atmosphere; see docs/correlated_k_rt.md.
+    Reported once per run.
+elapsed=4.624886e+01 cycle=1200 time=2.555531e+04 dt=1.895325e+01
+
+--- dt history, last 300 cycles (ndiag = 100) ---
+elapsed=4.589867e+03 cycle=134500 time=1.627928e+06 dt=2.510485e+00
+elapsed=4.593301e+03 cycle=134600 time=1.628113e+06 dt=1.540285e+00
+elapsed=4.596735e+03 cycle=134700 time=1.628262e+06 dt=1.706203e+00
+elapsed=4.600171e+03 cycle=134800 time=1.628454e+06 dt=1.315496e+00
+elapsed=4.603605e+03 cycle=134900 time=1.628631e+06 dt=7.394426e-01
+elapsed=4.607048e+03 cycle=135000 time=1.628648e+06 dt=4.525207e-02
+### FATAL: timestep collapsed: dt = 8.875321e-03 < time/dt_min = 1.000000e-02 at cycle 135014, time 1.628648e+06
+
+--- dhj.hydro.hst, last rows (t, dt, mass, 1-mom, 2-mom, 3-mom, tot-E, 1-KE, 2-KE, 3-KE) ---
+# Athena++ history data
+#  [1]=time      [2]=dt       [3]=mass    [4]=1-mom    [5]=2-mom    [6]=3-mom    [7]=tot-E    [8]=1-KE    [9]=2-KE    [10]=3-KE    
+  1.40301e+06  1.22294e+01  3.59857e+26 -4.02438e+29 -2.15122e+28 -1.73566e+27  6.62693e+38  4.76666e+33  5.98437e+33  3.43189e+33
+  1.43350e+06  1.21513e+01  3.60124e+26 -1.92206e+29 -2.45115e+27 -7.31352e+26  6.63267e+38  5.86517e+33  6.16014e+33  3.61466e+33
+  1.46401e+06  1.12139e+01  3.60082e+26  3.16469e+28  1.64117e+28  2.16939e+27  6.63206e+38  4.50760e+33  6.31877e+33  3.75788e+33
+  1.49451e+06  1.10239e+01  3.59956e+26  2.06491e+29  1.49388e+28  5.17238e+27  6.62967e+38  4.84655e+33  6.53262e+33  3.92554e+33
+  1.52501e+06  1.12863e+01  3.59801e+26  3.19281e+29 -1.04778e+28  5.70777e+27  6.62666e+38  7.60529e+33  6.67778e+33  4.01223e+33
+  1.55551e+06  1.07853e+01  3.59551e+26  3.67089e+29 -4.23573e+28  2.45091e+27  6.62168e+38  7.60528e+33  7.86593e+33  4.60811e+33
+  1.58600e+06  9.26175e+00  3.59221e+26  2.73993e+29 -5.42817e+28  1.98053e+27  6.61516e+38  5.47510e+33  8.49254e+33  4.69989e+33
+  1.61650e+06  2.55561e+00  3.59058e+26  3.62240e+28 -3.37342e+28 -2.22552e+27  6.61349e+38  2.12689e+34  8.59534e+33  4.68867e+33
+
+--- dhj.log (floor / C2P counters), last rows ---
+# Athena event counter data
+#  cycle eos_dfloor eos_efloor eos_tfloor eos_vceil eos_fail c2p_it fofc
+    1425   160181   120057    44512        0        0      0        0
+    2892 52034967  2107019   221928        0        0      0        0
+  119095 32093588  1492667   635976        0        0      0        0
+  121935 30422487  1442681   721635        0        0      0        0
+  124784 23669475  1385767   771749        0        0      0        0
+  130124 24896966  4097873  2343876        0        0      0        0

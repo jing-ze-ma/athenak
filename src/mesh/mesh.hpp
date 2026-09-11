@@ -289,6 +289,12 @@ class Mesh {
   // range).  A limited slope sees every even profile as an extremum at the pole and
   // flattens the cell, which makes the polar theta-flux first order.
   bool use_polar_quadratic_recon;
+  // polar_x3_shift: the theta correction applied to the x3-face (phi-face) states in
+  // spherical polar.  0 = off, 1 = rotate (exact basis rotation of the (r,theta) vector
+  // pairs into the face's own basis, a8cfb83e), 2 = shift (unlimited centred-difference
+  // theta shift of EVERY variable, 863e8337 -- bisected to the polar-row radial-field
+  // blow-up, 2026-09-10), 3 = scalar (rotate the vectors, shift the scalars).
+  int polar_x3_shift;
   // SPHERICAL POLAR: keep the theta-face field at the pole single-valued by
   // azimuthally averaging it into one Cartesian vector each step
   // (PolarAzimuthalAverageBxBy).  Its call had been commented out since the polar

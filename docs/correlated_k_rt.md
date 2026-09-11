@@ -148,6 +148,14 @@ with alpha the local angle between the coordinate lines; the orthogonal form
 panel edges on an l = 2 test field (`cs_test iprob = 15`), the exact one converges to the
 analytic Laplacian at second order.
 
+`<mhd>/rad_tmax_kappa` (K, default `0.0` = off) caps the temperature that enters
+`kappa_rad` -- both its `T^3` and the `kappa_R` lookup -- leaving the temperature
+gradient and the flux limiter's `sigma T^4` at the true temperature. It exists for the
+cubed-sphere vertex dt collapse: a single drained cell runs away to 1e5-1e7 K,
+`kappa_rad ~ T^3/(kappa_R rho)` follows it and the explicit diffusive dt collapses with
+it, so conduction reports the runaway rather than causing it; the cap makes that
+survivable while the column refills. Off leaves every run bitwise unchanged.
+
 The older hard cut (`ck_pcut_bar`, default 10 bar, no diffusion) is what runs when the
 conduction block is absent; the reasons it was placed at 10 bar still hold for where the
 blend lands (grey tau ~ 9200 at 10 bar; the interior is 5100-12000 K, outside any
@@ -257,6 +265,12 @@ oscillating cold-hot-cold by a factor of 20 in shell-mean temperature: the expli
 source overshooting, the clamp bounding it, and the next step overshooting harder. It
 reproduced identically with a wall and with an open inner boundary, which is what ruled
 the boundary out. With the semi-implicit step the same run keeps its timestep.
+
+**`problem/rt_semi_implicit`** (default `true`) turns the step above off. It is not
+answer-preserving everywhere: on the cubed-sphere `deep_hot_jupiter` 09-07 configuration
+(`rt_ck`, `ck_pcut_bar = 10`) it moves the kinetic energy by 3e-4 at cycle 1 and by 3 %
+by cycle 20 (A/B 2026-09-09), with mass exact and total energy differing by 3e-6. Set it
+`false` to recover the plain explicit `de = src*bdt` and reproduce pre-048dff30 results.
 
 ### The clamp (`problem/rt_de_max`)
 

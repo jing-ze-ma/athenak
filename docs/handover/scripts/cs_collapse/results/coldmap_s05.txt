@@ -1,0 +1,103 @@
+si/s05 (semi-implicit RT, seed 5) -- cold / drained column maps, coldmap.py method
+cold column = >30%% of its 128 radial cells with T < 1500 K
+drained column = dens[i=52] < 1e-09   r = 1.2260e+10 cm
+ALL columns (6*32*32=6144):  V=216  E=1872  I=4056
+
+=== TASK 1: cold / drained column counts per dump (compare coldmap.txt) ===
+arm         n      time       rot     ncold  ndrain      minrho  meanfrac
+si/s05      1 3.0501e+05    1.0000         0       0   5.000e-14     0.004
+si/s05      2 6.1001e+05    2.0000        52       0   5.000e-14     0.006
+si/s05      3 9.1501e+05    3.0000         0       0   5.000e-14     0.002
+si/s05      4 1.2200e+06    4.0000        15      44   5.000e-14     0.003
+si/s05      5 1.5250e+06    5.0000         0      65   5.000e-14     0.001
+
+=== TASK 2: geography (V/E/I) of cold and drained columns, si/s05 ===
+set                           V      E      I    V enr  E enr  I enr
+ALL columns                 216   1872   4056     1.00   1.00   1.00
+si/s05 rot1 cold              0      0      0        -      -      -
+si/s05 rot1 drained           0      0      0        -      -      -
+si/s05 rot2 cold              0      0     52     0.00   0.00   1.51
+si/s05 rot2 drained           0      0      0        -      -      -
+si/s05 rot3 cold              0      0      0        -      -      -
+si/s05 rot3 drained           0      0      0        -      -      -
+si/s05 rot4 cold              0      0     15     0.00   0.00   1.51
+si/s05 rot4 drained           2     32     10     1.29   2.39   0.34
+si/s05 rot5 cold              0      0      0        -      -      -
+si/s05 rot5 drained           0      2     63     0.00   0.10   1.47
+
+=== TASK 5: layer temperature statistics (compare coldmap.txt si/s01, ctl2/s01) ===
+arm       rot |     A med     A p10  A f<1500 |     B med     B p10
+si/s05      1 |    3134.0    1984.6   0.00049 |    3591.8    3367.3
+si/s05      2 |    3498.8    2058.6   0.00804 |    3440.2    3179.0
+si/s05      3 |    3607.0    2198.1   0.00088 |    3335.6    3066.9
+si/s05      4 |    3623.9    2182.1   0.00217 |    3262.1    2994.6
+si/s05      5 |    3826.8    2282.9   0.00042 |    3207.7    2928.6
+
+=== per-panel mean cold fraction (panel 0 = antistellar) ===
+si/s05 rot1  0.0203 0.0002 0.0000 0.0003 0.0000 0.0003
+si/s05 rot2  0.0342 0.0002 0.0000 0.0007 0.0001 0.0009
+si/s05 rot3  0.0104 0.0002 0.0000 0.0003 0.0000 0.0008
+si/s05 rot4  0.0153 0.0002 0.0000 0.0002 0.0001 0.0001
+si/s05 rot5  0.0058 0.0008 0.0000 0.0006 0.0001 0.0005
+
+=== TASK: the MOST DRAINED columns at rot 5 (candidates for the abort column) ===
+   #   p   J   K class   dV   dE     rho[52]     minrho    v_r[52]     Tmin      T[52]    gid   j,k
+   1   0  18  14     I   14   13   5.352e-10  7.097e-14 -8.727e+05   1615.1     1615.1      1  4,16
+   2   0  14  11     I   14   11   5.392e-10  5.076e-13 -8.746e+05   1820.5     2346.0      0 16,13
+   3   0  17  13     I   14   13   5.530e-10  2.221e-13 -8.705e+05   1781.3     1781.3      1  3,15
+   4   0  13  11     I   13   11   5.607e-10  5.879e-13 -8.112e+05   1945.7     2506.4      0 15,13
+   5   0  16  12     I   15   12   5.944e-10  3.530e-13 -8.695e+05   1940.4     1945.8      1  2,14
+   6   0  11  11     I   11   11   6.244e-10  5.508e-13 -8.410e+05   1992.1     3907.9      0 13,13
+   7   0  27   7     I    7    4   6.536e-10  5.000e-14 -6.563e+05   1633.0     2184.2      1  13,9
+   8   0  17  14     I   14   14   6.548e-10  1.572e-13 -8.813e+05   1647.7     1647.7      1  3,16
+   9   0  15  12     I   15   12   6.605e-10  5.153e-13 -8.858e+05   1893.8     2016.1      0 17,14
+  10   0  16  13     I   15   13   6.803e-10  3.567e-13 -8.835e+05   1806.9     1846.7      1  2,15
+  11   0  18  15     I   15   13   6.866e-10  5.280e-14 -8.752e+05   1505.0     1505.0      1  4,17
+  12   0  14  12     I   14   12   7.051e-10  5.667e-13 -8.914e+05   1911.1     2103.9      0 16,14
+  13   0   9  12     I   12    9   7.205e-10  4.910e-13 -9.835e+05   1937.3     2407.0      0 11,14
+  14   0  13  12     I   13   12   7.209e-10  5.347e-13 -9.076e+05   1908.6     2187.0      0 15,14
+  15   0  21  18     I   13   10   7.249e-10  5.000e-14 -8.133e+05   1162.6     1162.6      3   7,4
+  16   0  11  12     I   12   11   7.327e-10  5.277e-13 -9.531e+05   1919.4     2336.5      0 13,14
+  17   0  12  12     I   12   12   7.338e-10  5.579e-13 -9.271e+05   1909.9     2270.8      0 14,14
+  18   0  14  10     I   14   10   7.450e-10  4.661e-13 -7.336e+05   1961.2     2179.1      0 16,12
+  19   0  10  12     I   12   10   7.453e-10  5.151e-13 -9.722e+05   1925.3     2397.9      0 12,14
+  20   0  12  11     I   12   11   7.500e-10  4.596e-13 -5.695e+05   1967.6     4829.0      0 14,13
+  21   0  28   7     I    7    3   7.558e-10  5.000e-14 -6.790e+05   1646.2     2144.6      1  14,9
+  22   0  10  11     I   11   10   7.629e-10  4.734e-13 -7.761e+05   2105.5     5287.0      0 12,13
+  23   0  28   6     I    6    3   7.763e-10  5.000e-14 -6.135e+05   1640.3     2151.2      1  14,8
+  24   0  15  11     I   15   11   7.787e-10  4.764e-13 -6.614e+05   1945.1     2353.9      0 17,13
+  25   0  11   9     I   11    9   7.827e-10  4.660e-13 -8.626e+05    674.9      674.9      0 13,11
+
+=== drained-column count per gid at rot 5 (dr mask) ===
+  gid  0 : 22 drained columns
+  gid  1 : 18 drained columns
+  gid  3 : 18 drained columns
+  gid  2 : 4 drained columns
+  gid  6 : 2 drained columns
+  gid  4 : 1 drained columns
+
+=== gid map (panel, J-half, K-half) -> gid ===
+  panel 0  J  0-15  K  0-15  -> gid  0
+  panel 0  J  0-15  K 16-31  -> gid  2
+  panel 0  J 16-31  K  0-15  -> gid  1
+  panel 0  J 16-31  K 16-31  -> gid  3
+  panel 1  J  0-15  K  0-15  -> gid  4
+  panel 1  J  0-15  K 16-31  -> gid  6
+  panel 1  J 16-31  K  0-15  -> gid  5
+  panel 1  J 16-31  K 16-31  -> gid  7
+  panel 2  J  0-15  K  0-15  -> gid  8
+  panel 2  J  0-15  K 16-31  -> gid 10
+  panel 2  J 16-31  K  0-15  -> gid  9
+  panel 2  J 16-31  K 16-31  -> gid 11
+  panel 3  J  0-15  K  0-15  -> gid 12
+  panel 3  J  0-15  K 16-31  -> gid 14
+  panel 3  J 16-31  K  0-15  -> gid 13
+  panel 3  J 16-31  K 16-31  -> gid 15
+  panel 4  J  0-15  K  0-15  -> gid 16
+  panel 4  J  0-15  K 16-31  -> gid 18
+  panel 4  J 16-31  K  0-15  -> gid 17
+  panel 4  J 16-31  K 16-31  -> gid 19
+  panel 5  J  0-15  K  0-15  -> gid 20
+  panel 5  J  0-15  K 16-31  -> gid 22
+  panel 5  J 16-31  K  0-15  -> gid 21
+  panel 5  J 16-31  K 16-31  -> gid 23

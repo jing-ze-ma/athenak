@@ -126,6 +126,7 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
   const bool str_r1_ = pmy_pack->pmesh->use_cubed_sphere;
   auto &mb_bcs = pmy_pack->pmb->mb_bcs;
   const bool pquad_ = pmy_pack->pmesh->use_polar_quadratic_recon;
+  const int px3_ = pmy_pack->pmesh->polar_x3_shift;
 
   //--------------------------------------------------------------------------------------
   // i-direction
@@ -783,22 +784,46 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
         // continuation through the axis (the exchange flips the tangential components),
         // so the centred difference is valid in the polar row too.  For a vector this
         // shift includes the basis rotation rhat' = rhat cos d + thhat sin d.
+        // <mesh>/polar_x3_shift selects the form: 1 = "rotate", the exact basis rotation
+        // of the (r,theta) pairs of v and B alone (a8cfb83e); 2 = "shift", the unlimited
+        // centred-difference shift of every variable above (863e8337) -- BISECTED to the
+        // polar-row radial-field blow-up of the sp MHD production run (2026-09-10);
+        // 3 = "scalar", rotate the vectors and shift only the remaining variables;
+        // 0 = "off".
         if (use_spherical_polar) {
-          const Real fac = (0.5*(x2f3_(m,j) + x2f3_(m,j+1)) - x2v3_(m,j))
-                           /(x2v3_(m,j+1) - x2v3_(m,j-1));
-          for (int n=0; n<nvars; ++n) {
+          if (px3_ == 1 || px3_ == 3) {
+            const Real dang = 0.5*(x2f3_(m,j) + x2f3_(m,j+1)) - x2v3_(m,j);
+            const Real cd = cos(dang), sd = sin(dang);
             par_for_inner(member, is-1, ie+1, [&](const int i) {
-              const Real sh = fac*(w0_(m,n,k,j+1,i) - w0_(m,n,k,j-1,i));
-              wl_kp1(n,i) += sh;
-              wr(n,i) += sh;
+              Real a = wl_kp1(IVX,i), b = wl_kp1(IVY,i);
+              wl_kp1(IVX,i) = a*cd + b*sd;  wl_kp1(IVY,i) = -a*sd + b*cd;
+              a = wr(IVX,i); b = wr(IVY,i);
+              wr(IVX,i) = a*cd + b*sd;  wr(IVY,i) = -a*sd + b*cd;
+              a = bl_kp1(0,i); b = bl_kp1(1,i);
+              bl_kp1(0,i) = a*cd + b*sd;  bl_kp1(1,i) = -a*sd + b*cd;
+              a = br(0,i); b = br(1,i);
+              br(0,i) = a*cd + b*sd;  br(1,i) = -a*sd + b*cd;
             });
           }
-          for (int n=0; n<3; ++n) {
-            par_for_inner(member, is-1, ie+1, [&](const int i) {
-              const Real sh = fac*(b0_(m,n,k,j+1,i) - b0_(m,n,k,j-1,i));
-              bl_kp1(n,i) += sh;
-              br(n,i) += sh;
-            });
+          if (px3_ == 2 || px3_ == 3) {
+            const Real fac = (0.5*(x2f3_(m,j) + x2f3_(m,j+1)) - x2v3_(m,j))
+                             /(x2v3_(m,j+1) - x2v3_(m,j-1));
+            for (int n=0; n<nvars; ++n) {
+              if (px3_ == 3 && (n == IVX || n == IVY)) continue;
+              par_for_inner(member, is-1, ie+1, [&](const int i) {
+                const Real sh = fac*(w0_(m,n,k,j+1,i) - w0_(m,n,k,j-1,i));
+                wl_kp1(n,i) += sh;
+                wr(n,i) += sh;
+              });
+            }
+            for (int n=0; n<3; ++n) {
+              if (px3_ == 3 && n != 2) continue;
+              par_for_inner(member, is-1, ie+1, [&](const int i) {
+                const Real sh = fac*(b0_(m,n,k,j+1,i) - b0_(m,n,k,j-1,i));
+                bl_kp1(n,i) += sh;
+                br(n,i) += sh;
+              });
+            }
           }
         }
 

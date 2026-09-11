@@ -1,0 +1,68 @@
+=== PASS 1 replay of si/s05 from rst rot 5.000 (t=1.525e6, cycle 119095) ===
+job 11584466(cancelled)/11584520, apudev vipa1001, 2 ranks/2 GPUs,
+binary /viper/u2/jinma/ATHENAK/athenak/build_dhj_gpu/src/athena (Sep 11 00:30, dt-COLLAPSE + cyclediag + rad_tmax_kappa)
+overrides: tlim=1.628848e6 (abort+200 s), dt_min=1e-2, ndiag=1, diag_gid=-1,
+           output1/dt=100 output2/dt=100 output3/dt=1e30 output4/dt=300 last_time=1.62770e6
+
+RESULT: reached tlim.  'Terminating on time limit'.  NO dt collapse, NO dt COLLAPSE block.
+  original : cycle 119100 (t 1.525063e6) -> ABORT cycle 135014 (t 1.628648e6) = 15914 cycles
+  replay   : cycle 119095 (t 1.525007e6) -> tlim   cycle 128834 (t 1.628848e6) =  9739 cycles
+  min dt over the whole replay = 7.157 s (one cycle); second lowest 9.008 s
+  original min dt in the same window = 8.875e-3 s (the abort); 2.56 s at t=1.6165e6
+
+--- replay dt trace, every 500 cycles ---
+elapsed=5.753098e+00 cycle=119095 time=1.525007e+06 dt=1.128518e+01
+elapsed=2.287161e+01 cycle=119595 time=1.530347e+06 dt=9.666312e+00
+elapsed=3.997545e+01 cycle=120095 time=1.535853e+06 dt=1.015183e+01
+elapsed=5.704215e+01 cycle=120595 time=1.541197e+06 dt=1.181105e+01
+elapsed=7.413074e+01 cycle=121095 time=1.546567e+06 dt=9.680479e+00
+elapsed=9.119010e+01 cycle=121595 time=1.552115e+06 dt=1.109863e+01
+elapsed=1.082522e+02 cycle=122095 time=1.557315e+06 dt=1.077423e+01
+elapsed=1.253632e+02 cycle=122595 time=1.562558e+06 dt=9.688306e+00
+elapsed=1.424387e+02 cycle=123095 time=1.568170e+06 dt=1.050864e+01
+elapsed=1.594530e+02 cycle=123595 time=1.573487e+06 dt=1.190168e+01
+elapsed=1.765042e+02 cycle=124095 time=1.578665e+06 dt=1.022484e+01
+elapsed=1.935293e+02 cycle=124595 time=1.584231e+06 dt=1.040115e+01
+elapsed=2.105130e+02 cycle=125095 time=1.589579e+06 dt=1.208553e+01
+elapsed=2.275914e+02 cycle=125595 time=1.594616e+06 dt=1.036207e+01
+elapsed=2.446447e+02 cycle=126095 time=1.599985e+06 dt=1.055526e+01
+elapsed=2.616704e+02 cycle=126595 time=1.605277e+06 dt=1.063373e+01
+elapsed=2.787155e+02 cycle=127095 time=1.610242e+06 dt=1.026147e+01
+elapsed=2.957451e+02 cycle=127595 time=1.615704e+06 dt=1.032782e+01
+elapsed=3.127233e+02 cycle=128095 time=1.620987e+06 dt=1.131304e+01
+elapsed=3.297394e+02 cycle=128595 time=1.626088e+06 dt=1.049008e+01
+--- last 10 cycles ---
+elapsed=3.376498e+02 cycle=128825 time=1.628748e+06 dt=1.172419e+01
+elapsed=3.376839e+02 cycle=128826 time=1.628759e+06 dt=1.169427e+01
+elapsed=3.377178e+02 cycle=128827 time=1.628771e+06 dt=1.170393e+01
+elapsed=3.377521e+02 cycle=128828 time=1.628783e+06 dt=1.165921e+01
+elapsed=3.377863e+02 cycle=128829 time=1.628794e+06 dt=1.163346e+01
+elapsed=3.378207e+02 cycle=128830 time=1.628806e+06 dt=1.164265e+01
+elapsed=3.378553e+02 cycle=128831 time=1.628818e+06 dt=1.161696e+01
+elapsed=3.378895e+02 cycle=128832 time=1.628829e+06 dt=1.158882e+01
+elapsed=3.379231e+02 cycle=128833 time=1.628841e+06 dt=7.157264e+00
+elapsed=3.380069e+02 cycle=128834 time=1.628848e+06 dt=1.156385e+01
+
+--- the 10 lowest dt of the replay ---
+elapsed=3.379231e+02 cycle=128833 time=1.628841e+06 7.157264e+00
+elapsed=1.727599e+02 cycle=123985 time=1.577621e+06 9.007899e+00
+elapsed=1.727259e+02 cycle=123984 time=1.577612e+06 9.036725e+00
+elapsed=1.727938e+02 cycle=123986 time=1.577630e+06 9.048976e+00
+elapsed=3.246233e+02 cycle=128444 time=1.624630e+06 9.052133e+00
+elapsed=1.726921e+02 cycle=123983 time=1.577603e+06 9.064774e+00
+elapsed=2.237796e+02 cycle=125483 time=1.593542e+06 9.067246e+00
+elapsed=1.723872e+02 cycle=123974 time=1.577521e+06 9.075965e+00
+elapsed=1.723532e+02 cycle=123973 time=1.577512e+06 9.085360e+00
+elapsed=2.746115e+02 cycle=126974 time=1.609087e+06 9.106931e+00
+
+--- hst, original si/s05 vs the replay, matched times (replay dt=100 s, thinned) ---
+      rot |    dt(o)     1-KE(o)     2-KE(o)     3-KE(o)     tot-E(o) |    dt(r)     1-KE(r)     2-KE(r)     3-KE(r)     tot-E(r)
+   5.0000 |   11.286  7.6053e+33  6.6778e+33  4.0122e+33 6.626660e+38 |   11.398  7.3871e+33  6.6785e+33  4.0073e+33 6.627290e+38
+   5.1000 |   10.785  7.6053e+33  7.8659e+33  4.6081e+33 6.621680e+38 |   10.602  7.5662e+33  7.8672e+33  4.6076e+33 6.621660e+38
+   5.2000 |    9.262  5.4751e+33  8.4925e+33  4.6999e+33 6.615160e+38 |    9.265  5.5008e+33  8.4925e+33  4.6985e+33 6.615190e+38
+   5.3000 |    2.556  2.1269e+34  8.5953e+33  4.6887e+33 6.613490e+38 |    9.457  6.3695e+33  9.0076e+33  4.7716e+33 6.612910e+38
+
+replay final rows:
+  rot 5.3400 dt 11.746 1-KE 5.8553e+33 2-KE 8.8269e+33 3-KE 4.8643e+33 tot-E 6.640890e+38 mass 3.60440e+26
+  rot 5.3404 dt 11.633 1-KE 5.7902e+33 2-KE 8.8360e+33 3-KE 4.8622e+33 tot-E 6.640800e+38 mass 3.60436e+26
+  rot 5.3405 dt 11.564 1-KE 5.7592e+33 2-KE 8.8400e+33 3-KE 4.8614e+33 tot-E 6.640740e+38 mass 3.60433e+26

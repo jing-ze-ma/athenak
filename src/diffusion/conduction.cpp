@@ -117,6 +117,12 @@ Conduction::Conduction(std::string block, MeshBlockPack *pp, ParameterInput *pin
       rad_tau_lo = pin->GetOrAddReal(block,"rad_tau_lo",0.0);
       rad_tau_hi = pin->GetOrAddReal(block,"rad_tau_hi",0.0);
       rad_tau_mode = (rad_tau_hi > 0.0);
+      // ceiling on the temperature entering kappa_rad; 0 = off (bitwise inert)
+      rad_tmax = pin->GetOrAddReal(block,"rad_tmax_kappa",0.0);
+      if (rad_tmax > 0.0 && global_variable::my_rank == 0) {
+        std::cout << "Conduction: radiative kappa temperature ceiling rad_tmax_kappa = "
+                  << rad_tmax << " K" << std::endl;
+      }
       rad_cs_exact = pin->GetOrAddBoolean(block,"rad_cs_exact",true);
       rad_kappa_rmax = pin->GetOrAddReal(block,"rad_kappa_rmax",0.0);
       rad_kappa_above = pin->GetOrAddReal(block,"rad_kappa_above",0.0);
@@ -230,6 +236,19 @@ Conduction::Conduction(std::string block, MeshBlockPack *pp, ParameterInput *pin
 //! \brief Conduction destructor
 
 Conduction::~Conduction() {
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void Conduction::EnableDiag()
+//! \brief Allocate the per-cycle diagnostic array.  NOT done in the constructor: the
+//! diagnostic is a problem-generator option, and the pgen runs after AddPhysics has
+//! built this object.  With AMR the pack size can change and this array would be stale,
+//! but the runs this exists for (cubed-sphere deep hot Jupiter) have no AMR.
+
+void Conduction::EnableDiag(int nmb, int n3, int n2, int n1) {
+  diag = true;
+  Kokkos::realloc(cond_diag, nmb, 6, n3, n2, n1);
+  Kokkos::deep_copy(cond_diag, 0.0);
 }
 
 //----------------------------------------------------------------------------------------
@@ -350,18 +369,23 @@ Real RadiativeKappaKR(const Real tk, const Real rhocgs, const Real kfac, const R
 //! axis) or from the Freedman fit.  This is the ONE place the face conductivity is
 //! defined: the explicit face flux (AddIsotropicHeatFluxRadiative) and the implicit
 //! radial solve (ImplicitRadialUpdate) both call it, so the two operators cannot drift
-//! apart.
+//! apart.  `tmax` is <hydro>/rad_tmax_kappa: the temperature entering the conductivity
+//! (its T^3 and the kappa_R lookup) is capped there, so the ceiling reaches the explicit
+//! faces, the angular cap and the implicit radial solve through this one function.  The
+//! gradient and the free-streaming limiter keep the true temperature.
 
 KOKKOS_INLINE_FUNCTION
 Real RadFaceKappa(const Real tk, const Real pcgs, const Real rhocgs, const bool ktab,
                   const DvceArray2D<Real> &krt, const DvceArray1D<Real> &krlT,
                   const DvceArray1D<Real> &krlP, const int krnT, const int krnP,
-                  const bool krho, const Real met, const Real kfac) {
+                  const bool krho, const Real met, const Real kfac,
+                  const Real tmax) {
+  const Real tka = KappaTemp(tk, tmax);
   return ktab
-      ? RadiativeKappaKR(tk, rhocgs, kfac,
-                         RosselandTable(krt, krlT, krlP, krnT, krnP, tk,
+      ? RadiativeKappaKR(tka, rhocgs, kfac,
+                         RosselandTable(krt, krlT, krlP, krnT, krnP, tka,
                                         krho ? rhocgs : pcgs))
-      : RadiativeKappa(tk, pcgs, rhocgs, met, kfac);
+      : RadiativeKappa(tka, pcgs, rhocgs, met, kfac);
 }
 
 //----------------------------------------------------------------------------------------
@@ -403,6 +427,7 @@ void Conduction::AddIsotropicHeatFluxRadiative(const DvceArray5D<Real> &w0,
   const Real len_unit  = pmy_pack->punit->length_cgs();
   const Real eflx_unit = pres_unit*pmy_pack->punit->velocity_cgs();   // erg/cm^2/s
   const Real met = rad_met, kfac = rad_kappa_fac, fin = rad_flux_inner;
+  const Real tmax = rad_tmax;   // temperature ceiling in kappa_rad only (0 = off)
   // pressure cut, or the tau blend: with the blend every face is masked by its weight
   const Real pcut = rad_tau_mode ? -1.0 : rad_pcut;
   const bool taumode = rad_tau_mode;
@@ -436,8 +461,10 @@ void Conduction::AddIsotropicHeatFluxRadiative(const DvceArray5D<Real> &w0,
     if (pf < pcut) return 0.0;
     const Real tk = 0.5*(tl + tr)*temp_unit;
     const Real rhof = 0.5*(dl_ + dr_)*dens_unit;
+    // the CAPPED temperature (rad_tmax_kappa) enters kappa_rad only; the gradient
+    // below and the free-streaming limit use the true face temperature tk
     const Real kap = RadFaceKappa(tk, pf*pres_unit, rhof, ktab, krt, krlT, krlP,
-                                  krnT, krnP, krho, met, kfac);
+                                  krnT, krnP, krho, met, kfac, tmax);
     Real f = -kap*gradn*temp_unit/len_unit;     // erg/cm^2/s, positive outward
     if (limit) {
       // saturate smoothly at the free-streaming flux sigma T^4: 0.3 % at F = 0.08 sigma
@@ -460,7 +487,7 @@ void Conduction::AddIsotropicHeatFluxRadiative(const DvceArray5D<Real> &w0,
     const Real tk = 0.5*(tl + tr)*temp_unit;
     const Real rhof = 0.5*(dl_ + dr_)*dens_unit;
     const Real kap = RadFaceKappa(tk, pf*pres_unit, rhof, ktab, krt, krlT, krlP,
-                                  krnT, krnP, krho, met, kfac);
+                                  krnT, krnP, krho, met, kfac, tmax);
     Real lf = 1.0;
     if (limit) {
       const Real f = -kap*gradn*temp_unit/len_unit;
@@ -495,6 +522,9 @@ void Conduction::AddIsotropicHeatFluxRadiative(const DvceArray5D<Real> &w0,
     Kokkos::deep_copy(cndcnt, 0);
     Kokkos::deep_copy(cndrec, 0.0);
   }
+  // per-cycle diagnostic (problem/diag_gid): locals only, never `this`
+  const bool diag_ = diag;
+  auto cdg = cond_diag;
 
   auto &flx1 = flx.x1f;
   // rad_implicit_x1: the INTERIOR x1 faces are handled by ImplicitRadialUpdate after the
@@ -509,6 +539,7 @@ void Conduction::AddIsotropicHeatFluxRadiative(const DvceArray5D<Real> &w0,
         (mb_bcs.d_view(m,BoundaryFace::inner_x1) == BoundaryFlag::user ||
          mb_bcs.d_view(m,BoundaryFace::inner_x1) == BoundaryFlag::reflect)) {
       flx1(m,IEN,k,j,i) += fin;
+      if (diag_) cdg(m,0,k,j,i) = fin;
       return;
     }
     if (impx1 && i > is && i < ie+1) return;
@@ -526,6 +557,7 @@ void Conduction::AddIsotropicHeatFluxRadiative(const DvceArray5D<Real> &w0,
     const Real fcnd = wt*face_flux(tl, tr, pl, pr, w0(m,IDN,k,j,i-1),
                                    w0(m,IDN,k,j,i), (tr - tl)/dl);
     flx1(m,IEN,k,j,i) += fcnd;
+    if (diag_) cdg(m,0,k,j,i) = fcnd;
     // --- <problem>/nan_report: record the first face whose conduction flux, or the
     // total flux it lands in, is not finite, with the inputs that produced it.
     if (nanrep_c) {
@@ -535,7 +567,7 @@ void Conduction::AddIsotropicHeatFluxRadiative(const DvceArray5D<Real> &w0,
           const Real rhof = 0.5*(w0(m,IDN,k,j,i-1) + w0(m,IDN,k,j,i))*dens_unit;
           const Real pf = 0.5*(pl + pr);
           const Real kap = RadFaceKappa(tk, pf*pres_unit, rhof, ktab, krt, krlT, krlP,
-                                        krnT, krnP, krho, met, kfac);
+                                        krnT, krnP, krho, met, kfac, tmax);
           cndrec(0) = static_cast<Real>(m);
           cndrec(1) = static_cast<Real>(k);
           cndrec(2) = static_cast<Real>(j);
@@ -763,8 +795,10 @@ void Conduction::AddIsotropicHeatFluxRadiative(const DvceArray5D<Real> &w0,
         Kokkos::atomic_fetch_add(&capcnt(1), 1);
       }
     }
-    flx2(m,IEN,k,j,i) += wtc*face_flux(tl, tr, pl, pr, w0(m,IDN,k,j-1,i),
-                                       w0(m,IDN,k,j,i), gradn);
+    const Real fadd = wtc*face_flux(tl, tr, pl, pr, w0(m,IDN,k,j-1,i),
+                                    w0(m,IDN,k,j,i), gradn);
+    flx2(m,IEN,k,j,i) += fadd;
+    if (diag_) cdg(m,1,k,j,i) = fadd;
   });
   if (!three_d) return;
 
@@ -802,8 +836,10 @@ void Conduction::AddIsotropicHeatFluxRadiative(const DvceArray5D<Real> &w0,
         Kokkos::atomic_fetch_add(&capcnt(1), 1);
       }
     }
-    flx3(m,IEN,k,j,i) += wtc*face_flux(tl, tr, pl, pr, w0(m,IDN,k-1,j,i),
-                                       w0(m,IDN,k,j,i), gradn);
+    const Real fadd = wtc*face_flux(tl, tr, pl, pr, w0(m,IDN,k-1,j,i),
+                                    w0(m,IDN,k,j,i), gradn);
+    flx3(m,IEN,k,j,i) += fadd;
+    if (diag_) cdg(m,2,k,j,i) = fadd;
   });
 
   // rad_cap_ang report: how stiff the angular operator was and how much of it had to be
@@ -889,6 +925,9 @@ void Conduction::ImplicitRadialUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos
   const Real len_unit  = pmy_pack->punit->length_cgs();
   const Real eflx_unit = pres_unit*pmy_pack->punit->velocity_cgs();
   const Real met = rad_met, kfac = rad_kappa_fac;
+  // the rad_tmax_kappa ceiling reaches the implicit radial solve too: it forms its
+  // face conductivities with the same RadFaceKappa as the explicit operator
+  const Real tmax = rad_tmax;   // temperature ceiling in kappa_rad only (0 = off)
   const Real pcut = rad_tau_mode ? -1.0 : rad_pcut;
   const bool taumode = rad_tau_mode;
   const bool blend_r = rad_blend_radial;
@@ -965,7 +1004,7 @@ void Conduction::ImplicitRadialUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos
           const Real tk = 0.5*(tl + tr)*temp_unit;
           const Real rhof = 0.5*(u0(m,IDN,k,j,i-1) + u0(m,IDN,k,j,i))*dens_unit;
           const Real kap = RadFaceKappa(tk, pf*pres_unit, rhof, ktab, krt, krlT, krlP,
-                                        krnT, krnP, krho, met, kfac);
+                                        krnT, krnP, krho, met, kfac, tmax);
           // the flux limiter, evaluated on the FROZEN gradient and then held fixed:
           // F = -kap g/sqrt(1 + (kap g/F_free)^2) linearises to a diffusion coefficient
           // kap/sqrt(1 + s^2) at fixed s, which is what keeps the system linear
@@ -1349,6 +1388,7 @@ void Conduction::NewTimeStep(const DvceArray5D<Real> &w0, const EOS_Data &eos_da
   Real vel_unit = 1.0;
   const bool radiative = (iso_cond_type.compare("radiative") == 0);
   const Real met = rad_met, kfac = rad_kappa_fac;
+  const Real tmax = rad_tmax;   // temperature ceiling in kappa_rad only (0 = off)
   const Real pcut = rad_tau_mode ? -1.0 : rad_pcut;
   const bool taumode = rad_tau_mode;
   const bool blend_r = rad_blend_radial;
@@ -1419,6 +1459,11 @@ void Conduction::NewTimeStep(const DvceArray5D<Real> &w0, const EOS_Data &eos_da
   // WHICH cell did it, and reconstructing that afterwards from a dump means redoing the
   // opacity lookup, the tau blend and the flux limiter outside the code.  The location
   // rides along for free.
+  // per-cycle diagnostic (problem/diag_gid): locals only, never `this`
+  const bool diag_ = diag;
+  auto cdg = cond_diag;
+  const Real dt_huge = static_cast<Real>(std::numeric_limits<float>::max());
+
   Kokkos::ValLocScalar<Real, int> mloc;
   Kokkos::parallel_reduce("cond_newdt", Kokkos::RangePolicy<>(DevExeSpace(), 0, nmkji),
   KOKKOS_LAMBDA(const int &idx, Kokkos::ValLocScalar<Real, int> &mres) {
@@ -1431,6 +1476,14 @@ void Conduction::NewTimeStep(const DvceArray5D<Real> &w0, const EOS_Data &eos_da
     k += ks;
     j += js;
 
+    // the diagnostic slots for cells that take one of the early returns below stay at
+    // zero, which is what "this cell puts no constraint on the timestep" means
+    if (diag_) {
+      cdg(m,3,k,j,i) = 0.0;
+      cdg(m,4,k,j,i) = 0.0;
+      cdg(m,5,k,j,i) = 0.0;
+    }
+
     Real kappa_ = kappa0;
     Real wmax = 1.0;
     if (spitzer) {
@@ -1441,12 +1494,13 @@ void Conduction::NewTimeStep(const DvceArray5D<Real> &w0, const EOS_Data &eos_da
       Real pres = (gen ? wder_(m,IDPR,k,j,i) : w0(m,IEN,k,j,i)*gm1);
       if (pres < pcut) return;   // no flux above the cut: no constraint
       if (krmax > 0.0 && x1v_n(m,i) > krmax) return;     // radiatively inert corona
+      const Real tkap = KappaTemp(temp*temp_unit, tmax);
       kappa_ = (ktab
-          ? RadiativeKappaKR(temp*temp_unit, w0_(m,IDN,k,j,i)*dens_unit, kfac,
-                             RosselandTable(krt, krlT, krlP, krnT, krnP, temp*temp_unit,
+          ? RadiativeKappaKR(tkap, w0_(m,IDN,k,j,i)*dens_unit, kfac,
+                             RosselandTable(krt, krlT, krlP, krnT, krnP, tkap,
                                             krho ? w0_(m,IDN,k,j,i)*dens_unit
                                                  : pres*pres_unit))
-          : RadiativeKappa(temp*temp_unit, pres*pres_unit, w0_(m,IDN,k,j,i)*dens_unit,
+          : RadiativeKappa(tkap, pres*pres_unit, w0_(m,IDN,k,j,i)*dens_unit,
                            met, kfac))/kappa_unit;
       if (gaterho > 0.0) {
         kappa_ *= RadGate(w0_(m,IDN,k,j,i)*dens_unit, gaterho, gatedex);
@@ -1491,11 +1545,20 @@ void Conduction::NewTimeStep(const DvceArray5D<Real> &w0, const EOS_Data &eos_da
       return kappa_/((1.0 + s*s)*sqrt(1.0 + s*s));
     };
 
+    // the cell's OWN dt candidate, kept separate from the running reduction minimum
+    Real dtc = dt_huge;
     const Real d1 = (curv && radiative) ? dx1_(m,k,j,i) : size.d_view(m).dx1;
     if (!impx1) {
       const Real w1 = (taumode && blend_r) ? wmax : 1.0;
       const Real k1 = w1*keff(d1, tc(k,j,i-1), tc(k,j,i+1));
-      if (k1 > 0.0) min_dt = fmin(min_dt, SQR(d1)/k1*rcv);
+      if (k1 > 0.0) {
+        min_dt = fmin(min_dt, SQR(d1)/k1*rcv);
+        dtc = fmin(dtc, SQR(d1)/k1*rcv);
+      }
+      if (diag_) {
+        cdg(m,3,k,j,i) = kappa_;
+        cdg(m,4,k,j,i) = keff(d1, tc(k,j,i-1), tc(k,j,i+1));
+      }
     }
     // on a curvilinear grid size.dx2/dx3 are ANGLES; the physical widths are pcoord's
     // cubed sphere: the exact operator's angular diffusivity is kappa/sin^2(alpha)
@@ -1504,13 +1567,20 @@ void Conduction::NewTimeStep(const DvceArray5D<Real> &w0, const EOS_Data &eos_da
     if (multi_d && !capa) {
       const Real d2 = (curv && radiative) ? dx2_(m,k,j,i) : size.d_view(m).dx2;
       const Real k2 = wa*keff(d2, tc(k,j-1,i), tc(k,j+1,i));
-      if (k2 > 0.0) min_dt = fmin(min_dt, SQR(d2)*s2/k2*rcv);
+      if (k2 > 0.0) {
+        min_dt = fmin(min_dt, SQR(d2)*s2/k2*rcv);
+        dtc = fmin(dtc, SQR(d2)*s2/k2*rcv);
+      }
     }
     if (three_d && !capa) {
       const Real d3 = (curv && radiative) ? dx3_(m,k,j,i) : size.d_view(m).dx3;
       const Real k3 = wa*keff(d3, tc(k-1,j,i), tc(k+1,j,i));
-      if (k3 > 0.0) min_dt = fmin(min_dt, SQR(d3)*s2/k3*rcv);
+      if (k3 > 0.0) {
+        min_dt = fmin(min_dt, SQR(d3)*s2/k3*rcv);
+        dtc = fmin(dtc, SQR(d3)*s2/k3*rcv);
+      }
     }
+    if (diag_) cdg(m,5,k,j,i) = dtc;
     if (min_dt < mres.val) { mres.val = min_dt; mres.loc = idx; }
   }, Kokkos::MinLoc<Real, int>(mloc));
   dtnew = mloc.val*fac;
@@ -1539,12 +1609,13 @@ void Conduction::NewTimeStep(const DvceArray5D<Real> &w0, const EOS_Data &eos_da
                              : w0_(dm,IEN,dk,dj,di)/w0_(dm,IDN,dk,dj,di)*gm1);
       const Real pres = (gen ? wder_(dm,IDPR,dk,dj,di) : w0_(dm,IEN,dk,dj,di)*gm1);
       const Real dens = w0_(dm,IDN,dk,dj,di);
-      const Real kr = (ktab ? RosselandTable(krt, krlT, krlP, krnT, krnP, temp*temp_unit,
+      const Real tkap = KappaTemp(temp*temp_unit, tmax);
+      const Real kr = (ktab ? RosselandTable(krt, krlT, krlP, krnT, krnP, tkap,
                                              krho ? dens*dens_unit : pres*pres_unit)
                             : -1.0);
       Real kappa_ = (ktab
-          ? RadiativeKappaKR(temp*temp_unit, dens*dens_unit, kfac, kr)
-          : RadiativeKappa(temp*temp_unit, pres*pres_unit, dens*dens_unit, met, kfac))
+          ? RadiativeKappaKR(tkap, dens*dens_unit, kfac, kr)
+          : RadiativeKappa(tkap, pres*pres_unit, dens*dens_unit, met, kfac))
           /kappa_unit;
       if (gaterho > 0.0) kappa_ *= RadGate(dens*dens_unit, gaterho, gatedex);
       Real rcv = dens/gm1;
@@ -1596,8 +1667,8 @@ void Conduction::NewTimeStep(const DvceArray5D<Real> &w0, const EOS_Data &eos_da
                       ? -1.0 : SQR(d3)*s2/(wa*keff(s3v))*rcv*fac;
       dd.d_view(15) = ffree;
     });
-    dt_diag.template modify<DevExeSpace>();
-    dt_diag.template sync<HostMemSpace>();
+    dt_diag.modify_device();
+    dt_diag.sync_host();
     dt_diag_valid = true;
   }
   dtnew_prev = dtnew;

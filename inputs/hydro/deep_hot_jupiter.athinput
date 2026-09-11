@@ -42,6 +42,7 @@ cfl_number = 0.3         # The Courant, Friedrichs, & Lewy (CFL) Number
 nlim       = 1000000000    # cycle limit
 tlim       = 8.64e8       # time limit
 ndiag      = 1           # cycles between diagostic output
+dt_min     = 1.0e-2      # abort on timestep collapse (healthy dt is 5-20 s)
 
 <hydro>
 eos             = ideal  # EOS type

@@ -206,6 +206,27 @@ Mesh::Mesh(ParameterInput *pin) :
   use_polar_boundary = pin->GetOrAddBoolean("mesh", "use_polar_boundary", false);
   use_polar_quadratic_recon = pin->GetOrAddBoolean("mesh", "polar_quadratic_recon",
                                                     false);
+  {
+    std::string px3 = pin->GetOrAddString("mesh", "polar_x3_shift", "rotate");
+    if (px3.compare("off") == 0) {
+      polar_x3_shift = 0;
+    } else if (px3.compare("rotate") == 0) {
+      polar_x3_shift = 1;
+    } else if (px3.compare("shift") == 0) {
+      polar_x3_shift = 2;
+    } else if (px3.compare("scalar") == 0) {
+      polar_x3_shift = 3;
+    } else {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "mesh/polar_x3_shift = '" << px3 << "' not recognized."
+                << "  Options are off, rotate, shift, scalar." << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    if (global_variable::my_rank == 0) {
+      std::cout << "Mesh: spherical-polar x3-face theta correction = " << px3
+                << std::endl;
+    }
+  }
   use_polar_average_b = pin->GetOrAddBoolean("mesh", "use_polar_average_b", false);
   // default ON: without it the resistive E_r at the one physical pole edge differs
   // between the phi cells that share it and the polar-row div B grows to ~1e-3 b0/L

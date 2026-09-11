@@ -20,6 +20,10 @@ using UserBoundaryFnPtr = void (*)(Mesh* pm);
 using UserSrctermFnPtr = void (*)(Mesh* pm, const Real bdt);
 using UserRefinementFnPtr = void (*)(MeshBlockPack* pmbp);
 using UserHistoryFnPtr = void (*)(HistoryData *pdata, Mesh *pm);
+// called ONCE PER CYCLE, after Mesh::NewTimeStep in Driver::Execute, for problem
+// generators that want a per-cycle diagnostic. Not part of any task list: it sees the
+// state at the end of the cycle, with the new dt already computed.
+using UserCycleFnPtr = void (*)(Mesh *pm);
 
 struct HotJupiterParam {
   // Initialised, because these are only filled when <problem>/hot_jupiter is true and the
@@ -76,6 +80,8 @@ class ProblemGenerator {
   UserSrctermFnPtr user_srcs_func=nullptr;
   UserRefinementFnPtr user_ref_func=nullptr;
   UserHistoryFnPtr user_hist_func=nullptr;
+  // called once per cycle after Mesh::NewTimeStep in Driver::Execute
+  UserCycleFnPtr user_cycle_func=nullptr;
 
   // predefined problem generator functions (default test suite)
   void CallProblemGenerator(ParameterInput *pin, bool is_restart);
