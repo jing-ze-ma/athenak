@@ -274,6 +274,7 @@ class Mesh {
     
   bool use_cubed_sphere;      // true if using cubed sphere
   bool cs_vertex_fill;        // true to fill the cube-vertex corner by exchange
+  bool cs_corner_poison;      // DEBUG: overwrite the cube-vertex corner ghosts with 1e30
   int npanels;                // 6 if using cubed sphere; 1 otherwise
   bool use_spherical_polar;   // true if using spherical polar grid
   bool use_grid_stretch_r;      // true if using grid stretching in r

@@ -730,6 +730,7 @@ void MeshBoundaryValuesCC::FillPanelCornersCC(DvceArray5D<Real> &a, bool coarse)
   auto &nghbr = pmy_pack->pmb->nghbr;
   auto &mbpanel = pmy_pack->pmb->mb_panel;
   auto &mblev = pmy_pack->pmb->mb_lev;
+  const bool poison_ = pmy_pack->pmesh->cs_corner_poison;
   auto a_ = a;
 
   // par_for takes at most five ranges, so the ng x ng corner block is flattened into g
@@ -772,6 +773,7 @@ void MeshBoundaryValuesCC::FillPanelCornersCC(DvceArray5D<Real> &a, bool coarse)
     const Real ej = wj0*a_(m,v,kt,aj,i) + wj1*a_(m,v,kt,aj+stj,i)
                   + wj2*a_(m,v,kt,aj+2*stj,i);
     a_(m,v,kt,jt,i) = 0.5*(ek + ej);
+    if (poison_) { a_(m,v,kt,jt,i) = 1.0e30; }   // DEBUG: see <mesh>/cs_corner_poison
   });
   return;
 }

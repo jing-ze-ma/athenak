@@ -13,6 +13,7 @@
 #include <string> // string
 #include <cmath>  // std::isfinite
 #include <cstdlib>  // std::_Exit
+#include <utility>  // std::pair
 
 #include "athena.hpp"
 #include "globals.hpp"
@@ -468,10 +469,18 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       // rotations on NaN). Scan the conserved density and energy every N cycles and
       // abort with the count. One reduction over the pack, negligible cost.
       if (nan_check_cycles > 0 && pmesh->ncycle % nan_check_cycles == 0) {
-        int nbad = 0;
+        int nbad = 0, nbad_act = 0;
         int bad_m = -1, bad_k = -1, bad_j = -1, bad_i = -1;
         int bad_ilo = -1, bad_ihi = -1;
-        auto count = [&](const DvceArray5D<Real> &u) {
+        // ACTIVE cells are counted and located SEPARATELY from the ghosts.  A NaN a
+        // boundary condition wrote into a ghost and one the interior made itself need
+        // opposite things done to them, and by the time the check fires the ghosts are
+        // full of both, so the total says nothing.  act_w remembers which module's
+        // primitives to read back for the report.
+        int act_m = -1, act_k = -1, act_j = -1, act_i = -1;
+        const DvceArray5D<Real> *act_w = nullptr;
+        auto &ixs = pmesh->mb_indcs;
+        auto count = [&](const DvceArray5D<Real> &u, const DvceArray5D<Real> &w) {
           const int nmb = static_cast<int>(u.extent_int(0));
           const int n3 = static_cast<int>(u.extent_int(2));
           const int n2 = static_cast<int>(u.extent_int(3));
@@ -520,21 +529,56 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
             bad_j = (idx - bad_m*n3*n2*n1 - bad_k*n2*n1)/n1;
             bad_i = idx - bad_m*n3*n2*n1 - bad_k*n2*n1 - bad_j*n1;
           }
+          // the same scan restricted to the active cells.  Only run when something is
+          // already wrong, so the healthy path still costs the two reductions above.
+          if (nb > 0) {
+            const int is = ixs.is, ie = ixs.ie;
+            const int js = ixs.js, je = ixs.je;
+            const int ks = ixs.ks, ke = ixs.ke;
+            int na = 0;
+            Kokkos::MinLoc<int, int>::value_type aloc;
+            Kokkos::parallel_reduce("nan_check_active",
+                                    Kokkos::RangePolicy<>(DevExeSpace(), 0, ntot),
+            KOKKOS_LAMBDA(const int idx, int &sum,
+                          Kokkos::ValLocScalar<int, int> &mres) {
+              const int m = idx/(n3*n2*n1);
+              const int k = (idx - m*n3*n2*n1)/(n2*n1);
+              const int j = (idx - m*n3*n2*n1 - k*n2*n1)/n1;
+              const int i = idx - m*n3*n2*n1 - k*n2*n1 - j*n1;
+              if (i < is || i > ie || j < js || j > je || k < ks || k > ke) return;
+              if (!Kokkos::isfinite(u(m,IDN,k,j,i))
+                  || !Kokkos::isfinite(u(m,IEN,k,j,i))) {
+                sum++;
+                if (idx < mres.val) { mres.val = idx; mres.loc = idx; }
+              }
+            }, Kokkos::Sum<int>(na), Kokkos::MinLoc<int, int>(aloc));
+            nbad_act += na;
+            if (na > 0 && act_m < 0) {
+              const int idx = aloc.loc;
+              act_m = idx/(n3*n2*n1);
+              act_k = (idx - act_m*n3*n2*n1)/(n2*n1);
+              act_j = (idx - act_m*n3*n2*n1 - act_k*n2*n1)/n1;
+              act_i = idx - act_m*n3*n2*n1 - act_k*n2*n1 - act_j*n1;
+              act_w = &w;
+            }
+          }
           return nb;
         };
         auto pp = pmesh->pmb_pack;
-        if (pp->phydro != nullptr) nbad += count(pp->phydro->u0);
-        if (pp->pmhd != nullptr) nbad += count(pp->pmhd->u0);
+        if (pp->phydro != nullptr) nbad += count(pp->phydro->u0, pp->phydro->w0);
+        if (pp->pmhd != nullptr) nbad += count(pp->pmhd->u0, pp->pmhd->w0);
 #if MPI_PARALLEL_ENABLED
         MPI_Allreduce(MPI_IN_PLACE, &nbad, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
+        MPI_Allreduce(MPI_IN_PLACE, &nbad_act, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
 #endif
         if (nbad > 0) {
           if (global_variable::my_rank == 0) {
             std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                       << std::endl << "non-finite conserved density or energy in " << nbad
-                      << " cell(s) at cycle " << pmesh->ncycle << ", time = "
-                      << pmesh->time << " (time/nan_check_cycles = " << nan_check_cycles
-                      << ")" << std::endl;
+                      << " cell(s), of which " << nbad_act << " active and "
+                      << (nbad - nbad_act) << " ghost, at cycle " << pmesh->ncycle
+                      << ", time = " << pmesh->time << " (time/nan_check_cycles = "
+                      << nan_check_cycles << ")" << std::endl;
           }
           if (bad_m >= 0) {
             std::cout << "    first non-finite cell (m,k,j,i) = (" << bad_m << ","
@@ -544,6 +588,32 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
                       << pmesh->mb_indcs.js << ".." << pmesh->mb_indcs.je << ", k = "
                       << pmesh->mb_indcs.ks << ".." << pmesh->mb_indcs.ke
                       << "; bad i span " << bad_ilo << ".." << bad_ihi << std::endl;
+          }
+          if (act_m >= 0) {
+            // (m) is rank-local and says nothing about where the block sits; the logical
+            // location is what maps the cell back to a panel and an angular column
+            const int gid = pp->gids + act_m;
+            LogicalLocation &ll = pmesh->lloc_eachmb[gid];
+            std::cout << "    first non-finite ACTIVE cell (m,k,j,i) = (" << act_m << ","
+                      << act_k << "," << act_j << "," << act_i << ") on rank "
+                      << global_variable::my_rank << "; MeshBlock gid = " << gid
+                      << ", panel = " << ll.panel << ", level = " << ll.level
+                      << ", lloc = (" << ll.lx1 << "," << ll.lx2 << "," << ll.lx3 << ")"
+                      << std::endl;
+            // and WHAT went bad: the primitives of that cell and of its two radial
+            // neighbours, which separates a density collapse from an energy blow-up
+            // from a velocity, and says which side the damage came from
+            const int nx1 = static_cast<int>(act_w->extent_int(4));
+            const int il = (act_i > 0) ? (act_i - 1) : act_i;
+            const int iu = (act_i < nx1-1) ? (act_i + 1) : act_i;
+            auto wsub = Kokkos::subview(*act_w, act_m, Kokkos::ALL(), act_k, act_j,
+                                        Kokkos::make_pair(il, iu+1));
+            auto hw = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), wsub);
+            for (int n=0; n<=(iu-il); ++n) {
+              std::cout << "      w0 i = " << (il+n) << ": rho = " << hw(IDN,n)
+                        << " p/e = " << hw(IEN,n) << " v1 = " << hw(IVX,n)
+                        << " v2 = " << hw(IVY,n) << " v3 = " << hw(IVZ,n) << std::endl;
+            }
           }
           // std::exit would run static destructors with Kokkos still live (segfault) and
           // leave the other ranks waiting; leave hard

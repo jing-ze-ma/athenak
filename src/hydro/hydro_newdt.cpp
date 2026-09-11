@@ -40,6 +40,13 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
   Real dt1 = std::numeric_limits<float>::max();
   Real dt2 = std::numeric_limits<float>::max();
   Real dt3 = std::numeric_limits<float>::max();
+  // MinLoc alongside the three Mins: when dt collapses the only question that matters is
+  // WHICH cell did it, and the location rides along for free.  See the report in
+  // Mesh::NewTimeStep.
+  Kokkos::ValLocScalar<Real, int> hloc;
+  hloc.val = std::numeric_limits<float>::max();
+  hloc.loc = -1;
+  if (dt_diag.h_view.extent(0) == 0) Kokkos::realloc(dt_diag, ndtdiag);
 
   // capture class variables for kernel
   auto &w0_ = w0;
@@ -69,6 +76,8 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
   // at all on the panel axes.  sp and Cartesian are untouched.
   const bool cs_ = pmy_pack->pmesh->use_cubed_sphere;
   auto &sncell_ = pmy_pack->pcoord->sin_cell;
+  const bool multi_d_ = pmy_pack->pmesh->multi_d;
+  const bool three_d_ = pmy_pack->pmesh->three_d;
 
   if (pdrive->time_evolution == TimeEvolution::kinematic) {
     // find smallest (dx/v) in each direction for advection problems
@@ -95,7 +104,8 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
   } else {
     // find smallest dx/(v +/- Cs) in each direction for hydrodynamic problems
     Kokkos::parallel_reduce("HydroNudt2",Kokkos::RangePolicy<>(DevExeSpace(), 0, nmkji),
-    KOKKOS_LAMBDA(const int &idx, Real &min_dt1, Real &min_dt2, Real &min_dt3) {
+    KOKKOS_LAMBDA(const int &idx, Real &min_dt1, Real &min_dt2, Real &min_dt3,
+                  Kokkos::ValLocScalar<Real, int> &mres) {
       // compute m,k,j,i indices of thread and call function
       int m = (idx)/nkji;
       int k = (idx - m*nkji)/nji;
@@ -145,22 +155,75 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
         max_dv3 = fabs(w0_(m,IVZ,k,j,i))
                  + (cs_ ? cs/sncell_(m,k,j) : cs);
       }
+      Real cell_dt;
       if (use_cubed_sphere || use_spherical_polar) {
         min_dt1 = fmin((dx1_(m,k,j,i)/max_dv1), min_dt1);
         min_dt2 = fmin((dx2_(m,k,j,i)/max_dv2), min_dt2);
         min_dt3 = fmin((dx3_(m,k,j,i)/max_dv3), min_dt3);
+        cell_dt = dx1_(m,k,j,i)/max_dv1;
+        if (multi_d_) cell_dt = fmin(cell_dt, dx2_(m,k,j,i)/max_dv2);
+        if (three_d_) cell_dt = fmin(cell_dt, dx3_(m,k,j,i)/max_dv3);
       } else {
       min_dt1 = fmin((mbsize.d_view(m).dx1/max_dv1), min_dt1);
       min_dt2 = fmin((mbsize.d_view(m).dx2/max_dv2), min_dt2);
       min_dt3 = fmin((mbsize.d_view(m).dx3/max_dv3), min_dt3);
+      cell_dt = mbsize.d_view(m).dx1/max_dv1;
+      if (multi_d_) cell_dt = fmin(cell_dt, mbsize.d_view(m).dx2/max_dv2);
+      if (three_d_) cell_dt = fmin(cell_dt, mbsize.d_view(m).dx3/max_dv3);
       }
-    }, Kokkos::Min<Real>(dt1), Kokkos::Min<Real>(dt2),Kokkos::Min<Real>(dt3));
+      if (cell_dt < mres.val) { mres.val = cell_dt; mres.loc = idx; }
+    }, Kokkos::Min<Real>(dt1), Kokkos::Min<Real>(dt2),Kokkos::Min<Real>(dt3),
+       Kokkos::MinLoc<Real, int>(hloc));
   }
 
   // compute minimum of dt1/dt2/dt3 for 1D/2D/3D problems
   dtnew = dt1;
   if (pmy_pack->pmesh->multi_d) { dtnew = std::min(dtnew, dt2); }
   if (pmy_pack->pmesh->three_d) { dtnew = std::min(dtnew, dt3); }
+
+  // decode the winning cell, and -- only when dt has just collapsed -- its state
+  if (hloc.loc >= 0 && hloc.loc < nmkji) {
+    dtnew_m = (hloc.loc)/nkji;
+    dtnew_k = (hloc.loc - dtnew_m*nkji)/nji + ks;
+    dtnew_j = (hloc.loc - dtnew_m*nkji - (dtnew_k-ks)*nji)/nx1 + js;
+    dtnew_i = (hloc.loc - dtnew_m*nkji - (dtnew_k-ks)*nji - (dtnew_j-js)*nx1) + is;
+  } else {
+    dtnew_m = dtnew_k = dtnew_j = dtnew_i = -1;
+  }
+  dt_diag_valid = false;
+  if (dtnew_m >= 0 && (dtnew_prev < 0.0 || dtnew < 0.25*dtnew_prev)) {
+    auto dd = dt_diag;
+    const int dm = dtnew_m, dk = dtnew_k, dj = dtnew_j, di = dtnew_i;
+    auto &x1v_ = pmy_pack->pcoord->x1v;
+    auto &wtemp_ = pmy_pack->phydro->wtemp;
+    auto eos_ = eos;
+    par_for("hyd_dtdiag", DevExeSpace(), 0, 0, KOKKOS_LAMBDA(const int) {
+      const Real d = w0_(dm,IDN,dk,dj,di);
+      Real pr, cs;
+      if (eos_.IsGeneral()) {
+        pr = wder_(dm,IDPR,dk,dj,di);
+        cs = eos_.SoundSpeedFromP(d, pr, wder_(dm,IDG1,dk,dj,di));
+      } else if (eos_.is_ideal) {
+        pr = eos_.IdealGasPressure(w0_(dm,IEN,dk,dj,di));
+        cs = eos_.IdealHydroSoundSpeed(d, pr);
+      } else {
+        pr = d*SQR(eos_.iso_cs);
+        cs = eos_.iso_cs;
+      }
+      dd.d_view(0) = x1v_(dm,di);
+      dd.d_view(1) = d;
+      dd.d_view(2) = eos_.IsGeneral() ? wtemp_(dm,dk,dj,di) : (pr/d);
+      dd.d_view(3) = pr;
+      dd.d_view(4) = cs;
+      dd.d_view(5) = w0_(dm,IVX,dk,dj,di);
+      dd.d_view(6) = w0_(dm,IVY,dk,dj,di);
+      dd.d_view(7) = w0_(dm,IVZ,dk,dj,di);
+    });
+    dt_diag.template modify<DevExeSpace>();
+    dt_diag.template sync<HostMemSpace>();
+    dt_diag_valid = true;
+  }
+  dtnew_prev = dtnew;
 
   // compute timestep for diffusion
   if (pcond != nullptr) {

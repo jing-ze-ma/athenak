@@ -20,6 +20,7 @@
 #include "eos/eos.hpp"
 #include "diffusion/viscosity.hpp"
 #include "diffusion/conduction.hpp"
+#include "utils/runaway_scan.hpp"
 #include "srcterms/srcterms.hpp"
 #include "bvals/bvals.hpp"
 #include "shearing_box/shearing_box.hpp"
@@ -27,6 +28,133 @@
 #include "hydro/hydro.hpp"
 
 namespace hydro {
+
+//----------------------------------------------------------------------------------------
+// <problem>/nan_report diagnostics.  Both helpers are no-ops unless Hydro::nan_report is
+// set, so a default run executes not one extra kernel and is bit-identical.  They exist
+// to say WHICH stage-level operator first writes a non-finite value; see the call sites
+// in Hydro::Fluxes and Hydro::HydroSrcTerms.
+namespace {
+DvceArray1D<int> *nanrep_cnt = nullptr;
+DvceArray1D<Real> *nanrep_rec = nullptr;
+int nanrep_lines = 0;
+const int nanrep_maxlines = 400;
+
+void NanRepAlloc() {
+  if (nanrep_cnt == nullptr) {
+    nanrep_cnt = new DvceArray1D<int>("nanrep_cnt", 1);
+    nanrep_rec = new DvceArray1D<Real>("nanrep_rec", 16);
+  }
+  Kokkos::deep_copy(*nanrep_cnt, 0);
+  Kokkos::deep_copy(*nanrep_rec, 0.0);
+}
+
+//! \brief scan one face-centered flux component for a non-finite IDN/IM1/IEN and report
+//! the first offender with the two cell states that made it.  dir = 1, 2 or 3.
+void NanScanFlux(MeshBlockPack *pmbp, const DvceArray5D<Real> &flx, const int dir,
+                 const DvceArray5D<Real> &w0, const EOS_Data &eos, const char *tag) {
+  if (nanrep_lines >= nanrep_maxlines) return;
+  auto &indcs = pmbp->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmbp->nmb_thispack - 1;
+  const int di = (dir == 1), dj = (dir == 2), dk = (dir == 3);
+  NanRepAlloc();
+  auto ncnt = *nanrep_cnt;
+  auto nrec = *nanrep_rec;
+  const bool gen = eos.IsGeneral();
+  const Real tunit = eos.temp_cgs, gm1 = eos.gamma - 1.0;
+  par_for("nanscan_flx", DevExeSpace(), 0, nmb1, ks, ke+dk, js, je+dj, is, ie+di,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const Real fd = flx(m,IDN,k,j,i);
+    const Real f1 = flx(m,IM1,k,j,i);
+    const Real fe = flx(m,IEN,k,j,i);
+    if (isfinite(fd) && isfinite(f1) && isfinite(fe)) return;
+    if (Kokkos::atomic_fetch_add(&ncnt(0), 1) != 0) return;
+    const int kl = k-dk, jl = j-dj, il = i-di;
+    const Real dl = w0(m,IDN,kl,jl,il), el = w0(m,IEN,kl,jl,il);
+    const Real dr = w0(m,IDN,k,j,i), er = w0(m,IEN,k,j,i);
+    nrec(0) = static_cast<Real>(m);
+    nrec(1) = static_cast<Real>(k);
+    nrec(2) = static_cast<Real>(j);
+    nrec(3) = static_cast<Real>(i);
+    nrec(4) = fd;
+    nrec(5) = f1;
+    nrec(6) = fe;
+    nrec(7) = dl;
+    nrec(8) = el;
+    nrec(9) = gen ? eos.Temperature(dl, el)*tunit : el/dl*gm1*tunit;
+    nrec(10) = w0(m,IVX,kl,jl,il);
+    nrec(11) = dr;
+    nrec(12) = er;
+    nrec(13) = gen ? eos.Temperature(dr, er)*tunit : er/dr*gm1*tunit;
+    nrec(14) = w0(m,IVX,k,j,i);
+  });
+  auto hc = Kokkos::create_mirror_view(ncnt);
+  Kokkos::deep_copy(hc, ncnt);
+  if (hc(0) <= 0) return;
+  auto hr = Kokkos::create_mirror_view(nrec);
+  Kokkos::deep_copy(hr, nrec);
+  ++nanrep_lines;
+  const int mb = static_cast<int>(hr(0));
+  std::cout << "### nan_report [" << tag << "] rank " << global_variable::my_rank
+            << " cycle " << pmbp->pmesh->ncycle << " t = " << pmbp->pmesh->time
+            << ": " << hc(0) << " bad face(s); first (m,k,j,i) = (" << mb << ","
+            << static_cast<int>(hr(1)) << "," << static_cast<int>(hr(2)) << ","
+            << static_cast<int>(hr(3)) << ") gid = " << (pmbp->gids + mb)
+            << " flx(IDN) = " << hr(4) << " flx(IM1) = " << hr(5)
+            << " flx(IEN) = " << hr(6)
+            << " | L: d = " << hr(7) << " e = " << hr(8) << " T = " << hr(9)
+            << " v1 = " << hr(10)
+            << " | R: d = " << hr(11) << " e = " << hr(12) << " T = " << hr(13)
+            << " v1 = " << hr(14) << std::endl;
+}
+
+//! \brief scan the conserved variables for a non-finite or non-positive state.
+void NanScanCons(MeshBlockPack *pmbp, const DvceArray5D<Real> &u0, const char *tag) {
+  if (nanrep_lines >= nanrep_maxlines) return;
+  auto &indcs = pmbp->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmbp->nmb_thispack - 1;
+  NanRepAlloc();
+  auto ncnt = *nanrep_cnt;
+  auto nrec = *nanrep_rec;
+  par_for("nanscan_u", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const Real d = u0(m,IDN,k,j,i), e = u0(m,IEN,k,j,i);
+    const Real m1 = u0(m,IM1,k,j,i), m2 = u0(m,IM2,k,j,i), m3 = u0(m,IM3,k,j,i);
+    const bool bad = !isfinite(d) || !isfinite(m1) || !isfinite(m2) || !isfinite(m3)
+                     || !isfinite(e) || !(e > 0.0) || !(d > 0.0);
+    if (!bad) return;
+    if (Kokkos::atomic_fetch_add(&ncnt(0), 1) != 0) return;
+    nrec(0) = static_cast<Real>(m);
+    nrec(1) = static_cast<Real>(k);
+    nrec(2) = static_cast<Real>(j);
+    nrec(3) = static_cast<Real>(i);
+    nrec(4) = d;
+    nrec(5) = e;
+    nrec(6) = m1;
+    nrec(7) = m2;
+    nrec(8) = m3;
+  });
+  auto hc = Kokkos::create_mirror_view(ncnt);
+  Kokkos::deep_copy(hc, ncnt);
+  if (hc(0) <= 0) return;
+  auto hr = Kokkos::create_mirror_view(nrec);
+  Kokkos::deep_copy(hr, nrec);
+  ++nanrep_lines;
+  const int mb = static_cast<int>(hr(0));
+  std::cout << "### nan_report [" << tag << "] rank " << global_variable::my_rank
+            << " cycle " << pmbp->pmesh->ncycle << " t = " << pmbp->pmesh->time
+            << ": " << hc(0) << " bad cell(s); first (m,k,j,i) = (" << mb << ","
+            << static_cast<int>(hr(1)) << "," << static_cast<int>(hr(2)) << ","
+            << static_cast<int>(hr(3)) << ") gid = " << (pmbp->gids + mb)
+            << " u(IDN) = " << hr(4) << " u(IEN) = " << hr(5)
+            << " u(IM1) = " << hr(6) << " u(IM2) = " << hr(7)
+            << " u(IM3) = " << hr(8) << std::endl;
+}
+}  // namespace
 //----------------------------------------------------------------------------------------
 //! \fn  void Hydro::AssembleHydroTasks
 //! \brief Adds hydro tasks to appropriate task lists used by time integrators.
@@ -196,6 +324,84 @@ TaskStatus Hydro::Fluxes(Driver *pdrive, int stage) {
     CalculateFluxes<Hydro_RSolver::hlle_gr>(pdrive, stage);
   }
 
+  // <problem>/nan_report: the x1 WB reconstruction, captured before the pfloor mask
+  if (nan_report && wbrec_nanrep_cnt != nullptr && wbrec_nanrep_lines < 400) {
+    auto hwc = Kokkos::create_mirror_view(*wbrec_nanrep_cnt);
+    Kokkos::deep_copy(hwc, *wbrec_nanrep_cnt);
+    if (hwc(0) > 0) {
+      auto h = Kokkos::create_mirror_view(*wbrec_nanrep_rec);
+      Kokkos::deep_copy(h, *wbrec_nanrep_rec);
+      ++wbrec_nanrep_lines;
+      const int mb = static_cast<int>(h(0));
+      std::cout << "### nan_report [wb_recon_x1] rank " << global_variable::my_rank
+                << " cycle " << pmy_pack->pmesh->ncycle
+                << " t = " << pmy_pack->pmesh->time << ": " << hwc(0)
+                << " bad interface(s); first (m,k,j,i) = (" << mb << ","
+                << static_cast<int>(h(1)) << "," << static_cast<int>(h(2)) << ","
+                << static_cast<int>(h(3)) << ") gid = " << (pmy_pack->gids + mb)
+                << " stage = " << static_cast<int>(h(4))
+                << " wb_cache_rebuilt = " << static_cast<int>(h(5))
+                << " | w0 d[i-1,i,i+1] = " << h(6) << "," << h(7) << "," << h(8)
+                << " e = " << h(9) << "," << h(10) << "," << h(11)
+                << " T = " << h(12) << "," << h(13) << "," << h(14)
+                << " wder_p = " << h(15) << "," << h(16) << "," << h(17)
+                << " phicc = " << h(18) << "," << h(19) << "," << h(20)
+                << " | bg_d[im1,imh,i,iph,ip1] = " << h(21) << "," << h(22) << ","
+                << h(23) << "," << h(24) << "," << h(25)
+                << " bg_e = " << h(26) << "," << h(27) << "," << h(28) << ","
+                << h(29) << "," << h(30)
+                << " bg_p = " << h(31) << "," << h(32) << "," << h(33) << ","
+                << h(34) << "," << h(35)
+                << " | dl(IDPR) = " << h(36) << " dr(IDPR) = " << h(37)
+                << " wl(IEN) = " << h(38) << " wr(IEN) = " << h(39)
+                << " dl(IDG1) = " << h(40) << " dr(IDG1) = " << h(41)
+                << " wl(IDN) = " << h(42) << " wr(IDN) = " << h(43)
+                << " phif = " << h(44) << std::endl;
+    }
+  }
+  // <problem>/nan_report: what the HLLC solver itself captured, then the Riemann fluxes
+  // alone, before any diffusive flux is added
+  if (nan_report && rsolv_nanrep_cnt != nullptr &&
+      rsolv_nanrep_lines < 400) {
+    auto hrc = Kokkos::create_mirror_view(*rsolv_nanrep_cnt);
+    Kokkos::deep_copy(hrc, *rsolv_nanrep_cnt);
+    if (hrc(0) > 0) {
+      auto hrr = Kokkos::create_mirror_view(*rsolv_nanrep_rec);
+      Kokkos::deep_copy(hrr, *rsolv_nanrep_rec);
+      ++rsolv_nanrep_lines;
+      const int mb = static_cast<int>(hrr(0));
+      std::cout << "### nan_report [hllc_solver] rank " << global_variable::my_rank
+                << " cycle " << pmy_pack->pmesh->ncycle
+                << " t = " << pmy_pack->pmesh->time << ": " << hrc(0)
+                << " bad face(s); first (m,k,j,i) = (" << mb << ","
+                << static_cast<int>(hrr(1)) << "," << static_cast<int>(hrr(2)) << ","
+                << static_cast<int>(hrr(3)) << ") gid = " << (pmy_pack->gids + mb)
+                << " | L: d = " << hrr(4) << " vx = " << hrr(5) << " vy = " << hrr(6)
+                << " vz = " << hrr(7) << " e = " << hrr(8) << " p = " << hrr(9)
+                << " G1 = " << hrr(10)
+                << " | R: d = " << hrr(11) << " vx = " << hrr(12) << " vy = " << hrr(13)
+                << " vz = " << hrr(14) << " e = " << hrr(15) << " p = " << hrr(16)
+                << " G1 = " << hrr(17)
+                << " | cs_l = " << hrr(18) << " cs_r = " << hrr(19)
+                << " S_L = " << hrr(20) << " S_R = " << hrr(21) << " S_M = " << hrr(22)
+                << " p_star = " << hrr(23) << " ml = " << hrr(24) << " mr = " << hrr(25)
+                << " E_l = " << hrr(26) << " E_r = " << hrr(27)
+                << " fl.e = " << hrr(28) << " fr.e = " << hrr(29)
+                << " | wL = " << hrr(30) << " wR = " << hrr(31) << " wC = " << hrr(32)
+                << " flx(mx) = " << hrr(33) << " flx(d) = " << hrr(34)
+                << " flx(E) = " << hrr(35) << std::endl;
+    }
+  }
+  if (nan_report) {
+    NanScanFlux(pmy_pack, uflx.x1f, 1, w0, peos->eos_data, "hydro_flux_x1");
+    if (pmy_pack->pmesh->multi_d) {
+      NanScanFlux(pmy_pack, uflx.x2f, 2, w0, peos->eos_data, "hydro_flux_x2");
+    }
+    if (pmy_pack->pmesh->three_d) {
+      NanScanFlux(pmy_pack, uflx.x3f, 3, w0, peos->eos_data, "hydro_flux_x3");
+    }
+  }
+
   // Add diffusion fluxes
   if (pcond != nullptr) {
     // the angular cap (<hydro>/rad_cap_ang) needs the step it is capping, and the
@@ -203,6 +409,9 @@ TaskStatus Hydro::Fluxes(Driver *pdrive, int stage) {
     pcond->stage_beta_dt = (stage >= 1)
         ? (pdrive->beta[stage-1])*(pmy_pack->pmesh->dt) : 0.0;
     pcond->AddHeatFluxes(w0, peos->eos_data, uflx);
+    if (nan_report) {
+      NanScanFlux(pmy_pack, uflx.x1f, 1, w0, peos->eos_data, "after_conduction_flux");
+    }
   }
   if (pvisc != nullptr) {
     pvisc->AddViscousFluxes(w0, peos->eos_data, uflx);
@@ -277,8 +486,13 @@ TaskStatus Hydro::HydroSrcTerms(Driver *pdrive, int stage) {
     
   Real beta_dt = (pdrive->beta[stage-1])*(pmy_pack->pmesh->dt);
 
+  // <problem>/nan_report: this task runs immediately after RKUpdate, so u0 here is what
+  // the flux divergence produced
+  if (nan_report) NanScanCons(pmy_pack, u0, "after_RKUpdate");
+
   // Add physics source terms (must be computed from primitives)
   if (psrc != nullptr) psrc->ApplySrcTerms(w0, peos->eos_data,  beta_dt, u0);
+  if (nan_report && psrc != nullptr) NanScanCons(pmy_pack, u0, "after_ApplySrcTerms");
 
   // Add shearing box source terms for cell-centered hydro variables
   if (psbox_u != nullptr) psbox_u->SourceTermsCC(w0, peos->eos_data, beta_dt, u0);
@@ -292,6 +506,7 @@ TaskStatus Hydro::HydroSrcTerms(Driver *pdrive, int stage) {
   if (pmy_pack->pmesh->use_cubed_sphere) {
     pmy_pack->pcoord->SrcTermsGnomonicEquiangle(w0, wder, uflx, peos->eos_data,
                                                 beta_dt, u0);
+    if (nan_report) NanScanCons(pmy_pack, u0, "after_GnomonicSrc");
   }
   if (pmy_pack->pmesh->use_spherical_polar) {
     pmy_pack->pcoord->SrcTermsSphericalPolarHydro(w0, pwb, uflx, peos->eos_data,
@@ -478,6 +693,7 @@ TaskStatus Hydro::ConToPrim(Driver *pdrive, int stage) {
   if (use_etotgrav) {
     AddGravEtot(phicc0, u0, 0, n1m1, 0, n2m1, 0, n3m1);
   }
+  runaway_scan::Scan(pmy_pack->pmesh, "ConToPrim_floors");
   return TaskStatus::complete;
 }
 

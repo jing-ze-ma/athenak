@@ -127,6 +127,16 @@ class Hydro {
   DvceArray5D<Real> u1;       // conserved variables at intermediate step
   DvceFaceFld5D<Real> uflx;   // fluxes of conserved quantities on cell faces
   Real dtnew;
+  // The cell that set dtnew, and its state, for the `### dt COLLAPSE` report in
+  // Mesh::NewTimeStep.  Conduction has carried this since the radiative-diffusion
+  // hunt; the hydro side did not, so a hydro-limited collapse printed a number and no
+  // place -- 18 of them in the I4 run.  Filled by one extra single-cell kernel, and only
+  // when dtnew has just collapsed (or on the first call), so a healthy run pays nothing.
+  int dtnew_m = -1, dtnew_k = -1, dtnew_j = -1, dtnew_i = -1;
+  static constexpr int ndtdiag = 8;
+  DualArray1D<Real> dt_diag;   // r, rho, T, p, cs, v1, v2, v3
+  bool dt_diag_valid = false;
+  Real dtnew_prev = -1.0;
 
   // following used for FOFC
   DvceArray4D<bool> fofc;  // flag for each cell to indicate if FOFC is needed

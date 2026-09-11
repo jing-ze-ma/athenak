@@ -126,6 +126,10 @@ Mesh::Mesh(ParameterInput *pin) :
   // a 64-cell one.  Turn it OFF to reproduce the pre-fill answers exactly.
   cs_vertex_fill = use_cubed_sphere &&
                    pin->GetOrAddBoolean("mesh", "cs_vertex_fill", true);
+  // DEBUG ONLY: poison every cube-vertex corner ghost cell filled by FillPanelCornersCC
+  // with 1e30, to test whether any active cell ever reads them.
+  cs_corner_poison = use_cubed_sphere &&
+                     pin->GetOrAddBoolean("mesh", "cs_corner_poison", false);
   npanels = (use_cubed_sphere ? 6 : 1);
   if (use_cubed_sphere) {
     strictly_periodic = false;
@@ -979,6 +983,22 @@ void Mesh::NewTimeStep(const Real tlim) {
                   << " | hydro=" << dbg_hyd << " cond=" << dbg_cnd
                   << " visc=" << dbg_vis << " srcterms=" << dbg_src
                   << "  (rank " << global_variable::my_rank << ")" << std::endl;
+        // the HYDRO cell, when hydro is what collapsed: a bare number says nothing
+        // about which cell to look at, and 18 of I4's collapses printed exactly that
+        if (pmb_pack->phydro != nullptr && dbg_hyd > 0.0 && dbg_hyd <= dt) {
+          hydro::Hydro *ph = pmb_pack->phydro;
+          std::cout << "    hydro dt is set by cell (m,k,j,i) = (" << ph->dtnew_m << ","
+                    << ph->dtnew_k << "," << ph->dtnew_j << "," << ph->dtnew_i << ")"
+                    << " gid = " << (pmb_pack->gids + std::max(ph->dtnew_m, 0))
+                    << std::endl;
+          if (ph->dt_diag_valid) {
+            auto &h = ph->dt_diag;
+            std::cout << "    r=" << h.h_view(0) << " rho=" << h.h_view(1)
+                      << " T=" << h.h_view(2) << " p=" << h.h_view(3)
+                      << " cs=" << h.h_view(4) << " v=(" << h.h_view(5) << ","
+                      << h.h_view(6) << "," << h.h_view(7) << ")" << std::endl;
+          }
+        }
         Conduction *pc = (pmb_pack->phydro != nullptr) ? pmb_pack->phydro->pcond
                        : ((pmb_pack->pmhd != nullptr) ? pmb_pack->pmhd->pcond : nullptr);
         if (pc != nullptr && dbg_cnd > 0.0 && dbg_cnd <= dt) {
