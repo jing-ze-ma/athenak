@@ -171,6 +171,11 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
   use_wb_x2 = pin->GetOrAddBoolean("hydro","wb_x2",false);
   use_wb_x3 = pin->GetOrAddBoolean("hydro","wb_x3",false);
   use_wb_rho = pin->GetOrAddBoolean("hydro","wb_rho",false);
+  // switch the x1 well-balanced reconstruction off above this radius (0 = never); see
+  // the declaration in hydro.hpp.  Only the position-aware x1 path (spherical polar and
+  // cubed sphere, where x1v is the radius) honours it -- a Cartesian mesh has no radius
+  // to compare against.
+  wb_rmax = pin->GetOrAddReal("hydro","wb_rmax",0.0);
   nan_report = pin->GetOrAddBoolean("problem","nan_report",false);
   // allocate array of flags used with etotgrav
   if (use_etotgrav || use_wellbalance_dynamic) {

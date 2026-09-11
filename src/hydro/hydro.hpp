@@ -154,6 +154,14 @@ class Hydro {
   bool use_wb_x2 = false;    // flag for directions
   bool use_wb_x3 = false;    // flag for directions
   bool use_wb_rho = false;   // flag to enable local well-balanced method also in reconstructing rho
+  // Radius (x1v, which IS the radius on the spherical grids) beyond which the dynamic
+  // well-balanced x1 reconstruction is switched off cell by cell; 0 = never.  The
+  // hydrostatic background is a statement about a SUPPORTED atmosphere: over an
+  // unsupported ambient medium (a uniform cold background above the star) the
+  // background the stencil builds has nothing to do with the state, and the deviation
+  // it reconstructs is the whole state.  Above wb_rmax those cells take the plain
+  // reconstruction and the plain -rho g source, exactly as wellbalance_dynamic = false.
+  Real wb_rmax = 0.0;
   WBOption wb_option;
   DvceArray5D<Real> u0wb;   // background conserved variables
   DvceArray5D<Real> w0wb;   // background primitive variables
@@ -716,6 +724,7 @@ class Hydro {
     static void GridPiecewiseLinearX1(TeamMember_t const &member, const EOS_Data &eos,
          const WBOption wb_option,
          const bool use_wb_rho, const bool use_wellbalance_dynamic, const bool use_wb_x1,
+         const Real wb_rmax,
          const int m, const int k, const int j,
          const int il, const int iu, const DvceArray5D<Real> &q,
          const DvceArray2D<Real> &xv, const DvceArray2D<Real> &xf,
@@ -736,7 +745,16 @@ class Hydro {
               Real dxRh = x_iph-x_i;
               Real dxL = x_i-x_im1;
               Real dxR = x_ip1-x_i;
-                
+
+              // above wb_rmax the background is meaningless (see Hydro::wb_rmax), so
+              // this cell reconstructs its state directly, like the non-well-balanced
+              // branch below.  Per CELL, not per MeshBlock: a radial block spans both.
+              if (wb_rmax > 0.0 && x_i > wb_rmax) {
+                PLM_nonuniform(q(m,n,k,j,i-1), q(m,n,k,j,i), q(m,n,k,j,i+1),
+                               dxL, dxR, dxLh, dxRh, ql(n,i+1), qr(n,i));
+                return;
+              }
+
               Real q0_im1, q0_ip1, q0_imh, q0_iph, q0_i;
               WBReadCache(wbq0, (n == (IEN)) ? WBVar::wb_eint : WBVar::wb_dens,
                      m, k, j, i,
@@ -879,6 +897,7 @@ class Hydro {
     static void GridPiecewiseLinearDerX1(TeamMember_t const &member,
          const EOS_Data &eos, const WBOption wb_option,
          const bool use_wellbalance_dynamic, const bool use_wb_x1,
+         const Real wb_rmax,
          const int m, const int k, const int j, const int il, const int iu,
          const DvceArray5D<Real> &q, const DvceArray5D<Real> &qd,
          const DvceArray2D<Real> &xv, const DvceArray2D<Real> &xf,
@@ -898,7 +917,11 @@ class Hydro {
           Real dxL = x_i-x_im1;
           Real dxR = x_ip1-x_i;
 
-          if (n == (IDPR) && use_wellbalance_dynamic && use_wb_x1) {
+          // the pressure channel must be cut off at the same radius as the (d,e) ones
+          // above, or the Riemann solver would see a deviation pressure in a cell whose
+          // primitives were reconstructed in full
+          if (n == (IDPR) && use_wellbalance_dynamic && use_wb_x1 &&
+              !(wb_rmax > 0.0 && x_i > wb_rmax)) {
             Real q0_im1, q0_imh, q0_i, q0_iph, q0_ip1;
             WBReadCache(wbq0, WBVar::wb_pres, m, k, j, i,
                      q0_im1, q0_imh, q0_i, q0_iph, q0_ip1);
