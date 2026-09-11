@@ -1,0 +1,12 @@
+panel 0 centre lat     0.0  lon_from_substellar  -180.0
+panel 1 centre lat     0.0  lon_from_substellar   -90.0
+panel 2 centre lat     0.0  lon_from_substellar    -0.0
+panel 3 centre lat    90.0  lon_from_substellar  -180.0
+panel 4 centre lat     0.0  lon_from_substellar    90.0
+panel 5 centre lat   -90.0  lon_from_substellar  -180.0
+ctl2 rot2  mean cold fraction per panel: 0.2305 0.0023 0.0000 0.0022 0.0009 0.0023
+ctl2 rot3  mean cold fraction per panel: 0.1932 0.0025 0.0000 0.0048 0.0019 0.0050
+ctl2 rot4  mean cold fraction per panel: 0.1013 0.0082 0.0003 0.0041 0.0008 0.0042
+ctl2 rot5  mean cold fraction per panel: 0.2659 0.1078 0.0002 0.0318 0.0016 0.0464
+si   rot2  mean cold fraction per panel: 0.0379 0.0002 0.0000 0.0007 0.0001 0.0008
+si   rot5  mean cold fraction per panel: 0.0068 0.0004 0.0000 0.0002 0.0001 0.0009

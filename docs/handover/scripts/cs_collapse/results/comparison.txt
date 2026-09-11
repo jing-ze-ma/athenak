@@ -1,0 +1,35 @@
+=== cold / drained columns: si/s05 (dies rot 5.34) vs si/s01 (survives 8 rot) vs ctl2/s01 (explicit, dies rot 5.71) ===
+numbers for si/s01 and ctl2/s01 are from ../coldmap/coldmap.txt; si/s05 from coldmap_s05.txt
+cold column   = >30% of its 128 radial cells below 1500 K
+drained column= dens[i=52] < 1e-9  (healthy ~3e-8)
+
+           ncold                     ndrain                 layer-A median T [K]     layer-A f(T<1500)
+rot   ctl2/s01  si/s01  si/s05   ctl2/s01 si/s01 si/s05   ctl2/s01 si/s01 si/s05   ctl2/s01  si/s01  si/s05
+ 1          0       0       0          0      0      0      3156   3130   3134     0.00126 0.00088 0.00049
+ 2        418      59      52          1      0      0      3388   3477   3499     0.06402 0.00897 0.00804
+ 3        322       0       0        105      0      0      2945   3601   3607     0.04804 0.00088 0.00088
+ 4        102       0      15        141     34     44      3364   3645   3624     0.01630 0.00087 0.00217
+ 5        770       0       0         96     35     65      2873   3872   3827     0.09402 0.00035 0.00042
+
+geography of the drained set (V = within 2 cells of a cube vertex, E = panel edge, I = interior;
+enrichment = class fraction of the set / class fraction of all 6144 columns)
+                        V      E      I     V enr  E enr  I enr
+ctl2/s01 rot3 drained   6     62     37      1.63   1.94   0.53
+ctl2/s01 rot4 drained   0     57     84      0.00   1.33   0.90
+ctl2/s01 rot5 drained   0     42     54      0.00   1.44   0.85
+si/s01   rot4 drained   0     34      0      0.00   3.28   0.00
+si/s01   rot5 drained   0      0     35      0.00   0.00   1.51
+si/s05   rot4 drained   2     32     10      1.29   2.39   0.34
+si/s05   rot5 drained   0      2     63      0.00   0.10   1.47
+
+per-panel mean cold fraction (panel 0 = antistellar)
+ctl2/s01 rot5   0.2659 0.1078 0.0002 0.0318 0.0016 0.0464
+si/s01   rot5   0.0068 0.0004 0.0000 0.0002 0.0001 0.0009
+si/s05   rot5   0.0058 0.0008 0.0000 0.0006 0.0001 0.0005
+
+READING: si/s05 is thermally INDISTINGUISHABLE from si/s01 -- no cold bias, no cold columns at
+rot 3-5, layer-A median within 45 K of si/s01 at every rotation.  What it does have is a drained
+set that is 65 columns at rot 5 and, unlike ctl2, INTERIOR-weighted (I enr 1.47, V = 0, E = 2),
+all on the ANTISTELLAR panel 0.  The deepest of them, panel 0 (J,K) = (18,14) / (14,11), went from
+rho[i=52] = 2.2e-8 at rot 4 to 5.4e-10 at rot 5 -- the drain formed inside the last rotation,
+with v_r ~ -8.8e5 cm/s and a flat evacuated plateau rho ~ 2-5e-10 over i = 52..68 at T ~ 2340 K.
