@@ -1,11 +1,13 @@
 ## RULE ZERO (the user has asked THREE times, 2026-09-09 and 09-10)
 
+- **[SAVE TOKENS](save-tokens.md) — user rule 2026-09-11: never spend tokens on unneeded work; narrow agent prompts, haiku/sonnet for lookups, no agents before the direction is chosen**
+
 - **[DELEGATE simple tasks to OPUS 5 subagents](delegate-simple-tasks-to-opus.md) — FROM THE FIRST TOOL CALL of every session: reading handover notes, git/merge/build/test cycles, creating run dirs, submitting and polling jobs, log reads, analysis scripts. Fable thinks, designs, decides; Opus (`Agent`, `model: "opus"`) executes. Do not wait to be reminded**
 
 ## Cubed sphere — start here
 
-- **[RT SEMI-IMPLICIT source: ROUND-OFF only, chaos-amplified](rt-semi-implicit-changes-dhj-answer.md) — orion merge semantically NEUTRAL on dhj; GPU deterministic; old runs unreproducible at round-off. READ before any A/B claim on cs**
-- **[IN FLIGHT 2026-09-10 viper](inflight-2026-09-09-viper.md) — STOPPED ~19:30: sp flag MERGED + sp_mhd_prod3 launched (check it first); cs collapse ONSET = source-term instability in a drained vertex column; next instrument (per-cycle RT/conduction dump + explicit/semi-implicit twin from rot 5.70) NOT built; 15 ens arms HELD until production runs. START HERE**
+- **[RT SEMI-IMPLICIT source](rt-semi-implicit-changes-dhj-answer.md) — 3 days old (048dff30, 09-08); the 09-09 switch to explicit was for ABLATION REPRODUCTION only; the explicit/semi-implicit difference is the EXPLICIT scheme's overcooling error (see cs-vertex note). READ before any A/B claim on cs**
+- **[IN FLIGHT, STOPPED 2026-09-11 ~03:30](inflight-2026-09-09-viper.md) — sp_mhd_prod3 CLEAN at rot 23.8 on apu (check it first); cs collapse CLOSED; instrument + cap + handover bundle PUSHED (c26b01ac); explicit ens arms CANCELLED. Next = dt_min 1e-3, density floor vs WB, longer si ensemble. START HERE**
 - **[GPU BUILD RACE: flag never compiled](gpu-build-race-flag-not-compiled.md) — verify flags with `strings` + a startup print before trusting any arm**
 - **[cs RADIAL = sp RADIAL, DONE 979edada](cs-radial-unification.md) — centroid everywhere, x1 Grid-PLM always; every cs baseline before it is stale**
 - **[cs STRETCHED-grid SOURCE TERM off 0.57-2.15x: FIXED 13a97399](cs-stretched-source-term-bug.md) — index-space dr in the curvature source; affects every stretched cs dhj run**
@@ -57,10 +59,10 @@
 
 - **[dhj JET is SHALLOW, deep equator WESTWARD to rot 164 on sp](dhj-jet-shallow-westward-deep.md) — all cs solvers = sp; the deep super-rotation never spins up. hllc upper jet HALF of ausm+up/sp. START HERE for any jet question**
 
-- **[cs VERTEX dt COLLAPSE on the 09-07 defaults](cs-vertex-dt-collapse-0907-defaults.md) — MECHANISM 09-10: explicit RT source cools the upper column to a runaway (10/10 dead vs semi-implicit 1/8), conduction only reports it; vertex is WHERE not WHY. START HERE**
+- **[cs VERTEX dt COLLAPSE: CLOSED 09-11](cs-vertex-dt-collapse-0907-defaults.md) — explicit RT source overcools stiff cells by x/(1-e^-x) (verified 0.04%), a NIGHTSIDE cold patch sinks, the vertex column drains, hydro reheats it, RT cascade, conduction reports; semi-implicit default is RIGHT and self-heals; rad_tmax_kappa is no rescue; si/s05 = marginal dt_min case. START HERE**
 - **[RESTART dropped rot_potential: centrifugal force DOUBLED after every chain restart, FIXED](restart-rot-potential-bug.md) — 0.4 % of g; all first-round restart ablation arms INVALID; hllc/ausmpup/prod2 chains ran on it. READ before trusting any restarted 09-07-default run**
 - **[WB RESTART cache bug, FIXED 5c0b98e4 (orion)](wb-restart-cache-bug.md) — zero background for 9 cycles after every restart; not the collapse trigger**
-- **[sp POLAR BLOW-UP BISECTED to 863e8337, the x3-face theta SHIFT](sp-pole-bisect-culprit-863e8337.md) — rotation form a8cfb83e is CLEAN; flag + HEAD A/B in flight 09-10. START HERE for sp MHD**
+- **[sp POLAR BLOW-UP BISECTED to 863e8337 and FIXED](sp-pole-bisect-culprit-863e8337.md) — `mesh/polar_x3_shift=rotate` default (9a9396f7); A/B shift 6.4e34 vs rotate 7.2e31; sp_mhd_prod3 clean past rot 23 (old prod died 10.3). START HERE for sp MHD**
 - **[cs_mhd_prod DIED at rot 41.6](cs-mhd-prod-nan-rot41.md) — NaN everywhere in one interval, no precursor; the code does not stop on NaN. START HERE for the old cs production**
 - **[cs_hyd_rs: hydro cs twin x {hllc, lhllc, ausmpup, ppmx}](cs-hyd-rs-run.md) — the jet comparison. START HERE for the solver comparison**
 - **[cs_mhd_prod2: cs MHD production FROM SCRATCH on the 09-07 defaults](cs-mhd-prod2-run.md) — WB+rot_potential+deep RT; A/B vs cs_mhd_prod. START HERE for current production**
@@ -140,6 +142,8 @@
 
 ## Bugs and performance
 
+- **[ORION MERGE round-off: GATED caad9247, default path bitwise old](orion-merge-roundoff-8da093f5.md) — `floors_legacy`; the general-EOS c2p was the hunk; same-TU kernels still differ (hipcc inlining trap)**
+
 - **[All-Mach solvers lhllc/ausmpup: algebra matches the papers](lowmach-solver-audit.md) — rk2 == rk3, NO CFL~M restriction; wb_column tgrad=-0.3 is SUPERADIABATIC (trap)**
 
 - **[REFLECTING WALLS leaked mass under a blast: FIXED](reflect-wall-mass-leak.md) — mirror the wall state; invisible in every v_r = 0 test; sp always, cs since 979edada**
@@ -173,27 +177,8 @@
 
 ---
 
-**CURRENT STATE, 2026-09-07 (~09:45), HANDOVER TO ORION.** HEAD 7c652768 on `polar-average-perf`, PUSHED
-to the fork (jing-ze-ma/athenak). Viper is in MAINTENANCE 09-07 12:00 -> 09-12 12:00; the next
-session runs on ORION, which cannot see viper's bench/ or scratch. Everything needed is in git:
-docs/handover/HANDOVER-2026-09-07.md (READ FIRST), docs/handover/scripts/ (the analysis scripts),
-docs/handover/claude-memory-2026-09-07/ (a copy of this memory directory as of the handover).
-
-### Running on VIPER through/after the maintenance (check when back on viper, NOT from orion)
-1. cs_mhd_prod2 (11526708 -> chain 11526681/2): cs MHD production on the new defaults, rot ~11 at 09:00.
-2. cs_hyd_rs/{hllc,lhllc,ausmpup,ppmx} (11529253/56/59/11529330 + chains): pure-hydro solver and
-   reconstruction comparison; the jet at rot 15-20 is the question. LHLLC keeps 70x the deep radial KE.
-3. sp_pole_bisect wall_r (11526902) and x3shift_r (11526903): gate ME1 at rot 4.7 / polerow at rot 4.
-4. cs_mhd_prod_nan (11529359): passed rot 41.6 without NaN -> the original NaN is not reproducible.
-5. Login-node serial: lowmach/isoL_N64_* (2000 t_BV Edelmann slow-mode test), ~50 % at 09:00.
-
-### NEXT STEPS on ORION (in order)
-1. Clone/pull the fork branch; `git submodule update --init`; build CPU (PROBLEM=deep_hot_jupiter_rt) and GPU
-   per viper-hip-build-recipe's orion equivalent; the ck tables are at /orion/u/jinma/ATHENAK/athenak/data/exo_fms_ck.
-2. Regression: `cd tst && python run_test_suite.py --test test_suite/rad/test_rad_dhj_ck_cpu.py` and
-   test_rad_cs_raddiff_cpu.py (both PASS on viper at ebd57244).
-3. GPU binary needs the NaN guard (d3d74f2b) -- rebuild before any GPU run.
-4. Determinism test (cs MHD restart twice from one rst, 200 cycles, bitwise) -- the rot-41.6 NaN hunt showed
-   restarts diverge at 5e-6 in 0.1 rot ([[cs-mhd-prod-nan-rot41]]).
-5. Open science: the jet comparison (results on viper after 09-12), the deep interior with the radiative
-   outlet, and the sp polar blow-up bisection result.
+**CURRENT STATE, 2026-09-11 (~05:30), HELD on VIPER: waiting for bug-fixes from ORION; start nothing.** (was: HEAD = fork = c26b01ac on `polar-average-perf`.
+Read docs/handover/HANDOVER-2026-09-11.md and [[inflight-2026-09-09-viper]] (bottom section) first. Running: sp_mhd_prod3
+(bench/sp_mhd_prod3, apu chain 11569324-27), clean at rot 23.8. Nothing else. The cs collapse is CLOSED; semi-implicit RT is
+the production default. Next steps are in the inflight note (dt_min 1e-3, density floor vs WB, longer si ensemble, rotate the
+origin token). Rules: delegate to Opus from the first tool call; apudev one-time tests only; never write in run/.
