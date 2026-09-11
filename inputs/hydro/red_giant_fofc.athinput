@@ -1,0 +1,275 @@
+# RG_fofc (orion, 2026-09-12): the red giant FROM SCRATCH at nghost=3 with FOFC on, NO velocity
+# ceiling, floor consistency fixes on.  Data paths below point at the VIPER clone; on orion use
+# /orion/u/jinma/ATHENAK/athenak/data/...  Launch recipe: docs/handover/scripts/rg_fofc/.
+# red_giant on the CUBED SPHERE: the envelope of a 1.5 Msun, 500 Lsun, Teff 4000 K red
+# giant branch star (R ~ 3.2e12 cm) from 0.5 R to 1.1 R, tabulated EOS with radiation,
+# stellar Rosseland opacities, radiative diffusion with the tau blend and the thin-layer
+# relaxation, point-mass gravity, well-balanced.  Build with -DPROBLEM=red_giant.
+#
+# A SMOKE resolution: 6 panels x 16 x 16 with 128 radial cells.  Convection is resolved
+# here, not modelled: mlt_alpha stays 0 and vpert seeds the flow.
+
+<comment>
+problem   = red giant envelope, cubed sphere
+reference = tools/stellar_opac/merge_rosseland.py for the opacity
+
+<job>
+basename  = rg
+
+<mesh>
+# RG_fofc: nghost = 3.  FOFC + PLM requires >= 3 ghost zones (fatal in hydro.cpp:275).
+# Every red-giant restart file bakes nghost = 2 into its header (build_tree.cpp memcpy's
+# mesh_indcs from the restart and ignores the override), so this run starts FROM SCRATCH.
+# The grey two-stream radial tier cap is n1 = nx1 + 2*nghost <= 520; 480 + 6 = 486, OK.
+nghost    = 3
+nx1       = 480              # RADIAL  (HARD CAP 516: the grey two-stream dispatches on
+                             # compile-time radial tiers and the largest is n1 = nx1+2*nghost
+                             # = 520 -- nx1 = 640 aborts with "exceeds the largest grey
+                             # radial tier", which is how attempt 1 died at cycle 0)
+x1min     = 9.6e10           # 0.03 R, BELOW the convection zone (RCB at 0.04 R): SAME as V7
+x1max     = 4.16e12          # 1.30 R -- room for the HOT CORONA above the star/ambient join
+# V8: the V7 grid EXTENDED to 1.30 R.  The stretch is a 4-coefficient polynomial (see
+# src/coordinates/grid_stretch.hpp) whose end points are PINNED to x1min/x1max, so the V7
+# map cannot simply be continued: extrapolating u(xi) past xi = 1 folds over at xi = 1.05
+# (du/dxi reaches zero there), which caps an exact continuation at 1.106 R.  Nor can four
+# coefficients reproduce V7's interior on a 20% longer domain -- an unconstrained least
+# squares folds over.  The coefficients below are therefore REFITTED for
+# [9.6e10, 4.16e12] at nx1 = 480 against the target
+#   dr(r) = V7's own dr(r)              for r < 3.40e12
+#         = 3.13e9 (V7's photospheric cell)  for 3.40e12 < r < 3.78e12
+#         = growing linearly to 20x that at x1max   above 3.78e12,
+# with c1 pinned so the FIRST cell equals V7's (6.96e9 vs 6.802e9, +2.3%) and a one-sided
+# penalty so the fit is never coarser than the target inside the star.  Result:
+#   dr_V8/dr_V7 for r < 3.40e12 : max 1.399 (at r = 3.273e12, which is V7's OWN dr minimum
+#                                 and its most over-resolved point), median 0.783, min 0.736
+#   at the photosphere 1.077 R = 3.4464e12 : dr = 2.580e9 = 0.824x V7 (FINER)
+#   338 cells below the photosphere, 363 below 3.52e12 (V7 had 320), 42 in the corona
+#   smallest cell 2.257e9 cm at r = 3.383e12; du/dxi bottoms at 0.2666 (strictly increasing)
+# The corona cells are 6.0e9-6.6e9 wide; at 6e5 K (c_s = 1.16e7 cm/s) their CFL limit is
+# ~157 s, well above the ~31 s the deep envelope sets, so the corona costs no timestep.
+use_grid_stretch_r_poly = true
+f_stretch_r_c1 = -0.196600
+f_stretch_r_c2 = +8.811622
+f_stretch_r_c3 = -17.210081
+f_stretch_r_c4 = +8.883710
+ix1_bc    = user
+ox1_bc    = user
+nx2       = 32               # xi: nx2 must equal nx3
+x2min     = -1.0
+x2max     = 1.0
+ix2_bc    = panel
+ox2_bc    = panel
+nx3       = 32               # eta
+x3min     = -1.0
+x3max     = 1.0
+ix3_bc    = panel
+ox3_bc    = panel
+use_cubed_sphere = true
+
+<meshblock>
+nx1       = 480
+nx2       = 8
+nx3       = 8
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim       = -1
+tlim       = 9.0e5
+ndiag      = 100
+nan_check_cycles = 10
+
+<units>
+length_cgs = 1.0
+mass_cgs   = 1.0
+time_cgs   = 1.0
+mu         = 1.0
+
+<hydro>
+eos             = general
+general_eos     = table
+gamma           = 1.6666666667   # unused by the table
+eos_h2               = true
+eos_ionization       = true
+eos_metal_ionization = true
+eos_radiation        = false    # the radiation field is NOT thermalised in the thin layers,
+                                 # and aT^4/3 is < 0.1 % of p below the photosphere here
+eos_xh               = 0.70     # the opacity table is tabulated at X = 0.70
+eos_yhe              = 0.286    # Y = 1 - X - Z with Z = 0.014, matching the opacity table
+eos_logd_min    = -27.0         # reach down to the corona (~6e-25) without extrapolating
+eos_logd_max    = 2.0
+eos_logt_min    = 2.0
+eos_logt_max    = 7.5
+eos_dlog        = 0.05
+reconstruct = plm
+rsolver     = hllc
+etotgrav    = true
+wellbalance_dynamic = true
+wb_x1               = true
+wb_option           = polytropic
+wb_cache_every      = 10
+isotropic_conduction = radiative
+rad_implicit_x1      = true
+rad_cap_ang          = 0.5
+rad_gate_rho         = 1.0e-16
+rad_gate_dex         = 0.5
+# NO radius cutoff on the opacity (I5/J3: the cutoff radiated 9000 K gas as a blackbody
+# and produced the spurious 3 L emergent flux).  V9f's from-scratch input set
+# rad_kappa_rmax = 3.652820e12; this run states the zeros explicitly instead.
+rad_kappa_rmax  = 0.0
+rad_kappa_above = 0.0
+# DENSITY gate instead of the radius cutoff: the opacity follows the gas, so the
+# 1e-15-class corona stays inert wherever it sits and stellar material that inflates
+# past the old cutoff radius keeps its opacity.  6.0e-17 is the geometric mean of the
+# two populations measured in the V9f state at t = 5.0e5 (corona 90th pct 2.54e-17,
+# stellar-atmosphere 1st pct 1.40e-16); 1e-14 would have made HALF the atmosphere
+# inert, i.e. worse than the radius cutoff it replaces.
+rad_kappa_src        = table_rho
+rad_flux_inner       = -1.0
+rad_flux_limit       = true
+rad_tau_lo           = 10
+rad_tau_hi           = 100
+dfloor = 1.0e-18             # V9: the V7 floor is BACK.  The 2e4 K corona is pressure-matched
+# RG_fofc: the FLOOR AMENDMENTS are OFF and FOFC replaces them.  vceil is KEPT (5e7):
+# it is one of the FOFC triggers (the c2p test pass flags a cell whose trial state
+# exceeds the ceiling), not a floor amendment.
+dfloor_keep_velocity = true   # RG_fofc: ON (floor consistency fix kept)
+dfloor_keep_temperature = false
+fofc                 = true
+vceil = 0.0                # <hydro>/vceil: velocity ceiling [cm/s]
+                             # at rho_c = 8.10e-17 and falls to 6.50e-18 at x1max (6.5x the
+                             # floor), so the floor never fires in it
+pfloor = 1.0e-20
+# the corona is a numerical lid, not a stellar layer: above rad_kappa_rmax it neither
+# radiates nor constrains the timestep, in the diffusion operator and in the two-stream
+# alike (rad_kappa_above = 0 is exact in the grey chain).  The test in conduction.cpp is on
+# the cell CENTROID x1v.  V9's join is predicted at 3.65220e12 = 1.1413 R (VERIFY against
+# the startup print); on this grid it lands 37% of the way between the centroids
+# 3.650440e12 (last stellar cell) and 3.655226e12 (first corona cell), and 3.652820e12 is
+# the face between them.  So every corona cell is inert and the last stellar cell is not.
+wb_rmax = 3.3e12             # above this the polytropic background is meaningless
+efloor_from_ekin     = true # RG_fofc: ON (floor consistency fix kept)
+eos_floor_consistent = false
+
+<problem>
+rt_use_cons = true
+# pin10: the tree's RT defaults are the OLD solver, so the six opt-ins must be
+# stated explicitly in every input.
+rt_bface      = true
+rt_src_direct = true
+rt_newton     = true
+rt_rescue_eq  = true
+rt_semi_lin   = false
+rt_top_clamp  = true
+bc_use_cons = true
+opac_tmin   = -1.0          # CLAMP OFF (I3 test): full grain/molecular opacity
+                            # molecular knee (3200-2500 K) removed
+user_srcs   = true
+mstar       = 2.983e33
+lstar       = 1.914e36
+teff        = 4000.0
+ptop        = 3.0
+vpert       = 1.0
+vpert_cart  = true
+vpert_rand_amp = 1.0
+vpert_lmin  = 1.14133e12     # PINNED to the values V6 printed
+vpert_lmax  = 5.5292e12
+vpert_seed  = 1234
+vpert_nrand = 32
+vpert_rmin  = 1.6e12         # seed the OUTER envelope only: a seed across the RCB advects the entropy step and drove the deep transient (proven 2026-09-09)
+vpert_mlt   = true
+ic_tau_rad  = 10.0
+vpert_mach_max = 0.05            # cap on the seed, in units of the local sound speed
+kappa_fac   = 1.0
+kappa_const = 0.0
+mlt_alpha   = 0.0
+mlt_alpha_ic = 3.0
+sponge      = false
+sponge_zbot = 0.98
+# the inner boundary sits INSIDE the convection zone (see the pgen header): `open` gives
+# it the Stein-Nordlund / CO5BOLD treatment so plumes pass through and the energy enters
+# as the entropy of the inflow.  With open, set rad_flux_inner = 0.
+inner_bc    = wall
+outer_bc    = open           # TEST at 32x32: lid-free (grav fix) + Stein-Nordlund open top, inflow clamped
+open_outer_noinflow = true
+open_debug  = 2              # trace the first two outer-ghost fills, then silent
+# --- the HOT CORONA above the star (R7_hot_open's recipe, retried on the fixed binary).
+# The ambient medium above the star is a HYDROSTATIC isothermal corona at bg_temp,
+# pressure-matched to the last stellar level; bg_rho is only the threshold that LOCATES
+# the join.  A cold medium at 2e-22 is in balance with nothing, free-falls onto the thin
+# atmosphere and crushes it onto the photosphere -- that is what killed R3/R4/R5.  At
+# 6e5 K the scale height is ~1.6 r, so the corona holds itself up, and the pressure-matched
+# join makes it ~550x LIGHTER than the gas below: Rayleigh-Taylor stable, light on heavy.
+# V9 (the DENSE/COOL member of the V8/V9 pair): the join threshold is raised from 2e-22 to
+# 1e-15 and the corona temperature dropped from 6e5 K to 2e4 K, so that the pressure-matched
+# corona density lands ABOVE the V7 density floor (dfloor = 1e-18) instead of 1e7 times
+# below it.  Numbers, from the star's own column (identical to V8's; the atmosphere is
+# isothermal at T_j = 3363.6 K over this whole range):
+#   join r = 3.65220e12 = 1.1413 R  (V8's is 3.89051e12 = 1.2157 R), p_j = 2.1363e-4
+#   rho_c  = 8.10e-17 g/cm^3        (V8's is 6.08e-25), 81x the floor
+#   rho at x1max = 4.16e12          = 6.50e-18, still 6.5x the floor
+#   H/r    = 0.048                  (V8's is 0.95) -- a thin CHROMOSPHERE, not a hot corona,
+#                                     so the light-on-heavy density inversion is only 30x
+#   c_s    = 2.10e6 cm/s, Bondi Mdot = 4 pi lambda (GM)^2 rho_c / c_s^3 = 1.7e-8 Msun/yr,
+#                                     which is 170x the 1e-10 bound quoted in the pgen: at
+#                                     2e4 K one cannot both keep the corona off a 1e-18
+#                                     floor and keep the Bondi rate small.  Recorded, not fixed.
+bg_rho      = 1.0e-15
+bg_temp     = 2.0e4          # K: a COOL chromosphere-like corona (V8's control is 6.0e5)
+bg_hydrostatic = true
+bg_rtop     = 3.52e12        # the column is anchored at ptop HERE, not at x1max, so the
+                             # star is IDENTICAL to V7's (V7 anchored at its x1max = 3.52e12)
+s_relax_cs  = 0.1
+s_relax_cp  = 0.3
+open_budget = 0
+face_budget = 200
+mlt_dump    =                # if set: dump one column's MLT faces at the first call
+# --- the correlated-k two-stream for the optically thin layers.  DEFAULT ON here: the
+# grey Eddington relaxation it replaces cannot represent the line blanketing that sets a
+# cool giant's atmospheric structure, and measured over 200 cycles from the same state it
+# let the top run away by ~70x in density where the band solver held it to 0.7.  Set false
+# to fall back to the relaxation, which is cheaper and is the only path the 1-D column
+# tests can use.  Self-luminous: no irradiation, T_int = teff.
+rt_ck       = false
+rt_grey     = true
+ck_table    = /viper/u2/jinma/ATHENAK/athenak/data/exo_fms_ck/ck/Premixed_1x_g8_11.txt
+ck_data_dir = /viper/u2/jinma/ATHENAK/athenak/data/exo_fms_ck
+ck_swflux   = sw_band_flux_W121_11.txt
+ck_nquad    = 2              # two-point Gauss: exact diffusion limit (the 1.66 mean is 0.904x); no defect found
+ck_pcut_bar = 1.0e30         # no pressure cut: the tau blend decides the handover
+rt_de_max   = -1.0            # no clipping: the semi-implicit step relaxes to the true equilibrium and is bounded
+met         = 0.0
+ck_dump_file = rtcol_t0.txt               # if set: one column's RT solution at the first call
+ck_dump_m   = 0
+ck_dump_j   = -1             # -1 = the meshblock centre in that direction
+ck_dump_k   = -1
+ck_dump_t2  = 1.0e6           # >= 0: dump a SECOND column once t reaches this
+ck_dump_file2 = rtcol_late.txt
+opac_compare  =              # if set: write the ck-derived Rosseland table for comparison
+opac_table  = /viper/u2/jinma/ATHENAK/athenak/data/stellar_opac/rosseland_gs98_x0.7_z0.014.txt
+column_dump = column.txt
+
+# --- rt_cell_report (gate 3), mirrored from V8f_rtfix but at the V9 join ---
+rt_cell_report = true
+rt_report_r    = 3.6522e12
+rt_report_every = 500
+
+<output1>
+file_type  = hst
+dt         = 1.0e4
+
+<output2>
+file_type  = bin
+variable   = hydro_w
+dt         = 2.0e4
+
+<output3>
+file_type  = rst
+dt         = 1.0e5           # RG_fofc: 1e5 (I8/V9f used 2.5e5).  From scratch to 9e5 takes
+                             # two 4 h jobs, so the chain must not lose more than ~1e5 of
+                             # work on a wall-clock kill.  268 MB per file, <= 10 files.
+
+<output4>
+file_type  = log
+dt         = 1.0e4
