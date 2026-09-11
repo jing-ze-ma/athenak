@@ -95,6 +95,7 @@ using two_stream_rt::rt_split;
 using two_stream_rt::rt_srclim_warned;
 using two_stream_rt::rt_star_teff;
 using two_stream_rt::rt_tau_ptr;
+using two_stream_rt::rt_use_cons;
 using two_stream_rt::rt_xP_ptr;
 using two_stream_rt::rt_xT_ptr;
 
@@ -415,6 +416,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     std::cout << "deep_hot_jupiter_rt: RT two-stream source is "
               << (rt_semi_implicit ? "SEMI-IMPLICIT" : "EXPLICIT") << std::endl;
   }
+  // problem/rt_use_cons: read the RT solver's thermodynamic state from the CONSERVED
+  // u0 instead of w0 (the previous stage's ConToPrim output, which the explicit source
+  // terms and the implicit radial conduction have since moved).  See the long note in
+  // utils/two_stream_rt.hpp.  Default FALSE, so the default answer is unchanged; read
+  // here, the one site both the from-scratch and the restart path go through.
+  rt_use_cons = pin->GetOrAddBoolean("problem","rt_use_cons",false);
   // per-cycle single-meshblock diagnostic dump. Read here, which is the one place both
   // the from-scratch and the restart path go through (CallProblemGenerator is called by
   // BOTH ProblemGenerator constructors), so the two can never drift apart -- see the

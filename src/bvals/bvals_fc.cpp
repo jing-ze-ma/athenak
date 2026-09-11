@@ -29,6 +29,190 @@ MeshBoundaryValuesFC::MeshBoundaryValuesFC(MeshBlockPack *pp, ParameterInput *pi
 }
 
 //----------------------------------------------------------------------------------------
+//! \!fn void MeshBoundaryValuesFC::BuildCubedSphereSeamTables()
+//! \brief Precompute everything the cubed-sphere seam packer derives from (xi,eta).
+//!
+//! x1 is RADIAL on the cubed sphere and no seam crosses it, so every geometric quantity
+//! the seam branch of PackAndSendFC evaluates is a function of (kk,jj) only and is
+//! recomputed identically for all nx1 cells of the radial loop.  Profiled on a 300-cycle
+//! dhj MHD run that made "SendBuff" cost 1432 ms, a quarter of the GPU time, almost all
+//! of it trigonometry: three TransformFieldToDstNormals per output cell (the resample
+//! needs one per stencil cell), each with four PanelFrame switches, four tan/sqrt pairs,
+//! a PanelToCart and a CartToPanel with two atan, plus the resample's own atan/tan and
+//! the shear term's two sin.
+//!
+//! HOISTING IT INTO A NESTED LOOP -- which is what bvals_cc.cpp does, 8.9x there -- does
+//! NOT work here: the face-centred pack needs THREE transforms per column rather than
+//! one, and turning the flat (k,j,i) loop into TeamThreadRange(k,j) x
+//! ThreadVectorRange(i) both serialises the radial direction (the TeamPolicy's vector
+//! length is 1) and pushes the per-thread private segment from 908 to 2224 bytes.
+//! Measured 1432 -> 8596 ms.
+//! So the geometry goes into a TABLE instead and the loop structure is left alone.  The
+//! table is indexed by (block, destination-panel slot, staggering kind, kk, jj); the
+//! packer reads it with the (kk,jj) of each sample.  Consecutive threads of a team differ
+//! only in i, so they all read the SAME table row and it broadcasts out of cache.
+//!
+//! BITWISE IDENTITY is the point: the fill below evaluates the SAME expressions, in the
+//! same order, with the same inputs as the kernel used to inline, and the kernel then
+//! calls ApplyFieldXform on the stored SeamFieldXform.  Nothing is refactored into a
+//! smaller form (the 2x2 matrix ApplyFieldXform effectively builds would re-associate the
+//! sums and change the last bits), so all 15 fields are stored.
+//!
+//! WHEN IT IS BUILT.  The table depends on the neighbour table, the panel of each block
+//! and mb_size -- none of which change after startup on a cubed sphere: ADAPTIVE
+//! refinement is refused outright (mesh.cpp), and static refinement is refused wherever a
+//! coarse/fine interface would lie on a seam (build_tree.cpp's
+//! CheckCubedSphereRefinement), so no regrid can alter it.  It is therefore built lazily
+//! on the first PackAndSendFC call, once, and never invalidated.  Cross-level SEAM
+//! buffers still exist on the diagonals, so the coarse staggering variants are built
+//! whenever the mesh is multilevel.
+
+void MeshBoundaryValuesFC::BuildCubedSphereSeamTables() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int nmb = pmy_pack->nmb_thispack;
+  const int nnghbr = pmy_pack->pmb->nnghbr;
+  const bool ml_ = pmy_pack->pmesh->multilevel;
+  // TWO KIND AXES.  The transform is needed only for the two ANGULAR components, the
+  // resample for all three -- b.x1f crosses a seam as a scalar but is still resampled
+  // along it -- so the geometry table carries 2 staggerings and the stencil table 3,
+  // doubled when the mesh is multilevel and cross-level seam buffers exist.
+  const int nkg = ml_ ? 4 : 2;
+  const int nks = ml_ ? 6 : 3;
+  // The tables are indexed by the ABSOLUTE (kk,jj) of the sample, GHOSTS INCLUDED.  On a
+  // multilevel mesh a same-level send buffer is widened by ng in its transverse
+  // directions -- that is what feeds the neighbour's prolongation -- so the packer reads
+  // source cells outside the active range, and indexing the table from the active corner
+  // ran it off the end.  One entry per face index of the block array covers everything.
+  const int nk2 = indcs.nx2 + 2*indcs.ng + 1;
+  const int nk3 = indcs.nx3 + 2*indcs.ng + 1;
+
+  // Which destination panels does each block actually send to?  At most four (the four
+  // edge neighbours of a panel; the cube-vertex diagonals are skipped on both sides), so
+  // a slot map keeps the table a quarter of the size of one indexed by panel.
+  Kokkos::realloc(cs_seam_slot, nmb, 6);
+  auto &nghbr = pmy_pack->pmb->nghbr;
+  auto &mbpanel = pmy_pack->pmb->mb_panel;
+  int nslot = 1;
+  for (int m=0; m<nmb; ++m) {
+    for (int p=0; p<6; ++p) {
+      cs_seam_slot.h_view(m,p) = -1;
+    }
+    int ns = 0;
+    for (int n=0; n<nnghbr; ++n) {
+      if (nghbr.h_view(m,n).gid < 0) continue;
+      if (IsCubeVertexCorner(nghbr.h_view, mbpanel.h_view, m, n)) continue;
+      const int dp = nghbr.h_view(m,n).panel;
+      if (dp == mbpanel.h_view(m)) continue;
+      if (cs_seam_slot.h_view(m,dp) < 0) {
+        cs_seam_slot.h_view(m,dp) = ns;
+        ++ns;
+      }
+    }
+    if (ns > nslot) nslot = ns;
+  }
+  cs_seam_nslot = nslot;
+  // modify_host()/sync_device(), not the explicit-space templates: those fail the
+  // DualView static_assert under hipcc (same trap as cdd7d2a5, and the same fix the
+  // radiation tetrads already carry).
+  cs_seam_slot.modify_host();
+  cs_seam_slot.sync_device();
+
+  Kokkos::realloc(cs_seam_geom, nmb, nslot, nkg, nk3, nk2, 15);
+  Kokkos::realloc(cs_seam_stnc, nmb, nks, 2, nk3, nk2, 7);
+
+  auto &mbsize = pmy_pack->pmb->mb_size;
+  auto slot_ = cs_seam_slot;
+  auto geom_ = cs_seam_geom;
+  auto stnc_ = cs_seam_stnc;
+  auto &cs_indcs = indcs;
+
+  par_for("cs_seam_tbl", DevExeSpace(), 0, nmb-1, 0, nks-1, 0, nk3-1, 0, nk2-1,
+  KOKKOS_LAMBDA(const int m, const int kd, const int kk, const int jj) {
+    // kind = (coarse ? 3 : 0) + vv: the staggering of the SOURCE component vv the packer
+    // reads, which is what fixes whether xi/eta are a face or a centre.  vv = 0 is a real
+    // kind and not a spare: b.x1f crosses a seam as a SCALAR and needs no transform, but
+    // it IS resampled along the seam, and it lives at BOTH cell centres.
+    const int vv = kd % 3;
+    const bool coar = (kd >= 3);
+    const int js_ = coar ? cs_indcs.cjs : cs_indcs.js;
+    const int ks_ = coar ? cs_indcs.cks : cs_indcs.ks;
+    const int je_ = coar ? cs_indcs.cje : cs_indcs.je;
+    const int ke_ = coar ? cs_indcs.cke : cs_indcs.ke;
+    const int nx2_ = coar ? cs_indcs.cnx2 : cs_indcs.nx2;
+    const int nx3_ = coar ? cs_indcs.cnx3 : cs_indcs.nx3;
+    // the coarse array is half as wide; its rows sit in the same table, the rest unused
+    if (coar && (jj > nx2_ + 2*cs_indcs.ng || kk > nx3_ + 2*cs_indcs.ng)) return;
+    const int jq = jj - js_;
+    const int kq = kk - ks_;
+
+    const Real x2mn = mbsize.d_view(m).x2min, x2mx = mbsize.d_view(m).x2max;
+    const Real x3mn = mbsize.d_view(m).x3min, x3mx = mbsize.d_view(m).x3max;
+    // exactly the packer's `angles` lambda
+    const Real xi  = 0.25*M_PI*((vv == 1) ? LeftEdgeX(jq, nx2_, x2mn, x2mx)
+                                          : CellCenterX(jq, nx2_, x2mn, x2mx));
+    const Real eta = 0.25*M_PI*((vv == 2) ? LeftEdgeX(kq, nx3_, x3mn, x3mx)
+                                          : CellCenterX(kq, nx3_, x3mn, x3mx));
+
+    // the field transform's geometry, one entry per destination panel this block uses
+    const int psrc = mbpanel.d_view(m);
+    if (vv > 0) {
+      const int gkd = (coar ? 2 : 0) + (vv - 1);
+      for (int p=0; p<6; ++p) {
+        const int sl = slot_.d_view(m,p);
+        if (sl < 0) continue;
+        cubed_sphere::SeamFieldXform t;
+        cubed_sphere::SeamFieldXformAt(psrc, p, xi, eta, t);
+        for (int c=0; c<3; ++c) {
+          geom_(m,sl,gkd,kk,jj,c)    = t.s1[c];
+          geom_(m,sl,gkd,kk,jj,3+c)  = t.s2[c];
+          geom_(m,sl,gkd,kk,jj,6+c)  = t.d1[c];
+          geom_(m,sl,gkd,kk,jj,9+c)  = t.d2[c];
+        }
+        geom_(m,sl,gkd,kk,jj,12) = t.sns;
+        geom_(m,sl,gkd,kk,jj,13) = t.csd;
+        geom_(m,sl,gkd,kk,jj,14) = t.snd;
+      }
+    }
+
+    // the along-seam resample's stencil and the shear term's sigma, for both seam
+    // orientations (cs_seam = 2 stored at sidx 0, cs_seam = 3 at sidx 1).  Neither
+    // depends on the destination panel.
+    for (int sidx=0; sidx<2; ++sidx) {
+      Real ang, nrm, dang;
+      int sc, blo, bhi;
+      if (sidx == 0) {
+        ang = eta; nrm = xi;
+        dang = 0.25*M_PI*(x3mx - x3mn)/static_cast<Real>(nx3_);
+        sc = kk; blo = ks_; bhi = ke_ + ((vv == 2) ? 1 : 0) - 2;
+      } else {
+        ang = xi; nrm = eta;
+        dang = 0.25*M_PI*(x2mx - x2mn)/static_cast<Real>(nx2_);
+        sc = jj; blo = js_; bhi = je_ + ((vv == 1) ? 1 : 0) - 2;
+      }
+      const Real pos = sc + (atan(tan(ang)*tan(fabs(nrm))) - ang)/dang;
+      int bs = static_cast<int>(floor(pos + 0.5)) - 1;
+      bs = (bs < blo) ? blo : ((bs > bhi) ? bhi : bs);
+      const Real u = pos - static_cast<Real>(bs + 1);
+      stnc_(m,kd,sidx,kk,jj,0) = static_cast<Real>(bs);
+      stnc_(m,kd,sidx,kk,jj,1) = 0.5*u*(u - 1.0);
+      stnc_(m,kd,sidx,kk,jj,2) = 1.0 - u*u;
+      stnc_(m,kd,sidx,kk,jj,3) = 0.5*u*(u + 1.0);
+      stnc_(m,kd,sidx,kk,jj,4) = pos - static_cast<Real>(bs);
+      // SHEAR CORRECTION geometry.  `along_eta` is (cs_seam == 2), i.e. sidx == 0, and
+      // its (ang_,nrm_) are exactly the (ang,nrm) the resample already picked, so one
+      // pair serves both.  sigma is stored unconditionally; the packer keeps the
+      // |sin(2 nrm)| > 1e-8 guard, so a division by zero here is never read back.
+      const Real sden = sin(2.0*nrm);
+      stnc_(m,kd,sidx,kk,jj,5) = sden;
+      stnc_(m,kd,sidx,kk,jj,6) = sin(2.0*ang)/sden;
+    }
+  });
+
+  cs_seam_tbl_ready = true;
+  return;
+}
+
+//----------------------------------------------------------------------------------------
 //! \!fn void MeshBoundaryValuesFC::PackAndSendFC()
 //! \brief Pack face-centered Mesh variables into boundary buffers and send to neighbors.
 //!
@@ -45,6 +229,14 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
   int nmb = pmy_pack->nmb_thispack;
   int nnghbr = pmy_pack->pmb->nnghbr;
 
+  // CUBED-SPHERE SEAM GEOMETRY TABLE.  Built once, lazily, on the first call: it needs
+  // the neighbour table, which is not yet set when this object is constructed, and it
+  // can never go stale because a cubed sphere refuses adaptive refinement and refuses
+  // any static level boundary that would lie on a seam.  See BuildCubedSphereSeamTables.
+  if (pmy_pack->pmesh->use_cubed_sphere && !cs_seam_tbl_ready) {
+    BuildCubedSphereSeamTables();
+  }
+
   {int my_rank = global_variable::my_rank;
   auto &nghbr = pmy_pack->pmb->nghbr;
   auto &mbgid = pmy_pack->pmb->mb_gid;
@@ -53,7 +245,6 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
   const bool use_cs = pmy_pack->pmesh->use_cubed_sphere;
   const bool ml_ = pmy_pack->pmesh->multilevel;
   const bool use_pole = pmy_pack->pmesh->use_polar_boundary;
-  auto &mbsize = pmy_pack->pmb->mb_size;
   // Sign/enable switch for the seam SHEAR CORRECTION, while its orientation is being
   // pinned down empirically.  The derivation fixes the magnitude; which way the
   // receiver's face tilts relative to the source's depends on the seam orientation and
@@ -67,6 +258,9 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
   const Real cs_shear_sgn = cs_shear_env;
 
   auto &cs_indcs = pmy_pack->pmesh->mb_indcs;
+  auto cs_gtbl = cs_seam_geom;
+  auto cs_stbl = cs_seam_stnc;
+  auto cs_sltb = cs_seam_slot;
   auto &sbuf = sendbuf;
   auto &rbuf = recvbuf;
 
@@ -163,6 +357,8 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
             // ghost field of exactly ZERO across the seam.  See the note in bvals_cc.cpp.
             const bool cs_coar = (nghbr.d_view(m,n).lev < mblev.d_view(m));
             int cs_srcpanel = 0, cs_dstpanel = 0;
+            // where this (destination panel, staggering) pair sits in the seam tables
+            int cs_slotidx = 0, cs_gkind = 0, cs_skind = 0;
             // 0 = no along-seam resample; 2 = x2-face seam (resample in k);
             // 3 = x3-face seam (resample in j). See the note on seamval below.
             int cs_seam = 0;
@@ -207,6 +403,9 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
               cs_xform = (v == 1) || (v == 2);
               cs_srcpanel = my_panel;
               cs_dstpanel = ngh.panel;
+              cs_slotidx = cs_sltb.d_view(m, ngh.panel);
+              cs_gkind = (cs_coar ? 2 : 0) + ((vv > 0) ? (vv - 1) : 0);
+              cs_skind = (cs_coar ? 3 : 0) + vv;
 
               // Which buffer is this? A same-level FACE buffer is ng deep in its own
               // normal direction and spans the full active range in the other tangential
@@ -312,8 +511,6 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
             const int ks_ = cs_coar ? cs_indcs.cks : cs_indcs.ks;
             const int je_ = cs_coar ? cs_indcs.cje : cs_indcs.je;
             const int ke_ = cs_coar ? cs_indcs.cke : cs_indcs.ke;
-            const int nx2_ = cs_coar ? cs_indcs.cnx2 : cs_indcs.nx2;
-            const int nx3_ = cs_coar ? cs_indcs.cnx3 : cs_indcs.nx3;
             // Every read below goes through these, so the whole seam transform works on
             // the restricted field cb unchanged when the neighbour is coarser.
             auto bx1 = [&](const int kk, const int jj, const int i) {
@@ -421,23 +618,22 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
             };
             //
             // The (xi,eta) of a source sample, with the STAGGERING of component vv:
-            // b.x2f sits on a xi face and b.x3f on an eta face, b.x1f on neither.
-            const Real x2mn = mbsize.d_view(m).x2min, x2mx = mbsize.d_view(m).x2max;
-            const Real x3mn = mbsize.d_view(m).x3min, x3mx = mbsize.d_view(m).x3max;
-            auto angles = [&](const int kk, const int jj, Real &xi, Real &eta) {
-              xi  = 0.25*M_PI*((vv == 1) ? LeftEdgeX(jj-js_, nx2_, x2mn, x2mx)
-                                         : CellCenterX(jj-js_, nx2_, x2mn, x2mx));
-              eta = 0.25*M_PI*((vv == 2) ? LeftEdgeX(kk-ks_, nx3_, x3mn, x3mx)
-                                         : CellCenterX(kk-ks_, nx3_, x3mn, x3mx));
-            };
+            // b.x2f sits on a xi face and b.x3f on an eta face, b.x1f on neither.  That
+            // is what `cs_gkind` and `cs_skind` name, and everything the seam branch
+            // used to compute from (xi,eta) per CELL -- the transform geometry, the
+            // resample stencil and the shear term's sigma -- is read out of the tables
+            // below at the sample's own (kk,jj).  The rows are indexed by the ABSOLUTE
+            // (kk,jj), ghosts included: on a multilevel mesh a same-level send buffer is
+            // widened by ng in its transverse directions and the packer reads source
+            // cells outside the active range.  The fill evaluates exactly what this
+            // lambda used to hand to LeftEdgeX/CellCenterX.
             auto srcval = [&](const int kk, const int jj, const int i) {
               if (!cs_xform) {
                 if (vv == 0) return bx1(kk,jj,i)*signvar;
                 if (vv == 1) return bx2(kk,jj,i)*signvar;
                 return bx3(kk,jj,i)*signvar;
               }
-              Real xi, eta, bxi, bet;
-              angles(kk, jj, xi, eta);
+              Real bxi, bet;
               if (vv == 1) {
                 // primary on a XI face: (xi face jj, eta centre kk)
                 bxi = bx2(kk,jj,i);
@@ -534,11 +730,10 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
                 const bool ok_n = (nn1 >= nlo && nn1 <= nhi);
                 const bool ok_a = (an0-1 >= alo && an0+1 <= ahi);
                 if ((corr_et || corr_xi) && ok_n && ok_a) {
-                  const Real ang_ = along_eta ? eta : xi;
-                  const Real nrm_ = along_eta ? xi : eta;
-                  const Real sden = sin(2.0*nrm_);
+                  const int sidx_ = along_eta ? 0 : 1;
+                  const Real sden = cs_stbl(m,cs_skind,sidx_,kk,jj,5);
                   if (fabs(sden) > 1.0e-8) {
-                    const Real sig = sin(2.0*ang_)/sden;
+                    const Real sig = cs_stbl(m,cs_skind,sidx_,kk,jj,6);
                     // f at (along index, normal index), whichever way round they are
                     auto fv = [&](const int aa, const int nn) {
                       const int kq = along_eta ? aa : nn;
@@ -555,9 +750,21 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
                   }
                 }
               }
+              // TransformFieldToDstNormals, with its geometry half read from the table
+              // instead of recomputed: the two are the same call, so this is bitwise
+              // what the inline version produced.
               Real oxi, oet;
-              cubed_sphere::TransformFieldToDstNormals(cs_srcpanel, cs_dstpanel, xi, eta,
-                                                       bxi, bet, oxi, oet);
+              cubed_sphere::SeamFieldXform t;
+              for (int c=0; c<3; ++c) {
+                t.s1[c] = cs_gtbl(m,cs_slotidx,cs_gkind,kk,jj,c);
+                t.s2[c] = cs_gtbl(m,cs_slotidx,cs_gkind,kk,jj,3+c);
+                t.d1[c] = cs_gtbl(m,cs_slotidx,cs_gkind,kk,jj,6+c);
+                t.d2[c] = cs_gtbl(m,cs_slotidx,cs_gkind,kk,jj,9+c);
+              }
+              t.sns = cs_gtbl(m,cs_slotidx,cs_gkind,kk,jj,12);
+              t.csd = cs_gtbl(m,cs_slotidx,cs_gkind,kk,jj,13);
+              t.snd = cs_gtbl(m,cs_slotidx,cs_gkind,kk,jj,14);
+              cubed_sphere::ApplyFieldXform(t, bxi, bet, oxi, oet);
               return (v == 1) ? oxi : oet;
             };
 
@@ -582,31 +789,18 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
             // which `angles` already knows.
             auto seamval = [&](const int kk, const int jj, const int i) {
               if (cs_seam == 0) return srcval(kk,jj,i);
-              Real xi, eta;
-              angles(kk, jj, xi, eta);
-              Real ang, nrm, dang;
-              int sc, blo, bhi;
-              if (cs_seam == 2) {
-                ang = eta; nrm = xi;
-                dang = 0.25*M_PI*(x3mx - x3mn)/static_cast<Real>(nx3_);
-                // Bounds from the SOURCE'S ACTIVE range, not the buffer's.  For a face
-                // or x1-edge buffer the two coincide, so this is a no-op there; for a
-                // doubly-ghost buffer the along-seam direction is only ng deep in the
-                // BUFFER and clamping to that would extrapolate from two cells when the
-                // source block holds the data.
-                sc = kk; blo = ks_; bhi = ke_ + ((vv == 2) ? 1 : 0) - 2;
-              } else {
-                ang = xi; nrm = eta;
-                dang = 0.25*M_PI*(x2mx - x2mn)/static_cast<Real>(nx2_);
-                sc = jj; blo = js_; bhi = je_ + ((vv == 1) ? 1 : 0) - 2;
-              }
-              const Real pos = sc + (atan(tan(ang)*tan(fabs(nrm))) - ang)/dang;
-              int bs = static_cast<int>(floor(pos + 0.5)) - 1;
-              bs = (bs < blo) ? blo : ((bs > bhi) ? bhi : bs);
-              const Real u = pos - static_cast<Real>(bs + 1);
-              const Real wm = 0.5*u*(u - 1.0);
-              const Real w0 = 1.0 - u*u;
-              const Real wp = 0.5*u*(u + 1.0);
+              // The stencil is geometry: its index and its three weights come out of the
+              // table, built with the SAME expressions this used to evaluate inline --
+              // the seam-parallel map atan(tan(a)*tan|n|), the half-cell rounding, the
+              // clamp to the SOURCE'S ACTIVE range (not the buffer's: for a face or
+              // x1-edge buffer the two coincide, but a doubly-ghost buffer is only ng
+              // deep along the seam and clamping to that would extrapolate from two
+              // cells when the source block holds the data), and the quadratic weights.
+              const int sidx_ = (cs_seam == 2) ? 0 : 1;
+              const int bs = static_cast<int>(cs_stbl(m,cs_skind,sidx_,kk,jj,0));
+              const Real wm = cs_stbl(m,cs_skind,sidx_,kk,jj,1);
+              const Real w0 = cs_stbl(m,cs_skind,sidx_,kk,jj,2);
+              const Real wp = cs_stbl(m,cs_skind,sidx_,kk,jj,3);
               const Real sv0 = (cs_seam == 2) ? srcval(bs,jj,i)   : srcval(kk,bs,i);
               const Real sv1 = (cs_seam == 2) ? srcval(bs+1,jj,i) : srcval(kk,bs+1,i);
               const Real sv2 = (cs_seam == 2) ? srcval(bs+2,jj,i) : srcval(kk,bs+2,i);
@@ -633,7 +827,7 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
               // straddles ZERO -- it triggered ten million times on a smooth run.
               const Real qq = wm*sv0 + w0*sv1 + wp*sv2;
               const Real dd1 = sv1 - sv0, dd2 = sv2 - sv1;
-              const Real fpos = pos - static_cast<Real>(bs);
+              const Real fpos = cs_stbl(m,cs_skind,sidx_,kk,jj,4);
               if (dd1*dd2 > 0.0 && fpos >= 0.0 && fpos <= 2.0) {
                 const Real lo0 = fmin(sv0, fmin(sv1, sv2));
                 const Real hi0 = fmax(sv0, fmax(sv1, sv2));

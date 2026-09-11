@@ -51,7 +51,15 @@ void MHD::AssembleMHDTasks(std::map<std::string, std::shared_ptr<TaskList>> tl) 
   id.recvf     = tl["stagen"]->AddTask(&MHD::RecvFlux, this, id.sendf);
   id.rkupdt    = tl["stagen"]->AddTask(&MHD::RKUpdate, this, id.recvf);
   id.srctrms   = tl["stagen"]->AddTask(&MHD::MHDSrcTerms, this, id.rkupdt);
-  id.sendu_oa  = tl["stagen"]->AddTask(&MHD::SendU_OA, this, id.srctrms);
+  // the implicit radial radiative diffusion (<mhd>/rad_implicit_x1), in the same slot as
+  // the hydro one: after the explicit update and BEFORE the u0 ghost exchange, so what
+  // it writes is what is communicated.  It must NOT be moved after MHD::CT, tempting as
+  // the final face field is -- MHD::EField depends on RecvU_Shr, so u0 has already been
+  // sent by then and the neighbours' ghost energies would miss this operator entirely.
+  // Here bcc0 is the exact cell-centred form of the b0 that has not yet moved, which is
+  // all the magnetic-energy subtraction needs (see MagEnergyCC).
+  id.impcnd    = tl["stagen"]->AddTask(&MHD::ImplicitConduction, this, id.srctrms);
+  id.sendu_oa  = tl["stagen"]->AddTask(&MHD::SendU_OA, this, id.impcnd);
   id.recvu_oa  = tl["stagen"]->AddTask(&MHD::RecvU_OA, this, id.sendu_oa);
   id.restu     = tl["stagen"]->AddTask(&MHD::RestrictU, this, id.recvu_oa);
   id.sendu     = tl["stagen"]->AddTask(&MHD::SendU, this, id.restu);
@@ -224,6 +232,12 @@ TaskStatus MHD::Fluxes(Driver *pdrive, int stage) {
 
   // Add diffusive fluxes
   if (pcond != nullptr) {
+    // the angular cap (<mhd>/rad_cap_ang) needs the step it is capping, and the angular
+    // fluxes are formed here, before the RK update ever sees beta_dt.  Without this the
+    // cap reads beta_dt = 0, every face stiffness comes out zero and the cap is silently
+    // inert -- while NewTimeStep has already dropped dt2/dt3 on the strength of it.
+    pcond->stage_beta_dt = (stage >= 1)
+        ? (pdrive->beta[stage-1])*(pmy_pack->pmesh->dt) : 0.0;
     pcond->AddHeatFluxes(w0, peos->eos_data, uflx);
   }
   if (pvisc != nullptr) {
@@ -324,6 +338,23 @@ TaskStatus MHD::MHDSrcTerms(Driver *pdrive, int stage) {
     (pmy_pack->pmesh->pgen->user_srcs_func)(pmy_pack->pmesh, beta_dt);
   }
 
+  return TaskStatus::complete;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn TaskList MHD::ImplicitConduction
+//! \brief Wrapper task that applies the implicit radial radiative diffusion
+//! (<mhd>/rad_implicit_x1).  A no-op unless that flag is set; see
+//! Conduction::ImplicitRadialUpdate for what it solves and why, and MagEnergyCC for how
+//! the magnetic energy is taken out of the conserved state first.  The MHD counterpart
+//! of Hydro::ImplicitConduction, in the same place in the stage.
+
+TaskStatus MHD::ImplicitConduction(Driver *pdrive, int stage) {
+  if (pcond == nullptr) return TaskStatus::complete;
+  if (!(pcond->rad_implicit_x1)) return TaskStatus::complete;
+  if (stage < 1) return TaskStatus::complete;
+  Real beta_dt = (pdrive->beta[stage-1])*(pmy_pack->pmesh->dt);
+  pcond->ImplicitRadialUpdate(u0, peos->eos_data, beta_dt);
   return TaskStatus::complete;
 }
 

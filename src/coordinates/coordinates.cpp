@@ -818,6 +818,80 @@ void Coordinates::GnomonicEquiangleRaiseVel(DvceArray5D<Real> &u0,
   auto eos_ = eos_data;
   auto wder_ = wder;
   auto wtemp_ = wtemp;
+
+  // THE LEGACY KERNEL.  See the note on EOS_Data::floors_legacy: with no floor switch
+  // enabled the kernel below is algebraically the same as this one, but not bitwise --
+  // hoisting the kinetic energy, moving the w0 writes and turning the par_for into a
+  // parallel_reduce change how the device compiler contracts the expressions.  This copy
+  // is kept identical to the pre-switch version so that such a run is reproduced exactly.
+  // Any change to the floors below that is meant to apply by DEFAULT has to be made here
+  // too.
+  if (eos_data.floors_legacy) {
+    par_for("cs_raisev", DevExeSpace(), 0,nmb1, kl,ku, jl,ju, il,iu,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real c = cos_cell_(m,k,j);
+      const Real det = 1.0 - c*c;
+      const Real d = u0(m,IDN,k,j,i);
+      const Real m1 = u0(m,IM1,k,j,i);   // radial: orthogonal to both angles
+      const Real m2 = u0(m,IM2,k,j,i);   // xi
+      const Real m3 = u0(m,IM3,k,j,i);   // eta
+      // v^i = g^{ij} m_j / rho, with the metric acting on the ANGULAR pair only
+      const Real v1 = m1/d;
+      const Real v2 = (m2 - c*m3)/(d*det);
+      const Real v3 = (m3 - c*m2)/(d*det);
+      w0(m,IVX,k,j,i) = v1;
+      w0(m,IVY,k,j,i) = v2;
+      w0(m,IVZ,k,j,i) = v3;
+      // KE = 0.5 rho g_ij v^i v^j = 0.5 m_i v^i, which is the cross-term-correct form.
+      Real eint = u0(m,IEN,k,j,i) - 0.5*(m1*v1 + m2*v2 + m3*v3);
+      // ---------------------------------------------------------------------------------
+      // RE-APPLY THE FLOORS.  ConsToPrim floored the state it inverted, but that state
+      // carried an ORTHONORMAL kinetic energy; the metric cross term above MOVES the
+      // internal energy, so a cell ConsToPrim left comfortably above the floor can land
+      // below it -- or below zero -- here.  Leaving that unfloored hands a non-positive
+      // internal energy straight to the tabulated inversion below, which is undefined
+      // there and returns NaN in T, p and Gamma_1; the NaN then leaves the cell through
+      // the reconstruction stencil and takes the whole grid down within ~100 cycles.
+      // The sequence deliberately mirrors SingleC2P_GeneralHyd, including its guard
+      // against inverting a non-positive energy.  NOTE the pressure floor alone is NOT
+      // sufficient under a tabulated EOS: at upper-atmosphere densities e(d,pfloor) lies
+      // far below the table's lowest temperature, so it is the TEMPERATURE floor that
+      // actually keeps the lookup in range.  u0 is updated in step, exactly as ConsToPrim
+      // updates cons when a floor fires, so the conserved energy cannot keep sinking and
+      // re-trip the floor on every cycle.
+      if (gen_) {
+        Real temp = -1.0, pnew = 0.0, g1new = 0.0;
+        const bool e_positive = (eint > 0.0);
+        bool stale = !e_positive;
+        if (e_positive) {
+          eos_.TemperaturePressureGamma1(d, eint, wtemp_(m,k,j,i), temp, pnew, g1new);
+        }
+        if (!e_positive || pnew < eos_.pfloor) {
+          eint = eos_.EnergyFromPressure(d, eos_.pfloor, temp);
+          stale = true;
+        }
+        if (temp < eos_.tfloor) {
+          eint = eos_.EnergyFromTemperature(d, eos_.tfloor);
+          temp = eos_.tfloor;
+          stale = true;
+        }
+        if (stale) {
+          eos_.PressureAndGamma1(d, eint, temp, pnew, g1new);
+          u0(m,IEN,k,j,i) = eint + 0.5*(m1*v1 + m2*v2 + m3*v3);
+        }
+        wder_(m,IDPR,k,j,i) = pnew;
+        wder_(m,IDG1,k,j,i) = g1new;
+        wtemp_(m,k,j,i) = temp;
+      } else {
+        const Real eold = eint;
+        eos_.ApplyEnergyFloor(d, eint);
+        if (eint != eold) { u0(m,IEN,k,j,i) = eint + 0.5*(m1*v1+m2*v2+m3*v3); }
+      }
+      w0(m,IEN,k,j,i) = eint;
+    });
+    return;
+  }
+
   // see the dfloor_keep_velocity note at the kinetic energy below
   const bool keepv_ = eos_data.dfloor_keep_velocity && eos_data.defer_cons_floors;
   // <hydro>/dfloor_keep_temperature, deferred for the same reason: the internal energy

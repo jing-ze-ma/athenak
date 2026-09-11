@@ -95,6 +95,15 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
   // GnomonicEquiangleRaiseVel{,MHD} re-applies the floors to the corrected energy.
   eos_data.defer_cons_floors = pp->pmesh->use_cubed_sphere;
 
+  // See the note on EOS_Data::floors_legacy: with none of the four floor switches above
+  // enabled the kernels take the pre-existing code path VERBATIM, so that a build
+  // carrying these features reproduces an older run bit for bit.
+  eos_data.floors_legacy = !(eos_data.dfloor_keep_velocity ||
+                             eos_data.dfloor_keep_temperature ||
+                             (eos_data.vceil > 0.0) ||
+                             eos_data.floor_consistent ||
+                             eos_data.efloor_from_ekin);
+
   // <block>/tfloor_kelvin -- the SAME floor, stated in kelvin instead of code units.
   //
   // `tfloor` is a floor on the CODE temperature, and what that means changes with the

@@ -1,6 +1,6 @@
 ---
 name: inflight-2026-09-09-viper
-description: IN FLIGHT 2026-09-10 (updated ~22:00: instrument BUILT uncommitted, twins running, held ens RELEASED, prod3 clean rot 1.2; earlier ~09:05 STOPPED at the user's request): ENSEMBLE RESULT explicit RT source 10/10 dead rot 4.3-5.7, semi-implicit 1/8 dead; sp A/B running on apudev chains + apu1 copies, gate rot 4.7 not reached; 17 ens jobs HELD, a watcher releases them. Earlier: seed gates PASSED, semi-implicit flag CONFIRMED honoured (95f2b07c), cs ENSEMBLE bench/cs_ens LAUNCHING (5 arms x 10 seeds x 8 rot); sp bisection CLOSED -> 863e8337, flag A/B bench/sp_pole_bisect/hd_* launching. Earlier: 6-rot from-scratch ablation: no arm collapsed (no power; AND all ran semi-implicit ON by a build race). Decision taken: ENSEMBLE via problem/seed; seed code being committed, ensemble NOT launched; - restart rot_potential bug FIXED 42c0a6a2; restart arms resubmitted f_ 11539616-20, fh_ 11539621-25; - merge done but 048dff30 changed the dhj answer, flag ae300379 added; ablation RE-STAGED with rt_semi_implicit=false (from-scratch 11539561-65, apudev restart arms f_/fh_ 11539567-76, old-binary controls 11539512/13); next = read them
+description: IN FLIGHT, STOPPED 2026-09-11 ~03:30 - sp_mhd_prod3 clean at rot 23.8 (chain on apu), cs collapse CLOSED, instrument + rad_tmax_kappa + handover bundle COMMITTED and PUSHED (c26b01ac), explicit ensemble arms CANCELLED; next = dt_min 1e-3, density floor vs WB, longer si ensemble. READ THE BOTTOM SECTION FIRST
 metadata:
   type: project
 ---
@@ -174,3 +174,38 @@ rates when done; (3) origin remote embeds a plaintext GitHub token -- rotate it,
   bench/cs_ens/si_s05_pm) -- the only semi-implicit death (rot 5.3). User asked whether semi-implicit == explicit: answered from the
   record (semi-implicit is 3 days old, 048dff30; the 09-09 switch to explicit was for ablation reproduction; the difference is the
   explicit scheme's overcooling error).
+- 2026-09-11 ~03:00: HANDOVER BUNDLE pushed as c26b01ac (docs/handover/HANDOVER-2026-09-11.md, scripts/cs_collapse, claude-memory-2026-09-11). Fork = c26b01ac.
+
+## STATE AT STOP, 2026-09-11 ~03:30 (read this first next session)
+- Code: HEAD = fork/polar-average-perf = c26b01ac (docs/handover bundle) on top of 5c58426e (rad_tmax_kappa) and 1d988879
+  (cyclediag instrument). Working tree clean. docs/handover/HANDOVER-2026-09-11.md is the handover; memory snapshot in
+  docs/handover/claude-memory-2026-09-11/.
+- Running on viper: sp_mhd_prod3 only (11569324 RUNNING, chain 11569325-27 pending on apu). At 03:00: rot 23.8, dt 13.6 s,
+  1-ME 8.4e30 (peak 8.5e31 at rot 4.3, decaying), zero NaN/FATAL/collapse. It passed the old death point rot 10.3.
+  CHECK FIRST: is link 2 running, is 1-ME still decaying, any dt COLLAPSE lines.
+- Nothing else running. The 15 explicit ensemble arms are CANCELLED (user decision: moot).
+- Science: cs vertex collapse CLOSED (chain in [[cs-vertex-dt-collapse-0907-defaults]] bottom); semi-implicit RT is the production
+  default; rescue 1 (rad_tmax_kappa) is a no-op on semi-implicit, insufficient on explicit; si/s05 death = marginal self-healing
+  excursion under dt_min 1e-2.
+- NEXT (user to choose): (1) production dt_min 1e-2 -> 1e-3; (2) option 2 density floor vs the WB background (not built);
+  (3) longer si ensemble 4 seeds x 20 rot; (4) rotate the GitHub token in the origin URL (user only); (5) implicit/sub-cycled RT
+  source for x>1 cells (design only). Also open: the sp polar 1-ME long-term behaviour and the jet comparison on cs_hyd_rs.
+
+## UPDATE 2026-09-11 ~05:30 (viper, HELD)
+- User decision: DO NOT start any of the next steps (no dt_min change, no density floor, no ensemble). WAITING for
+  bug-fixes arriving from ORION. When they land: fetch fork, merge into polar-average-perf, then re-evaluate the next-step list.
+- sp_mhd_prod3 checked at 05:10: link 1 (11569324) RUNNING, rot 35.8, dt 12-14 s, 1-ME ~1e31 flat, zero NaN/FATAL. Links 2-4 queued.
+- Reminder: bench/ is /viper/u2/jinma/ATHENAK/bench (sibling of athenak/), logs are log.out.<jobid>.
+
+## UPDATE 2026-09-11 ~06:30: orion fixes pulled, HEAD a10e367d (ff from c26b01ac, 10 commits)
+- HEAD does NOT build on HIP: src/hydro/hydro_newdt.cpp:223 `dt_diag.template sync<HostMemSpace>()` is illegal when the
+  DualView device is HIPSpace. One-line fix (modify_device()/sync_host(), diagnostic path only) sits UNCOMMITTED in the tree.
+- A/B old (c26b01ac, bench/wt_c26b01ac/build_gpu) vs new (athenak/build_hip) on apudev, bench/ab_orion/{cs,sp}/{old,new}, 400 cycles:
+  NOT bitwise. cs: cycles 0-11 identical, cycle 12 one cell vely 1 float32-ULP; 1e-12 rel in dens/eint to ~cycle 100; 1e-3..1e-2
+  by cycle 400 (chaotic amplification). sp MHD: 1e-12 at cycle 104, 1e-10 dens at 400, bcc3 1e-3. old-vs-old repeat bitwise identical,
+  so the seed is a real code difference at round-off level (likely FP reassociation in restructured hunks), not a scheme change.
+  Not bisected. ab_orion holds 3.7 GB (per-cycle dumps).
+
+## UPDATE 2026-09-11 ~07:30: HEAD = fork = cdd7d2a5 (HIP fix committed+pushed). Bisect DONE, see [[orion-merge-roundoff-8da093f5]].
+ab_orion trimmed 3.7 -> 1.5 GB. Worktrees bench/wt_{k3,k6,nEOS,nRT,c26b01ac} still present. Nothing running except sp_mhd_prod3.
+## UPDATE 2026-09-11 ~09:00: HEAD = fork = caad9247 (floors_legacy gate). cs+sp gates bit-identical to c26b01ac. Idle.

@@ -268,6 +268,17 @@ class MeshBoundaryValuesFC : public MeshBoundaryValues {
   void AverageBoundaryFluxes(DvceEdgeFld4D<Real> &flx, DvceArray2D<int> &nflx);
   void SavePanelCornerEMF(DvceEdgeFld4D<Real> &flx, DvceArray3D<Real> &save);
   void AveragePanelCornerEMF(DvceEdgeFld4D<Real> &flx, DvceArray3D<Real> &save);
+
+  // CUBED-SPHERE SEAM GEOMETRY TABLES.  Everything the seam packer computes from
+  // (xi,eta) alone -- the field transform's geometry, the along-seam resample's stencil
+  // and the shear term's sigma -- is precomputed once per (block, destination panel,
+  // staggering, kk, jj) and read back per cell.  See BuildCubedSphereSeamTables().
+  bool cs_seam_tbl_ready = false;
+  int cs_seam_nslot = 0;
+  DualArray2D<int> cs_seam_slot;    // (nmb,6): destination panel -> slot, -1 if none
+  DvceArray6D<Real> cs_seam_geom;   // (nmb,nslot,nkind,nk3,nk2,15): SeamFieldXform
+  DvceArray6D<Real> cs_seam_stnc;   // (nmb,nkind,2,nk3,nk2,7): bs,wm,w0,wp,fpos,sden,sig
+  void BuildCubedSphereSeamTables();
 };
 
 //----------------------------------------------------------------------------------------

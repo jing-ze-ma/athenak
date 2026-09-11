@@ -49,8 +49,10 @@ add_executable(
         eos/eos.cpp
         eos/eos_table.cpp
         eos/general_hyd.cpp
+        eos/general_hyd_floors.cpp
         eos/general_mhd.cpp
         eos/ideal_hyd.cpp
+        eos/ideal_hyd_floors.cpp
         eos/ideal_mhd.cpp
         eos/isothermal_hyd.cpp
         eos/isothermal_mhd.cpp

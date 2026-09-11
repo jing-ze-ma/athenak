@@ -111,7 +111,7 @@ class Conduction {
   // rad_kappa_rmax (fatal if both are set): one criterion or the other.
   Real rad_gate_rho = 0.0;
   Real rad_gate_dex = 0.5;
-  // rad_implicit_x1 (<hydro>/rad_implicit_x1, default false): solve the RADIAL
+  // rad_implicit_x1 (<hydro>/ or <mhd>/rad_implicit_x1, default false): solve the RADIAL
   // radiative diffusion IMPLICITLY (backward Euler) instead of adding it to the
   // face fluxes.  The explicit radial operator has dt ~ dx^2 rho c_v/kappa_rad with
   // kappa_rad ~ T^3/(kappa_R rho): in an evacuated cell just above the photosphere
@@ -122,6 +122,8 @@ class Conduction {
   // same flux-limited operator unconditionally stably, and the x1 conduction timestep
   // constraint is dropped.  The whole radial extent must live in ONE MeshBlock (the
   // solve is column-local, no MPI), which the constructor checks.  x2/x3 stay explicit.
+  // In MHD the frozen internal energy also has the magnetic energy taken out of it
+  // (MagEnergyCC); the operator itself is identical.
   bool rad_implicit_x1 = false;
   // scratch for the tridiagonal solve, allocated once: slots (e*, T*, 1/(rho c_v), p,
   // A_f K_f/dl_f, c', d') per cell/face of every column.  See imp_* below.
@@ -134,7 +136,7 @@ class Conduction {
   int imp_lines = 0;           // lines printed so far by the debug report
   void ImplicitRadialUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
                             const Real beta_dt);
-  // rad_cap_ang (<hydro>/rad_cap_ang, default 0 = off): a CONSERVATIVE per-face cap on
+  // rad_cap_ang (<hydro>/ or <mhd>/rad_cap_ang, default 0 = off): a CONSERVATIVE cap on
   // the explicit ANGULAR (x2/x3) radiative diffusion.  With the radial direction made
   // implicit the same evacuated-cell runaway simply migrates to the angular faces (the
   // I1 test died at t = 5.76e5 with T = 3e10 K in a cell 60x below its shell median),
