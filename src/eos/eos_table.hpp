@@ -112,6 +112,13 @@ struct EOSTable {
   DvceArray3D<Real> tbl;
   DvceArray1D<Real> efbnd;   // per-x-cell upper bound on e(rho, pfloor), CODE units
 
+  //! Largest value of e(rho, T_tablemin)/rho over the table's density range, in CGS.
+  //! This is the cheap gate on the sub-floor continuation below (see EOS_Data::
+  //! SubFloorState): a state whose specific energy exceeds it is certainly above its own
+  //! density's floor, so the common case costs one divide and one compare and never
+  //! touches the table.
+  Real eminspec = 0.0;
+
   // ln(10), and the log-space convergence tolerance for the root finds below. The
   // tolerance tracks the working precision: a double-precision run converges to round
   // off in two or three Newton steps from a warm start, a single-precision one has no
@@ -540,6 +547,19 @@ struct EOSTable {
   Real SolveDensity(const Real ptarget, const Real t, const Real dguess) const {
     Real zg = (dguess > 0.0) ? log10(dguess) : -1.0e30;
     return Pow10(SolveLog<2>(log10(t), log10(ptarget), zg, xmin - 4.0, xmax + 4.0));
+  }
+
+  //--------------------------------------------------------------------------------------
+  //! \fn void EvalTMin
+  //! \brief the thermodynamic state at the table's OWN lowest tabulated temperature,
+  //! 10^ymin, for a density in CGS. This is the anchor of the sub-floor continuation:
+  //! below it the tabulated surfaces are pure extrapolation and, worse, the temperature
+  //! root find below has nothing to converge to once e drops under e(rho, 10^(ymin-3)),
+  //! where it pins on its own bracket and returns a p, c_s and Gamma_1 that no longer
+  //! depend on e at all.
+  KOKKOS_INLINE_FUNCTION
+  void EvalTMin(const Real rho, EOSThermoState &s) const {
+    EvalFromLogs<false>(log10(rho), ymin, rho, Pow10(ymin), s);
   }
 
   //--------------------------------------------------------------------------------------

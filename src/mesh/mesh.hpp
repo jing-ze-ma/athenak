@@ -73,8 +73,13 @@ struct LogicalLocation {
 
 struct EventCounters {
   int nfofc, neos_dfloor, neos_efloor, neos_tfloor, neos_vceil, neos_fail, maxit_c2p;
+  // Energy density CREATED by the internal-energy/pressure floor since the counters were
+  // last reset, summed over cells (code units, not volume weighted -- a cell count's
+  // worth of erg/cm^3).  A floor that fires is only a diagnostic; a floor that fires
+  // while donating a large energy is the run being driven by its own repair.
+  Real efloor_de;
   EventCounters() : nfofc(0), neos_dfloor(0), neos_efloor(0), neos_tfloor(0),
-                    neos_vceil(0), neos_fail(0), maxit_c2p(0) {}
+                    neos_vceil(0), neos_fail(0), maxit_c2p(0), efloor_de(0.0) {}
 };
 
 //----------------------------------------------------------------------------------------

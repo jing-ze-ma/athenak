@@ -816,24 +816,91 @@ void Coordinates::GnomonicEquiangleRaiseVel(DvceArray5D<Real> &u0,
   auto eos_ = eos_data;
   auto wder_ = wder;
   auto wtemp_ = wtemp;
+  // see the dfloor_keep_velocity note at the kinetic energy below
+  const bool keepv_ = eos_data.dfloor_keep_velocity && eos_data.defer_cons_floors;
+  // <hydro>/vceil: the velocity ceiling is applied HERE on the cubed sphere, for the
+  // same reason the density floor's energy correction is -- |v| and the kinetic energy
+  // are the METRIC ones and ConsToPrim cannot form them.  See the note on EOS_Data::vceil
+  // and the block at the ceiling itself below.
+  const Real vceil_ = eos_data.vceil;
+  // ...and only in ACTIVE cells.  This kernel is called over a range that includes the
+  // ghost zones, and a ghost filled by a boundary condition can carry a velocity the
+  // interior never has (the red-giant open ghosts do: ~8000 firings over 2000 cycles on
+  // a star whose active max |v| is 20x below the ceiling).  Clipping those is pointless
+  // -- the ghosts are overwritten on the next exchange -- and it makes the eos_vceil
+  // counter read as an event when nothing happened.
+  auto &aidx = pmy_pack->pmesh->mb_indcs;
+  const int ais = aidx.is, aie = aidx.ie;
+  const int ajs = aidx.js, aje = aidx.je;
+  const int aks = aidx.ks, ake = aidx.ke;
+  auto dflfv_ = (pmy_pack->phydro != nullptr) ? pmy_pack->phydro->dfl_fv
+                                              : DvceArray4D<Real>("cs_fv_dm",1,1,1,1);
 
-  par_for("cs_raisev", DevExeSpace(), 0,nmb1, kl,ku, jl,ju, il,iu,
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+  // The energy the floors below CREATE is summed out of the kernel: on the cubed sphere
+  // this routine, not ConsToPrim, is where the energy floor is actually applied (see
+  // EOS_Data::defer_cons_floors), so it is the only place that number exists.
+  Real efloor_de_ = 0.0;
+  int nceilv_ = 0;
+  const int nkji = (ku - kl + 1)*(ju - jl + 1)*(iu - il + 1);
+  const int nji = (ju - jl + 1)*(iu - il + 1);
+  const int ni = (iu - il + 1);
+  Kokkos::parallel_reduce("cs_raisev",
+  Kokkos::RangePolicy<>(DevExeSpace(), 0, (nmb1 + 1)*nkji),
+  KOKKOS_LAMBDA(const int &idx, int &sumv, Real &sumde) {
+    const int m = idx/nkji;
+    const int k = (idx - m*nkji)/nji + kl;
+    const int j = (idx - m*nkji - (k - kl)*nji)/ni + jl;
+    const int i = (idx - m*nkji - (k - kl)*nji - (j - jl)*ni) + il;
     const Real c = cos_cell_(m,k,j);
     const Real det = 1.0 - c*c;
     const Real d = u0(m,IDN,k,j,i);
-    const Real m1 = u0(m,IM1,k,j,i);   // radial: orthogonal to both angles
-    const Real m2 = u0(m,IM2,k,j,i);   // xi
-    const Real m3 = u0(m,IM3,k,j,i);   // eta
+    Real m1 = u0(m,IM1,k,j,i);   // radial: orthogonal to both angles
+    Real m2 = u0(m,IM2,k,j,i);   // xi
+    Real m3 = u0(m,IM3,k,j,i);   // eta
     // v^i = g^{ij} m_j / rho, with the metric acting on the ANGULAR pair only
-    const Real v1 = m1/d;
-    const Real v2 = (m2 - c*m3)/(d*det);
-    const Real v3 = (m3 - c*m2)/(d*det);
-    w0(m,IVX,k,j,i) = v1;
-    w0(m,IVY,k,j,i) = v2;
-    w0(m,IVZ,k,j,i) = v3;
+    Real v1 = m1/d;
+    Real v2 = (m2 - c*m3)/(d*det);
+    Real v3 = (m3 - c*m2)/(d*det);
     // KE = 0.5 rho g_ij v^i v^j = 0.5 m_i v^i, which is the cross-term-correct form.
-    Real eint = u0(m,IEN,k,j,i) - 0.5*(m1*v1 + m2*v2 + m3*v3);
+    Real ekin = 0.5*(m1*v1 + m2*v2 + m3*v3);
+    // <hydro>/dfloor_keep_velocity: ConsToPrim scaled this cell's momentum by
+    // fv = d_old/dfloor and raised rho to dfloor, so the kinetic energy it now carries is
+    // fv^3 of what it had.  The matching reduction of the TOTAL energy could not be made
+    // there -- the orthonormal e_k in the c2p is not the kinetic energy on this grid --
+    // so it is made here from the metric-correct ekin: KE_old = ekin/fv^3, and removing
+    // KE_old - ekin leaves the internal energy exactly where it was.
+    if (keepv_) {
+      const Real fv = dflfv_(m,k,j,i);
+      if (fv > 0.0 && fv < 1.0) {
+        u0(m,IEN,k,j,i) -= ekin*(1.0/(fv*fv*fv) - 1.0);
+      } else if (!(fv > 0.0)) {
+        u0(m,IEN,k,j,i) -= ekin;     // the momentum was zeroed: remove all of it
+      }
+    }
+    // <hydro>/vceil, the deferred half.  |v|^2 = g_ij v^i v^j = 2 KE/rho with the
+    // metric-correct kinetic energy formed above, which is the quantity ConsToPrim
+    // cannot build on this grid.  Scale the momentum by fs = vceil/|v| and remove
+    // (1 - fs^2) KE from the conserved total, so the INTERNAL energy below is exactly
+    // what it would have been.  The conserved momentum is written immediately: the
+    // floor block that follows writes it only when a floor also fires.
+    const bool act_ = (i >= ais && i <= aie && j >= ajs && j <= aje &&
+                       k >= aks && k <= ake);
+    if (vceil_ > 0.0 && act_ && ekin > 0.0 && d > 0.0) {
+      const Real vsq = 2.0*ekin/d;
+      if (vsq > vceil_*vceil_) {
+        const Real fs = vceil_/sqrt(vsq);
+        m1 *= fs; m2 *= fs; m3 *= fs;
+        v1 *= fs; v2 *= fs; v3 *= fs;
+        u0(m,IEN,k,j,i) -= (1.0 - fs*fs)*ekin;
+        ekin *= fs*fs;
+        u0(m,IM1,k,j,i) = m1;
+        u0(m,IM2,k,j,i) = m2;
+        u0(m,IM3,k,j,i) = m3;
+        sumv++;
+      }
+    }
+    Real eint = u0(m,IEN,k,j,i) - ekin;
+    bool mom_scaled = false;
     // ---------------------------------------------------------------------------------
     // RE-APPLY THE FLOORS.  ConsToPrim floored the state it inverted, but that state
     // carried an ORTHONORMAL kinetic energy; the metric cross term above MOVES the
@@ -857,17 +924,42 @@ void Coordinates::GnomonicEquiangleRaiseVel(DvceArray5D<Real> &u0,
         eos_.TemperaturePressureGamma1(d, eint, wtemp_(m,k,j,i), temp, pnew, g1new);
       }
       if (!e_positive || pnew < eos_.pfloor) {
-        eint = eos_.EnergyFromPressure(d, eos_.pfloor, temp);
+        const Real efl = eos_.EnergyFromPressure(d, eos_.pfloor, temp);
+        // See EOS_Data::efloor_from_ekin: rebuilding the conserved energy as efl + ekin
+        // with ekin untouched donates efl - eint, which is the cell's whole kinetic
+        // energy whenever the update left eint negative.  Paying out of the kinetic
+        // energy instead holds the conserved total fixed.
+        const Real etot = u0(m,IEN,k,j,i);
+        if (eos_.efloor_from_ekin && ekin > 0.0 && (etot - efl) < ekin) {
+          Real ek_new = etot - efl;
+          if (!(ek_new > 0.0)) ek_new = 0.0;
+          const Real fv = sqrt(ek_new/ekin);
+          m1 *= fv; m2 *= fv; m3 *= fv;
+          v1 *= fv; v2 *= fv; v3 *= fv;
+          sumde += (efl + ek_new) - etot;
+          ekin = ek_new;
+          mom_scaled = true;
+        } else {
+          sumde += efl - eint;
+        }
+        eint = efl;
         stale = true;
       }
       if (temp < eos_.tfloor) {
-        eint = eos_.EnergyFromTemperature(d, eos_.tfloor);
+        const Real etf = eos_.EnergyFromTemperature(d, eos_.tfloor);
+        sumde += etf - eint;
+        eint = etf;
         temp = eos_.tfloor;
         stale = true;
       }
       if (stale) {
         eos_.PressureAndGamma1(d, eint, temp, pnew, g1new);
-        u0(m,IEN,k,j,i) = eint + 0.5*(m1*v1 + m2*v2 + m3*v3);
+        u0(m,IEN,k,j,i) = eint + ekin;
+        if (mom_scaled) {
+          u0(m,IM1,k,j,i) = m1;
+          u0(m,IM2,k,j,i) = m2;
+          u0(m,IM3,k,j,i) = m3;
+        }
       }
       wder_(m,IDPR,k,j,i) = pnew;
       wder_(m,IDG1,k,j,i) = g1new;
@@ -875,10 +967,18 @@ void Coordinates::GnomonicEquiangleRaiseVel(DvceArray5D<Real> &u0,
     } else {
       const Real eold = eint;
       eos_.ApplyEnergyFloor(d, eint);
-      if (eint != eold) { u0(m,IEN,k,j,i) = eint + 0.5*(m1*v1+m2*v2+m3*v3); }
+      if (eint != eold) {
+        sumde += eint - eold;
+        u0(m,IEN,k,j,i) = eint + ekin;
+      }
     }
+    w0(m,IVX,k,j,i) = v1;
+    w0(m,IVY,k,j,i) = v2;
+    w0(m,IVZ,k,j,i) = v3;
     w0(m,IEN,k,j,i) = eint;
-  });
+  }, Kokkos::Sum<int>(nceilv_), Kokkos::Sum<Real>(efloor_de_));
+  pmy_pack->pmesh->ecounter.efloor_de += efloor_de_;
+  pmy_pack->pmesh->ecounter.neos_vceil += nceilv_;
   return;
 }
 

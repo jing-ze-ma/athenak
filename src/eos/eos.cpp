@@ -35,8 +35,38 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
   const bool tfloor_set = pin->DoesParameterExist(bk, "tfloor") &&
                           !pin->IsParameterDefaulted(bk, "tfloor");
   eos_data.dfloor = pin->GetOrAddReal(bk,"dfloor",(FLT_MIN));
+  eos_data.dfloor_keep_velocity =
+      pin->GetOrAddBoolean(bk,"dfloor_keep_velocity",false);
+  // Only the HYDRO conserved-to-primitive path (ideal_c2p_hyd.hpp/general_c2p_hyd.hpp,
+  // and GnomonicEquiangleRaiseVel for the deferred cubed-sphere half) implements this.
+  // In an <mhd> block it would be read and silently ignored, so refuse it instead.
+  if (eos_data.dfloor_keep_velocity && bk.compare("hydro") != 0) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+              << std::endl << "<" << bk << ">/dfloor_keep_velocity is implemented only "
+              << "for hydrodynamics" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  // <hydro>/vceil: see the note on EOS_Data::vceil.  Non-relativistic HYDRO only -- the
+  // relativistic inversions have their own ceiling (gamma_max), and the MHD c2p would
+  // read this and silently ignore it, so refuse it there the same way.
+  eos_data.vceil = pin->GetOrAddReal(bk,"vceil",0.0);
+  if (eos_data.vceil > 0.0 && bk.compare("hydro") != 0) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+              << std::endl << "<" << bk << ">/vceil is implemented only "
+              << "for hydrodynamics" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
   eos_data.pfloor = pin->GetOrAddReal(bk,"pfloor",(FLT_MIN));
   eos_data.tfloor = pin->GetOrAddReal(bk,"tfloor",(FLT_MIN));
+
+  // See the notes on EOS_Data::floor_consistent and EOS_Data::efloor_from_ekin.  Both
+  // default OFF so that every existing run is bit-for-bit unchanged; both are meaningful
+  // only for the tabulated general EOS (the ideal branch has neither a table floor nor a
+  // root find), and floor_consistent additionally changes what `pfloor` MEANS there --
+  // with it on the pressure floor is the pressure it names, without it the tabulated
+  // inversion silently replaces it by e(rho, 10^(eos_logt_min - 3)).
+  eos_data.floor_consistent = pin->GetOrAddBoolean(bk,"eos_floor_consistent",false);
+  eos_data.efloor_from_ekin = pin->GetOrAddBoolean(bk,"efloor_from_ekin",false);
   eos_data.sfloor = pin->GetOrAddReal(bk,"sfloor",(FLT_MIN));
   // See the note on defer_cons_floors in eos.hpp.  Set for the cubed sphere, where
   // GnomonicEquiangleRaiseVel{,MHD} re-applies the floors to the corrected energy.

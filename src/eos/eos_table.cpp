@@ -234,6 +234,21 @@ void BuildEOSTable(EOSTable &tbl, ParameterInput *pin, const std::string &block,
   }
   tbl.efmax = efmax;
 
+  // -------------------------------------------------- sub-floor gate, in CGS specific e
+  // The largest e(rho, 10^ymin)/rho anywhere on the table's density range. The j = 0 row
+  // already holds log10(e_gas/rho) there; radiation, which is not tabulated, is added at
+  // the LOWEST density, where its contribution per gram is largest.
+  double emsp = 0.0;
+  for (int i=0; i<nx; ++i) {
+    double es = pow(10.0, static_cast<double>(h_tbl(0,i,ITE)));
+    if (tbl.radiation) {
+      const double tmin = pow(10.0, ylo);
+      es += eos_cgs::a_rad*tmin*tmin*tmin*tmin/pow(10.0, xlo);
+    }
+    emsp = std::max(emsp, es);
+  }
+  tbl.eminspec = emsp;
+
   Kokkos::deep_copy(tbl.tbl, h_tbl);
   Kokkos::deep_copy(tbl.efbnd, h_efb);
   tbl.active = true;

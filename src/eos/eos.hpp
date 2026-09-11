@@ -59,6 +59,54 @@ struct EOS_Data {
   // the guarded and unguarded results are bit-identical there -- when a cell ends up
   // floored either way, deferring the write lands on the same value.
   bool defer_cons_floors = false;
+  // <block>/dfloor_keep_velocity: how the DENSITY floor treats the momentum.  The old
+  // behaviour raises u.d to dfloor and leaves m and E alone, which changes the cell's
+  // velocity and silently CREATES internal energy (less of the fixed total is charged to
+  // the kinetic term once rho has gone up).  With this on the floor instead scales the
+  // momentum by fv = d_old/dfloor, so the kinetic energy falls to fv^3 of its old value
+  // -- KE = m^2/2rho with m -> fv m and rho -> rho/fv -- and the total energy is reduced
+  // by the same amount, leaving the INTERNAL energy exactly where it was.  The velocity
+  // ends at fv^2 of its old value, i.e. a deeply floored cell is damped hard instead of
+  // being left carrying a 1e11 cm/s momentum it inherited from a 1e-20 g/cm^3 state.
+  bool dfloor_keep_velocity = false;
+
+  // <hydro>/vceil -- a VELOCITY CEILING for NEWTONIAN hydro (0 = off, the default).
+  // The relativistic inversions have had one forever (gamma_max, counted in
+  // neos_vceil); the non-relativistic ones have not, and nothing else bounds |v|.  A
+  // cell that acquires a velocity thousands of times the local escape speed makes the
+  // total energy kinetic-dominated by many orders of magnitude, and the internal energy
+  // e = E - KE is then a catastrophic cancellation: it comes back negative or as pure
+  // round-off noise, the pressure floor repairs it by CREATING energy, and the next
+  // Riemann solve accelerates the cell further.  With this set, whenever |v| > vceil the
+  // momentum is scaled by fs = vceil/|v| and exactly (1 - fs^2) KE is removed from the
+  // conserved total, so the INTERNAL energy is left where it was -- the same bookkeeping
+  // dfloor_keep_velocity uses for the density floor, and the same reason it is deferred:
+  // on the cubed sphere |v| and KE are the METRIC norms (the momentum is covariant on a
+  // non-orthogonal basis) and only Coordinates::GnomonicEquiangleRaiseVel can form them,
+  // so there the ceiling is applied in that routine rather than in ConsToPrim.
+  // Firings are counted in EventCounters::neos_vceil (event-log column eos_vceil).
+  Real vceil = 0.0;
+
+  // <block>/eos_floor_consistent -- make the TABULATED EOS thermodynamically consistent
+  // below the lowest tabulated temperature.  The temperature inversion brackets on
+  // [10^(ymin-3), 10^(ymax+3)]; once e falls under e(rho, 10^(ymin-3)) it pins on that
+  // bracket and returns T, p, Gamma_1 and c_s that DO NOT DEPEND ON e -- a frozen
+  // pressure plateau with p/e -> infinity as e -> 0.  The same pinning makes
+  // EnergyFromPressure(d, pfloor) ignore pfloor entirely and return e(rho, 10^(ymin-3)),
+  // so a nominal pfloor of 1e-12 is silently applied as a pressure ~1e10 times larger.
+  // With this on, e < e(rho,10^ymin) is continued as p and T LINEAR in e at fixed
+  // Gamma_1, i.e. p -> 0 with e, and the pressure floor means what it says.
+  bool floor_consistent = false;
+
+  // <block>/efloor_from_ekin -- pay for the energy/pressure floor out of the cell's
+  // KINETIC energy before creating any.  The floor is applied to the internal energy and
+  // the conserved total is then rebuilt as e_floor + e_kin, so whenever the update
+  // leaves e = E - e_kin NEGATIVE the repair donates |e| out of nothing.  In a light
+  // cell next to a heavy one that donation is the cell's whole kinetic energy and it
+  // feeds straight back into the acceleration that caused it.  With this on the total
+  // energy is held fixed and the momentum is rescaled instead, so energy is created only
+  // in the residual case E < e_floor.
+  bool efloor_from_ekin = false;
   Real gamma_max;    // ceiling on Lorentz factor in SR/GR
   // AUSM+-up cut-off Mach numbers (hydro/ausm_mcut, ausm_mcut_p): f_a = M_o(2 - M_o)
   // with M_o = min(1, max(M_bar, mcut)) scales the velocity-diffusion pressure term
@@ -131,6 +179,52 @@ struct EOS_Data {
   // extra root find does not matter. Calling the (d,e) form N times on one cell means N
   // root finds.
 
+  //--------------------------------------------------------------------------------------
+  //! \fn bool SubFloorState
+  //! \brief the consistent continuation of the tabulated EOS below its own temperature
+  //! floor, under <block>/eos_floor_consistent.  Returns false (leaving t, p, g1
+  //! untouched) whenever the state is on the tabulated branch, which is the common case
+  //! and costs one divide and one compare.
+  //!
+  //! Below e_min(rho) = e(rho, T_min) the continuation is p = p_min e/e_min,
+  //! T = T_min e/e_min at fixed Gamma_1, i.e. a gamma law anchored on the table's lowest
+  //! row.  It is C0 in p and T at e = e_min, monotone, and positive: p -> 0 as e -> 0,
+  //! which is what the Riemann solver and the pressure floor both need and what the
+  //! bracket-pinned table does not give.
+  KOKKOS_INLINE_FUNCTION
+  bool SubFloorState(const Real d, const Real e, Real &t, Real &p, Real &g1) const {
+    if (!floor_consistent || !tbl.active) return false;
+    const Real rho = d*dens_cgs;
+    const Real ecgs = e*pres_cgs;
+    if (!(ecgs < rho*tbl.eminspec)) return false;     // certainly on the table
+    EOSThermoState s;
+    tbl.EvalTMin(rho, s);
+    if (!(ecgs < s.e) || !(s.e > 0.0)) return false;  // above this density's own floor
+    const Real f = (ecgs > 0.0) ? (ecgs/s.e) : 0.0;
+    const Real tmin = EOSTable::Pow10(tbl.ymin);
+    t = (tmin*f)/temp_cgs;
+    p = (s.p*f)/pres_cgs;
+    g1 = s.chi_rho + s.p*s.chi_t*s.chi_t/(rho*tmin*s.cv);
+    return true;
+  }
+
+  //! \fn Real EnergyBelowFloor
+  //! \brief the internal energy density e(d,p) on the sub-floor branch, i.e. the exact
+  //! inverse of SubFloorState().  Returns a negative value when p is on the tabulated
+  //! branch and the caller must use the root find instead.
+  KOKKOS_INLINE_FUNCTION
+  Real EnergyBelowFloor(const Real d, const Real p, Real &t) const {
+    if (!floor_consistent || !tbl.active) return -1.0;
+    const Real rho = d*dens_cgs;
+    const Real pcgs = p*pres_cgs;
+    EOSThermoState s;
+    tbl.EvalTMin(rho, s);
+    if (!(pcgs < s.p) || !(s.p > 0.0)) return -1.0;
+    const Real f = (pcgs > 0.0) ? (pcgs/s.p) : 0.0;
+    t = (EOSTable::Pow10(tbl.ymin)*f)/temp_cgs;
+    return (s.e*f)/pres_cgs;
+  }
+
   //! \fn Real Temperature
   //! \brief temperature T(d,e) in code units (p/d for an ideal gas).
   //!
@@ -142,6 +236,8 @@ struct EOS_Data {
   KOKKOS_INLINE_FUNCTION
   Real Temperature(const Real d, const Real e, const Real tguess = -1.0) const {
     if (tbl.active) {
+      Real tsub, psub, g1sub;
+      if (SubFloorState(d, e, tsub, psub, g1sub)) return tsub;
       Real tg = (tguess > 0.0) ? tguess*temp_cgs : -1.0;
       return tbl.SolveTemperature(d*dens_cgs, e*pres_cgs, tg)/temp_cgs;
     }
@@ -153,6 +249,8 @@ struct EOS_Data {
   KOKKOS_INLINE_FUNCTION
   Real Pressure(const Real d, const Real e, const Real t) const {
     if (tbl.active) {
+      Real tsub, psub, g1sub;
+      if (SubFloorState(d, e, tsub, psub, g1sub)) return psub;
       EOSThermoState s;
       tbl.Eval(d*dens_cgs, t*temp_cgs, s);
       return (s.p/pres_cgs);
@@ -176,6 +274,8 @@ struct EOS_Data {
   KOKKOS_INLINE_FUNCTION
   Real Gamma1(const Real d, const Real e, const Real t) const {
     if (tbl.active) {
+      Real tsub, psub, g1sub;
+      if (SubFloorState(d, e, tsub, psub, g1sub)) return g1sub;
       EOSThermoState s;
       Real rho = d*dens_cgs;
       Real tk = t*temp_cgs;
@@ -203,6 +303,9 @@ struct EOS_Data {
   KOKKOS_INLINE_FUNCTION
   Real EnergyFromPressure(const Real d, const Real p) const {
     if (tbl.active) {
+      Real tsub;
+      Real esub = EnergyBelowFloor(d, p, tsub);
+      if (esub >= 0.0) return esub;
       Real rho = d*dens_cgs;
       Real tk = tbl.SolveTemperatureFromP(rho, p*pres_cgs, -1.0);
       EOSThermoState s;
@@ -223,6 +326,8 @@ struct EOS_Data {
   KOKKOS_INLINE_FUNCTION
   Real EnergyFromPressure(const Real d, const Real p, Real &t) const {
     if (tbl.active) {
+      Real esub = EnergyBelowFloor(d, p, t);
+      if (esub >= 0.0) return esub;
       Real rho = d*dens_cgs;
       Real tk = tbl.SolveTemperatureFromP(rho, p*pres_cgs, -1.0);
       EOSThermoState s;
@@ -248,6 +353,8 @@ struct EOS_Data {
   void PressureAndGamma1(const Real d, const Real e, const Real t,
                          Real &p, Real &g1) const {
     if (tbl.active) {
+      Real tsub;
+      if (SubFloorState(d, e, tsub, p, g1)) return;
       EOSThermoState s;
       Real rho = d*dens_cgs;
       Real tk = t*temp_cgs;
@@ -275,6 +382,7 @@ struct EOS_Data {
   void TemperaturePressureGamma1(const Real d, const Real e, const Real tguess,
                                  Real &t, Real &p, Real &g1) const {
     if (tbl.active) {
+      if (SubFloorState(d, e, t, p, g1)) return;
       const Real rho = d*dens_cgs;
       const Real lrho = log10(rho);
       const Real zg = (tguess > 0.0) ? log10(tguess*temp_cgs) : -1.0e30;
@@ -385,8 +493,28 @@ struct EOS_Data {
   void ThermoAt(const Real d, const Real t, Real &e, Real &p, Real &chi_rho,
                 Real &chi_t, Real &cv) const {
     if (tbl.active) {
+      const Real rho = d*dens_cgs;
+      const Real tk = t*temp_cgs;
       EOSThermoState s;
-      tbl.EvalNoMu(d*dens_cgs, t*temp_cgs, s);   // mu is not wanted: one surface fewer
+      // The sub-floor branch of <block>/eos_floor_consistent, in the (d,T) form this
+      // entry point uses.  Below the table's lowest row the continuation is e and p
+      // LINEAR in T anchored on e(rho,T_min), p(rho,T_min) -- the exact inverse of
+      // SubFloorState()/EnergyFromTemperature() -- with the logarithmic derivatives and
+      // c_v held at their T_min values, which is what holds Gamma_1 fixed there and makes
+      // the background walk see the same EOS as the evolved state.  Without the switch
+      // the table is extrapolated exactly as before, so the default is bit-identical.
+      if (floor_consistent && tk < EOSTable::Pow10(tbl.ymin)) {
+        const Real tmin = EOSTable::Pow10(tbl.ymin);
+        tbl.EvalTMin(rho, s);
+        const Real f = (tk > 0.0) ? (tk/tmin) : 0.0;
+        e = (s.e*f)/pres_cgs;
+        p = (s.p*f)/pres_cgs;
+        chi_rho = s.chi_rho;
+        chi_t = s.chi_t;
+        cv = s.cv*dens_cgs*temp_cgs/pres_cgs;
+        return;
+      }
+      tbl.EvalNoMu(rho, tk, s);   // mu is not wanted: one surface fewer
       e = s.e/pres_cgs;
       p = s.p/pres_cgs;
       chi_rho = s.chi_rho;
@@ -405,8 +533,16 @@ struct EOS_Data {
   KOKKOS_INLINE_FUNCTION
   Real EnergyFromTemperature(const Real d, const Real t) const {
     if (tbl.active) {
+      const Real rho = d*dens_cgs;
+      const Real tk = t*temp_cgs;
       EOSThermoState s;
-      tbl.Eval(d*dens_cgs, t*temp_cgs, s);
+      // on the sub-floor branch e is linear in T at fixed Gamma_1, so the inverse of
+      // SubFloorState() is the same linear scaling of e(rho,T_min)
+      if (floor_consistent && tk < EOSTable::Pow10(tbl.ymin)) {
+        tbl.EvalTMin(rho, s);
+        return (s.e*(tk/EOSTable::Pow10(tbl.ymin))/pres_cgs);
+      }
+      tbl.Eval(rho, tk, s);
       return (s.e/pres_cgs);
     }
     return (d*t/(gamma-1.0));

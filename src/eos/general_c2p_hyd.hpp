@@ -32,12 +32,39 @@
 //! `tguess` warm starts the temperature solve (the cached T in this cell from the
 //! previous stage); the solved temperature is returned in `temp`.
 
+//! `efloor_de` accumulates the internal energy density this call CREATED at the energy
+//! floor, and `mom_scaled` says whether the momentum was rescaled to pay for it
+//! (<block>/efloor_from_ekin), in which case the caller must write u.mx/my/mz back.
+
 KOKKOS_INLINE_FUNCTION
 void SingleC2P_GeneralHyd(HydCons1D &u, const EOS_Data &eos, HydPrim1D &w,
                           const Real tguess, Real &temp, Real &pgas, Real &g1,
-                          bool &dfloor_used, bool &efloor_used, bool &tfloor_used) {
-  // apply density floor, without changing momentum or energy
+                          bool &dfloor_used, bool &efloor_used, bool &tfloor_used,
+                          Real &efloor_de, bool &mom_scaled, Real &dfloor_fv,
+                          bool &vceil_used) {
+  // THE DENSITY FLOOR.  Default: raise u.d and leave m and E alone -- which changes the
+  // velocity and creates internal energy, because the kinetic share of the fixed total
+  // drops when rho goes up.  <block>/dfloor_keep_velocity instead scales the momentum by
+  // fv = d_old/dfloor so KE -> fv^3 KE, and removes exactly that from the total energy,
+  // leaving the internal energy untouched.  On the cubed sphere (defer_cons_floors) the
+  // e_k below is the ORTHONORMAL kinetic energy and is NOT the real one, so the energy
+  // correction is deferred to GnomonicEquiangleRaiseVel, which has the metric; it is
+  // handed fv through dfloor_fv and applies (1/fv^3 - 1) times the metric KE there.
+  dfloor_fv = 1.0;
   if (u.d < eos.dfloor) {
+    if (eos.dfloor_keep_velocity) {
+      const Real fv = (u.d > 0.0) ? u.d/eos.dfloor : 0.0;
+      if (!eos.defer_cons_floors) {
+        const Real ke_old = (u.d > 0.0)
+            ? 0.5*(SQR(u.mx) + SQR(u.my) + SQR(u.mz))/u.d : 0.0;
+        u.e -= (1.0 - fv*fv*fv)*ke_old;
+      }
+      u.mx *= fv;
+      u.my *= fv;
+      u.mz *= fv;
+      mom_scaled = true;
+      dfloor_fv = fv;
+    }
     u.d = eos.dfloor;
     dfloor_used = true;
   }
@@ -51,6 +78,23 @@ void SingleC2P_GeneralHyd(HydCons1D &u, const EOS_Data &eos, HydPrim1D &w,
 
   // set internal energy, apply floor, correct total energy (if needed)
   Real e_k = 0.5*di*(SQR(u.mx) + SQR(u.my) + SQR(u.mz));
+  // THE VELOCITY CEILING: see the note in eos.hpp.  Scale the momentum by
+  // fs = vceil/|v| and take (1 - fs^2) KE out of the total, which leaves the internal
+  // energy exactly unchanged.  On the cubed sphere (defer_cons_floors) |v| and e_k here
+  // are the ORTHONORMAL ones and are not the real ones, so the ceiling is applied by
+  // GnomonicEquiangleRaiseVel instead, which owns the metric.
+  if (eos.vceil > 0.0 && !eos.defer_cons_floors) {
+    const Real vsq = SQR(w.vx) + SQR(w.vy) + SQR(w.vz);
+    if (vsq > SQR(eos.vceil)) {
+      const Real fs = eos.vceil/sqrt(vsq);
+      u.mx *= fs; u.my *= fs; u.mz *= fs;
+      w.vx *= fs; w.vy *= fs; w.vz *= fs;
+      u.e -= (1.0 - fs*fs)*e_k;
+      e_k *= fs*fs;
+      vceil_used = true;
+      mom_scaled = true;
+    }
+  }
   w.e = (u.e - e_k);
 
   // Solve for the temperature. For a general EOS this is the one expensive EOS call in
@@ -77,7 +121,31 @@ void SingleC2P_GeneralHyd(HydCons1D &u, const EOS_Data &eos, HydPrim1D &w,
   if (!e_positive || pgas < eos.pfloor) {
     // the three-argument form hands back the temperature the inversion solved for,
     // so the floored cell does not pay for a second root find
-    w.e = eos.EnergyFromPressure(w.d, eos.pfloor, temp);
+    const Real efl = eos.EnergyFromPressure(w.d, eos.pfloor, temp);
+    // PAY FROM THE KINETIC ENERGY FIRST.  Rebuilding u.e as efl + e_k with e_k untouched
+    // donates efl - w.e, which is the whole kinetic energy whenever the update left
+    // w.e = u.e - e_k negative.  Holding u.e fixed and rescaling the momentum instead
+    // creates nothing unless the TOTAL energy is itself below the floor.
+    //
+    // NOT under defer_cons_floors (the cubed sphere): there e_k above is the ORTHONORMAL
+    // kinetic energy, which is not the kinetic energy at all on a non-orthogonal tangent
+    // basis, and this floor is provisional -- Coordinates::GnomonicEquiangleRaiseVel
+    // re-applies it to the metric-correct energy and does the payment and the accounting
+    // there.  Touching the conserved momentum here would freeze the wrong KE into it.
+    if (eos.efloor_from_ekin && !eos.defer_cons_floors &&
+        e_k > 0.0 && (u.e - efl) < e_k) {
+      Real ek_new = u.e - efl;
+      if (!(ek_new > 0.0)) ek_new = 0.0;
+      const Real fv = sqrt(ek_new/e_k);
+      u.mx *= fv; u.my *= fv; u.mz *= fv;
+      w.vx *= fv; w.vy *= fv; w.vz *= fv;
+      efloor_de += (efl + ek_new) - u.e;
+      e_k = ek_new;
+      mom_scaled = true;
+    } else if (!eos.defer_cons_floors) {
+      efloor_de += efl - w.e;
+    }
+    w.e = efl;
     if (!eos.defer_cons_floors) u.e = w.e + e_k;
     efloor_used = true;
     stale = true;
@@ -86,7 +154,9 @@ void SingleC2P_GeneralHyd(HydCons1D &u, const EOS_Data &eos, HydPrim1D &w,
   // Apply the temperature floor. Free to test now that T is known, and e(d,tfloor) is a
   // direct evaluation rather than an inversion, so this costs no root find either.
   if (temp < eos.tfloor) {
-    w.e = eos.EnergyFromTemperature(w.d, eos.tfloor);
+    const Real etf = eos.EnergyFromTemperature(w.d, eos.tfloor);
+    if (!eos.defer_cons_floors) efloor_de += etf - w.e;
+    w.e = etf;
     if (!eos.defer_cons_floors) u.e = w.e + e_k;
     temp = eos.tfloor;
     tfloor_used = true;

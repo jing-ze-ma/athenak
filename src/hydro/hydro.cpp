@@ -133,6 +133,14 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
       Kokkos::realloc(wder, nmb, NDERIVED, ncells3, ncells2, ncells1);
       Kokkos::realloc(wtemp, nmb, ncells3, ncells2, ncells1);
     }
+    // <hydro>/dfloor_keep_velocity with deferred conserved floors (the cubed sphere):
+    // the metric-correct kinetic-energy correction is made by GnomonicEquiangleRaiseVel,
+    // which reads fv from here.  Needed for both EOS flavours, so it sits outside the
+    // general-EOS branch above.
+    if (peos->eos_data.dfloor_keep_velocity && peos->eos_data.defer_cons_floors) {
+      Kokkos::realloc(dfl_fv, nmb, ncells3, ncells2, ncells1);
+      Kokkos::deep_copy(dfl_fv, 1.0);
+    }
   }
 
   // allocate memory for conserved variables on coarse mesh

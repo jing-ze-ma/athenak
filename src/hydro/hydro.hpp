@@ -104,6 +104,11 @@ class Hydro {
   // previous step's value reduces the inversion to 1-2 Newton iterations. Only allocated
   // when the EOS is general.
   DvceArray4D<Real> wtemp;
+  // <hydro>/dfloor_keep_velocity on the cubed sphere: fv = d_old/dfloor of the density
+  // floor, per cell, handed from ConsToPrim to GnomonicEquiangleRaiseVel, which owns the
+  // metric and so is the only place the kinetic-energy correction can be made correctly.
+  // Allocated only when that flag AND defer_cons_floors are both set.
+  DvceArray4D<Real> dfl_fv;
 
   // Boundary communication buffers and functions for u
   MeshBoundaryValuesCC *pbval_u;

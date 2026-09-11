@@ -21,15 +21,31 @@
 KOKKOS_INLINE_FUNCTION
 void SingleC2P_IdealHyd(HydCons1D &u, const EOS_Data &eos,
                         HydPrim1D &w,
-                        bool &dfloor_used, bool &efloor_used, bool &tfloor_used) {
+                        bool &dfloor_used, bool &efloor_used, bool &tfloor_used,
+                        Real &dfloor_fv, bool &vceil_used) {
   const Real &dfloor_ = eos.dfloor;
   Real efloor = eos.pfloor/(eos.gamma - 1.0);
   Real tfloor = eos.tfloor;
   Real sfloor = eos.sfloor;
   Real gm1 = eos.gamma - 1.0;
 
-  // apply density floor, without changing momentum or energy
+  // THE DENSITY FLOOR: see the note in general_c2p_hyd.hpp.  <block>/dfloor_keep_velocity
+  // scales the momentum by fv = d_old/dfloor so the kinetic energy falls to fv^3 of its
+  // value and the same amount is taken out of the total, leaving e untouched.
+  dfloor_fv = 1.0;
   if (u.d < dfloor_) {
+    if (eos.dfloor_keep_velocity) {
+      const Real fv = (u.d > 0.0) ? u.d/dfloor_ : 0.0;
+      if (!eos.defer_cons_floors) {
+        const Real ke_old = (u.d > 0.0)
+            ? 0.5*(SQR(u.mx) + SQR(u.my) + SQR(u.mz))/u.d : 0.0;
+        u.e -= (1.0 - fv*fv*fv)*ke_old;
+      }
+      u.mx *= fv;
+      u.my *= fv;
+      u.mz *= fv;
+      dfloor_fv = fv;
+    }
     u.d = dfloor_;
     dfloor_used = true;
   }
@@ -43,6 +59,22 @@ void SingleC2P_IdealHyd(HydCons1D &u, const EOS_Data &eos,
 
   // set internal energy, apply floor, correct total energy (if needed)
   Real e_k = 0.5*di*(SQR(u.mx) + SQR(u.my) + SQR(u.mz));
+  // THE VELOCITY CEILING: see the note in eos.hpp.  Scale the momentum by
+  // fs = vceil/|v| and take (1 - fs^2) KE out of the total, which leaves the internal
+  // energy exactly unchanged.  On the cubed sphere (defer_cons_floors) |v| and e_k here
+  // are the ORTHONORMAL ones and are not the real ones, so the ceiling is applied by
+  // GnomonicEquiangleRaiseVel instead, which owns the metric.
+  if (eos.vceil > 0.0 && !eos.defer_cons_floors) {
+    const Real vsq = SQR(w.vx) + SQR(w.vy) + SQR(w.vz);
+    if (vsq > SQR(eos.vceil)) {
+      const Real fs = eos.vceil/sqrt(vsq);
+      u.mx *= fs; u.my *= fs; u.mz *= fs;
+      w.vx *= fs; w.vy *= fs; w.vz *= fs;
+      u.e -= (1.0 - fs*fs)*e_k;
+      e_k *= fs*fs;
+      vceil_used = true;
+    }
+  }
   w.e = (u.e - e_k);
   if (w.e < efloor) {
     w.e = efloor;
