@@ -35,6 +35,7 @@
 #include <string>
 
 #include "athena.hpp"
+#include "utils/eint_from_cons.hpp"
 #include "globals.hpp"
 #include "mesh/mesh.hpp"
 #include "eos/eos.hpp"
@@ -235,6 +236,7 @@ inline DvceArray5D<Real> *rt_Qb_ptr = nullptr;
 // only part of the radiative source that depends on the cell's OWN temperature.  It is
 // what turns the explicit update into a stable exponential one; see the apply kernel.
 inline DvceArray5D<Real> *rt_Em_ptr = nullptr;
+inline DvceArray5D<Real> *rt_Src_ptr = nullptr;   // per-cell net source, formed DIRECTLY
 
 // --- correlated-k (Lee/Exo-FMS premixed tables, Kataria+2013 11-band grid) --------
 // problem/rt_ck turns it on; problem/ck_table is the path to the premixed table and
@@ -290,10 +292,102 @@ inline Real rt_ck_pcut = 10.0;                    // bar
 // blanketing, which is the reason the band solver exists -- so this is the control, and
 // the diagnosis, not automatically the production choice.
 inline bool rt_grey = false;
+
+// --- read-only access to the band solver's radial face flux, for diagnostics ---------
+// rt_Fb holds the NET longwave flux on the radial faces, (m, block, i, k, j), in code
+// flux units (pressure x velocity), for faces i = is..ie+1.  It is a namespace-scope
+// pointer and lives for the run once the split band path has allocated it, so a problem
+// generator can sum it without re-running the solver.  rt_face_flux_ready() is the guard
+// every caller must use: the monolithic and non-band paths never fill it.
+inline bool rt_face_flux_ready() {
+  return (rt_Fb_ptr != nullptr) && (rt_ck || rt_grey);
+}
+inline int rt_face_nblk() {
+  return (rt_Fb_ptr != nullptr) ? rt_Fb_ptr->extent_int(1) : 0;
+}
+inline DvceArray5D<Real> rt_face_flux() { return *rt_Fb_ptr; }
+// (m,k,j) deepest cell the band solver integrates; the face below it is where the
+// interior flux is handed in from the diffusion operator.
+inline DvceArray3D<int> rt_cut_index() { return *rt_icut_ptr; }
 // problem/rt_de_max: the cap in LimitRTSource, as a fraction of the cell's internal
 // energy per RT application. Applies to every EXPLICIT radiative update -- grey and
 // correlated-k, split and monolithic. Set <= 0 to disable the limiter entirely.
 inline Real rt_de_max = 0.5;
+// problem/rt_semi_lin: recover the OLD semi-implicit step, which linearized the emission
+// about the current state and relaxed at lambda = 4E/e.  See the long note in rt_apply:
+// that form bounds cooling but leaves heating explicit and unbounded, so a cold optically
+// thin cell overshoots its equilibrium badly.  Kept only to reproduce runs made before
+// the fix.  DEFAULT TRUE, i.e. the old linearization, so that every problem generator
+// sharing this header reproduces its pre-fix runs bit for bit; the red-giant inputs set
+// it false to select the new equilibrium-relaxation step.
+inline bool rt_semi_lin = true;
+// problem/rt_use_cons: take the cell's internal energy and density from the CONSERVED
+// state u0 instead of from w0.  w0 is the previous stage's ConToPrim output, and by the
+// time the user source function runs RKUpdate, the explicit source terms and the
+// implicit radial conduction have all moved u0.  In a smooth cell the two agree to
+// O(dt); in a runaway cell the hydro step changes e by ~100 % per stage, so the
+// equilibrium, the Newton iterate, the positivity guard and LimitRTSource are all
+// evaluated on a number that no longer exists while the step is applied to u0 anyway --
+// which is how a cell is driven to a negative internal energy, repaired by the floor,
+// and handed to the next Riemann solve as a 0.1 K cell beside a 1e4 K one.  Default
+// FALSE so every existing input reproduces bit-for-bit; the red-giant runs set it true.
+inline bool rt_use_cons = false;
+// problem/rt_bface: the emissivity-weighted far-endpoint Planck source (see BFace).
+// It is a red-giant fix -- it exists because the corona/star join put a cell's emission
+// on a neighbour's Planck function 1e9 times its own -- and this header is shared with
+// solar_convection and the hot-Jupiter problems, which have no such join.  DEFAULT FALSE
+// therefore returns the old endpoint b_far bit for bit at every one of the seven call
+// sites; the red-giant inputs set it true.
+inline bool rt_bface = false;
+// problem/rt_explicit: take the source EXPLICITLY, de = src*bdt, and skip the whole
+// equilibrium block -- no closed form, no linearization, no Newton.  With the direct
+// (cancellation-free) source the explicit step's stability limit is the local radiative
+// time e/|src|, which is ~1e3 s at tau 1-10 against a 30 s timestep, so this is a usable
+// control and not just a diagnostic: it removes the semi-implicit update from the picture
+// entirely for the R9 death bisection.  rt_de_max still applies if it is set (> 0).
+inline bool rt_explicit = false;
+// how many cells the Newton loop had to be rescued from a non-positive internal energy
+// (see rt_apply).  A device counter, read back where the clip count is reported.
+inline DvceArray1D<int> *rt_efix_ptr = nullptr;
+// problem/rt_newton: refine the semi-implicit step with a Newton solve of the exact
+// backward-Euler balance, seeded by the closed form.  The closed form already lands on
+// the right equilibrium under e ~ T; this drops that assumption and uses the EOS's own
+// T(e) and c_v(e), which matters wherever H2 or H is partly dissociated.  Costs one
+// Temperature() and one SpecificHeatCv() per iteration, and from that seed it is
+// normally one or two.  General EOS only; with an ideal gas e ~ T is exact and the
+// closed form is already the answer.  DEFAULT FALSE so shared pgens are unchanged; the
+// red-giant inputs set it true.
+inline bool rt_newton = false;
+// problem/rt_rescue_eq: when the Newton step would leave e <= 0, land the cell on the
+// radiative equilibrium it actually sees -- deq = ei((A/Em)^(1/4) - 1), i.e. Em(T_eq) = A
+// with A = src + Em the absorption, which in the thin limit is (pi/mu) kappa rho
+// (I_up + I_dn) so that sigma T_eq^4 = pi (I_up + I_dn)/2 up to the diffusivity factor --
+// instead of the unconditional 99.9 % drop.  Floored at that same 99.9 %, so it can only
+// make the rescue less violent.  DEFAULT FALSE = the old 99.9 % policy, so shared pgens
+// are unchanged; the red-giant inputs set it true.
+inline bool rt_rescue_eq = false;
+// problem/rt_src_direct: form the per-cell radiative source DIRECTLY as absorption minus
+// emission during the sweeps, instead of as the difference of the two face fluxes.  The
+// two are the same number algebraically -- the stream update across a layer is
+//     I_out = (1 - e0) I_in + (alp B_far + bet B_near),   alp + bet = e0,
+// so the flux change over the layer is e0 (I_in - B) exactly, and summing those over a
+// column telescopes to F_top - F_bot -- but not numerically.  In a transparent cell the
+// two face fluxes agree to every digit and their difference is round-off: measured
+// 1.7e-11 relative on 5.67e9, i.e. 5.8e-12 erg/cm^3/s against a cell whose whole
+// internal energy is 6.3e-12.  That noise, of either sign, is what heated the ambient
+// medium to 3000 K in two steps and then drove it to zero; no limiter or opacity floor
+// touches it, because it is not a physical term at all.  Formed directly the source is
+// O(dtau) with no large numbers cancelling, and it vanishes as the cell goes transparent
+// the way the physics says it must.  Off reproduces the flux-difference form bit for bit,
+// and is the DEFAULT for that reason; the red-giant inputs set it true.
+inline bool rt_src_direct = false;
+// problem/rt_top_clamp: the band solver's top slot i = ie+1 takes its fluid state from
+// the top ACTIVE cell ie instead of from the hydro ghost (see rt_pre_tp).  It decouples
+// the whole column from whatever the outer boundary condition put in the ghost, which is
+// what a poisoned ghost needs, but it changes numbers in any run whose top ghost is a
+// legitimate state.  DEFAULT FALSE = read the ghost exactly as before; the red-giant
+// inputs set it true.
+inline bool rt_top_clamp = false;
 // problem/ck_int_at_cut: deliver the planet's internal flux sigma T_int^4 as an extra
 // upward source at the correlated-k cut (the historical behaviour, true). Set false when
 // the layers below the cut carry it themselves -- <mhd|hydro>/isotropic_conduction =
@@ -310,6 +404,12 @@ inline bool rt_int_at_cut = true;
 // RADIATIVE EQUILIBRIUM instead: it absorbs (1-e^-dtau) I_up from below and re-emits half
 // up to space and half back down, so its source is I_up/2 whatever its optical depth and
 // the face always keeps at least half of its outgoing flux. Grey path only so far.
+// NOTE, and the reason for the startup warning below: the back-radiation is delivered
+// as (1 - exp(-dtau/mu)) bsrc with dtau = kappa(ghost) p/g.  Above rad_kappa_rmax the
+// ghost's opacity is rad_kappa_above, so with rad_kappa_above = 0 -- the exact setting
+// every corona run uses -- dtau is 0 and this boundary hands back EXACTLY ZERO however
+// carefully bsrc was probed.  Measured in V8_corona: I_dn at the top face of the active
+// column is 0.000000e+00 at every cycle.  Behaviour unchanged; it is only documented.
 inline bool rt_top_re = false;
 // SELF-LUMINOUS objects: > 0 uses this internal temperature directly instead of the
 // Thorngren+2019 T_int(T_eq) relation, which is a fit for IRRADIATED giant planets and
@@ -333,7 +433,39 @@ inline std::string ad_dump_file = "";
 // temperature has to be caught.
 inline int rt_apply_debug = 0;
 inline int rt_apply_debug_n = 8;
+// problem/rt_cell_report: the radiative-balance report for the cells that decide the
+// top of the active column.  Prints, once per RT call, the FIRST cell that trips the
+// Newton positivity rescue -- its location, state, opacity, tau to the top, the up and
+// down streams at its two faces, the absorption and emission terms, e_eq, dt and every
+// Newton iterate -- and, every rt_report_every cycles, the same for the fixed cell that
+// contains rt_report_r on the (ks, js) column.  Off by default: a default run neither
+// allocates the two stream arrays nor prints.
+inline bool rt_cell_report = false;
+inline Real rt_report_r = 3.887e12;               // problem/rt_report_r [cm]
+inline int rt_report_every = 100;                 // problem/rt_report_every [cycles]
+inline DvceArray4D<Real> *rt_idn_ptr = nullptr;   // downward stream at face i
+inline DvceArray4D<Real> *rt_iup_ptr = nullptr;   // upward stream at face i
 inline bool rt_srclim_warned = false;             // the one-time warning has been issued
+// problem/nan_report: catch the cell whose conserved energy the GREY apply makes
+// non-finite or non-positive, IN the kernel, with the inputs that produced it.  Off by
+// default, so a default run is bit-identical.  Pointers, not Views, for the same reason
+// the pgen's guards use pointers: a file-scope View outlives Kokkos::finalize.
+inline bool rt_nan_report = false;
+inline DvceArray1D<int> *rt_nanrep_cnt = nullptr;
+inline DvceArray1D<Real> *rt_nanrep_rec = nullptr;
+inline int rt_nanrep_lines = 0;                   // printed so far on this rank
+inline int rt_nanrep_maxlines = 400;              // then stay quiet (the run continues)
+
+// problem/rt_use_cons NaN GUARD.  EintFromCons returns whatever E - KE gives, INCLUDING
+// a negative number: in a runaway cell the total energy is kinetic dominated by many
+// orders of magnitude and the difference is catastrophic cancellation.  A non-positive
+// e makes TempKelvin/PresTempFromEint return NaN, and one NaN Planck function poisons
+// the whole column (measured: T(i-1) = nan, B(i-1) = nan, I_dn = nan ahead of the
+// red-giant dt collapse).  eiN clamps such a cell to e(rho, tfloor) -- the same floor
+// ConsToPrim would apply -- so the sweep never sees a NaN, and counts the clamps here.
+// Active only under rt_use_cons; with it off eiN returns w0 and nothing changes.
+inline DvceArray1D<int> *rt_eiclamp_cnt = nullptr;
+inline bool rt_eiclamp_warned = false;
 
 //----------------------------------------------------------------------------------------
 //! \fn void RTSourceLimiterWarn
@@ -382,6 +514,50 @@ inline void RTSourceLimiterWarn(const int nclip) {
 //! This bounds the damage; it does not make the step accurate. A run that trips it is
 //! reporting that its floors, or its timestep, put the radiation outside the regime the
 //! scheme is valid in -- which is why tripping it is warned about exactly once.
+// The emissivity ratio below which BFace stops trusting the neighbour's Planck function
+// as this layer's far source endpoint.  1/10: at V8_corona's join the ratio is exactly 0
+// (rad_kappa_above = 0) and in a smooth stellar column it never falls below ~0.5, so this
+// separates the two by 5x on the smooth side and infinitely on the pathological one.
+#define RT_BFACE_R 0.1
+
+//----------------------------------------------------------------------------------------
+//! \fn Real BFace
+//! \brief the Planck source at a layer's FAR endpoint, weighted by emitting matter.
+//!
+//! WHY THIS EXISTS.  Both sweeps take the source function of a layer as B interpolated
+//! linearly between the two cell CENTRES -- alp*B_far + bet*B_near -- and Em averages the
+//! same two.  Nothing in that asks whether the far cell radiates at all.  Across the join
+//! at rad_kappa_rmax it does not: measured in V8_corona at t = 0, the last active cell
+//! (i = 439, T = 3363.6 K, B = 2.310e9) sits directly under the first corona cell
+//! (T = 6.0e5 K, kappa = 0, B = 2.339e18), so its emission was formed with a Planck
+//! function 1.01e9 times its own: 3.60e-8 erg/cm^3/s of emission against an absorption of
+//! 5.50e-17 and an internal energy of 7.46e-10, i.e. 1480 times its own energy removed in
+//! one 30.6 s step.  All 192 cells of that shell hit the temperature floor on the FIRST
+//! RT call and the corona then accreted onto the cold sink.
+//!
+//! WHAT IT DOES.  It is SURGICAL: while the far cell's emissivity kappa*rho is within a
+//! factor RT_BFACE_R of this layer's, the old endpoint B_far is returned unchanged, so
+//! every column whose opacity varies smoothly is BIT-IDENTICAL to the pre-fix code
+//! (measured on the V7 grey column: all 39 active faces identical).  Below that ratio the
+//! endpoint is blended into the emissivity-weighted face source
+//!     S = (j_own B_own + j_far B_far)/(j_own + j_far),   j = kappa rho,
+//! with a weight that reaches S exactly as the far cell stops radiating -- so an inert
+//! neighbour contributes B_own, i.e. the layer emits with its OWN Planck function.  The
+//! blend is continuous at the threshold (S is entered with weight 0 there), so a cell
+//! cannot jump between the two forms.
+KOKKOS_INLINE_FUNCTION
+Real BFace(const Real k_own, const Real k_far, const Real b_own, const Real b_far,
+           const bool on) {
+  if (!on) return b_far;                  // problem/rt_bface off: the pre-fix endpoint
+  const Real kt = RT_BFACE_R*k_own;
+  if (k_far >= kt) return b_far;          // the old expression, bit for bit
+  if (!(k_own > 0.0)) return b_far;       // this layer does not emit at all
+  if (!(k_far > 0.0)) return b_own;       // the far cell is radiatively inert
+  const Real w = k_far/kt;                // 1 at the threshold, 0 at k_far = 0
+  const Real sem = (k_own*b_own + k_far*b_far)/(k_own + k_far);
+  return w*b_far + (1.0 - w)*sem;
+}
+
 KOKKOS_INLINE_FUNCTION
 Real LimitRTSource(const Real de, const Real eint, const Real de_max) {
   const Real cap = de_max*eint;
@@ -582,6 +758,71 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
       gamma = pmbp->pmhd->peos->eos_data.gamma;
       eos = pmbp->pmhd->peos->eos_data;
     }
+    // problem/rt_use_cons: where the solver reads the cell's thermodynamic state from.
+    // eiN/rhoN are the ONLY way this routine touches e and rho below, so the switch
+    // reaches the precompute, the sweeps, the equilibrium, the Newton, the positivity
+    // guard, the rescue floor and LimitRTSource together -- there is no half-converted
+    // path.  With the switch off they return exactly w0(...), so the default is
+    // bit-identical by construction.
+    const bool usecons_ = rt_use_cons;
+    const bool bface_on = rt_bface;
+    const bool cs_uc_ = pm->use_cubed_sphere;
+    auto cosc_uc_ = pmbp->pcoord->cos_cell;
+    const bool etg_uc_ = (pmbp->phydro != nullptr) ? pmbp->phydro->use_etotgrav
+                       : ((pmbp->pmhd != nullptr) ? pmbp->pmhd->use_etotgrav : false);
+    DvceArray4D<Real> phicc_uc_("rt_phi_dummy", 1, 1, 1, 1);
+    if (pmbp->phydro != nullptr) {
+      phicc_uc_ = pmbp->phydro->phicc0;
+    } else if (pmbp->pmhd != nullptr) {
+      phicc_uc_ = pmbp->pmhd->phicc0;
+    }
+    auto u0_uc_ = u0;
+    auto w0_uc_ = w0;
+    // see the note on rt_eiclamp_cnt: e <= 0 (or NaN) out of the conserved state is
+    // clamped to e(rho, tfloor) before any temperature or Planck function is formed
+    if (rt_eiclamp_cnt == nullptr) {
+      rt_eiclamp_cnt = new DvceArray1D<int>("rt_eiclamp", 1);
+      Kokkos::deep_copy(*rt_eiclamp_cnt, 0);
+    }
+    auto eicl_g = *rt_eiclamp_cnt;
+    auto eos_uc_ = eos;
+    auto eiN = [=] (const int m, const int k, const int j, const int i) {
+      if (!usecons_) return w0_uc_(m,IEN,k,j,i);
+      const Real ei_uc = EintFromCons(u0_uc_, m, k, j, i,
+                                      cs_uc_ ? cosc_uc_(m,k,j) : 0.0, cs_uc_,
+                                      etg_uc_, etg_uc_ ? phicc_uc_(m,k,j,i) : 0.0);
+      if (ei_uc > 0.0) return ei_uc;           // false for NaN too, which is the point
+      Kokkos::atomic_fetch_add(&eicl_g(0), 1);
+      Real ei_fl = eos_uc_.EnergyFromTemperature(u0_uc_(m,IDN,k,j,i), eos_uc_.tfloor);
+      if (!(ei_fl > 0.0)) ei_fl = 1.0e-300;
+      return ei_fl;
+    };
+    if (usecons_ && !rt_eiclamp_warned) {
+      auto eicl_h = Kokkos::create_mirror_view(eicl_g);
+      Kokkos::deep_copy(eicl_h, eicl_g);
+      if (eicl_h(0) > 0) {
+        rt_eiclamp_warned = true;
+        if (global_variable::my_rank == 0) {
+          std::cout << "### WARNING in two_stream_rt: rt_use_cons gave a non-positive "
+                    << "internal energy in " << eicl_h(0) << " cell read(s); clamped to "
+                    << "e(rho,tfloor) before the temperature/Planck evaluation. "
+                    << "Reported once." << std::endl;
+        }
+      }
+    }
+    auto rhoN = [=] (const int m, const int k, const int j, const int i) {
+      return usecons_ ? u0_uc_(m,IDN,k,j,i) : w0_uc_(m,IDN,k,j,i);
+    };
+    {
+      static bool uc_announced = false;
+      if (!uc_announced && global_variable::my_rank == 0) {
+        uc_announced = true;
+        std::cout << "### two_stream_rt: thermodynamic state read from "
+                  << (usecons_ ? "u0 (CONSERVED, problem/rt_use_cons = true)"
+                               : "w0 (previous ConToPrim; rt_use_cons = false)")
+                  << std::endl;
+      }
+    }
 
     Real r0, r1;
     r0 = pm->mesh_size.x1min;
@@ -681,6 +922,7 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
         // its own cache line: 8 useful bytes out of every 64 fetched.
         rt_Fb_ptr  = new DvceArray5D<Real>("rt_Fb",  nmb, nblk, n1, n3, n2);
         rt_Em_ptr  = new DvceArray5D<Real>("rt_Em",  nmb, nblk, n1, n3, n2);
+        rt_Src_ptr = new DvceArray5D<Real>("rt_Src", nmb, nblk, n1, n3, n2);
         if (rt_ck || rt_grey) {
           const int nb_a = rt_ck ? CK_NB : 1;
           rt_kc_ptr = new DvceArray5D<Real>("rt_kc", nmb, nb_a, n1, n3, n2);
@@ -705,12 +947,15 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
       auto cf_g  = *rt_cf_ptr;
       auto Fb_g  = *rt_Fb_ptr;
       auto Em_g  = *rt_Em_ptr;
+      auto Src_g = *rt_Src_ptr;
       const bool ck_on = rt_ck;
       // the grey path shares the correlated-k scaffolding: the per-cell (T, p) and
       // opacity precompute, the cut, the tau blend and the semi-implicit application.
       // band_on says "one of the two band solvers is running", ck_on says which.
       const bool grey_on = rt_grey;
       const bool band_on = ck_on || grey_on;
+      // problem/rt_top_clamp: top slot reads cell ie instead of the hydro ghost
+      const bool topclamp = rt_top_clamp;
       // the optical-depth blend with the conduction module's radiative diffusion: its
       // x1-face weight w (rad_w) says how much of each face's longwave flux the
       // two-stream still owns (1 - w); the column's RT bottom is the first face with
@@ -723,6 +968,24 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
       auto tauf_g = taublend ? pcond_rt->rad_tauf
                              : DvceArray4D<Real>("rt_tau_dummy",1,1,1,1);
       if (taublend) int_at_cut = false;
+      // rt_top_re is silently a no-op when the ghost is radiatively inert: see the note
+      // on rt_top_re.  Say so once, from rank 0; the behaviour is unchanged.
+      {
+        static bool topre_warned = false;
+        // NOTE the DENSITY gate is deliberately not part of this test: with
+        // rad_gate_rho the top ghost's opacity is G(rho_top)*kappa, which is zero only
+        // where the gate is actually closed, so rt_top_re is a no-op there and live
+        // everywhere else.  Warning on it would be wrong more often than right.
+        if (top_re && !topre_warned && pcond_rt != nullptr &&
+            pcond_rt->rad_kappa_rmax > 0.0 && pcond_rt->rad_kappa_above == 0.0 &&
+            global_variable::my_rank == 0) {
+          topre_warned = true;
+          std::cout << "### WARNING in two_stream_rt: problem/rt_top_re is ON but "
+                    << "rad_kappa_above = 0, so the top ghost has zero optical depth and "
+                    << "the back-radiation it hands down is exactly zero. The switch has "
+                    << "no effect in this configuration." << std::endl;
+        }
+      }
       auto kc_g   = (band_on) ? *rt_kc_ptr : Fb_g;
       auto Bb_g   = (band_on) ? *rt_Bb_ptr : Fb_g;
       auto T_g    = (band_on) ? *rt_T_ptr  : tau_g;
@@ -731,6 +994,15 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
       auto xP_g   = (band_on) ? *rt_xP_ptr : tau_g;
       auto icut_g = (band_on) ? *rt_icut_ptr : DvceArray3D<int>("dummy",1,1,1);
       auto Qb_g   = (band_on) ? *rt_Qb_ptr : Fb_g;
+      // see rt_cell_report: the per-face streams the report needs, q = 0 only
+      const bool report_on = rt_cell_report && band_on;
+      if (report_on && rt_idn_ptr == nullptr) {
+        const int nmb_r = pmbp->nmb_thispack;
+        rt_idn_ptr = new DvceArray4D<Real>("rt_idn", nmb_r, n3, n2, n1);
+        rt_iup_ptr = new DvceArray4D<Real>("rt_iup", nmb_r, n3, n2, n1);
+      }
+      auto idn_g = report_on ? *rt_idn_ptr : DvceArray4D<Real>("rt_idn_d", 1, 1, 1, 1);
+      auto iup_g = report_on ? *rt_iup_ptr : DvceArray4D<Real>("rt_iup_d", 1, 1, 1, 1);
       // the grey opacity: the conduction module's own table if it has one, else the
       // Freedman fit, which is what the old grey path used unconditionally
       const bool grey_ktab = grey_on && pcond_rt != nullptr &&
@@ -742,6 +1014,22 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
       const int grey_nT = grey_ktab ? pcond_rt->rad_kr_nT : 0;
       const int grey_nP = grey_ktab ? pcond_rt->rad_kr_nP : 0;
       const Real grey_kfac = (pcond_rt != nullptr) ? pcond_rt->rad_kappa_fac : 1.0;
+      // the radiatively inert region the conduction module defines (rad_kappa_rmax): the
+      // two-stream has to go quiet over exactly the same cells, or the corona the
+      // diffusion refuses to touch would still be cooled by the band solver.  Zero
+      // opacity is exact here, not a limit: dtau = 0 gives e0 = -expm1(0) = 0, so alp,
+      // bet and gm all vanish, Src and Em pick up nothing, and rt_apply's Newton branch
+      // is skipped because Em <= 0.  With tau flat through the corona the blend weight w
+      // is 0 there too, so the w*F handover term adds nothing either.
+      const Real grey_krmax = (pcond_rt != nullptr) ? pcond_rt->rad_kappa_rmax : 0.0;
+      const Real grey_kabove = (pcond_rt != nullptr) ? pcond_rt->rad_kappa_above : 0.0;
+      // ...and its DENSITY form (rad_gate_rho), which is the one to use when the
+      // artificial medium and the star exchange gas: kappa_eff = G kappa + (1-G) kabove
+      // with G = RadGate(rho).  Applied to kc_g, which is the ONE array every sweep
+      // below reads -- the top-ghost dtau, the BFace emissivity weighting and the
+      // up/down sweeps all go through it, so gating it here gates the whole solver.
+      const Real gate_rho = (pcond_rt != nullptr) ? pcond_rt->rad_gate_rho : 0.0;
+      const Real gate_dex = (pcond_rt != nullptr) ? pcond_rt->rad_gate_dex : 0.5;
       auto ckswf  = (ck_on) ? *ck_swf_ptr : DvceArray1D<Real>("d",1);
       auto cklk = (ck_on) ? *ck_lk_ptr : DvceArray4D<Real>("d",1,1,1,1);
       auto cklT = (ck_on) ? *ck_lT_ptr : DvceArray1D<Real>("d",1);
@@ -805,9 +1093,17 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
         });
         par_for("rt_pre_tp", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
         KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+          // THE TOP SLOT READS THE TOP ACTIVE CELL, NOT THE HYDRO GHOST.  i = ie+1 is the
+          // unresolved column above the domain, and physically it IS the continuation of
+          // cell ie -- taking its state from ie rather than from w0's ghost decouples the
+          // whole band solver from whatever the boundary condition put there.  R9's death
+          // (t = 1.99e5, hydro dt 37 s -> 7e-15 in one step, 1.64e6 non-finite cells over
+          // i ~ 200..323 on every rank in 26 cycles) is what a single poisoned ghost does
+          // once the down-sweep starts from it; nothing else spreads that fast.
+          const int ii = (topclamp && i > ie) ? ie : i;
           Real pp, TT;
-          PresTempFromEint(eos,gm1,Rgas,w0(m,IDN,k,j,i),w0(m,IEN,k,j,i),
-                           TGuess(wtemp_, m, k, j, i),pp,TT);
+          PresTempFromEint(eos,gm1,Rgas,rhoN(m,k,j,ii),eiN(m,k,j,ii),
+                           TGuess(wtemp_, m, k, j, ii),pp,TT);
           T_g(m,k,j,i) = TT;
           pb_g(m,k,j,i) = pp*1.0e-6;
         });
@@ -832,13 +1128,20 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
           par_for("rt_pre_opac_grey", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
           KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
             if (i < icut_g(m,k,j)) return;        // deeper than the cut: never read
+            const int ii = (topclamp && i > ie) ? ie : i;  // top slot: see rt_pre_tp
             const Real TT = T_g(m,k,j,i);
             const Real pcgs = pb_g(m,k,j,i)*1.0e6;
-            const Real rho = w0(m,IDN,k,j,i);
-            const Real kr = grey_ktab
-                ? RosselandTable(grey_kt, grey_klT, grey_klP, grey_nT, grey_nP, TT,
-                                 grey_krho ? rho : pcgs)
-                : RosselandFreedman2014(TT, pcgs, met);
+            const Real rho = rhoN(m,k,j,ii);
+            Real kr = (grey_krmax > 0.0 && x1v_(m,i) > grey_krmax)
+                ? grey_kabove
+                : (grey_ktab
+                   ? RosselandTable(grey_kt, grey_klT, grey_klP, grey_nT, grey_nP, TT,
+                                    grey_krho ? rho : pcgs)
+                   : RosselandFreedman2014(TT, pcgs, met));
+            if (gate_rho > 0.0) {
+              const Real g = RadGate(rho, gate_rho, gate_dex);
+              kr = g*kr + (1.0 - g)*grey_kabove;
+            }
             kc_g(m,0,i,k,j) = grey_kfac*kr;
             Bb_g(m,0,i,k,j) = boltz_sigma/M_PI*SQR(SQR(TT));
           });
@@ -846,6 +1149,7 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
         par_for("rt_pre_opac", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
         KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
           if (i < icut_g(m,k,j)) return;          // deeper than the cut: never read
+          const int ii = (topclamp && i > ie) ? ie : i;  // top slot: see rt_pre_tp
           const Real TT = T_g(m,k,j,i);
           const Real pbar = pb_g(m,k,j,i);
           int iT, iP;
@@ -856,10 +1160,17 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
           xP_g(m,k,j,i) = static_cast<Real>(iP) + fP;
           Real kcb[CK_NB];
           ck_continuum(cece, celT, celP, ceNT, ceNP, cian, ciaT, ciak, rayx, ckwl,
-                       TT, pbar, w0(m,IDN,k,j,i), kcb);
+                       TT, pbar, rhoN(m,k,j,ii), kcb);
+          // the density gate.  The correlated-k path never carried the rad_kappa_rmax
+          // radius test -- the inert corona is a grey-path feature -- but the gate is a
+          // property of the GAS, so it must reach every band here as well or a ck run
+          // would keep heating the medium the grey run refuses to touch.
+          const Real gk = (gate_rho > 0.0)
+              ? RadGate(rhoN(m,k,j,ii), gate_rho, gate_dex) : 1.0;
           const Real sigT4_pi = boltz_sigma/M_PI*SQR(SQR(TT));
           for (int b=0; b<CK_NB; ++b) {
-            kc_g(m,b,i,k,j) = kcb[b];
+            kc_g(m,b,i,k,j) = (gate_rho > 0.0)
+                ? (gk*kcb[b] + (1.0 - gk)*grey_kabove) : kcb[b];
             Bb_g(m,b,i,k,j) = sigT4_pi*ck_planck_frac(ckpf, pfl0, pfid, TT, b);
           }
         });
@@ -903,9 +1214,12 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
 
         // 3 V Bands
         // top
-        Real p = PresFromEint(eos,gm1,w0(m,IDN,k,j,ie+1),w0(m,IEN,k,j,ie+1));
-        Real rho = w0(m,IDN,k,j,ie+1);
-        Real T = TempKelvin(eos,Rgas,rho,w0(m,IEN,k,j,ie+1),p);
+        // the top slot is the continuation of the top ACTIVE cell, not the hydro ghost
+        // (see rt_pre_tp): the band solver must not be able to read a poisoned ghost
+        const int itop = topclamp ? ie : (ie+1);
+        Real p = PresFromEint(eos,gm1,rhoN(m,k,j,itop),eiN(m,k,j,itop));
+        Real rho = rhoN(m,k,j,itop);
+        Real T = TempKelvin(eos,Rgas,rho,eiN(m,k,j,itop),p);
         B[ie+1] = boltz_sigma/M_PI*SQR(SQR(T));
         Real kapr;
         get_kapr(T, p, met, kapr);
@@ -932,9 +1246,9 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
 //        F_v_down_f(ie+1) = (mu0 > 0.0)? F_v_down_f(ie+1) : 0.0;
         // down-sweep
         for (int i=ie; i>is-1; --i) {
-          Real rho = w0(m,IDN,k,j,i);
+          Real rho = rhoN(m,k,j,i);
           Real p, T;
-          PresTempFromEint(eos,gm1,Rgas,rho,w0(m,IEN,k,j,i),
+          PresTempFromEint(eos,gm1,Rgas,rho,eiN(m,k,j,i),
                            TGuess(wtemp_, m, k, j, i),p,T);
           B[i] = boltz_sigma/M_PI*SQR(SQR(T));
           Real kapr;
@@ -1011,6 +1325,7 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
               Fb_g(m,0,i,k,j) = 0.0;
               Qb_g(m,0,i,k,j) = 0.0;
               Em_g(m,0,i,k,j) = 0.0;
+              Src_g(m,0,i,k,j) = 0.0;
             }
             const int icut = icut_g(m,k,j);
             if (icut > ie) return;                  // whole column deeper than the cut
@@ -1053,13 +1368,17 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
                 for (int q=0; q<nq; ++q) {
                   Real ip = Bb_g(m,0,icut,k,j) + (int_at_cut ? Iint : 0.0);
                   for (int i=icut+1; i<ie+2; ++i) {
-                    const Real x = kc_g(m,0,i-1,k,j)*w0(m,IDN,k,j,i-1)*dx1(m,k,j,i-1)
-                                 / muq[q];
+                    const Real krb = kc_g(m,0,i-1,k,j)*rhoN(m,k,j,i-1);
+                    const Real x = krb*dx1(m,k,j,i-1)/muq[q];
                     const Real e0 = -expm1(-x);
                     const Real bet = (x > 1.0e-3) ? (1.0 - e0/x) : (x/2.0 - SQR(x)/6.0);
                     const Real gm  = (x > 1.0e-3) ? (e0 - 1.0 + e0/x)
                                                   : (x/2.0 - SQR(x)/3.0);
-                    ip = (1.0-e0)*ip + bet*Bb_g(m,0,i,k,j) + gm*Bb_g(m,0,i-1,k,j);
+                    // emissivity-weighted far endpoint: see BFace
+                    const int iir = (i > ie) ? ie : i;
+                    const Real bfar = BFace(krb, kc_g(m,0,i,k,j)*rhoN(m,k,j,iir),
+                                            Bb_g(m,0,i-1,k,j), Bb_g(m,0,i,k,j), bface_on);
+                    ip = (1.0-e0)*ip + bet*bfar + gm*Bb_g(m,0,i-1,k,j);
                   }
                   bsrc[q] = 0.5*ip;
                 }
@@ -1067,18 +1386,33 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
               for (int q=0; q<nq; ++q) {
                 I_down[q][ie+1] = (1.0 - exp(-dtau/muq[q]))*bsrc[q];
               }
+              if (report_on) idn_g(m,k,j,ie+1) = I_down[0][ie+1];
             }
             // down-sweep
             for (int i=ie; i>icut-1; --i) {
-              const Real dtau_i = kc_g(m,0,i,k,j)*w0(m,IDN,k,j,i)*dx1(m,k,j,i);
+              const Real krb_d = kc_g(m,0,i,k,j)*rhoN(m,k,j,i);
+              const Real dtau_i = krb_d*dx1(m,k,j,i);
+              // the far endpoint of the layer's source function, weighted by emitting
+              // matter: above rad_kappa_rmax the neighbour has kappa = 0 and a Planck
+              // function 1e9x this cell's, which used to drain it to the floor in one
+              // step (see BFace).  Identical to Bb_g(i+1) at equal opacity.
+              const int iip = (i+1 > ie) ? ie : i+1;
+              const Real bfar_d = BFace(krb_d, kc_g(m,0,i+1,k,j)*rhoN(m,k,j,iip),
+                                        Bb_g(m,0,i,k,j), Bb_g(m,0,i+1,k,j), bface_on);
               for (int q=0; q<nq; ++q) {
                 const Real x = dtau_i/muq[q];
                 const Real e0 = -expm1(-x);
                 const Real alp = (x > 1.0e-3) ? (e0 - 1.0 + e0/x) : (x/2.0 - SQR(x)/3.0);
                 const Real bet = (x > 1.0e-3) ? (1.0 - e0/x) : (x/2.0 - SQR(x)/6.0);
+                // direct source: what this stream leaves in cell i, absorbed minus
+                // emitted
+                Src_g(m,0,i,k,j) += wfq[q]/dx1(m,k,j,i)
+                                  *(e0*I_down[q][i+1]
+                                    - (alp*bfar_d + bet*Bb_g(m,0,i,k,j)));
                 I_down[q][i] = (1.0-e0)*I_down[q][i+1]
-                             + alp*Bb_g(m,0,i+1,k,j) + bet*Bb_g(m,0,i,k,j);
+                             + alp*bfar_d + bet*Bb_g(m,0,i,k,j);
               }
+              if (report_on) idn_g(m,k,j,i) = I_down[0][i];
             }
             // Bottom of the RT domain: thermalised, plus the internal flux if the layers
             // below are not carrying it themselves (see rt_int_at_cut).
@@ -1087,22 +1421,34 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
               I_up[q] = Bb_g(m,0,icut,k,j) + (int_at_cut ? Iint : 0.0);
               Fb_g(m,0,icut,k,j) += wfq[q]*(I_up[q] - I_down[q][icut]);
             }
+            if (report_on) iup_g(m,k,j,icut) = I_up[0];
             // up-sweep
             for (int i=icut+1; i<ie+2; ++i) {
               const Real kap = kc_g(m,0,i-1,k,j);
-              const Real rho = w0(m,IDN,k,j,i-1);
+              const Real rho = rhoN(m,k,j,i-1);
               const Real dtau_i = kap*rho*dx1(m,k,j,i-1);
+              // same emissivity weighting for the upward stream and for Em: see BFace
+              const int iiu = (i > ie) ? ie : i;
+              const Real bfar_u = BFace(kap*rho, kc_g(m,0,i,k,j)*rhoN(m,k,j,iiu),
+                                        Bb_g(m,0,i-1,k,j), Bb_g(m,0,i,k,j), bface_on);
               for (int q=0; q<nq; ++q) {
                 const Real x = dtau_i/muq[q];
                 const Real e0 = -expm1(-x);
                 const Real bet = (x > 1.0e-3) ? (1.0 - e0/x) : (x/2.0 - SQR(x)/6.0);
                 const Real gm  = (x > 1.0e-3) ? (e0 - 1.0 + e0/x) : (x/2.0 - SQR(x)/3.0);
-                I_up[q] = (1.0-e0)*I_up[q]
-                        + bet*Bb_g(m,0,i,k,j) + gm*Bb_g(m,0,i-1,k,j);
+                const Real Iup_in = I_up[q];
+                // the same for the upward stream through layer i-1
+                Src_g(m,0,i-1,k,j) += wfq[q]/dx1(m,k,j,i-1)
+                                    *(e0*Iup_in
+                                      - (bet*bfar_u
+                                         + gm*Bb_g(m,0,i-1,k,j)));
+                I_up[q] = (1.0-e0)*Iup_in
+                        + bet*bfar_u + gm*Bb_g(m,0,i-1,k,j);
                 Fb_g(m,0,i,k,j) += wfq[q]*(I_up[q] - I_down[q][i]);
               }
+              if (report_on) iup_g(m,k,j,i) = I_up[0];
               Em_g(m,0,i-1,k,j) = 4.0*M_PI*kap*rho
-                                * 0.5*(Bb_g(m,0,i,k,j) + Bb_g(m,0,i-1,k,j));
+                                * 0.5*(bfar_u + Bb_g(m,0,i-1,k,j));
             }
           });
         };
@@ -1137,6 +1483,7 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
               Fb_g(m,blk,i,k,j) = 0.0;
               Qb_g(m,blk,i,k,j) = 0.0;
               Em_g(m,blk,i,k,j) = 0.0;
+              Src_g(m,blk,i,k,j) = 0.0;
             }
             const int icut = icut_g(m,k,j);
             if (icut > ie) return;                  // whole column deeper than the cut
@@ -1232,7 +1579,7 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
             }
             // down-sweep
             for (int i=ie; i>icut-1; --i) {
-              const Real rho = w0(m,IDN,k,j,i);
+              const Real rho = rhoN(m,k,j,i);
               const Real drho = rho*dx1(m,k,j,i);
               int iT, iP;
               Real fT, fP;
@@ -1240,10 +1587,29 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
               const Real xPv = xP_g(m,k,j,i);
               iT = static_cast<int>(xTv); fT = xTv - static_cast<Real>(iT);
               iP = static_cast<int>(xPv); fP = xPv - static_cast<Real>(iP);
+              // the far endpoint of this layer's source function, weighted by emitting
+              // matter (see BFace).  The neighbour's kappa costs a second table lookup,
+              // so it is paid only where the two Planck functions differ by more than 4x
+              // -- a smooth column takes the old expression and is bit-identical.
+              const int ir1 = (i+1 > ie) ? ie : i+1;
+              const Real rhf = rhoN(m,k,j,ir1);
+              const Real xTf = xT_g(m,k,j,i+1);
+              const Real xPf = xP_g(m,k,j,i+1);
+              const int iTf = static_cast<int>(xTf);
+              const int iPf = static_cast<int>(xPf);
+              const Real fTf = xTf - static_cast<Real>(iTf);
+              const Real fPf = xPf - static_cast<Real>(iPf);
               for (int cc=0; cc<NC; ++cc) {
                 const int b = bandc[cc];
                 const Real kap = ck_kappa(cklk, iT, fT, iP, fP, b, gc[cc])
                                  + kc_g(m,b,i,k,j);
+                const Real bown = Bb_g(m,b,i,k,j);
+                Real bfar = Bb_g(m,b,i+1,k,j);
+                if (bfar > 4.0*bown || bown > 4.0*bfar) {
+                  const Real kapf = ck_kappa(cklk, iTf, fTf, iPf, fPf, b, gc[cc])
+                                  + kc_g(m,b,i+1,k,j);
+                  bfar = BFace(kap*rho, kapf*rhf, bown, bfar, bface_on);
+                }
                 const RtF x = static_cast<RtF>(kap*drho/muc[cc]);
                 const RtF e0 = -RT_EXPM1(-x);
                 const RtF one = static_cast<RtF>(1.0);
@@ -1251,9 +1617,13 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
                                                               : (x/2 - x*x/3);
                 const RtF bet = (x > static_cast<RtF>(1.0e-3)) ? (one - e0/x)
                                                               : (x/2 - x*x/6);
+                Src_g(m,blk,i,k,j) += wfc[cc]/dx1(m,k,j,i)
+                    *static_cast<Real>(e0*I_down[cc][i+1]
+                      - (alp*static_cast<RtF>(bfar)
+                         + bet*static_cast<RtF>(bown)));
                 I_down[cc][i] = (one-e0)*I_down[cc][i+1]
-                              + alp*static_cast<RtF>(Bb_g(m,b,i+1,k,j))
-                              + bet*static_cast<RtF>(Bb_g(m,b,i,k,j));
+                              + alp*static_cast<RtF>(bfar)
+                              + bet*static_cast<RtF>(bown);
                 // Direct beam. Deposit the flux DIFFERENCE across the cell, not
                 // kappa rho F exp(-tau) evaluated at one face. The latter is what the
                 // grey
@@ -1294,7 +1664,7 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
             }
             // up-sweep
             for (int i=icut+1; i<ie+2; ++i) {
-              const Real rho = w0(m,IDN,k,j,i-1);
+              const Real rho = rhoN(m,k,j,i-1);
               const Real drho = rho*dx1(m,k,j,i-1);
               int iT, iP;
               Real fT, fP;
@@ -1302,10 +1672,26 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
               const Real xPv = xP_g(m,k,j,i-1);
               iT = static_cast<int>(xTv); fT = xTv - static_cast<Real>(iT);
               iP = static_cast<int>(xPv); fP = xPv - static_cast<Real>(iP);
+              // same emissivity-weighted far endpoint, and the same 4x guard: see BFace
+              const int ir1 = (i > ie) ? ie : i;
+              const Real rhf = rhoN(m,k,j,ir1);
+              const Real xTf = xT_g(m,k,j,i);
+              const Real xPf = xP_g(m,k,j,i);
+              const int iTf = static_cast<int>(xTf);
+              const int iPf = static_cast<int>(xPf);
+              const Real fTf = xTf - static_cast<Real>(iTf);
+              const Real fPf = xPf - static_cast<Real>(iPf);
               for (int cc=0; cc<NC; ++cc) {
                 const int b = bandc[cc];
                 const Real kap = ck_kappa(cklk, iT, fT, iP, fP, b, gc[cc])
                                + kc_g(m,b,i-1,k,j);
+                const Real bown = Bb_g(m,b,i-1,k,j);
+                Real bfar = Bb_g(m,b,i,k,j);
+                if (bfar > 4.0*bown || bown > 4.0*bfar) {
+                  const Real kapf = ck_kappa(cklk, iTf, fTf, iPf, fPf, b, gc[cc])
+                                  + kc_g(m,b,i,k,j);
+                  bfar = BFace(kap*rho, kapf*rhf, bown, bfar, bface_on);
+                }
                 const RtF x = static_cast<RtF>(kap*drho/muc[cc]);
                 const RtF e0 = -RT_EXPM1(-x);
                 const RtF one = static_cast<RtF>(1.0);
@@ -1313,9 +1699,14 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
                                                               : (x/2 - x*x/6);
                 const RtF gm = (x > static_cast<RtF>(1.0e-3)) ? (e0 - one + e0/x)
                                                              : (x/2 - x*x/3);
-                I_up[cc] = (one-e0)*I_up[cc]
-                         + bet*static_cast<RtF>(Bb_g(m,b,i,k,j))
-                         + gm*static_cast<RtF>(Bb_g(m,b,i-1,k,j));
+                const RtF Iup_in = I_up[cc];
+                Src_g(m,blk,i-1,k,j) += wfc[cc]/dx1(m,k,j,i-1)
+                    *static_cast<Real>(e0*Iup_in
+                      - (bet*static_cast<RtF>(bfar)
+                         + gm*static_cast<RtF>(bown)));
+                I_up[cc] = (one-e0)*Iup_in
+                         + bet*static_cast<RtF>(bfar)
+                         + gm*static_cast<RtF>(bown);
                 Fb_g(m,blk,i,k,j) += wfc[cc]*(I_up[cc] - I_down[cc][i]);
                 // the cell's OWN emission, both hemispheres: in the thin limit each
                 // stream adds wfc*(kap*rho*dr/mu)*B over the layer, so per unit volume
@@ -1324,7 +1715,7 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
                 // 4 sigma kappa_P rho T^4 with 1.66 in place of 2 for the hemispheric
                 // mean.  17 % low, which is well inside what a rate estimate needs.
                 Em_g(m,blk,i-1,k,j) += 2.0*(wfc[cc]/muc[cc])*kap*rho
-                                     * 0.5*(Bb_g(m,b,i,k,j) + Bb_g(m,b,i-1,k,j));
+                                     * 0.5*(bfar + bown);
               }
             }
           });
@@ -1359,6 +1750,7 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
         for (int i=is; i<ie+2; ++i) {
           Fb_g(m,blk,i,k,j) = 0.0;
           Em_g(m,blk,i,k,j) = 0.0;
+          Src_g(m,blk,i,k,j) = 0.0;
         }
           Real gamirc[NC], fbc[NC], muggc[NC], wggc[NC];
           for (int cc=0; cc<NC; ++cc) {
@@ -1384,14 +1776,26 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
           // down-sweep
           for (int i=ie; i>is-1; --i) {
             Real dtau_i = tau_down_r_f[i]-tau_down_r_f[i+1];
+            // emissivity-weighted far endpoint of the layer's source function: dtau/dr
+            // is kappa rho, so the two layers' optical thicknesses per unit length are
+            // the weights (see BFace).  The ghost above ie has no dtau in the array, so
+            // the topmost layer keeps the old endpoint exactly.
+            const Real kro_g = dtau_i/dx1(m,k,j,i);
+            const Real krf_g = (i < ie) ? (tau_down_r_f[i+1]-tau_down_r_f[i+2])
+                                        / dx1(m,k,j,i+1) : kro_g;
+            const Real bfr_g = BFace(kro_g, krf_g, B[i], B[i+1], bface_on);
             for (int cc=0; cc<NC; ++cc) {
               Real dtauir = gamirc[cc]*dtau_i;
               Real x = dtauir/muggc[cc];
               Real e0 = -expm1(-x);
               Real alp = (x > 1.0e-3) ? (e0 - 1.0 + e0/x) : (x/2.0-SQR(x)/3.0);
               Real bet = (x > 1.0e-3) ? (1.0 - e0/x) : (x/2.0-SQR(x)/6.0);
+              // direct source: what this stream leaves in cell i, absorbed minus emitted
+              Src_g(m,blk,i,k,j) += 2.0*M_PI*wggc[cc]*muggc[cc]/dx1(m,k,j,i)
+                                  *(e0*I_ir_down_c[cc][i+1]
+                                    - fbc[cc]*(alp*bfr_g + bet*B[i]));
               I_ir_down_c[cc][i] = (1.0-e0)*I_ir_down_c[cc][i+1]
-                                 + alp*fbc[cc]*B[i+1] + bet*fbc[cc]*B[i];
+                                 + alp*fbc[cc]*bfr_g + bet*fbc[cc]*B[i];
 #if RT_CACHE
               e0c[cc][i] = e0;
               alpc[cc][i] = alp;
@@ -1413,6 +1817,12 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
 #if !RT_CACHE
             Real dtau_i = tau_down_r_f[i-1]-tau_down_r_f[i];
 #endif
+            // the same emissivity-weighted far endpoint for the upward stream and for
+            // Em; the topmost layer keeps the old endpoint (see the down-sweep)
+            const Real krou = (tau_down_r_f[i-1]-tau_down_r_f[i])/dx1(m,k,j,i-1);
+            const Real krfu = (i < ie+1) ? (tau_down_r_f[i]-tau_down_r_f[i+1])
+                                         / dx1(m,k,j,i) : krou;
+            const Real bfru = BFace(krou, krfu, B[i-1], B[i], bface_on);
             for (int cc=0; cc<NC; ++cc) {
 #if RT_CACHE
               // layer i-1, already solved on the way down
@@ -1426,8 +1836,11 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
               Real bet = (x > 1.0e-3) ? (1.0 - e0/x) : (x/2.0-SQR(x)/6.0);
               Real gm = (x > 1.0e-3) ? (e0 - 1.0 + e0/x) : (x/2.0-SQR(x)/3.0);
 #endif
-              I_ir_up_c[cc] = (1.0-e0)*I_ir_up_c[cc]
-                            + bet*fbc[cc]*B[i] + gm*fbc[cc]*B[i-1];
+              const Real Iup_in = I_ir_up_c[cc];
+              Src_g(m,blk,i-1,k,j) += 2.0*M_PI*wggc[cc]*muggc[cc]/dx1(m,k,j,i-1)
+                                    *(e0*Iup_in - fbc[cc]*(bet*bfru + gm*B[i-1]));
+              I_ir_up_c[cc] = (1.0-e0)*Iup_in
+                            + bet*fbc[cc]*bfru + gm*fbc[cc]*B[i-1];
               Real F_ir_down_f = 2.0*M_PI*wggc[cc]*muggc[cc]*I_ir_down_c[cc][i];
               Real F_ir_up_f = 2.0*M_PI*wggc[cc]*muggc[cc]*I_ir_up_c[cc];
               Fb_g(m,blk,i,k,j) += (F_ir_up_f - F_ir_down_f);
@@ -1436,7 +1849,7 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
               // thickness cancels out of the volumetric rate.
               const Real dtau_ly = tau_down_r_f[i-1]-tau_down_r_f[i];
               Em_g(m,blk,i-1,k,j) += 2.0*(2.0*M_PI*wggc[cc])*gamirc[cc]*dtau_ly
-                                   / dx1(m,k,j,i-1)*fbc[cc]*0.5*(B[i]+B[i-1]);
+                                   / dx1(m,k,j,i-1)*fbc[cc]*0.5*(bfru+B[i-1]);
             }
           }
       });
@@ -1445,6 +1858,25 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
       // ---- C: reduce over blocks in order, then apply ------------------------------
       int nclip = 0;
       const Real demax = rt_de_max;
+      const bool semilin = rt_semi_lin;
+      const bool explicit_on = rt_explicit;
+      const bool newton_on = rt_newton;
+      if (rt_efix_ptr == nullptr) {
+        rt_efix_ptr = new DvceArray1D<int>("rt_efix", 3);
+        Kokkos::deep_copy(*rt_efix_ptr, 0);
+      }
+      auto efix_g = *rt_efix_ptr;
+      const bool resc_eq = rt_rescue_eq;
+      // rt_cell_report: claimed once per RT call, so only the FIRST rescued cell prints
+      DvceArray1D<int> repc_g(std::string("rt_repc"), 1);
+      Kokkos::deep_copy(repc_g, 0);
+      const bool fixed_on = report_on && (rt_report_every > 0) &&
+                            (pm->ncycle % rt_report_every == 0);
+      const Real rep_r = rt_report_r;
+      const int rep_k = ks, rep_j = js;
+      const int rep_cyc = pm->ncycle;
+      const Real rep_time = pm->time;
+      const bool direct_on = rt_src_direct && (ck_on || grey_on);
       // see rt_apply_debug: which column, and how many calls are left to print
       const bool dbg_on = (rt_apply_debug > 0);
       const int dbg_m = rt_dump_m;
@@ -1460,11 +1892,28 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
           Fb += Fb_g(m,b,i,k,j);
         }
         // the two-stream's share of each face in the tau blend
-        if (taublend) {
-          Ft *= (1.0 - w_g(m,k,j,i+1));
-          Fb *= (1.0 - w_g(m,k,j,i));
+        Real src;
+        if (direct_on) {
+          // The direct source is the divergence of the FULL two-stream flux.  What the
+          // two-stream actually deposits is the divergence of its blended share,
+          //     -d[(1-w)F]/dr = -dF/dr + d[wF]/dr,
+          // and the second term is the flux it hands to the conduction operator across
+          // the blend layer -- an O(F/dr) exchange, not a correction.  Keep it, formed
+          // from the raw face fluxes.  Where w = 0 (the thin layers this rewrite is for)
+          // it vanishes identically, so no round-off of F - F re-enters there; where it
+          // is non-zero the cell is at tau > 10 and its energy dwarfs that round-off.
+          src = 0.0;
+          for (int b=0; b<nblk; ++b) src += Src_g(m,b,i,k,j);
+          if (taublend) {
+            src += (w_g(m,k,j,i+1)*Ft - w_g(m,k,j,i)*Fb)/dx1(m,k,j,i);
+          }
+        } else {
+          if (taublend) {
+            Ft *= (1.0 - w_g(m,k,j,i+1));
+            Fb *= (1.0 - w_g(m,k,j,i));
+          }
+          src = -(Ft-Fb)/dx1(m,k,j,i);
         }
-        Real src = -(Ft-Fb)/dx1(m,k,j,i);
         if (band_on) {
           // deeper than the cut nothing radiative is applied: that region is optically
           // thick and convective, and the stellar beam died decades of optical depth
@@ -1481,50 +1930,238 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
         }
         // SEMI-IMPLICIT APPLICATION.  The source splits as src = A - E(T), A being the
         // absorption of the field from elsewhere, fixed on this step, and E the cell's
-        // own emission, which is 4 sigma kappa_P rho T^4 and so scales as T^4.  Treating
-        // E implicitly and A explicitly, and using de/dT = rho c_v ~ e/T (exact for an
-        // ideal gas, and an UNDER-estimate of rho c_v wherever H2 or H is partly
-        // dissociated, which only makes the step more damped), gives a linear relaxation
-        // with rate lambda = dE/de = (4E/T)/(rho c_v) = 4E/e.  The exact solution over
-        // bdt is the exponential below; it reduces to src*bdt when lambda*bdt << 1 and to
-        // the equilibrium offset src/lambda when lambda*bdt >> 1, and it can never
-        // overshoot the equilibrium.  Pure cooling is then bounded by e/4 per step
-        // whatever the timestep, which is what rt_de_max used to impose by hand.
+        // own emission, which is 4 sigma kappa_P rho T^4 and so scales as T^4.  The step
+        // has to be right in two limits at once: it must reduce to the explicit rate
+        // src*bdt as bdt -> 0, and it must land on the state where the cell stops
+        // exchanging energy, E(T) = A, as bdt -> infinity.
+        //
+        // WHY NOT LINEARIZE.  Treating E implicitly by linearizing about the CURRENT
+        // state gives a relaxation rate lambda = dE/de = (4E/T)/(rho c_v) ~ 4E/e and the
+        // step (src/lambda)(1 - exp(-lambda bdt)).  That is only valid while |src| <~ E.
+        // Its asymptote is e(A-E)/(4E), which for a cold optically thin cell in a hotter
+        // field (A >> E) DIVERGES as E -> 0: the emission is damped but the absorption
+        // stays explicit and unbounded.  A 400 K ambient cell sitting in a field whose
+        // equilibrium temperature is 1500 K has A/E = (1500/400)^4 = 197 and is handed
+        // de/e ~ 49 in one step, where the true answer is T_eq/T - 1 = 2.75 -- an
+        // overshoot of ~18x, and the reason rt_de_max used to clip essentially every cell
+        // above the photosphere.  Cooling was safe (A = 0 gives -e/4); heating was not.
+        //
+        // WHAT THIS DOES INSTEAD.  Relax toward the TRUE fixed point.  E ~ T^4 and, under
+        // the same e ~ rho c_v T the old rate assumed, e ~ T, so E(T_eq) = A puts the
+        // equilibrium at e_eq = e (A/E)^(1/4) and deq = e_eq - e.  Then take the rate
+        // from the initial slope rather than from lambda -- x = src*bdt/deq -- so that
+        //     de = deq (1 - exp(-x))
+        // is exactly src*bdt for small bdt and exactly deq for large bdt.  src and deq
+        // always share a sign (A > E <=> e_eq > e), so x >= 0 and the step is monotone
+        // and can never cross the equilibrium from either side.  Where the departure is
+        // small it agrees with the old linearized form, since deq -> src/lambda there.
+        //
+        // The e ~ T behind e_eq is the same approximation the old rate made, and it
+        // UNDER-estimates e_eq wherever H2 or H is partly dissociated, i.e. it errs
+        // toward a smaller step.  problem/rt_semi_lin recovers the old linearization.
         Real de = src*bdt;
-        {
+        // rt_cell_report bookkeeping: the pieces of the step, kept for the report below
+        Real dg_A = 0.0, dg_Em = 0.0, dg_deq = 0.0;
+        Real dg_it[8];
+        int dg_nit = 0;
+        bool dg_resc = false;
+        for (int q=0; q<8; ++q) dg_it[q] = 0.0;
+        // problem/rt_explicit: nothing else touches de.  See rt_explicit.
+        if (!explicit_on) {
           Real Em = 0.0;
           for (int b=0; b<nblk; ++b) Em += Em_g(m,b,i,k,j);
           if (taublend) {
             Em *= 1.0 - 0.5*(w_g(m,k,j,i) + w_g(m,k,j,i+1));
           }
           if (band_on && i < icut_g(m,k,j)) Em = 0.0;
-          const Real ei = w0(m,IEN,k,j,i);
+          const Real ei = eiN(m,k,j,i);
           if (Em > 0.0 && ei > 0.0) {
-            const Real lam = 4.0*Em/ei;
-            const Real x = lam*bdt;
-            de = (x > 1.0e-4) ? (src/lam)*(-expm1(-x)) : src*bdt;
+            const Real sdt = src*bdt;
+            if (semilin) {
+              const Real lam = 4.0*Em/ei;
+              const Real x = lam*bdt;
+              de = (x > 1.0e-4) ? (src/lam)*(-expm1(-x)) : sdt;
+            } else {
+              const Real absn = src + Em;              // A, held fixed over the step
+              // e_eq - e.  With nothing arriving the equilibrium is T = 0, i.e. -e.
+              const Real deq = (absn > 0.0) ? ei*(sqrt(sqrt(absn/Em)) - 1.0) : -ei;
+              dg_A = absn; dg_Em = Em; dg_deq = deq;
+              if (deq != 0.0) {
+                const Real x = sdt/deq;                // >= 0: src and deq share a sign
+                de = (x > 1.0e-4) ? deq*(-expm1(-x)) : sdt;
+              } else {
+                de = sdt;
+              }
+              // NEWTON REFINEMENT, seeded by the closed form above.  That estimate is
+              // already the right asymptote, so this only has to correct the e ~ T it
+              // assumed -- with H2 dissociating or H ionizing, e(T) is far steeper than
+              // linear and the equilibrium moves.  Solve the exact backward-Euler
+              // balance with the emission at the NEW temperature,
+              //     F(de) = de - A dt + E(T_old) (T_new/T_old)^4 dt = 0,
+              // which is the same E ~ T^4 the band solver emits with, but with T(e) and
+              // c_v(e) taken from the EOS.  F is monotone in de (both terms increase),
+              // so Newton from a bracketing-quality guess converges in a step or two;
+              // F(0) = -src dt recovers the explicit answer if it stops immediately.
+              if (newton_on && eos.IsGeneral()) {
+                const Real t0 = T_g(m,k,j,i);
+                const Real d0 = rhoN(m,k,j,i);
+                const Real abdt = absn*bdt, embdt = Em*bdt;
+                if (t0 > 0.0 && d0 > 0.0) {
+                  for (int it=0; it<8; ++it) {
+                    const Real e1 = ei + de;
+                    if (!(e1 > 0.0)) break;
+                    const Real tc = eos.Temperature(d0, e1);
+                    const Real t1 = tc*eos.temp_cgs;
+                    if (!(t1 > 0.0)) break;
+                    const Real cv = d0*eos.SpecificHeatCv(d0, e1, tc);
+                    if (!(cv > 0.0)) break;
+                    const Real r4 = SQR(SQR(t1/t0));
+                    const Real fx = de - abdt + embdt*r4;
+                    // d(r4)/de = 4 r4/T dT/de, with dT/de = temp_cgs/(d c_v)
+                    const Real dfx = 1.0 + embdt*4.0*r4/t1*(eos.temp_cgs/cv);
+                    if (!(dfx > 0.0)) break;
+                    const Real step = fx/dfx;
+                    de -= step;
+                    if (dg_nit < 8) dg_it[dg_nit++] = de;
+                    if (fabs(step) <= 1.0e-8*(fabs(de) + fabs(ei))) break;
+                  }
+                }
+                // THE LOOP CHECKS e1 > 0 AT THE TOP, NOT AT THE BOTTOM.  The last
+                // `de -= step` is never validated, so Newton can exit having pushed the
+                // cell to ei + de <= 0 -- a one-step NaN with no counterpart in the
+                // closed form, which guarantees e1 = ei*exp(-x) > 0.  R9's all-column
+                // NaN at t = 1.99e5 is under bisection; this closes the only path in
+                // this branch to a non-positive energy.  Falling back to a 99.9 %
+                // drop keeps the cell cooling hard without ever crossing zero.
+                if (!(ei + de > 0.0)) {
+                  // problem/rt_rescue_eq: land on the equilibrium the cell actually
+                  // sees rather than on a fixed 99.9 % drop.  deq is e_eq - e from the
+                  // closed form above, i.e. Em(T_eq) = A = src + Em; the old floor is
+                  // kept underneath it, so this can only make the rescue gentler.
+                  const Real defl = -(1.0 - 1.0e-3)*ei;
+                  if (resc_eq && deq < 0.0 && deq > defl) {
+                    de = deq;
+                    Kokkos::atomic_fetch_add(&efix_g(1), 1);
+                  } else {
+                    de = defl;
+                    Kokkos::atomic_fetch_add(&efix_g(2), 1);
+                  }
+                  Kokkos::atomic_fetch_add(&efix_g(0), 1);
+                  dg_resc = true;
+                }
+              }
+            }
           }
         }
         if (demax > 0.0) {
-          const Real dl = LimitRTSource(de, w0(m,IEN,k,j,i), demax);
+          const Real dl = LimitRTSource(de, eiN(m,k,j,i), demax);
           if (dl != de) { ++nc; de = dl; }
         }
         if (dbg_on && m == dbg_m && k == dbg_k && j == dbg_j && i > ie - dbg_n) {
           Real Em = 0.0, Qs = 0.0;
           for (int b=0; b<nblk; ++b) { Em += Em_g(m,b,i,k,j); Qs += Qb_g(m,b,i,k,j); }
-          const Real ei = w0(m,IEN,k,j,i);
+          // the raw direct source, before the blend handover and the beam are added
+          Real srcraw = 0.0;
+          for (int b=0; b<nblk; ++b) srcraw += Src_g(m,b,i,k,j);
+          const Real ei = eiN(m,k,j,i);
           Kokkos::printf("rt_apply i=%d T=%.4e d=%.4e e=%.4e Fb=%.6e Ft=%.6e "
-                         "divF=%.4e Qs=%.4e Em=%.4e lamdt=%.4e de=%.4e de/e=%.4e "
-                         "tau=%.4e w=%.4e dx=%.4e\n",
-                         i, T_g(m,k,j,i), w0(m,IDN,k,j,i), ei, Fb, Ft,
-                         -(Ft-Fb)/dx1(m,k,j,i), Qs, Em,
+                         "divF=%.14e srcraw=%.14e src=%.4e Qs=%.4e Em=%.4e "
+                         "lamdt=%.4e de=%.4e "
+                         "de/e=%.4e tau=%.4e w=%.4e dx=%.4e\n",
+                         i, T_g(m,k,j,i), rhoN(m,k,j,i), ei, Fb, Ft,
+                         -(Ft-Fb)/dx1(m,k,j,i), srcraw, src, Qs, Em,
                          (Em > 0.0 && ei > 0.0) ? 4.0*Em/ei*bdt : 0.0,
                          de, de/ei, taublend ? tauf_g(m,k,j,i) : 0.0,
                          taublend ? w_g(m,k,j,i) : 0.0, dx1(m,k,j,i));
         }
+        // ---- rt_cell_report ---------------------------------------------------
+        if (report_on) {
+          const bool fixedcell = fixed_on && (k == rep_k) && (j == rep_j) &&
+              (fabs(x1v_(m,i) - rep_r) < 0.5*dx1(m,k,j,i));
+          bool doprint = fixedcell;
+          if (dg_resc) {
+            if (Kokkos::atomic_fetch_add(&repc_g(0), 1) == 0) doprint = true;
+          }
+          if (doprint && i >= icut_g(m,k,j)) {
+            const Real kap = kc_g(m,0,i,k,j);
+            const Real rho = rhoN(m,k,j,i);
+            const Real dtc = kap*rho*dx1(m,k,j,i);
+            Real tautop = 0.0;
+            for (int i2=i; i2<=ie; ++i2) {
+              tautop += kc_g(m,0,i2,k,j)*rhoN(m,k,j,i2)*dx1(m,k,j,i2);
+            }
+            // the hemispheric-mean weights the sweeps used (ck_nquad = 1); with
+            // ck_nquad = 2 the split into absorption and emission below is indicative
+            const Real mu1 = 1.0/CK_DIFFUSIVITY, wf = M_PI;
+            const Real xq = dtc/mu1;
+            const Real e0 = -expm1(-xq);
+            const Real alp = (xq > 1.0e-3) ? (e0 - 1.0 + e0/xq) : (xq/2.0 - SQR(xq)/3.0);
+            const Real bet = (xq > 1.0e-3) ? (1.0 - e0/xq) : (xq/2.0 - SQR(xq)/6.0);
+            const Real gmq = alp;
+            const Real bi = Bb_g(m,0,i,k,j);
+            const Real bip = Bb_g(m,0,i+1,k,j);
+            const Real bim = (i > is) ? Bb_g(m,0,i-1,k,j) : bi;
+            const Real idn = idn_g(m,k,j,i+1), iup = iup_g(m,k,j,i);
+            const Real absdn = wf/dx1(m,k,j,i)*e0*idn;
+            const Real absup = wf/dx1(m,k,j,i)*e0*iup;
+            const Real emidn = wf/dx1(m,k,j,i)*(alp*bip + bet*bi);
+            const Real emiup = wf/dx1(m,k,j,i)*(bet*bip + gmq*bi);
+            const Real ei = eiN(m,k,j,i);
+            // the staleness itself, so a report says whether w0 and u0 had parted
+            const Real ei_w0_r = w0_uc_(m,IEN,k,j,i);
+            const Real ei_u0_r = EintFromCons(u0_uc_, m, k, j, i,
+                                              cs_uc_ ? cosc_uc_(m,k,j) : 0.0, cs_uc_,
+                                              etg_uc_,
+                                              etg_uc_ ? phicc_uc_(m,k,j,i) : 0.0);
+            const Real rho_w0_r = w0_uc_(m,IDN,k,j,i);
+            const Real rho_u0_r = u0_uc_(m,IDN,k,j,i);
+            Kokkos::printf(
+              "### rt_cell_report %s ncycle=%d t=%.6e m=%d k=%d j=%d i=%d r=%.6e\n"
+              "    rho=%.4e T=%.6e kap=%.4e kaprho=%.4e dtau=%.4e tau_to_top=%.4e "
+              "dt=%.4e\n"
+              "    I_dn(i+1)=%.6e I_dn(i)=%.6e I_up(i)=%.6e I_up(i+1)=%.6e "
+              "F(i)=%.6e F(i+1)=%.6e\n"
+              "    B(i-1)=%.6e B(i)=%.6e B(i+1)=%.6e T(i-1)=%.4e T(i+1)=%.4e "
+              "kap(i-1)=%.3e kap(i+1)=%.3e\n"
+              "    abs_dn=%.6e abs_up=%.6e emi_dn=%.6e emi_up=%.6e src=%.6e Em=%.6e "
+              "A=%.6e\n"
+              "    e=%.6e deq=%.6e e_eq=%.6e de=%.6e de/e=%.6e rescued=%d nit=%d\n"
+              "    ei_w0=%.6e ei_u0=%.6e stale=%.4e rho_w0=%.6e rho_u0=%.6e\n"
+              "    newton de: %.6e %.6e %.6e %.6e %.6e %.6e %.6e %.6e\n",
+              dg_resc ? "RESCUE" : "FIXED", rep_cyc, rep_time, m, k, j, i, x1v_(m,i),
+              rho, T_g(m,k,j,i), kap, kap*rho, dtc, tautop, bdt,
+              idn, idn_g(m,k,j,i), iup, iup_g(m,k,j,i+1),
+              Fb_g(m,0,i,k,j), Fb_g(m,0,i+1,k,j),
+              bim, bi, bip, (i > is) ? T_g(m,k,j,i-1) : 0.0, T_g(m,k,j,i+1),
+              (i > is) ? kc_g(m,0,i-1,k,j) : 0.0, kc_g(m,0,i+1,k,j),
+              absdn, absup, emidn, emiup, src, dg_Em, dg_A,
+              ei, dg_deq, ei + dg_deq, de, de/ei, dg_resc ? 1 : 0, dg_nit,
+              ei_w0_r, ei_u0_r,
+              (ei_w0_r != 0.0) ? (ei_u0_r - ei_w0_r)/ei_w0_r : 0.0,
+              rho_w0_r, rho_u0_r,
+              dg_it[0], dg_it[1], dg_it[2], dg_it[3],
+              dg_it[4], dg_it[5], dg_it[6], dg_it[7]);
+          }
+        }
         u0(m,IEN,k,j,i) += de;
       });
       RTSourceLimiterWarn(nclip);
+      // The Newton positivity rescue should never fire.  Say so the first time it does,
+      // with the running total, and stay quiet afterwards.
+      {
+        static bool efix_warned = false;
+        static int efix_seen = 0;
+        auto he = Kokkos::create_mirror_view(efix_g);
+        Kokkos::deep_copy(he, efix_g);
+        if (he(0) > efix_seen && !efix_warned) {
+          std::cout << "### two_stream_rt: the Newton step left e <= 0 in " << he(0)
+                    << " cell(s): " << he(1) << " rescued to the radiative equilibrium "
+                    << "(problem/rt_rescue_eq), " << he(2) << " to the 99.9 % floor; "
+                    << "this is reported once" << std::endl;
+          efix_warned = true;
+        }
+        efix_seen = he(0);
+      }
 
       // ---- one-shot column dump, for cross-code comparison -------------------------
       if (band_on && !rt_dump_file.empty() && !rt_dump_done) {
@@ -1549,8 +2186,8 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
           // when the EOS is ideal; under the tabulated EOS they dip hard through the H2
           // dissociation and H ionization bands, and how steeply they vary across a cell
           // is what the reconstruction has to cope with.
-          const Real dd = w0(md,IDN,kd,jd,i);
-          const Real ee = w0(md,IEN,kd,jd,i);
+          const Real dd = rhoN(md,kd,jd,i);
+          const Real ee = eiN(md,kd,jd,i);
           col(i,5) = eos.IsGeneral() ? eos.Gamma1(dd, ee) : eos.gamma;
           col(i,6) = GradAd(eos, eos.gamma, Rgas, pb_g(md,kd,jd,i)*1.0e6,
                             T_g(md,kd,jd,i));
@@ -1606,6 +2243,21 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
     // time over compile-time tiers instead, as the correlated-k chain kernel is.
     int nclip_grey = 0;
     const Real demax_grey = rt_de_max;
+    // --- problem/nan_report (see rt_nan_report): the in-kernel catcher.  One int
+    // counter and one 16-slot record, zeroed per call; the FIRST offending cell on the
+    // rank wins the record.  Everything it needs is recomputed inside the `bad` branch,
+    // so the fast path pays nothing but a bool test.
+    const bool nanrep_g = rt_nan_report;
+    if (nanrep_g && rt_nanrep_cnt == nullptr) {
+      rt_nanrep_cnt = new DvceArray1D<int>("rt_nanrep_cnt", 1);
+      rt_nanrep_rec = new DvceArray1D<Real>("rt_nanrep_rec", 16);
+    }
+    auto nrcnt = nanrep_g ? *rt_nanrep_cnt : DvceArray1D<int>("d", 1);
+    auto nrrec = nanrep_g ? *rt_nanrep_rec : DvceArray1D<Real>("d", 1);
+    if (nanrep_g) {
+      Kokkos::deep_copy(nrcnt, 0);
+      Kokkos::deep_copy(nrrec, 0.0);
+    }
     auto launch_grey_rt = [&](auto nn_tag) {
       constexpr int NN = decltype(nn_tag)::value;
       par_reduce_clip3("2stream_rt", 0, nmb1, ks, ke, js, je, nclip_grey,
@@ -1655,9 +2307,9 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
 
           // 3 V Bands
           // top
-          Real p = PresFromEint(eos,gm1,w0(m,IDN,k,j,ie+1),w0(m,IEN,k,j,ie+1));
-          Real rho = w0(m,IDN,k,j,ie+1);
-          Real T = TempKelvin(eos,Rgas,rho,w0(m,IEN,k,j,ie+1),p);
+          Real p = PresFromEint(eos,gm1,rhoN(m,k,j,ie+1),eiN(m,k,j,ie+1));
+          Real rho = rhoN(m,k,j,ie+1);
+          Real T = TempKelvin(eos,Rgas,rho,eiN(m,k,j,ie+1),p);
           B[ie+1] = boltz_sigma/M_PI*SQR(SQR(T));
           Real kapr;
           get_kapr(T, p, met, kapr);
@@ -1680,9 +2332,9 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
   //        F_v_down_f(ie+1) = (mu0 > 0.0)? F_v_down_f(ie+1) : 0.0;
           // down-sweep
           for (int i=ie; i>is-1; --i) {
-            Real rho = w0(m,IDN,k,j,i);
+            Real rho = rhoN(m,k,j,i);
             Real p, T;
-            PresTempFromEint(eos,gm1,Rgas,rho,w0(m,IEN,k,j,i),
+            PresTempFromEint(eos,gm1,Rgas,rho,eiN(m,k,j,i),
                              TGuess(wtemp_, m, k, j, i),p,T);
             B[i] = boltz_sigma/M_PI*SQR(SQR(T));
             Real kapr;
@@ -1820,13 +2472,13 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
             Real du_flux = src*bdt;
 
   //          // source term semi-implicit
-  //          Real p = PresFromEint(eos,gm1,w0(m,IDN,k,j,i),w0(m,IEN,k,j,i));
-  //          Real rho = w0(m,IDN,k,j,i);
-  //          Real T = TempKelvin(eos,Rgas,rho,w0(m,IEN,k,j,i),p);
+  //          Real p = PresFromEint(eos,gm1,rhoN(m,k,j,i),eiN(m,k,j,i));
+  //          Real rho = rhoN(m,k,j,i);
+  //          Real T = TempKelvin(eos,Rgas,rho,eiN(m,k,j,i),p);
   //          Real kapr;
   //          get_kapr(T, p, met, kapr);
   //          Real cv = Rgas*rho*igm1;
-  //          Real e0 = eos.IsGeneral() ? w0(m,IEN,k,j,i) : cv*T;
+  //          Real e0 = eos.IsGeneral() ? eiN(m,k,j,i) : cv*T;
   //          Real kk = 0.0;
   //          Real bb = du_flux + e0;
   ////          Real bb = Q_v(i)*bdt + e0;
@@ -1873,10 +2525,43 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
   //          Real du = (fabs(du_flux) < e0 && ierr == 1) ? du_flux : du_src;
             Real du = du_flux;
             if (demax_grey > 0.0) {
-              const Real dl = LimitRTSource(du, w0(m,IEN,k,j,i), demax_grey);
+              const Real dl = LimitRTSource(du, eiN(m,k,j,i), demax_grey);
               if (dl != du) { ++nc; du = dl; }
             }
             u0(m,IEN,k,j,i) += du;
+            // --- the nan_report catcher.  Record the cell the grey apply just made
+            // non-finite or non-positive, with the state that produced it.
+            if (nanrep_g) {
+              const Real enew = u0(m,IEN,k,j,i);
+              if (!(enew > 0.0) || !isfinite(enew) || !isfinite(du)) {
+                if (Kokkos::atomic_fetch_add(&nrcnt(0), 1) == 0) {
+                  Real pc, tc, pm1, tm1, pp1, tp1, kc;
+                  PresTempFromEint(eos, gm1, Rgas, rhoN(m,k,j,i), eiN(m,k,j,i),
+                                   TGuess(wtemp_, m, k, j, i), pc, tc);
+                  PresTempFromEint(eos, gm1, Rgas, rhoN(m,k,j,i-1), eiN(m,k,j,i-1),
+                                   TGuess(wtemp_, m, k, j, i-1), pm1, tm1);
+                  PresTempFromEint(eos, gm1, Rgas, rhoN(m,k,j,i+1), eiN(m,k,j,i+1),
+                                   TGuess(wtemp_, m, k, j, i+1), pp1, tp1);
+                  get_kapr(tc, pc, met, kc);
+                  nrrec(0) = static_cast<Real>(m);
+                  nrrec(1) = static_cast<Real>(k);
+                  nrrec(2) = static_cast<Real>(j);
+                  nrrec(3) = static_cast<Real>(i);
+                  nrrec(4) = rhoN(m,k,j,i);
+                  nrrec(5) = eiN(m,k,j,i);
+                  nrrec(6) = tc;
+                  nrrec(7) = kc*rhoN(m,k,j,i);
+                  nrrec(8) = du;
+                  nrrec(9) = du_flux;
+                  nrrec(10) = enew;
+                  nrrec(11) = eiN(m,k,j,i-1);
+                  nrrec(12) = tm1;
+                  nrrec(13) = eiN(m,k,j,i+1);
+                  nrrec(14) = tp1;
+                  nrrec(15) = tau_down_r_f[i];
+                }
+              }
+            }
           }
   //        });
 
@@ -1902,6 +2587,27 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
       std::exit(EXIT_FAILURE);
     }
     RTSourceLimiterWarn(nclip_grey);
+    if (nanrep_g && rt_nanrep_lines < rt_nanrep_maxlines) {
+      auto hgc = Kokkos::create_mirror_view(nrcnt);
+      Kokkos::deep_copy(hgc, nrcnt);
+      if (hgc(0) > 0) {
+        auto hgr = Kokkos::create_mirror_view(nrrec);
+        Kokkos::deep_copy(hgr, nrrec);
+        ++rt_nanrep_lines;
+        std::cout << "### rg nan_report [RT_grey_apply] rank "
+                  << global_variable::my_rank << " cycle " << pm->ncycle
+                  << " t = " << pm->time << ": " << hgc(0) << " cell(s); first (m,k,j,i)"
+                  << " = (" << static_cast<int>(hgr(0)) << ","
+                  << static_cast<int>(hgr(1)) << "," << static_cast<int>(hgr(2)) << ","
+                  << static_cast<int>(hgr(3)) << ")"
+                  << " d = " << hgr(4) << " e_pre = " << hgr(5) << " T = " << hgr(6)
+                  << " rho_kap = " << hgr(7) << " du = " << hgr(8)
+                  << " du_flux = " << hgr(9) << " u_new = " << hgr(10)
+                  << " e[i-1] = " << hgr(11) << " T[i-1] = " << hgr(12)
+                  << " e[i+1] = " << hgr(13) << " T[i+1] = " << hgr(14)
+                  << " tau = " << hgr(15) << std::endl;
+      }
+    }
 
     return;
 }
