@@ -126,6 +126,20 @@ ck_swflux   = sw_band_flux_W121_11.txt
 ck_nquad    = 1
 ck_pcut_bar = 1.0e30         # no pressure cut: the tau blend decides the handover
 rt_de_max   = 0.5
+# problem/rt_bface: the emissivity-weighted far-endpoint Planck source (two_stream_rt
+# BFace).  It exists for the corona/star join of this problem, where a cell's emission
+# was formed with an inert neighbour's Planck function 1e9x its own; the switch defaults
+# FALSE in the shared header so the other problem generators are untouched.
+rt_bface    = true
+# the red giant opts in to the new two-stream solver: direct (cancellation-free) source,
+# equilibrium-relaxation semi-implicit step with the Newton refinement and the
+# equilibrium rescue, and the band solver's top slot taken from the top ACTIVE cell.
+# All five default to the OLD behaviour so the shared pgens are bit-for-bit unchanged.
+rt_src_direct = true
+rt_newton     = true
+rt_rescue_eq  = true
+rt_semi_lin   = false
+rt_top_clamp  = true
 met         = 0.0
 ck_dump_file =               # if set: one column's RT solution at the first call
 ck_dump_m   = 0

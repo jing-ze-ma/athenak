@@ -6,6 +6,12 @@
 //
 // Build:  g++ -O2 -I<athenak>/src -o eos_dump eos_dump.cpp
 // Run:    ./eos_dump <out.bin> [xh] [yhe] [a_metal] [h2] [ion]
+//                    [logd_min] [logd_max] [logt_min] [logt_max]
+//
+// The DENSITY RANGE has to cover the run being analysed, or the interpolation silently
+// extrapolates: a red giant with an ambient medium reaches 1e-22 g/cm^3, eight decades
+// below the -14 default, and the temperatures that came back there were wrong by 40 %.
+// Match <hydro>/eos_logd_min..eos_logd_max of the run.
 //
 // Output: little-endian float64. Header: nd nt logd_min dlogd logt_min dlogt (6 doubles),
 // then nd*nt records of (log10 e_spec, log10 p_spec, mu, xh2, xhii), T fastest.
@@ -30,8 +36,13 @@ int main(int argc, char **argv) {
   if (argc > 6) m.include_ion = atoi(argv[6]) != 0;
 
   // Finer than the run's own table: this is offline, cost does not matter.
-  const double logd_min = -14.0, logd_max = 0.0, dlogd = 0.02;
-  const double logt_min = 1.5,   logt_max = 7.0, dlogt = 0.004;
+  double logd_min = -14.0, logd_max = 0.0;
+  double logt_min = 1.5,   logt_max = 7.0;
+  if (argc > 7)  logd_min = atof(argv[7]);
+  if (argc > 8)  logd_max = atof(argv[8]);
+  if (argc > 9)  logt_min = atof(argv[9]);
+  if (argc > 10) logt_max = atof(argv[10]);
+  const double dlogd = 0.02, dlogt = 0.004;
   const int nd = static_cast<int>((logd_max - logd_min)/dlogd) + 1;
   const int nt = static_cast<int>((logt_max - logt_min)/dlogt) + 1;
 
