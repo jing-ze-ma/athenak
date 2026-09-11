@@ -58,7 +58,10 @@ void Hydro::AssembleHydroTasks(std::map<std::string, std::shared_ptr<TaskList>> 
   id.recvf     = tl["stagen"]->AddTask(&Hydro::RecvFlux, this, id.sendf);
   id.rkupdt    = tl["stagen"]->AddTask(&Hydro::RKUpdate, this, id.recvf);
   id.srctrms   = tl["stagen"]->AddTask(&Hydro::HydroSrcTerms, this, id.rkupdt);
-  id.sendu_oa  = tl["stagen"]->AddTask(&Hydro::SendU_OA, this, id.srctrms);
+  // the implicit radial radiative diffusion (<hydro>/rad_implicit_x1) sits between the
+  // explicit update and the ghost exchange, so what it writes is what is communicated
+  id.impcnd    = tl["stagen"]->AddTask(&Hydro::ImplicitConduction, this, id.srctrms);
+  id.sendu_oa  = tl["stagen"]->AddTask(&Hydro::SendU_OA, this, id.impcnd);
   id.recvu_oa  = tl["stagen"]->AddTask(&Hydro::RecvU_OA, this, id.sendu_oa);
   id.restu     = tl["stagen"]->AddTask(&Hydro::RestrictU, this, id.recvu_oa);
   id.sendu     = tl["stagen"]->AddTask(&Hydro::SendU, this, id.restu);
@@ -195,6 +198,10 @@ TaskStatus Hydro::Fluxes(Driver *pdrive, int stage) {
 
   // Add diffusion fluxes
   if (pcond != nullptr) {
+    // the angular cap (<hydro>/rad_cap_ang) needs the step it is capping, and the
+    // angular fluxes are formed here, before the RK update ever sees beta_dt
+    pcond->stage_beta_dt = (stage >= 1)
+        ? (pdrive->beta[stage-1])*(pmy_pack->pmesh->dt) : 0.0;
     pcond->AddHeatFluxes(w0, peos->eos_data, uflx);
   }
   if (pvisc != nullptr) {
@@ -296,6 +303,22 @@ TaskStatus Hydro::HydroSrcTerms(Driver *pdrive, int stage) {
     (pmy_pack->pmesh->pgen->user_srcs_func)(pmy_pack->pmesh, beta_dt);
   }
 
+  return TaskStatus::complete;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn TaskList Hydro::ImplicitConduction
+//! \brief Wrapper task that applies the implicit radial radiative diffusion
+//! (<hydro>/rad_implicit_x1).  A no-op unless that flag is set; see
+//! Conduction::ImplicitRadialUpdate for what it solves and why.
+
+TaskStatus Hydro::ImplicitConduction(Driver *pdrive, int stage) {
+  if (pcond == nullptr) return TaskStatus::complete;
+  if (!(pcond->rad_implicit_x1)) return TaskStatus::complete;
+  if (stage < 1) return TaskStatus::complete;
+  Real beta_dt = (pdrive->beta[stage-1])*(pmy_pack->pmesh->dt);
+  pcond->ImplicitRadialUpdate(u0, peos->eos_data, beta_dt);
+  runaway_scan::Scan(pmy_pack->pmesh, "implicit_conduction");
   return TaskStatus::complete;
 }
 

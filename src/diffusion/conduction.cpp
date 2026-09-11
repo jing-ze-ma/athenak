@@ -16,6 +16,7 @@
 
 // Athena++ headers
 #include "athena.hpp"
+#include "globals.hpp"
 #include "parameter_input.hpp"
 #include "mesh/mesh.hpp"
 #include "hydro/hydro.hpp"
@@ -23,6 +24,17 @@
 #include "eos/eos.hpp"
 #include "conduction.hpp"
 #include "utils/rosseland.hpp"
+#include "utils/eint_from_cons.hpp"
+
+// <problem>/nan_report: the first x1 radiative-conduction face whose flux comes out
+// non-finite, and the inputs that made it.  Pointers, not Views: a file-scope View
+// outlives Kokkos::finalize.  Nothing is allocated or run unless the switch is on.
+namespace {
+DvceArray1D<int> *cnd_nanrep_cnt = nullptr;
+DvceArray1D<Real> *cnd_nanrep_rec = nullptr;
+int cnd_nanrep_lines = 0;
+const int cnd_nanrep_maxlines = 400;
+}  // namespace
 #include "coordinates/coordinates.hpp"
 #include "units/units.hpp"
 
@@ -100,12 +112,30 @@ Conduction::Conduction(std::string block, MeshBlockPack *pp, ParameterInput *pin
         rad_flux_inner /= (pp->punit->pressure_cgs()*pp->punit->velocity_cgs());
       }
       rad_kappa_fac = pin->GetOrAddReal(block,"rad_kappa_fac",1.0);
+      nan_report = pin->GetOrAddBoolean("problem","nan_report",false);
       rad_flux_limit = pin->GetOrAddBoolean(block,"rad_flux_limit",true);
       rad_tau_lo = pin->GetOrAddReal(block,"rad_tau_lo",0.0);
       rad_tau_hi = pin->GetOrAddReal(block,"rad_tau_hi",0.0);
       rad_tau_mode = (rad_tau_hi > 0.0);
       rad_cs_exact = pin->GetOrAddBoolean(block,"rad_cs_exact",true);
+      rad_kappa_rmax = pin->GetOrAddReal(block,"rad_kappa_rmax",0.0);
+      rad_kappa_above = pin->GetOrAddReal(block,"rad_kappa_above",0.0);
+      rad_gate_rho = pin->GetOrAddReal(block,"rad_gate_rho",0.0);
+      rad_gate_dex = pin->GetOrAddReal(block,"rad_gate_dex",0.5);
+      if (rad_gate_rho > 0.0 && rad_kappa_rmax > 0.0) {
+        std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
+                  << std::endl << "rad_gate_rho and rad_kappa_rmax are two forms of the "
+                  << "same switch: set one or the other, not both" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      if (rad_gate_rho > 0.0 && !(rad_gate_dex > 0.0)) {
+        std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
+                  << std::endl << "rad_gate_dex must be positive" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
       rad_blend_radial = pin->GetOrAddBoolean(block,"rad_blend_radial",true);
+      rad_implicit_x1 = pin->GetOrAddBoolean(block,"rad_implicit_x1",false);
+      rad_cap_ang = pin->GetOrAddReal(block,"rad_cap_ang",0.0);
       {
         std::string ksrc = pin->GetOrAddString(block,"rad_kappa_src","freedman");
         if (ksrc.compare("table") == 0) {
@@ -134,6 +164,63 @@ Conduction::Conduction(std::string block, MeshBlockPack *pp, ParameterInput *pin
         Kokkos::realloc(rad_w, nmb, ncells3, ncells2, ncells1+1);
         Kokkos::realloc(rad_tauf, nmb, ncells3, ncells2, ncells1+1);
       }
+      if (rad_implicit_x1) {
+        // hydro only: the MHD inversion would have to subtract the magnetic energy too
+        if (block.compare("hydro") != 0) {
+          std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
+                    << std::endl << "rad_implicit_x1 is implemented for <hydro> only"
+                    << std::endl;
+          std::exit(EXIT_FAILURE);
+        }
+        // the solve is column-local, so the whole radial extent must be in one MeshBlock
+        if (pp->pmesh->mb_indcs.nx1 != pp->pmesh->mesh_indcs.nx1) {
+          std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
+                    << std::endl << "rad_implicit_x1 needs the whole radial extent in "
+                    << "one MeshBlock: <meshblock>/nx1 = " << pp->pmesh->mb_indcs.nx1
+                    << " but <mesh>/nx1 = " << pp->pmesh->mesh_indcs.nx1 << std::endl;
+          std::exit(EXIT_FAILURE);
+        }
+        auto &indcs = pp->pmesh->mb_indcs;
+        const int nmb = pp->nmb_thispack;
+        const int ncells1 = indcs.nx1 + 2*indcs.ng;
+        const int ncells2 = (indcs.nx2 > 1)? (indcs.nx2 + 2*indcs.ng) : 1;
+        const int ncells3 = (indcs.nx3 > 1)? (indcs.nx3 + 2*indcs.ng) : 1;
+        Kokkos::realloc(imp_wrk, nmb, nimpw, ncells3, ncells2, ncells1+1);
+        Kokkos::realloc(imp_flag, 1);
+        Kokkos::realloc(imp_rec, 8);
+      }
+      if (rad_cap_ang > 0.0) {
+        // the angular cap only makes sense once the radial direction is unconditionally
+        // stable: with x1 still explicit the run dies on dt1 long before dt2/dt3 matter,
+        // and dropping dt2/dt3 while dt1 still applies would be a silent half-measure
+        if (!rad_implicit_x1) {
+          std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
+                    << std::endl << "rad_cap_ang > 0 requires rad_implicit_x1 = true"
+                    << std::endl;
+          std::exit(EXIT_FAILURE);
+        }
+        auto &indcs = pp->pmesh->mb_indcs;
+        if (indcs.ng < 2) {
+          std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
+                    << std::endl << "rad_cap_ang needs nghost >= 2: the stiffness of a "
+                    << "ghost cell reads its own outer face" << std::endl;
+          std::exit(EXIT_FAILURE);
+        }
+        const int nmb = pp->nmb_thispack;
+        const int ncells1 = indcs.nx1 + 2*indcs.ng;
+        const int ncells2 = (indcs.nx2 > 1)? (indcs.nx2 + 2*indcs.ng) : 1;
+        const int ncells3 = (indcs.nx3 > 1)? (indcs.nx3 + 2*indcs.ng) : 1;
+        Kokkos::realloc(cap_x, nmb, ncells3, ncells2, ncells1);
+        Kokkos::realloc(cap_c2, nmb, ncells3, ncells2+1, ncells1);
+        Kokkos::realloc(cap_c3, nmb, ncells3+1, ncells2, ncells1);
+        Kokkos::realloc(cap_cnt, 2);
+        Kokkos::realloc(cap_rec, 6);
+      }
+    } else if (pin->GetOrAddBoolean(block,"rad_implicit_x1",false)) {
+      std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
+                << std::endl << "rad_implicit_x1 needs isotropic_conduction = radiative"
+                << std::endl;
+      std::exit(EXIT_FAILURE);
     }
   }
   Kokkos::realloc(dt_diag, ndtdiag);
@@ -200,6 +287,13 @@ void Conduction::BuildRadWeights(const DvceArray5D<Real> &w0, const EOS_Data &eo
   auto &krlT = rad_kr_lT;
   auto &krlP = rad_kr_lP;
   const int krnT = rad_kr_nT, krnP = rad_kr_nP;
+  // the radiatively inert region above rad_kappa_rmax: tau accumulates at rad_kappa_above
+  // there, so it does not grow through the corona and the blend weight stays 0
+  const Real krmax = rad_kappa_rmax, kabove = rad_kappa_above;
+  // the DENSITY gate (rad_gate_rho): the same inert medium, selected by what the gas is
+  // rather than by where it is.  kappa_eff = G kappa_table + (1 - G) rad_kappa_above.
+  const Real gaterho = rad_gate_rho, gatedex = rad_gate_dex;
+  auto &x1v_t = pmy_pack->pcoord->x1v;
   par_for("radtau", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1,
   KOKKOS_LAMBDA(const int m, const int k, const int j) {
     Real tau = 0.0;
@@ -210,10 +304,16 @@ void Conduction::BuildRadWeights(const DvceArray5D<Real> &w0, const EOS_Data &eo
       const Real p = (gen ? wder_(m,IDPR,k,j,i) : w0(m,IEN,k,j,i)*gm1);
       const Real rho = w0(m,IDN,k,j,i)*dens_unit;
       const Real dr = (curv ? dx1_(m,k,j,i) : size.d_view(m).dx1)*len_unit;
-      const Real kr = ktab
-          ? RosselandTable(krt, krlT, krlP, krnT, krnP, t*temp_unit,
-                           krho ? rho : p*pres_unit)
-          : RosselandFreedman2014(t*temp_unit, p*pres_unit, met);
+      Real kr = (krmax > 0.0 && x1v_t(m,i) > krmax)
+          ? kabove
+          : (ktab
+             ? RosselandTable(krt, krlT, krlP, krnT, krnP, t*temp_unit,
+                              krho ? rho : p*pres_unit)
+             : RosselandFreedman2014(t*temp_unit, p*pres_unit, met));
+      if (gaterho > 0.0) {
+        const Real g = RadGate(rho, gaterho, gatedex);
+        kr = g*kr + (1.0 - g)*kabove;
+      }
       tau += kfac*kr*rho*dr;
       tf(m,k,j,i) = tau;
       wf(m,k,j,i) = RadBlendWeight(tau, lo, hi);
@@ -241,6 +341,27 @@ KOKKOS_INLINE_FUNCTION
 Real RadiativeKappaKR(const Real tk, const Real rhocgs, const Real kfac, const Real kr) {
   const Real sigma_sb = 5.670374419e-5;
   return 16.0*sigma_sb*tk*tk*tk/(3.0*kfac*kr*rhocgs);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn Real RadFaceKappa
+//! \brief the radiative conductivity of a face in cgs from its temperature, pressure and
+//! density, taking kappa_R either from the tabulated lookup (on a log p or a log rho
+//! axis) or from the Freedman fit.  This is the ONE place the face conductivity is
+//! defined: the explicit face flux (AddIsotropicHeatFluxRadiative) and the implicit
+//! radial solve (ImplicitRadialUpdate) both call it, so the two operators cannot drift
+//! apart.
+
+KOKKOS_INLINE_FUNCTION
+Real RadFaceKappa(const Real tk, const Real pcgs, const Real rhocgs, const bool ktab,
+                  const DvceArray2D<Real> &krt, const DvceArray1D<Real> &krlT,
+                  const DvceArray1D<Real> &krlP, const int krnT, const int krnP,
+                  const bool krho, const Real met, const Real kfac) {
+  return ktab
+      ? RadiativeKappaKR(tk, rhocgs, kfac,
+                         RosselandTable(krt, krlT, krlP, krnT, krnP, tk,
+                                        krho ? rhocgs : pcgs))
+      : RadiativeKappa(tk, pcgs, rhocgs, met, kfac);
 }
 
 //----------------------------------------------------------------------------------------
@@ -298,6 +419,15 @@ void Conduction::AddIsotropicHeatFluxRadiative(const DvceArray5D<Real> &w0,
   auto &krlT = rad_kr_lT;
   auto &krlP = rad_kr_lP;
   const int krnT = rad_kr_nT, krnP = rad_kr_nP;
+  // no radiative diffusion above rad_kappa_rmax: the corona is transparent by fiat, and
+  // an opacity of zero would divide by zero in RadiativeKappaKR, so the face is skipped
+  // outright rather than handed kappa = 0
+  const Real krmax = rad_kappa_rmax;
+  // the DENSITY gate: kappa follows the gas, not the radius.  For a FACE the gate reads
+  // the same face-averaged density the flux does, so the two operators switch off over
+  // exactly the same faces.  Folded into the tau-blend weight, which is where every
+  // conduction face flux is already scaled.
+  const Real gaterho = rad_gate_rho, gatedex = rad_gate_dex;
   // gradn is the FACE-NORMAL temperature derivative in code units (T per length); the
   // caller forms it, which is where the grid enters
   auto face_flux = [=] (const Real tl, const Real tr, const Real pl, const Real pr,
@@ -306,11 +436,8 @@ void Conduction::AddIsotropicHeatFluxRadiative(const DvceArray5D<Real> &w0,
     if (pf < pcut) return 0.0;
     const Real tk = 0.5*(tl + tr)*temp_unit;
     const Real rhof = 0.5*(dl_ + dr_)*dens_unit;
-    const Real kap = ktab
-        ? RadiativeKappaKR(tk, rhof, kfac,
-                           RosselandTable(krt, krlT, krlP, krnT, krnP, tk,
-                                          krho ? rhof : pf*pres_unit))
-        : RadiativeKappa(tk, pf*pres_unit, rhof, met, kfac);
+    const Real kap = RadFaceKappa(tk, pf*pres_unit, rhof, ktab, krt, krlT, krlP,
+                                  krnT, krnP, krho, met, kfac);
     Real f = -kap*gradn*temp_unit/len_unit;     // erg/cm^2/s, positive outward
     if (limit) {
       // saturate smoothly at the free-streaming flux sigma T^4: 0.3 % at F = 0.08 sigma
@@ -320,6 +447,27 @@ void Conduction::AddIsotropicHeatFluxRadiative(const DvceArray5D<Real> &w0,
       f /= sqrt(1.0 + SQR(f/ffree));
     }
     return f/eflx_unit;
+  };
+
+  // THE SAME COEFFICIENT AS A CONDUCTIVITY.  face_flux returns -K gradn; the angular
+  // cap (rad_cap_ang) needs K itself, in code units, to form the explicit stiffness of a
+  // cell.  Identical expressions in the same order, from the same RadFaceKappa, so the
+  // capped operator and the flux it caps cannot disagree about what K is.
+  auto face_kcode = [=] (const Real tl, const Real tr, const Real pl, const Real pr,
+                         const Real dl_, const Real dr_, const Real gradn) {
+    const Real pf = 0.5*(pl + pr);
+    if (pf < pcut) return 0.0;
+    const Real tk = 0.5*(tl + tr)*temp_unit;
+    const Real rhof = 0.5*(dl_ + dr_)*dens_unit;
+    const Real kap = RadFaceKappa(tk, pf*pres_unit, rhof, ktab, krt, krlT, krlP,
+                                  krnT, krnP, krho, met, kfac);
+    Real lf = 1.0;
+    if (limit) {
+      const Real f = -kap*gradn*temp_unit/len_unit;
+      const Real ffree = sigma_sb*tk*tk*tk*tk;
+      lf = (ffree > 0.0) ? 1.0/sqrt(1.0 + SQR(f/ffree)) : 0.0;
+    }
+    return kap*lf*temp_unit/len_unit/eflx_unit;
   };
 
   // CUBED SPHERE: the xi and eta coordinate lines meet at an angle alpha (cos_cell,
@@ -335,7 +483,25 @@ void Conduction::AddIsotropicHeatFluxRadiative(const DvceArray5D<Real> &w0,
     return gen ? wtemp_(m,k,j,i) : w0(m,IEN,k,j,i)/w0(m,IDN,k,j,i)*gm1;
   };
 
+  // <problem>/nan_report device counter/record; untouched when the switch is off
+  const bool nanrep_c = nan_report;
+  if (nanrep_c && cnd_nanrep_cnt == nullptr) {
+    cnd_nanrep_cnt = new DvceArray1D<int>("cnd_nanrep_cnt", 1);
+    cnd_nanrep_rec = new DvceArray1D<Real>("cnd_nanrep_rec", 16);
+  }
+  auto cndcnt = nanrep_c ? *cnd_nanrep_cnt : DvceArray1D<int>("d", 1);
+  auto cndrec = nanrep_c ? *cnd_nanrep_rec : DvceArray1D<Real>("d", 1);
+  if (nanrep_c) {
+    Kokkos::deep_copy(cndcnt, 0);
+    Kokkos::deep_copy(cndrec, 0.0);
+  }
+
   auto &flx1 = flx.x1f;
+  // rad_implicit_x1: the INTERIOR x1 faces are handled by ImplicitRadialUpdate after the
+  // RK update, so nothing is added to them here.  The two boundary faces stay explicit:
+  // the inner one is the imposed wall flux (or the ghost-based gradient), the outer one
+  // the ghost-based gradient, and neither is part of the tridiagonal system.
+  const bool impx1 = rad_implicit_x1;
   par_for("radcond1", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     // the imposed internal flux through the inner wall replaces the gradient there
@@ -345,27 +511,238 @@ void Conduction::AddIsotropicHeatFluxRadiative(const DvceArray5D<Real> &w0,
       flx1(m,IEN,k,j,i) += fin;
       return;
     }
+    if (impx1 && i > is && i < ie+1) return;
+    if (krmax > 0.0 && x1v_(m,i) > krmax) return;
     const Real tl = (gen ? wtemp_(m,k,j,i-1) : w0(m,IEN,k,j,i-1)/w0(m,IDN,k,j,i-1)*gm1);
     const Real tr = (gen ? wtemp_(m,k,j,i) : w0(m,IEN,k,j,i)/w0(m,IDN,k,j,i)*gm1);
     const Real pl = (gen ? wder_(m,IDPR,k,j,i-1) : w0(m,IEN,k,j,i-1)*gm1);
     const Real pr = (gen ? wder_(m,IDPR,k,j,i) : w0(m,IEN,k,j,i)*gm1);
     const Real dl = curv ? (x1v_(m,i) - x1v_(m,i-1)) : size.d_view(m).dx1;
-    const Real wt = (taumode && blend_r) ? wf(m,k,j,i) : 1.0;
-    flx1(m,IEN,k,j,i) += wt*face_flux(tl, tr, pl, pr, w0(m,IDN,k,j,i-1),
-                                      w0(m,IDN,k,j,i), (tr - tl)/dl);
+    Real wt = (taumode && blend_r) ? wf(m,k,j,i) : 1.0;
+    if (gaterho > 0.0) {
+      wt *= RadGate(0.5*(w0(m,IDN,k,j,i-1) + w0(m,IDN,k,j,i))*dens_unit,
+                    gaterho, gatedex);
+    }
+    const Real fcnd = wt*face_flux(tl, tr, pl, pr, w0(m,IDN,k,j,i-1),
+                                   w0(m,IDN,k,j,i), (tr - tl)/dl);
+    flx1(m,IEN,k,j,i) += fcnd;
+    // --- <problem>/nan_report: record the first face whose conduction flux, or the
+    // total flux it lands in, is not finite, with the inputs that produced it.
+    if (nanrep_c) {
+      if (!isfinite(fcnd) || !isfinite(flx1(m,IEN,k,j,i))) {
+        if (Kokkos::atomic_fetch_add(&cndcnt(0), 1) == 0) {
+          const Real tk = 0.5*(tl + tr)*temp_unit;
+          const Real rhof = 0.5*(w0(m,IDN,k,j,i-1) + w0(m,IDN,k,j,i))*dens_unit;
+          const Real pf = 0.5*(pl + pr);
+          const Real kap = RadFaceKappa(tk, pf*pres_unit, rhof, ktab, krt, krlT, krlP,
+                                        krnT, krnP, krho, met, kfac);
+          cndrec(0) = static_cast<Real>(m);
+          cndrec(1) = static_cast<Real>(k);
+          cndrec(2) = static_cast<Real>(j);
+          cndrec(3) = static_cast<Real>(i);
+          cndrec(4) = tl*temp_unit;
+          cndrec(5) = tr*temp_unit;
+          cndrec(6) = kap;
+          cndrec(7) = wt;
+          cndrec(8) = (tr - tl)/dl*temp_unit/len_unit;
+          cndrec(9) = dl*len_unit;
+          cndrec(10) = fcnd;
+          cndrec(11) = flx1(m,IEN,k,j,i);
+          cndrec(12) = w0(m,IDN,k,j,i-1);
+          cndrec(13) = w0(m,IDN,k,j,i);
+          cndrec(14) = pl;
+          cndrec(15) = pr;
+        }
+      }
+    }
   });
+  if (nanrep_c && cnd_nanrep_lines < cnd_nanrep_maxlines) {
+    auto hcc = Kokkos::create_mirror_view(cndcnt);
+    Kokkos::deep_copy(hcc, cndcnt);
+    if (hcc(0) > 0) {
+      auto hcr = Kokkos::create_mirror_view(cndrec);
+      Kokkos::deep_copy(hcr, cndrec);
+      ++cnd_nanrep_lines;
+      const int mb = static_cast<int>(hcr(0));
+      std::cout << "### nan_report [conduction_x1_face] rank "
+                << global_variable::my_rank << " cycle " << pmy_pack->pmesh->ncycle
+                << " t = " << pmy_pack->pmesh->time << ": " << hcc(0)
+                << " bad face(s); first (m,k,j,i) = (" << mb << ","
+                << static_cast<int>(hcr(1)) << "," << static_cast<int>(hcr(2)) << ","
+                << static_cast<int>(hcr(3)) << ") gid = " << (pmy_pack->gids + mb)
+                << " T_l = " << hcr(4) << " T_r = " << hcr(5) << " kappa = " << hcr(6)
+                << " w_tau = " << hcr(7) << " dT/dx = " << hcr(8)
+                << " dl = " << hcr(9) << " F_cond = " << hcr(10)
+                << " flx1(IEN) = " << hcr(11) << " d_l = " << hcr(12)
+                << " d_r = " << hcr(13) << " p_l = " << hcr(14)
+                << " p_r = " << hcr(15) << std::endl;
+    }
+  }
   if (!multi_d) return;
+
+  // ------------------------------------------------------------------------------------
+  // rad_cap_ang: the CONSERVATIVE per-face cap on the explicit angular operator.  Three
+  // extra kernels evaluate the frozen face coefficient A_f K_f/(dl_f sin alpha) on the
+  // x2 and x3 faces and then the per-cell stiffness
+  //     x_i = beta_dt alpha_i (sum over its 4 angular faces of A_f K_f/dl_f)/V_i,
+  // one cell into the angular ghosts, because the first interior face needs the
+  // stiffness of the cell on its other side.  The flux kernels below then multiply each
+  // face by min(1, cap/max(x_i,x_j)) -- one number per face, so nothing is created or
+  // destroyed, only moved more slowly than an explicit step could resolve.
+  const Real capang = rad_cap_ang;
+  const Real capbdt = stage_beta_dt;
+  auto capx = cap_x;
+  auto capc2 = cap_c2;
+  auto capc3 = cap_c3;
+  auto capcnt = cap_cnt;
+  auto caprec = cap_rec;
+  if (capang > 0.0) {
+    auto &vol_ = pmy_pack->pcoord->volume;
+    auto &area2_ = pmy_pack->pcoord->area.x2f;
+    auto &area3_ = pmy_pack->pcoord->area.x3f;
+    auto eos_ = eos;
+    Kokkos::deep_copy(capcnt, 0);
+
+    par_for("radcapc2", DevExeSpace(), 0, nmb1, ks-1, ke+1, js-1, je+2, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      capc2(m,k,j,i) = 0.0;
+      if (krmax > 0.0 && x1v_(m,i) > krmax) return;
+      const Real tl = tcell(m,k,j-1,i), tr = tcell(m,k,j,i);
+      const Real pl = (gen ? wder_(m,IDPR,k,j-1,i) : w0(m,IEN,k,j-1,i)*gm1);
+      const Real pr = (gen ? wder_(m,IDPR,k,j,i) : w0(m,IEN,k,j,i)*gm1);
+      const Real dl = curv ? 0.5*(dx2_(m,k,j-1,i) + dx2_(m,k,j,i)) : size.d_view(m).dx2;
+      Real wt = taumode ? 0.25*(wf(m,k,j-1,i) + wf(m,k,j-1,i+1)
+                                + wf(m,k,j,i) + wf(m,k,j,i+1)) : 1.0;
+      if (gaterho > 0.0) {
+        wt *= RadGate(0.5*(w0(m,IDN,k,j-1,i) + w0(m,IDN,k,j,i))*dens_unit,
+                      gaterho, gatedex);
+      }
+      Real gradn = (tr - tl)/dl;
+      Real sn = 1.0;
+      if (cs && three_d) {
+        const Real c = 0.5*(cosc_(m,k,j-1) + cosc_(m,k,j));
+        sn = 0.5*(sinc_(m,k,j-1) + sinc_(m,k,j));
+        const Real ge = 0.5*((tcell(m,k+1,j-1,i) - tcell(m,k-1,j-1,i))
+                              /(0.5*dx3_(m,k-1,j-1,i) + dx3_(m,k,j-1,i)
+                                + 0.5*dx3_(m,k+1,j-1,i))
+                           + (tcell(m,k+1,j,i) - tcell(m,k-1,j,i))
+                              /(0.5*dx3_(m,k-1,j,i) + dx3_(m,k,j,i)
+                                + 0.5*dx3_(m,k+1,j,i)));
+        gradn = (gradn - c*ge)/sn;
+      }
+      // the coefficient of (T_j - T_i)/dl in the face flux is K/sin(alpha): the metric
+      // normalisation of grad(xi) is part of the stiffness, exactly as it is part of the
+      // dt2 the cap replaces (SQR(d2)*s2/k2 in NewTimeStep)
+      const Real kc = wt*face_kcode(tl, tr, pl, pr, w0(m,IDN,k,j-1,i),
+                                    w0(m,IDN,k,j,i), gradn);
+      const Real af = curv ? area2_(m,k,j,i) : 1.0/size.d_view(m).dx2;
+      capc2(m,k,j,i) = kc*af/(dl*sn);
+    });
+
+    if (three_d) {
+      par_for("radcapc3", DevExeSpace(), 0, nmb1, ks-1, ke+2, js-1, je+1, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        capc3(m,k,j,i) = 0.0;
+        if (krmax > 0.0 && x1v_(m,i) > krmax) return;
+        const Real tl = tcell(m,k-1,j,i), tr = tcell(m,k,j,i);
+        const Real pl = (gen ? wder_(m,IDPR,k-1,j,i) : w0(m,IEN,k-1,j,i)*gm1);
+        const Real pr = (gen ? wder_(m,IDPR,k,j,i) : w0(m,IEN,k,j,i)*gm1);
+        const Real dl = curv ? 0.5*(dx3_(m,k-1,j,i) + dx3_(m,k,j,i))
+                             : size.d_view(m).dx3;
+        Real wt = taumode ? 0.25*(wf(m,k-1,j,i) + wf(m,k-1,j,i+1)
+                                  + wf(m,k,j,i) + wf(m,k,j,i+1)) : 1.0;
+        if (gaterho > 0.0) {
+          wt *= RadGate(0.5*(w0(m,IDN,k-1,j,i) + w0(m,IDN,k,j,i))*dens_unit,
+                        gaterho, gatedex);
+        }
+        Real gradn = (tr - tl)/dl;
+        Real sn = 1.0;
+        if (cs) {
+          const Real c = 0.5*(cosc_(m,k-1,j) + cosc_(m,k,j));
+          sn = 0.5*(sinc_(m,k-1,j) + sinc_(m,k,j));
+          const Real gx = 0.5*((tcell(m,k-1,j+1,i) - tcell(m,k-1,j-1,i))
+                                /(0.5*dx2_(m,k-1,j-1,i) + dx2_(m,k-1,j,i)
+                                  + 0.5*dx2_(m,k-1,j+1,i))
+                             + (tcell(m,k,j+1,i) - tcell(m,k,j-1,i))
+                                /(0.5*dx2_(m,k,j-1,i) + dx2_(m,k,j,i)
+                                  + 0.5*dx2_(m,k,j+1,i)));
+          gradn = (gradn - c*gx)/sn;
+        }
+        const Real kc = wt*face_kcode(tl, tr, pl, pr, w0(m,IDN,k-1,j,i),
+                                      w0(m,IDN,k,j,i), gradn);
+        const Real af = curv ? area3_(m,k,j,i) : 1.0/size.d_view(m).dx3;
+        capc3(m,k,j,i) = kc*af/(dl*sn);
+      });
+    }
+
+    par_for("radcapx", DevExeSpace(), 0, nmb1, ks-1, ke+1, js-1, je+1, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real d = w0(m,IDN,k,j,i);
+      Real rcv = d/gm1;
+      if (gen) rcv = d*eos_.SpecificHeatCv(d, w0(m,IEN,k,j,i), wtemp_(m,k,j,i));
+      Real sum = capc2(m,k,j,i) + capc2(m,k,j+1,i);
+      if (three_d) sum += capc3(m,k,j,i) + capc3(m,k+1,j,i);
+      const Real vi = curv ? vol_(m,k,j,i) : 1.0;
+      capx(m,k,j,i) = (rcv > 0.0 && vi > 0.0 && sum > 0.0) ? capbdt*sum/(rcv*vi) : 0.0;
+    });
+
+    // the diagnostic: how stiff the angular operator actually is, and where.  Active
+    // cells only -- a ghost is somebody else's cell and would be double counted.
+    {
+      const int nx1_ = indcs.nx1, nx2_ = indcs.nx2, nx3_ = indcs.nx3;
+      const int nkji_ = nx3_*nx2_*nx1_, nji_ = nx2_*nx1_;
+      Kokkos::ValLocScalar<Real, int> xloc;
+      int nover = 0;
+      Kokkos::parallel_reduce("radcapdiag",
+      Kokkos::RangePolicy<>(DevExeSpace(), 0, (nmb1 + 1)*nkji_),
+      KOKKOS_LAMBDA(const int &idx, Kokkos::ValLocScalar<Real, int> &xres, int &nov) {
+        const int m = idx/nkji_;
+        const int k = (idx - m*nkji_)/nji_ + ks;
+        const int j = (idx - m*nkji_ - (k - ks)*nji_)/nx1_ + js;
+        const int i = (idx - m*nkji_ - (k - ks)*nji_ - (j - js)*nx1_) + is;
+        const Real xv = capx(m,k,j,i);
+        if (xv > capang) ++nov;
+        if (xv > xres.val) { xres.val = xv; xres.loc = idx; }
+      }, Kokkos::MaxLoc<Real, int>(xloc), nover);
+      const int xl = xloc.loc;
+      const Real xv = xloc.val;
+      par_for("radcaploc", DevExeSpace(), 0, 0, KOKKOS_LAMBDA(const int) {
+        caprec(0) = xv;
+        if (xl >= 0) {
+          const int m = xl/nkji_;
+          const int k = (xl - m*nkji_)/nji_ + ks;
+          const int j = (xl - m*nkji_ - (k - ks)*nji_)/nx1_ + js;
+          const int i = (xl - m*nkji_ - (k - ks)*nji_ - (j - js)*nx1_) + is;
+          caprec(1) = static_cast<Real>(m);
+          caprec(2) = static_cast<Real>(k);
+          caprec(3) = static_cast<Real>(j);
+          caprec(4) = static_cast<Real>(i);
+          caprec(5) = x1v_(m,i);
+        } else {
+          caprec(1) = -1.0; caprec(2) = -1.0; caprec(3) = -1.0;
+          caprec(4) = -1.0; caprec(5) = -1.0;
+        }
+      });
+      cap_diag_x = xv;
+      cap_diag_over = nover;
+    }
+  }
 
   auto &flx2 = flx.x2f;
   par_for("radcond2", DevExeSpace(), 0, nmb1, ks, ke, js, je+1, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    if (krmax > 0.0 && x1v_(m,i) > krmax) return;
     const Real tl = (gen ? wtemp_(m,k,j-1,i) : w0(m,IEN,k,j-1,i)/w0(m,IDN,k,j-1,i)*gm1);
     const Real tr = (gen ? wtemp_(m,k,j,i) : w0(m,IEN,k,j,i)/w0(m,IDN,k,j,i)*gm1);
     const Real pl = (gen ? wder_(m,IDPR,k,j-1,i) : w0(m,IEN,k,j-1,i)*gm1);
     const Real pr = (gen ? wder_(m,IDPR,k,j,i) : w0(m,IEN,k,j,i)*gm1);
     const Real dl = curv ? 0.5*(dx2_(m,k,j-1,i) + dx2_(m,k,j,i)) : size.d_view(m).dx2;
-    const Real wt = taumode ? 0.25*(wf(m,k,j-1,i) + wf(m,k,j-1,i+1)
-                                    + wf(m,k,j,i) + wf(m,k,j,i+1)) : 1.0;
+    Real wt = taumode ? 0.25*(wf(m,k,j-1,i) + wf(m,k,j-1,i+1)
+                              + wf(m,k,j,i) + wf(m,k,j,i+1)) : 1.0;
+    if (gaterho > 0.0) {
+      wt *= RadGate(0.5*(w0(m,IDN,k,j-1,i) + w0(m,IDN,k,j,i))*dens_unit,
+                    gaterho, gatedex);
+    }
     Real gradn = (tr - tl)/dl;
     if (cs && three_d) {
       const Real c = 0.5*(cosc_(m,k,j-1) + cosc_(m,k,j));
@@ -377,21 +754,35 @@ void Conduction::AddIsotropicHeatFluxRadiative(const DvceArray5D<Real> &w0,
                             /(0.5*dx3_(m,k-1,j,i) + dx3_(m,k,j,i) + 0.5*dx3_(m,k+1,j,i)));
       gradn = (gradn - c*ge)/sn;
     }
-    flx2(m,IEN,k,j,i) += wt*face_flux(tl, tr, pl, pr, w0(m,IDN,k,j-1,i),
-                                      w0(m,IDN,k,j,i), gradn);
+    // rad_cap_ang: one scale factor per face, applied to both of its cells
+    Real wtc = wt;
+    if (capang > 0.0) {
+      const Real xm = fmax(capx(m,k,j-1,i), capx(m,k,j,i));
+      if (xm > capang) {
+        wtc = wt*(capang/xm);
+        Kokkos::atomic_fetch_add(&capcnt(1), 1);
+      }
+    }
+    flx2(m,IEN,k,j,i) += wtc*face_flux(tl, tr, pl, pr, w0(m,IDN,k,j-1,i),
+                                       w0(m,IDN,k,j,i), gradn);
   });
   if (!three_d) return;
 
   auto &flx3 = flx.x3f;
   par_for("radcond3", DevExeSpace(), 0, nmb1, ks, ke+1, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    if (krmax > 0.0 && x1v_(m,i) > krmax) return;
     const Real tl = (gen ? wtemp_(m,k-1,j,i) : w0(m,IEN,k-1,j,i)/w0(m,IDN,k-1,j,i)*gm1);
     const Real tr = (gen ? wtemp_(m,k,j,i) : w0(m,IEN,k,j,i)/w0(m,IDN,k,j,i)*gm1);
     const Real pl = (gen ? wder_(m,IDPR,k-1,j,i) : w0(m,IEN,k-1,j,i)*gm1);
     const Real pr = (gen ? wder_(m,IDPR,k,j,i) : w0(m,IEN,k,j,i)*gm1);
     const Real dl = curv ? 0.5*(dx3_(m,k-1,j,i) + dx3_(m,k,j,i)) : size.d_view(m).dx3;
-    const Real wt = taumode ? 0.25*(wf(m,k-1,j,i) + wf(m,k-1,j,i+1)
-                                    + wf(m,k,j,i) + wf(m,k,j,i+1)) : 1.0;
+    Real wt = taumode ? 0.25*(wf(m,k-1,j,i) + wf(m,k-1,j,i+1)
+                              + wf(m,k,j,i) + wf(m,k,j,i+1)) : 1.0;
+    if (gaterho > 0.0) {
+      wt *= RadGate(0.5*(w0(m,IDN,k-1,j,i) + w0(m,IDN,k,j,i))*dens_unit,
+                    gaterho, gatedex);
+    }
     Real gradn = (tr - tl)/dl;
     if (cs) {
       const Real c = 0.5*(cosc_(m,k-1,j) + cosc_(m,k,j));
@@ -403,9 +794,288 @@ void Conduction::AddIsotropicHeatFluxRadiative(const DvceArray5D<Real> &w0,
                             /(0.5*dx2_(m,k,j-1,i) + dx2_(m,k,j,i) + 0.5*dx2_(m,k,j+1,i)));
       gradn = (gradn - c*gx)/sn;
     }
-    flx3(m,IEN,k,j,i) += wt*face_flux(tl, tr, pl, pr, w0(m,IDN,k-1,j,i),
-                                      w0(m,IDN,k,j,i), gradn);
+    Real wtc = wt;
+    if (capang > 0.0) {
+      const Real xm = fmax(capx(m,k-1,j,i), capx(m,k,j,i));
+      if (xm > capang) {
+        wtc = wt*(capang/xm);
+        Kokkos::atomic_fetch_add(&capcnt(1), 1);
+      }
+    }
+    flx3(m,IEN,k,j,i) += wtc*face_flux(tl, tr, pl, pr, w0(m,IDN,k-1,j,i),
+                                       w0(m,IDN,k,j,i), gradn);
   });
+
+  // rad_cap_ang report: how stiff the angular operator was and how much of it had to be
+  // slowed down.  Same style and line budget as the rad_implicit_x1 report.
+  if (capang > 0.0 && cap_lines < 400) {
+    auto hcc = Kokkos::create_mirror_view(capcnt);
+    Kokkos::deep_copy(hcc, capcnt);
+    const bool active = (cap_diag_over > 0 || hcc(1) > 0);
+    // the first 20 calls print from EVERY rank, so the startup lines carry the global
+    // maximum of x_i and not just rank 0's share; after that only a rank that actually
+    // had to cap something says anything
+    if (active || cap_lines < 20) {
+      ++cap_lines;
+      auto hcr = Kokkos::create_mirror_view(caprec);
+      Kokkos::deep_copy(hcr, caprec);
+      const int mb = static_cast<int>(hcr(1));
+      std::cout << "### rad_cap_ang rank " << global_variable::my_rank
+                << " cycle " << pmy_pack->pmesh->ncycle
+                << " t = " << pmy_pack->pmesh->time
+                << ": max x_i = " << hcr(0) << " (cap " << capang << ") at (m,k,j,i) = ("
+                << mb << "," << static_cast<int>(hcr(2)) << ","
+                << static_cast<int>(hcr(3)) << "," << static_cast<int>(hcr(4))
+                << ") gid = " << (pmy_pack->gids + ((mb >= 0) ? mb : 0))
+                << " r = " << hcr(5) << " | cells over cap = " << cap_diag_over
+                << ", faces capped = " << hcc(1) << std::endl;
+    }
+  }
+  return;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void Conduction::ImplicitRadialUpdate
+//! \brief BACKWARD-EULER solve of the radial flux-limited radiative diffusion, one
+//! tridiagonal system per (m,k,j) column.  Runs after the RK update and the source
+//! terms, and before the ghost exchange, so the values it writes are the ones that are
+//! communicated.
+//!
+//! WHY.  The explicit radial operator is limited by dt ~ dr^2 rho c_v/kappa_rad with
+//! kappa_rad = 16 sigma T^3/(3 kappa_R rho).  In an evacuated cell just above the
+//! photosphere (rho 60x below its shell median, tau_cell ~ 1) that limit is ~1e-4 s
+//! while the run takes 30 s steps, and since dt is set from the PREVIOUS state the
+//! overshoot is unbounded: the cell heats past its neighbours, kappa_rad grows as T^3,
+//! and T reaches 1e10 K in a single step.  Implicit in the ENERGY removes the
+//! constraint entirely: the operator below is a symmetric M-matrix, so it is
+//! unconditionally stable and cannot overshoot the neighbour equilibrium.
+//!
+//! WHAT IS SOLVED.  With e the internal energy density, T linearised about the frozen
+//! post-update state,  T_i = T*_i + (e_i - e*_i)/(rho_i c_v,i),  and the frozen face
+//! conductivity K_f (the SAME RadFaceKappa, tau-blend weight and flux limiter the
+//! explicit face flux uses, the limiter evaluated on the frozen gradient),
+//!     F_f = -K_f (T_i - T_{i-1})/dl_f
+//!     e_i = e*_i + beta_dt (A_f F_f - A_{f+1} F_{f+1})/V_i
+//! with exactly the areas and volumes Hydro::RKUpdate divides by, so the update is the
+//! same flux-form divergence.  The two boundary faces (is and ie+1) are NOT in the
+//! system -- they are added explicitly in AddIsotropicHeatFluxRadiative -- so the
+//! interior fluxes telescope and sum_i V_i (e_i - e*_i) = 0 per column to round-off.
+//! Only u0(IEN) is written; w0 is rebuilt by ConToPrim later in the same stage.
+
+void Conduction::ImplicitRadialUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
+                                      const Real beta_dt) {
+  if (!rad_implicit_x1) return;
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie;
+  const int js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto &size = pmy_pack->pmb->mb_size;
+  const bool curvg = pmy_pack->pmesh->use_cubed_sphere
+                     || pmy_pack->pmesh->use_spherical_polar;
+  const bool cs_ = pmy_pack->pmesh->use_cubed_sphere;
+  auto &cosc_ = pmy_pack->pcoord->cos_cell;
+  auto &x1v_ = pmy_pack->pcoord->x1v;
+  auto &vol_ = pmy_pack->pcoord->volume;
+  auto &area1_ = pmy_pack->pcoord->area.x1f;
+  auto eos_ = eos;
+  const bool gen = eos.IsGeneral();
+  auto &wtemp_ = pmy_pack->phydro->wtemp;
+  auto &phicc_ = pmy_pack->phydro->phicc0;
+  const bool etg = pmy_pack->phydro->use_etotgrav;
+  const Real temp_unit = pmy_pack->punit->temperature_cgs();
+  const Real pres_unit = pmy_pack->punit->pressure_cgs();
+  const Real dens_unit = pmy_pack->punit->density_cgs();
+  const Real len_unit  = pmy_pack->punit->length_cgs();
+  const Real eflx_unit = pres_unit*pmy_pack->punit->velocity_cgs();
+  const Real met = rad_met, kfac = rad_kappa_fac;
+  const Real pcut = rad_tau_mode ? -1.0 : rad_pcut;
+  const bool taumode = rad_tau_mode;
+  const bool blend_r = rad_blend_radial;
+  const bool limit = rad_flux_limit;
+  const Real krmax = rad_kappa_rmax;
+  // the density gate, on the same face-averaged density the explicit x1 face uses
+  const Real gaterho = rad_gate_rho, gatedex = rad_gate_dex;
+  const Real sigma_sb = 5.670374419e-5;
+  auto &wf = rad_w;
+  const bool ktab = (rad_kappa_tab && rad_kr_nT > 0);
+  const bool krho = rad_kappa_rho;
+  auto &krt = rad_kr_tab;
+  auto &krlT = rad_kr_lT;
+  auto &krlP = rad_kr_lP;
+  const int krnT = rad_kr_nT, krnP = rad_kr_nP;
+  auto wrk = imp_wrk;
+  auto iflag = imp_flag;
+  auto irec = imp_rec;
+  // slot indices as plain locals: a static constexpr member would capture `this`
+  const int e_ = IMPE, t_ = IMPT, al_ = IMPA, pr_ = IMPP;
+  const int c_ = IMPC, cp_ = IMPCP, dp_ = IMPDP;
+  Kokkos::deep_copy(iflag, 0);
+
+  const int nkj = (ke - ks + 1)*(je - js + 1);
+  const int nj = (je - js + 1);
+  Real maxviol = 0.0;
+  int nfail = 0;
+  Kokkos::parallel_reduce("radimpx1",
+  Kokkos::RangePolicy<>(DevExeSpace(), 0, (nmb1 + 1)*nkj),
+  KOKKOS_LAMBDA(const int &idx, Real &mviol, int &nbad) {
+    const int m = idx/nkj;
+    const int k = (idx - m*nkj)/nj + ks;
+    const int j = (idx - m*nkj - (k - ks)*nj) + js;
+    const Real dx1c = size.d_view(m).dx1;
+
+    // ---- the FROZEN state of every cell: internal energy, temperature, pressure and
+    // 1/(rho c_v).  The internal energy is extracted exactly as ConToPrim extracts it:
+    // the gravitational term (etotgrav) and, on the cubed sphere, the kinetic energy
+    // formed with the non-orthogonal metric (GnomonicEquiangleRaiseVel).  A cell whose
+    // internal energy is not positive is marked with a negative 1/(rho c_v) and is
+    // dropped from the system rather than handed to the EOS inversion.
+    for (int i=is; i<=ie; ++i) {
+      const Real d = u0(m,IDN,k,j,i);
+      // the one shared extraction (utils/eint_from_cons.hpp): identical arithmetic in
+      // identical order to what stood here, so this refactor is bit-for-bit a no-op
+      const Real ei = EintFromCons(u0, m, k, j, i, cs_ ? cosc_(m,k,j) : 0.0, cs_, etg,
+                                   etg ? phicc_(m,k,j,i) : 0.0);
+      wrk(m,e_,k,j,i) = ei;
+      wrk(m,t_,k,j,i) = 0.0;
+      wrk(m,pr_,k,j,i) = 0.0;
+      wrk(m,al_,k,j,i) = -1.0;
+      if (!(ei > 0.0) || !(d > 0.0) || !isfinite(ei)) continue;
+      const Real tt = eos_.Temperature(d, ei, gen ? wtemp_(m,k,j,i) : -1.0);
+      if (!(tt > 0.0) || !isfinite(tt)) continue;
+      const Real cv = eos_.SpecificHeatCv(d, ei, tt);
+      if (!(cv > 0.0) || !isfinite(cv)) continue;
+      wrk(m,t_,k,j,i) = tt;
+      wrk(m,pr_,k,j,i) = eos_.Pressure(d, ei, tt);
+      wrk(m,al_,k,j,i) = 1.0/(d*cv);
+    }
+
+    // ---- the frozen face coefficient A_f K_f/dl_f.  The two boundary faces are
+    // outside the system: they were added explicitly with the ghost states.
+    wrk(m,c_,k,j,is) = 0.0;
+    wrk(m,c_,k,j,ie+1) = 0.0;
+    for (int i=is+1; i<=ie; ++i) {
+      Real ca = 0.0;
+      const Real all = wrk(m,al_,k,j,i-1), alr = wrk(m,al_,k,j,i);
+      if (all > 0.0 && alr > 0.0 && !(krmax > 0.0 && x1v_(m,i) > krmax)) {
+        const Real tl = wrk(m,t_,k,j,i-1), tr = wrk(m,t_,k,j,i);
+        const Real pf = 0.5*(wrk(m,pr_,k,j,i-1) + wrk(m,pr_,k,j,i));
+        if (!(pf < pcut)) {
+          const Real dl = curvg ? (x1v_(m,i) - x1v_(m,i-1)) : dx1c;
+          const Real tk = 0.5*(tl + tr)*temp_unit;
+          const Real rhof = 0.5*(u0(m,IDN,k,j,i-1) + u0(m,IDN,k,j,i))*dens_unit;
+          const Real kap = RadFaceKappa(tk, pf*pres_unit, rhof, ktab, krt, krlT, krlP,
+                                        krnT, krnP, krho, met, kfac);
+          // the flux limiter, evaluated on the FROZEN gradient and then held fixed:
+          // F = -kap g/sqrt(1 + (kap g/F_free)^2) linearises to a diffusion coefficient
+          // kap/sqrt(1 + s^2) at fixed s, which is what keeps the system linear
+          Real lf = 1.0;
+          if (limit) {
+            const Real ffree = sigma_sb*tk*tk*tk*tk;
+            if (ffree > 0.0) {
+              const Real fu = -kap*((tr - tl)/dl)*temp_unit/len_unit;
+              lf = 1.0/sqrt(1.0 + SQR(fu/ffree));
+            } else {
+              lf = 0.0;
+            }
+          }
+          Real wt = (taumode && blend_r) ? wf(m,k,j,i) : 1.0;
+          if (gaterho > 0.0) wt *= RadGate(rhof, gaterho, gatedex);
+          const Real af = curvg ? area1_(m,k,j,i) : 1.0;
+          ca = wt*kap*lf*temp_unit/len_unit/eflx_unit*af/dl;
+          if (!isfinite(ca) || ca < 0.0) ca = 0.0;
+        }
+      }
+      wrk(m,c_,k,j,i) = ca;
+    }
+
+    // ---- forward sweep of the Thomas algorithm on the energy INCREMENT
+    // x_i = e_i - e*_i.  Row i:
+    //   -g_i A_i C_i alpha_{i-1} x_{i-1}
+    // + (1 + g_i alpha_i (A_i C_i + A_{i+1} C_{i+1})) x_i
+    // - g_i A_{i+1} C_{i+1} alpha_{i+1} x_{i+1}
+    // = g_i (A_i F*_i - A_{i+1} F*_{i+1}),   g_i = beta_dt/V_i
+    for (int i=is; i<=ie; ++i) {
+      const Real vi = curvg ? vol_(m,k,j,i) : dx1c;
+      const Real g = beta_dt/vi;
+      const Real cl = wrk(m,c_,k,j,i), cr = wrk(m,c_,k,j,i+1);
+      const Real ac = fmax(wrk(m,al_,k,j,i), 0.0);
+      const Real amm = (i > is) ? fmax(wrk(m,al_,k,j,i-1), 0.0) : 0.0;
+      const Real apl = (i < ie) ? fmax(wrk(m,al_,k,j,i+1), 0.0) : 0.0;
+      const Real aa = -g*cl*amm;
+      const Real bb = 1.0 + g*ac*(cl + cr);
+      const Real cc = -g*cr*apl;
+      const Real tc = wrk(m,t_,k,j,i);
+      const Real tm = (i > is) ? wrk(m,t_,k,j,i-1) : 0.0;
+      const Real tp = (i < ie) ? wrk(m,t_,k,j,i+1) : 0.0;
+      const Real rhs = g*(cr*(tp - tc) - cl*(tc - tm));
+      if (i == is) {
+        wrk(m,cp_,k,j,i) = cc/bb;
+        wrk(m,dp_,k,j,i) = rhs/bb;
+      } else {
+        const Real den = bb - aa*wrk(m,cp_,k,j,i-1);
+        wrk(m,cp_,k,j,i) = cc/den;
+        wrk(m,dp_,k,j,i) = (rhs - aa*wrk(m,dp_,k,j,i-1))/den;
+      }
+    }
+
+    // ---- back substitution, write-back, and the per-column conservation residual
+    Real xnext = 0.0, csum = 0.0, cabs = 0.0;
+    for (int i=ie; i>=is; --i) {
+      Real x = wrk(m,dp_,k,j,i) - wrk(m,cp_,k,j,i)*xnext;
+      const Real es = wrk(m,e_,k,j,i);
+      if (!isfinite(x) || !((es + x) > 0.0)) {
+        // should never fire: the system is an M-matrix and cannot undershoot below the
+        // minimum of the frozen column.  Fall back to no radial conduction in the cell.
+        if (x != 0.0) {
+          ++nbad;
+          if (Kokkos::atomic_fetch_add(&iflag(0), 1) == 0) {
+            irec(0) = static_cast<Real>(m);
+            irec(1) = static_cast<Real>(k);
+            irec(2) = static_cast<Real>(j);
+            irec(3) = static_cast<Real>(i);
+            irec(4) = x1v_(m,i);
+            irec(5) = wrk(m,t_,k,j,i)*temp_unit;
+            irec(6) = u0(m,IDN,k,j,i)*dens_unit;
+            irec(7) = x;
+          }
+        }
+        x = 0.0;
+      }
+      xnext = x;
+      u0(m,IEN,k,j,i) += x;
+      const Real vi = curvg ? vol_(m,k,j,i) : dx1c;
+      csum += vi*x;
+      cabs += fabs(vi*x);
+    }
+    if (cabs > 0.0) mviol = fmax(mviol, fabs(csum)/cabs);
+  }, Kokkos::Max<Real>(maxviol), nfail);
+
+  // <problem>/nan_report: the conservation residual of the tridiagonal solve, and any
+  // cell that had to fall back.  Nothing is printed unless the switch is on, except a
+  // fallback, which is always worth a line.
+  if (imp_lines < 400) {
+    const bool bad = (nfail > 0);
+    const bool tell = nan_report && (imp_lines < 20 || maxviol > 1.0e-10);
+    if (bad || (tell && global_variable::my_rank == 0)) {
+      ++imp_lines;
+      std::cout << "### rad_implicit_x1 rank " << global_variable::my_rank
+                << " cycle " << pmy_pack->pmesh->ncycle
+                << " t = " << pmy_pack->pmesh->time
+                << ": max |sum V de|/sum V|de| = " << maxviol
+                << ", fallback cells = " << nfail << std::endl;
+      if (bad) {
+        auto hr = Kokkos::create_mirror_view(irec);
+        Kokkos::deep_copy(hr, irec);
+        const int mb = static_cast<int>(hr(0));
+        std::cout << "    first fallback (m,k,j,i) = (" << mb << ","
+                  << static_cast<int>(hr(1)) << "," << static_cast<int>(hr(2)) << ","
+                  << static_cast<int>(hr(3)) << ") gid = " << (pmy_pack->gids + mb)
+                  << " r = " << hr(4) << " T* = " << hr(5) << " rho = " << hr(6)
+                  << " de = " << hr(7) << std::endl;
+      }
+    }
+  }
   return;
 }
 
@@ -683,6 +1353,12 @@ void Conduction::NewTimeStep(const DvceArray5D<Real> &w0, const EOS_Data &eos_da
   const bool taumode = rad_tau_mode;
   const bool blend_r = rad_blend_radial;
   const bool limit = rad_flux_limit;
+  // the radial operator is unconditionally stable when it is solved implicitly, so it
+  // carries no timestep constraint; x2/x3 are still explicit and still do
+  const bool impx1 = rad_implicit_x1;
+  // ...and the angular operator self-limits when rad_cap_ang caps every face, so dt2 and
+  // dt3 go with it
+  const bool capa = (rad_cap_ang > 0.0);
   auto &wf = rad_w;
   const bool ktab = (rad_kappa_tab && rad_kr_nT > 0);
   const bool krho = rad_kappa_rho;   // table axis is log rho, not log p
@@ -706,6 +1382,12 @@ void Conduction::NewTimeStep(const DvceArray5D<Real> &w0, const EOS_Data &eos_da
   auto &dx3_ = pmy_pack->pcoord->dx3;
   const bool cs = pmy_pack->pmesh->use_cubed_sphere && rad_cs_exact;
   auto &sinc_ = pmy_pack->pcoord->sin_cell;
+  // the inert region carries no flux, so it must not carry a constraint either
+  const Real krmax = rad_kappa_rmax;
+  // ...and neither does gas the density gate has made inert: the face fluxes it feeds
+  // are all scaled by G, so the cell's constraint scales with G too
+  const Real gaterho = rad_gate_rho, gatedex = rad_gate_dex;
+  auto &x1v_n = pmy_pack->pcoord->x1v;
 
   // capture variables for kernel
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -758,6 +1440,7 @@ void Conduction::NewTimeStep(const DvceArray5D<Real> &w0, const EOS_Data &eos_da
       Real temp = (gen ? wtemp_(m,k,j,i) : w0(m,IEN,k,j,i)/w0(m,IDN,k,j,i)*gm1);
       Real pres = (gen ? wder_(m,IDPR,k,j,i) : w0(m,IEN,k,j,i)*gm1);
       if (pres < pcut) return;   // no flux above the cut: no constraint
+      if (krmax > 0.0 && x1v_n(m,i) > krmax) return;     // radiatively inert corona
       kappa_ = (ktab
           ? RadiativeKappaKR(temp*temp_unit, w0_(m,IDN,k,j,i)*dens_unit, kfac,
                              RosselandTable(krt, krlT, krlP, krnT, krnP, temp*temp_unit,
@@ -765,6 +1448,9 @@ void Conduction::NewTimeStep(const DvceArray5D<Real> &w0, const EOS_Data &eos_da
                                                  : pres*pres_unit))
           : RadiativeKappa(temp*temp_unit, pres*pres_unit, w0_(m,IDN,k,j,i)*dens_unit,
                            met, kfac))/kappa_unit;
+      if (gaterho > 0.0) {
+        kappa_ *= RadGate(w0_(m,IDN,k,j,i)*dens_unit, gaterho, gatedex);
+      }
       // the blend: the face flux is w*kappa*grad T, so the explicit limit is on w*kappa,
       // and a cell whose faces carry no weight carries no constraint
       if (taumode) {
@@ -806,7 +1492,7 @@ void Conduction::NewTimeStep(const DvceArray5D<Real> &w0, const EOS_Data &eos_da
     };
 
     const Real d1 = (curv && radiative) ? dx1_(m,k,j,i) : size.d_view(m).dx1;
-    {
+    if (!impx1) {
       const Real w1 = (taumode && blend_r) ? wmax : 1.0;
       const Real k1 = w1*keff(d1, tc(k,j,i-1), tc(k,j,i+1));
       if (k1 > 0.0) min_dt = fmin(min_dt, SQR(d1)/k1*rcv);
@@ -815,12 +1501,12 @@ void Conduction::NewTimeStep(const DvceArray5D<Real> &w0, const EOS_Data &eos_da
     // cubed sphere: the exact operator's angular diffusivity is kappa/sin^2(alpha)
     const Real s2 = (cs && radiative) ? SQR(sinc_(m,k,j)) : 1.0;
     const Real wa = taumode ? wmax : 1.0;
-    if (multi_d) {
+    if (multi_d && !capa) {
       const Real d2 = (curv && radiative) ? dx2_(m,k,j,i) : size.d_view(m).dx2;
       const Real k2 = wa*keff(d2, tc(k,j-1,i), tc(k,j+1,i));
       if (k2 > 0.0) min_dt = fmin(min_dt, SQR(d2)*s2/k2*rcv);
     }
-    if (three_d) {
+    if (three_d && !capa) {
       const Real d3 = (curv && radiative) ? dx3_(m,k,j,i) : size.d_view(m).dx3;
       const Real k3 = wa*keff(d3, tc(k-1,j,i), tc(k+1,j,i));
       if (k3 > 0.0) min_dt = fmin(min_dt, SQR(d3)*s2/k3*rcv);
@@ -856,10 +1542,11 @@ void Conduction::NewTimeStep(const DvceArray5D<Real> &w0, const EOS_Data &eos_da
       const Real kr = (ktab ? RosselandTable(krt, krlT, krlP, krnT, krnP, temp*temp_unit,
                                              krho ? dens*dens_unit : pres*pres_unit)
                             : -1.0);
-      const Real kappa_ = (ktab
+      Real kappa_ = (ktab
           ? RadiativeKappaKR(temp*temp_unit, dens*dens_unit, kfac, kr)
           : RadiativeKappa(temp*temp_unit, pres*pres_unit, dens*dens_unit, met, kfac))
           /kappa_unit;
+      if (gaterho > 0.0) kappa_ *= RadGate(dens*dens_unit, gaterho, gatedex);
       Real rcv = dens/gm1;
       if (gen) {
         rcv = dens*eos_.SpecificHeatCv(dens, w0_(dm,IEN,dk,dj,di));
@@ -901,11 +1588,12 @@ void Conduction::NewTimeStep(const DvceArray5D<Real> &w0, const EOS_Data &eos_da
       dd.d_view(9)  = taumode ? tfd(dm,dk,dj,di)  : -1.0;
       dd.d_view(10) = taumode ? tfd(dm,dk,dj,di+1): -1.0;
       dd.d_view(11) = s1v;
-      dd.d_view(12) = (w1*keff(s1v) > 0.0) ? SQR(d1)/(w1*keff(s1v))*rcv*fac : -1.0;
-      dd.d_view(13) = (multi_d && wa*keff(s2v) > 0.0)
-                      ? SQR(d2)*s2/(wa*keff(s2v))*rcv*fac : -1.0;
-      dd.d_view(14) = (three_d && wa*keff(s3v) > 0.0)
-                      ? SQR(d3)*s2/(wa*keff(s3v))*rcv*fac : -1.0;
+      dd.d_view(12) = (impx1 || !(w1*keff(s1v) > 0.0))
+                      ? -1.0 : SQR(d1)/(w1*keff(s1v))*rcv*fac;
+      dd.d_view(13) = (capa || !(multi_d && wa*keff(s2v) > 0.0))
+                      ? -1.0 : SQR(d2)*s2/(wa*keff(s2v))*rcv*fac;
+      dd.d_view(14) = (capa || !(three_d && wa*keff(s3v) > 0.0))
+                      ? -1.0 : SQR(d3)*s2/(wa*keff(s3v))*rcv*fac;
       dd.d_view(15) = ffree;
     });
     dt_diag.template modify<DevExeSpace>();

@@ -45,6 +45,9 @@ class Conduction {
   Real rad_pcut = 0.0;         // code units; faces with p < rad_pcut get no flux
   Real rad_flux_inner = 0.0;   // code units; heat flux through the inner x1 wall
   Real rad_kappa_fac = 1.0;
+  // <problem>/nan_report: record the first x1 face whose radiative heat flux comes out
+  // non-finite, with the inputs that made it.  Default false; nothing runs when off.
+  bool nan_report = false;
   bool rad_flux_limit = true;
   // OPTICAL-DEPTH BLEND (rad_tau_hi > 0): instead of the pressure cut, each x1 face
   // carries a weight w(tau_R) rising smoothly from 0 at rad_tau_lo to 1 at rad_tau_hi,
@@ -73,6 +76,88 @@ class Conduction {
   // this mode the pgen hands over (T, rho) directly and every lookup site already has
   // the face or cell density.  rad_kr_lP then holds log10 rho.
   bool rad_kappa_rho = false;
+  // rad_kappa_rmax > 0 [code length]: a RADIATIVELY INERT region above this radius.  The
+  // red-giant runs put a hot hydrostatic corona above the star, and that corona must
+  // neither cool nor set the timestep: it is a numerical lid, not a stellar layer, and a
+  // 6e5 K gas at 1e-24 g/cm^3 has a conduction time short enough to stop the run dead.
+  // Above rmax the radiative conduction flux is zero, the cell is dropped from the
+  // conduction timestep, and the optical depth integrated down from the top accumulates
+  // at rad_kappa_above instead of the table value -- so tau does not grow through the
+  // corona and the blend weight w stays 0 there.  The two-stream reads the same two
+  // numbers (see two_stream_rt.hpp) so both radiative operators go quiet together.
+  Real rad_kappa_rmax = 0.0;
+  // rad_kappa_above [cm^2/g]: the opacity used above rad_kappa_rmax.  0 (the default)
+  // makes the corona perfectly transparent; the grey chain handles kappa = 0 exactly
+  // (dtau = 0 gives e0 = 0, so both the source and the emission vanish identically).
+  Real rad_kappa_above = 0.0;
+  // rad_gate_rho [g/cm^3] > 0: the DENSITY form of the same idea, and the one to use
+  // whenever the artificial medium can exchange gas with the star.  The radius test
+  // above is a fixed shell: it makes the corona inert, but it ALSO strips the opacity
+  // from stellar gas that inflates or is ejected past that radius -- which is exactly
+  // what the open-top red-giant runs do from t ~ 5.7e5 on (mass above 3.6e12 grows by
+  // 4.5-14x, the photosphere crosses the cutoff, and the two-stream then radiates 9000 K
+  // gas as a bare blackbody at 2-4 L).  Gating on the LOCAL DENSITY instead makes the
+  // opacity follow the gas: the 1e-15 corona stays inert wherever it is, and stellar
+  // material stays opaque wherever it goes.  The gate is a logistic in log10 rho (see
+  // RadGate) rising from 0.1 to 0.9 over rad_gate_dex decades, and the effective opacity
+  // is  kappa_eff = G kappa_table + (1 - G) rad_kappa_above.  Mutually exclusive with
+  // rad_kappa_rmax (fatal if both are set): one criterion or the other.
+  Real rad_gate_rho = 0.0;
+  Real rad_gate_dex = 0.5;
+  // rad_implicit_x1 (<hydro>/rad_implicit_x1, default false): solve the RADIAL
+  // radiative diffusion IMPLICITLY (backward Euler) instead of adding it to the
+  // face fluxes.  The explicit radial operator has dt ~ dx^2 rho c_v/kappa_rad with
+  // kappa_rad ~ T^3/(kappa_R rho): in an evacuated cell just above the photosphere
+  // that limit falls below 1e-4 s while the run takes 30 s steps, and because dt is
+  // evaluated from the PREVIOUS state the overshoot is unbounded -- the cell runs away
+  // to 1e10 K in a single step.  With this on, the interior x1 faces carry no explicit
+  // flux; a per-column tridiagonal solve (Conduction::ImplicitRadialUpdate) applies the
+  // same flux-limited operator unconditionally stably, and the x1 conduction timestep
+  // constraint is dropped.  The whole radial extent must live in ONE MeshBlock (the
+  // solve is column-local, no MPI), which the constructor checks.  x2/x3 stay explicit.
+  bool rad_implicit_x1 = false;
+  // scratch for the tridiagonal solve, allocated once: slots (e*, T*, 1/(rho c_v), p,
+  // A_f K_f/dl_f, c', d') per cell/face of every column.  See imp_* below.
+  static constexpr int nimpw = 7;
+  static constexpr int IMPE = 0, IMPT = 1, IMPA = 2, IMPP = 3;
+  static constexpr int IMPC = 4, IMPCP = 5, IMPDP = 6;
+  DvceArray5D<Real> imp_wrk;
+  DvceArray1D<int> imp_flag;   // 1 element: has the first bad cell been recorded?
+  DvceArray1D<Real> imp_rec;   // 8 elements: that cell's identity and state
+  int imp_lines = 0;           // lines printed so far by the debug report
+  void ImplicitRadialUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
+                            const Real beta_dt);
+  // rad_cap_ang (<hydro>/rad_cap_ang, default 0 = off): a CONSERVATIVE per-face cap on
+  // the explicit ANGULAR (x2/x3) radiative diffusion.  With the radial direction made
+  // implicit the same evacuated-cell runaway simply migrates to the angular faces (the
+  // I1 test died at t = 5.76e5 with T = 3e10 K in a cell 60x below its shell median),
+  // because the angular operator is still explicit and its limit dt ~ dx^2 rho c_v/kappa
+  // is evaluated from the PREVIOUS state.  Define per cell the explicit angular
+  // stiffness
+  //     x_i = beta_dt alpha_i (sum over its 4 angular faces of A_f K_f/dl_f)/V_i
+  //         = dt/dt_cond,angular,
+  // with alpha_i = 1/(rho_i c_v,i) and K_f the SAME frozen face conductivity the x2/x3
+  // kernels use (RadFaceKappa x flux limiter x tau-blend weight, divided by sin(alpha)
+  // on the cubed sphere, which is the coefficient of (T_j - T_i)/dl in the face flux).
+  // Every angular face flux is then multiplied by
+  //     f_f = min(1, rad_cap_ang/max(x_i, x_j)),
+  // one number per face applied to both of its cells: exactly conservative, purely
+  // local, and it makes the effective x of every cell <= rad_cap_ang, so at 0.5 the
+  // operator is unconditionally stable and monotone (the checkerboard mode's
+  // amplification factor stays >= 0).  Requires rad_implicit_x1; drops dt2/dt3.
+  Real rad_cap_ang = 0.0;
+  // beta_dt of the CURRENT stage.  The angular fluxes are added in Hydro::Fluxes, which
+  // runs before the RK update, so the cap has no other way of knowing the step it is
+  // capping; Hydro::Fluxes sets this immediately before calling AddHeatFluxes.
+  Real stage_beta_dt = 0.0;
+  DvceArray4D<Real> cap_x;    // the stiffness x_i, active cells + one angular ghost
+  DvceArray4D<Real> cap_c2;   // A_f K_f/dl_f on the x2 faces
+  DvceArray4D<Real> cap_c3;   // ... and on the x3 faces
+  DvceArray1D<int> cap_cnt;   // 2: cells with x_i > cap, faces actually capped
+  DvceArray1D<Real> cap_rec;  // 6: max x_i and the cell that carries it
+  int cap_lines = 0;
+  Real cap_diag_x = 0.0;      // the largest x_i of the last call (rank-local)
+  int cap_diag_over = 0;      // cells with x_i > rad_cap_ang in the last call
   // rad_cs_exact (default true): the exact face-normal derivative on the cubed sphere;
   // false drops the metric cross term and the 1/sin(alpha) -- DIAGNOSTIC only
   bool rad_cs_exact = true;
@@ -136,6 +221,27 @@ Real RosselandTable(const DvceArray2D<Real> &tab, const DvceArray1D<Real> &lT,
   const Real lk = (1.0-fx)*((1.0-fy)*tab(i,j) + fy*tab(i,j+1))
                 +      fx *((1.0-fy)*tab(i+1,j) + fy*tab(i+1,j+1));
   return pow(10.0, lk);
+}
+
+//! \fn Real RadGate
+//! \brief the density gate G(rho): 1 where the gas is dense enough to carry its
+//! tabulated opacity, 0 in the artificial low-density medium, a logistic in log10 rho
+//! between.  Exactly
+//!     G = 1/(1 + exp(-(log10(rho) - log10(rho_gate))/s)),   s = dex/(2 ln 9),
+//! so G = 1/2 at the threshold and G runs from 0.1 to 0.9 over exactly `dex` decades
+//! (G = 0.9 at u/s = ln 9, and the width in u is 2 s ln 9 = dex).  rho <= 0 gives 0; the
+//! exponent is clamped so a 20-decade excursion cannot overflow.
+//! ONE definition, used at every opacity site in the conduction module and the
+//! two-stream, so the two operators cannot disagree about which gas is radiative.
+KOKKOS_INLINE_FUNCTION
+Real RadGate(const Real rho_cgs, const Real rho_gate, const Real dex) {
+  if (!(rho_gate > 0.0)) return 1.0;      // gate off
+  if (!(rho_cgs > 0.0)) return 0.0;
+  const Real s = dex/(2.0*log(9.0));
+  Real u = (log10(rho_cgs) - log10(rho_gate))/s;
+  if (u > 40.0) return 1.0;
+  if (u < -40.0) return 0.0;
+  return 1.0/(1.0 + exp(-u));
 }
 
 //! \fn Real RadBlendWeight

@@ -994,9 +994,15 @@ void Mesh::NewTimeStep(const Real tlim) {
                       << "    w=" << d.h_view(7) << "," << d.h_view(8)
                       << " tau=" << d.h_view(9) << "," << d.h_view(10)
                       << " s1=" << d.h_view(11) << " F_free=" << d.h_view(15)
-                      << " | dt1=" << cfl_no*d.h_view(12)
-                      << " dt2=" << cfl_no*d.h_view(13)
-                      << " dt3=" << cfl_no*d.h_view(14) << std::endl;
+                      << " | dt1="
+                      << (pc->rad_implicit_x1 ? std::string("x1 implicit")
+                          : std::to_string(cfl_no*d.h_view(12)))
+                      << " dt2="
+                      << (pc->rad_cap_ang > 0.0 ? std::string("capped")
+                          : std::to_string(cfl_no*d.h_view(13)))
+                      << " dt3="
+                      << (pc->rad_cap_ang > 0.0 ? std::string("capped")
+                          : std::to_string(cfl_no*d.h_view(14))) << std::endl;
           }
         }
       }
