@@ -1,0 +1,109 @@
+# AthenaK input file: strong RADIAL double-rarefaction MHD shock tube on the
+# SPHERICAL-POLAR grid, used to regression-test first-order flux correction (FOFC) for
+# MHD on a curvilinear mesh.
+#
+# WHY THIS EXISTS.  The FOFC trial update used to divide by the Cartesian
+# mb_size.dx1/2/3 instead of forming the area/volume divergence the real update
+# (MHD::RKUpdate) forms, and the trial cell-centred field used a Cartesian curl instead
+# of the spherical one, so on this grid it flagged the wrong cells.  The radial face
+# area varies as r^2 across the shell, so a Cartesian divergence is visibly wrong.
+#
+# The guide field is purely AZIMUTHAL (b3 = const), which is divergence-free on this
+# grid; a uniform theta component would not be.  Both radial walls are REFLECTING and
+# the angular directions are polar/periodic, so the domain is CLOSED and the total mass
+# can be compared between the fofc=true and fofc=false runs.
+
+<comment>
+problem = spherical-polar radial MHD double rarefaction, FOFC regression test
+
+<job>
+basename = fofc_mhd_sp
+
+<mesh>
+nghost = 3
+nx1    = 48            # RADIAL
+x1min  = 0.5
+x1max  = 1.5
+ix1_bc = reflect
+ox1_bc = reflect
+
+nx2    = 32            # theta; -1.0 selects the full 0..pi range
+x2min  = -1.0
+x2max  = -1.0
+ix2_bc = polar
+ox2_bc = polar
+
+nx3    = 8             # phi; -1.0 selects the full 0..2pi range
+x3min  = -1.0
+x3max  = -1.0
+ix3_bc = periodic
+ox3_bc = periodic
+
+use_spherical_polar   = true
+use_polar_boundary    = true
+polar_quadratic_recon = false
+
+<meshblock>
+nx1 = 48
+nx2 = 32
+nx3 = 4   # mesh nx3 / meshblock nx3 must be EVEN with polar boundaries
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim       = -1
+tlim       = 0.02
+ndiag      = 100000
+
+<mhd>
+eos         = ideal
+reconstruct = plm
+rsolver     = hlld
+gamma       = 1.4
+dfloor      = 1.0e-4
+pfloor      = 1.0e-4
+fofc        = true
+fofc_rsolver = llf     # first-order fallback solver (llf|hlle), toggled by the test
+
+<problem>
+pgen_name = shock_tube
+shock_dir = 1
+xshock    = 1.0
+
+dl  = 1.0
+pl  = 0.4
+ul  = -20.0
+vl  = 0.0
+wl  = 0.0
+bxl = 0.0
+byl = 0.0
+bzl = 0.1
+
+dr  = 1.0
+pr  = 0.4
+ur  = 20.0
+vr  = 0.0
+wr  = 0.0
+bxr = 0.0
+byr = 0.0
+bzr = 0.1
+
+<output1>
+file_type = log
+dt        = 0.002
+
+<output2>
+file_type   = hst
+data_format = %24.16e
+dt          = 0.002
+
+<output3>
+file_type = bin
+variable  = mhd_w_bcc
+dt        = 0.02
+
+<output4>
+file_type = bin
+variable  = mhd_divb
+dt        = 0.02

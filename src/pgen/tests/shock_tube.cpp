@@ -19,6 +19,7 @@
 #include "parameter_input.hpp"
 #include "coordinates/cell_locations.hpp"
 #include "mesh/mesh.hpp"
+#include "coordinates/cubed_sphere.hpp"
 #include "eos/eos.hpp"
 #include "hydro/hydro.hpp"
 #include "mhd/mhd.hpp"
@@ -295,6 +296,109 @@ void ProblemGenerator::ShockTube(ParameterInput *pin, const bool restart) {
         bcc0(m,IBZ,k,j,i) = bzr;
       }
     });
+    // CUBED SPHERE: replace the field with a divergence-free AZIMUTHAL one -------------
+    //
+    // The uniform face values written above are NOT divergence-free on this grid (every
+    // face area varies from face to face), and a field with B.rhat != 0 makes a
+    // reflecting radial wall an ill-posed Riemann problem that leaks mass at O(B^2).  So
+    // on the cubed sphere <problem>/bazi replaces them with B = bazi*(-y, x, 0), purely
+    // azimuthal about the z axis, hence B.rhat = 0 exactly.  It is laid down as the
+    // DISCRETE CURL of its vector potential on the very edges the CT update integrates
+    // over, so div B is round-off BY CONSTRUCTION; the gauge is
+    // A = (1/3)*bazi*r^2*sin(theta) thetahat, which has no radial component, so each
+    // tangential face's circulation is exact over its two tangential edges alone.  This
+    // mirrors CSTestBlastFaces in the cs_test problem generator, where the construction
+    // is gated on four independent numbers.
+    // Strictly ADDITIVE: with <problem>/bazi absent or zero nothing here runs and the
+    // uniform bxl/byl/bzl above stand exactly as they did (they are not
+    // divergence-free on this grid -- that is then the caller's problem, as it always
+    // was).
+    const Real bazi = pin->GetOrAddReal("problem","bazi",0.0);
+    if (pmy_mesh_->use_cubed_sphere && bazi != 0.0) {
+      auto &mbp = pmbp->pmb->mb_panel;
+      auto &x1f_ = pmbp->pcoord->xx1f;
+      auto &x1v_ = pmbp->pcoord->x1v;
+      auto &ar1 = pmbp->pcoord->area.x1f;
+      auto &ar2 = pmbp->pcoord->area.x2f;
+      auto &ar3 = pmbp->pcoord->area.x3f;
+      auto &dxe2 = pmbp->pcoord->dxedge.x2e;
+      auto &dxe3 = pmbp->pcoord->dxedge.x3e;
+      auto &ccell = pmbp->pcoord->cos_cell;
+      auto &scell = pmbp->pcoord->sin_cell;
+      const int ng = indcs.ng;
+      const int n1m1 = indcs.nx1 + 2*ng - 1;
+      const int n2m1 = indcs.nx2 + 2*ng - 1;
+      const int n3m1 = indcs.nx3 + 2*ng - 1;
+      par_for("pgen_shock_csb", DevExeSpace(), 0, (pmbp->nmb_thispack-1),
+              0, n3m1, 0, n2m1, 0, n1m1,
+      KOKKOS_LAMBDA(int m, int k, int j, int i) {
+        const int p = mbp.d_view(m);
+        const Real x2mn = size.d_view(m).x2min, x2mx = size.d_view(m).x2max;
+        const Real x3mn = size.d_view(m).x3min, x3mx = size.d_view(m).x3max;
+        // A on one edge, projected on that edge's own UNIT tangent -- the component
+        // dxedge*A consumes.  along_xi selects the xi edge (r face, xi CENTRE, eta face)
+        // or the eta edge (r face, xi face, eta CENTRE).
+        auto Aedge = [&](const int ii, const int jj, const int kk, const bool along_xi) {
+          const Real rf = x1f_(m,ii);
+          const Real xi = 0.25*M_PI*(along_xi
+              ? CellCenterX(jj-js, indcs.nx2, x2mn, x2mx)
+              : LeftEdgeX(jj-js, indcs.nx2, x2mn, x2mx));
+          const Real et = 0.25*M_PI*(along_xi
+              ? LeftEdgeX(kk-ks, indcs.nx3, x3mn, x3mx)
+              : CellCenterX(kk-ks, indcs.nx3, x3mn, x3mx));
+          Real qh[3], e1[3], e2[3];
+          cubed_sphere::PanelToCart(p, xi, et, qh);
+          cubed_sphere::PanelTangents(p, xi, et, e1, e2);
+          const Real aa = bazi*rf*rf/3.0;
+          const Real ax =  aa*qh[0]*qh[2];
+          const Real ay =  aa*qh[1]*qh[2];
+          const Real az = -aa*(qh[0]*qh[0] + qh[1]*qh[1]);
+          const Real *t = along_xi ? e1 : e2;
+          const Real tn = sqrt(t[0]*t[0] + t[1]*t[1] + t[2]*t[2]);
+          return (ax*t[0] + ay*t[1] + az*t[2])/tn;
+        };
+        // B.n = (1/area) * circulation of A around the face, exactly as mhd_ct.cpp
+        auto setb1 = [&](const int ifc) {
+          b0.x1f(m,k,j,ifc) = (dxe3(m,k,j+1,ifc)*Aedge(ifc,j+1,k,false)
+                             - dxe3(m,k,j  ,ifc)*Aedge(ifc,j  ,k,false)
+                             - dxe2(m,k+1,j,ifc)*Aedge(ifc,j,k+1,true)
+                             + dxe2(m,k  ,j,ifc)*Aedge(ifc,j,k  ,true))/ar1(m,k,j,ifc);
+        };
+        auto setb2 = [&](const int jfc) {
+          b0.x2f(m,k,jfc,i) = -(dxe3(m,k,jfc,i+1)*Aedge(i+1,jfc,k,false)
+                              - dxe3(m,k,jfc,i  )*Aedge(i  ,jfc,k,false))/ar2(m,k,jfc,i);
+        };
+        auto setb3 = [&](const int kfc) {
+          b0.x3f(m,kfc,j,i) = (dxe2(m,kfc,j,i+1)*Aedge(i+1,j,kfc,true)
+                             - dxe2(m,kfc,j,i  )*Aedge(i  ,j,kfc,true))/ar3(m,kfc,j,i);
+        };
+        setb1(i);
+        setb2(j);
+        setb3(k);
+        if (i == n1m1) { setb1(i+1); }
+        if (j == n2m1) { setb2(j+1); }
+        if (k == n3m1) { setb3(k+1); }
+        // the cell-centred field, in the ORTHONORMAL frame {rhat, e_xi, (e_eta -
+        // c e_xi)/s} that bcc0 is stored in on this grid (see
+        // Coordinates::GnomonicEquiangleRaiseVelMHD), so that the PrimToCons below adds
+        // the right magnetic energy.  It is rebuilt from the faces at the first
+        // ConsToPrim anyway; only |B|^2 has to be right here.
+        const Real rc = x1v_(m,i);
+        const Real xc = 0.25*M_PI*CellCenterX(j-js, indcs.nx2, x2mn, x2mx);
+        const Real ec = 0.25*M_PI*CellCenterX(k-ks, indcs.nx3, x3mn, x3mx);
+        Real qh[3], e1[3], e2[3];
+        cubed_sphere::PanelToCart(p, xc, ec, qh);
+        cubed_sphere::PanelTangents(p, xc, ec, e1, e2);
+        const Real bx = -bazi*rc*qh[1], by = bazi*rc*qh[0], bz = 0.0;
+        const Real br  = bx*qh[0] + by*qh[1] + bz*qh[2];
+        const Real bxi = bx*e1[0] + by*e1[1] + bz*e1[2];
+        const Real bet = bx*e2[0] + by*e2[1] + bz*e2[2];
+        bcc0(m,IBX,k,j,i) = br;
+        bcc0(m,IBY,k,j,i) = bxi;
+        bcc0(m,IBZ,k,j,i) = (bet - ccell(m,k,j)*bxi)/scell(m,k,j);
+      });
+    }
+
     // Convert primitives to conserved
     auto &u0 = pmbp->pmhd->u0;
     if (!pmbp->pcoord->is_dynamical_relativistic) {

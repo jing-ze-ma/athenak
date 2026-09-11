@@ -460,10 +460,13 @@ void MeshBoundaryValuesCC::ConsToPrimCoarseBndry(const DvceArray5D<Real> &cons,
             // bracket for itself. Both it and the derived quantities are
             // discarded here.
             Real pgas_, g1_, temp_;
+            bool vcl_ = false, vclt_ = false;
             SingleC2P_GeneralMHD(u, eos, w, -1.0, temp_, pgas_, g1_,
-                                 dfloor_used, efloor_used, tfloor_used);
+                                 dfloor_used, efloor_used, tfloor_used, vcl_, vclt_);
           } else {
-            SingleC2P_IdealMHD(u, eos, w, dfloor_used, efloor_used, tfloor_used);
+            bool vcl2_ = false, vclt2_ = false;
+            SingleC2P_IdealMHD(u, eos, w, dfloor_used, efloor_used, tfloor_used,
+                               vcl2_, vclt2_);
           }
         }
 

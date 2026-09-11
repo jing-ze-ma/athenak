@@ -1,0 +1,122 @@
+# AthenaK input file: strong RADIAL double-rarefaction MHD shock tube on the CUBED
+# SPHERE, used to regression-test first-order flux correction (FOFC) for MHD on that
+# grid.
+#
+# WHY THIS EXISTS.  <mhd>/fofc used to be a startup FATAL on the cubed sphere: the trial
+# update divided by the Cartesian mb_size.dx1/2/3 rather than forming the area/volume
+# divergence, the single-state fallback applied none of the gnomonic rotations to the
+# velocity, the field, the returned momentum flux or the face EMF, the trial
+# cell-centred field had no gnomonic curl, and the floor-TEST pass never ran the
+# DEFERRED floors this grid applies in Coordinates::GnomonicEquiangleRaiseVelMHD.  All
+# of that is fixed; this is the gate.
+#
+# THE FIELD IS AZIMUTHAL, B = bazi*(-y, x, 0), laid down by the shock_tube problem
+# generator as the DISCRETE CURL of its vector potential on the edges CT integrates
+# over, so div B is round-off BY CONSTRUCTION and B.rhat = 0 -- the uniform face values
+# bxl/byl/bzl would be neither, and a field threading a reflecting radial wall leaks
+# mass at O(B^2).  The two rarefactions open a near-vacuum in the middle of the shell,
+# which is what the first-order fallback exists for; the guide field is rarefied with
+# the gas and its motion through the radial rarefaction gives non-zero face EMFs, so the
+# EMF rotation is exercised and not merely present.
+#
+# Both radial walls are REFLECTING and the angular directions are panel seams, so the
+# domain is CLOSED and total mass is conserved to round-off -- comparable between the
+# fofc=true and fofc=false runs.  <mhd>/fofc, <mhd>/fofc_rsolver and <mhd>/vceil are set
+# from the command line by the test script.
+
+<comment>
+problem = cubed-sphere radial MHD double rarefaction, FOFC regression test
+
+<job>
+basename = fofc_mhd_cs
+
+<mesh>
+nghost = 3             # FOFC with PLM requires nghost >= 3
+nx1    = 32            # RADIAL
+x1min  = 0.5
+x1max  = 1.5
+ix1_bc = reflect
+ox1_bc = reflect
+
+nx2    = 16            # xi; nx2 must equal nx3
+x2min  = -1.0
+x2max  = 1.0
+ix2_bc = panel
+ox2_bc = panel
+
+nx3    = 16            # eta
+x3min  = -1.0
+x3max  = 1.0
+ix3_bc = panel
+ox3_bc = panel
+
+use_cubed_sphere = true
+
+<meshblock>
+nx1 = 32
+nx2 = 16
+nx3 = 16
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim       = -1
+tlim       = 0.02
+ndiag      = 100000
+
+<mhd>
+eos          = ideal
+reconstruct  = plm
+rsolver      = hlld
+gamma        = 1.4
+dfloor       = 1.0e-4
+pfloor       = 1.0e-4
+fofc         = true     # toggled by the test
+fofc_rsolver = llf      # first-order fallback solver (llf|hlle), toggled by the test
+vceil        = 0.0      # velocity ceiling, 0 = off (the test switches it on)
+
+<problem>
+pgen_name = shock_tube
+shock_dir = 1
+xshock    = 1.0
+
+bazi      = 0.1         # AZIMUTHAL amplitude: B = bazi*(-y, x, 0), so B.rhat = 0.
+                        # The uniform bxl/byl/bzl below are ignored on this grid.
+
+dl  = 1.0
+pl  = 0.4
+ul  = -20.0
+vl  = 0.0
+wl  = 0.0
+bxl = 0.0
+byl = 0.0
+bzl = 0.0
+
+dr  = 1.0
+pr  = 0.4
+ur  = 20.0
+vr  = 0.0
+wr  = 0.0
+bxr = 0.0
+byr = 0.0
+bzr = 0.0
+
+<output1>
+file_type = log        # event counter log (column "fofc" counts FOFC-flagged cells)
+dt        = 0.002
+
+<output2>
+file_type   = hst      # history dump: volume integrals over EVERY cell
+data_format = %24.16e
+dt          = 0.002
+
+<output3>
+file_type = bin        # binary dump of the whole domain, for bitwise regression
+variable  = mhd_w_bcc
+dt        = 0.02
+
+<output4>
+file_type = bin        # div(B) from the FACE fields, which CT must keep at round-off
+variable  = mhd_divb
+dt        = 0.02

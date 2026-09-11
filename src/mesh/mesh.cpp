@@ -408,16 +408,11 @@ Mesh::Mesh(ParameterInput *pin) :
       missing = "ADAPTIVE mesh refinement (mesh_refinement = adaptive): refinement "
                 "flags are walked through a single MeshBlockTree and a cubed sphere has "
                 "one tree per panel. Static refinement is supported";
-    // NB: GetOrAdd would CREATE <hydro>, and AddPhysics constructs a module for every
-    // block that exists -- so only ever ask whether the parameter is already there.
-    } else if ((pin->DoesParameterExist("hydro", "fofc") &&
-                pin->GetBoolean("hydro", "fofc")) ||
-               (pin->DoesParameterExist("mhd", "fofc") &&
-                pin->GetBoolean("mhd", "fofc"))) {
-      missing = "first-order flux correction (hydro/fofc, mhd/fofc): the trial update "
-                "in {hydro,mhd}_fofc.cpp divides by the Cartesian mb_size.dx1/2/3 "
-                "instead of area/dxedge, and its single-state solvers apply none of the "
-                "gnomonic rotations";
+    // FOFC: BOTH <hydro>/fofc and <mhd>/fofc are SUPPORTED on this grid.  {Hydro,MHD}::
+    // FOFC do their trial update with the face areas and cell volumes (the same form as
+    // RKUpdate), their single-state solves apply the gnomonic rotations to the velocity,
+    // the field and the returned momentum flux / face EMF, and the floor-TEST pass runs
+    // the DEFERRED cubed-sphere floors (coordinates/gnomonic_raisevel{,_mhd}.hpp).
     } else if (pin->DoesParameterExist("hydro", "isotropic_viscosity") ||
                pin->DoesParameterExist("mhd", "isotropic_viscosity")) {
       missing = "viscosity (isotropic_viscosity): diffusion/viscosity.cpp has no "

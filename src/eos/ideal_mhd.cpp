@@ -57,9 +57,9 @@ void IdealMHD::ConsToPrim(DvceArray5D<Real> &cons, const DvceFaceFld4D<Real> &b,
   const int nkji = (ku - kl + 1)*nji;
   const int nmkji = nmb*nkji;
 
-  int nfloord_=0, nfloore_=0, nfloort_=0;
+  int nfloord_=0, nfloore_=0, nfloort_=0, nceilv_=0;
   Kokkos::parallel_reduce("mhd_c2p",Kokkos::RangePolicy<>(DevExeSpace(), 0, nmkji),
-  KOKKOS_LAMBDA(const int &idx, int &sumd, int &sume, int &sumt) {
+  KOKKOS_LAMBDA(const int &idx, int &sumd, int &sume, int &sumt, int &sumv) {
     int m = (idx)/nkji;
     int k = (idx - m*nkji)/nji;
     int j = (idx - m*nkji - k*nji)/ni;
@@ -114,11 +114,24 @@ void IdealMHD::ConsToPrim(DvceArray5D<Real> &cons, const DvceFaceFld4D<Real> &b,
     // (inline function in ideal_c2p_mhd.hpp file)
     HydPrim1D w;
     bool dfloor_used=false, efloor_used=false, tfloor_used=false;
-    SingleC2P_IdealMHD(u, eos, w, dfloor_used, efloor_used, tfloor_used);
+    bool vceil_used=false, vceil_test=false;
+    SingleC2P_IdealMHD(u, eos, w, dfloor_used, efloor_used, tfloor_used,
+                       vceil_used, vceil_test);
+    // The floor-TEST pass (FOFC) is handed scratch conserved data and must leave no
+    // trace, so the momentum rescale is written back only on the real pass.
+    if (!only_testfloors && vceil_used) {
+      cons(m,IM1,k,j,i) = u.mx;
+      cons(m,IM2,k,j,i) = u.my;
+      cons(m,IM3,k,j,i) = u.mz;
+      cons(m,IEN,k,j,i) = u.e;
+    }
 
     // set FOFC flag and quit loop if this function called only to check floors
     if (only_testfloors) {
-      if (dfloor_used || efloor_used || tfloor_used) {
+      // the velocity ceiling counts as a floor event for FOFC, exactly as in
+      // ideal_hyd.cpp: a cell that would need it is one the first-order flux is meant
+      // to rescue.  vceil_test is the decision alone and performs no write.
+      if (dfloor_used || efloor_used || tfloor_used || vceil_test) {
         fofc_(m,k,j,i) = true;
         sumd++;  // use dfloor as counter for when either is true
       }
@@ -135,6 +148,9 @@ void IdealMHD::ConsToPrim(DvceArray5D<Real> &cons, const DvceFaceFld4D<Real> &b,
       if (tfloor_used) {
         cons(m,IEN,k,j,i) = u.e;
         sumt++;
+      }
+      if (vceil_used) {
+        sumv++;
       }
       // store primitive state in 3D array
       prim(m,IDN,k,j,i) = w.d;
@@ -155,7 +171,8 @@ void IdealMHD::ConsToPrim(DvceArray5D<Real> &cons, const DvceFaceFld4D<Real> &b,
         prim(m,n,k,j,i) = cons(m,n,k,j,i)/u.d;
       }
     }
-  }, Kokkos::Sum<int>(nfloord_), Kokkos::Sum<int>(nfloore_), Kokkos::Sum<int>(nfloort_));
+  }, Kokkos::Sum<int>(nfloord_), Kokkos::Sum<int>(nfloore_),
+     Kokkos::Sum<int>(nfloort_), Kokkos::Sum<int>(nceilv_));
 
   // store appropriate counters
   if (only_testfloors) {
@@ -164,6 +181,7 @@ void IdealMHD::ConsToPrim(DvceArray5D<Real> &cons, const DvceFaceFld4D<Real> &b,
     pmy_pack->pmesh->ecounter.neos_dfloor += nfloord_;
     pmy_pack->pmesh->ecounter.neos_efloor += nfloore_;
     pmy_pack->pmesh->ecounter.neos_tfloor += nfloort_;
+    pmy_pack->pmesh->ecounter.neos_vceil  += nceilv_;
   }
 
   return;

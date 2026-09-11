@@ -956,6 +956,8 @@ void ProblemGenerator::CallProblemGenerator(ParameterInput *pin, bool is_restart
     ShockTube(pin, is_restart);
   } else if (pgen_fun_name.compare("shwave") == 0) {
     Shwave(pin, is_restart);
+  } else if (pgen_fun_name.compare("wb_atm") == 0) {
+    WbAtmosphere(pin, is_restart);
   } else if (pgen_fun_name.compare("z4c_boosted_puncture") == 0) {
     Z4cBoostedPuncture(pin, is_restart);
   } else if (pgen_fun_name.compare("z4c_linear_wave") == 0) {

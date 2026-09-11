@@ -154,6 +154,14 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
   }
   int il = is, iu = ie+1;
   if (use_fofc) { il = is-1, iu = ie+2; }
+  // TRANSVERSE WIDENING.  FOFC replaces the fluxes on all six faces of every flagged
+  // cell, and cells are flagged over [js-1,je+1] x [ks-1,ke+1] (MHD::FOFC), so the x1
+  // fluxes are needed one row beyond the active zone in x2 and x3 as well.  Unlike
+  // hydro, MHD already computes this sweep over exactly those transverse ranges
+  // UNCONDITIONALLY -- the corner-EMF stencil needs them -- so no fofc widening is
+  // required here (nor in the x2/x3 sweeps, which run over is-1,ie+1 in x1 and
+  // js-1,je+1 in x2 for the same reason).  There is no MHD counterpart of the
+  // spherical-polar face-average (sp_favg) widening, so there is nothing to union with.
 
   // the well-balanced background of every cell in this sweep, walked once
 

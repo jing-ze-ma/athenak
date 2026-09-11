@@ -155,6 +155,12 @@ class MHD {
   // following used for FOFC algorithm
   DvceArray4D<bool> fofc;  // flag for each cell to indicate if FOFC is needed
   bool use_fofc = false;   // flag to enable FOFC
+  // <mhd>/fofc_rsolver = llf (default) | hlle -- which SINGLE-STATE solver the
+  // first-order fallback uses.  LLF is the most diffusive and the traditional FOFC
+  // fallback; HLLE restores the contact-adjacent accuracy at a small cost in
+  // robustness, and is the same solver the cubed-sphere low-beta fallback already
+  // drops to.  Non-relativistic only: there is no single-state HLLE for SR/GR MHD.
+  bool fofc_hlle = false;
 
   // CUBED-SPHERE DIAGNOSTICS. The momentum RHS on a gnomonic grid is the sum of a flux
   // divergence and a geometric source term that must cancel to the accuracy of the

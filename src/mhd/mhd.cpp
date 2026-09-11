@@ -299,6 +299,29 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
   if (evolution_t.compare("stationary") != 0) {
     // determine if FOFC is enabled
     use_fofc = pin->GetOrAddBoolean("mhd","fofc",false);
+    // <mhd>/fofc_rsolver: see the note in mhd.hpp.  Default llf keeps every existing
+    // run bit-for-bit unchanged.
+    {
+      std::string fofc_rs = pin->GetOrAddString("mhd","fofc_rsolver","llf");
+      if (fofc_rs.compare("llf") == 0) {
+        fofc_hlle = false;
+      } else if (fofc_rs.compare("hlle") == 0) {
+        fofc_hlle = true;
+      } else {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<mhd>/fofc_rsolver = '" << fofc_rs
+                  << "' not implemented; choose llf or hlle" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      if (fofc_hlle && (pmy_pack->pcoord->is_special_relativistic ||
+                        pmy_pack->pcoord->is_general_relativistic)) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<mhd>/fofc_rsolver=hlle is implemented only for "
+                  << "NEWTONIAN MHD: there is no single-state HLLE for SR/GR MHD"
+                  << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }
 
     // cubed-sphere RHS-split diagnostics (see mhd.hpp); both default off
     cs_diag_no_coordsrc = pin->GetOrAddBoolean("mhd","cs_diag_no_coordsrc",false);

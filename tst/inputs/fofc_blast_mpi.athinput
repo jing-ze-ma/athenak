@@ -1,0 +1,105 @@
+# AthenaK input file: the strong 2D double-rarefaction blast of fofc_blast.athinput, cut
+# into 16 (or, with static refinement, 28) MeshBlocks so that it can be run on several
+# MPI ranks with several MeshBlocks per rank.  Used to regression-test first-order flux
+# correction (FOFC) across MPI boundaries and across a static-refinement level boundary.
+#
+# The test script sets, from the command line:
+#   <hydro>/fofc                       true / false
+#   <mesh_refinement>/refinement       none (uniform) / static (the refined region below)
+
+<comment>
+problem   = strong 2D double rarefaction, FOFC + MPI + SMR regression test
+
+<job>
+basename  = fofc_blast_mpi # problem ID: basename of output filenames
+
+<mesh>
+nghost    = 4          # FOFC requires nghost >= 3, SMR requires it to be even
+nx1       = 64         # Number of zones in X1-direction
+x1min     = -0.5       # minimum value of X1
+x1max     = 0.5        # maximum value of X1
+ix1_bc    = outflow    # inner-X1 boundary flag
+ox1_bc    = outflow    # outer-X1 boundary flag
+
+nx2       = 64         # Number of zones in X2-direction
+x2min     = -0.5       # minimum value of X2
+x2max     = 0.5        # maximum value of X2
+ix2_bc    = outflow    # inner-X2 boundary flag
+ox2_bc    = outflow    # outer-X2 boundary flag
+
+nx3       = 1          # Number of zones in X3-direction
+x3min     = -0.5       # minimum value of X3
+x3max     = 0.5        # maximum value of X3
+ix3_bc    = periodic   # inner-X3 boundary flag
+ox3_bc    = periodic   # outer-X3 boundary flag
+
+<meshblock>
+nx1       = 16         # 4 x 4 = 16 root MeshBlocks, i.e. 4 per rank on 4 ranks
+nx2       = 16         # Number of cells in each MeshBlock, X2-dir
+nx3       = 1          # Number of cells in each MeshBlock, X3-dir
+
+<mesh_refinement>
+refinement = none      # "static" is set by the test for the SMR case
+
+<refined_region1>
+level = 1              # one extra level, over 2 x 2 root MeshBlocks.  The x1 edges of
+x1min = -0.25          # the region sit inside the expanding vacuum, so the rarefaction
+x1max = 0.25           # heads and the FOFC-flagged region both cross the level boundary
+x2min = -0.5
+x2max = 0.0
+x3min = -0.5
+x3max = 0.5
+
+<units>
+length_cgs = 1.0       # a general EOS is not scale free; unused with eos = ideal
+mass_cgs   = 1.0       # cgs mass per code mass
+time_cgs   = 1.0       # cgs time per code time
+mu         = 1.0       # reference mean molecular weight
+
+<time>
+evolution  = dynamic   # dynamic/kinematic/static
+integrator = rk2       # time integration algorithm
+cfl_number = 0.3       # The Courant, Friedrichs, & Lewy (CFL) Number
+nlim       = -1        # cycle limit
+tlim       = 0.01      # time limit
+ndiag      = 100000    # cycles between diagostic output
+
+<hydro>
+eos         = ideal    # EOS type
+reconstruct = plm      # spatial reconstruction method
+rsolver     = hllc     # Riemann-solver to be used
+gamma       = 1.4      # gamma = C_p/C_v
+dfloor      = 1.0e-4   # density floor
+pfloor      = 1.0e-4   # pressure floor
+fofc        = true     # first-order flux correction (toggled by the test)
+
+<problem>
+pgen_name  = shock_tube # problem generator name
+shock_dir  = 1          # Shock Direction -- (1,2,3) = (x1,x2,x3)
+xshock     = 0.0        # position of initial interface
+
+dl = 1.0              # density on left
+pl = 0.4              # pressure
+ul = -20.0            # X-velocity
+vl = 0.0              # Y-velocity
+wl = 0.0              # Z-velocity
+
+dr = 1.0              # density on right
+pr = 0.4              # pressure
+ur = 20.0             # X-velocity
+vr = 0.0              # Y-velocity
+wr = 0.0              # Z-velocity
+
+<output1>
+file_type   = log     # event counter log (column "fofc" counts FOFC-flagged cells)
+dt          = 0.001   # time increment between outputs
+
+<output2>
+file_type   = hst     # history dump: volume integrals over EVERY cell, so a NaN
+data_format = %24.16e # anywhere in the domain shows up here
+dt          = 0.001   # time increment between outputs
+
+<output3>
+file_type   = bin     # full field, MeshBlocks in global gid order on any rank count
+variable    = hydro_w # variables to be output
+dt          = 0.01    # only the final time is needed

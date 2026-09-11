@@ -84,7 +84,9 @@ struct EOS_Data {
   // existing eos_dfloor counter.  Deferred on the cubed sphere exactly as
   // dfloor_keep_velocity is: see Coordinates::GnomonicEquiangleRaiseVel.
   bool dfloor_keep_temperature = false;
-  // <hydro>/vceil -- a VELOCITY CEILING for NEWTONIAN hydro (0 = off, the default).
+
+  // <hydro>/vceil, <mhd>/vceil -- a VELOCITY CEILING for NEWTONIAN hydro and MHD
+  // (0 = off, the default).
   // The relativistic inversions have had one forever (gamma_max, counted in
   // neos_vceil); the non-relativistic ones have not, and nothing else bounds |v|.  A
   // cell that acquires a velocity thousands of times the local escape speed makes the
@@ -98,6 +100,11 @@ struct EOS_Data {
   // on the cubed sphere |v| and KE are the METRIC norms (the momentum is covariant on a
   // non-orthogonal basis) and only Coordinates::GnomonicEquiangleRaiseVel can form them,
   // so there the ceiling is applied in that routine rather than in ConsToPrim.
+  // The MHD inversion applies exactly the same bookkeeping, on the KINETIC energy
+  // alone: the magnetic energy is untouched, so the internal energy is again left
+  // where it was, and on the cubed sphere it is deferred in the same way to
+  // Coordinates::GnomonicEquiangleRaiseVelMHD.  <mhd>/vceil is refused in SR/GR MHD
+  // (gamma_max instead).
   // Firings are counted in EventCounters::neos_vceil (event-log column eos_vceil).
   Real vceil = 0.0;
 

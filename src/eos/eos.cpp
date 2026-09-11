@@ -14,6 +14,7 @@
 #include "athena.hpp"
 #include "globals.hpp"
 #include "mesh/mesh.hpp"
+#include "coordinates/coordinates.hpp"
 #include "parameter_input.hpp"
 #include "units/units.hpp"
 #include "eos/eos.hpp"
@@ -56,15 +57,27 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
               << "only for hydrodynamics" << std::endl;
     std::exit(EXIT_FAILURE);
   }
-  // <hydro>/vceil: see the note on EOS_Data::vceil.  Non-relativistic HYDRO only -- the
-  // relativistic inversions have their own ceiling (gamma_max), and the MHD c2p would
-  // read this and silently ignore it, so refuse it there the same way.
+  // <hydro>/vceil and <mhd>/vceil: see the note on EOS_Data::vceil.  NON-RELATIVISTIC
+  // hydro and MHD only -- the relativistic inversions have their own ceiling
+  // (gamma_max), and reading this there would silently ignore it, so refuse it instead.
+  // On the CUBED SPHERE the ceiling is deferred for both: |v| and the kinetic energy are
+  // the METRIC ones there, so the ConsToPrim block only DECIDES and the application is
+  // made by Coordinates::GnomonicEquiangleRaiseVel{,MHD}.
   eos_data.vceil = pin->GetOrAddReal(bk,"vceil",0.0);
-  if (eos_data.vceil > 0.0 && bk.compare("hydro") != 0) {
+  if (eos_data.vceil > 0.0 &&
+      (bk.compare("hydro") != 0 && bk.compare("mhd") != 0)) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
               << std::endl << "<" << bk << ">/vceil is implemented only "
-              << "for hydrodynamics" << std::endl;
+              << "for hydrodynamics and MHD" << std::endl;
     std::exit(EXIT_FAILURE);
+  }
+  if (eos_data.vceil > 0.0 && bk.compare("mhd") == 0) {
+    if (pp->pcoord->is_special_relativistic || pp->pcoord->is_general_relativistic) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<mhd>/vceil is implemented only for NEWTONIAN MHD; "
+                << "the relativistic inversions use gamma_max instead" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
   }
   eos_data.pfloor = pin->GetOrAddReal(bk,"pfloor",(FLT_MIN));
   eos_data.tfloor = pin->GetOrAddReal(bk,"tfloor",(FLT_MIN));

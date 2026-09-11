@@ -1,0 +1,105 @@
+# AthenaK input file: strong double-rarefaction MHD blast ("1-2-0-3" problem with a
+# transverse guide field), used to regression-test first-order flux correction (FOFC)
+# for MHD.  Two strong rarefactions open a near-vacuum between them, where the internal
+# energy is a vanishing fraction of the total and the conserved-to-primitive inversion
+# needs its floors -- exactly the situation the first-order fallback exists for.
+#
+# Every boundary is REFLECTING, so the domain is CLOSED: total mass is conserved to
+# round-off and can be compared between the fofc=true and fofc=false runs.  The field
+# along the shock direction is zero so that the reflecting walls are consistent with it;
+# the guide field is transverse and is rarefied with the gas.
+#
+# <mhd>/fofc, <mhd>/fofc_rsolver, <problem>/shock_dir and the x3 extent are set from the
+# command line by the test script.
+
+<comment>
+problem = strong MHD double rarefaction, FOFC regression test
+
+<job>
+basename = fofc_mhd_blast
+
+<mesh>
+nghost = 3             # FOFC requires nghost >= 3
+nx1    = 64
+x1min  = -0.5
+x1max  = 0.5
+ix1_bc = reflect
+ox1_bc = reflect
+
+nx2    = 64
+x2min  = -0.5
+x2max  = 0.5
+ix2_bc = reflect
+ox2_bc = reflect
+
+nx3    = 1
+x3min  = -0.5
+x3max  = 0.5
+ix3_bc = periodic
+ox3_bc = periodic
+
+<meshblock>
+nx1 = 32
+nx2 = 32
+nx3 = 1
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim       = -1
+tlim       = 0.01
+ndiag      = 100000
+
+<mhd>
+eos         = ideal
+reconstruct = plm
+rsolver     = hlld
+gamma       = 1.4
+dfloor      = 1.0e-4
+pfloor      = 1.0e-4
+fofc        = true     # toggled by the test
+fofc_rsolver = llf     # first-order fallback solver (llf|hlle), toggled by the test
+vceil        = 0.0     # velocity ceiling, 0 = off (the test switches it on)
+
+<problem>
+pgen_name = shock_tube
+shock_dir = 1
+xshock    = 0.0
+
+dl  = 1.0
+pl  = 0.4
+ul  = -20.0
+vl  = 0.0
+wl  = 0.0
+bxl = 0.0
+byl = 0.1
+bzl = 0.0
+
+dr  = 1.0
+pr  = 0.4
+ur  = 20.0
+vr  = 0.0
+wr  = 0.0
+bxr = 0.0
+byr = 0.1
+bzr = 0.0
+
+<output1>
+file_type = log        # event counter log (column "fofc" counts FOFC-flagged cells)
+dt        = 0.001
+
+<output2>
+file_type   = hst      # history dump: volume integrals over EVERY cell
+data_format = %24.16e
+dt          = 0.001
+
+<output3>
+file_type = bin        # binary dump of the whole domain, for bitwise regression
+variable  = mhd_w_bcc
+dt        = 0.01
+
+<output4>
+file_type = bin        # div(B) from the FACE fields, which CT must keep at round-off
+variable  = mhd_divb
+dt        = 0.01

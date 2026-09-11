@@ -23,7 +23,8 @@
 KOKKOS_INLINE_FUNCTION
 void SingleC2P_GeneralMHD(MHDCons1D &u, const EOS_Data &eos, HydPrim1D &w,
                           const Real tguess, Real &temp, Real &pgas, Real &g1,
-                          bool &dfloor_used, bool &efloor_used, bool &tfloor_used) {
+                          bool &dfloor_used, bool &efloor_used, bool &tfloor_used,
+                          bool &vceil_used, bool &vceil_test) {
   // apply density floor, without changing momentum or energy
   if (u.d < eos.dfloor) {
     u.d = eos.dfloor;
@@ -40,6 +41,21 @@ void SingleC2P_GeneralMHD(MHDCons1D &u, const EOS_Data &eos, HydPrim1D &w,
   // set internal energy, apply floor, correcting total energy
   Real e_k = 0.5*di*(SQR(u.mx) + SQR(u.my) + SQR(u.mz));
   Real e_m = 0.5*(SQR(u.bx) + SQR(u.by) + SQR(u.bz));
+  // THE VELOCITY CEILING: identical to the block in ideal_c2p_mhd.hpp; see eos.hpp.
+  if (eos.vceil > 0.0) {
+    const Real vsq = SQR(w.vx) + SQR(w.vy) + SQR(w.vz);
+    if (vsq > SQR(eos.vceil)) {
+      vceil_test = true;
+      if (!eos.defer_cons_floors) {
+        const Real fs = eos.vceil/sqrt(vsq);
+        u.mx *= fs; u.my *= fs; u.mz *= fs;
+        w.vx *= fs; w.vy *= fs; w.vz *= fs;
+        u.e -= (1.0 - fs*fs)*e_k;
+        e_k *= fs*fs;
+        vceil_used = true;
+      }
+    }
+  }
   w.e = (u.e - e_k - e_m);
 
   // Solve for the temperature, once per cell; see general_c2p_hyd.hpp for why this is the

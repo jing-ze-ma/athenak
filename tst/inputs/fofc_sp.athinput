@@ -1,0 +1,96 @@
+# AthenaK input file: strong RADIAL double-rarefaction shock tube on the SPHERICAL-POLAR
+# grid, used to regression-test first-order flux correction (FOFC) on a curvilinear mesh.
+#
+# WHY THIS EXISTS.  The FOFC trial update used to divide by the Cartesian mb_size.dx1/2/3
+# instead of forming the area/volume divergence the real update (Hydro::RKUpdate) forms,
+# so on this grid it flagged the wrong cells.  The two rarefactions open a near-vacuum in
+# the middle of the shell, which is exactly what the first-order fallback exists for, and
+# the radial face area varies as r^2 across it so a Cartesian divergence is visibly wrong.
+#
+# Both radial walls are REFLECTING and the angular directions are polar/periodic, so the
+# domain is CLOSED: total mass is conserved to round-off and can be compared between the
+# fofc=true and fofc=false runs.
+# <hydro>/fofc is set from the command line by the test script.
+
+<comment>
+problem = spherical-polar radial double rarefaction, FOFC regression test
+
+<job>
+basename = fofc_sp
+
+<mesh>
+nghost = 3             # FOFC with PLM requires nghost >= 3
+nx1    = 48            # RADIAL
+x1min  = 0.5
+x1max  = 1.5
+ix1_bc = reflect
+ox1_bc = reflect
+
+nx2    = 32            # theta; -1.0 selects the full 0..pi range
+x2min  = -1.0
+x2max  = -1.0
+ix2_bc = polar
+ox2_bc = polar
+
+nx3    = 8             # phi; -1.0 selects the full 0..2pi range
+x3min  = -1.0
+x3max  = -1.0
+ix3_bc = periodic
+ox3_bc = periodic
+
+use_spherical_polar   = true
+use_polar_boundary    = true
+polar_quadratic_recon = false
+
+<meshblock>
+nx1 = 48
+nx2 = 32
+nx3 = 4   # mesh nx3 / meshblock nx3 must be EVEN with polar boundaries
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim       = -1
+tlim       = 0.02
+ndiag      = 100000
+
+<hydro>
+eos         = ideal
+reconstruct = plm
+rsolver     = hllc
+gamma       = 1.4
+dfloor      = 1.0e-4
+pfloor      = 1.0e-4
+fofc        = true
+
+<problem>
+pgen_name = shock_tube
+shock_dir = 1
+xshock    = 1.0
+
+dl = 1.0
+pl = 0.4
+ul = -20.0
+vl = 0.0
+wl = 0.0
+
+dr = 1.0
+pr = 0.4
+ur = 20.0
+vr = 0.0
+wr = 0.0
+
+<output1>
+file_type = log       # event counter log (column "fofc" counts FOFC-flagged cells)
+dt        = 0.002
+
+<output2>
+file_type   = hst     # history dump: volume integrals over EVERY cell
+data_format = %24.16e
+dt          = 0.002
+
+<output3>
+file_type = bin       # binary dump, for the bitwise fofc=false regression
+variable  = hydro_w
+dt        = 0.02

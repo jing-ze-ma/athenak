@@ -15,6 +15,8 @@
 #include "coordinates.hpp"
 #include "cell_locations.hpp"
 #include "cubed_sphere.hpp"
+#include "gnomonic_raisevel.hpp"
+#include "gnomonic_raisevel_mhd.hpp"
 #include "hydro/hydro.hpp"
 #include "mhd/mhd.hpp"
 
@@ -818,6 +820,9 @@ void Coordinates::GnomonicEquiangleRaiseVel(DvceArray5D<Real> &u0,
   auto wtemp_ = wtemp;
   // see the dfloor_keep_velocity note at the kinetic energy below
   const bool keepv_ = eos_data.dfloor_keep_velocity && eos_data.defer_cons_floors;
+  // <hydro>/dfloor_keep_temperature, deferred for the same reason: the internal energy
+  // is E minus the METRIC kinetic energy, which only this routine can form.
+  const bool keept_ = eos_data.dfloor_keep_temperature && eos_data.defer_cons_floors;
   // <hydro>/vceil: the velocity ceiling is applied HERE on the cubed sphere, for the
   // same reason the density floor's energy correction is -- |v| and the kinetic energy
   // are the METRIC ones and ConsToPrim cannot form them.  See the note on EOS_Data::vceil
@@ -851,127 +856,39 @@ void Coordinates::GnomonicEquiangleRaiseVel(DvceArray5D<Real> &u0,
     const int k = (idx - m*nkji)/nji + kl;
     const int j = (idx - m*nkji - (k - kl)*nji)/ni + jl;
     const int i = (idx - m*nkji - (k - kl)*nji - (j - jl)*ni) + il;
+    // THE PER-CELL BODY LIVES IN coordinates/gnomonic_raisevel.hpp, so that the FOFC
+    // floor-TEST pass can run exactly this arithmetic on its trial state (see the note
+    // there and Hydro::FOFC).  The loads and stores stay here: m1..m3 and etot are
+    // written back unconditionally, which is bit-for-bit what the in-line version did
+    // (it wrote them only when something fired, and when nothing fires the locals still
+    // hold the bits that were loaded).
     const Real c = cos_cell_(m,k,j);
-    const Real det = 1.0 - c*c;
     const Real d = u0(m,IDN,k,j,i);
     Real m1 = u0(m,IM1,k,j,i);   // radial: orthogonal to both angles
     Real m2 = u0(m,IM2,k,j,i);   // xi
     Real m3 = u0(m,IM3,k,j,i);   // eta
-    // v^i = g^{ij} m_j / rho, with the metric acting on the ANGULAR pair only
-    Real v1 = m1/d;
-    Real v2 = (m2 - c*m3)/(d*det);
-    Real v3 = (m3 - c*m2)/(d*det);
-    // KE = 0.5 rho g_ij v^i v^j = 0.5 m_i v^i, which is the cross-term-correct form.
-    Real ekin = 0.5*(m1*v1 + m2*v2 + m3*v3);
-    // <hydro>/dfloor_keep_velocity: ConsToPrim scaled this cell's momentum by
-    // fv = d_old/dfloor and raised rho to dfloor, so the kinetic energy it now carries is
-    // fv^3 of what it had.  The matching reduction of the TOTAL energy could not be made
-    // there -- the orthonormal e_k in the c2p is not the kinetic energy on this grid --
-    // so it is made here from the metric-correct ekin: KE_old = ekin/fv^3, and removing
-    // KE_old - ekin leaves the internal energy exactly where it was.
-    if (keepv_) {
-      const Real fv = dflfv_(m,k,j,i);
-      if (fv > 0.0 && fv < 1.0) {
-        u0(m,IEN,k,j,i) -= ekin*(1.0/(fv*fv*fv) - 1.0);
-      } else if (!(fv > 0.0)) {
-        u0(m,IEN,k,j,i) -= ekin;     // the momentum was zeroed: remove all of it
-      }
-    }
-    // <hydro>/vceil, the deferred half.  |v|^2 = g_ij v^i v^j = 2 KE/rho with the
-    // metric-correct kinetic energy formed above, which is the quantity ConsToPrim
-    // cannot build on this grid.  Scale the momentum by fs = vceil/|v| and remove
-    // (1 - fs^2) KE from the conserved total, so the INTERNAL energy below is exactly
-    // what it would have been.  The conserved momentum is written immediately: the
-    // floor block that follows writes it only when a floor also fires.
+    Real etot = u0(m,IEN,k,j,i);
+    // ...and only in ACTIVE cells: see the note on act_ above.
     const bool act_ = (i >= ais && i <= aie && j >= ajs && j <= aje &&
                        k >= aks && k <= ake);
-    if (vceil_ > 0.0 && act_ && ekin > 0.0 && d > 0.0) {
-      const Real vsq = 2.0*ekin/d;
-      if (vsq > vceil_*vceil_) {
-        const Real fs = vceil_/sqrt(vsq);
-        m1 *= fs; m2 *= fs; m3 *= fs;
-        v1 *= fs; v2 *= fs; v3 *= fs;
-        u0(m,IEN,k,j,i) -= (1.0 - fs*fs)*ekin;
-        ekin *= fs*fs;
-        u0(m,IM1,k,j,i) = m1;
-        u0(m,IM2,k,j,i) = m2;
-        u0(m,IM3,k,j,i) = m3;
-        sumv++;
-      }
-    }
-    Real eint = u0(m,IEN,k,j,i) - ekin;
-    bool mom_scaled = false;
-    // ---------------------------------------------------------------------------------
-    // RE-APPLY THE FLOORS.  ConsToPrim floored the state it inverted, but that state
-    // carried an ORTHONORMAL kinetic energy; the metric cross term above MOVES the
-    // internal energy, so a cell ConsToPrim left comfortably above the floor can land
-    // below it -- or below zero -- here.  Leaving that unfloored hands a non-positive
-    // internal energy straight to the tabulated inversion below, which is undefined
-    // there and returns NaN in T, p and Gamma_1; the NaN then leaves the cell through
-    // the reconstruction stencil and takes the whole grid down within ~100 cycles.
-    // The sequence deliberately mirrors SingleC2P_GeneralHyd, including its guard
-    // against inverting a non-positive energy.  NOTE the pressure floor alone is NOT
-    // sufficient under a tabulated EOS: at upper-atmosphere densities e(d,pfloor) lies
-    // far below the table's lowest temperature, so it is the TEMPERATURE floor that
-    // actually keeps the lookup in range.  u0 is updated in step, exactly as ConsToPrim
-    // updates cons when a floor fires, so the conserved energy cannot keep sinking and
-    // re-trip the floor on every cycle.
+    Real v1, v2, v3, eint, pnew, g1new, temp, de;
+    bool ceil_used, floored;
+    GnomonicRaiseVelFloors(c, eos_, gen_, keepv_, keept_, vceil_, act_,
+                           (keepv_ || keept_) ? dflfv_(m,k,j,i) : 1.0,
+                           gen_ ? wtemp_(m,k,j,i) : 0.0, d,
+                           m1, m2, m3, etot, v1, v2, v3, eint, pnew, g1new, temp,
+                           ceil_used, floored, de);
+    u0(m,IM1,k,j,i) = m1;
+    u0(m,IM2,k,j,i) = m2;
+    u0(m,IM3,k,j,i) = m3;
+    u0(m,IEN,k,j,i) = etot;
     if (gen_) {
-      Real temp = -1.0, pnew = 0.0, g1new = 0.0;
-      const bool e_positive = (eint > 0.0);
-      bool stale = !e_positive;
-      if (e_positive) {
-        eos_.TemperaturePressureGamma1(d, eint, wtemp_(m,k,j,i), temp, pnew, g1new);
-      }
-      if (!e_positive || pnew < eos_.pfloor) {
-        const Real efl = eos_.EnergyFromPressure(d, eos_.pfloor, temp);
-        // See EOS_Data::efloor_from_ekin: rebuilding the conserved energy as efl + ekin
-        // with ekin untouched donates efl - eint, which is the cell's whole kinetic
-        // energy whenever the update left eint negative.  Paying out of the kinetic
-        // energy instead holds the conserved total fixed.
-        const Real etot = u0(m,IEN,k,j,i);
-        if (eos_.efloor_from_ekin && ekin > 0.0 && (etot - efl) < ekin) {
-          Real ek_new = etot - efl;
-          if (!(ek_new > 0.0)) ek_new = 0.0;
-          const Real fv = sqrt(ek_new/ekin);
-          m1 *= fv; m2 *= fv; m3 *= fv;
-          v1 *= fv; v2 *= fv; v3 *= fv;
-          sumde += (efl + ek_new) - etot;
-          ekin = ek_new;
-          mom_scaled = true;
-        } else {
-          sumde += efl - eint;
-        }
-        eint = efl;
-        stale = true;
-      }
-      if (temp < eos_.tfloor) {
-        const Real etf = eos_.EnergyFromTemperature(d, eos_.tfloor);
-        sumde += etf - eint;
-        eint = etf;
-        temp = eos_.tfloor;
-        stale = true;
-      }
-      if (stale) {
-        eos_.PressureAndGamma1(d, eint, temp, pnew, g1new);
-        u0(m,IEN,k,j,i) = eint + ekin;
-        if (mom_scaled) {
-          u0(m,IM1,k,j,i) = m1;
-          u0(m,IM2,k,j,i) = m2;
-          u0(m,IM3,k,j,i) = m3;
-        }
-      }
       wder_(m,IDPR,k,j,i) = pnew;
       wder_(m,IDG1,k,j,i) = g1new;
       wtemp_(m,k,j,i) = temp;
-    } else {
-      const Real eold = eint;
-      eos_.ApplyEnergyFloor(d, eint);
-      if (eint != eold) {
-        sumde += eint - eold;
-        u0(m,IEN,k,j,i) = eint + ekin;
-      }
     }
+    if (ceil_used) { sumv++; }
+    sumde += de;
     w0(m,IVX,k,j,i) = v1;
     w0(m,IVY,k,j,i) = v2;
     w0(m,IVZ,k,j,i) = v3;
@@ -1034,11 +951,32 @@ void Coordinates::GnomonicEquiangleRaiseVelMHD(DvceArray5D<Real> &u0,
   auto &x1v_ = x1v;
   auto &x1f_ = xx1f;
 
-  par_for("cs_raisev_mhd", DevExeSpace(), 0,nmb1, kl,ku, jl,ju, il,iu,
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+  // <mhd>/vceil: the velocity ceiling is applied HERE on the cubed sphere, for exactly
+  // the reason the hydro one is -- |v| and the kinetic energy are the METRIC ones and
+  // ConsToPrim cannot form them.  See the note on EOS_Data::vceil and the block in
+  // coordinates/gnomonic_raisevel_mhd.hpp.
+  const Real vceil_ = eos_data.vceil;
+  // ...and only in ACTIVE cells: this kernel runs over the ghost zones too, and a ghost
+  // filled by a boundary condition can carry a velocity the interior never has.  Same
+  // gate, same reason, as GnomonicEquiangleRaiseVel above.
+  auto &aidx = pmy_pack->pmesh->mb_indcs;
+  const int ais = aidx.is, aie = aidx.ie;
+  const int ajs = aidx.js, aje = aidx.je;
+  const int aks = aidx.ks, ake = aidx.ke;
+
+  int nceilv_ = 0;
+  const int nkji = (ku - kl + 1)*(ju - jl + 1)*(iu - il + 1);
+  const int nji = (ju - jl + 1)*(iu - il + 1);
+  const int ni = (iu - il + 1);
+  Kokkos::parallel_reduce("cs_raisev_mhd",
+  Kokkos::RangePolicy<>(DevExeSpace(), 0, (nmb1 + 1)*nkji),
+  KOKKOS_LAMBDA(const int &idx, int &sumv) {
+    const int m = idx/nkji;
+    const int k = (idx - m*nkji)/nji + kl;
+    const int j = (idx - m*nkji - (k - kl)*nji)/ni + jl;
+    const int i = (idx - m*nkji - (k - kl)*nji - (j - jl)*ni) + il;
     const Real c = cos_cell_(m,k,j);
     const Real sn = sin_cell_(m,k,j);
-    const Real det = 1.0 - c*c;
 
     // cell-centred field, then into the orthonormal frame. The eta slot already IS the
     // third axis of that frame (B.(e_eta - c e_xi)/s = s B^eta), so only the xi slot
@@ -1057,59 +995,40 @@ void Coordinates::GnomonicEquiangleRaiseVelMHD(DvceArray5D<Real> &u0,
     bcc0(m,IBY,k,j,i) = by;
     bcc0(m,IBZ,k,j,i) = bz;
 
+    // THE PER-CELL BODY LIVES IN coordinates/gnomonic_raisevel_mhd.hpp, so that the FOFC
+    // floor-TEST pass can run exactly this arithmetic on its trial state (see MHD::FOFC).
+    // The loads and stores stay here.
     const Real d = u0(m,IDN,k,j,i);
-    const Real m1 = u0(m,IM1,k,j,i);   // radial: orthogonal to both angles
-    const Real m2 = u0(m,IM2,k,j,i);   // xi
-    const Real m3 = u0(m,IM3,k,j,i);   // eta
-    const Real v1 = m1/d;
-    const Real v2 = (m2 - c*m3)/(d*det);
-    const Real v3 = (m3 - c*m2)/(d*det);
+    Real m1 = u0(m,IM1,k,j,i);   // radial: orthogonal to both angles
+    Real m2 = u0(m,IM2,k,j,i);   // xi
+    Real m3 = u0(m,IM3,k,j,i);   // eta
+    Real etot = u0(m,IEN,k,j,i);
+    const bool act_ = (i >= ais && i <= aie && j >= ajs && j <= aje &&
+                       k >= aks && k <= ake);
+    Real v1, v2, v3, eint, pnew, g1new, temp;
+    bool ceil_used, floored;
+    GnomonicRaiseVelMHDFloors(c, eos_, gen_, vceil_, act_,
+                              gen_ ? wtemp_(m,k,j,i) : 0.0, d, bx, by, bz,
+                              m1, m2, m3, etot, v1, v2, v3, eint, pnew, g1new, temp,
+                              ceil_used, floored);
+    if (ceil_used) {
+      u0(m,IM1,k,j,i) = m1;
+      u0(m,IM2,k,j,i) = m2;
+      u0(m,IM3,k,j,i) = m3;
+      sumv++;
+    }
+    if (ceil_used || floored) { u0(m,IEN,k,j,i) = etot; }
     w0(m,IVX,k,j,i) = v1;
     w0(m,IVY,k,j,i) = v2;
     w0(m,IVZ,k,j,i) = v3;
-    // the frame is orthonormal, so the magnetic energy IS the sum of squares.
-    // Keep the two subtractions separate and in this order: folding them into a single
-    // (kinetic + magnetic) sum re-associates the rounding and perturbs every ideal-EOS
-    // cubed-sphere answer in the last bits, for nothing.
-    Real eint = u0(m,IEN,k,j,i) - 0.5*(m1*v1 + m2*v2 + m3*v3)
-                                - 0.5*(bx*bx + by*by + bz*bz);
-    // Re-apply the floors to the CORRECTED internal energy; see the extended note in
-    // GnomonicEquiangleRaiseVel above. Without this the tabulated inversion below is
-    // handed a non-positive energy and returns NaN.
     if (gen_) {
-      Real temp = -1.0, pnew = 0.0, g1new = 0.0;
-      const bool e_positive = (eint > 0.0);
-      bool stale = !e_positive;
-      if (e_positive) {
-        eos_.TemperaturePressureGamma1(d, eint, wtemp_(m,k,j,i), temp, pnew, g1new);
-      }
-      if (!e_positive || pnew < eos_.pfloor) {
-        eint = eos_.EnergyFromPressure(d, eos_.pfloor, temp);
-        stale = true;
-      }
-      if (temp < eos_.tfloor) {
-        eint = eos_.EnergyFromTemperature(d, eos_.tfloor);
-        temp = eos_.tfloor;
-        stale = true;
-      }
-      if (stale) {
-        eos_.PressureAndGamma1(d, eint, temp, pnew, g1new);
-        u0(m,IEN,k,j,i) = eint + 0.5*(m1*v1 + m2*v2 + m3*v3)
-                                 + 0.5*(bx*bx + by*by + bz*bz);
-      }
       wder_(m,IDPR,k,j,i) = pnew;
       wder_(m,IDG1,k,j,i) = g1new;
       wtemp_(m,k,j,i) = temp;
-    } else {
-      const Real eold = eint;
-      eos_.ApplyEnergyFloor(d, eint);
-      if (eint != eold) {
-        u0(m,IEN,k,j,i) = eint + 0.5*(m1*v1 + m2*v2 + m3*v3)
-                               + 0.5*(bx*bx + by*by + bz*bz);
-      }
     }
     w0(m,IEN,k,j,i) = eint;
-  });
+  }, Kokkos::Sum<int>(nceilv_));
+  pmy_pack->pmesh->ecounter.neos_vceil += nceilv_;
   return;
 }
 

@@ -1,0 +1,119 @@
+# AthenaK input file: the strong double-rarefaction MHD blast of fofc_mhd_blast.athinput,
+# cut into 16 (or, with static refinement, 28) MeshBlocks so that it can be run on
+# several MPI ranks with several MeshBlocks per rank.  Used to regression-test
+# first-order flux correction (FOFC) for MHD across MPI boundaries and across a static
+# refinement level boundary, including the constrained transport that has to keep
+# div(B) at round-off through the prolongation/restriction at that boundary.
+#
+# Every boundary is REFLECTING, so the domain is CLOSED and total mass is conserved to
+# round-off.  The field along the shock direction is zero so that the reflecting walls
+# are consistent with it; the guide field is transverse and is rarefied with the gas.
+#
+# The test script sets, from the command line:
+#   <mhd>/fofc                         true / false
+#   <mesh_refinement>/refinement       none (uniform) / static (the refined region below)
+
+<comment>
+problem = strong MHD double rarefaction, FOFC + MPI + SMR regression test
+
+<job>
+basename = fofc_mhd_blast_mpi
+
+<mesh>
+nghost = 4             # FOFC requires nghost >= 3, SMR requires it to be even
+nx1    = 64
+x1min  = -0.5
+x1max  = 0.5
+ix1_bc = reflect
+ox1_bc = reflect
+
+nx2    = 64
+x2min  = -0.5
+x2max  = 0.5
+ix2_bc = reflect
+ox2_bc = reflect
+
+nx3    = 1
+x3min  = -0.5
+x3max  = 0.5
+ix3_bc = periodic
+ox3_bc = periodic
+
+<meshblock>
+nx1 = 16               # 4 x 4 = 16 root MeshBlocks, i.e. 4 per rank on 4 ranks
+nx2 = 16
+nx3 = 1
+
+<mesh_refinement>
+refinement = none      # "static" is set by the test for the SMR case
+
+<refined_region1>
+level = 1              # one extra level over 2 x 2 root MeshBlocks; its x1 edges sit
+x1min = -0.25          # inside the expanding vacuum, so the rarefaction heads and the
+x1max = 0.25           # FOFC-flagged region both cross the level boundary
+x2min = -0.5
+x2max = 0.0
+x3min = -0.5
+x3max = 0.5
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim       = -1
+tlim       = 0.01
+ndiag      = 100000
+
+<mhd>
+eos         = ideal
+reconstruct = plm
+rsolver     = hlld
+gamma       = 1.4
+dfloor      = 5.0e-2   # high enough that the rarefied cells actually reach it,
+                       # which is what makes the first-order fallback fire
+pfloor      = 1.0e-4
+fofc        = true     # toggled by the test
+fofc_rsolver = llf     # first-order fallback solver (llf|hlle), toggled by the test
+vceil        = 0.0     # velocity ceiling, 0 = off (the test switches it on)
+
+<problem>
+pgen_name = shock_tube
+shock_dir = 1
+xshock    = 0.0
+
+dl  = 1.0
+pl  = 0.4
+ul  = -20.0
+vl  = 0.0
+wl  = 0.0
+bxl = 0.0
+byl = 0.1
+bzl = 0.0
+
+dr  = 1.0
+pr  = 0.4
+ur  = 20.0
+vr  = 0.0
+wr  = 0.0
+bxr = 0.0
+byr = 0.1
+bzr = 0.0
+
+<output1>
+file_type = log        # event counter log (column "fofc" counts FOFC-flagged cells)
+dt        = 0.001
+
+<output2>
+file_type   = hst      # history dump: volume integrals over EVERY cell
+data_format = %24.16e
+dt          = 0.001
+
+<output3>
+file_type = bin        # binary dump of the whole domain, for bitwise regression
+variable  = mhd_w_bcc
+dt        = 0.01
+
+<output4>
+file_type = bin        # div(B) from the FACE fields, which CT must keep at round-off
+variable  = mhd_divb
+dt        = 0.01
