@@ -79,7 +79,8 @@ void GeneralHydro::ConsToPrim(DvceArray5D<Real> &cons, DvceArray5D<Real> &prim,
   auto &fofc_ = pmy_pack->phydro->fofc;
   auto &wder_ = pmy_pack->phydro->wder;
   auto &wtemp_ = pmy_pack->phydro->wtemp;
-  const bool keepv_defer_ = eos.dfloor_keep_velocity && eos.defer_cons_floors;
+  const bool keepv_defer_ = (eos.dfloor_keep_velocity ||
+                             eos.dfloor_keep_temperature) && eos.defer_cons_floors;
   auto dfl_fv_ = pmy_pack->phydro->dfl_fv;
 
   const int ni   = (iu - il + 1);

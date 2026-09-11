@@ -34,7 +34,8 @@ void IdealHydro::ConsToPrim(DvceArray5D<Real> &cons, DvceArray5D<Real> &prim,
   int &nscal = pmy_pack->phydro->nscalars;
   int &nmb = pmy_pack->nmb_thispack;
   auto &eos = eos_data;
-  const bool keepv_defer_ = eos.dfloor_keep_velocity && eos.defer_cons_floors;
+  const bool keepv_defer_ = (eos.dfloor_keep_velocity ||
+                             eos.dfloor_keep_temperature) && eos.defer_cons_floors;
   auto dfl_fv_ = pmy_pack->phydro->dfl_fv;
   auto &fofc_ = pmy_pack->phydro->fofc;
 
@@ -73,7 +74,8 @@ void IdealHydro::ConsToPrim(DvceArray5D<Real> &cons, DvceArray5D<Real> &prim,
     // data and is followed by no GnomonicEquiangleRaiseVel, so neither the momentum
     // rescale nor the fv it would hand on may be written from here.
     if (!only_testfloors) {
-      if ((eos.dfloor_keep_velocity && dfloor_fv < 1.0) || vceil_used) {
+      if (((eos.dfloor_keep_velocity || eos.dfloor_keep_temperature) &&
+           dfloor_fv < 1.0) || vceil_used) {
         cons(m,IM1,k,j,i) = u.mx;
         cons(m,IM2,k,j,i) = u.my;
         cons(m,IM3,k,j,i) = u.mz;

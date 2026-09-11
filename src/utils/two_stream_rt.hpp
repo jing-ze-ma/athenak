@@ -493,6 +493,44 @@ inline int rt_nanrep_maxlines = 400;              // then stay quiet (the run co
 inline DvceArray1D<int> *rt_eiclamp_cnt = nullptr;
 inline bool rt_eiclamp_warned = false;
 
+// The SAME hazard one level up: a (p, T) pair the EOS could not form -- a non-positive
+// or non-finite conserved DENSITY in the cell a slot reads, or a solve that did not
+// converge -- gives a NaN Planck function and a NaN top-of-column optical depth, and a
+// single NaN poisons the WHOLE column below it.  The down-sweep carries the stream as
+// I(i) = (1-e0)*I(i+1) + ..., and at large dtau (1-e0) underflows to EXACTLY zero, so
+// 0*NaN = NaN survives to arbitrary depth: measured in I8_vceil, 348 rescued cells at
+// tau_to_top = 75-90 with I_dn = -nan while their own B, T and kappa were finite.  The
+// two guards below are the density and the state analogues of the eiN clamp, counted in
+// one counter, and they are no-ops on any state the EOS returned cleanly.
+inline DvceArray1D<int> *rt_stclamp_cnt = nullptr;
+inline bool rt_stclamp_warned = false;
+
+//----------------------------------------------------------------------------------------
+//! \fn bool RTBadState
+//! \brief true when a (p, T) pair cannot be used to form a Planck function or a
+//! top-of-column optical depth: NaN, infinite, or non-positive.
+KOKKOS_INLINE_FUNCTION
+bool RTBadState(const Real p, const Real t) {
+  return !(t > 0.0) || !(p > 0.0) || !Kokkos::isfinite(t) || !Kokkos::isfinite(p);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn Real RTTopDtau
+//! \brief the optical depth of the unresolved hydrostatic column above the domain,
+//! kappa p / g_eff, with the g_eff = 0 case resolved.
+//!
+//! g_eff > 0 returns the old expression BIT FOR BIT.  Where the effective gravity is
+//! zero (a plane-parallel run that never set one) the old form was kappa*p/0, which is
+//! +inf for an opaque ghost -- an opaque lid, harmless -- but 0/0 = NaN as soon as the
+//! ghost's opacity is zero, which is exactly what the density gate makes it above the
+//! star.  The limit is taken here instead: no opacity above the domain means no column.
+KOKKOS_INLINE_FUNCTION
+Real RTTopDtau(const Real kap, const Real pcgs, const Real geff) {
+  const Real kp = kap*pcgs;
+  if (geff > 0.0) return kp/geff;           // the old expression, unchanged
+  return (kp > 0.0) ? 1.0e30 : 0.0;
+}
+
 //----------------------------------------------------------------------------------------
 //! \fn void RTSourceLimiterWarn
 //! \brief say ONCE, from rank 0, that LimitRTSource has clipped cells.
@@ -836,8 +874,33 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
         }
       }
     }
+    // see rt_stclamp_cnt: a non-positive or non-finite density, and a (p,T) the EOS
+    // could not form from it, are clamped before any Planck function or optical depth
+    if (rt_stclamp_cnt == nullptr) {
+      rt_stclamp_cnt = new DvceArray1D<int>("rt_stclamp", 1);
+      Kokkos::deep_copy(*rt_stclamp_cnt, 0);
+    }
+    auto stcl_g = *rt_stclamp_cnt;
+    if (!rt_stclamp_warned) {
+      auto stcl_h = Kokkos::create_mirror_view(stcl_g);
+      Kokkos::deep_copy(stcl_h, stcl_g);
+      if (stcl_h(0) > 0) {
+        rt_stclamp_warned = true;
+        if (global_variable::my_rank == 0) {
+          std::cout << "### WARNING in two_stream_rt: a non-finite or non-positive "
+                    << "density/(p,T) state was read in " << stcl_h(0) << " cell(s); "
+                    << "clamped to the floor state before the Planck function and the "
+                    << "optical depth, so the column below it is not poisoned. "
+                    << "Reported once." << std::endl;
+        }
+      }
+    }
+    const Real dfl_uc_ = eos.dfloor;
     auto rhoN = [=] (const int m, const int k, const int j, const int i) {
-      return usecons_ ? u0_uc_(m,IDN,k,j,i) : w0_uc_(m,IDN,k,j,i);
+      const Real d = usecons_ ? u0_uc_(m,IDN,k,j,i) : w0_uc_(m,IDN,k,j,i);
+      if (d > 0.0) return d;                 // false for NaN too, as in eiN
+      Kokkos::atomic_fetch_add(&stcl_g(0), 1);
+      return dfl_uc_;
     };
     {
       static bool uc_announced = false;
@@ -1131,8 +1194,14 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
           // once the down-sweep starts from it; nothing else spreads that fast.
           const int ii = (topclamp && i > ie) ? ie : i;
           Real pp, TT;
-          PresTempFromEint(eos,gm1,Rgas,rhoN(m,k,j,ii),eiN(m,k,j,ii),
+          const Real dd = rhoN(m,k,j,ii);
+          PresTempFromEint(eos,gm1,Rgas,dd,eiN(m,k,j,ii),
                            TGuess(wtemp_, m, k, j, ii),pp,TT);
+          if (RTBadState(pp, TT)) {          // see RTBadState: one NaN kills the column
+            Kokkos::atomic_fetch_add(&stcl_g(0), 1);
+            TT = 0.0;                        // the marker the opacity kernels read
+            pp = 0.0;
+          }
           T_g(m,k,j,i) = TT;
           pb_g(m,k,j,i) = pp*1.0e-6;
         });
@@ -1158,6 +1227,18 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
           KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
             if (i < icut_g(m,k,j)) return;        // deeper than the cut: never read
             const int ii = (topclamp && i > ie) ? ie : i;  // top slot: see rt_pre_tp
+            // T = 0 is rt_pre_tp's marker for a state the EOS could not form (see
+            // RTBadState).  Such a cell takes NO part in this RT call: zero opacity and
+            // zero emission make the layer transparent (e0 = 0, so alp = bet = 0, the
+            // streams pass through untouched, Src and Em pick up nothing and rt_apply's
+            // Newton branch is skipped) -- the same "exact" inert state the corona above
+            // rad_kappa_rmax already has.  Giving it a FLOOR state instead would hand a
+            // 0.1 K blackbody to a cell with 8000 K neighbours, which collapses dt.
+            if (!(T_g(m,k,j,i) > 0.0)) {
+              kc_g(m,0,i,k,j) = 0.0;
+              Bb_g(m,0,i,k,j) = 0.0;
+              return;
+            }
             const Real TT = T_g(m,k,j,i);
             const Real pcgs = pb_g(m,k,j,i)*1.0e6;
             const Real rho = rhoN(m,k,j,ii);
@@ -1179,6 +1260,15 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
         KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
           if (i < icut_g(m,k,j)) return;          // deeper than the cut: never read
           const int ii = (topclamp && i > ie) ? ie : i;  // top slot: see rt_pre_tp
+          if (!(T_g(m,k,j,i) > 0.0)) {            // unusable state: inert, see the grey
+            xT_g(m,k,j,i) = 0.0;                  // kernel's note
+            xP_g(m,k,j,i) = 0.0;
+            for (int b=0; b<CK_NB; ++b) {
+              kc_g(m,b,i,k,j) = 0.0;
+              Bb_g(m,b,i,k,j) = 0.0;
+            }
+            return;
+          }
           const Real TT = T_g(m,k,j,i);
           const Real pbar = pb_g(m,k,j,i);
           int iT, iP;
@@ -1246,19 +1336,27 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
         // the top slot is the continuation of the top ACTIVE cell, not the hydro ghost
         // (see rt_pre_tp): the band solver must not be able to read a poisoned ghost
         const int itop = topclamp ? ie : (ie+1);
-        Real p = PresFromEint(eos,gm1,rhoN(m,k,j,itop),eiN(m,k,j,itop));
         Real rho = rhoN(m,k,j,itop);
+        Real p = PresFromEint(eos,gm1,rho,eiN(m,k,j,itop));
         Real T = TempKelvin(eos,Rgas,rho,eiN(m,k,j,itop),p);
-        B[ie+1] = boltz_sigma/M_PI*SQR(SQR(T));
-        Real kapr;
-        get_kapr(T, p, met, kapr);
+        bool badtop = RTBadState(p, T);      // see RTBadState: one NaN kills the column
+        if (badtop) {
+          Kokkos::atomic_fetch_add(&stcl_g(0), 1);
+          T = 0.0;
+          p = 0.0;
+        }
+        B[ie+1] = badtop ? 0.0 : boltz_sigma/M_PI*SQR(SQR(T));
+        Real kapr = 0.0;
+        if (!badtop) get_kapr(T, p, met, kapr);
         // tau = kappa p / g for the UNRESOLVED column above the domain. g must be the
         // value at the top, not the surface value: at r/ap = 1.5 they differ by 2.3x.
         // The tidal term belongs here too: it is the EFFECTIVE gravity that sets how
         // much mass the unresolved column above the domain holds. See EffGravAt.
-        Real tau_r_f = kapr*p/EffGravAt(grav, ap, rtop, grav_pmass, omega, mu0, tide);
+        Real tau_r_f = RTTopDtau(kapr, p,
+                                 EffGravAt(grav, ap, rtop, grav_pmass, omega, mu0,
+                                           tide));
         tau_down_r_f[ie+1] = tau_r_f;
-        Real drtop = tau_r_f/(kapr*rho);
+        Real drtop = (kapr*rho != 0.0) ? tau_r_f/(kapr*rho) : 0.0;
         Real delta = drtop/rtop;
         Real fac = (sqrt(SQR(mu0)+2.0*delta+SQR(delta)) - mu0)/delta;
         fac = (mu0 > 0.1) ? (1.0/mu0) : (1.0/0.1);
@@ -1279,9 +1377,15 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
           Real p, T;
           PresTempFromEint(eos,gm1,Rgas,rho,eiN(m,k,j,i),
                            TGuess(wtemp_, m, k, j, i),p,T);
-          B[i] = boltz_sigma/M_PI*SQR(SQR(T));
-          Real kapr;
-          get_kapr(T, p, met, kapr);
+          bool badcell = RTBadState(p, T);   // see RTBadState: one NaN kills the column
+          if (badcell) {
+            Kokkos::atomic_fetch_add(&stcl_g(0), 1);
+            T = 0.0;
+            p = 0.0;
+          }
+          B[i] = badcell ? 0.0 : boltz_sigma/M_PI*SQR(SQR(T));
+          Real kapr = 0.0;
+          if (!badcell) get_kapr(T, p, met, kapr);
           Real dr = dx1(m,k,j,i);
           tau_down_r_f[i] = tau_down_r_f[i+1] + kapr*rho*dr;
           Real r = x1f_(m,i);
@@ -1377,9 +1481,9 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
             {
               const Real kap = kc_g(m,0,ie+1,k,j);
               const Real mu0 = cf_g(m,k,j,3);
-              const Real dtau = kap*pb_g(m,k,j,ie+1)*1.0e6
-                              / EffGravAt(grav, ap, x1v_(m,ie+1), grav_pmass, omega,
-                                          mu0, tide);
+              const Real dtau = RTTopDtau(kap, pb_g(m,k,j,ie+1)*1.0e6,
+                                          EffGravAt(grav, ap, x1v_(m,ie+1), grav_pmass,
+                                                    omega, mu0, tide));
               // The source of that column: the ghost's own Planck function, or -- with
               // rt_top_re -- the radiative-equilibrium value I_up/2, which is what a slab
               // with nothing but space above it must emit downward.  See rt_top_re.
@@ -1597,8 +1701,9 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
               for (int cc=0; cc<NC; ++cc) {
                 const Real kap = ck_kappa(cklk, iT, fT, iP, fP, bandc[cc], gc[cc])
                                + kc_g(m,bandc[cc],ie+1,k,j);
-                const Real dtau = kap*ptop*1.0e6/EffGravAt(grav, ap, x1v_(m,ie+1),
-                                                           grav_pmass, omega, mu0, tide);
+                const Real dtau = RTTopDtau(kap, ptop*1.0e6,
+                                            EffGravAt(grav, ap, x1v_(m,ie+1),
+                                                      grav_pmass, omega, mu0, tide));
                 const RtF trans = RT_EXP(-static_cast<RtF>(dtau/muc[cc]));
                 I_down[cc][ie+1] = (static_cast<RtF>(1.0)-trans)
                                  * static_cast<RtF>(Bb_g(m,bandc[cc],ie+1,k,j));
@@ -2363,15 +2468,23 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
 
           // 3 V Bands
           // top
-          Real p = PresFromEint(eos,gm1,rhoN(m,k,j,ie+1),eiN(m,k,j,ie+1));
           Real rho = rhoN(m,k,j,ie+1);
+          Real p = PresFromEint(eos,gm1,rho,eiN(m,k,j,ie+1));
           Real T = TempKelvin(eos,Rgas,rho,eiN(m,k,j,ie+1),p);
-          B[ie+1] = boltz_sigma/M_PI*SQR(SQR(T));
-          Real kapr;
-          get_kapr(T, p, met, kapr);
-          Real tau_r_f = kapr*p/EffGravAt(grav, ap, rtop, grav_pmass, omega, mu0, tide);
+          bool badtop = RTBadState(p, T);    // see RTBadState: one NaN kills the column
+          if (badtop) {
+            Kokkos::atomic_fetch_add(&stcl_g(0), 1);
+            T = 0.0;
+            p = 0.0;
+          }
+          B[ie+1] = badtop ? 0.0 : boltz_sigma/M_PI*SQR(SQR(T));
+          Real kapr = 0.0;
+          if (!badtop) get_kapr(T, p, met, kapr);
+          Real tau_r_f = RTTopDtau(kapr, p,
+                                   EffGravAt(grav, ap, rtop, grav_pmass, omega, mu0,
+                                             tide));
           tau_down_r_f[ie+1] = tau_r_f;
-          Real drtop = tau_r_f/(kapr*rho);
+          Real drtop = (kapr*rho != 0.0) ? tau_r_f/(kapr*rho) : 0.0;
           Real delta = drtop/rtop;
           Real fac = (sqrt(SQR(mu0)+2.0*delta+SQR(delta)) - mu0)/delta;
           fac = (mu0 > 0.1) ? (1.0/mu0) : (1.0/0.1);
@@ -2392,9 +2505,15 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
             Real p, T;
             PresTempFromEint(eos,gm1,Rgas,rho,eiN(m,k,j,i),
                              TGuess(wtemp_, m, k, j, i),p,T);
-            B[i] = boltz_sigma/M_PI*SQR(SQR(T));
-            Real kapr;
-            get_kapr(T, p, met, kapr);
+            bool badcell = RTBadState(p, T); // see RTBadState: one NaN kills the column
+            if (badcell) {
+              Kokkos::atomic_fetch_add(&stcl_g(0), 1);
+              T = 0.0;
+              p = 0.0;
+            }
+            B[i] = badcell ? 0.0 : boltz_sigma/M_PI*SQR(SQR(T));
+            Real kapr = 0.0;
+            if (!badcell) get_kapr(T, p, met, kapr);
             Real dr = dx1(m,k,j,i);
             tau_down_r_f[i] = tau_down_r_f[i+1] + kapr*rho*dr;
             Real r = x1f_(m,i);

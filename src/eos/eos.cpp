@@ -46,6 +46,16 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
               << "for hydrodynamics" << std::endl;
     std::exit(EXIT_FAILURE);
   }
+  // <hydro>/dfloor_keep_temperature: see the note on EOS_Data::dfloor_keep_temperature.
+  // Implemented in the same places as dfloor_keep_velocity, refused in the same way.
+  eos_data.dfloor_keep_temperature =
+      pin->GetOrAddBoolean(bk,"dfloor_keep_temperature",false);
+  if (eos_data.dfloor_keep_temperature && bk.compare("hydro") != 0) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+              << std::endl << "<" << bk << ">/dfloor_keep_temperature is implemented "
+              << "only for hydrodynamics" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
   // <hydro>/vceil: see the note on EOS_Data::vceil.  Non-relativistic HYDRO only -- the
   // relativistic inversions have their own ceiling (gamma_max), and the MHD c2p would
   // read this and silently ignore it, so refuse it there the same way.

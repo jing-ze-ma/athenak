@@ -52,17 +52,24 @@ void SingleC2P_GeneralHyd(HydCons1D &u, const EOS_Data &eos, HydPrim1D &w,
   // handed fv through dfloor_fv and applies (1/fv^3 - 1) times the metric KE there.
   dfloor_fv = 1.0;
   if (u.d < eos.dfloor) {
-    if (eos.dfloor_keep_velocity) {
+    if (eos.dfloor_keep_velocity || eos.dfloor_keep_temperature) {
       const Real fv = (u.d > 0.0) ? u.d/eos.dfloor : 0.0;
       if (!eos.defer_cons_floors) {
         const Real ke_old = (u.d > 0.0)
             ? 0.5*(SQR(u.mx) + SQR(u.my) + SQR(u.mz))/u.d : 0.0;
-        u.e -= (1.0 - fv*fv*fv)*ke_old;
+        const Real eint_old = u.e - ke_old;
+        if (eos.dfloor_keep_velocity) u.e -= (1.0 - fv*fv*fv)*ke_old;
+        // <block>/dfloor_keep_temperature: e -> fv e, which holds e/rho at the value the
+        // plain floor would have inflated.  EXACT only for an ideal gas; the tabulated
+        // EOS is not called here (see the note in eos.hpp).
+        if (eos.dfloor_keep_temperature && fv > 0.0) u.e -= (1.0 - fv)*eint_old;
       }
-      u.mx *= fv;
-      u.my *= fv;
-      u.mz *= fv;
-      mom_scaled = true;
+      if (eos.dfloor_keep_velocity) {
+        u.mx *= fv;
+        u.my *= fv;
+        u.mz *= fv;
+        mom_scaled = true;
+      }
       dfloor_fv = fv;
     }
     u.d = eos.dfloor;

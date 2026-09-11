@@ -69,7 +69,21 @@ struct EOS_Data {
   // ends at fv^2 of its old value, i.e. a deeply floored cell is damped hard instead of
   // being left carrying a 1e11 cm/s momentum it inherited from a 1e-20 g/cm^3 state.
   bool dfloor_keep_velocity = false;
-
+  // <block>/dfloor_keep_temperature: the ENERGY half of the same floor.  Raising u.d to
+  // dfloor while leaving the internal energy alone leaves a cell that held e at a density
+  // far below the floor holding the same e at the floor density: its temperature is then
+  // e/rho with the WRONG rho, and a cell floored from 1e-20 to 1e-18 comes back at
+  // T ~ 1e16 K, cs ~ 1e8 cm/s, and collapses the hydro time step for one cycle.  With
+  // this on the internal energy is scaled by the same fv = d_old/dfloor the momentum is
+  // scaled by, so the floored cell no longer carries the energy of a state that had a
+  // much lower density (for an ideal gas e is linear in rho at fixed T, so this is the
+  // exact e <-> rho scaling; for a general EOS the SAME e *= fv is used, which holds
+  // e/rho fixed but is only approximately isothermal -- the table is deliberately not
+  // consulted here).  Nothing happens when d_old <= 0: a cell created out of nothing has
+  // no temperature to keep, and keeps the old behaviour.  Events are counted in the
+  // existing eos_dfloor counter.  Deferred on the cubed sphere exactly as
+  // dfloor_keep_velocity is: see Coordinates::GnomonicEquiangleRaiseVel.
+  bool dfloor_keep_temperature = false;
   // <hydro>/vceil -- a VELOCITY CEILING for NEWTONIAN hydro (0 = off, the default).
   // The relativistic inversions have had one forever (gamma_max, counted in
   // neos_vceil); the non-relativistic ones have not, and nothing else bounds |v|.  A
