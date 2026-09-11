@@ -54,6 +54,33 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
     extrema = true;
   }
 
+  // --- <problem>/nan_report: the HLLC in-kernel capture (see hllc_hyd.hpp).  Zeroed once
+  // per Fluxes call; the first face with a non-finite energy flux wins the record.  When
+  // the switch is off these are 1-element dummies and the solver never touches them.
+  const bool nanrep_r_ = nan_report;
+  if (nanrep_r_ && wbrec_nanrep_cnt == nullptr) {
+    wbrec_nanrep_cnt = new DvceArray1D<int>("wbrec_nanrep_cnt", 1);
+    wbrec_nanrep_rec = new DvceArray1D<Real>("wbrec_nanrep_rec", 48);
+  }
+  auto wbcnt_ = nanrep_r_ ? *wbrec_nanrep_cnt : DvceArray1D<int>("d", 1);
+  auto wbrec_ = nanrep_r_ ? *wbrec_nanrep_rec : DvceArray1D<Real>("d", 1);
+  if (nanrep_r_) {
+    Kokkos::deep_copy(wbcnt_, 0);
+    Kokkos::deep_copy(wbrec_, 0.0);
+  }
+  const Real nanrep_stage_ = static_cast<Real>(stage);
+  auto wtemp_nr_ = wtemp;
+  if (nanrep_r_ && rsolv_nanrep_cnt == nullptr) {
+    rsolv_nanrep_cnt = new DvceArray1D<int>("rsolv_nanrep_cnt", 1);
+    rsolv_nanrep_rec = new DvceArray1D<Real>("rsolv_nanrep_rec", 40);
+  }
+  auto rscnt_ = nanrep_r_ ? *rsolv_nanrep_cnt : DvceArray1D<int>("d", 1);
+  auto rsrec_ = nanrep_r_ ? *rsolv_nanrep_rec : DvceArray1D<Real>("d", 1);
+  if (nanrep_r_) {
+    Kokkos::deep_copy(rscnt_, 0);
+    Kokkos::deep_copy(rsrec_, 0.0);
+  }
+
   auto &eos_ = peos->eos_data;
   auto &size_ = pmy_pack->pmb->mb_size;
   auto &coord_ = pmy_pack->pcoord->coord_data;
@@ -131,18 +158,33 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
 
   // the well-balanced background of every cell in this sweep, walked once
 
+  bool wbreb_h = false;
   if (use_wellbalance_dynamic && use_wb_x1) {
     const int ncyc = pmy_pack->pmesh->ncycle;
     if (wb_cache_every <= 0 || !wb_cache_built ||
         (stage == 1 && (ncyc % wb_cache_every) == 0)) {
       BuildWBCache(jl, ju, kl, ku);
       wb_cache_built = true;
+      wbreb_h = true;
     }
   }
 
 
+  const Real wbreb_ = wbreb_h ? 1.0 : 0.0;
+
   par_for_outer("hflux_x1",DevExeSpace(), scr_size, scr_level, 0, nmb1, kl, ku, jl, ju,
   KOKKOS_LAMBDA(TeamMember_t member, const int m, const int k, const int j) {
+    auto wbcnt = wbcnt_;
+    auto wbrec = wbrec_;
+    const Real nanrep_stage = nanrep_stage_;
+    const Real wbrebuilt = wbreb_;
+    auto wbq0 = wbq0_;
+    auto w0 = w0_;
+    auto wder = wder_;
+    auto wtemp = wtemp_nr_;
+    auto phicc = phicc0_;
+    auto phif = phi0_x1f;
+    const bool nanrep_r = nanrep_r_;
     ScrArray2D<Real> wl(member.team_scratch(scr_level), nvars, ncells1);
     ScrArray2D<Real> wr(member.team_scratch(scr_level), nvars, ncells1);
     ScrArray2D<Real> dl(member.team_scratch(scr_level), nder, ncells1);
@@ -230,7 +272,71 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
       // and the run is not reproducible.  x2/x3 need no barrier: those
       // reconstructions write index i from thread i.
       member.team_barrier();
+      // --- <problem>/nan_report: look at the reconstruction BEFORE the fmax mask below.
+      // fmax(NaN, pfloor) returns pfloor, so a NaN interface pressure is invisible after
+      // it; the interface ENERGY has no such mask and reaches the solver as NaN.
+      if (nanrep_r) {
+        par_for_inner(member, il, iu, [&](const int i) {
+          if (isfinite(dl(IDPR,i)) && isfinite(dr(IDPR,i)) &&
+              isfinite(wl(IEN,i)) && isfinite(wr(IEN,i))) return;
+          if (Kokkos::atomic_fetch_add(&wbcnt(0), 1) != 0) return;
+          Real bd[5], be[5], bp[5];
+          WBReadCache(wbq0, WBVar::wb_dens, m, k, j, i,
+                      bd[0], bd[1], bd[2], bd[3], bd[4]);
+          WBReadCache(wbq0, WBVar::wb_eint, m, k, j, i,
+                      be[0], be[1], be[2], be[3], be[4]);
+          WBReadCache(wbq0, WBVar::wb_pres, m, k, j, i,
+                      bp[0], bp[1], bp[2], bp[3], bp[4]);
+          wbrec(0) = static_cast<Real>(m);
+          wbrec(1) = static_cast<Real>(k);
+          wbrec(2) = static_cast<Real>(j);
+          wbrec(3) = static_cast<Real>(i);
+          wbrec(4) = nanrep_stage;
+          wbrec(5) = wbrebuilt;
+          for (int q = 0; q < 3; ++q) {
+            wbrec(6+q)  = w0(m,IDN,k,j,i-1+q);
+            wbrec(9+q)  = w0(m,IEN,k,j,i-1+q);
+            wbrec(12+q) = wtemp(m,k,j,i-1+q);
+            wbrec(15+q) = wder(m,IDPR,k,j,i-1+q);
+            wbrec(18+q) = phicc(m,k,j,i-1+q);
+          }
+          for (int q = 0; q < 5; ++q) {
+            wbrec(21+q) = bd[q];
+            wbrec(26+q) = be[q];
+            wbrec(31+q) = bp[q];
+          }
+          wbrec(36) = dl(IDPR,i);
+          wbrec(37) = dr(IDPR,i);
+          wbrec(38) = wl(IEN,i);
+          wbrec(39) = wr(IEN,i);
+          wbrec(40) = dl(IDG1,i);
+          wbrec(41) = dr(IDG1,i);
+          wbrec(42) = wl(IDN,i);
+          wbrec(43) = wr(IDN,i);
+          wbrec(44) = phif(m,k,j,i);
+        });
+        member.team_barrier();
+      }
       par_for_inner(member, il, iu, [&](const int i) {
+        // fmax(NaN, pfloor) returns pfloor, so the floor below does not just floor an
+        // undershoot -- it MASKS a non-finite reconstructed pressure and leaves the
+        // interface energy wl/wr(IEN), which has no floor of its own, NaN; the HLLC
+        // general-EOS branch then poisons flx(IEN) through 0*NaN while every momentum
+        // flux stays finite (the signature of the wb_recon_x1 death).  Repair the pair
+        // consistently instead: floored pressure AND the internal energy that belongs
+        // to it, pfloor/(Gamma_1 - 1) with this interface's reconstructed Gamma_1
+        // (gamma-law fallback if that is unusable too).  The nan_report block above has
+        // already counted and recorded the event, so nothing is hidden any more.
+        if (!isfinite(dl(IDPR,i)) || !isfinite(wl(IEN,i))) {
+          Real g1 = (isfinite(dl(IDG1,i)) && dl(IDG1,i) > 1.0) ? dl(IDG1,i) : eos_.gamma;
+          dl(IDPR,i) = eos_.pfloor;
+          wl(IEN,i) = eos_.pfloor/(g1 - 1.0);
+        }
+        if (!isfinite(dr(IDPR,i)) || !isfinite(wr(IEN,i))) {
+          Real g1 = (isfinite(dr(IDG1,i)) && dr(IDG1,i) > 1.0) ? dr(IDG1,i) : eos_.gamma;
+          dr(IDPR,i) = eos_.pfloor;
+          wr(IEN,i) = eos_.pfloor/(g1 - 1.0);
+        }
         dl(IDPR,i) = fmax(dl(IDPR,i), eos_.pfloor);
         dr(IDPR,i) = fmax(dr(IDPR,i), eos_.pfloor);
       });
@@ -271,6 +377,8 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
     // compute fluxes over [is,ie+1]
     // NOTE(@pdmullen): Capture variables prior to if constexpr.  Required for cuda 11.6+.
     auto eos = eos_;
+    auto rscnt = rscnt_;
+    auto rsrec = rsrec_;
     auto indcs = indcs_;
     auto size = size_;
     auto coord = coord_;
@@ -282,7 +390,8 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
     } else if constexpr (rsolver_method_ == Hydro_RSolver::hlle) {
       HLLE(member, eos, indcs, size, coord, m, k, j, il, iu, IVX, wl, wr, dl, dr, flx1);
     } else if constexpr (rsolver_method_ == Hydro_RSolver::hllc) {
-      HLLC(member,eos,indcs,size,coord,m,k,j,il,iu,IVX,wl,wr,dl,dr,flx1);
+      HLLC(member,eos,indcs,size,coord,m,k,j,il,iu,IVX,wl,wr,dl,dr,flx1,
+           nanrep_r,rscnt,rsrec);
     } else if constexpr (rsolver_method_ == Hydro_RSolver::lhllc) {
       LHLLC(member,eos,indcs,size,coord,m,k,j,il,iu,IVX,wl,wr,dl,dr,flx1);
     } else if constexpr (rsolver_method_ == Hydro_RSolver::hllclm) {
@@ -295,11 +404,13 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
         const BoundaryFlag bo = mb_bcs_pq.d_view(m,BoundaryFace::outer_x1);
         if (bi == BoundaryFlag::reflect || bi == BoundaryFlag::user) {
           member.team_barrier();
-          HLLC(member,eos,indcs,size,coord,m,k,j,is,is,IVX,wl,wr,dl,dr,flx1);
+          HLLC(member,eos,indcs,size,coord,m,k,j,is,is,IVX,wl,wr,dl,dr,flx1,
+               nanrep_r,rscnt,rsrec);
         }
         if (bo == BoundaryFlag::reflect || bo == BoundaryFlag::user) {
           member.team_barrier();
-          HLLC(member,eos,indcs,size,coord,m,k,j,ie+1,ie+1,IVX,wl,wr,dl,dr,flx1);
+          HLLC(member,eos,indcs,size,coord,m,k,j,ie+1,ie+1,IVX,wl,wr,dl,dr,flx1,
+               nanrep_r,rscnt,rsrec);
         }
       }
     } else if constexpr (rsolver_method_ == Hydro_RSolver::roe) {
@@ -475,6 +586,9 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
         if (j>jl) {
           // NOTE(@pdmullen): Capture variables prior to if constexpr.
           auto eos = eos_;
+          const bool nanrep_r = nanrep_r_;
+          auto rscnt = rscnt_;
+          auto rsrec = rsrec_;
           auto indcs = indcs_;
           auto size = size_;
           auto coord = coord_;
@@ -486,7 +600,8 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
           } else if constexpr (rsolver_method_ == Hydro_RSolver::hlle) {
             HLLE(member,eos,indcs,size,coord,m,k,j,il,iu,IVY,wl,wr,dl,dr,flx2);
           } else if constexpr (rsolver_method_ == Hydro_RSolver::hllc) {
-            HLLC(member,eos,indcs,size,coord,m,k,j,il,iu,IVY,wl,wr,dl,dr,flx2);
+            HLLC(member,eos,indcs,size,coord,m,k,j,il,iu,IVY,wl,wr,dl,dr,flx2,
+                 nanrep_r,rscnt,rsrec);
           } else if constexpr (rsolver_method_ == Hydro_RSolver::lhllc) {
             LHLLC(member,eos,indcs,size,coord,m,k,j,il,iu,IVY,wl,wr,dl,dr,flx2);
           } else if constexpr (rsolver_method_ == Hydro_RSolver::hllclm) {
@@ -672,6 +787,9 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
         if (k>kl) {
           // NOTE(@pdmullen): Capture variables prior to if constexpr.
           auto eos = eos_;
+          const bool nanrep_r = nanrep_r_;
+          auto rscnt = rscnt_;
+          auto rsrec = rsrec_;
           auto indcs = indcs_;
           auto size = size_;
           auto coord = coord_;
@@ -683,7 +801,8 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
           } else if constexpr (rsolver_method_ == Hydro_RSolver::hlle) {
             HLLE(member,eos,indcs,size,coord,m,k,j,il,iu,IVZ,wl,wr,dl,dr,flx3);
           } else if constexpr (rsolver_method_ == Hydro_RSolver::hllc) {
-            HLLC(member,eos,indcs,size,coord,m,k,j,il,iu,IVZ,wl,wr,dl,dr,flx3);
+            HLLC(member,eos,indcs,size,coord,m,k,j,il,iu,IVZ,wl,wr,dl,dr,flx3,
+                 nanrep_r,rscnt,rsrec);
           } else if constexpr (rsolver_method_ == Hydro_RSolver::lhllc) {
             LHLLC(member,eos,indcs,size,coord,m,k,j,il,iu,IVZ,wl,wr,dl,dr,flx3);
           } else if constexpr (rsolver_method_ == Hydro_RSolver::hllclm) {

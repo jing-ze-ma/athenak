@@ -65,6 +65,16 @@ struct HydroTaskIDs {
 
 namespace hydro {
 
+// <problem>/nan_report: the HLLC in-kernel capture record (see hllc_hyd.hpp and the
+// readback in Hydro::Fluxes).  Pointers, not Views: a file-scope View outlives
+// Kokkos::finalize.  Never allocated unless the switch is on.
+inline DvceArray1D<int> *rsolv_nanrep_cnt = nullptr;
+inline DvceArray1D<Real> *rsolv_nanrep_rec = nullptr;
+inline DvceArray1D<int> *wbrec_nanrep_cnt = nullptr;
+inline DvceArray1D<Real> *wbrec_nanrep_rec = nullptr;
+inline int wbrec_nanrep_lines = 0;
+inline int rsolv_nanrep_lines = 0;
+
 //----------------------------------------------------------------------------------------
 //! \class Hydro
 
@@ -115,6 +125,10 @@ class Hydro {
   // following used for FOFC
   DvceArray4D<bool> fofc;  // flag for each cell to indicate if FOFC is needed
   bool use_fofc = false;   // flag to enable FOFC
+  // <problem>/nan_report: scan the fluxes and the conserved state for a non-finite value
+  // after each stage-level operator and report the first offender.  Default false, in
+  // which case not one extra kernel runs.  See the NanScan* helpers in hydro_tasks.cpp.
+  bool nan_report = false;
   DvceArray5D<Real> utest;  // scratch array for FOFC
     
   // following only used for including time-independent gravity in the conserved energy equation

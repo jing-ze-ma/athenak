@@ -29,7 +29,8 @@ void HLLC(TeamMember_t const &member, const EOS_Data &eos,
      const RegionIndcs &indcs,const DualArray1D<RegionSize> &size,const CoordData &coord,
      const int m, const int k, const int j, const int il, const int iu, const int ivx,
      const ScrArray2D<Real> &wl, const ScrArray2D<Real> &wr,
-     const ScrArray2D<Real> &dl, const ScrArray2D<Real> &dr, DvceArray5D<Real> flx) {
+     const ScrArray2D<Real> &dl, const ScrArray2D<Real> &dr, DvceArray5D<Real> flx,
+     const bool nanrep, const DvceArray1D<int> nrcnt, const DvceArray1D<Real> nrrec) {
   int ivy = IVX + ((ivx-IVX)+1)%3;
   int ivz = IVX + ((ivx-IVX)+2)%3;
 
@@ -79,9 +80,17 @@ void HLLC(TeamMember_t const &member, const EOS_Data &eos,
     qb = eos.SoundSpeedFromP(wr_idn, wr_ipr, g1r);
     Real el, er;
     if (eos.IsGeneral()) {
-      // internal energy density is a reconstructed primitive; e(p) would be a root find
-      el = wl(IEN,i) + 0.5*wl_idn*(SQR(wl_ivx) + SQR(wl_ivy) + SQR(wl_ivz));
-      er = wr(IEN,i) + 0.5*wr_idn*(SQR(wr_ivx) + SQR(wr_ivy) + SQR(wr_ivz));
+      // internal energy density is a reconstructed primitive; e(p) would be a root find.
+      // It is the ONLY channel with no floor: the reconstructed pressure is floored by
+      // the caller, so when a deviation reconstruction against an overflowed background
+      // gives inf - inf the NaN survives only here, and it reaches flx(IEN) even on the
+      // side whose weight is zero (0*NaN = NaN) while the momentum flux, which never
+      // reads w(IEN), stays finite.  Fall back to the floored pressure's energy, one
+      // ternary per side, in the spirit of the `cp = cp > 0.0 ? cp : 0.0;` clamp below.
+      Real eil = (wl(IEN,i) > 0.0 && isfinite(wl(IEN,i))) ? wl(IEN,i) : wl_ipr/(g1l-1.0);
+      Real eir = (wr(IEN,i) > 0.0 && isfinite(wr(IEN,i))) ? wr(IEN,i) : wr_ipr/(g1r-1.0);
+      el = eil + 0.5*wl_idn*(SQR(wl_ivx) + SQR(wl_ivy) + SQR(wl_ivz));
+      er = eir + 0.5*wr_idn*(SQR(wr_ivx) + SQR(wr_ivy) + SQR(wr_ivz));
     } else {
       el = wl_ipr*igm1 + 0.5*wl_idn*(SQR(wl_ivx) + SQR(wl_ivy) + SQR(wl_ivz));
       er = wr_ipr*igm1 + 0.5*wr_idn*(SQR(wr_ivx) + SQR(wr_ivy) + SQR(wr_ivz));
@@ -161,6 +170,53 @@ void HLLC(TeamMember_t const &member, const EOS_Data &eos,
     flx(m,ivy,k,j,i) = qc*fl.my + qd*fr.my;
     flx(m,ivz,k,j,i) = qc*fl.mz + qd*fr.mz;
     flx(m,IEN,k,j,i) = qc*fl.e  + qd*fr.e  + qe*cp*am;
+
+    // --- <problem>/nan_report: capture the first face whose ENERGY flux is not finite,
+    // with every intermediate the solver formed.  The momentum flux is printed beside it
+    // so the factor that differs (am, and the reconstructed IEN through el/er) is
+    // visible.  Nothing here runs when the switch is off.
+    if (nanrep) {
+      if (!isfinite(flx(m,IEN,k,j,i))) {
+        if (Kokkos::atomic_fetch_add(&nrcnt(0), 1) == 0) {
+          nrrec(0)  = static_cast<Real>(m);
+          nrrec(1)  = static_cast<Real>(k);
+          nrrec(2)  = static_cast<Real>(j);
+          nrrec(3)  = static_cast<Real>(i);
+          nrrec(4)  = wl_idn;
+          nrrec(5)  = wl_ivx;
+          nrrec(6)  = wl_ivy;
+          nrrec(7)  = wl_ivz;
+          nrrec(8)  = wl(IEN,i);
+          nrrec(9)  = wl_ipr;
+          nrrec(10) = g1l;
+          nrrec(11) = wr_idn;
+          nrrec(12) = wr_ivx;
+          nrrec(13) = wr_ivy;
+          nrrec(14) = wr_ivz;
+          nrrec(15) = wr(IEN,i);
+          nrrec(16) = wr_ipr;
+          nrrec(17) = g1r;
+          nrrec(18) = eos.SoundSpeedFromP(wl_idn, wl_ipr, g1l);
+          nrrec(19) = eos.SoundSpeedFromP(wr_idn, wr_ipr, g1r);
+          nrrec(20) = qb;          // bm  = S_L
+          nrrec(21) = qa;          // bp  = S_R
+          nrrec(22) = am;          // S_M, the contact speed
+          nrrec(23) = cp;          // p*, the contact pressure
+          nrrec(24) = ml;
+          nrrec(25) = mr;
+          nrrec(26) = el;
+          nrrec(27) = er;
+          nrrec(28) = fl.e;
+          nrrec(29) = fr.e;
+          nrrec(30) = qc;          // weight on the L flux
+          nrrec(31) = qd;          // weight on the R flux
+          nrrec(32) = qe;          // weight on the contact term
+          nrrec(33) = flx(m,ivx,k,j,i);
+          nrrec(34) = flx(m,IDN,k,j,i);
+          nrrec(35) = flx(m,IEN,k,j,i);
+        }
+      }
+    }
   });
   return;
 }

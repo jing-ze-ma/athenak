@@ -171,6 +171,7 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
   use_wb_x2 = pin->GetOrAddBoolean("hydro","wb_x2",false);
   use_wb_x3 = pin->GetOrAddBoolean("hydro","wb_x3",false);
   use_wb_rho = pin->GetOrAddBoolean("hydro","wb_rho",false);
+  nan_report = pin->GetOrAddBoolean("problem","nan_report",false);
   // allocate array of flags used with etotgrav
   if (use_etotgrav || use_wellbalance_dynamic) {
     auto &indcs = pmy_pack->pmesh->mb_indcs;
