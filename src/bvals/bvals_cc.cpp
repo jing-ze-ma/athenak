@@ -216,78 +216,130 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
           if (v == IVZ) signvar = -1;
         }
 
-        // Value of variable v at the source cell, with the seam transform applied. Both
-        // tangential momenta of the source cell are needed to produce either one, so
-        // this reads two components and selects; IVX and every scalar take the plain
-        // copy path. Away from a panel seam it is exactly the old `a(...)*signvar`.
-        auto srcval = [&](const int kk, const int jj, const int i) {
-          if (!cs_xform) {
-            return (cs_coar ? ca(m,vv,kk,jj,i) : a(m,vv,kk,jj,i))*signvar;
-          }
-          const int js_ = cs_coar ? cs_indcs.cjs : cs_indcs.js;
-          const int ks_ = cs_coar ? cs_indcs.cks : cs_indcs.ks;
-          const int nx2_ = cs_coar ? cs_indcs.cnx2 : cs_indcs.nx2;
-          const int nx3_ = cs_coar ? cs_indcs.cnx3 : cs_indcs.nx3;
-          const Real xi = 0.25*M_PI*CellCenterX(jj-js_, nx2_,
-                            mbsize.d_view(m).x2min, mbsize.d_view(m).x2max);
-          const Real eta = 0.25*M_PI*CellCenterX(kk-ks_, nx3_,
-                            mbsize.d_view(m).x3min, mbsize.d_view(m).x3max);
-          Real m2o, m3o;
-          const Real my_ = cs_coar ? ca(m,IVY,kk,jj,i) : a(m,IVY,kk,jj,i);
-          const Real mz_ = cs_coar ? ca(m,IVZ,kk,jj,i) : a(m,IVZ,kk,jj,i);
-          cubed_sphere::TransformMomentum(cs_srcpanel, cs_dstpanel, xi, eta,
-                                          my_, mz_, m2o, m3o);
-          return (v == IVY) ? m2o : m3o;
-        };
-
-        // ALONG-SEAM RESAMPLE. Across a panel seam the two charts share the seam-normal
-        // coordinate exactly but NOT the seam-parallel one. Writing the seam-normal
-        // angle of a source cell as n and its seam-parallel angle as a, the physical
-        // point of that cell sits at seam-parallel angle atan(tan(a)/tan|n|) in the
-        // DESTINATION chart, not at a. So the plain index copy hands each ghost cell the
-        // state of a point up to half a cell (layer 0) or ~1.5 cells (layer 1) away
-        // along the seam -- an offset that does NOT shrink with resolution in cell
-        // units, which makes the ghost value O(dx) wrong and the acceleration it drives
-        // O(1)... i.e. the seam is only first-order accurate.
+        // THE SEAM GEOMETRY IS HOISTED OUT OF THE RADIAL LOOP.
         //
-        // Inverting that map, the value a ghost needs is the source field at
-        // seam-parallel angle atan(tan(a)*tan|n|), which is always INSIDE the source
-        // cell's own angle (|tan n| < 1), so the stencil never leaves the source block.
-        // The same formula covers both orientations: a reversed seam flips the sign of
-        // both a and the target, and the index reversal above already carries that.
-        // Quadratic (3-point) Lagrange keeps the ghost error O(dx^3), which is what the
-        // second-order flux difference needs.
-        auto seamval = [&](const int kk, const int jj, const int i) {
-          if (cs_seam == 0) return srcval(kk,jj,i);
-          const int js_ = cs_coar ? cs_indcs.cjs : cs_indcs.js;
-          const int ks_ = cs_coar ? cs_indcs.cks : cs_indcs.ks;
-          const int nx2_ = cs_coar ? cs_indcs.cnx2 : cs_indcs.nx2;
-          const int nx3_ = cs_coar ? cs_indcs.cnx3 : cs_indcs.nx3;
-          const Real x2mn = mbsize.d_view(m).x2min, x2mx = mbsize.d_view(m).x2max;
-          const Real x3mn = mbsize.d_view(m).x3min, x3mx = mbsize.d_view(m).x3max;
-          const Real xi  = 0.25*M_PI*CellCenterX(jj-js_, nx2_, x2mn, x2mx);
-          const Real eta = 0.25*M_PI*CellCenterX(kk-ks_, nx3_, x3mn, x3mx);
-          Real ang, nrm, dang;
-          int sc, blo, bhi;
-          if (cs_seam == 2) {
-            ang = eta; nrm = xi;
-            dang = 0.25*M_PI*(x3mx - x3mn)/static_cast<Real>(nx3_);
-            sc = kk; blo = kl; bhi = ku - 2;
-          } else {
-            ang = xi; nrm = eta;
-            dang = 0.25*M_PI*(x2mx - x2mn)/static_cast<Real>(nx2_);
-            sc = jj; blo = jl; bhi = ju - 2;
+        // x1 is RADIAL on the cubed sphere and no seam crosses it, so (xi,eta) -- and
+        // therefore EVERYTHING the transform and the resample compute from it -- is the
+        // same for every cell in the i loop. It used to be recomputed per cell: four
+        // PanelFrame switches, four tan/sqrt pairs, a PanelToCart and a CartToPanel with
+        // two atan, plus the resample's own atan/tan, once for every radial cell of every
+        // seam buffer. Profiled on a 300-cycle dhj MHD run, this pack cost 14.9x per call
+        // on the cubed sphere against spherical polar, a quarter of the whole GPU time.
+        //
+        // Everything below is per (kk,jj) and none of it depends on the data, so the
+        // hoist is BITWISE EXACT: each per-cell floating-point expression is unchanged
+        // and still evaluated in the same order.  MEASURED on that run: this kernel went
+        // 2267 ms -> 254 ms, 8.9x, for no change in any output byte.
+        //
+        // THE SAME HOIST IN bvals_fc.cpp MADE IT 6x SLOWER and is deliberately NOT there.
+        // The face-centred pack needs THREE transforms per column (one per resample
+        // stencil cell) rather than one, and its loop is flat over (k,j,i); turning it
+        // into TeamThreadRange(k,j) x ThreadVectorRange(i) to get a place to hoist into
+        // both serialises the radial direction (the TeamPolicy's vector length is 1) and
+        // pushes the per-thread private segment from 908 to 2224 bytes.  Measured
+        // 1432 ms -> 8596 ms.  Any retry needs an explicit vector length on the policy
+        // and a way to carry the three transforms without a per-thread array.
+        const int js_ = cs_coar ? cs_indcs.cjs : cs_indcs.js;
+        const int ks_ = cs_coar ? cs_indcs.cks : cs_indcs.ks;
+        const int nx2_ = cs_coar ? cs_indcs.cnx2 : cs_indcs.nx2;
+        const int nx3_ = cs_coar ? cs_indcs.cnx3 : cs_indcs.nx3;
+        const Real x2mn = mbsize.d_view(m).x2min, x2mx = mbsize.d_view(m).x2max;
+        const Real x3mn = mbsize.d_view(m).x3min, x3mx = mbsize.d_view(m).x3max;
+
+        // Middle loop over k,j
+        Kokkos::parallel_for(Kokkos::TeamThreadRange<>(tmember, nkj), [&](const int idx) {
+          int k = idx / nj;
+          int j = (idx - k * nj) + jl;
+          k += kl;
+          int kk = ak*k + bk;
+          int jj = aj*j + bj;
+
+          // ALONG-SEAM RESAMPLE. Across a panel seam the two charts share the seam-normal
+          // coordinate exactly but NOT the seam-parallel one. Writing the seam-normal
+          // angle of a source cell as n and its seam-parallel angle as a, the physical
+          // point of that cell sits at seam-parallel angle atan(tan(a)/tan|n|) in the
+          // DESTINATION chart, not at a. So the plain index copy hands each ghost cell
+          // the state of a point up to half a cell (layer 0) or ~1.5 cells (layer 1) away
+          // along the seam -- an offset that does NOT shrink with resolution in cell
+          // units, which makes the ghost value O(dx) wrong and the acceleration it drives
+          // O(1)... i.e. the seam is only first-order accurate.
+          //
+          // Inverting that map, the value a ghost needs is the source field at
+          // seam-parallel angle atan(tan(a)*tan|n|), which is always INSIDE the source
+          // cell's own angle (|tan n| < 1), so the stencil never leaves the source block.
+          // The same formula covers both orientations: a reversed seam flips the sign of
+          // both a and the target, and the index reversal above already carries that.
+          // Quadratic (3-point) Lagrange keeps the ghost error O(dx^3), which is what the
+          // second-order flux difference needs.
+          //
+          // The stencil cells and their weights are a function of (kk,jj) alone. With no
+          // resample there is a single "stencil cell", the source cell itself.
+          int kst[3] = {kk, kk, kk};
+          int jst[3] = {jj, jj, jj};
+          int nst = 1;
+          Real wm = 1.0, w0 = 0.0, wp = 0.0;
+          if (cs_seam != 0) {
+            const Real xi  = 0.25*M_PI*CellCenterX(jj-js_, nx2_, x2mn, x2mx);
+            const Real eta = 0.25*M_PI*CellCenterX(kk-ks_, nx3_, x3mn, x3mx);
+            Real ang, nrm, dang;
+            int sc, blo, bhi;
+            if (cs_seam == 2) {
+              ang = eta; nrm = xi;
+              dang = 0.25*M_PI*(x3mx - x3mn)/static_cast<Real>(nx3_);
+              sc = kk; blo = kl; bhi = ku - 2;
+            } else {
+              ang = xi; nrm = eta;
+              dang = 0.25*M_PI*(x2mx - x2mn)/static_cast<Real>(nx2_);
+              sc = jj; blo = jl; bhi = ju - 2;
+            }
+            const Real pos = sc + (atan(tan(ang)*tan(fabs(nrm))) - ang)/dang;
+            int b = static_cast<int>(floor(pos + 0.5)) - 1;
+            b = (b < blo) ? blo : ((b > bhi) ? bhi : b);
+            const Real u = pos - static_cast<Real>(b + 1);
+            wm = 0.5*u*(u - 1.0);
+            w0 = 1.0 - u*u;
+            wp = 0.5*u*(u + 1.0);
+            nst = 3;
+            for (int s=0; s<3; ++s) {
+              if (cs_seam == 2) {
+                kst[s] = b + s;
+              } else {
+                jst[s] = b + s;
+              }
+            }
           }
-          const Real pos = sc + (atan(tan(ang)*tan(fabs(nrm))) - ang)/dang;
-          int b = static_cast<int>(floor(pos + 0.5)) - 1;
-          b = (b < blo) ? blo : ((b > bhi) ? bhi : b);
-          const Real u = pos - static_cast<Real>(b + 1);
-          const Real wm = 0.5*u*(u - 1.0);
-          const Real w0 = 1.0 - u*u;
-          const Real wp = 0.5*u*(u + 1.0);
-          const Real sv0 = (cs_seam == 2) ? srcval(b,jj,i)   : srcval(kk,b,i);
-          const Real sv1 = (cs_seam == 2) ? srcval(b+1,jj,i) : srcval(kk,b+1,i);
-          const Real sv2 = (cs_seam == 2) ? srcval(b+2,jj,i) : srcval(kk,b+2,i);
+
+          // The tangent-basis geometry of each stencil cell. Across a panel seam the two
+          // charts carry different tangent bases at the same physical point, differing by
+          // a shear that is O(1) away from the seam midline, so the two tangential
+          // momenta must be re-expressed rather than permuted -- see cubed_sphere::
+          // TransformMomentum. IVX is radial, common to both charts, and passes through,
+          // as does every scalar; those take the plain copy path and need no geometry.
+          cubed_sphere::SeamXform xf[3];
+          if (cs_xform) {
+            for (int s=0; s<nst; ++s) {
+              const Real xis = 0.25*M_PI*CellCenterX(jst[s]-js_, nx2_, x2mn, x2mx);
+              const Real etas = 0.25*M_PI*CellCenterX(kst[s]-ks_, nx3_, x3mn, x3mx);
+              cubed_sphere::SeamXformAt(cs_srcpanel, cs_dstpanel, xis, etas, xf[s]);
+            }
+          }
+
+          // Value of variable v at stencil cell s, radial index i. Both tangential
+          // momenta of the source cell are needed to make either one, so this reads two
+          // components and selects. Away from a panel seam it is exactly the old
+          // `a(...)*signvar`. Only loads and the O(1) half of the transform remain here.
+          auto sval = [&](const int s, const int i) {
+            const int kq = kst[s], jq = jst[s];
+            if (!cs_xform) {
+              return (cs_coar ? ca(m,vv,kq,jq,i) : a(m,vv,kq,jq,i))*signvar;
+            }
+            Real m2o, m3o;
+            const Real my_ = cs_coar ? ca(m,IVY,kq,jq,i) : a(m,IVY,kq,jq,i);
+            const Real mz_ = cs_coar ? ca(m,IVZ,kq,jq,i) : a(m,IVZ,kq,jq,i);
+            cubed_sphere::ApplyMomentumXform(xf[s], my_, mz_, m2o, m3o);
+            return (v == IVY) ? m2o : m3o;
+          };
+
           // MONOTONICITY LIMIT, threshold-free.
           //
           // The rule is the standard one: monotone data must give a monotone
@@ -299,9 +351,9 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
           // clamp is a numerical NO-OP, because the quadratic already lies inside the
           // range, so nothing is paid for it.
           //
-          // It must also be skipped when the resample is EXTRAPOLATING -- `bs` is
+          // It must also be skipped when the resample is EXTRAPOLATING -- `b` is
           // clamped at the ends of the source range, so `pos` can fall outside
-          // [bs, bs+2], where the correct value legitimately lies outside the node
+          // [b, b+2], where the correct value legitimately lies outside the node
           // range; clamping there cost 3.5x on the smooth seam halo.
           //
           // TWO EARLIER ATTEMPTS FAILED and are recorded so they are not retried: an
@@ -309,8 +361,7 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
           // second-difference roughness test gated on a RELATIVE span
           // (hi-lo) > 0.1*(|hi|+|lo|), which fires spuriously wherever the stencil
           // straddles ZERO -- it triggered ten million times on a smooth run.
-          const Real qq = wm*sv0 + w0*sv1 + wp*sv2;
-          const Real dd1 = sv1 - sv0, dd2 = sv2 - sv1;
+          //
           // CELL-CENTRED: clamp UNCONDITIONALLY.  The face-centred twin guards this with
           // "monotone stencil AND interpolating", which is right there and costs 3.5x if
           // dropped -- but here BOTH guards let the failure through.  The one that
@@ -320,21 +371,16 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
           // smooth.  Measured on iprob=12: guarded, a VERTEX-centred blast still went
           // entirely NaN at contrast 100; unconditional, it survives 1000.  The price is
           // ~6% on one hydro halo metric, against a run that silently fills with NaN.
-          {
+          auto seamval = [&](const int i) {
+            if (cs_seam == 0) return sval(0,i);
+            const Real sv0 = sval(0,i);
+            const Real sv1 = sval(1,i);
+            const Real sv2 = sval(2,i);
+            const Real qq = wm*sv0 + w0*sv1 + wp*sv2;
             const Real lo0 = fmin(sv0, fmin(sv1, sv2));
             const Real hi0 = fmax(sv0, fmax(sv1, sv2));
             return fmin(hi0, fmax(lo0, qq));
-          }
-          return qq;
-        };
-
-        // Middle loop over k,j
-        Kokkos::parallel_for(Kokkos::TeamThreadRange<>(tmember, nkj), [&](const int idx) {
-          int k = idx / nj;
-          int j = (idx - k * nj) + jl;
-          k += kl;
-          int kk = ak*k + bk;
-          int jj = aj*j + bj;
+          };
 
           // Inner (vector) loop over i
           // copy directly into recv buffer if MeshBlocks on same rank
@@ -344,7 +390,7 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
           if (nghbr.d_view(m,n).rank == my_rank) {
             Kokkos::parallel_for(Kokkos::ThreadVectorRange(tmember,il,iu+1),
             [&](const int i) {
-              Real val = seamval(kk,jj,i);
+              Real val = seamval(i);
               int index = i-il + ni*(sj*(j-jl) + sk*(k-kl) + nk*nj*v);
               rbuf[dn].vars(dm, index) = val;
             });
@@ -354,7 +400,7 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
           } else {
             Kokkos::parallel_for(Kokkos::ThreadVectorRange(tmember,il,iu+1),
             [&](const int i) {
-              Real val = seamval(kk,jj,i);
+              Real val = seamval(i);
               int index = i-il + ni*(sj*(j-jl) + sk*(k-kl) + nk*nj*v);
               sbuf[n].vars(m,index) = val;
             });
