@@ -804,6 +804,18 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
     }
     auto u0_uc_ = u0;
     auto w0_uc_ = w0;
+    // MHD: u0(IEN) also holds the magnetic energy, so the extraction has to subtract it
+    // or every temperature this solver forms is the temperature of e + ME.  bcc0 is the
+    // cell-centred form of the CURRENT b0 (see MagEnergyCC): the RT apply and its
+    // precompute run from MHD::MHDSrcTerms, inside the stage but BEFORE MHD::CT, so b0
+    // has not moved since the ConToPrim that filled bcc0 and re-averaging the faces here
+    // would return the same numbers.  On the cubed sphere bcc0 is already in the
+    // orthonormal frame, so no metric enters.
+    const bool mhd_uc_ = (pmbp->pmhd != nullptr);
+    DvceArray5D<Real> bcc_uc_("rt_bcc_dummy", 1, 1, 1, 1, 1);
+    if (pmbp->pmhd != nullptr) {
+      bcc_uc_ = pmbp->pmhd->bcc0;
+    }
     // see the note on rt_eiclamp_cnt: e <= 0 (or NaN) out of the conserved state is
     // clamped to e(rho, tfloor) before any temperature or Planck function is formed
     if (rt_eiclamp_cnt == nullptr) {
@@ -816,7 +828,8 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
       if (!usecons_) return w0_uc_(m,IEN,k,j,i);
       const Real ei_uc = EintFromCons(u0_uc_, m, k, j, i,
                                       cs_uc_ ? cosc_uc_(m,k,j) : 0.0, cs_uc_,
-                                      etg_uc_, etg_uc_ ? phicc_uc_(m,k,j,i) : 0.0);
+                                      etg_uc_, etg_uc_ ? phicc_uc_(m,k,j,i) : 0.0,
+                                      mhd_uc_ ? MagEnergyCC(bcc_uc_,m,k,j,i) : 0.0);
       if (ei_uc > 0.0) return ei_uc;           // false for NaN too, which is the point
       Kokkos::atomic_fetch_add(&eicl_g(0), 1);
       Real ei_fl = eos_uc_.EnergyFromTemperature(u0_uc_(m,IDN,k,j,i), eos_uc_.tfloor);

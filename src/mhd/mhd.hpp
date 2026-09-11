@@ -57,6 +57,7 @@ struct MHDTaskIDs {
   TaskID recvf;
   TaskID rkupdt;
   TaskID srctrms;
+  TaskID impcnd;
   TaskID sendu_oa;
   TaskID recvu_oa;
   TaskID restu;
@@ -257,6 +258,7 @@ class MHD {
   TaskStatus RecvFlux(Driver *d, int stage);
   TaskStatus RKUpdate(Driver *d, int stage);
   TaskStatus MHDSrcTerms(Driver *d, int stage);
+  TaskStatus ImplicitConduction(Driver *d, int stage);
   TaskStatus SendU_OA(Driver *d, int stage);
   TaskStatus RecvU_OA(Driver *d, int stage);
   TaskStatus RestrictU(Driver *d, int stage);

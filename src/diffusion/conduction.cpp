@@ -171,13 +171,9 @@ Conduction::Conduction(std::string block, MeshBlockPack *pp, ParameterInput *pin
         Kokkos::realloc(rad_tauf, nmb, ncells3, ncells2, ncells1+1);
       }
       if (rad_implicit_x1) {
-        // hydro only: the MHD inversion would have to subtract the magnetic energy too
-        if (block.compare("hydro") != 0) {
-          std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
-                    << std::endl << "rad_implicit_x1 is implemented for <hydro> only"
-                    << std::endl;
-          std::exit(EXIT_FAILURE);
-        }
+        // hydro and MHD both: ImplicitRadialUpdate subtracts the magnetic energy from
+        // the conserved state when the block is <mhd> (see MagEnergyCC), so the frozen
+        // internal energy it linearises about is the internal energy in either system.
         // the solve is column-local, so the whole radial extent must be in one MeshBlock
         if (pp->pmesh->mb_indcs.nx1 != pp->pmesh->mesh_indcs.nx1) {
           std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
@@ -897,6 +893,11 @@ void Conduction::AddIsotropicHeatFluxRadiative(const DvceArray5D<Real> &w0,
 //! system -- they are added explicitly in AddIsotropicHeatFluxRadiative -- so the
 //! interior fluxes telescope and sum_i V_i (e_i - e*_i) = 0 per column to round-off.
 //! Only u0(IEN) is written; w0 is rebuilt by ConToPrim later in the same stage.
+//!
+//! HYDRO AND MHD.  In MHD u0(IEN) carries the magnetic energy too, so the frozen
+//! internal energy subtracts 0.5|bcc0|^2 as well (MagEnergyCC); nothing else in the
+//! routine changes, since what is solved for is the INCREMENT and what is written is
+//! u0(IEN) += x.  The field is frozen over the step exactly as T*, c_v and K_f are.
 
 void Conduction::ImplicitRadialUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
                                       const Real beta_dt) {
@@ -916,9 +917,20 @@ void Conduction::ImplicitRadialUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos
   auto &area1_ = pmy_pack->pcoord->area.x1f;
   auto eos_ = eos;
   const bool gen = eos.IsGeneral();
-  auto &wtemp_ = pmy_pack->phydro->wtemp;
-  auto &phicc_ = pmy_pack->phydro->phicc0;
-  const bool etg = pmy_pack->phydro->use_etotgrav;
+  // hydro or MHD: the cached temperature, the gravitational potential and, in MHD, the
+  // cell-centred field whose energy has to come out of u0(IEN) as well
+  const bool ismhd = (my_block.compare("mhd") == 0);
+  auto &wtemp_ = ismhd ? pmy_pack->pmhd->wtemp : pmy_pack->phydro->wtemp;
+  auto &phicc_ = ismhd ? pmy_pack->pmhd->phicc0 : pmy_pack->phydro->phicc0;
+  const bool etg = ismhd ? pmy_pack->pmhd->use_etotgrav
+                         : pmy_pack->phydro->use_etotgrav;
+  // bcc0 is the cell-centred form of the CURRENT b0 and, on the cubed sphere, is already
+  // in the orthonormal frame -- see MagEnergyCC.  MHD::ImplicitConduction runs from the
+  // stage before MHD::CT, exactly as the hydro one runs before the ghost exchange, so
+  // b0 has not moved since the ConToPrim that filled it.  A zero-size dummy in hydro,
+  // captured by the kernel and never read.
+  DvceArray5D<Real> bcc_("imp_bcc_dummy", 1, 1, 1, 1, 1);
+  if (ismhd) bcc_ = pmy_pack->pmhd->bcc0;
   const Real temp_unit = pmy_pack->punit->temperature_cgs();
   const Real pres_unit = pmy_pack->punit->pressure_cgs();
   const Real dens_unit = pmy_pack->punit->density_cgs();
@@ -974,7 +986,8 @@ void Conduction::ImplicitRadialUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos
       // the one shared extraction (utils/eint_from_cons.hpp): identical arithmetic in
       // identical order to what stood here, so this refactor is bit-for-bit a no-op
       const Real ei = EintFromCons(u0, m, k, j, i, cs_ ? cosc_(m,k,j) : 0.0, cs_, etg,
-                                   etg ? phicc_(m,k,j,i) : 0.0);
+                                   etg ? phicc_(m,k,j,i) : 0.0,
+                                   ismhd ? MagEnergyCC(bcc_,m,k,j,i) : 0.0);
       wrk(m,e_,k,j,i) = ei;
       wrk(m,t_,k,j,i) = 0.0;
       wrk(m,pr_,k,j,i) = 0.0;
