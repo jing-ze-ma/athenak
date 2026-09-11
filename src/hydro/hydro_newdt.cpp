@@ -219,8 +219,8 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
       dd.d_view(6) = w0_(dm,IVY,dk,dj,di);
       dd.d_view(7) = w0_(dm,IVZ,dk,dj,di);
     });
-    dt_diag.template modify<DevExeSpace>();
-    dt_diag.template sync<HostMemSpace>();
+    dt_diag.modify_device();
+    dt_diag.sync_host();
     dt_diag_valid = true;
   }
   dtnew_prev = dtnew;
