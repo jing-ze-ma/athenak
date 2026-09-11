@@ -23,6 +23,95 @@
 //! find.
 
 //----------------------------------------------------------------------------------------
+//! \fn void SingleC2P_GeneralHydLegacy()
+//! \brief THE PRE-FLOOR-SWITCH inversion, kept verbatim.  See the note on
+//! EOS_Data::floors_legacy: with none of the floor switches set SingleC2P_GeneralHyd()
+//! below is algebraically this routine, but its extra tests and temporaries change how
+//! the device compiler contracts the arithmetic, so a run built with the switches
+//! available but unused would not reproduce one built without them.  It is a separate
+//! function rather than a branch inside the other one precisely so that the kernel that
+//! calls it inlines this code and nothing else.  ConsToPrim() selects between the two on
+//! eos.floors_legacy; any change meant to apply by DEFAULT has to be made in both.
+
+KOKKOS_INLINE_FUNCTION
+void SingleC2P_GeneralHydLegacy(HydCons1D &u, const EOS_Data &eos, HydPrim1D &w,
+                          const Real tguess, Real &temp, Real &pgas, Real &g1,
+                          bool &dfloor_used, bool &efloor_used, bool &tfloor_used) {
+  // apply density floor, without changing momentum or energy
+  if (u.d < eos.dfloor) {
+    u.d = eos.dfloor;
+    dfloor_used = true;
+  }
+  w.d = u.d;
+
+  // compute velocities
+  Real di = 1.0/u.d;
+  w.vx = di*u.mx;
+  w.vy = di*u.my;
+  w.vz = di*u.mz;
+
+  // set internal energy, apply floor, correct total energy (if needed)
+  Real e_k = 0.5*di*(SQR(u.mx) + SQR(u.my) + SQR(u.mz));
+  w.e = (u.e - e_k);
+
+  // Solve for the temperature. For a general EOS this is the one expensive EOS call in
+  // the time step, so it happens here, once, and everything below reuses the result. A
+  // badly under-resolved cell can leave e non-positive, where the root find has nothing
+  // to converge to; that case skips the solve and goes straight to the pressure floor.
+  bool e_positive = (w.e > 0.0);
+  temp = -1.0;
+
+  // Apply the pressure floor. The test is on p rather than on e so that the inverse
+  // e(d,pfloor) -- density dependent, and a root find for a general EOS -- is evaluated
+  // only in the rare cells where the floor actually trips, instead of in every cell as a
+  // constant would be. See EOS_Data::BelowPressureFloor().
+  // ONE table evaluation now serves three consumers -- the pressure-floor test below, and
+  // the p and Gamma_1 the Riemann solvers need at the bottom -- because all three are at
+  // the same (d,T). `stale` marks the rare paths where a floor moves the state afterwards
+  // and they have to be redone.
+  bool stale = !e_positive;
+  if (e_positive) {
+    // fused: the inversion and the evaluation that follows it share their logarithms
+    eos.TemperaturePressureGamma1(w.d, w.e, tguess, temp, pgas, g1);
+  }
+
+  if (!e_positive || pgas < eos.pfloor) {
+    // the three-argument form hands back the temperature the inversion solved for,
+    // so the floored cell does not pay for a second root find
+    w.e = eos.EnergyFromPressure(w.d, eos.pfloor, temp);
+    if (!eos.defer_cons_floors) u.e = w.e + e_k;
+    efloor_used = true;
+    stale = true;
+  }
+
+  // Apply the temperature floor. Free to test now that T is known, and e(d,tfloor) is a
+  // direct evaluation rather than an inversion, so this costs no root find either.
+  if (temp < eos.tfloor) {
+    w.e = eos.EnergyFromTemperature(w.d, eos.tfloor);
+    if (!eos.defer_cons_floors) u.e = w.e + e_k;
+    temp = eos.tfloor;
+    tfloor_used = true;
+    stale = true;
+  }
+
+  // Apply the entropy floor. Only meaningful while the general EOS evaluates a gamma law,
+  // where it is the ideal-gas floor verbatim; under a tabulated EOS this is a no-op and a
+  // run that sets sfloor is refused at startup. See EOS_Data::ApplyEntropyFloor().
+  if (eos.ApplyEntropyFloor(w.d, di, w.e)) {
+    temp = eos.Temperature(w.d, w.e, temp);
+    efloor_used = true;
+    stale = true;
+  }
+
+  // Evaluate the derived thermodynamic quantities that the Riemann solvers will need.
+  // Both are cheap: the temperature they depend on has already been solved for above.
+  if (stale) {
+    eos.PressureAndGamma1(w.d, w.e, temp, pgas, g1);
+  }
+  return;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void SingleC2P_GeneralHyd()
 //! \brief Converts a single state of conserved variables into primitive variables for
 //! non-relativistic hydrodynamics with a general EOS, and evaluates the derived

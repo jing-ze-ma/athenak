@@ -79,19 +79,26 @@ void GeneralHydro::ConsToPrim(DvceArray5D<Real> &cons, DvceArray5D<Real> &prim,
   auto &fofc_ = pmy_pack->phydro->fofc;
   auto &wder_ = pmy_pack->phydro->wder;
   auto &wtemp_ = pmy_pack->phydro->wtemp;
-  const bool keepv_defer_ = eos.dfloor_keep_velocity && eos.defer_cons_floors;
-  auto dfl_fv_ = pmy_pack->phydro->dfl_fv;
 
   const int ni   = (iu - il + 1);
   const int nji  = (ju - jl + 1)*ni;
   const int nkji = (ku - kl + 1)*nji;
   const int nmkji = nmb*nkji;
 
-  int nfloord_=0, nfloore_=0, nfloort_=0, nceilv_=0;
-  Real efloor_de_=0.0;
+  // THE FLOOR-SWITCH KERNEL LIVES IN ITS OWN TRANSLATION UNIT (general_hyd_floors.cpp).
+  // See the note on EOS_Data::floors_legacy.  It is not merely a second launch in this
+  // file: with both kernels in one TU the device compiler contracts the arithmetic of
+  // the legacy one differently and the default answer moves by an ULP, so the two are
+  // compiled apart and this routine keeps exactly the code it had before the switches
+  // existed.
+  if (!eos.floors_legacy) {
+    ConsToPrimFloors(cons, prim, only_testfloors, il, iu, jl, ju, kl, ku);
+    return;
+  }
+
+  int nfloord_=0, nfloore_=0, nfloort_=0;
   Kokkos::parallel_reduce("hyd_c2p_gen",Kokkos::RangePolicy<>(DevExeSpace(), 0, nmkji),
-  KOKKOS_LAMBDA(const int &idx, int &sumd, int &sume, int &sumt, int &sumv,
-                Real &sumde) {
+  KOKKOS_LAMBDA(const int &idx, int &sumd, int &sume, int &sumt) {
     int m = (idx)/nkji;
     int k = (idx - m*nkji)/nji;
     int j = (idx - m*nkji - k*nji)/ni;
@@ -112,20 +119,10 @@ void GeneralHydro::ConsToPrim(DvceArray5D<Real> &cons, DvceArray5D<Real> &prim,
     HydPrim1D w;
     Real pgas, g1;
     Real temp;
-    bool dfloor_used=false, efloor_used=false, tfloor_used=false, mom_scaled=false;
-    bool vceil_used=false;
-    Real efloor_de=0.0;
-    Real dfloor_fv=1.0;
+    bool dfloor_used=false, efloor_used=false, tfloor_used=false;
     // the cached temperature in this cell warm starts the T(d,e) root find
-    SingleC2P_GeneralHyd(u, eos, w, wtemp_(m,k,j,i), temp, pgas, g1,
-                         dfloor_used, efloor_used, tfloor_used, efloor_de, mom_scaled,
-                         dfloor_fv, vceil_used);
-    // <hydro>/dfloor_keep_velocity on the cubed sphere: the metric-correct part of the
-    // correction is applied by GnomonicEquiangleRaiseVel, which needs fv per cell.  Not
-    // on the floor-TEST pass (FOFC): that one is handed scratch conserved data and is
-    // followed by no RaiseVel, so the fv it computed must not reach one.
-    if (keepv_defer_ && !only_testfloors) dfl_fv_(m,k,j,i) = dfloor_fv;
-    sumde += efloor_de;
+    SingleC2P_GeneralHydLegacy(u, eos, w, wtemp_(m,k,j,i), temp, pgas, g1,
+                               dfloor_used, efloor_used, tfloor_used);
 
     // set FOFC flag and quit loop if this function called only to check floors
     if (only_testfloors) {
@@ -142,24 +139,6 @@ void GeneralHydro::ConsToPrim(DvceArray5D<Real> &cons, DvceArray5D<Real> &prim,
       if (efloor_used) {
         cons(m,IEN,k,j,i) = u.e;
         sume++;
-      }
-      // <hydro>/efloor_from_ekin (and the density floor under dfloor_keep_velocity)
-      // paid by rescaling the momentum, so the conserved momentum has to follow the
-      // primitive velocity down
-      if (mom_scaled) {
-        cons(m,IM1,k,j,i) = u.mx;
-        cons(m,IM2,k,j,i) = u.my;
-        cons(m,IM3,k,j,i) = u.mz;
-      }
-      // dfloor_keep_velocity OFF the cubed sphere takes the removed kinetic energy out
-      // of u.e inside the c2p; without this write the energy write above happens only
-      // when a pressure or temperature floor also fired, and the cell would keep the
-      // energy it no longer has any kinetic energy for.
-      if ((dfloor_fv < 1.0 || vceil_used) && !eos.defer_cons_floors) {
-        cons(m,IEN,k,j,i) = u.e;
-      }
-      if (vceil_used) {
-        sumv++;
       }
       if (tfloor_used) {
         cons(m,IEN,k,j,i) = u.e;
@@ -186,8 +165,8 @@ void GeneralHydro::ConsToPrim(DvceArray5D<Real> &cons, DvceArray5D<Real> &prim,
         prim(m,n,k,j,i) = cons(m,n,k,j,i)/u.d;
       }
     }
-  }, Kokkos::Sum<int>(nfloord_), Kokkos::Sum<int>(nfloore_), Kokkos::Sum<int>(nfloort_),
-     Kokkos::Sum<int>(nceilv_), Kokkos::Sum<Real>(efloor_de_));
+  }, Kokkos::Sum<int>(nfloord_), Kokkos::Sum<int>(nfloore_),
+     Kokkos::Sum<int>(nfloort_));
 
   // store appropriate counters
   if (only_testfloors) {
@@ -196,10 +175,9 @@ void GeneralHydro::ConsToPrim(DvceArray5D<Real> &cons, DvceArray5D<Real> &prim,
     pmy_pack->pmesh->ecounter.neos_dfloor += nfloord_;
     pmy_pack->pmesh->ecounter.neos_efloor += nfloore_;
     pmy_pack->pmesh->ecounter.neos_tfloor += nfloort_;
-    pmy_pack->pmesh->ecounter.neos_vceil  += nceilv_;
-    pmy_pack->pmesh->ecounter.efloor_de += efloor_de_;
   }
 
+  return;
   return;
 }
 

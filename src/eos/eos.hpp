@@ -107,6 +107,20 @@ struct EOS_Data {
   // energy is held fixed and the momentum is rescaled instead, so energy is created only
   // in the residual case E < e_floor.
   bool efloor_from_ekin = false;
+
+  // TRUE when NONE of the four floor switches above (dfloor_keep_velocity, vceil,
+  // floor_consistent, efloor_from_ekin) is enabled, i.e. when the floors behave exactly
+  // as they did before they were added.  Set once in ReadEOS_Params().
+  //
+  // Why a flag rather than the switches' own tests: adding them rewrote the kernels that
+  // apply the floors -- expressions regrouped, temporaries hoisted, writes moved, and in
+  // Coordinates::GnomonicEquiangleRaiseVel a par_for turned into a parallel_reduce.  All
+  // of that is algebraically neutral when the switches are off, but it is not neutral in
+  // FLOATING POINT: the device compiler contracts the rearranged expressions differently
+  // and the answer moves by an ULP, which over a few thousand cycles is a different run.
+  // Where that happens the kernel is launched in TWO forms selected on this flag by the
+  // host, with the legacy form byte-identical to the pre-existing one.
+  bool floors_legacy = true;
   Real gamma_max;    // ceiling on Lorentz factor in SR/GR
   // AUSM+-up cut-off Mach numbers (hydro/ausm_mcut, ausm_mcut_p): f_a = M_o(2 - M_o)
   // with M_o = min(1, max(M_bar, mcut)) scales the velocity-diffusion pressure term
@@ -1016,6 +1030,13 @@ class IdealHydro : public EquationOfState {
                   const bool only_testfloors,
                   const int il, const int iu, const int jl, const int ju,
                   const int kl, const int ku) override;
+  // The same inversion with the EOS_Data floor switches active; it lives in
+  // ideal_hyd_floors.cpp.
+  // See the note on EOS_Data::floors_legacy for why it is a separate translation unit.
+  void ConsToPrimFloors(DvceArray5D<Real> &cons, DvceArray5D<Real> &prim,
+                        const bool only_testfloors,
+                        const int il, const int iu, const int jl, const int ju,
+                        const int kl, const int ku);
   void PrimToCons(const DvceArray5D<Real> &prim, DvceArray5D<Real> &cons,
                   const int il, const int iu, const int jl, const int ju,
                   const int kl, const int ku) override;
@@ -1038,6 +1059,13 @@ class GeneralHydro : public EquationOfState {
                   const bool only_testfloors,
                   const int il, const int iu, const int jl, const int ju,
                   const int kl, const int ku) override;
+  // The same inversion with the EOS_Data floor switches active; it lives in
+  // general_hyd_floors.cpp.
+  // See the note on EOS_Data::floors_legacy for why it is a separate translation unit.
+  void ConsToPrimFloors(DvceArray5D<Real> &cons, DvceArray5D<Real> &prim,
+                        const bool only_testfloors,
+                        const int il, const int iu, const int jl, const int ju,
+                        const int kl, const int ku);
   void PrimToCons(const DvceArray5D<Real> &prim, DvceArray5D<Real> &cons,
                   const int il, const int iu, const int jl, const int ju,
                   const int kl, const int ku) override;
