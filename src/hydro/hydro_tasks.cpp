@@ -402,6 +402,19 @@ TaskStatus Hydro::Fluxes(Driver *pdrive, int stage) {
     }
   }
 
+  // Call FOFC if necessary.  It must run on the RIEMANN fluxes ALONE, before any
+  // additive correction (diffusion, gravity flux, the well-balanced flux removal, and
+  // the resistive fluxes in MHD): the published algorithm forms the trial update from
+  // the Riemann fluxes only, and the fallback is meant to replace that flux, with the
+  // corrections then applied on top of the first-order flux.
+  if (use_fofc) {
+    FOFC(pdrive, stage);
+  } else if (pmy_pack->pcoord->is_general_relativistic) {
+    if (pmy_pack->pcoord->coord_data.bh_excise) {
+      FOFC(pdrive, stage);
+    }
+  }
+
   // Add diffusion fluxes
   if (pcond != nullptr) {
     // the angular cap (<hydro>/rad_cap_ang) needs the step it is capping, and the
@@ -421,15 +434,6 @@ TaskStatus Hydro::Fluxes(Driver *pdrive, int stage) {
   }
   if (use_wellbalance_static) {
     RemoveWbFlux(pfacewb,uflx);
-  }
-
-  // call FOFC if necessary
-  if (use_fofc) {
-    FOFC(pdrive, stage);
-  } else if (pmy_pack->pcoord->is_general_relativistic) {
-    if (pmy_pack->pcoord->coord_data.bh_excise) {
-      FOFC(pdrive, stage);
-    }
   }
 
   return TaskStatus::complete;

@@ -41,7 +41,7 @@ void SingleC2P_GeneralHyd(HydCons1D &u, const EOS_Data &eos, HydPrim1D &w,
                           const Real tguess, Real &temp, Real &pgas, Real &g1,
                           bool &dfloor_used, bool &efloor_used, bool &tfloor_used,
                           Real &efloor_de, bool &mom_scaled, Real &dfloor_fv,
-                          bool &vceil_used) {
+                          bool &vceil_used, bool &vceil_test) {
   // THE DENSITY FLOOR.  Default: raise u.d and leave m and E alone -- which changes the
   // velocity and creates internal energy, because the kinetic share of the fixed total
   // drops when rho goes up.  <block>/dfloor_keep_velocity instead scales the momentum by
@@ -83,16 +83,21 @@ void SingleC2P_GeneralHyd(HydCons1D &u, const EOS_Data &eos, HydPrim1D &w,
   // energy exactly unchanged.  On the cubed sphere (defer_cons_floors) |v| and e_k here
   // are the ORTHONORMAL ones and are not the real ones, so the ceiling is applied by
   // GnomonicEquiangleRaiseVel instead, which owns the metric.
-  if (eos.vceil > 0.0 && !eos.defer_cons_floors) {
+  // `vceil_test` is the DECISION alone, recorded even where the ceiling itself is
+  // deferred, so that the FOFC floor-test pass can flag the cell.  It performs no write.
+  if (eos.vceil > 0.0) {
     const Real vsq = SQR(w.vx) + SQR(w.vy) + SQR(w.vz);
     if (vsq > SQR(eos.vceil)) {
-      const Real fs = eos.vceil/sqrt(vsq);
-      u.mx *= fs; u.my *= fs; u.mz *= fs;
-      w.vx *= fs; w.vy *= fs; w.vz *= fs;
-      u.e -= (1.0 - fs*fs)*e_k;
-      e_k *= fs*fs;
-      vceil_used = true;
-      mom_scaled = true;
+      vceil_test = true;
+      if (!eos.defer_cons_floors) {
+        const Real fs = eos.vceil/sqrt(vsq);
+        u.mx *= fs; u.my *= fs; u.mz *= fs;
+        w.vx *= fs; w.vy *= fs; w.vz *= fs;
+        u.e -= (1.0 - fs*fs)*e_k;
+        e_k *= fs*fs;
+        vceil_used = true;
+        mom_scaled = true;
+      }
     }
   }
   w.e = (u.e - e_k);

@@ -113,13 +113,25 @@ void GeneralHydro::ConsToPrim(DvceArray5D<Real> &cons, DvceArray5D<Real> &prim,
     Real pgas, g1;
     Real temp;
     bool dfloor_used=false, efloor_used=false, tfloor_used=false, mom_scaled=false;
-    bool vceil_used=false;
+    bool vceil_used=false, vceil_test=false;
     Real efloor_de=0.0;
     Real dfloor_fv=1.0;
+    // The floor-TEST pass (FOFC) must never hand garbage to the tabulated inversion: a
+    // non-finite or non-positive trial state has no temperature to converge to, and the
+    // root find would either spin or return nonsense.  Flag the cell and skip the solve.
+    if (only_testfloors) {
+      if (!Kokkos::isfinite(u.d) || !Kokkos::isfinite(u.mx) ||
+          !Kokkos::isfinite(u.my) || !Kokkos::isfinite(u.mz) ||
+          !Kokkos::isfinite(u.e) || (u.d <= 0.0) || (u.e <= 0.0)) {
+        fofc_(m,k,j,i) = true;
+        sumd++;
+        return;
+      }
+    }
     // the cached temperature in this cell warm starts the T(d,e) root find
     SingleC2P_GeneralHyd(u, eos, w, wtemp_(m,k,j,i), temp, pgas, g1,
                          dfloor_used, efloor_used, tfloor_used, efloor_de, mom_scaled,
-                         dfloor_fv, vceil_used);
+                         dfloor_fv, vceil_used, vceil_test);
     // <hydro>/dfloor_keep_velocity on the cubed sphere: the metric-correct part of the
     // correction is applied by GnomonicEquiangleRaiseVel, which needs fv per cell.  Not
     // on the floor-TEST pass (FOFC): that one is handed scratch conserved data and is
@@ -129,7 +141,8 @@ void GeneralHydro::ConsToPrim(DvceArray5D<Real> &cons, DvceArray5D<Real> &prim,
 
     // set FOFC flag and quit loop if this function called only to check floors
     if (only_testfloors) {
-      if (dfloor_used || efloor_used || tfloor_used) {
+      // the velocity ceiling counts as a floor event for FOFC (see ideal_hyd.cpp)
+      if (dfloor_used || efloor_used || tfloor_used || vceil_test) {
         fofc_(m,k,j,i) = true;
         sumd++;  // use dfloor as counter for when either is true
       }

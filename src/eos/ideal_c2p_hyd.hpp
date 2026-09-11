@@ -22,7 +22,7 @@ KOKKOS_INLINE_FUNCTION
 void SingleC2P_IdealHyd(HydCons1D &u, const EOS_Data &eos,
                         HydPrim1D &w,
                         bool &dfloor_used, bool &efloor_used, bool &tfloor_used,
-                        Real &dfloor_fv, bool &vceil_used) {
+                        Real &dfloor_fv, bool &vceil_used, bool &vceil_test) {
   const Real &dfloor_ = eos.dfloor;
   Real efloor = eos.pfloor/(eos.gamma - 1.0);
   Real tfloor = eos.tfloor;
@@ -64,15 +64,20 @@ void SingleC2P_IdealHyd(HydCons1D &u, const EOS_Data &eos,
   // energy exactly unchanged.  On the cubed sphere (defer_cons_floors) |v| and e_k here
   // are the ORTHONORMAL ones and are not the real ones, so the ceiling is applied by
   // GnomonicEquiangleRaiseVel instead, which owns the metric.
-  if (eos.vceil > 0.0 && !eos.defer_cons_floors) {
+  // `vceil_test` is the DECISION alone, recorded even where the ceiling itself is
+  // deferred, so that the FOFC floor-test pass can flag the cell.  It performs no write.
+  if (eos.vceil > 0.0) {
     const Real vsq = SQR(w.vx) + SQR(w.vy) + SQR(w.vz);
     if (vsq > SQR(eos.vceil)) {
-      const Real fs = eos.vceil/sqrt(vsq);
-      u.mx *= fs; u.my *= fs; u.mz *= fs;
-      w.vx *= fs; w.vy *= fs; w.vz *= fs;
-      u.e -= (1.0 - fs*fs)*e_k;
-      e_k *= fs*fs;
-      vceil_used = true;
+      vceil_test = true;
+      if (!eos.defer_cons_floors) {
+        const Real fs = eos.vceil/sqrt(vsq);
+        u.mx *= fs; u.my *= fs; u.mz *= fs;
+        w.vx *= fs; w.vy *= fs; w.vz *= fs;
+        u.e -= (1.0 - fs*fs)*e_k;
+        e_k *= fs*fs;
+        vceil_used = true;
+      }
     }
   }
   w.e = (u.e - e_k);

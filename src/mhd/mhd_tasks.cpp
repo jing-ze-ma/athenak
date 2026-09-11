@@ -209,6 +209,19 @@ TaskStatus MHD::Fluxes(Driver *pdrive, int stage) {
     CalculateFluxes<MHD_RSolver::hlle_gr>(pdrive, stage);
   }
 
+  // Call FOFC if necessary.  It must run on the RIEMANN fluxes ALONE, before any
+  // additive correction (diffusion, gravity flux, the well-balanced flux removal, and
+  // the resistive fluxes in MHD): the published algorithm forms the trial update from
+  // the Riemann fluxes only, and the fallback is meant to replace that flux, with the
+  // corrections then applied on top of the first-order flux.
+  if (use_fofc) {
+    FOFC(pdrive, stage);
+  } else if (pmy_pack->pcoord->is_general_relativistic) {
+    if (pmy_pack->pcoord->coord_data.bh_excise) {
+      FOFC(pdrive, stage);
+    }
+  }
+
   // Add diffusive fluxes
   if (pcond != nullptr) {
     pcond->AddHeatFluxes(w0, peos->eos_data, uflx);
@@ -225,15 +238,6 @@ TaskStatus MHD::Fluxes(Driver *pdrive, int stage) {
   }
   if (use_wellbalance_static) {
     RemoveWbFlux(pfacewb,uflx);
-  }
-
-  // call FOFC if necessary
-  if (use_fofc) {
-    FOFC(pdrive, stage);
-  } else if (pmy_pack->pcoord->is_general_relativistic) {
-    if (pmy_pack->pcoord->coord_data.bh_excise) {
-      FOFC(pdrive, stage);
-    }
   }
 
   return TaskStatus::complete;

@@ -138,6 +138,8 @@ void MHD::FOFC(Driver *pdriver, int stage) {
   auto &use_excise_ = pmy_pack->pcoord->coord_data.bh_excise;
   auto &excision_flux_ = pmy_pack->pcoord->excision_flux;
   auto &w0_ = w0;
+  const int nmhd_f = nmhd;
+  const int nvar_f = nmhd + nscalars;
   auto &b0_ = b0;
 
   // Index bounds
@@ -216,6 +218,12 @@ void MHD::FOFC(Driver *pdriver, int stage) {
         flx1(m,IM2,k,j,i) = flux.my;
         flx1(m,IM3,k,j,i) = flux.mz;
         if (eos.is_ideal) {flx1(m,IEN,k,j,i) = flux.e;}
+        // passive scalars ride the NEW mass flux: the higher-order scalar
+        // flux formed in mhd_fluxes.cpp used the flux just replaced
+        for (int n=nmhd_f; n<nvar_f; ++n) {
+          flx1(m,n,k,j,i) = (flux.d >= 0.0) ? flux.d*w0_(m,n,k,j,i-1)
+                              : flux.d*w0_(m,n,k,j,i);
+        }
         e3x1_(m,k,j,i) = flux.by;
         e2x1_(m,k,j,i) = flux.bz;
       }
@@ -275,6 +283,12 @@ void MHD::FOFC(Driver *pdriver, int stage) {
         flx2(m,IM3,k,j,i) = flux.my;
         flx2(m,IM1,k,j,i) = flux.mz;
         if (eos.is_ideal) {flx2(m,IEN,k,j,i) = flux.e;}
+        // passive scalars ride the NEW mass flux: the higher-order scalar
+        // flux formed in mhd_fluxes.cpp used the flux just replaced
+        for (int n=nmhd_f; n<nvar_f; ++n) {
+          flx2(m,n,k,j,i) = (flux.d >= 0.0) ? flux.d*w0_(m,n,k,j-1,i)
+                              : flux.d*w0_(m,n,k,j,i);
+        }
         e1x2_(m,k,j,i) = flux.by;
         e3x2_(m,k,j,i) = flux.bz;
       }
@@ -334,6 +348,12 @@ void MHD::FOFC(Driver *pdriver, int stage) {
         flx3(m,IM1,k,j,i) = flux.my;
         flx3(m,IM2,k,j,i) = flux.mz;
         if (eos.is_ideal) {flx3(m,IEN,k,j,i) = flux.e;}
+        // passive scalars ride the NEW mass flux: the higher-order scalar
+        // flux formed in mhd_fluxes.cpp used the flux just replaced
+        for (int n=nmhd_f; n<nvar_f; ++n) {
+          flx3(m,n,k,j,i) = (flux.d >= 0.0) ? flux.d*w0_(m,n,k-1,j,i)
+                              : flux.d*w0_(m,n,k,j,i);
+        }
         e2x3_(m,k,j,i) = flux.by;
         e1x3_(m,k,j,i) = flux.bz;
       }
@@ -411,6 +431,12 @@ void MHD::FOFC(Driver *pdriver, int stage) {
         flx1(m,IM2,k,j,i+1) = flux.my;
         flx1(m,IM3,k,j,i+1) = flux.mz;
         if (eos.is_ideal) {flx1(m,IEN,k,j,i+1) = flux.e;}
+        // passive scalars ride the NEW mass flux: the higher-order scalar
+        // flux formed in mhd_fluxes.cpp used the flux just replaced
+        for (int n=nmhd_f; n<nvar_f; ++n) {
+          flx1(m,n,k,j,i+1) = (flux.d >= 0.0) ? flux.d*w0_(m,n,k,j,i)
+                              : flux.d*w0_(m,n,k,j,i+1);
+        }
         e3x1_(m,k,j,i+1) = flux.by;
         e2x1_(m,k,j,i+1) = flux.bz;
       }
@@ -470,6 +496,12 @@ void MHD::FOFC(Driver *pdriver, int stage) {
         flx2(m,IM3,k,j+1,i) = flux.my;
         flx2(m,IM1,k,j+1,i) = flux.mz;
         if (eos.is_ideal) {flx2(m,IEN,k,j+1,i) = flux.e;}
+        // passive scalars ride the NEW mass flux: the higher-order scalar
+        // flux formed in mhd_fluxes.cpp used the flux just replaced
+        for (int n=nmhd_f; n<nvar_f; ++n) {
+          flx2(m,n,k,j+1,i) = (flux.d >= 0.0) ? flux.d*w0_(m,n,k,j,i)
+                              : flux.d*w0_(m,n,k,j+1,i);
+        }
         e1x2_(m,k,j+1,i) = flux.by;
         e3x2_(m,k,j+1,i) = flux.bz;
       }
@@ -529,6 +561,12 @@ void MHD::FOFC(Driver *pdriver, int stage) {
         flx3(m,IM1,k+1,j,i) = flux.my;
         flx3(m,IM2,k+1,j,i) = flux.mz;
         if (eos.is_ideal) {flx3(m,IEN,k+1,j,i) = flux.e;}
+        // passive scalars ride the NEW mass flux: the higher-order scalar
+        // flux formed in mhd_fluxes.cpp used the flux just replaced
+        for (int n=nmhd_f; n<nvar_f; ++n) {
+          flx3(m,n,k+1,j,i) = (flux.d >= 0.0) ? flux.d*w0_(m,n,k,j,i)
+                              : flux.d*w0_(m,n,k+1,j,i);
+        }
         e2x3_(m,k+1,j,i) = flux.by;
         e1x3_(m,k+1,j,i) = flux.bz;
       }

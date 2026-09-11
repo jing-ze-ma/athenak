@@ -1,0 +1,100 @@
+# AthenaK input file: strong 2D double-rarefaction blast ("1-2-0-3" problem), used to
+# regression-test first-order flux correction (FOFC).  Two strong rarefactions open a
+# near-vacuum between them, where the internal energy is a vanishing fraction of the
+# total and the conserved-to-primitive inversion needs its floors -- which is exactly
+# the situation the first-order fallback exists for.
+# <hydro>/fofc and <problem>/shock_dir are set from the command line by the test script.
+
+<comment>
+problem   = strong 2D double rarefaction, FOFC regression test
+
+<job>
+basename  = fofc_blast # problem ID: basename of output filenames
+
+<mesh>
+nghost    = 3          # FOFC requires nghost >= 3
+nx1       = 64         # Number of zones in X1-direction
+x1min     = -0.5       # minimum value of X1
+x1max     = 0.5        # maximum value of X1
+ix1_bc    = outflow    # inner-X1 boundary flag
+ox1_bc    = outflow    # outer-X1 boundary flag
+
+nx2       = 64         # Number of zones in X2-direction
+x2min     = -0.5       # minimum value of X2
+x2max     = 0.5        # maximum value of X2
+ix2_bc    = outflow    # inner-X2 boundary flag
+ox2_bc    = outflow    # outer-X2 boundary flag
+
+nx3       = 1          # Number of zones in X3-direction
+x3min     = -0.5       # minimum value of X3
+x3max     = 0.5        # maximum value of X3
+ix3_bc    = periodic   # inner-X3 boundary flag
+ox3_bc    = periodic   # outer-X3 boundary flag
+
+<meshblock>
+nx1       = 32         # Number of cells in each MeshBlock, X1-dir
+nx2       = 32         # Number of cells in each MeshBlock, X2-dir
+nx3       = 1          # Number of cells in each MeshBlock, X3-dir
+
+<units>
+length_cgs = 1.0       # a general EOS is not scale free; only used with eos = general
+mass_cgs   = 1.0       # cgs mass per code mass
+time_cgs   = 1.0       # cgs time per code time
+mu         = 1.0       # reference mean molecular weight
+
+<time>
+evolution  = dynamic   # dynamic/kinematic/static
+integrator = rk2       # time integration algorithm
+cfl_number = 0.3       # The Courant, Friedrichs, & Lewy (CFL) Number
+nlim       = -1        # cycle limit
+tlim       = 0.01      # time limit
+ndiag      = 100000    # cycles between diagostic output
+
+<hydro>
+eos         = ideal    # EOS type (the test also runs this with eos = general)
+general_eos = gamma    # general-EOS interface evaluating the same gamma law
+reconstruct = plm      # spatial reconstruction method
+rsolver     = hllc     # Riemann-solver to be used
+gamma       = 1.4      # gamma = C_p/C_v
+dfloor      = 1.0e-4   # density floor
+pfloor      = 1.0e-4   # pressure floor
+fofc        = true     # first-order flux correction (toggled by the test)
+
+<problem>
+pgen_name  = shock_tube # problem generator name
+shock_dir  = 1          # Shock Direction -- (1,2,3) = (x1,x2,x3)
+xshock     = 0.0        # position of initial interface
+
+dl = 1.0              # density on left
+pl = 0.4              # pressure
+ul = -20.0            # X-velocity
+vl = 0.0              # Y-velocity
+wl = 0.0              # Z-velocity
+
+dr = 1.0              # density on right
+pr = 0.4              # pressure
+ur = 20.0             # X-velocity
+vr = 0.0              # Y-velocity
+wr = 0.0              # Z-velocity
+
+<output1>
+file_type   = log     # event counter log (column "fofc" counts FOFC-flagged cells)
+dt          = 0.001   # time increment between outputs
+
+<output2>
+file_type   = hst     # history dump: volume integrals over EVERY cell, so a NaN
+data_format = %24.16e # anywhere in the domain shows up here
+dt          = 0.001   # time increment between outputs
+
+<output3>
+file_type   = tab     # Tabular data dump, 1D slice along x1
+variable    = hydro_w # variables to be output
+data_format = %24.16e # Optional data format string
+dt          = 0.01    # time increment between outputs
+slice_x2    = 0.0     # slice in x2
+slice_x3    = 0.0     # slice in x3
+
+<output4>
+file_type   = bin     # binary dump of the whole 2D domain, for bitwise regression
+variable    = hydro_w # variables to be output
+dt          = 0.01    # time increment between outputs

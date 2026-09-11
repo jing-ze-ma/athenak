@@ -65,9 +65,10 @@ void IdealHydro::ConsToPrim(DvceArray5D<Real> &cons, DvceArray5D<Real> &prim,
     // (inline function in ideal_c2p_hyd.hpp file)
     HydPrim1D w;
     bool dfloor_used=false, efloor_used=false, tfloor_used=false, vceil_used=false;
+    bool vceil_test=false;
     Real dfloor_fv=1.0;
     SingleC2P_IdealHyd(u, eos, w, dfloor_used, efloor_used, tfloor_used, dfloor_fv,
-                       vceil_used);
+                       vceil_used, vceil_test);
     // The floor-TEST pass (FOFC) must leave no trace: it is handed scratch conserved
     // data and is followed by no GnomonicEquiangleRaiseVel, so neither the momentum
     // rescale nor the fv it would hand on may be written from here.
@@ -83,7 +84,10 @@ void IdealHydro::ConsToPrim(DvceArray5D<Real> &cons, DvceArray5D<Real> &prim,
 
     // set FOFC flag and quit loop if this function called only to check floors
     if (only_testfloors) {
-      if (dfloor_used || efloor_used || tfloor_used) {
+      // the velocity ceiling counts as a floor event for FOFC: a cell that would need it
+      // is one the first-order flux is meant to rescue (the ceiling itself is applied on
+      // the real pass, or deferred to the metric-aware pass on the cubed sphere)
+      if (dfloor_used || efloor_used || tfloor_used || vceil_test) {
         fofc_(m,k,j,i) = true;
         sumd++;  // use dfloor as counter for when either is true
       }

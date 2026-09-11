@@ -6,6 +6,7 @@
 //! \file hydro.cpp
 //! \brief implementation of Hydro class constructor and assorted other functions
 
+#include <cstdlib>
 #include <iostream>
 #include <string>
 #include <algorithm>
@@ -457,6 +458,15 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
       if (use_fofc) {
         Kokkos::realloc(fofc,  nmb, ncells3, ncells2, ncells1);
         Kokkos::realloc(utest, nmb, nhydro, ncells3, ncells2, ncells1);
+        // the general-EOS single-state LLF fallback in hydro_fofc.cpp indexes wder;
+        // fail loudly here rather than read a 1x1x1x1 placeholder on the device
+        if (peos->eos_data.IsGeneral() &&
+            (wder.extent_int(0) != nmb || wder.extent_int(4) != ncells1)) {
+          std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                    << std::endl << "<hydro>/fofc=true with a general EOS, but the "
+                    << "derived-variable array wder is not allocated" << std::endl;
+          std::exit(EXIT_FAILURE);
+        }
       }
     }
   }

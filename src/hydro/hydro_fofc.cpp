@@ -93,6 +93,16 @@ void Hydro::FOFC(Driver *pdriver, int stage) {
   auto &use_excise = pmy_pack->pcoord->coord_data.bh_excise;
   auto &excision_flux_ = pmy_pack->pcoord->excision_flux;
   auto &w0_ = w0;
+  // During Hydro::Fluxes the well-balanced PERTURBATION reconstruction has already
+  // subtracted the static background from w0 (RemoveWbVar in Hydro::Fluxes), so w0 is
+  // NOT a full state in this window.  The first-order fallback is a physical Riemann
+  // solve and needs the full state, so the background is added back here, for the few
+  // flagged cells only.  With the perturbation scheme off this is the identity on w0,
+  // so every non-well-balanced run is bit-for-bit unchanged.
+  auto &w0wb_ = w0wb;
+  const bool wbpert_ = use_wellbalance_static_reconst_perturb;
+  const int nhyd_f = nhydro;
+  const int nvar_f = nhydro + nscalars;
 
   // Index bounds
   int il = is-1, iu = ie+1, jl = js, ju = je, kl = ks, ku = ke;
@@ -103,6 +113,12 @@ void Hydro::FOFC(Driver *pdriver, int stage) {
   // using FOFC) and/or for any cell about the excision (if GR+excising)
   par_for("FOFC-flx", DevExeSpace(), 0, nmb-1, kl, ku, jl, ju, il, iu,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    // full-state primitive accessor; see the note on the WB perturbation above
+    auto wfull = [&](const int n, const int kk, const int jj, const int ii) -> Real {
+      return (wbpert_ && n < nhyd_f) ? (w0_(m,n,kk,jj,ii) + w0wb_(m,n,kk,jj,ii))
+                                     : w0_(m,n,kk,jj,ii);
+    };
+
     // Check for FOFC flag
     bool fofc_flag = false;
     if (use_fofc_) { fofc_flag = fofc_(m,k,j,i); }
@@ -118,19 +134,19 @@ void Hydro::FOFC(Driver *pdriver, int stage) {
       // replace x1-flux at i
       // load left state
       HydPrim1D wim1;
-      wim1.d  = w0_(m,IDN,k,j,i-1);
-      wim1.vx = w0_(m,IVX,k,j,i-1);
-      wim1.vy = w0_(m,IVY,k,j,i-1);
-      wim1.vz = w0_(m,IVZ,k,j,i-1);
-      if (eos.is_ideal) {wim1.e  = w0_(m,IEN,k,j,i-1);}
+      wim1.d  = wfull(IDN,k,j,i-1);
+      wim1.vx = wfull(IVX,k,j,i-1);
+      wim1.vy = wfull(IVY,k,j,i-1);
+      wim1.vz = wfull(IVZ,k,j,i-1);
+      if (eos.is_ideal) {wim1.e  = wfull(IEN,k,j,i-1);}
 
       // load right state
       HydPrim1D wi;
-      wi.d  = w0_(m,IDN,k,j,i);
-      wi.vx = w0_(m,IVX,k,j,i);
-      wi.vy = w0_(m,IVY,k,j,i);
-      wi.vz = w0_(m,IVZ,k,j,i);
-      if (eos.is_ideal) {wi.e = w0_(m,IEN,k,j,i);}
+      wi.d  = wfull(IDN,k,j,i);
+      wi.vx = wfull(IVX,k,j,i);
+      wi.vy = wfull(IVY,k,j,i);
+      wi.vz = wfull(IVZ,k,j,i);
+      if (eos.is_ideal) {wi.e = wfull(IEN,k,j,i);}
 
       // compute new 1st-order LLF flux
       HydCons1D flux;
@@ -165,15 +181,21 @@ void Hydro::FOFC(Driver *pdriver, int stage) {
       flx1(m,IM2,k,j,i) = flux.my;
       flx1(m,IM3,k,j,i) = flux.mz;
       if (eos.is_ideal) {flx1(m,IEN,k,j,i) = flux.e;}
+      // passive scalars ride the NEW mass flux: the higher-order scalar
+      // flux formed in hydro_fluxes.cpp used the flux just replaced
+      for (int n=nhyd_f; n<nvar_f; ++n) {
+        flx1(m,n,k,j,i) = (flux.d >= 0.0) ? flux.d*wfull(n,k,j,i-1)
+                              : flux.d*wfull(n,k,j,i);
+      }
 
       // replace x1-flux at i+1
       // load right state (left state just wi from above)
       HydPrim1D wip1;
-      wip1.d  = w0_(m,IDN,k,j,i+1);
-      wip1.vx = w0_(m,IVX,k,j,i+1);
-      wip1.vy = w0_(m,IVY,k,j,i+1);
-      wip1.vz = w0_(m,IVZ,k,j,i+1);
-      if (eos.is_ideal) {wip1.e = w0_(m,IEN,k,j,i+1);}
+      wip1.d  = wfull(IDN,k,j,i+1);
+      wip1.vx = wfull(IVX,k,j,i+1);
+      wip1.vy = wfull(IVY,k,j,i+1);
+      wip1.vz = wfull(IVZ,k,j,i+1);
+      if (eos.is_ideal) {wip1.e = wfull(IEN,k,j,i+1);}
 
       // compute new 1st-order LLF flux
       if (is_gr) {
@@ -207,24 +229,30 @@ void Hydro::FOFC(Driver *pdriver, int stage) {
       flx1(m,IM2,k,j,i+1) = flux.my;
       flx1(m,IM3,k,j,i+1) = flux.mz;
       if (eos.is_ideal) {flx1(m,IEN,k,j,i+1) = flux.e;}
+      // passive scalars ride the NEW mass flux: the higher-order scalar
+      // flux formed in hydro_fluxes.cpp used the flux just replaced
+      for (int n=nhyd_f; n<nvar_f; ++n) {
+        flx1(m,n,k,j,i+1) = (flux.d >= 0.0) ? flux.d*wfull(n,k,j,i)
+                              : flux.d*wfull(n,k,j,i+1);
+      }
 
       if (multi_d) {
         // replace x2-flux at j
         // load left state, permutting components of vectors
         HydPrim1D wjm1;
-        wjm1.d  = w0_(m,IDN,k,j-1,i);
-        wjm1.vx = w0_(m,IVY,k,j-1,i);
-        wjm1.vy = w0_(m,IVZ,k,j-1,i);
-        wjm1.vz = w0_(m,IVX,k,j-1,i);
-        if (eos.is_ideal) {wjm1.e = w0_(m,IEN,k,j-1,i);}
+        wjm1.d  = wfull(IDN,k,j-1,i);
+        wjm1.vx = wfull(IVY,k,j-1,i);
+        wjm1.vy = wfull(IVZ,k,j-1,i);
+        wjm1.vz = wfull(IVX,k,j-1,i);
+        if (eos.is_ideal) {wjm1.e = wfull(IEN,k,j-1,i);}
 
         // load right state, permutting components of vectors
         HydPrim1D wj;
-        wj.d  = w0_(m,IDN,k,j,i);
-        wj.vx = w0_(m,IVY,k,j,i);
-        wj.vy = w0_(m,IVZ,k,j,i);
-        wj.vz = w0_(m,IVX,k,j,i);
-        if (eos.is_ideal) {wj.e = w0_(m,IEN,k,j,i);}
+        wj.d  = wfull(IDN,k,j,i);
+        wj.vx = wfull(IVY,k,j,i);
+        wj.vy = wfull(IVZ,k,j,i);
+        wj.vz = wfull(IVX,k,j,i);
+        if (eos.is_ideal) {wj.e = wfull(IEN,k,j,i);}
 
         // compute new first-order flux
         if (is_gr) {
@@ -258,16 +286,22 @@ void Hydro::FOFC(Driver *pdriver, int stage) {
         flx2(m,IM3,k,j,i) = flux.my;
         flx2(m,IM1,k,j,i) = flux.mz;
         if (eos.is_ideal) {flx2(m,IEN,k,j,i) = flux.e;}
+        // passive scalars ride the NEW mass flux: the higher-order scalar
+        // flux formed in hydro_fluxes.cpp used the flux just replaced
+        for (int n=nhyd_f; n<nvar_f; ++n) {
+          flx2(m,n,k,j,i) = (flux.d >= 0.0) ? flux.d*wfull(n,k,j-1,i)
+                                : flux.d*wfull(n,k,j,i);
+        }
 
         // replace x2-flux at j+1
         // load left state, permutting components of vectors (just wj from above)
         // load right state, permutting components of vectors
         HydPrim1D wjp1;
-        wjp1.d  = w0_(m,IDN,k,j+1,i);
-        wjp1.vx = w0_(m,IVY,k,j+1,i);
-        wjp1.vy = w0_(m,IVZ,k,j+1,i);
-        wjp1.vz = w0_(m,IVX,k,j+1,i);
-        if (eos.is_ideal) {wjp1.e = w0_(m,IEN,k,j+1,i);}
+        wjp1.d  = wfull(IDN,k,j+1,i);
+        wjp1.vx = wfull(IVY,k,j+1,i);
+        wjp1.vy = wfull(IVZ,k,j+1,i);
+        wjp1.vz = wfull(IVX,k,j+1,i);
+        if (eos.is_ideal) {wjp1.e = wfull(IEN,k,j+1,i);}
 
         // compute new first-order flux
         if (is_gr) {
@@ -301,25 +335,31 @@ void Hydro::FOFC(Driver *pdriver, int stage) {
         flx2(m,IM3,k,j+1,i) = flux.my;
         flx2(m,IM1,k,j+1,i) = flux.mz;
         if (eos.is_ideal) {flx2(m,IEN,k,j+1,i) = flux.e;}
+        // passive scalars ride the NEW mass flux: the higher-order scalar
+        // flux formed in hydro_fluxes.cpp used the flux just replaced
+        for (int n=nhyd_f; n<nvar_f; ++n) {
+          flx2(m,n,k,j+1,i) = (flux.d >= 0.0) ? flux.d*wfull(n,k,j,i)
+                                : flux.d*wfull(n,k,j+1,i);
+        }
       }
 
       if (three_d) {
         // replace x3-flux at k
         // load left state, permutting components of vectors
         HydPrim1D wkm1;
-        wkm1.d  = w0_(m,IDN,k-1,j,i);
-        wkm1.vx = w0_(m,IVZ,k-1,j,i);
-        wkm1.vy = w0_(m,IVX,k-1,j,i);
-        wkm1.vz = w0_(m,IVY,k-1,j,i);
-        if (eos.is_ideal) {wkm1.e = w0_(m,IEN,k-1,j,i);}
+        wkm1.d  = wfull(IDN,k-1,j,i);
+        wkm1.vx = wfull(IVZ,k-1,j,i);
+        wkm1.vy = wfull(IVX,k-1,j,i);
+        wkm1.vz = wfull(IVY,k-1,j,i);
+        if (eos.is_ideal) {wkm1.e = wfull(IEN,k-1,j,i);}
 
         // load right state, permutting components of vectors
         HydPrim1D wk;
-        wk.d  = w0_(m,IDN,k,j,i);
-        wk.vx = w0_(m,IVZ,k,j,i);
-        wk.vy = w0_(m,IVX,k,j,i);
-        wk.vz = w0_(m,IVY,k,j,i);
-        if (eos.is_ideal) {wk.e = w0_(m,IEN,k,j,i);}
+        wk.d  = wfull(IDN,k,j,i);
+        wk.vx = wfull(IVZ,k,j,i);
+        wk.vy = wfull(IVX,k,j,i);
+        wk.vz = wfull(IVY,k,j,i);
+        if (eos.is_ideal) {wk.e = wfull(IEN,k,j,i);}
 
         // compute new first-order flux
         if (is_gr) {
@@ -353,16 +393,22 @@ void Hydro::FOFC(Driver *pdriver, int stage) {
         flx3(m,IM1,k,j,i) = flux.my;
         flx3(m,IM2,k,j,i) = flux.mz;
         if (eos.is_ideal) {flx3(m,IEN,k,j,i) = flux.e;}
+        // passive scalars ride the NEW mass flux: the higher-order scalar
+        // flux formed in hydro_fluxes.cpp used the flux just replaced
+        for (int n=nhyd_f; n<nvar_f; ++n) {
+          flx3(m,n,k,j,i) = (flux.d >= 0.0) ? flux.d*wfull(n,k-1,j,i)
+                                : flux.d*wfull(n,k,j,i);
+        }
 
         // replace x3-flux at k+1
         // load left state, permutting components of vectors (just wk from above)
         // load right state, permutting components of vectors
         HydPrim1D wkp1;
-        wkp1.d  = w0_(m,IDN,k+1,j,i);
-        wkp1.vx = w0_(m,IVZ,k+1,j,i);
-        wkp1.vy = w0_(m,IVX,k+1,j,i);
-        wkp1.vz = w0_(m,IVY,k+1,j,i);
-        if (eos.is_ideal) {wkp1.e = w0_(m,IEN,k+1,j,i);}
+        wkp1.d  = wfull(IDN,k+1,j,i);
+        wkp1.vx = wfull(IVZ,k+1,j,i);
+        wkp1.vy = wfull(IVX,k+1,j,i);
+        wkp1.vz = wfull(IVY,k+1,j,i);
+        if (eos.is_ideal) {wkp1.e = wfull(IEN,k+1,j,i);}
 
         // compute new first-order flux
         if (is_gr) {
@@ -396,6 +442,12 @@ void Hydro::FOFC(Driver *pdriver, int stage) {
         flx3(m,IM1,k+1,j,i) = flux.my;
         flx3(m,IM2,k+1,j,i) = flux.mz;
         if (eos.is_ideal) {flx3(m,IEN,k+1,j,i) = flux.e;}
+        // passive scalars ride the NEW mass flux: the higher-order scalar
+        // flux formed in hydro_fluxes.cpp used the flux just replaced
+        for (int n=nhyd_f; n<nvar_f; ++n) {
+          flx3(m,n,k+1,j,i) = (flux.d >= 0.0) ? flux.d*wfull(n,k,j,i)
+                                : flux.d*wfull(n,k+1,j,i);
+        }
       }
 
       // reset FOFC flag (do not reset excision flag)
