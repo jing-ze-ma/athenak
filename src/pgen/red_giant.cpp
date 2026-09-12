@@ -155,6 +155,14 @@ bool curv_ = false;      // spherical polar or cubed sphere: x1 IS r
 Real rgas_ = 1.0;        // k/(mu m_H) for an ideal gas, code units
 Real gm1_ = 0.4;
 bool etotgrav_ = false;
+// <problem>/wb_grav_source = background (default) | plain.  Under wellbalance_dynamic the
+// radial gravity source is the BACKGROUND's own pressure difference across the cell,
+// which cancels the well-balanced reconstruction exactly.  With `plain` the source
+// reverts to -rho G M / r^2 (energy handled exactly as in the non-WB path) while the
+// reconstruction and the fluxes keep the deviation form: the cancellation is deliberately
+// broken, which separates an overstability living in the SOURCE (a delayed or weakened
+// restoring force) from one living in the RECONSTRUCTION.  Not a production option.
+bool wb_grav_plain_ = false;
 
 // the initial column on a fine uniform grid in r: ln p [code] and T [K]
 DvceArray1D<Real> lnp_d_, tk_d_;
@@ -829,6 +837,19 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
               << pmy_mesh_->mb_indcs.nx1 << ". Set meshblock/nx1 = mesh/nx1, or set "
               << "problem/mlt_mean = false." << std::endl;
     std::exit(EXIT_FAILURE);
+  }
+  {
+    std::string wbgs = pin->GetOrAddString("problem", "wb_grav_source", "background");
+    if (wbgs.compare("background") == 0) {
+      wb_grav_plain_ = false;
+    } else if (wbgs.compare("plain") == 0) {
+      wb_grav_plain_ = true;
+    } else {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<problem> wb_grav_source = '" << wbgs
+                << "' must be 'background' or 'plain'" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
   }
   sponge_on_ = pin->GetOrAddBoolean("problem", "sponge", true);
   nan_report_ = pin->GetOrAddBoolean("problem", "nan_report", false);
@@ -1911,10 +1932,14 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
   const bool wbdyn = is_mhd ? pmbp->pmhd->use_wellbalance_dynamic
                             : pmbp->phydro->use_wellbalance_dynamic;
   const bool wbx1 = is_mhd ? pmbp->pmhd->use_wb_x1 : pmbp->phydro->use_wb_x1;
-  // above <hydro>/wb_rmax the reconstruction dropped the well-balanced background, so
-  // the source term must drop it too: the two are only well balanced TOGETHER.  The
-  // cutoff exists on the hydro module alone, so an MHD run simply never cuts off.
+  // outside [<hydro>/wb_rmin, <hydro>/wb_rmax] the reconstruction dropped the
+  // well-balanced background, so the source term must drop it too: the two are only
+  // well balanced TOGETHER.  The cutoffs exist on the hydro module alone, so an MHD run
+  // simply never cuts off.
   const Real wbrmax = is_mhd ? 0.0 : pmbp->phydro->wb_rmax;
+  const Real wbrmin = is_mhd ? 0.0 : pmbp->phydro->wb_rmin;
+  // <problem>/wb_grav_source = plain: keep the WB reconstruction, drop the WB source
+  const bool wbplain = wb_grav_plain_;
   const WBOption wbo = is_mhd ? pmbp->pmhd->wb_option : pmbp->phydro->wb_option;
   DvceArray4D<Real> phicc = is_mhd ? pmbp->pmhd->phicc0 : pmbp->phydro->phicc0;
   DvceArray4D<Real> ph1 = is_mhd ? pmbp->pmhd->phi0.x1f : pmbp->phydro->phi0.x1f;
@@ -1935,7 +1960,8 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
     const Real g = GravAt(gm, r);
     Real src = -bdt*g*d;
     if (!etotgrav) u0(m,IEN,k,j,i) += src*w0(m,IVX,k,j,i);
-    if (wbdyn && !(wbrmax > 0.0 && r > wbrmax)) {
+    if (wbdyn && !wbplain && !(wbrmax > 0.0 && r > wbrmax) &&
+        !(wbrmin > 0.0 && r < wbrmin)) {
       Real pl, pr, d1, d2, d3;
       if (wbx1) {
         WBReadCache(wbq0, WBVar::wb_pres, m, k, j, i, d1, pl, d2, pr, d3);
