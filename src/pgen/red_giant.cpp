@@ -2731,7 +2731,7 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
     auto &dx1s = pmbp->pcoord->dx1;
     auto &ccell_s = pmbp->pcoord->cos_cell;    // see CsKinetic
     const bool cs_s = pm->use_cubed_sphere;
-    const Real gamma_ = gm1_ + 1.0;
+    const Real gm1l = gm1_, gamma_ = gm1_ + 1.0;   // locals: no host global in the lambda
     if (spgguard_cnt_ == nullptr) {
       spgguard_cnt_ = new DvceArray1D<int>("rg_spgguard_cnt", 1);
       spgguard_rec_ = new DvceArray1D<Real>("rg_spgguard_rec", 8);
@@ -2773,7 +2773,7 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
         return;
       }
       const Real cs2 = eos.IsGeneral() ? eos.Gamma1(d, ei)*eos.Pressure(d, ei)/d
-                                       : gamma_*gm1_*ei/d;
+                                       : gamma_*gm1l*ei/d;
       const Real dz = curv ? dx1s(m,k,j,i) : (x1hi - x1lo)/indcs.nx1;
       const Real fac = 1.0/(1.0 + sc*ramp*bdt*sqrt(cs2)/dz);
       // scaling the whole momentum vector by fac scales the kinetic energy by fac^2 on
