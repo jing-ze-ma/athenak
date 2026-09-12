@@ -198,9 +198,12 @@ class MHD {
   // Spherical polar: the ORIGINAL polar-boundary code swaps HLLD for HLLE on the rows
   // adjacent to each pole (all three directions). The hydro module has no such swap, and
   // the extra HLLE dissipation there drives a spurious deep meridional circulation
-  // (bench/sp_excess2: with HLLE in both modules B=0 MHD == hydro bitwise). Default keeps
-  // the swap; <mhd>/polar_hlle_rows = false runs HLLD on the polar rows too.
-  bool polar_hlle_rows = true;
+  // (bench/sp_excess2: with HLLE in both modules B=0 MHD == hydro bitwise), but the
+  // canonical polar MHD blast at 256^2 needs it (the far polar row drains and dt
+  // collapses without it, bench/polar_blast_hlle). <mhd>/polar_hlle_rows is a per-sweep
+  // MASK: bit 1 = x1 sweep, bit 2 = x2 (theta) sweep, bit 4 = x3 sweep; 7 (default) =
+  // the old swap everywhere, 0 = HLLD everywhere. true/false are accepted as 7/0.
+  int polar_hlle_rows = 7;
 
   // CUBED SPHERE, MEASUREMENT ONLY: report how often that fallback actually FIRES, as a
   // profile in radius, every N cycles (0 = off).  It changes no answer.  The question it

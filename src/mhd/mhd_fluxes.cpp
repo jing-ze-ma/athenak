@@ -90,7 +90,9 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
     
   auto &use_cubed_sphere = pmy_pack->pmesh->use_cubed_sphere;
   const Real cs_lb_beta = cs_lowbeta_fallback;
-  const bool polar_hlle_ = polar_hlle_rows;
+  const bool polar_hlle_x1_ = (polar_hlle_rows & 1) != 0;
+  const bool polar_hlle_x2_ = (polar_hlle_rows & 2) != 0;
+  const bool polar_hlle_x3_ = (polar_hlle_rows & 4) != 0;
   // MEASUREMENT ONLY: count the fallback's hits on ONE stage-1 sweep every N cycles, so
   // the printed profile is a snapshot of a single sweep rather than a running sum whose
   // denominator depends on how long the run has been going.
@@ -335,7 +337,7 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
     auto flx1 = flx1_;
     auto e31 = e31_;
     auto e21 = e21_;
-    const bool do_pole = polar_hlle_ &&
+    const bool do_pole = polar_hlle_x1_ &&
       ((mb_bcs.d_view(m,BoundaryFace::inner_x2) == BoundaryFlag::polar && j == js) ||
        (mb_bcs.d_view(m,BoundaryFace::outer_x2) == BoundaryFlag::polar && j == je));
     if constexpr (rsolver_method_ == MHD_RSolver::advect) {
@@ -574,7 +576,7 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
           auto flx2 = flx2_;
           auto e12 = e12_;
           auto e32 = e32_;
-          const bool do_pole = polar_hlle_ &&
+          const bool do_pole = polar_hlle_x2_ &&
             ((mb_bcs.d_view(m,BoundaryFace::inner_x2) == BoundaryFlag::polar &&
               (j == js || j == js+1)) ||
              (mb_bcs.d_view(m,BoundaryFace::outer_x2) == BoundaryFlag::polar &&
@@ -857,7 +859,7 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
           auto flx3 = flx3_;
           auto e23 = e23_;
           auto e13 = e13_;
-          const bool do_pole = polar_hlle_ &&
+          const bool do_pole = polar_hlle_x3_ &&
             ((mb_bcs.d_view(m,BoundaryFace::inner_x2) == BoundaryFlag::polar &&
               j == js) ||
              (mb_bcs.d_view(m,BoundaryFace::outer_x2) == BoundaryFlag::polar && j == je));

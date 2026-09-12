@@ -347,7 +347,13 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
     // beta to preserve.  It is a no-op on every other grid.
     cs_lowbeta_fallback = pin->GetOrAddReal("mhd","cs_lowbeta_fallback",
                      (pmy_pack->pmesh->use_cubed_sphere ? 0.5 : 0.0));
-    polar_hlle_rows = pin->GetOrAddBoolean("mhd","polar_hlle_rows",true);
+    {
+      // per-sweep mask; accept the earlier boolean spelling too
+      std::string s = pin->GetOrAddString("mhd","polar_hlle_rows","7");
+      if (s == "true") polar_hlle_rows = 7;
+      else if (s == "false") polar_hlle_rows = 0;
+      else polar_hlle_rows = std::stoi(s);
+    }
 
     // MEASUREMENT ONLY (mhd.hpp): a radial profile of how often that fallback fires,
     // printed every N cycles.  Refused rather than silently mis-reported when it could
