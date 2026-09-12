@@ -902,7 +902,19 @@ void Mesh::NewTimeStep(const Real tlim) {
   // A dt that falls off a cliff is nearly always one physics module going unstable, and
   // the cycle line alone does not say which.  Keep each candidate so a collapse can name
   // its owner; the report is at the end of this function.
-  Real dbg_hyd = -1.0, dbg_cnd = -1.0, dbg_vis = -1.0, dbg_src = -1.0;
+  Real dbg_hyd = -1.0, dbg_cnd = -1.0, dbg_vis = -1.0, dbg_src = -1.0, dbg_mhd = -1.0;
+  if (pmb_pack->pmhd != nullptr) {
+    dbg_mhd = (cfl_no)*(pmb_pack->pmhd->dtnew);
+    if (pmb_pack->pmhd->pcond != nullptr) {
+      dbg_cnd = (cfl_no)*(pmb_pack->pmhd->pcond->dtnew);
+    }
+    if (pmb_pack->pmhd->pvisc != nullptr) {
+      dbg_vis = (cfl_no)*(pmb_pack->pmhd->pvisc->dtnew);
+    }
+    if (pmb_pack->pmhd->psrc != nullptr) {
+      dbg_src = (cfl_no)*(pmb_pack->pmhd->psrc->dtnew);
+    }
+  }
   if (pmb_pack->phydro != nullptr) {
     dbg_hyd = (cfl_no)*(pmb_pack->phydro->dtnew);
     if (pmb_pack->phydro->pcond != nullptr) {
@@ -989,6 +1001,7 @@ void Mesh::NewTimeStep(const Real tlim) {
     if (dtold > 0.0 && dt < 0.25*dtold && ndbg < 20) {
       Real mine = std::numeric_limits<Real>::max();
       if (dbg_hyd > 0.0) mine = std::min(mine, dbg_hyd);
+      if (dbg_mhd > 0.0) mine = std::min(mine, dbg_mhd);
       if (dbg_cnd > 0.0) mine = std::min(mine, dbg_cnd);
       if (dbg_vis > 0.0) mine = std::min(mine, dbg_vis);
       if (dbg_src > 0.0) mine = std::min(mine, dbg_src);
@@ -996,7 +1009,8 @@ void Mesh::NewTimeStep(const Real tlim) {
         ++ndbg;
         std::cout << "### dt COLLAPSE cycle=" << ncycle << " time=" << time
                   << " dtold=" << dtold << " dt=" << dt
-                  << " | hydro=" << dbg_hyd << " cond=" << dbg_cnd
+                  << " | hydro=" << dbg_hyd << " mhd=" << dbg_mhd
+                  << " cond=" << dbg_cnd
                   << " visc=" << dbg_vis << " srcterms=" << dbg_src
                   << "  (rank " << global_variable::my_rank << ")" << std::endl;
         // the HYDRO cell, when hydro is what collapsed: a bare number says nothing
@@ -1013,6 +1027,24 @@ void Mesh::NewTimeStep(const Real tlim) {
                       << " T=" << h.h_view(2) << " p=" << h.h_view(3)
                       << " cs=" << h.h_view(4) << " v=(" << h.h_view(5) << ","
                       << h.h_view(6) << "," << h.h_view(7) << ")" << std::endl;
+          }
+        }
+        // the MHD cell, when MHD is what collapsed: same question, and on an MHD run
+        // the answer is usually one cell whose plasma beta has gone to nothing
+        if (pmb_pack->pmhd != nullptr && dbg_mhd > 0.0 && dbg_mhd <= dt) {
+          mhd::MHD *pm = pmb_pack->pmhd;
+          std::cout << "    mhd dt is set by cell (m,k,j,i) = (" << pm->dtnew_m << ","
+                    << pm->dtnew_k << "," << pm->dtnew_j << "," << pm->dtnew_i << ")"
+                    << " gid = " << (pmb_pack->gids + std::max(pm->dtnew_m, 0))
+                    << std::endl;
+          if (pm->dt_diag_valid) {
+            auto &b = pm->dt_diag;
+            std::cout << "    r=" << b.h_view(0) << " rho=" << b.h_view(1)
+                      << " T=" << b.h_view(2) << " p=" << b.h_view(3)
+                      << " |B|^2=" << b.h_view(4) << " beta=" << b.h_view(5)
+                      << " cf=" << b.h_view(9) << std::endl
+                      << "    v=(" << b.h_view(6) << "," << b.h_view(7) << ","
+                      << b.h_view(8) << ")" << std::endl;
           }
         }
         Conduction *pc = (pmb_pack->phydro != nullptr) ? pmb_pack->phydro->pcond

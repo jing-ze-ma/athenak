@@ -147,6 +147,16 @@ class MHD {
   DvceArray4D<Real> e1x2, e3x2;
   DvceArray4D<Real> e2x3, e1x3;
   Real dtnew;
+  // The cell that set dtnew, and its state, for the `### dt COLLAPSE` report in
+  // Mesh::NewTimeStep.  Mirror of the hydro machinery in hydro.hpp: a dt set by the fast
+  // speed says nothing about WHERE, and on an MHD run the usual answer is one cell whose
+  // beta has gone to nothing.  Filled by one extra single-cell kernel, and only when
+  // dtnew has just collapsed (or on the first call), so a healthy run pays nothing.
+  int dtnew_m = -1, dtnew_k = -1, dtnew_j = -1, dtnew_i = -1;
+  static constexpr int ndtdiag = 10;
+  DualArray1D<Real> dt_diag;   // r, rho, T, p, |B|^2, beta, v1, v2, v3, cf
+  bool dt_diag_valid = false;
+  Real dtnew_prev = -1.0;
 
   // following used for time derivatives in computation of jcon
   bool wbcc_saved = false;
