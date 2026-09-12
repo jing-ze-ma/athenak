@@ -25,7 +25,7 @@ polar_quadratic_recon = false
 <meshblock>
 nx1 = 8
 nx2 = 32
-nx3 = 64
+nx3 = 32
 <time>
 evolution = dynamic
 integrator = rk2
