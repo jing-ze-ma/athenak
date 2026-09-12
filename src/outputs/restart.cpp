@@ -103,6 +103,17 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
     Kokkos::deep_copy(outfield.x3f, Kokkos::subview(pmhd->b0.x3f, std::make_pair(0,nmb),
                       Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
   }
+  // the general-EOS temperature cache, see the note on outarray_wth in outputs.hpp
+  if (phydro != nullptr && phydro->peos->eos_data.IsGeneral()) {
+    Kokkos::realloc(outarray_wth, nmb, nout3, nout2, nout1);
+    Kokkos::deep_copy(outarray_wth, Kokkos::subview(phydro->wtemp,
+                      std::make_pair(0,nmb), Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
+  }
+  if (pmhd != nullptr && pmhd->peos->eos_data.IsGeneral()) {
+    Kokkos::realloc(outarray_wtm, nmb, nout3, nout2, nout1);
+    Kokkos::deep_copy(outarray_wtm, Kokkos::subview(pmhd->wtemp,
+                      std::make_pair(0,nmb), Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
+  }
   if (prad != nullptr) {
     Kokkos::realloc(outarray_rad, nmb, nrad, nout3, nout2, nout1);
     Kokkos::deep_copy(outarray_rad, Kokkos::subview(prad->i0, std::make_pair(0,nmb),
@@ -269,6 +280,12 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
 
   // total size of all cell-centered variables and face-centered fields to be written by
   // this rank
+  // the general-EOS temperature cache is appended at the END of each MeshBlock record,
+  // so that a file written without it (any run with an ideal gas, and every file written
+  // before this was added) differs only in its tail and is still readable -- see the
+  // size check in pgen.cpp's restart constructor.
+  bool wt_hyd = (phydro != nullptr) && phydro->peos->eos_data.IsGeneral();
+  bool wt_mhd = (pmhd != nullptr) && pmhd->peos->eos_data.IsGeneral();
   IOWrapperSizeT data_size = 0;
   if (phydro != nullptr) {
     data_size += nout1*nout2*nout3*nhydro*sizeof(Real); // hydro u0
@@ -289,6 +306,12 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
     data_size += nout1*nout2*nout3*nz4c*sizeof(Real);   // z4c u0
   } else if (padm != nullptr) {
     data_size += nout1*nout2*nout3*nadm*sizeof(Real);   // adm u_adm
+  }
+  if (wt_hyd) {
+    data_size += nout1*nout2*nout3*sizeof(Real);        // hydro wtemp
+  }
+  if (wt_mhd) {
+    data_size += nout1*nout2*nout3*sizeof(Real);        // mhd wtemp
   }
   if (global_variable::my_rank == 0 || single_file_per_rank) {
     resfile.Write_any_type(&(data_size), sizeof(IOWrapperSizeT), "byte",
@@ -622,6 +645,40 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
     offset_myrank += nout1*nout2*nout3*nadm*sizeof(Real); // adm u_adm
     myoffset = offset_myrank;
   }
+
+  // write the general-EOS temperature cache last, one MeshBlock at a time, exactly as
+  // the arrays above.  Same loop for hydro and MHD, so it is written once here.
+  auto write_wtemp = [&](const HostArray4D<Real> &a, const char *what) {
+    for (int m=0;  m<noutmbs_max; ++m) {
+      if (m < noutmbs_min) {
+        auto mbptr = Kokkos::subview(a, m, Kokkos::ALL, Kokkos::ALL, Kokkos::ALL);
+        int mbcnt = mbptr.size();
+        if (resfile.Write_any_type_at_all(mbptr.data(),mbcnt,myoffset,"Real",
+                                          single_file_per_rank) != mbcnt) {
+          std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                    << std::endl << what << " wtemp not written correctly to rst file, "
+                    << "restart file is broken." << std::endl;
+          exit(EXIT_FAILURE);
+        }
+        myoffset += data_size;
+      } else if (m < pm->nmb_thisrank) {
+        auto mbptr = Kokkos::subview(a, m, Kokkos::ALL, Kokkos::ALL, Kokkos::ALL);
+        int mbcnt = mbptr.size();
+        if (resfile.Write_any_type_at(mbptr.data(), mbcnt, myoffset,"Real",
+                                      single_file_per_rank) != mbcnt) {
+          std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                    << std::endl << what << " wtemp not written correctly to rst file, "
+                    << "restart file is broken." << std::endl;
+          exit(EXIT_FAILURE);
+        }
+        myoffset += data_size;
+      }
+    }
+    offset_myrank += nout1*nout2*nout3*sizeof(Real);
+    myoffset = offset_myrank;
+  };
+  if (wt_hyd) { write_wtemp(outarray_wth, "hydro"); }
+  if (wt_mhd) { write_wtemp(outarray_wtm, "mhd"); }
 
   // close file, clean up
   resfile.Close(single_file_per_rank);

@@ -249,6 +249,12 @@ class BaseTypeOutput {
   HostArray5D<Real> outarray;
   HostArray5D<Real> outarray_hyd, outarray_mhd, outarray_rad,
                     outarray_force, outarray_z4c, outarray_adm;
+  // the general EOS temperature cache (Hydro/MHD::wtemp).  It is not state in the sense
+  // of an evolved variable, but it IS the warm start of the c2p temperature root find,
+  // which converges only to `logtol`: a restart that cold starts it lands on a different
+  // temperature in the last digits and is no longer a bitwise continuation.  Written to
+  // (and read from) the restart file for that reason; empty for an ideal gas.
+  HostArray4D<Real> outarray_wth, outarray_wtm;
   HostFaceFld4D<Real> outfield;  // FC output field on host
   std::vector<int> noutmbs;   // with MPI, number of output MBs across all ranks
   int noutmbs_min;            // with MPI, minimum number of output MBs across all ranks
