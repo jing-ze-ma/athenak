@@ -139,7 +139,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
 
   size_t scr_size = (ScrArray2D<Real>::shmem_size(nvars, ncells1) +
                      ScrArray2D<Real>::shmem_size(nder, ncells1)) * 2;
-  int scr_level = 0;
+  int scr_level = scratch_level;
   auto &flx1_ = uflx.x1f;
     
   auto &x1v_ = pmy_pack->pcoord->x1v;

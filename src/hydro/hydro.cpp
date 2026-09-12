@@ -179,6 +179,7 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
   // radiative timescale the profile changes on.  N = 1 halves the walk cost, N = 10
   // removes it.
   wb_cache_every = pin->GetOrAddInteger("hydro","wb_cache_every",0);
+  scratch_level = pin->GetOrAddInteger("hydro","scratch_level",0);
   use_wb_x2 = pin->GetOrAddBoolean("hydro","wb_x2",false);
   use_wb_x3 = pin->GetOrAddBoolean("hydro","wb_x3",false);
   use_wb_rho = pin->GetOrAddBoolean("hydro","wb_rho",false);

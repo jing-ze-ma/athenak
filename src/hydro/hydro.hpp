@@ -153,6 +153,9 @@ class Hydro {
   DvceArray4D<Real> phicc0;     // cell-centered gravitational potential energy
   DvceArray5D<Real> wbq0;       // per-cell well-balanced background (BuildWBCache)
   int wb_cache_every = 0;       // rebuild wbq0 every stage (0) or every N-th cycle
+  // Kokkos team-scratch level for the flux kernels: 0 = LDS (64 kB per workgroup on
+  // AMD, which caps meshblock nx1 at a few hundred), 1 = global memory, no cap (~1% cost)
+  int scratch_level = 0;
   // Has wbq0 ever been filled in this process?  With wb_cache_every > 1 the rebuild is
   // gated on (ncycle % wb_cache_every == 0), and ncycle is RESTORED from the restart
   // file -- so a restart at a cycle that is not a multiple of wb_cache_every ran up to
