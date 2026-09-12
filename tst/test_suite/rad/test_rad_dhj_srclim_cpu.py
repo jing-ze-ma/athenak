@@ -74,7 +74,11 @@ def test_run():
 
         # 1. identity, on both the correlated-k and the grey path
         identity(binary, "ck", ck.CK)
-        identity(binary, "grey", ["problem/rt_ck=false", "problem/rt_split=false"])
+        # No grey arm: since ebd57244 the input runs the radiative diffusion with the
+        # optical-depth blend, which needs the correlated-k scheme (the grey scheme has
+        # no cut and would double count; the pgen refuses it), and the grey scheme with
+        # the blend off collapses dt on the first cycle at this grid. The clipping
+        # limiter is scheme-independent, so the ck arm covers it.
 
         # 2. plumbing: an absurd cap clips every cell, and must warn exactly once
         out, _ = history(binary, "clip", ck.CK + ["problem/rt_de_max=1.0e-12"])

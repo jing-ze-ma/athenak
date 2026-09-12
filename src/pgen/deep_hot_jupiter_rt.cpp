@@ -456,7 +456,15 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
               << "(diffusivity factor) or 2 (Gauss), got " << ck_nq << std::endl;
     std::exit(EXIT_FAILURE);
   }
-  if (rt_ck && ck_lk_ptr == nullptr) {
+  // the ck table is also needed when the radiative diffusion takes its Rosseland
+  // opacity from it (<hydro|mhd>/rad_kappa_src = table), even with the grey RT
+  bool ck_need_table = rt_ck;
+  {
+    MeshBlockPack *pk = pmy_mesh_->pmb_pack;
+    Conduction *pcd = (pk->pmhd != nullptr) ? pk->pmhd->pcond : pk->phydro->pcond;
+    if (pcd != nullptr && pcd->rad_kappa_tab) ck_need_table = true;
+  }
+  if (ck_need_table && ck_lk_ptr == nullptr) {
     read_ck_table(pin->GetOrAddString("problem","ck_table",
                                       "data/exo_fms_ck/ck/Premixed_1x_g8_11.txt"),
                   rt_ck_pcut);
