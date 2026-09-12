@@ -37,6 +37,7 @@
 #include "utils/rosseland.hpp"
 #include "utils/correlated_k.hpp"
 #include "utils/atm_column.hpp"
+#include "utils/eint_from_cons.hpp"
 #include "utils/two_stream_rt.hpp"
 #include "diffusion/conduction.hpp"
 #include "units/units.hpp"
@@ -1601,12 +1602,17 @@ void HydrostaticEquilibrium(Mesh *pm) {
   MeshBlockPack *pmbp = pm->pmb_pack;
   auto &size = pmbp->pmb->mb_size;
 
-    // wtemp holds the temperature ConsToPrim solved for; the outer-x1 ghost extrapolation
-    // warm starts its hydrostatic solve from the last active cell's value. General EOS
-    // only -- a zero-size View otherwise, captured and never read.
-    DvceArray4D<Real> wtemp_;
+    // THE BOUNDARY READS THE CONSERVED STATE ONLY -- u0 and the face fields b0, never
+    // w0, bcc0 or wtemp.  Those three are NOT restart state: restart.cpp writes u0 and
+    // b0 (the full nx+2*ng arrays, ghosts included) and nothing else, and
+    // Driver::InitBoundaryValuesAndPrimitives runs RecvU -> ApplyPhysicalBCs ->
+    // Prolongate -> ConToPrim, i.e. the user boundary is called BEFORE the first
+    // ConToPrim of a restarted run, when w0/bcc0/wtemp are still exactly zero.  Anything
+    // read from them there is not the value the running boundary sees, so the restart is
+    // not a continuation of the run that wrote the file.  Reading u0/b0 also drops the
+    // one-stage lag: ApplyPhysicalBCs runs after RKUpdate, the source terms and the RT,
+    // and w0 predates all of them.
     DvceArray5D<Real> u0_;
-    DvceArray5D<Real> w0_;
     Real gamma;
     bool use_etotgrav = false;
     bool use_wellbalance_dynamic = false;
@@ -1635,8 +1641,6 @@ void HydrostaticEquilibrium(Mesh *pm) {
     EOS_Data eos;
     if (pmbp->phydro != nullptr) {
       u0_ = pmbp->phydro->u0;
-      w0_ = pmbp->phydro->w0;
-      wtemp_ = pmbp->phydro->wtemp;
       gamma = pmbp->phydro->peos->eos_data.gamma;
       eos = pmbp->phydro->peos->eos_data;
       use_etotgrav = pmbp->phydro->use_etotgrav;
@@ -1645,8 +1649,6 @@ void HydrostaticEquilibrium(Mesh *pm) {
       phicc0 = pmbp->phydro->phicc0;
     } else if (pmbp->pmhd != nullptr) {
       u0_ = pmbp->pmhd->u0;
-      w0_ = pmbp->pmhd->w0;
-      wtemp_ = pmbp->pmhd->wtemp;
       gamma = pmbp->pmhd->peos->eos_data.gamma;
       eos = pmbp->pmhd->peos->eos_data;
       use_etotgrav = pmbp->pmhd->use_etotgrav;
@@ -1667,6 +1669,60 @@ void HydrostaticEquilibrium(Mesh *pm) {
     Real gm1ig = (gamma-1.0)/gamma;
     Real ig = 1.0/gamma;
     
+    // Local copy of the file-scope flag. Reading the global directly from the kernel is
+    // a reference to a __host__ variable in device code, which hipcc rejects outright --
+    // the switch has to be captured by value like any other host state.
+    const bool bc_outer_maxwell_ = bc_outer_maxwell;
+    // for the metric-correct ghost kinetic energy below (cubed sphere only)
+    const bool cs_bc_ = pm->use_cubed_sphere;
+    auto &ccell_bc_ = pmbp->pcoord->cos_cell;
+    auto &scell_bc_ = pmbp->pcoord->sin_cell;
+    // whether MHD is on, as a VALUE: `pmbp->pmhd != nullptr` inside a device lambda is a
+    // host-pointer dereference (see the note in CLAUDE.md on capturing `this`).
+    const bool is_mhd_ = (pmbp->pmhd != nullptr);
+
+    // THE INNER-x1 GHOST MAGNETIC ENERGY IS REMOVED HERE, BEFORE THE FIELD IS REFLECTED.
+    // The inner ghosts keep the internal energy and the momenta the problem generator
+    // gave them; only their MAGNETIC energy follows the reflected field, so every call
+    // swaps one for the other:  E -= e_mag(old ghost field);  reflect;  E += e_mag(new).
+    // The subtraction used to read bcc0, which is NOT restart state -- it is rebuilt by
+    // ConToPrim, and the user boundary is called BEFORE the first ConToPrim of a
+    // restarted run (Driver::InitBoundaryValuesAndPrimitives), where bcc0 is still
+    // exactly zero.  A restart therefore subtracted NOTHING and added the full field
+    // energy, so every inner radial ghost carried a spurious e_mag that the run which
+    // wrote the file never had.
+    // The face field b0 IS in the restart file, ghosts included (restart.cpp writes the
+    // full nx+2*ng arrays), so taking e_mag from the faces -- with the same averaging and
+    // the same cubed-sphere frame rotation the rebuild below uses, which is what
+    // ConToPrim built bcc0 from in the first place -- is the same number in a running
+    // stage and the right one after a restart.  It is also idempotent: a second call in
+    // a row subtracts exactly what the first added.
+    if (pmbp->pmhd != nullptr) {
+      par_for("usrboundaryx1_demag_inner", DevExeSpace(),0,(nmb-1),0,(n3-1),0,(n2-1),
+      KOKKOS_LAMBDA(int m, int k, int j) {
+        if (mb_bcs.d_view(m,BoundaryFace::inner_x1) == BoundaryFlag::user) {
+          for (int i=0; i<ng; ++i) {
+            const int ig = is-i-1;
+            Real lw, rw;
+            lw = (x1f_(m,ig+1)-x1v_(m,ig))/(x1f_(m,ig+1)-x1f_(m,ig));
+            rw = (x1v_(m,ig)-x1f_(m,ig))/(x1f_(m,ig+1)-x1f_(m,ig));
+            Real bxg = lw*b0_x1f(m,k,j,ig) + rw*b0_x1f(m,k,j,ig+1);
+            lw = (x2f_(m,j+1)-x2v_(m,j))/(x2f_(m,j+1)-x2f_(m,j));
+            rw = (x2v_(m,j)-x2f_(m,j))/(x2f_(m,j+1)-x2f_(m,j));
+            Real byg = lw*b0_x2f(m,k,j,ig) + rw*b0_x2f(m,k,j+1,ig);
+            lw = (x3f_(m,k+1)-x3v_(m,k))/(x3f_(m,k+1)-x3f_(m,k));
+            rw = (x3v_(m,k)-x3f_(m,k))/(x3f_(m,k+1)-x3f_(m,k));
+            Real bzg = lw*b0_x3f(m,k,j,ig) + rw*b0_x3f(m,k+1,j,ig);
+            if (cs_bc_) {
+              const Real cg = ccell_bc_(m,k,j), sg = scell_bc_(m,k,j);
+              byg = (byg + cg*bzg)/sg;
+            }
+            u0_(m,IEN,k,j,ig) -= 0.5*(SQR(bxg)+SQR(byg)+SQR(bzg));
+          }
+        }
+      });
+    }
+
     if (pmbp->pmhd != nullptr) {
       par_for("usrboundaryx1_bfield", DevExeSpace(),0,(nmb-1),0,(n3-1),0,(n2-1),
       KOKKOS_LAMBDA(int m, int k, int j) {
@@ -1745,25 +1801,15 @@ void HydrostaticEquilibrium(Mesh *pm) {
 //        pmbp->pmhd->AddGravEtot(phicc0, u0_, 0, is-1, 0, (n2-1), 0, (n3-1));
 //      }
 //    }
-    if (pmbp->phydro != nullptr) {
-      if (use_etotgrav) {
-        pmbp->phydro->RemoveGravEtot(phicc0, u0_, ie, ie, 0, (n2-1), 0, (n3-1));
-      }
-      pmbp->phydro->peos->ConsToPrim(u0_, w0_, false, ie, ie, 0, (n2-1), 0, (n3-1));
-      if (use_etotgrav) {
-        pmbp->phydro->AddGravEtot(phicc0, u0_, ie, ie, 0, (n2-1), 0, (n3-1));
-      }
-    }
-    else if (pmbp->pmhd != nullptr) {
-      auto b0 = pmbp->pmhd->b0;
-      if (use_etotgrav) {
-        pmbp->pmhd->RemoveGravEtot(phicc0, u0_, ie, ie, 0, (n2-1), 0, (n3-1));
-      }
-      pmbp->pmhd->peos->ConsToPrim(u0_, b0, w0_, bcc0, false, ie, ie, 0, (n2-1), 0, (n3-1));
-      if (use_etotgrav) {
-        pmbp->pmhd->AddGravEtot(phicc0, u0_, ie, ie, 0, (n2-1), 0, (n3-1));
-      }
-    }
+    // (The ConsToPrim on the ie column that used to stand here is gone.  It existed only
+    // to refresh w0/wtemp/bcc0 for the outer ghost extrapolation below, which now takes
+    // rho, e and T from u0 and b0 itself.  It could not stay: it is called on an ACTIVE
+    // column, so its floors and -- under etotgrav -- its RemoveGravEtot/AddGravEtot round
+    // trip edited u0(IEN,ie) by a rounding error on EVERY boundary call, and a restarted
+    // run makes one extra call (Driver::InitBoundaryValuesAndPrimitives) that the run
+    // which wrote the file did not, so the two could not agree bit for bit.  Flooring an
+    // active cell is the job of the ConToPrim that follows this boundary in the same task
+    // list, and it still does it.)
 
 //    par_for("usrboundaryx1", DevExeSpace(), 0,(nmb-1),0,(nvar-1),0,(n3-1),0,(n2-1),
 //    KOKKOS_LAMBDA(int m, int n, int k, int j) {
@@ -1774,15 +1820,6 @@ void HydrostaticEquilibrium(Mesh *pm) {
 //        }
 //    });
     
-    // Local copy of the file-scope flag. Reading the global directly from the kernel is
-    // a reference to a __host__ variable in device code, which hipcc rejects outright --
-    // the switch has to be captured by value like any other host state.
-    const bool bc_outer_maxwell_ = bc_outer_maxwell;
-    // for the metric-correct ghost kinetic energy below (cubed sphere only)
-    const bool cs_bc_ = pm->use_cubed_sphere;
-    auto &ccell_bc_ = pmbp->pcoord->cos_cell;
-    auto &scell_bc_ = pmbp->pcoord->sin_cell;
-
     // The cell-centred field in the OUTER-x1 ghost zones is built here, in its own kernel,
     // and not in the extrapolation kernel below.  It used to be computed inline there, in
     // the same launch that reads bcc0 at (k,j+1) and (k+1,j) for the Maxwell stress -- cells
@@ -1845,7 +1882,9 @@ void HydrostaticEquilibrium(Mesh *pm) {
 //          Real factor_i = rho_i/e_i*igm1;
           for (int i=0; i<ng; ++i) {
             if (pmbp->pmhd != nullptr) {
-              u0_(m,IEN,k,j,is-i-1) -= 0.5*(SQR(bcc0(m,IBX,k,j,is-i-1))+SQR(bcc0(m,IBY,k,j,is-i-1))+SQR(bcc0(m,IBZ,k,j,is-i-1)));
+              // the OLD ghost magnetic energy was removed in usrboundaryx1_demag_inner,
+              // before the reflection overwrote the faces it was built from; here only
+              // the NEW one is added back.  See the note on that kernel.
               Real lw, rw;
               lw = (x1f_(m,(is-i-1)+1)-x1v_(m,(is-i-1)))/(x1f_(m,(is-i-1)+1)-x1f_(m,(is-i-1)));
               rw = (x1v_(m,(is-i-1))-x1f_(m,(is-i-1)))/(x1f_(m,(is-i-1)+1)-x1f_(m,(is-i-1)));
@@ -1893,12 +1932,67 @@ void HydrostaticEquilibrium(Mesh *pm) {
 //            if (pmbp->pmhd != nullptr) u0_(m,IEN,k,j,(is-i-1)) +=  0.5*(SQR(bcc0(m,IBX,k,j,(is-i-1)))+SQR(bcc0(m,IBY,k,j,(is-i-1)))+SQR(bcc0(m,IBZ,k,j,(is-i-1))));
           }
         }
-        if (mb_bcs.d_view(m,BoundaryFace::outer_x1) == BoundaryFlag::user) {
-          Real rho_i = w0_(m,IDN,k,j,ie);
-//          Real e_i = u0_(m,IEN,k,j,ie) - 0.5*(SQR(u0_(m,IM1,k,j,ie))+SQR(u0_(m,IM2,k,j,ie))+SQR(u0_(m,IM3,k,j,ie)))/rho_i;
-//          if (use_etotgrav) e_i -= rho_i*phicc0(m,k,j,ie);
-//          if (pmbp->pmhd != nullptr) e_i -= 0.5*(SQR(bcc0(m,IBX,k,j,ie))+SQR(bcc0(m,IBY,k,j,ie))+SQR(bcc0(m,IBZ,k,j,ie)));
-          Real e_i = w0_(m,IEN,k,j,ie);
+        // AN OPEN GHOST NEEDS AN INTERIOR TO CONTINUE.  This boundary runs twice before
+        // the problem generator has filled anything, with u0 exactly zero; the
+        // hydrostatic continuation of THAT is a division by zero.  It used to produce
+        // inf/NaN ghosts that the generator then overwrote; the gate makes it leave them
+        // alone instead.  Once u0 has a state the continuation is used, and at t = 0 it
+        // reproduces the initial column anyway.
+        if (mb_bcs.d_view(m,BoundaryFace::outer_x1) == BoundaryFlag::user &&
+            u0_(m,IDN,k,j,ie) > 0.0) {
+          // rho, e AND T OF THE LAST ACTIVE CELL, FROM THE CONSERVED STATE.  These three
+          // used to come from w0(IDN,ie), w0(IEN,ie) and wtemp(ie), refreshed by a
+          // ConsToPrim on this column a few lines above.  None of the three is restart
+          // state, and the warm start wtemp gave that inversion is not either: the root
+          // find stops at |dz| < logtol, so its answer depends on where it started, and
+          // at the first boundary call of a restarted run wtemp is zero while in a
+          // running stage it is the previous stage's temperature.  Extracting the state
+          // here from u0 and b0 -- both restored bitwise by the restart file -- makes the
+          // whole ghost fill a pure function of the restart state, hence idempotent, and
+          // drops the one-stage lag w0 carried (ApplyPhysicalBCs runs after RKUpdate, the
+          // source terms and the RT).  EintFromCons performs exactly ConsToPrim's
+          // extraction, in the same order, so in a smooth cell nothing moves.
+          Real rho_i = u0_(m,IDN,k,j,ie);
+          if (rho_i < eos.dfloor) rho_i = eos.dfloor;
+          Real emag_i = 0.0;
+          if (is_mhd_) {
+            // the cell-centred field ConsToPrim would have built from these faces: the
+            // same positional average and the same cubed-sphere orthonormal rotation the
+            // ghost kernels above use (see usrboundaryx1_bcc_outer).
+            Real lw, rw;
+            lw = (x1f_(m,ie+1)-x1v_(m,ie))/(x1f_(m,ie+1)-x1f_(m,ie));
+            rw = (x1v_(m,ie)-x1f_(m,ie))/(x1f_(m,ie+1)-x1f_(m,ie));
+            Real bxi = lw*b0_x1f(m,k,j,ie) + rw*b0_x1f(m,k,j,ie+1);
+            lw = (x2f_(m,j+1)-x2v_(m,j))/(x2f_(m,j+1)-x2f_(m,j));
+            rw = (x2v_(m,j)-x2f_(m,j))/(x2f_(m,j+1)-x2f_(m,j));
+            Real byi = lw*b0_x2f(m,k,j,ie) + rw*b0_x2f(m,k,j+1,ie);
+            lw = (x3f_(m,k+1)-x3v_(m,k))/(x3f_(m,k+1)-x3f_(m,k));
+            rw = (x3v_(m,k)-x3f_(m,k))/(x3f_(m,k+1)-x3f_(m,k));
+            Real bzi = lw*b0_x3f(m,k,j,ie) + rw*b0_x3f(m,k+1,j,ie);
+            if (cs_bc_) {
+              const Real cg = ccell_bc_(m,k,j), sg = scell_bc_(m,k,j);
+              byi = (byi + cg*bzi)/sg;
+            }
+            emag_i = 0.5*(SQR(bxi)+SQR(byi)+SQR(bzi));
+          }
+          Real e_i = EintFromCons(u0_, m, k, j, ie, (cs_bc_ ? ccell_bc_(m,k,j) : 0.0),
+                                  cs_bc_, use_etotgrav, phicc0(m,k,j,ie), emag_i);
+          // the pressure and temperature floors SingleC2P applies, in its order, so that
+          // the extrapolation never starts from a state the EOS cannot represent.  The
+          // temperature is solved WITHOUT a warm start -- the only guess that is the same
+          // in a restarted run and in the run that wrote the file.
+          Real t_i = -1.0, p_i = 0.0, g1_i = 0.0;
+          bool tclamp_i = false;
+          if (e_i > 0.0) {
+            eos.TemperaturePressureGamma1(rho_i, e_i, -1.0, t_i, p_i, g1_i, tclamp_i);
+          }
+          if (!(e_i > 0.0) || p_i < eos.pfloor) {
+            e_i = eos.EnergyFromPressure(rho_i, eos.pfloor, t_i);
+          }
+          if (t_i < eos.tfloor) {
+            e_i = eos.EnergyFromTemperature(rho_i, eos.tfloor);
+            t_i = eos.tfloor;
+          }
           Real phi_i = phicc0(m,k,j,ie);
           Real q0_i = log(e_i);
           Real factor_i = rho_i/e_i*igm1;
@@ -1961,11 +2055,10 @@ void HydrostaticEquilibrium(Mesh *pm) {
               rho0_hyd = rho_i;
               e0_hyd = e_i;
               Real t_hyd = -1.0;   // WBAdvance's temperature hand-off; unused here
-              // Warm start from cell ie's own temperature, which the ConsToPrim call on
-              // this column above has already solved for and left in wtemp. This runs per
-              // ghost cell per stage, and the isothermal branch inverts twice.
-              WBAdvance(eos, 1, rho_i, e_i, dphi_i, rho0_hyd, e0_hyd, t_hyd,
-                        TGuess(wtemp_, m, k, j, ie));
+              // Warm start from cell ie's own temperature, solved above from u0 (NOT
+              // from the wtemp cache, which a restart does not have). This runs per ghost
+              // cell per stage, and the isothermal branch inverts twice.
+              WBAdvance(eos, 1, rho_i, e_i, dphi_i, rho0_hyd, e0_hyd, t_hyd, t_i);
             } else {
               e0_hyd = exp(q0_i - factor_i * dphi_i);
               rho0_hyd = e0_hyd/e_i*rho_i;
