@@ -317,7 +317,20 @@ void Driver::ExecuteTaskList(Mesh *pm, std::string tl, int stage) {
 
 void Driver::Initialize(Mesh *pmesh, ParameterInput *pin, Outputs *pout, bool res_flag) {
   //---- Step 1.  Set conserved variables in ghost zones for all physics
-  InitBoundaryValuesAndPrimitives(pmesh);
+  // ON A RESTART the ghost zones are already in the file (restart.cpp writes and reads
+  // the full nx+2*ng arrays), and they are NOT reproducible by refilling them here: a
+  // stage fills ghosts -- physical BCs and the MPI/seam exchange alike -- from u0 as it
+  // stands BEFORE ConsToPrim, and ConsToPrim then writes its density/energy FLOOR
+  // corrections back into u0 (eos/general_hyd.cpp: `if (dfloor_used) cons(IDN)=u.d`).
+  // The restart file therefore holds a POST-floor u0 whose ghosts were made from the
+  // PRE-floor one, and any refill from it lands somewhere else.  Measured on the red
+  // giant: every column whose outermost active cell sat on the density floor -- 261 of
+  // 6144, an exact one-to-one match -- came back with different outer ghosts, and one
+  // cycle later the active cells had moved.  Keeping what the file restored makes the
+  // restart a bitwise continuation; the primitives are still rebuilt below.
+  // <time>/restart_refill_ghosts=true restores the old behaviour.
+  bool refill = pin->GetOrAddBoolean("time", "restart_refill_ghosts", false);
+  InitBoundaryValuesAndPrimitives(pmesh, (res_flag && !refill));
 
   //---- Step 2.  Compute time step (if problem involves time evolution)
   hydro::Hydro *phydro = pmesh->pmb_pack->phydro;
@@ -773,12 +786,17 @@ Real Driver::UpdateWallClock() {
 //! \brief Sets boundary conditions on conserved and initializes primitives.  Used both
 //! on initialization, and when new MBs created with AMR.
 
-void Driver::InitBoundaryValuesAndPrimitives(Mesh *pm) {
+void Driver::InitBoundaryValuesAndPrimitives(Mesh *pm, bool keep_ghosts) {
   // Note: with MPI, sends on ALL MBs must be complete before receives execute
+  //
+  // keep_ghosts: the ghost zones are already valid (a restart restored them from file)
+  // and must not be recomputed -- see the note at the call site in Initialize().  Only
+  // the conserved-to-primitive conversions are then performed.  Never set when new
+  // MeshBlocks have been created (mesh_refinement.cpp), whose ghosts are empty.
 
   // Initialize Z4c
   z4c::Z4c *pz4c = pm->pmb_pack->pz4c;
-  if (pz4c != nullptr) {
+  if (pz4c != nullptr && !keep_ghosts) {
     (void) pz4c->RestrictU(this, 0);
     (void) pz4c->InitRecv(this, -1);  // stage < 0 suppresses InitFluxRecv
     (void) pz4c->SendU(this, 0);
@@ -795,18 +813,20 @@ void Driver::InitBoundaryValuesAndPrimitives(Mesh *pm) {
   hydro::Hydro *phydro = pm->pmb_pack->phydro;
   if (phydro != nullptr) {
     // following functions return a TaskStatus, but it is ignored so cast to (void)
-    (void) phydro->RestrictU(this, 0);
-    (void) phydro->InitRecv(this, -1);  // stage < 0 suppresses InitFluxRecv
-    (void) phydro->SendU(this, 0);
-    (void) phydro->ClearSend(this, -1); // stage = -1 only clear SendU
-    (void) phydro->ClearRecv(this, -1); // stage = -1 only clear RecvU
-    (void) phydro->RecvU(this, 0);
-    (void) phydro->SendU_Shr(this, 0);
-    (void) phydro->ClearSend(this, -4); // stage = -4 only clear SendU_Shr
-    (void) phydro->ClearRecv(this, -4); // stage = -4 only clear RecvU_Shr
-    (void) phydro->RecvU_Shr(this, 0);
-    (void) phydro->ApplyPhysicalBCs(this, 0);
-    (void) phydro->Prolongate(this, 0);
+    if (!keep_ghosts) {
+      (void) phydro->RestrictU(this, 0);
+      (void) phydro->InitRecv(this, -1);  // stage < 0 suppresses InitFluxRecv
+      (void) phydro->SendU(this, 0);
+      (void) phydro->ClearSend(this, -1); // stage = -1 only clear SendU
+      (void) phydro->ClearRecv(this, -1); // stage = -1 only clear RecvU
+      (void) phydro->RecvU(this, 0);
+      (void) phydro->SendU_Shr(this, 0);
+      (void) phydro->ClearSend(this, -4); // stage = -4 only clear SendU_Shr
+      (void) phydro->ClearRecv(this, -4); // stage = -4 only clear RecvU_Shr
+      (void) phydro->RecvU_Shr(this, 0);
+      (void) phydro->ApplyPhysicalBCs(this, 0);
+      (void) phydro->Prolongate(this, 0);
+    }
     (void) phydro->ConToPrim(this, 0);
     // The well-balanced background is in place by now (the problem generator set it), and
     // it does not evolve, so its pressure is evaluated once here rather than per stage.
@@ -818,23 +838,25 @@ void Driver::InitBoundaryValuesAndPrimitives(Mesh *pm) {
   mhd::MHD *pmhd = pm->pmb_pack->pmhd;
   dyngr::DynGRMHD *pdyngr = pm->pmb_pack->pdyngr;
   if (pmhd != nullptr) {
-    (void) pmhd->RestrictU(this, 0);
-    (void) pmhd->RestrictB(this, 0);
-    (void) pmhd->InitRecv(this, -1);  // stage < 0 suppresses InitFluxRecv
-    (void) pmhd->SendU(this, 0);
-    (void) pmhd->SendB(this, 0);
-    (void) pmhd->ClearSend(this, -1); // stage = -1 only clear SendU, SendB
-    (void) pmhd->ClearRecv(this, -1); // stage = -1 only clear RecvU, RecvB
-    (void) pmhd->RecvU(this, 0);
-    (void) pmhd->RecvB(this, 0);
-    (void) pmhd->SendU_Shr(this, 0);
-    (void) pmhd->SendB_Shr(this, 0);
-    (void) pmhd->ClearSend(this, -4); // stage = -4 only clear SendU_Shr, SendB_Shr
-    (void) pmhd->ClearRecv(this, -4); // stage = -4 only clear RecvU_Shr, SendB_Shr
-    (void) pmhd->RecvU_Shr(this, 0);
-    (void) pmhd->RecvB_Shr(this, 0);
-    (void) pmhd->ApplyPhysicalBCs(this, 0);
-    (void) pmhd->Prolongate(this, 0);
+    if (!keep_ghosts) {
+      (void) pmhd->RestrictU(this, 0);
+      (void) pmhd->RestrictB(this, 0);
+      (void) pmhd->InitRecv(this, -1);  // stage < 0 suppresses InitFluxRecv
+      (void) pmhd->SendU(this, 0);
+      (void) pmhd->SendB(this, 0);
+      (void) pmhd->ClearSend(this, -1); // stage = -1 only clear SendU, SendB
+      (void) pmhd->ClearRecv(this, -1); // stage = -1 only clear RecvU, RecvB
+      (void) pmhd->RecvU(this, 0);
+      (void) pmhd->RecvB(this, 0);
+      (void) pmhd->SendU_Shr(this, 0);
+      (void) pmhd->SendB_Shr(this, 0);
+      (void) pmhd->ClearSend(this, -4); // stage = -4 only clear SendU_Shr, SendB_Shr
+      (void) pmhd->ClearRecv(this, -4); // stage = -4 only clear RecvU_Shr, SendB_Shr
+      (void) pmhd->RecvU_Shr(this, 0);
+      (void) pmhd->RecvB_Shr(this, 0);
+      (void) pmhd->ApplyPhysicalBCs(this, 0);
+      (void) pmhd->Prolongate(this, 0);
+    }
     if (pdyngr == nullptr) {
       (void) pmhd->ConToPrim(this, 0);
       // see the hydro comment above
@@ -850,7 +872,7 @@ void Driver::InitBoundaryValuesAndPrimitives(Mesh *pm) {
   // Initialize radiation: ghost zones and intensity (everywhere)
   // DOES NOT include communications for shearing box boundaries
   radiation::Radiation *prad = pm->pmb_pack->prad;
-  if (prad != nullptr) {
+  if (prad != nullptr && !keep_ghosts) {
     (void) prad->RestrictI(this, 0);
     (void) prad->InitRecv(this, -1);  // stage < 0 suppresses InitFluxRecv
     (void) prad->SendI(this, 0);
