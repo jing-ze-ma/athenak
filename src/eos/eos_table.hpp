@@ -493,29 +493,109 @@ struct EOSTable {
   //! and log10 of the temperature out. The caller usually has log10(rho) already and is
   //! about to evaluate the table at the temperature this returns, so exponentiating here
   //! and taking the logarithm again there is another round trip worth not making.
+  //!
+  //! Both are CLAMPED to the tabulated range, and both come in a form that reports the
+  //! clamp to the caller; see ClampLogT() immediately below.
+  //--------------------------------------------------------------------------------------
+  //! \fn Real ClampLogT
+  //! \brief hold a solved log10 T inside the TABULATED range [ymin, ymax], and say
+  //! whether it had to.
+  //!
+  //! WHY THE INVERSIONS BELOW MUST NOT RETURN WHAT THE ROOT FIND RETURNS.  The bracket
+  //! is [ymin-3, ymax+3], three decades of linear-in-the-logs continuation on either
+  //! side, and the solver is free to PIN on either end: a target outside
+  //! [e(rho,10^(ymin-3)), e(rho,10^(ymax+3))] -- or a non-finite one, which makes the
+  //! residual NaN and sends the bisection fallback marching to the upper end -- comes
+  //! back as the bracket edge itself rather than as a failure.  That is a SATURATED
+  //! state, not a temperature: it no longer depends on e at all, and at the top edge it
+  //! is 10^(ymax+3) K with the sound speed that goes with it, which collapses the
+  //! timestep and kills the run (RG_fofc_long, 2026-09-12).  Clamping to the table's own
+  //! range instead returns the state at the nearest tabulated row -- finite, monotone in
+  //! the right direction, and counted by the caller as an event.
+  //!
+  //! A state INSIDE the table is returned bit for bit unchanged, which is why the clamp
+  //! can sit on the hot path unconditionally.
+  KOKKOS_INLINE_FUNCTION
+  Real ClampLogT(const Real z, bool &clamped) const {
+    if (!(z >= ymin)) {   // below the table, or NaN
+      clamped = true;
+      return ymin;
+    }
+    if (z > ymax) {
+      clamped = true;
+      return ymax;
+    }
+    return z;
+  }
+
+  //! \fn Real ClampedSolveLogT
+  //! \brief the mode-0/mode-1 root find, guarded and clamped.  A non-finite target is
+  //! intercepted BEFORE the solve: log10 of a negative or NaN energy is NaN, and a NaN
+  //! residual does not merely fail to converge -- every comparison in SolveLog() is
+  //! false, so the bisection fallback walks the iterate all the way to the TOP of the
+  //! bracket and returns a plausible-looking 10^(ymax+3) K.
+  template <int MODE>
+  KOKKOS_INLINE_FUNCTION
+  Real ClampedSolveLogT(const Real lfixed, const Real ltarget, const Real zguess,
+                        bool &clamped) const {
+    if (!Kokkos::isfinite(ltarget)) {
+      clamped = true;
+      return (ltarget > 0.0) ? ymax : ymin;   // +inf -> top, -inf/NaN -> bottom
+    }
+    return ClampLogT(SolveLog<MODE>(lfixed, ltarget, zguess, ymin - 3.0, ymax + 3.0),
+                     clamped);
+  }
+
+  KOKKOS_INLINE_FUNCTION
+  Real SolveLogTemperature(const Real lrho, const Real letarget, const Real zguess,
+                           bool &clamped) const {
+    return ClampedSolveLogT<0>(lrho, letarget, zguess, clamped);
+  }
+
   KOKKOS_INLINE_FUNCTION
   Real SolveLogTemperature(const Real lrho, const Real letarget,
                            const Real zguess) const {
-    return SolveLog<0>(lrho, letarget, zguess, ymin - 3.0, ymax + 3.0);
+    bool clamped = false;
+    return ClampedSolveLogT<0>(lrho, letarget, zguess, clamped);
+  }
+
+  KOKKOS_INLINE_FUNCTION
+  Real SolveTemperature(const Real rho, const Real etarget, const Real tguess,
+                        bool &clamped) const {
+    Real zg = (tguess > 0.0) ? log10(tguess) : -1.0e30;
+    return Pow10(ClampedSolveLogT<0>(log10(rho), log10(etarget), zg, clamped));
   }
 
   KOKKOS_INLINE_FUNCTION
   Real SolveTemperature(const Real rho, const Real etarget, const Real tguess) const {
-    // Bracket generously beyond the table: the continuation there is linear in the logs,
-    // so a state off the table still has a well defined temperature.
-    Real zg = (tguess > 0.0) ? log10(tguess) : -1.0e30;
-    return Pow10(SolveLog<0>(log10(rho), log10(etarget), zg, ymin - 3.0, ymax + 3.0));
+    bool clamped = false;
+    return SolveTemperature(rho, etarget, tguess, clamped);
   }
 
   //--------------------------------------------------------------------------------------
   //! \fn Real SolveTemperatureFromP
   //! \brief invert p(rho,T) for T, in CGS. Driven by chi_T instead of dln e/dln T. Used
   //! by the pressure floor and by problem generators.
+  //!
+  //! Clamped exactly as the energy inversion is, and that is what makes the PRESSURE
+  //! FLOOR consistent with the table: at upper-atmosphere densities e(rho,pfloor) lies
+  //! far below the lowest tabulated row, so without the clamp this returned the bracket
+  //! bottom 10^(ymin-3) and the floor put the cell three decades in temperature BELOW
+  //! the table, where every subsequent lookup is pure extrapolation.  With it the floor
+  //! is max(e(rho,pfloor), e(rho,T_tablemin)) -- the floor can never place a cell
+  //! outside the EOS it is being evolved with.
+  KOKKOS_INLINE_FUNCTION
+  Real SolveTemperatureFromP(const Real rho, const Real ptarget, const Real tguess,
+                             bool &clamped) const {
+    Real zg = (tguess > 0.0) ? log10(tguess) : -1.0e30;
+    return Pow10(ClampedSolveLogT<1>(log10(rho), log10(ptarget), zg, clamped));
+  }
+
   KOKKOS_INLINE_FUNCTION
   Real SolveTemperatureFromP(const Real rho, const Real ptarget,
                              const Real tguess) const {
-    Real zg = (tguess > 0.0) ? log10(tguess) : -1.0e30;
-    return Pow10(SolveLog<1>(log10(rho), log10(ptarget), zg, ymin - 3.0, ymax + 3.0));
+    bool clamped = false;
+    return SolveTemperatureFromP(rho, ptarget, tguess, clamped);
   }
 
   //--------------------------------------------------------------------------------------

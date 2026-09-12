@@ -413,15 +413,20 @@ struct EOS_Data {
   //! temperature by multiplying back the same temp_cgs the inversion had just divided
   //! out. Chaining them in the log domain removes two log10 per cell per stage and the
   //! unit round trip with them.
+  //!
+  //! `tclamped` comes back true when the inversion had to be held at the table's own
+  //! lowest or highest tabulated temperature because the energy it was given lies
+  //! outside the tabulated range at this density (see EOSTable::ClampLogT). The caller
+  //! counts it -- it is a state the EOS cannot actually represent, not a floor firing.
   KOKKOS_INLINE_FUNCTION
   void TemperaturePressureGamma1(const Real d, const Real e, const Real tguess,
-                                 Real &t, Real &p, Real &g1) const {
+                                 Real &t, Real &p, Real &g1, bool &tclamped) const {
     if (tbl.active) {
       if (SubFloorState(d, e, t, p, g1)) return;
       const Real rho = d*dens_cgs;
       const Real lrho = log10(rho);
       const Real zg = (tguess > 0.0) ? log10(tguess*temp_cgs) : -1.0e30;
-      const Real ltk = tbl.SolveLogTemperature(lrho, log10(e*pres_cgs), zg);
+      const Real ltk = tbl.SolveLogTemperature(lrho, log10(e*pres_cgs), zg, tclamped);
       const Real tk = EOSTable::Pow10(ltk);
       EOSThermoState s;
       tbl.EvalFromLogs<false>(lrho, ltk, rho, tk, s);
@@ -433,6 +438,16 @@ struct EOS_Data {
     t = (gamma-1.0)*e/d;
     p = (gamma-1.0)*e;
     g1 = gamma;
+    return;
+  }
+
+  //! \fn void TemperaturePressureGamma1
+  //! \brief the same, for callers that do not count the table-range clamp.
+  KOKKOS_INLINE_FUNCTION
+  void TemperaturePressureGamma1(const Real d, const Real e, const Real tguess,
+                                 Real &t, Real &p, Real &g1) const {
+    bool tclamped = false;
+    TemperaturePressureGamma1(d, e, tguess, t, p, g1, tclamped);
     return;
   }
 

@@ -24,7 +24,7 @@ KOKKOS_INLINE_FUNCTION
 void SingleC2P_GeneralMHD(MHDCons1D &u, const EOS_Data &eos, HydPrim1D &w,
                           const Real tguess, Real &temp, Real &pgas, Real &g1,
                           bool &dfloor_used, bool &efloor_used, bool &tfloor_used,
-                          bool &vceil_used, bool &vceil_test) {
+                          bool &vceil_used, bool &vceil_test, bool &tclamp_used) {
   // apply density floor, without changing momentum or energy
   if (u.d < eos.dfloor) {
     u.d = eos.dfloor;
@@ -72,7 +72,7 @@ void SingleC2P_GeneralMHD(MHDCons1D &u, const EOS_Data &eos, HydPrim1D &w,
   bool stale = !e_positive;
   if (e_positive) {
     // fused: the inversion and the evaluation that follows it share their logarithms
-    eos.TemperaturePressureGamma1(w.d, w.e, tguess, temp, pgas, g1);
+    eos.TemperaturePressureGamma1(w.d, w.e, tguess, temp, pgas, g1, tclamp_used);
   }
 
   if (!e_positive || pgas < eos.pfloor) {

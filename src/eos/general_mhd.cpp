@@ -87,9 +87,10 @@ void GeneralMHD::ConsToPrim(DvceArray5D<Real> &cons, const DvceFaceFld4D<Real> &
   const int nkji = (ku - kl + 1)*nji;
   const int nmkji = nmb*nkji;
 
-  int nfloord_=0, nfloore_=0, nfloort_=0, nceilv_=0;
+  int nfloord_=0, nfloore_=0, nfloort_=0, nceilv_=0, ntclamp_=0;
   Kokkos::parallel_reduce("mhd_c2p_gen",Kokkos::RangePolicy<>(DevExeSpace(), 0, nmkji),
-  KOKKOS_LAMBDA(const int &idx, int &sumd, int &sume, int &sumt, int &sumv) {
+  KOKKOS_LAMBDA(const int &idx, int &sumd, int &sume, int &sumt, int &sumv,
+                int &sumc) {
     int m = (idx)/nkji;
     int k = (idx - m*nkji)/nji;
     int j = (idx - m*nkji - k*nji)/ni;
@@ -146,10 +147,12 @@ void GeneralMHD::ConsToPrim(DvceArray5D<Real> &cons, const DvceFaceFld4D<Real> &
     Real pgas, g1;
     Real temp;
     bool dfloor_used=false, efloor_used=false, tfloor_used=false;
+    bool tclamp_used=false;
     bool vceil_used=false, vceil_test=false;
     // the cached temperature in this cell warm starts the T(d,e) root find
     SingleC2P_GeneralMHD(u, eos, w, wtemp_(m,k,j,i), temp, pgas, g1,
-                         dfloor_used, efloor_used, tfloor_used, vceil_used, vceil_test);
+                         dfloor_used, efloor_used, tfloor_used, vceil_used, vceil_test,
+                         tclamp_used);
     // see the note in ideal_mhd.cpp: the floor-TEST pass writes nothing back
     if (!only_testfloors && vceil_used) {
       cons(m,IM1,k,j,i) = u.mx;
@@ -184,6 +187,11 @@ void GeneralMHD::ConsToPrim(DvceArray5D<Real> &cons, const DvceFaceFld4D<Real> &
       if (vceil_used) {
         sumv++;
       }
+      // the tabulated inversion had to be held at the table's own lowest or highest
+      // temperature: the state is outside the EOS, not merely at a floor
+      if (tclamp_used) {
+        sumc++;
+      }
       // store primitive state in 3D array
       prim(m,IDN,k,j,i) = w.d;
       prim(m,IVX,k,j,i) = w.vx;
@@ -210,7 +218,8 @@ void GeneralMHD::ConsToPrim(DvceArray5D<Real> &cons, const DvceFaceFld4D<Real> &
       }
     }
   }, Kokkos::Sum<int>(nfloord_), Kokkos::Sum<int>(nfloore_),
-     Kokkos::Sum<int>(nfloort_), Kokkos::Sum<int>(nceilv_));
+     Kokkos::Sum<int>(nfloort_), Kokkos::Sum<int>(nceilv_),
+     Kokkos::Sum<int>(ntclamp_));
 
   // store appropriate counters
   if (only_testfloors) {
@@ -219,6 +228,7 @@ void GeneralMHD::ConsToPrim(DvceArray5D<Real> &cons, const DvceFaceFld4D<Real> &
     pmy_pack->pmesh->ecounter.neos_dfloor += nfloord_;
     pmy_pack->pmesh->ecounter.neos_efloor += nfloore_;
     pmy_pack->pmesh->ecounter.neos_tfloor += nfloort_;
+    pmy_pack->pmesh->ecounter.neos_tclamp += ntclamp_;
     pmy_pack->pmesh->ecounter.neos_vceil  += nceilv_;
   }
 

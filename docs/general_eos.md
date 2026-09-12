@@ -283,6 +283,33 @@ The conversion is reported at startup. Notes:
   this quantity).
 - `tfloor` itself is completely unchanged, so no existing input behaves differently.
 
+#### The inversion is clamped to the table, and so is the pressure floor
+
+Under `general_eos = table` the `(rho,e) -> T` root find brackets on
+`[10^(eos_logt_min - 3), 10^(eos_logt_max + 3)]`, three decades of linear-in-the-logs
+continuation on either side of the table. A state outside that bracket used to come back
+as the **bracket edge itself**: a temperature, pressure, `Gamma_1` and sound speed that no
+longer depend on `e` at all. At the top edge that is `10^(eos_logt_max+3)` K with the sound
+speed to match, which collapses the timestep; a non-finite energy reached the same place,
+because a NaN residual sends the bisection fallback marching to the top of the bracket.
+
+Both temperature inversions — `e -> T` and `p -> T` — are now **clamped to the tabulated
+range** `[10^eos_logt_min, 10^eos_logt_max]`, and every clamped cell is counted in the
+event log's `eos_tclamp` column (`EventCounters::neos_tclamp`). A state inside the table
+is returned bit for bit unchanged.
+
+The clamp on the `p -> T` inversion is also what makes the **pressure floor consistent with
+the table**: `e(rho,pfloor)` is now `max(e(rho,pfloor), e(rho,10^eos_logt_min))`, so the
+floor can no longer place a cell three decades in temperature below the EOS it is being
+evolved with. At upper-atmosphere densities a nominal `pfloor` implies a temperature far
+under the table, and without this the floor pinned the cell at `e(rho,10^(logt_min-3))` —
+which is where the red-giant run RG_fofc_long died. A **non-zero `eos_tclamp` means cells
+are leaving the table**: widen `eos_logt_min`/`eos_logt_max`, or raise `tfloor_kelvin`.
+
+`<hydro|mhd>/eos_floor_consistent` is a separate, opt-in continuation *below* the table
+(p and T linear in e at fixed `Gamma_1`); where it is on, it takes precedence and the
+clamp is not reached.
+
 ---
 
 ## What is supported, and what is refused

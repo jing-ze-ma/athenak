@@ -221,13 +221,25 @@ void BuildEOSTable(EOSTable &tbl, ParameterInput *pin, const std::string &block,
   // For each x cell, the maximum of e(rho, pfloor) over that cell, evaluated from the
   // ANALYTIC model rather than from the interpolant and then inflated slightly, so that
   // it bounds the interpolated value too. See EOSTable::EnergyFloorBound().
+  // The floor the run actually applies is e(rho,pfloor) CLAMPED to the table's lowest
+  // tabulated temperature (see EOSTable::SolveTemperatureFromP): at low density a
+  // nominal pfloor implies a temperature far below the table, and the floor is then
+  // e(rho,T_tablemin) instead.  The bound has to bound THAT, or ApplyEnergyFloor()
+  // would skip cells its own floor would have raised.
   const double pfl_cgs = pfloor*pres_cgs;
+  const double tmin_cgs = pow(10.0, ylo);
   double efmax = 0.0;
   for (int i=0; i<nx-1; ++i) {
     double emax = 0.0;
     for (int k=0; k<=4; ++k) {
       double x = xlo + (i + 0.25*k)*tbl.dx;
-      emax = std::max(emax, EnergyAtPressure(model, tbl.radiation, pow(10.0,x), pfl_cgs));
+      const double rho = pow(10.0, x);
+      emax = std::max(emax, EnergyAtPressure(model, tbl.radiation, rho, pfl_cgs));
+      EOSCompositionState st = model.Evaluate(rho, tmin_cgs);
+      const double etmin = rho*st.e_spec
+                         + (tbl.radiation ? eos_cgs::a_rad*tmin_cgs*tmin_cgs*tmin_cgs
+                                            *tmin_cgs : 0.0);
+      emax = std::max(emax, etmin);
     }
     h_efb(i) = (emax/pres_cgs)*(1.0 + 1.0e-6);
     efmax = std::max(efmax, static_cast<double>(h_efb(i)));

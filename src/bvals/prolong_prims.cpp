@@ -169,16 +169,16 @@ void MeshBoundaryValuesCC::ConsToPrimCoarseBndry(const DvceArray5D<Real> &cons,
             // bracket for itself. Both it and the derived quantities are
             // discarded here.
             Real pgas_, g1_, temp_, de_ = 0.0;
-            bool mscl_ = false, vcl_ = false, vclt_ = false;
+            bool mscl_ = false, vcl_ = false, vclt_ = false, tclm_ = false;
             Real dfv_ = 1.0;
             // see the note on EOS_Data::floors_legacy
             if (eos.floors_legacy) {
               SingleC2P_GeneralHydLegacy(u, eos, w, -1.0, temp_, pgas_, g1_,
-                                         dfloor_used, efloor_used, tfloor_used);
+                                         dfloor_used, efloor_used, tfloor_used, tclm_);
             } else {
               SingleC2P_GeneralHyd(u, eos, w, -1.0, temp_, pgas_, g1_,
                                    dfloor_used, efloor_used, tfloor_used, de_, mscl_,
-                                   dfv_, vcl_, vclt_);
+                                   dfv_, vcl_, vclt_, tclm_);
             }
           } else {
             Real dfv2_ = 1.0;
@@ -470,9 +470,10 @@ void MeshBoundaryValuesCC::ConsToPrimCoarseBndry(const DvceArray5D<Real> &cons,
             // bracket for itself. Both it and the derived quantities are
             // discarded here.
             Real pgas_, g1_, temp_;
-            bool vcl_ = false, vclt_ = false;
+            bool vcl_ = false, vclt_ = false, tclm_ = false;
             SingleC2P_GeneralMHD(u, eos, w, -1.0, temp_, pgas_, g1_,
-                                 dfloor_used, efloor_used, tfloor_used, vcl_, vclt_);
+                                 dfloor_used, efloor_used, tfloor_used, vcl_, vclt_,
+                                 tclm_);
           } else {
             bool vcl2_ = false, vclt2_ = false;
             SingleC2P_IdealMHD(u, eos, w, dfloor_used, efloor_used, tfloor_used,

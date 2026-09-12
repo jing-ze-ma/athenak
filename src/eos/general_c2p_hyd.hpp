@@ -36,7 +36,8 @@
 KOKKOS_INLINE_FUNCTION
 void SingleC2P_GeneralHydLegacy(HydCons1D &u, const EOS_Data &eos, HydPrim1D &w,
                           const Real tguess, Real &temp, Real &pgas, Real &g1,
-                          bool &dfloor_used, bool &efloor_used, bool &tfloor_used) {
+                          bool &dfloor_used, bool &efloor_used, bool &tfloor_used,
+                          bool &tclamp_used) {
   // apply density floor, without changing momentum or energy
   if (u.d < eos.dfloor) {
     u.d = eos.dfloor;
@@ -72,7 +73,7 @@ void SingleC2P_GeneralHydLegacy(HydCons1D &u, const EOS_Data &eos, HydPrim1D &w,
   bool stale = !e_positive;
   if (e_positive) {
     // fused: the inversion and the evaluation that follows it share their logarithms
-    eos.TemperaturePressureGamma1(w.d, w.e, tguess, temp, pgas, g1);
+    eos.TemperaturePressureGamma1(w.d, w.e, tguess, temp, pgas, g1, tclamp_used);
   }
 
   if (!e_positive || pgas < eos.pfloor) {
@@ -130,7 +131,7 @@ void SingleC2P_GeneralHyd(HydCons1D &u, const EOS_Data &eos, HydPrim1D &w,
                           const Real tguess, Real &temp, Real &pgas, Real &g1,
                           bool &dfloor_used, bool &efloor_used, bool &tfloor_used,
                           Real &efloor_de, bool &mom_scaled, Real &dfloor_fv,
-                          bool &vceil_used, bool &vceil_test) {
+                          bool &vceil_used, bool &vceil_test, bool &tclamp_used) {
   // THE DENSITY FLOOR.  Default: raise u.d and leave m and E alone -- which changes the
   // velocity and creates internal energy, because the kinetic share of the fixed total
   // drops when rho goes up.  <block>/dfloor_keep_velocity instead scales the momentum by
@@ -216,7 +217,7 @@ void SingleC2P_GeneralHyd(HydCons1D &u, const EOS_Data &eos, HydPrim1D &w,
   bool stale = !e_positive;
   if (e_positive) {
     // fused: the inversion and the evaluation that follows it share their logarithms
-    eos.TemperaturePressureGamma1(w.d, w.e, tguess, temp, pgas, g1);
+    eos.TemperaturePressureGamma1(w.d, w.e, tguess, temp, pgas, g1, tclamp_used);
   }
 
   if (!e_positive || pgas < eos.pfloor) {
