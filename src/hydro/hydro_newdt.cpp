@@ -15,6 +15,7 @@
 #include "athena.hpp"
 #include "mesh/mesh.hpp"
 #include "driver/driver.hpp"
+#include "coordinates/cell_locations.hpp"
 #include "eos/eos.hpp"
 #include "hydro.hpp"
 #include "diffusion/conduction.hpp"
@@ -60,7 +61,7 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
   const int nmkji = (pmy_pack->nmb_thispack)*nx3*nx2*nx1;
   const int nkji = nx3*nx2*nx1;
   const int nji  = nx2*nx1;
-    
+
   auto &use_cubed_sphere = pmy_pack->pmesh->use_cubed_sphere;
   auto &use_spherical_polar = pmy_pack->pmesh->use_spherical_polar;
   auto &dx1_ = pmy_pack->pcoord->dx1;
@@ -197,6 +198,8 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
     auto &x1v_ = pmy_pack->pcoord->x1v;
     auto &wtemp_ = pmy_pack->phydro->wtemp;
     auto eos_ = eos;
+    const bool curvilinear_ = (use_cubed_sphere || use_spherical_polar);
+    const int is_ = is, nx1_ = nx1;
     par_for("hyd_dtdiag", DevExeSpace(), 0, 0, KOKKOS_LAMBDA(const int) {
       const Real d = w0_(dm,IDN,dk,dj,di);
       Real pr, cs;
@@ -210,7 +213,11 @@ TaskStatus Hydro::NewTimeStep(Driver *pdrive, int stage) {
         pr = d*SQR(eos_.iso_cs);
         cs = eos_.iso_cs;
       }
-      dd.d_view(0) = x1v_(dm,di);
+      // x1v is allocated only on spherical-polar/cubed-sphere grids; on a Cartesian
+      // grid it is a (1,1) dummy, so build the cell-centre position from the block size
+      dd.d_view(0) = curvilinear_ ? x1v_(dm,di)
+                   : CellCenterX(di-is_, nx1_, mbsize.d_view(dm).x1min,
+                                 mbsize.d_view(dm).x1max);
       dd.d_view(1) = d;
       dd.d_view(2) = eos_.IsGeneral() ? wtemp_(dm,dk,dj,di) : (pr/d);
       dd.d_view(3) = pr;
