@@ -1849,7 +1849,7 @@ void HydrostaticEquilibrium(Mesh *pm) {
     par_for("usrboundaryx1_bcc_outer", DevExeSpace(),0,(nmb-1),0,(n3-1),0,(n2-1),
     KOKKOS_LAMBDA(int m, int k, int j) {
         if (mb_bcs.d_view(m,BoundaryFace::outer_x1) == BoundaryFlag::user &&
-            pmbp->pmhd != nullptr) {
+            is_mhd_) {
           for (int i=0; i<ng; ++i) {
             Real lw, rw;
             lw = (x1f_(m,(ie+i+1)+1)-x1v_(m,(ie+i+1)))/(x1f_(m,(ie+i+1)+1)-x1f_(m,(ie+i+1)));
@@ -1889,7 +1889,7 @@ void HydrostaticEquilibrium(Mesh *pm) {
 //          Real q0_i = log(e_i);
 //          Real factor_i = rho_i/e_i*igm1;
           for (int i=0; i<ng; ++i) {
-            if (pmbp->pmhd != nullptr) {
+            if (is_mhd_) {
               // the OLD ghost magnetic energy was removed in usrboundaryx1_demag_inner,
               // before the reflection overwrote the faces it was built from; here only
               // the NEW one is added back.  See the note on that kernel.
@@ -2006,7 +2006,7 @@ void HydrostaticEquilibrium(Mesh *pm) {
           Real factor_i = rho_i/e_i*igm1;
           for (int i=0; i<ng; ++i) {
             Real dM1mag = 0.0;
-            if (pmbp->pmhd != nullptr) {
+            if (is_mhd_) {
               // bcc0 in these ghost cells was built by usrboundaryx1_bcc_outer above.
               if (bc_outer_maxwell_) {
               // (k,j+1) and (k+1,j) are read here. They belong to other threads, which is
@@ -2109,7 +2109,7 @@ void HydrostaticEquilibrium(Mesh *pm) {
             }
             u0_(m,IEN,k,j,(ie+i+1)) = e0_ip + ke_g;
             if (use_etotgrav) u0_(m,IEN,k,j,(ie+i+1)) += rho0_ip*phicc0(m,k,j,(ie+i+1));
-            if (pmbp->pmhd != nullptr) u0_(m,IEN,k,j,(ie+i+1)) +=  0.5*(SQR(bcc0(m,IBX,k,j,(ie+i+1)))+SQR(bcc0(m,IBY,k,j,(ie+i+1)))+SQR(bcc0(m,IBZ,k,j,(ie+i+1))));
+            if (is_mhd_) u0_(m,IEN,k,j,(ie+i+1)) +=  0.5*(SQR(bcc0(m,IBX,k,j,(ie+i+1)))+SQR(bcc0(m,IBY,k,j,(ie+i+1)))+SQR(bcc0(m,IBZ,k,j,(ie+i+1))));
           }
         }
     });
@@ -2389,6 +2389,10 @@ void SourceFunc(Mesh *pm, Real bdt) {
     
     picket_fence_two_stream_RT(pm, bdt);
 
+    // which fluid module is on, as VALUES: dereferencing the host pointer `pmbp`
+    // inside a device lambda is illegal on a discrete GPU (see CLAUDE.md).
+    const bool is_hydro_ = (pmbp->phydro != nullptr);
+    const bool is_mhd_ = (pmbp->pmhd != nullptr);
     par_for("usrsource", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         
@@ -2458,9 +2462,9 @@ void SourceFunc(Mesh *pm, Real bdt) {
           // dispatches to the ideal-gas closed forms or to the general-EOS background and
           // returns pressure directly, not an energy to be multiplied by (gamma-1).
           Real pl,pr,dum1,dum2,dum3;
-          if (pmbp->phydro != nullptr) {
+          if (is_hydro_) {
               WBReadCache(wbq0_, WBVar::wb_pres, m, k, j, i, dum1, pl, dum2, pr, dum3);
-          } else if (pmbp->pmhd != nullptr) {
+          } else if (is_mhd_) {
               WBReadCache(wbq0_, WBVar::wb_pres, m, k, j, i, dum1, pl, dum2, pr, dum3);
           }
           src = bdt*(area_r*(pr-p)+area_l*(p-pl))/vol;
