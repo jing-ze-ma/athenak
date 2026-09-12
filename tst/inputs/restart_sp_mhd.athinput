@@ -1,0 +1,114 @@
+# AthenaK input file: SPHERICAL-POLAR MHD radial double rarefaction, restart-bitwise
+# regression test.  The mesh and the shock tube are those of fofc_mhd_sp.athinput, at a
+# smaller size.
+#
+# WHY THIS CASE EXISTS.  The two rarefactions open a near-vacuum in the middle of the
+# shell, so the DENSITY AND PRESSURE FLOORS fire, and ConsToPrim writes its floor
+# corrections back into the CONSERVED array at the END of a stage -- after the ghosts
+# for that stage were filled from the PRE-floor u0.  The restart file therefore holds a
+# post-floor u0 whose ghost zones were made from a pre-floor one, and refilling the
+# ghosts on restart cannot reproduce them by any fill in general; keeping the ghosts the
+# file restored (commit 2667d984) is what makes the restart a bitwise continuation.
+# Measured here, the reflecting/polar/periodic fills of this problem happen to BE
+# reproducible, so <time>/restart_refill_ghosts=true does not break this case -- the
+# unreproducible fills are the ones a USER boundary hook performs (red giant, deep hot
+# Jupiter), which this suite cannot build.  The case still gates the floor path itself:
+# floors fire in thousands of cells per cycle here.
+#
+# The polar boundary and the reflecting radial walls are exercised on top of that.  The
+# guide field is purely AZIMUTHAL (b3 = const), divergence-free on this grid.
+
+<comment>
+problem = spherical-polar MHD double rarefaction, restart-bitwise test
+
+<job>
+basename = restart_sp_mhd
+
+<mesh>
+nghost = 3
+nx1    = 32            # RADIAL
+x1min  = 0.5
+x1max  = 1.5
+ix1_bc = reflect
+ox1_bc = reflect
+
+nx2    = 16            # theta; -1.0 selects the full 0..pi range
+x2min  = -1.0
+x2max  = -1.0
+ix2_bc = polar
+ox2_bc = polar
+
+nx3    = 8             # phi; -1.0 selects the full 0..2pi range
+x3min  = -1.0
+x3max  = -1.0
+ix3_bc = periodic
+ox3_bc = periodic
+
+use_spherical_polar   = true
+use_polar_boundary    = true
+polar_quadratic_recon = false
+
+<meshblock>
+nx1 = 32
+nx2 = 16
+nx3 = 4   # mesh nx3 / meshblock nx3 must be EVEN with polar boundaries
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim       = 20
+tlim       = 100.0
+ndiag      = 100000
+
+<mhd>
+eos          = ideal
+reconstruct  = plm
+rsolver      = hlld
+gamma        = 1.4
+dfloor       = 1.0e-4
+pfloor       = 1.0e-4
+fofc         = true
+fofc_rsolver = llf
+
+<problem>
+pgen_name = shock_tube
+shock_dir = 1
+xshock    = 1.0
+
+dl  = 1.0
+pl  = 0.4
+ul  = -20.0
+vl  = 0.0
+wl  = 0.0
+bxl = 0.0
+byl = 0.0
+bzl = 0.1
+
+dr  = 1.0
+pr  = 0.4
+ur  = 20.0
+vr  = 0.0
+wr  = 0.0
+bxr = 0.0
+byr = 0.0
+bzr = 0.1
+
+<output1>
+file_type = rst
+dcycle    = 10
+
+<output2>
+file_type   = bin
+variable    = mhd_u_bcc
+ghost_zones = true
+dcycle      = 1000000
+
+<output3>
+file_type   = tab      # a radial line at full double precision (the bin dump is 32-bit)
+variable    = mhd_u_bcc
+data_format = %26.17e
+ghost_zones = true
+slice_x2    = 1.5707963267948966
+slice_x3    = 3.141592653589793
+dcycle      = 1000000

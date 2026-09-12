@@ -1,0 +1,111 @@
+# AthenaK input file: CUBED-SPHERE MHD radial double rarefaction, restart-bitwise
+# regression test.  The mesh and the shock tube are those of fofc_mhd_cs.athinput, at a
+# smaller size.
+#
+# WHY THIS CASE EXISTS.  Same floor mechanism as restart_sp_mhd.athinput (see there),
+# but the ghost zones at stake here are the PANEL-SEAM and CUBE-VERTEX CORNER ones: the
+# seam exchange resamples from the neighbouring panel's u0, the corner fill extrapolates
+# from those, and this grid applies deferred floors of its own in
+# Coordinates::GnomonicEquiangleRaiseVelMHD.  That whole chain has to come back from the
+# restart file unchanged.  (Measured: it does, and it is also reproducible by a refill,
+# so <time>/restart_refill_ghosts=true does not break this case either.)
+#
+# The field is AZIMUTHAL, B = bazi*(-y, x, 0), laid down as the discrete curl of a
+# vector potential on the edges CT integrates over, so div B is round-off by
+# construction and B.rhat = 0 at the reflecting radial walls.
+
+<comment>
+problem = cubed-sphere MHD double rarefaction, restart-bitwise test
+
+<job>
+basename = restart_cs_mhd
+
+<mesh>
+nghost = 3             # FOFC with PLM requires nghost >= 3
+nx1    = 16            # RADIAL
+x1min  = 0.5
+x1max  = 1.5
+ix1_bc = reflect
+ox1_bc = reflect
+
+nx2    = 8             # xi; nx2 must equal nx3
+x2min  = -1.0
+x2max  = 1.0
+ix2_bc = panel
+ox2_bc = panel
+
+nx3    = 8             # eta
+x3min  = -1.0
+x3max  = 1.0
+ix3_bc = panel
+ox3_bc = panel
+
+use_cubed_sphere = true
+
+<meshblock>
+nx1 = 16
+nx2 = 8
+nx3 = 8
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim       = 20
+tlim       = 100.0
+ndiag      = 100000
+
+<mhd>
+eos          = ideal
+reconstruct  = plm
+rsolver      = hlld
+gamma        = 1.4
+dfloor       = 1.0e-4
+pfloor       = 1.0e-4
+fofc         = true
+fofc_rsolver = llf
+vceil        = 0.0
+
+<problem>
+pgen_name = shock_tube
+shock_dir = 1
+xshock    = 1.0
+
+bazi      = 0.1         # AZIMUTHAL amplitude: B = bazi*(-y, x, 0), so B.rhat = 0
+
+dl  = 1.0
+pl  = 0.4
+ul  = -20.0
+vl  = 0.0
+wl  = 0.0
+bxl = 0.0
+byl = 0.0
+bzl = 0.0
+
+dr  = 1.0
+pr  = 0.4
+ur  = 20.0
+vr  = 0.0
+wr  = 0.0
+bxr = 0.0
+byr = 0.0
+bzr = 0.0
+
+<output1>
+file_type = rst
+dcycle    = 10
+
+<output2>
+file_type   = bin
+variable    = mhd_u_bcc
+ghost_zones = true
+dcycle      = 1000000
+
+<output3>
+file_type   = tab      # a radial line at full double precision (the bin dump is 32-bit)
+variable    = mhd_u_bcc
+data_format = %26.17e
+ghost_zones = true
+slice_x2    = 0.0
+slice_x3    = 0.0
+dcycle      = 1000000

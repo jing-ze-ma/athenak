@@ -1,0 +1,89 @@
+# AthenaK input file: 1D Cartesian HYDRO linear wave, restart-bitwise regression test.
+#
+# The test (tst/test_suite/hydro/test_restart_bitwise_cpu.py) runs this twice: once
+# straight through <time>/nlim cycles, and once as a restart from the file written at
+# cycle nlim/2, and demands that the two final dumps are BITWISE identical.
+#
+# <output1> is the restart file, written every nlim/2 cycles (dcycle); <output2> is the
+# full conserved state INCLUDING GHOST ZONES, written by Driver::Finalize at the end of
+# each run (dcycle is large enough never to fire in between), and <output3> is the same
+# state as a formatted table at 17 significant digits, which -- unlike the binary dump,
+# whose floats are 32-bit -- round-trips a double exactly.
+#
+# This is the reference case: periodic BCs, no floors, no user hooks, ideal gas.  It
+# holds with and without <time>/restart_refill_ghosts, because a periodic refill
+# reproduces the ghosts exactly; it is here to catch any coarser restart regression
+# (wrong cycle/time bookkeeping, a stage of lag, dropped state).
+
+<comment>
+problem = 1D hydro linear wave, restart-bitwise regression test
+
+<job>
+basename = restart_lwave_hydro
+
+<mesh>
+nghost = 2
+nx1    = 64
+x1min  = 0.0
+x1max  = 1.0
+ix1_bc = periodic
+ox1_bc = periodic
+
+nx2    = 1
+x2min  = -0.5
+x2max  = 0.5
+ix2_bc = periodic
+ox2_bc = periodic
+
+nx3    = 1
+x3min  = -0.5
+x3max  = 0.5
+ix3_bc = periodic
+ox3_bc = periodic
+
+<meshblock>
+nx1 = 32          # two MeshBlocks, so the block-to-block exchange is exercised too
+nx2 = 1
+nx3 = 1
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim       = 20   # total cycles; the restart happens at cycle 10
+tlim       = 100.0
+ndiag      = 100000
+
+<hydro>
+eos         = ideal
+reconstruct = plm
+rsolver     = hllc
+gamma       = 1.66666666667
+
+<problem>
+pgen_name = linear_wave
+wave_flag = 0
+amp       = 1.0e-3
+dens      = 1.0
+pgas      = 0.6
+vx0       = 0.0
+along_x1  = true
+along_x2  = false
+along_x3  = false
+
+<output1>
+file_type = rst
+dcycle    = 10
+
+<output2>
+file_type   = bin
+variable    = hydro_u
+ghost_zones = true
+dcycle      = 1000000
+
+<output3>
+file_type   = tab
+variable    = hydro_u
+data_format = %26.17e
+ghost_zones = true
+dcycle      = 1000000
