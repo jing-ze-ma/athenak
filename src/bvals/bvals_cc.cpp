@@ -762,6 +762,40 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackCC(DvceArray5D<Real> &a,
 // are accurate, so each corner ghost is extrapolated quadratically from one, again from
 // the other, and the two are averaged. The stencil reads only the flanking strips, never
 // the corner block being written. Same-panel corners are left entirely alone.
+//
+// EACH EXTRAPOLANT GETS A SIGN-PRESERVING FALLBACK. The raw quadratic weights are not
+// positivity preserving -- with nghost = 3 the third ghost carries (10, -15, 6) -- and in
+// the red-giant run the density extrapolant went NEGATIVE in the layer above the
+// star-corona join, firing the density and energy floors ~1e6 times per output interval
+// in these ghost cells. The rule applied here is the weakest one that rules that out: if
+// the three stencil nodes all share a STRICT sign and the extrapolant comes out with the
+// opposite sign, or exactly zero, the extrapolant is replaced by the node ADJACENT to the
+// ghost -- it falls back to constant extrapolation there. In every other case it is kept
+// bit for bit. A positive density or internal energy above the red-giant star/corona join
+// therefore stays positive, while a smooth profile, where the quadratic never crosses
+// zero, is untouched, so the angular diffusion operator that reads this block through the
+// conduction cross term keeps its order. An earlier version instead CLAMPED every
+// extrapolant to the [min,max] of its three nodes; that also truncates smooth MONOTONE
+// data, which is what that operator is built from, and it pushed the nx = 32 Linf
+// residual of tst/test_suite/rad/test_rad_cs_raddiff_cpu.py from 0.0363 to 0.189 against
+// a 0.1 gate. The sign fallback leaves that test where it was.
+
+//----------------------------------------------------------------------------------------
+//! \fn SignPreserveCS
+//! \brief Sign-preserving fallback for a one-sided quadratic cube-vertex extrapolant.
+//! q is the extrapolant and (n0,n1,n2) the three stencil nodes it was built from, with n0
+//! the node ADJACENT to the ghost being filled. If n0, n1 and n2 all share a strict sign
+//! and q has the opposite sign or is exactly zero, q is discarded for n0, i.e. constant
+//! extrapolation; otherwise q is returned unchanged. See the note above the caller.
+
+KOKKOS_INLINE_FUNCTION
+static Real SignPreserveCS(const Real q, const Real n0, const Real n1, const Real n2) {
+  if (((n0 > 0.0) && (n1 > 0.0) && (n2 > 0.0) && !(q > 0.0)) ||
+      ((n0 < 0.0) && (n1 < 0.0) && (n2 < 0.0) && !(q < 0.0))) {
+    return n0;
+  }
+  return q;
+}
 
 void MeshBoundaryValuesCC::FillPanelCornersCC(DvceArray5D<Real> &a, bool coarse) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -814,10 +848,19 @@ void MeshBoundaryValuesCC::FillPanelCornersCC(DvceArray5D<Real> &a, bool coarse)
     const int aj = (sj < 0) ? js : je;
     const int ak = (sk < 0) ? ks : ke;
 
-    const Real ek = wk0*a_(m,v,ak,jt,i) + wk1*a_(m,v,ak+stk,jt,i)
-                  + wk2*a_(m,v,ak+2*stk,jt,i);
-    const Real ej = wj0*a_(m,v,kt,aj,i) + wj1*a_(m,v,kt,aj+stj,i)
-                  + wj2*a_(m,v,kt,aj+2*stj,i);
+    const Real k0 = a_(m,v,ak,jt,i);
+    const Real k1 = a_(m,v,ak+stk,jt,i);
+    const Real k2 = a_(m,v,ak+2*stk,jt,i);
+    const Real j0 = a_(m,v,kt,aj,i);
+    const Real j1 = a_(m,v,kt,aj+stj,i);
+    const Real j2 = a_(m,v,kt,aj+2*stj,i);
+    Real ek = wk0*k0 + wk1*k1 + wk2*k2;
+    Real ej = wj0*j0 + wj1*j1 + wj2*j2;
+    // SIGN-PRESERVING FALLBACK -- see the note above the function.  It only fires when
+    // the three nodes share a strict sign and the extrapolant flips it (or zeroes it),
+    // and then drops to the node next to the ghost; smooth data is kept exactly.
+    ek = SignPreserveCS(ek, k0, k1, k2);
+    ej = SignPreserveCS(ej, j0, j1, j2);
     a_(m,v,kt,jt,i) = 0.5*(ek + ej);
     if (poison_) { a_(m,v,kt,jt,i) = 1.0e30; }   // DEBUG: see <mesh>/cs_corner_poison
   });

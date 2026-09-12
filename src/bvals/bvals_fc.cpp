@@ -1023,6 +1023,17 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
 // the O(dx^3) local error the face halo already has, and the stencil only ever reads the
 // two flanking face-halo strips, never the corner block being written.
 //
+// EACH EXTRAPOLANT GETS A SIGN-PRESERVING FALLBACK, the same rule as in
+// FillPanelCornersCC and applied to every field component: if the three stencil nodes all
+// share a strict sign and the extrapolant comes out with the opposite sign, or exactly
+// zero, it is replaced by the node adjacent to the ghost (constant extrapolation);
+// otherwise it is kept bit for bit. The raw quadratic weights are not positivity
+// preserving -- with nghost = 3 the third ghost carries (10, -15, 6) -- which on the
+// cell-centred side drove the red-giant density extrapolant NEGATIVE above the
+// star/corona join. Because a smooth profile never trips the sign test, nothing changes
+// there and the corner ghost keeps its order; the earlier [min,max] node clamp did not
+// have that property. See the numbers quoted above FillPanelCornersCC.
+//
 // Called once at the end of RecvAndUnpackFC, when every face buffer is guaranteed
 // unpacked. Same-panel corners are left entirely alone.
 //
@@ -1040,6 +1051,23 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
 // are filled by their own buffers and were measured accurate. Ideal MHD never reaches
 // this block, but the resistive curl does: it is why cubed-sphere resistivity did not
 // reproduce its Linf under a plain radial split.
+
+//----------------------------------------------------------------------------------------
+//! \fn SignPreserveCS
+//! \brief Sign-preserving fallback for a one-sided quadratic cube-vertex extrapolant.
+//! q is the extrapolant and (n0,n1,n2) the three stencil nodes it was built from, with n0
+//! the node ADJACENT to the ghost being filled. If n0, n1 and n2 all share a strict sign
+//! and q has the opposite sign or is exactly zero, q is discarded for n0, i.e. constant
+//! extrapolation; otherwise q is returned unchanged. See the note above the caller.
+
+KOKKOS_INLINE_FUNCTION
+static Real SignPreserveCS(const Real q, const Real n0, const Real n1, const Real n2) {
+  if (((n0 > 0.0) && (n1 > 0.0) && (n2 > 0.0) && !(q > 0.0)) ||
+      ((n0 < 0.0) && (n1 < 0.0) && (n2 < 0.0) && !(q < 0.0))) {
+    return n0;
+  }
+  return q;
+}
 
 void MeshBoundaryValuesFC::FillPanelCornersFC(DvceFaceFld4D<Real> &b, bool coarse) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -1132,27 +1160,45 @@ void MeshBoundaryValuesFC::FillPanelCornersFC(DvceFaceFld4D<Real> &b, bool coars
 
     // b.x1f: cell indices in both j and k, faces in i
     if (!vfill_x1) {
-      const Real ek = wk0*b_.x1f(m,akc,jtc,i) + wk1*b_.x1f(m,akc+stk,jtc,i)
-                    + wk2*b_.x1f(m,akc+2*stk,jtc,i);
-      const Real ej = wj0*b_.x1f(m,ktc,ajc,i) + wj1*b_.x1f(m,ktc,ajc+stj,i)
-                    + wj2*b_.x1f(m,ktc,ajc+2*stj,i);
+      const Real k0 = b_.x1f(m,akc,jtc,i);
+      const Real k1 = b_.x1f(m,akc+stk,jtc,i);
+      const Real k2 = b_.x1f(m,akc+2*stk,jtc,i);
+      const Real j0 = b_.x1f(m,ktc,ajc,i);
+      const Real j1 = b_.x1f(m,ktc,ajc+stj,i);
+      const Real j2 = b_.x1f(m,ktc,ajc+2*stj,i);
+      Real ek = wk0*k0 + wk1*k1 + wk2*k2;
+      Real ej = wj0*j0 + wj1*j1 + wj2*j2;
+      ek = SignPreserveCS(ek, k0, k1, k2);
+      ej = SignPreserveCS(ej, j0, j1, j2);
       b_.x1f(m,ktc,jtc,i) = wblend*ek + (1.0-wblend)*ej;
     }
     if (i > (nc1-1)) return;
     // b.x2f: FACE index in j, cell index in k
     if (!vfill_cc) {
-      const Real ek = wk0*b_.x2f(m,akc,jtf,i) + wk1*b_.x2f(m,akc+stk,jtf,i)
-                    + wk2*b_.x2f(m,akc+2*stk,jtf,i);
-      const Real ej = wj0*b_.x2f(m,ktc,ajf,i) + wj1*b_.x2f(m,ktc,ajf+stj,i)
-                    + wj2*b_.x2f(m,ktc,ajf+2*stj,i);
+      const Real k0 = b_.x2f(m,akc,jtf,i);
+      const Real k1 = b_.x2f(m,akc+stk,jtf,i);
+      const Real k2 = b_.x2f(m,akc+2*stk,jtf,i);
+      const Real j0 = b_.x2f(m,ktc,ajf,i);
+      const Real j1 = b_.x2f(m,ktc,ajf+stj,i);
+      const Real j2 = b_.x2f(m,ktc,ajf+2*stj,i);
+      Real ek = wk0*k0 + wk1*k1 + wk2*k2;
+      Real ej = wj0*j0 + wj1*j1 + wj2*j2;
+      ek = SignPreserveCS(ek, k0, k1, k2);
+      ej = SignPreserveCS(ej, j0, j1, j2);
       b_.x2f(m,ktc,jtf,i) = wblend*ek + (1.0-wblend)*ej;
     }
     // b.x3f: cell index in j, FACE index in k
     if (!vfill_cc) {
-      const Real ek = wk0*b_.x3f(m,akf,jtc,i) + wk1*b_.x3f(m,akf+stk,jtc,i)
-                    + wk2*b_.x3f(m,akf+2*stk,jtc,i);
-      const Real ej = wj0*b_.x3f(m,ktf,ajc,i) + wj1*b_.x3f(m,ktf,ajc+stj,i)
-                    + wj2*b_.x3f(m,ktf,ajc+2*stj,i);
+      const Real k0 = b_.x3f(m,akf,jtc,i);
+      const Real k1 = b_.x3f(m,akf+stk,jtc,i);
+      const Real k2 = b_.x3f(m,akf+2*stk,jtc,i);
+      const Real j0 = b_.x3f(m,ktf,ajc,i);
+      const Real j1 = b_.x3f(m,ktf,ajc+stj,i);
+      const Real j2 = b_.x3f(m,ktf,ajc+2*stj,i);
+      Real ek = wk0*k0 + wk1*k1 + wk2*k2;
+      Real ej = wj0*j0 + wj1*j1 + wj2*j2;
+      ek = SignPreserveCS(ek, k0, k1, k2);
+      ej = SignPreserveCS(ej, j0, j1, j2);
       b_.x3f(m,ktf,jtc,i) = wblend*ek + (1.0-wblend)*ej;
     }
   });
