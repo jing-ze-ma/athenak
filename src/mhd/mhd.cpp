@@ -349,7 +349,7 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
                      (pmy_pack->pmesh->use_cubed_sphere ? 0.5 : 0.0));
     {
       // per-sweep mask; accept the earlier boolean spelling too
-      std::string s = pin->GetOrAddString("mhd","polar_hlle_rows","7");
+      std::string s = pin->GetOrAddString("mhd","polar_hlle_rows","6");
       if (s == "true") polar_hlle_rows = 7;
       else if (s == "false") polar_hlle_rows = 0;
       else polar_hlle_rows = std::stoi(s);
