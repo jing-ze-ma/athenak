@@ -321,6 +321,20 @@ void MHD::FOFC(Driver *pdriver, int stage) {
       }, Kokkos::Sum<int>(nflag_));
       pmy_pack->pmesh->ecounter.nfofc += nflag_;
     }
+    // Accumulate the PER-CELL FOFC flag count for the `mhd_fofc` output variable.
+    // Placed after every writer of the flag array and before the flux kernel that reads
+    // and clears it, so it sees exactly the set of cells this stage flagged -- the same
+    // set the scalar `fofc` column of the event-log output counts.  It reads the flags
+    // and writes only its own array: where and how the correction is applied is
+    // untouched.  Reset to zero when the output variable is loaded (derived_variables).
+    {
+      auto fofcf_ = fofc;
+      auto fcnt_ = fofc_cnt;
+      par_for("FOFC-count", DevExeSpace(), 0, nmb-1, kl, ku, jl, ju, il, iu,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        if (fofcf_(m,k,j,i)) { fcnt_(m,k,j,i) += 1.0; }
+      });
+    }
   }
 
   auto &coord = pmy_pack->pcoord->coord_data;

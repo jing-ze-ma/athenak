@@ -166,6 +166,13 @@ class MHD {
   // following used for FOFC algorithm
   DvceArray4D<bool> fofc;  // flag for each cell to indicate if FOFC is needed
   bool use_fofc = false;   // flag to enable FOFC
+  // Per-cell count of FOFC flags, for the `mhd_fofc` output variable: incremented by
+  // one in every stage in which the cell was flagged, so a dump answers "WHERE did FOFC
+  // fire", which the scalar <output>/file_type=log column cannot.  Allocated only when
+  // use_fofc is true, and RESET TO ZERO each time the output variable is loaded, so a
+  // dump holds the flags accumulated since the previous dump of it.  Not carried in
+  // restart files.
+  DvceArray4D<Real> fofc_cnt;
   // <mhd>/fofc_rsolver = llf (default) | hlle -- which SINGLE-STATE solver the
   // first-order fallback uses.  LLF is the most diffusive and the traditional FOFC
   // fallback; HLLE restores the contact-adjacent accuracy at a small cost in

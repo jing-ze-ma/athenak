@@ -67,6 +67,29 @@ void BaseTypeOutput::ComputeDerivedVariable(std::string name, Mesh *pm) {
     i_dv += 1; // increment derived variable index
   }
 
+  // PER-CELL FOFC FLAG COUNT.  Copies the running count kept by Hydro::FOFC / MHD::FOFC
+  // (one per stage in which the cell was flagged) into the derived-variable array, then
+  // RESETS the counter to zero: a dump therefore holds the flags accumulated since the
+  // PREVIOUS dump of this variable, exactly as the `fofc` column of the event-log output
+  // holds the count since the previous log line.  The count is not written to, or
+  // restored from, restart files -- a restarted run starts counting from zero.
+  // The full array, ghost zones included, is copied so that <output>/ghost_zones = true
+  // shows the boundary band the flagging loop also covers.
+  if (name.compare("hydro_fofc") == 0 ||
+      name.compare("mhd_fofc") == 0) {
+    if (derived_var.extent(4) <= 1)
+      Kokkos::realloc(derived_var, nmb, n_dv, n3, n2, n1);
+    auto dv = derived_var;
+    auto fcnt_ = (name.compare("hydro_fofc") == 0)?
+      pm->pmb_pack->phydro->fofc_cnt : pm->pmb_pack->pmhd->fofc_cnt;
+    par_for("fofc_cnt", DevExeSpace(), 0, (nmb-1), 0, (n3-1), 0, (n2-1), 0, (n1-1),
+    KOKKOS_LAMBDA(int m, int k, int j, int i) {
+      dv(m,i_dv,k,j,i) = fcnt_(m,k,j,i);
+    });
+    Kokkos::deep_copy(fcnt_, 0.0);
+    i_dv += 1; // increment derived variable index
+  }
+
   // z-component of vorticity.
   // Not computed in ghost zones since requires derivative
   if (name.compare("hydro_wz") == 0 ||

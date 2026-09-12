@@ -43,7 +43,8 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
     pwb("preswb",1,1,1,1),
     pfacewb("presfwb",1,1,1,1),
     utest("utest",1,1,1,1,1),
-    fofc("fofc",1,1,1,1) {
+    fofc("fofc",1,1,1,1),
+    fofc_cnt("fofc_cnt",1,1,1,1) {
   // Total number of MeshBlocks on this rank to be used in array dimensioning
   int nmb = std::max((ppack->nmb_thispack), (ppack->pmesh->nmb_maxperrank));
 
@@ -461,6 +462,9 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
       if (use_fofc) {
         Kokkos::realloc(fofc,  nmb, ncells3, ncells2, ncells1);
         Kokkos::realloc(utest, nmb, nhydro, ncells3, ncells2, ncells1);
+        // per-cell FOFC flag count for the `hydro_fofc` output variable (hydro.hpp)
+        Kokkos::realloc(fofc_cnt, nmb, ncells3, ncells2, ncells1);
+        Kokkos::deep_copy(fofc_cnt, 0.0);
         // the general-EOS single-state LLF fallback in hydro_fofc.cpp indexes wder;
         // fail loudly here rather than read a 1x1x1x1 placeholder on the device
         if (peos->eos_data.IsGeneral() &&

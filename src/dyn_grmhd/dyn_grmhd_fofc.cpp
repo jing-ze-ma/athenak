@@ -149,6 +149,18 @@ void DynGRMHDPS<EOSPolicy, ErrorPolicy>::FOFC(Driver *pdriver, int stage) {
     eos.ConsToPrim(utest_, pmy_pack->pmhd->b0, bcctest_,
                            pmy_pack->pmhd->w0, temperature,
                            il, iu, jl, ju, kl, ku, true);
+
+    // Accumulate the PER-CELL FOFC flag count for the `mhd_fofc` output variable; see
+    // the note in mhd.hpp.  Reads the flags only, after every writer of them and before
+    // the flux kernel that reads and clears them: the correction is untouched.
+    {
+      auto fofcf_ = pmy_pack->pmhd->fofc;
+      auto fcnt_ = pmy_pack->pmhd->fofc_cnt;
+      par_for("FOFC-count", DevExeSpace(), 0, nmb-1, kl, ku, jl, ju, il, iu,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        if (fofcf_(m,k,j,i)) { fcnt_(m,k,j,i) += 1.0; }
+      });
+    }
   }
 
   auto &use_fofc_ = pmy_pack->pmhd->use_fofc;

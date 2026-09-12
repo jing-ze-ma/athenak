@@ -63,7 +63,8 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
     pfacewb("presfwb",1,1,1,1),
     utest("utest",1,1,1,1,1),
     bcctest("bcctest",1,1,1,1,1),
-    fofc("fofc",1,1,1,1) {
+    fofc("fofc",1,1,1,1),
+    fofc_cnt("fofc_cnt",1,1,1,1) {
   // Total number of MeshBlocks on this rank to be used in array dimensioning
   int nmb = std::max((ppack->nmb_thispack), (ppack->pmesh->nmb_maxperrank));
 
@@ -589,6 +590,9 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
         Kokkos::realloc(utest,   nmb, nvars, ncells3, ncells2, ncells1);
         Kokkos::realloc(bcctest, nmb, 3,    ncells3, ncells2, ncells1);
         Kokkos::deep_copy(fofc, false);
+        // per-cell FOFC flag count for the `mhd_fofc` output variable (mhd.hpp)
+        Kokkos::realloc(fofc_cnt, nmb, ncells3, ncells2, ncells1);
+        Kokkos::deep_copy(fofc_cnt, 0.0);
       }
     }
   }

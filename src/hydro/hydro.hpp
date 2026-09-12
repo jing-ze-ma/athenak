@@ -141,6 +141,13 @@ class Hydro {
   // following used for FOFC
   DvceArray4D<bool> fofc;  // flag for each cell to indicate if FOFC is needed
   bool use_fofc = false;   // flag to enable FOFC
+  // Per-cell count of FOFC flags, for the `hydro_fofc` output variable: incremented by
+  // one in every stage in which the cell was flagged, so a dump answers "WHERE did FOFC
+  // fire", which the scalar <output>/file_type=log column cannot.  Allocated only when
+  // use_fofc is true, and RESET TO ZERO each time the output variable is loaded, so a
+  // dump holds the flags accumulated since the previous dump of it.  Not carried in
+  // restart files.
+  DvceArray4D<Real> fofc_cnt;
   // <problem>/nan_report: scan the fluxes and the conserved state for a non-finite value
   // after each stage-level operator and report the first offender.  Default false, in
   // which case not one extra kernel runs.  See the NanScan* helpers in hydro_tasks.cpp.

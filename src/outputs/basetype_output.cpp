@@ -161,6 +161,24 @@ BaseTypeOutput::BaseTypeOutput(ParameterInput *pin, Mesh *pm, OutputParameters o
        << out_params.block_name << "' but no Tmunu object has been constructed."
        << std::endl << "Input file is likely missing a <adm> block" << std::endl;
   }
+  // FOFC per-cell flag count: needs the module AND <hydro>/<mhd> fofc = true, since the
+  // counter array is allocated only when FOFC is on.
+  if (ivar==153 && (pm->pmb_pack->phydro == nullptr ||
+                    !(pm->pmb_pack->phydro->use_fofc))) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
+       << "Output variable 'hydro_fofc' requested in <output> block '"
+       << out_params.block_name << "', but FOFC is not enabled."
+       << std::endl << "Input file needs <hydro>/fofc = true" << std::endl;
+    exit(EXIT_FAILURE);
+  }
+  if (ivar==154 && (pm->pmb_pack->pmhd == nullptr ||
+                    !(pm->pmb_pack->pmhd->use_fofc))) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
+       << "Output variable 'mhd_fofc' requested in <output> block '"
+       << out_params.block_name << "', but FOFC is not enabled."
+       << std::endl << "Input file needs <mhd>/fofc = true" << std::endl;
+    exit(EXIT_FAILURE);
+  }
   if ((ivar>=151) && (ivar<153) && (pm->pmb_pack->ppart == nullptr)) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
        << "Output of particles requested in <output> block '"
@@ -540,6 +558,15 @@ BaseTypeOutput::BaseTypeOutput(ParameterInput *pin, Mesh *pm, OutputParameters o
       out_params.n_derived += 1;
       int i_derived = out_params.n_derived - 1;
       outvars.emplace_back("bmag",i_derived,&(derived_var));
+    }
+
+    // hydro/mhd per-cell count of FOFC flags since the previous dump of this variable
+    if (variable.compare("hydro_fofc") == 0 ||
+        variable.compare("mhd_fofc") == 0) {
+      out_params.contains_derived = true;
+      out_params.n_derived += 1;
+      int i_derived = out_params.n_derived - 1;
+      outvars.emplace_back("fofc_cnt",i_derived,&(derived_var));
     }
 
     // mhd divergence of B
