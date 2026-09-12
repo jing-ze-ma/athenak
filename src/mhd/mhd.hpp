@@ -195,6 +195,12 @@ class MHD {
   // CUBED SPHERE: plasma beta below which the flux falls back from HLLD to HLLE, per
   // FACE.  <= 0 disables it.  See rsolvers/cs_lowbeta_fallback.hpp for why this exists.
   Real cs_lowbeta_fallback = 0.0;
+  // Spherical polar: the ORIGINAL polar-boundary code swaps HLLD for HLLE on the rows
+  // adjacent to each pole (all three directions). The hydro module has no such swap, and
+  // the extra HLLE dissipation there drives a spurious deep meridional circulation
+  // (bench/sp_excess2: with HLLE in both modules B=0 MHD == hydro bitwise). Default keeps
+  // the swap; <mhd>/polar_hlle_rows = false runs HLLD on the polar rows too.
+  bool polar_hlle_rows = true;
 
   // CUBED SPHERE, MEASUREMENT ONLY: report how often that fallback actually FIRES, as a
   // profile in radius, every N cycles (0 = off).  It changes no answer.  The question it
