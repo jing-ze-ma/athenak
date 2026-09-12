@@ -370,9 +370,11 @@ bool spgguard_reported_ = false;    // has the first offender been printed
 // only report after the fact.  One reduction per operator, only when the switch is on.
 // Pointers, not Views, for the same reason as the guards above.
 bool nan_report_ = false;
-// problem/bc_use_cons: the ghost fills continue the interior cell from u0, not from the
-// previous stage's w0.  See state_i in RedGiantBC.  Default false: bit-identical.
-bool bc_use_cons_ = false;
+// (problem/bc_use_cons is gone: the ghost fills ALWAYS continue the interior cell from
+// u0.  Reading the previous stage's w0 made a restart non-reproducible -- w0 does not
+// live in the restart file and is still zero at the first physical-BC call of
+// Driver::Initialize -- so the old default is not a legal option.  See state_i in
+// RedGiantBC.)
 DvceArray1D<int> *nanrep_cnt_ = nullptr;
 DvceArray1D<Real> *nanrep_rec_ = nullptr;
 int nanrep_lines_ = 0;              // lines printed on this rank
@@ -830,7 +832,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   }
   sponge_on_ = pin->GetOrAddBoolean("problem", "sponge", true);
   nan_report_ = pin->GetOrAddBoolean("problem", "nan_report", false);
-  bc_use_cons_ = pin->GetOrAddBoolean("problem", "bc_use_cons", false);
   runaway_scan::on = pin->GetOrAddBoolean("problem","runaway_scan",false);
   runaway_scan::rmin = pin->GetOrAddReal("problem","runaway_rmin",3.3e12);
   runaway_scan::ratio_print = pin->GetOrAddReal("problem","runaway_ratio",3.0);
@@ -2891,7 +2892,6 @@ void RedGiantBC(Mesh *pm) {
   // allocated and filled over the FULL padded angular range, ghosts included.
   auto &ccell_b = pmbp->pcoord->cos_cell;
   const bool cs_b = pm->use_cubed_sphere;
-  const bool bc_uc = bc_use_cons_;
   const bool curv = curv_, etotgrav = etotgrav_;
   const Real gm = gm_, rin = rin_, x1min = x1min_, rgas = rgas_, igm1 = 1.0/gm1_;
   DvceArray4D<Real> phicc = is_mhd ? pmbp->pmhd->phicc0 : pmbp->phydro->phicc0;
@@ -2970,26 +2970,27 @@ void RedGiantBC(Mesh *pm) {
       grec(4) = d_i; grec(5) = e_i; grec(6) = t_i; grec(7) = p_g;
     }
   };
-  // <problem>/bc_use_cons: where the ghost fills read the interior cell they continue.
-  // ApplyPhysicalBCs runs AFTER RKUpdate, the user source terms (gravity, WB, the
+  // WHERE THE GHOST FILLS READ THE INTERIOR CELL THEY CONTINUE: always from u0, never
+  // from w0.  Two reasons, and the second is fatal.
+  // (1) ApplyPhysicalBCs runs AFTER RKUpdate, the user source terms (gravity, WB, the
   // two-stream) and the implicit radial conduction, and BEFORE ConToPrim -- so w0 here
   // is the previous stage's inversion and predates every one of those edits to u0.  In a
   // smooth cell the difference is O(dt); at the photosphere, which is exactly where these
-  // runs die, it is a systematic jump at the boundary face.  Reading u0 instead makes the
-  // ghost a continuation of the state the boundary actually has.  The velocity is RAISED
-  // with the gnomonic metric (the stored momentum is covariant, see
-  // GnomonicEquiangleRaiseVel), which is the inverse of the lowering the ghost write
-  // below performs, so the round trip is exact.  Default false: bit-identical.
+  // runs die, it is a systematic jump at the boundary face.
+  // (2) w0 IS NOT RESTART STATE.  restart.cpp writes u0 only (ghosts included), and
+  // Driver::InitBoundaryValuesAndPrimitives (driver.cpp) calls ApplyPhysicalBCs BEFORE
+  // ConToPrim, so at the first boundary call of a restarted run w0 is still zero: the
+  // `w0(...,is/ie) > 0` gates below then took the initial-column branch and overwrote the
+  // ghosts the file had restored with a state the running boundary never produces.  That
+  // made every radial ghost differ on a restart and ~17k active cells differ one cycle
+  // later.  Reading u0 -- which IS restored bitwise, and which the running boundary reads
+  // at exactly the same point of the update -- makes the fill idempotent, so a restart is
+  // a bitwise continuation, and it is the physically correct state as well.
+  // The velocity is RAISED with the gnomonic metric (the stored momentum is covariant,
+  // see GnomonicEquiangleRaiseVel), which is the inverse of the lowering the ghost write
+  // below performs, so the round trip is exact.
   auto state_i = [=] (const int m, const int k, const int j, const int im,
                       Real &d_i, Real &e_i, Real &v1, Real &v2, Real &v3) {
-    if (!bc_uc) {
-      d_i = w0(m,IDN,k,j,im);
-      e_i = w0(m,IEN,k,j,im);
-      v1 = w0(m,IVX,k,j,im);
-      v2 = w0(m,IVY,k,j,im);
-      v3 = w0(m,IVZ,k,j,im);
-      return;
-    }
     const Real cc = cs_b ? ccell_b(m,k,j) : 0.0;
     d_i = u0(m,IDN,k,j,im);
     e_i = EintFromCons(u0, m, k, j, im, cc, cs_b, etotgrav,
@@ -3102,23 +3103,24 @@ void RedGiantBC(Mesh *pm) {
   par_for("rg_bc_x1", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1, 0, ng-1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int n) {
     // AN OPEN GHOST NEEDS AN INTERIOR TO CONTINUE.  The boundary function runs before the
-    // problem generator has filled w0 -- twice, on the calls that set up the mesh -- and
-    // the primitives are then exactly zero.  Continuing THAT hydrostatically gives a
-    // pressure of NaN, and SolveDensity answers a NaN pressure with its 1e6 g/cm^3
+    // problem generator has filled the state -- twice, on the calls that set up the mesh
+    // -- and the conserved variables are then exactly zero.  Continuing THAT
+    // hydrostatically gives a pressure of NaN, and SolveDensity answers a NaN pressure
+    // with its 1e6 g/cm^3
     // sentinel: a ghost 17 orders of magnitude denser than the cell it sits against,
     // which destroys the outermost active cell on the first step and collapses the
     // timestep by 2e4 before the run has produced a single output.  Fall back to the
     // initial column whenever the neighbouring active cell has no state yet; once it
     // has, the continuation is used and at t = 0 it reproduces the column anyway.
     if (mb_bcs.d_view(m,BoundaryFace::inner_x1) == BoundaryFlag::user) {
-      if (open_in && w0(m,IDN,k,j,is) > 0.0) {
+      if (open_in && u0(m,IDN,k,j,is) > 0.0) {
         fill_open(m, k, j, is-1-n, is);      // always from the lowest ACTIVE cell
       } else {
         fill(m, k, j, is-1-n, is+n);
       }
     }
     if (mb_bcs.d_view(m,BoundaryFace::outer_x1) == BoundaryFlag::user) {
-      if (open_out && w0(m,IDN,k,j,ie) > 0.0) {
+      if (open_out && u0(m,IDN,k,j,ie) > 0.0) {
         fill_open_out(m, k, j, ie+1+n, ie);   // always from the highest ACTIVE cell
       } else {
         fill(m, k, j, ie+1+n, ie-n);
