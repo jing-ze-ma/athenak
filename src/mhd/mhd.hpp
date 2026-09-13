@@ -1052,6 +1052,8 @@ class MHD {
          const EOS_Data &eos, const WBOption wb_option,
          const bool use_wellbalance_dynamic, const bool use_wb_x1,
          const Real wb_rmax, const Real wb_rmin,
+         const bool use_wb_static_perturb,
+         const DvceArray4D<Real> &pwb, const DvceArray4D<Real> &pfwb,
          const int m, const int k, const int j, const int il, const int iu,
          const DvceArray5D<Real> &q, const DvceArray5D<Real> &qd,
          const DvceArray2D<Real> &xv, const DvceArray2D<Real> &xf,
@@ -1071,6 +1073,21 @@ class MHD {
           Real dxL = x_i-x_im1;
           Real dxR = x_ip1-x_i;
 
+          // the STATIC background is a field the problem generator supplied, so it
+          // needs no cache walk: subtract it, reconstruct the deviation on this grid's
+          // own non-uniform stencil, and add the FACE background back.  See the twin in
+          // Hydro::GridPiecewiseLinearDerX1.
+          if (n == (IDPR) && use_wb_static_perturb) {
+            const Real q0_im1 = pwb(m,k,j,i-1);
+            const Real q0_i   = pwb(m,k,j,i);
+            const Real q0_ip1 = pwb(m,k,j,i+1);
+            PLM_nonuniform(qd(m,n,k,j,i-1) - q0_im1, qd(m,n,k,j,i) - q0_i,
+                           qd(m,n,k,j,i+1) - q0_ip1, dxL, dxR, dxLh, dxRh,
+                           dl(n,i+1), dr(n,i));
+            dl(n,i+1) += pfwb(m,k,j,i+1);
+            dr(n,i)   += pfwb(m,k,j,i);
+            return;
+          }
           // the radius cutoffs have to match the primitive reconstruction just above,
           // or the Riemann solver would see a deviation pressure in a cell whose
           // primitives were reconstructed in full

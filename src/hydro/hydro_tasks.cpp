@@ -415,6 +415,16 @@ TaskStatus Hydro::Fluxes(Driver *pdrive, int stage) {
     }
   }
 
+  // Restore the FULL primitives before any operator that reads them as a physical
+  // state.  Under wellbalance_static_reconst the background was removed from w0 at the
+  // top of this task so the Riemann reconstruction sees the deviation; everything below
+  // -- the conduction and viscous fluxes, and every consumer downstream -- needs the
+  // real state.  (FOFC above is the one operator that must run on the deviation: it adds
+  // the background back itself, see hydro_fofc.cpp.)  A temperature computed from a
+  // deviation density and energy is meaningless, and on a stratified star that is the
+  // whole heat flux.
+  if (use_wellbalance_static_reconst_perturb) AddWbVar(w0wb,w0);
+
   // Add diffusion fluxes
   if (pcond != nullptr) {
     // the angular cap (<hydro>/rad_cap_ang) needs the step it is capping, and the
@@ -486,8 +496,6 @@ TaskStatus Hydro::RecvFlux(Driver *pdrive, int stage) {
 //! variables (u0) have already been partially updated when this fn called.
 
 TaskStatus Hydro::HydroSrcTerms(Driver *pdrive, int stage) {
-  if (use_wellbalance_static_reconst_perturb) AddWbVar(w0wb,w0);
-    
   Real beta_dt = (pdrive->beta[stage-1])*(pmy_pack->pmesh->dt);
 
   // <problem>/nan_report: this task runs immediately after RKUpdate, so u0 here is what
@@ -508,7 +516,7 @@ TaskStatus Hydro::HydroSrcTerms(Driver *pdrive, int stage) {
     
   // Add coordinate source terms in curvi-linear grid.  Again, must be computed with only primitives.
   if (pmy_pack->pmesh->use_cubed_sphere) {
-    pmy_pack->pcoord->SrcTermsGnomonicEquiangle(w0, wder, uflx, peos->eos_data,
+    pmy_pack->pcoord->SrcTermsGnomonicEquiangle(w0, wder, pwb, uflx, peos->eos_data,
                                                 beta_dt, u0);
     if (nan_report) NanScanCons(pmy_pack, u0, "after_GnomonicSrc");
   }

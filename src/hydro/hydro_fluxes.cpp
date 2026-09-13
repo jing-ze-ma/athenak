@@ -243,6 +243,8 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
       if (use_spherical_polar || str_r1_) {
         GridPiecewiseLinearDerX1(member, eos_, wb_option_, use_wellbalance_dynamic_,
                                  use_wb_x1_, wb_rmax_, wb_rmin_,
+                                 use_wellbalance_static_reconst_perturb_,
+                                 pwb_, pfacewb_x1f,
                                  m, k, j, il-1, iu, w0_, wder_,
                                  x1v_, x1f_, phicc0_, phi0_x1f, wbq0_, dl, dr);
       } else if (use_wellbalance_static_reconst_perturb_) {

@@ -163,6 +163,16 @@ bool etotgrav_ = false;
 // broken, which separates an overstability living in the SOURCE (a delayed or weakened
 // restoring force) from one living in the RECONSTRUCTION.  Not a production option.
 bool wb_grav_plain_ = false;
+// <problem>/wb_ramp [cm], 0 = a hard edge.  The STATIC well-balanced background is set to
+// zero outside [<hydro>/wb_rmin, <hydro>/wb_rmax], which is exactly the plain scheme
+// there -- a zero background makes the deviation the full state, the face background adds
+// nothing, the flux removal removes nothing and the gravity source is -rho g.  But the
+// deviation is reconstructed with a THREE-CELL stencil, so a hard step in the background
+// puts a step of the background's own size into the slope of the cell beside it.  wb_ramp
+// takes the background to zero over a raised cosine of this width instead; a few radial
+// cells is enough.  The scheme stays exactly consistent for any background field -- the
+// tapered one is simply less completely cancelled, ending at the plain scheme.
+Real wb_ramp_ = 0.0;
 
 // the initial column on a fine uniform grid in r: ln p [code] and T [K]
 DvceArray1D<Real> lnp_d_, tk_d_;
@@ -497,6 +507,36 @@ KOKKOS_INLINE_FUNCTION Real RadiusOf(const bool curv, const Real x1, const Real 
                                      const Real x1min) {
   return curv ? x1 : (rin + x1 - x1min);
 }
+// The STATIC well-balanced background's radial window: 1 inside [rmin, rmax], 0 outside,
+// with a raised-cosine ramp of width `ramp` on each side (ramp = 0: a hard edge).  A pure
+// function of r, so cells and faces see the same field and the scheme stays consistent.
+KOKKOS_INLINE_FUNCTION Real WbWindow(const Real r, const Real rmin, const Real rmax,
+                                     const Real ramp) {
+  Real w = 1.0;
+  if (rmax > 0.0) {
+    if (r >= rmax) return 0.0;
+    if (ramp > 0.0 && r > rmax - ramp) {
+      w *= 0.5*(1.0 - cos(M_PI*(rmax - r)/ramp));
+    }
+  }
+  if (rmin > 0.0) {
+    if (r <= rmin) return 0.0;
+    if (ramp > 0.0 && r < rmin + ramp) {
+      w *= 0.5*(1.0 - cos(M_PI*(r - rmin)/ramp));
+    }
+  }
+  return w;
+}
+
+// the STATIC background state at radius r: the initial column's (rho, e), tapered by the
+// window.  A free function, not a lambda captured inside the fill kernel: a device lambda
+// may not capture another host-defined lambda.
+KOKKOS_INLINE_FUNCTION
+void WbBgAt(const EOS_Data &eos, const Real rgas, const Real igm1,
+            const DvceArray1D<Real> &lnp, const DvceArray1D<Real> &tk, const int nf,
+            const Real rlo, const Real drf, const Real rmin, const Real rmax,
+            const Real ramp, const Real r, Real &dbg, Real &ebg);
+
 // the column at radius r: ln p (code) and T (K), linear in r between fine nodes
 KOKKOS_INLINE_FUNCTION void ColumnAt(const DvceArray1D<Real> &lnp,
                                      const DvceArray1D<Real> &tk, const int nfine,
@@ -509,6 +549,19 @@ KOKKOS_INLINE_FUNCTION void ColumnAt(const DvceArray1D<Real> &lnp,
   lp = lnp(ii)*(1.0 - f) + lnp(ii+1)*f;
   t = tk(ii)*(1.0 - f) + tk(ii+1)*f;
 }
+KOKKOS_INLINE_FUNCTION
+void WbBgAt(const EOS_Data &eos, const Real rgas, const Real igm1,
+            const DvceArray1D<Real> &lnp, const DvceArray1D<Real> &tk, const int nf,
+            const Real rlo, const Real drf, const Real rmin, const Real rmax,
+            const Real ramp, const Real r, Real &dbg, Real &ebg) {
+  Real lp, t;
+  ColumnAt(lnp, tk, nf, rlo, drf, r, lp, t);
+  const Real d = DensFromPT(eos, rgas, exp(lp), t);
+  const Real w = WbWindow(r, rmin, rmax, ramp);
+  dbg = w*d;
+  ebg = w*EintFromDensT(eos, rgas, igm1, d, t);
+}
+
 // the same as ColumnAt, on host mirrors, for the start-up checks
 template <typename V1>
 void ColumnAtHost(const V1 &lnp, const V1 &tk, const int nfine, const Real rlo,
@@ -851,6 +904,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       std::exit(EXIT_FAILURE);
     }
   }
+  // the ramp that takes the STATIC background to zero at wb_rmin / wb_rmax [cm]
+  wb_ramp_ = pin->GetOrAddReal("problem", "wb_ramp", 0.0)/lunit;
   sponge_on_ = pin->GetOrAddBoolean("problem", "sponge", true);
   nan_report_ = pin->GetOrAddBoolean("problem", "nan_report", false);
   runaway_scan::on = pin->GetOrAddBoolean("problem","runaway_scan",false);
@@ -1554,6 +1609,98 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       if (k == n3m1) ph3(m,k+1,j,i) = phi_c;
     });
   }
+  // --- the STATIC well-balanced background (<hydro>/wellbalance_static), needed on
+  // restarts too: it is the problem generator's own initial column, evaluated over the
+  // FULL arrays including every ghost zone, and it never evolves.
+  //
+  // WHY IT IS THE COLUMN.  The DYNAMIC scheme rebuilds a hydrostatic background from the
+  // current state in every stencil, so the background responds to the perturbation it is
+  // meant to be measured against; on this star that feedback drives an exponentially
+  // growing buoyancy mode in the deep radiative zone (RG_fofc_long2/mode).  A background
+  // fixed at the initial column cannot feed back, and it is a genuine hydrostatic
+  // solution of this problem's own EOS and gravity, so the deviation stays small
+  // wherever the star has not moved.
+  //
+  // WHAT MAKES IT BALANCED.  The deviation reconstruction hands the Riemann solver the
+  // face background wherever the deviation vanishes; RemoveWbFlux then subtracts exactly
+  // that face pressure from the momentum flux and the geometric source subtracts pwb, so
+  // a cell whose state IS the background gets zero momentum change from the flux
+  // divergence and the geometry together.  The gravity source below must therefore also
+  // vanish there, which is what -g*(rho - rho_bg) does -- to round-off, for any
+  // background field, however the background was built.
+  const bool wbstat = is_mhd ? pmbp->pmhd->use_wellbalance_static
+                             : pmbp->phydro->use_wellbalance_static;
+  if (wbstat && wbdyn) {
+    std::cout << "### FATAL ERROR in red_giant: wellbalance_static and "
+              << "wellbalance_dynamic are two backgrounds for one scheme; pick one"
+              << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  if (wbstat) {
+    const Real wbrmax = is_mhd ? pmbp->pmhd->wb_rmax : pmbp->phydro->wb_rmax;
+    const Real wbrmin = is_mhd ? pmbp->pmhd->wb_rmin : pmbp->phydro->wb_rmin;
+    const Real wbramp = wb_ramp_;
+    auto u0wb = is_mhd ? pmbp->pmhd->u0wb : pmbp->phydro->u0wb;
+    auto w0wb = is_mhd ? pmbp->pmhd->w0wb : pmbp->phydro->w0wb;
+    auto wf1 = is_mhd ? pmbp->pmhd->w0facewb.x1f : pmbp->phydro->w0facewb.x1f;
+    auto wf2 = is_mhd ? pmbp->pmhd->w0facewb.x2f : pmbp->phydro->w0facewb.x2f;
+    auto wf3 = is_mhd ? pmbp->pmhd->w0facewb.x3f : pmbp->phydro->w0facewb.x3f;
+    auto lnp_w = lnp_d_;
+    auto tk_w = tk_d_;
+    const int nfw = nfine_;
+    const Real rlo_w = rlo_, drf_w = drf_;
+    par_for("rg_wb_static", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1, 0, n1m1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real x1lo = size.d_view(m).x1min, x1hi = size.d_view(m).x1max;
+      const Real xc = curv ? x1v_(m,i) : CellCenterX(i-is, indcs.nx1, x1lo, x1hi);
+      const Real rc = RadiusOf(curv, xc, rin, x1min);
+      Real dbg, ebg;
+      WbBgAt(eos, rgas, igm1, lnp_w, tk_w, nfw, rlo_w, drf_w,
+             wbrmin, wbrmax, wbramp, rc, dbg, ebg);
+      w0wb(m,IDN,k,j,i) = dbg;
+      w0wb(m,IVX,k,j,i) = 0.0;
+      w0wb(m,IVY,k,j,i) = 0.0;
+      w0wb(m,IVZ,k,j,i) = 0.0;
+      w0wb(m,IEN,k,j,i) = ebg;
+      u0wb(m,IDN,k,j,i) = dbg;
+      u0wb(m,IM1,k,j,i) = 0.0;
+      u0wb(m,IM2,k,j,i) = 0.0;
+      u0wb(m,IM3,k,j,i) = 0.0;
+      // with etotgrav the conserved energy carries the potential, exactly as the initial
+      // state below does
+      u0wb(m,IEN,k,j,i) = ebg + (etotgrav ? dbg*PotAt(gm, rin, rc) : 0.0);
+      // the ANGULAR faces sit at the cell's own radius: the background is a function of
+      // r alone, so their state is the cell's
+      wf2(m,IDN,k,j,i) = dbg; wf2(m,IEN,k,j,i) = ebg;
+      wf3(m,IDN,k,j,i) = dbg; wf3(m,IEN,k,j,i) = ebg;
+      wf2(m,IVX,k,j,i) = 0.0; wf2(m,IVY,k,j,i) = 0.0; wf2(m,IVZ,k,j,i) = 0.0;
+      wf3(m,IVX,k,j,i) = 0.0; wf3(m,IVY,k,j,i) = 0.0; wf3(m,IVZ,k,j,i) = 0.0;
+      if (j == n2m1) {
+        wf2(m,IDN,k,j+1,i) = dbg; wf2(m,IEN,k,j+1,i) = ebg;
+        wf2(m,IVX,k,j+1,i) = 0.0; wf2(m,IVY,k,j+1,i) = 0.0; wf2(m,IVZ,k,j+1,i) = 0.0;
+      }
+      if (k == n3m1) {
+        wf3(m,IDN,k+1,j,i) = dbg; wf3(m,IEN,k+1,j,i) = ebg;
+        wf3(m,IVX,k+1,j,i) = 0.0; wf3(m,IVY,k+1,j,i) = 0.0; wf3(m,IVZ,k+1,j,i) = 0.0;
+      }
+      // the RADIAL faces take their own radius
+      const Real xl = curv ? x1f_(m,i) : LeftEdgeX(i-is, indcs.nx1, x1lo, x1hi);
+      Real dfl, efl;
+      WbBgAt(eos, rgas, igm1, lnp_w, tk_w, nfw, rlo_w, drf_w, wbrmin, wbrmax, wbramp,
+             RadiusOf(curv, xl, rin, x1min), dfl, efl);
+      wf1(m,IDN,k,j,i) = dfl; wf1(m,IEN,k,j,i) = efl;
+      wf1(m,IVX,k,j,i) = 0.0; wf1(m,IVY,k,j,i) = 0.0; wf1(m,IVZ,k,j,i) = 0.0;
+      if (i == n1m1) {
+        const Real xr = curv ? x1f_(m,i+1) : LeftEdgeX(i+1-is, indcs.nx1, x1lo, x1hi);
+        Real dfr, efr;
+        WbBgAt(eos, rgas, igm1, lnp_w, tk_w, nfw, rlo_w, drf_w, wbrmin, wbrmax, wbramp,
+               RadiusOf(curv, xr, rin, x1min), dfr, efr);
+        wf1(m,IDN,k,j,i+1) = dfr; wf1(m,IEN,k,j,i+1) = efr;
+        wf1(m,IVX,k,j,i+1) = 0.0; wf1(m,IVY,k,j,i+1) = 0.0; wf1(m,IVZ,k,j,i+1) = 0.0;
+      }
+    });
+  }
+
   if (restart) return;
 
   // --- the initial state
@@ -1932,6 +2079,15 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
   const bool wbdyn = is_mhd ? pmbp->pmhd->use_wellbalance_dynamic
                             : pmbp->phydro->use_wellbalance_dynamic;
   const bool wbx1 = is_mhd ? pmbp->pmhd->use_wb_x1 : pmbp->phydro->use_wb_x1;
+  // the STATIC well-balanced background (filled from the initial column in UserProblem).
+  // Its gravity source is -g*(rho - rho_bg): the background's own pressure difference has
+  // already been taken out of the momentum RHS by RemoveWbFlux and the geometric source,
+  // so a cell sitting exactly on the background must receive nothing here.  Where the
+  // background was windowed to zero (outside [wb_rmin, wb_rmax]) this IS -rho g, so the
+  // radius cutoffs need no branch of their own.
+  const bool wbstat = is_mhd ? pmbp->pmhd->use_wellbalance_static
+                             : pmbp->phydro->use_wellbalance_static;
+  auto w0wb = is_mhd ? pmbp->pmhd->w0wb : pmbp->phydro->w0wb;
   // outside [wb_rmin, wb_rmax] the reconstruction dropped the well-balanced background,
   // so the source term must drop it too: the two are only well balanced TOGETHER.  Both
   // modules carry the pair, so take it from whichever one is evolving the fluid --
@@ -1960,6 +2116,9 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
     const Real g = GravAt(gm, r);
     Real src = -bdt*g*d;
     if (!etotgrav) u0(m,IEN,k,j,i) += src*w0(m,IVX,k,j,i);
+    if (wbstat && !wbplain) {
+      src = -bdt*g*(d - w0wb(m,IDN,k,j,i));
+    }
     if (wbdyn && !wbplain && !(wbrmax > 0.0 && r > wbrmax) &&
         !(wbrmin > 0.0 && r < wbrmin)) {
       Real pl, pr, d1, d2, d3;

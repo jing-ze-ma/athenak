@@ -275,6 +275,14 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
     // determine if static wellbalance is enabled
     use_wellbalance_static = pin->GetOrAddBoolean("mhd","wellbalance_static",false);
     use_wellbalance_static_reconst_perturb = pin->GetOrAddBoolean("mhd","wellbalance_static_reconst",false);
+  // the deviation reconstruction reads the background arrays, which only
+  // wellbalance_static allocates -- the pair is one scheme, not two options
+  if (use_wellbalance_static_reconst_perturb && !use_wellbalance_static) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+              << std::endl << "<mhd>/wellbalance_static_reconst needs "
+              << "<mhd>/wellbalance_static = true" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
     // allocate array of flags used with wellbalance
     if (use_wellbalance_static) {
       auto &indcs = pmy_pack->pmesh->mb_indcs;

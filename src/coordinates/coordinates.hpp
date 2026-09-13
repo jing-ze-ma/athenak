@@ -124,11 +124,17 @@ class Coordinates {
   void GnomonicEquiangleLowerMom(const DvceArray5D<Real> &w0, DvceArray5D<Real> &u0,
                                  const int il, const int iu, const int jl, const int ju,
                                  const int kl, const int ku);
+  // pwb is the STATIC well-balanced background pressure (zero-sized and ignored unless
+  // the module's use_wellbalance_static is set); the cubed sphere subtracts it from the
+  // geometric source for exactly the reason spherical polar does -- see
+  // SrcTermsSphericalPolarHydro.
   void SrcTermsGnomonicEquiangle(const DvceArray5D<Real> &w0,
-      const DvceArray5D<Real> &wder, const DvceFaceFld5D<Real> uflx,
+      const DvceArray5D<Real> &wder, const DvceArray4D<Real> &pwb,
+      const DvceFaceFld5D<Real> uflx,
       const EOS_Data &eos_data, const Real bdt, DvceArray5D<Real> &u0);
   void SrcTermsGnomonicEquiangleMHD(const DvceArray5D<Real> &w0,
       const DvceArray5D<Real> &bcc0, const DvceArray5D<Real> &wder,
+      const DvceArray4D<Real> &pwb,
       const DvceFaceFld5D<Real> uflx, const EOS_Data &eos_data, const Real bdt,
       DvceArray5D<Real> &u0);
   // The face-sum (well-balanced) geometric source, shared by the cubed sphere and the
@@ -139,7 +145,8 @@ class Coordinates {
        DvceArray5D<Real> &u0, const DvceArray4D<Real> &pwb, const bool use_wb_static);
   void SrcTermsGnomonicEquiangleImpl(const DvceArray5D<Real> &w0,
       const DvceArray5D<Real> &bcc0, const bool is_mhd,
-      const DvceArray5D<Real> &wder, const DvceFaceFld5D<Real> uflx,
+      const DvceArray5D<Real> &wder, const DvceArray4D<Real> &pwb,
+      const bool use_wb_static, const DvceFaceFld5D<Real> uflx,
       const EOS_Data &eos_data, const Real bdt, DvceArray5D<Real> &u0);
     
     // GNOMONIC EQUIANGLE, x1 = RADIAL, xi = x2, eta = x3.

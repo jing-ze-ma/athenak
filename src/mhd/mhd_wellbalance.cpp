@@ -17,6 +17,21 @@
 
 namespace mhd {
 //----------------------------------------------------------------------------------------
+//! \brief the background pressure of ONE cell or face.
+//!
+//! A problem generator may switch the static background OFF over part of the domain by
+//! setting it to zero there (red_giant does this outside [wb_rmin, wb_rmax]): a zero
+//! background makes the deviation the full state, the face background adds nothing and
+//! the flux removal removes nothing, which is exactly the plain scheme.  The EOS must
+//! not be asked about that state -- a tabulated EOS takes log10 of the density and the
+//! internal energy and returns a NaN -- so it is short-circuited to zero here.
+
+KOKKOS_INLINE_FUNCTION
+Real WbPres(const EOS_Data &eos, const Real d, const Real e) {
+  return (d > 0.0 && e > 0.0) ? eos.Pressure(d, e) : 0.0;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void MHD::SetWbBackgroundPressure
 //! \brief evaluates the gas pressure of the static well-balanced background, once.
 //!
@@ -44,28 +59,28 @@ void MHD::SetWbBackgroundPressure() {
   auto &pc = pwb;
   par_for("wbsetpres", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1, 0, n1m1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    pc(m,k,j,i) = eos.Pressure(wc(m,IDN,k,j,i), wc(m,IEN,k,j,i));
+    pc(m,k,j,i) = WbPres(eos, wc(m,IDN,k,j,i), wc(m,IEN,k,j,i));
   });
 
   auto &wf1 = w0facewb.x1f;
   auto &pf1 = pfacewb.x1f;
   par_for("wbsetpresf1", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1, 0, n1m1+1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    pf1(m,k,j,i) = eos.Pressure(wf1(m,IDN,k,j,i), wf1(m,IEN,k,j,i));
+    pf1(m,k,j,i) = WbPres(eos, wf1(m,IDN,k,j,i), wf1(m,IEN,k,j,i));
   });
 
   auto &wf2 = w0facewb.x2f;
   auto &pf2 = pfacewb.x2f;
   par_for("wbsetpresf2", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1+1, 0, n1m1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    pf2(m,k,j,i) = eos.Pressure(wf2(m,IDN,k,j,i), wf2(m,IEN,k,j,i));
+    pf2(m,k,j,i) = WbPres(eos, wf2(m,IDN,k,j,i), wf2(m,IEN,k,j,i));
   });
 
   auto &wf3 = w0facewb.x3f;
   auto &pf3 = pfacewb.x3f;
   par_for("wbsetpresf3", DevExeSpace(), 0, nmb1, 0, n3m1+1, 0, n2m1, 0, n1m1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    pf3(m,k,j,i) = eos.Pressure(wf3(m,IDN,k,j,i), wf3(m,IEN,k,j,i));
+    pf3(m,k,j,i) = WbPres(eos, wf3(m,IDN,k,j,i), wf3(m,IEN,k,j,i));
   });
 
   return;
@@ -82,10 +97,23 @@ void MHD::RemoveWbFlux(const DvceFaceFld4D<Real> &pfacewb, DvceFaceFld5D<Real> &
      int ks = indcs.ks, ke = indcs.ke;
      int nmb1 = pmy_pack->nmb_thispack - 1;
      auto size = pmy_pack->pmb->mb_size;
-    
+
      // The background pressure is NOT (gamma-1)*e_bg -- the background primitives carry
      // their own density -- but it is also not asked of the EOS here: the background is
      // static, so SetWbBackgroundPressure() evaluated it once at startup.
+
+     // ON THE CUBED SPHERE the ANGULAR momentum fluxes are covariant components on a
+     // NON-ORTHOGONAL tangent basis, and GnomonicEquiangleFluxX2/X3 have already
+     // converted them: a face state at rest with pressure p leaves the Riemann solver as
+     // (IM2, IM3) = (p, 0) and comes out of that conversion as (p*sin, 0), sin being that
+     // FACE's own angle between the two tangent directions.  Subtracting a bare p there
+     // would leave a spurious ANGULAR force of order (1-sin)*p*A/V -- comparable with
+     // gravity, not a small error.  The radial face is unaffected (its transform leaves
+     // IM1 alone and maps (0,0) to (0,0)), and on every other grid the basis is
+     // orthonormal and the factor is 1.
+     const bool cs_ = pmy_pack->pmesh->use_cubed_sphere;
+     auto sin_xi = pmy_pack->pcoord->sin_face_xi;
+     auto sin_eta = pmy_pack->pcoord->sin_face_eta;
 
      //--------------------------------------------------------------------------------------
      // fluxes in x1-direction
@@ -107,7 +135,8 @@ void MHD::RemoveWbFlux(const DvceFaceFld4D<Real> &pfacewb, DvceFaceFld5D<Real> &
 
      par_for("wbremflux2",DevExeSpace(), 0, nmb1, ks, ke, js, je+1, is, ie,
      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-         flx2(m,IM2,k,j,i) -= pfacewb2(m,k,j,i);
+         flx2(m,IM2,k,j,i) -= cs_ ? pfacewb2(m,k,j,i)*sin_xi(m,k,j)
+                                  : pfacewb2(m,k,j,i);
      });
      if (pmy_pack->pmesh->two_d) {return;}
 
@@ -119,7 +148,8 @@ void MHD::RemoveWbFlux(const DvceFaceFld4D<Real> &pfacewb, DvceFaceFld5D<Real> &
 
      par_for("wbremflux3",DevExeSpace(), 0, nmb1, ks, ke+1, js, je, is, ie,
      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-         flx3(m,IM3,k,j,i) -= pfacewb3(m,k,j,i);
+         flx3(m,IM3,k,j,i) -= cs_ ? pfacewb3(m,k,j,i)*sin_eta(m,k,j)
+                                  : pfacewb3(m,k,j,i);
      });
 
      return;

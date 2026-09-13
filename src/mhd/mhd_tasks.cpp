@@ -230,6 +230,12 @@ TaskStatus MHD::Fluxes(Driver *pdrive, int stage) {
     }
   }
 
+  // Restore the FULL primitives before any operator that reads them as a physical
+  // state -- see the same note in Hydro::Fluxes.  The deviation form is for the Riemann
+  // reconstruction (and for FOFC, which adds the background back itself); conduction,
+  // viscosity and resistivity all need the real state.
+  if (use_wellbalance_static_reconst_perturb) AddWbVar(w0wb,w0);
+
   // Add diffusive fluxes
   if (pcond != nullptr) {
     // the angular cap (<mhd>/rad_cap_ang) needs the step it is capping, and the angular
@@ -305,8 +311,6 @@ TaskStatus MHD::RecvFlux(Driver *pdrive, int stage) {
 //! variables (u0) have already been partially updated when this fn called.
 
 TaskStatus MHD::MHDSrcTerms(Driver *pdrive, int stage) {
-  if (use_wellbalance_static_reconst_perturb) AddWbVar(w0wb,w0);
-    
   Real beta_dt = (pdrive->beta[stage-1])*(pmy_pack->pmesh->dt);
 
   // Add physics source terms (must be computed from primitives)
@@ -325,7 +329,7 @@ TaskStatus MHD::MHDSrcTerms(Driver *pdrive, int stage) {
     
   // Add coordinate source terms in curvi-linear grid.  Again, must be computed with only primitives.
   if (pmy_pack->pmesh->use_cubed_sphere && !cs_diag_no_coordsrc) {
-    pmy_pack->pcoord->SrcTermsGnomonicEquiangleMHD(w0, bcc0, wder, uflx,
+    pmy_pack->pcoord->SrcTermsGnomonicEquiangleMHD(w0, bcc0, wder, pwb, uflx,
                                                    peos->eos_data, beta_dt, u0);
   }
   if (pmy_pack->pmesh->use_spherical_polar) {

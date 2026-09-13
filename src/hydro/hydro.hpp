@@ -936,6 +936,8 @@ class Hydro {
          const EOS_Data &eos, const WBOption wb_option,
          const bool use_wellbalance_dynamic, const bool use_wb_x1,
          const Real wb_rmax, const Real wb_rmin,
+         const bool use_wb_static_perturb,
+         const DvceArray4D<Real> &pwb, const DvceArray4D<Real> &pfwb,
          const int m, const int k, const int j, const int il, const int iu,
          const DvceArray5D<Real> &q, const DvceArray5D<Real> &qd,
          const DvceArray2D<Real> &xv, const DvceArray2D<Real> &xf,
@@ -955,6 +957,25 @@ class Hydro {
           Real dxL = x_i-x_im1;
           Real dxR = x_ip1-x_i;
 
+          // the STATIC background is a field the problem generator supplied, so it
+          // needs no cache walk: subtract it, reconstruct the deviation on this grid's
+          // own non-uniform stencil, and add the FACE background back.  Without this the
+          // pressure the Riemann solver consumes under a general EOS would be plain PLM
+          // of the full stratified pressure while the primitives beside it are the
+          // deviation plus the exact face background, and the background would no longer
+          // cancel to round-off.  A zero background (the problem generator's way of
+          // switching the scheme off over part of the domain) reduces to plain PLM here.
+          if (n == (IDPR) && use_wb_static_perturb) {
+            const Real q0_im1 = pwb(m,k,j,i-1);
+            const Real q0_i   = pwb(m,k,j,i);
+            const Real q0_ip1 = pwb(m,k,j,i+1);
+            PLM_nonuniform(qd(m,n,k,j,i-1) - q0_im1, qd(m,n,k,j,i) - q0_i,
+                           qd(m,n,k,j,i+1) - q0_ip1, dxL, dxR, dxLh, dxRh,
+                           dl(n,i+1), dr(n,i));
+            dl(n,i+1) += pfwb(m,k,j,i+1);
+            dr(n,i)   += pfwb(m,k,j,i);
+            return;
+          }
           // the pressure channel must be cut off at the same radius as the (d,e) ones
           // above, or the Riemann solver would see a deviation pressure in a cell whose
           // primitives were reconstructed in full

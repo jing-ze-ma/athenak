@@ -1139,17 +1139,23 @@ void Coordinates::GnomonicEquiangleLowerMom(const DvceArray5D<Real> &w0,
 // Maxwell stress, so the two are kept in the same kernel rather than duplicated the way
 // SrcTermsSphericalPolar{Hydro,MHD} are.
 void Coordinates::SrcTermsGnomonicEquiangle(const DvceArray5D<Real> &w0,
-    const DvceArray5D<Real> &wder, const DvceFaceFld5D<Real> uflx,
+    const DvceArray5D<Real> &wder, const DvceArray4D<Real> &pwb,
+    const DvceFaceFld5D<Real> uflx,
     const EOS_Data &eos_data, const Real bdt, DvceArray5D<Real> &u0) {
-  SrcTermsGnomonicEquiangleImpl(w0, w0, false, wder, uflx, eos_data, bdt, u0);
+  SrcTermsGnomonicEquiangleImpl(w0, w0, false, wder, pwb,
+                                pmy_pack->phydro->use_wellbalance_static,
+                                uflx, eos_data, bdt, u0);
   return;
 }
 
 void Coordinates::SrcTermsGnomonicEquiangleMHD(const DvceArray5D<Real> &w0,
     const DvceArray5D<Real> &bcc0, const DvceArray5D<Real> &wder,
+    const DvceArray4D<Real> &pwb,
     const DvceFaceFld5D<Real> uflx, const EOS_Data &eos_data, const Real bdt,
     DvceArray5D<Real> &u0) {
-  SrcTermsGnomonicEquiangleImpl(w0, bcc0, true, wder, uflx, eos_data, bdt, u0);
+  SrcTermsGnomonicEquiangleImpl(w0, bcc0, true, wder, pwb,
+                                pmy_pack->pmhd->use_wellbalance_static,
+                                uflx, eos_data, bdt, u0);
   return;
 }
 
@@ -1449,7 +1455,8 @@ void Coordinates::SrcTermsCurvilinearWB(const DvceArray5D<Real> &w0,
 //----------------------------------------------------------------------------------------
 void Coordinates::SrcTermsGnomonicEquiangleImpl(const DvceArray5D<Real> &w0,
     const DvceArray5D<Real> &bcc0, const bool is_mhd,
-    const DvceArray5D<Real> &wder, const DvceFaceFld5D<Real> uflx,
+    const DvceArray5D<Real> &wder, const DvceArray4D<Real> &pwb,
+    const bool use_wb_static, const DvceFaceFld5D<Real> uflx,
     const EOS_Data &eos_data, const Real bdt, DvceArray5D<Real> &u0) {
 
   auto &size = pmy_pack->pmb->mb_size;
@@ -1470,6 +1477,8 @@ void Coordinates::SrcTermsGnomonicEquiangleImpl(const DvceArray5D<Real> &w0,
   auto &wder_ = wder;
   auto &bcc_ = bcc0;
   const bool mhd_ = is_mhd && !cs_diag_no_magsrc;
+  auto pwb_ = pwb;
+  const bool wbs_ = use_wb_static;
 
   if (cs_cart_momentum) {
     SrcTermsGnomonicCartMomentum(w0, bcc0, is_mhd, wder, uflx, eos_data, bdt, u0);
@@ -1477,7 +1486,7 @@ void Coordinates::SrcTermsGnomonicEquiangleImpl(const DvceArray5D<Real> &w0,
   }
   if (cs_wellbalanced_src) {
     SrcTermsCurvilinearWB(w0, bcc0, is_mhd, wder, eos_data, bdt, u0,
-                          DvceArray4D<Real>(), false);
+                          pwb, use_wb_static);
     return;
   }
 
@@ -1505,6 +1514,12 @@ void Coordinates::SrcTermsGnomonicEquiangleImpl(const DvceArray5D<Real> &w0,
     Real v3 = w0(m,IVZ,k,j,i);   // eta
     Real pr = gen_ ? wder_(m,IDPR,k,j,i)
                             : eos_.Pressure(w0(m,IDN,k,j,i), w0(m,IEN,k,j,i));
+    // subtract the STATIC well-balanced background pressure, precomputed once by
+    // SetWbBackgroundPressure(): the flux path already had it removed (RemoveWbFlux), so
+    // leaving it in the geometric source would leave the two halves of the momentum RHS
+    // describing different states, and the background would no longer be balanced.  Same
+    // substitution as SrcTermsSphericalPolarHydro / SrcTermsCurvilinearWB.
+    if (wbs_) pr -= pwb_(m,k,j,i);
     Real rho = w0(m,IDN,k,j,i);
 
     Real sine = sin_cell_(m,k,j);
