@@ -126,6 +126,7 @@ add_executable(
 
         pgen/pgen.cpp
         pgen/tests/advection.cpp
+        pgen/tests/balsara_vortex.cpp
         pgen/tests/collapse.cpp
         pgen/tests/cpaw.cpp
         pgen/tests/cshock.cpp

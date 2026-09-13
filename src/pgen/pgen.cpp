@@ -1012,6 +1012,8 @@ void ProblemGenerator::CallProblemGenerator(ParameterInput *pin, bool is_restart
     MRI3d(pin, is_restart);
   } else if (pgen_fun_name.compare("gresho_mhd") == 0) {
     GreshoMHD(pin, is_restart);
+  } else if (pgen_fun_name.compare("balsara_vortex") == 0) {
+    BalsaraVortex(pin, is_restart);
   } else if (pgen_fun_name.compare("orszag_tang") == 0) {
     OrszagTang(pin, is_restart);
   } else if (pgen_fun_name.compare("rad_linear_wave") == 0) {
