@@ -28,6 +28,7 @@
 //! allocated by the caller once the mesh exists.
 
 #include <math.h>
+#include <cstdio>
 
 #include <algorithm>
 #include <fstream>
@@ -48,6 +49,7 @@
 #include "utils/correlated_k.hpp"
 #include "utils/atm_column.hpp"
 #include "pgen/pgen_eos_utils.hpp"
+#include "utils/rad_taper.hpp"
 
 namespace two_stream_rt {
 
@@ -331,6 +333,42 @@ inline bool rt_grey = false;
 // kernel and the correlated-k kernel carry stellar-beam geometry (the substellar angle,
 // the slant path) that has no plane-parallel meaning.  The guard is a fatal error.
 inline bool rt_plane_parallel = false;
+
+//----------------------------------------------------------------------------------------
+// problem/rt_rad_force -- the RADIATIVE MOMENTUM SOURCE that goes with the EOS's
+// thin-region radiation taper (<eos>/eos_rad_rho_hi, see utils/rad_taper.hpp).
+//
+// WHY.  With the taper on, the hydro's pressure carries only w(rho) of the LTE radiation
+// pressure, so the momentum equation loses (1-w) of -grad Prad -- and in the thin layer
+// that is precisely where the real force lives: MEASURED on the relaxed B-star column,
+// grad Prad/(rho g) is 0.10 at tau = 1e-2, 0.15 at tau = 0.1, 0.23 at tau = 2/3 and 0.30
+// at tau = 10, and at the very top it agrees with kappa_R F/(c g) to 1.8x and below tau 1
+// to a few per cent.  Dropping it would make the top of the box lighter than it is.
+//
+// WHAT IS ADDED, per cell:
+//     f = (1 - w) rho kappa_R F_net/c   +   Prad grad w,     Prad = a T^4/3,
+// with F_net the face-averaged net two-stream flux (positive upward, so the force is
+// along +x1, against gravity).  The FIRST term is the direct momentum deposition the
+// pressure gradient no longer supplies.  The SECOND is a correction, not a force: with
+// p = pgas + w(rho) Prad the hydro differences
+//     -grad(w Prad) = -w grad Prad - Prad grad w,
+// and the last piece is an artefact of the taper: inside the ramp dw/dln rho is of
+// order one, so it is of the same order as grad Prad itself, up to ~20 % of g.  Adding
+// Prad grad w back cancels it exactly, and the total radiative force is then -grad Prad
+// in the deep limit (w = 1), kappa rho F/c in the thin limit (w = 0), and continuous
+// through the ramp.  The x1 component of the first term is the only one the column-wise
+// two-stream knows; the second is a genuine pressure gradient and is applied in all three
+// directions.  The work v.f is added to the total energy alongside.
+//
+// The step is EXPLICIT and lives in the same place as the tau-blend handover: after the
+// semi-implicit relaxation, which must not damp it.  Default OFF; box_convection requires
+// the EOS taper to be on with it.
+inline bool rt_rad_force = false;
+// problem/rt_force_verbose -- print the hydrostatic balance of every cell inside the
+// taper ramp for this many RT calls, then stop.  a_p + a_g + a_f normalised by g: inside
+// the ramp this is what says whether the Prad grad w correction is doing its job.
+inline int rt_force_verbose = 0;
+inline Real rt_force_grav = 0.0;    // |g| used only to normalise that print
 // problem/rt_top_vacuum: nothing above the top of the domain.  The default top boundary
 // is the UNRESOLVED HYDROSTATIC COLUMN, of optical depth kappa p / g_eff, which is the
 // right model for a star whose atmosphere continues above x1max.  A local box is cut out
@@ -2125,6 +2163,17 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
       const bool diag = rt_diag;
       DvceArray5D<Real> dg;
       if (diag) dg = *rt_diag_ptr;
+      // ---- the radiative momentum source (problem/rt_rad_force) --------------------
+      const bool radforce = rt_rad_force && grey_on;
+      const Real inv_c = 1.0/2.99792458e10;      // cgs: this path runs in cgs code units
+      const Real arad_f = eos.tbl.arad;
+      const Real xlo_f = eos.tbl.rad_lrho_lo, xhi_f = eos.tbl.rad_lrho_hi;
+      const bool md_f = pm->multi_d, td_f = pm->three_d;
+      const bool fverb = radforce && (rt_force_verbose > 0);
+      if (fverb) --rt_force_verbose;
+      const Real gver = rt_force_grav;
+      const int vcyc = pm->ncycle;
+      auto eos_f = eos;
       par_reduce_clip4("rt_apply", 0, nmb1, ks, ke, js, je, is, ie, nclip,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, int &nc) {
         Real Ft = 0.0, Fb = 0.0;
@@ -2501,6 +2550,52 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
           }
         }
         u0(m,IEN,k,j,i) += de;
+        // ---- radiative momentum source, see rt_rad_force --------------------------
+        if (radforce) {
+          const Real rho = rhoN(m,k,j,i);
+          Real wr, dwdx;
+          rad_taper::Weight(log10(rho), xlo_f, xhi_f, wr, dwdx);
+          // the cell's net two-stream flux, positive upward
+          const Real fnet = 0.5*(Ft + Fb);
+          Real f1 = (1.0 - wr)*rho*kc_g(m,0,i,k,j)*fnet*inv_c;
+          Real f2 = 0.0, f3 = 0.0, prgw = 0.0;
+          if (dwdx != 0.0) {
+            // Prad grad w, with grad w = w'(x) grad rho/(rho ln10) -- the SAME derivative
+            // the EOS put into chi_rho, so the two cancel in the continuum limit
+            const Real tk = T_g(m,k,j,i);
+            const Real cg = (arad_f*tk*tk*tk*tk/3.0)*dwdx*M_LOG10E/rho;
+            prgw = cg*(rhoN(m,k,j,i+1) - rhoN(m,k,j,i-1))/(X1V(m,i+1) - X1V(m,i-1));
+            f1 += prgw;
+            if (md_f) {
+              f2 = cg*(rhoN(m,k,j+1,i) - rhoN(m,k,j-1,i))/(2.0*size.d_view(m).dx2);
+            }
+            if (td_f) {
+              f3 = cg*(rhoN(m,k+1,j,i) - rhoN(m,k-1,j,i))/(2.0*size.d_view(m).dx3);
+            }
+          }
+          const Real dinv = 1.0/u0(m,IDN,k,j,i);
+          const Real v1 = u0(m,IM1,k,j,i)*dinv;
+          const Real v2 = u0(m,IM2,k,j,i)*dinv;
+          const Real v3 = u0(m,IM3,k,j,i)*dinv;
+          u0(m,IM1,k,j,i) += f1*bdt;
+          if (md_f) u0(m,IM2,k,j,i) += f2*bdt;
+          if (td_f) u0(m,IM3,k,j,i) += f3*bdt;
+          u0(m,IEN,k,j,i) += (v1*f1 + v2*f2 + v3*f3)*bdt;
+          if (fverb && wr > 0.0 && wr < 1.0) {
+            // the hydrostatic balance of this cell: pressure gradient, gravity, source
+            EOSThermoState sm, sp;
+            eos_f.tbl.EvalNoMu(rhoN(m,k,j,i-1), T_g(m,k,j,i-1), sm);
+            eos_f.tbl.EvalNoMu(rhoN(m,k,j,i+1), T_g(m,k,j,i+1), sp);
+            const Real ap = -(sp.p - sm.p)/((X1V(m,i+1) - X1V(m,i-1))*rho);
+            const Real gg = (gver > 0.0) ? gver : 1.0;
+            Kokkos::printf("### rt_force ncycle=%d i=%d rho=%.4e T=%.4e w=%.4f "
+                           "a_p/g=%.6e a_f/g=%.6e a_prgw/g=%.6e resid/g=%.6e "
+                           "F=%.4e kap=%.4e\n",
+                           vcyc, i, rho, T_g(m,k,j,i), wr, ap/gg, f1/(rho*gg),
+                           prgw/(rho*gg), (ap - gg + f1/rho)/gg,
+                           0.5*(Ft + Fb), kc_g(m,0,i,k,j));
+          }
+        }
       });
       rt_nclip_last = nclip;
       RTSourceLimiterWarn(nclip);

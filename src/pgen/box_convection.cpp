@@ -547,6 +547,29 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     ts::rt_dump_m = pin->GetOrAddInteger("problem", "rt_dump_m", 0);
     ts::rt_dump_j = pin->GetOrAddInteger("problem", "rt_dump_j", -1);
     ts::rt_dump_k = pin->GetOrAddInteger("problem", "rt_dump_k", -1);
+    // ---- the thin-region radiative force (see two_stream_rt.hpp, rt_rad_force) ------
+    // It is the other half of the EOS's radiation taper: the taper removes (1-w) of the
+    // LTE radiation pressure from the gas, and this puts the force that pressure was
+    // carrying back as an explicit momentum source.  Neither half is meaningful alone,
+    // so both are required together.
+    ts::rt_rad_force = pin->GetOrAddBoolean("problem", "rt_rad_force", false);
+    ts::rt_force_verbose = pin->GetOrAddInteger("problem", "rt_force_verbose", 0);
+    ts::rt_force_grav = g0;
+    if (ts::rt_rad_force) {
+      if (!pmbp->phydro->peos->eos_data.tbl.rad_taper) {
+        std::cout << "### FATAL ERROR in box_convection: problem/rt_rad_force is the "
+                  << "momentum source that goes with the EOS radiation taper, and is "
+                  << "only defined when the taper is on: set <hydro>/eos_rad_rho_hi and "
+                  << "eos_rad_rho_lo (with eos_radiation = true), or drop rt_rad_force."
+                  << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      if (global_variable::my_rank == 0) {
+        std::cout << "box_convection: RT radiative momentum source ON -- "
+                  << "(1-w) rho kappa F/c + Prad grad w, with w from the EOS taper"
+                  << std::endl;
+      }
+    }
     // ck_nquad: 1 = hemispheric mean (mu = 1/1.66), 2 = two-point Gauss-Legendre
     correlated_k::ck_nq = pin->GetOrAddInteger("problem", "rt_nquad", 2);
     // The internal flux.  It enters the box ONCE, through the bottom wall as
