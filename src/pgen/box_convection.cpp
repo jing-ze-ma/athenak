@@ -63,6 +63,26 @@
 //!                 ~1e-4 of the gravity term.
 //!   cool_depth    thickness of the cooling layer below x1max [cm]; < 0 -> 0.3 H_p(base)
 //!   cool_tau      relaxation time of that layer [s]; < 0 -> 0.1 H_p(base)/v*
+//!   bc_mode       the x1 walls.  0: the ghost carries the INITIAL column with the normal
+//!                 velocity mirrored (what wb_column.cpp does -- correct only while the
+//!                 state stays on that column; in a convecting box the ghost and the
+//!                 evolved interior drift apart and the wall runs a steady WIND through
+//!                 the box).  1: a plain reflecting mirror, which makes the wall-face
+//!                 Riemann problem exactly symmetric and the mass flux exactly zero.
+//!                 2 (DEFAULT): the mirror RESCALED by the initial column's own ratio
+//!                 across the wall, rho_g = rho_m rho_col(z_g)/rho_col(z_m) and likewise
+//!                 for e -- impermeable like 1 up to the stratification over one cell,
+//!                 and hydrostatic like 0 at t = 0.
+//!   ic_profile    if set, a text file "z rho eint" (cgs, one node per line, increasing
+//!                 z, '#' comments) REPLACES the isentropic march.  It must already cover
+//!                 the ghosts -- analysis/mkprofile.py writes the horizontally and time
+//!                 averaged profile of a finished case and pads both ends
+//!                 hydrostatically.  This is how a finer case is started from a coarser
+//!                 one's RELAXED stratification: an AMR-style upsampled restart is not
+//!                 possible across different meshes, but the 1-D mean profile is exactly
+//!                 the part that takes a thermal time to establish.  The flow itself
+//!                 still has to grow from the seed, which takes a few turnovers, not a
+//!                 Kelvin-Helmholtz time.
 //!   vpert         velocity seed amplitude, in units of the LOCAL sound speed
 //!   vpert_nk      number of random horizontal modes (default 16)
 //!   vpert_seed    RNG seed for those modes (default 1234)
@@ -104,7 +124,7 @@ namespace {
 DvceArray1D<Real> cd_, ce_, cp_, ct_;   // density, eint, pressure, temperature [K]
 Real g0_ = 0.0, zlo_ = 0.0, dzf_ = 1.0, zmin_ = 0.0;
 Real zcool_ = 0.0, zmax_ = 0.0, tcool_ = 1.0;
-int nfine_ = 0;
+int nfine_ = 0, bc_mode_ = 2;
 bool etotgrav_ = false;
 
 //----------------------------------------------------------------------------------------
@@ -164,6 +184,22 @@ void ReadOpacityTable(const std::string &fname, DvceArray2D<Real> &tab,
   Kokkos::deep_copy(lD, hlD);
   return;
 }
+//----------------------------------------------------------------------------------------
+//! \fn par_file_tp
+//! \brief p and T of a supplied (rho, e) column, for the start-up report and the dump.
+//! A tabulated EOS lives in a DvceArray, so this has to happen on the device.
+
+void par_file_tp(const EOS_Data &eos, DvceArray1D<Real> d, DvceArray1D<Real> e,
+                 DvceArray1D<Real> p, DvceArray1D<Real> t, const int n, const Real gm1,
+                 const Real rgas) {
+  par_for("boxconv_filetp", DevExeSpace(), 0, n-1, KOKKOS_LAMBDA(const int i) {
+    Real pp, tk;
+    pgen_eos::PresTempFromEint(eos, gm1, rgas, d(i), e(i), -1.0, pp, tk);
+    p(i) = pp;
+    t(i) = tk;
+  });
+  return;
+}
 }  // namespace
 
 //----------------------------------------------------------------------------------------
@@ -201,7 +237,14 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   const int nfine = pin->GetOrAddInteger("problem", "nfine", 8192);
   const Real mu = pin->GetOrAddReal("problem", "mu", 1.3);
   const Real dgrad = pin->GetOrAddReal("problem", "dgrad", 0.0);
+  bc_mode_ = pin->GetOrAddInteger("problem", "bc_mode", 2);
+  if (bc_mode_ < 0 || bc_mode_ > 2) {
+    std::cout << "### FATAL ERROR in box_convection: problem/bc_mode must be 0, 1 or 2"
+              << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
   const std::string dump = pin->GetOrAddString("problem", "column_dump", "");
+  const std::string icprof = pin->GetOrAddString("problem", "ic_profile", "");
   g0_ = g0;
 
   auto &eos = pmbp->phydro->peos->eos_data;
@@ -282,6 +325,59 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   ce.modify_device();  ce.sync_host();
   cp.modify_device();  cp.sync_host();
   ct.modify_device();  ct.sync_host();
+  // --- an externally supplied stratification REPLACES the march
+  if (!icprof.empty()) {
+    std::ifstream pf(icprof);
+    if (!pf.good()) {
+      std::cout << "### FATAL ERROR in box_convection: cannot open problem/ic_profile '"
+                << icprof << "'" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    std::vector<Real> zf, df, ef;
+    std::string line;
+    while (std::getline(pf, line)) {
+      if (line.empty() || line[0] == '#') continue;
+      std::istringstream is(line);
+      Real a, b, c;
+      if (!(is >> a >> b >> c)) continue;
+      zf.push_back(a);
+      df.push_back(b);
+      ef.push_back(c);
+    }
+    if (zf.size() < 2 || zf.front() > zlo || zf.back() < zhi) {
+      std::cout << "### FATAL ERROR in box_convection: problem/ic_profile has "
+                << zf.size() << " nodes spanning ["
+                << (zf.empty() ? 0.0 : zf.front()) << ", "
+                << (zf.empty() ? 0.0 : zf.back())
+                << "], which does not cover the mesh plus its ghosts ["
+                << zlo << ", " << zhi << "].  Pad it with analysis/mkprofile.py."
+                << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    std::size_t kk = 0;
+    for (int i=0; i<nfine; ++i) {
+      const Real z = zlo + i*dzf;
+      while (kk + 2 < zf.size() && zf[kk+1] < z) ++kk;
+      const Real w = (z - zf[kk])/(zf[kk+1] - zf[kk]);
+      // logarithmic in both: the profile spans two decades in density
+      cd.h_view(i) = std::exp(std::log(df[kk])*(1.0 - w) + std::log(df[kk+1])*w);
+      ce.h_view(i) = std::exp(std::log(ef[kk])*(1.0 - w) + std::log(ef[kk+1])*w);
+    }
+    cd.modify_host();  cd.sync_device();
+    ce.modify_host();  ce.sync_device();
+    // T and p of the supplied state, for the report and the dump only
+    {
+      auto cd_dv = cd.d_view, ce_dv = ce.d_view, cp_dv = cp.d_view, ct_dv = ct.d_view;
+      par_file_tp(eos, cd_dv, ce_dv, cp_dv, ct_dv, nfine, gamma - 1.0, rgas);
+    }
+    cp.modify_device();  cp.sync_host();
+    ct.modify_device();  ct.sync_host();
+    if (global_variable::my_rank == 0) {
+      std::cout << "box_convection: initial stratification READ FROM " << icprof
+                << " (" << zf.size() << " nodes); the isentropic march is overridden"
+                << std::endl;
+    }
+  }
   cd_ = cd.d_view; ce_ = ce.d_view; cp_ = cp.d_view; ct_ = ct.d_view;
 
   // --- the derived scales of the base state, and the cooling layer
@@ -354,6 +450,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                 "turnover H_p/v* = %.5e s\n", fin, vstar, vstar/cs0, tturn);
     std::printf("  cooling layer: z > %.5e (top %.4f H_p), tau = %.5e s = %.4f"
                 " turnover\n", zcool_, cdep/hp0, ctau, ctau/tturn);
+    std::printf("  x1 walls: bc_mode = %d (0 column ghost, 1 mirror, 2 mirror x the"
+                " column ratio)\n", bc_mode_);
     if (pc != nullptr) {
       std::printf("  rad_kappa_fac = %.5e (conductivity is 1/rad_kappa_fac x physical)\n",
                   pc->rad_kappa_fac);
@@ -544,16 +642,38 @@ void BoxConvBC(Mesh *pm) {
   const int nfine = nfine_;
   const bool etotgrav = etotgrav_;
   auto cd_d = cd_, ce_d = ce_;
+  const int bcm = bc_mode_;
   auto fill = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i,
                             const int km, const int jm, const int im) {
+    // (k,j,i) the ghost cell, (km,jm,im) the active cell it mirrors
     const Real x1min = size.d_view(m).x1min, x1max = size.d_view(m).x1max;
-    const Real z = CellCenterX(i-is, indcs.nx1, x1min, x1max);
-    Real s = (z - zlo)/dzf;
-    int ii = static_cast<int>(s);
-    ii = (ii < 0) ? 0 : ((ii > nfine-2) ? nfine-2 : ii);
-    const Real f = s - ii;
-    const Real d = cd_d(ii)*(1.0 - f) + cd_d(ii+1)*f;
-    const Real e = ce_d(ii)*(1.0 - f) + ce_d(ii+1)*f;
+    const Real zg = CellCenterX(i-is, indcs.nx1, x1min, x1max);
+    const Real zm = CellCenterX(im-is, indcs.nx1, x1min, x1max);
+    Real d, e;
+    if (bcm == 1) {
+      d = w0(m,IDN,km,jm,im);
+      e = w0(m,IEN,km,jm,im);
+    } else {
+      Real sg = (zg - zlo)/dzf;
+      int ig = static_cast<int>(sg);
+      ig = (ig < 0) ? 0 : ((ig > nfine-2) ? nfine-2 : ig);
+      const Real fg = sg - ig;
+      const Real dg = cd_d(ig)*(1.0 - fg) + cd_d(ig+1)*fg;
+      const Real eg = ce_d(ig)*(1.0 - fg) + ce_d(ig+1)*fg;
+      if (bcm == 0) {
+        d = dg;
+        e = eg;
+      } else {
+        Real sm = (zm - zlo)/dzf;
+        int im2 = static_cast<int>(sm);
+        im2 = (im2 < 0) ? 0 : ((im2 > nfine-2) ? nfine-2 : im2);
+        const Real fm = sm - im2;
+        const Real dm = cd_d(im2)*(1.0 - fm) + cd_d(im2+1)*fm;
+        const Real em = ce_d(im2)*(1.0 - fm) + ce_d(im2+1)*fm;
+        d = w0(m,IDN,km,jm,im)*(dg/dm);
+        e = w0(m,IEN,km,jm,im)*(eg/em);
+      }
+    }
     const Real v1 = -w0(m,IVX,km,jm,im);
     const Real v2 = w0(m,IVY,km,jm,im);
     const Real v3 = w0(m,IVZ,km,jm,im);
@@ -567,7 +687,7 @@ void BoxConvBC(Mesh *pm) {
     u0(m,IM2,k,j,i) = d*v2;
     u0(m,IM3,k,j,i) = d*v3;
     Real et = e + 0.5*d*(v1*v1 + v2*v2 + v3*v3);
-    if (etotgrav) et += d*g0*(z - zmin);
+    if (etotgrav) et += d*g0*(zg - zmin);
     u0(m,IEN,k,j,i) = et;
   };
   par_for("boxconv_bc_x1", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1, 0, ng-1,
