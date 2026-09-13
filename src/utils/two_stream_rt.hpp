@@ -2236,7 +2236,7 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
       // needs no compile-time knowledge of this header, and it is written before the
       // source is applied so that the number the diffusion operator scales by w is
       // exactly the number this call scales by 1 - w.
-      if (taublend && pcond_rt->rad_blend_use_2s) {
+      if (taublend && pcond_rt->rad_blend_use_2s > 0) {
         auto f2s_out = pcond_rt->rad_f2s;
         const int nblk_f = nblk;
         par_for("rt_f2s", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,

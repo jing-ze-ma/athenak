@@ -147,7 +147,13 @@ Conduction::Conduction(std::string block, MeshBlockPack *pp, ParameterInput *pin
       rad_blend_radial = pin->GetOrAddBoolean(block,"rad_blend_radial",true);
       // rad_blend_use_2s: the ramp faces carry w*F_2s, not w*(-K dT/dz).  See
       // conduction.hpp for the whole argument.
-      rad_blend_use_2s = pin->GetOrAddBoolean(block,"rad_blend_use_2s",false);
+      rad_blend_use_2s = pin->GetOrAddInteger(block,"rad_blend_use_2s",0);
+      if (rad_blend_use_2s < 0 || rad_blend_use_2s > 2) {
+        std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
+                  << std::endl << "rad_blend_use_2s is 0 (off), 1 (prescribed flux) or "
+                  << "2 (defect correction)" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
       rad_implicit_x1 = pin->GetOrAddBoolean(block,"rad_implicit_x1",false);
       rad_cap_ang = pin->GetOrAddReal(block,"rad_cap_ang",0.0);
       rad_implicit_ang = pin->GetOrAddBoolean(block,"rad_implicit_ang",false);
@@ -210,6 +216,16 @@ Conduction::Conduction(std::string block, MeshBlockPack *pp, ParameterInput *pin
         std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
                   << std::endl << "rad_blend_use_2s is a property of the tau blend and "
                   << "needs rad_tau_hi > 0" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      if (rad_implicit_x1 && rad_blend_use_2s > 0) {
+        std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
+                  << std::endl << "rad_blend_use_2s puts part of the ramp's radial flux "
+                  << "back on an EXPLICIT, lagged footing, and rad_implicit_x1 is on "
+                  << "because the explicit radial radiative dt on this column is orders "
+                  << "below the step. Measured on the He-star 1-D arms: dt collapses at "
+                  << "cycle 2-3 in both modes. See conduction.hpp, rad_blend_use_2s."
+                  << std::endl;
         std::exit(EXIT_FAILURE);
       }
       if (rad_implicit_x1) {
@@ -1097,7 +1113,10 @@ void Conduction::AddIsotropicHeatFluxRadiative(const DvceArray5D<Real> &w0,
   // rad_blend_use_2s: faces inside the tau ramp carry the TWO-STREAM's own flux, scaled
   // by w, instead of w*(-K dT/dz).  See conduction.hpp.  Applied here for both radial
   // paths, since a prescribed-flux face is outside the tridiagonal system either way.
-  const bool use2s = rad_blend_use_2s && taumode && blend_r && rad_f2s_ready;
+  const bool use2s = (rad_blend_use_2s > 0) && taumode && blend_r && rad_f2s_ready;
+  // mode 1 replaces the face flux outright; mode 2 adds only the defect and leaves the
+  // face in the implicit system.  Without rad_implicit_x1 the two coincide.
+  const bool pres2s = use2s && (rad_blend_use_2s == 1 || !(rad_implicit_x1||rad_sts_all));
   auto f2s_ = use2s ? rad_f2s : DvceArray4D<Real>("radf2sdummy", 1, 1, 1, 1);
   // rad_sts_split: the interior x1 faces of the rad_sts_all stencil DO carry a flux
   // here -- the explicit part C_exp of the split, as the fraction cap_f1 of the full
@@ -1124,17 +1143,18 @@ void Conduction::AddIsotropicHeatFluxRadiative(const DvceArray5D<Real> &w0,
     // see this one number, so the exchange is conservative to round-off; and because the
     // two-stream's own share is (1 - w) of the SAME number, the two sum to F_2s exactly
     // and the handover term -d/dz[(1 - w)(F_2s - F_diff)] is identically zero.
-    if (use2s && i > is && i < ie+1) {
-      const Real wv = wf(m,k,j,i);
-      if (wv > 0.0 && wv < 1.0) {
-        const Real f2 = wv*f2s_(m,k,j,i);
-        flx1(m,IEN,k,j,i) += f2;
-        if (diag_) cdg(m,0,k,j,i) = f2;
-        return;
-      }
+    // MODE 2 marks the face for the defect correction below; it stays in the implicit
+    // system, so the early return for impx1 must NOT be taken on it.
+    const bool ramp2s = use2s && i > is && i < ie+1 &&
+                        wf(m,k,j,i) > 0.0 && wf(m,k,j,i) < 1.0;
+    if (pres2s && ramp2s) {
+      const Real f2 = wf(m,k,j,i)*f2s_(m,k,j,i);
+      flx1(m,IEN,k,j,i) += f2;
+      if (diag_) cdg(m,0,k,j,i) = f2;
+      return;
     }
     Real fsp = 1.0;
-    if (impx1 && i > is && i < ie+1) {
+    if (impx1 && i > is && i < ie+1 && !ramp2s) {
       if (!splt1) return;
       fsp = capf1_(m,k,j,i);
       if (!(fsp > 0.0)) return;
@@ -1150,8 +1170,12 @@ void Conduction::AddIsotropicHeatFluxRadiative(const DvceArray5D<Real> &w0,
       wt *= RadGate(0.5*(w0(m,IDN,k,j,i-1) + w0(m,IDN,k,j,i))*dens_unit,
                     gaterho, gatedex);
     }
-    const Real fcnd = fsp*wt*face_flux(tl, tr, pl, pr, w0(m,IDN,k,j,i-1),
-                                       w0(m,IDN,k,j,i), (tr - tl)/dl);
+    Real fcnd = fsp*wt*face_flux(tl, tr, pl, pr, w0(m,IDN,k,j,i-1),
+                                 w0(m,IDN,k,j,i), (tr - tl)/dl);
+    // MODE 2: replace the explicit contribution by the DEFECT w (F_2s - F_diff*).  The
+    // implicit solve supplies w F_diff(T_new) across this same face with the same weight
+    // wt, so the two sum to w F_2s at the frozen state.  Both cells see this one number.
+    if (ramp2s) fcnd = wt*f2s_(m,k,j,i) - fcnd;
     flx1(m,IEN,k,j,i) += fcnd;
     if (diag_) cdg(m,0,k,j,i) = fcnd;
     // --- <problem>/nan_report: record the first face whose conduction flux, or the
@@ -1450,7 +1474,8 @@ void Conduction::ImplicitRadialUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos
   auto &krlP = rad_kr_lP;
   const int krnT = rad_kr_nT, krnP = rad_kr_nP;
   // rad_blend_use_2s: the ramp faces are prescribed-flux and leave this system
-  const bool use2s_ = rad_blend_use_2s && taumode && blend_r && rad_f2s_ready;
+  // mode 1 ONLY: mode 2 keeps the ramp faces in the system and corrects them explicitly
+  const bool use2s_ = (rad_blend_use_2s == 1) && taumode && blend_r && rad_f2s_ready;
   auto wrk = imp_wrk;
   auto iflag = imp_flag;
   auto irec = imp_rec;

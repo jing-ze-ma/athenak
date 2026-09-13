@@ -332,9 +332,9 @@ class Conduction {
   // conduction operator fully on.  NewTimeStep builds the weights itself if this is
   // still false, which is the case at initialisation.
   bool rad_w_built = false;
-  // rad_blend_use_2s (<hydro>/ or <mhd>/rad_blend_use_2s, default false): inside the tau
-  // ramp, take the DIFFUSION operator's share of each x1 face from the TWO-STREAM instead
-  // of forming it from -K dT/dz.
+  // rad_blend_use_2s (<hydro>/ or <mhd>/rad_blend_use_2s, default 0 = off): inside the
+  // tau ramp, take the DIFFUSION operator's share of each x1 face from the TWO-STREAM
+  // instead of forming it from -K dT/dz.  Two modes, 1 and 2; see below.
   //
   // WHY.  In the ramp the blended flux is F = (1 - w) F_2s + w F_diff, and the two
   // solvers do not agree there: on the He-star column F_diff exceeds the code's F_2s by
@@ -352,18 +352,62 @@ class Conduction {
   // is written into the face flux, so the two cells sharing a face see the same value and
   // the exchange is conservative to round-off.
   //
-  // HOW IT REACHES THE IMPLICIT SOLVE.  A face with 0 < w < 1 becomes a PRESCRIBED-FLUX
-  // face: ImplicitRadialUpdate sets its conductance to zero, which drops it from the
-  // tridiagonal coupling, and the flux is added explicitly in the face-flux kernel
-  // instead -- for both the implicit (rad_implicit_x1) and the explicit radial paths,
-  // with the same line of code.  rad_sts_all is refused with this switch: its RKL1
-  // stencil owns the x1 faces and would need the same surgery.
+  // MODE 1, PRESCRIBED FLUX.  A face with 0 < w < 1 leaves the implicit system outright:
+  // ImplicitRadialUpdate sets its conductance to zero, dropping it from the tridiagonal
+  // coupling, and the whole w F_2s is added explicitly in the face-flux kernel.  This is
+  // exact -- the blended flux IS F_2s -- but it makes the ramp faces an EXPLICIT radial
+  // operator again, and that is precisely what rad_implicit_x1 exists to avoid: on the
+  // He-star arms (chi_rad ~ 1e17-1e18 cm^2/s, explicit radial dt ~ 1e-4 s against a 0.1 s
+  // hydro CFL) the lagged feedback T -> F_2s -> deposition runs away inside ten seconds,
+  // dt collapses to the hydro CFL and v reaches 1e8 cm/s.  Kept for the explicit-x1 path
+  // and for diagnosis; NOT usable with rad_implicit_x1 on a stiff column.
+  //
+  // MODE 2, DEFECT CORRECTION -- the usable one.  The face KEEPS its conductance and
+  // stays in the implicit system, so the stiff part is still solved implicitly; what is
+  // added explicitly is only the DEFECT
+  //     w (F_2s - F_diff*),
+  // F_diff* being the diffusion flux at the frozen state the solve linearises about.  The
+  // implicit solve then contributes w F_diff(T_new), and the two sum to w F_2s wherever
+  // T_new is close to T*, i.e. the handover term is removed to first order while the
+  // damping that makes the step stable is untouched.  The defect is ~3 % of w F, so it is
+  // small AND it is the only explicit piece.  On the explicit-x1 path modes 1 and 2 are
+  // identical by construction.
+  //
+  // MEASURED, AND WHY THE SWITCH IS REFUSED WITH rad_implicit_x1.  Both modes were run
+  // on the four He-star 1-D arms (bench/hestar_fecz/instab1d, rad_tau_lo/hi = 3/10,
+  // 10/100, 30/100, 100/300, rad_implicit_x1 = true).  BOTH collapse at cycle 2-3: dt
+  // falls to the hydro CFL and the bottom cells reach T ~ 1e14 K within ten seconds.
+  // Two reasons, and neither is fixable from this side:
+  //
+  //   (i) WHAT IS PUT EXPLICITLY IS STIFF.  chi_rad is 1e17-1e18 cm^2/s in these
+  //       columns, so the EXPLICIT radial radiative dt is ~1e-4 s against a 0.1 s hydro
+  //       step -- which is exactly why rad_implicit_x1 is mandatory here.  Mode 1 makes
+  //       the whole ramp face explicit and lagged; mode 2's defect still carries
+  //       -w F_diff*, whose response to a cell's own temperature is the unstable
+  //       feedback.  Removing that feedback needs dF_2s/dT inside the tridiagonal
+  //       system, i.e. a linearised two-stream, not a corrected flux.
+  //
+  //  (ii) F_2s IS NOT ACCURATE ENOUGH IN THE RAMP TO PIN THE BLEND TO.  From the
+  //       solver's own column dump on the 100/300 arm, with F_int = sigma Teff^4 =
+  //       2.475e15: across the ramp (dtau per cell 3-6) F_2s/F_int runs 0.73 .. 1.06,
+  //       while ABOVE the ramp, where dtau per cell is below 2, it settles at 0.99.
+  //       That is the layer-source error documented at the down-sweep in
+  //       two_stream_rt.hpp, and it is +-25 % at these dtau, not the 4 % it is at
+  //       dtau ~ 1-3.  Forcing the blended flux to follow F_2s therefore starves the
+  //       layers below it of a quarter of the stellar flux.  The handover mismatch is
+  //       the smaller of the two errors.
+  //
+  // So the switch is refused with rad_implicit_x1 and with rad_sts_all, and is usable
+  // only on an explicit-x1 column -- where the two modes coincide -- and only once the
+  // sweep is accurate at the ramp's dtau per cell.  It is kept because it is the right
+  // construction once that holds: it is the only way to make the handover term vanish
+  // identically.
   //
   // ONE STAGE OF LAG.  The two-stream runs in the source-term task, after the flux task,
   // so F_2s here is the previous stage's.  The cancellation is still exact -- both
   // operators multiply THE SAME stored number by w and 1 - w -- and F_2s in the ramp
   // evolves on the thermal time of a tau ~ 10-100 layer, far above a step.
-  bool rad_blend_use_2s = false;
+  int rad_blend_use_2s = 0;
   // the two-stream's net x1-face flux in code flux units, written by
   // two_stream_rt::picket_fence_two_stream_RT once per RT call.  Allocated only when the
   // switch is on; rad_f2s_ready stays false until the first RT call has filled it, and
