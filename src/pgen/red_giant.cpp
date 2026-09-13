@@ -2900,7 +2900,15 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
       // below carries the same guard for the same reason.  Skipping the cell leaves the
       // advected mass uncancelled for one stage, which is the harmless failure.
       if (!(ei > 0.0) || !(d > 0.0)) return;
-      const Real h = (u0(m,IEN,k,j,is) + eos.Pressure(d, ei))/d;   // specific total
+      // The face flux carried the specific total energy AT THE FACE, where the
+      // potential is PotAt(rin) = 0; u0(IEN) under etotgrav holds rho*Phi at the CELL
+      // centre. Returning dm*h with the cell-centre potential left |dm|*Phi(i=is)
+      // (3.9% of h, always heating) in the star every stage: +8.8e-5 of E over 2e6 s
+      // in RG_fofc_long3, exactly 0.4 x the face counter's |dm|*Phi (its stage-1
+      // bias). Use the gas total energy plus the FACE potential (zero) instead.
+      Real etot_face = u0(m,IEN,k,j,is);
+      if (etotgrav) etot_face -= d*phicc(m,k,j,is);
+      const Real h = (etot_face + eos.Pressure(d, ei))/d;   // specific total, face
       u0(m,IDN,k,j,is) -= dm;
       u0(m,IEN,k,j,is) -= dm*h;
     });
