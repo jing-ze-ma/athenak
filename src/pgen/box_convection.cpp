@@ -84,6 +84,14 @@
 //!                 face advected are cancelled cell by cell after every stage
 //!                 (problem/wall_noflux, red_giant.cpp's treatment), which makes the box
 //!                 EXACTLY closed whatever the interior does.
+//!                 The walk is GUARDED: a wall cell the EOS table can only clamp (the
+//!                 top of a radiation-dominated atmosphere) can send the closure's
+//!                 exponential to zero density and, with eos_radiation, to an infinite
+//!                 specific energy.  A ghost that is not finite, not positive, or whose
+//!                 ratio to the mirror cell is more than problem/wall_walk_maxfac away
+//!                 from what the initial column does over the same gap falls back to the
+//!                 bc_mode-2 rescaled mirror, and both channels are then floored.
+//!   wall_walk_maxfac  the slack in that test (default 100).
 //!   wall_noflux   cancel the wall-face mass (and energy) flux after each stage.
 //!                 Defaults to true under bc_mode 3 and false otherwise.  When a
 //!                 diffusive flux (conduction, viscosity) has been added into the same
@@ -161,6 +169,7 @@ Real zcool_ = 0.0, zmax_ = 0.0, tcool_ = 1.0;
 int nfine_ = 0, bc_mode_ = 2;
 bool etotgrav_ = false;
 bool wall_noflux_ = false;   // cancel the wall-face flux after each stage (bc_mode 3)
+Real wall_walk_maxfac_ = 100.0;   // how far the bc_mode-3 walk may depart from the column
 bool diff_flux_ = false;     // a diffusive flux shares the wall face's energy channel
 bool rt_on_ = false;      // problem/rt_two_stream
 bool cool_on_ = true;     // the Newton cooling layer (off by default once RT is on)
@@ -282,6 +291,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     std::exit(EXIT_FAILURE);
   }
   wall_noflux_ = pin->GetOrAddBoolean("problem", "wall_noflux", (bc_mode_ == 3));
+  wall_walk_maxfac_ = pin->GetOrAddReal("problem", "wall_walk_maxfac", 100.0);
   diff_flux_ = (pmbp->phydro->pcond != nullptr) || (pmbp->phydro->pvisc != nullptr);
   const std::string dump = pin->GetOrAddString("problem", "column_dump", "");
   const std::string icprof = pin->GetOrAddString("problem", "ic_profile", "");
@@ -843,6 +853,8 @@ void BoxConvBC(Mesh *pm) {
   const int bcm = bc_mode_;
   auto eos = pmbp->phydro->peos->eos_data;
   const WBOption wbo = pmbp->phydro->wb_option;
+  const Real wfac = wall_walk_maxfac_;
+  const Real dfl = eos.dfloor;
   auto fill = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i,
                             const int km, const int jm, const int im) {
     // (k,j,i) the ghost cell, (km,jm,im) the active cell it mirrors
@@ -865,6 +877,23 @@ void BoxConvBC(Mesh *pm) {
       // other side of the mirror cell is the ghost being built.
       const Real dmm = w0(m,IDN,km,jm,im);
       const Real emm = w0(m,IEN,km,jm,im);
+      // THE FALLBACK, and the scale the walk is judged against: bc_mode 2's rescaled
+      // mirror, the initial column's own ratio across this pair.  Always formed, because
+      // a walk out of a sick wall cell must not be able to take the ghost with it.
+      Real sg = (zg - zlo)/dzf;
+      int ig = static_cast<int>(sg);
+      ig = (ig < 0) ? 0 : ((ig > nfine-2) ? nfine-2 : ig);
+      const Real fg = sg - ig;
+      const Real dcg = cd_d(ig)*(1.0 - fg) + cd_d(ig+1)*fg;
+      const Real ecg = ce_d(ig)*(1.0 - fg) + ce_d(ig+1)*fg;
+      Real sm = (zm - zlo)/dzf;
+      int imc = static_cast<int>(sm);
+      imc = (imc < 0) ? 0 : ((imc > nfine-2) ? nfine-2 : imc);
+      const Real fm = sm - imc;
+      const Real dcm = cd_d(imc)*(1.0 - fm) + cd_d(imc+1)*fm;
+      const Real ecm = ce_d(imc)*(1.0 - fm) + ce_d(imc+1)*fm;
+      const Real rd_col = (dcm > 0.0) ? (dcg/dcm) : 1.0;
+      const Real re_col = (ecm > 0.0) ? (ecg/ecm) : 1.0;
       const int in = (im > i) ? (im + 1) : (im - 1);
       const Real dnn = w0(m,IDN,km,jm,in);
       const Real enn = w0(m,IEN,km,jm,in);
@@ -880,8 +909,31 @@ void BoxConvBC(Mesh *pm) {
       }
       Real dw = dmm, ew = emm, tw = tmm;
       WBAdvance(eos, wopt, dmm, emm, g0*(zg - zm), dw, ew, tw, tmm, dlntdphi, tmm, tmm);
-      d = (dw > 0.0) ? dw : dmm;
-      e = (ew > 0.0) ? ew : emm;
+      // GUARD THE WALK.  A hydrostatic continuation is only meaningful out of a cell that
+      // is itself physical.  At the top of a radiation-dominated atmosphere the wall cell
+      // can reach a state the EOS table can only clamp (T ~ 1e13 K at rho ~ 2e-9), and
+      // then the polytropic branch's stencil gradient a = dT/dPhi is enormous: the
+      // segment's exp(k*dphi) underflows the density to ~0, and with eos_radiation the
+      // specific energy carries a_rad T^4/rho, so e comes back +inf.  The outermost ghost
+      // sees the largest |dphi| and goes first -- exactly the 8-ghost, 0-active death of
+      // bench/hestar_fecz/smoke_rt_3msun_bc3_tau100 at cycle 3500.  A test on positivity
+      // alone does NOT catch it (+inf > 0), and the file's own comment warns the walk can
+      // also come back "FINITE but absurd".  So demand finite, positive, and a ratio to
+      // the mirror cell within wall_walk_maxfac of what the initial column does over the
+      // same gap; anything else falls back to the rescaled mirror, which is bounded by
+      // construction.  Then floor both, so even the fallback cannot hand the Riemann
+      // solver a state below what ConsToPrim would accept.
+      const Real rdw = dw/dmm, rew = ew/emm;
+      const bool walk_ok = Kokkos::isfinite(dw) && Kokkos::isfinite(ew)
+                           && (dw > 0.0) && (ew > 0.0)
+                           && Kokkos::isfinite(rdw) && Kokkos::isfinite(rew)
+                           && (rdw < rd_col*wfac) && (rdw*wfac > rd_col)
+                           && (rew < re_col*wfac) && (rew*wfac > re_col);
+      d = walk_ok ? dw : dmm*rd_col;
+      e = walk_ok ? ew : emm*re_col;
+      d = (d > dfl) ? d : dfl;
+      const Real efl = eos.EnergyFloorBound(d);
+      e = (e > efl) ? e : efl;
     } else {
       Real sg = (zg - zlo)/dzf;
       int ig = static_cast<int>(sg);
