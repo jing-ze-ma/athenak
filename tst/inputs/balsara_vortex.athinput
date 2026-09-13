@@ -1,0 +1,53 @@
+# AthenaXXX input file for the advected Balsara MHD vortex (low-Mach solver benchmark)
+
+<comment>
+problem   = Advected magnetic vortex
+reference = Balsara, D., ApJS, 151, 149 (2004); Leidi et al., A&A, 668, A143 (2022)
+
+<job>
+basename  = balsara     # problem ID: basename of output filenames
+
+<mesh>
+nghost    = 2         # Number of ghost cells
+nx1       = 64        # Number of zones in X1-direction
+x1min     = -5.0      # minimum value of X1
+x1max     = 5.0       # maximum value of X1
+ix1_bc    = periodic  # inner-X1 boundary flag
+ox1_bc    = periodic  # outer-X1 boundary flag
+
+nx2       = 64        # Number of zones in X2-direction
+x2min     = -5.0      # minimum value of X2
+x2max     = 5.0       # maximum value of X2
+ix2_bc    = periodic  # inner-X2 boundary flag
+ox2_bc    = periodic  # outer-X2 boundary flag
+
+nx3       = 1         # Number of zones in X3-direction
+x3min     = -0.5      # minimum value of X3
+x3max     = 0.5       # maximum value of X3
+ix3_bc    = periodic  # inner-X3 boundary flag
+ox3_bc    = periodic  # outer-X3 boundary flag
+
+<meshblock>
+nx1       = 32        # Number of cells in each MeshBlock, X1-dir
+nx2       = 32        # Number of cells in each MeshBlock, X2-dir
+nx3       = 1         # Number of cells in each MeshBlock, X3-dir
+
+<time>
+evolution  = dynamic   # dynamic/kinematic/static
+integrator = rk2       # time integration algorithm
+cfl_number = 0.4       # The Courant, Friedrichs, & Lewy (CFL) Number
+nlim       = -1        # cycle limit
+tlim       = 1.0       # OVERWRITTEN by the pgen with ncross*10*sqrt(2)/vtil
+ndiag      = 10000     # cycles between diagnostic output
+
+<mhd>
+eos         = ideal    # EOS type
+reconstruct = plm      # spatial reconstruction method
+rsolver     = hlld     # Riemann-solver to be used (hlld or lhlld)
+gamma       = 1.666666666666667   # gamma = C_p/C_v
+
+<problem>
+pgen_name   = balsara_vortex  # problem generator name
+vtil        = 1.0e-2   # vortex strength: max rotational velocity, = max Mach/1.55
+beta_k      = 1.0      # magnetic-to-(rotational)kinetic energy ratio, Btil^2/Vtil^2
+ncross      = 1.0      # number of advective crossing times to evolve
