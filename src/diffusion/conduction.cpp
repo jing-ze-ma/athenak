@@ -114,6 +114,10 @@ Conduction::Conduction(std::string block, MeshBlockPack *pp, ParameterInput *pin
       rad_kappa_fac = pin->GetOrAddReal(block,"rad_kappa_fac",1.0);
       nan_report = pin->GetOrAddBoolean("problem","nan_report",false);
       rad_flux_limit = pin->GetOrAddBoolean(block,"rad_flux_limit",true);
+      // the free-streaming ceiling of that limiter: c a T^4 = 4 sigma T^4, or the
+      // historical sigma T^4 with rad_flim_legacy.  See conduction.hpp.
+      rad_flim_legacy = pin->GetOrAddBoolean(block,"rad_flim_legacy",false);
+      rad_flim_fac = rad_flim_legacy ? 1.0 : 4.0;
       rad_tau_lo = pin->GetOrAddReal(block,"rad_tau_lo",0.0);
       rad_tau_hi = pin->GetOrAddReal(block,"rad_tau_hi",0.0);
       rad_tau_mode = (rad_tau_hi > 0.0);
@@ -430,6 +434,7 @@ void Conduction::AddIsotropicHeatFluxRadiative(const DvceArray5D<Real> &w0,
   const bool blend_r = rad_blend_radial;
   auto &wf = rad_w;
   const bool limit = rad_flux_limit;
+  const Real ffac = rad_flim_fac;      // 4 sigma T^4, or 1 with rad_flim_legacy
   const Real sigma_sb = 5.670374419e-5;
 
   // the heat flux across one face in CODE units, from the two adjacent cell states and
@@ -466,7 +471,7 @@ void Conduction::AddIsotropicHeatFluxRadiative(const DvceArray5D<Real> &w0,
       // saturate smoothly at the free-streaming flux sigma T^4: 0.3 % at F = 0.08 sigma
       // T^4,
       // where the diffusion approximation is still exact, and never above sigma T^4
-      const Real ffree = sigma_sb*tk*tk*tk*tk;
+      const Real ffree = ffac*sigma_sb*tk*tk*tk*tk;
       f /= sqrt(1.0 + SQR(f/ffree));
     }
     return f/eflx_unit;
@@ -487,7 +492,7 @@ void Conduction::AddIsotropicHeatFluxRadiative(const DvceArray5D<Real> &w0,
     Real lf = 1.0;
     if (limit) {
       const Real f = -kap*gradn*temp_unit/len_unit;
-      const Real ffree = sigma_sb*tk*tk*tk*tk;
+      const Real ffree = ffac*sigma_sb*tk*tk*tk*tk;
       lf = (ffree > 0.0) ? 1.0/sqrt(1.0 + SQR(f/ffree)) : 0.0;
     }
     return kap*lf*temp_unit/len_unit/eflx_unit;
@@ -944,6 +949,7 @@ void Conduction::ImplicitRadialUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos
   const bool taumode = rad_tau_mode;
   const bool blend_r = rad_blend_radial;
   const bool limit = rad_flux_limit;
+  const Real ffac = rad_flim_fac;      // 4 sigma T^4, or 1 with rad_flim_legacy
   const Real krmax = rad_kappa_rmax;
   // the density gate, on the same face-averaged density the explicit x1 face uses
   const Real gaterho = rad_gate_rho, gatedex = rad_gate_dex;
@@ -1032,7 +1038,7 @@ void Conduction::ImplicitRadialUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos
         // kap/sqrt(1 + s^2) at fixed s, which is what keeps the system linear
         Real lf = 1.0;
         if (limit) {
-          const Real ffree = sigma_sb*tk*tk*tk*tk;
+          const Real ffree = ffac*sigma_sb*tk*tk*tk*tk;
           if (ffree > 0.0) {
             const Real fu = -kap*((tr - tl)/dl)*temp_unit/len_unit;
             lf = 1.0/sqrt(1.0 + SQR(fu/ffree));
@@ -1427,6 +1433,7 @@ void Conduction::NewTimeStep(const DvceArray5D<Real> &w0, const EOS_Data &eos_da
   const bool taumode = rad_tau_mode;
   const bool blend_r = rad_blend_radial;
   const bool limit = rad_flux_limit;
+  const Real ffac = rad_flim_fac;      // 4 sigma T^4, or 1 with rad_flim_legacy
   // the radial operator is unconditionally stable when it is solved implicitly, so it
   // carries no timestep constraint; x2/x3 are still explicit and still do
   const bool impx1 = rad_implicit_x1;
@@ -1568,7 +1575,7 @@ void Conduction::NewTimeStep(const DvceArray5D<Real> &w0, const EOS_Data &eos_da
     if (radiative && limit) {
       const Real tk = (gen ? wtemp_(m,k,j,i) : w0(m,IEN,k,j,i)/w0(m,IDN,k,j,i)*gm1)
                       *temp_unit;
-      ffree = 5.670374419e-5*tk*tk*tk*tk/(pres_unit*vel_unit);   // code units
+      ffree = ffac*5.670374419e-5*tk*tk*tk*tk/(pres_unit*vel_unit);   // code units
     }
     auto tc = [&] (const int kk, const int jj, const int ii) {
       return (gen ? wtemp_(m,kk,jj,ii) : w0(m,IEN,kk,jj,ii)/w0(m,IDN,kk,jj,ii)*gm1);
@@ -1659,7 +1666,7 @@ void Conduction::NewTimeStep(const DvceArray5D<Real> &w0, const EOS_Data &eos_da
       Real ffree = 0.0;
       if (limit) {
         const Real tk = temp*temp_unit;
-        ffree = 5.670374419e-5*tk*tk*tk*tk/(pres_unit*vel_unit);
+        ffree = ffac*5.670374419e-5*tk*tk*tk*tk/(pres_unit*vel_unit);
       }
       auto tc = [&] (const int kk, const int jj, const int ii) {
         return (gen ? wtemp_(dm,kk,jj,ii)

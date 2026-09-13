@@ -49,6 +49,24 @@ class Conduction {
   // non-finite, with the inputs that made it.  Default false; nothing runs when off.
   bool nan_report = false;
   bool rad_flux_limit = true;
+  // rad_flim_legacy (<hydro>/ or <mhd>/rad_flim_legacy, default FALSE): the FREE-
+  // STREAMING FLUX the limiter saturates at.  The limiter is
+  //     F = -K grad T / sqrt(1 + (K grad T/F_free)^2),
+  // and F_free must be the largest flux the radiation field can carry, which for an
+  // isotropic LTE field of energy density E = a T^4 streaming freely is
+  //     F_free = c E = c a T^4 = 4 sigma T^4.
+  // Every version of this module before 2026-09-14 used sigma T^4, i.e. F_free too small
+  // by 4, so the limiter bit four times too early and the diffusion flux was suppressed
+  // wherever it approached the (wrong) ceiling.  MEASURED on the He-star 1-D column: the
+  // face flux changes by 6 % at tau = 3, 0.8 % at tau = 10 and < 1e-3 at tau > 30 --
+  // a RAMP-LAYER effect, which is exactly where the tau blend hands over.
+  // Set true to get sigma T^4 back for a bitwise comparison with a pre-fix run.
+  bool rad_flim_legacy = false;
+  // 4 when the fix is on, 1 in the legacy mode.  THE ONE PLACE the factor enters: every
+  // limiter in this module (the explicit face flux, the angular-cap conductivity, the
+  // implicit radial solve, and both timestep estimates) multiplies sigma T^4 by it, so
+  // they cannot drift apart.
+  Real rad_flim_fac = 4.0;
   // OPTICAL-DEPTH BLEND (rad_tau_hi > 0): instead of the pressure cut, each x1 face
   // carries a weight w(tau_R) rising smoothly from 0 at rad_tau_lo to 1 at rad_tau_hi,
   // tau_R the column's Rosseland depth from the top; the diffusion flux is multiplied
