@@ -1021,6 +1021,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // the mirroring column sealed the atmosphere -- 6650 K isothermal, emergent flux
     // 0.3 % of L.  Set problem/rt_top_re = false to get the old boundary back.
     ts::rt_top_re = pin->GetOrAddBoolean("problem", "rt_top_re", true);
+    // see two_stream_rt.hpp, rt_cut_bc_legacy: the grey sweep used to start the upward
+    // intensity at the cut isotropic at B, which is exactly half the flux the column
+    // supports.  The fix is the default here too; true restores the old boundary.
+    ts::rt_cut_bc_legacy = pin->GetOrAddBoolean("problem", "rt_cut_bc_legacy", false);
     ts::rt_cell_report = pin->GetOrAddBoolean("problem", "rt_cell_report", false);
     ts::rt_report_r = pin->GetOrAddReal("problem", "rt_report_r", 3.887e12);
     ts::rt_report_every = pin->GetOrAddInteger("problem", "rt_report_every", 100);
