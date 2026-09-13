@@ -72,7 +72,25 @@
 //!                 2 (DEFAULT): the mirror RESCALED by the initial column's own ratio
 //!                 across the wall, rho_g = rho_m rho_col(z_g)/rho_col(z_m) and likewise
 //!                 for e -- impermeable like 1 up to the stratification over one cell,
-//!                 and hydrostatic like 0 at t = 0.
+//!                 and hydrostatic like 0 at t = 0.  It LEAKS: the rescaled mirror is
+//!                 not the hydrostatic continuation the WB background stencil would
+//!                 build from the evolved state, so the wall-face Riemann problem keeps
+//!                 a one-signed mass flux once the interior departs from the column.
+//!                 3: the WB-CONSISTENT wall.  The ghost is the interior cell's own
+//!                 (rho,e) walked across the wall with the SAME closure the well
+//!                 balanced background uses (utils/wb_background.hpp's WBAdvance), so
+//!                 the wall cell's background is an exact hydrostatic continuation of
+//!                 what is actually there; on top of that the mass and energy the wall
+//!                 face advected are cancelled cell by cell after every stage
+//!                 (problem/wall_noflux, red_giant.cpp's treatment), which makes the box
+//!                 EXACTLY closed whatever the interior does.
+//!   wall_noflux   cancel the wall-face mass (and energy) flux after each stage.
+//!                 Defaults to true under bc_mode 3 and false otherwise.  When a
+//!                 diffusive flux (conduction, viscosity) has been added into the same
+//!                 face -- at the bottom wall that term IS the imposed luminosity --
+//!                 only the energy the cancelled mass carried is removed, as
+//!                 red_giant.cpp does; with no diffusive flux the face energy flux is
+//!                 cancelled exactly too.
 //!   ic_profile    if set, a text file "z rho eint" (cgs, one node per line, increasing
 //!                 z, '#' comments) REPLACES the isentropic march.  It must already cover
 //!                 the ghosts -- analysis/mkprofile.py writes the horizontally and time
@@ -142,6 +160,8 @@ Real g0_ = 0.0, zlo_ = 0.0, dzf_ = 1.0, zmin_ = 0.0;
 Real zcool_ = 0.0, zmax_ = 0.0, tcool_ = 1.0;
 int nfine_ = 0, bc_mode_ = 2;
 bool etotgrav_ = false;
+bool wall_noflux_ = false;   // cancel the wall-face flux after each stage (bc_mode 3)
+bool diff_flux_ = false;     // a diffusive flux shares the wall face's energy channel
 bool rt_on_ = false;      // problem/rt_two_stream
 bool cool_on_ = true;     // the Newton cooling layer (off by default once RT is on)
 
@@ -256,11 +276,13 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   const Real mu = pin->GetOrAddReal("problem", "mu", 1.3);
   const Real dgrad = pin->GetOrAddReal("problem", "dgrad", 0.0);
   bc_mode_ = pin->GetOrAddInteger("problem", "bc_mode", 2);
-  if (bc_mode_ < 0 || bc_mode_ > 2) {
-    std::cout << "### FATAL ERROR in box_convection: problem/bc_mode must be 0, 1 or 2"
+  if (bc_mode_ < 0 || bc_mode_ > 3) {
+    std::cout << "### FATAL ERROR in box_convection: problem/bc_mode must be 0, 1, 2 or 3"
               << std::endl;
     std::exit(EXIT_FAILURE);
   }
+  wall_noflux_ = pin->GetOrAddBoolean("problem", "wall_noflux", (bc_mode_ == 3));
+  diff_flux_ = (pmbp->phydro->pcond != nullptr) || (pmbp->phydro->pvisc != nullptr);
   const std::string dump = pin->GetOrAddString("problem", "column_dump", "");
   const std::string icprof = pin->GetOrAddString("problem", "ic_profile", "");
   g0_ = g0;
@@ -567,7 +589,11 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     std::printf("  cooling layer: z > %.5e (top %.4f H_p), tau = %.5e s = %.4f"
                 " turnover\n", zcool_, cdep/hp0, ctau, ctau/tturn);
     std::printf("  x1 walls: bc_mode = %d (0 column ghost, 1 mirror, 2 mirror x the"
-                " column ratio)\n", bc_mode_);
+                " column ratio, 3 WB continuation), wall_noflux = %d%s\n",
+                bc_mode_, static_cast<int>(wall_noflux_),
+                (wall_noflux_ && diff_flux_) ? " (mass exact, energy via enthalpy)"
+                                             : (wall_noflux_ ? " (mass and energy exact)"
+                                                             : ""));
     if (pc != nullptr) {
       std::printf("  rad_kappa_fac = %.5e (conductivity is 1/rad_kappa_fac x physical)\n",
                   pc->rad_kappa_fac);
@@ -733,6 +759,56 @@ void BoxConvSrcs(Mesh *pm, Real bdt) {
       u0(m,IEN,k,j,i) -= bdt*ramp*d*(w0(m,IEN,k,j,i)/d - e0/d0)/tcool;
     }
   });
+  // --- THE WALLS ARE IMPERMEABLE.  The bc_mode-3 ghost above is the hydrostatic
+  // continuation of the evolved interior, which makes the wall-face mass flux small; but
+  // small and one-signed still integrates into a leak over 1e5 stages.  So cancel it
+  // exactly, cell by cell: undo the contribution the wall face made to this stage's flux
+  // divergence in the mass and energy channels, and leave the MOMENTUM channel alone --
+  // its pressure term is the wall force that holds the box up.  This is what
+  // red_giant.cpp's problem/wall_noflux does at its inner wall.
+  if (wall_noflux_) {
+    auto &flx1w = pmbp->phydro->uflx.x1f;
+    auto &mb_bcs = pmbp->pmb->mb_bcs;
+    const bool difflx = diff_flux_;
+    par_for("boxconv_wallflux", DevExeSpace(), 0, nmb1, ks, ke, js, je,
+    KOKKOS_LAMBDA(const int m, const int k, const int j) {
+      const Real idz = indcs.nx1/(size.d_view(m).x1max - size.d_view(m).x1min);
+      for (int w=0; w<2; ++w) {
+        const bool inner = (w == 0);
+        const BoundaryFlag bf = inner ? mb_bcs.d_view(m,BoundaryFace::inner_x1)
+                                      : mb_bcs.d_view(m,BoundaryFace::outer_x1);
+        if (bf != BoundaryFlag::user) continue;
+        const int ic = inner ? is : ie;             // the cell against the wall
+        const int ifc = inner ? is : (ie + 1);      // the wall face itself
+        // RKUpdate did u0 -= bdt*(flx(ie+1) - flx(is))/dz, so the inner face entered with
+        // a + sign and the outer face with a -.
+        const Real sgn = inner ? 1.0 : -1.0;
+        const Real dm = sgn*bdt*idz*flx1w(m,IDN,k,j,ifc);
+        if (dm == 0.0) continue;
+        const Real d = u0(m,IDN,k,j,ic);
+        if (!(d - dm > 0.0)) continue;
+        Real de;
+        if (difflx) {
+          // conduction (and viscosity) have already been added into this face's ENERGY
+          // channel, and at the bottom wall that term IS the imposed luminosity.  Remove
+          // only the energy the cancelled mass carried, exactly as red_giant.cpp does.
+          Real ei = u0(m,IEN,k,j,ic)
+                    - 0.5*(SQR(u0(m,IM1,k,j,ic)) + SQR(u0(m,IM2,k,j,ic))
+                           + SQR(u0(m,IM3,k,j,ic)))/d;
+          if (etotgrav) ei -= d*phicc(m,k,j,ic);
+          // guard the EOS call: a tabulated EOS takes log10(e) and would write a NaN
+          // into u0 with no precursor.  Skipping one stage's cancellation is harmless.
+          if (!(ei > 0.0)) continue;
+          de = dm*(u0(m,IEN,k,j,ic) + eos.Pressure(d, ei))/d;
+        } else {
+          de = sgn*bdt*idz*flx1w(m,IEN,k,j,ifc);
+        }
+        u0(m,IDN,k,j,ic) -= dm;
+        u0(m,IEN,k,j,ic) -= de;
+      }
+    });
+  }
+
   // --- the grey two-stream, after gravity and the cooling layer, exactly where
   // red_giant.cpp calls it: inside the stage, on the state the last ConToPrim left.
   if (rt_on_) {
@@ -765,6 +841,8 @@ void BoxConvBC(Mesh *pm) {
   const bool etotgrav = etotgrav_;
   auto cd_d = cd_, ce_d = ce_;
   const int bcm = bc_mode_;
+  auto eos = pmbp->phydro->peos->eos_data;
+  const WBOption wbo = pmbp->phydro->wb_option;
   auto fill = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i,
                             const int km, const int jm, const int im) {
     // (k,j,i) the ghost cell, (km,jm,im) the active cell it mirrors
@@ -775,6 +853,35 @@ void BoxConvBC(Mesh *pm) {
     if (bcm == 1) {
       d = w0(m,IDN,km,jm,im);
       e = w0(m,IEN,km,jm,im);
+    } else if (bcm == 3) {
+      // THE WB-CONSISTENT WALL.  Walk the mirror cell's OWN (rho,e) across the wall with
+      // the very closure the well-balanced background stencil integrates -- for the
+      // general EOS that is utils/wb_background.hpp's WBAdvance, which is what
+      // WBBackgroundStencil() calls for its own half-cell segments.  The wall cell's
+      // background is then the exact hydrostatic continuation of the state that is
+      // actually there, not of the initial column, so it carries no residual force and
+      // the wall-face Riemann problem stays symmetric however far the interior has
+      // drifted.  The closure test is one-sided (the cell one further IN), because the
+      // other side of the mirror cell is the ghost being built.
+      const Real dmm = w0(m,IDN,km,jm,im);
+      const Real emm = w0(m,IEN,km,jm,im);
+      const int in = (im > i) ? (im + 1) : (im - 1);
+      const Real dnn = w0(m,IDN,km,jm,in);
+      const Real enn = w0(m,IEN,km,jm,in);
+      const Real tmm = eos.Temperature(dmm, emm);
+      const int wopt = WBOptionNumber(eos, wbo, dmm, emm, dnn, enn, dmm, emm, tmm);
+      Real dlntdphi = 0.0;
+      if (wopt == 3) {
+        const Real zn = CellCenterX(in-is, indcs.nx1, x1min, x1max);
+        const Real dphn = g0*(zn - zm);
+        if (dphn != 0.0) {
+          dlntdphi = (eos.Temperature(dnn, enn, tmm) - tmm)/dphn;
+        }
+      }
+      Real dw = dmm, ew = emm, tw = tmm;
+      WBAdvance(eos, wopt, dmm, emm, g0*(zg - zm), dw, ew, tw, tmm, dlntdphi, tmm, tmm);
+      d = (dw > 0.0) ? dw : dmm;
+      e = (ew > 0.0) ? ew : emm;
     } else {
       Real sg = (zg - zlo)/dzf;
       int ig = static_cast<int>(sg);
