@@ -19,10 +19,25 @@ conduction is the only operator that moves anything.
 WHAT THIS GUARDS.  dx1 = 10 dx2, and x1 -- where the state is uniform and no flux ever
 flows -- is the direction that sets the timestep, so the transverse solver is asked to
 cover exactly 100 explicit transverse steps per step, in 7 RKL1 substages.  Halving dx2
-and dx1 together holds that ratio and scales dt as dx^2, so the whole scheme (2nd order
-in space, 1st order in the super-step) converges at better than 1.5th order.  The gates
-are the L1 error in the energy at both resolutions, the observed order, and the
-conservation residual sum V de / sum V |de| of every call, which must be at round-off.
+and dx1 together holds that ratio and scales dt as dx^2, so the scheme converges at 2nd
+order.  The gates are the L1 error in the energy at both resolutions, the observed order,
+and the conservation residual sum V de / sum V |de| of every call, which must be at
+round-off.
+
+THE ERROR FLOOR, and why the gates are where they are.  Measured over four resolutions
+n = 32, 64, 128, 256 (L1 = 1.0373e-7, 2.7855e-8, 8.8556e-9, 4.1603e-9), the error is not
+a pure power law; it fits
+
+    L1(n) = 6.32e-9 (128/n)^2 + 2.56e-9
+
+to within a percent.  The operator is therefore EXACTLY 2nd order, sitting on a
+resolution-INDEPENDENT floor of 2.56e-9.  That floor belongs to the REFERENCE, not to the
+scheme: the analytic solution assumes a constant D, while the real conductivity varies by
+~1e-4 across the blob, and the gas back-reacts a little.  Refining cannot remove it, so at
+high n the apparent order sags -- 64 -> 128 gives 1.65 and 128 -> 256 only 1.09 -- and any
+gate calibrated up there is measuring the reference's error, not the operator's.  Hence
+this test runs the two COARSEST resolutions, 32 and 64, where the floor is 2.5 % and 9 %
+of the error and the measured order is 1.897.  Do not "improve" it by adding finer runs.
 
 This test is deliberately BLIND to one thing, and the blindness is the point of the
 design note: the state is uniform in x1, so the radial operator moves nothing and the
@@ -44,17 +59,14 @@ INPUT = os.path.join(REPO, "inputs", "tests", "rad_transverse_gauss.athinput")
 BUILD = os.path.join(os.path.dirname(os.path.abspath(__file__)), "build_tr_gauss")
 
 # L1 error in the total energy against the analytic solution, and the order.
-# RECALIBRATED when the operator stopped linearising about the stage-START state and
-# started re-evaluating T* and alpha from the conserved energy it actually writes on
-# (conduction_transverse.cpp).  That refresh removes a splitting error, so the ABSOLUTE
-# error improves at both resolutions -- MEASURED 8.69e-8 -> 2.785e-8 at 64^2 (3.1x) and
-# 1.80e-8 -> 8.855e-9 at 128^2 (2.0x), identical on CPU and on one and two MI300A -- but
-# what is left is a different mixture of terms and converges at 1.653 rather than the
-# 2.27 of the lagged scheme.  The gates below are the measured numbers with ~1.4x of
-# margin; a run that comes back at the OLD values is the lag returning, and will trip the
-# L1 gates rather than the order one.
-L1_MAX = {64: 4.0e-8, 128: 1.3e-8}
-ORDER_MIN = 1.5
+# MEASURED 1.0373e-7 at 32^2 and 2.7855e-8 at 64^2, order 1.897, identical on CPU and on
+# one and two MI300A.  The gates carry ~1.15x of margin.  These numbers moved once, when
+# the operator stopped linearising about the stage-START state and started re-evaluating
+# T* and alpha from the conserved energy it actually writes on (conduction_transverse.cpp)
+# -- that refresh removed a splitting error and cut the 64^2 error 3.1x -- so a run that
+# comes back ~3x high is the lag returning, and will trip the L1 gates.
+L1_MAX = {32: 1.2e-7, 64: 3.3e-8}
+ORDER_MIN = 1.85
 # |sum V de| / sum V |de| of one call of the operator
 CONS_MAX = 1.0e-12
 # the super-step the solver is asked to cover, in explicit transverse steps
@@ -102,7 +114,7 @@ def test_run():
                        check=True, capture_output=True, text=True)
         binary = os.path.join(BUILD, "src", "athena")
         l1 = {}
-        for n in (64, 128):
+        for n in (32, 64):
             l1[n], out = run(binary, n)
             nsub, viol = parse_report(out)
             assert nsub <= SUBSTAGE_MAX, \
@@ -113,9 +125,9 @@ def test_run():
                 f"{viol:.3g}"
             assert l1[n] < L1_MAX[n], \
                 f"nx={n}: L1 energy error {l1[n]:.4g}, gate {L1_MAX[n]:.4g}"
-        order = np.log2(l1[64] / l1[128])
+        order = np.log2(l1[32] / l1[64])
         assert order > ORDER_MIN, \
-            f"convergence order {order:.3f} (L1 {l1[64]:.4g} -> {l1[128]:.4g}), " \
+            f"convergence order {order:.3f} (L1 {l1[32]:.4g} -> {l1[64]:.4g}), " \
             f"gate {ORDER_MIN}"
     finally:
         shutil.rmtree(BUILD, ignore_errors=True)
