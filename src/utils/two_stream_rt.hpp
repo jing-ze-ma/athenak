@@ -495,6 +495,33 @@ inline bool rt_semi_implicit = true;
 // radiative with rad_flux_inner at the bottom wall -- so the cut's upward intensity is
 // just the thermalised Planck function and nothing is counted twice.
 inline bool rt_int_at_cut = true;
+// problem/rt_cut_bc_legacy: the UPWARD intensity the grey sweep starts with at the cut.
+//
+// The sweep used to start with the isotropic thermalised value I_up(mu) = B(icut) for
+// every mu.  That is the zeroth term of the deep expansion and it drops the first one,
+// which is the ONLY term that carries a flux: with I_up = B and the down-sweep already
+// carrying its own gradient, sum_q w_q (I_up - I_down) comes out at EXACTLY half the
+// diffusion flux the same column supports.  MEASURED on the He-star 1-D column
+// (bench/hestar_fecz/instab1d): F_2s(cut)/F_diff(cut) = 2.0002, healing over ~3 cells
+// above the cut, and the residual of that mismatch is what the tau blend then deposits
+// in the ramp.
+//
+// The first term is the standard diffusion limit,
+//     I_up(mu) = B + mu dB/dtau,
+// with tau increasing DOWNWARD (into the star, i.e. towards smaller i), so dB/dtau is
+// formed here from the two cell-centre Planck functions straddling the cut face and the
+// Rosseland optical depth between those two CENTRES,
+//     dB/dtau = (B_icut - B_{icut+1}) / (0.5 (kappa rho dz)_icut
+//                                        + 0.5 (kappa rho dz)_{icut+1}),
+// which is positive on a star (deeper is hotter) and so raises I_up above B.  With the
+// two-point Gauss-Legendre quadrature (rt_nquad = 2) this reproduces F = (4 pi/3) dB/dtau
+// exactly; with the hemispheric mean (rt_nquad = 1) it gives 2 pi mu_H dB/dtau = 0.904 of
+// it, which is the quadrature's own error and not this boundary's.
+//
+// Default false, i.e. THE FIX IS ON: the old behaviour was a bug.  Set true only to
+// reproduce a pre-fix run bitwise.  Grey split path only -- the correlated-k sweep keeps
+// its own cut boundary, which is never used under a tau blend.
+inline bool rt_cut_bc_legacy = false;
 // problem/rt_top_re: what the unresolved column ABOVE the domain sends back down.
 // false (historical) makes it radiate at the ghost cell's own temperature. That is safe
 // only while the ghost is pinned to something outside the solution: with an open outer
@@ -1078,6 +1105,7 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
     }
     Real Tint4 = SQR(SQR(Tint));
     bool int_at_cut = rt_int_at_cut;
+    const bool cut_legacy = rt_cut_bc_legacy;   // see rt_cut_bc_legacy
     const bool top_re = rt_top_re;
     const bool top_vac = rt_top_vacuum;
     Real Iint = boltz_sigma/M_PI*Tint4;
@@ -1594,6 +1622,19 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
             }
             const int icut = icut_g(m,k,j);
             if (icut > ie) return;                  // whole column deeper than the cut
+            // THE DEEP-LIMIT GRADIENT AT THE CUT (see rt_cut_bc_legacy).  dB/dtau with
+            // tau increasing downward, from the two cell centres straddling the cut face
+            // and the Rosseland tau between those centres.  Zero in the legacy mode, and
+            // zero if the cut sits on the top cell (no i+1 to difference against).
+            Real dbdtau_cut = 0.0;
+            if (!cut_legacy && icut + 1 <= ie) {
+              const Real krb0 = kc_g(m,0,icut,k,j)*rhoN(m,k,j,icut);
+              const Real krb1 = kc_g(m,0,icut+1,k,j)*rhoN(m,k,j,icut+1);
+              const Real dtc = 0.5*(krb0*DX1(m,k,j,icut) + krb1*DX1(m,k,j,icut+1));
+              if (dtc > 0.0) {
+                dbdtau_cut = (Bb_g(m,0,icut,k,j) - Bb_g(m,0,icut+1,k,j))/dtc;
+              }
+            }
             // ck_nquad = 1 is the hemispheric mean (mu = 1/1.66), 2 the two-point
             // Gauss-Legendre quadrature the band solver offers on the same switch
             const int nq = (ck_nq_ > 1) ? 2 : 1;
@@ -1634,7 +1675,8 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
               }
               if (top_re) {
                 for (int q=0; q<nq; ++q) {
-                  Real ip = Bb_g(m,0,icut,k,j) + (int_at_cut ? Iint : 0.0);
+                  Real ip = Bb_g(m,0,icut,k,j) + (int_at_cut ? Iint : 0.0)
+                          + muq[q]*dbdtau_cut;
                   for (int i=icut+1; i<ie+2; ++i) {
                     const Real krb = kc_g(m,0,i-1,k,j)*rhoN(m,k,j,i-1);
                     const Real x = krb*DX1(m,k,j,i-1)/muq[q];
@@ -1657,6 +1699,18 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
               if (report_on) idn_g(m,k,j,ie+1) = I_down[0][ie+1];
             }
             // down-sweep
+            //
+            // KNOWN, NOT FIXED HERE: the layer source.  Each layer is integrated with a
+            // thickness dtau = kappa rho DX1(i) -- a whole cell -- but with the source
+            // running linearly from this cell's centre value Bb_g(i) to the NEIGHBOURING
+            // CELL'S CENTRE value (BFace), i.e. over a centre-to-centre interval offset
+            // by half a cell from the layer the optical depth belongs to.  The two do not
+            // line up, and the emergent flux comes out LOW by about 4 % where dtau per
+            // cell is ~1-3; it falls off both as dtau/cell -> 0 and as dtau/cell -> big.
+            // It is a smooth O(dtau^2) error and not a handover, so it does not pump the
+            // box acoustic mode the tau ramp does, and it is deliberately left alone:
+            // fixing it means re-deriving alpha/beta/gamma on half-cell layers, which
+            // moves every existing answer on every problem that uses this solver.
             for (int i=ie; i>icut-1; --i) {
               const Real krb_d = kc_g(m,0,i,k,j)*rhoN(m,k,j,i);
               const Real dtau_i = krb_d*DX1(m,k,j,i);
@@ -1686,7 +1740,8 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
             // below are not carrying it themselves (see rt_int_at_cut).
             Real I_up[2];
             for (int q=0; q<nq; ++q) {
-              I_up[q] = Bb_g(m,0,icut,k,j) + (int_at_cut ? Iint : 0.0);
+              I_up[q] = Bb_g(m,0,icut,k,j) + (int_at_cut ? Iint : 0.0)
+                      + muq[q]*dbdtau_cut;
               Fb_g(m,0,icut,k,j) += wfq[q]*(I_up[q] - I_down[q][icut]);
             }
             if (report_on) iup_g(m,k,j,icut) = I_up[0];

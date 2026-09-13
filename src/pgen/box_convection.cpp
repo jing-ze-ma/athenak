@@ -539,6 +539,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     ts::rt_top_clamp = pin->GetOrAddBoolean("problem", "rt_top_clamp", true);
     ts::rt_use_cons = pin->GetOrAddBoolean("problem", "rt_use_cons", true);
     ts::rt_bface = pin->GetOrAddBoolean("problem", "rt_bface", true);
+    // the deep-limit gradient in the grey sweep's upward intensity at the cut; the
+    // fix is the default, the switch only buys back the old bit pattern
+    ts::rt_cut_bc_legacy = pin->GetOrAddBoolean("problem", "rt_cut_bc_legacy", false);
     ts::rt_semi_implicit = pin->GetOrAddBoolean("problem", "rt_semi_implicit", true);
     ts::rt_apply_debug = pin->GetOrAddInteger("problem", "rt_apply_debug", 0);
     ts::rt_apply_debug_n = pin->GetOrAddInteger("problem", "rt_apply_debug_n", 8);
