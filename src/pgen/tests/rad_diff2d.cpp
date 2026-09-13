@@ -49,7 +49,7 @@ namespace {
 // true while setting the initial conditions, false while filling the reference register
 bool set_initial_conditions = true;
 struct RadDiff2DVars {
-  Real d0, p0, amp, sig0, x20, x30, dcoeff;
+  Real d0, p0, amp, sig0, sig1, x20, x30, dcoeff;
 };
 RadDiff2DVars rdv;
 }  // namespace
@@ -83,6 +83,15 @@ void ProblemGenerator::RadDiff2D(ParameterInput *pin, const bool restart) {
     rdv.p0 = pin->GetOrAddReal("problem", "p0", 1.0);
     rdv.amp = pin->GetOrAddReal("problem", "amp", 1.0e-4);
     rdv.sig0 = pin->GetOrAddReal("problem", "sig0", 0.06);
+    // sig1 > 0: the blob is spread in x1 AS WELL, with its own width, and is uniform in
+    // x3 instead -- the 3-D ANISOTROPIC mode the unified super-time-stepped operator
+    // (<hydro>/rad_sts_all) is tested with, where x1 and x2 both carry flux and a
+    // different amount of it.  x1 is closed by ZERO-FLUX (reflecting) walls, and a
+    // Gaussian centred on the midpoint of a symmetric interval has Neumann images at
+    // exactly the periodic positions n*l1, so the reference below sums images in x1 with
+    // the same formula as in x2 and is exact, not asymptotic.  Default 0 keeps the 2-D
+    // (x2,x3) problem of the transverse test bit for bit.
+    rdv.sig1 = pin->GetOrAddReal("problem", "sig1", 0.0);
     rdv.x20 = pin->GetOrAddReal("problem", "x20", 0.0);
     rdv.x30 = pin->GetOrAddReal("problem", "x30", 0.0);
 
@@ -121,12 +130,19 @@ void ProblemGenerator::RadDiff2D(ParameterInput *pin, const bool restart) {
   // the domain is periodic in x2/x3, and the periodic solution of the heat equation is
   // the sum over the images of the infinite-domain Gaussian.  Two images each way is
   // exact to well below round-off for every width this test uses.
+  const Real l1 = pmy_mesh_->mesh_size.x1max - pmy_mesh_->mesh_size.x1min;
   const Real l2 = pmy_mesh_->mesh_size.x2max - pmy_mesh_->mesh_size.x2min;
   const Real l3 = pmy_mesh_->mesh_size.x3max - pmy_mesh_->mesh_size.x3min;
   const Real tnow = set_initial_conditions ? 0.0 : pmbp->pmesh->time;
   const Real s2 = rdv.sig0*rdv.sig0 + 2.0*rdv.dcoeff*tnow;
   const Real fac = amp*t0*(rdv.sig0*rdv.sig0)/s2;
-  const int nx2 = indcs.nx2, nx3 = indcs.nx3;
+  // the 3-D anisotropic mode: a product of two independent 1-D Gaussians, in x1 with
+  // width sig1 and in x2 with width sig0, each spreading with the same D, so the
+  // amplitude carries one factor sig/s per spreading direction instead of two
+  const bool sp1 = (rdv.sig1 > 0.0);
+  const Real s1sq = rdv.sig1*rdv.sig1 + 2.0*rdv.dcoeff*tnow;
+  const Real fac1 = amp*t0*(rdv.sig1*rdv.sig0)/sqrt(s1sq*s2);
+  const int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
 
   auto &u1 = (set_initial_conditions) ? pmbp->phydro->u0 : pmbp->phydro->u1;
   par_for("pgen_raddiff2d", DevExeSpace(), 0, (pmbp->nmb_thispack-1), ks, ke, js, je,
@@ -137,14 +153,27 @@ void ProblemGenerator::RadDiff2D(ParameterInput *pin, const bool restart) {
     Real &x3max = size.d_view(m).x3max;
     const Real x2v = CellCenterX(j-js, nx2, x2min, x2max);
     const Real x3v = CellCenterX(k-ks, nx3, x3min, x3max);
-    Real g = 0.0;
-    for (int n2=-2; n2<=2; ++n2) {
-      for (int n3=-2; n3<=2; ++n3) {
-        const Real r2 = SQR(x2v - x20 + n2*l2) + SQR(x3v - x30 + n3*l3);
-        g += exp(-0.5*r2/s2);
+    Real temp;
+    if (sp1) {
+      Real &x1min = size.d_view(m).x1min;
+      Real &x1max = size.d_view(m).x1max;
+      const Real x1v = CellCenterX(i-is, nx1, x1min, x1max);
+      Real g1 = 0.0, g2 = 0.0;
+      for (int n=-2; n<=2; ++n) {
+        g1 += exp(-0.5*SQR(x1v + n*l1)/s1sq);
+        g2 += exp(-0.5*SQR(x2v - x20 + n*l2)/s2);
       }
+      temp = t0 + fac1*g1*g2;
+    } else {
+      Real g = 0.0;
+      for (int n2=-2; n2<=2; ++n2) {
+        for (int n3=-2; n3<=2; ++n3) {
+          const Real r2 = SQR(x2v - x20 + n2*l2) + SQR(x3v - x30 + n3*l3);
+          g += exp(-0.5*r2/s2);
+        }
+      }
+      temp = t0 + fac*g;
     }
-    const Real temp = t0 + fac*g;
     u1(m,IDN,k,j,i) = d0;
     u1(m,IM1,k,j,i) = 0.0;
     u1(m,IM2,k,j,i) = 0.0;
