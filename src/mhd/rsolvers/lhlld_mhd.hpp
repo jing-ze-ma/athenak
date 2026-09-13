@@ -25,8 +25,10 @@
 //!
 //! The contact speed S_M, the Alfven speeds, and every intermediate B and v state are
 //! unchanged, exactly as the LHLLC solver leaves its contact speed unchanged and fixes
-//! only the pressure.  The isothermal branch follows Mignone's formulation, which never
-//! forms p_T* explicitly, and is left identical to HLLD.
+//! only the pressure.  Since the star states are built from the wave speeds alone, the
+//! change in p_T* is applied where p_T* actually enters the flux, in Step 7.  The
+//! isothermal branch follows Mignone's formulation, which never forms p_T*
+//! explicitly, and is left identical to HLLD.
 //!
 //! REFERENCES:
 //! - T. Miyoshi & K. Kusano, "A multi-state HLL approximate Riemann solver for ideal
@@ -136,7 +138,7 @@ void LHLLD(TeamMember_t const &member, const EOS_Data &eos,
       spd[0] = fmin( wl_ivx-cfl, wr_ivx-cfr );
       spd[4] = fmax( wl_ivx+cfl, wr_ivx+cfr );
 
-      //--- Step 2b. Low-Mach factor of Minoshima & Miyoshi, used in Step 5 only
+      //--- Step 2b. Low-Mach factor of Minoshima & Miyoshi, used in Step 7 only
 
       Real chi = fmin(1.0, fmax(fabs(wl_ivx), fabs(wr_ivx))/fmax(cfl, cfr));
       Real phi = chi*(2.0 - chi);
@@ -207,10 +209,12 @@ void LHLLD(TeamMember_t const &member, const EOS_Data &eos,
       // Real ptstl = ptl + ul.d*sdl*(sdl-sdml); // these eqns had issues when averaged
       // Real ptstr = ptr + ur.d*sdr*(sdr-sdmr);
       Real ptst = 0.5*(ptstr + ptstl);  // total pressure (star state)
-      // LHLLD: scale the velocity-jump term of p_T* by phi.  Written as a correction to
-      // the HLLD value so that phi = 1 gives back HLLD bitwise: the correction is then
-      // exactly 0.0, and x - 0.0 == x in IEEE arithmetic.
-      ptst -= (1.0-phi)*ul.d*ur.d*sdl*sdr*(wr_ivx - wl_ivx)/(sdr*ur.d - sdl*ul.d);
+
+      // LHLLD: the change in the total pressure at the contact when its velocity-jump
+      // term is scaled by phi.  Every intermediate state below is left at its HLLD
+      // value and dpt is applied to the flux itself in Step 7, which is where p_T*
+      // enters (see the note there).  At phi = 1 this is exactly 0.0.
+      Real dpt = -(1.0-phi)*ul.d*ur.d*sdl*sdr*(wr_ivx - wl_ivx)/(sdr*ur.d - sdl*ul.d);
 
       // ul* - eqn (39) of M&K
       ulst.mx = ulst.d * spd[2];
@@ -396,6 +400,21 @@ void LHLLD(TeamMember_t const &member, const EOS_Data &eos,
         flxi.e  = fr.e  + urst.e;
         flxi.by = fr.by + urst.by;
         flxi.bz = fr.bz + urst.bz;
+      }
+
+      //--- Step 7.  Apply the low-Mach pressure correction
+      // Written in the star regions as F = F_i + S_i*(U*_i - U_i), the total pressure
+      // at the contact enters the flux only through the rearrangement of Batten et
+      // al. (1997), in which p_T* carries the weight
+      // S_i/(S_i - S_M) in the normal momentum and S_M times that in the energy.  Both
+      // ** states share the weight of the * state on their side, because U** differs
+      // from U* only in components p_T* does not touch.  Outside [S_L,S_R] the flux is
+      // the upwind one and there is nothing to correct.  dpt = 0.0 when phi = 1, so
+      // this leaves HLLD bitwise unchanged there.
+      if ((spd[0] < 0.0) && (spd[4] > 0.0)) {
+        Real wpt = (spd[2] >= 0.0) ? spd[0]*sdml_inv : spd[4]*sdmr_inv;
+        flxi.mx += wpt*dpt;
+        flxi.e  += wpt*dpt*spd[2];
       }
 
       flx(m,IDN,k,j,i) = flxi.d;
