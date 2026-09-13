@@ -2046,6 +2046,29 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
         }
         // the two-stream's share of each face in the tau blend
         Real src;
+        // THE BLEND HANDOVER IS NOT AN EMISSION, AND MUST NOT BE RELAXED.  src below is
+        // the divergence of the two-stream's BLENDED share, and inside the tau ramp it
+        // is dominated by the handover term d[w F]/dr: the flux the two-stream gives up
+        // to the conduction operator (and the conduction operator, face by face, takes
+        // up in full).  The semi-implicit step further down damps whatever it is handed
+        // by (1 - e^-x)/x per cell, which is the right thing to do to the LOCAL
+        // absorption-emission balance -- it is stiff -- and the wrong thing to do to a
+        // handover: one half of the exchange is then damped and the other is not, the
+        // two no longer cancel, and the residual is deposited in the blend layer for as
+        // long as the run lasts.  MEASURED on the 1-D grey atmosphere with tau_bottom
+        // = 1000 and rad_tau_lo/hi = 10/100, started FROM the analytic steady state:
+        // +0.098 F of spurious heating, 68 % of it inside tau 10-100, against +0.006 F
+        // with problem/rt_semi_implicit = false.
+        //
+        // So the source is split.  src_relax, the (1-w)-weighted local balance, goes
+        // through the relaxation and is paired with the (1-w)-weighted Em it must
+        // balance; src_ex = src - src_relax, which is the handover and nothing else, is
+        // applied EXPLICITLY and therefore exactly.  The explicit limit of the whole
+        // step is src*bdt either way.  Outside the blend (w = 0 on both faces, i.e.
+        // every cell the two-stream owns alone, and every run with no tau blend at all)
+        // src_relax == src and src_ex == 0 identically, so this is inert there.
+        Real src_relax;
+        const Real wbar = taublend ? 0.5*(w_g(m,k,j,i) + w_g(m,k,j,i+1)) : 0.0;
         if (direct_on) {
           // The direct source is the divergence of the FULL two-stream flux.  What the
           // two-stream actually deposits is the divergence of its blended share,
@@ -2057,15 +2080,19 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
           // is non-zero the cell is at tau > 10 and its energy dwarfs that round-off.
           src = 0.0;
           for (int b=0; b<nblk; ++b) src += Src_g(m,b,i,k,j);
+          src_relax = src;
           if (taublend) {
             src += (w_g(m,k,j,i+1)*Ft - w_g(m,k,j,i)*Fb)/dx1(m,k,j,i);
+            src_relax *= (1.0 - wbar);
           }
         } else {
+          const Real dvg = -(Ft-Fb)/dx1(m,k,j,i);
           if (taublend) {
             Ft *= (1.0 - w_g(m,k,j,i+1));
             Fb *= (1.0 - w_g(m,k,j,i));
           }
           src = -(Ft-Fb)/dx1(m,k,j,i);
+          src_relax = taublend ? (1.0 - wbar)*dvg : src;
         }
         Real Qs_d = 0.0;   // the stellar heating that entered src, for the diagnostic
         if (band_on) {
@@ -2074,15 +2101,18 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
           // above
           if (i < icut_g(m,k,j)) {
             src = 0.0;
+            src_relax = 0.0;
           } else {
             Real Qs = 0.0;
             for (int b=0; b<nblk; ++b) Qs += Qb_g(m,b,i,k,j);
             src += Qs;
+            src_relax += Qs;
             Qs_d = Qs;
           }
         } else {
           Qs_d = Qv_g(m,k,j,i);
           src += Qs_d;
+          src_relax += Qs_d;
         }
         // SEMI-IMPLICIT APPLICATION.  The source splits as src = A - E(T), A being the
         // absorption of the field from elsewhere, fixed on this step, and E the cell's
@@ -2133,13 +2163,15 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
           if (band_on && i < icut_g(m,k,j)) Em = 0.0;
           const Real ei = eiN(m,k,j,i);
           if (Em > 0.0 && ei > 0.0) {
-            const Real sdt = src*bdt;
+            const Real src_ex = src - src_relax;     // the handover, applied exactly
+            const Real sdt = src_relax*bdt;
             if (semilin) {
               const Real lam = 4.0*Em/ei;
               const Real x = lam*bdt;
-              de = (x > 1.0e-4) ? (src/lam)*(-expm1(-x)) : sdt;
+              de = (x > 1.0e-4) ? (src_relax/lam)*(-expm1(-x)) : sdt;
+              de += src_ex*bdt;
             } else {
-              const Real absn = src + Em;              // A, held fixed over the step
+              const Real absn = src_relax + Em;        // A, held fixed over the step
               // e_eq - e.  With nothing arriving the equilibrium is T = 0, i.e. -e.
               const Real deq = (absn > 0.0) ? ei*(sqrt(sqrt(absn/Em)) - 1.0) : -ei;
               dg_A = absn; dg_Em = Em; dg_deq = deq;
@@ -2207,6 +2239,11 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
                   dg_resc = true;
                 }
               }
+              // ...and the handover the relaxation was deliberately not shown.  Added
+              // after the Newton refinement and the rescue, both of which are statements
+              // about the LOCAL balance alone; src_ex is zero unless this cell sits
+              // inside the tau ramp.
+              de += src_ex*bdt;
             }
           }
         }
