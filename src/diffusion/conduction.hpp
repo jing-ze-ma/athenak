@@ -220,6 +220,55 @@ class Conduction {
   bool rad_sts_all = false;
   void StsConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
                            const Real beta_dt);
+  // rad_sts_split (<hydro>/ or <mhd>/rad_sts_split, default false): the STIFFNESS SPLIT
+  // of the super-time-stepped operator.  Every face conductance is written as
+  //     C_f = C_exp,f + C_sts,f,   C_exp,f = min(C_f, C_max,f),   C_sts,f = C_f - C_exp,f
+  // where C_max,f is the largest conductance the CURRENT hydro step can carry
+  // EXPLICITLY on that face.  C_exp is added to the ordinary face fluxes in the flux
+  // kernels of AddIsotropicHeatFluxRadiative, i.e. inside the RK stages, and C_sts alone
+  // goes into the RKL1 loop.  Two things follow, and they are the whole point:
+  //   * the non-stiff part of the operator -- which is most of it away from the stiff
+  //     cells (37 % of cells in the B-star FeCZ box, nearly all in the He box) -- is
+  //     advanced BY THE RK INTEGRATOR, so it is coupled to the hydro at the integrator's
+  //     own order instead of being operator-split from it at first order, and
+  //   * the RKL1 loop sees a smaller Gershgorin radius, so it takes fewer substages, and
+  //     a MeshBlock in which C_sts vanishes on every face is skipped outright
+  //     (sts_blk below).
+  // Both parts are in FLUX form, so each is separately conservative.  The dt limiter is
+  // untouched: C_exp is bounded BY CONSTRUCTION, never by dt.
+  //
+  // C_max,f.  The explicit stability limit this code already uses in NewTimeStep is, per
+  // cell, dt <= cfl/(2 ndim) dx^2 rho c_v/K per direction, which is exactly the row-sum
+  // statement
+  //     x_i = beta_dt alpha_i (sum over the cell's faces of C_f)/V_i <= cfl,
+  //     alpha_i = 1/(rho_i c_v,i)
+  // (see the derivation in BuildAngularCoeffs).  The explicit part is therefore given the
+  // budget x_i <= rad_sts_split_x (0.5 by default, the value at which the operator is
+  // monotone), distributed EVENLY over the nf = 2 x ndim faces of the row, and a face is
+  // held to the smaller of the budgets of the two cells that share it:
+  //     C_max,f = rad_sts_split_x min(V_i/alpha_i, V_j/alpha_j)/(nf beta_dt).
+  // Taking the min makes the bound hold for BOTH rows, and the even split makes the row
+  // sum at most nf x (budget/nf) = budget.  Symmetric in i and j, so the two cells (and
+  // the two MeshBlocks at a block face) form bitwise the same number and the explicit
+  // part stays exactly conservative.
+  //
+  // A face the RKL1 loop treats as CLOSED (a physical, non-periodic x2/x3 boundary, and
+  // the two physical x1 faces) gets no explicit part either: the split only redistributes
+  // the operator that is already there, it does not open faces.
+  //
+  // NOTE for rad_implicit_ang WITHOUT rad_sts_all: the x1 faces are then not part of this
+  // operator at all and keep their own explicit treatment, whose share of the row sum the
+  // conduction dt limiter still bounds by cfl/ndim.  The total explicit row sum is then
+  // at most rad_sts_split_x + cfl/ndim rather than rad_sts_split_x.
+  bool rad_sts_split = false;
+  Real rad_sts_split_x = 0.5;
+  // the explicit FRACTION C_exp,f/C_f of each face, 0 when the face carries nothing;
+  // allocated only when rad_sts_split is set.  cap_c1/2/3 then hold C_sts, not C_f.
+  DvceArray4D<Real> cap_f1, cap_f2, cap_f3;
+  // per MeshBlock: does ANY face of it still carry C_sts > 0?  A block where the split
+  // left nothing behind is skipped by the RKL1 stencil (its increment is zero there).
+  DvceArray1D<int> sts_blk;
+  bool sts_blk_used = false;
   // rad_sts_once (default false): apply the RKL1 operator ONCE per cycle, after the LAST
   // RK stage and with the FULL dt, instead of once per stage with beta_dt.  The substage
   // count grows as sqrt(tau), so one call over dt costs sqrt(2) x one call over dt/2 and

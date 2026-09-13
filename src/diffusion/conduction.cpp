@@ -152,9 +152,12 @@ Conduction::Conduction(std::string block, MeshBlockPack *pp, ParameterInput *pin
       // cover it without being repeated.
       rad_sts_all = pin->GetOrAddBoolean(block,"rad_sts_all",false);
       if (rad_sts_all) rad_implicit_ang = true;
-      // rad_sts_once applies the RKL1 operator once per cycle over the full dt, and
-      // rad_sts_margin is the round-off margin on its substage count.  Both are
-      // switches on the super-time-stepped operator and do nothing when it is off.
+      // the STIFFNESS SPLIT and the once-per-cycle application of the RKL1 operator,
+      // and the round-off margin of its substage count.  All three are switches on the
+      // super-time-stepped operator and do nothing at all when it is off; see
+      // conduction.hpp for what each one does and why.
+      rad_sts_split = pin->GetOrAddBoolean(block,"rad_sts_split",false);
+      rad_sts_split_x = pin->GetOrAddReal(block,"rad_sts_split_x",0.5);
       rad_sts_once = pin->GetOrAddBoolean(block,"rad_sts_once",false);
       rad_sts_margin = pin->GetOrAddReal(block,"rad_sts_margin",0.10);
       rad_ang_maxit = pin->GetOrAddInteger(block,"rad_ang_maxit",200);
@@ -265,12 +268,20 @@ Conduction::Conduction(std::string block, MeshBlockPack *pp, ParameterInput *pin
           std::exit(EXIT_FAILURE);
         }
       }
-      if (rad_sts_once && !rad_implicit_ang) {
-        // a switch ON the super-time-stepped operator: there is nothing to defer when
-        // that operator is not running
+      if (rad_sts_split || rad_sts_once) {
+        // both are switches ON the super-time-stepped operator: there is nothing to
+        // split off and nothing to defer when that operator is not running
+        if (!rad_implicit_ang) {
+          std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
+                    << std::endl << "rad_sts_split/rad_sts_once need rad_implicit_ang "
+                    << "or rad_sts_all" << std::endl;
+          std::exit(EXIT_FAILURE);
+        }
+      }
+      if (rad_sts_split && !(rad_sts_split_x > 0.0 && rad_sts_split_x <= 1.0)) {
         std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
-                  << std::endl << "rad_sts_once needs rad_implicit_ang or rad_sts_all"
-                  << std::endl;
+                  << std::endl << "rad_sts_split_x is the explicit row-sum budget x_i "
+                  << "and must be in (0,1]" << std::endl;
         std::exit(EXIT_FAILURE);
       }
       if (!(rad_sts_margin >= 0.0)) {
@@ -307,6 +318,15 @@ Conduction::Conduction(std::string block, MeshBlockPack *pp, ParameterInput *pin
         Kokkos::realloc(cap_c3, nmb, ncells3+1, ncells2, ncells1);
         Kokkos::realloc(cap_cnt, 2);
         Kokkos::realloc(cap_rec, 6);
+        // the stiffness split: one explicit-fraction array per direction in the stencil,
+        // and one flag per MeshBlock.  Nothing is allocated when the switch is off.
+        if (rad_sts_split) {
+          if (rad_sts_all) Kokkos::realloc(cap_f1, nmb, ncells3, ncells2, ncells1+1);
+          Kokkos::realloc(cap_f2, nmb, ncells3, ncells2+1, ncells1);
+          Kokkos::realloc(cap_f3, nmb, ncells3+1, ncells2, ncells1);
+          Kokkos::realloc(sts_blk, nmb);
+          sts_blk_used = true;
+        }
         if (rad_implicit_ang) {
           Kokkos::realloc(tr_st, nmb, ntrs, ncells3, ncells2, ncells1);
           Kokkos::realloc(tr_ya, nmb, 1, ncells3, ncells2, ncells1);
@@ -796,6 +816,108 @@ void Conduction::BuildAngularCoeffs(const DvceArray5D<Real> &w0, const EOS_Data 
       trst(m,ia_,k,j,i) = (rcv > 0.0 && isfinite(rcv)) ? 1.0/rcv : 0.0;
     });
   }
+
+  // ------------------------------------------------------------------------------------
+  // rad_sts_split: THE STIFFNESS SPLIT.  Everything above this point is untouched, so
+  // the operator is bitwise what it was when the switch is off.
+  //
+  // THE BUDGET.  NewTimeStep limits the EXPLICIT operator by
+  //     dt <= cfl fac dx_d^2 rho c_v/K_d   per direction d,   fac = 1/(2 ndim),
+  // and on a Cartesian mesh C_f = K/dx^2 and V_i = 1, so a direction at that limit
+  // contributes 2 C dt alpha = cfl/ndim to the row sum
+  //     x_i = beta_dt alpha_i (sum_f C_f)/V_i
+  // and the whole row is bounded by cfl.  The row-sum form is the direction-independent
+  // statement of the same limit, and it is the one that can be applied per face: give the
+  // explicit part the budget x_i <= xsplit, share it evenly over the nf = 2 ndim faces of
+  // the row, and hold each face to the smaller of the two budgets it sees,
+  //     C_max,f = xsplit min(V_i/alpha_i, V_j/alpha_j)/(nf beta_dt),
+  //     C_exp,f = min(C_f, C_max,f),   C_sts,f = C_f - C_exp,f >= 0.
+  // Both cells then satisfy sum_f C_exp,f <= nf (budget/nf) = budget by construction --
+  // for ANY dt, which is why the dt limiter needs no change -- and the expression is
+  // symmetric in the two cells, so they (and the two MeshBlocks at a block boundary) form
+  // bitwise the same number and the explicit part is exactly conservative.
+  //
+  // WHAT IS STORED.  cap_f* holds the explicit FRACTION C_exp,f/C_f, which is what the
+  // face-flux kernels multiply their flux by (the flux they form is C_f (T_j - T_i) in
+  // disguise, see AddIsotropicHeatFluxRadiative), and cap_c* is overwritten with C_sts so
+  // that the RKL1 loop needs no change at all.  A face the RKL1 loop treats as CLOSED
+  // gets fraction 0: the split redistributes the operator, it does not open faces.
+  if (rad_sts_split) {
+    const Real xsplit = rad_sts_split_x;
+    const int ndim = (three_d ? 2 : 1) + (sts1 ? 1 : 0) + 1;   // x2 [+x3] [+x1]
+    const Real nf = 2.0*static_cast<Real>(ndim);
+    auto capf1 = cap_f1;
+    auto capf2 = cap_f2;
+    auto capf3 = cap_f3;
+    auto trst = tr_st;
+    auto blk = sts_blk;
+    const int ia_ = TRSA;
+    auto &mb_bcs = pmy_pack->pmb->mb_bcs;
+    Kokkos::deep_copy(blk, 0);
+    // V_i/alpha_i = V_i rho_i c_v,i, the cell's heat capacity; a cell the linearisation
+    // dropped (alpha = 0) carries no flux either way
+    auto cap_i = [=] (const int m, const int k, const int j, const int i) {
+      const Real ai = trst(m,ia_,k,j,i);
+      const Real vi = curv ? vol_(m,k,j,i) : 1.0;
+      return (ai > 0.0 && vi > 0.0) ? vi/ai : 0.0;
+    };
+    // the explicit fraction of a face, and the C_sts it leaves behind
+    auto split_f = [=] (const Real cf, const Real hi, const Real hj, const bool open) {
+      if (!open || !(cf > 0.0) || !(capbdt > 0.0)) return 0.0;
+      const Real hmin = fmin(hi, hj);
+      if (!(hmin > 0.0)) return 0.0;
+      const Real cmax = xsplit*hmin/(nf*capbdt);
+      return (cf > cmax) ? cmax/cf : 1.0;
+    };
+    par_for("radstssp2", DevExeSpace(), 0, nmb1, ks-1, ke+1, js, je+1, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      bool op = true;
+      if (j == js) {
+        const BoundaryFlag f = mb_bcs.d_view(m,BoundaryFace::inner_x2);
+        op = (f == BoundaryFlag::block || f == BoundaryFlag::periodic);
+      } else if (j == je+1) {
+        const BoundaryFlag f = mb_bcs.d_view(m,BoundaryFace::outer_x2);
+        op = (f == BoundaryFlag::block || f == BoundaryFlag::periodic);
+      }
+      const Real cf = capc2(m,k,j,i);
+      const Real fr = split_f(cf, cap_i(m,k,j-1,i), cap_i(m,k,j,i), op);
+      capf2(m,k,j,i) = fr;
+      capc2(m,k,j,i) = cf*(1.0 - fr);
+      if (capc2(m,k,j,i) > 0.0) Kokkos::atomic_fetch_max(&blk(m), 1);
+    });
+    if (three_d) {
+      par_for("radstssp3", DevExeSpace(), 0, nmb1, ks, ke+1, js-1, je+1, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        bool op = true;
+        if (k == ks) {
+          const BoundaryFlag f = mb_bcs.d_view(m,BoundaryFace::inner_x3);
+          op = (f == BoundaryFlag::block || f == BoundaryFlag::periodic);
+        } else if (k == ke+1) {
+          const BoundaryFlag f = mb_bcs.d_view(m,BoundaryFace::outer_x3);
+          op = (f == BoundaryFlag::block || f == BoundaryFlag::periodic);
+        }
+        const Real cf = capc3(m,k,j,i);
+        const Real fr = split_f(cf, cap_i(m,k-1,j,i), cap_i(m,k,j,i), op);
+        capf3(m,k,j,i) = fr;
+        capc3(m,k,j,i) = cf*(1.0 - fr);
+        if (capc3(m,k,j,i) > 0.0) Kokkos::atomic_fetch_max(&blk(m), 1);
+      });
+    }
+    if (sts1) {
+      par_for("radstssp1", DevExeSpace(), 0, nmb1, ks-1, ke+1, js-1, je+1, is, ie+1,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        // the two PHYSICAL x1 faces are not in the stencil and keep the full explicit
+        // treatment AddIsotropicHeatFluxRadiative gives them; fraction 1 would double
+        // them, fraction 0 is what the flux kernel is told to ignore
+        if (i == is || i == ie+1) { capf1(m,k,j,i) = 0.0; return; }
+        const Real cf = capc1(m,k,j,i);
+        const Real fr = split_f(cf, cap_i(m,k,j,i-1), cap_i(m,k,j,i), true);
+        capf1(m,k,j,i) = fr;
+        capc1(m,k,j,i) = cf*(1.0 - fr);
+        if (capc1(m,k,j,i) > 0.0) Kokkos::atomic_fetch_max(&blk(m), 1);
+      });
+    }
+  }
   return;
 }
 
@@ -928,6 +1050,17 @@ void Conduction::AddIsotropicHeatFluxRadiative(const DvceArray5D<Real> &w0,
   // rad_sts_all does exactly the same, for the same reason: its RKL1 loop owns the
   // interior x1 faces and leaves the two physical ones here.
   const bool impx1 = rad_implicit_x1 || rad_sts_all;
+  // rad_sts_split: the interior x1 faces of the rad_sts_all stencil DO carry a flux
+  // here -- the explicit part C_exp of the split, as the fraction cap_f1 of the full
+  // face flux (see BuildAngularCoeffs).  The two physical x1 faces are untouched: they
+  // were never in the stencil and are already explicit at full strength.
+  const bool splt1 = rad_sts_split && rad_sts_all;
+  auto capf1_ = splt1 ? cap_f1 : DvceArray4D<Real>("radsp1dummy", 1, 1, 1, 1);
+  // ...which means the frozen coefficients have to exist BEFORE this kernel, not after
+  // it as they do on every other path (the call below is skipped when this one runs).
+  // rad_sts_all implies rad_implicit_ang, which is refused on a 1D mesh, so the x2/x3
+  // stencils of BuildAngularCoeffs are always in range here.
+  if (splt1) BuildAngularCoeffs(w0, eos, stage_beta_dt);
   par_for("radcond1", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     // the imposed internal flux through the inner wall replaces the gradient there
@@ -938,7 +1071,12 @@ void Conduction::AddIsotropicHeatFluxRadiative(const DvceArray5D<Real> &w0,
       if (diag_) cdg(m,0,k,j,i) = fin;
       return;
     }
-    if (impx1 && i > is && i < ie+1) return;
+    Real fsp = 1.0;
+    if (impx1 && i > is && i < ie+1) {
+      if (!splt1) return;
+      fsp = capf1_(m,k,j,i);
+      if (!(fsp > 0.0)) return;
+    }
     if (krmax > 0.0 && x1v_(m,i) > krmax) return;
     const Real tl = (gen ? wtemp_(m,k,j,i-1) : w0(m,IEN,k,j,i-1)/w0(m,IDN,k,j,i-1)*gm1);
     const Real tr = (gen ? wtemp_(m,k,j,i) : w0(m,IEN,k,j,i)/w0(m,IDN,k,j,i)*gm1);
@@ -950,8 +1088,8 @@ void Conduction::AddIsotropicHeatFluxRadiative(const DvceArray5D<Real> &w0,
       wt *= RadGate(0.5*(w0(m,IDN,k,j,i-1) + w0(m,IDN,k,j,i))*dens_unit,
                     gaterho, gatedex);
     }
-    const Real fcnd = wt*face_flux(tl, tr, pl, pr, w0(m,IDN,k,j,i-1),
-                                   w0(m,IDN,k,j,i), (tr - tl)/dl);
+    const Real fcnd = fsp*wt*face_flux(tl, tr, pl, pr, w0(m,IDN,k,j,i-1),
+                                       w0(m,IDN,k,j,i), (tr - tl)/dl);
     flx1(m,IEN,k,j,i) += fcnd;
     if (diag_) cdg(m,0,k,j,i) = fcnd;
     // --- <problem>/nan_report: record the first face whose conduction flux, or the
@@ -1019,13 +1157,19 @@ void Conduction::AddIsotropicHeatFluxRadiative(const DvceArray5D<Real> &w0,
   auto capx = cap_x;
   auto capcnt = cap_cnt;
   auto caprec = cap_rec;
-  if (capang > 0.0 || rad_implicit_ang) {
+  if ((capang > 0.0 || rad_implicit_ang) && !splt1) {
     BuildAngularCoeffs(w0, eos, stage_beta_dt);
   }
   // rad_implicit_ang: the transverse fluxes are NOT added here at all.  The operator is
   // applied after the RK update, by Conduction::ImplicitTransverseUpdate (see
   // conduction_transverse.cpp), and the x2/x3 conduction timestep goes with it.
-  if (rad_implicit_ang) return;
+  // rad_sts_split is the exception: the part of each face the current step CAN carry
+  // explicitly is added here, inside the stage, and only the remainder C_sts is left to
+  // the super-time-stepped operator.  cap_f2/cap_f3 hold that fraction.
+  const bool splt = rad_sts_split;
+  if (rad_implicit_ang && !splt) return;
+  auto capf2_ = splt ? cap_f2 : DvceArray4D<Real>("radsp2dummy", 1, 1, 1, 1);
+  auto capf3_ = splt ? cap_f3 : DvceArray4D<Real>("radsp3dummy", 1, 1, 1, 1);
 
   auto &flx2 = flx.x2f;
   par_for("radcond2", DevExeSpace(), 0, nmb1, ks, ke, js, je+1, is, ie,
@@ -1062,6 +1206,7 @@ void Conduction::AddIsotropicHeatFluxRadiative(const DvceArray5D<Real> &w0,
         Kokkos::atomic_fetch_add(&capcnt(1), 1);
       }
     }
+    if (splt) wtc = wt*capf2_(m,k,j,i);
     const Real fadd = wtc*face_flux(tl, tr, pl, pr, w0(m,IDN,k,j-1,i),
                                     w0(m,IDN,k,j,i), gradn);
     flx2(m,IEN,k,j,i) += fadd;
@@ -1103,6 +1248,7 @@ void Conduction::AddIsotropicHeatFluxRadiative(const DvceArray5D<Real> &w0,
         Kokkos::atomic_fetch_add(&capcnt(1), 1);
       }
     }
+    if (splt) wtc = wt*capf3_(m,k,j,i);
     const Real fadd = wtc*face_flux(tl, tr, pl, pr, w0(m,IDN,k-1,j,i),
                                     w0(m,IDN,k,j,i), gradn);
     flx3(m,IEN,k,j,i) += fadd;
