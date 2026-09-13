@@ -1,0 +1,13 @@
+# 2 2 2.0 3.0 -14.0 10.0
+# A CONSTANT Rosseland opacity, kappa_R = 0.4 cm^2/g, in the merged-table format
+# box_convection.cpp / red_giant.cpp read: the grid line above is
+# "# nT nD log10(T)_min dlog10(T) log10(rho)_min dlog10(rho)", then nT*nD values of
+# log10 kappa_R with T slowest.  Two nodes per axis spanning 10^2-10^5 K and
+# 10^-14-10^-4 g/cm^3 with the same value at every corner make the bilinear
+# interpolation (and any edge clamp) exactly constant, which is what the analytic grey
+# atmosphere test needs: T^4 = (3/4) Teff^4 (tau + 2/3) is exact only for a grey,
+# constant opacity.
+-0.3979400086720376
+-0.3979400086720376
+-0.3979400086720376
+-0.3979400086720376

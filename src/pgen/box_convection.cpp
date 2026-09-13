@@ -90,6 +90,21 @@
 //!   opac_table    Rosseland table, "# nT nD lTmin dlT lDmin dlD" then nT*nD log10 kappa
 //!   column_dump   if set, write the initial column to this file
 //!   mu            ideal-gas branch only: mean molecular weight
+//!   rt_two_stream  run the GREY TWO-STREAM of utils/two_stream_rt.hpp in its
+//!                 PLANE-PARALLEL mode instead of relying on the cooling layer alone
+//!                 (default false = today's behaviour).  The solver then does the
+//!                 cooling: each cell exchanges with the radiation field through the
+//!                 same Rosseland opacity the conduction operator uses, the top of the
+//!                 domain radiates to space with nothing coming back in
+//!                 (problem/rt_top_vacuum, default true), and the deep interior hands
+//!                 over to radiative diffusion through the conduction module's tau blend
+//!                 (<hydro>/rad_tau_lo, rad_tau_hi) exactly as red_giant.cpp does.  The
+//!                 energy still enters at the bottom wall as <hydro>/rad_flux_inner.
+//!                 Needs the whole vertical extent in ONE MeshBlock and nx1 + 2*nghost
+//!                 <= 520 (the solver's compile-time column tiers).
+//!   cool_layer    keep the Newton cooling layer.  Defaults to !rt_two_stream, i.e. on
+//!                 by default and OFF as soon as the two-stream runs -- the two are two
+//!                 models of the same loss and would double-count.
 //!   user_srcs     must be true (gravity and the cooling layer live in the source term)
 
 #include <algorithm>
@@ -112,6 +127,7 @@
 #include "utils/wb_background.hpp"
 #include "diffusion/conduction.hpp"
 #include "units/units.hpp"
+#include "utils/two_stream_rt.hpp"
 #include "pgen_eos_utils.hpp"
 #include "pgen.hpp"
 
@@ -126,6 +142,8 @@ Real g0_ = 0.0, zlo_ = 0.0, dzf_ = 1.0, zmin_ = 0.0;
 Real zcool_ = 0.0, zmax_ = 0.0, tcool_ = 1.0;
 int nfine_ = 0, bc_mode_ = 2;
 bool etotgrav_ = false;
+bool rt_on_ = false;      // problem/rt_two_stream
+bool cool_on_ = true;     // the Newton cooling layer (off by default once RT is on)
 
 //----------------------------------------------------------------------------------------
 //! \fn ReadOpacityTable
@@ -431,6 +449,104 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     }
   }
 
+  // --- the GREY TWO-STREAM (problem/rt_two_stream), utils/two_stream_rt.hpp
+  // Everything the solver reads about the geometry and the star goes in here.  The
+  // plane-parallel switch is what makes it legal on this mesh: see rt_plane_parallel.
+  rt_on_ = pin->GetOrAddBoolean("problem", "rt_two_stream", false);
+  cool_on_ = pin->GetOrAddBoolean("problem", "cool_layer", !rt_on_);
+  if (rt_on_) {
+    namespace ts = two_stream_rt;
+    // the column sweep is vertical and private to a thread, so one MeshBlock must hold
+    // the whole x1 extent; and the private intensity column is sized at compile time
+    if (pmy_mesh_->mb_indcs.nx1 != pmy_mesh_->mesh_indcs.nx1) {
+      std::cout << "### FATAL ERROR in box_convection: problem/rt_two_stream sweeps a "
+                << "whole vertical column inside one MeshBlock, but mesh/nx1 = "
+                << pmy_mesh_->mesh_indcs.nx1 << " and meshblock/nx1 = "
+                << pmy_mesh_->mb_indcs.nx1 << ". Set meshblock/nx1 = mesh/nx1 and "
+                << "decompose in x2/x3 only." << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    if (indcs.nx1 + 2*ng > 520) {
+      std::cout << "### FATAL ERROR in box_convection: problem/rt_two_stream needs "
+                << "nx1 + 2*nghost <= 520 (the grey sweep dispatches on compile-time "
+                << "column tiers, the largest of which is 520), but nx1 = "
+                << indcs.nx1 << " and nghost = " << ng << " give "
+                << (indcs.nx1 + 2*ng) << "." << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    // the solver is written in CGS throughout (sigma_SB, kappa in cm^2/g, p in bar), so
+    // the code units have to BE cgs
+    if (pmbp->punit == nullptr ||
+        pmbp->punit->length_cgs() != 1.0 || pmbp->punit->density_cgs() != 1.0 ||
+        pmbp->punit->velocity_cgs() != 1.0) {
+      std::cout << "### FATAL ERROR in box_convection: problem/rt_two_stream needs cgs "
+                << "code units (<units> with length_cgs = mass_cgs = time_cgs = 1); the "
+                << "two-stream solver works in cgs internally." << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    if (pc == nullptr || pc->iso_cond_type.compare("radiative") != 0) {
+      std::cout << "### FATAL ERROR in box_convection: problem/rt_two_stream takes its "
+                << "opacity from the conduction module, so <hydro>/isotropic_conduction "
+                << "= radiative with rad_kappa_src = table_rho is required." << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    ts::rt_grey = true;
+    ts::rt_split = true;               // implied: the grey kernel lives on the split path
+    ts::rt_plane_parallel = true;      // constant g, flat faces, geometry from RegionSize
+    ts::rt_top_vacuum = pin->GetOrAddBoolean("problem", "rt_top_vacuum", true);
+    ts::rt_top_re = pin->GetOrAddBoolean("problem", "rt_top_re", false);
+    ts::rt_de_max = pin->GetOrAddReal("problem", "rt_de_max", 0.5);
+    // Unlike red_giant.cpp, which defaults these to the pre-fix solver for backward
+    // compatibility, a NEW problem generator defaults to the FIXED one -- the same six
+    // opt-ins the production red-giant inputs state explicitly.
+    ts::rt_semi_lin = pin->GetOrAddBoolean("problem", "rt_semi_lin", false);
+    ts::rt_explicit = pin->GetOrAddBoolean("problem", "rt_explicit", false);
+    ts::rt_newton = pin->GetOrAddBoolean("problem", "rt_newton", true);
+    ts::rt_rescue_eq = pin->GetOrAddBoolean("problem", "rt_rescue_eq", true);
+    ts::rt_src_direct = pin->GetOrAddBoolean("problem", "rt_src_direct", true);
+    ts::rt_top_clamp = pin->GetOrAddBoolean("problem", "rt_top_clamp", true);
+    ts::rt_use_cons = pin->GetOrAddBoolean("problem", "rt_use_cons", true);
+    ts::rt_bface = pin->GetOrAddBoolean("problem", "rt_bface", true);
+    ts::rt_semi_implicit = pin->GetOrAddBoolean("problem", "rt_semi_implicit", true);
+    ts::rt_apply_debug = pin->GetOrAddInteger("problem", "rt_apply_debug", 0);
+    ts::rt_apply_debug_n = pin->GetOrAddInteger("problem", "rt_apply_debug_n", 8);
+    ts::rt_nan_report = pin->GetOrAddBoolean("problem", "nan_report", false);
+    ts::rt_dump_file = pin->GetOrAddString("problem", "rt_dump_file", "");
+    ts::rt_dump_m = pin->GetOrAddInteger("problem", "rt_dump_m", 0);
+    ts::rt_dump_j = pin->GetOrAddInteger("problem", "rt_dump_j", -1);
+    ts::rt_dump_k = pin->GetOrAddInteger("problem", "rt_dump_k", -1);
+    // ck_nquad: 1 = hemispheric mean (mu = 1/1.66), 2 = two-point Gauss-Legendre
+    correlated_k::ck_nq = pin->GetOrAddInteger("problem", "rt_nquad", 2);
+    // The internal flux.  It enters the box ONCE, through the bottom wall as
+    // <hydro>/rad_flux_inner, so the solver must not inject it a second time at the cut;
+    // with the tau blend on, two_stream_rt forces rt_int_at_cut false anyway.
+    const Real teff_bot = (fin > 0.0) ? std::pow(fin/5.670374419e-5, 0.25) : 0.0;
+    ts::rt_int_at_cut = pin->GetOrAddBoolean("problem", "rt_int_at_cut", false);
+    ts::rt_tint_override = teff_bot;
+    ts::rt_star_teff = 0.0;
+    // The star-and-grid carrier the solver reads.  Teq = 0 switches the stellar beam off
+    // and grav_point_mass = false makes EffGravAt return the box's constant g.
+    hot_jupiter_param.Teq = 0.0;
+    hot_jupiter_param.omega = 0.0;
+    hot_jupiter_param.grav = g0;
+    hot_jupiter_param.ap = 1.0;        // unused: no point mass, no tide, no beam
+    hot_jupiter_param.Rgas = rgas;
+    hot_jupiter_param.met = pin->GetOrAddReal("problem", "met", 0.0);
+    hot_jupiter_param.grav_point_mass = false;
+    hot_jupiter_param.stellar_tide = false;
+    hot_jupiter_param.rot_potential = false;
+    if (global_variable::my_rank == 0) {
+      std::printf("box_convection: GREY two-stream ON (plane-parallel), %d-point "
+                  "angular quadrature, top %s, T_int = %.5e K\n",
+                  correlated_k::ck_nq, ts::rt_top_vacuum ? "VACUUM (no incoming "
+                  "intensity)" : "unresolved hydrostatic column", teff_bot);
+      std::printf("  deep handover: %s\n", pc->rad_tau_mode
+                  ? "tau blend to radiative diffusion (<hydro>/rad_tau_lo, rad_tau_hi)"
+                  : "NONE -- the sweep reaches the bottom wall; set rad_tau_lo/hi");
+      std::printf("  Newton cooling layer: %s\n", cool_on_ ? "ON" : "off");
+    }
+  }
+
   // --- the start-up report: every number the design rests on
   if (global_variable::my_rank == 0) {
     std::printf("box_convection: base rho = %.5e g/cm^3, T = %.5e K, p = %.5e\n",
@@ -578,6 +694,7 @@ void BoxConvSrcs(Mesh *pm, Real bdt) {
   auto cd_d = cd_, ce_d = ce_;
   const bool use_cache = wbx1;
   const Real cwid = (zmax > zcool) ? (zmax - zcool) : 1.0;
+  const bool cool_on = cool_on_;
 
   par_for("boxconv_srcs", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -603,7 +720,7 @@ void BoxConvSrcs(Mesh *pm, Real bdt) {
     }
     u0(m,IM1,k,j,i) += src;
     // the cooling layer: relax the SPECIFIC internal energy toward the initial column's
-    if (z > zcool) {
+    if (cool_on && z > zcool) {
       Real s = (z - zcool)/cwid;
       s = (s > 1.0) ? 1.0 : s;
       const Real ramp = s*s*(3.0 - 2.0*s);
@@ -616,6 +733,11 @@ void BoxConvSrcs(Mesh *pm, Real bdt) {
       u0(m,IEN,k,j,i) -= bdt*ramp*d*(w0(m,IEN,k,j,i)/d - e0/d0)/tcool;
     }
   });
+  // --- the grey two-stream, after gravity and the cooling layer, exactly where
+  // red_giant.cpp calls it: inside the stage, on the state the last ConToPrim left.
+  if (rt_on_) {
+    two_stream_rt::picket_fence_two_stream_RT(pm, bdt);
+  }
   return;
 }
 

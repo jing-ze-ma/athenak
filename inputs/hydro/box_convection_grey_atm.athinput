@@ -1,0 +1,117 @@
+# A PLANE-PARALLEL GREY ATMOSPHERE: the validation problem for the two-stream radiative
+# transfer of utils/two_stream_rt.hpp running in its Cartesian mode
+# (problem/rt_two_stream, problem/rt_plane_parallel inside the solver).
+#
+# THE ANALYTIC ANSWER.  A static, grey, plane-parallel atmosphere in radiative
+# equilibrium carrying a flux F = sigma Teff^4 has the Eddington temperature profile
+#     T(tau)^4 = (3/4) Teff^4 (tau + 2/3),
+# with tau the Rosseland optical depth measured DOWNWARD from the top.  That is exact
+# only for a constant (grey) opacity, which is why problem/opac_table points at a table
+# whose every entry is the same kappa_R = 0.4 cm^2/g.
+#
+# THE SET-UP.  g = 1e4 cm/s^2, mu = 0.6, ideal gamma = 5/3, Teff = 5000 K
+# (F = 3.5440e10 erg/cm^2/s, supplied at the bottom wall as <hydro>/rad_flux_inner).
+# Hydrostatic equilibrium with a constant kappa makes p = g tau / kappa, so the column
+# mass 250 g/cm^2 -- which the reflecting walls CONSERVE -- pins the optical depth at the
+# bottom wall to tau = kappa p/g = 100 whatever the run does.  The domain is 9.0972e8 cm
+# tall, which is what the analytic profile occupies between tau = 0.004 and tau = 100.
+#
+# The initial column is NOT the answer: it is the pgen's own march at
+# dln T/dln p = 0.20 (grad_ad = 0.4, so problem/dgrad = -0.20), which is 20 % away from
+# the radiative gradient 0.2483 deep down and a factor 2.6 too cold at the top.  The run
+# has to find the Eddington profile from there; the relaxation is the thermal time of the
+# column, E/F = 1.74e4 s.
+#
+# 1-D (nx2 = nx3 = 1) and convectively STABLE: the radiative gradient of a grey
+# atmosphere maxes out at 1/4, below grad_ad = 2/5, so nothing convects and the answer is
+# the static one.
+#
+# Build:  cmake -B build -D PROBLEM=box_convection && make -C build -j
+# Run:    build/src/athena -i inputs/hydro/box_convection_grey_atm.athinput
+
+<comment>
+problem = grey plane-parallel atmosphere, two-stream RT validation
+
+<job>
+basename = grey_atm
+
+<mesh>
+nghost = 2
+nx1    = 256
+x1min  = 0.0
+x1max  = 9.0971904e8
+ix1_bc = user
+ox1_bc = user
+nx2    = 1
+x2min  = 0.0
+x2max  = 9.0971904e8
+ix2_bc = periodic
+ox2_bc = periodic
+nx3    = 1
+x3min  = 0.0
+x3max  = 9.0971904e8
+ix3_bc = periodic
+ox3_bc = periodic
+
+<meshblock>
+nx1 = 256
+nx2 = 1
+nx3 = 1
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim       = -1
+tlim       = 4.0e4
+ndiag      = 2000
+
+<units>
+length_cgs = 1.0
+mass_cgs   = 1.0
+time_cgs   = 1.0
+mu         = 0.6
+
+<hydro>
+eos         = ideal
+gamma       = 1.6666666667
+reconstruct = plm
+rsolver     = hllc
+dfloor      = 1.0e-16
+pfloor      = 1.0e-8
+# the opacity, the bottom flux and the deep handover to radiative diffusion
+isotropic_conduction = radiative
+rad_kappa_src        = table_rho
+rad_kappa_fac        = 1.0
+rad_flux_inner       = 3.543984012e10
+rad_flux_limit       = true
+rad_implicit_x1      = true
+rad_tau_lo           = 3.0
+rad_tau_hi           = 30.0
+
+<problem>
+user_srcs    = true
+g0           = 1.0e4
+mu           = 0.6
+rho_base     = 1.2240533e-6
+t_base       = 14738.6173
+dgrad        = -0.20
+vpert        = 0.0
+bc_mode      = 2
+opac_table   = inputs/hydro/kappa_const.txt
+rt_two_stream = true
+rt_top_vacuum = true
+rt_nquad      = 2
+column_dump   = grey_atm_column.txt
+
+<output1>
+file_type = tab
+variable  = hydro_w
+data_format = %24.16e
+dt        = 4.0e3
+slice_x2  = 4.5485952e8
+slice_x3  = 4.5485952e8
+
+<output2>
+file_type = hst
+dt        = 1.0e3

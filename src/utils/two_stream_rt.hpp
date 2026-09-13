@@ -35,6 +35,7 @@
 #include <string>
 
 #include "athena.hpp"
+#include "coordinates/cell_locations.hpp"
 #include "utils/eint_from_cons.hpp"
 #include "globals.hpp"
 #include "mesh/mesh.hpp"
@@ -306,6 +307,38 @@ inline Real rt_ck_pcut = 10.0;                    // bar
 // blanketing, which is the reason the band solver exists -- so this is the control, and
 // the diagnosis, not automatically the production choice.
 inline bool rt_grey = false;
+
+// problem/rt_plane_parallel: run the GREY sweep on a PLANE-PARALLEL Cartesian mesh.
+//
+// Everything else in this file assumes a RADIAL mesh: the cell centres and faces come
+// from Coordinates::x1v / xx1f and the radial width from Coordinates::dx1, and all three
+// are 1x1 placeholder Views on a Cartesian mesh (coordinates.cpp reallocates them only
+// for spherical-polar and cubed-sphere grids), so reading them there is an out-of-bounds
+// access.  With this flag the three are taken from the MeshBlock's own RegionSize
+// instead -- uniform dx1, centres from CellCenterX, faces from LeftEdgeX -- which is
+// exactly what a plane-parallel column needs and costs the radial path nothing: the
+// substitutions are runtime branches on a `const bool` that is false in every existing
+// run, and the spherical expressions are untouched.
+//
+// The sweep itself needs NO other change, because the split path already deposits
+// -(F_top - F_bot)/dx1 rather than a divergence with face areas: the radial and the
+// plane-parallel operator are the same expression.  What DOES have to be right is the
+// gravity model -- a plane-parallel box has constant g, so the caller sets
+// grav_point_mass = false and stellar_tide = false, and EffGravAt then returns g
+// whatever radius it is handed.
+//
+// RESTRICTED to the grey split path (rt_grey && rt_split): the monolithic picket-fence
+// kernel and the correlated-k kernel carry stellar-beam geometry (the substellar angle,
+// the slant path) that has no plane-parallel meaning.  The guard is a fatal error.
+inline bool rt_plane_parallel = false;
+// problem/rt_top_vacuum: nothing above the top of the domain.  The default top boundary
+// is the UNRESOLVED HYDROSTATIC COLUMN, of optical depth kappa p / g_eff, which is the
+// right model for a star whose atmosphere continues above x1max.  A local box is cut out
+// of a stratification and the cells above it are not part of the problem; more to the
+// point, a box with weak gravity would be handed p/g = a huge column and sealed.  With
+// this flag the downward intensity entering the top face is exactly zero, which is the
+// standard grey-atmosphere boundary and the one solar_convection.cpp's local solver uses.
+inline bool rt_top_vacuum = false;
 
 // --- read-only access to the band solver's radial face flux, for diagnostics ---------
 // rt_Fb holds the NET longwave flux on the radial faces, (m, block, i, k, j), in code
@@ -803,6 +836,42 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
     const bool correct_spherical = false;
     const bool test_oned = false;
 
+    // --- PLANE-PARALLEL geometry (problem/rt_plane_parallel).  See the flag's note: the
+    // three radial geometry Views above are placeholders on a Cartesian mesh, so in this
+    // mode every read of them goes through X1V / X1F / DX1 instead, which rebuild the
+    // same quantities from the MeshBlock's RegionSize.  With the flag off each helper
+    // returns the View element it replaced, so the radial path is unchanged bit for bit.
+    const bool pp_ = rt_plane_parallel;
+    if (pp_ && !(rt_grey && rt_split)) {
+      std::cout << "### FATAL ERROR in two_stream_rt: rt_plane_parallel is implemented "
+                << "for the GREY split sweep only (rt_grey = true, which implies "
+                << "rt_split); the picket-fence and correlated-k kernels carry radial "
+                << "stellar-beam geometry." << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    if (pp_ && (use_cubed_sphere_ || use_spherical_polar)) {
+      std::cout << "### FATAL ERROR in two_stream_rt: rt_plane_parallel is for a "
+                << "Cartesian mesh, but this mesh is spherical-polar or cubed-sphere."
+                << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    const int is_pp = is;
+    const int nx1_pp = indcs.nx1;
+    auto X1V = [=] (const int m, const int i) {
+      return pp_ ? CellCenterX(i-is_pp, nx1_pp, size.d_view(m).x1min,
+                               size.d_view(m).x1max)
+                 : x1v_(m,i);
+    };
+    auto X1F = [=] (const int m, const int i) {
+      return pp_ ? LeftEdgeX(i-is_pp, nx1_pp, size.d_view(m).x1min,
+                             size.d_view(m).x1max)
+                 : x1f_(m,i);
+    };
+    auto dx1_ = pmbp->pcoord->dx1;
+    auto DX1 = [=] (const int m, const int k, const int j, const int i) {
+      return pp_ ? size.d_view(m).dx1 : dx1_(m,k,j,i);
+    };
+
     Real gamma;
     EOS_Data eos;
     // wtemp is the temperature ConsToPrim already solved for the current w0. It is
@@ -968,6 +1037,7 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
     Real Tint4 = SQR(SQR(Tint));
     bool int_at_cut = rt_int_at_cut;
     const bool top_re = rt_top_re;
+    const bool top_vac = rt_top_vacuum;
     Real Iint = boltz_sigma/M_PI*Tint4;
 
     const int nchain_rt = rt_nchain;
@@ -1178,6 +1248,13 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
       if (band_on) {
         par_for("rt_pre_geom", DevExeSpace(), 0, nmb1, ks, ke, js, je,
         KOKKOS_LAMBDA(const int m, const int k, const int j) {
+          // PLANE-PARALLEL: there is no substellar direction, and x2v/x3v are 1x1
+          // placeholder Views on a Cartesian mesh, so they must not be read at all.
+          // mu0 reaches only EffGravAt's tidal term, which is off here.
+          if (pp_) {
+            cf_g(m,k,j,3) = 0.0;
+            return;
+          }
           const Real x2v = x2v_(m,j);
           const Real x3v = x3v_(m,k);
           Real lam, phi, theta;
@@ -1255,7 +1332,7 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
             const Real TT = T_g(m,k,j,i);
             const Real pcgs = pb_g(m,k,j,i)*1.0e6;
             const Real rho = rhoN(m,k,j,ii);
-            Real kr = (grey_krmax > 0.0 && x1v_(m,i) > grey_krmax)
+            Real kr = (grey_krmax > 0.0 && X1V(m,i) > grey_krmax)
                 ? grey_kabove
                 : (grey_ktab
                    ? RosselandTable(grey_kt, grey_klT, grey_klP, grey_nT, grey_nP, TT,
@@ -1494,9 +1571,12 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
             {
               const Real kap = kc_g(m,0,ie+1,k,j);
               const Real mu0 = cf_g(m,k,j,3);
-              const Real dtau = RTTopDtau(kap, pb_g(m,k,j,ie+1)*1.0e6,
-                                          EffGravAt(grav, ap, x1v_(m,ie+1), grav_pmass,
-                                                    omega, mu0, tide));
+              // rt_top_vacuum: nothing above the domain, so the column has no optical
+              // depth and hands back no intensity whatever its source function is.
+              const Real dtau = top_vac ? 0.0
+                  : RTTopDtau(kap, pb_g(m,k,j,ie+1)*1.0e6,
+                              EffGravAt(grav, ap, X1V(m,ie+1), grav_pmass,
+                                        omega, mu0, tide));
               // The source of that column: the ghost's own Planck function, or -- with
               // rt_top_re -- the radiative-equilibrium value I_up/2, which is what a slab
               // with nothing but space above it must emit downward.  See rt_top_re.
@@ -1515,7 +1595,7 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
                   Real ip = Bb_g(m,0,icut,k,j) + (int_at_cut ? Iint : 0.0);
                   for (int i=icut+1; i<ie+2; ++i) {
                     const Real krb = kc_g(m,0,i-1,k,j)*rhoN(m,k,j,i-1);
-                    const Real x = krb*dx1(m,k,j,i-1)/muq[q];
+                    const Real x = krb*DX1(m,k,j,i-1)/muq[q];
                     const Real e0 = -expm1(-x);
                     const Real bet = (x > 1.0e-3) ? (1.0 - e0/x) : (x/2.0 - SQR(x)/6.0);
                     const Real gm  = (x > 1.0e-3) ? (e0 - 1.0 + e0/x)
@@ -1537,7 +1617,7 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
             // down-sweep
             for (int i=ie; i>icut-1; --i) {
               const Real krb_d = kc_g(m,0,i,k,j)*rhoN(m,k,j,i);
-              const Real dtau_i = krb_d*dx1(m,k,j,i);
+              const Real dtau_i = krb_d*DX1(m,k,j,i);
               // the far endpoint of the layer's source function, weighted by emitting
               // matter: above rad_kappa_rmax the neighbour has kappa = 0 and a Planck
               // function 1e9x this cell's, which used to drain it to the floor in one
@@ -1552,7 +1632,7 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
                 const Real bet = (x > 1.0e-3) ? (1.0 - e0/x) : (x/2.0 - SQR(x)/6.0);
                 // direct source: what this stream leaves in cell i, absorbed minus
                 // emitted
-                Src_g(m,0,i,k,j) += wfq[q]/dx1(m,k,j,i)
+                Src_g(m,0,i,k,j) += wfq[q]/DX1(m,k,j,i)
                                   *(e0*I_down[q][i+1]
                                     - (alp*bfar_d + bet*Bb_g(m,0,i,k,j)));
                 I_down[q][i] = (1.0-e0)*I_down[q][i+1]
@@ -1572,7 +1652,7 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
             for (int i=icut+1; i<ie+2; ++i) {
               const Real kap = kc_g(m,0,i-1,k,j);
               const Real rho = rhoN(m,k,j,i-1);
-              const Real dtau_i = kap*rho*dx1(m,k,j,i-1);
+              const Real dtau_i = kap*rho*DX1(m,k,j,i-1);
               // same emissivity weighting for the upward stream and for Em: see BFace
               const int iiu = (i > ie) ? ie : i;
               const Real bfar_u = BFace(kap*rho, kc_g(m,0,i,k,j)*rhoN(m,k,j,iiu),
@@ -1584,7 +1664,7 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
                 const Real gm  = (x > 1.0e-3) ? (e0 - 1.0 + e0/x) : (x/2.0 - SQR(x)/3.0);
                 const Real Iup_in = I_up[q];
                 // the same for the upward stream through layer i-1
-                Src_g(m,0,i-1,k,j) += wfq[q]/dx1(m,k,j,i-1)
+                Src_g(m,0,i-1,k,j) += wfq[q]/DX1(m,k,j,i-1)
                                     *(e0*Iup_in
                                       - (bet*bfar_u
                                          + gm*Bb_g(m,0,i-1,k,j)));
@@ -2058,14 +2138,14 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
           src = 0.0;
           for (int b=0; b<nblk; ++b) src += Src_g(m,b,i,k,j);
           if (taublend) {
-            src += (w_g(m,k,j,i+1)*Ft - w_g(m,k,j,i)*Fb)/dx1(m,k,j,i);
+            src += (w_g(m,k,j,i+1)*Ft - w_g(m,k,j,i)*Fb)/DX1(m,k,j,i);
           }
         } else {
           if (taublend) {
             Ft *= (1.0 - w_g(m,k,j,i+1));
             Fb *= (1.0 - w_g(m,k,j,i));
           }
-          src = -(Ft-Fb)/dx1(m,k,j,i);
+          src = -(Ft-Fb)/DX1(m,k,j,i);
         }
         Real Qs_d = 0.0;   // the stellar heating that entered src, for the diagnostic
         if (band_on) {
@@ -2242,15 +2322,15 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
                          "lamdt=%.4e de=%.4e "
                          "de/e=%.4e tau=%.4e w=%.4e dx=%.4e\n",
                          i, T_g(m,k,j,i), rhoN(m,k,j,i), ei, Fb, Ft,
-                         -(Ft-Fb)/dx1(m,k,j,i), srcraw, src, Qs, Em,
+                         -(Ft-Fb)/DX1(m,k,j,i), srcraw, src, Qs, Em,
                          (Em > 0.0 && ei > 0.0) ? 4.0*Em/ei*bdt : 0.0,
                          de, de/ei, taublend ? tauf_g(m,k,j,i) : 0.0,
-                         taublend ? w_g(m,k,j,i) : 0.0, dx1(m,k,j,i));
+                         taublend ? w_g(m,k,j,i) : 0.0, DX1(m,k,j,i));
         }
         // ---- rt_cell_report ---------------------------------------------------
         if (report_on) {
           const bool fixedcell = fixed_on && (k == rep_k) && (j == rep_j) &&
-              (fabs(x1v_(m,i) - rep_r) < 0.5*dx1(m,k,j,i));
+              (fabs(X1V(m,i) - rep_r) < 0.5*DX1(m,k,j,i));
           bool doprint = fixedcell;
           if (dg_resc) {
             if (Kokkos::atomic_fetch_add(&repc_g(0), 1) == 0) doprint = true;
@@ -2258,10 +2338,10 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
           if (doprint && i >= icut_g(m,k,j)) {
             const Real kap = kc_g(m,0,i,k,j);
             const Real rho = rhoN(m,k,j,i);
-            const Real dtc = kap*rho*dx1(m,k,j,i);
+            const Real dtc = kap*rho*DX1(m,k,j,i);
             Real tautop = 0.0;
             for (int i2=i; i2<=ie; ++i2) {
-              tautop += kc_g(m,0,i2,k,j)*rhoN(m,k,j,i2)*dx1(m,k,j,i2);
+              tautop += kc_g(m,0,i2,k,j)*rhoN(m,k,j,i2)*DX1(m,k,j,i2);
             }
             // the hemispheric-mean weights the sweeps used (ck_nquad = 1); with
             // ck_nquad = 2 the split into absorption and emission below is indicative
@@ -2275,10 +2355,10 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
             const Real bip = Bb_g(m,0,i+1,k,j);
             const Real bim = (i > is) ? Bb_g(m,0,i-1,k,j) : bi;
             const Real idn = idn_g(m,k,j,i+1), iup = iup_g(m,k,j,i);
-            const Real absdn = wf/dx1(m,k,j,i)*e0*idn;
-            const Real absup = wf/dx1(m,k,j,i)*e0*iup;
-            const Real emidn = wf/dx1(m,k,j,i)*(alp*bip + bet*bi);
-            const Real emiup = wf/dx1(m,k,j,i)*(bet*bip + gmq*bi);
+            const Real absdn = wf/DX1(m,k,j,i)*e0*idn;
+            const Real absup = wf/DX1(m,k,j,i)*e0*iup;
+            const Real emidn = wf/DX1(m,k,j,i)*(alp*bip + bet*bi);
+            const Real emiup = wf/DX1(m,k,j,i)*(bet*bip + gmq*bi);
             const Real ei = eiN(m,k,j,i);
             // the staleness itself, so a report says whether w0 and u0 had parted
             const Real ei_w0_r = w0_uc_(m,IEN,k,j,i);
@@ -2301,7 +2381,7 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
               "    e=%.6e deq=%.6e e_eq=%.6e de=%.6e de/e=%.6e rescued=%d nit=%d\n"
               "    ei_w0=%.6e ei_u0=%.6e stale=%.4e rho_w0=%.6e rho_u0=%.6e\n"
               "    newton de: %.6e %.6e %.6e %.6e %.6e %.6e %.6e %.6e\n",
-              dg_resc ? "RESCUE" : "FIXED", rep_cyc, rep_time, m, k, j, i, x1v_(m,i),
+              dg_resc ? "RESCUE" : "FIXED", rep_cyc, rep_time, m, k, j, i, X1V(m,i),
               rho, T_g(m,k,j,i), kap, kap*rho, dtc, tautop, bdt,
               idn, idn_g(m,k,j,i), iup, iup_g(m,k,j,i+1),
               Fb_g(m,0,i,k,j), Fb_g(m,0,i+1,k,j),
@@ -2355,7 +2435,7 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
           col(i,1) = T_g(md,kd,jd,i);
           col(i,2) = Fs;
           col(i,3) = Qs;
-          col(i,4) = x1f_(md,i);
+          col(i,4) = X1F(md,i);
           // Gamma_1 and grad_ad of the CURRENT state. Both collapse to the ideal values
           // when the EOS is ideal; under the tabulated EOS they dip hard through the H2
           // dissociation and H ionization bands, and how steeply they vary across a cell
