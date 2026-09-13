@@ -844,6 +844,14 @@ void Conduction::BuildAngularCoeffs(const DvceArray5D<Real> &w0, const EOS_Data 
   // gets fraction 0: the split redistributes the operator, it does not open faces.
   if (rad_sts_split) {
     const Real xsplit = rad_sts_split_x;
+    // THE STEP THE BUDGET IS FOR.  Normally the stage's own beta_dt: the explicit part
+    // is added to THIS stage's fluxes and has to be stable over it.  With rad_sts_once
+    // the RKL1 loop runs once over the FULL dt, and the division has to be the same in
+    // every stage or the two parts would not add up to the whole operator -- the
+    // explicit part would be sized for one step and the remainder subtracted for
+    // another.  Budgeting the full dt in that case is both consistent and stricter than
+    // each stage needs, so the explicit part stays stable a fortiori.
+    const Real spbdt = rad_sts_once ? pmy_pack->pmesh->dt : beta_dt;
     const int ndim = (three_d ? 2 : 1) + (sts1 ? 1 : 0) + 1;   // x2 [+x3] [+x1]
     const Real nf = 2.0*static_cast<Real>(ndim);
     auto capf1 = cap_f1;
@@ -863,10 +871,10 @@ void Conduction::BuildAngularCoeffs(const DvceArray5D<Real> &w0, const EOS_Data 
     };
     // the explicit fraction of a face, and the C_sts it leaves behind
     auto split_f = [=] (const Real cf, const Real hi, const Real hj, const bool open) {
-      if (!open || !(cf > 0.0) || !(capbdt > 0.0)) return 0.0;
+      if (!open || !(cf > 0.0) || !(spbdt > 0.0)) return 0.0;
       const Real hmin = fmin(hi, hj);
       if (!(hmin > 0.0)) return 0.0;
-      const Real cmax = xsplit*hmin/(nf*capbdt);
+      const Real cmax = xsplit*hmin/(nf*spbdt);
       return (cf > cmax) ? cmax/cf : 1.0;
     };
     par_for("radstssp2", DevExeSpace(), 0, nmb1, ks-1, ke+1, js, je+1, is, ie,
