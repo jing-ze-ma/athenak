@@ -411,6 +411,16 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   rt_dump_j = pin->GetOrAddInteger("problem","ck_dump_j",-1);
   rt_dump_k = pin->GetOrAddInteger("problem","ck_dump_k",-1);
   rt_ck_pcut = pin->GetOrAddReal("problem","ck_pcut_bar",10.0);
+  // the two grey-sweep fixes, wired here so a dhj run can reproduce a pre-fix run
+  // bitwise.  Both default to the FIX (false); see utils/two_stream_rt.hpp.
+  // rt_cut_bc_legacy: the upward intensity at the cut used to be isotropic at B, which
+  // is exactly half the flux the column supports.
+  two_stream_rt::rt_cut_bc_legacy =
+      pin->GetOrAddBoolean("problem","rt_cut_bc_legacy",false);
+  // rt_layer_legacy: every layer used to span a whole cell in optical depth but carry a
+  // source running between two cell CENTRES, offset from it by half a cell.
+  two_stream_rt::rt_layer_legacy =
+      pin->GetOrAddBoolean("problem","rt_layer_legacy",false);
   rt_de_max = pin->GetOrAddReal("problem","rt_de_max",0.5);
   rt_semi_implicit = pin->GetOrAddBoolean("problem","rt_semi_implicit",true);
   if (global_variable::my_rank == 0) {

@@ -1025,6 +1025,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // intensity at the cut isotropic at B, which is exactly half the flux the column
     // supports.  The fix is the default here too; true restores the old boundary.
     ts::rt_cut_bc_legacy = pin->GetOrAddBoolean("problem", "rt_cut_bc_legacy", false);
+    // see two_stream_rt.hpp, rt_layer_legacy: every layer used to span a whole
+    // cell in optical depth but carry a source running between two cell CENTRES.
+    // The fix is the default here too; true restores the old layers.
+    ts::rt_layer_legacy = pin->GetOrAddBoolean("problem", "rt_layer_legacy", false);
     ts::rt_cell_report = pin->GetOrAddBoolean("problem", "rt_cell_report", false);
     ts::rt_report_r = pin->GetOrAddReal("problem", "rt_report_r", 3.887e12);
     ts::rt_report_every = pin->GetOrAddInteger("problem", "rt_report_every", 100);
