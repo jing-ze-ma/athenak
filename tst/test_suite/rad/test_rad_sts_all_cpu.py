@@ -48,7 +48,7 @@ BUILD = os.path.join(os.path.dirname(os.path.abspath(__file__)), "build_sts_all"
 
 # cfl_number at nx = 32; halved with every doubling of the resolution so that dt scales
 # as dx^2.  At this value the super-step is ~100 explicit diffusion steps.
-CFL32 = 0.35
+CFL32 = 0.00465
 
 # L1 error in the total energy against the analytic solution.  MEASURED on CPU:
 #   unified  1.299634e-07 (32)  3.281713e-08 (64)  8.545311e-09 (128), orders 1.99, 1.94
