@@ -144,6 +144,14 @@ Conduction::Conduction(std::string block, MeshBlockPack *pp, ParameterInput *pin
       rad_implicit_x1 = pin->GetOrAddBoolean(block,"rad_implicit_x1",false);
       rad_cap_ang = pin->GetOrAddReal(block,"rad_cap_ang",0.0);
       rad_implicit_ang = pin->GetOrAddBoolean(block,"rad_implicit_ang",false);
+      // rad_sts_all: ONE RKL1 loop over x1, x2 and x3.  It IS the transverse treatment,
+      // so it implies rad_implicit_ang -- everything rad_implicit_ang allocates, checks,
+      // drops from the timestep and builds in BuildAngularCoeffs is needed here too, and
+      // the extra x1 faces are the only difference.  Set before any of the checks below,
+      // so that the Cartesian / uniform-grid / SMR / nghost guards of rad_implicit_ang
+      // cover it without being repeated.
+      rad_sts_all = pin->GetOrAddBoolean(block,"rad_sts_all",false);
+      if (rad_sts_all) rad_implicit_ang = true;
       rad_ang_maxit = pin->GetOrAddInteger(block,"rad_ang_maxit",200);
       rad_ang_verbose = pin->GetOrAddBoolean(block,"rad_ang_verbose",false);
       {
@@ -230,6 +238,28 @@ Conduction::Conduction(std::string block, MeshBlockPack *pp, ParameterInput *pin
           std::exit(EXIT_FAILURE);
         }
       }
+      if (rad_sts_all) {
+        // ONE operator over all three directions: the tridiagonal radial solve is not
+        // part of it and running both would apply the radial operator twice
+        if (rad_implicit_x1) {
+          std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
+                    << std::endl << "rad_sts_all and rad_implicit_x1 are two treatments "
+                    << "of the radial direction: set one or the other, not both"
+                    << std::endl;
+          std::exit(EXIT_FAILURE);
+        }
+        // the x1 faces of a column are all in the stencil and the PHYSICAL x1 faces are
+        // left to the explicit path, exactly as ImplicitRadialUpdate leaves them, so the
+        // whole x1 extent has to be in one MeshBlock: an interior x1 face that fell on a
+        // block boundary would be closed by both operators and carry nothing at all
+        if (pp->pmesh->mb_indcs.nx1 != pp->pmesh->mesh_indcs.nx1) {
+          std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
+                    << std::endl << "rad_sts_all needs the whole x1 extent in one "
+                    << "MeshBlock: <meshblock>/nx1 = " << pp->pmesh->mb_indcs.nx1
+                    << " but <mesh>/nx1 = " << pp->pmesh->mesh_indcs.nx1 << std::endl;
+          std::exit(EXIT_FAILURE);
+        }
+      }
       if (rad_cap_ang > 0.0) {
         // the angular cap only makes sense once the radial direction is unconditionally
         // stable: with x1 still explicit the run dies on dt1 long before dt2/dt3 matter,
@@ -254,6 +284,7 @@ Conduction::Conduction(std::string block, MeshBlockPack *pp, ParameterInput *pin
         const int ncells2 = (indcs.nx2 > 1)? (indcs.nx2 + 2*indcs.ng) : 1;
         const int ncells3 = (indcs.nx3 > 1)? (indcs.nx3 + 2*indcs.ng) : 1;
         Kokkos::realloc(cap_x, nmb, ncells3, ncells2, ncells1);
+        if (rad_sts_all) Kokkos::realloc(cap_c1, nmb, ncells3, ncells2, ncells1+1);
         Kokkos::realloc(cap_c2, nmb, ncells3, ncells2+1, ncells1);
         Kokkos::realloc(cap_c3, nmb, ncells3+1, ncells2, ncells1);
         Kokkos::realloc(cap_cnt, 2);
@@ -276,9 +307,10 @@ Conduction::Conduction(std::string block, MeshBlockPack *pp, ParameterInput *pin
         }
       }
     } else if (pin->GetOrAddBoolean(block,"rad_implicit_x1",false) ||
-               pin->GetOrAddBoolean(block,"rad_implicit_ang",false)) {
+               pin->GetOrAddBoolean(block,"rad_implicit_ang",false) ||
+               pin->GetOrAddBoolean(block,"rad_sts_all",false)) {
       std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
-                << std::endl << "rad_implicit_x1/rad_implicit_ang need "
+                << std::endl << "rad_implicit_x1/rad_implicit_ang/rad_sts_all need "
                 << "isotropic_conduction = radiative" << std::endl;
       std::exit(EXIT_FAILURE);
     }
@@ -444,6 +476,34 @@ Real RadFaceKappa(const Real tk, const Real pcgs, const Real rhocgs, const bool 
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn Real RadFaceKCode
+//! \brief the face CONDUCTIVITY in CODE units: the cgs conductivity `kap` that
+//! RadFaceKappa returns, multiplied by the flux limiter evaluated on the frozen
+//! face-normal gradient `gradn` (code units, T per length) and converted to code units.
+//! It is the coefficient of (T_j - T_i)/dl in the face flux, i.e. what the explicit face
+//! flux -K grad T contributes per unit gradient.
+//!
+//! THE ONE DEFINITION used by every operator that needs K itself rather than the flux:
+//! BuildAngularCoeffs forms the x1 (rad_sts_all), x2 and x3 face coefficients of the
+//! super-time-stepped operator with it, so the three directions of that operator cannot
+//! disagree about what K is, and none of them can drift from the explicit face flux.
+//! (Conduction::ImplicitRadialUpdate keeps its own inline copy of the same three lines:
+//! its expression multiplies the tau-blend weight in at a different place in the product,
+//! so folding it in here would move its last bits, and that solve is bitwise frozen.)
+
+KOKKOS_INLINE_FUNCTION
+Real RadFaceKCode(const Real kap, const Real tk, const Real gradn, const bool limit,
+                  const Real temp_unit, const Real len_unit, const Real eflx_unit) {
+  Real lf = 1.0;
+  if (limit) {
+    const Real f = -kap*gradn*temp_unit/len_unit;
+    const Real ffree = 5.670374419e-5*tk*tk*tk*tk;
+    lf = (ffree > 0.0) ? 1.0/sqrt(1.0 + SQR(f/ffree)) : 0.0;
+  }
+  return kap*lf*temp_unit/len_unit/eflx_unit;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void Conduction::BuildAngularCoeffs
 //! \brief the FROZEN coefficients of the TRANSVERSE (x2/x3) radiative operator: the face
 //! coefficient C_f = A_f K_f/(dl_f sin alpha) on every x2 and x3 face, the per-cell
@@ -493,7 +553,6 @@ void Conduction::BuildAngularCoeffs(const DvceArray5D<Real> &w0, const EOS_Data 
   const bool taumode = rad_tau_mode;
   auto &wf = rad_w;
   const bool limit = rad_flux_limit;
-  const Real sigma_sb = 5.670374419e-5;
   const bool ktab = (rad_kappa_tab && rad_kr_nT > 0);
   const bool krho = rad_kappa_rho;
   auto &krt = rad_kr_tab;
@@ -513,13 +572,7 @@ void Conduction::BuildAngularCoeffs(const DvceArray5D<Real> &w0, const EOS_Data 
     const Real rhof = 0.5*(dl_ + dr_)*dens_unit;
     const Real kap = RadFaceKappa(tk, pf*pres_unit, rhof, ktab, krt, krlT, krlP,
                                   krnT, krnP, krho, met, kfac, tmax);
-    Real lf = 1.0;
-    if (limit) {
-      const Real f = -kap*gradn*temp_unit/len_unit;
-      const Real ffree = sigma_sb*tk*tk*tk*tk;
-      lf = (ffree > 0.0) ? 1.0/sqrt(1.0 + SQR(f/ffree)) : 0.0;
-    }
-    return kap*lf*temp_unit/len_unit/eflx_unit;
+    return RadFaceKCode(kap, tk, gradn, limit, temp_unit, len_unit, eflx_unit);
   };
   const bool cs = pmy_pack->pmesh->use_cubed_sphere && rad_cs_exact;
   auto &sinc_ = pmy_pack->pcoord->sin_cell;
@@ -528,7 +581,12 @@ void Conduction::BuildAngularCoeffs(const DvceArray5D<Real> &w0, const EOS_Data 
     return gen ? wtemp_(m,k,j,i) : w0(m,IEN,k,j,i)/w0(m,IDN,k,j,i)*gm1;
   };
   const Real capbdt = beta_dt;
+  // rad_sts_all: the x1 faces join the stencil, and the radial tau-blend weight comes
+  // with them (rad_blend_radial), exactly as it does in the explicit x1 face flux
+  const bool sts1 = rad_sts_all;
+  const bool blend_r = rad_blend_radial;
   auto capx = cap_x;
+  auto capc1 = cap_c1;
   auto capc2 = cap_c2;
   auto capc3 = cap_c3;
   auto capcnt = cap_cnt;
@@ -607,6 +665,38 @@ void Conduction::BuildAngularCoeffs(const DvceArray5D<Real> &w0, const EOS_Data 
                                     w0(m,IDN,k,j,i), gradn);
       const Real af = curv ? area3_(m,k,j,i) : 1.0/size.d_view(m).dx3;
       capc3(m,k,j,i) = kc*af/(dl*sn);
+    });
+  }
+
+  // rad_sts_all: the x1 face coefficient, from the SAME face_kcode (and therefore the
+  // same RadFaceKappa, the same flux limiter and the same tau-blend weight) as the x2/x3
+  // faces above and as the explicit x1 face flux.  Cartesian only -- rad_sts_all refuses
+  // curvilinear meshes -- so A_f = 1/dx1 and V_i = 1, the form the flux-divergence of
+  // Hydro::RKUpdate applies on a Cartesian grid.
+  if (sts1) {
+    par_for("radstsc1", DevExeSpace(), 0, nmb1, ks-1, ke+1, js-1, je+1, is, ie+1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      capc1(m,k,j,i) = 0.0;
+      // the two PHYSICAL x1 faces are NOT in the stencil.  They keep the explicit
+      // treatment of AddIsotropicHeatFluxRadiative -- the imposed internal flux
+      // rad_flux_inner at the bottom, the ghost-based gradient at the top -- which is
+      // exactly what ImplicitRadialUpdate leaves them, and it is what makes the interior
+      // fluxes telescope so that the operator moves energy without creating it.
+      if (i == is || i == ie+1) return;
+      if (krmax > 0.0 && x1v_(m,i) > krmax) return;
+      const Real tl = tcell(m,k,j,i-1), tr = tcell(m,k,j,i);
+      const Real pl = (gen ? wder_(m,IDPR,k,j,i-1) : w0(m,IEN,k,j,i-1)*gm1);
+      const Real pr = (gen ? wder_(m,IDPR,k,j,i) : w0(m,IEN,k,j,i)*gm1);
+      const Real dl = size.d_view(m).dx1;
+      Real wt = (taumode && blend_r) ? wf(m,k,j,i) : 1.0;
+      if (gaterho > 0.0) {
+        wt *= RadGate(0.5*(w0(m,IDN,k,j,i-1) + w0(m,IDN,k,j,i))*dens_unit,
+                      gaterho, gatedex);
+      }
+      const Real kc = wt*face_kcode(tl, tr, pl, pr, w0(m,IDN,k,j,i-1),
+                                    w0(m,IDN,k,j,i), (tr - tl)/dl);
+      const Real af = 1.0/size.d_view(m).dx1;
+      capc1(m,k,j,i) = kc*af/dl;
     });
   }
 
@@ -769,26 +859,9 @@ void Conduction::AddIsotropicHeatFluxRadiative(const DvceArray5D<Real> &w0,
     return f/eflx_unit;
   };
 
-  // THE SAME COEFFICIENT AS A CONDUCTIVITY.  face_flux returns -K gradn; the angular
-  // cap (rad_cap_ang) needs K itself, in code units, to form the explicit stiffness of a
-  // cell.  Identical expressions in the same order, from the same RadFaceKappa, so the
-  // capped operator and the flux it caps cannot disagree about what K is.
-  auto face_kcode = [=] (const Real tl, const Real tr, const Real pl, const Real pr,
-                         const Real dl_, const Real dr_, const Real gradn) {
-    const Real pf = 0.5*(pl + pr);
-    if (pf < pcut) return 0.0;
-    const Real tk = 0.5*(tl + tr)*temp_unit;
-    const Real rhof = 0.5*(dl_ + dr_)*dens_unit;
-    const Real kap = RadFaceKappa(tk, pf*pres_unit, rhof, ktab, krt, krlT, krlP,
-                                  krnT, krnP, krho, met, kfac, tmax);
-    Real lf = 1.0;
-    if (limit) {
-      const Real f = -kap*gradn*temp_unit/len_unit;
-      const Real ffree = sigma_sb*tk*tk*tk*tk;
-      lf = (ffree > 0.0) ? 1.0/sqrt(1.0 + SQR(f/ffree)) : 0.0;
-    }
-    return kap*lf*temp_unit/len_unit/eflx_unit;
-  };
+  // (The same coefficient AS A CONDUCTIVITY -- what the capped, implicit and
+  // super-time-stepped operators need instead of the flux -- is RadFaceKCode above;
+  // BuildAngularCoeffs forms every face coefficient with it.)
 
   // CUBED SPHERE: the xi and eta coordinate lines meet at an angle alpha (cos_cell,
   // sin_cell), so the face-normal derivative on a xi-face is
@@ -824,7 +897,9 @@ void Conduction::AddIsotropicHeatFluxRadiative(const DvceArray5D<Real> &w0,
   // RK update, so nothing is added to them here.  The two boundary faces stay explicit:
   // the inner one is the imposed wall flux (or the ghost-based gradient), the outer one
   // the ghost-based gradient, and neither is part of the tridiagonal system.
-  const bool impx1 = rad_implicit_x1;
+  // rad_sts_all does exactly the same, for the same reason: its RKL1 loop owns the
+  // interior x1 faces and leaves the two physical ones here.
+  const bool impx1 = rad_implicit_x1 || rad_sts_all;
   par_for("radcond1", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     // the imposed internal flux through the inner wall replaces the gradient there
@@ -1597,7 +1672,8 @@ void Conduction::NewTimeStep(const DvceArray5D<Real> &w0, const EOS_Data &eos_da
   const bool limit = rad_flux_limit;
   // the radial operator is unconditionally stable when it is solved implicitly, so it
   // carries no timestep constraint; x2/x3 are still explicit and still do
-  const bool impx1 = rad_implicit_x1;
+  // rad_sts_all removes it in the same way, by putting the x1 faces in the RKL1 loop
+  const bool impx1 = rad_implicit_x1 || rad_sts_all;
   // ...and the transverse operator carries no constraint either when rad_cap_ang caps
   // every face, or when rad_implicit_ang solves it implicitly, so dt2 and dt3 go with it
   const bool capa = (rad_cap_ang > 0.0) || rad_implicit_ang;
