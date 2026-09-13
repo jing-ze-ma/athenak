@@ -14,14 +14,35 @@
 //! value (eqn 41 of Miyoshi & Kusano) is algebraically
 //!   p_T* = [ sd_R rho_R p_TL - sd_L rho_L p_TR
 //!            + rho_L rho_R sd_R sd_L (u_R - u_L) ] / [ sd_R rho_R - sd_L rho_L ],
-//! and LHLLD multiplies the velocity-jump term (the last term of the numerator) by
-//!   phi = chi*(2 - chi),   chi = min(1, max(|u_L|,|u_R|)/max(c_fL,c_fR)),
-//! with c_f the fast magnetosonic speed and u the velocity NORMAL to the interface (the
-//! same choice the LHLLC hydro solver makes, src/hydro/rsolvers/lhllc_hyd.hpp).  That
-//! term is the piece of the numerical dissipation that does not vanish as the Mach
-//! number M -> 0; phi = O(M) there removes it.  Whenever the flow is sonic or faster
-//! phi = 1 and LHLLD reduces to HLLD exactly -- bitwise, since the fix is coded below as
-//! a correction that is then identically 0.0.
+//! and LHLLD multiplies the velocity-jump term (the last term of the numerator) by the
+//! factor phi of Minoshima & Miyoshi eqns. (14)-(16),
+//!   phi = chi*(2 - chi),   chi = min(1, max(c_uL, c_uR)/max(c_fL, c_fR)),
+//! where c_u is the fast-magnetosonic formula with the SOUND speed replaced by the FULL
+//! velocity magnitude |u| = sqrt(u_x^2 + u_y^2 + u_z^2),
+//!   c_u^2 = 0.5*[ (c_a^2 + |u|^2) + sqrt((c_a^2 + |u|^2)^2 - 4 |u|^2 c_ax^2) ],
+//!   c_a^2 = |B|^2/rho,   c_ax^2 = B_x^2/rho.
+//! The velocity-jump term is the piece of the numerical dissipation that does not vanish
+//! as the Mach number M -> 0; phi = O(M) there removes it.  Note that c_u -> c_a as
+//! u -> 0, so chi carries a MAGNETIC FLOOR: the dissipation is never removed below the
+//! level set by the Alfven speed, which is what keeps the scheme from admitting a
+//! round-off checkerboard in the vanishing-Mach limit.  Using the normal velocity alone
+//! in place of c_u (the choice of the LHLLC hydro solver,
+//! src/hydro/rsolvers/lhllc_hyd.hpp) has no such floor and does admit one.  Whenever the
+//! flow is sonic or faster chi = phi = 1 and LHLLD reduces to HLLD exactly -- bitwise,
+//! since the fix is coded below as a correction that is then identically 0.0.
+//!
+//! ALTERNATIVE: Leidi et al. (2022) use the per-side ratio
+//!   chi = min(1, max(c_uL/c_fL, c_uR/c_fR))
+//! instead of the ratio of the two maxima.  Minoshima's form is what is implemented
+//! here.
+//!
+//! NOT IMPLEMENTED: Minoshima & Miyoshi also multiply the transverse momentum and
+//! magnetic-field dissipation by a shock-detection factor theta (their eqns. 9-13),
+//! built from the minimum of the velocity divergence over the cells ADJACENT to the
+//! interface in the transverse directions.  The rsolver interface here receives only the
+//! reconstructed L/R states along one line, so those transverse stencils are not
+//! available and theta is omitted; the solver therefore reproduces the low-Mach fix of
+//! the paper but not its shock-robustness modification.
 //!
 //! The contact speed S_M, the Alfven speeds, and every intermediate B and v state are
 //! unchanged, exactly as the LHLLC solver leaves its contact speed unchanged and fixes
@@ -140,7 +161,21 @@ void LHLLD(TeamMember_t const &member, const EOS_Data &eos,
 
       //--- Step 2b. Low-Mach factor of Minoshima & Miyoshi, used in Step 7 only
 
-      Real chi = fmin(1.0, fmax(fabs(wl_ivx), fabs(wr_ivx))/fmax(cfl, cfr));
+      // c_u of Minoshima & Miyoshi eqn. (16): the fast-speed formula with the sound
+      // speed replaced by the full velocity magnitude.  c_u -> c_a as u -> 0, which is
+      // the magnetic floor that keeps a residual dissipation at vanishing Mach number.
+      Real casql = (bxsq + (SQR(wl_iby) + SQR(wl_ibz)))/wl_idn;
+      Real casqr = (bxsq + (SQR(wr_iby) + SQR(wr_ibz)))/wr_idn;
+      Real caxsql = bxsq/wl_idn;
+      Real caxsqr = bxsq/wr_idn;
+      Real usql = SQR(wl_ivx) + (SQR(wl_ivy) + SQR(wl_ivz));
+      Real usqr = SQR(wr_ivx) + (SQR(wr_ivy) + SQR(wr_ivz));
+      Real qa = casql + usql;
+      Real qb = casqr + usqr;
+      Real cul = sqrt(0.5*(qa + sqrt(fmax(0.0, SQR(qa) - 4.0*usql*caxsql))));
+      Real cur = sqrt(0.5*(qb + sqrt(fmax(0.0, SQR(qb) - 4.0*usqr*caxsqr))));
+      // eqns. (14)-(15) of Minoshima & Miyoshi
+      Real chi = fmin(1.0, fmax(cul, cur)/fmax(cfl, cfr));
       Real phi = chi*(2.0 - chi);
 
       // Real cfmax = std::max(cfl,cfr);
@@ -403,17 +438,27 @@ void LHLLD(TeamMember_t const &member, const EOS_Data &eos,
       }
 
       //--- Step 7.  Apply the low-Mach pressure correction
-      // Written in the star regions as F = F_i + S_i*(U*_i - U_i), the total pressure
-      // at the contact enters the flux only through the rearrangement of Batten et
-      // al. (1997), in which p_T* carries the weight
-      // S_i/(S_i - S_M) in the normal momentum and S_M times that in the energy.  Both
-      // ** states share the weight of the * state on their side, because U** differs
-      // from U* only in components p_T* does not touch.  Outside [S_L,S_R] the flux is
-      // the upwind one and there is nothing to correct.  dpt = 0.0 when phi = 1, so
-      // this leaves HLLD bitwise unchanged there.
+      // The star-region flux is built above as F = F_i + S_i*(U*_i - U_i).  For the
+      // normal momentum that form is algebraically IDENTICAL to F(U*) = rho* S_M^2 +
+      // p_T* - B_x^2: using rho*_i = rho_i sd_i/(S_i - S_M) and p_T* = p_T,i +
+      // rho_i sd_i (S_M - u_i),
+      //   F_i,mx + S_i (rho*_i S_M - rho_i u_i)
+      //     = rho_i u_i^2 + p_T,i - B_x^2 + S_i rho*_i S_M - S_i rho_i u_i
+      //     = rho*_i S_M^2 + p_T* - B_x^2  +  rho*_i S_M (S_i - S_M) - rho_i sd_i S_M
+      //                                    +  rho_i u_i (sd_i + u_i - S_i)
+      // and both bracketed groups vanish identically (rho*_i (S_i - S_M) = rho_i sd_i,
+      // sd_i = S_i - u_i).  So p_T* enters the normal momentum flux with weight ONE and
+      // the correction is simply dpt.
+      // For the energy, p_T* enters only through E*_i, whose eqn. (48) gives
+      // dE*_i = dpt S_M/(S_i - S_M); then dF_e = S_i dE*_i = S_M (dE*_i + dpt), i.e.
+      // the weight S_i/(S_i - S_M) times S_M.  Both ** states inherit the weight of the
+      // * state on their side, because U** differs from U* only in components p_T* does
+      // not touch (mx is copied, and the e correction of eqn. 63 is p_T*-free).
+      // Outside [S_L,S_R] the flux is the upwind one and there is nothing to correct.
+      // dpt = 0.0 when phi = 1, so this leaves HLLD bitwise unchanged there.
       if ((spd[0] < 0.0) && (spd[4] > 0.0)) {
         Real wpt = (spd[2] >= 0.0) ? spd[0]*sdml_inv : spd[4]*sdmr_inv;
-        flxi.mx += wpt*dpt;
+        flxi.mx += dpt;
         flxi.e  += wpt*dpt*spd[2];
       }
 

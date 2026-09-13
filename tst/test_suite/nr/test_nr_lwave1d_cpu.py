@@ -5,16 +5,16 @@ Runs tests in both hydro and MHD for different
   - reconstruction algorithms
   - Riemann solvers
 
-lhlld (HLLD with the low-Mach fix of Minoshima & Miyoshi 2021) is held to its OWN
-thresholds, in errors_lhlld below.  These waves have amplitude 1e-6 on a background at
-rest, i.e. they are at Mach 1e-6, so the fix removes essentially all of the pressure
-jump term p_T* carries: phi = O(M).  That term is the dissipation of the longitudinal
-mode, and without it the errors of the magnetosonic waves grow by up to a factor 2 and
-the Alfven waves (wave_flag 1 and 5) develop a round-off-seeded checkerboard with the
-PPM reconstructions at nx1 >= 64, where hlld is accurate to 1e-11.  Those four cases
-are listed in _lhlld_skip and are not run for lhlld; everything else is.  This is a
-property of the scheme at M -> 0, not of the flow lhlld is meant for: at the Mach 0.01
-of test_mhd_lhlld_lowmach_cpu.py the fix is a large win.
+lhlld (HLLD with the low-Mach fix of Minoshima & Miyoshi 2021) is run over the same
+waves as hlld and held to the same thresholds, with the two exceptions in errors_lhlld
+below.  These waves have amplitude 1e-6 on a background at rest, i.e. they are at Mach
+1e-6, yet the fix leaves them alone: chi is built from c_u, the fast-speed formula with
+the sound speed replaced by |u| (Minoshima & Miyoshi eqn. 16), and c_u -> c_a as u -> 0,
+so the magnetized background keeps chi away from zero and the longitudinal dissipation
+is never fully removed.  The measured L1 errors agree with hlld to about 0.1 per cent
+everywhere.  (An earlier version used chi = max(|u_n|)/max(c_f), with no such magnetic
+floor; that removed the dissipation entirely at M -> 0 and seeded a round-off
+checkerboard in the PPM Alfven cases.)
 """
 
 # Modules
@@ -106,35 +106,12 @@ errors = {
     ("mhd", "rk3", "wenoz", "3"): (3.4e-12, 0.045),
 }
 
-# Thresholds that REPLACE the ones above when the Riemann solver is lhlld (see the
-# module docstring); every other configuration is held to the hlld thresholds.
+# Thresholds that REPLACE the ones above when the Riemann solver is lhlld.  Only two
+# cases need one: hlld sits exactly on the 0.54 error-ratio threshold for the rk2+ppm4
+# Alfven waves and lhlld lands at 0.542.
 errors_lhlld = {
-    ("mhd", "rk2", "plm", "0"): (3.4e-08, 0.34),
-    ("mhd", "rk2", "plm", "6"): (3.4e-08, 0.34),
-    ("mhd", "rk2", "plm", "4"): (2.8e-08, 0.54),
-    ("mhd", "rk2", "plm", "2"): (2.8e-08, 0.54),
-    ("mhd", "rk2", "ppm4", "0"): (3.1e-08, 0.39),
-    ("mhd", "rk2", "ppm4", "6"): (3.1e-08, 0.39),
-    ("mhd", "rk2", "ppm4", "4"): (2.3e-08, 0.43),
-    ("mhd", "rk2", "ppm4", "2"): (2.1e-08, 0.38),
-    ("mhd", "rk3", "plm", "0"): (3.0e-08, 0.34),
-    ("mhd", "rk3", "plm", "6"): (3.0e-08, 0.34),
-    ("mhd", "rk3", "plm", "4"): (3.1e-08, 0.59),
-    ("mhd", "rk3", "plm", "2"): (3.1e-08, 0.59),
-    ("mhd", "rk3", "ppm4", "0"): (1.7e-08, 0.26),
-    ("mhd", "rk3", "ppm4", "6"): (1.7e-08, 0.26),
-    ("mhd", "rk3", "ppm4", "4"): (1.5e-08, 0.40),
-    ("mhd", "rk3", "ppm4", "2"): (1.5e-08, 0.40),
-    ("mhd", "rk3", "wenoz", "4"): (4.5e-12, 0.17),
-    ("mhd", "rk3", "wenoz", "2"): (4.5e-12, 0.17),
-}
-
-# (integrator, reconstruction) -> waves NOT run with lhlld: the Alfven waves under PPM,
-# which the undamped longitudinal mode takes over at nx1 >= 64 (module docstring).
-_lhlld_skip = {
-    ("rk2", "ppm4"): {"1", "5"},
-    ("rk3", "ppm4"): {"1", "5"},
-    ("rk3", "ppmx"): {"1", "5"},
+    ("mhd", "rk2", "ppm4", "4"): (1.5e-08, 0.55),
+    ("mhd", "rk2", "ppm4", "2"): (1.5e-08, 0.55),
 }
 
 _int = ["rk2", "rk3"]
@@ -183,8 +160,6 @@ def test_run(iv, rv, soe):
         waves = _wave[soe]
         if fv == "lhlld":
             thresholds = {**errors, **errors_lhlld}
-            skip = _lhlld_skip.get((iv, rv), set())
-            waves = [wv for wv in waves if wv not in skip]
         # returns error in L/R wave specified by 'left_wave'/'right_wave' arguments
         l1_rms_l, l1_rms_r = testutils.test_error_convergence(
             f"inputs/lwave_{soe}.athinput",
