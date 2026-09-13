@@ -622,6 +622,45 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
          << cp.h_view(i) << " " << ce.h_view(i) << "\n";
     }
   }
+  // --- THE GRAVITATIONAL POTENTIAL, WHICH A RESTART DOES NOT CARRY.  restart.cpp
+  // writes and reads u0 (and the face fields) only: phicc0 and phi0 are NOT restart
+  // state, they are pgen state, and they must be rebuilt on EVERY start.  They used to
+  // be filled inside the initial-condition kernel below, i.e. after the `if (restart)`
+  // return, so a restarted run ran with a potential of exactly zero -- and this problem
+  // needs it twice over.  With <hydro>/etotgrav the conserved energy CARRIES rho*phi, so
+  // ConToPrim recovers the internal energy by subtracting d*phicc: with phicc = 0 every
+  // cell's e_int came back too large by rho*g0*(z - zmin), which at the top of the box is
+  // orders of magnitude above e_int itself.  With <hydro>/wellbalance_dynamic the source
+  // term's stencil reads phicc and phi0.x1f directly, so the hydrostatic balance the
+  // scheme is built on was being integrated against a flat potential.  Both show up in
+  // cycle 0 of the restarted run: the timestep collapses and the two-stream clips on
+  // rt_de_max.  red_giant.cpp fills its potential before its own restart return for
+  // exactly this reason.
+  {
+    DvceArray4D<Real> phicc = pmbp->phydro->phicc0;
+    DvceArray4D<Real> ph1 = pmbp->phydro->phi0.x1f;
+    DvceArray4D<Real> ph2 = pmbp->phydro->phi0.x2f;
+    DvceArray4D<Real> ph3 = pmbp->phydro->phi0.x3f;
+    const bool have_phi = (etotgrav || wbdyn);
+    if (have_phi) {
+      par_for("boxconv_phi", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1, 0, n1m1,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        const Real x1min = size.d_view(m).x1min, x1max = size.d_view(m).x1max;
+        const Real z = CellCenterX(i-is, indcs.nx1, x1min, x1max);
+        const Real x1l = LeftEdgeX(i-is, indcs.nx1, x1min, x1max);
+        const Real x1r = LeftEdgeX(i+1-is, indcs.nx1, x1min, x1max);
+        const Real phi_c = g0*(z - zmin);
+        phicc(m,k,j,i) = phi_c;
+        ph1(m,k,j,i) = g0*(x1l - zmin);
+        if (i == n1m1) ph1(m,k,j,i+1) = g0*(x1r - zmin);
+        ph2(m,k,j,i) = phi_c;
+        ph3(m,k,j,i) = phi_c;
+        if (j == n2m1) ph2(m,k,j+1,i) = phi_c;
+        if (k == n3m1) ph3(m,k+1,j,i) = phi_c;
+      });
+    }
+  }
+
   if (restart) return;
 
   // --- the random horizontal modes of the velocity seed
@@ -645,12 +684,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   md.sync_device();
   auto md_d = md.d_view;
 
-  // --- the state and the potentials, every cell and every face, ghosts included
-  DvceArray4D<Real> phicc = pmbp->phydro->phicc0;
-  DvceArray4D<Real> ph1 = pmbp->phydro->phi0.x1f;
-  DvceArray4D<Real> ph2 = pmbp->phydro->phi0.x2f;
-  DvceArray4D<Real> ph3 = pmbp->phydro->phi0.x3f;
-  const bool have_phi = (etotgrav || wbdyn);
+  // --- the state, every cell, ghosts included.  The potentials are already built
+  // above, on this path and on the restart path alike; only the etotgrav offset that
+  // the INITIAL conserved energy carries is added here.
   const Real x2min_m = pmy_mesh_->mesh_size.x2min, x2max_m = pmy_mesh_->mesh_size.x2max;
   const Real x3min_m = pmy_mesh_->mesh_size.x3min, x3max_m = pmy_mesh_->mesh_size.x3max;
   const Real lz = zmax - zmin;
@@ -662,8 +698,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     const Real z = CellCenterX(i-is, indcs.nx1, x1min, x1max);
     const Real x2v = CellCenterX(j-js, indcs.nx2, x2min, x2max);
     const Real x3v = CellCenterX(k-ks, indcs.nx3, x3min, x3max);
-    const Real x1l = LeftEdgeX(i-is, indcs.nx1, x1min, x1max);
-    const Real x1r = LeftEdgeX(i+1-is, indcs.nx1, x1min, x1max);
     Real s = (z - zlo)/dzf;
     int ii = static_cast<int>(s);
     ii = (ii < 0) ? 0 : ((ii > nfine-2) ? nfine-2 : ii);
@@ -687,17 +721,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     u0(m,IM2,k,j,i) = 0.0;
     u0(m,IM3,k,j,i) = 0.0;
     u0(m,IEN,k,j,i) = e + 0.5*d*v1*v1;
-    if (have_phi) {
-      const Real phi_c = g0*(z - zmin);
-      phicc(m,k,j,i) = phi_c;
-      if (etotgrav) u0(m,IEN,k,j,i) += d*phi_c;
-      ph1(m,k,j,i) = g0*(x1l - zmin);
-      if (i == n1m1) ph1(m,k,j,i+1) = g0*(x1r - zmin);
-      ph2(m,k,j,i) = phi_c;
-      ph3(m,k,j,i) = phi_c;
-      if (j == n2m1) ph2(m,k,j+1,i) = phi_c;
-      if (k == n3m1) ph3(m,k+1,j,i) = phi_c;
-    }
+    if (etotgrav) u0(m,IEN,k,j,i) += d*g0*(z - zmin);
   });
   return;
 }
@@ -846,6 +870,7 @@ void BoxConvBC(Mesh *pm) {
   auto &mb_bcs = pmbp->pmb->mb_bcs;
   auto &u0 = pmbp->phydro->u0;
   auto &w0 = pmbp->phydro->w0;
+  DvceArray4D<Real> phicc = pmbp->phydro->phicc0;
   const Real g0 = g0_, zlo = zlo_, dzf = dzf_, zmin = zmin_;
   const int nfine = nfine_;
   const bool etotgrav = etotgrav_;
@@ -855,6 +880,32 @@ void BoxConvBC(Mesh *pm) {
   const WBOption wbo = pmbp->phydro->wb_option;
   const Real wfac = wall_walk_maxfac_;
   const Real dfl = eos.dfloor;
+  // WHERE THE GHOST FILL READS THE INTERIOR CELL IT CONTINUES: from u0, never from w0.
+  // Two reasons, and the second is fatal.
+  // (1) ApplyPhysicalBCs runs AFTER RKUpdate, the user source terms (gravity, the
+  // cooling layer, the two-stream) and the implicit x1 conduction, and BEFORE ConToPrim
+  // -- so w0 here is the PREVIOUS stage's inversion and predates every one of those
+  // edits to u0.  At the wall, which is where the imposed luminosity enters, that is a
+  // systematic jump across the boundary face rather than an O(dt) smooth-cell error.
+  // (2) w0 IS NOT RESTART STATE.  restart.cpp writes u0 only (ghosts included), and
+  // Driver::InitBoundaryValuesAndPrimitives calls ApplyPhysicalBCs BEFORE the first
+  // ConToPrim, so at the first boundary call of a restarted run w0 is still exactly
+  // zero: the bc_mode-3 walk then started from rho = e = 0, the guard (correctly)
+  // rejected it, and the fallback rescaled that same zero, so both x1 walls came back as
+  // bare floors -- overwriting the ghosts the restart file had restored bitwise with a
+  // state the running boundary never produces.  Reading u0 -- which IS restored bitwise,
+  // and which the running boundary reads at exactly the same point of the update --
+  // makes the fill idempotent, so a restart is a bitwise continuation.
+  // This is red_giant.cpp's fix (state_i in RedGiantBC) for the same defect.
+  auto state_i = [=] (const int m, const int k, const int j, const int km, const int jm,
+                      const int im, Real &d_i, Real &e_i) {
+    d_i = u0(m,IDN,km,jm,im);
+    const Real di = (d_i > 0.0) ? (1.0/d_i) : 0.0;
+    e_i = u0(m,IEN,km,jm,im)
+          - 0.5*(SQR(u0(m,IM1,km,jm,im)) + SQR(u0(m,IM2,km,jm,im))
+                 + SQR(u0(m,IM3,km,jm,im)))*di;
+    if (etotgrav) e_i -= d_i*phicc(m,km,jm,im);
+  };
   auto fill = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i,
                             const int km, const int jm, const int im) {
     // (k,j,i) the ghost cell, (km,jm,im) the active cell it mirrors
@@ -863,8 +914,7 @@ void BoxConvBC(Mesh *pm) {
     const Real zm = CellCenterX(im-is, indcs.nx1, x1min, x1max);
     Real d, e;
     if (bcm == 1) {
-      d = w0(m,IDN,km,jm,im);
-      e = w0(m,IEN,km,jm,im);
+      state_i(m, k, j, km, jm, im, d, e);
     } else if (bcm == 3) {
       // THE WB-CONSISTENT WALL.  Walk the mirror cell's OWN (rho,e) across the wall with
       // the very closure the well-balanced background stencil integrates -- for the
@@ -875,8 +925,8 @@ void BoxConvBC(Mesh *pm) {
       // the wall-face Riemann problem stays symmetric however far the interior has
       // drifted.  The closure test is one-sided (the cell one further IN), because the
       // other side of the mirror cell is the ghost being built.
-      const Real dmm = w0(m,IDN,km,jm,im);
-      const Real emm = w0(m,IEN,km,jm,im);
+      Real dmm, emm;
+      state_i(m, k, j, km, jm, im, dmm, emm);
       // THE FALLBACK, and the scale the walk is judged against: bc_mode 2's rescaled
       // mirror, the initial column's own ratio across this pair.  Always formed, because
       // a walk out of a sick wall cell must not be able to take the ghost with it.
@@ -895,8 +945,8 @@ void BoxConvBC(Mesh *pm) {
       const Real rd_col = (dcm > 0.0) ? (dcg/dcm) : 1.0;
       const Real re_col = (ecm > 0.0) ? (ecg/ecm) : 1.0;
       const int in = (im > i) ? (im + 1) : (im - 1);
-      const Real dnn = w0(m,IDN,km,jm,in);
-      const Real enn = w0(m,IEN,km,jm,in);
+      Real dnn, enn;
+      state_i(m, k, j, km, jm, in, dnn, enn);
       const Real tmm = eos.Temperature(dmm, emm);
       const int wopt = WBOptionNumber(eos, wbo, dmm, emm, dnn, enn, dmm, emm, tmm);
       Real dlntdphi = 0.0;
@@ -951,13 +1001,17 @@ void BoxConvBC(Mesh *pm) {
         const Real fm = sm - im2;
         const Real dm = cd_d(im2)*(1.0 - fm) + cd_d(im2+1)*fm;
         const Real em = ce_d(im2)*(1.0 - fm) + ce_d(im2+1)*fm;
-        d = w0(m,IDN,km,jm,im)*(dg/dm);
-        e = w0(m,IEN,km,jm,im)*(eg/em);
+        Real dmm, emm;
+        state_i(m, k, j, km, jm, im, dmm, emm);
+        d = dmm*(dg/dm);
+        e = emm*(eg/em);
       }
     }
-    const Real v1 = -w0(m,IVX,km,jm,im);
-    const Real v2 = w0(m,IVY,km,jm,im);
-    const Real v3 = w0(m,IVZ,km,jm,im);
+    const Real dm_i = u0(m,IDN,km,jm,im);
+    const Real idm = (dm_i > 0.0) ? (1.0/dm_i) : 0.0;
+    const Real v1 = -u0(m,IM1,km,jm,im)*idm;
+    const Real v2 = u0(m,IM2,km,jm,im)*idm;
+    const Real v3 = u0(m,IM3,km,jm,im)*idm;
     w0(m,IDN,k,j,i) = d;
     w0(m,IEN,k,j,i) = e;
     w0(m,IVX,k,j,i) = v1;
