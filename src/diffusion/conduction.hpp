@@ -183,6 +183,42 @@ class Conduction {
   int ang_lines = 0;
   void ImplicitTransverseUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
                                 const Real beta_dt);
+  // rad_sts_all (<hydro>/ or <mhd>/rad_sts_all, default false): ONE super-time-stepped
+  // radiative conduction operator over ALL THREE directions, replacing the split of an
+  // implicit tridiagonal x1 solve (rad_implicit_x1) plus the RKL1 transverse operator
+  // (rad_implicit_ang).  The stencil of ImplicitTransverseUpdate is extended to 7 points
+  // by the x1 faces, every direction is linearised about the SAME refreshed state, and
+  // the whole thing is advanced by one RKL1 loop -- so there is no splitting error
+  // between the radial and the horizontal operator at all.  That splitting error is not
+  // academic: linearising the transverse operator about the state the radial solve had
+  // already moved is what grew max|de| by ~1.5x per cycle in the He-star FeCZ box (see
+  // the file comment of conduction_transverse.cpp).  Implies rad_implicit_ang (it IS
+  // the transverse treatment), is mutually exclusive with rad_implicit_x1 and
+  // rad_cap_ang, and inherits every restriction of rad_implicit_ang: Cartesian,
+  // uniform grid, no SMR/AMR, nghost >= 2, plus the whole x1 extent in one MeshBlock.
+  //
+  // WHAT IT IS FOR, AND WHAT IT IS NOT FOR.  An RKL1 super-step costs s substages for
+  // s^2+s explicit steps, i.e. the SQUARE ROOT of the stiffness ratio -- but ONE s is
+  // chosen for the whole mesh from the global maximum of the Gershgorin radius, so the
+  // cost is set by the single stiffest cell in every direction at once.  In an
+  // ISOTROPIC CARTESIAN BOX (the FeCZ boxes, the solar box) all three directions have
+  // the same dx and the same K, the x1 faces raise the row radius by a factor of order
+  // 3/2, and the substage count grows by only ~20 %: the unified operator is then
+  // strictly better than the split, since it costs almost nothing extra and removes a
+  // first-order-in-dt error term.
+  //
+  // On a STRETCHED SPHERICAL (or cubed-sphere) grid it is the WRONG CHOICE, and the
+  // curvilinear guards below refuse it outright.  There the radial direction is both the
+  // finest (dr/r ~ 1e-3 near the photosphere against a degree in angle) and the one
+  // carrying the whole stellar flux, so its stiffness runs orders of magnitude above the
+  // transverse one; folding it into the same RKL1 loop would set s from the radial rows
+  // and multiply the cost of the transverse operator by that ratio's square root, where
+  // the tridiagonal solve of ImplicitRadialUpdate handles exactly that direction in ONE
+  // unconditionally stable sweep because it is column-local.  Radially stiff, angularly
+  // mild -> keep rad_implicit_x1 + rad_implicit_ang.  Isotropic -> rad_sts_all.
+  bool rad_sts_all = false;
+  void StsConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
+                           const Real beta_dt);
   void BuildAngularCoeffs(const DvceArray5D<Real> &w0, const EOS_Data &eos,
                           const Real beta_dt);
   // beta_dt of the CURRENT stage.  The angular fluxes are added in Hydro::Fluxes, which
@@ -190,6 +226,7 @@ class Conduction {
   // capping; Hydro::Fluxes sets this immediately before calling AddHeatFluxes.
   Real stage_beta_dt = 0.0;
   DvceArray4D<Real> cap_x;    // the stiffness x_i, active cells + one angular ghost
+  DvceArray4D<Real> cap_c1;   // ... and on the x1 faces (rad_sts_all only)
   DvceArray4D<Real> cap_c2;   // A_f K_f/dl_f on the x2 faces
   DvceArray4D<Real> cap_c3;   // ... and on the x3 faces
   DvceArray1D<int> cap_cnt;   // 2: cells with x_i > cap, faces actually capped
@@ -237,6 +274,11 @@ class Conduction {
   void NewTimeStep(const DvceArray5D<Real> &w, const EOS_Data &eos_data);
 
  private:
+  // the ONE RKL1 loop both super-time-stepped entry points run: `with_x1` = false is the
+  // 5-point transverse operator (rad_implicit_ang), true the 7-point unified one
+  // (rad_sts_all).  See conduction_transverse.cpp.
+  void RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
+                           const Real beta_dt, const bool with_x1);
   MeshBlockPack* pmy_pack;
   // "hydro" or "mhd": identifies which physics module owns this Conduction object, so
   // that the general EOS derived-variable arrays (cached temperature and pressure) of the
