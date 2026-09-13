@@ -9,6 +9,7 @@
 //! \brief Contains data and functions that implement various formulations for conduction.
 //  Currently only isotropic conduction implemented
 
+#include <cstdint>
 #include <string>
 
 #include "athena.hpp"
@@ -219,6 +220,24 @@ class Conduction {
   bool rad_sts_all = false;
   void StsConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
                            const Real beta_dt);
+  // rad_sts_once (default false): apply the RKL1 operator ONCE per cycle, after the LAST
+  // RK stage and with the FULL dt, instead of once per stage with beta_dt.  The substage
+  // count grows as sqrt(tau), so one call over dt costs sqrt(2) x one call over dt/2 and
+  // the two-stage integrator saves ~30 % of the operator.  The splitting between this
+  // operator and the hydro is FIRST ORDER either way -- running it every stage does not
+  // make it second order, because the operator is not part of the RK right-hand side --
+  // so this trades nothing but the size of the first-order term.
+  bool rad_sts_once = false;
+  // rad_sts_margin (default 0.10): the round-off margin on the RKL1 stability limit.  An
+  // s-substage RKL1 super-step covers |lambda| tau <= s^2+s, and the substage count is
+  // chosen from R = 0.5 (1 + margin) max_i z_i.  0.10 is the value this operator has
+  // always used; 0.02 is safe (the bound on z_i is a Gershgorin radius, i.e. already an
+  // over-estimate of |lambda|) and trims a few per cent off the substage count.
+  Real rad_sts_margin = 0.10;
+  // cumulative substage count of this operator, reported alongside the per-call one so
+  // that the COST of a run can be read off a single line
+  std::int64_t sts_nsub_tot = 0;
+  std::int64_t sts_ncall = 0;
   void BuildAngularCoeffs(const DvceArray5D<Real> &w0, const EOS_Data &eos,
                           const Real beta_dt);
   // beta_dt of the CURRENT stage.  The angular fluxes are added in Hydro::Fluxes, which

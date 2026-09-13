@@ -152,6 +152,11 @@ Conduction::Conduction(std::string block, MeshBlockPack *pp, ParameterInput *pin
       // cover it without being repeated.
       rad_sts_all = pin->GetOrAddBoolean(block,"rad_sts_all",false);
       if (rad_sts_all) rad_implicit_ang = true;
+      // rad_sts_once applies the RKL1 operator once per cycle over the full dt, and
+      // rad_sts_margin is the round-off margin on its substage count.  Both are
+      // switches on the super-time-stepped operator and do nothing when it is off.
+      rad_sts_once = pin->GetOrAddBoolean(block,"rad_sts_once",false);
+      rad_sts_margin = pin->GetOrAddReal(block,"rad_sts_margin",0.10);
       rad_ang_maxit = pin->GetOrAddInteger(block,"rad_ang_maxit",200);
       rad_ang_verbose = pin->GetOrAddBoolean(block,"rad_ang_verbose",false);
       {
@@ -260,6 +265,19 @@ Conduction::Conduction(std::string block, MeshBlockPack *pp, ParameterInput *pin
           std::exit(EXIT_FAILURE);
         }
       }
+      if (rad_sts_once && !rad_implicit_ang) {
+        // a switch ON the super-time-stepped operator: there is nothing to defer when
+        // that operator is not running
+        std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
+                  << std::endl << "rad_sts_once needs rad_implicit_ang or rad_sts_all"
+                  << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      if (!(rad_sts_margin >= 0.0)) {
+        std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
+                  << std::endl << "rad_sts_margin must be >= 0" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
       if (rad_cap_ang > 0.0) {
         // the angular cap only makes sense once the radial direction is unconditionally
         // stable: with x1 still explicit the run dies on dt1 long before dt2/dt3 matter,
@@ -322,6 +340,16 @@ Conduction::Conduction(std::string block, MeshBlockPack *pp, ParameterInput *pin
 //! \brief Conduction destructor
 
 Conduction::~Conduction() {
+  // the COST of the super-time-stepped operator over the whole run, in one line: the
+  // substage count is the number of stencil sweeps and halo exchanges it took, and it is
+  // what rad_sts_split, rad_sts_once and rad_sts_margin are there to reduce.  Only with
+  // rad_ang_verbose, and only from rank 0.
+  if (sts_ncall > 0 && rad_ang_verbose && global_variable::my_rank == 0) {
+    std::cout << "### rad_sts totals: " << sts_ncall << " calls, "
+              << sts_nsub_tot << " substages, mean "
+              << (static_cast<double>(sts_nsub_tot)/static_cast<double>(sts_ncall))
+              << " per call" << std::endl;
+  }
   if (pbval_tr != nullptr) delete pbval_tr;
 }
 

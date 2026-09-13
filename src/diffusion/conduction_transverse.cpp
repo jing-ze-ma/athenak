@@ -328,7 +328,11 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
 
   // ---- the substage count.  R is the super-step in units of the explicit limit
   // 2/lambda_max, with 10 % of round-off margin; RKL1 with s stages covers (s^2+s)/2.
-  const Real rstiff = 0.55*zmax;
+  // rad_sts_margin: the round-off margin on the RKL1 stability limit, 0.10 by default
+  // (0.5 x 1.1 = 0.55, the value this loop has always used).  z_i is a Gershgorin radius
+  // and therefore already an over-estimate of |lambda|, so 0.02 is safe and buys a few
+  // per cent of the substage count.
+  const Real rstiff = 0.5*(1.0 + rad_sts_margin)*zmax;
   int nsub = static_cast<int>(std::ceil(0.5*(std::sqrt(1.0 + 8.0*rstiff) - 1.0)));
   if (nsub < 1) nsub = 1;
   bool clamped = false;
@@ -432,6 +436,8 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
   }
 #endif
   const Real viol = (eabs > 0.0) ? fabs(esum)/eabs : 0.0;
+  sts_nsub_tot += nsub;
+  ++sts_ncall;
 
   // the report: the substage count is the cost of the operator and the residual is the
   // one thing that can silently go wrong, so both are printed.  A clamped substage count
@@ -444,6 +450,8 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
                 << pmy_pack->pmesh->ncycle
                 << " t = " << pmy_pack->pmesh->time
                 << ": max z_i = " << zmax << ", substages = " << nsub
+                << ", substages_total = " << sts_nsub_tot
+                << " in " << sts_ncall << " calls"
                 << (clamped ? " (CLAMPED at rad_ang_maxit -- the step is NOT covered)"
                             : "")
                 << ", max |de| = " << emax

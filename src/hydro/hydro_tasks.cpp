@@ -566,6 +566,16 @@ TaskStatus Hydro::ImplicitTransverseConduction(Driver *pdrive, int stage) {
   if (!(pcond->rad_implicit_ang)) return TaskStatus::complete;
   if (stage < 1) return TaskStatus::complete;
   Real beta_dt = (pdrive->beta[stage-1])*(pmy_pack->pmesh->dt);
+  // <hydro>/rad_sts_once: ONE call per cycle, after the LAST stage and over the
+  // FULL dt, instead of one per stage over beta_dt.  An RKL1 super-step of tau costs
+  // sqrt(tau) substages, so one call over dt is cheaper than two over dt/2 by ~30 %.
+  // The splitting between this operator and the hydro is FIRST ORDER either way -- the
+  // operator is not part of the RK right-hand side, so running it every stage does not
+  // raise the order, it only halves the size of the first-order term.
+  if (pcond->rad_sts_once) {
+    if (stage != pdrive->nexp_stages) return TaskStatus::complete;
+    beta_dt = pmy_pack->pmesh->dt;
+  }
   // <hydro>/rad_sts_all replaces BOTH implicit conduction tasks with this one: the radial
   // task above is a no-op (rad_implicit_x1 is refused alongside it) and the RKL1 loop
   // here runs over all three directions at once.  Same slot in the stage either way.
