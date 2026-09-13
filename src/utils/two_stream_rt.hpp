@@ -451,6 +451,39 @@ inline bool rt_int_at_cut = true;
 // reproduce a pre-fix run bitwise.  Grey split path only -- the correlated-k sweep keeps
 // its own cut boundary, which is never used under a tau blend.
 inline bool rt_cut_bc_legacy = false;
+// problem/rt_layer_legacy: the STAGGERED layer the grey and correlated-k sweeps used.
+//
+// Every layer was integrated over a WHOLE cell in optical depth, dtau = kappa rho dz of
+// cell i, but with its source running linearly in tau from that cell's CENTRE Planck
+// function to the NEIGHBOUR CELL'S CENTRE one.  The interval the optical depth measures
+// and the interval the source runs over are then offset by half a cell, and the two
+// endpoints of the source are two cells apart while the layer is one cell thick.  The
+// error is O(dtau^2) and smooth, but it is not small where it matters: MEASURED against
+// an accurate formal solution on the He-star column, the emergent flux came out ~4 % low
+// at dtau/cell of 1-3 and wandered between 0.73 and 1.06 of the true flux at dtau/cell
+// 3-6, which is exactly the handover ramp of the He and B-star boxes.
+//
+// THE FIX.  The layers now run between cell CENTRES: layer (i, i+1) has
+//     dtau = 0.5 (kappa rho dz)_i + 0.5 (kappa rho dz)_{i+1},
+// each half with its OWN opacity, and a source linear in tau between B_i and B_{i+1} --
+// which is exact for that layer, since the source really is (piecewise) linear there.
+// The layer is integrated as its two halves, split at the face, with the face source
+// taken at its own tau within the layer; composing the two halves reproduces the whole
+// layer exactly, so this costs nothing in accuracy and hands back the FACE intensity as a
+// by-product.  That face intensity is what Fb_g reports, so the fluxes the tau blend and
+// the heating read are the formal solution AT the face, not an interpolation of it.  The
+// column is closed by two HALF layers: the upper half of cell ie, from the top face to
+// its centre, with the source held at B(ie); and the lower half of cell icut, between its
+// centre and the cut face, with B continued at the deep-limit gradient dB/dtau (zero
+// under rt_cut_bc_legacy, so that flag still recovers its own old behaviour).
+//
+// Each half layer lies entirely inside ONE cell, so the absorbed and emitted amounts that
+// build Src_g are attributed unambiguously: a cell's emission is simply split between its
+// two halves.  Em_g, the relaxation rate, becomes the cell's own 4 sigma kappa rho T^4
+// instead of the centre-to-centre average of two Planck functions.
+//
+// Default false, i.e. THE FIX IS ON.  Set true to reproduce a pre-fix run bitwise.
+inline bool rt_layer_legacy = false;
 // problem/rt_top_re: what the unresolved column ABOVE the domain sends back down.
 // false (historical) makes it radiate at the ghost cell's own temperature. That is safe
 // only while the ghost is pinned to something outside the solution: with an open outer
@@ -651,6 +684,29 @@ Real BFace(const Real k_own, const Real k_far, const Real b_own, const Real b_fa
   const Real w = k_far/kt;                // 1 at the threshold, 0 at k_far = 0
   const Real sem = (k_own*b_own + k_far*b_far)/(k_own + k_far);
   return w*b_far + (1.0 - w)*sem;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RTLayer
+//! \brief one exact short-characteristic step through a layer (see rt_layer_legacy).
+//!
+//! The layer has optical thickness dtau along the ray (mu the direction cosine) and a
+//! source linear in tau from s_in, where the ray ENTERS, to s_out, where it LEAVES.  The
+//! exponential coefficients are the ones the sweeps have always used, with their series
+//! forms below x = 1e-3; what changes with the new layers is only which interval they are
+//! handed.  absorbed and emitted come back separately because the per-cell source needs
+//! them apart, and because their difference is exactly the change in the intensity, which
+//! is what keeps Src_g and the divergence of the face fluxes the same number.
+KOKKOS_INLINE_FUNCTION
+void RTLayer(const Real dtau, const Real mu, const Real s_in, const Real s_out,
+             Real &intens, Real &absorbed, Real &emitted) {
+  const Real x = dtau/mu;
+  const Real e0 = -expm1(-x);
+  const Real c_in  = (x > 1.0e-3) ? (e0 - 1.0 + e0/x) : (x/2.0 - SQR(x)/3.0);
+  const Real c_out = (x > 1.0e-3) ? (1.0 - e0/x)      : (x/2.0 - SQR(x)/6.0);
+  absorbed = e0*intens;
+  emitted  = c_in*s_in + c_out*s_out;
+  intens   = (1.0 - e0)*intens + emitted;
 }
 
 KOKKOS_INLINE_FUNCTION
@@ -999,6 +1055,7 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
     Real Tint4 = SQR(SQR(Tint));
     bool int_at_cut = rt_int_at_cut;
     const bool cut_legacy = rt_cut_bc_legacy;   // see rt_cut_bc_legacy
+    const bool layer_legacy = rt_layer_legacy;  // see rt_layer_legacy
     const bool top_re = rt_top_re;
     Real Iint = boltz_sigma/M_PI*Tint4;
 
