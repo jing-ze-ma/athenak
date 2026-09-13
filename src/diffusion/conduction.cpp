@@ -1676,12 +1676,15 @@ void Conduction::NewTimeStep(const DvceArray5D<Real> &w0, const EOS_Data &eos_da
       const Real d2 = curv ? dx2_(dm,dk,dj,di) : size.d_view(dm).dx2;
       const Real d3 = curv ? dx3_(dm,dk,dj,di) : size.d_view(dm).dx3;
       const Real s2 = cs ? SQR(sinc_(dm,dk,dj)) : 1.0;
+      // GUARD the neighbours the mesh does not have: in 2-D ncells3 == 1 and in 1-D
+      // ncells2 == 1, so tc(dk-1,..) / tc(..,dj-1,..) read off the end of w0.
       const Real s1v = sof(d1, tc(dk,dj,di-1), tc(dk,dj,di+1));
-      const Real s2v = sof(d2, tc(dk,dj-1,di), tc(dk,dj+1,di));
-      const Real s3v = sof(d3, tc(dk-1,dj,di), tc(dk+1,dj,di));
+      const Real s2v = multi_d ? sof(d2, tc(dk,dj-1,di), tc(dk,dj+1,di)) : 0.0;
+      const Real s3v = three_d ? sof(d3, tc(dk-1,dj,di), tc(dk+1,dj,di)) : 0.0;
       const Real w1 = (taumode && blend_r) ? wmax : 1.0;
       const Real wa = taumode ? wmax : 1.0;
-      dd.d_view(0)  = x1v_(dm,di);
+      // x1v is only allocated on a curvilinear mesh; on Cartesian it is a 1x1 dummy
+      dd.d_view(0)  = curv ? x1v_(dm,di) : -1.0;
       dd.d_view(1)  = dens*dens_unit;
       dd.d_view(2)  = temp*temp_unit;
       dd.d_view(3)  = pres*pres_unit;
