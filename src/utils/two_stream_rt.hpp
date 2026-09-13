@@ -363,6 +363,10 @@ inline bool rt_explicit = false;
 // how many cells the Newton loop had to be rescued from a non-positive internal energy
 // (see rt_apply).  A device counter, read back where the clip count is reported.
 inline DvceArray1D<int> *rt_efix_ptr = nullptr;
+// ...and the STATE of the first cell it happened to, which is the only way to tell a
+// genuine stiff-cooling cell from a poisoned neighbour without re-running.  Filled once
+// per run by whichever cell claims efix(0) == 0, printed with the warning.
+inline DvceArray1D<Real> *rt_efix_rec = nullptr;
 // problem/rt_newton: refine the semi-implicit step with a Newton solve of the exact
 // backward-Euler balance, seeded by the closed form.  The closed form already lands on
 // the right equilibrium under e ~ T; this drops that assumption and uses the EOS's own
@@ -2011,8 +2015,12 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
       if (rt_efix_ptr == nullptr) {
         rt_efix_ptr = new DvceArray1D<int>("rt_efix", 3);
         Kokkos::deep_copy(*rt_efix_ptr, 0);
+        rt_efix_rec = new DvceArray1D<Real>("rt_efix_rec", 16);
+        Kokkos::deep_copy(*rt_efix_rec, 0.0);
       }
       auto efix_g = *rt_efix_ptr;
+      auto efrec_g = *rt_efix_rec;
+      const int efix_cyc = pm->ncycle;
       const bool resc_eq = rt_rescue_eq;
       // rt_cell_report: claimed once per RT call, so only the FIRST rescued cell prints
       DvceArray1D<int> repc_g(std::string("rt_repc"), 1);
@@ -2195,6 +2203,37 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
                 const Real t0 = T_g(m,k,j,i);
                 const Real d0 = rhoN(m,k,j,i);
                 const Real abdt = absn*bdt, embdt = Em*bdt;
+                // SAFEGUARDED, because a bare Newton here does not converge.  F is
+                // MONOTONE INCREASING in de -- both de and E(T(e+de)) rise with de -- so
+                // its root is unique and bracketing is available for free: every iterate
+                // with F < 0 is a lower bound on the root and every one with F > 0 an
+                // upper bound.  Without that, in an optically thin radiation-dominated
+                // cell the step is very nearly the EXPLICIT one (the damping denominator
+                // dfx -> 1 as the cell's own emission stops controlling its temperature)
+                // and it overshoots the root by orders of magnitude.  MEASURED in
+                // RG_v4/out.txt, where rt_cell_report printed the iterates: on a cell
+                // with e = 6.02e-3 the sequence was de = -1.63e+1, +1.06e+1, -3.33e+1 --
+                // oscillating, each iterate 3-4 decades past e -- and on another,
+                // e = 3.06e-1 was handed de = -3.37e-1 on the FIRST step.  Both left
+                // e + de <= 0 and fell through to the rescue, which can only leave the
+                // cell at ~1e-3 e, from which the table EOS returns a floor temperature
+                // and the sound speed collapses the timestep.  That is the mechanism
+                // behind the He-star top-cell "dt COLLAPSE" events and the red giant's
+                // 152 eos_tclamp family.
+                //
+                // The lower bracket nlo is the 99.9 % floor the rescue used, and
+                // F(nlo) < 0 whenever the absorption A is non-negative, so it is a true
+                // lower bound on the root.  ONLY a step that would cross zero energy is
+                // replaced, by a bisection of [nlo, de]; every other step is taken
+                // exactly as before, so this is inert on every cell the bare iteration
+                // handled.  A wider safeguard was tried first -- bracketing from both
+                // sides and clamping the converged answer into the bracket -- and is NOT
+                // in the tree: it perturbed healthy cells (the 1-D He-star column's
+                // timestep fell 0.107 -> 0.034 s with no rescue anywhere in the run),
+                // because the Newton legitimately walks past the e ~ T equilibrium
+                // wherever the EOS is far from that, which is the reason the refinement
+                // exists at all.
+                const Real nlo = -(1.0 - 1.0e-3)*ei;
                 if (t0 > 0.0 && d0 > 0.0) {
                   for (int it=0; it<8; ++it) {
                     const Real e1 = ei + de;
@@ -2210,7 +2249,17 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
                     const Real dfx = 1.0 + embdt*4.0*r4/t1*(eos.temp_cgs/cv);
                     if (!(dfx > 0.0)) break;
                     const Real step = fx/dfx;
-                    de -= step;
+                    const Real dn = de - step;
+                    // THE ONE INTERVENTION.  A step that would leave a non-positive
+                    // internal energy is replaced by a bisection of [nlo, de], which
+                    // brackets the root: F is monotone and F(de) > 0 is what makes the
+                    // step negative in the first place, while F(nlo) < 0 for any
+                    // non-negative absorption.  Every other step is taken EXACTLY as
+                    // before -- dn is `de - step`, the same expression `de -= step`
+                    // evaluated -- so a cell the bare iteration handled is untouched,
+                    // bit for bit, and `ei + de > 1e-3 ei > 0` now holds unconditionally
+                    // after the loop.
+                    de = (ei + dn > 0.0) ? dn : 0.5*(nlo + de);
                     if (dg_nit < 8) dg_it[dg_nit++] = de;
                     if (fabs(step) <= 1.0e-8*(fabs(de) + fabs(ei))) break;
                   }
@@ -2223,6 +2272,7 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
                 // this branch to a non-positive energy.  Falling back to a 99.9 %
                 // drop keeps the cell cooling hard without ever crossing zero.
                 if (!(ei + de > 0.0)) {
+                  const Real de_nt = de;         // what Newton left, for the report
                   // problem/rt_rescue_eq: land on the equilibrium the cell actually
                   // sees rather than on a fixed 99.9 % drop.  deq is e_eq - e from the
                   // closed form above, i.e. Em(T_eq) = A = src + Em; the old floor is
@@ -2235,7 +2285,24 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
                     de = defl;
                     Kokkos::atomic_fetch_add(&efix_g(2), 1);
                   }
-                  Kokkos::atomic_fetch_add(&efix_g(0), 1);
+                  if (Kokkos::atomic_fetch_add(&efix_g(0), 1) == 0) {
+                    efrec_g(0) = static_cast<Real>(m);
+                    efrec_g(1) = static_cast<Real>(k);
+                    efrec_g(2) = static_cast<Real>(j);
+                    efrec_g(3) = static_cast<Real>(i);
+                    efrec_g(4) = rhoN(m,k,j,i);
+                    efrec_g(5) = ei;
+                    efrec_g(6) = t0;
+                    efrec_g(7) = src;
+                    efrec_g(8) = src_relax;
+                    efrec_g(9) = Em;
+                    efrec_g(10) = absn;
+                    efrec_g(11) = deq;
+                    efrec_g(12) = de_nt;
+                    efrec_g(13) = bdt;
+                    efrec_g(14) = de;
+                    efrec_g(15) = static_cast<Real>(efix_cyc);
+                  }
                   dg_resc = true;
                 }
               }
@@ -2369,6 +2436,22 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
                     << " cell(s): " << he(1) << " rescued to the radiative equilibrium "
                     << "(problem/rt_rescue_eq), " << he(2) << " to the 99.9 % floor; "
                     << "this is reported once" << std::endl;
+          auto hr = Kokkos::create_mirror_view(efrec_g);
+          Kokkos::deep_copy(hr, efrec_g);
+          std::cout << "    first such cell: cycle " << static_cast<int>(hr(15))
+                    << " (m,k,j,i) = (" << static_cast<int>(hr(0)) << ","
+                    << static_cast<int>(hr(1)) << "," << static_cast<int>(hr(2)) << ","
+                    << static_cast<int>(hr(3)) << ")  rho = " << hr(4)
+                    << "  e = " << hr(5) << "  T = " << hr(6) << " K" << std::endl
+                    << "      src = " << hr(7) << "  src_relax = " << hr(8)
+                    << "  Em = " << hr(9) << "  A = src_relax+Em = " << hr(10)
+                    << "  bdt = " << hr(13) << std::endl
+                    << "      src*bdt/e = " << (hr(5) != 0.0 ? hr(7)*hr(13)/hr(5) : 0.0)
+                    << "  Em*bdt/e = " << (hr(5) != 0.0 ? hr(9)*hr(13)/hr(5) : 0.0)
+                    << "  deq/e = " << (hr(5) != 0.0 ? hr(11)/hr(5) : 0.0)
+                    << "  de_newton/e = " << (hr(5) != 0.0 ? hr(12)/hr(5) : 0.0)
+                    << "  de_used/e = " << (hr(5) != 0.0 ? hr(14)/hr(5) : 0.0)
+                    << std::endl;
           efix_warned = true;
         }
         efix_seen = he(0);
