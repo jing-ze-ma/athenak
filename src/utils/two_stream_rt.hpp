@@ -1695,6 +1695,26 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
             // ck_nquad = 1 is the hemispheric mean (mu = 1/1.66), 2 the two-point
             // Gauss-Legendre quadrature the band solver offers on the same switch
             const int nq = (ck_nq_ > 1) ? 2 : 1;
+            // THE LAYER between the centres of cells iL and iL+1 (see rt_layer_legacy):
+            // its two half thicknesses, the Planck source at each centre, and the source
+            // at the face that separates them, taken at its own tau inside the layer.
+            // BFace is applied to BOTH endpoints and symmetrically, so a radiatively
+            // inert neighbour leaves a layer emitting with its own Planck function, as it
+            // did before -- and with equal opacities on both sides this is just the
+            // straight line from B(iL) to B(iL+1).
+            auto rt_layer = [&](const int iL, Real &dt_l, Real &dt_u,
+                                Real &s_l, Real &s_u, Real &s_f) {
+              const Real kl = kc_g(m,0,iL,k,j)*rhoN(m,k,j,iL);
+              const Real ku = kc_g(m,0,iL+1,k,j)*rhoN(m,k,j,iL+1);
+              const Real bl = Bb_g(m,0,iL,k,j);
+              const Real bu = Bb_g(m,0,iL+1,k,j);
+              dt_l = 0.5*kl*DX1(m,k,j,iL);
+              dt_u = 0.5*ku*DX1(m,k,j,iL+1);
+              s_l = BFace(ku, kl, bu, bl, bface_on);
+              s_u = BFace(kl, ku, bl, bu, bface_on);
+              const Real dtc = dt_l + dt_u;
+              s_f = (dtc > 0.0) ? (s_l + (s_u - s_l)*(dt_l/dtc)) : (0.5*(s_l + s_u));
+            };
             Real muq[2], wfq[2];
             if (nq == 1) {
               muq[0] = 1.0/CK_DIFFUSIVITY;
@@ -1730,7 +1750,29 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
               for (int q=0; q<nq; ++q) {
                 bsrc[q] = Bb_g(m,0,ie+1,k,j);
               }
-              if (top_re) {
+              if (top_re && !layer_legacy) {
+                // the same probe on the centre-to-centre layers (see rt_layer_legacy):
+                // the cut half, then every layer, then the top half
+                const Real dcut = 0.5*kc_g(m,0,icut,k,j)*rhoN(m,k,j,icut)
+                                * DX1(m,k,j,icut);
+                const Real bcut = Bb_g(m,0,icut,k,j);
+                const Real dtop = 0.5*kc_g(m,0,ie,k,j)*rhoN(m,k,j,ie)*DX1(m,k,j,ie);
+                const Real btop = Bb_g(m,0,ie,k,j);
+                for (int q=0; q<nq; ++q) {
+                  const Real bfc = bcut + dbdtau_cut*dcut;
+                  Real ip = bfc + (int_at_cut ? Iint : 0.0) + muq[q]*dbdtau_cut;
+                  Real ab, em;
+                  RTLayer(dcut, muq[q], bfc, bcut, ip, ab, em);
+                  for (int i=icut; i<ie; ++i) {
+                    Real dt_l, dt_u, s_l, s_u, s_f;
+                    rt_layer(i, dt_l, dt_u, s_l, s_u, s_f);
+                    RTLayer(dt_l, muq[q], s_l, s_f, ip, ab, em);
+                    RTLayer(dt_u, muq[q], s_f, s_u, ip, ab, em);
+                  }
+                  RTLayer(dtop, muq[q], btop, btop, ip, ab, em);
+                  bsrc[q] = 0.5*ip;
+                }
+              } else if (top_re) {
                 for (int q=0; q<nq; ++q) {
                   Real ip = Bb_g(m,0,icut,k,j) + (int_at_cut ? Iint : 0.0)
                           + muq[q]*dbdtau_cut;
@@ -1755,80 +1797,154 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
               }
               if (report_on) idn_g(m,k,j,ie+1) = I_down[0][ie+1];
             }
-            // down-sweep
-            //
-            // KNOWN, NOT FIXED HERE: the layer source.  Each layer is integrated with a
-            // thickness dtau = kappa rho DX1(i) -- a whole cell -- but with the source
-            // running linearly from this cell's centre value Bb_g(i) to the NEIGHBOURING
-            // CELL'S CENTRE value (BFace), i.e. over a centre-to-centre interval offset
-            // by half a cell from the layer the optical depth belongs to.  The two do not
-            // line up, and the emergent flux comes out LOW by about 4 % where dtau per
-            // cell is ~1-3; it falls off both as dtau/cell -> 0 and as dtau/cell -> big.
-            // It is a smooth O(dtau^2) error and not a handover, so it does not pump the
-            // box acoustic mode the tau ramp does, and it is deliberately left alone:
-            // fixing it means re-deriving alpha/beta/gamma on half-cell layers, which
-            // moves every existing answer on every problem that uses this solver.
-            for (int i=ie; i>icut-1; --i) {
-              const Real krb_d = kc_g(m,0,i,k,j)*rhoN(m,k,j,i);
-              const Real dtau_i = krb_d*DX1(m,k,j,i);
-              // the far endpoint of the layer's source function, weighted by emitting
-              // matter: above rad_kappa_rmax the neighbour has kappa = 0 and a Planck
-              // function 1e9x this cell's, which used to drain it to the floor in one
-              // step (see BFace).  Identical to Bb_g(i+1) at equal opacity.
-              const int iip = (i+1 > ie) ? ie : i+1;
-              const Real bfar_d = BFace(krb_d, kc_g(m,0,i+1,k,j)*rhoN(m,k,j,iip),
-                                        Bb_g(m,0,i,k,j), Bb_g(m,0,i+1,k,j), bface_on);
-              for (int q=0; q<nq; ++q) {
-                const Real x = dtau_i/muq[q];
-                const Real e0 = -expm1(-x);
-                const Real alp = (x > 1.0e-3) ? (e0 - 1.0 + e0/x) : (x/2.0 - SQR(x)/3.0);
-                const Real bet = (x > 1.0e-3) ? (1.0 - e0/x) : (x/2.0 - SQR(x)/6.0);
-                // direct source: what this stream leaves in cell i, absorbed minus
-                // emitted
-                Src_g(m,0,i,k,j) += wfq[q]/DX1(m,k,j,i)
-                                  *(e0*I_down[q][i+1]
-                                    - (alp*bfar_d + bet*Bb_g(m,0,i,k,j)));
-                I_down[q][i] = (1.0-e0)*I_down[q][i+1]
-                             + alp*bfar_d + bet*Bb_g(m,0,i,k,j);
-              }
-              if (report_on) idn_g(m,k,j,i) = I_down[0][i];
-            }
-            // Bottom of the RT domain: thermalised, plus the internal flux if the layers
-            // below are not carrying it themselves (see rt_int_at_cut).
+            // THE LAYERS.  See rt_layer_legacy: the default branch runs layers
+            // between cell CENTRES; the legacy one the old staggered whole-cell
+            // layers, bit for bit.
             Real I_up[2];
-            for (int q=0; q<nq; ++q) {
-              I_up[q] = Bb_g(m,0,icut,k,j) + (int_at_cut ? Iint : 0.0)
-                      + muq[q]*dbdtau_cut;
-              Fb_g(m,0,icut,k,j) += wfq[q]*(I_up[q] - I_down[q][icut]);
-            }
-            if (report_on) iup_g(m,k,j,icut) = I_up[0];
-            // up-sweep
-            for (int i=icut+1; i<ie+2; ++i) {
-              const Real kap = kc_g(m,0,i-1,k,j);
-              const Real rho = rhoN(m,k,j,i-1);
-              const Real dtau_i = kap*rho*DX1(m,k,j,i-1);
-              // same emissivity weighting for the upward stream and for Em: see BFace
-              const int iiu = (i > ie) ? ie : i;
-              const Real bfar_u = BFace(kap*rho, kc_g(m,0,i,k,j)*rhoN(m,k,j,iiu),
-                                        Bb_g(m,0,i-1,k,j), Bb_g(m,0,i,k,j), bface_on);
-              for (int q=0; q<nq; ++q) {
-                const Real x = dtau_i/muq[q];
-                const Real e0 = -expm1(-x);
-                const Real bet = (x > 1.0e-3) ? (1.0 - e0/x) : (x/2.0 - SQR(x)/6.0);
-                const Real gm  = (x > 1.0e-3) ? (e0 - 1.0 + e0/x) : (x/2.0 - SQR(x)/3.0);
-                const Real Iup_in = I_up[q];
-                // the same for the upward stream through layer i-1
-                Src_g(m,0,i-1,k,j) += wfq[q]/DX1(m,k,j,i-1)
-                                    *(e0*Iup_in
-                                      - (bet*bfar_u
-                                         + gm*Bb_g(m,0,i-1,k,j)));
-                I_up[q] = (1.0-e0)*Iup_in
-                        + bet*bfar_u + gm*Bb_g(m,0,i-1,k,j);
-                Fb_g(m,0,i,k,j) += wfq[q]*(I_up[q] - I_down[q][i]);
+            if (layer_legacy) {
+              // down-sweep on the OLD staggered whole-cell layers
+              for (int i=ie; i>icut-1; --i) {
+                const Real krb_d = kc_g(m,0,i,k,j)*rhoN(m,k,j,i);
+                const Real dtau_i = krb_d*DX1(m,k,j,i);
+                // the far endpoint of the layer's source function, weighted by emitting
+                // matter: above rad_kappa_rmax the neighbour has kappa = 0 and a Planck
+                // function 1e9x this cell's, which used to drain it to the floor in one
+                // step (see BFace).  Identical to Bb_g(i+1) at equal opacity.
+                const int iip = (i+1 > ie) ? ie : i+1;
+                const Real bfar_d = BFace(krb_d, kc_g(m,0,i+1,k,j)*rhoN(m,k,j,iip),
+                                          Bb_g(m,0,i,k,j), Bb_g(m,0,i+1,k,j), bface_on);
+                for (int q=0; q<nq; ++q) {
+                  const Real x = dtau_i/muq[q];
+                  const Real e0 = -expm1(-x);
+                  const Real alp = (x > 1.0e-3) ? (e0 - 1.0 + e0/x)
+                                               : (x/2.0 - SQR(x)/3.0);
+                  const Real bet = (x > 1.0e-3) ? (1.0 - e0/x) : (x/2.0 - SQR(x)/6.0);
+                  // direct source: what this stream leaves in cell i, absorbed minus
+                  // emitted
+                  Src_g(m,0,i,k,j) += wfq[q]/DX1(m,k,j,i)
+                                    *(e0*I_down[q][i+1]
+                                      - (alp*bfar_d + bet*Bb_g(m,0,i,k,j)));
+                  I_down[q][i] = (1.0-e0)*I_down[q][i+1]
+                               + alp*bfar_d + bet*Bb_g(m,0,i,k,j);
+                }
+                if (report_on) idn_g(m,k,j,i) = I_down[0][i];
               }
-              if (report_on) iup_g(m,k,j,i) = I_up[0];
-              Em_g(m,0,i-1,k,j) = 4.0*M_PI*kap*rho
-                                * 0.5*(bfar_u + Bb_g(m,0,i-1,k,j));
+              // Bottom of the RT domain: thermalised, plus the internal flux if the
+              // layers below are not carrying it themselves (see rt_int_at_cut).
+              for (int q=0; q<nq; ++q) {
+                I_up[q] = Bb_g(m,0,icut,k,j) + (int_at_cut ? Iint : 0.0)
+                        + muq[q]*dbdtau_cut;
+                Fb_g(m,0,icut,k,j) += wfq[q]*(I_up[q] - I_down[q][icut]);
+              }
+              if (report_on) iup_g(m,k,j,icut) = I_up[0];
+              // up-sweep
+              for (int i=icut+1; i<ie+2; ++i) {
+                const Real kap = kc_g(m,0,i-1,k,j);
+                const Real rho = rhoN(m,k,j,i-1);
+                const Real dtau_i = kap*rho*DX1(m,k,j,i-1);
+                // same emissivity weighting for the upward stream and for Em: see BFace
+                const int iiu = (i > ie) ? ie : i;
+                const Real bfar_u = BFace(kap*rho, kc_g(m,0,i,k,j)*rhoN(m,k,j,iiu),
+                                          Bb_g(m,0,i-1,k,j), Bb_g(m,0,i,k,j), bface_on);
+                for (int q=0; q<nq; ++q) {
+                  const Real x = dtau_i/muq[q];
+                  const Real e0 = -expm1(-x);
+                  const Real bet = (x > 1.0e-3) ? (1.0 - e0/x) : (x/2.0 - SQR(x)/6.0);
+                  const Real gm  = (x > 1.0e-3) ? (e0 - 1.0 + e0/x)
+                                               : (x/2.0 - SQR(x)/3.0);
+                  const Real Iup_in = I_up[q];
+                  // the same for the upward stream through layer i-1
+                  Src_g(m,0,i-1,k,j) += wfq[q]/DX1(m,k,j,i-1)
+                                      *(e0*Iup_in
+                                        - (bet*bfar_u
+                                           + gm*Bb_g(m,0,i-1,k,j)));
+                  I_up[q] = (1.0-e0)*Iup_in
+                          + bet*bfar_u + gm*Bb_g(m,0,i-1,k,j);
+                  Fb_g(m,0,i,k,j) += wfq[q]*(I_up[q] - I_down[q][i]);
+                }
+                if (report_on) iup_g(m,k,j,i) = I_up[0];
+                Em_g(m,0,i-1,k,j) = 4.0*M_PI*kap*rho
+                                  * 0.5*(bfar_u + Bb_g(m,0,i-1,k,j));
+              }
+            } else {
+              // ---- the centre-to-centre layers (see rt_layer_legacy) ----
+              // The top half layer: the upper half of cell ie, entered at the top face,
+              // with the source held at the cell's own centre value -- there is nothing
+              // above it to interpolate towards.
+              const Real dt_top = 0.5*kc_g(m,0,ie,k,j)*rhoN(m,k,j,ie)*DX1(m,k,j,ie);
+              const Real b_top = Bb_g(m,0,ie,k,j);
+              // The cut half layer: the lower half of cell icut.  B is continued from
+              // the centre to the cut face at the deep-limit gradient, the same
+              // linear-in-tau behaviour the cut boundary itself assumes (and zero under
+              // rt_cut_bc_legacy).  A thick half layer forgets its entry source anyway,
+              // since that coefficient falls off as 1/x.
+              const Real dt_cut = 0.5*kc_g(m,0,icut,k,j)*rhoN(m,k,j,icut)
+                                * DX1(m,k,j,icut);
+              const Real b_cut = Bb_g(m,0,icut,k,j);
+              const Real b_cutf = b_cut + dbdtau_cut*dt_cut;
+              Real ab, em;
+              // down-sweep: centre to centre, recording the face intensity in between
+              Real Idn[2];
+              for (int q=0; q<nq; ++q) {
+                Idn[q] = I_down[q][ie+1];
+                RTLayer(dt_top, muq[q], b_top, b_top, Idn[q], ab, em);
+                Src_g(m,0,ie,k,j) += wfq[q]/DX1(m,k,j,ie)*(ab - em);
+              }
+              for (int i=ie; i>icut; --i) {
+                Real dt_l, dt_u, s_l, s_u, s_f;
+                rt_layer(i-1, dt_l, dt_u, s_l, s_u, s_f);
+                for (int q=0; q<nq; ++q) {
+                  RTLayer(dt_u, muq[q], s_u, s_f, Idn[q], ab, em);
+                  Src_g(m,0,i,k,j) += wfq[q]/DX1(m,k,j,i)*(ab - em);
+                  I_down[q][i] = Idn[q];
+                  RTLayer(dt_l, muq[q], s_f, s_l, Idn[q], ab, em);
+                  Src_g(m,0,i-1,k,j) += wfq[q]/DX1(m,k,j,i-1)*(ab - em);
+                }
+                if (report_on) idn_g(m,k,j,i) = I_down[0][i];
+              }
+              for (int q=0; q<nq; ++q) {
+                RTLayer(dt_cut, muq[q], b_cut, b_cutf, Idn[q], ab, em);
+                Src_g(m,0,icut,k,j) += wfq[q]/DX1(m,k,j,icut)*(ab - em);
+                I_down[q][icut] = Idn[q];
+              }
+              if (report_on) idn_g(m,k,j,icut) = I_down[0][icut];
+              // Bottom of the RT domain, now AT the cut face: thermalised, plus the
+              // internal flux if the layers below are not carrying it themselves (see
+              // rt_int_at_cut), plus the deep-limit gradient (see rt_cut_bc_legacy).
+              for (int q=0; q<nq; ++q) {
+                I_up[q] = b_cutf + (int_at_cut ? Iint : 0.0) + muq[q]*dbdtau_cut;
+                Fb_g(m,0,icut,k,j) += wfq[q]*(I_up[q] - I_down[q][icut]);
+              }
+              if (report_on) iup_g(m,k,j,icut) = I_up[0];
+              // up-sweep
+              for (int q=0; q<nq; ++q) {
+                RTLayer(dt_cut, muq[q], b_cutf, b_cut, I_up[q], ab, em);
+                Src_g(m,0,icut,k,j) += wfq[q]/DX1(m,k,j,icut)*(ab - em);
+              }
+              for (int i=icut; i<ie; ++i) {
+                Real dt_l, dt_u, s_l, s_u, s_f;
+                rt_layer(i, dt_l, dt_u, s_l, s_u, s_f);
+                for (int q=0; q<nq; ++q) {
+                  RTLayer(dt_l, muq[q], s_l, s_f, I_up[q], ab, em);
+                  Src_g(m,0,i,k,j) += wfq[q]/DX1(m,k,j,i)*(ab - em);
+                  Fb_g(m,0,i+1,k,j) += wfq[q]*(I_up[q] - I_down[q][i+1]);
+                  if (report_on && q == 0) iup_g(m,k,j,i+1) = I_up[0];
+                  RTLayer(dt_u, muq[q], s_f, s_u, I_up[q], ab, em);
+                  Src_g(m,0,i+1,k,j) += wfq[q]/DX1(m,k,j,i+1)*(ab - em);
+                }
+              }
+              for (int q=0; q<nq; ++q) {
+                RTLayer(dt_top, muq[q], b_top, b_top, I_up[q], ab, em);
+                Src_g(m,0,ie,k,j) += wfq[q]/DX1(m,k,j,ie)*(ab - em);
+                Fb_g(m,0,ie+1,k,j) += wfq[q]*(I_up[q] - I_down[q][ie+1]);
+              }
+              if (report_on) iup_g(m,k,j,ie+1) = I_up[0];
+              // the cell's own emission, exactly 4 sigma kappa rho T^4: each cell now
+              // owns both of its half layers, so nothing here is a two-centre average
+              for (int i=icut; i<ie+1; ++i) {
+                Em_g(m,0,i,k,j) = 4.0*M_PI*kc_g(m,0,i,k,j)*rhoN(m,k,j,i)
+                                * Bb_g(m,0,i,k,j);
+              }
             }
           });
         };
