@@ -1,0 +1,79 @@
+<comment>
+problem = transverse radiative diffusion of a 2D Gaussian (pgen rad_diff2d)
+# A Cartesian box at rest, uniform in x1, with a 1e-4 Gaussian temperature perturbation
+# in (x2,x3) on a uniform density, run in KINEMATIC mode so that radiative conduction is
+# the only operator that moves anything.  The x2/x3 operator is solved with the implicit
+# transverse solver (hydro/rad_implicit_ang, conduction_transverse.cpp) and the x1
+# operator -- which carries no flux at all, the state being uniform in x1 -- is left
+# explicit and is what sets the timestep.  dx1 = 10 dx2, so the step the transverse
+# solver is asked to cover is exactly 100x the explicit transverse limit; halving dx2
+# and dx1 together keeps that ratio and scales dt as dx^2, which is what makes the
+# convergence of the whole scheme second order.
+# Units make T0 = 1 read as ~1000 K and p0 = 1 as 0.036 bar, inside the range of the
+# Freedman+2014 fit.  rad_kappa_fac = 0.1 makes the conductivity large enough that the
+# blob diffuses ~20x faster than sound crosses it, so the gas has no time to respond and
+# the evolution is conduction alone: the induced velocity changes T by ~1e-6 of the
+# perturbation over the run.  (The run is NOT kinematic: the advect Riemann solver never
+# writes the energy flux -- it is for isothermal problems -- so the conduction flux would
+# land on top of a stale one.)  Errors against the analytic spreading Gaussian (periodic images
+# included) go to lap2d-errs.dat.
+
+<job>
+basename = lap2d
+
+<mesh>
+nghost   = 2
+nx1      = 4
+x1min    = 0.0
+x1max    = 0.625
+ix1_bc   = periodic
+ox1_bc   = periodic
+nx2      = 64
+x2min    = -0.5
+x2max    = 0.5
+ix2_bc   = periodic
+ox2_bc   = periodic
+nx3      = 64
+x3min    = -0.5
+x3max    = 0.5
+ix3_bc   = periodic
+ox3_bc   = periodic
+
+<meshblock>
+nx1      = 4
+nx2      = 64
+nx3      = 64
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim       = -1
+tlim       = 0.00225034
+
+<hydro>
+eos         = ideal
+reconstruct = plm
+rsolver     = hllc
+gamma       = 1.666667
+isotropic_conduction = radiative
+rad_pcut_bar     = 0.0
+rad_flux_limit   = false
+rad_kappa_fac    = 0.02
+rad_flux_inner   = 0.0
+rad_met          = 0.0
+rad_implicit_ang = true
+rad_ang_verbose  = true
+
+<units>
+length_cgs = 1.0e8
+mass_cgs   = 1.0e18
+time_cgs   = 527.0
+mu         = 2.3
+
+<problem>
+pgen_name = rad_diff2d
+d0    = 1.0
+p0    = 1.0
+amp   = 1.0e-4
+sig0  = 0.09375
