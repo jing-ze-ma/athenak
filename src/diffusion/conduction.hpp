@@ -14,6 +14,9 @@
 #include "athena.hpp"
 #include "parameter_input.hpp"
 
+// the dedicated one-variable ghost exchange the implicit transverse solve drives
+class MeshBoundaryValuesCC;
+
 //----------------------------------------------------------------------------------------
 //! \class Conduction
 //! \brief data and functions that implement thermal conduction in Hydro and MHD
@@ -155,6 +158,33 @@ class Conduction {
   // operator is unconditionally stable and monotone (the checkerboard mode's
   // amplification factor stays >= 0).  Requires rad_implicit_x1; drops dt2/dt3.
   Real rad_cap_ang = 0.0;
+  // rad_implicit_ang (<hydro>/ or <mhd>/rad_implicit_ang, default false): solve the
+  // TRANSVERSE (x2/x3) radiative diffusion with an unconditionally stable operator-split
+  // update instead of adding it to the face fluxes.  rad_cap_ang slows the transverse
+  // exchange down to whatever an explicit step can carry, which is stable and
+  // conservative but WRONG: in the iron-convection-zone boxes it throttles the very
+  // horizontal radiative exchange that sets the structure.  With this on, the x2/x3
+  // faces carry no explicit flux, the x2/x3 conduction timestep constraints are dropped,
+  // and Conduction::ImplicitTransverseUpdate (conduction_transverse.cpp) advances the
+  // per-layer 2D operator over the stage with an RKL1 super-time-stepping loop.
+  // v1 is CARTESIAN and uniform-grid only, and mutually exclusive with rad_cap_ang.
+  // rad_implicit_x1 is NOT required: the two operators are split from each other and
+  // from the hydro, and the radial direction keeps whatever treatment it was given.
+  bool rad_implicit_ang = false;
+  int rad_ang_maxit = 200;      // ceiling on the RKL1 substage count of one call
+  bool rad_ang_verbose = false; // report the substage count and the conservation residual
+  static constexpr int ntrs = 2;
+  static constexpr int TRST = 0, TRSA = 1;   // frozen T*, and alpha = 1/(rho c_v)
+  DvceArray5D<Real> tr_st;
+  // the RKL1 registers Y_{j-2}, Y_{j-1}, Y_j on the energy increment, one variable each
+  // so the dedicated MeshBoundaryValuesCC below can exchange whichever one is current
+  DvceArray5D<Real> tr_ya, tr_yb, tr_yc, tr_ycoar;
+  MeshBoundaryValuesCC *pbval_tr = nullptr;
+  int ang_lines = 0;
+  void ImplicitTransverseUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
+                                const Real beta_dt);
+  void BuildAngularCoeffs(const DvceArray5D<Real> &w0, const EOS_Data &eos,
+                          const Real beta_dt);
   // beta_dt of the CURRENT stage.  The angular fluxes are added in Hydro::Fluxes, which
   // runs before the RK update, so the cap has no other way of knowing the step it is
   // capping; Hydro::Fluxes sets this immediately before calling AddHeatFluxes.
