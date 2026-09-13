@@ -20,9 +20,15 @@ WHAT THIS GUARDS.  dx1 = 10 dx2, and x1 -- where the state is uniform and no flu
 flows -- is the direction that sets the timestep, so the transverse solver is asked to
 cover exactly 100 explicit transverse steps per step, in 7 RKL1 substages.  Halving dx2
 and dx1 together holds that ratio and scales dt as dx^2, so the whole scheme (2nd order
-in space, 1st order in the super-step) converges at 2nd order.  The gates are the L1
-error in the energy at both resolutions, the observed order, and the conservation
-residual sum V de / sum V |de| of every call, which must be at round-off.
+in space, 1st order in the super-step) converges at better than 1.5th order.  The gates
+are the L1 error in the energy at both resolutions, the observed order, and the
+conservation residual sum V de / sum V |de| of every call, which must be at round-off.
+
+This test is deliberately BLIND to one thing, and the blindness is the point of the
+design note: the state is uniform in x1, so the radial operator moves nothing and the
+lag between the two split operators -- which is what destabilised the He-star FeCZ box --
+shows up here as max |dT*|/T* = 3e-6 instead of the 5-7 % it reaches in that box.  Do not
+treat a pass here as evidence that the operator splitting is consistent.
 """
 
 # Modules
@@ -37,9 +43,18 @@ REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..")
 INPUT = os.path.join(REPO, "inputs", "tests", "rad_transverse_gauss.athinput")
 BUILD = os.path.join(os.path.dirname(os.path.abspath(__file__)), "build_tr_gauss")
 
-# L1 error in the total energy against the analytic solution, and the order
-L1_MAX = {64: 1.2e-7, 128: 2.6e-8}
-ORDER_MIN = 1.9
+# L1 error in the total energy against the analytic solution, and the order.
+# RECALIBRATED when the operator stopped linearising about the stage-START state and
+# started re-evaluating T* and alpha from the conserved energy it actually writes on
+# (conduction_transverse.cpp).  That refresh removes a splitting error, so the ABSOLUTE
+# error improves at both resolutions -- MEASURED 8.69e-8 -> 2.785e-8 at 64^2 (3.1x) and
+# 1.80e-8 -> 8.855e-9 at 128^2 (2.0x), identical on CPU and on one and two MI300A -- but
+# what is left is a different mixture of terms and converges at 1.653 rather than the
+# 2.27 of the lagged scheme.  The gates below are the measured numbers with ~1.4x of
+# margin; a run that comes back at the OLD values is the lag returning, and will trip the
+# L1 gates rather than the order one.
+L1_MAX = {64: 4.0e-8, 128: 1.3e-8}
+ORDER_MIN = 1.5
 # |sum V de| / sum V |de| of one call of the operator
 CONS_MAX = 1.0e-12
 # the super-step the solver is asked to cover, in explicit transverse steps
