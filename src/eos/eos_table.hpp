@@ -47,6 +47,7 @@
 #include <string>
 
 #include "athena.hpp"
+#include "utils/rad_taper.hpp"
 
 //----------------------------------------------------------------------------------------
 //! \enum EOSTableVar
@@ -95,6 +96,14 @@ struct EOSTable {
   // self-contained and can be evaluated without one.
   Real dens_cgs = 1.0, pres_cgs = 1.0, temp_cgs = 1.0;
   Real arad = 7.5657332503e-15;   // radiation constant in cgs
+  //! THIN-REGION TAPER (see utils/rad_taper.hpp). When `rad_taper` is set, the aT^4 and
+  //! aT^4/3 terms below are multiplied by a smoothstep w(log10 rho) that is 1 at and
+  //! below `rad_lrho_hi` in density... i.e. 1 for rho >= 10^rad_lrho_hi (LTE) and 0 for
+  //! rho <= 10^rad_lrho_lo (optically thin, where the two-stream owns the radiation).
+  //! Every branch below is written so that rad_taper = false reproduces the untapered
+  //! arithmetic BIT FOR BIT, which is what keeps existing runs unchanged.
+  bool rad_taper = false;
+  Real rad_lrho_lo = 0.0, rad_lrho_hi = 0.0;   // log10 of rho_lo, rho_hi, in cgs
   // composition metadata, so a caller can check its own metallicity against the EOS's.
   // A problem generator that feeds [M/H] to an opacity fit and an EOS built at a
   // different [M/H] is opaque at one metallicity and conducting at another, silently.
@@ -272,13 +281,20 @@ struct EOSTable {
     const Real cv_g = (egas/rho)*evy/t;
 
     if (radiation) {
-      const Real erad = arad*t*t*t*t;
+      const Real erad0 = arad*t*t*t*t;
+      Real w = 1.0, dwdx = 0.0;
+      if (rad_taper) rad_taper::Weight(x, rad_lrho_lo, rad_lrho_hi, w, dwdx);
+      const Real erad = rad_taper ? w*erad0 : erad0;
       const Real prad = erad/3.0;
       s.e = egas + erad;
       s.p = pgas + prad;
       // radiation is independent of density at fixed T, so it dilutes chi_rho and pulls
       // chi_T towards its own value of 4
       s.chi_rho = pgas*chir_g/s.p;
+      // ...unless the taper is on, in which case the radiation term DOES depend on
+      // density, through w, and chi_rho has to carry that derivative or it is no longer
+      // the derivative of the p returned beside it. d(w prad0)/dln rho = prad0 dw/dx/ln10
+      if (rad_taper) s.chi_rho += (erad0/3.0)*dwdx*M_LOG10E/s.p;
       s.chi_t = (pgas*chit_g + 4.0*prad)/s.p;
       s.cv = cv_g + 4.0*erad/(rho*t);
       s.dlne_dlnt = (egas*evy + 4.0*erad)/s.e;
@@ -383,10 +399,12 @@ struct EOSTable {
   KOKKOS_INLINE_FUNCTION
   void EvalEOnly(const Real rho, const Real t, Real &e, Real &dlne_dlnt) const {
     Real ev, evx, evy;
-    Interpolate<false, true>(ITE, log10(rho), log10(t), ev, evx, evy);
+    const Real xr = log10(rho);
+    Interpolate<false, true>(ITE, xr, log10(t), ev, evx, evy);
     const Real egas = rho*Pow10(ev);
     if (radiation) {
-      const Real erad = arad*t*t*t*t;
+      Real erad = arad*t*t*t*t;
+      if (rad_taper) erad *= rad_taper::WeightOnly(xr, rad_lrho_lo, rad_lrho_hi);
       e = egas + erad;
       dlne_dlnt = (egas*evy + 4.0*erad)/e;
     } else {
@@ -405,15 +423,20 @@ struct EOSTable {
   void EvalPOnly(const Real rho, const Real t,
                  Real &p, Real &chi_rho, Real &chi_t) const {
     Real pv, pvx, pvy;
-    Interpolate(ITP, log10(rho), log10(t), pv, pvx, pvy);
+    const Real xr = log10(rho);
+    Interpolate(ITP, xr, log10(t), pv, pvx, pvy);
     const Real pgas = rho*Pow10(pv);
     const Real chir_g = 1.0 + pvx;
     const Real chit_g = pvy;
     if (radiation) {
-      const Real erad = arad*t*t*t*t;
+      const Real erad0 = arad*t*t*t*t;
+      Real w = 1.0, dwdx = 0.0;
+      if (rad_taper) rad_taper::Weight(xr, rad_lrho_lo, rad_lrho_hi, w, dwdx);
+      const Real erad = rad_taper ? w*erad0 : erad0;
       const Real prad = erad/3.0;
       p = pgas + prad;
       chi_rho = pgas*chir_g/p;
+      if (rad_taper) chi_rho += (erad0/3.0)*dwdx*M_LOG10E/p;
       chi_t = (pgas*chit_g + 4.0*prad)/p;
     } else {
       p = pgas;
@@ -459,13 +482,21 @@ struct EOSTable {
       // the radiation term is additive in the linear quantity, so this branch has to
       // reconstruct it. Kept arithmetically identical to Eval().
       const Real t = Pow10(y);
-      const Real erad = arad*t*t*t*t;
+      Real erad = arad*t*t*t*t;
+      Real w = 1.0, dwdx = 0.0;
+      if (rad_taper) {
+        rad_taper::Weight(x, rad_lrho_lo, rad_lrho_hi, w, dwdx);
+        // dwdx is with respect to log10 rho, so only the density inversion sees it
+        dwdx *= erad*M_LOG10E;
+        erad *= w;
+      }
       const Real qrad = (MODE == 0) ? erad : erad/3.0;
       const Real qgas = Pow10(g + ltarget);
       const Real qtot = qgas + qrad;
       const Real f = (MODE == 0) ? 4.0 : ((MODE == 2) ? 0.0 : 4.0);
       if (MODE == 2) {
         dg = qgas*(1.0 + qvx)/qtot;
+        if (rad_taper) dg += (dwdx/3.0)/qtot;
       } else {
         dg = (qgas*qvy + f*qrad)/qtot;
       }

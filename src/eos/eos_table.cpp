@@ -25,6 +25,7 @@
 #include "parameter_input.hpp"
 #include "eos/eos_composition.hpp"
 #include "eos/eos_table.hpp"
+#include "utils/rad_taper.hpp"
 
 namespace {
 
@@ -50,13 +51,13 @@ void SampleModel(const EOSCompositionModel &m, const double x, const double y,
 //! so a plain bisection is fast enough and avoids depending on the table being built.
 
 double EnergyAtPressure(const EOSCompositionModel &m, const bool rad,
-                        const double rho, const double ptarget) {
+                        const double wrad, const double rho, const double ptarget) {
   double ylo = -2.0, yhi = 12.0;
   for (int it=0; it<200; ++it) {
     double y = 0.5*(ylo + yhi);
     double t = pow(10.0, y);
     EOSCompositionState s = m.Evaluate(rho, t);
-    double p = rho*s.p_spec + (rad ? eos_cgs::a_rad*t*t*t*t/3.0 : 0.0);
+    double p = rho*s.p_spec + (rad ? wrad*eos_cgs::a_rad*t*t*t*t/3.0 : 0.0);
     if (p > ptarget) {
       yhi = y;
     } else {
@@ -66,7 +67,7 @@ double EnergyAtPressure(const EOSCompositionModel &m, const bool rad,
   }
   double t = pow(10.0, 0.5*(ylo + yhi));
   EOSCompositionState s = m.Evaluate(rho, t);
-  return rho*s.e_spec + (rad ? eos_cgs::a_rad*t*t*t*t : 0.0);
+  return rho*s.e_spec + (rad ? wrad*eos_cgs::a_rad*t*t*t*t : 0.0);
 }
 
 }  // namespace
@@ -100,6 +101,32 @@ void BuildEOSTable(EOSTable &tbl, ParameterInput *pin, const std::string &block,
   model.include_metal_cond = pin->GetOrAddBoolean(block, "eos_metal_condensation", false);
   model.metal_tcond = pin->GetOrAddReal(block, "eos_metal_tcond", 0.0);
   tbl.radiation = pin->GetOrAddBoolean(block, "eos_radiation", false);
+
+  // ------------------------------------------------------ thin-region radiation taper
+  // See utils/rad_taper.hpp.  eos_rad_rho_hi = 0 (the default) leaves the radiation
+  // terms untapered and every expression below on its original branch, bit for bit.
+  const Real rad_rho_hi = pin->GetOrAddReal(block, "eos_rad_rho_hi", 0.0);
+  const Real rad_rho_lo = pin->GetOrAddReal(block, "eos_rad_rho_lo", 0.0);
+  tbl.rad_taper = (rad_rho_hi > 0.0);
+  if (tbl.rad_taper) {
+    if (!(rad_rho_lo > 0.0) || !(rad_rho_lo < rad_rho_hi)) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl
+                << "<" << block << ">/eos_rad_rho_lo must be positive and strictly less "
+                << "than eos_rad_rho_hi; got rho_lo = " << rad_rho_lo
+                << ", rho_hi = " << rad_rho_hi << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    if (!tbl.radiation) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl
+                << "<" << block << ">/eos_rad_rho_hi tapers a radiation term that is not "
+                << "there: set eos_radiation = true, or drop the taper." << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    tbl.rad_lrho_lo = log10(static_cast<double>(rad_rho_lo));
+    tbl.rad_lrho_hi = log10(static_cast<double>(rad_rho_hi));
+  }
 
   if (model.xhyd < 0.0 || model.yhel < 0.0 || (model.xhyd + model.yhel) > 1.0) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
@@ -234,10 +261,12 @@ void BuildEOSTable(EOSTable &tbl, ParameterInput *pin, const std::string &block,
     for (int k=0; k<=4; ++k) {
       double x = xlo + (i + 0.25*k)*tbl.dx;
       const double rho = pow(10.0, x);
-      emax = std::max(emax, EnergyAtPressure(model, tbl.radiation, rho, pfl_cgs));
+      const double wr = tbl.rad_taper
+          ? rad_taper::WeightOnly(x, tbl.rad_lrho_lo, tbl.rad_lrho_hi) : 1.0;
+      emax = std::max(emax, EnergyAtPressure(model, tbl.radiation, wr, rho, pfl_cgs));
       EOSCompositionState st = model.Evaluate(rho, tmin_cgs);
       const double etmin = rho*st.e_spec
-                         + (tbl.radiation ? eos_cgs::a_rad*tmin_cgs*tmin_cgs*tmin_cgs
+                         + (tbl.radiation ? wr*eos_cgs::a_rad*tmin_cgs*tmin_cgs*tmin_cgs
                                             *tmin_cgs : 0.0);
       emax = std::max(emax, etmin);
     }
@@ -254,8 +283,11 @@ void BuildEOSTable(EOSTable &tbl, ParameterInput *pin, const std::string &block,
   for (int i=0; i<nx; ++i) {
     double es = pow(10.0, static_cast<double>(h_tbl(0,i,ITE)));
     if (tbl.radiation) {
+      const double xi = xlo + i*tbl.dx;
+      const double wr = tbl.rad_taper
+          ? rad_taper::WeightOnly(xi, tbl.rad_lrho_lo, tbl.rad_lrho_hi) : 1.0;
       const double tmin = pow(10.0, ylo);
-      es += eos_cgs::a_rad*tmin*tmin*tmin*tmin/pow(10.0, xlo);
+      es += wr*eos_cgs::a_rad*tmin*tmin*tmin*tmin/pow(10.0, xi);
     }
     emsp = std::max(emsp, es);
   }
@@ -306,8 +338,13 @@ void BuildEOSTable(EOSTable &tbl, ParameterInput *pin, const std::string &block,
             << ", Z = " << model.MetalFraction()
             << ", H2 " << (model.include_h2 ? "on" : "off")
             << ", ionization " << (model.include_ion ? "on" : "off")
-            << ", radiation " << (tbl.radiation ? "on" : "off") << std::endl
-            << "             metal ionization "
+            << ", radiation " << (tbl.radiation ? "on" : "off") << std::endl;
+  if (tbl.rad_taper) {
+    std::cout << "             radiation TAPERED off between rho = " << rad_rho_hi
+              << " (w = 1, LTE) and rho = " << rad_rho_lo
+              << " g/cm^3 (w = 0, the two-stream owns it)" << std::endl;
+  }
+  std::cout << "             metal ionization "
             << (model.include_metal_ion ? "on" : "off");
   if (model.include_metal_ion) {
     std::cout << " ([M/H] = " << model.metal_mh;
