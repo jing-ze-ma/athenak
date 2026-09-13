@@ -551,6 +551,9 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
       // HLLD solver
       } else if (rsolver.compare("hlld") == 0) {
         rsolver_method = MHD_RSolver::hlld;
+      // LHLLD solver (HLLD with the low-Mach fix of Minoshima & Miyoshi 2021)
+      } else if (rsolver.compare("lhlld") == 0) {
+        rsolver_method = MHD_RSolver::lhlld;
       // Roe solver
       // } else if (rsolver.compare("roe") == 0) {
       //   rsolver_method = MHD_RSolver::roe;

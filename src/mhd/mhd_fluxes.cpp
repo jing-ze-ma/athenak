@@ -29,6 +29,7 @@
 #include "mhd/rsolvers/llf_mhd.hpp"
 #include "mhd/rsolvers/hlle_mhd.hpp"
 #include "mhd/rsolvers/hlld_mhd.hpp"
+#include "mhd/rsolvers/lhlld_mhd.hpp"
 #include "mhd/rsolvers/llf_srmhd.hpp"
 #include "mhd/rsolvers/hlle_srmhd.hpp"
 #include "mhd/rsolvers/llf_grmhd.hpp"
@@ -361,6 +362,14 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
       HLLD(member,eos,indcs,size,coord,m,k,j,il,iu,IVX,wl,wr,bl,br,dl,dr,
            bx,flx1,e31,e21);
       }
+    } else if constexpr (rsolver_method_ == MHD_RSolver::lhlld) {
+      if (do_pole) {
+        HLLE(member,eos,indcs,size,coord,m,k,j,il,iu,IVX,wl,wr,bl,br,dl,dr,
+             bx,flx1,e31,e21);
+      } else {
+        LHLLD(member,eos,indcs,size,coord,m,k,j,il,iu,IVX,wl,wr,bl,br,dl,dr,
+              bx,flx1,e31,e21);
+      }
     } else if constexpr (rsolver_method_ == MHD_RSolver::llf_sr) {
       LLF_SR(member,eos,indcs,size,coord,m,k,j,il,iu,IVX,wl,wr,bl,br,bx,flx1,e31,e21);
     } else if constexpr (rsolver_method_ == MHD_RSolver::hlle_sr) {
@@ -603,6 +612,14 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
                           m,k,j,is-1,ie+1,IVY,wl,wr,bl,br,dl,dr,by,flx2,e12,e32);
             } else {
             HLLD(member,eos,indcs,size,coord,
+                    m,k,j,is-1,ie+1,IVY,wl,wr,bl,br,dl,dr,by,flx2,e12,e32);
+            }
+          } else if constexpr (rsolver_method_ == MHD_RSolver::lhlld) {
+            if (do_pole) {
+              HLLE(member,eos,indcs,size,coord,
+                          m,k,j,is-1,ie+1,IVY,wl,wr,bl,br,dl,dr,by,flx2,e12,e32);
+            } else {
+              LHLLD(member,eos,indcs,size,coord,
                     m,k,j,is-1,ie+1,IVY,wl,wr,bl,br,dl,dr,by,flx2,e12,e32);
             }
           } else if constexpr (rsolver_method_ == MHD_RSolver::llf_sr) {
@@ -887,6 +904,14 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
             HLLD(member,eos,indcs,size,coord,
                     m,k,j,is-1,ie+1,IVZ,wl,wr,bl,br,dl,dr,bz,flx3,e23,e13);
             }
+          } else if constexpr (rsolver_method_ == MHD_RSolver::lhlld) {
+            if (do_pole) {
+              HLLE(member,eos,indcs,size,coord,
+                        m,k,j,is-1,ie+1,IVZ,wl,wr,bl,br,dl,dr,bz,flx3,e23,e13);
+            } else {
+              LHLLD(member,eos,indcs,size,coord,
+                    m,k,j,is-1,ie+1,IVZ,wl,wr,bl,br,dl,dr,bz,flx3,e23,e13);
+            }
           } else if constexpr (rsolver_method_ == MHD_RSolver::llf_sr) {
             LLF_SR(member,eos,indcs,size,coord,
                     m,k,j,is-1,ie+1,IVZ,wl,wr,bl,br,bz,flx3,e23,e13);
@@ -999,6 +1024,7 @@ template void MHD::CalculateFluxes<MHD_RSolver::advect>(Driver *pdriver, int sta
 template void MHD::CalculateFluxes<MHD_RSolver::llf>(Driver *pdriver, int stage);
 template void MHD::CalculateFluxes<MHD_RSolver::hlle>(Driver *pdriver, int stage);
 template void MHD::CalculateFluxes<MHD_RSolver::hlld>(Driver *pdriver, int stage);
+template void MHD::CalculateFluxes<MHD_RSolver::lhlld>(Driver *pdriver, int stage);
 template void MHD::CalculateFluxes<MHD_RSolver::llf_sr>(Driver *pdriver, int stage);
 template void MHD::CalculateFluxes<MHD_RSolver::hlle_sr>(Driver *pdriver, int stage);
 template void MHD::CalculateFluxes<MHD_RSolver::llf_gr>(Driver *pdriver, int stage);
