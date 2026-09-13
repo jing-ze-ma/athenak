@@ -78,6 +78,60 @@
 void Conduction::ImplicitTransverseUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
                                           const Real beta_dt) {
   if (!rad_implicit_ang) return;
+  if (rad_sts_all) return;    // the unified operator owns the transverse faces instead
+  RklConductionUpdate(u0, eos, beta_dt, false);
+  return;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void Conduction::StsConductionUpdate
+//! \brief advance u0(IEN) by the UNIFIED radiative conduction operator -- x1, x2 and x3
+//! in ONE RKL1 loop -- over one stage (<hydro>/ or <mhd>/rad_sts_all).
+//!
+//! WHY ONE LOOP.  The split of an implicit tridiagonal x1 solve (ImplicitRadialUpdate)
+//! and the RKL1 transverse operator applies two diffusion operators to the same energy
+//! one after the other, each linearised about a state the other has already moved.  That
+//! is a first-order-in-dt error, and it is not small where both directions carry flux:
+//! it is what grew max|de| by ~1.5x per cycle in the He-star FeCZ box, at the first
+//! active row above the bottom wall where the radial solve does its largest work.  With
+//! every face of the 7-point stencil in one loop, linearised about one state, there is no
+//! splitting error between the directions at all -- and because the x1 faces of an
+//! isotropic box carry the same conductance as the x2/x3 ones, they raise the Gershgorin
+//! row radius by only ~3/2 and the substage count by only ~20 %.
+//!
+//! WHAT IT IS NOT FOR: a radially stiff grid.  See the note on rad_sts_all in
+//! conduction.hpp -- one global substage count is chosen from the stiffest row of the
+//! whole mesh, so a stretched spherical grid would pay the radial stiffness ratio's
+//! square root on every transverse face, where the column-local tridiagonal solve pays
+//! nothing.  The constructor refuses curvilinear meshes outright.
+//!
+//! WHAT THE x1 FACES CARRY.  The interior x1 faces carry the frozen face conductance
+//! cap_c1 = A_f K_f/dl_f that BuildAngularCoeffs forms with the SAME face_kcode (and so
+//! the same RadFaceKappa, flux limiter, tau-blend weight and density gate) as the x2/x3
+//! faces and as the explicit x1 face flux.  The two PHYSICAL x1 faces are NOT in the
+//! stencil: they keep the explicit treatment they have under rad_implicit_x1 -- the
+//! imposed internal flux rad_flux_inner through the bottom wall and the ghost-based
+//! gradient at the top, both added to flx1(IEN) in AddIsotropicHeatFluxRadiative before
+//! the RK update -- so the stencil's interior fluxes telescope and sum_i V_i y_i is the
+//! imposed wall flux alone, to round-off.  The two-stream's explicit handover deposit is
+//! untouched.
+
+void Conduction::StsConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
+                                     const Real beta_dt) {
+  if (!rad_sts_all) return;
+  RklConductionUpdate(u0, eos, beta_dt, true);
+  return;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void Conduction::RklConductionUpdate
+//! \brief the RKL1 loop itself, over the transverse faces alone (`with_x1` false) or
+//! over all three directions (`with_x1` true).  Every added term is guarded by that flag
+//! and appended after the existing ones, so the transverse-only path is bitwise what it
+//! was.
+
+void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
+                                     const Real beta_dt, const bool with_x1) {
   if (!(beta_dt > 0.0)) return;
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie;
@@ -87,8 +141,10 @@ void Conduction::ImplicitTransverseUpdate(DvceArray5D<Real> &u0, const EOS_Data 
   auto &size = pmy_pack->pmb->mb_size;
   auto &mb_bcs = pmy_pack->pmb->mb_bcs;
   const bool three_d = pmy_pack->pmesh->three_d;
+  auto c1 = cap_c1;
   auto c2 = cap_c2;
   auto c3 = cap_c3;
+  const bool sts1 = with_x1;
   auto st = tr_st;
   const int it_ = TRST, ia_ = TRSA;
   const Real tau = beta_dt;
@@ -207,6 +263,14 @@ void Conduction::ImplicitTransverseUpdate(DvceArray5D<Real> &u0, const EOS_Data 
     }
     return true;
   };
+  // An x1 face is in the stencil only if it is INTERIOR.  The two physical x1 faces are
+  // left to the explicit path (see the file comment), and the whole x1 extent is in one
+  // MeshBlock by construction, so there is no x1 block face to exchange: the refreshed
+  // T*/alpha of the x1 ghosts are never read, and their registers stay at the zero
+  // Kokkos allocated them with.
+  auto open1 = [=] (const int i) {
+    return (i > is && i < ie+1);
+  };
   auto open3 = [=] (const int m, const int kf) {
     if (kf == ks) {
       const BoundaryFlag f = mb_bcs.d_view(m,BoundaryFace::inner_x3);
@@ -242,6 +306,14 @@ void Conduction::ImplicitTransverseUpdate(DvceArray5D<Real> &u0, const EOS_Data 
         const Real cr3 = open3(m,k+1) ? c3(m,k+1,j,i) : 0.0;
         sumc += cl3 + cr3;
         sumca += cl3*st(m,ia_,k-1,j,i) + cr3*st(m,ia_,k+1,j,i);
+      }
+      // rad_sts_all: the x1 faces are part of the same row, so they must be part of the
+      // same bound -- the substage count has to cover the stiffest direction
+      if (sts1) {
+        const Real cl1 = open1(i) ? c1(m,k,j,i) : 0.0;
+        const Real cr1 = open1(i+1) ? c1(m,k,j,i+1) : 0.0;
+        sumc += cl1 + cr1;
+        sumca += cl1*st(m,ia_,k,j,i-1) + cr1*st(m,ia_,k,j,i+1);
       }
       // V_i = 1 on a Cartesian mesh: the face coefficients already carry the 1/dx that
       // the flux-divergence form of the RK update applies (see BuildAngularCoeffs)
@@ -311,6 +383,14 @@ void Conduction::ImplicitTransverseUpdate(DvceArray5D<Real> &u0, const EOS_Data 
                 ? c3(m,k+1,j,i)*((st(m,it_,k+1,j,i) + alp3*yc_(m,0,k+1,j,i)) - thc) : 0.0;
         mi += gr - gl;
       }
+      if (sts1) {
+        const Real alm1 = st(m,ia_,k,j,i-1), alp1 = st(m,ia_,k,j,i+1);
+        const Real hl = (open1(i) && ai > 0.0 && alm1 > 0.0)
+                ? c1(m,k,j,i)*(thc - (st(m,it_,k,j,i-1) + alm1*yc_(m,0,k,j,i-1))) : 0.0;
+        const Real hr = (open1(i+1) && ai > 0.0 && alp1 > 0.0)
+                ? c1(m,k,j,i+1)*((st(m,it_,k,j,i+1) + alp1*yc_(m,0,k,j,i+1)) - thc) : 0.0;
+        mi += hr - hl;
+      }
       if (!isfinite(mi)) mi = 0.0;
       yn_(m,0,k,j,i) = muj*yc_(m,0,k,j,i) + nuj*yo_(m,0,k,j,i) + mut*mi;
     });
@@ -360,7 +440,8 @@ void Conduction::ImplicitTransverseUpdate(DvceArray5D<Real> &u0, const EOS_Data 
     const bool tell = rad_ang_verbose && (ang_lines < 20 || viol > 1.0e-10);
     if (clamped || tell) {
       ++ang_lines;
-      std::cout << "### rad_implicit_ang cycle " << pmy_pack->pmesh->ncycle
+      std::cout << (sts1 ? "### rad_sts_all cycle " : "### rad_implicit_ang cycle ")
+                << pmy_pack->pmesh->ncycle
                 << " t = " << pmy_pack->pmesh->time
                 << ": max z_i = " << zmax << ", substages = " << nsub
                 << (clamped ? " (CLAMPED at rad_ang_maxit -- the step is NOT covered)"

@@ -557,14 +557,23 @@ TaskStatus Hydro::ImplicitConduction(Driver *pdrive, int stage) {
 //! \fn TaskList Hydro::ImplicitTransverseConduction
 //! \brief Wrapper task that applies the implicit transverse radiative diffusion
 //! (<hydro>/rad_implicit_ang).  A no-op unless that flag is set; see
-//! Conduction::ImplicitTransverseUpdate for what it solves and why.
+//! Conduction::ImplicitTransverseUpdate for what it solves and why.  With
+//! <hydro>/rad_sts_all it instead runs the UNIFIED operator over x1, x2 and x3 in one
+//! RKL1 loop (Conduction::StsConductionUpdate), and the radial task above does nothing.
 
 TaskStatus Hydro::ImplicitTransverseConduction(Driver *pdrive, int stage) {
   if (pcond == nullptr) return TaskStatus::complete;
   if (!(pcond->rad_implicit_ang)) return TaskStatus::complete;
   if (stage < 1) return TaskStatus::complete;
   Real beta_dt = (pdrive->beta[stage-1])*(pmy_pack->pmesh->dt);
-  pcond->ImplicitTransverseUpdate(u0, peos->eos_data, beta_dt);
+  // <hydro>/rad_sts_all replaces BOTH implicit conduction tasks with this one: the radial
+  // task above is a no-op (rad_implicit_x1 is refused alongside it) and the RKL1 loop
+  // here runs over all three directions at once.  Same slot in the stage either way.
+  if (pcond->rad_sts_all) {
+    pcond->StsConductionUpdate(u0, peos->eos_data, beta_dt);
+  } else {
+    pcond->ImplicitTransverseUpdate(u0, peos->eos_data, beta_dt);
+  }
   runaway_scan::Scan(pmy_pack->pmesh, "implicit_transverse_conduction");
   return TaskStatus::complete;
 }
