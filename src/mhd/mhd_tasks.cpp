@@ -59,7 +59,11 @@ void MHD::AssembleMHDTasks(std::map<std::string, std::shared_ptr<TaskList>> tl) 
   // Here bcc0 is the exact cell-centred form of the b0 that has not yet moved, which is
   // all the magnetic-energy subtraction needs (see MagEnergyCC).
   id.impcnd    = tl["stagen"]->AddTask(&MHD::ImplicitConduction, this, id.srctrms);
-  id.sendu_oa  = tl["stagen"]->AddTask(&MHD::SendU_OA, this, id.impcnd);
+  // ... and the implicit TRANSVERSE radiative diffusion (<mhd>/rad_implicit_ang) right
+  // after it: the two are operator-split from each other and from the MHD update
+  id.imptrc    = tl["stagen"]->AddTask(&MHD::ImplicitTransverseConduction, this,
+                                       id.impcnd);
+  id.sendu_oa  = tl["stagen"]->AddTask(&MHD::SendU_OA, this, id.imptrc);
   id.recvu_oa  = tl["stagen"]->AddTask(&MHD::RecvU_OA, this, id.sendu_oa);
   id.restu     = tl["stagen"]->AddTask(&MHD::RestrictU, this, id.recvu_oa);
   id.sendu     = tl["stagen"]->AddTask(&MHD::SendU, this, id.restu);
@@ -359,6 +363,21 @@ TaskStatus MHD::ImplicitConduction(Driver *pdrive, int stage) {
   if (stage < 1) return TaskStatus::complete;
   Real beta_dt = (pdrive->beta[stage-1])*(pmy_pack->pmesh->dt);
   pcond->ImplicitRadialUpdate(u0, peos->eos_data, beta_dt);
+  return TaskStatus::complete;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn TaskList MHD::ImplicitTransverseConduction
+//! \brief Wrapper task that applies the implicit transverse radiative diffusion
+//! (<mhd>/rad_implicit_ang).  A no-op unless that flag is set; see
+//! Conduction::ImplicitTransverseUpdate for what it solves and why.
+
+TaskStatus MHD::ImplicitTransverseConduction(Driver *pdrive, int stage) {
+  if (pcond == nullptr) return TaskStatus::complete;
+  if (!(pcond->rad_implicit_ang)) return TaskStatus::complete;
+  if (stage < 1) return TaskStatus::complete;
+  Real beta_dt = (pdrive->beta[stage-1])*(pmy_pack->pmesh->dt);
+  pcond->ImplicitTransverseUpdate(u0, peos->eos_data, beta_dt);
   return TaskStatus::complete;
 }
 

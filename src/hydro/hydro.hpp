@@ -49,6 +49,7 @@ struct HydroTaskIDs {
   TaskID rkupdt;
   TaskID srctrms;
   TaskID impcnd;
+  TaskID imptrc;
   TaskID sendu_oa;
   TaskID recvu_oa;
   TaskID restu;
@@ -226,6 +227,7 @@ class Hydro {
   TaskStatus RKUpdate(Driver *d, int stage);
   TaskStatus HydroSrcTerms(Driver *d, int stage);
   TaskStatus ImplicitConduction(Driver *d, int stage);
+  TaskStatus ImplicitTransverseConduction(Driver *d, int stage);
   TaskStatus SendU_OA(Driver *d, int stage);
   TaskStatus RecvU_OA(Driver *d, int stage);
   TaskStatus RestrictU(Driver *d, int stage);

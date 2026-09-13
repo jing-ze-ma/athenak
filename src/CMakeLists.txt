@@ -33,6 +33,7 @@ add_executable(
         coordinates/excision.cpp
 
         diffusion/conduction.cpp
+        diffusion/conduction_transverse.cpp
         diffusion/resistivity.cpp
         diffusion/viscosity.cpp
         diffusion/resistivity_rkg_tasks.cpp

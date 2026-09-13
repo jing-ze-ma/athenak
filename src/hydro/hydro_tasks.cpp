@@ -189,7 +189,11 @@ void Hydro::AssembleHydroTasks(std::map<std::string, std::shared_ptr<TaskList>> 
   // the implicit radial radiative diffusion (<hydro>/rad_implicit_x1) sits between the
   // explicit update and the ghost exchange, so what it writes is what is communicated
   id.impcnd    = tl["stagen"]->AddTask(&Hydro::ImplicitConduction, this, id.srctrms);
-  id.sendu_oa  = tl["stagen"]->AddTask(&Hydro::SendU_OA, this, id.impcnd);
+  // ... and the implicit TRANSVERSE radiative diffusion (<hydro>/rad_implicit_ang) right
+  // after it: the two are operator-split from each other and from the hydro
+  id.imptrc    = tl["stagen"]->AddTask(&Hydro::ImplicitTransverseConduction, this,
+                                       id.impcnd);
+  id.sendu_oa  = tl["stagen"]->AddTask(&Hydro::SendU_OA, this, id.imptrc);
   id.recvu_oa  = tl["stagen"]->AddTask(&Hydro::RecvU_OA, this, id.sendu_oa);
   id.restu     = tl["stagen"]->AddTask(&Hydro::RestrictU, this, id.recvu_oa);
   id.sendu     = tl["stagen"]->AddTask(&Hydro::SendU, this, id.restu);
@@ -546,6 +550,22 @@ TaskStatus Hydro::ImplicitConduction(Driver *pdrive, int stage) {
   Real beta_dt = (pdrive->beta[stage-1])*(pmy_pack->pmesh->dt);
   pcond->ImplicitRadialUpdate(u0, peos->eos_data, beta_dt);
   runaway_scan::Scan(pmy_pack->pmesh, "implicit_conduction");
+  return TaskStatus::complete;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn TaskList Hydro::ImplicitTransverseConduction
+//! \brief Wrapper task that applies the implicit transverse radiative diffusion
+//! (<hydro>/rad_implicit_ang).  A no-op unless that flag is set; see
+//! Conduction::ImplicitTransverseUpdate for what it solves and why.
+
+TaskStatus Hydro::ImplicitTransverseConduction(Driver *pdrive, int stage) {
+  if (pcond == nullptr) return TaskStatus::complete;
+  if (!(pcond->rad_implicit_ang)) return TaskStatus::complete;
+  if (stage < 1) return TaskStatus::complete;
+  Real beta_dt = (pdrive->beta[stage-1])*(pmy_pack->pmesh->dt);
+  pcond->ImplicitTransverseUpdate(u0, peos->eos_data, beta_dt);
+  runaway_scan::Scan(pmy_pack->pmesh, "implicit_transverse_conduction");
   return TaskStatus::complete;
 }
 
