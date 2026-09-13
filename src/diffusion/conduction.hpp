@@ -332,6 +332,44 @@ class Conduction {
   // conduction operator fully on.  NewTimeStep builds the weights itself if this is
   // still false, which is the case at initialisation.
   bool rad_w_built = false;
+  // rad_blend_use_2s (<hydro>/ or <mhd>/rad_blend_use_2s, default false): inside the tau
+  // ramp, take the DIFFUSION operator's share of each x1 face from the TWO-STREAM instead
+  // of forming it from -K dT/dz.
+  //
+  // WHY.  In the ramp the blended flux is F = (1 - w) F_2s + w F_diff, and the two
+  // solvers do not agree there: on the He-star column F_diff exceeds the code's F_2s by
+  // 3.2 % at tau = 10 and 1.9 % at tau = 3.  The disagreement enters the gas as
+  //     -d/dz[(1 - w)(F_2s - F_diff)],
+  // a dipole of heating and cooling that sits still in the ramp and rings the box's
+  // acoustic mode: MEASURED peak-to-peak swings in F_top/F_bot of 1.58, 0.50, 0.056 and
+  // 0.002 for rad_tau_lo/hi = 3/10, 10/100, 30/100 and 100/300, i.e. the shallower the
+  // handover the worse it is, which is the signature of a mismatch and not of physics.
+  //
+  // WHAT THIS DOES.  On every x1 face with 0 < w < 1 the diffusion operator contributes
+  // w F_2s rather than w (-K dT/dz), so F = (1 - w) F_2s + w F_2s = F_2s identically and
+  // the handover term vanishes by construction.  At w = 1 the diffusion operator resumes
+  // in full and at w = 0 the two-stream owns the face alone, both unchanged.  The number
+  // is written into the face flux, so the two cells sharing a face see the same value and
+  // the exchange is conservative to round-off.
+  //
+  // HOW IT REACHES THE IMPLICIT SOLVE.  A face with 0 < w < 1 becomes a PRESCRIBED-FLUX
+  // face: ImplicitRadialUpdate sets its conductance to zero, which drops it from the
+  // tridiagonal coupling, and the flux is added explicitly in the face-flux kernel
+  // instead -- for both the implicit (rad_implicit_x1) and the explicit radial paths,
+  // with the same line of code.  rad_sts_all is refused with this switch: its RKL1
+  // stencil owns the x1 faces and would need the same surgery.
+  //
+  // ONE STAGE OF LAG.  The two-stream runs in the source-term task, after the flux task,
+  // so F_2s here is the previous stage's.  The cancellation is still exact -- both
+  // operators multiply THE SAME stored number by w and 1 - w -- and F_2s in the ramp
+  // evolves on the thermal time of a tau ~ 10-100 layer, far above a step.
+  bool rad_blend_use_2s = false;
+  // the two-stream's net x1-face flux in code flux units, written by
+  // two_stream_rt::picket_fence_two_stream_RT once per RT call.  Allocated only when the
+  // switch is on; rad_f2s_ready stays false until the first RT call has filled it, and
+  // until then the ordinary diffusion flux is used.
+  DvceArray4D<Real> rad_f2s;
+  bool rad_f2s_ready = false;
   void BuildRadWeights(const DvceArray5D<Real> &w, const EOS_Data &eos);
   // PER-CYCLE DIAGNOSTIC (deep_hot_jupiter_rt's problem/diag_gid).  Off by default, and
   // cond_diag is not allocated until EnableDiag is called, so it costs nothing when off.

@@ -2229,6 +2229,24 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
       const Real gver = rt_force_grav;
       const int vcyc = pm->ncycle;
       auto eos_f = eos;
+      // ---- rad_blend_use_2s: hand the conduction module this sweep's face flux -----
+      // (see conduction.hpp).  The NET radial face flux of the band solver, summed over
+      // its blocks, in the same code flux units the conduction operator works in.  It is
+      // COPIED OUT rather than read back through rt_face_flux(), so the conduction module
+      // needs no compile-time knowledge of this header, and it is written before the
+      // source is applied so that the number the diffusion operator scales by w is
+      // exactly the number this call scales by 1 - w.
+      if (taublend && pcond_rt->rad_blend_use_2s) {
+        auto f2s_out = pcond_rt->rad_f2s;
+        const int nblk_f = nblk;
+        par_for("rt_f2s", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
+        KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+          Real ff = 0.0;
+          for (int b=0; b<nblk_f; ++b) ff += Fb_g(m,b,i,k,j);
+          f2s_out(m,k,j,i) = ff;
+        });
+        pcond_rt->rad_f2s_ready = true;
+      }
       par_reduce_clip4("rt_apply", 0, nmb1, ks, ke, js, je, is, ie, nclip,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, int &nc) {
         Real Ft = 0.0, Fb = 0.0;

@@ -145,6 +145,9 @@ Conduction::Conduction(std::string block, MeshBlockPack *pp, ParameterInput *pin
         std::exit(EXIT_FAILURE);
       }
       rad_blend_radial = pin->GetOrAddBoolean(block,"rad_blend_radial",true);
+      // rad_blend_use_2s: the ramp faces carry w*F_2s, not w*(-K dT/dz).  See
+      // conduction.hpp for the whole argument.
+      rad_blend_use_2s = pin->GetOrAddBoolean(block,"rad_blend_use_2s",false);
       rad_implicit_x1 = pin->GetOrAddBoolean(block,"rad_implicit_x1",false);
       rad_cap_ang = pin->GetOrAddReal(block,"rad_cap_ang",0.0);
       rad_implicit_ang = pin->GetOrAddBoolean(block,"rad_implicit_ang",false);
@@ -193,6 +196,21 @@ Conduction::Conduction(std::string block, MeshBlockPack *pp, ParameterInput *pin
         const int ncells3 = (indcs.nx3 > 1)? (indcs.nx3 + 2*indcs.ng) : 1;
         Kokkos::realloc(rad_w, nmb, ncells3, ncells2, ncells1+1);
         Kokkos::realloc(rad_tauf, nmb, ncells3, ncells2, ncells1+1);
+        if (rad_blend_use_2s) {
+          if (!rad_blend_radial) {
+            std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
+                      << std::endl << "rad_blend_use_2s replaces the RADIAL blend flux "
+                      << "and needs rad_blend_radial = true" << std::endl;
+            std::exit(EXIT_FAILURE);
+          }
+          Kokkos::realloc(rad_f2s, nmb, ncells3, ncells2, ncells1+1);
+          Kokkos::deep_copy(rad_f2s, 0.0);
+        }
+      } else if (rad_blend_use_2s) {
+        std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
+                  << std::endl << "rad_blend_use_2s is a property of the tau blend and "
+                  << "needs rad_tau_hi > 0" << std::endl;
+        std::exit(EXIT_FAILURE);
       }
       if (rad_implicit_x1) {
         // hydro and MHD both: ImplicitRadialUpdate subtracts the magnetic energy from
@@ -251,6 +269,15 @@ Conduction::Conduction(std::string block, MeshBlockPack *pp, ParameterInput *pin
         }
       }
       if (rad_sts_all) {
+        // the RKL1 stencil owns every interior x1 face, so a prescribed-flux face would
+        // have to be cut out of IT as well as out of the tridiagonal solve; not done
+        if (rad_blend_use_2s) {
+          std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
+                    << std::endl << "rad_blend_use_2s is not implemented for the "
+                    << "super-time-stepped radial operator: use rad_implicit_x1 or the "
+                    << "explicit x1 path" << std::endl;
+          std::exit(EXIT_FAILURE);
+        }
         // ONE operator over all three directions: the tridiagonal radial solve is not
         // part of it and running both would apply the radial operator twice
         if (rad_implicit_x1) {
@@ -1067,6 +1094,11 @@ void Conduction::AddIsotropicHeatFluxRadiative(const DvceArray5D<Real> &w0,
   // rad_sts_all does exactly the same, for the same reason: its RKL1 loop owns the
   // interior x1 faces and leaves the two physical ones here.
   const bool impx1 = rad_implicit_x1 || rad_sts_all;
+  // rad_blend_use_2s: faces inside the tau ramp carry the TWO-STREAM's own flux, scaled
+  // by w, instead of w*(-K dT/dz).  See conduction.hpp.  Applied here for both radial
+  // paths, since a prescribed-flux face is outside the tridiagonal system either way.
+  const bool use2s = rad_blend_use_2s && taumode && blend_r && rad_f2s_ready;
+  auto f2s_ = use2s ? rad_f2s : DvceArray4D<Real>("radf2sdummy", 1, 1, 1, 1);
   // rad_sts_split: the interior x1 faces of the rad_sts_all stencil DO carry a flux
   // here -- the explicit part C_exp of the split, as the fraction cap_f1 of the full
   // face flux (see BuildAngularCoeffs).  The two physical x1 faces are untouched: they
@@ -1087,6 +1119,19 @@ void Conduction::AddIsotropicHeatFluxRadiative(const DvceArray5D<Real> &w0,
       flx1(m,IEN,k,j,i) += fin;
       if (diag_) cdg(m,0,k,j,i) = fin;
       return;
+    }
+    // rad_blend_use_2s: the ramp face is a PRESCRIBED-FLUX face.  Both cells sharing it
+    // see this one number, so the exchange is conservative to round-off; and because the
+    // two-stream's own share is (1 - w) of the SAME number, the two sum to F_2s exactly
+    // and the handover term -d/dz[(1 - w)(F_2s - F_diff)] is identically zero.
+    if (use2s && i > is && i < ie+1) {
+      const Real wv = wf(m,k,j,i);
+      if (wv > 0.0 && wv < 1.0) {
+        const Real f2 = wv*f2s_(m,k,j,i);
+        flx1(m,IEN,k,j,i) += f2;
+        if (diag_) cdg(m,0,k,j,i) = f2;
+        return;
+      }
     }
     Real fsp = 1.0;
     if (impx1 && i > is && i < ie+1) {
@@ -1404,6 +1449,8 @@ void Conduction::ImplicitRadialUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos
   auto &krlT = rad_kr_lT;
   auto &krlP = rad_kr_lP;
   const int krnT = rad_kr_nT, krnP = rad_kr_nP;
+  // rad_blend_use_2s: the ramp faces are prescribed-flux and leave this system
+  const bool use2s_ = rad_blend_use_2s && taumode && blend_r && rad_f2s_ready;
   auto wrk = imp_wrk;
   auto iflag = imp_flag;
   auto irec = imp_rec;
@@ -1463,6 +1510,19 @@ void Conduction::ImplicitRadialUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos
     if (i == is || i == ie+1) {
       wrk(m,c_,k,j,i) = 0.0;
       return;
+    }
+    // rad_blend_use_2s: a face inside the tau ramp carries a PRESCRIBED flux, added
+    // explicitly by the face-flux kernel.  Zero conductance takes it out of the
+    // tridiagonal coupling entirely, which is what "prescribed" means for this solve; the
+    // rows on either side then see only their remaining faces and stay diagonally
+    // dominant.  The mask must be the SAME test the flux kernel used, and it is: rad_w is
+    // built once per stage, before both.
+    if (use2s_) {
+      const Real wv = wf(m,k,j,i);
+      if (wv > 0.0 && wv < 1.0) {
+        wrk(m,c_,k,j,i) = 0.0;
+        return;
+      }
     }
     const Real dx1c = size.d_view(m).dx1;
     Real ca = 0.0;
