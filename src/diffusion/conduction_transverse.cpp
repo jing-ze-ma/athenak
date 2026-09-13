@@ -145,6 +145,14 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
   auto c2 = cap_c2;
   auto c3 = cap_c3;
   const bool sts1 = with_x1;
+  // rad_sts_split: cap_c1/2/3 hold C_sts, the part of each face conductance the explicit
+  // face fluxes of the stage could NOT carry, and a MeshBlock on which nothing is left
+  // is skipped by the stencil below.  Its increment is identically zero, so the skip
+  // changes no result -- it only stops the kernel from reading the block's 7-point
+  // neighbourhood.  Nothing here is aware of the split otherwise: the loop integrates
+  // whatever conductances it is handed.
+  const bool blkon = rad_sts_split && sts_blk_used;
+  auto blk = blkon ? sts_blk : DvceArray1D<int>("rklblkdummy", 1);
   auto st = tr_st;
   const int it_ = TRST, ia_ = TRSA;
   const Real tau = beta_dt;
@@ -369,6 +377,9 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
     auto yn_ = ynew;
     par_for("radtrsub", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      // the stiffness split left this block nothing to do: its increment stays zero,
+      // but the register still has to be written, because the three registers rotate
+      if (blkon && blk(m) == 0) { yn_(m,0,k,j,i) = 0.0; return; }
       const Real ai = st(m,ia_,k,j,i);
       const Real thc = st(m,it_,k,j,i) + ai*yc_(m,0,k,j,i);
       // the FLUX through each face, written so that the neighbour forms the identical

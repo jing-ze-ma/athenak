@@ -68,10 +68,12 @@ rad_kappa_fac    = 0.002
 rad_flux_inner   = 0.0
 rad_met          = 0.0
 rad_sts_all      = true
-# two switches ON the super-time-stepped operator, at their defaults here so the
-# regression test can flip them from the command line: rad_sts_once applies the RKL1
-# operator once per cycle over the full dt instead of once per stage, and
-# rad_sts_margin is the round-off margin on its substage count.
+# the three switches ON the super-time-stepped operator, at their defaults here so the
+# regression test can flip them from the command line: rad_sts_split moves the part of
+# each face conductance the step can carry explicitly into the ordinary face fluxes,
+# rad_sts_once applies the RKL1 operator once per cycle over the full dt instead of once
+# per stage, and rad_sts_margin is the round-off margin on its substage count.
+rad_sts_split    = false
 rad_sts_once     = false
 rad_sts_margin   = 0.10
 # the SPLIT arm the regression test compares against overrides these three
