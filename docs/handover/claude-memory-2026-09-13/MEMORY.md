@@ -6,6 +6,22 @@
 - **[STANDING RULE: delegate to Opus 5 agents](delegate-heavy-work-to-opus.md) — EVERY session from the first tool call: Opus agents do reading/editing/building/launching/MONITORING/analysis; I do diagnosis, briefs, VERIFY every diff and number; ONE deliverable per agent, name the hunks to read, "STOP, no timers" (token blow-up 09-11)**
 - **[SAVE TOKENS (standing rule 09-11): especially on Fable; no unnecessary tool calls, no surveys, agents one deliverable each, no timers left armed](save-tokens-everywhere.md)**
 
+**CURRENT STATE, 2026-09-13 (~14:00), user asleep, VIPER.** Main branch HEAD = fork = eb4921c7 (docs only since 0db8a600). Box worktree
+bench/wt_rgbox branch rg-box-convection = bcb1fb5f (UNPUSHED): 5f2be7d2 RT plane-parallel port, decad388 handover fix (SHARED
+with red giant + dhj -> port to polar-average-perf first), 4e0054e7+39ce5a5c bc_mode 3 conservative wall, bcb1fb5f two-stream Newton
+safeguard. RG_v4 stopped by the user (2.6e6 s); box sweep done; smoke tests done: B star RT box healthy after the handover fix
+(bstar_fecz/smoke_rt2), He 3 Msun healthy in v2 (hestar_fecz/smoke_rt_3msun_v2); 5/8 Msun He are Eddington-limited. STAGED, UNSUBMITTED
+(user decisions): bstar_fecz/rt2turn (2 turnovers, ~9 h, 2 GPUs, chain), hestar_fecz/he3_2turn (~3 h). Known limits: rad_cap_ang
+throttles horizontal radiative exchange (needs an implicit transverse operator); box-wide 50-90 v_MLT velocity floor in the He box of
+unknown origin. Still running: sp_mhd_nopole 11639436/7, cs_mhd_prod3 11611229/30/31 (monitors off). Details: [[fecz-box-projects]],
+[[rt-handover-semi-implicit-bug]], [[rt-plane-parallel-port]], [[rg-v4-no-wb-vs-wb]], [[rg-box-sweep]]; handover addenda 7-8b.
+
+**RECOMMENDED NEXT STEPS (agreed plan, 09-13 ~14:15):** (1) cherry-pick decad388 + bcb1fb5f (two-stream handover + Newton) from
+bench/wt_rgbox onto polar-average-perf, rebuild, run the 4 rad tests, push (they change every red-giant/dhj RT run); (2) submit
+bench/bstar_fecz/rt2turn (`sbatch submit.sh`, then 4 dependent links) = the B-star 2-turnover continuation, ~9 h on 2 GPUs; (3) hold
+hestar_fecz/he3_2turn until (2) reports; (4) scope an IMPLICIT transverse radiative-diffusion operator (conduction.cpp x2/x3) with an
+agent and report the plan before coding - needed before any FeCZ production run; do NOT launch production or the 5/8 Msun He stars.
+
 ## Cubed sphere — start here
 
 - **[RT SEMI-IMPLICIT source](rt-semi-implicit-changes-dhj-answer.md) — 048dff30; explicit overcools, semi-implicit is right**
@@ -61,6 +77,7 @@
 
 ## Hot Jupiter: physics, runs, campaigns
 
+- **[cs dhj FOFC MAP: top-of-atmosphere night-side floor limiter, never low-beta](cs-dhj-fofc-where.md) — keep the fallback**
 - **[cs WB arm died rot 12.3; KE gap is sp MHD, not cs](cs-wb-arm-and-ke-gap.md) — every cs arm = sp hydro = 2-3e34**
 - **[dhj JET is SHALLOW, deep equator WESTWARD to rot 164 on sp](dhj-jet-shallow-westward-deep.md) — all cs solvers = sp; hllc jet half of ausm+up**
 - **[cs VERTEX dt COLLAPSE closed 09-11](cs-vertex-dt-collapse-0907-defaults.md) — explicit RT source overcools; semi-implicit is right**
@@ -75,7 +92,8 @@
 - **[cs MHD dhj validated at rot 20](cs-dhj-diagnostics-rot20.md) — T = sp, jet weak on every grid**
 - **[sp_mhd_prod dies at rot 10.3](sp-pole-bottom-radial-blowup.md) — polar-row radial field at the bottom**
 - **[cs MHD dhj bottom-boundary drift fixed 248f1b77](cs-mhd-bottom-inflow.md) — cs ghost bcc as face averages**
-- **[sp MHD EXCESS SOLVED: polar-row HLLD->HLLE swap](sp-polar-hlle-swap-is-the-excess.md) — `mhd/polar_hlle_rows=false` 7d87f3c5; sp_mhd_nopole testing**
+- **[cs vs sp dhj at rot 50: flows equal, sp loses deep field 1.6x, dayside energy floors 26x](cs-vs-sp-dhj-rot50.md) — setup (cs RT switches), not grid**
+- **[sp MHD EXCESS SOLVED: polar-row HLLD->HLLE swap](sp-polar-hlle-swap-is-the-excess.md) — radial-sweep swap only; DEFAULT now mask 6 (theta+phi), blast stable**
 - [sp MHD excess needs no field](sp-mhd-excess-is-hydro-path.md) — the bbot=0 step
 - [sp MHD energy excess, earlier symptoms](sp-mhd-energy-excess.md) — superseded by the above
 - **[Correlated-k design + build](correlated-k-design.md) — complete**
@@ -157,11 +175,21 @@
 
 ## Red giant FOFC (viper GPU)
 
+- **[RED GIANT at 3e6: sound numerically; inner-wall radial mode growing, corona drained](red-giant-3e6-state.md) — corona drained; inner mode -> [[red-giant-inner-mode-is-convection]]**
+- **[RG_v4 NO-WB vs WB: conservation better, velocity field worse (steady 3e4 cm/s wall flow, countergradient i=12-20)](rg-v4-no-wb-vs-wb.md) — decision for the user; WB + exact-flux wall not yet run**
+- **[RG BOX SWEEP: 16/H_p reaches the MLT excess; the global run is 260x above = the grid](rg-box-sweep.md) — Fgrav is not a diagnostic, budget closes 0.8; box-scale circulation; r128 held**
+- **[RG 3e6: long3 (wb_rmin) vs long2 -- production basis = long3; E drift + corona open](red-giant-3e6-long2-vs-long3.md) — FOFC is corona-only, no seam effect**
+- **[RED-GIANT INNER MODE = PHYSICAL CONVECTION switching on](red-giant-inner-mode-is-convection.md) — nabla_rad/nabla_ad 1.2-325 above i=5, superadiabaticity built to 6e-4; not a bug**
 - **[RESTARTS NOT BITWISE: user BCs read w0 before the first c2p](restart-bc-reads-w0-bug.md) — red giant fixed 3fd3a836; dhj same defect, fix in progress**
 - **[RED-GIANT DEATH MECHANISM: seam-row energy floor + EOS inversion garbage T=2.6e18](red-giant-seam-floor-eos-garbage.md) — not FOFC, not chaos**
 - **[RG_fofc SURVIVED on GPU AND on orion CPU](rg-fofc-gpu-survived.md) — FOFC replaces the vceil; floors are vertex corner ghosts**
 
 ## Solar / stellar convection
+
+- **[RT HANDOVER BUG FIXED decad388 (wt_rgbox, unpushed, NOT in main branch): semi-implicit step damped the tau-blend handover, 7-13 % of F deposited; SHARED by red giant + dhj](rt-handover-semi-implicit-bug.md) — port to polar-average-perf**
+- **[RT PLANE-PARALLEL PORT 5f2be7d2 (wt_rgbox, unpushed): grey two-stream on Cartesian, spherical bitwise, HIP = CPU to 3e-15](rt-plane-parallel-port.md)**
+- **[FeCZ BOX PROJECTS: B star 15 Msun + He stars 3/5/8 Msun staged, real X=0 OPLIB table built](fecz-box-projects.md) — 10 turnovers/24 h on 8 GPUs each; RT port in progress**
+- **[FeCZ LOW-LUMINOSITY GAP: no multi-D sim of the B-star (8-20 Msun) iron zone](fecz-low-lum-gap.md) — candidate box project; SLFV test**
 
 - **[run/sun viz + WAVES NOT SHOCKS](sun-convection-viz.md) — gravity waves, 87% solenoidal; data on orion**
 - [solar_convection binary provenance](solar-convection-binary-provenance.md) — the pinned ideal192/table192 binaries cannot be rebuilt from git
@@ -317,7 +345,7 @@
 
 ---
 
-**CURRENT STATE, 2026-09-12 (~00:30), STOPPED on VIPER.** HEAD = fork = fb69c554 on `polar-average-perf`
+**PREVIOUS STATE (superseded by the 2026-09-13 handover, docs/handover/HANDOVER-2026-09-13.md):** HEAD = fork = fb69c554 on `polar-average-perf`
 (bc972cc8 ME fix + MHD implicit conduction; 1bd31298/27ca5b13 cs seam packs bitwise; 77de5618 radimpx1 split, 1 ulp on HIP;
 fb69c554 HIP conventions note for orion). cs prod restart 62.0 -> 40.5 ms/cycle; cs grid gap vs sp CLOSED (37.2 vs 38.5).
 RUNNING on apu: cs_mhd_prod3 (11611223 + links 11611229/30/31, rot 6 clean, binary swapped to 27ca5b13 for links 2+) and

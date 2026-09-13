@@ -107,3 +107,8 @@ ApplyPhysicalBCs -> ConToPrim, same order as a stage) computes the open-top ghos
 input (w0 stale-by-one-stage in a run vs never computed at restart init?) than the running run; the rst file DOES
 carry the running ghosts and the init chain overwrites them. Agent fixing in red_giant.cpp (BC to read u0 or skip
 the overwrite). Same lag likely in deep_hot_jupiter_rt.cpp's user BCs -> every chained dhj run restarts non-bitwise.
+**2026-09-13 ~03:00 RG_fofc_long2 REACHED tlim 3.0e6** (11652892, EOS-fixed binary 5fe7be1c, from 1.7e6, 1.3 h, dt flat
+30.66 s throughout; rst every 1e5 to rg.00030.rst = 3e6 in bench/RG_fofc_long2/rst). = the orion prod12 gate (open top,
+sponge off, to 3e6) on the numbers, BUT total KE rose 2.2e42 (9e5) -> 8.6e43 (3e6) and the 2.2-2.6e6 episode had
+3.7e7 dfloor / 1.4e7 fofc / 1e6 eos_tclamp per interval: read-out agent on the corona state (analysis/ in the run dir).
+Handover docs/handover/HANDOVER-2026-09-13.md (3201d649, pushed) + claude-memory-2026-09-13 snapshot.

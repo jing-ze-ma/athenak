@@ -29,3 +29,10 @@ start). Residual after all three (fixtest round 3, 11654134): ONE outer radial g
 the restart cycle (BC writes w0 ghosts directly; the restart recomputes w0 = c2p(u0) -- EOS round trip), which the
 implicit radial conduction spreads to ~1e-6 in one cycle. Left OPEN. CPU tabulated-EOS linear wave: bitwise.
 The suite has NO restart tests -- add one.
+**Regression test ADDED (commit after 08fd72d6): tst/test_suite/hydro/test_restart_bitwise_cpu.py** -- 6 cases (Cartesian
+hydro/MHD linear waves, sp MHD and cs MHD double rarefactions with floors+FOFC, general-EOS table wave, an instrument
+check), full dumps + 17-digit tables compared exactly; all pass. Caveats: built-in pgens fill ghosts reproducibly, so the
+refill flag breaks none of them (the 2667d984 fix only shows with user BCs reading post-floor state); general-EOS
+restarts still differ at ~1e-16 in double (Driver::Initialize's extra ConsToPrim re-converges the restored wtemp within
+logtol) -- compared at dump precision only. Side finding: athena_read.tab mis-parses 1D tables (header advertises
+j/k columns the rows lack; formatted_table.cpp).
