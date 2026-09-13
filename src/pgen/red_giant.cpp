@@ -1932,12 +1932,12 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
   const bool wbdyn = is_mhd ? pmbp->pmhd->use_wellbalance_dynamic
                             : pmbp->phydro->use_wellbalance_dynamic;
   const bool wbx1 = is_mhd ? pmbp->pmhd->use_wb_x1 : pmbp->phydro->use_wb_x1;
-  // outside [<hydro>/wb_rmin, <hydro>/wb_rmax] the reconstruction dropped the
-  // well-balanced background, so the source term must drop it too: the two are only
-  // well balanced TOGETHER.  The cutoffs exist on the hydro module alone, so an MHD run
-  // simply never cuts off.
-  const Real wbrmax = is_mhd ? 0.0 : pmbp->phydro->wb_rmax;
-  const Real wbrmin = is_mhd ? 0.0 : pmbp->phydro->wb_rmin;
+  // outside [wb_rmin, wb_rmax] the reconstruction dropped the well-balanced background,
+  // so the source term must drop it too: the two are only well balanced TOGETHER.  Both
+  // modules carry the pair, so take it from whichever one is evolving the fluid --
+  // <mhd>/wb_r* under MHD, <hydro>/wb_r* otherwise.
+  const Real wbrmax = is_mhd ? pmbp->pmhd->wb_rmax : pmbp->phydro->wb_rmax;
+  const Real wbrmin = is_mhd ? pmbp->pmhd->wb_rmin : pmbp->phydro->wb_rmin;
   // <problem>/wb_grav_source = plain: keep the WB reconstruction, drop the WB source
   const bool wbplain = wb_grav_plain_;
   const WBOption wbo = is_mhd ? pmbp->pmhd->wb_option : pmbp->phydro->wb_option;

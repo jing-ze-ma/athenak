@@ -218,6 +218,13 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
     use_wb_x2 = pin->GetOrAddBoolean("mhd","wb_x2",false);
     use_wb_x3 = pin->GetOrAddBoolean("mhd","wb_x3",false);
     use_wb_rho = pin->GetOrAddBoolean("mhd","wb_rho",false);
+    // switch the x1 well-balanced reconstruction off above this radius (0 = never); see
+    // the declaration in mhd.hpp.  Only the position-aware x1 path (spherical polar and
+    // cubed sphere, where x1v is the radius) honours it -- a Cartesian mesh has no radius
+    // to compare against.  Mirror of <hydro>/wb_rmax.
+    wb_rmax = pin->GetOrAddReal("mhd","wb_rmax",0.0);
+    // ...and off BELOW this radius (0 = never), same path, same caveat.
+    wb_rmin = pin->GetOrAddReal("mhd","wb_rmin",0.0);
     // allocate array of flags used with etotgrav
     if (use_etotgrav || use_wellbalance_dynamic) {
       auto &indcs = pmy_pack->pmesh->mb_indcs;

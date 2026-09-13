@@ -112,6 +112,8 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
   const bool use_wb_x2_ = use_wb_x2;
   const bool use_wb_x3_ = use_wb_x3;
   const bool use_wellbalance_dynamic_ = use_wellbalance_dynamic;
+  const Real wb_rmax_ = wb_rmax;
+  const Real wb_rmin_ = wb_rmin;
   const bool use_wellbalance_static_reconst_perturb_ =
       use_wellbalance_static_reconst_perturb;
   // The gnomonic rotations need one (sin, cos) pair each, so hand the kernels that pair
@@ -190,11 +192,13 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
     if (use_spherical_polar || str_r1_) {
       GridPiecewiseLinearX1(member, eos_, wb_option_, use_wb_rho_,
                             use_wellbalance_dynamic_,
-                            use_wb_x1_, m, k, j, il-1, iu, w0_, x1v_, x1f_, phicc0_,
+                            use_wb_x1_, wb_rmax_, wb_rmin_,
+                            m, k, j, il-1, iu, w0_, x1v_, x1f_, phicc0_,
                             phi0_x1f, wbq0_, true, wl, wr);
       GridPiecewiseLinearX1(member, eos_, wb_option_, use_wb_rho_,
                             use_wellbalance_dynamic_,
-                            use_wb_x1_, m, k, j, il-1, iu, b0_, x1v_, x1f_, phicc0_,
+                            use_wb_x1_, wb_rmax_, wb_rmin_,
+                            m, k, j, il-1, iu, b0_, x1v_, x1f_, phicc0_,
                             phi0_x1f, wbq0_, false, bl, br);
     } else {
         
@@ -240,7 +244,8 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
       // hydrostatic gradient back into the solver's pressure and unbalance the scheme.
       if (use_spherical_polar || str_r1_) {
         GridPiecewiseLinearDerX1(member, eos_, wb_option_, use_wellbalance_dynamic_,
-                                 use_wb_x1_, m, k, j, il-1, iu, w0_, wder_,
+                                 use_wb_x1_, wb_rmax_, wb_rmin_,
+                                 m, k, j, il-1, iu, w0_, wder_,
                                  x1v_, x1f_, phicc0_, phi0_x1f, wbq0_, dl, dr);
       } else if (use_wellbalance_static_reconst_perturb_) {
         WbStaticPiecewiseLinearDerX1(member, m, k, j, il-1, iu,
