@@ -954,14 +954,23 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // blend is off and the sweep therefore reaches the wall (see ts::rt_bot_flux): with
     // the blend on, the diffusion operator carries the deep flux and must keep the wall.
     if (pin->GetOrAddBoolean("problem", "rt_bottom_flux", false)) {
-      if (pc->rad_tau_mode) {
+      if (!pc->rad_tau_mode) {
         std::cout << "### FATAL ERROR in box_convection: problem/rt_bottom_flux puts the "
                   << "internal flux on the two-stream's lower boundary and takes it off "
                   << "the conduction wall face, which is only consistent when the sweep "
-                  << "reaches that wall.  Switch the tau blend off (raise <hydro>/"
-                  << "rad_tau_lo and rad_tau_hi past the bottom of the box) or drop "
-                  << "rt_bottom_flux." << std::endl;
+                  << "reaches that wall -- and the sweep's cut is the deepest face the "
+                  << "TAU BLEND still leaves it, so <hydro>/rad_tau_hi must be set."
+                  << std::endl;
         std::exit(EXIT_FAILURE);
+      }
+      // ...and the blend weight has to be 0 on every face, i.e. rad_tau_lo deeper than
+      // the whole box, or the diffusion operator still carries part of the column and
+      // the wall it was fed through has just been taken away from it.  That cannot be
+      // checked here (the weights are built per cycle), so it is stated, not enforced.
+      if (global_variable::my_rank == 0) {
+        std::printf("box_convection: rt_bottom_flux assumes <hydro>/rad_tau_lo = %.3e "
+                    "is DEEPER than the bottom of the box, so the blend weight is 0 on "
+                    "every face and the cut is the inner wall\n", pc->rad_tau_lo);
       }
       ts::rt_bot_flux = pc->rad_flux_inner;
       pc->rad_flux_inner = 0.0;
