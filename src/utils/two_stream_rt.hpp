@@ -369,6 +369,11 @@ inline bool rt_rad_force = false;
 // WORK term v.f is accumulated, box-integrated over the step, into slot 10 of this
 // array.  Diagnostic only: nothing here changes a source term.
 inline DvceArray1D<Real> *rt_bud_ptr = nullptr;
+// problem/rt_src_dump: dump the grey sweep's per-cell source assembly for ONE column
+// (m = 0, k = ks, j = js) on the next N apply-kernel calls, every cell from the band cut
+// to the top: the raw face fluxes, both forms of the divergence, the assembled source
+// and the source actually applied.  Diagnostic only.
+inline int rt_src_dump = 0;
 // problem/rt_force_verbose -- print the hydrostatic balance of every cell inside the
 // taper ramp for this many RT calls, then stop.  a_p + a_g + a_f normalised by g: inside
 // the ramp this is what says whether the Prad grad w correction is doing its job.
@@ -3059,6 +3064,10 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
       const int vcyc = pm->ncycle;
       auto eos_f = eos;
       // problem/rt_budget_verbose: the v.f work accumulator (see rt_bud_ptr)
+      // problem/rt_src_dump: one column, this call only (see rt_src_dump)
+      const bool sdump_ = (rt_src_dump > 0);
+      if (sdump_) --rt_src_dump;
+      const int sdcyc_ = pm->ncycle;
       const bool budg_ = (rt_bud_ptr != nullptr) && radforce;
       auto bud_ = budg_ ? *rt_bud_ptr : DvceArray1D<Real>("rtbuddummy", 1);
       // ---- rad_blend_use_2s: hand the conduction module this sweep's face flux -----
@@ -3087,6 +3096,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
           Fb += Fb_g(m,b,i,k,j);
         }
         // the two-stream's share of each face in the tau blend
+        Real dg_srcd = 0.0;     // problem/rt_src_dump: the raw absorbed-minus-emitted sum
         Real src;
         // THE BLEND HANDOVER IS NOT AN EMISSION, AND MUST NOT BE RELAXED.  src below is
         // the divergence of the two-stream's BLENDED share, and inside the tau ramp it
@@ -3122,6 +3132,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
           // is non-zero the cell is at tau > 10 and its energy dwarfs that round-off.
           src = 0.0;
           for (int b=0; b<nblk; ++b) src += Src_g(m,b,i,k,j);
+          dg_srcd = src;
           src_relax = src;
           if (taublend) {
             src += (w_g(m,k,j,i+1)*Ft - w_g(m,k,j,i)*Fb)/DX1(m,k,j,i);
@@ -3605,6 +3616,20 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
         // the part of de this cell applies ITSELF: all of it when the tridiagonal owns
         // none of the cell, none when it owns all
         const Real de_app = implcol_ ? (1.0 - wthk_)*de : de;
+        if (sdump_ && m == 0 && k == ks && j == js &&
+            (!band_on || i >= icut_g(m,k,j))) {
+          const Real dxc = DX1(m,k,j,i);
+          const Real wb_ = taublend ? w_g(m,k,j,i) : 0.0;
+          const Real wt_ = taublend ? w_g(m,k,j,i+1) : 0.0;
+          const Real dtauc = kc_g(m,0,i,k,j)*rhoN(m,k,j,i)*dxc;
+          Kokkos::printf("### rt_srcdump cyc=%d i=%d w_b=%.6f w_t=%.6f dtau=%.4e "
+                         "T=%.6e dx=%.6e Fb=%.8e Ft=%.8e divf=%.8e divw=%.8e "
+                         "srcdir=%.8e src=%.8e src_relax=%.8e de_o_dt=%.8e\n",
+                         sdcyc_, i, wb_, wt_, dtauc, T_g(m,k,j,i), dxc, Fb, Ft,
+                         -(Ft - Fb)/dxc,
+                         -((1.0 - wt_)*Ft - (1.0 - wb_)*Fb)/dxc,
+                         dg_srcd, src, src_relax, de/bdt);
+        }
         if (implcol_ && wthk_ < 1.0) {
           // Record the change in this cell's Planck function that its own relaxation is
           // applying, so a neighbouring row can take the exchange with the part of it
