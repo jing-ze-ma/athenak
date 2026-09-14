@@ -117,6 +117,9 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
     const Real dtc = c.Ht(m,k,j,ic) + c.Ht(m,k,j,ic+1);
     if (dtc > 0.0) dbdtau = (c.Bb(m,0,ic,k,j) - c.Bb(m,0,ic+1,k,j))/dtc;
   }
+  // problem/rt_bottom_flux: the cut IS the bottom wall and carries the imposed internal
+  // flux, so its gradient is set by that flux, not by the column's own two deepest cells.
+  if (c.bot_flux > 0.0) dbdtau = 3.0*c.bot_flux/(4.0*M_PI);
   const Real cutc = dbdtau*c.Ht(m,k,j,ic);
   Real Dtop[2], Ucut[2];
   for (int q=0; q<2; ++q) {

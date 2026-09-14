@@ -2587,6 +2587,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
           c3.bdt = bdt;
           c3.sigma = boltz_sigma;
           c3.Iint = Iint;
+          c3.bot_flux = bot_flux;
           c3.mu[0] = mu3[0];
           c3.mu[1] = mu3[1];
           c3.wf[0] = wf3[0];

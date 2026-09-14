@@ -163,6 +163,7 @@ struct RTCol3 {
   Real bdt = 0.0;
   Real sigma = 5.6704e-5;         // the two-stream's own sigma_SB, bit for bit
   Real Iint = 0.0;                // the internal-flux intensity at the cut
+  Real bot_flux = 0.0;            // problem/rt_bottom_flux, see rt_bot_flux
   Real mu[2] = {0.0, 0.0};
   Real wf[2] = {0.0, 0.0};
   Real tol = 1.0e-6;
@@ -516,6 +517,9 @@ void RTCol3::Solve(const int m, const int k, const int j) const {
     const Real dtc = Ht(m,k,j,ic) + Ht(m,k,j,ic+1);
     if (dtc > 0.0) dbdtau = (Bb(m,0,ic,k,j) - Bb(m,0,ic+1,k,j))/dtc;
   }
+  // problem/rt_bottom_flux: the cut IS the bottom wall and carries the imposed internal
+  // flux, so its gradient is set by that flux, not by the column's own two deepest cells.
+  if (bot_flux > 0.0) dbdtau = 3.0*bot_flux/(4.0*M_PI);
   const Real hcut = Ht(m,k,j,ic);
   const Real cutc = dbdtau*hcut;              // b_cutf - b(ic), a frozen offset
   Real Dtop[2], Ucut[2];
