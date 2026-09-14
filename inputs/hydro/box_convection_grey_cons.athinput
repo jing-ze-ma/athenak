@@ -93,6 +93,18 @@ rt_relax_xcrit = 1.0                     # 1 = the single-step form, bit for bit
 rt_relax_submax = 32                     # here so the switch is reachable from the
                                          # command line on this test (an override of a
                                          # parameter absent from the input is fatal).
+# ---- the implicit column solve, reachable from the command line on this test ---------
+# This is the CONSERVATION gate for it: the column spans the pure two-stream, the tau
+# handover ramp and the radiative-diffusion interior, and starts from the analytic
+# Eddington steady state, so dE/dt as a fraction of F measures directly whether the
+# source and the handover still cancel.  Run it with
+#   ... -i box_convection_grey_cons.athinput problem/rt_implicit_column=3
+# and compare against the default (0).  See utils/two_stream_column_implicit.hpp.
+rt_implicit_column = 0                   # 0 off (bitwise), 3 = the exact block solve
+rt_impl_tol    = 1.0e-6                  # relative energy residual per column
+rt_impl_maxit  = 6                       # Newton steps; 3 is typical
+rt_outer_verbose = false                 # the per-call rt_col3 statistics line
+rt_report_every = 100                    # ...and how often it is printed
 user_srcs    = true
 g0           = 1.0e4
 mu           = 0.6
