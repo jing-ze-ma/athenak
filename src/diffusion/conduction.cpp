@@ -151,6 +151,10 @@ Conduction::Conduction(std::string block, MeshBlockPack *pp, ParameterInput *pin
       // owns the whole column (w = 0 everywhere), or there is no horizontal radiative
       // transport left at all.  See conduction.hpp.
       rad_blend_transverse = pin->GetOrAddBoolean(block,"rad_blend_transverse",true);
+      // the SMOOTH TRANSVERSE TAPER in the column optical depth; see conduction.hpp.
+      // 0 (the default) is off and bitwise inert.
+      rad_tr_tau_lo = pin->GetOrAddReal(block,"rad_tr_tau_lo",0.0);
+      rad_tr_tau_hi = pin->GetOrAddReal(block,"rad_tr_tau_hi",0.0);
       // rad_blend_use_2s: the ramp faces carry w*F_2s, not w*(-K dT/dz).  See
       // conduction.hpp for the whole argument.
       rad_blend_use_2s = pin->GetOrAddInteger(block,"rad_blend_use_2s",0);
@@ -365,6 +369,26 @@ Conduction::Conduction(std::string block, MeshBlockPack *pp, ParameterInput *pin
         std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
                   << std::endl << "rad_sts_margin must be >= 0" << std::endl;
         std::exit(EXIT_FAILURE);
+      }
+      if (rad_tr_tau_lo > 0.0) {
+        // the taper reads the COLUMN optical depth rad_tauf, which only BuildRadWeights
+        // fills and only when the tau blend is on
+        if (!rad_tau_mode) {
+          std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
+                    << std::endl << "rad_tr_tau_lo needs the column optical depth, i.e. "
+                    << "rad_tau_hi > 0 (the tau blend)" << std::endl;
+          std::exit(EXIT_FAILURE);
+        }
+        if (!(rad_tr_tau_hi > rad_tr_tau_lo)) {
+          std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
+                    << std::endl << "need 0 < rad_tr_tau_lo < rad_tr_tau_hi" << std::endl;
+          std::exit(EXIT_FAILURE);
+        }
+        if (global_variable::my_rank == 0) {
+          std::cout << "Conduction: transverse tau taper on, w = 0 below tau = "
+                    << rad_tr_tau_lo << ", w = 1 below tau = " << rad_tr_tau_hi
+                    << std::endl;
+        }
       }
       if (rad_cap_ang > 0.0) {
         // the angular cap only makes sense once the radial direction is unconditionally
@@ -717,6 +741,12 @@ void Conduction::BuildAngularCoeffs(const DvceArray5D<Real> &w0, const EOS_Data 
   // the x2/x3 faces take the blend weight only under rad_blend_transverse; the x1 faces
   // below keep rad_blend_radial either way
   const bool blend_t = rad_blend_transverse;
+  // the SMOOTH TRANSVERSE TAPER (rad_tr_tau_lo/hi): an INDEPENDENT factor on the x2/x3
+  // face conductances, applied whether or not the vertical blend reaches them, because
+  // what it encodes is that horizontal radiative DIFFUSION is not a valid approximation
+  // where the column is optically thin.  Off (trlo = 0) it is identically 1.
+  const Real trlo = rad_tr_tau_lo, trhi = rad_tr_tau_hi;
+  auto &tf = rad_tauf;
   auto capx = cap_x;
   auto capc1 = cap_c1;
   auto capc2 = cap_c2;
@@ -741,6 +771,10 @@ void Conduction::BuildAngularCoeffs(const DvceArray5D<Real> &w0, const EOS_Data 
     if (gaterho > 0.0) {
       wt *= RadGate(0.5*(w0(m,IDN,k,j-1,i) + w0(m,IDN,k,j,i))*dens_unit,
                     gaterho, gatedex);
+    }
+    if (trlo > 0.0) {
+      wt *= RadTaperWeight(0.25*(tf(m,k,j-1,i) + tf(m,k,j-1,i+1)
+                                 + tf(m,k,j,i) + tf(m,k,j,i+1)), trlo, trhi);
     }
     Real gradn = (tr - tl)/dl;
     Real sn = 1.0;
@@ -779,6 +813,10 @@ void Conduction::BuildAngularCoeffs(const DvceArray5D<Real> &w0, const EOS_Data 
       if (gaterho > 0.0) {
         wt *= RadGate(0.5*(w0(m,IDN,k-1,j,i) + w0(m,IDN,k,j,i))*dens_unit,
                       gaterho, gatedex);
+      }
+      if (trlo > 0.0) {
+        wt *= RadTaperWeight(0.25*(tf(m,k-1,j,i) + tf(m,k-1,j,i+1)
+                                   + tf(m,k,j,i) + tf(m,k,j,i+1)), trlo, trhi);
       }
       Real gradn = (tr - tl)/dl;
       Real sn = 1.0;
@@ -1059,6 +1097,10 @@ void Conduction::AddIsotropicHeatFluxRadiative(const DvceArray5D<Real> &w0,
   const bool blend_r = rad_blend_radial;
   // rad_blend_transverse: the x2/x3 faces below drop the vertical weight when it is off
   const bool blend_t = rad_blend_transverse;
+  // the SMOOTH TRANSVERSE TAPER, the same independent factor BuildAngularCoeffs puts on
+  // the frozen conductances; identically 1 when off.  See conduction.hpp.
+  const Real trlo = rad_tr_tau_lo, trhi = rad_tr_tau_hi;
+  auto &tf = rad_tauf;
   auto &wf = rad_w;
   const bool limit = rad_flux_limit;
   const Real ffac = rad_flim_fac;      // 4 sigma T^4, or 1 with rad_flim_legacy
@@ -1307,6 +1349,10 @@ void Conduction::AddIsotropicHeatFluxRadiative(const DvceArray5D<Real> &w0,
       wt *= RadGate(0.5*(w0(m,IDN,k,j-1,i) + w0(m,IDN,k,j,i))*dens_unit,
                     gaterho, gatedex);
     }
+    if (trlo > 0.0) {
+      wt *= RadTaperWeight(0.25*(tf(m,k,j-1,i) + tf(m,k,j-1,i+1)
+                                 + tf(m,k,j,i) + tf(m,k,j,i+1)), trlo, trhi);
+    }
     Real gradn = (tr - tl)/dl;
     if (cs && three_d) {
       const Real c = 0.5*(cosc_(m,k,j-1) + cosc_(m,k,j));
@@ -1349,6 +1395,10 @@ void Conduction::AddIsotropicHeatFluxRadiative(const DvceArray5D<Real> &w0,
     if (gaterho > 0.0) {
       wt *= RadGate(0.5*(w0(m,IDN,k-1,j,i) + w0(m,IDN,k,j,i))*dens_unit,
                     gaterho, gatedex);
+    }
+    if (trlo > 0.0) {
+      wt *= RadTaperWeight(0.25*(tf(m,k-1,j,i) + tf(m,k-1,j,i+1)
+                                 + tf(m,k,j,i) + tf(m,k,j,i+1)), trlo, trhi);
     }
     Real gradn = (tr - tl)/dl;
     if (cs) {
@@ -2518,6 +2568,11 @@ void Conduction::NewTimeStep(const DvceArray5D<Real> &w0, const EOS_Data &eos_da
   // rad_blend_transverse: with it off the x2/x3 face conductances carry weight 1, so
   // the transverse dt below must be formed at weight 1 as well
   const bool blend_t = rad_blend_transverse;
+  // the SMOOTH TRANSVERSE TAPER (rad_tr_tau_lo/hi): the x2/x3 face conductances are
+  // multiplied by it, so the explicit transverse conduction dt relaxes with them.  The
+  // cell's LARGER x1-face tau is used, i.e. the larger weight and the smaller dt.
+  const Real trlo = rad_tr_tau_lo, trhi = rad_tr_tau_hi;
+  auto &tfn = rad_tauf;
   const bool limit = rad_flux_limit;
   const Real ffac = rad_flim_fac;      // 4 sigma T^4, or 1 with rad_flim_legacy
   // the radial operator is unconditionally stable when it is solved implicitly, so it
@@ -2693,7 +2748,10 @@ void Conduction::NewTimeStep(const DvceArray5D<Real> &w0, const EOS_Data &eos_da
     // on a curvilinear grid size.dx2/dx3 are ANGLES; the physical widths are pcoord's
     // cubed sphere: the exact operator's angular diffusivity is kappa/sin^2(alpha)
     const Real s2 = (cs && radiative) ? SQR(sinc_(m,k,j)) : 1.0;
-    const Real wa = (taumode && blend_t) ? wmax : 1.0;
+    Real wa = (taumode && blend_t) ? wmax : 1.0;
+    if (radiative && trlo > 0.0) {
+      wa *= RadTaperWeight(fmax(tfn(m,k,j,i), tfn(m,k,j,i+1)), trlo, trhi);
+    }
     if (multi_d && !capa) {
       const Real d2 = (curv && radiative) ? dx2_(m,k,j,i) : size.d_view(m).dx2;
       const Real k2 = wa*keff(d2, tc(k,j-1,i), tc(k,j+1,i));
@@ -2778,7 +2836,10 @@ void Conduction::NewTimeStep(const DvceArray5D<Real> &w0, const EOS_Data &eos_da
       const Real s2v = multi_d ? sof(d2, tc(dk,dj-1,di), tc(dk,dj+1,di)) : 0.0;
       const Real s3v = three_d ? sof(d3, tc(dk-1,dj,di), tc(dk+1,dj,di)) : 0.0;
       const Real w1 = (taumode && blend_r) ? wmax : 1.0;
-      const Real wa = (taumode && blend_t) ? wmax : 1.0;
+      Real wa = (taumode && blend_t) ? wmax : 1.0;
+      if (trlo > 0.0) {
+        wa *= RadTaperWeight(fmax(tfd(dm,dk,dj,di), tfd(dm,dk,dj,di+1)), trlo, trhi);
+      }
       // x1v is only allocated on a curvilinear mesh; on Cartesian it is a 1x1 dummy
       dd.d_view(0)  = curv ? x1v_(dm,di) : -1.0;
       dd.d_view(1)  = dens*dens_unit;

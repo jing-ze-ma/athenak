@@ -109,6 +109,33 @@ class Conduction {
   // (rad_blend_radial is untouched, and so is cap_c1 under rad_sts_all).  The flux
   // limiter and the rad_gate_rho density gate still apply on every transverse face.
   bool rad_blend_transverse = true;
+
+  // rad_tr_tau_lo / rad_tr_tau_hi (default 0 = OFF, and bitwise inert then): the SMOOTH
+  // TRANSVERSE TAPER.  Every x2/x3 face conductance -- the frozen cap_c2/cap_c3 of
+  // BuildAngularCoeffs, the explicit x2/x3 face flux, and the transverse conduction dt --
+  // is multiplied by a weight that rises from 0 at rad_tr_tau_lo to 1 at rad_tr_tau_hi in
+  // the COLUMN optical depth tau measured down from the top face (the rad_tauf array
+  // BuildRadWeights fills, face-averaged over the four x1 faces of the transverse face,
+  // exactly as the vertical blend averages its weight there).  It is the same raised
+  // cosine in log tau the vertical blend uses (RadBlendWeight), so the two tapers cannot
+  // disagree about the shape of a handover.
+  //
+  // WHY.  The transverse operator is a DIFFUSION approximation of horizontal radiative
+  // exchange, and that approximation is invalid exactly where tau < 1: a photon there
+  // crosses the box horizontally without being absorbed, so there is no local flux
+  // -K grad_h T to speak of.  Those same planes are also the stiffest -- K ~ 1/(kappa
+  // rho) diverges as the gas thins -- so they set the RKL1 substage count of the whole
+  // operator (145-197 substages against ~15 for the deep planes in the B-star box).
+  // Tapering them off removes physics that was never right and buys most of the cost.
+  //
+  // The DENSITY gate rad_gate_rho is INDEPENDENT of this and stays: it is a safety
+  // against the artificial low-density medium, selected by what the gas is rather than by
+  // how deep it sits, and the two multiply.
+  //
+  // PRODUCTION (bstar_fecz/prod_whole): rad_tr_tau_lo = 3, rad_tr_tau_hi = 10.  The
+  // photosphere sits at tau = 2/3, i.e. at weight 0, so no horizontal radiative diffusion
+  // survives at or above the surface; the operator is at full strength by tau = 10.
+  Real rad_tr_tau_lo = 0.0, rad_tr_tau_hi = 0.0;
   // rad_kappa_src = freedman (default) | table: with table, kappa_R(T,p) is a bilinear
   // lookup of log10 kappa_R over (log10 T, log10 p[cgs]) in a table the problem
   // generator hands over ONCE at start-up (deep_hot_jupiter_rt tabulates the Rosseland
@@ -614,6 +641,15 @@ Real RadBlendWeight(const Real tau, const Real lo, const Real hi) {
   if (tau >= hi) return 1.0;
   const Real s = log(tau/lo)/log(hi/lo);
   return 0.5*(1.0 - cos(M_PI*s));
+}
+
+//! \fn Real RadTaperWeight
+//! \brief the TRANSVERSE taper weight of a face (Conduction::rad_tr_tau_lo/hi): the same
+//! raised cosine in log tau as RadBlendWeight, and identically 1 when the taper is off,
+//! so every call site is bitwise inert until rad_tr_tau_lo is set.
+KOKKOS_INLINE_FUNCTION
+Real RadTaperWeight(const Real tau, const Real lo, const Real hi) {
+  return (lo > 0.0) ? RadBlendWeight(tau, lo, hi) : 1.0;
 }
 
 #endif // DIFFUSION_CONDUCTION_HPP_
