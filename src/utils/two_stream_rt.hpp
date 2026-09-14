@@ -646,6 +646,24 @@ inline bool rt_int_at_cut = true;
 // reproduce a pre-fix run bitwise.  Grey split path only -- the correlated-k sweep keeps
 // its own cut boundary, which is never used under a tau blend.
 inline bool rt_cut_bc_legacy = false;
+// problem/rt_bottom_flux: THE IMPOSED FLUX ON THE TWO-STREAM'S OWN LOWER BOUNDARY.
+//
+// With the tau blend switched off (rad_tau_lo/hi beyond the bottom of the box, so the
+// blend weight is 0 on every face) the cut falls on the inner x1 wall and the two-stream
+// owns the WHOLE column: the radiative-diffusion operator has nothing left to carry, and
+// the handover that splits the two is gone.  The energy then has to enter through the
+// two-stream's own lower boundary instead of through the conduction wall face.
+//
+// This is the code-unit flux that boundary carries.  The cut's upward intensity is the
+// deep limit I_up(mu) = B + mu dB/dtau with the gradient set BY THE FLUX rather than read
+// off the two cells above it,
+//     dB/dtau = 3 F_bot/(4 pi),
+// which with the two-point Gauss-Legendre quadrature returns sum_q w_q (I_up - I_down) =
+// F_bot exactly (rt_nquad = 1 returns 0.904 of it, the hemispheric mean's own error).
+// 0 = off, the local gradient of rt_cut_bc_legacy = false.  box_convection.cpp sets it
+// from <hydro>/rad_flux_inner under <problem>/rt_bottom_flux, and zeroes rad_flux_inner
+// at the same time so the flux is not also injected at the conduction wall face.
+inline Real rt_bot_flux = 0.0;
 // problem/rt_layer_legacy: the STAGGERED layer the grey and correlated-k sweeps used.
 //
 // Every layer was integrated over a WHOLE cell in optical depth, dtau = kappa rho dz of
@@ -1417,6 +1435,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
     Real Tint4 = SQR(SQR(Tint));
     bool int_at_cut = rt_int_at_cut;
     const bool cut_legacy = rt_cut_bc_legacy;   // see rt_cut_bc_legacy
+    const Real bot_flux = rt_bot_flux;          // see rt_bottom_flux
     const bool layer_legacy = rt_layer_legacy;  // see rt_layer_legacy
     const bool top_re = rt_top_re;
     const bool top_vac = rt_top_vacuum;
@@ -1977,6 +1996,10 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
                 dbdtau_cut = (Bb_g(m,0,icut,k,j) - Bb_g(m,0,icut+1,k,j))/dtc;
               }
             }
+            // problem/rt_bottom_flux: the cut IS the bottom wall and carries the
+            // imposed internal flux, so its gradient is set by that flux, not by the
+            // column's own two deepest cells.  See rt_bot_flux.
+            if (bot_flux > 0.0) dbdtau_cut = 3.0*bot_flux/(4.0*M_PI);
             // ck_nquad = 1 is the hemispheric mean (mu = 1/1.66), 2 the two-point
             // Gauss-Legendre quadrature the band solver offers on the same switch
             const int nq = (ck_nq_ > 1) ? 2 : 1;

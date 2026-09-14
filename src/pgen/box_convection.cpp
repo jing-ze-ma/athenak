@@ -600,6 +600,28 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // with the tau blend on, two_stream_rt forces rt_int_at_cut false anyway.
     const Real teff_bot = (fin > 0.0) ? std::pow(fin/5.670374419e-5, 0.25) : 0.0;
     ts::rt_int_at_cut = pin->GetOrAddBoolean("problem", "rt_int_at_cut", false);
+    // <problem>/rt_bottom_flux: hand the internal flux to the TWO-STREAM's own lower
+    // boundary instead of to the conduction wall face.  Only meaningful when the tau
+    // blend is off and the sweep therefore reaches the wall (see ts::rt_bot_flux): with
+    // the blend on, the diffusion operator carries the deep flux and must keep the wall.
+    if (pin->GetOrAddBoolean("problem", "rt_bottom_flux", false)) {
+      if (pc->rad_tau_mode) {
+        std::cout << "### FATAL ERROR in box_convection: problem/rt_bottom_flux puts the "
+                  << "internal flux on the two-stream's lower boundary and takes it off "
+                  << "the conduction wall face, which is only consistent when the sweep "
+                  << "reaches that wall.  Switch the tau blend off (raise <hydro>/"
+                  << "rad_tau_lo and rad_tau_hi past the bottom of the box) or drop "
+                  << "rt_bottom_flux." << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      ts::rt_bot_flux = pc->rad_flux_inner;
+      pc->rad_flux_inner = 0.0;
+      if (global_variable::my_rank == 0) {
+        std::printf("box_convection: F_bot = %.5e erg/cm^2/s is carried by the "
+                    "TWO-STREAM's lower boundary (rt_bottom_flux); the conduction wall "
+                    "face injects nothing\n", fin);
+      }
+    }
     ts::rt_tint_override = teff_bot;
     ts::rt_star_teff = 0.0;
     // The star-and-grid carrier the solver reads.  Teq = 0 switches the stellar beam off
