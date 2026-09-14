@@ -899,6 +899,20 @@ void Conduction::AddIsotropicHeatFluxRadiative(const DvceArray5D<Real> &w0,
 //! interior fluxes telescope and sum_i V_i (e_i - e*_i) = 0 per column to round-off.
 //! Only u0(IEN) is written; w0 is rebuilt by ConToPrim later in the same stage.
 //!
+//! THE UNKNOWN IS dT, NOT de.  The system above written on the energy increment is NOT
+//! diagonally dominant: row i carries the cell's own alpha_i = 1/(rho c_v)_i on the
+//! diagonal but the NEIGHBOURS' alpha on the off-diagonals, so dominance needs
+//! alpha_i (C_l + C_r) >= C_l alpha_{i-1} + C_r alpha_{i+1}, which fails wherever
+//! 1/(rho c_v) rises steeply across a face (the top of a convection zone, a steep
+//! density drop) with beta_dt C/V >> 1.  The solve then undershoots and drives e_int
+//! negative.  Solving instead for dT_i, with the heat capacity ON THE DIAGONAL,
+//!     (rho c_v V)_i/beta_dt dT_i - sum_f C_f (dT_j - dT_i) = sum_f C_f (T*_j - T*_i),
+//!     de_i = (rho c_v)_i dT_i   (the same frozen c_v),
+//! is the SAME linearised problem -- it is the old row i multiplied through by
+//! (rho c_v)_i -- but it is symmetric, an M-matrix, and diagonally dominant for ANY
+//! alpha contrast, so dT cannot reach a new extremum and de cannot empty a cell.
+//! Results change only by round-off wherever the old solve converged.
+//!
 //! HYDRO AND MHD.  In MHD u0(IEN) carries the magnetic energy too, so the frozen
 //! internal energy subtracts 0.5|bcc0|^2 as well (MagEnergyCC); nothing else in the
 //! routine changes, since what is solved for is the INCREMENT and what is written is
@@ -1060,34 +1074,37 @@ void Conduction::ImplicitRadialUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos
   const int nj = (je - js + 1);
   Real maxviol = 0.0;
   int nfail = 0;
+  int nclip = 0;
   Kokkos::parallel_reduce("radimpx1",
   Kokkos::RangePolicy<>(DevExeSpace(), 0, (nmb1 + 1)*nkj),
-  KOKKOS_LAMBDA(const int &idx, Real &mviol, int &nbad) {
+  KOKKOS_LAMBDA(const int &idx, Real &mviol, int &nbad, int &nclp) {
     const int m = idx/nkj;
     const int k = (idx - m*nkj)/nj + ks;
     const int j = (idx - m*nkj - (k - ks)*nj) + js;
     const Real dx1c = size.d_view(m).dx1;
 
-    // ---- forward sweep of the Thomas algorithm on the energy INCREMENT
-    // x_i = e_i - e*_i.  Row i:
-    //   -g_i A_i C_i alpha_{i-1} x_{i-1}
-    // + (1 + g_i alpha_i (A_i C_i + A_{i+1} C_{i+1})) x_i
-    // - g_i A_{i+1} C_{i+1} alpha_{i+1} x_{i+1}
-    // = g_i (A_i F*_i - A_{i+1} F*_{i+1}),   g_i = beta_dt/V_i
+    // ---- forward sweep of the Thomas algorithm on the TEMPERATURE increment
+    // y_i = T_i - T*_i.  Row i, with D_i = (rho c_v V)_i/beta_dt = V_i/(beta_dt alpha_i):
+    //   -A_i C_i y_{i-1} + (D_i + A_i C_i + A_{i+1} C_{i+1}) y_i
+    //                                                      - A_{i+1} C_{i+1} y_{i+1}
+    // = A_i C_i (T*_{i-1} - T*_i) + A_{i+1} C_{i+1} (T*_{i+1} - T*_i)
+    // which is the old row on the energy increment multiplied through by (rho c_v)_i:
+    // the same linearised problem, but symmetric, diagonally dominant for any alpha
+    // contrast, and an M-matrix.  The energy increment comes back as de_i = y_i/alpha_i.
+    // A cell dropped by the state sweep (alpha <= 0) has both of its face conductances
+    // zero, so the row degenerates to y_i = 0 for any positive diagonal.
     for (int i=is; i<=ie; ++i) {
       const Real vi = curvg ? vol_(m,k,j,i) : dx1c;
-      const Real g = beta_dt/vi;
       const Real cl = wrk(m,c_,k,j,i), cr = wrk(m,c_,k,j,i+1);
-      const Real ac = fmax(wrk(m,al_,k,j,i), 0.0);
-      const Real amm = (i > is) ? fmax(wrk(m,al_,k,j,i-1), 0.0) : 0.0;
-      const Real apl = (i < ie) ? fmax(wrk(m,al_,k,j,i+1), 0.0) : 0.0;
-      const Real aa = -g*cl*amm;
-      const Real bb = 1.0 + g*ac*(cl + cr);
-      const Real cc = -g*cr*apl;
+      const Real ac = wrk(m,al_,k,j,i);
+      const Real dg = (ac > 0.0) ? vi/(beta_dt*ac) : 1.0;
+      const Real aa = -cl;
+      const Real bb = dg + cl + cr;
+      const Real cc = -cr;
       const Real tc = wrk(m,t_,k,j,i);
       const Real tm = (i > is) ? wrk(m,t_,k,j,i-1) : 0.0;
       const Real tp = (i < ie) ? wrk(m,t_,k,j,i+1) : 0.0;
-      const Real rhs = g*(cr*(tp - tc) - cl*(tc - tm));
+      const Real rhs = cr*(tp - tc) + cl*(tm - tc);
       if (i == is) {
         wrk(m,cp_,k,j,i) = cc/bb;
         wrk(m,dp_,k,j,i) = rhs/bb;
@@ -1098,51 +1115,105 @@ void Conduction::ImplicitRadialUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos
       }
     }
 
-    // ---- back substitution, write-back, and the per-column conservation residual
-    Real xnext = 0.0, csum = 0.0, cabs = 0.0;
+    // ---- back substitution, write-back, and the per-column conservation residual.
+    // Any positivity clipping is CONSERVATIVE: the energy a clipped cell is not allowed
+    // to give up is taken from the neighbour it is most strongly coupled to, so
+    // sum_i V_i de_i is preserved to round-off.  The sweep runs downwards, so a debt
+    // owed to i-1 is carried in `pend` (a volume-integrated energy) and paid on the next
+    // iteration, while a debt owed to i+1 is applied to u0 directly -- one thread owns
+    // the whole column, so there is no race.
+    Real xnext = 0.0, csum = 0.0, cabs = 0.0, pend = 0.0, eprev = 0.0;
     for (int i=ie; i>=is; --i) {
-      Real x = wrk(m,dp_,k,j,i) - wrk(m,cp_,k,j,i)*xnext;
+      const Real vi = curvg ? vol_(m,k,j,i) : dx1c;
+      const Real ac = wrk(m,al_,k,j,i);
+      Real y = wrk(m,dp_,k,j,i) - wrk(m,cp_,k,j,i)*xnext;
+      bool bad = !isfinite(y);
+      if (bad) y = 0.0;
+      xnext = y;
+      Real x = (ac > 0.0) ? y/ac : 0.0;
+      if (!isfinite(x)) {
+        x = 0.0;
+        bad = true;
+      }
+      x += pend/vi;
+      pend = 0.0;
       const Real es = wrk(m,e_,k,j,i);
-      if (!isfinite(x) || !((es + x) > 0.0)) {
-        // should never fire: the system is an M-matrix and cannot undershoot below the
-        // minimum of the frozen column.  Fall back to no radial conduction in the cell.
-        if (x != 0.0) {
-          ++nbad;
-          if (Kokkos::atomic_fetch_add(&iflag(0), 1) == 0) {
-            irec(0) = static_cast<Real>(m);
-            irec(1) = static_cast<Real>(k);
-            irec(2) = static_cast<Real>(j);
-            irec(3) = static_cast<Real>(i);
-            irec(4) = x1v_(m,i);
-            irec(5) = wrk(m,t_,k,j,i)*temp_unit;
-            irec(6) = u0(m,IDN,k,j,i)*dens_unit;
-            irec(7) = x;
+      if (x != 0.0 && !((es + x) > 0.0)) {
+        // with the M-matrix on T this should be unreachable from the solve itself; it
+        // can still be reached by a debt handed down from i+1.  Clip to a positive
+        // sliver and move the difference onto the stiffest neighbouring face.
+        const Real cl = wrk(m,c_,k,j,i), cr = wrk(m,c_,k,j,i+1);
+        const Real xn = -(1.0 - 1.0e-10)*es;
+        const Real amt = (xn - x)*vi;   // energy kept here, owed by a neighbour
+        // the stiffest neighbour is asked first and the other one second.  Downwards
+        // the debt is safe unconditionally -- cell i-1 has not been tested yet, so if
+        // it cannot afford it either it clips in turn and passes the rest on -- while
+        // upwards it has to fit in what cell i+1 has left, because that cell is done.
+        bool paid = false;
+        for (int p = 0; p < 2 && !paid; ++p) {
+          if ((cr >= cl) == (p == 0)) {
+            const Real vp = curvg ? vol_(m,k,j,i+1) : dx1c;
+            const Real take = amt/vp;
+            if (es > 0.0 && cr > 0.0 && i < ie && take < (1.0 - 1.0e-10)*eprev) {
+              u0(m,IEN,k,j,i+1) -= take;
+              eprev -= take;
+              csum -= amt;
+              cabs += fabs(amt);
+              paid = true;
+            }
+          } else {
+            if (es > 0.0 && cl > 0.0 && i > is) {
+              pend = -amt;
+              paid = true;
+            }
           }
         }
-        x = 0.0;
+        if (paid) {
+          x = xn;
+          ++nclp;
+        } else {
+          // nowhere to put it: an isolated cell, a cell with no positive energy left,
+          // or a neighbour that cannot afford the debt.  This is the only remaining
+          // non-conservative path and it is counted as a fallback.
+          x = 0.0;
+          bad = true;
+        }
       }
-      xnext = x;
+      if (bad) {
+        ++nbad;
+        if (Kokkos::atomic_fetch_add(&iflag(0), 1) == 0) {
+          irec(0) = static_cast<Real>(m);
+          irec(1) = static_cast<Real>(k);
+          irec(2) = static_cast<Real>(j);
+          irec(3) = static_cast<Real>(i);
+          irec(4) = x1v_(m,i);
+          irec(5) = wrk(m,t_,k,j,i)*temp_unit;
+          irec(6) = u0(m,IDN,k,j,i)*dens_unit;
+          irec(7) = y;
+        }
+      }
       u0(m,IEN,k,j,i) += x;
-      const Real vi = curvg ? vol_(m,k,j,i) : dx1c;
+      eprev = es + x;
       csum += vi*x;
       cabs += fabs(vi*x);
     }
     if (cabs > 0.0) mviol = fmax(mviol, fabs(csum)/cabs);
-  }, Kokkos::Max<Real>(maxviol), nfail);
+  }, Kokkos::Max<Real>(maxviol), nfail, nclip);
 
   // <problem>/nan_report: the conservation residual of the tridiagonal solve, and any
   // cell that had to fall back.  Nothing is printed unless the switch is on, except a
   // fallback, which is always worth a line.
   if (imp_lines < 400) {
     const bool bad = (nfail > 0);
-    const bool tell = nan_report && (imp_lines < 20 || maxviol > 1.0e-10);
+    const bool tell = nan_report && (imp_lines < 20 || maxviol > 1.0e-10 || nclip > 0);
     if (bad || (tell && global_variable::my_rank == 0)) {
       ++imp_lines;
       std::cout << "### rad_implicit_x1 rank " << global_variable::my_rank
                 << " cycle " << pmy_pack->pmesh->ncycle
                 << " t = " << pmy_pack->pmesh->time
                 << ": max |sum V de|/sum V|de| = " << maxviol
-                << ", fallback cells = " << nfail << std::endl;
+                << ", fallback cells = " << nfail
+                << ", conservative clips = " << nclip << std::endl;
       if (bad) {
         auto hr = Kokkos::create_mirror_view(irec);
         Kokkos::deep_copy(hr, irec);
