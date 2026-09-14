@@ -1,0 +1,100 @@
+<comment>
+problem = radiative diffusion of a 3D anisotropic Gaussian, x1 implicit + x2/x3 explicit
+# THE OPERATOR UNDER TEST: the implicit tridiagonal radial solve
+# (<hydro>/rad_implicit_x1, Conduction::ImplicitRadialUpdate) for the x1 faces, with the
+# TRANSVERSE (x2/x3) faces carried EXPLICITLY in the ordinary face fluxes.  That is the
+# whole operator this branch has: the implicit/super-time-stepped transverse arm
+# (rad_implicit_ang / rad_sts_all and their rad_sts_* switches) lives only on the
+# rg-box-convection line and does not exist here, so the transverse direction is
+# explicit and the timestep carries its dx^2 diffusion limit.  The two switches under
+# test, <hydro>/rad_x1_uform and rad_x1_kiter, act on the RADIAL solve alone and are
+# therefore tested exactly as they are used; see
+# tst/test_suite/rad/test_rad_x1_uform_cpu.py.
+#
+# A Cartesian box at rest with a 1e-4 Gaussian temperature perturbation spread in BOTH x1
+# and x2, with DIFFERENT widths (sig1 = 1.5 sig0), and uniform in x3 -- so the implicit
+# radial direction and the explicit transverse one both carry flux, and a different
+# amount of it.  At that amplitude the radiative conductivity is constant to a few parts
+# in 1e4, so the perturbation obeys dT/dt = D grad^2 T and the exact solution is the
+# product of two spreading Gaussians.  x2/x3 are periodic; x1 is closed by ZERO-FLUX
+# (reflecting) walls, and a blob centred on the midpoint of a symmetric interval has its
+# Neumann images at exactly the periodic positions, so the reference is exact there too.
+#
+# THE TIMESTEP.  rad_implicit_x1 drops the x1 conduction constraint but NOT the x2 one,
+# so dt is set by the EXPLICIT TRANSVERSE diffusion limit -- 9.38e-7 at nx = 32 and
+# cfl_number = 0.4, four orders of magnitude below the hydro CFL (9.7e-3), and the same
+# ratio at every resolution.  cfl_number is therefore held FIXED as the grid is refined
+# (no 1/n scaling: that is what the super-time-stepped variant of this test needs, and
+# it is unnecessary here) and dt then falls as dx^2 of its own accord, which is what
+# makes the backward-Euler radial solve, first order in time, contribute at the 2nd order
+# of the spatial stencil.  MEASURED: 2.10 in L1 between nx = 32 and 64.
+# Errors against the analytic solution go to sts3d-errs.dat.
+
+<job>
+basename = sts3d
+
+<mesh>
+nghost   = 2
+nx1      = 32
+x1min    = -0.5
+x1max    = 0.5
+ix1_bc   = reflect
+ox1_bc   = reflect
+nx2      = 32
+x2min    = -0.5
+x2max    = 0.5
+ix2_bc   = periodic
+ox2_bc   = periodic
+nx3      = 4
+x3min    = -0.0625
+x3max    = 0.0625
+ix3_bc   = periodic
+ox3_bc   = periodic
+
+<meshblock>
+nx1      = 32
+nx2      = 32
+nx3      = 4
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.4
+nlim       = -1
+tlim       = 0.00045
+
+<hydro>
+eos         = ideal
+reconstruct = plm
+rsolver     = hllc
+gamma       = 1.666667
+isotropic_conduction = radiative
+rad_pcut_bar     = 0.0
+rad_flux_limit   = false
+rad_kappa_fac    = 0.002
+rad_flux_inner   = 0.0
+rad_met          = 0.0
+rad_implicit_x1  = true
+# THE TWO SWITCHES UNDER TEST, at their defaults so that the regression test can flip
+# them from the command line: rad_x1_uform solves the radial column for du = d(T^4)
+# instead of dT, and rad_x1_kiter re-evaluates kappa_R (and c_v, and the face T^3) at the
+# updated state and re-solves, that many times.
+rad_x1_uform     = false
+rad_x1_kiter     = 1
+rad_x1_verbose   = false
+rad_x1_every     = 1
+
+<units>
+length_cgs = 1.0e8
+mass_cgs   = 1.0e18
+time_cgs   = 527.0
+mu         = 2.3
+
+<problem>
+pgen_name = rad_diff2d
+d0    = 1.0
+p0    = 1.0
+amp   = 1.0e-4
+sig0  = 0.09375
+sig1  = 0.140625
+nan_report = true
