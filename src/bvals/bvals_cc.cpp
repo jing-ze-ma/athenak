@@ -114,7 +114,10 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
       int nkj  = nk*nj;
       // the window narrows the LOOP only: ni and the index map stay as they were
       int ilp = il, iup = iu;
-      if (wlo_ >= 0 && il <= mbis_ && iu >= mbie_) {
+      // same-level x2/x3 halos only: coarse/fine ranges differ between the two sides
+      // and the cubed-sphere corner fill reads the full strips
+      if (wlo_ >= 0 && !use_cs && nghbr.d_view(m,n).lev == mblev.d_view(m) &&
+          il <= mbis_ && iu >= mbie_) {
         ilp = (il > wlo_) ? il : wlo_;
         iup = (iu < whi_) ? iu : whi_;
       }
@@ -685,7 +688,10 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackCC(DvceArray5D<Real> &a,
       int nkj  = nk*nj;
       // the window narrows the LOOP only: ni and the index map stay as they were
       int ilp = il, iup = iu;
-      if (wlo_ >= 0 && il <= mbis_ && iu >= mbie_) {
+      // same-level x2/x3 halos only: coarse/fine ranges differ between the two sides
+      // and the cubed-sphere corner fill reads the full strips
+      if (wlo_ >= 0 && !use_cs && nghbr.d_view(m,n).lev == mblev.d_view(m) &&
+          il <= mbis_ && iu >= mbie_) {
         ilp = (il > wlo_) ? il : wlo_;
         iup = (iu < whi_) ? iu : whi_;
       }
