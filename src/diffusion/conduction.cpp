@@ -146,6 +146,9 @@ Conduction::Conduction(std::string block, MeshBlockPack *pp, ParameterInput *pin
       rad_blend_radial = pin->GetOrAddBoolean(block,"rad_blend_radial",true);
       rad_implicit_x1 = pin->GetOrAddBoolean(block,"rad_implicit_x1",false);
       rad_cap_ang = pin->GetOrAddReal(block,"rad_cap_ang",0.0);
+      // DIAGNOSTIC ONLY: the T-linearisation audit of ImplicitRadialUpdate
+      rad_x1_verbose = pin->GetOrAddBoolean(block,"rad_x1_verbose",false);
+      rad_x1_every = pin->GetOrAddInteger(block,"rad_x1_every",1);
       {
         std::string ksrc = pin->GetOrAddString(block,"rad_kappa_src","freedman");
         if (ksrc.compare("table") == 0) {
@@ -194,6 +197,7 @@ Conduction::Conduction(std::string block, MeshBlockPack *pp, ParameterInput *pin
         Kokkos::realloc(imp_wrk, nmb, nimpw, ncells3, ncells2, ncells1+1);
         Kokkos::realloc(imp_flag, 1);
         Kokkos::realloc(imp_rec, 8);
+        Kokkos::realloc(imp_x1dg, 16);
       }
       if (rad_cap_ang > 0.0) {
         // the angular cap only makes sense once the radial direction is unconditionally
@@ -978,6 +982,11 @@ void Conduction::ImplicitRadialUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos
   auto wrk = imp_wrk;
   auto iflag = imp_flag;
   auto irec = imp_rec;
+  // ---- DIAGNOSTIC ONLY: the T-linearisation audit (rad_x1_verbose) -----------------
+  const bool x1dbg_ = rad_x1_verbose && (rad_x1_every > 0) &&
+                      (pmy_pack->pmesh->ncycle % rad_x1_every == 0);
+  auto x1dg_ = imp_x1dg;
+  if (x1dbg_) Kokkos::deep_copy(x1dg_, 0.0);
   // slot indices as plain locals: a static constexpr member would capture `this`
   const int e_ = IMPE, t_ = IMPT, al_ = IMPA, pr_ = IMPP;
   const int c_ = IMPC, cp_ = IMPCP, dp_ = IMPDP;
@@ -1129,6 +1138,10 @@ void Conduction::ImplicitRadialUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos
       Real y = wrk(m,dp_,k,j,i) - wrk(m,cp_,k,j,i)*xnext;
       bool bad = !isfinite(y);
       if (bad) y = 0.0;
+      // DIAGNOSTIC ONLY: park the solved increment where the audit below can read it.
+      // dp_ at this i has already been consumed by the line above and is never read
+      // again, so this is a dead slot from here on.
+      if (x1dbg_) wrk(m,dp_,k,j,i) = y;
       xnext = y;
       Real x = (ac > 0.0) ? y/ac : 0.0;
       if (!isfinite(x)) {
@@ -1199,6 +1212,152 @@ void Conduction::ImplicitRadialUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos
     }
     if (cabs > 0.0) mviol = fmax(mviol, fabs(csum)/cabs);
   }, Kokkos::Max<Real>(maxviol), nfail, nclip);
+
+  // ==================================================================================
+  // DIAGNOSTIC ONLY (rad_x1_verbose).  How wrong is the T-linearisation?
+  //
+  // The solve froze the face conductance C_f = A_f K_f/dl at the OLD state and solved a
+  // linear system for dT.  Three errors are measured, per interior face, over every
+  // column on the rank:
+  //   (1) the K-nonlinearity: recompute C_f with the SAME kappa table / limiter / blend
+  //       at T + dT (and p scaled by T_new/T*, rho frozen) and compare the flux
+  //       C_f(T+dT) * dT_grad with the flux the linear solve actually applied,
+  //       C_f(T) * dT_grad;
+  //   (2) the u-form check: radiative diffusion is EXACTLY linear in u = T^4 at frozen
+  //       opacity, F = -(ac/3 kappa rho) du/dz = -(K/(4T^3)) du/dz.  Compare
+  //       (K_f/(4 T_f^3)) (u_i - u_j) with the T-form K_f (T_i - T_j) the solve used.
+  //   (3) the column-integrated |dF| of (1), normalised by the flux through the lowest
+  //       interior face.
+  // plus max |dT/T| and where it sits (i, cell tau measured down from the top, T[K]).
+  // Two passes: pass 0 takes the maxima, pass 1 records where each maximum sits.
+  // ==================================================================================
+  if (x1dbg_) {
+    for (int pass = 0; pass < 2; ++pass) {
+      const int pss = pass;
+      Kokkos::parallel_for("radimpx1_dbg",
+      Kokkos::RangePolicy<>(DevExeSpace(), 0, (nmb1 + 1)*nkj),
+      KOKKOS_LAMBDA(const int &idx) {
+        const int m = idx/nkj;
+        const int k = (idx - m*nkj)/nj + ks;
+        const int j = (idx - m*nkj - (k - ks)*nj) + js;
+        const Real dx1c = size.d_view(m).dx1;
+        Real tau = 0.0;
+        Real colabs = 0.0, fbot = 0.0;
+        for (int i=ie; i>=is; --i) {
+          const Real tc = wrk(m,t_,k,j,i);
+          const Real ac = wrk(m,al_,k,j,i);
+          const Real dTc = wrk(m,dp_,k,j,i);
+          // cell optical depth accumulated from the top of the column
+          if (tc > 0.0 && ac > 0.0) {
+            const Real rho = u0(m,IDN,k,j,i)*dens_unit;
+            const Real kc = RadFaceKappa(tc*temp_unit, wrk(m,pr_,k,j,i)*pres_unit, rho,
+                                         ktab, krt, krlT, krlP, krnT, krnP, krho,
+                                         met, kfac, tmax);
+            const Real dlc = (curvg && i < ie) ? (x1v_(m,i+1) - x1v_(m,i)) : dx1c;
+            // RadFaceKappa returns the radiative CONDUCTIVITY 16 sigma T^3/(3 kfac
+            // kappa_R rho), so the true opacity x density is 16 sigma T^3/(3 kfac kc)
+            const Real tk3 = tc*temp_unit;
+            if (kc > 0.0) {
+              tau += 16.0*5.670374419e-5*tk3*tk3*tk3/(3.0*kfac*kc)*dlc*len_unit;
+            }
+          }
+          if (tc > 0.0 && ac > 0.0 && isfinite(dTc)) {
+            const Real r = fabs(dTc/tc);
+            if (pss == 0) {
+              Kokkos::atomic_max(&x1dg_(0), r);
+              Kokkos::atomic_add(&x1dg_(11), r);
+              Kokkos::atomic_add(&x1dg_(12), 1.0);
+            } else if (r == x1dg_(0) && r > 0.0) {
+              x1dg_(1) = static_cast<Real>(i);
+              x1dg_(2) = tau;
+              x1dg_(3) = tc*temp_unit;
+            }
+          }
+          // ---- the face between cell i and cell i+1 (face index i+1) --------------
+          if (i < ie) {
+            const int f = i + 1;
+            const Real cf = wrk(m,c_,k,j,f);
+            const Real tl = wrk(m,t_,k,j,f-1), tr = wrk(m,t_,k,j,f);
+            const Real dl_l = wrk(m,dp_,k,j,f-1), dl_r = wrk(m,dp_,k,j,f);
+            if (cf > 0.0 && tl > 0.0 && tr > 0.0 && isfinite(dl_l) && isfinite(dl_r)) {
+              const Real tln = tl + dl_l, trn = tr + dl_r;
+              const Real flin = cf*(tln - trn);
+              if (tln > 0.0 && trn > 0.0) {
+                // (1) recompute the conductance at the NEW temperature, same recipe
+                const Real dl = curvg ? (x1v_(m,f) - x1v_(m,f-1)) : dx1c;
+                const Real tkn = 0.5*(tln + trn)*temp_unit;
+                const Real rhof = 0.5*(u0(m,IDN,k,j,f-1) + u0(m,IDN,k,j,f))*dens_unit;
+                // pressure carried along with the temperature at frozen density
+                const Real pfn = 0.5*(wrk(m,pr_,k,j,f-1)*(tln/tl)
+                                    + wrk(m,pr_,k,j,f)*(trn/tr));
+                const Real kapn = RadFaceKappa(tkn, pfn*pres_unit, rhof, ktab, krt,
+                                               krlT, krlP, krnT, krnP, krho, met,
+                                               kfac, tmax);
+                Real lfn = 1.0;
+                if (limit) {
+                  const Real ffree = ffac*sigma_sb*tkn*tkn*tkn*tkn;
+                  if (ffree > 0.0) {
+                    const Real fu = -kapn*((trn - tln)/dl)*temp_unit/len_unit;
+                    lfn = 1.0/sqrt(1.0 + SQR(fu/ffree));
+                  } else {
+                    lfn = 0.0;
+                  }
+                }
+                Real wtn = (taumode && blend_r) ? wf(m,k,j,f) : 1.0;
+                if (gaterho > 0.0) wtn *= RadGate(rhof, gaterho, gatedex);
+                const Real afn = curvg ? area1_(m,k,j,f) : 1.0;
+                Real cfn = wtn*kapn*lfn*temp_unit/len_unit/eflx_unit*afn/dl;
+                if (!isfinite(cfn) || cfn < 0.0) cfn = 0.0;
+                const Real fnl = cfn*(tln - trn);
+                const Real den = fmax(fabs(flin), 1.0e-300);
+                const Real e1 = fabs(fnl - flin)/den;
+                // (2) the exact u-form flux at the SAME frozen opacity
+                const Real tf3 = 0.5*(tl + tr); // T_f of the frozen state
+                const Real fu_ = (tf3 > 0.0)
+                    ? cf/(4.0*tf3*tf3*tf3)*(tln*tln*tln*tln - trn*trn*trn*trn) : flin;
+                const Real e2 = fabs(fu_ - flin)/den;
+                colabs += fabs(fnl - flin);
+                if (f == is + 1) fbot = fabs(flin);
+                if (pss == 0) {
+                  Kokkos::atomic_max(&x1dg_(4), e1);
+                  Kokkos::atomic_max(&x1dg_(7), e2);
+                  Kokkos::atomic_max(&x1dg_(15), fabs(flin));
+                  Kokkos::atomic_add(&x1dg_(13), e1);
+                  Kokkos::atomic_add(&x1dg_(14), 1.0);
+                } else {
+                  if (e1 == x1dg_(4) && e1 > 0.0) {
+                    x1dg_(5) = static_cast<Real>(f); x1dg_(6) = tau;
+                  }
+                  if (e2 == x1dg_(7) && e2 > 0.0) {
+                    x1dg_(8) = static_cast<Real>(f); x1dg_(9) = tau;
+                  }
+                }
+              }
+            }
+          }
+        }
+        if (pss == 0 && fbot > 0.0) Kokkos::atomic_max(&x1dg_(10), colabs/fbot);
+      });
+    }
+    if (global_variable::my_rank == 0 && x1dbg_lines < 4000) {
+      ++x1dbg_lines;
+      auto hx = Kokkos::create_mirror_view(imp_x1dg);
+      Kokkos::deep_copy(hx, imp_x1dg);
+      const Real nc = (hx(12) > 0.0) ? hx(12) : 1.0;
+      const Real nf = (hx(14) > 0.0) ? hx(14) : 1.0;
+      std::cout << "### rad_x1_lin cycle " << pmy_pack->pmesh->ncycle
+                << " t= " << pmy_pack->pmesh->time
+                << " dt= " << beta_dt
+                << " maxdToT= " << hx(0) << " @i= " << static_cast<int>(hx(1))
+                << " tau= " << hx(2) << " T= " << hx(3)
+                << " meandToT= " << hx(11)/nc
+                << " | maxKerr= " << hx(4) << " @i= " << static_cast<int>(hx(5))
+                << " tau= " << hx(6) << " meanKerr= " << hx(13)/nf
+                << " | maxUerr= " << hx(7) << " @i= " << static_cast<int>(hx(8))
+                << " tau= " << hx(9)
+                << " | colint= " << hx(10) << " Fmax= " << hx(15) << std::endl;
+    }
+  }
 
   // <problem>/nan_report: the conservation residual of the tridiagonal solve, and any
   // cell that had to fall back.  Nothing is printed unless the switch is on, except a

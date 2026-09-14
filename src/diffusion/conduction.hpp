@@ -151,6 +151,13 @@ class Conduction {
   DvceArray5D<Real> imp_wrk;
   DvceArray1D<int> imp_flag;   // 1 element: has the first bad cell been recorded?
   DvceArray1D<Real> imp_rec;   // 8 elements: that cell's identity and state
+  // ---- DIAGNOSTIC ONLY (<hydro>/<mhd>/rad_x1_verbose): measure the error made by
+  // linearising the radial conduction in T with the face conductance frozen.  Nothing
+  // below is read by the solve; it is written and printed only when the switch is on.
+  bool rad_x1_verbose = false;
+  int rad_x1_every = 1;
+  DvceArray1D<Real> imp_x1dg;  // 16 slots, see ImplicitRadialUpdate
+  int x1dbg_lines = 0;
   int imp_lines = 0;           // lines printed so far by the debug report
   void ImplicitRadialUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
                             const Real beta_dt);
