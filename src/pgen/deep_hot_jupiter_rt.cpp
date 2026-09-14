@@ -97,6 +97,9 @@ using two_stream_rt::rt_srclim_warned;
 using two_stream_rt::rt_star_teff;
 using two_stream_rt::rt_tau_ptr;
 using two_stream_rt::rt_use_cons;
+using two_stream_rt::rt_relax_sub;
+using two_stream_rt::rt_relax_xcrit;
+using two_stream_rt::rt_relax_submax;
 using two_stream_rt::rt_xP_ptr;
 using two_stream_rt::rt_xT_ptr;
 
@@ -413,6 +416,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   rt_ck_pcut = pin->GetOrAddReal("problem","ck_pcut_bar",10.0);
   rt_de_max = pin->GetOrAddReal("problem","rt_de_max",0.5);
   rt_semi_implicit = pin->GetOrAddBoolean("problem","rt_semi_implicit",true);
+  // the sub-cycled local relaxation; see two_stream_rt.hpp, rt_relax_sub.  Default 1 =
+  // the single-step form, bit for bit.  Read here, the one site both the from-scratch and
+  // the restart path go through.
+  rt_relax_sub = pin->GetOrAddInteger("problem","rt_relax_sub",1);
+  rt_relax_xcrit = pin->GetOrAddReal("problem","rt_relax_xcrit",1.0);
+  rt_relax_submax = pin->GetOrAddInteger("problem","rt_relax_submax",32);
   if (global_variable::my_rank == 0) {
     std::cout << "deep_hot_jupiter_rt: RT two-stream source is "
               << (rt_semi_implicit ? "SEMI-IMPLICIT" : "EXPLICIT") << std::endl;

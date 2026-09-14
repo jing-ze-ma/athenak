@@ -535,6 +535,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     ts::rt_explicit = pin->GetOrAddBoolean("problem", "rt_explicit", false);
     ts::rt_newton = pin->GetOrAddBoolean("problem", "rt_newton", true);
     ts::rt_rescue_eq = pin->GetOrAddBoolean("problem", "rt_rescue_eq", true);
+    ts::rt_relax_sub = pin->GetOrAddInteger("problem", "rt_relax_sub", 1);
+    ts::rt_relax_xcrit = pin->GetOrAddReal("problem", "rt_relax_xcrit", 1.0);
+    ts::rt_relax_submax = pin->GetOrAddInteger("problem", "rt_relax_submax", 32);
     ts::rt_src_direct = pin->GetOrAddBoolean("problem", "rt_src_direct", true);
     ts::rt_top_clamp = pin->GetOrAddBoolean("problem", "rt_top_clamp", true);
     ts::rt_use_cons = pin->GetOrAddBoolean("problem", "rt_use_cons", true);
