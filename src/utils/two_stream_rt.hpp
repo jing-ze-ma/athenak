@@ -2385,7 +2385,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
           if (rt_c3wk_ptr == nullptr) {
             rt_c3wk_ptr = new DvceArray5D<Real>("rt_c3wk", nmb_c3, RTCOL3_NW, n1, n3, n2);
             rt_c3top_ptr = new DvceArray4D<Real>("rt_c3top", nmb_c3, 2, n3, n2);
-            rt_c3stat_ptr = new DvceArray1D<Real>("rt_c3stat", 16);
+            rt_c3stat_ptr = new DvceArray1D<Real>("rt_c3stat", 20);
             if (global_variable::my_rank == 0) {
               std::cout << "### two_stream_rt: rt_implicit_column = 3, the EXACT "
                         << "block-tridiagonal column solve (intensities as unknowns); "
@@ -2454,6 +2454,8 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
           c3.wf[1] = wf3[1];
           c3.tol = rt_impl_tol;
           c3.dfloor = eos.dfloor;
+          c3.rgas = Rgas;
+          c3.gm1 = gm1;
           c3.nq = nq3;
           c3.maxit = (rt_impl_maxit > 0) ? rt_impl_maxit : 6;
           c3.is = is;
@@ -2469,6 +2471,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
           c3.int_at_cut = int_at_cut;
           c3.cut_legacy = cut_legacy;
           c3.direct = rt_src_direct;
+          c3.dump = rt_outer_verbose && (pm->ncycle == 0);
           RTCol3Launch(c3, nmb1, ks, ke, js, je);
           if (rt_outer_verbose && global_variable::my_rank == 0 &&
               rt_c3_lines < 4000 &&
@@ -2482,7 +2485,8 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
                       << " it_mean=" << hs(0)/ncol
                       << " it_max=" << static_cast<int>(hs(2))
                       << " nclamp=" << static_cast<int>(hs(3))
-                      << " max|db/b|=" << hs(4)
+                      << " max|db/b|_it=" << hs(4)
+                      << " max|du/u|_tot=" << hs(18)
                       << " eos_roundtrip=" << hs(5)
                       << " nsing=" << static_cast<int>(hs(6))
                       << " nbadE=" << static_cast<int>(hs(7))
@@ -2493,7 +2497,9 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
                       << " budget_rel="
                       << ((hs(10) > 0.0) ? (hs(9) - hs(12))/hs(10) : 0.0)
                       << " telescope_rel="
-                      << ((hs(15) > 0.0) ? (hs(13) - hs(14))/hs(15) : 0.0) << std::endl;
+                      << ((hs(15) > 0.0) ? (hs(13) - hs(14))/hs(15) : 0.0)
+                      << " Ftop_impl/Ftop_sweep="
+                      << ((hs(17) != 0.0) ? hs(16)/hs(17) : 0.0) << std::endl;
           }
         }
       } else if (ck_on) {

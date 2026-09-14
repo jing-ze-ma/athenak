@@ -71,6 +71,7 @@
 //! intensity field stored at every half-layer endpoint.
 
 #include <math.h>
+#include <cstdio>
 
 #include "athena.hpp"
 #include "eos/eos.hpp"
@@ -162,6 +163,8 @@ struct RTCol3 {
   Real wf[2] = {0.0, 0.0};
   Real tol = 1.0e-6;
   Real dfloor = 0.0;
+  Real rgas = 1.0;                // ideal branch: p = rho Rgas T, see PresTempFromEint
+  Real gm1 = 0.6666666666666666;  // ideal branch: gamma - 1
   int nq = 2;
   int maxit = 6;
   int is = 0, ie = 0;
@@ -175,7 +178,7 @@ struct RTCol3 {
   bool int_at_cut = false;
   bool cut_legacy = false;
   bool direct = true;
-  bool verbose = false;
+  bool dump = false;              // one-shot per-cell assembly dump of column (0,ks,js)
 
   // ---- the two state accessors, the rt_use_cons forms (mode 3 requires it) ----------
   KOKKOS_INLINE_FUNCTION
@@ -192,6 +195,24 @@ struct RTCol3 {
     Real ef = eos.EnergyFromTemperature(u0(m,IDN,k,j,i), eos.tfloor);
     if (!(ef > 0.0)) ef = 1.0e-300;
     return ef;
+  }
+  //! \brief e(rho, T) with T in KELVIN, in code energy units.  THE EXACT EOS: under the
+  //! table this is the same inversion PresTempFromEint uses, so ionisation and the LTE
+  //! radiation term are carried in full; under an ideal gas it is the problem's own
+  //! p/(Rgas rho) relation, which is NOT eos.EnergyFromTemperature's code-temperature
+  //! argument (an ideal EOS_Data carries temp_cgs = 1 and no Rgas).
+  KOKKOS_INLINE_FUNCTION
+  Real EFromT(const Real rho, const Real tk) const {
+    return eos.IsGeneral() ? eos.EnergyFromTemperature(rho, tk/eos.temp_cgs)
+                           : rho*rgas*tk/gm1;
+  }
+  //! \brief de/dT at that state, per KELVIN: rho c_v(rho,T) from the table, or the ideal
+  //! constant.  The Jacobian diagonal needs it at the CURRENT iterate, not frozen.
+  KOKKOS_INLINE_FUNCTION
+  Real dEdT(const Real rho, const Real e, const Real tk) const {
+    return eos.IsGeneral()
+        ? rho*eos.SpecificHeatCv(rho, e, tk/eos.temp_cgs)/eos.temp_cgs
+        : rho*rgas/gm1;
   }
   KOKKOS_INLINE_FUNCTION
   Real Dx(const int m, const int k, const int j, const int i) const {
@@ -388,12 +409,9 @@ void RTCol3::BuildRow(const int m, const int k, const int j, const int i, const 
   const Real wb = taublend ? (1.0 - 0.5*(wblend(m,k,j,i) + wblend(m,k,j,i+1))) : 1.0;
   const Real fj = -bdt*wb;
   const Real tnew = sqrt(sqrt(b*M_PI/sigma));
-  const Real tcode = tnew/eos.temp_cgs;
-  const Real enew = eos.EnergyFromTemperature(rho, tcode);
-  const Real cv = eos.SpecificHeatCv(rho, enew, tcode);
-  // de/db = rho c_v dT/db with b = sigma T^4/pi, in the code's energy and temperature
-  // units: dT_K/db = pi/(4 sigma T^3) and T_code = T_K/temp_cgs
-  const Real dedb = rho*cv*M_PI/(4.0*sigma*tnew*tnew*tnew*eos.temp_cgs);
+  const Real enew = EFromT(rho, tnew);
+  // de/db = (de/dT) dT/db with b = sigma T^4/pi, i.e. dT_K/db = pi/(4 sigma T^3)
+  const Real dedb = dEdT(rho, enew, tnew)*M_PI/(4.0*sigma*tnew*tnew*tnew);
   Bm[4][4] = dedb + fj*dsdb[1];
   A3[4][2] = fj*dsdb[0];
   C3[4][2] = fj*dsdb[2];
@@ -599,7 +617,7 @@ void RTCol3::Solve(const int m, const int k, const int j) const {
       y[4] = db;
       for (int r=0; r<5; ++r) ynext[r] = y[r];
     }
-    dbmax = dbm;
+    if (dbm > dbmax) dbmax = dbm;   // the MAX OVER ITERATIONS, not the last one
     if (dbm < 1.0e-14) break;
   }
 
@@ -610,7 +628,7 @@ void RTCol3::Solve(const int m, const int k, const int j) const {
   //        rows, summed; it fails if the EOS round trip or a clamp has bitten;
   //   (ii) sum_i Src_i dx_i = F(cut) - F(top)  -- the sweep telescopes, i.e. the source
   //        really is the divergence of the face flux the same intensities carry.
-  Real budget = 0.0, bscale = 0.0, rtmax = 0.0;
+  Real budget = 0.0, bscale = 0.0, rtmax = 0.0, ubmax = 0.0;
   Real rhsum = 0.0, srsum = 0.0;
   for (int i=ic; i<=ie; ++i) {
     const Real dxi = Dx(m,k,j,i);
@@ -628,6 +646,16 @@ void RTCol3::Solve(const int m, const int k, const int j) const {
   Kokkos::atomic_add(&stat(13), srsum);
   Kokkos::atomic_add(&stat(14), fnet);
   Kokkos::atomic_add(&stat(15), fabs(srsum) + fabs(fnet));
+  // the emergent flux of the CONVERGED field against the one the explicit sweep left in
+  // Fb (which is what the flux dump, rad_f2s and rt_rad_force still see, by design: the
+  // frozen handover in src_ex is paired with exactly that flux).  On a relaxed column
+  // the two must agree, and how well is the statement that mode 3 has not moved the
+  // radiation field away from the formal solution the sweep was validated against.
+  Real ftop3 = 0.0;
+  for (int q=0; q<nq; ++q) ftop3 += wf[q]*(wk(m,UU+q,ie,k,j) - Dtop[q]);
+  Kokkos::atomic_add(&stat(16), ftop3);
+  Kokkos::atomic_add(&stat(17), Fb(m,0,ie+1,k,j));
+  Kokkos::atomic_max(&stat(18), ubmax);
   for (int i=ic; i<=ie; ++i) {
     const Real tk = Tg(m,k,j,i);
     if (!(tk > 0.0)) continue;
@@ -636,17 +664,33 @@ void RTCol3::Solve(const int m, const int k, const int j) const {
     const Real b = wk(m,BB,i,k,j);
     if (!(b > 0.0)) continue;
     const Real tnew = sqrt(sqrt(b/sopi));
-    const Real enew = eos.EnergyFromTemperature(rho, tnew/eos.temp_cgs);
+    const Real enew = EFromT(rho, tnew);
     if (!(enew > 0.0) || !isfinite(enew)) {
       Kokkos::atomic_add(&stat(7), 1.0);
       continue;
     }
-    const Real eref = eos.EnergyFromTemperature(rho, tk/eos.temp_cgs);
+    const Real eref = EFromT(rho, tk);
     if (es > 0.0 && eref > 0.0) {
       const Real rt = fabs(eref - es)/es;
       if (rt > rtmax) rtmax = rt;
     }
     Real de = enew - es;
+    // how far the implicit solve moved this cell from the state the explicit sweep saw,
+    // and what the explicit source would have deposited instead
+    const Real b0 = Bb(m,0,i,k,j);
+    if (b0 > 0.0) {
+      const Real rb = fabs(b/b0 - 1.0);
+      if (rb > ubmax) ubmax = rb;
+    }
+    if (dump && m == 0) {
+      const Real wb = taublend ? (1.0 - 0.5*(wblend(m,k,j,i) + wblend(m,k,j,i+1))) : 1.0;
+      Kokkos::printf("### rt_col3_cell i=%d dtau=%.4e T=%.6e rho=%.4e b0=%.6e "
+                     "b=%.6e du_u=%.4e de=%.6e de_expl=%.6e e=%.6e cv=%.4e\n",
+                     i, 2.0*Ht(m,k,j,i), tk, rho, b0, b,
+                     (b0 > 0.0) ? (b/b0 - 1.0) : 0.0, de,
+                     bdt*(wb*Src(m,0,i,k,j) + wk(m,EX,i,k,j)), es,
+                     dEdT(rho, es, tk));
+    }
     if (!((es + de) > 0.0)) {
       de = -0.999*es;
       Kokkos::atomic_add(&stat(8), 1.0);
