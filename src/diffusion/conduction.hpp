@@ -90,6 +90,25 @@ class Conduction {
   // blend, where flux-limited radial diffusion is the surface treatment and the
   // horizontal exchange in the optically thin layers is what is switched off.
   bool rad_blend_radial = true;
+  // rad_blend_transverse (default true): the blend weight also multiplies the x2/x3
+  // (TRANSVERSE) face conductances -- of the explicit flux, of the rad_cap_ang cap and
+  // of the super-time-stepped operator's coefficients alike, as a cell-centred 4-point
+  // average 0.25*(wf(i)+wf(i+1)) of the two cells sharing the face.  True is the
+  // historical behaviour and is bitwise unchanged.
+  //
+  // SET IT FALSE WHENEVER THE GREY TWO-STREAM OWNS THE WHOLE COLUMN.  In that
+  // configuration (rad_tau_lo/rad_tau_hi pushed below the bottom of the box so that
+  // w = 0 on every x1 face, with problem/rt_bottom_flux imposing rad_flux_inner on the
+  // sweep's own lower boundary) the radial diffusion is deliberately inert -- but the
+  // two-stream is a plane-parallel, column-by-column solver and carries NO horizontal
+  // radiative transport at all.  With the weight applied transversely as well, w = 0
+  // would switch the transverse operator off everywhere too, and the box would have no
+  // horizontal radiative exchange of any kind, which is precisely the transport this
+  // operator exists to supply.  False decouples the transverse conductance from the
+  // vertical blend: the x2/x3 faces use weight 1 while the x1 faces keep w
+  // (rad_blend_radial is untouched, and so is cap_c1 under rad_sts_all).  The flux
+  // limiter and the rad_gate_rho density gate still apply on every transverse face.
+  bool rad_blend_transverse = true;
   // rad_kappa_src = freedman (default) | table: with table, kappa_R(T,p) is a bilinear
   // lookup of log10 kappa_R over (log10 T, log10 p[cgs]) in a table the problem
   // generator hands over ONCE at start-up (deep_hot_jupiter_rt tabulates the Rosseland

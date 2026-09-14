@@ -146,6 +146,11 @@ Conduction::Conduction(std::string block, MeshBlockPack *pp, ParameterInput *pin
         std::exit(EXIT_FAILURE);
       }
       rad_blend_radial = pin->GetOrAddBoolean(block,"rad_blend_radial",true);
+      // the TRANSVERSE counterpart: false takes the vertical blend weight off the
+      // x2/x3 faces and leaves them at weight 1.  Required when the grey two-stream
+      // owns the whole column (w = 0 everywhere), or there is no horizontal radiative
+      // transport left at all.  See conduction.hpp.
+      rad_blend_transverse = pin->GetOrAddBoolean(block,"rad_blend_transverse",true);
       // rad_blend_use_2s: the ramp faces carry w*F_2s, not w*(-K dT/dz).  See
       // conduction.hpp for the whole argument.
       rad_blend_use_2s = pin->GetOrAddInteger(block,"rad_blend_use_2s",0);
@@ -709,6 +714,9 @@ void Conduction::BuildAngularCoeffs(const DvceArray5D<Real> &w0, const EOS_Data 
   // with them (rad_blend_radial), exactly as it does in the explicit x1 face flux
   const bool sts1 = rad_sts_all;
   const bool blend_r = rad_blend_radial;
+  // the x2/x3 faces take the blend weight only under rad_blend_transverse; the x1 faces
+  // below keep rad_blend_radial either way
+  const bool blend_t = rad_blend_transverse;
   auto capx = cap_x;
   auto capc1 = cap_c1;
   auto capc2 = cap_c2;
@@ -728,7 +736,7 @@ void Conduction::BuildAngularCoeffs(const DvceArray5D<Real> &w0, const EOS_Data 
     const Real pl = (gen ? wder_(m,IDPR,k,j-1,i) : w0(m,IEN,k,j-1,i)*gm1);
     const Real pr = (gen ? wder_(m,IDPR,k,j,i) : w0(m,IEN,k,j,i)*gm1);
     const Real dl = curv ? 0.5*(dx2_(m,k,j-1,i) + dx2_(m,k,j,i)) : size.d_view(m).dx2;
-    Real wt = taumode ? 0.25*(wf(m,k,j-1,i) + wf(m,k,j-1,i+1)
+    Real wt = (taumode && blend_t) ? 0.25*(wf(m,k,j-1,i) + wf(m,k,j-1,i+1)
                               + wf(m,k,j,i) + wf(m,k,j,i+1)) : 1.0;
     if (gaterho > 0.0) {
       wt *= RadGate(0.5*(w0(m,IDN,k,j-1,i) + w0(m,IDN,k,j,i))*dens_unit,
@@ -766,7 +774,7 @@ void Conduction::BuildAngularCoeffs(const DvceArray5D<Real> &w0, const EOS_Data 
       const Real pr = (gen ? wder_(m,IDPR,k,j,i) : w0(m,IEN,k,j,i)*gm1);
       const Real dl = curv ? 0.5*(dx3_(m,k-1,j,i) + dx3_(m,k,j,i))
                            : size.d_view(m).dx3;
-      Real wt = taumode ? 0.25*(wf(m,k-1,j,i) + wf(m,k-1,j,i+1)
+      Real wt = (taumode && blend_t) ? 0.25*(wf(m,k-1,j,i) + wf(m,k-1,j,i+1)
                                 + wf(m,k,j,i) + wf(m,k,j,i+1)) : 1.0;
       if (gaterho > 0.0) {
         wt *= RadGate(0.5*(w0(m,IDN,k-1,j,i) + w0(m,IDN,k,j,i))*dens_unit,
@@ -1049,6 +1057,8 @@ void Conduction::AddIsotropicHeatFluxRadiative(const DvceArray5D<Real> &w0,
   const Real pcut = rad_tau_mode ? -1.0 : rad_pcut;
   const bool taumode = rad_tau_mode;
   const bool blend_r = rad_blend_radial;
+  // rad_blend_transverse: the x2/x3 faces below drop the vertical weight when it is off
+  const bool blend_t = rad_blend_transverse;
   auto &wf = rad_w;
   const bool limit = rad_flux_limit;
   const Real ffac = rad_flim_fac;      // 4 sigma T^4, or 1 with rad_flim_legacy
@@ -1291,7 +1301,7 @@ void Conduction::AddIsotropicHeatFluxRadiative(const DvceArray5D<Real> &w0,
     const Real pl = (gen ? wder_(m,IDPR,k,j-1,i) : w0(m,IEN,k,j-1,i)*gm1);
     const Real pr = (gen ? wder_(m,IDPR,k,j,i) : w0(m,IEN,k,j,i)*gm1);
     const Real dl = curv ? 0.5*(dx2_(m,k,j-1,i) + dx2_(m,k,j,i)) : size.d_view(m).dx2;
-    Real wt = taumode ? 0.25*(wf(m,k,j-1,i) + wf(m,k,j-1,i+1)
+    Real wt = (taumode && blend_t) ? 0.25*(wf(m,k,j-1,i) + wf(m,k,j-1,i+1)
                               + wf(m,k,j,i) + wf(m,k,j,i+1)) : 1.0;
     if (gaterho > 0.0) {
       wt *= RadGate(0.5*(w0(m,IDN,k,j-1,i) + w0(m,IDN,k,j,i))*dens_unit,
@@ -1334,7 +1344,7 @@ void Conduction::AddIsotropicHeatFluxRadiative(const DvceArray5D<Real> &w0,
     const Real pl = (gen ? wder_(m,IDPR,k-1,j,i) : w0(m,IEN,k-1,j,i)*gm1);
     const Real pr = (gen ? wder_(m,IDPR,k,j,i) : w0(m,IEN,k,j,i)*gm1);
     const Real dl = curv ? 0.5*(dx3_(m,k-1,j,i) + dx3_(m,k,j,i)) : size.d_view(m).dx3;
-    Real wt = taumode ? 0.25*(wf(m,k-1,j,i) + wf(m,k-1,j,i+1)
+    Real wt = (taumode && blend_t) ? 0.25*(wf(m,k-1,j,i) + wf(m,k-1,j,i+1)
                               + wf(m,k,j,i) + wf(m,k,j,i+1)) : 1.0;
     if (gaterho > 0.0) {
       wt *= RadGate(0.5*(w0(m,IDN,k-1,j,i) + w0(m,IDN,k,j,i))*dens_unit,
@@ -2505,6 +2515,9 @@ void Conduction::NewTimeStep(const DvceArray5D<Real> &w0, const EOS_Data &eos_da
   const Real pcut = rad_tau_mode ? -1.0 : rad_pcut;
   const bool taumode = rad_tau_mode;
   const bool blend_r = rad_blend_radial;
+  // rad_blend_transverse: with it off the x2/x3 face conductances carry weight 1, so
+  // the transverse dt below must be formed at weight 1 as well
+  const bool blend_t = rad_blend_transverse;
   const bool limit = rad_flux_limit;
   const Real ffac = rad_flim_fac;      // 4 sigma T^4, or 1 with rad_flim_legacy
   // the radial operator is unconditionally stable when it is solved implicitly, so it
@@ -2624,7 +2637,9 @@ void Conduction::NewTimeStep(const DvceArray5D<Real> &w0, const EOS_Data &eos_da
       // and a cell whose faces carry no weight carries no constraint
       if (taumode) {
         wmax = fmax(wf(m,k,j,i), wf(m,k,j,i+1));
-        if (wmax == 0.0 && blend_r) return;
+        // a cell with no weight on either x1 face still conducts transversely when
+        // rad_blend_transverse is off, so it may not be dropped from the reduction
+        if (wmax == 0.0 && blend_r && blend_t) return;
       }
     }
 
@@ -2678,7 +2693,7 @@ void Conduction::NewTimeStep(const DvceArray5D<Real> &w0, const EOS_Data &eos_da
     // on a curvilinear grid size.dx2/dx3 are ANGLES; the physical widths are pcoord's
     // cubed sphere: the exact operator's angular diffusivity is kappa/sin^2(alpha)
     const Real s2 = (cs && radiative) ? SQR(sinc_(m,k,j)) : 1.0;
-    const Real wa = taumode ? wmax : 1.0;
+    const Real wa = (taumode && blend_t) ? wmax : 1.0;
     if (multi_d && !capa) {
       const Real d2 = (curv && radiative) ? dx2_(m,k,j,i) : size.d_view(m).dx2;
       const Real k2 = wa*keff(d2, tc(k,j-1,i), tc(k,j+1,i));
@@ -2763,7 +2778,7 @@ void Conduction::NewTimeStep(const DvceArray5D<Real> &w0, const EOS_Data &eos_da
       const Real s2v = multi_d ? sof(d2, tc(dk,dj-1,di), tc(dk,dj+1,di)) : 0.0;
       const Real s3v = three_d ? sof(d3, tc(dk-1,dj,di), tc(dk+1,dj,di)) : 0.0;
       const Real w1 = (taumode && blend_r) ? wmax : 1.0;
-      const Real wa = taumode ? wmax : 1.0;
+      const Real wa = (taumode && blend_t) ? wmax : 1.0;
       // x1v is only allocated on a curvilinear mesh; on Cartesian it is a 1x1 dummy
       dd.d_view(0)  = curv ? x1v_(dm,di) : -1.0;
       dd.d_view(1)  = dens*dens_unit;
