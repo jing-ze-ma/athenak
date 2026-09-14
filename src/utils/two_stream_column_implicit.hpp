@@ -496,6 +496,7 @@ void RTCol3::Solve(const int m, const int k, const int j) const {
   int nit = 0;
   int nclamp = 0;
   Real dbmax = 0.0;
+  Real rfin = 0.0;   // DIAGNOSTIC: the residual norm at the LAST iterate examined
   for (int it=0; it<maxit; ++it) {
     nit = it + 1;
     // ---- 4a. the formal solution at the current b, and Src ---------------------------
@@ -611,6 +612,7 @@ void RTCol3::Solve(const int m, const int k, const int j) const {
       Kokkos::atomic_add(&stat(6), 1.0);
       return;
     }
+    rfin = rmax;
     if (rmax < tol) break;
 
     // ---- 4c. back substitution and the clamped update -------------------------------
@@ -772,6 +774,8 @@ void RTCol3::Solve(const int m, const int k, const int j) const {
   Kokkos::atomic_max(&stat(18), ubmax);   // AFTER the apply loop, which fills it
   Kokkos::atomic_add(&stat(9), budget);
   Kokkos::atomic_add(&stat(10), bscale);
+  Kokkos::atomic_max(&stat(19), rfin);
+  Kokkos::atomic_add(&stat(20), rfin);
 }
 
 //----------------------------------------------------------------------------------------

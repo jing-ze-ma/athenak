@@ -2449,7 +2449,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
           if (rt_c3wk_ptr == nullptr) {
             rt_c3wk_ptr = new DvceArray5D<Real>("rt_c3wk", nmb_c3, RTCOL3_NW, n1, n3, n2);
             rt_c3top_ptr = new DvceArray4D<Real>("rt_c3top", nmb_c3, 2, n3, n2);
-            rt_c3stat_ptr = new DvceArray1D<Real>("rt_c3stat", 20);
+            rt_c3stat_ptr = new DvceArray1D<Real>("rt_c3stat", 21);
             if (global_variable::my_rank == 0) {
               std::cout << "### two_stream_rt: rt_implicit_column = 3, the EXACT "
                         << "block-tridiagonal column solve (intensities as unknowns); "
@@ -2559,6 +2559,8 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
                       << " sum_de_dx=" << hs(9)
                       << " sum|de|dx=" << hs(10)
                       << " ndiagviol=" << static_cast<int>(hs(11))
+                      << " resid_max=" << hs(19)
+                      << " resid_mean=" << hs(20)/ncol
                       << " budget_rel="
                       << ((hs(10) > 0.0) ? (hs(9) - hs(12))/hs(10) : 0.0)
                       << " telescope_rel="
