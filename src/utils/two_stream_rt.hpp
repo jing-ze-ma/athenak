@@ -900,6 +900,17 @@ void RTLayer(const Real dtau, const Real mu, const Real s_in, const Real s_out,
   intens   = (1.0 - e0)*intens + emitted;
 }
 
+//! \fn void RTLayerCoef
+//! \brief the three exponential coefficients RTLayer forms internally, without the
+//! transport.  Used only by rt_implicit_column, to linearise a layer in its endpoints.
+KOKKOS_INLINE_FUNCTION
+void RTLayerCoef(const Real dtau, const Real mu, Real &e0, Real &c_in, Real &c_out) {
+  const Real x = dtau/mu;
+  e0 = -expm1(-x);
+  c_in  = (x > 1.0e-3) ? (e0 - 1.0 + e0/x) : (x/2.0 - SQR(x)/3.0);
+  c_out = (x > 1.0e-3) ? (1.0 - e0/x)      : (x/2.0 - SQR(x)/6.0);
+}
+
 KOKKOS_INLINE_FUNCTION
 Real LimitRTSource(const Real de, const Real eint, const Real de_max) {
   const Real cap = de_max*eint;
@@ -1517,6 +1528,9 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
       auto dtx_g = (implcol_ && pcond_rt != nullptr)
                  ? pcond_rt->rt_col_dtex : DvceArray4D<Real>("rt_dtx_dummy",1,1,1,1);
       const Real taumin_ = rt_impl_tau_min;
+      // the one-shot assembly dump, see rtcol_asm below
+      const bool rtdbg_ = implcol_ && rt_outer_verbose && (pm->ncycle == 0);
+      if (implcol_ && pcond_rt != nullptr) pcond_rt->rt_col_verbose = rtdbg_;
       if (implcol_ && pcond_rt != nullptr) pcond_rt->rt_col_dtmax = rt_impl_dtmax;
       const bool grey_ktab = grey_on && pcond_rt != nullptr &&
                              pcond_rt->rad_kappa_tab && pcond_rt->rad_kr_nT > 0;
@@ -1926,6 +1940,30 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
               const Real dtc = dt_l + dt_u;
               s_f = (dtc > 0.0) ? (s_l + (s_u - s_l)*(dt_l/dtc)) : (0.5*(s_l + s_u));
             };
+            // ---- rt_implicit_column: the SAME layer, differentiated -----------------
+            // Every source above is a convex combination of the two centre Planck
+            // functions, so four weights describe the layer completely:
+            //   ds_l/dB_l = p_l,  ds_l/dB_u = 1 - p_l,
+            //   ds_u/dB_u = p_u,  ds_u/dB_l = 1 - p_u
+            // and s_f inherits them through the same dt_l/(dt_l+dt_u) interpolation.
+            const bool jac_on = implcol_;
+            auto rt_layer_w = [&](const int iL, Real &dl_l, Real &dl_u, Real &du_l,
+                                  Real &du_u, Real &df_l, Real &df_u) {
+              const Real kl = kc_g(m,0,iL,k,j)*rhoN(m,k,j,iL);
+              const Real ku = kc_g(m,0,iL+1,k,j)*rhoN(m,k,j,iL+1);
+              const Real pl = BFaceW(ku, kl, bface_on);     // ds_l/dB_l
+              const Real pu = BFaceW(kl, ku, bface_on);     // ds_u/dB_u
+              const Real dtl = 0.5*kl*DX1(m,k,j,iL);
+              const Real dtu = 0.5*ku*DX1(m,k,j,iL+1);
+              const Real dtc = dtl + dtu;
+              const Real f = (dtc > 0.0) ? (dtl/dtc) : 0.5;
+              dl_l = pl;
+              dl_u = 1.0 - pl;
+              du_l = 1.0 - pu;
+              du_u = pu;
+              df_l = dl_l*(1.0 - f) + du_l*f;
+              df_u = dl_u*(1.0 - f) + du_u*f;
+            };
             Real muq[2], wfq[2];
             if (nq == 1) {
               muq[0] = 1.0/CK_DIFFUSIVITY;
@@ -2096,20 +2134,70 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
               Real ab, em;
               // down-sweep: centre to centre, recording the face intensity in between
               Real Idn[2];
+              // dI_down(current face)/dB of the two cells nearest below it, per stream
+              Real ddn_c[2], ddn_p[2];
+              if (jac_on) {
+                for (int i=is; i<ie+2; ++i) {
+                  jac_g(m,0,k,j,i) = 0.0;
+                  jac_g(m,1,k,j,i) = 0.0;
+                  jac_g(m,2,k,j,i) = 0.0;
+                }
+                for (int q=0; q<2; ++q) {
+                  ddn_c[q] = 0.0;
+                  ddn_p[q] = 0.0;
+                }
+              }
               for (int q=0; q<nq; ++q) {
                 Idn[q] = I_down[q][ie+1];
                 RTLayer(dt_top, muq[q], b_top, b_top, Idn[q], ab, em);
                 Src_g(m,0,ie,k,j) += wfq[q]/DX1(m,k,j,ie)*(ab - em);
+                if (jac_on) {
+                  // the top half layer: both endpoints are cell ie's own B
+                  Real e0t, cit, cot;
+                  RTLayerCoef(dt_top, muq[q], e0t, cit, cot);
+                  const Real W = wfq[q]/DX1(m,k,j,ie);
+                  jac_g(m,1,k,j,ie) -= W*(cit + cot);
+                  ddn_c[q] = cit + cot;      // dIdn/dB(ie), the cell it just crossed
+                  ddn_p[q] = 0.0;
+                }
               }
               for (int i=ie; i>icut; --i) {
                 Real dt_l, dt_u, s_l, s_u, s_f;
                 rt_layer(i-1, dt_l, dt_u, s_l, s_u, s_f);
+                Real wl_l = 0.0, wl_u = 0.0, wu_l = 0.0, wu_u = 0.0;
+                Real wf_l = 0.0, wf_u = 0.0;
+                if (jac_on) rt_layer_w(i-1, wl_l, wl_u, wu_l, wu_u, wf_l, wf_u);
                 for (int q=0; q<nq; ++q) {
                   RTLayer(dt_u, muq[q], s_u, s_f, Idn[q], ab, em);
                   Src_g(m,0,i,k,j) += wfq[q]/DX1(m,k,j,i)*(ab - em);
                   I_down[q][i] = Idn[q];
                   RTLayer(dt_l, muq[q], s_f, s_l, Idn[q], ab, em);
                   Src_g(m,0,i-1,k,j) += wfq[q]/DX1(m,k,j,i-1)*(ab - em);
+                  if (jac_on) {
+                    // upper half: enters at s_u (centre i), leaves at s_f; deposits in i
+                    Real e0u, ciu, cou, e0l, cil, col;
+                    RTLayerCoef(dt_u, muq[q], e0u, ciu, cou);
+                    RTLayerCoef(dt_l, muq[q], e0l, cil, col);
+                    const Real Wi = wfq[q]/DX1(m,k,j,i);
+                    const Real Wm = wfq[q]/DX1(m,k,j,i-1);
+                    const Real eu_u = ciu*wu_u + cou*wf_u;   // d(emitted upper)/dB_i
+                    const Real eu_l = ciu*wu_l + cou*wf_l;   // ... /dB_{i-1}
+                    jac_g(m,1,k,j,i)   += Wi*(e0u*ddn_c[q] - eu_u);
+                    jac_g(m,2,k,j,i)   += Wi*e0u*ddn_p[q];
+                    jac_g(m,0,k,j,i)   -= Wi*eu_l;
+                    // the intensity at the face between the two half layers
+                    const Real dm_u = (1.0-e0u)*ddn_c[q] + eu_u;
+                    const Real dm_l = eu_l;
+                    const Real el_l = cil*wf_l + col*wl_l;   // d(emitted lower)/dB_{i-1}
+                    const Real el_u = cil*wf_u + col*wl_u;   // ... /dB_i
+                    jac_g(m,1,k,j,i-1) += Wm*(e0l*dm_l - el_l);
+                    jac_g(m,2,k,j,i-1) += Wm*(e0l*dm_u - el_u);
+                    // what leaves the layer, for the next pair one cell down
+                    const Real do_l = (1.0-e0l)*dm_l + el_l;
+                    const Real do_u = (1.0-e0l)*dm_u + el_u;
+                    ddn_c[q] = do_l;
+                    ddn_p[q] = do_u;
+                  }
                 }
                 if (report_on) idn_g(m,k,j,i) = I_down[0][i];
               }
@@ -2128,13 +2216,35 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
               }
               if (report_on) iup_g(m,k,j,icut) = I_up[0];
               // up-sweep
+              // dI_up(current face)/dB of the two cells nearest below it, per stream
+              Real dup_c[2], dup_m[2];
+              if (jac_on) {
+                for (int q=0; q<2; ++q) {
+                  dup_c[q] = 0.0;
+                  dup_m[q] = 0.0;
+                }
+              }
               for (int q=0; q<nq; ++q) {
                 RTLayer(dt_cut, muq[q], b_cutf, b_cut, I_up[q], ab, em);
                 Src_g(m,0,icut,k,j) += wfq[q]/DX1(m,k,j,icut)*(ab - em);
+                if (jac_on) {
+                  // the cut half layer: both endpoints are cell icut's own B (b_cutf
+                  // adds only the frozen deep gradient), and I_up entered it from the
+                  // thermalised boundary, which is B(icut) as well
+                  Real e0c, cic, coc;
+                  RTLayerCoef(dt_cut, muq[q], e0c, cic, coc);
+                  const Real W = wfq[q]/DX1(m,k,j,icut);
+                  jac_g(m,1,k,j,icut) += W*(e0c - (cic + coc));
+                  dup_c[q] = (1.0-e0c) + cic + coc;
+                  dup_m[q] = 0.0;
+                }
               }
               for (int i=icut; i<ie; ++i) {
                 Real dt_l, dt_u, s_l, s_u, s_f;
                 rt_layer(i, dt_l, dt_u, s_l, s_u, s_f);
+                Real wl_l = 0.0, wl_u = 0.0, wu_l = 0.0, wu_u = 0.0;
+                Real wf_l = 0.0, wf_u = 0.0;
+                if (jac_on) rt_layer_w(i, wl_l, wl_u, wu_l, wu_u, wf_l, wf_u);
                 for (int q=0; q<nq; ++q) {
                   RTLayer(dt_l, muq[q], s_l, s_f, I_up[q], ab, em);
                   Src_g(m,0,i,k,j) += wfq[q]/DX1(m,k,j,i)*(ab - em);
@@ -2142,12 +2252,41 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
                   if (report_on && q == 0) iup_g(m,k,j,i+1) = I_up[0];
                   RTLayer(dt_u, muq[q], s_f, s_u, I_up[q], ab, em);
                   Src_g(m,0,i+1,k,j) += wfq[q]/DX1(m,k,j,i+1)*(ab - em);
+                  if (jac_on) {
+                    Real e0l, cil, col, e0u, ciu, cou;
+                    RTLayerCoef(dt_l, muq[q], e0l, cil, col);
+                    RTLayerCoef(dt_u, muq[q], e0u, ciu, cou);
+                    const Real Wi = wfq[q]/DX1(m,k,j,i);
+                    const Real Wp = wfq[q]/DX1(m,k,j,i+1);
+                    const Real el_l = cil*wl_l + col*wf_l;   // d(emitted lower)/dB_i
+                    const Real el_u = cil*wl_u + col*wf_u;   // ... /dB_{i+1}
+                    jac_g(m,1,k,j,i) += Wi*(e0l*dup_c[q] - el_l);
+                    jac_g(m,0,k,j,i) += Wi*e0l*dup_m[q];
+                    jac_g(m,2,k,j,i) -= Wi*el_u;
+                    const Real dm_c = (1.0-e0l)*dup_c[q] + el_l;
+                    const Real dm_u = el_u;
+                    const Real eu_u = ciu*wf_u + cou*wu_u;   // d(emitted upper)/dB_{i+1}
+                    const Real eu_l = ciu*wf_l + cou*wu_l;   // ... /dB_i
+                    jac_g(m,1,k,j,i+1) += Wp*(e0u*dm_u - eu_u);
+                    jac_g(m,0,k,j,i+1) += Wp*(e0u*dm_c - eu_l);
+                    const Real do_u = (1.0-e0u)*dm_u + eu_u;
+                    const Real do_c = (1.0-e0u)*dm_c + eu_l;
+                    dup_c[q] = do_u;
+                    dup_m[q] = do_c;
+                  }
                 }
               }
               for (int q=0; q<nq; ++q) {
                 RTLayer(dt_top, muq[q], b_top, b_top, I_up[q], ab, em);
                 Src_g(m,0,ie,k,j) += wfq[q]/DX1(m,k,j,ie)*(ab - em);
                 Fb_g(m,0,ie+1,k,j) += wfq[q]*(I_up[q] - I_down[q][ie+1]);
+                if (jac_on) {
+                  Real e0t, cit, cot;
+                  RTLayerCoef(dt_top, muq[q], e0t, cit, cot);
+                  const Real W = wfq[q]/DX1(m,k,j,ie);
+                  jac_g(m,1,k,j,ie) += W*(e0t*dup_c[q] - (cit + cot));
+                  jac_g(m,0,k,j,ie) += W*e0t*dup_m[q];
+                }
               }
               if (report_on) iup_g(m,k,j,ie+1) = I_up[0];
               // the cell's own emission, exactly 4 sigma kappa rho T^4: each cell now
@@ -2861,6 +3000,27 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
         // a thick cell hands its energy to the tridiagonal and applies nothing here; a
         // thin one takes the old nonlinear relaxation, unchanged
         const bool skip_de = implcol_ && thick_;
+        // ---- ONE-SHOT ASSEMBLY DUMP (problem/rt_outer_verbose, cycle 0, one column) --
+        // A and E are taken with EXACTLY the pre-existing apply block's definitions:
+        // E = Em, the per-volume emission the sweep subtracted, and A = src_relax + Em,
+        // so R = src = A - E + src_ex with the handover counted once and only once.
+        if (implcol_ && rtdbg_ && m == 0 && k == ks && j == js) {
+          Real Emd = 0.0;
+          for (int b=0; b<nblk; ++b) Emd += Em_g(m,b,i,k,j);
+          if (taublend) Emd *= 1.0 - wbar;
+          if (band_on && i < icut_g(m,k,j)) Emd = 0.0;
+          const Real dtau_c = kc_g(m,0,i,k,j)*rhoN(m,k,j,i)*DX1(m,k,j,i);
+          const Real tkd = T_g(m,k,j,i);
+          const Real dbd = (tkd > 0.0) ? 4.0*boltz_sigma/M_PI*tkd*tkd*tkd : 0.0;
+          Kokkos::printf("### rtcol_asm i=%d dtau=%.4e thick=%d T=%.5e rho=%.4e "
+                         "A=%.6e E=%.6e R=%.6e src_ex=%.4e jm=%.6e j0=%.6e jp=%.6e "
+                         "dBdT=%.6e sink=%.6e A/E=%.4e\n",
+                         i, dtau_c, thick_ ? 1 : 0, tkd, rhoN(m,k,j,i),
+                         src_relax + Emd, Emd, src, src - src_relax,
+                         jac_g(m,0,k,j,i), jac_g(m,1,k,j,i), jac_g(m,2,k,j,i), dbd,
+                         4.0*kc_g(m,0,i,k,j)*rhoN(m,k,j,i)*boltz_sigma*tkd*tkd*tkd,
+                         (Emd != 0.0) ? (src_relax + Emd)/Emd : 0.0);
+        }
         Real de = src*bdt;
         // rt_cell_report bookkeeping: the pieces of the step, kept for the report below
         Real dg_A = 0.0, dg_Em = 0.0, dg_deq = 0.0;

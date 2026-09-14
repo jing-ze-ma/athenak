@@ -187,6 +187,7 @@ class Conduction {
   //                 across a thick/thin interface is still counted exactly once.
   bool rt_col_active = false;       // <problem>/rt_implicit_column, set by two_stream_rt
   Real rt_col_dtmax = 0.25;         // <problem>/rt_impl_dtmax: cap on |dT|/T per pass
+  bool rt_col_verbose = false;      // one-shot assembly dump of one column at cycle 0
   DvceArray4D<Real> rt_col_dtex;
   bool rt_col_alloc = false;
   DvceArray4D<Real> rt_col_res;

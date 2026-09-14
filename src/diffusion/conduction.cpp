@@ -9,6 +9,7 @@
 //! Conduction may be added to Hydro and/or MHD independently.
 
 #include <float.h>
+#include <cstdio>
 #include <algorithm>
 #include <limits>
 #include <string>
@@ -1492,6 +1493,7 @@ void Conduction::ImplicitRadialUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos
   auto rttn_ = rtc_ ? rt_col_tn : DvceArray4D<Real>("rtc_tn_d", 1, 1, 1, 1);
   auto rtdx_ = rtc_ ? rt_col_dtex : DvceArray4D<Real>("rtc_dx_d", 1, 1, 1, 1);
   const Real rtdtmax_ = rt_col_dtmax;
+  const bool rtdbg_ = rtc_ && rt_col_verbose;
   auto rtdg_ = rtc_ ? rt_col_diag : DvceArray1D<Real>("rtc_dg_d", 6);
   if (rtc_) Kokkos::deep_copy(rtdg_, 0.0);
   // slot indices as plain locals: a static constexpr member would capture `this`
@@ -1685,6 +1687,13 @@ void Conduction::ImplicitRadialUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos
           Kokkos::atomic_fetch_add(&rtdg_(0), 1.0);
         }
       }
+      if (rtdbg_ && m == 0 && k == ks && j == js) {
+        const Real j0d = vi*rtjac_(m,1,k,j,i)*rtdbt_(m,k,j,i)*temp_unit;
+        Kokkos::printf("### rtcol_row i=%d V=%.5e dg=%.6e cl=%.4e cr=%.4e VJii=%.6e "
+                       "aa=%.6e bb=%.6e cc=%.6e rhs=%.6e VR=%.6e T*=%.6e tu=%.4e\n",
+                       i, vi, dg, cl, cr, j0d, aa, bb, cc, rhs, vi*rtres_(m,k,j,i),
+                       tc, temp_unit);
+      }
       if (i == is) {
         wrk(m,cp_,k,j,i) = cc/bb;
         wrk(m,dp_,k,j,i) = rhs/bb;
@@ -1731,6 +1740,12 @@ void Conduction::ImplicitRadialUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos
             y = (y > 0.0) ? ycap : -ycap;
           }
         }
+      }
+      if (rtdbg_ && m == 0 && k == ks && j == js) {
+        Kokkos::printf("### rtcol_sol i=%d dT=%.6e T*=%.6e dT/T=%.4e de=%.6e\n",
+                       i, y, wrk(m,t_,k,j,i),
+                       (wrk(m,t_,k,j,i) > 0.0) ? y/wrk(m,t_,k,j,i) : 0.0,
+                       (wrk(m,al_,k,j,i) > 0.0) ? y/wrk(m,al_,k,j,i) : 0.0);
       }
       const Real yprev = xnext;             // y_{i+1}, already solved
       xnext = y;
