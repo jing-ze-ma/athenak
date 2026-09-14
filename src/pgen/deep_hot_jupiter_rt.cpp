@@ -7,6 +7,25 @@
 //! \brief Problem generator for the deep hot Jupiter.
 //!
 //! REFERENCE: Heng, Menou, Phillipps, MNRAS, 413, 2380 (2011); Deitrick, Mendonça, Schroffenegger, Grimm, Tsai, Heng, ApJS, 248, 30 (2020)
+//!
+//! problem/rt_use_cons (default FALSE, here and in red_giant.cpp; the FeCZ box
+//! pgen box_convection defaults it TRUE).  Where the two-stream sweep reads the cell's
+//! thermodynamic state from.  With it FALSE the sweep reads w0, the primitives the
+//! PREVIOUS ConToPrim wrote, i.e. the state at the START of the stage: the RK update,
+//! the explicit source terms and the implicit radial conduction have all moved the gas
+//! since, so the radiative source is computed against a state that is one whole stage
+//! stale.  That lag is not harmless -- it is a delayed thermostat, and a delayed
+//! thermostat is a numerical FORCING whose amplitude is linear in dt.  It was measured
+//! driving the organ-pipe acoustic modes of the closed FeCZ boxes (saturated v_rms
+//! strictly monotone in dt and in nothing else; see the memory note
+//! rt-source-dt-forcing.md), which is why box_convection hands the sweep the post-RK
+//! state and why TRUE is the recommended setting for new runs here as well.
+//!
+//! It is left FALSE by default deliberately: flipping the default would silently change
+//! every red-giant and deep-hot-Jupiter run ever restarted from these inputs, and the
+//! two states differ by O(dt) in the radiative source.  Opt in from the input file.
+//! (The conserved state is not guaranteed positive after an RK stage; the sweep's
+//! EintFromCons path carries its own non-positive guard -- see utils/two_stream_rt.hpp.)
 
 #include <sys/stat.h>  // mkdir, for the cyclediag/ subdirectory
 
