@@ -80,7 +80,7 @@
 namespace two_stream_rt {
 
 // workspace slots per cell, see RTCol3::Solve
-#define RTCOL3_NW 33
+#define RTCOL3_NW 35
 
 //----------------------------------------------------------------------------------------
 //! \fn bool RTCol3Inv5
@@ -162,11 +162,16 @@ struct RTCol3 {
   Real mu[2] = {0.0, 0.0};
   Real wf[2] = {0.0, 0.0};
   Real tol = 1.0e-6;
+  Real norm_eps = 1.0e-3;         // see problem/rt_impl_norm
   Real dfloor = 0.0;
   Real rgas = 1.0;                // ideal branch: p = rho Rgas T, see PresTempFromEint
   Real gm1 = 0.6666666666666666;  // ideal branch: gamma - 1
   int nq = 2;
   int maxit = 6;
+  int norm = 1;                   // problem/rt_impl_norm
+  int cvfreeze = 0;               // problem/rt_impl_cvfreeze
+  bool exjac = true;              // problem/rt_impl_exjac
+  bool dstop = true;              // problem/rt_impl_dstop
   int is = 0, ie = 0;
   int is_pp = 0, nx1_pp = 1;
   bool pp = false;
@@ -252,8 +257,8 @@ struct RTCol3 {
                   const Real cutc, Real &sl, Real &su, Real &sfu, Real &sfd) const;
   KOKKOS_INLINE_FUNCTION
   void BuildRow(const int m, const int k, const int j, const int i, const int ic,
-                const Real cutc, Real A3[5][3], Real Bm[5][5], Real C3[5][3],
-                Real rv[5], Real &rsc) const;
+                const Real cutc, const int it, Real A3[5][3], Real Bm[5][5],
+                Real C3[5][3], Real rv[5], Real &rsc) const;
   KOKKOS_INLINE_FUNCTION
   void Solve(const int m, const int k, const int j) const;
 };
@@ -340,8 +345,8 @@ void RTCol3::SourceVals(const int m, const int k, const int j, const int i, cons
 
 KOKKOS_INLINE_FUNCTION
 void RTCol3::BuildRow(const int m, const int k, const int j, const int i, const int ic,
-                      const Real cutc, Real A3[5][3], Real Bm[5][5], Real C3[5][3],
-                      Real rv[5], Real &rsc) const {
+                      const Real cutc, const int it, Real A3[5][3], Real Bm[5][5],
+                      Real C3[5][3], Real rv[5], Real &rsc) const {
   for (int r=0; r<5; ++r) {
     rv[r] = 0.0;
     for (int c=0; c<3; ++c) {
@@ -350,7 +355,8 @@ void RTCol3::BuildRow(const int m, const int k, const int j, const int i, const 
     }
     for (int c=0; c<5; ++c) Bm[r][c] = 0.0;
   }
-  const int EEs = 20, CIs = 22, COs = 24, BBs = 26, EXs = 31, SAs = 32;
+  const int EEs = 20, CIs = 22, COs = 24, BBs = 26, EXs = 31, SAs = 32, CVs = 33,
+            ESs = 34;
   Real cl[3], cu[3], cfu[3], cfd[3];
   SourceCoef(m, k, j, i, ic, cl, cu, cfu, cfd);
   const Real W = 1.0/Dx(m,k,j,i);
@@ -398,7 +404,7 @@ void RTCol3::BuildRow(const int m, const int k, const int j, const int i, const 
   // ---- the energy row ---------------------------------------------------------------
   const Real tk = Tg(m,k,j,i);
   const Real rho = Rho(m,k,j,i);
-  const Real es = Ei(m,k,j,i);
+  const Real es = wk(m,ESs,i,k,j);          // e*, cached in step 1: it never changes
   rsc = (es > 0.0) ? es : 1.0;
   const Real b = wk(m,BBs,i,k,j);
   if (!(tk > 0.0) || !(b > 0.0) || !(es > 0.0)) {
@@ -407,12 +413,27 @@ void RTCol3::BuildRow(const int m, const int k, const int j, const int i, const 
     rv[4] = 0.0;
     return;
   }
-  const Real wb = taublend ? (1.0 - 0.5*(wblend(m,k,j,i) + wblend(m,k,j,i+1))) : 1.0;
-  const Real fj = -bdt*wb;
+  const Real wlo = taublend ? wblend(m,k,j,i) : 0.0;
+  const Real whi = taublend ? wblend(m,k,j,i+1) : 0.0;
+  const Real wb = 1.0 - 0.5*(wlo + whi);
+  // THE EXACT ex_iter JACOBIAN (problem/rt_impl_exjac).  With rt_col3_ex_iter the
+  // applied source is  A_i = (1-w_i) Src_i + src_ex_i = Src_i + (w F_3)|_lo^hi / dx + Q,
+  // the 0.5(w_lo+w_hi) Src of the re-formed handover cancelling the (1-w_i) exactly.  So
+  // the Src coefficient is 1, not (1-w_i), and the face-flux term -- LINEAR in the same
+  // D and U the block already carries as unknowns -- is differentiated here instead of
+  // being left as a Picard lag.
+  const bool xj = exjac && ex_iter && taublend && direct;
+  const Real fj = -bdt*(xj ? 1.0 : wb);
   const Real tnew = sqrt(sqrt(b*M_PI/sigma));
   const Real enew = EFromT(rho, tnew);
   // de/db = (de/dT) dT/db with b = sigma T^4/pi, i.e. dT_K/db = pi/(4 sigma T^3)
-  const Real dedb = dEdT(rho, enew, tnew)*M_PI/(4.0*sigma*tnew*tnew*tnew);
+  Real dedb;
+  if (cvfreeze > 0 && it >= cvfreeze) {
+    dedb = wk(m,CVs,i,k,j);
+  } else {
+    dedb = dEdT(rho, enew, tnew)*M_PI/(4.0*sigma*tnew*tnew*tnew);
+    wk(m,CVs,i,k,j) = dedb;
+  }
   Bm[4][4] = dedb + fj*dsdb[1];
   A3[4][2] = fj*dsdb[0];
   C3[4][2] = fj*dsdb[2];
@@ -422,6 +443,19 @@ void RTCol3::BuildRow(const int m, const int k, const int j, const int i, const 
       A3[4][q] = fj*cdu[q];
     } else {
       Bm[4][4] += fj*cdu[q];
+    }
+  }
+  if (xj) {
+    const Real cfl = bdt*wlo*W, cfh = bdt*whi*W;
+    for (int q=0; q<nq; ++q) {
+      Bm[4][2+q] -= cfh*wf[q];                    // U_q(i),  the cell's upper face
+      Bm[4][q] -= cfl*wf[q];                      // D_q(i),  the cell's lower face
+      if (i < ie) C3[4][q] += cfh*wf[q];          // D_q(i+1); Dtop is frozen at i = ie
+      if (i > ic) {
+        A3[4][q] += cfl*wf[q];                    // U_q(i-1)
+      } else {
+        Bm[4][4] += cfl*wf[q];                    // U(ic-1) = b(ic) + Ucut
+      }
     }
   }
   rv[4] = -(enew - es - bdt*(wb*wk(m,SAs,i,k,j) + wk(m,EXs,i,k,j)));
@@ -440,7 +474,7 @@ void RTCol3::Solve(const int m, const int k, const int j) const {
   const Real sopi = sigma/M_PI;
   // slot layout
   const int G0 = 0, DP = 15, EE = 20, CI = 22, CO = 24, BB = 26, DD = 27, UU = 29,
-            EX = 31, SA = 32;
+            EX = 31, SA = 32, ES = 34;
 
   // ---- 1. the frozen per-cell layer coefficients, and b^0 --------------------------
   for (int i=ic; i<=ie; ++i) {
@@ -453,7 +487,22 @@ void RTCol3::Solve(const int m, const int k, const int j) const {
       wk(m,CO+q,i,k,j) = (x > 1.0e-3) ? (1.0 - e0/x) : (x/2.0 - SQR(x)/6.0);
     }
     wk(m,BB,i,k,j) = Bb(m,0,i,k,j);
+    wk(m,ES,i,k,j) = Ei(m,k,j,i);     // e*, fixed for the whole solve: cache it once
   }
+  // THE NORM SCALE.  problem/rt_impl_norm = 1 measures each cell's energy residual
+  // against e_i + eps e_max rather than against e_i alone.  In a stellar column e spans
+  // five decades, so the old norm is set entirely by the top cell, whose whole thermal
+  // content is a millionth of the base's: it demanded absolute precision there and
+  // reported the thick interior, which carries all the energy, as converged long before
+  // it was.
+  Real emax = 0.0;
+  if (norm == 1) {
+    for (int i=ic; i<=ie; ++i) {
+      const Real e = wk(m,ES,i,k,j);
+      if (e > emax) emax = e;
+    }
+  }
+  const Real eoff = norm_eps*emax;
 
   // ---- 2. the frozen boundary data --------------------------------------------------
   // the deep-limit gradient at the cut, exactly as the sweep forms it
@@ -575,8 +624,9 @@ void RTCol3::Solve(const int m, const int k, const int j) const {
     for (int i=ic; i<=ie && ok; ++i) {
       Real A3[5][3], Bm[5][5], C3[5][3], rv[5];
       Real rsc = 1.0;
-      BuildRow(m, k, j, i, ic, cutc, A3, Bm, C3, rv, rsc);
-      const Real rr = (rsc > 0.0) ? fabs(rv[4])/rsc : 0.0;
+      BuildRow(m, k, j, i, ic, cutc, it, A3, Bm, C3, rv, rsc);
+      const Real den = rsc + eoff;
+      const Real rr = (den > 0.0) ? fabs(rv[4])/den : 0.0;
       if (rr > rmax) rmax = rr;
       if (i > ic) {
         for (int r=0; r<5; ++r) {
@@ -647,6 +697,14 @@ void RTCol3::Solve(const int m, const int k, const int j) const {
       for (int r=0; r<5; ++r) ynext[r] = y[r];
     }
     if (dbm > dbmax) dbmax = dbm;   // the MAX OVER ITERATIONS, not the last one
+    if (dump && m == 0 && k == 0 && j == 0) {
+      Kokkos::printf("### rt_col3_it it=%d resid=%.6e dbmax=%.6e nclamp=%d\n",
+                     it, rmax, dbm, nclamp);
+    }
+    // the STEP-SIZE stopping rule (problem/rt_impl_dstop).  A Newton that has just taken
+    // a negligible step is converged; making it assemble one more block system only to
+    // read the residual back costs a whole pass and changes nothing.
+    if (dstop && dbm < tol) break;
     if (dbm < 1.0e-14) break;
   }
 

@@ -622,6 +622,31 @@ inline int rt_impl_maxit = 5;
 // the applied source is the divergence of one field, div[(1-w)F_3], and telescopes.  See
 // two_stream_column_implicit.hpp, step 4a'.  Off = bitwise the frozen handover.
 inline bool rt_col3_ex_iter = false;
+// ---- mode 3 CONVERGENCE, the switches of the acceleration pass ----------------------
+// problem/rt_impl_exjac: carry the rt_col3_ex_iter handover in the JACOBIAN instead of
+// lagging it.  With ex_iter on the applied source is A_i = Src_i + div[w F_3]_i + Q_i,
+// and div[w F_3] is LINEAR in the very unknowns the block system already carries, so
+// there is no excuse for lagging it: off, the missing term makes the whole Newton a
+// PICARD iteration wherever w is neither 0 nor 1, and the measured convergence is linear
+// at ~0.4 per pass (13-16 passes to 1e-12, bench/bstar_fecz/m3tol).  On, the block rows
+// are the exact derivative.  Off = the old lagged assembly, bitwise.
+inline bool rt_impl_exjac = true;
+// problem/rt_impl_norm: the residual norm the stopping rule measures.  0 = the old
+// max_i |R_i|/e_i, which the optically thin TOP of a stellar column dominates simply
+// because its e is 5e-6 of the base's -- a fixed relative tolerance there demands an
+// absolute precision nothing else in the scheme has.  1 = max_i |R_i|/(e_i + eps e_max),
+// eps = problem/rt_impl_norm_eps, so a cell holding a negligible share of the column's
+// energy is measured against that share and not against itself.
+inline int rt_impl_norm = 1;
+inline Real rt_impl_norm_eps = 1.0e-3;
+// problem/rt_impl_dstop: also stop when the Newton STEP is small, max_i |db_i/b_i| < tol.
+// A converged Newton takes a negligible step; insisting on the residual as well costs a
+// whole extra pass whose only effect is to confirm it.
+inline bool rt_impl_dstop = true;
+// problem/rt_impl_cvfreeze: freeze de/dT (the only nonlinear entry of the block) after
+// this many passes, 0 = never.  The radiative part of the diagonal is exact and frozen
+// already, so this only quasi-Newtons the thin cells.
+inline int rt_impl_cvfreeze = 0;
 // problem/rt_impl_tau_min: THE TWO-LEVEL SPLIT.  Only a cell whose OWN Rosseland optical
 // depth kappa rho dr reaches this goes into the tridiagonal.  Linearising the emission
 // about the current state gives dT ~ (T/4)(A/E), which diverges as the cell's own
@@ -2517,11 +2542,16 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
           c3.wf[0] = wf3[0];
           c3.wf[1] = wf3[1];
           c3.tol = rt_impl_tol;
+          c3.norm = rt_impl_norm;
+          c3.norm_eps = rt_impl_norm_eps;
+          c3.exjac = rt_impl_exjac;
+          c3.dstop = rt_impl_dstop;
+          c3.cvfreeze = rt_impl_cvfreeze;
           c3.dfloor = eos.dfloor;
           c3.rgas = Rgas;
           c3.gm1 = gm1;
           c3.nq = nq3;
-          c3.maxit = (rt_impl_maxit > 0) ? rt_impl_maxit : 6;
+          c3.maxit = (rt_impl_maxit > 0) ? rt_impl_maxit : 8;
           c3.is = is;
           c3.ie = ie;
           c3.is_pp = is_pp;

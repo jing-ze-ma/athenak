@@ -907,13 +907,19 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // the merged implicit column solve: the two-stream source folded into the radial
     // implicit conduction tridiagonal (see two_stream_rt.hpp, rt_implicit_column)
     ts::rt_implicit_column = pin->GetOrAddInteger("problem", "rt_implicit_column", 0);
-    ts::rt_impl_tol = pin->GetOrAddReal("problem", "rt_impl_tol", 1.0e-6);
+    ts::rt_impl_tol = pin->GetOrAddReal("problem", "rt_impl_tol",
+                                        (ts::rt_implicit_column == 3) ? 1.0e-8 : 1.0e-6);
     ts::rt_col3_ex_iter = pin->GetOrAddBoolean("problem", "rt_col3_ex_iter",
                                                 false);
     // mode 3 (the exact block-tridiagonal column solve) converges in 2-4 Newton steps
     // and is cheap per step, so it gets one more than the linearised modes by default
     ts::rt_impl_maxit = pin->GetOrAddInteger("problem", "rt_impl_maxit",
-                                             (ts::rt_implicit_column == 3) ? 6 : 5);
+                                             (ts::rt_implicit_column == 3) ? 8 : 5);
+    ts::rt_impl_exjac = pin->GetOrAddBoolean("problem", "rt_impl_exjac", true);
+    ts::rt_impl_norm = pin->GetOrAddInteger("problem", "rt_impl_norm", 1);
+    ts::rt_impl_norm_eps = pin->GetOrAddReal("problem", "rt_impl_norm_eps", 1.0e-3);
+    ts::rt_impl_dstop = pin->GetOrAddBoolean("problem", "rt_impl_dstop", true);
+    ts::rt_impl_cvfreeze = pin->GetOrAddInteger("problem", "rt_impl_cvfreeze", 0);
     ts::rt_impl_tau_min = pin->GetOrAddReal("problem", "rt_impl_tau_min", 1.0);
     ts::rt_impl_dtmax = pin->GetOrAddReal("problem", "rt_impl_dtmax", 0.25);
     ts::rt_impl_tau_blend = pin->GetOrAddReal("problem", "rt_impl_tau_blend", 1.0);
