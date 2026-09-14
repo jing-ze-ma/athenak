@@ -617,6 +617,11 @@ inline int rt_implicit_column = 0;
 // convergence tolerance and pass cap of that Newton, used when rt_outer_iter is not set
 inline Real rt_impl_tol = 1.0e-6;
 inline int rt_impl_maxit = 5;
+// problem/rt_col3_ex_iter: under rt_implicit_column = 3, re-form the tau-blend handover
+// src_ex from the COLUMN'S OWN converged face flux instead of the entry sweep's, so that
+// the applied source is the divergence of one field, div[(1-w)F_3], and telescopes.  See
+// two_stream_column_implicit.hpp, step 4a'.  Off = bitwise the frozen handover.
+inline bool rt_col3_ex_iter = false;
 // problem/rt_impl_tau_min: THE TWO-LEVEL SPLIT.  Only a cell whose OWN Rosseland optical
 // depth kappa rho dr reaches this goes into the tridiagonal.  Linearising the emission
 // about the current state gives dT ~ (T/4)(A/E), which diverges as the cell's own
@@ -2530,6 +2535,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
           c3.int_at_cut = int_at_cut;
           c3.cut_legacy = cut_legacy;
           c3.direct = rt_src_direct;
+          c3.ex_iter = rt_col3_ex_iter;
           c3.dump = rt_outer_verbose && (pm->ncycle == 0);
           RTCol3Launch(c3, nmb1, ks, ke, js, je);
           if (rt_outer_verbose && global_variable::my_rank == 0 &&

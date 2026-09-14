@@ -178,6 +178,7 @@ struct RTCol3 {
   bool int_at_cut = false;
   bool cut_legacy = false;
   bool direct = true;
+  bool ex_iter = false;          // see problem/rt_col3_ex_iter
   bool dump = false;              // one-shot per-cell assembly dump of column (0,ks,js)
 
   // ---- the two state accessors, the rt_use_cons forms (mode 3 requires it) ----------
@@ -535,6 +536,32 @@ void RTCol3::Solve(const int m, const int k, const int j) const {
       }
       wk(m,SA,i,k,j) += acc;
     }
+    // ---- 4a'. the handover, re-formed from THIS column's OWN flux ------------------
+    // problem/rt_col3_ex_iter.  Frozen (the default), src_ex carries the ENTRY sweep's
+    // face flux while the (1-w) term carries the converged source, and the two are no
+    // longer the divergence of one field: what the cells see is
+    //     div[(1-w) F_sweep] + (1-w)(Src_3 - Src_sweep),
+    // whose second piece is a real deposit with no flux behind it -- the 2.6 % of F the
+    // relaxed B-star column loses between the cut and the top.  With the switch on the
+    // whole source is div[(1-w) F_3] of the SAME intensities the energy row absorbs,
+    // and telescopes to the faces again.  The Jacobian keeps only the (1-w) part, so
+    // the extra coupling enters as a Picard lag, not as a Newton term.  NOT for
+    // rad_blend_use_2s > 0, where the conduction operator takes up w F_sweep by
+    // construction and the two-stream must give up exactly that.
+    if (ex_iter && taublend && direct) {
+      for (int i=ic; i<=ie; ++i) {
+        Real f3lo = 0.0, f3hi = 0.0;
+        for (int q=0; q<nq; ++q) {
+          const Real ulo = (i == ic) ? (wk(m,BB,ic,k,j) + Ucut[q]) : wk(m,UU+q,i-1,k,j);
+          const Real dhi = (i == ie) ? Dtop[q] : wk(m,DD+q,i+1,k,j);
+          f3lo += wf[q]*(ulo - wk(m,DD+q,i,k,j));
+          f3hi += wf[q]*(wk(m,UU+q,i,k,j) - dhi);
+        }
+        const Real wlo = wblend(m,k,j,i), whi = wblend(m,k,j,i+1);
+        wk(m,EX,i,k,j) = 0.5*(wlo + whi)*wk(m,SA,i,k,j)
+                       + (whi*f3hi - wlo*f3lo)/Dx(m,k,j,i) + Qb(m,0,i,k,j);
+      }
+    }
 
     // ---- 4b. forward elimination ----------------------------------------------------
     Real Gp[5][3], dp[5];
@@ -655,6 +682,43 @@ void RTCol3::Solve(const int m, const int k, const int j) const {
   for (int q=0; q<nq; ++q) ftop3 += wf[q]*(wk(m,UU+q,ie,k,j) - Dtop[q]);
   Kokkos::atomic_add(&stat(16), ftop3);
   Kokkos::atomic_add(&stat(17), Fb(m,0,ie+1,k,j));
+
+  // ---- THE FLUX-TELESCOPING DUMP (problem/rt_outer_verbose, first cycle only) -------
+  // Identity (ii) cell by cell.  Src_i is the quadrature-weighted (I_in - I_out) of the
+  // two half layers of cell i, so it MUST equal the divergence of the face flux built
+  // from the very same converged D/U with the same weights; any difference is an
+  // assembly inconsistency between the energy row and the transport rows.  Next to it
+  // sit the sweep's own entry-state face flux Fb and source Src -- which is where a
+  // difference lives if the two FIELDS differ rather than the algebra -- and the blend
+  // weight w, because the applied heating is (1-w) Src + src_ex, not Src.
+  if (dump && m == 0) {
+    Kokkos::printf("### rt_col3_fsum ic=%d ie=%d srsum=%.10e fnet=%.10e rhsum=%.10e "
+                   "F3top=%.10e Fbtop=%.10e Fbcut=%.10e\n",
+                   ic, ie, srsum, fnet, rhsum, ftop3, Fb(m,0,ie+1,k,j),
+                   Fb(m,0,ic,k,j));
+    for (int i=ic; i<=ie; ++i) {
+      Real f3lo = 0.0, f3hi = 0.0;
+      for (int q=0; q<nq; ++q) {
+        const Real ulo = (i == ic) ? (wk(m,BB,ic,k,j) + Ucut[q]) : wk(m,UU+q,i-1,k,j);
+        const Real dhi = (i == ie) ? Dtop[q] : wk(m,DD+q,i+1,k,j);
+        f3lo += wf[q]*(ulo - wk(m,DD+q,i,k,j));
+        f3hi += wf[q]*(wk(m,UU+q,i,k,j) - dhi);
+      }
+      const Real dxi = Dx(m,k,j,i);
+      const Real wlo = taublend ? wblend(m,k,j,i) : 0.0;
+      const Real whi = taublend ? wblend(m,k,j,i+1) : 0.0;
+      const Real wb = 1.0 - 0.5*(wlo + whi);
+      const Real srcdx = wk(m,SA,i,k,j)*dxi;
+      const Real divf = f3lo - f3hi;
+      Kokkos::printf("### rt_col3_flux i=%d dtau=%.4e w=%.4e srcdx=%.10e divF=%.10e "
+                     "dif=%.4e sw_srcdx=%.10e F3lo=%.10e Fblo=%.10e exdx=%.10e "
+                     "appdx=%.10e db_rel=%.4e\n",
+                     i, 2.0*Ht(m,k,j,i), 1.0 - wb, srcdx, divf, srcdx - divf,
+                     Src(m,0,i,k,j)*dxi, f3lo, Fb(m,0,i,k,j), wk(m,EX,i,k,j)*dxi,
+                     (wb*wk(m,SA,i,k,j) + wk(m,EX,i,k,j))*dxi,
+                     (Bb(m,0,i,k,j) > 0.0) ? (wk(m,BB,i,k,j)/Bb(m,0,i,k,j) - 1.0) : 0.0);
+    }
+  }
   for (int i=ic; i<=ie; ++i) {
     const Real tk = Tg(m,k,j,i);
     if (!(tk > 0.0)) continue;
