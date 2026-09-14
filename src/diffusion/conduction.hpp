@@ -161,6 +161,31 @@ class Conduction {
   int rad_x1_every = 1;
   DvceArray1D<Real> imp_x1dg;  // 16 slots, see ImplicitRadialUpdate
   int x1dbg_lines = 0;
+  // ---- <hydro>/<mhd>/rad_x1_uform and rad_x1_kiter: the two cures for the frozen-K
+  // error the audit above measures.  Both default to off/1, and with them off not one
+  // expression of the solve changes (bitwise).
+  //
+  // rad_x1_uform.  At frozen opacity the radiative flux is EXACTLY linear in u = T^4,
+  //   F = -(a c/(3 kappa_R rho)) du/dl = -(K/(4 T^3)) du/dl,
+  // so solving for du instead of dT removes the T^3 part of the nonlinearity outright
+  // (measured: it halves the frozen-K flux error).  The face recipe is untouched -- the
+  // off-diagonal is the SAME C_f divided by 4 T_f^3 with T_f the frozen face
+  // temperature, so the two forms coincide where T is uniform -- the diagonal becomes
+  // (rho c_v V)_i/(4 T_i^3 beta_dt), and the energy increment comes back as
+  // de_i = (rho c_v)_i du_i/(4 T_i^3), through the same conservative positivity clip.
+  // Still symmetric, still an M-matrix.
+  //
+  // rad_x1_kiter.  The residue the u-form leaves is the frozen d ln kappa_R/d ln T
+  // (~0 in a He-star convection zone, -2.4 at the B-star Fe bump).  kiter > 1 re-runs
+  // the whole assembly -- T, c_v, kappa_R(T,p), the limiter and the face T^3 -- at the
+  // state the previous pass wrote, and re-solves: a Picard iteration on the backward-
+  // Euler balance.  Passes 2..k keep the heat-capacity term anchored on T^n (imp_tn),
+  // exactly as the merged two-stream passes do, so each pass CORRECTS the step already
+  // taken instead of taking another full one.  Both switches are refused together with
+  // the merged two-stream column solve, which carries its own linearisation.
+  bool rad_x1_uform = false;
+  int rad_x1_kiter = 1;
+  DvceArray4D<Real> imp_tn;    // T^n, the state pass 0 started from (kiter > 1 only)
   int imp_lines = 0;           // lines printed so far by the debug report
   void ImplicitRadialUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
                             const Real beta_dt, const bool rt_on = false,
