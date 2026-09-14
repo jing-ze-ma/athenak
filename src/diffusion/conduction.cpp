@@ -149,6 +149,20 @@ Conduction::Conduction(std::string block, MeshBlockPack *pp, ParameterInput *pin
       // DIAGNOSTIC ONLY: the T-linearisation audit of ImplicitRadialUpdate
       rad_x1_verbose = pin->GetOrAddBoolean(block,"rad_x1_verbose",false);
       rad_x1_every = pin->GetOrAddInteger(block,"rad_x1_every",1);
+      // the u = T^4 radial solve and its Picard iteration (see conduction.hpp)
+      rad_x1_uform = pin->GetOrAddBoolean(block,"rad_x1_uform",false);
+      rad_x1_kiter = pin->GetOrAddInteger(block,"rad_x1_kiter",1);
+      if (rad_x1_kiter < 1) {
+        std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
+                  << std::endl << "rad_x1_kiter must be >= 1" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      if ((rad_x1_uform || rad_x1_kiter > 1) && !rad_implicit_x1) {
+        std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
+                  << std::endl << "rad_x1_uform/rad_x1_kiter need rad_implicit_x1"
+                  << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
       {
         std::string ksrc = pin->GetOrAddString(block,"rad_kappa_src","freedman");
         if (ksrc.compare("table") == 0) {
@@ -198,6 +212,10 @@ Conduction::Conduction(std::string block, MeshBlockPack *pp, ParameterInput *pin
         Kokkos::realloc(imp_flag, 1);
         Kokkos::realloc(imp_rec, 8);
         Kokkos::realloc(imp_x1dg, 16);
+        if (rad_x1_kiter > 1) {
+          Kokkos::realloc(imp_tn, nmb, ncells3, ncells2, ncells1);
+          Kokkos::deep_copy(imp_tn, 0.0);
+        }
       }
       if (rad_cap_ang > 0.0) {
         // the angular cap only makes sense once the radial direction is unconditionally
@@ -986,7 +1004,10 @@ void Conduction::ImplicitRadialUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos
   const bool x1dbg_ = rad_x1_verbose && (rad_x1_every > 0) &&
                       (pmy_pack->pmesh->ncycle % rad_x1_every == 0);
   auto x1dg_ = imp_x1dg;
-  if (x1dbg_) Kokkos::deep_copy(x1dg_, 0.0);
+  // ---- rad_x1_uform / rad_x1_kiter (see conduction.hpp) -----------------------------
+  const bool uf_ = rad_x1_uform;
+  const int nkit_ = rad_x1_kiter;
+  auto tn_ = (nkit_ > 1) ? imp_tn : DvceArray4D<Real>("imp_tn_d", 1, 1, 1, 1);
   // slot indices as plain locals: a static constexpr member would capture `this`
   const int e_ = IMPE, t_ = IMPT, al_ = IMPA, pr_ = IMPP;
   const int c_ = IMPC, cp_ = IMPCP, dp_ = IMPDP;
@@ -1008,354 +1029,452 @@ void Conduction::ImplicitRadialUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos
   // MEASURED on that run: "radimpx1" went 3179 ms -> 368 ms, 8.6x, and 21.6% -> 2.2% of
   // the GPU time, for no change in any output byte.
   //
-  // ---- the FROZEN state of every cell: internal energy, temperature, pressure and
-  // 1/(rho c_v).  The internal energy is extracted exactly as ConToPrim extracts it:
-  // the gravitational term (etotgrav) and, on the cubed sphere, the kinetic energy
-  // formed with the non-orthogonal metric (GnomonicEquiangleRaiseVel).  A cell whose
-  // internal energy is not positive is marked with a negative 1/(rho c_v) and is
-  // dropped from the system rather than handed to the EOS inversion.
-  par_for("radimpx1_coef", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    const Real d = u0(m,IDN,k,j,i);
-    // the one shared extraction (utils/eint_from_cons.hpp): identical arithmetic in
-    // identical order to what stood here, so this refactor is bit-for-bit a no-op
-    const Real ei = EintFromCons(u0, m, k, j, i, cs_ ? cosc_(m,k,j) : 0.0, cs_, etg,
-                                 etg ? phicc_(m,k,j,i) : 0.0,
-                                 ismhd ? MagEnergyCC(bcc_,m,k,j,i) : 0.0);
-    wrk(m,e_,k,j,i) = ei;
-    wrk(m,t_,k,j,i) = 0.0;
-    wrk(m,pr_,k,j,i) = 0.0;
-    wrk(m,al_,k,j,i) = -1.0;
-    if (!(ei > 0.0) || !(d > 0.0) || !isfinite(ei)) return;
-    const Real tt = eos_.Temperature(d, ei, gen ? wtemp_(m,k,j,i) : -1.0);
-    if (!(tt > 0.0) || !isfinite(tt)) return;
-    const Real cv = eos_.SpecificHeatCv(d, ei, tt);
-    if (!(cv > 0.0) || !isfinite(cv)) return;
-    wrk(m,t_,k,j,i) = tt;
-    wrk(m,pr_,k,j,i) = eos_.Pressure(d, ei, tt);
-    wrk(m,al_,k,j,i) = 1.0/(d*cv);
-  });
-
-  // ---- the frozen face coefficient A_f K_f/dl_f.  The two boundary faces are
-  // outside the system: they were added explicitly with the ghost states.
-  par_for("radimpx1_face", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    if (i == is || i == ie+1) {
-      wrk(m,c_,k,j,i) = 0.0;
-      return;
-    }
-    const Real dx1c = size.d_view(m).dx1;
-    Real ca = 0.0;
-    const Real all = wrk(m,al_,k,j,i-1), alr = wrk(m,al_,k,j,i);
-    if (all > 0.0 && alr > 0.0 && !(krmax > 0.0 && x1v_(m,i) > krmax)) {
-      const Real tl = wrk(m,t_,k,j,i-1), tr = wrk(m,t_,k,j,i);
-      const Real pf = 0.5*(wrk(m,pr_,k,j,i-1) + wrk(m,pr_,k,j,i));
-      if (!(pf < pcut)) {
-        const Real dl = curvg ? (x1v_(m,i) - x1v_(m,i-1)) : dx1c;
-        const Real tk = 0.5*(tl + tr)*temp_unit;
-        const Real rhof = 0.5*(u0(m,IDN,k,j,i-1) + u0(m,IDN,k,j,i))*dens_unit;
-        const Real kap = RadFaceKappa(tk, pf*pres_unit, rhof, ktab, krt, krlT, krlP,
-                                      krnT, krnP, krho, met, kfac, tmax);
-        // the flux limiter, evaluated on the FROZEN gradient and then held fixed:
-        // F = -kap g/sqrt(1 + (kap g/F_free)^2) linearises to a diffusion coefficient
-        // kap/sqrt(1 + s^2) at fixed s, which is what keeps the system linear
-        Real lf = 1.0;
-        if (limit) {
-          const Real ffree = ffac*sigma_sb*tk*tk*tk*tk;
-          if (ffree > 0.0) {
-            const Real fu = -kap*((tr - tl)/dl)*temp_unit/len_unit;
-            lf = 1.0/sqrt(1.0 + SQR(fu/ffree));
-          } else {
-            lf = 0.0;
-          }
-        }
-        Real wt = (taumode && blend_r) ? wf(m,k,j,i) : 1.0;
-        if (gaterho > 0.0) wt *= RadGate(rhof, gaterho, gatedex);
-        const Real af = curvg ? area1_(m,k,j,i) : 1.0;
-        ca = wt*kap*lf*temp_unit/len_unit/eflx_unit*af/dl;
-        if (!isfinite(ca) || ca < 0.0) ca = 0.0;
-      }
-    }
-    wrk(m,c_,k,j,i) = ca;
-  });
-
   const int nkj = (ke - ks + 1)*(je - js + 1);
   const int nj = (je - js + 1);
+  // ---- THE PICARD LOOP (rad_x1_kiter).  One pass is the solve as it always was; a
+  // further pass re-runs the WHOLE assembly -- T, c_v, kappa_R(T,p), the flux limiter
+  // and the face T^3 -- at the state the previous pass wrote into u0, and re-solves
+  // for the remaining increment, with the heat-capacity term held on T^n so that the
+  // passes correct one backward-Euler step instead of taking k of them.  With
+  // rad_x1_kiter = 1 the loop body runs exactly once and nothing changes.
   Real maxviol = 0.0;
   int nfail = 0;
   int nclip = 0;
-  Kokkos::parallel_reduce("radimpx1",
-  Kokkos::RangePolicy<>(DevExeSpace(), 0, (nmb1 + 1)*nkj),
-  KOKKOS_LAMBDA(const int &idx, Real &mviol, int &nbad, int &nclp) {
-    const int m = idx/nkj;
-    const int k = (idx - m*nkj)/nj + ks;
-    const int j = (idx - m*nkj - (k - ks)*nj) + js;
-    const Real dx1c = size.d_view(m).dx1;
+  for (int kit = 0; kit < nkit_; ++kit) {
+    // the audit below reports each pass on its own, so its maxima start from zero here
+    if (x1dbg_) Kokkos::deep_copy(x1dg_, 0.0);
+    // ---- the FROZEN state of every cell: internal energy, temperature, pressure and
+    // 1/(rho c_v).  The internal energy is extracted exactly as ConToPrim extracts it:
+    // the gravitational term (etotgrav) and, on the cubed sphere, the kinetic energy
+    // formed with the non-orthogonal metric (GnomonicEquiangleRaiseVel).  A cell whose
+    // internal energy is not positive is marked with a negative 1/(rho c_v) and is
+    // dropped from the system rather than handed to the EOS inversion.
+    par_for("radimpx1_coef", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real d = u0(m,IDN,k,j,i);
+      // the one shared extraction (utils/eint_from_cons.hpp): identical arithmetic in
+      // identical order to what stood here, so this refactor is bit-for-bit a no-op
+      const Real ei = EintFromCons(u0, m, k, j, i, cs_ ? cosc_(m,k,j) : 0.0, cs_, etg,
+                                   etg ? phicc_(m,k,j,i) : 0.0,
+                                   ismhd ? MagEnergyCC(bcc_,m,k,j,i) : 0.0);
+      wrk(m,e_,k,j,i) = ei;
+      wrk(m,t_,k,j,i) = 0.0;
+      wrk(m,pr_,k,j,i) = 0.0;
+      wrk(m,al_,k,j,i) = -1.0;
+      if (!(ei > 0.0) || !(d > 0.0) || !isfinite(ei)) return;
+      const Real tt = eos_.Temperature(d, ei, gen ? wtemp_(m,k,j,i) : -1.0);
+      if (!(tt > 0.0) || !isfinite(tt)) return;
+      const Real cv = eos_.SpecificHeatCv(d, ei, tt);
+      if (!(cv > 0.0) || !isfinite(cv)) return;
+      wrk(m,t_,k,j,i) = tt;
+      wrk(m,pr_,k,j,i) = eos_.Pressure(d, ei, tt);
+      wrk(m,al_,k,j,i) = 1.0/(d*cv);
+    });
 
-    // ---- forward sweep of the Thomas algorithm on the TEMPERATURE increment
-    // y_i = T_i - T*_i.  Row i, with D_i = (rho c_v V)_i/beta_dt = V_i/(beta_dt alpha_i):
-    //   -A_i C_i y_{i-1} + (D_i + A_i C_i + A_{i+1} C_{i+1}) y_i
-    //                                                      - A_{i+1} C_{i+1} y_{i+1}
-    // = A_i C_i (T*_{i-1} - T*_i) + A_{i+1} C_{i+1} (T*_{i+1} - T*_i)
-    // which is the old row on the energy increment multiplied through by (rho c_v)_i:
-    // the same linearised problem, but symmetric, diagonally dominant for any alpha
-    // contrast, and an M-matrix.  The energy increment comes back as de_i = y_i/alpha_i.
-    // A cell dropped by the state sweep (alpha <= 0) has both of its face conductances
-    // zero, so the row degenerates to y_i = 0 for any positive diagonal.
-    for (int i=is; i<=ie; ++i) {
-      const Real vi = curvg ? vol_(m,k,j,i) : dx1c;
-      const Real cl = wrk(m,c_,k,j,i), cr = wrk(m,c_,k,j,i+1);
-      const Real ac = wrk(m,al_,k,j,i);
-      const Real dg = (ac > 0.0) ? vi/(beta_dt*ac) : 1.0;
-      const Real aa = -cl;
-      const Real bb = dg + cl + cr;
-      const Real cc = -cr;
-      const Real tc = wrk(m,t_,k,j,i);
-      const Real tm = (i > is) ? wrk(m,t_,k,j,i-1) : 0.0;
-      const Real tp = (i < ie) ? wrk(m,t_,k,j,i+1) : 0.0;
-      const Real rhs = cr*(tp - tc) + cl*(tm - tc);
-      if (i == is) {
-        wrk(m,cp_,k,j,i) = cc/bb;
-        wrk(m,dp_,k,j,i) = rhs/bb;
-      } else {
-        const Real den = bb - aa*wrk(m,cp_,k,j,i-1);
-        wrk(m,cp_,k,j,i) = cc/den;
-        wrk(m,dp_,k,j,i) = (rhs - aa*wrk(m,dp_,k,j,i-1))/den;
-      }
+    // rad_x1_kiter: T^n, the state pass 0 started from.  Passes 2..k must keep the
+    // heat-capacity term anchored on it, or each pass would take another FULL backward-
+    // Euler conduction step instead of correcting the one already taken.
+    if (nkit_ > 1 && kit == 0) {
+      par_for("radimpx1_tn", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        tn_(m,k,j,i) = wrk(m,t_,k,j,i);
+      });
     }
 
-    // ---- back substitution, write-back, and the per-column conservation residual.
-    // Any positivity clipping is CONSERVATIVE: the energy a clipped cell is not allowed
-    // to give up is taken from the neighbour it is most strongly coupled to, so
-    // sum_i V_i de_i is preserved to round-off.  The sweep runs downwards, so a debt
-    // owed to i-1 is carried in `pend` (a volume-integrated energy) and paid on the next
-    // iteration, while a debt owed to i+1 is applied to u0 directly -- one thread owns
-    // the whole column, so there is no race.
-    Real xnext = 0.0, csum = 0.0, cabs = 0.0, pend = 0.0, eprev = 0.0;
-    for (int i=ie; i>=is; --i) {
-      const Real vi = curvg ? vol_(m,k,j,i) : dx1c;
-      const Real ac = wrk(m,al_,k,j,i);
-      Real y = wrk(m,dp_,k,j,i) - wrk(m,cp_,k,j,i)*xnext;
-      bool bad = !isfinite(y);
-      if (bad) y = 0.0;
-      // DIAGNOSTIC ONLY: park the solved increment where the audit below can read it.
-      // dp_ at this i has already been consumed by the line above and is never read
-      // again, so this is a dead slot from here on.
-      if (x1dbg_) wrk(m,dp_,k,j,i) = y;
-      xnext = y;
-      Real x = (ac > 0.0) ? y/ac : 0.0;
-      if (!isfinite(x)) {
-        x = 0.0;
-        bad = true;
+    // ---- the frozen face coefficient A_f K_f/dl_f.  The two boundary faces are
+    // outside the system: they were added explicitly with the ghost states.
+    par_for("radimpx1_face", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      if (i == is || i == ie+1) {
+        wrk(m,c_,k,j,i) = 0.0;
+        return;
       }
-      x += pend/vi;
-      pend = 0.0;
-      const Real es = wrk(m,e_,k,j,i);
-      if (x != 0.0 && !((es + x) > 0.0)) {
-        // with the M-matrix on T this should be unreachable from the solve itself; it
-        // can still be reached by a debt handed down from i+1.  Clip to a positive
-        // sliver and move the difference onto the stiffest neighbouring face.
-        const Real cl = wrk(m,c_,k,j,i), cr = wrk(m,c_,k,j,i+1);
-        const Real xn = -(1.0 - 1.0e-10)*es;
-        const Real amt = (xn - x)*vi;   // energy kept here, owed by a neighbour
-        // the stiffest neighbour is asked first and the other one second.  Downwards
-        // the debt is safe unconditionally -- cell i-1 has not been tested yet, so if
-        // it cannot afford it either it clips in turn and passes the rest on -- while
-        // upwards it has to fit in what cell i+1 has left, because that cell is done.
-        bool paid = false;
-        for (int p = 0; p < 2 && !paid; ++p) {
-          if ((cr >= cl) == (p == 0)) {
-            const Real vp = curvg ? vol_(m,k,j,i+1) : dx1c;
-            const Real take = amt/vp;
-            if (es > 0.0 && cr > 0.0 && i < ie && take < (1.0 - 1.0e-10)*eprev) {
-              u0(m,IEN,k,j,i+1) -= take;
-              eprev -= take;
-              csum -= amt;
-              cabs += fabs(amt);
-              paid = true;
-            }
-          } else {
-            if (es > 0.0 && cl > 0.0 && i > is) {
-              pend = -amt;
-              paid = true;
+      const Real dx1c = size.d_view(m).dx1;
+      Real ca = 0.0;
+      const Real all = wrk(m,al_,k,j,i-1), alr = wrk(m,al_,k,j,i);
+      if (all > 0.0 && alr > 0.0 && !(krmax > 0.0 && x1v_(m,i) > krmax)) {
+        const Real tl = wrk(m,t_,k,j,i-1), tr = wrk(m,t_,k,j,i);
+        const Real pf = 0.5*(wrk(m,pr_,k,j,i-1) + wrk(m,pr_,k,j,i));
+        if (!(pf < pcut)) {
+          const Real dl = curvg ? (x1v_(m,i) - x1v_(m,i-1)) : dx1c;
+          const Real tk = 0.5*(tl + tr)*temp_unit;
+          const Real rhof = 0.5*(u0(m,IDN,k,j,i-1) + u0(m,IDN,k,j,i))*dens_unit;
+          const Real kap = RadFaceKappa(tk, pf*pres_unit, rhof, ktab, krt, krlT, krlP,
+                                        krnT, krnP, krho, met, kfac, tmax);
+          // the flux limiter, evaluated on the FROZEN gradient and then held fixed:
+          // F = -kap g/sqrt(1 + (kap g/F_free)^2) linearises to a diffusion coefficient
+          // kap/sqrt(1 + s^2) at fixed s, which is what keeps the system linear
+          Real lf = 1.0;
+          if (limit) {
+            const Real ffree = ffac*sigma_sb*tk*tk*tk*tk;
+            if (ffree > 0.0) {
+              const Real fu = -kap*((tr - tl)/dl)*temp_unit/len_unit;
+              lf = 1.0/sqrt(1.0 + SQR(fu/ffree));
+            } else {
+              lf = 0.0;
             }
           }
+          Real wt = (taumode && blend_r) ? wf(m,k,j,i) : 1.0;
+          if (gaterho > 0.0) wt *= RadGate(rhof, gaterho, gatedex);
+          const Real af = curvg ? area1_(m,k,j,i) : 1.0;
+          ca = wt*kap*lf*temp_unit/len_unit/eflx_unit*af/dl;
+          if (!isfinite(ca) || ca < 0.0) ca = 0.0;
         }
-        if (paid) {
-          x = xn;
-          ++nclp;
+      }
+      wrk(m,c_,k,j,i) = ca;
+    });
+
+    Real mviol_p = 0.0;
+    int nfail_p = 0;
+    int nclip_p = 0;
+    Kokkos::parallel_reduce("radimpx1",
+    Kokkos::RangePolicy<>(DevExeSpace(), 0, (nmb1 + 1)*nkj),
+    KOKKOS_LAMBDA(const int &idx, Real &mviol, int &nbad, int &nclp) {
+      const int m = idx/nkj;
+      const int k = (idx - m*nkj)/nj + ks;
+      const int j = (idx - m*nkj - (k - ks)*nj) + js;
+      const Real dx1c = size.d_view(m).dx1;
+
+      // ---- forward sweep of the Thomas algorithm on the TEMPERATURE increment
+      // y_i = T_i - T*_i.  Row i, with D_i = (rho c_v V)_i/beta_dt, i.e.
+      // V_i/(beta_dt alpha_i):
+      //   -A_i C_i y_{i-1} + (D_i + A_i C_i + A_{i+1} C_{i+1}) y_i
+      //                                                      - A_{i+1} C_{i+1} y_{i+1}
+      // = A_i C_i (T*_{i-1} - T*_i) + A_{i+1} C_{i+1} (T*_{i+1} - T*_i)
+      // which is the old row on the energy increment multiplied through by (rho c_v)_i:
+      // the same linearised problem, but symmetric, diagonally dominant for any alpha
+      // contrast, and an M-matrix.  The energy increment comes back as
+      // de_i = y_i/alpha_i.
+      // A cell dropped by the state sweep (alpha <= 0) has both of its face conductances
+      // zero, so the row degenerates to y_i = 0 for any positive diagonal.
+      for (int i=is; i<=ie; ++i) {
+        const Real vi = curvg ? vol_(m,k,j,i) : dx1c;
+        Real cl = wrk(m,c_,k,j,i), cr = wrk(m,c_,k,j,i+1);
+        const Real ac = wrk(m,al_,k,j,i);
+        const Real dgt = (ac > 0.0) ? vi/(beta_dt*ac) : 1.0;
+        Real dg = dgt;
+        const Real tc = wrk(m,t_,k,j,i);
+        const Real tm = (i > is) ? wrk(m,t_,k,j,i-1) : 0.0;
+        const Real tp = (i < ie) ? wrk(m,t_,k,j,i+1) : 0.0;
+        Real rhs;
+        if (uf_) {
+          // THE u = T^4 FORM.  The face flux is exactly linear in u at frozen opacity,
+          // F_f = -(C_f/(4 T_f^3)) (u_i - u_j) with T_f the SAME frozen face
+          // temperature the conductance was built on, so the off-diagonal is the same
+          // C_f divided by 4 T_f^3 and the two forms coincide where T is uniform.  The
+          // diagonal carries the same factor at the CELL temperature,
+          //   (rho c_v V)_i/(4 T_i^3 beta_dt) z_i - sum_f Cu_f (z_j - z_i)
+          //                                          = sum_f Cu_f (u*_j - u*_i),
+          // which is row i of the T-form divided by 4 T_i^3 only on the diagonal: it is
+          // the same symmetric M-matrix (Cu_f >= 0), and z_i = du_i comes back as
+          // dT_i = du_i/(4 T_i^3) below, so the energy update and its clip are
+          // unchanged.  A cell the state sweep dropped (ac <= 0, hence T <= 0 and both
+          // conductances zero) keeps its unscaled unit diagonal and its zero row.
+          // EVERY geometric factor is inherited unchanged: C_f already carries the
+          // curvilinear face area A_f and the (stretched) radial width dl_f, and the
+          // diagonal still carries the curvilinear cell volume V_i, as in the T-form.
+          if (ac > 0.0 && tc > 0.0) dg = dgt/(4.0*tc*tc*tc);
+          Real rl = 0.0, rr = 0.0;
+          if (cl > 0.0) {
+            const Real tf = 0.5*(tm + tc);
+            cl /= 4.0*tf*tf*tf;
+            rl = SQR(tm*tm) - SQR(tc*tc);
+          }
+          if (cr > 0.0) {
+            const Real tf = 0.5*(tc + tp);
+            cr /= 4.0*tf*tf*tf;
+            rr = SQR(tp*tp) - SQR(tc*tc);
+          }
+          rhs = cr*rr + cl*rl;
         } else {
-          // nowhere to put it: an isolated cell, a cell with no positive energy left,
-          // or a neighbour that cannot afford the debt.  This is the only remaining
-          // non-conservative path and it is counted as a fallback.
+          rhs = cr*(tp - tc) + cl*(tm - tc);
+        }
+        const Real aa = -cl;
+        const Real bb = dg + cl + cr;
+        const Real cc = -cr;
+        // rad_x1_kiter: passes 2..k correct the step already taken instead of taking
+        // another one, so the heat-capacity term stays anchored on T^n.  The anchor is
+        // an ENERGY, so it is the unscaled (rho c_v V)/beta_dt in both forms.
+        if (kit > 0 && ac > 0.0) rhs -= dgt*(tc - tn_(m,k,j,i));
+        if (i == is) {
+          wrk(m,cp_,k,j,i) = cc/bb;
+          wrk(m,dp_,k,j,i) = rhs/bb;
+        } else {
+          const Real den = bb - aa*wrk(m,cp_,k,j,i-1);
+          wrk(m,cp_,k,j,i) = cc/den;
+          wrk(m,dp_,k,j,i) = (rhs - aa*wrk(m,dp_,k,j,i-1))/den;
+        }
+      }
+
+      // ---- back substitution, write-back, and the per-column conservation residual.
+      // Any positivity clipping is CONSERVATIVE: the energy a clipped cell is not allowed
+      // to give up is taken from the neighbour it is most strongly coupled to, so
+      // sum_i V_i de_i is preserved to round-off.  The sweep runs downwards, so a debt
+      // owed to i-1 is carried in `pend` (a volume-integrated energy) and paid on the
+      // next iteration, while a debt owed to i+1 is applied to u0 directly -- one
+      // thread owns
+      // the whole column, so there is no race.
+      Real xnext = 0.0, csum = 0.0, cabs = 0.0, pend = 0.0, eprev = 0.0;
+      // rad_x1_kiter, passes 2..k: the rows carry the T^n anchor, which is NOT a flux
+      // divergence, so this pass's column sum is not zero -- it is minus the energy the
+      // earlier passes put in.  kexp accumulates that as the EXPECTED sum, so what is
+      // reported below stays the conservation error and not the anchor.  It is
+      // identically zero on pass 0, which telescopes exactly.
+      Real kexp = 0.0;
+      for (int i=ie; i>=is; --i) {
+        const Real vi = curvg ? vol_(m,k,j,i) : dx1c;
+        const Real ac = wrk(m,al_,k,j,i);
+        Real y = wrk(m,dp_,k,j,i) - wrk(m,cp_,k,j,i)*xnext;
+        bool bad = !isfinite(y);
+        if (bad) y = 0.0;
+        // DIAGNOSTIC ONLY: park the solved increment where the audit below can read it.
+        // dp_ at this i has already been consumed by the line above and is never read
+        // again, so this is a dead slot from here on.
+        xnext = y;
+        // u-form: what the recurrence carries is z_i = du_i; what the energy update
+        // needs is the temperature increment dT_i = du_i/(4 T_i^3), the same
+        // linearisation that put 4 T_i^3 on the diagonal.  Everything below is then
+        // form-independent.
+        if (uf_) {
+          const Real tcu = wrk(m,t_,k,j,i);
+          y = (tcu > 0.0) ? y/(4.0*tcu*tcu*tcu) : 0.0;
+        }
+        if (x1dbg_) wrk(m,dp_,k,j,i) = y;
+        // the T^n anchor of passes 2..k, as an energy (V/alpha = rho c_v V)
+        if (kit > 0 && ac > 0.0) {
+          kexp -= vi/ac*(wrk(m,t_,k,j,i) - tn_(m,k,j,i));
+        }
+        Real x = (ac > 0.0) ? y/ac : 0.0;
+        if (!isfinite(x)) {
           x = 0.0;
           bad = true;
         }
-      }
-      if (bad) {
-        ++nbad;
-        if (Kokkos::atomic_fetch_add(&iflag(0), 1) == 0) {
-          irec(0) = static_cast<Real>(m);
-          irec(1) = static_cast<Real>(k);
-          irec(2) = static_cast<Real>(j);
-          irec(3) = static_cast<Real>(i);
-          irec(4) = x1v_(m,i);
-          irec(5) = wrk(m,t_,k,j,i)*temp_unit;
-          irec(6) = u0(m,IDN,k,j,i)*dens_unit;
-          irec(7) = y;
+        x += pend/vi;
+        pend = 0.0;
+        const Real es = wrk(m,e_,k,j,i);
+        if (x != 0.0 && !((es + x) > 0.0)) {
+          // with the M-matrix on T this should be unreachable from the solve itself; it
+          // can still be reached by a debt handed down from i+1.  Clip to a positive
+          // sliver and move the difference onto the stiffest neighbouring face.
+          const Real cl = wrk(m,c_,k,j,i), cr = wrk(m,c_,k,j,i+1);
+          const Real xn = -(1.0 - 1.0e-10)*es;
+          const Real amt = (xn - x)*vi;   // energy kept here, owed by a neighbour
+          // the stiffest neighbour is asked first and the other one second.  Downwards
+          // the debt is safe unconditionally -- cell i-1 has not been tested yet, so if
+          // it cannot afford it either it clips in turn and passes the rest on -- while
+          // upwards it has to fit in what cell i+1 has left, because that cell is done.
+          bool paid = false;
+          for (int p = 0; p < 2 && !paid; ++p) {
+            if ((cr >= cl) == (p == 0)) {
+              const Real vp = curvg ? vol_(m,k,j,i+1) : dx1c;
+              const Real take = amt/vp;
+              if (es > 0.0 && cr > 0.0 && i < ie && take < (1.0 - 1.0e-10)*eprev) {
+                u0(m,IEN,k,j,i+1) -= take;
+                eprev -= take;
+                csum -= amt;
+                cabs += fabs(amt);
+                paid = true;
+              }
+            } else {
+              if (es > 0.0 && cl > 0.0 && i > is) {
+                pend = -amt;
+                paid = true;
+              }
+            }
+          }
+          if (paid) {
+            x = xn;
+            ++nclp;
+          } else {
+            // nowhere to put it: an isolated cell, a cell with no positive energy left,
+            // or a neighbour that cannot afford the debt.  This is the only remaining
+            // non-conservative path and it is counted as a fallback.
+            x = 0.0;
+            bad = true;
+          }
         }
+        if (bad) {
+          ++nbad;
+          if (Kokkos::atomic_fetch_add(&iflag(0), 1) == 0) {
+            irec(0) = static_cast<Real>(m);
+            irec(1) = static_cast<Real>(k);
+            irec(2) = static_cast<Real>(j);
+            irec(3) = static_cast<Real>(i);
+            irec(4) = x1v_(m,i);
+            irec(5) = wrk(m,t_,k,j,i)*temp_unit;
+            irec(6) = u0(m,IDN,k,j,i)*dens_unit;
+            irec(7) = y;
+          }
+        }
+        u0(m,IEN,k,j,i) += x;
+        eprev = es + x;
+        csum += vi*x;
+        cabs += fabs(vi*x);
       }
-      u0(m,IEN,k,j,i) += x;
-      eprev = es + x;
-      csum += vi*x;
-      cabs += fabs(vi*x);
-    }
-    if (cabs > 0.0) mviol = fmax(mviol, fabs(csum)/cabs);
-  }, Kokkos::Max<Real>(maxviol), nfail, nclip);
+      if (cabs > 0.0) mviol = fmax(mviol, fabs(csum - kexp)/cabs);
+    }, Kokkos::Max<Real>(mviol_p), nfail_p, nclip_p);
+    maxviol = fmax(maxviol, mviol_p);
+    nfail += nfail_p;
+    nclip += nclip_p;
 
-  // ==================================================================================
-  // DIAGNOSTIC ONLY (rad_x1_verbose).  How wrong is the T-linearisation?
-  //
-  // The solve froze the face conductance C_f = A_f K_f/dl at the OLD state and solved a
-  // linear system for dT.  Three errors are measured, per interior face, over every
-  // column on the rank:
-  //   (1) the K-nonlinearity: recompute C_f with the SAME kappa table / limiter / blend
-  //       at T + dT (and p scaled by T_new/T*, rho frozen) and compare the flux
-  //       C_f(T+dT) * dT_grad with the flux the linear solve actually applied,
-  //       C_f(T) * dT_grad;
-  //   (2) the u-form check: radiative diffusion is EXACTLY linear in u = T^4 at frozen
-  //       opacity, F = -(ac/3 kappa rho) du/dz = -(K/(4T^3)) du/dz.  Compare
-  //       (K_f/(4 T_f^3)) (u_i - u_j) with the T-form K_f (T_i - T_j) the solve used.
-  //   (3) the column-integrated |dF| of (1), normalised by the flux through the lowest
-  //       interior face.
-  // plus max |dT/T| and where it sits (i, cell tau measured down from the top, T[K]).
-  // Two passes: pass 0 takes the maxima, pass 1 records where each maximum sits.
-  // ==================================================================================
-  if (x1dbg_) {
-    for (int pass = 0; pass < 2; ++pass) {
-      const int pss = pass;
-      Kokkos::parallel_for("radimpx1_dbg",
-      Kokkos::RangePolicy<>(DevExeSpace(), 0, (nmb1 + 1)*nkj),
-      KOKKOS_LAMBDA(const int &idx) {
-        const int m = idx/nkj;
-        const int k = (idx - m*nkj)/nj + ks;
-        const int j = (idx - m*nkj - (k - ks)*nj) + js;
-        const Real dx1c = size.d_view(m).dx1;
-        Real tau = 0.0;
-        Real colabs = 0.0, fbot = 0.0;
-        for (int i=ie; i>=is; --i) {
-          const Real tc = wrk(m,t_,k,j,i);
-          const Real ac = wrk(m,al_,k,j,i);
-          const Real dTc = wrk(m,dp_,k,j,i);
-          // cell optical depth accumulated from the top of the column
-          if (tc > 0.0 && ac > 0.0) {
-            const Real rho = u0(m,IDN,k,j,i)*dens_unit;
-            const Real kc = RadFaceKappa(tc*temp_unit, wrk(m,pr_,k,j,i)*pres_unit, rho,
-                                         ktab, krt, krlT, krlP, krnT, krnP, krho,
-                                         met, kfac, tmax);
-            const Real dlc = (curvg && i < ie) ? (x1v_(m,i+1) - x1v_(m,i)) : dx1c;
-            // RadFaceKappa returns the radiative CONDUCTIVITY 16 sigma T^3/(3 kfac
-            // kappa_R rho), so the true opacity x density is 16 sigma T^3/(3 kfac kc)
-            const Real tk3 = tc*temp_unit;
-            if (kc > 0.0) {
-              tau += 16.0*5.670374419e-5*tk3*tk3*tk3/(3.0*kfac*kc)*dlc*len_unit;
+    // ==================================================================================
+    // DIAGNOSTIC ONLY (rad_x1_verbose).  How wrong is the T-linearisation?
+    //
+    // The solve froze the face conductance C_f = A_f K_f/dl at the OLD state and solved a
+    // linear system for dT.  Three errors are measured, per interior face, over every
+    // column on the rank:
+    //   (1) the K-nonlinearity: recompute C_f with the SAME kappa table / limiter / blend
+    //       at T + dT (and p scaled by T_new/T*, rho frozen) and compare the flux
+    //       C_f(T+dT) * dT_grad with the flux the linear solve actually applied,
+    //       C_f(T) * dT_grad;
+    //   (2) the u-form check: radiative diffusion is EXACTLY linear in u = T^4 at frozen
+    //       opacity, F = -(ac/3 kappa rho) du/dz = -(K/(4T^3)) du/dz.  Compare
+    //       (K_f/(4 T_f^3)) (u_i - u_j) with the T-form K_f (T_i - T_j) the solve used.
+    //   (3) the column-integrated |dF| of (1), normalised by the flux through the lowest
+    //       interior face.
+    // plus max |dT/T| and where it sits (i, cell tau measured down from the top, T[K]).
+    // Two passes: pass 0 takes the maxima, pass 1 records where each maximum sits.
+    // ==================================================================================
+    if (x1dbg_) {
+      for (int pass = 0; pass < 2; ++pass) {
+        const int pss = pass;
+        Kokkos::parallel_for("radimpx1_dbg",
+        Kokkos::RangePolicy<>(DevExeSpace(), 0, (nmb1 + 1)*nkj),
+        KOKKOS_LAMBDA(const int &idx) {
+          const int m = idx/nkj;
+          const int k = (idx - m*nkj)/nj + ks;
+          const int j = (idx - m*nkj - (k - ks)*nj) + js;
+          const Real dx1c = size.d_view(m).dx1;
+          Real tau = 0.0;
+          Real colabs = 0.0, fbot = 0.0;
+          for (int i=ie; i>=is; --i) {
+            const Real tc = wrk(m,t_,k,j,i);
+            const Real ac = wrk(m,al_,k,j,i);
+            const Real dTc = wrk(m,dp_,k,j,i);
+            // cell optical depth accumulated from the top of the column
+            if (tc > 0.0 && ac > 0.0) {
+              const Real rho = u0(m,IDN,k,j,i)*dens_unit;
+              const Real kc = RadFaceKappa(tc*temp_unit, wrk(m,pr_,k,j,i)*pres_unit, rho,
+                                           ktab, krt, krlT, krlP, krnT, krnP, krho,
+                                           met, kfac, tmax);
+              const Real dlc = (curvg && i < ie) ? (x1v_(m,i+1) - x1v_(m,i)) : dx1c;
+              // RadFaceKappa returns the radiative CONDUCTIVITY 16 sigma T^3/(3 kfac
+              // kappa_R rho), so the true opacity x density is 16 sigma T^3/(3 kfac kc)
+              const Real tk3 = tc*temp_unit;
+              if (kc > 0.0) {
+                tau += 16.0*5.670374419e-5*tk3*tk3*tk3/(3.0*kfac*kc)*dlc*len_unit;
+              }
             }
-          }
-          if (tc > 0.0 && ac > 0.0 && isfinite(dTc)) {
-            const Real r = fabs(dTc/tc);
-            if (pss == 0) {
-              Kokkos::atomic_max(&x1dg_(0), r);
-              Kokkos::atomic_add(&x1dg_(11), r);
-              Kokkos::atomic_add(&x1dg_(12), 1.0);
-            } else if (r == x1dg_(0) && r > 0.0) {
-              x1dg_(1) = static_cast<Real>(i);
-              x1dg_(2) = tau;
-              x1dg_(3) = tc*temp_unit;
+            if (tc > 0.0 && ac > 0.0 && isfinite(dTc)) {
+              const Real r = fabs(dTc/tc);
+              if (pss == 0) {
+                Kokkos::atomic_max(&x1dg_(0), r);
+                Kokkos::atomic_add(&x1dg_(11), r);
+                Kokkos::atomic_add(&x1dg_(12), 1.0);
+              } else if (r == x1dg_(0) && r > 0.0) {
+                x1dg_(1) = static_cast<Real>(i);
+                x1dg_(2) = tau;
+                x1dg_(3) = tc*temp_unit;
+              }
             }
-          }
-          // ---- the face between cell i and cell i+1 (face index i+1) --------------
-          if (i < ie) {
-            const int f = i + 1;
-            const Real cf = wrk(m,c_,k,j,f);
-            const Real tl = wrk(m,t_,k,j,f-1), tr = wrk(m,t_,k,j,f);
-            const Real dl_l = wrk(m,dp_,k,j,f-1), dl_r = wrk(m,dp_,k,j,f);
-            if (cf > 0.0 && tl > 0.0 && tr > 0.0 && isfinite(dl_l) && isfinite(dl_r)) {
-              const Real tln = tl + dl_l, trn = tr + dl_r;
-              const Real flin = cf*(tln - trn);
-              if (tln > 0.0 && trn > 0.0) {
-                // (1) recompute the conductance at the NEW temperature, same recipe
-                const Real dl = curvg ? (x1v_(m,f) - x1v_(m,f-1)) : dx1c;
-                const Real tkn = 0.5*(tln + trn)*temp_unit;
-                const Real rhof = 0.5*(u0(m,IDN,k,j,f-1) + u0(m,IDN,k,j,f))*dens_unit;
-                // pressure carried along with the temperature at frozen density
-                const Real pfn = 0.5*(wrk(m,pr_,k,j,f-1)*(tln/tl)
-                                    + wrk(m,pr_,k,j,f)*(trn/tr));
-                const Real kapn = RadFaceKappa(tkn, pfn*pres_unit, rhof, ktab, krt,
-                                               krlT, krlP, krnT, krnP, krho, met,
-                                               kfac, tmax);
-                Real lfn = 1.0;
-                if (limit) {
-                  const Real ffree = ffac*sigma_sb*tkn*tkn*tkn*tkn;
-                  if (ffree > 0.0) {
-                    const Real fu = -kapn*((trn - tln)/dl)*temp_unit/len_unit;
-                    lfn = 1.0/sqrt(1.0 + SQR(fu/ffree));
+            // ---- the face between cell i and cell i+1 (face index i+1) --------------
+            if (i < ie) {
+              const int f = i + 1;
+              const Real cf = wrk(m,c_,k,j,f);
+              const Real tl = wrk(m,t_,k,j,f-1), tr = wrk(m,t_,k,j,f);
+              const Real dl_l = wrk(m,dp_,k,j,f-1), dl_r = wrk(m,dp_,k,j,f);
+              if (cf > 0.0 && tl > 0.0 && tr > 0.0 && isfinite(dl_l) && isfinite(dl_r)) {
+                const Real tln = tl + dl_l, trn = tr + dl_r;
+                // the flux the solve ACTUALLY applied across this face, in whichever
+                // form it was solved: C_f (T_l - T_r), or C_f/(4 T_f*^3) (u_l - u_r)
+                // with T_f* the frozen face temperature C_f was divided by
+                const Real tf0 = 0.5*(tl + tr);
+                const Real un_l = SQR(tln*tln), un_r = SQR(trn*trn);
+                const Real flin = uf_ ? cf/(4.0*tf0*tf0*tf0)*(un_l - un_r)
+                                      : cf*(tln - trn);
+                if (tln > 0.0 && trn > 0.0) {
+                  // (1) recompute the conductance at the NEW temperature, same recipe
+                  const Real dl = curvg ? (x1v_(m,f) - x1v_(m,f-1)) : dx1c;
+                  const Real tkn = 0.5*(tln + trn)*temp_unit;
+                  const Real rhof = 0.5*(u0(m,IDN,k,j,f-1) + u0(m,IDN,k,j,f))*dens_unit;
+                  // pressure carried along with the temperature at frozen density
+                  const Real pfn = 0.5*(wrk(m,pr_,k,j,f-1)*(tln/tl)
+                                      + wrk(m,pr_,k,j,f)*(trn/tr));
+                  const Real kapn = RadFaceKappa(tkn, pfn*pres_unit, rhof, ktab, krt,
+                                                 krlT, krlP, krnT, krnP, krho, met,
+                                                 kfac, tmax);
+                  Real lfn = 1.0;
+                  if (limit) {
+                    const Real ffree = ffac*sigma_sb*tkn*tkn*tkn*tkn;
+                    if (ffree > 0.0) {
+                      const Real fu = -kapn*((trn - tln)/dl)*temp_unit/len_unit;
+                      lfn = 1.0/sqrt(1.0 + SQR(fu/ffree));
+                    } else {
+                      lfn = 0.0;
+                    }
+                  }
+                  Real wtn = (taumode && blend_r) ? wf(m,k,j,f) : 1.0;
+                  if (gaterho > 0.0) wtn *= RadGate(rhof, gaterho, gatedex);
+                  const Real afn = curvg ? area1_(m,k,j,f) : 1.0;
+                  Real cfn = wtn*kapn*lfn*temp_unit/len_unit/eflx_unit*afn/dl;
+                  if (!isfinite(cfn) || cfn < 0.0) cfn = 0.0;
+                  // the same face re-evaluated at the NEW state: in the u-form the
+                  // face T^3 is re-evaluated with it, since that is what the next
+                  // pass would use.  The frozen-coefficient residual of the form
+                  // that actually ran.
+                  const Real tfn = 0.5*(tln + trn);
+                  const Real fnl = uf_ ? cfn/(4.0*tfn*tfn*tfn)*(un_l - un_r)
+                                       : cfn*(tln - trn);
+                  const Real den = fmax(fabs(flin), 1.0e-300);
+                  const Real e1 = fabs(fnl - flin)/den;
+                  // (2) the OTHER form's flux at the same frozen opacity: how much of
+                  // the residual above is the T^3 nonlinearity the u-form removes
+                  const Real fot = uf_ ? cf*(tln - trn)
+                                       : cf/(4.0*tf0*tf0*tf0)*(un_l - un_r);
+                  const Real e2 = (tf0 > 0.0) ? fabs(fot - flin)/den : 0.0;
+                  colabs += fabs(fnl - flin);
+                  if (f == is + 1) fbot = fabs(flin);
+                  if (pss == 0) {
+                    Kokkos::atomic_max(&x1dg_(4), e1);
+                    Kokkos::atomic_max(&x1dg_(7), e2);
+                    Kokkos::atomic_max(&x1dg_(15), fabs(flin));
+                    Kokkos::atomic_add(&x1dg_(13), e1);
+                    Kokkos::atomic_add(&x1dg_(14), 1.0);
                   } else {
-                    lfn = 0.0;
-                  }
-                }
-                Real wtn = (taumode && blend_r) ? wf(m,k,j,f) : 1.0;
-                if (gaterho > 0.0) wtn *= RadGate(rhof, gaterho, gatedex);
-                const Real afn = curvg ? area1_(m,k,j,f) : 1.0;
-                Real cfn = wtn*kapn*lfn*temp_unit/len_unit/eflx_unit*afn/dl;
-                if (!isfinite(cfn) || cfn < 0.0) cfn = 0.0;
-                const Real fnl = cfn*(tln - trn);
-                const Real den = fmax(fabs(flin), 1.0e-300);
-                const Real e1 = fabs(fnl - flin)/den;
-                // (2) the exact u-form flux at the SAME frozen opacity
-                const Real tf3 = 0.5*(tl + tr); // T_f of the frozen state
-                const Real fu_ = (tf3 > 0.0)
-                    ? cf/(4.0*tf3*tf3*tf3)*(tln*tln*tln*tln - trn*trn*trn*trn) : flin;
-                const Real e2 = fabs(fu_ - flin)/den;
-                colabs += fabs(fnl - flin);
-                if (f == is + 1) fbot = fabs(flin);
-                if (pss == 0) {
-                  Kokkos::atomic_max(&x1dg_(4), e1);
-                  Kokkos::atomic_max(&x1dg_(7), e2);
-                  Kokkos::atomic_max(&x1dg_(15), fabs(flin));
-                  Kokkos::atomic_add(&x1dg_(13), e1);
-                  Kokkos::atomic_add(&x1dg_(14), 1.0);
-                } else {
-                  if (e1 == x1dg_(4) && e1 > 0.0) {
-                    x1dg_(5) = static_cast<Real>(f); x1dg_(6) = tau;
-                  }
-                  if (e2 == x1dg_(7) && e2 > 0.0) {
-                    x1dg_(8) = static_cast<Real>(f); x1dg_(9) = tau;
+                    if (e1 == x1dg_(4) && e1 > 0.0) {
+                      x1dg_(5) = static_cast<Real>(f); x1dg_(6) = tau;
+                    }
+                    if (e2 == x1dg_(7) && e2 > 0.0) {
+                      x1dg_(8) = static_cast<Real>(f); x1dg_(9) = tau;
+                    }
                   }
                 }
               }
             }
           }
-        }
-        if (pss == 0 && fbot > 0.0) Kokkos::atomic_max(&x1dg_(10), colabs/fbot);
-      });
-    }
-    if (global_variable::my_rank == 0 && x1dbg_lines < 4000) {
-      ++x1dbg_lines;
-      auto hx = Kokkos::create_mirror_view(imp_x1dg);
-      Kokkos::deep_copy(hx, imp_x1dg);
-      const Real nc = (hx(12) > 0.0) ? hx(12) : 1.0;
-      const Real nf = (hx(14) > 0.0) ? hx(14) : 1.0;
-      std::cout << "### rad_x1_lin cycle " << pmy_pack->pmesh->ncycle
-                << " t= " << pmy_pack->pmesh->time
-                << " dt= " << beta_dt
-                << " maxdToT= " << hx(0) << " @i= " << static_cast<int>(hx(1))
-                << " tau= " << hx(2) << " T= " << hx(3)
-                << " meandToT= " << hx(11)/nc
-                << " | maxKerr= " << hx(4) << " @i= " << static_cast<int>(hx(5))
-                << " tau= " << hx(6) << " meanKerr= " << hx(13)/nf
-                << " | maxUerr= " << hx(7) << " @i= " << static_cast<int>(hx(8))
-                << " tau= " << hx(9)
-                << " | colint= " << hx(10) << " Fmax= " << hx(15) << std::endl;
+          if (pss == 0 && fbot > 0.0) Kokkos::atomic_max(&x1dg_(10), colabs/fbot);
+        });
+      }
+      if (global_variable::my_rank == 0 && x1dbg_lines < 4000) {
+        ++x1dbg_lines;
+        auto hx = Kokkos::create_mirror_view(imp_x1dg);
+        Kokkos::deep_copy(hx, imp_x1dg);
+        const Real nc = (hx(12) > 0.0) ? hx(12) : 1.0;
+        const Real nf = (hx(14) > 0.0) ? hx(14) : 1.0;
+        std::cout << "### rad_x1_lin cycle " << pmy_pack->pmesh->ncycle
+                  << " t= " << pmy_pack->pmesh->time
+                  << " dt= " << beta_dt
+                  << " kit= " << kit
+                  << (uf_ ? " uform" : " Tform")
+                  << " maxdToT= " << hx(0) << " @i= " << static_cast<int>(hx(1))
+                  << " tau= " << hx(2) << " T= " << hx(3)
+                  << " meandToT= " << hx(11)/nc
+                  << " | maxKerr= " << hx(4) << " @i= " << static_cast<int>(hx(5))
+                  << " tau= " << hx(6) << " meanKerr= " << hx(13)/nf
+                  << " | maxUerr= " << hx(7) << " @i= " << static_cast<int>(hx(8))
+                  << " tau= " << hx(9)
+                  << " | colint= " << hx(10) << " Fmax= " << hx(15) << std::endl;
+      }
     }
   }
 
