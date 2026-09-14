@@ -630,6 +630,20 @@ inline bool rt_col3_ex_iter = false;
 // PICARD iteration wherever w is neither 0 nor 1, and the measured convergence is linear
 // at ~0.4 per pass (13-16 passes to 1e-12, bench/bstar_fecz/m3tol).  On, the block rows
 // are the exact derivative.  Off = the old lagged assembly, bitwise.
+//
+// MEASURED, bench/bstar_fecz/m3acc/sweep, the relaxed 15 Msun B-star column at cycle 0,
+// passes taken to reach a given residual (norm 0, no step-size stop, maxit 30):
+//     tol     1e-2   1e-4   1e-6   1e-8   1e-10  1e-12
+//   exjac 0     2      4      7     10     13     16      LINEAR, rate 0.215 per pass
+//   exjac 1     2      3      3      3      4      4      QUADRATIC: 1.6e-4, 4.3e-9,
+//                                                         5.4e-14, i.e. round-off at 4
+// Both reach the SAME fixed point (max|du/u| 6.350328e-02 either way at tol 1e-14), so
+// this is purely the path.  Cost of the whole run, 2000 cycles on 1 MI300A:
+//   old default (tol 1e-6, maxit 6, never converged, exits on maxit)   1.53e5 zc/s
+//   old converged (tol 1e-12, maxit 20, 13-16 passes)                  8.36e4 zc/s
+//   new default (exjac, tol 1e-8, maxit 8, 3 passes, resid 5e-10)      2.15e5 zc/s
+// against 3.96e5 zc/s for the standard scheme (rt_implicit_column = 0), so the CONVERGED
+// mode 3 now costs 1.84x the standard scheme where the unconverged one cost 2.58x.
 inline bool rt_impl_exjac = true;
 // problem/rt_impl_norm: the residual norm the stopping rule measures.  0 = the old
 // max_i |R_i|/e_i, which the optically thin TOP of a stellar column dominates simply
