@@ -88,6 +88,11 @@ rad_tau_lo           = 10.0
 rad_tau_hi           = 100.0
 
 <problem>
+rt_relax_sub   = 1                       # sub-cycled local relaxation of the RT source;
+rt_relax_xcrit = 1.0                     # 1 = the single-step form, bit for bit.  Stated
+rt_relax_submax = 32                     # here so the switch is reachable from the
+                                         # command line on this test (an override of a
+                                         # parameter absent from the input is fatal).
 user_srcs    = true
 g0           = 1.0e4
 mu           = 0.6
