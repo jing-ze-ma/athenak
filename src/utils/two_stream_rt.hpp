@@ -593,6 +593,12 @@ inline int rt_impl_maxit = 5;
 inline Real rt_impl_tau_min = 1.0;
 // problem/rt_impl_dtmax: cap on |dT|/T per tridiagonal pass, the belt for the thick rows
 inline Real rt_impl_dtmax = 0.25;
+// problem/rt_impl_tau_blend: 1 = the hard switch above.  b > 1 makes the thick weight
+// rise LINEARLY IN log dtau from tau_min/b to tau_min*b, and the cell then does both:
+// the tridiagonal carries w R and w J, the per-cell relaxation applies (1-w) de, and a
+// neighbour's coupling to it is w-weighted with the remaining (1-w) handed over as the
+// known dB of rt_col_dtex.  At w = 0 and w = 1 this is bitwise the two pure branches.
+inline Real rt_impl_tau_blend = 1.0;
 // problem/ck_int_at_cut: deliver the planet's internal flux sigma T_int^4 as an extra
 // upward source at the correlated-k cut (the historical behaviour, true). Set false when
 // the layers below the cut carry it themselves -- <mhd|hydro>/isotropic_conduction =
@@ -1527,7 +1533,10 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
                  ? pcond_rt->rt_col_dbdt : DvceArray4D<Real>("rt_dbt_dummy",1,1,1,1);
       auto dtx_g = (implcol_ && pcond_rt != nullptr)
                  ? pcond_rt->rt_col_dtex : DvceArray4D<Real>("rt_dtx_dummy",1,1,1,1);
+      auto tn_g = (implcol_ && pcond_rt != nullptr)
+                 ? pcond_rt->rt_col_tn : DvceArray4D<Real>("rt_tn_dummy",1,1,1,1);
       const Real taumin_ = rt_impl_tau_min;
+      const Real taublnd_ = (rt_impl_tau_blend > 1.0) ? rt_impl_tau_blend : 0.0;
       // the one-shot assembly dump, see rtcol_asm below
       const bool rtdbg_ = implcol_ && rt_outer_verbose && (pm->ncycle == 0);
       if (implcol_ && pcond_rt != nullptr) pcond_rt->rt_col_verbose = rtdbg_;
@@ -2975,31 +2984,42 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
         // handover's own B-dependence is left in R.
         // ---- THE TWO-LEVEL SPLIT, see rt_impl_tau_min ------------------------------
         // dtau of the cell itself, straight out of the sweep's own tau array.
+        Real wthk_ = 0.0;              // this cell's share of the tridiagonal
         bool thick_ = false;
         if (implcol_) {
           // kappa_R rho dr of the cell itself, from the SAME opacity cache the sweep
           // built its layers with.  (tau_g is not filled on a box with no stellar beam,
           // so it cannot be used for this.)
           const Real dtau_c = kc_g(m,0,i,k,j)*rhoN(m,k,j,i)*DX1(m,k,j,i);
-          thick_ = (dtau_c >= taumin_);
+          if (taublnd_ > 0.0) {
+            if (!(dtau_c > 0.0)) {
+              wthk_ = 0.0;
+            } else {
+              const Real u = log(dtau_c*taublnd_/taumin_)/log(taublnd_*taublnd_);
+              wthk_ = (u <= 0.0) ? 0.0 : ((u >= 1.0) ? 1.0 : u);
+            }
+          } else {
+            wthk_ = (dtau_c >= taumin_) ? 1.0 : 0.0;
+          }
+          thick_ = (wthk_ > 0.0);
           Real jsc = taublend ? (1.0 - wbar) : 1.0;
           if (band_on && i < icut_g(m,k,j)) jsc = 0.0;
-          if (!thick_) jsc = 0.0;   // a thin row carries NO two-stream term at all
+          jsc *= wthk_;             // a thin row carries NO two-stream term at all
           if (jsc != 1.0) {
             jac_g(m,0,k,j,i) *= jsc;
             jac_g(m,1,k,j,i) *= jsc;
             jac_g(m,2,k,j,i) *= jsc;
           }
           const Real tkc = T_g(m,k,j,i);
-          // dbdt doubles as the "this cell is an unknown of the system" mask: zero here
+          // dbdt doubles as the "how much of this cell is an unknown" weight: zero here
           // removes the row's own diagonal AND a thick neighbour's coupling to it
-          dbt_g(m,k,j,i) = (thick_ && tkc > 0.0) ? 4.0*boltz_sigma/M_PI*tkc*tkc*tkc : 0.0;
-          res_g(m,k,j,i) = thick_ ? src : 0.0;
-          dtx_g(m,k,j,i) = 0.0;     // filled below by a thin cell that relaxes itself
+          dbt_g(m,k,j,i) = (tkc > 0.0) ? wthk_*4.0*boltz_sigma/M_PI*tkc*tkc*tkc : 0.0;
+          res_g(m,k,j,i) = wthk_*src;
+          dtx_g(m,k,j,i) = 0.0;     // filled below by the share the cell relaxes itself
         }
-        // a thick cell hands its energy to the tridiagonal and applies nothing here; a
-        // thin one takes the old nonlinear relaxation, unchanged
-        const bool skip_de = implcol_ && thick_;
+        // the share the tridiagonal owns is not applied here; the rest takes the old
+        // nonlinear relaxation, unchanged
+        const bool skip_de = implcol_ && (wthk_ >= 1.0);
         // ---- ONE-SHOT ASSEMBLY DUMP (problem/rt_outer_verbose, cycle 0, one column) --
         // A and E are taken with EXACTLY the pre-existing apply block's definitions:
         // E = Em, the per-volume emission the sweep subtracted, and A = src_relax + Em,
@@ -3371,21 +3391,38 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
               dg_it[4], dg_it[5], dg_it[6], dg_it[7]);
           }
         }
-        if (implcol_ && !thick_) {
-          // a THIN cell: it relaxed itself, exactly as before.  Record the change in its
-          // Planck function so the thick rows next to it can take the exchange with it as
-          // a known right-hand-side term instead of an unknown (see rt_col_dtex).
+        // the part of de this cell applies ITSELF: all of it when the tridiagonal owns
+        // none of the cell, none when it owns all
+        const Real de_app = implcol_ ? (1.0 - wthk_)*de : de;
+        if (implcol_ && wthk_ < 1.0) {
+          // Record the change in this cell's Planck function that its own relaxation is
+          // applying, so a neighbouring row can take the exchange with the part of it
+          // that is NOT an unknown as a known right-hand-side term (see rt_col_dtex).
+          //
+          // IT IS MEASURED AGAINST THE STATE THE SWEEP SAW, not against e^n: R was formed
+          // from the running column, so the only thing the rows have not been shown is
+          // the step about to be taken.  de is the TOTAL stage increment (rt_outer_iter
+          // re-derives it from e^n every pass), hence the walk back through deacc.
           const Real t0x = T_g(m,k,j,i);
-          const Real eix = eiN(m,k,j,i);
-          if (t0x > 0.0 && eix > 0.0 && (eix + de) > 0.0) {
+          const Real ei0 = outer_on ? (eiN(m,k,j,i) - deacc_g(m,k,j,i)) : eiN(m,k,j,i);
+          if (t0x > 0.0 && ei0 > 0.0 && (ei0 + de_app) > 0.0) {
             Real t1x;
             if (newton_on && eos.IsGeneral()) {
-              t1x = eos.Temperature(rhoN(m,k,j,i), eix + de)*eos.temp_cgs;
+              t1x = eos.Temperature(rhoN(m,k,j,i), ei0 + de_app)*eos.temp_cgs;
             } else {
-              t1x = t0x*(eix + de)/eix;
+              t1x = t0x*(ei0 + de_app)/eiN(m,k,j,i);
             }
             if (t1x > 0.0) {
               dtx_g(m,k,j,i) = boltz_sigma/M_PI*(SQR(SQR(t1x)) - SQR(SQR(t0x)));
+              // AND RE-ANCHOR T^n.  The tridiagonal's heat-capacity term measures
+              // T^{k-1} - T^n to keep the conduction operator from being applied in full
+              // on every outer pass.  This cell's OWN relaxation also moved T^{k-1}, and
+              // that part is not an unconverged conduction increment: without moving the
+              // anchor with it the next pass's conduction row would try to undo it.  THIS
+              // IS THE OUTER-LOOP DEFECT that made the fixed point diverge.
+              if (outer_on && oit > 0 && eos.temp_cgs > 0.0) {
+                tn_g(m,k,j,i) += (t1x - t0x)/eos.temp_cgs;
+              }
             }
           }
         }
@@ -3403,13 +3440,13 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
         } else if (outer_on) {
           // de REPLACES de_{k-1}: u0 carries the running total, never a sum of passes
           const Real dprev = deacc_g(m,k,j,i);
-          u0(m,IEN,k,j,i) += de - dprev;
-          deacc_g(m,k,j,i) = de;
-          const Real ade = fabs(de);
-          Kokkos::atomic_max(&oconv_g(0), (ade > 0.0) ? fabs(de - dprev)/ade : 0.0);
+          u0(m,IEN,k,j,i) += de_app - dprev;
+          deacc_g(m,k,j,i) = de_app;
+          const Real ade = fabs(de_app);
+          Kokkos::atomic_max(&oconv_g(0), (ade > 0.0) ? fabs(de_app - dprev)/ade : 0.0);
           Kokkos::atomic_max(&oconv_g(1), ade);
         } else {
-          u0(m,IEN,k,j,i) += de;
+          u0(m,IEN,k,j,i) += de_app;
         }
         // ---- radiative momentum source, see rt_rad_force --------------------------
         if (radforce && outer_last) {
