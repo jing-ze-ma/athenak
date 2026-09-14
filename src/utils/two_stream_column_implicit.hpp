@@ -655,7 +655,6 @@ void RTCol3::Solve(const int m, const int k, const int j) const {
   for (int q=0; q<nq; ++q) ftop3 += wf[q]*(wk(m,UU+q,ie,k,j) - Dtop[q]);
   Kokkos::atomic_add(&stat(16), ftop3);
   Kokkos::atomic_add(&stat(17), Fb(m,0,ie+1,k,j));
-  Kokkos::atomic_max(&stat(18), ubmax);
   for (int i=ic; i<=ie; ++i) {
     const Real tk = Tg(m,k,j,i);
     if (!(tk > 0.0)) continue;
@@ -706,6 +705,7 @@ void RTCol3::Solve(const int m, const int k, const int j) const {
   Kokkos::atomic_add(&stat(3), static_cast<Real>(nclamp));
   Kokkos::atomic_max(&stat(4), dbmax);
   Kokkos::atomic_max(&stat(5), rtmax);
+  Kokkos::atomic_max(&stat(18), ubmax);   // AFTER the apply loop, which fills it
   Kokkos::atomic_add(&stat(9), budget);
   Kokkos::atomic_add(&stat(10), bscale);
 }
