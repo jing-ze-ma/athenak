@@ -34,6 +34,7 @@
 #include <fstream>
 #include <iostream>
 #include <string>
+#include <type_traits>
 
 #include "athena.hpp"
 #include "coordinates/cell_locations.hpp"
@@ -51,6 +52,7 @@
 #include "pgen/pgen_eos_utils.hpp"
 #include "utils/rad_taper.hpp"
 #include "utils/two_stream_column_implicit.hpp"
+#include "utils/two_stream_column_partition.hpp"
 
 namespace two_stream_rt {
 
@@ -689,7 +691,20 @@ inline Real rt_impl_tau_blend = 1.0;
 // the tau-blend handover, the radial conduction tridiagonal (rad_implicit_x1) and the
 // transverse operator are untouched, and rt_col_active stays false so the conduction
 // wrapper task still runs.  Grey only; fatal under correlated-k or picket fence.
+// problem/rt_impl_solver: HOW the block-tridiagonal column system is solved.
+//   thomas (0, the default)  one thread per column, the serial block Thomas of
+//                            two_stream_column_implicit.hpp -- the reference bit pattern
+//   pcr    (1)               one TEAM per column: the column is cut into
+//                            problem/rt_impl_nseg segments, each thread eliminates its
+//                            own segment with the incoming unknown carried symbolically,
+//                            and the resulting 5x5 block system over the segment
+//                            BOUNDARIES is solved by one thread and back-substituted in
+//                            parallel.  Same system, same Newton, same clamps; the two
+//                            agree to round-off.  See two_stream_column_partition.hpp.
+inline int rt_impl_solver = 0;
+inline int rt_impl_nseg = 64;
 inline DvceArray5D<Real> *rt_c3wk_ptr = nullptr;
+inline DvceArray4D<Real> *rt_c3rd_ptr = nullptr;
 inline DvceArray4D<Real> *rt_c3top_ptr = nullptr;
 inline DvceArray1D<Real> *rt_c3stat_ptr = nullptr;
 inline int rt_c3_lines = 0;
@@ -2485,18 +2500,37 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
         // 0 hands them.
         if (mode3_) {
           const int nmb_c3 = pmbp->nmb_thispack;
+          // THE PARTITIONED SOLVER (problem/rt_impl_solver = pcr).  A team per column
+          // needs the spike H and the two sweep factors on top of the serial layout, and
+          // a per-segment array for the reduced system.  On a host backend a Kokkos team
+          // is one thread, so the partition is forced to a single segment there -- which
+          // is the serial block Thomas, to round-off.
+          const bool c3par = (rt_impl_solver == 1);
+          int c3nseg = c3par ? rt_impl_nseg : 1;
+          if (std::is_same<DevExeSpace, Kokkos::DefaultHostExecutionSpace>::value) {
+            c3nseg = 1;
+          }
+          const int c3nw = c3par ? RTCOL3_NWP : RTCOL3_NW;
           if (rt_c3wk_ptr == nullptr) {
-            rt_c3wk_ptr = new DvceArray5D<Real>("rt_c3wk", nmb_c3, RTCOL3_NW, n1, n3, n2);
+            rt_c3wk_ptr = new DvceArray5D<Real>("rt_c3wk", nmb_c3, c3nw, n1, n3, n2);
             rt_c3top_ptr = new DvceArray4D<Real>("rt_c3top", nmb_c3, 2, n3, n2);
             rt_c3stat_ptr = new DvceArray1D<Real>("rt_c3stat", 21);
+            rt_c3rd_ptr = new DvceArray4D<Real>("rt_c3rd", nmb_c3,
+                                                c3par ? c3nseg*RTCOL3_NRD : 1, n3, n2);
             if (global_variable::my_rank == 0) {
+              const double wmb = static_cast<double>(nmb_c3)*c3nw*n1*n2*n3
+                                 *sizeof(Real)/1.0e6;
+              const double rmb = c3par ? (static_cast<double>(nmb_c3)*c3nseg*RTCOL3_NRD
+                                          *n2*n3*sizeof(Real)/1.0e6) : 0.0;
               std::cout << "### two_stream_rt: rt_implicit_column = 3, the EXACT "
                         << "block-tridiagonal column solve (intensities as unknowns); "
-                        << "workspace " << (static_cast<double>(nmb_c3)*RTCOL3_NW*n1*n2*n3
-                                            *sizeof(Real)/1.0e6) << " MB" << std::endl;
+                        << "solver " << (c3par ? "pcr" : "thomas")
+                        << " nseg " << c3nseg
+                        << "; workspace " << wmb << " + " << rmb << " MB" << std::endl;
             }
           }
           auto c3wk = *rt_c3wk_ptr;
+          auto c3rd = *rt_c3rd_ptr;
           auto c3top = *rt_c3top_ptr;
           auto c3stat = *rt_c3stat_ptr;
           Kokkos::deep_copy(c3stat, 0.0);
@@ -2543,6 +2577,8 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
           c3.wblend = taublend ? w_g : DvceArray4D<Real>("rt_c3w_d",1,1,1,1);
           c3.icut = icut_g;
           c3.wk = c3wk;
+          c3.rd = c3rd;
+          c3.nseg = c3nseg;
           c3.dtop = c3top;
           c3.stat = c3stat;
           c3.size = size;
@@ -2581,7 +2617,11 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
           c3.direct = rt_src_direct;
           c3.ex_iter = rt_col3_ex_iter;
           c3.dump = rt_outer_verbose && (pm->ncycle == 0);
-          RTCol3Launch(c3, nmb1, ks, ke, js, je);
+          if (c3par) {
+            RTCol3TeamLaunch(c3, nmb1, ks, ke, js, je);
+          } else {
+            RTCol3Launch(c3, nmb1, ks, ke, js, je);
+          }
           if (rt_outer_verbose && global_variable::my_rank == 0 &&
               rt_c3_lines < 4000 &&
               (rt_report_every <= 0 || pm->ncycle % rt_report_every == 0)) {

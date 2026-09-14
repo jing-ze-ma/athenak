@@ -920,6 +920,26 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     ts::rt_impl_norm_eps = pin->GetOrAddReal("problem", "rt_impl_norm_eps", 1.0e-3);
     ts::rt_impl_dstop = pin->GetOrAddBoolean("problem", "rt_impl_dstop", true);
     ts::rt_impl_cvfreeze = pin->GetOrAddInteger("problem", "rt_impl_cvfreeze", 0);
+    // how the mode-3 block system is solved: the serial block Thomas (one thread per
+    // column) or the team-partitioned solve (see two_stream_column_partition.hpp)
+    {
+      std::string sv = pin->GetOrAddString("problem", "rt_impl_solver", "thomas");
+      if (sv == "thomas") {
+        ts::rt_impl_solver = 0;
+      } else if (sv == "pcr") {
+        ts::rt_impl_solver = 1;
+      } else {
+        std::cout << "### FATAL ERROR in box_convection: problem/rt_impl_solver = "
+                  << sv << " is not one of thomas, pcr" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }
+    ts::rt_impl_nseg = pin->GetOrAddInteger("problem", "rt_impl_nseg", 64);
+    if (ts::rt_impl_nseg < 1) {
+      std::cout << "### FATAL ERROR in box_convection: problem/rt_impl_nseg must be >= 1"
+                << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
     ts::rt_impl_tau_min = pin->GetOrAddReal("problem", "rt_impl_tau_min", 1.0);
     ts::rt_impl_dtmax = pin->GetOrAddReal("problem", "rt_impl_dtmax", 0.25);
     ts::rt_impl_tau_blend = pin->GetOrAddReal("problem", "rt_impl_tau_blend", 1.0);
