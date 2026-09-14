@@ -753,6 +753,15 @@ TaskStatus Hydro::RTStrangSplit(Driver *pdrive, int stage) {
   if (pm->pgen == nullptr || pm->pgen->user_split_func == nullptr) {
     return TaskStatus::complete;
   }
+  // problem/rt_once_per_cycle: ONE full-dt call, after the last RK stage.  The
+  // "before_timeintegrator" half (stage = 0, see Driver::Execute) is skipped entirely,
+  // so the source is applied once per cycle on the final state instead of being blended
+  // by the SSP-RK stage weights.
+  if (pm->pgen->user_split_once) {
+    if (stage == 0) return TaskStatus::complete;
+    (pm->pgen->user_split_func)(pm, pm->dt);
+    return TaskStatus::complete;
+  }
   (pm->pgen->user_split_func)(pm, 0.5*(pm->dt));
   return TaskStatus::complete;
 }

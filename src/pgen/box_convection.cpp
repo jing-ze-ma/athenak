@@ -235,6 +235,14 @@ bool rt_on_ = false;      // problem/rt_two_stream
 // dt-INDEPENDENT box-mode forcing that survives the exact column solve
 // (rt_implicit_column = 3) is the operator SPLIT rather than the solve.
 bool rt_strang_ = false;
+// problem/rt_once_per_cycle (default false, bitwise off): like rt_strang, the two-stream
+// leaves the RK stage -- but instead of two half-steps it is applied ONCE with the FULL
+// cycle dt after the last stage ("after_timeintegrator", followed by ConToPrim).  It
+// exists to test whether the SSP-RK stage AVERAGING of an exact per-stage relaxation
+// (rt_implicit_column = 3 relaxes the column exactly inside every stage, and stage 2 of
+// rk2 then blends that fully relaxed state back with the un-relaxed u^n) is what drives
+// the residual dt-independent box mode.  Works for any rt_implicit_column mode.
+bool rt_once_ = false;
 bool cool_on_ = true;     // the Newton cooling layer (off by default once RT is on)
 Real rgas_ = 0.0;         // R/mu in code units; the ideal branch's T = p/(Rgas rho)
 // --- the per-column emergent-flux surface dump (problem/rt_surface_dt) --------------
@@ -910,13 +918,26 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     ts::rt_impl_dtmax = pin->GetOrAddReal("problem", "rt_impl_dtmax", 0.25);
     ts::rt_impl_tau_blend = pin->GetOrAddReal("problem", "rt_impl_tau_blend", 1.0);
     rt_strang_ = pin->GetOrAddBoolean("problem", "rt_strang", false);
+    rt_once_ = pin->GetOrAddBoolean("problem", "rt_once_per_cycle", false);
+    if (rt_strang_ && rt_once_) {
+      std::cout << "### FATAL ERROR in box_convection: problem/rt_strang and "
+                << "problem/rt_once_per_cycle are mutually exclusive" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
     // enrolled HERE, not next to user_srcs_func: the switch is read only now
-    if (rt_strang_) {
+    if (rt_strang_ || rt_once_) {
       user_split_func = BoxConvRTSplit;
+      user_split_once = rt_once_;
       if (global_variable::my_rank == 0) {
-        std::cout << "### box_convection: problem/rt_strang = true, the grey two-stream "
-                  << "is STRANG-SPLIT around the time integrator (dt/2 before, dt/2 "
-                  << "after) and is NOT applied inside the RK stages" << std::endl;
+        if (rt_once_) {
+          std::cout << "### box_convection: problem/rt_once_per_cycle = true, the grey "
+                    << "two-stream is applied ONCE per cycle with the FULL dt after the "
+                    << "last RK stage and is NOT applied inside the stages" << std::endl;
+        } else {
+          std::cout << "### box_convection: problem/rt_strang = true, the grey two-stream"
+                    << " is STRANG-SPLIT around the time integrator (dt/2 before, dt/2 "
+                    << "after) and is NOT applied inside the RK stages" << std::endl;
+        }
       }
     }
     ts::rt_apply_debug = pin->GetOrAddInteger("problem", "rt_apply_debug", 0);
@@ -1346,7 +1367,7 @@ void BoxConvSrcs(Mesh *pm, Real bdt) {
 
   // --- the grey two-stream, after gravity and the cooling layer, exactly where
   // red_giant.cpp calls it: inside the stage, on the state the last ConToPrim left.
-  if (rt_on_ && !rt_strang_) {
+  if (rt_on_ && !rt_strang_ && !rt_once_) {
     two_stream_rt::picket_fence_two_stream_RT(pm, bdt);
     if (bud_on) {
       Real e4, r4, ft, fc;
@@ -1382,7 +1403,27 @@ void BoxConvSrcs(Mesh *pm, Real bdt) {
 
 void BoxConvRTSplit(Mesh *pm, Real bdt) {
   if (!rt_on_) return;
+  // the same budget bookkeeping the in-stage call does, so the energy budget and the
+  // Ftop/Fcut integrals stay complete when the source moves out of the stage
+  const bool bud_on = (rtbud_n_ > 0);
+  Real e0 = 0.0, r0 = 0.0;
+  if (bud_on) BoxConvBoxInt(pm, e0, r0);
   two_stream_rt::picket_fence_two_stream_RT(pm, bdt);
+  if (bud_on) {
+    Real e4, r4, ft, fc;
+    BoxConvBoxInt(pm, e4, r4);
+    rtbud_h_[9] += e4 - e0;
+    BoxConvFtopInt(pm, ft, fc);
+    rtbud_h_[11] += bdt*ft;
+    rtbud_h_[12] += bdt*fc;
+  }
+  if (surf_dt_ > 0.0 && two_stream_rt::rt_face_flux_ready()) {
+    if (surf_next_ < 0.0) surf_next_ = pm->time;
+    if (pm->time >= surf_next_) {
+      BoxConvSurfaceDump(pm);
+      while (surf_next_ <= pm->time) surf_next_ += surf_dt_;
+    }
+  }
 }
 
 //----------------------------------------------------------------------------------------

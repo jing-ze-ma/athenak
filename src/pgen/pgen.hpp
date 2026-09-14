@@ -83,6 +83,11 @@ class ProblemGenerator {
   // and half in "after_timeintegrator", with the in-stage call switched off.  Left
   // null the two tasks are no-ops, so every existing run is bitwise unchanged.
   UserSrctermFnPtr user_split_func=nullptr;
+  // problem/rt_once_per_cycle (box_convection): when true the split source is applied
+  // ONCE per cycle with the FULL dt, in "after_timeintegrator" only -- the
+  // "before_timeintegrator" call is skipped.  Used to test whether the SSP-RK stage
+  // averaging of an exact per-stage relaxation is what drives the residual box mode.
+  bool user_split_once=false;
   UserRefinementFnPtr user_ref_func=nullptr;
   UserHistoryFnPtr user_hist_func=nullptr;
   // called once per cycle after Mesh::NewTimeStep in Driver::Execute
