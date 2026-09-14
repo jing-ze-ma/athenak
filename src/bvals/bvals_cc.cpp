@@ -41,7 +41,8 @@ MeshBoundaryValuesCC::MeshBoundaryValuesCC(MeshBlockPack *pp, ParameterInput *pi
 //! 5D Kokkos View of coarsened (restricted) array data also required with SMR/AMR
 
 TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
-                                               DvceArray5D<Real> &ca) {
+                                               DvceArray5D<Real> &ca,
+                                               int iwl, int iwu) {
   // create local references for variables in kernel
   int nmb = pmy_pack->nmb_thispack;
   int nnghbr = pmy_pack->pmb->nnghbr;
@@ -65,6 +66,10 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
   auto &rbuf = recvbuf;
   auto &is_z4c = is_z4c_;
   auto &multilevel = pmy_pack->pmesh->multilevel;
+  // x1 index window (see the declaration): only buffers spanning the whole x1 extent
+  const int wlo_ = iwl, whi_ = iwu;
+  const int mbis_ = pmy_pack->pmesh->mb_indcs.is;
+  const int mbie_ = pmy_pack->pmesh->mb_indcs.ie;
   // Outer loop over (# of MeshBlocks)*(# of buffers)*(# of variables)
   int nmnv = nmb*nnghbr*nvar;
   Kokkos::TeamPolicy<> policy(DevExeSpace(), nmnv, Kokkos::AUTO);
@@ -107,6 +112,12 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
       int nj = ju - jl + 1;
       int nk = ku - kl + 1;
       int nkj  = nk*nj;
+      // the window narrows the LOOP only: ni and the index map stay as they were
+      int ilp = il, iup = iu;
+      if (wlo_ >= 0 && il <= mbis_ && iu >= mbie_) {
+        ilp = (il > wlo_) ? il : wlo_;
+        iup = (iu < whi_) ? iu : whi_;
+      }
 
       // indices of recv'ing (destination) MB and buffer: MB IDs are stored sequentially
       // in MeshBlockPacks, so array index equals (target_id - first_id)
@@ -420,13 +431,13 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
         if (nghbr.d_view(m,n).rank == my_rank) {
           // if neighbor is at same or finer level, load data from u0
           if (nghbr.d_view(m,n).lev >= mblev.d_view(m)) {
-            Kokkos::parallel_for(Kokkos::ThreadVectorRange(tmember,il,iu+1),
+            Kokkos::parallel_for(Kokkos::ThreadVectorRange(tmember,ilp,iup+1),
             [&](const int i) {
               rbuf[dn].vars(dm, (i-il + ni*(j-jl + nj*(k-kl + nk*v))) ) = a(m,v,k,j,i);
             });
           // if neighbor is at coarser level, load data from coarse_u0
           } else {
-            Kokkos::parallel_for(Kokkos::ThreadVectorRange(tmember,il,iu+1),
+            Kokkos::parallel_for(Kokkos::ThreadVectorRange(tmember,ilp,iup+1),
             [&](const int i) {
               rbuf[dn].vars(dm, (i-il + ni*(j-jl + nj*(k-kl + nk*v))) ) = ca(m,v,k,j,i);
             });
@@ -437,13 +448,13 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
         } else {
           // if neighbor is at same or finer level, load data from u0
           if (nghbr.d_view(m,n).lev >= mblev.d_view(m)) {
-            Kokkos::parallel_for(Kokkos::ThreadVectorRange(tmember,il,iu+1),
+            Kokkos::parallel_for(Kokkos::ThreadVectorRange(tmember,ilp,iup+1),
             [&](const int i) {
               sbuf[n].vars(m, (i-il + ni*(j-jl + nj*(k-kl + nk*v))) ) = a(m,v,k,j,i);
             });
           // if neighbor is at coarser level, load data from coarse_u0
           } else {
-            Kokkos::parallel_for(Kokkos::ThreadVectorRange(tmember,il,iu+1),
+            Kokkos::parallel_for(Kokkos::ThreadVectorRange(tmember,ilp,iup+1),
             [&](const int i) {
               sbuf[n].vars(m, (i-il + ni*(j-jl + nj*(k-kl + nk*v))) ) = ca(m,v,k,j,i);
             });
@@ -455,7 +466,11 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
     tmember.team_barrier();
   }); // end par_for_outer
 
-  Kokkos::parallel_for("SendBuff", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
+  // The whole body of this kernel sits under (is_z4c && multilevel), both of which are
+  // host-side constants, so when they do not hold the launch has nothing to do at all:
+  // skip it.  It is otherwise a full-size empty team launch on EVERY halo exchange.
+  if (is_z4c_ && ml_) {
+  Kokkos::parallel_for("SendBuffZ4c", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
     const int m = (tmember.league_rank())/(nnghbr*nvar);
     const int n = (tmember.league_rank() - m*(nnghbr*nvar))/nvar;
     const int v = (tmember.league_rank() - m*(nnghbr*nvar) - n*nvar);
@@ -513,6 +528,7 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
     } // end if-neighbor-exists block
     tmember.team_barrier();
   }); // end par_for_outer
+  }
   }
 
 #if MPI_PARALLEL_ENABLED
@@ -575,7 +591,8 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
 // \brief Unpack boundary buffers
 
 TaskStatus MeshBoundaryValuesCC::RecvAndUnpackCC(DvceArray5D<Real> &a,
-                                                 DvceArray5D<Real> &ca) {
+                                                 DvceArray5D<Real> &ca,
+                                                 int iwl, int iwu) {
   // create local references for variables in kernel
   int nmb = pmy_pack->nmb_thispack;
   int nnghbr = pmy_pack->pmb->nnghbr;
@@ -587,6 +604,10 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackCC(DvceArray5D<Real> &a,
   const bool use_cs = pmy_pack->pmesh->use_cubed_sphere;
   const bool ml_ = pmy_pack->pmesh->multilevel;
   auto &multilevel = pmy_pack->pmesh->multilevel;
+  // x1 index window: see PackAndSendCC and the declaration in bvals.hpp
+  const int wlo_ = iwl, whi_ = iwu;
+  const int mbis_ = pmy_pack->pmesh->mb_indcs.is;
+  const int mbie_ = pmy_pack->pmesh->mb_indcs.ie;
 #if MPI_PARALLEL_ENABLED
   //----- STEP 1: check that recv boundary buffer communications have all completed
 
@@ -662,6 +683,12 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackCC(DvceArray5D<Real> &a,
       int nj = ju - jl + 1;
       int nk = ku - kl + 1;
       int nkj  = nk*nj;
+      // the window narrows the LOOP only: ni and the index map stay as they were
+      int ilp = il, iup = iu;
+      if (wlo_ >= 0 && il <= mbis_ && iu >= mbie_) {
+        ilp = (il > wlo_) ? il : wlo_;
+        iup = (iu < whi_) ? iu : whi_;
+      }
 
       // Middle loop over k,j
       Kokkos::parallel_for(Kokkos::TeamThreadRange<>(tmember, nkj), [&](const int idx) {
@@ -671,14 +698,14 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackCC(DvceArray5D<Real> &a,
 
         // if neighbor is at same or finer level, load data directly into u0
         if (nghbr.d_view(m,n).lev >= mblev.d_view(m)) {
-          Kokkos::parallel_for(Kokkos::ThreadVectorRange(tmember,il,iu+1),
+          Kokkos::parallel_for(Kokkos::ThreadVectorRange(tmember,ilp,iup+1),
           [&](const int i) {
             a(m,v,k,j,i) = rbuf[n].vars(m, (i-il + ni*(j-jl + nj*(k-kl + nk*v))) );
           });
 
         // if neighbor is at coarser level, load data into coarse_u0
         } else {
-          Kokkos::parallel_for(Kokkos::ThreadVectorRange(tmember,il,iu+1),
+          Kokkos::parallel_for(Kokkos::ThreadVectorRange(tmember,ilp,iup+1),
           [&](const int i) {
             ca(m,v,k,j,i) = rbuf[n].vars(m, (i-il + ni*(j-jl + nj*(k-kl + nk*v))) );
           });
@@ -688,8 +715,10 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackCC(DvceArray5D<Real> &a,
     tmember.team_barrier();
   });  // end par_for_outer
 
-  // Outer loop over (# of MeshBlocks)*(# of buffers)*(# of variables)
-  Kokkos::parallel_for("RecvBuff", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
+  // Outer loop over (# of MeshBlocks)*(# of buffers)*(# of variables).  Whole body is
+  // under the host-side (is_z4c && multilevel): skip the launch when it cannot fire.
+  if (is_z4c_ && ml_) {
+  Kokkos::parallel_for("RecvBuffZ4c", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
     const int m = (tmember.league_rank())/(nnghbr*nvar);
     const int n = (tmember.league_rank() - m*(nnghbr*nvar))/nvar;
     const int v = (tmember.league_rank() - m*(nnghbr*nvar) - n*nvar);
@@ -728,6 +757,7 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackCC(DvceArray5D<Real> &a,
     }  // end if-neighbor-exists block
     tmember.team_barrier();
   });  // end par_for_outer
+  }
 
   // Every face buffer is unpacked by this point, which is what the corner fill needs.
   // The COARSE array needs it too -- see the note in bvals_fc.cpp's RecvAndUnpackFC.

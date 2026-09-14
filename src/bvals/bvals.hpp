@@ -218,8 +218,18 @@ class MeshBoundaryValuesCC : public MeshBoundaryValues {
   TaskStatus InitFluxRecv(const int nvar) override;
 
   // functions to communicate CC data
-  TaskStatus PackAndSendCC(DvceArray5D<Real> &a, DvceArray5D<Real> &ca);
-  TaskStatus RecvAndUnpackCC(DvceArray5D<Real> &a, DvceArray5D<Real> &ca);
+  // iwl/iwu: an optional x1 INDEX WINDOW.  When >= 0, only the cells i in [iwl,iwu]
+  // are packed/unpacked, and ONLY for the buffers whose i-range spans the whole x1
+  // extent of the block (the x2/x3 transverse halos), which are exactly the buffers
+  // whose sender and receiver index ranges are the SAME absolute x1 indices -- so both
+  // sides skip the identical buffer entries and the layout is untouched.  Buffer
+  // entries outside the window keep whatever they held; the caller must not read the
+  // ghosts they feed.  Used by the RKL1 transverse-conduction substages, where the
+  // stencil only touches a shrinking radial window of planes.
+  TaskStatus PackAndSendCC(DvceArray5D<Real> &a, DvceArray5D<Real> &ca,
+                           int iwl = -1, int iwu = -1);
+  TaskStatus RecvAndUnpackCC(DvceArray5D<Real> &a, DvceArray5D<Real> &ca,
+                             int iwl = -1, int iwu = -1);
   void FillPanelCornersCC(DvceArray5D<Real> &a, bool coarse = false);
   // functions to communicate fluxes of CC data
   TaskStatus PackAndSendFluxCC(DvceFaceFld5D<Real> &flx);

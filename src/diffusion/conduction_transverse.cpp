@@ -249,14 +249,18 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
       }, Kokkos::Max<Real>(tshift));
     }
     // the ghost ring, through the module's own exchange (one variable at a time)
+    // ONLY the ACTIVE x1 range is exchanged.  Every read of the T*/alpha ghost ring is
+    // st(...,k+-1,j+-1,i) with i an ACTIVE plane (the stencil, the Gershgorin reduction
+    // and the copy-back all run over is..ie), so the x1-ghost columns of the transverse
+    // halo are dead weight -- radtrseed/radtrcopy do not even write them.
     pbval_tr->InitRecv(1);
-    pbval_tr->PackAndSendCC(tnew, tr_ycoar);
-    while (pbval_tr->RecvAndUnpackCC(tnew, tr_ycoar) != TaskStatus::complete) {}
+    pbval_tr->PackAndSendCC(tnew, tr_ycoar, is, ie);
+    while (pbval_tr->RecvAndUnpackCC(tnew, tr_ycoar, is, ie) != TaskStatus::complete) {}
     while (pbval_tr->ClearRecv() != TaskStatus::complete) {}
     while (pbval_tr->ClearSend() != TaskStatus::complete) {}
     pbval_tr->InitRecv(1);
-    pbval_tr->PackAndSendCC(anew, tr_ycoar);
-    while (pbval_tr->RecvAndUnpackCC(anew, tr_ycoar) != TaskStatus::complete) {}
+    pbval_tr->PackAndSendCC(anew, tr_ycoar, is, ie);
+    while (pbval_tr->RecvAndUnpackCC(anew, tr_ycoar, is, ie) != TaskStatus::complete) {}
     while (pbval_tr->ClearRecv() != TaskStatus::complete) {}
     while (pbval_tr->ClearSend() != TaskStatus::complete) {}
     par_for("radtrcopy", DevExeSpace(), 0, nmb1, ks-1, ke+1, js-1, je+1, is, ie,
@@ -456,9 +460,17 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
       // post the receives, send, and spin on the unpack: RecvAndUnpackCC is the only
       // one of these that can legitimately come back incomplete (the MPI traffic of
       // this substage is all there is to overlap it with)
+      // ... and only over THIS SUBSTAGE'S ACTIVE PLANE BRACKET.  The stencil below
+      // reads the transverse ghosts of Y_{j-1} at i in [ilo_,ihi_] and nowhere else:
+      // the x1 term (rad_sts_all only, which turns rad_sts_perplane off) reads i+-1 on
+      // the block's OWN row, never a transverse ghost, and the write-out reads active
+      // cells only.  The brackets NEST as j grows (the set {i : s_i >= j} shrinks), so a
+      // plane dropped here is never read again from this register either.
+      const int iwl_ = is + plo[js_], iwu_ = is + phi[js_];
       pbval_tr->InitRecv(1);
-      pbval_tr->PackAndSendCC(ycur, tr_ycoar);
-      while (pbval_tr->RecvAndUnpackCC(ycur, tr_ycoar) != TaskStatus::complete) {}
+      pbval_tr->PackAndSendCC(ycur, tr_ycoar, iwl_, iwu_);
+      while (pbval_tr->RecvAndUnpackCC(ycur, tr_ycoar, iwl_, iwu_)
+             != TaskStatus::complete) {}
       while (pbval_tr->ClearRecv() != TaskStatus::complete) {}
       while (pbval_tr->ClearSend() != TaskStatus::complete) {}
     }
