@@ -419,6 +419,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // the sub-cycled local relaxation; see two_stream_rt.hpp, rt_relax_sub.  Default 1 =
   // the single-step form, bit for bit.  Read here, the one site both the from-scratch and
   // the restart path go through.
+  rt_ali_diag = pin->GetOrAddBoolean("problem","rt_ali_diag",true);
   rt_relax_sub = pin->GetOrAddInteger("problem","rt_relax_sub",1);
   rt_relax_xcrit = pin->GetOrAddReal("problem","rt_relax_xcrit",1.0);
   rt_relax_submax = pin->GetOrAddInteger("problem","rt_relax_submax",32);

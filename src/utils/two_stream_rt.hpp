@@ -482,6 +482,33 @@ inline bool rt_rescue_eq = false;
 // running energy after each sub-step, so every sub-step is taken at small x.  The value
 // is the FLOOR on nsub; the stiffness rule below can raise it.  DEFAULT 1 = the
 // single-step form, BIT FOR BIT.
+// problem/rt_ali_diag: the ACCELERATED-LAMBDA (ALI) DIAGONAL in the per-cell
+// semi-implicit apply.  Without it the step relaxes the cell toward A, the absorption
+// the sweep computed, at the rate 4E/e set by the cell's OWN emission -- and in an
+// optically thick cell that rate is enormous, so x = src*bdt/deq reaches 1e4-1e5 and the
+// factor (1 - exp(-x))/x delivers 1/x of the source to the gas.  MEASURED on the B-star
+// relaxed column (bench/bstar_fecz/leakdiag/dump0, arm d, w = 0 everywhere, dtau 5-134):
+// the assembled source sums to +0.2931 F_bot = F_bot - F_top exactly, and the APPLIED
+// sum is +0.000089 F_bot.  Nothing is clipped, no guard fires, the Newton converges in
+// 1-2 steps -- the source is simply damped away, cell by cell, and the energy the sweep
+// took out of the radiation field is never given to the gas.  That is the 0.29 F_bot
+// deficit: Ftop/F_bot froze at 0.707 because the column can never re-relax.
+//
+// The mistake is treating A as an EXTERNAL field.  In a thick cell almost all of A is
+// the cell's own emission coming back from its immediate neighbours, so the true
+// response of the net exchange to a change in this cell's source function is not 4E/e
+// but (1 - Lambda*_ii) 4E/e, with Lambda*_ii the diagonal of the Lambda operator.  That
+// is textbook accelerated Lambda iteration; the sub-cycle and the Newton refinement are
+// both fixes to the wrong rate rather than to the rate itself.
+//
+// Lambda*_ii here is the local escape-probability diagonal the sweep's own layer
+// coefficients already carry, 1 - (1 - e^-x)/x at x = dtau/mu, averaged over the
+// quadrature.  It goes to 1 as dtau -> infinity, which sends the relaxation rate to zero
+// and the step to the EXACT explicit one, de = src*bdt -- conservative, and stable
+// because a thick cell's net imbalance relaxes on the diffusion time, not the thermal
+// one -- and to 0 as dtau -> 0, where the old stiff relaxation is what is wanted and is
+// recovered bitwise.  rt_ali_diag = false restores the old behaviour exactly.
+inline bool rt_ali_diag = true;
 inline int rt_relax_sub = 1;
 // problem/rt_relax_xcrit: the per-sub-step stiffness the sub-cycle aims for.  nsub is
 // ceil(x/rt_relax_xcrit) with x = src_relax*bdt/deq the first step's stiffness, floored
@@ -3065,6 +3092,8 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
       auto eos_f = eos;
       // problem/rt_budget_verbose: the v.f work accumulator (see rt_bud_ptr)
       // problem/rt_src_dump: one column, this call only (see rt_src_dump)
+      const bool ali_on = rt_ali_diag;      // see rt_ali_diag
+      const int ali_nq = (ck_nq_ > 1) ? 2 : 1;
       const bool sdump_ = (rt_src_dump > 0);
       if (sdump_) --rt_src_dump;
       const int sdcyc_ = pm->ncycle;
@@ -3263,12 +3292,35 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
                          4.0*kc_g(m,0,i,k,j)*rhoN(m,k,j,i)*boltz_sigma*tkd*tkd*tkd,
                          (Emd != 0.0) ? (src_relax + Emd)/Emd : 0.0);
         }
+        // ---- rt_ali_diag: 1 - Lambda*_ii, the local escape factor -----------------
+        Real ome_ = 1.0;
+        if (ali_on) {
+          const Real dtau_a = kc_g(m,0,i,k,j)*rhoN(m,k,j,i)*DX1(m,k,j,i);
+          if (dtau_a > 0.0) {
+            Real lst = 0.0;
+            if (ali_nq > 1) {
+              const Real mq[2] = {0.21132487, 0.78867513};
+              for (int q=0; q<2; ++q) {
+                const Real xq = dtau_a/mq[q];
+                lst += 0.5*((xq > 1.0e-3) ? (1.0 - (-expm1(-xq))/xq)
+                                          : (0.5*xq - xq*xq/6.0));
+              }
+            } else {
+              const Real xq = dtau_a*1.66;
+              lst = (xq > 1.0e-3) ? (1.0 - (-expm1(-xq))/xq) : (0.5*xq - xq*xq/6.0);
+            }
+            ome_ = 1.0 - lst;
+            if (!(ome_ > 1.0e-8)) ome_ = 1.0e-8;   // never divide by zero below
+            if (ome_ > 1.0) ome_ = 1.0;
+          }
+        }
         Real de = src*bdt;
         // rt_cell_report bookkeeping: the pieces of the step, kept for the report below
         Real dg_A = 0.0, dg_Em = 0.0, dg_deq = 0.0;
         Real dg_it[8];
         int dg_nit = 0;
         bool dg_resc = false;
+        int dg_nsub = 1;   // rt_src_dump: the sub-cycle count actually used
         for (int q=0; q<8; ++q) dg_it[q] = 0.0;
         // problem/rt_explicit (or problem/rt_semi_implicit = false): nothing else
         // touches de.  See rt_explicit and rt_semi_implicit.
@@ -3291,7 +3343,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
             const Real src_ex = src - src_relax;     // the handover, applied exactly
             const Real sdt = src_relax*bdt;
             if (semilin) {
-              const Real lam = 4.0*Em/ei;
+              const Real lam = ome_*4.0*Em/ei;     // see rt_ali_diag
               const Real x = lam*bdt;
               de = (x > 1.0e-4) ? (src_relax/lam)*(-expm1(-x)) : sdt;
               de += src_ex*bdt;
@@ -3321,7 +3373,11 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
               // ceil(x/rt_relax_xcrit), floored at rt_relax_sub and capped at
               // rt_relax_submax.  rt_relax_sub <= 1 disables the whole thing and is
               // BITWISE the single-step form above.
-              const Real absn = src_relax + Em;        // A, held fixed over the step
+              // A_eff: the equilibrium the cell is relaxed toward is the one where the
+              // NET exchange vanishes, (1 - Lambda*)(E(T) - E) = src, i.e. E_eq = E +
+              // src/(1 - Lambda*).  With rt_ali_diag off ome_ is 1 and this is the old
+              // A = src + Em, bit for bit.  See rt_ali_diag.
+              const Real absn = src_relax/ome_ + Em;  // A, held fixed over the step
               // e_eq - e.  With nothing arriving the equilibrium is T = 0, i.e. -e.
               const Real deq0 = (absn > 0.0) ? ei*(sqrt(sqrt(absn/Em)) - 1.0) : -ei;
               int nsub = 1;
@@ -3337,6 +3393,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
                 if (nsub > nsub_max) nsub = nsub_max;
                 if (nsub < 1) nsub = 1;
               }
+              dg_nsub = nsub;
               const Real sub_bdt = bdt/static_cast<Real>(nsub);
               const Real sub_sdt = src_relax*sub_bdt;
               const Real t0 = T_g(m,k,j,i);
@@ -3367,7 +3424,10 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
                 // Under sub-cycling T_old and E(T_old) stay the values of the cell at the
                 // START of the stage, so r4 is measured against the same fixed A.
                 if (newton_on && eos.IsGeneral()) {
-                  const Real abdt = absn*sub_bdt, embdt = Em*sub_bdt;
+                  // both terms carry the same (1 - Lambda*), so F(de) = de -
+                  // bdt*src_relax + ome*bdt*Em*(r4 - 1): explicit at r4 = 1, zero at the
+                  // ALI equilibrium E(T) = A_eff.  ome_ = 1 is the old expression.
+                  const Real abdt = ome_*absn*sub_bdt, embdt = ome_*Em*sub_bdt;
                   // SAFEGUARDED, because a bare Newton here does not converge.  F is
                   // MONOTONE INCREASING in de -- both de and E(T(e+de)) rise with de --
                   // so its root is unique and bracketing is available for free: every
@@ -3624,11 +3684,17 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
           const Real dtauc = kc_g(m,0,i,k,j)*rhoN(m,k,j,i)*dxc;
           Kokkos::printf("### rt_srcdump cyc=%d i=%d w_b=%.6f w_t=%.6f dtau=%.4e "
                          "T=%.6e dx=%.6e Fb=%.8e Ft=%.8e divf=%.8e divw=%.8e "
-                         "srcdir=%.8e src=%.8e src_relax=%.8e de_o_dt=%.8e\n",
+                         "srcdir=%.8e src=%.8e src_relax=%.8e de_o_dt=%.8e "
+                         "A=%.8e Em=%.8e AoE_m1=%.8e deq=%.8e x=%.8e nsub=%d "
+                         "nit=%d resc=%d clip=%d ei=%.8e de=%.8e\n",
                          sdcyc_, i, wb_, wt_, dtauc, T_g(m,k,j,i), dxc, Fb, Ft,
                          -(Ft - Fb)/dxc,
                          -((1.0 - wt_)*Ft - (1.0 - wb_)*Fb)/dxc,
-                         dg_srcd, src, src_relax, de/bdt);
+                         dg_srcd, src, src_relax, de/bdt,
+                         dg_A, dg_Em, (dg_Em != 0.0) ? (dg_A/dg_Em - 1.0) : 0.0,
+                         dg_deq, (dg_deq != 0.0) ? (src_relax*bdt/dg_deq) : 0.0,
+                         dg_nsub, dg_nit, dg_resc ? 1 : 0,
+                         (de != de_pre) ? 1 : 0, eiN(m,k,j,i), de);
         }
         if (implcol_ && wthk_ < 1.0) {
           // Record the change in this cell's Planck function that its own relaxation is
