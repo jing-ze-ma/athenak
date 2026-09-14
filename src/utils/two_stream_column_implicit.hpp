@@ -150,6 +150,10 @@ struct RTCol3 {
   DvceArray4D<Real> wblend;       // (m,k,j,i) tau-blend face weight
   DvceArray3D<int>  icut;         // (m,k,j) the band cut
   DvceArray5D<Real> wk;           // (m, RTCOL3_NW, i, k, j) the per-column workspace
+  // the PARTITIONED path only (problem/rt_impl_solver = pcr, see
+  // two_stream_column_partition.hpp): the per-SEGMENT workspace of the reduced system,
+  // (m, nseg*RTCOL3_NRD, k, j), and the number of segments = the Kokkos team size
+  DvceArray4D<Real> rd;
   DvceArray4D<Real> dtop;         // (m,q,k,j) the frozen top-face downward intensity
   DvceArray1D<Real> stat;         // 12 reduction slots, see the launcher
   DualArray1D<RegionSize> size;
@@ -167,6 +171,7 @@ struct RTCol3 {
   Real rgas = 1.0;                // ideal branch: p = rho Rgas T, see PresTempFromEint
   Real gm1 = 0.6666666666666666;  // ideal branch: gamma - 1
   int nq = 2;
+  int nseg = 1;                   // problem/rt_impl_nseg, the partitioned path only
   int maxit = 6;
   int norm = 1;                   // problem/rt_impl_norm
   int cvfreeze = 0;               // problem/rt_impl_cvfreeze
