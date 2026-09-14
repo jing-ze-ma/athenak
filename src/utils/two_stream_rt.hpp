@@ -438,6 +438,12 @@ inline DvceArray1D<int> *rt_efix_ptr = nullptr;
 // genuine stiff-cooling cell from a poisoned neighbour without re-running.  Filled once
 // per run by whichever cell claims efix(0) == 0, printed with the warning.
 inline DvceArray1D<Real> *rt_efix_rec = nullptr;
+// the column energy budget of the source application, accumulated when rt_cell_report is
+// on: slot 0 is the EXPLICIT deposit sum(src*bdt*dx1), which telescopes to F_bot - F_top
+// over a column, and slot 1 the deposit actually applied, sum(de*dx1).  The two differ by
+// whatever the relaxation, the sub-cycle and LimitRTSource did, so their ratio is the
+// conservation statement for problem/rt_relax_sub.
+inline DvceArray1D<Real> *rt_desum_ptr = nullptr;
 // problem/rt_newton: refine the semi-implicit step with a Newton solve of the exact
 // backward-Euler balance, seeded by the closed form.  The closed form already lands on
 // the right equilibrium under e ~ T; this drops that assumption and uses the EOS's own
@@ -455,6 +461,25 @@ inline bool rt_newton = false;
 // make the rescue less violent.  DEFAULT FALSE = the old 99.9 % policy, so shared pgens
 // are unchanged; the red-giant inputs set it true.
 inline bool rt_rescue_eq = false;
+// problem/rt_relax_sub: SUB-CYCLE the local relaxation of the two-stream source.  The
+// single-step form damps each cell toward the equilibrium of the un-relaxed column by a
+// per-cell factor (1 - exp(-x))/x; neighbours at different x are damped by different
+// amounts, so the non-local exchange between them no longer cancels and what is left is
+// a pressure perturbation ~ dt x the compression rate, which pumps the standing acoustic
+// modes of a closed box (the He-star box's saturated v_rms was LINEAR in dt).  With this
+// set > 1 the local balance is integrated in nsub sub-steps of bdt/nsub instead, the
+// absorbed field A frozen for the stage and the cell's own emission re-formed from the
+// running energy after each sub-step, so every sub-step is taken at small x.  The value
+// is the FLOOR on nsub; the stiffness rule below can raise it.  DEFAULT 1 = the
+// single-step form, BIT FOR BIT.
+inline int rt_relax_sub = 1;
+// problem/rt_relax_xcrit: the per-sub-step stiffness the sub-cycle aims for.  nsub is
+// ceil(x/rt_relax_xcrit) with x = src_relax*bdt/deq the first step's stiffness, floored
+// at rt_relax_sub.  Inert unless rt_relax_sub > 1.
+inline Real rt_relax_xcrit = 1.0;
+// problem/rt_relax_submax: the cap on nsub, so a single pathological cell cannot cost an
+// unbounded number of EOS calls.  Inert unless rt_relax_sub > 1.
+inline int rt_relax_submax = 32;
 // problem/rt_src_direct: form the per-cell radiative source DIRECTLY as absorption minus
 // emission during the sweeps, instead of as the difference of the two face fluxes.  The
 // two are the same number algebraically -- the stream update across a layer is
@@ -2366,8 +2391,17 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
       }
       auto efix_g = *rt_efix_ptr;
       auto efrec_g = *rt_efix_rec;
+      if (rt_desum_ptr == nullptr) {
+        rt_desum_ptr = new DvceArray1D<Real>("rt_desum", 2);
+      }
+      auto dsum_g = *rt_desum_ptr;
+      Kokkos::deep_copy(dsum_g, 0.0);
       const int efix_cyc = pm->ncycle;
       const bool resc_eq = rt_rescue_eq;
+      // the sub-cycled local relaxation; see rt_relax_sub
+      const int nsub_in = rt_relax_sub;
+      const int nsub_max = (rt_relax_submax > 1) ? rt_relax_submax : 1;
+      const Real xcrit = rt_relax_xcrit;
       // rt_cell_report: claimed once per RT call, so only the FIRST rescued cell prints
       DvceArray1D<int> repc_g(std::string("rt_repc"), 1);
       Kokkos::deep_copy(repc_g, 0);
@@ -2554,137 +2588,206 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
               de = (x > 1.0e-4) ? (src_relax/lam)*(-expm1(-x)) : sdt;
               de += src_ex*bdt;
             } else {
+              // SUB-CYCLED RELAXATION (problem/rt_relax_sub).  The step above relaxes
+              // toward the equilibrium of the UN-relaxed column: A is one Jacobi pass,
+              // formed from the intensities of the state the sweep saw, and the cell is
+              // then damped toward it by a per-cell factor (1 - exp(-x))/x.  That factor
+              // is what breaks the problem: the non-local exchange between two cells
+              // cancels exactly only while both are damped by the SAME amount, and two
+              // neighbours at different x are not.  What survives the near-cancellation
+              // is a pressure perturbation proportional to dt times the local compression
+              // rate, i.e. a term that pumps rather than damps, and in a closed box it
+              // feeds the organ-pipe modes: the He-star box's saturated v_rms came out
+              // LINEAR in dt, which no converged solution can be.
+              //
+              // The fix is to stop taking one large damped step.  A, the absorbed field,
+              // stays frozen for the stage -- it is what the sweep computed and re-doing
+              // the sweep is what this is trying to avoid -- but the LOCAL balance is
+              // integrated in nsub sub-steps of bdt/nsub, re-forming the cell's own
+              // emission from the running energy after each one (Em(T) ~ T^4, with T(e)
+              // from the EOS where there is one).  Each sub-step is then taken at small
+              // x, where (1 - exp(-x))/x -> 1 and the damping that broke the cancellation
+              // is gone, while the sum still lands on the same fixed point E(T) = A.
+              //
+              // nsub is chosen per cell from the stiffness of the first sub-step,
+              // ceil(x/rt_relax_xcrit), floored at rt_relax_sub and capped at
+              // rt_relax_submax.  rt_relax_sub <= 1 disables the whole thing and is
+              // BITWISE the single-step form above.
               const Real absn = src_relax + Em;        // A, held fixed over the step
               // e_eq - e.  With nothing arriving the equilibrium is T = 0, i.e. -e.
-              const Real deq = (absn > 0.0) ? ei*(sqrt(sqrt(absn/Em)) - 1.0) : -ei;
-              dg_A = absn; dg_Em = Em; dg_deq = deq;
-              if (deq != 0.0) {
-                const Real x = sdt/deq;                // >= 0: src and deq share a sign
-                de = (x > 1.0e-4) ? deq*(-expm1(-x)) : sdt;
-              } else {
-                de = sdt;
-              }
-              // NEWTON REFINEMENT, seeded by the closed form above.  That estimate is
-              // already the right asymptote, so this only has to correct the e ~ T it
-              // assumed -- with H2 dissociating or H ionizing, e(T) is far steeper than
-              // linear and the equilibrium moves.  Solve the exact backward-Euler
-              // balance with the emission at the NEW temperature,
-              //     F(de) = de - A dt + E(T_old) (T_new/T_old)^4 dt = 0,
-              // which is the same E ~ T^4 the band solver emits with, but with T(e) and
-              // c_v(e) taken from the EOS.  F is monotone in de (both terms increase),
-              // so Newton from a bracketing-quality guess converges in a step or two;
-              // F(0) = -src dt recovers the explicit answer if it stops immediately.
-              if (newton_on && eos.IsGeneral()) {
-                const Real t0 = T_g(m,k,j,i);
-                const Real d0 = rhoN(m,k,j,i);
-                const Real abdt = absn*bdt, embdt = Em*bdt;
-                // SAFEGUARDED, because a bare Newton here does not converge.  F is
-                // MONOTONE INCREASING in de -- both de and E(T(e+de)) rise with de -- so
-                // its root is unique and bracketing is available for free: every iterate
-                // with F < 0 is a lower bound on the root and every one with F > 0 an
-                // upper bound.  Without that, in an optically thin radiation-dominated
-                // cell the step is very nearly the EXPLICIT one (the damping denominator
-                // dfx -> 1 as the cell's own emission stops controlling its temperature)
-                // and it overshoots the root by orders of magnitude.  MEASURED in
-                // RG_v4/out.txt, where rt_cell_report printed the iterates: on a cell
-                // with e = 6.02e-3 the sequence was de = -1.63e+1, +1.06e+1, -3.33e+1 --
-                // oscillating, each iterate 3-4 decades past e -- and on another,
-                // e = 3.06e-1 was handed de = -3.37e-1 on the FIRST step.  Both left
-                // e + de <= 0 and fell through to the rescue, which can only leave the
-                // cell at ~1e-3 e, from which the table EOS returns a floor temperature
-                // and the sound speed collapses the timestep.  That is the mechanism
-                // behind the He-star top-cell "dt COLLAPSE" events and the red giant's
-                // 152 eos_tclamp family.
-                //
-                // The lower bracket nlo is the 99.9 % floor the rescue used, and
-                // F(nlo) < 0 whenever the absorption A is non-negative, so it is a true
-                // lower bound on the root.  ONLY a step that would cross zero energy is
-                // replaced, by a bisection of [nlo, de]; every other step is taken
-                // exactly as before, so this is inert on every cell the bare iteration
-                // handled.  A wider safeguard was tried first -- bracketing from both
-                // sides and clamping the converged answer into the bracket -- and is NOT
-                // in the tree: it perturbed healthy cells (the 1-D He-star column's
-                // timestep fell 0.107 -> 0.034 s with no rescue anywhere in the run),
-                // because the Newton legitimately walks past the e ~ T equilibrium
-                // wherever the EOS is far from that, which is the reason the refinement
-                // exists at all.
-                const Real nlo = -(1.0 - 1.0e-3)*ei;
-                if (t0 > 0.0 && d0 > 0.0) {
-                  for (int it=0; it<8; ++it) {
-                    const Real e1 = ei + de;
-                    if (!(e1 > 0.0)) break;
-                    const Real tc = eos.Temperature(d0, e1);
-                    const Real t1 = tc*eos.temp_cgs;
-                    if (!(t1 > 0.0)) break;
-                    const Real cv = d0*eos.SpecificHeatCv(d0, e1, tc);
-                    if (!(cv > 0.0)) break;
-                    const Real r4 = SQR(SQR(t1/t0));
-                    const Real fx = de - abdt + embdt*r4;
-                    // d(r4)/de = 4 r4/T dT/de, with dT/de = temp_cgs/(d c_v)
-                    const Real dfx = 1.0 + embdt*4.0*r4/t1*(eos.temp_cgs/cv);
-                    if (!(dfx > 0.0)) break;
-                    const Real step = fx/dfx;
-                    const Real dn = de - step;
-                    // THE ONE INTERVENTION.  A step that would leave a non-positive
-                    // internal energy is replaced by a bisection of [nlo, de], which
-                    // brackets the root: F is monotone and F(de) > 0 is what makes the
-                    // step negative in the first place, while F(nlo) < 0 for any
-                    // non-negative absorption.  Every other step is taken EXACTLY as
-                    // before -- dn is `de - step`, the same expression `de -= step`
-                    // evaluated -- so a cell the bare iteration handled is untouched,
-                    // bit for bit, and `ei + de > 1e-3 ei > 0` now holds unconditionally
-                    // after the loop.
-                    de = (ei + dn > 0.0) ? dn : 0.5*(nlo + de);
-                    if (dg_nit < 8) dg_it[dg_nit++] = de;
-                    if (fabs(step) <= 1.0e-8*(fabs(de) + fabs(ei))) break;
+              const Real deq0 = (absn > 0.0) ? ei*(sqrt(sqrt(absn/Em)) - 1.0) : -ei;
+              int nsub = 1;
+              if (nsub_in > 1) {
+                nsub = nsub_in;
+                if (deq0 != 0.0 && xcrit > 0.0) {
+                  const Real xn = ceil((sdt/deq0)/xcrit);
+                  if (xn > static_cast<Real>(nsub)) {
+                    nsub = (xn >= static_cast<Real>(nsub_max)) ? nsub_max
+                                                              : static_cast<int>(xn);
                   }
                 }
-                // THE LOOP CHECKS e1 > 0 AT THE TOP, NOT AT THE BOTTOM.  The last
-                // `de -= step` is never validated, so Newton can exit having pushed the
-                // cell to ei + de <= 0 -- a one-step NaN with no counterpart in the
-                // closed form, which guarantees e1 = ei*exp(-x) > 0.  R9's all-column
-                // NaN at t = 1.99e5 is under bisection; this closes the only path in
-                // this branch to a non-positive energy.  Falling back to a 99.9 %
-                // drop keeps the cell cooling hard without ever crossing zero.
-                if (!(ei + de > 0.0)) {
-                  const Real de_nt = de;         // what Newton left, for the report
-                  // problem/rt_rescue_eq: land on the equilibrium the cell actually
-                  // sees rather than on a fixed 99.9 % drop.  deq is e_eq - e from the
-                  // closed form above, i.e. Em(T_eq) = A = src + Em; the old floor is
-                  // kept underneath it, so this can only make the rescue gentler.
-                  const Real defl = -(1.0 - 1.0e-3)*ei;
-                  if (resc_eq && deq < 0.0 && deq > defl) {
-                    de = deq;
-                    Kokkos::atomic_fetch_add(&efix_g(1), 1);
+                if (nsub > nsub_max) nsub = nsub_max;
+                if (nsub < 1) nsub = 1;
+              }
+              const Real sub_bdt = bdt/static_cast<Real>(nsub);
+              const Real sub_sdt = src_relax*sub_bdt;
+              const Real t0 = T_g(m,k,j,i);
+              const Real d0 = rhoN(m,k,j,i);
+              Real ec = ei;                            // the running internal energy
+              Real Emc = Em;                           // its emission, re-formed below
+              de = 0.0;
+              for (int s=0; s<nsub; ++s) {
+                const Real deq = (absn > 0.0) ? ec*(sqrt(sqrt(absn/Emc)) - 1.0) : -ec;
+                dg_A = absn; dg_Em = Emc; dg_deq = deq;
+                Real des;
+                if (deq != 0.0) {
+                  const Real x = sub_sdt/deq;          // >= 0: src and deq share a sign
+                  des = (x > 1.0e-4) ? deq*(-expm1(-x)) : sub_sdt;
+                } else {
+                  des = sub_sdt;
+                }
+                // NEWTON REFINEMENT, seeded by the closed form above.  That estimate is
+                // already the right asymptote, so this only has to correct the e ~ T it
+                // assumed -- with H2 dissociating or H ionizing, e(T) is far steeper than
+                // linear and the equilibrium moves.  Solve the exact backward-Euler
+                // balance with the emission at the NEW temperature,
+                //     F(de) = de - A dt + E(T_old) (T_new/T_old)^4 dt = 0,
+                // which is the same E ~ T^4 the band solver emits with, but with T(e) and
+                // c_v(e) taken from the EOS.  F is monotone in de (both terms increase),
+                // so Newton from a bracketing-quality guess converges in a step or two;
+                // F(0) = -src dt recovers the explicit answer if it stops immediately.
+                // Under sub-cycling T_old and E(T_old) stay the values of the cell at the
+                // START of the stage, so r4 is measured against the same fixed A.
+                if (newton_on && eos.IsGeneral()) {
+                  const Real abdt = absn*sub_bdt, embdt = Em*sub_bdt;
+                  // SAFEGUARDED, because a bare Newton here does not converge.  F is
+                  // MONOTONE INCREASING in de -- both de and E(T(e+de)) rise with de --
+                  // so its root is unique and bracketing is available for free: every
+                  // iterate with F < 0 is a lower bound on the root and every one with F
+                  // > 0 an upper bound.  Without that, in an optically thin
+                  // radiation-dominated cell the step is very nearly the EXPLICIT one
+                  // (the damping denominator dfx -> 1 as the cell's own emission stops
+                  // controlling its temperature) and it overshoots the root by orders of
+                  // magnitude.  MEASURED in RG_v4/out.txt, where rt_cell_report printed
+                  // the iterates: on a cell with e = 6.02e-3 the sequence was de =
+                  // -1.63e+1, +1.06e+1, -3.33e+1 -- oscillating, each iterate 3-4 decades
+                  // past e -- and on another, e = 3.06e-1 was handed de = -3.37e-1 on the
+                  // FIRST step.  Both left e + de <= 0 and fell through to the rescue,
+                  // which can only leave the cell at ~1e-3 e, from which the table EOS
+                  // returns a floor temperature and the sound speed collapses the
+                  // timestep.  That is the mechanism behind the He-star top-cell "dt
+                  // COLLAPSE" events and the red giant's 152 eos_tclamp family.
+                  //
+                  // The lower bracket nlo is the 99.9 % floor the rescue used, and F(nlo)
+                  // < 0 whenever the absorption A is non-negative, so it is a true lower
+                  // bound on the root.  ONLY a step that would cross zero energy is
+                  // replaced, by a bisection of [nlo, des]; every other step is taken
+                  // exactly as before, so this is inert on every cell the bare iteration
+                  // handled.  A wider safeguard was tried first -- bracketing from both
+                  // sides and clamping the converged answer into the bracket -- and is
+                  // NOT in the tree: it perturbed healthy cells (the 1-D He-star column's
+                  // timestep fell 0.107 -> 0.034 s with no rescue anywhere in the run),
+                  // because the Newton legitimately walks past the e ~ T equilibrium
+                  // wherever the EOS is far from that, which is the reason the refinement
+                  // exists at all.
+                  const Real nlo = -(1.0 - 1.0e-3)*ec;
+                  if (t0 > 0.0 && d0 > 0.0) {
+                    for (int it=0; it<8; ++it) {
+                      const Real e1 = ec + des;
+                      if (!(e1 > 0.0)) break;
+                      const Real tc = eos.Temperature(d0, e1);
+                      const Real t1 = tc*eos.temp_cgs;
+                      if (!(t1 > 0.0)) break;
+                      const Real cv = d0*eos.SpecificHeatCv(d0, e1, tc);
+                      if (!(cv > 0.0)) break;
+                      const Real r4 = SQR(SQR(t1/t0));
+                      const Real fx = des - abdt + embdt*r4;
+                      // d(r4)/de = 4 r4/T dT/de, with dT/de = temp_cgs/(d c_v)
+                      const Real dfx = 1.0 + embdt*4.0*r4/t1*(eos.temp_cgs/cv);
+                      if (!(dfx > 0.0)) break;
+                      const Real step = fx/dfx;
+                      const Real dn = des - step;
+                      // THE ONE INTERVENTION.  A step that would leave a non-positive
+                      // internal energy is replaced by a bisection of [nlo, des], which
+                      // brackets the root: F is monotone and F(des) > 0 is what makes the
+                      // step negative in the first place, while F(nlo) < 0 for any
+                      // non-negative absorption.  Every other step is taken EXACTLY as
+                      // before -- dn is `des - step`, the same expression `des -= step`
+                      // evaluated -- so a cell the bare iteration handled is untouched,
+                      // bit for bit, and `ec + des > 1e-3 ec > 0` now holds
+                      // unconditionally after the loop.
+                      des = (ec + dn > 0.0) ? dn : 0.5*(nlo + des);
+                      if (dg_nit < 8) dg_it[dg_nit++] = des;
+                      if (fabs(step) <= 1.0e-8*(fabs(des) + fabs(ec))) break;
+                    }
+                  }
+                  // THE LOOP CHECKS e1 > 0 AT THE TOP, NOT AT THE BOTTOM.  The last `des
+                  // -= step` is never validated, so Newton can exit having pushed the
+                  // cell to ec + des <= 0 -- a one-step NaN with no counterpart in the
+                  // closed form, which guarantees e1 = ec*exp(-x) > 0.  R9's all-column
+                  // NaN at t = 1.99e5 is under bisection; this closes the only path in
+                  // this branch to a non-positive energy.  Falling back to a 99.9 % drop
+                  // keeps the cell cooling hard without ever crossing zero.
+                  if (!(ec + des > 0.0)) {
+                    const Real de_nt = des;        // what Newton left, for the report
+                    // problem/rt_rescue_eq: land on the equilibrium the cell actually
+                    // sees rather than on a fixed 99.9 % drop.  deq is e_eq - e from the
+                    // closed form above, i.e. Em(T_eq) = A = src + Em; the old floor is
+                    // kept underneath it, so this can only make the rescue gentler.
+                    const Real defl = -(1.0 - 1.0e-3)*ec;
+                    if (resc_eq && deq < 0.0 && deq > defl) {
+                      des = deq;
+                      Kokkos::atomic_fetch_add(&efix_g(1), 1);
+                    } else {
+                      des = defl;
+                      Kokkos::atomic_fetch_add(&efix_g(2), 1);
+                    }
+                    if (Kokkos::atomic_fetch_add(&efix_g(0), 1) == 0) {
+                      efrec_g(0) = static_cast<Real>(m);
+                      efrec_g(1) = static_cast<Real>(k);
+                      efrec_g(2) = static_cast<Real>(j);
+                      efrec_g(3) = static_cast<Real>(i);
+                      efrec_g(4) = rhoN(m,k,j,i);
+                      efrec_g(5) = ei;
+                      efrec_g(6) = t0;
+                      efrec_g(7) = src;
+                      efrec_g(8) = src_relax;
+                      efrec_g(9) = Em;
+                      efrec_g(10) = absn;
+                      efrec_g(11) = deq;
+                      efrec_g(12) = de_nt;
+                      efrec_g(13) = bdt;
+                      efrec_g(14) = des;
+                      efrec_g(15) = static_cast<Real>(efix_cyc);
+                    }
+                    dg_resc = true;
+                  }
+                }
+                de += des;
+                ec = ei + de;
+                // Re-form the emission of the UPDATED state for the next sub-step.  Em
+                // scales as T^4 and T comes from the EOS wherever the Newton block has
+                // one; with e ~ T (ideal gas, and the closed form's own assumption) the
+                // ratio is just ec/ei.  This is the whole point of the sub-cycle: without
+                // it every sub-step would relax toward the same stale equilibrium.
+                if (s + 1 < nsub) {
+                  if (!(ec > 0.0)) break;
+                  Real trat;
+                  if (newton_on && eos.IsGeneral() && t0 > 0.0 && d0 > 0.0) {
+                    const Real t1 = eos.Temperature(d0, ec)*eos.temp_cgs;
+                    trat = (t1 > 0.0) ? t1/t0 : 0.0;
                   } else {
-                    de = defl;
-                    Kokkos::atomic_fetch_add(&efix_g(2), 1);
+                    trat = ec/ei;
                   }
-                  if (Kokkos::atomic_fetch_add(&efix_g(0), 1) == 0) {
-                    efrec_g(0) = static_cast<Real>(m);
-                    efrec_g(1) = static_cast<Real>(k);
-                    efrec_g(2) = static_cast<Real>(j);
-                    efrec_g(3) = static_cast<Real>(i);
-                    efrec_g(4) = rhoN(m,k,j,i);
-                    efrec_g(5) = ei;
-                    efrec_g(6) = t0;
-                    efrec_g(7) = src;
-                    efrec_g(8) = src_relax;
-                    efrec_g(9) = Em;
-                    efrec_g(10) = absn;
-                    efrec_g(11) = deq;
-                    efrec_g(12) = de_nt;
-                    efrec_g(13) = bdt;
-                    efrec_g(14) = de;
-                    efrec_g(15) = static_cast<Real>(efix_cyc);
-                  }
-                  dg_resc = true;
+                  Emc = Em*SQR(SQR(trat));
+                  if (!(Emc > 0.0)) break;
                 }
               }
               // ...and the handover the relaxation was deliberately not shown.  Added
               // after the Newton refinement and the rescue, both of which are statements
               // about the LOCAL balance alone; src_ex is zero unless this cell sits
-              // inside the tau ramp.
+              // inside the tau ramp.  It is OUTSIDE the sub-cycle: it is an exact
+              // explicit term, not part of the local balance being relaxed.
               de += src_ex*bdt;
             }
           }
@@ -2693,6 +2796,11 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
         if (demax > 0.0) {
           const Real dl = LimitRTSource(de, eiN(m,k,j,i), demax);
           if (dl != de) { ++nc; de = dl; }
+        }
+        if (report_on) {
+          const Real dxb = DX1(m,k,j,i);
+          Kokkos::atomic_add(&dsum_g(0), src*bdt*dxb);
+          Kokkos::atomic_add(&dsum_g(1), de*dxb);
         }
         if (diag) {
           Real Em_d = 0.0;
@@ -2876,6 +2984,15 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
           efix_warned = true;
         }
         efix_seen = he(0);
+      }
+      // the source's energy budget: what the flux divergence asked for against what the
+      // (sub-cycled, relaxed, limited) application actually deposited.  See rt_desum_ptr.
+      if (report_on && fixed_on) {
+        auto hd = Kokkos::create_mirror_view(dsum_g);
+        Kokkos::deep_copy(hd, dsum_g);
+        std::cout << "### rt_desum ncycle=" << pm->ncycle << " sum(src*dt*dx) = " << hd(0)
+                  << "  sum(de*dx) = " << hd(1) << "  rel = "
+                  << ((hd(0) != 0.0) ? (hd(1) - hd(0))/hd(0) : 0.0) << std::endl;
       }
 
       // ---- one-shot column dump, for cross-code comparison -------------------------
