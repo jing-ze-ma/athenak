@@ -3061,6 +3061,17 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
       });
       rt_nclip_last = nclip;
       if (outer_last) RTSourceLimiterWarn(nclip);
+      // ---- the per-cycle clip/rescue CENSUS (problem/rt_outer_verbose) -------------
+      // How many cells the per-STEP caps actually touched this stage: nclip is the
+      // LimitRTSource count reduced over the apply kernel, efix(0..2) the running Newton
+      // positivity rescue totals.  Diagnostic only; nothing here changes an answer.
+      if (rt_outer_verbose && global_variable::my_rank == 0 && pm->ncycle % 200 == 0) {
+        auto hcen = Kokkos::create_mirror_view(efix_g);
+        Kokkos::deep_copy(hcen, efix_g);
+        std::cout << "### rt_clip ncycle=" << pm->ncycle << " t=" << pm->time
+                  << " nclip=" << nclip << " efix_tot=" << hcen(0)
+                  << " resc_eq=" << hcen(1) << " resc_floor=" << hcen(2) << std::endl;
+      }
       // ---- the fixed-point convergence of this pass, see rt_outer_iter ------------
       if (outer_on && (rt_outer_verbose || report_on) && rt_report_every > 0 &&
           (pm->ncycle % rt_report_every == 0) && global_variable::my_rank == 0) {
