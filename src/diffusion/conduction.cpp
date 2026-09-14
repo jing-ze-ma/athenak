@@ -1875,6 +1875,18 @@ void Conduction::ImplicitRadialUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos
             rtexp += vp*rtjac_(m,0,k,j,i+1)*rtdbt_(m,k,j,i)*temp_unit*y;
           }
         }
+        // rad_x1_kiter, passes 2..k: the rows carry the T^n anchor, which is NOT a
+        // flux divergence, so this pass's column sum is not zero -- it is minus the
+        // energy the earlier passes put in, sum_i V_i (e^(p)_i - e^n_i).  Accumulate
+        // that as the EXPECTED sum, exactly as the merged two-stream solve accumulates
+        // its source, so what is reported below stays the conservation error and not
+        // the anchor.  (V/alpha = rho c_v V, so this is already an energy and is not
+        // scaled by beta_dt the way the two-stream source is.)  Once the iteration has
+        // converged both sides are round-off and their ratio means nothing; the gate
+        // that matters is pass 0, which telescopes exactly.
+        if (kit > 0 && ac > 0.0) {
+          rtexp -= vi/ac*(wrk(m,t_,k,j,i) - tn_(m,k,j,i));
+        }
         Real x = (ac > 0.0) ? y/ac : 0.0;
         if (!isfinite(x)) {
           x = 0.0;
