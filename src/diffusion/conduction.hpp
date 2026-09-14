@@ -446,6 +446,11 @@ class Conduction {
   // planes, and the substage count then has to be global.  It is silently ignored there.
   // Needs the whole x1 extent in one MeshBlock, so that a local index i IS a plane.
   bool rad_sts_perplane = false;
+  // rad_tr_window (default true): restrict the three transverse halo exchanges to the
+  // x1 plane bracket that the substage actually reads (see conduction_transverse.cpp).
+  // false = exchange the FULL x1 range every time, which is the pre-window behaviour
+  // and a control for any placement- or window-dependent difference.
+  bool rad_tr_window = true;
   DvceArray1D<Real> tr_zpl;     // the Gershgorin radius of each x1 plane
   DvceArray1D<int> tr_spl;      // ... its substage count s_i ...
   DvceArray1D<Real> tr_w1pl;    // ... and its RKL1 w1 = 2/(s_i^2 + s_i)

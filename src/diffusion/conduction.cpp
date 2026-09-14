@@ -184,6 +184,7 @@ Conduction::Conduction(std::string block, MeshBlockPack *pp, ParameterInput *pin
       rad_sts_once = pin->GetOrAddBoolean(block,"rad_sts_once",false);
       rad_sts_margin = pin->GetOrAddReal(block,"rad_sts_margin",0.10);
       rad_sts_perplane = pin->GetOrAddBoolean(block,"rad_sts_perplane",false);
+      rad_tr_window = pin->GetOrAddBoolean(block,"rad_tr_window",true);
       rad_ang_maxit = pin->GetOrAddInteger(block,"rad_ang_maxit",200);
       rad_ang_verbose = pin->GetOrAddBoolean(block,"rad_ang_verbose",false);
       // DIAGNOSTIC ONLY: the T-linearisation audit of ImplicitRadialUpdate

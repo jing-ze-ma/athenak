@@ -253,14 +253,22 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
     // st(...,k+-1,j+-1,i) with i an ACTIVE plane (the stencil, the Gershgorin reduction
     // and the copy-back all run over is..ie), so the x1-ghost columns of the transverse
     // halo are dead weight -- radtrseed/radtrcopy do not even write them.
+    // rad_tr_window = false exchanges the FULL x1 range instead of the window
+    const int sl_ = rad_tr_window ? is : -1, su_ = rad_tr_window ? ie : -1;
     pbval_tr->InitRecv(1);
-    pbval_tr->PackAndSendCC(tnew, tr_ycoar, is, ie);
-    while (pbval_tr->RecvAndUnpackCC(tnew, tr_ycoar, is, ie) != TaskStatus::complete) {}
+    pbval_tr->PackAndSendCC(tnew, tr_ycoar, sl_, su_);
+    while (pbval_tr->RecvAndUnpackCC(tnew, tr_ycoar, sl_, su_) != TaskStatus::complete) {}
+    // RecvAndUnpackCC launches the unpack kernel ASYNCHRONOUSLY and returns.  The next
+    // InitRecv re-posts MPI_Irecv into the SAME device recv buffer, so with GPU-aware
+    // MPI a neighbour that is ahead can have the NIC overwrite that buffer while the
+    // unpack kernel is still reading it: fence before ClearRecv/ClearSend and InitRecv.
+    Kokkos::fence();
     while (pbval_tr->ClearRecv() != TaskStatus::complete) {}
     while (pbval_tr->ClearSend() != TaskStatus::complete) {}
     pbval_tr->InitRecv(1);
-    pbval_tr->PackAndSendCC(anew, tr_ycoar, is, ie);
-    while (pbval_tr->RecvAndUnpackCC(anew, tr_ycoar, is, ie) != TaskStatus::complete) {}
+    pbval_tr->PackAndSendCC(anew, tr_ycoar, sl_, su_);
+    while (pbval_tr->RecvAndUnpackCC(anew, tr_ycoar, sl_, su_) != TaskStatus::complete) {}
+    Kokkos::fence();   // see the comment above: the recv buffer is re-posted below
     while (pbval_tr->ClearRecv() != TaskStatus::complete) {}
     while (pbval_tr->ClearSend() != TaskStatus::complete) {}
     par_for("radtrcopy", DevExeSpace(), 0, nmb1, ks-1, ke+1, js-1, je+1, is, ie,
@@ -466,11 +474,18 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
       // the block's OWN row, never a transverse ghost, and the write-out reads active
       // cells only.  The brackets NEST as j grows (the set {i : s_i >= j} shrinks), so a
       // plane dropped here is never read again from this register either.
-      const int iwl_ = is + plo[js_], iwu_ = is + phi[js_];
+      // rad_tr_window = false: (-1,-1) = the full x1 range, no window
+      const int iwl_ = rad_tr_window ? (is + plo[js_]) : -1;
+      const int iwu_ = rad_tr_window ? (is + phi[js_]) : -1;
       pbval_tr->InitRecv(1);
       pbval_tr->PackAndSendCC(ycur, tr_ycoar, iwl_, iwu_);
       while (pbval_tr->RecvAndUnpackCC(ycur, tr_ycoar, iwl_, iwu_)
              != TaskStatus::complete) {}
+      // RecvAndUnpackCC launches the unpack kernel ASYNCHRONOUSLY and returns.  The
+      // next InitRecv re-posts MPI_Irecv into the SAME device recv buffer, so with
+      // GPU-aware MPI a neighbour that is ahead can have the NIC overwrite it while
+      // the unpack kernel still reads it: fence before ClearRecv/ClearSend/InitRecv.
+      Kokkos::fence();
       while (pbval_tr->ClearRecv() != TaskStatus::complete) {}
       while (pbval_tr->ClearSend() != TaskStatus::complete) {}
     }
