@@ -50,6 +50,7 @@
 #include "utils/atm_column.hpp"
 #include "pgen/pgen_eos_utils.hpp"
 #include "utils/rad_taper.hpp"
+#include "utils/two_stream_column_implicit.hpp"
 
 namespace two_stream_rt {
 
@@ -599,6 +600,19 @@ inline Real rt_impl_dtmax = 0.25;
 // neighbour's coupling to it is w-weighted with the remaining (1-w) handed over as the
 // known dB of rt_col_dtex.  At w = 0 and w = 1 this is bitwise the two pure branches.
 inline Real rt_impl_tau_blend = 1.0;
+// ---- rt_implicit_column = 3: THE EXACT IMPLICIT COLUMN SOLVE ------------------------
+// The intensities become unknowns alongside the gas energy, so the column system is
+// exactly block-tridiagonal (5x5) and a block Thomas solves it with no Jacobi/
+// Gauss-Seidel iteration at all -- which is what modes 1 and 2 could not do.  See
+// utils/two_stream_column_implicit.hpp for the rows, the M-matrix argument and what is
+// frozen.  Mode 3 REPLACES the two-stream's own semi-implicit apply and nothing else:
+// the tau-blend handover, the radial conduction tridiagonal (rad_implicit_x1) and the
+// transverse operator are untouched, and rt_col_active stays false so the conduction
+// wrapper task still runs.  Grey only; fatal under correlated-k or picket fence.
+inline DvceArray5D<Real> *rt_c3wk_ptr = nullptr;
+inline DvceArray4D<Real> *rt_c3top_ptr = nullptr;
+inline DvceArray1D<Real> *rt_c3stat_ptr = nullptr;
+inline int rt_c3_lines = 0;
 // problem/ck_int_at_cut: deliver the planet's internal flux sigma T_int^4 as an extra
 // upward source at the correlated-k cut (the historical behaviour, true). Set false when
 // the layers below the cut carry it themselves -- <mhd|hydro>/isotropic_conduction =
@@ -1104,7 +1118,36 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
   // step it is replacing.
   Conduction *pc = (pm->pmb_pack->pmhd != nullptr) ? pm->pmb_pack->pmhd->pcond
                                                    : pm->pmb_pack->phydro->pcond;
-  if (rt_implicit_column > 0) {
+  if (rt_implicit_column == 3) {
+    // ---- mode 3, the exact block-tridiagonal column solve ---------------------------
+    // It needs the grey split sweep (it IS that sweep, differentiated), the conserved
+    // state (it applies de to u0 and must read the post-RK state), the direct per-cell
+    // source (its rows ARE the per-half-layer absorbed-minus-emitted balance), and the
+    // centre-to-centre layers.  It does NOT need rad_implicit_x1: the radial conduction
+    // stays a separate implicit tridiagonal, applied by its own task.
+    static bool c3checked = false;
+    if (!c3checked) {
+      c3checked = true;
+      if (!(rt_grey && rt_split) || rt_ck || !rt_use_cons || rt_explicit ||
+          !rt_semi_implicit || !rt_src_direct || rt_layer_legacy || rt_top_re ||
+          rt_outer_iter > 1) {
+        std::cout << "### FATAL ERROR in two_stream_rt: problem/rt_implicit_column = 3 "
+                  << "needs the GREY SPLIT sweep (rt_grey + rt_split, and NOT "
+                  << "correlated-k or picket fence), problem/rt_use_cons, "
+                  << "rt_src_direct, the centre-to-centre layers (rt_layer_legacy = "
+                  << "false), rt_top_re = false, rt_outer_iter = 1 and the semi-implicit "
+                  << "apply it replaces (rt_semi_implicit, !rt_explicit).  Got rt_grey="
+                  << rt_grey << " rt_split=" << rt_split << " rt_ck=" << rt_ck
+                  << " rt_use_cons=" << rt_use_cons << " rt_explicit=" << rt_explicit
+                  << " rt_semi_implicit=" << rt_semi_implicit
+                  << " rt_src_direct=" << rt_src_direct
+                  << " rt_layer_legacy=" << rt_layer_legacy
+                  << " rt_top_re=" << rt_top_re
+                  << " rt_outer_iter=" << rt_outer_iter << "." << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }
+  } else if (rt_implicit_column > 0) {
     static bool cchecked = false;
     if (!cchecked) {
       cchecked = true;
@@ -1125,7 +1168,9 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
   }
   for (int oit=0; oit<nit; ++oit) {
     picket_fence_two_stream_RT_pass(pm, bdt, oit, nit);
-    if (rt_implicit_column > 0 && pc != nullptr) {
+    // mode 3 solved and applied the column inside the pass; the radial conduction stays
+    // a separate operator, applied by the ImplicitConduction task as usual.
+    if (rt_implicit_column > 0 && rt_implicit_column != 3 && pc != nullptr) {
       // the sweep wrote R, the Jacobian and dB/dT for the CURRENT state; solve the
       // column for dT and let the tridiagonal apply the energy, radiative exchange and
       // radiative diffusion together
@@ -1521,7 +1566,13 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
       // The requirements are checked once, in the wrapper.  The arrays are allocated on
       // the Conduction object the first time through; with the switch off implcol_ is
       // false everywhere and jac_g is a 1-element dummy that is captured and never read.
-      const bool implcol_ = (rt_implicit_column > 0) && grey_on && rt_split;
+      const bool implcol_ = (rt_implicit_column > 0) && (rt_implicit_column != 3) &&
+                            grey_on && rt_split;
+      // rt_implicit_column = 3: the exact block-tridiagonal column solve.  It runs as a
+      // separate kernel right after the sweep and owns the energy update, so the apply
+      // block below skips de entirely (skip_de) and keeps only its diagnostics and the
+      // radiative momentum source.
+      const bool mode3_ = (rt_implicit_column == 3) && grey_on && rt_split;
       if (implcol_ && pcond_rt != nullptr && !pcond_rt->rt_col_alloc) {
         pcond_rt->EnableRTColumn();
       }
@@ -2321,6 +2372,130 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
                     << "dispatch in picket_fence_two_stream_RT." << std::endl;
           std::exit(EXIT_FAILURE);
         }
+        // ---- rt_implicit_column = 3: THE EXACT IMPLICIT COLUMN SOLVE ----------------
+        // The sweep above has just filled kc_g/Bb_g (the FROZEN opacity and the entry
+        // Planck function), Fb_g/Src_g (which the handover term is formed from) and
+        // Qb_g.  Everything the block solve needs is therefore in place; it re-solves
+        // the same column with the intensities as unknowns and applies the energy
+        // itself.  Fb_g/Src_g/Em_g are deliberately LEFT at the entry-state values, so
+        // rad_f2s, rt_rad_force and every diagnostic below see exactly the numbers mode
+        // 0 hands them.
+        if (mode3_) {
+          const int nmb_c3 = pmbp->nmb_thispack;
+          if (rt_c3wk_ptr == nullptr) {
+            rt_c3wk_ptr = new DvceArray5D<Real>("rt_c3wk", nmb_c3, RTCOL3_NW, n1, n3, n2);
+            rt_c3top_ptr = new DvceArray4D<Real>("rt_c3top", nmb_c3, 2, n3, n2);
+            rt_c3stat_ptr = new DvceArray1D<Real>("rt_c3stat", 16);
+            if (global_variable::my_rank == 0) {
+              std::cout << "### two_stream_rt: rt_implicit_column = 3, the EXACT "
+                        << "block-tridiagonal column solve (intensities as unknowns); "
+                        << "workspace " << (static_cast<double>(nmb_c3)*RTCOL3_NW*n1*n2*n3
+                                            *sizeof(Real)/1.0e6) << " MB" << std::endl;
+            }
+          }
+          auto c3wk = *rt_c3wk_ptr;
+          auto c3top = *rt_c3top_ptr;
+          auto c3stat = *rt_c3stat_ptr;
+          Kokkos::deep_copy(c3stat, 0.0);
+          // the angular quadrature, the same one the sweep just used
+          const int nq3 = (ck_nq_ > 1) ? 2 : 1;
+          Real mu3[2], wf3[2];
+          if (nq3 == 1) {
+            mu3[0] = 1.0/CK_DIFFUSIVITY;
+            wf3[0] = M_PI;
+            mu3[1] = 1.0;
+            wf3[1] = 0.0;
+          } else {
+            for (int q=0; q<2; ++q) {
+              mu3[q] = mug[q];
+              wf3[q] = 2.0*M_PI*wg[q]*mug[q];
+            }
+          }
+          // the frozen top-face downward intensity: the sweep's unresolved-column model
+          const Real mu3a = mu3[0], mu3b = mu3[1];
+          const bool tv3 = top_vac;
+          par_for("rt_c3_top", DevExeSpace(), 0, nmb1, ks, ke, js, je,
+          KOKKOS_LAMBDA(const int m, const int k, const int j) {
+            const Real kap = kc_g(m,0,ie+1,k,j);
+            const Real mu0 = cf_g(m,k,j,3);
+            const Real dtau = tv3 ? 0.0
+                : RTTopDtau(kap, pb_g(m,k,j,ie+1)*1.0e6,
+                            EffGravAt(grav, ap, X1V(m,ie+1), grav_pmass, omega, mu0,
+                                      tide));
+            const Real bsrc = Bb_g(m,0,ie+1,k,j);
+            c3top(m,0,k,j) = (1.0 - exp(-dtau/mu3a))*bsrc;
+            c3top(m,1,k,j) = (1.0 - exp(-dtau/mu3b))*bsrc;
+          });
+          RTCol3 c3;
+          c3.u0 = u0;
+          c3.bcc = bcc_uc_;
+          c3.phicc = phicc_uc_;
+          c3.cosc = cosc_uc_;
+          c3.kc = kc_g;
+          c3.Bb = Bb_g;
+          c3.Fb = Fb_g;
+          c3.Src = Src_g;
+          c3.Qb = Qb_g;
+          c3.Tg = T_g;
+          c3.wblend = taublend ? w_g : DvceArray4D<Real>("rt_c3w_d",1,1,1,1);
+          c3.icut = icut_g;
+          c3.wk = c3wk;
+          c3.dtop = c3top;
+          c3.stat = c3stat;
+          c3.size = size;
+          c3.dx1 = dx1_;
+          c3.eos = eos;
+          c3.bdt = bdt;
+          c3.sigma = boltz_sigma;
+          c3.Iint = Iint;
+          c3.mu[0] = mu3[0];
+          c3.mu[1] = mu3[1];
+          c3.wf[0] = wf3[0];
+          c3.wf[1] = wf3[1];
+          c3.tol = rt_impl_tol;
+          c3.dfloor = eos.dfloor;
+          c3.nq = nq3;
+          c3.maxit = (rt_impl_maxit > 0) ? rt_impl_maxit : 6;
+          c3.is = is;
+          c3.ie = ie;
+          c3.is_pp = is_pp;
+          c3.nx1_pp = nx1_pp;
+          c3.pp = pp_;
+          c3.mhd = mhd_uc_;
+          c3.etg = etg_uc_;
+          c3.cs = cs_uc_;
+          c3.bface = bface_on;
+          c3.taublend = taublend;
+          c3.int_at_cut = int_at_cut;
+          c3.cut_legacy = cut_legacy;
+          c3.direct = rt_src_direct;
+          RTCol3Launch(c3, nmb1, ks, ke, js, je);
+          if (rt_outer_verbose && global_variable::my_rank == 0 &&
+              rt_c3_lines < 4000 &&
+              (rt_report_every <= 0 || pm->ncycle % rt_report_every == 0)) {
+            ++rt_c3_lines;
+            auto hs = Kokkos::create_mirror_view(c3stat);
+            Kokkos::deep_copy(hs, c3stat);
+            const Real ncol = (hs(1) > 0.0) ? hs(1) : 1.0;
+            std::cout << "### rt_col3 ncycle=" << pm->ncycle << " t=" << pm->time
+                      << " dt=" << bdt << " ncol=" << static_cast<int>(hs(1))
+                      << " it_mean=" << hs(0)/ncol
+                      << " it_max=" << static_cast<int>(hs(2))
+                      << " nclamp=" << static_cast<int>(hs(3))
+                      << " max|db/b|=" << hs(4)
+                      << " eos_roundtrip=" << hs(5)
+                      << " nsing=" << static_cast<int>(hs(6))
+                      << " nbadE=" << static_cast<int>(hs(7))
+                      << " nfloor=" << static_cast<int>(hs(8))
+                      << " sum_de_dx=" << hs(9)
+                      << " sum|de|dx=" << hs(10)
+                      << " ndiagviol=" << static_cast<int>(hs(11))
+                      << " budget_rel="
+                      << ((hs(10) > 0.0) ? (hs(9) - hs(12))/hs(10) : 0.0)
+                      << " telescope_rel="
+                      << ((hs(15) > 0.0) ? (hs(13) - hs(14))/hs(15) : 0.0) << std::endl;
+          }
+        }
       } else if (ck_on) {
         // The private intensity column has to be sized at COMPILE time, but the radial
         // extent is only known at run time, and an oversized one is not free: at n1 = 68
@@ -3019,7 +3194,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
         }
         // the share the tridiagonal owns is not applied here; the rest takes the old
         // nonlinear relaxation, unchanged
-        const bool skip_de = implcol_ && (wthk_ >= 1.0);
+        const bool skip_de = (implcol_ && (wthk_ >= 1.0)) || mode3_;
         // ---- ONE-SHOT ASSEMBLY DUMP (problem/rt_outer_verbose, cycle 0, one column) --
         // A and E are taken with EXACTLY the pre-existing apply block's definitions:
         // E = Em, the per-volume emission the sweep subtracted, and A = src_relax + Em,
