@@ -440,6 +440,13 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // source running between two cell CENTRES, offset from it by half a cell.
   two_stream_rt::rt_layer_legacy =
       pin->GetOrAddBoolean("problem","rt_layer_legacy",false);
+  // problem/rt_ali_diag: the accelerated-Lambda diagonal in the per-cell semi-implicit
+  // apply.  A PHYSICS CORRECTION, default TRUE: without it an optically thick cell is
+  // handed 1/x of its own radiative source (x up to 1e5), so the thick layers of the
+  // column never re-relax.  The LEGACY value is false, and reproduces a pre-fix run bit
+  // for bit.  See the long note in utils/two_stream_rt.hpp.
+  two_stream_rt::rt_ali_diag =
+      pin->GetOrAddBoolean("problem","rt_ali_diag",true);
   rt_de_max = pin->GetOrAddReal("problem","rt_de_max",0.5);
   rt_semi_implicit = pin->GetOrAddBoolean("problem","rt_semi_implicit",true);
   if (global_variable::my_rank == 0) {

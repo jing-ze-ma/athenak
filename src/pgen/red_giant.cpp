@@ -1028,6 +1028,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     ts::rt_explicit = pin->GetOrAddBoolean("problem", "rt_explicit", false);
     ts::rt_newton = pin->GetOrAddBoolean("problem", "rt_newton", false);
     ts::rt_rescue_eq = pin->GetOrAddBoolean("problem", "rt_rescue_eq", false);
+    // problem/rt_ali_diag: the accelerated-Lambda diagonal in the per-cell semi-implicit
+    // apply.  A PHYSICS CORRECTION, default TRUE: without it an optically thick cell is
+    // handed 1/x of its own radiative source (x up to 1e5), so the thick two-stream
+    // layers never re-relax.  LEGACY value false = the old behaviour, bit for bit.
+    // See the long note in utils/two_stream_rt.hpp.
+    ts::rt_ali_diag = pin->GetOrAddBoolean("problem", "rt_ali_diag", true);
     ts::rt_src_direct = pin->GetOrAddBoolean("problem", "rt_src_direct", false);
     ts::rt_top_clamp = pin->GetOrAddBoolean("problem", "rt_top_clamp", false);
     ts::rt_use_cons = pin->GetOrAddBoolean("problem", "rt_use_cons", false);
@@ -1090,6 +1096,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     ts::rt_explicit = pin->GetOrAddBoolean("problem", "rt_explicit", false);
     ts::rt_newton = pin->GetOrAddBoolean("problem", "rt_newton", false);
     ts::rt_rescue_eq = pin->GetOrAddBoolean("problem", "rt_rescue_eq", false);
+    // problem/rt_ali_diag: the accelerated-Lambda diagonal in the per-cell semi-implicit
+    // apply.  A PHYSICS CORRECTION, default TRUE: without it an optically thick cell is
+    // handed 1/x of its own radiative source (x up to 1e5), so the thick two-stream
+    // layers never re-relax.  LEGACY value false = the old behaviour, bit for bit.
+    // See the long note in utils/two_stream_rt.hpp.
+    ts::rt_ali_diag = pin->GetOrAddBoolean("problem", "rt_ali_diag", true);
     ts::rt_src_direct = pin->GetOrAddBoolean("problem", "rt_src_direct", false);
     ts::rt_top_clamp = pin->GetOrAddBoolean("problem", "rt_top_clamp", false);
     ts::rt_use_cons = pin->GetOrAddBoolean("problem", "rt_use_cons", false);

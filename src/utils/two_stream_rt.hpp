@@ -384,6 +384,39 @@ inline bool rt_newton = false;
 // make the rescue less violent.  DEFAULT FALSE = the old 99.9 % policy, so shared pgens
 // are unchanged; the red-giant inputs set it true.
 inline bool rt_rescue_eq = false;
+// problem/rt_ali_diag: the ACCELERATED-LAMBDA (ALI) DIAGONAL in the per-cell
+// semi-implicit apply.  Without it the step relaxes the cell toward A, the absorption
+// the sweep computed, at the rate 4E/e set by the cell's OWN emission -- and in an
+// optically thick cell that rate is enormous, so x = src*bdt/deq reaches 1e4-1e5 and the
+// factor (1 - exp(-x))/x delivers 1/x of the source to the gas.  MEASURED on the B-star
+// relaxed column (bench/bstar_fecz/leakdiag/dump0, w = 0 everywhere, dtau 5-134): the
+// assembled source sums to +0.2931 F_bot = F_bot - F_top exactly, and the APPLIED sum is
+// +0.000089 F_bot.  Nothing is clipped, no guard fires, the Newton converges in 1-2 steps
+// -- the source is simply damped away, cell by cell, and the energy the sweep took out of
+// the radiation field is never given to the gas.  Every thick two-stream layer in every
+// run built on this file -- the red giant and the hot Jupiter included -- therefore had
+// its thermal structure effectively FROZEN at the initial condition.
+//
+// The mistake is treating A as an EXTERNAL field.  In a thick cell almost all of A is the
+// cell's own emission coming back from its immediate neighbours, so the true response of
+// the net exchange to a change in this cell's source function is not 4E/e but
+// (1 - Lambda*_ii) 4E/e, with Lambda*_ii the diagonal of the Lambda operator.  That is
+// textbook accelerated Lambda iteration.
+//
+// Lambda*_ii here is the local escape-probability diagonal the sweep's own layer
+// coefficients already carry, 1 - (1 - e^-x)/x at x = dtau/mu, averaged over the
+// quadrature.  It goes to 1 as dtau -> infinity, which sends the relaxation rate to zero
+// and the step to the EXACT explicit one, de = src*bdt -- conservative, and stable
+// because a thick cell's net imbalance relaxes on the diffusion time, not the thermal one
+// -- and to 0 as dtau -> 0, where the old stiff relaxation is what is wanted and is
+// recovered BITWISE.  The same factor enters the closed form and the Newton refinement,
+// so the fixed point is still E(T) = A_eff and the semi-implicit form is unchanged.
+//
+// DEFAULT TRUE: this is a PHYSICS CORRECTION, not a tuning knob.  rt_ali_diag = false is
+// the LEGACY value and reproduces the old behaviour exactly.  Only the band paths (grey
+// and correlated-k) carry a per-cell continuum opacity, so the diagonal is computed there
+// and the bare picket-fence path is left alone.
+inline bool rt_ali_diag = true;
 // problem/rt_src_direct: form the per-cell radiative source DIRECTLY as absorption minus
 // emission during the sweeps, instead of as the difference of the two face fluxes.  The
 // two are the same number algebraically -- the stream update across a layer is
@@ -2562,6 +2595,10 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
       const bool semilin = rt_semi_lin;
       const bool explicit_on = rt_explicit;
       const bool newton_on = rt_newton;
+      // see rt_ali_diag.  Only the band paths carry a per-cell continuum opacity in
+      // kc_g, so the diagonal is available there and nowhere else.
+      const bool ali_on = rt_ali_diag && band_on;
+      const int ali_nq = (ck_nq_ > 1) ? 2 : 1;
       if (rt_efix_ptr == nullptr) {
         rt_efix_ptr = new DvceArray1D<int>("rt_efix", 3);
         Kokkos::deep_copy(*rt_efix_ptr, 0);
@@ -2703,6 +2740,32 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
         // The e ~ T behind e_eq is the same approximation the old rate made, and it
         // UNDER-estimates e_eq wherever H2 or H is partly dissociated, i.e. it errs
         // toward a smaller step.  problem/rt_semi_lin recovers the old linearization.
+        // ---- rt_ali_diag: 1 - Lambda*_ii, the local escape factor -------------------
+        // The escape probability of the cell's own emission, from the same layer
+        // coefficient 1 - (1 - e^-x)/x at x = dtau/mu the sweeps use, averaged over the
+        // quadrature.  ome_ = 1 (the value with rt_ali_diag off, and the value in the
+        // transparent limit) is the old expression bit for bit.
+        Real ome_ = 1.0;
+        if (ali_on) {
+          const Real dtau_a = kc_g(m,0,i,k,j)*rhoN(m,k,j,i)*dx1(m,k,j,i);
+          if (dtau_a > 0.0) {
+            Real lst = 0.0;
+            if (ali_nq > 1) {
+              const Real mq[2] = {0.21132487, 0.78867513};
+              for (int q=0; q<2; ++q) {
+                const Real xq = dtau_a/mq[q];
+                lst += 0.5*((xq > 1.0e-3) ? (1.0 - (-expm1(-xq))/xq)
+                                          : (0.5*xq - xq*xq/6.0));
+              }
+            } else {
+              const Real xq = dtau_a*1.66;
+              lst = (xq > 1.0e-3) ? (1.0 - (-expm1(-xq))/xq) : (0.5*xq - xq*xq/6.0);
+            }
+            ome_ = 1.0 - lst;
+            if (!(ome_ > 1.0e-8)) ome_ = 1.0e-8;   // never divide by zero below
+            if (ome_ > 1.0) ome_ = 1.0;
+          }
+        }
         Real de = src*bdt;
         // rt_cell_report bookkeeping: the pieces of the step, kept for the report below
         Real dg_A = 0.0, dg_Em = 0.0, dg_deq = 0.0;
@@ -2724,12 +2787,16 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
             const Real src_ex = src - src_relax;     // the handover, applied exactly
             const Real sdt = src_relax*bdt;
             if (semilin) {
-              const Real lam = 4.0*Em/ei;
+              const Real lam = ome_*4.0*Em/ei;     // see rt_ali_diag
               const Real x = lam*bdt;
               de = (x > 1.0e-4) ? (src_relax/lam)*(-expm1(-x)) : sdt;
               de += src_ex*bdt;
             } else {
-              const Real absn = src_relax + Em;        // A, held fixed over the step
+              // A_eff: the equilibrium the cell is relaxed toward is the one where the
+              // NET exchange vanishes, (1 - Lambda*)(E(T) - E) = src, i.e. E_eq = E +
+              // src/(1 - Lambda*).  With rt_ali_diag off ome_ is 1 and this is the old
+              // A = src_relax + Em, bit for bit.  See rt_ali_diag.
+              const Real absn = src_relax/ome_ + Em;   // A, held fixed over the step
               // e_eq - e.  With nothing arriving the equilibrium is T = 0, i.e. -e.
               const Real deq = (absn > 0.0) ? ei*(sqrt(sqrt(absn/Em)) - 1.0) : -ei;
               dg_A = absn; dg_Em = Em; dg_deq = deq;
@@ -2752,7 +2819,10 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
               if (newton_on && eos.IsGeneral()) {
                 const Real t0 = T_g(m,k,j,i);
                 const Real d0 = rhoN(m,k,j,i);
-                const Real abdt = absn*bdt, embdt = Em*bdt;
+                // both terms carry the same (1 - Lambda*), so F(de) = de -
+                // bdt*src_relax + ome_*bdt*Em*(r4 - 1): explicit at r4 = 1, zero at the
+                // ALI equilibrium E(T) = A_eff.  ome_ = 1 is the old expression.
+                const Real abdt = ome_*absn*bdt, embdt = ome_*Em*bdt;
                 // SAFEGUARDED, because a bare Newton here does not converge.  F is
                 // MONOTONE INCREASING in de -- both de and E(T(e+de)) rise with de -- so
                 // its root is unique and bracketing is available for free: every iterate
