@@ -54,6 +54,7 @@
 #include <cmath>
 #include <iostream>
 #include <string>
+#include <vector>
 
 #if MPI_PARALLEL_ENABLED
 #include <mpi.h>
@@ -408,6 +409,40 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
     Kokkos::deep_copy(tr_w1pl, tr_w1pl_h);
   }
 
+  // ---- THE ACTIVE PLANE RANGE OF EACH SUBSTAGE.  The loop below still runs s_max
+  // substages, but at substage j only the planes with s_i >= j do any arithmetic.  Under
+  // the transverse stencil the planes never talk to each other, so those planes can be
+  // dropped from the KERNEL as well as from the arithmetic: the x1 index is the outermost
+  // of the par_for range, and the active planes of a stiffness profile that varies
+  // smoothly with depth are contiguous, so one min/max bracket per substage is enough.
+  // (A bracket, not a compact list: a plane inside the bracket with s_i < j still enters
+  // the kernel, but returns immediately.)
+  //
+  // What the finished planes used to pay is the register copy y_j = y_{j-1}, needed only
+  // because the three RKL1 registers rotate.  It is removed by NOT writing them at all
+  // and remembering where each plane's final value was left: the rotation is a fixed
+  // 3-cycle, so the register written at substage j is always index 2 - (j-1) % 3 of
+  // (tr_yc, tr_yb, tr_ya) -- see the write-out below.  No value changes, so this is
+  // bitwise what the copies gave.
+  std::vector<int> plo(nsub + 1, 0), phi(nsub + 1, nplane - 1);
+  int pswept = nsub*nplane;
+  if (perpl) {
+    pswept = 0;
+    for (int j=1; j<=nsub; ++j) {
+      int lo = nplane, hi = -1;
+      for (int p=0; p<nplane; ++p) {
+        if (tr_spl_h(p) >= j) {
+          if (p < lo) lo = p;
+          hi = p;
+        }
+      }
+      if (hi < lo) { lo = 0; hi = 0; }     // cannot happen: max_i s_i = nsub
+      plo[j] = lo;
+      phi[j] = hi;
+      pswept += hi - lo + 1;
+    }
+  }
+
   // ---- the RKL1 loop on the increment.  Y_0 = 0 everywhere INCLUDING the ghosts, so
   // the first substage needs no exchange; every later one exchanges Y_{j-1} through the
   // module's own one-variable boundary object before the stencil reads it.
@@ -434,18 +469,20 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
     auto yc_ = ycur;
     auto yo_ = yold;
     auto yn_ = ynew;
-    par_for("radtrsub", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    const int ilo_ = is + plo[js_], ihi_ = is + phi[js_];
+    par_for("radtrsub", DevExeSpace(), 0, nmb1, ks, ke, js, je, ilo_, ihi_,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       // the stiffness split left this block nothing to do: its increment stays zero,
       // but the register still has to be written, because the three registers rotate
       if (blkon && blk(m) == 0) { yn_(m,0,k,j,i) = 0.0; return; }
       // rad_sts_perplane: this plane's own s_i-stage scheme is already finished, so its
-      // register holds its final increment and is simply carried into the next one (the
-      // three registers rotate, so it has to be written).  mu_j and nu_j do not depend on
-      // s; only mu~_j = mu_j w1 does, through w1 = 2/(s^2+s).
+      // final increment is already sitting in the register substage s_i wrote it to, and
+      // it is left there -- nothing is copied and nothing is written (the write-out below
+      // picks the register up).  mu_j and nu_j do not depend on s; only mu~_j = mu_j w1
+      // does, through w1 = 2/(s^2+s).
       Real mutp = mut;
       if (perpl) {
-        if (jsub > spl(i - isv)) { yn_(m,0,k,j,i) = yc_(m,0,k,j,i); return; }
+        if (jsub > spl(i - isv)) return;
         mutp = muj*w1pl(i - isv)*tau;
       }
       const Real ai = st(m,ia_,k,j,i);
@@ -489,6 +526,14 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
     const int nx1_ = indcs.nx1, nx2_ = indcs.nx2, nx3_ = indcs.nx3;
     const int nkji_ = nx3_*nx2_*nx1_, nji_ = nx2_*nx1_;
     auto yfin = ycur;
+    // rad_sts_perplane: each plane's final increment is in the register its OWN last
+    // substage wrote.  The rotation (old <- cur, cur <- new, new <- old) has period 3
+    // starting from new = tr_yc, so substage j wrote register 2 - (j-1) % 3 of
+    // (tr_ya, tr_yb, tr_yc).  For s_i = nsub this reduces to ycur, which is what the
+    // global path uses.
+    auto yf0_ = tr_ya;
+    auto yf1_ = tr_yb;
+    auto yf2_ = tr_yc;
     Kokkos::parallel_reduce("radtrend",
     Kokkos::RangePolicy<>(DevExeSpace(), 0, (nmb1 + 1)*nkji_),
     KOKKOS_LAMBDA(const int &idx, Real &ssum, Real &sabs, Real &smax) {
@@ -496,7 +541,14 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
       const int k = (idx - m*nkji_)/nji_ + ks;
       const int j = (idx - m*nkji_ - (k - ks)*nji_)/nx1_ + js;
       const int i = (idx - m*nkji_ - (k - ks)*nji_ - (j - js)*nx1_) + is;
-      Real y = yfin(m,0,k,j,i);
+      Real y;
+      if (perpl) {
+        const int b = 2 - (spl(i - isv) - 1)%3;
+        y = (b == 2) ? yf2_(m,0,k,j,i) : ((b == 1) ? yf1_(m,0,k,j,i)
+                                                   : yf0_(m,0,k,j,i));
+      } else {
+        y = yfin(m,0,k,j,i);
+      }
       if (!isfinite(y)) y = 0.0;
       u0(m,IEN,k,j,i) += y;
       const Real dv = size.d_view(m).dx1*size.d_view(m).dx2*size.d_view(m).dx3;
@@ -531,7 +583,9 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
       if (perpl) {
         plstr = ", per-plane s min/mean = " + std::to_string(splmin) + "/"
                 + std::to_string(static_cast<double>(splsum)
-                                 /static_cast<double>(nplane));
+                                 /static_cast<double>(nplane))
+                + ", planes swept/needed/full = " + std::to_string(pswept) + "/"
+                + std::to_string(splsum) + "/" + std::to_string(nsub*nplane);
       }
       std::cout << (sts1 ? "### rad_sts_all cycle " : "### rad_implicit_ang cycle ")
                 << pmy_pack->pmesh->ncycle
