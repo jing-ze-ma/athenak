@@ -1417,7 +1417,8 @@ void Conduction::AddIsotropicHeatFluxRadiative(const DvceArray5D<Real> &w0,
 //! u0(IEN) += x.  The field is frozen over the step exactly as T*, c_v and K_f are.
 
 void Conduction::ImplicitRadialUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
-                                      const Real beta_dt) {
+                                      const Real beta_dt, const bool rt_on,
+                                      const int rt_pass) {
   if (!rad_implicit_x1) return;
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie;
@@ -1479,6 +1480,18 @@ void Conduction::ImplicitRadialUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos
   auto wrk = imp_wrk;
   auto iflag = imp_flag;
   auto irec = imp_rec;
+  // ---- the merged two-stream column solve (<problem>/rt_implicit_column) ------------
+  // rt_on is passed true ONLY by two_stream_rt, which has just filled rt_col_res /
+  // rt_col_jac / rt_col_dbdt for the CURRENT state.  Everything below is behind it, so
+  // with the switch off not one expression of the original solve changes.
+  const bool rtc_ = rt_on && rt_col_active && rt_col_alloc;
+  const int rtpass_ = rt_pass;
+  auto rtres_ = rtc_ ? rt_col_res : DvceArray4D<Real>("rtc_res_d", 1, 1, 1, 1);
+  auto rtjac_ = rtc_ ? rt_col_jac : DvceArray5D<Real>("rtc_jac_d", 1, 1, 1, 1, 1);
+  auto rtdbt_ = rtc_ ? rt_col_dbdt : DvceArray4D<Real>("rtc_dbt_d", 1, 1, 1, 1);
+  auto rttn_ = rtc_ ? rt_col_tn : DvceArray4D<Real>("rtc_tn_d", 1, 1, 1, 1);
+  auto rtdg_ = rtc_ ? rt_col_diag : DvceArray1D<Real>("rtc_dg_d", 4);
+  if (rtc_) Kokkos::deep_copy(rtdg_, 0.0);
   // slot indices as plain locals: a static constexpr member would capture `this`
   const int e_ = IMPE, t_ = IMPT, al_ = IMPA, pr_ = IMPP;
   const int c_ = IMPC, cp_ = IMPCP, dp_ = IMPDP;
@@ -1527,6 +1540,18 @@ void Conduction::ImplicitRadialUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos
     wrk(m,pr_,k,j,i) = eos_.Pressure(d, ei, tt);
     wrk(m,al_,k,j,i) = 1.0/(d*cv);
   });
+
+  // T^n, the temperature the OUTER iteration started from.  Passes 2..k must keep the
+  // heat-capacity term anchored on it, or each pass would take another FULL backward-
+  // Euler conduction step instead of correcting the one already taken.
+  if (rtc_ && rtpass_ == 0) {
+    auto wrk_tn = wrk;
+    const int t_tn = t_;
+    par_for("radimpx1_tn", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      rttn_(m,k,j,i) = wrk_tn(m,t_tn,k,j,i);
+    });
+  }
 
   // ---- the frozen face coefficient A_f K_f/dl_f.  The two boundary faces are
   // outside the system: they were added explicitly with the ghost states.
@@ -1612,13 +1637,44 @@ void Conduction::ImplicitRadialUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos
       const Real cl = wrk(m,c_,k,j,i), cr = wrk(m,c_,k,j,i+1);
       const Real ac = wrk(m,al_,k,j,i);
       const Real dg = (ac > 0.0) ? vi/(beta_dt*ac) : 1.0;
-      const Real aa = -cl;
-      const Real bb = dg + cl + cr;
-      const Real cc = -cr;
+      Real aa = -cl;
+      Real bb = dg + cl + cr;
+      Real cc = -cr;
       const Real tc = wrk(m,t_,k,j,i);
       const Real tm = (i > is) ? wrk(m,t_,k,j,i-1) : 0.0;
       const Real tp = (i < ie) ? wrk(m,t_,k,j,i+1) : 0.0;
-      const Real rhs = cr*(tp - tc) + cl*(tm - tc);
+      Real rhs = cr*(tp - tc) + cl*(tm - tc);
+      // ---- the two-stream's nearest-neighbour linearisation, folded in ------------
+      // R_i is the FULL explicit source at this state (everything >= 2 cells away, the
+      // stellar beam and the tau-blend handover included), so the fixed point of the
+      // outer iteration is the exact backward-Euler balance whatever the Jacobian gets
+      // wrong.  J_ij = dR_i/dB_j dB_j/dT_j, converted from Kelvin to code temperature
+      // and volume-integrated so it lives in the same units as the face conductances.
+      // J_ii <= 0 (the cell's own emission) raises the diagonal and J_{i,i+-1} >= 0 (it
+      // absorbs what its neighbour emits) lowers the off-diagonals, so the row stays an
+      // M-matrix; the audit below counts any row where that fails.
+      if (rtc_ && ac > 0.0) {
+        const Real jm = (i > is) ? vi*rtjac_(m,0,k,j,i)*rtdbt_(m,k,j,i-1)*temp_unit : 0.0;
+        const Real j0 = vi*rtjac_(m,1,k,j,i)*rtdbt_(m,k,j,i)*temp_unit;
+        const Real jp = (i < ie) ? vi*rtjac_(m,2,k,j,i)*rtdbt_(m,k,j,i+1)*temp_unit : 0.0;
+        if (isfinite(jm) && isfinite(j0) && isfinite(jp)) {
+          aa -= jm;
+          bb -= j0;
+          cc -= jp;
+        }
+        rhs += vi*rtres_(m,k,j,i);
+        if (rtpass_ > 0) rhs -= dg*(tc - rttn_(m,k,j,i));
+        const Real offs = fabs(aa) + fabs(cc);
+        if (bb > 0.0) {
+          const Real rat = offs/bb;
+          if (rat > 1.0) {
+            Kokkos::atomic_fetch_add(&rtdg_(0), 1.0);
+            Kokkos::atomic_max(&rtdg_(1), rat);
+          }
+        } else {
+          Kokkos::atomic_fetch_add(&rtdg_(0), 1.0);
+        }
+      }
       if (i == is) {
         wrk(m,cp_,k,j,i) = cc/bb;
         wrk(m,dp_,k,j,i) = rhs/bb;
@@ -1637,13 +1693,31 @@ void Conduction::ImplicitRadialUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos
     // iteration, while a debt owed to i+1 is applied to u0 directly -- one thread owns
     // the whole column, so there is no race.
     Real xnext = 0.0, csum = 0.0, cabs = 0.0, pend = 0.0, eprev = 0.0;
+    // the merged solve is NOT source-free: the column exchanges energy with the two
+    // boundaries through the radiation field, so sum_i V_i de_i must come out equal to
+    // beta_dt times the LINEARISED two-stream source summed over the column, not to
+    // zero.  rtexp accumulates exactly that; it is identically zero with the switch off,
+    // so the residual reported below is the same number it always was.
+    Real rtexp = 0.0;
     for (int i=ie; i>=is; --i) {
       const Real vi = curvg ? vol_(m,k,j,i) : dx1c;
       const Real ac = wrk(m,al_,k,j,i);
       Real y = wrk(m,dp_,k,j,i) - wrk(m,cp_,k,j,i)*xnext;
       bool bad = !isfinite(y);
       if (bad) y = 0.0;
+      const Real yprev = xnext;             // y_{i+1}, already solved
       xnext = y;
+      if (rtc_ && ac > 0.0) {
+        // R_i + J_ii y_i + J_{i,i+1} y_{i+1}, and cell i+1's absorption of THIS cell's
+        // emission, V_{i+1} J_{i+1,i} y_i -- the only term of row i+1 still outstanding
+        rtexp += vi*rtres_(m,k,j,i);
+        rtexp += vi*rtjac_(m,1,k,j,i)*rtdbt_(m,k,j,i)*temp_unit*y;
+        if (i < ie) {
+          const Real vp = curvg ? vol_(m,k,j,i+1) : dx1c;
+          rtexp += vi*rtjac_(m,2,k,j,i)*rtdbt_(m,k,j,i+1)*temp_unit*yprev;
+          rtexp += vp*rtjac_(m,0,k,j,i+1)*rtdbt_(m,k,j,i)*temp_unit*y;
+        }
+      }
       Real x = (ac > 0.0) ? y/ac : 0.0;
       if (!isfinite(x)) {
         x = 0.0;
@@ -1711,7 +1785,12 @@ void Conduction::ImplicitRadialUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos
       csum += vi*x;
       cabs += fabs(vi*x);
     }
-    if (cabs > 0.0) mviol = fmax(mviol, fabs(csum)/cabs);
+    if (rtc_) {
+      rtexp *= beta_dt;
+      Kokkos::atomic_fetch_add(&rtdg_(2), csum);
+      Kokkos::atomic_fetch_add(&rtdg_(3), rtexp);
+    }
+    if (cabs > 0.0) mviol = fmax(mviol, fabs(csum - rtexp)/cabs);
   }, Kokkos::Max<Real>(maxviol), nfail, nclip);
 
   // <problem>/nan_report: the conservation residual of the tridiagonal solve, and any
@@ -1740,7 +1819,60 @@ void Conduction::ImplicitRadialUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos
       }
     }
   }
+  // ---- the M-matrix audit of the merged rows, and the column energy budget ----------
+  if (rtc_) {
+    auto hg = Kokkos::create_mirror_view(rt_col_diag);
+    Kokkos::deep_copy(hg, rt_col_diag);
+    const bool viol = (hg(0) > 0.0);
+    if (viol || (nan_report && rt_col_lines < 20)) {
+      if (global_variable::my_rank == 0 && rt_col_lines < 200) {
+        ++rt_col_lines;
+        const Real den = fabs(hg(3)) + fabs(hg(2));
+        std::cout << "### rt_implicit_column rank " << global_variable::my_rank
+                  << " cycle " << pmy_pack->pmesh->ncycle
+                  << " pass " << rtpass_
+                  << ": M-matrix violations = " << static_cast<int64_t>(hg(0))
+                  << ", worst |offdiag|/diag = " << hg(1)
+                  << ", sum V de = " << hg(2) << ", expected = " << hg(3)
+                  << ", rel = " << ((den > 0.0) ? fabs(hg(2) - hg(3))/den : 0.0)
+                  << std::endl;
+      }
+    }
+  }
   return;
+}
+
+//----------------------------------------------------------------------------------------
+//! n void Conduction::EnableRTColumn
+//! rief allocate the four arrays the merged two-stream column solve exchanges with
+//! two_stream_rt.  Called once, from the RT header, the first time the switch is seen.
+
+void Conduction::EnableRTColumn() {
+  if (rt_col_alloc) return;
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int ng = indcs.ng;
+  const int n1 = indcs.nx1 + 2*ng;
+  const int n2 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*ng) : 1;
+  const int n3 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*ng) : 1;
+  const int nmb = pmy_pack->nmb_thispack;
+  Kokkos::realloc(rt_col_res, nmb, n3, n2, n1);
+  Kokkos::realloc(rt_col_jac, nmb, 3, n3, n2, n1);
+  Kokkos::realloc(rt_col_dbdt, nmb, n3, n2, n1);
+  Kokkos::realloc(rt_col_tn, nmb, n3, n2, n1);
+  Kokkos::realloc(rt_col_diag, 4);
+  Kokkos::deep_copy(rt_col_res, 0.0);
+  Kokkos::deep_copy(rt_col_jac, 0.0);
+  Kokkos::deep_copy(rt_col_dbdt, 0.0);
+  Kokkos::deep_copy(rt_col_tn, 0.0);
+  Kokkos::deep_copy(rt_col_diag, 0.0);
+  rt_col_active = true;
+  rt_col_alloc = true;
+  if (!rad_implicit_x1) {
+    std::cout << "### FATAL ERROR in Conduction::EnableRTColumn: "
+              << "<problem>/rt_implicit_column needs rad_implicit_x1 = true."
+              << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
 }
 
 //----------------------------------------------------------------------------------------

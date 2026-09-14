@@ -156,7 +156,41 @@ class Conduction {
   DvceArray1D<Real> imp_rec;   // 8 elements: that cell's identity and state
   int imp_lines = 0;           // lines printed so far by the debug report
   void ImplicitRadialUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
-                            const Real beta_dt);
+                            const Real beta_dt, const bool rt_on = false,
+                            const int rt_pass = 0);
+  // ---- THE MERGED TWO-STREAM COLUMN SOLVE (<problem>/rt_implicit_column) -------------
+  // The grey two-stream source is exactly linear in the cell Planck functions B_j at
+  // frozen opacity, so its nearest-neighbour linearisation folds straight into the
+  // tridiagonal above: the column is then solved for the radiative exchange AND the
+  // radiative diffusion at once, by one backward-Euler Newton step, instead of the
+  // two_stream's per-cell relaxation which damps each cell by its own (1 - e^-x)/x and
+  // so breaks the O(1e3)-to-O(1) cancellation between neighbours (the dt-linear velocity
+  // pump; see two_stream_rt.hpp, rt_implicit_column).
+  //
+  // two_stream_rt fills these three arrays instead of applying its own de, and then
+  // calls ImplicitRadialUpdate itself, once per outer pass.  The wrapper task
+  // ImplicitConduction is a no-op while rt_col_active: the solve has already happened.
+  //   rt_col_res  : R_i, the FULL explicit two-stream source at the current state, in
+  //                 code energy density per code time (what the old apply block would
+  //                 have multiplied by bdt).
+  //   rt_col_jac  : dR_i/dB_{i-1}, dR_i/dB_i, dR_i/dB_{i+1} at frozen opacity, summed
+  //                 over the quadrature chains.  Everything >= 2 cells away stays in R.
+  //   rt_col_dbdt : dB_i/dT_i with T in KELVIN, i.e. 4 B_i/T_i.  The Kelvin -> code
+  //                 conversion is applied here, where temperature_cgs() lives.
+  //   rt_col_tn   : T* at the START of the outer iteration, needed by passes 2..k so the
+  //                 heat-capacity term stays anchored on T^n and the conduction operator
+  //                 is not re-applied in full on every pass.
+  bool rt_col_active = false;       // <problem>/rt_implicit_column, set by two_stream_rt
+  bool rt_col_alloc = false;
+  DvceArray4D<Real> rt_col_res;
+  DvceArray5D<Real> rt_col_jac;
+  DvceArray4D<Real> rt_col_dbdt;
+  DvceArray4D<Real> rt_col_tn;
+  // the M-matrix audit of the merged rows: how many rows had |off-diagonals| exceeding
+  // the diagonal, and the worst excess ratio.  Reported once per rad_col_report cycles.
+  DvceArray1D<Real> rt_col_diag;    // 4: nviol, worst ratio, sum V de, expected sum V de
+  int rt_col_lines = 0;
+  void EnableRTColumn();
   // rad_cap_ang (<hydro>/ or <mhd>/rad_cap_ang, default 0 = off): a CONSERVATIVE cap on
   // the explicit ANGULAR (x2/x3) radiative diffusion.  With the radial direction made
   // implicit the same evacuated-cell runaway simply migrates to the angular faces (the
