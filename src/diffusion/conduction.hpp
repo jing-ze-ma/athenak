@@ -421,6 +421,37 @@ class Conduction {
   // always used; 0.02 is safe (the bound on z_i is a Gershgorin radius, i.e. already an
   // over-estimate of |lambda|) and trims a few per cent off the substage count.
   Real rad_sts_margin = 0.10;
+  // rad_sts_perplane (default false): PER-PLANE SUBSTAGE COUNTS.  The transverse
+  // operator couples cells only inside a horizontal plane of fixed x1 index i -- its
+  // stencil has no x1 face at all -- so the planes are INDEPENDENT linear systems that
+  // happen to be integrated in one kernel.  One global substage count therefore makes
+  // every plane pay the stiffness of the stiffest one (145-197 substages in the
+  // whole-column B-star box, where the deep planes need ~15).
+  //
+  // With this on, the Gershgorin radius is reduced PER PLANE (a global max over m, k, j
+  // at fixed i, reduced across MPI), each plane gets its own substage count s_i and its
+  // own RKL1 w1 = 2/(s_i^2+s_i), and the loop runs s_max = max_i s_i substages during
+  // which a plane with j > s_i is skipped by the stencil -- its register is already its
+  // final value and is simply carried forward.  mu_j and nu_j do not depend on s, so the
+  // only per-plane coefficient is w1.  Each plane is then exactly the s_i-stage RKL1
+  // scheme it would have got on its own, so the answer is a converged RKL1 solution of
+  // the same operator plane by plane, and conservation is untouched: the flux form is
+  // per plane, and the two cells sharing an x2/x3 face are always in the SAME plane and
+  // multiply the same mu~_j.
+  //
+  // BITWISE identical to the global-s loop when every plane has the same s_i (a state
+  // uniform in x1, e.g. inputs/tests/rad_transverse_gauss.athinput).
+  //
+  // NOT available with rad_sts_all: the 7-point stencil has x1 faces, which couple the
+  // planes, and the substage count then has to be global.  It is silently ignored there.
+  // Needs the whole x1 extent in one MeshBlock, so that a local index i IS a plane.
+  bool rad_sts_perplane = false;
+  DvceArray1D<Real> tr_zpl;     // the Gershgorin radius of each x1 plane
+  DvceArray1D<int> tr_spl;      // ... its substage count s_i ...
+  DvceArray1D<Real> tr_w1pl;    // ... and its RKL1 w1 = 2/(s_i^2 + s_i)
+  HostArray1D<Real> tr_zpl_h;
+  HostArray1D<int> tr_spl_h;
+  HostArray1D<Real> tr_w1pl_h;
   // cumulative substage count of this operator, reported alongside the per-call one so
   // that the COST of a run can be read off a single line
   std::int64_t sts_nsub_tot = 0;

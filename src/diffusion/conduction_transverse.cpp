@@ -156,6 +156,14 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
   auto st = tr_st;
   const int it_ = TRST, ia_ = TRSA;
   const Real tau = beta_dt;
+  // PER-PLANE SUBSTAGE COUNTS (rad_sts_perplane).  Only for the 5-point transverse
+  // stencil: with_x1 puts x1 faces in the row, which couple the planes, and the substage
+  // count must then be global.  See conduction.hpp.
+  const bool perpl = rad_sts_perplane && !sts1;
+  const int nplane = ie - is + 1;
+  const int isv = is;
+  auto spl = perpl ? tr_spl : DvceArray1D<int>("rklspldummy", 1);
+  auto w1pl = perpl ? tr_w1pl : DvceArray1D<Real>("rklw1dummy", 1);
 
   // ---- THE LINEARISATION POINT IS REFRESHED FROM THE CURRENT CONSERVED ENERGY.
   // BuildAngularCoeffs forms T*_i and alpha_i = 1/(rho_i c_v,i) from w0 in Hydro::Fluxes,
@@ -168,7 +176,8 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
   // on.  The error re-enters through K(T) on the next cycle, which is why the He-star
   // FeCZ box grew max|de| by ~1.5x per cycle from cycle 1, at the first active row above
   // the bottom wall where ImplicitRadialUpdate does its largest work.  The Gaussian test
-  // cannot see it: there the state is uniform in x1 and the radial operator moves nothing.
+  // cannot see it: there the state is uniform in x1 and the radial operator moves
+  // nothing.
   //
   // Re-evaluating T* and alpha here -- from u0, through the same EintFromCons and the
   // same EOS the radial solve uses -- puts the linearisation point back on the state the
@@ -292,9 +301,38 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
   };
 
   // ---- the stiffness of the step: the largest Gershgorin row radius of tau dM/dy.  A
-  // global maximum, because every rank must take the same number of substages.
+  // global maximum, because every rank must take the same number of substages -- or, with
+  // rad_sts_perplane, one global maximum PER x1 PLANE, because the planes do not talk to
+  // each other and each may take its own.
   Real zmax = 0.0;
-  {
+  if (perpl) {
+    auto zpl = tr_zpl;
+    Kokkos::deep_copy(zpl, 0.0);
+    par_for("radtrzpl", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real ai = st(m,ia_,k,j,i);
+      const Real cl2 = open2(m,j) ? c2(m,k,j,i) : 0.0;
+      const Real cr2 = open2(m,j+1) ? c2(m,k,j+1,i) : 0.0;
+      Real sumc = cl2 + cr2;
+      Real sumca = cl2*st(m,ia_,k,j-1,i) + cr2*st(m,ia_,k,j+1,i);
+      if (three_d) {
+        const Real cl3 = open3(m,k) ? c3(m,k,j,i) : 0.0;
+        const Real cr3 = open3(m,k+1) ? c3(m,k+1,j,i) : 0.0;
+        sumc += cl3 + cr3;
+        sumca += cl3*st(m,ia_,k-1,j,i) + cr3*st(m,ia_,k+1,j,i);
+      }
+      const Real zi = tau*(ai*sumc + sumca);
+      if (isfinite(zi) && zi > 0.0) Kokkos::atomic_max(&zpl(i - isv), zi);
+    });
+    Kokkos::deep_copy(tr_zpl_h, zpl);
+#if MPI_PARALLEL_ENABLED
+    MPI_Allreduce(MPI_IN_PLACE, tr_zpl_h.data(), nplane, MPI_ATHENA_REAL, MPI_MAX,
+                  MPI_COMM_WORLD);
+#endif
+    for (int p=0; p<nplane; ++p) {
+      if (tr_zpl_h(p) > zmax) zmax = tr_zpl_h(p);
+    }
+  } else {
     const int nx1_ = indcs.nx1, nx2_ = indcs.nx2, nx3_ = indcs.nx3;
     const int nkji_ = nx3_*nx2_*nx1_, nji_ = nx2_*nx1_;
     Kokkos::parallel_reduce("radtrz",
@@ -328,10 +366,10 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
       const Real zi = tau*(ai*sumc + sumca);
       if (isfinite(zi) && zi > zres) zres = zi;
     }, Kokkos::Max<Real>(zmax));
-  }
 #if MPI_PARALLEL_ENABLED
-  MPI_Allreduce(MPI_IN_PLACE, &zmax, 1, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+    MPI_Allreduce(MPI_IN_PLACE, &zmax, 1, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
 #endif
+  }
   if (!(zmax > 0.0)) return;    // no face carries any flux this stage: nothing to do
 
   // ---- the substage count.  R is the super-step in units of the explicit limit
@@ -349,6 +387,26 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
     clamped = true;
   }
   const Real w1 = 2.0/(static_cast<Real>(nsub)*static_cast<Real>(nsub) + nsub);
+  // ---- the PER-PLANE substage counts.  ceil((sqrt(1+8R)-1)/2) is monotone in R, so
+  // max_i s_i is exactly the nsub the global radius above gives, i.e. the loop below
+  // still runs nsub substages -- but only the planes that need them do any work.
+  int splmin = nsub, splsum = nsub*nplane;
+  if (perpl) {
+    splmin = nsub;
+    splsum = 0;
+    for (int p=0; p<nplane; ++p) {
+      const Real rp = 0.5*(1.0 + rad_sts_margin)*tr_zpl_h(p);
+      int sp = static_cast<int>(std::ceil(0.5*(std::sqrt(1.0 + 8.0*rp) - 1.0)));
+      if (sp < 1) sp = 1;
+      if (sp > rad_ang_maxit) sp = rad_ang_maxit;
+      tr_spl_h(p) = sp;
+      tr_w1pl_h(p) = 2.0/(static_cast<Real>(sp)*static_cast<Real>(sp) + sp);
+      if (sp < splmin) splmin = sp;
+      splsum += sp;
+    }
+    Kokkos::deep_copy(tr_spl, tr_spl_h);
+    Kokkos::deep_copy(tr_w1pl, tr_w1pl_h);
+  }
 
   // ---- the RKL1 loop on the increment.  Y_0 = 0 everywhere INCLUDING the ghosts, so
   // the first substage needs no exchange; every later one exchanges Y_{j-1} through the
@@ -372,6 +430,7 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
     const Real muj = (js_ == 1) ? 1.0 : (2.0*js_ - 1.0)/js_;
     const Real nuj = (js_ == 1) ? 0.0 : (1.0 - js_)/js_;
     const Real mut = muj*w1*tau;
+    const int jsub = js_;
     auto yc_ = ycur;
     auto yo_ = yold;
     auto yn_ = ynew;
@@ -380,6 +439,15 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
       // the stiffness split left this block nothing to do: its increment stays zero,
       // but the register still has to be written, because the three registers rotate
       if (blkon && blk(m) == 0) { yn_(m,0,k,j,i) = 0.0; return; }
+      // rad_sts_perplane: this plane's own s_i-stage scheme is already finished, so its
+      // register holds its final increment and is simply carried into the next one (the
+      // three registers rotate, so it has to be written).  mu_j and nu_j do not depend on
+      // s; only mu~_j = mu_j w1 does, through w1 = 2/(s^2+s).
+      Real mutp = mut;
+      if (perpl) {
+        if (jsub > spl(i - isv)) { yn_(m,0,k,j,i) = yc_(m,0,k,j,i); return; }
+        mutp = muj*w1pl(i - isv)*tau;
+      }
       const Real ai = st(m,ia_,k,j,i);
       const Real thc = st(m,it_,k,j,i) + ai*yc_(m,0,k,j,i);
       // the FLUX through each face, written so that the neighbour forms the identical
@@ -407,7 +475,7 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
         mi += hr - hl;
       }
       if (!isfinite(mi)) mi = 0.0;
-      yn_(m,0,k,j,i) = muj*yc_(m,0,k,j,i) + nuj*yo_(m,0,k,j,i) + mut*mi;
+      yn_(m,0,k,j,i) = muj*yc_(m,0,k,j,i) + nuj*yo_(m,0,k,j,i) + mutp*mi;
     });
     auto tmp = yold;
     yold = ycur;
@@ -457,6 +525,14 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
     const bool tell = rad_ang_verbose && (ang_lines < 20 || viol > 1.0e-10);
     if (clamped || tell) {
       ++ang_lines;
+      // rad_sts_perplane: nsub above is then s_max, and these are the rest of the
+      // distribution -- the whole point of the switch is that they sit well below it
+      std::string plstr;
+      if (perpl) {
+        plstr = ", per-plane s min/mean = " + std::to_string(splmin) + "/"
+                + std::to_string(static_cast<double>(splsum)
+                                 /static_cast<double>(nplane));
+      }
       std::cout << (sts1 ? "### rad_sts_all cycle " : "### rad_implicit_ang cycle ")
                 << pmy_pack->pmesh->ncycle
                 << " t = " << pmy_pack->pmesh->time
@@ -465,10 +541,18 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
                 << " in " << sts_ncall << " calls"
                 << (clamped ? " (CLAMPED at rad_ang_maxit -- the step is NOT covered)"
                             : "")
+                << plstr
                 << ", max |de| = " << emax
                 << ", max |dT*|/T* = " << tshift
                 << ", |sum V de|/sum V|de| = " << viol << std::endl;
     }
+  }
+  // the per-plane substage PROFILE, once: it is the map of where the operator is stiff,
+  // and it is what says whether a taper is buying anything.  One block of nx1 integers.
+  if (perpl && rad_ang_verbose && sts_ncall == 1 && global_variable::my_rank == 0) {
+    std::cout << "### rad_sts_perplane s_i (i = is .. ie):";
+    for (int p=0; p<nplane; ++p) std::cout << " " << tr_spl_h(p);
+    std::cout << std::endl;
   }
   return;
 }

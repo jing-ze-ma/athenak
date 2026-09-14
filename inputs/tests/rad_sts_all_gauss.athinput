@@ -76,6 +76,9 @@ rad_sts_all      = true
 rad_sts_split    = false
 rad_sts_once     = false
 rad_sts_margin   = 0.10
+# rad_sts_perplane gives every x1 plane its own RKL1 substage count; with a state
+# uniform in x1 every plane gets the same one and the result is BITWISE unchanged.
+rad_sts_perplane = false
 # the SPLIT arm the regression test compares against overrides these three
 rad_implicit_x1  = false
 rad_implicit_ang = false

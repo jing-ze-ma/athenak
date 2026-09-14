@@ -183,6 +183,7 @@ Conduction::Conduction(std::string block, MeshBlockPack *pp, ParameterInput *pin
       rad_sts_split_x = pin->GetOrAddReal(block,"rad_sts_split_x",0.5);
       rad_sts_once = pin->GetOrAddBoolean(block,"rad_sts_once",false);
       rad_sts_margin = pin->GetOrAddReal(block,"rad_sts_margin",0.10);
+      rad_sts_perplane = pin->GetOrAddBoolean(block,"rad_sts_perplane",false);
       rad_ang_maxit = pin->GetOrAddInteger(block,"rad_ang_maxit",200);
       rad_ang_verbose = pin->GetOrAddBoolean(block,"rad_ang_verbose",false);
       // DIAGNOSTIC ONLY: the T-linearisation audit of ImplicitRadialUpdate
@@ -390,6 +391,27 @@ Conduction::Conduction(std::string block, MeshBlockPack *pp, ParameterInput *pin
                     << std::endl;
         }
       }
+      if (rad_sts_perplane) {
+        if (!rad_implicit_ang) {
+          std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
+                    << std::endl << "rad_sts_perplane is a switch on the transverse "
+                    << "super-time-stepped operator and needs rad_implicit_ang"
+                    << std::endl;
+          std::exit(EXIT_FAILURE);
+        }
+        // a plane is an x1 index, so a local i must BE a global plane
+        if (pp->pmesh->mb_indcs.nx1 != pp->pmesh->mesh_indcs.nx1) {
+          std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
+                    << std::endl << "rad_sts_perplane needs the whole x1 extent in one "
+                    << "MeshBlock: <meshblock>/nx1 = " << pp->pmesh->mb_indcs.nx1
+                    << " but <mesh>/nx1 = " << pp->pmesh->mesh_indcs.nx1 << std::endl;
+          std::exit(EXIT_FAILURE);
+        }
+        if (rad_sts_all && global_variable::my_rank == 0) {
+          std::cout << "### WARNING: rad_sts_perplane is IGNORED under rad_sts_all -- "
+                    << "the x1 faces of that stencil couple the planes" << std::endl;
+        }
+      }
       if (rad_cap_ang > 0.0) {
         // the angular cap only makes sense once the radial direction is unconditionally
         // stable: with x1 still explicit the run dies on dt1 long before dt2/dt3 matter,
@@ -429,6 +451,14 @@ Conduction::Conduction(std::string block, MeshBlockPack *pp, ParameterInput *pin
           sts_blk_used = true;
         }
         if (rad_implicit_ang) {
+          if (rad_sts_perplane) {
+            Kokkos::realloc(tr_zpl, indcs.nx1);
+            Kokkos::realloc(tr_spl, indcs.nx1);
+            Kokkos::realloc(tr_w1pl, indcs.nx1);
+            Kokkos::realloc(tr_zpl_h, indcs.nx1);
+            Kokkos::realloc(tr_spl_h, indcs.nx1);
+            Kokkos::realloc(tr_w1pl_h, indcs.nx1);
+          }
           Kokkos::realloc(tr_st, nmb, ntrs, ncells3, ncells2, ncells1);
           Kokkos::realloc(tr_ya, nmb, 1, ncells3, ncells2, ncells1);
           Kokkos::realloc(tr_yb, nmb, 1, ncells3, ncells2, ncells1);
