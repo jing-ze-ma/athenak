@@ -545,6 +545,41 @@ inline DvceArray1D<Real> *rt_oconv_ptr = nullptr;
 // problem/rt_outer_verbose: print that convergence every rt_report_every cycles even
 // without problem/rt_cell_report.  Inert unless rt_outer_iter > 1.
 inline bool rt_outer_verbose = false;
+// ---- problem/rt_implicit_column: THE MERGED IMPLICIT COLUMN SOLVE -------------------
+//
+// WHAT IS WRONG WITH THE PER-CELL RELAXATION.  The grey split sweep is exactly LINEAR in
+// the cell Planck functions B_j at frozen opacity: the net source is
+//     Src_i = kappa_i rho_i [(M B)_i + g_i] - 4 pi kappa_i rho_i B_i,
+// M the (dense, but strongly banded) exchange matrix the two sweeps build and g the
+// boundary terms.  The apply block then relaxes each cell SEPARATELY toward the
+// equilibrium of that one sweep, damping it by its own factor (1 - e^-x)/x.  Two
+// neighbours exchanging O(1e3) F of radiation with a net of O(1) F are damped by
+// DIFFERENT factors, so what survives the near-cancellation is not the net but a
+// residual proportional to dt -- a pump, not a relaxation.  That is the measured
+// dt-LINEAR saturated v_rms of the He-star box (5.29e4 / 1.61e5 / 2.82e5 cm/s over cfl
+// 0.15 / 0.30 / 0.45), and lagging the neighbours in an outer fixed point only contracts
+// it at ~0.9 per pass, which is useless.
+//
+// WHAT THIS DOES.  Per column the implicit balance is
+//     F(T) = C_v (T - T*)/(beta dt) - kappa rho (M - I) B(T) = 0,
+// whose Jacobian J = C_v/(beta dt) + kappa rho (I - M) dB/dT is an M-matrix.  Its
+// NEAREST-NEIGHBOUR part is accumulated during the sweep itself, out of the e0/alp/bet
+// layer quantities already in registers, and folded straight into the radial implicit
+// conduction tridiagonal (Conduction::ImplicitRadialUpdate), which is solved for the
+// same column and is already an M-matrix in dT.  Everything two cells away or further,
+// the stellar beam and the tau-blend handover stay in the EXPLICIT residual R_i, so the
+// fixed point of the outer iteration is the exact backward-Euler balance whatever the
+// truncated Jacobian gets wrong -- and the radiative exchange and the radiative
+// diffusion are then applied by ONE conservative column update instead of two split ones.
+//
+// With the switch on the two-stream applies NO de of its own: it stores R_i, the
+// three-point Jacobian and dB_i/dT_i on the Conduction object and calls the tridiagonal
+// itself, once per outer pass (rt_outer_iter), so Hydro/MHD::ImplicitConduction is a
+// no-op.  0 = the old per-cell relaxation, bitwise.
+inline int rt_implicit_column = 0;
+// convergence tolerance and pass cap of that Newton, used when rt_outer_iter is not set
+inline Real rt_impl_tol = 1.0e-6;
+inline int rt_impl_maxit = 5;
 // problem/ck_int_at_cut: deliver the planet's internal flux sigma T_int^4 as an extra
 // upward source at the correlated-k cut (the historical behaviour, true). Set false when
 // the layers below the cut carry it themselves -- <mhd|hydro>/isotropic_conduction =
@@ -814,6 +849,22 @@ Real BFace(const Real k_own, const Real k_far, const Real b_own, const Real b_fa
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn Real BFaceW
+//! \brief d(BFace)/d(b_far): BFace is a CONVEX COMBINATION of b_far and b_own at frozen
+//! opacity, so one weight describes it completely and the own-side weight is 1 - this.
+//! Used only by the merged column solve (rt_implicit_column) to linearise the sweep.
+KOKKOS_INLINE_FUNCTION
+Real BFaceW(const Real k_own, const Real k_far, const bool on) {
+  if (!on) return 1.0;
+  const Real kt = RT_BFACE_R*k_own;
+  if (k_far >= kt) return 1.0;
+  if (!(k_own > 0.0)) return 1.0;
+  if (!(k_far > 0.0)) return 0.0;
+  const Real w = k_far/kt;
+  return w + (1.0 - w)*k_far/(k_own + k_far);
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RTLayer
 //! \brief one exact short-characteristic step through a layer (see rt_layer_legacy).
 //!
@@ -1016,8 +1067,46 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
       }
     }
   }
+  // ---- problem/rt_implicit_column: the merged tridiagonal Newton --------------------
+  // Requirements, checked once.  The column solve linearises the GREY SPLIT sweep, reads
+  // the running state out of u0 (rt_use_cons) between passes, and replaces -- not
+  // supplements -- the semi-implicit per-cell relaxation, which therefore has to be the
+  // step it is replacing.
+  Conduction *pc = (pm->pmb_pack->pmhd != nullptr) ? pm->pmb_pack->pmhd->pcond
+                                                   : pm->pmb_pack->phydro->pcond;
+  if (rt_implicit_column > 0) {
+    static bool cchecked = false;
+    if (!cchecked) {
+      cchecked = true;
+      if (!(rt_grey && rt_split) || !rt_use_cons || rt_explicit || !rt_semi_implicit ||
+          pc == nullptr || !pc->rad_implicit_x1) {
+        std::cout << "### FATAL ERROR in two_stream_rt: problem/rt_implicit_column "
+                  << "needs the GREY SPLIT sweep (rt_grey + rt_split), "
+                  << "problem/rt_use_cons, the semi-implicit apply (rt_semi_implicit, "
+                  << "!rt_explicit) and <hydro>/ or <mhd>/rad_implicit_x1 = true.  Got "
+                  << "rt_grey=" << rt_grey << " rt_split=" << rt_split
+                  << " rt_use_cons=" << rt_use_cons << " rt_explicit=" << rt_explicit
+                  << " rt_semi_implicit=" << rt_semi_implicit
+                  << " rad_implicit_x1="
+                  << ((pc != nullptr) ? pc->rad_implicit_x1 : false) << "." << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }
+  }
   for (int oit=0; oit<nit; ++oit) {
     picket_fence_two_stream_RT_pass(pm, bdt, oit, nit);
+    if (rt_implicit_column > 0 && pc != nullptr) {
+      // the sweep wrote R, the Jacobian and dB/dT for the CURRENT state; solve the
+      // column for dT and let the tridiagonal apply the energy, radiative exchange and
+      // radiative diffusion together
+      MeshBlockPack *pp = pm->pmb_pack;
+      if (pp->pmhd != nullptr) {
+        pc->ImplicitRadialUpdate(pp->pmhd->u0, pp->pmhd->peos->eos_data, bdt, true, oit);
+      } else {
+        pc->ImplicitRadialUpdate(pp->phydro->u0, pp->phydro->peos->eos_data, bdt, true,
+                                 oit);
+      }
+    }
   }
 }
 
@@ -1398,6 +1487,20 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
       auto iup_g = report_on ? *rt_iup_ptr : DvceArray4D<Real>("rt_iup_d", 1, 1, 1, 1);
       // the grey opacity: the conduction module's own table if it has one, else the
       // Freedman fit, which is what the old grey path used unconditionally
+      // ---- problem/rt_implicit_column: the merged tridiagonal Newton -----------------
+      // The requirements are checked once, in the wrapper.  The arrays are allocated on
+      // the Conduction object the first time through; with the switch off implcol_ is
+      // false everywhere and jac_g is a 1-element dummy that is captured and never read.
+      const bool implcol_ = (rt_implicit_column > 0) && grey_on && rt_split;
+      if (implcol_ && pcond_rt != nullptr && !pcond_rt->rt_col_alloc) {
+        pcond_rt->EnableRTColumn();
+      }
+      auto jac_g = (implcol_ && pcond_rt != nullptr)
+                 ? pcond_rt->rt_col_jac : DvceArray5D<Real>("rt_jac_dummy",1,1,1,1,1);
+      auto res_g = (implcol_ && pcond_rt != nullptr)
+                 ? pcond_rt->rt_col_res : DvceArray4D<Real>("rt_res_dummy",1,1,1,1);
+      auto dbt_g = (implcol_ && pcond_rt != nullptr)
+                 ? pcond_rt->rt_col_dbdt : DvceArray4D<Real>("rt_dbt_dummy",1,1,1,1);
       const bool grey_ktab = grey_on && pcond_rt != nullptr &&
                              pcond_rt->rad_kappa_tab && pcond_rt->rad_kr_nT > 0;
       const bool grey_krho = grey_ktab && pcond_rt->rad_kappa_rho;
@@ -2327,6 +2430,11 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
       par_for("rt_chain", DevExeSpace(), 0, nmb1, 0, nblk-1, ks, ke, js, je,
       KOKKOS_LAMBDA(const int m, const int blk, const int k, const int j) {
         constexpr int NN = RT_NNC;
+        // ---- rt_implicit_column: the nearest-neighbour linearisation of this sweep ---
+        // dSrc_i/dB_{i-1,i,i+1} at frozen opacity, summed over the NC quadrature chains
+        // with their weights.  nblk == 1 on the grey path, so one thread owns the whole
+        // column and these are ordinary stores.  Nothing here reads back into the sweep.
+        const bool jac_on = implcol_;
         auto tau_down_r_f = Kokkos::subview(tau_g, m, k, j, Kokkos::ALL);
         auto B            = Kokkos::subview(B_g,   m, k, j, Kokkos::ALL);
         auto F_ir_f       = Kokkos::subview(Fb_g,  m, blk, k, j, Kokkos::ALL);
@@ -2339,6 +2447,23 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
           Fb_g(m,blk,i,k,j) = 0.0;
           Em_g(m,blk,i,k,j) = 0.0;
           Src_g(m,blk,i,k,j) = 0.0;
+        }
+        if (jac_on) {
+          for (int i=is; i<ie+2; ++i) {
+            jac_g(m,0,k,j,i) = 0.0;
+            jac_g(m,1,k,j,i) = 0.0;
+            jac_g(m,2,k,j,i) = 0.0;
+          }
+        }
+        // d I_down(entering face of the next layer)/dB(that layer's upper neighbour),
+        // and the two upward counterparts; carried along the sweeps, per chain
+        Real djd[NC], djup[NC], djuo[NC];
+        if (jac_on) {
+          for (int cc=0; cc<NC; ++cc) {
+            djd[cc] = 0.0;
+            djup[cc] = 0.0;
+            djuo[cc] = 0.0;
+          }
         }
           Real gamirc[NC], fbc[NC], muggc[NC], wggc[NC];
           for (int cc=0; cc<NC; ++cc) {
@@ -2372,6 +2497,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
             const Real krf_g = (i < ie) ? (tau_down_r_f[i+1]-tau_down_r_f[i+2])
                                         / dx1(m,k,j,i+1) : kro_g;
             const Real bfr_g = BFace(kro_g, krf_g, B[i], B[i+1], bface_on);
+            const Real pfd = jac_on ? BFaceW(kro_g, krf_g, bface_on) : 0.0;
             for (int cc=0; cc<NC; ++cc) {
               Real dtauir = gamirc[cc]*dtau_i;
               Real x = dtauir/muggc[cc];
@@ -2382,6 +2508,17 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
               Src_g(m,blk,i,k,j) += 2.0*M_PI*wggc[cc]*muggc[cc]/dx1(m,k,j,i)
                                   *(e0*I_ir_down_c[cc][i+1]
                                     - fbc[cc]*(alp*bfr_g + bet*B[i]));
+              if (jac_on) {
+                // the layer's own emission into the downward beam, per unit B_i:
+                // alp weights the FAR endpoint (1 - pfd of which is B_i) and bet the near
+                const Real P = 2.0*M_PI*wggc[cc]*muggc[cc]/dx1(m,k,j,i);
+                const Real eown = fbc[cc]*(alp*(1.0 - pfd) + bet);
+                jac_g(m,1,k,j,i) -= P*eown;
+                // B_{i+1} enters twice: through this layer's far endpoint, and through
+                // the intensity the layer ABOVE handed down (djd, carried from there)
+                jac_g(m,2,k,j,i) += P*(e0*djd[cc] - fbc[cc]*alp*pfd);
+                djd[cc] = eown;
+              }
               I_ir_down_c[cc][i] = (1.0-e0)*I_ir_down_c[cc][i+1]
                                  + alp*fbc[cc]*bfr_g + bet*fbc[cc]*B[i];
 #if RT_CACHE
@@ -2394,6 +2531,14 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
 
           // bottom
           Real I_ir_up_c[NC];
+          if (jac_on) {
+            // the reflecting bottom hands the downward beam back up, so the upward
+            // intensity at face is already carries d/dB[is] of the last down-layer
+            for (int cc=0; cc<NC; ++cc) {
+              djuo[cc] = djd[cc];
+              djup[cc] = 0.0;
+            }
+          }
           for (int cc=0; cc<NC; ++cc) {
             I_ir_up_c[cc] = Iint + I_ir_down_c[cc][is];
             Real F_ir_down_f = 2.0*M_PI*wggc[cc]*muggc[cc]*I_ir_down_c[cc][is];
@@ -2411,6 +2556,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
             const Real krfu = (i < ie+1) ? (tau_down_r_f[i]-tau_down_r_f[i+1])
                                          / dx1(m,k,j,i) : krou;
             const Real bfru = BFace(krou, krfu, B[i-1], B[i], bface_on);
+            const Real pfu = jac_on ? BFaceW(krou, krfu, bface_on) : 0.0;
             for (int cc=0; cc<NC; ++cc) {
 #if RT_CACHE
               // layer i-1, already solved on the way down
@@ -2427,6 +2573,20 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
               const Real Iup_in = I_ir_up_c[cc];
               Src_g(m,blk,i-1,k,j) += 2.0*M_PI*wggc[cc]*muggc[cc]/dx1(m,k,j,i-1)
                                     *(e0*Iup_in - fbc[cc]*(bet*bfru + gm*B[i-1]));
+              if (jac_on) {
+                const Real Q = 2.0*M_PI*wggc[cc]*muggc[cc]/dx1(m,k,j,i-1);
+                // this layer's own emission into the upward beam, per unit B_{i-1}:
+                // bet weights the FAR endpoint (1 - pfu of which is B_{i-1}), gm the near
+                const Real uown = fbc[cc]*(bet*(1.0 - pfu) + gm);
+                const Real ufar = fbc[cc]*bet*pfu;
+                jac_g(m,1,k,j,i-1) += Q*(e0*djuo[cc] - uown);
+                jac_g(m,0,k,j,i-1) += Q*e0*djup[cc];
+                jac_g(m,2,k,j,i-1) -= Q*ufar;
+                // what leaves this layer upward, seen by the layer above: cell i-1 is
+                // then ITS lower neighbour and cell i is its own cell
+                djup[cc] = (1.0-e0)*djuo[cc] + uown;
+                djuo[cc] = ufar;
+              }
               I_ir_up_c[cc] = (1.0-e0)*Iup_in
                             + bet*fbc[cc]*bfru + gm*fbc[cc]*B[i-1];
               Real F_ir_down_f = 2.0*M_PI*wggc[cc]*muggc[cc]*I_ir_down_c[cc][i];
@@ -2651,6 +2811,24 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
         // The e ~ T behind e_eq is the same approximation the old rate made, and it
         // UNDER-estimates e_eq wherever H2 or H is partly dissociated, i.e. it errs
         // toward a smaller step.  problem/rt_semi_lin recovers the old linearization.
+        // ---- rt_implicit_column: hand the column solve the residual and the Jacobian
+        // R_i is the FULL source at this state -- handover, stellar beam and all -- so
+        // the outer iteration's fixed point is the exact backward-Euler balance.  The
+        // Jacobian is scaled by the same (1 - wbar) the relaxed part of the source
+        // carries, and zeroed below the band cut where no source is applied at all; the
+        // handover's own B-dependence is left in R.
+        if (implcol_) {
+          res_g(m,k,j,i) = src;
+          const Real tkc = T_g(m,k,j,i);
+          dbt_g(m,k,j,i) = (tkc > 0.0) ? 4.0*boltz_sigma/M_PI*tkc*tkc*tkc : 0.0;
+          Real jsc = taublend ? (1.0 - wbar) : 1.0;
+          if (band_on && i < icut_g(m,k,j)) jsc = 0.0;
+          if (jsc != 1.0) {
+            jac_g(m,0,k,j,i) *= jsc;
+            jac_g(m,1,k,j,i) *= jsc;
+            jac_g(m,2,k,j,i) *= jsc;
+          }
+        }
         Real de = src*bdt;
         // rt_cell_report bookkeeping: the pieces of the step, kept for the report below
         Real dg_A = 0.0, dg_Em = 0.0, dg_deq = 0.0;
@@ -2660,7 +2838,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
         for (int q=0; q<8; ++q) dg_it[q] = 0.0;
         // problem/rt_explicit (or problem/rt_semi_implicit = false): nothing else
         // touches de.  See rt_explicit and rt_semi_implicit.
-        if (!explicit_on && semi_imp) {
+        if (!explicit_on && semi_imp && !implcol_) {
           Real Em = 0.0;
           for (int b=0; b<nblk; ++b) Em += Em_g(m,b,i,k,j);
           if (taublend) {
@@ -2889,7 +3067,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
           }
         }
         const Real de_pre = de;
-        if (demax > 0.0) {
+        if (demax > 0.0 && !implcol_) {
           const Real dl = LimitRTSource(de,
               outer_on ? (eiN(m,k,j,i) - deacc_g(m,k,j,i)) : eiN(m,k,j,i), demax);
           if (dl != de) { ++nc; de = dl; }
@@ -3001,7 +3179,18 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
               dg_it[4], dg_it[5], dg_it[6], dg_it[7]);
           }
         }
-        if (outer_on) {
+        if (implcol_) {
+          // NOTHING is applied here: the tridiagonal owns the energy update, and it is
+          // called by the wrapper as soon as this kernel is done.  de is kept only for
+          // the diagnostics above, where it is the EXPLICIT rate this state would give.
+          if (outer_on) {
+            const Real dprev = deacc_g(m,k,j,i);
+            deacc_g(m,k,j,i) = de;
+            const Real ade = fabs(de);
+            Kokkos::atomic_max(&oconv_g(0), (ade > 0.0) ? fabs(de - dprev)/ade : 0.0);
+            Kokkos::atomic_max(&oconv_g(1), ade);
+          }
+        } else if (outer_on) {
           // de REPLACES de_{k-1}: u0 carries the running total, never a sum of passes
           const Real dprev = deacc_g(m,k,j,i);
           u0(m,IEN,k,j,i) += de - dprev;
