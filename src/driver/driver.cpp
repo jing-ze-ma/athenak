@@ -351,7 +351,13 @@ void Driver::Initialize(Mesh *pmesh, ParameterInput *pin, Outputs *pout, bool re
       (void) pmesh->pmb_pack->pz4c->NewTimeStep(this, nexp_stages);
     }
 
+    // A restart file stores the dt of the cycle it is about to take (it is written after
+    // Mesh::NewTimeStep).  Recomputing dt here from the restored state gives a
+    // roundoff-different value, so keep the one the file restored: only then does the
+    // restarted run take exactly the step the straight run took.
+    Real dt_rst = pmesh->dt;
     pmesh->NewTimeStep(tlim);
+    if (res_flag && dt_rst > 0.0) { pmesh->dt = dt_rst; }
   }
 
   //---- Step 3.  Cycle through output Types and load data / write files.
@@ -457,16 +463,22 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
             static_cast<float>(pmesh->nmb_total);
       }
 
-      // Test for/make outputs
-      for (auto &out : pout->pout_list) {
-        // compare at floating point (32-bit) precision to reduce effect of round off
+      // Test for/make outputs.  RESTART files are the exception: they are written
+      // further down, AFTER Mesh::NewTimeStep, because the dt a restart file stores must
+      // be the dt of the NEXT cycle -- the one the running code is about to take.  Write
+      // it here and the restarted run starts from a different (recomputed) dt.
+      // compare at floating point (32-bit) precision to reduce effect of round off
+      auto out_is_due = [&](BaseTypeOutput *out) {
         float time_32 = static_cast<float>(pmesh->time);
         float next_32 = static_cast<float>(out->out_params.last_time+out->out_params.dt);
         float tlim_32 = static_cast<float>(tlim);
         int &dcycle_ = out->out_params.dcycle;
-
-        if (((out->out_params.dt > 0.0) && ((time_32 >= next_32) && (time_32<tlim_32))) ||
-            ((dcycle_ > 0) && ((pmesh->ncycle)%(dcycle_) == 0)) ) {
+        return (((out->out_params.dt > 0.0) && ((time_32 >= next_32)&&(time_32<tlim_32)))
+                || ((dcycle_ > 0) && ((pmesh->ncycle)%(dcycle_) == 0)));
+      };
+      for (auto &out : pout->pout_list) {
+        if (out->out_params.file_type.compare("rst") == 0) { continue; }
+        if (out_is_due(out)) {
           out->LoadOutputData(pmesh);
           out->WriteOutputFile(pmesh, pin);
         }
@@ -476,6 +488,15 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       if (pmesh->adaptive) {pmesh->pmr->AdaptiveMeshRefinement(this, pin);}
       // compute new timestep AFTER all Meshblocks refined/derefined
       pmesh->NewTimeStep(tlim);
+
+      // restart files, now that pmesh->dt holds the next cycle's timestep
+      for (auto &out : pout->pout_list) {
+        if (out->out_params.file_type.compare("rst") != 0) { continue; }
+        if (out_is_due(out)) {
+          out->LoadOutputData(pmesh);
+          out->WriteOutputFile(pmesh, pin);
+        }
+      }
 
       // per-cycle problem-generator hook (problem/diag_gid in deep_hot_jupiter_rt).
       // Runs with the state at the end of the cycle and the new dt already set.
