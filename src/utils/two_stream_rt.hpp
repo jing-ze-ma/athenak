@@ -2803,7 +2803,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
           rt_deacc_ptr = new DvceArray4D<Real>("rt_deacc", nmb1+1, n3, n2, n1);
         }
         if (rt_oconv_ptr == nullptr) {
-          rt_oconv_ptr = new DvceArray1D<Real>("rt_oconv", 2);
+          rt_oconv_ptr = new DvceArray1D<Real>("rt_oconv", 6);
         }
         deacc_g = *rt_deacc_ptr;
         oconv_g = *rt_oconv_ptr;
@@ -3445,6 +3445,13 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
           const Real ade = fabs(de_app);
           Kokkos::atomic_max(&oconv_g(0), (ade > 0.0) ? fabs(de_app - dprev)/ade : 0.0);
           Kokkos::atomic_max(&oconv_g(1), ade);
+          // ABSOLUTE per class: the ratio above is a max over cells and is therefore
+          // owned by whichever cell has the SMALLEST |de_k|, which says nothing about
+          // convergence.  Slots 2/3 are the cells this kernel applies (thin, or the
+          // relaxed share of a blended one), 4/5 the ones that touch a tridiagonal row.
+          const int cls = (implcol_ && thick_) ? 4 : 2;
+          Kokkos::atomic_max(&oconv_g(cls), fabs(de_app - dprev));
+          Kokkos::atomic_max(&oconv_g(cls+1), ade);
         } else {
           u0(m,IEN,k,j,i) += de_app;
         }
@@ -3515,7 +3522,10 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
         Kokkos::deep_copy(hc, oconv_g);
         std::cout << "### rt_outer ncycle=" << pm->ncycle << " pass " << (oit+1)
                   << "/" << nit << "  max|de_k-de_k-1|/|de_k| = " << hc(0)
-                  << "  max|de_k| = " << hc(1) << std::endl;
+                  << "  max|de_k| = " << hc(1)
+                  << "  | relaxed: max|dde| = " << hc(2) << " max|de| = " << hc(3)
+                  << "  | interface: max|dde| = " << hc(4) << " max|de| = " << hc(5)
+                  << std::endl;
       }
       // The Newton positivity rescue should never fire.  Say so the first time it does,
       // with the running total, and stay quiet afterwards.

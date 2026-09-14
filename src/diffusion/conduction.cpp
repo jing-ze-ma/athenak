@@ -1494,7 +1494,7 @@ void Conduction::ImplicitRadialUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos
   auto rtdx_ = rtc_ ? rt_col_dtex : DvceArray4D<Real>("rtc_dx_d", 1, 1, 1, 1);
   const Real rtdtmax_ = rt_col_dtmax;
   const bool rtdbg_ = rtc_ && rt_col_verbose;
-  auto rtdg_ = rtc_ ? rt_col_diag : DvceArray1D<Real>("rtc_dg_d", 6);
+  auto rtdg_ = rtc_ ? rt_col_diag : DvceArray1D<Real>("rtc_dg_d", 8);
   if (rtc_) Kokkos::deep_copy(rtdg_, 0.0);
   // slot indices as plain locals: a static constexpr member would capture `this`
   const int e_ = IMPE, t_ = IMPT, al_ = IMPA, pr_ = IMPP;
@@ -1825,6 +1825,13 @@ void Conduction::ImplicitRadialUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos
           irec(7) = y;
         }
       }
+      if (rtc_ && rtres_(m,k,j,i) != 0.0) {
+        // the L-infinity energy increment the tridiagonal itself applies to a row that
+        // carries a two-stream source: the THICK half of the per-pass contraction
+        Kokkos::atomic_max(&rtdg_(6), fabs(x));
+        const Real tcc = wrk(m,t_,k,j,i);
+        if (tcc > 0.0) Kokkos::atomic_max(&rtdg_(7), fabs(y)/tcc);
+      }
       u0(m,IEN,k,j,i) += x;
       eprev = es + x;
       csum += vi*x;
@@ -1869,7 +1876,8 @@ void Conduction::ImplicitRadialUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos
     auto hg = Kokkos::create_mirror_view(rt_col_diag);
     Kokkos::deep_copy(hg, rt_col_diag);
     const bool viol = (hg(0) > 0.0);
-    if (viol || (nan_report && rt_col_lines < 20)) {
+    if (viol || (rt_col_verbose && rt_col_lines < 60) ||
+        (nan_report && rt_col_lines < 20)) {
       if (global_variable::my_rank == 0 && rt_col_lines < 200) {
         ++rt_col_lines;
         const Real den = fabs(hg(3)) + fabs(hg(2));
@@ -1882,6 +1890,8 @@ void Conduction::ImplicitRadialUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos
                   << ", rel = " << ((den > 0.0) ? fabs(hg(2) - hg(3))/den : 0.0)
                   << ", dT caps = " << static_cast<int64_t>(hg(4))
                   << ", worst |dT|/T = " << hg(5)
+                  << ", max|de_thick| = " << hg(6)
+                  << ", max|dT/T|_thick = " << hg(7)
                   << std::endl;
       }
     }
@@ -1907,7 +1917,7 @@ void Conduction::EnableRTColumn() {
   Kokkos::realloc(rt_col_dbdt, nmb, n3, n2, n1);
   Kokkos::realloc(rt_col_tn, nmb, n3, n2, n1);
   Kokkos::realloc(rt_col_dtex, nmb, n3, n2, n1);
-  Kokkos::realloc(rt_col_diag, 6);
+  Kokkos::realloc(rt_col_diag, 8);
   Kokkos::deep_copy(rt_col_res, 0.0);
   Kokkos::deep_copy(rt_col_jac, 0.0);
   Kokkos::deep_copy(rt_col_dbdt, 0.0);
