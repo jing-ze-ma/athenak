@@ -180,7 +180,14 @@ class Conduction {
   //   rt_col_tn   : T* at the START of the outer iteration, needed by passes 2..k so the
   //                 heat-capacity term stays anchored on T^n and the conduction operator
   //                 is not re-applied in full on every pass.
+  //   rt_col_dtex : for a THIN cell (see rt_impl_tau_min), the CHANGE in its own Planck
+  //                 function that its per-cell relaxation has just applied.  A thick row
+  //                 next to it keeps its Jacobian entry dR_i/dB_thin, but as a KNOWN
+  //                 right-hand-side contribution rather than an unknown, so the exchange
+  //                 across a thick/thin interface is still counted exactly once.
   bool rt_col_active = false;       // <problem>/rt_implicit_column, set by two_stream_rt
+  Real rt_col_dtmax = 0.25;         // <problem>/rt_impl_dtmax: cap on |dT|/T per pass
+  DvceArray4D<Real> rt_col_dtex;
   bool rt_col_alloc = false;
   DvceArray4D<Real> rt_col_res;
   DvceArray5D<Real> rt_col_jac;
@@ -188,7 +195,8 @@ class Conduction {
   DvceArray4D<Real> rt_col_tn;
   // the M-matrix audit of the merged rows: how many rows had |off-diagonals| exceeding
   // the diagonal, and the worst excess ratio.  Reported once per rad_col_report cycles.
-  DvceArray1D<Real> rt_col_diag;    // 4: nviol, worst ratio, sum V de, expected sum V de
+  // 6: nviol, worst ratio, sum V de, expected sum V de, dT caps, worst capped |dT|/T
+  DvceArray1D<Real> rt_col_diag;
   int rt_col_lines = 0;
   void EnableRTColumn();
   // rad_cap_ang (<hydro>/ or <mhd>/rad_cap_ang, default 0 = off): a CONSERVATIVE cap on

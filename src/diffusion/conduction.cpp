@@ -1490,7 +1490,9 @@ void Conduction::ImplicitRadialUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos
   auto rtjac_ = rtc_ ? rt_col_jac : DvceArray5D<Real>("rtc_jac_d", 1, 1, 1, 1, 1);
   auto rtdbt_ = rtc_ ? rt_col_dbdt : DvceArray4D<Real>("rtc_dbt_d", 1, 1, 1, 1);
   auto rttn_ = rtc_ ? rt_col_tn : DvceArray4D<Real>("rtc_tn_d", 1, 1, 1, 1);
-  auto rtdg_ = rtc_ ? rt_col_diag : DvceArray1D<Real>("rtc_dg_d", 4);
+  auto rtdx_ = rtc_ ? rt_col_dtex : DvceArray4D<Real>("rtc_dx_d", 1, 1, 1, 1);
+  const Real rtdtmax_ = rt_col_dtmax;
+  auto rtdg_ = rtc_ ? rt_col_diag : DvceArray1D<Real>("rtc_dg_d", 6);
   if (rtc_) Kokkos::deep_copy(rtdg_, 0.0);
   // slot indices as plain locals: a static constexpr member would capture `this`
   const int e_ = IMPE, t_ = IMPT, al_ = IMPA, pr_ = IMPP;
@@ -1663,6 +1665,14 @@ void Conduction::ImplicitRadialUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos
           cc -= jp;
         }
         rhs += vi*rtres_(m,k,j,i);
+        // A neighbour left OUT of the system -- a thin cell that relaxed itself, or the
+        // ghost beyond the first/last row -- has dbdt = 0 above, so its exchange term
+        // dropped out of the matrix.  Put back the part of it that is already KNOWN: the
+        // change in that cell's Planck function, dB, which its own relaxation has just
+        // applied.  R_i was formed before that change, so without this the exchange
+        // across a thick/thin interface would be counted with the stale neighbour.
+        if (i > is) rhs += vi*rtjac_(m,0,k,j,i)*rtdx_(m,k,j,i-1);
+        if (i < ie) rhs += vi*rtjac_(m,2,k,j,i)*rtdx_(m,k,j,i+1);
         if (rtpass_ > 0) rhs -= dg*(tc - rttn_(m,k,j,i));
         const Real offs = fabs(aa) + fabs(cc);
         if (bb > 0.0) {
@@ -1705,6 +1715,23 @@ void Conduction::ImplicitRadialUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos
       Real y = wrk(m,dp_,k,j,i) - wrk(m,cp_,k,j,i)*xnext;
       bool bad = !isfinite(y);
       if (bad) y = 0.0;
+      // ---- rt_impl_dtmax: bound the linearised Newton step -----------------------
+      // B ~ T^4 is CONVEX, so a row that needs heating is handed a tangent whose root
+      // lies past the true one, and in an optically thin cell (E -> 0) that overshoot is
+      // unbounded -- the same divergence the per-cell relaxation avoids by relaxing
+      // toward the true fixed point.  rt_impl_tau_min keeps those cells out of the
+      // system; this is the belt for the ones that are in it.
+      if (rtc_ && rtdtmax_ > 0.0) {
+        const Real tcb = wrk(m,t_,k,j,i);
+        if (tcb > 0.0) {
+          const Real ycap = rtdtmax_*tcb;
+          if (fabs(y) > ycap) {
+            Kokkos::atomic_fetch_add(&rtdg_(4), 1.0);
+            Kokkos::atomic_max(&rtdg_(5), fabs(y)/tcb);
+            y = (y > 0.0) ? ycap : -ycap;
+          }
+        }
+      }
       const Real yprev = xnext;             // y_{i+1}, already solved
       xnext = y;
       if (rtc_ && ac > 0.0) {
@@ -1712,6 +1739,9 @@ void Conduction::ImplicitRadialUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos
         // emission, V_{i+1} J_{i+1,i} y_i -- the only term of row i+1 still outstanding
         rtexp += vi*rtres_(m,k,j,i);
         rtexp += vi*rtjac_(m,1,k,j,i)*rtdbt_(m,k,j,i)*temp_unit*y;
+        // the same known dB of a neighbour left out of the system
+        if (i > is) rtexp += vi*rtjac_(m,0,k,j,i)*rtdx_(m,k,j,i-1);
+        if (i < ie) rtexp += vi*rtjac_(m,2,k,j,i)*rtdx_(m,k,j,i+1);
         if (i < ie) {
           const Real vp = curvg ? vol_(m,k,j,i+1) : dx1c;
           rtexp += vi*rtjac_(m,2,k,j,i)*rtdbt_(m,k,j,i+1)*temp_unit*yprev;
@@ -1835,6 +1865,8 @@ void Conduction::ImplicitRadialUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos
                   << ", worst |offdiag|/diag = " << hg(1)
                   << ", sum V de = " << hg(2) << ", expected = " << hg(3)
                   << ", rel = " << ((den > 0.0) ? fabs(hg(2) - hg(3))/den : 0.0)
+                  << ", dT caps = " << static_cast<int64_t>(hg(4))
+                  << ", worst |dT|/T = " << hg(5)
                   << std::endl;
       }
     }
@@ -1859,11 +1891,13 @@ void Conduction::EnableRTColumn() {
   Kokkos::realloc(rt_col_jac, nmb, 3, n3, n2, n1);
   Kokkos::realloc(rt_col_dbdt, nmb, n3, n2, n1);
   Kokkos::realloc(rt_col_tn, nmb, n3, n2, n1);
-  Kokkos::realloc(rt_col_diag, 4);
+  Kokkos::realloc(rt_col_dtex, nmb, n3, n2, n1);
+  Kokkos::realloc(rt_col_diag, 6);
   Kokkos::deep_copy(rt_col_res, 0.0);
   Kokkos::deep_copy(rt_col_jac, 0.0);
   Kokkos::deep_copy(rt_col_dbdt, 0.0);
   Kokkos::deep_copy(rt_col_tn, 0.0);
+  Kokkos::deep_copy(rt_col_dtex, 0.0);
   Kokkos::deep_copy(rt_col_diag, 0.0);
   rt_col_active = true;
   rt_col_alloc = true;

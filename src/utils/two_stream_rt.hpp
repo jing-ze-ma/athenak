@@ -580,6 +580,19 @@ inline int rt_implicit_column = 0;
 // convergence tolerance and pass cap of that Newton, used when rt_outer_iter is not set
 inline Real rt_impl_tol = 1.0e-6;
 inline int rt_impl_maxit = 5;
+// problem/rt_impl_tau_min: THE TWO-LEVEL SPLIT.  Only a cell whose OWN Rosseland optical
+// depth kappa rho dr reaches this goes into the tridiagonal.  Linearising the emission
+// about the current state gives dT ~ (T/4)(A/E), which diverges as the cell's own
+// emission E -> 0: measured on the He-star box the first merged step emptied 33 cells and
+// collapsed dt by three decades, which is the divergence the apply block's own note
+// ("WHY NOT LINEARIZE ... DIVERGES as E -> 0") warns about.  In a cell with dtau >~ 1 the
+// field is within a factor of its own B, A/E = O(1), and the linearisation is excellent
+// -- and those are exactly the cells the (1 - e^-x)/x damping pumps.  Thin cells keep
+// the nonlinear per-cell relaxation, which relaxes toward the TRUE fixed point and is
+// bounded.
+inline Real rt_impl_tau_min = 1.0;
+// problem/rt_impl_dtmax: cap on |dT|/T per tridiagonal pass, the belt for the thick rows
+inline Real rt_impl_dtmax = 0.25;
 // problem/ck_int_at_cut: deliver the planet's internal flux sigma T_int^4 as an extra
 // upward source at the correlated-k cut (the historical behaviour, true). Set false when
 // the layers below the cut carry it themselves -- <mhd|hydro>/isotropic_conduction =
@@ -1501,6 +1514,10 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
                  ? pcond_rt->rt_col_res : DvceArray4D<Real>("rt_res_dummy",1,1,1,1);
       auto dbt_g = (implcol_ && pcond_rt != nullptr)
                  ? pcond_rt->rt_col_dbdt : DvceArray4D<Real>("rt_dbt_dummy",1,1,1,1);
+      auto dtx_g = (implcol_ && pcond_rt != nullptr)
+                 ? pcond_rt->rt_col_dtex : DvceArray4D<Real>("rt_dtx_dummy",1,1,1,1);
+      const Real taumin_ = rt_impl_tau_min;
+      if (implcol_ && pcond_rt != nullptr) pcond_rt->rt_col_dtmax = rt_impl_dtmax;
       const bool grey_ktab = grey_on && pcond_rt != nullptr &&
                              pcond_rt->rad_kappa_tab && pcond_rt->rad_kr_nT > 0;
       const bool grey_krho = grey_ktab && pcond_rt->rad_kappa_rho;
@@ -2817,18 +2834,30 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
         // Jacobian is scaled by the same (1 - wbar) the relaxed part of the source
         // carries, and zeroed below the band cut where no source is applied at all; the
         // handover's own B-dependence is left in R.
+        // ---- THE TWO-LEVEL SPLIT, see rt_impl_tau_min ------------------------------
+        // dtau of the cell itself, straight out of the sweep's own tau array.
+        bool thick_ = false;
         if (implcol_) {
-          res_g(m,k,j,i) = src;
-          const Real tkc = T_g(m,k,j,i);
-          dbt_g(m,k,j,i) = (tkc > 0.0) ? 4.0*boltz_sigma/M_PI*tkc*tkc*tkc : 0.0;
+          const Real dtau_c = tau_g(m,k,j,i) - tau_g(m,k,j,i+1);
+          thick_ = (dtau_c >= taumin_);
           Real jsc = taublend ? (1.0 - wbar) : 1.0;
           if (band_on && i < icut_g(m,k,j)) jsc = 0.0;
+          if (!thick_) jsc = 0.0;   // a thin row carries NO two-stream term at all
           if (jsc != 1.0) {
             jac_g(m,0,k,j,i) *= jsc;
             jac_g(m,1,k,j,i) *= jsc;
             jac_g(m,2,k,j,i) *= jsc;
           }
+          const Real tkc = T_g(m,k,j,i);
+          // dbdt doubles as the "this cell is an unknown of the system" mask: zero here
+          // removes the row's own diagonal AND a thick neighbour's coupling to it
+          dbt_g(m,k,j,i) = (thick_ && tkc > 0.0) ? 4.0*boltz_sigma/M_PI*tkc*tkc*tkc : 0.0;
+          res_g(m,k,j,i) = thick_ ? src : 0.0;
+          dtx_g(m,k,j,i) = 0.0;     // filled below by a thin cell that relaxes itself
         }
+        // a thick cell hands its energy to the tridiagonal and applies nothing here; a
+        // thin one takes the old nonlinear relaxation, unchanged
+        const bool skip_de = implcol_ && thick_;
         Real de = src*bdt;
         // rt_cell_report bookkeeping: the pieces of the step, kept for the report below
         Real dg_A = 0.0, dg_Em = 0.0, dg_deq = 0.0;
@@ -2838,7 +2867,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
         for (int q=0; q<8; ++q) dg_it[q] = 0.0;
         // problem/rt_explicit (or problem/rt_semi_implicit = false): nothing else
         // touches de.  See rt_explicit and rt_semi_implicit.
-        if (!explicit_on && semi_imp && !implcol_) {
+        if (!explicit_on && semi_imp && !skip_de) {
           Real Em = 0.0;
           for (int b=0; b<nblk; ++b) Em += Em_g(m,b,i,k,j);
           if (taublend) {
@@ -3067,7 +3096,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
           }
         }
         const Real de_pre = de;
-        if (demax > 0.0 && !implcol_) {
+        if (demax > 0.0 && !skip_de) {
           const Real dl = LimitRTSource(de,
               outer_on ? (eiN(m,k,j,i) - deacc_g(m,k,j,i)) : eiN(m,k,j,i), demax);
           if (dl != de) { ++nc; de = dl; }
@@ -3179,7 +3208,25 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
               dg_it[4], dg_it[5], dg_it[6], dg_it[7]);
           }
         }
-        if (implcol_) {
+        if (implcol_ && !thick_) {
+          // a THIN cell: it relaxed itself, exactly as before.  Record the change in its
+          // Planck function so the thick rows next to it can take the exchange with it as
+          // a known right-hand-side term instead of an unknown (see rt_col_dtex).
+          const Real t0x = T_g(m,k,j,i);
+          const Real eix = eiN(m,k,j,i);
+          if (t0x > 0.0 && eix > 0.0 && (eix + de) > 0.0) {
+            Real t1x;
+            if (newton_on && eos.IsGeneral()) {
+              t1x = eos.Temperature(rhoN(m,k,j,i), eix + de)*eos.temp_cgs;
+            } else {
+              t1x = t0x*(eix + de)/eix;
+            }
+            if (t1x > 0.0) {
+              dtx_g(m,k,j,i) = boltz_sigma/M_PI*(SQR(SQR(t1x)) - SQR(SQR(t0x)));
+            }
+          }
+        }
+        if (skip_de) {
           // NOTHING is applied here: the tridiagonal owns the energy update, and it is
           // called by the wrapper as soon as this kernel is done.  de is kept only for
           // the diagnostics above, where it is the EXPLICIT rate this state would give.
