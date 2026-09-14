@@ -149,7 +149,7 @@ struct RTCol3 {
   DvceArray4D<Real> Tg;           // (m,k,j,i) T* in Kelvin
   DvceArray4D<Real> wblend;       // (m,k,j,i) tau-blend face weight
   DvceArray3D<int>  icut;         // (m,k,j) the band cut
-  DvceArray5D<Real> wk;           // (m, RTCOL3_NW, i, k, j) the per-column workspace
+  DvceArray5D<Real> wk;           // the per-column workspace, see Wk()
   // the PARTITIONED path only (problem/rt_impl_solver = pcr, see
   // two_stream_column_partition.hpp): the per-SEGMENT workspace of the reduced system,
   // (m, nseg*RTCOL3_NRD, k, j), and the number of segments = the Kokkos team size
@@ -226,6 +226,22 @@ struct RTCol3 {
         ? rho*eos.SpecificHeatCv(rho, e, tk/eos.temp_cgs)/eos.temp_cgs
         : rho*rgas/gm1;
   }
+  //! \brief the per-cell workspace element.  THE PARTITIONED PATH TRANSPOSES IT.  With
+  //! one thread per column the fast index must be j, so that neighbouring threads read
+  //! neighbouring words; with a TEAM per column the threads of one wavefront differ in i
+  //! instead, and the same layout scatters every access over as many cache lines as
+  //! there are lanes.  rt_impl_solver = pcr therefore allocates the workspace as
+  //! (m, slot, k, j, i) and this accessor hides which one is live.  The arithmetic is
+  //! untouched either way, so the thomas path stays bit for bit what it was.
+  template <bool TLAY>
+  KOKKOS_INLINE_FUNCTION
+  Real &Wk(const int m, const int n, const int i, const int k, const int j) const {
+    if constexpr (TLAY) {
+      return wk(m,n,k,j,i);
+    } else {
+      return wk(m,n,i,k,j);
+    }
+  }
   KOKKOS_INLINE_FUNCTION
   Real Dx(const int m, const int k, const int j, const int i) const {
     return pp ? size.d_view(m).dx1 : dx1(m,k,j,i);
@@ -258,9 +274,11 @@ struct RTCol3 {
   KOKKOS_INLINE_FUNCTION
   void SourceCoef(const int m, const int k, const int j, const int i, const int ic,
                   Real sl[3], Real su[3], Real sfu[3], Real sfd[3]) const;
+  template <bool TLAY>
   KOKKOS_INLINE_FUNCTION
   void SourceVals(const int m, const int k, const int j, const int i, const int ic,
                   const Real cutc, Real &sl, Real &su, Real &sfu, Real &sfd) const;
+  template <bool TLAY>
   KOKKOS_INLINE_FUNCTION
   void BuildRow(const int m, const int k, const int j, const int i, const int ic,
                 const Real cutc, const int it, Real A3[5][3], Real Bm[5][5],
@@ -326,6 +344,7 @@ void RTCol3::SourceCoef(const int m, const int k, const int j, const int i, cons
 //! \fn void RTCol3::SourceVals
 //! \brief the same four sources, evaluated at the CURRENT b.
 
+template <bool TLAY>
 KOKKOS_INLINE_FUNCTION
 void RTCol3::SourceVals(const int m, const int k, const int j, const int i, const int ic,
                         const Real cutc, Real &sl, Real &su, Real &sfu,
@@ -333,9 +352,9 @@ void RTCol3::SourceVals(const int m, const int k, const int j, const int i, cons
   Real cl[3], cu[3], cfu[3], cfd[3];
   SourceCoef(m, k, j, i, ic, cl, cu, cfu, cfd);
   const int BBs = 26;
-  const Real bm = (i > ic) ? wk(m,BBs,i-1,k,j) : 0.0;
-  const Real b0 = wk(m,BBs,i,k,j);
-  const Real bp = (i < ie) ? wk(m,BBs,i+1,k,j) : 0.0;
+  const Real bm = (i > ic) ? Wk<TLAY>(m,BBs,i-1,k,j) : 0.0;
+  const Real b0 = Wk<TLAY>(m,BBs,i,k,j);
+  const Real bp = (i < ie) ? Wk<TLAY>(m,BBs,i+1,k,j) : 0.0;
   sl  = cl[0]*bm + cl[1]*b0 + cl[2]*bp;
   su  = cu[0]*bm + cu[1]*b0 + cu[2]*bp;
   sfu = cfu[0]*bm + cfu[1]*b0 + cfu[2]*bp;
@@ -349,6 +368,7 @@ void RTCol3::SourceVals(const int m, const int k, const int j, const int i, cons
 //! non-zero.  rv is the NEGATIVE residual, so the solve returns the Newton increment.
 //! rsc is the scale the energy residual is measured against (the cell's internal energy).
 
+template <bool TLAY>
 KOKKOS_INLINE_FUNCTION
 void RTCol3::BuildRow(const int m, const int k, const int j, const int i, const int ic,
                       const Real cutc, const int it, Real A3[5][3], Real Bm[5][5],
@@ -369,8 +389,8 @@ void RTCol3::BuildRow(const int m, const int k, const int j, const int i, const 
   Real dsdb[3] = {0.0, 0.0, 0.0};
   Real cdu[2] = {0.0, 0.0};
   for (int q=0; q<nq; ++q) {
-    const Real E = wk(m,EEs+q,i,k,j), t = 1.0 - E;
-    const Real ci = wk(m,CIs+q,i,k,j), co = wk(m,COs+q,i,k,j);
+    const Real E = Wk<TLAY>(m,EEs+q,i,k,j), t = 1.0 - E;
+    const Real ci = Wk<TLAY>(m,CIs+q,i,k,j), co = Wk<TLAY>(m,COs+q,i,k,j);
     // ---- the two transport rows -----------------------------------------------------
     Bm[q][q] = 1.0;
     Bm[2+q][2+q] = 1.0;
@@ -410,9 +430,9 @@ void RTCol3::BuildRow(const int m, const int k, const int j, const int i, const 
   // ---- the energy row ---------------------------------------------------------------
   const Real tk = Tg(m,k,j,i);
   const Real rho = Rho(m,k,j,i);
-  const Real es = wk(m,ESs,i,k,j);          // e*, cached in step 1: it never changes
+  const Real es = Wk<TLAY>(m,ESs,i,k,j);          // e*, cached in step 1: it never changes
   rsc = (es > 0.0) ? es : 1.0;
-  const Real b = wk(m,BBs,i,k,j);
+  const Real b = Wk<TLAY>(m,BBs,i,k,j);
   if (!(tk > 0.0) || !(b > 0.0) || !(es > 0.0)) {
     // an unusable state: the cell takes no part, exactly as it does in the sweep
     Bm[4][4] = 1.0;
@@ -435,10 +455,10 @@ void RTCol3::BuildRow(const int m, const int k, const int j, const int i, const 
   // de/db = (de/dT) dT/db with b = sigma T^4/pi, i.e. dT_K/db = pi/(4 sigma T^3)
   Real dedb;
   if (cvfreeze > 0 && it >= cvfreeze) {
-    dedb = wk(m,CVs,i,k,j);
+    dedb = Wk<TLAY>(m,CVs,i,k,j);
   } else {
     dedb = dEdT(rho, enew, tnew)*M_PI/(4.0*sigma*tnew*tnew*tnew);
-    wk(m,CVs,i,k,j) = dedb;
+    Wk<TLAY>(m,CVs,i,k,j) = dedb;
   }
   Bm[4][4] = dedb + fj*dsdb[1];
   A3[4][2] = fj*dsdb[0];
@@ -464,7 +484,7 @@ void RTCol3::BuildRow(const int m, const int k, const int j, const int i, const 
       }
     }
   }
-  rv[4] = -(enew - es - bdt*(wb*wk(m,SAs,i,k,j) + wk(m,EXs,i,k,j)));
+  rv[4] = -(enew - es - bdt*(wb*Wk<TLAY>(m,SAs,i,k,j) + Wk<TLAY>(m,EXs,i,k,j)));
   if (!(Bm[4][4] > 0.0)) Kokkos::atomic_add(&stat(11), 1.0);
 }
 
@@ -488,12 +508,12 @@ void RTCol3::Solve(const int m, const int k, const int j) const {
     for (int q=0; q<nq; ++q) {
       const Real x = h/mu[q];
       const Real e0 = -expm1(-x);
-      wk(m,EE+q,i,k,j) = e0;
-      wk(m,CI+q,i,k,j) = (x > 1.0e-3) ? (e0 - 1.0 + e0/x) : (x/2.0 - SQR(x)/3.0);
-      wk(m,CO+q,i,k,j) = (x > 1.0e-3) ? (1.0 - e0/x) : (x/2.0 - SQR(x)/6.0);
+      Wk<false>(m,EE+q,i,k,j) = e0;
+      Wk<false>(m,CI+q,i,k,j) = (x > 1.0e-3) ? (e0 - 1.0 + e0/x) : (x/2.0 - SQR(x)/3.0);
+      Wk<false>(m,CO+q,i,k,j) = (x > 1.0e-3) ? (1.0 - e0/x) : (x/2.0 - SQR(x)/6.0);
     }
-    wk(m,BB,i,k,j) = Bb(m,0,i,k,j);
-    wk(m,ES,i,k,j) = Ei(m,k,j,i);     // e*, fixed for the whole solve: cache it once
+    Wk<false>(m,BB,i,k,j) = Bb(m,0,i,k,j);
+    Wk<false>(m,ES,i,k,j) = Ei(m,k,j,i);     // e*, fixed for the whole solve: cache it once
   }
   // THE NORM SCALE.  problem/rt_impl_norm = 1 measures each cell's energy residual
   // against e_i + eps e_max rather than against e_i alone.  In a stellar column e spans
@@ -504,7 +524,7 @@ void RTCol3::Solve(const int m, const int k, const int j) const {
   Real emax = 0.0;
   if (norm == 1) {
     for (int i=ic; i<=ie; ++i) {
-      const Real e = wk(m,ES,i,k,j);
+      const Real e = Wk<false>(m,ES,i,k,j);
       if (e > emax) emax = e;
     }
   }
@@ -547,7 +567,7 @@ void RTCol3::Solve(const int m, const int k, const int j) const {
            + (1.0 - wb)*(ft - fb)/dxi;
       }
     }
-    wk(m,EX,i,k,j) = ex + Qb(m,0,i,k,j);
+    Wk<false>(m,EX,i,k,j) = ex + Qb(m,0,i,k,j);
   }
 
   // ---- 4. Newton ---------------------------------------------------------------------
@@ -558,42 +578,42 @@ void RTCol3::Solve(const int m, const int k, const int j) const {
   for (int it=0; it<maxit; ++it) {
     nit = it + 1;
     // ---- 4a. the formal solution at the current b, and Src ---------------------------
-    for (int i=ic; i<=ie; ++i) wk(m,SA,i,k,j) = 0.0;
+    for (int i=ic; i<=ie; ++i) Wk<false>(m,SA,i,k,j) = 0.0;
     Real Din[2];
     for (int q=0; q<nq; ++q) Din[q] = Dtop[q];
     for (int i=ie; i>=ic; --i) {
       Real sl, su, sfu, sfd;
-      SourceVals(m, k, j, i, ic, cutc, sl, su, sfu, sfd);
+      SourceVals<false>(m, k, j, i, ic, cutc, sl, su, sfu, sfd);
       const Real W = 1.0/Dx(m,k,j,i);
       Real acc = 0.0;
       for (int q=0; q<nq; ++q) {
-        const Real E = wk(m,EE+q,i,k,j), t = 1.0 - E;
-        const Real ci = wk(m,CI+q,i,k,j), co = wk(m,CO+q,i,k,j);
+        const Real E = Wk<false>(m,EE+q,i,k,j), t = 1.0 - E;
+        const Real ci = Wk<false>(m,CI+q,i,k,j), co = Wk<false>(m,CO+q,i,k,j);
         const Real P = ci*sfu + co*sl;
         const Real Q = ci*su + co*sfd;
         acc += wf[q]*W*(E*(1.0 + t)*Din[q] + E*P - (P + Q));
         Din[q] = t*t*Din[q] + t*P + Q;
-        wk(m,DD+q,i,k,j) = Din[q];
+        Wk<false>(m,DD+q,i,k,j) = Din[q];
       }
-      wk(m,SA,i,k,j) += acc;
+      Wk<false>(m,SA,i,k,j) += acc;
     }
     Real Uin[2];
-    for (int q=0; q<nq; ++q) Uin[q] = wk(m,BB,ic,k,j) + Ucut[q];
+    for (int q=0; q<nq; ++q) Uin[q] = Wk<false>(m,BB,ic,k,j) + Ucut[q];
     for (int i=ic; i<=ie; ++i) {
       Real sl, su, sfu, sfd;
-      SourceVals(m, k, j, i, ic, cutc, sl, su, sfu, sfd);
+      SourceVals<false>(m, k, j, i, ic, cutc, sl, su, sfu, sfd);
       const Real W = 1.0/Dx(m,k,j,i);
       Real acc = 0.0;
       for (int q=0; q<nq; ++q) {
-        const Real E = wk(m,EE+q,i,k,j), t = 1.0 - E;
-        const Real ci = wk(m,CI+q,i,k,j), co = wk(m,CO+q,i,k,j);
+        const Real E = Wk<false>(m,EE+q,i,k,j), t = 1.0 - E;
+        const Real ci = Wk<false>(m,CI+q,i,k,j), co = Wk<false>(m,CO+q,i,k,j);
         const Real Pu = ci*sfd + co*su;
         const Real Qu = ci*sl + co*sfu;
         acc += wf[q]*W*(E*(1.0 + t)*Uin[q] + E*Pu - (Pu + Qu));
         Uin[q] = t*t*Uin[q] + t*Pu + Qu;
-        wk(m,UU+q,i,k,j) = Uin[q];
+        Wk<false>(m,UU+q,i,k,j) = Uin[q];
       }
-      wk(m,SA,i,k,j) += acc;
+      Wk<false>(m,SA,i,k,j) += acc;
     }
     // ---- 4a'. the handover, re-formed from THIS column's OWN flux ------------------
     // problem/rt_col3_ex_iter.  Frozen (the default), src_ex carries the ENTRY sweep's
@@ -611,13 +631,13 @@ void RTCol3::Solve(const int m, const int k, const int j) const {
       for (int i=ic; i<=ie; ++i) {
         Real f3lo = 0.0, f3hi = 0.0;
         for (int q=0; q<nq; ++q) {
-          const Real ulo = (i == ic) ? (wk(m,BB,ic,k,j) + Ucut[q]) : wk(m,UU+q,i-1,k,j);
-          const Real dhi = (i == ie) ? Dtop[q] : wk(m,DD+q,i+1,k,j);
-          f3lo += wf[q]*(ulo - wk(m,DD+q,i,k,j));
-          f3hi += wf[q]*(wk(m,UU+q,i,k,j) - dhi);
+          const Real ulo = (i == ic) ? (Wk<false>(m,BB,ic,k,j) + Ucut[q]) : Wk<false>(m,UU+q,i-1,k,j);
+          const Real dhi = (i == ie) ? Dtop[q] : Wk<false>(m,DD+q,i+1,k,j);
+          f3lo += wf[q]*(ulo - Wk<false>(m,DD+q,i,k,j));
+          f3hi += wf[q]*(Wk<false>(m,UU+q,i,k,j) - dhi);
         }
         const Real wlo = wblend(m,k,j,i), whi = wblend(m,k,j,i+1);
-        wk(m,EX,i,k,j) = 0.5*(wlo + whi)*wk(m,SA,i,k,j)
+        Wk<false>(m,EX,i,k,j) = 0.5*(wlo + whi)*Wk<false>(m,SA,i,k,j)
                        + (whi*f3hi - wlo*f3lo)/Dx(m,k,j,i) + Qb(m,0,i,k,j);
       }
     }
@@ -633,7 +653,7 @@ void RTCol3::Solve(const int m, const int k, const int j) const {
     for (int i=ic; i<=ie && ok; ++i) {
       Real A3[5][3], Bm[5][5], C3[5][3], rv[5];
       Real rsc = 1.0;
-      BuildRow(m, k, j, i, ic, cutc, it, A3, Bm, C3, rv, rsc);
+      BuildRow<false>(m, k, j, i, ic, cutc, it, A3, Bm, C3, rv, rsc);
       const Real den = rsc + eoff;
       const Real rr = (den > 0.0) ? fabs(rv[4])/den : 0.0;
       if (rr > rmax) rmax = rr;
@@ -658,12 +678,12 @@ void RTCol3::Solve(const int m, const int k, const int j) const {
         Real s = 0.0;
         for (int c=0; c<5; ++c) s += Bi[r][c]*rv[c];
         dp[r] = s;
-        wk(m,DP+r,i,k,j) = s;
+        Wk<false>(m,DP+r,i,k,j) = s;
         for (int c=0; c<3; ++c) {
           Real g = 0.0;
           for (int t=0; t<5; ++t) g += Bi[r][t]*C3[t][c];
           Gp[r][c] = g;
-          wk(m,G0+3*r+c,i,k,j) = g;
+          Wk<false>(m,G0+3*r+c,i,k,j) = g;
         }
       }
     }
@@ -681,14 +701,14 @@ void RTCol3::Solve(const int m, const int k, const int j) const {
     for (int i=ie; i>=ic; --i) {
       Real y[5];
       for (int r=0; r<5; ++r) {
-        Real s = wk(m,DP+r,i,k,j);
+        Real s = Wk<false>(m,DP+r,i,k,j);
         if (i < ie) {
-          s -= wk(m,G0+3*r+0,i,k,j)*ynext[0] + wk(m,G0+3*r+1,i,k,j)*ynext[1]
-             + wk(m,G0+3*r+2,i,k,j)*ynext[4];
+          s -= Wk<false>(m,G0+3*r+0,i,k,j)*ynext[0] + Wk<false>(m,G0+3*r+1,i,k,j)*ynext[1]
+             + Wk<false>(m,G0+3*r+2,i,k,j)*ynext[4];
         }
         y[r] = s;
       }
-      const Real b = wk(m,BB,i,k,j);
+      const Real b = Wk<false>(m,BB,i,k,j);
       Real db = y[4];
       if (b > 0.0) {
         if (db > 3.0*b) {
@@ -700,7 +720,7 @@ void RTCol3::Solve(const int m, const int k, const int j) const {
         }
         const Real rel = fabs(db)/b;
         if (rel > dbm) dbm = rel;
-        wk(m,BB,i,k,j) = b + db;
+        Wk<false>(m,BB,i,k,j) = b + db;
       }
       y[4] = db;
       for (int r=0; r<5; ++r) ynext[r] = y[r];
@@ -729,13 +749,13 @@ void RTCol3::Solve(const int m, const int k, const int j) const {
   for (int i=ic; i<=ie; ++i) {
     const Real dxi = Dx(m,k,j,i);
     const Real wb = taublend ? (1.0 - 0.5*(wblend(m,k,j,i) + wblend(m,k,j,i+1))) : 1.0;
-    rhsum += bdt*(wb*wk(m,SA,i,k,j) + wk(m,EX,i,k,j))*dxi;
-    srsum += wk(m,SA,i,k,j)*dxi;
+    rhsum += bdt*(wb*Wk<false>(m,SA,i,k,j) + Wk<false>(m,EX,i,k,j))*dxi;
+    srsum += Wk<false>(m,SA,i,k,j)*dxi;
   }
   Real fnet = 0.0;
   for (int q=0; q<nq; ++q) {
-    const Real ftop = wf[q]*(wk(m,UU+q,ie,k,j) - Dtop[q]);
-    const Real fcut = wf[q]*((wk(m,BB,ic,k,j) + Ucut[q]) - wk(m,DD+q,ic,k,j));
+    const Real ftop = wf[q]*(Wk<false>(m,UU+q,ie,k,j) - Dtop[q]);
+    const Real fcut = wf[q]*((Wk<false>(m,BB,ic,k,j) + Ucut[q]) - Wk<false>(m,DD+q,ic,k,j));
     fnet += fcut - ftop;
   }
   Kokkos::atomic_add(&stat(12), rhsum);
@@ -748,7 +768,7 @@ void RTCol3::Solve(const int m, const int k, const int j) const {
   // the two must agree, and how well is the statement that mode 3 has not moved the
   // radiation field away from the formal solution the sweep was validated against.
   Real ftop3 = 0.0;
-  for (int q=0; q<nq; ++q) ftop3 += wf[q]*(wk(m,UU+q,ie,k,j) - Dtop[q]);
+  for (int q=0; q<nq; ++q) ftop3 += wf[q]*(Wk<false>(m,UU+q,ie,k,j) - Dtop[q]);
   Kokkos::atomic_add(&stat(16), ftop3);
   Kokkos::atomic_add(&stat(17), Fb(m,0,ie+1,k,j));
 
@@ -768,24 +788,24 @@ void RTCol3::Solve(const int m, const int k, const int j) const {
     for (int i=ic; i<=ie; ++i) {
       Real f3lo = 0.0, f3hi = 0.0;
       for (int q=0; q<nq; ++q) {
-        const Real ulo = (i == ic) ? (wk(m,BB,ic,k,j) + Ucut[q]) : wk(m,UU+q,i-1,k,j);
-        const Real dhi = (i == ie) ? Dtop[q] : wk(m,DD+q,i+1,k,j);
-        f3lo += wf[q]*(ulo - wk(m,DD+q,i,k,j));
-        f3hi += wf[q]*(wk(m,UU+q,i,k,j) - dhi);
+        const Real ulo = (i == ic) ? (Wk<false>(m,BB,ic,k,j) + Ucut[q]) : Wk<false>(m,UU+q,i-1,k,j);
+        const Real dhi = (i == ie) ? Dtop[q] : Wk<false>(m,DD+q,i+1,k,j);
+        f3lo += wf[q]*(ulo - Wk<false>(m,DD+q,i,k,j));
+        f3hi += wf[q]*(Wk<false>(m,UU+q,i,k,j) - dhi);
       }
       const Real dxi = Dx(m,k,j,i);
       const Real wlo = taublend ? wblend(m,k,j,i) : 0.0;
       const Real whi = taublend ? wblend(m,k,j,i+1) : 0.0;
       const Real wb = 1.0 - 0.5*(wlo + whi);
-      const Real srcdx = wk(m,SA,i,k,j)*dxi;
+      const Real srcdx = Wk<false>(m,SA,i,k,j)*dxi;
       const Real divf = f3lo - f3hi;
       Kokkos::printf("### rt_col3_flux i=%d dtau=%.4e w=%.4e srcdx=%.10e divF=%.10e "
                      "dif=%.4e sw_srcdx=%.10e F3lo=%.10e Fblo=%.10e exdx=%.10e "
                      "appdx=%.10e db_rel=%.4e\n",
                      i, 2.0*Ht(m,k,j,i), 1.0 - wb, srcdx, divf, srcdx - divf,
-                     Src(m,0,i,k,j)*dxi, f3lo, Fb(m,0,i,k,j), wk(m,EX,i,k,j)*dxi,
-                     (wb*wk(m,SA,i,k,j) + wk(m,EX,i,k,j))*dxi,
-                     (Bb(m,0,i,k,j) > 0.0) ? (wk(m,BB,i,k,j)/Bb(m,0,i,k,j) - 1.0) : 0.0);
+                     Src(m,0,i,k,j)*dxi, f3lo, Fb(m,0,i,k,j), Wk<false>(m,EX,i,k,j)*dxi,
+                     (wb*Wk<false>(m,SA,i,k,j) + Wk<false>(m,EX,i,k,j))*dxi,
+                     (Bb(m,0,i,k,j) > 0.0) ? (Wk<false>(m,BB,i,k,j)/Bb(m,0,i,k,j) - 1.0) : 0.0);
     }
   }
   for (int i=ic; i<=ie; ++i) {
@@ -793,7 +813,7 @@ void RTCol3::Solve(const int m, const int k, const int j) const {
     if (!(tk > 0.0)) continue;
     const Real rho = Rho(m,k,j,i);
     const Real es = Ei(m,k,j,i);
-    const Real b = wk(m,BB,i,k,j);
+    const Real b = Wk<false>(m,BB,i,k,j);
     if (!(b > 0.0)) continue;
     const Real tnew = sqrt(sqrt(b/sopi));
     const Real enew = EFromT(rho, tnew);
@@ -820,7 +840,7 @@ void RTCol3::Solve(const int m, const int k, const int j) const {
                      "b=%.6e du_u=%.4e de=%.6e de_expl=%.6e e=%.6e cv=%.4e\n",
                      i, 2.0*Ht(m,k,j,i), tk, rho, b0, b,
                      (b0 > 0.0) ? (b/b0 - 1.0) : 0.0, de,
-                     bdt*(wb*Src(m,0,i,k,j) + wk(m,EX,i,k,j)), es,
+                     bdt*(wb*Src(m,0,i,k,j) + Wk<false>(m,EX,i,k,j)), es,
                      dEdT(rho, es, tk));
     }
     if (!((es + de) > 0.0)) {

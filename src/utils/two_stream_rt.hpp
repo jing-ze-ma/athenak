@@ -2512,11 +2512,15 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
           }
           const int c3nw = c3par ? RTCOL3_NWP : RTCOL3_NW;
           if (rt_c3wk_ptr == nullptr) {
-            rt_c3wk_ptr = new DvceArray5D<Real>("rt_c3wk", nmb_c3, c3nw, n1, n3, n2);
+            // the partitioned path TRANSPOSES the workspace so that the fast index is
+            // the one the threads of a team differ in; see RTCol3::Wk
+            rt_c3wk_ptr = c3par
+                ? new DvceArray5D<Real>("rt_c3wk", nmb_c3, c3nw, n3, n2, n1)
+                : new DvceArray5D<Real>("rt_c3wk", nmb_c3, c3nw, n1, n3, n2);
             rt_c3top_ptr = new DvceArray4D<Real>("rt_c3top", nmb_c3, 2, n3, n2);
             rt_c3stat_ptr = new DvceArray1D<Real>("rt_c3stat", 21);
-            rt_c3rd_ptr = new DvceArray4D<Real>("rt_c3rd", nmb_c3,
-                                                c3par ? c3nseg*RTCOL3_NRD : 1, n3, n2);
+            rt_c3rd_ptr = new DvceArray4D<Real>("rt_c3rd", nmb_c3, n3, n2,
+                                                c3par ? c3nseg*RTCOL3_NRD : 1);
             if (global_variable::my_rank == 0) {
               const double wmb = static_cast<double>(nmb_c3)*c3nw*n1*n2*n3
                                  *sizeof(Real)/1.0e6;
