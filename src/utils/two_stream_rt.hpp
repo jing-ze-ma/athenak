@@ -2838,7 +2838,10 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
         // dtau of the cell itself, straight out of the sweep's own tau array.
         bool thick_ = false;
         if (implcol_) {
-          const Real dtau_c = tau_g(m,k,j,i) - tau_g(m,k,j,i+1);
+          // kappa_R rho dr of the cell itself, from the SAME opacity cache the sweep
+          // built its layers with.  (tau_g is not filled on a box with no stellar beam,
+          // so it cannot be used for this.)
+          const Real dtau_c = kc_g(m,0,i,k,j)*rhoN(m,k,j,i)*DX1(m,k,j,i);
           thick_ = (dtau_c >= taumin_);
           Real jsc = taublend ? (1.0 - wbar) : 1.0;
           if (band_on && i < icut_g(m,k,j)) jsc = 0.0;
