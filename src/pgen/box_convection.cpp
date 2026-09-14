@@ -132,9 +132,56 @@
 //!                 by default and OFF as soon as the two-stream runs -- the two are two
 //!                 models of the same loss and would double-count.
 //!   user_srcs     must be true (gravity and the cooling layer live in the source term)
+//!
+//! THE EMERGENT-FLUX DIAGNOSTICS (both require problem/rt_two_stream = true).
+//!   user_hist     enrol the five-column user history below.  The values are read out of
+//!                 the two-stream's OWN face-flux array (two_stream_rt::rt_face_flux(),
+//!                 the net longwave flux on the x1 faces), which lives for the run, so
+//!                 the history samples the LAST RT call of the cycle -- no extra solve.
+//!                 Columns, all box averages over the nx2*nx3 columns of the mesh:
+//!                   Ftop   <F(ie+1)>, the net EMERGENT flux, erg/cm^2/s
+//!                   Ftop2  <F(ie+1)^2>: the box rms about the mean is
+//!                          sqrt(Ftop2 - Ftop^2).  The mean square, not the rms, is what
+//!                          is written, because history columns are MPI_SUM-reduced
+//!                          across ranks and a root is not a sum.
+//!                   Fcut   <F(icut)>, the flux handed IN to the two-stream at the
+//!                          deepest face it integrates -- the tau-blend handover.  The
+//!                          sweep leaves every face below icut at zero, so the wall face
+//!                          i = is carries nothing and is not what to read; the box's
+//!                          true bottom flux is the constant <hydro>/rad_flux_inner,
+//!                          which is what Ftop must equal in a steady state.
+//!                   Ttop   <T(ie)> and
+//!                   Ttop2  <T(ie)^2>, the top-cell temperature in K, taken from the
+//!                          temperature ConsToPrim already solved (Hydro::wtemp).  The
+//!                          tau = 2/3 surface temperature is NOT computed: it needs a
+//!                          downward opacity integral per column, which the history
+//!                          cadence cannot afford.  Use (Ftop/sigma_SB)^(1/4) instead.
+//!                 The history file is written with <outputN>/data_format, which already
+//!                 exists and defaults to "%12.5e".  THAT DEFAULT IS TOO COARSE FOR THIS:
+//!                 100-s differences of a 4e13 flux fall below one print quantum.  Set
+//!                 data_format = %24.16e in the hst output block.
+//!   rt_surface_dt  cadence, in code time, of a per-column surface dump of F_top(x2,x3).
+//!                 <= 0 (default) disables it.  Written from the source term right after
+//!                 the RT call, once per cycle, appended to one file.
+//!   rt_surface_file  that file (default "rt_surface.bin").  FORMAT: a stream of records,
+//!                 each  [int64 ncol][float64 time][ncol x (float64 x2, x3, F_top)],
+//!                 little-endian, no padding, no global header.  The columns are in no
+//!                 particular order (they arrive rank by rank), which is why each row
+//!                 carries its own (x2,x3) cell-centre coordinates.  Reader:
+//!                   import numpy as np
+//!                   recs = []
+//!                   with open("rt_surface.bin","rb") as f:
+//!                       while True:
+//!                           h = f.read(8)
+//!                           if len(h) < 8: break
+//!                           n = np.frombuffer(h, "<i8")[0]
+//!                           t = np.frombuffer(f.read(8), "<f8")[0]
+//!                           a = np.frombuffer(f.read(24*n), "<f8").reshape(n, 3)
+//!                           recs.append((t, a))          # a[:,0]=x2 a[:,1]=x3 a[:,2]=F
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <fstream>
 #include <iostream>
@@ -144,6 +191,9 @@
 #include <vector>
 
 #include "athena.hpp"
+#if MPI_PARALLEL_ENABLED
+#include <mpi.h>
+#endif
 #include "parameter_input.hpp"
 #include "coordinates/cell_locations.hpp"
 #include "mesh/mesh.hpp"
@@ -160,6 +210,7 @@
 void BoxConvSrcs(Mesh *pm, Real bdt);
 void BoxConvBC(Mesh *pm);
 void BoxConvFinal(ParameterInput *pin, Mesh *pm);
+void BoxConvHistory(HistoryData *pdata, Mesh *pm);
 
 namespace {
 // the column, on a uniform fine grid covering the mesh plus its ghosts
@@ -173,6 +224,14 @@ Real wall_walk_maxfac_ = 100.0;   // how far the bc_mode-3 walk may depart from 
 bool diff_flux_ = false;     // a diffusive flux shares the wall face's energy channel
 bool rt_on_ = false;      // problem/rt_two_stream
 bool cool_on_ = true;     // the Newton cooling layer (off by default once RT is on)
+Real rgas_ = 0.0;         // R/mu in code units; the ideal branch's T = p/(Rgas rho)
+// --- the per-column emergent-flux surface dump (problem/rt_surface_dt) --------------
+Real surf_dt_ = 0.0;             // <= 0 disables it
+Real surf_next_ = -1.0;          // next dump time; armed at the first source call
+char surf_file_[256] = "rt_surface.bin";
+HostArray2D<Real> surf_h_;       // (ncol_local, 3): x2, x3, F_top
+DvceArray2D<Real> surf_d_;
+bool surf_alloc_ = false;
 
 //----------------------------------------------------------------------------------------
 //! \fn ReadOpacityTable
@@ -247,6 +306,85 @@ void par_file_tp(const EOS_Data &eos, DvceArray1D<Real> d, DvceArray1D<Real> e,
   });
   return;
 }
+
+//----------------------------------------------------------------------------------------
+//! \fn BoxConvSurfaceDump
+//! \brief append one record of the per-column EMERGENT flux F_top(x2,x3).
+//!
+//! Called from the source term immediately after the two-stream, so what is written is
+//! the flux the solver has just produced, on the state it was handed.  Every MeshBlock
+//! holds the whole x1 extent -- UserProblem fatals otherwise, because the column sweep
+//! needs it -- so the i = ie+1 face of every block IS the top of the box and every rank
+//! owns whole columns.  Each row therefore carries its OWN (x2,x3) cell centre and the
+//! reader never has to reconstruct the decomposition.  Format: see the file header.
+
+void BoxConvSurfaceDump(Mesh *pm) {
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  auto &indcs = pm->mb_indcs;
+  const int ie = indcs.ie, js = indcs.js, ks = indcs.ks;
+  const int nx2 = indcs.nx2, nx3 = indcs.nx3;
+  const int nmb = pmbp->nmb_thispack;
+  const int ncol = nmb*nx3*nx2;
+  if (!surf_alloc_ || surf_d_.extent_int(0) != ncol) {
+    Kokkos::realloc(surf_d_, ncol, 3);
+    Kokkos::realloc(surf_h_, ncol, 3);
+    surf_alloc_ = true;
+  }
+  auto fb = two_stream_rt::rt_face_flux();
+  const int nblk = two_stream_rt::rt_face_nblk();
+  auto &size = pmbp->pmb->mb_size;
+  auto sd = surf_d_;
+  par_for("boxconv_surf", DevExeSpace(), 0, ncol-1, KOKKOS_LAMBDA(const int idx) {
+    const int m = idx/(nx3*nx2);
+    const int kj = idx - m*(nx3*nx2);
+    const int kk = kj/nx2;
+    const int jj = kj - kk*nx2;
+    Real ft = 0.0;
+    for (int b=0; b<nblk; ++b) ft += fb(m,b,ie+1,ks+kk,js+jj);
+    sd(idx,0) = CellCenterX(jj, nx2, size.d_view(m).x2min, size.d_view(m).x2max);
+    sd(idx,1) = CellCenterX(kk, nx3, size.d_view(m).x3min, size.d_view(m).x3max);
+    sd(idx,2) = ft;
+  });
+  Kokkos::deep_copy(surf_h_, surf_d_);
+
+  std::vector<double> mine(3*ncol);
+  for (int n=0; n<ncol; ++n) {
+    for (int c=0; c<3; ++c) mine[3*n+c] = static_cast<double>(surf_h_(n,c));
+  }
+  std::vector<double> all;
+  int ntot = ncol;
+#if MPI_PARALLEL_ENABLED
+  const int nr = global_variable::nranks;
+  std::vector<int> cnt(nr, 0), disp(nr, 0);
+  int mycnt = 3*ncol;
+  MPI_Gather(&mycnt, 1, MPI_INT, cnt.data(), 1, MPI_INT, 0, MPI_COMM_WORLD);
+  int tot = 0;
+  for (int r=0; r<nr; ++r) {
+    disp[r] = tot;
+    tot += cnt[r];
+  }
+  all.resize((global_variable::my_rank == 0) ? tot : 1);
+  MPI_Gatherv(mine.data(), mycnt, MPI_DOUBLE, all.data(), cnt.data(), disp.data(),
+              MPI_DOUBLE, 0, MPI_COMM_WORLD);
+  ntot = tot/3;
+#else
+  all.swap(mine);
+#endif
+  if (global_variable::my_rank != 0) return;
+  FILE *pf = std::fopen(surf_file_, "ab");
+  if (pf == nullptr) {
+    std::cout << "### FATAL ERROR in box_convection: cannot append to "
+              << "problem/rt_surface_file '" << surf_file_ << "'" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  const int64_t n64 = static_cast<int64_t>(ntot);
+  const double tnow = static_cast<double>(pm->time);
+  std::fwrite(&n64, sizeof(int64_t), 1, pf);
+  std::fwrite(&tnow, sizeof(double), 1, pf);
+  std::fwrite(all.data(), sizeof(double), 3*ntot, pf);
+  std::fclose(pf);
+  return;
+}
 }  // namespace
 
 //----------------------------------------------------------------------------------------
@@ -256,6 +394,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   user_srcs_func = BoxConvSrcs;
   user_bcs_func = BoxConvBC;
   pgen_final_func = BoxConvFinal;
+  user_hist_func = BoxConvHistory;
   MeshBlockPack *pmbp = pmy_mesh_->pmb_pack;
   if (pmbp->phydro == nullptr) {
     std::cout << "### FATAL ERROR in box_convection: <hydro> is required" << std::endl;
@@ -312,6 +451,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     punit = pmbp->punit->pressure_cgs();
   }
   const Real rgas = 1.380649e-16/(mu*1.66053906660e-24)/(vunit*vunit);
+  rgas_ = rgas;      // BoxConvHistory needs it for the ideal-gas temperature
 
   // --- the column, on a fine grid over the mesh's x1 extent plus its ghosts
   const Real zmin = pmy_mesh_->mesh_size.x1min;
@@ -570,6 +710,20 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     ts::rt_dump_m = pin->GetOrAddInteger("problem", "rt_dump_m", 0);
     ts::rt_dump_j = pin->GetOrAddInteger("problem", "rt_dump_j", -1);
     ts::rt_dump_k = pin->GetOrAddInteger("problem", "rt_dump_k", -1);
+    // ---- the per-column emergent-flux surface dump (see the header block) ----------
+    surf_dt_ = pin->GetOrAddReal("problem", "rt_surface_dt", 0.0);
+    {
+      std::string sf = pin->GetOrAddString("problem", "rt_surface_file",
+                                           "rt_surface.bin");
+      if (sf.size() >= sizeof(surf_file_)) {
+        std::cout << "### FATAL ERROR in box_convection: problem/rt_surface_file is "
+                  << "longer than 255 characters" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      std::snprintf(surf_file_, sizeof(surf_file_), "%s", sf.c_str());
+    }
+    surf_next_ = -1.0;
+    surf_alloc_ = false;
     // ---- the thin-region radiative force (see two_stream_rt.hpp, rt_rad_force) ------
     // It is the other half of the EOS's radiation taper: the taper removes (1-w) of the
     // LTE radiation pressure from the gas, and this puts the force that pressure was
@@ -915,7 +1069,89 @@ void BoxConvSrcs(Mesh *pm, Real bdt) {
   // red_giant.cpp calls it: inside the stage, on the state the last ConToPrim left.
   if (rt_on_) {
     two_stream_rt::picket_fence_two_stream_RT(pm, bdt);
+    // The per-column surface dump, on the flux that call just wrote.  pm->time is the
+    // time at the START of the cycle and does not move between stages, so advancing
+    // surf_next_ PAST it here is what makes this fire once per cycle rather than once
+    // per stage.  A restart arms it at the restart time, so the series simply resumes.
+    if (surf_dt_ > 0.0 && two_stream_rt::rt_face_flux_ready()) {
+      if (surf_next_ < 0.0) surf_next_ = pm->time;
+      if (pm->time >= surf_next_) {
+        BoxConvSurfaceDump(pm);
+        while (surf_next_ <= pm->time) surf_next_ += surf_dt_;
+      }
+    }
   }
+  return;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void BoxConvHistory
+//! \brief the emergent-flux history columns.  See the header block for what each is and
+//! why the MEAN SQUARE, not the rms, is what gets written.
+//!
+//! Nothing here re-runs the solver: two_stream_rt::rt_face_flux() is the solver's own
+//! face-flux array, which lives for the run, so these are the numbers of the LAST RT
+//! call of the cycle -- which is what the history is called after.
+
+void BoxConvHistory(HistoryData *pdata, Mesh *pm) {
+  pdata->nhist = 5;
+  pdata->label[0] = "Ftop";
+  pdata->label[1] = "Ftop2";
+  pdata->label[2] = "Fcut";
+  pdata->label[3] = "Ttop";
+  pdata->label[4] = "Ttop2";
+  for (int n=0; n<pdata->nhist; ++n) pdata->hdata[n] = 0.0;
+  if (!rt_on_ || !two_stream_rt::rt_face_flux_ready()) return;
+
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  auto &indcs = pm->mb_indcs;
+  const int ie = indcs.ie, js = indcs.js, ks = indcs.ks;
+  const int nx2 = indcs.nx2, nx3 = indcs.nx3;
+  const int ncol = pmbp->nmb_thispack*nx3*nx2;
+  auto fb = two_stream_rt::rt_face_flux();
+  auto icut = two_stream_rt::rt_cut_index();
+  const int nblk = two_stream_rt::rt_face_nblk();
+  auto &w0 = pmbp->phydro->w0;
+  auto wt = pmbp->phydro->wtemp;
+  auto eos = pmbp->phydro->peos->eos_data;
+  const bool gen = eos.IsGeneral();
+  const Real tcgs = eos.temp_cgs;
+  const Real rgas = rgas_;
+  // Each column contributes 1/N of the box mean, so the MPI_SUM the history performs
+  // over ranks lands on the mean itself.  N is the whole mesh's column count: one
+  // MeshBlock spans the whole x1 extent, so nx2*nx3 of the MESH counts every column once.
+  const Real inc = 1.0/(static_cast<Real>(pm->mesh_indcs.nx2)*
+                        static_cast<Real>(pm->mesh_indcs.nx3));
+  array_sum::GlobalSum sum_this_mb;
+  Kokkos::parallel_reduce("boxconv_hist",
+  Kokkos::RangePolicy<>(DevExeSpace(), 0, ncol),
+  KOKKOS_LAMBDA(const int idx, array_sum::GlobalSum &mb_sum) {
+    const int m = idx/(nx3*nx2);
+    const int kj = idx - m*(nx3*nx2);
+    const int k = ks + kj/nx2;
+    const int j = js + kj - (kj/nx2)*nx2;
+    // the sweep starts at icut, the deepest face the two-stream integrates; every face
+    // below it is left at zero, so the wall face i = is carries nothing to read
+    const int ic = icut(m,k,j);
+    Real ft = 0.0, fcut = 0.0;
+    for (int b=0; b<nblk; ++b) {
+      ft += fb(m,b,ie+1,k,j);
+      fcut += fb(m,b,ic,k,j);
+    }
+    // the temperature ConsToPrim already solved for this very cell; no second inversion
+    const Real tk = (gen) ? wt(m,k,j,ie)*tcgs
+                          : w0(m,IEN,k,j,ie)/(rgas*w0(m,IDN,k,j,ie));
+    array_sum::GlobalSum hvars;
+    hvars.the_array[0] = inc*ft;
+    hvars.the_array[1] = inc*ft*ft;
+    hvars.the_array[2] = inc*fcut;
+    hvars.the_array[3] = inc*tk;
+    hvars.the_array[4] = inc*tk*tk;
+    for (int n=5; n<NHISTORY_VARIABLES; ++n) hvars.the_array[n] = 0.0;
+    mb_sum += hvars;
+  }, Kokkos::Sum<array_sum::GlobalSum>(sum_this_mb));
+  Kokkos::fence();
+  for (int n=0; n<pdata->nhist; ++n) pdata->hdata[n] = sum_this_mb.the_array[n];
   return;
 }
 
@@ -1114,5 +1350,10 @@ void BoxConvFinal(ParameterInput *pin, Mesh *pm) {
   ce_ = DvceArray1D<Real>();
   cp_ = DvceArray1D<Real>();
   ct_ = DvceArray1D<Real>();
+  // the surface-dump buffers are namespace-scope Views, so their destructors run at
+  // static-destruction time, which is AFTER Kokkos::finalize(): release them here
+  surf_h_ = HostArray2D<Real>();
+  surf_d_ = DvceArray2D<Real>();
+  surf_alloc_ = false;
   return;
 }
