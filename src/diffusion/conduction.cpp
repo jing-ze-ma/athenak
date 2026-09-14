@@ -1525,16 +1525,26 @@ void Conduction::ImplicitRadialUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos
   auto rtdg_ = rtc_ ? rt_col_diag : DvceArray1D<Real>("rtc_dg_d", 8);
   if (rtc_) Kokkos::deep_copy(rtdg_, 0.0);
   // ---- rad_x1_uform / rad_x1_kiter (see conduction.hpp) -----------------------------
-  // The merged two-stream solve carries its own linearisation of B(T) ~ T^4 and its own
+  // The MERGED two-stream solve (rt_implicit_column = 1 or 2) folds the sweep's source
+  // into THIS tridiagonal.  It carries its own linearisation of B(T) ~ T^4 and its own
   // outer iteration on T^n; both would have to be re-derived in u and re-anchored, so
   // the two are refused together rather than silently mixed.
+  //
+  // rt_implicit_column = 3 is NOT affected and is deliberately allowed.  The exact
+  // block-tridiagonal column solve owns the two-stream entirely and applies its own
+  // energy update inside the sweep; it never calls EnableRTColumn(), so rt_col_active --
+  // and with it rtc_ -- stays false and this operator runs as the plain radial
+  // conduction it always was, carrying only the w-weighted deep share of the flux.  The
+  // u-form and the Picard passes are then exactly the cure for the frozen-K error they
+  // are everywhere else, with nothing to mix.  The gate below keys on rtc_ for that
+  // reason, not on rt_implicit_column > 0.
   const bool uf_ = rad_x1_uform;
   const int nkit_ = rad_x1_kiter;
   if (rtc_ && (uf_ || nkit_ > 1)) {
     std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
               << std::endl << "rad_x1_uform/rad_x1_kiter are not supported together "
-              << "with the merged two-stream column solve (rt_implicit_column)"
-              << std::endl;
+              << "with the MERGED two-stream column solve (rt_implicit_column = 1 or 2; "
+              << "mode 3 solves the two-stream separately and is allowed)" << std::endl;
     std::exit(EXIT_FAILURE);
   }
   auto tn_ = (nkit_ > 1) ? imp_tn : DvceArray4D<Real>("imp_tn_d", 1, 1, 1, 1);
