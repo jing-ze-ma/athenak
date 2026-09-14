@@ -63,6 +63,10 @@ struct HydroTaskIDs {
   TaskID newdt;
   TaskID csend;
   TaskID crecv;
+  TaskID splitpre;
+  TaskID splitpc2p;
+  TaskID splitpst;
+  TaskID splitsc2p;
 };
 
 namespace hydro {
@@ -238,6 +242,7 @@ class Hydro {
   TaskStatus ApplyPhysicalBCs(Driver* pdrive, int stage);
   TaskStatus Prolongate(Driver* pdrive, int stage);
   TaskStatus ConToPrim(Driver *d, int stage);
+  TaskStatus RTStrangSplit(Driver *d, int stage);
   TaskStatus NewTimeStep(Driver *d, int stage);
   // ...in "after_stagen_tl" list
   TaskStatus ClearSend(Driver *d, int stage);

@@ -177,6 +177,19 @@ void Hydro::AssembleHydroTasks(std::map<std::string, std::shared_ptr<TaskList>> 
   TaskID none(0);
 
   // assemble "before_stagen" task list
+  // ---- the Strang-split operator-split source (ProblemGenerator::user_split_func)
+  // Half the CYCLE dt before the integrator and half after, each followed by a
+  // ConToPrim so the hydro stage (and the next cycle) sees consistent primitives.
+  // The hook is null unless a problem generator enrols it, and both tasks then return
+  // immediately, so this is bitwise inert for every other run.
+  id.splitpre  = tl["before_timeintegrator"]->AddTask(&Hydro::RTStrangSplit, this,
+                                                      none);
+  id.splitpc2p = tl["before_timeintegrator"]->AddTask(&Hydro::ConToPrim, this,
+                                                      id.splitpre);
+  id.splitpst  = tl["after_timeintegrator"]->AddTask(&Hydro::RTStrangSplit, this, none);
+  id.splitsc2p = tl["after_timeintegrator"]->AddTask(&Hydro::ConToPrim, this,
+                                                     id.splitpst);
+
   id.irecv = tl["before_stagen"]->AddTask(&Hydro::InitRecv, this, none);
 
   // assemble "stagen" task list
@@ -720,6 +733,27 @@ TaskStatus Hydro::Prolongate(Driver *pdrive, int stage) {
       pbval_u->ProlongateCC(u0, coarse_u0);
     }
   }
+  return TaskStatus::complete;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn TaskStatus Hydro::RTStrangSplit
+//! \brief the Strang half-step of ProblemGenerator::user_split_func.  It runs once in
+//! "before_timeintegrator" and once in "after_timeintegrator", each with HALF the
+//! CYCLE dt -- pmesh->dt is fixed for the whole cycle, NewTimeStep running only after
+//! the second call -- so the two halves are equal and the split is second order.  Each
+//! is followed by ConToPrim in the same list so the stage (and the next cycle) sees
+//! primitives consistent with the conserved state the source just changed.
+//!
+//! A null hook returns immediately: every run that does not enrol one is bitwise
+//! unchanged.
+
+TaskStatus Hydro::RTStrangSplit(Driver *pdrive, int stage) {
+  Mesh *pm = pmy_pack->pmesh;
+  if (pm->pgen == nullptr || pm->pgen->user_split_func == nullptr) {
+    return TaskStatus::complete;
+  }
+  (pm->pgen->user_split_func)(pm, 0.5*(pm->dt));
   return TaskStatus::complete;
 }
 

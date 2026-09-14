@@ -212,6 +212,7 @@
 #include "pgen.hpp"
 
 void BoxConvSrcs(Mesh *pm, Real bdt);
+void BoxConvRTSplit(Mesh *pm, Real bdt);
 void BoxConvBC(Mesh *pm);
 void BoxConvFinal(ParameterInput *pin, Mesh *pm);
 void BoxConvHistory(HistoryData *pdata, Mesh *pm);
@@ -227,6 +228,13 @@ bool wall_noflux_ = false;   // cancel the wall-face flux after each stage (bc_m
 Real wall_walk_maxfac_ = 100.0;   // how far the bc_mode-3 walk may depart from the column
 bool diff_flux_ = false;     // a diffusive flux shares the wall face's energy channel
 bool rt_on_ = false;      // problem/rt_two_stream
+// problem/rt_strang (default false, bitwise off): take the grey two-stream OUT of the
+// RK stage and apply it Strang-wise around the whole time integrator instead -- half
+// the cycle dt before it, half after, through ProblemGenerator::user_split_func.  The
+// in-stage call in BoxConvSrcs is then skipped.  It exists to test whether the residual
+// dt-INDEPENDENT box-mode forcing that survives the exact column solve
+// (rt_implicit_column = 3) is the operator SPLIT rather than the solve.
+bool rt_strang_ = false;
 bool cool_on_ = true;     // the Newton cooling layer (off by default once RT is on)
 Real rgas_ = 0.0;         // R/mu in code units; the ideal branch's T = p/(Rgas rho)
 // --- the per-column emergent-flux surface dump (problem/rt_surface_dt) --------------
@@ -899,6 +907,16 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     ts::rt_impl_tau_min = pin->GetOrAddReal("problem", "rt_impl_tau_min", 1.0);
     ts::rt_impl_dtmax = pin->GetOrAddReal("problem", "rt_impl_dtmax", 0.25);
     ts::rt_impl_tau_blend = pin->GetOrAddReal("problem", "rt_impl_tau_blend", 1.0);
+    rt_strang_ = pin->GetOrAddBoolean("problem", "rt_strang", false);
+    // enrolled HERE, not next to user_srcs_func: the switch is read only now
+    if (rt_strang_) {
+      user_split_func = BoxConvRTSplit;
+      if (global_variable::my_rank == 0) {
+        std::cout << "### box_convection: problem/rt_strang = true, the grey two-stream "
+                  << "is STRANG-SPLIT around the time integrator (dt/2 before, dt/2 "
+                  << "after) and is NOT applied inside the RK stages" << std::endl;
+      }
+    }
     ts::rt_apply_debug = pin->GetOrAddInteger("problem", "rt_apply_debug", 0);
     ts::rt_apply_debug_n = pin->GetOrAddInteger("problem", "rt_apply_debug_n", 8);
     ts::rt_nan_report = pin->GetOrAddBoolean("problem", "nan_report", false);
@@ -1326,7 +1344,7 @@ void BoxConvSrcs(Mesh *pm, Real bdt) {
 
   // --- the grey two-stream, after gravity and the cooling layer, exactly where
   // red_giant.cpp calls it: inside the stage, on the state the last ConToPrim left.
-  if (rt_on_) {
+  if (rt_on_ && !rt_strang_) {
     two_stream_rt::picket_fence_two_stream_RT(pm, bdt);
     if (bud_on) {
       Real e4, r4, ft, fc;
@@ -1350,6 +1368,19 @@ void BoxConvSrcs(Mesh *pm, Real bdt) {
     }
   }
   return;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void BoxConvRTSplit
+//! \brief problem/rt_strang: the grey two-stream as a Strang-split operator around the
+//! time integrator.  Hydro::RTStrangSplit calls this twice a cycle with bdt = dt/2, on
+//! the state at the start and at the end of the cycle, and runs ConToPrim after each.
+//! Nothing else moves: this is exactly the call BoxConvSrcs makes when rt_strang is
+//! off, with a different dt and at a different point in the cycle.
+
+void BoxConvRTSplit(Mesh *pm, Real bdt) {
+  if (!rt_on_) return;
+  two_stream_rt::picket_fence_two_stream_RT(pm, bdt);
 }
 
 //----------------------------------------------------------------------------------------

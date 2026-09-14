@@ -78,6 +78,11 @@ class ProblemGenerator {
   // function pointer for user-enrolled BCs.  Called in ApplyPhysicalBCs in task list
   UserBoundaryFnPtr user_bcs_func=nullptr;
   UserSrctermFnPtr user_srcs_func=nullptr;
+  // problem/rt_strang (box_convection): an OPERATOR-SPLIT source applied Strang-wise
+  // around the whole time integrator -- half the cycle dt in "before_timeintegrator"
+  // and half in "after_timeintegrator", with the in-stage call switched off.  Left
+  // null the two tasks are no-ops, so every existing run is bitwise unchanged.
+  UserSrctermFnPtr user_split_func=nullptr;
   UserRefinementFnPtr user_ref_func=nullptr;
   UserHistoryFnPtr user_hist_func=nullptr;
   // called once per cycle after Mesh::NewTimeStep in Driver::Execute
