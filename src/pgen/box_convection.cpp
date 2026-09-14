@@ -160,6 +160,9 @@
 //!                 exists and defaults to "%12.5e".  THAT DEFAULT IS TOO COARSE FOR THIS:
 //!                 100-s differences of a 4e13 flux fall below one print quantum.  Set
 //!                 data_format = %24.16e in the hst output block.
+//!   rt_budget_verbose  print the box ENERGY BUDGET term by term every N cycles, each
+//!                 term box-integrated over the window and divided by F_bot A sum(dt).
+//!                 Diagnostic only; see the block above BoxConvBoxInt for the terms.
 //!   rt_surface_dt  cadence, in code time, of a per-column surface dump of F_top(x2,x3).
 //!                 <= 0 (default) disables it.  Written from the source term right after
 //!                 the RT call, once per cycle, appended to one file.
@@ -204,6 +207,7 @@
 #include "diffusion/conduction.hpp"
 #include "units/units.hpp"
 #include "utils/two_stream_rt.hpp"
+#include "utils/rad_taper.hpp"
 #include "pgen_eos_utils.hpp"
 #include "pgen.hpp"
 
@@ -232,6 +236,181 @@ char surf_file_[256] = "rt_surface.bin";
 HostArray2D<Real> surf_h_;       // (ncol_local, 3): x2, x3, F_top
 DvceArray2D<Real> surf_d_;
 bool surf_alloc_ = false;
+
+// --- problem/rt_budget_verbose: THE BOX ENERGY BUDGET, TERM BY TERM -----------------
+// Diagnostic only.  Every term is an ENERGY (erg), box-integrated and accumulated over
+// the window between two prints, and is reported divided by W = F_bot * A * sum(bdt),
+// so an exactly balanced box reads 1 in and 1 out.  The device slots are
+//   0/1  the TOTAL x1-face energy flux at the i = is and i = ie+1 faces, i.e. what
+//        Hydro::RKUpdate's flux divergence puts into / takes out of the box.  Both
+//        carry the Riemann flux AND whatever AddIsotropicHeatFluxRadiative added to the
+//        same channel, which at i = is is the imposed <hydro>/rad_flux_inner.  Every
+//        interior face telescopes out of the box integral and x2/x3 are periodic, so
+//        these two faces are the whole flux-divergence contribution.
+//   2/3  the same faces' MASS flux (the bc_mode-3 leak, before its cancellation)
+//   4/5  the bc_mode-3 wall ENERGY removal de, inner / outer wall
+//   6/7  the same walls' MASS removal dm
+//   10   the radiative force's WORK term v.f (filled by two_stream_rt.hpp)
+// and the host-side accumulators carry the operator differences that are measured by
+// re-integrating u0(IEN) across a call: 8 = the gravity/WB/cooling kernel, 9 = the
+// two-stream call (deposition + v.f), 14 = the wall-correction kernel (the direct
+// check on 4 + 5), 11/12 = the two-stream's own <Ftop>/<Fcut> area-integrated, 13 = the
+// imposed bottom flux F_bot*A*bdt.
+constexpr int kNBud = 16;
+int  rtbud_n_ = 0;                 // print every N cycles; 0 = off
+DvceArray1D<Real> rtbud_;          // device slots
+Real rtbud_h_[kNBud];              // host accumulators
+Real rtbud_e0_ = 0.0;              // box energy at the window start
+Real rtbud_r0_ = 0.0;              // box LTE radiation energy w aT^4 at the window start
+Real rtbud_area_ = 0.0;            // the mesh's horizontal area
+Real rtbud_fin_ = 0.0;             // F_bot in code units
+int  rtbud_cyc_ = -1;              // the cycle the current stage belongs to
+bool rtbud_arm_ = false;
+
+//----------------------------------------------------------------------------------------
+//! \fn void BoxConvBoxInt
+//! \brief box integrals over the ACTIVE cells: the conserved energy, and the LTE
+//! radiation energy w(rho) a T^4 that the EOS taper keeps in it.  Summed over ranks.
+
+void BoxConvBoxInt(Mesh *pm, Real &etot, Real &erad) {
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, js = indcs.js, ks = indcs.ks;
+  const int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
+  const int ncell = pmbp->nmb_thispack*nx3*nx2*nx1;
+  auto &size = pmbp->pmb->mb_size;
+  auto &u0 = pmbp->phydro->u0;
+  auto &w0 = pmbp->phydro->w0;
+  auto wt = pmbp->phydro->wtemp;
+  auto eos = pmbp->phydro->peos->eos_data;
+  const bool gen = eos.IsGeneral();
+  const bool tap = gen && eos.tbl.rad_taper;
+  const Real xlo = eos.tbl.rad_lrho_lo, xhi = eos.tbl.rad_lrho_hi;
+  const Real arad = eos.tbl.arad;
+  const Real tcgs = eos.temp_cgs;
+  Real se = 0.0, sr = 0.0;
+  Kokkos::parallel_reduce("boxconv_bint",
+  Kokkos::RangePolicy<>(DevExeSpace(), 0, ncell),
+  KOKKOS_LAMBDA(const int idx, Real &le, Real &lr) {
+    const int m = idx/(nx3*nx2*nx1);
+    int r = idx - m*(nx3*nx2*nx1);
+    const int k = ks + r/(nx2*nx1);
+    r -= (r/(nx2*nx1))*(nx2*nx1);
+    const int j = js + r/nx1;
+    const int i = is + (r - (r/nx1)*nx1);
+    const Real dv = size.d_view(m).dx1*size.d_view(m).dx2*size.d_view(m).dx3;
+    le += u0(m,IEN,k,j,i)*dv;
+    if (tap) {
+      const Real wr = rad_taper::WeightOnly(log10(w0(m,IDN,k,j,i)), xlo, xhi);
+      const Real tk = wt(m,k,j,i)*tcgs;
+      lr += wr*arad*tk*tk*tk*tk*dv;
+    }
+  }, se, sr);
+  Kokkos::fence();
+#if MPI_PARALLEL_ENABLED
+  Real snd[2] = {se, sr}, rcv[2];
+  MPI_Allreduce(snd, rcv, 2, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+  se = rcv[0]; sr = rcv[1];
+#endif
+  etot = se; erad = sr;
+  return;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void BoxConvFtopInt
+//! \brief the two-stream's own AREA-INTEGRATED net flux at the top face and at the cut.
+//! Same arrays BoxConvHistory reads; valid only after a solver call.
+
+void BoxConvFtopInt(Mesh *pm, Real &ftop, Real &fcut) {
+  ftop = 0.0; fcut = 0.0;
+  if (!two_stream_rt::rt_face_flux_ready()) return;
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  auto &indcs = pm->mb_indcs;
+  const int ie = indcs.ie, js = indcs.js, ks = indcs.ks;
+  const int nx2 = indcs.nx2, nx3 = indcs.nx3;
+  const int ncol = pmbp->nmb_thispack*nx3*nx2;
+  auto &size = pmbp->pmb->mb_size;
+  auto fb = two_stream_rt::rt_face_flux();
+  auto icut = two_stream_rt::rt_cut_index();
+  const int nblk = two_stream_rt::rt_face_nblk();
+  Real st = 0.0, sc = 0.0;
+  Kokkos::parallel_reduce("boxconv_ftop",
+  Kokkos::RangePolicy<>(DevExeSpace(), 0, ncol),
+  KOKKOS_LAMBDA(const int idx, Real &lt, Real &lc) {
+    const int m = idx/(nx3*nx2);
+    const int kj = idx - m*(nx3*nx2);
+    const int k = ks + kj/nx2;
+    const int j = js + (kj - (kj/nx2)*nx2);
+    const Real da = size.d_view(m).dx2*size.d_view(m).dx3;
+    const int ic = icut(m,k,j);
+    for (int b=0; b<nblk; ++b) {
+      lt += da*fb(m,b,ie+1,k,j);
+      lc += da*fb(m,b,ic,k,j);
+    }
+  }, st, sc);
+  Kokkos::fence();
+#if MPI_PARALLEL_ENABLED
+  Real snd[2] = {st, sc}, rcv[2];
+  MPI_Allreduce(snd, rcv, 2, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+  st = rcv[0]; sc = rcv[1];
+#endif
+  ftop = st; fcut = sc;
+  return;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void BoxConvBudgetReport
+//! \brief close the window: pull the device slots, print every term normalised by
+//! W = F_bot A sum(bdt), and re-arm.
+
+void BoxConvBudgetReport(Mesh *pm, const Real enow, const Real rnow) {
+  auto hb = Kokkos::create_mirror_view(rtbud_);
+  Kokkos::deep_copy(hb, rtbud_);
+  Real dev[kNBud];
+  for (int n=0; n<kNBud; ++n) dev[n] = hb(n);
+#if MPI_PARALLEL_ENABLED
+  Real rcv[kNBud];
+  MPI_Allreduce(dev, rcv, kNBud, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+  for (int n=0; n<kNBud; ++n) dev[n] = rcv[n];
+#endif
+  const Real w = rtbud_h_[13];
+  const Real iw = (w != 0.0) ? 1.0/w : 0.0;
+  const Real dE = enow - rtbud_e0_;
+  const Real dR = rnow - rtbud_r0_;
+  // what the measured operators say the box should have gained
+  const Real acc = dev[0] - dev[1] - dev[4] - dev[5] + rtbud_h_[8] + rtbud_h_[9];
+  if (global_variable::my_rank == 0) {
+    std::printf("### rt_budget ncycle=%d t=%.8e dtsum=%.6e W=%.8e (F_bot*A*dtsum)\n",
+                pm->ncycle, pm->time, rtbud_h_[15], w);
+    std::printf("###   1 in_bot_face   = %+.6f   (imposed F_bot = %+.6f)\n",
+                dev[0]*iw, 1.0);
+    std::printf("###   1b in_bot_mass  = %+.6e g\n", dev[2]);
+    std::printf("###   2 out_top_face  = %+.6f   out_top_mass = %+.6e g\n",
+                dev[1]*iw, dev[3]);
+    std::printf("###   2b Ftop_2stream = %+.6f   Fcut_2stream = %+.6f\n",
+                rtbud_h_[11]*iw, rtbud_h_[12]*iw);
+    std::printf("###   3 wall_de_in    = %+.6f   wall_de_out  = %+.6f"
+                "   (dE across the wall kernel = %+.6f)\n",
+                -dev[4]*iw, -dev[5]*iw, rtbud_h_[14]*iw);
+    std::printf("###   3b wall_dm_in   = %+.6e   wall_dm_out  = %+.6e g\n",
+                dev[6], dev[7]);
+    std::printf("###   4 rad_force_vf  = %+.6f\n", dev[10]*iw);
+    std::printf("###   5 dE_two_stream = %+.6f   (deposition alone = %+.6f)\n",
+                rtbud_h_[9]*iw, (rtbud_h_[9] - dev[10])*iw);
+    std::printf("###   6 dE_grav_src   = %+.6f\n", rtbud_h_[8]*iw);
+    std::printf("###   7 d(w aT^4)     = %+.6f   (box LTE radiation energy)\n", dR*iw);
+    std::printf("###   9 dE_box        = %+.6f   E = %.16e\n", dE*iw, enow);
+    std::printf("###   R residual      = %+.6f   (dE_box - sum of the terms above;"
+                " the implicit x1 + RKL1 operators and the BCs are all that is left)\n",
+                (dE - acc)*iw);
+    std::fflush(stdout);
+  }
+  Kokkos::deep_copy(rtbud_, 0.0);
+  for (int n=0; n<kNBud; ++n) rtbud_h_[n] = 0.0;
+  rtbud_e0_ = enow;
+  rtbud_r0_ = rnow;
+  return;
+}
 
 //----------------------------------------------------------------------------------------
 //! \fn ReadOpacityTable
@@ -399,6 +578,21 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   if (pmbp->phydro == nullptr) {
     std::cout << "### FATAL ERROR in box_convection: <hydro> is required" << std::endl;
     std::exit(EXIT_FAILURE);
+  }
+  // --- problem/rt_budget_verbose: the term-by-term box energy budget (see the block
+  // above BoxConvBoxInt).  Diagnostic only; nothing below changes a source term.
+  rtbud_n_ = pin->GetOrAddInteger("problem", "rt_budget_verbose", 0);
+  if (rtbud_n_ > 0) {
+    rtbud_ = DvceArray1D<Real>("rtbud", kNBud);
+    Kokkos::deep_copy(rtbud_, 0.0);
+    for (int n=0; n<kNBud; ++n) rtbud_h_[n] = 0.0;
+    two_stream_rt::rt_bud_ptr = &rtbud_;
+    rtbud_area_ = (pmy_mesh_->mesh_size.x2max - pmy_mesh_->mesh_size.x2min)
+                 *(pmy_mesh_->mesh_size.x3max - pmy_mesh_->mesh_size.x3min);
+    rtbud_fin_ = (pmbp->phydro->pcond != nullptr)
+               ? pmbp->phydro->pcond->rad_flux_inner : 0.0;
+    rtbud_cyc_ = -1;
+    rtbud_arm_ = false;
   }
   if (pin->GetOrAddBoolean("mesh", "use_cubed_sphere", false) ||
       pin->GetOrAddBoolean("mesh", "use_spherical_polar", false)) {
@@ -978,6 +1172,28 @@ void BoxConvSrcs(Mesh *pm, Real bdt) {
   const Real cwid = (zmax > zcool) ? (zmax - zcool) : 1.0;
   const bool cool_on = cool_on_;
 
+  // ---- problem/rt_budget_verbose: open/close the window, and take the first of the
+  // four energy snapshots this call makes.  The window is closed on the FIRST source
+  // call of a cycle, which is stage 1, so E is always sampled at the same phase and the
+  // accumulators below cover exactly the interval between two samples.
+  const bool bud_on = (rtbud_n_ > 0);
+  Real bud_e = 0.0, bud_r = 0.0;
+  if (bud_on) {
+    if (pm->ncycle != rtbud_cyc_) {
+      rtbud_cyc_ = pm->ncycle;
+      Real e1, r1;
+      BoxConvBoxInt(pm, e1, r1);
+      if (!rtbud_arm_) {
+        rtbud_e0_ = e1; rtbud_r0_ = r1; rtbud_arm_ = true;
+      } else if (pm->ncycle % rtbud_n_ == 0) {
+        BoxConvBudgetReport(pm, e1, r1);
+      }
+    }
+    BoxConvBoxInt(pm, bud_e, bud_r);
+    rtbud_h_[13] += rtbud_fin_*rtbud_area_*bdt;
+    rtbud_h_[15] += bdt;
+  }
+
   par_for("boxconv_srcs", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real x1min = size.d_view(m).x1min, x1max = size.d_view(m).x1max;
@@ -1015,6 +1231,24 @@ void BoxConvSrcs(Mesh *pm, Real bdt) {
       u0(m,IEN,k,j,i) -= bdt*ramp*d*(w0(m,IEN,k,j,i)/d - e0/d0)/tcool;
     }
   });
+  // the gravity/WB/cooling kernel's own contribution, and the two x1 wall faces of the
+  // RK flux divergence (every other face telescopes out of the box integral)
+  if (bud_on) {
+    Real e2, r2;
+    BoxConvBoxInt(pm, e2, r2);
+    rtbud_h_[8] += e2 - bud_e;
+    bud_e = e2;
+    auto &flx1b = pmbp->phydro->uflx.x1f;
+    auto budf = rtbud_;
+    par_for("boxconv_budflx", DevExeSpace(), 0, nmb1, ks, ke, js, je,
+    KOKKOS_LAMBDA(const int m, const int k, const int j) {
+      const Real da = size.d_view(m).dx2*size.d_view(m).dx3;
+      Kokkos::atomic_add(&budf(0), bdt*da*flx1b(m,IEN,k,j,is));
+      Kokkos::atomic_add(&budf(1), bdt*da*flx1b(m,IEN,k,j,ie+1));
+      Kokkos::atomic_add(&budf(2), bdt*da*flx1b(m,IDN,k,j,is));
+      Kokkos::atomic_add(&budf(3), bdt*da*flx1b(m,IDN,k,j,ie+1));
+    });
+  }
   // --- THE WALLS ARE IMPERMEABLE.  The bc_mode-3 ghost above is the hydrostatic
   // continuation of the evolved interior, which makes the wall-face mass flux small; but
   // small and one-signed still integrates into a leak over 1e5 stages.  So cancel it
@@ -1026,6 +1260,8 @@ void BoxConvSrcs(Mesh *pm, Real bdt) {
     auto &flx1w = pmbp->phydro->uflx.x1f;
     auto &mb_bcs = pmbp->pmb->mb_bcs;
     const bool difflx = diff_flux_;
+    const bool bud_w = bud_on;
+    auto budw = bud_on ? rtbud_ : DvceArray1D<Real>("budwdummy", kNBud);
     par_for("boxconv_wallflux", DevExeSpace(), 0, nmb1, ks, ke, js, je,
     KOKKOS_LAMBDA(const int m, const int k, const int j) {
       const Real idz = indcs.nx1/(size.d_view(m).x1max - size.d_view(m).x1min);
@@ -1061,14 +1297,35 @@ void BoxConvSrcs(Mesh *pm, Real bdt) {
         }
         u0(m,IDN,k,j,ic) -= dm;
         u0(m,IEN,k,j,ic) -= de;
+        if (bud_w) {
+          const Real dvw = size.d_view(m).dx1*size.d_view(m).dx2*size.d_view(m).dx3;
+          Kokkos::atomic_add(&budw(inner ? 4 : 5), de*dvw);
+          Kokkos::atomic_add(&budw(inner ? 6 : 7), dm*dvw);
+        }
       }
     });
+  }
+
+  if (bud_on) {
+    Real e3, r3;
+    BoxConvBoxInt(pm, e3, r3);
+    rtbud_h_[14] += e3 - bud_e;
+    bud_e = e3;
   }
 
   // --- the grey two-stream, after gravity and the cooling layer, exactly where
   // red_giant.cpp calls it: inside the stage, on the state the last ConToPrim left.
   if (rt_on_) {
     two_stream_rt::picket_fence_two_stream_RT(pm, bdt);
+    if (bud_on) {
+      Real e4, r4, ft, fc;
+      BoxConvBoxInt(pm, e4, r4);
+      rtbud_h_[9] += e4 - bud_e;
+      bud_e = e4;
+      BoxConvFtopInt(pm, ft, fc);
+      rtbud_h_[11] += bdt*ft;
+      rtbud_h_[12] += bdt*fc;
+    }
     // The per-column surface dump, on the flux that call just wrote.  pm->time is the
     // time at the START of the cycle and does not move between stages, so advancing
     // surf_next_ PAST it here is what makes this fire once per cycle rather than once
@@ -1355,5 +1612,9 @@ void BoxConvFinal(ParameterInput *pin, Mesh *pm) {
   surf_h_ = HostArray2D<Real>();
   surf_d_ = DvceArray2D<Real>();
   surf_alloc_ = false;
+  // and the rt_budget_verbose accumulator, for the same reason
+  two_stream_rt::rt_bud_ptr = nullptr;
+  rtbud_ = DvceArray1D<Real>();
+  rtbud_n_ = 0;
   return;
 }

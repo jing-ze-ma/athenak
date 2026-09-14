@@ -365,6 +365,10 @@ inline bool rt_plane_parallel = false;
 // semi-implicit relaxation, which must not damp it.  Default OFF; box_convection requires
 // the EOS taper to be on with it.
 inline bool rt_rad_force = false;
+// problem/rt_budget_verbose (box_convection.cpp): when non-null, the radiative force's
+// WORK term v.f is accumulated, box-integrated over the step, into slot 10 of this
+// array.  Diagnostic only: nothing here changes a source term.
+inline DvceArray1D<Real> *rt_bud_ptr = nullptr;
 // problem/rt_force_verbose -- print the hydrostatic balance of every cell inside the
 // taper ramp for this many RT calls, then stop.  a_p + a_g + a_f normalised by g: inside
 // the ramp this is what says whether the Prad grad w correction is doing its job.
@@ -3054,6 +3058,9 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
       const Real gver = rt_force_grav;
       const int vcyc = pm->ncycle;
       auto eos_f = eos;
+      // problem/rt_budget_verbose: the v.f work accumulator (see rt_bud_ptr)
+      const bool budg_ = (rt_bud_ptr != nullptr) && radforce;
+      auto bud_ = budg_ ? *rt_bud_ptr : DvceArray1D<Real>("rtbuddummy", 1);
       // ---- rad_blend_use_2s: hand the conduction module this sweep's face flux -----
       // (see conduction.hpp).  The NET radial face flux of the band solver, summed over
       // its blocks, in the same code flux units the conduction operator works in.  It is
@@ -3690,6 +3697,10 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
           if (md_f) u0(m,IM2,k,j,i) += f2*bdt;
           if (td_f) u0(m,IM3,k,j,i) += f3*bdt;
           u0(m,IEN,k,j,i) += (v1*f1 + v2*f2 + v3*f3)*bdt;
+          if (budg_) {
+            const Real dvb = DX1(m,k,j,i)*size.d_view(m).dx2*size.d_view(m).dx3;
+            Kokkos::atomic_add(&bud_(10), (v1*f1 + v2*f2 + v3*f3)*bdt*dvb);
+          }
           if (fverb && wr > 0.0 && wr < 1.0) {
             // the hydrostatic balance of this cell: pressure gradient, gravity, source
             EOSThermoState sm, sp;
