@@ -514,6 +514,37 @@ inline bool rt_top_clamp = false;
 // rt_semi_implicit is true AND rt_explicit is false, so each default (true / false)
 // reproduces its own side's behaviour and either flag alone selects the explicit step.
 inline bool rt_semi_implicit = true;
+// problem/rt_outer_iter: how many times the WHOLE two-stream source step is repeated
+// per stage.  Default 1 = the behaviour of every run so far, and bitwise so.
+//
+// WHAT IT TESTS.  With one pass the absorbed field A that each cell relaxes toward is
+// formed from ONE sweep of the UN-relaxed column: the intensities are those of the state
+// at the start of the stage, while the cell's own energy is then moved by the full stage
+// increment.  The non-local half of the exchange therefore lags the local half by one
+// stage, and that lag is proportional to bdt -- exactly the signature of the He-star
+// box's dt-LINEAR saturated v_rms.  Sub-cycling (rt_relax_sub) cannot see this: it
+// re-forms the cell's own emission but keeps A frozen, which is the whole point of it.
+//
+// WHAT IT DOES.  Pass k re-runs the column sweep on the CURRENT running state -- the
+// partially relaxed column, e = e^n + de_{k-1} -- and then recomputes the TOTAL stage
+// increment de_k from the ORIGINAL e^n against that updated field.  It is a fixed-point
+// iteration for the implicit balance e^{n+1} = e^n + bdt S(e^{n+1}), not an accumulation
+// of extra increments: de_k replaces de_{k-1} rather than adding to it, and u0 carries
+// only the difference.  The handover term src_ex is re-formed from the updated face
+// fluxes each pass too, since it is explicit and exact in flux form and should therefore
+// use the CONVERGED field.  k passes cost ~k times the RT time.
+//
+// REQUIREMENTS (checked at the top of the wrapper).  The sweep has to be able to SEE the
+// running state, so it needs problem/rt_use_cons (u0 is what the passes update; w0 is
+// stale until the next ConToPrim), the grey split path, and the semi-implicit apply.
+inline int rt_outer_iter = 1;
+// the running total stage increment de_k, (m,k,j,i); allocated only when rt_outer_iter>1
+inline DvceArray4D<Real> *rt_deacc_ptr = nullptr;
+// the fixed-point convergence of the pass: (max |de_k - de_{k-1}|/|de_k|, max |de_k|)
+inline DvceArray1D<Real> *rt_oconv_ptr = nullptr;
+// problem/rt_outer_verbose: print that convergence every rt_report_every cycles even
+// without problem/rt_cell_report.  Inert unless rt_outer_iter > 1.
+inline bool rt_outer_verbose = false;
 // problem/ck_int_at_cut: deliver the planet's internal flux sigma T_int^4 as an extra
 // upward source at the correlated-k cut (the historical behaviour, true). Set false when
 // the layers below the cut carry it themselves -- <mhd|hydro>/isotropic_conduction =
@@ -958,7 +989,42 @@ void get_Tint(const Real &Teq, Real &Tint) {
   return;
 }
 
+inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
+                                           const int nit);
+
+//----------------------------------------------------------------------------------------
+//! \fn picket_fence_two_stream_RT
+//! \brief the two-stream source step.  One pass unless problem/rt_outer_iter > 1, in
+//! which case the whole step (sweep + apply) is repeated as a fixed-point iteration for
+//! the implicit balance; see rt_outer_iter.
+
 inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
+  const int nit = (rt_outer_iter > 1) ? rt_outer_iter : 1;
+  if (nit > 1) {
+    static bool checked = false;
+    if (!checked) {
+      checked = true;
+      if (!(rt_grey && rt_split) || !rt_use_cons || rt_explicit || !rt_semi_implicit) {
+        std::cout << "### FATAL ERROR in two_stream_rt: problem/rt_outer_iter > 1 needs "
+                  << "the GREY SPLIT sweep (rt_grey + rt_split), problem/rt_use_cons "
+                  << "(the passes update u0, and w0 is stale until the next ConToPrim) "
+                  << "and the semi-implicit apply (rt_semi_implicit, !rt_explicit). "
+                  << "Got rt_grey=" << rt_grey << " rt_split=" << rt_split
+                  << " rt_use_cons=" << rt_use_cons << " rt_explicit=" << rt_explicit
+                  << " rt_semi_implicit=" << rt_semi_implicit << "." << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }
+  }
+  for (int oit=0; oit<nit; ++oit) {
+    picket_fence_two_stream_RT_pass(pm, bdt, oit, nit);
+  }
+}
+
+inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
+                                            const int nit) {
+  const bool outer_on = (nit > 1);
+  const bool outer_last = (oit == nit - 1);
   // the cubed sphere needs the cell's PANEL to turn (x2,x3) into a direction
   const bool use_cubed_sphere_ = pm->use_cubed_sphere;
   auto &mbpanel_ = pm->pmb_pack->pmb->mb_panel;
@@ -2396,6 +2462,29 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
       }
       auto dsum_g = *rt_desum_ptr;
       Kokkos::deep_copy(dsum_g, 0.0);
+      // ---- the outer fixed-point iteration, see rt_outer_iter --------------------
+      // deacc holds de_{k-1}, the total stage increment this cell has already been
+      // given.  u0 carries it, so the next pass's sweep reads the partially relaxed
+      // column (rt_use_cons is required for exactly that reason) and the apply below
+      // recovers e^n as eiN - deacc.  With rt_outer_iter = 1 nothing here is allocated
+      // and every use of deacc is compiled behind outer_on, so the path is bitwise.
+      DvceArray4D<Real> deacc_g;
+      DvceArray1D<Real> oconv_g;
+      if (outer_on) {
+        if (rt_deacc_ptr == nullptr ||
+            rt_deacc_ptr->extent(0) != static_cast<size_t>(nmb1+1) ||
+            rt_deacc_ptr->extent(3) != static_cast<size_t>(n1)) {
+          if (rt_deacc_ptr != nullptr) delete rt_deacc_ptr;
+          rt_deacc_ptr = new DvceArray4D<Real>("rt_deacc", nmb1+1, n3, n2, n1);
+        }
+        if (rt_oconv_ptr == nullptr) {
+          rt_oconv_ptr = new DvceArray1D<Real>("rt_oconv", 2);
+        }
+        deacc_g = *rt_deacc_ptr;
+        oconv_g = *rt_oconv_ptr;
+        if (oit == 0) Kokkos::deep_copy(deacc_g, 0.0);
+        Kokkos::deep_copy(oconv_g, 0.0);
+      }
       const int efix_cyc = pm->ncycle;
       const bool resc_eq = rt_rescue_eq;
       // the sub-cycled local relaxation; see rt_relax_sub
@@ -2419,7 +2508,7 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
       const int dbg_j = (rt_dump_j >= 0) ? rt_dump_j : (js + je)/2;
       const int dbg_k = (rt_dump_k >= 0) ? rt_dump_k : (ks + ke)/2;
       const int dbg_n = rt_apply_debug_n;
-      if (dbg_on) --rt_apply_debug;
+      if (dbg_on && outer_last) --rt_apply_debug;
       // per-cycle diagnostic: an empty View captures fine, so the lambda needs no
       // branch on the pointer itself
       const bool diag = rt_diag;
@@ -2443,7 +2532,7 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
       // needs no compile-time knowledge of this header, and it is written before the
       // source is applied so that the number the diffusion operator scales by w is
       // exactly the number this call scales by 1 - w.
-      if (taublend && pcond_rt->rad_blend_use_2s > 0) {
+      if (taublend && pcond_rt->rad_blend_use_2s > 0 && outer_last) {
         auto f2s_out = pcond_rt->rad_f2s;
         const int nblk_f = nblk;
         par_for("rt_f2s", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
@@ -2578,7 +2667,14 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
             Em *= 1.0 - 0.5*(w_g(m,k,j,i) + w_g(m,k,j,i+1));
           }
           if (band_on && i < icut_g(m,k,j)) Em = 0.0;
-          const Real ei = eiN(m,k,j,i);
+          // e^n, the energy this stage STARTED from.  Without the outer iteration that
+          // is just the state the solver reads; with it, u0 already carries de_{k-1}
+          // and has to be walked back, because de below is the TOTAL stage increment
+          // and not an addition to what the previous pass left.  T_g and Em, by
+          // contrast, are deliberately the UPDATED state's: Em(T^{k-1}) together with
+          // t0 = T^{k-1} is what makes the Newton's Em*(T(e^n+de)/t0)^4 the emission at
+          // the NEW energy, i.e. F(de) = de - bdt(A - Em(e^n+de)) exactly.
+          const Real ei = outer_on ? (eiN(m,k,j,i) - deacc_g(m,k,j,i)) : eiN(m,k,j,i);
           if (Em > 0.0 && ei > 0.0) {
             const Real src_ex = src - src_relax;     // the handover, applied exactly
             const Real sdt = src_relax*bdt;
@@ -2794,15 +2890,16 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
         }
         const Real de_pre = de;
         if (demax > 0.0) {
-          const Real dl = LimitRTSource(de, eiN(m,k,j,i), demax);
+          const Real dl = LimitRTSource(de,
+              outer_on ? (eiN(m,k,j,i) - deacc_g(m,k,j,i)) : eiN(m,k,j,i), demax);
           if (dl != de) { ++nc; de = dl; }
         }
-        if (report_on) {
+        if (report_on && outer_last) {
           const Real dxb = DX1(m,k,j,i);
           Kokkos::atomic_add(&dsum_g(0), src*bdt*dxb);
           Kokkos::atomic_add(&dsum_g(1), de*dxb);
         }
-        if (diag) {
+        if (diag && outer_last) {
           Real Em_d = 0.0;
           for (int b=0; b<nblk; ++b) Em_d += Em_g(m,b,i,k,j);
           if (taublend) {
@@ -2817,7 +2914,8 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
           dg(m,5,k,j,i) = Qs_d;
           dg(m,6,k,j,i) = Em_d;
         }
-        if (dbg_on && m == dbg_m && k == dbg_k && j == dbg_j && i > ie - dbg_n) {
+        if (dbg_on && outer_last && m == dbg_m && k == dbg_k && j == dbg_j &&
+            i > ie - dbg_n) {
           Real Em = 0.0, Qs = 0.0;
           for (int b=0; b<nblk; ++b) { Em += Em_g(m,b,i,k,j); Qs += Qb_g(m,b,i,k,j); }
           // the raw direct source, before the blend handover and the beam are added
@@ -2835,7 +2933,7 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
                          taublend ? w_g(m,k,j,i) : 0.0, DX1(m,k,j,i));
         }
         // ---- rt_cell_report ---------------------------------------------------
-        if (report_on) {
+        if (report_on && outer_last) {
           const bool fixedcell = fixed_on && (k == rep_k) && (j == rep_j) &&
               (fabs(X1V(m,i) - rep_r) < 0.5*DX1(m,k,j,i));
           bool doprint = fixedcell;
@@ -2903,9 +3001,19 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
               dg_it[4], dg_it[5], dg_it[6], dg_it[7]);
           }
         }
-        u0(m,IEN,k,j,i) += de;
+        if (outer_on) {
+          // de REPLACES de_{k-1}: u0 carries the running total, never a sum of passes
+          const Real dprev = deacc_g(m,k,j,i);
+          u0(m,IEN,k,j,i) += de - dprev;
+          deacc_g(m,k,j,i) = de;
+          const Real ade = fabs(de);
+          Kokkos::atomic_max(&oconv_g(0), (ade > 0.0) ? fabs(de - dprev)/ade : 0.0);
+          Kokkos::atomic_max(&oconv_g(1), ade);
+        } else {
+          u0(m,IEN,k,j,i) += de;
+        }
         // ---- radiative momentum source, see rt_rad_force --------------------------
-        if (radforce) {
+        if (radforce && outer_last) {
           const Real rho = rhoN(m,k,j,i);
           Real wr, dwdx;
           rad_taper::Weight(log10(rho), xlo_f, xhi_f, wr, dwdx);
@@ -2952,7 +3060,16 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
         }
       });
       rt_nclip_last = nclip;
-      RTSourceLimiterWarn(nclip);
+      if (outer_last) RTSourceLimiterWarn(nclip);
+      // ---- the fixed-point convergence of this pass, see rt_outer_iter ------------
+      if (outer_on && (rt_outer_verbose || report_on) && rt_report_every > 0 &&
+          (pm->ncycle % rt_report_every == 0) && global_variable::my_rank == 0) {
+        auto hc = Kokkos::create_mirror_view(oconv_g);
+        Kokkos::deep_copy(hc, oconv_g);
+        std::cout << "### rt_outer ncycle=" << pm->ncycle << " pass " << (oit+1)
+                  << "/" << nit << "  max|de_k-de_k-1|/|de_k| = " << hc(0)
+                  << "  max|de_k| = " << hc(1) << std::endl;
+      }
       // The Newton positivity rescue should never fire.  Say so the first time it does,
       // with the running total, and stay quiet afterwards.
       {
@@ -2987,7 +3104,7 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
       }
       // the source's energy budget: what the flux divergence asked for against what the
       // (sub-cycled, relaxed, limited) application actually deposited.  See rt_desum_ptr.
-      if (report_on && fixed_on) {
+      if (report_on && fixed_on && outer_last) {
         auto hd = Kokkos::create_mirror_view(dsum_g);
         Kokkos::deep_copy(hd, dsum_g);
         std::cout << "### rt_desum ncycle=" << pm->ncycle << " sum(src*dt*dx) = " << hd(0)

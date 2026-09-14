@@ -549,6 +549,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // the default, the switch only buys back the old bit pattern
     ts::rt_layer_legacy = pin->GetOrAddBoolean("problem", "rt_layer_legacy", false);
     ts::rt_semi_implicit = pin->GetOrAddBoolean("problem", "rt_semi_implicit", true);
+    ts::rt_outer_iter = pin->GetOrAddInteger("problem", "rt_outer_iter", 1);
+    ts::rt_outer_verbose = pin->GetOrAddBoolean("problem", "rt_outer_verbose",
+                                                false);
     ts::rt_apply_debug = pin->GetOrAddInteger("problem", "rt_apply_debug", 0);
     ts::rt_apply_debug_n = pin->GetOrAddInteger("problem", "rt_apply_debug_n", 8);
     ts::rt_nan_report = pin->GetOrAddBoolean("problem", "nan_report", false);

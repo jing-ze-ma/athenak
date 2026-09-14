@@ -112,6 +112,7 @@ rt_rescue_eq  = true
 rt_src_direct = true
 rt_top_clamp  = true
 rt_use_cons   = true
+rt_outer_iter = 1        # passes of the outer fixed-point iteration; see rt_outer_iter
 rt_bface      = true
 rt_de_max     = 0.5
 rt_int_at_cut = false
