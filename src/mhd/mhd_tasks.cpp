@@ -361,6 +361,10 @@ TaskStatus MHD::ImplicitConduction(Driver *pdrive, int stage) {
   if (pcond == nullptr) return TaskStatus::complete;
   if (!(pcond->rad_implicit_x1)) return TaskStatus::complete;
   if (stage < 1) return TaskStatus::complete;
+  // <problem>/rt_implicit_column: the two-stream has already solved this column, with
+  // its own source folded into the same tridiagonal.  Solving again here would take a
+  // SECOND backward-Euler conduction step per stage.
+  if (pcond->rt_col_active) return TaskStatus::complete;
   Real beta_dt = (pdrive->beta[stage-1])*(pmy_pack->pmesh->dt);
   pcond->ImplicitRadialUpdate(u0, peos->eos_data, beta_dt);
   return TaskStatus::complete;

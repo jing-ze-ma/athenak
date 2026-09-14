@@ -552,6 +552,11 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     ts::rt_outer_iter = pin->GetOrAddInteger("problem", "rt_outer_iter", 1);
     ts::rt_outer_verbose = pin->GetOrAddBoolean("problem", "rt_outer_verbose",
                                                 false);
+    // the merged implicit column solve: the two-stream source folded into the radial
+    // implicit conduction tridiagonal (see two_stream_rt.hpp, rt_implicit_column)
+    ts::rt_implicit_column = pin->GetOrAddInteger("problem", "rt_implicit_column", 0);
+    ts::rt_impl_tol = pin->GetOrAddReal("problem", "rt_impl_tol", 1.0e-6);
+    ts::rt_impl_maxit = pin->GetOrAddInteger("problem", "rt_impl_maxit", 5);
     ts::rt_apply_debug = pin->GetOrAddInteger("problem", "rt_apply_debug", 0);
     ts::rt_apply_debug_n = pin->GetOrAddInteger("problem", "rt_apply_debug_n", 8);
     ts::rt_nan_report = pin->GetOrAddBoolean("problem", "nan_report", false);
