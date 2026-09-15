@@ -246,6 +246,7 @@ class Hydro {
   TaskStatus Prolongate(Driver* pdrive, int stage);
   TaskStatus ConToPrim(Driver *d, int stage);
   TaskStatus RTStrangSplit(Driver *d, int stage);
+  void RTOpSplitBvals(bool recv_posted, bool repost);
   TaskStatus RTImExFirst(Driver *d, int stage);
   TaskStatus RTImEx(Driver *d, int stage);
   TaskStatus NewTimeStep(Driver *d, int stage);
