@@ -17,3 +17,5 @@ as an RKL1 substage), deferred at 1.25x; now the thin-region horizontal operator
 substages) and PCG cost is stiffness-independent -> next real speed item, ahead of RKL1 tuning. Options: (a) CG + per-block line
 preconditioner (drops onto the existing exchange, first choice); (b) geometric multigrid per plane (needs coarse levels across
 ranks); (c) CG + FFT preconditioner of the plane-averaged coefficient (periodic uniform planes, needs a distributed transform).
+
+PCG TRIED 09-15 (rad_ang_solver=pcg, worktree bench/wt_pcg detached at b6413928, UNCOMMITTED, +338 lines; binary md5 8746cd5d): correct (P0 bitwise = T0; conservation to the residual) but the block-local x2 line preconditioner (Dirichlet-truncated, no cross-block coupling) is too weak at z ~1e3-1e4: hits maxit 100 on 399/400 B-star calls (relres 2e-7), 2.22x SLOWER than RKL1 (158 vs 71 ms/cycle); He 3-D 1.67x slower (100 it vs 122 substages). Gaussian test: backward Euler 7x less accurate than RKL1 at a 100x super-step (order 1.8; would fail the L1 gate). Needs a multigrid / global-line preconditioner to be competitive - not pursued. RKL1 stays.

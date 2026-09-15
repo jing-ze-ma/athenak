@@ -7,3 +7,5 @@ metadata:
 Refs: Kunasz & Auer 1988; Olson & Kunasz 1987; Olson, Auer & Buchler 1986 (ALI); Bruls, Vollmoeller & Schuessler 1999; Voegler+05
 (MURaM); Hayek+10 (STAGGER); Davis, Stone & Jiang 2012 (Athena SC). See [[rt-source-dt-forcing]], [[bstar-observables]],
 [[implicit-transverse-raddiff-plan]].
+
+RE-PRIORITISED 09-15 (user 'fine'): the thin-layer horizontal transport is the missing physics for the surface observables; interim closure in prod_w4 = flux-limited horizontal diffusion everywhere (a bounded smoothing above tau 1, stated as interim); NEXT PHYSICS PROJECT = multi-D short characteristics above tau ~3 coupled to the mode-3 column below (mode 3 exact below, ADI lod2 cheap deep step). Alternatives noted: lower the box top to tau 0.03-0.1 with the taper at 1/3 (untested), or a two-temperature thin region (larger).
