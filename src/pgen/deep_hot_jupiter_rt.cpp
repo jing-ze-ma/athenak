@@ -495,6 +495,19 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                 << "enabling the split RT path" << std::endl;
     }
   }
+  // The EXACT implicit column (problem/rt_implicit_column = 3) is GREY-ONLY on this
+  // branch: the correlated-k / picket-fence band sweep uses the centre-to-centre layer
+  // branch, which never fills the mode-3 Jacobian (jac_g, djd/djup/djuo, BFaceW), so the
+  // column would be solved against a zero Jacobian.  This pgen also never forwards the
+  // parameter to two_stream_rt, so refuse it here instead of ignoring it silently.
+  if (pin->GetOrAddInteger("problem","rt_implicit_column",0) != 0) {
+    std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: problem/rt_implicit_column is "
+              << "not supported here.  The exact implicit column (mode 3) is GREY-ONLY "
+              << "on this branch and the correlated-k / picket-fence band sweep carries "
+              << "no Jacobian, so the column solve would run against a zero Jacobian."
+              << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
   ck_nq = pin->GetOrAddInteger("problem","ck_nquad",1);
   if (ck_nq != 1 && ck_nq != 2) {
     std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: problem/ck_nquad must be 1 "
