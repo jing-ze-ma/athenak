@@ -178,6 +178,9 @@ struct RTCol3 {
   Real gm1 = 0.6666666666666666;  // ideal branch: gamma - 1
   int nq = 2;
   int nseg = 1;                   // problem/rt_impl_nseg, the partitioned path only
+  // problem/rt_impl_redpar: solve the REDUCED system of the partitioned path by parallel
+  // cyclic reduction across the team's lanes instead of serially on one of them.
+  bool redpar = false;
   int maxit = 6;
   int norm = 1;                   // problem/rt_impl_norm
   int cvfreeze = 0;               // problem/rt_impl_cvfreeze

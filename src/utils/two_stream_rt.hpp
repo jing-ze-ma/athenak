@@ -725,6 +725,16 @@ inline Real rt_impl_tau_blend = 1.0;
 //                            agree to round-off.  See two_stream_column_partition.hpp.
 inline int rt_impl_solver = 0;
 inline int rt_impl_nseg = 64;
+// problem/rt_impl_redpar: on the pcr path, the REDUCED block-tridiagonal system over the
+// segment boundaries (nsg 5x5 rows, non-periodic) is by default eliminated serially by
+// one lane while the other nsg-1 idle -- ~29 % of a Newton pass at nseg = 32.  With this
+// switch it is solved by PARALLEL CYCLIC REDUCTION instead: lane s owns block row s and
+// log2(nsg) rounds of neighbour eliminations leave y_s = B_s^-1 r_s on every lane at
+// once, with no reduced back-substitution.  Same system, different elimination order, so
+// the answer is equal to ROUND-OFF, not bitwise.  Falls back to the serial solve unless
+// 2 <= nsg <= 64 and nsg is a power of two.  Costs the larger per-segment workspace
+// (RTCOL3_NRDP), so the array is only enlarged when the switch is on.
+inline bool rt_impl_redpar = false;
 // problem/rt_impl_warm: WARM-START the mode-3 Newton from the previous call's converged
 // Planck function instead of from the entry state's.  0 = off (bitwise the old code),
 // 1 = the previous converged b per cell, 2 = linear extrapolation in time from the last
@@ -2578,6 +2588,8 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
           // is one thread, so the partition is forced to a single segment there -- which
           // is the serial block Thomas, to round-off.
           const bool c3par = (rt_impl_solver == 1);
+          const bool c3rp = c3par && rt_impl_redpar;
+          const int c3nrd = c3rp ? RTCOL3_NRDP : RTCOL3_NRD;
           int c3nseg = c3par ? rt_impl_nseg : 1;
           if (std::is_same<DevExeSpace, Kokkos::DefaultHostExecutionSpace>::value) {
             c3nseg = 1;
@@ -2604,16 +2616,17 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
                                                  (rt_impl_warm > 1) ? wn2 : 1,
                                                  (rt_impl_warm > 1) ? wn1 : 1);
             rt_c3rd_ptr = new DvceArray4D<Real>("rt_c3rd", nmb_c3, n3, n2,
-                                                c3par ? c3nseg*RTCOL3_NRD : 1);
+                                                c3par ? c3nseg*c3nrd : 1);
             if (global_variable::my_rank == 0) {
               const double wmb = static_cast<double>(nmb_c3)*c3nw*n1*n2*n3
                                  *sizeof(Real)/1.0e6;
-              const double rmb = c3par ? (static_cast<double>(nmb_c3)*c3nseg*RTCOL3_NRD
+              const double rmb = c3par ? (static_cast<double>(nmb_c3)*c3nseg*c3nrd
                                           *n2*n3*sizeof(Real)/1.0e6) : 0.0;
               std::cout << "### two_stream_rt: rt_implicit_column = 3, the EXACT "
                         << "block-tridiagonal column solve (intensities as unknowns); "
                         << "solver " << (c3par ? "pcr" : "thomas")
                         << " nseg " << c3nseg
+                        << (c3rp ? " redpar" : "")
                         << "; workspace " << wmb << " + " << rmb << " MB" << std::endl;
             }
           }
@@ -2669,6 +2682,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
           c3.wk = c3wk;
           c3.rd = c3rd;
           c3.nseg = c3nseg;
+          c3.redpar = c3rp;
           c3.dtop = c3top;
           c3.stat = c3stat;
           c3.size = size;
