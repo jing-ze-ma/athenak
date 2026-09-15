@@ -993,6 +993,14 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     ts::rt_impl_norm = pin->GetOrAddInteger("problem", "rt_impl_norm", 1);
     ts::rt_impl_norm_eps = pin->GetOrAddReal("problem", "rt_impl_norm_eps", 1.0e-3);
     ts::rt_impl_dstop = pin->GetOrAddBoolean("problem", "rt_impl_dstop", true);
+    ts::rt_impl_rescheck = pin->GetOrAddBoolean("problem", "rt_impl_rescheck", false);
+    ts::rt_impl_ablate = pin->GetOrAddInteger("problem", "rt_impl_ablate", 0);
+    ts::rt_impl_fixit = pin->GetOrAddBoolean("problem", "rt_impl_fixit", false);
+    if (ts::rt_impl_ablate != 0 || ts::rt_impl_fixit) {
+      std::cout << "### WARNING in box_convection: problem/rt_impl_ablate or "
+                << "rt_impl_fixit is set.  These are TIMING INSTRUMENTATION and the "
+                << "mode-3 solve they produce is NOT a correct solve." << std::endl;
+    }
     ts::rt_impl_cvfreeze = pin->GetOrAddInteger("problem", "rt_impl_cvfreeze", 0);
     // how the mode-3 block system is solved: the serial block Thomas (one thread per
     // column) or the team-partitioned solve (see two_stream_column_partition.hpp)

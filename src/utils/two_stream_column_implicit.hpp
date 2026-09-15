@@ -185,6 +185,33 @@ struct RTCol3 {
   Real dtr = 1.0;                 // bdt/bdt_prev, the warm = 2 extrapolation ratio
   bool exjac = true;              // problem/rt_impl_exjac
   bool dstop = true;              // problem/rt_impl_dstop
+  // problem/rt_impl_rescheck.  THE CONFIRMING PASS, WITHOUT THE FACTORISATION.  The
+  // convergence test of step 4b reads one number out of the assembled system -- the
+  // energy-row residual -- but the test sits AFTER the 5x5 inverses and the elimination,
+  // so the pass that does nothing but confirm convergence (it_mean is ~2.0 on the B
+  // star: pass 1 solves, pass 2 only checks) pays the whole block factorisation to learn
+  // that it had nothing to do.  With this switch the residual is formed FIRST, by
+  // ResidRel, which is the SAME arithmetic BuildRow uses for rv[4] and rsc and nothing
+  // else; if it is already below tol the pass breaks having done only the formal
+  // solution.  The test, the value compared and the iterate are identical, so the answer
+  // is BITWISE the answer of the standard path -- this is a scheduling change, not an
+  // approximation.  Off by default only because every switch here is.
+  bool rescheck = false;
+  // ---- TIMING INSTRUMENTATION (problem/rt_impl_ablate, problem/rt_impl_fixit) -------
+  // To apportion the cost of a Newton pass between its steps, ablate REPEATS a step
+  // rather than skipping it: steps 4a and 4b are IDEMPOTENT (4a zeroes Src before it
+  // accumulates, and 4b reads only b, which it does not touch), so running one of them
+  // twice leaves the answer BITWISE unchanged while adding exactly its own cost.
+  // Skipping instead would change the iterate, and with it the pass count, the timestep
+  // and -- with a diverging solve -- the branch mix, which is what makes a difference of
+  // wall times unreadable.  The bit mask: 1 = one extra step 4a, 2 = one extra step 4b,
+  // 4 = one extra residual-only loop (what a rescheck pass costs).  fixit removes the
+  // early exits so that every column runs exactly maxit passes, which gives the cost of
+  // a WHOLE pass as the slope in maxit; it is the only one of the two that moves the
+  // answer, and only by converging further.  Both branch on RUNTIME members, so nothing
+  // is dead-code eliminated.
+  int ablate = 0;
+  bool fixit = false;
   int is = 0, ie = 0;
   int is_pp = 0, nx1_pp = 1;
   bool pp = false;
@@ -291,6 +318,10 @@ struct RTCol3 {
   KOKKOS_INLINE_FUNCTION
   void SourceVals(const int m, const int k, const int j, const int i, const int ic,
                   const Real cutc, Real &sl, Real &su, Real &sfu, Real &sfd) const;
+  template <bool TLAY>
+  KOKKOS_INLINE_FUNCTION
+  Real ResidRel(const int m, const int k, const int j, const int i,
+                const Real eoff) const;
   template <bool TLAY>
   KOKKOS_INLINE_FUNCTION
   void BuildRow(const int m, const int k, const int j, const int i, const int ic,
@@ -421,6 +452,38 @@ void RTCol3::SourceVals(const int m, const int k, const int j, const int i, cons
   su  = cu[0]*bm + cu[1]*b0 + cu[2]*bp;
   sfu = cfu[0]*bm + cfu[1]*b0 + cfu[2]*bp;
   sfd = cfd[0]*bm + cfd[1]*b0 + cfd[2]*bp + ((i == ic) ? cutc : 0.0);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn Real RTCol3::ResidRel
+//! \brief THE ENERGY-ROW RESIDUAL ALONE, relative to the norm scale -- exactly the
+//! number step 4b extracts from BuildRow as fabs(rv[4])/(rsc + eoff), formed with the
+//! same operations in the same order so that the comparison against tol is bitwise the
+//! same comparison.  It needs only the formal solution of step 4a (through the cached
+//! Src and the handover), the entry energy e* cached in step 1, and ONE equation-of-state
+//! call e(rho, T(b)); none of the Jacobian, no SourceCoef, no c_v, no 5x5 inverse.
+//!
+//! The unusable-state branch of BuildRow (a non-positive T*, b or e*) writes rv[4] = 0
+//! and leaves the cell out of the solve, so it contributes nothing to the maximum here
+//! either.
+
+template <bool TLAY>
+KOKKOS_INLINE_FUNCTION
+Real RTCol3::ResidRel(const int m, const int k, const int j, const int i,
+                      const Real eoff) const {
+  const int BBs = 26, EXs = 31, SAs = 32, ESs = 34;
+  const Real tk = Tg(m,k,j,i);
+  const Real es = Wk<TLAY>(m,ESs,i,k,j);
+  const Real b = Wk<TLAY>(m,BBs,i,k,j);
+  if (!(tk > 0.0) || !(b > 0.0) || !(es > 0.0)) return 0.0;
+  const Real wlo = taublend ? wblend(m,k,j,i) : 0.0;
+  const Real whi = taublend ? wblend(m,k,j,i+1) : 0.0;
+  const Real wb = 1.0 - 0.5*(wlo + whi);
+  const Real tnew = sqrt(sqrt(b*M_PI/sigma));
+  const Real enew = EFromT(Rho(m,k,j,i), tnew);
+  const Real rv = -(enew - es - bdt*(wb*Wk<TLAY>(m,SAs,i,k,j) + Wk<TLAY>(m,EXs,i,k,j)));
+  const Real den = es + eoff;
+  return (den > 0.0) ? fabs(rv)/den : 0.0;
 }
 
 //----------------------------------------------------------------------------------------
@@ -640,6 +703,7 @@ void RTCol3::Solve(const int m, const int k, const int j) const {
   for (int it=0; it<maxit; ++it) {
     nit = it + 1;
     // ---- 4a. the formal solution at the current b, and Src ---------------------------
+    for (int rep=(ablate & 1); rep>=0; --rep) {
     for (int i=ic; i<=ie; ++i) Wk<false>(m,SA,i,k,j) = 0.0;
     Real Din[2];
     for (int q=0; q<nq; ++q) Din[q] = Dtop[q];
@@ -703,6 +767,26 @@ void RTCol3::Solve(const int m, const int k, const int j) const {
                        + (whi*f3hi - wlo*f3lo)/Dx(m,k,j,i) + Qb(m,0,i,k,j);
       }
     }
+    }
+
+    // ---- 4a''. THE RESIDUAL-ONLY CONVERGENCE TEST (problem/rt_impl_rescheck) ---------
+    // The same test step 4b makes, made before the factorisation instead of after it, so
+    // that a pass which only confirms convergence never assembles or inverts a block.
+    // See the switch's note on the struct: this is bitwise, not an approximation.
+    if (rescheck || (ablate & 4)) {
+      Real rpre = 0.0;
+      for (int rep=((ablate & 4) ? 1 : 0); rep>=0; --rep) {
+        rpre = 0.0;
+        for (int i=ic; i<=ie; ++i) {
+          const Real rr = ResidRel<false>(m, k, j, i, eoff);
+          if (rr > rpre) rpre = rr;
+        }
+      }
+      if (rescheck) {
+        rfin = rpre;
+        if (rpre < tol && !fixit) break;
+      }
+    }
 
     // ---- 4b. forward elimination ----------------------------------------------------
     Real Gp[5][3], dp[5];
@@ -712,6 +796,9 @@ void RTCol3::Solve(const int m, const int k, const int j) const {
     }
     Real rmax = 0.0;
     bool ok = true;
+    for (int rep=(ablate & 2); rep>=0; --rep) {
+    rmax = 0.0;
+    ok = true;
     for (int i=ic; i<=ie && ok; ++i) {
       Real A3[5][3], Bm[5][5], C3[5][3], rv[5];
       Real rsc = 1.0;
@@ -749,17 +836,19 @@ void RTCol3::Solve(const int m, const int k, const int j) const {
         }
       }
     }
+    }
     if (!ok) {
       Kokkos::atomic_add(&stat(6), 1.0);
       return;
     }
     rfin = rmax;
-    if (rmax < tol) break;
+    if (rmax < tol && !fixit) break;
 
     // ---- 4c. back substitution and the clamped update -------------------------------
+    Real dbm = 0.0;
+    {
     Real ynext[5];
     for (int r=0; r<5; ++r) ynext[r] = 0.0;
-    Real dbm = 0.0;
     for (int i=ie; i>=ic; --i) {
       Real y[5];
       for (int r=0; r<5; ++r) {
@@ -792,9 +881,11 @@ void RTCol3::Solve(const int m, const int k, const int j) const {
       Kokkos::printf("### rt_col3_it it=%d resid=%.6e dbmax=%.6e nclamp=%d\n",
                      it, rmax, dbm, nclamp);
     }
+    }
     // the STEP-SIZE stopping rule (problem/rt_impl_dstop).  A Newton that has just taken
     // a negligible step is converged; making it assemble one more block system only to
     // read the residual back costs a whole pass and changes nothing.
+    if (fixit) continue;
     if (dstop && dbm < tol) break;
     if (dbm < 1.0e-14) break;
   }

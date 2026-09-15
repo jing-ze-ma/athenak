@@ -673,6 +673,14 @@ inline Real rt_impl_norm_eps = 1.0e-3;
 // A converged Newton takes a negligible step; insisting on the residual as well costs a
 // whole extra pass whose only effect is to confirm it.
 inline bool rt_impl_dstop = true;
+// problem/rt_impl_rescheck: form the energy-row residual BEFORE the block factorisation
+// so that the pass which only confirms convergence never factorises.  Bitwise identical
+// to the standard path (same test, same value, same iterate); see the note on RTCol3.
+inline bool rt_impl_rescheck = false;
+// problem/rt_impl_ablate, problem/rt_impl_fixit: TIMING INSTRUMENTATION ONLY, serial
+// (thomas) path only.  They do not produce a correct solve -- see RTCol3.
+inline int rt_impl_ablate = 0;
+inline bool rt_impl_fixit = false;
 // problem/rt_impl_cvfreeze: freeze de/dT (the only nonlinear entry of the block) after
 // this many passes, 0 = never.  The radiative part of the diagonal is exact and frozen
 // already, so this only quasi-Newtons the thin cells.
@@ -2679,6 +2687,9 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
           c3.norm_eps = rt_impl_norm_eps;
           c3.exjac = rt_impl_exjac;
           c3.dstop = rt_impl_dstop;
+          c3.rescheck = rt_impl_rescheck;
+          c3.ablate = rt_impl_ablate;
+          c3.fixit = rt_impl_fixit;
           c3.cvfreeze = rt_impl_cvfreeze;
           c3.warm = rt_impl_warm;
           c3.bprev = c3bp;

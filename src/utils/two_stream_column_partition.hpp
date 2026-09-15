@@ -156,6 +156,10 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
     nit = it + 1;
     tm.team_barrier();
     // ---- 4a. the formal solution, each segment with a ZERO incoming intensity --------
+    // problem/rt_impl_ablate bit 1 repeats the SEGMENT SWEEPS, which write absolutely
+    // and are therefore idempotent.  The entry-value scan and the correction that follow
+    // accumulate, so they are not repeated and their cost is not measured here.
+    for (int rep=(c.ablate & 1); rep>=0; --rep) {
     Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, nsg), [&](const int s) {
       const int i0 = ic + (nc*s)/nsg, i1 = ic + (nc*(s+1))/nsg - 1;
       Real L[2] = {0.0, 0.0}, hg[2] = {1.0, 1.0};
@@ -198,6 +202,7 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
       }
     });
     tm.team_barrier();
+    }
     // the P segment entry intensities: a serial scan over SEGMENTS, not over cells
     Kokkos::single(Kokkos::PerTeam(tm), [&]() {
       Real de[2], ue[2];
@@ -260,8 +265,38 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
       tm.team_barrier();
     }
 
+    // ---- 4a''. THE RESIDUAL-ONLY CONVERGENCE TEST (problem/rt_impl_rescheck) --------
+    // The same test step 4b makes, made before the factorisation instead of after it, so
+    // that a pass which only confirms convergence never assembles or inverts a block.
+    // ResidRel is the shared helper both solver paths use, and it reproduces
+    // fabs(rv[4])/(rsc + eoff) of BuildRow bit for bit, so the break is bitwise the
+    // break the standard path takes.  The partition is the same i0..i1 the sweep used,
+    // so each thread reads only cells it has just written; the team reduce broadcasts
+    // rpre, which is what makes the collective break legal.
+    if (c.rescheck || (c.ablate & 4)) {
+      Real rpre = 0.0;
+      for (int rep=((c.ablate & 4) ? 1 : 0); rep>=0; --rep) {
+        rpre = 0.0;
+        Kokkos::parallel_reduce(Kokkos::TeamThreadRange(tm, nsg),
+        [&](const int s, Real &rmx) {
+          const int i0 = ic + (nc*s)/nsg, i1 = ic + (nc*(s+1))/nsg - 1;
+          for (int i=i0; i<=i1; ++i) {
+            const Real rr = c.ResidRel<true>(m, k, j, i, eoff);
+            if (rr > rmx) rmx = rr;
+          }
+        }, Kokkos::Max<Real>(rpre));
+      }
+      if (c.rescheck) {
+        rfin = rpre;
+        if (rpre < c.tol && !c.fixit) break;
+      }
+    }
+
     // ---- 4b. the PARTITIONED forward elimination ------------------------------------
+    // ablate bit 2 repeats it: it writes absolutely out of b, so it is idempotent.
     Real rmax = 0.0;
+    for (int rep=(c.ablate & 2); rep>=0; --rep) {
+    rmax = 0.0;
     Kokkos::parallel_reduce(Kokkos::TeamThreadRange(tm, nsg),
     [&](const int s, Real &rmx) {
       const int i0 = ic + (nc*s)/nsg, i1 = ic + (nc*(s+1))/nsg - 1;
@@ -360,9 +395,10 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
         for (int col=0; col<3; ++col) c.rd(m,k,j,b0+RR+3*r+col) = Rm[r][col];
       }
     }, Kokkos::Max<Real>(rmax));
+    }
     rfin = rmax;
     if (!(rmax < HUGE_VAL)) return;     // a singular block: leave the column alone
-    if (rmax < c.tol) break;
+    if (rmax < c.tol && !c.fixit) break;
 
     // ---- 4c. the REDUCED system, and the clamped update -----------------------------
     tm.team_barrier();
@@ -529,6 +565,7 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
       for (int s=0; s<nsg; ++s) ncl += c.rd(m,k,j,s*RTCOL3_NRD+NCL);
       if (ncl > 0.0) Kokkos::atomic_add(&c.stat(3), ncl);
     });
+    if (c.fixit) continue;
     if (c.dstop && dbm < c.tol) break;
     if (dbm < 1.0e-14) break;
   }
