@@ -88,6 +88,22 @@ bool IsCubeVertexCorner(const NghbrView &nghbr, const PanelView &mbpanel,
 
 
 //----------------------------------------------------------------------------------------
+//! \fn bool IsX2X3DiagSlot(int n)
+//! \brief Is buffer slot n an x2x3 EDGE (40..47) or a three-dimensional CORNER (48..55)?
+//!
+//! These are exactly the buffers that are ghost in BOTH x2 and x3, i.e. the DIAGONAL
+//! transverse neighbours.  A 5-point cross stencil (k+-1 at fixed j, or j+-1 at fixed k)
+//! never reads them, so an exchange dedicated to such a stencil can drop them entirely:
+//! see MeshBoundaryValues::skip_x2x3_diag and <hydro>/rad_tr_halo_faces_only.  The slot
+//! layout is the one nghbr_index.hpp builds (0-7 x1 faces, 8-15 x2 faces, 16-23 x1x2
+//! edges, 24-31 x3 faces, 32-39 x3x1 edges, 40-47 x2x3 edges, 48-55 corners); in 1D/2D
+//! nnghbr is 8/24 and no slot reaches 40, so the predicate is inert there.
+KOKKOS_INLINE_FUNCTION
+bool IsX2X3DiagSlot(const int n) {
+  return (n >= 40 && n < 56);
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn int CreateBvals_MPI_Tag(int lid, int bufid)
 //! \brief calculate an MPI tag for boundary buffer communications.  Note maximum size of
 //! lid that can be encoded is set by (NUM_BITS_LID) macro defined in athena.hpp.
@@ -202,6 +218,17 @@ class MeshBoundaryValues {
   // many types (Hydro, MHD, Radiation, Z4c, etc.)
   MeshBlockPack* pmy_pack;
   bool is_z4c_;   // flag to denote if this BoundaryValues is for Z4c module
+
+ public:
+  // skip_x2x3_diag (default false): drop every DIAGONAL transverse buffer -- the x2x3
+  // edges (40..47) and the corners (48..55) -- from this object's exchanges, on the
+  // send, the receive, the MPI_Irecv/Isend, the completion test and the waits together,
+  // so the two sides skip the identical slots and nothing is ever left unmatched.  Only
+  // legal for a caller whose stencil is a 5-POINT CROSS and therefore never reads a
+  // cell that is ghost in x2 and x3 at once.  Set on the RKL1 transverse-conduction
+  // object alone (Conduction::pbval_tr, <hydro>/rad_tr_halo_faces_only); every other
+  // MeshBoundaryValues leaves it false and is bitwise untouched.
+  bool skip_x2x3_diag = false;
 };
 
 //----------------------------------------------------------------------------------------

@@ -54,6 +54,8 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
   auto &mblev = pmy_pack->pmb->mb_lev;
   auto &mbpanel = pmy_pack->pmb->mb_panel;
   const bool use_cs = pmy_pack->pmesh->use_cubed_sphere;
+  // skip the DIAGONAL transverse buffers entirely (see bvals.hpp)
+  const bool skipd_ = skip_x2x3_diag;
   const bool ml_ = pmy_pack->pmesh->multilevel;
   const bool use_pole = pmy_pack->pmesh->use_polar_boundary;
   // needed only on the cubed sphere, to give a source cell its (xi,eta)
@@ -81,7 +83,8 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
     // only load buffers when neighbor exists.  CUBED-SPHERE CUBE VERTEX: skipped on
     // both sides; FillPanelCornersCC overwrites exactly this corner block. See bvals.hpp.
     if (nghbr.d_view(m,n).gid >= 0 &&
-        !(use_cs && IsCubeVertexCorner(nghbr.d_view, mbpanel.d_view, m, n))) {
+        !(use_cs && IsCubeVertexCorner(nghbr.d_view, mbpanel.d_view, m, n)) &&
+        !(skipd_ && IsX2X3DiagSlot(n))) {
       // if neighbor is at coarser level, use coar indices to pack buffer
       int il, iu, jl, ju, kl, ku;
       if (nghbr.d_view(m,n).lev < mblev.d_view(m)) {
@@ -481,7 +484,8 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
     // only load buffers when neighbor exists.  CUBED-SPHERE CUBE VERTEX: skipped on
     // both sides; FillPanelCornersCC overwrites exactly this corner block. See bvals.hpp.
     if (nghbr.d_view(m,n).gid >= 0 &&
-        !(use_cs && IsCubeVertexCorner(nghbr.d_view, mbpanel.d_view, m, n))) {
+        !(use_cs && IsCubeVertexCorner(nghbr.d_view, mbpanel.d_view, m, n)) &&
+        !(skipd_ && IsX2X3DiagSlot(n))) {
       int il, iu, jl, ju, kl, ku;
       // If neighbor is at same level and data is for Z4c module, append data from coarse
       // array for higher-order prolongation
@@ -544,11 +548,14 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
   const bool ml_ = pmy_pack->pmesh->multilevel;
   auto &mblev = pmy_pack->pmb->mb_lev;
   const bool use_cs = pmy_pack->pmesh->use_cubed_sphere;
+  // skip the DIAGONAL transverse buffers entirely (see bvals.hpp)
+  const bool skipd_ = skip_x2x3_diag;
   bool no_errors=true;
   for (int m=0; m<nmb; ++m) {
     for (int n=0; n<nnghbr; ++n) {
       if (nghbr.h_view(m,n).gid >= 0 &&
-          !(use_cs && IsCubeVertexCorner(nghbr.h_view, mbpanel.h_view, m, n))) {
+          !(use_cs && IsCubeVertexCorner(nghbr.h_view, mbpanel.h_view, m, n)) &&
+          !(skipd_ && IsX2X3DiagSlot(n))) {
         // index and rank of destination Neighbor
         int dn = nghbr.h_view(m,n).dest;
         int drank = nghbr.h_view(m,n).rank;
@@ -605,6 +612,8 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackCC(DvceArray5D<Real> &a,
   auto &mbpanel = pmy_pack->pmb->mb_panel;
   auto &mblev = pmy_pack->pmb->mb_lev;
   const bool use_cs = pmy_pack->pmesh->use_cubed_sphere;
+  // skip the DIAGONAL transverse buffers entirely (see bvals.hpp)
+  const bool skipd_ = skip_x2x3_diag;
   const bool ml_ = pmy_pack->pmesh->multilevel;
   auto &multilevel = pmy_pack->pmesh->multilevel;
   // x1 index window: see PackAndSendCC and the declaration in bvals.hpp
@@ -619,7 +628,8 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackCC(DvceArray5D<Real> &a,
   for (int m=0; m<nmb; ++m) {
     for (int n=0; n<nnghbr; ++n) {
       if (nghbr.h_view(m,n).gid >= 0 &&
-          !(use_cs && IsCubeVertexCorner(nghbr.h_view, mbpanel.h_view, m, n))) {
+          !(use_cs && IsCubeVertexCorner(nghbr.h_view, mbpanel.h_view, m, n)) &&
+          !(skipd_ && IsX2X3DiagSlot(n))) {
         if (nghbr.h_view(m,n).rank != global_variable::my_rank) {
           int test;
           int ierr = MPI_Test(&(rbuf[n].vars_req[m]), &test, MPI_STATUS_IGNORE);
@@ -655,7 +665,8 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackCC(DvceArray5D<Real> &a,
 
     // only unpack buffers when neighbor exists (cube vertex skipped -- see bvals.hpp)
     if (nghbr.d_view(m,n).gid >= 0 &&
-        !(use_cs && IsCubeVertexCorner(nghbr.d_view, mbpanel.d_view, m, n))) {
+        !(use_cs && IsCubeVertexCorner(nghbr.d_view, mbpanel.d_view, m, n)) &&
+        !(skipd_ && IsX2X3DiagSlot(n))) {
       int il, iu, jl, ju, kl, ku;
       // if neighbor is at coarser level, use coar indices to unpack buffer
       if (nghbr.d_view(m,n).lev < mblev.d_view(m)) {
@@ -730,7 +741,8 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackCC(DvceArray5D<Real> &a,
     const int v = (tmember.league_rank() - m*(nnghbr*nvar) - n*nvar);
     // only unpack buffers when neighbor exists (cube vertex skipped -- see bvals.hpp)
     if (nghbr.d_view(m,n).gid >= 0 &&
-        !(use_cs && IsCubeVertexCorner(nghbr.d_view, mbpanel.d_view, m, n))) {
+        !(use_cs && IsCubeVertexCorner(nghbr.d_view, mbpanel.d_view, m, n)) &&
+        !(skipd_ && IsX2X3DiagSlot(n))) {
       int il, iu, jl, ju, kl, ku;
       // If neighbor is at same level and data is for Z4c module, unpack data from coarse
       // array for higher-order prolongation

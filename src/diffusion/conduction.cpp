@@ -185,6 +185,9 @@ Conduction::Conduction(std::string block, MeshBlockPack *pp, ParameterInput *pin
       rad_sts_margin = pin->GetOrAddReal(block,"rad_sts_margin",0.10);
       rad_sts_perplane = pin->GetOrAddBoolean(block,"rad_sts_perplane",false);
       rad_tr_window = pin->GetOrAddBoolean(block,"rad_tr_window",true);
+      rad_tr_halo_faces_only =
+          pin->GetOrAddBoolean(block,"rad_tr_halo_faces_only",false);
+      rad_tr_halo_every = pin->GetOrAddInteger(block,"rad_tr_halo_every",1);
       rad_ang_maxit = pin->GetOrAddInteger(block,"rad_ang_maxit",200);
       rad_ang_verbose = pin->GetOrAddBoolean(block,"rad_ang_verbose",false);
       // DIAGNOSTIC ONLY: the T-linearisation audit of ImplicitRadialUpdate
@@ -361,6 +364,14 @@ Conduction::Conduction(std::string block, MeshBlockPack *pp, ParameterInput *pin
           std::exit(EXIT_FAILURE);
         }
       }
+      if (rad_sts_split && pin->GetOrAddInteger(block,"rad_tr_halo_every",1) > 1) {
+        // the stiffness split rewrites cap_c2/cap_c3 over the ACTIVE faces only, so the
+        // ghost skin would run on unsplit conductances
+        std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
+                  << std::endl << "rad_tr_halo_every > 1 is not implemented with "
+                  << "rad_sts_split" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
       if (rad_sts_split && !(rad_sts_split_x > 0.0 && rad_sts_split_x <= 1.0)) {
         std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
                   << std::endl << "rad_sts_split_x is the explicit row-sum budget x_i "
@@ -474,6 +485,27 @@ Conduction::Conduction(std::string block, MeshBlockPack *pp, ParameterInput *pin
           // communicator, so the substage traffic cannot collide with u0 or b0
           pbval_tr = new MeshBoundaryValuesCC(pp, pin, false);
           pbval_tr->InitializeBuffers(1);
+          // ---- the two communication switches, resolved once here.
+          if (rad_tr_halo_every < 1) rad_tr_halo_every = 1;
+          if (rad_tr_halo_every > indcs.ng) rad_tr_halo_every = indcs.ng;
+          if (rad_tr_halo_faces_only && rad_tr_halo_every > 1) {
+            // a ghost SKIN of depth d needs the cell (j+-d, k+-1) as well, i.e. the
+            // x2x3 DIAGONAL ghosts the faces-only exchange drops.  The two are not
+            // compatible; the skin is the bigger saving, so it wins.
+            rad_tr_halo_faces_only = false;
+            if (global_variable::my_rank == 0) {
+              std::cout << "### rad_tr_halo_faces_only turned OFF: it needs "
+                        << "rad_tr_halo_every = 1 (the skin reads the diagonal ghosts)"
+                        << std::endl;
+            }
+          }
+          pbval_tr->skip_x2x3_diag = rad_tr_halo_faces_only;
+          if (global_variable::my_rank == 0 &&
+              (rad_tr_halo_faces_only || rad_tr_halo_every > 1)) {
+            std::cout << "### rad transverse halo: faces_only = "
+                      << rad_tr_halo_faces_only << ", every = "
+                      << rad_tr_halo_every << " substages" << std::endl;
+          }
         }
       }
     } else if (pin->GetOrAddBoolean(block,"rad_implicit_x1",false) ||
@@ -788,8 +820,23 @@ void Conduction::BuildAngularCoeffs(const DvceArray5D<Real> &w0, const EOS_Data 
   auto &area2_ = pmy_pack->pcoord->area.x2f;
   auto &area3_ = pmy_pack->pcoord->area.x3f;
   auto eos_ = eos;
+  // ---- HOW DEEP INTO THE x2/x3 GHOSTS THE FACE COEFFICIENTS ARE BUILT.  One layer is
+  // all the RKL1 stencil reads when it runs on the active cells alone.  Under
+  // rad_tr_halo_every > 1 it also runs on a GHOST SKIN of depth up to ng-1, whose faces
+  // reach j = je+ng and k = ke+ng, so the coefficients must exist that deep.  The extra
+  // layers are simply never read at rad_tr_halo_every = 1, which is why turning this on
+  // changes no number; w0, wtemp, rad_tauf and rad_w are all valid over the full ghost
+  // extent (BuildRadWeights sweeps 0..n3m1, 0..n2m1), so the deep values are real.
+  const int gd_ = (rad_tr_halo_every > 1) ? indcs.ng : 1;
+  const int dm1 = (gd_ > 1) ? (gd_ - 1) : 1;   // = 1 at the default: the old ranges
+  const int c2kl = ks - dm1,     c2ku = ke + dm1;
+  const int c2jl = js - dm1,     c2ju = je + dm1 + 1;
+  const int c3kl = ks - dm1,     c3ku = ke + dm1 + 1;
+  const int c3jl = js - dm1,     c3ju = je + dm1;
+  const int xkl  = ks - gd_,     xku  = ke + gd_;
+  const int xjl  = js - gd_,     xju  = je + gd_;
   if (capang > 0.0) Kokkos::deep_copy(capcnt, 0);
-  par_for("radcapc2", DevExeSpace(), 0, nmb1, ks-1, ke+1, js-1, je+2, is, ie,
+  par_for("radcapc2", DevExeSpace(), 0, nmb1, c2kl, c2ku, c2jl, c2ju, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     capc2(m,k,j,i) = 0.0;
     if (krmax > 0.0 && x1v_(m,i) > krmax) return;
@@ -830,7 +877,7 @@ void Conduction::BuildAngularCoeffs(const DvceArray5D<Real> &w0, const EOS_Data 
   });
 
   if (three_d) {
-    par_for("radcapc3", DevExeSpace(), 0, nmb1, ks-1, ke+2, js-1, je+1, is, ie,
+    par_for("radcapc3", DevExeSpace(), 0, nmb1, c3kl, c3ku, c3jl, c3ju, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       capc3(m,k,j,i) = 0.0;
       if (krmax > 0.0 && x1v_(m,i) > krmax) return;
@@ -901,7 +948,7 @@ void Conduction::BuildAngularCoeffs(const DvceArray5D<Real> &w0, const EOS_Data 
     });
   }
 
-  par_for("radcapx", DevExeSpace(), 0, nmb1, ks-1, ke+1, js-1, je+1, is, ie,
+  par_for("radcapx", DevExeSpace(), 0, nmb1, c2kl, c2ku, c3jl, c3ju, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real d = w0(m,IDN,k,j,i);
     Real rcv = d/gm1;
@@ -960,7 +1007,7 @@ void Conduction::BuildAngularCoeffs(const DvceArray5D<Real> &w0, const EOS_Data 
   if (impang) {
     auto trst = tr_st;
     const int it_ = TRST, ia_ = TRSA;
-    par_for("radtrst", DevExeSpace(), 0, nmb1, ks-1, ke+1, js-1, je+1, is, ie,
+    par_for("radtrst", DevExeSpace(), 0, nmb1, xkl, xku, xjl, xju, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       const Real d = w0(m,IDN,k,j,i);
       Real rcv = d/gm1;

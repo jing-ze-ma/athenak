@@ -451,6 +451,26 @@ class Conduction {
   // false = exchange the FULL x1 range every time, which is the pre-window behaviour
   // and a control for any placement- or window-dependent difference.
   bool rad_tr_window = true;
+  // ---- COMMUNICATION COST OF THE RKL1 TRANSVERSE OPERATOR.  Both switches change only
+  // WHICH GHOST CELLS ARE EXCHANGED AND WHEN; the arithmetic every ACTIVE cell performs
+  // is untouched, so both are bitwise-inert at their defaults and both are meant to stay
+  // bitwise when on.  See the bookkeeping note in conduction_transverse.cpp.
+  //
+  // rad_tr_halo_faces_only (default false): the substage stencil is a 5-POINT CROSS --
+  // (k,j+-1) and (k+-1,j) at a fixed i -- and never reads a cell that is ghost in x2 and
+  // x3 at once.  So the x2x3 EDGE and CORNER buffers (slots 40..55) of pbval_tr carry
+  // nothing the operator reads: this drops them from the pack, the unpack, the
+  // MPI_Irecv/Isend, the completion test and the waits together.  With one MeshBlock per
+  // rank, periodic x2/x3 and physical x1 boundaries that is 8 messages per swap down to
+  // 4.  ONLY legal at rad_tr_halo_every = 1 (a ghost SKIN needs the diagonal ghosts --
+  // see below), and the constructor turns it off with a note if both are set.
+  bool rad_tr_halo_faces_only = false;
+  // rad_tr_halo_every (int, default 1 = exchange every substage): exchange the RKL1
+  // increment only every N substages and compute the intermediate substages on a GHOST
+  // SKIN as well, letting the skin shrink by one layer per substage.  N is clamped to
+  // nghost.  N >= 3 also exchanges the SECOND register at each refill (see the note in
+  // conduction_transverse.cpp: the two-iterate recurrence otherwise runs the skin out).
+  int rad_tr_halo_every = 1;
   DvceArray1D<Real> tr_zpl;     // the Gershgorin radius of each x1 plane
   DvceArray1D<int> tr_spl;      // ... its substage count s_i ...
   DvceArray1D<Real> tr_w1pl;    // ... and its RKL1 w1 = 2/(s_i^2 + s_i)
