@@ -50,11 +50,13 @@
 //! boundary carries no flux, since the increment is not defined outside the mesh.
 
 #include <float.h>
+#include <cstddef>
 #include <cstdlib>
 #include <algorithm>
 #include <cmath>
 #include <iostream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #if MPI_PARALLEL_ENABLED
@@ -63,6 +65,7 @@
 
 #include "athena.hpp"
 #include "globals.hpp"
+#include "mesh/nghbr_index.hpp"
 #include "parameter_input.hpp"
 #include "mesh/mesh.hpp"
 #include "bvals/bvals.hpp"
@@ -188,7 +191,11 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
   // PER-PLANE SUBSTAGE COUNTS (rad_sts_perplane).  Only for the 5-point transverse
   // stencil: with_x1 puts x1 faces in the row, which couple the planes, and the substage
   // count must then be global.  See conduction.hpp.
-  const bool perpl = rad_sts_perplane && !sts1;
+  // rad_ang_solver = adi replaces the RKL1 loop below with one alternating-direction
+  // implicit step; it is transverse-only, and it needs the per-plane stiffness radii (for
+  // the plane skip), so it turns the per-plane path on for itself.
+  const bool adi = rad_ang_adi && !sts1;
+  const bool perpl = (rad_sts_perplane || adi) && !sts1;
   const int nplane = ie - is + 1;
   const int isv = is;
   auto spl = perpl ? tr_spl : DvceArray1D<int>("rklspldummy", 1);
@@ -417,6 +424,579 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
 #endif
   }
   if (!(zmax > 0.0)) return;    // no face carries any flux this stage: nothing to do
+
+  // ====================================================================================
+  // rad_ang_solver = adi: ONE ALTERNATING-DIRECTION IMPLICIT STEP over the whole stage,
+  // in place of the RKL1 loop below.
+  //
+  // THE SYSTEM is the one the file comment defines and the RKL1 substage discretises.
+  // M(y) is affine, M(y) = b + A y with
+  //     b_i     = (1/V_i) sum_f s_f C_f (T*_j - T*_i)                       = M(0)_i,
+  //     (A y)_i = (1/V_i) sum_f s_f C_f (alpha_j y_j - alpha_i y_i),
+  // over the SAME open faces, with the SAME alpha > 0 gates and the SAME flux-form
+  // expression, so ADI and RKL1 are two time discretisations of ONE operator.  Split
+  // A = A2 + A3 by direction and integrate y(0) = 0 to tau = beta_dt by the DOUGLAS
+  // scheme, theta-weighted:
+  //     (I - theta tau A2) Y1 = tau b,      (I - theta tau A3) y = Y1,
+  // whose product form is (I - theta tau A2)(I - theta tau A3) y = tau b.  theta = 1 is
+  // backward Euler plus the O(tau^2 A2 A3) splitting term -- unconditionally stable and
+  // damping in the stiff limit, which is what a stiff transverse operator needs -- and
+  // theta = 0.5 is the Peaceman-Rachford variant, second order in tau.  One step is taken
+  // however stiff the row is: there is no substage count.
+  //
+  // CONSERVATION.  sum_i V_i (A v)_i = 0 identically for any v (the flux form telescopes,
+  // and a face on a physical boundary is closed), and sum_i V_i b_i = 0 for the same
+  // reason.  Summing the first sweep gives sum V Y1 = tau sum V b + theta tau sum V A2 Y1
+  // = 0, and the second gives sum V y = sum V Y1 = 0.  What is left is the round-off of
+  // the line solves, which the report measures exactly as before.
+  //
+  // THE LINE SOLVES CROSS MeshBlocks AND RANKS, and are solved by PARTITION.  See the
+  // rad_ang_solver note in conduction.hpp for the pattern; here is the algebra.  Order
+  // the cells of one line inside one block s = 1..n.  The local rows are tridiagonal
+  // except that row 1 couples to the left neighbour's row n through a_1 and row n to the
+  // right neighbour's row 1 through c_n, so with x_L, x_R those two outside unknowns,
+  //     T x = d - a_1 x_L e_1 - c_n x_R e_n,   x = u - x_L v' - x_R w',
+  //     u = T^-1 d,   v' = a_1 T^-1 e_1,   w' = c_n T^-1 e_n,
+  // i.e. ONE Thomas factorisation with THREE right-hand sides.  Its first and last rows,
+  //     p_b + A_b q_{b-1} + B_b p_{b+1} = U_b,   q_b + C_b q_{b-1} + D_b p_{b+1} = Q_b,
+  //     (A,B,U,C,D,Q)_b = (v'_1, w'_1, u_1, v'_n, w'_n, u_n),
+  // are the REDUCED SYSTEM: 2 unknowns per block, 2*nblk in all, cyclic because the line
+  // is periodic.  The six numbers are gathered around the ring of blocks, the reduced
+  // system is assembled in ABSOLUTE block order (so every block of the ring does bitwise
+  // identical arithmetic and they cannot disagree about an interface value) and solved
+  // redundantly, and each block back-substitutes x = u - x_L v' - x_R w' locally.  A
+  // closed face gives a_1 = 0 or c_n = 0 and the chain simply decouples there, so a
+  // single-block periodic direction (nblk = 1, the ring is the block itself) and a
+  // physical boundary are the same code.
+  //
+  // PLANE SKIP, as in the RKL1 path: a plane whose Gershgorin radius z_i <= 1 is not
+  // stiff, RKL1 gives it s_i = 1 and hence y = tau M(0) = tau b, and that is what it is
+  // given here; the sweeps run over the contiguous bracket of ACTIVE planes only.
+  if (adi) {
+    auto yy = tr_ya;      // the working register: right-hand side in, answer out
+    auto uu = tr_yb;      // T^-1 d
+    auto vv = tr_yc;      // the left spike, scaled by a_1
+    auto ww = tr_aw;      // the right spike, scaled by c_n
+    auto cpv = tr_acp;    // the Thomas upper-diagonal scratch
+    auto yf = tr_yf;      // lod2 only: the full-step LOD answer, kept for Richardson
+    auto rd_ = tr_ared;
+    auto act = tr_aact;
+    auto ab0 = tr_ab0;
+    const bool adilod = rad_adi_lod;
+    const int scm = rad_adi_scm;
+
+    // ---- the active plane bracket, from the per-plane Gershgorin radii computed above
+    int alo = nplane, ahi = -1;
+    for (int p=0; p<nplane; ++p) {
+      const int a = (tr_zpl_h(p) > 1.0) ? 1 : 0;
+      tr_aact_h(p) = a;
+      if (a) {
+        if (p < alo) alo = p;
+        ahi = p;
+      }
+    }
+    Kokkos::deep_copy(act, tr_aact_h);
+    const bool anyact = (ahi >= alo);
+    const int ilo_ = anyact ? (is + alo) : is;
+    const int ihi_ = anyact ? (is + ahi) : is;
+    const int nplact = ihi_ - ilo_ + 1;
+    const int nx1_ = indcs.nx1, nx2_ = indcs.nx2, nx3_ = indcs.nx3;
+    const int nkji_ = nx3_*nx2_*nx1_, nji_ = nx2_*nx1_;
+
+    // ---- the ring of MeshBlocks each line crosses.  One entry per (direction, local
+    // block): this block's ABSOLUTE index along the direction, and the rank and local id
+    // of its two face neighbours, from the neighbour table (no SMR, so one neighbour per
+    // face and the same-level slot is the only one filled).
+    const int nmbl = nmb1 + 1;
+    std::vector<int> ab0h(2*nmbl, 0), lrk(2*nmbl, -1), rrk(2*nmbl, -1);
+    std::vector<int> llid(2*nmbl, -1), rlid(2*nmbl, -1);
+    {
+      auto &nghbr = pmy_pack->pmb->nghbr;
+      auto &gidh = pmy_pack->pmb->mb_gid;
+      const int nl2 = NeighborIndex(0,-1,0,0,0), nr2 = NeighborIndex(0,1,0,0,0);
+      const int nl3 = NeighborIndex(0,0,-1,0,0), nr3 = NeighborIndex(0,0,1,0,0);
+      for (int m=0; m<nmbl; ++m) {
+        const LogicalLocation &ll = pmy_pack->pmesh->lloc_eachmb[gidh.h_view(m)];
+        ab0h[m] = static_cast<int>(ll.lx2);
+        ab0h[nmbl + m] = static_cast<int>(ll.lx3);
+        const int slot[4] = {nl2, nr2, nl3, nr3};
+        for (int q=0; q<4; ++q) {
+          if (q >= 2 && !three_d) continue;
+          const int gg = nghbr.h_view(m,slot[q]).gid;
+          const int rr = nghbr.h_view(m,slot[q]).rank;
+          if (gg < 0) continue;
+          const int lid = gg - pmy_pack->pmesh->gids_eachrank[rr];
+          const int o = (q/2)*nmbl + m;
+          if ((q%2) == 0) {
+            lrk[o] = rr;
+            llid[o] = lid;
+          } else {
+            rrk[o] = rr;
+            rlid[o] = lid;
+          }
+        }
+      }
+    }
+
+    // ---- THE SCHEMES.  A SUB-STEP is a pair of directional sweeps over an interval
+    // dts, starting from a given y_in.  Written out, with b = b2 + b3 the direction-split
+    // source and A = A2 + A3 the direction-split matrix:
+    //
+    // DOUGLAS (rad_adi_scheme = douglas) puts the WHOLE source in the first sweep,
+    //     (I - th dts A2) Y1 = y_in + dts b,    (I - th dts A3) y = Y1,
+    // product form (I - th dts A2)(I - th dts A3) y = y_in + dts b.  It is the textbook
+    // scheme and second order at th = 0.5, but it is NOT STIFFLY ACCURATE: for one
+    // Fourier mode with dts lambda2 = -a, dts lambda3 = -b it returns
+    //     y = -(dT/alpha) (a + b)/((1+a)(1+b))
+    // against the exact -(dT/alpha)(1 - e^-(a+b)).  A mode stiff in BOTH directions --
+    // the horizontal checkerboard, which is what this operator exists to damp -- has
+    // a = b >> 1 and gets ~2/a of the relaxation it needs: at the B-star box's z ~ 1500
+    // that is 0.3 %, i.e. the operator does essentially NOTHING to the checkerboard.
+    // MEASURED: the B-star 1-rank gate arm dies at cycle 3411 with the transverse kinetic
+    // energy 2e4 times the RKL1 arm's.  Kept only as a switch, for the record.
+    //
+    // LOD (the default), the sequential (Lie / locally-one-dimensional) splitting: one
+    // BACKWARD-EULER step of each sub-problem in turn over the whole interval, each
+    // carrying ITS OWN part of the source,
+    //     (I - dts A2) Y1 = y_in + dts b2,     (I - dts A3) y = Y1 + dts b3.
+    // Same two line solves, same cost, same exact conservation (each sweep's flux form
+    // telescopes on its own), first order in dts -- but the stiff limit is
+    //     y = -(dT/alpha) [a/(1+a) + b]/(1+b)  ->  -(dT/alpha),
+    // i.e. a mode stiff in either or both directions is relaxed essentially completely,
+    // which is what backward Euler on the unsplit operator would do.  L-stable, and that
+    // is why it, not Douglas, is what a stiff transverse operator can use.
+    //
+    // WHAT LOD STILL COSTS: it is only FIRST order, and its stiff damping factor is the
+    // backward-Euler 1/(1+z), which for a moderately stiff mode is far above the exact
+    // e^-z -- the mode is UNDER-DAMPED.  MEASURED on the Gaussian test: L1 5.78e-7 (32^2)
+    // and 1.61e-7 (64^2) against RKL1's 1.04e-7 and 2.79e-8, and on the B-star gate box
+    // dT_tau10 and dT_tau1 come out 7-8x the RKL1 arm's.  The two cures below both keep
+    // the sweeps, the plane skip and the partitioned line solve exactly as they are and
+    // only change WHICH sub-steps are taken:
+    //
+    // LODN (rad_adi_scheme = lodn, rad_adi_nsub = N): N sequential LOD sub-steps of
+    // dts = tau/N, with the SWEEP ORDER ALTERNATED between sub-steps (x2-x3, then x3-x2,
+    // ...), which cancels the leading Lie splitting error over each pair (Strang-like)
+    // without a half-step.  Still first order in the backward-Euler sense, amplification
+    // 1/(1+z/N)^N, so it converges to the exact e^-z only as N grows: the honest
+    // brute-force fallback, and the comparison the extrapolation has to beat.
+    //
+    // LOD2 (rad_adi_scheme = lod2): RICHARDSON EXTRAPOLATION of LOD in the step size,
+    //     y_full = LOD(tau) from 0,
+    //     y_half = LOD(tau/2) from 0, then LOD(tau/2) again from y_half,
+    //     y      = 2 y_half - y_full.
+    // ALL THREE SUB-STEPS SWEEP IN THE SAME ORDER (x2 then x3), and that is not a detail:
+    // Richardson needs y_full and y_half to be the SAME method at two step sizes, so that
+    // their leading errors differ only by the factor 2.  Alternating the order between
+    // the two halves (rad_adi_scheme = lod2a, kept as a switch) symmetrises the half
+    // sequence and cancels its Lie SPLITTING error on its own -- which sounds better but
+    // breaks the extrapolation: the full step's splitting error then has nothing to
+    // cancel against and survives with the WRONG SIGN, so 2 y_half - y_full carries as
+    // much splitting error as plain lod does.  MEASURED on the B-star gate box: lod2a
+    // leaves dT_tau10 = 2.6e-6 and dT_tau1 = 6.0e-5, i.e. the lod arm's 2.3e-6/5.6e-5,
+    // while RKL1 has 2.8e-7/7.5e-6.  The B-star residual is SPLITTING error, not
+    // backward-Euler damping error.
+    // LOD's error is O(dts) with a fixed leading coefficient, so the combination cancels
+    // it and the scheme is SECOND order.  It is also still L-stable: one Fourier mode
+    // with tau lambda = -z sees
+    //     R(z) = 2/(1 + z/2)^2 - 1/(1 + z)  ->  0   as z -> infinity,
+    // and |R| <= 1 on z >= 0 (R(z) - 1 = -z^2(3 + z + z^2/4)/((1+z/2)^2 (1+z)) <= 0 and
+    // R(z) >= -1/8 at its minimum), so the stiff checkerboard is still damped, not
+    // amplified -- unlike Douglas, whose R does not go to zero.  THE COST is three sweep
+    // pairs per stage instead of one, with TWO factorisation sets (tau and tau/2): the
+    // tau/2 tridiagonal differs from the tau one in every entry, so nothing is shared.
+    //
+    // CONSERVATION survives all of them: every sweep is a flux-form solve that conserves
+    // sum_i V_i y_i exactly (see the note above), each sub-step therefore preserves it,
+    // and 2 y_half - y_full is a linear combination with weights summing to 1 of two
+    // vectors that each have sum V y = 0.  The report below measures exactly that.
+    //
+    // THE SCHEDULE.  One pass loop over (sub-step, direction), so pass p belongs to
+    // sub-step p/nsweep and runs direction p%nsweep of it.
+    const int nbm_ = tr_ared.extent_int(1);
+    const int nlmax_ = tr_ared.extent_int(2);
+    const int nsweep = three_d ? 2 : 1;
+    int nsb = 1;
+    if (scm == ADISCM_LOD2 || scm == ADISCM_LOD2A) {
+      nsb = 3;
+    } else if (scm == ADISCM_LODN) {
+      nsb = (rad_adi_nsub > 1) ? rad_adi_nsub : 1;
+    }
+    std::vector<Real> sdt(nsb, tau);
+    std::vector<int> smode(nsb, 1), sfrst(nsb, 1);
+    // smode: 0 = this sub-step starts from y = 0, 1 = from what is in yy.
+    // sfrst: 1 = x2 sweeps first in this sub-step, 0 = x3 first.
+    if (scm == ADISCM_LOD2 || scm == ADISCM_LOD2A) {
+      // the full step
+      sdt[0] = tau;
+      smode[0] = 0;
+      sfrst[0] = 1;
+      // the first half, from zero again
+      sdt[1] = 0.5*tau;
+      smode[1] = 0;
+      sfrst[1] = 1;
+      // the second half, continuing.  lod2 keeps the SAME sweep order as the full step,
+      // which is what makes the extrapolation valid (see the note above); lod2a swaps it,
+      // symmetrising the half sequence at the price of the cancellation.
+      sdt[2] = 0.5*tau;
+      smode[2] = 1;
+      sfrst[2] = (scm == ADISCM_LOD2A) ? 0 : 1;
+    } else {
+      const Real dsb = tau/static_cast<Real>(nsb);
+      for (int s=0; s<nsb; ++s) {
+        sdt[s] = dsb;
+        smode[s] = (s == 0) ? 0 : 1;
+        sfrst[s] = ((s % 2) == 0) ? 1 : 0;
+      }
+    }
+    for (int pass=0; pass<nsb*nsweep; ++pass) {
+      const int sb = pass/nsweep;
+      const int dpass = pass - sb*nsweep;
+      const Real dts = sdt[sb];
+      const bool dfrst = three_d ? (sfrst[sb] != 0) : true;
+      // LOD is a sequence of BACKWARD-EULER sub-steps: the implicit weight is 1 by
+      // construction (rad_adi_theta is refused with it, see conduction.cpp)
+      const Real thtau = adilod ? dts : (rad_adi_theta*dts);
+      const bool d2 = ((dpass == 0) == dfrst);
+      // LOD2: the full-step answer is stashed before the half-step sequence restarts
+      if (dpass == 0 && sb == 1 && (scm == ADISCM_LOD2 ||
+                                    scm == ADISCM_LOD2A)) {
+        Kokkos::deep_copy(yf, yy);
+      }
+      // ---- THE RIGHT-HAND SIDE of this sweep.  The first sweep of a sub-step loads the
+      // sub-step's starting value plus the source of the direction it integrates
+      // (Douglas: the whole source); the second loads its own direction's source on top
+      // of the first sub-problem's answer.  Over the FULL plane range, so an INACTIVE
+      // plane -- which no sweep touches -- still accumulates the full tau b, the answer
+      // the RKL1 path's single substage gives it, in every scheme (and the Richardson
+      // combination of 2 x (tau/2) b and tau b is again tau b).
+      if (dpass == 0 || adilod) {
+        const bool ub2 = (dpass == 0) ? (adilod ? d2 : true) : d2;
+        const bool ub3 = three_d && ((dpass == 0) ? (adilod ? !d2 : true) : !d2);
+        const int lmode = (dpass == 0) ? smode[sb] : 2;    // 2 = add in place
+        auto o_ = yy;
+        par_for("radtradirhs", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+        KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+          const Real ai = st(m,ia_,k,j,i);
+          const Real phc = st(m,it_,k,j,i);
+          Real mi = 0.0;
+          if (ub2) {
+            const Real alm2 = st(m,ia_,k,j-1,i), alp2 = st(m,ia_,k,j+1,i);
+            Real fl = (open2(m,j) && ai > 0.0 && alm2 > 0.0)
+                      ? c2(m,k,j,i)*(phc - st(m,it_,k,j-1,i)) : 0.0;
+            Real fr = (open2(m,j+1) && ai > 0.0 && alp2 > 0.0)
+                      ? c2(m,k,j+1,i)*(st(m,it_,k,j+1,i) - phc) : 0.0;
+            mi = fr - fl;
+          }
+          if (ub3) {
+            const Real alm3 = st(m,ia_,k-1,j,i), alp3 = st(m,ia_,k+1,j,i);
+            const Real gl = (open3(m,k) && ai > 0.0 && alm3 > 0.0)
+                    ? c3(m,k,j,i)*(phc - st(m,it_,k-1,j,i)) : 0.0;
+            const Real gr = (open3(m,k+1) && ai > 0.0 && alp3 > 0.0)
+                    ? c3(m,k+1,j,i)*(st(m,it_,k+1,j,i) - phc) : 0.0;
+            const Real m3 = gr - gl;
+            mi = ub2 ? (mi + m3) : m3;
+          }
+          if (!isfinite(mi)) mi = 0.0;
+          if (lmode == 0) {
+            o_(m,0,k,j,i) = dts*mi;
+          } else {
+            o_(m,0,k,j,i) += dts*mi;   // lmode 1 (from y_in) and 2 (add) coincide
+          }
+        });
+      }
+      const int nb = d2 ? adi_nb2 : adi_nb3;
+      const int ns = d2 ? js : ks;
+      const int ne = d2 ? je : ke;
+      const int t1s = d2 ? ks : js;
+      const int t1e = d2 ? ke : je;
+      const int nline = (t1e - t1s + 1)*nplact;
+      const int doff = d2 ? 0 : nmbl;
+      for (int m=0; m<nmbl; ++m) tr_ab0_h(m) = ab0h[doff + m];
+      Kokkos::deep_copy(ab0, tr_ab0_h);
+      auto y_ = yy;
+      auto u_ = uu;
+      auto v_ = vv;
+      auto w_ = ww;
+      auto cp_ = cpv;
+      const int nplact_ = nplact, ilo2_ = ilo_, t1sv_ = t1s;
+
+      // (1) the LOCAL Thomas factorisation, three right-hand sides at once, and the six
+      // interface coefficients of this block's piece of every line
+      par_for("radtradiln", DevExeSpace(), 0, nmb1, t1s, t1e, ilo_, ihi_,
+      KOKKOS_LAMBDA(const int m, const int t, const int i) {
+        const int l = (t - t1sv_)*nplact_ + (i - ilo2_);
+        const int b0 = ab0(m);
+        if (act(i - isv) == 0) {
+          for (int c=0; c<6; ++c) rd_(m,b0,l,c) = 0.0;
+          return;
+        }
+        Real a1 = 0.0, cn = 0.0;
+        for (int s=ns; s<=ne; ++s) {
+          const int k = d2 ? t : s;
+          const int j = d2 ? s : t;
+          const Real ai = st(m,ia_,k,j,i);
+          Real cl, cr, alm, alp;
+          if (d2) {
+            alm = st(m,ia_,k,j-1,i);
+            alp = st(m,ia_,k,j+1,i);
+            cl = (open2(m,j) && ai > 0.0 && alm > 0.0) ? c2(m,k,j,i) : 0.0;
+            cr = (open2(m,j+1) && ai > 0.0 && alp > 0.0) ? c2(m,k,j+1,i) : 0.0;
+          } else {
+            alm = st(m,ia_,k-1,j,i);
+            alp = st(m,ia_,k+1,j,i);
+            cl = (open3(m,k) && ai > 0.0 && alm > 0.0) ? c3(m,k,j,i) : 0.0;
+            cr = (open3(m,k+1) && ai > 0.0 && alp > 0.0) ? c3(m,k+1,j,i) : 0.0;
+          }
+          Real dj = 1.0 + thtau*ai*(cl + cr);
+          if (!(dj > 0.0) || !isfinite(dj)) dj = 1.0;
+          Real aj = -thtau*cl*alm;
+          Real cj = -thtau*cr*alp;
+          if (!isfinite(aj)) aj = 0.0;
+          if (!isfinite(cj)) cj = 0.0;
+          Real e1 = 0.0, en = 0.0;
+          // the two rows that couple OUT of this block: the coupling is remembered and
+          // the row is truncated, which is what turns it into a spike right-hand side
+          if (s == ns) {
+            a1 = aj;
+            aj = 0.0;
+            e1 = 1.0;
+          }
+          if (s == ne) {
+            cn = cj;
+            cj = 0.0;
+            en = 1.0;
+          }
+          const int kp = d2 ? k : (k - 1);
+          const int jp = d2 ? (j - 1) : j;
+          const Real cpm = (s == ns) ? 0.0 : cp_(m,0,kp,jp,i);
+          Real bet = dj - aj*cpm;
+          if (!(fabs(bet) > 0.0) || !isfinite(bet)) bet = 1.0;
+          const Real pu = (s == ns) ? 0.0 : u_(m,0,kp,jp,i);
+          const Real pv = (s == ns) ? 0.0 : v_(m,0,kp,jp,i);
+          const Real pw = (s == ns) ? 0.0 : w_(m,0,kp,jp,i);
+          u_(m,0,k,j,i) = (y_(m,0,k,j,i) - aj*pu)/bet;
+          v_(m,0,k,j,i) = (e1 - aj*pv)/bet;
+          w_(m,0,k,j,i) = (en - aj*pw)/bet;
+          cp_(m,0,k,j,i) = cj/bet;
+        }
+        // the back substitution, with the two spikes scaled by their couplings as they
+        // are written (v'_s = a_1 v_s - cp_s v'_{s+1} is the same recurrence)
+        {
+          const int k = d2 ? t : ne;
+          const int j = d2 ? ne : t;
+          v_(m,0,k,j,i) *= a1;
+          w_(m,0,k,j,i) *= cn;
+        }
+        for (int s=ne-1; s>=ns; --s) {
+          const int k = d2 ? t : s;
+          const int j = d2 ? s : t;
+          const int kn = d2 ? k : (k + 1);
+          const int jn = d2 ? (j + 1) : j;
+          const Real cc = cp_(m,0,k,j,i);
+          u_(m,0,k,j,i) -= cc*u_(m,0,kn,jn,i);
+          v_(m,0,k,j,i) = a1*v_(m,0,k,j,i) - cc*v_(m,0,kn,jn,i);
+          w_(m,0,k,j,i) = cn*w_(m,0,k,j,i) - cc*w_(m,0,kn,jn,i);
+        }
+        const int k1 = d2 ? t : ns, j1 = d2 ? ns : t;
+        const int k2 = d2 ? t : ne, j2 = d2 ? ne : t;
+        rd_(m,b0,l,0) = v_(m,0,k1,j1,i);
+        rd_(m,b0,l,1) = w_(m,0,k1,j1,i);
+        rd_(m,b0,l,2) = u_(m,0,k1,j1,i);
+        rd_(m,b0,l,3) = v_(m,0,k2,j2,i);
+        rd_(m,b0,l,4) = w_(m,0,k2,j2,i);
+        rd_(m,b0,l,5) = u_(m,0,k2,j2,i);
+      });
+
+      // (2) the RING GATHER.  Round r shifts one slab one block to the right, so after
+      // nb-1 rounds every block of the ring holds all nb slabs, indexed by ABSOLUTE block
+      // index.  A neighbour on this rank is a device copy; one on another rank is a
+      // message on the module's own communicator, tagged with the RECEIVER's local id (a
+      // rank can receive one slab per local block per round, so that is unique).
+      Real *rbase = rd_.data();
+      const int chunk = nlmax_*6;
+      for (int r=1; r<nb; ++r) {
+        Kokkos::fence();
+#if MPI_PARALLEL_ENABLED
+        std::vector<MPI_Request> reqs;
+#endif
+        for (int m=0; m<nmbl; ++m) {
+          const int b0 = ab0h[doff + m];
+          const int br = ((b0 - r) % nb + nb) % nb;          // the slab I receive
+          if (lrk[doff + m] == global_variable::my_rank) {
+            const int ml = llid[doff + m];
+            Kokkos::deep_copy(
+              Kokkos::subview(rd_, m, br, Kokkos::make_pair(0, nline), Kokkos::ALL),
+              Kokkos::subview(rd_, ml, br, Kokkos::make_pair(0, nline), Kokkos::ALL));
+          } else {
+#if MPI_PARALLEL_ENABLED
+            MPI_Request rq;
+            const int tg = (m << 5) | (r << 1) | (d2 ? 0 : 1);
+            MPI_Irecv(rbase + (static_cast<std::size_t>(m)*nbm_ + br)*chunk,
+                      6*nline, MPI_ATHENA_REAL, lrk[doff + m], tg, adi_comm, &rq);
+            reqs.push_back(rq);
+#endif
+          }
+        }
+        for (int m=0; m<nmbl; ++m) {
+          if (rrk[doff + m] == global_variable::my_rank) continue;
+#if MPI_PARALLEL_ENABLED
+          const int b0 = ab0h[doff + m];
+          const int bs = ((b0 - r + 1) % nb + nb) % nb;
+          MPI_Request rq;
+          const int tg = (rlid[doff + m] << 5) | (r << 1) | (d2 ? 0 : 1);
+          MPI_Isend(rbase + (static_cast<std::size_t>(m)*nbm_ + bs)*chunk,
+                    6*nline, MPI_ATHENA_REAL, rrk[doff + m], tg, adi_comm, &rq);
+          reqs.push_back(rq);
+#endif
+        }
+#if MPI_PARALLEL_ENABLED
+        if (!reqs.empty()) {
+          MPI_Waitall(static_cast<int>(reqs.size()), reqs.data(), MPI_STATUSES_IGNORE);
+        }
+#endif
+      }
+      Kokkos::fence();
+
+      // (3) the REDUCED SYSTEM, assembled in absolute block order and solved redundantly
+      // on every block of the ring, then the local back substitution
+      par_for("radtradird", DevExeSpace(), 0, nmb1, t1s, t1e, ilo_, ihi_,
+      KOKKOS_LAMBDA(const int m, const int t, const int i) {
+        if (act(i - isv) == 0) return;
+        const int l = (t - t1sv_)*nplact_ + (i - ilo2_);
+        const int nu = 2*nb;
+        Real mm[2*NADIB*(2*NADIB + 1)];
+        for (int r=0; r<nu; ++r) {
+          for (int c=0; c<=nu; ++c) mm[r*(nu+1) + c] = 0.0;
+        }
+        // accumulate, so that nb = 1 (the block is its own two neighbours) and nb = 2
+        // (one neighbour on both sides) fall out of the same cyclic assembly
+        for (int b=0; b<nb; ++b) {
+          const int bm = (b + nb - 1)%nb, bp = (b + 1)%nb;
+          const int r0 = 2*b, r1 = 2*b + 1;
+          mm[r0*(nu+1) + 2*b]      += 1.0;
+          mm[r0*(nu+1) + 2*bm + 1] += rd_(m,b,l,0);
+          mm[r0*(nu+1) + 2*bp]     += rd_(m,b,l,1);
+          mm[r0*(nu+1) + nu]        = rd_(m,b,l,2);
+          mm[r1*(nu+1) + 2*b + 1]  += 1.0;
+          mm[r1*(nu+1) + 2*bm + 1] += rd_(m,b,l,3);
+          mm[r1*(nu+1) + 2*bp]     += rd_(m,b,l,4);
+          mm[r1*(nu+1) + nu]        = rd_(m,b,l,5);
+        }
+        for (int c=0; c<nu; ++c) {
+          int piv = c;
+          Real best = fabs(mm[c*(nu+1) + c]);
+          for (int r=c+1; r<nu; ++r) {
+            const Real vr = fabs(mm[r*(nu+1) + c]);
+            if (vr > best) {
+              best = vr;
+              piv = r;
+            }
+          }
+          if (piv != c) {
+            for (int q=c; q<=nu; ++q) {
+              const Real tmp = mm[c*(nu+1) + q];
+              mm[c*(nu+1) + q] = mm[piv*(nu+1) + q];
+              mm[piv*(nu+1) + q] = tmp;
+            }
+          }
+          Real dg = mm[c*(nu+1) + c];
+          if (!(fabs(dg) > 0.0) || !isfinite(dg)) dg = 1.0;
+          for (int r=c+1; r<nu; ++r) {
+            const Real f = mm[r*(nu+1) + c]/dg;
+            if (f == 0.0) continue;
+            for (int q=c; q<=nu; ++q) mm[r*(nu+1) + q] -= f*mm[c*(nu+1) + q];
+          }
+        }
+        Real zz[2*NADIB];
+        for (int r=nu-1; r>=0; --r) {
+          Real acc = mm[r*(nu+1) + nu];
+          for (int q=r+1; q<nu; ++q) acc -= mm[r*(nu+1) + q]*zz[q];
+          Real dg = mm[r*(nu+1) + r];
+          if (!(fabs(dg) > 0.0) || !isfinite(dg)) dg = 1.0;
+          zz[r] = acc/dg;
+        }
+        const int b0 = ab0(m);
+        const int bm = (b0 + nb - 1)%nb, bp = (b0 + 1)%nb;
+        Real xl = zz[2*bm + 1], xr = zz[2*bp];
+        if (!isfinite(xl)) xl = 0.0;
+        if (!isfinite(xr)) xr = 0.0;
+        for (int s=ns; s<=ne; ++s) {
+          const int k = d2 ? t : s;
+          const int j = d2 ? s : t;
+          Real yv = u_(m,0,k,j,i) - xl*v_(m,0,k,j,i) - xr*w_(m,0,k,j,i);
+          if (!isfinite(yv)) yv = 0.0;
+          y_(m,0,k,j,i) = yv;
+        }
+      });
+    }
+    // ---- LOD2: the RICHARDSON COMBINATION, y = 2 y_half - y_full.  A linear combination
+    // with weights 2 - 1 = 1, so sum V y = 0 survives it exactly (both operands have it).
+    if (scm == ADISCM_LOD2 || scm == ADISCM_LOD2A) {
+      auto y_ = yy;
+      auto f_ = yf;
+      par_for("radtradirx", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        Real yv = 2.0*y_(m,0,k,j,i) - f_(m,0,k,j,i);
+        if (!isfinite(yv)) yv = 0.0;
+        y_(m,0,k,j,i) = yv;
+      });
+    }
+    ++sts_ncall;
+
+    // ---- write the increment into the energy and measure what it did to the total
+    Real esum = 0.0, eabs = 0.0, emax = 0.0;
+    {
+      auto y_ = yy;
+      Kokkos::parallel_reduce("radtradiend",
+      Kokkos::RangePolicy<>(DevExeSpace(), 0, (nmb1 + 1)*nkji_),
+      KOKKOS_LAMBDA(const int &idx, Real &ssum, Real &sabs, Real &smax) {
+        const int m = idx/nkji_;
+        const int k = (idx - m*nkji_)/nji_ + ks;
+        const int j = (idx - m*nkji_ - (k - ks)*nji_)/nx1_ + js;
+        const int i = (idx - m*nkji_ - (k - ks)*nji_ - (j - js)*nx1_) + is;
+        Real y = y_(m,0,k,j,i);
+        if (!isfinite(y)) y = 0.0;
+        u0(m,IEN,k,j,i) += y;
+        const Real dv = size.d_view(m).dx1*size.d_view(m).dx2*size.d_view(m).dx3;
+        ssum += dv*y;
+        sabs += dv*fabs(y);
+        smax = fmax(smax, fabs(y));
+      }, Kokkos::Sum<Real>(esum), Kokkos::Sum<Real>(eabs), Kokkos::Max<Real>(emax));
+    }
+#if MPI_PARALLEL_ENABLED
+    {
+      Real buf[2] = {esum, eabs};
+      MPI_Allreduce(MPI_IN_PLACE, buf, 2, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+      esum = buf[0];
+      eabs = buf[1];
+      MPI_Allreduce(MPI_IN_PLACE, &emax, 1, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+    }
+#endif
+    const Real viol = (eabs > 0.0) ? fabs(esum)/eabs : 0.0;
+    if (ang_lines < 400 && global_variable::my_rank == 0) {
+      const bool tell = rad_ang_verbose && (ang_lines < 20 || viol > 1.0e-10);
+      if (tell) {
+        ++ang_lines;
+        std::cout << "### rad_implicit_ang cycle " << pmy_pack->pmesh->ncycle
+                  << " t = " << pmy_pack->pmesh->time
+                  << ": adi " << ((scm == ADISCM_DOUGLAS) ? "douglas" :
+                                  (scm == ADISCM_LOD2) ? "lod2" :
+                                  (scm == ADISCM_LOD2A) ? "lod2a" :
+                                  (scm == ADISCM_LODN) ? "lodn" : "lod")
+                  << ", sweep pairs = " << nsb
+                  << ", theta = " << (adilod ? 1.0 : rad_adi_theta)
+                  << ", max z_i = " << zmax
+                  << ", planes active/total = " << (anyact ? (ahi - alo + 1) : 0)
+                  << "/" << nplane
+                  << ", blocks/line = " << adi_nb2 << " x " << adi_nb3
+                  << ", max |de| = " << emax
+                  << ", max |dT*|/T* = " << tshift
+                  << ", |sum V de|/sum V|de| = " << viol << std::endl;
+      }
+    }
+    return;
+  }
 
   // ---- the substage count.  R is the super-step in units of the explicit limit
   // 2/lambda_max, with 10 % of round-off margin; RKL1 with s stages covers (s^2+s)/2.

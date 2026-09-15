@@ -190,6 +190,45 @@ Conduction::Conduction(std::string block, MeshBlockPack *pp, ParameterInput *pin
       rad_tr_halo_every = pin->GetOrAddInteger(block,"rad_tr_halo_every",1);
       rad_ang_maxit = pin->GetOrAddInteger(block,"rad_ang_maxit",200);
       rad_ang_verbose = pin->GetOrAddBoolean(block,"rad_ang_verbose",false);
+      // ---- rad_ang_solver: which solver advances the transverse system.  "sts" (the
+      // default) is the RKL1 loop and leaves every path bitwise as it was; "adi" is the
+      // alternating-direction implicit step of conduction_transverse.cpp.
+      {
+        std::string asolv = pin->GetOrAddString(block,"rad_ang_solver","sts");
+        if (asolv.compare("adi") == 0) {
+          rad_ang_adi = true;
+        } else if (asolv.compare("sts") != 0) {
+          std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
+                    << std::endl << "rad_ang_solver must be sts or adi" << std::endl;
+          std::exit(EXIT_FAILURE);
+        }
+      }
+      {
+        std::string ascm = pin->GetOrAddString(block,"rad_adi_scheme","lod");
+        if (ascm.compare("douglas") == 0) {
+          rad_adi_lod = false;
+          rad_adi_scm = ADISCM_DOUGLAS;
+        } else if (ascm.compare("lod") == 0) {
+          rad_adi_scm = ADISCM_LOD;    // promoted to lodn below if rad_adi_nsub > 1
+        } else if (ascm.compare("lod2") == 0) {
+          rad_adi_scm = ADISCM_LOD2;
+        } else if (ascm.compare("lod2a") == 0) {
+          rad_adi_scm = ADISCM_LOD2A;
+        } else if (ascm.compare("lodn") == 0) {
+          rad_adi_scm = ADISCM_LODN;
+        } else {
+          std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
+                    << std::endl << "rad_adi_scheme must be lod, lod2, lod2a, lodn "
+                    << "or douglas" << std::endl;
+          std::exit(EXIT_FAILURE);
+        }
+        // lodn only; lod is lodn with one sub-step and lod2 fixes its own schedule
+        rad_adi_nsub = pin->GetOrAddInteger(block,"rad_adi_nsub",1);
+        if (rad_adi_nsub < 1) rad_adi_nsub = 1;
+        if (rad_adi_scm == ADISCM_LOD && rad_adi_nsub > 1) rad_adi_scm = ADISCM_LODN;
+        if (rad_adi_scm == ADISCM_LODN && rad_adi_nsub == 1) rad_adi_scm = ADISCM_LOD;
+      }
+      rad_adi_theta = pin->GetOrAddReal(block,"rad_adi_theta",1.0);
       // DIAGNOSTIC ONLY: the T-linearisation audit of ImplicitRadialUpdate
       rad_x1_verbose = pin->GetOrAddBoolean(block,"rad_x1_verbose",false);
       rad_x1_every = pin->GetOrAddInteger(block,"rad_x1_every",1);
@@ -403,6 +442,91 @@ Conduction::Conduction(std::string block, MeshBlockPack *pp, ParameterInput *pin
                     << std::endl;
         }
       }
+      if (rad_ang_adi) {
+        if (!rad_implicit_ang) {
+          std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
+                    << std::endl << "rad_ang_solver = adi is a solver for the transverse "
+                    << "system and needs rad_implicit_ang" << std::endl;
+          std::exit(EXIT_FAILURE);
+        }
+        if (rad_sts_all) {
+          std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
+                    << std::endl << "rad_ang_solver = adi is the TRANSVERSE operator "
+                    << "only; rad_sts_all is the unified 7-point RKL1 loop" << std::endl;
+          std::exit(EXIT_FAILURE);
+        }
+        if (rad_sts_split) {
+          std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
+                    << std::endl << "rad_sts_split is an RKL1 stability construction and "
+                    << "has no meaning for a direct solve; use rad_ang_solver = sts"
+                    << std::endl;
+          std::exit(EXIT_FAILURE);
+        }
+        if (rad_adi_lod && rad_adi_theta != 1.0) {
+          std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
+                    << std::endl << "rad_adi_theta applies to rad_adi_scheme = douglas "
+                    << "only: lod is a sequence of two backward-Euler sub-steps"
+                    << std::endl;
+          std::exit(EXIT_FAILURE);
+        }
+        if (!(rad_adi_theta > 0.0) || rad_adi_theta > 1.0) {
+          std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
+                    << std::endl << "rad_adi_theta must be in (0,1]: 1 = Douglas "
+                    << "(backward Euler), 0.5 = Peaceman-Rachford" << std::endl;
+          std::exit(EXIT_FAILURE);
+        }
+        // the plane skip needs a local i to BE a global plane
+        if (pp->pmesh->mb_indcs.nx1 != pp->pmesh->mesh_indcs.nx1) {
+          std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
+                    << std::endl << "rad_ang_solver = adi needs the whole x1 extent in "
+                    << "one MeshBlock: <meshblock>/nx1 = " << pp->pmesh->mb_indcs.nx1
+                    << " but <mesh>/nx1 = " << pp->pmesh->mesh_indcs.nx1 << std::endl;
+          std::exit(EXIT_FAILURE);
+        }
+        // the blocks a line crosses, per direction, and the periodicity the ring gather
+        // needs when there is more than one of them
+        adi_nb2 = pp->pmesh->mesh_indcs.nx2/pp->pmesh->mb_indcs.nx2;
+        adi_nb3 = pp->pmesh->three_d ?
+                  (pp->pmesh->mesh_indcs.nx3/pp->pmesh->mb_indcs.nx3) : 1;
+        if (adi_nb2 > NADIB || adi_nb3 > NADIB) {
+          std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
+                    << std::endl << "rad_ang_solver = adi: at most " << NADIB
+                    << " MeshBlocks along a line (the reduced system is 2 per block); "
+                    << "have " << adi_nb2 << " in x2 and " << adi_nb3 << " in x3"
+                    << std::endl;
+          std::exit(EXIT_FAILURE);
+        }
+        const bool per2 = (pp->pmesh->mesh_bcs[BoundaryFace::inner_x2] ==
+                           BoundaryFlag::periodic);
+        const bool per3 = (pp->pmesh->mesh_bcs[BoundaryFace::inner_x3] ==
+                           BoundaryFlag::periodic);
+        if ((adi_nb2 > 1 && !per2) || (adi_nb3 > 1 && !per3)) {
+          std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
+                    << std::endl << "rad_ang_solver = adi: a direction split over more "
+                    << "than one MeshBlock must be PERIODIC (the interface gather walks "
+                    << "a closed ring of blocks)" << std::endl;
+          std::exit(EXIT_FAILURE);
+        }
+        if (rad_tr_halo_every > 1 && global_variable::my_rank == 0) {
+          std::cout << "### WARNING: rad_tr_halo_every is IGNORED under "
+                    << "rad_ang_solver = adi -- the ADI step has no substage recurrence"
+                    << std::endl;
+        }
+        if (global_variable::my_rank == 0) {
+          const char *snm = (rad_adi_scm == ADISCM_DOUGLAS) ? "douglas" :
+                            (rad_adi_scm == ADISCM_LOD2) ? "lod2" :
+                            (rad_adi_scm == ADISCM_LOD2A) ? "lod2a" :
+                            (rad_adi_scm == ADISCM_LODN) ? "lodn" : "lod";
+          const int npair = (rad_adi_scm == ADISCM_LOD2 ||
+                             rad_adi_scm == ADISCM_LOD2A) ? 3 :
+                            ((rad_adi_scm == ADISCM_LODN) ? rad_adi_nsub : 1);
+          std::cout << "Conduction: transverse solver = ADI (" << snm << ", theta = "
+                    << (rad_adi_lod ? 1.0 : rad_adi_theta)
+                    << ", sweep pairs/stage = " << npair
+                    << "), blocks per line = " << adi_nb2 << " (x2), "
+                    << adi_nb3 << " (x3)" << std::endl;
+        }
+      }
       if (rad_sts_perplane) {
         if (!rad_implicit_ang) {
           std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
@@ -463,7 +587,7 @@ Conduction::Conduction(std::string block, MeshBlockPack *pp, ParameterInput *pin
           sts_blk_used = true;
         }
         if (rad_implicit_ang) {
-          if (rad_sts_perplane) {
+          if (rad_sts_perplane || rad_ang_adi) {
             Kokkos::realloc(tr_zpl, indcs.nx1);
             Kokkos::realloc(tr_spl, indcs.nx1);
             Kokkos::realloc(tr_w1pl, indcs.nx1);
@@ -475,6 +599,28 @@ Conduction::Conduction(std::string block, MeshBlockPack *pp, ParameterInput *pin
           Kokkos::realloc(tr_ya, nmb, 1, ncells3, ncells2, ncells1);
           Kokkos::realloc(tr_yb, nmb, 1, ncells3, ncells2, ncells1);
           Kokkos::realloc(tr_yc, nmb, 1, ncells3, ncells2, ncells1);
+          // the second spike, the Thomas scratch, the per-line interface coefficients
+          // and the two small per-plane / per-block index arrays of the ADI path
+          if (rad_ang_adi) {
+            Kokkos::realloc(tr_aw, nmb, 1, ncells3, ncells2, ncells1);
+            // the Richardson register: only lod2 keeps a second answer alive
+            if (rad_adi_scm == ADISCM_LOD2 || rad_adi_scm == ADISCM_LOD2A) {
+              Kokkos::realloc(tr_yf, nmb, 1, ncells3, ncells2, ncells1);
+            }
+            Kokkos::realloc(tr_acp, nmb, 1, ncells3, ncells2, ncells1);
+            const int nbm = (adi_nb2 > adi_nb3) ? adi_nb2 : adi_nb3;
+            const int nt = (indcs.nx2 > indcs.nx3) ? indcs.nx2 : indcs.nx3;
+            adi_nlmax = nt*indcs.nx1;
+            Kokkos::realloc(tr_ared, nmb, nbm, adi_nlmax, 6);
+            Kokkos::realloc(tr_aact, indcs.nx1);
+            Kokkos::realloc(tr_aact_h, indcs.nx1);
+            Kokkos::realloc(tr_ab0, nmb);
+            Kokkos::realloc(tr_ab0_h, nmb);
+#if MPI_PARALLEL_ENABLED
+            MPI_Comm_dup(MPI_COMM_WORLD, &adi_comm);
+            adi_comm_set = true;
+#endif
+          }
           // the coarse register every MeshBoundaryValuesCC call takes.  Never used
           // (SMR/AMR is refused above) but it has to exist and be the right shape.
           const int cc1 = indcs.cnx1 + 2*(indcs.ng);
@@ -534,6 +680,9 @@ Conduction::~Conduction() {
               << (static_cast<double>(sts_nsub_tot)/static_cast<double>(sts_ncall))
               << " per call" << std::endl;
   }
+#if MPI_PARALLEL_ENABLED
+  if (adi_comm_set) MPI_Comm_free(&adi_comm);
+#endif
   if (pbval_tr != nullptr) delete pbval_tr;
 }
 

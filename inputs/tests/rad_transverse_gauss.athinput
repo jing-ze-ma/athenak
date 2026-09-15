@@ -74,6 +74,13 @@ rad_sts_margin   = 0.10
 # rad_sts_perplane gives every x1 plane its own RKL1 substage count; with a state
 # uniform in x1 every plane gets the same one and the result is BITWISE unchanged.
 rad_sts_perplane = false
+# rad_ang_solver selects the transverse solver: sts (the RKL1 loop, the default) or adi
+# (one alternating-direction implicit step over the stage).  rad_adi_theta is the Douglas
+# weight: 1 = backward Euler, 0.5 = Peaceman-Rachford.
+rad_ang_solver   = sts
+rad_adi_scheme   = lod
+rad_adi_nsub     = 1
+rad_adi_theta    = 1.0
 rad_ang_verbose  = true
 
 <units>

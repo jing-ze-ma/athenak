@@ -12,6 +12,10 @@
 #include <cstdint>
 #include <string>
 
+#if MPI_PARALLEL_ENABLED
+#include <mpi.h>
+#endif
+
 #include "athena.hpp"
 #include "parameter_input.hpp"
 
@@ -320,6 +324,86 @@ class Conduction {
   DvceArray5D<Real> tr_ya, tr_yb, tr_yc, tr_ycoar;
   MeshBoundaryValuesCC *pbval_tr = nullptr;
   int ang_lines = 0;
+  // ---- rad_ang_solver (<hydro>/ or <mhd>/rad_ang_solver, "sts" by default): WHICH
+  // solver advances the transverse system.  "sts" is the RKL1 super-time-stepping loop
+  // and is the default, so the switch is bitwise inert unless it is set.  "adi" is an
+  // ALTERNATING-DIRECTION IMPLICIT step: the SAME frozen coefficients, the SAME flux-form
+  // 5-point stencil and the SAME conservation check, but the linear ODE
+  //     dy/dt = b + A y,   A = A2 + A3 (the x2 and the x3 faces),   y(0) = 0
+  // is advanced over the whole stage tau = beta_dt in ONE step, by the Douglas scheme
+  //     (I - theta tau A2) Y1 = tau b,      (I - theta tau A3) y = Y1,
+  // i.e. two tridiagonal LINE solves instead of s explicit substages.  Its product form
+  // is (I - theta tau A2)(I - theta tau A3) y = tau b, so theta = 1 is backward Euler up
+  // to the O(tau^2 A2 A3) splitting term (unconditionally stable, damping in the stiff
+  // limit) and theta = 0.5 is the Peaceman-Rachford / Crank-Nicolson variant, second
+  // order in tau.  <hydro>/rad_adi_theta selects it; 1.0 is the default.
+  //
+  // COST.  Two line solves and NO cell halo exchange at all: the only communication is
+  // the T*/alpha refresh exchange the operator already does, the Gershgorin Allreduce,
+  // and one tiny ring gather of interface coefficients per sweep.  RKL1 pays one stencil
+  // + one halo per substage, and s grows as the square root of the stiffness.
+  //
+  // THE LINE SOLVE CROSSES MeshBlocks AND RANKS -- a line along x2 runs through all
+  // nblk2 = <mesh>/nx2 / <meshblock>/nx2 blocks of its row, periodically.  It is solved
+  // by PARTITION (the SPIKE / reduced-system pattern of the mode-3 column partition in
+  // utils/two_stream_column_partition.hpp): each block runs Thomas on the INTERIOR of its
+  // own piece of the line for three right-hand sides -- the data, and the two unit
+  // vectors on its first and last row -- which gives its two interface unknowns as an
+  // affine function of its two neighbours' facing interface unknowns.  Those 6 numbers
+  // per line are gathered around the ring of blocks (nblk-1 rounds of a neighbour shift,
+  // a device copy when the neighbour is on this rank and an MPI message when it is not),
+  // the resulting 2*nblk reduced system is solved REDUNDANTLY and in one canonical
+  // (absolute-block-index) order on every block of the ring -- so all of them get
+  // bitwise-identical interface values -- and each block back-substitutes locally.
+  //
+  // WHAT IS REFUSED: rad_sts_split (an RKL1 stability construction with no meaning for
+  // a direct solve) and rad_sts_all (ADI is the transverse operator only).  A direction
+  // decomposed into more than one MeshBlock must be PERIODIC (an open chain of blocks
+  // would need a second gather pass that is not implemented).  rad_tr_halo_every is
+  // IGNORED with a warning: there is no substage recurrence whose ghost skin it could run
+  // down.  rad_sts_once is orthogonal and works unchanged.
+  bool rad_ang_adi = false;
+  // rad_adi_scheme (lod | douglas, "lod" by default): WHICH splitting the two sweeps
+  // implement.  See the long note at the right-hand side in conduction_transverse.cpp:
+  // douglas is the textbook theta-weighted scheme and is NOT stiffly accurate (it relaxes
+  // a mode stiff in both transverse directions by only ~2/(tau|lambda|) of what it
+  // should, which killed the B-star box at cycle 3411), lod is the sequential
+  // backward-Euler splitting, which is.  rad_adi_theta applies to douglas only.
+  //
+  // lod is only FIRST order, and under-damps a moderately stiff mode (1/(1+z) against
+  // the exact e^-z): on the Gaussian test its L1 is 5.6x RKL1's at 32^2 and on the B-star
+  // gate box dT_tau10/dT_tau1 come out 7-8x RKL1's.  Two more values fix that, both of
+  // them sequences of the SAME lod sub-step (same sweeps, same plane skip, same
+  // partitioned line solve), only over different intervals:
+  //   lodn  -- rad_adi_nsub sub-steps of tau/N, sweep order alternating between them.
+  //            The brute-force fallback; amplification 1/(1+z/N)^N.
+  //   lod2  -- RICHARDSON extrapolation in the step size: y = 2 LOD(tau/2)^2 - LOD(tau),
+  //            the two half-steps taken with the sweep order alternated.  SECOND order,
+  //            and still L-stable: R(z) = 2/(1+z/2)^2 - 1/(1+z) -> 0 as z -> infinity and
+  //            |R| <= 1 on z >= 0.  THREE sweep pairs per stage and TWO factorisation
+  //            sets (tau and tau/2 share nothing), i.e. ~3x the lod cost.
+  // See the long note at the schemes in conduction_transverse.cpp.
+  static constexpr int ADISCM_DOUGLAS = 0;
+  static constexpr int ADISCM_LOD = 1;
+  static constexpr int ADISCM_LOD2 = 2;
+  static constexpr int ADISCM_LODN = 3;
+  static constexpr int ADISCM_LOD2A = 4;   // lod2 with the half-step order alternated
+  bool rad_adi_lod = true;             // every scheme but douglas
+  int rad_adi_scm = ADISCM_LOD;
+  int rad_adi_nsub = 1;                // lodn only: sub-steps per stage
+  Real rad_adi_theta = 1.0;
+  static constexpr int NADIB = 8;      // ceiling on blocks per line (reduced size 2*N)
+  DvceArray5D<Real> tr_aw, tr_acp;     // the second spike, and the Thomas scratch
+  DvceArray5D<Real> tr_yf;             // lod2 only: the full-step answer for Richardson
+  DvceArray4D<Real> tr_ared;           // (m, block, line, 6): the interface coefficients
+  DvceArray1D<int> tr_aact, tr_ab0;    // per plane: active?  per block: its ring index
+  HostArray1D<int> tr_aact_h, tr_ab0_h;
+  int adi_nb2 = 1, adi_nb3 = 1;        // blocks along a line, per direction
+  int adi_nlmax = 1;
+#if MPI_PARALLEL_ENABLED
+  MPI_Comm adi_comm;                   // its own communicator for the ring gather
+  bool adi_comm_set = false;
+#endif
   void ImplicitTransverseUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
                                 const Real beta_dt);
   // rad_sts_all (<hydro>/ or <mhd>/rad_sts_all, default false): ONE super-time-stepped
