@@ -117,6 +117,61 @@
 //!                 vdamp sponge.  The box is then NOT closed: mass and energy leave
 //!                 through x1max, which is the intended physics for a lid that is
 //!                 pushed out by a near-Eddington flux.
+//!   bc_mode_bot   the INNER x1 (bottom) wall on its own.  -1 (DEFAULT) = whatever
+//!                 bc_mode says, i.e. today's behaviour, bitwise.  5 = an INFLOW
+//!                 bottom, the companion of the open top: with bc_mode_top = 4 the
+//!                 box SHEDS mass (the He column loses several per cent of its mass
+//!                 per turnover once its vertical pulsation grows), and a closed
+//!                 bottom cannot replenish it, so the run can never reach a
+//!                 statistical steady state.  The ghost then carries
+//!                   rho_g, T_g = the INITIAL (relaxed) COLUMN at the ghost's own
+//!                                height -- the same values bc_mode 0 lays down and
+//!                                bc_mode 3 falls back to -- with
+//!                                e_g = eos.EnergyFromTemperature(rho_g, T_g)
+//!                 and the wall itself stays IMPERMEABLE (the velocity is mirrored and
+//!                 wall_noflux still cancels the wall-face mass and energy flux): the
+//!                 inflow does NOT come through the wall face.  It is added instead as
+//!                 an EXACT SOURCE in the cell against the wall -- rho_base v_in of
+//!                 mass, rho_base v_in^2 of momentum and rho_base v_in h_base of energy
+//!                 per unit area and time, h_base = (e+p)/rho + v_in^2/2 of the base
+//!                 state -- so the box mass follows the controller exactly.  Handing
+//!                 the bottom face to its own Riemann flux instead was TRIED and is a
+//!                 DRAIN, not an inflow: an uncancelled wall face in this stratification
+//!                 carries a one-signed acoustic mass flux that took the He column to
+//!                 0.32 M0 in 50 s, ~300x the loss the open top makes.
+//!                 v_in is set by a MASS-DEFICIT CONTROLLER,
+//!                   v_in = min(bc_inflow_vmax,
+//!                              max(0, (M0 - M(t))/(rho_base A tau_in))),
+//!                 with M(t) the box mass (a global reduction over the active cells
+//!                 of u0, done ONCE PER CYCLE), M0 the initial mass, A the horizontal
+//!                 area, rho_base the initial column density at x1min and
+//!                 tau_in = problem/bc_inflow_time.  The controller is proportional,
+//!                 so a box losing mass at a steady rate Mdot settles at a deficit
+//!                 Mdot*tau_in rather than at zero deficit; tau_in is the knob.
+//!                 M0 is NOT carried in the restart file: it is recomputed at every
+//!                 start as the exact sum over the active cells of the same initial
+//!                 column interpolation the IC kernel uses, which is deterministic
+//!                 (host-side, no MPI) and identical on a restart.
+//!                 Everything else at the bottom is untouched: the imposed luminosity
+//!                 still enters exactly as it did, through the two-stream's lower
+//!                 boundary (rt_bottom_flux) or as <hydro>/rad_flux_inner in that same
+//!                 face's energy channel.
+//!   bc_inflow_ghost  false (DEFAULT) = the bottom ghost follows bc_mode (the WB
+//!                 continuation of the evolved interior) and only the INJECTED mass
+//!                 carries the base state; true = the ghost itself is the base state.
+//!                 MEASURED: true is a real perturbation, because the wall-face
+//!                 MOMENTUM flux is deliberately not cancelled and a frozen-column
+//!                 ghost therefore pushes on the wall cell.  On the 1-D B-star column
+//!                 (which loses no mass at all through the open top, so the controller
+//!                 is idle) the base-state ghost drove E/E0 to 1.40 and Ftop/Fbot to
+//!                 1.67 in 3.9e3 s, while the bc_mode ghost reproduced the closed-
+//!                 bottom control to 6 digits; on the He column it moved Ftop/Fbot from
+//!                 0.9995 to 1.021.
+//!   bc_inflow_time  tau_in [code time] of that controller; <= 0 -> one turnover
+//!                 H_p(base)/v*, which is what the startup line prints.
+//!   bc_inflow_vmax  the cap on v_in [code velocity]; <= 0 -> 0.1 c_s(base).
+//!   bc_inflow_print  print the controller state (cycle, t, v_in, M/M0) every N
+//!                 cycles; default 100, 0 = off.
 //!   wall_walk_maxfac  the slack in that test (default 100).
 //!   wall_noflux   cancel the wall-face mass (and energy) flux after each stage.
 //!                 Defaults to true under bc_mode 3 and false otherwise.  When a
@@ -253,6 +308,20 @@ int nfine_ = 0, bc_mode_ = 2;
 // problem/bc_mode_top (default -1 = the same wall as bc_mode).  The only extra
 // value is 4: an OPEN (outflow) top.  See the header block.
 int bc_mode_top_ = -1;
+// problem/bc_mode_bot (default -1 = the same wall as bc_mode).  The only extra value
+// is 5: an INFLOW bottom driven by the mass-deficit controller.  See the header block.
+int bc_mode_bot_ = -1;
+Real inflow_tau_ = 0.0;      // tau_in
+Real inflow_vmax_ = 0.0;     // the cap on v_in
+Real inflow_mass0_ = 0.0;    // M0, recomputed from the initial column at every start
+Real inflow_area_ = 0.0;     // A, the mesh's horizontal area
+Real inflow_rhob_ = 0.0;     // rho_base, the initial column density at x1min
+Real inflow_vin_ = 0.0;      // the current v_in
+Real inflow_mnow_ = 0.0;     // the current box mass
+int inflow_cyc_ = -1;        // the cycle the controller was last updated on
+int inflow_print_n_ = 100;   // print cadence in cycles; 0 = off
+Real inflow_eb_ = 0.0, inflow_pb_ = 0.0;   // the base state's eint and pressure
+bool inflow_ghost_ = false;  // bottom ghost = the base state (false: follow bc_mode)
 bool etotgrav_ = false;
 bool wall_noflux_ = false;   // cancel the wall-face flux after each stage (bc_mode 3)
 Real wall_walk_maxfac_ = 100.0;   // how far the bc_mode-3 walk may depart from the column
@@ -381,6 +450,40 @@ void BoxConvBoxInt(Mesh *pm, Real &etot, Real &erad) {
 #endif
   etot = se; erad = sr;
   return;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn Real BoxConvMassInt
+//! \brief the box mass over the ACTIVE cells, summed over ranks.  The bottom-inflow
+//! controller's M(t); called ONCE PER CYCLE, from the first boundary call of the cycle.
+
+Real BoxConvMassInt(Mesh *pm) {
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, js = indcs.js, ks = indcs.ks;
+  const int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
+  const int ncell = pmbp->nmb_thispack*nx3*nx2*nx1;
+  auto &size = pmbp->pmb->mb_size;
+  auto &u0 = pmbp->phydro->u0;
+  Real sm = 0.0;
+  Kokkos::parallel_reduce("boxconv_mint",
+  Kokkos::RangePolicy<>(DevExeSpace(), 0, ncell),
+  KOKKOS_LAMBDA(const int idx, Real &lm) {
+    const int m = idx/(nx3*nx2*nx1);
+    int r = idx - m*(nx3*nx2*nx1);
+    const int k = ks + r/(nx2*nx1);
+    r -= (r/(nx2*nx1))*(nx2*nx1);
+    const int j = js + r/nx1;
+    const int i = is + (r - (r/nx1)*nx1);
+    lm += u0(m,IDN,k,j,i)*size.d_view(m).dx1*size.d_view(m).dx2*size.d_view(m).dx3;
+  }, sm);
+  Kokkos::fence();
+#if MPI_PARALLEL_ENABLED
+  Real snd = sm, rcv;
+  MPI_Allreduce(&snd, &rcv, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+  sm = rcv;
+#endif
+  return sm;
 }
 
 //----------------------------------------------------------------------------------------
@@ -696,6 +799,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
               << " (follow bc_mode) or 0-4" << std::endl;
     std::exit(EXIT_FAILURE);
   }
+  bc_mode_bot_ = pin->GetOrAddInteger("problem", "bc_mode_bot", -1);
+  if (bc_mode_bot_ < -1 || bc_mode_bot_ > 5 || bc_mode_bot_ == 4) {
+    std::cout << "### FATAL ERROR in box_convection: problem/bc_mode_bot must be -1"
+              << " (follow bc_mode), 0-3, or 5 (inflow)" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
   wall_noflux_ = pin->GetOrAddBoolean("problem", "wall_noflux", (bc_mode_ == 3));
   wall_walk_maxfac_ = pin->GetOrAddReal("problem", "wall_walk_maxfac", 100.0);
   diff_flux_ = (pmbp->phydro->pcond != nullptr) || (pmbp->phydro->pvisc != nullptr);
@@ -851,6 +960,41 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   const Real vstar = (fin > 0.0) ? std::cbrt(fin/rho_b) : cs0;
   const Real tturn = hp0/vstar;
   Real cdep = pin->GetOrAddReal("problem", "cool_depth", -1.0);
+  // --- THE BOTTOM-INFLOW CONTROLLER'S CONSTANTS (bc_mode_bot = 5) -------------------
+  // M0 is recomputed here at EVERY start, restart included: it is the exact sum over
+  // the active cells of the very column interpolation the IC kernel evaluates at each
+  // cell centre (the x1 grid is uniform and every column is identical, so the sum is
+  // one host-side loop over the mesh's nx1), which makes it deterministic and free of
+  // any need to carry it in the restart file.
+  inflow_tau_ = pin->GetOrAddReal("problem", "bc_inflow_time", -1.0);
+  if (inflow_tau_ <= 0.0) inflow_tau_ = tturn;
+  inflow_vmax_ = pin->GetOrAddReal("problem", "bc_inflow_vmax", -1.0);
+  if (inflow_vmax_ <= 0.0) inflow_vmax_ = 0.1*cs0;
+  inflow_print_n_ = pin->GetOrAddInteger("problem", "bc_inflow_print", 100);
+  inflow_ghost_ = pin->GetOrAddBoolean("problem", "bc_inflow_ghost", false);
+  inflow_area_ = (pmy_mesh_->mesh_size.x2max - pmy_mesh_->mesh_size.x2min)
+                *(pmy_mesh_->mesh_size.x3max - pmy_mesh_->mesh_size.x3min);
+  {
+    const int nx1m = pmy_mesh_->mesh_indcs.nx1;
+    const Real dz1 = (zmax - zmin)/static_cast<Real>(nx1m);
+    Real msum = 0.0;
+    for (int ic=0; ic<nx1m; ++ic) {
+      const Real zc = zmin + (static_cast<Real>(ic) + 0.5)*dz1;
+      Real sc = (zc - zlo)/dzf;
+      int ii = static_cast<int>(sc);
+      ii = (ii < 0) ? 0 : ((ii > nfine-2) ? nfine-2 : ii);
+      const Real fc = sc - ii;
+      msum += cd.h_view(ii)*(1.0 - fc) + cd.h_view(ii+1)*fc;
+    }
+    inflow_mass0_ = msum*dz1*inflow_area_;
+    Real sb = (zmin - zlo)/dzf;
+    int ib = static_cast<int>(sb);
+    ib = (ib < 0) ? 0 : ((ib > nfine-2) ? nfine-2 : ib);
+    const Real fb = sb - ib;
+    inflow_rhob_ = cd.h_view(ib)*(1.0 - fb) + cd.h_view(ib+1)*fb;
+    inflow_eb_ = ce.h_view(ib)*(1.0 - fb) + ce.h_view(ib+1)*fb;
+    inflow_pb_ = cp.h_view(ib)*(1.0 - fb) + cp.h_view(ib+1)*fb;
+  }
   if (cdep < 0.0) cdep = 0.3*hp0;
   Real ctau = pin->GetOrAddReal("problem", "cool_tau", -1.0);
   if (ctau < 0.0) ctau = 0.1*tturn;
@@ -1286,6 +1430,22 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                     " no top-face flux cancellation)"
                   : "");
     }
+    if (bc_mode_bot_ >= 0) {
+      std::printf("  x1 BOTTOM wall overridden: bc_mode_bot = %d%s\n", bc_mode_bot_,
+                  (bc_mode_bot_ == 5)
+                  ? " = INFLOW (base-state ghost under bc_inflow_ghost, wall still"
+                    " impermeable, v_in injected as a source in the wall cell)"
+                  : "");
+    }
+    if (bc_mode_bot_ == 5) {
+      std::printf("  bottom inflow controller: M0 = %.8e (A = %.5e, rho_base = %.5e),"
+                  " tau_in = %.5e s = %.4f turnover, v_in <= %.5e cm/s = %.4f c_s,"
+                  " e_base = %.5e, p_base = %.5e, ghost = %s, print every %d cycles\n",
+                  inflow_mass0_, inflow_area_, inflow_rhob_,
+                  inflow_tau_, inflow_tau_/tturn, inflow_vmax_, inflow_vmax_/cs0,
+                  inflow_eb_, inflow_pb_,
+                  inflow_ghost_ ? "base state" : "bc_mode", inflow_print_n_);
+    }
     if (pc != nullptr) {
       std::printf("  rad_kappa_fac = %.5e (conductivity is 1/rad_kappa_fac x physical)\n",
                   pc->rad_kappa_fac);
@@ -1635,6 +1795,37 @@ void BoxConvSrcs(Mesh *pm, Real bdt) {
     });
   }
 
+  // --- THE BOTTOM INFLOW (bc_mode_bot = 5).  The wall-face cancellation above STAYS:
+  // an uncancelled wall face in a stratified box is not a small leak but a drain (the
+  // He column ran down to 0.32 M0 in 50 s when the bottom face was left to its own
+  // Riemann flux -- ~300x the mass loss the open top makes).  So the wall stays
+  // impermeable and the inflow is added here as an EXACT source in the cell against the
+  // bottom wall: per unit area and time it is rho_base v_in of mass, rho_base v_in^2 of
+  // momentum and rho_base v_in h_base of energy, with h_base the RELAXED BASE STATE's
+  // specific enthalpy (e + p)/rho + v_in^2/2 from the initial column at x1min.  The box
+  // mass then follows the controller exactly, and the imposed luminosity -- which lives
+  // in the same face's ENERGY channel, or under rt_bottom_flux in the two-stream's own
+  // lower boundary -- is untouched.
+  if (bc_mode_bot_ == 5 && inflow_vin_ > 0.0) {
+    auto &mb_bcs_i = pmbp->pmb->mb_bcs;
+    const Real vin = inflow_vin_;
+    const Real db = inflow_rhob_, eb = inflow_eb_, pb = inflow_pb_;
+    const Real hb = (db > 0.0) ? ((eb + pb)/db + 0.5*vin*vin) : 0.0;
+    const Real zmn = zmin_;
+    par_for("boxconv_inflow", DevExeSpace(), 0, nmb1, ks, ke, js, je,
+    KOKKOS_LAMBDA(const int m, const int k, const int j) {
+      if (mb_bcs_i.d_view(m,BoundaryFace::inner_x1) != BoundaryFlag::user) return;
+      const Real x1min = size.d_view(m).x1min, x1max = size.d_view(m).x1max;
+      const Real idz = indcs.nx1/(x1max - x1min);
+      const Real dm = db*vin*bdt*idz;
+      Real de = dm*hb;
+      if (etotgrav) de += dm*g0*(CellCenterX(0, indcs.nx1, x1min, x1max) - zmn);
+      u0(m,IDN,k,j,is) += dm;
+      u0(m,IM1,k,j,is) += dm*vin;
+      u0(m,IEN,k,j,is) += de;
+    });
+  }
+
   if (bud_on) {
     Real e3, r3;
     BoxConvBoxInt(pm, e3, r3);
@@ -1798,9 +1989,35 @@ void BoxConvBC(Mesh *pm) {
   const int nfine = nfine_;
   const bool etotgrav = etotgrav_;
   auto cd_d = cd_, ce_d = ce_;
-  const int bcm = bc_mode_;
   // the TOP wall may run a different mode; -1 means "the same as bc_mode"
   const int bcm_top = (bc_mode_top_ >= 0) ? bc_mode_top_ : bc_mode_;
+  const int bcm_bot = (bc_mode_bot_ == 5) ? (inflow_ghost_ ? 5 : bc_mode_)
+                    : ((bc_mode_bot_ >= 0) ? bc_mode_bot_ : bc_mode_);
+  auto ct_d = ct_;
+  // --- THE BOTTOM-INFLOW CONTROLLER.  One global reduction per CYCLE (not per stage:
+  // this function is called once per stage on every rank, and pm->ncycle does not move
+  // between the stages of a cycle), so v_in is a constant of the cycle.  Every rank
+  // reaches this the same number of times, which is what the Allreduce needs.
+  // gated on bc_mode_bot_, NOT on bcm_bot: under bc_inflow_ghost = false the ghost
+  // follows bc_mode and bcm_bot is not 5, but the controller must still run
+  if (bc_mode_bot_ == 5) {
+    if (pm->ncycle != inflow_cyc_) {
+      inflow_cyc_ = pm->ncycle;
+      inflow_mnow_ = BoxConvMassInt(pm);
+      Real vin_new = (inflow_mass0_ - inflow_mnow_)
+                     /(inflow_rhob_*inflow_area_*inflow_tau_);
+      if (!(vin_new > 0.0)) vin_new = 0.0;
+      if (vin_new > inflow_vmax_) vin_new = inflow_vmax_;
+      inflow_vin_ = vin_new;
+      if (inflow_print_n_ > 0 && global_variable::my_rank == 0
+          && (pm->ncycle % inflow_print_n_ == 0)) {
+        std::printf("boxconv inflow: cycle %d  t %.6e  v_in %.6e  M/M0 %.8f\n",
+                    pm->ncycle, pm->time, inflow_vin_,
+                    (inflow_mass0_ > 0.0) ? inflow_mnow_/inflow_mass0_ : 0.0);
+        std::fflush(stdout);
+      }
+    }
+  }
   auto eos = pmbp->phydro->peos->eos_data;
   const WBOption wbo = pmbp->phydro->wb_option;
   const Real wfac = wall_walk_maxfac_;
@@ -1868,6 +2085,24 @@ void BoxConvBC(Mesh *pm) {
       d = (dgh > dfl) ? dgh : dfl;
       const Real efl4 = eos.EnergyFloorBound(d);
       e = (egh > efl4) ? egh : efl4;
+    } else if (bcmode == 5) {
+      // THE INFLOW BOTTOM.  The ghost is the RELAXED BASE STATE: the initial column at
+      // the ghost's OWN height -- the same interpolation bc_mode 0 lays down and the
+      // bc_mode-3 walk falls back to -- with the energy rebuilt from the column's
+      // TEMPERATURE through the EOS, so the ghost sits on the EOS whatever the table's
+      // radiation taper does to e(rho,T).  The velocity is set below.
+      Real sg5 = (zg - zlo)/dzf;
+      int ig5 = static_cast<int>(sg5);
+      ig5 = (ig5 < 0) ? 0 : ((ig5 > nfine-2) ? nfine-2 : ig5);
+      const Real fg5 = sg5 - ig5;
+      const Real dg5 = cd_d(ig5)*(1.0 - fg5) + cd_d(ig5+1)*fg5;
+      const Real eg5 = ce_d(ig5)*(1.0 - fg5) + ce_d(ig5+1)*fg5;
+      const Real tg5 = ct_d(ig5)*(1.0 - fg5) + ct_d(ig5+1)*fg5;
+      d = (dg5 > dfl) ? dg5 : dfl;
+      Real e5 = eos.EnergyFromTemperature(d, tg5);
+      if (!(Kokkos::isfinite(e5) && (e5 > 0.0))) e5 = eg5;
+      const Real efl5 = eos.EnergyFloorBound(d);
+      e = (e5 > efl5) ? e5 : efl5;
     } else if (bcmode == 1) {
       state_i(m, k, j, km, jm, im, d, e);
     } else if (bcmode == 3) {
@@ -1964,8 +2199,10 @@ void BoxConvBC(Mesh *pm) {
     }
     const Real dm_i = u0(m,IDN,km,jm,im);
     const Real idm = (dm_i > 0.0) ? (1.0/dm_i) : 0.0;
-    // the outflow top copies v1 and refuses inflow; every other mode mirrors it
     const Real v1r = u0(m,IM1,km,jm,im)*idm;
+    // the outflow top copies v1 and refuses inflow; every other mode -- the inflow
+    // bottom included, whose mass enters as a source and not through the wall face --
+    // mirrors it, which is what keeps the wall-face Riemann problem symmetric
     const Real v1 = (bcmode == 4) ? ((v1r > 0.0) ? v1r : 0.0) : (-v1r);
     const Real v2 = u0(m,IM2,km,jm,im)*idm;
     const Real v3 = u0(m,IM3,km,jm,im)*idm;
@@ -1985,7 +2222,7 @@ void BoxConvBC(Mesh *pm) {
   par_for("boxconv_bc_x1", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1, 0, ng-1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int n) {
     if (mb_bcs.d_view(m,BoundaryFace::inner_x1) == BoundaryFlag::user) {
-      fill(m, k, j, is-1-n, k, j, is+n, bcm);
+      fill(m, k, j, is-1-n, k, j, is+n, bcm_bot);
     }
     if (mb_bcs.d_view(m,BoundaryFace::outer_x1) == BoundaryFlag::user) {
       // under the open top EVERY ghost layer continues the SAME cell (ie); the other
