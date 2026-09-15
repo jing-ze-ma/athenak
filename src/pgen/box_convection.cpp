@@ -1161,6 +1161,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       }
     }
     ts::rt_impl_redpar = pin->GetOrAddBoolean("problem", "rt_impl_redpar", false);
+    ts::rt_col3_hybrid_tau = pin->GetOrAddReal("problem", "rt_col3_hybrid_tau", 0.0);
     ts::rt_impl_nseg = pin->GetOrAddInteger("problem", "rt_impl_nseg", 64);
     if (ts::rt_impl_nseg < 1) {
       std::cout << "### FATAL ERROR in box_convection: problem/rt_impl_nseg must be >= 1"

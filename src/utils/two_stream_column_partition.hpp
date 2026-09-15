@@ -40,6 +40,21 @@
 //! cycle) and differ at O(clamp) when it is not.  The Newton FIXED POINT is the same
 //! either way: at convergence db -> 0 and no clamp fires.
 //!
+//! THE HYBRID (<problem>/rt_col3_hybrid_tau) IS IMPLEMENTED HERE.  On the same equal
+//! partition, a segment is DEEP if its top cell lies below the interface isp (every cell
+//! a scalar diffusion row: one unknown, one divide, no 5x5 inverse), THIN if its bottom
+//! cell lies at or above isp, and the one segment that straddles isp carries the SPLICE
+//! -- the 5x1 interface column into the thin row and the 1x3 interface row on the deep
+//! top face -- inside its own lane's recurrence, exactly as the serial hybrid forms it.
+//! The reduced system over the segment boundaries then has MIXED block sizes (1 for a
+//! deep boundary, 5 for a thin one); it is carried as 5x5 rows with the deep ones PADDED
+//! by a unit diagonal on the four dead components.  That padding is exact -- those
+//! components' right-hand sides and off-diagonal rows are identically zero, so they
+//! solve to zero -- and it leaves BOTH reduced solvers (the serial block Thomas and the
+//! PCR of rt_impl_redpar) untouched.  It wastes one 5x5 inverse per deep segment, nsg of
+//! them against nc cells, while every deep CELL drops from a 5x5 assembly plus inverse
+//! to a single divide.
+//!
 //! NOT IMPLEMENTED HERE: the rt_outer_verbose per-cell assembly dump (rt_col3_it /
 //! rt_col3_flux / rt_col3_cell).  It is a cycle-0 debugging aid; run rt_impl_solver =
 //! thomas to get it.
@@ -75,10 +90,14 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
   if (ic > ie) return;                        // nothing radiative in this column
   const int nc = ie - ic + 1;
   const int nsg = (c.nseg < nc) ? c.nseg : nc;
-
   // per-cell slots: the serial solver's layout, then H and the sweep factors
   const int G0 = 0, DP = 15, EE = 20, CI = 22, CO = 24, BB = 26, DD = 27, UU = 29,
             EX = 31, SA = 32, ES = 34, HH = 35, HD = 50, HU = 52;
+  // FL aliases DD: a DEEP cell has no downward intensity unknown and the slot carries
+  // that cell's LOWER-face diffusion flux instead.
+  const int FL = 27;
+  // row 4 -- the b row -- is the only live row of a deep cell's G, H and d
+  const int GD = G0 + 12, HHD = HH + 12, DPD = DP + 4;
   // per-segment slots of c.rd(m, k, j, s*nrd + slot)
   const int PP = 0, QQ = 5, RR = 30, GR = 45, DR = 70, DE = 75, UE = 77, YY = 79,
             YR = 84, BUD = 85, BSC = 86, RTM = 87, UBM = 88, RHS = 89, SRS = 90,
@@ -95,6 +114,45 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
   const Real sopi = c.sigma/M_PI;
   // the three column components of the reduced (x[0], x[1], x[4]) coupling
   const int rc3[3] = {0, 1, 4};
+
+  // ---- 0. THE HYBRID SPLIT (problem/rt_col3_hybrid_tau) ----------------------------
+  // The same interface the serial path picks, on the same partition: nsg equal segments
+  // over [ic, ie], so a segment is DEEP if i1 < ib (every cell a SCALAR diffusion row,
+  // one unknown, one divide), THIN if i0 >= ib (the 5x5 machinery unchanged), and the
+  // one segment straddling ib carries the SPLICE -- its deep cells scalar, its thin
+  // cells 5x5, and the 5x1 / 1x3 interface pair inside that one lane's own recurrence,
+  // exactly as the serial hybrid forms it.
+  //
+  // THE REDUCED SYSTEM then has MIXED block sizes: a deep segment's boundary unknown is
+  // the scalar b, a thin one's the five (D0, D1, U0, U1, b).  Rather than carry two
+  // block types through both reduced solvers, the deep rows are PADDED to 5x5 with a
+  // unit diagonal on the four dead components: their right-hand sides and their
+  // off-diagonal rows are identically zero, so those components solve to exactly zero
+  // and the padded system is the mixed system, bit for bit.  Both the serial reduced
+  // Thomas and the PCR of rt_impl_redpar therefore run UNCHANGED.  The padding wastes
+  // one 5x5 inverse per deep segment -- nsg of them against nc cells -- while the
+  // per-cell saving is the whole 5x5 assembly, inverse and back-substitution.
+  RTCol3Hyb hb;
+  hb.isp = ic;
+  Real kflx = 0.0, wsum = 0.0;
+  for (int q=0; q<nq; ++q) {
+    kflx += 2.0*c.wf[q]*c.mu[q];
+    wsum += c.wf[q];
+  }
+  {
+    const int isp0 = c.Interface(m, k, j, ic);
+    if (isp0 > ic) {
+      const Real hm = c.Ht(m,k,j,isp0-1), h0 = c.Ht(m,k,j,isp0);
+      if (hm + h0 > 0.0) {
+        hb.on = true;
+        hb.isp = isp0;
+        hb.dtc = hm + h0;
+        hb.g = h0/hb.dtc;
+        for (int q=0; q<nq; ++q) hb.am[q] = hb.g + c.mu[q]/hb.dtc;
+      }
+    }
+  }
+  const int ib = hb.isp;              // the bottom cell of the TWO-STREAM segment
 
   // ---- 1. the frozen per-cell layer coefficients, and b^0 --------------------------
   Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, nsg), [&](const int s) {
@@ -133,6 +191,8 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
   // flux, so its gradient is set by that flux, not by the column's own two deepest cells.
   if (c.bot_flux > 0.0) dbdtau = 3.0*c.bot_flux/(4.0*M_PI);
   const Real cutc = dbdtau*c.Ht(m,k,j,ic);
+  // the deep segment's BOTTOM face flux, the two-stream cut flux in its deep limit
+  const Real fbot = kflx*dbdtau + (c.int_at_cut ? wsum*c.Iint : 0.0);
   Real Dtop[2], Ucut[2];
   for (int q=0; q<2; ++q) {
     Dtop[q] = c.dtop(m,q,k,j);
@@ -164,9 +224,20 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
   int nit = 0;
   Real dbmax = 0.0;
   Real rfin = 0.0;
+  // THE INTERFACE STATE, re-formed on every lane from the current b at every pass: the
+  // deep limit the thin segment's bottom cell sees in place of the cut's frozen Ucut.
+  // Equal to the cut values when the hybrid is off, which keeps that path bitwise.
+  Real cutc_i = cutc;
+  Real Ucut_i[2] = {Ucut[0], Ucut[1]};
+  Real fif = 0.0;                             // the interface net flux
   for (int it=0; it<c.maxit; ++it) {
     nit = it + 1;
     tm.team_barrier();
+    if (hb.on) {
+      const Real dbd = (c.Wk<true>(m,BB,ib-1,k,j) - c.Wk<true>(m,BB,ib,k,j))/hb.dtc;
+      cutc_i = dbd*c.Ht(m,k,j,ib);
+      for (int q=0; q<nq; ++q) Ucut_i[q] = cutc_i + c.mu[q]*dbd;
+    }
     // ---- 4a. the formal solution, each segment with a ZERO incoming intensity --------
     // problem/rt_impl_ablate bit 1 repeats the SEGMENT SWEEPS, which write absolutely
     // and are therefore idempotent.  The entry-value scan and the correction that follow
@@ -174,10 +245,12 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
     for (int rep=(c.ablate & 1); rep>=0; --rep) {
     Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, nsg), [&](const int s) {
       const int i0 = ic + (nc*s)/nsg, i1 = ic + (nc*(s+1))/nsg - 1;
+      if (i1 < ib) return;                    // a wholly DEEP segment: no two-stream here
+      const int t0 = (i0 > ib) ? i0 : ib;     // this segment's bottom THIN cell
       Real L[2] = {0.0, 0.0}, hg[2] = {1.0, 1.0};
-      for (int i=i1; i>=i0; --i) {
+      for (int i=i1; i>=t0; --i) {
         Real sl, su, sfu, sfd;
-        c.SourceVals<true>(m, k, j, i, ic, cutc, sl, su, sfu, sfd);
+        c.SourceVals<true>(m, k, j, i, ib, hb, cutc, sl, su, sfu, sfd);
         const Real W = 1.0/c.Dx(m,k,j,i);
         Real acc = 0.0;
         for (int q=0; q<nq; ++q) {
@@ -194,9 +267,9 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
         c.Wk<true>(m,SA,i,k,j) = acc;
       }
       Real Lu[2] = {0.0, 0.0}, hu[2] = {1.0, 1.0};
-      for (int i=i0; i<=i1; ++i) {
+      for (int i=t0; i<=i1; ++i) {
         Real sl, su, sfu, sfd;
-        c.SourceVals<true>(m, k, j, i, ic, cutc, sl, su, sfu, sfd);
+        c.SourceVals<true>(m, k, j, i, ib, hb, cutc, sl, su, sfu, sfd);
         const Real W = 1.0/c.Dx(m,k,j,i);
         Real acc = 0.0;
         for (int q=0; q<nq; ++q) {
@@ -220,15 +293,18 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
       Real de[2], ue[2];
       for (int q=0; q<nq; ++q) de[q] = Dtop[q];
       for (int s=nsg-1; s>=0; --s) {
-        const int i0 = ic + (nc*s)/nsg;
+        const int i0 = ic + (nc*s)/nsg, i1 = ic + (nc*(s+1))/nsg - 1;
+        if (i1 < ib) continue;
+        const int t0 = (i0 > ib) ? i0 : ib;
         for (int q=0; q<nq; ++q) c.rd(m,k,j,s*nrd+DE+q) = de[q];
         for (int q=0; q<nq; ++q) {
-          de[q] = c.Wk<true>(m,DD+q,i0,k,j) + c.Wk<true>(m,HD+q,i0,k,j)*de[q];
+          de[q] = c.Wk<true>(m,DD+q,t0,k,j) + c.Wk<true>(m,HD+q,t0,k,j)*de[q];
         }
       }
-      for (int q=0; q<nq; ++q) ue[q] = c.Wk<true>(m,BB,ic,k,j) + Ucut[q];
+      for (int q=0; q<nq; ++q) ue[q] = c.Wk<true>(m,BB,ib,k,j) + Ucut_i[q];
       for (int s=0; s<nsg; ++s) {
         const int i1 = ic + (nc*(s+1))/nsg - 1;
+        if (i1 < ib) continue;
         for (int q=0; q<nq; ++q) c.rd(m,k,j,s*nrd+UE+q) = ue[q];
         for (int q=0; q<nq; ++q) {
           ue[q] = c.Wk<true>(m,UU+q,i1,k,j) + c.Wk<true>(m,HU+q,i1,k,j)*ue[q];
@@ -239,18 +315,20 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
     // and the correction each cell owes to its segment's entry value
     Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, nsg), [&](const int s) {
       const int i0 = ic + (nc*s)/nsg, i1 = ic + (nc*(s+1))/nsg - 1;
+      if (i1 < ib) return;
+      const int t0 = (i0 > ib) ? i0 : ib;
       Real de[2], ue[2];
       for (int q=0; q<nq; ++q) {
         de[q] = c.rd(m,k,j,s*nrd+DE+q);
         ue[q] = c.rd(m,k,j,s*nrd+UE+q);
       }
-      for (int i=i0; i<=i1; ++i) {
+      for (int i=t0; i<=i1; ++i) {
         const Real W = 1.0/c.Dx(m,k,j,i);
         Real acc = 0.0;
         for (int q=0; q<nq; ++q) {
           const Real E = c.Wk<true>(m,EE+q,i,k,j), t = 1.0 - E;
           const Real hd = (i == i1) ? 1.0 : c.Wk<true>(m,HD+q,i+1,k,j);
-          const Real hup = (i == i0) ? 1.0 : c.Wk<true>(m,HU+q,i-1,k,j);
+          const Real hup = (i == t0) ? 1.0 : c.Wk<true>(m,HU+q,i-1,k,j);
           acc += c.wf[q]*W*E*(1.0 + t)*(hd*de[q] + hup*ue[q]);
           c.Wk<true>(m,DD+q,i,k,j) += c.Wk<true>(m,HD+q,i,k,j)*de[q];
           c.Wk<true>(m,UU+q,i,k,j) += c.Wk<true>(m,HU+q,i,k,j)*ue[q];
@@ -259,18 +337,62 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
       }
     });
     tm.team_barrier();
+    // ---- 4a''. THE DEEP SEGMENT: the diffusion fluxes and their divergence --------
+    // The interface flux is the two-stream's OWN net flux at that face, built from the
+    // deep-limit U (implicit in b(isp-1), b(isp)) and the solved D(isp), so the deep
+    // cell loses upward exactly what the thin cell gains at its lower face and the
+    // column still telescopes across the interface.  Two passes with a barrier between
+    // them: F is a face quantity each lane writes for its own cells, and the divergence
+    // reads the face above, which for the top cell of a lane belongs to the next lane.
+    if (hb.on) {
+      fif = 0.0;
+      for (int q=0; q<nq; ++q) {
+        fif += c.wf[q]*((c.Wk<true>(m,BB,ib,k,j) + Ucut_i[q])
+                        - c.Wk<true>(m,DD+q,ib,k,j));
+      }
+      Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, nsg), [&](const int s) {
+        const int i0 = ic + (nc*s)/nsg, i1 = ic + (nc*(s+1))/nsg - 1;
+        const int d1 = (i1 < ib-1) ? i1 : (ib-1);
+        for (int i=i0; i<=d1; ++i) {
+          Real flo = fbot;
+          if (i > ic) {
+            const Real dtm = c.Ht(m,k,j,i-1) + c.Ht(m,k,j,i);
+            flo = (dtm > 0.0) ? kflx*(c.Wk<true>(m,BB,i-1,k,j)
+                                      - c.Wk<true>(m,BB,i,k,j))/dtm : 0.0;
+          }
+          c.Wk<true>(m,FL,i,k,j) = flo;
+        }
+      });
+      tm.team_barrier();
+      Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, nsg), [&](const int s) {
+        const int i0 = ic + (nc*s)/nsg, i1 = ic + (nc*(s+1))/nsg - 1;
+        const int d1 = (i1 < ib-1) ? i1 : (ib-1);
+        for (int i=i0; i<=d1; ++i) {
+          const Real fhi = (i + 1 < ib) ? c.Wk<true>(m,FL,i+1,k,j) : fif;
+          c.Wk<true>(m,SA,i,k,j) = (c.Wk<true>(m,FL,i,k,j) - fhi)/c.Dx(m,k,j,i);
+        }
+      });
+      tm.team_barrier();
+    }
+
     // ---- 4a'. the handover, re-formed from THIS column's OWN flux ------------------
     if (c.ex_iter && c.taublend && c.direct) {
       Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, ic, ie+1), [&](const int i) {
+        const Real wlo = c.wblend(m,k,j,i), whi = c.wblend(m,k,j,i+1);
+        if (i < ib) {                         // a DEEP cell: the diffusion faces
+          const Real fhi = (i + 1 < ib) ? c.Wk<true>(m,FL,i+1,k,j) : fif;
+          c.Wk<true>(m,EX,i,k,j) = 0.5*(wlo + whi)*c.Wk<true>(m,SA,i,k,j)
+              + (whi*fhi - wlo*c.Wk<true>(m,FL,i,k,j))/c.Dx(m,k,j,i) + c.Qb(m,0,i,k,j);
+          return;
+        }
         Real f3lo = 0.0, f3hi = 0.0;
         for (int q=0; q<nq; ++q) {
-          const Real ulo = (i == ic) ? (c.Wk<true>(m,BB,ic,k,j) + Ucut[q])
+          const Real ulo = (i == ib) ? (c.Wk<true>(m,BB,ib,k,j) + Ucut_i[q])
                                      : c.Wk<true>(m,UU+q,i-1,k,j);
           const Real dhi = (i == ie) ? Dtop[q] : c.Wk<true>(m,DD+q,i+1,k,j);
           f3lo += c.wf[q]*(ulo - c.Wk<true>(m,DD+q,i,k,j));
           f3hi += c.wf[q]*(c.Wk<true>(m,UU+q,i,k,j) - dhi);
         }
-        const Real wlo = c.wblend(m,k,j,i), whi = c.wblend(m,k,j,i+1);
         c.Wk<true>(m,EX,i,k,j) = 0.5*(wlo + whi)*c.Wk<true>(m,SA,i,k,j)
                          + (whi*f3hi - wlo*f3lo)/c.Dx(m,k,j,i) + c.Qb(m,0,i,k,j);
       });
@@ -314,9 +436,75 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
       const int i0 = ic + (nc*s)/nsg, i1 = ic + (nc*(s+1))/nsg - 1;
       Real Gp[5][3], Hp[5][3], dp[5];
       for (int i=i0; i<=i1; ++i) {
+        if (i < ib) {
+          // ---- the DEEP cell: a SCALAR row, padded into the b slot ------------------
+          // x_i = d_i - g_i . x_{i+1}|(D0,D1,b) - h_i . x_L|(U0,U1,b), all three of them
+          // scalars times a 3-vector, and the four dead components of this cell carry
+          // nothing: their d, G and H rows are written as zero ONLY at the segment
+          // boundary cell, which is the only one the reduced system reads in full.
+          Real aa, dd, cup, C5[3], rvd, rscd;
+          c.DeepRow<true>(m, k, j, i, ic, hb, kflx, it, aa, dd, cup, C5, rvd, rscd);
+          const Real dend = rscd + eoff;
+          const Real rrd = (dend > 0.0) ? fabs(rvd)/dend : 0.0;
+          if (rrd > rmx) rmx = rrd;
+          Real cv[3] = {0.0, 0.0, cup};       // the upper coupling, on (D0, D1, b)
+          if (i + 1 >= ib) {
+            for (int t=0; t<3; ++t) cv[t] = C5[t];   // the 1x3 INTERFACE row
+          }
+          Real hv[3] = {0.0, 0.0, 0.0};
+          Real piv = dd, rvv = rvd;
+          if (i > i0) {
+            piv -= aa*Gp[4][2];
+            rvv -= aa*dp[4];
+            for (int t=0; t<3; ++t) hv[t] = -aa*Hp[4][t];
+          } else {
+            hv[2] = aa;                       // the spike on the left segment's unknown
+          }
+          if (!(fabs(piv) > 0.0)) {
+            Kokkos::atomic_add(&c.stat(6), 1.0);
+            rmx = HUGE_VAL;
+            return;
+          }
+          dp[4] = rvv/piv;
+          dp[2] = 0.0;
+          dp[3] = 0.0;
+          c.Wk<true>(m,DPD,i,k,j) = dp[4];
+          for (int t=0; t<3; ++t) {
+            Gp[2][t] = 0.0;
+            Gp[3][t] = 0.0;
+            Hp[2][t] = 0.0;
+            Hp[3][t] = 0.0;
+            Gp[4][t] = cv[t]/piv;
+            Hp[4][t] = hv[t]/piv;
+            c.Wk<true>(m,GD+t,i,k,j) = Gp[4][t];
+            c.Wk<true>(m,HHD+t,i,k,j) = Hp[4][t];
+          }
+          if (i == i1) {          // pad the boundary row for the reduced system
+            for (int r=0; r<4; ++r) {
+              c.Wk<true>(m,DP+r,i,k,j) = 0.0;
+              for (int t=0; t<3; ++t) {
+                c.Wk<true>(m,G0+3*r+t,i,k,j) = 0.0;
+                c.Wk<true>(m,HH+3*r+t,i,k,j) = 0.0;
+              }
+            }
+          }
+          continue;
+        }
         Real A3[5][3], Bm[5][5], C3[5][3], rv[5], AH[5][3];
         Real rsc = 1.0;
-        c.BuildRow<true>(m, k, j, i, ic, cutc, it, A3, Bm, C3, rv, rsc);
+        Real A1z[5];
+        c.BuildRow<true>(m, k, j, i, ib, hb, cutc, it, A3, A1z, Bm, C3, rv, rsc);
+        if (i == ib && hb.on) {
+          // THE SPLICE.  The thin segment's bottom cell couples to the deep unknown
+          // b(ib-1) through the 5x1 column A1; in the A3 mapping (the columns are
+          // components 2, 3, 4 = U0, U1, b of the cell below) that is column 2, so the
+          // shared elimination below needs no other special case.
+          for (int r=0; r<5; ++r) {
+            A3[r][0] = 0.0;
+            A3[r][1] = 0.0;
+            A3[r][2] = A1z[r];
+          }
+        }
         const Real den = rsc + eoff;
         const Real rr = (den > 0.0) ? fabs(rv[4])/den : 0.0;
         if (rr > rmx) rmx = rr;
@@ -378,6 +566,33 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
         for (int cc=0; cc<3; ++cc) Rm[r][cc] = 0.0;
       }
       for (int i=i1-1; i>=i0; --i) {
+        if (i < ib) {
+          // the DEEP cell: only the b row of (p, Q, R) is live.  The four dead rows are
+          // zeroed once, when the recurrence first enters the deep part -- either at the
+          // interface or at a wholly deep segment's own boundary cell -- and stay zero.
+          Real p4 = c.Wk<true>(m,DPD,i,k,j);
+          Real Q4[5], R4[3];
+          for (int col=0; col<5; ++col) Q4[col] = 0.0;
+          for (int col=0; col<3; ++col) R4[col] = c.Wk<true>(m,HHD+col,i,k,j);
+          for (int cc=0; cc<3; ++cc) {
+            const Real g = c.Wk<true>(m,GD+cc,i,k,j);
+            if (g == 0.0) continue;
+            p4 -= g*pq[rc3[cc]];
+            for (int col=0; col<5; ++col) Q4[col] -= g*Qm[rc3[cc]][col];
+            for (int col=0; col<3; ++col) R4[col] -= g*Rm[rc3[cc]][col];
+          }
+          if (i == ib-1 || i == i1-1) {
+            for (int r=0; r<4; ++r) {
+              pq[r] = 0.0;
+              for (int col=0; col<5; ++col) Qm[r][col] = 0.0;
+              for (int col=0; col<3; ++col) Rm[r][col] = 0.0;
+            }
+          }
+          pq[4] = p4;
+          for (int col=0; col<5; ++col) Qm[4][col] = Q4[col];
+          for (int col=0; col<3; ++col) Rm[4][col] = R4[col];
+          continue;
+        }
         Real pn[5], Qn[5][5], Rn[5][3];
         for (int r=0; r<5; ++r) {
           Real sp = c.Wk<true>(m,DP+r,i,k,j);
@@ -734,6 +949,30 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
         }
       }
       for (int i=i1-1; i>=i0; --i) {
+        if (i < ib) {                         // the DEEP cell: one row, one unknown
+          Real sy = c.Wk<true>(m,DPD,i,k,j);
+          for (int cc=0; cc<3; ++cc) {
+            sy -= c.Wk<true>(m,GD+cc,i,k,j)*ynext[rc3[cc]]
+                + c.Wk<true>(m,HHD+cc,i,k,j)*yL[cc];
+          }
+          const Real bd = c.Wk<true>(m,BB,i,k,j);
+          Real dbd = sy;
+          if (bd > 0.0) {
+            if (dbd > 3.0*bd) {
+              dbd = 3.0*bd;
+              ++ncl;
+            } else if (dbd < -0.75*bd) {
+              dbd = -0.75*bd;
+              ++ncl;
+            }
+            const Real rel = fabs(dbd)/bd;
+            if (rel > dmx) dmx = rel;
+            c.Wk<true>(m,BB,i,k,j) = bd + dbd;
+          }
+          for (int r=0; r<4; ++r) ynext[r] = 0.0;
+          ynext[4] = dbd;
+          continue;
+        }
         Real y[5];
         for (int r=0; r<5; ++r) {
           Real sy = c.Wk<true>(m,DP+r,i,k,j);
@@ -840,14 +1079,18 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
       const Real ub = c.rd(m,k,j,b0+UBM);
       if (ub > ubmax) ubmax = ub;
     }
-    Real fnet = 0.0;
-    for (int q=0; q<nq; ++q) {
-      const Real ftop = c.wf[q]*(c.Wk<true>(m,UU+q,ie,k,j) - Dtop[q]);
-      const Real fcut = c.wf[q]*((c.Wk<true>(m,BB,ic,k,j) + Ucut[q]) - c.Wk<true>(m,DD+q,ic,k,j));
-      fnet += fcut - ftop;
-    }
     Real ftop3 = 0.0;
     for (int q=0; q<nq; ++q) ftop3 += c.wf[q]*(c.Wk<true>(m,UU+q,ie,k,j) - Dtop[q]);
+    Real fnet = 0.0;
+    if (hb.on) {
+      fnet = c.Wk<true>(m,FL,ic,k,j) - ftop3;   // the imposed deep bottom flux
+    } else {
+      for (int q=0; q<nq; ++q) {
+        fnet += c.wf[q]*((c.Wk<true>(m,BB,ic,k,j) + Ucut[q])
+                         - c.Wk<true>(m,DD+q,ic,k,j));
+      }
+      fnet -= ftop3;
+    }
     Kokkos::atomic_add(&c.stat(12), rhsum);
     Kokkos::atomic_add(&c.stat(13), srsum);
     Kokkos::atomic_add(&c.stat(14), fnet);
@@ -871,9 +1114,13 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
   // here (the whole column has converged and the barrier above has passed).
   if (c.wrflux) {
     Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, ic, ie+1), [&](const int i) {
+      if (i < ib) {                           // a DEEP face carries the diffusion flux
+        c.Fb(m,0,i,k,j) = c.Wk<true>(m,FL,i,k,j);
+        return;
+      }
       Real f3lo = 0.0;
       for (int q=0; q<nq; ++q) {
-        const Real ulo = (i == ic) ? (c.Wk<true>(m,BB,ic,k,j) + Ucut[q])
+        const Real ulo = (i == ib) ? (c.Wk<true>(m,BB,ib,k,j) + Ucut_i[q])
                                    : c.Wk<true>(m,UU+q,i-1,k,j);
         f3lo += c.wf[q]*(ulo - c.Wk<true>(m,DD+q,i,k,j));
       }

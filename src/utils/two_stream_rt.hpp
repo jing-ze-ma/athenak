@@ -735,6 +735,19 @@ inline int rt_impl_nseg = 64;
 // 2 <= nsg <= 64 and nsg is a power of two.  Costs the larger per-segment workspace
 // (RTCOL3_NRDP), so the array is only enlarged when the switch is on.
 inline bool rt_impl_redpar = false;
+// problem/rt_col3_hybrid_tau: THE HYBRID COLUMN.  Below this COLUMN optical depth the
+// cells are solved as DIFFUSION -- one unknown per cell, F = (4 pi/3) dB/dtau across the
+// faces, which is the exact deep limit of the same two-stream -- instead of as the full
+// five-unknown two-stream, all inside the SAME Newton system and the same block
+// elimination (1x1 blocks deep, 5x5 thin, a 1x5/5x1 pair at the interface).  The two
+// segments are coupled by flux continuity: the thin segment's lower boundary is the deep
+// limit U_q = b_f + mu_q dB/dtau with b_f and dB/dtau carried implicitly by the deep
+// unknowns, and the deep segment's top face loses exactly the two-stream's own net flux
+// at that face.  0 = off, bitwise the whole-column solve.  See
+// utils/two_stream_column_implicit.hpp, RTCol3Hyb.  Supported on BOTH solvers: with
+// rt_impl_solver = pcr the deep segments run a scalar partitioned Thomas and the reduced
+// system has mixed block sizes.  See two_stream_column_partition.hpp.
+inline Real rt_col3_hybrid_tau = 0.0;
 // problem/rt_impl_warm: WARM-START the mode-3 Newton from the previous call's converged
 // Planck function instead of from the entry state's.  0 = off (bitwise the old code),
 // 1 = the previous converged b per cell, 2 = linear extrapolation in time from the last
@@ -2627,6 +2640,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
                         << "solver " << (c3par ? "pcr" : "thomas")
                         << " nseg " << c3nseg
                         << (c3rp ? " redpar" : "")
+                        << " hybrid_tau " << rt_col3_hybrid_tau
                         << "; workspace " << wmb << " + " << rmb << " MB" << std::endl;
             }
           }
@@ -2731,6 +2745,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
           c3.cut_legacy = cut_legacy;
           c3.direct = rt_src_direct;
           c3.ex_iter = rt_col3_ex_iter;
+          c3.hyb_tau = rt_col3_hybrid_tau;
           c3.wrflux = skipsweep_;
           c3.dump = rt_outer_verbose && (pm->ncycle == 0);
           if (c3par) {
