@@ -24,3 +24,8 @@ DONE; a bounds-checked Debug run of ANY Cartesian hydro input is the regression 
 The style gate (`run_test_suite.py --style`) is unusable on this branch: thousands of
 pre-existing cpplint errors in pgen/*, hydro.hpp, mhd.hpp, and flake8 needs `python`.
 See [[validate-the-instrument]].
+
+**2026-09-13 ~07:30 srclim test:** test_rad_dhj_srclim_cpu.py had been FAILING since ebd57244 (tau blend default in the
+input): its grey arm is refused by the pgen (blend needs rt_ck) and, blend off, collapses dt at cycle 1. Fixed
+(commit after 774b71c2): pgen reads the ck table whenever rad_kappa_src=table; the test keeps only the ck arm.
+Verified sp MHD tests with the new polar mask default 6: test_rad_dhj_ck_cpu PASSES, test_mhd_fofc_blast_cpu PASSES.

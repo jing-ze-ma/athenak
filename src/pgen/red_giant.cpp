@@ -2905,20 +2905,16 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
       if (dm == 0.0) return;
       const Real d = u0(m,IDN,k,j,is);
       if (!(d - dm > 0.0)) return;
-      const Real cc = cs_g ? ccell_g(m,k,j) : 0.0;
-      Real ei = u0(m,IEN,k,j,is)
-                - CsKinetic(d, u0(m,IM1,k,j,is), u0(m,IM2,k,j,is),
-                            u0(m,IM3,k,j,is), cc);
-      if (etotgrav) ei -= d*phicc(m,k,j,is);
-      // GUARD THE EOS CALL.  eos.Pressure takes log10 of the internal energy under the
-      // tabulated EOS, so a cell the split operators have left at e <= 0 returns NaN
-      // here and the wall then writes it into u0 with no precursor at all.  The sponge
-      // below carries the same guard for the same reason.  Skipping the cell leaves the
-      // advected mass uncancelled for one stage, which is the harmless failure.
-      if (!(ei > 0.0) || !(d > 0.0)) return;
-      const Real h = (u0(m,IEN,k,j,is) + eos.Pressure(d, ei))/d;   // specific total
+      // Cancel EXACTLY the energy the face flux applied this stage (the hydro flux
+      // array holds the advected total-energy + pressure-work flux; the conduction
+      // flux is a separate operator and is untouched). Rebuilding it as dm*h from the
+      // cell state was not exact: with etotgrav the cell holds rho*Phi at its centre
+      // while the face flux carries the reconstructed face energy, and the mismatch
+      // (either sign, depending on the reconstruction) drifted tot-E by 1e-4 in 2e6 s
+      // (RG_fofc_long3, +8.8e-5) or -7e-5 in 2e5 s (RG_v4 with the h = gas-only variant).
+      const Real dE = bdt*area1w(m,k,j,is)*flx1w(m,IEN,k,j,is)/volw(m,k,j,is);
       u0(m,IDN,k,j,is) -= dm;
-      u0(m,IEN,k,j,is) -= dm*h;
+      u0(m,IEN,k,j,is) -= dE;
     });
     RGNanScan(pm, "wall_noflux");
   }

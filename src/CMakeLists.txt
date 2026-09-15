@@ -127,6 +127,7 @@ add_executable(
 
         pgen/pgen.cpp
         pgen/tests/advection.cpp
+        pgen/tests/balsara_vortex.cpp
         pgen/tests/collapse.cpp
         pgen/tests/cpaw.cpp
         pgen/tests/cshock.cpp
@@ -135,6 +136,7 @@ add_executable(
         pgen/tests/gr_monopole.cpp
         pgen/tests/linear_wave.cpp
         pgen/tests/lw_implode.cpp
+        pgen/tests/gresho_mhd.cpp
         pgen/tests/orszag_tang.cpp
         pgen/tests/mri3d.cpp
         pgen/tests/shock_tube.cpp

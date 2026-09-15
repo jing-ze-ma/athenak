@@ -97,6 +97,7 @@ class ProblemGenerator {
   void CallProblemGenerator(ParameterInput *pin, bool is_restart);
   void Advection(ParameterInput *pin, const bool restart);
   void AlfvenWave(ParameterInput *pin, const bool restart);
+  void BalsaraVortex(ParameterInput *pin, const bool restart);
   void BondiAccretion(ParameterInput *pin, const bool restart);
   void CShock(ParameterInput *pin, const bool restart);
   void Diffusion(ParameterInput *pin, const bool restart);
@@ -105,6 +106,7 @@ class ProblemGenerator {
   void LWImplode(ParameterInput *pin, const bool restart);
   void Monopole(ParameterInput *pin, const bool restart);
   void MRI3d(ParameterInput *pin, const bool restart);
+  void GreshoMHD(ParameterInput *pin, const bool restart);
   void OrszagTang(ParameterInput *pin, const bool restart);
   void ShockTube(ParameterInput *pin, const bool restart);
   void Shwave(ParameterInput *pin, const bool restart);

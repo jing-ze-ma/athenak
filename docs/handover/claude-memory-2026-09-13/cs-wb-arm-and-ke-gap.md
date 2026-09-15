@@ -17,3 +17,9 @@ WB arm death: bench/cs_mhd_prod3_wb, link 11618999, FATAL dt < 1e-2 at cycle 311
 rst 24 (rot 12.0) and bin 6 (rot 12) exist for a restart reproduction. The mesh.cpp dt-collapse cell
 diagnostic exists ONLY for hydro (ph->dt_diag); MHD has none -> add one before hunting the cell.
 cs_mhd_prod3 (no WB) passed rot 23.6 clean at the same time.
+
+**2026-09-13 cs FOFC arm restart (bench/cs_mhd_prod3_fofc/deathmap, 11657597, HEAD binary 08fd72d6):** from rst 22 (rot
+11.0) to rot 12.5 CLEAN, dt 16-21 s, eos_tclamp 0 throughout, FOFC ~7.5e7/interval. The rot-11.4 death did not recur and
+was NOT the EOS bracket-edge sentinel. Dumps mhd_w_bcc + mhd_fofc every 0.05 rot in deathmap/bin for the FOFC geography.
+cs deaths at rot 11-12 (fofc, wb arms) remain UNEXPLAINED, non-reproducible from restarts on other builds; the MHD
+dt-cell diagnostic is now in every new binary, so the next live death names its cell.

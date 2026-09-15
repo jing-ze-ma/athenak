@@ -33,3 +33,17 @@ sp_mhd_nopole (mask 0 = old false) may hit the drain: watch its dt.
 mask 0 (none) E-E_hyd 0, KEh ratio 1.00; mask 1 (x1 only) +7.2e35, 7.4x; mask 2 (theta only) 0, 1.00; mask 4 (phi
 only) 0, 1.00; mask 7 (old) +4.5e35, 2.1x. => candidate default mask 6 (theta+phi swapped, radial not) if the blast
 is stable with it (polar_blast_hlle/mask running).
+**sp_mhd_nopole PASSED the rot 10-12 gate (2026-09-13 ~04:30):** rot 12.6, dt 13.0 s, KE 1.85e34 (cs_mhd_prod3 rot 12:
+1.82e34), 1-ME 6.5e31 (band), E 6.580e38 falling like cs; no polar-row drain, no FATAL, mask 0 (HLLD everywhere) on
+the dhj sp grid. The polar blast's drain (256^2 test problem) did not appear here through rot 12. Mask default
+decision still waits on polar_blast_hlle/mask (candidate 6 = theta+phi swapped, radial not).
+**DEFAULT FLIPPED to mask 6 (commit after 41d19fce, 2026-09-13 ~06:00).** GPU blast (bench/polar_blast_hlle/gpu, apudev,
+3 min/arm): mask 7 min dt 3.05e-5; 6: 2.84e-5 reaches tlim; 4, 5: 2.2e-5 reach tlim; 2: 2.2e-5; 0: collapses. => theta+phi
+swapped, radial not: stable blast, no dhj excess. sp_mhd_nopole (mask 0) clean to rot 16+ on dhj. sp_mhd_prod3 STOPPED.
+**Mask 6 verified on EVERY sp MHD input in the tree (bench/polar_blast_hlle/others, 2026-09-13):** fofc_mhd_sp + dhj ck
+regression tests pass; sp_test resist L1(B) 1.802e-3 (7: 1.785e-3, 0: 1.859e-3), order 2.31 both; toroidal L1(B) +0.4%
+(mask 0 is 10x BETTER: 4.6e-5 -- the swap in any direction costs B accuracy there); rigidrot MHD +1.5-5% at 1e-4 level;
+sp blast across the pole (spherical_polar_blast_mhd): mask 6 keeps min dt 2x LARGER and is 10-27% better on the
+rotational-invariance gate; uniform_field identical; lowbeta wedge bitwise (no polar boundary); dhj_blowup 300 cycles
+clean, KE -32% (the artefact removed). Nothing loses stability. Incidental: spherical_polar_uniform_field.athinput
+fatals as committed (meshblock nx3 must be even count in x3).

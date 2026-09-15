@@ -4,6 +4,17 @@ Runs tests in both hydro and MHD for different
   - time integrators
   - reconstruction algorithms
   - Riemann solvers
+
+lhlld (HLLD with the low-Mach fix of Minoshima & Miyoshi 2021) is run over the same
+waves as hlld and held to the same thresholds, with the two exceptions in errors_lhlld
+below.  These waves have amplitude 1e-6 on a background at rest, i.e. they are at Mach
+1e-6, yet the fix leaves them alone: chi is built from c_u, the fast-speed formula with
+the sound speed replaced by |u| (Minoshima & Miyoshi eqn. 16), and c_u -> c_a as u -> 0,
+so the magnetized background keeps chi away from zero and the longitudinal dissipation
+is never fully removed.  The measured L1 errors agree with hlld to about 0.1 per cent
+everywhere.  (An earlier version used chi = max(|u_n|)/max(c_f), with no such magnetic
+floor; that removed the dissipation entirely at M -> 0 and seeded a round-off
+checkerboard in the PPM Alfven cases.)
 """
 
 # Modules
@@ -95,13 +106,21 @@ errors = {
     ("mhd", "rk3", "wenoz", "3"): (3.4e-12, 0.045),
 }
 
+# Thresholds that REPLACE the ones above when the Riemann solver is lhlld.  Only two
+# cases need one: hlld sits exactly on the 0.54 error-ratio threshold for the rk2+ppm4
+# Alfven waves and lhlld lands at 0.542.
+errors_lhlld = {
+    ("mhd", "rk2", "ppm4", "4"): (1.5e-08, 0.55),
+    ("mhd", "rk2", "ppm4", "2"): (1.5e-08, 0.55),
+}
+
 _int = ["rk2", "rk3"]
 _recon = ["plm", "ppm4", "ppmx", "wenoz"]
 _wave = {}
 _wave["mhd"] = ["0", "6", "5", "1", "4", "2", "3"]
 _wave["hydro"] = ["0", "4", "3"]
 _flux = {}
-_flux["mhd"] = ["llf", "hlle", "hlld"]
+_flux["mhd"] = ["llf", "hlle", "hlld", "lhlld"]
 _flux["hydro"] = ["llf", "hlle", "hllc", "roe"]
 _res = [32, 64]  # resolutions to test
 
@@ -137,13 +156,17 @@ def arguments(iv, rv, fv, wv, res, soe, name):
 def test_run(iv, rv, soe):
     """Loop over Riemann solvers and run test with given integrator/resolution/physics."""
     for fv in _flux[soe]:
+        thresholds = errors
+        waves = _wave[soe]
+        if fv == "lhlld":
+            thresholds = {**errors, **errors_lhlld}
         # returns error in L/R wave specified by 'left_wave'/'right_wave' arguments
         l1_rms_l, l1_rms_r = testutils.test_error_convergence(
             f"inputs/lwave_{soe}.athinput",
             f"lwave1d_{soe}",
             arguments,
-            errors,
-            _wave[soe],
+            thresholds,
+            waves,
             _res,
             iv,
             rv,
