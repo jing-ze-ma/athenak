@@ -361,6 +361,38 @@ Real wall_walk_maxfac_ = 100.0;   // how far the bc_mode-3 walk may depart from 
 // REMOVED from the box, not converted to heat.  This is a numerical sponge, not physics.
 Real vdamp_tau_ = 0.0, vdamp_time_ = 20.0;
 bool vdamp_printed_ = false;
+// problem/vdamp_bot_cells, problem/vdamp_bot_time, problem/vdamp_bot_mean_only
+// (default 0 = OFF, bitwise inert): the BOTTOM sponge, the companion of the top one.
+// The closed bottom wall reflects the box's vertical acoustic fundamental (the He box:
+// period ~150 s = twice the sound crossing from the wall to the acoustic cutoff in the
+// lid) and the internal gravity waves convection launches downward into the stable
+// layer; the star does neither, it lets both propagate away.  The sponge damps m1
+// (only m1) in the lowest vdamp_bot_cells ACTIVE cells, i = is .. is+N-1, with the
+// raised-cosine weight
+//     f(i) = 0.5 (1 + cos(pi (i - is)/N)),
+// i.e. f = 1 in the cell against the wall, falling monotonically to 0 in the first
+// cell ABOVE the layer (the topmost sponge cell still carries a small weight, so the
+// layer has no hard edge).  Per stage, with the exact exponential factor
+//     g = 1 - exp(-f bdt/vdamp_bot_time),
+//     m1 -> m1 - g m1                      (vdamp_bot_mean_only = false, DEFAULT), or
+//     m1 -> m1 - g rho <v1>_h              (vdamp_bot_mean_only = true),
+// where <v1>_h is the HORIZONTAL (x2,x3) mean of v1 at that x1 index, taken once per
+// stage from the u0 the gravity/cooling kernel just left, with an MPI_Allreduce of the
+// plane sums (every rank applies it).  The mean-only form exists for a box whose
+// convection reaches the bottom: a plane-coherent v1 IS the radial mode, while a
+// convective plume has zero plane mean, so damping the mean alone absorbs the mode and
+// leaves the convection untouched.  In the He box the bottom layer is STABLY
+// STRATIFIED (the convection zone is the top ~1 Mm), so the full-m1 form is the
+// default: it absorbs the g-modes as well.  m2 and m3 are never touched.
+// As for the top sponge, the kinetic energy removed is taken OUT of the total energy
+// rather than turned into heat.  The sponge is applied BEFORE the bottom inflow source
+// (bc_mode_bot = 5) in the same stage, so the momentum the inflow injects into the wall
+// cell survives the stage intact.
+int vdb_cells_ = 0;
+Real vdb_time_ = 20.0;
+bool vdb_mean_ = false;
+DvceArray1D<Real> vdb_d_;        // (N): the plane sums of v1, then the plane means
+HostArray1D<Real> vdb_h_;
 bool diff_flux_ = false;     // a diffusive flux shares the wall face's energy channel
 bool rt_on_ = false;      // problem/rt_two_stream
 // problem/rt_strang (default false, bitwise off): take the grey two-stream OUT of the
@@ -1157,6 +1189,32 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     }
   }
 
+  // --- the bottom vertical-velocity sponge (see the note on vdb_cells_ above)
+  vdb_cells_ = pin->GetOrAddInteger("problem", "vdamp_bot_cells", 0);
+  vdb_time_ = pin->GetOrAddReal("problem", "vdamp_bot_time", 20.0);
+  vdb_mean_ = pin->GetOrAddBoolean("problem", "vdamp_bot_mean_only", false);
+  if (vdb_cells_ > 0) {
+    if (2*vdb_cells_ >= pmy_mesh_->mesh_indcs.nx1) {
+      std::cout << "### FATAL ERROR in box_convection: problem/vdamp_bot_cells = "
+                << vdb_cells_ << " must be < nx1/2 = "
+                << pmy_mesh_->mesh_indcs.nx1/2 << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    if (!(vdb_time_ > 0.0)) {
+      std::cout << "### FATAL ERROR in box_convection: vdamp_bot_time must be > 0"
+                << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    // the sponge absorbs the standing mode of a CLOSED wall; on an open bottom it
+    // would instead drive a flow through the boundary.  bc_mode_bot = 5 (inflow) is
+    // allowed: that wall is impermeable too, the inflow is a source in the wall cell.
+    if (pmy_mesh_->mesh_bcs[BoundaryFace::inner_x1] != BoundaryFlag::user) {
+      std::cout << "### FATAL ERROR in box_convection: problem/vdamp_bot_cells needs a "
+                << "CLOSED bottom wall, i.e. <mesh>/ix1_bc = user" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+  }
+
   // --- the Rosseland table, for the conduction operator
   const std::string opac = pin->GetOrAddString("problem", "opac_table", "");
   if (pc != nullptr && pc->iso_cond_type.compare("radiative") == 0) {
@@ -1610,6 +1668,13 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                   " timescale %.4e s (the cell range is printed at the first stage)\n",
                   vdamp_tau_/3.0, vdamp_tau_, vdamp_time_);
     }
+    if (vdb_cells_ > 0) {
+      const Real zbot = zmin + vdb_cells_*(zmax - zmin)/pmy_mesh_->mesh_indcs.nx1;
+      std::printf("  bottom v1 sponge: i = is .. is+%d, z <= %.5e (%.4f H_p),"
+                  " f = 0.5(1+cos(pi (i-is)/N)), timescale %.4e s, %s\n",
+                  vdb_cells_-1, zbot, (zbot - zmin)/hp0, vdb_time_,
+                  vdb_mean_ ? "the PLANE MEAN of v1 only" : "the FULL v1");
+    }
     std::printf("  x1 walls: bc_mode = %d (0 column ghost, 1 mirror, 2 mirror x the"
                 " column ratio, 3 WB continuation), wall_noflux = %d%s\n",
                 bc_mode_, static_cast<int>(wall_noflux_),
@@ -1919,6 +1984,63 @@ void BoxConvSrcs(Mesh *pm, Real bdt) {
                     vd_hi);
       }
     }
+  }
+
+  // ---- THE BOTTOM SPONGE (problem/vdamp_bot_cells; see the note on vdb_cells_).  It
+  // runs HERE, on the u0 the kernel above left, and BEFORE the bottom-inflow source
+  // further down, so the momentum bc_mode_bot = 5 injects into the wall cell is never
+  // cancelled by the sponge in the same stage.
+  if (vdb_cells_ > 0) {
+    const int nb = vdb_cells_;
+    const int gnx2 = pm->mesh_indcs.nx2, gnx3 = pm->mesh_indcs.nx3;
+    if (vdb_d_.extent_int(0) != nb) {
+      Kokkos::realloc(vdb_d_, nb);
+      Kokkos::realloc(vdb_h_, nb);
+    }
+    auto vdb = vdb_d_;
+    if (vdb_mean_) {
+      // one team per x1 index of the layer sums v1 over that plane's (m,k,j); the plane
+      // SUMS are Allreduced (every rank applies the mean) and divided by the global
+      // plane cell count, exactly as the profile dump does
+      const int lnx2 = indcs.nx2, lnx3 = indcs.nx3;
+      const int nkj = (nmb1+1)*lnx3*lnx2;
+      Kokkos::TeamPolicy<> vpol(DevExeSpace(), nb, Kokkos::AUTO);
+      Kokkos::parallel_for("boxconv_vdbot_mean", vpol,
+      KOKKOS_LAMBDA(Kokkos::TeamPolicy<>::member_type tmember) {
+        const int i = is + tmember.league_rank();
+        Real vs = 0.0;
+        Kokkos::parallel_reduce(Kokkos::TeamThreadRange(tmember, nkj),
+        [&](const int idx, Real &ls) {
+          const int m = idx/(lnx3*lnx2);
+          const int kj = idx - m*(lnx3*lnx2);
+          const int k = ks + kj/lnx2;
+          const int j = js + (kj - (kj/lnx2)*lnx2);
+          ls += u0(m,IM1,k,j,i)/u0(m,IDN,k,j,i);
+        }, Kokkos::Sum<Real>(vs));
+        Kokkos::single(Kokkos::PerTeam(tmember), [&]() { vdb(i-is) = vs; });
+      });
+      Kokkos::fence();
+      Kokkos::deep_copy(vdb_h_, vdb_d_);
+#if MPI_PARALLEL_ENABLED
+      MPI_Allreduce(MPI_IN_PLACE, vdb_h_.data(), nb, MPI_ATHENA_REAL, MPI_SUM,
+                    MPI_COMM_WORLD);
+#endif
+      const Real fpl = 1.0/static_cast<Real>(gnx2*gnx3);
+      for (int q=0; q<nb; ++q) vdb_h_(q) *= fpl;
+      Kokkos::deep_copy(vdb_d_, vdb_h_);
+    }
+    const Real vb_rate = bdt/vdb_time_;
+    const bool vb_mean = vdb_mean_;
+    par_for("boxconv_vdbot", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, is+nb-1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real f = 0.5*(1.0 + std::cos(M_PI*static_cast<Real>(i-is)/nb));
+      const Real gg = 1.0 - std::exp(-f*vb_rate);
+      const Real dc = u0(m,IDN,k,j,i);
+      const Real m1o = u0(m,IM1,k,j,i);
+      const Real m1n = m1o - gg*(vb_mean ? dc*vdb(i-is) : m1o);
+      u0(m,IM1,k,j,i) = m1n;
+      u0(m,IEN,k,j,i) += 0.5*(SQR(m1n) - SQR(m1o))/dc;
+    });
   }
 
   // the gravity/WB/cooling kernel's own contribution, and the two x1 wall faces of the
@@ -2454,6 +2576,9 @@ void BoxConvFinal(ParameterInput *pin, Mesh *pm) {
   prof_h_ = HostArray2D<Real>();
   prof_d_ = DvceArray2D<Real>();
   prof_alloc_ = false;
+  // and the bottom sponge's plane-mean buffers
+  vdb_h_ = HostArray1D<Real>();
+  vdb_d_ = DvceArray1D<Real>();
   // and the rt_budget_verbose accumulator, for the same reason
   two_stream_rt::rt_bud_ptr = nullptr;
   rtbud_ = DvceArray1D<Real>();
