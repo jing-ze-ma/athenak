@@ -262,6 +262,29 @@
 //!                           t = np.frombuffer(f.read(8), "<f8")[0]
 //!                           a = np.frombuffer(f.read(24*n), "<f8").reshape(n, 3)
 //!                           recs.append((t, a))          # a[:,0]=x2 a[:,1]=x3 a[:,2]=F
+//!   rt_profile_dt  cadence, in code time, of a HORIZONTALLY AVERAGED x1 PROFILE dump.
+//!                 <= 0 (default 0) disables it.  Written from the source term at the
+//!                 TOP of the call, before any source touches the state, and only on
+//!                 the first RK stage of a cycle (the same pm->time gate the surface
+//!                 dump uses), so every record is the state at time = pm->time.  It
+//!                 reads the PRIMITIVES w0 (and u0(IEN) for the internal energy, and
+//!                 Hydro::wtemp for the temperature) as ConsToPrim last left them,
+//!                 i.e. the start-of-cycle state.  Appended to one file.
+//!   rt_profile_file  that file (default "rt_profile.bin").  FORMAT: a stream of
+//!                 records, each
+//!                   [float64 time][int32 nx1][int32 nvar]
+//!                   [float64 x1v[nx1]][float64 data[nvar][nx1]]
+//!                 little-endian, no padding, no global header.  nvar = 8, and each
+//!                 row of data is the mean over the WHOLE horizontal plane (all x2,
+//!                 all x3, all MeshBlocks, all ranks) at that x1 index, in code units:
+//!                   0 <rho>          1 <v1>            2 <rho v1>
+//!                   3 <v1^2>         4 <v2^2 + v3^2>   5 <T>  (x eos.temp_cgs for K)
+//!                   6 <e>   internal energy DENSITY, u0(IEN) - rho v^2/2
+//!                   7 <v1 (e + p)>   the enthalpy flux, p = w0(IPR)
+//!                 Every MeshBlock spans the whole x1 extent (UserProblem fatals
+//!                 otherwise), so the local i index IS the global one and the grid is
+//!                 uniform in x1: x1v comes straight from the mesh extent.  Reader:
+//!                 vis/python/read_rt_profile.py.
 
 #include <algorithm>
 #include <cmath>
@@ -372,6 +395,15 @@ char surf_file_[256] = "rt_surface.bin";
 HostArray2D<Real> surf_h_;       // (ncol_local, 3): x2, x3, F_top
 DvceArray2D<Real> surf_d_;
 bool surf_alloc_ = false;
+
+// --- the horizontally averaged x1 profile dump (problem/rt_profile_dt) --------------
+constexpr int kNProf = 8;        // see the header block for what each slot is
+Real prof_dt_ = 0.0;             // <= 0 disables it
+Real prof_next_ = -1.0;          // next dump time; armed at the first source call
+char prof_file_[256] = "rt_profile.bin";
+HostArray2D<Real> prof_h_;       // (kNProf, nx1): the plane SUMS, then the means
+DvceArray2D<Real> prof_d_;
+bool prof_alloc_ = false;
 
 // --- problem/rt_budget_verbose: THE BOX ENERGY BUDGET, TERM BY TERM -----------------
 // Diagnostic only.  Every term is an ENERGY (erg), box-integrated and accumulated over
@@ -732,6 +764,108 @@ void BoxConvSurfaceDump(Mesh *pm) {
   std::fwrite(&tnow, sizeof(double), 1, pf);
   std::fwrite(all.data(), sizeof(double), 3*ntot, pf);
   std::fclose(pf);
+  return;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn BoxConvProfileDump
+//! \brief append one record of the HORIZONTALLY AVERAGED x1 profile.
+//!
+//! Diagnostic only: it reads the primitives w0, the conserved energy u0(IEN) and the
+//! temperature Hydro::wtemp that ConsToPrim left, and writes nothing back.  Called from
+//! the top of BoxConvSrcs, once per cycle, so the record is the start-of-cycle state.
+//!
+//! Every MeshBlock spans the whole x1 extent (UserProblem fatals otherwise), so the
+//! local index i - is IS the global x1 index and no LogicalLocation mapping is needed.
+//! One team per x1 index reduces over that plane's (m,k,j); the plane SUMS are gathered
+//! with MPI_Reduce and rank 0 divides by the global plane cell count.  Format: see the
+//! file header block.
+
+void BoxConvProfileDump(Mesh *pm) {
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, js = indcs.js, ks = indcs.ks;
+  const int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
+  const int nmb = pmbp->nmb_thispack;
+  const int nkj = nmb*nx3*nx2;
+  if (!prof_alloc_ || prof_d_.extent_int(1) != nx1) {
+    Kokkos::realloc(prof_d_, kNProf, nx1);
+    Kokkos::realloc(prof_h_, kNProf, nx1);
+    prof_alloc_ = true;
+  }
+  auto &w0 = pmbp->phydro->w0;
+  auto &u0 = pmbp->phydro->u0;
+  auto wt = pmbp->phydro->wtemp;
+  auto pd = prof_d_;
+  Kokkos::TeamPolicy<> policy(DevExeSpace(), nx1, Kokkos::AUTO);
+  Kokkos::parallel_for("boxconv_prof", policy,
+  KOKKOS_LAMBDA(Kokkos::TeamPolicy<>::member_type tmember) {
+    const int i = is + tmember.league_rank();
+    array_sum::GlobalSum sum;
+    Kokkos::parallel_reduce(Kokkos::TeamThreadRange(tmember, nkj),
+    [&](const int idx, array_sum::GlobalSum &ls) {
+      const int m = idx/(nx3*nx2);
+      const int kj = idx - m*(nx3*nx2);
+      const int k = ks + kj/nx2;
+      const int j = js + (kj - (kj/nx2)*nx2);
+      const Real d = w0(m,IDN,k,j,i);
+      const Real v1 = w0(m,IVX,k,j,i);
+      const Real v2 = w0(m,IVY,k,j,i);
+      const Real v3 = w0(m,IVZ,k,j,i);
+      const Real pg = w0(m,IPR,k,j,i);
+      const Real ei = u0(m,IEN,k,j,i) - 0.5*d*(v1*v1 + v2*v2 + v3*v3);
+      ls.the_array[0] += d;
+      ls.the_array[1] += v1;
+      ls.the_array[2] += d*v1;
+      ls.the_array[3] += v1*v1;
+      ls.the_array[4] += v2*v2 + v3*v3;
+      ls.the_array[5] += wt(m,k,j,i);
+      ls.the_array[6] += ei;
+      ls.the_array[7] += v1*(ei + pg);
+    }, Kokkos::Sum<array_sum::GlobalSum>(sum));
+    Kokkos::single(Kokkos::PerTeam(tmember), [&]() {
+      for (int n=0; n<kNProf; ++n) pd(n, i-is) = sum.the_array[n];
+    });
+  });
+  Kokkos::fence();
+  Kokkos::deep_copy(prof_h_, prof_d_);
+
+  std::vector<double> buf(kNProf*nx1);
+  for (int n=0; n<kNProf; ++n) {
+    for (int i=0; i<nx1; ++i) buf[n*nx1+i] = static_cast<double>(prof_h_(n,i));
+  }
+#if MPI_PARALLEL_ENABLED
+  std::vector<double> rbuf((global_variable::my_rank == 0) ? kNProf*nx1 : 1);
+  MPI_Reduce(buf.data(), rbuf.data(), kNProf*nx1, MPI_DOUBLE, MPI_SUM, 0,
+             MPI_COMM_WORLD);
+  if (global_variable::my_rank == 0) buf.swap(rbuf);
+#endif
+  if (global_variable::my_rank != 0) return;
+  const int nplane = pm->mesh_indcs.nx2*pm->mesh_indcs.nx3;
+  const double fnorm = 1.0/static_cast<double>(nplane);
+  for (int q=0; q<kNProf*nx1; ++q) buf[q] *= fnorm;
+  // the grid is uniform in x1 and every block spans it, so the mesh extent gives x1v
+  std::vector<double> x1v(nx1);
+  const double x1lo = static_cast<double>(pm->mesh_size.x1min);
+  const double x1hi = static_cast<double>(pm->mesh_size.x1max);
+  for (int i=0; i<nx1; ++i) {
+    x1v[i] = x1lo + (static_cast<double>(i) + 0.5)*(x1hi - x1lo)/nx1;
+  }
+  FILE *pfp = std::fopen(prof_file_, "ab");
+  if (pfp == nullptr) {
+    std::cout << "### FATAL ERROR in box_convection: cannot append to "
+              << "problem/rt_profile_file '" << prof_file_ << "'" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  const double tnow = static_cast<double>(pm->time);
+  const int32_t n1 = static_cast<int32_t>(nx1);
+  const int32_t nv = static_cast<int32_t>(kNProf);
+  std::fwrite(&tnow, sizeof(double), 1, pfp);
+  std::fwrite(&n1, sizeof(int32_t), 1, pfp);
+  std::fwrite(&nv, sizeof(int32_t), 1, pfp);
+  std::fwrite(x1v.data(), sizeof(double), nx1, pfp);
+  std::fwrite(buf.data(), sizeof(double), kNProf*nx1, pfp);
+  std::fclose(pfp);
   return;
 }
 }  // namespace
@@ -1244,6 +1378,20 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     }
     surf_next_ = -1.0;
     surf_alloc_ = false;
+    // ---- the horizontally averaged x1 profile dump (see the header block) ---------
+    prof_dt_ = pin->GetOrAddReal("problem", "rt_profile_dt", 0.0);
+    {
+      std::string pf = pin->GetOrAddString("problem", "rt_profile_file",
+                                           "rt_profile.bin");
+      if (pf.size() >= sizeof(prof_file_)) {
+        std::cout << "### FATAL ERROR in box_convection: problem/rt_profile_file is "
+                  << "longer than 255 characters" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      std::snprintf(prof_file_, sizeof(prof_file_), "%s", pf.c_str());
+    }
+    prof_next_ = -1.0;
+    prof_alloc_ = false;
     // ---- the thin-region radiative force (see two_stream_rt.hpp, rt_rad_force) ------
     // It is the other half of the EOS's radiation taper: the taper removes (1-w) of the
     // LTE radiation pressure from the gas, and this puts the force that pressure was
@@ -1575,6 +1723,17 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
 //! wellbalance_dynamic -- plus the top cooling layer.
 
 void BoxConvSrcs(Mesh *pm, Real bdt) {
+  // The horizontally averaged profile dump, on the state as it stands BEFORE any source
+  // term of this call.  pm->time is the time at the START of the cycle and does not move
+  // between stages, so advancing prof_next_ PAST it here is what makes this fire once
+  // per cycle rather than once per stage.  A restart arms it at the restart time.
+  if (prof_dt_ > 0.0) {
+    if (prof_next_ < 0.0) prof_next_ = pm->time;
+    if (pm->time >= prof_next_) {
+      BoxConvProfileDump(pm);
+      while (prof_next_ <= pm->time) prof_next_ += prof_dt_;
+    }
+  }
   MeshBlockPack *pmbp = pm->pmb_pack;
   auto &indcs = pm->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
@@ -2248,6 +2407,9 @@ void BoxConvFinal(ParameterInput *pin, Mesh *pm) {
   surf_h_ = HostArray2D<Real>();
   surf_d_ = DvceArray2D<Real>();
   surf_alloc_ = false;
+  prof_h_ = HostArray2D<Real>();
+  prof_d_ = DvceArray2D<Real>();
+  prof_alloc_ = false;
   // and the rt_budget_verbose accumulator, for the same reason
   two_stream_rt::rt_bud_ptr = nullptr;
   rtbud_ = DvceArray1D<Real>();
