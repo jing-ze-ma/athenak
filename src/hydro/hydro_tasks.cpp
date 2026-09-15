@@ -194,14 +194,24 @@ void Hydro::AssembleHydroTasks(std::map<std::string, std::shared_ptr<TaskList>> 
 
   // assemble "stagen" task list
   id.copyu     = tl["stagen"]->AddTask(&Hydro::CopyCons, this, none);
-  id.flux      = tl["stagen"]->AddTask(&Hydro::Fluxes,this,id.copyu);
+  // ---- problem/rt_imex: the EXTRA fully implicit stages the ImEx tableau puts before
+  // the first explicit stage.  They must run before Fluxes so the stage-1 flux
+  // divergence is evaluated on the implicitly updated state, hence the ConToPrim in
+  // between.  Both are no-ops unless a problem generator enrols user_imex_func.
+  id.imexpre   = tl["stagen"]->AddTask(&Hydro::RTImExFirst, this, id.copyu);
+  id.imexc2p   = tl["stagen"]->AddTask(&Hydro::ConToPrim, this, id.imexpre);
+  id.flux      = tl["stagen"]->AddTask(&Hydro::Fluxes,this,id.imexc2p);
   id.sendf     = tl["stagen"]->AddTask(&Hydro::SendFlux, this, id.flux);
   id.recvf     = tl["stagen"]->AddTask(&Hydro::RecvFlux, this, id.sendf);
   id.rkupdt    = tl["stagen"]->AddTask(&Hydro::RKUpdate, this, id.recvf);
   id.srctrms   = tl["stagen"]->AddTask(&Hydro::HydroSrcTerms, this, id.rkupdt);
+  // ---- problem/rt_imex: the implicit stage operator, in exactly the place the in-stage
+  // user source it replaces occupied -- after the explicit update and the explicit
+  // sources, before the ghost exchange, so what it writes is what is communicated
+  id.imex      = tl["stagen"]->AddTask(&Hydro::RTImEx, this, id.srctrms);
   // the implicit radial radiative diffusion (<hydro>/rad_implicit_x1) sits between the
   // explicit update and the ghost exchange, so what it writes is what is communicated
-  id.impcnd    = tl["stagen"]->AddTask(&Hydro::ImplicitConduction, this, id.srctrms);
+  id.impcnd    = tl["stagen"]->AddTask(&Hydro::ImplicitConduction, this, id.imex);
   // ... and the implicit TRANSVERSE radiative diffusion (<hydro>/rad_implicit_ang) right
   // after it: the two are operator-split from each other and from the hydro
   id.imptrc    = tl["stagen"]->AddTask(&Hydro::ImplicitTransverseConduction, this,
@@ -763,6 +773,41 @@ TaskStatus Hydro::RTStrangSplit(Driver *pdrive, int stage) {
     return TaskStatus::complete;
   }
   (pm->pgen->user_split_func)(pm, 0.5*(pm->dt));
+  return TaskStatus::complete;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn TaskStatus Hydro::RTImExFirst
+//! \brief the extra fully implicit stages of the ImEx-RK integrator
+//! (ProblemGenerator::user_imex_func), run once at the head of explicit stage 1 with
+//! estage = -1 and 0 (istage = 1 and 2 in the module's numbering).  Mirrors
+//! IonNeutral::FirstTwoImpRK; CopyCons has already saved u1 = u0 = U^n.
+//!
+//! A null hook returns immediately: every run that does not enrol one is bitwise
+//! unchanged.
+
+TaskStatus Hydro::RTImExFirst(Driver *pdrive, int stage) {
+  Mesh *pm = pmy_pack->pmesh;
+  if (pm->pgen == nullptr || pm->pgen->user_imex_func == nullptr) {
+    return TaskStatus::complete;
+  }
+  if (stage != 1) return TaskStatus::complete;
+  (pm->pgen->user_imex_func)(pm, pdrive, -1);
+  (pm->pgen->user_imex_func)(pm, pdrive, 0);
+  return TaskStatus::complete;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn TaskStatus Hydro::RTImEx
+//! \brief the implicit stage operator of the ImEx-RK integrator
+//! (ProblemGenerator::user_imex_func) for explicit stage n.  A null hook is a no-op.
+
+TaskStatus Hydro::RTImEx(Driver *pdrive, int stage) {
+  Mesh *pm = pmy_pack->pmesh;
+  if (pm->pgen == nullptr || pm->pgen->user_imex_func == nullptr) {
+    return TaskStatus::complete;
+  }
+  (pm->pgen->user_imex_func)(pm, pdrive, stage);
   return TaskStatus::complete;
 }
 

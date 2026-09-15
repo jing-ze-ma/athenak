@@ -308,6 +308,7 @@
 #include "globals.hpp"
 #include "eos/eos.hpp"
 #include "hydro/hydro.hpp"
+#include "driver/driver.hpp"
 #include "utils/wb_background.hpp"
 #include "diffusion/conduction.hpp"
 #include "units/units.hpp"
@@ -318,6 +319,7 @@
 
 void BoxConvSrcs(Mesh *pm, Real bdt);
 void BoxConvRTSplit(Mesh *pm, Real bdt);
+void BoxConvRTImEx(Mesh *pm, Driver *pdrive, const int estage);
 void BoxConvBC(Mesh *pm);
 void BoxConvFinal(ParameterInput *pin, Mesh *pm);
 void BoxConvHistory(HistoryData *pdata, Mesh *pm);
@@ -386,6 +388,25 @@ bool rt_once_ = false;
 // the whole radiation source is then applied ONCE with the FULL cycle dt after the last
 // stage.  Halves the cost of the mode-3 source under rk2.
 bool rt_col3_once_ = false;
+// problem/rt_imex: the mode-3 column solve becomes the IMPLICIT STAGE OPERATOR of the
+// ImEx-RK integrator (<time>/integrator = imex2 or imex2+) instead of a source applied
+// inside the explicit RK stage.  The splitting error between the hydro update and the
+// column -- the O(dt) anti-damping that grows the surface f-mode at gamma = 0.615 dt[s]
+// per turnover -- is what this removes: ImEx is jointly second order in the explicit and
+// the implicit operator, the first-order split is not.
+//
+// The RADIATION OPERATOR IS TAKEN AS A WHOLE: the energy exchange AND the radiative
+// momentum force (problem/rt_rad_force) and its work are all part of S, so all four
+// components (IM1,IM2,IM3,IEN) are stored and recombined.  The force is not stiff, but
+// it is evaluated on the same fresh column solve as the energy source, so making it part
+// of the same operator costs nothing, needs no hook inside two_stream_rt.hpp, and leaves
+// no residual first-order split in the force either.
+bool rt_imex_ = false;
+// the per-stage implicit sources S^(l), (nimp_stages, nmb, 4, n3, n2, n1), 4 = the
+// IM1/IM2/IM3/IEN components in that order.  Allocated on the first call (the Driver,
+// which owns nimp_stages, is built after the problem generator).  NOT restarted: every
+// slot is written before it is read inside the same cycle (see BoxConvRTImEx).
+DvceArray6D<Real> rtimex_src_;
 bool cool_on_ = true;     // the Newton cooling layer (off by default once RT is on)
 Real rgas_ = 0.0;         // R/mu in code units; the ideal branch's T = p/(Rgas rho)
 // --- the per-column emergent-flux surface dump (problem/rt_surface_dt) --------------
@@ -1336,6 +1357,38 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                 << ts::rt_implicit_column << std::endl;
       std::exit(EXIT_FAILURE);
     }
+    // ---- problem/rt_imex: the column solve as the ImEx implicit stage operator ----
+    rt_imex_ = pin->GetOrAddBoolean("problem", "rt_imex", false);
+    if (rt_imex_) {
+      const std::string integ = pin->GetOrAddString("time", "integrator", "rk2");
+      if (integ != "imex2" && integ != "imex2+") {
+        std::cout << "### FATAL ERROR in box_convection: problem/rt_imex needs "
+                  << "<time>/integrator = imex2 or imex2+ (the a_twid/a_impl weights "
+                  << "the implicit stages are combined with exist only there).  Got "
+                  << "integrator = " << integ << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      if (ts::rt_implicit_column != 3) {
+        std::cout << "### FATAL ERROR in box_convection: problem/rt_imex needs "
+                  << "problem/rt_implicit_column = 3 -- the ImEx implicit stage must be "
+                  << "an exact solve of the whole column, which is what mode 3 is.  Got "
+                  << "rt_implicit_column = " << ts::rt_implicit_column << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      if (rt_strang_ || rt_once_ || rt_col3_once_) {
+        std::cout << "### FATAL ERROR in box_convection: problem/rt_imex is mutually "
+                  << "exclusive with rt_strang, rt_once_per_cycle and rt_col3_once -- "
+                  << "they are alternative ways of splitting the SAME source"
+                  << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      user_imex_func = BoxConvRTImEx;
+      if (global_variable::my_rank == 0) {
+        std::cout << "### box_convection: problem/rt_imex = true, the mode-3 column "
+                  << "solve is the IMPLICIT STAGE OPERATOR of " << integ
+                  << " and is NOT applied as an in-stage source" << std::endl;
+      }
+    }
     // enrolled HERE, not next to user_srcs_func: the switch is read only now
     if (rt_strang_ || rt_once_ || rt_col3_once_) {
       user_split_func = BoxConvRTSplit;
@@ -1995,7 +2048,7 @@ void BoxConvSrcs(Mesh *pm, Real bdt) {
 
   // --- the grey two-stream, after gravity and the cooling layer, exactly where
   // red_giant.cpp calls it: inside the stage, on the state the last ConToPrim left.
-  if (rt_on_ && !rt_strang_ && !rt_once_ && !rt_col3_once_) {
+  if (rt_on_ && !rt_strang_ && !rt_once_ && !rt_col3_once_ && !rt_imex_) {
     two_stream_rt::picket_fence_two_stream_RT(pm, bdt);
     if (bud_on) {
       Real e4, r4, ft, fc;
@@ -2052,6 +2105,128 @@ void BoxConvRTSplit(Mesh *pm, Real bdt) {
       while (surf_next_ <= pm->time) surf_next_ += surf_dt_;
     }
   }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void BoxConvRTImEx
+//! \brief problem/rt_imex: the mode-3 column solve AS THE IMPLICIT STAGE OPERATOR of the
+//! ImEx-RK integrator (<time>/integrator = imex2 or imex2+).  Enrolled as
+//! ProblemGenerator::user_imex_func and called by Hydro::RTImEx (once per explicit
+//! stage, in the place the in-stage source it replaces occupied) and by
+//! Hydro::RTImExFirst (with estage = -1 and 0, at the head of stage 1, for the extra
+//! fully implicit stages the tableau adds).
+//!
+//! It mirrors IonNeutral::ImpRKUpdate exactly -- that is the only true ImEx user in the
+//! code, and its conventions are what the Driver's weights are written for:
+//!   istage = estage + 2         the implicit stage number, 1..nimp_stages+1
+//!   slot   = istage - 1         where this stage's source S^(l) is stored
+//!   row    = istage - 2         the a_twid row used to recombine the stored sources
+//! and the three steps per stage are
+//!   (a) u0 += dt*sum_{l<=row} a_twid[row][l]*S^(l)   the earlier sources, EXPLICITLY
+//!   (b) the implicit solve on that state with the effective step a_impl*dt
+//!   (c) S^(slot) = (u0_after - u0_before)/(a_impl*dt) = R(U^(istage))
+//! (b) and (c) are skipped on the LAST explicit stage (estage == nexp_stages), which is
+//! the final combination and does (a) only.  a_twid is NOT the implicit Butcher tableau
+//! and the diagonal is NOT a_twid[k][k]: the solve always uses a_impl (0.5 for imex2,
+//! 1+1/sqrt(2) for imex2+), exactly as ion-neutral does.
+//!
+//! Because the column solve is backward Euler over a_impl*dt (mode 3 solves the cell
+//! energies implicitly), the increment it returns divided by a_impl*dt IS the source
+//! evaluated on the state the solve produced, which is what (c) needs.
+//!
+//! WHAT IS IN THE OPERATOR: the energy exchange, the radiative momentum force
+//! (problem/rt_rad_force) and its work -- the whole of what picket_fence_two_stream_RT
+//! writes into u0 -- hence the four stored components IM1,IM2,IM3,IEN.  The force is
+//! therefore evaluated on THAT stage's fresh column solve (it is computed in the same
+//! kernel that applies the energy source) and recombined with the same weights.  The
+//! horizontal ADI operator (<hydro>/rad_implicit_ang) is NOT part of it: it stays the
+//! separate operator-split task it is today, right after this one.  It is the obvious
+//! next thing to fold in if a residual O(dt) mode survives.
+//!
+//! RESTARTS need no new state: slot l is written at implicit stage l+1 and first read at
+//! stage l+2 of the SAME cycle, so the array is rebuilt from scratch every cycle.
+
+void BoxConvRTImEx(Mesh *pm, Driver *pd, const int estage) {
+  if (!rt_on_ || !rt_imex_) return;
+  const int istage = estage + 2;
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmbp->nmb_thispack - 1;
+  auto &u0 = pmbp->phydro->u0;
+  const Real dt = pm->dt;
+
+  // allocated here, not in UserProblem: the Driver (which owns nimp_stages) is built
+  // after the problem generator.  Zeroed, so the coefficient-zero slots imex2+ never
+  // writes can still be read.
+  if (rtimex_src_.extent(0) == 0) {
+    const int nmb = std::max(pmbp->nmb_thispack, pm->nmb_maxperrank);
+    const int n1 = indcs.nx1 + 2*indcs.ng;
+    const int n2 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*indcs.ng) : 1;
+    const int n3 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*indcs.ng) : 1;
+    Kokkos::realloc(rtimex_src_, pd->nimp_stages, nmb, 4, n3, n2, n1);
+    Kokkos::deep_copy(rtimex_src_, 0.0);
+  }
+
+  // imex2+ (Krapp et al. 2024) has all-zero a_twid rows 0 and 1 and no implicit
+  // contribution at its first two implicit stages: they are NO-OPS, exactly as
+  // IonNeutral::ImpRKUpdate zeroes its coefficients there.  The practical gain is that
+  // imex2+ needs no pre-stage at all, so nothing is ever solved before the stage-1 flux
+  // divergence and no ghost zone is ever a stage stale (see the note in RTImExFirst).
+  const bool noop = (pd->integrator == "imex2+") && (istage < 3);
+  if (noop) return;
+
+  // ---- (a) the earlier stages' sources, re-applied EXPLICITLY --------------------
+  if (istage > 1) {
+    const int row = istage - 2;
+    Real wgt[4];
+    for (int l=0; l<4; ++l) wgt[l] = (l <= row) ? (pd->a_twid[row][l])*dt : 0.0;
+    const Real w0c = wgt[0], w1c = wgt[1], w2c = wgt[2], w3c = wgt[3];
+    const int nl = row;
+    auto s_ = rtimex_src_;
+    par_for("boxconv_imex_exp", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      Real d[4] = {0.0, 0.0, 0.0, 0.0};
+      const Real ww[4] = {w0c, w1c, w2c, w3c};
+      for (int l=0; l<=nl; ++l) {
+        for (int c=0; c<4; ++c) d[c] += ww[l]*s_(l,m,c,k,j,i);
+      }
+      u0(m,IM1,k,j,i) += d[0];
+      u0(m,IM2,k,j,i) += d[1];
+      u0(m,IM3,k,j,i) += d[2];
+      u0(m,IEN,k,j,i) += d[3];
+    });
+  }
+
+  // ---- (b) the implicit solve, and (c) the source it defines ---------------------
+  // Skipped on the last explicit stage, which only combines what is stored.
+  if (estage < pd->nexp_stages) {
+    const int sl = istage - 1;
+    const Real adt = (pd->a_impl)*dt;
+    auto s_ = rtimex_src_;
+    // stash -u0 in the slot: the increment is formed in place, no second array
+    par_for("boxconv_imex_pre", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      s_(sl,m,0,k,j,i) = -u0(m,IM1,k,j,i);
+      s_(sl,m,1,k,j,i) = -u0(m,IM2,k,j,i);
+      s_(sl,m,2,k,j,i) = -u0(m,IM3,k,j,i);
+      s_(sl,m,3,k,j,i) = -u0(m,IEN,k,j,i);
+    });
+    // the solve.  BoxConvRTSplit is the bare call plus the budget/Ftop/surface-dump
+    // bookkeeping the in-stage call also does; nothing in it depends on WHERE it is
+    // called from, only on the dt it is handed.
+    BoxConvRTSplit(pm, adt);
+    const Real iadt = 1.0/adt;
+    par_for("boxconv_imex_rec", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      s_(sl,m,0,k,j,i) = (s_(sl,m,0,k,j,i) + u0(m,IM1,k,j,i))*iadt;
+      s_(sl,m,1,k,j,i) = (s_(sl,m,1,k,j,i) + u0(m,IM2,k,j,i))*iadt;
+      s_(sl,m,2,k,j,i) = (s_(sl,m,2,k,j,i) + u0(m,IM3,k,j,i))*iadt;
+      s_(sl,m,3,k,j,i) = (s_(sl,m,3,k,j,i) + u0(m,IEN,k,j,i))*iadt;
+    });
+  }
+  return;
 }
 
 //----------------------------------------------------------------------------------------
@@ -2414,5 +2589,7 @@ void BoxConvFinal(ParameterInput *pin, Mesh *pm) {
   two_stream_rt::rt_bud_ptr = nullptr;
   rtbud_ = DvceArray1D<Real>();
   rtbud_n_ = 0;
+  // ...and the ImEx per-stage source store (problem/rt_imex), likewise
+  rtimex_src_ = DvceArray6D<Real>();
   return;
 }
