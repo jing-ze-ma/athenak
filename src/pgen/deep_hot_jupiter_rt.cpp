@@ -7,6 +7,25 @@
 //! \brief Problem generator for the deep hot Jupiter.
 //!
 //! REFERENCE: Heng, Menou, Phillipps, MNRAS, 413, 2380 (2011); Deitrick, Mendonça, Schroffenegger, Grimm, Tsai, Heng, ApJS, 248, 30 (2020)
+//!
+//! problem/rt_use_cons (default FALSE, here and in red_giant.cpp; the FeCZ box
+//! pgen box_convection defaults it TRUE).  Where the two-stream sweep reads the cell's
+//! thermodynamic state from.  With it FALSE the sweep reads w0, the primitives the
+//! PREVIOUS ConToPrim wrote, i.e. the state at the START of the stage: the RK update,
+//! the explicit source terms and the implicit radial conduction have all moved the gas
+//! since, so the radiative source is computed against a state that is one whole stage
+//! stale.  That lag is not harmless -- it is a delayed thermostat, and a delayed
+//! thermostat is a numerical FORCING whose amplitude is linear in dt.  It was measured
+//! driving the organ-pipe acoustic modes of the closed FeCZ boxes (saturated v_rms
+//! strictly monotone in dt and in nothing else; see the memory note
+//! rt-source-dt-forcing.md), which is why box_convection hands the sweep the post-RK
+//! state and why TRUE is the recommended setting for new runs here as well.
+//!
+//! It is left FALSE by default deliberately: flipping the default would silently change
+//! every red-giant and deep-hot-Jupiter run ever restarted from these inputs, and the
+//! two states differ by O(dt) in the radiative source.  Opt in from the input file.
+//! (The conserved state is not guaranteed positive after an RK stage; the sweep's
+//! EintFromCons path carries its own non-positive guard -- see utils/two_stream_rt.hpp.)
 
 #include <sys/stat.h>  // mkdir, for the cyclediag/ subdirectory
 
@@ -414,12 +433,28 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   rt_dump_j = pin->GetOrAddInteger("problem","ck_dump_j",-1);
   rt_dump_k = pin->GetOrAddInteger("problem","ck_dump_k",-1);
   rt_ck_pcut = pin->GetOrAddReal("problem","ck_pcut_bar",10.0);
+  // the two grey-sweep fixes, wired here so a dhj run can reproduce a pre-fix run
+  // bitwise.  Both default to the FIX (false); see utils/two_stream_rt.hpp.
+  // rt_cut_bc_legacy: the upward intensity at the cut used to be isotropic at B, which
+  // is exactly half the flux the column supports.
+  two_stream_rt::rt_cut_bc_legacy =
+      pin->GetOrAddBoolean("problem","rt_cut_bc_legacy",false);
+  // rt_layer_legacy: every layer used to span a whole cell in optical depth but carry a
+  // source running between two cell CENTRES, offset from it by half a cell.
+  two_stream_rt::rt_layer_legacy =
+      pin->GetOrAddBoolean("problem","rt_layer_legacy",false);
+  // problem/rt_ali_diag: the accelerated-Lambda diagonal in the per-cell semi-implicit
+  // apply.  A PHYSICS CORRECTION, default TRUE: without it an optically thick cell is
+  // handed 1/x of its own radiative source (x up to 1e5), so the thick layers of the
+  // column never re-relax.  The LEGACY value is false, and reproduces a pre-fix run bit
+  // for bit.  See the long note in utils/two_stream_rt.hpp.
+  two_stream_rt::rt_ali_diag =
+      pin->GetOrAddBoolean("problem","rt_ali_diag",true);
   rt_de_max = pin->GetOrAddReal("problem","rt_de_max",0.5);
   rt_semi_implicit = pin->GetOrAddBoolean("problem","rt_semi_implicit",true);
   // the sub-cycled local relaxation; see two_stream_rt.hpp, rt_relax_sub.  Default 1 =
   // the single-step form, bit for bit.  Read here, the one site both the from-scratch and
   // the restart path go through.
-  rt_ali_diag = pin->GetOrAddBoolean("problem","rt_ali_diag",true);
   rt_relax_sub = pin->GetOrAddInteger("problem","rt_relax_sub",1);
   rt_relax_xcrit = pin->GetOrAddReal("problem","rt_relax_xcrit",1.0);
   rt_relax_submax = pin->GetOrAddInteger("problem","rt_relax_submax",32);

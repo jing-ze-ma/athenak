@@ -2897,145 +2897,333 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
                 transw[cc] = RT_EXP(-static_cast<RtF>(dtau*facsw));
               }
             }
-            // down-sweep
-            for (int i=ie; i>icut-1; --i) {
-              const Real rho = rhoN(m,k,j,i);
-              const Real drho = rho*dx1(m,k,j,i);
-              int iT, iP;
-              Real fT, fP;
-              const Real xTv = xT_g(m,k,j,i);
-              const Real xPv = xP_g(m,k,j,i);
-              iT = static_cast<int>(xTv); fT = xTv - static_cast<Real>(iT);
-              iP = static_cast<int>(xPv); fP = xPv - static_cast<Real>(iP);
-              // the far endpoint of this layer's source function, weighted by emitting
-              // matter (see BFace).  The neighbour's kappa costs a second table lookup,
-              // so it is paid only where the two Planck functions differ by more than 4x
-              // -- a smooth column takes the old expression and is bit-identical.
-              const int ir1 = (i+1 > ie) ? ie : i+1;
-              const Real rhf = rhoN(m,k,j,ir1);
-              const Real xTf = xT_g(m,k,j,i+1);
-              const Real xPf = xP_g(m,k,j,i+1);
-              const int iTf = static_cast<int>(xTf);
-              const int iPf = static_cast<int>(xPf);
-              const Real fTf = xTf - static_cast<Real>(iTf);
-              const Real fPf = xPf - static_cast<Real>(iPf);
-              for (int cc=0; cc<NC; ++cc) {
-                const int b = bandc[cc];
-                const Real kap = ck_kappa(cklk, iT, fT, iP, fP, b, gc[cc])
-                                 + kc_g(m,b,i,k,j);
-                const Real bown = Bb_g(m,b,i,k,j);
-                Real bfar = Bb_g(m,b,i+1,k,j);
-                if (bfar > 4.0*bown || bown > 4.0*bfar) {
-                  const Real kapf = ck_kappa(cklk, iTf, fTf, iPf, fPf, b, gc[cc])
-                                  + kc_g(m,b,i+1,k,j);
-                  bfar = BFace(kap*rho, kapf*rhf, bown, bfar, bface_on);
-                }
-                const RtF x = static_cast<RtF>(kap*drho/muc[cc]);
-                const RtF e0 = -RT_EXPM1(-x);
-                const RtF one = static_cast<RtF>(1.0);
-                const RtF alp = (x > static_cast<RtF>(1.0e-3)) ? (e0 - one + e0/x)
-                                                              : (x/2 - x*x/3);
-                const RtF bet = (x > static_cast<RtF>(1.0e-3)) ? (one - e0/x)
-                                                              : (x/2 - x*x/6);
-                Src_g(m,blk,i,k,j) += wfc[cc]/dx1(m,k,j,i)
-                    *static_cast<Real>(e0*I_down[cc][i+1]
-                      - (alp*static_cast<RtF>(bfar)
-                         + bet*static_cast<RtF>(bown)));
-                I_down[cc][i] = (one-e0)*I_down[cc][i+1]
-                              + alp*static_cast<RtF>(bfar)
-                              + bet*static_cast<RtF>(bown);
-                // Direct beam. Deposit the flux DIFFERENCE across the cell, not
-                // kappa rho F exp(-tau) evaluated at one face. The latter is what the
-                // grey
-                // picket fence does, and it under-deposits badly once a layer is not
-                // thin:
-                // the ratio of deposited to absorbed is u e^-u/(1 - e^-u) with u =
-                // dtau/mu,
-                // which is 0.95 at u = 0.1 but 0.58 at u = 1 and 0.31 at u = 2. Summed
-                // down
-                // a column with u ~ 0.5 it loses a quarter of the incident flux --
-                // measured
-                // against Exo-FMS on an identical column, which is how this was found.
-                // Written this way the column integral is F mu (1 - e^-tau_total) by
-                // construction, and it still reduces to the old form as dtau -> 0.
-                tausw[cc] += kap*drho;
-                if (lit) {
-                  const Real tnew = RT_EXP(-static_cast<RtF>(tausw[cc]*facsw));
-                  Qb_g(m,blk,i,k,j) += (1.0-albedo)*Fstar*ckswf(b)*wgc[cc]/facsw
-                            * (transw[cc] - tnew)/dx1(m,k,j,i);
-                  transw[cc] = tnew;
+            if (layer_legacy) {
+              // down-sweep
+              for (int i=ie; i>icut-1; --i) {
+                const Real rho = rhoN(m,k,j,i);
+                const Real drho = rho*dx1(m,k,j,i);
+                int iT, iP;
+                Real fT, fP;
+                const Real xTv = xT_g(m,k,j,i);
+                const Real xPv = xP_g(m,k,j,i);
+                iT = static_cast<int>(xTv); fT = xTv - static_cast<Real>(iT);
+                iP = static_cast<int>(xPv); fP = xPv - static_cast<Real>(iP);
+                // the far endpoint of this layer's source function, weighted by emitting
+                // matter (see BFace).  The neighbour's kappa costs a second table lookup,
+                // so it is paid only where the two Planck functions differ by more than
+                // 4x
+                // -- a smooth column takes the old expression and is bit-identical.
+                const int ir1 = (i+1 > ie) ? ie : i+1;
+                const Real rhf = rhoN(m,k,j,ir1);
+                const Real xTf = xT_g(m,k,j,i+1);
+                const Real xPf = xP_g(m,k,j,i+1);
+                const int iTf = static_cast<int>(xTf);
+                const int iPf = static_cast<int>(xPf);
+                const Real fTf = xTf - static_cast<Real>(iTf);
+                const Real fPf = xPf - static_cast<Real>(iPf);
+                for (int cc=0; cc<NC; ++cc) {
+                  const int b = bandc[cc];
+                  const Real kap = ck_kappa(cklk, iT, fT, iP, fP, b, gc[cc])
+                                   + kc_g(m,b,i,k,j);
+                  const Real bown = Bb_g(m,b,i,k,j);
+                  Real bfar = Bb_g(m,b,i+1,k,j);
+                  if (bfar > 4.0*bown || bown > 4.0*bfar) {
+                    const Real kapf = ck_kappa(cklk, iTf, fTf, iPf, fPf, b, gc[cc])
+                                    + kc_g(m,b,i+1,k,j);
+                    bfar = BFace(kap*rho, kapf*rhf, bown, bfar, bface_on);
+                  }
+                  const RtF x = static_cast<RtF>(kap*drho/muc[cc]);
+                  const RtF e0 = -RT_EXPM1(-x);
+                  const RtF one = static_cast<RtF>(1.0);
+                  const RtF alp = (x > static_cast<RtF>(1.0e-3)) ? (e0 - one + e0/x)
+                                                                : (x/2 - x*x/3);
+                  const RtF bet = (x > static_cast<RtF>(1.0e-3)) ? (one - e0/x)
+                                                                : (x/2 - x*x/6);
+                  Src_g(m,blk,i,k,j) += wfc[cc]/dx1(m,k,j,i)
+                      *static_cast<Real>(e0*I_down[cc][i+1]
+                        - (alp*static_cast<RtF>(bfar)
+                           + bet*static_cast<RtF>(bown)));
+                  I_down[cc][i] = (one-e0)*I_down[cc][i+1]
+                                + alp*static_cast<RtF>(bfar)
+                                + bet*static_cast<RtF>(bown);
+                  // Direct beam. Deposit the flux DIFFERENCE across the cell, not
+                  // kappa rho F exp(-tau) evaluated at one face. The latter is what the
+                  // grey
+                  // picket fence does, and it under-deposits badly once a layer is not
+                  // thin:
+                  // the ratio of deposited to absorbed is u e^-u/(1 - e^-u) with u =
+                  // dtau/mu,
+                  // which is 0.95 at u = 0.1 but 0.58 at u = 1 and 0.31 at u = 2. Summed
+                  // down
+                  // a column with u ~ 0.5 it loses a quarter of the incident flux --
+                  // measured
+                  // against Exo-FMS on an identical column, which is how this was found.
+                  // Written this way the column integral is F mu (1 - e^-tau_total) by
+                  // construction, and it still reduces to the old form as dtau -> 0.
+                  tausw[cc] += kap*drho;
+                  if (lit) {
+                    const Real tnew = RT_EXP(-static_cast<RtF>(tausw[cc]*facsw));
+                    Qb_g(m,blk,i,k,j) += (1.0-albedo)*Fstar*ckswf(b)*wgc[cc]/facsw
+                              * (transw[cc] - tnew)/dx1(m,k,j,i);
+                    transw[cc] = tnew;
+                  }
                 }
               }
-            }
-            // Bottom of the CORRELATED-K DOMAIN, not of the column. At the cut the grey
-            // optical depth is of order 1e4, so the layer is thermalised to e^-tau and
-            // the
-            // upward intensity is its own Planck function; the planet's internal flux is
-            // delivered here as an extra band-weighted source. Below the cut nothing
-            // radiative is applied -- that region is optically thick and convective, and
-            // the flux simply passes through it.
-            RtF I_up[NC];
-            for (int cc=0; cc<NC; ++cc) {
-              const int b = bandc[cc];
-              const Real Iint_b = (int_at_cut ? boltz_sigma/M_PI*Tint4
-                                * ck_planck_frac(ckpf, pfl0, pfid, Tint, b) : 0.0);
-              I_up[cc] = static_cast<RtF>(Bb_g(m,b,icut,k,j) + Iint_b);
-              Fb_g(m,blk,icut,k,j) += wfc[cc]*(I_up[cc] - I_down[cc][icut]);
-            }
-            // up-sweep
-            for (int i=icut+1; i<ie+2; ++i) {
-              const Real rho = rhoN(m,k,j,i-1);
-              const Real drho = rho*dx1(m,k,j,i-1);
-              int iT, iP;
-              Real fT, fP;
-              const Real xTv = xT_g(m,k,j,i-1);
-              const Real xPv = xP_g(m,k,j,i-1);
-              iT = static_cast<int>(xTv); fT = xTv - static_cast<Real>(iT);
-              iP = static_cast<int>(xPv); fP = xPv - static_cast<Real>(iP);
-              // same emissivity-weighted far endpoint, and the same 4x guard: see BFace
-              const int ir1 = (i > ie) ? ie : i;
-              const Real rhf = rhoN(m,k,j,ir1);
-              const Real xTf = xT_g(m,k,j,i);
-              const Real xPf = xP_g(m,k,j,i);
-              const int iTf = static_cast<int>(xTf);
-              const int iPf = static_cast<int>(xPf);
-              const Real fTf = xTf - static_cast<Real>(iTf);
-              const Real fPf = xPf - static_cast<Real>(iPf);
+              // Bottom of the CORRELATED-K DOMAIN, not of the column. At the cut the grey
+              // optical depth is of order 1e4, so the layer is thermalised to e^-tau and
+              // the
+              // upward intensity is its own Planck function; the planet's internal flux
+              // is
+              // delivered here as an extra band-weighted source. Below the cut nothing
+              // radiative is applied -- that region is optically thick and convective,
+              // and
+              // the flux simply passes through it.
+              RtF I_up[NC];
               for (int cc=0; cc<NC; ++cc) {
                 const int b = bandc[cc];
-                const Real kap = ck_kappa(cklk, iT, fT, iP, fP, b, gc[cc])
-                               + kc_g(m,b,i-1,k,j);
-                const Real bown = Bb_g(m,b,i-1,k,j);
-                Real bfar = Bb_g(m,b,i,k,j);
-                if (bfar > 4.0*bown || bown > 4.0*bfar) {
-                  const Real kapf = ck_kappa(cklk, iTf, fTf, iPf, fPf, b, gc[cc])
-                                  + kc_g(m,b,i,k,j);
-                  bfar = BFace(kap*rho, kapf*rhf, bown, bfar, bface_on);
+                const Real Iint_b = (int_at_cut ? boltz_sigma/M_PI*Tint4
+                                  * ck_planck_frac(ckpf, pfl0, pfid, Tint, b) : 0.0);
+                I_up[cc] = static_cast<RtF>(Bb_g(m,b,icut,k,j) + Iint_b);
+                Fb_g(m,blk,icut,k,j) += wfc[cc]*(I_up[cc] - I_down[cc][icut]);
+              }
+              // up-sweep
+              for (int i=icut+1; i<ie+2; ++i) {
+                const Real rho = rhoN(m,k,j,i-1);
+                const Real drho = rho*dx1(m,k,j,i-1);
+                int iT, iP;
+                Real fT, fP;
+                const Real xTv = xT_g(m,k,j,i-1);
+                const Real xPv = xP_g(m,k,j,i-1);
+                iT = static_cast<int>(xTv); fT = xTv - static_cast<Real>(iT);
+                iP = static_cast<int>(xPv); fP = xPv - static_cast<Real>(iP);
+                // same emissivity-weighted far endpoint, and the same 4x guard: see BFace
+                const int ir1 = (i > ie) ? ie : i;
+                const Real rhf = rhoN(m,k,j,ir1);
+                const Real xTf = xT_g(m,k,j,i);
+                const Real xPf = xP_g(m,k,j,i);
+                const int iTf = static_cast<int>(xTf);
+                const int iPf = static_cast<int>(xPf);
+                const Real fTf = xTf - static_cast<Real>(iTf);
+                const Real fPf = xPf - static_cast<Real>(iPf);
+                for (int cc=0; cc<NC; ++cc) {
+                  const int b = bandc[cc];
+                  const Real kap = ck_kappa(cklk, iT, fT, iP, fP, b, gc[cc])
+                                 + kc_g(m,b,i-1,k,j);
+                  const Real bown = Bb_g(m,b,i-1,k,j);
+                  Real bfar = Bb_g(m,b,i,k,j);
+                  if (bfar > 4.0*bown || bown > 4.0*bfar) {
+                    const Real kapf = ck_kappa(cklk, iTf, fTf, iPf, fPf, b, gc[cc])
+                                    + kc_g(m,b,i,k,j);
+                    bfar = BFace(kap*rho, kapf*rhf, bown, bfar, bface_on);
+                  }
+                  const RtF x = static_cast<RtF>(kap*drho/muc[cc]);
+                  const RtF e0 = -RT_EXPM1(-x);
+                  const RtF one = static_cast<RtF>(1.0);
+                  const RtF bet = (x > static_cast<RtF>(1.0e-3)) ? (one - e0/x)
+                                                                : (x/2 - x*x/6);
+                  const RtF gm = (x > static_cast<RtF>(1.0e-3)) ? (e0 - one + e0/x)
+                                                               : (x/2 - x*x/3);
+                  const RtF Iup_in = I_up[cc];
+                  Src_g(m,blk,i-1,k,j) += wfc[cc]/dx1(m,k,j,i-1)
+                      *static_cast<Real>(e0*Iup_in
+                        - (bet*static_cast<RtF>(bfar)
+                           + gm*static_cast<RtF>(bown)));
+                  I_up[cc] = (one-e0)*Iup_in
+                           + bet*static_cast<RtF>(bfar)
+                           + gm*static_cast<RtF>(bown);
+                  Fb_g(m,blk,i,k,j) += wfc[cc]*(I_up[cc] - I_down[cc][i]);
+                  // the cell's OWN emission, both hemispheres: in the thin limit each
+                  // stream adds wfc*(kap*rho*dr/mu)*B over the layer, so per unit volume
+                  // the two together give 2*(wfc/mu)*kap*rho*B.  Summed over bands and g
+                  // this is 2*CK_DIFFUSIVITY*sigma*kappa_P*rho*T^4, i.e. the exact
+                  // 4 sigma kappa_P rho T^4 with 1.66 in place of 2 for the hemispheric
+                  // mean.  17 % low, which is well inside what a rate estimate needs.
+                  Em_g(m,blk,i-1,k,j) += 2.0*(wfc[cc]/muc[cc])*kap*rho
+                                       * 0.5*(bfar + bown);
                 }
-                const RtF x = static_cast<RtF>(kap*drho/muc[cc]);
+              }
+            } else {
+              // ---- the centre-to-centre layers (see rt_layer_legacy) ----
+              // Every layer now runs from one cell CENTRE to the next, split at the face
+              // into its two halves, so the interval the optical depth measures and the
+              // interval the source runs over are the same one.  The column is closed by
+              // two half layers, the upper half of cell ie and the lower half of cell
+              // icut, each with its own cell's Planck function at both ends.
+              //
+              // NO EXTRA TABLE LOOKUP.  The far cell's kappa rho is CARRIED in kfar from
+              // the previous iteration of the sweep, so this pays exactly one ck_kappa
+              // per cell and chain -- one FEWER than the staggered layers, which looked
+              // the neighbour up again whenever the two Planck functions differed by 4x.
+              // kfar and the running intensity Idn are the only new per-chain state.
+              Real kfar[NC];
+              RtF Idn[NC];
+              // one half-layer step, in the chain's own precision: the same exponential
+              // coefficients the staggered layers used, handed the half interval.  dsrc
+              // comes back as absorbed minus emitted, which is what Src_g wants and is
+              // exactly the change in the intensity.
+              auto step = [&](const Real dtau, const Real mu, const Real s_in,
+                              const Real s_out, RtF &I, Real &dsrc) {
+                const RtF x = static_cast<RtF>(dtau/mu);
                 const RtF e0 = -RT_EXPM1(-x);
                 const RtF one = static_cast<RtF>(1.0);
-                const RtF bet = (x > static_cast<RtF>(1.0e-3)) ? (one - e0/x)
-                                                              : (x/2 - x*x/6);
-                const RtF gm = (x > static_cast<RtF>(1.0e-3)) ? (e0 - one + e0/x)
-                                                             : (x/2 - x*x/3);
-                const RtF Iup_in = I_up[cc];
-                Src_g(m,blk,i-1,k,j) += wfc[cc]/dx1(m,k,j,i-1)
-                    *static_cast<Real>(e0*Iup_in
-                      - (bet*static_cast<RtF>(bfar)
-                         + gm*static_cast<RtF>(bown)));
-                I_up[cc] = (one-e0)*Iup_in
-                         + bet*static_cast<RtF>(bfar)
-                         + gm*static_cast<RtF>(bown);
-                Fb_g(m,blk,i,k,j) += wfc[cc]*(I_up[cc] - I_down[cc][i]);
-                // the cell's OWN emission, both hemispheres: in the thin limit each
-                // stream adds wfc*(kap*rho*dr/mu)*B over the layer, so per unit volume
-                // the two together give 2*(wfc/mu)*kap*rho*B.  Summed over bands and g
-                // this is 2*CK_DIFFUSIVITY*sigma*kappa_P*rho*T^4, i.e. the exact
-                // 4 sigma kappa_P rho T^4 with 1.66 in place of 2 for the hemispheric
-                // mean.  17 % low, which is well inside what a rate estimate needs.
-                Em_g(m,blk,i-1,k,j) += 2.0*(wfc[cc]/muc[cc])*kap*rho
-                                     * 0.5*(bfar + bown);
+                const RtF cin = (x > static_cast<RtF>(1.0e-3)) ? (e0 - one + e0/x)
+                                                               : (x/2 - x*x/3);
+                const RtF cout = (x > static_cast<RtF>(1.0e-3)) ? (one - e0/x)
+                                                                : (x/2 - x*x/6);
+                const RtF em = cin*static_cast<RtF>(s_in)
+                             + cout*static_cast<RtF>(s_out);
+                dsrc = static_cast<Real>(e0*I - em);
+                I = (one - e0)*I + em;
+              };
+              for (int cc=0; cc<NC; ++cc) {
+                Idn[cc] = I_down[cc][ie+1];
+              }
+              // down-sweep, recording the FACE intensity in between the two halves
+              for (int i=ie; i>icut-1; --i) {
+                const Real rho = rhoN(m,k,j,i);
+                const Real dz = dx1(m,k,j,i);
+                const Real drho = rho*dz;
+                const Real dzf = (i < ie) ? dx1(m,k,j,i+1) : dz;
+                const Real xTv = xT_g(m,k,j,i);
+                const Real xPv = xP_g(m,k,j,i);
+                const int iT = static_cast<int>(xTv);
+                const int iP = static_cast<int>(xPv);
+                const Real fT = xTv - static_cast<Real>(iT);
+                const Real fP = xPv - static_cast<Real>(iP);
+                for (int cc=0; cc<NC; ++cc) {
+                  const int b = bandc[cc];
+                  const Real kap = ck_kappa(cklk, iT, fT, iP, fP, b, gc[cc])
+                                 + kc_g(m,b,i,k,j);
+                  const Real kro = kap*rho;
+                  const Real bown = Bb_g(m,b,i,k,j);
+                  Real dsrc;
+                  if (i == ie) {
+                    // the top half layer: the upper half of cell ie, entered at the top
+                    // face, its source held at the cell's own value -- there is nothing
+                    // above it to interpolate towards
+                    step(0.5*kro*dz, muc[cc], bown, bown, Idn[cc], dsrc);
+                    Src_g(m,blk,i,k,j) += wfc[cc]/dz*dsrc;
+                  } else {
+                    // the layer between the centres of cells i+1 and i.  BFace is
+                    // applied to both endpoints and symmetrically, so a radiatively
+                    // inert neighbour leaves a layer emitting with its own Planck
+                    // function; with equal opacities this is the straight line.
+                    const Real kru = kfar[cc];
+                    const Real bfar = Bb_g(m,b,i+1,k,j);
+                    const Real dt_u = 0.5*kru*dzf;
+                    const Real dt_l = 0.5*kro*dz;
+                    const Real s_l = BFace(kru, kro, bfar, bown, bface_on);
+                    const Real s_u = BFace(kro, kru, bown, bfar, bface_on);
+                    const Real dtc = dt_l + dt_u;
+                    const Real s_f = (dtc > 0.0) ? (s_l + (s_u - s_l)*(dt_l/dtc))
+                                                 : (0.5*(s_l + s_u));
+                    step(dt_u, muc[cc], s_u, s_f, Idn[cc], dsrc);
+                    Src_g(m,blk,i+1,k,j) += wfc[cc]/dzf*dsrc;
+                    I_down[cc][i+1] = Idn[cc];
+                    step(dt_l, muc[cc], s_f, s_l, Idn[cc], dsrc);
+                    Src_g(m,blk,i,k,j) += wfc[cc]/dz*dsrc;
+                  }
+                  kfar[cc] = kro;
+                  // Direct beam, UNCHANGED: it crosses whole cells and carries no
+                  // source, so the layer construction does not touch it.  Deposit the
+                  // flux DIFFERENCE across the cell, not kappa rho F exp(-tau) at one
+                  // face: the latter is what the grey picket fence does, and it
+                  // under-deposits badly once a layer is not thin (the ratio of
+                  // deposited to absorbed is u e^-u/(1 - e^-u), 0.95 at u = 0.1 but 0.58
+                  // at u = 1), losing a quarter of the incident flux down a column with
+                  // u ~ 0.5 -- measured against Exo-FMS on an identical column.
+                  tausw[cc] += kap*drho;
+                  if (lit) {
+                    const Real tnew = RT_EXP(-static_cast<RtF>(tausw[cc]*facsw));
+                    Qb_g(m,blk,i,k,j) += (1.0-albedo)*Fstar*ckswf(b)*wgc[cc]/facsw
+                              * (transw[cc] - tnew)/dz;
+                    transw[cc] = tnew;
+                  }
+                }
+              }
+              // the lower half of cell icut, from its centre down to the cut face
+              {
+                const Real dz = dx1(m,k,j,icut);
+                for (int cc=0; cc<NC; ++cc) {
+                  const Real bcut = Bb_g(m,bandc[cc],icut,k,j);
+                  Real dsrc;
+                  step(0.5*kfar[cc]*dz, muc[cc], bcut, bcut, Idn[cc], dsrc);
+                  Src_g(m,blk,icut,k,j) += wfc[cc]/dz*dsrc;
+                  I_down[cc][icut] = Idn[cc];
+                }
+              }
+              // Bottom of the CORRELATED-K DOMAIN, not of the column, and now AT the cut
+              // face.  There the grey optical depth is of order 1e4, so the layer is
+              // thermalised to e^-tau and the upward intensity is its own Planck
+              // function; the planet's internal flux is delivered here as an extra
+              // band-weighted source.  Below the cut nothing radiative is applied.
+              RtF I_up[NC];
+              for (int cc=0; cc<NC; ++cc) {
+                const int b = bandc[cc];
+                const Real Iint_b = (int_at_cut ? boltz_sigma/M_PI*Tint4
+                                  * ck_planck_frac(ckpf, pfl0, pfid, Tint, b) : 0.0);
+                I_up[cc] = static_cast<RtF>(Bb_g(m,b,icut,k,j) + Iint_b);
+                Fb_g(m,blk,icut,k,j) += wfc[cc]*(I_up[cc] - I_down[cc][icut]);
+              }
+              // up-sweep: the cut half layer first, on the opacity the down-sweep left
+              // in kfar, then centre to centre.  Em_g is now the cell's OWN emission,
+              // 2 (wfc/mu) kappa rho B summed over the chains, instead of the
+              // centre-to-centre average of two Planck functions.
+              {
+                const Real dz = dx1(m,k,j,icut);
+                for (int cc=0; cc<NC; ++cc) {
+                  const Real bcut = Bb_g(m,bandc[cc],icut,k,j);
+                  Real dsrc;
+                  step(0.5*kfar[cc]*dz, muc[cc], bcut, bcut, I_up[cc], dsrc);
+                  Src_g(m,blk,icut,k,j) += wfc[cc]/dz*dsrc;
+                  Em_g(m,blk,icut,k,j) += 2.0*(wfc[cc]/muc[cc])*kfar[cc]*bcut;
+                }
+              }
+              for (int i=icut; i<ie; ++i) {
+                const Real rhou = rhoN(m,k,j,i+1);
+                const Real dzu = dx1(m,k,j,i+1);
+                const Real dzl = dx1(m,k,j,i);
+                const Real xTv = xT_g(m,k,j,i+1);
+                const Real xPv = xP_g(m,k,j,i+1);
+                const int iT = static_cast<int>(xTv);
+                const int iP = static_cast<int>(xPv);
+                const Real fT = xTv - static_cast<Real>(iT);
+                const Real fP = xPv - static_cast<Real>(iP);
+                for (int cc=0; cc<NC; ++cc) {
+                  const int b = bandc[cc];
+                  const Real kapu = ck_kappa(cklk, iT, fT, iP, fP, b, gc[cc])
+                                  + kc_g(m,b,i+1,k,j);
+                  const Real kru = kapu*rhou;
+                  const Real krl = kfar[cc];
+                  const Real bl = Bb_g(m,b,i,k,j);
+                  const Real bu = Bb_g(m,b,i+1,k,j);
+                  const Real dt_l = 0.5*krl*dzl;
+                  const Real dt_u = 0.5*kru*dzu;
+                  const Real s_l = BFace(kru, krl, bu, bl, bface_on);
+                  const Real s_u = BFace(krl, kru, bl, bu, bface_on);
+                  const Real dtc = dt_l + dt_u;
+                  const Real s_f = (dtc > 0.0) ? (s_l + (s_u - s_l)*(dt_l/dtc))
+                                               : (0.5*(s_l + s_u));
+                  Real dsrc;
+                  step(dt_l, muc[cc], s_l, s_f, I_up[cc], dsrc);
+                  Src_g(m,blk,i,k,j) += wfc[cc]/dzl*dsrc;
+                  Fb_g(m,blk,i+1,k,j) += wfc[cc]*(I_up[cc] - I_down[cc][i+1]);
+                  step(dt_u, muc[cc], s_f, s_u, I_up[cc], dsrc);
+                  Src_g(m,blk,i+1,k,j) += wfc[cc]/dzu*dsrc;
+                  Em_g(m,blk,i+1,k,j) += 2.0*(wfc[cc]/muc[cc])*kru*bu;
+                  kfar[cc] = kru;
+                }
+              }
+              // the top half of cell ie, back out through the top face
+              {
+                const Real dz = dx1(m,k,j,ie);
+                for (int cc=0; cc<NC; ++cc) {
+                  const Real btop = Bb_g(m,bandc[cc],ie,k,j);
+                  Real dsrc;
+                  step(0.5*kfar[cc]*dz, muc[cc], btop, btop, I_up[cc], dsrc);
+                  Src_g(m,blk,ie,k,j) += wfc[cc]/dz*dsrc;
+                  Fb_g(m,blk,ie+1,k,j) += wfc[cc]*(I_up[cc] - I_down[cc][ie+1]);
+                }
               }
             }
           });
@@ -3115,118 +3303,217 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
             Real trans = exp(-dtauir/muggc[cc]);
             I_ir_down_c[cc][ie+1] = (1.0-trans)*(fbc[cc]*B[ie+1]);
           }
-          // down-sweep
-          for (int i=ie; i>is-1; --i) {
-            Real dtau_i = tau_down_r_f[i]-tau_down_r_f[i+1];
-            // emissivity-weighted far endpoint of the layer's source function: dtau/dr
-            // is kappa rho, so the two layers' optical thicknesses per unit length are
-            // the weights (see BFace).  The ghost above ie has no dtau in the array, so
-            // the topmost layer keeps the old endpoint exactly.
-            const Real kro_g = dtau_i/dx1(m,k,j,i);
-            const Real krf_g = (i < ie) ? (tau_down_r_f[i+1]-tau_down_r_f[i+2])
-                                        / dx1(m,k,j,i+1) : kro_g;
-            const Real bfr_g = BFace(kro_g, krf_g, B[i], B[i+1], bface_on);
-            const Real pfd = jac_on ? BFaceW(kro_g, krf_g, bface_on) : 0.0;
-            for (int cc=0; cc<NC; ++cc) {
-              Real dtauir = gamirc[cc]*dtau_i;
-              Real x = dtauir/muggc[cc];
-              Real e0 = -expm1(-x);
-              Real alp = (x > 1.0e-3) ? (e0 - 1.0 + e0/x) : (x/2.0-SQR(x)/3.0);
-              Real bet = (x > 1.0e-3) ? (1.0 - e0/x) : (x/2.0-SQR(x)/6.0);
-              // direct source: what this stream leaves in cell i, absorbed minus emitted
-              Src_g(m,blk,i,k,j) += 2.0*M_PI*wggc[cc]*muggc[cc]/dx1(m,k,j,i)
-                                  *(e0*I_ir_down_c[cc][i+1]
-                                    - fbc[cc]*(alp*bfr_g + bet*B[i]));
-              if (jac_on) {
-                // the layer's own emission into the downward beam, per unit B_i:
-                // alp weights the FAR endpoint (1 - pfd of which is B_i) and bet the near
-                const Real P = 2.0*M_PI*wggc[cc]*muggc[cc]/dx1(m,k,j,i);
-                const Real eown = fbc[cc]*(alp*(1.0 - pfd) + bet);
-                jac_g(m,1,k,j,i) -= P*eown;
-                // B_{i+1} enters twice: through this layer's far endpoint, and through
-                // the intensity the layer ABOVE handed down (djd, carried from there)
-                jac_g(m,2,k,j,i) += P*(e0*djd[cc] - fbc[cc]*alp*pfd);
-                djd[cc] = eown;
-              }
-              I_ir_down_c[cc][i] = (1.0-e0)*I_ir_down_c[cc][i+1]
-                                 + alp*fbc[cc]*bfr_g + bet*fbc[cc]*B[i];
+          if (layer_legacy) {
+            // down-sweep
+            for (int i=ie; i>is-1; --i) {
+              Real dtau_i = tau_down_r_f[i]-tau_down_r_f[i+1];
+              // emissivity-weighted far endpoint of the layer's source function: dtau/dr
+              // is kappa rho, so the two layers' optical thicknesses per unit length are
+              // the weights (see BFace).  The ghost above ie has no dtau in the array, so
+              // the topmost layer keeps the old endpoint exactly.
+              const Real kro_g = dtau_i/dx1(m,k,j,i);
+              const Real krf_g = (i < ie) ? (tau_down_r_f[i+1]-tau_down_r_f[i+2])
+                                          / dx1(m,k,j,i+1) : kro_g;
+              const Real bfr_g = BFace(kro_g, krf_g, B[i], B[i+1], bface_on);
+              for (int cc=0; cc<NC; ++cc) {
+                Real dtauir = gamirc[cc]*dtau_i;
+                Real x = dtauir/muggc[cc];
+                Real e0 = -expm1(-x);
+                Real alp = (x > 1.0e-3) ? (e0 - 1.0 + e0/x) : (x/2.0-SQR(x)/3.0);
+                Real bet = (x > 1.0e-3) ? (1.0 - e0/x) : (x/2.0-SQR(x)/6.0);
+                // direct source: what this stream leaves in cell i, absorbed minus
+                // emitted
+                Src_g(m,blk,i,k,j) += 2.0*M_PI*wggc[cc]*muggc[cc]/dx1(m,k,j,i)
+                                    *(e0*I_ir_down_c[cc][i+1]
+                                      - fbc[cc]*(alp*bfr_g + bet*B[i]));
+                I_ir_down_c[cc][i] = (1.0-e0)*I_ir_down_c[cc][i+1]
+                                   + alp*fbc[cc]*bfr_g + bet*fbc[cc]*B[i];
 #if RT_CACHE
-              e0c[cc][i] = e0;
-              alpc[cc][i] = alp;
-              betc[cc][i] = bet;
+                e0c[cc][i] = e0;
+                alpc[cc][i] = alp;
+                betc[cc][i] = bet;
 #endif
+              }
             }
-          }
 
-          // bottom
-          Real I_ir_up_c[NC];
-          if (jac_on) {
-            // the reflecting bottom hands the downward beam back up, so the upward
-            // intensity at face is already carries d/dB[is] of the last down-layer
+            // bottom
+            Real I_ir_up_c[NC];
             for (int cc=0; cc<NC; ++cc) {
-              djuo[cc] = djd[cc];
-              djup[cc] = 0.0;
-            }
-          }
-          for (int cc=0; cc<NC; ++cc) {
-            I_ir_up_c[cc] = Iint + I_ir_down_c[cc][is];
-            Real F_ir_down_f = 2.0*M_PI*wggc[cc]*muggc[cc]*I_ir_down_c[cc][is];
-            Real F_ir_up_f = 2.0*M_PI*wggc[cc]*muggc[cc]*I_ir_up_c[cc];
-            Fb_g(m,blk,is,k,j) += (F_ir_up_f - F_ir_down_f);
-          }
-          // up-sweep, accumulating the band flux as it goes
-          for (int i=is+1; i<ie+2; ++i) {
-#if !RT_CACHE
-            Real dtau_i = tau_down_r_f[i-1]-tau_down_r_f[i];
-#endif
-            // the same emissivity-weighted far endpoint for the upward stream and for
-            // Em; the topmost layer keeps the old endpoint (see the down-sweep)
-            const Real krou = (tau_down_r_f[i-1]-tau_down_r_f[i])/dx1(m,k,j,i-1);
-            const Real krfu = (i < ie+1) ? (tau_down_r_f[i]-tau_down_r_f[i+1])
-                                         / dx1(m,k,j,i) : krou;
-            const Real bfru = BFace(krou, krfu, B[i-1], B[i], bface_on);
-            const Real pfu = jac_on ? BFaceW(krou, krfu, bface_on) : 0.0;
-            for (int cc=0; cc<NC; ++cc) {
-#if RT_CACHE
-              // layer i-1, already solved on the way down
-              const Real e0 = e0c[cc][i-1];
-              const Real bet = betc[cc][i-1];
-              const Real gm = alpc[cc][i-1];
-#else
-              Real dtauir = gamirc[cc]*dtau_i;
-              Real x = dtauir/muggc[cc];
-              Real e0 = -expm1(-x);
-              Real bet = (x > 1.0e-3) ? (1.0 - e0/x) : (x/2.0-SQR(x)/6.0);
-              Real gm = (x > 1.0e-3) ? (e0 - 1.0 + e0/x) : (x/2.0-SQR(x)/3.0);
-#endif
-              const Real Iup_in = I_ir_up_c[cc];
-              Src_g(m,blk,i-1,k,j) += 2.0*M_PI*wggc[cc]*muggc[cc]/dx1(m,k,j,i-1)
-                                    *(e0*Iup_in - fbc[cc]*(bet*bfru + gm*B[i-1]));
-              if (jac_on) {
-                const Real Q = 2.0*M_PI*wggc[cc]*muggc[cc]/dx1(m,k,j,i-1);
-                // this layer's own emission into the upward beam, per unit B_{i-1}:
-                // bet weights the FAR endpoint (1 - pfu of which is B_{i-1}), gm the near
-                const Real uown = fbc[cc]*(bet*(1.0 - pfu) + gm);
-                const Real ufar = fbc[cc]*bet*pfu;
-                jac_g(m,1,k,j,i-1) += Q*(e0*djuo[cc] - uown);
-                jac_g(m,0,k,j,i-1) += Q*e0*djup[cc];
-                jac_g(m,2,k,j,i-1) -= Q*ufar;
-                // what leaves this layer upward, seen by the layer above: cell i-1 is
-                // then ITS lower neighbour and cell i is its own cell
-                djup[cc] = (1.0-e0)*djuo[cc] + uown;
-                djuo[cc] = ufar;
-              }
-              I_ir_up_c[cc] = (1.0-e0)*Iup_in
-                            + bet*fbc[cc]*bfru + gm*fbc[cc]*B[i-1];
-              Real F_ir_down_f = 2.0*M_PI*wggc[cc]*muggc[cc]*I_ir_down_c[cc][i];
+              I_ir_up_c[cc] = Iint + I_ir_down_c[cc][is];
+              Real F_ir_down_f = 2.0*M_PI*wggc[cc]*muggc[cc]*I_ir_down_c[cc][is];
               Real F_ir_up_f = 2.0*M_PI*wggc[cc]*muggc[cc]*I_ir_up_c[cc];
-              Fb_g(m,blk,i,k,j) += (F_ir_up_f - F_ir_down_f);
-              // the cell's own emission per unit volume, both hemispheres.  dtau_i is
-              // kappa rho dr for this layer, so dtau_i/dr = kappa rho and the layer
-              // thickness cancels out of the volumetric rate.
-              const Real dtau_ly = tau_down_r_f[i-1]-tau_down_r_f[i];
-              Em_g(m,blk,i-1,k,j) += 2.0*(2.0*M_PI*wggc[cc])*gamirc[cc]*dtau_ly
-                                   / dx1(m,k,j,i-1)*fbc[cc]*0.5*(bfru+B[i-1]);
+              Fb_g(m,blk,is,k,j) += (F_ir_up_f - F_ir_down_f);
+            }
+            // up-sweep, accumulating the band flux as it goes
+            for (int i=is+1; i<ie+2; ++i) {
+#if !RT_CACHE
+              Real dtau_i = tau_down_r_f[i-1]-tau_down_r_f[i];
+#endif
+              // the same emissivity-weighted far endpoint for the upward stream and for
+              // Em; the topmost layer keeps the old endpoint (see the down-sweep)
+              const Real krou = (tau_down_r_f[i-1]-tau_down_r_f[i])/dx1(m,k,j,i-1);
+              const Real krfu = (i < ie+1) ? (tau_down_r_f[i]-tau_down_r_f[i+1])
+                                           / dx1(m,k,j,i) : krou;
+              const Real bfru = BFace(krou, krfu, B[i-1], B[i], bface_on);
+              for (int cc=0; cc<NC; ++cc) {
+#if RT_CACHE
+                // layer i-1, already solved on the way down
+                const Real e0 = e0c[cc][i-1];
+                const Real bet = betc[cc][i-1];
+                const Real gm = alpc[cc][i-1];
+#else
+                Real dtauir = gamirc[cc]*dtau_i;
+                Real x = dtauir/muggc[cc];
+                Real e0 = -expm1(-x);
+                Real bet = (x > 1.0e-3) ? (1.0 - e0/x) : (x/2.0-SQR(x)/6.0);
+                Real gm = (x > 1.0e-3) ? (e0 - 1.0 + e0/x) : (x/2.0-SQR(x)/3.0);
+#endif
+                const Real Iup_in = I_ir_up_c[cc];
+                Src_g(m,blk,i-1,k,j) += 2.0*M_PI*wggc[cc]*muggc[cc]/dx1(m,k,j,i-1)
+                                      *(e0*Iup_in - fbc[cc]*(bet*bfru + gm*B[i-1]));
+                I_ir_up_c[cc] = (1.0-e0)*Iup_in
+                              + bet*fbc[cc]*bfru + gm*fbc[cc]*B[i-1];
+                Real F_ir_down_f = 2.0*M_PI*wggc[cc]*muggc[cc]*I_ir_down_c[cc][i];
+                Real F_ir_up_f = 2.0*M_PI*wggc[cc]*muggc[cc]*I_ir_up_c[cc];
+                Fb_g(m,blk,i,k,j) += (F_ir_up_f - F_ir_down_f);
+                // the cell's own emission per unit volume, both hemispheres.  dtau_i is
+                // kappa rho dr for this layer, so dtau_i/dr = kappa rho and the layer
+                // thickness cancels out of the volumetric rate.
+                const Real dtau_ly = tau_down_r_f[i-1]-tau_down_r_f[i];
+                Em_g(m,blk,i-1,k,j) += 2.0*(2.0*M_PI*wggc[cc])*gamirc[cc]*dtau_ly
+                                     / dx1(m,k,j,i-1)*fbc[cc]*0.5*(bfru+B[i-1]);
+              }
+            }
+          } else {
+            // ---- the centre-to-centre layers (see rt_layer_legacy) ----
+            // Same construction as the grey and correlated-k sweeps: a layer runs from
+            // one cell CENTRE to the next, split at the face into two halves, each half
+            // lying entirely inside one cell.  Here the optical depths come ready-made
+            // from the face-cumulative tau array, so a half layer is simply half a
+            // cell's dtau and nothing extra is looked up.  The coefficient cache is not
+            // used on this path: both halves of a cell have the SAME thickness, but the
+            // cache is indexed by the whole-cell layer the legacy branch walks.
+            Real Idn[NC];
+            // one half-layer step; dsrc is absorbed minus emitted, which is exactly the
+            // change in the intensity, so Src_g and the divergence of Fb_g agree
+            auto step = [&](const Real dtau, const Real mu, const Real s_in,
+                            const Real s_out, Real &I, Real &dsrc) {
+              const Real x = dtau/mu;
+              const Real e0 = -expm1(-x);
+              const Real cin = (x > 1.0e-3) ? (e0 - 1.0 + e0/x) : (x/2.0-SQR(x)/3.0);
+              const Real cout = (x > 1.0e-3) ? (1.0 - e0/x) : (x/2.0-SQR(x)/6.0);
+              const Real em = cin*s_in + cout*s_out;
+              dsrc = e0*I - em;
+              I = (1.0 - e0)*I + em;
+            };
+            for (int cc=0; cc<NC; ++cc) {
+              Idn[cc] = I_ir_down_c[cc][ie+1];
+            }
+            // down-sweep, recording the FACE intensity in between the two halves
+            for (int i=ie; i>is-1; --i) {
+              const Real dtau_l = tau_down_r_f[i]-tau_down_r_f[i+1];
+              const Real dzl = dx1(m,k,j,i);
+              if (i == ie) {
+                // the top half layer: the upper half of cell ie, its source held at the
+                // cell's own Planck function -- there is nothing above it
+                for (int cc=0; cc<NC; ++cc) {
+                  const Real s = fbc[cc]*B[ie];
+                  Real dsrc;
+                  step(0.5*gamirc[cc]*dtau_l, muggc[cc], s, s, Idn[cc], dsrc);
+                  Src_g(m,blk,ie,k,j) += 2.0*M_PI*wggc[cc]*muggc[cc]/dzl*dsrc;
+                }
+              } else {
+                // the layer between the centres of cells i+1 and i.  dtau/dr is kappa
+                // rho, so the two cells' optical thicknesses per unit length are the
+                // emissivity weights BFace wants, applied symmetrically to both
+                // endpoints.
+                const Real dtau_u = tau_down_r_f[i+1]-tau_down_r_f[i+2];
+                const Real dzu = dx1(m,k,j,i+1);
+                const Real krl = dtau_l/dzl;
+                const Real kru = dtau_u/dzu;
+                const Real s_l = BFace(kru, krl, B[i+1], B[i], bface_on);
+                const Real s_u = BFace(krl, kru, B[i], B[i+1], bface_on);
+                const Real dtc = dtau_l + dtau_u;
+                const Real s_f = (dtc > 0.0) ? (s_l + (s_u - s_l)*(dtau_l/dtc))
+                                             : (0.5*(s_l + s_u));
+                for (int cc=0; cc<NC; ++cc) {
+                  Real dsrc;
+                  step(0.5*gamirc[cc]*dtau_u, muggc[cc], fbc[cc]*s_u, fbc[cc]*s_f,
+                       Idn[cc], dsrc);
+                  Src_g(m,blk,i+1,k,j) += 2.0*M_PI*wggc[cc]*muggc[cc]/dzu*dsrc;
+                  I_ir_down_c[cc][i+1] = Idn[cc];
+                  step(0.5*gamirc[cc]*dtau_l, muggc[cc], fbc[cc]*s_f, fbc[cc]*s_l,
+                       Idn[cc], dsrc);
+                  Src_g(m,blk,i,k,j) += 2.0*M_PI*wggc[cc]*muggc[cc]/dzl*dsrc;
+                }
+              }
+            }
+            // the lower half of cell is, down to the bottom face
+            const Real dtau_is = tau_down_r_f[is]-tau_down_r_f[is+1];
+            for (int cc=0; cc<NC; ++cc) {
+              const Real s = fbc[cc]*B[is];
+              Real dsrc;
+              step(0.5*gamirc[cc]*dtau_is, muggc[cc], s, s, Idn[cc], dsrc);
+              Src_g(m,blk,is,k,j) += 2.0*M_PI*wggc[cc]*muggc[cc]/dx1(m,k,j,is)*dsrc;
+              I_ir_down_c[cc][is] = Idn[cc];
+            }
+
+            // bottom, now AT the bottom face
+            Real I_ir_up_c[NC];
+            for (int cc=0; cc<NC; ++cc) {
+              I_ir_up_c[cc] = Iint + I_ir_down_c[cc][is];
+              Real F_ir_down_f = 2.0*M_PI*wggc[cc]*muggc[cc]*I_ir_down_c[cc][is];
+              Real F_ir_up_f = 2.0*M_PI*wggc[cc]*muggc[cc]*I_ir_up_c[cc];
+              Fb_g(m,blk,is,k,j) += (F_ir_up_f - F_ir_down_f);
+            }
+            // up-sweep: the bottom half layer first, then centre to centre, accumulating
+            // the band flux as it goes.  Em_g is the cell's OWN emission now, since each
+            // cell owns both of its halves.
+            for (int cc=0; cc<NC; ++cc) {
+              const Real s = fbc[cc]*B[is];
+              Real dsrc;
+              step(0.5*gamirc[cc]*dtau_is, muggc[cc], s, s, I_ir_up_c[cc], dsrc);
+              Src_g(m,blk,is,k,j) += 2.0*M_PI*wggc[cc]*muggc[cc]/dx1(m,k,j,is)*dsrc;
+              Em_g(m,blk,is,k,j) += 2.0*(2.0*M_PI*wggc[cc])*gamirc[cc]*dtau_is
+                                  / dx1(m,k,j,is)*fbc[cc]*B[is];
+            }
+            for (int i=is; i<ie; ++i) {
+              const Real dtau_l = tau_down_r_f[i]-tau_down_r_f[i+1];
+              const Real dtau_u = tau_down_r_f[i+1]-tau_down_r_f[i+2];
+              const Real dzl = dx1(m,k,j,i);
+              const Real dzu = dx1(m,k,j,i+1);
+              const Real krl = dtau_l/dzl;
+              const Real kru = dtau_u/dzu;
+              const Real s_l = BFace(kru, krl, B[i+1], B[i], bface_on);
+              const Real s_u = BFace(krl, kru, B[i], B[i+1], bface_on);
+              const Real dtc = dtau_l + dtau_u;
+              const Real s_f = (dtc > 0.0) ? (s_l + (s_u - s_l)*(dtau_l/dtc))
+                                           : (0.5*(s_l + s_u));
+              for (int cc=0; cc<NC; ++cc) {
+                const Real pref = 2.0*M_PI*wggc[cc]*muggc[cc];
+                Real dsrc;
+                step(0.5*gamirc[cc]*dtau_l, muggc[cc], fbc[cc]*s_l, fbc[cc]*s_f,
+                     I_ir_up_c[cc], dsrc);
+                Src_g(m,blk,i,k,j) += pref/dzl*dsrc;
+                Fb_g(m,blk,i+1,k,j) += pref*(I_ir_up_c[cc] - I_ir_down_c[cc][i+1]);
+                step(0.5*gamirc[cc]*dtau_u, muggc[cc], fbc[cc]*s_f, fbc[cc]*s_u,
+                     I_ir_up_c[cc], dsrc);
+                Src_g(m,blk,i+1,k,j) += pref/dzu*dsrc;
+                Em_g(m,blk,i+1,k,j) += 2.0*(2.0*M_PI*wggc[cc])*gamirc[cc]*dtau_u
+                                     / dzu*fbc[cc]*B[i+1];
+              }
+            }
+            // the top half of cell ie, back out through the top face
+            {
+              const Real dtau_ie = tau_down_r_f[ie]-tau_down_r_f[ie+1];
+              for (int cc=0; cc<NC; ++cc) {
+                const Real pref = 2.0*M_PI*wggc[cc]*muggc[cc];
+                const Real s = fbc[cc]*B[ie];
+                Real dsrc;
+                step(0.5*gamirc[cc]*dtau_ie, muggc[cc], s, s, I_ir_up_c[cc], dsrc);
+                Src_g(m,blk,ie,k,j) += pref/dx1(m,k,j,ie)*dsrc;
+                Fb_g(m,blk,ie+1,k,j) += pref*(I_ir_up_c[cc] - I_ir_down_c[cc][ie+1]);
+              }
             }
           }
       });
@@ -3238,6 +3525,10 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
       const bool semilin = rt_semi_lin;
       const bool explicit_on = rt_explicit;
       const bool newton_on = rt_newton;
+      // see rt_ali_diag.  Only the band paths carry a per-cell continuum opacity in
+      // kc_g, so the diagonal is available there and nowhere else.
+      const bool ali_on = rt_ali_diag && band_on;
+      const int ali_nq = (ck_nq_ > 1) ? 2 : 1;
       if (rt_efix_ptr == nullptr) {
         rt_efix_ptr = new DvceArray1D<int>("rt_efix", 3);
         Kokkos::deep_copy(*rt_efix_ptr, 0);
@@ -3316,8 +3607,6 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
       auto eos_f = eos;
       // problem/rt_budget_verbose: the v.f work accumulator (see rt_bud_ptr)
       // problem/rt_src_dump: one column, this call only (see rt_src_dump)
-      const bool ali_on = rt_ali_diag;      // see rt_ali_diag
-      const int ali_nq = (ck_nq_ > 1) ? 2 : 1;
       const bool sdump_ = (rt_src_dump > 0);
       if (sdump_) --rt_src_dump;
       const int sdcyc_ = pm->ncycle;

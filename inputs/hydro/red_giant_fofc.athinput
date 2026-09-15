@@ -239,6 +239,11 @@ ck_swflux   = sw_band_flux_W121_11.txt
 ck_nquad    = 2              # two-point Gauss: exact diffusion limit (the 1.66 mean is 0.904x); no defect found
 ck_pcut_bar = 1.0e30         # no pressure cut: the tau blend decides the handover
 rt_de_max   = -1.0            # no clipping: the semi-implicit step relaxes to the true equilibrium and is bounded
+# rt_ali_diag: the accelerated-Lambda diagonal in the per-cell semi-implicit apply.
+# TRUE is the physics; false is the legacy value, which hands an optically thick cell
+# only 1/x of its radiative source and freezes the thick layers.  Listed here so it can
+# be overridden from the command line.  See utils/two_stream_rt.hpp.
+rt_ali_diag = true
 met         = 0.0
 ck_dump_file = rtcol_t0.txt               # if set: one column's RT solution at the first call
 ck_dump_m   = 0

@@ -126,6 +126,11 @@ ck_swflux   = sw_band_flux_W121_11.txt
 ck_nquad    = 1
 ck_pcut_bar = 1.0e30         # no pressure cut: the tau blend decides the handover
 rt_de_max   = 0.5
+# rt_ali_diag: the accelerated-Lambda diagonal in the per-cell semi-implicit apply.
+# TRUE is the physics; false is the legacy value, which hands an optically thick cell
+# only 1/x of its radiative source and freezes the thick layers.  Listed here so it can
+# be overridden from the command line.  See utils/two_stream_rt.hpp.
+rt_ali_diag  = true
 # problem/rt_bface: the emissivity-weighted far-endpoint Planck source (two_stream_rt
 # BFace).  It exists for the corona/star join of this problem, where a cell's emission
 # was formed with an inert neighbour's Planck function 1e9x its own; the switch defaults

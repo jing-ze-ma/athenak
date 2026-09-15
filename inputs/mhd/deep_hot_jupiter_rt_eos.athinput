@@ -252,6 +252,11 @@ rt_de_max    = 0.5               # cap on |Delta e_int| per RT source applicatio
                                  # number.  Set <= 0 to disable.  See
                                  # docs/correlated_k_rt.md.
 rt_ck        = true              # false = grey picket fence; true = correlated-k
+# rt_ali_diag: the accelerated-Lambda diagonal in the per-cell semi-implicit apply.
+# TRUE is the physics; false is the legacy value, which hands an optically thick cell
+# only 1/x of its radiative source and freezes the thick layers.  Listed here so it can
+# be overridden from the command line.  See utils/two_stream_rt.hpp.
+rt_ali_diag  = true
 rt_split     = false             # run the RT as chain-parallel kernels instead of one
                                  # kernel looping over chains serially.  Implied by
                                  # rt_ck.  Same arithmetic and the same summation
