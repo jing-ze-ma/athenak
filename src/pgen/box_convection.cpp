@@ -91,6 +91,32 @@
 //!                 ratio to the mirror cell is more than problem/wall_walk_maxfac away
 //!                 from what the initial column does over the same gap falls back to the
 //!                 bc_mode-2 rescaled mirror, and both channels are then floored.
+//!   bc_mode_top   the OUTER x1 (top) wall on its own.  -1 (DEFAULT) = whatever
+//!                 bc_mode says, i.e. today's behaviour, bitwise.  4 = an OPEN
+//!                 (OUTFLOW) top: gas may LEAVE through x1max, nothing comes in.
+//!                 Every ghost layer is built from the LAST ACTIVE cell (ie), not
+//!                 from the mirror cell, and is
+//!                   v1_g = max(v1(ie), 0)          (zero gradient, no inflow)
+//!                   v2_g = v2(ie), v3_g = v3(ie)   (zero gradient)
+//!                   rho_g = rho(ie) exp(-g dz/(p/rho)(ie))   (ISOTHERMAL
+//!                                                    hydrostatic continuation)
+//!                   e_g  = eos.EnergyFromTemperature(rho_g, T(ie))
+//!                 so the ghost column is in hydrostatic balance with the cell it
+//!                 continues -- a plain zero-gradient copy of (rho,e) would put a
+//!                 finite pressure gradient with no weight against the top face and
+//!                 launch a spurious wind.  Continuing the TEMPERATURE rather than
+//!                 the specific energy is what keeps the ghost on the EOS (with
+//!                 eos_radiation, e at fixed T is NOT proportional to rho).  The
+//!                 exponent is clamped to +-30 and the walk falls back to a plain
+//!                 copy if the EOS hands back something that is not finite and
+//!                 positive; both channels are floored afterwards.
+//!                 wall_noflux is DISABLED ON THE TOP FACE in this mode (the point
+//!                 of the mode is that the top face carries a flux); the bottom
+//!                 wall, its imposed luminosity and its flux cancellation are
+//!                 untouched, and so are the two-stream top (rt_top_vacuum) and the
+//!                 vdamp sponge.  The box is then NOT closed: mass and energy leave
+//!                 through x1max, which is the intended physics for a lid that is
+//!                 pushed out by a near-Eddington flux.
 //!   wall_walk_maxfac  the slack in that test (default 100).
 //!   wall_noflux   cancel the wall-face mass (and energy) flux after each stage.
 //!                 Defaults to true under bc_mode 3 and false otherwise.  When a
@@ -188,6 +214,7 @@
 #include <cstdio>
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <random>
 #include <sstream>
 #include <string>
@@ -223,9 +250,25 @@ DvceArray1D<Real> cd_, ce_, cp_, ct_;   // density, eint, pressure, temperature 
 Real g0_ = 0.0, zlo_ = 0.0, dzf_ = 1.0, zmin_ = 0.0;
 Real zcool_ = 0.0, zmax_ = 0.0, tcool_ = 1.0;
 int nfine_ = 0, bc_mode_ = 2;
+// problem/bc_mode_top (default -1 = the same wall as bc_mode).  The only extra
+// value is 4: an OPEN (outflow) top.  See the header block.
+int bc_mode_top_ = -1;
 bool etotgrav_ = false;
 bool wall_noflux_ = false;   // cancel the wall-face flux after each stage (bc_mode 3)
 Real wall_walk_maxfac_ = 100.0;   // how far the bc_mode-3 walk may depart from the column
+// problem/vdamp_top_tau, problem/vdamp_top_time (default 0 = OFF, bitwise inert): a
+// RAYLEIGH SPONGE on the VERTICAL velocity in the optically thin lid.  A closed box has
+// a vertical acoustic fundamental that convection pumps; its amplitude grows like
+// rho^-1/2, so it is the lid cells that evacuate to the density floor and collapse dt.
+// The sponge damps m1 (only m1) implicitly per stage,
+//     m1 -> m1/(1 + f bdt/vdamp_top_time),
+// with the ramp f = 1 where the COLUMN optical depth tau <= vdamp_top_tau/3, f = 0 where
+// tau >= vdamp_top_tau, a raised cosine in log tau between (the same shape the transverse
+// conduction taper uses, and it reads the same per-plane tau, Conduction::rad_tauf).
+// The kinetic energy the sponge removes is subtracted from the TOTAL energy: it is
+// REMOVED from the box, not converted to heat.  This is a numerical sponge, not physics.
+Real vdamp_tau_ = 0.0, vdamp_time_ = 20.0;
+bool vdamp_printed_ = false;
 bool diff_flux_ = false;     // a diffusive flux shares the wall face's energy channel
 bool rt_on_ = false;      // problem/rt_two_stream
 // problem/rt_strang (default false, bitwise off): take the grey two-stream OUT of the
@@ -647,6 +690,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
               << std::endl;
     std::exit(EXIT_FAILURE);
   }
+  bc_mode_top_ = pin->GetOrAddInteger("problem", "bc_mode_top", -1);
+  if (bc_mode_top_ < -1 || bc_mode_top_ > 4) {
+    std::cout << "### FATAL ERROR in box_convection: problem/bc_mode_top must be -1"
+              << " (follow bc_mode) or 0-4" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
   wall_noflux_ = pin->GetOrAddBoolean("problem", "wall_noflux", (bc_mode_ == 3));
   wall_walk_maxfac_ = pin->GetOrAddReal("problem", "wall_walk_maxfac", 100.0);
   diff_flux_ = (pmbp->phydro->pcond != nullptr) || (pmbp->phydro->pvisc != nullptr);
@@ -811,6 +860,23 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     std::cout << "### FATAL ERROR in box_convection: cooling layer fills the box"
               << std::endl;
     std::exit(EXIT_FAILURE);
+  }
+
+  // --- the top vertical-velocity sponge (see the note on vdamp_tau_ above)
+  vdamp_tau_ = pin->GetOrAddReal("problem", "vdamp_top_tau", 0.0);
+  vdamp_time_ = pin->GetOrAddReal("problem", "vdamp_top_time", 20.0);
+  if (vdamp_tau_ > 0.0) {
+    if (pc == nullptr || !pc->rad_tau_mode) {
+      std::cout << "### FATAL ERROR in box_convection: vdamp_top_tau needs the per-plane "
+                << "column optical depth, i.e. the tau blend (<hydro>/rad_tau_hi > 0)"
+                << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    if (!(vdamp_time_ > 0.0)) {
+      std::cout << "### FATAL ERROR in box_convection: vdamp_top_time must be > 0"
+                << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
   }
 
   // --- the Rosseland table, for the conduction operator
@@ -1193,12 +1259,24 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                 "turnover H_p/v* = %.5e s\n", fin, vstar, vstar/cs0, tturn);
     std::printf("  cooling layer: z > %.5e (top %.4f H_p), tau = %.5e s = %.4f"
                 " turnover\n", zcool_, cdep/hp0, ctau, ctau/tturn);
+    if (vdamp_tau_ > 0.0) {
+      std::printf("  top v1 sponge: f = 1 for tau <= %.4e, 0 for tau >= %.4e,"
+                  " timescale %.4e s (the cell range is printed at the first stage)\n",
+                  vdamp_tau_/3.0, vdamp_tau_, vdamp_time_);
+    }
     std::printf("  x1 walls: bc_mode = %d (0 column ghost, 1 mirror, 2 mirror x the"
                 " column ratio, 3 WB continuation), wall_noflux = %d%s\n",
                 bc_mode_, static_cast<int>(wall_noflux_),
                 (wall_noflux_ && diff_flux_) ? " (mass exact, energy via enthalpy)"
                                              : (wall_noflux_ ? " (mass and energy exact)"
                                                              : ""));
+    if (bc_mode_top_ >= 0) {
+      std::printf("  x1 TOP wall overridden: bc_mode_top = %d%s\n", bc_mode_top_,
+                  (bc_mode_top_ == 4)
+                  ? " = OPEN (outflow: hydrostatic isothermal ghost, v1 >= 0,"
+                    " no top-face flux cancellation)"
+                  : "");
+    }
     if (pc != nullptr) {
       std::printf("  rad_kappa_fac = %.5e (conductivity is 1/rad_kappa_fac x physical)\n",
                   pc->rad_kappa_fac);
@@ -1350,6 +1428,17 @@ void BoxConvSrcs(Mesh *pm, Real bdt) {
   const bool use_cache = wbx1;
   const Real cwid = (zmax > zcool) ? (zmax - zcool) : 1.0;
   const bool cool_on = cool_on_;
+  // the top vertical-velocity sponge: it reads the per-plane COLUMN optical depth that
+  // Conduction::BuildRadWeights fills (rad_tauf, x1-face centred; the cell's lower face
+  // carries the larger tau, which is the conservative -- weaker -- choice for the ramp)
+  // (rad_w_built guards the one stage in which the column tau does not exist yet: an
+  // all-zero tau would read as "thin everywhere" and damp the whole box)
+  const bool vdamp_on = (vdamp_tau_ > 0.0) && (pmbp->phydro->pcond != nullptr)
+                        && pmbp->phydro->pcond->rad_w_built;
+  const Real vd_hi = vdamp_tau_, vd_lo = vdamp_tau_/3.0;
+  const Real vd_rate = vdamp_on ? bdt/vdamp_time_ : 0.0;
+  DvceArray4D<Real> vtauf = vdamp_on ? pmbp->phydro->pcond->rad_tauf
+                                     : DvceArray4D<Real>("vdamp_unused", 1, 1, 1, 1);
 
   // ---- problem/rt_budget_verbose: open/close the window, and take the first of the
   // four energy snapshots this call makes.  The window is closed on the FIRST source
@@ -1409,7 +1498,56 @@ void BoxConvSrcs(Mesh *pm, Real bdt) {
       const Real e0 = ce_d(ii)*(1.0 - f) + ce_d(ii+1)*f;
       u0(m,IEN,k,j,i) -= bdt*ramp*d*(w0(m,IEN,k,j,i)/d - e0/d0)/tcool;
     }
+    // the top vertical-velocity sponge.  Implicit in the stage, so it cannot overshoot
+    // at any dt.  The kinetic energy it removes is taken OUT of the total energy (not
+    // converted to internal energy): this is a numerical sponge on the box's acoustic
+    // fundamental, and turning its energy into heat would feed exactly the layer it is
+    // meant to quiet.
+    if (vdamp_on) {
+      const Real f = 1.0 - RadBlendWeight(vtauf(m,k,j,i), vd_lo, vd_hi);
+      if (f > 0.0) {
+        const Real dc = u0(m,IDN,k,j,i);
+        const Real m1o = u0(m,IM1,k,j,i);
+        const Real m1n = m1o/(1.0 + f*vd_rate);
+        u0(m,IM1,k,j,i) = m1n;
+        u0(m,IEN,k,j,i) += 0.5*(SQR(m1n) - SQR(m1o))/dc;
+      }
+    }
   });
+  // ---- the sponge's cell range, once, at the first stage it runs (the column tau only
+  // exists once BuildRadWeights has run, so it cannot be known at setup)
+  if (vdamp_on && !vdamp_printed_) {
+    vdamp_printed_ = true;
+    Real zlow = std::numeric_limits<Real>::max();
+    Kokkos::parallel_reduce("boxconv_vdamp_range",
+    Kokkos::MDRangePolicy<Kokkos::Rank<4>>(DevExeSpace(), {0,ks,js,is},
+                                           {nmb1+1,ke+1,je+1,ie+1}),
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &lmin) {
+      if (1.0 - RadBlendWeight(vtauf(m,k,j,i), vd_lo, vd_hi) > 0.0) {
+        const Real x1min = size.d_view(m).x1min, x1max = size.d_view(m).x1max;
+        const Real z = CellCenterX(i-is, indcs.nx1, x1min, x1max);
+        lmin = (z < lmin) ? z : lmin;
+      }
+    }, Kokkos::Min<Real>(zlow));
+#if MPI_PARALLEL_ENABLED
+    Real zg = zlow;
+    MPI_Allreduce(&zg, &zlow, 1, MPI_ATHENA_REAL, MPI_MIN, MPI_COMM_WORLD);
+#endif
+    if (global_variable::my_rank == 0) {
+      const Real gx1min = pm->mesh_size.x1min, gx1max = pm->mesh_size.x1max;
+      const int gnx1 = pm->mesh_indcs.nx1;
+      if (zlow < gx1max) {
+        const int i0 = static_cast<int>((zlow - gx1min)/((gx1max - gx1min)/gnx1));
+        std::printf("  top v1 sponge active: i = %d .. %d (of %d), z >= %.5e,"
+                    " f = 1 at tau <= %.4e, timescale %.4e s\n",
+                    i0, gnx1-1, gnx1, zlow, vd_lo, vdamp_time_);
+      } else {
+        std::printf("  top v1 sponge: NO cell has tau < %.4e -- the sponge is inert\n",
+                    vd_hi);
+      }
+    }
+  }
+
   // the gravity/WB/cooling kernel's own contribution, and the two x1 wall faces of the
   // RK flux divergence (every other face telescopes out of the box integral)
   if (bud_on) {
@@ -1439,6 +1577,7 @@ void BoxConvSrcs(Mesh *pm, Real bdt) {
     auto &flx1w = pmbp->phydro->uflx.x1f;
     auto &mb_bcs = pmbp->pmb->mb_bcs;
     const bool difflx = diff_flux_;
+    const bool topopen = (bc_mode_top_ == 4);
     const bool bud_w = bud_on;
     auto budw = bud_on ? rtbud_ : DvceArray1D<Real>("budwdummy", kNBud);
     par_for("boxconv_wallflux", DevExeSpace(), 0, nmb1, ks, ke, js, je,
@@ -1449,6 +1588,8 @@ void BoxConvSrcs(Mesh *pm, Real bdt) {
         const BoundaryFlag bf = inner ? mb_bcs.d_view(m,BoundaryFace::inner_x1)
                                       : mb_bcs.d_view(m,BoundaryFace::outer_x1);
         if (bf != BoundaryFlag::user) continue;
+        // an OPEN top (bc_mode_top = 4) is meant to carry a flux: do not cancel it
+        if (!inner && topopen) continue;
         const int ic = inner ? is : ie;             // the cell against the wall
         const int ifc = inner ? is : (ie + 1);      // the wall face itself
         // RKUpdate did u0 -= bdt*(flx(ie+1) - flx(is))/dz, so the inner face entered with
@@ -1649,6 +1790,8 @@ void BoxConvBC(Mesh *pm) {
   const bool etotgrav = etotgrav_;
   auto cd_d = cd_, ce_d = ce_;
   const int bcm = bc_mode_;
+  // the TOP wall may run a different mode; -1 means "the same as bc_mode"
+  const int bcm_top = (bc_mode_top_ >= 0) ? bc_mode_top_ : bc_mode_;
   auto eos = pmbp->phydro->peos->eos_data;
   const WBOption wbo = pmbp->phydro->wb_option;
   const Real wfac = wall_walk_maxfac_;
@@ -1680,15 +1823,45 @@ void BoxConvBC(Mesh *pm) {
     if (etotgrav) e_i -= d_i*phicc(m,km,jm,im);
   };
   auto fill = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i,
-                            const int km, const int jm, const int im) {
-    // (k,j,i) the ghost cell, (km,jm,im) the active cell it mirrors
+                            const int km, const int jm, const int im, const int bcmode) {
+    // (k,j,i) the ghost cell, (km,jm,im) the active cell it mirrors -- or, under the
+    // OPEN top (bcmode 4), the last active cell every ghost layer is continued from
     const Real x1min = size.d_view(m).x1min, x1max = size.d_view(m).x1max;
     const Real zg = CellCenterX(i-is, indcs.nx1, x1min, x1max);
     const Real zm = CellCenterX(im-is, indcs.nx1, x1min, x1max);
     Real d, e;
-    if (bcm == 1) {
+    if (bcmode == 4) {
+      // THE OPEN (OUTFLOW) TOP.  Zero gradient in the velocity with the inflow clamped
+      // away (below), and an ISOTHERMAL HYDROSTATIC continuation of the last active
+      // cell in (rho,e): with p = rho (p/rho)_a and dp/dz = -rho g,
+      //   rho_g = rho_a exp(-g (z_g - z_a) rho_a/p_a),  e_g = e(rho_g, T_a).
+      // A plain zero-gradient copy of (rho,e) would leave a pressure gradient with no
+      // weight under it at the top face and blow a steady wind out of the box; this
+      // ghost carries no residual force, so the face only sees what the interior does.
+      // The TEMPERATURE is what is continued, not the specific energy: with
+      // eos_radiation e at fixed T is not proportional to rho.
+      Real da, ea;
+      state_i(m, k, j, km, jm, im, da, ea);
+      const Real ta = eos.Temperature(da, ea);
+      const Real pa = eos.Pressure(da, ea, ta);
+      Real xarg = 0.0;
+      if ((da > 0.0) && (pa > 0.0)) xarg = -g0*(zg - zm)*da/pa;
+      xarg = (xarg < -30.0) ? -30.0 : ((xarg > 30.0) ? 30.0 : xarg);
+      Real dgh = da*Kokkos::exp(xarg);
+      Real egh = eos.EnergyFromTemperature(dgh, ta);
+      // the same guard the bc_mode-3 walk needs: an EOS-clamped lid can hand back a
+      // zero density or, with eos_radiation, an infinite specific energy
+      if (!(Kokkos::isfinite(dgh) && (dgh > 0.0)
+            && Kokkos::isfinite(egh) && (egh > 0.0))) {
+        dgh = da;
+        egh = ea;
+      }
+      d = (dgh > dfl) ? dgh : dfl;
+      const Real efl4 = eos.EnergyFloorBound(d);
+      e = (egh > efl4) ? egh : efl4;
+    } else if (bcmode == 1) {
       state_i(m, k, j, km, jm, im, d, e);
-    } else if (bcm == 3) {
+    } else if (bcmode == 3) {
       // THE WB-CONSISTENT WALL.  Walk the mirror cell's OWN (rho,e) across the wall with
       // the very closure the well-balanced background stencil integrates -- for the
       // general EOS that is utils/wb_background.hpp's WBAdvance, which is what
@@ -1764,7 +1937,7 @@ void BoxConvBC(Mesh *pm) {
       const Real fg = sg - ig;
       const Real dg = cd_d(ig)*(1.0 - fg) + cd_d(ig+1)*fg;
       const Real eg = ce_d(ig)*(1.0 - fg) + ce_d(ig+1)*fg;
-      if (bcm == 0) {
+      if (bcmode == 0) {
         d = dg;
         e = eg;
       } else {
@@ -1782,7 +1955,9 @@ void BoxConvBC(Mesh *pm) {
     }
     const Real dm_i = u0(m,IDN,km,jm,im);
     const Real idm = (dm_i > 0.0) ? (1.0/dm_i) : 0.0;
-    const Real v1 = -u0(m,IM1,km,jm,im)*idm;
+    // the outflow top copies v1 and refuses inflow; every other mode mirrors it
+    const Real v1r = u0(m,IM1,km,jm,im)*idm;
+    const Real v1 = (bcmode == 4) ? ((v1r > 0.0) ? v1r : 0.0) : (-v1r);
     const Real v2 = u0(m,IM2,km,jm,im)*idm;
     const Real v3 = u0(m,IM3,km,jm,im)*idm;
     w0(m,IDN,k,j,i) = d;
@@ -1801,10 +1976,12 @@ void BoxConvBC(Mesh *pm) {
   par_for("boxconv_bc_x1", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1, 0, ng-1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int n) {
     if (mb_bcs.d_view(m,BoundaryFace::inner_x1) == BoundaryFlag::user) {
-      fill(m, k, j, is-1-n, k, j, is+n);
+      fill(m, k, j, is-1-n, k, j, is+n, bcm);
     }
     if (mb_bcs.d_view(m,BoundaryFace::outer_x1) == BoundaryFlag::user) {
-      fill(m, k, j, ie+1+n, k, j, ie-n);
+      // under the open top EVERY ghost layer continues the SAME cell (ie); the other
+      // modes mirror layer by layer
+      fill(m, k, j, ie+1+n, k, j, (bcm_top == 4) ? ie : (ie-n), bcm_top);
     }
   });
   return;
