@@ -624,6 +624,20 @@ inline int rt_impl_maxit = 5;
 // the applied source is the divergence of one field, div[(1-w)F_3], and telescopes.  See
 // two_stream_column_implicit.hpp, step 4a'.  Off = bitwise the frozen handover.
 inline bool rt_col3_ex_iter = false;
+// problem/rt_col3_skip_sweep: under rt_implicit_column = 3 with the tau blend weight w
+// = 0 on EVERY face (rad_tau_lo deeper than the whole box, i.e. the rt_bottom_flux
+// production configuration), SKIP the explicit entry sweep, which the column no longer
+// consumes.  With w = 0 the handover src_ex is 0 on every cell and, under
+// rt_col3_ex_iter, the column re-forms it from its own flux anyway: mode 3 then reads
+// only kc, Bb, icut, Qb (identically 0 on the grey path) and the frozen top-face
+// intensity, all of which the PRE-kernels and rt_c3_top build without the sweep.  The
+// sweep's own products -- Fb (the face flux every diagnostic, rad_f2s, rt_rad_force and
+// the surface/history dumps read), Src and Em -- are then supplied differently: Fb is
+// written by the COLUMN SOLVE from its own converged D/U intensities (which is the field
+// mode 3 actually applies, not the entry-state one), while Src and Em stay at zero, so
+// every consumer of THOSE two must be off.  box_convection.cpp enforces the whole list.
+// Default false = bitwise off.
+inline bool rt_col3_skip_sweep = false;
 // ---- mode 3 CONVERGENCE, the switches of the acceleration pass ----------------------
 // problem/rt_impl_exjac: carry the rt_col3_ex_iter handover in the JACOBIAN instead of
 // lagging it.  With ex_iter on the applied source is A_i = Src_i + div[w F_3]_i + Q_i,
@@ -703,10 +717,20 @@ inline Real rt_impl_tau_blend = 1.0;
 //                            agree to round-off.  See two_stream_column_partition.hpp.
 inline int rt_impl_solver = 0;
 inline int rt_impl_nseg = 64;
+// problem/rt_impl_warm: WARM-START the mode-3 Newton from the previous call's converged
+// Planck function instead of from the entry state's.  0 = off (bitwise the old code),
+// 1 = the previous converged b per cell, 2 = linear extrapolation in time from the last
+// two.  Only the ITERATE moves; the residual, the Jacobian, the tolerance and the entry
+// state are untouched, so the converged root is the same one and the answer is equal to
+// round-off rather than bitwise.  Costs one (warm = 1) or two (warm = 2) extra 4D arrays.
+inline int rt_impl_warm = 0;
 inline DvceArray5D<Real> *rt_c3wk_ptr = nullptr;
 inline DvceArray4D<Real> *rt_c3rd_ptr = nullptr;
 inline DvceArray4D<Real> *rt_c3top_ptr = nullptr;
 inline DvceArray1D<Real> *rt_c3stat_ptr = nullptr;
+inline DvceArray4D<Real> *rt_c3bp_ptr = nullptr;   // the warm-start history, level n
+inline DvceArray4D<Real> *rt_c3bp2_ptr = nullptr;  // the warm-start history, level n-1
+inline Real rt_c3_bdt_prev = 0.0;                  // the previous call's bdt
 inline int rt_c3_lines = 0;
 // problem/ck_int_at_cut: deliver the planet's internal flux sigma T_int^4 as an extra
 // upward source at the correlated-k cut (the historical behaviour, true). Set false when
@@ -1687,6 +1711,41 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
       // block below skips de entirely (skip_de) and keeps only its diagnostics and the
       // radiative momentum source.
       const bool mode3_ = (rt_implicit_column == 3) && grey_on && rt_split;
+      // problem/rt_col3_skip_sweep: the entry sweep is dead weight under mode 3 when the
+      // blend weight is 0 everywhere.  The REQUIREMENTS are checked in the problem
+      // generator; the one thing it cannot check there is that w really is 0 on every
+      // face (the weights are built per cycle), so that is checked here, once.
+      const bool skipsweep_ = mode3_ && rt_col3_skip_sweep;
+      if (skipsweep_) {
+        static bool wchecked = false;
+        if (!wchecked) {
+          wchecked = true;
+          Real wmax = 0.0;
+          if (taublend) {
+            Kokkos::parallel_reduce("rt_c3_wchk",
+              Kokkos::RangePolicy<>(DevExeSpace(), 0, (nmb1+1)*(ke-ks+1)*(je-js+1)
+                                                      *(ie+2-is)),
+              KOKKOS_LAMBDA(const int idx, Real &mx) {
+                const int nn1 = ie + 2 - is, nn2 = je - js + 1, nn3 = ke - ks + 1;
+                const int i = is + (idx % nn1);
+                const int j = js + ((idx/nn1) % nn2);
+                const int k = ks + ((idx/(nn1*nn2)) % nn3);
+                const int m = idx/(nn1*nn2*nn3);
+                const Real w = fabs(w_g(m,k,j,i));
+                if (w > mx) mx = w;
+              }, Kokkos::Max<Real>(wmax));
+          }
+          if (wmax > 0.0) {
+            std::cout << "### FATAL ERROR in two_stream_rt: problem/rt_col3_skip_sweep "
+                      << "needs the tau-blend weight to be 0 on EVERY x1 face (the "
+                      << "handover the skipped sweep would feed is then identically "
+                      << "zero), but max|w| = " << wmax << ". Set <hydro>/rad_tau_lo "
+                      << "deeper than the bottom of the box, or drop the switch."
+                      << std::endl;
+            std::exit(EXIT_FAILURE);
+          }
+        }
+      }
       if (implcol_ && pcond_rt != nullptr && !pcond_rt->rt_col_alloc) {
         pcond_rt->EnableRTColumn();
       }
@@ -2476,7 +2535,12 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
             }
           });
         };
-        if (n1 <= 72) {
+        if (skipsweep_) {
+          // NOTHING to launch: kc_g/Bb_g/icut_g come from the pre-kernels, Qb_g is
+          // identically 0 on the grey path (only the correlated-k chain accumulates
+          // into it) and stays at its allocation zero, Fb_g is written by the column
+          // solve below, and Src_g/Em_g stay zero with no consumer left.
+        } else if (n1 <= 72) {
           launch_grey_chain(std::integral_constant<int, 72>{});
         } else if (n1 <= 136) {
           launch_grey_chain(std::integral_constant<int, 136>{});
@@ -2518,7 +2582,19 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
                 ? new DvceArray5D<Real>("rt_c3wk", nmb_c3, c3nw, n3, n2, n1)
                 : new DvceArray5D<Real>("rt_c3wk", nmb_c3, c3nw, n1, n3, n2);
             rt_c3top_ptr = new DvceArray4D<Real>("rt_c3top", nmb_c3, 2, n3, n2);
-            rt_c3stat_ptr = new DvceArray1D<Real>("rt_c3stat", 21);
+            rt_c3stat_ptr = new DvceArray1D<Real>("rt_c3stat", 22);
+            // the warm-start history.  Zero-initialised, so "no history" is the state of
+            // every cell on the first call and the fallback fires there by construction.
+            const int wn1 = (rt_impl_warm > 0) ? n1 : 1;
+            const int wn2 = (rt_impl_warm > 0) ? n2 : 1;
+            const int wn3 = (rt_impl_warm > 0) ? n3 : 1;
+            const int wnm = (rt_impl_warm > 0) ? nmb_c3 : 1;
+            rt_c3bp_ptr = new DvceArray4D<Real>("rt_c3bp", wnm, wn3, wn2, wn1);
+            rt_c3bp2_ptr = new DvceArray4D<Real>("rt_c3bp2",
+                                                 (rt_impl_warm > 1) ? wnm : 1,
+                                                 (rt_impl_warm > 1) ? wn3 : 1,
+                                                 (rt_impl_warm > 1) ? wn2 : 1,
+                                                 (rt_impl_warm > 1) ? wn1 : 1);
             rt_c3rd_ptr = new DvceArray4D<Real>("rt_c3rd", nmb_c3, n3, n2,
                                                 c3par ? c3nseg*RTCOL3_NRD : 1);
             if (global_variable::my_rank == 0) {
@@ -2537,6 +2613,8 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
           auto c3rd = *rt_c3rd_ptr;
           auto c3top = *rt_c3top_ptr;
           auto c3stat = *rt_c3stat_ptr;
+          auto c3bp = *rt_c3bp_ptr;
+          auto c3bp2 = *rt_c3bp2_ptr;
           Kokkos::deep_copy(c3stat, 0.0);
           // the angular quadrature, the same one the sweep just used
           const int nq3 = (ck_nq_ > 1) ? 2 : 1;
@@ -2602,6 +2680,13 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
           c3.exjac = rt_impl_exjac;
           c3.dstop = rt_impl_dstop;
           c3.cvfreeze = rt_impl_cvfreeze;
+          c3.warm = rt_impl_warm;
+          c3.bprev = c3bp;
+          c3.bprev2 = c3bp2;
+          // the extrapolation ratio: this call's bdt over the last one's.  The first
+          // call of a run has no history at all, so the value is irrelevant there.
+          c3.dtr = (rt_c3_bdt_prev > 0.0) ? (bdt/rt_c3_bdt_prev) : 1.0;
+          rt_c3_bdt_prev = bdt;
           c3.dfloor = eos.dfloor;
           c3.rgas = Rgas;
           c3.gm1 = gm1;
@@ -2621,6 +2706,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
           c3.cut_legacy = cut_legacy;
           c3.direct = rt_src_direct;
           c3.ex_iter = rt_col3_ex_iter;
+          c3.wrflux = skipsweep_;
           c3.dump = rt_outer_verbose && (pm->ncycle == 0);
           if (c3par) {
             RTCol3TeamLaunch(c3, nmb1, ks, ke, js, je);
@@ -2648,6 +2734,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
                       << " sum_de_dx=" << hs(9)
                       << " sum|de|dx=" << hs(10)
                       << " ndiagviol=" << static_cast<int>(hs(11))
+                      << " nwarmfb=" << static_cast<int>(hs(21))
                       << " resid_max=" << hs(19)
                       << " resid_mean=" << hs(20)/ncol
                       << " budget_rel="

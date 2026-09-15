@@ -243,6 +243,14 @@ bool rt_strang_ = false;
 // rk2 then blends that fully relaxed state back with the un-relaxed u^n) is what drives
 // the residual dt-independent box mode.  Works for any rt_implicit_column mode.
 bool rt_once_ = false;
+// problem/rt_col3_once (default false, bitwise off): the SAME once-per-cycle split as
+// rt_once_per_cycle, but only legal for the exact block-tridiagonal column solve
+// (rt_implicit_column = 3).  In mode 3 the explicit sweep exists ONLY to build the
+// column solve's coefficients -- the per-cell apply it would otherwise feed is replaced
+// by the solve -- so taking the column out of the RK stage takes the sweep with it, and
+// the whole radiation source is then applied ONCE with the FULL cycle dt after the last
+// stage.  Halves the cost of the mode-3 source under rk2.
+bool rt_col3_once_ = false;
 bool cool_on_ = true;     // the Newton cooling layer (off by default once RT is on)
 Real rgas_ = 0.0;         // R/mu in code units; the ideal branch's T = p/(Rgas rho)
 // --- the per-column emergent-flux surface dump (problem/rt_surface_dt) --------------
@@ -940,22 +948,51 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                 << std::endl;
       std::exit(EXIT_FAILURE);
     }
+    // problem/rt_impl_warm: warm-start the mode-3 Newton from the previous call's
+    // converged Planck function (1) or from a linear extrapolation of the last two (2).
+    // 0 (the default) is the old code, bitwise.
+    ts::rt_impl_warm = pin->GetOrAddInteger("problem", "rt_impl_warm", 0);
+    if (ts::rt_impl_warm < 0 || ts::rt_impl_warm > 2) {
+      std::cout << "### FATAL ERROR in box_convection: problem/rt_impl_warm must be "
+                << "0, 1 or 2" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
     ts::rt_impl_tau_min = pin->GetOrAddReal("problem", "rt_impl_tau_min", 1.0);
     ts::rt_impl_dtmax = pin->GetOrAddReal("problem", "rt_impl_dtmax", 0.25);
     ts::rt_impl_tau_blend = pin->GetOrAddReal("problem", "rt_impl_tau_blend", 1.0);
     rt_strang_ = pin->GetOrAddBoolean("problem", "rt_strang", false);
     rt_once_ = pin->GetOrAddBoolean("problem", "rt_once_per_cycle", false);
+    rt_col3_once_ = pin->GetOrAddBoolean("problem", "rt_col3_once", false);
     if (rt_strang_ && rt_once_) {
       std::cout << "### FATAL ERROR in box_convection: problem/rt_strang and "
                 << "problem/rt_once_per_cycle are mutually exclusive" << std::endl;
       std::exit(EXIT_FAILURE);
     }
+    if (rt_col3_once_ && (rt_strang_ || rt_once_)) {
+      std::cout << "### FATAL ERROR in box_convection: problem/rt_col3_once is the "
+                << "once-per-cycle split of the mode-3 column source and is mutually "
+                << "exclusive with problem/rt_strang and problem/rt_once_per_cycle"
+                << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    if (rt_col3_once_ && ts::rt_implicit_column != 3) {
+      std::cout << "### FATAL ERROR in box_convection: problem/rt_col3_once needs "
+                << "problem/rt_implicit_column = 3 (only there does the sweep exist "
+                << "solely to feed the column solve).  Got rt_implicit_column = "
+                << ts::rt_implicit_column << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
     // enrolled HERE, not next to user_srcs_func: the switch is read only now
-    if (rt_strang_ || rt_once_) {
+    if (rt_strang_ || rt_once_ || rt_col3_once_) {
       user_split_func = BoxConvRTSplit;
-      user_split_once = rt_once_;
+      user_split_once = (rt_once_ || rt_col3_once_);
       if (global_variable::my_rank == 0) {
-        if (rt_once_) {
+        if (rt_col3_once_) {
+          std::cout << "### box_convection: problem/rt_col3_once = true, the mode-3 "
+                    << "column source (sweep + exact column solve) is applied ONCE per "
+                    << "cycle with the FULL dt after the last RK stage and is NOT "
+                    << "applied inside the stages" << std::endl;
+        } else if (rt_once_) {
           std::cout << "### box_convection: problem/rt_once_per_cycle = true, the grey "
                     << "two-stream is applied ONCE per cycle with the FULL dt after the "
                     << "last RK stage and is NOT applied inside the stages" << std::endl;
@@ -1021,7 +1058,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // boundary instead of to the conduction wall face.  Only meaningful when the tau
     // blend is off and the sweep therefore reaches the wall (see ts::rt_bot_flux): with
     // the blend on, the diffusion operator carries the deep flux and must keep the wall.
-    if (pin->GetOrAddBoolean("problem", "rt_bottom_flux", false)) {
+    const bool rt_botflux_ = pin->GetOrAddBoolean("problem", "rt_bottom_flux", false);
+    if (rt_botflux_) {
       if (!pc->rad_tau_mode) {
         std::cout << "### FATAL ERROR in box_convection: problem/rt_bottom_flux puts the "
                   << "internal flux on the two-stream's lower boundary and takes it off "
@@ -1046,6 +1084,69 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         std::printf("box_convection: F_bot = %.5e erg/cm^2/s is carried by the "
                     "TWO-STREAM's lower boundary (rt_bottom_flux); the conduction wall "
                     "face injects nothing\n", fin);
+      }
+    }
+    // ---- problem/rt_col3_skip_sweep: drop the explicit entry sweep under mode 3 ----
+    //
+    // With the blend weight 0 on every face the column solve consumes NOTHING the sweep
+    // makes except the frozen opacity and Planck function (kc, Bb), the cut index and
+    // the stellar heating Qb -- all of which the pre-kernels build -- so the sweep is
+    // pure cost.  What the sweep ALSO makes, and what the rest of the code reads, is the
+    // face flux Fb (rad_f2s, rt_rad_force, the emergent-flux history and the surface
+    // dump), the per-cell source Src and the emission rate Em.  Fb is taken over by the
+    // column solve, which writes its OWN converged flux (see rt_col3_skip_sweep in
+    // two_stream_rt.hpp); Src and Em are left at zero, so every reader of those two has
+    // to be off.  Refuse anything that is not served.
+    ts::rt_col3_skip_sweep = pin->GetOrAddBoolean("problem", "rt_col3_skip_sweep", false);
+    if (ts::rt_col3_skip_sweep) {
+      std::string bad;
+      if (ts::rt_implicit_column != 3) {
+        bad += "\n  problem/rt_implicit_column must be 3 (in every other mode the sweep "
+               "IS the solver)";
+      }
+      if (!ts::rt_col3_ex_iter) {
+        bad += "\n  problem/rt_col3_ex_iter must be true (frozen, the handover src_ex is "
+               "read out of the sweep's Fb and Src)";
+      }
+      if (!ts::rt_src_direct) {
+        bad += "\n  problem/rt_src_direct must be true (the non-direct handover reads "
+               "the sweep's Fb)";
+      }
+      if (!rt_botflux_) {
+        bad += "\n  problem/rt_bottom_flux must be true: it is this code's statement "
+               "that <hydro>/rad_tau_lo is deeper than the box, i.e. that the blend "
+               "weight is 0 on every face and the handover is identically zero (the "
+               "weights themselves are checked once, on the first RT call)";
+      }
+      if (ts::rt_src_dump > 0) {
+        bad += "\n  problem/rt_src_dump reads the sweep's Src";
+      }
+      if (ts::rt_apply_debug > 0) {
+        bad += "\n  problem/rt_apply_debug reads the sweep's Em, Src and Qb";
+      }
+      if (ts::rt_diag) {
+        bad += "\n  problem/rt_diag reads the sweep's Em";
+      }
+      if (ts::rt_cell_report) {
+        bad += "\n  problem/rt_cell_report reads the sweep's per-face intensities";
+      }
+      if (!bad.empty()) {
+        std::cout << "### FATAL ERROR in box_convection: problem/rt_col3_skip_sweep "
+                  << "cannot be served here:" << bad << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      if (global_variable::my_rank == 0) {
+        std::cout << "### box_convection: problem/rt_col3_skip_sweep = true -- the "
+                  << "explicit two-stream entry sweep is NOT run; the column solve "
+                  << "supplies the face flux Fb from its own converged intensities, and "
+                  << "Src/Em stay zero" << std::endl;
+        if (ts::rt_outer_verbose) {
+          std::cout << "### WARNING in box_convection: with rt_col3_skip_sweep the "
+                    << "rt_col3_fsum/rt_col3_flux dumps compare the column against an "
+                    << "entry sweep that never ran: their Fb/sw_srcdx columns and the "
+                    << "rt_col3 Fbtop slot are the PREVIOUS call's numbers, not this "
+                    << "one's" << std::endl;
+        }
       }
     }
     ts::rt_tint_override = teff_bot;
@@ -1393,7 +1494,7 @@ void BoxConvSrcs(Mesh *pm, Real bdt) {
 
   // --- the grey two-stream, after gravity and the cooling layer, exactly where
   // red_giant.cpp calls it: inside the stage, on the state the last ConToPrim left.
-  if (rt_on_ && !rt_strang_ && !rt_once_) {
+  if (rt_on_ && !rt_strang_ && !rt_once_ && !rt_col3_once_) {
     two_stream_rt::picket_fence_two_stream_RT(pm, bdt);
     if (bud_on) {
       Real e4, r4, ft, fc;

@@ -155,6 +155,11 @@ struct RTCol3 {
   // (m, nseg*RTCOL3_NRD, k, j), and the number of segments = the Kokkos team size
   DvceArray4D<Real> rd;
   DvceArray4D<Real> dtop;         // (m,q,k,j) the frozen top-face downward intensity
+  // THE WARM START (problem/rt_impl_warm).  The converged b of the PREVIOUS call, per
+  // cell, and the one before it; a non-positive entry means "no history here" (the
+  // Views are zero-initialised, so the first call of a run falls back everywhere).
+  DvceArray4D<Real> bprev;        // (m,k,j,i) last converged b
+  DvceArray4D<Real> bprev2;       // (m,k,j,i) the call before that (warm = 2)
   DvceArray1D<Real> stat;         // 12 reduction slots, see the launcher
   DualArray1D<RegionSize> size;
   DvceArray4D<Real> dx1;
@@ -176,6 +181,8 @@ struct RTCol3 {
   int maxit = 6;
   int norm = 1;                   // problem/rt_impl_norm
   int cvfreeze = 0;               // problem/rt_impl_cvfreeze
+  int warm = 0;                   // problem/rt_impl_warm
+  Real dtr = 1.0;                 // bdt/bdt_prev, the warm = 2 extrapolation ratio
   bool exjac = true;              // problem/rt_impl_exjac
   bool dstop = true;              // problem/rt_impl_dstop
   int is = 0, ie = 0;
@@ -190,6 +197,12 @@ struct RTCol3 {
   bool cut_legacy = false;
   bool direct = true;
   bool ex_iter = false;          // see problem/rt_col3_ex_iter
+  // problem/rt_col3_skip_sweep: the entry sweep did not run, so Fb holds nothing.  WRITE
+  // the converged face flux of this solve into it instead, so that rad_f2s, the
+  // radiative momentum source and the flux/surface/history dumps read the flux of the
+  // very field mode 3 applies.  Src/Em are left alone (zero); their consumers are
+  // refused at startup.
+  bool wrflux = false;
   bool dump = false;              // one-shot per-cell assembly dump of column (0,ks,js)
 
   // ---- the two state accessors, the rt_use_cons forms (mode 3 requires it) ----------
@@ -286,6 +299,55 @@ struct RTCol3 {
   KOKKOS_INLINE_FUNCTION
   void Solve(const int m, const int k, const int j) const;
 };
+
+//----------------------------------------------------------------------------------------
+//! \fn Real RTCol3WarmStart
+//! \brief THE SHARED WARM START, used by BOTH the serial (RTCol3::Solve) and the
+//! partitioned (RTCol3TeamSolve) path -- the initial NEWTON ITERATE only.
+//!
+//! WHY.  Nothing else about the solve changes: the entry state e*, T*, the frozen layer
+//! coefficients, the boundary data and the handover are all still built from the current
+//! state, and the tolerance is unchanged.  Newton therefore converges to the SAME root;
+//! starting it at the previous call's answer instead of at the entry Planck function
+//! only removes passes.  Results are equal to round-off, not bitwise, which is why the
+//! default (rt_impl_warm = 0) returns b0 unchanged.
+//!
+//! THE GUARD.  A warm value that is non-positive, non-finite, or further from the entry
+//! Planck function than one clamped Newton step could take it (db in [-0.75 b, 3 b], so
+//! the band [0.25 b0, 4 b0]) is discarded for that cell and b0 is used instead.  The
+//! discards are counted in stat(21).
+
+KOKKOS_INLINE_FUNCTION
+Real RTCol3WarmStart(const RTCol3 &c, const int m, const int k, const int j, const int i,
+                     const Real b0) {
+  if (c.warm <= 0) return b0;
+  const Real bp = c.bprev(m,k,j,i);
+  if (!(bp > 0.0) || !isfinite(bp)) return b0;
+  Real bw = bp;
+  if (c.warm >= 2) {
+    const Real bp2 = c.bprev2(m,k,j,i);
+    if (bp2 > 0.0 && isfinite(bp2)) bw = bp + (bp - bp2)*c.dtr;
+  }
+  if (!(bw > 0.0) || !isfinite(bw) || !(b0 > 0.0) ||
+      bw < 0.25*b0 || bw > 4.0*b0) {
+    Kokkos::atomic_add(&c.stat(21), 1.0);
+    return b0;
+  }
+  return bw;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RTCol3WarmStore
+//! \brief the other half of the same helper: push this call's converged b into the
+//! history, shifting the previous level down when the extrapolation needs it.
+
+KOKKOS_INLINE_FUNCTION
+void RTCol3WarmStore(const RTCol3 &c, const int m, const int k, const int j, const int i,
+                     const Real b) {
+  if (c.warm <= 0) return;
+  if (c.warm >= 2) c.bprev2(m,k,j,i) = c.bprev(m,k,j,i);
+  c.bprev(m,k,j,i) = (b > 0.0 && isfinite(b)) ? b : 0.0;
+}
 
 //----------------------------------------------------------------------------------------
 //! \fn void RTCol3::SourceCoef
@@ -512,7 +574,7 @@ void RTCol3::Solve(const int m, const int k, const int j) const {
       Wk<false>(m,CI+q,i,k,j) = (x > 1.0e-3) ? (e0 - 1.0 + e0/x) : (x/2.0 - SQR(x)/3.0);
       Wk<false>(m,CO+q,i,k,j) = (x > 1.0e-3) ? (1.0 - e0/x) : (x/2.0 - SQR(x)/6.0);
     }
-    Wk<false>(m,BB,i,k,j) = Bb(m,0,i,k,j);
+    Wk<false>(m,BB,i,k,j) = RTCol3WarmStart(*this, m, k, j, i, Bb(m,0,i,k,j));
     Wk<false>(m,ES,i,k,j) = Ei(m,k,j,i);     // e*, fixed for the whole solve: cache it once
   }
   // THE NORM SCALE.  problem/rt_impl_norm = 1 measures each cell's energy residual
@@ -751,6 +813,7 @@ void RTCol3::Solve(const int m, const int k, const int j) const {
     const Real wb = taublend ? (1.0 - 0.5*(wblend(m,k,j,i) + wblend(m,k,j,i+1))) : 1.0;
     rhsum += bdt*(wb*Wk<false>(m,SA,i,k,j) + Wk<false>(m,EX,i,k,j))*dxi;
     srsum += Wk<false>(m,SA,i,k,j)*dxi;
+    RTCol3WarmStore(*this, m, k, j, i, Wk<false>(m,BB,i,k,j));
   }
   Real fnet = 0.0;
   for (int q=0; q<nq; ++q) {
@@ -863,6 +926,23 @@ void RTCol3::Solve(const int m, const int k, const int j) const {
   Kokkos::atomic_add(&stat(10), bscale);
   Kokkos::atomic_max(&stat(19), rfin);
   Kokkos::atomic_add(&stat(20), rfin);
+  // problem/rt_col3_skip_sweep: Fb IS this solve's own flux.  Face i carries
+  // sum_q w_q (I_up(i-) - I_down(i)), exactly the sweep's definition, with the cut face
+  // taking the thermalised upward intensity and the top face the frozen Dtop.  Written
+  // after stat(17) so that slot still reports what Fb held on entry (the PREVIOUS call's
+  // converged Ftop here, and 0 on the first one).
+  if (wrflux) {
+    for (int i=ic; i<=ie; ++i) {
+      Real f3lo = 0.0;
+      for (int q=0; q<nq; ++q) {
+        const Real ulo = (i == ic) ? (Wk<false>(m,BB,ic,k,j) + Ucut[q])
+                                   : Wk<false>(m,UU+q,i-1,k,j);
+        f3lo += wf[q]*(ulo - Wk<false>(m,DD+q,i,k,j));
+      }
+      Fb(m,0,i,k,j) = f3lo;
+    }
+    Fb(m,0,ie+1,k,j) = ftop3;
+  }
 }
 
 //----------------------------------------------------------------------------------------

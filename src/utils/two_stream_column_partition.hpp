@@ -96,7 +96,7 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
         c.Wk<true>(m,CI+q,i,k,j) = (x > 1.0e-3) ? (e0 - 1.0 + e0/x) : (x/2.0 - SQR(x)/3.0);
         c.Wk<true>(m,CO+q,i,k,j) = (x > 1.0e-3) ? (1.0 - e0/x) : (x/2.0 - SQR(x)/6.0);
       }
-      c.Wk<true>(m,BB,i,k,j) = c.Bb(m,0,i,k,j);
+      c.Wk<true>(m,BB,i,k,j) = RTCol3WarmStart(c, m, k, j, i, c.Bb(m,0,i,k,j));
       c.Wk<true>(m,ES,i,k,j) = c.Ei(m,k,j,i);
     }
   });
@@ -546,6 +546,7 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
           ? (1.0 - 0.5*(c.wblend(m,k,j,i) + c.wblend(m,k,j,i+1))) : 1.0;
       rhsum += c.bdt*(wb*c.Wk<true>(m,SA,i,k,j) + c.Wk<true>(m,EX,i,k,j))*dxi;
       srsum += c.Wk<true>(m,SA,i,k,j)*dxi;
+      RTCol3WarmStore(c, m, k, j, i, c.Wk<true>(m,BB,i,k,j));
       const Real tk = c.Tg(m,k,j,i);
       if (!(tk > 0.0)) continue;
       const Real rho = c.Rho(m,k,j,i);
@@ -624,6 +625,29 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
     Kokkos::atomic_max(&c.stat(19), rfin);
     Kokkos::atomic_add(&c.stat(20), rfin);
   });
+  // problem/rt_col3_skip_sweep: the entry sweep did not run, so write this solve's own
+  // converged face flux into Fb.  Same definition as the serial path, one thread per
+  // face; the workspace is global, so reading i-1 across a segment boundary is legal
+  // here (the whole column has converged and the barrier above has passed).
+  if (c.wrflux) {
+    Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, ic, ie+1), [&](const int i) {
+      Real f3lo = 0.0;
+      for (int q=0; q<nq; ++q) {
+        const Real ulo = (i == ic) ? (c.Wk<true>(m,BB,ic,k,j) + Ucut[q])
+                                   : c.Wk<true>(m,UU+q,i-1,k,j);
+        f3lo += c.wf[q]*(ulo - c.Wk<true>(m,DD+q,i,k,j));
+      }
+      c.Fb(m,0,i,k,j) = f3lo;
+      if (i == ie) {
+        Real f3hi = 0.0;
+        for (int q=0; q<nq; ++q) {
+          f3hi += c.wf[q]*(c.Wk<true>(m,UU+q,ie,k,j) - Dtop[q]);
+        }
+        c.Fb(m,0,ie+1,k,j) = f3hi;
+      }
+    });
+    tm.team_barrier();
+  }
 }
 
 //----------------------------------------------------------------------------------------
