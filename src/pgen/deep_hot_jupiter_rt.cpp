@@ -1587,6 +1587,16 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                   << "problem/rt_ck = true" << std::endl;
         std::exit(EXIT_FAILURE);
       }
+      // the internal flux enters on exactly ONE path: through the conduction wall
+      // (rad_flux_inner, blend on) or as the two-stream's intensity at the cut
+      // (ck_int_at_cut, blend off).  Both at once would inject it twice.
+      if (!pc->rad_tau_mode && rt_int_at_cut && pc->rad_flux_inner != 0.0) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "rad_flux_inner != 0 without the optical-depth blend "
+                  << "injects the internal flux twice: set problem/ck_int_at_cut = false "
+                  << "or rad_tau_hi > 0" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
       // rad_flux_inner < 0: the planet's internal flux sigma T_int^4 through the wall
       if (pc->rad_flux_inner < 0.0) {
         Real Tint;
