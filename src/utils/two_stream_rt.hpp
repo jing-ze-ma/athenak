@@ -381,6 +381,17 @@ inline bool rt_rad_force = false;
 // surface dumps read the CONVERGED flux too; the force itself is what mode 1/2 differ in.
 inline int rt_force_center = 0;
 inline DvceArray4D<Real> *rt_fbsave_ptr = nullptr;  // rt_force_center: the entry Fb sum
+// problem/rt_src_theta (default 1.0, bitwise off; needs rt_implicit_column = 3): the
+// time centring of the column's own energy deposit.  The solve is backward Euler within
+// the stage (theta = 1, bitwise the old code), which lags T' by O(bdt/t_rad); theta < 1
+// blends that deposit with the EXACT exponential relaxation of the same implied rate, in
+// factor space -- see RTCol3ThetaDe in two_stream_column_implicit.hpp for why a literal
+// theta*implicit + (1-theta)*explicit blend is unusable (it blew the He column up by a
+// factor 1e5 at theta = 0.5).  theta = 0.5 is the Crank-Nicolson-like centring, theta = 0
+// the exact linear relaxation.  Exact only in the linear limit, and NOT conservative
+// against the column's own flux divergence: a diagnostic switch, not a production one.
+// Needs the entry sweep, so it turns problem/rt_col3_skip_sweep off.
+inline Real rt_src_theta = 1.0;
 // problem/rt_budget_verbose (box_convection.cpp): when non-null, the radiative force's
 // WORK term v.f is accumulated, box-integrated over the step, into slot 10 of this
 // array.  Diagnostic only: nothing here changes a source term.
@@ -2780,6 +2791,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
           c3.ex_iter = rt_col3_ex_iter;
           c3.hyb_tau = rt_col3_hybrid_tau;
           c3.wrflux = skipsweep_ || (fcen_ > 0);
+          c3.theta = rt_src_theta;
           c3.dump = rt_outer_verbose && (pm->ncycle == 0);
           if (c3par) {
             RTCol3TeamLaunch(c3, nmb1, ks, ke, js, je);

@@ -131,6 +131,36 @@ bool RTCol3Inv5(const Real a[5][5], Real inv[5][5]) {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn Real RTCol3ThetaDe
+//! \brief problem/rt_src_theta: re-centre the column's energy deposit in time.
+//!
+//! The solve is backward Euler within the stage, which for a relaxation of rate 1/t_r
+//! over a step x = bdt/t_r applies the factor f_i = 1/(1 + x) to the EXPLICIT deposit
+//! de_x = -(e - e*) x.  A naive theta blend theta*de_i + (1 - theta)*de_x is unusable
+//! here: in an optically thick cell x is enormous and any explicit share blows the
+//! column up (measured: Ftop 1e5 x too large on the He column at theta = 0.5).  So the
+//! blend is taken in FACTOR space instead, between backward Euler and the EXACT
+//! exponential relaxation f_e = (1 - e^-x)/x, with x recovered from the solve's own
+//! factor as x = 1/f_i - 1:
+//!     de(theta) = de_x * (theta*f_i + (1 - theta)*f_e).
+//! theta = 1 is bitwise the backward-Euler deposit; theta = 0 is the exact linear
+//! relaxation, which is what removes the O(dt) phase lag backward Euler puts on T'.
+//! It is exact only in the linear limit -- the implicit branch is still the full
+//! nonlinear solve, and only the factor it implies is re-centred.  Cells where the
+//! implied factor is not in (0, 1] (sign flips, a floor rescue, a near-zero explicit
+//! deposit) keep the implicit deposit untouched.
+
+KOKKOS_INLINE_FUNCTION
+Real RTCol3ThetaDe(const Real de_impl, const Real de_expl, const Real theta) {
+  if (!(fabs(de_expl) > 0.0)) return de_impl;
+  const Real fi = de_impl/de_expl;
+  if (!(fi > 0.0) || fi > 1.0) return de_impl;
+  const Real x = 1.0/fi - 1.0;
+  const Real fe = (x > 1.0e-6) ? ((1.0 - exp(-x))/x) : (1.0 - 0.5*x);
+  return de_expl*(theta*fi + (1.0 - theta)*fe);
+}
+
+//----------------------------------------------------------------------------------------
 //! \struct RTCol3Hyb
 //! \brief THE HYBRID INTERFACE (<problem>/rt_col3_hybrid_tau), per column.
 //!
@@ -269,6 +299,10 @@ struct RTCol3 {
   // very field mode 3 applies.  Src/Em are left alone (zero); their consumers are
   // refused at startup.
   bool wrflux = false;
+  // problem/rt_src_theta: the time centring of the deposit this solve applies.  1.0 is
+  // the fully implicit solve (bitwise the old code); theta < 1 blends in the explicit
+  // stage-start deposit.  See the note in two_stream_rt.hpp.
+  Real theta = 1.0;
   // problem/rt_col3_hybrid_tau: the column optical depth below which the column is
   // solved as DIFFUSION (1 unknown per cell) instead of as the full two-stream.
   // 0 = off, bitwise the whole-column solve.  See RTCol3Hyb.
@@ -1335,6 +1369,13 @@ void RTCol3::Solve(const int m, const int k, const int j) const {
       if (rt > rtmax) rtmax = rt;
     }
     Real de = enew - es;
+    // problem/rt_src_theta: re-centre the deposit in RELAXATION-FACTOR space.  See
+    // RTCol3::theta and RTCol3ThetaDe.
+    if (theta != 1.0) {
+      const Real wbt = taublend
+          ? (1.0 - 0.5*(wblend(m,k,j,i) + wblend(m,k,j,i+1))) : 1.0;
+      de = RTCol3ThetaDe(de, bdt*(wbt*Src(m,0,i,k,j) + Wk<false>(m,EX,i,k,j)), theta);
+    }
     // how far the implicit solve moved this cell from the state the explicit sweep saw,
     // and what the explicit source would have deposited instead
     const Real b0 = Bb(m,0,i,k,j);

@@ -1044,6 +1044,11 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
         if (rt > rtmax) rtmax = rt;
       }
       Real de = enew - es;
+      // problem/rt_src_theta: the same re-centring the serial solver makes
+      if (c.theta != 1.0) {
+        de = RTCol3ThetaDe(de, c.bdt*(wb*c.Src(m,0,i,k,j) + c.Wk<true>(m,EX,i,k,j)),
+                           c.theta);
+      }
       const Real bz = c.Bb(m,0,i,k,j);
       if (bz > 0.0) {
         const Real rb = fabs(b/bz - 1.0);

@@ -1517,8 +1517,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         }
       }
     }
-    // ---- problem/rt_force_center: the TIME CENTRING of the radiative momentum source
-    // (see two_stream_rt.hpp).  Default off and bitwise off; needs the exact column.
+    // ---- problem/rt_force_center, problem/rt_src_theta: the TIME CENTRING of the
+    // two coupling terms the mode-3 column leaves first-order (see two_stream_rt.hpp).
+    // Both are default-off and bitwise off; both need the exact column solve.
     ts::rt_force_center = pin->GetOrAddInteger("problem", "rt_force_center", 0);
     if (ts::rt_force_center < 0 || ts::rt_force_center > 2) {
       std::cout << "### FATAL ERROR in box_convection: problem/rt_force_center must be "
@@ -1531,10 +1532,34 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                 << "converged flux to centre against)" << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    if (global_variable::my_rank == 0 && ts::rt_force_center > 0) {
+    ts::rt_src_theta = pin->GetOrAddReal("problem", "rt_src_theta", 1.0);
+    if (ts::rt_src_theta < 0.0 || ts::rt_src_theta > 1.0) {
+      std::cout << "### FATAL ERROR in box_convection: problem/rt_src_theta must be in "
+                << "[0, 1]" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    if (ts::rt_src_theta != 1.0) {
+      if (ts::rt_implicit_column != 3) {
+        std::cout << "### FATAL ERROR in box_convection: problem/rt_src_theta != 1 needs "
+                  << "problem/rt_implicit_column = 3" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      if (ts::rt_col3_skip_sweep) {
+        // the explicit deposit IS the skipped sweep's source, so the sweep has to run:
+        // turn the skip off rather than refuse the switch (it costs ~11 % per cycle)
+        ts::rt_col3_skip_sweep = false;
+        if (global_variable::my_rank == 0) {
+          std::cout << "### WARNING in box_convection: problem/rt_src_theta != 1 needs "
+                    << "the entry sweep's source, so problem/rt_col3_skip_sweep is "
+                    << "turned OFF for this run" << std::endl;
+        }
+      }
+    }
+    if (global_variable::my_rank == 0 &&
+        (ts::rt_force_center > 0 || ts::rt_src_theta != 1.0)) {
       std::cout << "### box_convection: RT coupling centring -- rt_force_center = "
-                << ts::rt_force_center << " (0 entry flux, 1 converged flux, 2 average)"
-                << std::endl;
+                << ts::rt_force_center << " (0 entry flux, 1 converged flux, 2 average), "
+                << "rt_src_theta = " << ts::rt_src_theta << std::endl;
     }
     ts::rt_tint_override = teff_bot;
     ts::rt_star_teff = 0.0;
