@@ -367,6 +367,20 @@ inline bool rt_plane_parallel = false;
 // semi-implicit relaxation, which must not damp it.  Default OFF; box_convection requires
 // the EOS taper to be on with it.
 inline bool rt_rad_force = false;
+// problem/rt_force_center (default 0, bitwise off; needs rt_implicit_column = 3): WHICH
+// face flux the radiative momentum source above is driven by.  In mode 3 the energy is
+// solved exactly and implicitly over the stage, but Fb is deliberately left at the
+// ENTRY sweep's (lambda-iteration) values, so the force alone still responds to the
+// stage-START radiation field: for a radiatively relaxed surface mode that is a phase
+// lag linear in dt, and the work f.v it does over a cycle is then an O(dt) forcing.
+//   0 = the entry sweep's flux (as now),
+//   1 = the flux of THIS stage's converged column solve (the column writes its own face
+//       flux, exactly as rt_col3_skip_sweep already makes it do),
+//   2 = the average of the two, i.e. a trapezoidal centring in the stage.
+// With the switch on the column writes Fb, so rad_f2s, the emergent-flux history and the
+// surface dumps read the CONVERGED flux too; the force itself is what mode 1/2 differ in.
+inline int rt_force_center = 0;
+inline DvceArray4D<Real> *rt_fbsave_ptr = nullptr;  // rt_force_center: the entry Fb sum
 // problem/rt_budget_verbose (box_convection.cpp): when non-null, the radiative force's
 // WORK term v.f is accumulated, box-integrated over the step, into slot 10 of this
 // array.  Diagnostic only: nothing here changes a source term.
@@ -2680,6 +2694,25 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
             c3top(m,0,k,j) = (1.0 - exp(-dtau/mu3a))*bsrc;
             c3top(m,1,k,j) = (1.0 - exp(-dtau/mu3b))*bsrc;
           });
+          // ---- problem/rt_force_center: centre the flux the radiative force uses --
+          // The column below writes its OWN converged face flux into Fb (the
+          // rt_col3_skip_sweep path, RTCol3::wrflux); mode 2 needs the ENTRY flux as
+          // well, so it is summed over the blocks and saved here, before the solve.
+          const int fcen_ = rt_force_center;
+          if (fcen_ == 2 && rt_fbsave_ptr == nullptr) {
+            rt_fbsave_ptr = new DvceArray4D<Real>("rt_fbsave", nmb_c3, n3, n2, n1);
+          }
+          auto fbsv_ = (rt_fbsave_ptr != nullptr) ? *rt_fbsave_ptr
+                     : DvceArray4D<Real>("rt_fbsave_d", 1, 1, 1, 1);
+          if (fcen_ == 2) {
+            const int nblk_s = nblk;
+            par_for("rt_fbsave", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
+            KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+              Real ff = 0.0;
+              for (int b=0; b<nblk_s; ++b) ff += Fb_g(m,b,i,k,j);
+              fbsv_(m,k,j,i) = ff;
+            });
+          }
           RTCol3 c3;
           c3.u0 = u0;
           c3.bcc = bcc_uc_;
@@ -2746,7 +2779,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
           c3.direct = rt_src_direct;
           c3.ex_iter = rt_col3_ex_iter;
           c3.hyb_tau = rt_col3_hybrid_tau;
-          c3.wrflux = skipsweep_;
+          c3.wrflux = skipsweep_ || (fcen_ > 0);
           c3.dump = rt_outer_verbose && (pm->ncycle == 0);
           if (c3par) {
             RTCol3TeamLaunch(c3, nmb1, ks, ke, js, je);
@@ -3596,6 +3629,12 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
       if (diag) dg = *rt_diag_ptr;
       // ---- the radiative momentum source (problem/rt_rad_force) --------------------
       const bool radforce = rt_rad_force && grey_on;
+      // problem/rt_force_center: 0 = the entry sweep's flux (Fb as it stands), 1 = the
+      // converged column flux (mode 3 has already overwritten Fb with it above), 2 = the
+      // average of the two, with the entry flux taken from the saved copy.
+      const int fcen_a = (rt_implicit_column == 3) ? rt_force_center : 0;
+      auto fbs_a = (rt_fbsave_ptr != nullptr) ? *rt_fbsave_ptr
+                 : DvceArray4D<Real>("rt_fbs_dummy", 1, 1, 1, 1);
       const Real inv_c = 1.0/2.99792458e10;      // cgs: this path runs in cgs code units
       const Real arad_f = eos.tbl.arad;
       const Real xlo_f = eos.tbl.rad_lrho_lo, xhi_f = eos.tbl.rad_lrho_hi;
@@ -4275,8 +4314,15 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
           const Real rho = rhoN(m,k,j,i);
           Real wr, dwdx;
           rad_taper::Weight(log10(rho), xlo_f, xhi_f, wr, dwdx);
-          // the cell's net two-stream flux, positive upward
-          const Real fnet = 0.5*(Ft + Fb);
+          // the cell's net two-stream flux, positive upward (rt_force_center: Ft/Fb
+          // are this call's Fb array, so 0/1 differ only in what the column wrote; 2
+          // averages it with the saved entry flux)
+          Real ftc_ = Ft, fbc_ = Fb;
+          if (fcen_a == 2) {
+            ftc_ = 0.5*(Ft + fbs_a(m,k,j,i+1));
+            fbc_ = 0.5*(Fb + fbs_a(m,k,j,i));
+          }
+          const Real fnet = 0.5*(ftc_ + fbc_);
           Real f1 = (1.0 - wr)*rho*kc_g(m,0,i,k,j)*fnet*inv_c;
           Real f2 = 0.0, f3 = 0.0, prgw = 0.0;
           if (dwdx != 0.0) {

@@ -1517,6 +1517,25 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         }
       }
     }
+    // ---- problem/rt_force_center: the TIME CENTRING of the radiative momentum source
+    // (see two_stream_rt.hpp).  Default off and bitwise off; needs the exact column.
+    ts::rt_force_center = pin->GetOrAddInteger("problem", "rt_force_center", 0);
+    if (ts::rt_force_center < 0 || ts::rt_force_center > 2) {
+      std::cout << "### FATAL ERROR in box_convection: problem/rt_force_center must be "
+                << "0 (entry flux), 1 (converged flux) or 2 (the average)" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    if (ts::rt_force_center > 0 && ts::rt_implicit_column != 3) {
+      std::cout << "### FATAL ERROR in box_convection: problem/rt_force_center needs "
+                << "problem/rt_implicit_column = 3 (only the exact column solve has a "
+                << "converged flux to centre against)" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    if (global_variable::my_rank == 0 && ts::rt_force_center > 0) {
+      std::cout << "### box_convection: RT coupling centring -- rt_force_center = "
+                << ts::rt_force_center << " (0 entry flux, 1 converged flux, 2 average)"
+                << std::endl;
+    }
     ts::rt_tint_override = teff_bot;
     ts::rt_star_teff = 0.0;
     // The star-and-grid carrier the solver reads.  Teq = 0 switches the stellar beam off
