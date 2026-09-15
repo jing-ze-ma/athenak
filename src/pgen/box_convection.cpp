@@ -386,6 +386,18 @@ bool rt_once_ = false;
 // the whole radiation source is then applied ONCE with the FULL cycle dt after the last
 // stage.  Halves the cost of the mode-3 source under rk2.
 bool rt_col3_once_ = false;
+// --- problem/rt_weights_per_stage: RE-CENTRE THE OPACITY/TAU CACHES ON THE STAGE STATE.
+// Conduction::BuildRadWeights (the column optical depth rad_tauf and the tau-blend weight
+// rad_w) and Conduction::BuildAngularCoeffs (the transverse conductances cap_c2/cap_c3 and
+// the frozen T*, alpha of the ADI operator) are both built inside Hydro::Fluxes, from w0 =
+// the STAGE-START primitives.  The two-stream column and the radiative force, however, run
+// on u0 AFTER the RK flux update and the gravity source.  The caches therefore lag the state
+// they are used with by one sub-step, which is an O(dt) error in phase with rho'/T' -- the
+// numerical-kappa mechanism the surface f-mode is being tested against.  With this on, the
+// primitives are re-formed from the current u0 and both builders are re-run immediately
+// before the two-stream call, so everything the column and the force consume is centred on
+// the state they act on.  Default false and the code path is untouched when off.
+bool rtwps_ = false;
 bool cool_on_ = true;     // the Newton cooling layer (off by default once RT is on)
 Real rgas_ = 0.0;         // R/mu in code units; the ideal branch's T = p/(Rgas rho)
 // --- the per-column emergent-flux surface dump (problem/rt_surface_dt) --------------
@@ -1187,6 +1199,15 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // Everything the solver reads about the geometry and the star goes in here.  The
   // plane-parallel switch is what makes it legal on this mesh: see rt_plane_parallel.
   rt_on_ = pin->GetOrAddBoolean("problem", "rt_two_stream", false);
+  // problem/rt_weights_per_stage (see rtwps_ above): rebuild the tau/blend weights and the
+  // transverse conductances from the CURRENT state at every stage.  Read unconditionally so
+  // that the parameter always exists and can be set from the command line.
+  rtwps_ = pin->GetOrAddBoolean("problem", "rt_weights_per_stage", false);
+  if (rtwps_ && rt_on_ && global_variable::my_rank == 0) {
+    std::cout << "### box_convection: problem/rt_weights_per_stage = true -- the column "
+              << "optical depth, the tau-blend weight and the transverse conductances are "
+              << "rebuilt from the post-update state at every RK stage" << std::endl;
+  }
   cool_on_ = pin->GetOrAddBoolean("problem", "cool_layer", !rt_on_);
   if (rt_on_) {
     namespace ts = two_stream_rt;
@@ -1762,6 +1783,42 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void BoxConvRebuildRadWeights
+//! \brief problem/rt_weights_per_stage: re-form the primitives from the CURRENT conserved
+//! state and rebuild the radiation caches Conduction holds, immediately before the
+//! two-stream source.  ConsToPrim is run over the full range (ghosts included) exactly as
+//! Hydro::ConToPrim runs it, so wtemp/wder -- which BuildRadWeights reads under a general
+//! EOS -- are consistent with w0.  The ghost cells carry the last exchanged u0, i.e. the
+//! same staleness w0 already had there; nothing is made worse.  Cost per stage: one
+//! ConsToPrim, one BuildRadWeights (one serial x1 sweep per column), and, when the ADI /
+//! capped transverse operator is on, one BuildAngularCoeffs.
+
+void BoxConvRebuildRadWeights(Mesh *pm, Real bdt) {
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  Conduction *pc = pmbp->phydro->pcond;
+  if (pc == nullptr) return;
+  auto &indcs = pm->mb_indcs;
+  const int ng = indcs.ng;
+  const int n1m1 = indcs.nx1 + 2*ng - 1;
+  const int n2m1 = (indcs.nx2 > 1)? (indcs.nx2 + 2*ng - 1) : 0;
+  const int n3m1 = (indcs.nx3 > 1)? (indcs.nx3 + 2*ng - 1) : 0;
+  auto &w0 = pmbp->phydro->w0;
+  pmbp->phydro->peos->ConsToPrim(pmbp->phydro->u0, w0, false,
+                                 0, n1m1, 0, n2m1, 0, n3m1);
+  auto &eosd = pmbp->phydro->peos->eos_data;
+  if (pc->rad_tau_mode) pc->BuildRadWeights(w0, eosd);
+  // the same gate Conduction::AddIsotropicHeatFluxRadiative applies before it calls this
+  // (including its 1-D early return: there are no transverse faces and cap_c2/cap_c3 are
+  // sized for a single layer, so the builder must not run)
+  if (pm->multi_d && (pc->rad_cap_ang > 0.0 || pc->rad_implicit_ang)
+      && !pc->rad_sts_split) {
+    pc->stage_beta_dt = bdt;
+    pc->BuildAngularCoeffs(w0, eosd, bdt);
+  }
+  return;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void BoxConvSrcs
 //! \brief constant gravity along x1 -- in the well-balanced form under
 //! wellbalance_dynamic -- plus the top cooling layer.
@@ -2040,6 +2097,7 @@ void BoxConvSrcs(Mesh *pm, Real bdt) {
   // --- the grey two-stream, after gravity and the cooling layer, exactly where
   // red_giant.cpp calls it: inside the stage, on the state the last ConToPrim left.
   if (rt_on_ && !rt_strang_ && !rt_once_ && !rt_col3_once_) {
+    if (rtwps_) BoxConvRebuildRadWeights(pm, bdt);
     two_stream_rt::picket_fence_two_stream_RT(pm, bdt);
     if (bud_on) {
       Real e4, r4, ft, fc;
@@ -2080,6 +2138,7 @@ void BoxConvRTSplit(Mesh *pm, Real bdt) {
   const bool bud_on = (rtbud_n_ > 0);
   Real e0 = 0.0, r0 = 0.0;
   if (bud_on) BoxConvBoxInt(pm, e0, r0);
+  if (rtwps_) BoxConvRebuildRadWeights(pm, bdt);
   two_stream_rt::picket_fence_two_stream_RT(pm, bdt);
   if (bud_on) {
     Real e4, r4, ft, fc;
