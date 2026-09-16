@@ -318,6 +318,7 @@
 #include "pgen.hpp"
 
 void BoxConvSrcs(Mesh *pm, Real bdt);
+void BoxConvRebuildRadWeights(Mesh *pm, Real bdt);
 void BoxConvRTSplit(Mesh *pm, Real bdt);
 void BoxConvRTImEx(Mesh *pm, Driver *pdrive, const int estage);
 void BoxConvBC(Mesh *pm);
@@ -415,6 +416,43 @@ bool rt_imex_ = false;
 // the horizontal operator switched off (arm TR), and ARMS 4/5/7 show the same transonic
 // lid in all three cases.  Set false to reproduce the ARMS 4/5 behaviour.
 bool rt_split_tr_ = false;
+// problem/rt_col3_sub (int, default 1 = today's behaviour, bitwise off): SUB-CYCLE the
+// whole radiation column operator inside each RK stage.  The hydro step is untouched --
+// the stage still advances over beta_dt -- but the radiation operator is applied N times
+// with beta_dt/N each.
+//
+// WHY.  Every reordering of the step (rk2/rk3/imex2/imex2+/Strang, force and heating
+// centering, weights, top BC: ARMS 1-9 in plaid/fmode_README.txt) leaves the surface
+// f-mode growing at gamma = 0.615 x dt[s] per turnover.  The favoured reading is that the
+// lid relaxes FULLY within one application of the operator, so the radiative work
+// integral over the mode's cycle is evaluated with an effective thermal time equal to the
+// step over which the operator is applied.  If that is right, gamma must follow that step
+// and not the hydro dt: N = 2 halves it, N = 4 quarters it.  If gamma is unchanged (or
+// doubles with the cost), the reading is refuted.
+//
+// WHAT IS IN A SUB-STEP: the whole operator, in the "column + transverse together"
+// ordering rt_split_transverse established -- the mode-3 column solve (sweep + exact
+// block-tridiagonal solve + the radiative force and its work, i.e. all of
+// picket_fence_two_stream_RT) followed immediately by the horizontal ADI operator over
+// the SAME beta_dt/N.  The in-stage transverse task is therefore made a no-op
+// (Conduction::rad_tr_split_out), exactly as the split switches do.
+//
+// WHAT IS REFRESHED between sub-steps: BoxConvRebuildRadWeights -- one ConsToPrim over
+// the full range, then BuildRadWeights (the tau/blend weights) and BuildAngularCoeffs
+// (the frozen ADI face conductances, over the SUB-step beta_dt/N).  The column itself
+// reads rho and e straight out of u0 (problem/rt_use_cons is required by mode 3), so it
+// needs no refresh for its own state; what the ConsToPrim buys is a consistent wtemp --
+// the general EOS's temperature GUESS -- and consistent weights.  The rebuild runs before
+// EVERY sub-step, the first included, so that all N sub-steps see coefficients formed
+// with the same beta_dt/N.
+//
+// GHOSTS: the column writes active cells only and columns are independent, so it needs no
+// halo exchange between sub-steps.  The ADI operator recomputes T and 1/(rho cv) from the
+// current u0 on the active cells and exchanges THOSE through its own one-variable halo
+// (Conduction::RklConductionUpdate, pbval_tr), so each sub-step's transverse solve sees
+// up-to-date transverse neighbours.  What stays as stale as it is today is the mesh u0
+// ghost ring itself, which only the frozen face conductances on the outermost faces read.
+int rt_col3_sub_ = 1;
 // the per-stage implicit sources S^(l), (nimp_stages, nmb, 4, n3, n2, n1), 4 = the
 // IM1/IM2/IM3/IEN components in that order.  Allocated on the first call (the Driver,
 // which owns nimp_stages, is built after the problem generator).  NOT restarted: every
@@ -1423,19 +1461,61 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         }
       }
     }
+    // ---- problem/rt_col3_sub: sub-cycle the whole column operator in the stage ----
+    rt_col3_sub_ = pin->GetOrAddInteger("problem", "rt_col3_sub", 1);
+    if (rt_col3_sub_ < 1) {
+      std::cout << "### FATAL ERROR in box_convection: problem/rt_col3_sub must be >= 1 "
+                << "(1 = the un-sub-cycled stage source).  Got " << rt_col3_sub_
+                << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    if (rt_col3_sub_ > 1) {
+      if (!rt_on_) {
+        std::cout << "### FATAL ERROR in box_convection: problem/rt_col3_sub > 1 needs "
+                  << "problem/rt_two_stream = true -- there is no column to sub-cycle"
+                  << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      if (ts::rt_implicit_column != 3) {
+        std::cout << "### FATAL ERROR in box_convection: problem/rt_col3_sub > 1 needs "
+                  << "problem/rt_implicit_column = 3 -- a sub-step must be an EXACT "
+                  << "solve of the whole column, which is what mode 3 is (the per-cell "
+                  << "sub-cycler problem/rt_relax_sub is a different, inert, switch).  "
+                  << "Got rt_implicit_column = " << ts::rt_implicit_column << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      if (rt_strang_ || rt_once_ || rt_col3_once_ || rt_imex_) {
+        std::cout << "### FATAL ERROR in box_convection: problem/rt_col3_sub > 1 "
+                  << "sub-cycles the IN-STAGE column source and is mutually exclusive "
+                  << "with rt_strang, rt_once_per_cycle, rt_col3_once and rt_imex, which "
+                  << "all take that source out of the stage" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      if (global_variable::my_rank == 0) {
+        std::cout << "### box_convection: problem/rt_col3_sub = " << rt_col3_sub_
+                  << ", the WHOLE radiation operator (mode-3 column solve + radiative "
+                  << "force + horizontal ADI) is applied " << rt_col3_sub_
+                  << " times per RK stage with beta_dt/" << rt_col3_sub_
+                  << " each, at the unchanged hydro dt" << std::endl;
+      }
+    }
     // problem/rt_split_transverse: with the column out of the stage, take the
     // horizontal ADI operator out with it (see the declaration above).  Default ON
-    // whenever a split is active; a no-op otherwise.
+    // whenever a split is active; a no-op otherwise.  rt_col3_sub > 1 keeps the column
+    // INSIDE the stage but still has to move the transverse operator into the sub-cycle
+    // loop, and uses the same Conduction flag to silence the in-stage task.
     const bool splitout = (rt_strang_ || rt_once_ || rt_col3_once_ || rt_imex_);
-    rt_split_tr_ = splitout &&
+    rt_split_tr_ = (splitout || rt_col3_sub_ > 1) &&
                    pin->GetOrAddBoolean("problem", "rt_split_transverse", true);
     if (rt_split_tr_ && pmbp->phydro != nullptr && pmbp->phydro->pcond != nullptr &&
         pmbp->phydro->pcond->rad_implicit_ang) {
       pmbp->phydro->pcond->rad_tr_split_out = true;
       if (global_variable::my_rank == 0) {
         std::cout << "### box_convection: problem/rt_split_transverse = true, the "
-                  << "IMPLICIT TRANSVERSE radiative operator is run inside the split "
-                  << "step with the column and NOT inside the RK stage" << std::endl;
+                  << "IMPLICIT TRANSVERSE radiative operator is run "
+                  << ((rt_col3_sub_ > 1) ? "inside each column SUB-STEP"
+                                         : "inside the split step with the column")
+                  << " and NOT as its own in-stage task" << std::endl;
       }
     }
     ts::rt_apply_debug = pin->GetOrAddInteger("problem", "rt_apply_debug", 0);
@@ -1799,6 +1879,44 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void BoxConvRebuildRadWeights
+//! \brief re-form the primitives from the CURRENT conserved state and rebuild the
+//! radiation caches Conduction holds, immediately before a radiation sub-step
+//! (problem/rt_col3_sub > 1).  ConsToPrim is run over the full range (ghosts included)
+//! exactly as Hydro::ConToPrim runs it, so wtemp -- the general EOS's temperature guess,
+//! which the two-stream and the ADI operator both read -- is consistent with the u0 the
+//! previous sub-step wrote.  The ghost cells carry the last exchanged u0, i.e. the same
+//! staleness w0 already had there; nothing is made worse.  Cost per sub-step: one
+//! ConsToPrim, one BuildRadWeights (one serial x1 sweep per column) and, with the ADI
+//! operator on, one BuildAngularCoeffs -- all small next to the column solve itself.
+
+void BoxConvRebuildRadWeights(Mesh *pm, Real bdt) {
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  if (pmbp->phydro == nullptr) return;
+  Conduction *pc = pmbp->phydro->pcond;
+  if (pc == nullptr) return;
+  auto &indcs = pm->mb_indcs;
+  const int ng = indcs.ng;
+  const int n1m1 = indcs.nx1 + 2*ng - 1;
+  const int n2m1 = (indcs.nx2 > 1)? (indcs.nx2 + 2*ng - 1) : 0;
+  const int n3m1 = (indcs.nx3 > 1)? (indcs.nx3 + 2*ng - 1) : 0;
+  auto &w0 = pmbp->phydro->w0;
+  pmbp->phydro->peos->ConsToPrim(pmbp->phydro->u0, w0, false,
+                                 0, n1m1, 0, n2m1, 0, n3m1);
+  auto &eosd = pmbp->phydro->peos->eos_data;
+  if (pc->rad_tau_mode) pc->BuildRadWeights(w0, eosd);
+  // the same gate Conduction::AddIsotropicHeatFluxRadiative applies before it calls this
+  // (including its 1-D early return: there are no transverse faces and cap_c2/cap_c3 are
+  // sized for a single layer, so the builder must not run)
+  if (pm->multi_d && (pc->rad_cap_ang > 0.0 || pc->rad_implicit_ang)
+      && !pc->rad_sts_split) {
+    pc->stage_beta_dt = bdt;
+    pc->BuildAngularCoeffs(w0, eosd, bdt);
+  }
+  return;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void BoxConvSrcs
 //! \brief constant gravity along x1 -- in the well-balanced form under
 //! wellbalance_dynamic -- plus the top cooling layer.
@@ -2077,15 +2195,36 @@ void BoxConvSrcs(Mesh *pm, Real bdt) {
   // --- the grey two-stream, after gravity and the cooling layer, exactly where
   // red_giant.cpp calls it: inside the stage, on the state the last ConToPrim left.
   if (rt_on_ && !rt_strang_ && !rt_once_ && !rt_col3_once_ && !rt_imex_) {
-    two_stream_rt::picket_fence_two_stream_RT(pm, bdt);
-    if (bud_on) {
-      Real e4, r4, ft, fc;
-      BoxConvBoxInt(pm, e4, r4);
-      rtbud_h_[9] += e4 - bud_e;
-      bud_e = e4;
-      BoxConvFtopInt(pm, ft, fc);
-      rtbud_h_[11] += bdt*ft;
-      rtbud_h_[12] += bdt*fc;
+    // problem/rt_col3_sub: N applications of the WHOLE radiation operator per stage with
+    // beta_dt/N each, at the unchanged hydro dt.  N = 1 is one pass of exactly the call
+    // that was here, with no rebuild and no transverse call -- bitwise the old code.
+    const int nsub = rt_col3_sub_;
+    const Real sdt = bdt/static_cast<Real>(nsub);
+    for (int isub=0; isub<nsub; ++isub) {
+      if (nsub > 1) BoxConvRebuildRadWeights(pm, sdt);
+      two_stream_rt::picket_fence_two_stream_RT(pm, sdt);
+      // the horizontal ADI operator travels WITH the column, over the same sub-step and
+      // on the state the column solve has just relaxed (the ordering rt_split_transverse
+      // established).  The in-stage transverse task is a no-op under rad_tr_split_out.
+      if (nsub > 1 && rt_split_tr_) {
+        hydro::Hydro *ph = pm->pmb_pack->phydro;
+        if (ph != nullptr && ph->pcond != nullptr && ph->pcond->rad_implicit_ang) {
+          if (ph->pcond->rad_sts_all) {
+            ph->pcond->StsConductionUpdate(ph->u0, ph->peos->eos_data, sdt);
+          } else {
+            ph->pcond->ImplicitTransverseUpdate(ph->u0, ph->peos->eos_data, sdt);
+          }
+        }
+      }
+      if (bud_on) {
+        Real e4, r4, ft, fc;
+        BoxConvBoxInt(pm, e4, r4);
+        rtbud_h_[9] += e4 - bud_e;
+        bud_e = e4;
+        BoxConvFtopInt(pm, ft, fc);
+        rtbud_h_[11] += sdt*ft;
+        rtbud_h_[12] += sdt*fc;
+      }
     }
     // The per-column surface dump, on the flux that call just wrote.  pm->time is the
     // time at the START of the cycle and does not move between stages, so advancing
