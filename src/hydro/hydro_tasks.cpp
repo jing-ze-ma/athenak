@@ -199,7 +199,7 @@ void Hydro::AssembleHydroTasks(std::map<std::string, std::shared_ptr<TaskList>> 
   // divergence is evaluated on the implicitly updated state, hence the ConToPrim in
   // between.  Both are no-ops unless a problem generator enrols user_imex_func.
   id.imexpre   = tl["stagen"]->AddTask(&Hydro::RTImExFirst, this, id.copyu);
-  id.imexc2p   = tl["stagen"]->AddTask(&Hydro::ConToPrim, this, id.imexpre);
+  id.imexc2p   = tl["stagen"]->AddTask(&Hydro::RTImExConToPrim, this, id.imexpre);
   // ---- problem/rt_before_flux: the REVERSED Lie ordering.  The whole radiation
   // operator runs at the head of the stage, on the stage-start state, so the flux
   // update that follows is built from the radiatively updated primitives (the task
@@ -901,6 +901,24 @@ TaskStatus Hydro::RTImExFirst(Driver *pdrive, int stage) {
   // receives for U, so consume those and post a fresh set for the stage's own SendU.
   RTOpSplitBvals(true, true);
   return TaskStatus::complete;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn TaskStatus Hydro::RTImExConToPrim
+//! \brief the ConToPrim between the ImEx pre-stages (RTImExFirst) and Fluxes.  It exists
+//! ONLY to re-form w0 from the state those pre-stages wrote, so it must not run when no
+//! problem generator enrolled user_imex_func: an extra unconditional ConToPrim per stage
+//! is NOT a no-op under a general EOS, where it refreshes the temperature guess wtemp and
+//! shifts the next inversion by a few ULP.  A null hook therefore returns immediately and
+//! every run that does not use problem/rt_imex is bitwise unchanged.
+
+TaskStatus Hydro::RTImExConToPrim(Driver *pdrive, int stage) {
+  Mesh *pm = pmy_pack->pmesh;
+  if (pm->pgen == nullptr || pm->pgen->user_imex_func == nullptr) {
+    return TaskStatus::complete;
+  }
+  if (stage != 1) return TaskStatus::complete;
+  return ConToPrim(pdrive, stage);
 }
 
 //----------------------------------------------------------------------------------------
