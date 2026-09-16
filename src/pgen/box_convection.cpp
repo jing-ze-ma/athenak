@@ -308,6 +308,7 @@
 #include "globals.hpp"
 #include "eos/eos.hpp"
 #include "hydro/hydro.hpp"
+#include "driver/driver.hpp"
 #include "utils/wb_background.hpp"
 #include "diffusion/conduction.hpp"
 #include "units/units.hpp"
@@ -317,7 +318,9 @@
 #include "pgen.hpp"
 
 void BoxConvSrcs(Mesh *pm, Real bdt);
+void BoxConvRebuildRadWeights(Mesh *pm, Real bdt);
 void BoxConvRTSplit(Mesh *pm, Real bdt);
+void BoxConvRTImEx(Mesh *pm, Driver *pdrive, const int estage);
 void BoxConvBC(Mesh *pm);
 void BoxConvFinal(ParameterInput *pin, Mesh *pm);
 void BoxConvHistory(HistoryData *pdata, Mesh *pm);
@@ -431,6 +434,75 @@ bool rt_col3_once_ = false;
 // two-stream call, so everything the column and the force consume is centred on the
 // state they act on.  Default false and the code path is untouched when off.
 bool rtwps_ = false;
+// problem/rt_imex: the mode-3 column solve becomes the IMPLICIT STAGE OPERATOR of the
+// ImEx-RK integrator (<time>/integrator = imex2 or imex2+) instead of a source applied
+// inside the explicit RK stage.  The splitting error between the hydro update and the
+// column -- the O(dt) anti-damping that grows the surface f-mode at gamma = 0.615 dt[s]
+// per turnover -- is what this removes: ImEx is jointly second order in the explicit and
+// the implicit operator, the first-order split is not.
+//
+// The RADIATION OPERATOR IS TAKEN AS A WHOLE: the energy exchange AND the radiative
+// momentum force (problem/rt_rad_force) and its work are all part of S, so all four
+// components (IM1,IM2,IM3,IEN) are stored and recombined.  The force is not stiff, but
+// it is evaluated on the same fresh column solve as the energy source, so making it part
+// of the same operator costs nothing, needs no hook inside two_stream_rt.hpp, and leaves
+// no residual first-order split in the force either.
+bool rt_imex_ = false;
+// problem/rt_split_transverse (default TRUE whenever rt_strang / rt_once_per_cycle /
+// rt_col3_once / rt_imex is on): move the IMPLICIT TRANSVERSE radiative operator
+// (<hydro>/rad_implicit_ang, the horizontal ADI) OUT of the RK stage as well, and run it
+// inside the same split step as the column, immediately after it and over the SAME bdt.
+//
+// WHY.  In the lid the column solve is a projection onto radiative equilibrium and the
+// horizontal operator is a very fast diffusion (chi_rad ~ 5e17 cm^2/s); in the stage the
+// two are applied back to back over the same beta_dt and very nearly cancel.  Taking
+// only the column out leaves the horizontal operator acting, at its own stage weight, on
+// a state the column has not relaxed -- which is the SAME inconsistency as running with
+// the horizontal operator switched off (arm TR), and ARMS 4/5/7 show the same transonic
+// lid in all three cases.  Set false to reproduce the ARMS 4/5 behaviour.
+bool rt_split_tr_ = false;
+// problem/rt_col3_sub (int, default 1 = today's behaviour, bitwise off): SUB-CYCLE the
+// whole radiation column operator inside each RK stage.  The hydro step is untouched --
+// the stage still advances over beta_dt -- but the radiation operator is applied N times
+// with beta_dt/N each.
+//
+// WHY.  Every reordering of the step (rk2/rk3/imex2/imex2+/Strang, force and heating
+// centering, weights, top BC: ARMS 1-9 in plaid/fmode_README.txt) leaves the surface
+// f-mode growing at gamma = 0.615 x dt[s] per turnover.  The favoured reading is that the
+// lid relaxes FULLY within one application of the operator, so the radiative work
+// integral over the mode's cycle is evaluated with an effective thermal time equal to the
+// step over which the operator is applied.  If that is right, gamma must follow that step
+// and not the hydro dt: N = 2 halves it, N = 4 quarters it.  If gamma is unchanged (or
+// doubles with the cost), the reading is refuted.
+//
+// WHAT IS IN A SUB-STEP: the whole operator, in the "column + transverse together"
+// ordering rt_split_transverse established -- the mode-3 column solve (sweep + exact
+// block-tridiagonal solve + the radiative force and its work, i.e. all of
+// picket_fence_two_stream_RT) followed immediately by the horizontal ADI operator over
+// the SAME beta_dt/N.  The in-stage transverse task is therefore made a no-op
+// (Conduction::rad_tr_split_out), exactly as the split switches do.
+//
+// WHAT IS REFRESHED between sub-steps: BoxConvRebuildRadWeights -- one ConsToPrim over
+// the full range, then BuildRadWeights (the tau/blend weights) and BuildAngularCoeffs
+// (the frozen ADI face conductances, over the SUB-step beta_dt/N).  The column itself
+// reads rho and e straight out of u0 (problem/rt_use_cons is required by mode 3), so it
+// needs no refresh for its own state; what the ConsToPrim buys is a consistent wtemp --
+// the general EOS's temperature GUESS -- and consistent weights.  The rebuild runs before
+// EVERY sub-step, the first included, so that all N sub-steps see coefficients formed
+// with the same beta_dt/N.
+//
+// GHOSTS: the column writes active cells only and columns are independent, so it needs no
+// halo exchange between sub-steps.  The ADI operator recomputes T and 1/(rho cv) from the
+// current u0 on the active cells and exchanges THOSE through its own one-variable halo
+// (Conduction::RklConductionUpdate, pbval_tr), so each sub-step's transverse solve sees
+// up-to-date transverse neighbours.  What stays as stale as it is today is the mesh u0
+// ghost ring itself, which only the frozen face conductances on the outermost faces read.
+int rt_col3_sub_ = 1;
+// the per-stage implicit sources S^(l), (nimp_stages, nmb, 4, n3, n2, n1), 4 = the
+// IM1/IM2/IM3/IEN components in that order.  Allocated on the first call (the Driver,
+// which owns nimp_stages, is built after the problem generator).  NOT restarted: every
+// slot is written before it is read inside the same cycle (see BoxConvRTImEx).
+DvceArray6D<Real> rtimex_src_;
 bool cool_on_ = true;     // the Newton cooling layer (off by default once RT is on)
 Real rgas_ = 0.0;         // R/mu in code units; the ideal branch's T = p/(Rgas rho)
 // --- the per-column emergent-flux surface dump (problem/rt_surface_dt) --------------
@@ -1417,6 +1489,38 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                 << ts::rt_implicit_column << std::endl;
       std::exit(EXIT_FAILURE);
     }
+    // ---- problem/rt_imex: the column solve as the ImEx implicit stage operator ----
+    rt_imex_ = pin->GetOrAddBoolean("problem", "rt_imex", false);
+    if (rt_imex_) {
+      const std::string integ = pin->GetOrAddString("time", "integrator", "rk2");
+      if (integ != "imex2" && integ != "imex2+") {
+        std::cout << "### FATAL ERROR in box_convection: problem/rt_imex needs "
+                  << "<time>/integrator = imex2 or imex2+ (the a_twid/a_impl weights "
+                  << "the implicit stages are combined with exist only there).  Got "
+                  << "integrator = " << integ << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      if (ts::rt_implicit_column != 3) {
+        std::cout << "### FATAL ERROR in box_convection: problem/rt_imex needs "
+                  << "problem/rt_implicit_column = 3 -- the ImEx implicit stage must be "
+                  << "an exact solve of the whole column, which is what mode 3 is.  Got "
+                  << "rt_implicit_column = " << ts::rt_implicit_column << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      if (rt_strang_ || rt_once_ || rt_col3_once_) {
+        std::cout << "### FATAL ERROR in box_convection: problem/rt_imex is mutually "
+                  << "exclusive with rt_strang, rt_once_per_cycle and rt_col3_once -- "
+                  << "they are alternative ways of splitting the SAME source"
+                  << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      user_imex_func = BoxConvRTImEx;
+      if (global_variable::my_rank == 0) {
+        std::cout << "### box_convection: problem/rt_imex = true, the mode-3 column "
+                  << "solve is the IMPLICIT STAGE OPERATOR of " << integ
+                  << " and is NOT applied as an in-stage source" << std::endl;
+      }
+    }
     // enrolled HERE, not next to user_srcs_func: the switch is read only now
     if (rt_strang_ || rt_once_ || rt_col3_once_) {
       user_split_func = BoxConvRTSplit;
@@ -1436,6 +1540,63 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                     << " is STRANG-SPLIT around the time integrator (dt/2 before, dt/2 "
                     << "after) and is NOT applied inside the RK stages" << std::endl;
         }
+      }
+    }
+    // ---- problem/rt_col3_sub: sub-cycle the whole column operator in the stage ----
+    rt_col3_sub_ = pin->GetOrAddInteger("problem", "rt_col3_sub", 1);
+    if (rt_col3_sub_ < 1) {
+      std::cout << "### FATAL ERROR in box_convection: problem/rt_col3_sub must be >= 1 "
+                << "(1 = the un-sub-cycled stage source).  Got " << rt_col3_sub_
+                << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    if (rt_col3_sub_ > 1) {
+      if (!rt_on_) {
+        std::cout << "### FATAL ERROR in box_convection: problem/rt_col3_sub > 1 needs "
+                  << "problem/rt_two_stream = true -- there is no column to sub-cycle"
+                  << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      if (ts::rt_implicit_column != 3) {
+        std::cout << "### FATAL ERROR in box_convection: problem/rt_col3_sub > 1 needs "
+                  << "problem/rt_implicit_column = 3 -- a sub-step must be an EXACT "
+                  << "solve of the whole column, which is what mode 3 is (the per-cell "
+                  << "sub-cycler problem/rt_relax_sub is a different, inert, switch).  "
+                  << "Got rt_implicit_column = " << ts::rt_implicit_column << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      if (rt_strang_ || rt_once_ || rt_col3_once_ || rt_imex_) {
+        std::cout << "### FATAL ERROR in box_convection: problem/rt_col3_sub > 1 "
+                  << "sub-cycles the IN-STAGE column source and is mutually exclusive "
+                  << "with rt_strang, rt_once_per_cycle, rt_col3_once and rt_imex, which "
+                  << "all take that source out of the stage" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      if (global_variable::my_rank == 0) {
+        std::cout << "### box_convection: problem/rt_col3_sub = " << rt_col3_sub_
+                  << ", the WHOLE radiation operator (mode-3 column solve + radiative "
+                  << "force + horizontal ADI) is applied " << rt_col3_sub_
+                  << " times per RK stage with beta_dt/" << rt_col3_sub_
+                  << " each, at the unchanged hydro dt" << std::endl;
+      }
+    }
+    // problem/rt_split_transverse: with the column out of the stage, take the
+    // horizontal ADI operator out with it (see the declaration above).  Default ON
+    // whenever a split is active; a no-op otherwise.  rt_col3_sub > 1 keeps the column
+    // INSIDE the stage but still has to move the transverse operator into the sub-cycle
+    // loop, and uses the same Conduction flag to silence the in-stage task.
+    const bool splitout = (rt_strang_ || rt_once_ || rt_col3_once_ || rt_imex_);
+    rt_split_tr_ = (splitout || rt_col3_sub_ > 1) &&
+                   pin->GetOrAddBoolean("problem", "rt_split_transverse", true);
+    if (rt_split_tr_ && pmbp->phydro != nullptr && pmbp->phydro->pcond != nullptr &&
+        pmbp->phydro->pcond->rad_implicit_ang) {
+      pmbp->phydro->pcond->rad_tr_split_out = true;
+      if (global_variable::my_rank == 0) {
+        std::cout << "### box_convection: problem/rt_split_transverse = true, the "
+                  << "IMPLICIT TRANSVERSE radiative operator is run "
+                  << ((rt_col3_sub_ > 1) ? "inside each column SUB-STEP"
+                                         : "inside the split step with the column")
+                  << " and NOT as its own in-stage task" << std::endl;
       }
     }
     ts::rt_apply_debug = pin->GetOrAddInteger("problem", "rt_apply_debug", 0);
@@ -1851,17 +2012,21 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
 
 //----------------------------------------------------------------------------------------
 //! \fn void BoxConvRebuildRadWeights
-//! \brief problem/rt_weights_per_stage: re-form the primitives from the CURRENT conserved
-//! state and rebuild the radiation caches Conduction holds, immediately before the
-//! two-stream source.  ConsToPrim is run over the full range (ghosts included) exactly as
-//! Hydro::ConToPrim runs it, so wtemp/wder -- which BuildRadWeights reads under a general
-//! EOS -- are consistent with w0.  The ghost cells carry the last exchanged u0, i.e. the
-//! same staleness w0 already had there; nothing is made worse.  Cost per stage: one
-//! ConsToPrim, one BuildRadWeights (one serial x1 sweep per column), and, when the ADI /
-//! capped transverse operator is on, one BuildAngularCoeffs.
+//! \brief re-form the primitives from the CURRENT conserved state and rebuild the
+//! radiation caches Conduction holds, immediately before the two-stream source.  Serves
+//! BOTH problem/rt_weights_per_stage (re-centre the caches on the stage state, once per
+//! stage) and a radiation sub-step under problem/rt_col3_sub > 1.  ConsToPrim is run over
+//! the full range (ghosts included) exactly as Hydro::ConToPrim runs it, so wtemp/wder --
+//! the general EOS's temperature guess and derivatives, which BuildRadWeights, the
+//! two-stream and the ADI operator all read -- are consistent with w0.  The ghost cells
+//! carry the last exchanged u0, i.e. the same staleness w0 already had there; nothing is
+//! made worse.  Cost per call: one ConsToPrim, one BuildRadWeights (one serial x1 sweep
+//! per column) and, with the ADI / capped transverse operator on, one BuildAngularCoeffs
+//! -- all small next to the column solve itself.
 
 void BoxConvRebuildRadWeights(Mesh *pm, Real bdt) {
   MeshBlockPack *pmbp = pm->pmb_pack;
+  if (pmbp->phydro == nullptr) return;
   Conduction *pc = pmbp->phydro->pcond;
   if (pc == nullptr) return;
   auto &indcs = pm->mb_indcs;
@@ -2220,17 +2385,37 @@ void BoxConvSrcs(Mesh *pm, Real bdt) {
 
   // --- the grey two-stream, after gravity and the cooling layer, exactly where
   // red_giant.cpp calls it: inside the stage, on the state the last ConToPrim left.
-  if (rt_on_ && !rt_strang_ && !rt_once_ && !rt_col3_once_) {
-    if (rtwps_) BoxConvRebuildRadWeights(pm, bdt);
-    two_stream_rt::picket_fence_two_stream_RT(pm, bdt);
-    if (bud_on) {
-      Real e4, r4, ft, fc;
-      BoxConvBoxInt(pm, e4, r4);
-      rtbud_h_[9] += e4 - bud_e;
-      bud_e = e4;
-      BoxConvFtopInt(pm, ft, fc);
-      rtbud_h_[11] += bdt*ft;
-      rtbud_h_[12] += bdt*fc;
+  if (rt_on_ && !rt_strang_ && !rt_once_ && !rt_col3_once_ && !rt_imex_) {
+    // problem/rt_col3_sub: N applications of the WHOLE radiation operator per stage with
+    // beta_dt/N each, at the unchanged hydro dt.  N = 1 is one pass of exactly the call
+    // that was here, with no rebuild and no transverse call -- bitwise the old code.
+    const int nsub = rt_col3_sub_;
+    const Real sdt = bdt/static_cast<Real>(nsub);
+    for (int isub=0; isub<nsub; ++isub) {
+      if (nsub > 1 || rtwps_) BoxConvRebuildRadWeights(pm, sdt);
+      two_stream_rt::picket_fence_two_stream_RT(pm, sdt);
+      // the horizontal ADI operator travels WITH the column, over the same sub-step and
+      // on the state the column solve has just relaxed (the ordering rt_split_transverse
+      // established).  The in-stage transverse task is a no-op under rad_tr_split_out.
+      if (nsub > 1 && rt_split_tr_) {
+        hydro::Hydro *ph = pm->pmb_pack->phydro;
+        if (ph != nullptr && ph->pcond != nullptr && ph->pcond->rad_implicit_ang) {
+          if (ph->pcond->rad_sts_all) {
+            ph->pcond->StsConductionUpdate(ph->u0, ph->peos->eos_data, sdt);
+          } else {
+            ph->pcond->ImplicitTransverseUpdate(ph->u0, ph->peos->eos_data, sdt);
+          }
+        }
+      }
+      if (bud_on) {
+        Real e4, r4, ft, fc;
+        BoxConvBoxInt(pm, e4, r4);
+        rtbud_h_[9] += e4 - bud_e;
+        bud_e = e4;
+        BoxConvFtopInt(pm, ft, fc);
+        rtbud_h_[11] += sdt*ft;
+        rtbud_h_[12] += sdt*fc;
+      }
     }
     // The per-column surface dump, on the flux that call just wrote.  pm->time is the
     // time at the START of the cycle and does not move between stages, so advancing
@@ -2264,6 +2449,20 @@ void BoxConvRTSplit(Mesh *pm, Real bdt) {
   if (bud_on) BoxConvBoxInt(pm, e0, r0);
   if (rtwps_) BoxConvRebuildRadWeights(pm, bdt);
   two_stream_rt::picket_fence_two_stream_RT(pm, bdt);
+  // problem/rt_split_transverse: the horizontal ADI operator moves WITH the column, over
+  // the same bdt and on the state the column solve has just relaxed.  Its x2/x3 ghosts
+  // are the last exchange's, exactly as they are for the in-stage task it replaces
+  // (imptrc runs before SendU), so nothing is more stale than before.
+  if (rt_split_tr_) {
+    hydro::Hydro *ph = pm->pmb_pack->phydro;
+    if (ph != nullptr && ph->pcond != nullptr && ph->pcond->rad_implicit_ang) {
+      if (ph->pcond->rad_sts_all) {
+        ph->pcond->StsConductionUpdate(ph->u0, ph->peos->eos_data, bdt);
+      } else {
+        ph->pcond->ImplicitTransverseUpdate(ph->u0, ph->peos->eos_data, bdt);
+      }
+    }
+  }
   if (bud_on) {
     Real e4, r4, ft, fc;
     BoxConvBoxInt(pm, e4, r4);
@@ -2279,6 +2478,128 @@ void BoxConvRTSplit(Mesh *pm, Real bdt) {
       while (surf_next_ <= pm->time) surf_next_ += surf_dt_;
     }
   }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void BoxConvRTImEx
+//! \brief problem/rt_imex: the mode-3 column solve AS THE IMPLICIT STAGE OPERATOR of the
+//! ImEx-RK integrator (<time>/integrator = imex2 or imex2+).  Enrolled as
+//! ProblemGenerator::user_imex_func and called by Hydro::RTImEx (once per explicit
+//! stage, in the place the in-stage source it replaces occupied) and by
+//! Hydro::RTImExFirst (with estage = -1 and 0, at the head of stage 1, for the extra
+//! fully implicit stages the tableau adds).
+//!
+//! It mirrors IonNeutral::ImpRKUpdate exactly -- that is the only true ImEx user in the
+//! code, and its conventions are what the Driver's weights are written for:
+//!   istage = estage + 2         the implicit stage number, 1..nimp_stages+1
+//!   slot   = istage - 1         where this stage's source S^(l) is stored
+//!   row    = istage - 2         the a_twid row used to recombine the stored sources
+//! and the three steps per stage are
+//!   (a) u0 += dt*sum_{l<=row} a_twid[row][l]*S^(l)   the earlier sources, EXPLICITLY
+//!   (b) the implicit solve on that state with the effective step a_impl*dt
+//!   (c) S^(slot) = (u0_after - u0_before)/(a_impl*dt) = R(U^(istage))
+//! (b) and (c) are skipped on the LAST explicit stage (estage == nexp_stages), which is
+//! the final combination and does (a) only.  a_twid is NOT the implicit Butcher tableau
+//! and the diagonal is NOT a_twid[k][k]: the solve always uses a_impl (0.5 for imex2,
+//! 1+1/sqrt(2) for imex2+), exactly as ion-neutral does.
+//!
+//! Because the column solve is backward Euler over a_impl*dt (mode 3 solves the cell
+//! energies implicitly), the increment it returns divided by a_impl*dt IS the source
+//! evaluated on the state the solve produced, which is what (c) needs.
+//!
+//! WHAT IS IN THE OPERATOR: the energy exchange, the radiative momentum force
+//! (problem/rt_rad_force) and its work -- the whole of what picket_fence_two_stream_RT
+//! writes into u0 -- hence the four stored components IM1,IM2,IM3,IEN.  The force is
+//! therefore evaluated on THAT stage's fresh column solve (it is computed in the same
+//! kernel that applies the energy source) and recombined with the same weights.  The
+//! horizontal ADI operator (<hydro>/rad_implicit_ang) is NOT part of it: it stays the
+//! separate operator-split task it is today, right after this one.  It is the obvious
+//! next thing to fold in if a residual O(dt) mode survives.
+//!
+//! RESTARTS need no new state: slot l is written at implicit stage l+1 and first read at
+//! stage l+2 of the SAME cycle, so the array is rebuilt from scratch every cycle.
+
+void BoxConvRTImEx(Mesh *pm, Driver *pd, const int estage) {
+  if (!rt_on_ || !rt_imex_) return;
+  const int istage = estage + 2;
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmbp->nmb_thispack - 1;
+  auto &u0 = pmbp->phydro->u0;
+  const Real dt = pm->dt;
+
+  // allocated here, not in UserProblem: the Driver (which owns nimp_stages) is built
+  // after the problem generator.  Zeroed, so the coefficient-zero slots imex2+ never
+  // writes can still be read.
+  if (rtimex_src_.extent(0) == 0) {
+    const int nmb = std::max(pmbp->nmb_thispack, pm->nmb_maxperrank);
+    const int n1 = indcs.nx1 + 2*indcs.ng;
+    const int n2 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*indcs.ng) : 1;
+    const int n3 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*indcs.ng) : 1;
+    Kokkos::realloc(rtimex_src_, pd->nimp_stages, nmb, 4, n3, n2, n1);
+    Kokkos::deep_copy(rtimex_src_, 0.0);
+  }
+
+  // imex2+ (Krapp et al. 2024) has all-zero a_twid rows 0 and 1 and no implicit
+  // contribution at its first two implicit stages: they are NO-OPS, exactly as
+  // IonNeutral::ImpRKUpdate zeroes its coefficients there.  The practical gain is that
+  // imex2+ needs no pre-stage at all, so nothing is ever solved before the stage-1 flux
+  // divergence and no ghost zone is ever a stage stale (see the note in RTImExFirst).
+  const bool noop = (pd->integrator == "imex2+") && (istage < 3);
+  if (noop) return;
+
+  // ---- (a) the earlier stages' sources, re-applied EXPLICITLY --------------------
+  if (istage > 1) {
+    const int row = istage - 2;
+    Real wgt[4];
+    for (int l=0; l<4; ++l) wgt[l] = (l <= row) ? (pd->a_twid[row][l])*dt : 0.0;
+    const Real w0c = wgt[0], w1c = wgt[1], w2c = wgt[2], w3c = wgt[3];
+    const int nl = row;
+    auto s_ = rtimex_src_;
+    par_for("boxconv_imex_exp", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      Real d[4] = {0.0, 0.0, 0.0, 0.0};
+      const Real ww[4] = {w0c, w1c, w2c, w3c};
+      for (int l=0; l<=nl; ++l) {
+        for (int c=0; c<4; ++c) d[c] += ww[l]*s_(l,m,c,k,j,i);
+      }
+      u0(m,IM1,k,j,i) += d[0];
+      u0(m,IM2,k,j,i) += d[1];
+      u0(m,IM3,k,j,i) += d[2];
+      u0(m,IEN,k,j,i) += d[3];
+    });
+  }
+
+  // ---- (b) the implicit solve, and (c) the source it defines ---------------------
+  // Skipped on the last explicit stage, which only combines what is stored.
+  if (estage < pd->nexp_stages) {
+    const int sl = istage - 1;
+    const Real adt = (pd->a_impl)*dt;
+    auto s_ = rtimex_src_;
+    // stash -u0 in the slot: the increment is formed in place, no second array
+    par_for("boxconv_imex_pre", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      s_(sl,m,0,k,j,i) = -u0(m,IM1,k,j,i);
+      s_(sl,m,1,k,j,i) = -u0(m,IM2,k,j,i);
+      s_(sl,m,2,k,j,i) = -u0(m,IM3,k,j,i);
+      s_(sl,m,3,k,j,i) = -u0(m,IEN,k,j,i);
+    });
+    // the solve.  BoxConvRTSplit is the bare call plus the budget/Ftop/surface-dump
+    // bookkeeping the in-stage call also does; nothing in it depends on WHERE it is
+    // called from, only on the dt it is handed.
+    BoxConvRTSplit(pm, adt);
+    const Real iadt = 1.0/adt;
+    par_for("boxconv_imex_rec", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      s_(sl,m,0,k,j,i) = (s_(sl,m,0,k,j,i) + u0(m,IM1,k,j,i))*iadt;
+      s_(sl,m,1,k,j,i) = (s_(sl,m,1,k,j,i) + u0(m,IM2,k,j,i))*iadt;
+      s_(sl,m,2,k,j,i) = (s_(sl,m,2,k,j,i) + u0(m,IM3,k,j,i))*iadt;
+      s_(sl,m,3,k,j,i) = (s_(sl,m,3,k,j,i) + u0(m,IEN,k,j,i))*iadt;
+    });
+  }
+  return;
 }
 
 //----------------------------------------------------------------------------------------
@@ -2644,5 +2965,7 @@ void BoxConvFinal(ParameterInput *pin, Mesh *pm) {
   two_stream_rt::rt_bud_ptr = nullptr;
   rtbud_ = DvceArray1D<Real>();
   rtbud_n_ = 0;
+  // ...and the ImEx per-stage source store (problem/rt_imex), likewise
+  rtimex_src_ = DvceArray6D<Real>();
   return;
 }

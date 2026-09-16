@@ -19,6 +19,12 @@ using ProblemFinalizeFnPtr = void (*)(ParameterInput *pin, Mesh *pm);
 using UserBoundaryFnPtr = void (*)(Mesh* pm);
 using UserSrctermFnPtr = void (*)(Mesh* pm, const Real bdt);
 using UserRefinementFnPtr = void (*)(MeshBlockPack* pmbp);
+// problem/rt_imex (box_convection): the implicit stage operator of an ImEx-RK
+// integrator.  Called with the DRIVER (for a_twid/a_impl/nexp_stages) and the number of
+// the EXPLICIT stage it belongs to, with estage <= 0 for the extra fully implicit
+// stages the ImEx tableau adds before the first explicit stage.
+class Driver;
+using UserImExFnPtr = void (*)(Mesh *pm, Driver *pdrive, const int estage);
 using UserHistoryFnPtr = void (*)(HistoryData *pdata, Mesh *pm);
 // called ONCE PER CYCLE, after Mesh::NewTimeStep in Driver::Execute, for problem
 // generators that want a per-cycle diagnostic. Not part of any task list: it sees the
@@ -88,6 +94,10 @@ class ProblemGenerator {
   // "before_timeintegrator" call is skipped.  Used to test whether the SSP-RK stage
   // averaging of an exact per-stage relaxation is what drives the residual box mode.
   bool user_split_once=false;
+  // problem/rt_imex (box_convection): the implicit stage operator of the ImEx-RK
+  // integrator.  Left null the two Hydro::RTImEx* tasks are no-ops, so every existing
+  // run is bitwise unchanged.
+  UserImExFnPtr user_imex_func=nullptr;
   UserRefinementFnPtr user_ref_func=nullptr;
   UserHistoryFnPtr user_hist_func=nullptr;
   // called once per cycle after Mesh::NewTimeStep in Driver::Execute
