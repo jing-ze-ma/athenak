@@ -955,6 +955,219 @@ void BoxConvProfileDump(Mesh *pm) {
   std::fclose(pfp);
   return;
 }
+
+//----------------------------------------------------------------------------------------
+//! \fn void BoxConvWorkSnap / BoxConvWorkClose / the probes
+//! \brief problem/work_hist: THE MODE-PROJECTED, PER-OPERATOR WORK INTEGRALS.
+//!
+//! Diagnostic only; nothing here writes back to the state, and with problem/work_hist
+//! false (the default) not one kernel is launched and not one history column is added.
+//!
+//! WHAT IS MEASURED.  The seeded (m,n) mode is a LINEAR horizontal Fourier mode, so the
+//! box integral of any work rate f.v against it vanishes at first order: the only work
+//! that means anything is the work PROJECTED on the mode.  Define, for each x1 row and
+//! with W(y,z) = cos(k_x (y-y0)) cos(k_y (z-z0)) the seeded horizontal pattern,
+//!    s0 = sum_plane rho            s4 = sum_plane E W
+//!    s1 = sum_plane (rho v1) W     s5 = sum_plane p W
+//!    s2 = sum_plane (rho v2) W     s6 = sum_plane p
+//!    s3 = sum_plane (rho v3) W
+//! (plane sums over the WHOLE mesh: every MeshBlock spans x1, so a local i IS a global
+//! row, and the plane sums are MPI-reduced onto rank 0, which owns the accumulators.)
+//! The mode's momentum amplitude in the row is m_c = 4 s_c/N_h and its mean density
+//! R = s0/N_h, with N_h the global plane cell count, so the MODE KINETIC ENERGY is
+//!    E_mode = sum_rows (N_h/4) dV m_c^2/(2R)  =  sum_rows 2 dV (s1^2+s2^2+s3^2)/s0 ,
+//! which is the "Emod" column.  Everything else is a CHANGE of E_mode across one
+//! operator, or a mode-projected heating work.
+//!
+//! HOW THE TERMS ARE SEPARATED.  A snapshot is taken at five points of the cycle and
+//! each interval is charged to the operator that lies inside it.  Between the end of one
+//! interval and the start of the next NOTHING else writes u0 in the active cells (the
+//! boundary exchange fills ghosts, ConToPrim writes w0), so the intervals TILE the cycle
+//! and the KE columns close exactly:
+//!    tag 0  entry of BoxConvSrcs        -> "Wflx"  the RK combination + flux divergence
+//!                                          (the mode's own pressure and advection work)
+//!    tag 1  after the gravity block     -> "Wgrv"  the well-balanced gravity source and
+//!                                          the cooling/sponge/wall/inflow sources
+//!    tag 2  after the mode-3 column     -> "Wtco"  the COLUMN HEATING's mode work
+//!    tag 3  after picket_fence returns  -> "Wfrc"  the RADIATIVE FORCE's work on the
+//!                                          mode, and "Wtfr" its v.f heating work
+//!    tag 4  end of the transverse ADI   -> "Wtad"  the ADI OPERATOR's mode work
+//! "Woth" collects the KE change of the two intervals that should not carry any (the
+//! column and the ADI change energy, not momentum): it is the CLOSURE CONTROL, and
+//!    Emod(t) - Emod(0)  =  Wflx + Wgrv + Wfrc + Woth
+//! must hold to round-off.  What it does NOT contain is anything a floor or a C2P
+//! correction puts back into u0, which is exactly what makes it a control.
+//!
+//! THE HEATING WORK.  An operator that only changes the energy does no work on the mode
+//! directly; it drives (or damps) it through the pressure it leaves for the NEXT flux
+//! step.  The standard linear measure of that is the pdV work of the heating in phase
+//! with the compression, so for a heating that deposits dE per unit volume,
+//!    W_th = sum_rows (N_h/4) dV Q (P/Pbar)  =  sum_rows 4 dV dE_proj s5/s6 ,
+//! with Q = 4 dE_proj/N_h the mode amplitude of the deposited energy and P/Pbar = 4 s5/s6
+//! the mode amplitude of the relative pressure perturbation.  The pressure weight is
+//! taken from the state at the START of the interval (w0, i.e. stage-start primitives:
+//! the pressure is not re-derived mid-stage).  Its phase error is dt/P ~ 1.6e-3 of a
+//! period, far below the effect under test.  NOTE the normalisation: this is the work
+//! integral up to the thermodynamic factor (Gamma_3 - 1), which is not applied -- a
+//! POSITIVE Wtco/Wtad/Wtfr means heating in phase with compression, i.e. DRIVING, and
+//! the terms are compared with each other and with 2 gamma E_mode, not used absolutely.
+//!
+//! ALL SEVEN "W" COLUMNS ARE CUMULATIVE (erg, summed over every stage since t = 0), so
+//! the reader differentiates them and band-passes at the mode frequency.  "Sdsp" is the
+//! instantaneous mode amplitude of v1 in the TOP active row (cm/s), 4 s1/s0 there, whose
+//! time integral is the (m,n)-projected surface displacement.
+//!
+//! WHEN THE RADIATION OPERATORS MOVE (rt_strang, rt_imex, rt_col3_sub > 1) the tag-2/3/4
+//! points still fire wherever the operator runs, but the intervals no longer tile the
+//! stage in the order above; the KE closure still holds, the per-term split is still the
+//! operator's own, and only the label "Wflx" becomes "everything since the last tag".
+constexpr int kNWk = 7;
+bool work_on_ = false;            // problem/work_hist
+bool wk_alloc_ = false;
+bool wk_armed_ = false;           // the first snapshot has been taken
+int wk_nx1_ = 0;
+Mesh *wk_pm_ = nullptr;           // for the two_stream_rt probe, which takes no Mesh
+// heap-allocated and never freed, like the solver's own scratch: a file-scope Kokkos
+// View would be destroyed AFTER Kokkos::finalize and abort the run at exit
+DvceArray2D<Real> *wkd_ptr_ = nullptr;   // (kNWk, nx1) the plane sums
+HostArray2D<Real> *wkh_ptr_ = nullptr;
+std::vector<double> wk_now_, wk_old_;
+double wk_dv_ = 0.0;              // the cell volume (uniform mesh)
+double wk_acc_[7] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+double wk_emod_ = 0.0, wk_sdsp_ = 0.0;
+
+void BoxConvWorkSnap(Mesh *pm) {
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, js = indcs.js, ks = indcs.ks;
+  const int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
+  const int nmb = pmbp->nmb_thispack;
+  const int nkj = nmb*nx3*nx2;
+  if (!wk_alloc_ || wkd_ptr_->extent_int(1) != nx1) {
+    if (wkd_ptr_ == nullptr) {
+      wkd_ptr_ = new DvceArray2D<Real>("boxconv_wkd", kNWk, nx1);
+      wkh_ptr_ = new HostArray2D<Real>("boxconv_wkh", kNWk, nx1);
+    } else {
+      Kokkos::realloc(*wkd_ptr_, kNWk, nx1);
+      Kokkos::realloc(*wkh_ptr_, kNWk, nx1);
+    }
+    wk_now_.assign(kNWk*nx1, 0.0);
+    wk_old_.assign(kNWk*nx1, 0.0);
+    wk_nx1_ = nx1;
+    const double dx1 = static_cast<double>(pm->mesh_size.x1max - pm->mesh_size.x1min)
+                     / static_cast<double>(pm->mesh_indcs.nx1);
+    const double dx2 = static_cast<double>(pm->mesh_size.x2max - pm->mesh_size.x2min)
+                     / static_cast<double>(pm->mesh_indcs.nx2);
+    const double dx3 = static_cast<double>(pm->mesh_size.x3max - pm->mesh_size.x3min)
+                     / static_cast<double>(pm->mesh_indcs.nx3);
+    wk_dv_ = dx1*dx2*dx3;
+    wk_alloc_ = true;
+  }
+  auto &u0 = pmbp->phydro->u0;
+  auto &w0 = pmbp->phydro->w0;
+  auto &size = pmbp->pmb->mb_size;
+  auto wd = *wkd_ptr_;
+  const Real kx = fm_kx_, ky = fm_ky_;
+  const Real x2m = fm_x2min_, x3m = fm_x3min_;
+  Kokkos::TeamPolicy<> policy(DevExeSpace(), nx1, Kokkos::AUTO);
+  Kokkos::parallel_for("boxconv_wksnap", policy,
+  KOKKOS_LAMBDA(Kokkos::TeamPolicy<>::member_type tmember) {
+    const int i = is + tmember.league_rank();
+    array_sum::GlobalSum sum;
+    Kokkos::parallel_reduce(Kokkos::TeamThreadRange(tmember, nkj),
+    [&](const int idx, array_sum::GlobalSum &ls) {
+      const int m = idx/(nx3*nx2);
+      const int kj = idx - m*(nx3*nx2);
+      const int k = ks + kj/nx2;
+      const int j = js + (kj - (kj/nx2)*nx2);
+      const Real x2min = size.d_view(m).x2min, x2max = size.d_view(m).x2max;
+      const Real x3min = size.d_view(m).x3min, x3max = size.d_view(m).x3max;
+      const Real x2v = CellCenterX(j-js, nx2, x2min, x2max);
+      const Real x3v = CellCenterX(k-ks, nx3, x3min, x3max);
+      const Real cw = cos(kx*(x2v - x2m))*cos(ky*(x3v - x3m));
+      const Real pg = w0(m,IPR,k,j,i);
+      ls.the_array[0] += u0(m,IDN,k,j,i);
+      ls.the_array[1] += u0(m,IM1,k,j,i)*cw;
+      ls.the_array[2] += u0(m,IM2,k,j,i)*cw;
+      ls.the_array[3] += u0(m,IM3,k,j,i)*cw;
+      ls.the_array[4] += u0(m,IEN,k,j,i)*cw;
+      ls.the_array[5] += pg*cw;
+      ls.the_array[6] += pg;
+    }, Kokkos::Sum<array_sum::GlobalSum>(sum));
+    Kokkos::single(Kokkos::PerTeam(tmember), [&]() {
+      for (int n=0; n<kNWk; ++n) wd(n, i-is) = sum.the_array[n];
+    });
+  });
+  Kokkos::fence();
+  auto wkh_ = *wkh_ptr_;
+  Kokkos::deep_copy(wkh_, *wkd_ptr_);
+  for (int n=0; n<kNWk; ++n) {
+    for (int i=0; i<nx1; ++i) wk_now_[n*nx1+i] = static_cast<double>(wkh_(n,i));
+  }
+#if MPI_PARALLEL_ENABLED
+  std::vector<double> rbuf((global_variable::my_rank == 0) ? kNWk*nx1 : 1);
+  MPI_Reduce(wk_now_.data(), rbuf.data(), kNWk*nx1, MPI_DOUBLE, MPI_SUM, 0,
+             MPI_COMM_WORLD);
+  if (global_variable::my_rank == 0) wk_now_.swap(rbuf);
+#endif
+  return;
+}
+
+//! the mode kinetic energy of a snapshot, E_mode = sum_rows 2 dV (s1^2+s2^2+s3^2)/s0
+double BoxConvWorkKE(const std::vector<double> &s) {
+  const int n1 = wk_nx1_;
+  double e = 0.0;
+  for (int i=0; i<n1; ++i) {
+    const double s0 = s[i];
+    if (!(s0 > 0.0)) continue;
+    const double s1 = s[n1+i], s2 = s[2*n1+i], s3 = s[3*n1+i];
+    e += 2.0*wk_dv_*(s1*s1 + s2*s2 + s3*s3)/s0;
+  }
+  return e;
+}
+
+void BoxConvWorkClose(Mesh *pm, const int tag) {
+  if (!work_on_) return;
+  BoxConvWorkSnap(pm);
+  if (global_variable::my_rank == 0) {
+    if (wk_armed_) {
+      const int n1 = wk_nx1_;
+      // the KE bucket: 0 = flux, 1 = gravity, 2 = radiative force, 3 = the control
+      const int kb = (tag == 0) ? 0 : ((tag == 1) ? 1 : ((tag == 3) ? 2 : 3));
+      wk_acc_[kb] += BoxConvWorkKE(wk_now_) - BoxConvWorkKE(wk_old_);
+      if (tag >= 2) {
+        // the mode-projected heating work of this interval, with the pressure weight
+        // taken at its START (see the header block)
+        double wth = 0.0;
+        for (int i=0; i<n1; ++i) {
+          const double s6 = wk_old_[6*n1+i];
+          if (!(s6 > 0.0)) continue;
+          wth += 4.0*wk_dv_*(wk_now_[4*n1+i] - wk_old_[4*n1+i])*wk_old_[5*n1+i]/s6;
+        }
+        wk_acc_[(tag == 2) ? 4 : ((tag == 3) ? 5 : 6)] += wth;
+      }
+    }
+    wk_armed_ = true;
+    wk_emod_ = BoxConvWorkKE(wk_now_);
+    const int n1 = wk_nx1_;
+    const double s0t = wk_now_[n1-1];
+    wk_sdsp_ = (s0t > 0.0) ? 4.0*wk_now_[n1 + n1-1]/s0t : 0.0;
+  }
+  wk_old_.swap(wk_now_);
+  return;
+}
+
+//! the ProblemGenerator::user_probe_func hook (tag 4, the end of the transverse ADI)
+void BoxConvWorkProbe(Mesh *pm, const int tag) {
+  BoxConvWorkClose(pm, tag);
+  return;
+}
+
+//! the two_stream_rt::rt_probe hook (tag 2, the end of the mode-3 column solve)
+void BoxConvWorkProbeRT(const int tag) {
+  if (wk_pm_ != nullptr) BoxConvWorkClose(wk_pm_, tag);
+  return;
+}
 }  // namespace
 
 //----------------------------------------------------------------------------------------
@@ -1008,6 +1221,25 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   fm_m_ = pin->GetOrAddInteger("problem", "seed_fmode_m", 1);
   fm_n_ = pin->GetOrAddInteger("problem", "seed_fmode_n", 1);
   fm_hist_ = pin->GetOrAddBoolean("problem", "fmode_hist", (fmamp > 0.0));
+  // --- problem/work_hist: the mode-projected per-operator work integrals (see the
+  // block above BoxConvWorkSnap).  Diagnostic only, and off by default.
+  work_on_ = pin->GetOrAddBoolean("problem", "work_hist", false);
+  if (work_on_) {
+    if (!fm_hist_) {
+      std::cout << "### FATAL ERROR in box_convection: problem/work_hist needs "
+                << "problem/fmode_hist -- the work integrals are projections on the "
+                << "SAME (m,n) mode the history columns track" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    wk_pm_ = pmy_mesh_;
+    user_probe_func = BoxConvWorkProbe;      // tag 4: the transverse ADI operator
+    two_stream_rt::rt_probe = BoxConvWorkProbeRT;   // tag 2: the mode-3 column solve
+    if (global_variable::my_rank == 0) {
+      std::cout << "### box_convection: problem/work_hist = true, the mode-projected "
+                << "work integrals Wflx/Wgrv/Wfrc/Woth/Wtco/Wtfr/Wtad + Emod/Sdsp are "
+                << "appended to the user history" << std::endl;
+    }
+  }
   // re-integrate the supplied ic_profile into EXACT hydrostatic balance under whatever
   // EOS is in force, keeping its T(z); needed when the EOS is changed under a profile
   // that was relaxed with a different one (the radiation-free linear f-mode test)
@@ -1622,6 +1854,27 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                   << " and NOT as its own in-stage task" << std::endl;
       }
     }
+    // ---- problem/rt_kappa_frozen: no opacity perturbation for the mode ----------
+    // See the note in two_stream_rt.hpp.  The grey opacity kc_g is replaced by its
+    // horizontal mean in each x1 row, which removes delta kappa from the column solve
+    // AND from the radiative force (both read kc_g) while leaving the mean profile
+    // free.  The transverse ADI operator builds its own conductances in Conduction and
+    // is NOT covered by this switch.  Off = bitwise unchanged.
+    ts::rt_kappa_frozen = pin->GetOrAddBoolean("problem", "rt_kappa_frozen", false);
+    if (ts::rt_kappa_frozen) {
+      if (!ts::rt_grey) {
+        std::cout << "### FATAL ERROR in box_convection: problem/rt_kappa_frozen is a "
+                  << "GREY-path switch (it freezes kc_g where the grey opacity kernel "
+                  << "fills it)" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      if (global_variable::my_rank == 0) {
+        std::cout << "### box_convection: problem/rt_kappa_frozen = true, the grey "
+                  << "opacity is the HORIZONTAL MEAN of each x1 row (delta kappa = 0 "
+                  << "for the mode) in the column solve and the radiative force; the "
+                  << "transverse ADI conductances are NOT frozen" << std::endl;
+      }
+    }
     ts::rt_apply_debug = pin->GetOrAddInteger("problem", "rt_apply_debug", 0);
     ts::rt_apply_debug_n = pin->GetOrAddInteger("problem", "rt_apply_debug_n", 8);
     ts::rt_nan_report = pin->GetOrAddBoolean("problem", "nan_report", false);
@@ -2067,6 +2320,10 @@ void BoxConvSrcs(Mesh *pm, Real bdt) {
       while (prof_next_ <= pm->time) prof_next_ += prof_dt_;
     }
   }
+  // problem/work_hist, tag 0: this task runs immediately after RKUpdate and nothing
+  // between them writes u0 in the active cells, so the interval that closes here is
+  // exactly the RK combination plus the flux divergence.
+  BoxConvWorkClose(pm, 0);
   MeshBlockPack *pmbp = pm->pmb_pack;
   auto &indcs = pm->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
@@ -2326,6 +2583,10 @@ void BoxConvSrcs(Mesh *pm, Real bdt) {
     bud_e = e3;
   }
 
+  // problem/work_hist, tag 1: everything above -- the well-balanced gravity source, the
+  // cooling layer, the top sponge, the wall-flux cancellation and the bottom inflow.
+  BoxConvWorkClose(pm, 1);
+
   // --- the grey two-stream, after gravity and the cooling layer, exactly where
   // red_giant.cpp calls it: inside the stage, on the state the last ConToPrim left.
   if (rt_on_ && !rt_strang_ && !rt_once_ && !rt_col3_once_ && !rt_imex_) {
@@ -2337,6 +2598,10 @@ void BoxConvSrcs(Mesh *pm, Real bdt) {
     for (int isub=0; isub<nsub; ++isub) {
       if (nsub > 1) BoxConvRebuildRadWeights(pm, sdt);
       two_stream_rt::picket_fence_two_stream_RT(pm, sdt);
+      // problem/work_hist, tag 3: the column solve closed its own interval from inside
+      // (two_stream_rt::rt_probe, tag 2), so what closes here is the radiative momentum
+      // force and nothing else.
+      BoxConvWorkClose(pm, 3);
       // the horizontal ADI operator travels WITH the column, over the same sub-step and
       // on the state the column solve has just relaxed (the ordering rt_split_transverse
       // established).  The in-stage transverse task is a no-op under rad_tr_split_out.
@@ -2348,6 +2613,7 @@ void BoxConvSrcs(Mesh *pm, Real bdt) {
           } else {
             ph->pcond->ImplicitTransverseUpdate(ph->u0, ph->peos->eos_data, sdt);
           }
+          BoxConvWorkClose(pm, 4);  // problem/work_hist: the transverse ADI operator
         }
       }
       if (bud_on) {
@@ -2391,6 +2657,7 @@ void BoxConvRTSplit(Mesh *pm, Real bdt) {
   Real e0 = 0.0, r0 = 0.0;
   if (bud_on) BoxConvBoxInt(pm, e0, r0);
   two_stream_rt::picket_fence_two_stream_RT(pm, bdt);
+  BoxConvWorkClose(pm, 3);   // problem/work_hist: the radiative force (see tag 3 above)
   // problem/rt_split_transverse: the horizontal ADI operator moves WITH the column, over
   // the same bdt and on the state the column solve has just relaxed.  Its x2/x3 ghosts
   // are the last exchange's, exactly as they are for the in-stage task it replaces
@@ -2403,6 +2670,7 @@ void BoxConvRTSplit(Mesh *pm, Real bdt) {
       } else {
         ph->pcond->ImplicitTransverseUpdate(ph->u0, ph->peos->eos_data, bdt);
       }
+      BoxConvWorkClose(pm, 4);   // problem/work_hist: the transverse ADI operator
     }
   }
   if (bud_on) {
@@ -2554,7 +2822,7 @@ void BoxConvRTImEx(Mesh *pm, Driver *pd, const int estage) {
 //! call of the cycle -- which is what the history is called after.
 
 void BoxConvHistory(HistoryData *pdata, Mesh *pm) {
-  pdata->nhist = 5 + (fm_hist_ ? 2 : 0);
+  pdata->nhist = 5 + (fm_hist_ ? 2 : 0) + (work_on_ ? 9 : 0);
   pdata->label[0] = "Ftop";
   pdata->label[1] = "Ftop2";
   pdata->label[2] = "Fcut";
@@ -2563,6 +2831,17 @@ void BoxConvHistory(HistoryData *pdata, Mesh *pm) {
   if (fm_hist_) {
     pdata->label[5] = "fmAc";
     pdata->label[6] = "fmAs";
+  }
+  if (work_on_) {
+    pdata->label[7]  = "Wflx";   // cumulative mode-KE change across RKUpdate
+    pdata->label[8]  = "Wgrv";   // ... across the gravity/WB + layer sources
+    pdata->label[9]  = "Wfrc";   // ... across the radiative momentum force
+    pdata->label[10] = "Woth";   // ... across the column + ADI: the closure control
+    pdata->label[11] = "Wtco";   // the column heating's mode-projected pdV work
+    pdata->label[12] = "Wtfr";   // the radiative force's v.f heating work, same measure
+    pdata->label[13] = "Wtad";   // the transverse ADI operator's, same measure
+    pdata->label[14] = "Emod";   // the mode kinetic energy (instantaneous)
+    pdata->label[15] = "Sdsp";   // mode amplitude of v1 in the top row (cm/s)
   }
   for (int n=0; n<pdata->nhist; ++n) pdata->hdata[n] = 0.0;
 
@@ -2614,6 +2893,14 @@ void BoxConvHistory(HistoryData *pdata, Mesh *pm) {
     pdata->hdata[5] = sum_fm.the_array[5];
     pdata->hdata[6] = sum_fm.the_array[6];
   }
+  // problem/work_hist: the accumulators live on rank 0 (the plane sums they are built
+  // from are MPI-reduced there), so only rank 0 contributes and the history's own
+  // MPI_SUM over ranks lands on the number itself.
+  if (work_on_ && global_variable::my_rank == 0) {
+    for (int q=0; q<7; ++q) pdata->hdata[7+q] = wk_acc_[q];
+    pdata->hdata[14] = wk_emod_;
+    pdata->hdata[15] = wk_sdsp_;
+  }
   if (!rt_on_ || !two_stream_rt::rt_face_flux_ready()) return;
 
   MeshBlockPack *pmbp = pm->pmb_pack;
@@ -2664,7 +2951,12 @@ void BoxConvHistory(HistoryData *pdata, Mesh *pm) {
     mb_sum += hvars;
   }, Kokkos::Sum<array_sum::GlobalSum>(sum_this_mb));
   Kokkos::fence();
-  for (int n=0; n<pdata->nhist; ++n) pdata->hdata[n] = sum_this_mb.the_array[n];
+  // slots 0..4 ONLY: the reduction above zeroes everything above 4, and the f-mode and
+  // work columns were already written above.  (It used to run to pdata->nhist, which
+  // silently wiped fmAc/fmAs in any run that had BOTH radiation and fmode_hist on --
+  // arm set L never saw it because it ran with rt_two_stream = false, which returns
+  // before this block.)
+  for (int n=0; n<5; ++n) pdata->hdata[n] = sum_this_mb.the_array[n];
   return;
 }
 

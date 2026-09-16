@@ -615,6 +615,12 @@ TaskStatus Hydro::ImplicitTransverseConduction(Driver *pdrive, int stage) {
     pcond->ImplicitTransverseUpdate(u0, peos->eos_data, beta_dt);
   }
   runaway_scan::Scan(pmy_pack->pmesh, "implicit_transverse_conduction");
+  // problem/work_hist (box_convection): close the ADI interval of the mode-projected
+  // work integrals here.  A null hook is a no-op, so nothing changes without it.
+  if (pmy_pack->pmesh->pgen != nullptr &&
+      pmy_pack->pmesh->pgen->user_probe_func != nullptr) {
+    (pmy_pack->pmesh->pgen->user_probe_func)(pmy_pack->pmesh, 4);
+  }
   return TaskStatus::complete;
 }
 
