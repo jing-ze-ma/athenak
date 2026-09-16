@@ -190,9 +190,23 @@
 //!                 the part that takes a thermal time to establish.  The flow itself
 //!                 still has to grow from the seed, which takes a few turnovers, not a
 //!                 Kelvin-Helmholtz time.
-//!   vpert         velocity seed amplitude, in units of the LOCAL sound speed
-//!   vpert_nk      number of random horizontal modes (default 16)
+//!   vpert         seed amplitude: in units of the LOCAL sound speed for the default
+//!                 velocity seed, or the RELATIVE internal-energy amplitude when
+//!                 vpert_var = eint
+//!   vpert_nk      NUMBER of random horizontal modes (not a wavelength range; default 16)
 //!   vpert_seed    RNG seed for those modes (default 1234)
+//!   vpert_kmin    smallest integer horizontal wavenumber drawn for k2 and k3, in units
+//!   vpert_kmax    of 2 pi / L2 (L3); the draw is uniform on [kmin,kmax] (defaults 1, 4).
+//!                 Raise kmin to keep the seed OFF the box-scale surface f-modes of a
+//!                 wide box.
+//!   vpert_zlo     height range (cm) the seed is applied in; the vertical envelope is
+//!   vpert_zhi     sin(pi (z - zlo)/(zhi - zlo)) inside and zero outside.  Defaults are
+//!                 the mesh x1min/x1max, i.e. the whole column.
+//!   vpert_var     "v1" (default) seeds the vertical VELOCITY; "eint" instead multiplies
+//!                 the internal energy (and so the pressure) by
+//!                 1 + vpert*envelope*amp at FIXED density and zero velocity, i.e. an
+//!                 entropy perturbation.  The linear f-mode seed (seed_fmode_amp) is
+//!                 independent of this and always acts on the velocity.
 //!   nfine         nodes in the column march (default 8192)
 //!   opac_table    Rosseland table, "# nT nD lTmin dlT lDmin dlD" then nT*nD log10 kappa
 //!   column_dump   if set, write the initial column to this file
@@ -1348,6 +1362,35 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   }
   const int nk = pin->GetOrAddInteger("problem", "vpert_nk", 16);
   const int kseed = pin->GetOrAddInteger("problem", "vpert_seed", 1234);
+  // --- the horizontal wavenumber band and the vertical window of the random seed, plus
+  // which variable it perturbs.  The defaults reproduce the historical seed exactly.
+  const int kmin = pin->GetOrAddInteger("problem", "vpert_kmin", 1);
+  const int kmax = pin->GetOrAddInteger("problem", "vpert_kmax", 4);
+  if (kmin < 0 || kmax < kmin) {
+    std::cout << "### FATAL ERROR in box_convection: need 0 <= problem/vpert_kmin <= "
+              << "problem/vpert_kmax" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  const Real pzlo = pin->GetOrAddReal("problem", "vpert_zlo",
+                                      pmy_mesh_->mesh_size.x1min);
+  const Real pzhi = pin->GetOrAddReal("problem", "vpert_zhi",
+                                      pmy_mesh_->mesh_size.x1max);
+  if (pzhi <= pzlo) {
+    std::cout << "### FATAL ERROR in box_convection: need problem/vpert_zhi > "
+              << "problem/vpert_zlo" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  const std::string pvar_str = pin->GetOrAddString("problem", "vpert_var", "v1");
+  int pvar = 0;
+  if (pvar_str.compare("v1") == 0) {
+    pvar = 0;
+  } else if (pvar_str.compare("eint") == 0) {
+    pvar = 1;
+  } else {
+    std::cout << "### FATAL ERROR in box_convection: problem/vpert_var must be "
+              << "\"v1\" or \"eint\"" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
   const int nfine = pin->GetOrAddInteger("problem", "nfine", 8192);
   const Real mu = pin->GetOrAddReal("problem", "mu", 1.3);
   const Real dgrad = pin->GetOrAddReal("problem", "dgrad", 0.0);
@@ -2452,11 +2495,13 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   {
     std::mt19937 rng(kseed);
     std::uniform_real_distribution<double> u01(0.0, 1.0);
+    const Real kminr = static_cast<Real>(kmin);
+    const Real nkr = static_cast<Real>(kmax - kmin + 1);
     const bool three_d = (indcs.nx3 > 1);
     Real norm = 0.0;
     for (int n=0; n<nk; ++n) {
-      md.h_view(n,0) = 1.0 + std::floor(4.0*u01(rng));
-      md.h_view(n,1) = three_d ? (1.0 + std::floor(4.0*u01(rng))) : 0.0;
+      md.h_view(n,0) = kminr + std::floor(nkr*u01(rng));
+      md.h_view(n,1) = three_d ? (kminr + std::floor(nkr*u01(rng))) : 0.0;
       md.h_view(n,2) = u01(rng) + 0.25;
       md.h_view(n,3) = 2.0*M_PI*u01(rng);
       norm += md.h_view(n,2)*md.h_view(n,2);
@@ -2473,7 +2518,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // the INITIAL conserved energy carries is added here.
   const Real x2min_m = pmy_mesh_->mesh_size.x2min, x2max_m = pmy_mesh_->mesh_size.x2max;
   const Real x3min_m = pmy_mesh_->mesh_size.x3min, x3max_m = pmy_mesh_->mesh_size.x3max;
-  const Real lz = zmax - zmin;
+  const Real plz = pzhi - pzlo;
   // --- problem/seed_fmode_amp: the LINEAR SURFACE-GRAVITY-WAVE SEED.  One horizontal
   // Fourier mode (m,n) of the box, in the vertical velocity only, with the f-mode's own
   // depth eigenfunction exp(k_h (z - z_top)).  Density and pressure are left alone: the
@@ -2516,15 +2561,22 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     const Real e = ce_d(ii)*(1.0 - f) + ce_d(ii+1)*f;
     const Real p = cp_d(ii)*(1.0 - f) + cp_d(ii+1)*f;
     Real v1 = 0.0;
-    if (vpert > 0.0 && z > zmin && z < zmax) {
-      const Real cs = sqrt(gamma*p/d);
+    Real efac = 1.0;
+    if (vpert > 0.0 && z > pzlo && z < pzhi) {
       Real amp = 0.0;
       for (int n=0; n<nk; ++n) {
         amp += md_d(n,2)*sin(2.0*M_PI*(md_d(n,0)*(x2v - x2min_m)/(x2max_m - x2min_m)
                                      + md_d(n,1)*(x3v - x3min_m)/(x3max_m - x3min_m))
                              + md_d(n,3));
       }
-      v1 = vpert*cs*sin(M_PI*(z - zmin)/lz)*amp;
+      const Real env = sin(M_PI*(z - pzlo)/plz);
+      if (pvar == 0) {
+        const Real cs = sqrt(gamma*p/d);
+        v1 = vpert*cs*env*amp;
+      } else {
+        // entropy seed: internal energy (and so the pressure) scaled at fixed density
+        efac = 1.0 + vpert*env*amp;
+      }
     }
     if (fm_v0 > 0.0 && z > zmin && z < zmax) {
       v1 += fm_v0*exp(fm_kh*(z - zmax))*cos(fm_kx*(x2v - x2min_m))
@@ -2534,7 +2586,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     u0(m,IM1,k,j,i) = d*v1;
     u0(m,IM2,k,j,i) = 0.0;
     u0(m,IM3,k,j,i) = 0.0;
-    u0(m,IEN,k,j,i) = e + 0.5*d*v1*v1;
+    u0(m,IEN,k,j,i) = e*efac + 0.5*d*v1*v1;
     if (etotgrav) u0(m,IEN,k,j,i) += d*g0*(z - zmin);
   });
   return;
