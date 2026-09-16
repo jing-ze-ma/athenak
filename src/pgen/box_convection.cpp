@@ -1341,6 +1341,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // problem/rt_impl_reuse: reuse the block factorisation across Newton passes, with a
     // contraction check (1) or unconditionally (2).  0 (the default) is the old code.
     ts::rt_impl_reuse = pin->GetOrAddInteger("problem", "rt_impl_reuse", 0);
+    ts::rt_impl_reuse_rho = pin->GetOrAddReal("problem", "rt_impl_reuse_rho", 0.3);
     if (ts::rt_impl_reuse < 0 || ts::rt_impl_reuse > 2) {
       std::cout << "### FATAL ERROR in box_convection: problem/rt_impl_reuse must be "
                 << "0, 1 or 2" << std::endl;

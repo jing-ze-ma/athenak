@@ -455,15 +455,15 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
       }
       // THE CONTRACTION CHECK.  A frozen Jacobian is still a contraction as long as the
       // residual keeps falling; the pass refactorises when it did not fall by at
-      // least a factor 0.3, which is what keeps the quasi-Newton from stalling
-      // against maxit.  reuse = 2 never refactorises (diagnostic).
+      // least problem/rt_impl_reuse_rho, which is what keeps the quasi-Newton from
+      // stalling against maxit.  reuse = 2 never refactorises (diagnostic).
       if (c.reuse > 0) {
         if (it == 0) {
           refac = true;
         } else if (c.reuse >= 2) {
           refac = false;
         } else {
-          refac = !(rpre < 0.3*rlast);
+          refac = !(rpre < c.reuse_rho*rlast);
           if (refac) ++nrefac;
         }
         rlast = rpre;

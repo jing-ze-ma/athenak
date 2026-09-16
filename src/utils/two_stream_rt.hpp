@@ -722,6 +722,11 @@ inline int rt_impl_cvfreeze = 0;
 // first and the last differ, at O(the frozen de/db), like rt_impl_cvfreeze.  The
 // PARTITIONED path (rt_impl_solver = pcr) only; thomas is refused.
 inline int rt_impl_reuse = 0;
+// problem/rt_impl_reuse_rho: the contraction a reuse pass must show for the NEXT pass to
+// keep the factorisation.  The residual of a full Newton pass falls much faster than of
+// a frozen-Jacobian one, so a loose threshold buys cheap passes at the price of more of
+// them; tighten it to refactorise sooner.
+inline Real rt_impl_reuse_rho = 0.3;
 // problem/rt_impl_tau_min: THE TWO-LEVEL SPLIT.  Only a cell whose OWN Rosseland optical
 // depth kappa rho dr reaches this goes into the tridiagonal.  Linearising the emission
 // about the current state gives dT ~ (T/4)(A/E), which diverges as the cell's own
@@ -2790,6 +2795,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
           c3.fixit = rt_impl_fixit;
           c3.cvfreeze = rt_impl_cvfreeze;
           c3.reuse = rt_impl_reuse;
+          c3.reuse_rho = rt_impl_reuse_rho;
           c3.warm = rt_impl_warm;
           c3.bprev = c3bp;
           c3.bprev2 = c3bp2;

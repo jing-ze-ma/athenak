@@ -253,6 +253,7 @@ struct RTCol3 {
   // problem/rt_impl_reuse: keep the block factorisation of the first Newton pass and
   // reuse it (1 = with a contraction check, 2 = always).  Partitioned path only.
   int reuse = 0;
+  Real reuse_rho = 0.3;           // problem/rt_impl_reuse_rho
   int warm = 0;                   // problem/rt_impl_warm
   Real dtr = 1.0;                 // bdt/bdt_prev, the warm = 2 extrapolation ratio
   bool exjac = true;              // problem/rt_impl_exjac
