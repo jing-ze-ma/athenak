@@ -37,6 +37,9 @@
 #include <type_traits>
 
 #include "athena.hpp"
+#if MPI_PARALLEL_ENABLED
+#include <mpi.h>
+#endif
 #include "coordinates/cell_locations.hpp"
 #include "utils/eint_from_cons.hpp"
 #include "globals.hpp"
@@ -1286,6 +1289,31 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
 //! which case the whole step (sweep + apply) is repeated as a fixed-point iteration for
 //! the implicit balance; see rt_outer_iter.
 
+// ---- problem/work_hist: THE PER-OPERATOR PROBE (box_convection) ---------------------
+// A diagnostic hook, null by default.  The only call site in this header is at the end
+// of the mode-3 column solve, with tag 2: at that point the column has applied all of
+// its energy to u0 and the ONLY thing left in the call is the radiative momentum force
+// (rt_apply's energy branch is skipped under mode 3), so the interval that closes there
+// is exactly "column heating" and the interval that closes when the call returns is
+// exactly "radiative force".  Left null nothing is called and nothing changes.
+inline void (*rt_probe)(const int tag) = nullptr;
+
+// ---- problem/rt_kappa_frozen: THE MODE SEES NO OPACITY PERTURBATION -----------------
+// With this on, the grey opacity kc_g is replaced, after it has been built from the
+// local (rho,T) as usual, by its HORIZONTAL (x2,x3) MEAN in each x1 row.  So the mean
+// opacity profile still follows the mean state stage by stage, while delta kappa (the
+// part that carries the horizontal mode) is identically zero -- which kills the
+// kappa-mechanism channel in the column solve AND in the radiative force, both of which
+// read kc_g and nothing else for the opacity.  (It is the mean of kappa, not kappa of
+// the mean state; the two differ only at second order in the perturbation, which is
+// below the linear-mode test's resolution.)  The horizontal mean is GLOBAL: every rank
+// reduces its own plane sums and the result is broadcast back, because a per-rank mean
+// of a cos(k x) pattern is not zero.  The transverse ADI operator builds its own
+// conductances in Conduction and is NOT covered.  Grey path only.
+inline bool rt_kappa_frozen = false;
+inline DvceArray1D<Real> *rt_kfrz_d_ptr = nullptr;
+inline HostArray1D<Real> *rt_kfrz_h_ptr = nullptr;
+
 inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
   const int nit = (rt_outer_iter > 1) ? rt_outer_iter : 1;
   if (nit > 1) {
@@ -1986,6 +2014,61 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
             kc_g(m,0,i,k,j) = grey_kfac*kr;
             Bb_g(m,0,i,k,j) = boltz_sigma/M_PI*SQR(SQR(TT));
           });
+          // ---- problem/rt_kappa_frozen: kc_g -> its horizontal mean in each x1 row ---
+          // See the note at the top of picket_fence_two_stream_RT.  Only the cells this
+          // call actually reads take part (i >= icut, T > 0), so a row that straddles a
+          // column cut is still the mean of the cells that are used; the cells below the
+          // cut are left alone because nothing reads them.  Off by default = no kernel.
+          if (rt_kappa_frozen) {
+            const int nr = ie + 2 - is;          // the rows i = is .. ie+1
+            if (rt_kfrz_d_ptr == nullptr) {
+              rt_kfrz_d_ptr = new DvceArray1D<Real>("rt_kfrz_d", 2*nr);
+              rt_kfrz_h_ptr = new HostArray1D<Real>("rt_kfrz_h", 2*nr);
+            }
+            auto kfd = *rt_kfrz_d_ptr;
+            auto kfh = *rt_kfrz_h_ptr;
+            const int nkj_f = (nmb1 + 1)*(ke - ks + 1)*(je - js + 1);
+            const int nx2_f = je - js + 1, nx3_f = ke - ks + 1;
+            Kokkos::TeamPolicy<> pol_f(DevExeSpace(), nr, Kokkos::AUTO);
+            Kokkos::parallel_for("rt_kfrz_sum", pol_f,
+            KOKKOS_LAMBDA(Kokkos::TeamPolicy<>::member_type tm) {
+              const int i = is + tm.league_rank();
+              array_sum::GlobalSum sm;
+              Kokkos::parallel_reduce(Kokkos::TeamThreadRange(tm, nkj_f),
+              [&](const int idx, array_sum::GlobalSum &ls) {
+                const int m = idx/(nx3_f*nx2_f);
+                const int kj = idx - m*(nx3_f*nx2_f);
+                const int k = ks + kj/nx2_f;
+                const int j = js + (kj - (kj/nx2_f)*nx2_f);
+                const bool ok = (i >= icut_g(m,k,j)) && (T_g(m,k,j,i) > 0.0);
+                array_sum::GlobalSum lv;
+                for (int n=0; n<NREDUCTION_VARIABLES; ++n) lv.the_array[n] = 0.0;
+                lv.the_array[0] = ok ? kc_g(m,0,i,k,j) : 0.0;
+                lv.the_array[1] = ok ? 1.0 : 0.0;
+                ls += lv;
+              }, Kokkos::Sum<array_sum::GlobalSum>(sm));
+              Kokkos::single(Kokkos::PerTeam(tm), [&]() {
+                kfd(tm.league_rank()) = sm.the_array[0];
+                kfd(nr + tm.league_rank()) = sm.the_array[1];
+              });
+            });
+            Kokkos::fence();
+            Kokkos::deep_copy(kfh, kfd);
+#if MPI_PARALLEL_ENABLED
+            MPI_Allreduce(MPI_IN_PLACE, kfh.data(), 2*nr, MPI_ATHENA_REAL, MPI_SUM,
+                          MPI_COMM_WORLD);
+#endif
+            for (int r=0; r<nr; ++r) {
+              kfh(r) = (kfh(nr + r) > 0.0) ? (kfh(r)/kfh(nr + r)) : 0.0;
+            }
+            Kokkos::deep_copy(kfd, kfh);
+            par_for("rt_kfrz_put", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
+            KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+              if (i < icut_g(m,k,j)) return;
+              if (!(T_g(m,k,j,i) > 0.0)) return;
+              kc_g(m,0,i,k,j) = kfd(i - is);
+            });
+          }
         } else {
         par_for("rt_pre_opac", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
         KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -2829,6 +2912,10 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
                       << " Ftop_impl/Ftop_sweep="
                       << ((hs(17) != 0.0) ? hs(16)/hs(17) : 0.0) << std::endl;
           }
+          // problem/work_hist: CLOSE THE COLUMN-HEATING INTERVAL.  The column has just
+          // applied all of its energy to u0 and the only operator left in this call is
+          // the radiative momentum force.  Null hook = no-op.
+          if (rt_probe != nullptr) rt_probe(2);
         }
       } else if (ck_on) {
         // The private intensity column has to be sized at COMPILE time, but the radial

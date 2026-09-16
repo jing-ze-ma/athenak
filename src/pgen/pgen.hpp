@@ -30,6 +30,10 @@ using UserHistoryFnPtr = void (*)(HistoryData *pdata, Mesh *pm);
 // generators that want a per-cycle diagnostic. Not part of any task list: it sees the
 // state at the end of the cycle, with the new dt already computed.
 using UserCycleFnPtr = void (*)(Mesh *pm);
+// problem/work_hist (box_convection): a DIAGNOSTIC probe called at fixed points of the
+// task list so a problem generator can close a per-operator work interval there.  Left
+// null every call site is a no-op, so every existing run is bitwise unchanged.
+using UserProbeFnPtr = void (*)(Mesh *pm, const int tag);
 
 struct HotJupiterParam {
   // Initialised, because these are only filled when <problem>/hot_jupiter is true and the
@@ -98,10 +102,20 @@ class ProblemGenerator {
   // integrator.  Left null the two Hydro::RTImEx* tasks are no-ops, so every existing
   // run is bitwise unchanged.
   UserImExFnPtr user_imex_func=nullptr;
+  // problem/rt_before_flux (box_convection): the REVERSED Lie ordering inside each RK
+  // stage -- the whole radiation operator (column + force + horizontal ADI) applied at
+  // the HEAD of the stage, on the stage-start state, before the hydro flux update,
+  // with the in-stage radiation call switched off.  Called by Hydro::RTBeforeFlux with
+  // this stage's beta_dt.  Left null that task is a no-op, so every existing run is
+  // bitwise unchanged.
+  UserSrctermFnPtr user_rt_before_flux=nullptr;
   UserRefinementFnPtr user_ref_func=nullptr;
   UserHistoryFnPtr user_hist_func=nullptr;
   // called once per cycle after Mesh::NewTimeStep in Driver::Execute
   UserCycleFnPtr user_cycle_func=nullptr;
+  // problem/work_hist (box_convection): the per-operator work probe.  Tag 4 is called
+  // at the END of Hydro::ImplicitTransverseConduction (the horizontal ADI operator).
+  UserProbeFnPtr user_probe_func=nullptr;
 
   // predefined problem generator functions (default test suite)
   void CallProblemGenerator(ParameterInput *pin, bool is_restart);
