@@ -200,7 +200,13 @@ void Hydro::AssembleHydroTasks(std::map<std::string, std::shared_ptr<TaskList>> 
   // between.  Both are no-ops unless a problem generator enrols user_imex_func.
   id.imexpre   = tl["stagen"]->AddTask(&Hydro::RTImExFirst, this, id.copyu);
   id.imexc2p   = tl["stagen"]->AddTask(&Hydro::ConToPrim, this, id.imexpre);
-  id.flux      = tl["stagen"]->AddTask(&Hydro::Fluxes,this,id.imexc2p);
+  // ---- problem/rt_before_flux: the REVERSED Lie ordering.  The whole radiation
+  // operator runs at the head of the stage, on the stage-start state, so the flux
+  // update that follows is built from the radiatively updated primitives (the task
+  // does its own ghost exchange and ConToPrim).  A no-op unless a problem generator
+  // enrols user_rt_before_flux.
+  id.rtpre     = tl["stagen"]->AddTask(&Hydro::RTBeforeFlux, this, id.imexc2p);
+  id.flux      = tl["stagen"]->AddTask(&Hydro::Fluxes,this,id.rtpre);
   id.sendf     = tl["stagen"]->AddTask(&Hydro::SendFlux, this, id.flux);
   id.recvf     = tl["stagen"]->AddTask(&Hydro::RecvFlux, this, id.sendf);
   id.rkupdt    = tl["stagen"]->AddTask(&Hydro::RKUpdate, this, id.recvf);
@@ -835,6 +841,39 @@ TaskStatus Hydro::RTStrangSplit(Driver *pdrive, int stage) {
   // the half-step wrote ACTIVE cells only, outside any stage: bring the MeshBlock halos
   // and the physical x1 ghosts up to the state it produced before the stage reads them
   RTOpSplitBvals(false, false);
+  return TaskStatus::complete;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn TaskStatus Hydro::RTBeforeFlux
+//! \brief problem/rt_before_flux: the radiation operator applied BEFORE the hydro flux
+//! update within each RK stage (ProblemGenerator::user_rt_before_flux), with this
+//! stage's beta_dt -- the same step the in-stage call it replaces would have used.
+//!
+//! WHY.  Today's stage is fluxes/RKUpdate (hydro advection) -> sources -> the stiff
+//! radiative projection: a first-order Lie split whose leading error is the commutator
+//! of the two operators, which is proportional to the advecting velocity and changes
+//! SIGN when the two are exchanged.  This task is the reversed ordering, everything
+//! else identical.
+//!
+//! The operator writes ACTIVE cells only and runs before the stage's own exchange, so
+//! the MeshBlock halos and the physical x1 wall/top ghosts are brought up to what it
+//! produced with RTOpSplitBvals (which ends in ConToPrim) before Fluxes reads w0 --
+//! exactly the update the Strang/ImEx paths needed for the same reason.  The receives
+//! have already been posted by "before_stagen", so they are consumed here and a fresh
+//! set posted for the stage's own SendU.
+//!
+//! A null hook returns immediately: every run that does not enrol one is bitwise
+//! unchanged.
+
+TaskStatus Hydro::RTBeforeFlux(Driver *pdrive, int stage) {
+  Mesh *pm = pmy_pack->pmesh;
+  if (pm->pgen == nullptr || pm->pgen->user_rt_before_flux == nullptr) {
+    return TaskStatus::complete;
+  }
+  Real beta_dt = (pdrive->beta[stage-1])*(pm->dt);
+  (pm->pgen->user_rt_before_flux)(pm, beta_dt);
+  RTOpSplitBvals(true, true);
   return TaskStatus::complete;
 }
 

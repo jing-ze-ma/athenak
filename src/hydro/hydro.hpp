@@ -64,6 +64,7 @@ struct HydroTaskIDs {
   TaskID csend;
   TaskID crecv;
   TaskID imexpre;
+  TaskID rtpre;
   TaskID imexc2p;
   TaskID imex;
   TaskID splitpre;
@@ -247,6 +248,7 @@ class Hydro {
   TaskStatus ConToPrim(Driver *d, int stage);
   TaskStatus RTStrangSplit(Driver *d, int stage);
   void RTOpSplitBvals(bool recv_posted, bool repost);
+  TaskStatus RTBeforeFlux(Driver *d, int stage);
   TaskStatus RTImExFirst(Driver *d, int stage);
   TaskStatus RTImEx(Driver *d, int stage);
   TaskStatus NewTimeStep(Driver *d, int stage);

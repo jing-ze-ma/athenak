@@ -321,6 +321,7 @@ void BoxConvSrcs(Mesh *pm, Real bdt);
 void BoxConvRebuildRadWeights(Mesh *pm, Real bdt);
 void BoxConvTransverseApply(Mesh *pm, Real dt);
 void BoxConvRTSplit(Mesh *pm, Real bdt);
+void BoxConvRTBeforeFlux(Mesh *pm, Real bdt);
 void BoxConvRTImEx(Mesh *pm, Driver *pdrive, const int estage);
 void BoxConvBC(Mesh *pm);
 void BoxConvFinal(ParameterInput *pin, Mesh *pm);
@@ -481,6 +482,28 @@ int rt_col3_sub_ = 1;
 // work_hist: tags 2/3/4 fire wherever the operators run, so the budget stays complete;
 // Wtad is then the SUM of the two half-steps and Wtco+Wtad is still the pair imbalance.
 int rt_pair_sym_ = 0;
+// problem/rt_before_flux (bool, default false, bitwise off): REVERSE THE LIE ORDER of
+// the two operators inside each RK stage.  Today the stage is
+//     fluxes + RKUpdate (hydro advection)  ->  BoxConvSrcs (gravity, then the column +
+//     radiative force, then the horizontal ADI)
+// i.e. a first-order Lie split of the hydro advection against the stiff radiative
+// projection.  The leading error of such a split is the COMMUTATOR of the two
+// operators: it is proportional to the advecting (convective) velocity -- it vanishes in
+// a box at rest -- and to dt, and it CHANGES SIGN when the two operators are exchanged.
+// The convecting box's surface f-mode grows at gamma = 1.31 omega^2 dt while the same
+// mode without convection is neutral at every dt, and every rearrangement INSIDE the
+// radiation step has been null, which leaves the commutator as the candidate.
+// With this switch the radiation block (column + force + horizontal ADI, exactly the
+// sequence BoxConvSrcs runs today, with the same beta_dt) is applied at the HEAD of the
+// stage, on the stage-start state, by Hydro::RTBeforeFlux -- which follows it with a
+// full ghost/BC update and a ConToPrim, so the fluxes are built from the radiatively
+// updated primitives -- and the radiation part of BoxConvSrcs is skipped for that stage.
+// Gravity, cooling, sponge, wall cancellation and inflow stay exactly where they are.
+// A sign flip of gamma identifies the commutator; an unchanged gamma refutes it.
+// work_hist: the tag-2/3/4 points fire wherever the operators run, so the intervals
+// still TILE the stage and the KE closure still holds exactly; only the ORDER changes
+// (radiation first, then "Wflx" = the RK combination + flux divergence, then "Wgrv").
+bool rt_before_flux_ = false;
 // the per-stage implicit sources S^(l), (nimp_stages, nmb, 4, n3, n2, n1), 4 = the
 // IM1/IM2/IM3/IEN components in that order.  Allocated on the first call (the Driver,
 // which owns nimp_stages, is built after the problem generator).  NOT restarted: every
@@ -1896,13 +1919,48 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                   << "HALF step" << std::endl;
       }
     }
+    // ---- problem/rt_before_flux: the REVERSED Lie order within the stage ---------
+    rt_before_flux_ = pin->GetOrAddBoolean("problem", "rt_before_flux", false);
+    if (rt_before_flux_) {
+      if (rt_strang_ || rt_once_ || rt_col3_once_ || rt_imex_ || rt_pair_sym_ > 0 ||
+          rt_col3_sub_ > 1) {
+        std::cout << "### FATAL ERROR in box_convection: problem/rt_before_flux is the "
+                  << "IN-STAGE operator ORDER and is mutually exclusive with rt_strang, "
+                  << "rt_once_per_cycle, rt_col3_once, rt_imex, rt_pair_sym and "
+                  << "rt_col3_sub > 1, which move or repeat the radiation operator"
+                  << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      if (!rt_on_) {
+        std::cout << "### FATAL ERROR in box_convection: problem/rt_before_flux needs "
+                  << "the two-stream radiation (<problem>/rt_two_stream)" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      if (pmbp->phydro == nullptr || pmbp->phydro->pcond == nullptr ||
+          !pmbp->phydro->pcond->rad_implicit_ang) {
+        std::cout << "### FATAL ERROR in box_convection: problem/rt_before_flux needs "
+                  << "the implicit transverse operator (<hydro>/rad_implicit_ang): the "
+                  << "whole radiation operator, ADI included, has to move together"
+                  << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      user_rt_before_flux = BoxConvRTBeforeFlux;
+      if (global_variable::my_rank == 0) {
+        std::cout << "### box_convection: problem/rt_before_flux = true, the RADIATION "
+                  << "OPERATOR (column + force + horizontal ADI) runs at the HEAD of "
+                  << "each RK stage, on the stage-start state, BEFORE the hydro flux "
+                  << "update -- the REVERSED Lie order (commutator sign test)"
+                  << std::endl;
+      }
+    }
     // problem/rt_split_transverse: with the column out of the stage, take the
     // horizontal ADI operator out with it (see the declaration above).  Default ON
     // whenever a split is active; a no-op otherwise.  rt_col3_sub > 1 keeps the column
     // INSIDE the stage but still has to move the transverse operator into the sub-cycle
     // loop, and uses the same Conduction flag to silence the in-stage task.
     const bool splitout = (rt_strang_ || rt_once_ || rt_col3_once_ || rt_imex_);
-    rt_split_tr_ = (splitout || rt_col3_sub_ > 1 || rt_pair_sym_ > 0) &&
+    rt_split_tr_ = (splitout || rt_col3_sub_ > 1 || rt_pair_sym_ > 0 ||
+                    rt_before_flux_) &&
                    pin->GetOrAddBoolean("problem", "rt_split_transverse", true);
     if (rt_split_tr_ && pmbp->phydro != nullptr && pmbp->phydro->pcond != nullptr &&
         pmbp->phydro->pcond->rad_implicit_ang) {
@@ -1911,8 +1969,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         std::cout << "### box_convection: problem/rt_split_transverse = true, the "
                   << "IMPLICIT TRANSVERSE radiative operator is run "
                   << ((rt_pair_sym_ > 0) ? "as the SYMMETRIC PAIR around the column"
+                     : (rt_before_flux_ ? "with the column at the HEAD of the stage"
                      : ((rt_col3_sub_ > 1) ? "inside each column SUB-STEP"
-                                           : "inside the split step with the column"))
+                                           : "inside the split step with the column")))
                   << " and NOT as its own in-stage task" << std::endl;
       }
     }
@@ -2670,7 +2729,10 @@ void BoxConvSrcs(Mesh *pm, Real bdt) {
 
   // --- the grey two-stream, after gravity and the cooling layer, exactly where
   // red_giant.cpp calls it: inside the stage, on the state the last ConToPrim left.
-  if (rt_on_ && !rt_strang_ && !rt_once_ && !rt_col3_once_ && !rt_imex_) {
+  // problem/rt_before_flux: the whole block has already run at the head of this stage,
+  // in Hydro::RTBeforeFlux (BoxConvRTBeforeFlux), on the stage-start state.
+  if (rt_on_ && !rt_strang_ && !rt_once_ && !rt_col3_once_ && !rt_imex_ &&
+      !rt_before_flux_) {
     // problem/rt_col3_sub: N applications of the WHOLE radiation operator per stage with
     // beta_dt/N each, at the unchanged hydro dt.  N = 1 is one pass of exactly the call
     // that was here, with no rebuild and no transverse call -- bitwise the old code.
@@ -2781,6 +2843,56 @@ void BoxConvRTSplit(Mesh *pm, Real bdt) {
       while (surf_next_ <= pm->time) surf_next_ += surf_dt_;
     }
   }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void BoxConvRTBeforeFlux
+//! \brief problem/rt_before_flux: the WHOLE radiation operator at the HEAD of the RK
+//! stage, on the stage-start state, BEFORE the hydro flux update -- the reversed Lie
+//! order (see the declaration of rt_before_flux_).  Enrolled as
+//! ProblemGenerator::user_rt_before_flux; Hydro::RTBeforeFlux calls it once per stage
+//! with that stage's beta_dt and follows it with a ghost/BC update and a ConToPrim.
+//!
+//! The sequence is EXACTLY the one BoxConvSrcs runs today at rt_col3_sub = 1,
+//! rt_pair_sym = 0 -- the column solve + radiative force, then the horizontal ADI over
+//! the same step -- with the same budget bookkeeping and the same per-column surface
+//! dump, so nothing but the position in the stage changes.
+
+void BoxConvRTBeforeFlux(Mesh *pm, Real bdt) {
+  if (!rt_on_ || !rt_before_flux_) return;
+  const bool bud_on = (rtbud_n_ > 0);
+  Real e0 = 0.0, r0 = 0.0;
+  if (bud_on) BoxConvBoxInt(pm, e0, r0);
+  // The tau/blend weights and the frozen ADI face conductances are normally built inside
+  // Hydro::Fluxes, from the STAGE-START primitives -- which have not been built yet when
+  // this runs (and do not exist at all in the first stage of a run).  Build them here,
+  // from the same stage-start state, so the operator sees exactly the coefficients the
+  // in-stage ordering gives it: this is the rebuild rt_col3_sub / rt_pair_sym make.
+  BoxConvRebuildRadWeights(pm, bdt);
+  two_stream_rt::picket_fence_two_stream_RT(pm, bdt);
+  // problem/work_hist, tag 3: the column solve closed its own interval from inside
+  // (two_stream_rt::rt_probe, tag 2), so what closes here is the radiative force
+  BoxConvWorkClose(pm, 3);
+  // the horizontal ADI operator travels WITH the column (rt_split_transverse is forced
+  // on, so the in-stage transverse task is a no-op); tag 4 closes inside the call
+  BoxConvTransverseApply(pm, bdt);
+  if (bud_on) {
+    Real e4, r4, ft, fc;
+    BoxConvBoxInt(pm, e4, r4);
+    rtbud_h_[9] += e4 - e0;
+    BoxConvFtopInt(pm, ft, fc);
+    rtbud_h_[11] += bdt*ft;
+    rtbud_h_[12] += bdt*fc;
+  }
+  // the per-column surface dump, once per cycle (pm->time does not move between stages)
+  if (surf_dt_ > 0.0 && two_stream_rt::rt_face_flux_ready()) {
+    if (surf_next_ < 0.0) surf_next_ = pm->time;
+    if (pm->time >= surf_next_) {
+      BoxConvSurfaceDump(pm);
+      while (surf_next_ <= pm->time) surf_next_ += surf_dt_;
+    }
+  }
+  return;
 }
 
 //----------------------------------------------------------------------------------------

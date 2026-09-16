@@ -102,6 +102,13 @@ class ProblemGenerator {
   // integrator.  Left null the two Hydro::RTImEx* tasks are no-ops, so every existing
   // run is bitwise unchanged.
   UserImExFnPtr user_imex_func=nullptr;
+  // problem/rt_before_flux (box_convection): the REVERSED Lie ordering inside each RK
+  // stage -- the whole radiation operator (column + force + horizontal ADI) applied at
+  // the HEAD of the stage, on the stage-start state, before the hydro flux update,
+  // with the in-stage radiation call switched off.  Called by Hydro::RTBeforeFlux with
+  // this stage's beta_dt.  Left null that task is a no-op, so every existing run is
+  // bitwise unchanged.
+  UserSrctermFnPtr user_rt_before_flux=nullptr;
   UserRefinementFnPtr user_ref_func=nullptr;
   UserHistoryFnPtr user_hist_func=nullptr;
   // called once per cycle after Mesh::NewTimeStep in Driver::Execute
