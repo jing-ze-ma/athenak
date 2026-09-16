@@ -250,6 +250,9 @@ struct RTCol3 {
   int maxit = 6;
   int norm = 1;                   // problem/rt_impl_norm
   int cvfreeze = 0;               // problem/rt_impl_cvfreeze
+  // problem/rt_impl_reuse: keep the block factorisation of the first Newton pass and
+  // reuse it (1 = with a contraction check, 2 = always).  Partitioned path only.
+  int reuse = 0;
   int warm = 0;                   // problem/rt_impl_warm
   Real dtr = 1.0;                 // bdt/bdt_prev, the warm = 2 extrapolation ratio
   bool exjac = true;              // problem/rt_impl_exjac
@@ -401,6 +404,11 @@ struct RTCol3 {
   KOKKOS_INLINE_FUNCTION
   Real ResidRel(const int m, const int k, const int j, const int i,
                 const Real eoff) const;
+  //! the SIGNED energy-row residual of one cell, rv[4] of BuildRow, which is the whole
+  //! right-hand side a reuse pass needs (rv[0..3] are identically zero).
+  template <bool TLAY>
+  KOKKOS_INLINE_FUNCTION
+  Real ResidRaw(const int m, const int k, const int j, const int i) const;
   template <bool TLAY>
   KOKKOS_INLINE_FUNCTION
   void BuildRow(const int m, const int k, const int j, const int i, const int ic,
@@ -572,8 +580,7 @@ void RTCol3::SourceVals(const int m, const int k, const int j, const int i, cons
 
 template <bool TLAY>
 KOKKOS_INLINE_FUNCTION
-Real RTCol3::ResidRel(const int m, const int k, const int j, const int i,
-                      const Real eoff) const {
+Real RTCol3::ResidRaw(const int m, const int k, const int j, const int i) const {
   const int BBs = 26, EXs = 31, SAs = 32, ESs = 34;
   const Real tk = Tg(m,k,j,i);
   const Real es = Wk<TLAY>(m,ESs,i,k,j);
@@ -584,7 +591,16 @@ Real RTCol3::ResidRel(const int m, const int k, const int j, const int i,
   const Real wb = 1.0 - 0.5*(wlo + whi);
   const Real tnew = sqrt(sqrt(b*M_PI/sigma));
   const Real enew = EFromT(Rho(m,k,j,i), tnew);
-  const Real rv = -(enew - es - bdt*(wb*Wk<TLAY>(m,SAs,i,k,j) + Wk<TLAY>(m,EXs,i,k,j)));
+  return -(enew - es - bdt*(wb*Wk<TLAY>(m,SAs,i,k,j) + Wk<TLAY>(m,EXs,i,k,j)));
+}
+
+template <bool TLAY>
+KOKKOS_INLINE_FUNCTION
+Real RTCol3::ResidRel(const int m, const int k, const int j, const int i,
+                      const Real eoff) const {
+  const int ESs = 34;
+  const Real es = Wk<TLAY>(m,ESs,i,k,j);
+  const Real rv = ResidRaw<TLAY>(m, k, j, i);
   const Real den = es + eoff;
   return (den > 0.0) ? fabs(rv)/den : 0.0;
 }

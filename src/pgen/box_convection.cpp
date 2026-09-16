@@ -1338,6 +1338,16 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                 << "mode-3 solve they produce is NOT a correct solve." << std::endl;
     }
     ts::rt_impl_cvfreeze = pin->GetOrAddInteger("problem", "rt_impl_cvfreeze", 0);
+    // problem/rt_impl_reuse: reuse the block factorisation across Newton passes, with a
+    // contraction check (1) or unconditionally (2).  0 (the default) is the old code.
+    ts::rt_impl_reuse = pin->GetOrAddInteger("problem", "rt_impl_reuse", 0);
+    if (ts::rt_impl_reuse < 0 || ts::rt_impl_reuse > 2) {
+      std::cout << "### FATAL ERROR in box_convection: problem/rt_impl_reuse must be "
+                << "0, 1 or 2" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    // how often the mode-3 convergence line is printed under rt_outer_verbose
+    ts::rt_report_every = pin->GetOrAddInteger("problem", "rt_report_every", 100);
     // how the mode-3 block system is solved: the serial block Thomas (one thread per
     // column) or the team-partitioned solve (see two_stream_column_partition.hpp)
     {

@@ -75,6 +75,17 @@ namespace two_stream_rt {
 // (<problem>/rt_impl_redpar): two buffers of the block row (A, B, C, r = 80 slots) plus
 // the diagonal block's inverse.  Allocated only when the switch is on.
 #define RTCOL3_NRDP 281
+// ... and the REUSE slots (<problem>/rt_impl_reuse), appended at the END of both layouts
+// so that a run with the switch off allocates exactly what it did before.  Per CELL, 20
+// more: v = Bi[:,4] (5) and M = Bi*A3 (5x3), the only parts of the factorisation a reuse
+// pass needs, a deep cell using two of them for 1/piv and aa/piv.  Per SEGMENT, either
+// the serial reduced solve's own 5x5 inverse (25) or, under rt_impl_redpar, the PCR's
+// Wm = A B^-1 and Wp = C B^-1 for each of its at most six rounds plus the final
+// decoupled inverse (2*25*6 + 25 = 325).
+#define RTCOL3_NWPU 74
+#define RTCOL3_NRDU 121
+#define RTCOL3_NRDPU 606
+#define RTCOL3_PCRMAXR 6
 
 //----------------------------------------------------------------------------------------
 //! \fn void RTCol3TeamSolve
@@ -105,7 +116,14 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
   // the PCR slots of the extended per-segment workspace: A, B, C, r in two buffers
   // (stride PSTR), then the diagonal block's inverse
   const int PA = 96, PSTR = 80, PBI = 256;
-  const int nrd = c.redpar ? RTCOL3_NRDP : RTCOL3_NRD;
+  // the REUSE slots (problem/rt_impl_reuse), per cell and per segment.  RU is the first
+  // per-segment one: the serial reduced solve's stored inverse, or the PCR's Wm/Wp of
+  // round r at RU + 50 r and its final decoupled inverse at RU + 300.
+  const int VI = 54, MM = 59;
+  const int RU = c.redpar ? RTCOL3_NRDP : RTCOL3_NRD;
+  const int PBF = RU + 50*RTCOL3_PCRMAXR;
+  const int nrd = c.reuse ? (c.redpar ? RTCOL3_NRDPU : RTCOL3_NRDU)
+                          : (c.redpar ? RTCOL3_NRDP : RTCOL3_NRD);
   // the reduced system is solved by PCR only when lane s can own block row s and the
   // round count is exactly log2(nsg); otherwise the serial reduced solve runs.
   const bool usepcr = c.redpar && (nsg >= 2) && (nsg <= 64)
@@ -230,6 +248,12 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
   Real cutc_i = cutc;
   Real Ucut_i[2] = {Ucut[0], Ucut[1]};
   Real fif = 0.0;                             // the interface net flux
+  // problem/rt_impl_reuse: whether THIS pass factorises (pass 1 always does), the
+  // residual the contraction test compares against, and the count of refactorisations
+  // this column made after its first pass.
+  bool refac = true;
+  Real rlast = 0.0, rpass = 0.0;
+  int nrefac = 0, nreuse = 0;
   for (int it=0; it<c.maxit; ++it) {
     nit = it + 1;
     tm.team_barrier();
@@ -407,7 +431,12 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
     // break the standard path takes.  The partition is the same i0..i1 the sweep used,
     // so each thread reads only cells it has just written; the team reduce broadcasts
     // rpre, which is what makes the collective break legal.
-    if (c.rescheck || (c.ablate & 4)) {
+    // With problem/rt_impl_reuse the residual is needed at the TOP of every pass
+    // anyway -- it is both the convergence test and the contraction test that decides
+    // whether the pass may keep the previous factorisation -- so the switch turns this
+    // block on by itself.  It is the same test on the same number, so a run with
+    // rescheck off and reuse on takes the same break at the same pass.
+    if (c.rescheck || c.reuse > 0 || (c.ablate & 4)) {
       Real rpre = 0.0;
       for (int rep=((c.ablate & 4) ? 1 : 0); rep>=0; --rep) {
         rpre = 0.0;
@@ -420,15 +449,32 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
           }
         }, Kokkos::Max<Real>(rpre));
       }
-      if (c.rescheck) {
+      if (c.rescheck || c.reuse > 0) {
         rfin = rpre;
         if (rpre < c.tol && !c.fixit) break;
+      }
+      // THE CONTRACTION CHECK.  A frozen Jacobian is still a contraction as long as the
+      // residual keeps falling; the pass refactorises when it did not fall by at
+      // least a factor 0.3, which is what keeps the quasi-Newton from stalling
+      // against maxit.  reuse = 2 never refactorises (diagnostic).
+      if (c.reuse > 0) {
+        if (it == 0) {
+          refac = true;
+        } else if (c.reuse >= 2) {
+          refac = false;
+        } else {
+          refac = !(rpre < 0.3*rlast);
+          if (refac) ++nrefac;
+        }
+        rlast = rpre;
+        rpass = rpre;
       }
     }
 
     // ---- 4b. the PARTITIONED forward elimination ------------------------------------
     // ablate bit 2 repeats it: it writes absolutely out of b, so it is idempotent.
     Real rmax = 0.0;
+    if (refac) {
     for (int rep=(c.ablate & 2); rep>=0; --rep) {
     rmax = 0.0;
     Kokkos::parallel_reduce(Kokkos::TeamThreadRange(tm, nsg),
@@ -468,6 +514,11 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
           dp[4] = rvv/piv;
           dp[2] = 0.0;
           dp[3] = 0.0;
+          if (c.reuse > 0) {                  // what a reuse pass needs of this row
+            const Real ip = 1.0/piv;
+            c.Wk<true>(m,VI,i,k,j) = ip;
+            c.Wk<true>(m,VI+1,i,k,j) = aa*ip;
+          }
           c.Wk<true>(m,DPD,i,k,j) = dp[4];
           for (int t=0; t<3; ++t) {
             Gp[2][t] = 0.0;
@@ -553,6 +604,22 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
             c.Wk<true>(m,HH+3*r+cc,i,k,j) = sg*h;
           }
         }
+        if (c.reuse > 0) {
+          // the two pieces a reuse pass needs: the fifth COLUMN of the inverse (the
+          // right-hand side has no other live component) and Bi A3, the incoming
+          // unknown's coefficient.  At the segment's first cell A3 is the spike, which
+          // the reduced system carries, so no M is formed there.
+          for (int r=0; r<5; ++r) {
+            c.Wk<true>(m,VI+r,i,k,j) = Bi[r][4];
+            if (i > i0) {
+              for (int t=0; t<3; ++t) {
+                Real sm = 0.0;
+                for (int cc=0; cc<5; ++cc) sm += Bi[r][cc]*A3[cc][t];
+                c.Wk<true>(m,MM+3*r+t,i,k,j) = sm;
+              }
+            }
+          }
+        }
       }
       // ---- 4b'. the segment's FIRST cell in the two boundary unknowns ---------------
       // x_i = p_i - Q_i y_s - R_i y_{s-1}, started at i1 from x_{i1} = y_s.  With one
@@ -623,6 +690,75 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
       }
     }, Kokkos::Max<Real>(rmax));
     }
+    } else {
+      // ---- 4b''. THE REUSE PASS -----------------------------------------------------
+      // Nothing of the system has changed except the right-hand side: the Jacobian's
+      // only iterate-dependent entry is de/db, which this pass holds at the value the
+      // last factorising pass used (exactly what rt_impl_cvfreeze does), and rv[0..3]
+      // are identically zero, so the forward elimination collapses to
+      //     d_i = rv4_i v_i - M_i d_{i-1}|(2,3,4),   v = Bi[:,4],  M = Bi A3,
+      // one EOS call and 20 multiplies per cell in place of the assembly, the 5x5
+      // inverse and the two 5x3 products.  G, H, Q and R are Jacobian-only and stay in
+      // the workspace untouched; only the p of the segment recurrence is redone.  The
+      // residual scan at the top of the pass already gave the maximum, and it is the
+      // same number this pass's assembly would have produced.
+      ++nreuse;
+      rmax = rpass;
+      Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, nsg), [&](const int s) {
+        const int i0 = ic + (nc*s)/nsg, i1 = ic + (nc*(s+1))/nsg - 1;
+        Real dp[5] = {0.0, 0.0, 0.0, 0.0, 0.0};
+        for (int i=i0; i<=i1; ++i) {
+          const Real rv4 = c.ResidRaw<true>(m, k, j, i);
+          if (i < ib) {                       // the DEEP cell: one scalar row
+            Real d4 = rv4*c.Wk<true>(m,VI,i,k,j);
+            if (i > i0) d4 -= c.Wk<true>(m,VI+1,i,k,j)*dp[4];
+            dp[2] = 0.0;
+            dp[3] = 0.0;
+            dp[4] = d4;
+            c.Wk<true>(m,DPD,i,k,j) = d4;
+            continue;
+          }
+          Real dn[5];
+          for (int r=0; r<5; ++r) {
+            Real sd = rv4*c.Wk<true>(m,VI+r,i,k,j);
+            if (i > i0) {
+              for (int t=0; t<3; ++t) sd -= c.Wk<true>(m,MM+3*r+t,i,k,j)*dp[t+2];
+            }
+            dn[r] = sd;
+          }
+          for (int r=0; r<5; ++r) {
+            dp[r] = dn[r];
+            c.Wk<true>(m,DP+r,i,k,j) = dn[r];
+          }
+        }
+        // the segment's own backward recurrence, p only: Q and R are frozen in rd
+        if (nsg < 2) return;
+        Real pq[5] = {0.0, 0.0, 0.0, 0.0, 0.0};
+        for (int i=i1-1; i>=i0; --i) {
+          if (i < ib) {
+            Real p4 = c.Wk<true>(m,DPD,i,k,j);
+            for (int cc=0; cc<3; ++cc) {
+              const Real g = c.Wk<true>(m,GD+cc,i,k,j);
+              if (g == 0.0) continue;
+              p4 -= g*pq[rc3[cc]];
+            }
+            if (i == ib-1 || i == i1-1) {
+              for (int r=0; r<4; ++r) pq[r] = 0.0;
+            }
+            pq[4] = p4;
+            continue;
+          }
+          Real pn[5];
+          for (int r=0; r<5; ++r) {
+            Real sp = c.Wk<true>(m,DP+r,i,k,j);
+            for (int cc=0; cc<3; ++cc) sp -= c.Wk<true>(m,G0+3*r+cc,i,k,j)*pq[rc3[cc]];
+            pn[r] = sp;
+          }
+          for (int r=0; r<5; ++r) pq[r] = pn[r];
+        }
+        for (int r=0; r<5; ++r) c.rd(m,k,j,s*nrd+PP+r) = pq[r];
+      });
+    }
     rfin = rmax;
     if (!(rmax < HUGE_VAL)) return;     // a singular block: leave the column alone
     if (rmax < c.tol && !c.fixit) break;
@@ -637,7 +773,81 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
     // default path eliminates that system by the SERIAL block Thomas below, one lane
     // walking nsg rows while the other nsg-1 idle.
     tm.team_barrier();
-    if (usepcr) {
+    if (usepcr && !refac) {
+      // ---- 4c (REUSE). the same PCR with the ROUND FACTORS of the last factorising
+      // pass.  Every A, B and C of every round is built from G, H, Q and R, which the
+      // frozen Jacobian leaves untouched, so the only thing a round does to a reuse
+      // pass is  r'_s = r_s - Wm r_{s-d} - Wp r_{s+d}  with Wm = A B^-1, Wp = C B^-1
+      // stored per round, and the decoupled solve at the end is one stored inverse.
+      Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, nsg), [&](const int s) {
+        const int b0 = s*nrd, pb = b0 + PA;
+        const int i1 = ic + (nc*(s+1))/nsg - 1;
+        Real rh[5];
+        for (int r=0; r<5; ++r) rh[r] = c.Wk<true>(m,DP+r,i1,k,j);
+        if (s + 1 < nsg) {
+          const int b1 = (s+1)*nrd;
+          for (int r=0; r<5; ++r) {
+            for (int cc=0; cc<3; ++cc) {
+              const Real g = c.Wk<true>(m,G0+3*r+cc,i1,k,j);
+              if (g == 0.0) continue;
+              rh[r] -= g*c.rd(m,k,j,b1+PP+rc3[cc]);
+            }
+          }
+        }
+        for (int r=0; r<5; ++r) c.rd(m,k,j,pb+75+r) = rh[r];
+      });
+      int pcur = 0, rnd = 0;
+      for (int d=1; d<nsg; d*=2) {
+        tm.team_barrier();
+        Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, nsg), [&](const int s) {
+          const int b0 = s*nrd, pb = b0 + PA + pcur*PSTR;
+          const int pn = b0 + PA + (1-pcur)*PSTR;
+          const int wb = b0 + RU + 50*rnd;
+          Real nr[5];
+          for (int r=0; r<5; ++r) nr[r] = c.rd(m,k,j,pb+75+r);
+          if (s - d >= 0) {
+            const int pm = (s-d)*nrd + PA + pcur*PSTR;
+            for (int r=0; r<5; ++r) {
+              Real sr = 0.0;
+              for (int t=0; t<5; ++t) sr += c.rd(m,k,j,wb+5*r+t)*c.rd(m,k,j,pm+75+t);
+              nr[r] -= sr;
+            }
+          }
+          if (s + d < nsg) {
+            const int pp = (s+d)*nrd + PA + pcur*PSTR;
+            for (int r=0; r<5; ++r) {
+              Real sr = 0.0;
+              for (int t=0; t<5; ++t) sr += c.rd(m,k,j,wb+25+5*r+t)*c.rd(m,k,j,pp+75+t);
+              nr[r] -= sr;
+            }
+          }
+          for (int r=0; r<5; ++r) c.rd(m,k,j,pn+75+r) = nr[r];
+        });
+        pcur = 1 - pcur;
+        ++rnd;
+      }
+      tm.team_barrier();
+      Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, nsg), [&](const int s) {
+        const int b0 = s*nrd, pb = b0 + PA + pcur*PSTR;
+        const int i1 = ic + (nc*(s+1))/nsg - 1;
+        Real y[5];
+        for (int r=0; r<5; ++r) {
+          Real sy = 0.0;
+          for (int t=0; t<5; ++t) sy += c.rd(m,k,j,b0+PBF+5*r+t)*c.rd(m,k,j,pb+75+t);
+          y[r] = sy;
+        }
+        c.rd(m,k,j,b0+YR) = y[4];
+        const Real b = c.Wk<true>(m,BB,i1,k,j);
+        if (b > 0.0) {
+          if (y[4] > 3.0*b) {
+            y[4] = 3.0*b;
+          } else if (y[4] < -0.75*b) {
+            y[4] = -0.75*b;
+          }
+        }
+        for (int r=0; r<5; ++r) c.rd(m,k,j,b0+YY+r) = y[r];
+      });
+    } else if (usepcr) {
       // <problem>/rt_impl_redpar: PARALLEL CYCLIC REDUCTION instead.  Lane s owns block
       // row s; each of the log2(nsg) rounds eliminates the neighbours at distance d by
       // A'_s = -A_s B_{s-d}^-1 A_{s-d},  C'_s = -C_s B_{s+d}^-1 C_{s+d},
@@ -692,7 +902,7 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
           c.rd(m,k,j,pb+75+r) = rh[r];
         }
       });
-      int pcur = 0;
+      int pcur = 0, rnd = 0;
       for (int d=1; d<nsg; d*=2) {
         tm.team_barrier();
         // the diagonal block's inverse, one per lane
@@ -734,6 +944,7 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
                   w += c.rd(m,k,j,pb+5*r+t)*c.rd(m,k,j,bm+PBI+5*t+col);
                 }
                 W[r][col] = w;
+                if (c.reuse > 0) c.rd(m,k,j,b0+RU+50*rnd+5*r+col) = w;
               }
             }
             for (int r=0; r<5; ++r) {
@@ -760,6 +971,7 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
                   w += c.rd(m,k,j,pb+50+5*r+t)*c.rd(m,k,j,bp+PBI+5*t+col);
                 }
                 W[r][col] = w;
+                if (c.reuse > 0) c.rd(m,k,j,b0+RU+50*rnd+25+5*r+col) = w;
               }
             }
             for (int r=0; r<5; ++r) {
@@ -787,6 +999,7 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
           }
         });
         pcur = 1 - pcur;
+        ++rnd;
       }
       tm.team_barrier();
       // every lane now holds a DECOUPLED 5x5 row: y_s = B_s^-1 r_s, then the clamp
@@ -800,6 +1013,11 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
         if (!RTCol3Inv5(Bm, Bi)) {
           for (int r=0; r<5; ++r) {
             for (int col=0; col<5; ++col) Bi[r][col] = 0.0;
+          }
+        }
+        if (c.reuse > 0) {
+          for (int r=0; r<5; ++r) {
+            for (int col=0; col<5; ++col) c.rd(m,k,j,b0+PBF+5*r+col) = Bi[r][col];
           }
         }
         for (int r=0; r<5; ++r) {
@@ -818,6 +1036,70 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
         }
         for (int r=0; r<5; ++r) c.rd(m,k,j,b0+YY+r) = y[r];
       });
+    } else if (!refac) {
+    // ---- 4c (REUSE), the SERIAL reduced solve.  B_s and C_s are frozen, so the stored
+    // B_s^-1 and G_s = B_s^-1 C_s are still this pass's; only r_s is re-formed.
+    Kokkos::single(Kokkos::PerTeam(tm), [&]() {
+      for (int s=0; s<nsg; ++s) {
+        const int b0 = s*nrd;
+        const int i1 = ic + (nc*(s+1))/nsg - 1;
+        Real rh[5];
+        for (int r=0; r<5; ++r) rh[r] = c.Wk<true>(m,DP+r,i1,k,j);
+        if (s + 1 < nsg) {
+          const int b1 = (s+1)*nrd;
+          for (int r=0; r<5; ++r) {
+            for (int cc=0; cc<3; ++cc) {
+              const Real g = c.Wk<true>(m,G0+3*r+cc,i1,k,j);
+              if (g == 0.0) continue;
+              rh[r] -= g*c.rd(m,k,j,b1+PP+rc3[cc]);
+            }
+          }
+        }
+        if (s > 0) {
+          const int bm1 = (s-1)*nrd;
+          for (int r=0; r<5; ++r) {
+            Real s2 = 0.0;
+            for (int t=0; t<3; ++t) {
+              s2 += c.Wk<true>(m,HH+3*r+t,i1,k,j)*c.rd(m,k,j,bm1+DR+t+2);
+            }
+            rh[r] -= s2;
+          }
+        }
+        for (int r=0; r<5; ++r) {
+          Real sd = 0.0;
+          for (int t=0; t<5; ++t) sd += c.rd(m,k,j,b0+RU+5*r+t)*rh[t];
+          c.rd(m,k,j,b0+DR+r) = sd;
+        }
+      }
+      // the reduced back-substitution, with the SAME clamp, propagated the same way
+      Real ynext[5];
+      for (int r=0; r<5; ++r) ynext[r] = 0.0;
+      for (int s=nsg-1; s>=0; --s) {
+        const int b0 = s*nrd;
+        const int i1 = ic + (nc*(s+1))/nsg - 1;
+        Real y[5];
+        for (int r=0; r<5; ++r) {
+          Real sy = c.rd(m,k,j,b0+DR+r);
+          if (s + 1 < nsg) {
+            for (int col=0; col<5; ++col) sy -= c.rd(m,k,j,b0+GR+5*r+col)*ynext[col];
+          }
+          y[r] = sy;
+        }
+        c.rd(m,k,j,b0+YR) = y[4];
+        const Real b = c.Wk<true>(m,BB,i1,k,j);
+        if (b > 0.0) {
+          if (y[4] > 3.0*b) {
+            y[4] = 3.0*b;
+          } else if (y[4] < -0.75*b) {
+            y[4] = -0.75*b;
+          }
+        }
+        for (int r=0; r<5; ++r) {
+          c.rd(m,k,j,b0+YY+r) = y[r];
+          ynext[r] = y[r];
+        }
+      }
+    });
     } else {
     Kokkos::single(Kokkos::PerTeam(tm), [&]() {
       for (int s=0; s<nsg; ++s) {
@@ -870,7 +1152,10 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
         if (!RTCol3Inv5(Bh, Bi)) {
           for (int r=0; r<5; ++r) {
             c.rd(m,k,j,b0+DR+r) = 0.0;
-            for (int col=0; col<5; ++col) c.rd(m,k,j,b0+GR+5*r+col) = 0.0;
+            for (int col=0; col<5; ++col) {
+              c.rd(m,k,j,b0+GR+5*r+col) = 0.0;
+              if (c.reuse > 0) c.rd(m,k,j,b0+RU+5*r+col) = 0.0;
+            }
           }
           continue;
         }
@@ -882,6 +1167,7 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
             Real g = 0.0;
             for (int t=0; t<5; ++t) g += Bi[r][t]*Ch[t][col];
             c.rd(m,k,j,b0+GR+5*r+col) = g;
+            if (c.reuse > 0) c.rd(m,k,j,b0+RU+5*r+col) = Bi[r][col];
           }
         }
       }
@@ -1105,6 +1391,10 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
     Kokkos::atomic_add(&c.stat(0), static_cast<Real>(nit));
     Kokkos::atomic_add(&c.stat(1), 1.0);
     Kokkos::atomic_max(&c.stat(2), static_cast<Real>(nit));
+    if (c.reuse > 0) {                        // problem/rt_impl_reuse accounting
+      Kokkos::atomic_add(&c.stat(22), static_cast<Real>(nrefac));
+      Kokkos::atomic_add(&c.stat(23), static_cast<Real>(nreuse));
+    }
     Kokkos::atomic_max(&c.stat(4), dbmax);
     Kokkos::atomic_max(&c.stat(5), rtmax);
     Kokkos::atomic_max(&c.stat(18), ubmax);

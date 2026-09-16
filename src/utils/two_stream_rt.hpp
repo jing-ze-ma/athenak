@@ -710,6 +710,18 @@ inline bool rt_impl_fixit = false;
 // this many passes, 0 = never.  The radiative part of the diagonal is exact and frozen
 // already, so this only quasi-Newtons the thin cells.
 inline int rt_impl_cvfreeze = 0;
+// problem/rt_impl_reuse: REUSE THE BLOCK FACTORISATION across Newton passes.  The
+// Jacobian of the column system is constant in the iterate except for the single entry
+// de/db (the gas heat capacity), and the right-hand side is one number per cell -- the
+// energy-row residual -- so a pass that keeps pass 1's factors costs a residual
+// evaluation and two small matrix-vector products instead of the whole assembly,
+// factorisation and reduced elimination.  1 = reuse with a contraction check (the pass
+// refactorises when the residual failed to fall by a factor 0.3), 2 = reuse always
+// (diagnostic).  0 (the default) is the old code, bitwise.  The converged answer is the
+// same root of the same residual to the same tolerance; only the iterates between the
+// first and the last differ, at O(the frozen de/db), like rt_impl_cvfreeze.  The
+// PARTITIONED path (rt_impl_solver = pcr) only; thomas is refused.
+inline int rt_impl_reuse = 0;
 // problem/rt_impl_tau_min: THE TWO-LEVEL SPLIT.  Only a cell whose OWN Rosseland optical
 // depth kappa rho dr reaches this goes into the tridiagonal.  Linearising the emission
 // about the current state gives dT ~ (T/4)(A/E), which diverges as the cell's own
@@ -2627,12 +2639,24 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
           // is the serial block Thomas, to round-off.
           const bool c3par = (rt_impl_solver == 1);
           const bool c3rp = c3par && rt_impl_redpar;
-          const int c3nrd = c3rp ? RTCOL3_NRDP : RTCOL3_NRD;
+          // problem/rt_impl_reuse enlarges BOTH workspaces (the per-cell factors v, M
+          // and the reduced solve's own stored factors); with the switch off not a word
+          // is added.  The serial (thomas) path does not implement it.
+          if (rt_impl_reuse > 0 && !c3par) {
+            std::cout << "### FATAL ERROR in two_stream_rt: problem/rt_impl_reuse "
+                      << "requires problem/rt_impl_solver = pcr (the partitioned column "
+                      << "solver); the thomas path does not store the factorisation."
+                      << std::endl;
+            std::exit(EXIT_FAILURE);
+          }
+          const int c3nrd = (rt_impl_reuse > 0) ? (c3rp ? RTCOL3_NRDPU : RTCOL3_NRDU)
+                                                : (c3rp ? RTCOL3_NRDP : RTCOL3_NRD);
           int c3nseg = c3par ? rt_impl_nseg : 1;
           if (std::is_same<DevExeSpace, Kokkos::DefaultHostExecutionSpace>::value) {
             c3nseg = 1;
           }
-          const int c3nw = c3par ? RTCOL3_NWP : RTCOL3_NW;
+          const int c3nw = c3par ? ((rt_impl_reuse > 0) ? RTCOL3_NWPU : RTCOL3_NWP)
+                                 : RTCOL3_NW;
           if (rt_c3wk_ptr == nullptr) {
             // the partitioned path TRANSPOSES the workspace so that the fast index is
             // the one the threads of a team differ in; see RTCol3::Wk
@@ -2640,7 +2664,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
                 ? new DvceArray5D<Real>("rt_c3wk", nmb_c3, c3nw, n3, n2, n1)
                 : new DvceArray5D<Real>("rt_c3wk", nmb_c3, c3nw, n1, n3, n2);
             rt_c3top_ptr = new DvceArray4D<Real>("rt_c3top", nmb_c3, 2, n3, n2);
-            rt_c3stat_ptr = new DvceArray1D<Real>("rt_c3stat", 22);
+            rt_c3stat_ptr = new DvceArray1D<Real>("rt_c3stat", 24);
             // the warm-start history.  Zero-initialised, so "no history" is the state of
             // every cell on the first call and the fallback fires there by construction.
             const int wn1 = (rt_impl_warm > 0) ? n1 : 1;
@@ -2666,6 +2690,8 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
                         << " nseg " << c3nseg
                         << (c3rp ? " redpar" : "")
                         << " hybrid_tau " << rt_col3_hybrid_tau
+                        << (rt_impl_reuse > 0
+                            ? ((rt_impl_reuse > 1) ? " reuse(always)" : " reuse") : "")
                         << "; workspace " << wmb << " + " << rmb << " MB" << std::endl;
             }
           }
@@ -2763,6 +2789,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
           c3.ablate = rt_impl_ablate;
           c3.fixit = rt_impl_fixit;
           c3.cvfreeze = rt_impl_cvfreeze;
+          c3.reuse = rt_impl_reuse;
           c3.warm = rt_impl_warm;
           c3.bprev = c3bp;
           c3.bprev2 = c3bp2;
@@ -2820,6 +2847,8 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
                       << " sum|de|dx=" << hs(10)
                       << " ndiagviol=" << static_cast<int>(hs(11))
                       << " nwarmfb=" << static_cast<int>(hs(21))
+                      << " nrefac=" << hs(22)/ncol
+                      << " nreusepass=" << hs(23)/ncol
                       << " resid_max=" << hs(19)
                       << " resid_mean=" << hs(20)/ncol
                       << " budget_rel="
