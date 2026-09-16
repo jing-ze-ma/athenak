@@ -131,6 +131,114 @@ bool RTCol3Inv5(const Real a[5][5], Real inv[5][5]) {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn bool RTCol3Inv5X
+//! \brief the SAME 5x5 inverse, computed in the FACTOR type FT (problem/rt_impl_mixed).
+//!
+//! FT = Real is the default path and calls RTCol3Inv5 itself, so nothing about it moves.
+//! FT = float runs the Gauss-Jordan in single precision on the double-precision block,
+//! which is legitimate only because the inverse is used to form a Newton CORRECTION:
+//! the residual it is applied to, the convergence test and the state update all stay
+//! double, so a float factor is a preconditioner and the outer Newton is the iterative
+//! refinement that cleans up after it.  What single precision cannot survive is an
+//! ill-conditioned block, so the rows are EQUILIBRATED first (each divided by its own
+//! largest entry, which the seeded augmented half undoes exactly) and the pivots are
+//! then watched against 1: a block whose smallest pivot falls below 1e-5 -- four of
+//! float's seven digits gone -- is REDONE in double and rounded, which costs one extra
+//! block and is counted in stat(24).  Without the equilibration the test is meaningless
+//! (the energy row is decades larger than the transport rows) and fires on ~70 % of
+//! blocks: measured on the He column, and it cost 2.3x.
+
+template <typename FT>
+KOKKOS_INLINE_FUNCTION
+bool RTCol3Inv5X(const Real a[5][5], FT inv[5][5], int &nill) {
+  if constexpr (sizeof(FT) == sizeof(Real)) {
+    return RTCol3Inv5(a, reinterpret_cast<Real (*)[5]>(inv));
+  } else {
+    // ROW EQUILIBRATION FIRST.  The rows of this block are not commensurate -- the two
+    // transport rows have unit diagonals while the energy row carries rho c_v dT/db,
+    // which is many decades larger -- so a pivot magnitude only means something once
+    // each row is divided by its own largest entry.  Scaling row r by 1/s_r turns the
+    // system into (S A) x = S b, so seeding the augmented half with S instead of I
+    // returns A^-1 itself and the equilibration costs nothing downstream.
+    FT m[5][10];
+    for (int r=0; r<5; ++r) {
+      Real sm = 0.0;
+      for (int c=0; c<5; ++c) {
+        const Real av = fabs(a[r][c]);
+        if (av > sm) sm = av;
+      }
+      if (!(sm > 0.0)) return false;
+      const Real iv = 1.0/sm;
+      for (int c=0; c<5; ++c) {
+        m[r][c] = static_cast<FT>(a[r][c]*iv);
+        m[r][5+c] = (r == c) ? static_cast<FT>(iv) : static_cast<FT>(0);
+      }
+    }
+    const FT amax = static_cast<FT>(1);
+    FT pmin = amax;
+    bool ok = true;
+    for (int c=0; c<5; ++c) {
+      int p = c;
+      FT best = fabsf(m[c][c]);
+      for (int r=c+1; r<5; ++r) {
+        const FT v = fabsf(m[r][c]);
+        if (v > best) {
+          best = v;
+          p = r;
+        }
+      }
+      if (!(best > static_cast<FT>(0))) {
+        ok = false;
+        break;
+      }
+      if (best < pmin) pmin = best;
+      if (p != c) {
+        for (int q=0; q<10; ++q) {
+          const FT tmp = m[c][q];
+          m[c][q] = m[p][q];
+          m[p][q] = tmp;
+        }
+      }
+      const FT iv = static_cast<FT>(1)/m[c][c];
+      for (int q=0; q<10; ++q) m[c][q] *= iv;
+      for (int r=0; r<5; ++r) {
+        if (r == c) continue;
+        const FT f = m[r][c];
+        if (f != static_cast<FT>(0)) {
+          for (int q=0; q<10; ++q) m[r][q] -= f*m[c][q];
+        }
+      }
+    }
+    // THE FALLBACK: a block whose smallest pivot has lost ~all of float's digits, or
+    // whose inverse came back non-finite, is redone in double and rounded.
+    bool bad = !ok || !(pmin > static_cast<FT>(1.0e-5)*amax);
+    if (!bad) {
+      for (int r=0; r<5 && !bad; ++r) {
+        for (int c=0; c<5; ++c) {
+          if (!isfinite(m[r][5+c])) {
+            bad = true;
+            break;
+          }
+        }
+      }
+    }
+    if (bad) {
+      Real dv[5][5];
+      if (!RTCol3Inv5(a, dv)) return false;
+      for (int r=0; r<5; ++r) {
+        for (int c=0; c<5; ++c) inv[r][c] = static_cast<FT>(dv[r][c]);
+      }
+      ++nill;
+      return true;
+    }
+    for (int r=0; r<5; ++r) {
+      for (int c=0; c<5; ++c) inv[r][c] = m[r][5+c];
+    }
+    return true;
+  }
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn Real RTCol3ThetaDe
 //! \brief problem/rt_src_theta: re-centre the column's energy deposit in time.
 //!
@@ -216,6 +324,10 @@ struct RTCol3 {
   DvceArray4D<Real> wblend;       // (m,k,j,i) tau-blend face weight
   DvceArray3D<int>  icut;         // (m,k,j) the band cut
   DvceArray5D<Real> wk;           // the per-column workspace, see Wk()
+  // problem/rt_impl_mixed = 2: the FACTOR slots (G, H, d and the reuse pair v, M) live
+  // in their own SINGLE-precision workspace instead of in wk, which halves the memory
+  // traffic of every factor read and write.  Allocated only when the switch is 2.
+  DvceArray5D<float> wkf;
   // the PARTITIONED path only (problem/rt_impl_solver = pcr, see
   // two_stream_column_partition.hpp): the per-SEGMENT workspace of the reduced system,
   // (m, nseg*RTCOL3_NRD, k, j), and the number of segments = the Kokkos team size
@@ -254,6 +366,13 @@ struct RTCol3 {
   // reuse it (1 = with a contraction check, 2 = always).  Partitioned path only.
   int reuse = 0;
   Real reuse_rho = 0.3;           // problem/rt_impl_reuse_rho
+  // problem/rt_impl_mixed: 0 = today (everything double), 1 = the Newton CORRECTION is
+  // formed in single precision (the 5x5 inverses, the segment eliminations and the
+  // back-substitutions), 2 = and the stored factors are single precision too.  The
+  // residual, the convergence test, the Planck/kappa coefficients and the state update
+  // are double in every case, so the converged answer is set by rt_impl_tol, not by the
+  // factor type; see RTCol3Inv5X.  Partitioned path only.
+  int mixed = 0;
   int warm = 0;                   // problem/rt_impl_warm
   Real dtr = 1.0;                 // bdt/bdt_prev, the warm = 2 extrapolation ratio
   bool exjac = true;              // problem/rt_impl_exjac
@@ -384,6 +503,12 @@ struct RTCol3 {
     } else {
       return wk(m,n,i,k,j);
     }
+  }
+  //! the FACTOR workspace of problem/rt_impl_mixed = 2, compacted: G (15 slots), d (5),
+  //! H (15) and, with problem/rt_impl_reuse, v (5) and M (15).  See RTCol3TeamSolve.
+  KOKKOS_INLINE_FUNCTION
+  float &WkF(const int m, const int n, const int i, const int k, const int j) const {
+    return wkf(m,n,k,j,i);
   }
   KOKKOS_INLINE_FUNCTION
   Real Dx(const int m, const int k, const int j, const int i) const {

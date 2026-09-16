@@ -766,6 +766,19 @@ inline Real rt_impl_tau_blend = 1.0;
 //                            parallel.  Same system, same Newton, same clamps; the two
 //                            agree to round-off.  See two_stream_column_partition.hpp.
 inline int rt_impl_solver = 0;
+// problem/rt_impl_mixed: MIXED PRECISION in the partitioned column solve's block algebra.
+//   0 (default)  everything double -- bit for bit the code before the switch existed
+//   1            the Newton CORRECTION is formed in SINGLE precision: the 5x5 inverses
+//                (RTCol3Inv5X), the segment forward eliminations, the p/Q/R recurrence
+//                and the back-substitutions.  The residual, the convergence test, the
+//                layer/Planck/kappa coefficients, the reduced system and the u0(IEN)
+//                update stay double, so the outer Newton is an iterative refinement of
+//                the float factor and converges to the same rt_impl_tol.
+//   2            ... and the STORED factors (G, H, d, and the reuse pair v, M) live in
+//                their own float workspace, which halves their memory traffic.
+// A block whose float Gauss-Jordan loses its pivots is redone in double and counted in
+// stat(24) (nmixfb under rt_outer_verbose).  Partitioned path only.
+inline int rt_impl_mixed = 0;
 inline int rt_impl_nseg = 64;
 // problem/rt_impl_redpar: on the pcr path, the REDUCED block-tridiagonal system over the
 // segment boundaries (nsg 5x5 rows, non-periodic) is by default eliminated serially by
@@ -811,6 +824,7 @@ inline int rt_col3_split_w = 8;   // problem/rt_col3_split_w, thin cost / deep c
 // round-off rather than bitwise.  Costs one (warm = 1) or two (warm = 2) extra 4D arrays.
 inline int rt_impl_warm = 0;
 inline DvceArray5D<Real> *rt_c3wk_ptr = nullptr;
+inline DvceArray5D<float> *rt_c3wkf_ptr = nullptr;
 inline DvceArray4D<Real> *rt_c3rd_ptr = nullptr;
 inline DvceArray4D<Real> *rt_c3top_ptr = nullptr;
 inline DvceArray1D<Real> *rt_c3stat_ptr = nullptr;
@@ -2660,6 +2674,12 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
           // problem/rt_impl_reuse enlarges BOTH workspaces (the per-cell factors v, M
           // and the reduced solve's own stored factors); with the switch off not a word
           // is added.  The serial (thomas) path does not implement it.
+          if (rt_impl_mixed > 0 && !c3par) {
+            std::cout << "### FATAL ERROR in two_stream_rt: problem/rt_impl_mixed "
+                      << "requires problem/rt_impl_solver = pcr (the partitioned column "
+                      << "solver); the thomas path is double only." << std::endl;
+            std::exit(EXIT_FAILURE);
+          }
           if (rt_impl_reuse > 0 && !c3par) {
             std::cout << "### FATAL ERROR in two_stream_rt: problem/rt_impl_reuse "
                       << "requires problem/rt_impl_solver = pcr (the partitioned column "
@@ -2682,7 +2702,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
                 ? new DvceArray5D<Real>("rt_c3wk", nmb_c3, c3nw, n3, n2, n1)
                 : new DvceArray5D<Real>("rt_c3wk", nmb_c3, c3nw, n1, n3, n2);
             rt_c3top_ptr = new DvceArray4D<Real>("rt_c3top", nmb_c3, 2, n3, n2);
-            rt_c3stat_ptr = new DvceArray1D<Real>("rt_c3stat", 24);
+            rt_c3stat_ptr = new DvceArray1D<Real>("rt_c3stat", 26);
             // the warm-start history.  Zero-initialised, so "no history" is the state of
             // every cell on the first call and the fallback fires there by construction.
             const int wn1 = (rt_impl_warm > 0) ? n1 : 1;
@@ -2697,6 +2717,13 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
                                                  (rt_impl_warm > 1) ? wn1 : 1);
             rt_c3rd_ptr = new DvceArray4D<Real>("rt_c3rd", nmb_c3, n3, n2,
                                                 c3par ? c3nseg*c3nrd : 1);
+            // problem/rt_impl_mixed = 2: the compact SINGLE-precision factor workspace.
+            // Sized 1 when the switch is not 2, so nothing is added otherwise.
+            const int c3nwf = (rt_impl_mixed == 2)
+                ? ((rt_impl_reuse > 0) ? RTCOL3_NWFU : RTCOL3_NWF) : 1;
+            rt_c3wkf_ptr = (rt_impl_mixed == 2)
+                ? new DvceArray5D<float>("rt_c3wkf", nmb_c3, c3nwf, n3, n2, n1)
+                : new DvceArray5D<float>("rt_c3wkf", 1, 1, 1, 1, 1);
             if (global_variable::my_rank == 0) {
               const double wmb = static_cast<double>(nmb_c3)*c3nw*n1*n2*n3
                                  *sizeof(Real)/1.0e6;
@@ -2711,10 +2738,13 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
                         << (rt_col3_split_deep ? " split_deep" : "")
                         << (rt_impl_reuse > 0
                             ? ((rt_impl_reuse > 1) ? " reuse(always)" : " reuse") : "")
+                        << (rt_impl_mixed > 0
+                            ? ((rt_impl_mixed > 1) ? " mixed(2)" : " mixed(1)") : "")
                         << "; workspace " << wmb << " + " << rmb << " MB" << std::endl;
             }
           }
           auto c3wk = *rt_c3wk_ptr;
+          auto c3wkf = *rt_c3wkf_ptr;
           auto c3rd = *rt_c3rd_ptr;
           auto c3top = *rt_c3top_ptr;
           auto c3stat = *rt_c3stat_ptr;
@@ -2783,6 +2813,8 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
           c3.wblend = taublend ? w_g : DvceArray4D<Real>("rt_c3w_d",1,1,1,1);
           c3.icut = icut_g;
           c3.wk = c3wk;
+          c3.wkf = c3wkf;
+          c3.mixed = rt_impl_mixed;
           c3.rd = c3rd;
           c3.nseg = c3nseg;
           c3.redpar = c3rp;
@@ -2871,6 +2903,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
                       << " nwarmfb=" << static_cast<int>(hs(21))
                       << " nrefac=" << hs(22)/ncol
                       << " nreusepass=" << hs(23)/ncol
+                      << " nmixfb=" << static_cast<int>(hs(24))
                       << " resid_max=" << hs(19)
                       << " resid_mean=" << hs(20)/ncol
                       << " budget_rel="
