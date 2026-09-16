@@ -460,6 +460,21 @@ int rt_col3_sub_ = 1;
 DvceArray6D<Real> rtimex_src_;
 bool cool_on_ = true;     // the Newton cooling layer (off by default once RT is on)
 Real rgas_ = 0.0;         // R/mu in code units; the ideal branch's T = p/(Rgas rho)
+// --- THE LINEAR f-MODE TEST (problem/seed_fmode_amp, problem/fmode_hist) ------------
+// A single horizontal Fourier mode (m,n) of the box, seeded in v1 with the surface-
+// gravity-wave depth eigenfunction exp(k_h (z - z_top)), and a pair of history columns
+// that project v1 back onto that mode.  Both are inert at their defaults: with
+// seed_fmode_amp = 0 the initial state is bit-for-bit the unseeded one, and with
+// fmode_hist false the history carries exactly the columns it carried before.  The
+// point of the diagnostic is that the (m,n) amplitude of a LINEAR mode is a clean
+// exponentially-damped/growing sinusoid, so ln|a| against t measures the scheme's
+// numerical damping rate directly.
+int fm_m_ = 1, fm_n_ = 1;        // the horizontal mode numbers of the projection
+Real fm_kx_ = 0.0, fm_ky_ = 0.0; // 2 pi m / Lx, 2 pi n / Ly
+Real fm_kh_ = 0.0;               // sqrt(kx^2 + ky^2)
+Real fm_ztop_ = 0.0;             // x1max: the reference depth of the eigenfunction
+Real fm_x2min_ = 0.0, fm_x3min_ = 0.0;
+bool fm_hist_ = false;           // write the two projection columns
 // --- the per-column emergent-flux surface dump (problem/rt_surface_dt) --------------
 Real surf_dt_ = 0.0;             // <= 0 disables it
 Real surf_next_ = -1.0;          // next dump time; armed at the first source call
@@ -988,6 +1003,21 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   const Real rho_b = pin->GetReal("problem", "rho_base");
   const Real t_b = pin->GetReal("problem", "t_base");
   const Real vpert = pin->GetOrAddReal("problem", "vpert", 0.0);
+  // --- the linear f-mode seed and its history projection (see the globals above)
+  const Real fmamp = pin->GetOrAddReal("problem", "seed_fmode_amp", 0.0);
+  fm_m_ = pin->GetOrAddInteger("problem", "seed_fmode_m", 1);
+  fm_n_ = pin->GetOrAddInteger("problem", "seed_fmode_n", 1);
+  fm_hist_ = pin->GetOrAddBoolean("problem", "fmode_hist", (fmamp > 0.0));
+  // re-integrate the supplied ic_profile into EXACT hydrostatic balance under whatever
+  // EOS is in force, keeping its T(z); needed when the EOS is changed under a profile
+  // that was relaxed with a different one (the radiation-free linear f-mode test)
+  const int hse_retune = pin->GetOrAddInteger("problem", "ic_hse_retune", 0);
+  if (hse_retune < 0 || hse_retune > 2) {
+    std::cout << "### FATAL ERROR in box_convection: problem/ic_hse_retune must be 0 "
+              << "(off), 1 (keep T(z), solve p) or 2 (keep rho(z), solve p and T)"
+              << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
   const int nk = pin->GetOrAddInteger("problem", "vpert_nk", 16);
   const int kseed = pin->GetOrAddInteger("problem", "vpert_seed", 1234);
   const int nfine = pin->GetOrAddInteger("problem", "nfine", 8192);
@@ -1148,6 +1178,80 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       std::cout << "box_convection: initial stratification READ FROM " << icprof
                 << " (" << zf.size() << " nodes); the isentropic march is overridden"
                 << std::endl;
+    }
+  }
+  // --- problem/ic_hse_retune: RE-INTEGRATE the column into hydrostatic balance.
+  // The march above is hydrostatic by construction, but a profile READ from a file is
+  // only hydrostatic under the EOS it was relaxed with.  Change the EOS -- e.g. move the
+  // LTE radiation taper so that aT^4 is carried at every density -- and the same (rho,e)
+  // column is no longer in balance where the change bites.  This keeps the column's own
+  // T(z) (the thermal structure is what the file is FOR) and re-solves dp/dz = -rho g
+  // downward from the top node, with rho = rho(p,T) from the live EOS at every step:
+  // RK2 midpoint in ln p on the same fine grid the march uses, so the result is
+  // hydrostatic to the same order as the march and no better.
+  if (hse_retune > 0) {
+    auto cd_dv = cd.d_view, ce_dv = ce.d_view, cp_dv = cp.d_view, ct_dv = ct.d_view;
+    const int nf = nfine;
+    const int hmode = hse_retune;
+    par_for("boxconv_hse", DevExeSpace(), 0, 0, KOKKOS_LAMBDA(int) {
+      Real pc = cp_dv(nf-1);
+      if (hmode == 1) {
+        // MODE 1 -- keep T(z), solve for p.  RK2 midpoint in ln p, rho = rho(p,T) from
+        // the live EOS.  Fails by construction wherever the supplied T(z) makes the LTE
+        // aT^4/3 alone exceed the hydrostatic p: there is then no rho >= 0 that fits.
+        for (int i=nf-2; i>=0; --i) {
+          const Real tm = 0.5*(ct_dv(i) + ct_dv(i+1));
+          Real d = pgen_eos::DensFromPT(eos, rgas, pc, ct_dv(i+1));
+          Real dlnp = -d*g0/pc;
+          const Real pm = pc*exp(-0.5*dzf*dlnp);
+          d = pgen_eos::DensFromPT(eos, rgas, pm, tm);
+          dlnp = -d*g0/pm;
+          pc = pc*exp(-dzf*dlnp);
+          cp_dv(i) = pc;
+        }
+        for (int i=0; i<nf; ++i) {
+          const Real d = pgen_eos::DensFromPT(eos, rgas, cp_dv(i), ct_dv(i));
+          cd_dv(i) = d;
+          ce_dv(i) = pgen_eos::EintFromDensT(eos, rgas, igm1, d, ct_dv(i));
+        }
+      } else {
+        // MODE 2 -- keep rho(z), solve for p AND T.  This is the one that always has a
+        // solution: at fixed rho the EOS pressure is strictly increasing in T from 0 to
+        // unbounded, so a bisection in log T always brackets the hydrostatic p.  It also
+        // leaves the DEEP column alone: dp/dz = -rho g is unchanged wherever rho is, so
+        // p moves only by the constant the lid's missing radiative support contributes,
+        // which is negligible against the deep pressure.  The trapezoidal integration is
+        // exact for the piecewise-linear rho the fine grid carries.
+        for (int i=nf-2; i>=0; --i) {
+          pc += 0.5*dzf*g0*(cd_dv(i) + cd_dv(i+1));
+          cp_dv(i) = pc;
+        }
+        for (int i=0; i<nf; ++i) {
+          const Real d = cd_dv(i);
+          Real tlo = 1.0e-3*ct_dv(i), thi = 1.0e3*ct_dv(i);
+          for (int it=0; it<80; ++it) {
+            const Real tmid = sqrt(tlo*thi);
+            const Real em = pgen_eos::EintFromDensT(eos, rgas, igm1, d, tmid);
+            const Real pm = pgen_eos::PresFromEint(eos, gamma - 1.0, d, em);
+            if (pm < cp_dv(i)) { tlo = tmid; } else { thi = tmid; }
+          }
+          const Real tk = sqrt(tlo*thi);
+          ct_dv(i) = tk;
+          ce_dv(i) = pgen_eos::EintFromDensT(eos, rgas, igm1, d, tk);
+          cp_dv(i) = pgen_eos::PresFromEint(eos, gamma - 1.0, d, ce_dv(i));
+        }
+      }
+    });
+    ct.modify_device();  ct.sync_host();
+    cd.modify_device();  cd.sync_host();
+    ce.modify_device();  ce.sync_host();
+    cp.modify_device();  cp.sync_host();
+    if (global_variable::my_rank == 0) {
+      std::cout << "box_convection: problem/ic_hse_retune = true, the column was "
+                << "RE-INTEGRATED into hydrostatic balance under the live EOS at fixed "
+                << ((hse_retune == 1) ? "T(z)" : "rho(z)") << ", downward from p(top) = "
+                << cp.h_view(nfine-1) << "; base (rho,T,p) = " << cd.h_view(i0) << " "
+                << ct.h_view(i0) << " " << cp.h_view(i0) << std::endl;
     }
   }
   cd_ = cd.d_view; ce_ = ce.d_view; cp_ = cp.d_view; ct_ = ct.d_view;
@@ -1842,6 +1946,32 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   const Real x2min_m = pmy_mesh_->mesh_size.x2min, x2max_m = pmy_mesh_->mesh_size.x2max;
   const Real x3min_m = pmy_mesh_->mesh_size.x3min, x3max_m = pmy_mesh_->mesh_size.x3max;
   const Real lz = zmax - zmin;
+  // --- problem/seed_fmode_amp: the LINEAR SURFACE-GRAVITY-WAVE SEED.  One horizontal
+  // Fourier mode (m,n) of the box, in the vertical velocity only, with the f-mode's own
+  // depth eigenfunction exp(k_h (z - z_top)).  Density and pressure are left alone: the
+  // mode sorts its own thermodynamic part out within the first period, at the cost of
+  // shedding half the seed into the counter-propagating branch, which is irrelevant to
+  // a growth rate measured over periods 1-4.  The amplitude is in units of the sound
+  // speed at the TOP of the box, where the eigenfunction peaks.
+  fm_kx_ = 2.0*M_PI*fm_m_/(x2max_m - x2min_m);
+  fm_ky_ = (indcs.nx3 > 1) ? (2.0*M_PI*fm_n_/(x3max_m - x3min_m)) : 0.0;
+  fm_kh_ = std::sqrt(fm_kx_*fm_kx_ + fm_ky_*fm_ky_);
+  fm_ztop_ = zmax;  fm_x2min_ = x2min_m;  fm_x3min_ = x3min_m;
+  Real cs_top = 0.0;
+  {
+    int it = static_cast<int>((zmax - zlo)/dzf);
+    it = (it < 0) ? 0 : ((it > nfine-1) ? nfine-1 : it);
+    const Real dtop = cd.h_view(it), ptop = cp.h_view(it);
+    cs_top = std::sqrt(pgen_eos::HostGamma1FromP(eos, dtop, ptop)*ptop/dtop);
+  }
+  const Real fm_kx = fm_kx_, fm_ky = fm_ky_, fm_kh = fm_kh_;
+  const Real fm_v0 = fmamp*cs_top;
+  if (global_variable::my_rank == 0 && fmamp > 0.0) {
+    std::printf("box_convection: f-MODE SEED (%d,%d)  k_h = %.5e cm^-1  "
+                "omega^2 = g k_h = %.5e s^-2  P = %.4f s  amp = %.3e c_s(top) "
+                "= %.5e cm/s\n", fm_m_, fm_n_, fm_kh_, g0*fm_kh_,
+                2.0*M_PI/std::sqrt(g0*fm_kh_), fmamp, fm_v0);
+  }
   par_for("boxconv_ic", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1, 0, n1m1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real x1min = size.d_view(m).x1min, x1max = size.d_view(m).x1max;
@@ -1867,6 +1997,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                              + md_d(n,3));
       }
       v1 = vpert*cs*sin(M_PI*(z - zmin)/lz)*amp;
+    }
+    if (fm_v0 > 0.0 && z > zmin && z < zmax) {
+      v1 += fm_v0*exp(fm_kh*(z - zmax))*cos(fm_kx*(x2v - x2min_m))
+                                       *cos(fm_ky*(x3v - x3min_m));
     }
     u0(m,IDN,k,j,i) = d;
     u0(m,IM1,k,j,i) = d*v1;
@@ -2420,13 +2554,66 @@ void BoxConvRTImEx(Mesh *pm, Driver *pd, const int estage) {
 //! call of the cycle -- which is what the history is called after.
 
 void BoxConvHistory(HistoryData *pdata, Mesh *pm) {
-  pdata->nhist = 5;
+  pdata->nhist = 5 + (fm_hist_ ? 2 : 0);
   pdata->label[0] = "Ftop";
   pdata->label[1] = "Ftop2";
   pdata->label[2] = "Fcut";
   pdata->label[3] = "Ttop";
   pdata->label[4] = "Ttop2";
+  if (fm_hist_) {
+    pdata->label[5] = "fmAc";
+    pdata->label[6] = "fmAs";
+  }
   for (int n=0; n<pdata->nhist; ++n) pdata->hdata[n] = 0.0;
+
+  // --- problem/fmode_hist: the (m,n) amplitude of the vertical velocity, projected
+  // with the f-mode's own depth weight exp(k_h (z - z_top)).  fmAc is the cos.cos
+  // projection (the phase the seed is written in) and fmAs the sin.sin one, which the
+  // seed leaves at zero and which is therefore a free control on how much of the signal
+  // is the seeded mode and how much is everything else at the same |k|.  Both are box
+  // means in cm/s: the 4/N normalisation makes fmAc equal the weighted-mean amplitude of
+  // a pure cos.cos mode.  The cells are uniform on this mesh, so a cell count IS the
+  // volume weight.
+  if (fm_hist_) {
+    MeshBlockPack *pmbp = pm->pmb_pack;
+    auto &indcs = pm->mb_indcs;
+    const int is = indcs.is, js = indcs.js, ks = indcs.ks;
+    const int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
+    const int ncell = pmbp->nmb_thispack*nx3*nx2*nx1;
+    auto &size = pmbp->pmb->mb_size;
+    auto &w0 = pmbp->phydro->w0;
+    const Real kx = fm_kx_, ky = fm_ky_, kh = fm_kh_;
+    const Real ztop = fm_ztop_, x2m = fm_x2min_, x3m = fm_x3min_;
+    const Real inc = 4.0/(static_cast<Real>(pm->mesh_indcs.nx1)*
+                          static_cast<Real>(pm->mesh_indcs.nx2)*
+                          static_cast<Real>(pm->mesh_indcs.nx3));
+    array_sum::GlobalSum sum_fm;
+    Kokkos::parallel_reduce("boxconv_fmhist",
+    Kokkos::RangePolicy<>(DevExeSpace(), 0, ncell),
+    KOKKOS_LAMBDA(const int idx, array_sum::GlobalSum &mb_sum) {
+      const int m = idx/(nx3*nx2*nx1);
+      const int r = idx - m*(nx3*nx2*nx1);
+      const int k = ks + r/(nx2*nx1);
+      const int r2 = r - (r/(nx2*nx1))*(nx2*nx1);
+      const int j = js + r2/nx1;
+      const int i = is + r2 - (r2/nx1)*nx1;
+      const Real x1min = size.d_view(m).x1min, x1max = size.d_view(m).x1max;
+      const Real x2min = size.d_view(m).x2min, x2max = size.d_view(m).x2max;
+      const Real x3min = size.d_view(m).x3min, x3max = size.d_view(m).x3max;
+      const Real z = CellCenterX(i-is, nx1, x1min, x1max);
+      const Real x2v = CellCenterX(j-js, nx2, x2min, x2max);
+      const Real x3v = CellCenterX(k-ks, nx3, x3min, x3max);
+      const Real wz = exp(kh*(z - ztop))*w0(m,IVX,k,j,i);
+      array_sum::GlobalSum hvars;
+      for (int n=0; n<NHISTORY_VARIABLES; ++n) hvars.the_array[n] = 0.0;
+      hvars.the_array[5] = inc*wz*cos(kx*(x2v - x2m))*cos(ky*(x3v - x3m));
+      hvars.the_array[6] = inc*wz*sin(kx*(x2v - x2m))*sin(ky*(x3v - x3m));
+      mb_sum += hvars;
+    }, Kokkos::Sum<array_sum::GlobalSum>(sum_fm));
+    Kokkos::fence();
+    pdata->hdata[5] = sum_fm.the_array[5];
+    pdata->hdata[6] = sum_fm.the_array[6];
+  }
   if (!rt_on_ || !two_stream_rt::rt_face_flux_ready()) return;
 
   MeshBlockPack *pmbp = pm->pmb_pack;
