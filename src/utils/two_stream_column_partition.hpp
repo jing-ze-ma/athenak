@@ -174,7 +174,7 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
 
   // ---- 1. the frozen per-cell layer coefficients, and b^0 --------------------------
   Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, nsg), [&](const int s) {
-    const int i0 = ic + (nc*s)/nsg, i1 = ic + (nc*(s+1))/nsg - 1;
+    const int i0 = c.SegStart(s,ic,nc,nsg,ib), i1 = c.SegStart(s+1,ic,nc,nsg,ib) - 1;
     for (int i=i0; i<=i1; ++i) {
       const Real h = c.Ht(m,k,j,i);
       for (int q=0; q<nq; ++q) {
@@ -219,7 +219,7 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
 
   // ---- 3. the tau-blend handover, frozen from the entry-state sweep -----------------
   Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, nsg), [&](const int s) {
-    const int i0 = ic + (nc*s)/nsg, i1 = ic + (nc*(s+1))/nsg - 1;
+    const int i0 = c.SegStart(s,ic,nc,nsg,ib), i1 = c.SegStart(s+1,ic,nc,nsg,ib) - 1;
     for (int i=i0; i<=i1; ++i) {
       Real ex = 0.0;
       if (c.taublend) {
@@ -268,7 +268,7 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
     // accumulate, so they are not repeated and their cost is not measured here.
     for (int rep=(c.ablate & 1); rep>=0; --rep) {
     Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, nsg), [&](const int s) {
-      const int i0 = ic + (nc*s)/nsg, i1 = ic + (nc*(s+1))/nsg - 1;
+      const int i0 = c.SegStart(s,ic,nc,nsg,ib), i1 = c.SegStart(s+1,ic,nc,nsg,ib) - 1;
       if (i1 < ib) return;                    // a wholly DEEP segment: no two-stream here
       const int t0 = (i0 > ib) ? i0 : ib;     // this segment's bottom THIN cell
       Real L[2] = {0.0, 0.0}, hg[2] = {1.0, 1.0};
@@ -317,7 +317,7 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
       Real de[2], ue[2];
       for (int q=0; q<nq; ++q) de[q] = Dtop[q];
       for (int s=nsg-1; s>=0; --s) {
-        const int i0 = ic + (nc*s)/nsg, i1 = ic + (nc*(s+1))/nsg - 1;
+        const int i0 = c.SegStart(s,ic,nc,nsg,ib), i1 = c.SegStart(s+1,ic,nc,nsg,ib) - 1;
         if (i1 < ib) continue;
         const int t0 = (i0 > ib) ? i0 : ib;
         for (int q=0; q<nq; ++q) c.rd(m,k,j,s*nrd+DE+q) = de[q];
@@ -327,7 +327,7 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
       }
       for (int q=0; q<nq; ++q) ue[q] = c.Wk<true>(m,BB,ib,k,j) + Ucut_i[q];
       for (int s=0; s<nsg; ++s) {
-        const int i1 = ic + (nc*(s+1))/nsg - 1;
+        const int i1 = c.SegStart(s+1,ic,nc,nsg,ib) - 1;
         if (i1 < ib) continue;
         for (int q=0; q<nq; ++q) c.rd(m,k,j,s*nrd+UE+q) = ue[q];
         for (int q=0; q<nq; ++q) {
@@ -338,7 +338,7 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
     tm.team_barrier();
     // and the correction each cell owes to its segment's entry value
     Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, nsg), [&](const int s) {
-      const int i0 = ic + (nc*s)/nsg, i1 = ic + (nc*(s+1))/nsg - 1;
+      const int i0 = c.SegStart(s,ic,nc,nsg,ib), i1 = c.SegStart(s+1,ic,nc,nsg,ib) - 1;
       if (i1 < ib) return;
       const int t0 = (i0 > ib) ? i0 : ib;
       Real de[2], ue[2];
@@ -375,7 +375,7 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
                         - c.Wk<true>(m,DD+q,ib,k,j));
       }
       Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, nsg), [&](const int s) {
-        const int i0 = ic + (nc*s)/nsg, i1 = ic + (nc*(s+1))/nsg - 1;
+        const int i0 = c.SegStart(s,ic,nc,nsg,ib), i1 = c.SegStart(s+1,ic,nc,nsg,ib) - 1;
         const int d1 = (i1 < ib-1) ? i1 : (ib-1);
         for (int i=i0; i<=d1; ++i) {
           Real flo = fbot;
@@ -389,7 +389,7 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
       });
       tm.team_barrier();
       Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, nsg), [&](const int s) {
-        const int i0 = ic + (nc*s)/nsg, i1 = ic + (nc*(s+1))/nsg - 1;
+        const int i0 = c.SegStart(s,ic,nc,nsg,ib), i1 = c.SegStart(s+1,ic,nc,nsg,ib) - 1;
         const int d1 = (i1 < ib-1) ? i1 : (ib-1);
         for (int i=i0; i<=d1; ++i) {
           const Real fhi = (i + 1 < ib) ? c.Wk<true>(m,FL,i+1,k,j) : fif;
@@ -442,7 +442,8 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
         rpre = 0.0;
         Kokkos::parallel_reduce(Kokkos::TeamThreadRange(tm, nsg),
         [&](const int s, Real &rmx) {
-          const int i0 = ic + (nc*s)/nsg, i1 = ic + (nc*(s+1))/nsg - 1;
+          const int i0 = c.SegStart(s,ic,nc,nsg,ib);
+          const int i1 = c.SegStart(s+1,ic,nc,nsg,ib) - 1;
           for (int i=i0; i<=i1; ++i) {
             const Real rr = c.ResidRel<true>(m, k, j, i, eoff);
             if (rr > rmx) rmx = rr;
@@ -479,7 +480,7 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
     rmax = 0.0;
     Kokkos::parallel_reduce(Kokkos::TeamThreadRange(tm, nsg),
     [&](const int s, Real &rmx) {
-      const int i0 = ic + (nc*s)/nsg, i1 = ic + (nc*(s+1))/nsg - 1;
+      const int i0 = c.SegStart(s,ic,nc,nsg,ib), i1 = c.SegStart(s+1,ic,nc,nsg,ib) - 1;
       Real Gp[5][3], Hp[5][3], dp[5];
       for (int i=i0; i<=i1; ++i) {
         if (i < ib) {
@@ -705,7 +706,7 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
       ++nreuse;
       rmax = rpass;
       Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, nsg), [&](const int s) {
-        const int i0 = ic + (nc*s)/nsg, i1 = ic + (nc*(s+1))/nsg - 1;
+        const int i0 = c.SegStart(s,ic,nc,nsg,ib), i1 = c.SegStart(s+1,ic,nc,nsg,ib) - 1;
         Real dp[5] = {0.0, 0.0, 0.0, 0.0, 0.0};
         for (int i=i0; i<=i1; ++i) {
           const Real rv4 = c.ResidRaw<true>(m, k, j, i);
@@ -781,7 +782,7 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
       // stored per round, and the decoupled solve at the end is one stored inverse.
       Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, nsg), [&](const int s) {
         const int b0 = s*nrd, pb = b0 + PA;
-        const int i1 = ic + (nc*(s+1))/nsg - 1;
+        const int i1 = c.SegStart(s+1,ic,nc,nsg,ib) - 1;
         Real rh[5];
         for (int r=0; r<5; ++r) rh[r] = c.Wk<true>(m,DP+r,i1,k,j);
         if (s + 1 < nsg) {
@@ -829,7 +830,7 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
       tm.team_barrier();
       Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, nsg), [&](const int s) {
         const int b0 = s*nrd, pb = b0 + PA + pcur*PSTR;
-        const int i1 = ic + (nc*(s+1))/nsg - 1;
+        const int i1 = c.SegStart(s+1,ic,nc,nsg,ib) - 1;
         Real y[5];
         for (int r=0; r<5; ++r) {
           Real sy = 0.0;
@@ -860,7 +861,7 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
       // difference the partitioned path already carries, and zero once converged).
       Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, nsg), [&](const int s) {
         const int b0 = s*nrd, pb = b0 + PA;
-        const int i1 = ic + (nc*(s+1))/nsg - 1;
+        const int i1 = c.SegStart(s+1,ic,nc,nsg,ib) - 1;
         Real Bh[5][5], Ch[5][5], Ah[5][5], rh[5];
         for (int r=0; r<5; ++r) {
           rh[r] = c.Wk<true>(m,DP+r,i1,k,j);
@@ -1005,7 +1006,7 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
       // every lane now holds a DECOUPLED 5x5 row: y_s = B_s^-1 r_s, then the clamp
       Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, nsg), [&](const int s) {
         const int b0 = s*nrd, pb = b0 + PA + pcur*PSTR;
-        const int i1 = ic + (nc*(s+1))/nsg - 1;
+        const int i1 = c.SegStart(s+1,ic,nc,nsg,ib) - 1;
         Real Bm[5][5], Bi[5][5], y[5];
         for (int r=0; r<5; ++r) {
           for (int col=0; col<5; ++col) Bm[r][col] = c.rd(m,k,j,pb+25+5*r+col);
@@ -1042,7 +1043,7 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
     Kokkos::single(Kokkos::PerTeam(tm), [&]() {
       for (int s=0; s<nsg; ++s) {
         const int b0 = s*nrd;
-        const int i1 = ic + (nc*(s+1))/nsg - 1;
+        const int i1 = c.SegStart(s+1,ic,nc,nsg,ib) - 1;
         Real rh[5];
         for (int r=0; r<5; ++r) rh[r] = c.Wk<true>(m,DP+r,i1,k,j);
         if (s + 1 < nsg) {
@@ -1076,7 +1077,7 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
       for (int r=0; r<5; ++r) ynext[r] = 0.0;
       for (int s=nsg-1; s>=0; --s) {
         const int b0 = s*nrd;
-        const int i1 = ic + (nc*(s+1))/nsg - 1;
+        const int i1 = c.SegStart(s+1,ic,nc,nsg,ib) - 1;
         Real y[5];
         for (int r=0; r<5; ++r) {
           Real sy = c.rd(m,k,j,b0+DR+r);
@@ -1104,7 +1105,7 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
     Kokkos::single(Kokkos::PerTeam(tm), [&]() {
       for (int s=0; s<nsg; ++s) {
         const int b0 = s*nrd;
-        const int i1 = ic + (nc*(s+1))/nsg - 1;
+        const int i1 = c.SegStart(s+1,ic,nc,nsg,ib) - 1;
         Real Bh[5][5], Ch[5][5], rh[5];
         for (int r=0; r<5; ++r) {
           rh[r] = c.Wk<true>(m,DP+r,i1,k,j);
@@ -1176,7 +1177,7 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
       for (int r=0; r<5; ++r) ynext[r] = 0.0;
       for (int s=nsg-1; s>=0; --s) {
         const int b0 = s*nrd;
-        const int i1 = ic + (nc*(s+1))/nsg - 1;
+        const int i1 = c.SegStart(s+1,ic,nc,nsg,ib) - 1;
         Real y[5];
         for (int r=0; r<5; ++r) {
           Real sy = c.rd(m,k,j,b0+DR+r);
@@ -1206,7 +1207,7 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
     Real dbm = 0.0;
     Kokkos::parallel_reduce(Kokkos::TeamThreadRange(tm, nsg),
     [&](const int s, Real &dmx) {
-      const int i0 = ic + (nc*s)/nsg, i1 = ic + (nc*(s+1))/nsg - 1;
+      const int i0 = c.SegStart(s,ic,nc,nsg,ib), i1 = c.SegStart(s+1,ic,nc,nsg,ib) - 1;
       const int b0 = s*nrd;
       int ncl = 0;
       Real yL[3] = {0.0, 0.0, 0.0};
@@ -1301,7 +1302,7 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
   // ---- 5. apply, and the column energy budget --------------------------------------
   tm.team_barrier();
   Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, nsg), [&](const int s) {
-    const int i0 = ic + (nc*s)/nsg, i1 = ic + (nc*(s+1))/nsg - 1;
+    const int i0 = c.SegStart(s,ic,nc,nsg,ib), i1 = c.SegStart(s+1,ic,nc,nsg,ib) - 1;
     const int b0 = s*nrd;
     Real budget = 0.0, bscale = 0.0, rtmax = 0.0, ubmax = 0.0;
     Real rhsum = 0.0, srsum = 0.0;

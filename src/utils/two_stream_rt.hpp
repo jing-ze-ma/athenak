@@ -790,6 +790,15 @@ inline bool rt_impl_redpar = false;
 // rt_impl_solver = pcr the deep segments run a scalar partitioned Thomas and the reduced
 // system has mixed block sizes.  See two_stream_column_partition.hpp.
 inline Real rt_col3_hybrid_tau = 0.0;
+// problem/rt_col3_split_deep: BALANCE the partitioned path's segments by WORK.  The
+// hybrid makes a deep cell a scalar row, but the team's segments are equal in CELLS and
+// every phase ends on a team barrier, so the lanes that hold the thin cells still carry
+// nc/nseg full 5x5 rows and the pass costs what it did with the hybrid off -- the 1.09x.
+// With this switch a thin cell counts rt_col3_split_w deep cells when the boundaries are
+// laid out, the thin cells spread over all nseg lanes, and the critical path falls to
+// about n_thin/nseg 5x5 rows.  Partition only: the answer moves by round-off.
+inline bool rt_col3_split_deep = false;
+inline int rt_col3_split_w = 8;   // problem/rt_col3_split_w, thin cost / deep cost
 // problem/rt_impl_warm: WARM-START the mode-3 Newton from the previous call's converged
 // Planck function instead of from the entry state's.  0 = off (bitwise the old code),
 // 1 = the previous converged b per cell, 2 = linear extrapolation in time from the last
@@ -2695,6 +2704,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
                         << " nseg " << c3nseg
                         << (c3rp ? " redpar" : "")
                         << " hybrid_tau " << rt_col3_hybrid_tau
+                        << (rt_col3_split_deep ? " split_deep" : "")
                         << (rt_impl_reuse > 0
                             ? ((rt_impl_reuse > 1) ? " reuse(always)" : " reuse") : "")
                         << "; workspace " << wmb << " + " << rmb << " MB" << std::endl;
@@ -2823,6 +2833,8 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
           c3.direct = rt_src_direct;
           c3.ex_iter = rt_col3_ex_iter;
           c3.hyb_tau = rt_col3_hybrid_tau;
+          c3.split_deep = rt_col3_split_deep;
+          c3.split_w = rt_col3_split_w;
           c3.wrflux = skipsweep_ || (fcen_ > 0);
           c3.theta = rt_src_theta;
           c3.dump = rt_outer_verbose && (pm->ncycle == 0);

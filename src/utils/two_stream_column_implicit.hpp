@@ -311,6 +311,20 @@ struct RTCol3 {
   // solved as DIFFUSION (1 unknown per cell) instead of as the full two-stream.
   // 0 = off, bitwise the whole-column solve.  See RTCol3Hyb.
   Real hyb_tau = 0.0;
+  // problem/rt_col3_split_deep: BALANCE the partitioned path's segments by WORK rather
+  // than by cell count.  The hybrid already makes a deep cell a scalar row, but the team
+  // splits [ic, ie] into nseg EQUAL segments and every phase runs behind a team barrier,
+  // so the wall time of a pass is the SLOWEST lane -- and the lanes holding the thin
+  // (two-stream) cells still carry nc/nseg full 5x5 cells each, exactly what they carried
+  // with the hybrid off.  That is why the hybrid measured only 1.09x.  With this switch a
+  // thin cell counts split_w times a deep one when the segment boundaries are laid out,
+  // so the ~n_thin two-stream cells are spread over ALL nseg lanes and the critical path
+  // falls from nc/nseg thin cells to about n_thin/nseg.  The partition is the only thing
+  // that changes: the spike composition is exact for the linear recurrence, so the answer
+  // moves by round-off only (and the clamp caveat of the partitioned path, unchanged).
+  // Off = bitwise the equal partition.
+  bool split_deep = false;
+  int split_w = 8;                // problem/rt_col3_split_w, thin cost / deep cost
   bool dump = false;              // one-shot per-cell assembly dump of column (0,ks,js)
 
   // ---- the two state accessors, the rt_use_cons forms (mode 3 requires it) ----------
@@ -427,6 +441,23 @@ struct RTCol3 {
   //! when the hybrid is off or the column cannot carry both segments.
   KOKKOS_INLINE_FUNCTION
   int Interface(const int m, const int k, const int j, const int ic) const;
+  //! the first cell of segment s of the partitioned path (s in [0, nsg]; segment s is
+  //! [SegStart(s), SegStart(s+1)-1]).  The equal partition unless rt_col3_split_deep.
+  KOKKOS_INLINE_FUNCTION
+  int SegStart(const int s, const int ic, const int nc, const int nsg,
+               const int ib) const {
+    if (!split_deep || ib <= ic || nsg >= nc) return ic + (nc*s)/nsg;
+    if (s <= 0) return ic;
+    if (s >= nsg) return ic + nc;
+    const int w = (split_w > 1) ? split_w : 1;
+    const int nd = ib - ic;                    // deep cells, [ic, ib-1]
+    const double wt = static_cast<double>(nd) + static_cast<double>(nc - nd)*w;
+    const int tg = static_cast<int>((wt*s)/nsg);
+    int i0 = (tg <= nd) ? (ic + tg) : (ib + (tg - nd + w - 1)/w);
+    if (i0 < ic + s) i0 = ic + s;              // >= 1 cell in every lane below
+    if (i0 > ic + nc - (nsg - s)) i0 = ic + nc - (nsg - s);   // ... and above
+    return i0;
+  }
   KOKKOS_INLINE_FUNCTION
   void Solve(const int m, const int k, const int j) const;
 };
