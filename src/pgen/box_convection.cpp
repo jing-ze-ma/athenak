@@ -319,6 +319,7 @@
 
 void BoxConvSrcs(Mesh *pm, Real bdt);
 void BoxConvRebuildRadWeights(Mesh *pm, Real bdt);
+void BoxConvTransverseApply(Mesh *pm, Real dt);
 void BoxConvRTSplit(Mesh *pm, Real bdt);
 void BoxConvRTImEx(Mesh *pm, Driver *pdrive, const int estage);
 void BoxConvBC(Mesh *pm);
@@ -453,6 +454,33 @@ bool rt_split_tr_ = false;
 // up-to-date transverse neighbours.  What stays as stale as it is today is the mesh u0
 // ghost ring itself, which only the frozen face conductances on the outermost faces read.
 int rt_col3_sub_ = 1;
+// problem/rt_pair_sym (int, default 0 = today's ordering, bitwise off): make the COLUMN
+// SOLVE and the HORIZONTAL (transverse ADI) OPERATOR a SYMMETRIC (Strang) PAIR inside
+// each radiation call,
+//     ADI(bdt/2)  ->  column(bdt) [+ the radiative force, as today]  ->  ADI(bdt/2)
+// instead of the Lie ordering column(bdt) -> ADI(bdt) that rt_split_transverse
+// established.  WHY: the arm-set-B work budget (problem/work_hist) found that the
+// seeded linear f-mode's entire energy budget is the COLUMN HEATING (+1759 in units of
+// 2 gamma E) against the HORIZONTAL ADI (-1798), each ~1800x the growth rate and
+// cancelling to a net -38 -- i.e. the O(dt) growth IS the imbalance of that pair, which
+// is exactly what a Lie split of two operators evaluated at different states produces.
+// A symmetric pair makes that imbalance O(dt^2); the prediction is that Wtco+Wtad, and
+// with it gamma, drop by a large factor at fixed dt.
+//   value 1: the symmetric pair above.  It runs in the PLAIN in-stage path (the one
+//     production uses), once per RK stage, and once per rt_col3_sub sub-step when that
+//     is also on.  Cost: one extra ADI half-step plus one BoxConvRebuildRadWeights per
+//     stage (the frozen ADI face conductances must be formed with the HALF step; the
+//     SAME frozen coefficients are then used for both halves, which is what makes the
+//     pair adjoint-symmetric).  It implies rt_split_transverse, i.e. it sets
+//     Conduction::rad_tr_split_out so the separate in-stage transverse task is silenced
+//     and this is the only place the operator runs.
+//   value 2 (Picard iteration of the pair) is NOT implemented: it needs a saved copy of
+//     the whole start state plus a way to feed the first pass's heating back into the
+//     column solve as a lagged source, neither of which exists here (the mode-3 column
+//     solve writes u0(IEN) in place from its own converged flux).  See the README.
+// work_hist: tags 2/3/4 fire wherever the operators run, so the budget stays complete;
+// Wtad is then the SUM of the two half-steps and Wtco+Wtad is still the pair imbalance.
+int rt_pair_sym_ = 0;
 // the per-stage implicit sources S^(l), (nimp_stages, nmb, 4, n3, n2, n1), 4 = the
 // IM1/IM2/IM3/IEN components in that order.  Allocated on the first call (the Driver,
 // which owns nimp_stages, is built after the problem generator).  NOT restarted: every
@@ -1835,13 +1863,46 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                   << " each, at the unchanged hydro dt" << std::endl;
       }
     }
+    // ---- problem/rt_pair_sym: the column and the ADI as a symmetric pair -------
+    rt_pair_sym_ = pin->GetOrAddInteger("problem", "rt_pair_sym", 0);
+    if (rt_pair_sym_ < 0 || rt_pair_sym_ > 1) {
+      std::cout << "### FATAL ERROR in box_convection: problem/rt_pair_sym must be 0 "
+                << "(today's ordering) or 1 (ADI(dt/2) -> column(dt) -> ADI(dt/2)).  "
+                << "Value 2 (Picard) is not implemented -- see the declaration.  Got "
+                << rt_pair_sym_ << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    if (rt_pair_sym_ > 0) {
+      if (rt_strang_ || rt_once_ || rt_col3_once_ || rt_imex_) {
+        std::cout << "### FATAL ERROR in box_convection: problem/rt_pair_sym is the "
+                  << "IN-STAGE pair ordering and is mutually exclusive with rt_strang, "
+                  << "rt_once_per_cycle, rt_col3_once and rt_imex, which move the "
+                  << "column out of the stage" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      if (pmbp->phydro == nullptr || pmbp->phydro->pcond == nullptr ||
+          !pmbp->phydro->pcond->rad_implicit_ang) {
+        std::cout << "### FATAL ERROR in box_convection: problem/rt_pair_sym needs the "
+                  << "implicit transverse operator (<hydro>/rad_implicit_ang or "
+                  << "rad_sts_all): there is no horizontal operator to pair with"
+                  << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      if (global_variable::my_rank == 0) {
+        std::cout << "### box_convection: problem/rt_pair_sym = " << rt_pair_sym_
+                  << ", the column solve and the horizontal ADI operator are a "
+                  << "SYMMETRIC pair in every radiation call: ADI(bdt/2) -> column(bdt)"
+                  << " + force -> ADI(bdt/2), with the face conductances formed at the "
+                  << "HALF step" << std::endl;
+      }
+    }
     // problem/rt_split_transverse: with the column out of the stage, take the
     // horizontal ADI operator out with it (see the declaration above).  Default ON
     // whenever a split is active; a no-op otherwise.  rt_col3_sub > 1 keeps the column
     // INSIDE the stage but still has to move the transverse operator into the sub-cycle
     // loop, and uses the same Conduction flag to silence the in-stage task.
     const bool splitout = (rt_strang_ || rt_once_ || rt_col3_once_ || rt_imex_);
-    rt_split_tr_ = (splitout || rt_col3_sub_ > 1) &&
+    rt_split_tr_ = (splitout || rt_col3_sub_ > 1 || rt_pair_sym_ > 0) &&
                    pin->GetOrAddBoolean("problem", "rt_split_transverse", true);
     if (rt_split_tr_ && pmbp->phydro != nullptr && pmbp->phydro->pcond != nullptr &&
         pmbp->phydro->pcond->rad_implicit_ang) {
@@ -1849,8 +1910,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       if (global_variable::my_rank == 0) {
         std::cout << "### box_convection: problem/rt_split_transverse = true, the "
                   << "IMPLICIT TRANSVERSE radiative operator is run "
-                  << ((rt_col3_sub_ > 1) ? "inside each column SUB-STEP"
-                                         : "inside the split step with the column")
+                  << ((rt_pair_sym_ > 0) ? "as the SYMMETRIC PAIR around the column"
+                     : ((rt_col3_sub_ > 1) ? "inside each column SUB-STEP"
+                                           : "inside the split step with the column"))
                   << " and NOT as its own in-stage task" << std::endl;
       }
     }
@@ -2304,6 +2366,25 @@ void BoxConvRebuildRadWeights(Mesh *pm, Real bdt) {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void BoxConvTransverseApply
+//! \brief one application of the horizontal (transverse ADI / RKL1) radiative operator
+//! over `dt`, on the state as it stands, plus the problem/work_hist tag-4 close.  It is
+//! exactly the call the rt_split_transverse paths make inline; it exists so that the
+//! symmetric pair (problem/rt_pair_sym) can make it twice with a half step.
+
+void BoxConvTransverseApply(Mesh *pm, Real dt) {
+  hydro::Hydro *ph = pm->pmb_pack->phydro;
+  if (ph == nullptr || ph->pcond == nullptr || !ph->pcond->rad_implicit_ang) return;
+  if (ph->pcond->rad_sts_all) {
+    ph->pcond->StsConductionUpdate(ph->u0, ph->peos->eos_data, dt);
+  } else {
+    ph->pcond->ImplicitTransverseUpdate(ph->u0, ph->peos->eos_data, dt);
+  }
+  BoxConvWorkClose(pm, 4);   // problem/work_hist: the transverse ADI operator
+  return;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void BoxConvSrcs
 //! \brief constant gravity along x1 -- in the well-balanced form under
 //! wellbalance_dynamic -- plus the top cooling layer.
@@ -2596,7 +2677,16 @@ void BoxConvSrcs(Mesh *pm, Real bdt) {
     const int nsub = rt_col3_sub_;
     const Real sdt = bdt/static_cast<Real>(nsub);
     for (int isub=0; isub<nsub; ++isub) {
-      if (nsub > 1) BoxConvRebuildRadWeights(pm, sdt);
+      // problem/rt_pair_sym = 1: the frozen ADI face conductances are formed with the
+      // HALF step and used for BOTH halves of the symmetric pair, which is what makes
+      // the pair adjoint-symmetric; the rebuild also refreshes w0 (and so the tau/blend
+      // weights) for the column solve that follows, exactly as the sub-cycle does.
+      if (rt_pair_sym_ == 1) {
+        BoxConvRebuildRadWeights(pm, 0.5*sdt);
+        BoxConvTransverseApply(pm, 0.5*sdt);
+      } else if (nsub > 1) {
+        BoxConvRebuildRadWeights(pm, sdt);
+      }
       two_stream_rt::picket_fence_two_stream_RT(pm, sdt);
       // problem/work_hist, tag 3: the column solve closed its own interval from inside
       // (two_stream_rt::rt_probe, tag 2), so what closes here is the radiative momentum
@@ -2605,7 +2695,10 @@ void BoxConvSrcs(Mesh *pm, Real bdt) {
       // the horizontal ADI operator travels WITH the column, over the same sub-step and
       // on the state the column solve has just relaxed (the ordering rt_split_transverse
       // established).  The in-stage transverse task is a no-op under rad_tr_split_out.
-      if (nsub > 1 && rt_split_tr_) {
+      if (rt_pair_sym_ == 1) {
+        // the closing half of the symmetric pair, on the state the column just relaxed
+        BoxConvTransverseApply(pm, 0.5*sdt);
+      } else if (nsub > 1 && rt_split_tr_) {
         hydro::Hydro *ph = pm->pmb_pack->phydro;
         if (ph != nullptr && ph->pcond != nullptr && ph->pcond->rad_implicit_ang) {
           if (ph->pcond->rad_sts_all) {
