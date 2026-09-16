@@ -797,6 +797,10 @@ inline Real rt_col3_hybrid_tau = 0.0;
 // With this switch a thin cell counts rt_col3_split_w deep cells when the boundaries are
 // laid out, the thin cells spread over all nseg lanes, and the critical path falls to
 // about n_thin/nseg 5x5 rows.  Partition only: the answer moves by round-off.
+// MEASURED SLOWER, and kept off: see the note on RTCol3::split_deep.  The team's lanes
+// are one wavefront, so a cell loop costs deep-plus-thin and scales with the most cells
+// any lane holds; the equal partition already minimises that.  tau_hyb 30 on the B star:
+// 223.7 ms/call plain, 258.4 balanced, 293.1 with the hybrid off.
 inline bool rt_col3_split_deep = false;
 inline int rt_col3_split_w = 8;   // problem/rt_col3_split_w, thin cost / deep cost
 // problem/rt_impl_warm: WARM-START the mode-3 Newton from the previous call's converged

@@ -323,6 +323,14 @@ struct RTCol3 {
   // that changes: the spike composition is exact for the linear recurrence, so the answer
   // moves by round-off only (and the clamp caveat of the partitioned path, unchanged).
   // Off = bitwise the equal partition.
+  //
+  // MEASURED ON THE B STAR (prod_w4 restart, 2 MI300A, 162 calls, tau_hyb 30): the plain
+  // hybrid is 223.7 ms/call against 293.1 off, and BALANCING MAKES IT WORSE, 258.4.  The
+  // critical path is not the thin arithmetic per lane: the lanes of a team are one
+  // wavefront, so a cell loop costs the UNION of the deep and thin branches and scales
+  // with the MOST cells any lane holds.  The equal partition minimises that maximum (10.5
+  // cells here); balancing raises it to ~22 on the deep-heavy lanes and pays both
+  // branches on every one.  So the switch is kept OFF, as the measurement behind that.
   bool split_deep = false;
   int split_w = 8;                // problem/rt_col3_split_w, thin cost / deep cost
   bool dump = false;              // one-shot per-cell assembly dump of column (0,ks,js)
