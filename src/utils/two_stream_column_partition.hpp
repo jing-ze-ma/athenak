@@ -75,6 +75,21 @@ namespace two_stream_rt {
 // (<problem>/rt_impl_redpar): two buffers of the block row (A, B, C, r = 80 slots) plus
 // the diagonal block's inverse.  Allocated only when the switch is on.
 #define RTCOL3_NRDP 281
+// ... and the REUSE slots (<problem>/rt_impl_reuse), appended at the END of both layouts
+// so that a run with the switch off allocates exactly what it did before.  Per CELL, 20
+// more: v = Bi[:,4] (5) and M = Bi*A3 (5x3), the only parts of the factorisation a reuse
+// pass needs, a deep cell using two of them for 1/piv and aa/piv.  Per SEGMENT, either
+// the serial reduced solve's own 5x5 inverse (25) or, under rt_impl_redpar, the PCR's
+// Wm = A B^-1 and Wp = C B^-1 for each of its at most six rounds plus the final
+// decoupled inverse (2*25*6 + 25 = 325).
+#define RTCOL3_NWPU 74
+#define RTCOL3_NRDU 121
+#define RTCOL3_NRDPU 606
+#define RTCOL3_PCRMAXR 6
+// the COMPACT single-precision factor workspace of problem/rt_impl_mixed = 2: G (15),
+// d (5), H (15) and, under problem/rt_impl_reuse, v (5) and M (15).  See RTCol3::WkF.
+#define RTCOL3_NWF 35
+#define RTCOL3_NWFU 55
 
 //----------------------------------------------------------------------------------------
 //! \fn void RTCol3TeamSolve
@@ -82,6 +97,7 @@ namespace two_stream_rt {
 //! by SEGMENT (thread s owns cells [i0(s), i1(s)]), which keeps each cell's data on one
 //! thread through the whole Newton pass.
 
+template <typename FT, bool F2>
 KOKKOS_INLINE_FUNCTION
 void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
                      const int m, const int k, const int j) {
@@ -105,7 +121,14 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
   // the PCR slots of the extended per-segment workspace: A, B, C, r in two buffers
   // (stride PSTR), then the diagonal block's inverse
   const int PA = 96, PSTR = 80, PBI = 256;
-  const int nrd = c.redpar ? RTCOL3_NRDP : RTCOL3_NRD;
+  // the REUSE slots (problem/rt_impl_reuse), per cell and per segment.  RU is the first
+  // per-segment one: the serial reduced solve's stored inverse, or the PCR's Wm/Wp of
+  // round r at RU + 50 r and its final decoupled inverse at RU + 300.
+  const int VI = 54, MM = 59;
+  const int RU = c.redpar ? RTCOL3_NRDP : RTCOL3_NRD;
+  const int PBF = RU + 50*RTCOL3_PCRMAXR;
+  const int nrd = c.reuse ? (c.redpar ? RTCOL3_NRDPU : RTCOL3_NRDU)
+                          : (c.redpar ? RTCOL3_NRDP : RTCOL3_NRD);
   // the reduced system is solved by PCR only when lane s can own block row s and the
   // round count is exactly log2(nsg); otherwise the serial reduced solve runs.
   const bool usepcr = c.redpar && (nsg >= 2) && (nsg <= 64)
@@ -114,6 +137,72 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
   const Real sopi = c.sigma/M_PI;
   // the three column components of the reduced (x[0], x[1], x[4]) coupling
   const int rc3[3] = {0, 1, 4};
+  // ---- THE FACTOR TYPE (problem/rt_impl_mixed) -------------------------------------
+  // FT is the type the Newton CORRECTION is carried in: the 5x5 inverses, the segment
+  // forward eliminations, the p/Q/R recurrence and the back-substitution.  F2 in
+  // addition puts the STORED factors (G, H, d and the reuse pair v, M) in their own
+  // single-precision workspace, with the compact slot layout below, which halves the
+  // memory traffic of every factor read and write.  Everything else -- the layer
+  // coefficients, the Planck function b, the residual, the convergence test, the
+  // reduced system and the energy update -- is double whatever FT is, so with
+  // FT = Real and F2 = false every line here is bit for bit what it was.
+  const int FG0 = 0, FDP = 15, FHH = 20, FVI = 35, FMM = 40;
+  auto rG = [&](const int r, const int cc, const int i) -> FT {
+    return F2 ? static_cast<FT>(c.WkF(m,FG0+3*r+cc,i,k,j))
+              : static_cast<FT>(c.Wk<true>(m,G0+3*r+cc,i,k,j));
+  };
+  auto rH = [&](const int r, const int cc, const int i) -> FT {
+    return F2 ? static_cast<FT>(c.WkF(m,FHH+3*r+cc,i,k,j))
+              : static_cast<FT>(c.Wk<true>(m,HH+3*r+cc,i,k,j));
+  };
+  auto rD = [&](const int r, const int i) -> FT {
+    return F2 ? static_cast<FT>(c.WkF(m,FDP+r,i,k,j))
+              : static_cast<FT>(c.Wk<true>(m,DP+r,i,k,j));
+  };
+  auto rV = [&](const int r, const int i) -> FT {
+    return F2 ? static_cast<FT>(c.WkF(m,FVI+r,i,k,j))
+              : static_cast<FT>(c.Wk<true>(m,VI+r,i,k,j));
+  };
+  auto rM = [&](const int r, const int t, const int i) -> FT {
+    return F2 ? static_cast<FT>(c.WkF(m,FMM+3*r+t,i,k,j))
+              : static_cast<FT>(c.Wk<true>(m,MM+3*r+t,i,k,j));
+  };
+  auto wG = [&](const int r, const int cc, const int i, const FT v) {
+    if constexpr (F2) {
+      c.WkF(m,FG0+3*r+cc,i,k,j) = static_cast<float>(v);
+    } else {
+      c.Wk<true>(m,G0+3*r+cc,i,k,j) = static_cast<Real>(v);
+    }
+  };
+  auto wH = [&](const int r, const int cc, const int i, const FT v) {
+    if constexpr (F2) {
+      c.WkF(m,FHH+3*r+cc,i,k,j) = static_cast<float>(v);
+    } else {
+      c.Wk<true>(m,HH+3*r+cc,i,k,j) = static_cast<Real>(v);
+    }
+  };
+  auto wD = [&](const int r, const int i, const FT v) {
+    if constexpr (F2) {
+      c.WkF(m,FDP+r,i,k,j) = static_cast<float>(v);
+    } else {
+      c.Wk<true>(m,DP+r,i,k,j) = static_cast<Real>(v);
+    }
+  };
+  auto wV = [&](const int r, const int i, const FT v) {
+    if constexpr (F2) {
+      c.WkF(m,FVI+r,i,k,j) = static_cast<float>(v);
+    } else {
+      c.Wk<true>(m,VI+r,i,k,j) = static_cast<Real>(v);
+    }
+  };
+  auto wM = [&](const int r, const int t, const int i, const FT v) {
+    if constexpr (F2) {
+      c.WkF(m,FMM+3*r+t,i,k,j) = static_cast<float>(v);
+    } else {
+      c.Wk<true>(m,MM+3*r+t,i,k,j) = static_cast<Real>(v);
+    }
+  };
+  const FT fzero = static_cast<FT>(0);
 
   // ---- 0. THE HYBRID SPLIT (problem/rt_col3_hybrid_tau) ----------------------------
   // The same interface the serial path picks, on the same partition: nsg equal segments
@@ -156,7 +245,7 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
 
   // ---- 1. the frozen per-cell layer coefficients, and b^0 --------------------------
   Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, nsg), [&](const int s) {
-    const int i0 = ic + (nc*s)/nsg, i1 = ic + (nc*(s+1))/nsg - 1;
+    const int i0 = c.SegStart(s,ic,nc,nsg,ib), i1 = c.SegStart(s+1,ic,nc,nsg,ib) - 1;
     for (int i=i0; i<=i1; ++i) {
       const Real h = c.Ht(m,k,j,i);
       for (int q=0; q<nq; ++q) {
@@ -201,7 +290,7 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
 
   // ---- 3. the tau-blend handover, frozen from the entry-state sweep -----------------
   Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, nsg), [&](const int s) {
-    const int i0 = ic + (nc*s)/nsg, i1 = ic + (nc*(s+1))/nsg - 1;
+    const int i0 = c.SegStart(s,ic,nc,nsg,ib), i1 = c.SegStart(s+1,ic,nc,nsg,ib) - 1;
     for (int i=i0; i<=i1; ++i) {
       Real ex = 0.0;
       if (c.taublend) {
@@ -230,6 +319,12 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
   Real cutc_i = cutc;
   Real Ucut_i[2] = {Ucut[0], Ucut[1]};
   Real fif = 0.0;                             // the interface net flux
+  // problem/rt_impl_reuse: whether THIS pass factorises (pass 1 always does), the
+  // residual the contraction test compares against, and the count of refactorisations
+  // this column made after its first pass.
+  bool refac = true;
+  Real rlast = 0.0, rpass = 0.0;
+  int nrefac = 0, nreuse = 0;
   for (int it=0; it<c.maxit; ++it) {
     nit = it + 1;
     tm.team_barrier();
@@ -244,7 +339,7 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
     // accumulate, so they are not repeated and their cost is not measured here.
     for (int rep=(c.ablate & 1); rep>=0; --rep) {
     Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, nsg), [&](const int s) {
-      const int i0 = ic + (nc*s)/nsg, i1 = ic + (nc*(s+1))/nsg - 1;
+      const int i0 = c.SegStart(s,ic,nc,nsg,ib), i1 = c.SegStart(s+1,ic,nc,nsg,ib) - 1;
       if (i1 < ib) return;                    // a wholly DEEP segment: no two-stream here
       const int t0 = (i0 > ib) ? i0 : ib;     // this segment's bottom THIN cell
       Real L[2] = {0.0, 0.0}, hg[2] = {1.0, 1.0};
@@ -293,7 +388,7 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
       Real de[2], ue[2];
       for (int q=0; q<nq; ++q) de[q] = Dtop[q];
       for (int s=nsg-1; s>=0; --s) {
-        const int i0 = ic + (nc*s)/nsg, i1 = ic + (nc*(s+1))/nsg - 1;
+        const int i0 = c.SegStart(s,ic,nc,nsg,ib), i1 = c.SegStart(s+1,ic,nc,nsg,ib) - 1;
         if (i1 < ib) continue;
         const int t0 = (i0 > ib) ? i0 : ib;
         for (int q=0; q<nq; ++q) c.rd(m,k,j,s*nrd+DE+q) = de[q];
@@ -303,7 +398,7 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
       }
       for (int q=0; q<nq; ++q) ue[q] = c.Wk<true>(m,BB,ib,k,j) + Ucut_i[q];
       for (int s=0; s<nsg; ++s) {
-        const int i1 = ic + (nc*(s+1))/nsg - 1;
+        const int i1 = c.SegStart(s+1,ic,nc,nsg,ib) - 1;
         if (i1 < ib) continue;
         for (int q=0; q<nq; ++q) c.rd(m,k,j,s*nrd+UE+q) = ue[q];
         for (int q=0; q<nq; ++q) {
@@ -314,7 +409,7 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
     tm.team_barrier();
     // and the correction each cell owes to its segment's entry value
     Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, nsg), [&](const int s) {
-      const int i0 = ic + (nc*s)/nsg, i1 = ic + (nc*(s+1))/nsg - 1;
+      const int i0 = c.SegStart(s,ic,nc,nsg,ib), i1 = c.SegStart(s+1,ic,nc,nsg,ib) - 1;
       if (i1 < ib) return;
       const int t0 = (i0 > ib) ? i0 : ib;
       Real de[2], ue[2];
@@ -351,7 +446,7 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
                         - c.Wk<true>(m,DD+q,ib,k,j));
       }
       Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, nsg), [&](const int s) {
-        const int i0 = ic + (nc*s)/nsg, i1 = ic + (nc*(s+1))/nsg - 1;
+        const int i0 = c.SegStart(s,ic,nc,nsg,ib), i1 = c.SegStart(s+1,ic,nc,nsg,ib) - 1;
         const int d1 = (i1 < ib-1) ? i1 : (ib-1);
         for (int i=i0; i<=d1; ++i) {
           Real flo = fbot;
@@ -365,7 +460,7 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
       });
       tm.team_barrier();
       Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, nsg), [&](const int s) {
-        const int i0 = ic + (nc*s)/nsg, i1 = ic + (nc*(s+1))/nsg - 1;
+        const int i0 = c.SegStart(s,ic,nc,nsg,ib), i1 = c.SegStart(s+1,ic,nc,nsg,ib) - 1;
         const int d1 = (i1 < ib-1) ? i1 : (ib-1);
         for (int i=i0; i<=d1; ++i) {
           const Real fhi = (i + 1 < ib) ? c.Wk<true>(m,FL,i+1,k,j) : fif;
@@ -407,34 +502,58 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
     // break the standard path takes.  The partition is the same i0..i1 the sweep used,
     // so each thread reads only cells it has just written; the team reduce broadcasts
     // rpre, which is what makes the collective break legal.
-    if (c.rescheck || (c.ablate & 4)) {
+    // With problem/rt_impl_reuse the residual is needed at the TOP of every pass
+    // anyway -- it is both the convergence test and the contraction test that decides
+    // whether the pass may keep the previous factorisation -- so the switch turns this
+    // block on by itself.  It is the same test on the same number, so a run with
+    // rescheck off and reuse on takes the same break at the same pass.
+    if (c.rescheck || c.reuse > 0 || (c.ablate & 4)) {
       Real rpre = 0.0;
       for (int rep=((c.ablate & 4) ? 1 : 0); rep>=0; --rep) {
         rpre = 0.0;
         Kokkos::parallel_reduce(Kokkos::TeamThreadRange(tm, nsg),
         [&](const int s, Real &rmx) {
-          const int i0 = ic + (nc*s)/nsg, i1 = ic + (nc*(s+1))/nsg - 1;
+          const int i0 = c.SegStart(s,ic,nc,nsg,ib);
+          const int i1 = c.SegStart(s+1,ic,nc,nsg,ib) - 1;
           for (int i=i0; i<=i1; ++i) {
             const Real rr = c.ResidRel<true>(m, k, j, i, eoff);
             if (rr > rmx) rmx = rr;
           }
         }, Kokkos::Max<Real>(rpre));
       }
-      if (c.rescheck) {
+      if (c.rescheck || c.reuse > 0) {
         rfin = rpre;
         if (rpre < c.tol && !c.fixit) break;
+      }
+      // THE CONTRACTION CHECK.  A frozen Jacobian is still a contraction as long as the
+      // residual keeps falling; the pass refactorises when it did not fall by at
+      // least problem/rt_impl_reuse_rho, which is what keeps the quasi-Newton from
+      // stalling against maxit.  reuse = 2 never refactorises (diagnostic).
+      if (c.reuse > 0) {
+        if (it == 0) {
+          refac = true;
+        } else if (c.reuse >= 2) {
+          refac = false;
+        } else {
+          refac = !(rpre < c.reuse_rho*rlast);
+          if (refac) ++nrefac;
+        }
+        rlast = rpre;
+        rpass = rpre;
       }
     }
 
     // ---- 4b. the PARTITIONED forward elimination ------------------------------------
     // ablate bit 2 repeats it: it writes absolutely out of b, so it is idempotent.
     Real rmax = 0.0;
+    if (refac) {
     for (int rep=(c.ablate & 2); rep>=0; --rep) {
     rmax = 0.0;
     Kokkos::parallel_reduce(Kokkos::TeamThreadRange(tm, nsg),
     [&](const int s, Real &rmx) {
-      const int i0 = ic + (nc*s)/nsg, i1 = ic + (nc*(s+1))/nsg - 1;
-      Real Gp[5][3], Hp[5][3], dp[5];
+      const int i0 = c.SegStart(s,ic,nc,nsg,ib), i1 = c.SegStart(s+1,ic,nc,nsg,ib) - 1;
+      FT Gp[5][3], Hp[5][3], dp[5];
+      int nill = 0;
       for (int i=i0; i<=i1; ++i) {
         if (i < ib) {
           // ---- the DEEP cell: a SCALAR row, padded into the b slot ------------------
@@ -454,9 +573,9 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
           Real hv[3] = {0.0, 0.0, 0.0};
           Real piv = dd, rvv = rvd;
           if (i > i0) {
-            piv -= aa*Gp[4][2];
-            rvv -= aa*dp[4];
-            for (int t=0; t<3; ++t) hv[t] = -aa*Hp[4][t];
+            piv -= aa*static_cast<Real>(Gp[4][2]);
+            rvv -= aa*static_cast<Real>(dp[4]);
+            for (int t=0; t<3; ++t) hv[t] = -aa*static_cast<Real>(Hp[4][t]);
           } else {
             hv[2] = aa;                       // the spike on the left segment's unknown
           }
@@ -465,32 +584,38 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
             rmx = HUGE_VAL;
             return;
           }
-          dp[4] = rvv/piv;
-          dp[2] = 0.0;
-          dp[3] = 0.0;
-          c.Wk<true>(m,DPD,i,k,j) = dp[4];
+          dp[4] = static_cast<FT>(rvv/piv);
+          dp[2] = fzero;
+          dp[3] = fzero;
+          if (c.reuse > 0) {                  // what a reuse pass needs of this row
+            const Real ip = 1.0/piv;
+            wV(0, i, static_cast<FT>(ip));
+            wV(1, i, static_cast<FT>(aa*ip));
+          }
+          wD(4, i, dp[4]);
           for (int t=0; t<3; ++t) {
-            Gp[2][t] = 0.0;
-            Gp[3][t] = 0.0;
-            Hp[2][t] = 0.0;
-            Hp[3][t] = 0.0;
-            Gp[4][t] = cv[t]/piv;
-            Hp[4][t] = hv[t]/piv;
-            c.Wk<true>(m,GD+t,i,k,j) = Gp[4][t];
-            c.Wk<true>(m,HHD+t,i,k,j) = Hp[4][t];
+            Gp[2][t] = fzero;
+            Gp[3][t] = fzero;
+            Hp[2][t] = fzero;
+            Hp[3][t] = fzero;
+            Gp[4][t] = static_cast<FT>(cv[t]/piv);
+            Hp[4][t] = static_cast<FT>(hv[t]/piv);
+            wG(4, t, i, Gp[4][t]);
+            wH(4, t, i, Hp[4][t]);
           }
           if (i == i1) {          // pad the boundary row for the reduced system
             for (int r=0; r<4; ++r) {
-              c.Wk<true>(m,DP+r,i,k,j) = 0.0;
+              wD(r, i, fzero);
               for (int t=0; t<3; ++t) {
-                c.Wk<true>(m,G0+3*r+t,i,k,j) = 0.0;
-                c.Wk<true>(m,HH+3*r+t,i,k,j) = 0.0;
+                wG(r, t, i, fzero);
+                wH(r, t, i, fzero);
               }
             }
           }
           continue;
         }
-        Real A3[5][3], Bm[5][5], C3[5][3], rv[5], AH[5][3];
+        Real A3[5][3], Bm[5][5], C3[5][3], rv[5];
+        FT AH[5][3];
         Real rsc = 1.0;
         Real A1z[5];
         c.BuildRow<true>(m, k, j, i, ib, hb, cutc, it, A3, A1z, Bm, C3, rv, rsc);
@@ -513,79 +638,100 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
           sg = -1.0;
           for (int r=0; r<5; ++r) {
             for (int cc=0; cc<3; ++cc) {
-              Real sa = 0.0, sh = 0.0;
+              FT sa = fzero, sh = fzero;
               for (int t=0; t<3; ++t) {
-                sa += A3[r][t]*Gp[t+2][cc];
-                sh += A3[r][t]*Hp[t+2][cc];
+                sa += static_cast<FT>(A3[r][t])*Gp[t+2][cc];
+                sh += static_cast<FT>(A3[r][t])*Hp[t+2][cc];
               }
-              Bm[r][rc3[cc]] -= sa;
+              Bm[r][rc3[cc]] -= static_cast<Real>(sa);
               AH[r][cc] = sh;
             }
-            Real s2 = 0.0;
-            for (int t=0; t<3; ++t) s2 += A3[r][t]*dp[t+2];
-            rv[r] -= s2;
+            FT s2 = fzero;
+            for (int t=0; t<3; ++t) s2 += static_cast<FT>(A3[r][t])*dp[t+2];
+            rv[r] -= static_cast<Real>(s2);
           }
         } else {
           for (int r=0; r<5; ++r) {
-            for (int cc=0; cc<3; ++cc) AH[r][cc] = A3[r][cc];
+            for (int cc=0; cc<3; ++cc) AH[r][cc] = static_cast<FT>(A3[r][cc]);
           }
         }
-        Real Bi[5][5];
-        if (!RTCol3Inv5(Bm, Bi)) {
+        FT Bi[5][5];
+        if (!RTCol3Inv5X<FT>(Bm, Bi, nill)) {
           Kokkos::atomic_add(&c.stat(6), 1.0);
           rmx = HUGE_VAL;
           return;
         }
+        const FT sgf = static_cast<FT>(sg);
         for (int r=0; r<5; ++r) {
-          Real sd = 0.0;
-          for (int cc=0; cc<5; ++cc) sd += Bi[r][cc]*rv[cc];
+          FT sd = fzero;
+          for (int cc=0; cc<5; ++cc) sd += Bi[r][cc]*static_cast<FT>(rv[cc]);
           dp[r] = sd;
-          c.Wk<true>(m,DP+r,i,k,j) = sd;
+          wD(r, i, sd);
           for (int cc=0; cc<3; ++cc) {
-            Real g = 0.0, h = 0.0;
+            FT g = fzero, h = fzero;
             for (int t=0; t<5; ++t) {
-              g += Bi[r][t]*C3[t][cc];
+              g += Bi[r][t]*static_cast<FT>(C3[t][cc]);
               h += Bi[r][t]*AH[t][cc];
             }
             Gp[r][cc] = g;
-            Hp[r][cc] = sg*h;
-            c.Wk<true>(m,G0+3*r+cc,i,k,j) = g;
-            c.Wk<true>(m,HH+3*r+cc,i,k,j) = sg*h;
+            Hp[r][cc] = sgf*h;
+            wG(r, cc, i, g);
+            wH(r, cc, i, sgf*h);
+          }
+        }
+        if (c.reuse > 0) {
+          // the two pieces a reuse pass needs: the fifth COLUMN of the inverse (the
+          // right-hand side has no other live component) and Bi A3, the incoming
+          // unknown's coefficient.  At the segment's first cell A3 is the spike, which
+          // the reduced system carries, so no M is formed there.
+          for (int r=0; r<5; ++r) {
+            wV(r, i, Bi[r][4]);
+            if (i > i0) {
+              for (int t=0; t<3; ++t) {
+                FT sm = fzero;
+                for (int cc=0; cc<5; ++cc) sm += Bi[r][cc]*static_cast<FT>(A3[cc][t]);
+                wM(r, t, i, sm);
+              }
+            }
           }
         }
       }
+      // the single-precision blocks that had to be redone in double (rt_impl_mixed)
+      if (nill > 0) Kokkos::atomic_add(&c.stat(24), static_cast<Real>(nill));
       // ---- 4b'. the segment's FIRST cell in the two boundary unknowns ---------------
       // x_i = p_i - Q_i y_s - R_i y_{s-1}, started at i1 from x_{i1} = y_s.  With one
       // segment there is no reduced system to feed and this is pure waste, so skip it:
       // nsg = 1 is then exactly the serial block Thomas (the host-backend path).
       if (nsg < 2) return;
-      Real pq[5], Qm[5][5], Rm[5][3];
+      FT pq[5], Qm[5][5], Rm[5][3];
       for (int r=0; r<5; ++r) {
-        pq[r] = 0.0;
-        for (int cc=0; cc<5; ++cc) Qm[r][cc] = (r == cc) ? -1.0 : 0.0;
-        for (int cc=0; cc<3; ++cc) Rm[r][cc] = 0.0;
+        pq[r] = fzero;
+        for (int cc=0; cc<5; ++cc) {
+          Qm[r][cc] = (r == cc) ? static_cast<FT>(-1) : fzero;
+        }
+        for (int cc=0; cc<3; ++cc) Rm[r][cc] = fzero;
       }
       for (int i=i1-1; i>=i0; --i) {
         if (i < ib) {
           // the DEEP cell: only the b row of (p, Q, R) is live.  The four dead rows are
           // zeroed once, when the recurrence first enters the deep part -- either at the
           // interface or at a wholly deep segment's own boundary cell -- and stay zero.
-          Real p4 = c.Wk<true>(m,DPD,i,k,j);
-          Real Q4[5], R4[3];
-          for (int col=0; col<5; ++col) Q4[col] = 0.0;
-          for (int col=0; col<3; ++col) R4[col] = c.Wk<true>(m,HHD+col,i,k,j);
+          FT p4 = rD(4,i);
+          FT Q4[5], R4[3];
+          for (int col=0; col<5; ++col) Q4[col] = fzero;
+          for (int col=0; col<3; ++col) R4[col] = rH(4,col,i);
           for (int cc=0; cc<3; ++cc) {
-            const Real g = c.Wk<true>(m,GD+cc,i,k,j);
-            if (g == 0.0) continue;
+            const FT g = rG(4,cc,i);
+            if (g == fzero) continue;
             p4 -= g*pq[rc3[cc]];
             for (int col=0; col<5; ++col) Q4[col] -= g*Qm[rc3[cc]][col];
             for (int col=0; col<3; ++col) R4[col] -= g*Rm[rc3[cc]][col];
           }
           if (i == ib-1 || i == i1-1) {
             for (int r=0; r<4; ++r) {
-              pq[r] = 0.0;
-              for (int col=0; col<5; ++col) Qm[r][col] = 0.0;
-              for (int col=0; col<3; ++col) Rm[r][col] = 0.0;
+              pq[r] = fzero;
+              for (int col=0; col<5; ++col) Qm[r][col] = fzero;
+              for (int col=0; col<3; ++col) Rm[r][col] = fzero;
             }
           }
           pq[4] = p4;
@@ -593,19 +739,19 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
           for (int col=0; col<3; ++col) Rm[4][col] = R4[col];
           continue;
         }
-        Real pn[5], Qn[5][5], Rn[5][3];
+        FT pn[5], Qn[5][5], Rn[5][3];
         for (int r=0; r<5; ++r) {
-          Real sp = c.Wk<true>(m,DP+r,i,k,j);
-          for (int cc=0; cc<3; ++cc) sp -= c.Wk<true>(m,G0+3*r+cc,i,k,j)*pq[rc3[cc]];
+          FT sp = rD(r,i);
+          for (int cc=0; cc<3; ++cc) sp -= rG(r,cc,i)*pq[rc3[cc]];
           pn[r] = sp;
           for (int col=0; col<5; ++col) {
-            Real sq = 0.0;
-            for (int cc=0; cc<3; ++cc) sq += c.Wk<true>(m,G0+3*r+cc,i,k,j)*Qm[rc3[cc]][col];
+            FT sq = fzero;
+            for (int cc=0; cc<3; ++cc) sq += rG(r,cc,i)*Qm[rc3[cc]][col];
             Qn[r][col] = -sq;
           }
           for (int col=0; col<3; ++col) {
-            Real sr = c.Wk<true>(m,HH+3*r+col,i,k,j);
-            for (int cc=0; cc<3; ++cc) sr -= c.Wk<true>(m,G0+3*r+cc,i,k,j)*Rm[rc3[cc]][col];
+            FT sr = rH(r,col,i);
+            for (int cc=0; cc<3; ++cc) sr -= rG(r,cc,i)*Rm[rc3[cc]][col];
             Rn[r][col] = sr;
           }
         }
@@ -617,11 +763,86 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
       }
       const int b0 = s*nrd;
       for (int r=0; r<5; ++r) {
-        c.rd(m,k,j,b0+PP+r) = pq[r];
-        for (int col=0; col<5; ++col) c.rd(m,k,j,b0+QQ+5*r+col) = Qm[r][col];
-        for (int col=0; col<3; ++col) c.rd(m,k,j,b0+RR+3*r+col) = Rm[r][col];
+        c.rd(m,k,j,b0+PP+r) = static_cast<Real>(pq[r]);
+        for (int col=0; col<5; ++col) {
+          c.rd(m,k,j,b0+QQ+5*r+col) = static_cast<Real>(Qm[r][col]);
+        }
+        for (int col=0; col<3; ++col) {
+          c.rd(m,k,j,b0+RR+3*r+col) = static_cast<Real>(Rm[r][col]);
+        }
       }
     }, Kokkos::Max<Real>(rmax));
+    }
+    } else {
+      // ---- 4b''. THE REUSE PASS -----------------------------------------------------
+      // Nothing of the system has changed except the right-hand side: the Jacobian's
+      // only iterate-dependent entry is de/db, which this pass holds at the value the
+      // last factorising pass used (exactly what rt_impl_cvfreeze does), and rv[0..3]
+      // are identically zero, so the forward elimination collapses to
+      //     d_i = rv4_i v_i - M_i d_{i-1}|(2,3,4),   v = Bi[:,4],  M = Bi A3,
+      // one EOS call and 20 multiplies per cell in place of the assembly, the 5x5
+      // inverse and the two 5x3 products.  G, H, Q and R are Jacobian-only and stay in
+      // the workspace untouched; only the p of the segment recurrence is redone.  The
+      // residual scan at the top of the pass already gave the maximum, and it is the
+      // same number this pass's assembly would have produced.
+      ++nreuse;
+      rmax = rpass;
+      Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, nsg), [&](const int s) {
+        const int i0 = c.SegStart(s,ic,nc,nsg,ib), i1 = c.SegStart(s+1,ic,nc,nsg,ib) - 1;
+        FT dp[5] = {fzero, fzero, fzero, fzero, fzero};
+        for (int i=i0; i<=i1; ++i) {
+          const FT rv4 = static_cast<FT>(c.ResidRaw<true>(m, k, j, i));
+          if (i < ib) {                       // the DEEP cell: one scalar row
+            FT d4 = rv4*rV(0,i);
+            if (i > i0) d4 -= rV(1,i)*dp[4];
+            dp[2] = fzero;
+            dp[3] = fzero;
+            dp[4] = d4;
+            wD(4, i, d4);
+            continue;
+          }
+          FT dn[5];
+          for (int r=0; r<5; ++r) {
+            FT sd = rv4*rV(r,i);
+            if (i > i0) {
+              for (int t=0; t<3; ++t) sd -= rM(r,t,i)*dp[t+2];
+            }
+            dn[r] = sd;
+          }
+          for (int r=0; r<5; ++r) {
+            dp[r] = dn[r];
+            wD(r, i, dn[r]);
+          }
+        }
+        // the segment's own backward recurrence, p only: Q and R are frozen in rd
+        if (nsg < 2) return;
+        FT pq[5] = {fzero, fzero, fzero, fzero, fzero};
+        for (int i=i1-1; i>=i0; --i) {
+          if (i < ib) {
+            FT p4 = rD(4,i);
+            for (int cc=0; cc<3; ++cc) {
+              const FT g = rG(4,cc,i);
+              if (g == fzero) continue;
+              p4 -= g*pq[rc3[cc]];
+            }
+            if (i == ib-1 || i == i1-1) {
+              for (int r=0; r<4; ++r) pq[r] = fzero;
+            }
+            pq[4] = p4;
+            continue;
+          }
+          FT pn[5];
+          for (int r=0; r<5; ++r) {
+            FT sp = rD(r,i);
+            for (int cc=0; cc<3; ++cc) sp -= rG(r,cc,i)*pq[rc3[cc]];
+            pn[r] = sp;
+          }
+          for (int r=0; r<5; ++r) pq[r] = pn[r];
+        }
+        for (int r=0; r<5; ++r) {
+          c.rd(m,k,j,s*nrd+PP+r) = static_cast<Real>(pq[r]);
+        }
+      });
     }
     rfin = rmax;
     if (!(rmax < HUGE_VAL)) return;     // a singular block: leave the column alone
@@ -637,7 +858,81 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
     // default path eliminates that system by the SERIAL block Thomas below, one lane
     // walking nsg rows while the other nsg-1 idle.
     tm.team_barrier();
-    if (usepcr) {
+    if (usepcr && !refac) {
+      // ---- 4c (REUSE). the same PCR with the ROUND FACTORS of the last factorising
+      // pass.  Every A, B and C of every round is built from G, H, Q and R, which the
+      // frozen Jacobian leaves untouched, so the only thing a round does to a reuse
+      // pass is  r'_s = r_s - Wm r_{s-d} - Wp r_{s+d}  with Wm = A B^-1, Wp = C B^-1
+      // stored per round, and the decoupled solve at the end is one stored inverse.
+      Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, nsg), [&](const int s) {
+        const int b0 = s*nrd, pb = b0 + PA;
+        const int i1 = c.SegStart(s+1,ic,nc,nsg,ib) - 1;
+        Real rh[5];
+        for (int r=0; r<5; ++r) rh[r] = static_cast<Real>(rD(r,i1));
+        if (s + 1 < nsg) {
+          const int b1 = (s+1)*nrd;
+          for (int r=0; r<5; ++r) {
+            for (int cc=0; cc<3; ++cc) {
+              const Real g = static_cast<Real>(rG(r,cc,i1));
+              if (g == 0.0) continue;
+              rh[r] -= g*c.rd(m,k,j,b1+PP+rc3[cc]);
+            }
+          }
+        }
+        for (int r=0; r<5; ++r) c.rd(m,k,j,pb+75+r) = rh[r];
+      });
+      int pcur = 0, rnd = 0;
+      for (int d=1; d<nsg; d*=2) {
+        tm.team_barrier();
+        Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, nsg), [&](const int s) {
+          const int b0 = s*nrd, pb = b0 + PA + pcur*PSTR;
+          const int pn = b0 + PA + (1-pcur)*PSTR;
+          const int wb = b0 + RU + 50*rnd;
+          Real nr[5];
+          for (int r=0; r<5; ++r) nr[r] = c.rd(m,k,j,pb+75+r);
+          if (s - d >= 0) {
+            const int pm = (s-d)*nrd + PA + pcur*PSTR;
+            for (int r=0; r<5; ++r) {
+              Real sr = 0.0;
+              for (int t=0; t<5; ++t) sr += c.rd(m,k,j,wb+5*r+t)*c.rd(m,k,j,pm+75+t);
+              nr[r] -= sr;
+            }
+          }
+          if (s + d < nsg) {
+            const int pp = (s+d)*nrd + PA + pcur*PSTR;
+            for (int r=0; r<5; ++r) {
+              Real sr = 0.0;
+              for (int t=0; t<5; ++t) sr += c.rd(m,k,j,wb+25+5*r+t)*c.rd(m,k,j,pp+75+t);
+              nr[r] -= sr;
+            }
+          }
+          for (int r=0; r<5; ++r) c.rd(m,k,j,pn+75+r) = nr[r];
+        });
+        pcur = 1 - pcur;
+        ++rnd;
+      }
+      tm.team_barrier();
+      Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, nsg), [&](const int s) {
+        const int b0 = s*nrd, pb = b0 + PA + pcur*PSTR;
+        const int i1 = c.SegStart(s+1,ic,nc,nsg,ib) - 1;
+        Real y[5];
+        for (int r=0; r<5; ++r) {
+          Real sy = 0.0;
+          for (int t=0; t<5; ++t) sy += c.rd(m,k,j,b0+PBF+5*r+t)*c.rd(m,k,j,pb+75+t);
+          y[r] = sy;
+        }
+        c.rd(m,k,j,b0+YR) = y[4];
+        const Real b = c.Wk<true>(m,BB,i1,k,j);
+        if (b > 0.0) {
+          if (y[4] > 3.0*b) {
+            y[4] = 3.0*b;
+          } else if (y[4] < -0.75*b) {
+            y[4] = -0.75*b;
+          }
+        }
+        for (int r=0; r<5; ++r) c.rd(m,k,j,b0+YY+r) = y[r];
+      });
+    } else if (usepcr) {
       // <problem>/rt_impl_redpar: PARALLEL CYCLIC REDUCTION instead.  Lane s owns block
       // row s; each of the log2(nsg) rounds eliminates the neighbours at distance d by
       // A'_s = -A_s B_{s-d}^-1 A_{s-d},  C'_s = -C_s B_{s+d}^-1 C_{s+d},
@@ -650,10 +945,10 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
       // difference the partitioned path already carries, and zero once converged).
       Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, nsg), [&](const int s) {
         const int b0 = s*nrd, pb = b0 + PA;
-        const int i1 = ic + (nc*(s+1))/nsg - 1;
+        const int i1 = c.SegStart(s+1,ic,nc,nsg,ib) - 1;
         Real Bh[5][5], Ch[5][5], Ah[5][5], rh[5];
         for (int r=0; r<5; ++r) {
-          rh[r] = c.Wk<true>(m,DP+r,i1,k,j);
+          rh[r] = static_cast<Real>(rD(r,i1));
           for (int col=0; col<5; ++col) {
             Bh[r][col] = (r == col) ? 1.0 : 0.0;
             Ch[r][col] = 0.0;
@@ -664,7 +959,7 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
           const int b1 = (s+1)*nrd;
           for (int r=0; r<5; ++r) {
             for (int cc=0; cc<3; ++cc) {
-              const Real g = c.Wk<true>(m,G0+3*r+cc,i1,k,j);
+              const Real g = static_cast<Real>(rG(r,cc,i1));
               if (g == 0.0) continue;
               rh[r] -= g*c.rd(m,k,j,b1+PP+rc3[cc]);
               for (int col=0; col<5; ++col) {
@@ -679,7 +974,7 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
         if (s > 0) {
           for (int r=0; r<5; ++r) {
             for (int t=0; t<3; ++t) {
-              Ah[r][t+2] = c.Wk<true>(m,HH+3*r+t,i1,k,j);
+              Ah[r][t+2] = static_cast<Real>(rH(r,t,i1));
             }
           }
         }
@@ -692,7 +987,7 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
           c.rd(m,k,j,pb+75+r) = rh[r];
         }
       });
-      int pcur = 0;
+      int pcur = 0, rnd = 0;
       for (int d=1; d<nsg; d*=2) {
         tm.team_barrier();
         // the diagonal block's inverse, one per lane
@@ -734,6 +1029,7 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
                   w += c.rd(m,k,j,pb+5*r+t)*c.rd(m,k,j,bm+PBI+5*t+col);
                 }
                 W[r][col] = w;
+                if (c.reuse > 0) c.rd(m,k,j,b0+RU+50*rnd+5*r+col) = w;
               }
             }
             for (int r=0; r<5; ++r) {
@@ -760,6 +1056,7 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
                   w += c.rd(m,k,j,pb+50+5*r+t)*c.rd(m,k,j,bp+PBI+5*t+col);
                 }
                 W[r][col] = w;
+                if (c.reuse > 0) c.rd(m,k,j,b0+RU+50*rnd+25+5*r+col) = w;
               }
             }
             for (int r=0; r<5; ++r) {
@@ -787,12 +1084,13 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
           }
         });
         pcur = 1 - pcur;
+        ++rnd;
       }
       tm.team_barrier();
       // every lane now holds a DECOUPLED 5x5 row: y_s = B_s^-1 r_s, then the clamp
       Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, nsg), [&](const int s) {
         const int b0 = s*nrd, pb = b0 + PA + pcur*PSTR;
-        const int i1 = ic + (nc*(s+1))/nsg - 1;
+        const int i1 = c.SegStart(s+1,ic,nc,nsg,ib) - 1;
         Real Bm[5][5], Bi[5][5], y[5];
         for (int r=0; r<5; ++r) {
           for (int col=0; col<5; ++col) Bm[r][col] = c.rd(m,k,j,pb+25+5*r+col);
@@ -800,6 +1098,11 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
         if (!RTCol3Inv5(Bm, Bi)) {
           for (int r=0; r<5; ++r) {
             for (int col=0; col<5; ++col) Bi[r][col] = 0.0;
+          }
+        }
+        if (c.reuse > 0) {
+          for (int r=0; r<5; ++r) {
+            for (int col=0; col<5; ++col) c.rd(m,k,j,b0+PBF+5*r+col) = Bi[r][col];
           }
         }
         for (int r=0; r<5; ++r) {
@@ -818,14 +1121,78 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
         }
         for (int r=0; r<5; ++r) c.rd(m,k,j,b0+YY+r) = y[r];
       });
+    } else if (!refac) {
+    // ---- 4c (REUSE), the SERIAL reduced solve.  B_s and C_s are frozen, so the stored
+    // B_s^-1 and G_s = B_s^-1 C_s are still this pass's; only r_s is re-formed.
+    Kokkos::single(Kokkos::PerTeam(tm), [&]() {
+      for (int s=0; s<nsg; ++s) {
+        const int b0 = s*nrd;
+        const int i1 = c.SegStart(s+1,ic,nc,nsg,ib) - 1;
+        Real rh[5];
+        for (int r=0; r<5; ++r) rh[r] = static_cast<Real>(rD(r,i1));
+        if (s + 1 < nsg) {
+          const int b1 = (s+1)*nrd;
+          for (int r=0; r<5; ++r) {
+            for (int cc=0; cc<3; ++cc) {
+              const Real g = static_cast<Real>(rG(r,cc,i1));
+              if (g == 0.0) continue;
+              rh[r] -= g*c.rd(m,k,j,b1+PP+rc3[cc]);
+            }
+          }
+        }
+        if (s > 0) {
+          const int bm1 = (s-1)*nrd;
+          for (int r=0; r<5; ++r) {
+            Real s2 = 0.0;
+            for (int t=0; t<3; ++t) {
+              s2 += static_cast<Real>(rH(r,t,i1))*c.rd(m,k,j,bm1+DR+t+2);
+            }
+            rh[r] -= s2;
+          }
+        }
+        for (int r=0; r<5; ++r) {
+          Real sd = 0.0;
+          for (int t=0; t<5; ++t) sd += c.rd(m,k,j,b0+RU+5*r+t)*rh[t];
+          c.rd(m,k,j,b0+DR+r) = sd;
+        }
+      }
+      // the reduced back-substitution, with the SAME clamp, propagated the same way
+      Real ynext[5];
+      for (int r=0; r<5; ++r) ynext[r] = 0.0;
+      for (int s=nsg-1; s>=0; --s) {
+        const int b0 = s*nrd;
+        const int i1 = c.SegStart(s+1,ic,nc,nsg,ib) - 1;
+        Real y[5];
+        for (int r=0; r<5; ++r) {
+          Real sy = c.rd(m,k,j,b0+DR+r);
+          if (s + 1 < nsg) {
+            for (int col=0; col<5; ++col) sy -= c.rd(m,k,j,b0+GR+5*r+col)*ynext[col];
+          }
+          y[r] = sy;
+        }
+        c.rd(m,k,j,b0+YR) = y[4];
+        const Real b = c.Wk<true>(m,BB,i1,k,j);
+        if (b > 0.0) {
+          if (y[4] > 3.0*b) {
+            y[4] = 3.0*b;
+          } else if (y[4] < -0.75*b) {
+            y[4] = -0.75*b;
+          }
+        }
+        for (int r=0; r<5; ++r) {
+          c.rd(m,k,j,b0+YY+r) = y[r];
+          ynext[r] = y[r];
+        }
+      }
+    });
     } else {
     Kokkos::single(Kokkos::PerTeam(tm), [&]() {
       for (int s=0; s<nsg; ++s) {
         const int b0 = s*nrd;
-        const int i1 = ic + (nc*(s+1))/nsg - 1;
+        const int i1 = c.SegStart(s+1,ic,nc,nsg,ib) - 1;
         Real Bh[5][5], Ch[5][5], rh[5];
         for (int r=0; r<5; ++r) {
-          rh[r] = c.Wk<true>(m,DP+r,i1,k,j);
+          rh[r] = static_cast<Real>(rD(r,i1));
           for (int col=0; col<5; ++col) {
             Bh[r][col] = (r == col) ? 1.0 : 0.0;
             Ch[r][col] = 0.0;
@@ -835,7 +1202,7 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
           const int b1 = (s+1)*nrd;
           for (int r=0; r<5; ++r) {
             for (int cc=0; cc<3; ++cc) {
-              const Real g = c.Wk<true>(m,G0+3*r+cc,i1,k,j);
+              const Real g = static_cast<Real>(rG(r,cc,i1));
               if (g == 0.0) continue;
               rh[r] -= g*c.rd(m,k,j,b1+PP+rc3[cc]);
               for (int col=0; col<5; ++col) {
@@ -855,13 +1222,14 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
             for (int col=0; col<5; ++col) {
               Real sa = 0.0;
               for (int t=0; t<3; ++t) {
-                sa += c.Wk<true>(m,HH+3*r+t,i1,k,j)*c.rd(m,k,j,bm1+GR+5*(t+2)+col);
+                sa += static_cast<Real>(rH(r,t,i1))
+                      *c.rd(m,k,j,bm1+GR+5*(t+2)+col);
               }
               Bh[r][col] -= sa;
             }
             Real s2 = 0.0;
             for (int t=0; t<3; ++t) {
-              s2 += c.Wk<true>(m,HH+3*r+t,i1,k,j)*c.rd(m,k,j,bm1+DR+t+2);
+              s2 += static_cast<Real>(rH(r,t,i1))*c.rd(m,k,j,bm1+DR+t+2);
             }
             rh[r] -= s2;
           }
@@ -870,7 +1238,10 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
         if (!RTCol3Inv5(Bh, Bi)) {
           for (int r=0; r<5; ++r) {
             c.rd(m,k,j,b0+DR+r) = 0.0;
-            for (int col=0; col<5; ++col) c.rd(m,k,j,b0+GR+5*r+col) = 0.0;
+            for (int col=0; col<5; ++col) {
+              c.rd(m,k,j,b0+GR+5*r+col) = 0.0;
+              if (c.reuse > 0) c.rd(m,k,j,b0+RU+5*r+col) = 0.0;
+            }
           }
           continue;
         }
@@ -882,6 +1253,7 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
             Real g = 0.0;
             for (int t=0; t<5; ++t) g += Bi[r][t]*Ch[t][col];
             c.rd(m,k,j,b0+GR+5*r+col) = g;
+            if (c.reuse > 0) c.rd(m,k,j,b0+RU+5*r+col) = Bi[r][col];
           }
         }
       }
@@ -890,7 +1262,7 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
       for (int r=0; r<5; ++r) ynext[r] = 0.0;
       for (int s=nsg-1; s>=0; --s) {
         const int b0 = s*nrd;
-        const int i1 = ic + (nc*(s+1))/nsg - 1;
+        const int i1 = c.SegStart(s+1,ic,nc,nsg,ib) - 1;
         Real y[5];
         for (int r=0; r<5; ++r) {
           Real sy = c.rd(m,k,j,b0+DR+r);
@@ -920,16 +1292,16 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
     Real dbm = 0.0;
     Kokkos::parallel_reduce(Kokkos::TeamThreadRange(tm, nsg),
     [&](const int s, Real &dmx) {
-      const int i0 = ic + (nc*s)/nsg, i1 = ic + (nc*(s+1))/nsg - 1;
+      const int i0 = c.SegStart(s,ic,nc,nsg,ib), i1 = c.SegStart(s+1,ic,nc,nsg,ib) - 1;
       const int b0 = s*nrd;
       int ncl = 0;
-      Real yL[3] = {0.0, 0.0, 0.0};
+      FT yL[3] = {fzero, fzero, fzero};
       if (s > 0) {
         const int bm1 = (s-1)*nrd;
-        for (int r=0; r<3; ++r) yL[r] = c.rd(m,k,j,bm1+YY+r+2);
+        for (int r=0; r<3; ++r) yL[r] = static_cast<FT>(c.rd(m,k,j,bm1+YY+r+2));
       }
-      Real ynext[5];
-      for (int r=0; r<5; ++r) ynext[r] = c.rd(m,k,j,b0+YY+r);
+      FT ynext[5];
+      for (int r=0; r<5; ++r) ynext[r] = static_cast<FT>(c.rd(m,k,j,b0+YY+r));
       // the boundary cell itself: the clamp is re-applied to the RAW increment, which is
       // the same arithmetic the reduced pass did, so the two agree bit for bit
       {
@@ -950,13 +1322,12 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
       }
       for (int i=i1-1; i>=i0; --i) {
         if (i < ib) {                         // the DEEP cell: one row, one unknown
-          Real sy = c.Wk<true>(m,DPD,i,k,j);
+          FT syf = rD(4,i);
           for (int cc=0; cc<3; ++cc) {
-            sy -= c.Wk<true>(m,GD+cc,i,k,j)*ynext[rc3[cc]]
-                + c.Wk<true>(m,HHD+cc,i,k,j)*yL[cc];
+            syf -= rG(4,cc,i)*ynext[rc3[cc]] + rH(4,cc,i)*yL[cc];
           }
           const Real bd = c.Wk<true>(m,BB,i,k,j);
-          Real dbd = sy;
+          Real dbd = static_cast<Real>(syf);
           if (bd > 0.0) {
             if (dbd > 3.0*bd) {
               dbd = 3.0*bd;
@@ -969,21 +1340,20 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
             if (rel > dmx) dmx = rel;
             c.Wk<true>(m,BB,i,k,j) = bd + dbd;
           }
-          for (int r=0; r<4; ++r) ynext[r] = 0.0;
-          ynext[4] = dbd;
+          for (int r=0; r<4; ++r) ynext[r] = fzero;
+          ynext[4] = static_cast<FT>(dbd);
           continue;
         }
-        Real y[5];
+        FT y[5];
         for (int r=0; r<5; ++r) {
-          Real sy = c.Wk<true>(m,DP+r,i,k,j);
+          FT sy = rD(r,i);
           for (int cc=0; cc<3; ++cc) {
-            sy -= c.Wk<true>(m,G0+3*r+cc,i,k,j)*ynext[rc3[cc]]
-                + c.Wk<true>(m,HH+3*r+cc,i,k,j)*yL[cc];
+            sy -= rG(r,cc,i)*ynext[rc3[cc]] + rH(r,cc,i)*yL[cc];
           }
           y[r] = sy;
         }
         const Real b = c.Wk<true>(m,BB,i,k,j);
-        Real db = y[4];
+        Real db = static_cast<Real>(y[4]);
         if (b > 0.0) {
           if (db > 3.0*b) {
             db = 3.0*b;
@@ -996,7 +1366,7 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
           if (rel > dmx) dmx = rel;
           c.Wk<true>(m,BB,i,k,j) = b + db;
         }
-        y[4] = db;
+        y[4] = static_cast<FT>(db);
         for (int r=0; r<5; ++r) ynext[r] = y[r];
       }
       c.rd(m,k,j,b0+NCL) = static_cast<Real>(ncl);
@@ -1015,7 +1385,7 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
   // ---- 5. apply, and the column energy budget --------------------------------------
   tm.team_barrier();
   Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, nsg), [&](const int s) {
-    const int i0 = ic + (nc*s)/nsg, i1 = ic + (nc*(s+1))/nsg - 1;
+    const int i0 = c.SegStart(s,ic,nc,nsg,ib), i1 = c.SegStart(s+1,ic,nc,nsg,ib) - 1;
     const int b0 = s*nrd;
     Real budget = 0.0, bscale = 0.0, rtmax = 0.0, ubmax = 0.0;
     Real rhsum = 0.0, srsum = 0.0;
@@ -1105,6 +1475,10 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
     Kokkos::atomic_add(&c.stat(0), static_cast<Real>(nit));
     Kokkos::atomic_add(&c.stat(1), 1.0);
     Kokkos::atomic_max(&c.stat(2), static_cast<Real>(nit));
+    if (c.reuse > 0) {                        // problem/rt_impl_reuse accounting
+      Kokkos::atomic_add(&c.stat(22), static_cast<Real>(nrefac));
+      Kokkos::atomic_add(&c.stat(23), static_cast<Real>(nreuse));
+    }
     Kokkos::atomic_max(&c.stat(4), dbmax);
     Kokkos::atomic_max(&c.stat(5), rtmax);
     Kokkos::atomic_max(&c.stat(18), ubmax);
@@ -1155,13 +1529,33 @@ inline void RTCol3TeamLaunch(const RTCol3 &c, const int nmb1, const int ks, cons
   const int nk = ke - ks + 1, nj = je - js + 1;
   const int nteam = (nmb1 + 1)*nk*nj;
   Kokkos::TeamPolicy<> policy(DevExeSpace(), nteam, cc.nseg);
-  Kokkos::parallel_for("rt_col3_p", policy, KOKKOS_LAMBDA(TeamMember_t tm) {
-    const int q = tm.league_rank();
-    const int m = q/(nk*nj);
-    const int k = ks + (q - m*nk*nj)/nj;
-    const int j = js + (q - m*nk*nj)%nj;
-    RTCol3TeamSolve(cc, tm, m, k, j);
-  });
+  // problem/rt_impl_mixed picks the factor type; the two extra instantiations exist
+  // only when the switch is set, and mixed = 0 is the untouched double kernel.
+  if (cc.mixed == 1) {
+    Kokkos::parallel_for("rt_col3_p", policy, KOKKOS_LAMBDA(TeamMember_t tm) {
+      const int q = tm.league_rank();
+      const int m = q/(nk*nj);
+      const int k = ks + (q - m*nk*nj)/nj;
+      const int j = js + (q - m*nk*nj)%nj;
+      RTCol3TeamSolve<float, false>(cc, tm, m, k, j);
+    });
+  } else if (cc.mixed == 2) {
+    Kokkos::parallel_for("rt_col3_p", policy, KOKKOS_LAMBDA(TeamMember_t tm) {
+      const int q = tm.league_rank();
+      const int m = q/(nk*nj);
+      const int k = ks + (q - m*nk*nj)/nj;
+      const int j = js + (q - m*nk*nj)%nj;
+      RTCol3TeamSolve<float, true>(cc, tm, m, k, j);
+    });
+  } else {
+    Kokkos::parallel_for("rt_col3_p", policy, KOKKOS_LAMBDA(TeamMember_t tm) {
+      const int q = tm.league_rank();
+      const int m = q/(nk*nj);
+      const int k = ks + (q - m*nk*nj)/nj;
+      const int j = js + (q - m*nk*nj)%nj;
+      RTCol3TeamSolve<Real, false>(cc, tm, m, k, j);
+    });
+  }
 }
 
 }  // namespace two_stream_rt

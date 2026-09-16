@@ -1820,6 +1820,25 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                 << "mode-3 solve they produce is NOT a correct solve." << std::endl;
     }
     ts::rt_impl_cvfreeze = pin->GetOrAddInteger("problem", "rt_impl_cvfreeze", 0);
+    // problem/rt_impl_reuse: reuse the block factorisation across Newton passes, with a
+    // contraction check (1) or unconditionally (2).  0 (the default) is the old code.
+    // problem/rt_impl_mixed: 0 = double (default), 1 = single-precision Newton
+    // correction, 2 = and single-precision stored factors.  See two_stream_rt.hpp.
+    ts::rt_impl_mixed = pin->GetOrAddInteger("problem", "rt_impl_mixed", 0);
+    if (ts::rt_impl_mixed < 0 || ts::rt_impl_mixed > 2) {
+      std::cout << "### FATAL ERROR in box_convection: problem/rt_impl_mixed must be "
+                << "0, 1 or 2" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    ts::rt_impl_reuse = pin->GetOrAddInteger("problem", "rt_impl_reuse", 0);
+    ts::rt_impl_reuse_rho = pin->GetOrAddReal("problem", "rt_impl_reuse_rho", 0.3);
+    if (ts::rt_impl_reuse < 0 || ts::rt_impl_reuse > 2) {
+      std::cout << "### FATAL ERROR in box_convection: problem/rt_impl_reuse must be "
+                << "0, 1 or 2" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    // how often the mode-3 convergence line is printed under rt_outer_verbose
+    ts::rt_report_every = pin->GetOrAddInteger("problem", "rt_report_every", 100);
     // how the mode-3 block system is solved: the serial block Thomas (one thread per
     // column) or the team-partitioned solve (see two_stream_column_partition.hpp)
     {
@@ -1836,6 +1855,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     }
     ts::rt_impl_redpar = pin->GetOrAddBoolean("problem", "rt_impl_redpar", false);
     ts::rt_col3_hybrid_tau = pin->GetOrAddReal("problem", "rt_col3_hybrid_tau", 0.0);
+    ts::rt_col3_split_deep = pin->GetOrAddBoolean("problem", "rt_col3_split_deep",
+                                                  false);
+    ts::rt_col3_split_w = pin->GetOrAddInteger("problem", "rt_col3_split_w", 8);
     ts::rt_impl_nseg = pin->GetOrAddInteger("problem", "rt_impl_nseg", 64);
     if (ts::rt_impl_nseg < 1) {
       std::cout << "### FATAL ERROR in box_convection: problem/rt_impl_nseg must be >= 1"
