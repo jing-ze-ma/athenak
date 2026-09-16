@@ -314,6 +314,13 @@ class Conduction {
   // rad_implicit_x1 is NOT required: the two operators are split from each other and
   // from the hydro, and the radial direction keeps whatever treatment it was given.
   bool rad_implicit_ang = false;
+  // rad_tr_split_out (set by a problem generator, not by the input file): the TRANSVERSE
+  // operator has been taken OUT of the RK stage and is run by the same operator-split
+  // step that runs the radiation column (box_convection's problem/rt_strang and
+  // problem/rt_imex, through problem/rt_split_transverse).  Hydro::/MHD::
+  // ImplicitTransverseConduction is then a no-op: solving here as well would apply the
+  // operator twice a stage.
+  bool rad_tr_split_out = false;
   int rad_ang_maxit = 200;      // ceiling on the RKL1 substage count of one call
   bool rad_ang_verbose = false; // report the substage count and the conservation residual
   static constexpr int ntrs = 2;

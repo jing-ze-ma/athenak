@@ -592,6 +592,9 @@ TaskStatus Hydro::ImplicitTransverseConduction(Driver *pdrive, int stage) {
   if (pcond == nullptr) return TaskStatus::complete;
   if (!(pcond->rad_implicit_ang)) return TaskStatus::complete;
   if (stage < 1) return TaskStatus::complete;
+  // the operator has been moved out of the stage, to run with the radiation column in
+  // the same operator-split step (Conduction::rad_tr_split_out)
+  if (pcond->rad_tr_split_out) return TaskStatus::complete;
   Real beta_dt = (pdrive->beta[stage-1])*(pmy_pack->pmesh->dt);
   // <hydro>/rad_sts_once: ONE call per cycle, after the LAST stage and over the
   // FULL dt, instead of one per stage over beta_dt.  An RKL1 super-step of tau costs

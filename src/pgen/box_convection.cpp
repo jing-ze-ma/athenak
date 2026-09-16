@@ -402,6 +402,19 @@ bool rt_col3_once_ = false;
 // of the same operator costs nothing, needs no hook inside two_stream_rt.hpp, and leaves
 // no residual first-order split in the force either.
 bool rt_imex_ = false;
+// problem/rt_split_transverse (default TRUE whenever rt_strang / rt_once_per_cycle /
+// rt_col3_once / rt_imex is on): move the IMPLICIT TRANSVERSE radiative operator
+// (<hydro>/rad_implicit_ang, the horizontal ADI) OUT of the RK stage as well, and run it
+// inside the same split step as the column, immediately after it and over the SAME bdt.
+//
+// WHY.  In the lid the column solve is a projection onto radiative equilibrium and the
+// horizontal operator is a very fast diffusion (chi_rad ~ 5e17 cm^2/s); in the stage the
+// two are applied back to back over the same beta_dt and very nearly cancel.  Taking
+// only the column out leaves the horizontal operator acting, at its own stage weight, on
+// a state the column has not relaxed -- which is the SAME inconsistency as running with
+// the horizontal operator switched off (arm TR), and ARMS 4/5/7 show the same transonic
+// lid in all three cases.  Set false to reproduce the ARMS 4/5 behaviour.
+bool rt_split_tr_ = false;
 // the per-stage implicit sources S^(l), (nimp_stages, nmb, 4, n3, n2, n1), 4 = the
 // IM1/IM2/IM3/IEN components in that order.  Allocated on the first call (the Driver,
 // which owns nimp_stages, is built after the problem generator).  NOT restarted: every
@@ -1410,6 +1423,21 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         }
       }
     }
+    // problem/rt_split_transverse: with the column out of the stage, take the
+    // horizontal ADI operator out with it (see the declaration above).  Default ON
+    // whenever a split is active; a no-op otherwise.
+    const bool splitout = (rt_strang_ || rt_once_ || rt_col3_once_ || rt_imex_);
+    rt_split_tr_ = splitout &&
+                   pin->GetOrAddBoolean("problem", "rt_split_transverse", true);
+    if (rt_split_tr_ && pmbp->phydro != nullptr && pmbp->phydro->pcond != nullptr &&
+        pmbp->phydro->pcond->rad_implicit_ang) {
+      pmbp->phydro->pcond->rad_tr_split_out = true;
+      if (global_variable::my_rank == 0) {
+        std::cout << "### box_convection: problem/rt_split_transverse = true, the "
+                  << "IMPLICIT TRANSVERSE radiative operator is run inside the split "
+                  << "step with the column and NOT inside the RK stage" << std::endl;
+      }
+    }
     ts::rt_apply_debug = pin->GetOrAddInteger("problem", "rt_apply_debug", 0);
     ts::rt_apply_debug_n = pin->GetOrAddInteger("problem", "rt_apply_debug_n", 8);
     ts::rt_nan_report = pin->GetOrAddBoolean("problem", "nan_report", false);
@@ -2090,6 +2118,20 @@ void BoxConvRTSplit(Mesh *pm, Real bdt) {
   Real e0 = 0.0, r0 = 0.0;
   if (bud_on) BoxConvBoxInt(pm, e0, r0);
   two_stream_rt::picket_fence_two_stream_RT(pm, bdt);
+  // problem/rt_split_transverse: the horizontal ADI operator moves WITH the column, over
+  // the same bdt and on the state the column solve has just relaxed.  Its x2/x3 ghosts
+  // are the last exchange's, exactly as they are for the in-stage task it replaces
+  // (imptrc runs before SendU), so nothing is more stale than before.
+  if (rt_split_tr_) {
+    hydro::Hydro *ph = pm->pmb_pack->phydro;
+    if (ph != nullptr && ph->pcond != nullptr && ph->pcond->rad_implicit_ang) {
+      if (ph->pcond->rad_sts_all) {
+        ph->pcond->StsConductionUpdate(ph->u0, ph->peos->eos_data, bdt);
+      } else {
+        ph->pcond->ImplicitTransverseUpdate(ph->u0, ph->peos->eos_data, bdt);
+      }
+    }
+  }
   if (bud_on) {
     Real e4, r4, ft, fc;
     BoxConvBoxInt(pm, e4, r4);
