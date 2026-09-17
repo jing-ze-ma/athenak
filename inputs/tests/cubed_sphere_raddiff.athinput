@@ -57,6 +57,18 @@ rad_kappa_fac  = 0.01
 rad_flux_inner = 0.0
 rad_met        = 0.0
 rad_cs_exact   = true
+# The IMPLICIT transverse operator, at its OFF default so that this input still runs the
+# explicit path bitwise as before; test_rad_cs_implicit_ang_* flips these from the
+# command line to run the same problem through conduction_transverse.cpp.
+# rad_ang_solver = sts is the RKL1 loop (no line structure, panel seams are ordinary
+# open faces), adi is the alternating-direction solve (lines end at a panel seam and the
+# seam faces are applied by the pair-implicit sub-step).
+rad_implicit_ang  = false
+rad_ang_solver    = sts
+rad_adi_scheme    = lod2
+rad_adi_cross_iter = 1
+rad_adi_seam_w    = 0.5
+rad_ang_verbose   = false
 
 <units>
 length_cgs = 1.0e8
