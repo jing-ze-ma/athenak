@@ -530,17 +530,37 @@ struct RTCol3 {
   //! its face area again to become a flux per unit area.  Under problem/
   //! rt_plane_parallel all three collapse to A = 1 and V = Dx, so every new factor is a
   //! multiplication or division by exactly 1.0 and the box is bitwise unchanged.
+  //!
+  //! THE REFERENCE AREA, AND WHY THE AREAS ARE NOT ABSOLUTE.  All three are carried
+  //! RELATIVE to the column's top face, Ar = A(ie+1).  The scaling cancels identically
+  //! -- every source endpoint, boundary datum and face flux of this solve carries ONE
+  //! power of the area and every divergence one power of 1/V, so J, Src, Fb, the
+  //! Jacobian and every reduction slot are unchanged by it -- but the MAGNITUDE of the
+  //! unknowns is not.  With absolute areas D_q, U_q are A I ~ 1e22 x b while the fifth
+  //! unknown of the same 5x5 block is b itself, so the transport rows' b-column entries
+  //! (t^2 A and the source coefficients, all O(A)) sit 22 decades above their unit
+  //! diagonals.  Row equilibration then drives the transport pivots to ~1/A, the
+  //! single-precision pivot test of RTCol3Inv5X fires on EVERY block, and
+  //! problem/rt_impl_mixed silently degenerates into the double path plus a wasted
+  //! float factorisation (measured on the 1-D He column: 10464 fallbacks per call,
+  //! i.e. every cell, against 0 with the reference area).  Relative areas are O(1)
+  //! -- A(i)/A(ie+1) spans the domain's area ratio and nothing more -- so the block is
+  //! commensurate again.  Under rt_plane_parallel Ar is not read at all.
+  KOKKOS_INLINE_FUNCTION
+  Real Ar(const int m, const int k, const int j) const {
+    return area1(m,k,j,ie+1);
+  }
   KOKKOS_INLINE_FUNCTION
   Real Av(const int m, const int k, const int j, const int i) const {
-    return pp ? 1.0 : area1(m,k,j,i);
+    return pp ? 1.0 : area1(m,k,j,i)/Ar(m,k,j);
   }
   KOKKOS_INLINE_FUNCTION
   Real Ac(const int m, const int k, const int j, const int i) const {
-    return pp ? 1.0 : vol(m,k,j,i)/dx1(m,k,j,i);
+    return pp ? 1.0 : vol(m,k,j,i)/(dx1(m,k,j,i)*Ar(m,k,j));
   }
   KOKKOS_INLINE_FUNCTION
   Real Vc(const int m, const int k, const int j, const int i) const {
-    return pp ? size.d_view(m).dx1 : vol(m,k,j,i);
+    return pp ? size.d_view(m).dx1 : vol(m,k,j,i)/Ar(m,k,j);
   }
   //! kappa_R * rho, the emissivity the layers are built from
   KOKKOS_INLINE_FUNCTION
@@ -1556,7 +1576,7 @@ void RTCol3::Solve(const int m, const int k, const int j) const {
       const Real fhi = (i + 1 < ib) ? Wk<false>(m,FL,i+1,k,j) : fif;
       Kokkos::printf("### rt_col3_deep i=%d dtau=%.4e srcdx=%.10e Flo=%.10e Fhi=%.10e "
                      "b=%.6e db_rel=%.4e\n",
-                     i, 2.0*Ht(m,k,j,i), Wk<false>(m,SA,i,k,j)*Dx(m,k,j,i),
+                     i, 2.0*Ht(m,k,j,i), Wk<false>(m,SA,i,k,j)*Vc(m,k,j,i),
                      Wk<false>(m,FL,i,k,j), fhi, Wk<false>(m,BB,i,k,j),
                      (Bb(m,0,i,k,j) > 0.0) ? (Wk<false>(m,BB,i,k,j)/Bb(m,0,i,k,j) - 1.0)
                                            : 0.0);
@@ -1564,7 +1584,9 @@ void RTCol3::Solve(const int m, const int k, const int j) const {
     for (int i=ib; i<=ie; ++i) {
       Real f3lo = 0.0, f3hi = 0.0;
       for (int q=0; q<nq; ++q) {
-        const Real ulo = (i == ib) ? (Wk<false>(m,BB,ib,k,j) + Ucut_i[q]) : Wk<false>(m,UU+q,i-1,k,j);
+        const Real ulo = (i == ib)
+            ? (Wk<false>(m,BB,ib,k,j) + Ucut_i[q])*Av(m,k,j,ib)
+            : Wk<false>(m,UU+q,i-1,k,j);
         const Real dhi = (i == ie) ? Dtop[q] : Wk<false>(m,DD+q,i+1,k,j);
         f3lo += wf[q]*(ulo - Wk<false>(m,DD+q,i,k,j));
         f3hi += wf[q]*(Wk<false>(m,UU+q,i,k,j) - dhi);
@@ -1576,10 +1598,11 @@ void RTCol3::Solve(const int m, const int k, const int j) const {
       const Real srcdx = Wk<false>(m,SA,i,k,j)*dxi;
       const Real divf = f3lo - f3hi;
       Kokkos::printf("### rt_col3_flux i=%d dtau=%.4e w=%.4e srcdx=%.10e divF=%.10e "
-                     "dif=%.4e sw_srcdx=%.10e F3lo=%.10e Fblo=%.10e exdx=%.10e "
+                     "dif=%.4e sw_srcdx=%.10e F3lo/A=%.10e Fblo=%.10e exdx=%.10e "
                      "appdx=%.10e db_rel=%.4e\n",
                      i, 2.0*Ht(m,k,j,i), 1.0 - wb, srcdx, divf, srcdx - divf,
-                     Src(m,0,i,k,j)*dxi, f3lo, Fb(m,0,i,k,j), Wk<false>(m,EX,i,k,j)*dxi,
+                     Src(m,0,i,k,j)*dxi, f3lo/Av(m,k,j,i), Fb(m,0,i,k,j),
+                     Wk<false>(m,EX,i,k,j)*dxi,
                      (wb*Wk<false>(m,SA,i,k,j) + Wk<false>(m,EX,i,k,j))*dxi,
                      (Bb(m,0,i,k,j) > 0.0) ? (Wk<false>(m,BB,i,k,j)/Bb(m,0,i,k,j) - 1.0) : 0.0);
     }
