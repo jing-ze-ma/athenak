@@ -90,6 +90,11 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
   // inversion silently replaces it by e(rho, 10^(eos_logt_min - 3)).
   eos_data.floor_consistent = pin->GetOrAddBoolean(bk,"eos_floor_consistent",false);
   eos_data.efloor_from_ekin = pin->GetOrAddBoolean(bk,"efloor_from_ekin",false);
+  // See the note on EOS_Data::efloor_as_tfloor.  Also default OFF, also meaningful only
+  // for the tabulated general EOS, and it additionally RAISES tfloor to the table's own
+  // lowest temperature (in BuildGeneralEOS, once the table exists and its range is
+  // known), because a tfloor below the table can never fire.
+  eos_data.efloor_as_tfloor = pin->GetOrAddBoolean(bk,"efloor_as_tfloor",false);
   eos_data.sfloor = pin->GetOrAddReal(bk,"sfloor",(FLT_MIN));
   // See the note on defer_cons_floors in eos.hpp.  Set for the cubed sphere, where
   // GnomonicEquiangleRaiseVel{,MHD} re-applies the floors to the corrected energy.
@@ -102,7 +107,8 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
                              eos_data.dfloor_keep_temperature ||
                              (eos_data.vceil > 0.0) ||
                              eos_data.floor_consistent ||
-                             eos_data.efloor_from_ekin);
+                             eos_data.efloor_from_ekin ||
+                             eos_data.efloor_as_tfloor);
 
   // <block>/tfloor_kelvin -- the SAME floor, stated in kelvin instead of code units.
   //
@@ -200,6 +206,27 @@ void EquationOfState::BuildGeneralEOS(std::string block, ParameterInput *pin) {
     }
     BuildEOSTable(eos_data.tbl, pin, block, eos_data.dens_cgs, eos_data.pres_cgs,
                   eos_data.temp_cgs, eos_data.pfloor);
+    // <block>/efloor_as_tfloor: A TEMPERATURE FLOOR UNDER THE TABLE CANNOT FIRE.
+    // EOSTable::ClampLogT holds every sub-table inversion at the table's lowest
+    // tabulated row, so the temperature ConsToPrim sees is never below it and the
+    // `temp < tfloor` test is dead.  The he4 presupernova input carried
+    // tfloor = 5e3 K against a table starting at 10^3.8 = 6310 K and the counter read
+    // zero for the whole run while the clamp fired throughout.  Raise the floor to the
+    // table's own edge and say so; without the switch the input is left alone, so no
+    // existing run changes.
+    if (eos_data.efloor_as_tfloor) {
+      const Real tmin = eos_data.TableTempMin();
+      if (tmin > 0.0 && eos_data.tfloor < tmin) {
+        if (global_variable::my_rank == 0) {
+          std::cout << "General EOS: <" << block << ">/efloor_as_tfloor raised tfloor "
+                    << eos_data.tfloor*eos_data.temp_cgs << " K -> "
+                    << tmin*eos_data.temp_cgs << " K, the table's lowest tabulated "
+                    << "temperature; a floor below it is unreachable (the inversion is "
+                    << "clamped to that row first)." << std::endl;
+        }
+        eos_data.tfloor = tmin;
+      }
+    }
   } else {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
               << "<" << block << ">/general_eos = '" << mode << "' not recognized; "

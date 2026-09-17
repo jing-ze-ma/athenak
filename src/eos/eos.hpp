@@ -129,9 +129,31 @@ struct EOS_Data {
   // in the residual case E < e_floor.
   bool efloor_from_ekin = false;
 
-  // TRUE when NONE of the four floor switches above (dfloor_keep_velocity, vceil,
-  // floor_consistent, efloor_from_ekin) is enabled, i.e. when the floors behave exactly
-  // as they did before they were added.  Set once in ReadEOS_Params().
+  // <block>/efloor_as_tfloor -- REBUILD A FLOORED STATE FROM ITS TEMPERATURE.
+  //
+  // Under a tabulated EOS the energy floor and the table's own temperature clamp leave
+  // the cell INCONSISTENT: `pfloor` sets e to e(rho,pfloor), and EOSTable::ClampLogT
+  // returns the state at the table's lowest tabulated row whenever e lies below it --
+  // so T, p, Gamma_1 and the sound speed are those of the clamp row while the conserved
+  // energy is still that of a colder gas the table cannot represent.  Every consumer
+  // then disagrees with every other: the Riemann solver sees a pressure the cell's own
+  // energy does not support, the timestep sees the clamp row's sound speed, and the
+  // two-stream reads a Planck function the energy cannot pay for.
+  //
+  // With this on, whenever a floor fires or the inversion is clamped the internal energy
+  // is set to e(rho, T) for the temperature that was settled on -- at least `tfloor`,
+  // and the clamp row where the clamp bound -- and the conserved energy is corrected to
+  // match.  Re-inverting the cell then returns that same T by construction.  It also
+  // makes `tfloor` the floor that actually binds, which is why ReadEOS_Params() raises
+  // tfloor to the table's own lowest temperature when it is set below it: a tfloor under
+  // the table is unreachable, because the clamp intercepts every state that would trip
+  // it.  Counted in EventCounters::neos_tset.
+  bool efloor_as_tfloor = false;
+
+  // TRUE when NONE of the five floor switches above (dfloor_keep_velocity, vceil,
+  // floor_consistent, efloor_from_ekin, efloor_as_tfloor) is enabled, i.e. when the
+  // floors behave exactly as they did before they were added.  Set once in
+  // ReadEOS_Params().
   //
   // Why a flag rather than the switches' own tests: adding them rewrote the kernels that
   // apply the floors -- expressions regrouped, temporaries hoisted, writes moved, and in
@@ -463,6 +485,15 @@ struct EOS_Data {
   KOKKOS_INLINE_FUNCTION
   bool BelowPressureFloor(const Real d, const Real e, const Real t) const {
     return (Pressure(d, e, t) < pfloor);
+  }
+
+  //! \fn Real TableTempMin
+  //! \brief the LOWEST TABULATED temperature, in CODE units; -1 when no table is active.
+  //! This is the temperature EOSTable::ClampLogT holds a sub-table state at, and
+  //! therefore the lowest temperature any floor can actually reach.
+  KOKKOS_INLINE_FUNCTION
+  Real TableTempMin() const {
+    return tbl.active ? (EOSTable::Pow10(tbl.ymin)/temp_cgs) : -1.0;
   }
 
   //! \fn Real EnergyFloorBound

@@ -170,11 +170,11 @@ void Hydro::FOFC(Driver *pdriver, int stage) {
         Real m3 = utest_(m,IM3,k,j,i);
         Real etot = utest_(m,IEN,k,j,i);
         Real v1, v2, v3, eint, pnew, g1new, temp, de;
-        bool ceil_used, floored;
+        bool ceil_used, floored, tset_used;
         GnomonicRaiseVelFloors(cosc_(m,k,j), eos_, gen_, false, false, vceil_, true,
                                1.0, gen_ ? wtemp_(m,k,j,i) : 0.0, d,
                                m1, m2, m3, etot, v1, v2, v3, eint, pnew, g1new, temp,
-                               ceil_used, floored, de);
+                               ceil_used, floored, tset_used, de);
         if (ceil_used || floored) {
           fofcc_(m,k,j,i) = true;
           sumf++;

@@ -216,10 +216,31 @@ rad_tr_tau_lo    = 0.0           # no tau blend on the transverse operator: the 
 rad_tr_tau_hi    = 0.0           # two-stream already owns the radiation above rad_gate_rho
 # (rad_cap_ang, the explicit stiffness cap of the old fallback, is REMOVED: it and
 # rad_implicit_ang are two treatments of the same operator and the code refuses both.)
-tfloor  = 5.0e3                  # rt_use_cons clamps a non-positive e to e(rho, tfloor)
+tfloor  = 5.0e3                  # rt_use_cons clamps a non-positive e to e(rho, tfloor).
+                                 # 5e3 K is BELOW the table's own lowest row (10^3.8 =
+                                 # 6310 K) and was therefore UNREACHABLE: every sub-table
+                                 # inversion is clamped to 6310 K first, so the tfloor
+                                 # counter read 0 for the whole of arm B'/E' while the
+                                 # clamp fired throughout.  efloor_as_tfloor below raises
+                                 # it to the table edge at startup and says so.
 dfloor  = 1.0e-13                # the EOS table's own lower edge (eos_logd_min = -13); the
                                  # initial top cell is 5.71e-11, so this is 5.7e-3 of it
 pfloor  = 1.0e-1                 # 1.3e-5 of the initial top-cell pressure; should not fire
+# THE FLOORED STATE MADE CONSISTENT.  See the note on EOS_Data::efloor_as_tfloor.  Arm E'
+# died at 0.78 turnover on a cell at r/R = 0.744 carrying rho = 3.5e-9, code T = 5.246e11
+# and p = 459: that is NOT an EOS-inversion failure -- 5.246e11/8.314e7 = 6310 K is the
+# table's lowest tabulated temperature exactly, and p = rho R T / mu with mu = 4.03 is
+# neutral helium at that temperature.  The cell is at the CLAMP, and the hazard is that
+# its p, Gamma_1 and sound speed are the clamp row's while its conserved energy is that
+# of a colder gas.  With this on the energy is reset to e(rho,T) for the temperature that
+# was settled on, so the cell re-inverts to the same T and every consumer agrees.
+efloor_as_tfloor = true
+# PAY FOR THE ENERGY FLOOR OUT OF THE KINETIC ENERGY, not out of nothing.  Off here so
+# that the arm tables of tests_r5 mean what they say; it is the next thing to try, because
+# arms E'/E'' both die on a cell whose |v1| has already reached 1e9-2e10 cm/s, i.e. one
+# where e = E - e_kin is negative and the floor donates the cell's whole kinetic energy
+# back into the acceleration that emptied it.  See EOS_Data::efloor_from_ekin.
+efloor_from_ekin = false
 
 <problem>
 user_srcs   = true

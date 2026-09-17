@@ -80,6 +80,12 @@ struct EventCounters {
   // its own bracket three decades outside the table and returns a saturated
   // temperature and sound speed that no longer depend on e at all.
   int neos_tclamp;
+  // Cells whose FLOORED state was rebuilt from a TEMPERATURE, under
+  // <block>/efloor_as_tfloor: e was set to e(rho,T) for the T the floors and the table
+  // clamp left, so that re-inverting the cell returns that same T and the cached p,
+  // Gamma_1 and sound speed belong to the energy the cell actually carries.  Counted
+  // separately from neos_efloor because it is a repair OF a floor, not a floor.
+  int neos_tset;
   // Energy density CREATED by the internal-energy/pressure floor since the counters were
   // last reset, summed over cells (code units, not volume weighted -- a cell count's
   // worth of erg/cm^3).  A floor that fires is only a diagnostic; a floor that fires
@@ -87,7 +93,7 @@ struct EventCounters {
   Real efloor_de;
   EventCounters() : nfofc(0), neos_dfloor(0), neos_efloor(0), neos_tfloor(0),
                     neos_vceil(0), neos_fail(0), maxit_c2p(0), neos_tclamp(0),
-                    efloor_de(0.0) {}
+                    neos_tset(0), efloor_de(0.0) {}
 };
 
 //----------------------------------------------------------------------------------------

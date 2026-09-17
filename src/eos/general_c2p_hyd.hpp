@@ -131,7 +131,8 @@ void SingleC2P_GeneralHyd(HydCons1D &u, const EOS_Data &eos, HydPrim1D &w,
                           const Real tguess, Real &temp, Real &pgas, Real &g1,
                           bool &dfloor_used, bool &efloor_used, bool &tfloor_used,
                           Real &efloor_de, bool &mom_scaled, Real &dfloor_fv,
-                          bool &vceil_used, bool &vceil_test, bool &tclamp_used) {
+                          bool &vceil_used, bool &vceil_test, bool &tclamp_used,
+                          bool &tset_used) {
   // THE DENSITY FLOOR.  Default: raise u.d and leave m and E alone -- which changes the
   // velocity and creates internal energy, because the kinetic share of the fixed total
   // drops when rho goes up.  <block>/dfloor_keep_velocity instead scales the momentum by
@@ -271,6 +272,28 @@ void SingleC2P_GeneralHyd(HydCons1D &u, const EOS_Data &eos, HydPrim1D &w,
   if (eos.ApplyEntropyFloor(w.d, di, w.e)) {
     temp = eos.Temperature(w.d, w.e, temp);
     efloor_used = true;
+    stale = true;
+  }
+
+  // <block>/efloor_as_tfloor: REBUILD THE FLOORED STATE FROM ITS TEMPERATURE.  See the
+  // note on EOS_Data::efloor_as_tfloor.  Everything above sets the internal energy and
+  // then reports whatever temperature the table could form from it; when a floor fired,
+  // or when the inversion had to be CLAMPED to the table's lowest/highest tabulated row,
+  // those two no longer describe the same gas.  Invert the relation instead: take the
+  // temperature that was settled on -- at least tfloor, and the clamp row where the
+  // clamp bound -- and set e to e(rho,T) for it, so that re-inverting this cell returns
+  // exactly this T and the p, Gamma_1 and sound speed below belong to the energy the
+  // cell actually carries.  At the LOW edge this raises e (it is the temperature floor
+  // doing what the pressure floor could not reach); at the HIGH edge it lowers e, which
+  // removes energy the table cannot represent rather than leaving a saturated state.
+  if (eos.efloor_as_tfloor && (stale || tclamp_used)) {
+    const Real tset = (temp > eos.tfloor) ? temp : eos.tfloor;
+    const Real ets = eos.EnergyFromTemperature(w.d, tset);
+    if (!eos.defer_cons_floors) efloor_de += ets - w.e;
+    w.e = ets;
+    if (!eos.defer_cons_floors) u.e = w.e + e_k;
+    temp = tset;
+    tset_used = true;
     stale = true;
   }
 
