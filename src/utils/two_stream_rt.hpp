@@ -1518,6 +1518,22 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
     auto DX1 = [=] (const int m, const int k, const int j, const int i) {
       return pp_ ? size.d_view(m).dx1 : dx1_(m,k,j,i);
     };
+    // ---- THE TRANSVERSE ARC LENGTHS.  On a CURVILINEAR mesh size.dx2/dx3 are the
+    // COORDINATE spacings -- on the cubed sphere the gnomonic angles xi, eta in [-1,1],
+    // i.e. dimensionless -- while pcoord->dx2/dx3 are the per-cell physical arc lengths
+    // (~ r dxi), the same distinction conduction.cpp:1069 makes with its `curv` flag.
+    // Every transverse DERIVATIVE in this file must divide by the arc length; the
+    // coordinate spacing is off by ~r (2e11 on the He star).  On a Cartesian mesh
+    // pcoord->dx2/dx3 are 1x1x1x1 dummies, so the flag also decides which is readable.
+    const bool curv_ = pmbp->pmesh->use_cubed_sphere || pmbp->pmesh->use_spherical_polar;
+    auto dx2_c_ = pmbp->pcoord->dx2;
+    auto dx3_c_ = pmbp->pcoord->dx3;
+    auto DX2 = [=] (const int m, const int k, const int j, const int i) {
+      return curv_ ? dx2_c_(m,k,j,i) : size.d_view(m).dx2;
+    };
+    auto DX3 = [=] (const int m, const int k, const int j, const int i) {
+      return curv_ ? dx3_c_(m,k,j,i) : size.d_view(m).dx3;
+    };
 
     Real gamma;
     EOS_Data eos;
@@ -4665,11 +4681,21 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
             const Real cg = (arad_f*tk*tk*tk*tk/3.0)*dwdx*M_LOG10E/rho;
             prgw = cg*(rhoN(m,k,j,i+1) - rhoN(m,k,j,i-1))/(X1V(m,i+1) - X1V(m,i-1));
             f1 += prgw;
+            // the transverse components of Prad grad w.  The derivative is taken
+            // against the physical ARC LENGTH (DX2/DX3), not the coordinate spacing:
+            // on the cubed sphere x2/x3 are the gnomonic ANGLES and size.dx2 is
+            // dimensionless, which made this term ~r = 2e11 times too large and drove
+            // a grid-scale transverse instability from round-off in a few cycles.
+            // What u0(IM2), u0(IM3) hold on the cubed sphere is the COVARIANT angular
+            // momentum (coordinates.hpp:151-161), and the covariant component of a
+            // gradient along the unit tangent e_xi IS dphi/dl_xi, so no metric
+            // inverse enters here -- the arc-length derivative is already the right
+            // component to add.
             if (md_f) {
-              f2 = cg*(rhoN(m,k,j+1,i) - rhoN(m,k,j-1,i))/(2.0*size.d_view(m).dx2);
+              f2 = cg*(rhoN(m,k,j+1,i) - rhoN(m,k,j-1,i))/(2.0*DX2(m,k,j,i));
             }
             if (td_f) {
-              f3 = cg*(rhoN(m,k+1,j,i) - rhoN(m,k-1,j,i))/(2.0*size.d_view(m).dx3);
+              f3 = cg*(rhoN(m,k+1,j,i) - rhoN(m,k-1,j,i))/(2.0*DX3(m,k,j,i));
             }
           }
           const Real dinv = 1.0/u0(m,IDN,k,j,i);
