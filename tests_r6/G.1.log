@@ -1,0 +1,206 @@
+Loading openmpi_gpu/5.0
+  Loading requirement: openmpi/5.0
+### LEG 01  tlim=2352.5  mlt_dump=mltfaces_00.txt  job 11780748
+Mesh: spherical-polar x3-face theta correction = rotate
+
+Cubed sphere: Root grid = 6 x 1 x (2 x 2) MeshBlocks
+Total number of MeshBlocks = 24
+Number of logical  levels of refinement = 1 (2 levels total)
+Number of physical levels of refinement = 0 (1 levels total)
+Number of parallel ranks = 2
+  Rank = 0: 12 MeshBlocks, cost = 12
+  Rank = 1: 12 MeshBlocks, cost = 12
+Load Balancing:
+  Maximum normalized cost = 1, Average = 1
+General EOS: tabulated on 501 x 676 nodes (41 MB), log10 rho[cgs] in [-13, -3], log10 T[K] in [3.8, 6.5]
+             X = 0, Y = 0.98, Z = 0.02, H2 off, ionization on, radiation on
+             radiation TAPERED off between rho = 1.93e-09 (w = 1, LTE) and rho = 4.97e-10 g/cm^3 (w = 0, the two-stream owns it)
+             metal ionization off
+             mu at the grid centre = 1.35912, n_e/n_tot = 0.665534
+General EOS: <hydro>/efloor_as_tfloor raised tfloor 6.01362e-05 K -> 6309.57 K, the table's lowest tabulated temperature; a floor below it is unreachable (the inversion is clamped to that row first).
+Conduction: transverse solver = ADI (lod2, theta = 1, sweep pairs/stage = 3), blocks per line = 2 (x2), 2 (x3)
+General EOS: tabulated on 501 x 676 nodes (41 MB), log10 rho[cgs] in [-13, -3], log10 T[K] in [3.8, 6.5]
+             X = 0, Y = 0.98, Z = 0.02, H2 off, ionization on, radiation on
+             radiation TAPERED off between rho = 1.93e-09 (w = 1, LTE) and rho = 4.97e-10 g/cm^3 (w = 0, the two-stream owns it)
+             metal ionization off
+             mu at the grid centre = 1.35912, n_e/n_tot = 0.665534
+red_giant: opacity table '/viper/u2/jinma/ATHENAK/bench/hestar_fecz/rosseland_he_x0.0_z0.02.txt', 217 x 481 nodes, log10 T 2.6..8, log10 rho -24..0 (200 rows prepended below the file's -14 at the floor, so the clamp cannot hand back real opacity for a thin cell); 41020 prepended nodes (rho below the file) set to problem/opac_floor = 1e-05 cm^2/g (optically thin; the merge edge-filled them)
+red_giant: opacity table '/viper/u2/jinma/ATHENAK/bench/hestar_fecz/rosseland_he_x0.0_z0.02.txt', 217 x 481 nodes, log10 T 2.6..8, log10 rho -24..0 (200 rows prepended below the file's -14 at the floor, so the clamp cannot hand back real opacity for a thin cell); 41020 prepended nodes (rho below the file) set to problem/opac_floor = 1e-05 cm^2/g (optically thin; the merge edge-filled them)
+red_giant: RT radiative momentum source ON -- (1-w) rho kappa F/c + Prad grad w, with w from the EOS taper; g(r) = GM/r^2
+red_giant: F_bot = 1.30528e+15 is carried by the TWO-STREAM's lower boundary (rt_bottom_flux); the conduction wall face injects nothing.  This assumes <hydro>/rad_tau_lo = 1.000e+05 is DEEPER than the domain, so the blend weight is 0 on every face.
+red_giant: the two-stream is applied STRANG-SPLIT around the time integrator (dt/2 before, dt/2 after) and NOT inside the RK stages; the transverse operator moves with it
+red_giant: GREY two-stream (problem/rt_grey), opacity from the conduction module's table, 2-point angular quadrature
+           column above the domain: the ghost's own Planck function (it mirrors the top cell back)
+red_giant: initial stratification READ FROM /viper/u2/jinma/ATHENAK/bench/hestar_presn/ic_he4_presn_sph.txt (15999 nodes, 8.30108e+10 .. 2.43252e+11 cm); the hydrostatic+MLT march, problem/ptop and the outer-wall gas-solution check are all OVERRIDDEN
+red_giant: no cell is denser than the opacity table's valid window logR = [-8, 1.5]; cells below it carry problem/opac_floor
+red_giant: OPEN outer boundary -- the ghosts continue the top active cell hydrostatically at its own temperature, outflow only. Mass and energy CAN leave the domain; problem/face_budget reports how much.
+red_giant: M = 6.2651e+33 g, L = 2.3066e+38 erg/s, Teff = 48978 K, rin = 1.18585e+11 cm, rout = 2.4057e+11 cm
+           wall p/T: outer 7510 / 41382.7 K, inner 8.35805e+06 / 237659 K
+           tau = 2/3 at r = 2.37122e+11 cm, T = 49199.2 K; radiative-convective boundary at r = 2.29155e+11 cm
+red_giant: no cell is denser than the opacity table's valid window logR = [-8, 1.5]; cells below it carry problem/opac_floor
+red_giant: chart-free seed + 32 random plane waves, lambda in [2.5e+11, 7.4e+11] cm, seed 1234, amp 1
+
+Setup complete, executing task list(s)...
+
+elapsed=7.928364e+00 cycle=0 time=0.000000e+00 dt=1.292197e+01
+### two_stream_rt: thermodynamic state read from u0 (CONSERVED, problem/rt_use_cons = true)
+deep_hot_jupiter_rt: RT split path ON, 1 chain block(s) of 4 -> 1x the thread count of the monolithic kernel
+### two_stream_rt: rt_implicit_column = 3, the EXACT block-tridiagonal column solve (intensities as unknowns); solver pcr nseg 32 hybrid_tau 0.000000e+00 mixed(2); workspace 2.559237e+02 + 1.427374e+02 MB
+  red_giant top v1 sponge active: r >= 2.39020e+11, f = 1 at tau <= 3.3333e-02, timescale 2.0000e+01 s
+elapsed=7.395510e+01 cycle=100 time=1.270216e+03 dt=1.252216e+01
+
+Terminating on time limit
+time=2.352500e+03 cycle=187
+tlim=2.352500e+03 nlim=-1
+
+MeshBlock-cycles = 4488
+cpu time used  = 1.249018e+02
+zone-cycles/cpu_second = 8.830702e+05
+particle-updates/cpu_second = 0.000000e+00
+### athena exit 0 (leg 01)
+### LEG 02  tlim=4705.0  mlt_dump=mltfaces_01.txt  job 11780748
+Mesh: spherical-polar x3-face theta correction = rotate
+
+Cubed sphere: Root grid = 6 x 1 x (2 x 2) MeshBlocks
+Total number of MeshBlocks = 24
+Number of logical  levels of refinement = 1 (2 levels total)
+Number of physical levels of refinement = 0 (1 levels total)
+Number of parallel ranks = 2
+  Rank = 0: 12 MeshBlocks, cost = 12
+  Rank = 1: 12 MeshBlocks, cost = 12
+Load Balancing:
+  Maximum normalized cost = 1, Average = 1
+General EOS: tabulated on 501 x 676 nodes (41 MB), log10 rho[cgs] in [-13, -3], log10 T[K] in [3.8, 6.5]
+             X = 0, Y = 0.98, Z = 0.02, H2 off, ionization on, radiation on
+             radiation TAPERED off between rho = 1.93e-09 (w = 1, LTE) and rho = 4.97e-10 g/cm^3 (w = 0, the two-stream owns it)
+             metal ionization off
+             mu at the grid centre = 1.35912, n_e/n_tot = 0.665534
+General EOS: tabulated on 501 x 676 nodes (41 MB), log10 rho[cgs] in [-13, -3], log10 T[K] in [3.8, 6.5]
+             X = 0, Y = 0.98, Z = 0.02, H2 off, ionization on, radiation on
+             radiation TAPERED off between rho = 1.93e-09 (w = 1, LTE) and rho = 4.97e-10 g/cm^3 (w = 0, the two-stream owns it)
+             metal ionization off
+             mu at the grid centre = 1.35912, n_e/n_tot = 0.665534
+General EOS: <hydro>/efloor_as_tfloor raised tfloor 6.01362e-05 K -> 6309.57 K, the table's lowest tabulated temperature; a floor below it is unreachable (the inversion is clamped to that row first).
+Conduction: transverse solver = ADI (lod2, theta = 1, sweep pairs/stage = 3), blocks per line = 2 (x2), 2 (x3)
+red_giant: opacity table '/viper/u2/jinma/ATHENAK/bench/hestar_fecz/rosseland_he_x0.0_z0.02.txt', 217 x 481 nodes, log10 T 2.6..8, log10 rho -24..0 (200 rows prepended below the file's -14 at the floor, so the clamp cannot hand back real opacity for a thin cell); 41020 prepended nodes (rho below the file) set to problem/opac_floor = 1e-05 cm^2/g (optically thin; the merge edge-filled them)
+red_giant: RT radiative momentum source ON -- (1-w) rho kappa F/c + Prad grad w, with w from the EOS taper; g(r) = GM/r^2
+red_giant: F_bot = 1.30528e+15 is carried by the TWO-STREAM's lower boundary (rt_bottom_flux); the conduction wall face injects nothing.  This assumes <hydro>/rad_tau_lo = 1.000e+05 is DEEPER than the domain, so the blend weight is 0 on every face.
+red_giant: the two-stream is applied STRANG-SPLIT around the time integrator (dt/2 before, dt/2 after) and NOT inside the RK stages; the transverse operator moves with it
+red_giant: GREY two-stream (problem/rt_grey), opacity from the conduction module's table, 2-point angular quadrature
+           column above the domain: the ghost's own Planck function (it mirrors the top cell back)
+red_giant: opacity table '/viper/u2/jinma/ATHENAK/bench/hestar_fecz/rosseland_he_x0.0_z0.02.txt', 217 x 481 nodes, log10 T 2.6..8, log10 rho -24..0 (200 rows prepended below the file's -14 at the floor, so the clamp cannot hand back real opacity for a thin cell); 41020 prepended nodes (rho below the file) set to problem/opac_floor = 1e-05 cm^2/g (optically thin; the merge edge-filled them)
+red_giant: initial stratification READ FROM /viper/u2/jinma/ATHENAK/bench/hestar_presn/ic_he4_presn_sph.txt (15999 nodes, 8.30108e+10 .. 2.43252e+11 cm); the hydrostatic+MLT march, problem/ptop and the outer-wall gas-solution check are all OVERRIDDEN
+red_giant: no cell is denser than the opacity table's valid window logR = [-8, 1.5]; cells below it carry problem/opac_floor
+red_giant: no cell is denser than the opacity table's valid window logR = [-8, 1.5]; cells below it carry problem/opac_floor
+red_giant: OPEN outer boundary -- the ghosts continue the top active cell hydrostatically at its own temperature, outflow only. Mass and energy CAN leave the domain; problem/face_budget reports how much.
+red_giant: M = 6.2651e+33 g, L = 2.3066e+38 erg/s, Teff = 48978 K, rin = 1.18585e+11 cm, rout = 2.4057e+11 cm
+           wall p/T: outer 7510 / 41382.7 K, inner 8.35805e+06 / 237659 K
+           tau = 2/3 at r = 2.37122e+11 cm, T = 49199.2 K; radiative-convective boundary at r = 2.29155e+11 cm
+
+Setup complete, executing task list(s)...
+
+### two_stream_rt: thermodynamic state read from u0 (CONSERVED, problem/rt_use_cons = true)
+deep_hot_jupiter_rt: RT split path ON, 1 chain block(s) of 4 -> 1x the thread count of the monolithic kernel
+### two_stream_rt: rt_implicit_column = 3, the EXACT block-tridiagonal column solve (intensities as unknowns); solver pcr nseg 32 hybrid_tau 0 mixed(2); workspace 255.924 + 142.737 MB
+  red_giant top v1 sponge active: r >= 2.37724e+11, f = 1 at tau <= 3.3333e-02, timescale 2.0000e+01 s
+elapsed=1.659804e+01 cycle=200 time=2.508055e+03 dt=1.088410e+01
+elapsed=8.667307e+01 cycle=300 time=2.962615e+03 dt=5.687754e-02
+elapsed=1.590770e+02 cycle=400 time=2.967316e+03 dt=4.377855e-02
+### red_giant sponge guard FIRED (rank 1, cycle 480, t = 2975.34): 1 cell(s) not damped; first (m,k,j,i) = (8,7,3,91) d = 1.58658e-09 ei = -8.01204e+08 ke = 8.18499e+08 dphi = 2.78012e+06
+### dt COLLAPSE cycle=486 time=2.976326e+03 dtold=1.179540e-01 dt=2.579309e-02 | hydro=2.579309e-02 mhd=-1.000000e+00 cond=8.988466e+306 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+    hydro dt is set by cell (m,k,j,i) = (1,3,12,41) gid = 1
+    r=1.956673e+11 rho=8.606767e-10 T=2.362396e+14 p=5.898417e+10 cs=1.717143e+10 v=(-2.297438e+07,8.560565e+06,-1.234090e+07)
+### red_giant sponge guard FIRED (rank 0, cycle 487, t = 2.976351e+03): 1 cell(s) not damped; first (m,k,j,i) = (9,3,16,91) d = 1.853531e-09 ei = -7.977470e+07 ke = 1.453507e+08 dphi = 3.247883e+06
+elapsed=2.321992e+02 cycle=500 time=2.976895e+03 dt=2.653422e-02
+
+Terminating on wall clock limit
+time=2.977170e+03 cycle=511
+tlim=4.705000e+03 nlim=-1
+
+MeshBlock-cycles = 7776
+cpu time used  = 2.334701e+02
+zone-cycles/cpu_second = 8.185331e+05
+particle-updates/cpu_second = 0.000000e+00
+### athena exit 0 (leg 02)
+### LEG 03  tlim=7057.5  mlt_dump=mltfaces_02.txt  job 11780748
+Mesh: spherical-polar x3-face theta correction = rotate
+
+Cubed sphere: Root grid = 6 x 1 x (2 x 2) MeshBlocks
+Total number of MeshBlocks = 24
+Number of logical  levels of refinement = 1 (2 levels total)
+Number of physical levels of refinement = 0 (1 levels total)
+Number of parallel ranks = 2
+  Rank = 0: 12 MeshBlocks, cost = 12
+  Rank = 1: 12 MeshBlocks, cost = 12
+Load Balancing:
+  Maximum normalized cost = 1, Average = 1
+General EOS: tabulated on 501 x 676 nodes (41 MB), log10 rho[cgs] in [-13, -3], log10 T[K] in [3.8, 6.5]
+             X = 0, Y = 0.98, Z = 0.02, H2 off, ionization on, radiation on
+             radiation TAPERED off between rho = 1.93e-09 (w = 1, LTE) and rho = 4.97e-10 g/cm^3 (w = 0, the two-stream owns it)
+             metal ionization off
+             mu at the grid centre = 1.35912, n_e/n_tot = 0.665534
+General EOS: tabulated on 501 x 676 nodes (41 MB), log10 rho[cgs] in [-13, -3], log10 T[K] in [3.8, 6.5]
+             X = 0, Y = 0.98, Z = 0.02, H2 off, ionization on, radiation on
+             radiation TAPERED off between rho = 1.93e-09 (w = 1, LTE) and rho = 4.97e-10 g/cm^3 (w = 0, the two-stream owns it)
+             metal ionization off
+             mu at the grid centre = 1.35912, n_e/n_tot = 0.665534
+General EOS: <hydro>/efloor_as_tfloor raised tfloor 6.01362e-05 K -> 6309.57 K, the table's lowest tabulated temperature; a floor below it is unreachable (the inversion is clamped to that row first).
+Conduction: transverse solver = ADI (lod2, theta = 1, sweep pairs/stage = 3), blocks per line = 2 (x2), 2 (x3)
+red_giant: opacity table '/viper/u2/jinma/ATHENAK/bench/hestar_fecz/rosseland_he_x0.0_z0.02.txt', 217 x 481 nodes, log10 T 2.6..8, log10 rho -24..0 (200 rows prepended below the file's -14 at the floor, so the clamp cannot hand back real opacity for a thin cell); 41020 prepended nodes (rho below the file) set to problem/opac_floor = 1e-05 cm^2/g (optically thin; the merge edge-filled them)
+red_giant: opacity table '/viper/u2/jinma/ATHENAK/bench/hestar_fecz/rosseland_he_x0.0_z0.02.txt', 217 x 481 nodes, log10 T 2.6..8, log10 rho -24..0 (200 rows prepended below the file's -14 at the floor, so the clamp cannot hand back real opacity for a thin cell); 41020 prepended nodes (rho below the file) set to problem/opac_floor = 1e-05 cm^2/g (optically thin; the merge edge-filled them)
+red_giant: RT radiative momentum source ON -- (1-w) rho kappa F/c + Prad grad w, with w from the EOS taper; g(r) = GM/r^2
+red_giant: F_bot = 1.30528e+15 is carried by the TWO-STREAM's lower boundary (rt_bottom_flux); the conduction wall face injects nothing.  This assumes <hydro>/rad_tau_lo = 1.000e+05 is DEEPER than the domain, so the blend weight is 0 on every face.
+red_giant: the two-stream is applied STRANG-SPLIT around the time integrator (dt/2 before, dt/2 after) and NOT inside the RK stages; the transverse operator moves with it
+red_giant: GREY two-stream (problem/rt_grey), opacity from the conduction module's table, 2-point angular quadrature
+           column above the domain: the ghost's own Planck function (it mirrors the top cell back)
+red_giant: initial stratification READ FROM /viper/u2/jinma/ATHENAK/bench/hestar_presn/ic_he4_presn_sph.txt (15999 nodes, 8.30108e+10 .. 2.43252e+11 cm); the hydrostatic+MLT march, problem/ptop and the outer-wall gas-solution check are all OVERRIDDEN
+red_giant: no cell is denser than the opacity table's valid window logR = [-8, 1.5]; cells below it carry problem/opac_floor
+red_giant: no cell is denser than the opacity table's valid window logR = [-8, 1.5]; cells below it carry problem/opac_floor
+red_giant: OPEN outer boundary -- the ghosts continue the top active cell hydrostatically at its own temperature, outflow only. Mass and energy CAN leave the domain; problem/face_budget reports how much.
+red_giant: M = 6.2651e+33 g, L = 2.3066e+38 erg/s, Teff = 48978 K, rin = 1.18585e+11 cm, rout = 2.4057e+11 cm
+           wall p/T: outer 7510 / 41382.7 K, inner 8.35805e+06 / 237659 K
+           tau = 2/3 at r = 2.37122e+11 cm, T = 49199.2 K; radiative-convective boundary at r = 2.29155e+11 cm
+
+Setup complete, executing task list(s)...
+
+### two_stream_rt: thermodynamic state read from u0 (CONSERVED, problem/rt_use_cons = true)
+deep_hot_jupiter_rt: RT split path ON, 1 chain block(s) of 4 -> 1x the thread count of the monolithic kernel
+### two_stream_rt: rt_implicit_column = 3, the EXACT block-tridiagonal column solve (intensities as unknowns); solver pcr nseg 32 hybrid_tau 0 mixed(2); workspace 255.924 + 142.737 MB
+  red_giant top v1 sponge active: r >= 2.37065e+11, f = 1 at tau <= 3.3333e-02, timescale 2.0000e+01 s
+### red_giant sponge guard FIRED (rank 1, cycle 512, t = 2977.2): 1 cell(s) not damped; first (m,k,j,i) = (5,8,18,91) d = 1.68871e-09 ei = -4.71831e+06 ke = 2.54624e+07 dphi = 2.95908e+06
+### red_giant sponge guard FIRED (rank 0, cycle 513, t = 2977.23): 1 cell(s) not damped; first (m,k,j,i) = (9,3,12,91) d = 1.81679e-09 ei = -4.97516e+07 ke = 9.10977e+07 dphi = 3.1835e+06
+srun: Job step aborted: Waiting up to 62 seconds for job step to finish.
+srun: got SIGCONT
+[2026-09-17T20:52:42.324] error: *** JOB 11780748 ON vipa1001 CANCELLED AT 2026-09-17T20:52:42 DUE to SIGNAL Terminated ***
+srun: forcing job termination
+[2026-09-17T20:52:42.324] error: *** STEP 11780748.2 ON vipa1001 CANCELLED AT 2026-09-17T20:52:42 DUE to SIGNAL Terminated ***
+                                  
+================================= 
+Global information about the job: 
+================================= 
+  
+Job owner: jinma(28895)
+Job name:  r6he4
+Node list: vipa1001
+Job start: Thu Sep 17 20:45:22 CEST 2026
+Job end:   Thu Sep 17 20:52:42 CEST 2026
+Work dir:  /viper/u2/jinma/ATHENAK/bench/wt_he4/tests_r6
+Command:   /viper/u2/jinma/ATHENAK/bench/wt_he4/tests_r6/chain.sh
+  
+  
+  
+==========================================================================================
+Information on jobsteps (Note: MaxRSS/AveRSS is the maximum/average over all 
+tasks of the per-task memory high-water marks; cf. "man sacct"): 
+==========================================================================================
+  
+JobID            JobName NNodes NTasks  NCPUS       MaxRSS       AveRSS    Elapsed ExitCode
+------------- ---------- ------ ------ ------ ------------ ------------ ---------- --------
+11780748           r6he4      1            32                             00:07:20      0:0
+11780748.0     athena_v2      1      2     32     1617.29M     1351.74M   00:02:17      0:0
+11780748.1     athena_v2      1      2     32     1578.90M     1313.04M   00:04:02      0:0
+11780748.2     athena_v2      1      2     32     1578.27M     1311.96M   00:01:00     0:15
+  
+Maximum memory per node: 3.391713 GB (defined as MaxRSS*Ntasks/NNodes)
+CPU utilization: 11.8 %
+  

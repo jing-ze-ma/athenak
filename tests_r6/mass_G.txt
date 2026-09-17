@@ -1,0 +1,50 @@
+
+===== ARM G : 65 profile records, t_end = 2977.2 s = 0.633 turnover
+hst total mass: 1.912482e+26 -> 1.912672e+26 g  (drift +9.941e-05 relative)
+
+-- TABLE 1  Mdot(r) = 4 pi r^2 <rho v1> [g/s], + = outward ; and the domain mass
+  t/turn    r/R=0.60   r/R=0.70   r/R=0.80   r/R=0.90   r/R=0.97  r/R=1.013(top)   M(prof)/M0-1
+    0.00  +0.000e+00 +4.243e+14 -6.656e+14 +1.168e+15 +0.000e+00 +4.924e+15      +0.000e+00
+    0.25  -5.397e+17 -2.262e+19 -2.613e+20 +5.447e+20 -1.710e+20 -8.374e+17      -2.478e-05
+    0.50  -2.620e+17 +3.664e+19 -1.517e+20 +1.484e+21 -3.773e+20 -1.498e+19      -4.211e-07
+    0.63  -6.058e+20 -1.967e+21 -3.519e+22 +3.613e+22 +1.463e+22 -3.692e+19      +6.337e-05
+
+-- TABLE 2  shell-integrated mass per zone [g], and the drift PER TURNOVER
+  zone                           t= 0.00   t= 0.63  
+  0.50-0.68 R (below FeCZ)      5.055e+25 5.089e+25
+     d/turn [%]                     --      +0.68  
+  0.68-0.92 R (FeCZ, Gamma>1)   7.459e+25 7.243e+25
+     d/turn [%]                     --      -2.88  
+  0.92-0.96 R (the swept shell) 4.489e+25 4.693e+25
+     d/turn [%]                     --      +4.54  
+  0.96-1.01 R (top atmosphere)  2.142e+25 2.120e+25
+     d/turn [%]                     --      -1.02  
+
+-- TABLE 3  the three diagnostic radii: rho drift, v1, Gamma = kappa L/(4 pi c G M)
+  base       r/R=0.633 i=15
+    t/turn   rho/rho0-1      v1      vr_rms/vMLT   T[K]    Gamma
+      0.00      +0.000  +0.00e+00      0.000   1.871e+05   0.989
+      0.25      -0.008  +2.83e+04      0.002   1.875e+05   0.982
+      0.50      -0.017  +1.95e+04      0.001   1.876e+05   0.979
+      0.63      -0.019  -1.48e+06      0.314   2.065e+05   0.762
+  kappa peak r/R=0.761 i=29
+    t/turn   rho/rho0-1      v1      vr_rms/vMLT   T[K]    Gamma
+      0.00      +0.000  -2.94e-02      0.000   1.679e+05   1.154
+      0.25      +0.025  -1.31e+05      0.009   1.683e+05   1.156
+      0.50      +0.010  +8.91e+04      0.006   1.683e+05   1.153
+      0.63      -0.086  -1.18e+07      1.505   2.313e+05   0.543
+  top        r/R=0.969 i=79
+    t/turn   rho/rho0-1      v1      vr_rms/vMLT   T[K]    Gamma
+      0.00      +0.000  +0.00e+00      0.000   8.413e+04   0.828
+      0.25      +0.008  -5.11e+04      0.004   8.413e+04   0.830
+      0.50      -0.035  -1.18e+05      0.008   8.377e+04   0.822
+      0.63      -0.049  +4.08e+06      1.325   9.937e+04   0.760
+
+-- TABLE 4  THE HAND-OVER BUDGET from the per-leg mltfaces dumps.
+   Gamma_rad = Gamma x F_2s/F_req is the Eddington ratio the RADIATION alone
+   carries; F_mlt/F_req is the sub-grid closure, F_res/F_req the RESOLVED
+   convective flux (mltfaces column F_conv_res).
+   t/turn    r/R=0.70: G_rad F_2s/Fq F_mlt/Fq F_res/Fq   r/R=0.80: G_rad F_2s/Fq F_mlt/Fq F_res/Fq   r/R=0.90: G_rad F_2s/Fq F_mlt/Fq F_res/Fq
+     0.00          1.004    0.921   0.102   +0.000         1.007    0.852   0.194   -0.000         1.036    0.899   0.232   +0.000
+     0.50          1.018    0.931   0.711   -0.000         0.996    0.867   0.735   -0.000         1.084    0.909   0.353   +0.000
+     0.63         -61.629  -95.361   0.000   -5.551        -1771.752  -4221.102   0.000  -22.216        134.155  142.874   0.000  +21.494

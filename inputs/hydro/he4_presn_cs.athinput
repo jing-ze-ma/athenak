@@ -225,6 +225,23 @@ tfloor  = 5.0e3                  # rt_use_cons clamps a non-positive e to e(rho,
                                  # it to the table edge at startup and says so.
 dfloor  = 1.0e-13                # the EOS table's own lower edge (eos_logd_min = -13); the
                                  # initial top cell is 5.71e-11, so this is 5.7e-3 of it
+# THE FLOORED CELL KEEPS ITS VELOCITY, AND A VELOCITY CEILING SIZED TO THE FeCZ.
+# Arms E''/F'' of tests_r5 both died on a cell that had been EVACUATED, not mis-inverted:
+# F'''s collapsing cell sat at rho = dfloor = 1e-13 EXACTLY (local rho 2.3e-9, i.e. four
+# decades down) with v1 = m/dfloor = 6.4e12 cm/s = 212 c.  dfloor is 5.7e-3 of the initial
+# TOP cell but only 4.3e-5 of the FeCZ, so inside the layer a cell can be emptied by four
+# decades before any floor notices, and the default (dfloor_keep_velocity = false) then
+# raises rho and leaves the MOMENTUM alone -- which is what manufactures the 212 c.
+# With this on the momentum is scaled with the density, so a floored cell keeps the
+# velocity it had instead of acquiring m/dfloor.  Both switches are implemented for
+# cubed-sphere hydro and both are DEFERRED to Coordinates::GnomonicEquiangleRaiseVel,
+# where |v| and the kinetic energy are the metric ones (ConsToPrim only DECIDES).
+dfloor_keep_velocity = true
+# vceil = 1e8 cm/s = 1.4 c_s at the FeCZ (c_s ~ 7.7e7) = 7 v_MLT (1.45e7): above anything
+# physical in this star, 60x below the 6.4e12 cm/s F'' reached, and 6x below v_esc.  The
+# eos_vceil column of the event log says how often it fires; a LARGE count means the
+# ceiling is doing physics rather than catching a numerical runaway, and is a warning.
+vceil   = 1.0e8
 pfloor  = 1.0e-1                 # 1.3e-5 of the initial top-cell pressure; should not fire
 # THE FLOORED STATE MADE CONSISTENT.  See the note on EOS_Data::efloor_as_tfloor.  Arm E'
 # died at 0.78 turnover on a cell at r/R = 0.744 carrying rho = 3.5e-9, code T = 5.246e11
