@@ -121,13 +121,44 @@ Gate (5 % at all 89 faces with `r/R >= 0.55`): **every run fails.** Worst face: 
    `T_f`/`grad`/`F_raddiff`/`F_cond` (after it) **in the same row are from different
    instants**. Evidence: H1's `F_2s` at `i = 70,76` is bit-identical to M0's while its `T_f`
    there differs by 1.2 %.
-2. **Deep `T_f` drifts 0.42 %** between configurations, which -- because `F_raddiff` is a
-   gradient -- moves `F_raddiff/F_req` at `i = 4` from M0's 1.0712 to H1's 0.9930, a 7 %
-   swing. Leading explanation: with the blend off the radial conduction operator is *inert*,
-   with 20/300 it is live, implicit and at `w = 1`, so it relaxes an IC that is over-carrying
-   by 7 % toward equilibrium. Either reading brackets 1, so the deep conclusion survives; the
-   honest wording is "within 7 % on the IC, within 1 % after one implicit step". Frozen-cfl
-   controls (jobs 11760331, 11760604) were queued to settle this.
+2. **The REFERENCE is the drifted run, not the handover runs.** Deep `T_f` differs 0.42 %
+   between configurations. The first explanation tried -- that the *live implicit conduction*
+   operator relaxes an IC that over-carries -- was **REFUTED** by the frozen-cfl control
+   (job 11760331: H1c/H2c/H3c at `cfl = 1e-4`). H1c's `F_raddiff/F_req` at `i = 4` comes back
+   at 0.9930, exactly its normal-dt value, and M0's 1.0712 is the outlier. The sign is the
+   other way round: under `rt_strang` the **two-stream's** `dt/2` PRE-step is what acts before
+   the dump, and conduction is inside the RK stages and has not acted yet. With the blend off
+   (M0/Q4) the sweep owns all 96 cells and moves the deep state in that pre-step; with `w = 1`
+   deep (H1/H2) the sweep does not run there at all and nothing moves it. **So the H dumps are
+   the honest ones deep down and M0/Q4 is the drifted reference.**
+
+### `F_raddiff/F_req` ON THE FROZEN STATE — plain Rosseland on the true IC
+
+The three frozen runs agree to four digits at every face **although their blends are
+completely different** (`w` runs 1.0 → 0.0 across them at the same face). That is the proof
+that `F_raddiff` is a pure state diagnostic, as documented, and that the meter is sound.
+
+| r/R | 0.506 | 0.553 | 0.609 | 0.667 | 0.815 | 0.902 | 0.937 | 0.952 | 0.968 | 0.984 | 1.001 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| frozen (H1c=H2c=H3c) | 0.993 | 0.997 | 0.999 | 0.963 | 0.844 | 0.906 | 1.000 | 1.003 | 1.002 | 1.000 | 1.038 |
+| M0/Q4 (drifted) | 1.071 | 1.017 | 1.050 | 0.987 | 0.851 | 0.929 | 0.976 | 0.986 | 0.990 | 0.972 | 0.797 |
+
+**Radiative diffusion carries `L` to within 0.7 % over 0.51-0.61 R and to within 0.3 % over
+0.94-0.98 R on the true IC, with a single 16 % trough at 0.815 R.** The IC is self-consistent
+and the whole problem is that one trough -- which is the FeCZ, i.e. the convective flux.
+
+### Corrected budget on the frozen state, `(F_cond + (1-w)F_2s)/F_req`, worst face over r/R >= 0.55
+
+| run | worst face | value | verdict |
+| --- | --- | --- | --- |
+| H1c 20/300 | r/R = 0.840 | 0.730 | FAIL -- 27 % deficit, the FeCZ trough |
+| H2c 5/50 | r/R = 1.009 | 1.251 | FAIL, but **only above the photosphere**; over 0.55-0.98 R it is the best of the three (0.999 / 0.994 / 0.976 at r/R = 0.937 / 0.952 / 0.968, where H1c gives 0.945 / 0.958 / 0.969) |
+| H3c 50/1000 | r/R = 0.757 | 0.424 | FAIL -- 58 % deficit, much the worst |
+
+**The "H2 overshoots by 31 % just below the surface" verdict in the table above was entirely
+the drift and is RETRACTED**: on the frozen state H2's excess is confined to `r/R > 1.0`,
+where the meter is meaningless anyway. The verdict that does not change is that no handover
+passes 5 % everywhere and the residual is the FeCZ trough.
 
 **Configuration warning.** M0/Q4 took `rad_tau_lo/hi = 1e5/1e6` from the input file. Pass
 those explicitly when reproducing the reference; do not rely on the file's defaults.
