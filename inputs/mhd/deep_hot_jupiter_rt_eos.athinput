@@ -132,12 +132,14 @@ etotgrav        = true
 # isentropic columns), and the gravity source is that background's pressure difference,
 # so a column at rest stays at rest to the closure error instead of the O(dx^2)
 # discretisation error: deep-band spurious v_r 16 m/s -> 1 m/s at production resolution.
-# One walk per cell every 10 cycles (wb_cache_every): 1.03x the cost of a plain run.
+# wb_cache_every = 0 rebuilds the background every stage. Do not raise it: a stale
+# cache numerically drives the f-mode (found 2026-09-16, growth 0.86 -> 0.05 per
+# turnover when the cache interval of 10 cycles was replaced by 0).
 # Cubed sphere and spherical polar agree to four digits. See src/utils/wb_background.hpp.
 wellbalance_dynamic = true
 wb_x1               = true
 wb_option           = polytropic
-wb_cache_every      = 10
+wb_cache_every      = 0
 
 # --- composition ---
 eos_h2               = true      # H2 dissociation: the heat pipe

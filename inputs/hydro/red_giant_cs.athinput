@@ -86,7 +86,10 @@ etotgrav    = true
 wellbalance_dynamic = true
 wb_x1               = true
 wb_option           = polytropic
-wb_cache_every      = 10
+# wb_cache_every = 0 rebuilds the hydrostatic background every stage. Do not raise
+# it: a stale cache numerically drives the f-mode (found 2026-09-16, growth 0.86 ->
+# 0.05 per turnover when the cache interval of 10 cycles was replaced by 0).
+wb_cache_every      = 0
 isotropic_conduction = radiative
 rad_kappa_src        = table_rho
 rad_flux_inner       = -1.0
