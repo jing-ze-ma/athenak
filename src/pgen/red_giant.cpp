@@ -4296,8 +4296,11 @@ void RedGiantFinal(ParameterInput *pin, Mesh *pm) {
   klT_ = DvceArray1D<Real>();
   klD_ = DvceArray1D<Real>();
   tau_d_ = DvceArray1D<Real>();  // the seed's tau window (problem/vpert_tau_lo/hi)
-  vdb_d_ = DvceArray1D<Real>();  // the bottom sponge's shell means
-  surf_d_ = DvceArray2D<Real>(); // the two diagnostic dumps' device buffers
-  prof_d_ = DvceArray2D<Real>();
+  vdb_d_ = DvceArray1D<Real>();  // the bottom sponge's shell means...
+  vdb_h_ = HostArray1D<Real>();  // ...and its HOST mirror: Kokkos tracks host
+  surf_d_ = DvceArray2D<Real>(); // allocations too, and a default-constructed View
+  surf_h_ = HostArray2D<Real>(); // reallocated later carries the empty label "", which
+  prof_d_ = DvceArray2D<Real>(); // is what the abort at exit named
+  prof_h_ = HostArray2D<Real>();
   return;
 }

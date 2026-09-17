@@ -284,5 +284,6 @@ dt         = 1212.0              # 0.2 turnover
 <output4>
 file_type      = cbin
 variable       = hydro_w
-coarsen_factor = 3
+coarsen_factor = 2               # 2, not 3: the coarsening must divide EVERY MeshBlock
+                                 # dimension and meshblock/nx2 = nx3 = 16
 dt             = 303.0           # 0.05 turnover, the movie frames
