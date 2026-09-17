@@ -3322,6 +3322,9 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
         // faces at or above each column's cut and is exactly zero below, so it can be
         // summed as it stands.
         const Real f2s = shell(i,12)/nr*punit_*vunit;                  // cgs
+        // the blend weight of this face: the share of the radiative flux the CONDUCTION
+        // operator already carries, and therefore the share of F_2s that frad repeats
+        const Real wbl = condrad ? shell(i,6)/nr : 0.0;
         fmean(i,13) = fres; fmean(i,16) = f2s;
         // thermodynamics at the face, cgs.  Needed by both branches below, so it is no
         // longer behind the x > 0 test the old closure returned on.
@@ -3357,7 +3360,16 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
         if (grad_rad > grad_ad) {
           // (b) what is left for the SUBGRID model, after the diffusion operator, the
           // two-stream and the resolved flow have each been counted once
-          const Real dfc = fmax(0.0, freq - frad - fres - f2s);
+          // THE DOUBLE COUNT.  frad is the conduction module's BLENDED face flux,
+          // w F_raddiff, while f2s is the two-stream's UNBLENDED one; the apply kernel
+          // hands the shell (1-w) F_2s, not F_2s.  Subtracting the whole F_2s therefore
+          // counts the blended part twice, the deficit comes out too small wherever
+          // w > 0, and the subgrid model is asked for a flux the star is already
+          // carrying (tests_3d/handover/README.md section 3).  Exactly f2s when w = 0,
+          // which is the shipped whole-column blend, so that configuration is bitwise.
+          Real f2se = f2s;
+          if (wbl > 0.0) f2se = (1.0 - wbl)*f2s;
+          const Real dfc = fmax(0.0, freq - frad - fres - f2se);
           fmean(i,15) = dfc;
           if (dfc > 0.0) {
             // (c) efficient vs inefficient.  Where x is a real number the mixing-length

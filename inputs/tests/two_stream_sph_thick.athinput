@@ -105,6 +105,14 @@ mlt_dump    = mltfaces.txt
 rt_grey     = true
 rt_implicit_column = 3
 rt_impl_solver = pcr
+# WHOSE flux is F_2s?  Fb -- column 17 of the dump -- is written by the EXPLICIT sweep
+# unless the column solve is told to own it.  With rt_col3_skip_sweep = false (the value
+# here, and the one the first measurement of this directory ran with) the test therefore
+# reports MODE 0's flux whatever rt_implicit_column says; pass
+# problem/rt_col3_skip_sweep=true on the command line to gate the mode-3 solve itself.
+rt_col3_skip_sweep = false
+rt_col3_ex_iter    = true        # required by rt_col3_skip_sweep
+rt_src_direct      = true        # required by rt_col3_skip_sweep
 ck_nquad    = 2
 rt_strang   = true
 rt_bottom_flux = true

@@ -285,7 +285,10 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
   // as J = A I -- the SPHERICAL DILUTION of two_stream_rt.hpp, exactly as the serial
   // path carries it (RTCol3::Av/Ac/Vc)
   const Real fbot = kflx*dbdtau + (c.int_at_cut ? wsum*c.Iint : 0.0);
-  const Real avt = c.Av(m,k,j,ie+1), avb = c.Av(m,k,j,ib);
+  // the two boundary data live in their FACE's own frame, as plain intensities: both
+  // factors are exactly 1.0 and are read from the area View only so that the box keeps
+  // the expression shapes it had (see the SPHERICAL FORM note on RTCol3::Bt)
+  const Real avt = c.Aun(m,k,j,ie+1), avb = c.Aun(m,k,j,ib);
   Real Dtop[2], Ucut[2];
   for (int q=0; q<2; ++q) {
     Dtop[q] = c.dtop(m,q,k,j)*avt;
@@ -342,6 +345,26 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
     // problem/rt_impl_ablate bit 1 repeats the SEGMENT SWEEPS, which write absolutely
     // and are therefore idempotent.  The entry-value scan and the correction that follow
     // accumulate, so they are not repeated and their cost is not measured here.
+    // THE SPHERICAL FORM couples the two rays at every face (RTCol3::Bt), so the formal
+    // solution is no longer a one-directional recursion and the segmented scan below --
+    // sweep with a zero entry value, record the homogeneous factor, scan the segments,
+    // correct -- does not decompose it.  On a curvilinear mesh the team therefore solves
+    // the coupled system once, serially, with the SAME RTCol3::FormalSph the standard
+    // solver uses; the block assembly and the PCR factorisation stay parallel, and they
+    // are what the cost of this solver is.  A plane-parallel column never takes this
+    // branch and keeps the scan bit for bit.
+    Real Ubot[2] = {0.0, 0.0};
+    for (int q=0; q<nq; ++q) {
+      Ubot[q] = (c.Wk<true>(m,BB,ib,k,j) + Ucut_i[q])*avb;
+    }
+    if (!c.pp) {
+      for (int rep=(c.ablate & 1); rep>=0; --rep) {
+      Kokkos::single(Kokkos::PerTeam(tm), [&]() {
+        c.FormalSph<true>(m, k, j, ib, hb, cutc, Ubot, Dtop);
+      });
+      tm.team_barrier();
+      }
+    } else {
     for (int rep=(c.ablate & 1); rep>=0; --rep) {
     Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, nsg), [&](const int s) {
       const int i0 = c.SegStart(s,ic,nc,nsg,ib), i1 = c.SegStart(s+1,ic,nc,nsg,ib) - 1;
@@ -439,6 +462,7 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
       }
     });
     tm.team_barrier();
+    }
     // ---- 4a''. THE DEEP SEGMENT: the diffusion fluxes and their divergence --------
     // The interface flux is the two-stream's OWN net flux at that face, built from the
     // deep-limit U (implicit in b(isp-1), b(isp)) and the solved D(isp), so the deep
@@ -447,10 +471,15 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
     // them: F is a face quantity each lane writes for its own cells, and the divergence
     // reads the face above, which for the top cell of a lane belongs to the next lane.
     if (hb.on) {
+      // Phi = A F at the interface, from the FACE-frame pair (see the serial path)
       fif = 0.0;
-      for (int q=0; q<nq; ++q) {
-        fif += c.wf[q]*((c.Wk<true>(m,BB,ib,k,j) + Ucut_i[q])*avb
-                        - c.Wk<true>(m,DD+q,ib,k,j));
+      {
+        const Real bif = c.Bt(m,k,j,ib,ib);
+        for (int q=0; q<nq; ++q) {
+          const Real da = c.Wk<true>(m,DD+q,ib,k,j);
+          fif += c.wf[q]*(Ubot[q] - (da + c.Mix(bif, Ubot[q], da)));
+        }
+        fif *= c.Av(m,k,j,ib);
       }
       Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, nsg), [&](const int s) {
         const int i0 = c.SegStart(s,ic,nc,nsg,ib), i1 = c.SegStart(s+1,ic,nc,nsg,ib) - 1;
@@ -489,15 +518,20 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
           return;
         }
         Real f3lo = 0.0, f3hi = 0.0;
+        const Real blo = c.Bt(m,k,j,i,ib);
+        const Real bhi = c.Bt(m,k,j,i+1,ib);
         for (int q=0; q<nq; ++q) {
-          const Real ulo = (i == ib) ? (c.Wk<true>(m,BB,ib,k,j) + Ucut_i[q])*avb
-                                     : c.Wk<true>(m,UU+q,i-1,k,j);
-          const Real dhi = (i == ie) ? Dtop[q] : c.Wk<true>(m,DD+q,i+1,k,j);
-          f3lo += c.wf[q]*(ulo - c.Wk<true>(m,DD+q,i,k,j));
-          f3hi += c.wf[q]*(c.Wk<true>(m,UU+q,i,k,j) - dhi);
+          const Real ulo0 = (i == ib) ? (c.Wk<true>(m,BB,ib,k,j) + Ucut_i[q])*avb
+                                      : c.Wk<true>(m,UU+q,i-1,k,j);
+          const Real dcur = c.Wk<true>(m,DD+q,i,k,j);
+          const Real ucur = c.Wk<true>(m,UU+q,i,k,j);
+          const Real dhi0 = (i == ie) ? Dtop[q] : c.Wk<true>(m,DD+q,i+1,k,j);
+          f3lo += c.wf[q]*(ulo0 + c.Mix(blo, ulo0, dcur) - dcur);
+          f3hi += c.wf[q]*(ucur - (dhi0 + c.Mix(bhi, ucur, dhi0)));
         }
+        // the cell-frame fluxes divide by dx, not by the volume: A_i cancels
         c.Wk<true>(m,EX,i,k,j) = 0.5*(wlo + whi)*c.Wk<true>(m,SA,i,k,j)
-                         + (whi*f3hi - wlo*f3lo)/c.Vc(m,k,j,i) + c.Qb(m,0,i,k,j);
+                         + (whi*f3hi - wlo*f3lo)/c.Dx(m,k,j,i) + c.Qb(m,0,i,k,j);
       });
       tm.team_barrier();
     }
@@ -1462,17 +1496,24 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
       const Real ub = c.rd(m,k,j,b0+UBM);
       if (ub > ubmax) ubmax = ub;
     }
+    const Real btop = c.Bt(m,k,j,ie+1,ib);
+    const Real bcut = c.Bt(m,k,j,ic,ib);
     Real ftop3 = 0.0;
-    for (int q=0; q<nq; ++q) ftop3 += c.wf[q]*(c.Wk<true>(m,UU+q,ie,k,j) - Dtop[q]);
+    for (int q=0; q<nq; ++q) {
+      const Real uo = c.Wk<true>(m,UU+q,ie,k,j);
+      ftop3 += c.wf[q]*(uo + c.Mix(btop, uo, Dtop[q]) - Dtop[q]);
+    }
     Real fnet = 0.0;
     if (hb.on) {
-      fnet = c.Wk<true>(m,FL,ic,k,j) - ftop3;   // the imposed deep bottom flux
+      fnet = c.Wk<true>(m,FL,ic,k,j) - c.Av(m,k,j,ie+1)*ftop3;
     } else {
       for (int q=0; q<nq; ++q) {
-        fnet += c.wf[q]*((c.Wk<true>(m,BB,ic,k,j) + Ucut[q])*c.Av(m,k,j,ic)
-                         - c.Wk<true>(m,DD+q,ic,k,j));
+        const Real ub = (c.Wk<true>(m,BB,ic,k,j) + Ucut[q])*c.Aun(m,k,j,ic);
+        const Real da = c.Wk<true>(m,DD+q,ic,k,j);
+        fnet += c.wf[q]*(ub + c.Mix(bcut, ub, da) - da);
       }
-      fnet -= ftop3;
+      fnet *= c.Ac(m,k,j,ic);
+      fnet -= c.Av(m,k,j,ie+1)*ftop3;
     }
     Kokkos::atomic_add(&c.stat(12), rhsum);
     Kokkos::atomic_add(&c.stat(13), srsum);
@@ -1507,16 +1548,21 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
         return;
       }
       Real f3lo = 0.0;
+      const Real blo = c.Bt(m,k,j,i,ib);
       for (int q=0; q<nq; ++q) {
-        const Real ulo = (i == ib) ? (c.Wk<true>(m,BB,ib,k,j) + Ucut_i[q])*avb
-                                   : c.Wk<true>(m,UU+q,i-1,k,j);
-        f3lo += c.wf[q]*(ulo - c.Wk<true>(m,DD+q,i,k,j));
+        const Real ulo0 = (i == ib) ? (c.Wk<true>(m,BB,ib,k,j) + Ucut_i[q])*avb
+                                    : c.Wk<true>(m,UU+q,i-1,k,j);
+        const Real dcur = c.Wk<true>(m,DD+q,i,k,j);
+        f3lo += c.wf[q]*(ulo0 + c.Mix(blo, ulo0, dcur) - dcur);
       }
-      c.Fb(m,0,i,k,j) = f3lo/c.Av(m,k,j,i);
+      // Phi_i/A(i): the cell-frame flux times A_cell/A_face, = 1/Av under pp
+      c.Fb(m,0,i,k,j) = f3lo*c.Afl(m,k,j,i);
       if (i == ie) {
         Real f3hi = 0.0;
+        const Real bt = c.Bt(m,k,j,ie+1,ib);
         for (int q=0; q<nq; ++q) {
-          f3hi += c.wf[q]*(c.Wk<true>(m,UU+q,ie,k,j) - Dtop[q]);
+          const Real uo = c.Wk<true>(m,UU+q,ie,k,j);
+          f3hi += c.wf[q]*(uo + c.Mix(bt, uo, Dtop[q]) - Dtop[q]);
         }
         c.Fb(m,0,ie+1,k,j) = f3hi/avt;
       }

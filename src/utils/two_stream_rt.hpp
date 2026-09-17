@@ -1496,6 +1496,15 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
                 << "stellar-beam geometry." << std::endl;
       std::exit(EXIT_FAILURE);
     }
+    if (rt_layer_legacy && !rt_plane_parallel && rt_grey) {
+      std::cout << "### FATAL ERROR in two_stream_rt: problem/rt_layer_legacy (the old "
+                << "staggered whole-cell layers) was NOT converted to the spherical "
+                << "form of the grey sweep and still carries the J = A I substitution, "
+                << "which is wrong in the diffusion limit by 1 - H_T/(2r).  Use the "
+                << "centre-to-centre layers (rt_layer_legacy = false) on a curvilinear "
+                << "mesh." << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
     if (pp_ && (use_cubed_sphere_ || use_spherical_polar)) {
       std::cout << "### FATAL ERROR in two_stream_rt: rt_plane_parallel is for a "
                 << "Cartesian mesh, but this mesh is spherical-polar or cubed-sphere."
@@ -1669,6 +1678,17 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
     // ================================================================================
     // SPHERICAL DILUTION: WHY THE DEPOSIT *AND* THE PROPAGATION CARRY THE AREA
     //
+    // SUPERSEDED FOR THE GREY CENTRE-TO-CENTRE SWEEP AND FOR MODE 3.  The J = A I form
+    // derived below is exact in the TRANSPARENT limit and wrong in the DIFFUSION limit
+    // by F_2s/F_exact = 1 - H_T/(2r) (tests_r2/thick measures it to 1e-4), because it
+    // puts the area on BOTH two-stream moments while the exact pair puts it on the
+    // antisymmetric one alone.  The grey centre-to-centre sweep and the mode-3 column
+    // solve now carry PLAIN intensities with the face mixing of BTF/MIXF instead -- see
+    // the SPHERICAL FORM note on RTCol3::Bt in two_stream_column_implicit.hpp, which is
+    // the derivation that applies.  What follows still describes the LEGACY whole-cell
+    // layers (refused on a curvilinear mesh), the picket-fence chain kernel and the
+    // correlated-k kernel, which were not converted.
+    //
     // The sweep integrates, per ray direction mu, the plane-parallel transfer equation
     //     mu dI/dr = -kappa rho (I - B),
     // and used to deposit -(F_top - F_bot)/dx1 with F = 2 pi w mu I.  On a RADIAL mesh
@@ -1737,6 +1757,36 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
     };
     auto VLA = [=] (const int m, const int k, const int j, const int i) {
       return pp_ ? DX1(m,k,j,i) : volume(m,k,j,i);
+    };
+    // ---- THE SPHERICAL FORM of the grey centre-to-centre sweep.  The J = A I
+    // substitution above is kept ONLY by the legacy layers, the picket-fence chain and
+    // the correlated-k kernel; the grey c2c sweep -- what a global star actually runs --
+    // carries PLAIN intensities and puts the geometry in the FACE conditions instead.
+    // See the derivation on RTCol3::Bt in two_stream_column_implicit.hpp: the area
+    // belongs to the ANTISYMMETRIC moment alone, so at every face S = (I+ + I-)/2 and
+    // A D = A (I+ - I-)/2 are passed continuously, which is the single correction
+    //     c = beta (d_above - u_below),   beta = (A_above - A_below)/(A_above + A_below)
+    // added to BOTH sides.  Inside a cell the frame area is constant (A_i = V_i/dx_i),
+    // so the layer solve and the deposit are the plane-parallel ones they always were.
+    // Both helpers are identically inert under rt_plane_parallel: beta is exactly 0 and
+    // AUN/ACN are the very area factors the old expressions read.
+    auto BTF = [=] (const int m, const int k, const int j, const int f, const int ic) {
+      if (pp_) return 0.0;
+      const Real ab = (f <= ic) ? area1(m,k,j,f) : volume(m,k,j,f-1)/dx1(m,k,j,f-1);
+      const Real aa = (f > ie) ? area1(m,k,j,f) : volume(m,k,j,f)/dx1(m,k,j,f);
+      return (aa - ab)/(aa + ab);
+    };
+    auto MIXF = [=] (const Real bt, const Real ub, const Real da) {
+      return bt*(da - ub);
+    };
+    // the area factors the OLD expression still spells out and the spherical form no
+    // longer carries: exactly 1.0, read from the Views under rt_plane_parallel so that
+    // the box's expression DAG -- and hipcc's FMA contraction -- is untouched
+    auto AUN = [=] (const int m, const int k, const int j, const int i) {
+      return pp_ ? AFC(m,k,j,i) : 1.0;
+    };
+    auto ACN = [=] (const int m, const int k, const int j, const int i) {
+      return pp_ ? ACC(m,k,j,i) : 1.0;
     };
 
 //    Real Teq = 1469.0;
@@ -2485,15 +2535,19 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
                 wfq[q] = 2.0*M_PI*wg[q]*mug[q];
               }
             }
-            // AREA-WEIGHTED INTENSITIES from here on: J = A I, the SPHERICAL
-            // DILUTION of the caller's note.  The sweep integrates the same layer
-            // solve, mu dJ/dr = -kappa rho (J - A B), so every source endpoint is
-            // multiplied by the area AT ITS OWN POSITION (a face endpoint by AFC, a
-            // cell-centre endpoint by the cell's mean area ACC), every deposit is per
-            // VOLUME (VLS), and a face flux handed back is J/A again.  Under
-            // rt_plane_parallel all of that is A = 1, V = dx1 and bitwise the old code.
+            // GEOMETRY.  The LEGACY whole-cell layers below still carry the J = A I
+            // substitution of 1159a8f3 (area-weighted intensities against a source A B)
+            // and are refused on a curvilinear mesh; the CENTRE-TO-CENTRE layers -- the
+            // default, and the only branch a global star runs -- carry PLAIN intensities
+            // and the face mixing of BTF/MIXF instead.  Under rt_plane_parallel the two
+            // are the same code: every factor is 1.0 and beta is 0.
             const Real aft_ = AFC(m,k,j,ie+1);
             const Real afc_ = AFC(m,k,j,icut);
+            const Real aftn_ = AUN(m,k,j,ie+1);
+            const Real afcn_ = AUN(m,k,j,icut);
+            // the top face's incoming datum: area-weighted for the legacy branch, a
+            // plain intensity in the face's own frame for the centre-to-centre one
+            const Real atop_ = layer_legacy ? aft_ : aftn_;
             Real I_down[2][NN];
             // Top: the unresolved hydrostatic column above the domain, p/g of it, at the
             // top cell's opacity -- the same construction the band solver uses.
@@ -2529,23 +2583,27 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
                 const Real btop = Bb_g(m,0,ie,k,j);
                 // the probe is the up-sweep, so it dilutes exactly as the up-sweep
                 // does: it carries J and is divided back by the top face's area
-                const Real acc_ = ACC(m,k,j,icut), act_ = ACC(m,k,j,ie);
+                // the probe is the up-sweep, so it carries what the up-sweep carries:
+                // plain intensities.  It does NOT apply the face mixing -- the ratio
+                // I_up(top)/2 it returns is a boundary MODEL, and rt_top_re is off in
+                // every production configuration; documented as an approximation here.
+                const Real acc_ = ACN(m,k,j,icut), act_ = ACN(m,k,j,ie);
                 for (int q=0; q<nq; ++q) {
                   const Real bfc = bcut + dbdtau_cut*dcut;
                   Real ip = (bfc + (int_at_cut ? Iint : 0.0)
-                             + muq[q]*dbdtau_cut)*afc_;
+                             + muq[q]*dbdtau_cut)*afcn_;
                   Real ab, em;
-                  RTLayer(dcut, muq[q], bfc*afc_, bcut*acc_, ip, ab, em);
+                  RTLayer(dcut, muq[q], bfc*afcn_, bcut*acc_, ip, ab, em);
                   for (int i=icut; i<ie; ++i) {
                     Real dt_l, dt_u, s_l, s_u, s_f;
                     rt_layer(i, dt_l, dt_u, s_l, s_u, s_f);
-                    const Real acl = ACC(m,k,j,i), afm = AFC(m,k,j,i+1);
-                    const Real acu = ACC(m,k,j,i+1);
+                    const Real acl = ACN(m,k,j,i), afm = AUN(m,k,j,i+1);
+                    const Real acu = ACN(m,k,j,i+1);
                     RTLayer(dt_l, muq[q], s_l*acl, s_f*afm, ip, ab, em);
                     RTLayer(dt_u, muq[q], s_f*afm, s_u*acu, ip, ab, em);
                   }
-                  RTLayer(dtop, muq[q], btop*act_, btop*aft_, ip, ab, em);
-                  bsrc[q] = 0.5*ip/aft_;
+                  RTLayer(dtop, muq[q], btop*act_, btop*aftn_, ip, ab, em);
+                  bsrc[q] = 0.5*ip/aftn_;
                 }
               } else if (top_re) {
                 for (int q=0; q<nq; ++q) {
@@ -2569,7 +2627,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
                 }
               }
               for (int q=0; q<nq; ++q) {
-                I_down[q][ie+1] = (1.0 - exp(-dtau/muq[q]))*(bsrc[q]*aft_);
+                I_down[q][ie+1] = (1.0 - exp(-dtau/muq[q]))*(bsrc[q]*atop_);
               }
               if (report_on) idn_g(m,k,j,ie+1) = I_down[0][ie+1];
             }
@@ -2679,12 +2737,42 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
                   ddn_p[q] = 0.0;
                 }
               }
+              // THE PROBE UP-SWEEP (curvilinear only, see the SPHERICAL FORM note).
+              // The down-sweep's face mixing c = beta (d_above - u_below) needs the
+              // UPWARD intensity at each face, which the down-sweep does not have; the
+              // up-sweep that follows it does have the downward one, so only this
+              // direction is lagged.  A plane-parallel probe pass supplies u_below to
+              // O(beta), leaving the down ray's mixing exact to O(beta^2) -- beta is
+              // dr/2r, so ~2e-5 on the test grids, which is what the gates measure.
+              // Mode 3 needs none of this: it solves the coupled system exactly.
+              Real I_upb[2][NN];
+              if (!pp_) {
+                for (int q=0; q<nq; ++q) {
+                  Real ipb = b_cutf + (int_at_cut ? Iint : 0.0) + muq[q]*dbdtau_cut;
+                  I_upb[q][icut] = ipb;
+                  RTLayer(dt_cut, muq[q], b_cutf, b_cut, ipb, ab, em);
+                  for (int i=icut; i<ie; ++i) {
+                    Real dt_l, dt_u, s_l, s_u, s_f;
+                    rt_layer(i, dt_l, dt_u, s_l, s_u, s_f);
+                    RTLayer(dt_l, muq[q], s_l, s_f, ipb, ab, em);
+                    I_upb[q][i+1] = ipb;
+                    RTLayer(dt_u, muq[q], s_f, s_u, ipb, ab, em);
+                  }
+                  RTLayer(dt_top, muq[q], b_top, b_top, ipb, ab, em);
+                  I_upb[q][ie+1] = ipb;
+                }
+              }
               // the top half layer runs from the TOP FACE to the CENTRE of cell ie
-              const Real act_ = ACC(m,k,j,ie), acc_ = ACC(m,k,j,icut);
+              const Real act_ = ACN(m,k,j,ie), acc_ = ACN(m,k,j,icut);
+              const Real bt_top = BTF(m,k,j,ie+1,icut);
+              const Real bt_cut = BTF(m,k,j,icut,icut);
               for (int q=0; q<nq; ++q) {
                 Idn[q] = I_down[q][ie+1];
-                RTLayer(dt_top, muq[q], b_top*aft_, b_top*act_, Idn[q], ab, em);
-                Src_g(m,0,ie,k,j) += wfq[q]/VLA(m,k,j,ie)*(ab - em);
+                if (!pp_) {
+                  Idn[q] += MIXF(bt_top, I_upb[q][ie+1], I_down[q][ie+1]);
+                }
+                RTLayer(dt_top, muq[q], b_top*aftn_, b_top*act_, Idn[q], ab, em);
+                Src_g(m,0,ie,k,j) += wfq[q]/DX1(m,k,j,ie)*(ab - em);
                 if (jac_on) {
                   // the top half layer: both endpoints are cell ie's own B
                   Real e0t, cit, cot;
@@ -2701,14 +2789,18 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
                 Real wl_l = 0.0, wl_u = 0.0, wu_l = 0.0, wu_u = 0.0;
                 Real wf_l = 0.0, wf_u = 0.0;
                 if (jac_on) rt_layer_w(i-1, wl_l, wl_u, wu_l, wu_u, wf_l, wf_u);
-                const Real acd_u = ACC(m,k,j,i), afd_m = AFC(m,k,j,i);
-                const Real acd_l = ACC(m,k,j,i-1);
+                const Real acd_u = ACN(m,k,j,i), afd_m = AUN(m,k,j,i);
+                const Real acd_l = ACN(m,k,j,i-1);
+                const Real bt_d = BTF(m,k,j,i,icut);
                 for (int q=0; q<nq; ++q) {
                   RTLayer(dt_u, muq[q], s_u*acd_u, s_f*afd_m, Idn[q], ab, em);
-                  Src_g(m,0,i,k,j) += wfq[q]/VLA(m,k,j,i)*(ab - em);
+                  Src_g(m,0,i,k,j) += wfq[q]/DX1(m,k,j,i)*(ab - em);
+                  // the value ABOVE the face, in cell i's own frame: this is what the
+                  // up-sweep needs to form the mixing exactly
                   I_down[q][i] = Idn[q];
+                  if (!pp_) Idn[q] += MIXF(bt_d, I_upb[q][i], Idn[q]);
                   RTLayer(dt_l, muq[q], s_f*afd_m, s_l*acd_l, Idn[q], ab, em);
-                  Src_g(m,0,i-1,k,j) += wfq[q]/VLA(m,k,j,i-1)*(ab - em);
+                  Src_g(m,0,i-1,k,j) += wfq[q]/DX1(m,k,j,i-1)*(ab - em);
                   if (jac_on) {
                     // upper half: enters at s_u (centre i), leaves at s_f; deposits in i
                     Real e0u, ciu, cou, e0l, cil, col;
@@ -2738,8 +2830,8 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
                 if (report_on) idn_g(m,k,j,i) = I_down[0][i];
               }
               for (int q=0; q<nq; ++q) {
-                RTLayer(dt_cut, muq[q], b_cut*acc_, b_cutf*afc_, Idn[q], ab, em);
-                Src_g(m,0,icut,k,j) += wfq[q]/VLA(m,k,j,icut)*(ab - em);
+                RTLayer(dt_cut, muq[q], b_cut*acc_, b_cutf*afcn_, Idn[q], ab, em);
+                Src_g(m,0,icut,k,j) += wfq[q]/DX1(m,k,j,icut)*(ab - em);
                 I_down[q][icut] = Idn[q];
               }
               if (report_on) idn_g(m,k,j,icut) = I_down[0][icut];
@@ -2748,8 +2840,13 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
               // rt_int_at_cut), plus the deep-limit gradient (see rt_cut_bc_legacy).
               for (int q=0; q<nq; ++q) {
                 I_up[q] = (b_cutf + (int_at_cut ? Iint : 0.0)
-                           + muq[q]*dbdtau_cut)*afc_;
-                Fb_g(m,0,icut,k,j) += wfq[q]*(I_up[q] - I_down[q][icut])/afc_;
+                           + muq[q]*dbdtau_cut)*afcn_;
+                // the cut face: Phi = A(icut) (u_below - d_below), reported per unit
+                // area, so the factor is A(icut)/A(icut) = 1 and the division stands
+                const Real cc = MIXF(bt_cut, I_up[q], I_down[q][icut]);
+                Fb_g(m,0,icut,k,j) += wfq[q]*(I_up[q]
+                                              - (I_down[q][icut] + cc))/afcn_;
+                I_up[q] += cc;                       // -> cell icut's own frame
               }
               if (report_on) iup_g(m,k,j,icut) = I_up[0];
               // up-sweep
@@ -2762,8 +2859,8 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
                 }
               }
               for (int q=0; q<nq; ++q) {
-                RTLayer(dt_cut, muq[q], b_cutf*afc_, b_cut*acc_, I_up[q], ab, em);
-                Src_g(m,0,icut,k,j) += wfq[q]/VLA(m,k,j,icut)*(ab - em);
+                RTLayer(dt_cut, muq[q], b_cutf*afcn_, b_cut*acc_, I_up[q], ab, em);
+                Src_g(m,0,icut,k,j) += wfq[q]/DX1(m,k,j,icut)*(ab - em);
                 if (jac_on) {
                   // the cut half layer: both endpoints are cell icut's own B (b_cutf
                   // adds only the frozen deep gradient), and I_up entered it from the
@@ -2782,15 +2879,23 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
                 Real wl_l = 0.0, wl_u = 0.0, wu_l = 0.0, wu_u = 0.0;
                 Real wf_l = 0.0, wf_u = 0.0;
                 if (jac_on) rt_layer_w(i, wl_l, wl_u, wu_l, wu_u, wf_l, wf_u);
-                const Real acu_l = ACC(m,k,j,i), afu_m = AFC(m,k,j,i+1);
-                const Real acu_u = ACC(m,k,j,i+1);
+                const Real acu_l = ACN(m,k,j,i), afu_m = AUN(m,k,j,i+1);
+                const Real acu_u = ACN(m,k,j,i+1);
+                const Real bt_u = BTF(m,k,j,i+1,icut);
+                // Phi_f / A(f) with Phi built on the LOWER side: A_cell(i)/A(i+1),
+                // which is 1/AFC(i+1) = 1 on a Cartesian mesh
+                const Real fsc_u = pp_ ? 1.0/afu_m
+                                       : ACC(m,k,j,i)/AFC(m,k,j,i+1);
                 for (int q=0; q<nq; ++q) {
                   RTLayer(dt_l, muq[q], s_l*acu_l, s_f*afu_m, I_up[q], ab, em);
-                  Src_g(m,0,i,k,j) += wfq[q]/VLA(m,k,j,i)*(ab - em);
-                  Fb_g(m,0,i+1,k,j) += wfq[q]*(I_up[q] - I_down[q][i+1])/afu_m;
+                  Src_g(m,0,i,k,j) += wfq[q]/DX1(m,k,j,i)*(ab - em);
+                  const Real cc = MIXF(bt_u, I_up[q], I_down[q][i+1]);
+                  Fb_g(m,0,i+1,k,j) += wfq[q]*(I_up[q]
+                                               - (I_down[q][i+1] + cc))*fsc_u;
+                  I_up[q] += cc;                     // -> cell i+1's own frame
                   if (report_on && q == 0) iup_g(m,k,j,i+1) = I_up[0];
                   RTLayer(dt_u, muq[q], s_f*afu_m, s_u*acu_u, I_up[q], ab, em);
-                  Src_g(m,0,i+1,k,j) += wfq[q]/VLA(m,k,j,i+1)*(ab - em);
+                  Src_g(m,0,i+1,k,j) += wfq[q]/DX1(m,k,j,i+1)*(ab - em);
                   if (jac_on) {
                     Real e0l, cil, col, e0u, ciu, cou;
                     RTLayerCoef(dt_l, muq[q], e0l, cil, col);
@@ -2815,10 +2920,14 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
                   }
                 }
               }
+              const Real fsc_t = pp_ ? 1.0/aft_ : ACC(m,k,j,ie)/AFC(m,k,j,ie+1);
               for (int q=0; q<nq; ++q) {
-                RTLayer(dt_top, muq[q], b_top*act_, b_top*aft_, I_up[q], ab, em);
-                Src_g(m,0,ie,k,j) += wfq[q]/VLA(m,k,j,ie)*(ab - em);
-                Fb_g(m,0,ie+1,k,j) += wfq[q]*(I_up[q] - I_down[q][ie+1])/aft_;
+                RTLayer(dt_top, muq[q], b_top*act_, b_top*aftn_, I_up[q], ab, em);
+                Src_g(m,0,ie,k,j) += wfq[q]/DX1(m,k,j,ie)*(ab - em);
+                const Real cc = MIXF(bt_top, I_up[q], I_down[q][ie+1]);
+                Fb_g(m,0,ie+1,k,j) += wfq[q]*(I_up[q]
+                                              - (I_down[q][ie+1] + cc))*fsc_t;
+                I_up[q] += cc;
                 if (jac_on) {
                   Real e0t, cit, cot;
                   RTLayerCoef(dt_top, muq[q], e0t, cit, cot);
