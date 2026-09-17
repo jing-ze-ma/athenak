@@ -1,0 +1,8 @@
+---
+name: conduction-frozen-k-error
+description: 2026-09-14 MEASURED (bc3a67c1 diagnostic rad_x1_verbose on rg-box-convection): the implicit radial conduction's T-linearisation with FROZEN K(T) ~ T^3/kappa is a steady ONE-SIGNED accuracy error where a cell carries a through-flow - He column: |dT/T| 0.16 per stage at the bottom wall cell (tau 345), frozen-K flux error 8 % mean / 38-50 % worst face (over-cools by that fraction of the through-flux, reheated next step = limit cycle); B-star: 0.02 per stage at the ramp (tau 155), 0.6 % mean / 9-13 % worst face, steady over 2000 cycles. No divergence (M-matrix, bracketed). FIX: u = T^4 form (flux exactly linear in u; still symmetric M-matrix) HALVES it; the residue = frozen dln kappa/dln T (~0 He, -2.4 at the B-star Fe bump) needs a 2nd Newton iteration re-evaluating K. ~70-100 lines in ImplicitRadialUpdate (+20 for BuildAngularCoeffs/RKL1 consistency). DONE ed35708d + 3ce51cd8 (rg-box-convection): <hydro>/rad_x1_uform (default false, bitwise) + rad_x1_kiter (Picard re-assembly at the updated state, anchored on T^n): worst-face error T-form 50/11/13 % (He/B-star col/B-star box) -> uform k1 30/4.3/5.1 % -> uform k2 5/0.06/0.12 %; cost -7 %; B-star floor -13 %; grey_cons unchanged; test test_rad_x1_uform_cpu.py; transverse stays T-form. RECOMMENDED STANDARD for the next box production (keep the current production/extension unchanged for a consistent time series).
+metadata:
+  type: project
+---
+See [[rt-source-dt-forcing]] (the two-stream's own pump, 7-13 % of F, same order and sign), [[rt-shallow-ramp-missplit]]
+(the radial solver dominance fix 61662b2a), [[implicit-transverse-raddiff-plan]].
