@@ -1,0 +1,123 @@
+# G.2 GATE: a 1-D SPHERICAL radiative column for the two-stream r^2 dilution fix.
+#
+# One radial column per cubed-sphere panel (nx2 = nx3 = 4), uniform radial grid, no
+# seed, grey two-stream (rt_grey), CONSTANT opacity, ideal gas.  The domain spans
+# r_out/r_in = 2.5, so the shell AREA changes by 6.25 across it.
+#
+# The star is DELIBERATELY not a real red giant: mstar is lowered to 5e30 g so that the
+# pressure scale height is comparable to the radius and the whole domain is a single
+# extended, OPTICALLY THIN atmosphere (kappa_const = 1e-5 gives tau << 1 everywhere).
+# That isolates the geometry: with no absorption and no emission to speak of, the
+# two-stream must carry a CONSTANT luminosity L = 4 pi r^2 F, i.e. its face flux must
+# dilute as 1/r^2.  The old plane-parallel sweep keeps F constant instead, so its L
+# grows by the full area ratio 6.25.
+#
+# problem/rt_apply_debug = 1 + rt_apply_debug_n = 200 print Fb/Ft per cell of one column.
+
+<comment>
+problem   = 1-D spherical two-stream dilution gate
+
+<job>
+basename  = rg1d
+
+<mesh>
+nghost    = 2
+nx1       = 128              # RADIAL, uniform (no stretch: the analysis wants r_i exact)
+x1min     = 1.6e12
+x1max     = 4.0e12           # r_out/r_in = 2.5, area ratio 6.25
+ix1_bc    = user
+ox1_bc    = user
+nx2       = 4
+x2min     = -1.0
+x2max     = 1.0
+ix2_bc    = panel
+ox2_bc    = panel
+nx3       = 4
+x3min     = -1.0
+x3max     = 1.0
+ix3_bc    = panel
+ox3_bc    = panel
+use_cubed_sphere = true
+
+<meshblock>
+nx1       = 128
+nx2       = 4
+nx3       = 4
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim       = 4
+tlim       = 1.0e30
+ndiag      = 1
+nan_check_cycles = 100
+
+<units>
+length_cgs = 1.0
+mass_cgs   = 1.0
+time_cgs   = 1.0
+mu         = 1.0
+
+<hydro>
+eos         = ideal
+gamma       = 1.6666666667
+reconstruct = plm
+rsolver     = hllc
+etotgrav    = true
+wellbalance_dynamic = false
+isotropic_conduction = radiative
+rad_kappa_src        = table_rho
+rad_flux_inner       = -1.0
+rad_flux_limit       = true
+rad_tau_lo           = 1.0
+rad_tau_hi           = 10.0
+dfloor = 1.0e-18
+pfloor = 1.0e-12
+
+<problem>
+user_srcs   = true
+mstar       = 5.0e30         # NOT a red giant: see the header
+lstar       = 1.914e36
+teff        = 4000.0
+ptop        = 3.0
+mu          = 1.3
+vpert       = 0.0
+kappa_fac   = 1.0
+kappa_const = 1.0e-5         # transparent: tau << 1 over the whole domain
+mlt_alpha   = 0.0
+inner_bc    = wall
+s_relax_cs  = 0.1
+s_relax_cp  = 0.3
+rt_ck       = false
+rt_grey     = true
+rt_de_max   = 0.5
+rt_ali_diag = true
+rt_bface    = true
+rt_src_direct = true
+rt_newton     = true
+rt_rescue_eq  = true
+rt_semi_lin   = false
+rt_top_clamp  = true
+rt_apply_debug   = 1
+rt_apply_debug_n = 200
+ck_dump_m   = 0
+ck_dump_j   = -1
+ck_dump_k   = -1
+met         = 0.0
+opac_table  = /viper/u2/jinma/ATHENAK/bench/hestar_fecz/rosseland_he_x0.0_z0.02.txt
+rt_implicit_column = 0
+rt_impl_solver     = thomas
+rt_impl_mixed      = 0
+rt_impl_warm       = 0
+rt_col3_skip_sweep = false
+rt_col3_ex_iter    = false
+rt_col3_hybrid_tau = 0.0
+rt_cell_report     = false
+rt_outer_verbose   = false
+rt_force_verbose   = 0
+column_dump = column.txt
+
+<output1>
+file_type  = hst
+dt         = 1.0e30

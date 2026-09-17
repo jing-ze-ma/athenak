@@ -1,0 +1,87 @@
+Mesh: spherical-polar x3-face theta correction = rotate
+
+Cubed sphere: Root grid = 6 x 1 x (1 x 1) MeshBlocks
+Total number of MeshBlocks = 6
+Number of logical  levels of refinement = 0 (1 levels total)
+Number of physical levels of refinement = 0 (1 levels total)
+Number of parallel ranks = 1
+General EOS: tabulated on 501 x 676 nodes (41 MB), log10 rho[cgs] in [-13, -3], log10 T[K] in [3.8, 6.5]
+             X = 0, Y = 0.98, Z = 0.02, H2 off, ionization on, radiation on
+             radiation TAPERED off between rho = 1.93e-09 (w = 1, LTE) and rho = 4.97e-10 g/cm^3 (w = 0, the two-stream owns it)
+             metal ionization off
+             mu at the grid centre = 1.35912, n_e/n_tot = 0.665534
+red_giant: opacity table '/viper/u2/jinma/ATHENAK/bench/hestar_fecz/rosseland_he_x0.0_z0.02.txt', 217 x 481 nodes, log10 T 2.6..8, log10 rho -24..0 (200 rows prepended below the file's -14 at the floor, so the clamp cannot hand back real opacity for a thin cell); 41020 prepended nodes (rho below the file) set to problem/opac_floor = 1e-05 cm^2/g (optically thin; the merge edge-filled them)
+red_giant: the two-stream is applied STRANG-SPLIT around the time integrator (dt/2 before, dt/2 after) and NOT inside the RK stages; the transverse operator moves with it
+red_giant: GREY two-stream (problem/rt_grey), opacity from the conduction module's table, 2-point angular quadrature
+           column above the domain: the ghost's own Planck function (it mirrors the top cell back)
+red_giant: initial stratification READ FROM /viper/u2/jinma/ATHENAK/bench/hestar_presn/ic_he4_presn_sph.txt (15999 nodes, 8.30108e+10 .. 2.43252e+11 cm); the hydrostatic+MLT march, problem/ptop and the outer-wall gas-solution check are all OVERRIDDEN
+red_giant: no cell is denser than the opacity table's valid window logR = [-8, 1.5]; cells below it carry problem/opac_floor
+red_giant: OPEN outer boundary -- the ghosts continue the top active cell hydrostatically at its own temperature, outflow only. Mass and energy CAN leave the domain; problem/face_budget reports how much.
+red_giant: OPEN inner boundary (Stein-Nordlund / CO5BOLD). The deep adiabat is anchored at p = 8.35805e+06 dyn/cm^2, T = 237659 K; the emergent luminosity is now an OUTPUT.
+red_giant: M = 6.2651e+33 g, L = 2.3066e+38 erg/s, Teff = 48978 K, rin = 1.18585e+11 cm, rout = 2.4057e+11 cm
+           wall p/T: outer 7510 / 41382.7 K, inner 8.35805e+06 / 237659 K
+           tau = 2/3 at r = 2.37122e+11 cm, T = 49199.2 K; radiative-convective boundary at r = 2.29155e+11 cm
+red_giant: chart-free seed + 32 random plane waves, lambda in [2.5e+11, 7.4e+11] cm, seed 1234, amp 1
+
+Setup complete, executing task list(s)...
+
+elapsed=7.252414e+00 cycle=0 time=0.000000e+00 dt=1.292915e+01
+### two_stream_rt: thermodynamic state read from u0 (CONSERVED, problem/rt_use_cons = true)
+deep_hot_jupiter_rt: RT split path ON, 1 chain block(s) of 4 -> 1x the thread count of the monolithic kernel
+### two_stream_rt: rt_implicit_column = 3, the EXACT block-tridiagonal column solve (intensities as unknowns); solver thomas nseg 1 hybrid_tau 0.000000e+00; workspace 1.713600e+01 + 0.000000e+00 MB
+### rad_cap_ang rank 0 cycle 0 t = 0.000000e+00: max x_i = 1.843508e+00 (cap 5.000000e-01) at (m,k,j,i) = (0,3,3,95) gid = 0 r = 2.383770e+11 | cells over cap = 480, faces capped = 1320
+  red_giant top v1 sponge active: r >= 2.39020e+11, f = 1 at tau <= 3.3333e-02, timescale 2.0000e+01 s
+### rad_cap_ang rank 0 cycle 0 t = 0.000000e+00: max x_i = 6.608755e-01 (cap 5.000000e-01) at (m,k,j,i) = (0,6,6,94) gid = 0 r = 2.377242e+11 | cells over cap = 288, faces capped = 840
+### rad_cap_ang rank 0 cycle 1 t = 1.292915e+01: max x_i = 1.464898e+00 (cap 5.000000e-01) at (m,k,j,i) = (0,3,3,95) gid = 0 r = 2.383770e+11 | cells over cap = 408, faces capped = 1200
+face budget: gain/L  inner=-1.123613e-02 outer=1.723229e-07 | erg in=-6.744550e+37 out=4.534792e+32 | g in=-3.811777e+22 out=2.484656e+17 | L_rad,out/L = 9.382872e-01 L_rad,cut/L = 9.196280e-01 (t = 1.292915e+01 s)
+### rad_cap_ang rank 0 cycle 1 t = 1.292915e+01: max x_i = 5.948435e-01 (cap 5.000000e-01) at (m,k,j,i) = (0,6,6,94) gid = 0 r = 2.377242e+11 | cells over cap = 72, faces capped = 504
+### rad_cap_ang rank 0 cycle 2 t = 2.599328e+01: max x_i = 1.268396e+00 (cap 5.000000e-01) at (m,k,j,i) = (0,3,3,95) gid = 0 r = 2.383770e+11 | cells over cap = 360, faces capped = 1032
+face budget: gain/L  inner=-1.111057e-02 outer=5.724848e-07 | erg in=-1.009258e+38 out=2.178589e+33 | g in=-5.628343e+22 out=1.194740e+18 | L_rad,out/L = 9.062444e-01 L_rad,cut/L = 9.795690e-01 (t = 2.599328e+01 s)
+### rad_cap_ang rank 0 cycle 2 t = 2.599328e+01: max x_i = 5.404584e-01 (cap 5.000000e-01) at (m,k,j,i) = (2,3,3,94) gid = 2 r = 2.377242e+11 | cells over cap = 72, faces capped = 504
+### rad_cap_ang rank 0 cycle 3 t = 3.930041e+01: max x_i = 1.114823e+00 (cap 5.000000e-01) at (m,k,j,i) = (2,3,3,95) gid = 2 r = 2.383770e+11 | cells over cap = 360, faces capped = 1032
+face budget: gain/L  inner=-1.088999e-02 outer=7.944499e-07 | erg in=-1.343518e+38 out=4.617093e+33 | g in=-7.395240e+22 out=2.532235e+18 | L_rad,out/L = 8.741908e-01 L_rad,cut/L = 1.036757e+00 (t = 3.930041e+01 s)
+### rad_cap_ang rank 0 cycle 3 t = 3.930041e+01: max x_i = 4.951336e-01 (cap 5.000000e-01) at (m,k,j,i) = (2,3,3,94) gid = 2 r = 2.377242e+11 | cells over cap = 0, faces capped = 240
+### rad_cap_ang rank 0 cycle 4 t = 5.282588e+01: max x_i = 9.894206e-01 (cap 5.000000e-01) at (m,k,j,i) = (2,6,6,95) gid = 2 r = 2.383770e+11 | cells over cap = 288, faces capped = 912
+face budget: gain/L  inner=-1.068283e-02 outer=9.295234e-07 | erg in=-1.676799e+38 out=7.517005e+33 | g in=-9.112942e+22 out=4.122709e+18 | L_rad,out/L = 8.474655e-01 L_rad,cut/L = 1.093488e+00 (t = 5.282588e+01 s)
+### rad_cap_ang rank 0 cycle 4 t = 5.282588e+01: max x_i = 4.564641e-01 (cap 5.000000e-01) at (m,k,j,i) = (2,6,6,94) gid = 2 r = 2.377242e+11 | cells over cap = 0, faces capped = 144
+### rad_cap_ang rank 0 cycle 5 t = 6.654991e+01: max x_i = 8.858899e-01 (cap 5.000000e-01) at (m,k,j,i) = (2,6,3,95) gid = 2 r = 2.383770e+11 | cells over cap = 264, faces capped = 888
+face budget: gain/L  inner=-1.047912e-02 outer=1.021516e-06 | erg in=-2.008525e+38 out=1.075070e+34 | g in=-1.078106e+23 out=5.896146e+18 | L_rad,out/L = 8.244758e-01 L_rad,cut/L = 1.151920e+00 (t = 6.654991e+01 s)
+### rad_cap_ang rank 0 cycle 5 t = 6.654991e+01: max x_i = 4.220944e-01 (cap 5.000000e-01) at (m,k,j,i) = (4,6,3,94) gid = 4 r = 2.377242e+11 | cells over cap = 0, faces capped = 96
+### rad_cap_ang rank 0 cycle 6 t = 8.045807e+01: max x_i = 7.978721e-01 (cap 5.000000e-01) at (m,k,j,i) = (4,6,3,95) gid = 4 r = 2.383770e+11 | cells over cap = 264, faces capped = 888
+face budget: gain/L  inner=-1.026159e-02 outer=1.091369e-06 | erg in=-2.337722e+38 out=1.425187e+34 | g in=-1.239661e+23 out=7.816174e+18 | L_rad,out/L = 8.041907e-01 L_rad,cut/L = 1.213633e+00 (t = 8.045807e+01 s)
+### rad_cap_ang rank 0 cycle 6 t = 8.045807e+01: max x_i = 3.922551e-01 (cap 5.000000e-01) at (m,k,j,i) = (4,3,3,94) gid = 4 r = 2.377242e+11 | cells over cap = 0, faces capped = 96
+### rad_cap_ang rank 0 cycle 7 t = 9.452986e+01: max x_i = 7.219824e-01 (cap 5.000000e-01) at (m,k,j,i) = (2,3,6,95) gid = 2 r = 2.383770e+11 | cells over cap = 192, faces capped = 768
+face budget: gain/L  inner=-1.005413e-02 outer=1.152734e-06 | erg in=-2.664059e+38 out=1.799342e+34 | g in=-1.396047e+23 out=9.867919e+18 | L_rad,out/L = 7.860954e-01 L_rad,cut/L = 1.275452e+00 (t = 9.452986e+01 s)
+### rad_cap_ang rank 0 cycle 7 t = 9.452986e+01: max x_i = 3.665110e-01 (cap 5.000000e-01) at (m,k,j,i) = (3,6,3,94) gid = 3 r = 2.377242e+11 | cells over cap = 0, faces capped = 96
+### rad_cap_ang rank 0 cycle 8 t = 1.087501e+02: max x_i = 6.570767e-01 (cap 5.000000e-01) at (m,k,j,i) = (3,6,3,95) gid = 3 r = 2.383770e+11 | cells over cap = 192, faces capped = 768
+face budget: gain/L  inner=-9.872987e-03 outer=1.211620e-06 | erg in=-2.987897e+38 out=2.196758e+34 | g in=-1.547752e+23 out=1.204713e+19 | L_rad,out/L = 7.697284e-01 L_rad,cut/L = 1.332676e+00 (t = 1.087501e+02 s)
+### rad_cap_ang rank 0 cycle 8 t = 1.087501e+02: max x_i = 3.447910e-01 (cap 5.000000e-01) at (m,k,j,i) = (0,3,3,94) gid = 0 r = 2.377242e+11 | cells over cap = 0, faces capped = 48
+### rad_cap_ang rank 0 cycle 9 t = 1.231045e+02: max x_i = 6.015745e-01 (cap 5.000000e-01) at (m,k,j,i) = (0,6,3,95) gid = 0 r = 2.383770e+11 | cells over cap = 144, faces capped = 672
+face budget: gain/L  inner=-9.683424e-03 outer=1.268015e-06 | erg in=-3.308514e+38 out=2.616597e+34 | g in=-1.694654e+23 out=1.434919e+19 | L_rad,out/L = 7.551146e-01 L_rad,cut/L = 1.393397e+00 (t = 1.231045e+02 s)
+### rad_cap_ang rank 0 cycle 9 t = 1.231045e+02: max x_i = 3.269130e-01 (cap 5.000000e-01) at (m,k,j,i) = (5,3,6,94) gid = 5 r = 2.377242e+11 | cells over cap = 0, faces capped = 48
+### rad_cap_ang rank 0 cycle 10 t = 1.375796e+02: max x_i = 5.648790e-01 (cap 5.000000e-01) at (m,k,j,i) = (4,6,3,94) gid = 4 r = 2.377242e+11 | cells over cap = 144, faces capped = 624
+face budget: gain/L  inner=-9.434108e-03 outer=1.317957e-06 | erg in=-3.623501e+38 out=3.056638e+34 | g in=-1.835699e+23 out=1.676193e+19 | L_rad,out/L = 7.421177e-01 L_rad,cut/L = 1.469995e+00 (t = 1.375796e+02 s)
+### rad_cap_ang rank 0 cycle 11 t = 1.521622e+02: max x_i = 5.379231e-01 (cap 5.000000e-01) at (m,k,j,i) = (3,3,6,94) gid = 3 r = 2.377242e+11 | cells over cap = 96, faces capped = 504
+face budget: gain/L  inner=-9.193666e-03 outer=1.324794e-06 | erg in=-3.932743e+38 out=3.502251e+34 | g in=-1.971100e+23 out=1.920513e+19 | L_rad,out/L = 7.306928e-01 L_rad,cut/L = 1.545400e+00 (t = 1.521622e+02 s)
+### rad_cap_ang rank 0 cycle 12 t = 1.668400e+02: max x_i = 5.175894e-01 (cap 5.000000e-01) at (m,k,j,i) = (3,3,6,94) gid = 3 r = 2.377242e+11 | cells over cap = 24, faces capped = 288
+face budget: gain/L  inner=-8.951340e-03 outer=1.173498e-06 | erg in=-4.235798e+38 out=3.899548e+34 | g in=-2.100898e+23 out=2.138335e+19 | L_rad,out/L = 7.206754e-01 L_rad,cut/L = 1.623226e+00 (t = 1.668400e+02 s)
+### rad_cap_ang rank 0 cycle 13 t = 1.816008e+02: max x_i = 4.735637e-01 (cap 5.000000e-01) at (m,k,j,i) = (4,6,3,94) gid = 4 r = 2.377242e+11 | cells over cap = 0, faces capped = 192
+face budget: gain/L  inner=-8.097166e-03 outer=9.644850e-07 | erg in=-4.511483e+38 out=4.227927e+34 | g in=-2.216320e+23 out=2.318366e+19 | L_rad,out/L = 7.121519e-01 L_rad,cut/L = 1.729616e+00 (t = 1.816008e+02 s)
+### rad_cap_ang rank 0 cycle 14 t = 1.955359e+02: max x_i = 4.435686e-01 (cap 5.000000e-01) at (m,k,j,i) = (1,3,3,94) gid = 1 r = 2.377242e+11 | cells over cap = 0, faces capped = 192
+face budget: gain/L  inner=-7.841124e-03 outer=8.537114e-07 | erg in=-4.763519e+38 out=4.502335e+34 | g in=-2.319746e+23 out=2.468803e+19 | L_rad,out/L = 7.052672e-01 L_rad,cut/L = 1.846416e+00 (t = 1.955359e+02 s)
+### rad_cap_ang rank 0 cycle 15 t = 2.088680e+02: max x_i = 4.231036e-01 (cap 5.000000e-01) at (m,k,j,i) = (3,6,3,94) gid = 3 r = 2.377242e+11 | cells over cap = 0, faces capped = 144
+face budget: gain/L  inner=-7.556560e-03 outer=7.508466e-07 | erg in=-4.995897e+38 out=4.733234e+34 | g in=-2.413242e+23 out=2.595384e+19 | L_rad,out/L = 6.993376e-01 L_rad,cut/L = 1.970072e+00 (t = 2.088680e+02 s)
+### rad_cap_ang rank 0 cycle 16 t = 2.217627e+02: max x_i = 3.995750e-01 (cap 5.000000e-01) at (m,k,j,i) = (5,6,3,94) gid = 5 r = 2.377242e+11 | cells over cap = 0, faces capped = 144
+face budget: gain/L  inner=-7.062889e-03 outer=6.388691e-07 | erg in=-5.205968e+38 out=4.923252e+34 | g in=-2.496192e+23 out=2.699552e+19 | L_rad,out/L = 6.943345e-01 L_rad,cut/L = 2.102887e+00 (t = 2.217627e+02 s)
+### rad_cap_ang rank 0 cycle 17 t = 2.340427e+02: max x_i = 3.838734e-01 (cap 5.000000e-01) at (m,k,j,i) = (5,6,3,94) gid = 5 r = 2.377242e+11 | cells over cap = 0, faces capped = 96
+face budget: gain/L  inner=-6.707341e-03 outer=5.581292e-07 | erg in=-5.395953e+38 out=5.081342e+34 | g in=-2.570119e+23 out=2.786214e+19 | L_rad,out/L = 6.903112e-01 L_rad,cut/L = 2.254969e+00 (t = 2.340427e+02 s)
+face budget: gain/L  inner=-2.296069e-03 outer=1.608828e-07 | erg in=-5.458740e+38 out=5.125336e+34 | g in=-2.594312e+23 out=2.810330e+19 | L_rad,out/L = 6.871159e-01 L_rad,cut/L = 2.418594e+00 (t = 2.458980e+02 s)
+
+Terminating on time limit
+time=2.500000e+02 cycle=19
+tlim=2.500000e+02 nlim=200000
+
+MeshBlock-cycles = 114
+cpu time used  = 9.478997e+00
+zone-cycles/cpu_second = 1.847284e+04
+particle-updates/cpu_second = 0.000000e+00
