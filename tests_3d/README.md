@@ -123,7 +123,7 @@ factor **~2e11**, every cycle, in every cell of the EOS taper (`w` strictly betw
 not.  The radial component of the same term (`X1V(i+1) - X1V(i-1)`) is a length and is
 correct, which is why the plane-parallel box, where `size.dx2` IS a length, never saw it.
 
-**Fixed** in commit `b3f6a9f4`: the transverse derivatives now divide by `DX2`/`DX3`, the
+**Fixed** in commit `4bcdc855`: the transverse derivatives now divide by `DX2`/`DX3`, the
 per-cell physical arc lengths on a curvilinear mesh and `size.dx2`/`dx3` on a Cartesian
 one, so the box is bitwise (verified above).  No metric inverse enters: what `u0(IM2)`,
 `u0(IM3)` hold on the cubed sphere is the COVARIANT angular momentum

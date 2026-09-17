@@ -268,6 +268,12 @@ rt_de_max          = 0.5
 # above took out of the gas, put back as (1-w) rho kappa F/c + Prad grad w; the gravity it
 # works against is the pgen's own point mass, g(r) = GM/r^2.
 rt_rad_force       = true
+# problem/rt_bottom_flux: hand <hydro>/rad_flux_inner to the TWO-STREAM's own lower
+# boundary instead of to the conduction wall face.  FALSE here, because inner_bc = open
+# injects the luminosity as the entropy of the inflow and the two would double count.  It
+# is listed (not left to its default) so that the 1-D relaxation run, which uses
+# inner_bc = wall and must inject L somewhere, can switch it on from the command line.
+rt_bottom_flux     = false
 rt_force_verbose   = 0
 # OPERATOR SPLITTING: the radiation operator is Strang-split around the time integrator
 # (dt/2 before, dt/2 after) instead of applied once per RK stage.
