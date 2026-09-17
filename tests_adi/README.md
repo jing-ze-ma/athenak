@@ -196,6 +196,20 @@ interior:
 
 The outliers are the **cube-vertex** cells, the only cells with two seam faces.
 
+### the cross-term outer iteration (`hydro/rad_adi_cross_iter`)
+
+`adi`, n = 32, `cfl = 0.0075`, `nlim = 80` (the ladder's 32 arm):
+
+| `rad_adi_cross_iter` | amp | L1 | `|sum V de|/sum V|de|` |
+| --- | --- | --- | --- |
+| 1 | 0.99665 | 0.02462 | 1.3208e-6 |
+| 2 | 0.99666 | 0.02462 | 1.3196e-6 |
+| 3 | 0.99666 | 0.02462 | 1.3196e-6 |
+
+It converges in two iterations and changes nothing here, which is the expected result:
+the lag error of the explicit cross term scales with the per-stage stiffness `z`, and
+this ladder runs at `z ~ 0.05`.  The switch exists for the production regime.
+
 ## (c) Stability
 
 `hydro/rad_implicit_x1 = true` as well, or the radial conduction step shrinks `dt` with
