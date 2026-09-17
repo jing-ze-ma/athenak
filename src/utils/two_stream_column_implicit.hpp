@@ -341,6 +341,11 @@ struct RTCol3 {
   DvceArray1D<Real> stat;         // 12 reduction slots, see the launcher
   DualArray1D<RegionSize> size;
   DvceArray4D<Real> dx1;
+  // the radial-mesh geometry of the SPHERICAL DILUTION (derived in two_stream_rt.hpp):
+  // the x1 face areas and the cell volumes.  Both are 1x1x1x1 placeholders on a
+  // Cartesian mesh, which is why every read goes through Av/Ac/Vc and their pp branch.
+  DvceArray4D<Real> vol;
+  DvceArray4D<Real> area1;
   EOS_Data eos;
   // ---- switches and scalars --------------------------------------------------------
   Real bdt = 0.0;
@@ -513,6 +518,29 @@ struct RTCol3 {
   KOKKOS_INLINE_FUNCTION
   Real Dx(const int m, const int k, const int j, const int i) const {
     return pp ? size.d_view(m).dx1 : dx1(m,k,j,i);
+  }
+  //! \brief the x1 FACE area A(i), the cell's MEAN area V/dx1 -- the weight of a source
+  //! endpoint that sits at the cell CENTRE -- and the cell VOLUME.  THE UNKNOWNS D_q,
+  //! U_q OF THIS SOLVE ARE THE AREA-WEIGHTED INTENSITIES J = A I the sweep carries (the
+  //! SPHERICAL DILUTION derivation in two_stream_rt.hpp): the transfer equation in J is
+  //! the plane-parallel one with the source function A B, so every source endpoint is
+  //! scaled by the area at its own position, the deep-segment diffusion fluxes and the
+  //! entry-state face fluxes are scaled by their face area, every divergence is per
+  //! VOLUME, and a flux REPORTED to the rest of the code (Fb, stat(16)) is divided by
+  //! its face area again to become a flux per unit area.  Under problem/
+  //! rt_plane_parallel all three collapse to A = 1 and V = Dx, so every new factor is a
+  //! multiplication or division by exactly 1.0 and the box is bitwise unchanged.
+  KOKKOS_INLINE_FUNCTION
+  Real Av(const int m, const int k, const int j, const int i) const {
+    return pp ? 1.0 : area1(m,k,j,i);
+  }
+  KOKKOS_INLINE_FUNCTION
+  Real Ac(const int m, const int k, const int j, const int i) const {
+    return pp ? 1.0 : vol(m,k,j,i)/dx1(m,k,j,i);
+  }
+  KOKKOS_INLINE_FUNCTION
+  Real Vc(const int m, const int k, const int j, const int i) const {
+    return pp ? size.d_view(m).dx1 : vol(m,k,j,i);
   }
   //! kappa_R * rho, the emissivity the layers are built from
   KOKKOS_INLINE_FUNCTION
@@ -706,6 +734,15 @@ void RTCol3::SourceCoef(const int m, const int k, const int j, const int i, cons
     su[1] = 1.0;
     sfd[1] = 1.0;
   }
+  // sl and su are evaluated at the cell CENTRE, sfu at the upper face and sfd at the
+  // lower one, so each carries the area of its own position (see Av/Ac/Vc)
+  const Real ac_ = Ac(m,k,j,i), afu_ = Av(m,k,j,i+1), afd_ = Av(m,k,j,i);
+  for (int c=0; c<3; ++c) {
+    sl[c] *= ac_;
+    su[c] *= ac_;
+    sfu[c] *= afu_;
+    sfd[c] *= afd_;
+  }
 }
 
 //----------------------------------------------------------------------------------------
@@ -727,7 +764,8 @@ void RTCol3::SourceVals(const int m, const int k, const int j, const int i, cons
   su  = cu[0]*bm + cu[1]*b0 + cu[2]*bp;
   sfu = cfu[0]*bm + cfu[1]*b0 + cfu[2]*bp;
   // at a hybrid interface the offset is already in cfd[0]*b(i-1), not a frozen constant
-  sfd = cfd[0]*bm + cfd[1]*b0 + cfd[2]*bp + ((i == ic && !hb.on) ? cutc : 0.0);
+  sfd = cfd[0]*bm + cfd[1]*b0 + cfd[2]*bp
+      + ((i == ic && !hb.on) ? cutc*Av(m,k,j,i) : 0.0);
 }
 
 //----------------------------------------------------------------------------------------
@@ -796,7 +834,9 @@ void RTCol3::BuildRow(const int m, const int k, const int j, const int i, const 
             ESs = 34;
   Real cl[3], cu[3], cfu[3], cfd[3];
   SourceCoef(m, k, j, i, ic, hb, cl, cu, cfu, cfd);
-  const Real W = 1.0/Dx(m,k,j,i);
+  const Real W = 1.0/Vc(m,k,j,i);
+  // U enters this cell's LOWER face, so the b it is built from enters as A(i) b
+  const Real avl = Av(m,k,j,i);
   Real dsdb[3] = {0.0, 0.0, 0.0};
   Real cdu[2] = {0.0, 0.0};
   for (int q=0; q<nq; ++q) {
@@ -810,10 +850,10 @@ void RTCol3::BuildRow(const int m, const int k, const int j, const int i, const 
       A3[2+q][q] = -t*t;
     } else if (hb.on) {
       // U enters at the INTERFACE as the deep limit, linear in b(i) and in b(i-1)
-      Bm[2+q][4] -= t*t*(1.0 - hb.am[q]);
-      A1[2+q] -= t*t*hb.am[q];
+      Bm[2+q][4] -= t*t*(1.0 - hb.am[q])*avl;
+      A1[2+q] -= t*t*hb.am[q]*avl;
     } else {
-      Bm[2+q][4] -= t*t;              // U enters at the cut as b(icut) + a constant
+      Bm[2+q][4] -= t*t*avl;          // U enters at the cut as b(icut) + a constant
     }
     for (int c=0; c<3; ++c) {
       const Real demd = t*ci*cfu[c] + t*co*cl[c] + ci*cu[c] + co*cfd[c];
@@ -892,10 +932,10 @@ void RTCol3::BuildRow(const int m, const int k, const int j, const int i, const 
     if (i > ic) {
       A3[4][q] = fj*cdu[q];
     } else if (hb.on) {
-      Bm[4][4] += fj*cdu[q]*(1.0 - hb.am[q]);
-      A1[4] += fj*cdu[q]*hb.am[q];
+      Bm[4][4] += fj*cdu[q]*(1.0 - hb.am[q])*avl;
+      A1[4] += fj*cdu[q]*hb.am[q]*avl;
     } else {
-      Bm[4][4] += fj*cdu[q];
+      Bm[4][4] += fj*cdu[q]*avl;
     }
   }
   if (xj) {
@@ -907,10 +947,10 @@ void RTCol3::BuildRow(const int m, const int k, const int j, const int i, const 
       if (i > ic) {
         A3[4][q] += cfl*wf[q];                    // U_q(i-1)
       } else if (hb.on) {
-        Bm[4][4] += cfl*wf[q]*(1.0 - hb.am[q]);   // U(interface), implicit in both b
-        A1[4] += cfl*wf[q]*hb.am[q];
+        Bm[4][4] += cfl*wf[q]*(1.0 - hb.am[q])*avl;   // U(interface), in both b
+        A1[4] += cfl*wf[q]*hb.am[q]*avl;
       } else {
-        Bm[4][4] += cfl*wf[q];                    // U(ic-1) = b(ic) + Ucut
+        Bm[4][4] += cfl*wf[q]*avl;                // U(ic-1) = b(ic) + Ucut
       }
     }
   }
@@ -981,7 +1021,7 @@ void RTCol3::DeepRow(const int m, const int k, const int j, const int i, const i
     dd = 1.0;                                  // an unusable state takes no part
     return;
   }
-  const Real W = 1.0/Dx(m,k,j,i);
+  const Real W = 1.0/Vc(m,k,j,i);
   const Real wlo = taublend ? wblend(m,k,j,i) : 0.0;
   const Real whi = taublend ? wblend(m,k,j,i+1) : 0.0;
   const Real wb = 1.0 - 0.5*(wlo + whi);
@@ -1002,13 +1042,13 @@ void RTCol3::DeepRow(const int m, const int k, const int j, const int i, const i
   dd = dedb;
   if (i > ic) {                                // the lower face: pure diffusion
     const Real dtm = Ht(m,k,j,i-1) + Ht(m,k,j,i);
-    const Real kk = (dtm > 0.0) ? kflx/dtm : 0.0;
+    const Real kk = (dtm > 0.0) ? kflx/dtm*Av(m,k,j,i) : 0.0;
     aa -= bdt*clo*W*kk;
     dd += bdt*clo*W*kk;
   }                                            // at i = ic the flux is imposed, d/db = 0
   if (i + 1 < hb.isp) {                        // the upper face: pure diffusion
     const Real dtp = Ht(m,k,j,i) + Ht(m,k,j,i+1);
-    const Real kk = (dtp > 0.0) ? kflx/dtp : 0.0;
+    const Real kk = (dtp > 0.0) ? kflx/dtp*Av(m,k,j,i+1) : 0.0;
     dd += bdt*chi*W*kk;
     cc -= bdt*chi*W*kk;
   } else {                                     // the upper face IS the interface
@@ -1018,8 +1058,10 @@ void RTCol3::DeepRow(const int m, const int k, const int j, const int i, const i
       sap += wf[q]*(1.0 - hb.am[q]);           // d F_if / d b(isp)
       C5[q] = -bdt*chi*W*wf[q];                // d F_if / d D_q(isp) = -w_q
     }
-    dd += bdt*chi*W*sam;
-    C5[2] = bdt*chi*W*sap;
+    // the interface flux is built from the deep-limit U at that FACE: A(i+1) b
+    const Real avi = Av(m,k,j,i+1);
+    dd += bdt*chi*W*sam*avi;
+    C5[2] = bdt*chi*W*sap*avi;
   }
   rv = -(enew - es - bdt*(wb*Wk<TLAY>(m,SAs,i,k,j) + Wk<TLAY>(m,EXs,i,k,j)));
   if (!(dd > 0.0)) Kokkos::atomic_add(&stat(11), 1.0);
@@ -1119,15 +1161,17 @@ void RTCol3::Solve(const int m, const int k, const int j) const {
   // the downward intensity entering the top face, frozen.  The launcher fills it with
   // exactly the sweep's unresolved-column model (RTTopDtau of the top slot's opacity and
   // pressure), so mode 3 and mode 0 see the same boundary.
-  for (int q=0; q<nq; ++q) Dtop[q] = dtop(m,q,k,j);
+  const Real avt = Av(m,k,j,ie+1);
+  for (int q=0; q<nq; ++q) Dtop[q] = dtop(m,q,k,j)*avt;
 
   // ---- 3. the tau-blend handover, frozen from the entry-state sweep -----------------
   for (int i=ic; i<=ie; ++i) {
     Real ex = 0.0;
     if (taublend) {
-      const Real dxi = Dx(m,k,j,i);
+      const Real dxi = Vc(m,k,j,i);
       const Real wb = 0.5*(wblend(m,k,j,i) + wblend(m,k,j,i+1));
-      const Real ft = Fb(m,0,i+1,k,j), fb = Fb(m,0,i,k,j);
+      const Real ft = Fb(m,0,i+1,k,j)*Av(m,k,j,i+1);
+      const Real fb = Fb(m,0,i,k,j)*Av(m,k,j,i);
       if (direct) {
         ex = wb*Src(m,0,i,k,j)
            + (wblend(m,k,j,i+1)*ft - wblend(m,k,j,i)*fb)/dxi;
@@ -1165,7 +1209,7 @@ void RTCol3::Solve(const int m, const int k, const int j) const {
     for (int i=ie; i>=ib; --i) {
       Real sl, su, sfu, sfd;
       SourceVals<false>(m, k, j, i, ib, hb, cutc, sl, su, sfu, sfd);
-      const Real W = 1.0/Dx(m,k,j,i);
+      const Real W = 1.0/Vc(m,k,j,i);
       Real acc = 0.0;
       for (int q=0; q<nq; ++q) {
         const Real E = Wk<false>(m,EE+q,i,k,j), t = 1.0 - E;
@@ -1179,11 +1223,12 @@ void RTCol3::Solve(const int m, const int k, const int j) const {
       Wk<false>(m,SA,i,k,j) += acc;
     }
     Real Uin[2];
-    for (int q=0; q<nq; ++q) Uin[q] = Wk<false>(m,BB,ib,k,j) + Ucut_i[q];
+    const Real avb = Av(m,k,j,ib);
+    for (int q=0; q<nq; ++q) Uin[q] = (Wk<false>(m,BB,ib,k,j) + Ucut_i[q])*avb;
     for (int i=ib; i<=ie; ++i) {
       Real sl, su, sfu, sfd;
       SourceVals<false>(m, k, j, i, ib, hb, cutc, sl, su, sfu, sfd);
-      const Real W = 1.0/Dx(m,k,j,i);
+      const Real W = 1.0/Vc(m,k,j,i);
       Real acc = 0.0;
       for (int q=0; q<nq; ++q) {
         const Real E = Wk<false>(m,EE+q,i,k,j), t = 1.0 - E;
@@ -1204,20 +1249,23 @@ void RTCol3::Solve(const int m, const int k, const int j) const {
     if (hb.on) {
       fif = 0.0;
       for (int q=0; q<nq; ++q) {
-        fif += wf[q]*((Wk<false>(m,BB,ib,k,j) + Ucut_i[q]) - Wk<false>(m,DD+q,ib,k,j));
+        fif += wf[q]*((Wk<false>(m,BB,ib,k,j) + Ucut_i[q])*Av(m,k,j,ib)
+                      - Wk<false>(m,DD+q,ib,k,j));
       }
       for (int i=ic; i<ib; ++i) {
-        Real flo = fbot;
+        // the deep fluxes are per unit area; carry them as A F like every other face
+        Real flo = fbot*Av(m,k,j,ic);
         if (i > ic) {
           const Real dtm = Ht(m,k,j,i-1) + Ht(m,k,j,i);
           flo = (dtm > 0.0)
-              ? kflx*(Wk<false>(m,BB,i-1,k,j) - Wk<false>(m,BB,i,k,j))/dtm : 0.0;
+              ? kflx*(Wk<false>(m,BB,i-1,k,j) - Wk<false>(m,BB,i,k,j))/dtm
+                *Av(m,k,j,i) : 0.0;
         }
         Wk<false>(m,FL,i,k,j) = flo;
       }
       for (int i=ic; i<ib; ++i) {
         const Real fhi = (i + 1 < ib) ? Wk<false>(m,FL,i+1,k,j) : fif;
-        Wk<false>(m,SA,i,k,j) = (Wk<false>(m,FL,i,k,j) - fhi)/Dx(m,k,j,i);
+        Wk<false>(m,SA,i,k,j) = (Wk<false>(m,FL,i,k,j) - fhi)/Vc(m,k,j,i);
       }
     }
     // ---- 4a'. the handover, re-formed from THIS column's OWN flux ------------------
@@ -1238,20 +1286,23 @@ void RTCol3::Solve(const int m, const int k, const int j) const {
           const Real fhi = (i + 1 < ib) ? Wk<false>(m,FL,i+1,k,j) : fif;
           const Real wlo = wblend(m,k,j,i), whi = wblend(m,k,j,i+1);
           Wk<false>(m,EX,i,k,j) = 0.5*(wlo + whi)*Wk<false>(m,SA,i,k,j)
-                     + (whi*fhi - wlo*Wk<false>(m,FL,i,k,j))/Dx(m,k,j,i) + Qb(m,0,i,k,j);
+                     + (whi*fhi - wlo*Wk<false>(m,FL,i,k,j))/Vc(m,k,j,i)
+                     + Qb(m,0,i,k,j);
         }
       }
       for (int i=ib; i<=ie; ++i) {
         Real f3lo = 0.0, f3hi = 0.0;
         for (int q=0; q<nq; ++q) {
-          const Real ulo = (i == ib) ? (Wk<false>(m,BB,ib,k,j) + Ucut_i[q]) : Wk<false>(m,UU+q,i-1,k,j);
+          const Real ulo = (i == ib)
+              ? (Wk<false>(m,BB,ib,k,j) + Ucut_i[q])*Av(m,k,j,ib)
+              : Wk<false>(m,UU+q,i-1,k,j);
           const Real dhi = (i == ie) ? Dtop[q] : Wk<false>(m,DD+q,i+1,k,j);
           f3lo += wf[q]*(ulo - Wk<false>(m,DD+q,i,k,j));
           f3hi += wf[q]*(Wk<false>(m,UU+q,i,k,j) - dhi);
         }
         const Real wlo = wblend(m,k,j,i), whi = wblend(m,k,j,i+1);
         Wk<false>(m,EX,i,k,j) = 0.5*(wlo + whi)*Wk<false>(m,SA,i,k,j)
-                       + (whi*f3hi - wlo*f3lo)/Dx(m,k,j,i) + Qb(m,0,i,k,j);
+                       + (whi*f3hi - wlo*f3lo)/Vc(m,k,j,i) + Qb(m,0,i,k,j);
       }
     }
     }
@@ -1456,7 +1507,7 @@ void RTCol3::Solve(const int m, const int k, const int j) const {
   Real budget = 0.0, bscale = 0.0, rtmax = 0.0, ubmax = 0.0;
   Real rhsum = 0.0, srsum = 0.0;
   for (int i=ic; i<=ie; ++i) {
-    const Real dxi = Dx(m,k,j,i);
+    const Real dxi = Vc(m,k,j,i);
     const Real wb = taublend ? (1.0 - 0.5*(wblend(m,k,j,i) + wblend(m,k,j,i+1))) : 1.0;
     rhsum += bdt*(wb*Wk<false>(m,SA,i,k,j) + Wk<false>(m,EX,i,k,j))*dxi;
     srsum += Wk<false>(m,SA,i,k,j)*dxi;
@@ -1468,7 +1519,8 @@ void RTCol3::Solve(const int m, const int k, const int j) const {
     fnet = Wk<false>(m,FL,ic,k,j) - ftopn;      // the imposed deep bottom flux
   } else {
     for (int q=0; q<nq; ++q) {
-      fnet += wf[q]*((Wk<false>(m,BB,ic,k,j) + Ucut[q]) - Wk<false>(m,DD+q,ic,k,j));
+      fnet += wf[q]*((Wk<false>(m,BB,ic,k,j) + Ucut[q])*Av(m,k,j,ic)
+                     - Wk<false>(m,DD+q,ic,k,j));
     }
     fnet -= ftopn;
   }
@@ -1483,7 +1535,8 @@ void RTCol3::Solve(const int m, const int k, const int j) const {
   // radiation field away from the formal solution the sweep was validated against.
   Real ftop3 = 0.0;
   for (int q=0; q<nq; ++q) ftop3 += wf[q]*(Wk<false>(m,UU+q,ie,k,j) - Dtop[q]);
-  Kokkos::atomic_add(&stat(16), ftop3);
+  // stat(16) is compared against Fb, a flux PER UNIT AREA, so undo the area weight
+  Kokkos::atomic_add(&stat(16), ftop3/avt);
   Kokkos::atomic_add(&stat(17), Fb(m,0,ie+1,k,j));
 
   // ---- THE FLUX-TELESCOPING DUMP (problem/rt_outer_verbose, first cycle only) -------
@@ -1516,7 +1569,7 @@ void RTCol3::Solve(const int m, const int k, const int j) const {
         f3lo += wf[q]*(ulo - Wk<false>(m,DD+q,i,k,j));
         f3hi += wf[q]*(Wk<false>(m,UU+q,i,k,j) - dhi);
       }
-      const Real dxi = Dx(m,k,j,i);
+      const Real dxi = Vc(m,k,j,i);
       const Real wlo = taublend ? wblend(m,k,j,i) : 0.0;
       const Real whi = taublend ? wblend(m,k,j,i+1) : 0.0;
       const Real wb = 1.0 - 0.5*(wlo + whi);
@@ -1578,7 +1631,7 @@ void RTCol3::Solve(const int m, const int k, const int j) const {
       Kokkos::atomic_add(&stat(8), 1.0);
     }
     u0(m,IEN,k,j,i) += de;
-    const Real dxi = Dx(m,k,j,i);
+    const Real dxi = Vc(m,k,j,i);
     budget += de*dxi;
     bscale += fabs(de)*dxi;
   }
@@ -1599,17 +1652,18 @@ void RTCol3::Solve(const int m, const int k, const int j) const {
   // after stat(17) so that slot still reports what Fb held on entry (the PREVIOUS call's
   // converged Ftop here, and 0 on the first one).
   if (wrflux) {
-    for (int i=ic; i<ib; ++i) Fb(m,0,i,k,j) = Wk<false>(m,FL,i,k,j);
+    for (int i=ic; i<ib; ++i) Fb(m,0,i,k,j) = Wk<false>(m,FL,i,k,j)/Av(m,k,j,i);
     for (int i=ib; i<=ie; ++i) {
       Real f3lo = 0.0;
       for (int q=0; q<nq; ++q) {
-        const Real ulo = (i == ib) ? (Wk<false>(m,BB,ib,k,j) + Ucut_i[q])
-                                   : Wk<false>(m,UU+q,i-1,k,j);
+        const Real ulo = (i == ib)
+            ? (Wk<false>(m,BB,ib,k,j) + Ucut_i[q])*Av(m,k,j,ib)
+            : Wk<false>(m,UU+q,i-1,k,j);
         f3lo += wf[q]*(ulo - Wk<false>(m,DD+q,i,k,j));
       }
-      Fb(m,0,i,k,j) = f3lo;
+      Fb(m,0,i,k,j) = f3lo/Av(m,k,j,i);
     }
-    Fb(m,0,ie+1,k,j) = ftop3;
+    Fb(m,0,ie+1,k,j) = ftop3/avt;
   }
 }
 

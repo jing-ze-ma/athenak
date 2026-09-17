@@ -281,10 +281,14 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
   if (c.bot_flux > 0.0) dbdtau = 3.0*c.bot_flux/(4.0*M_PI);
   const Real cutc = dbdtau*c.Ht(m,k,j,ic);
   // the deep segment's BOTTOM face flux, the two-stream cut flux in its deep limit
+  // per unit area; every face quantity below is carried as A F, and every intensity
+  // as J = A I -- the SPHERICAL DILUTION of two_stream_rt.hpp, exactly as the serial
+  // path carries it (RTCol3::Av/Ac/Vc)
   const Real fbot = kflx*dbdtau + (c.int_at_cut ? wsum*c.Iint : 0.0);
+  const Real avt = c.Av(m,k,j,ie+1), avb = c.Av(m,k,j,ib);
   Real Dtop[2], Ucut[2];
   for (int q=0; q<2; ++q) {
-    Dtop[q] = c.dtop(m,q,k,j);
+    Dtop[q] = c.dtop(m,q,k,j)*avt;
     Ucut[q] = cutc + (c.int_at_cut ? c.Iint : 0.0) + c.mu[q]*dbdtau;
   }
 
@@ -294,9 +298,10 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
     for (int i=i0; i<=i1; ++i) {
       Real ex = 0.0;
       if (c.taublend) {
-        const Real dxi = c.Dx(m,k,j,i);
+        const Real dxi = c.Vc(m,k,j,i);
         const Real wb = 0.5*(c.wblend(m,k,j,i) + c.wblend(m,k,j,i+1));
-        const Real ft = c.Fb(m,0,i+1,k,j), fb = c.Fb(m,0,i,k,j);
+        const Real ft = c.Fb(m,0,i+1,k,j)*c.Av(m,k,j,i+1);
+        const Real fb = c.Fb(m,0,i,k,j)*c.Av(m,k,j,i);
         if (c.direct) {
           ex = wb*c.Src(m,0,i,k,j)
              + (c.wblend(m,k,j,i+1)*ft - c.wblend(m,k,j,i)*fb)/dxi;
@@ -346,7 +351,7 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
       for (int i=i1; i>=t0; --i) {
         Real sl, su, sfu, sfd;
         c.SourceVals<true>(m, k, j, i, ib, hb, cutc, sl, su, sfu, sfd);
-        const Real W = 1.0/c.Dx(m,k,j,i);
+        const Real W = 1.0/c.Vc(m,k,j,i);
         Real acc = 0.0;
         for (int q=0; q<nq; ++q) {
           const Real E = c.Wk<true>(m,EE+q,i,k,j), t = 1.0 - E;
@@ -365,7 +370,7 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
       for (int i=t0; i<=i1; ++i) {
         Real sl, su, sfu, sfd;
         c.SourceVals<true>(m, k, j, i, ib, hb, cutc, sl, su, sfu, sfd);
-        const Real W = 1.0/c.Dx(m,k,j,i);
+        const Real W = 1.0/c.Vc(m,k,j,i);
         Real acc = 0.0;
         for (int q=0; q<nq; ++q) {
           const Real E = c.Wk<true>(m,EE+q,i,k,j), t = 1.0 - E;
@@ -396,7 +401,9 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
           de[q] = c.Wk<true>(m,DD+q,t0,k,j) + c.Wk<true>(m,HD+q,t0,k,j)*de[q];
         }
       }
-      for (int q=0; q<nq; ++q) ue[q] = c.Wk<true>(m,BB,ib,k,j) + Ucut_i[q];
+      for (int q=0; q<nq; ++q) {
+        ue[q] = (c.Wk<true>(m,BB,ib,k,j) + Ucut_i[q])*avb;
+      }
       for (int s=0; s<nsg; ++s) {
         const int i1 = c.SegStart(s+1,ic,nc,nsg,ib) - 1;
         if (i1 < ib) continue;
@@ -418,7 +425,7 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
         ue[q] = c.rd(m,k,j,s*nrd+UE+q);
       }
       for (int i=t0; i<=i1; ++i) {
-        const Real W = 1.0/c.Dx(m,k,j,i);
+        const Real W = 1.0/c.Vc(m,k,j,i);
         Real acc = 0.0;
         for (int q=0; q<nq; ++q) {
           const Real E = c.Wk<true>(m,EE+q,i,k,j), t = 1.0 - E;
@@ -442,18 +449,18 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
     if (hb.on) {
       fif = 0.0;
       for (int q=0; q<nq; ++q) {
-        fif += c.wf[q]*((c.Wk<true>(m,BB,ib,k,j) + Ucut_i[q])
+        fif += c.wf[q]*((c.Wk<true>(m,BB,ib,k,j) + Ucut_i[q])*avb
                         - c.Wk<true>(m,DD+q,ib,k,j));
       }
       Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, nsg), [&](const int s) {
         const int i0 = c.SegStart(s,ic,nc,nsg,ib), i1 = c.SegStart(s+1,ic,nc,nsg,ib) - 1;
         const int d1 = (i1 < ib-1) ? i1 : (ib-1);
         for (int i=i0; i<=d1; ++i) {
-          Real flo = fbot;
+          Real flo = fbot*c.Av(m,k,j,ic);
           if (i > ic) {
             const Real dtm = c.Ht(m,k,j,i-1) + c.Ht(m,k,j,i);
             flo = (dtm > 0.0) ? kflx*(c.Wk<true>(m,BB,i-1,k,j)
-                                      - c.Wk<true>(m,BB,i,k,j))/dtm : 0.0;
+                                      - c.Wk<true>(m,BB,i,k,j))/dtm*c.Av(m,k,j,i) : 0.0;
           }
           c.Wk<true>(m,FL,i,k,j) = flo;
         }
@@ -464,7 +471,7 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
         const int d1 = (i1 < ib-1) ? i1 : (ib-1);
         for (int i=i0; i<=d1; ++i) {
           const Real fhi = (i + 1 < ib) ? c.Wk<true>(m,FL,i+1,k,j) : fif;
-          c.Wk<true>(m,SA,i,k,j) = (c.Wk<true>(m,FL,i,k,j) - fhi)/c.Dx(m,k,j,i);
+          c.Wk<true>(m,SA,i,k,j) = (c.Wk<true>(m,FL,i,k,j) - fhi)/c.Vc(m,k,j,i);
         }
       });
       tm.team_barrier();
@@ -477,19 +484,20 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
         if (i < ib) {                         // a DEEP cell: the diffusion faces
           const Real fhi = (i + 1 < ib) ? c.Wk<true>(m,FL,i+1,k,j) : fif;
           c.Wk<true>(m,EX,i,k,j) = 0.5*(wlo + whi)*c.Wk<true>(m,SA,i,k,j)
-              + (whi*fhi - wlo*c.Wk<true>(m,FL,i,k,j))/c.Dx(m,k,j,i) + c.Qb(m,0,i,k,j);
+              + (whi*fhi - wlo*c.Wk<true>(m,FL,i,k,j))/c.Vc(m,k,j,i)
+              + c.Qb(m,0,i,k,j);
           return;
         }
         Real f3lo = 0.0, f3hi = 0.0;
         for (int q=0; q<nq; ++q) {
-          const Real ulo = (i == ib) ? (c.Wk<true>(m,BB,ib,k,j) + Ucut_i[q])
+          const Real ulo = (i == ib) ? (c.Wk<true>(m,BB,ib,k,j) + Ucut_i[q])*avb
                                      : c.Wk<true>(m,UU+q,i-1,k,j);
           const Real dhi = (i == ie) ? Dtop[q] : c.Wk<true>(m,DD+q,i+1,k,j);
           f3lo += c.wf[q]*(ulo - c.Wk<true>(m,DD+q,i,k,j));
           f3hi += c.wf[q]*(c.Wk<true>(m,UU+q,i,k,j) - dhi);
         }
         c.Wk<true>(m,EX,i,k,j) = 0.5*(wlo + whi)*c.Wk<true>(m,SA,i,k,j)
-                         + (whi*f3hi - wlo*f3lo)/c.Dx(m,k,j,i) + c.Qb(m,0,i,k,j);
+                         + (whi*f3hi - wlo*f3lo)/c.Vc(m,k,j,i) + c.Qb(m,0,i,k,j);
       });
       tm.team_barrier();
     }
@@ -1390,7 +1398,7 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
     Real budget = 0.0, bscale = 0.0, rtmax = 0.0, ubmax = 0.0;
     Real rhsum = 0.0, srsum = 0.0;
     for (int i=i0; i<=i1; ++i) {
-      const Real dxi = c.Dx(m,k,j,i);
+      const Real dxi = c.Vc(m,k,j,i);
       const Real wb = c.taublend
           ? (1.0 - 0.5*(c.wblend(m,k,j,i) + c.wblend(m,k,j,i+1))) : 1.0;
       rhsum += c.bdt*(wb*c.Wk<true>(m,SA,i,k,j) + c.Wk<true>(m,EX,i,k,j))*dxi;
@@ -1461,7 +1469,7 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
       fnet = c.Wk<true>(m,FL,ic,k,j) - ftop3;   // the imposed deep bottom flux
     } else {
       for (int q=0; q<nq; ++q) {
-        fnet += c.wf[q]*((c.Wk<true>(m,BB,ic,k,j) + Ucut[q])
+        fnet += c.wf[q]*((c.Wk<true>(m,BB,ic,k,j) + Ucut[q])*c.Av(m,k,j,ic)
                          - c.Wk<true>(m,DD+q,ic,k,j));
       }
       fnet -= ftop3;
@@ -1470,7 +1478,8 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
     Kokkos::atomic_add(&c.stat(13), srsum);
     Kokkos::atomic_add(&c.stat(14), fnet);
     Kokkos::atomic_add(&c.stat(15), fabs(srsum) + fabs(fnet));
-    Kokkos::atomic_add(&c.stat(16), ftop3);
+    // a flux PER UNIT AREA, like the Fb it is compared with
+    Kokkos::atomic_add(&c.stat(16), ftop3/avt);
     Kokkos::atomic_add(&c.stat(17), c.Fb(m,0,ie+1,k,j));
     Kokkos::atomic_add(&c.stat(0), static_cast<Real>(nit));
     Kokkos::atomic_add(&c.stat(1), 1.0);
@@ -1494,22 +1503,22 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
   if (c.wrflux) {
     Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, ic, ie+1), [&](const int i) {
       if (i < ib) {                           // a DEEP face carries the diffusion flux
-        c.Fb(m,0,i,k,j) = c.Wk<true>(m,FL,i,k,j);
+        c.Fb(m,0,i,k,j) = c.Wk<true>(m,FL,i,k,j)/c.Av(m,k,j,i);
         return;
       }
       Real f3lo = 0.0;
       for (int q=0; q<nq; ++q) {
-        const Real ulo = (i == ib) ? (c.Wk<true>(m,BB,ib,k,j) + Ucut_i[q])
+        const Real ulo = (i == ib) ? (c.Wk<true>(m,BB,ib,k,j) + Ucut_i[q])*avb
                                    : c.Wk<true>(m,UU+q,i-1,k,j);
         f3lo += c.wf[q]*(ulo - c.Wk<true>(m,DD+q,i,k,j));
       }
-      c.Fb(m,0,i,k,j) = f3lo;
+      c.Fb(m,0,i,k,j) = f3lo/c.Av(m,k,j,i);
       if (i == ie) {
         Real f3hi = 0.0;
         for (int q=0; q<nq; ++q) {
           f3hi += c.wf[q]*(c.Wk<true>(m,UU+q,ie,k,j) - Dtop[q]);
         }
-        c.Fb(m,0,ie+1,k,j) = f3hi;
+        c.Fb(m,0,ie+1,k,j) = f3hi/avt;
       }
     });
     tm.team_barrier();
