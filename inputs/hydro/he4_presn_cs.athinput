@@ -1,0 +1,267 @@
+# ========================================================================================
+# he4_presn on the CUBED SPHERE: the envelope of the 4 Msun presupernova HELIUM STAR of
+# Woosley (2019) -- M = 3.15 Msun remaining, L = 60256 Lsun, Teff = 48978 K,
+# R = 2.3717e11 cm -- from 0.40 R to the tau = 1e-2 level, with the iron-opacity-peak
+# convection zone (FeCZ) resolved.  Build with -DPROBLEM=red_giant.
+#
+# Derived from inputs/hydro/red_giant_cs.athinput (the cubed-sphere template) with the
+# star, EOS, opacity and boundary parameters of bench/hestar_presn/GAP_ANALYSIS.md
+# sections C, D and E, and the RT switches of bench/hestar_fecz/box_w8/he_box_w8.athinput
+# (the plane-parallel FeCZ box production).  EVERY line that differs from one of those two
+# carries the reason.
+#
+# THE STRUCTURE (bench/hestar_presn/column_he4_presn.txt, columns z p T rho kappa nabla
+# nabla_ad nabla_rad tau v_mlt Hp N2 Prad/Pgas):
+#   r_in   = 9.4868e10 (0.40 R): T = 1.94e5 K, rho = 3.42e-9, kappa = 0.668, tau = 362
+#   FeCZ   = r 1.006e11 .. 2.293e11, i.e. tau 349 .. 11.8; kappa peaks 0.839 at tau = 157
+#   photosphere tau = 2/3 at 2.3717e11; x1max = tau = 1e-2 at 2.4057e11, p = 7.51e3
+#   MLT peak v = 1.25e7 cm/s (Ma 0.455), Prad/Pgas = 56, kappa F/(c g) = 1.23 -- the
+#   envelope is SUPER-EDDINGTON, which is why rt_rad_force and an open top are mandatory
+#   turnover Hp/v = 6.06e3 s; this input runs 5 turnovers.
+#
+# THIS IS THE SMOKE GRID of GAP_ANALYSIS section E (one node, 2 MI300A, minutes), not the
+# production grid: nx1 = 96, nx2 = nx3 = 32 per panel, 6*32^2*96 = 5.9e5 cells.
+
+<comment>
+problem   = 4 Msun presupernova He star envelope, cubed sphere
+reference = Woosley 2019; bench/hestar_presn/GAP_ANALYSIS.md
+
+<job>
+basename  = he4
+
+<mesh>
+nghost    = 2
+nx1       = 96               # RADIAL; nx1 + 2*nghost = 100 <= 520, the largest column
+                             # tier the grey sweep dispatches on
+x1min     = 9.4868e10        # 0.40 R: inside the FeCZ, where Hp = 1.43e11 and tau = 362
+x1max     = 2.4057e11        # the tau = 1e-2 level (the column's own tau = 1e-3 top,
+                             # 2.4180e11, leaves no room for the unresolved ghost column)
+# The polynomial radial stretch refitted TO THIS STAR with
+#   tools/grid/fit_radial_stretch.py col_he4_r.txt 9.4868e10 2.4057e11 --dumin 0.4 --nx 96
+# (col_he4_r.txt = column_he4_presn.txt with r = z + R in column 0).  --dumin 0.4 is what
+# sets the SMALLEST cell: 0.4*(x1max-x1min)/96 = 6.07e8 cm, i.e. the 6e8 cm floor asked
+# for, which is also the smallest min(Hp,H_rho) in the domain (6.59e8 at the top).  The
+# fit targets dr ~ H_rho and delivers 35 cells per scale height at the median and 202 at
+# the best; the floor binds only in the top few cells, where it gives ~1.  du/dxi stays in
+# [0.40, 5.24], so the map is monotonic and Mesh accepts it.  REFIT if the star, the
+# domain or nx1 changes.
+use_grid_stretch_r_poly = true
+f_stretch_r_c1 = +4.238180
+f_stretch_r_c2 = -11.313543
+f_stretch_r_c3 = +12.981851
+f_stretch_r_c4 = -5.418158
+ix1_bc    = user
+ox1_bc    = user
+nx2       = 32               # xi: nx2 must equal nx3.  Smoke value; the production grid
+x2min     = -1.0             # of GAP section E is 320 (two cells per Hp at the surface)
+x2max     = 1.0
+ix2_bc    = panel
+ox2_bc    = panel
+nx3       = 32               # eta
+x3min     = -1.0
+x3max     = 1.0
+ix3_bc    = panel
+ox3_bc    = panel
+use_cubed_sphere = true
+
+<meshblock>
+nx1       = 96               # MUST equal mesh/nx1: the mode-3 column solve, the shell
+nx2       = 16               # means and both diagnostic dumps all need whole columns
+nx3       = 16               # 6*(32/16)^2 = 24 MeshBlocks, 12 per GPU on 2 MI300A
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim       = -1
+tlim       = 3.03e4          # 5 turnovers at Hp/v = 6.06e3 s
+ndiag      = 100
+nan_check_cycles = 100
+
+<units>
+length_cgs = 1.0             # the two-stream and the opacity table are cgs throughout
+mass_cgs   = 1.0
+time_cgs   = 1.0
+mu         = 1.0
+
+<hydro>
+eos             = general
+general_eos     = table
+gamma           = 1.6666666667   # unused by the table
+# --- the He composition.  X = 0 (there is no hydrogen left), Y = 0.98, Z = 0.02, which is
+# what the opacity table below is tabulated at.
+eos_xh               = 0.0
+eos_yhe              = 0.98
+eos_h2               = false     # no hydrogen, so no H2
+eos_metal_ionization = false     # dead code at X = 0 (the donor pool is gated on nh_tot)
+eos_ionization       = true      # He I -> II -> III is the whole ionization budget
+eos_radiation        = true      # Prad/Pgas = 56 at the MLT peak: the radiation field IS
+                                 # the pressure here, unlike the red giant this file came
+                                 # from (which sets it false)
+eos_logd_min    = -13.0          # the domain spans log rho = -10.24 (top) .. -8.47 (r_in)
+eos_logd_max    = -3.0
+eos_logt_min    = 3.8            # and log T = 4.62 (top) .. 5.29 (r_in)
+eos_logt_max    = 6.5
+eos_dlog        = 0.02
+# --- THE EOS RADIATION TAPER, the other half of problem/rt_rad_force.  w = 1 (full LTE
+# aT^4 in the gas) at rho >= rad_rho_hi, w = 0 at rho <= rad_rho_lo.  The two densities are
+# read off column_he4_presn.txt at tau = 3.00 and tau = 0.30, i.e. the taper is one
+# half-decade wide, sits ENTIRELY ABOVE the FeCZ (which ends at tau 11.8) and straddles the
+# photosphere, which is exactly where the two-stream takes the radiation over from the gas.
+eos_rad_rho_hi       = 1.93e-9   # rho at tau = 3.00 (r = 2.3386e11)
+eos_rad_rho_lo       = 4.97e-10  # rho at tau = 0.30 (r = 2.3823e11)
+reconstruct = plm
+rsolver     = lhllc              # all-Mach HLLC: at Ma = 0.46 plain hllc's pressure
+                                 # diffusion would eat the buoyancy forcing
+etotgrav    = true
+fofc        = true               # first-order flux correction; the cube vertices need it
+wellbalance_dynamic = true
+wb_x1               = true
+wb_option           = polytropic # the stratification is radiative, not isentropic
+wb_cache_every      = 0          # REBUILD EVERY STAGE.  A stale background numerically
+                                 # drives the surface f-mode (2026-09-16); do not raise it.
+isotropic_conduction = radiative
+rad_kappa_src        = table_rho # the He Rosseland table is on (T, rho)
+rad_kappa_fac        = 1.0
+rad_flux_inner       = 0.0       # MUST be 0 with inner_bc = open: the luminosity enters as
+                                 # the ENTROPY of the inflow, and both would double count
+rad_flux_limit       = true
+rad_tau_lo  = 1.0e5              # WHOLE-COLUMN TWO-STREAM, as in the He box: the deepest
+rad_tau_hi  = 1.0e6              # cell has tau = 362, so w(tau) = 0 on every face, the
+                                 # radial diffusion operator is inert and the grey
+                                 # two-stream owns all 96 cells
+rad_implicit_x1      = true      # inert under that blend, but it is what makes the blend
+rad_x1_uform         = true      # safe to move; u-form + one Picard correction for
+rad_x1_kiter         = 2         # d ln kappa/d ln T (worst-face error 50 % -> 5 % on He)
+rad_blend_transverse = false     # MUST be false with the whole-column blend, or the
+                                 # transverse conductances are multiplied by w = 0 and
+                                 # horizontal radiative transport is switched off entirely
+rad_gate_rho         = 4.97e-10  # = eos_rad_rho_lo: no transverse diffusion below the
+                                 # density at which the two-stream owns the radiation
+# --- THE TRANSVERSE OPERATOR.  The He productions run the IMPLICIT (ADI/lod2) operator:
+#   rad_implicit_ang = true
+#   rad_ang_solver   = adi
+#   rad_adi_scheme   = lod2
+#   rad_ang_maxit    = 400
+#   rad_sts_perplane = true
+#   rad_tr_tau_lo    = 0
+#   rad_tr_tau_hi    = 0
+# but it is a STARTUP FATAL on the cubed sphere (src/diffusion/conduction.cpp:339-352: the
+# 5-point stencil the ADI inverts does not carry the cubed-sphere metric cross term, and it
+# is declared uniform-grid only).  The generalisation is the `implicit-transverse-raddiff`
+# branch; UNCOMMENT the block above and delete rad_cap_ang below once it lands.  Until
+# then the FALLBACK is the explicit angular operator with the conservative stiffness cap.
+rad_implicit_ang = false
+rad_cap_ang = 0.5                # the fallback: cap the explicit x2/x3 stiffness at 0.5
+tfloor  = 5.0e3                  # rt_use_cons clamps a non-positive e to e(rho, tfloor)
+dfloor  = 1.0e-13                # the EOS table's own lower edge (eos_logd_min = -13); the
+                                 # initial top cell is 5.71e-11, so this is 5.7e-3 of it
+pfloor  = 1.0e-1                 # 1.3e-5 of the initial top-cell pressure; should not fire
+
+<problem>
+user_srcs   = true
+# --- the star (GAP_ANALYSIS section C).  On the cubed sphere problem/rin is NOT read:
+# the inner radius IS mesh/x1min = 9.4868e10.
+mstar       = 6.2651e33          # 3.15 Msun remaining
+lstar       = 2.3066e38          # 60256 Lsun
+teff        = 48978.0
+ptop        = 7.51e3             # p at tau = 1e-2, the anchor of the initial column
+mu          = 1.3423             # fully ionized He + Z; used only by the pgen's own march
+opac_table  = /viper/u2/jinma/ATHENAK/bench/hestar_fecz/rosseland_he_x0.0_z0.02.txt
+                                 # the X = 0, Z = 0.02 OPLIB He table, as in the He box
+column_dump = column_he4_ic.txt  # the IC, for comparison against column_he4_presn.txt
+# --- the initial column.  mlt_alpha = 0: convection is RESOLVED, not modelled.  But the
+# column itself must be built with the mixing length, or it is adiabatic wherever the
+# Schwarzschild criterion bites and carries no flux; alpha = 1.5 is the value the MESA
+# model was computed with (column header).  ic_tau_rad is ESSENTIAL here: the pgen
+# defaults it to rad_tau_hi, which the whole-column blend has pushed to 1e6, and the whole
+# star would then be built RADIATIVE and have no convection zone at all.  10 is the usual
+# handover, well above the FeCZ top (tau 11.8).
+mlt_alpha    = 0.0
+mlt_alpha_ic = 1.5
+ic_tau_rad   = 10.0
+# --- THE SEED.  Chart-free (cubic harmonics + random plane waves in Cartesian position,
+# so no panel, block or rank enters it) at Mach 1e-3 of the local sound speed, windowed on
+# the FeCZ in OPTICAL DEPTH: tau 300 (just above the zone's 349 bottom) to tau 20 (just
+# below its 11.8 top), which brackets the kappa peak at tau 157.  The angular band is the
+# most unstable scale, ~2 layer thicknesses ~ 2.6e11 cm, i.e. global l ~ 2-6.
+vpert       = 1.0e-3
+vpert_var   = v1                 # VELOCITY seed (the entropy variant is vpert_var = eint)
+vpert_tau_hi = 300.0             # the DEEP edge of the window
+vpert_tau_lo = 20.0              # the shallow edge
+vpert_cart  = true
+vpert_nrand = 32
+vpert_lmin  = 2.5e11             # 2 pi R / 6
+vpert_lmax  = 7.4e11             # 2 pi R / 2
+vpert_seed  = 1234
+# --- BOUNDARIES (GAP_ANALYSIS section D).  Inner: Stein-Nordlund / CO5BOLD deep
+# relaxation, so plumes pass through and the luminosity enters as the entropy of the
+# inflow.  Outer: hydrostatic continuation at the top cell's own temperature, OUTFLOW ONLY
+# -- at kappa F/(c g) = 1.23 the outer layers are unbound and a wall would build a
+# standing jump.
+inner_bc    = open
+s_relax_cs  = 0.1
+s_relax_cp  = 0.3
+outer_bc    = open
+open_outer_noinflow = true
+open_conserve = true
+face_budget = 1                  # log what leaves through both radial faces from cycle 0
+# --- THE SPONGES.  The tau-based top sponge (ported from the He box) follows the
+# photosphere; red_giant's own radius-based sponge stays on underneath the outer wall.
+vdamp_top_tau  = 0.1             # f = 1 at tau <= 0.0333, 0 at tau >= 0.1
+vdamp_top_time = 20.0
+vdamp_bot_cells = 24             # the box uses 48 of its 134 cells; 48 of 96 would trip
+                                 # the nx1/2 guard, and 24 is the same FRACTION of the
+                                 # radial domain that 48 of the 192-cell production grid is
+vdamp_bot_time  = 20.0
+vdamp_bot_mean_only = false
+# --- THE GREY TWO-STREAM, mode 3 (the exact block-tridiagonal column solve) with the PCR
+# partitioned solver and the warm/mixed accelerators, exactly as box_w8 runs them.  The
+# five legacy switches (rt_use_cons, rt_src_direct, rt_top_re, rt_newton, rt_rescue_eq)
+# are flipped by the pgen when rt_implicit_column = 3, because the mode-3 gate demands it.
+rt_grey            = true
+rt_implicit_column = 3
+rt_impl_solver     = pcr
+rt_impl_nseg       = 32          # segments per column = the Kokkos team size
+rt_impl_warm       = 1           # warm-start Newton from the last converged B
+rt_impl_mixed      = 2           # single-precision correction and stored factors
+rt_impl_tol        = 1.0e-8
+rt_impl_maxit      = 8           # the He box measures it_mean = 3
+rt_col3_ex_iter    = true        # re-form the explicit source from the column's own flux
+rt_ali_diag        = false       # irrelevant under mode 3, and measured worse on He
+ck_nquad           = 2           # two-point Gauss-Legendre angular quadrature
+rt_de_max          = 0.5
+# THE RADIATIVE FORCE.  Mandatory: kappa F/(c g) = 1.23.  It is the momentum the EOS taper
+# above took out of the gas, put back as (1-w) rho kappa F/c + Prad grad w; the gravity it
+# works against is the pgen's own point mass, g(r) = GM/r^2.
+rt_rad_force       = true
+rt_force_verbose   = 0
+# OPERATOR SPLITTING: the radiation operator is Strang-split around the time integrator
+# (dt/2 before, dt/2 after) instead of applied once per RK stage.
+rt_strang          = true
+# --- the two diagnostic dumps (see the record layouts in src/pgen/red_giant.cpp)
+rt_surface_dt   = 121.2          # 0.02 turnover, the B/He production cadence
+rt_surface_file = rt_surface.bin
+rt_profile_dt   = 60.6           # 0.01 turnover
+rt_profile_file = rt_profile.bin
+nan_report  = false
+
+<output1>
+file_type  = hst
+dt         = 60.6                # 0.01 turnover
+data_format = %24.16e
+
+<output2>
+file_type  = bin
+variable   = hydro_w
+dt         = 606.0               # 0.1 turnover
+
+<output3>
+file_type  = rst
+dt         = 1212.0              # 0.2 turnover
+
+<output4>
+file_type      = cbin
+variable       = hydro_w
+coarsen_factor = 3
+dt             = 303.0           # 0.05 turnover, the movie frames
