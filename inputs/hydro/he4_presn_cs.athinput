@@ -150,21 +150,21 @@ rad_blend_transverse = false     # MUST be false with the whole-column blend, or
                                  # horizontal radiative transport is switched off entirely
 rad_gate_rho         = 4.97e-10  # = eos_rad_rho_lo: no transverse diffusion below the
                                  # density at which the two-stream owns the radiation
-# --- THE TRANSVERSE OPERATOR.  The He productions run the IMPLICIT (ADI/lod2) operator:
-#   rad_implicit_ang = true
-#   rad_ang_solver   = adi
-#   rad_adi_scheme   = lod2
-#   rad_ang_maxit    = 400
-#   rad_sts_perplane = true
-#   rad_tr_tau_lo    = 0
-#   rad_tr_tau_hi    = 0
-# but it is a STARTUP FATAL on the cubed sphere (src/diffusion/conduction.cpp:339-352: the
-# 5-point stencil the ADI inverts does not carry the cubed-sphere metric cross term, and it
-# is declared uniform-grid only).  The generalisation is the `implicit-transverse-raddiff`
-# branch; UNCOMMENT the block above and delete rad_cap_ang below once it lands.  Until
-# then the FALLBACK is the explicit angular operator with the conservative stiffness cap.
-rad_implicit_ang = false
-rad_cap_ang = 0.5                # the fallback: cap the explicit x2/x3 stiffness at 0.5
+# --- THE TRANSVERSE OPERATOR.  The IMPLICIT (ADI/lod2) transverse radiative diffusion,
+# as the He box productions run it.  It was a startup fatal on the cubed sphere until the
+# `cs-implicit-transverse` branch generalised BuildAngularCoeffs to the gnomonic metric
+# (face area, arc length, 1/sin(alpha) and the explicit cross term through cap_g2/cap_g3,
+# with the operator dividing by the cell volume); see docs/dev/cs_implicit_transverse.md.
+# The ADI lines are an OPEN CHAIN of blocks per panel, not a periodic ring.
+rad_implicit_ang = true
+rad_ang_solver   = adi           # alternating-direction implicit, tridiagonal x2/x3 lines
+rad_adi_scheme   = lod2          # Richardson-extrapolated LOD: second order in the step
+rad_ang_maxit    = 400           # the cubed-sphere cross-term outer iteration cap
+rad_sts_perplane = true
+rad_tr_tau_lo    = 0.0           # no tau blend on the transverse operator: the whole-column
+rad_tr_tau_hi    = 0.0           # two-stream already owns the radiation above rad_gate_rho
+# (rad_cap_ang, the explicit stiffness cap of the old fallback, is REMOVED: it and
+# rad_implicit_ang are two treatments of the same operator and the code refuses both.)
 tfloor  = 5.0e3                  # rt_use_cons clamps a non-positive e to e(rho, tfloor)
 dfloor  = 1.0e-13                # the EOS table's own lower edge (eos_logd_min = -13); the
                                  # initial top cell is 5.71e-11, so this is 5.7e-3 of it
