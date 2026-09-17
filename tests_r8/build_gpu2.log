@@ -1,0 +1,233 @@
+Loading openmpi_gpu/5.0
+  Loading requirement: openmpi/5.0
+[  1%] Built target kokkossimd
+[ 14%] Built target kokkoscore
+[ 14%] Built target AlwaysCheckGit
+[ 15%] Built target kokkoscontainers
+[ 16%] Built target impl_git_version
+[ 17%] Building CXX object src/CMakeFiles/athena.dir/bvals/buffs_cc.cpp.o
+[ 17%] Building CXX object src/CMakeFiles/athena.dir/bvals/buffs_fc.cpp.o
+[ 17%] Building CXX object src/CMakeFiles/athena.dir/bvals/bvals.cpp.o
+[ 18%] Building CXX object src/CMakeFiles/athena.dir/bvals/bvals_cc.cpp.o
+[ 18%] Building CXX object src/CMakeFiles/athena.dir/bvals/bvals_fc.cpp.o
+[ 19%] Building CXX object src/CMakeFiles/athena.dir/bvals/bvals_part.cpp.o
+[ 20%] Building CXX object src/CMakeFiles/athena.dir/bvals/flux_correct_cc.cpp.o
+[ 20%] Building CXX object src/CMakeFiles/athena.dir/bvals/bvals_tasks.cpp.o
+[ 21%] Building CXX object src/CMakeFiles/athena.dir/bvals/flux_correct_fc.cpp.o
+[ 21%] Building CXX object src/CMakeFiles/athena.dir/bvals/flux_seam_cc.cpp.o
+[ 22%] Building CXX object src/CMakeFiles/athena.dir/bvals/physics/hydro_bcs.cpp.o
+[ 22%] Building CXX object src/CMakeFiles/athena.dir/bvals/physics/bfield_bcs.cpp.o
+[ 22%] Building CXX object src/CMakeFiles/athena.dir/bvals/physics/radiation_bcs.cpp.o
+[ 24%] Building CXX object src/CMakeFiles/athena.dir/bvals/prolong_prims.cpp.o
+[ 24%] Building CXX object src/CMakeFiles/athena.dir/bvals/physics/z4c_bcs.cpp.o
+[ 24%] Building CXX object src/CMakeFiles/athena.dir/bvals/prolongation.cpp.o
+[ 24%] Building CXX object src/CMakeFiles/athena.dir/coordinates/adm.cpp.o
+[ 25%] Building CXX object src/CMakeFiles/athena.dir/coordinates/coordinates.cpp.o
+[ 25%] Building CXX object src/CMakeFiles/athena.dir/coordinates/excision.cpp.o
+[ 26%] Building CXX object src/CMakeFiles/athena.dir/diffusion/conduction.cpp.o
+[ 26%] Building CXX object src/CMakeFiles/athena.dir/diffusion/conduction_transverse.cpp.o
+[ 27%] Building CXX object src/CMakeFiles/athena.dir/diffusion/resistivity.cpp.o
+[ 28%] Building CXX object src/CMakeFiles/athena.dir/diffusion/resistivity_ct.cpp.o
+[ 28%] Building CXX object src/CMakeFiles/athena.dir/diffusion/resistivity_gnomonic.cpp.o
+[ 29%] Building CXX object src/CMakeFiles/athena.dir/diffusion/resistivity_rkg_tasks.cpp.o
+[ 29%] Building CXX object src/CMakeFiles/athena.dir/diffusion/resistivity_update.cpp.o
+[ 29%] Building CXX object src/CMakeFiles/athena.dir/diffusion/viscosity.cpp.o
+[ 30%] Building CXX object src/CMakeFiles/athena.dir/driver/driver.cpp.o
+[ 30%] Building CXX object src/CMakeFiles/athena.dir/dyn_grmhd/dyn_grmhd.cpp.o
+[ 31%] Building CXX object src/CMakeFiles/athena.dir/dyn_grmhd/dyn_grmhd_fluxes.cpp.o
+[ 31%] Building CXX object src/CMakeFiles/athena.dir/dyn_grmhd/dyn_grmhd_fofc.cpp.o
+/viper/u2/jinma/ATHENAK/bench/wt_he4/src/dyn_grmhd/dyn_grmhd.cpp:46:10: warning: enumeration values 'eos_compose' and 'eos_hybrid' not handled in switch [-Wswitch]
+   46 |   switch(eos_policy) {
+      |          ^~~~~~~~~~
+[ 32%] Building CXX object src/CMakeFiles/athena.dir/eos/eos.cpp.o
+/viper/u2/jinma/ATHENAK/bench/wt_he4/src/dyn_grmhd/dyn_grmhd.cpp:46:10: warning: enumeration values 'eos_compose' and 'eos_hybrid' not handled in switch [-Wswitch]
+   46 |   switch(eos_policy) {
+      |          ^~~~~~~~~~
+/viper/u2/jinma/ATHENAK/bench/wt_he4/src/dyn_grmhd/dyn_grmhd.cpp:110:16: note: in instantiation of function template specialization 'dyngr::SelectDynGRMHDEOS<Primitive::ResetFloor>' requested here
+  110 |       dyn_gr = SelectDynGRMHDEOS<Primitive::ResetFloor>(ppack, pin, eos_policy);
+      |                ^
+[ 32%] Building CXX object src/CMakeFiles/athena.dir/eos/eos_table.cpp.o
+[ 33%] Building CXX object src/CMakeFiles/athena.dir/eos/general_hyd.cpp.o
+[ 33%] Building CXX object src/CMakeFiles/athena.dir/eos/general_hyd_floors.cpp.o
+[ 34%] Building CXX object src/CMakeFiles/athena.dir/eos/general_mhd.cpp.o
+[ 34%] Building CXX object src/CMakeFiles/athena.dir/eos/ideal_grhyd.cpp.o
+[ 34%] Building CXX object src/CMakeFiles/athena.dir/eos/ideal_grmhd.cpp.o
+[ 34%] Building CXX object src/CMakeFiles/athena.dir/eos/ideal_hyd.cpp.o
+[ 35%] Building CXX object src/CMakeFiles/athena.dir/eos/ideal_hyd_floors.cpp.o
+[ 35%] Building CXX object src/CMakeFiles/athena.dir/eos/ideal_mhd.cpp.o
+[ 36%] Building CXX object src/CMakeFiles/athena.dir/eos/ideal_srhyd.cpp.o
+[ 37%] Building CXX object src/CMakeFiles/athena.dir/eos/ideal_srmhd.cpp.o
+[ 38%] Building CXX object src/CMakeFiles/athena.dir/eos/isothermal_hyd.cpp.o
+[ 38%] Building CXX object src/CMakeFiles/athena.dir/eos/isothermal_mhd.cpp.o
+[ 39%] Building CXX object src/CMakeFiles/athena.dir/geodesic-grid/gauss_legendre.cpp.o
+[ 39%] Building CXX object src/CMakeFiles/athena.dir/geodesic-grid/spherical_grid.cpp.o
+[ 39%] Building CXX object src/CMakeFiles/athena.dir/hydro/hydro.cpp.o
+[ 40%] Building CXX object src/CMakeFiles/athena.dir/hydro/hydro_etotgrav.cpp.o
+[ 40%] Building CXX object src/CMakeFiles/athena.dir/hydro/hydro_fluxes.cpp.o
+[ 41%] Building CXX object src/CMakeFiles/athena.dir/hydro/hydro_fofc.cpp.o
+2 warnings generated when compiling for gfx942.
+[ 41%] Building CXX object src/CMakeFiles/athena.dir/hydro/hydro_newdt.cpp.o
+[ 42%] Building CXX object src/CMakeFiles/athena.dir/hydro/hydro_tasks.cpp.o
+[ 42%] Building CXX object src/CMakeFiles/athena.dir/hydro/hydro_update.cpp.o
+[ 43%] Building CXX object src/CMakeFiles/athena.dir/hydro/hydro_wellbalance.cpp.o
+[ 43%] Building CXX object src/CMakeFiles/athena.dir/ion-neutral/ion-neutral.cpp.o
+/viper/u2/jinma/ATHENAK/bench/wt_he4/src/dyn_grmhd/dyn_grmhd.cpp:46:10: warning: enumeration values 'eos_compose' and 'eos_hybrid' not handled in switch [-Wswitch]
+   46 |   switch(eos_policy) {
+      |          ^~~~~~~~~~
+[ 44%] Building CXX object src/CMakeFiles/athena.dir/ion-neutral/ion-neutral_tasks.cpp.o
+[ 44%] Building CXX object src/CMakeFiles/athena.dir/main.cpp.o
+/viper/u2/jinma/ATHENAK/bench/wt_he4/src/dyn_grmhd/dyn_grmhd.cpp:46:10: warning: enumeration values 'eos_compose' and 'eos_hybrid' not handled in switch [-Wswitch]
+   46 |   switch(eos_policy) {
+      |          ^~~~~~~~~~
+/viper/u2/jinma/ATHENAK/bench/wt_he4/src/dyn_grmhd/dyn_grmhd.cpp:110:16: note: in instantiation of function template specialization 'dyngr::SelectDynGRMHDEOS<Primitive::ResetFloor>' requested here
+  110 |       dyn_gr = SelectDynGRMHDEOS<Primitive::ResetFloor>(ppack, pin, eos_policy);
+      |                ^
+[ 44%] Building CXX object src/CMakeFiles/athena.dir/mesh/build_tree.cpp.o
+[ 45%] Building CXX object src/CMakeFiles/athena.dir/mesh/load_balance.cpp.o
+2 warnings generated when compiling for host.
+[ 45%] Building CXX object src/CMakeFiles/athena.dir/mesh/mesh.cpp.o
+[ 45%] Building CXX object src/CMakeFiles/athena.dir/mesh/mesh_refinement.cpp.o
+[ 46%] Building CXX object src/CMakeFiles/athena.dir/mesh/meshblock.cpp.o
+[ 46%] Building CXX object src/CMakeFiles/athena.dir/mesh/meshblock_pack.cpp.o
+[ 47%] Building CXX object src/CMakeFiles/athena.dir/mesh/meshblock_tree.cpp.o
+[ 48%] Building CXX object src/CMakeFiles/athena.dir/mesh/refinement_criteria.cpp.o
+/viper/u2/jinma/ATHENAK/bench/wt_he4/src/mesh/mesh.cpp:681:23: warning: variable length arrays in C++ are a Clang extension [-Wvla-cxx-extension]
+  681 |     int nb_per_plevel[max_level];      // NOLINT(runtime/arrays)
+      |                       ^~~~~~~~~
+/viper/u2/jinma/ATHENAK/bench/wt_he4/src/mesh/mesh.cpp:681:23: note: implicit use of 'this' pointer is only allowed within the evaluation of a call to a 'constexpr' member function
+/viper/u2/jinma/ATHENAK/bench/wt_he4/src/mesh/mesh.cpp:682:27: warning: variable length arrays in C++ are a Clang extension [-Wvla-cxx-extension]
+  682 |     float cost_per_plevel[max_level];  // NOLINT(runtime/arrays)
+      |                           ^~~~~~~~~
+/viper/u2/jinma/ATHENAK/bench/wt_he4/src/mesh/mesh.cpp:682:27: note: implicit use of 'this' pointer is only allowed within the evaluation of a call to a 'constexpr' member function
+/viper/u2/jinma/ATHENAK/bench/wt_he4/src/mesh/mesh.cpp:703:21: warning: variable length arrays in C++ are a Clang extension [-Wvla-cxx-extension]
+  703 |     int nb_per_rank[global_variable::nranks];    // NOLINT(runtime/arrays)
+      |                     ^~~~~~~~~~~~~~~~~~~~~~~
+/viper/u2/jinma/ATHENAK/bench/wt_he4/src/mesh/mesh.cpp:703:21: note: read of non-const variable 'nranks' is not allowed in a constant expression
+/viper/u2/jinma/ATHENAK/bench/wt_he4/src/globals.hpp:12:21: note: declared here
+   12 | extern int my_rank, nranks;
+      |                     ^
+/viper/u2/jinma/ATHENAK/bench/wt_he4/src/mesh/mesh.cpp:704:23: warning: variable length arrays in C++ are a Clang extension [-Wvla-cxx-extension]
+  704 |     int cost_per_rank[global_variable::nranks];  // NOLINT(runtime/arrays)
+      |                       ^~~~~~~~~~~~~~~~~~~~~~~
+/viper/u2/jinma/ATHENAK/bench/wt_he4/src/mesh/mesh.cpp:704:23: note: read of non-const variable 'nranks' is not allowed in a constant expression
+/viper/u2/jinma/ATHENAK/bench/wt_he4/src/globals.hpp:12:21: note: declared here
+   12 | extern int my_rank, nranks;
+      |                     ^
+[ 48%] Building CXX object src/CMakeFiles/athena.dir/mhd/mhd.cpp.o
+4 warnings generated when compiling for gfx942.
+[ 49%] Building CXX object src/CMakeFiles/athena.dir/mhd/mhd_corner_e.cpp.o
+[ 49%] Building CXX object src/CMakeFiles/athena.dir/mhd/mhd_ct.cpp.o
+[ 49%] Building CXX object src/CMakeFiles/athena.dir/mhd/mhd_etotgrav.cpp.o
+/viper/u2/jinma/ATHENAK/bench/wt_he4/src/mesh/mesh.cpp:681:23: warning: variable length arrays in C++ are a Clang extension [-Wvla-cxx-extension]
+  681 |     int nb_per_plevel[max_level];      // NOLINT(runtime/arrays)
+      |                       ^~~~~~~~~
+/viper/u2/jinma/ATHENAK/bench/wt_he4/src/mesh/mesh.cpp:681:23: note: implicit use of 'this' pointer is only allowed within the evaluation of a call to a 'constexpr' member function
+/viper/u2/jinma/ATHENAK/bench/wt_he4/src/mesh/mesh.cpp:682:27: warning: variable length arrays in C++ are a Clang extension [-Wvla-cxx-extension]
+  682 |     float cost_per_plevel[max_level];  // NOLINT(runtime/arrays)
+      |                           ^~~~~~~~~
+/viper/u2/jinma/ATHENAK/bench/wt_he4/src/mesh/mesh.cpp:682:27: note: implicit use of 'this' pointer is only allowed within the evaluation of a call to a 'constexpr' member function
+/viper/u2/jinma/ATHENAK/bench/wt_he4/src/mesh/mesh.cpp:703:21: warning: variable length arrays in C++ are a Clang extension [-Wvla-cxx-extension]
+  703 |     int nb_per_rank[global_variable::nranks];    // NOLINT(runtime/arrays)
+      |                     ^~~~~~~~~~~~~~~~~~~~~~~
+/viper/u2/jinma/ATHENAK/bench/wt_he4/src/mesh/mesh.cpp:703:21: note: read of non-const variable 'nranks' is not allowed in a constant expression
+/viper/u2/jinma/ATHENAK/bench/wt_he4/src/globals.hpp:12:21: note: declared here
+   12 | extern int my_rank, nranks;
+      |                     ^
+/viper/u2/jinma/ATHENAK/bench/wt_he4/src/mesh/mesh.cpp:704:23: warning: variable length arrays in C++ are a Clang extension [-Wvla-cxx-extension]
+  704 |     int cost_per_rank[global_variable::nranks];  // NOLINT(runtime/arrays)
+      |                       ^~~~~~~~~~~~~~~~~~~~~~~
+/viper/u2/jinma/ATHENAK/bench/wt_he4/src/mesh/mesh.cpp:704:23: note: read of non-const variable 'nranks' is not allowed in a constant expression
+/viper/u2/jinma/ATHENAK/bench/wt_he4/src/globals.hpp:12:21: note: declared here
+   12 | extern int my_rank, nranks;
+      |                     ^
+[ 50%] Building CXX object src/CMakeFiles/athena.dir/mhd/mhd_fluxes.cpp.o
+4 warnings generated when compiling for host.
+[ 50%] Building CXX object src/CMakeFiles/athena.dir/mhd/mhd_fofc.cpp.o
+[ 51%] Building CXX object src/CMakeFiles/athena.dir/mhd/mhd_newdt.cpp.o
+[ 51%] Building CXX object src/CMakeFiles/athena.dir/mhd/mhd_seam_diag.cpp.o
+[ 52%] Building CXX object src/CMakeFiles/athena.dir/mhd/mhd_seam_econsist.cpp.o
+[ 52%] Building CXX object src/CMakeFiles/athena.dir/mhd/mhd_tasks.cpp.o
+[ 53%] Building CXX object src/CMakeFiles/athena.dir/mhd/mhd_update.cpp.o
+[ 54%] Building CXX object src/CMakeFiles/athena.dir/mhd/mhd_wellbalance.cpp.o
+[ 54%] Building CXX object src/CMakeFiles/athena.dir/outputs/basetype_output.cpp.o
+[ 55%] Building CXX object src/CMakeFiles/athena.dir/outputs/binary.cpp.o
+[ 56%] Building CXX object src/CMakeFiles/athena.dir/outputs/cartgrid.cpp.o
+[ 57%] Building CXX object src/CMakeFiles/athena.dir/outputs/coarsened_binary.cpp.o
+[ 57%] Building CXX object src/CMakeFiles/athena.dir/outputs/derived_variables.cpp.o
+[ 57%] Building CXX object src/CMakeFiles/athena.dir/outputs/eventlog.cpp.o
+[ 58%] Building CXX object src/CMakeFiles/athena.dir/outputs/formatted_table.cpp.o
+[ 58%] Building CXX object src/CMakeFiles/athena.dir/outputs/history.cpp.o
+[ 59%] Building CXX object src/CMakeFiles/athena.dir/outputs/outputs.cpp.o
+[ 59%] Building CXX object src/CMakeFiles/athena.dir/outputs/pdf.cpp.o
+[ 60%] Building CXX object src/CMakeFiles/athena.dir/outputs/restart.cpp.o
+[ 60%] Building CXX object src/CMakeFiles/athena.dir/outputs/spherical_surface.cpp.o
+[ 60%] Building CXX object src/CMakeFiles/athena.dir/outputs/track_prtcl.cpp.o
+[ 61%] Building CXX object src/CMakeFiles/athena.dir/outputs/vtk_mesh.cpp.o
+[ 61%] Building CXX object src/CMakeFiles/athena.dir/outputs/vtk_prtcl.cpp.o
+[ 62%] Building CXX object src/CMakeFiles/athena.dir/particles/particles.cpp.o
+[ 62%] Building CXX object src/CMakeFiles/athena.dir/particles/particles_pushers.cpp.o
+[ 63%] Building CXX object src/CMakeFiles/athena.dir/particles/particles_tasks.cpp.o
+[ 63%] Building CXX object src/CMakeFiles/athena.dir/pgen/pgen.cpp.o
+[ 64%] Building CXX object src/CMakeFiles/athena.dir/pgen/tests/advection.cpp.o
+[ 64%] Building CXX object src/CMakeFiles/athena.dir/pgen/tests/balsara_vortex.cpp.o
+[ 65%] Building CXX object src/CMakeFiles/athena.dir/pgen/tests/collapse.cpp.o
+[ 65%] Building CXX object src/CMakeFiles/athena.dir/pgen/tests/cpaw.cpp.o
+[ 66%] Building CXX object src/CMakeFiles/athena.dir/pgen/tests/cshock.cpp.o
+[ 66%] Building CXX object src/CMakeFiles/athena.dir/pgen/tests/diffusion.cpp.o
+[ 67%] Building CXX object src/CMakeFiles/athena.dir/pgen/tests/gr_bondi.cpp.o
+[ 67%] Building CXX object src/CMakeFiles/athena.dir/pgen/tests/gr_monopole.cpp.o
+[ 68%] Building CXX object src/CMakeFiles/athena.dir/pgen/tests/gresho_mhd.cpp.o
+[ 69%] Building CXX object src/CMakeFiles/athena.dir/pgen/tests/linear_wave.cpp.o
+[ 69%] Building CXX object src/CMakeFiles/athena.dir/pgen/tests/lw_implode.cpp.o
+[ 70%] Building CXX object src/CMakeFiles/athena.dir/pgen/tests/mri3d.cpp.o
+[ 70%] Building CXX object src/CMakeFiles/athena.dir/pgen/tests/orszag_tang.cpp.o
+[ 71%] Building CXX object src/CMakeFiles/athena.dir/pgen/tests/rad_beam.cpp.o
+[ 71%] Building CXX object src/CMakeFiles/athena.dir/pgen/tests/rad_diff2d.cpp.o
+[ 72%] Building CXX object src/CMakeFiles/athena.dir/pgen/tests/rad_linear_wave.cpp.o
+[ 72%] Building CXX object src/CMakeFiles/athena.dir/pgen/tests/shock_tube.cpp.o
+[ 73%] Building CXX object src/CMakeFiles/athena.dir/pgen/tests/shwave.cpp.o
+[ 73%] Building CXX object src/CMakeFiles/athena.dir/pgen/tests/wb_atm.cpp.o
+[ 73%] Building CXX object src/CMakeFiles/athena.dir/pgen/tests/z4c_boosted_puncture.cpp.o
+[ 74%] Building CXX object src/CMakeFiles/athena.dir/pgen/tests/z4c_linear_wave.cpp.o
+[ 74%] Building CXX object src/CMakeFiles/athena.dir/radiation/radiation.cpp.o
+[ 75%] Building CXX object src/CMakeFiles/athena.dir/radiation/radiation_fluxes.cpp.o
+[ 75%] Building CXX object src/CMakeFiles/athena.dir/radiation/radiation_newdt.cpp.o
+[ 76%] Building CXX object src/CMakeFiles/athena.dir/radiation/radiation_source.cpp.o
+[ 76%] Building CXX object src/CMakeFiles/athena.dir/radiation/radiation_tasks.cpp.o
+[ 77%] Building CXX object src/CMakeFiles/athena.dir/radiation/radiation_tetrad.cpp.o
+[ 77%] Building CXX object src/CMakeFiles/athena.dir/radiation/radiation_update.cpp.o
+[ 78%] Building CXX object src/CMakeFiles/athena.dir/shearing_box/orbital_advection.cpp.o
+[ 78%] Building CXX object src/CMakeFiles/athena.dir/shearing_box/orbital_advection_cc.cpp.o
+[ 79%] Building CXX object src/CMakeFiles/athena.dir/shearing_box/orbital_advection_fc.cpp.o
+[ 79%] Building CXX object src/CMakeFiles/athena.dir/shearing_box/orbital_advection_tasks.cpp.o
+[ 80%] Building CXX object src/CMakeFiles/athena.dir/shearing_box/shearing_box.cpp.o
+[ 80%] Building CXX object src/CMakeFiles/athena.dir/shearing_box/shearing_box_cc.cpp.o
+[ 81%] Building CXX object src/CMakeFiles/athena.dir/shearing_box/shearing_box_fc.cpp.o
+[ 81%] Building CXX object src/CMakeFiles/athena.dir/shearing_box/shearing_box_srcterms.cpp.o
+[ 82%] Building CXX object src/CMakeFiles/athena.dir/shearing_box/shearing_box_tasks.cpp.o
+[ 82%] Building CXX object src/CMakeFiles/athena.dir/srcterms/srcterms.cpp.o
+[ 83%] Building CXX object src/CMakeFiles/athena.dir/srcterms/srcterms_newdt.cpp.o
+[ 83%] Building CXX object src/CMakeFiles/athena.dir/srcterms/turb_driver.cpp.o
+[ 84%] Building CXX object src/CMakeFiles/athena.dir/tasklist/numerical_relativity.cpp.o
+[ 85%] Building CXX object src/CMakeFiles/athena.dir/utils/cart_grid.cpp.o
+[ 85%] Building CXX object src/CMakeFiles/athena.dir/utils/derived_vars.cpp.o
+[ 85%] Building CXX object src/CMakeFiles/athena.dir/utils/lagrange_interpolator.cpp.o
+[ 85%] Building CXX object src/CMakeFiles/athena.dir/utils/spherical_surface.cpp.o
+[ 86%] Building CXX object src/CMakeFiles/athena.dir/z4c/cce/cce.cpp.o
+[ 87%] Building CXX object src/CMakeFiles/athena.dir/z4c/compact_object_tracker.cpp.o
+[ 87%] Building CXX object src/CMakeFiles/athena.dir/z4c/horizon_dump.cpp.o
+[ 88%] Building CXX object src/CMakeFiles/athena.dir/z4c/tmunu.cpp.o
+[ 88%] Building CXX object src/CMakeFiles/athena.dir/z4c/z4c.cpp.o
+[ 89%] Building CXX object src/CMakeFiles/athena.dir/z4c/z4c_Sbc.cpp.o
+[ 90%] Building CXX object src/CMakeFiles/athena.dir/z4c/z4c_adm.cpp.o
+[ 90%] Building CXX object src/CMakeFiles/athena.dir/z4c/z4c_amr.cpp.o
+[ 90%] Building CXX object src/CMakeFiles/athena.dir/z4c/z4c_calcrhs.cpp.o
+[ 90%] Building CXX object src/CMakeFiles/athena.dir/z4c/z4c_calculate_weyl_scalars.cpp.o
+[ 90%] Building CXX object src/CMakeFiles/athena.dir/z4c/z4c_gauge.cpp.o
+[ 91%] Building CXX object src/CMakeFiles/athena.dir/z4c/z4c_newdt.cpp.o
+[ 91%] Building CXX object src/CMakeFiles/athena.dir/z4c/z4c_tasks.cpp.o
+[ 92%] Building CXX object src/CMakeFiles/athena.dir/z4c/z4c_update.cpp.o
+[ 93%] Building CXX object src/CMakeFiles/athena.dir/z4c/z4c_wave_extr.cpp.o
+[ 94%] Linking CXX executable athena
+[100%] Built target athena
+BUILD_OK2

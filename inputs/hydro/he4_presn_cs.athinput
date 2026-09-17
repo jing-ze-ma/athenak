@@ -122,6 +122,25 @@ eos_dlog        = 0.02
 # photosphere, which is exactly where the two-stream takes the radiation over from the gas.
 eos_rad_rho_hi       = 1.93e-9   # rho at tau = 3.00 (r = 2.3386e11)
 eos_rad_rho_lo       = 4.97e-10  # rho at tau = 0.30 (r = 2.3823e11)
+# --- THE TEMPERATURE GATE ON THAT TAPER (tests_r8).  w is raised to max(w_rho, w_T), with
+# w_T = 1 at and above eos_rad_t_hi and 0 at and below eos_rad_t_lo, so that a cell hotter
+# than the tau = 3 layer keeps the full LTE aT^4 in its EOS -- and the pressure gradient
+# rather than kappa F/c as its radiative force -- WHATEVER its density does.
+# WHY THIS IS NEEDED.  w(rho) alone is not the statement the taper means to make.  The FeCZ
+# here has a DENSITY INVERSION whose minimum, 2.34e-9, sits only 1.21x above rad_rho_hi, so
+# a cell that a panel-seam flux error thins by half a decade lands INSIDE the window at
+# tau ~ 150 and is handed the optically-thin surface force, kappa F/(c g) = 1.23, in the
+# middle of the convection zone; it then evacuates further.  That loop killed every 3-D arm
+# of tests_r6 at 1.04-1.08 turnover and the 1-D column at 1.19 (11 of 11 collapses on a
+# panel-seam row, tests_r7 sections 2 and 5), and rt_rad_force = false was the only switch
+# that removed it.  T(r) is monotone through the inversion where rho(r) is not, which is
+# what makes it the right gate variable; it is also the only stratification variable the
+# EOS has in hand at every one of its ~150 evaluation sites (see rad_taper.hpp).
+# The two temperatures are the run's OWN table T at the SAME two optical depths the density
+# window came from, printed by hestar_presn/make_ic_sph.py, which builds the ic with this
+# same w -- the gate must be identical in the EOS, in the force and in the ic.
+eos_rad_t_hi         = 6.3281e4  # T_table at tau = 3.00 (r = 2.33866e11, T_col 6.3246e4)
+eos_rad_t_lo         = 4.5213e4  # T_table at tau = 0.30 (r = 2.38258e11, T_col 4.5192e4)
 reconstruct = plm
 rsolver     = lhllc              # all-Mach HLLC: at Ma = 0.46 plain hllc's pressure
                                  # diffusion would eat the buoyancy forcing

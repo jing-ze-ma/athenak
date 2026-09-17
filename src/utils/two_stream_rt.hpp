@@ -4079,6 +4079,12 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
       const Real inv_c = 1.0/2.99792458e10;      // cgs: this path runs in cgs code units
       const Real arad_f = eos.tbl.arad;
       const Real xlo_f = eos.tbl.rad_lrho_lo, xhi_f = eos.tbl.rad_lrho_hi;
+      // the taper's TEMPERATURE GATE (see rad_taper::WeightGated).  The force must use
+      // the SAME w the EOS uses, or the two stop being complementary and the total force
+      // is neither -grad Prad nor kappa F/c; that is the whole point of sharing the
+      // weight function between the two modules.
+      const Real ylo_f = eos.tbl.rad_lt_lo, yhi_f = eos.tbl.rad_lt_hi;
+      const bool tg_f = eos.tbl.rad_tgate;
       const bool md_f = pm->multi_d, td_f = pm->three_d;
       const bool fverb = radforce && (rt_force_verbose > 0);
       if (fverb) --rt_force_verbose;
@@ -4770,8 +4776,10 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
         // ---- radiative momentum source, see rt_rad_force --------------------------
         if (radforce && outer_last) {
           const Real rho = rhoN(m,k,j,i);
-          Real wr, dwdx;
-          rad_taper::Weight(log10(rho), xlo_f, xhi_f, wr, dwdx);
+          const Real tkc = T_g(m,k,j,i);
+          Real wr, dwdx, dwdy;
+          rad_taper::WeightGated(log10(rho), xlo_f, xhi_f, log10(tkc), ylo_f, yhi_f,
+                                 tg_f, wr, dwdx, dwdy);
           // the cell's net two-stream flux, positive upward (rt_force_center: Ft/Fb
           // are this call's Fb array, so 0/1 differ only in what the column wrote; 2
           // averages it with the saved entry flux)
@@ -4783,12 +4791,20 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
           const Real fnet = 0.5*(ftc_ + fbc_);
           Real f1 = (1.0 - wr)*rho*kc_g(m,0,i,k,j)*fnet*inv_c;
           Real f2 = 0.0, f3 = 0.0, prgw = 0.0;
-          if (dwdx != 0.0) {
+          if (dwdx != 0.0 || dwdy != 0.0) {
             // Prad grad w, with grad w = w'(x) grad rho/(rho ln10) -- the SAME derivative
             // the EOS put into chi_rho, so the two cancel in the continuum limit
-            const Real tk = T_g(m,k,j,i);
+            const Real tk = tkc;
             const Real cg = (arad_f*tk*tk*tk*tk/3.0)*dwdx*M_LOG10E/rho;
+            // ...and, under the temperature gate, w'(y) grad T/(T ln10), the partner of
+            // the dw/dlnT the EOS put into chi_T.  Exactly one of cg and ct is non-zero,
+            // because max() picks one branch of the weight.
+            const Real ct = (dwdy != 0.0)
+                          ? (arad_f*tk*tk*tk*tk/3.0)*dwdy*M_LOG10E/tk : 0.0;
             prgw = cg*(rhoN(m,k,j,i+1) - rhoN(m,k,j,i-1))/(X1V(m,i+1) - X1V(m,i-1));
+            if (ct != 0.0) {
+              prgw += ct*(T_g(m,k,j,i+1) - T_g(m,k,j,i-1))/(X1V(m,i+1) - X1V(m,i-1));
+            }
             f1 += prgw;
             // the transverse components of Prad grad w.  The derivative is taken
             // against the physical ARC LENGTH (DX2/DX3), not the coordinate spacing:
@@ -4802,9 +4818,15 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
             // component to add.
             if (md_f) {
               f2 = cg*(rhoN(m,k,j+1,i) - rhoN(m,k,j-1,i))/(2.0*DX2(m,k,j,i));
+              if (ct != 0.0) {
+                f2 += ct*(T_g(m,k,j+1,i) - T_g(m,k,j-1,i))/(2.0*DX2(m,k,j,i));
+              }
             }
             if (td_f) {
               f3 = cg*(rhoN(m,k+1,j,i) - rhoN(m,k-1,j,i))/(2.0*DX3(m,k,j,i));
+              if (ct != 0.0) {
+                f3 += ct*(T_g(m,k+1,j,i) - T_g(m,k-1,j,i))/(2.0*DX3(m,k,j,i));
+              }
             }
           }
           const Real dinv = 1.0/u0(m,IDN,k,j,i);

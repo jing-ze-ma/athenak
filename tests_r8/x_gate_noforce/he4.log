@@ -1,0 +1,9 @@
+# Athena event counter data
+#  cycle eos_dfloor eos_efloor eos_tfloor eos_vceil eos_fail c2p_it fofc  efloor_de eos_tclamp   eos_tset
+      70     3600        0        0        0        0      0        0  0.0000e+00          0          0
+      74     9600        0        0        0        0      0        0  0.0000e+00          0          0
+      78     9600        0        0        0        0      0        0  0.0000e+00          0          0
+      82     9600     2400        0        0        0      0        0  8.8702e+01          0       4800
+      85     6000     6000        0        0        0      0        0  7.1181e+02          0      12000
+      89      600      600        0        0        0      0        0  1.0868e+02          0       1200
+     119     3600        0        0        0        0      0        0  0.0000e+00          0          0

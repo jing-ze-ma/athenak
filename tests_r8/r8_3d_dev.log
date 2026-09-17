@@ -1,0 +1,44 @@
+             radiation TAPERED off between rho = 1.93e-09 (w = 1, LTE) and rho = 4.97e-10 g/cm^3 (w = 0, the two-stream owns it)
+             ...GATED on temperature: w = max(w_rho, w_T), w_T = 1 at and above T = 63281 K, 0 at and below 45213 K -- a hot cell keeps LTE radiation whatever its density
+             radiation TAPERED off between rho = 1.93e-09 (w = 1, LTE) and rho = 4.97e-10 g/cm^3 (w = 0, the two-stream owns it)
+             ...GATED on temperature: w = max(w_rho, w_T), w_T = 1 at and above T = 63281 K, 0 at and below 45213 K -- a hot cell keeps LTE radiation whatever its density
+elapsed=8.069976e+00 cycle=0 time=0.000000e+00 dt=1.292197e+01
+elapsed=8.246591e+01 cycle=100 time=1.270266e+03 dt=1.252370e+01
+elapsed=1.586960e+02 cycle=200 time=2.518542e+03 dt=1.234020e+01
+elapsed=2.379348e+02 cycle=300 time=3.720243e+03 dt=1.164239e+01
+elapsed=3.170840e+02 cycle=400 time=4.836083e+03 dt=1.052664e+01
+elapsed=3.985810e+02 cycle=500 time=5.801024e+03 dt=7.388889e+00
+elapsed=4.784325e+02 cycle=600 time=6.072274e+03 dt=9.594568e-01
+elapsed=5.586159e+02 cycle=700 time=6.128786e+03 dt=3.201985e-01
+elapsed=6.387849e+02 cycle=800 time=6.193594e+03 dt=6.798052e-01
+elapsed=7.188922e+02 cycle=900 time=6.238193e+03 dt=2.737877e-01
+Terminating on wall clock limit
+time=6.238739e+03 cycle=902
+                                  
+================================= 
+Global information about the job: 
+================================= 
+  
+Job owner: jinma(28895)
+Job name:  r8_3d
+Node list: vipa1327
+Job start: Thu Sep 17 22:54:55 CEST 2026
+Job end:   Thu Sep 17 23:07:05 CEST 2026
+Work dir:  /viper/u2/jinma/ATHENAK/bench/wt_he4
+Command:   /viper/u2/jinma/ATHENAK/bench/wt_he4/tests_r8/r8_3d_dev.sh
+  
+  
+  
+==========================================================================================
+Information on jobsteps (Note: MaxRSS/AveRSS is the maximum/average over all 
+tasks of the per-task memory high-water marks; cf. "man sacct"): 
+==========================================================================================
+  
+JobID            JobName NNodes NTasks  NCPUS       MaxRSS       AveRSS    Elapsed ExitCode
+------------- ---------- ------ ------ ------ ------------ ------------ ---------- --------
+11784460           r8_3d      1            32                             00:12:10      0:0
+11784460.0     athena_v4      1      2     32     1623.22M     1358.58M   00:12:07      0:0
+  
+Maximum memory per node: 3.404136 GB (defined as MaxRSS*Ntasks/NNodes)
+CPU utilization: 12.4 %
+  

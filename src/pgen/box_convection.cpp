@@ -651,6 +651,9 @@ void BoxConvBoxInt(Mesh *pm, Real &etot, Real &erad) {
   const bool gen = eos.IsGeneral();
   const bool tap = gen && eos.tbl.rad_taper;
   const Real xlo = eos.tbl.rad_lrho_lo, xhi = eos.tbl.rad_lrho_hi;
+  // the same w the EOS used, temperature gate included (rad_taper::WeightGated)
+  const Real ylo = eos.tbl.rad_lt_lo, yhi = eos.tbl.rad_lt_hi;
+  const bool tg = eos.tbl.rad_tgate;
   const Real arad = eos.tbl.arad;
   const Real tcgs = eos.temp_cgs;
   Real se = 0.0, sr = 0.0;
@@ -666,8 +669,10 @@ void BoxConvBoxInt(Mesh *pm, Real &etot, Real &erad) {
     const Real dv = size.d_view(m).dx1*size.d_view(m).dx2*size.d_view(m).dx3;
     le += u0(m,IEN,k,j,i)*dv;
     if (tap) {
-      const Real wr = rad_taper::WeightOnly(log10(w0(m,IDN,k,j,i)), xlo, xhi);
       const Real tk = wt(m,k,j,i)*tcgs;
+      Real wr, dwdx, dwdy;
+      rad_taper::WeightGated(log10(w0(m,IDN,k,j,i)), xlo, xhi, log10(tk), ylo, yhi,
+                             tg, wr, dwdx, dwdy);
       lr += wr*arad*tk*tk*tk*tk*dv;
     }
   }, se, sr);

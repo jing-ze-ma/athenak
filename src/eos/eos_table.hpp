@@ -104,6 +104,13 @@ struct EOSTable {
   //! arithmetic BIT FOR BIT, which is what keeps existing runs unchanged.
   bool rad_taper = false;
   Real rad_lrho_lo = 0.0, rad_lrho_hi = 0.0;   // log10 of rho_lo, rho_hi, in cgs
+  //! THE TEMPERATURE GATE on that taper (<block>/eos_rad_t_hi, eos_rad_t_lo), which makes
+  //! the weight w = max(w_rho, w_T) so that a HOT cell keeps its radiation in the EOS
+  //! whatever its density does.  See rad_taper::WeightGated() for why this exists and why
+  //! the gate is on temperature rather than on radius or optical depth.  With
+  //! `rad_tgate = false` every branch below reduces to the ungated arithmetic BIT FOR BIT
+  bool rad_tgate = false;
+  Real rad_lt_lo = 0.0, rad_lt_hi = 0.0;       // log10 of T_lo, T_hi, in Kelvin
   // composition metadata, so a caller can check its own metallicity against the EOS's.
   // A problem generator that feeds [M/H] to an opacity fit and an EOS built at a
   // different [M/H] is opaque at one metallicity and conducting at another, silently.
@@ -282,8 +289,11 @@ struct EOSTable {
 
     if (radiation) {
       const Real erad0 = arad*t*t*t*t;
-      Real w = 1.0, dwdx = 0.0;
-      if (rad_taper) rad_taper::Weight(x, rad_lrho_lo, rad_lrho_hi, w, dwdx);
+      Real w = 1.0, dwdx = 0.0, dwdy = 0.0;
+      if (rad_taper) {
+        rad_taper::WeightGated(x, rad_lrho_lo, rad_lrho_hi, y, rad_lt_lo, rad_lt_hi,
+                               rad_tgate, w, dwdx, dwdy);
+      }
       const Real erad = rad_taper ? w*erad0 : erad0;
       const Real prad = erad/3.0;
       s.e = egas + erad;
@@ -298,6 +308,18 @@ struct EOSTable {
       s.chi_t = (pgas*chit_g + 4.0*prad)/s.p;
       s.cv = cv_g + 4.0*erad/(rho*t);
       s.dlne_dlnt = (egas*evy + 4.0*erad)/s.e;
+      // ...and the TEMPERATURE GATE puts a dw/dlnT into every temperature derivative, for
+      // the same reason: w is a function of T as well now, and chi_T, c_v and dln e/dln T
+      // must be the derivatives of the p and e returned beside them.
+      // d(w erad0)/dlnT = 4 w erad0 + erad0 dw/dy/ln10; the first term is already in.
+      // The chi_T term is written in EvalPOnly()'s form and the c_v / dln e/dln T terms
+      // in EvalEOnly()'s, so the split evaluators still agree with this one BIT FOR BIT.
+      if (dwdy != 0.0) {
+        const Real dgt = erad0*dwdy*M_LOG10E;
+        s.chi_t += (erad0/3.0)*dwdy*M_LOG10E/s.p;
+        s.cv += dgt/(rho*t);
+        s.dlne_dlnt += dgt/s.e;
+      }
     } else {
       s.e = egas;
       s.p = pgas;
@@ -400,13 +422,22 @@ struct EOSTable {
   void EvalEOnly(const Real rho, const Real t, Real &e, Real &dlne_dlnt) const {
     Real ev, evx, evy;
     const Real xr = log10(rho);
-    Interpolate<false, true>(ITE, xr, log10(t), ev, evx, evy);
+    const Real yr = log10(t);
+    Interpolate<false, true>(ITE, xr, yr, ev, evx, evy);
     const Real egas = rho*Pow10(ev);
     if (radiation) {
       Real erad = arad*t*t*t*t;
-      if (rad_taper) erad *= rad_taper::WeightOnly(xr, rad_lrho_lo, rad_lrho_hi);
+      Real dgt = 0.0;
+      if (rad_taper) {
+        Real w, dwdx, dwdy;
+        rad_taper::WeightGated(xr, rad_lrho_lo, rad_lrho_hi, yr, rad_lt_lo, rad_lt_hi,
+                               rad_tgate, w, dwdx, dwdy);
+        dgt = erad*dwdy*M_LOG10E;   // erad0 dw/dlnT, before the weight is applied
+        erad *= w;
+      }
       e = egas + erad;
       dlne_dlnt = (egas*evy + 4.0*erad)/e;
+      if (dgt != 0.0) dlne_dlnt += dgt/e;
     } else {
       e = egas;
       dlne_dlnt = evy;
@@ -424,20 +455,25 @@ struct EOSTable {
                  Real &p, Real &chi_rho, Real &chi_t) const {
     Real pv, pvx, pvy;
     const Real xr = log10(rho);
-    Interpolate(ITP, xr, log10(t), pv, pvx, pvy);
+    const Real yr = log10(t);
+    Interpolate(ITP, xr, yr, pv, pvx, pvy);
     const Real pgas = rho*Pow10(pv);
     const Real chir_g = 1.0 + pvx;
     const Real chit_g = pvy;
     if (radiation) {
       const Real erad0 = arad*t*t*t*t;
-      Real w = 1.0, dwdx = 0.0;
-      if (rad_taper) rad_taper::Weight(xr, rad_lrho_lo, rad_lrho_hi, w, dwdx);
+      Real w = 1.0, dwdx = 0.0, dwdy = 0.0;
+      if (rad_taper) {
+        rad_taper::WeightGated(xr, rad_lrho_lo, rad_lrho_hi, yr, rad_lt_lo, rad_lt_hi,
+                               rad_tgate, w, dwdx, dwdy);
+      }
       const Real erad = rad_taper ? w*erad0 : erad0;
       const Real prad = erad/3.0;
       p = pgas + prad;
       chi_rho = pgas*chir_g/p;
       if (rad_taper) chi_rho += (erad0/3.0)*dwdx*M_LOG10E/p;
       chi_t = (pgas*chit_g + 4.0*prad)/p;
+      if (dwdy != 0.0) chi_t += ((erad0/3.0)*dwdy*M_LOG10E)/p;
     } else {
       p = pgas;
       chi_rho = chir_g;
@@ -483,11 +519,14 @@ struct EOSTable {
       // reconstruct it. Kept arithmetically identical to Eval().
       const Real t = Pow10(y);
       Real erad = arad*t*t*t*t;
-      Real w = 1.0, dwdx = 0.0;
+      Real w = 1.0, dwdx = 0.0, dwdy = 0.0;
       if (rad_taper) {
-        rad_taper::Weight(x, rad_lrho_lo, rad_lrho_hi, w, dwdx);
+        rad_taper::WeightGated(x, rad_lrho_lo, rad_lrho_hi, y, rad_lt_lo, rad_lt_hi,
+                               rad_tgate, w, dwdx, dwdy);
         // dwdx is with respect to log10 rho, so only the density inversion sees it
         dwdx *= erad*M_LOG10E;
+        // ...and dwdy with respect to log10 T, which only the two T inversions see
+        dwdy *= erad*M_LOG10E;
         erad *= w;
       }
       const Real qrad = (MODE == 0) ? erad : erad/3.0;
@@ -499,6 +538,9 @@ struct EOSTable {
         if (rad_taper) dg += (dwdx/3.0)/qtot;
       } else {
         dg = (qgas*qvy + f*qrad)/qtot;
+        // the temperature gate's own dw/dlnT.  It is non-negative, so the target stays
+        // monotonically increasing in T and SolveLog()'s bracket update stays valid.
+        if (dwdy != 0.0) dg += ((MODE == 0) ? dwdy : dwdy/3.0)/qtot;
       }
       g = log10(qtot) - ltarget;
     }

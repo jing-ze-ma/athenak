@@ -128,6 +128,38 @@ void BuildEOSTable(EOSTable &tbl, ParameterInput *pin, const std::string &block,
     tbl.rad_lrho_hi = log10(static_cast<double>(rad_rho_hi));
   }
 
+  // ------------------------------------------- the TEMPERATURE GATE on that taper
+  // w = max(w_rho(rho), w_T(T)): a cell hotter than eos_rad_t_hi keeps its radiation in
+  // the EOS whatever its density does.  See rad_taper::WeightGated().  Both radii of the
+  // density window are read off two optical depths; so are these two temperatures, and
+  // the pair should come from the SAME two tau levels or the gate and the taper disagree
+  // about where the hand-over is.  eos_rad_t_hi = 0 (the default) leaves the gate off and
+  // every branch on its original arithmetic, bit for bit.
+  const Real rad_t_hi = pin->GetOrAddReal(block, "eos_rad_t_hi", 0.0);
+  const Real rad_t_lo = pin->GetOrAddReal(block, "eos_rad_t_lo", 0.0);
+  tbl.rad_tgate = (rad_t_hi > 0.0);
+  if (tbl.rad_tgate) {
+    if (!tbl.rad_taper) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl
+                << "<" << block << ">/eos_rad_t_hi gates a taper that is not there: the "
+                << "gate raises w = max(w_rho, w_T), and without eos_rad_rho_hi w is 1 "
+                << "everywhere already.  Set the density window, or drop the gate."
+                << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    if (!(rad_t_lo > 0.0) || !(rad_t_lo < rad_t_hi)) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl
+                << "<" << block << ">/eos_rad_t_lo must be positive and strictly less "
+                << "than eos_rad_t_hi; got T_lo = " << rad_t_lo
+                << ", T_hi = " << rad_t_hi << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    tbl.rad_lt_lo = log10(static_cast<double>(rad_t_lo));
+    tbl.rad_lt_hi = log10(static_cast<double>(rad_t_hi));
+  }
+
   if (model.xhyd < 0.0 || model.yhel < 0.0 || (model.xhyd + model.yhel) > 1.0) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
               << "<" << block << ">/eos_xh and eos_yhe must be non-negative and sum "
@@ -261,14 +293,22 @@ void BuildEOSTable(EOSTable &tbl, ParameterInput *pin, const std::string &block,
     for (int k=0; k<=4; ++k) {
       double x = xlo + (i + 0.25*k)*tbl.dx;
       const double rho = pow(10.0, x);
-      const double wr = tbl.rad_taper
+      const double wr0 = tbl.rad_taper
           ? rad_taper::WeightOnly(x, tbl.rad_lrho_lo, tbl.rad_lrho_hi) : 1.0;
-      emax = std::max(emax, EnergyAtPressure(model, tbl.radiation, wr, rho, pfl_cgs));
-      EOSCompositionState st = model.Evaluate(rho, tmin_cgs);
-      const double etmin = rho*st.e_spec
-                         + (tbl.radiation ? wr*eos_cgs::a_rad*tmin_cgs*tmin_cgs*tmin_cgs
-                                            *tmin_cgs : 0.0);
-      emax = std::max(emax, etmin);
+      // Under the TEMPERATURE GATE the weight at this density is not known here -- it
+      // depends on the T the inversion lands on -- so the bound is taken over BOTH ends
+      // of the gate, w = w_rho and w = 1.  This is a bound, and its only job is to prove
+      // the common case is above the floor; widening it costs nothing but a compare.
+      const double wrs[2] = {wr0, tbl.rad_tgate ? 1.0 : wr0};
+      for (int q=0; q<(tbl.rad_tgate ? 2 : 1); ++q) {
+        const double wr = wrs[q];
+        emax = std::max(emax, EnergyAtPressure(model, tbl.radiation, wr, rho, pfl_cgs));
+        EOSCompositionState st = model.Evaluate(rho, tmin_cgs);
+        const double etmin = rho*st.e_spec
+                           + (tbl.radiation ? wr*eos_cgs::a_rad*tmin_cgs*tmin_cgs
+                                              *tmin_cgs*tmin_cgs : 0.0);
+        emax = std::max(emax, etmin);
+      }
     }
     h_efb(i) = (emax/pres_cgs)*(1.0 + 1.0e-6);
     efmax = std::max(efmax, static_cast<double>(h_efb(i)));
@@ -284,8 +324,14 @@ void BuildEOSTable(EOSTable &tbl, ParameterInput *pin, const std::string &block,
     double es = pow(10.0, static_cast<double>(h_tbl(0,i,ITE)));
     if (tbl.radiation) {
       const double xi = xlo + i*tbl.dx;
-      const double wr = tbl.rad_taper
+      double wr = tbl.rad_taper
           ? rad_taper::WeightOnly(xi, tbl.rad_lrho_lo, tbl.rad_lrho_hi) : 1.0;
+      // the gate is evaluated at the table's own lowest row, which is where this bound
+      // lives and where EvalTMin() will evaluate it too, so this is exact, not a bound
+      if (tbl.rad_tgate) {
+        wr = std::max(wr, static_cast<double>(
+                 rad_taper::WeightOnly(ylo, tbl.rad_lt_lo, tbl.rad_lt_hi)));
+      }
       const double tmin = pow(10.0, ylo);
       es += wr*eos_cgs::a_rad*tmin*tmin*tmin*tmin/pow(10.0, xi);
     }
@@ -343,6 +389,12 @@ void BuildEOSTable(EOSTable &tbl, ParameterInput *pin, const std::string &block,
     std::cout << "             radiation TAPERED off between rho = " << rad_rho_hi
               << " (w = 1, LTE) and rho = " << rad_rho_lo
               << " g/cm^3 (w = 0, the two-stream owns it)" << std::endl;
+  }
+  if (tbl.rad_tgate) {
+    std::cout << "             ...GATED on temperature: w = max(w_rho, w_T), w_T = 1 at "
+              << "and above T = " << rad_t_hi << " K, 0 at and below " << rad_t_lo
+              << " K -- a hot cell keeps LTE radiation whatever its density"
+              << std::endl;
   }
   std::cout << "             metal ionization "
             << (model.include_metal_ion ? "on" : "off");

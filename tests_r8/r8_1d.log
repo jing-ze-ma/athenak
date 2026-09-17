@@ -1,0 +1,86 @@
+=========== ARM x_gate : 
+elapsed=1.269628e+02 cycle=1400 time=9.198474e+03 dt=3.277282e+00
+elapsed=1.338299e+02 cycle=1500 time=9.472490e+03 dt=2.215667e+00
+elapsed=1.404272e+02 cycle=1600 time=9.665491e+03 dt=1.696513e+00
+elapsed=1.470277e+02 cycle=1700 time=9.819669e+03 dt=1.408661e+00
+elapsed=1.536295e+02 cycle=1800 time=9.950134e+03 dt=1.206692e+00
+elapsed=1.602321e+02 cycle=1900 time=1.006250e+04 dt=1.045741e+00
+elapsed=1.668401e+02 cycle=2000 time=1.016066e+04 dt=9.213139e-01
+elapsed=1.734473e+02 cycle=2100 time=1.024778e+04 dt=8.242159e-01
+elapsed=1.800568e+02 cycle=2200 time=1.032627e+04 dt=7.476493e-01
+elapsed=1.866701e+02 cycle=2300 time=1.039788e+04 dt=6.860460e-01
+elapsed=1.933855e+02 cycle=2400 time=1.046391e+04 dt=6.244493e-01
+elapsed=2.041998e+02 cycle=2500 time=1.051351e+04 dt=3.000145e-01
+elapsed=2.149524e+02 cycle=2600 time=1.052995e+04 dt=1.106682e-01
+elapsed=2.235013e+02 cycle=2700 time=1.054052e+04 dt=1.059773e-01
+elapsed=2.336847e+02 cycle=2800 time=1.055104e+04 dt=1.055309e-01
+elapsed=2.442540e+02 cycle=2900 time=1.056167e+04 dt=1.074663e-01
+elapsed=2.549632e+02 cycle=3000 time=1.057250e+04 dt=1.083609e-01
+elapsed=2.658933e+02 cycle=3100 time=1.058337e+04 dt=1.088201e-01
+elapsed=2.770322e+02 cycle=3200 time=1.059419e+04 dt=1.076836e-01
+elapsed=2.881947e+02 cycle=3300 time=1.060491e+04 dt=1.066649e-01
+elapsed=2.994121e+02 cycle=3400 time=1.061557e+04 dt=1.064173e-01
+elapsed=3.105264e+02 cycle=3500 time=1.062613e+04 dt=1.049648e-01
+elapsed=3.212701e+02 cycle=3600 time=1.063662e+04 dt=1.042796e-01
+Terminating on wall clock limit
+time=1.064486e+04 cycle=3679
+=========== ARM x_gate_noforce : problem/rt_rad_force=false
+elapsed=1.790670e+02 cycle=2500 time=6.282774e+03 dt=7.324458e-01
+elapsed=1.856817e+02 cycle=2600 time=6.354806e+03 dt=7.083192e-01
+elapsed=1.922956e+02 cycle=2700 time=6.424527e+03 dt=6.862164e-01
+elapsed=1.989128e+02 cycle=2800 time=6.492129e+03 dt=6.659108e-01
+elapsed=2.055275e+02 cycle=2900 time=6.557774e+03 dt=6.470578e-01
+elapsed=2.121405e+02 cycle=3000 time=6.621610e+03 dt=6.296842e-01
+elapsed=2.187551e+02 cycle=3100 time=6.683768e+03 dt=6.134825e-01
+elapsed=2.253645e+02 cycle=3200 time=6.744359e+03 dt=5.983721e-01
+elapsed=2.319753e+02 cycle=3300 time=6.803491e+03 dt=5.842807e-01
+elapsed=2.385874e+02 cycle=3400 time=6.861258e+03 dt=5.710783e-01
+elapsed=2.451971e+02 cycle=3500 time=6.917747e+03 dt=5.586953e-01
+elapsed=2.518138e+02 cycle=3600 time=6.973032e+03 dt=5.469531e-01
+elapsed=2.584302e+02 cycle=3700 time=7.027163e+03 dt=5.356951e-01
+elapsed=2.650477e+02 cycle=3800 time=7.080207e+03 dt=5.253674e-01
+elapsed=2.716641e+02 cycle=3900 time=7.132451e+03 dt=5.206952e-01
+elapsed=2.782767e+02 cycle=4000 time=7.184535e+03 dt=5.217253e-01
+elapsed=2.848902e+02 cycle=4100 time=7.236894e+03 dt=5.257951e-01
+elapsed=2.915045e+02 cycle=4200 time=7.289703e+03 dt=5.300113e-01
+elapsed=2.981331e+02 cycle=4300 time=7.342899e+03 dt=5.354189e-01
+elapsed=3.047770e+02 cycle=4400 time=7.397020e+03 dt=5.483844e-01
+elapsed=3.114222e+02 cycle=4500 time=7.452489e+03 dt=5.544048e-01
+elapsed=3.180703e+02 cycle=4600 time=7.507607e+03 dt=5.479521e-01
+elapsed=3.246977e+02 cycle=4700 time=7.562097e+03 dt=5.418346e-01
+Terminating on wall clock limit
+time=7.605799e+03 cycle=4781
+=========== restart determinism (two runs of the same 1-D configuration)
+rst 00000: BYTE-IDENTICAL
+rst 00001: BYTE-IDENTICAL
+                                  
+================================= 
+Global information about the job: 
+================================= 
+  
+Job owner: jinma(28895)
+Job name:  r8_1d
+Node list: vipa1327
+Job start: Thu Sep 17 22:40:21 CEST 2026
+Job end:   Thu Sep 17 22:51:45 CEST 2026
+Work dir:  /viper/u2/jinma/ATHENAK/bench/wt_he4
+Command:   /viper/u2/jinma/ATHENAK/bench/wt_he4/tests_r8/r8_1d.sh
+  
+  
+  
+==========================================================================================
+Information on jobsteps (Note: MaxRSS/AveRSS is the maximum/average over all 
+tasks of the per-task memory high-water marks; cf. "man sacct"): 
+==========================================================================================
+  
+JobID            JobName NNodes NTasks  NCPUS       MaxRSS       AveRSS    Elapsed ExitCode
+------------- ---------- ------ ------ ------ ------------ ------------ ---------- --------
+11783976           r8_1d      1            16                             00:11:24      0:0
+11783976.0     athena_v4      1      1     16      974.13M      974.13M   00:05:32      0:0
+11783976.1     athena_v4      1      1     16      985.33M      985.33M   00:05:31      0:0
+11783976.2     athena_v4      1      1     16       35.38M       35.38M   00:00:10      0:0
+11783976.3     athena_v4      1      1     16       35.38M       35.38M   00:00:10      0:0
+  
+Maximum memory per node: 1.033197 GB (defined as MaxRSS*Ntasks/NNodes)
+CPU utilization: 12.4 %
+  

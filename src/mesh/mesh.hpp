@@ -34,12 +34,19 @@ struct RegionSize {
 //! \struct RegionIndcs
 //! \brief Cell indices and number of active and ghost cells in a Mesh or a MeshBlock
 
+//! EVERY MEMBER IS ZERO INITIALISED, and that is not cosmetic: restart.cpp STEP 1 writes
+//! `mesh_indcs` and `mb_indcs` to the file as raw structs, while the coarse-cell fields
+//! `cnx1..cke` are only ever assigned on a MULTILEVEL mesh.  On a uniform grid they were
+//! indeterminate, so every restart file carried ~21 bytes of whatever had been on the
+//! stack and two runs of the same binary wrote DIFFERENT files -- harmless to a restart
+//! (the reader takes the coarse indices from the input) but it put uninitialised memory
+//! on disk and made a byte-for-byte restart regression test impossible (tests_r7 B.2a).
 struct RegionIndcs {
-  int ng;                       // number of ghost cells
-  int nx1, nx2, nx3;            // number of active cells (not including ghost zones)
-  int is,ie,js,je,ks,ke;        // indices of ACTIVE cells
-  int cnx1, cnx2, cnx3;         // number of active coarse cells (not including gzs)
-  int cis,cie,cjs,cje,cks,cke;  // indices of ACTIVE coarse cells
+  int ng = 0;                   // number of ghost cells
+  int nx1 = 0, nx2 = 0, nx3 = 0;  // number of active cells (not including ghost zones)
+  int is = 0, ie = 0, js = 0, je = 0, ks = 0, ke = 0;   // indices of ACTIVE cells
+  int cnx1 = 0, cnx2 = 0, cnx3 = 0;  // number of active coarse cells (not including gzs)
+  int cis = 0, cie = 0, cjs = 0, cje = 0, cks = 0, cke = 0;  // ACTIVE coarse cells
 };
 
 //----------------------------------------------------------------------------------------
