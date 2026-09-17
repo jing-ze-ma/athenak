@@ -88,6 +88,13 @@ lharm = 2
 d0    = 1.0
 p0    = 1.0
 amp   = 0.01
+# STATIC seam-halo accuracy scan: with time/nlim = 0 the only thing that has touched the
+# ghosts is one boundary exchange, and the exact ghost value of this initial state is
+# known analytically, so this measures the panel-seam halo and nothing else.  1 = the
+# per-block/per-face/per-layer table, 2 = the full along-seam profiles.  See
+# tests_seam4/README.md.  It is listed here at its off default because a command-line
+# override cannot ADD a parameter.
+seam_halo_scan = 0
 
 <output1>
 file_type = bin
