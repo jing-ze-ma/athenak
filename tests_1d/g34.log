@@ -1,0 +1,67 @@
+======== gate(iii) rt_implicit_column=3
+face budget: gain/L  inner=-2.563197e-01 outer=-7.413214e+02 | erg in=-8.190892e+39 out=-3.851662e+41 | g in=-6.123771e+23 out=-1.009518e+23 | L_rad,out/L = 8.642888e+05 L_rad,cut/L = 1.307301e+01 (t = 5.626701e+02 s)
+elapsed=3.953900e+01 cycle=500 time=5.626912e+02 dt=2.096403e-02
+time=5.626912e+02 cycle=500
+======== gate(iii) rt_implicit_column=0
+face budget: gain/L  inner=-1.247500e-02 outer=-1.320131e-07 | erg in=-1.841608e+40 out=-2.092748e+36 | g in=-1.108485e+25 out=-1.162403e+21 | L_rad,out/L = 9.500887e-01 L_rad,cut/L = 6.985681e-01 (t = 6.392237e+03 s)
+elapsed=2.647895e+01 cycle=500 time=6.404923e+03 dt=1.268612e+01
+time=6.404923e+03 cycle=500
+======== gate(iv) continuous 250
+zone-cycles/cpu_second = 1.559626e+05
+particle-updates/cpu_second = 0.000000e+00
+======== gate(iv) 200 then restart +50
+zone-cycles/cpu_second = 1.564428e+05
+particle-updates/cpu_second = 0.000000e+00
+total 4954
+drwxr-xr-x 2 jinma mpa    4096 Sep 17 07:28 .
+drwxr-xr-x 5 jinma mpa    4096 Sep 17 07:27 ..
+-rw-r--r-- 1 jinma mpa 2967878 Sep 17 07:27 he4.00000.rst
+-rw-r--r-- 1 jinma mpa 2967886 Sep 17 07:28 he4.00001.rst
+restart file: /viper/u2/jinma/ATHENAK/bench/wt_he4/tests_1d/g4_rst/rst/he4.00001.rst
+zone-cycles/cpu_second = 1.509023e+05
+particle-updates/cpu_second = 0.000000e+00
+                                  
+================================= 
+Global information about the job: 
+================================= 
+  
+Job owner: jinma(28895)
+Job name:  he4_g34
+Node list: vipa1001
+Job start: Thu Sep 17 07:26:08 CEST 2026
+Job end:   Thu Sep 17 07:28:15 CEST 2026
+Work dir:  /viper/u2/jinma/ATHENAK/bench/wt_he4/tests_1d
+Command:   /viper/u2/jinma/ATHENAK/bench/wt_he4/tests_1d/sub_g34.sh
+  
+  
+  
+==========================================================================================
+Information on jobsteps (Note: MaxRSS/AveRSS is the maximum/average over all 
+tasks of the per-task memory high-water marks; cf. "man sacct"): 
+==========================================================================================
+  
+JobID            JobName NNodes NTasks  NCPUS       MaxRSS       AveRSS    Elapsed ExitCode
+------------- ---------- ------ ------ ------ ------------ ------------ ---------- --------
+11754654         he4_g34      1            16                             00:02:07      0:0
+11754654.0        athena      1      1     16      933.22M      933.22M   00:00:40      0:0
+11754654.1        athena      1      1     16      930.69M      930.69M   00:00:28      0:0
+11754654.2        athena      1      1     16      931.55M      931.55M   00:00:25      0:0
+11754654.3        athena      1      1     16      927.33M      927.33M   00:00:20      0:0
+11754654.4        athena      1      1     16      923.96M      923.96M   00:00:12      0:0
+  
+Maximum memory per node: 0.978548 GB (defined as MaxRSS*Ntasks/NNodes)
+CPU utilization: 10.1 %
+  
+...[trimmed: repeated rad_cap_ang / dt COLLAPSE lines removed]...
+======== gate(iii) rt_implicit_column=3
+face budget: gain/L  inner=-2.563197e-01 outer=-7.413214e+02 | erg in=-8.190892e+39 out=-3.851662e+41 | g in=-6.123771e+23 out=-1.009518e+23 | L_rad,out/L = 8.642888e+05 L_rad,cut/L = 1.307301e+01 (t = 5.626701e+02 s)
+elapsed=3.953900e+01 cycle=500 time=5.626912e+02 dt=2.096403e-02
+time=5.626912e+02 cycle=500
+======== gate(iii) rt_implicit_column=0
+face budget: gain/L  inner=-1.247500e-02 outer=-1.320131e-07 | erg in=-1.841608e+40 out=-2.092748e+36 | g in=-1.108485e+25 out=-1.162403e+21 | L_rad,out/L = 9.500887e-01 L_rad,cut/L = 6.985681e-01 (t = 6.392237e+03 s)
+elapsed=2.647895e+01 cycle=500 time=6.404923e+03 dt=1.268612e+01
+time=6.404923e+03 cycle=500
+======== gate(iv) continuous 250
+======== gate(iv) 200 then restart +50
+================================= 
+==========================================================================================

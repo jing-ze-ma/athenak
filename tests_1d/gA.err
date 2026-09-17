@@ -1,0 +1,6 @@
+Loading openmpi_gpu/5.0
+  Loading requirement: openmpi/5.0
+srun: Job step aborted: Waiting up to 62 seconds for job step to finish.
+[2026-09-17T07:17:09.866] error: *** STEP 11754391.0 ON vipa1001 CANCELLED AT 2026-09-17T07:17:09 DUE to SIGNAL Killed ***
+srun: error: vipa1001: tasks 0-1: Exited with exit code 1
+srun: Terminating StepId=11754391.0

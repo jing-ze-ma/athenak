@@ -1,7 +1,7 @@
 # ========================================================================================
 # he4_presn on the CUBED SPHERE: the envelope of the 4 Msun presupernova HELIUM STAR of
 # Woosley (2019) -- M = 3.15 Msun remaining, L = 60256 Lsun, Teff = 48978 K,
-# R = 2.3717e11 cm -- from 0.40 R to the tau = 1e-2 level, with the iron-opacity-peak
+# R = 2.3717e11 cm -- from 0.50 R to the tau = 1e-2 level, with the iron-opacity-peak
 # convection zone (FeCZ) resolved.  Build with -DPROBLEM=red_giant.
 #
 # Derived from inputs/hydro/red_giant_cs.athinput (the cubed-sphere template) with the
@@ -12,12 +12,18 @@
 #
 # THE STRUCTURE (bench/hestar_presn/column_he4_presn.txt, columns z p T rho kappa nabla
 # nabla_ad nabla_rad tau v_mlt Hp N2 Prad/Pgas):
-#   r_in   = 9.4868e10 (0.40 R): T = 1.94e5 K, rho = 3.42e-9, kappa = 0.668, tau = 362
-#   FeCZ   = r 1.006e11 .. 2.293e11, i.e. tau 349 .. 11.8; kappa peaks 0.839 at tau = 157
+#   r_in   = 1.18585e11 (0.50 R): the 0.40-0.50 R layer holds 6.6 Hp of strongly
+#          stable 0.24-1.06 MK gas and only costs cells and timestep, so the inner wall
+#          was moved out on 2026-09-17.  One Hp / two H_rho of stable buffer, with a
+#          Brunt period of about one turnover, remain below the FeCZ base at 0.635 R.
+#   FeCZ   = tau 349 .. 11.8; kappa peaks 0.839 at tau = 157.  On the SPHERICAL
+#          column (column_he4_presn_sph.txt) its base is at 0.635 R = 1.506e11 cm,
+#          not at the plane-parallel column's 1.006e11
 #   photosphere tau = 2/3 at 2.3717e11; x1max = tau = 1e-2 at 2.4057e11, p = 7.51e3
 #   MLT peak v = 1.25e7 cm/s (Ma 0.455), Prad/Pgas = 56, kappa F/(c g) = 1.23 -- the
 #   envelope is SUPER-EDDINGTON, which is why rt_rad_force and an open top are mandatory
-#   turnover Hp/v = 6.06e3 s; this input runs 5 turnovers.
+#   turnover Hp/v = 4.705e3 s ON THE SPHERE (the plane-parallel column's 6.06e3 is
+#          not the right number for this geometry); this input runs 5 turnovers.
 #
 # THIS IS THE SMOKE GRID of GAP_ANALYSIS section E (one node, 2 MI300A, minutes), not the
 # production grid: nx1 = 96, nx2 = nx3 = 32 per panel, 6*32^2*96 = 5.9e5 cells.
@@ -34,23 +40,28 @@ nghost    = 3                # 3, not the red giant's 2: FOFC with plm reconstru
                              # needs three ghost zones (src/hydro/hydro.cpp:287)
 nx1       = 96               # RADIAL; nx1 + 2*nghost = 102 <= 520, the largest column
                              # tier the grey sweep dispatches on
-x1min     = 9.4868e10        # 0.40 R: inside the FeCZ, where Hp = 1.43e11 and tau = 362
+x1min     = 1.18585e11       # 0.50 R (see the header): one Hp of stable buffer below
+                             # the FeCZ base at 0.635 R
 x1max     = 2.4057e11        # the tau = 1e-2 level (the column's own tau = 1e-3 top,
                              # 2.4180e11, leaves no room for the unresolved ghost column)
 # The polynomial radial stretch refitted TO THIS STAR with
-#   tools/grid/fit_radial_stretch.py col_he4_r.txt 9.4868e10 2.4057e11 --dumin 0.4 --nx 96
-# (col_he4_r.txt = column_he4_presn.txt with r = z + R in column 0).  --dumin 0.4 is what
-# sets the SMALLEST cell: 0.4*(x1max-x1min)/96 = 6.07e8 cm, i.e. the 6e8 cm floor asked
-# for, which is also the smallest min(Hp,H_rho) in the domain (6.59e8 at the top).  The
-# fit targets dr ~ H_rho and delivers 35 cells per scale height at the median and 202 at
-# the best; the floor binds only in the top few cells, where it gives ~1.  du/dxi stays in
-# [0.40, 5.24], so the map is monotonic and Mesh accepts it.  REFIT if the star, the
-# domain or nx1 changes.
+#   tools/grid/fit_radial_stretch.py \
+#       bench/hestar_presn/column_he4_presn_sph.txt 1.18585e11 2.4057e11 --dumin 0.47 \
+#       --nx 96
+# REFIT on 2026-09-17 for the new r_in; the SPHERICAL column (r in column 0 already) is
+# the right structure to fit here, not the plane-parallel one.  --dumin 0.47 keeps the
+# SAME smallest cell as the 0.40 R grid did: 0.47*(x1max-x1min)/96 = 5.97e8 cm, i.e. the
+# 6e8 cm floor, which is also the smallest min(Hp,H_rho) in the domain.  du/dxi now stays
+# in [0.47, 1.81] -- far gentler than the [0.40, 5.24] of the 0.40 R fit, because the
+# deep, strongly stratified layer that forced the stretch is gone -- so the map is
+# monotonic and Mesh accepts it.  The domain spans 8.6 density scale heights; the fit
+# delivers 23 cells per scale height at the median, 1.3 at the worst (the top few cells,
+# where the floor binds).  REFIT if the star, the domain or nx1 changes.
 use_grid_stretch_r_poly = true
-f_stretch_r_c1 = +4.238180
-f_stretch_r_c2 = -11.313543
-f_stretch_r_c3 = +12.981851
-f_stretch_r_c4 = -5.418158
+f_stretch_r_c1 = +0.134559
+f_stretch_r_c2 = +4.942505
+f_stretch_r_c3 = -8.950106
+f_stretch_r_c4 = +4.403042
 ix1_bc    = user
 ox1_bc    = user
 nx2       = 32               # xi: nx2 must equal nx3.  Smoke value; the production grid
@@ -75,7 +86,7 @@ evolution  = dynamic
 integrator = rk2
 cfl_number = 0.3
 nlim       = -1
-tlim       = 3.03e4          # 5 turnovers at Hp/v = 6.06e3 s
+tlim       = 2.3525e4        # 5 turnovers at the SPHERICAL Hp/v = 4.705e3 s
 ndiag      = 100
 nan_check_cycles = 100
 
@@ -162,31 +173,28 @@ pfloor  = 1.0e-1                 # 1.3e-5 of the initial top-cell pressure; shou
 <problem>
 user_srcs   = true
 # --- the star (GAP_ANALYSIS section C).  On the cubed sphere problem/rin is NOT read:
-# the inner radius IS mesh/x1min = 9.4868e10.
+# the inner radius IS mesh/x1min = 1.18585e11.
 mstar       = 6.2651e33          # 3.15 Msun remaining
 lstar       = 2.3066e38          # 60256 Lsun
 teff        = 48978.0
-ptop        = 9.00e3             # RAISED from the column's own p(tau = 1e-2) = 7.51e3.
-                                 # Two reasons, both about the radiation pressure:
-                                 # (1) the pgen anchors the column at the grey tau = 0
-                                 # temperature T = Teff/2^(1/4) = 41185 K, where
-                                 # a T^4/3 = 7.26e3 -- 97 % of 7.51e3 -- and it REFUSES a
-                                 # top state with a T^4/3 > 0.9 ptop, because the table
-                                 # inversion of a 3 %-of-total gas pressure is not
-                                 # trustworthy (red_giant.cpp, "no gas solution at the
-                                 # outer wall").  This envelope is radiation dominated
-                                 # EVERYWHERE (Prad/Pgas = 50 here, 56 at the MLT peak),
-                                 # so no choice of x1max avoids that; only a larger ptop
-                                 # does.  (2) above rho = eos_rad_rho_lo the EOS taper has
-                                 # removed the radiation from the gas altogether and
-                                 # rt_rad_force carries it instead, so the hydrostatic top
-                                 # of THIS model is not the MESA column's top in any case
-                                 # -- the pgen's own march knows nothing about that force.
-                                 # The FeCZ, which is what this run is about, sits at
-                                 # rho >> eos_rad_rho_hi where the taper weight is 1 and
-                                 # the march is the MESA physics again.  A proper fix is
-                                 # an ic_profile reader (GAP_ANALYSIS section C), which
-                                 # red_giant does not have.
+ptop        = 7.51e3             # RESTORED to the column's own p(tau = 1e-2).  The
+                                 # 9.00e3 this file carried until 2026-09-17 was a hack
+                                 # to get past the pgen's "no gas solution at the outer
+                                 # wall" refusal (a T^4/3 = 7.26e3 is 97 % of 7.51e3 at
+                                 # the grey tau = 0 temperature, and the march refuses a
+                                 # top with a T^4/3 > 0.9 ptop).  With problem/ic_profile
+                                 # below the march and that check are both SKIPPED, so
+                                 # ptop is now READ AND UNUSED -- it is kept at the honest
+                                 # value so the file documents the star.
+# --- THE INITIAL STRATIFICATION.  Three columns "r[cm] rho eint" ascending in r, built
+# OFFLINE by bench/hestar_presn/make_ic_sph.py against THIS run's own table: at each node
+# T solves p_gas_table(rho,T) + a T^4/3 = p_column(r) -- hydrostatic balance with the
+# UNTAPERED radiation -- and eint is then e_gas(rho,T) + w(rho) a T^4 with the taper
+# above applied at fixed (rho,T).  The (1-w) a T^4/3 the taper removes is carried by
+# problem/rt_rad_force.  15999 nodes over 8.30e10 .. 2.43e11 cm, which covers this mesh
+# and its radial ghosts with margin.  rho is NON-MONOTONE over 0.72-0.95 R (a physical
+# density inversion, contrast 3.9); the reader searches on r, so that is fine.
+ic_profile  = /viper/u2/jinma/ATHENAK/bench/hestar_presn/ic_he4_presn_sph.txt
 mu          = 1.3423             # fully ionized He + Z; used only by the pgen's own march
 opac_table  = /viper/u2/jinma/ATHENAK/bench/hestar_fecz/rosseland_he_x0.0_z0.02.txt
                                  # the X = 0, Z = 0.02 OPLIB He table, as in the He box
@@ -198,6 +206,10 @@ column_dump = column_he4_ic.txt  # the IC, for comparison against column_he4_pre
 # defaults it to rad_tau_hi, which the whole-column blend has pushed to 1e6, and the whole
 # star would then be built RADIATIVE and have no convection zone at all.  10 is the usual
 # handover, well above the FeCZ top (tau 11.8).
+# With problem/ic_profile set, mlt_alpha_ic and ic_tau_rad no longer shape the initial
+# structure at all -- they only enter the gradient and convective velocity REPORTED in
+# column_dump (and problem/vpert_mlt, which is off).  They are kept at the values the
+# MESA model was computed with so the report is meaningful.
 mlt_alpha    = 0.0
 mlt_alpha_ic = 1.5
 ic_tau_rad   = 10.0
@@ -261,29 +273,29 @@ rt_force_verbose   = 0
 # (dt/2 before, dt/2 after) instead of applied once per RK stage.
 rt_strang          = true
 # --- the two diagnostic dumps (see the record layouts in src/pgen/red_giant.cpp)
-rt_surface_dt   = 121.2          # 0.02 turnover, the B/He production cadence
+rt_surface_dt   = 94.1           # 0.02 turnover, the B/He production cadence
 rt_surface_file = rt_surface.bin
-rt_profile_dt   = 60.6           # 0.01 turnover
+rt_profile_dt   = 47.05          # 0.01 turnover
 rt_profile_file = rt_profile.bin
 nan_report  = false
 
 <output1>
 file_type  = hst
-dt         = 60.6                # 0.01 turnover
+dt         = 47.0                # 0.01 turnover
 data_format = %24.16e
 
 <output2>
 file_type  = bin
 variable   = hydro_w
-dt         = 606.0               # 0.1 turnover
+dt         = 470.0               # 0.1 turnover
 
 <output3>
 file_type  = rst
-dt         = 1212.0              # 0.2 turnover
+dt         = 940.0               # 0.2 turnover
 
 <output4>
 file_type      = cbin
 variable       = hydro_w
 coarsen_factor = 2               # 2, not 3: the coarsening must divide EVERY MeshBlock
                                  # dimension and meshblock/nx2 = nx3 = 16
-dt             = 303.0           # 0.05 turnover, the movie frames
+dt             = 235.0           # 0.05 turnover, the movie frames
