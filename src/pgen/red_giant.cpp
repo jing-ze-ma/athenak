@@ -4295,5 +4295,9 @@ void RedGiantFinal(ParameterInput *pin, Mesh *pm) {
   fmean_ = DvceArray2D<Real>();
   klT_ = DvceArray1D<Real>();
   klD_ = DvceArray1D<Real>();
+  tau_d_ = DvceArray1D<Real>();  // the seed's tau window (problem/vpert_tau_lo/hi)
+  vdb_d_ = DvceArray1D<Real>();  // the bottom sponge's shell means
+  surf_d_ = DvceArray2D<Real>(); // the two diagnostic dumps' device buffers
+  prof_d_ = DvceArray2D<Real>();
   return;
 }

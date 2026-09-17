@@ -30,8 +30,9 @@ reference = Woosley 2019; bench/hestar_presn/GAP_ANALYSIS.md
 basename  = he4
 
 <mesh>
-nghost    = 2
-nx1       = 96               # RADIAL; nx1 + 2*nghost = 100 <= 520, the largest column
+nghost    = 3                # 3, not the red giant's 2: FOFC with plm reconstruction
+                             # needs three ghost zones (src/hydro/hydro.cpp:287)
+nx1       = 96               # RADIAL; nx1 + 2*nghost = 102 <= 520, the largest column
                              # tier the grey sweep dispatches on
 x1min     = 9.4868e10        # 0.40 R: inside the FeCZ, where Hp = 1.43e11 and tau = 362
 x1max     = 2.4057e11        # the tau = 1e-2 level (the column's own tau = 1e-3 top,
@@ -165,7 +166,27 @@ user_srcs   = true
 mstar       = 6.2651e33          # 3.15 Msun remaining
 lstar       = 2.3066e38          # 60256 Lsun
 teff        = 48978.0
-ptop        = 7.51e3             # p at tau = 1e-2, the anchor of the initial column
+ptop        = 9.00e3             # RAISED from the column's own p(tau = 1e-2) = 7.51e3.
+                                 # Two reasons, both about the radiation pressure:
+                                 # (1) the pgen anchors the column at the grey tau = 0
+                                 # temperature T = Teff/2^(1/4) = 41185 K, where
+                                 # a T^4/3 = 7.26e3 -- 97 % of 7.51e3 -- and it REFUSES a
+                                 # top state with a T^4/3 > 0.9 ptop, because the table
+                                 # inversion of a 3 %-of-total gas pressure is not
+                                 # trustworthy (red_giant.cpp, "no gas solution at the
+                                 # outer wall").  This envelope is radiation dominated
+                                 # EVERYWHERE (Prad/Pgas = 50 here, 56 at the MLT peak),
+                                 # so no choice of x1max avoids that; only a larger ptop
+                                 # does.  (2) above rho = eos_rad_rho_lo the EOS taper has
+                                 # removed the radiation from the gas altogether and
+                                 # rt_rad_force carries it instead, so the hydrostatic top
+                                 # of THIS model is not the MESA column's top in any case
+                                 # -- the pgen's own march knows nothing about that force.
+                                 # The FeCZ, which is what this run is about, sits at
+                                 # rho >> eos_rad_rho_hi where the taper weight is 1 and
+                                 # the march is the MESA physics again.  A proper fix is
+                                 # an ic_profile reader (GAP_ANALYSIS section C), which
+                                 # red_giant does not have.
 mu          = 1.3423             # fully ionized He + Z; used only by the pgen's own march
 opac_table  = /viper/u2/jinma/ATHENAK/bench/hestar_fecz/rosseland_he_x0.0_z0.02.txt
                                  # the X = 0, Z = 0.02 OPLIB He table, as in the He box
