@@ -1,0 +1,52 @@
+Loading openmpi_gpu/5.0
+  Loading requirement: openmpi/5.0
+=========== ARM a_mlt0 : problem/mlt_alpha=0.0
+elapsed=1.154747e+02 cycle=1900 time=1.079688e+04 dt=3.462355e+00
+elapsed=1.203936e+02 cycle=2000 time=1.112560e+04 dt=3.120504e+00
+elapsed=1.252901e+02 cycle=2100 time=1.142333e+04 dt=2.840072e+00
+elapsed=1.301811e+02 cycle=2200 time=1.169491e+04 dt=2.591572e+00
+elapsed=1.350726e+02 cycle=2300 time=1.194303e+04 dt=2.374636e+00
+elapsed=1.399626e+02 cycle=2400 time=1.217110e+04 dt=2.189444e+00
+elapsed=1.448520e+02 cycle=2500 time=1.238193e+04 dt=2.029502e+00
+elapsed=1.497380e+02 cycle=2600 time=1.257771e+04 dt=1.887530e+00
+elapsed=1.546260e+02 cycle=2700 time=1.276014e+04 dt=1.762700e+00
+elapsed=1.595119e+02 cycle=2800 time=1.293090e+04 dt=1.653950e+00
+elapsed=1.644000e+02 cycle=2900 time=1.309154e+04 dt=1.560408e+00
+elapsed=1.692856e+02 cycle=3000 time=1.324351e+04 dt=1.480024e+00
+elapsed=1.741704e+02 cycle=3100 time=1.338801e+04 dt=1.411007e+00
+elapsed=1.790570e+02 cycle=3200 time=1.352609e+04 dt=1.351495e+00
+elapsed=1.839410e+02 cycle=3300 time=1.365866e+04 dt=1.300583e+00
+elapsed=1.888234e+02 cycle=3400 time=1.378643e+04 dt=1.255127e+00
+elapsed=1.937051e+02 cycle=3500 time=1.390982e+04 dt=1.212366e+00
+elapsed=1.985860e+02 cycle=3600 time=1.402896e+04 dt=1.170839e+00
+Terminating on time limit
+time=1.411500e+04 cycle=3675
+=========== ARM a_mlt0 DONE
+                                  
+================================= 
+Global information about the job: 
+================================= 
+  
+Job owner: jinma(28895)
+Job name:  r9a
+Node list: vipa1050
+Job start: Thu Sep 17 23:39:04 CEST 2026
+Job end:   Thu Sep 17 23:42:33 CEST 2026
+Work dir:  /viper/u2/jinma/ATHENAK/bench/wt_he4/tests_r9
+Command:   /viper/u2/jinma/ATHENAK/bench/wt_he4/tests_r9/r9_arm.sh
+  
+  
+  
+==========================================================================================
+Information on jobsteps (Note: MaxRSS/AveRSS is the maximum/average over all 
+tasks of the per-task memory high-water marks; cf. "man sacct"): 
+==========================================================================================
+  
+JobID            JobName NNodes NTasks  NCPUS       MaxRSS       AveRSS    Elapsed ExitCode
+------------- ---------- ------ ------ ------ ------------ ------------ ---------- --------
+11785334             r9a      1            48                             00:03:29      0:0
+11785334.0     athena_v5      1      1     16      972.91M      972.91M   00:03:26      0:0
+  
+Maximum memory per node: 1.020167 GB (defined as MaxRSS*Ntasks/NNodes)
+CPU utilization: 4.2 %
+  

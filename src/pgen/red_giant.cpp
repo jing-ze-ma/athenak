@@ -504,9 +504,36 @@ bool surf_alloc_ = false;
 //     double x1v[nx1]                      the radial cell centres
 //     double q[nvar][nx1]                  the shell means, slot order
 //        0 rho   1 v1   2 rho v1   3 v1^2   4 v2^2+v3^2   5 T[K]   6 eint   7 v1(eint+p)
+// with, PRECISELY (fixed 2026-09-17, tests_r9 task 3; every slot area weighted):
+//        0  rho                      w0(IDN)                          [g/cm^3]
+//        1  v1                       w0(IVX)                          [cm/s]
+//        2  rho v1                                                    [g/cm^2/s]
+//        3  v1^2                                                      [cm^2/s^2]
+//        4  |v_perp|^2               v2^2+v3^2+2 cos(a) v2 v3, the GNOMONIC metric norm
+//        5  T                        KELVIN: Hydro::wtemp (the CODE temperature the EOS
+//                                    root find returned) times EOS_Data::temp_cgs
+//        6  eint                     the INTERNAL ENERGY DENSITY [erg/cm^3], as
+//                                    EintFromCons: u0(IEN) - KE(metric) - emag - rho Phi
+//        7  v1 (eint + p)            with p the GAS+TAPERED-RADIATION PRESSURE, i.e.
+//                                    wder(IDPR) under a general EOS
+// WHAT WAS WRONG BEFORE.  Slot 5 was wtemp RAW, i.e. the code temperature, which on this
+// star is 8.3145e7 times the kelvin the comment promises (T = 1.19e5 K at 0.94 R read out
+// as 9.88e12).  Slot 6 was u0(IEN) - KE with NO rho*Phi subtraction, so under
+// <hydro>/etotgrav = true (which every he4_presn input sets) it was eint + rho*GM(1/rin
+// - 1/r): right at the inner wall, and 80x the true eint at the top of the domain, where
+// eint is 1e-8 of the base and rho*Phi is not.  Slot 7 used w0(IPR) as `p`, but IPR ==
+// IEN and under a GENERAL EOS the primitive slot holds the INTERNAL ENERGY, not the
+// pressure (general_c2p_hyd.hpp:56 `w.e = u.e - e_k`; the pressure is in wder(IDPR)), so
+// the enthalpy flux was v1*2*eint on the ideal branch's arithmetic.  Both are diagnostic
+// only -- nothing reads them back into the evolution -- but tests_r6/an6.py's energy
+// columns do, and were wrong in the envelope by those factors.
 // Identical to the box's record except that x1v is the STRETCHED grid's own cell centres
 // rather than a uniform reconstruction, so a reader must take x1v from the file (the box
-// reader already does).
+// reader already does), and except for the two corrections above, which the box's own
+// writer (box_convection.cpp:BoxConvProfileDump) does NOT have: it is plane-parallel with
+// etotgrav off in every input that uses it, where slot 6 is already right, and its slot 7
+// carries the same general-EOS defect.  Left untouched there on purpose: the box's
+// productions are compared against their own archived records.
 constexpr int kNProf = 8;        // see the slot list above
 Real prof_dt_ = 0.0;             // <= 0 disables it
 Real prof_next_ = -1.0;
@@ -1142,6 +1169,25 @@ void RedGiantProfileDump(Mesh *pm) {
   auto &area1 = pmbp->pcoord->area.x1f;
   auto &ccellp = pmbp->pcoord->cos_cell;
   const bool cs_p = pm->use_cubed_sphere;
+  // slots 6 and 7: the internal energy has to come out of u0 the way ConToPrim takes it
+  // out -- with the gnomonic kinetic energy, the magnetic energy and, under
+  // <hydro>/etotgrav, rho*Phi -- and the pressure out of wder, because under a general
+  // EOS the primitive slot IPR holds the internal energy instead.  See the layout above.
+  auto phicc = is_mhd ? pmbp->pmhd->phicc0 : pmbp->phydro->phicc0;
+  auto bcc = is_mhd ? pmbp->pmhd->bcc0 : pmbp->phydro->w0;   // unread unless is_mhd
+  auto wder_p = is_mhd ? pmbp->pmhd->wder : pmbp->phydro->wder;
+  const bool etg_p = is_mhd ? pmbp->pmhd->use_etotgrav : pmbp->phydro->use_etotgrav;
+  const bool cgen_p = pmbp->phydro != nullptr ? pmbp->phydro->peos->eos_data.IsGeneral()
+                                              : pmbp->pmhd->peos->eos_data.IsGeneral();
+  const Real gm1_p = (is_mhd ? pmbp->pmhd->peos->eos_data.gamma
+                             : pmbp->phydro->peos->eos_data.gamma) - 1.0;
+  // slot 5 in KELVIN.  Hydro::wtemp is the CODE temperature the root find returned --
+  // k_B T/(mu_ref m_u) in code energy per unit mass -- and EOS_Data::temp_cgs is the
+  // kelvin per unit of it (eos.cpp:281, = temperature_cgs()/mu, so the <units>/mu cancels
+  // and on a cgs <units> block it is m_u/k_B = 1.2027e-8).  Dumping wtemp raw made slot 5
+  // 8.31e7 times the kelvin its comment promised.
+  const Real tcgs_p = is_mhd ? pmbp->pmhd->peos->eos_data.temp_cgs
+                             : pmbp->phydro->peos->eos_data.temp_cgs;
   auto pd = prof_d_;
   Kokkos::TeamPolicy<> policy(DevExeSpace(), nx1, Kokkos::AUTO);
   Kokkos::parallel_for("rg_prof", policy,
@@ -1159,18 +1205,22 @@ void RedGiantProfileDump(Mesh *pm) {
       const Real v1 = w0(m,IVX,k,j,i);
       const Real v2 = w0(m,IVY,k,j,i);
       const Real v3 = w0(m,IVZ,k,j,i);
-      const Real pg = w0(m,IPR,k,j,i);
+      const Real pg = cgen_p ? wder_p(m,IDPR,k,j,i) : w0(m,IPR,k,j,i)*gm1_p;
       // the kinetic energy on THIS grid's basis (the gnomonic tangents are not
       // orthogonal to each other), the same form CsKinetic uses
       const Real cc = cs_p ? ccellp(m,k,j) : 0.0;
-      const Real ke = 0.5*d*(v1*v1 + v2*v2 + v3*v3 + 2.0*cc*v2*v3);
-      const Real ei = u0(m,IEN,k,j,i) - ke;
+      // the internal energy exactly as ConToPrim extracts it: EintFromCons subtracts the
+      // metric kinetic energy, the magnetic energy and rho*Phi (the last only under
+      // etotgrav, which is what slot 6 used to be wrong by)
+      const Real emag = is_mhd ? MagEnergyCC(bcc, m, k, j, i) : 0.0;
+      const Real ei = EintFromCons(u0, m, k, j, i, cc, cs_p, etg_p,
+                                   etg_p ? phicc(m,k,j,i) : 0.0, emag);
       ls.the_array[0] += aw*d;
       ls.the_array[1] += aw*v1;
       ls.the_array[2] += aw*d*v1;
       ls.the_array[3] += aw*v1*v1;
       ls.the_array[4] += aw*(v2*v2 + v3*v3 + 2.0*cc*v2*v3);
-      ls.the_array[5] += aw*wt(m,k,j,i);
+      ls.the_array[5] += aw*(tcgs_p*wt(m,k,j,i));
       ls.the_array[6] += aw*ei;
       ls.the_array[7] += aw*v1*(ei + pg);
       ls.the_array[8] += aw;
