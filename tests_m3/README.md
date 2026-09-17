@@ -143,7 +143,9 @@ Still a failure (the `tests_1d` D(iii) number was `L_out/L = 8.6e5`; the conditi
 buys two orders but not the gate).  With the production `rt_rad_force = true`
 (`he_gA`) the run collapses exactly as `tests_1d/gA.log` reported: `dt` falls to 2e-13,
 `t` sticks at 58.5 s, and `rt_use_cons gave a non-positive internal energy in 36 cell
-reads`.  5 turnovers is unreachable, so the `eos_fail`/mass-drift gates cannot be read.
+reads`.  It does not die -- it WEDGES: left running to cycle 700 it is still at
+`t = 58.5 s` with `dt = 3e-13` and `L_rad,out/L = 9.5e+06`.  5 turnovers is unreachable,
+so the `eos_fail`/mass-drift gates cannot be read.
 
 **Why it is not the solver.**  Backward Euler must converge in `dt`, and it does.  Mode 3,
 `thomas`, mixed 0, warm 0, `rt_rad_force = false`, all run to `t = 250 s`:
