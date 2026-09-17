@@ -2294,7 +2294,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // ghosts, since the boundary cells feed the wall flux -- not merely on the domain.
     // A first line of defence, not a guarantee: cells can still wander out as the
     // atmosphere relaxes.
-    if (opac_lR_lo_ > -1.0e29) {
+    // ...and it is about the TABLE, so a run whose opacity is problem/kappa_const
+    // never touches it: the window is then not a statement about anything.
+    if (opac_lR_lo_ > -1.0e29 && !(kconst > 0.0)) {
       auto &x1v_chk = pmbp->pcoord->x1v;
       auto hx1v = Kokkos::create_mirror_view(x1v_chk);
       Kokkos::deep_copy(hx1v, x1v_chk);

@@ -3957,7 +3957,17 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
       const bool md_f = pm->multi_d, td_f = pm->three_d;
       const bool fverb = radforce && (rt_force_verbose > 0);
       if (fverb) --rt_force_verbose;
+      // problem/rt_force_verbose normalises the cell balance by g.  rt_force_grav is a
+      // CONSTANT (the pgen's GM/r_in^2), which on a global radial domain is not the
+      // gravity any cell feels -- at the He star's photosphere it is 4x the local value,
+      // so both the printed accelerations and the residual were mis-scaled.  Use the
+      // LOCAL g(r) that the force itself works against, and keep rt_force_grav only as
+      // the fallback for a mesh with no radius (the plane-parallel box).
       const Real gver = rt_force_grav;
+      auto cfv_ = (rt_cf_ptr != nullptr) ? *rt_cf_ptr
+                : DvceArray4D<Real>("rt_cf_dummy", 1, 1, 1, 1);
+      const bool cfv_on = (rt_cf_ptr != nullptr);
+      const Real apo_ = ap;             // the orbit's a; the print shadows `ap` below
       const int vcyc = pm->ncycle;
       auto eos_f = eos;
       // problem/rt_budget_verbose: the v.f work accumulator (see rt_bud_ptr)
@@ -4470,12 +4480,14 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
           Kokkos::printf("rt_apply i=%d T=%.4e d=%.4e e=%.4e Fb=%.6e Ft=%.6e "
                          "divF=%.14e srcraw=%.14e src=%.4e Qs=%.4e Em=%.4e "
                          "lamdt=%.4e de=%.4e "
-                         "de/e=%.4e tau=%.4e w=%.4e dx=%.4e\n",
+                         "de/e=%.4e tau=%.4e w=%.4e dx=%.4e "
+                         "Ab=%.6e At=%.6e Ac=%.6e V=%.6e\n",
                          i, T_g(m,k,j,i), rhoN(m,k,j,i), ei, Fb, Ft,
-                         -(Ft-Fb)/DX1(m,k,j,i), srcraw, src, Qs, Em,
+                         -(Ft*aft_a-Fb*afb_a)/VLA(m,k,j,i), srcraw, src, Qs, Em,
                          (Em > 0.0 && ei > 0.0) ? 4.0*Em/ei*bdt : 0.0,
                          de, de/ei, taublend ? tauf_g(m,k,j,i) : 0.0,
-                         taublend ? w_g(m,k,j,i) : 0.0, DX1(m,k,j,i));
+                         taublend ? w_g(m,k,j,i) : 0.0, DX1(m,k,j,i),
+                         afb_a, aft_a, ACC(m,k,j,i), VLA(m,k,j,i));
         }
         // ---- rt_cell_report ---------------------------------------------------
         if (report_on && outer_last) {
@@ -4678,7 +4690,11 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
             eos_f.tbl.EvalNoMu(rhoN(m,k,j,i-1), T_g(m,k,j,i-1), sm);
             eos_f.tbl.EvalNoMu(rhoN(m,k,j,i+1), T_g(m,k,j,i+1), sp);
             const Real ap = -(sp.p - sm.p)/((X1V(m,i+1) - X1V(m,i-1))*rho);
-            const Real gg = (gver > 0.0) ? gver : 1.0;
+            const Real gloc = !pp_
+                ? EffGravAt(grav, apo_, X1V(m,i), grav_pmass, omega,
+                            cfv_on ? cfv_(m,k,j,3) : 0.0, tide)
+                : gver;
+            const Real gg = (gloc > 0.0) ? gloc : ((gver > 0.0) ? gver : 1.0);
             Kokkos::printf("### rt_force ncycle=%d i=%d rho=%.4e T=%.4e w=%.4f "
                            "a_p/g=%.6e a_f/g=%.6e a_prgw/g=%.6e resid/g=%.6e "
                            "F=%.4e kap=%.4e\n",
