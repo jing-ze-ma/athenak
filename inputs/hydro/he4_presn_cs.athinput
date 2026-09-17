@@ -135,11 +135,10 @@ wb_cache_every      = 0          # REBUILD EVERY STAGE.  A stale background nume
 isotropic_conduction = radiative
 rad_kappa_src        = table_rho # the He Rosseland table is on (T, rho)
 rad_kappa_fac        = 1.0
-rad_flux_inner       = 1.305278e15  # L/(4 pi x1min^2).  With the 20/300 handover above,
-                                 # w = 1 at the bottom face and the CONDUCTION operator owns
-                                 # the deep interior, so the luminosity enters at the
-                                 # conduction wall face and problem/rt_bottom_flux is false
-                                 # (the two would double count).  Requires inner_bc = wall.
+rad_flux_inner       = 0.0       # MUST be 0 with inner_bc = open: the luminosity enters as
+                                 # the ENTROPY of the inflow, and both would double count.
+                                 # (Under the 20/300 handover it becomes 1.305278e15 with
+                                 # inner_bc = wall and rt_bottom_flux = false; see above.)
 rad_flux_limit       = true
 # --- THE OPTICAL-DEPTH HANDOVER.  20/300, NOT the He box's whole-column 1e5/1e6.
 # The grey two-stream's spherical form (commit 1159a8f3) transports J = A I with source
@@ -165,8 +164,22 @@ rad_flux_limit       = true
 # = 1.28); 50/1000 leaves w = 0.69 at the bottom face and the interior still on the sweep.
 # rt_impl_mixed = 0 and ck_nquad = 4 were measured and change the face budget by nothing at
 # all, so the deficit is the spherical form and not the column solver.
-rad_tau_lo  = 20.0
-rad_tau_hi  = 300.0
+# STATUS 2026-09-17: 20/300 is NOT YET THE DEFAULT.  Its t = 0 budget is much better than
+# the whole-column blend's, but the only DYNAMICAL test of it so far is WORSE: arm BH
+# (tests_3d/handover/BH, 20/300 + inner_bc = wall + mlt_alpha = 0, the pure-transport test)
+# dt-collapsed at t = 1242 s = 0.26 turnovers against arm B's 1723 s = 0.36, one node
+# DEEPER (r/R = 0.633, the FeCZ base, vs 0.672), with 1.1e6 dfloor hits where arm B had
+# none, and L_out/L falling monotonically 0.93 -> 0.34 with no floor where arm B recovered
+# and held 0.66-0.72.  The reading is that the live conduction operator carries more flux
+# INTO the FeCZ base while the top still cannot transport it away.  Arm DH (the same with
+# mlt_alpha = 1.5, so the Schwarzschild-unstable residual is supplied) is the run that
+# decides whether 20/300 becomes the default; until it passes, this file keeps the
+# whole-column blend so that the shipped configuration is the one with the longer life.
+rad_tau_lo  = 1.0e5              # WHOLE-COLUMN TWO-STREAM, as in the He box: the deepest
+rad_tau_hi  = 1.0e6              # cell has tau = 362, so w(tau) = 0 on every face, the
+                                 # radial diffusion operator is inert and the grey
+                                 # two-stream owns all 96 cells.  Its cost is the budget
+                                 # hole documented above; its virtue is that it lives longer.
 rad_implicit_x1      = true      # inert under that blend, but it is what makes the blend
 rad_x1_uform         = true      # safe to move; u-form + one Picard correction for
 rad_x1_kiter         = 2         # d ln kappa/d ln T (worst-face error 50 % -> 5 % on He)
@@ -240,13 +253,14 @@ column_dump = column_he4_ic.txt  # the IC, for comparison against column_he4_pre
 # structure at all -- they only enter the gradient and convective velocity REPORTED in
 # column_dump (and problem/vpert_mlt, which is off).  They are kept at the values the
 # MESA model was computed with so the report is meaningful.
-mlt_alpha    = 1.5               # ON.  With the 20/300 handover the only uncarried flux
-                                 # left at t = 0 is 0.09-0.26 of L over 0.72-0.90 R, and
-                                 # those shells are Schwarzschild-UNSTABLE (x > 0 above
-                                 # 0.63 R), so the shell-mean deficit closure below is
-                                 # entitled to supply it and hands over as the resolved flow
-                                 # takes the load.  Under 1e5/1e6 the hole was in the STABLE
-                                 # layer and no convective closure could legally fill it.
+mlt_alpha    = 0.0               # convection RESOLVED, not modelled.  Set to 1.5 TOGETHER
+                                 # with the 20/300 handover (see the block above): the
+                                 # residual that handover leaves at t = 0 (0.09-0.26 of L
+                                 # over 0.72-0.90 R) is in Schwarzschild-UNSTABLE shells,
+                                 # which is what the shell-mean deficit closure exists to
+                                 # supply.  Under the whole-column blend the hole was in the
+                                 # STABLE layer instead and no convective closure could
+                                 # legally fill it -- see tests_3d/mlt/README.md, arm D.
 mlt_alpha_ic = 1.5
 ic_tau_rad   = 10.0
 # The SUB-GRID convective flux (problem/mlt_alpha > 0) and its hand-over to the resolved
@@ -284,10 +298,9 @@ vpert_seed  = 1234
 # inflow.  Outer: hydrostatic continuation at the top cell's own temperature, OUTFLOW ONLY
 # -- at kappa F/(c g) = 1.23 the outer layers are unbound and a wall would build a
 # standing jump.
-inner_bc    = wall               # WALL, not open: the luminosity now enters through the
-                                 # conduction wall face as hydro/rad_flux_inner above.  The
-                                 # deep relaxation (s_relax_cs/cp) is retained below but is
-                                 # inert at a wall.
+inner_bc    = open               # Arms BH/DH use inner_bc = wall together with the 20/300
+                                 # handover and hydro/rad_flux_inner (see the block above);
+                                 # the deep relaxation s_relax_cs/cp below is inert at a wall.
 s_relax_cs  = 0.1
 s_relax_cp  = 0.3
 outer_bc    = open
