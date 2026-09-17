@@ -173,8 +173,16 @@ rad_flux_limit       = true
 # and held 0.66-0.72.  The reading is that the live conduction operator carries more flux
 # INTO the FeCZ base while the top still cannot transport it away.  Arm DH (the same with
 # mlt_alpha = 1.5, so the Schwarzschild-unstable residual is supplied) is the run that
-# decides whether 20/300 becomes the default; until it passes, this file keeps the
-# whole-column blend so that the shipped configuration is the one with the longer life.
+# decided it, and it FAILED HARDER: DH died at t = 998 s = 0.21 turnovers, the worst of the
+# four arms run on this grid (DH 0.21 < BH 0.26 < B 0.36 = D 0.36), by a one-cycle
+# detonation at r/R = 0.662 -- dt 4.94 s -> 7.2e-15 s in a single step, the cell on BOTH
+# floors with v1 = -9.4e22 cm/s, and the cut face passing 8.0e3 times its share of L.  So
+# 20/300 has two dynamical tests against it and none for it, and this file keeps the
+# whole-column blend.  The suspected mechanism, NOT confirmed: the MLT deficit closure
+# subtracts the BLENDED conduction flux (F_cond = w*F_raddiff, verified in the t = 0 dumps)
+# while the two-stream contributes its UNBLENDED flux at the same face, so around w ~ 0.94
+# the same flux is handed in twice at the cut.  If the handover is retried, that double
+# count is the first thing to fix.  See tests_3d/handover/README.md.
 rad_tau_lo  = 1.0e5              # WHOLE-COLUMN TWO-STREAM, as in the He box: the deepest
 rad_tau_hi  = 1.0e6              # cell has tau = 362, so w(tau) = 0 on every face, the
                                  # radial diffusion operator is inert and the grey
@@ -260,7 +268,11 @@ mlt_alpha    = 0.0               # convection RESOLVED, not modelled.  Set to 1.
                                  # which is what the shell-mean deficit closure exists to
                                  # supply.  Under the whole-column blend the hole was in the
                                  # STABLE layer instead and no convective closure could
-                                 # legally fill it -- see tests_3d/mlt/README.md, arm D.
+                                 # legally fill it -- see tests_3d/mlt/README.md, arm D.  MEASURED 2026-09-17: doing so on
+                                 # the 20/300 handover (arm DH) is WORSE than not doing it
+                                 # (arm BH) -- 0.21 turnovers against 0.26, with 19 FOFC
+                                 # fallbacks and a one-cycle detonation at the handover
+                                 # radius.  See tests_3d/handover/README.md.
 mlt_alpha_ic = 1.5
 ic_tau_rad   = 10.0
 # The SUB-GRID convective flux (problem/mlt_alpha > 0) and its hand-over to the resolved
