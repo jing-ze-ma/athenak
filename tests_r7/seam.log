@@ -1,0 +1,120 @@
+=========== ARM s_novfill : mesh/cs_vertex_fill=false
+### FATAL ERROR in /viper/u2/jinma/ATHENAK/bench/wt_he4/src/parameter_input.cpp at line 390
+srun: Terminating StepId=11782395.0
+=========== ARM s_nofofc : hydro/fofc=false
+### dt COLLAPSE cycle=678 time=5.556441e+03 dtold=6.317161e-02 dt=1.381459e-02 | hydro=1.381459e-02 mhd=-1.000000e+00 cond=8.988466e+306 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+    hydro dt is set by cell (m,k,j,i) = (2,5,6,92) gid = 2
+    r=2.364004e+11 rho=5.756750e-10 T=2.629264e+14 p=8.235797e+09 cs=1.435971e+10 v=(1.000000e+08,2.777140e+03,2.667527e+04)
+elapsed=7.075770e+01 cycle=700 time=5.557173e+03 dt=4.027881e-02
+### dt COLLAPSE cycle=712 time=5.557590e+03 dtold=6.619569e-02 dt=1.470043e-02 | hydro=1.470043e-02 mhd=-1.000000e+00 cond=8.988466e+306 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+    hydro dt is set by cell (m,k,j,i) = (4,6,4,92) gid = 4
+    r=2.364004e+11 rho=5.640983e-10 T=2.629264e+14 p=6.181998e+09 cs=1.348863e+10 v=(9.974941e+07,7.341075e+05,-7.116867e+06)
+### dt COLLAPSE cycle=718 time=5.557811e+03 dtold=4.803147e-02 dt=1.106010e-02 | hydro=1.106010e-02 mhd=-1.000000e+00 cond=8.988466e+306 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+    hydro dt is set by cell (m,k,j,i) = (5,4,3,92) gid = 5
+    r=2.364004e+11 rho=6.480511e-10 T=2.629264e+14 p=2.517368e+10 cs=1.796089e+10 v=(9.997714e+07,-2.150818e+06,-2.429756e+05)
+### dt COLLAPSE cycle=745 time=5.558494e+03 dtold=8.875623e-02 dt=9.360535e-03 | hydro=9.360535e-03 mhd=-1.000000e+00 cond=8.988466e+306 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+    hydro dt is set by cell (m,k,j,i) = (3,4,4,92) gid = 3
+    r=2.364004e+11 rho=1.026155e-09 T=2.629264e+14 p=1.390802e+11 cs=2.124039e+10 v=(9.974036e+07,3.590793e+05,7.206150e+06)
+elapsed=8.176887e+01 cycle=800 time=5.559675e+03 dt=1.319558e-02
+### dt COLLAPSE cycle=823 time=5.560329e+03 dtold=5.992793e-02 dt=1.243429e-02 | hydro=1.243429e-02 mhd=-1.000000e+00 cond=8.988466e+306 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+    hydro dt is set by cell (m,k,j,i) = (2,4,5,92) gid = 2
+    r=2.364004e+11 rho=7.391856e-10 T=2.339868e+14 p=3.270213e+10 cs=1.596488e+10 v=(9.996875e+07,-1.378547e+06,-2.033453e+06)
+### dt COLLAPSE cycle=863 time=5.562657e+03 dtold=9.142332e-02 dt=9.319953e-03 | hydro=9.319953e-03 mhd=-1.000000e+00 cond=8.988466e+306 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+    hydro dt is set by cell (m,k,j,i) = (0,4,3,92) gid = 0
+    r=2.364004e+11 rho=8.792526e-10 T=2.629264e+14 p=9.627429e+10 cs=2.133307e+10 v=(9.998235e+07,-3.176281e+05,1.817735e+06)
+Terminating on wall clock limit
+time=5.562786e+03 cycle=875
+=========== ARM s_dc : hydro/reconstruct=dc
+elapsed=7.649349e+00 cycle=0 time=0.000000e+00 dt=1.292915e+01
+elapsed=1.554813e+01 cycle=100 time=1.270806e+03 dt=1.252927e+01
+elapsed=2.355478e+01 cycle=200 time=2.519932e+03 dt=1.235892e+01
+elapsed=3.234480e+01 cycle=300 time=3.723523e+03 dt=1.165940e+01
+elapsed=4.089297e+01 cycle=400 time=4.840853e+03 dt=1.052822e+01
+elapsed=4.991139e+01 cycle=500 time=5.553782e+03 dt=5.938401e-01
+elapsed=6.110162e+01 cycle=600 time=5.596298e+03 dt=3.957154e-01
+### dt COLLAPSE cycle=603 time=5.597291e+03 dtold=2.384408e-01 dt=5.755051e-02 | hydro=5.755051e-02 mhd=-1.000000e+00 cond=8.988466e+306 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+    hydro dt is set by cell (m,k,j,i) = (2,6,4,97) gid = 2
+    r=2.396513e+11 rho=1.072891e-09 T=1.017500e+14 p=3.395002e+09 cs=3.153213e+09 v=(9.999231e+07,3.524626e+05,-1.227794e+06)
+elapsed=7.250610e+01 cycle=700 time=5.599754e+03 dt=2.856133e-02
+elapsed=8.386268e+01 cycle=800 time=5.602507e+03 dt=2.832741e-02
+Terminating on wall clock limit
+time=5.604015e+03 cycle=855
+=========== ARM s_wenoz : hydro/reconstruct=wenoz
+### FATAL ERROR in /viper/u2/jinma/ATHENAK/bench/wt_he4/src/hydro/hydro.cpp at line 305
+srun: Terminating StepId=11782395.3
+=========== ARM a8 : mesh/nx2=8 mesh/nx3=8 meshblock/nx2=8 meshblock/nx3=8
+elapsed=7.777492e+00 cycle=0 time=0.000000e+00 dt=1.292915e+01
+elapsed=2.088522e+01 cycle=100 time=1.270806e+03 dt=1.252927e+01
+elapsed=3.420980e+01 cycle=200 time=2.519932e+03 dt=1.235892e+01
+elapsed=4.804440e+01 cycle=300 time=3.723523e+03 dt=1.165940e+01
+elapsed=6.218913e+01 cycle=400 time=4.840854e+03 dt=1.052821e+01
+elapsed=7.666965e+01 cycle=500 time=5.560403e+03 dt=6.799992e-01
+Terminating on wall clock limit
+time=5.586112e+03 cycle=580
+=========== ARM r64 : mesh/nx1=64 meshblock/nx1=64
+elapsed=7.289774e+00 cycle=0 time=0.000000e+00 dt=1.939427e+01
+elapsed=1.432215e+01 cycle=100 time=1.818258e+03 dt=1.740474e+01
+elapsed=2.127910e+01 cycle=200 time=3.545665e+03 dt=1.682394e+01
+elapsed=2.823618e+01 cycle=300 time=5.104794e+03 dt=1.405753e+01
+### dt COLLAPSE cycle=387 time=5.890281e+03 dtold=2.590538e+00 dt=5.250880e-01 | hydro=5.250880e-01 mhd=-1.000000e+00 cond=8.988466e+306 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+    hydro dt is set by cell (m,k,j,i) = (0,6,4,26) gid = 0
+    r=1.905969e+11 rho=2.559309e-09 T=8.977044e+13 p=3.427267e+09 cs=1.336236e+09 v=(6.872990e+07,1.991664e+05,-3.377394e+04)
+elapsed=3.620120e+01 cycle=400 time=5.900404e+03 dt=1.154911e+00
+### dt COLLAPSE cycle=422 time=5.921601e+03 dtold=7.285797e-01 dt=1.448285e-01 | hydro=1.448285e-01 mhd=-1.000000e+00 cond=8.988466e+306 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+    hydro dt is set by cell (m,k,j,i) = (3,3,3,64) gid = 3
+    r=2.382136e+11 rho=5.034035e-10 T=1.714681e+14 p=1.217235e+07 cs=1.943763e+09 v=(7.855235e+07,-8.129991e+04,-3.573917e+05)
+### dt COLLAPSE cycle=428 time=5.924642e+03 dtold=3.651517e-01 dt=5.775867e-02 | hydro=5.775867e-02 mhd=-1.000000e+00 cond=8.988466e+306 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+    hydro dt is set by cell (m,k,j,i) = (0,6,4,66) gid = 0
+    r=2.401121e+11 rho=6.753770e-10 T=1.309202e+14 p=2.018510e+09 cs=4.663248e+09 v=(1.000000e+08,-2.755587e+01,-1.088615e+03)
+elapsed=4.623394e+01 cycle=500 time=5.927866e+03 dt=3.293475e-02
+elapsed=5.634216e+01 cycle=600 time=5.930948e+03 dt=2.775535e-02
+elapsed=6.644619e+01 cycle=700 time=5.933830e+03 dt=2.780262e-02
+elapsed=7.653793e+01 cycle=800 time=5.936294e+03 dt=2.309051e-02
+elapsed=8.660642e+01 cycle=900 time=5.938228e+03 dt=1.702794e-02
+Terminating on wall clock limit
+time=5.938799e+03 cycle=934
+=========== ARM r144 : mesh/nx1=144 meshblock/nx1=144
+elapsed=7.799971e+00 cycle=0 time=0.000000e+00 dt=8.620116e+00
+elapsed=1.635992e+01 cycle=100 time=8.579830e+02 dt=8.530728e+00
+elapsed=2.479877e+01 cycle=200 time=1.707208e+03 dt=8.451694e+00
+elapsed=3.326755e+01 cycle=300 time=2.544570e+03 dt=8.273278e+00
+elapsed=4.196647e+01 cycle=400 time=3.359173e+03 dt=8.003180e+00
+elapsed=5.042955e+01 cycle=500 time=4.142816e+03 dt=7.652194e+00
+elapsed=5.947300e+01 cycle=600 time=4.887636e+03 dt=7.234226e+00
+elapsed=6.884456e+01 cycle=700 time=5.587646e+03 dt=6.676435e+00
+Terminating on time limit
+time=6.120000e+03 cycle=784
+                                  
+================================= 
+Global information about the job: 
+================================= 
+  
+Job owner: jinma(28895)
+Job name:  r7_seam
+Node list: vipa1001
+Job start: Thu Sep 17 21:38:31 CEST 2026
+Job end:   Thu Sep 17 21:46:07 CEST 2026
+Work dir:  /viper/u2/jinma/ATHENAK/bench/wt_he4/tests_r7
+Command:   /viper/u2/jinma/ATHENAK/bench/wt_he4/tests_r7/seam1d.sh
+  
+  
+  
+==========================================================================================
+Information on jobsteps (Note: MaxRSS/AveRSS is the maximum/average over all 
+tasks of the per-task memory high-water marks; cf. "man sacct"): 
+==========================================================================================
+  
+JobID            JobName NNodes NTasks  NCPUS       MaxRSS       AveRSS    Elapsed ExitCode
+------------- ---------- ------ ------ ------ ------------ ------------ ---------- --------
+11782395         r7_seam      1            16                             00:07:36      0:0
+11782395.0     athena_v2      1      1     16       35.31M       35.31M   00:00:01      1:0
+11782395.1     athena_v2      1      1     16      939.96M      939.96M   00:01:31      0:0
+11782395.2     athena_v2      1      1     16      940.26M      940.26M   00:01:33      0:0
+11782395.3     athena_v2      1      1     16       36.37M       36.37M   00:00:08      1:0
+11782395.4     athena_v2      1      1     16      941.15M      941.15M   00:01:31      0:0
+11782395.5     athena_v2      1      1     16      939.32M      939.32M   00:01:33      0:0
+11782395.6     athena_v2      1      1     16      936.06M      936.06M   00:01:18      0:0
+  
+Maximum memory per node: 0.986863 GB (defined as MaxRSS*Ntasks/NNodes)
+CPU utilization: 12.0 %
+  

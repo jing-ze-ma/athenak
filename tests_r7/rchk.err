@@ -1,0 +1,15 @@
+Loading openmpi_gpu/5.0
+  Loading requirement: openmpi/5.0
+[2026-09-17T22:00:41.772] error: *** JOB 11782880 ON vipa1001 CANCELLED AT 2026-09-17T22:00:41 DUE to SIGNAL Terminated ***
+Traceback (most recent call last):
+  File "/viper/u2/jinma/ATHENAK/bench/wt_he4/tests_r7/cmphst.py", line 20, in <module>
+    a, b = load(sys.argv[1]), load(sys.argv[2])
+  File "/viper/u2/jinma/ATHENAK/bench/wt_he4/tests_r7/cmphst.py", line 12, in load
+    for ln in open(fn):
+FileNotFoundError: [Errno 2] No such file or directory: '/viper/u2/jinma/ATHENAK/bench/wt_he4/tests_r7/rc_newF_cont/he4.hydro.hst'
+Traceback (most recent call last):
+  File "/viper/u2/jinma/ATHENAK/bench/wt_he4/tests_r7/firstline.py", line 11, in <module>
+    a, b = load(sys.argv[1]), load(sys.argv[2])
+  File "/viper/u2/jinma/ATHENAK/bench/wt_he4/tests_r7/firstline.py", line 8, in load
+    return [[float(x) for x in ln.split()] for ln in open(fn) if not ln.startswith('#')]
+FileNotFoundError: [Errno 2] No such file or directory: '/viper/u2/jinma/ATHENAK/bench/wt_he4/tests_r7/rc_newF_cont/he4.hydro.hst'

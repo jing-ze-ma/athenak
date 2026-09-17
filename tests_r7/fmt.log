@@ -1,0 +1,66 @@
+old mlt_alpha=0 rst: total 14338
+drwxr-xr-x 2 jinma mpa    4096 Sep 17 22:03 .
+drwxr-xr-x 5 jinma mpa    4096 Sep 17 22:03 ..
+-rw-r--r-- 1 jinma mpa 2968901 Sep 17 22:03 he4.00000.rst
+-rw-r--r-- 1 jinma mpa 2968901 Sep 17 22:03 he4.00001.rst
+-rw-r--r-- 1 jinma mpa 2968901 Sep 17 22:03 he4.00002.rst
+-rw-r--r-- 1 jinma mpa 2968901 Sep 17 22:03 he4.00003.rst
+-rw-r--r-- 1 jinma mpa 2968901 Sep 17 22:03 he4.00004.rst
+-rw-r--r-- 1 jinma mpa 2968901 Sep 17 22:03 he4.00005.rst
+-rw-r--r-- 1 jinma mpa 2968901 Sep 17 22:03 he4.00006.rst
+new mlt_alpha=0 rst: total 14338
+drwxr-xr-x 2 jinma mpa    4096 Sep 17 22:03 .
+drwxr-xr-x 5 jinma mpa    4096 Sep 17 22:03 ..
+-rw-r--r-- 1 jinma mpa 2968901 Sep 17 22:03 he4.00000.rst
+-rw-r--r-- 1 jinma mpa 2968901 Sep 17 22:03 he4.00001.rst
+-rw-r--r-- 1 jinma mpa 2968901 Sep 17 22:03 he4.00002.rst
+-rw-r--r-- 1 jinma mpa 2968901 Sep 17 22:03 he4.00003.rst
+-rw-r--r-- 1 jinma mpa 2968901 Sep 17 22:03 he4.00004.rst
+-rw-r--r-- 1 jinma mpa 2968901 Sep 17 22:03 he4.00005.rst
+-rw-r--r-- 1 jinma mpa 2968901 Sep 17 22:03 he4.00006.rst
+=== cmp of the two mlt_alpha=0 restart files (must be identical) ===
+/viper/u2/jinma/ATHENAK/bench/wt_he4/tests_r7/fmt_old/rst/he4.00001.rst /viper/u2/jinma/ATHENAK/bench/wt_he4/tests_r7/fmt_new/rst/he4.00001.rst differ: byte 31018, line 365
+=== the new binary reads the OLD binary's file (mlt_alpha=0) ===
+Terminating on cycle limit
+time=104.735 cycle=8
+=== the new binary reads the OLD binary's file WITH mlt_alpha=1.5 (must warn) ===
+### red_giant: this restart file carries no MLT closure state; the relaxed profile is re-seeded (expect a kick if problem/mlt_relax_time > 0)
+Terminating on cycle limit
+time=103.802 cycle=8
+=== the OLD binary reads a NEW mlt_alpha=1.5 file (must FAIL cleanly or be refused) ===
+### FATAL ERROR in /viper/u2/jinma/ATHENAK/bench/wt_he4/src/pgen/pgen.cpp at line 313
+CC data size read from restart file not equal to size of Hydro, MHD, Rad, and/or Z4c arrays, restart file is broken.
+srun: Terminating StepId=11782995.5
+                                  
+================================= 
+Global information about the job: 
+================================= 
+  
+Job owner: jinma(28895)
+Job name:  r7_fmt
+Node list: vipa1001
+Job start: Thu Sep 17 22:03:28 CEST 2026
+Job end:   Thu Sep 17 22:04:23 CEST 2026
+Work dir:  /viper/u2/jinma/ATHENAK/bench/wt_he4/tests_r7
+Command:   /viper/u2/jinma/ATHENAK/bench/wt_he4/tests_r7/fmt.sh
+  
+  
+  
+==========================================================================================
+Information on jobsteps (Note: MaxRSS/AveRSS is the maximum/average over all 
+tasks of the per-task memory high-water marks; cf. "man sacct"): 
+==========================================================================================
+  
+JobID            JobName NNodes NTasks  NCPUS       MaxRSS       AveRSS    Elapsed ExitCode
+------------- ---------- ------ ------ ------ ------------ ------------ ---------- --------
+11782995          r7_fmt      1            16                             00:00:55      0:0
+11782995.0     athena_v2      1      1     16       34.38M       34.38M   00:00:09      0:0
+11782995.1     athena_v3      1      1     16       35.38M       35.38M   00:00:09      0:0
+11782995.2     athena_v3      1      1     16       36.37M       36.37M   00:00:09      0:0
+11782995.3     athena_v3      1      1     16       36.37M       36.37M   00:00:10      0:0
+11782995.4     athena_v3      1      1     16       35.37M       35.37M   00:00:09      0:0
+11782995.5     athena_v2      1      1     16       36.37M       36.37M   00:00:08      1:0
+  
+Maximum memory per node: 0.038139 GB (defined as MaxRSS*Ntasks/NNodes)
+CPU utilization: 0.0 %
+  

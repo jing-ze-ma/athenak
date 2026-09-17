@@ -1,0 +1,32 @@
+=== athena_v2 against ITSELF, two runs ===
+/viper/u2/jinma/ATHENAK/bench/wt_he4/tests_r7/fmt_ctla/rst/he4.00001.rst /viper/u2/jinma/ATHENAK/bench/wt_he4/tests_r7/fmt_ctlb/rst/he4.00001.rst differ: byte 31018, line 365
+sizes 2968901 2968901 ndiff 21 range (31017, 31052)
+                                  
+================================= 
+Global information about the job: 
+================================= 
+  
+Job owner: jinma(28895)
+Job name:  r7_fmt2
+Node list: vipa1001
+Job start: Thu Sep 17 22:06:25 CEST 2026
+Job end:   Thu Sep 17 22:06:47 CEST 2026
+Work dir:  /viper/u2/jinma/ATHENAK/bench/wt_he4/tests_r7
+Command:   /viper/u2/jinma/ATHENAK/bench/wt_he4/tests_r7/fmt2.sh
+  
+  
+  
+==========================================================================================
+Information on jobsteps (Note: MaxRSS/AveRSS is the maximum/average over all 
+tasks of the per-task memory high-water marks; cf. "man sacct"): 
+==========================================================================================
+  
+JobID            JobName NNodes NTasks  NCPUS       MaxRSS       AveRSS    Elapsed ExitCode
+------------- ---------- ------ ------ ------ ------------ ------------ ---------- --------
+11783054         r7_fmt2      1            16                             00:00:22      0:0
+11783054.0     athena_v2      1      1     16       35.38M       35.38M   00:00:10      0:0
+11783054.1     athena_v2      1      1     16       35.38M       35.38M   00:00:10      0:0
+  
+Maximum memory per node: 0.037096 GB (defined as MaxRSS*Ntasks/NNodes)
+CPU utilization: 0.0 %
+  
