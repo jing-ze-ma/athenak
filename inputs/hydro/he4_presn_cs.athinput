@@ -135,19 +135,49 @@ wb_cache_every      = 0          # REBUILD EVERY STAGE.  A stale background nume
 isotropic_conduction = radiative
 rad_kappa_src        = table_rho # the He Rosseland table is on (T, rho)
 rad_kappa_fac        = 1.0
-rad_flux_inner       = 0.0       # MUST be 0 with inner_bc = open: the luminosity enters as
-                                 # the ENTROPY of the inflow, and both would double count
+rad_flux_inner       = 1.305278e15  # L/(4 pi x1min^2).  With the 20/300 handover above,
+                                 # w = 1 at the bottom face and the CONDUCTION operator owns
+                                 # the deep interior, so the luminosity enters at the
+                                 # conduction wall face and problem/rt_bottom_flux is false
+                                 # (the two would double count).  Requires inner_bc = wall.
 rad_flux_limit       = true
-rad_tau_lo  = 1.0e5              # WHOLE-COLUMN TWO-STREAM, as in the He box: the deepest
-rad_tau_hi  = 1.0e6              # cell has tau = 362, so w(tau) = 0 on every face, the
-                                 # radial diffusion operator is inert and the grey
-                                 # two-stream owns all 96 cells
+# --- THE OPTICAL-DEPTH HANDOVER.  20/300, NOT the He box's whole-column 1e5/1e6.
+# The grey two-stream's spherical form (commit 1159a8f3) transports J = A I with source
+# A B, which is EXACT in the transparent limit but adds a spurious term in the DIFFUSION
+# limit: with J = A I the scheme's implied intensity equation is
+#     mu dI/dr = -kappa rho (I - B) - 2 mu I/r,
+# so its two-stream first moment gives F_2s = -(mu/(kappa rho)) [dB/dr + 2B/r] and
+#     F_2s/F_exact = 1 - H_T/(2 r),     H_T = T/|dT/dr|,
+# while the exact first moment (Eddington f = 1/3) has no such term.  Deep in this star
+# H_T/r is 0.3-1.7, so the error is O(1) and can change sign; MEASURED on the arm-D t = 0
+# budget (tests_3d/mlt/D/mltfaces_D.txt) the prediction matches F_2s/F_raddiff to 1-4 % at
+# every face from 0.50 to 0.98 R.  With 1e5/1e6 the two-stream owned all 96 cells and
+# carried only 0.10-0.74 of L over 0.55-0.90 R; arms A, B and D all died at r/R = 0.672,
+# t = 1723 s, in the Schwarzschild-STABLE layer where that hole sat.
+# 20/300 hands the interior back to Rosseland diffusion, which carries 0.85-1.07 of L on
+# the same state.  MEASURED t = 0 budget (tests_3d/handover/H1): (F_cond + (1-w) F_2s)/F_req
+# = 0.99 over 0.50-0.67 R -- the stable-layer hole is CLOSED -- and 0.74-0.91 over
+# 0.72-0.90 R, which is a Schwarzschild-UNSTABLE layer, i.e. the residual is the convective
+# flux the shell-mean MLT closure below exists to supply.  Above tau = 20, where the
+# two-stream owns the column, 1 - H_T/(2r) is 0.96-0.97, so the spherical-form error there
+# is 3-4 %.  5/50 and 50/1000 were both measured and are worse (tests_3d/handover/README):
+# 5/50 pins w = 1 out to 0.94 R, into the regime where Rosseland is invalid (F_raddiff/F_req
+# = 1.28); 50/1000 leaves w = 0.69 at the bottom face and the interior still on the sweep.
+# rt_impl_mixed = 0 and ck_nquad = 4 were measured and change the face budget by nothing at
+# all, so the deficit is the spherical form and not the column solver.
+rad_tau_lo  = 20.0
+rad_tau_hi  = 300.0
 rad_implicit_x1      = true      # inert under that blend, but it is what makes the blend
 rad_x1_uform         = true      # safe to move; u-form + one Picard correction for
 rad_x1_kiter         = 2         # d ln kappa/d ln T (worst-face error 50 % -> 5 % on He)
-rad_blend_transverse = false     # MUST be false with the whole-column blend, or the
-                                 # transverse conductances are multiplied by w = 0 and
-                                 # horizontal radiative transport is switched off entirely
+rad_blend_transverse = false     # OPEN QUESTION, left as it was.  This value was chosen
+                                 # for the WHOLE-COLUMN blend, where w = 0 everywhere and
+                                 # true would have switched horizontal radiative transport
+                                 # off entirely.  With the LIVE 20/300 blend above w is ~1
+                                 # in the deep interior, so false now means the transverse
+                                 # conductances are UNWEIGHTED there.  It does not affect
+                                 # the radial face budget and was not changed, but the
+                                 # right value for a live blend has not been measured.
 rad_gate_rho         = 4.97e-10  # = eos_rad_rho_lo: no transverse diffusion below the
                                  # density at which the two-stream owns the radiation
 # --- THE TRANSVERSE OPERATOR.  The IMPLICIT (ADI/lod2) transverse radiative diffusion,
@@ -210,7 +240,13 @@ column_dump = column_he4_ic.txt  # the IC, for comparison against column_he4_pre
 # structure at all -- they only enter the gradient and convective velocity REPORTED in
 # column_dump (and problem/vpert_mlt, which is off).  They are kept at the values the
 # MESA model was computed with so the report is meaningful.
-mlt_alpha    = 0.0
+mlt_alpha    = 1.5               # ON.  With the 20/300 handover the only uncarried flux
+                                 # left at t = 0 is 0.09-0.26 of L over 0.72-0.90 R, and
+                                 # those shells are Schwarzschild-UNSTABLE (x > 0 above
+                                 # 0.63 R), so the shell-mean deficit closure below is
+                                 # entitled to supply it and hands over as the resolved flow
+                                 # takes the load.  Under 1e5/1e6 the hole was in the STABLE
+                                 # layer and no convective closure could legally fill it.
 mlt_alpha_ic = 1.5
 ic_tau_rad   = 10.0
 # The SUB-GRID convective flux (problem/mlt_alpha > 0) and its hand-over to the resolved
@@ -248,7 +284,10 @@ vpert_seed  = 1234
 # inflow.  Outer: hydrostatic continuation at the top cell's own temperature, OUTFLOW ONLY
 # -- at kappa F/(c g) = 1.23 the outer layers are unbound and a wall would build a
 # standing jump.
-inner_bc    = open
+inner_bc    = wall               # WALL, not open: the luminosity now enters through the
+                                 # conduction wall face as hydro/rad_flux_inner above.  The
+                                 # deep relaxation (s_relax_cs/cp) is retained below but is
+                                 # inert at a wall.
 s_relax_cs  = 0.1
 s_relax_cp  = 0.3
 outer_bc    = open
@@ -289,7 +328,10 @@ rt_rad_force       = true
 # injects the luminosity as the entropy of the inflow and the two would double count.  It
 # is listed (not left to its default) so that the 1-D relaxation run, which uses
 # inner_bc = wall and must inject L somewhere, can switch it on from the command line.
-rt_bottom_flux     = false
+rt_bottom_flux     = false       # FALSE, and now for a different reason: with the 20/300
+                                 # handover w = 1 at the bottom face, so the two-stream's
+                                 # own lower boundary is below its cut and the luminosity
+                                 # enters at the conduction wall (hydro/rad_flux_inner)
 rt_force_verbose   = 0
 # OPERATOR SPLITTING: the radiation operator is Strang-split around the time integrator
 # (dt/2 before, dt/2 after) instead of applied once per RK stage.
