@@ -568,6 +568,20 @@ Real lstar_cgs_ = 0.0;   // L [erg/s], for the physical cap F_mlt <= L/(4 pi r^2
 // expand.  Ramping over a few sound-crossing times of the convection zone lets the
 // stratification follow the source instead of being shocked by it.
 Real mlt_ramp_ = 0.0;
+// problem/mlt_ramp_down_time [s], 0 = off, and problem/mlt_hold_time [s]: the HAND-OVER
+// to resolved convection.  mlt_ramp_time only ramps the subgrid flux UP, which is what a
+// 1-D column that has to carry L for ever needs; a 3-D run wants the opposite -- the
+// subgrid flux carries the convective luminosity from t = 0, while the seed grows, and
+// is then withdrawn so that the resolved flow has to take the load.  The applied flux is
+// multiplied by 1 for t <= mlt_hold_time and falls linearly to 0 at
+// mlt_hold_time + mlt_ramp_down_time.  (The shell-mean closure already hands over
+// PHYSICALLY -- it asks only for the deficit F_req - F_cond - F_2s - F_resolved, so it
+// shrinks on its own as the resolved flux grows -- but that hand-over is a fixed point of
+// the run, not a controlled one: if the resolved flow stalls, the subgrid flux simply
+// keeps carrying L for ever and the run never tests whether convection has started.  The
+// ramp-down forces the question at a time of the user's choosing.)
+Real mlt_ramp_dn_ = 0.0;
+Real mlt_hold_ = 0.0;
 // problem/mlt_x_thr: the superadiabaticity above which the MLT AMPLITUDE is trusted.
 // On the shell mean the deep convection zone sits on the adiabat to ~1e-6 in grad, and
 // the SIGN of that difference is round-off: face by face it alternates, and the old
@@ -1277,6 +1291,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   mlt_dump_ = pin->GetOrAddString("problem", "mlt_dump", "");
   mlt_mean_ = pin->GetOrAddBoolean("problem", "mlt_mean", true);
   mlt_ramp_ = pin->GetOrAddReal("problem", "mlt_ramp_time", 0.0);
+  mlt_ramp_dn_ = pin->GetOrAddReal("problem", "mlt_ramp_down_time", 0.0);
+  mlt_hold_ = pin->GetOrAddReal("problem", "mlt_hold_time", 0.0);
   mlt_x_thr_ = pin->GetOrAddReal("problem", "mlt_x_thr", 1.0e-4);
   mlt_relax_ = pin->GetOrAddReal("problem", "mlt_relax_time", 1.0e4);
   // the shell mean indexes cells by their GLOBAL radial position, so a MeshBlock that
@@ -3382,8 +3398,20 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
     }
     // problem/mlt_ramp_time: fade the applied flux in, so the cut region heats over
     // that time instead of in one step (see the declaration).
-    const Real ramp = (mlt_ramp_ > 0.0)
-                      ? fmin(1.0, pm->time*tunit/mlt_ramp_) : 1.0;
+    Real ramp = (mlt_ramp_ > 0.0)
+                ? fmin(1.0, pm->time*tunit/mlt_ramp_) : 1.0;
+    // problem/mlt_ramp_down_time / mlt_hold_time: the hand-over to resolved convection
+    // (see the declaration).  Off by default, so nothing above changes.
+    if (mlt_ramp_dn_ > 0.0) {
+      const Real tdn = pm->time*tunit - mlt_hold_;
+      ramp *= (tdn <= 0.0) ? 1.0
+              : ((tdn >= mlt_ramp_dn_) ? 0.0 : (1.0 - tdn/mlt_ramp_dn_));
+    }
+    if (global_variable::my_rank == 0 && mlt_ramp_dn_ > 0.0
+        && pm->ncycle % 100 == 0) {
+      std::cout << "### red_giant: MLT subgrid flux fraction = " << ramp
+                << " at t = " << pm->time*tunit << " s" << std::endl;
+    }
     par_for("rg_mlt_flux", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       fconv(m,k,j,i) = 0.0;

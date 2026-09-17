@@ -213,6 +213,22 @@ column_dump = column_he4_ic.txt  # the IC, for comparison against column_he4_pre
 mlt_alpha    = 0.0
 mlt_alpha_ic = 1.5
 ic_tau_rad   = 10.0
+# The SUB-GRID convective flux (problem/mlt_alpha > 0) and its hand-over to the resolved
+# flow.  Listed here, not left to their defaults, so tests_3d/mlt can switch them on from
+# the command line.  mlt_alpha = 1.5 turns on the shell-mean closure (mlt_mean, the
+# default): each radial face is asked for the DEFICIT L/(4 pi r^2) - F_conduction -
+# F_two-stream - F_resolved, so it hands over to resolved convection on its own; the
+# ramp-down withdraws it on a schedule regardless.  mlt_tau_lo/hi are the per-column
+# path's tau taper and are UNUSED under mlt_mean.
+mlt_mean           = true
+mlt_dump           = mltfaces.txt  # the t = 0 face budget: F_req, F_cond, F_2s,
+                                 # F_resolved, the deficit D and F_used, per face
+mlt_relax_time     = 1.0e4       # 2 turnovers: follow the mean of the resolved flux,
+                                 # not its flicker
+mlt_ramp_time      = 0.0         # no ramp-UP: the ic was built with alpha = 1.5, so the
+                                 # deficit at t = 0 is the flux the column already assumes
+mlt_hold_time      = 0.0         # hand-over: full subgrid flux until this time ...
+mlt_ramp_down_time = 0.0         # ... then linearly to zero over this time.  0 = held.
 # --- THE SEED.  Chart-free (cubic harmonics + random plane waves in Cartesian position,
 # so no panel, block or rank enters it) at Mach 1e-3 of the local sound speed, windowed on
 # the FeCZ in OPTICAL DEPTH: tau 300 (just above the zone's 349 bottom) to tau 20 (just
