@@ -1,0 +1,13 @@
+n=16 L_exp_16                     amp= 0.99638  L1= 0.02514  Linf=  0.0475  edge=  0.0475  interior=    0.03
+n=16 L_sts_16                     amp= 0.99503  L1= 0.02438  Linf= 0.03755  edge= 0.03755  interior= 0.03051
+|sum V de|/sum V|de| = 1.831665e-05
+n=16 L_adi_16                     amp= 0.99489  L1= 0.02457  Linf= 0.03744  edge= 0.03744  interior= 0.03164
+|sum V de|/sum V|de| = 1.868048e-05
+n=32 L_exp_32                     amp= 0.99966  L1= 0.03391  Linf= 0.04492  edge= 0.04391  interior= 0.04492
+n=32 L_sts_32                     amp= 0.99672  L1= 0.02445  Linf= 0.03799  edge= 0.03799  interior= 0.03405
+|sum V de|/sum V|de| = 2.139308e-06
+n=32 L_adi_32                     amp= 0.99665  L1= 0.02462  Linf= 0.03946  edge= 0.03946  interior=  0.0343
+|sum V de|/sum V|de| = 1.320816e-06
+n=64 L_exp_64                     amp= 1.00032  L1= 0.09571  Linf= 0.08951  edge= 0.08806  interior= 0.08951
+n=64 L_sts_64                     amp= 0.99715  L1= 0.02443  Linf=  0.0354  edge= 0.03477  interior=  0.0354
+|sum V de|/sum V|de| = 7.825905e-07
