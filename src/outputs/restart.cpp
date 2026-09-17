@@ -16,6 +16,7 @@
 #include <sstream>
 #include <string>
 #include <utility> // make_pair
+#include <vector>
 
 #include "athena.hpp"
 #include "coordinates/cell_locations.hpp"
@@ -29,6 +30,7 @@
 #include "z4c/z4c.hpp"
 #include "radiation/radiation.hpp"
 #include "srcterms/turb_driver.hpp"
+#include "pgen/pgen.hpp"
 //#include "outputs.hpp"
 
 //----------------------------------------------------------------------------------------
@@ -159,6 +161,13 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   TurbulenceDriver* pturb=pm->pmb_pack->pturb;
   z4c::Z4c* pz4c = pm->pmb_pack->pz4c;
   adm::ADM* padm = pm->pmb_pack->padm;
+  // the OPTIONAL, MARKED pgen state block (see ProblemGenerator::pgen_rst_write_func).
+  // Empty -- which is every problem generator but red_giant with problem/mlt_alpha > 0 --
+  // and not one byte is written, so the file layout is exactly what it always was.
+  std::vector<char> pgen_state;
+  if (pm->pgen != nullptr && pm->pgen->pgen_rst_write_func != nullptr) {
+    pgen_state = (pm->pgen->pgen_rst_write_func)();
+  }
   int nhydro=0, nmhd=0, nrad=0, nforce=3, nz4c=0, nadm=0, nco=0;
   if (phydro != nullptr) {
     nhydro = phydro->nhydro + phydro->nscalars;
@@ -273,6 +282,14 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
       resfile.Write_any_type(&(pturb->rstate), sizeof(RNG_State), "byte",
                              single_file_per_rank);
     }
+    // the pgen's own relaxed state, marker then length then payload
+    if (!pgen_state.empty()) {
+      IOWrapperSizeT nb = pgen_state.size();
+      resfile.Write_any_type(&(kPgenRstMagic[0]), sizeof(kPgenRstMagic), "byte",
+                             single_file_per_rank);
+      resfile.Write_any_type(&nb, sizeof(IOWrapperSizeT), "byte", single_file_per_rank);
+      resfile.Write_any_type(pgen_state.data(), nb, "byte", single_file_per_rank);
+    }
   }
 
   //--- STEP 4.  All ranks write data over all MeshBlocks (5D arrays) in parallel
@@ -326,6 +343,9 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   IOWrapperSizeT step3size = 3*nco*sizeof(Real);
   if (pz4c != nullptr) step3size += sizeof(Real);
   if (pturb != nullptr) step3size += sizeof(RNG_State);
+  if (!pgen_state.empty()) {
+    step3size += sizeof(kPgenRstMagic) + sizeof(IOWrapperSizeT) + pgen_state.size();
+  }
 
   // write cell-centered variables in parallel
   IOWrapperSizeT offset_myrank = (step1size + step2size + step3size

@@ -15,6 +15,21 @@
 #include "geodesic-grid/spherical_grid.hpp"
 #include "parameter_input.hpp"
 
+// --- PGEN STATE IN THE RESTART FILE.  A problem generator that carries RELAXED internal
+// state -- red_giant's shell-mean MLT profile fmlt1d, which follows the shell flux
+// deficit over problem/mlt_relax_time -- has to store it, or every restart re-seeds that
+// state from scratch and hits the star with an impulse (measured: the radial kinetic
+// energy jumped 2.5-4.6x in the one history interval containing the restart,
+// bench/wt_he4/tests_r6/README.md section 3).  The block is OPTIONAL and MARKED: a pgen
+// that leaves `pgen_rst_write_func` null writes nothing at all, so every restart file
+// this code has ever written is unchanged and still readable.  The reader peeks eight
+// bytes; when they are not the marker they are the variable data size that follows in
+// the old layout, and nothing has been lost.
+using PgenRestartStateFnPtr = std::vector<char> (*)();
+// eight bytes that cannot be a plausible IOWrapperSizeT (the data size that occupies this
+// position in a file without the block is O(1e6), i.e. five leading zero bytes)
+constexpr char kPgenRstMagic[8] = {'P', 'G', 'E', 'N', 'S', 'T', '0', '1'};
+
 using ProblemFinalizeFnPtr = void (*)(ParameterInput *pin, Mesh *pm);
 using UserBoundaryFnPtr = void (*)(Mesh* pm);
 using UserSrctermFnPtr = void (*)(Mesh* pm, const Real bdt);
@@ -111,6 +126,12 @@ class ProblemGenerator {
   UserSrctermFnPtr user_rt_before_flux=nullptr;
   UserRefinementFnPtr user_ref_func=nullptr;
   UserHistoryFnPtr user_hist_func=nullptr;
+  // the two halves of the optional pgen state block (see kPgenRstMagic).  A pgen enrols
+  // `pgen_rst_write_func` to have its bytes stored by every restart output, and consumes
+  // `pgen_rststate` -- the bytes a restart read back, empty when the file carried none --
+  // from its own restart path.
+  PgenRestartStateFnPtr pgen_rst_write_func=nullptr;
+  std::vector<char> pgen_rststate;
   // called once per cycle after Mesh::NewTimeStep in Driver::Execute
   UserCycleFnPtr user_cycle_func=nullptr;
   // problem/work_hist (box_convection): the per-operator work probe.  Tag 4 is called

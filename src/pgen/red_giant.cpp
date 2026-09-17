@@ -122,6 +122,8 @@
 
 #include <cmath>
 #include <cstdio>
+#include <cstdint>
+#include <cstring>
 #include <fstream>
 #include <iostream>
 #include <limits>
@@ -632,6 +634,71 @@ DvceArray2D<Real> fmean_;   // (i, 17): the 1D closure's diagnostics, cgs
 DvceArray2D<Real> fdiag_;   // (i, 8): grad, grad_ad, H_p, c_p, v, F, F_cap, F_used
 DvceArray4D<Real> fconv_; // its radial face flux, code units, (m,k,j,i) on x1 faces
 DvceArray4D<Real> taumlt_;  // cell-centred Rosseland tau from the top, (m,k,j,i)
+
+//----------------------------------------------------------------------------------------
+//! \brief the MLT closure's RELAXED STATE for the restart file (kPgenRstMagic in
+//! pgen.hpp).  fmlt1d and mlt_relax_seeded_ are the only state the closure carries
+//! between calls -- shell_, fmean_, fdiag_, taumlt_ and fconv_ are all rebuilt from the
+//! current solution every call -- and without them a restart re-seeds fmlt1d to the
+//! instantaneous target and the applied subgrid flux jumps by a factor 1.5-7 in one step,
+//! which kicks the star (tests_r6/README.md section 3).  Layout: int32 nface, int32
+//! seeded, then nface Reals, in the pgen's own code flux units.  Enrolled only when
+//! problem/mlt_alpha > 0, so no other configuration writes a block at all.
+
+std::vector<char> RedGiantMltRestartState() {
+  std::vector<char> out;
+  if (!(mlt_alpha_ > 0.0) || fmlt1d_.extent_int(0) <= 0) return out;
+  const int nf = fmlt1d_.extent_int(0);
+  auto hf = Kokkos::create_mirror_view(fmlt1d_);
+  Kokkos::deep_copy(hf, fmlt1d_);
+  const std::int32_t hdr[2] = {static_cast<std::int32_t>(nf),
+                               static_cast<std::int32_t>(mlt_relax_seeded_ ? 1 : 0)};
+  out.resize(sizeof(hdr) + nf*sizeof(Real));
+  std::memcpy(out.data(), &(hdr[0]), sizeof(hdr));
+  std::vector<Real> tmp(nf);
+  for (int i = 0; i < nf; ++i) tmp[i] = hf(i);
+  std::memcpy(out.data() + sizeof(hdr), tmp.data(), nf*sizeof(Real));
+  return out;
+}
+
+//----------------------------------------------------------------------------------------
+//! \brief the other half: put a restart's stored profile back into fmlt1d_.  Tolerates
+//! its absence (a file written with problem/mlt_alpha = 0, or by any older binary) and
+//! refuses a profile of the wrong length rather than reading past it -- a restart onto a
+//! different radial grid has no business reusing a face-by-face profile.
+
+void RedGiantMltRestartRestore(const std::vector<char> &blk) {
+  if (!(mlt_alpha_ > 0.0) || fmlt1d_.extent_int(0) <= 0) return;
+  const int nf = fmlt1d_.extent_int(0);
+  if (blk.size() < 2*sizeof(std::int32_t)) {
+    if (global_variable::my_rank == 0) {
+      std::cout << "### red_giant: this restart file carries no MLT closure state; the "
+                << "relaxed profile is re-seeded (expect a kick if "
+                << "problem/mlt_relax_time > 0)" << std::endl;
+    }
+    return;
+  }
+  std::int32_t hdr[2];
+  std::memcpy(&(hdr[0]), blk.data(), sizeof(hdr));
+  if (hdr[0] != nf || blk.size() != sizeof(hdr) + nf*sizeof(Real)) {
+    std::cout << "### FATAL ERROR in red_giant: the restart file's MLT closure profile "
+              << "has " << hdr[0] << " faces and " << blk.size() << " bytes, this run "
+              << "has " << nf << " faces.  Restarting a problem/mlt_alpha > 0 run onto a "
+              << "different radial grid is not supported: set problem/mlt_relax_time = 0 "
+              << "or start from scratch." << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  std::vector<Real> tmp(nf);
+  std::memcpy(tmp.data(), blk.data() + sizeof(hdr), nf*sizeof(Real));
+  auto hf = Kokkos::create_mirror_view(fmlt1d_);
+  for (int i = 0; i < nf; ++i) hf(i) = tmp[i];
+  Kokkos::deep_copy(fmlt1d_, hf);
+  mlt_relax_seeded_ = (hdr[1] != 0);
+  if (global_variable::my_rank == 0) {
+    std::cout << "### red_giant: MLT closure state read from the restart file ("
+              << nf << " faces, seeded = " << mlt_relax_seeded_ << ")" << std::endl;
+  }
+}
 
 KOKKOS_INLINE_FUNCTION Real GravAt(const Real gm, const Real r) {
   return gm/(r*r);
@@ -1946,6 +2013,11 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     Kokkos::realloc(shell_, n1m1+2, 13);
     Kokkos::realloc(fmlt1d_, n1m1+2);
     Kokkos::realloc(fmean_, n1m1+2, 17);
+    // the relaxed profile goes into, and comes out of, the restart file (see
+    // RedGiantMltRestartState).  Enrolled only here, so a run with problem/mlt_alpha = 0
+    // writes no block and every other pgen's restart format is untouched.
+    pgen_rst_write_func = RedGiantMltRestartState;
+    if (restart) RedGiantMltRestartRestore(pgen_rststate);
   }
 
   // --- the initial column: fine grid in r from below the inner ghosts to above the
