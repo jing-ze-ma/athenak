@@ -922,6 +922,240 @@ void RGNanScan(Mesh *pm, const char *opname) {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn RedGiantSurfaceDump
+//! \brief append one record of the EMERGENT TOP-FACE FLUX per angular cell.
+//!
+//! The spherical reading of box_convection.cpp's rt_surface dump (:899-955): there the
+//! columns are vertical and the record is F_top(x2, x3); here they are radial and the
+//! record is F_top per angular cell of every cubed-sphere panel, all panels concatenated.
+//! Every MeshBlock spans the whole radius (the mode-3 and mlt_mean checks enforce it), so
+//! the i = ie+1 face of every block IS the top of the star and every rank owns whole
+//! columns; each row therefore carries its OWN panel and (x2, x3) cell centre and the
+//! reader never has to reconstruct the decomposition.  Record layout: see surf_file_.
+//!
+//! Called immediately after the two-stream, so what is written is the flux the solver has
+//! just produced, on the state it was handed.  Diagnostic only.
+
+void RedGiantSurfaceDump(Mesh *pm) {
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  auto &indcs = pm->mb_indcs;
+  const int ie = indcs.ie, js = indcs.js, ks = indcs.ks;
+  const int nx2 = indcs.nx2, nx3 = indcs.nx3;
+  const int nmb = pmbp->nmb_thispack;
+  const int ncol = nmb*nx3*nx2;
+  if (!surf_alloc_ || surf_d_.extent_int(0) != ncol) {
+    Kokkos::realloc(surf_d_, ncol, 4);
+    Kokkos::realloc(surf_h_, ncol, 4);
+    surf_alloc_ = true;
+  }
+  auto fb = two_stream_rt::rt_face_flux();
+  const int nblk = two_stream_rt::rt_face_nblk();
+  auto &size = pmbp->pmb->mb_size;
+  auto &mbpanel = pmbp->pmb->mb_panel;
+  const bool cs_s = pm->use_cubed_sphere;
+  auto sd = surf_d_;
+  par_for("rg_surf", DevExeSpace(), 0, ncol-1, KOKKOS_LAMBDA(const int idx) {
+    const int m = idx/(nx3*nx2);
+    const int kj = idx - m*(nx3*nx2);
+    const int kk = kj/nx2;
+    const int jj = kj - kk*nx2;
+    Real ft = 0.0;
+    for (int b=0; b<nblk; ++b) ft += fb(m,b,ie+1,ks+kk,js+jj);
+    sd(idx,0) = cs_s ? static_cast<Real>(mbpanel.d_view(m)) : -1.0;
+    sd(idx,1) = CellCenterX(jj, nx2, size.d_view(m).x2min, size.d_view(m).x2max);
+    sd(idx,2) = CellCenterX(kk, nx3, size.d_view(m).x3min, size.d_view(m).x3max);
+    sd(idx,3) = ft;
+  });
+  Kokkos::deep_copy(surf_h_, surf_d_);
+
+  std::vector<double> mine(4*ncol);
+  for (int n=0; n<ncol; ++n) {
+    for (int c=0; c<4; ++c) mine[4*n+c] = static_cast<double>(surf_h_(n,c));
+  }
+  std::vector<double> all;
+  int ntot = ncol;
+#if MPI_PARALLEL_ENABLED
+  const int nr = global_variable::nranks;
+  std::vector<int> cnt(nr, 0), disp(nr, 0);
+  int mycnt = 4*ncol;
+  MPI_Gather(&mycnt, 1, MPI_INT, cnt.data(), 1, MPI_INT, 0, MPI_COMM_WORLD);
+  int tot = 0;
+  for (int r=0; r<nr; ++r) {
+    disp[r] = tot;
+    tot += cnt[r];
+  }
+  all.resize((global_variable::my_rank == 0) ? tot : 1);
+  MPI_Gatherv(mine.data(), mycnt, MPI_DOUBLE, all.data(), cnt.data(), disp.data(),
+              MPI_DOUBLE, 0, MPI_COMM_WORLD);
+  ntot = tot/4;
+#else
+  all.swap(mine);
+#endif
+  if (global_variable::my_rank != 0) return;
+  FILE *pf = std::fopen(surf_file_, "ab");
+  if (pf == nullptr) {
+    std::cout << "### FATAL ERROR in red_giant: cannot append to "
+              << "problem/rt_surface_file '" << surf_file_ << "'" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  const int64_t n64 = static_cast<int64_t>(ntot);
+  const double tnow = static_cast<double>(pm->time);
+  std::fwrite(&n64, sizeof(int64_t), 1, pf);
+  std::fwrite(&tnow, sizeof(double), 1, pf);
+  std::fwrite(all.data(), sizeof(double), 4*ntot, pf);
+  std::fclose(pf);
+  return;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn RedGiantSurfaceTick
+//! \brief the cadence guard for the surface dump (problem/rt_surface_dt).  pm->time does
+//! not move between RK stages, so advancing surf_next_ PAST it here is what makes the
+//! dump fire once per cycle rather than once per stage.
+
+void RedGiantSurfaceTick(Mesh *pm) {
+  if (!(surf_dt_ > 0.0) || !two_stream_rt::rt_face_flux_ready()) return;
+  if (surf_next_ < 0.0) surf_next_ = pm->time;
+  if (pm->time >= surf_next_) {
+    RedGiantSurfaceDump(pm);
+    while (surf_next_ <= pm->time) surf_next_ += surf_dt_;
+  }
+  return;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn RedGiantProfileDump
+//! \brief append one record of the SHELL-AVERAGED radial profile.
+//!
+//! The spherical reading of box_convection.cpp's rt_profile dump (:981-1050).  The
+//! average is AREA WEIGHTED, with the weight the cell's own radial face area: on the
+//! cubed sphere the gnomonic cells differ in area by a factor ~4 between panel centre and
+//! corner, so a plain cell count would be a different average at every radius.  One team
+//! per radial index reduces over that shell's (m, k, j); the weighted SUMS are gathered
+//! with MPI_Reduce and rank 0 divides by the summed weight (slot kNProf).
+//!
+//! Diagnostic only: it reads the primitives w0, the conserved energy u0(IEN) and the
+//! temperature Hydro::wtemp that ConsToPrim left, and writes nothing back.  Record
+//! layout: see prof_file_.
+
+void RedGiantProfileDump(Mesh *pm) {
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, js = indcs.js, ks = indcs.ks;
+  const int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
+  const int nmb = pmbp->nmb_thispack;
+  const int nkj = nmb*nx3*nx2;
+  const bool is_mhd = (pmbp->pmhd != nullptr);
+  if (!prof_alloc_ || prof_d_.extent_int(1) != nx1) {
+    Kokkos::realloc(prof_d_, kNProf+1, nx1);
+    Kokkos::realloc(prof_h_, kNProf+1, nx1);
+    prof_alloc_ = true;
+  }
+  auto &w0 = is_mhd ? pmbp->pmhd->w0 : pmbp->phydro->w0;
+  auto &u0 = is_mhd ? pmbp->pmhd->u0 : pmbp->phydro->u0;
+  auto wt = is_mhd ? pmbp->pmhd->wtemp : pmbp->phydro->wtemp;
+  auto &area1 = pmbp->pcoord->area.x1f;
+  auto &ccellp = pmbp->pcoord->cos_cell;
+  const bool cs_p = pm->use_cubed_sphere;
+  auto pd = prof_d_;
+  Kokkos::TeamPolicy<> policy(DevExeSpace(), nx1, Kokkos::AUTO);
+  Kokkos::parallel_for("rg_prof", policy,
+  KOKKOS_LAMBDA(Kokkos::TeamPolicy<>::member_type tmember) {
+    const int i = is + tmember.league_rank();
+    array_sum::GlobalSum sum;
+    Kokkos::parallel_reduce(Kokkos::TeamThreadRange(tmember, nkj),
+    [&](const int idx, array_sum::GlobalSum &ls) {
+      const int m = idx/(nx3*nx2);
+      const int kj = idx - m*(nx3*nx2);
+      const int k = ks + kj/nx2;
+      const int j = js + (kj - (kj/nx2)*nx2);
+      const Real aw = area1(m,k,j,i);          // the area weight of this angular cell
+      const Real d = w0(m,IDN,k,j,i);
+      const Real v1 = w0(m,IVX,k,j,i);
+      const Real v2 = w0(m,IVY,k,j,i);
+      const Real v3 = w0(m,IVZ,k,j,i);
+      const Real pg = w0(m,IPR,k,j,i);
+      // the kinetic energy on THIS grid's basis (the gnomonic tangents are not
+      // orthogonal to each other), the same form CsKinetic uses
+      const Real cc = cs_p ? ccellp(m,k,j) : 0.0;
+      const Real ke = 0.5*d*(v1*v1 + v2*v2 + v3*v3 + 2.0*cc*v2*v3);
+      const Real ei = u0(m,IEN,k,j,i) - ke;
+      ls.the_array[0] += aw*d;
+      ls.the_array[1] += aw*v1;
+      ls.the_array[2] += aw*d*v1;
+      ls.the_array[3] += aw*v1*v1;
+      ls.the_array[4] += aw*(v2*v2 + v3*v3 + 2.0*cc*v2*v3);
+      ls.the_array[5] += aw*wt(m,k,j,i);
+      ls.the_array[6] += aw*ei;
+      ls.the_array[7] += aw*v1*(ei + pg);
+      ls.the_array[8] += aw;
+    }, Kokkos::Sum<array_sum::GlobalSum>(sum));
+    Kokkos::single(Kokkos::PerTeam(tmember), [&]() {
+      for (int n=0; n<kNProf+1; ++n) pd(n, i-is) = sum.the_array[n];
+    });
+  });
+  Kokkos::fence();
+  Kokkos::deep_copy(prof_h_, prof_d_);
+
+  const int nq = (kNProf+1)*nx1;
+  std::vector<double> buf(nq);
+  for (int n=0; n<kNProf+1; ++n) {
+    for (int i=0; i<nx1; ++i) buf[n*nx1+i] = static_cast<double>(prof_h_(n,i));
+  }
+#if MPI_PARALLEL_ENABLED
+  std::vector<double> rbuf((global_variable::my_rank == 0) ? nq : 1);
+  MPI_Reduce(buf.data(), rbuf.data(), nq, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+  if (global_variable::my_rank == 0) buf.swap(rbuf);
+#endif
+  // the radial cell centres: the grid may be stretched, so they are read off the
+  // coordinates rather than reconstructed from the mesh extent as the box does
+  std::vector<double> x1v(nx1);
+  {
+    auto hx = Kokkos::create_mirror_view(pmbp->pcoord->x1v);
+    Kokkos::deep_copy(hx, pmbp->pcoord->x1v);
+    for (int i=0; i<nx1; ++i) x1v[i] = static_cast<double>(hx(0, is+i));
+  }
+  if (global_variable::my_rank != 0) return;
+  for (int i=0; i<nx1; ++i) {
+    const double wsum = buf[kNProf*nx1+i];
+    const double fn = (wsum > 0.0) ? 1.0/wsum : 0.0;
+    for (int n=0; n<kNProf; ++n) buf[n*nx1+i] *= fn;
+  }
+  FILE *pfp = std::fopen(prof_file_, "ab");
+  if (pfp == nullptr) {
+    std::cout << "### FATAL ERROR in red_giant: cannot append to "
+              << "problem/rt_profile_file '" << prof_file_ << "'" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  const double tnow = static_cast<double>(pm->time);
+  const int32_t n1 = static_cast<int32_t>(nx1);
+  const int32_t nv = static_cast<int32_t>(kNProf);
+  std::fwrite(&tnow, sizeof(double), 1, pfp);
+  std::fwrite(&n1, sizeof(int32_t), 1, pfp);
+  std::fwrite(&nv, sizeof(int32_t), 1, pfp);
+  std::fwrite(x1v.data(), sizeof(double), nx1, pfp);
+  std::fwrite(buf.data(), sizeof(double), kNProf*nx1, pfp);
+  std::fclose(pfp);
+  return;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn RedGiantProfileTick
+//! \brief the cadence guard for the profile dump (problem/rt_profile_dt).  Called from
+//! the top of the source term, so the record is the start-of-cycle state; pm->time does
+//! not move between stages, so advancing prof_next_ past it fires this once per cycle.
+
+void RedGiantProfileTick(Mesh *pm) {
+  if (!(prof_dt_ > 0.0)) return;
+  if (prof_next_ < 0.0) prof_next_ = pm->time;
+  if (pm->time >= prof_next_) {
+    RedGiantProfileDump(pm);
+    while (prof_next_ <= pm->time) prof_next_ += prof_dt_;
+  }
+  return;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RedGiantRTSweep
 //! \brief the band/grey two-stream call itself, shared by the in-stage source term and
 //! the operator-split entry point (problem/rt_strang, rt_once_per_cycle) so that the two
@@ -1195,6 +1429,46 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                 << "the whole radius: set meshblock/nx1 = mesh/nx1." << std::endl;
       std::exit(EXIT_FAILURE);
     }
+  }
+
+  // --- THE TWO DIAGNOSTIC DUMPS (problem/rt_surface_dt, problem/rt_profile_dt), ported
+  // from box_convection.cpp:2153-2178 and reinterpreted for a sphere.  See the
+  // declarations of surf_file_ and prof_file_ for the record layouts.  Both are OFF at
+  // dt <= 0, which is the default, and neither writes back to the state.
+  surf_dt_ = pin->GetOrAddReal("problem", "rt_surface_dt", 0.0);
+  {
+    const std::string sf = pin->GetOrAddString("problem", "rt_surface_file",
+                                               "rt_surface.bin");
+    if (sf.size() >= sizeof(surf_file_)) {
+      std::cout << "### FATAL ERROR in red_giant: problem/rt_surface_file is longer than "
+                << "255 characters" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    std::snprintf(surf_file_, sizeof(surf_file_), "%s", sf.c_str());
+  }
+  surf_next_ = -1.0;
+  surf_alloc_ = false;
+  prof_dt_ = pin->GetOrAddReal("problem", "rt_profile_dt", 0.0);
+  {
+    const std::string pf = pin->GetOrAddString("problem", "rt_profile_file",
+                                               "rt_profile.bin");
+    if (pf.size() >= sizeof(prof_file_)) {
+      std::cout << "### FATAL ERROR in red_giant: problem/rt_profile_file is longer than "
+                << "255 characters" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    std::snprintf(prof_file_, sizeof(prof_file_), "%s", pf.c_str());
+  }
+  prof_next_ = -1.0;
+  prof_alloc_ = false;
+  // the surface dump takes the i = ie+1 face of every block as the top of the star, and
+  // the profile indexes cells by their global radial position: both need whole columns
+  if ((surf_dt_ > 0.0 || prof_dt_ > 0.0) &&
+      pmy_mesh_->mesh_indcs.nx1 != pmy_mesh_->mb_indcs.nx1) {
+    std::cout << "### FATAL ERROR in red_giant: problem/rt_surface_dt and "
+              << "rt_profile_dt need every MeshBlock to span the whole radius: set "
+              << "meshblock/nx1 = mesh/nx1." << std::endl;
+    std::exit(EXIT_FAILURE);
   }
 
   // --- the CORRELATED-K two-stream for the optically thin layers
@@ -2563,6 +2837,9 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
   auto &size = pmbp->pmb->mb_size;
   const bool is_mhd = (pmbp->pmhd != nullptr);
   RedGiantFaceBudget(pm);
+  // problem/rt_profile_dt: the shell-averaged radial profile, once per cycle, on the
+  // state this routine inherits (the start-of-cycle state in stage 1)
+  RedGiantProfileTick(pm);
   // problem/nan_report call sites: one scan after each operator below that writes
   // u0(IEN).  The first is the state this routine INHERITS, i.e. everything RKUpdate
   // applied -- the hydro flux divergence and the conduction heat flux with it.
@@ -3609,6 +3886,8 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
   // cycle, and nothing else moves.
   if ((rt_ck_ || rt_grey_) && !rt_strang_ && !rt_once_) {
     RedGiantRTSweep(pm, bdt);
+    // problem/rt_surface_dt: the emergent top-face flux the sweep has just produced
+    RedGiantSurfaceTick(pm);
   }
   // --- the grey relaxation (see UserProblem): with weight 1 - w each cell
   // decays toward the Eddington temperature of its optical depth on its radiative time
@@ -3688,6 +3967,9 @@ void RedGiantRTSplit(Mesh *pm, Real bdt) {
       RGNanScan(pm, "RT_transverse_split");
     }
   }
+  // the per-angular-cell surface dump, once per cycle (pm->time does not move between
+  // the two Strang half steps, so the arming below fires on the first of them only)
+  RedGiantSurfaceTick(pm);
   return;
 }
 
