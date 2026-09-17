@@ -469,12 +469,21 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
       }
       // the cubed-sphere cross term adds four entries per face to the row; V_i = 1 off
       // a cubed sphere, so the Cartesian radius is bitwise what it was
-      Real xrad = 0.0;
-      if (csx) {
-        xrad = crad2(m,k,j,i) + crad2(m,k,j+1,i)
-             + crad3(m,k,j,i) + crad3(m,k+1,j,i);
+      // the CARTESIAN expression is kept VERBATIM in its own branch: adding a
+      // zero cross radius and dividing by an exact 1.0 are algebraic no-ops, but they
+      // change how the compiler contracts the product into an FMA, and this radius
+      // decides the substage count and the active-plane bracket
+      Real zi;
+      if (curv) {
+        Real xrad = 0.0;
+        if (csx) {
+          xrad = crad2(m,k,j,i) + crad2(m,k,j+1,i)
+               + crad3(m,k,j,i) + crad3(m,k+1,j,i);
+        }
+        zi = tau*(ai*sumc + sumca + xrad)/vol_(m,k,j,i);
+      } else {
+        zi = tau*(ai*sumc + sumca);
       }
-      const Real zi = tau*(ai*sumc + sumca + xrad)/vcell(m,k,j,i);
       if (isfinite(zi) && zi > 0.0) Kokkos::atomic_max(&zpl(i - isv), zi);
     });
     Kokkos::deep_copy(tr_zpl_h, zpl);
@@ -518,12 +527,17 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
       // the flux-divergence form of the RK update applies (see BuildAngularCoeffs).  On
       // a cubed sphere they carry the face AREA instead and the volume divides here, and
       // the metric cross term adds four entries per face to the row.
-      Real xrad = 0.0;
-      if (csx) {
-        xrad = crad2(m,k,j,i) + crad2(m,k,j+1,i)
-             + crad3(m,k,j,i) + crad3(m,k+1,j,i);
+      Real zi;
+      if (curv) {
+        Real xrad = 0.0;
+        if (csx) {
+          xrad = crad2(m,k,j,i) + crad2(m,k,j+1,i)
+               + crad3(m,k,j,i) + crad3(m,k+1,j,i);
+        }
+        zi = tau*(ai*sumc + sumca + xrad)/vol_(m,k,j,i);
+      } else {
+        zi = tau*(ai*sumc + sumca);
       }
-      const Real zi = tau*(ai*sumc + sumca + xrad)/vcell(m,k,j,i);
       if (isfinite(zi) && zi > zres) zres = zi;
     }, Kokkos::Max<Real>(zmax));
 #if MPI_PARALLEL_ENABLED
@@ -904,13 +918,26 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
             cl = (lnk3(m,k) && ai > 0.0 && alm > 0.0) ? c3(m,k,j,i) : 0.0;
             cr = (lnk3(m,k+1) && ai > 0.0 && alp > 0.0) ? c3(m,k+1,j,i) : 0.0;
           }
-          // the row of (I - thtau A_d): A_d carries the 1/V_i of the flux divergence,
-          // and V_i is exactly 1.0 off a cubed sphere
-          const Real vi = vcell(m,k,j,i);
-          Real dj = 1.0 + thtau*ai*(cl + cr)/vi;
+          // The row of (I - thtau A_d).  The three Cartesian statements are kept
+          // EXACTLY as they were, in exactly this order, and the curvilinear form is
+          // appended as an overwrite: A_d carries the 1/V_i of the flux divergence and
+          // V_i is exactly 1.0 off a cubed sphere, but neither dividing by that 1.0 nor
+          // hoisting the same expressions into an if/else is a compile no-op -- both
+          // change how the product contracts into an FMA, and MEASURED on the He-star
+          // FeCZ box (the production Cartesian configuration) that moves the last bit of
+          // the tridiagonal row and, through it, the solution.  This is the one hunk of
+          // this branch that broke the Cartesian bitwise regression; see tests_adi.
+          Real dj = 1.0 + thtau*ai*(cl + cr);
           if (!(dj > 0.0) || !isfinite(dj)) dj = 1.0;
-          Real aj = -thtau*cl*alm/vi;
-          Real cj = -thtau*cr*alp/vi;
+          Real aj = -thtau*cl*alm;
+          Real cj = -thtau*cr*alp;
+          if (curv) {
+            const Real thv = thtau/vol_(m,k,j,i);
+            dj = 1.0 + thv*ai*(cl + cr);
+            if (!(dj > 0.0) || !isfinite(dj)) dj = 1.0;
+            aj = -thv*cl*alm;
+            cj = -thv*cr*alp;
+          }
           if (!isfinite(aj)) aj = 0.0;
           if (!isfinite(cj)) cj = 0.0;
           Real e1 = 0.0, en = 0.0;

@@ -535,6 +535,11 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
 
   const Real blob_w = pin->GetOrAddReal("problem", "blob_width", 0.3);
   const Real amp_ = cs_amp, r0_ = cs_r0;
+  // iprob 15: the DEGREE of the harmonic the scalar-diffusion test starts from.  2 is
+  // the l = 2 combination of direction cosines this test has always used; 6 is the
+  // zonal P_6(cos), whose surface Laplacian is -42 f/r^2 -- a much shorter wavelength
+  // on the same grid, so it is the resolution-sensitive end of the operator.
+  const int lharm_ = pin->GetOrAddInteger("problem", "lharm", 2);
 
   auto &indcs = pmy_mesh_->mb_indcs;
   int &is = indcs.is; int &js = indcs.js; int &ks = indcs.ks;
@@ -642,7 +647,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       // the dump itself. Uses p0 as T0 (R = 1).
       Real cx, cy, cz;
       PanelToCart(mbpanel.d_view(m), xi, eta, cx, cy, cz);
-      const Real f = cx*cy + 0.7*cz*cx - 0.4*(cz*cz - 1.0/3.0);
+      Real f = cx*cy + 0.7*cz*cx - 0.4*(cz*cz - 1.0/3.0);
+      if (lharm_ == 6) {
+        // P_6(u) = (231 u^6 - 315 u^4 + 105 u^2 - 5)/16, Laplacian_S f = -42 f
+        const Real u2 = cz*cz;
+        f = (((231.0*u2 - 315.0)*u2 + 105.0)*u2 - 5.0)/16.0;
+      }
       w0(m,IDN,k,j,i) = d0;
       w0(m,IEN,k,j,i) = d0*p0*(1.0 + amp_*f)/gm1;
       w0(m,IVX,k,j,i) = 0.0;

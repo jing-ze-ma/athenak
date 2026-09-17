@@ -1,0 +1,25 @@
+# run directories, binaries and job output: reproduce them with the scripts
+athena_head_gpu
+athena_head_box_gpu
+*.out.*
+*.err.*
+gpu_build_*.log
+bb_*/
+bw_*/
+gbw_*/
+gbwm_*/
+hebox*/
+G_*/
+GS_*/
+L_*/
+H_*/
+S_*/
+T_*/
+q_*/
+c_*/
+k_*/
+r_*/
+w_*/
+n_*/
+MB_*/
+guard/
