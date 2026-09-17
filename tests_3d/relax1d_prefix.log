@@ -1,0 +1,403 @@
+Mesh: spherical-polar x3-face theta correction = rotate
+
+Cubed sphere: Root grid = 6 x 1 x (1 x 1) MeshBlocks
+Total number of MeshBlocks = 6
+Number of logical  levels of refinement = 0 (1 levels total)
+Number of physical levels of refinement = 0 (1 levels total)
+Number of parallel ranks = 2
+  Rank = 0: 3 MeshBlocks, cost = 3
+  Rank = 1: 3 MeshBlocks, cost = 3
+Load Balancing:
+  Maximum normalized cost = 1, Average = 1
+General EOS: tabulated on 501 x 676 nodes (41 MB), log10 rho[cgs] in [-13, -3], log10 T[K] in [3.8, 6.5]
+             X = 0, Y = 0.98, Z = 0.02, H2 off, ionization on, radiation on
+             radiation TAPERED off between rho = 1.93e-09 (w = 1, LTE) and rho = 4.97e-10 g/cm^3 (w = 0, the two-stream owns it)
+             metal ionization off
+             mu at the grid centre = 1.35912, n_e/n_tot = 0.665534
+Conduction: transverse solver = ADI (lod2, theta = 1, sweep pairs/stage = 3), blocks per line = 1 (x2), 1 (x3)
+General EOS: tabulated on 501 x 676 nodes (41 MB), log10 rho[cgs] in [-13, -3], log10 T[K] in [3.8, 6.5]
+             X = 0, Y = 0.98, Z = 0.02, H2 off, ionization on, radiation on
+             radiation TAPERED off between rho = 1.93e-09 (w = 1, LTE) and rho = 4.97e-10 g/cm^3 (w = 0, the two-stream owns it)
+             metal ionization off
+             mu at the grid centre = 1.35912, n_e/n_tot = 0.665534
+red_giant: opacity table '/viper/u2/jinma/ATHENAK/bench/hestar_fecz/rosseland_he_x0.0_z0.02.txt', 217 x 481 nodes, log10 T 2.6..8, log10 rho -24..0 (200 rows prepended below the file's -14 at the floor, so the clamp cannot hand back real opacity for a thin cell); 41020 prepended nodes (rho below the file) set to problem/opac_floor = 1e-05 cm^2/g (optically thin; the merge edge-filled them)
+red_giant: opacity table '/viper/u2/jinma/ATHENAK/bench/hestar_fecz/rosseland_he_x0.0_z0.02.txt', 217 x 481 nodes, log10 T 2.6..8, log10 rho -24..0 (200 rows prepended below the file's -14 at the floor, so the clamp cannot hand back real opacity for a thin cell); 41020 prepended nodes (rho below the file) set to problem/opac_floor = 1e-05 cm^2/g (optically thin; the merge edge-filled them)
+red_giant: RT radiative momentum source ON -- (1-w) rho kappa F/c + Prad grad w, with w from the EOS taper; g(r) = GM/r^2
+red_giant: F_bot = 1.30528e+15 is carried by the TWO-STREAM's lower boundary (rt_bottom_flux); the conduction wall face injects nothing.  This assumes <hydro>/rad_tau_lo = 1.000e+05 is DEEPER than the domain, so the blend weight is 0 on every face.
+red_giant: the two-stream is applied STRANG-SPLIT around the time integrator (dt/2 before, dt/2 after) and NOT inside the RK stages; the transverse operator moves with it
+red_giant: GREY two-stream (problem/rt_grey), opacity from the conduction module's table, 2-point angular quadrature
+           column above the domain: the ghost's own Planck function (it mirrors the top cell back)
+red_giant: initial stratification READ FROM /viper/u2/jinma/ATHENAK/bench/hestar_presn/ic_he4_presn_sph.txt (15999 nodes, 8.30108e+10 .. 2.43252e+11 cm); the hydrostatic+MLT march, problem/ptop and the outer-wall gas-solution check are all OVERRIDDEN
+red_giant: no cell is denser than the opacity table's valid window logR = [-8, 1.5]; cells below it carry problem/opac_floor
+red_giant: OPEN outer boundary -- the ghosts continue the top active cell hydrostatically at its own temperature, outflow only. Mass and energy CAN leave the domain; problem/face_budget reports how much.
+red_giant: M = 6.2651e+33 g, L = 2.3066e+38 erg/s, Teff = 48978 K, rin = 1.18585e+11 cm, rout = 2.4057e+11 cm
+           wall p/T: outer 7510 / 41382.7 K, inner 8.35805e+06 / 237659 K
+           tau = 2/3 at r = 2.37122e+11 cm, T = 49199.2 K; radiative-convective boundary at r = 2.29155e+11 cm
+red_giant: no cell is denser than the opacity table's valid window logR = [-8, 1.5]; cells below it carry problem/opac_floor
+red_giant: chart-free seed + 32 random plane waves, lambda in [2.5e+11, 7.4e+11] cm, seed 1234, amp 1
+
+Setup complete, executing task list(s)...
+
+elapsed=8.065472e+00 cycle=0 time=0.000000e+00 dt=1.292915e+01
+### two_stream_rt: thermodynamic state read from u0 (CONSERVED, problem/rt_use_cons = true)
+deep_hot_jupiter_rt: RT split path ON, 1 chain block(s) of 4 -> 1x the thread count of the monolithic kernel
+### two_stream_rt: rt_implicit_column = 3, the EXACT block-tridiagonal column solve (intensities as unknowns); solver pcr nseg 32 hybrid_tau 0.000000e+00 mixed(2); workspace 1.321920e+01 + 7.372800e+00 MB
+  red_giant top v1 sponge active: r >= 2.39020e+11, f = 1 at tau <= 3.3333e-02, timescale 2.0000e+01 s
+face budget: gain/L  inner=-5.240790e-03 outer=2.082775e-07 | erg in=-2.043999e+37 out=4.988118e+32 | g in=-1.130506e+22 out=2.730224e+17 | L_rad,out/L = 9.382410e-01 L_rad,cut/L = 8.681877e-01 (t = 1.292915e+01 s)
+face budget: gain/L  inner=-8.435329e-03 outer=6.301147e-07 | erg in=-4.585877e+37 out=2.397582e+33 | g in=-2.457385e+22 out=1.314555e+18 | L_rad,out/L = 9.061920e-01 L_rad,cut/L = 8.630110e-01 (t = 2.599328e+01 s)
+face budget: gain/L  inner=-1.123621e-02 outer=1.219011e-06 | erg in=-8.034746e+37 out=6.139244e+33 | g in=-4.213264e+22 out=3.367027e+18 | L_rad,out/L = 1.097691e+00 L_rad,cut/L = 8.586219e-01 (t = 3.930042e+01 s)
+### red_giant sponge guard FIRED (rank 0, cycle 3, t = 3.930042e+01): 11 cell(s) not damped; first (m,k,j,i) = (0,3,6,91) d = 1.068062e-09 ei = -8.266254e+05 ke = 2.774081e+06 dphi = 1.871531e+06
+### red_giant sponge guard FIRED (rank 1, cycle 3, t = 39.3004): 5 cell(s) not damped; first (m,k,j,i) = (2,3,6,91) d = 1.07208e-09 ei = -432640 ke = 9.19755e+06 dphi = 1.87857e+06
+### dt COLLAPSE cycle=4 time=52.8259 dtold=13.5255 dt=0.303481 | hydro=0.303481 mhd=-1 cond=8.98847e+306 visc=-1 srcterms=-1  (rank 1)
+    hydro dt is set by cell (m,k,j,i) = (1,5,4,92) gid = 4
+    r=2.364e+11 rho=5.09296e-10 T=8.4851e+13 p=2.66289e+06 cs=6.53586e+08 v=(4.62732e+06,2.18146e+08,-1.70954e+08)
+face budget: gain/L  inner=-2.758217e-04 outer=-1.372588e-04 | erg in=-8.120796e+37 out=-4.220787e+35 | g in=-4.256680e+22 out=-7.569908e+19 | L_rad,out/L = 8.546110e+00 L_rad,cut/L = 8.547041e-01 (t = 5.282588e+01 s)
+### rad_implicit_x1 rank 0 cycle 4 t = 5.282588e+01: max |sum V de|/sum V|de| = 1.983582e-01, fallback cells = 1, conservative clips = 82
+    first fallback (m,k,j,i) = (1,4,5,3) gid = 1 r = 1.193399e+11 T* = 2.392064e+05 rho = 1.904258e-08 de = 4.923111e+06
+### rad_implicit_x1 rank 1 cycle 4 t = 52.8259: max |sum V de|/sum V|de| = 0.213911, fallback cells = 1, conservative clips = 102
+    first fallback (m,k,j,i) = (1,5,4,3) gid = 4 r = 1.1934e+11 T* = 239134 rho = 1.90426e-08 de = 8.3415e+06
+### WARNING in two_stream_rt: rt_use_cons gave a non-positive internal energy in 181 cell read(s); clamped to e(rho,tfloor) before the temperature/Planck evaluation. Reported once.
+### dt COLLAPSE cycle=5 time=53.1294 dtold=0.303481 dt=2.47508e-36 | hydro=2.47508e-36 mhd=-1 cond=8.98847e+306 visc=-1 srcterms=-1  (rank 1)
+    hydro dt is set by cell (m,k,j,i) = (1,3,6,93) gid = 4
+    r=2.37065e+11 rho=1e-13 T=1.8571e+12 p=0.1 cs=1.03983e+06 v=(8.02934e+43,4.07263e+44,-2.19202e+44)
+face budget: gain/L  inner=0.000000e+00 outer=0.000000e+00 | erg in=-8.120796e+37 out=-4.220787e+35 | g in=-4.256680e+22 out=-7.569908e+19 | L_rad,out/L = 4.551932e+06 L_rad,cut/L = 8.547270e-01 (t = 5.312936e+01 s)
+### dt COLLAPSE cycle=62 time=53.1294 dtold=6.30108e-20 dt=3.36407e-30 | hydro=3.36407e-30 mhd=-1 cond=8.98847e+306 visc=-1 srcterms=-1  (rank 1)
+    hydro dt is set by cell (m,k,j,i) = (1,6,3,94) gid = 4
+    r=2.37724e+11 rho=1e-13 T=1.8571e+12 p=0.1 cs=1.03983e+06 v=(-5.85739e+37,-8.35836e+37,-5.13593e+38)
+elapsed=1.304947e+01 cycle=100 time=5.312936e+01 dt=1.176231e-19
+### dt COLLAPSE cycle=103 time=5.312936e+01 dtold=1.721694e-19 dt=2.480030e-32 | hydro=2.480030e-32 mhd=-1.000000e+00 cond=8.988466e+306 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+    hydro dt is set by cell (m,k,j,i) = (1,3,6,94) gid = 1
+    r=2.377242e+11 rho=1.000000e-13 T=1.857096e+12 p=1.000000e-01 cs=1.039826e+06 v=(-7.945338e+39,4.736950e+40,3.993528e+40)
+### dt COLLAPSE cycle=150 time=53.1294 dtold=6.48084e-19 dt=7.39377e-23 | hydro=7.39377e-23 mhd=-1 cond=8.98847e+306 visc=-1 srcterms=-1  (rank 1)
+    hydro dt is set by cell (m,k,j,i) = (2,3,5,88) gid = 5
+    r=2.33737e+11 rho=1e-13 T=2.62926e+14 p=19.3454 cs=1.79561e+07 v=(2.68723e+30,-3.74329e+31,-4.61356e+31)
+### dt COLLAPSE cycle=165 time=53.1294 dtold=1.2114e-18 dt=2.00623e-24 | hydro=2.00623e-24 mhd=-1 cond=8.98847e+306 visc=-1 srcterms=-1  (rank 1)
+    hydro dt is set by cell (m,k,j,i) = (0,6,4,88) gid = 3
+    r=2.33737e+11 rho=1e-13 T=1.8571e+12 p=0.1 cs=1.03983e+06 v=(9.90354e+31,1.02626e+32,1.66867e+31)
+### dt COLLAPSE cycle=181 time=5.312936e+01 dtold=6.574016e-20 dt=2.625752e-29 | hydro=2.625752e-29 mhd=-1.000000e+00 cond=8.988466e+306 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+    hydro dt is set by cell (m,k,j,i) = (2,3,6,95) gid = 2
+    r=2.383770e+11 rho=1.000000e-13 T=1.857096e+12 p=1.000000e-01 cs=1.039826e+06 v=(7.411994e+36,-1.622005e+37,-3.183592e+37)
+elapsed=1.792745e+01 cycle=200 time=5.312936e+01 dt=1.376650e-23
+### dt COLLAPSE cycle=218 time=5.312936e+01 dtold=1.494635e-18 dt=2.973417e-19 | hydro=2.973417e-19 mhd=-1.000000e+00 cond=8.988466e+306 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+    hydro dt is set by cell (m,k,j,i) = (2,5,6,96) gid = 2
+    r=2.390203e+11 rho=1.498608e-08 T=2.629264e+14 p=2.521940e+11 cs=4.736887e+09 v=(6.436155e+26,-1.315173e+27,-1.302423e+27)
+### dt COLLAPSE cycle=220 time=53.1294 dtold=3.98427e-19 dt=1.90611e-39 | hydro=1.90611e-39 mhd=-1 cond=8.98847e+306 visc=-1 srcterms=-1  (rank 1)
+    hydro dt is set by cell (m,k,j,i) = (1,3,6,90) gid = 4
+    r=2.35067e+11 rho=1e-13 T=1.8571e+12 p=0.1 cs=1.03983e+06 v=(7.21267e+46,-4.78882e+48,-1.33912e+49)
+### dt COLLAPSE cycle=290 time=5.312936e+01 dtold=1.125169e-18 dt=2.086228e-32 | hydro=2.086228e-32 mhd=-1.000000e+00 cond=8.988466e+306 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+    hydro dt is set by cell (m,k,j,i) = (0,4,3,88) gid = 0
+    r=2.337367e+11 rho=1.000000e-13 T=1.857096e+12 p=1.000000e-01 cs=1.039826e+06 v=(-9.523781e+39,-5.232105e+41,-3.960196e+41)
+elapsed=2.271217e+01 cycle=300 time=5.312936e+01 dt=2.136298e-29
+### dt COLLAPSE cycle=329 time=5.312936e+01 dtold=5.734581e-21 dt=3.206180e-32 | hydro=3.206180e-32 mhd=-1.000000e+00 cond=8.988466e+306 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+    hydro dt is set by cell (m,k,j,i) = (0,4,3,87) gid = 0
+    r=2.330765e+11 rho=1.000000e-13 T=1.857096e+12 p=1.000000e-01 cs=1.039826e+06 v=(-1.134482e+39,8.501318e+41,6.763238e+41)
+### dt COLLAPSE cycle=367 time=53.1294 dtold=4.40654e-21 dt=7.69278e-41 | hydro=7.69278e-41 mhd=-1 cond=8.98847e+306 visc=-1 srcterms=-1  (rank 1)
+    hydro dt is set by cell (m,k,j,i) = (1,5,6,89) gid = 4
+    r=2.34401e+11 rho=1e-13 T=1.8571e+12 p=0.1 cs=1.03983e+06 v=(-1.13091e+48,-2.86241e+50,-3.03193e+50)
+elapsed=2.748047e+01 cycle=400 time=5.312936e+01 dt=6.608044e-31
+### dt COLLAPSE cycle=434 time=53.1294 dtold=5.67627e-21 dt=2.39645e-46 | hydro=2.39645e-46 mhd=-1 cond=8.98847e+306 visc=-1 srcterms=-1  (rank 1)
+    hydro dt is set by cell (m,k,j,i) = (1,6,6,89) gid = 4
+    r=2.34401e+11 rho=1e-13 T=1.8571e+12 p=0.1 cs=1.03983e+06 v=(-8.32846e+53,4.93028e+54,6.32166e+54)
+elapsed=3.224224e+01 cycle=500 time=5.312936e+01 dt=1.768265e-26
+### dt COLLAPSE cycle=511 time=5.312936e+01 dtold=1.810703e-23 dt=1.617746e-34 | hydro=1.617746e-34 mhd=-1.000000e+00 cond=8.988466e+306 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+    hydro dt is set by cell (m,k,j,i) = (0,6,6,88) gid = 0
+    r=2.337367e+11 rho=1.000000e-13 T=1.857096e+12 p=1.000000e-01 cs=1.039826e+06 v=(-3.010084e+41,6.475636e+43,1.568889e+44)
+### dt COLLAPSE cycle=552 time=5.312936e+01 dtold=7.277922e-23 dt=1.687776e-23 | hydro=1.687776e-23 mhd=-1.000000e+00 cond=8.988466e+306 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+    hydro dt is set by cell (m,k,j,i) = (1,6,6,85) gid = 1
+    r=2.317699e+11 rho=7.003577e-09 T=2.629264e+14 p=2.521925e+11 cs=6.929081e+09 v=(1.151706e+31,-8.062572e+31,-3.019849e+32)
+elapsed=3.704878e+01 cycle=600 time=5.312936e+01 dt=3.632109e-23
+elapsed=4.189375e+01 cycle=700 time=5.312936e+01 dt=4.286005e-23
+elapsed=4.675837e+01 cycle=800 time=5.312936e+01 dt=4.795476e-23
+elapsed=5.163045e+01 cycle=900 time=5.312936e+01 dt=4.749767e-23
+elapsed=5.650951e+01 cycle=1000 time=5.312936e+01 dt=5.114568e-23
+### red_giant open-ghost guard FIRED (rank 0): first at (m,k,j,i) = (2,9,9,99) d_i=9.471408e-11 e_i=-2.236686e+05 t_i=6.309573e+03 p_g=3.865843e-14; the initial column is used there instead
+### red_giant open-ghost guard FIRED (rank 1): first at (m,k,j,i) = (2,9,8,101) d_i=9.47139e-11 e_i=-74326.6 t_i=6309.57 p_g=3.39198e-41; the initial column is used there instead
+red_giant open-ghost guard: 900 fallbacks since the last report, 3465474 total (rank 0, cycle 1000)
+red_giant open-ghost guard: 900 fallbacks since the last report, 3453721 total (rank 1, cycle 1000)
+red_giant open-ghost guard: 900 fallbacks since the last report, 3466374 total (rank 0, cycle 1000)
+red_giant open-ghost guard: 900 fallbacks since the last report, 3454621 total (rank 1, cycle 1000)
+red_giant open-ghost guard: 900 fallbacks since the last report, 3467274 total (rank 0, cycle 1000)
+red_giant open-ghost guard: 900 fallbacks since the last report, 3455521 total (rank 1, cycle 1000)
+elapsed=6.139183e+01 cycle=1100 time=5.312936e+01 dt=4.516266e-23
+elapsed=6.627654e+01 cycle=1200 time=5.312936e+01 dt=4.597952e-23
+elapsed=7.117137e+01 cycle=1300 time=5.312936e+01 dt=4.719378e-23
+elapsed=7.606108e+01 cycle=1400 time=5.312936e+01 dt=5.267683e-23
+### dt COLLAPSE cycle=1419 time=53.1294 dtold=5.36569e-23 dt=5.85509e-28 | hydro=5.85509e-28 mhd=-1 cond=8.98847e+306 visc=-1 srcterms=-1  (rank 1)
+    hydro dt is set by cell (m,k,j,i) = (1,3,6,82) gid = 4
+    r=2.29853e+11 rho=1e-13 T=1.8571e+12 p=0.1 cs=1.03983e+06 v=(3.22665e+35,-1.92623e+36,-6.83493e+35)
+elapsed=8.095131e+01 cycle=1500 time=5.312936e+01 dt=5.727673e-23
+elapsed=8.584300e+01 cycle=1600 time=5.312936e+01 dt=5.988766e-23
+elapsed=9.073424e+01 cycle=1700 time=5.312936e+01 dt=6.138735e-23
+elapsed=9.562350e+01 cycle=1800 time=5.312936e+01 dt=6.427412e-23
+### dt COLLAPSE cycle=1811 time=53.1294 dtold=6.48892e-23 dt=5.46684e-43 | hydro=5.46684e-43 mhd=-1 cond=8.98847e+306 visc=-1 srcterms=-1  (rank 1)
+    hydro dt is set by cell (m,k,j,i) = (1,6,3,81) gid = 4
+    r=2.29226e+11 rho=1e-13 T=1.8571e+12 p=0.1 cs=1.03983e+06 v=(3.42255e+50,-2.804e+50,-1.86194e+51)
+elapsed=1.004969e+02 cycle=1900 time=5.312936e+01 dt=6.540584e-27
+elapsed=1.053770e+02 cycle=2000 time=5.312936e+01 dt=3.512434e-26
+red_giant open-ghost guard: 3597300 fallbacks since the last report, 7064574 total (rank 0, cycle 2000)
+red_giant open-ghost guard: 3597300 fallbacks since the last report, 7052821 total (rank 1, cycle 2000)
+red_giant open-ghost guard: 900 fallbacks since the last report, 7065474 total (rank 0, cycle 2000)
+red_giant open-ghost guard: 900 fallbacks since the last report, 7053721 total (rank 1, cycle 2000)
+red_giant open-ghost guard: 900 fallbacks since the last report, 7066374 total (rank 0, cycle 2000)
+red_giant open-ghost guard: 900 fallbacks since the last report, 7054621 total (rank 1, cycle 2000)
+red_giant open-ghost guard: 900 fallbacks since the last report, 7067274 total (rank 0, cycle 2000)
+red_giant open-ghost guard: 900 fallbacks since the last report, 7055521 total (rank 1, cycle 2000)
+elapsed=1.102593e+02 cycle=2100 time=5.312936e+01 dt=1.938820e-25
+### dt COLLAPSE cycle=2177 time=53.1294 dtold=5.39969e-25 dt=1.1962e-39 | hydro=1.1962e-39 mhd=-1 cond=8.98847e+306 visc=-1 srcterms=-1  (rank 1)
+    hydro dt is set by cell (m,k,j,i) = (1,6,3,81) gid = 4
+    r=2.29226e+11 rho=1e-13 T=1.8571e+12 p=0.1 cs=1.03983e+06 v=(-1.56416e+47,5.74956e+46,8.54751e+46)
+elapsed=1.151437e+02 cycle=2200 time=5.312936e+01 dt=1.003447e-32
+### dt COLLAPSE cycle=2241 time=53.1294 dtold=7.30274e-25 dt=3.66976e-52 | hydro=3.66976e-52 mhd=-1 cond=8.98847e+306 visc=-1 srcterms=-1  (rank 1)
+    hydro dt is set by cell (m,k,j,i) = (0,6,3,83) gid = 3
+    r=2.30486e+11 rho=1e-13 T=1.8571e+12 p=0.1 cs=1.03983e+06 v=(-5.19862e+59,1.26502e+60,-1.05423e+60)
+elapsed=1.200183e+02 cycle=2300 time=5.312936e+01 dt=2.115474e-34
+### dt COLLAPSE cycle=2322 time=53.1294 dtold=3.13447e-28 dt=1.77253e-41 | hydro=1.77253e-41 mhd=-1 cond=8.98847e+306 visc=-1 srcterms=-1  (rank 1)
+    hydro dt is set by cell (m,k,j,i) = (1,5,3,79) gid = 4
+    r=2.2799e+11 rho=1e-13 T=1.8571e+12 p=0.1 cs=1.03983e+06 v=(-1.03676e+49,2.54964e+48,2.92661e+49)
+### dt COLLAPSE cycle=2367 time=53.1294 dtold=3.11827e-28 dt=2.50675e-33 | hydro=2.50675e-33 mhd=-1 cond=8.98847e+306 visc=-1 srcterms=-1  (rank 1)
+    hydro dt is set by cell (m,k,j,i) = (1,3,3,78) gid = 4
+    r=2.2738e+11 rho=1e-13 T=1.8571e+12 p=0.1 cs=1.03983e+06 v=(-7.27409e+40,-1.50264e+41,1.86658e+41)
+elapsed=1.249120e+02 cycle=2400 time=5.312936e+01 dt=7.333896e-28
+### dt COLLAPSE cycle=2405 time=53.1294 dtold=7.92261e-28 dt=7.69161e-55 | hydro=7.69161e-55 mhd=-1 cond=8.98847e+306 visc=-1 srcterms=-1  (rank 1)
+    hydro dt is set by cell (m,k,j,i) = (0,6,4,82) gid = 3
+    r=2.29853e+11 rho=1e-13 T=1.8571e+12 p=0.1 cs=1.03983e+06 v=(2.45623e+62,-5.36247e+62,4.22465e+62)
+### dt COLLAPSE cycle=2490 time=53.1294 dtold=2.19751e-30 dt=7.62889e-71 | hydro=7.62889e-71 mhd=-1 cond=8.98847e+306 visc=-1 srcterms=-1  (rank 1)
+    hydro dt is set by cell (m,k,j,i) = (1,6,3,86) gid = 4
+    r=2.32421e+11 rho=1e-13 T=1.8571e+12 p=0.1 cs=1.03983e+06 v=(2.56949e+78,-9.96479e+77,-6.62629e+78)
+elapsed=1.298029e+02 cycle=2500 time=5.312936e+01 dt=7.811979e-68
+elapsed=1.346715e+02 cycle=2600 time=5.312936e+01 dt=9.902860e-38
+### dt COLLAPSE cycle=2605 time=53.1294 dtold=1.58446e-36 dt=3.09227e-53 | hydro=3.09227e-53 mhd=-1 cond=8.98847e+306 visc=-1 srcterms=-1  (rank 1)
+    hydro dt is set by cell (m,k,j,i) = (1,6,5,85) gid = 4
+    r=2.3177e+11 rho=1e-13 T=2.62926e+14 p=19.3454 cs=1.79561e+07 v=(-6.28606e+60,-6.31014e+59,3.31481e+61)
+### dt COLLAPSE cycle=2606 time=53.1294 dtold=3.09227e-53 dt=1.81018e-65 | hydro=1.81018e-65 mhd=-1 cond=8.98847e+306 visc=-1 srcterms=-1  (rank 1)
+    hydro dt is set by cell (m,k,j,i) = (1,6,4,85) gid = 4
+    r=2.3177e+11 rho=1e-13 T=1.8571e+12 p=0.1 cs=1.03983e+06 v=(1.07383e+73,-6.69946e+72,-2.50029e+73)
+elapsed=1.395328e+02 cycle=2700 time=5.312936e+01 dt=3.585429e-37
+### dt COLLAPSE cycle=2707 time=53.1294 dtold=2.29467e-35 dt=1.30884e-55 | hydro=1.30884e-55 mhd=-1 cond=8.98847e+306 visc=-1 srcterms=-1  (rank 1)
+    hydro dt is set by cell (m,k,j,i) = (0,3,3,87) gid = 3
+    r=2.33076e+11 rho=1e-13 T=1.8571e+12 p=0.1 cs=1.03983e+06 v=(-1.50881e+63,7.06978e+63,-2.07748e+63)
+### dt COLLAPSE cycle=2776 time=53.1294 dtold=1.89256e-35 dt=1.09101e-83 | hydro=1.09101e-83 mhd=-1 cond=8.98847e+306 visc=-1 srcterms=-1  (rank 1)
+    hydro dt is set by cell (m,k,j,i) = (1,5,6,85) gid = 4
+    r=2.3177e+11 rho=1e-13 T=1.8571e+12 p=0.1 cs=1.03983e+06 v=(-1.78167e+91,6.00249e+91,6.15433e+91)
+elapsed=1.443861e+02 cycle=2800 time=5.312936e+01 dt=1.830409e-76
+### dt COLLAPSE cycle=2843 time=5.312936e+01 dtold=8.050224e-64 dt=5.637600e-68 | hydro=5.637600e-68 mhd=-1.000000e+00 cond=8.988466e+306 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+    hydro dt is set by cell (m,k,j,i) = (0,4,3,84) gid = 0
+    r=2.311249e+11 rho=1.000000e-13 T=1.857096e+12 p=1.000000e-01 cs=1.039826e+06 v=(3.416609e+75,-7.068586e+75,-1.080980e+76)
+elapsed=1.492339e+02 cycle=2900 time=5.312936e+01 dt=7.361832e-71
+### rad_implicit_x1 rank 0 cycle 2978 t = 5.312936e+01: max |sum V de|/sum V|de| = 0.000000e+00, fallback cells = 4608, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 0 r = 2.402668e+11 T* = 0.000000e+00 rho = 3.933117e-03 de = 0.000000e+00
+### rad_implicit_x1 rank 1 cycle 2978 t = 53.1294: max |sum V de|/sum V|de| = 0, fallback cells = 4607, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 3 r = 2.40267e+11 T* = 3.16228e+06 rho = 9.47105e-11 de = 0
+### rad_implicit_x1 rank 0 cycle 2978 t = 5.312936e+01: max |sum V de|/sum V|de| = 0.000000e+00, fallback cells = 4608, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 0 r = 2.402668e+11 T* = 3.162278e+06 rho = 3.933117e-03 de = 0.000000e+00
+### rad_implicit_x1 rank 1 cycle 2978 t = 53.1294: max |sum V de|/sum V|de| = 0, fallback cells = 4603, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 3 r = 2.40267e+11 T* = 3.16228e+06 rho = 9.47105e-11 de = 0
+### WARNING in two_stream_rt: a non-finite or non-positive density/(p,T) state was read in 16 cell(s); clamped to the floor state before the Planck function and the optical depth, so the column below it is not poisoned. Reported once.
+### rad_implicit_x1 rank 0 cycle 2979 t = 5.312936e+01: max |sum V de|/sum V|de| = 0.000000e+00, fallback cells = 4606, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 0 r = 2.402668e+11 T* = 0.000000e+00 rho = 3.933117e-03 de = 0.000000e+00
+### rad_implicit_x1 rank 1 cycle 2979 t = 53.1294: max |sum V de|/sum V|de| = 0, fallback cells = 4597, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 3 r = 2.40267e+11 T* = 3.16228e+06 rho = 9.47105e-11 de = 0
+### rad_implicit_x1 rank 0 cycle 2979 t = 5.312936e+01: max |sum V de|/sum V|de| = 0.000000e+00, fallback cells = 4599, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 0 r = 2.402668e+11 T* = 3.162278e+06 rho = 3.933117e-03 de = 0.000000e+00
+### rad_implicit_x1 rank 1 cycle 2979 t = 53.1294: max |sum V de|/sum V|de| = 0, fallback cells = 4592, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 3 r = 2.40267e+11 T* = 3.16228e+06 rho = 9.47105e-11 de = 0
+### rad_implicit_x1 rank 1 cycle 2980 t = 53.1294: max |sum V de|/sum V|de| = 0, fallback cells = 4588, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 3 r = 2.40267e+11 T* = 3.16228e+06 rho = 9.47105e-11 de = 0
+### rad_implicit_x1 rank 0 cycle 2980 t = 5.312936e+01: max |sum V de|/sum V|de| = 0.000000e+00, fallback cells = 4588, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 0 r = 2.402668e+11 T* = 0.000000e+00 rho = 3.933117e-03 de = 0.000000e+00
+### rad_implicit_x1 rank 0 cycle 2980 t = 5.312936e+01: max |sum V de|/sum V|de| = 0.000000e+00, fallback cells = 4576, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 0 r = 2.402668e+11 T* = 3.162278e+06 rho = 3.933117e-03 de = 0.000000e+00
+### rad_implicit_x1 rank 1 cycle 2980 t = 53.1294: max |sum V de|/sum V|de| = 0, fallback cells = 4584, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 3 r = 2.40267e+11 T* = 3.16228e+06 rho = 9.47105e-11 de = 0
+### rad_implicit_x1 rank 0 cycle 2981 t = 5.312936e+01: max |sum V de|/sum V|de| = 0.000000e+00, fallback cells = 4566, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 0 r = 2.402668e+11 T* = 0.000000e+00 rho = 3.933117e-03 de = 0.000000e+00
+### rad_implicit_x1 rank 1 cycle 2981 t = 53.1294: max |sum V de|/sum V|de| = 0, fallback cells = 4578, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 3 r = 2.40267e+11 T* = 3.16228e+06 rho = 9.47105e-11 de = 0
+### rad_implicit_x1 rank 0 cycle 2981 t = 5.312936e+01: max |sum V de|/sum V|de| = 0.000000e+00, fallback cells = 4561, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 0 r = 2.402668e+11 T* = 3.162278e+06 rho = 3.933117e-03 de = 0.000000e+00
+### rad_implicit_x1 rank 1 cycle 2981 t = 53.1294: max |sum V de|/sum V|de| = 0, fallback cells = 4569, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 3 r = 2.40267e+11 T* = 3.16228e+06 rho = 9.47105e-11 de = 0
+### rad_implicit_x1 rank 0 cycle 2982 t = 5.312936e+01: max |sum V de|/sum V|de| = 0.000000e+00, fallback cells = 4560, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 0 r = 2.402668e+11 T* = 0.000000e+00 rho = 3.933117e-03 de = 0.000000e+00
+### rad_implicit_x1 rank 1 cycle 2982 t = 53.1294: max |sum V de|/sum V|de| = 0, fallback cells = 4562, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 3 r = 2.40267e+11 T* = 3.16228e+06 rho = 9.47105e-11 de = 0
+### rad_implicit_x1 rank 0 cycle 2982 t = 5.312936e+01: max |sum V de|/sum V|de| = 0.000000e+00, fallback cells = 4560, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 0 r = 2.402668e+11 T* = 3.162278e+06 rho = 3.933117e-03 de = 0.000000e+00
+### rad_implicit_x1 rank 1 cycle 2982 t = 53.1294: max |sum V de|/sum V|de| = 0, fallback cells = 4560, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 3 r = 2.40267e+11 T* = 3.16228e+06 rho = 9.47105e-11 de = 0
+### rad_implicit_x1 rank 0 cycle 2983 t = 5.312936e+01: max |sum V de|/sum V|de| = 0.000000e+00, fallback cells = 4560, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 0 r = 2.402668e+11 T* = 0.000000e+00 rho = 3.933117e-03 de = 0.000000e+00
+### rad_implicit_x1 rank 1 cycle 2983 t = 53.1294: max |sum V de|/sum V|de| = 0, fallback cells = 4560, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 3 r = 2.40267e+11 T* = 3.16228e+06 rho = 9.47105e-11 de = 0
+### rad_implicit_x1 rank 0 cycle 2983 t = 5.312936e+01: max |sum V de|/sum V|de| = 0.000000e+00, fallback cells = 4560, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 0 r = 2.402668e+11 T* = 3.162278e+06 rho = 3.933117e-03 de = 0.000000e+00
+### rad_implicit_x1 rank 1 cycle 2983 t = 53.1294: max |sum V de|/sum V|de| = 0, fallback cells = 4560, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 3 r = 2.40267e+11 T* = 3.16228e+06 rho = 9.47105e-11 de = 0
+### rad_implicit_x1 rank 0 cycle 2984 t = 5.312936e+01: max |sum V de|/sum V|de| = 0.000000e+00, fallback cells = 4560, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 0 r = 2.402668e+11 T* = 0.000000e+00 rho = 3.933117e-03 de = 0.000000e+00
+### rad_implicit_x1 rank 1 cycle 2984 t = 53.1294: max |sum V de|/sum V|de| = 0, fallback cells = 4560, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 3 r = 2.40267e+11 T* = 3.16228e+06 rho = 9.47105e-11 de = 0
+### rad_implicit_x1 rank 0 cycle 2984 t = 5.312936e+01: max |sum V de|/sum V|de| = 0.000000e+00, fallback cells = 4560, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 0 r = 2.402668e+11 T* = 3.162278e+06 rho = 3.933117e-03 de = 0.000000e+00
+### rad_implicit_x1 rank 1 cycle 2984 t = 53.1294: max |sum V de|/sum V|de| = 0, fallback cells = 4560, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 3 r = 2.40267e+11 T* = 3.16228e+06 rho = 9.47105e-11 de = 0
+### rad_implicit_x1 rank 0 cycle 2985 t = 5.312936e+01: max |sum V de|/sum V|de| = 0.000000e+00, fallback cells = 4560, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 0 r = 2.402668e+11 T* = 0.000000e+00 rho = 3.933117e-03 de = 0.000000e+00
+### rad_implicit_x1 rank 1 cycle 2985 t = 53.1294: max |sum V de|/sum V|de| = 0, fallback cells = 4560, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 3 r = 2.40267e+11 T* = 3.16228e+06 rho = 9.47105e-11 de = 0
+### rad_implicit_x1 rank 0 cycle 2985 t = 5.312936e+01: max |sum V de|/sum V|de| = 0.000000e+00, fallback cells = 4560, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 0 r = 2.402668e+11 T* = 3.162278e+06 rho = 3.933117e-03 de = 0.000000e+00
+### rad_implicit_x1 rank 1 cycle 2985 t = 53.1294: max |sum V de|/sum V|de| = 0, fallback cells = 4560, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 3 r = 2.40267e+11 T* = 3.16228e+06 rho = 9.47105e-11 de = 0
+### rad_implicit_x1 rank 0 cycle 2986 t = 5.312936e+01: max |sum V de|/sum V|de| = 0.000000e+00, fallback cells = 4560, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 0 r = 2.402668e+11 T* = 0.000000e+00 rho = 3.933117e-03 de = 0.000000e+00
+### rad_implicit_x1 rank 1 cycle 2986 t = 53.1294: max |sum V de|/sum V|de| = 0, fallback cells = 4560, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 3 r = 2.40267e+11 T* = 3.16228e+06 rho = 9.47105e-11 de = 0
+### rad_implicit_x1 rank 0 cycle 2986 t = 5.312936e+01: max |sum V de|/sum V|de| = 0.000000e+00, fallback cells = 4560, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 0 r = 2.402668e+11 T* = 3.162278e+06 rho = 3.933117e-03 de = 0.000000e+00
+### rad_implicit_x1 rank 1 cycle 2986 t = 53.1294: max |sum V de|/sum V|de| = 0, fallback cells = 4560, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 3 r = 2.40267e+11 T* = 3.16228e+06 rho = 9.47105e-11 de = 0
+### rad_implicit_x1 rank 0 cycle 2987 t = 5.312936e+01: max |sum V de|/sum V|de| = 0.000000e+00, fallback cells = 4560, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 0 r = 2.402668e+11 T* = 0.000000e+00 rho = 3.933117e-03 de = 0.000000e+00
+### rad_implicit_x1 rank 1 cycle 2987 t = 53.1294: max |sum V de|/sum V|de| = 0, fallback cells = 4560, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 3 r = 2.40267e+11 T* = 3.16228e+06 rho = 9.47105e-11 de = 0
+### rad_implicit_x1 rank 0 cycle 2987 t = 5.312936e+01: max |sum V de|/sum V|de| = 0.000000e+00, fallback cells = 4560, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 0 r = 2.402668e+11 T* = 3.162278e+06 rho = 3.933117e-03 de = 0.000000e+00
+### rad_implicit_x1 rank 1 cycle 2987 t = 53.1294: max |sum V de|/sum V|de| = 0, fallback cells = 4560, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 3 r = 2.40267e+11 T* = 3.16228e+06 rho = 9.47105e-11 de = 0
+### rad_implicit_x1 rank 0 cycle 2988 t = 5.312936e+01: max |sum V de|/sum V|de| = 0.000000e+00, fallback cells = 4560, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 0 r = 2.402668e+11 T* = 0.000000e+00 rho = 3.933117e-03 de = 0.000000e+00
+### rad_implicit_x1 rank 1 cycle 2988 t = 53.1294: max |sum V de|/sum V|de| = 0, fallback cells = 4560, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 3 r = 2.40267e+11 T* = 3.16228e+06 rho = 9.47105e-11 de = 0
+### rad_implicit_x1 rank 0 cycle 2988 t = 5.312936e+01: max |sum V de|/sum V|de| = 0.000000e+00, fallback cells = 4560, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 0 r = 2.402668e+11 T* = 3.162278e+06 rho = 3.933117e-03 de = 0.000000e+00
+### rad_implicit_x1 rank 1 cycle 2988 t = 53.1294: max |sum V de|/sum V|de| = 0, fallback cells = 4560, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 3 r = 2.40267e+11 T* = 3.16228e+06 rho = 9.47105e-11 de = 0
+### rad_implicit_x1 rank 0 cycle 2989 t = 5.312936e+01: max |sum V de|/sum V|de| = 0.000000e+00, fallback cells = 4560, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 0 r = 2.402668e+11 T* = 0.000000e+00 rho = 3.933117e-03 de = 0.000000e+00
+### rad_implicit_x1 rank 1 cycle 2989 t = 53.1294: max |sum V de|/sum V|de| = 0, fallback cells = 4560, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 3 r = 2.40267e+11 T* = 3.16228e+06 rho = 9.47105e-11 de = 0
+### rad_implicit_x1 rank 0 cycle 2989 t = 5.312936e+01: max |sum V de|/sum V|de| = 0.000000e+00, fallback cells = 4560, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 0 r = 2.402668e+11 T* = 0.000000e+00 rho = -nan de = 0.000000e+00
+### rad_implicit_x1 rank 1 cycle 2989 t = 53.1294: max |sum V de|/sum V|de| = 0, fallback cells = 4560, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 3 r = 2.40267e+11 T* = 3.16228e+06 rho = 9.47105e-11 de = 0
+### rad_implicit_x1 rank 0 cycle 2990 t = 5.312936e+01: max |sum V de|/sum V|de| = 0.000000e+00, fallback cells = 4560, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 0 r = 2.402668e+11 T* = 0.000000e+00 rho = -nan de = 0.000000e+00
+### rad_implicit_x1 rank 1 cycle 2990 t = 53.1294: max |sum V de|/sum V|de| = 0, fallback cells = 4560, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 3 r = 2.40267e+11 T* = 3.16228e+06 rho = 9.47105e-11 de = 0
+### rad_implicit_x1 rank 0 cycle 2990 t = 5.312936e+01: max |sum V de|/sum V|de| = 0.000000e+00, fallback cells = 4560, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 0 r = 2.402668e+11 T* = 0.000000e+00 rho = -nan de = 0.000000e+00
+### rad_implicit_x1 rank 1 cycle 2990 t = 53.1294: max |sum V de|/sum V|de| = 0, fallback cells = 4560, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 3 r = 2.40267e+11 T* = 3.16228e+06 rho = 9.47105e-11 de = 0
+### rad_implicit_x1 rank 0 cycle 2991 t = 5.312936e+01: max |sum V de|/sum V|de| = 0.000000e+00, fallback cells = 4560, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 0 r = 2.402668e+11 T* = 0.000000e+00 rho = -nan de = 0.000000e+00
+### rad_implicit_x1 rank 1 cycle 2991 t = 53.1294: max |sum V de|/sum V|de| = 0, fallback cells = 4560, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 3 r = 2.40267e+11 T* = 3.16228e+06 rho = 9.47105e-11 de = 0
+### rad_implicit_x1 rank 0 cycle 2991 t = 5.312936e+01: max |sum V de|/sum V|de| = 0.000000e+00, fallback cells = 4560, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 0 r = 2.402668e+11 T* = 0.000000e+00 rho = -nan de = 0.000000e+00
+### rad_implicit_x1 rank 1 cycle 2991 t = 53.1294: max |sum V de|/sum V|de| = 0, fallback cells = 4560, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 3 r = 2.40267e+11 T* = 0 rho = nan de = 0
+### rad_implicit_x1 rank 0 cycle 2992 t = 5.312936e+01: max |sum V de|/sum V|de| = 0.000000e+00, fallback cells = 4560, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 0 r = 2.402668e+11 T* = 0.000000e+00 rho = -nan de = 0.000000e+00
+### rad_implicit_x1 rank 1 cycle 2992 t = 53.1294: max |sum V de|/sum V|de| = 0, fallback cells = 4560, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 3 r = 2.40267e+11 T* = 0 rho = nan de = 0
+### rad_implicit_x1 rank 0 cycle 2992 t = 5.312936e+01: max |sum V de|/sum V|de| = 0.000000e+00, fallback cells = 4560, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 0 r = 2.402668e+11 T* = 0.000000e+00 rho = -nan de = 0.000000e+00
+### rad_implicit_x1 rank 1 cycle 2992 t = 53.1294: max |sum V de|/sum V|de| = 0, fallback cells = 4560, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 3 r = 2.40267e+11 T* = 0 rho = nan de = 0
+### rad_implicit_x1 rank 0 cycle 2993 t = 5.312936e+01: max |sum V de|/sum V|de| = 0.000000e+00, fallback cells = 4560, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 0 r = 2.402668e+11 T* = 0.000000e+00 rho = -nan de = 0.000000e+00
+### rad_implicit_x1 rank 1 cycle 2993 t = 53.1294: max |sum V de|/sum V|de| = 0, fallback cells = 4560, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 3 r = 2.40267e+11 T* = 0 rho = nan de = 0
+### rad_implicit_x1 rank 0 cycle 2993 t = 5.312936e+01: max |sum V de|/sum V|de| = 0.000000e+00, fallback cells = 4560, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 0 r = 2.402668e+11 T* = 0.000000e+00 rho = -nan de = 0.000000e+00
+### rad_implicit_x1 rank 1 cycle 2993 t = 53.1294: max |sum V de|/sum V|de| = 0, fallback cells = 4560, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 3 r = 2.40267e+11 T* = 0 rho = nan de = 0
+### rad_implicit_x1 rank 0 cycle 2994 t = 5.312936e+01: max |sum V de|/sum V|de| = 0.000000e+00, fallback cells = 4560, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 0 r = 2.402668e+11 T* = 0.000000e+00 rho = -nan de = 0.000000e+00
+### rad_implicit_x1 rank 1 cycle 2994 t = 53.1294: max |sum V de|/sum V|de| = 0, fallback cells = 4560, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 3 r = 2.40267e+11 T* = 0 rho = nan de = 0
+### rad_implicit_x1 rank 0 cycle 2994 t = 5.312936e+01: max |sum V de|/sum V|de| = 0.000000e+00, fallback cells = 4560, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 0 r = 2.402668e+11 T* = 0.000000e+00 rho = -nan de = 0.000000e+00
+### rad_implicit_x1 rank 1 cycle 2994 t = 53.1294: max |sum V de|/sum V|de| = 0, fallback cells = 4560, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 3 r = 2.40267e+11 T* = 0 rho = nan de = 0
+### rad_implicit_x1 rank 0 cycle 2995 t = 5.312936e+01: max |sum V de|/sum V|de| = 0.000000e+00, fallback cells = 4560, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 0 r = 2.402668e+11 T* = 0.000000e+00 rho = -nan de = 0.000000e+00
+### rad_implicit_x1 rank 1 cycle 2995 t = 53.1294: max |sum V de|/sum V|de| = 0, fallback cells = 4560, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 3 r = 2.40267e+11 T* = 0 rho = nan de = 0
+### rad_implicit_x1 rank 0 cycle 2995 t = 5.312936e+01: max |sum V de|/sum V|de| = 0.000000e+00, fallback cells = 4560, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 0 r = 2.402668e+11 T* = 0.000000e+00 rho = -nan de = 0.000000e+00
+### rad_implicit_x1 rank 1 cycle 2995 t = 53.1294: max |sum V de|/sum V|de| = 0, fallback cells = 4560, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 3 r = 2.40267e+11 T* = 0 rho = nan de = 0
+### rad_implicit_x1 rank 1 cycle 2996 t = 53.1294: max |sum V de|/sum V|de| = 0, fallback cells = 4560, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 3 r = 2.40267e+11 T* = 0 rho = nan de = 0
+### rad_implicit_x1 rank 0 cycle 2996 t = 5.312936e+01: max |sum V de|/sum V|de| = 0.000000e+00, fallback cells = 4560, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 0 r = 2.402668e+11 T* = 0.000000e+00 rho = -nan de = 0.000000e+00
+### rad_implicit_x1 rank 0 cycle 2996 t = 5.312936e+01: max |sum V de|/sum V|de| = 0.000000e+00, fallback cells = 4560, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 0 r = 2.402668e+11 T* = 0.000000e+00 rho = -nan de = 0.000000e+00
+### rad_implicit_x1 rank 1 cycle 2996 t = 53.1294: max |sum V de|/sum V|de| = 0, fallback cells = 4560, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 3 r = 2.40267e+11 T* = 0 rho = nan de = 0
+### rad_implicit_x1 rank 0 cycle 2997 t = 5.312936e+01: max |sum V de|/sum V|de| = 0.000000e+00, fallback cells = 4560, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 0 r = 2.402668e+11 T* = 0.000000e+00 rho = -nan de = 0.000000e+00
+### rad_implicit_x1 rank 1 cycle 2997 t = 53.1294: max |sum V de|/sum V|de| = 0, fallback cells = 4560, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 3 r = 2.40267e+11 T* = 0 rho = nan de = 0
+### rad_implicit_x1 rank 0 cycle 2997 t = 5.312936e+01: max |sum V de|/sum V|de| = 0.000000e+00, fallback cells = 4560, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 0 r = 2.402668e+11 T* = 0.000000e+00 rho = -nan de = 0.000000e+00
+### rad_implicit_x1 rank 1 cycle 2997 t = 53.1294: max |sum V de|/sum V|de| = 0, fallback cells = 4560, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 3 r = 2.40267e+11 T* = 0 rho = nan de = 0
+### rad_implicit_x1 rank 0 cycle 2998 t = 5.312936e+01: max |sum V de|/sum V|de| = 0.000000e+00, fallback cells = 4560, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 0 r = 2.402668e+11 T* = 0.000000e+00 rho = -nan de = 0.000000e+00
+### rad_implicit_x1 rank 1 cycle 2998 t = 53.1294: max |sum V de|/sum V|de| = 0, fallback cells = 4560, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 3 r = 2.40267e+11 T* = 0 rho = nan de = 0
+### rad_implicit_x1 rank 1 cycle 2998 t = 53.1294: max |sum V de|/sum V|de| = 0, fallback cells = 4560, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 3 r = 2.40267e+11 T* = 0 rho = nan de = 0
+### rad_implicit_x1 rank 0 cycle 2998 t = 5.312936e+01: max |sum V de|/sum V|de| = 0.000000e+00, fallback cells = 4560, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 0 r = 2.402668e+11 T* = 0.000000e+00 rho = -nan de = 0.000000e+00
+### rad_implicit_x1 rank 1 cycle 2999 t = 53.1294: max |sum V de|/sum V|de| = 0, fallback cells = 4560, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 3 r = 2.40267e+11 T* = 0 rho = nan de = 0
+### rad_implicit_x1 rank 0 cycle 2999 t = 5.312936e+01: max |sum V de|/sum V|de| = 0.000000e+00, fallback cells = 4560, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 0 r = 2.402668e+11 T* = 0.000000e+00 rho = -nan de = 0.000000e+00
+### rad_implicit_x1 rank 0 cycle 2999 t = 5.312936e+01: max |sum V de|/sum V|de| = 0.000000e+00, fallback cells = 4560, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 0 r = 2.402668e+11 T* = 0.000000e+00 rho = -nan de = 0.000000e+00
+### rad_implicit_x1 rank 1 cycle 2999 t = 53.1294: max |sum V de|/sum V|de| = 0, fallback cells = 4560, conservative clips = 0
+    first fallback (m,k,j,i) = (0,3,3,98) gid = 3 r = 2.40267e+11 T* = 0 rho = nan de = 0
+### FATAL ERROR in /viper/u2/jinma/ATHENAK/bench/wt_he4/src/driver/driver.cpp at line 634
+non-finite conserved density or energy in 39690 cell(s), of which 6056 active and 33634 ghost, at cycle 3000, time = 5.312936e+01 (time/nan_check_cycles = 100)
+    first non-finite cell (m,k,j,i) = (0,0,0,33) on rank 0; active cells are i = 3..98, j = 3..6, k = 3..6; bad i span 32..101
+    first non-finite cell (m,k,j,i) = (0,0,0,35) on rank 1; active cells are i = 3..98, j = 3..6, k = 3..6; bad i span 31..101
+    first non-finite ACTIVE cell (m,k,j,i) = (0,3,3,39) on rank 1; MeshBlock gid = 3, panel = 3, level = 0, lloc = (0,0,0)
+    first non-finite ACTIVE cell (m,k,j,i) = (0,3,3,35) on rank 0; MeshBlock gid = 0, panel = 0, level = 0, lloc = (0,0,0)
+      w0 i = 34: rho = 2.343216e-09 p/e = 5.522544e+06 v1 = 2.391108e+04 v2 = 1.760611e-02 v3 = 1.710185e-02
+      w0 i = 35: rho = nan p/e = nan v1 = nan v2 = -nan v3 = -nan
+      w0 i = 36: rho = nan p/e = nan v1 = -nan v2 = nan v3 = nan
+      w0 i = 38: rho = 2.4417e-09 p/e = 4.8877e+06 v1 = 24171.7 v2 = 0.0281441 v3 = 0.0327989
+      w0 i = 39: rho = -nan p/e = -nan v1 = -nan v2 = nan v3 = nan
+      w0 i = 40: rho = nan p/e = nan v1 = nan v2 = -nan v3 = -nan
+                                  
+================================= 
+Global information about the job: 
+================================= 
+  
+Job owner: jinma(28895)
+Job name:  he4_r1d
+Node list: vipa1001
+Job start: Thu Sep 17 08:45:52 CEST 2026
+Job end:   Thu Sep 17 08:48:29 CEST 2026
+Work dir:  /viper/u2/jinma/ATHENAK/bench/wt_he4
+Command:   /viper/u2/jinma/ATHENAK/bench/wt_he4/tests_3d/sub_relax1d.sh
+  
+  
+  
+==========================================================================================
+Information on jobsteps (Note: MaxRSS/AveRSS is the maximum/average over all 
+tasks of the per-task memory high-water marks; cf. "man sacct"): 
+==========================================================================================
+  
+JobID            JobName NNodes NTasks  NCPUS       MaxRSS       AveRSS    Elapsed ExitCode
+------------- ---------- ------ ------ ------ ------------ ------------ ---------- --------
+11757647         he4_r1d      1            32                             00:02:37      1:0
+11757647.0        athena      1      2     32     1459.95M     1193.80M   00:02:35      1:0
+  
+Maximum memory per node: 3.061731 GB (defined as MaxRSS*Ntasks/NNodes)
+CPU utilization: 12.5 %
+  
