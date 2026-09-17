@@ -96,6 +96,10 @@
 //!                        energy can then leave; problem/face_budget reports how much.
 //!   problem/s_relax_cs, problem/s_relax_cp   the two relaxation rates (0.1, 0.3)
 //!   problem/column_dump  if set, rank 0 writes the initial column to this file
+//!   problem/ic_profile   if set, the initial stratification is READ from this file
+//!                        ("r[cm] rho eint" ascending in r) instead of marched, and
+//!                        problem/ptop and the outer-wall gas-solution check are unused
+//!   problem/nfine        nodes of the fine radial grid the column lives on
 //!   problem/user_srcs    must be true (the gravity source lives here)
 //!
 //! <hydro|mhd>/isotropic_conduction = radiative with rad_kappa_src = table_rho makes the
@@ -1314,6 +1318,22 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   opac_tmin_ = pin->GetOrAddReal("problem", "opac_tmin", -1.0);
   const std::string opac = pin->GetString("problem", "opac_table");
   const std::string dump = pin->GetOrAddString("problem", "column_dump", "");
+  // problem/ic_profile: an EXTERNALLY SUPPLIED 1-D stratification, three columns
+  // "r[cm] rho[g/cm^3] eint[erg/cm^3]" in ASCENDING r (the same file format
+  // box_convection reads, with r in place of z).  When it is set the pgen's own
+  // hydrostatic+MLT march is SKIPPED ENTIRELY and the column below is built from the
+  // file instead.  It exists because that march cannot build a RADIATION-DOMINATED
+  // envelope: it anchors the top at the grey tau = 0 temperature, where a T^4/3 is
+  // within a few per cent of the total pressure, refuses that state outright (the "no
+  // gas solution at the outer wall" abort), knows nothing about the EOS radiation taper
+  // (<hydro>/eos_rad_rho_hi/lo) or about the two-stream radiative force
+  // (problem/rt_rad_force) that carries the pressure the taper removed, and the error
+  // those make at the top runs away inward.  A file built OFFLINE against this run's own
+  // table -- solving p_gas(rho,T) + a T^4/3 = p_column(r) node by node and then applying
+  // the taper at fixed (rho,T) -- has none of those problems.  rho may be NON-MONOTONE
+  // (a density inversion is physical in a super-Eddington envelope), which is why the
+  // interpolation below searches on r and never on rho.
+  const std::string icprof = pin->GetOrAddString("problem", "ic_profile", "");
   x1min_ = pmy_mesh_->mesh_size.x1min;
   const Real x1max = pmy_mesh_->mesh_size.x1max;
   rin_ = curv ? x1min_ : pin->GetReal("problem", "rin")/lunit;
@@ -1914,7 +1934,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
 
   // --- the initial column: fine grid in r from below the inner ghosts to above the
   // outer ones (10 % margins cover any stretch), integrated from the outer wall
-  const int nfine = 40*pmy_mesh_->mesh_indcs.nx1 + 2*ng*40;
+  const int nfine = pin->GetOrAddInteger("problem", "nfine",
+                                        40*pmy_mesh_->mesh_indcs.nx1 + 2*ng*40);
   const Real rlo = rin - 0.1*(rout - rin), rhi = rout + 0.1*(rout - rin);
   const Real drf = (rhi - rlo)/(nfine - 1);
   // The column is integrated DOWNWARD from itop, so itop -- not the grid -- is what
@@ -1924,6 +1945,87 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   DvceArray1D<Real> lnp("rg_lnp", nfine), tk("rg_tk", nfine);
   DvceArray1D<Real> kap("rg_kap", nfine), grad("rg_grad", nfine), tau("rg_tau", nfine);
   DvceArray1D<Real> vcc("rg_vc", nfine), rhoa("rg_rho", nfine);
+  // --- problem/ic_profile: (rho, eint) on the fine grid, read on the host.  Both are
+  // interpolated LOG-LINEARLY in r, as box_convection does: the profile spans decades in
+  // both and a linear interpolant on the coarse file nodes would not be hydrostatic to
+  // the accuracy the file itself has.  Nodes of the fine grid outside the file's range
+  // -- the 10 % margins, which no cell and no ghost ever reaches -- continue the end
+  // segment; ColumnAt clamps there in any case.
+  const bool useprof = !icprof.empty();
+  DualArray1D<Real> pfd("rg_pfd", nfine), pfe("rg_pfe", nfine);
+  if (useprof) {
+    std::ifstream pf(icprof);
+    if (!pf.good()) {
+      std::cout << "### FATAL ERROR in red_giant: cannot open problem/ic_profile '"
+                << icprof << "'" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    std::vector<Real> rf, df, ef;
+    std::string line;
+    while (std::getline(pf, line)) {
+      if (line.empty() || line[0] == '#') continue;
+      std::istringstream is(line);
+      Real a, b, c;
+      if (!(is >> a >> b >> c)) continue;
+      rf.push_back(a/lunit);
+      df.push_back(b/dunit);
+      ef.push_back(c/punit_);
+    }
+    if (rf.size() < 2) {
+      std::cout << "### FATAL ERROR in red_giant: problem/ic_profile '" << icprof
+                << "' has " << rf.size() << " usable rows" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    for (std::size_t q = 1; q < rf.size(); ++q) {
+      if (!(rf[q] > rf[q-1])) {
+        std::cout << "### FATAL ERROR in red_giant: problem/ic_profile must be in "
+                  << "ASCENDING r; row " << q << " is r = " << rf[q]*lunit
+                  << " after " << rf[q-1]*lunit << " cm" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }
+    // COVERAGE is checked on the RADII THE GRID ACTUALLY HAS, ghosts included -- not on
+    // the fine grid's 10 % margins, which are scratch.  The ghosts matter because the
+    // wall and open radial boundaries fill them from this column.
+    {
+      auto &x1v_ic = pmbp->pcoord->x1v;
+      auto hx1v_ic = Kokkos::create_mirror_view(x1v_ic);
+      Kokkos::deep_copy(hx1v_ic, x1v_ic);
+      Real rgmin = std::numeric_limits<Real>::max();
+      Real rgmax = -std::numeric_limits<Real>::max();
+      for (int m = 0; m <= nmb1; ++m) {
+        for (int i = 0; i <= n1m1; ++i) {
+          const Real rr = RadiusOf(curv, hx1v_ic(m,i), rin, x1min_);
+          rgmin = fmin(rgmin, rr);
+          rgmax = fmax(rgmax, rr);
+        }
+      }
+      if (rf.front() > rgmin || rf.back() < rgmax) {
+        std::cout << "### FATAL ERROR in red_giant: problem/ic_profile spans ["
+                  << rf.front()*lunit << ", " << rf.back()*lunit << "] cm, which does "
+                  << "not cover the radial grid plus its ghosts ["
+                  << rgmin*lunit << ", " << rgmax*lunit << "] cm" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }
+    std::size_t kk = 0;
+    for (int i = 0; i < nfine; ++i) {
+      const Real r = rlo + i*drf;
+      while (kk + 2 < rf.size() && rf[kk+1] < r) ++kk;
+      const Real w = (r - rf[kk])/(rf[kk+1] - rf[kk]);
+      pfd.h_view(i) = std::exp(std::log(df[kk])*(1.0 - w) + std::log(df[kk+1])*w);
+      pfe.h_view(i) = std::exp(std::log(ef[kk])*(1.0 - w) + std::log(ef[kk+1])*w);
+    }
+    pfd.modify_host();  pfd.sync_device();
+    pfe.modify_host();  pfe.sync_device();
+    if (global_variable::my_rank == 0) {
+      std::cout << "red_giant: initial stratification READ FROM " << icprof << " ("
+                << rf.size() << " nodes, " << rf.front()*lunit << " .. "
+                << rf.back()*lunit << " cm); the hydrostatic+MLT march, problem/ptop "
+                << "and the outer-wall gas-solution check are all OVERRIDDEN"
+                << std::endl;
+    }
+  }
   {
     const Real ttop = teff*pow(0.5, 0.25);
     const Real ptop = ptop_cgs/punit_;
@@ -1940,6 +2042,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     const Real tauhi = (ic_tau_rad_ >= 0.0) ? ic_tau_rad_ : tauhi_blend;
     const Real dbg = bg_rho_/dunit, tbg = bg_temp_, gm1c = gm1;
     const bool bghse = bg_hydrostatic_;
+    auto pfd_d = pfd.d_view;
+    auto pfe_d = pfe.d_view;
+    const bool useprof_k = useprof;
     par_for("rg_column", DevExeSpace(), 0, 0, KOKKOS_LAMBDA(const int dummy) {
       // gradient at (p [code], T [K], tau): d ln T / d ln p and the state
       auto nabla = [&](const Real r, const Real p, const Real t, const Real ta,
@@ -2022,15 +2127,30 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         ta -= kr*rho*dun*dr*lun;        // dr < 0 inward: tau increases
         if (ta < 0.0) ta = 0.0;
       };
-      lnp(itop) = log(ptop);
-      tk(itop) = ttop;
-      Real ta = 0.0;
-      for (int i = itop+1; i < nfine; ++i) {
-        step(rlo + (i-1)*drf, lnp(i-1), tk(i-1), drf, lnp(i), tk(i), ta);
-      }
-      ta = 0.0;
-      for (int i = itop-1; i >= 0; --i) {
-        step(rlo + (i+1)*drf, lnp(i+1), tk(i+1), -drf, lnp(i), tk(i), ta);
+      if (useprof_k) {
+        // problem/ic_profile: the column IS the file.  Everything downstream -- the
+        // initial state, the radial ghosts of both boundary modes, the static
+        // well-balanced background, the sponges, the seed's tau window and column_dump
+        // -- reads (lnp, tk) through ColumnAt, so converting the supplied (rho, eint)
+        // here with THIS run's own EOS is all that is needed, and it is the run's own
+        // (p, T) by construction.  No march, no anchor, no ptop.
+        for (int i = 0; i < nfine; ++i) {
+          Real pp_, tt_;
+          pgen_eos::PresTempFromEint(eos, gm1c, rgas, pfd_d(i), pfe_d(i), -1.0, pp_, tt_);
+          lnp(i) = log(pp_);
+          tk(i) = tt_;
+        }
+      } else {
+        lnp(itop) = log(ptop);
+        tk(itop) = ttop;
+        Real ta = 0.0;
+        for (int i = itop+1; i < nfine; ++i) {
+          step(rlo + (i-1)*drf, lnp(i-1), tk(i-1), drf, lnp(i), tk(i), ta);
+        }
+        ta = 0.0;
+        for (int i = itop-1; i >= 0; --i) {
+          step(rlo + (i+1)*drf, lnp(i+1), tk(i+1), -drf, lnp(i), tk(i), ta);
+        }
       }
       // --- THE AMBIENT MEDIUM.  Everything above the point where the star's own column
       // has thinned to bg_rho becomes either a constant (bg_rho, bg_temp) medium or, with
@@ -2275,7 +2395,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // the top state must have a gas solution: under a general EOS with radiation the
     // total pressure cannot fall below a T^4/3, and SolveDensity then hands back the
     // table floor -- a column of floor density that looks like a run and is not one
-    {
+    if (!useprof) {
       const Real p_t = exp(hlnp(itop)), t_t = htk(itop);
       const Real rho_t = DensFromPT(eos, rgas, p_t, t_t)*dunit;
       const Real prad = kArad*t_t*t_t*t_t*t_t/3.0;
