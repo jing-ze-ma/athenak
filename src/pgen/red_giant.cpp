@@ -117,6 +117,7 @@
 //! its own equilibrium rather than relaxing to it.
 
 #include <cmath>
+#include <cstdio>
 #include <fstream>
 #include <iostream>
 #include <random>
@@ -154,6 +155,9 @@ using pgen_eos::GradAd;
 using pgen_eos::TempKelvin;
 
 void RedGiantGravity(Mesh *pm, Real bdt);
+// problem/rt_strang, problem/rt_once_per_cycle: the radiation operator applied OUTSIDE
+// the RK stages (ProblemGenerator::user_split_func).  See the declarations of rt_strang_
+void RedGiantRTSplit(Mesh *pm, Real bdt);
 void RedGiantBC(Mesh *pm);
 void RedGiantFinal(ParameterInput *pin, Mesh *pm);
 
@@ -424,6 +428,101 @@ Real face_E_in_l_ = 0.0, face_E_out_l_ = 0.0, face_t_last_ = 0.0;
 Real open_dE_ent_ = 0.0, open_dE_prs_ = 0.0, open_dE_den_ = 0.0;
 Real open_lstar_ = 0.0, open_t_last_ = 0.0;
 Real open_dE_ent_l_ = 0.0, open_dE_prs_l_ = 0.0, open_dE_den_l_ = 0.0;
+// --- OPERATOR-SPLIT SCHEDULING, ported from box_convection.cpp (:1922-2110).
+// problem/rt_strang: the radiation operator (the two-stream column solve, its radiative
+// force and, with rt_split_transverse, the implicit transverse diffusion) is applied as
+// a Strang-split operator around the time integrator -- dt/2 before, dt/2 after -- and
+// NOT inside the RK stages.  problem/rt_once_per_cycle is the Lie variant: once with the
+// full dt after the last stage.  Both are enrolled through user_split_func.
+bool rt_strang_ = false;
+bool rt_once_ = false;
+// problem/rt_split_transverse: with the column out of the stage, take the implicit
+// transverse (ADI) operator out with it, over the same bdt.  Default ON under a split.
+bool rt_split_tr_ = false;
+
+// --- problem/vdamp_top_tau, problem/vdamp_top_time (0 = OFF, the default, and bitwise
+// inert): the TAU-BASED top sponge ported from box_convection.cpp (:1691-1692 and the
+// kernel at :2774).  Each stage the RADIAL momentum is relaxed as
+//     m1 -> m1/(1 + f bdt/vdamp_top_time),
+// with the ramp f = 1 where the COLUMN optical depth tau <= vdamp_top_tau/3, f = 0 where
+// tau >= vdamp_top_tau and a raised cosine in log tau between (RadBlendWeight, the same
+// shape the vertical blend uses).  It reads the per-column tau the conduction module
+// builds each sweep (Conduction::rad_tauf), so it FOLLOWS the photosphere, which is what
+// a radiation-pressure-dominated envelope needs; red_giant's own sponge (problem/sponge)
+// is positioned by radius fraction instead and both may run together.
+Real vdamp_tau_ = 0.0, vdamp_time_ = 20.0;
+bool vdamp_printed_ = false;
+// --- problem/vdamp_bot_cells, vdamp_bot_time, vdamp_bot_mean_only (0 = OFF, bitwise
+// inert): the bottom sponge (box_convection.cpp:1708-1710, kernel :2822), over the
+// lowest N ACTIVE RADIAL cells i = is .. is+N-1, with the ramp
+//     f = (1 + cos(pi (i-is)/N))/2,   g = 1 - exp(-f bdt/vdamp_bot_time),
+//     m1 -> m1 - g m1          (vdamp_bot_mean_only = false, the default), or
+//     m1 -> m1 - g rho <v1>_shell   (vdamp_bot_mean_only = true; the shell mean is taken
+//                                    over every angular cell at that radius, all ranks).
+// The internal energy is conserved: the kinetic-energy change is written back to IEN.
+// Insurance against the deep g-mode cavity under an open inner boundary.
+int vdb_cells_ = 0;
+Real vdb_time_ = 20.0;
+bool vdb_mean_ = false;
+DvceArray1D<Real> vdb_d_;        // (N): the shell sums of v1, then the shell means
+HostArray1D<Real> vdb_h_;
+
+// --- problem/rt_surface_dt, rt_surface_file: the EMERGENT TOP-FACE FLUX per angular
+// cell, the spherical reading of box_convection.cpp's rt_surface dump (:889-955).  Every
+// MeshBlock spans the whole radius, so the i = ie+1 face of every block IS the top of the
+// star and every rank owns whole columns.  RECORD LAYOUT (little-endian, appended):
+//     int64  n              number of angular cells in this record (all ranks, all panels
+//                           concatenated in rank then block then (k,j) order)
+//     double t              simulation time
+//     double row[n][4]      panel, x2v, x3v, F_top   -- panel is the cubed-sphere panel
+//                           index 0..5 as a double (-1 off the cubed sphere), x2v/x3v the
+//                           cell-centre gnomonic coordinates on that panel in [-1,1], and
+//                           F_top the net radial two-stream flux on the cell's top face.
+// The box writes 3 doubles per row (x2, x3, F) with no panel column, so a reader such
+// as analysis_0916/fmode_w7_t10 needs one change: read 4 columns and carry the panel.
+Real surf_dt_ = 0.0;             // <= 0 disables it
+Real surf_next_ = -1.0;          // next dump time; armed at the first source call
+char surf_file_[256] = "rt_surface.bin";
+DvceArray2D<Real> surf_d_;       // (ncol_local, 4): panel, x2, x3, F_top
+HostArray2D<Real> surf_h_;
+bool surf_alloc_ = false;
+// --- problem/rt_profile_dt, rt_profile_file: SHELL-AVERAGED RADIAL PROFILES, the
+// spherical reading of box_convection.cpp's rt_profile dump (:968-1050).  The average is
+// AREA WEIGHTED over every angular cell at a radial index -- on the cubed sphere the
+// gnomonic cells differ in area by ~4 between panel centre and corner, so a plain cell
+// count would be a different average at every radius.  Every MeshBlock spans the whole
+// radius, so the local index i - is IS the global radial index.  RECORD LAYOUT:
+//     double t
+//     int32  nx1, int32 nvar (= 8)
+//     double x1v[nx1]                      the radial cell centres
+//     double q[nvar][nx1]                  the shell means, slot order
+//        0 rho   1 v1   2 rho v1   3 v1^2   4 v2^2+v3^2   5 T[K]   6 eint   7 v1(eint+p)
+// Identical to the box's record except that x1v is the STRETCHED grid's own cell centres
+// rather than a uniform reconstruction, so a reader must take x1v from the file (the box
+// reader already does).
+constexpr int kNProf = 8;        // see the slot list above
+Real prof_dt_ = 0.0;             // <= 0 disables it
+Real prof_next_ = -1.0;
+char prof_file_[256] = "rt_profile.bin";
+DvceArray2D<Real> prof_d_;       // (kNProf+1, nx1): the weighted shell SUMS, then means
+HostArray2D<Real> prof_h_;
+bool prof_alloc_ = false;
+
+// --- problem/vpert_var: "v1" (default) seeds the RADIAL VELOCITY, exactly as before;
+// "eint" instead scales the internal energy at fixed density, i.e. an ENTROPY seed.  The
+// box's two options (box_convection.cpp:1383-1393), on red_giant's chart-free angular
+// pattern.
+int vpert_var_ = 0;
+// --- problem/vpert_tau_lo, problem/vpert_tau_hi: the optical-depth WINDOW of the seed,
+// the spherical reading of the box's height window vpert_zlo/vpert_zhi (which are quoted
+// in the He inputs as the tau values they mean).  tau_hi is the DEEP edge, tau_lo the
+// shallow one; the envelope is sin(pi ln(tau_hi/tau)/ln(tau_hi/tau_lo)) inside the
+// window and 0 outside, so the seed vanishes at both edges.  tau comes from the INITIAL
+// column, on its own fine radial grid.  Both 0 (the default) = no window, bitwise the
+// old seed.
+Real vpert_tau_lo_ = 0.0, vpert_tau_hi_ = 0.0;
+DvceArray1D<Real> tau_d_;        // the initial column's tau on the fine radial grid
+
 bool relax_ = false;     // the optically thin relaxation is on (radiative + tau blend)
 bool rt_ck_ = false;     // problem/rt_ck: the band solver replaces that relaxation
 // problem/rt_grey: the GREY two-stream on the same machinery, sharing the conduction
@@ -821,6 +920,24 @@ void RGNanScan(Mesh *pm, const char *opname) {
             << " u(IM1) = " << hr(7) << std::endl;
 }
 
+//----------------------------------------------------------------------------------------
+//! \fn void RedGiantRTSweep
+//! \brief the band/grey two-stream call itself, shared by the in-stage source term and
+//! the operator-split entry point (problem/rt_strang, rt_once_per_cycle) so that the two
+//! are the SAME code with a different dt.
+
+void RedGiantRTSweep(Mesh *pm, Real bdt) {
+  if (!ck_dumped2_ && ck_dump_t2_ >= 0.0 && !ck_dump_file2_.empty() &&
+      pm->time >= ck_dump_t2_) {
+    ck_dumped2_ = true;
+    two_stream_rt::rt_dump_file = ck_dump_file2_;
+    two_stream_rt::rt_dump_done = false;      // re-arm the one-shot dump
+  }
+  two_stream_rt::picket_fence_two_stream_RT(pm, bdt);
+  RGNanScan(pm, "RT_two_stream");
+  runaway_scan::Scan(pm, "RT_two_stream");
+}
+
 } // namespace
 
 //----------------------------------------------------------------------------------------
@@ -1021,20 +1138,33 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     namespace ts = two_stream_rt;
     ts::rt_grey = true;
     ts::rt_split = true;             // implied: the grey kernel lives on the split path
+    // THE MERGED IMPLICIT COLUMN SOLVE (problem/rt_implicit_column), ported from
+    // box_convection.cpp:1844-1921.  3 = the EXACT block-tridiagonal solve of the whole
+    // radial column; 0 (the default) is the old per-cell semi-implicit apply and leaves
+    // this problem generator bitwise unchanged.  It is read FIRST because the mode-3
+    // gate (two_stream_rt.hpp:1386-1414) demands rt_use_cons, rt_src_direct,
+    // rt_semi_implicit, !rt_explicit, !rt_layer_legacy, !rt_top_re and rt_outer_iter = 1,
+    // i.e. the OPPOSITE of four of red_giant's legacy defaults: so every one of those
+    // defaults is keyed on col3 below.  Each is still a GetOrAdd, so the input file
+    // always wins and a mode-0 run reads exactly the values it read before.
+    ts::rt_implicit_column = pin->GetOrAddInteger("problem", "rt_implicit_column", 0);
+    const bool col3 = (ts::rt_implicit_column == 3);
     ts::rt_de_max = pin->GetOrAddReal("problem", "rt_de_max", 0.5);
-    // these five default to the OLD (pre-fix) solver, as they must for every problem
-    // generator sharing two_stream_rt.hpp; the red-giant inputs turn them on explicitly
-    ts::rt_semi_lin = pin->GetOrAddBoolean("problem", "rt_semi_lin", true);
+    // these five default to the OLD (pre-fix) solver under rt_implicit_column = 0, as
+    // they must for every problem generator sharing two_stream_rt.hpp; the red-giant
+    // inputs turn them on explicitly.  Under mode 3 they default to the FIXED solver,
+    // which is what that gate requires anyway (see col3 above).
+    ts::rt_semi_lin = pin->GetOrAddBoolean("problem", "rt_semi_lin", !col3);
     ts::rt_explicit = pin->GetOrAddBoolean("problem", "rt_explicit", false);
-    ts::rt_newton = pin->GetOrAddBoolean("problem", "rt_newton", false);
-    ts::rt_rescue_eq = pin->GetOrAddBoolean("problem", "rt_rescue_eq", false);
+    ts::rt_newton = pin->GetOrAddBoolean("problem", "rt_newton", col3);
+    ts::rt_rescue_eq = pin->GetOrAddBoolean("problem", "rt_rescue_eq", col3);
     ts::rt_ali_diag = pin->GetOrAddBoolean("problem", "rt_ali_diag", true);
     ts::rt_relax_sub = pin->GetOrAddInteger("problem", "rt_relax_sub", 1);
     ts::rt_relax_xcrit = pin->GetOrAddReal("problem", "rt_relax_xcrit", 1.0);
     ts::rt_relax_submax = pin->GetOrAddInteger("problem", "rt_relax_submax", 32);
-    ts::rt_src_direct = pin->GetOrAddBoolean("problem", "rt_src_direct", false);
-    ts::rt_top_clamp = pin->GetOrAddBoolean("problem", "rt_top_clamp", false);
-    ts::rt_use_cons = pin->GetOrAddBoolean("problem", "rt_use_cons", false);
+    ts::rt_src_direct = pin->GetOrAddBoolean("problem", "rt_src_direct", col3);
+    ts::rt_top_clamp = pin->GetOrAddBoolean("problem", "rt_top_clamp", col3);
+    ts::rt_use_cons = pin->GetOrAddBoolean("problem", "rt_use_cons", col3);
     ts::rt_bface = pin->GetOrAddBoolean("problem", "rt_bface", false);
     ts::rt_apply_debug = pin->GetOrAddInteger("problem", "rt_apply_debug", 0);
     ts::rt_apply_debug_n = pin->GetOrAddInteger("problem", "rt_apply_debug_n", 8);
@@ -1043,7 +1173,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // down.  Default ON here because a star has nothing above it: with outer_bc = open
     // the mirroring column sealed the atmosphere -- 6650 K isothermal, emergent flux
     // 0.3 % of L.  Set problem/rt_top_re = false to get the old boundary back.
-    ts::rt_top_re = pin->GetOrAddBoolean("problem", "rt_top_re", true);
+    ts::rt_top_re = pin->GetOrAddBoolean("problem", "rt_top_re", !col3);
     // see two_stream_rt.hpp, rt_cut_bc_legacy: the grey sweep used to start the upward
     // intensity at the cut isotropic at B, which is exactly half the flux the column
     // supports.  The fix is the default here too; true restores the old boundary.
@@ -1061,7 +1191,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     ts::rt_dump_m = pin->GetOrAddInteger("problem", "ck_dump_m", 0);
     ts::rt_dump_j = pin->GetOrAddInteger("problem", "ck_dump_j", -1);
     ts::rt_dump_k = pin->GetOrAddInteger("problem", "ck_dump_k", -1);
-    ts::rt_use_cons = pin->GetOrAddBoolean("problem", "rt_use_cons", false);
+    ts::rt_use_cons = pin->GetOrAddBoolean("problem", "rt_use_cons", col3);
     ts::rt_bface = pin->GetOrAddBoolean("problem", "rt_bface", false);
     ts::rt_apply_debug = pin->GetOrAddInteger("problem", "rt_apply_debug", 0);
     ts::rt_apply_debug_n = pin->GetOrAddInteger("problem", "rt_apply_debug_n", 8);
@@ -1070,6 +1200,232 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // ck_nquad picks the angular quadrature for the grey sweep too: 1 = hemispheric
     // mean, 2 = two-point Gauss
     correlated_k::ck_nq = pin->GetOrAddInteger("problem", "ck_nquad", 1);
+    // ---- the column solve's own controls, ported verbatim from box_convection.cpp
+    // (:1844-1921).  Every name, and every default, is the box's, so the same input
+    // line means the same thing in both problem generators.
+    ts::rt_semi_implicit = pin->GetOrAddBoolean("problem", "rt_semi_implicit", true);
+    ts::rt_outer_iter = pin->GetOrAddInteger("problem", "rt_outer_iter", 1);
+    ts::rt_outer_verbose = pin->GetOrAddBoolean("problem", "rt_outer_verbose", false);
+    ts::rt_impl_tol = pin->GetOrAddReal("problem", "rt_impl_tol", col3 ? 1.0e-8 : 1.0e-6);
+    ts::rt_col3_ex_iter = pin->GetOrAddBoolean("problem", "rt_col3_ex_iter", false);
+    // mode 3 converges in 2-4 Newton steps and is cheap per step, so it gets one more
+    // than the linearised modes by default
+    ts::rt_impl_maxit = pin->GetOrAddInteger("problem", "rt_impl_maxit", col3 ? 8 : 5);
+    ts::rt_impl_exjac = pin->GetOrAddBoolean("problem", "rt_impl_exjac", true);
+    ts::rt_impl_norm = pin->GetOrAddInteger("problem", "rt_impl_norm", 1);
+    ts::rt_impl_norm_eps = pin->GetOrAddReal("problem", "rt_impl_norm_eps", 1.0e-3);
+    ts::rt_impl_dstop = pin->GetOrAddBoolean("problem", "rt_impl_dstop", true);
+    ts::rt_impl_rescheck = pin->GetOrAddBoolean("problem", "rt_impl_rescheck", true);
+    ts::rt_impl_ablate = pin->GetOrAddInteger("problem", "rt_impl_ablate", 0);
+    ts::rt_impl_fixit = pin->GetOrAddBoolean("problem", "rt_impl_fixit", false);
+    if (ts::rt_impl_ablate != 0 || ts::rt_impl_fixit) {
+      std::cout << "### WARNING in red_giant: problem/rt_impl_ablate or rt_impl_fixit "
+                << "is set.  These are TIMING INSTRUMENTATION and the mode-3 solve they "
+                << "produce is NOT a correct solve." << std::endl;
+    }
+    ts::rt_impl_cvfreeze = pin->GetOrAddInteger("problem", "rt_impl_cvfreeze", 0);
+    // problem/rt_impl_mixed: 0 = double (default), 1 = single-precision Newton
+    // correction, 2 = and single-precision stored factors.  See two_stream_rt.hpp.
+    ts::rt_impl_mixed = pin->GetOrAddInteger("problem", "rt_impl_mixed", 0);
+    if (ts::rt_impl_mixed < 0 || ts::rt_impl_mixed > 2) {
+      std::cout << "### FATAL ERROR in red_giant: problem/rt_impl_mixed must be 0, 1 or 2"
+                << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    // problem/rt_impl_reuse: reuse the block factorisation across Newton passes, with a
+    // contraction check (1) or unconditionally (2).  0 (the default) is the old code.
+    ts::rt_impl_reuse = pin->GetOrAddInteger("problem", "rt_impl_reuse", 0);
+    ts::rt_impl_reuse_rho = pin->GetOrAddReal("problem", "rt_impl_reuse_rho", 0.3);
+    if (ts::rt_impl_reuse < 0 || ts::rt_impl_reuse > 2) {
+      std::cout << "### FATAL ERROR in red_giant: problem/rt_impl_reuse must be 0, 1 or 2"
+                << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    // how the mode-3 block system is solved: the serial block Thomas (one thread per
+    // column) or the team-partitioned solve (two_stream_column_partition.hpp)
+    {
+      const std::string sv = pin->GetOrAddString("problem", "rt_impl_solver", "thomas");
+      if (sv.compare("thomas") == 0) {
+        ts::rt_impl_solver = 0;
+      } else if (sv.compare("pcr") == 0) {
+        ts::rt_impl_solver = 1;
+      } else {
+        std::cout << "### FATAL ERROR in red_giant: problem/rt_impl_solver = " << sv
+                  << " is not one of thomas, pcr" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }
+    ts::rt_impl_redpar = pin->GetOrAddBoolean("problem", "rt_impl_redpar", false);
+    ts::rt_col3_hybrid_tau = pin->GetOrAddReal("problem", "rt_col3_hybrid_tau", 0.0);
+    ts::rt_col3_split_deep = pin->GetOrAddBoolean("problem", "rt_col3_split_deep", false);
+    ts::rt_col3_split_w = pin->GetOrAddInteger("problem", "rt_col3_split_w", 8);
+    // segments per column = the Kokkos team size of the PCR partitioned solve
+    ts::rt_impl_nseg = pin->GetOrAddInteger("problem", "rt_impl_nseg", 64);
+    if (ts::rt_impl_nseg < 1) {
+      std::cout << "### FATAL ERROR in red_giant: problem/rt_impl_nseg must be >= 1"
+                << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    // problem/rt_impl_warm: warm-start the mode-3 Newton from the previous call's
+    // converged Planck function (1) or from a linear extrapolation of the last two (2).
+    ts::rt_impl_warm = pin->GetOrAddInteger("problem", "rt_impl_warm", 0);
+    if (ts::rt_impl_warm < 0 || ts::rt_impl_warm > 2) {
+      std::cout << "### FATAL ERROR in red_giant: problem/rt_impl_warm must be 0, 1 or 2"
+                << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    ts::rt_impl_tau_min = pin->GetOrAddReal("problem", "rt_impl_tau_min", 1.0);
+    ts::rt_impl_dtmax = pin->GetOrAddReal("problem", "rt_impl_dtmax", 0.25);
+    ts::rt_impl_tau_blend = pin->GetOrAddReal("problem", "rt_impl_tau_blend", 1.0);
+    ts::rt_col3_skip_sweep = pin->GetOrAddBoolean("problem", "rt_col3_skip_sweep", false);
+    if (ts::rt_col3_skip_sweep && !(col3 && ts::rt_col3_ex_iter && ts::rt_src_direct)) {
+      std::cout << "### FATAL ERROR in red_giant: problem/rt_col3_skip_sweep needs "
+                << "rt_implicit_column = 3, rt_col3_ex_iter and rt_src_direct (the "
+                << "column solve then supplies the face flux from its own converged "
+                << "intensities)" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    if (col3) {
+      // the column solve is radial and private to a team, so one MeshBlock must hold
+      // the whole x1 extent, and the private intensity column is sized at compile time
+      // (box_convection.cpp:1778-1793, the same two checks)
+      if (pmy_mesh_->mb_indcs.nx1 != pmy_mesh_->mesh_indcs.nx1) {
+        std::cout << "### FATAL ERROR in red_giant: problem/rt_implicit_column = 3 "
+                  << "solves a whole RADIAL column inside one MeshBlock, but mesh/nx1 = "
+                  << pmy_mesh_->mesh_indcs.nx1 << " and meshblock/nx1 = "
+                  << pmy_mesh_->mb_indcs.nx1 << ". Set meshblock/nx1 = mesh/nx1 and "
+                  << "decompose in x2/x3 only." << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      if (indcs.nx1 + 2*ng > 520) {
+        std::cout << "### FATAL ERROR in red_giant: the grey column sweep dispatches on "
+                  << "compile-time column tiers, the largest of which is 520, but nx1 = "
+                  << indcs.nx1 << " and nghost = " << ng << " give "
+                  << (indcs.nx1 + 2*ng) << "." << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }
+    // ---- the thin-region RADIATIVE FORCE (box_convection.cpp:2185-2320) -------------
+    // The other half of the EOS's radiation taper: the taper removes (1-w) of the LTE
+    // radiation pressure from the gas, and this puts the force that pressure carried
+    // back as an explicit momentum source, (1-w) rho kappa F/c + Prad grad w.  Neither
+    // half is meaningful alone, so both are required together.  Mandatory for the He
+    // star, where kappa F/(c g) = 1.23 -- the envelope is super-Eddington.
+    //
+    // The g(r) the force works against is NOT a parameter of the source: the momentum
+    // term is built from the two-stream's own face flux and the taper weight, and the
+    // point-mass gravity it opposes is applied by this file's own rg_grav kernel.  The
+    // only place the solver needs a gravity is EffGravAt, for the unresolved column
+    // above the top face, and that already reads hot_jupiter_param.grav with
+    // grav_point_mass = true (set below), i.e. the true g(r) = G M / r^2.  ts::
+    // rt_force_grav is used ONLY to normalise the rt_force_verbose print, so it is set
+    // to g at the inner wall, the same reference GravAt uses.
+    ts::rt_rad_force = pin->GetOrAddBoolean("problem", "rt_rad_force", false);
+    ts::rt_force_verbose = pin->GetOrAddInteger("problem", "rt_force_verbose", 0);
+    ts::rt_force_grav = kGrav*mstar/SQR(rin_*lunit);
+    if (ts::rt_rad_force) {
+      if (!pmbp->phydro->peos->eos_data.tbl.rad_taper) {
+        std::cout << "### FATAL ERROR in red_giant: problem/rt_rad_force is the momentum "
+                  << "source that goes with the EOS radiation taper, and is only defined "
+                  << "when the taper is on: set <hydro>/eos_rad_rho_hi and "
+                  << "eos_rad_rho_lo (with eos_radiation = true), or drop rt_rad_force."
+                  << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      if (global_variable::my_rank == 0) {
+        std::cout << "red_giant: RT radiative momentum source ON -- (1-w) rho kappa F/c "
+                  << "+ Prad grad w, with w from the EOS taper; g(r) = GM/r^2"
+                  << std::endl;
+      }
+    }
+    // the TIME CENTRING of the two coupling terms mode 3 leaves first order.  Both are
+    // default-off and bitwise off; both need the exact column solve.
+    ts::rt_force_center = pin->GetOrAddInteger("problem", "rt_force_center", 0);
+    if (ts::rt_force_center < 0 || ts::rt_force_center > 2) {
+      std::cout << "### FATAL ERROR in red_giant: problem/rt_force_center must be 0 "
+                << "(entry flux), 1 (converged flux) or 2 (the average)" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    if (ts::rt_force_center > 0 && !col3) {
+      std::cout << "### FATAL ERROR in red_giant: problem/rt_force_center needs "
+                << "problem/rt_implicit_column = 3 (only the exact column solve has a "
+                << "converged flux to centre against)" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    ts::rt_src_theta = pin->GetOrAddReal("problem", "rt_src_theta", 1.0);
+    if (ts::rt_src_theta < 0.0 || ts::rt_src_theta > 1.0) {
+      std::cout << "### FATAL ERROR in red_giant: problem/rt_src_theta must be in [0, 1]"
+                << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    if (ts::rt_src_theta != 1.0 && !col3) {
+      std::cout << "### FATAL ERROR in red_giant: problem/rt_src_theta != 1 needs "
+                << "problem/rt_implicit_column = 3" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    // ---- problem/rt_bottom_flux (box_convection.cpp:2214) --------------------------
+    // Hand the internal flux to the TWO-STREAM's own lower boundary instead of to the
+    // conduction wall face.  Only consistent when the tau blend leaves the sweep the
+    // whole column, i.e. <hydro>/rad_tau_lo deeper than the domain so the blend weight
+    // is 0 on every face; that cannot be checked here (the weights are built per cycle),
+    // so it is stated, not enforced.  Meaningless with inner_bc = open, which injects
+    // the luminosity as the entropy of the inflow instead.
+    {
+      const bool rt_botflux = pin->GetOrAddBoolean("problem", "rt_bottom_flux", false);
+      if (rt_botflux) {
+        if (pc == nullptr || !pc->rad_tau_mode) {
+          std::cout << "### FATAL ERROR in red_giant: problem/rt_bottom_flux puts the "
+                    << "internal flux on the two-stream's lower boundary and takes it "
+                    << "off the conduction wall face, which is only consistent when the "
+                    << "sweep reaches that wall: <hydro>/rad_tau_hi must be set."
+                    << std::endl;
+          std::exit(EXIT_FAILURE);
+        }
+        ts::rt_bot_flux = pc->rad_flux_inner;
+        pc->rad_flux_inner = 0.0;
+        if (global_variable::my_rank == 0) {
+          std::printf("red_giant: F_bot = %.5e is carried by the TWO-STREAM's lower "
+                      "boundary (rt_bottom_flux); the conduction wall face injects "
+                      "nothing.  This assumes <hydro>/rad_tau_lo = %.3e is DEEPER than "
+                      "the domain, so the blend weight is 0 on every face.\n",
+                      ts::rt_bot_flux, pc->rad_tau_lo);
+        }
+      }
+    }
+    // ---- OPERATOR-SPLIT SCHEDULING (box_convection.cpp:1922-2110) -------------------
+    // problem/rt_strang: the whole radiation operator is Strang-split around the time
+    // integrator (dt/2 before, dt/2 after) instead of being applied once per RK stage;
+    // problem/rt_once_per_cycle applies it once with the full dt after the last stage.
+    // Both take the source OUT of the stage, so the in-stage call below is skipped.
+    // problem/rt_imex is deliberately NOT ported.
+    rt_strang_ = pin->GetOrAddBoolean("problem", "rt_strang", false);
+    rt_once_ = pin->GetOrAddBoolean("problem", "rt_once_per_cycle", false);
+    if (rt_strang_ && rt_once_) {
+      std::cout << "### FATAL ERROR in red_giant: problem/rt_strang and "
+                << "problem/rt_once_per_cycle are mutually exclusive" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    if (rt_strang_ || rt_once_) {
+      user_split_func = RedGiantRTSplit;
+      user_split_once = rt_once_;
+      // problem/rt_split_transverse: with the column out of the stage, the implicit
+      // transverse (ADI) operator moves WITH it, over the same bdt and on the state the
+      // column solve has just relaxed.  Default ON whenever a split is active.
+      rt_split_tr_ = pin->GetOrAddBoolean("problem", "rt_split_transverse", true);
+      if (rt_split_tr_ && pc != nullptr && pc->rad_implicit_ang) {
+        pc->rad_tr_split_out = true;
+      }
+      if (global_variable::my_rank == 0) {
+        std::cout << "red_giant: the two-stream is applied "
+                  << (rt_strang_ ? "STRANG-SPLIT around the time integrator (dt/2 "
+                                   "before, dt/2 after)"
+                                 : "ONCE per cycle with the full dt after the last RK "
+                                   "stage")
+                  << " and NOT inside the RK stages"
+                  << (rt_split_tr_ ? "; the transverse operator moves with it" : "")
+                  << std::endl;
+      }
+    }
     if (global_variable::my_rank == 0) {
       std::cout << "red_giant: GREY two-stream (problem/rt_grey), opacity from the "
                 << "conduction module's table, " << pin->GetOrAddInteger("problem",
@@ -3025,17 +3381,12 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
   }
 
   // --- the optically thin layers: the correlated-k or the grey two-stream if one of
-  // them is on, else the old grey Eddington relaxation
-  if (rt_ck_ || rt_grey_) {
-    if (!ck_dumped2_ && ck_dump_t2_ >= 0.0 && !ck_dump_file2_.empty() &&
-        pm->time >= ck_dump_t2_) {
-      ck_dumped2_ = true;
-      two_stream_rt::rt_dump_file = ck_dump_file2_;
-      two_stream_rt::rt_dump_done = false;      // re-arm the one-shot dump
-    }
-    two_stream_rt::picket_fence_two_stream_RT(pm, bdt);
-    RGNanScan(pm, "RT_two_stream");
-  runaway_scan::Scan(pm, "RT_two_stream");
+  // them is on, else the old grey Eddington relaxation.  problem/rt_strang and
+  // problem/rt_once_per_cycle take this source OUT of the stage: RedGiantRTSplit then
+  // makes exactly the same call, with a different dt and at a different point in the
+  // cycle, and nothing else moves.
+  if ((rt_ck_ || rt_grey_) && !rt_strang_ && !rt_once_) {
+    RedGiantRTSweep(pm, bdt);
   }
   // --- the grey relaxation (see UserProblem): with weight 1 - w each cell
   // decays toward the Eddington temperature of its optical depth on its radiative time
@@ -3079,6 +3430,41 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
     });
     RGNanScan(pm, "grey_relax");
   runaway_scan::Scan(pm, "grey_relax");
+  }
+  return;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RedGiantRTSplit
+//! \brief problem/rt_strang (and problem/rt_once_per_cycle): the two-stream as an
+//! OPERATOR-SPLIT source around the time integrator instead of an in-stage one.
+//! Hydro::RTStrangSplit calls this twice a cycle with bdt = dt/2 (or once with the full
+//! dt under rt_once_per_cycle), on the state at the start and at the end of the cycle,
+//! and runs ConToPrim after each.  It is exactly the call RedGiantGravity makes when the
+//! split is off, with a different dt and at a different point in the cycle.
+//!
+//! With problem/rt_split_transverse the implicit transverse (ADI) operator travels with
+//! it, over the same bdt and on the state the column solve has just relaxed: its x2/x3
+//! ghosts are the last exchange's, exactly as they are for the in-stage task it replaces.
+
+void RedGiantRTSplit(Mesh *pm, Real bdt) {
+  if (!(rt_ck_ || rt_grey_)) return;
+  RedGiantRTSweep(pm, bdt);
+  if (rt_split_tr_) {
+    MeshBlockPack *pmbp = pm->pmb_pack;
+    const bool is_mhd = (pmbp->pmhd != nullptr);
+    Conduction *pc = is_mhd ? pmbp->pmhd->pcond : pmbp->phydro->pcond;
+    auto &u0 = is_mhd ? pmbp->pmhd->u0 : pmbp->phydro->u0;
+    const EOS_Data &eos = is_mhd ? pmbp->pmhd->peos->eos_data
+                                 : pmbp->phydro->peos->eos_data;
+    if (pc != nullptr && pc->rad_implicit_ang) {
+      if (pc->rad_sts_all) {
+        pc->StsConductionUpdate(u0, eos, bdt);
+      } else {
+        pc->ImplicitTransverseUpdate(u0, eos, bdt);
+      }
+      RGNanScan(pm, "RT_transverse_split");
+    }
   }
   return;
 }
