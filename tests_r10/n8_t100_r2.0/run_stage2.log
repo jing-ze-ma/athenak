@@ -1,0 +1,35 @@
+Mesh: spherical-polar x3-face theta correction = rotate
+
+Cubed sphere: Root grid = 6 x 1 x (1 x 1) MeshBlocks
+Total number of MeshBlocks = 6
+Number of logical  levels of refinement = 0 (1 levels total)
+Number of physical levels of refinement = 0 (1 levels total)
+Number of parallel ranks = 1
+red_giant: opacity table '/viper/u2/jinma/ATHENAK/bench/hestar_fecz/rosseland_he_x0.0_z0.02.txt', 217 x 481 nodes, log10 T 2.6..8, log10 rho -24..0 (200 rows prepended below the file's -14 at the floor, so the clamp cannot hand back real opacity for a thin cell); 41020 prepended nodes (rho below the file) set to problem/opac_floor = 1e-05 cm^2/g (optically thin; the merge edge-filled them)
+red_giant: kappa_const = 0.000705512 cm^2/g REPLACES the table
+red_giant: F_bot = 1.41759e+11 is carried by the TWO-STREAM's lower boundary (rt_bottom_flux); the conduction wall face injects nothing.  This assumes <hydro>/rad_tau_lo = 1.000e+05 is DEEPER than the domain, so the blend weight is 0 on every face.
+red_giant: the two-stream is applied STRANG-SPLIT around the time integrator (dt/2 before, dt/2 after) and NOT inside the RK stages; the transverse operator moves with it
+red_giant: GREY two-stream (problem/rt_grey), opacity from the conduction module's table, 2-point angular quadrature
+           column above the domain: the ghost's own Planck function (it mirrors the top cell back)
+### red_giant: MLT closure state read from the restart file (133 faces, seeded = 1)
+red_giant: initial stratification READ FROM ic_thick.txt (8001 nodes, 9.60938e+11 .. 2.03906e+12 cm); the hydrostatic+MLT march, problem/ptop and the outer-wall gas-solution check are all OVERRIDDEN
+red_giant: M = 1e+33 g, L = 1.7814e+36 erg/s, Teff = 5000 K, rin = 1e+12 cm, rout = 2e+12 cm
+           wall p/T: outer 3 / 5089.29 K, inner 1.61696e+06 / 19591.8 K
+           tau = 2/3 at r = 1.87723e+12 cm, T = 5464.16 K; radiative-convective boundary at r = -1 cm
+
+Setup complete, executing task list(s)...
+
+elapsed=1.362894e-01 cycle=200 time=1.148524e+05 dt=3.895736e+02
+### two_stream_rt: thermodynamic state read from u0 (CONSERVED, problem/rt_use_cons = true)
+deep_hot_jupiter_rt: RT split path ON, 1 chain block(s) of 4 -> 1x the thread count of the monolithic kernel
+### two_stream_rt: rt_implicit_column = 3, the EXACT block-tridiagonal column solve (intensities as unknowns); solver pcr nseg 64 hybrid_tau 0.000000e+00; workspace 2.189722e+01 + 1.887437e+01 MB
+elapsed=2.403400e-01 cycle=201 time=1.152420e+05 dt=3.890852e+02
+
+Terminating on cycle limit
+time=1.152420e+05 cycle=201
+tlim=1.000000e+30 nlim=201
+
+MeshBlock-cycles = 6
+cpu time used  = 1.040576e-01
+zone-cycles/cpu_second = 1.180885e+05
+particle-updates/cpu_second = 0.000000e+00
