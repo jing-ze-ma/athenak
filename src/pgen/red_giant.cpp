@@ -120,6 +120,7 @@
 #include <cstdio>
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <random>
 #include <sstream>
 #include <string>
@@ -1000,6 +1001,30 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   vpert_mach_max_ = pin->GetOrAddReal("problem", "vpert_mach_max", 0.3);
   vpert_rmin_ = pin->GetOrAddReal("problem", "vpert_rmin", 0.0);
   vpert_cart_ = pin->GetOrAddBoolean("problem", "vpert_cart", false);
+  // problem/vpert_var, problem/vpert_tau_lo/hi: WHICH variable the seed perturbs and the
+  // optical-depth window it lives in (see their declarations).  Both are the box's
+  // options on red_giant's chart-free angular pattern; the defaults are the old seed.
+  {
+    const std::string pvs = pin->GetOrAddString("problem", "vpert_var", "v1");
+    if (pvs.compare("v1") == 0) {
+      vpert_var_ = 0;
+    } else if (pvs.compare("eint") == 0) {
+      vpert_var_ = 1;
+    } else {
+      std::cout << "### FATAL ERROR in red_giant: problem/vpert_var must be \"v1\" or "
+                << "\"eint\"" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+  }
+  vpert_tau_lo_ = pin->GetOrAddReal("problem", "vpert_tau_lo", 0.0);
+  vpert_tau_hi_ = pin->GetOrAddReal("problem", "vpert_tau_hi", 0.0);
+  if ((vpert_tau_lo_ > 0.0) != (vpert_tau_hi_ > 0.0) ||
+      (vpert_tau_hi_ > 0.0 && !(vpert_tau_hi_ > vpert_tau_lo_))) {
+    std::cout << "### FATAL ERROR in red_giant: the seed window needs both "
+              << "problem/vpert_tau_lo and problem/vpert_tau_hi > 0 with tau_hi (the "
+              << "DEEP edge) > tau_lo" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
   const Real kfac = pin->GetOrAddReal("problem", "kappa_fac", 1.0);
   const Real kconst = pin->GetOrAddReal("problem", "kappa_const", 0.0);
   mlt_alpha_ = pin->GetOrAddReal("problem", "mlt_alpha", 0.0);
@@ -1123,6 +1148,53 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       std::exit(EXIT_FAILURE);
     }
     relax_ = true;
+  }
+
+  // --- the TAU-BASED TOP SPONGE (problem/vdamp_top_tau, vdamp_top_time), ported from
+  // box_convection.cpp:1691-1706.  It reads the per-column optical depth the conduction
+  // module builds, so the tau blend has to be on.  See the declaration of vdamp_tau_.
+  vdamp_tau_ = pin->GetOrAddReal("problem", "vdamp_top_tau", 0.0);
+  vdamp_time_ = pin->GetOrAddReal("problem", "vdamp_top_time", 20.0);
+  if (vdamp_tau_ > 0.0) {
+    if (pc == nullptr || !pc->rad_tau_mode) {
+      std::cout << "### FATAL ERROR in red_giant: problem/vdamp_top_tau needs the "
+                << "per-column optical depth, i.e. the tau blend (<hydro>/rad_tau_hi > 0)"
+                << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    if (!(vdamp_time_ > 0.0)) {
+      std::cout << "### FATAL ERROR in red_giant: problem/vdamp_top_time must be > 0"
+                << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+  }
+  // --- the BOTTOM SPONGE (problem/vdamp_bot_cells, vdamp_bot_time,
+  // vdamp_bot_mean_only), ported from box_convection.cpp:1707-1733.  The box additionally
+  // demands a CLOSED bottom wall; here the sponge exists precisely to tame the deep
+  // g-mode cavity under an OPEN inner boundary, so that check is dropped -- but the
+  // shell-mean variant needs every MeshBlock to span the whole radius, as the MLT shell
+  // mean does, because it indexes cells by their global radial position.
+  vdb_cells_ = pin->GetOrAddInteger("problem", "vdamp_bot_cells", 0);
+  vdb_time_ = pin->GetOrAddReal("problem", "vdamp_bot_time", 20.0);
+  vdb_mean_ = pin->GetOrAddBoolean("problem", "vdamp_bot_mean_only", false);
+  if (vdb_cells_ > 0) {
+    if (2*vdb_cells_ >= pmy_mesh_->mesh_indcs.nx1) {
+      std::cout << "### FATAL ERROR in red_giant: problem/vdamp_bot_cells = "
+                << vdb_cells_ << " must be < nx1/2 = "
+                << pmy_mesh_->mesh_indcs.nx1/2 << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    if (!(vdb_time_ > 0.0)) {
+      std::cout << "### FATAL ERROR in red_giant: problem/vdamp_bot_time must be > 0"
+                << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    if (vdb_mean_ && pmy_mesh_->mesh_indcs.nx1 != pmy_mesh_->mb_indcs.nx1) {
+      std::cout << "### FATAL ERROR in red_giant: problem/vdamp_bot_mean_only averages "
+                << "over a shell at a GLOBAL radial index, so every MeshBlock must span "
+                << "the whole radius: set meshblock/nx1 = mesh/nx1." << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
   }
 
   // --- the CORRELATED-K two-stream for the optically thin layers
@@ -1755,6 +1827,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     });
   }
   lnp_d_ = lnp; tk_d_ = tk; vc_d_ = vcc; rlo_ = rlo; drf_ = drf; nfine_ = nfine;
+  tau_d_ = tau;            // problem/vpert_tau_lo/hi: the seed's optical-depth window
 
   // --- report the column, and dump it if asked
   {
@@ -2100,6 +2173,14 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   const bool vpert_mlt = vpert_mlt_ && (mlt_alpha_ic > 0.0);
   const Real vmachmax = vpert_mach_max_;
   const Real vrmin = vpert_rmin_/lunit;             // code radius
+  // problem/vpert_var and the tau window (see their declarations).  tau comes from the
+  // INITIAL column on the same fine radial grid the state does, so the window is
+  // evaluated with ColumnAt's interpolation and nothing extra is stored.
+  const int pvar = vpert_var_;
+  auto taud = tau_d_;
+  const bool twin = (vpert_tau_hi_ > 0.0);
+  const Real tlo = vpert_tau_lo_, thi = vpert_tau_hi_;
+  const Real itlr = twin ? 1.0/log(thi/tlo) : 0.0;
   const bool vcart = vpert_cart_ && pmy_mesh_->use_cubed_sphere;
   auto &mbpanel_ic = pmbp->pmb->mb_panel;
   // The conserved momenta are COVARIANT on the cubed sphere's non-orthogonal angular
@@ -2244,7 +2325,21 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         amp *= (srmp <= 0.0) ? 0.0
                : ((srmp >= 1.0) ? 1.0 : 0.5*(1.0 - cos(M_PI*srmp)));
       }
-      const Real cs = amp;
+      // problem/vpert_tau_lo/hi: the OPTICAL-DEPTH window, the spherical reading of the
+      // box's vpert_zlo/vpert_zhi.  sin(pi ln(tau_hi/tau)/ln(tau_hi/tau_lo)) inside,
+      // zero outside, so the seed vanishes at both edges of the driving layer.
+      if (twin) {
+        const Real xf = (r - rlo)/drf;
+        int i0 = static_cast<int>(xf);
+        i0 = (i0 < 0) ? 0 : ((i0 > nf-2) ? nf-2 : i0);
+        const Real ff = xf - static_cast<Real>(i0);
+        const Real tac = taud(i0)*(1.0 - ff) + taud(i0+1)*ff;
+        amp *= (tac > tlo && tac < thi) ? sin(M_PI*log(thi/tac)*itlr) : 0.0;
+      }
+      // problem/vpert_var = eint: the pattern below is then DIMENSIONLESS (the Mach
+      // number of the velocity seed it replaces), and multiplies the internal energy at
+      // fixed density instead of setting a velocity -- an ENTROPY seed.
+      const Real cs = (pvar == 0) ? amp : amp/csl;
       const Real tp = 2.0*M_PI;
       if (vcart) {
         // CHART-INDEPENDENT seed: purely RADIAL, so it needs no tangential basis and is
@@ -2301,12 +2396,22 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
              *cos(2.0*tp*(x2v - x2lo)/(x2hi - x2lo));
       }
     }
+    // problem/vpert_var = eint: the RADIAL component of the pattern (which carries the
+    // chart-free angular harmonics and, with vpert_cart, the random plane waves) becomes
+    // a relative internal-energy perturbation at fixed density; the gas starts at rest.
+    Real efac = 1.0;
+    if (pvar == 1) {
+      efac = 1.0 + v1;      // v1 already carries the vpert amplitude
+      v1 = 0.0;
+      v2 = 0.0;
+      v3 = 0.0;
+    }
     const Real cc = cs_ic ? ccell_ic(m,k,j) : 0.0;
     u0(m,IDN,k,j,i) = d;
     u0(m,IM1,k,j,i) = d*v1;
     u0(m,IM2,k,j,i) = d*(v2 + cc*v3);
     u0(m,IM3,k,j,i) = d*(v3 + cc*v2);
-    u0(m,IEN,k,j,i) = e + 0.5*d*(v1*v1 + v2*v2 + v3*v3 + 2.0*cc*v2*v3);
+    u0(m,IEN,k,j,i) = e*efac + 0.5*d*(v1*v1 + v2*v2 + v3*v3 + 2.0*cc*v2*v3);
     if (etotgrav) u0(m,IEN,k,j,i) += d*PotAt(gm, rin, r);
   });
   if (is_mhd) {
@@ -3378,6 +3483,123 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
     }
     RGNanScan(pm, "sponge");
   runaway_scan::Scan(pm, "sponge");
+  }
+
+  // --- THE TAU-BASED TOP SPONGE (problem/vdamp_top_tau; see the declaration of
+  // vdamp_tau_), ported from box_convection.cpp:2703-2816.  It damps the RADIAL momentum
+  // only and writes the kinetic-energy change back to IEN, so the internal energy is left
+  // exactly where it was.  On the cubed sphere IM1 is orthogonal to the angular pair (the
+  // cos_cell cross term couples IM2 and IM3 alone), so 0.5 (m1n^2 - m1o^2)/rho is the
+  // exact kinetic-energy change here as well as on a Cartesian grid.
+  {
+    Conduction *pcsp = is_mhd ? pmbp->pmhd->pcond : pmbp->phydro->pcond;
+    // rad_w_built guards the one stage in which the column tau does not exist yet: an
+    // all-zero tau would read as "thin everywhere" and damp the whole envelope
+    const bool vdamp_on = (vdamp_tau_ > 0.0) && (pcsp != nullptr) && pcsp->rad_w_built;
+    if (vdamp_on) {
+      const Real vd_hi = vdamp_tau_, vd_lo = vdamp_tau_/3.0;
+      const Real vd_rate = bdt/vdamp_time_;
+      auto vtauf = pcsp->rad_tauf;
+      par_for("rg_vdtop", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        // the cell's LOWER face carries the larger tau, the conservative (weaker) choice
+        const Real f = 1.0 - RadBlendWeight(vtauf(m,k,j,i), vd_lo, vd_hi);
+        if (f > 0.0) {
+          const Real dc = u0(m,IDN,k,j,i);
+          const Real m1o = u0(m,IM1,k,j,i);
+          const Real m1n = m1o/(1.0 + f*vd_rate);
+          u0(m,IM1,k,j,i) = m1n;
+          u0(m,IEN,k,j,i) += 0.5*(SQR(m1n) - SQR(m1o))/dc;
+        }
+      });
+      // the sponge's radial range, once, at the first stage it runs: the column tau only
+      // exists after BuildRadWeights, so it cannot be known at start-up
+      if (!vdamp_printed_) {
+        vdamp_printed_ = true;
+        Real rlow = std::numeric_limits<Real>::max();
+        Kokkos::parallel_reduce("rg_vdtop_range",
+        Kokkos::MDRangePolicy<Kokkos::Rank<4>>(DevExeSpace(), {0,ks,js,is},
+                                               {nmb1+1,ke+1,je+1,ie+1}),
+        KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &lmin) {
+          if (1.0 - RadBlendWeight(vtauf(m,k,j,i), vd_lo, vd_hi) > 0.0) {
+            const Real x1lo = size.d_view(m).x1min, x1hi = size.d_view(m).x1max;
+            const Real xc = curv ? x1v_(m,i) : CellCenterX(i-is, indcs.nx1, x1lo, x1hi);
+            lmin = (xc < lmin) ? xc : lmin;
+          }
+        }, Kokkos::Min<Real>(rlow));
+#if MPI_PARALLEL_ENABLED
+        Real rg_ = rlow;
+        MPI_Allreduce(&rg_, &rlow, 1, MPI_ATHENA_REAL, MPI_MIN, MPI_COMM_WORLD);
+#endif
+        if (global_variable::my_rank == 0) {
+          if (rlow < pm->mesh_size.x1max) {
+            std::printf("  red_giant top v1 sponge active: r >= %.5e, f = 1 at tau <= "
+                        "%.4e, timescale %.4e s\n", rlow, vd_lo, vdamp_time_);
+          } else {
+            std::printf("  red_giant top v1 sponge: NO cell has tau < %.4e -- inert\n",
+                        vd_hi);
+          }
+        }
+      }
+      RGNanScan(pm, "vdamp_top");
+    }
+  }
+
+  // --- THE BOTTOM SPONGE (problem/vdamp_bot_cells; see the declaration of vdb_cells_),
+  // ported from box_convection.cpp:2818-2879.  It runs on the u0 the sponges above left
+  // and BEFORE the radiation source, so nothing injected this stage is cancelled by it.
+  if (vdb_cells_ > 0) {
+    const int nb = vdb_cells_;
+    if (vdb_d_.extent_int(0) != nb) {
+      Kokkos::realloc(vdb_d_, nb);
+      Kokkos::realloc(vdb_h_, nb);
+    }
+    auto vdb = vdb_d_;
+    if (vdb_mean_) {
+      // one team per radial index of the layer reduces v1 over that SHELL's (m,k,j); the
+      // sums are Allreduced (every rank applies the mean) and divided by the global count
+      const int lnx2 = indcs.nx2, lnx3 = indcs.nx3;
+      const int nkj = (nmb1+1)*lnx3*lnx2;
+      const int gnx2 = pm->mesh_indcs.nx2, gnx3 = pm->mesh_indcs.nx3;
+      const int npanel = pm->use_cubed_sphere ? 6 : 1;
+      Kokkos::TeamPolicy<> vpol(DevExeSpace(), nb, Kokkos::AUTO);
+      Kokkos::parallel_for("rg_vdbot_mean", vpol,
+      KOKKOS_LAMBDA(Kokkos::TeamPolicy<>::member_type tmember) {
+        const int i = is + tmember.league_rank();
+        Real vs = 0.0;
+        Kokkos::parallel_reduce(Kokkos::TeamThreadRange(tmember, nkj),
+        [&](const int idx, Real &ls) {
+          const int m = idx/(lnx3*lnx2);
+          const int kj = idx - m*(lnx3*lnx2);
+          const int k = ks + kj/lnx2;
+          const int j = js + (kj - (kj/lnx2)*lnx2);
+          ls += u0(m,IM1,k,j,i)/u0(m,IDN,k,j,i);
+        }, Kokkos::Sum<Real>(vs));
+        Kokkos::single(Kokkos::PerTeam(tmember), [&]() { vdb(i-is) = vs; });
+      });
+      Kokkos::fence();
+      Kokkos::deep_copy(vdb_h_, vdb_d_);
+#if MPI_PARALLEL_ENABLED
+      MPI_Allreduce(MPI_IN_PLACE, vdb_h_.data(), nb, MPI_ATHENA_REAL, MPI_SUM,
+                    MPI_COMM_WORLD);
+#endif
+      const Real fpl = 1.0/static_cast<Real>(gnx2*gnx3*npanel);
+      for (int q=0; q<nb; ++q) vdb_h_(q) *= fpl;
+      Kokkos::deep_copy(vdb_d_, vdb_h_);
+    }
+    const Real vb_rate = bdt/vdb_time_;
+    const bool vb_mean = vdb_mean_;
+    par_for("rg_vdbot", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, is+nb-1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real f = 0.5*(1.0 + cos(M_PI*static_cast<Real>(i-is)/nb));
+      const Real gg = 1.0 - exp(-f*vb_rate);
+      const Real dc = u0(m,IDN,k,j,i);
+      const Real m1o = u0(m,IM1,k,j,i);
+      const Real m1n = m1o - gg*(vb_mean ? dc*vdb(i-is) : m1o);
+      u0(m,IM1,k,j,i) = m1n;
+      u0(m,IEN,k,j,i) += 0.5*(SQR(m1n) - SQR(m1o))/dc;
+    });
+    RGNanScan(pm, "vdamp_bot");
   }
 
   // --- the optically thin layers: the correlated-k or the grey two-stream if one of
