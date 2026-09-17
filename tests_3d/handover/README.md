@@ -79,6 +79,11 @@ the `icut` face -- correct, not a bug.
 
 ### `(F_cond + (1-w) F_2s)/F_req`, every 6th face (R = 2.3717e11)
 
+**These are the UN-FROZEN dumps and the M0/Q4 column is a DRIFTED reference** -- see the two
+traps below and the frozen tables that follow, which supersede this one. It is kept because
+it is what was measured first and because H1c and H3c barely move from it.
+
+
 | r/R | H1 20/300 | H2 5/50 | H3 50/1000 | M0/Q4 blend off | `F_raddiff/F_req` |
 | --- | --- | --- | --- | --- | --- |
 | 0.506 | 0.993 | 0.993 | 0.926 | 0.735 | 1.071 |
@@ -159,6 +164,34 @@ and the whole problem is that one trough -- which is the FeCZ, i.e. the convecti
 the drift and is RETRACTED**: on the frozen state H2's excess is confined to `r/R > 1.0`,
 where the meter is meaningless anyway. The verdict that does not change is that no handover
 passes 5 % everywhere and the residual is the FeCZ trough.
+
+### The drift belongs to the BLEND-OFF configuration — control 11760604
+
+A second prediction was refuted here. It was expected that M0b (normal `cfl`, blend off) would
+show **no** deep drift, because with `w = 0` everywhere its conduction operator is inert. It
+drifts, and it drifts deep. Against the frozen M0c reference:
+
+| | max \|T/T-1\| over 95 faces | drift at i = 4 (r/R = 0.506) |
+| --- | --- | --- |
+| H1c / H2c / H3c (frozen) | 8.7e-06 / 7.2e-05 / 1.7e-06 | — |
+| M0b (normal cfl) | **8.05e-02** | **+4.26e-03** |
+| M0b vs the original M0 | **0.000** (bit-identical) | — |
+
+All four frozen runs sit on the same state to round-off with blends putting `w` at 1.0, 1.0,
+0.69 and 0.0 at the same deep face; that state is the IC. `M0c`'s `F_raddiff/F_req` at `i = 4`
+is 0.9931 against H1c's 0.9930, and over all 95 faces the two agree to 1.1e-04.
+
+Since conduction is inert with the blend off, **the only operator that can have moved the deep
+state is the two-stream Strang pre-step**, which at `w = 0` is live at `i = 4` (`F_2s = 0.7345`
+there). The drift is largest where the two-stream is strongest, and the blend *protects* the
+deep faces from it rather than exposing them — the opposite of the first reading. Note the sign
+flip at `i ~ 22`: the half-step **steepens** the gradient below 0.67 R and **flattens** it
+above, which is why the un-frozen reference read 1.07 deep *and* 0.80 at the top, both wrong and
+in opposite directions.
+
+M0b being bit-identical to the original M0 also confirms that changing the input's
+`rad_tau_lo/hi` defaults never leaked into the recorded M0/Q4 numbers -- the taus were passed
+explicitly.
 
 **Configuration warning.** M0/Q4 took `rad_tau_lo/hi = 1e5/1e6` from the input file. Pass
 those explicitly when reproducing the reference; do not rely on the file's defaults.
