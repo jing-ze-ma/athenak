@@ -205,11 +205,20 @@ closed face  (carries nothing)           : everything else (reflect, outflow, us
 
 The reduced interface system is then assembled on a **chain** instead of a ring: the
 existing cyclic assembly already degenerates correctly when the end couplings `a_1`,
-`c_n` are zero, which is what a non-linked face gives it, so the ring gather and the
-reduced solve need no change beyond the block count per line becoming *per panel*
-(`mesh_indcs.nx2/mb_indcs.nx2` within one panel -- the panel trees are separate, so this
-is already the per-panel count) and the periodicity check being replaced by "periodic or
-panel".
+`c_n` are zero, which is what a non-linked face gives it, so the *reduced solve* needs no
+change, and the block count per line is already *per panel* (`mesh_indcs.nx2/mb_indcs.nx2`
+within one panel -- the panel trees are separate).  Two things do change:
+
+* the neighbour table of the partition links only `block`/`periodic` faces, so a panel
+  seam ends the chain;
+* the interface GATHER cannot be a cyclic shift on an open chain.  It runs the same shift
+  twice, once each way (pass 0: block `b` receives slab `b-r` from its left neighbour,
+  which holds it after round `r-1`; pass 1: slab `b+r` from the right), skipping any round
+  whose slab index leaves `[0,nb)` or whose face is not linked.  After `nb-1` rounds each
+  way every block of the chain holds all `nb` slabs, indexed within the panel.
+
+Measured: the answer is identical to all printed digits at 1, 2 and 4 ranks and across two
+nodes; see `tests_adi/README.md` section (d).
 
 ## 4. The seam sub-step
 

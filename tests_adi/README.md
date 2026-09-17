@@ -263,10 +263,125 @@ Stability arms on the GPU:
 | 1e-5 | 6.71e5 | `adi` | 1.86e-3 | yes | 0 |
 | 1e-5 | 6.71e5 | `sts` (859 substages) | 3.44e-6 | no | 2 |
 
+## (d) MORE THAN ONE MeshBlock PER PANEL under `rad_ang_solver = adi`
+
+v1 refused this.  The production cubed-sphere grid is 6 panels x 320^2 with 192x80x80
+MeshBlocks, i.e. **4 x 4 blocks per panel**, 96 blocks on 8 GPUs, so the refusal blocked
+the production.  It is now supported.
+
+**What changed** (`src/diffusion/conduction_transverse.cpp`, `conduction.cpp`; +101/-22):
+
+* the fatal in `Conduction::Conduction` is gone.  `adi_nb2`/`adi_nb3` were already blocks
+  **per panel** -- each panel tree is its own root grid, so `mesh_indcs.nx2/mb_indcs.nx2`
+  counts the blocks of one panel and `LogicalLocation::lx2/lx3` index within it.
+* the neighbour table of the line partition now only links a face that is `block` or
+  `periodic` -- the same `lnk2`/`lnk3` truth table the tridiagonal row uses.  A panel seam
+  is therefore an **end of the chain**, and the chain of the gather and the chain of the
+  system cannot disagree.
+* the interface gather runs its shift **twice, once each way**, instead of once around a
+  closed ring: pass 0 carries slabs rightward (block `b` receives slab `b-r` from its left
+  neighbour, which holds it after round `r-1`), pass 1 leftward.  Rounds whose slab index
+  leaves `[0,nb)`, or whose face is not linked, are skipped, and that is what makes the
+  ends ends.  One extra tag bit (`p << 4`; `r < NADIB = 8` uses bits 1..3 only).
+* **the reduced system is untouched.**  A seam face gives `cl = 0`, hence `a_1 = c_n = 0`,
+  hence `rd_[...,0] = rd_[...,3] = 0` at the chain's left end and `rd_[...,1] =
+  rd_[...,4] = 0` at its right end, so the existing cyclic assembly degenerates to the
+  open chain exactly -- and the spikes it multiplies are zero, so the wrap-around
+  unknowns it reads cannot contaminate the back substitution.
+* the Cartesian path is `openchain = false` and keeps the old single-pass ring verbatim;
+  a Cartesian direction split over more than one block is still required to be periodic.
+
+### the rank decomposition: 1 rank, 2 ranks (1 node), 4 ranks (2 nodes)
+
+```bash
+sbatch run_gpu_csmb.sh      # apudev, 1 node, 2 MI300A: 1 and 2 ranks, all layouts
+sbatch run_gpu_csmb2n.sh    # apu, 2 nodes x 2 MI300A, 4 ranks: same arms + the He box
+```
+
+Both scripts measure each run inside the job and delete its dumps (inode quota).  With 2
+and 4 ranks the blocks of one panel live on different ranks -- and on two nodes the panel
+seams *and* the intra-panel block boundaries cross the interconnect -- so the open-chain
+gather, its reduced solve and the module's own halo exchange all run over MPI.
+
+`cs_test` `iprob = 15`, `cfl = 0.0075`, `nlim = 80`, `rad_ang_verbose = true`; `cons` is
+the operator's own `|sum V de|/sum V|de|` and `seam` the max residual over the outer ring
+of every MeshBlock (which is the panel edge only when there is one block per panel).
+
+| arm | blocks/panel | ranks x nodes | amp | L1 | seam | interior | cons |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `sts`, n=32, l=2 | 1x1 | 1 x 1 | 0.99672 | 0.02445 | 0.03799 | 0.03405 | 2.139308e-6 |
+| `sts`, n=32, l=2 | 2x2 | 1 x 1 | 0.99670 | 0.02474 | 0.04771 | 0.03404 | 2.374224e-6 |
+| `sts`, n=32, l=2 | 2x2 | 2 x 1 | 0.99670 | 0.02474 | 0.04771 | 0.03404 | 2.374224e-6 |
+| `sts`, n=32, l=2 | 2x2 | 4 x 2 | 0.99670 | 0.02474 | 0.04771 | 0.03404 | 2.374224e-6 |
+| `adi`, n=32, l=2 | 1x1 | 1 x 1 | 0.99665 | 0.02462 | 0.03946 | 0.03430 | 1.320816e-6 |
+| `adi`, n=32, l=2 | 2x2 | 1 x 1 | 0.99664 | 0.02489 | 0.05197 | 0.03429 | 1.554007e-6 |
+| `adi`, n=32, l=2 | 2x2 | 2 x 1 | 0.99664 | 0.02489 | 0.05197 | 0.03429 | 1.554007e-6 |
+| `adi`, n=32, l=2 | 2x2 | 4 x 2 | 0.99664 | 0.02489 | 0.05197 | 0.03429 | 1.554007e-6 |
+| `sts`, n=32, l=6 | 1x1 | 1 x 1 | 0.98750 | 0.02099 | 0.03606 | -- | 3.129976e-4 |
+| `sts`, n=32, l=6 | 2x2 | 1 / 2 / 4 x 2 | 0.98750 | 0.02099 | 0.03606 | 0.02489 | 3.129976e-4 |
+| `adi`, n=32, l=6 | 1x1 | 1 x 1 | 0.98725 | 0.02103 | 0.03625 | -- | 3.164191e-4 |
+| `adi`, n=32, l=6 | 2x2 | 1 / 2 / 4 x 2 | 0.98725 | 0.02103 | 0.03625 | 0.02507 | 3.164192e-4 |
+| `sts`, n=64, l=2 | 1x1 | 1 x 1 | 0.99717 | 0.02443 | 0.03478 | 0.03504 | 7.744367e-7 |
+| `sts`, n=64, l=2 | 4x4 | 1 / 2 / 4 x 2 | 0.99619 | 0.03006 | 0.4871 | 0.1250 | 1.932103e-5 |
+| `adi`, n=64, l=2 | 1x1 | 1 x 1 | 0.99706 | 0.02546 | 0.05323 | 0.03924 | 2.562643e-6 |
+| `adi`, n=64, l=2 | 4x4 | 1 / 2 / 4 x 2 | 0.99611 | 0.03069 | 0.4806 | 0.1283 | 1.679914e-5 |
+
+**The rank count changes nothing: every number above is identical to all printed digits
+at 1, 2 and 4 ranks, and at 4 ranks across two nodes.**  That is the whole claim of the
+partition change, and `sts` (which has no line structure and is untouched by it) comes
+out the same way, which is the control.
+
+The **He-star FeCZ box** production configuration on 4 ranks over 2 nodes, `nlim = 30`,
+against the 2-rank single-node run (`run_gpu_csmb2n.sh`, `cmpbin.py`): **BITWISE
+IDENTICAL over 32 dumps.**  Rank layout changes the reduction order of the history sums
+only; the data arrays do not move.
+
+And the Cartesian bitwise gates of (a) were re-run against the head binaries after the
+change:
+
+| arm | result |
+| --- | --- |
+| Gaussian, 1 rank, 1 block, `sts` / `adi` | **BITWISE IDENTICAL**, 14 dumps |
+| Gaussian, 2 ranks, 2x2 blocks, `sts` / `adi` | **BITWISE IDENTICAL**, 14 dumps |
+| He-star FeCZ box, 2 ranks, 2x4 blocks/line | **BITWISE IDENTICAL**, 32 dumps |
+
+### 4x4 MeshBlocks per panel degrades the SEAM -- and it is NOT this operator
+
+The n=64 rows above are worse at 4x4 blocks per panel than at 1x1 (seam residual 0.035 ->
+0.49, conservation 7.7e-7 -> 1.9e-5), while the n=32 rows at 2x2 are barely moved.  This
+is **not** the line partition and not the implicit operator.  `run_gpu_csctl.sh` and
+`run_gpu_csctl2.sh` run the same layouts through the EXPLICIT cubed-sphere operator and
+through the implicit ones with the metric cross term off:
+
+| n | blocks/panel | block size | explicit, max residual | `sts` | `adi` |
+| --- | --- | --- | --- | --- | --- |
+| 64 | 1x1 | 64 | 0.08951 | 0.03504 | 0.05323 |
+| 64 | 2x2 | 32 | 0.08951 | 0.03504 | 0.05323 |
+| 64 | 4x4 | 16 | **0.2618** | 0.4871 | 0.4806 |
+| 128 | 1x1 | 128 | 0.2833 | 0.03570 | 0.1568 |
+| 128 | 2x2 | 64 | 0.2833 | 0.03570 | 0.1568 |
+| 128 | 4x4 | 32 | **0.6372** | 0.3406 | 0.3337 |
+
+The explicit operator -- which has no lines, no reduced system and no seam sub-step --
+degrades by the same factor, at the same layout, and `nghost = 2` and `3` give
+bit-identical results, so it is not a ghost-depth effect either.  **Splitting a panel into
+four blocks per direction degrades the cubed-sphere seam halo itself**, presumably the
+along-seam resample where its donor stencil crosses a block boundary in the neighbouring
+panel; 2x2 is clean to five digits at every resolution tested.  This is a pre-existing
+property of the mesh, it is on the path of the 4x4 production grid, and it wants its own
+investigation -- it is out of scope here, but it is recorded because the production grid
+sits on it.
+
 ## What is refused
 
 * spherical polar (unchanged fatal);
 * SMR/AMR (unchanged fatal);
-* on the cubed sphere: `rad_sts_all`, `rad_sts_split`, `rad_tr_halo_faces_only`, and for
-  `rad_ang_solver = adi` more than one MeshBlock per panel in a transverse direction
-  (a tridiagonal line cannot cross a panel seam; `sts` has no such restriction).
+* on the cubed sphere: `rad_sts_all`, `rad_sts_split`, `rad_tr_halo_faces_only`;
+* under `rad_ang_solver = adi`, everywhere: the whole `x1` extent must be in one
+  MeshBlock, and at most `NADIB = 8` MeshBlocks along a line (the reduced system is 2
+  unknowns per block, solved redundantly in registers);
+* under `rad_ang_solver = adi` on a CARTESIAN mesh: a transverse direction split over more
+  than one MeshBlock must be PERIODIC, because there the ring of blocks really is closed.
+  On the cubed sphere the chain is open and no periodicity is needed -- see (d).
+
+More than one MeshBlock per panel under `rad_ang_solver = adi` is **no longer refused**.

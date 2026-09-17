@@ -608,6 +608,11 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
     // a cubed sphere ALWAYS has panel seams (every panel edge is one), and a Cartesian
     // mesh never has any.  A collective flag, because the seam sub-step exchanges.
     const bool anyseam = curv;
+    // A cubed-sphere line is an OPEN CHAIN (it ends at the two panel seams); a Cartesian
+    // multi-block line is a CLOSED RING (it is required to be periodic).  Only the
+    // GATHER differs -- see (2) below; the reduced system itself is the same cyclic
+    // assembly, which degenerates to the chain because a seam face gives a_1 = c_n = 0.
+    const bool openchain = curv;
 
     // ---- the active plane bracket, from the per-plane Gershgorin radii computed above
     int alo = nplane, ahi = -1;
@@ -627,10 +632,19 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
     const int nx1_ = indcs.nx1, nx2_ = indcs.nx2, nx3_ = indcs.nx3;
     const int nkji_ = nx3_*nx2_*nx1_, nji_ = nx2_*nx1_;
 
-    // ---- the ring of MeshBlocks each line crosses.  One entry per (direction, local
-    // block): this block's ABSOLUTE index along the direction, and the rank and local id
-    // of its two face neighbours, from the neighbour table (no SMR, so one neighbour per
-    // face and the same-level slot is the only one filled).
+    // ---- the CHAIN of MeshBlocks each line crosses.  One entry per (direction, local
+    // block): this block's index along the direction WITHIN ITS OWN PANEL, and the rank
+    // and local id of its two face neighbours, from the neighbour table (no SMR, so one
+    // neighbour per face and the same-level slot is the only one filled).
+    //
+    // A neighbour counts here only if the face is LINKED, i.e. `block` or `periodic` --
+    // the same truth table lnk2/lnk3 use, so the chain of the gather and the chain of
+    // the tridiagonal system cannot disagree.  A PANEL SEAM is therefore an END of the
+    // chain: the line stops there and the seam face is applied by the pair-implicit
+    // sub-step below.  Each panel tree is its own root grid, so ll.lx2/ll.lx3 already
+    // count blocks WITHIN the panel and adi_nb2/adi_nb3 are blocks PER PANEL.  On a
+    // Cartesian mesh nothing here changes: every multi-block direction is periodic, so
+    // every face of it is linked and the chain is the old closed ring.
     const int nmbl = nmb1 + 1;
     std::vector<int> ab0h(2*nmbl, 0), lrk(2*nmbl, -1), rrk(2*nmbl, -1);
     std::vector<int> llid(2*nmbl, -1), rlid(2*nmbl, -1);
@@ -639,6 +653,8 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
       auto &gidh = pmy_pack->pmb->mb_gid;
       const int nl2 = NeighborIndex(0,-1,0,0,0), nr2 = NeighborIndex(0,1,0,0,0);
       const int nl3 = NeighborIndex(0,0,-1,0,0), nr3 = NeighborIndex(0,0,1,0,0);
+      const int bface[4] = {BoundaryFace::inner_x2, BoundaryFace::outer_x2,
+                            BoundaryFace::inner_x3, BoundaryFace::outer_x3};
       for (int m=0; m<nmbl; ++m) {
         const LogicalLocation &ll = pmy_pack->pmesh->lloc_eachmb[gidh.h_view(m)];
         ab0h[m] = static_cast<int>(ll.lx2);
@@ -646,6 +662,8 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
         const int slot[4] = {nl2, nr2, nl3, nr3};
         for (int q=0; q<4; ++q) {
           if (q >= 2 && !three_d) continue;
+          const BoundaryFlag bf = mb_bcs.h_view(m,bface[q]);
+          if (!(bf == BoundaryFlag::block || bf == BoundaryFlag::periodic)) continue;
           const int gg = nghbr.h_view(m,slot[q]).gid;
           const int rr = nghbr.h_view(m,slot[q]).rank;
           if (gg < 0) continue;
@@ -999,9 +1017,71 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
       // index.  A neighbour on this rank is a device copy; one on another rank is a
       // message on the module's own communicator, tagged with the RECEIVER's local id (a
       // rank can receive one slab per local block per round, so that is unique).
+      //
+      // ON THE CUBED SPHERE the chain is OPEN and a cyclic shift has nothing to walk, so
+      // the same shift is run TWICE, once in each direction: pass 0 carries slabs
+      // rightward (block b receives slab b-r from its left neighbour, which holds it
+      // after round r-1), pass 1 carries them leftward (slab b+r from the right
+      // neighbour).  A round is skipped where the slab index leaves [0,nb) or the face is
+      // not linked, which is what makes the two ends of the chain ends.  After nb-1
+      // rounds each way every block of the chain again holds all nb slabs, indexed by the
+      // block's index WITHIN THE PANEL.  The extra tag bit (p << 4) is free: r < NADIB=8
+      // uses bits 1..3 only.
       Real *rbase = rd_.data();
       const int chunk = nlmax_*6;
-      for (int r=1; r<nb; ++r) {
+      for (int p=0; openchain && p<2; ++p) {
+        const bool rt = (p == 0);
+        for (int r=1; r<nb; ++r) {
+          Kokkos::fence();
+#if MPI_PARALLEL_ENABLED
+          std::vector<MPI_Request> reqs;
+#endif
+          // what I receive, and from which side
+          for (int m=0; m<nmbl; ++m) {
+            const int b0 = ab0h[doff + m];
+            const int br = rt ? (b0 - r) : (b0 + r);
+            if (br < 0 || br >= nb) continue;
+            const int srk = rt ? lrk[doff + m] : rrk[doff + m];
+            const int slid = rt ? llid[doff + m] : rlid[doff + m];
+            if (srk < 0) continue;
+            if (srk == global_variable::my_rank) {
+              Kokkos::deep_copy(
+                Kokkos::subview(rd_, m, br, Kokkos::make_pair(0, nline), Kokkos::ALL),
+                Kokkos::subview(rd_, slid, br, Kokkos::make_pair(0, nline), Kokkos::ALL));
+            } else {
+#if MPI_PARALLEL_ENABLED
+              MPI_Request rq;
+              const int tg = (m << 5) | (p << 4) | (r << 1) | (d2 ? 0 : 1);
+              MPI_Irecv(rbase + (static_cast<std::size_t>(m)*nbm_ + br)*chunk,
+                        6*nline, MPI_ATHENA_REAL, srk, tg, adi_comm, &rq);
+              reqs.push_back(rq);
+#endif
+            }
+          }
+          // what I send, and to which side: the slab my downstream neighbour needs
+          for (int m=0; m<nmbl; ++m) {
+            const int b0 = ab0h[doff + m];
+            const int bs = rt ? (b0 - r + 1) : (b0 + r - 1);
+            if (bs < 0 || bs >= nb) continue;
+            const int drk = rt ? rrk[doff + m] : lrk[doff + m];
+            const int dlid = rt ? rlid[doff + m] : llid[doff + m];
+            if (drk < 0 || drk == global_variable::my_rank) continue;
+#if MPI_PARALLEL_ENABLED
+            MPI_Request rq;
+            const int tg = (dlid << 5) | (p << 4) | (r << 1) | (d2 ? 0 : 1);
+            MPI_Isend(rbase + (static_cast<std::size_t>(m)*nbm_ + bs)*chunk,
+                      6*nline, MPI_ATHENA_REAL, drk, tg, adi_comm, &rq);
+            reqs.push_back(rq);
+#endif
+          }
+#if MPI_PARALLEL_ENABLED
+          if (!reqs.empty()) {
+            MPI_Waitall(static_cast<int>(reqs.size()), reqs.data(), MPI_STATUSES_IGNORE);
+          }
+#endif
+        }
+      }
+      for (int r=1; !openchain && r<nb; ++r) {
         Kokkos::fence();
 #if MPI_PARALLEL_ENABLED
         std::vector<MPI_Request> reqs;

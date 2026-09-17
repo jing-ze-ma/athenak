@@ -541,26 +541,23 @@ Conduction::Conduction(std::string block, MeshBlockPack *pp, ParameterInput *pin
                            BoundaryFlag::periodic);
         const bool per3 = (pp->pmesh->mesh_bcs[BoundaryFace::inner_x3] ==
                            BoundaryFlag::periodic);
-        if (pp->pmesh->use_cubed_sphere) {
-          // A LINE CANNOT CROSS A PANEL SEAM: the neighbouring panel's x2 may be this
-          // panel's x3 (signed axis swap) and the two charts' cells do not even coincide
-          // along the seam -- the halo there is a quadratic along-seam RESAMPLE.  So the
-          // ring of blocks a line walks is a CHAIN inside one panel, and the interface
-          // gather, which shifts slabs around a closed ring, has nothing to walk.  v1
-          // therefore asks for one MeshBlock per panel in each transverse direction, so
-          // that every line is wholly inside one block and the reduced system is local;
-          // the seam faces are then applied by the pair-implicit sub-step in
-          // conduction_transverse.cpp.  rad_ang_solver = sts has no line structure and
-          // no such restriction.
-          if (adi_nb2 > 1 || adi_nb3 > 1) {
-            std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
-                      << std::endl << "rad_ang_solver = adi on the cubed sphere needs "
-                      << "ONE MeshBlock per panel in x2 and x3 (a tridiagonal line "
-                      << "cannot cross a panel seam); have " << adi_nb2 << " x "
-                      << adi_nb3 << ".  Use rad_ang_solver = sts instead." << std::endl;
-            std::exit(EXIT_FAILURE);
-          }
-        } else if ((adi_nb2 > 1 && !per2) || (adi_nb3 > 1 && !per3)) {
+        // A LINE CANNOT CROSS A PANEL SEAM: the neighbouring panel's x2 may be this
+        // panel's x3 (signed axis swap) and the two charts' cells do not even coincide
+        // along the seam -- the halo there is a quadratic along-seam RESAMPLE.  So the
+        // blocks a line walks are an OPEN CHAIN inside ONE PANEL, ending at the two
+        // seams, and the seam faces are applied by the pair-implicit sub-step in
+        // conduction_transverse.cpp rather than by the sweeps.
+        //
+        // That chain is supported: each panel tree is its own root grid, so
+        // adi_nb2/adi_nb3 above are already blocks PER PANEL, a seam face is not
+        // `linked` and so contributes a_1 = c_n = 0 to the reduced system (which makes
+        // the cyclic assembly degenerate to the chain exactly), and the interface
+        // gather runs its shift twice, once each way, instead of once around a ring.
+        // Nothing beyond the NADIB ceiling above is refused here; a Cartesian direction
+        // split over more than one block is still required to be PERIODIC, because
+        // there the ring really is closed.
+        if (!pp->pmesh->use_cubed_sphere &&
+            ((adi_nb2 > 1 && !per2) || (adi_nb3 > 1 && !per3))) {
           std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
                     << std::endl << "rad_ang_solver = adi: a direction split over more "
                     << "than one MeshBlock must be PERIODIC (the interface gather walks "
