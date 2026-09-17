@@ -1,0 +1,50 @@
+=== G2 m0 exit 0
+=== G2 m3s exit 0
+=== G2 m3p exit 0
+=== G3 m3 n0_t100_r2.0 exit 1 
+=== G3 m3 n1_t100_r2.0 exit 1 
+=== G3 m3 n3_t100_r2.0 exit 1 
+=== G3 m3 n7_t100_r2.0 exit 1 
+=== G3 m3 n3_t30_r2.0 exit 1 
+=== G3 m3 n3_t300_r2.0 exit 1 
+=== G3 m3 n3_t100_r1.1 exit 1 
+=== G3 m3 n3_t100_r1.5 exit 1 
+ALLDONE
+                                  
+================================= 
+Global information about the job: 
+================================= 
+  
+Job owner: jinma(28895)
+Job name:  g2g3
+Node list: vipa1001
+Job start: Thu Sep 17 19:03:57 CEST 2026
+Job end:   Thu Sep 17 19:04:15 CEST 2026
+Work dir:  /viper/u2/jinma/ATHENAK/bench/wt_he4
+Command:   /viper/u2/jinma/ATHENAK/bench/wt_he4/tests_r4/sub_g2.sh
+  
+  
+  
+==========================================================================================
+Information on jobsteps (Note: MaxRSS/AveRSS is the maximum/average over all 
+tasks of the per-task memory high-water marks; cf. "man sacct"): 
+==========================================================================================
+  
+JobID            JobName NNodes NTasks  NCPUS       MaxRSS       AveRSS    Elapsed ExitCode
+------------- ---------- ------ ------ ------ ------------ ------------ ---------- --------
+11778000            g2g3      1            16                             00:00:18      0:0
+11778000.0     athena_m3      1      1     16       35.37M       35.37M   00:00:05      0:0
+11778000.1     athena_m3      1      1     16       35.38M       35.38M   00:00:01      0:0
+11778000.2     athena_m3      1      1     16       36.37M       36.37M   00:00:02      0:0
+11778000.3     athena_m3      1      1     16       36.36M       36.36M   00:00:01      1:0
+11778000.4     athena_m3      1      1     16       35.34M       35.34M   00:00:01      1:0
+11778000.5     athena_m3      1      1     16       35.31M       35.31M   00:00:00      1:0
+11778000.6     athena_m3      1      1     16       36.29M       36.29M   00:00:01      1:0
+11778000.7     athena_m3      1      1     16       35.29M       35.29M   00:00:01      1:0
+11778000.8     athena_m3      1      1     16       35.28M       35.28M   00:00:01      1:0
+11778000.9     athena_m3      1      1     16       36.29M       36.29M   00:00:01      1:0
+11778000.10    athena_m3      1      1     16       35.29M       35.29M   00:00:01      1:0
+  
+Maximum memory per node: 0.038133 GB (defined as MaxRSS*Ntasks/NNodes)
+CPU utilization: 0.0 %
+  

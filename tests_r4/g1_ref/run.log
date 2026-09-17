@@ -1,0 +1,74 @@
+Mesh: spherical-polar x3-face theta correction = rotate
+
+Root grid = 1 x 2 x 2 MeshBlocks
+Total number of MeshBlocks = 4
+Number of logical  levels of refinement = 1 (2 levels total)
+Number of physical levels of refinement = 0 (1 levels total)
+Number of parallel ranks = 1
+General EOS: tabulated on 501 x 676 nodes (41 MB), log10 rho[cgs] in [-13, -3], log10 T[K] in [3.8, 6.5]
+             X = 0, Y = 0.98, Z = 0.02, H2 off, ionization on, radiation on
+             radiation TAPERED off between rho = 6e-08 (w = 1, LTE) and rho = 6e-09 g/cm^3 (w = 0, the two-stream owns it)
+             metal ionization off
+             mu at the grid centre = 1.35912, n_e/n_tot = 0.665534
+Conduction: transverse solver = ADI (lod2, theta = 1, sweep pairs/stage = 3), blocks per line = 2 (x2), 2 (x3)
+box_convection: initial stratification READ FROM /viper/u2/jinma/ATHENAK/bench/hestar_fecz/ic/ic_fecz_he3_rt_relaxed_m3whole_taper.txt (8200 nodes); the isentropic march is overridden
+box_convection: RT radiative momentum source ON -- (1-w) rho kappa F/c + Prad grad w, with w from the EOS taper
+box_convection: rt_bottom_flux assumes <hydro>/rad_tau_lo = 1.000e+05 is DEEPER than the bottom of the box, so the blend weight is 0 on every face and the cut is the inner wall
+box_convection: F_bot = 2.47520e+15 erg/cm^2/s is carried by the TWO-STREAM's lower boundary (rt_bottom_flux); the conduction wall face injects nothing
+### box_convection: problem/rt_col3_skip_sweep = true -- the explicit two-stream entry sweep is NOT run; the column solve supplies the face flux Fb from its own converged intensities, and Src/Em stay zero
+box_convection: GREY two-stream ON (plane-parallel), 2-point angular quadrature, top VACUUM (no incoming intensity), T_int = 8.12830e+04 K
+  deep handover: tau blend to radiative diffusion (<hydro>/rad_tau_lo, rad_tau_hi)
+  Newton cooling layer: off
+box_convection: base rho = 1.50975e-06 g/cm^3, T = 3.20388e+05 K, p = 5.65433e+07
+  g0 = 3.98107e+05 cm/s^2, H_p = 9.40756e+07 cm, Gamma_1 = 1.43141, c_s = 7.32184e+06 cm/s
+  domain x1 = [-3.14103e+08, 4.12909e+07] = 3.7777 H_p; a constant-g adiabat reaches T = 0 at z - x1min ~ 4.65511e+08 cm = 4.948 H_p
+  initial column: dln T/dln p = grad_ad + 0.00000e+00 (dgrad; 0 = exact adiabat)
+  column top:  T = 6.48721e+04 K, rho = 7.46129e-10, p = 2.96098e+03, ln(p_b/p_top) = 9.8572
+  F_bot = 2.47520e+15 erg/cm^2/s -> v* = 1.17915e+07 cm/s, Mach = 1.6105e+00, turnover H_p/v* = 7.97826e+00 s
+  cooling layer: z > -8.70909e+06 (top 0.5315 H_p), tau = 1.00000e+00 s = 0.1253 turnover
+  top v1 sponge: f = 1 for tau <= 3.3333e-02, 0 for tau >= 1.0000e-01, timescale 2.0000e+01 s (the cell range is printed at the first stage)
+  bottom v1 sponge: i = is .. is+47, z <= -1.86798e+08 (1.3532 H_p), f = 0.5(1+cos(pi (i-is)/N)), timescale 2.0000e+01 s, the FULL v1
+  x1 walls: bc_mode = 3 (0 column ghost, 1 mirror, 2 mirror x the column ratio, 3 WB continuation), wall_noflux = 1 (mass exact, energy via enthalpy)
+  x1 TOP wall overridden: bc_mode_top = 4 = OPEN (outflow: hydrostatic isothermal ghost, v1 >= 0, no top-face flux cancellation)
+  x1 BOTTOM wall overridden: bc_mode_bot = 5 = INFLOW (base-state ghost under bc_inflow_ghost, wall still impermeable, v_in injected as a source in the wall cell)
+  bottom inflow controller: M0 = 1.72697350e+20 (A = 1.21730e+18, rho_base = 1.52481e-06), tau_in = 1.12800e+03 s = 141.3842 turnover, v_in <= 7.32184e+05 cm/s = 0.1000 c_s, e_base = 1.53251e+08, p_base = 5.65506e+07, ghost = bc_mode, print every 100 cycles
+  rad_kappa_fac = 1.00000e+00 (conductivity is 1/rad_kappa_fac x physical)
+boxconv inflow: cycle 0  t 0.000000e+00  v_in 0.000000e+00  M/M0 1.00000000
+
+Setup complete, executing task list(s)...
+
+elapsed=7.403070e+00 cycle=0 time=0.000000e+00 dt=1.091902e-01
+  top v1 sponge active: i = 125 .. 133 (of 134), z >= 1.87473e+07, f = 1 at tau <= 3.3333e-02, timescale 2.0000e+01 s
+### two_stream_rt: thermodynamic state read from u0 (CONSERVED, problem/rt_use_cons = true)
+deep_hot_jupiter_rt: RT split path ON, 1 chain block(s) of 4 -> 1x the thread count of the monolithic kernel
+### two_stream_rt: rt_implicit_column = 3, the EXACT block-tridiagonal column solve (intensities as unknowns); solver pcr nseg 1 hybrid_tau 0.000000e+00 mixed(2); workspace 4.741632e+01 + 6.021120e-01 MB
+### rad_implicit_ang cycle 0 t = 0.000000e+00: adi lod2, sweep pairs = 3, theta = 1.000000e+00, max z_i = 3.279627e+03, planes active/total = 111/134, blocks/line = 2 x 2, max |de| = 1.713787e+02, max |dT*|/T* = 3.818827e-02, |sum V de|/sum V|de| = 8.129053e-19
+### rad_implicit_ang cycle 0 t = 0.000000e+00: adi lod2, sweep pairs = 3, theta = 1.000000e+00, max z_i = 1.432205e+03, planes active/total = 77/134, blocks/line = 2 x 2, max |de| = 1.055407e+02, max |dT*|/T* = 1.674279e-03, |sum V de|/sum V|de| = 7.045619e-18
+### rad_implicit_ang cycle 1 t = 1.091902e-01: adi lod2, sweep pairs = 3, theta = 1.000000e+00, max z_i = 2.857793e+03, planes active/total = 111/134, blocks/line = 2 x 2, max |de| = 3.318353e+02, max |dT*|/T* = 1.337923e-03, |sum V de|/sum V|de| = 1.531234e-17
+### rad_implicit_ang cycle 1 t = 1.091902e-01: adi lod2, sweep pairs = 3, theta = 1.000000e+00, max z_i = 1.421830e+03, planes active/total = 77/134, blocks/line = 2 x 2, max |de| = 2.015752e+02, max |dT*|/T* = 1.519000e-04, |sum V de|/sum V|de| = 1.283763e-18
+### rad_implicit_ang cycle 2 t = 2.183760e-01: adi lod2, sweep pairs = 3, theta = 1.000000e+00, max z_i = 2.846717e+03, planes active/total = 111/134, blocks/line = 2 x 2, max |de| = 5.009837e+02, max |dT*|/T* = 1.141243e-04, |sum V de|/sum V|de| = 8.816271e-18
+### rad_implicit_ang cycle 2 t = 2.183760e-01: adi lod2, sweep pairs = 3, theta = 1.000000e+00, max z_i = 1.422844e+03, planes active/total = 77/134, blocks/line = 2 x 2, max |de| = 3.011136e+02, max |dT*|/T* = 2.553915e-05, |sum V de|/sum V|de| = 1.820534e-18
+### rad_implicit_ang cycle 3 t = 3.275593e-01: adi lod2, sweep pairs = 3, theta = 1.000000e+00, max z_i = 2.847327e+03, planes active/total = 111/134, blocks/line = 2 x 2, max |de| = 6.700804e+02, max |dT*|/T* = 6.863110e-05, |sum V de|/sum V|de| = 1.878060e-17
+### rad_implicit_ang cycle 3 t = 3.275593e-01: adi lod2, sweep pairs = 3, theta = 1.000000e+00, max z_i = 1.422613e+03, planes active/total = 77/134, blocks/line = 2 x 2, max |de| = 4.011630e+02, max |dT*|/T* = 2.615563e-05, |sum V de|/sum V|de| = 1.822567e-19
+### rad_implicit_ang cycle 4 t = 4.367404e-01: adi lod2, sweep pairs = 3, theta = 1.000000e+00, max z_i = 2.846542e+03, planes active/total = 111/134, blocks/line = 2 x 2, max |de| = 8.378672e+02, max |dT*|/T* = 4.602268e-05, |sum V de|/sum V|de| = 4.482157e-18
+### rad_implicit_ang cycle 4 t = 4.367404e-01: adi lod2, sweep pairs = 3, theta = 1.000000e+00, max z_i = 1.422507e+03, planes active/total = 77/134, blocks/line = 2 x 2, max |de| = 5.003925e+02, max |dT*|/T* = 2.754322e-05, |sum V de|/sum V|de| = 1.099032e-17
+### rad_implicit_ang cycle 5 t = 5.459197e-01: adi lod2, sweep pairs = 3, theta = 1.000000e+00, max z_i = 2.846017e+03, planes active/total = 111/134, blocks/line = 2 x 2, max |de| = 1.006122e+03, max |dT*|/T* = 3.794782e-05, |sum V de|/sum V|de| = 1.120235e-17
+### rad_implicit_ang cycle 5 t = 5.459197e-01: adi lod2, sweep pairs = 3, theta = 1.000000e+00, max z_i = 1.422444e+03, planes active/total = 77/134, blocks/line = 2 x 2, max |de| = 5.991918e+02, max |dT*|/T* = 3.286896e-05, |sum V de|/sum V|de| = 3.242517e-18
+### rad_implicit_ang cycle 6 t = 6.550975e-01: adi lod2, sweep pairs = 3, theta = 1.000000e+00, max z_i = 2.845603e+03, planes active/total = 111/134, blocks/line = 2 x 2, max |de| = 1.173121e+03, max |dT*|/T* = 4.027847e-05, |sum V de|/sum V|de| = 1.286601e-18
+### rad_implicit_ang cycle 6 t = 6.550975e-01: adi lod2, sweep pairs = 3, theta = 1.000000e+00, max z_i = 1.422405e+03, planes active/total = 77/134, blocks/line = 2 x 2, max |de| = 6.977879e+02, max |dT*|/T* = 3.815988e-05, |sum V de|/sum V|de| = 1.737637e-17
+### rad_implicit_ang cycle 7 t = 7.642740e-01: adi lod2, sweep pairs = 3, theta = 1.000000e+00, max z_i = 2.845270e+03, planes active/total = 111/134, blocks/line = 2 x 2, max |de| = 1.338420e+03, max |dT*|/T* = 4.695433e-05, |sum V de|/sum V|de| = 1.006301e-17
+### rad_implicit_ang cycle 7 t = 7.642740e-01: adi lod2, sweep pairs = 3, theta = 1.000000e+00, max z_i = 1.422385e+03, planes active/total = 77/134, blocks/line = 2 x 2, max |de| = 7.953804e+02, max |dT*|/T* = 4.337696e-05, |sum V de|/sum V|de| = 1.623625e-17
+### rad_implicit_ang cycle 8 t = 8.734494e-01: adi lod2, sweep pairs = 3, theta = 1.000000e+00, max z_i = 2.845003e+03, planes active/total = 111/134, blocks/line = 2 x 2, max |de| = 1.501962e+03, max |dT*|/T* = 5.309511e-05, |sum V de|/sum V|de| = 1.683424e-17
+### rad_implicit_ang cycle 8 t = 8.734494e-01: adi lod2, sweep pairs = 3, theta = 1.000000e+00, max z_i = 1.422379e+03, planes active/total = 77/134, blocks/line = 2 x 2, max |de| = 8.919261e+02, max |dT*|/T* = 4.852595e-05, |sum V de|/sum V|de| = 9.241801e-18
+### rad_implicit_ang cycle 9 t = 9.826240e-01: adi lod2, sweep pairs = 3, theta = 1.000000e+00, max z_i = 2.844792e+03, planes active/total = 111/134, blocks/line = 2 x 2, max |de| = 1.663665e+03, max |dT*|/T* = 5.885545e-05, |sum V de|/sum V|de| = 1.658429e-17
+### rad_implicit_ang cycle 9 t = 9.826240e-01: adi lod2, sweep pairs = 3, theta = 1.000000e+00, max z_i = 1.422384e+03, planes active/total = 77/134, blocks/line = 2 x 2, max |de| = 9.873636e+02, max |dT*|/T* = 5.361034e-05, |sum V de|/sum V|de| = 1.539755e-17
+
+Terminating on cycle limit
+time=5.458838e+00 cycle=50
+tlim=1.504400e+05 nlim=50
+
+MeshBlock-cycles = 200
+cpu time used  = 3.529674e+01
+zone-cycles/cpu_second = 4.859373e+04
+particle-updates/cpu_second = 0.000000e+00
+### rad_sts totals: 100 calls, 0 substages, mean 0.000000e+00 per call

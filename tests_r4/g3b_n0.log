@@ -1,0 +1,46 @@
+Loading openmpi_gpu/5.0
+  Loading requirement: openmpi/5.0
+=== G3 n0 n0_t100_r2.0 exit 0
+=== G3 n0 n1_t100_r2.0 exit 0
+=== G3 n0 n3_t100_r2.0 exit 0
+=== G3 n0 n7_t100_r2.0 exit 0
+=== G3 n0 n3_t30_r2.0 exit 0
+=== G3 n0 n3_t300_r2.0 exit 0
+=== G3 n0 n3_t100_r1.1 exit 0
+=== G3 n0 n3_t100_r1.5 exit 0
+ALLDONE
+                                  
+================================= 
+Global information about the job: 
+================================= 
+  
+Job owner: jinma(28895)
+Job name:  g3b
+Node list: vipa1327
+Job start: Thu Sep 17 19:12:28 CEST 2026
+Job end:   Thu Sep 17 19:12:50 CEST 2026
+Work dir:  /viper/u2/jinma/ATHENAK/bench/wt_he4
+Command:   /viper/u2/jinma/ATHENAK/bench/wt_he4/tests_r4/sub_g3_n0.sh
+  
+  
+  
+==========================================================================================
+Information on jobsteps (Note: MaxRSS/AveRSS is the maximum/average over all 
+tasks of the per-task memory high-water marks; cf. "man sacct"): 
+==========================================================================================
+  
+JobID            JobName NNodes NTasks  NCPUS       MaxRSS       AveRSS    Elapsed ExitCode
+------------- ---------- ------ ------ ------ ------------ ------------ ---------- --------
+11778123             g3b      1            16                             00:00:22      0:0
+11778123.0     athena_v2      1      1     16       35.27M       35.27M   00:00:03      0:0
+11778123.1     athena_v2      1      1     16       35.26M       35.26M   00:00:02      0:0
+11778123.2     athena_v2      1      1     16       36.25M       36.25M   00:00:03      0:0
+11778123.3     athena_v2      1      1     16       35.26M       35.26M   00:00:02      0:0
+11778123.4     athena_v2      1      1     16       36.25M       36.25M   00:00:03      0:0
+11778123.5     athena_v2      1      1     16       36.25M       36.25M   00:00:02      0:0
+11778123.6     athena_v2      1      1     16       36.25M       36.25M   00:00:03      0:0
+11778123.7     athena_v2      1      1     16       35.27M       35.27M   00:00:02      0:0
+  
+Maximum memory per node: 0.038015 GB (defined as MaxRSS*Ntasks/NNodes)
+CPU utilization: 0.0 %
+  
