@@ -1,0 +1,7 @@
+Loading openmpi_gpu/5.0
+  Loading requirement: openmpi/5.0
+srun: Job step aborted: Waiting up to 62 seconds for job step to finish.
+srun: got SIGCONT
+[2026-09-17T09:22:19.529] error: *** JOB 11758720 ON vipa1194 CANCELLED AT 2026-09-17T09:22:19 DUE to SIGNAL Terminated ***
+srun: forcing job termination
+[2026-09-17T09:22:19.529] error: *** STEP 11758720.0 ON vipa1194 CANCELLED AT 2026-09-17T09:22:19 DUE to SIGNAL Terminated ***

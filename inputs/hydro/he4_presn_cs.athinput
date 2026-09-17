@@ -305,3 +305,9 @@ variable       = hydro_w
 coarsen_factor = 2               # 2, not 3: the coarsening must divide EVERY MeshBlock
                                  # dimension and meshblock/nx2 = nx3 = 16
 dt             = 235.0           # 0.05 turnover, the movie frames
+
+<output5>
+file_type  = log                 # the EVENT LOG: eos_dfloor/efloor/tfloor/vceil,
+dt         = 47.0                # eos_fail, the c2p iteration count and the FOFC
+                                 # firing count, per 0.01 turnover.  The 3-D gate reads
+                                 # eos_fail, the floors and fofc off this file.
