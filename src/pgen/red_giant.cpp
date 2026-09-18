@@ -1673,6 +1673,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // the mirroring column sealed the atmosphere -- 6650 K isothermal, emergent flux
     // 0.3 % of L.  Set problem/rt_top_re = false to get the old boundary back.
     ts::rt_top_re = pin->GetOrAddBoolean("problem", "rt_top_re", !col3);
+    // problem/rt_top_vacuum (default false = the unresolved-column model above): nothing
+    // above the domain, I_down = 0 at the top face.  The right boundary when the domain
+    // top sits in optically thin gas (the He4 presupernova star: tau = 1e-2 at x1max),
+    // and the box's production setting; here it was never read, so the mode-3 column,
+    // with rt_top_re forced off, always used the column model (2026-09-18).
+    ts::rt_top_vacuum = pin->GetOrAddBoolean("problem", "rt_top_vacuum", false);
     // see two_stream_rt.hpp, rt_cut_bc_legacy: the grey sweep used to start the upward
     // intensity at the cut isotropic at B, which is exactly half the flux the column
     // supports.  The fix is the default here too; true restores the old boundary.

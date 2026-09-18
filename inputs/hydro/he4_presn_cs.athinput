@@ -410,6 +410,10 @@ rt_rad_force       = true
 # injects the luminosity as the entropy of the inflow and the two would double count.  It
 # is listed (not left to its default) so that the 1-D relaxation run, which uses
 # inner_bc = wall and must inject L somewhere, can switch it on from the command line.
+rt_top_vacuum      = false       # top boundary of the two-stream: false = the unresolved
+                                 # hydrostatic column above the domain radiating at the top
+                                 # cell's T (never read by red_giant before 2026-09-18);
+                                 # true = nothing above the domain (x1max sits at tau 1e-2)
 rt_bottom_flux     = false       # FALSE, and now for a different reason: with the 20/300
                                  # handover w = 1 at the bottom face, so the two-stream's
                                  # own lower boundary is below its cut and the luminosity
