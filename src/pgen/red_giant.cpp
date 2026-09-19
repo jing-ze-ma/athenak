@@ -278,6 +278,11 @@ bool open_outer_ = false;
 // inner boundary does, which is the right choice only if something above is being
 // modelled.
 bool open_outer_noinflow_ = true;
+// problem/open_outer_lid (default false): keep the open ghost's hydrostatic (rho, e)
+// continuation but MIRROR the radial velocity about the top face, so no mass crosses it.
+// For a star whose radial pulsation lifts BOUND gas (a few per cent of v_esc) through a
+// top that sits just above the photosphere: outflow-only drains it irreversibly.
+bool open_outer_lid_ = false;
 Real p_base_ = 0.0, t_base_ = 0.0;      // the initial column AT the inner wall, cgs
 // --- AMBIENT MEDIUM outside the star (problem/bg_rho > 0).  A constant (rho, T) filling
 // the domain above the point where the hydrostatic column thins to bg_rho, so that x1max
@@ -468,6 +473,10 @@ bool vdamp_printed_ = false;
 //                                    over every angular cell at that radius, all ranks).
 // The internal energy is conserved: the kinetic-energy change is written back to IEN.
 // Insurance against the deep g-mode cavity under an open inner boundary.
+// problem/vdamp_all_until (code time, 0 = off) and problem/vdamp_all_time: damp v1 in EVERY
+// cell at the rate 1/vdamp_all_time while time < vdamp_all_until, then release.  A
+// relaxed-start test: does radial motion regrow from rest (instability) or not (IC)?
+Real vda_until_ = 0.0, vda_time_ = 20.0;
 int vdb_cells_ = 0;
 Real vdb_time_ = 20.0;
 bool vdb_mean_ = false;
@@ -1561,6 +1570,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // g-mode cavity under an OPEN inner boundary, so that check is dropped -- but the
   // shell-mean variant needs every MeshBlock to span the whole radius, as the MLT shell
   // mean does, because it indexes cells by their global radial position.
+  vda_until_ = pin->GetOrAddReal("problem", "vdamp_all_until", 0.0);
+  vda_time_ = pin->GetOrAddReal("problem", "vdamp_all_time", 20.0);
   vdb_cells_ = pin->GetOrAddInteger("problem", "vdamp_bot_cells", 0);
   vdb_time_ = pin->GetOrAddReal("problem", "vdamp_bot_time", 20.0);
   vdb_mean_ = pin->GetOrAddBoolean("problem", "vdamp_bot_mean_only", false);
@@ -2506,6 +2517,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         std::exit(EXIT_FAILURE);
       }
       open_outer_noinflow_ = pin->GetOrAddBoolean("problem", "open_outer_noinflow", true);
+      open_outer_lid_ = pin->GetOrAddBoolean("problem", "open_outer_lid", false);
       if (open_outer_ && global_variable::my_rank == 0) {
         std::cout << "red_giant: OPEN outer boundary -- the ghosts continue the top "
                   << "active cell hydrostatically at its own temperature"
@@ -4168,6 +4180,17 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
     });
     RGNanScan(pm, "vdamp_bot");
   }
+  if (vda_until_ > 0.0 && pm->time < vda_until_) {
+    const Real ga = 1.0 - exp(-bdt/vda_time_);
+    par_for("rg_vdall", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real dc = u0(m,IDN,k,j,i);
+      const Real m1o = u0(m,IM1,k,j,i);
+      const Real m1n = m1o*(1.0 - ga);
+      u0(m,IM1,k,j,i) = m1n;
+      u0(m,IEN,k,j,i) += 0.5*(SQR(m1n) - SQR(m1o))/dc;
+    });
+  }
 
   // --- the optically thin layers: the correlated-k or the grey two-stream if one of
   // them is on, else the old grey Eddington relaxation.  problem/rt_strang and
@@ -4304,6 +4327,7 @@ void RedGiantBC(Mesh *pm) {
   // OPEN outer boundary: the same continuation at the other end.  See open_outer_.
   const bool open_out = open_outer_;
   const bool open_out_noin = open_outer_noinflow_;
+  const bool open_out_lid = open_outer_lid_;
   // The AMBIENT MEDIUM is not hydrostatic -- a 400 K gas has a scale height of ~1e-3 R
   // at the outer wall -- so it falls in at the free-fall speed and the reflecting ghost
   // below (v1 mirrored) lets the top cells evacuate with nothing coming back.  Measured:
@@ -4448,7 +4472,13 @@ void RedGiantBC(Mesh *pm) {
       guard_hit(m, k, j, i, d_i, e_i, t_i, p_g);
       column_state(m, i, d_g, e_g);
     }
-    if (open_out_noin && v1 < 0.0) v1 = 0.0;
+    if (open_out_lid) {
+      Real d_m, e_m, v2m, v3m;       // the mirror cell about the top face
+      state_i(m, k, j, 2*im + 1 - i, d_m, e_m, v1, v2m, v3m);
+      v1 = -v1;
+    } else if (open_out_noin && v1 < 0.0) {
+      v1 = 0.0;
+    }
     if (open_dbg && m == 0 && k == 2 && j == 2) {
       Kokkos::printf("rg_open_bc_out i=%d im=%d: d_i=%.6e e_i=%.6e p_i=%.6e t_i=%.6e "
                      "dphi=%.6e p_g=%.6e d_g=%.6e e_g=%.6e v1=%.6e\n",

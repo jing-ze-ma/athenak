@@ -373,6 +373,7 @@ inner_bc    = open               # Arms BH/DH use inner_bc = wall together with 
 s_relax_cs  = 0.1
 s_relax_cp  = 0.3
 outer_bc    = open
+open_outer_lid = false           # true: mirror v1 at the top face (no mass crosses); see red_giant.cpp
 open_outer_noinflow = true
 open_conserve = true
 face_budget = 1                  # log what leaves through both radial faces from cycle 0
@@ -385,6 +386,8 @@ vdamp_bot_cells = 24             # the box uses 48 of its 134 cells; 48 of 96 wo
                                  # radial domain that 48 of the 192-cell production grid is
 vdamp_bot_time  = 20.0
 vdamp_bot_mean_only = false
+vdamp_all_until = 0.0            # > 0: damp v1 everywhere until this time (relaxed-start test)
+vdamp_all_time  = 20.0
 # --- THE GREY TWO-STREAM, mode 3 (the exact block-tridiagonal column solve) with the PCR
 # partitioned solver and the warm/mixed accelerators, exactly as box_w8 runs them.  The
 # five legacy switches (rt_use_cons, rt_src_direct, rt_top_re, rt_newton, rt_rescue_eq)
