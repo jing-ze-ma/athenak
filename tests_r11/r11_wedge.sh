@@ -21,6 +21,11 @@ OV="problem/inner_bc=wall problem/rt_bottom_flux=true hydro/rad_flux_inner=1.305
 COMMON="output1/dt=47.0 output2/dt=2352.5 output3/dt=940.0 output4/dt=1.0e30
  output5/dt=47.0 problem/rt_profile_dt=47.0 problem/rt_surface_dt=94.0
  problem/column_dump=column_$ARM.txt problem/mlt_dump=mltfaces_$ARM.txt"
+# UPGRADE: sbatch --export=ALL,OLDJOB=<id> --nodes=2-4 ... takes over from a smaller running
+# job of the same arm: cancel it, let its files settle, continue from the newest restart.
+if [ -n "$OLDJOB" ] && squeue -h -j $OLDJOB 2>/dev/null | grep -q .; then
+  scancel $OLDJOB; sleep 60
+fi
 RST=$(ls -t $A/rst/*.rst 2>/dev/null | head -1)
 NT=$((SLURM_JOB_NUM_NODES*2))
 LEFT=$(squeue -h -j $SLURM_JOB_ID -o %L)              # [d-]hh:mm:ss or mm:ss granted
