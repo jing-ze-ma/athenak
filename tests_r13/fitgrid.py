@@ -6,13 +6,14 @@ xf=np.linspace(0,1,n+1); ro=r0+(r1o-r0)*u_of(cold,xf); dro=np.diff(ro)
 print("OLD grid: dr [1e8 cm] at r/R:"," ".join("%.3f:%.1f"%(0.5*(ro[i]+ro[i+1])/RS,dro[i]/1e8) for i in range(0,n,8)),"| last %.1f"%(dro[-1]/1e8))
 # target dr(r): as the old grid up to 0.97R, 6e8 over 0.97-1.10R, then geometric growth to r1
 import sys
-r1=float(sys.argv[1])*RS; N=int(sys.argv[2])
+r1=float(sys.argv[1])*RS; N=int(sys.argv[2]); DRA=float(sys.argv[3]) if len(sys.argv)>3 else 6.0e8
 def dr_target(r):
     x=r/RS
     old=np.interp(r,0.5*(ro[1:]+ro[:-1]),dro)
     if x<0.97: return old
-    if x<1.10: return 6.0e8
-    return 6.0e8*np.exp((x-1.10)/0.045)
+    if x<1.00: return 6.5e8
+    if x<1.10: return 6.5e8+(DRA-6.5e8)*min(1.0,(x-1.00)/0.02)
+    return DRA*np.exp((x-1.10)/0.06)
 # build faces by marching, then rescale cell count to N by uniform factor on dr
 faces=[r0]
 while faces[-1]<r1: faces.append(faces[-1]+dr_target(faces[-1]))
