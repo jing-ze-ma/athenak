@@ -2127,7 +2127,16 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
           if (test_oned) mu0 = cos(85.0/90.0*M_PI/2.0);
           cf_g(m,k,j,3) = mu0;
         });
-        par_for("rt_pre_tp", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
+        // ONE ANGULAR GHOST EACH SIDE under rt_rad_force: the transverse Prad grad w term
+        // differences T_g over j+-1 and k+-1, so at a MeshBlock edge it read a T_g that
+        // was never filled (0 or stale).  With the temperature gate on, that put a large
+        // spurious horizontal force on every block-edge cell of the shell where dw/dlnT
+        // is non-zero (He4 wedge, 0.988 R: v_h 3e6 cm/s and 20 % density errors at every
+        // 24th cell by 0.5 turnover, neighbouring shells quiet), on the cubed sphere too.
+        const int jg_tp = (rt_rad_force && pm->multi_d) ? 1 : 0;
+        const int kg_tp = (rt_rad_force && pm->three_d) ? 1 : 0;
+        par_for("rt_pre_tp", DevExeSpace(), 0, nmb1, ks-kg_tp, ke+kg_tp, js-jg_tp,
+                je+jg_tp, is, ie+1,
         KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
           // THE TOP SLOT READS THE TOP ACTIVE CELL, NOT THE HYDRO GHOST.  i = ie+1 is the
           // unresolved column above the domain, and physically it IS the continuation of
