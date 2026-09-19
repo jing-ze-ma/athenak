@@ -32,7 +32,7 @@ LEFT=$(squeue -h -j $SLURM_JOB_ID -o %L)              # [d-]hh:mm:ss or mm:ss gr
 SEC=$(echo $LEFT | awk -F'[-:]' '{n=NF; s=$n+60*$(n-1); if(n>2)s+=3600*$(n-2); if(n>3)s+=86400*$(n-3); print s-600}')
 TL=$(printf "%02d:%02d:%02d" $((SEC/3600)) $((SEC%3600/60)) $((SEC%60)))
 echo "### nodes $SLURM_JOB_NUM_NODES ranks $NT granted $LEFT athena -t $TL restart ${RST:-none}"
-srun -n $NT $B/tests_r11/athena_v18 ${RST:+-r $RST} -i $B/inputs/hydro/he4_presn_sp.athinput \
+srun -n $NT $B/tests_r11/athena_v19 ${RST:+-r $RST} -i $B/inputs/hydro/he4_presn_sp.athinput \
      -t $TL $COMMON $OV time/tlim=23525 "$@"
 echo "### athena exit $?"
 ls -t $A/rst/*.rst 2>/dev/null | tail -n +2 | xargs -r rm -f

@@ -479,6 +479,9 @@ bool vdamp_printed_ = false;
 // EVERY cell at the rate 1/vdamp_all_time while time < vdamp_all_until, then release.
 // A relaxed-start test: does radial motion regrow from rest (instability) or not (IC)?
 Real vda_until_ = 0.0, vda_time_ = 20.0;
+bool vda_mean_ = false;          // problem/vdamp_all_mean_only, see RedGiantGravity
+DvceArray1D<Real> vda_d_;
+HostArray1D<Real> vda_h_;
 int vdb_cells_ = 0;
 Real vdb_time_ = 20.0;
 bool vdb_mean_ = false;
@@ -1604,6 +1607,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // mean does, because it indexes cells by their global radial position.
   vda_until_ = pin->GetOrAddReal("problem", "vdamp_all_until", 0.0);
   vda_time_ = pin->GetOrAddReal("problem", "vdamp_all_time", 20.0);
+  vda_mean_ = pin->GetOrAddBoolean("problem", "vdamp_all_mean_only", false);
   vdb_cells_ = pin->GetOrAddInteger("problem", "vdamp_bot_cells", 0);
   vdb_time_ = pin->GetOrAddReal("problem", "vdamp_bot_time", 20.0);
   vdb_mean_ = pin->GetOrAddBoolean("problem", "vdamp_bot_mean_only", false);
@@ -4272,7 +4276,55 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
     });
     RGNanScan(pm, "vdamp_bot");
   }
-  if (vda_until_ > 0.0 && pm->time < vda_until_) {
+  // problem/vdamp_all_mean_only: damp only the SHELL MEAN of v1 (the radial mode), not
+  // the fluctuations about it, so convection grows undisturbed while the radial motion
+  // is held; released at vdamp_all_until like the plain variant.  Same reduction as the
+  // bottom sponge's mean, over every shell.
+  if (vda_mean_ && vda_until_ > 0.0 && pm->time < vda_until_) {
+    const int nb = indcs.nx1;
+    if (vda_d_.extent_int(0) != nb) {
+      Kokkos::realloc(vda_d_, nb);
+      Kokkos::realloc(vda_h_, nb);
+    }
+    auto vda = vda_d_;
+    const int lnx2 = indcs.nx2, lnx3 = indcs.nx3;
+    const int nkj = (nmb1+1)*lnx3*lnx2;
+    const int gnx2 = pm->mesh_indcs.nx2, gnx3 = pm->mesh_indcs.nx3;
+    const int npanel = pm->use_cubed_sphere ? 6 : 1;
+    Kokkos::TeamPolicy<> vpol(DevExeSpace(), nb, Kokkos::AUTO);
+    Kokkos::parallel_for("rg_vdall_mean", vpol,
+    KOKKOS_LAMBDA(Kokkos::TeamPolicy<>::member_type tmember) {
+      const int i = is + tmember.league_rank();
+      Real vs = 0.0;
+      Kokkos::parallel_reduce(Kokkos::TeamThreadRange(tmember, nkj),
+      [&](const int idx, Real &ls) {
+        const int m = idx/(lnx3*lnx2);
+        const int kj = idx - m*(lnx3*lnx2);
+        const int k = ks + kj/lnx2;
+        const int j = js + (kj - (kj/lnx2)*lnx2);
+        ls += u0(m,IM1,k,j,i)/u0(m,IDN,k,j,i);
+      }, Kokkos::Sum<Real>(vs));
+      Kokkos::single(Kokkos::PerTeam(tmember), [&]() { vda(i-is) = vs; });
+    });
+    Kokkos::fence();
+    Kokkos::deep_copy(vda_h_, vda_d_);
+#if MPI_PARALLEL_ENABLED
+    MPI_Allreduce(MPI_IN_PLACE, vda_h_.data(), nb, MPI_ATHENA_REAL, MPI_SUM,
+                  MPI_COMM_WORLD);
+#endif
+    const Real fpl = 1.0/static_cast<Real>(gnx2*gnx3*npanel);
+    for (int q=0; q<nb; ++q) vda_h_(q) *= fpl;
+    Kokkos::deep_copy(vda_d_, vda_h_);
+    const Real ga = 1.0 - exp(-bdt/vda_time_);
+    par_for("rg_vdall_m", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real dc = u0(m,IDN,k,j,i);
+      const Real m1o = u0(m,IM1,k,j,i);
+      const Real m1n = m1o - ga*dc*vda(i-is);
+      u0(m,IM1,k,j,i) = m1n;
+      u0(m,IEN,k,j,i) += 0.5*(SQR(m1n) - SQR(m1o))/dc;
+    });
+  } else if (vda_until_ > 0.0 && pm->time < vda_until_) {
     const Real ga = 1.0 - exp(-bdt/vda_time_);
     par_for("rg_vdall", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -4930,6 +4982,8 @@ void RedGiantFinal(ParameterInput *pin, Mesh *pm) {
   klT_ = DvceArray1D<Real>();
   klD_ = DvceArray1D<Real>();
   tau_d_ = DvceArray1D<Real>();  // the seed's tau window (problem/vpert_tau_lo/hi)
+  vda_d_ = DvceArray1D<Real>();
+  vda_h_ = HostArray1D<Real>();
   vdb_d_ = DvceArray1D<Real>();  // the bottom sponge's shell means...
   vdb_h_ = HostArray1D<Real>();  // ...and its HOST mirror: Kokkos tracks host
   surf_d_ = DvceArray2D<Real>(); // allocations too, and a default-constructed View
