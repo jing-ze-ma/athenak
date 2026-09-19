@@ -125,6 +125,7 @@
 #include <cstdint>
 #include <cstring>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <limits>
 #include <random>
@@ -165,6 +166,7 @@ void RedGiantGravity(Mesh *pm, Real bdt);
 // problem/rt_strang, problem/rt_once_per_cycle: the radiation operator applied OUTSIDE
 // the RK stages (ProblemGenerator::user_split_func).  See the declarations of rt_strang_
 void RedGiantRTSplit(Mesh *pm, Real bdt);
+void RedGiantGravityLedger(Mesh *pm, Real bdt);
 void RedGiantBC(Mesh *pm);
 void RedGiantFinal(ParameterInput *pin, Mesh *pm);
 
@@ -473,9 +475,9 @@ bool vdamp_printed_ = false;
 //                                    over every angular cell at that radius, all ranks).
 // The internal energy is conserved: the kinetic-energy change is written back to IEN.
 // Insurance against the deep g-mode cavity under an open inner boundary.
-// problem/vdamp_all_until (code time, 0 = off) and problem/vdamp_all_time: damp v1 in EVERY
-// cell at the rate 1/vdamp_all_time while time < vdamp_all_until, then release.  A
-// relaxed-start test: does radial motion regrow from rest (instability) or not (IC)?
+// problem/vdamp_all_until (code time, 0 = off) and problem/vdamp_all_time: damp v1 in
+// EVERY cell at the rate 1/vdamp_all_time while time < vdamp_all_until, then release.
+// A relaxed-start test: does radial motion regrow from rest (instability) or not (IC)?
 Real vda_until_ = 0.0, vda_time_ = 20.0;
 int vdb_cells_ = 0;
 Real vdb_time_ = 20.0;
@@ -636,6 +638,19 @@ Real mlt_x_thr_ = 1.0e-4;
 // on a Gamma ~ 0.95 envelope heats the layers under 0.93 R, cools those above and
 // drives the secular expansion.  This makes L(r) = L on every interior face in the mean.
 bool mlt_flux_fix_ = false;
+// problem/mlt_split_deposit (needs problem/rt_strang): deposit div F_conv in the SAME
+// Strang half steps as the two-stream, not inside the RK stages.  In the MLT zone
+// div F_conv and div F_2s are each up to 6e-3 of eint per step and cancel; with one in
+// the stages and the other split, the stages see a pressure error ~ dt div F_conv, a
+// force dipole LINEAR in dt at the top of the MLT zone (tests_r12 fc3/fb0/fc07: +8.5 /
+// +4.1 / +1.0 % of rho g at cfl 0.3 / 0.15 / 0.0375; sign flips with mlt_alpha = 0).
+// The stage call still builds fconv_.  mlt_owed_ carries the half step made before the
+// first build.
+Real cs_max_ = 0.0, cs_mass_added_ = 0.0;   // problem/cs_max, see RgCsCeiling
+bool rt_no_heat_ = false; // problem/rt_no_heat, see RedGiantRTSplit
+int eledger_ = 0;         // problem/e_ledger, see RedGiantRTSplit
+bool mlt_split_dep_ = false, mlt_fconv_ready_ = false;
+Real mlt_owed_ = 0.0;
 Real mlt_flux_fix_cap_ = 0.02, mlt_flux_fix_rmax_ = 0.0;
 // problem/mlt_relax_time [s], 0 = off: relax the applied 1-D profile toward the freshly
 // computed flux by dt/relax_time each call.  The deficit now contains the RESOLVED
@@ -1332,7 +1347,11 @@ void RedGiantRTSweep(Mesh *pm, Real bdt) {
 //! \fn void ProblemGenerator::UserProblem()
 
 void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
-  user_srcs_func = RedGiantGravity;
+  eledger_ = pin->GetOrAddInteger("problem", "e_ledger", 0);
+  rt_no_heat_ = pin->GetOrAddBoolean("problem", "rt_no_heat", false);
+  cs_max_ = pin->GetOrAddReal("problem", "cs_max", 0.0);
+  user_srcs_func = (eledger_ > 0 || cs_max_ > 0.0) ? RedGiantGravityLedger
+                                                   : RedGiantGravity;
   user_bcs_func = RedGiantBC;
   pgen_final_func = RedGiantFinal;
   MeshBlockPack *pmbp = pmy_mesh_->pmb_pack;
@@ -1430,6 +1449,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   mlt_hold_ = pin->GetOrAddReal("problem", "mlt_hold_time", 0.0);
   mlt_x_thr_ = pin->GetOrAddReal("problem", "mlt_x_thr", 1.0e-4);
   mlt_flux_fix_ = pin->GetOrAddBoolean("problem", "mlt_flux_fix", false);
+  mlt_split_dep_ = pin->GetOrAddBoolean("problem", "mlt_split_deposit", false);
   mlt_flux_fix_cap_ = pin->GetOrAddReal("problem", "mlt_flux_fix_cap", 0.02);
   mlt_flux_fix_rmax_ = pin->GetOrAddReal("problem", "mlt_flux_fix_rmax", 0.0);
   mlt_relax_ = pin->GetOrAddReal("problem", "mlt_relax_time", 1.0e4);
@@ -3700,6 +3720,8 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
         }
       }
     }
+    mlt_fconv_ready_ = true;
+    if (!(mlt_split_dep_ && rt_strang_))
     par_for("rg_mlt_div", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       const Real x1lo = size.d_view(m).x1min, x1hi = size.d_view(m).x1max;
@@ -4281,8 +4303,230 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
 //! it, over the same bdt and on the state the column solve has just relaxed: its x2/x3
 //! ghosts are the last exchange's, exactly as they are for the in-stage task it replaces.
 
+// problem/e_ledger (cycles, 0 = off; single rank only): which OPERATOR changes the
+// domain's sum of u0(IEN) dV.  el_(0) = the two-stream sweep (with its radiative force),
+// el_(1) = the split MLT deposit, el_(2) = everything in RedGiantGravity; the rest of
+// the change since the first call is the hydro update, i.e. the two radial faces.
+Real el_[3] = {0.0, 0.0, 0.0}, el_e0_ = 0.0, el_t0_ = -1.0;
+
+Real RgTotE(Mesh *pm) {
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  auto &u0 = (pmbp->pmhd != nullptr) ? pmbp->pmhd->u0 : pmbp->phydro->u0;
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, js = indcs.js, ks = indcs.ks;
+  const int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
+  const int nji = nx2*nx1, nkji = nx3*nx2*nx1;
+  auto &volume = pmbp->pcoord->volume;
+  Real sum = 0.0;
+  Kokkos::parallel_reduce("rg_tote", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                          pmbp->nmb_thispack*nkji),
+  KOKKOS_LAMBDA(const int &idx, Real &acc) {
+    const int m = idx/nkji;
+    const int k = (idx - m*nkji)/nji;
+    const int j = (idx - m*nkji - k*nji)/nx1;
+    const int i = (idx - m*nkji - k*nji - j*nx1) + is;
+    acc += u0(m,IEN,k+ks,j+js,i)*volume(m,k+ks,j+js,i);
+  }, Kokkos::Sum<Real>(sum));
+  return sum;
+}
+
+// problem/cs_max [cm/s], 0 = off: a SOUND-SPEED CEILING applied as a density floor,
+//     rho >= (10/9) e_int / cs_max^2
+// (c_s^2 = 4 e/(9 rho) radiation dominated, 10 e/(9 rho) for a gamma = 5/3 gas).  The
+// 1-D He4 column evacuates a cavity under the Fe bump (0.85-0.87 R, rho 4e-9 -> 1.6e-13
+// at T = 1.5e5 K); the EOS keeps LTE radiation pressure in a hot cell whatever its
+// density, so c_s = 4e9 cm/s there and dt falls from 17 s to 0.3 s (tests_r12/sd3).
+// The added mass is at rest and carries no energy (see the kernel).
+
+void RgCsCeiling(Mesh *pm) {
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  const bool is_mhd = (pmbp->pmhd != nullptr);
+  auto &u0 = is_mhd ? pmbp->pmhd->u0 : pmbp->phydro->u0;
+  auto &w0 = is_mhd ? pmbp->pmhd->w0 : pmbp->phydro->w0;
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, js = indcs.js, ks = indcs.ks;
+  const int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
+  const int nji = nx2*nx1, nkji = nx3*nx2*nx1;
+  auto &volume = pmbp->pcoord->volume;
+  auto &size = pmbp->pmb->mb_size;
+  auto &x1v_ = pmbp->pcoord->x1v;
+  const bool curv = curv_, etotgrav = etotgrav_;
+  const Real gm = gm_, rin = rin_, x1min = x1min_;
+  const Real fac = (10.0/9.0)/SQR(cs_max_/pmbp->punit->velocity_cgs());
+  Real dm = 0.0;
+  Kokkos::parallel_reduce("rg_csmax", Kokkos::RangePolicy<>(DevExeSpace(), 0,
+                          pmbp->nmb_thispack*nkji),
+  KOKKOS_LAMBDA(const int &idx, Real &acc) {
+    const int m = idx/nkji;
+    const int k = (idx - m*nkji)/nji + ks;
+    const int j = (idx - m*nkji - (k-ks)*nji)/nx1 + js;
+    const int i = (idx - m*nkji - (k-ks)*nji - (j-js)*nx1) + is;
+    const Real d = u0(m,IDN,k,j,i);
+    const Real dmin = fac*w0(m,IEN,k,j,i);
+    if (d > 0.0 && d < dmin) {
+      // the mass is added AT REST: momentum and total energy are kept, so the cell's
+      // kinetic energy falls by d/dmin and the difference becomes heat.  Keeping the
+      // VELOCITY instead injected kinetic energy (tests_r12/cm_3.0e8: tot-E +40 %).
+      const Real dd = dmin - d;
+      u0(m,IDN,k,j,i) = dmin;
+      if (etotgrav) {
+        const Real x1lo = size.d_view(m).x1min, x1hi = size.d_view(m).x1max;
+        const Real xc = curv ? x1v_(m,i) : CellCenterX(i-is, nx1, x1lo, x1hi);
+        u0(m,IEN,k,j,i) += dd*PotAt(gm, rin, RadiusOf(curv, xc, rin, x1min));
+      }
+      acc += dd*volume(m,k,j,i);
+    }
+  }, Kokkos::Sum<Real>(dm));
+  cs_mass_added_ += dm;
+}
+
+void RedGiantGravityLedger(Mesh *pm, Real bdt) {
+  const Real e0 = (eledger_ > 0) ? RgTotE(pm) : 0.0;
+  if (eledger_ > 0 && el_t0_ < 0.0) { el_t0_ = pm->time; el_e0_ = e0; }
+  RedGiantGravity(pm, bdt);
+  if (eledger_ > 0) el_[2] += RgTotE(pm) - e0;
+  if (cs_max_ > 0.0) RgCsCeiling(pm);
+}
+
+// the same ledger PER RADIAL SHELL, for the sweep alone: sign*sum(u0(IEN) dV) into
+// slot (0,i), and with sign = 0 the telescoped face fluxes the sweep reports,
+// bdt*(A_i F2s_i - A_i+1 F2s_i+1), into slot (1,i).  Written to e_ledger_shell.txt.
+DvceArray2D<Real> el_sh_;
+Real el_tsum_ = 0.0;      // sum of the sweep dt the shell ledger has integrated
+void RgShellAcc(Mesh *pm, const Real sign, const Real bdt) {
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  const bool is_mhd = (pmbp->pmhd != nullptr);
+  auto &u0 = is_mhd ? pmbp->pmhd->u0 : pmbp->phydro->u0;
+  Conduction *pc = is_mhd ? pmbp->pmhd->pcond : pmbp->phydro->pcond;
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  if (el_sh_.extent(0) == 0) Kokkos::realloc(el_sh_, 2, indcs.nx1+1);
+  auto sh = el_sh_;
+  auto &volume = pmbp->pcoord->volume;
+  auto &area1 = pmbp->pcoord->area.x1f;
+  if (sign != 0.0) {
+    par_for("rg_elsh", DevExeSpace(), 0, pmbp->nmb_thispack-1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      Kokkos::atomic_add(&sh(0,i-is), sign*u0(m,IEN,k,j,i)*volume(m,k,j,i));
+    });
+  } else if (two_stream_rt::rt_face_flux_ready()) {
+    // slot (1,i): the time integral of the FACE luminosity, sum_kj A_i F_i bdt
+    auto fb = two_stream_rt::rt_face_flux();
+    const int nblk = two_stream_rt::rt_face_nblk();
+    par_for("rg_elshf", DevExeSpace(), 0, pmbp->nmb_thispack-1, ks, ke, js, je, is, ie+1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      Real ft = 0.0;
+      for (int b=0; b<nblk; ++b) ft += fb(m,b,i,k,j);
+      Kokkos::atomic_add(&sh(1,i-is), bdt*area1(m,k,j,i)*ft);
+      // slot (0,nx1) is otherwise unused: the summed face AREA of the bottom face, and
+      // of the top face times 1e-30 packed apart is not worth it -- bottom only
+      if (i == is) Kokkos::atomic_add(&sh(0,ie+1-is), bdt*area1(m,k,j,i));
+    });
+  }
+}
+
+// problem/rt_no_heat (diagnostic): the split operator keeps its MOMENTUM change (the
+// radiative force) but deposits no heat: u0(IEN) is put back to its entry value plus the
+// kinetic-energy change.  An adiabatic star with the force law intact.
+DvceArray5D<Real> rt_nh_save_;
+void RedGiantRTSplitBody(Mesh *pm, Real bdt);
+void RedGiantRTSplitLedger(Mesh *pm, Real bdt);
 void RedGiantRTSplit(Mesh *pm, Real bdt) {
+  if (!rt_no_heat_) { RedGiantRTSplitLedger(pm, bdt); return; }
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  auto &u0 = (pmbp->pmhd != nullptr) ? pmbp->pmhd->u0 : pmbp->phydro->u0;
+  if (rt_nh_save_.extent(0) == 0) {
+    Kokkos::realloc(rt_nh_save_, u0.extent(0), 2, u0.extent(2), u0.extent(3),
+                    u0.extent(4));
+  }
+  auto sv = rt_nh_save_;
+  const int n1 = u0.extent(4) - 1, n2 = u0.extent(3) - 1, n3 = u0.extent(2) - 1;
+  const int nm = u0.extent(0) - 1;
+  par_for("rg_nh0", DevExeSpace(), 0, nm, 0, n3, 0, n2, 0, n1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    sv(m,0,k,j,i) = u0(m,IEN,k,j,i);
+    sv(m,1,k,j,i) = u0(m,IM1,k,j,i);
+  });
+  RedGiantRTSplitLedger(pm, bdt);
+  par_for("rg_nh1", DevExeSpace(), 0, nm, 0, n3, 0, n2, 0, n1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const Real d = u0(m,IDN,k,j,i);
+    const Real dke = (d > 0.0)
+                   ? 0.5*(SQR(u0(m,IM1,k,j,i)) - SQR(sv(m,1,k,j,i)))/d : 0.0;
+    u0(m,IEN,k,j,i) = sv(m,0,k,j,i) + dke;
+  });
+}
+
+void RedGiantRTSplitLedger(Mesh *pm, Real bdt) {
+  if (eledger_ <= 0) { RedGiantRTSplitBody(pm, bdt); return; }
+  static int ncall = 0;
+  const Real e0 = RgTotE(pm);
+  if (el_t0_ < 0.0) { el_t0_ = pm->time; el_e0_ = e0; }
+  const Real mlt0 = el_[1];
+  RgShellAcc(pm, -1.0, bdt);
+  RedGiantRTSplitBody(pm, bdt);
+  RgShellAcc(pm, 1.0, bdt);
+  RgShellAcc(pm, 0.0, bdt);
+  el_tsum_ += bdt;
+  el_[0] += RgTotE(pm) - e0 - (el_[1] - mlt0);
+  if ((++ncall % 2 == 0) && (pm->ncycle % eledger_ == 0)) {
+    const Real de = RgTotE(pm) - el_e0_;
+    std::cout << std::scientific << std::setprecision(6) << "### e_ledger t=" << pm->time
+              << " dE=" << de << " rt=" << el_[0] << " mlt=" << el_[1] << " srcs="
+              << el_[2] << " hydro=" << de - el_[0] - el_[1] - el_[2] << std::endl;
+    auto hs = Kokkos::create_mirror_view(el_sh_);
+    Kokkos::deep_copy(hs, el_sh_);
+    std::ofstream sf("e_ledger_shell.txt");
+    sf << "# t=" << el_tsum_ << " : i  dE_sweep(+mlt)  bdt*(A F2s)_i-(A F2s)_i+1 (code)\n"
+       << std::scientific << std::setprecision(8);
+    for (int i = 0; i <= pm->mb_indcs.nx1; ++i) {
+      sf << i << " " << hs(0,i) << " " << hs(1,i) << "\n";
+    }
+  }
+}
+
+void RedGiantRTSplitBody(Mesh *pm, Real bdt) {
   if (!(rt_ck_ || rt_grey_)) return;
+  // problem/mlt_split_deposit: div F_conv with the sweep's own dt (see the declaration),
+  // BEFORE the sweep: the implicit column solve then starts from e + dt S, i.e. it is
+  // backward Euler WITH the source, and a state with div F_2s + div F_conv = 0 is its
+  // fixed point.  Deposited after the sweep it is not (tests_r12/fs0: dipole 1.25x).
+  if (mlt_split_dep_ && rt_strang_ && mlt_alpha_ > 0.0) {
+    if (!mlt_fconv_ready_) {
+      mlt_owed_ += bdt;
+    } else {
+      MeshBlockPack *pmbp = pm->pmb_pack;
+      const bool is_mhd = (pmbp->pmhd != nullptr);
+      auto &u0 = is_mhd ? pmbp->pmhd->u0 : pmbp->phydro->u0;
+      auto &indcs = pm->mb_indcs;
+      const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+      const int ks = indcs.ks, ke = indcs.ke;
+      const int nmb1 = pmbp->nmb_thispack - 1;
+      auto &size = pmbp->pmb->mb_size;
+      auto &area1 = pmbp->pcoord->area.x1f;
+      auto &volume = pmbp->pcoord->volume;
+      const bool curv = curv_;
+      auto fconv = fconv_;
+      const Real ddt = bdt + mlt_owed_;
+      mlt_owed_ = 0.0;
+      const Real em0 = (eledger_ > 0) ? RgTotE(pm) : 0.0;
+      par_for("rg_mlt_div_split", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        const Real x1lo = size.d_view(m).x1min, x1hi = size.d_view(m).x1max;
+        Real div;
+        if (curv) {
+          div = (area1(m,k,j,i)*fconv(m,k,j,i) - area1(m,k,j,i+1)*fconv(m,k,j,i+1))
+                /volume(m,k,j,i);
+        } else {
+          div = (fconv(m,k,j,i) - fconv(m,k,j,i+1))/((x1hi - x1lo)/indcs.nx1);
+        }
+        u0(m,IEN,k,j,i) += ddt*div;
+      });
+      if (eledger_ > 0) el_[1] += RgTotE(pm) - em0;
+      RGNanScan(pm, "MLT_flux_divergence_split");
+    }
+  }
   RedGiantRTSweep(pm, bdt);
   if (rt_split_tr_) {
     MeshBlockPack *pmbp = pm->pmb_pack;

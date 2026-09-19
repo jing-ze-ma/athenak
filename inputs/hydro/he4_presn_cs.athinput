@@ -345,6 +345,10 @@ mlt_mean           = true
 mlt_dump           = mltfaces.txt  # the t = 0 face budget: F_req, F_cond, F_2s,
                                  # F_resolved, the deficit D and F_used, per face
 mlt_flux_fix       = false       # true: signed flux residual on the faces the closure leaves alone (red_giant.cpp)
+cs_max             = 0.0         # cm/s; > 0: sound-speed ceiling as a density floor rho >= (10/9) e_int/cs_max^2
+rt_no_heat         = false       # diagnostic: split RT keeps its force, deposits no heat (adiabatic star)
+e_ledger           = 0           # cycles; > 0: per-operator energy ledger (single rank)
+mlt_split_deposit  = false       # true (with rt_strang): div F_conv in the Strang half steps, with the two-stream
 mlt_flux_fix_cap   = 0.02
 mlt_flux_fix_rmax  = 2.3243e11   # 0.98 R: below the taper ramp's fast transient
 mlt_relax_time     = 1.0e4       # 2 turnovers: follow the mean of the resolved flux,
