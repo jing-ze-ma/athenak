@@ -352,11 +352,20 @@ Conduction::Conduction(std::string block, MeshBlockPack *pp, ParameterInput *pin
         // face conductances BuildAngularCoeffs forms already carry the face area, the
         // arc length and the 1/sin(alpha), the metric CROSS term is carried explicitly
         // through cap_g2/cap_g3, and the operator divides by the cell volume.
+        // ...unless the mesh is a WEDGE that excludes the axis and is periodic in x2 and
+        // x3 (closed rings, as on a Cartesian mesh): then no row touches a pole.
         if (pp->pmesh->use_spherical_polar) {
-          std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
-                    << std::endl << "rad_implicit_ang does not support spherical polar "
-                    << "(the pole rows need their own treatment)" << std::endl;
-          std::exit(EXIT_FAILURE);
+          const auto &ms = pp->pmesh->mesh_size;
+          const bool wedge = (ms.x2min > 0.01) && (ms.x2max < M_PI - 0.01)
+              && (pp->pmesh->mesh_bcs[BoundaryFace::inner_x2] == BoundaryFlag::periodic)
+              && (pp->pmesh->mesh_bcs[BoundaryFace::inner_x3] == BoundaryFlag::periodic);
+          if (!wedge) {
+            std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
+                      << std::endl << "rad_implicit_ang on spherical polar needs a wedge "
+                      << "off the axis, periodic in x2 and x3 (the pole rows need their "
+                      << "own treatment)" << std::endl;
+            std::exit(EXIT_FAILURE);
+          }
         }
         if (pp->pmesh->use_cubed_sphere) {
           // the cross-term stencil reads the x2x3 DIAGONAL ghosts, which is exactly

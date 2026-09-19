@@ -150,10 +150,12 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
   // the CELL VOLUME (the Cartesian face coefficients already carry the 1/dx that the
   // flux-divergence form applies, so V_i = 1 there and the division is by an exact 1.0),
   // and csx gates the METRIC CROSS TERM.  See docs/dev/cs_implicit_transverse.md.
-  // Spherical polar is refused by the constructor, so use_cubed_sphere IS "curvilinear"
-  // here.
-  const bool curv = pmy_pack->pmesh->use_cubed_sphere;
-  const bool csx = curv && rad_cs_exact && three_d;
+  // SPHERICAL POLAR is admitted by the constructor only as a WEDGE that excludes the
+  // axis: it needs the same area-carrying coefficients and volume division (curv), is
+  // orthogonal (no cross term, csx off) and has no panel seams (iscs gates those).
+  const bool iscs = pmy_pack->pmesh->use_cubed_sphere;
+  const bool curv = iscs || pmy_pack->pmesh->use_spherical_polar;
+  const bool csx = iscs && rad_cs_exact && three_d;
   auto vol_ = pmy_pack->pcoord->volume;
   auto dx2c_ = pmy_pack->pcoord->dx2;
   auto dx3c_ = pmy_pack->pcoord->dx3;
@@ -607,12 +609,12 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
     const int scm = rad_adi_scm;
     // a cubed sphere ALWAYS has panel seams (every panel edge is one), and a Cartesian
     // mesh never has any.  A collective flag, because the seam sub-step exchanges.
-    const bool anyseam = curv;
+    const bool anyseam = iscs;
     // A cubed-sphere line is an OPEN CHAIN (it ends at the two panel seams); a Cartesian
     // multi-block line is a CLOSED RING (it is required to be periodic).  Only the
     // GATHER differs -- see (2) below; the reduced system itself is the same cyclic
     // assembly, which degenerates to the chain because a seam face gives a_1 = c_n = 0.
-    const bool openchain = curv;
+    const bool openchain = iscs;
 
     // ---- the active plane bracket, from the per-plane Gershgorin radii computed above
     int alo = nplane, ahi = -1;
