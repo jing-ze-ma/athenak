@@ -147,6 +147,8 @@ rsolver     = lhllc              # all-Mach HLLC: at Ma = 0.46 plain hllc's pres
 etotgrav    = true
 fofc        = true               # first-order flux correction; the cube vertices need it
 wellbalance_dynamic = true
+wellbalance_static  = false      # the alternative: background = the initial column (red_giant.cpp); needs dynamic = false
+wellbalance_static_reconst = false
 wb_x1               = true
 wb_option           = polytropic # the stratification is radiative, not isentropic
 wb_cache_every      = 0          # REBUILD EVERY STAGE.  A stale background numerically
@@ -342,6 +344,9 @@ ic_tau_rad   = 10.0
 mlt_mean           = true
 mlt_dump           = mltfaces.txt  # the t = 0 face budget: F_req, F_cond, F_2s,
                                  # F_resolved, the deficit D and F_used, per face
+mlt_flux_fix       = false       # true: signed flux residual on the faces the closure leaves alone (red_giant.cpp)
+mlt_flux_fix_cap   = 0.02
+mlt_flux_fix_rmax  = 2.3243e11   # 0.98 R: below the taper ramp's fast transient
 mlt_relax_time     = 1.0e4       # 2 turnovers: follow the mean of the resolved flux,
                                  # not its flicker
 mlt_ramp_time      = 0.0         # no ramp-UP: the ic was built with alpha = 1.5, so the

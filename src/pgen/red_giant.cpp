@@ -628,6 +628,15 @@ Real mlt_hold_ = 0.0;
 // (1e-2..0.5 near the surface) and F_MLT(x) binds; below it only the DEFICIT is known,
 // and that is what gets carried.
 Real mlt_x_thr_ = 1.0e-4;
+// problem/mlt_flux_fix (default false), shell-mean path only: on faces the closure leaves
+// alone (radiatively stable, or a negative deficit) carry the SIGNED shell residual
+// F_req - F_rad - F_res - F_2s, capped at mlt_flux_fix_cap*F_req, below mlt_flux_fix_rmax
+// [cm].  The initial column is in radiative equilibrium with ITS OWN transfer, not with
+// the run's two-stream on this grid: the mismatch is 0.1-0.3 % of L (tests_r12), which
+// on a Gamma ~ 0.95 envelope heats the layers under 0.93 R, cools those above and
+// drives the secular expansion.  This makes L(r) = L on every interior face in the mean.
+bool mlt_flux_fix_ = false;
+Real mlt_flux_fix_cap_ = 0.02, mlt_flux_fix_rmax_ = 0.0;
 // problem/mlt_relax_time [s], 0 = off: relax the applied 1-D profile toward the freshly
 // computed flux by dt/relax_time each call.  The deficit now contains the RESOLVED
 // convective flux, which is a turbulent correlation and flickers from dump to dump; the
@@ -1420,6 +1429,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   mlt_ramp_dn_ = pin->GetOrAddReal("problem", "mlt_ramp_down_time", 0.0);
   mlt_hold_ = pin->GetOrAddReal("problem", "mlt_hold_time", 0.0);
   mlt_x_thr_ = pin->GetOrAddReal("problem", "mlt_x_thr", 1.0e-4);
+  mlt_flux_fix_ = pin->GetOrAddBoolean("problem", "mlt_flux_fix", false);
+  mlt_flux_fix_cap_ = pin->GetOrAddReal("problem", "mlt_flux_fix_cap", 0.02);
+  mlt_flux_fix_rmax_ = pin->GetOrAddReal("problem", "mlt_flux_fix_rmax", 0.0);
   mlt_relax_ = pin->GetOrAddReal("problem", "mlt_relax_time", 1.0e4);
   // the shell mean indexes cells by their GLOBAL radial position, so a MeshBlock that
   // covers only part of the radius would average cells at different radii together
@@ -3399,6 +3411,8 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
       // the deficit IS the hand-over and it vanishes wherever radiation takes the load.
       auto fmean = fmean_;
       const Real xthr = mlt_x_thr_, relaxt = mlt_relax_;
+      const bool ffix = mlt_flux_fix_;
+      const Real ffcap = mlt_flux_fix_cap_, ffrmax = mlt_flux_fix_rmax_;
       const bool seed = !mlt_relax_seeded_;
       auto ktab = ktab_;
       auto klT = klT_;
@@ -3536,6 +3550,12 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
             // luminosity uncarried through the upper envelope.
             ftar = fmax(0.0, f);
           }
+        }
+        // problem/mlt_flux_fix: the signed residual where the closure carried nothing
+        if (ffix && ftar == 0.0 && (ffrmax <= 0.0 || rcm < ffrmax)) {
+          const Real f2sf = (wbl > 0.0) ? (1.0 - wbl)*f2s : f2s;
+          const Real res = freq - frad - fres - f2sf;
+          ftar = fmax(-ffcap*freq, fmin(ffcap*freq, res));
         }
         // (d) relax the applied profile toward the target
         const Real fnew = ftar/(punit_*vunit);                         // code flux
