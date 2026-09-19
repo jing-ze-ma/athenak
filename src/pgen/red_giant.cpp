@@ -2857,6 +2857,45 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   vrwave.modify_host();
   vrwave.sync_device();
   auto vrwd = vrwave.d_view;
+  // problem/vpert_sp_rand (off the cubed sphere, e.g. the spherical-polar WEDGE): a
+  // random superposition of vpert_nrand modes PERIODIC over the mesh in x2 and x3,
+  //     sum_n cos(2 pi (a_n u + b_n w) + phi_n) sin(pi c_n s + chi_n),
+  // u, w, s the mesh-wide fractional coordinates, a_n, b_n integers in [-kmax, kmax] (not
+  // both zero), c_n in 1..3.  Without it the seed off the cubed sphere is ONE mode whose
+  // period is the MeshBlock, and everything else has to grow from round-off.  Radial
+  // component only, so under vpert_var = eint it is a scalar entropy pattern.
+  const int nsp = (!vcart && vrnum > 0) ? vrnum : 0;
+  const bool sprand = pin->GetOrAddBoolean("problem", "vpert_sp_rand", false)
+                      && (nsp > 0);
+  const int spkmax = pin->GetOrAddInteger("problem", "vpert_sp_kmax", 8);
+  DualArray2D<Real> spwave("rg_vpert_sp", (nsp > 0) ? nsp : 1, 5);
+  if (sprand) {
+    std::mt19937_64 rng2(vrseed + 7919);
+    std::uniform_real_distribution<double> uni2(0.0, 1.0);
+    for (int n=0; n<nsp; ++n) {
+      int an = 0, bn = 0;
+      while (an == 0 && bn == 0) {
+        an = static_cast<int>(floor((2*spkmax + 1)*uni2(rng2))) - spkmax;
+        bn = static_cast<int>(floor((2*spkmax + 1)*uni2(rng2))) - spkmax;
+      }
+      spwave.h_view(n,0) = static_cast<Real>(an);
+      spwave.h_view(n,1) = static_cast<Real>(bn);
+      spwave.h_view(n,2) = static_cast<Real>(1 + static_cast<int>(floor(3.0*uni2(rng2))));
+      spwave.h_view(n,3) = static_cast<Real>(2.0*M_PI*uni2(rng2));
+      spwave.h_view(n,4) = static_cast<Real>(2.0*M_PI*uni2(rng2));
+    }
+    if (global_variable::my_rank == 0) {
+      std::cout << "red_giant: periodic random seed, " << nsp << " modes, |a|,|b| <= "
+                << spkmax << ", seed " << vrseed << std::endl;
+    }
+  }
+  spwave.modify_host();
+  spwave.sync_device();
+  auto spwd = spwave.d_view;
+  const Real mx1lo = pmy_mesh_->mesh_size.x1min, mx1hi = pmy_mesh_->mesh_size.x1max;
+  const Real mx2lo = pmy_mesh_->mesh_size.x2min, mx2hi = pmy_mesh_->mesh_size.x2max;
+  const Real mx3lo = pmy_mesh_->mesh_size.x3min, mx3hi = pmy_mesh_->mesh_size.x3max;
+  const Real spnorm = (nsp > 0) ? 2.0/sqrt(static_cast<Real>(nsp)) : 0.0;  // unit rms
   // rms matching, so that vpert_rand_amp = 1 gives the two parts the same rms speed.
   // The structured part is the single RADIAL component vpert cs sin(3 . 2pi u) G(qhat)
   // with G = 4(K4 - 1/5) + 6 K6.  Over the sphere <K4> = 1/5 (which is exactly what the
@@ -2970,6 +3009,17 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
           v2 += (md2 - cg*md3)/dtg;
           v3 += (md3 - cg*md2)/dtg;
         }
+      } else if (sprand) {
+        const Real uu = (x2v - mx2lo)/(mx2hi - mx2lo), ww = (x3v - mx3lo)/(mx3hi - mx3lo);
+        const Real ss = (xc - mx1lo)/(mx1hi - mx1lo);
+        Real sum = 0.0;
+        for (int n=0; n<nsp; ++n) {
+          sum += cos(tp*(spwd(n,0)*uu + spwd(n,1)*ww) + spwd(n,3))
+                *sin(M_PI*spwd(n,2)*ss + spwd(n,4));
+        }
+        v1 = vpert*cs*spnorm*sum;
+        v2 = 0.0;
+        v3 = 0.0;
       } else {
         v1 = vpert*cs*sin(3.0*tp*(xc - x1lo)/(x1hi - x1lo))
              *cos(2.0*tp*(x2v - x2lo)/(x2hi - x2lo))

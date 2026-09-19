@@ -372,6 +372,8 @@ vpert_var   = v1                 # VELOCITY seed (the entropy variant is vpert_v
 vpert_tau_hi = 300.0             # the DEEP edge of the window
 vpert_tau_lo = 20.0              # the shallow edge
 vpert_cart  = true
+vpert_sp_rand = false             # true: vpert_nrand random modes periodic over the wedge (red_giant.cpp)
+vpert_sp_kmax = 8                 # |a|,|b| <= kmax waves across the wedge: 8 = 11 deg wavelength on 90 deg
 vpert_nrand = 32
 vpert_lmin  = 2.5e11             # 2 pi R / 6
 vpert_lmax  = 7.4e11             # 2 pi R / 2
