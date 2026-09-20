@@ -229,6 +229,15 @@ Conduction::Conduction(std::string block, MeshBlockPack *pp, ParameterInput *pin
         if (rad_adi_scm == ADISCM_LODN && rad_adi_nsub == 1) rad_adi_scm = ADISCM_LOD;
       }
       rad_adi_theta = pin->GetOrAddReal(block,"rad_adi_theta",1.0);
+      // the cubed-sphere cross-term outer iteration; see conduction.hpp
+      rad_adi_cross_iter = pin->GetOrAddInteger(block,"rad_adi_cross_iter",1);
+      if (rad_adi_cross_iter < 1) rad_adi_cross_iter = 1;
+      rad_adi_seam_w = pin->GetOrAddReal(block,"rad_adi_seam_w",0.5);
+      if (!(rad_adi_seam_w >= 0.0 && rad_adi_seam_w <= 1.0)) {
+        std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
+                  << std::endl << "rad_adi_seam_w must be in [0,1]" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
       // DIAGNOSTIC ONLY: the T-linearisation audit of ImplicitRadialUpdate
       rad_x1_verbose = pin->GetOrAddBoolean(block,"rad_x1_verbose",false);
       rad_x1_every = pin->GetOrAddInteger(block,"rad_x1_every",1);
@@ -337,14 +346,55 @@ Conduction::Conduction(std::string block, MeshBlockPack *pp, ParameterInput *pin
         std::exit(EXIT_FAILURE);
       }
       if (rad_implicit_ang) {
-        // v1 is CARTESIAN: the cubed-sphere face-normal derivative carries a metric
-        // cross term that is not part of the 5-point stencil the solver inverts, and
-        // the spherical-polar pole rows need their own treatment.  Both are step 2.
-        if (pp->pmesh->use_cubed_sphere || pp->pmesh->use_spherical_polar) {
-          std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
-                    << std::endl << "rad_implicit_ang is Cartesian-only in this version"
-                    << std::endl;
-          std::exit(EXIT_FAILURE);
+        // SPHERICAL POLAR is still refused: the x2 lines end ON the axis, where the
+        // transverse operator is singular and the polar machinery averages whole rows.
+        // The CUBED SPHERE is supported -- see docs/dev/cs_implicit_transverse.md: the
+        // face conductances BuildAngularCoeffs forms already carry the face area, the
+        // arc length and the 1/sin(alpha), the metric CROSS term is carried explicitly
+        // through cap_g2/cap_g3, and the operator divides by the cell volume.
+        // ...unless the mesh is a WEDGE that excludes the axis and is periodic in x2 and
+        // x3 (closed rings, as on a Cartesian mesh): then no row touches a pole.
+        if (pp->pmesh->use_spherical_polar) {
+          const auto &ms = pp->pmesh->mesh_size;
+          const bool wedge = (ms.x2min > 0.01) && (ms.x2max < M_PI - 0.01)
+              && (pp->pmesh->mesh_bcs[BoundaryFace::inner_x2] == BoundaryFlag::periodic)
+              && (pp->pmesh->mesh_bcs[BoundaryFace::inner_x3] == BoundaryFlag::periodic);
+          if (!wedge) {
+            std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
+                      << std::endl << "rad_implicit_ang on spherical polar needs a wedge "
+                      << "off the axis, periodic in x2 and x3 (the pole rows need their "
+                      << "own treatment)" << std::endl;
+            std::exit(EXIT_FAILURE);
+          }
+        }
+        if (pp->pmesh->use_cubed_sphere) {
+          // the cross-term stencil reads the x2x3 DIAGONAL ghosts, which is exactly
+          // what the faces-only halo drops
+          if (rad_tr_halo_faces_only) {
+            std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
+                      << std::endl << "rad_tr_halo_faces_only is not available on the "
+                      << "cubed sphere: the metric cross term reads the x2x3 diagonal "
+                      << "ghosts" << std::endl;
+            std::exit(EXIT_FAILURE);
+          }
+          // the split hands part of every face back to the explicit face fluxes, which
+          // would then have to carry their share of the cross term too
+          if (rad_sts_split) {
+            std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
+                      << std::endl << "rad_sts_split is not implemented on the cubed "
+                      << "sphere" << std::endl;
+            std::exit(EXIT_FAILURE);
+          }
+          // one global substage count would pay the RADIAL stiffness of a stretched
+          // shell on every transverse face; the column-local tridiagonal solve pays
+          // nothing for it
+          if (rad_sts_all) {
+            std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
+                      << std::endl << "rad_sts_all is Cartesian-only: use "
+                      << "rad_implicit_x1 with rad_implicit_ang on a curvilinear mesh"
+                      << std::endl;
+            std::exit(EXIT_FAILURE);
+          }
         }
         // ... and uniform-grid only: the increment is exchanged through its own
         // cell-centred boundary object, which would have to prolongate/restrict it at a
@@ -500,7 +550,23 @@ Conduction::Conduction(std::string block, MeshBlockPack *pp, ParameterInput *pin
                            BoundaryFlag::periodic);
         const bool per3 = (pp->pmesh->mesh_bcs[BoundaryFace::inner_x3] ==
                            BoundaryFlag::periodic);
-        if ((adi_nb2 > 1 && !per2) || (adi_nb3 > 1 && !per3)) {
+        // A LINE CANNOT CROSS A PANEL SEAM: the neighbouring panel's x2 may be this
+        // panel's x3 (signed axis swap) and the two charts' cells do not even coincide
+        // along the seam -- the halo there is a quadratic along-seam RESAMPLE.  So the
+        // blocks a line walks are an OPEN CHAIN inside ONE PANEL, ending at the two
+        // seams, and the seam faces are applied by the pair-implicit sub-step in
+        // conduction_transverse.cpp rather than by the sweeps.
+        //
+        // That chain is supported: each panel tree is its own root grid, so
+        // adi_nb2/adi_nb3 above are already blocks PER PANEL, a seam face is not
+        // `linked` and so contributes a_1 = c_n = 0 to the reduced system (which makes
+        // the cyclic assembly degenerate to the chain exactly), and the interface
+        // gather runs its shift twice, once each way, instead of once around a ring.
+        // Nothing beyond the NADIB ceiling above is refused here; a Cartesian direction
+        // split over more than one block is still required to be PERIODIC, because
+        // there the ring really is closed.
+        if (!pp->pmesh->use_cubed_sphere &&
+            ((adi_nb2 > 1 && !per2) || (adi_nb3 > 1 && !per3))) {
           std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
                     << std::endl << "rad_ang_solver = adi: a direction split over more "
                     << "than one MeshBlock must be PERIODIC (the interface gather walks "
@@ -575,6 +641,11 @@ Conduction::Conduction(std::string block, MeshBlockPack *pp, ParameterInput *pin
         if (rad_sts_all) Kokkos::realloc(cap_c1, nmb, ncells3, ncells2, ncells1+1);
         Kokkos::realloc(cap_c2, nmb, ncells3, ncells2+1, ncells1);
         Kokkos::realloc(cap_c3, nmb, ncells3+1, ncells2, ncells1);
+        // the cubed-sphere cross-term coefficients, on exactly the same faces
+        if (pp->pmesh->use_cubed_sphere && rad_cs_exact) {
+          Kokkos::realloc(cap_g2, nmb, ncells3, ncells2+1, ncells1);
+          Kokkos::realloc(cap_g3, nmb, ncells3+1, ncells2, ncells1);
+        }
         Kokkos::realloc(cap_cnt, 2);
         Kokkos::realloc(cap_rec, 6);
         // the stiffness split: one explicit-fraction array per direction in the stencil,
@@ -606,6 +677,11 @@ Conduction::Conduction(std::string block, MeshBlockPack *pp, ParameterInput *pin
             // the Richardson register: only lod2 keeps a second answer alive
             if (rad_adi_scm == ADISCM_LOD2 || rad_adi_scm == ADISCM_LOD2A) {
               Kokkos::realloc(tr_yf, nmb, 1, ncells3, ncells2, ncells1);
+            }
+            // the cross-term outer iteration's lag register; cubed sphere only
+            if (pp->pmesh->use_cubed_sphere && rad_cs_exact &&
+                rad_adi_cross_iter > 1) {
+              Kokkos::realloc(tr_ylg, nmb, 1, ncells3, ncells2, ncells1);
             }
             Kokkos::realloc(tr_acp, nmb, 1, ncells3, ncells2, ncells1);
             const int nbm = (adi_nb2 > adi_nb3) ? adi_nb2 : adi_nb3;
@@ -963,6 +1039,12 @@ void Conduction::BuildAngularCoeffs(const DvceArray5D<Real> &w0, const EOS_Data 
   auto capc1 = cap_c1;
   auto capc2 = cap_c2;
   auto capc3 = cap_c3;
+  // the cubed-sphere CROSS-TERM coefficients G_f = C_f dl_f cos(alpha), built on the
+  // same faces and in the same kernels, and only when the implicit transverse operator
+  // needs them.  A one-element dummy otherwise, captured and never read.
+  const bool csg = impang && cs;
+  auto capg2 = csg ? cap_g2 : DvceArray4D<Real>("radg2dummy", 1, 1, 1, 1);
+  auto capg3 = csg ? cap_g3 : DvceArray4D<Real>("radg3dummy", 1, 1, 1, 1);
   auto capcnt = cap_cnt;
   auto caprec = cap_rec;
   auto &vol_ = pmy_pack->pcoord->volume;
@@ -988,6 +1070,7 @@ void Conduction::BuildAngularCoeffs(const DvceArray5D<Real> &w0, const EOS_Data 
   par_for("radcapc2", DevExeSpace(), 0, nmb1, c2kl, c2ku, c2jl, c2ju, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     capc2(m,k,j,i) = 0.0;
+    if (csg) capg2(m,k,j,i) = 0.0;
     if (krmax > 0.0 && x1v_(m,i) > krmax) return;
     const Real tl = tcell(m,k,j-1,i), tr = tcell(m,k,j,i);
     const Real pl = (gen ? wder_(m,IDPR,k,j-1,i) : w0(m,IEN,k,j-1,i)*gm1);
@@ -1005,8 +1088,10 @@ void Conduction::BuildAngularCoeffs(const DvceArray5D<Real> &w0, const EOS_Data 
     }
     Real gradn = (tr - tl)/dl;
     Real sn = 1.0;
+    Real csa = 0.0;    // cos(alpha) on this face; 0 keeps the cross term identically off
     if (cs && three_d) {
       const Real c = 0.5*(cosc_(m,k,j-1) + cosc_(m,k,j));
+      csa = c;
       sn = 0.5*(sinc_(m,k,j-1) + sinc_(m,k,j));
       const Real ge = 0.5*((tcell(m,k+1,j-1,i) - tcell(m,k-1,j-1,i))
                             /(0.5*dx3_(m,k-1,j-1,i) + dx3_(m,k,j-1,i)
@@ -1022,13 +1107,18 @@ void Conduction::BuildAngularCoeffs(const DvceArray5D<Real> &w0, const EOS_Data 
     const Real kc = wt*face_kcode(tl, tr, pl, pr, w0(m,IDN,k,j-1,i),
                                   w0(m,IDN,k,j,i), gradn);
     const Real af = curv ? area2_(m,k,j,i) : 1.0/size.d_view(m).dx2;
-    capc2(m,k,j,i) = kc*af/(dl*sn);
+    const Real cf = kc*af/(dl*sn);
+    capc2(m,k,j,i) = cf;
+    // Phi_f = -C_f (T_j - T_i) + G_f ge_f: the SECOND term's coefficient.  Both cells
+    // sharing the face form it from the same operands, so the flux form still cancels.
+    if (csg) capg2(m,k,j,i) = cf*dl*csa;
   });
 
   if (three_d) {
     par_for("radcapc3", DevExeSpace(), 0, nmb1, c3kl, c3ku, c3jl, c3ju, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       capc3(m,k,j,i) = 0.0;
+      if (csg) capg3(m,k,j,i) = 0.0;
       if (krmax > 0.0 && x1v_(m,i) > krmax) return;
       const Real tl = tcell(m,k-1,j,i), tr = tcell(m,k,j,i);
       const Real pl = (gen ? wder_(m,IDPR,k-1,j,i) : w0(m,IEN,k-1,j,i)*gm1);
@@ -1047,8 +1137,10 @@ void Conduction::BuildAngularCoeffs(const DvceArray5D<Real> &w0, const EOS_Data 
       }
       Real gradn = (tr - tl)/dl;
       Real sn = 1.0;
+      Real csa = 0.0;
       if (cs) {
         const Real c = 0.5*(cosc_(m,k-1,j) + cosc_(m,k,j));
+        csa = c;
         sn = 0.5*(sinc_(m,k-1,j) + sinc_(m,k,j));
         const Real gx = 0.5*((tcell(m,k-1,j+1,i) - tcell(m,k-1,j-1,i))
                               /(0.5*dx2_(m,k-1,j-1,i) + dx2_(m,k-1,j,i)
@@ -1061,7 +1153,9 @@ void Conduction::BuildAngularCoeffs(const DvceArray5D<Real> &w0, const EOS_Data 
       const Real kc = wt*face_kcode(tl, tr, pl, pr, w0(m,IDN,k-1,j,i),
                                     w0(m,IDN,k,j,i), gradn);
       const Real af = curv ? area3_(m,k,j,i) : 1.0/size.d_view(m).dx3;
-      capc3(m,k,j,i) = kc*af/(dl*sn);
+      const Real cf = kc*af/(dl*sn);
+      capc3(m,k,j,i) = cf;
+      if (csg) capg3(m,k,j,i) = cf*dl*csa;
     });
   }
 

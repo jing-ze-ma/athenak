@@ -328,9 +328,11 @@ inline bool rt_grey = false;
 // substitutions are runtime branches on a `const bool` that is false in every existing
 // run, and the spherical expressions are untouched.
 //
-// The sweep itself needs NO other change, because the split path already deposits
-// -(F_top - F_bot)/dx1 rather than a divergence with face areas: the radial and the
-// plane-parallel operator are the same expression.  What DOES have to be right is the
+// The sweep needs no other geometric change, because with this flag on the area and
+// volume helpers of the radial path (AFC/ACC/VLS/VLA below, and the SPHERICAL
+// DILUTION note that introduces them) collapse to A = 1 and V = dx1, which is exactly
+// the plane-parallel operator -(F_top - F_bot)/dx1 this path used to carry
+// everywhere.  What DOES have to be right is the
 // gravity model -- a plane-parallel box has constant g, so the caller sets
 // grav_point_mass = false and stellar_tide = false, and EffGravAt then returns g
 // whatever radius it is handed.
@@ -370,6 +372,32 @@ inline bool rt_plane_parallel = false;
 // semi-implicit relaxation, which must not damp it.  Default OFF; box_convection requires
 // the EOS taper to be on with it.
 inline bool rt_rad_force = false;
+//----------------------------------------------------------------------------------------
+// problem/rt_force_tau_gate (default false, BITWISE OFF) -- the OPTICAL-DEPTH-GATED form
+// of the momentum source above, with rt_force_tau_lo / rt_force_tau_hi.
+//
+// WHY.  The form above splits the force by the EOS taper weight w(rho,T): the direct
+// deposit is scaled by (1-w) and the taper artefact Prad grad w is added back.  That is
+// the right split only where w itself is the statement "the gas no longer carries the
+// radiation".  On a star with a density inversion w is a function of the LOCAL density
+// (and, under the gate, the local T), so a dense cell sitting at tau < 1 gets w = 1 and
+// loses the whole kappa F/c deposit, while a thin cell deep inside the star gets w = 0
+// and is given a deposit it must not have: the force then has a dipole across the
+// inversion that no optical depth justifies.
+//
+// WHAT THE GATE DOES.  s(tau) = 1 for tau <= rt_force_tau_lo, 0 for tau >= tau_hi and
+// a cubic smoothstep in log10(tau) between, with tau the grey optical depth to the
+// TOP of the column.  Where s = 1 (the thin layers) the force is the honest optically
+// thin one,
+//     f = rho kappa F_net/c + grad(w Prad),
+// i.e. the FULL radiative deposit plus the gradient of whatever radiation pressure the
+// hydro still carries -- no (1-w) prefactor, because at tau < 1 the gas does not carry
+// the radiation whatever its density says.  Where s = 0 (tau above the ramp) the old
+// expressions are executed verbatim, so with the gate off, or in any cell with s = 0,
+// the arithmetic is bitwise the old one.  Default OFF.
+inline bool rt_force_tau_gate = false;
+inline Real rt_force_tau_lo = 0.3;
+inline Real rt_force_tau_hi = 3.0;
 // problem/rt_force_center (default 0, bitwise off; needs rt_implicit_column = 3): WHICH
 // face flux the radiative momentum source above is driven by.  In mode 3 the energy is
 // solved exactly and implicitly over the stage, but Fb is deliberately left at the
@@ -1014,6 +1042,35 @@ bool RTBadState(const Real p, const Real t) {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn Real RTWPrad
+//! \brief w(rho,T) a T^4/3 -- the share of the LTE radiation pressure the hydro still
+//! carries in a cell, with w the SAME taper weight the EOS uses (rad_taper::WeightGated).
+//! Used only by the optical-depth-gated radiative momentum source
+//! (problem/rt_force_tau_gate), which differences it across a cell's neighbours.
+KOKKOS_INLINE_FUNCTION
+Real RTWPrad(const Real dd, const Real tt, const Real xlo, const Real xhi,
+             const Real ylo, const Real yhi, const bool tgate, const Real arad) {
+  if (!(dd > 0.0) || !(tt > 0.0)) return 0.0;
+  Real ww, dwx, dwy;
+  rad_taper::WeightGated(log10(dd), xlo, xhi, log10(tt), ylo, yhi, tgate, ww, dwx, dwy);
+  return ww*arad*tt*tt*tt*tt/3.0;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn Real RTForceTauGate
+//! \brief s(tau): 1 at and below tau_lo, 0 at and above tau_hi, a cubic smoothstep in
+//! log10(tau) between.  lg_lo/lg_hi are log10 of the two thresholds.
+KOKKOS_INLINE_FUNCTION
+Real RTForceTauGate(const Real tau, const Real lg_lo, const Real lg_hi) {
+  if (!(tau > 0.0)) return 1.0;
+  const Real lt = log10(tau);
+  if (lt <= lg_lo) return 1.0;
+  if (lt >= lg_hi) return 0.0;
+  const Real x = (lt - lg_lo)/(lg_hi - lg_lo);
+  return 1.0 - x*x*(3.0 - 2.0*x);
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn Real RTTopDtau
 //! \brief the optical depth of the unresolved hydrostatic column above the domain,
 //! kappa p / g_eff, with the g_eff = 0 case resolved.
@@ -1494,6 +1551,15 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
                 << "stellar-beam geometry." << std::endl;
       std::exit(EXIT_FAILURE);
     }
+    if (rt_layer_legacy && !rt_plane_parallel && rt_grey) {
+      std::cout << "### FATAL ERROR in two_stream_rt: problem/rt_layer_legacy (the old "
+                << "staggered whole-cell layers) was NOT converted to the spherical "
+                << "form of the grey sweep and still carries the J = A I substitution, "
+                << "which is wrong in the diffusion limit by 1 - H_T/(2r).  Use the "
+                << "centre-to-centre layers (rt_layer_legacy = false) on a curvilinear "
+                << "mesh." << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
     if (pp_ && (use_cubed_sphere_ || use_spherical_polar)) {
       std::cout << "### FATAL ERROR in two_stream_rt: rt_plane_parallel is for a "
                 << "Cartesian mesh, but this mesh is spherical-polar or cubed-sphere."
@@ -1515,6 +1581,22 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
     auto dx1_ = pmbp->pcoord->dx1;
     auto DX1 = [=] (const int m, const int k, const int j, const int i) {
       return pp_ ? size.d_view(m).dx1 : dx1_(m,k,j,i);
+    };
+    // ---- THE TRANSVERSE ARC LENGTHS.  On a CURVILINEAR mesh size.dx2/dx3 are the
+    // COORDINATE spacings -- on the cubed sphere the gnomonic angles xi, eta in [-1,1],
+    // i.e. dimensionless -- while pcoord->dx2/dx3 are the per-cell physical arc lengths
+    // (~ r dxi), the same distinction conduction.cpp:1069 makes with its `curv` flag.
+    // Every transverse DERIVATIVE in this file must divide by the arc length; the
+    // coordinate spacing is off by ~r (2e11 on the He star).  On a Cartesian mesh
+    // pcoord->dx2/dx3 are 1x1x1x1 dummies, so the flag also decides which is readable.
+    const bool curv_ = pmbp->pmesh->use_cubed_sphere || pmbp->pmesh->use_spherical_polar;
+    auto dx2_c_ = pmbp->pcoord->dx2;
+    auto dx3_c_ = pmbp->pcoord->dx3;
+    auto DX2 = [=] (const int m, const int k, const int j, const int i) {
+      return curv_ ? dx2_c_(m,k,j,i) : size.d_view(m).dx2;
+    };
+    auto DX3 = [=] (const int m, const int k, const int j, const int i) {
+      return curv_ ? dx3_c_(m,k,j,i) : size.d_view(m).dx3;
     };
 
     Real gamma;
@@ -1647,6 +1729,120 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
     auto area1 = pmbp->pcoord->area.x1f;
     auto volume = pmbp->pcoord->volume;
     auto dx1 = pmbp->pcoord->dx1;
+
+    // ================================================================================
+    // SPHERICAL DILUTION: WHY THE DEPOSIT *AND* THE PROPAGATION CARRY THE AREA
+    //
+    // SUPERSEDED FOR THE GREY CENTRE-TO-CENTRE SWEEP AND FOR MODE 3.  The J = A I form
+    // derived below is exact in the TRANSPARENT limit and wrong in the DIFFUSION limit
+    // by F_2s/F_exact = 1 - H_T/(2r) (tests_r2/thick measures it to 1e-4), because it
+    // puts the area on BOTH two-stream moments while the exact pair puts it on the
+    // antisymmetric one alone.  The grey centre-to-centre sweep and the mode-3 column
+    // solve now carry PLAIN intensities with the face mixing of BTF/MIXF instead -- see
+    // the SPHERICAL FORM note on RTCol3::Bt in two_stream_column_implicit.hpp, which is
+    // the derivation that applies.  What follows still describes the LEGACY whole-cell
+    // layers (refused on a curvilinear mesh), the picket-fence chain kernel and the
+    // correlated-k kernel, which were not converted.
+    //
+    // The sweep integrates, per ray direction mu, the plane-parallel transfer equation
+    //     mu dI/dr = -kappa rho (I - B),
+    // and used to deposit -(F_top - F_bot)/dx1 with F = 2 pi w mu I.  On a RADIAL mesh
+    // that is wrong twice over, and the two errors have to be fixed together:
+    //   (a) the deposit is a plane-parallel divergence.  What the shell actually loses
+    //       is (A_top F_top - A_bot F_bot)/V, and over r_out/r_in = 2.5 the area ratio
+    //       is 6.25 -- the emergent luminosity of a global star was wrong by that much;
+    //   (b) the PROPAGATION does not dilute.  A transparent shell returns I_out = I_in,
+    //       i.e. F_out = F_in, so L = A F grows like r^2 -- and had only (a) been fixed
+    //       that same transparent shell would be handed a spurious cooling
+    //       -(A_top - A_bot) F/V = -2 F/r.  NEITHER FORM ALONE IS CONSERVATIVE.
+    //
+    // The exact statement is the zeroth moment, div F = kappa rho (4 pi B - c E), i.e.
+    // (1/r^2) d(r^2 F)/dr on the left.  Multiply the transfer equation by r^2 and write
+    // J = r^2 I (equivalently J = A I; the column's solid angle cancels):
+    //     mu dJ/dr = -kappa rho (J - A B),
+    // which is the SAME equation the layer solve already integrates exactly, with the
+    // source function A(r) B(r) in place of B(r).  So the sweep keeps its form and
+    // carries the AREA-WEIGHTED intensity J instead of I:
+    //   * every layer source endpoint is multiplied by the area AT THAT ENDPOINT -- a
+    //     face endpoint by area.x1f (AFC), a cell-centre endpoint by the cell's mean
+    //     area V/dx1 (ACC);
+    //   * the boundary data are scaled the same way (the top incoming intensity by
+    //     A(ie+1), the internal flux entering the bottom face by A(is));
+    //   * the face flux handed to the rest of the code stays a flux PER UNIT AREA,
+    //     recovered as F = 2 pi w mu J / A;
+    //   * the deposit is (J_in - J_out), summed over rays, divided by the cell VOLUME.
+    //     It telescopes to exactly -(A_top F_top - A_bot F_bot)/V, so the column
+    //     conserves energy cell by cell and L = A F is constant wherever the local
+    //     balance vanishes -- which is the 1-D radiative-equilibrium gate.
+    // The ray-curvature term of the true spherical transfer equation, (1-mu^2)/r dI/dmu,
+    // is NOT represented: this is the standard radial-ray approximation, exact in the
+    // two limits that matter here (diffusion, and a radially streaming flux) and
+    // conservative everywhere.
+    //
+    // PLANE-PARALLEL INERTNESS.  Under problem/rt_plane_parallel the helpers return
+    // A = 1 exactly and V = the same dx1 the expression used before, so every new
+    // factor is a multiplication or a division by 1.0 -- exact in IEEE arithmetic --
+    // and the Cartesian box is bitwise what it was.  The helpers are also the only
+    // reads of the Coordinates area/volume Views, which are 1x1x1x1 placeholders on a
+    // Cartesian mesh (coordinates.cpp:63-94) exactly like x1v/dx1, so the ternary is
+    // what keeps them unread there.
+    //
+    // WHAT IS NOT CONVERTED: the monolithic (rt_split = false) sweep, the correlated-k
+    // kernel and the mode-1/2 nearest-neighbour Jacobian still carry the plane-parallel
+    // divergence.  They serve the box and the r_out/r_in < 1.3 hot-Jupiter/red-giant
+    // domains, where the error is at the per-cent level.  The GREY SPLIT sweep
+    // (rt_grey + rt_split), the apply kernel and the mode-3 column solve -- the path a
+    // global star runs on -- are area/volume correct.
+    // ================================================================================
+    // the face area, the cell's MEAN area V/dx1 (the weight of a cell-centre source
+    // endpoint), and the cell volume.  THE TWO VOLUME HELPERS DIFFER ONLY IN THEIR
+    // PLANE-PARALLEL BRANCH, and each kernel must use the one matching the radial width
+    // it already spells: VLS for the picket-fence chain kernel, which indexes the raw
+    // dx1 View, and VLA wherever the code goes through DX1 (the grey sweep and the
+    // apply kernel).  That is what makes the substitution bitwise inert on the box --
+    // getting it the wrong way round reads the 1x1x1x1 dx1 placeholder there.
+    auto AFC = [=] (const int m, const int k, const int j, const int i) {
+      return pp_ ? 1.0 : area1(m,k,j,i);
+    };
+    auto ACC = [=] (const int m, const int k, const int j, const int i) {
+      return pp_ ? 1.0 : volume(m,k,j,i)/dx1(m,k,j,i);
+    };
+    auto VLS = [=] (const int m, const int k, const int j, const int i) {
+      return pp_ ? dx1(m,k,j,i) : volume(m,k,j,i);
+    };
+    auto VLA = [=] (const int m, const int k, const int j, const int i) {
+      return pp_ ? DX1(m,k,j,i) : volume(m,k,j,i);
+    };
+    // ---- THE SPHERICAL FORM of the grey centre-to-centre sweep.  The J = A I
+    // substitution above is kept ONLY by the legacy layers, the picket-fence chain and
+    // the correlated-k kernel; the grey c2c sweep -- what a global star actually runs --
+    // carries PLAIN intensities and puts the geometry in the FACE conditions instead.
+    // See the derivation on RTCol3::Bt in two_stream_column_implicit.hpp: the area
+    // belongs to the ANTISYMMETRIC moment alone, so at every face S = (I+ + I-)/2 and
+    // A D = A (I+ - I-)/2 are passed continuously, which is the single correction
+    //     c = beta (d_above - u_below),   beta = (A_above - A_below)/(A_above + A_below)
+    // added to BOTH sides.  Inside a cell the frame area is constant (A_i = V_i/dx_i),
+    // so the layer solve and the deposit are the plane-parallel ones they always were.
+    // Both helpers are identically inert under rt_plane_parallel: beta is exactly 0 and
+    // AUN/ACN are the very area factors the old expressions read.
+    auto BTF = [=] (const int m, const int k, const int j, const int f, const int ic) {
+      if (pp_) return 0.0;
+      const Real ab = (f <= ic) ? area1(m,k,j,f) : volume(m,k,j,f-1)/dx1(m,k,j,f-1);
+      const Real aa = (f > ie) ? area1(m,k,j,f) : volume(m,k,j,f)/dx1(m,k,j,f);
+      return (aa - ab)/(aa + ab);
+    };
+    auto MIXF = [=] (const Real bt, const Real ub, const Real da) {
+      return bt*(da - ub);
+    };
+    // the area factors the OLD expression still spells out and the spherical form no
+    // longer carries: exactly 1.0, read from the Views under rt_plane_parallel so that
+    // the box's expression DAG -- and hipcc's FMA contraction -- is untouched
+    auto AUN = [=] (const int m, const int k, const int j, const int i) {
+      return pp_ ? AFC(m,k,j,i) : 1.0;
+    };
+    auto ACN = [=] (const int m, const int k, const int j, const int i) {
+      return pp_ ? ACC(m,k,j,i) : 1.0;
+    };
 
 //    Real Teq = 1469.0;
 //    Real grav = 942.0;
@@ -1986,7 +2182,16 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
           if (test_oned) mu0 = cos(85.0/90.0*M_PI/2.0);
           cf_g(m,k,j,3) = mu0;
         });
-        par_for("rt_pre_tp", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
+        // ONE ANGULAR GHOST EACH SIDE under rt_rad_force: the transverse Prad grad w term
+        // differences T_g over j+-1 and k+-1, so at a MeshBlock edge it read a T_g that
+        // was never filled (0 or stale).  With the temperature gate on, that put a large
+        // spurious horizontal force on every block-edge cell of the shell where dw/dlnT
+        // is non-zero (He4 wedge, 0.988 R: v_h 3e6 cm/s and 20 % density errors at every
+        // 24th cell by 0.5 turnover, neighbouring shells quiet), on the cubed sphere too.
+        const int jg_tp = (rt_rad_force && pm->multi_d) ? 1 : 0;
+        const int kg_tp = (rt_rad_force && pm->three_d) ? 1 : 0;
+        par_for("rt_pre_tp", DevExeSpace(), 0, nmb1, ks-kg_tp, ke+kg_tp, js-jg_tp,
+                je+jg_tp, is, ie+1,
         KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
           // THE TOP SLOT READS THE TOP ACTIVE CELL, NOT THE HYDRO GHOST.  i = ie+1 is the
           // unresolved column above the domain, and physically it IS the continuation of
@@ -2394,6 +2599,19 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
                 wfq[q] = 2.0*M_PI*wg[q]*mug[q];
               }
             }
+            // GEOMETRY.  The LEGACY whole-cell layers below still carry the J = A I
+            // substitution of 1159a8f3 (area-weighted intensities against a source A B)
+            // and are refused on a curvilinear mesh; the CENTRE-TO-CENTRE layers -- the
+            // default, and the only branch a global star runs -- carry PLAIN intensities
+            // and the face mixing of BTF/MIXF instead.  Under rt_plane_parallel the two
+            // are the same code: every factor is 1.0 and beta is 0.
+            const Real aft_ = AFC(m,k,j,ie+1);
+            const Real afc_ = AFC(m,k,j,icut);
+            const Real aftn_ = AUN(m,k,j,ie+1);
+            const Real afcn_ = AUN(m,k,j,icut);
+            // the top face's incoming datum: area-weighted for the legacy branch, a
+            // plain intensity in the face's own frame for the centre-to-centre one
+            const Real atop_ = layer_legacy ? aft_ : aftn_;
             Real I_down[2][NN];
             // Top: the unresolved hydrostatic column above the domain, p/g of it, at the
             // top cell's opacity -- the same construction the band solver uses.
@@ -2427,24 +2645,34 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
                 const Real bcut = Bb_g(m,0,icut,k,j);
                 const Real dtop = 0.5*kc_g(m,0,ie,k,j)*rhoN(m,k,j,ie)*DX1(m,k,j,ie);
                 const Real btop = Bb_g(m,0,ie,k,j);
+                // the probe is the up-sweep, so it dilutes exactly as the up-sweep
+                // does: it carries J and is divided back by the top face's area
+                // the probe is the up-sweep, so it carries what the up-sweep carries:
+                // plain intensities.  It does NOT apply the face mixing -- the ratio
+                // I_up(top)/2 it returns is a boundary MODEL, and rt_top_re is off in
+                // every production configuration; documented as an approximation here.
+                const Real acc_ = ACN(m,k,j,icut), act_ = ACN(m,k,j,ie);
                 for (int q=0; q<nq; ++q) {
                   const Real bfc = bcut + dbdtau_cut*dcut;
-                  Real ip = bfc + (int_at_cut ? Iint : 0.0) + muq[q]*dbdtau_cut;
+                  Real ip = (bfc + (int_at_cut ? Iint : 0.0)
+                             + muq[q]*dbdtau_cut)*afcn_;
                   Real ab, em;
-                  RTLayer(dcut, muq[q], bfc, bcut, ip, ab, em);
+                  RTLayer(dcut, muq[q], bfc*afcn_, bcut*acc_, ip, ab, em);
                   for (int i=icut; i<ie; ++i) {
                     Real dt_l, dt_u, s_l, s_u, s_f;
                     rt_layer(i, dt_l, dt_u, s_l, s_u, s_f);
-                    RTLayer(dt_l, muq[q], s_l, s_f, ip, ab, em);
-                    RTLayer(dt_u, muq[q], s_f, s_u, ip, ab, em);
+                    const Real acl = ACN(m,k,j,i), afm = AUN(m,k,j,i+1);
+                    const Real acu = ACN(m,k,j,i+1);
+                    RTLayer(dt_l, muq[q], s_l*acl, s_f*afm, ip, ab, em);
+                    RTLayer(dt_u, muq[q], s_f*afm, s_u*acu, ip, ab, em);
                   }
-                  RTLayer(dtop, muq[q], btop, btop, ip, ab, em);
-                  bsrc[q] = 0.5*ip;
+                  RTLayer(dtop, muq[q], btop*act_, btop*aftn_, ip, ab, em);
+                  bsrc[q] = 0.5*ip/aftn_;
                 }
               } else if (top_re) {
                 for (int q=0; q<nq; ++q) {
-                  Real ip = Bb_g(m,0,icut,k,j) + (int_at_cut ? Iint : 0.0)
-                          + muq[q]*dbdtau_cut;
+                  Real ip = (Bb_g(m,0,icut,k,j) + (int_at_cut ? Iint : 0.0)
+                          + muq[q]*dbdtau_cut)*afc_;
                   for (int i=icut+1; i<ie+2; ++i) {
                     const Real krb = kc_g(m,0,i-1,k,j)*rhoN(m,k,j,i-1);
                     const Real x = krb*DX1(m,k,j,i-1)/muq[q];
@@ -2456,13 +2684,14 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
                     const int iir = (i > ie) ? ie : i;
                     const Real bfar = BFace(krb, kc_g(m,0,i,k,j)*rhoN(m,k,j,iir),
                                             Bb_g(m,0,i-1,k,j), Bb_g(m,0,i,k,j), bface_on);
-                    ip = (1.0-e0)*ip + bet*bfar + gm*Bb_g(m,0,i-1,k,j);
+                    ip = (1.0-e0)*ip + bet*bfar*ACC(m,k,j,i)
+                       + gm*Bb_g(m,0,i-1,k,j)*ACC(m,k,j,i-1);
                   }
-                  bsrc[q] = 0.5*ip;
+                  bsrc[q] = 0.5*ip/aft_;
                 }
               }
               for (int q=0; q<nq; ++q) {
-                I_down[q][ie+1] = (1.0 - exp(-dtau/muq[q]))*bsrc[q];
+                I_down[q][ie+1] = (1.0 - exp(-dtau/muq[q]))*(bsrc[q]*atop_);
               }
               if (report_on) idn_g(m,k,j,ie+1) = I_down[0][ie+1];
             }
@@ -2482,6 +2711,8 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
                 const int iip = (i+1 > ie) ? ie : i+1;
                 const Real bfar_d = BFace(krb_d, kc_g(m,0,i+1,k,j)*rhoN(m,k,j,iip),
                                           Bb_g(m,0,i,k,j), Bb_g(m,0,i+1,k,j), bface_on);
+                const Real bfa_d = bfar_d*ACC(m,k,j,i+1);
+                const Real bwn_d = Bb_g(m,0,i,k,j)*ACC(m,k,j,i);
                 for (int q=0; q<nq; ++q) {
                   const Real x = dtau_i/muq[q];
                   const Real e0 = -expm1(-x);
@@ -2490,20 +2721,20 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
                   const Real bet = (x > 1.0e-3) ? (1.0 - e0/x) : (x/2.0 - SQR(x)/6.0);
                   // direct source: what this stream leaves in cell i, absorbed minus
                   // emitted
-                  Src_g(m,0,i,k,j) += wfq[q]/DX1(m,k,j,i)
+                  Src_g(m,0,i,k,j) += wfq[q]/VLA(m,k,j,i)
                                     *(e0*I_down[q][i+1]
-                                      - (alp*bfar_d + bet*Bb_g(m,0,i,k,j)));
+                                      - (alp*bfa_d + bet*bwn_d));
                   I_down[q][i] = (1.0-e0)*I_down[q][i+1]
-                               + alp*bfar_d + bet*Bb_g(m,0,i,k,j);
+                               + alp*bfa_d + bet*bwn_d;
                 }
                 if (report_on) idn_g(m,k,j,i) = I_down[0][i];
               }
               // Bottom of the RT domain: thermalised, plus the internal flux if the
               // layers below are not carrying it themselves (see rt_int_at_cut).
               for (int q=0; q<nq; ++q) {
-                I_up[q] = Bb_g(m,0,icut,k,j) + (int_at_cut ? Iint : 0.0)
-                        + muq[q]*dbdtau_cut;
-                Fb_g(m,0,icut,k,j) += wfq[q]*(I_up[q] - I_down[q][icut]);
+                I_up[q] = (Bb_g(m,0,icut,k,j) + (int_at_cut ? Iint : 0.0)
+                        + muq[q]*dbdtau_cut)*afc_;
+                Fb_g(m,0,icut,k,j) += wfq[q]*(I_up[q] - I_down[q][icut])/afc_;
               }
               if (report_on) iup_g(m,k,j,icut) = I_up[0];
               // up-sweep
@@ -2515,6 +2746,9 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
                 const int iiu = (i > ie) ? ie : i;
                 const Real bfar_u = BFace(kap*rho, kc_g(m,0,i,k,j)*rhoN(m,k,j,iiu),
                                           Bb_g(m,0,i-1,k,j), Bb_g(m,0,i,k,j), bface_on);
+                const Real bfa_u = bfar_u*ACC(m,k,j,i);
+                const Real bwn_u = Bb_g(m,0,i-1,k,j)*ACC(m,k,j,i-1);
+                const Real afi_ = AFC(m,k,j,i);
                 for (int q=0; q<nq; ++q) {
                   const Real x = dtau_i/muq[q];
                   const Real e0 = -expm1(-x);
@@ -2523,13 +2757,13 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
                                                : (x/2.0 - SQR(x)/3.0);
                   const Real Iup_in = I_up[q];
                   // the same for the upward stream through layer i-1
-                  Src_g(m,0,i-1,k,j) += wfq[q]/DX1(m,k,j,i-1)
+                  Src_g(m,0,i-1,k,j) += wfq[q]/VLA(m,k,j,i-1)
                                       *(e0*Iup_in
-                                        - (bet*bfar_u
-                                           + gm*Bb_g(m,0,i-1,k,j)));
+                                        - (bet*bfa_u
+                                           + gm*bwn_u));
                   I_up[q] = (1.0-e0)*Iup_in
-                          + bet*bfar_u + gm*Bb_g(m,0,i-1,k,j);
-                  Fb_g(m,0,i,k,j) += wfq[q]*(I_up[q] - I_down[q][i]);
+                          + bet*bfa_u + gm*bwn_u;
+                  Fb_g(m,0,i,k,j) += wfq[q]*(I_up[q] - I_down[q][i])/afi_;
                 }
                 if (report_on) iup_g(m,k,j,i) = I_up[0];
                 Em_g(m,0,i-1,k,j) = 4.0*M_PI*kap*rho
@@ -2567,9 +2801,41 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
                   ddn_p[q] = 0.0;
                 }
               }
+              // THE PROBE UP-SWEEP (curvilinear only, see the SPHERICAL FORM note).
+              // The down-sweep's face mixing c = beta (d_above - u_below) needs the
+              // UPWARD intensity at each face, which the down-sweep does not have; the
+              // up-sweep that follows it does have the downward one, so only this
+              // direction is lagged.  A plane-parallel probe pass supplies u_below to
+              // O(beta), leaving the down ray's mixing exact to O(beta^2) -- beta is
+              // dr/2r, so ~2e-5 on the test grids, which is what the gates measure.
+              // Mode 3 needs none of this: it solves the coupled system exactly.
+              Real I_upb[2][NN];
+              if (!pp_) {
+                for (int q=0; q<nq; ++q) {
+                  Real ipb = b_cutf + (int_at_cut ? Iint : 0.0) + muq[q]*dbdtau_cut;
+                  I_upb[q][icut] = ipb;
+                  RTLayer(dt_cut, muq[q], b_cutf, b_cut, ipb, ab, em);
+                  for (int i=icut; i<ie; ++i) {
+                    Real dt_l, dt_u, s_l, s_u, s_f;
+                    rt_layer(i, dt_l, dt_u, s_l, s_u, s_f);
+                    RTLayer(dt_l, muq[q], s_l, s_f, ipb, ab, em);
+                    I_upb[q][i+1] = ipb;
+                    RTLayer(dt_u, muq[q], s_f, s_u, ipb, ab, em);
+                  }
+                  RTLayer(dt_top, muq[q], b_top, b_top, ipb, ab, em);
+                  I_upb[q][ie+1] = ipb;
+                }
+              }
+              // the top half layer runs from the TOP FACE to the CENTRE of cell ie
+              const Real act_ = ACN(m,k,j,ie), acc_ = ACN(m,k,j,icut);
+              const Real bt_top = BTF(m,k,j,ie+1,icut);
+              const Real bt_cut = BTF(m,k,j,icut,icut);
               for (int q=0; q<nq; ++q) {
                 Idn[q] = I_down[q][ie+1];
-                RTLayer(dt_top, muq[q], b_top, b_top, Idn[q], ab, em);
+                if (!pp_) {
+                  Idn[q] += MIXF(bt_top, I_upb[q][ie+1], I_down[q][ie+1]);
+                }
+                RTLayer(dt_top, muq[q], b_top*aftn_, b_top*act_, Idn[q], ab, em);
                 Src_g(m,0,ie,k,j) += wfq[q]/DX1(m,k,j,ie)*(ab - em);
                 if (jac_on) {
                   // the top half layer: both endpoints are cell ie's own B
@@ -2587,11 +2853,17 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
                 Real wl_l = 0.0, wl_u = 0.0, wu_l = 0.0, wu_u = 0.0;
                 Real wf_l = 0.0, wf_u = 0.0;
                 if (jac_on) rt_layer_w(i-1, wl_l, wl_u, wu_l, wu_u, wf_l, wf_u);
+                const Real acd_u = ACN(m,k,j,i), afd_m = AUN(m,k,j,i);
+                const Real acd_l = ACN(m,k,j,i-1);
+                const Real bt_d = BTF(m,k,j,i,icut);
                 for (int q=0; q<nq; ++q) {
-                  RTLayer(dt_u, muq[q], s_u, s_f, Idn[q], ab, em);
+                  RTLayer(dt_u, muq[q], s_u*acd_u, s_f*afd_m, Idn[q], ab, em);
                   Src_g(m,0,i,k,j) += wfq[q]/DX1(m,k,j,i)*(ab - em);
+                  // the value ABOVE the face, in cell i's own frame: this is what the
+                  // up-sweep needs to form the mixing exactly
                   I_down[q][i] = Idn[q];
-                  RTLayer(dt_l, muq[q], s_f, s_l, Idn[q], ab, em);
+                  if (!pp_) Idn[q] += MIXF(bt_d, I_upb[q][i], Idn[q]);
+                  RTLayer(dt_l, muq[q], s_f*afd_m, s_l*acd_l, Idn[q], ab, em);
                   Src_g(m,0,i-1,k,j) += wfq[q]/DX1(m,k,j,i-1)*(ab - em);
                   if (jac_on) {
                     // upper half: enters at s_u (centre i), leaves at s_f; deposits in i
@@ -2622,7 +2894,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
                 if (report_on) idn_g(m,k,j,i) = I_down[0][i];
               }
               for (int q=0; q<nq; ++q) {
-                RTLayer(dt_cut, muq[q], b_cut, b_cutf, Idn[q], ab, em);
+                RTLayer(dt_cut, muq[q], b_cut*acc_, b_cutf*afcn_, Idn[q], ab, em);
                 Src_g(m,0,icut,k,j) += wfq[q]/DX1(m,k,j,icut)*(ab - em);
                 I_down[q][icut] = Idn[q];
               }
@@ -2631,8 +2903,14 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
               // internal flux if the layers below are not carrying it themselves (see
               // rt_int_at_cut), plus the deep-limit gradient (see rt_cut_bc_legacy).
               for (int q=0; q<nq; ++q) {
-                I_up[q] = b_cutf + (int_at_cut ? Iint : 0.0) + muq[q]*dbdtau_cut;
-                Fb_g(m,0,icut,k,j) += wfq[q]*(I_up[q] - I_down[q][icut]);
+                I_up[q] = (b_cutf + (int_at_cut ? Iint : 0.0)
+                           + muq[q]*dbdtau_cut)*afcn_;
+                // the cut face: Phi = A(icut) (u_below - d_below), reported per unit
+                // area, so the factor is A(icut)/A(icut) = 1 and the division stands
+                const Real cc = MIXF(bt_cut, I_up[q], I_down[q][icut]);
+                Fb_g(m,0,icut,k,j) += wfq[q]*(I_up[q]
+                                              - (I_down[q][icut] + cc))/afcn_;
+                I_up[q] += cc;                       // -> cell icut's own frame
               }
               if (report_on) iup_g(m,k,j,icut) = I_up[0];
               // up-sweep
@@ -2645,7 +2923,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
                 }
               }
               for (int q=0; q<nq; ++q) {
-                RTLayer(dt_cut, muq[q], b_cutf, b_cut, I_up[q], ab, em);
+                RTLayer(dt_cut, muq[q], b_cutf*afcn_, b_cut*acc_, I_up[q], ab, em);
                 Src_g(m,0,icut,k,j) += wfq[q]/DX1(m,k,j,icut)*(ab - em);
                 if (jac_on) {
                   // the cut half layer: both endpoints are cell icut's own B (b_cutf
@@ -2665,12 +2943,22 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
                 Real wl_l = 0.0, wl_u = 0.0, wu_l = 0.0, wu_u = 0.0;
                 Real wf_l = 0.0, wf_u = 0.0;
                 if (jac_on) rt_layer_w(i, wl_l, wl_u, wu_l, wu_u, wf_l, wf_u);
+                const Real acu_l = ACN(m,k,j,i), afu_m = AUN(m,k,j,i+1);
+                const Real acu_u = ACN(m,k,j,i+1);
+                const Real bt_u = BTF(m,k,j,i+1,icut);
+                // Phi_f / A(f) with Phi built on the LOWER side: A_cell(i)/A(i+1),
+                // which is 1/AFC(i+1) = 1 on a Cartesian mesh
+                const Real fsc_u = pp_ ? 1.0/afu_m
+                                       : ACC(m,k,j,i)/AFC(m,k,j,i+1);
                 for (int q=0; q<nq; ++q) {
-                  RTLayer(dt_l, muq[q], s_l, s_f, I_up[q], ab, em);
+                  RTLayer(dt_l, muq[q], s_l*acu_l, s_f*afu_m, I_up[q], ab, em);
                   Src_g(m,0,i,k,j) += wfq[q]/DX1(m,k,j,i)*(ab - em);
-                  Fb_g(m,0,i+1,k,j) += wfq[q]*(I_up[q] - I_down[q][i+1]);
+                  const Real cc = MIXF(bt_u, I_up[q], I_down[q][i+1]);
+                  Fb_g(m,0,i+1,k,j) += wfq[q]*(I_up[q]
+                                               - (I_down[q][i+1] + cc))*fsc_u;
+                  I_up[q] += cc;                     // -> cell i+1's own frame
                   if (report_on && q == 0) iup_g(m,k,j,i+1) = I_up[0];
-                  RTLayer(dt_u, muq[q], s_f, s_u, I_up[q], ab, em);
+                  RTLayer(dt_u, muq[q], s_f*afu_m, s_u*acu_u, I_up[q], ab, em);
                   Src_g(m,0,i+1,k,j) += wfq[q]/DX1(m,k,j,i+1)*(ab - em);
                   if (jac_on) {
                     Real e0l, cil, col, e0u, ciu, cou;
@@ -2696,10 +2984,14 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
                   }
                 }
               }
+              const Real fsc_t = pp_ ? 1.0/aft_ : ACC(m,k,j,ie)/AFC(m,k,j,ie+1);
               for (int q=0; q<nq; ++q) {
-                RTLayer(dt_top, muq[q], b_top, b_top, I_up[q], ab, em);
+                RTLayer(dt_top, muq[q], b_top*act_, b_top*aftn_, I_up[q], ab, em);
                 Src_g(m,0,ie,k,j) += wfq[q]/DX1(m,k,j,ie)*(ab - em);
-                Fb_g(m,0,ie+1,k,j) += wfq[q]*(I_up[q] - I_down[q][ie+1]);
+                const Real cc = MIXF(bt_top, I_up[q], I_down[q][ie+1]);
+                Fb_g(m,0,ie+1,k,j) += wfq[q]*(I_up[q]
+                                              - (I_down[q][ie+1] + cc))*fsc_t;
+                I_up[q] += cc;
                 if (jac_on) {
                   Real e0t, cit, cot;
                   RTLayerCoef(dt_top, muq[q], e0t, cit, cot);
@@ -2905,6 +3197,10 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
           c3.stat = c3stat;
           c3.size = size;
           c3.dx1 = dx1_;
+          // the radial geometry of the SPHERICAL DILUTION (see the note above): the
+          // column solve carries the same area-weighted intensities the sweep does
+          c3.vol = volume;
+          c3.area1 = area1;
           c3.eos = eos;
           c3.bdt = bdt;
           c3.sigma = boltz_sigma;
@@ -3513,11 +3809,14 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
           Real e0c[NC][NN], alpc[NC][NN], betc[NC][NN];
 #endif
 
-          // top
+          // top.  Everything carried from here on is the AREA-WEIGHTED intensity
+          // J = A I of the dilution note above, so the incoming beam enters scaled by
+          // the top face's area.
+          const Real aft_ = AFC(m,k,j,ie+1);
           for (int cc=0; cc<NC; ++cc) {
             Real dtauir = gamirc[cc]*tau_down_r_f[ie+1];
             Real trans = exp(-dtauir/muggc[cc]);
-            I_ir_down_c[cc][ie+1] = (1.0-trans)*(fbc[cc]*B[ie+1]);
+            I_ir_down_c[cc][ie+1] = (1.0-trans)*(fbc[cc]*B[ie+1]*aft_);
           }
           if (layer_legacy) {
             // down-sweep
@@ -3531,6 +3830,10 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
               const Real krf_g = (i < ie) ? (tau_down_r_f[i+1]-tau_down_r_f[i+2])
                                           / dx1(m,k,j,i+1) : kro_g;
               const Real bfr_g = BFace(kro_g, krf_g, B[i], B[i+1], bface_on);
+              // the source function of the J equation is A B at the endpoint's own
+              // position; this layer runs between the two cell centres' mean areas
+              const Real bfa_g = bfr_g*ACC(m,k,j,i+1);
+              const Real bwn_g = B[i]*ACC(m,k,j,i);
               for (int cc=0; cc<NC; ++cc) {
                 Real dtauir = gamirc[cc]*dtau_i;
                 Real x = dtauir/muggc[cc];
@@ -3539,11 +3842,11 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
                 Real bet = (x > 1.0e-3) ? (1.0 - e0/x) : (x/2.0-SQR(x)/6.0);
                 // direct source: what this stream leaves in cell i, absorbed minus
                 // emitted
-                Src_g(m,blk,i,k,j) += 2.0*M_PI*wggc[cc]*muggc[cc]/dx1(m,k,j,i)
+                Src_g(m,blk,i,k,j) += 2.0*M_PI*wggc[cc]*muggc[cc]/VLS(m,k,j,i)
                                     *(e0*I_ir_down_c[cc][i+1]
-                                      - fbc[cc]*(alp*bfr_g + bet*B[i]));
+                                      - fbc[cc]*(alp*bfa_g + bet*bwn_g));
                 I_ir_down_c[cc][i] = (1.0-e0)*I_ir_down_c[cc][i+1]
-                                   + alp*fbc[cc]*bfr_g + bet*fbc[cc]*B[i];
+                                   + alp*fbc[cc]*bfa_g + bet*fbc[cc]*bwn_g;
 #if RT_CACHE
                 e0c[cc][i] = e0;
                 alpc[cc][i] = alp;
@@ -3554,10 +3857,11 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
 
             // bottom
             Real I_ir_up_c[NC];
+            const Real afb_ = AFC(m,k,j,is);
             for (int cc=0; cc<NC; ++cc) {
-              I_ir_up_c[cc] = Iint + I_ir_down_c[cc][is];
-              Real F_ir_down_f = 2.0*M_PI*wggc[cc]*muggc[cc]*I_ir_down_c[cc][is];
-              Real F_ir_up_f = 2.0*M_PI*wggc[cc]*muggc[cc]*I_ir_up_c[cc];
+              I_ir_up_c[cc] = Iint*afb_ + I_ir_down_c[cc][is];
+              Real F_ir_down_f = 2.0*M_PI*wggc[cc]*muggc[cc]*I_ir_down_c[cc][is]/afb_;
+              Real F_ir_up_f = 2.0*M_PI*wggc[cc]*muggc[cc]*I_ir_up_c[cc]/afb_;
               Fb_g(m,blk,is,k,j) += (F_ir_up_f - F_ir_down_f);
             }
             // up-sweep, accumulating the band flux as it goes
@@ -3571,6 +3875,9 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
               const Real krfu = (i < ie+1) ? (tau_down_r_f[i]-tau_down_r_f[i+1])
                                            / dx1(m,k,j,i) : krou;
               const Real bfru = BFace(krou, krfu, B[i-1], B[i], bface_on);
+              const Real bfa_u = bfru*ACC(m,k,j,i);
+              const Real bwn_u = B[i-1]*ACC(m,k,j,i-1);
+              const Real afi_ = AFC(m,k,j,i);
               for (int cc=0; cc<NC; ++cc) {
 #if RT_CACHE
                 // layer i-1, already solved on the way down
@@ -3585,12 +3892,12 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
                 Real gm = (x > 1.0e-3) ? (e0 - 1.0 + e0/x) : (x/2.0-SQR(x)/3.0);
 #endif
                 const Real Iup_in = I_ir_up_c[cc];
-                Src_g(m,blk,i-1,k,j) += 2.0*M_PI*wggc[cc]*muggc[cc]/dx1(m,k,j,i-1)
-                                      *(e0*Iup_in - fbc[cc]*(bet*bfru + gm*B[i-1]));
+                Src_g(m,blk,i-1,k,j) += 2.0*M_PI*wggc[cc]*muggc[cc]/VLS(m,k,j,i-1)
+                                      *(e0*Iup_in - fbc[cc]*(bet*bfa_u + gm*bwn_u));
                 I_ir_up_c[cc] = (1.0-e0)*Iup_in
-                              + bet*fbc[cc]*bfru + gm*fbc[cc]*B[i-1];
-                Real F_ir_down_f = 2.0*M_PI*wggc[cc]*muggc[cc]*I_ir_down_c[cc][i];
-                Real F_ir_up_f = 2.0*M_PI*wggc[cc]*muggc[cc]*I_ir_up_c[cc];
+                              + bet*fbc[cc]*bfa_u + gm*fbc[cc]*bwn_u;
+                Real F_ir_down_f = 2.0*M_PI*wggc[cc]*muggc[cc]*I_ir_down_c[cc][i]/afi_;
+                Real F_ir_up_f = 2.0*M_PI*wggc[cc]*muggc[cc]*I_ir_up_c[cc]/afi_;
                 Fb_g(m,blk,i,k,j) += (F_ir_up_f - F_ir_down_f);
                 // the cell's own emission per unit volume, both hemispheres.  dtau_i is
                 // kappa rho dr for this layer, so dtau_i/dr = kappa rho and the layer
@@ -3632,11 +3939,14 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
               if (i == ie) {
                 // the top half layer: the upper half of cell ie, its source held at the
                 // cell's own Planck function -- there is nothing above it
+                // the half layer runs from the TOP FACE to the cell CENTRE, so its
+                // two source endpoints take those two areas
+                const Real act_ = ACC(m,k,j,ie);
                 for (int cc=0; cc<NC; ++cc) {
                   const Real s = fbc[cc]*B[ie];
                   Real dsrc;
-                  step(0.5*gamirc[cc]*dtau_l, muggc[cc], s, s, Idn[cc], dsrc);
-                  Src_g(m,blk,ie,k,j) += 2.0*M_PI*wggc[cc]*muggc[cc]/dzl*dsrc;
+                  step(0.5*gamirc[cc]*dtau_l, muggc[cc], s*aft_, s*act_, Idn[cc], dsrc);
+                  Src_g(m,blk,ie,k,j) += 2.0*M_PI*wggc[cc]*muggc[cc]/VLS(m,k,j,ie)*dsrc;
                 }
               } else {
                 // the layer between the centres of cells i+1 and i.  dtau/dr is kappa
@@ -3652,34 +3962,39 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
                 const Real dtc = dtau_l + dtau_u;
                 const Real s_f = (dtc > 0.0) ? (s_l + (s_u - s_l)*(dtau_l/dtc))
                                              : (0.5*(s_l + s_u));
+                const Real acu_ = ACC(m,k,j,i+1), afm_ = AFC(m,k,j,i+1);
+                const Real acl_ = ACC(m,k,j,i);
                 for (int cc=0; cc<NC; ++cc) {
                   Real dsrc;
-                  step(0.5*gamirc[cc]*dtau_u, muggc[cc], fbc[cc]*s_u, fbc[cc]*s_f,
-                       Idn[cc], dsrc);
-                  Src_g(m,blk,i+1,k,j) += 2.0*M_PI*wggc[cc]*muggc[cc]/dzu*dsrc;
+                  step(0.5*gamirc[cc]*dtau_u, muggc[cc], fbc[cc]*s_u*acu_,
+                       fbc[cc]*s_f*afm_, Idn[cc], dsrc);
+                  Src_g(m,blk,i+1,k,j) += 2.0*M_PI*wggc[cc]*muggc[cc]/VLS(m,k,j,i+1)
+                                        *dsrc;
                   I_ir_down_c[cc][i+1] = Idn[cc];
-                  step(0.5*gamirc[cc]*dtau_l, muggc[cc], fbc[cc]*s_f, fbc[cc]*s_l,
-                       Idn[cc], dsrc);
-                  Src_g(m,blk,i,k,j) += 2.0*M_PI*wggc[cc]*muggc[cc]/dzl*dsrc;
+                  step(0.5*gamirc[cc]*dtau_l, muggc[cc], fbc[cc]*s_f*afm_,
+                       fbc[cc]*s_l*acl_, Idn[cc], dsrc);
+                  Src_g(m,blk,i,k,j) += 2.0*M_PI*wggc[cc]*muggc[cc]/VLS(m,k,j,i)*dsrc;
                 }
               }
             }
             // the lower half of cell is, down to the bottom face
             const Real dtau_is = tau_down_r_f[is]-tau_down_r_f[is+1];
+            const Real acs_ = ACC(m,k,j,is), afs_ = AFC(m,k,j,is);
             for (int cc=0; cc<NC; ++cc) {
               const Real s = fbc[cc]*B[is];
               Real dsrc;
-              step(0.5*gamirc[cc]*dtau_is, muggc[cc], s, s, Idn[cc], dsrc);
-              Src_g(m,blk,is,k,j) += 2.0*M_PI*wggc[cc]*muggc[cc]/dx1(m,k,j,is)*dsrc;
+              step(0.5*gamirc[cc]*dtau_is, muggc[cc], s*acs_, s*afs_, Idn[cc], dsrc);
+              Src_g(m,blk,is,k,j) += 2.0*M_PI*wggc[cc]*muggc[cc]/VLS(m,k,j,is)*dsrc;
               I_ir_down_c[cc][is] = Idn[cc];
             }
 
             // bottom, now AT the bottom face
             Real I_ir_up_c[NC];
+            const Real afb_ = AFC(m,k,j,is);
             for (int cc=0; cc<NC; ++cc) {
-              I_ir_up_c[cc] = Iint + I_ir_down_c[cc][is];
-              Real F_ir_down_f = 2.0*M_PI*wggc[cc]*muggc[cc]*I_ir_down_c[cc][is];
-              Real F_ir_up_f = 2.0*M_PI*wggc[cc]*muggc[cc]*I_ir_up_c[cc];
+              I_ir_up_c[cc] = Iint*afb_ + I_ir_down_c[cc][is];
+              Real F_ir_down_f = 2.0*M_PI*wggc[cc]*muggc[cc]*I_ir_down_c[cc][is]/afb_;
+              Real F_ir_up_f = 2.0*M_PI*wggc[cc]*muggc[cc]*I_ir_up_c[cc]/afb_;
               Fb_g(m,blk,is,k,j) += (F_ir_up_f - F_ir_down_f);
             }
             // up-sweep: the bottom half layer first, then centre to centre, accumulating
@@ -3688,8 +4003,9 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
             for (int cc=0; cc<NC; ++cc) {
               const Real s = fbc[cc]*B[is];
               Real dsrc;
-              step(0.5*gamirc[cc]*dtau_is, muggc[cc], s, s, I_ir_up_c[cc], dsrc);
-              Src_g(m,blk,is,k,j) += 2.0*M_PI*wggc[cc]*muggc[cc]/dx1(m,k,j,is)*dsrc;
+              step(0.5*gamirc[cc]*dtau_is, muggc[cc], s*afs_, s*acs_, I_ir_up_c[cc],
+                   dsrc);
+              Src_g(m,blk,is,k,j) += 2.0*M_PI*wggc[cc]*muggc[cc]/VLS(m,k,j,is)*dsrc;
               Em_g(m,blk,is,k,j) += 2.0*(2.0*M_PI*wggc[cc])*gamirc[cc]*dtau_is
                                   / dx1(m,k,j,is)*fbc[cc]*B[is];
             }
@@ -3705,16 +4021,19 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
               const Real dtc = dtau_l + dtau_u;
               const Real s_f = (dtc > 0.0) ? (s_l + (s_u - s_l)*(dtau_l/dtc))
                                            : (0.5*(s_l + s_u));
+              const Real acl2_ = ACC(m,k,j,i), afm2_ = AFC(m,k,j,i+1);
+              const Real acu2_ = ACC(m,k,j,i+1);
               for (int cc=0; cc<NC; ++cc) {
                 const Real pref = 2.0*M_PI*wggc[cc]*muggc[cc];
                 Real dsrc;
-                step(0.5*gamirc[cc]*dtau_l, muggc[cc], fbc[cc]*s_l, fbc[cc]*s_f,
-                     I_ir_up_c[cc], dsrc);
-                Src_g(m,blk,i,k,j) += pref/dzl*dsrc;
-                Fb_g(m,blk,i+1,k,j) += pref*(I_ir_up_c[cc] - I_ir_down_c[cc][i+1]);
-                step(0.5*gamirc[cc]*dtau_u, muggc[cc], fbc[cc]*s_f, fbc[cc]*s_u,
-                     I_ir_up_c[cc], dsrc);
-                Src_g(m,blk,i+1,k,j) += pref/dzu*dsrc;
+                step(0.5*gamirc[cc]*dtau_l, muggc[cc], fbc[cc]*s_l*acl2_,
+                     fbc[cc]*s_f*afm2_, I_ir_up_c[cc], dsrc);
+                Src_g(m,blk,i,k,j) += pref/VLS(m,k,j,i)*dsrc;
+                Fb_g(m,blk,i+1,k,j) += pref*(I_ir_up_c[cc]
+                                             - I_ir_down_c[cc][i+1])/afm2_;
+                step(0.5*gamirc[cc]*dtau_u, muggc[cc], fbc[cc]*s_f*afm2_,
+                     fbc[cc]*s_u*acu2_, I_ir_up_c[cc], dsrc);
+                Src_g(m,blk,i+1,k,j) += pref/VLS(m,k,j,i+1)*dsrc;
                 Em_g(m,blk,i+1,k,j) += 2.0*(2.0*M_PI*wggc[cc])*gamirc[cc]*dtau_u
                                      / dzu*fbc[cc]*B[i+1];
               }
@@ -3722,13 +4041,16 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
             // the top half of cell ie, back out through the top face
             {
               const Real dtau_ie = tau_down_r_f[ie]-tau_down_r_f[ie+1];
+              const Real act2_ = ACC(m,k,j,ie);
               for (int cc=0; cc<NC; ++cc) {
                 const Real pref = 2.0*M_PI*wggc[cc]*muggc[cc];
                 const Real s = fbc[cc]*B[ie];
                 Real dsrc;
-                step(0.5*gamirc[cc]*dtau_ie, muggc[cc], s, s, I_ir_up_c[cc], dsrc);
-                Src_g(m,blk,ie,k,j) += pref/dx1(m,k,j,ie)*dsrc;
-                Fb_g(m,blk,ie+1,k,j) += pref*(I_ir_up_c[cc] - I_ir_down_c[cc][ie+1]);
+                step(0.5*gamirc[cc]*dtau_ie, muggc[cc], s*act2_, s*aft_,
+                     I_ir_up_c[cc], dsrc);
+                Src_g(m,blk,ie,k,j) += pref/VLS(m,k,j,ie)*dsrc;
+                Fb_g(m,blk,ie+1,k,j) += pref*(I_ir_up_c[cc]
+                                              - I_ir_down_c[cc][ie+1])/aft_;
               }
             }
           }
@@ -3821,10 +4143,32 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
       const Real inv_c = 1.0/2.99792458e10;      // cgs: this path runs in cgs code units
       const Real arad_f = eos.tbl.arad;
       const Real xlo_f = eos.tbl.rad_lrho_lo, xhi_f = eos.tbl.rad_lrho_hi;
+      // the taper's TEMPERATURE GATE (see rad_taper::WeightGated).  The force must use
+      // the SAME w the EOS uses, or the two stop being complementary and the total force
+      // is neither -grad Prad nor kappa F/c; that is the whole point of sharing the
+      // weight function between the two modules.
+      const Real ylo_f = eos.tbl.rad_lt_lo, yhi_f = eos.tbl.rad_lt_hi;
+      const bool tg_f = eos.tbl.rad_tgate;
       const bool md_f = pm->multi_d, td_f = pm->three_d;
+      // problem/rt_force_tau_gate: the optical-depth gate s(tau) on the force above.
+      // OFF (or s = 0) executes the old expressions verbatim -- see rt_force_tau_gate.
+      const bool ftg_ = radforce && rt_force_tau_gate;
+      const Real ftlg_lo = log10(rt_force_tau_lo);
+      const Real ftlg_hi = log10(rt_force_tau_hi);
+      const Real ft_hi = rt_force_tau_hi;
       const bool fverb = radforce && (rt_force_verbose > 0);
       if (fverb) --rt_force_verbose;
+      // problem/rt_force_verbose normalises the cell balance by g.  rt_force_grav is a
+      // CONSTANT (the pgen's GM/r_in^2), which on a global radial domain is not the
+      // gravity any cell feels -- at the He star's photosphere it is 4x the local value,
+      // so both the printed accelerations and the residual were mis-scaled.  Use the
+      // LOCAL g(r) that the force itself works against, and keep rt_force_grav only as
+      // the fallback for a mesh with no radius (the plane-parallel box).
       const Real gver = rt_force_grav;
+      auto cfv_ = (rt_cf_ptr != nullptr) ? *rt_cf_ptr
+                : DvceArray4D<Real>("rt_cf_dummy", 1, 1, 1, 1);
+      const bool cfv_on = (rt_cf_ptr != nullptr);
+      const Real apo_ = ap;             // the orbit's a; the print shadows `ap` below
       const int vcyc = pm->ncycle;
       auto eos_f = eos;
       // problem/rt_budget_verbose: the v.f work accumulator (see rt_bud_ptr)
@@ -3859,6 +4203,10 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
           Ft += Fb_g(m,b,i+1,k,j);
           Fb += Fb_g(m,b,i,k,j);
         }
+        // the face fluxes are PER UNIT AREA; every divergence below is therefore
+        // (A_top F_top - A_bot F_bot)/V (the dilution note above), which under
+        // rt_plane_parallel is A = 1, V = DX1 and bitwise the old expression
+        const Real aft_a = AFC(m,k,j,i+1), afb_a = AFC(m,k,j,i);
         // the two-stream's share of each face in the tau blend
         Real dg_srcd = 0.0;     // problem/rt_src_dump: the raw absorbed-minus-emitted sum
         Real src;
@@ -3899,16 +4247,17 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
           dg_srcd = src;
           src_relax = src;
           if (taublend) {
-            src += (w_g(m,k,j,i+1)*Ft - w_g(m,k,j,i)*Fb)/DX1(m,k,j,i);
+            src += (w_g(m,k,j,i+1)*(Ft*aft_a)
+                    - w_g(m,k,j,i)*(Fb*afb_a))/VLA(m,k,j,i);
             src_relax *= (1.0 - wbar);
           }
         } else {
-          const Real dvg = -(Ft-Fb)/DX1(m,k,j,i);
+          const Real dvg = -(Ft*aft_a-Fb*afb_a)/VLA(m,k,j,i);
           if (taublend) {
             Ft *= (1.0 - w_g(m,k,j,i+1));
             Fb *= (1.0 - w_g(m,k,j,i));
           }
-          src = -(Ft-Fb)/DX1(m,k,j,i);
+          src = -(Ft*aft_a-Fb*afb_a)/VLA(m,k,j,i);
           src_relax = taublend ? (1.0 - wbar)*dvg : src;
         }
         Real Qs_d = 0.0;   // the stellar heating that entered src, for the diagnostic
@@ -4332,12 +4681,14 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
           Kokkos::printf("rt_apply i=%d T=%.4e d=%.4e e=%.4e Fb=%.6e Ft=%.6e "
                          "divF=%.14e srcraw=%.14e src=%.4e Qs=%.4e Em=%.4e "
                          "lamdt=%.4e de=%.4e "
-                         "de/e=%.4e tau=%.4e w=%.4e dx=%.4e\n",
+                         "de/e=%.4e tau=%.4e w=%.4e dx=%.4e "
+                         "Ab=%.6e At=%.6e Ac=%.6e V=%.6e\n",
                          i, T_g(m,k,j,i), rhoN(m,k,j,i), ei, Fb, Ft,
-                         -(Ft-Fb)/DX1(m,k,j,i), srcraw, src, Qs, Em,
+                         -(Ft*aft_a-Fb*afb_a)/VLA(m,k,j,i), srcraw, src, Qs, Em,
                          (Em > 0.0 && ei > 0.0) ? 4.0*Em/ei*bdt : 0.0,
                          de, de/ei, taublend ? tauf_g(m,k,j,i) : 0.0,
-                         taublend ? w_g(m,k,j,i) : 0.0, DX1(m,k,j,i));
+                         taublend ? w_g(m,k,j,i) : 0.0, DX1(m,k,j,i),
+                         afb_a, aft_a, ACC(m,k,j,i), VLA(m,k,j,i));
         }
         // ---- rt_cell_report ---------------------------------------------------
         if (report_on && outer_last) {
@@ -4495,8 +4846,10 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
         // ---- radiative momentum source, see rt_rad_force --------------------------
         if (radforce && outer_last) {
           const Real rho = rhoN(m,k,j,i);
-          Real wr, dwdx;
-          rad_taper::Weight(log10(rho), xlo_f, xhi_f, wr, dwdx);
+          const Real tkc = T_g(m,k,j,i);
+          Real wr, dwdx, dwdy;
+          rad_taper::WeightGated(log10(rho), xlo_f, xhi_f, log10(tkc), ylo_f, yhi_f,
+                                 tg_f, wr, dwdx, dwdy);
           // the cell's net two-stream flux, positive upward (rt_force_center: Ft/Fb
           // are this call's Fb array, so 0/1 differ only in what the column wrote; 2
           // averages it with the saved entry flux)
@@ -4506,21 +4859,121 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
             fbc_ = 0.5*(Fb + fbs_a(m,k,j,i));
           }
           const Real fnet = 0.5*(ftc_ + fbc_);
-          Real f1 = (1.0 - wr)*rho*kc_g(m,0,i,k,j)*fnet*inv_c;
-          Real f2 = 0.0, f3 = 0.0, prgw = 0.0;
-          if (dwdx != 0.0) {
-            // Prad grad w, with grad w = w'(x) grad rho/(rho ln10) -- the SAME derivative
-            // the EOS put into chi_rho, so the two cancel in the continuum limit
-            const Real tk = T_g(m,k,j,i);
-            const Real cg = (arad_f*tk*tk*tk*tk/3.0)*dwdx*M_LOG10E/rho;
-            prgw = cg*(rhoN(m,k,j,i+1) - rhoN(m,k,j,i-1))/(X1V(m,i+1) - X1V(m,i-1));
-            f1 += prgw;
+          // problem/rt_force_tau_gate: s(tau) with tau the grey optical depth to the top
+          // of this column.  The ingredients are the ones the `tautop` diagnostic uses,
+          // kappa_grey rho dr summed over the cells above, plus half of this cell's own
+          // dtau; the sum is formed here because no per-cell tau-to-top array exists
+          // outside the tau blend (pcond_rt->rad_tauf, which is a FACE tau and only
+          // allocated when taublend is on).  It runs only with the gate on.
+          Real sgt_ = 0.0;
+          if (ftg_) {
+            Real tau_ = 0.5*kc_g(m,0,i,k,j)*rhoN(m,k,j,i)*DX1(m,k,j,i);
+            // s = 0 once tau passes tau_hi: deep cells leave after a cell or two
+            for (int i2=i+1; i2<=ie && tau_ < ft_hi; ++i2) {
+              tau_ += kc_g(m,0,i2,k,j)*rhoN(m,k,j,i2)*DX1(m,k,j,i2);
+            }
+            sgt_ = RTForceTauGate(tau_, ftlg_lo, ftlg_hi);
+          }
+          Real f1 = 0.0, f2 = 0.0, f3 = 0.0, prgw = 0.0;
+          if (sgt_ > 0.0) {
+            // ---- the GATED form (problem/rt_force_tau_gate) ------------------------
+            //   f = s [ rho kappa F/c + grad(w Prad) ] + (1-s) [ old ],
+            // with grad(w Prad) a centred difference of w(rho,T) a T^4/3 over the same
+            // neighbours and the same spacings the old Prad grad w term differences:
+            // X1V(i+1)-X1V(i-1) radially, the arc lengths 2 DX2 / 2 DX3 transversely.
+            const Real kfc = rho*kc_g(m,0,i,k,j)*fnet*inv_c;
+            const Real wpm = RTWPrad(rhoN(m,k,j,i-1), T_g(m,k,j,i-1), xlo_f, xhi_f,
+                                     ylo_f, yhi_f, tg_f, arad_f);
+            const Real wpp = RTWPrad(rhoN(m,k,j,i+1), T_g(m,k,j,i+1), xlo_f, xhi_f,
+                                     ylo_f, yhi_f, tg_f, arad_f);
+            Real g1 = kfc + (wpp - wpm)/(X1V(m,i+1) - X1V(m,i-1));
+            Real g2 = 0.0, g3 = 0.0;
             if (md_f) {
-              f2 = cg*(rhoN(m,k,j+1,i) - rhoN(m,k,j-1,i))/(2.0*size.d_view(m).dx2);
+              g2 = (RTWPrad(rhoN(m,k,j+1,i), T_g(m,k,j+1,i), xlo_f, xhi_f,
+                            ylo_f, yhi_f, tg_f, arad_f)
+                  - RTWPrad(rhoN(m,k,j-1,i), T_g(m,k,j-1,i), xlo_f, xhi_f,
+                            ylo_f, yhi_f, tg_f, arad_f))/(2.0*DX2(m,k,j,i));
             }
             if (td_f) {
-              f3 = cg*(rhoN(m,k+1,j,i) - rhoN(m,k-1,j,i))/(2.0*size.d_view(m).dx3);
+              g3 = (RTWPrad(rhoN(m,k+1,j,i), T_g(m,k+1,j,i), xlo_f, xhi_f,
+                            ylo_f, yhi_f, tg_f, arad_f)
+                  - RTWPrad(rhoN(m,k-1,j,i), T_g(m,k-1,j,i), xlo_f, xhi_f,
+                            ylo_f, yhi_f, tg_f, arad_f))/(2.0*DX3(m,k,j,i));
             }
+            // the ungated expressions, for the (1-s) share; identical algebra to the
+            // branch below, kept separate so that branch stays untouched
+            Real o1 = (1.0 - wr)*kfc;
+            Real o2 = 0.0, o3 = 0.0;
+            if (dwdx != 0.0 || dwdy != 0.0) {
+              const Real tk = tkc;
+              const Real cg = (arad_f*tk*tk*tk*tk/3.0)*dwdx*M_LOG10E/rho;
+              const Real ct = (dwdy != 0.0)
+                            ? (arad_f*tk*tk*tk*tk/3.0)*dwdy*M_LOG10E/tk : 0.0;
+              prgw = cg*(rhoN(m,k,j,i+1) - rhoN(m,k,j,i-1))/(X1V(m,i+1) - X1V(m,i-1));
+              if (ct != 0.0) {
+                prgw += ct*(T_g(m,k,j,i+1) - T_g(m,k,j,i-1))/(X1V(m,i+1) - X1V(m,i-1));
+              }
+              o1 += prgw;
+              if (md_f) {
+                o2 = cg*(rhoN(m,k,j+1,i) - rhoN(m,k,j-1,i))/(2.0*DX2(m,k,j,i));
+                if (ct != 0.0) {
+                  o2 += ct*(T_g(m,k,j+1,i) - T_g(m,k,j-1,i))/(2.0*DX2(m,k,j,i));
+                }
+              }
+              if (td_f) {
+                o3 = cg*(rhoN(m,k+1,j,i) - rhoN(m,k-1,j,i))/(2.0*DX3(m,k,j,i));
+                if (ct != 0.0) {
+                  o3 += ct*(T_g(m,k+1,j,i) - T_g(m,k-1,j,i))/(2.0*DX3(m,k,j,i));
+                }
+              }
+            }
+            const Real oms = 1.0 - sgt_;
+            f1 = sgt_*g1 + oms*o1;
+            f2 = sgt_*g2 + oms*o2;
+            f3 = sgt_*g3 + oms*o3;
+          } else {
+          // ---- the UNGATED form.  Left at its original indentation and untouched,
+          // so that with rt_force_tau_gate off the arithmetic executed is bitwise the
+          // arithmetic of every run before the gate existed.
+          f1 = (1.0 - wr)*rho*kc_g(m,0,i,k,j)*fnet*inv_c;
+          if (dwdx != 0.0 || dwdy != 0.0) {
+            // Prad grad w, with grad w = w'(x) grad rho/(rho ln10) -- the SAME derivative
+            // the EOS put into chi_rho, so the two cancel in the continuum limit
+            const Real tk = tkc;
+            const Real cg = (arad_f*tk*tk*tk*tk/3.0)*dwdx*M_LOG10E/rho;
+            // ...and, under the temperature gate, w'(y) grad T/(T ln10), the partner of
+            // the dw/dlnT the EOS put into chi_T.  Exactly one of cg and ct is non-zero,
+            // because max() picks one branch of the weight.
+            const Real ct = (dwdy != 0.0)
+                          ? (arad_f*tk*tk*tk*tk/3.0)*dwdy*M_LOG10E/tk : 0.0;
+            prgw = cg*(rhoN(m,k,j,i+1) - rhoN(m,k,j,i-1))/(X1V(m,i+1) - X1V(m,i-1));
+            if (ct != 0.0) {
+              prgw += ct*(T_g(m,k,j,i+1) - T_g(m,k,j,i-1))/(X1V(m,i+1) - X1V(m,i-1));
+            }
+            f1 += prgw;
+            // the transverse components of Prad grad w.  The derivative is taken
+            // against the physical ARC LENGTH (DX2/DX3), not the coordinate spacing:
+            // on the cubed sphere x2/x3 are the gnomonic ANGLES and size.dx2 is
+            // dimensionless, which made this term ~r = 2e11 times too large and drove
+            // a grid-scale transverse instability from round-off in a few cycles.
+            // What u0(IM2), u0(IM3) hold on the cubed sphere is the COVARIANT angular
+            // momentum (coordinates.hpp:151-161), and the covariant component of a
+            // gradient along the unit tangent e_xi IS dphi/dl_xi, so no metric
+            // inverse enters here -- the arc-length derivative is already the right
+            // component to add.
+            if (md_f) {
+              f2 = cg*(rhoN(m,k,j+1,i) - rhoN(m,k,j-1,i))/(2.0*DX2(m,k,j,i));
+              if (ct != 0.0) {
+                f2 += ct*(T_g(m,k,j+1,i) - T_g(m,k,j-1,i))/(2.0*DX2(m,k,j,i));
+              }
+            }
+            if (td_f) {
+              f3 = cg*(rhoN(m,k+1,j,i) - rhoN(m,k-1,j,i))/(2.0*DX3(m,k,j,i));
+              if (ct != 0.0) {
+                f3 += ct*(T_g(m,k+1,j,i) - T_g(m,k-1,j,i))/(2.0*DX3(m,k,j,i));
+              }
+            }
+          }
           }
           const Real dinv = 1.0/u0(m,IDN,k,j,i);
           const Real v1 = u0(m,IM1,k,j,i)*dinv;
@@ -4540,7 +4993,11 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
             eos_f.tbl.EvalNoMu(rhoN(m,k,j,i-1), T_g(m,k,j,i-1), sm);
             eos_f.tbl.EvalNoMu(rhoN(m,k,j,i+1), T_g(m,k,j,i+1), sp);
             const Real ap = -(sp.p - sm.p)/((X1V(m,i+1) - X1V(m,i-1))*rho);
-            const Real gg = (gver > 0.0) ? gver : 1.0;
+            const Real gloc = !pp_
+                ? EffGravAt(grav, apo_, X1V(m,i), grav_pmass, omega,
+                            cfv_on ? cfv_(m,k,j,3) : 0.0, tide)
+                : gver;
+            const Real gg = (gloc > 0.0) ? gloc : ((gver > 0.0) ? gver : 1.0);
             Kokkos::printf("### rt_force ncycle=%d i=%d rho=%.4e T=%.4e w=%.4f "
                            "a_p/g=%.6e a_f/g=%.6e a_prgw/g=%.6e resid/g=%.6e "
                            "F=%.4e kap=%.4e\n",

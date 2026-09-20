@@ -1,0 +1,7 @@
+Loading openmpi_gpu/5.0
+  Loading requirement: openmpi/5.0
+[  1%] Built target kokkossimd
+[ 14%] Built target kokkoscore
+[ 15%] Built target kokkoscontainers
+[100%] Built target athena
+BUILD_DONE

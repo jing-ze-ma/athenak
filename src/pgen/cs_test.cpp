@@ -395,6 +395,7 @@ void CSTestSeamFluxCheck(Mesh *pm);
 void CSTestLevelFluxCheck(Mesh *pm);
 void CSTestConsSums(Mesh *pm);
 void CSTestHistory(HistoryData *pdata, Mesh *pm);
+void CSTestSeamHaloScan(ParameterInput *pin, Mesh *pm);
 
 //----------------------------------------------------------------------------------------
 //! \fn ProblemGenerator::UserProblem
@@ -486,6 +487,11 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   if (iprob == 11) {
     pgen_final_func = CSTestResistCheck;
   }
+  // iprob = 15: the STATIC seam-halo accuracy scan.  Run it with time/nlim = 0, so the
+  // only thing that has touched the ghosts is one boundary exchange.
+  if (iprob == 15 && pin->GetOrAddInteger("problem", "seam_halo_scan", 0) != 0) {
+    pgen_final_func = CSTestSeamHaloScan;
+  }
   // iprob = 13: the STRATIFIED low-beta test. Gravity is a user source term because
   // <srcterms> is refused on the cubed sphere (it has no gnomonic form); this one is
   // purely radial, and rhat is orthogonal to both angular directions on every grid, so
@@ -535,6 +541,11 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
 
   const Real blob_w = pin->GetOrAddReal("problem", "blob_width", 0.3);
   const Real amp_ = cs_amp, r0_ = cs_r0;
+  // iprob 15: the DEGREE of the harmonic the scalar-diffusion test starts from.  2 is
+  // the l = 2 combination of direction cosines this test has always used; 6 is the
+  // zonal P_6(cos), whose surface Laplacian is -42 f/r^2 -- a much shorter wavelength
+  // on the same grid, so it is the resolution-sensitive end of the operator.
+  const int lharm_ = pin->GetOrAddInteger("problem", "lharm", 2);
 
   auto &indcs = pmy_mesh_->mb_indcs;
   int &is = indcs.is; int &js = indcs.js; int &ks = indcs.ks;
@@ -642,7 +653,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       // the dump itself. Uses p0 as T0 (R = 1).
       Real cx, cy, cz;
       PanelToCart(mbpanel.d_view(m), xi, eta, cx, cy, cz);
-      const Real f = cx*cy + 0.7*cz*cx - 0.4*(cz*cz - 1.0/3.0);
+      Real f = cx*cy + 0.7*cz*cx - 0.4*(cz*cz - 1.0/3.0);
+      if (lharm_ == 6) {
+        // P_6(u) = (231 u^6 - 315 u^4 + 105 u^2 - 5)/16, Laplacian_S f = -42 f
+        const Real u2 = cz*cz;
+        f = (((231.0*u2 - 315.0)*u2 + 105.0)*u2 - 5.0)/16.0;
+      }
       w0(m,IDN,k,j,i) = d0;
       w0(m,IEN,k,j,i) = d0*p0*(1.0 + amp_*f)/gm1;
       w0(m,IVX,k,j,i) = 0.0;
@@ -6059,5 +6075,165 @@ void CSTestFFCheck(ParameterInput *pin, Mesh *pm) {
                  l1(sr[0],3), l1(sr[1],1), l1(sr[1],2), l1(sr[1],3), l1(sr[2],1),
                  l1(sr[2],2), l1(sr[2],3), mxdiv);
     std::fclose(pf);
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn CSTestSeamHaloScan
+//! \brief STATIC accuracy scan of the panel-seam halo (iprob = 15,
+//!        <problem>/seam_halo_scan > 0, run with time/nlim = 0).
+//!
+//! The iprob = 15 initial state is a spherical harmonic of the DIRECTION COSINES alone,
+//! so its exact value in a ghost cell is known with no reference to the neighbour panel:
+//! evaluate it at the ghost's OWN chart-continued (xi, eta).  The halo exchange is
+//! supposed to reproduce exactly that, to the order of the along-seam resample.  Nothing
+//! evolves at nlim = 0, so what is measured here is one boundary exchange and nothing
+//! else.
+//!
+//! The scan is reported PER MeshBlock, PER seam face and PER ghost layer, with the
+//! along-seam index of the worst cell -- which is what localises a defect to a block end,
+//! a cube vertex or one panel orientation.  seam_halo_scan >= 2 prints the full
+//! along-seam profile of every seam face.
+void CSTestSeamHaloScan(ParameterInput *pin, Mesh *pm) {
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  if (pmbp->phydro == nullptr) return;
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie;
+  const int js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int ng = indcs.ng;
+  const int verb = pin->GetOrAddInteger("problem", "seam_halo_scan", 0);
+  const int lharm = pin->GetOrAddInteger("problem", "lharm", 2);
+  const Real gm1 = pmbp->phydro->peos->eos_data.gamma - 1.0;
+  const Real d0 = cs_d0, p0 = cs_p0, amp = cs_amp;
+  auto &size = pmbp->pmb->mb_size;
+  size.sync_host();
+  auto &mbpanel = pmbp->pmb->mb_panel;
+  mbpanel.sync_host();
+  auto &nghbr = pmbp->pmb->nghbr;
+  nghbr.sync_host();
+  auto &gids = pmbp->pmb->mb_gid;
+  gids.sync_host();
+  auto uh = Kokkos::create_mirror_view(pmbp->phydro->u0);
+  Kokkos::deep_copy(uh, pmbp->phydro->u0);
+  const int imid = (is + ie)/2;
+
+  // the exact conserved energy at a chart-continued (xi, eta)
+  auto uexact = [&](const int p, const Real xi, const Real eta) {
+    Real cx, cy, cz;
+    PanelToCart(p, xi, eta, cx, cy, cz);
+    Real f = cx*cy + 0.7*cz*cx - 0.4*(cz*cz - 1.0/3.0);
+    if (lharm == 6) {
+      const Real u2 = cz*cz;
+      f = (((231.0*u2 - 315.0)*u2 + 105.0)*u2 - 5.0)/16.0;
+    }
+    return d0*p0*(1.0 + amp*f)/gm1;
+  };
+
+  // the four tangential faces: slot, axis (2 = x2 face, 3 = x3 face), side
+  struct Face { int slot; int ax; int side; const char *nm; };
+  const Face fc[4] = { {8, 2, -1, "-x2"}, {12, 2, 1, "+x2"},
+                       {24, 3, -1, "-x3"}, {28, 3, 1, "+x3"} };
+  std::cout << "### CS STATIC SEAM-HALO SCAN (one exchange, exact ghost known)\n";
+  std::cout << "###  gid pnl lx2 lx3 face lay    maxerr      at s (0..n-1)"
+            << "      end0      end1      mid\n";
+  Real gmax = 0.0;
+  for (int m=0; m<pmbp->nmb_thispack; ++m) {
+    const int p = mbpanel.h_view(m);
+    const int gid = gids.h_view(m);
+    for (int q=0; q<4; ++q) {
+      const int n = fc[q].slot;
+      if (nghbr.h_view(m,n).gid < 0) continue;
+      if (nghbr.h_view(m,n).panel == p) continue;   // not a seam
+      const int ns = (fc[q].ax == 2) ? indcs.nx3 : indcs.nx2;
+      for (int g=0; g<ng; ++g) {
+        Real emax = 0.0, e0 = 0.0, e1 = 0.0, emid = 0.0;
+        int smax = -1;
+        for (int s=0; s<ns; ++s) {
+          int j, k;
+          if (fc[q].ax == 2) {
+            j = (fc[q].side < 0) ? (js - 1 - g) : (je + 1 + g);
+            k = ks + s;
+          } else {
+            k = (fc[q].side < 0) ? (ks - 1 - g) : (ke + 1 + g);
+            j = js + s;
+          }
+          const Real xi = 0.25*M_PI*CellCenterX(j-js, indcs.nx2,
+                            size.h_view(m).x2min, size.h_view(m).x2max);
+          const Real eta = 0.25*M_PI*CellCenterX(k-ks, indcs.nx3,
+                            size.h_view(m).x3min, size.h_view(m).x3max);
+          const Real err = std::fabs(uh(m,IEN,k,j,imid) - uexact(p, xi, eta));
+          if (err > emax) { emax = err; smax = s; }
+          if (s == 0) e0 = err;
+          if (s == ns-1) e1 = err;
+          if (s == ns/2) emid = err;
+          if (verb >= 2) {
+            std::printf("###   PROF gid %3d face %s lay %d s %3d err %12.4e\n",
+                        gid, fc[q].nm, g, s, err);
+          }
+        }
+        if (emax > gmax) gmax = emax;
+        std::printf("###  %4d %3d %3d %3d  %s  %2d  %11.4e  %4d  %9.2e %9.2e %9.2e\n",
+                    gid, p, static_cast<int>(pm->lloc_eachmb[gid].lx2),
+                    static_cast<int>(pm->lloc_eachmb[gid].lx3), fc[q].nm, g,
+                    emax, smax, e0, e1, emid);
+      }
+    }
+  }
+  std::printf("### SEAM-HALO GLOBAL MAX |ghost - exact| = %.6e\n", gmax);
+
+  // ---- SECOND PASS: EVERY ghost cell, binned by what fills it --------------------
+  //
+  // The first pass only looks at the x2/x3 FACE ghosts of a PANEL SEAM.  This one walks
+  // the whole tangential ghost region and bins by category, which is what separates a
+  // seam defect from an ordinary block-boundary one and from the cube-vertex fill.
+  //   0 face ghost, SAME-panel neighbour        (intra-panel block boundary)
+  //   1 face ghost, CROSS-panel neighbour       (the seam)
+  //   2 x2x3 edge ghost, both flanks same panel (intra-panel block corner)
+  //   3 x2x3 edge ghost, one or both flanks a seam, with a real diagonal neighbour
+  //   4 x2x3 edge ghost at a CUBE VERTEX        (no neighbour; extrapolated fill)
+  const char *cnm[5] = {"face, same panel ", "face, SEAM       ",
+                        "edge, same panel ", "edge, seam       ",
+                        "edge, CUBE VERTEX"};
+  Real cmax[5] = {0.0, 0.0, 0.0, 0.0, 0.0};
+  std::int64_t cnum[5] = {0, 0, 0, 0, 0};
+  for (int m=0; m<pmbp->nmb_thispack; ++m) {
+    const int p = mbpanel.h_view(m);
+    for (int k=ks-ng; k<=ke+ng; ++k) {
+      for (int j=js-ng; j<=je+ng; ++j) {
+        const bool joff = (j < js) || (j > je);
+        const bool koff = (k < ks) || (k > ke);
+        if (!joff && !koff) continue;
+        // which face slots flank this ghost
+        const int nj_id = (j < js) ? 8 : 12;
+        const int nk_id = (k < ks) ? 24 : 28;
+        bool seamj = joff && (nghbr.h_view(m,nj_id).gid >= 0) &&
+                     (nghbr.h_view(m,nj_id).panel != p);
+        bool seamk = koff && (nghbr.h_view(m,nk_id).gid >= 0) &&
+                     (nghbr.h_view(m,nk_id).panel != p);
+        int cat;
+        if (joff && koff) {
+          const bool vtx = (nghbr.h_view(m,nj_id).gid >= 0) &&
+                           (nghbr.h_view(m,nj_id).panel != p) &&
+                           (nghbr.h_view(m,nk_id).gid >= 0) &&
+                           (nghbr.h_view(m,nk_id).panel != p);
+          cat = vtx ? 4 : ((seamj || seamk) ? 3 : 2);
+        } else {
+          cat = (seamj || seamk) ? 1 : 0;
+        }
+        const Real xi = 0.25*M_PI*CellCenterX(j-js, indcs.nx2,
+                          size.h_view(m).x2min, size.h_view(m).x2max);
+        const Real eta = 0.25*M_PI*CellCenterX(k-ks, indcs.nx3,
+                          size.h_view(m).x3min, size.h_view(m).x3max);
+        const Real err = std::fabs(uh(m,IEN,k,j,imid) - uexact(p, xi, eta));
+        if (err > cmax[cat]) { cmax[cat] = err; }
+        ++cnum[cat];
+      }
+    }
+  }
+  std::cout << "### GHOST SCAN BY CATEGORY: max |ghost - exact|\n";
+  for (int c=0; c<5; ++c) {
+    std::printf("###   %s  n = %8lld  max = %12.4e\n", cnm[c],
+                static_cast<long long>(cnum[c]), cmax[c]);
   }
 }

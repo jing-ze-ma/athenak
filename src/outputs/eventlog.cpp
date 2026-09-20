@@ -43,7 +43,9 @@ void EventLogOutput::LoadOutputData(Mesh *pm) {
   int* pmaxit  = &(pm->ecounter.maxit_c2p);
   int* pfofc   = &(pm->ecounter.nfofc);
   int* ptclamp = &(pm->ecounter.neos_tclamp);
+  int* ptset   = &(pm->ecounter.neos_tset);
   Real* pefde  = &(pm->ecounter.efloor_de);
+  Real* pvcde  = &(pm->ecounter.vceil_de);
   MPI_Allreduce(MPI_IN_PLACE, pdfloor, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
   MPI_Allreduce(MPI_IN_PLACE, pefloor, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
   MPI_Allreduce(MPI_IN_PLACE, ptfloor, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
@@ -52,7 +54,9 @@ void EventLogOutput::LoadOutputData(Mesh *pm) {
   MPI_Allreduce(MPI_IN_PLACE, pmaxit,  1, MPI_INT, MPI_MAX, MPI_COMM_WORLD);
   MPI_Allreduce(MPI_IN_PLACE, pfofc,   1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
   MPI_Allreduce(MPI_IN_PLACE, ptclamp, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, ptset,   1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
   MPI_Allreduce(MPI_IN_PLACE, pefde, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, pvcde, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
 #endif
 
   // check if there is any data to be written
@@ -65,7 +69,9 @@ void EventLogOutput::LoadOutputData(Mesh *pm) {
       pm->ecounter.nfofc > 0 ||
       pm->ecounter.maxit_c2p > 0 ||
       pm->ecounter.neos_tclamp > 0 ||
-      pm->ecounter.efloor_de != 0.0) {
+      pm->ecounter.neos_tset > 0 ||
+      pm->ecounter.efloor_de != 0.0 ||
+      pm->ecounter.vceil_de != 0.0) {
     no_output=false;
   }
 }
@@ -114,7 +120,8 @@ void EventLogOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
     if (!(header_written)) {
       std::fprintf(pfile,"# Athena event counter data\n");
       std::fprintf(pfile,"#  cycle eos_dfloor eos_efloor eos_tfloor eos_vceil");
-      std::fprintf(pfile," eos_fail c2p_it fofc  efloor_de eos_tclamp");
+      std::fprintf(pfile," eos_fail c2p_it fofc  efloor_de eos_tclamp   eos_tset");
+      std::fprintf(pfile,"   vceil_de");
       std::fprintf(pfile,"\n");  // terminate line
       header_written = true;
     }
@@ -133,6 +140,14 @@ void EventLogOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
       std::fprintf(pfile, " %11.4e",
                    static_cast<double>(pm->ecounter.efloor_de));
       std::fprintf(pfile, " %10d", pm->ecounter.neos_tclamp);
+      // <block>/efloor_as_tfloor: cells whose floored e was rebuilt from T.  APPENDED,
+      // so every column index an existing reader uses is unchanged.
+      std::fprintf(pfile, " %10d", pm->ecounter.neos_tset);
+      // kinetic energy density the velocity ceiling clipped since the last row: removed
+      // from the total energy, or turned into internal energy under vceil_thermalise.
+      // APPENDED, so every existing column index is unchanged.
+      std::fprintf(pfile, " %11.4e",
+                   static_cast<double>(pm->ecounter.vceil_de));
       std::fprintf(pfile,"\n"); // terminate line
     }
     std::fclose(pfile);
@@ -147,7 +162,9 @@ void EventLogOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   pm->ecounter.maxit_c2p = 0;
   pm->ecounter.nfofc = 0;
   pm->ecounter.neos_tclamp = 0;
+  pm->ecounter.neos_tset = 0;
   pm->ecounter.efloor_de = 0.0;
+  pm->ecounter.vceil_de = 0.0;
 
   // increment output time, clean up
   if (out_params.last_time < 0.0) {

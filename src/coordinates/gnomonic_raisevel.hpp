@@ -43,7 +43,11 @@
 //! \param[out]    v1,v2,v3 CONTRAVARIANT primitive velocity
 //! \param[out]    eint     internal energy density, after the deferred floors
 //! \param[out]    ceil_used, floored  whether the ceiling / any floor fired
+//! \param[out]    tset_used  whether <hydro>/efloor_as_tfloor rebuilt e from T
 //! \param[out]    de       energy CREATED by the floors (negative if removed)
+//! \param[out]    vde      kinetic energy the VELOCITY CEILING clipped -- removed from
+//!                         the conserved total, or converted to internal energy under
+//!                         <hydro>/vceil_thermalise
 
 KOKKOS_INLINE_FUNCTION
 void GnomonicRaiseVelFloors(const Real c, const EOS_Data &eos_, const bool gen_,
@@ -52,10 +56,12 @@ void GnomonicRaiseVelFloors(const Real c, const EOS_Data &eos_, const bool gen_,
     Real &m1, Real &m2, Real &m3, Real &etot,
     Real &v1, Real &v2, Real &v3, Real &eint,
     Real &pnew, Real &g1new, Real &temp,
-    bool &ceil_used, bool &floored, Real &de) {
+    bool &ceil_used, bool &floored, bool &tset_used, Real &de, Real &vde) {
   ceil_used = false;
   floored = false;
+  tset_used = false;
   de = 0.0;
+  vde = 0.0;
   pnew = 0.0;
   g1new = 0.0;
   temp = -1.0;
@@ -83,14 +89,18 @@ void GnomonicRaiseVelFloors(const Real c, const EOS_Data &eos_, const bool gen_,
   // metric-correct kinetic energy formed above, which is the quantity ConsToPrim
   // cannot build on this grid.  Scale the momentum by fs = vceil/|v| and remove
   // (1 - fs^2) KE from the conserved total, so the INTERNAL energy below is exactly
-  // what it would have been.
+  // what it would have been.  Under <hydro>/vceil_thermalise the conserved total is
+  // left alone instead and the clipped kinetic energy lands in `eint` below; the
+  // floors that follow then run on that larger internal energy, exactly as they do in
+  // SingleC2P_GeneralHyd.  See EOS_Data::vceil_thermalise.
   if (vceil_ > 0.0 && act_ && ekin > 0.0 && d > 0.0) {
     const Real vsq = 2.0*ekin/d;
     if (vsq > vceil_*vceil_) {
       const Real fs = vceil_/sqrt(vsq);
       m1 *= fs; m2 *= fs; m3 *= fs;
       v1 *= fs; v2 *= fs; v3 *= fs;
-      etot -= (1.0 - fs*fs)*ekin;
+      if (!eos_.vceil_thermalise) etot -= (1.0 - fs*fs)*ekin;
+      vde += (1.0 - fs*fs)*ekin;
       ekin *= fs*fs;
       ceil_used = true;
     }
@@ -126,10 +136,15 @@ void GnomonicRaiseVelFloors(const Real c, const EOS_Data &eos_, const bool gen_,
   // cannot keep sinking and re-trip the floor on every cycle.
   if (gen_) {
     bool stale = false;
+    bool tclamped = false;
     const bool e_positive = (eint > 0.0);
     stale = !e_positive;
     if (e_positive) {
-      eos_.TemperaturePressureGamma1(d, eint, twarm, temp, pnew, g1new);
+      // the CLAMP-REPORTING form: on the cubed sphere this routine, not ConsToPrim, is
+      // where the floors are actually applied, so it is also where the table clamp has
+      // to be seen.  The six-argument overload wraps this one, so the arithmetic is
+      // unchanged.
+      eos_.TemperaturePressureGamma1(d, eint, twarm, temp, pnew, g1new, tclamped);
     }
     if (!e_positive || pnew < eos_.pfloor) {
       const Real efl = eos_.EnergyFromPressure(d, eos_.pfloor, temp);
@@ -160,10 +175,30 @@ void GnomonicRaiseVelFloors(const Real c, const EOS_Data &eos_, const bool gen_,
       temp = eos_.tfloor;
       stale = true;
     }
+    // <hydro>/efloor_as_tfloor, the deferred half: see the note on
+    // EOS_Data::efloor_as_tfloor and the identical block in SingleC2P_GeneralHyd.  On
+    // the cubed sphere the internal energy this routine holds is the metric-correct one
+    // and the one the conserved energy is rebuilt from, so this is THE place the repair
+    // has to happen for a cubed-sphere run.
+    // whether a FLOOR fired, as opposed to this repair: FOFC flags cells on `floored`
+    // and the table clamp is not a floor -- it fires wherever the trial state leaves the
+    // tabulated range, which in the draining top atmosphere is a fifth of the grid.
+    // Folding it into `floored` put 5.3e7 FOFC firings into the first arm that ran with
+    // this switch on, and FOFC is a flux downgrade, not a diagnostic.
+    const bool floor_fired = stale;
+    if (eos_.efloor_as_tfloor && (stale || tclamped)) {
+      const Real tset = (temp > eos_.tfloor) ? temp : eos_.tfloor;
+      const Real ets = eos_.EnergyFromTemperature(d, tset);
+      de += ets - eint;
+      eint = ets;
+      temp = tset;
+      tset_used = true;
+      stale = true;
+    }
     if (stale) {
       eos_.PressureAndGamma1(d, eint, temp, pnew, g1new);
       etot = eint + ekin;
-      floored = true;
+      floored = floor_fired;
     }
     if (mom_scaled) { floored = true; }
   } else {

@@ -55,11 +55,12 @@ void GeneralHydro::ConsToPrimFloors(DvceArray5D<Real> &cons, DvceArray5D<Real> &
   const int nkji = (ku - kl + 1)*nji;
   const int nmkji = nmb*nkji;
 
-  int nfloord_=0, nfloore_=0, nfloort_=0, nceilv_=0, ntclamp_=0;
+  int nfloord_=0, nfloore_=0, nfloort_=0, nceilv_=0, ntclamp_=0, ntset_=0;
   Real efloor_de_=0.0;
+  Real vceil_de_=0.0;
   Kokkos::parallel_reduce("hyd_c2p_gen",Kokkos::RangePolicy<>(DevExeSpace(), 0, nmkji),
   KOKKOS_LAMBDA(const int &idx, int &sumd, int &sume, int &sumt, int &sumv,
-                int &sumc, Real &sumde) {
+                int &sumc, int &sumts, Real &sumde, Real &sumvde) {
     int m = (idx)/nkji;
     int k = (idx - m*nkji)/nji;
     int j = (idx - m*nkji - k*nji)/ni;
@@ -81,8 +82,9 @@ void GeneralHydro::ConsToPrimFloors(DvceArray5D<Real> &cons, DvceArray5D<Real> &
     Real pgas, g1;
     Real temp;
     bool dfloor_used=false, efloor_used=false, tfloor_used=false, mom_scaled=false;
-    bool vceil_used=false, vceil_test=false, tclamp_used=false;
+    bool vceil_used=false, vceil_test=false, tclamp_used=false, tset_used=false;
     Real efloor_de=0.0;
+    Real vceil_de=0.0;
     Real dfloor_fv=1.0;
     // The floor-TEST pass (FOFC) must never hand garbage to the tabulated inversion: a
     // non-finite or non-positive trial state has no temperature to converge to, and the
@@ -99,13 +101,16 @@ void GeneralHydro::ConsToPrimFloors(DvceArray5D<Real> &cons, DvceArray5D<Real> &
     // the cached temperature in this cell warm starts the T(d,e) root find
     SingleC2P_GeneralHyd(u, eos, w, wtemp_(m,k,j,i), temp, pgas, g1,
                          dfloor_used, efloor_used, tfloor_used, efloor_de, mom_scaled,
-                         dfloor_fv, vceil_used, vceil_test, tclamp_used);
+                         dfloor_fv, vceil_used, vceil_test, tclamp_used, tset_used,
+                         vceil_de);
     // <hydro>/dfloor_keep_velocity on the cubed sphere: the metric-correct part of the
     // correction is applied by GnomonicEquiangleRaiseVel, which needs fv per cell.  Not
     // on the floor-TEST pass (FOFC): that one is handed scratch conserved data and is
     // followed by no RaiseVel, so the fv it computed must not reach one.
     if (keepv_defer_ && !only_testfloors) dfl_fv_(m,k,j,i) = dfloor_fv;
     sumde += efloor_de;
+    // the energy the velocity ceiling clipped: see EventCounters::vceil_de
+    sumvde += vceil_de;
 
     // set FOFC flag and quit loop if this function called only to check floors
     if (only_testfloors) {
@@ -151,6 +156,13 @@ void GeneralHydro::ConsToPrimFloors(DvceArray5D<Real> &cons, DvceArray5D<Real> &
       if (tclamp_used) {
         sumc++;
       }
+      // <hydro>/efloor_as_tfloor rebuilt e from the temperature: the conserved energy
+      // has to follow, exactly as it does for the floors above (off the cubed sphere;
+      // there the write is GnomonicEquiangleRaiseVel's, see defer_cons_floors)
+      if (tset_used) {
+        if (!eos.defer_cons_floors) cons(m,IEN,k,j,i) = u.e;
+        sumts++;
+      }
       // store primitive state in 3D array
       prim(m,IDN,k,j,i) = w.d;
       prim(m,IVX,k,j,i) = w.vx;
@@ -173,8 +185,8 @@ void GeneralHydro::ConsToPrimFloors(DvceArray5D<Real> &cons, DvceArray5D<Real> &
       }
     }
   }, Kokkos::Sum<int>(nfloord_), Kokkos::Sum<int>(nfloore_), Kokkos::Sum<int>(nfloort_),
-     Kokkos::Sum<int>(nceilv_), Kokkos::Sum<int>(ntclamp_),
-     Kokkos::Sum<Real>(efloor_de_));
+     Kokkos::Sum<int>(nceilv_), Kokkos::Sum<int>(ntclamp_), Kokkos::Sum<int>(ntset_),
+     Kokkos::Sum<Real>(efloor_de_), Kokkos::Sum<Real>(vceil_de_));
 
   // store appropriate counters
   if (only_testfloors) {
@@ -185,7 +197,9 @@ void GeneralHydro::ConsToPrimFloors(DvceArray5D<Real> &cons, DvceArray5D<Real> &
     pmy_pack->pmesh->ecounter.neos_tfloor += nfloort_;
     pmy_pack->pmesh->ecounter.neos_vceil  += nceilv_;
     pmy_pack->pmesh->ecounter.neos_tclamp += ntclamp_;
+    pmy_pack->pmesh->ecounter.neos_tset += ntset_;
     pmy_pack->pmesh->ecounter.efloor_de += efloor_de_;
+    pmy_pack->pmesh->ecounter.vceil_de += vceil_de_;
   }
 
   return;

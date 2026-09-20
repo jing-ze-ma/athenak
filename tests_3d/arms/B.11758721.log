@@ -1,0 +1,97 @@
+### FRESH START (job 11758721)
+Mesh: spherical-polar x3-face theta correction = rotate
+
+Cubed sphere: Root grid = 6 x 1 x (2 x 2) MeshBlocks
+Total number of MeshBlocks = 24
+Number of logical  levels of refinement = 1 (2 levels total)
+Number of physical levels of refinement = 0 (1 levels total)
+Number of parallel ranks = 2
+  Rank = 0: 12 MeshBlocks, cost = 12
+  Rank = 1: 12 MeshBlocks, cost = 12
+Load Balancing:
+  Maximum normalized cost = 1, Average = 1
+General EOS: tabulated on 501 x 676 nodes (41 MB), log10 rho[cgs] in [-13, -3], log10 T[K] in [3.8, 6.5]
+             X = 0, Y = 0.98, Z = 0.02, H2 off, ionization on, radiation on
+             radiation TAPERED off between rho = 1.93e-09 (w = 1, LTE) and rho = 4.97e-10 g/cm^3 (w = 0, the two-stream owns it)
+             metal ionization off
+             mu at the grid centre = 1.35912, n_e/n_tot = 0.665534
+Conduction: transverse solver = ADI (lod2, theta = 1, sweep pairs/stage = 3), blocks per line = 2 (x2), 2 (x3)
+General EOS: tabulated on 501 x 676 nodes (41 MB), log10 rho[cgs] in [-13, -3], log10 T[K] in [3.8, 6.5]
+             X = 0, Y = 0.98, Z = 0.02, H2 off, ionization on, radiation on
+             radiation TAPERED off between rho = 1.93e-09 (w = 1, LTE) and rho = 4.97e-10 g/cm^3 (w = 0, the two-stream owns it)
+             metal ionization off
+             mu at the grid centre = 1.35912, n_e/n_tot = 0.665534
+red_giant: opacity table '/viper/u2/jinma/ATHENAK/bench/hestar_fecz/rosseland_he_x0.0_z0.02.txt', 217 x 481 nodes, log10 T 2.6..8, log10 rho -24..0 (200 rows prepended below the file's -14 at the floor, so the clamp cannot hand back real opacity for a thin cell); 41020 prepended nodes (rho below the file) set to problem/opac_floor = 1e-05 cm^2/g (optically thin; the merge edge-filled them)
+red_giant: opacity table '/viper/u2/jinma/ATHENAK/bench/hestar_fecz/rosseland_he_x0.0_z0.02.txt', 217 x 481 nodes, log10 T 2.6..8, log10 rho -24..0 (200 rows prepended below the file's -14 at the floor, so the clamp cannot hand back real opacity for a thin cell); 41020 prepended nodes (rho below the file) set to problem/opac_floor = 1e-05 cm^2/g (optically thin; the merge edge-filled them)
+red_giant: RT radiative momentum source ON -- (1-w) rho kappa F/c + Prad grad w, with w from the EOS taper; g(r) = GM/r^2
+red_giant: F_bot = 1.30528e+15 is carried by the TWO-STREAM's lower boundary (rt_bottom_flux); the conduction wall face injects nothing.  This assumes <hydro>/rad_tau_lo = 1.000e+05 is DEEPER than the domain, so the blend weight is 0 on every face.
+red_giant: the two-stream is applied STRANG-SPLIT around the time integrator (dt/2 before, dt/2 after) and NOT inside the RK stages; the transverse operator moves with it
+red_giant: GREY two-stream (problem/rt_grey), opacity from the conduction module's table, 2-point angular quadrature
+           column above the domain: the ghost's own Planck function (it mirrors the top cell back)
+red_giant: initial stratification READ FROM /viper/u2/jinma/ATHENAK/bench/hestar_presn/ic_he4_presn_sph.txt (15999 nodes, 8.30108e+10 .. 2.43252e+11 cm); the hydrostatic+MLT march, problem/ptop and the outer-wall gas-solution check are all OVERRIDDEN
+red_giant: no cell is denser than the opacity table's valid window logR = [-8, 1.5]; cells below it carry problem/opac_floor
+red_giant: OPEN outer boundary -- the ghosts continue the top active cell hydrostatically at its own temperature, outflow only. Mass and energy CAN leave the domain; problem/face_budget reports how much.
+red_giant: M = 6.2651e+33 g, L = 2.3066e+38 erg/s, Teff = 48978 K, rin = 1.18585e+11 cm, rout = 2.4057e+11 cm
+           wall p/T: outer 7510 / 41382.7 K, inner 8.35805e+06 / 237659 K
+           tau = 2/3 at r = 2.37122e+11 cm, T = 49199.2 K; radiative-convective boundary at r = 2.29155e+11 cm
+red_giant: no cell is denser than the opacity table's valid window logR = [-8, 1.5]; cells below it carry problem/opac_floor
+red_giant: chart-free seed + 32 random plane waves, lambda in [2.5e+11, 7.4e+11] cm, seed 1234, amp 1
+
+Setup complete, executing task list(s)...
+
+elapsed=8.258974e+00 cycle=0 time=0.000000e+00 dt=1.292197e+01
+### two_stream_rt: thermodynamic state read from u0 (CONSERVED, problem/rt_use_cons = true)
+deep_hot_jupiter_rt: RT split path ON, 1 chain block(s) of 4 -> 1x the thread count of the monolithic kernel
+### two_stream_rt: rt_implicit_column = 3, the EXACT block-tridiagonal column solve (intensities as unknowns); solver pcr nseg 32 hybrid_tau 0.000000e+00 mixed(2); workspace 2.559237e+02 + 1.427374e+02 MB
+  red_giant top v1 sponge active: r >= 2.39020e+11, f = 1 at tau <= 3.3333e-02, timescale 2.0000e+01 s
+face budget: gain/L  inner=-5.237915e-03 outer=2.080945e-07 | erg in=-2.041690e+37 out=4.983106e+32 | g in=-1.129271e+22 out=2.727495e+17 | L_rad,out/L = 9.382643e-01 L_rad,cut/L = 8.681909e-01 (t = 1.292197e+01 s)
+face budget: gain/L  inner=-8.430974e-03 outer=6.299018e-07 | erg in=-4.580798e+37 out=2.395350e+33 | g in=-2.454762e+22 out=1.313332e+18 | L_rad,out/L = 9.062321e-01 L_rad,cut/L = 8.630162e-01 (t = 2.597860e+01 s)
+face budget: gain/L  inner=-1.123075e-02 outer=8.707765e-07 | erg in=-8.025947e+37 out=5.066547e+33 | g in=-4.208814e+22 out=2.778458e+18 | L_rad,out/L = 8.741834e-01 L_rad,cut/L = 8.586289e-01 (t = 3.927785e+01 s)
+face budget: gain/L  inner=-1.373319e-02 outer=1.028229e-06 | erg in=-1.230780e+38 out=8.272451e+33 | g in=-6.355541e+22 out=4.536755e+18 | L_rad,out/L = 8.474711e-01 L_rad,cut/L = 8.547125e-01 (t = 5.279510e+01 s)
+face budget: gain/L  inner=-1.597173e-02 outer=1.147923e-06 | erg in=-1.736050e+38 out=1.190393e+34 | g in=-8.865586e+22 out=6.528347e+18 | L_rad,out/L = 8.244759e-01 L_rad,cut/L = 8.511539e-01 (t = 6.651019e+01 s)
+face budget: gain/L  inner=-1.796219e-02 outer=1.252569e-06 | erg in=-2.311935e+38 out=1.591979e+34 | g in=-1.171215e+23 out=8.730627e+18 | L_rad,out/L = 8.042211e-01 L_rad,cut/L = 8.478840e-01 (t = 8.040986e+01 s)
+face budget: gain/L  inner=-1.708954e-03 outer=1.357909e-06 | erg in=-2.367379e+38 out=2.032533e+34 | g in=-1.204208e+23 out=1.114649e+19 | L_rad,out/L = 7.861233e-01 L_rad,cut/L = 8.448573e-01 (t = 9.447538e+01 s)
+face budget: gain/L  inner=-3.663027e-03 outer=1.471876e-06 | erg in=-2.487475e+38 out=2.515099e+34 | g in=-1.274878e+23 out=1.379261e+19 | L_rad,out/L = 7.699057e-01 L_rad,cut/L = 8.417701e-01 (t = 1.086893e+02 s)
+face budget: gain/L  inner=-5.486522e-03 outer=1.594530e-06 | erg in=-2.669053e+38 out=3.042814e+34 | g in=-1.380657e+23 out=1.668619e+19 | L_rad,out/L = 7.552702e-01 L_rad,cut/L = 8.388005e-01 (t = 1.230374e+02 s)
+face budget: gain/L  inner=-7.173066e-03 outer=1.474452e-06 | erg in=-2.908448e+38 out=3.534901e+34 | g in=-1.518847e+23 out=1.938430e+19 | L_rad,out/L = 7.422182e-01 L_rad,cut/L = 8.360609e-01 (t = 1.375064e+02 s)
+face budget: gain/L  inner=-8.765421e-03 outer=1.318050e-06 | erg in=-3.203177e+38 out=3.978082e+34 | g in=-1.687540e+23 out=2.181417e+19 | L_rad,out/L = 7.306489e-01 L_rad,cut/L = 8.335002e-01 (t = 1.520837e+02 s)
+face budget: gain/L  inner=-1.026118e-02 outer=1.164744e-06 | erg in=-3.550480e+38 out=4.372305e+34 | g in=-1.884765e+23 out=2.397553e+19 | L_rad,out/L = 7.203592e-01 L_rad,cut/L = 8.310775e-01 (t = 1.667574e+02 s)
+face budget: gain/L  inner=-1.163695e-02 outer=1.017381e-06 | erg in=-3.946634e+38 out=4.718650e+34 | g in=-2.108112e+23 out=2.587434e+19 | L_rad,out/L = 7.114759e-01 L_rad,cut/L = 8.288123e-01 (t = 1.815162e+02 s)
+face budget: gain/L  inner=-1.289700e-02 outer=8.768161e-07 | erg in=-4.387905e+38 out=5.018652e+34 | g in=-2.355248e+23 out=2.751903e+19 | L_rad,out/L = 7.036649e-01 L_rad,cut/L = 8.267159e-01 (t = 1.963497e+02 s)
+[... face-budget lines removed; every number in README.md was read off the full log ...]
+### dt COLLAPSE cycle=190 time=1723.03 dtold=1.26915 dt=0.130482 | hydro=0.130482 mhd=-1 cond=8.98847e+306 visc=-1 srcterms=-1  (rank 1)
+    hydro dt is set by cell (m,k,j,i) = (1,13,15,24) gid = 13
+    r=1.63758e+11 rho=5.37469e-10 T=5.24607e+11 p=69.4262 cs=465713 v=(-5.08928e+09,5.28677e+06,-2.3981e+06)
+--
+### dt COLLAPSE cycle=205 time=1726.11 dtold=0.21805 dt=0.019955 | hydro=0.019955 mhd=-1 cond=8.98847e+306 visc=-1 srcterms=-1  (rank 1)
+    hydro dt is set by cell (m,k,j,i) = (1,11,16,54) gid = 13
+    r=2.1102e+11 rho=9.72695e-09 T=1.56485e+14 p=3.16444e+10 cs=2.08272e+09 v=(1.17021e+10,1009.81,-430.196)
+--
+### dt COLLAPSE cycle=1993 time=1.733583e+03 dtold=2.580314e-03 dt=2.109757e-04 | hydro=2.109757e-04 mhd=-1.000000e+00 cond=8.988466e+306 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+    hydro dt is set by cell (m,k,j,i) = (6,18,12,59) gid = 6
+    r=2.152152e+11 rho=5.742953e-12 T=2.629264e+14 p=1.110997e+03 cs=1.795615e+07 v=(1.092859e+12,4.984464e+12,-1.063884e+11)
+--
+### dt COLLAPSE cycle=2215 time=1734.04 dtold=0.00299763 dt=0.000459496 | hydro=0.000459496 mhd=-1 cond=8.98847e+306 visc=-1 srcterms=-1  (rank 1)
+    hydro dt is set by cell (m,k,j,i) = (1,13,15,72) gid = 13
+    r=2.23779e+11 rho=2.32792e-10 T=2.62926e+14 p=45034.5 cs=1.79561e+07 v=(-3.91019e+11,8.18574e+09,3.61524e+09)
+
+elapsed=8.640309e+01 cycle=700 time=1.730097e+03 dt=5.083428e-03
+elapsed=1.011921e+02 cycle=800 time=1.730466e+03 dt=3.169083e-03
+elapsed=1.175369e+02 cycle=900 time=1.730808e+03 dt=3.289998e-03
+elapsed=1.349797e+02 cycle=1000 time=1.731120e+03 dt=3.220640e-03
+elapsed=1.535890e+02 cycle=1100 time=1.731432e+03 dt=2.889426e-03
+elapsed=1.730612e+02 cycle=1200 time=1.731720e+03 dt=3.007262e-03
+elapsed=1.928714e+02 cycle=1300 time=1.731995e+03 dt=3.657591e-03
+elapsed=2.127620e+02 cycle=1400 time=1.732239e+03 dt=2.432050e-03
+elapsed=2.326384e+02 cycle=1500 time=1.732484e+03 dt=2.537433e-03
+elapsed=2.525304e+02 cycle=1600 time=1.732726e+03 dt=1.645712e-03
+elapsed=2.721996e+02 cycle=1700 time=1.732950e+03 dt=2.339419e-03
+elapsed=2.915648e+02 cycle=1800 time=1.733166e+03 dt=2.144526e-03
+elapsed=3.104042e+02 cycle=1900 time=1.733403e+03 dt=1.970818e-03
+elapsed=3.291135e+02 cycle=2000 time=1.733589e+03 dt=1.863214e-03
+elapsed=3.478941e+02 cycle=2100 time=1.733783e+03 dt=2.610911e-03
+elapsed=3.669245e+02 cycle=2200 time=1.734000e+03 dt=1.876195e-03
+elapsed=3.856646e+02 cycle=2300 time=1.734171e+03 dt=2.115358e-03
+elapsed=4.041242e+02 cycle=2400 time=1.734351e+03 dt=2.424952e-03
+elapsed=4.227568e+02 cycle=2500 time=1.734566e+03 dt=1.877800e-03
+elapsed=4.415056e+02 cycle=2600 time=1.734788e+03 dt=2.162658e-03

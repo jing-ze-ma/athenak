@@ -168,8 +168,9 @@ void MeshBoundaryValuesCC::ConsToPrimCoarseBndry(const DvceArray5D<Real> &cons,
             // temperature solve; a non-positive guess tells the EOS to
             // bracket for itself. Both it and the derived quantities are
             // discarded here.
-            Real pgas_, g1_, temp_, de_ = 0.0;
+            Real pgas_, g1_, temp_, de_ = 0.0, vde_ = 0.0;
             bool mscl_ = false, vcl_ = false, vclt_ = false, tclm_ = false;
+            bool tset_ = false;
             Real dfv_ = 1.0;
             // see the note on EOS_Data::floors_legacy
             if (eos.floors_legacy) {
@@ -178,7 +179,7 @@ void MeshBoundaryValuesCC::ConsToPrimCoarseBndry(const DvceArray5D<Real> &cons,
             } else {
               SingleC2P_GeneralHyd(u, eos, w, -1.0, temp_, pgas_, g1_,
                                    dfloor_used, efloor_used, tfloor_used, de_, mscl_,
-                                   dfv_, vcl_, vclt_, tclm_);
+                                   dfv_, vcl_, vclt_, tclm_, tset_, vde_);
             }
           } else {
             Real dfv2_ = 1.0;

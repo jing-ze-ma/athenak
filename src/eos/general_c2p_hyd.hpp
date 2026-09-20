@@ -126,12 +126,18 @@ void SingleC2P_GeneralHydLegacy(HydCons1D &u, const EOS_Data &eos, HydPrim1D &w,
 //! floor, and `mom_scaled` says whether the momentum was rescaled to pay for it
 //! (<block>/efloor_from_ekin), in which case the caller must write u.mx/my/mz back.
 
+//! `vceil_de` accumulates the kinetic energy density the VELOCITY CEILING clipped --
+//! removed from the conserved total by default, converted to internal energy under
+//! <block>/vceil_thermalise.  It is the same number either way; what changes is where
+//! it goes.  See EOS_Data::vceil_thermalise.
+
 KOKKOS_INLINE_FUNCTION
 void SingleC2P_GeneralHyd(HydCons1D &u, const EOS_Data &eos, HydPrim1D &w,
                           const Real tguess, Real &temp, Real &pgas, Real &g1,
                           bool &dfloor_used, bool &efloor_used, bool &tfloor_used,
                           Real &efloor_de, bool &mom_scaled, Real &dfloor_fv,
-                          bool &vceil_used, bool &vceil_test, bool &tclamp_used) {
+                          bool &vceil_used, bool &vceil_test, bool &tclamp_used,
+                          bool &tset_used, Real &vceil_de) {
   // THE DENSITY FLOOR.  Default: raise u.d and leave m and E alone -- which changes the
   // velocity and creates internal energy, because the kinetic share of the fixed total
   // drops when rho goes up.  <block>/dfloor_keep_velocity instead scales the momentum by
@@ -182,6 +188,8 @@ void SingleC2P_GeneralHyd(HydCons1D &u, const EOS_Data &eos, HydPrim1D &w,
   // GnomonicEquiangleRaiseVel instead, which owns the metric.
   // `vceil_test` is the DECISION alone, recorded even where the ceiling itself is
   // deferred, so that the FOFC floor-test pass can flag the cell.  It performs no write.
+  // <block>/vceil_thermalise instead leaves the TOTAL energy alone, so that w.e below
+  // picks the clipped kinetic energy up as internal energy; see EOS_Data.
   if (eos.vceil > 0.0) {
     const Real vsq = SQR(w.vx) + SQR(w.vy) + SQR(w.vz);
     if (vsq > SQR(eos.vceil)) {
@@ -190,7 +198,8 @@ void SingleC2P_GeneralHyd(HydCons1D &u, const EOS_Data &eos, HydPrim1D &w,
         const Real fs = eos.vceil/sqrt(vsq);
         u.mx *= fs; u.my *= fs; u.mz *= fs;
         w.vx *= fs; w.vy *= fs; w.vz *= fs;
-        u.e -= (1.0 - fs*fs)*e_k;
+        if (!eos.vceil_thermalise) u.e -= (1.0 - fs*fs)*e_k;
+        vceil_de += (1.0 - fs*fs)*e_k;
         e_k *= fs*fs;
         vceil_used = true;
         mom_scaled = true;
@@ -271,6 +280,28 @@ void SingleC2P_GeneralHyd(HydCons1D &u, const EOS_Data &eos, HydPrim1D &w,
   if (eos.ApplyEntropyFloor(w.d, di, w.e)) {
     temp = eos.Temperature(w.d, w.e, temp);
     efloor_used = true;
+    stale = true;
+  }
+
+  // <block>/efloor_as_tfloor: REBUILD THE FLOORED STATE FROM ITS TEMPERATURE.  See the
+  // note on EOS_Data::efloor_as_tfloor.  Everything above sets the internal energy and
+  // then reports whatever temperature the table could form from it; when a floor fired,
+  // or when the inversion had to be CLAMPED to the table's lowest/highest tabulated row,
+  // those two no longer describe the same gas.  Invert the relation instead: take the
+  // temperature that was settled on -- at least tfloor, and the clamp row where the
+  // clamp bound -- and set e to e(rho,T) for it, so that re-inverting this cell returns
+  // exactly this T and the p, Gamma_1 and sound speed below belong to the energy the
+  // cell actually carries.  At the LOW edge this raises e (it is the temperature floor
+  // doing what the pressure floor could not reach); at the HIGH edge it lowers e, which
+  // removes energy the table cannot represent rather than leaving a saturated state.
+  if (eos.efloor_as_tfloor && (stale || tclamp_used)) {
+    const Real tset = (temp > eos.tfloor) ? temp : eos.tfloor;
+    const Real ets = eos.EnergyFromTemperature(w.d, tset);
+    if (!eos.defer_cons_floors) efloor_de += ets - w.e;
+    w.e = ets;
+    if (!eos.defer_cons_floors) u.e = w.e + e_k;
+    temp = tset;
+    tset_used = true;
     stale = true;
   }
 

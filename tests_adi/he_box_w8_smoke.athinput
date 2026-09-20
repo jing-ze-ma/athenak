@@ -1,0 +1,461 @@
+# =================================================================================
+# BOX_W8 (2026-09-17): the He-star (3 Msun) FeCZ wide-box production RESTARTED FROM
+# t = 0.  Base = ../box_w4/he_box_w4.athinput (the from-scratch input; same
+# ic_profile, same box, same physics) + every parameter ../box_w4_in/
+# he_box_w4_in2.athinput added later.  THE COMPLETE LIST OF DIFFERENCES FROM box_w4:
+#   <hydro>   wb_cache_every      = 0     (was 10)  (the reason box_w5 existed)
+#   <problem> THE W8 SEED: vpert_var = v1 (VELOCITY), kmin/kmax = 4/6 (the most unstable
+#             scale), window tau 5-50 (the driving layer), vpert = 1.0e-3 of the local
+#             c_s  *** THE REASON box_w8 EXISTS ***
+#             (see the W8 SEED comment block in <problem> below)
+#   <problem> rt_profile_dt       = 10.0          (from box_w4_in)
+#   <problem> rt_profile_file     = rt_profile.bin(from box_w4_in)
+#   <problem> bc_mode_bot         = 5            (from box_w4_in: inflow controller)
+#   <problem> bc_inflow_time      = 1128         (from box_w4_in)
+#   <problem> bc_inflow_ghost     = false        (from box_w4_in)
+#   <problem> bc_inflow_print     = 100          (from box_w4_in)
+#   <problem> vdamp_top_tau       = 0.1          (from box_w4_in: top sponge)
+#   <problem> vdamp_top_time      = 20           (from box_w4_in)
+#   <problem> vdamp_bot_cells     = 48           (from box_w4_in link 2: bottom sponge)
+#   <problem> vdamp_bot_time      = 20.0         (from box_w4_in link 2)
+#   <problem> vdamp_bot_mean_only = false        (from box_w4_in link 2)
+#   <problem> rt_impl_warm        = 1            (accelerator; He gets warm + mixed)
+#   <problem> rt_impl_mixed       = 2            (accelerator)
+# NO rt_col3_hybrid_tau: the hybrid thick-column branch is a B-star-only acceleration.
+# Nothing else changes: same mesh, same tlim = 1.5044e5 s = 40 He turnovers, same
+# output cadences.
+#
+# WHY wb_cache_every = 0.  bench/fmode_0916b/wb/RESULTS.txt (jobs 11728412/13/14, the
+# binary used here, md5 887d1471): on the B-star box the (1,1) surface f-mode grows at
+# gamma = +0.864 +- 0.108 per turnover with wb_cache_every = 10 (the value every
+# previous production carried) and is NULL -- gamma = -0.039 +- 0.081, 6.7 sigma below
+# the reference, saturated amplitude 3.6x smaller -- with wb_cache_every = 0, i.e. with
+# the well-balanced hydrostatic background rebuilt EVERY STAGE.  wb_cache_every = 1 and
+# the WB scheme off entirely are equally null, so the driver is the STALENESS of the
+# cached background (a lag of 10*dt in a flowing box), not the WB reconstruction
+# itself.  The rebuild costs nothing measurable (81-86 ms/cycle across all four arms).
+# NOTE: this box ALSO carries a slower (0,3) mode that does not follow the f-mode law;
+# box_w8 tests whether a fresh background removes that one too.
+#
+# NOTE ON THE INFLOW CONTROLLER FROM t = 0.  bc_mode_bot = 5 fixes M0 at the initial
+# mass, so the controller is inert until the open top has actually drained something;
+# starting it at t = 0 is therefore safe and keeps the box at its initial mass from
+# the first turnover instead of recovering a 22 % deficit later, as box_w4_in had to.
+# =================================================================================
+# hestar_fecz BOX_W4: box_m3 with a 4x WIDER box and a DIRECT (ADI) transverse solve.
+# Derived verbatim from ../box_m3/he_box_m3.athinput; every change is marked "W4:".
+# STAGED, NOT SUBMITTED.
+#
+# hestar_fecz BOX_M3 (original header follows): the 3 Msun stripped-HELIUM-star iron convection zone (FeCZ) as a
+# 3-D Cartesian plane-parallel local box, with the MODE-3 EXACT block-tridiagonal
+# two-stream column solve + the PCR column solver, mirroring the B-star production
+# bench/bstar_fecz/prod_m3/fecz_rt.athinput.pcrfix.   STAGED, NOT SUBMITTED.
+#
+# TEMPLATE  = bench/bstar_fecz/prod_m3/fecz_rt.athinput.pcrfix (mode 3 + PCR nseg 32 +
+#             rt_bottom_flux + u-form radial conduction + implicit RKL1 transverse
+#             radiative diffusion, tau-tapered).
+# PHYSICS   = the 3 Msun He star (Woosley 2019 He/2: log L = 3.91, Teff = 81283 K,
+#             log g = 5.60, X = 0, Y = 0.98, Z = 0.02), taken verbatim from
+#             ../qual_m3/Q2p.athinput, the 1-D qualification arm that ran HEALTHY with
+#             mode 3 + PCR + the EOS radiation taper + the tapered IC + rt_rad_force
+#             (Ftop/Fbot 0.995-1.000, nclip = 0, nfloor = 0, it_mean = 3 for 2845 cycles).
+# GEOMETRY  = ../he3_2turn/fecz_rt.athinput, the He 3-D box that was sized (and staged,
+#             never launched) on 09-13.  Nothing about the box shape is new here.
+#
+# GEOMETRY (z = 0 is tau = 2/3; the code's x1 IS this z, gravity is constant -g0 x1-hat)
+#   FeCZ            z = -1.392e8 .. -3.372e7 cm  T = 2.15e5 .. 1.13e5 K  tau = 64.3 .. 4.38
+#                   v_MLT peak at z = -1.024e8, T = 1.883e5 K, Hp = 6.9903e7 cm,
+#                   v_MLT = 1.8586e4 cm/s (Mach 3.0e-3);  ENTIRELY INSIDE THE BOX
+#   box bottom      z = -3.1410310e8 = 2 Hp(base, 8.7438e7) below the FeCZ base;
+#                   T = 3.2039e5 K, rho = 1.5097e-6, p = 5.6535e7, tau = 321
+#   box top         z = +4.1290910e7, tau = 9.95e-3; T = 6.8605e4 K, rho = 2.0786e-9
+#   Lz = 3.5539401e8 cm = 6.77 pressure scale heights
+#   min(Hp) in the box = 2.12373e7 cm at z = +3.163e6, tau = 0.522
+#   Lx = Ly = 2.7582819e8 cm = 3.95 Hp at the FeCZ v-peak (6.9903e7).  The B star's box is
+#     4.04 Hp(FeCZ) wide, so the aspect ratio is the SAME to 2 %; the He box was sized by
+#     the same rule and is reused unchanged.
+#   dz = dx = dy = 2.6521941e6 cm -> 8.01 cells per min(Hp), 26 per Hp(FeCZ), 35 per
+#     Hp(base).  Identical isotropic cell and identical 8 cells/min(Hp) to the B star.
+#   134 x 104 x 104 = 1.449344e6 cells (the B star is 336 x 216 x 216 = 1.568e7, 10.8x);
+#     nx1 + 2*nghost = 140 <= 520 (two-stream column-tier limit) and 134 < the ~264-cell
+#     LDS ceiling, so <hydro>/scratch_level is NOT needed here (the B star sets it = 1).
+#
+# TIMESCALES  turnover = Hp/v_MLT at the v_MLT PEAK of the FeCZ = 6.9903e7/1.8586e4
+#   = 3.761e3 s (../he3_2turn header, ../REPORT.txt sec. 2).  tlim = 40 turnovers =
+#   1.5044e5 s, the same 40 turnovers the B-star production runs.
+#   IGNORE the start-up line "turnover H_p/v*": it uses v* = (F/rho_base)^(1/3) =
+#   1.18e7 cm/s, not v_MLT (F_conv/F = 5.3e-9), so it is ~450x too fast.
+
+<comment>
+problem = 3 Msun He-star iron convection zone, 3-D local box, mode-3 + PCR two-stream
+
+<job>
+basename  = feczrt
+
+<mesh>
+nghost    = 3                 # fofc + plm needs >= 3
+nx1       = 134               # CHANGED from the B star's 336: the He column is 134 cells
+x1min     = -3.1410310e8      # CHANGED: the He box bottom (../he3_2turn)
+x1max     =  4.1290910e7      # CHANGED: the He box top, tau = 1e-2
+ix1_bc    = user
+ox1_bc    = user
+nx2       = 104               # UNCHANGED (W4 widens the EXTENT, not the count)
+x2min     = 0.0
+x2max     = 1.10331276e9      # W4: 4 x the box_m3 width 2.7582819e8.  nx2 = 104 is
+                              # UNCHANGED, so the horizontal cell grows 4x with it:
+                              # dx = dy = 1.0608776e7 cm against dz = 2.6521941e6, a 4:1
+                              # anisotropic cell.  The box is then 1.1033e9/6.9903e7 =
+                              # 15.78 Hp(FeCZ) wide instead of 3.95, so it holds 4-5 of
+                              # the natural He convective cells (2-3 Mm) instead of ~1:
+                              # box_m3 was too narrow to let the cellular pattern choose
+                              # its own horizontal scale.
+ix2_bc    = periodic
+ox2_bc    = periodic
+nx3       = 104               # UNCHANGED, as nx2
+x3min     = 0.0
+x3max     = 1.10331276e9      # W4: as x2max
+ix3_bc    = periodic
+ox3_bc    = periodic
+
+<meshblock>
+nx1       = 134               # MUST equal <mesh>/nx1: rad_implicit_x1 solves a tridiagonal
+                              # down each column, the two-stream sweeps a whole column
+                              # inside ONE MeshBlock, and rad_sts_perplane needs x1 whole
+                              # so that an x1 index IS a horizontal plane.
+nx2       = 52                # CHANGED from the B star's 108: 104/52 = 2 ...
+nx3       = 26                # CHANGED from 54: 104/26 = 4 -> 2 x 4 = 8 MeshBlocks for
+                              # the 8 ranks (4 apu nodes x 2 GPUs), 1 block per GPU, the
+                              # same decomposition shape the B star uses.
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim       = -1
+tlim       = 1.5044e5         # CHANGED: 40 He turnovers x 3.761e3 s
+dt_min     = 1.0e-6           # CHANGED from the B star's 1e-4: the He dt is ~0.1 s, 15x
+                              # smaller than the B star's 1.5 s (../he3_2turn)
+ndiag      = 500
+nan_check_cycles = 50
+
+<units>
+length_cgs = 1.0
+mass_cgs   = 1.0
+time_cgs   = 1.0
+mu         = 1.0
+
+<hydro>
+eos_rad_rho_hi       = 6.0e-8    # CHANGED from the B star's 1e-8.  THE EOS RADIATION
+eos_rad_rho_lo       = 6.0e-9    # TAPER, verbatim from ../qual_m3/Q2p.athinput: w = 1
+                                 # (full LTE aT^4) at rho >= 6e-8 (tau >= 2), so the LTE
+                                 # radiation pressure is INTACT through the whole He FeCZ
+                                 # (tau 4.4-64); w = 0 at rho <= 6e-9 (tau <= 0.06), where
+                                 # the two-stream owns the radiation.  One decade wide and
+                                 # ENTIRELY ABOVE the driving layer.
+eos                  = general
+general_eos          = table
+gamma                = 1.6666666667      # unused by the table
+eos_h2               = false             # CHANGED from true: X = 0, there is no hydrogen
+eos_ionization       = true              # He I -> II -> III is the whole ionization budget
+eos_metal_ionization = false             # CHANGED from true: dead code at X = 0 (the donor
+                                         # pool is gated on nh_tot > 0)
+eos_radiation        = true              # Prad/Pgas = 0.59 (bottom) .. 6.32 (top)
+eos_xh               = 0.0               # CHANGED from 0.70: the He opacity table is X = 0
+eos_yhe              = 0.98              # CHANGED from 0.286: Z = 1 - Y = 0.02
+eos_logd_min         = -13.0             # CHANGED from -14: the box spans log rho
+eos_logd_max         = -3.0              # = -8.68 .. -5.82
+eos_logt_min         = 3.8               # the box spans log T = 4.84 .. 5.51
+eos_logt_max         = 6.5
+eos_dlog             = 0.02              # 501 x 676 nodes, 41 MB
+#                                        # <hydro>/scratch_level DELIBERATELY ABSENT: the
+#                                        # B star needs it at nx1 = 336; nx1 = 134 fits the
+#                                        # ~264-cell LDS ceiling (../he3_2turn).
+reconstruct = plm
+rsolver     = lhllc                      # all-Mach HLLC: the He convective Mach number is
+                                         # 3.0e-3 (the B star's is 3.4e-2), so plain hllc's
+                                         # pressure diffusion would swamp the buoyancy
+                                         # forcing outright
+etotgrav    = true
+wellbalance_dynamic = true
+wb_x1               = true
+wb_option           = polytropic         # the stratification is RADIATIVE, not isentropic
+wb_cache_every      = 0          # BOX_W8: REBUILD THE WB BACKGROUND EVERY STAGE.
+                                 # box_w4 carried 10; bench/fmode_0916b/wb/RESULTS.txt
+                                 # shows a 10-cycle-stale background drives the (1,1)
+                                 # surface f-mode at +0.864 +- 0.108 / turnover and that
+                                 # 0 (this value) is null at -0.039 +- 0.081, 6.7 sigma
+                                 # below, at no measurable cost.
+isotropic_conduction = radiative
+rad_kappa_src        = table_rho         # the stellar Rosseland table is on (T, rho)
+rad_kappa_fac        = 1.0               # NO BOOST
+rad_flux_inner       = 2.475202e15       # CHANGED from the B star's 4.214e13: F = sigma
+                                         # Teff^4 at Teff = 81283 K, 59x the B star's.
+                                         # The solver must echo T_int = 8.1283e4 K.
+rad_flux_limit       = true
+rad_tau_lo  = 1.0e5                      # WHOLE-COLUMN TWO-STREAM (unchanged from the B
+rad_tau_hi  = 1.0e6                      # star and from ../qual_m3): w(tau) = 0 on every
+                                         # face, the radial conduction operator is INERT,
+                                         # the grey two-stream owns all 134 cells and the
+                                         # internal flux enters at the SWEEP bottom
+                                         # (rt_bottom_flux).
+rad_implicit_x1      = true              # MANDATORY: chi_rad ~ 1e17-1e18 cm^2/s here, so
+                                         # an explicit x1 step would be ~1e-4 s against a
+                                         # 0.11 s hydro CFL.  Column-local, unconditionally
+                                         # stable.  (Inert under the whole-column blend,
+                                         # but it is what makes the blend safe to move.)
+rad_x1_uform         = true              # U-FORM radial conduction (../qual_m3 Q1p2/Q2p)
+rad_x1_kiter         = 2                 # one Picard correction for d ln kappa/d ln T
+rad_cap_ang = 0                          # OFF: replaced by the RKL1 transverse operator
+rad_implicit_ang = true                  # IMPLICIT (RKL1) transverse radiative diffusion
+rad_blend_transverse = false             # MUST BE false HERE, as in the B star: with
+                                         # rad_tau_lo = 1e5 the vertical blend weight is 0
+                                         # on EVERY face, so leaving this at its default
+                                         # (true) would multiply the x2/x3 conductances by
+                                         # 0 and switch horizontal radiative transport OFF
+                                         # in the whole box (conduction.cpp:771).  NOTE:
+                                         # ../qual_m3/base.athinput's footer records
+                                         # "rad_blend_transverse = true" for the 3-D run,
+                                         # but that line was written for the 100/300 deep
+                                         # handover of ../he3_2turn, NOT for the
+                                         # whole-column 1e5/1e6 blend used here.
+rad_gate_rho = 6.0e-9                    # CHANGED from the B star's 1e-9.  Same RULE as
+                                         # the B star, which sets it equal to its own
+                                         # eos_rad_rho_lo: no transverse diffusion below
+                                         # the density at which the two-stream takes over
+                                         # the radiation.  It is an independent safety --
+                                         # the tau taper below already has weight 0 there.
+rad_ang_maxit = 400                      # RKL1 stage cap
+rad_ang_verbose = true
+rad_sts_perplane = true                  # per-plane RKL1 substage counts
+rad_tr_tau_lo = 0                        # W4: TAPER OFF (0/0 = no taper): the
+rad_tr_tau_hi = 0                        # transverse operator now runs EVERYWHERE, at
+                                         # every optical depth.  box_m3 tapered it off
+                                         # above tau 1 because the RKL1 substage count
+                                         # explodes in the thin skin; the ADI solver below
+                                         # is a DIRECT solve whose cost does not depend on
+                                         # the stiffness, so the taper is no longer needed
+                                         # and the thin layers get real horizontal
+                                         # transport instead of none.
+rad_ang_solver = adi                     # W4: DIRECT alternating-direction solve of the
+                                         # transverse system, replacing the RKL1 (sts)
+                                         # loop.  Unconditionally stable, fixed cost per
+                                         # cycle -- which is what makes "operator
+                                         # everywhere" affordable.  Refusals checked
+                                         # (conduction.cpp:445-515): needs rad_implicit_ang
+                                         # (on), forbids rad_sts_all / rad_sts_split (both
+                                         # default false, both absent here), needs the
+                                         # whole x1 in one MeshBlock (nx1 = 134 = mesh
+                                         # nx1), allows at most NADIB = 8 blocks per line
+                                         # (we have 2 in x2 and 4 in x3), and needs those
+                                         # split directions PERIODIC (both are).
+rad_adi_scheme = lod2                    # W4: the symmetrised two-sub-step LOD splitting
+                                         # (3 sweep pairs per stage), second order in the
+                                         # direction splitting; theta is fixed at 1 for
+                                         # lod and must not be set.
+#                                        # W4: rad_tr_halo_every REMOVED -- the ADI step
+#                                        # has no substage recurrence, so it is ignored
+#                                        # (conduction.cpp:510 warns) and would only
+#                                        # mislead.  rad_sts_perplane is LEFT ON: adi does
+#                                        # not refuse it and forces the per-plane path
+#                                        # itself (conduction_transverse.cpp:198).
+rad_kappa_rmax       = 0.0               # MUST stay 0: it indexes x1v, never allocated on
+                                         # a Cartesian mesh (the pgen fatals otherwise)
+tfloor  = 5.0e3                          # rt_use_cons clamps a non-positive e to e(rho,tfloor)
+dfloor  = 2.3206e-12                     # CHANGED from the B star's 1e-12: 1e-3 x the
+                                         # INITIAL TOP-CELL DENSITY 2.320647e-9 measured
+                                         # off ../ic/dump_3msun.txt.  This caps the
+                                         # radiation sound speed of an evacuating cell at
+                                         # 32x the local value instead of ~1e3x -- the
+                                         # lesson of ../smoke_rt2 (5 Msun), where a 1e-14
+                                         # floor let dt collapse to 1.2e-4 s.
+pfloor  = 1.0e0                          # 1.5e-5 of the top-cell pressure; should not fire
+fofc    = true                           # first-order flux correction; dumped below
+
+<problem>
+rt_rad_force         = true      # (1-w) rho kappa_R F/c + Prad grad w, + v.f  (Q2p: ON,
+                                 # and only meaningful with the EOS taper on)
+rt_implicit_column = 3           # THE EXACT BLOCK-TRIDIAGONAL COLUMN SOLVE
+rt_impl_solver     = pcr         # one TEAM per column, segment-partitioned block solve
+rt_impl_nseg       = 32          # segments per column (= Kokkos team size).  UNCHANGED
+                                 # from the B star and from ../qual_m3/Q1p2, Q2p, which
+                                 # ran it at this same nx1 = 134.
+rt_col3_ex_iter    = true        # re-form the explicit source from the column solve's own
+                                 # flux instead of the cell's
+rt_impl_tol        = 1.0e-8      # the mode-3 exact-Jacobian defaults, which are also the
+rt_impl_maxit      = 8           # B star's gated values.  ../qual_m3 measured it_mean = 3
+                                 # on this column, well inside the cap.
+rt_bottom_flux = true            # F_bot on the two-stream's OWN lower boundary
+rt_ali_diag = false              # CHANGED from the B star's true.  Irrelevant under mode 3
+                                 # (there is no Lambda iteration to accelerate), but it was
+                                 # measured WORSE on the He whole column (floor 2.2e4 vs
+                                 # 8.7e3) and ../qual_m3 qualified mode 3 with it OFF.
+bc_mode_top = 4                  # W4: OPEN (outflow) TOP.  The outer x1 ghosts are the
+                                 # last active cell continued isothermally and
+                                 # hydrostatically with v1 clamped >= 0, so gas may LEAVE
+                                 # through x1max and nothing comes in; wall_noflux is
+                                 # dropped on the top face only and the bottom wall, its
+                                 # imposed luminosity and rt_top_vacuum are unchanged.
+                                 # box_m3's closed lid reflected the surface motions back
+                                 # into the box.  vdamp_top_tau is DELIBERATELY ABSENT:
+                                 # there is no sponge, the lid itself is the outlet.
+rt_col3_skip_sweep = true        # W4: drop the explicit entry sweep under mode 3 -- the
+                                 # exact column solve writes its own converged flux, so
+                                 # the pre-sweep is redundant work whose answer is then
+                                 # overwritten.
+rt_impl_rescheck   = true        # W4: residual-only Newton convergence.  NOTE it is
+                                 # already the DEFAULT at 57129d5c; stated explicitly so
+                                 # the run does not depend on a default moving.
+rt_outer_verbose   = false       # the cycle-0 Newton trace is a qualification tool
+user_hist   = true               # the five emergent-flux history columns
+rt_surface_dt = 75.22            # CHANGED from 200 s: 0.02 turnover, the B star's cadence
+rt_surface_file = rt_surface.bin
+rt_profile_dt = 10.0             # NEW: horizontally averaged x1 profile dump cadence
+                                 # [s] = 1/376 turnover, 1/15 of the ~150 s box
+                                 # pulsation period.  134 x 8 rows + x1v per record =
+                                 # 9.7 kB; ~1.8e4 records over the remaining chain.
+rt_profile_file = rt_profile.bin
+user_srcs   = true
+g0          = 3.98107e5                  # CHANGED: GM/R^2, log g = 5.60
+rho_base    = 1.509747e-06               # CHANGED: the He column at x1min; start-up report
+t_base      = 3.203880e5                 # CHANGED: only -- ic_profile sets the state
+mu          = 1.3333333                  # 4/3, fully ionized helium; used ONLY by the
+                                         # pgen's ideal-gas march, which ic_profile replaces
+bc_mode     = 3                          # x1 walls: WB continuation.  Impermeable,
+                                         # hydrostatic at t = 0.  ../smoke_rt2 sec. 4: this
+                                         # construction leaks once the interior leaves the
+                                         # column, so MASS IN THE .hst IS THE PRIMARY
+                                         # HEALTH INDICATOR, not a formality.
+dgrad       = 0.0                        # UNUSED: ic_profile replaces the march entirely
+cool_depth  = 5.0e7                      # PRESENT ONLY because the pgen computes zcool_
+cool_tau    = 1.0e0                      # before it reads cool_layer and fatals if the
+                                         # layer would fill the box.  UNUSED (the B star
+                                         # leaves them at their defaults; the He box is
+                                         # 43x thinner, so the default would fill it).
+rt_two_stream = true                     # GREY two-stream, plane-parallel mode
+cool_layer  = false                      # the Newton layer and the two-stream are two
+                                         # models of the same loss; never both
+rt_top_vacuum = true                     # nothing comes back in at the top
+rt_nquad    = 2                          # two-point Gauss-Legendre angular quadrature
+# ---------------------------------------------------------------------------------
+# W8 SEED (09-17).  REPLACES the w1-w7 seeds entirely: a VERTICAL-VELOCITY seed AT THE
+# MOST UNSTABLE SCALE, inside the driving layer only.
+#   vpert_var = v1: v_z = vpert * c_s(z) * sin-envelope(z) * (16 random horizontal modes),
+#     density and internal energy EXACTLY unperturbed (the column is untouched).
+#   vpert = 1.0e-3 in units of the LOCAL sound speed; c_s ~ 5.8e6 cm/s (57 km/s) in the
+#     window, so the seed is ~57 m/s peak, rms ~ 2.9e3 cm/s = ~0.3 v_MLT -- 20x WEAKER
+#     than the w7 whole-layer entropy kick in energy terms, but placed where it counts.
+#   k = 4..6 only: 10.98 Mm / (4..6) = 1.8-2.7 Mm = ~2 layer thicknesses, i.e. THE
+#     LINEARLY MOST UNSTABLE SCALE measured in bench/analysis_0916/onset_he_w7.  There is
+#     NO box-scale (k = 1) and no k = 2-3 content at all, so no box mode is excited.
+#   window tau 5 .. tau 50 (vpert_zhi .. vpert_zlo): THE DRIVING LAYER, one scale height
+#     thick, where the opacity peak makes the stratification superadiabatic.
+# WHY: the w7 ENTROPY seed (vpert_var = eint, k = 2-16, vpert = 1.0e-2, tau 3-300) was
+# RADIATIVELY ERASED before the instability grew.  In the He box the driving layer is only
+# ~1 scale height thick and radiative diffusion is fast, so an entropy perturbation
+# relaxes: measured v_z power grew only at k4-6 (+0.77/turnover) from a level 1e-6 below
+# developed convection => onset > 17 turnovers, and the small scales DECAYED outright
+# (bench/analysis_0916/onset_he_w7/RESULTS.txt).  A VELOCITY seed is not erased by
+# diffusion, and putting all of it in k4-6 removes the ~10-14 turnovers w7 needed just to
+# reprocess wrong-scale noise into the unstable band.
+# ---------------------------------------------------------------------------------
+vpert       = 1.0e-3                     # v_z amplitude in units of the LOCAL c_s
+vpert_var   = v1                         # VERTICAL VELOCITY seed; rho and eint untouched
+vpert_kmin  = 4                          # horizontal wavenumbers 4..6 = 1.8-2.7 Mm
+vpert_kmax  = 6                          #   = ~2 layer thicknesses = most unstable scale
+vpert_zlo   = -1.21152e8                 # tau = 50 (box bottom -3.14103e8 = tau 353)
+vpert_zhi   = -3.84803e7                 # tau = 5  (w7 used tau 300 .. tau 3)
+vpert_nk    = 16                         # mode COUNT (unchanged)
+vpert_seed  = 1234
+nfine       = 8192
+opac_table  = /viper/u2/jinma/ATHENAK/bench/hestar_fecz/rosseland_he_x0.0_z0.02.txt
+                                         # CHANGED: the X = 0, Z = 0.02 OPLIB He table
+ic_profile  = /viper/u2/jinma/ATHENAK/bench/hestar_fecz/ic/ic_fecz_he3_rt_relaxed_m3whole_taper.txt
+                                         # REPOINTED 09-15: the MODE-3 RELAXED He column,
+                                         # ../relax1d_m3 (1-D nx2=nx3=1, vpert 0, this
+                                         # input's own physics -- mode 3 + PCR, whole-column
+                                         # two-stream, rt_bottom_flux, u-form conduction,
+                                         # rt_rad_force -- run to t = 6000 s = 1.6 turnovers
+                                         # = ~790 column thermal times; (rho, eint) averaged
+                                         # over the last 10 dumps, t = 4650..6000 s).  The
+                                         # He analogue of the B star's
+                                         # ic_fecz_rt_relaxed_m3whole_taper.txt
+                                         # (../../bstar_fecz/relax1d_m3whole).  The eint is
+                                         # already in the TAPERED EOS (rho_lo 6e-9 /
+                                         # rho_hi 6e-8, matching the two eos_rad_rho_*
+                                         # above): the relaxation ran with the taper on, so
+                                         # NO separate mk_taper_ic_T.py step is needed.
+                                         # At the end of the relaxation Ftop/Fbot = 1.000004
+                                         # (rt_budget) and dE_box = -8e-6 of F_bot*A*dt.
+                                         # It SUPERSEDES ic_fecz_he3_rt_relaxed_fix_taper.txt,
+                                         # which was relaxed under the STANDARD (mode-0)
+                                         # source.
+column_dump = column_used.txt
+
+# ---------------------------------------------------------------------------------
+# BOX_W4_IN (staged 09-15): box_w4 + the BOTTOM MASS-INFLOW CONTROLLER and a TOP
+# SPONGE.  box_w4 drains 2.4 % of M0 per turnover through the open top (bc_mode_top
+# = 4); at t = 3.23e4 s (8.6 turnovers) the .hst mass is 0.780 M0.  Everything else
+# in this file is byte-identical to ../box_w4/he_box_w4.athinput.
+bc_mode_bot = 5                  # BOTTOM = the mass-deficit inflow controller.  The
+                                 # wall stays IMPERMEABLE (mirrored v, wall_noflux
+                                 # still cancels the wall-face mass/energy flux); the
+                                 # inflow is an EXACT SOURCE in the cell against the
+                                 # wall, rho_base v_in of mass, rho_base v_in^2 of
+                                 # momentum, rho_base v_in h_base of energy per unit
+                                 # area and time.  The imposed luminosity is untouched
+                                 # (it still enters through rt_bottom_flux).
+bc_inflow_time = 1128            # tau_in [s] = 0.3 turnover (turnover = 3.761e3 s).
+                                 # v_in = min(vmax, max(0,(M0-M)/(rho_base A tau_in))).
+                                 # PROPORTIONAL: a steady loss Mdot settles at a
+                                 # deficit Mdot*tau_in, not at zero deficit.
+bc_inflow_ghost = false          # DEFAULT and the measured-correct choice: the bottom
+                                 # ghost follows bc_mode (WB continuation); only the
+                                 # INJECTED mass carries the base state.  ghost = true
+                                 # moved Ftop/Fbot from 0.9995 to 1.021 on the He column.
+# bc_inflow_vmax                 # LEFT AT THE CODE DEFAULT (<= 0 -> 0.1 c_s(base)).
+bc_inflow_print = 100            # controller state (cycle, t, v_in, M/M0) every 100 cyc
+vdamp_top_tau = 0.1              # TOP SPONGE on m1 only: f = 1 where the column tau <=
+vdamp_top_time = 20              # 0.0333, f = 0 where tau >= 0.1, raised cosine in
+                                 # log tau between; m1 -> m1/(1 + f bdt/20 s), and the
+                                 # KE removed is taken out of the total energy (removed
+                                 # from the box, not heated).  Needs the tau blend,
+                                 # which <hydro>/rad_tau_hi = 1.0e6 provides.
+
+# ---------------------------------------------------------------------------------
+# LINK 2 (staged 09-16): the BOTTOM SPONGE, on top of everything above.  The He box
+# carries a VERTICAL STANDING ACOUSTIC MODE (period ~143-151 s = twice the sound
+# crossing from the closed bottom wall to the acoustic-cutoff layer in the lid).  The
+# upper reflection is physical; the bottom wall is not -- the star lets the wave
+# propagate down and away -- and the bottom layer of this box is STABLY STRATIFIED
+# (the convection zone is the top ~1 Mm), so a Rayleigh layer there also absorbs the
+# internal gravity waves the convection launches downward instead of reflecting them.
+#   m1 -> m1 - g m1,  g = 1 - exp(-f bdt/vdamp_bot_time),
+#   f(i) = 0.5 (1 + cos(pi (i - is)/N)),  i = is .. is+N-1  (f = 1 at the wall, 0 at
+#   the first cell above the layer).  m2, m3 untouched; the KE removed is taken OUT
+#   of the total energy, as the top sponge does.
+# CALIBRATED on the 1-D He column (bench/sponge_0916, relax1d_m3 input, 2000 s): the
+# 143 s mode's amplitude e-fold goes 1769 s (off) -> 1523 s (24 cells) -> 799 s (48)
+# -> 472 s (64), while <Ftop>/Fbot over the last 400 s moves only 0.99981 -> 0.99995.
+# 48 cells = 1.27e8 cm = 0.36 of the column; the acoustic wavelength at the bottom is
+# c_s x 143 s ~ 1.1e9 cm = 3 box heights, which is why a thin layer does so little.
+# NOTE: the sponge is applied BEFORE the bc_mode_bot = 5 inflow source in the same
+# stage, so the inflow's injected MASS is untouched; its injected MOMENTUM (a second
+# order effect, rho_base v_in^2) does decay on vdamp_bot_time in the wall cell.
+vdamp_bot_cells     = 48
+vdamp_bot_time      = 20.0
+vdamp_bot_mean_only = false      # damp the FULL v1: the bottom layer is stable, so the
+
+# LINK 2+ (09-16): the rt-integration merge (b775a270) accelerators, 1.27x per cycle.
+rt_impl_warm  = 1                # warm-start the mode-3 Newton from the previous call
+rt_impl_mixed = 2                # mixed-precision (single) block factors in the column solve
+                                 # sponge should absorb the g-waves as well.  true would
+                                 # damp only the horizontal mean of v1 (the radial mode
+                                 # alone), which is the setting for a box whose
+                                 # convection reaches the bottom.
+
+
+# ---- the SMOKE's own single dump, for the bitwise comparison
+<output1>
+file_type = bin
+variable  = hydro_u
+dt        = 1.0e-30

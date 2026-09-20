@@ -1,0 +1,38 @@
+Loading openmpi_gpu/5.0
+  Loading requirement: openmpi/5.0
+=========== ARM slotchk : 
+             radiation TAPERED off between rho = 1.93e-09 (w = 1, LTE) and rho = 4.97e-10 g/cm^3 (w = 0, the two-stream owns it)
+             ...GATED on temperature: w = max(w_rho, w_T), w_T = 1 at and above T = 63281 K, 0 at and below 45213 K -- a hot cell keeps LTE radiation whatever its density
+elapsed=7.753607e+00 cycle=0 time=0.000000e+00 dt=1.292915e+01
+elapsed=1.584546e+01 cycle=100 time=1.270853e+03 dt=1.253075e+01
+Terminating on time limit
+time=2.352500e+03 cycle=187
+=========== ARM slotchk DONE
+                                  
+================================= 
+Global information about the job: 
+================================= 
+  
+Job owner: jinma(28895)
+Job name:  r9slot
+Node list: vipa1001
+Job start: Thu Sep 17 23:47:15 CEST 2026
+Job end:   Thu Sep 17 23:47:43 CEST 2026
+Work dir:  /viper/u2/jinma/ATHENAK/bench/wt_he4/tests_r9
+Command:   /viper/u2/jinma/ATHENAK/bench/wt_he4/tests_r9/r9_slotchk.sh
+  
+  
+  
+==========================================================================================
+Information on jobsteps (Note: MaxRSS/AveRSS is the maximum/average over all 
+tasks of the per-task memory high-water marks; cf. "man sacct"): 
+==========================================================================================
+  
+JobID            JobName NNodes NTasks  NCPUS       MaxRSS       AveRSS    Elapsed ExitCode
+------------- ---------- ------ ------ ------ ------------ ------------ ---------- --------
+11785504          r9slot      1            16                             00:00:28      0:0
+11785504.0     athena_v6      1      1     16      929.15M      929.15M   00:00:26      0:0
+  
+Maximum memory per node: 0.974282 GB (defined as MaxRSS*Ntasks/NNodes)
+CPU utilization: 8.0 %
+  

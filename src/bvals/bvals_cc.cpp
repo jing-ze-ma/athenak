@@ -214,6 +214,35 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
             cs_seam = 2;
           } else if (n >= 24 && n < 40) {
             cs_seam = 3;
+          } else if (n >= 40 && n < 48) {
+            // x2x3 EDGE buffers.  These used to be left as a plain copy, on the grounds
+            // that a doubly-ghost buffer "has no single along-seam axis".  It does:
+            // EXACTLY ONE of the two flanking faces is a panel seam, because if both were
+            // this would be a CUBE VERTEX and the exchange is skipped altogether
+            // (IsCubeVertexCorner).  The seam normal is that face's axis and the resample
+            // runs along the other one, exactly as for the face buffer next to it.
+            //
+            // Leaving it a plain copy is the SECOND half of the 4x4-blocks-per-panel
+            // defect (tests_seam4/README.md): with one block per panel every cross-panel
+            // x2x3 edge IS a cube vertex, so nothing was ever wrong there, but as soon as
+            // a panel is split these are ordinary diagonal ghosts with a real donor --
+            // and they are what the metric cross term of the transverse operator reads,
+            // which is why the EXPLICIT operator did not improve when only the face
+            // halo was fixed.  Measured (static halo scan, n = 64 per panel, max
+            // |ghost - exact| over the x2x3 edge ghosts that have a seam flank):
+            // 2 x 2 blocks 3.50e-5 -> 5.6e-7, 4 x 4 blocks 3.54e-4 -> 5.6e-7.
+            const int q = n - 40;
+            const int nface2 = ((q/2)%2 == 0) ? 8 : 12;    // the flanking x2 face
+            const int nface3 = (q/4 == 0) ? 24 : 28;       // the flanking x3 face
+            const bool s2 = (nghbr.d_view(m,nface2).gid >= 0) &&
+                            (nghbr.d_view(m,nface2).panel != my_panel);
+            const bool s3 = (nghbr.d_view(m,nface3).gid >= 0) &&
+                            (nghbr.d_view(m,nface3).panel != my_panel);
+            if (s2 && !s3) {
+              cs_seam = 2;
+            } else if (s3 && !s2) {
+              cs_seam = 3;
+            }
           }
           // THE RESAMPLE NEEDS 3 CELLS ALONG THE SEAM -- see the note in bvals_fc.cpp,
           // where this degeneracy was measured.  The stencil bounds invert when the
@@ -295,6 +324,10 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
           int jst[3] = {jj, jj, jj};
           int nst = 1;
           Real wm = 1.0, w0 = 0.0, wp = 0.0;
+          // Is the stencil INTERPOLATING?  `b` below is clamped to the source's active
+          // range, so `pos` can fall outside [b, b+2] and the quadratic then
+          // EXTRAPOLATES -- see the note on the monotonicity limit in seamval().
+          bool cs_interp = true;
           if (cs_seam != 0) {
             const Real xi  = 0.25*M_PI*CellCenterX(jj-js_, nx2_, x2mn, x2mx);
             const Real eta = 0.25*M_PI*CellCenterX(kk-ks_, nx3_, x3mn, x3mx);
@@ -303,16 +336,26 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
             if (cs_seam == 2) {
               ang = eta; nrm = xi;
               dang = 0.25*M_PI*(x3mx - x3mn)/static_cast<Real>(nx3_);
-              sc = kk; blo = kl; bhi = ku - 2;
+              sc = kk;
+              blo = ks_; bhi = ks_ + nx3_ - 3;
             } else {
               ang = xi; nrm = eta;
               dang = 0.25*M_PI*(x2mx - x2mn)/static_cast<Real>(nx2_);
-              sc = jj; blo = jl; bhi = ju - 2;
+              sc = jj;
+              blo = js_; bhi = js_ + nx2_ - 3;
             }
+            // THE CLAMP IS TO THE SOURCE'S ACTIVE RANGE, NOT THE BUFFER'S.  For a face or
+            // x1-edge buffer the two coincide (the along-seam extent of such a buffer IS
+            // the active range), so this is bitwise for everything that resampled before;
+            // an x2x3 edge buffer is only ng deep along the seam and clamping to that
+            // would extrapolate from two cells while the source block holds the data.
+            // The stencil reads the array directly, not the buffer, so any active cell is
+            // available.  bvals_fc.cpp says the same thing about its own stencil table.
             const Real pos = sc + (atan(tan(ang)*tan(fabs(nrm))) - ang)/dang;
             int b = static_cast<int>(floor(pos + 0.5)) - 1;
             b = (b < blo) ? blo : ((b > bhi) ? bhi : b);
             const Real u = pos - static_cast<Real>(b + 1);
+            cs_interp = (u >= -1.0) && (u <= 1.0);
             wm = 0.5*u*(u - 1.0);
             w0 = 1.0 - u*u;
             wp = 0.5*u*(u + 1.0);
@@ -379,21 +422,43 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
           // (hi-lo) > 0.1*(|hi|+|lo|), which fires spuriously wherever the stencil
           // straddles ZERO -- it triggered ten million times on a smooth run.
           //
-          // CELL-CENTRED: clamp UNCONDITIONALLY.  The face-centred twin guards this with
-          // "monotone stencil AND interpolating", which is right there and costs 3.5x if
-          // dropped -- but here BOTH guards let the failure through.  The one that
-          // matters is monotonicity: a blast cap has a FLAT TOP, so a stencil astride
-          // its edge is NOT monotone, and a guard meant for smooth extrema was then
-          // skipping exactly the cells that needed clamping.  Non-monotone does not imply
-          // smooth.  Measured on iprob=12: guarded, a VERTEX-centred blast still went
-          // entirely NaN at contrast 100; unconditional, it survives 1000.  The price is
-          // ~6% on one hydro halo metric, against a run that silently fills with NaN.
+          // CELL-CENTRED: clamp for every INTERPOLATING stencil.  The face-centred twin
+          // guards this with "monotone stencil AND interpolating"; here the MONOTONE half
+          // must be dropped, because a blast cap has a FLAT TOP, so a stencil astride its
+          // edge is NOT monotone, and a guard meant for smooth extrema was then skipping
+          // exactly the cells that needed clamping.  Non-monotone does not imply smooth.
+          // Measured on iprob=12: with the monotone guard, a VERTEX-centred blast still
+          // went entirely NaN at contrast 100; without it, it survives 1000.
+          //
+          // The INTERPOLATING half must stay.  It used to be dropped as well, and that is
+          // HALF of the 4x4-MeshBlocks-per-panel seam defect (the other half is the x2x3
+          // edge buffers above; see tests_seam4/README.md): `b` is clamped to the
+          // source's ACTIVE range, which is one MeshBlock, not the panel.  The
+          // along-seam resample pulls the donor position toward the PANEL CENTRE by up
+          // to (layer + 1/2) cells, so at an
+          // interior block end -- an end that exists only when a panel is split more
+          // finely than 2 x 2, since at 2 x 2 the interior end sits exactly on the panel
+          // midline where the pull is zero -- the stencil runs off the block and the
+          // quadratic extrapolates.  Clamping an
+          // EXTRAPOLANT to its node range replaces it by the nearest node, i.e. by a
+          // FIRST-ORDER value, and that is what wrecked the halo.  Measured on the static
+          // halo scan (cs_test iprob 15, <problem>/seam_halo_scan, n = 32 per panel,
+          // max |ghost - exact|):
+          //
+          //   blocks/panel   clamped unconditionally   clamped only when interpolating
+          //   1 x 1          4.103e-6                  4.103e-6   (unchanged, bitwise)
+          //   2 x 2          4.671e-5                  4.103e-6   (= 1 x 1 exactly)
+          //   4 x 4          6.950e-4                  5.077e-6
+          //
+          // The residual 1.2x at 4 x 4 is the extrapolation itself, which is O(dx^3) and
+          // harmless; the 137x was the clamp.
           auto seamval = [&](const int i) {
             if (cs_seam == 0) return sval(0,i);
             const Real sv0 = sval(0,i);
             const Real sv1 = sval(1,i);
             const Real sv2 = sval(2,i);
             const Real qq = wm*sv0 + w0*sv1 + wp*sv2;
+            if (!cs_interp) return qq;
             const Real lo0 = fmin(sv0, fmin(sv1, sv2));
             const Real hi0 = fmax(sv0, fmax(sv1, sv2));
             return fmin(hi0, fmax(lo0, qq));

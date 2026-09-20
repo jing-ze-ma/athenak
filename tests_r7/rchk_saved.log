@@ -1,0 +1,117 @@
+########## oldNF CONT (/viper/u2/jinma/ATHENAK/bench/wt_he4/tests_r4/athena_v2) problem/rt_rad_force=false
+### red_giant: MLT closure state read from the restart file (103 faces, seeded = 1)
+Terminating on time limit
+---------- newNF hst
+# 201 lines in A, 100 in B, 35 shared times
+# bitwise-identical shared lines: 0 / 35
+# worst relative difference: 1.954e+00 at t = 2.7571289430323091e+03, column 5
+# resumed line 0, t = 2373.520713 (continuous line at t = 2373.520713)
+    dt      cont +1.2459056781e+01  rst +1.2459056781e+01  rel 0.000e+00
+    mass    cont +1.9124626271e+26  rst +1.9124626271e+26  rel 0.000e+00
+    1-mom   cont +3.7045568077e+31  rst +3.7045568077e+31  rel 1.216e-16
+    2-mom   cont -4.1532044332e+15  rst -3.8078106770e+15  rel 8.316e-02
+    3-mom   cont -3.7861236354e+16  rst -3.7653645261e+16  rel 5.483e-03
+    tot-E   cont +5.0505605111e+41  rst +5.0505605111e+41  rel 0.000e+00
+    1-KE    cont +1.2018273578e+37  rst +1.2018273578e+37  rel 9.823e-16
+    2-KE    cont +9.6768605285e+09  rst +9.6635252748e+09  rel 1.378e-03
+    3-KE    cont +8.6272908336e+09  rst +8.6247778273e+09  rel 2.913e-04
+# resumed line 1, t = 2398.423499 (continuous line at t = 2398.423499)
+    dt      cont +1.2448834235e+01  rst +1.2448834235e+01  rel 3.995e-15
+    mass    cont +1.9124590071e+26  rst +1.9124590071e+26  rel 0.000e+00
+    1-mom   cont +3.7481081753e+31  rst +3.7481081753e+31  rel 1.442e-15
+    2-mom   cont -4.2174273773e+15  rst -3.8639393969e+15  rel 8.382e-02
+    3-mom   cont -3.8889977614e+16  rst -3.8998235517e+16  rel 2.776e-03
+    tot-E   cont +5.0507269975e+41  rst +5.0507269975e+41  rel 3.064e-16
+    1-KE    cont +1.2208625394e+37  rst +1.2208625394e+37  rel 2.901e-15
+    2-KE    cont +9.9092236095e+09  rst +9.8931453610e+09  rel 1.623e-03
+    3-KE    cont +8.8358174267e+09  rst +8.8221418925e+09  rel 1.548e-03
+# resumed line 2, t = 2423.30576 (continuous line at t = 2423.30576)
+    dt      cont +1.2438558252e+01  rst +1.2438558252e+01  rel 1.428e-15
+    mass    cont +1.9124557053e+26  rst +1.9124557053e+26  rel 0.000e+00
+    1-mom   cont +3.7911802652e+31  rst +3.7911802652e+31  rel 2.613e-15
+    2-mom   cont -4.5943233875e+15  rst -4.8322305983e+15  rel 4.923e-02
+    3-mom   cont -4.0434922479e+16  rst -4.0353942617e+16  rel 2.003e-03
+    tot-E   cont +5.0508977422e+41  rst +5.0508977422e+41  rel 0.000e+00
+    1-KE    cont +1.2397290524e+37  rst +1.2397290524e+37  rel 4.571e-15
+    2-KE    cont +1.0138493996e+10  rst +1.0121641855e+10  rel 1.662e-03
+    3-KE    cont +9.0523234078e+09  rst +9.0300253753e+09  rel 2.463e-03
+########## oldF CONT (/viper/u2/jinma/ATHENAK/bench/wt_he4/tests_r4/athena_v2) 
+Terminating on time limit
+########## oldNF RST (/viper/u2/jinma/ATHENAK/bench/wt_he4/tests_r4/athena_v2)
+Terminating on time limit
+########## oldF RST (/viper/u2/jinma/ATHENAK/bench/wt_he4/tests_r4/athena_v2)
+Terminating on time limit
+---------- oldNF hst
+# 201 lines in A, 100 in B, 2 shared times
+# bitwise-identical shared lines: 0 / 2
+# worst relative difference: 1.207e+00 at t = 4.7050000000000000e+03, column 5
+# resumed line 0, t = 2373.520713 (continuous line at t = 2373.520713)
+    dt      cont +1.2459056781e+01  rst +1.2459056781e+01  rel 0.000e+00
+    mass    cont +1.9124626271e+26  rst +1.9124626553e+26  rel 1.476e-08
+    1-mom   cont +3.7045568077e+31  rst +3.6718890906e+31  rel 8.818e-03
+    2-mom   cont -4.1532044332e+15  rst -3.7069625794e+15  rel 1.074e-01
+    3-mom   cont -3.7861236354e+16  rst -3.7687628586e+16  rel 4.585e-03
+    tot-E   cont +5.0505605111e+41  rst +5.0506760118e+41  rel 2.287e-05
+    1-KE    cont +1.2018273578e+37  rst +1.4394051530e+37  rel 1.651e-01
+    2-KE    cont +9.6768605285e+09  rst +9.6634147529e+09  rel 1.389e-03
+    3-KE    cont +8.6272908336e+09  rst +8.6218424987e+09  rel 6.315e-04
+# resumed line 1, t = 2398.256456 (continuous line at t = 2398.423499)
+    dt      cont +1.2448834235e+01  rst +1.2352060381e+01  rel 7.774e-03
+    mass    cont +1.9124590071e+26  rst +1.9124592867e+26  rel 1.462e-07
+    1-mom   cont +3.7481081753e+31  rst +3.7722076841e+31  rel 6.389e-03
+    2-mom   cont -4.2174273773e+15  rst -3.7970860747e+15  rel 9.967e-02
+    3-mom   cont -3.8889977614e+16  rst -3.7893798899e+16  rel 2.562e-02
+    tot-E   cont +5.0507269975e+41  rst +5.0509311130e+41  rel 4.041e-05
+    1-KE    cont +1.2208625394e+37  rst +1.6371815212e+37  rel 2.543e-01
+    2-KE    cont +9.9092236095e+09  rst +9.8782780476e+09  rel 3.123e-03
+    3-KE    cont +8.8358174267e+09  rst +8.8166494211e+09  rel 2.169e-03
+# resumed line 2, t = 2422.861049 (continuous line at t = 2423.30576)
+    dt      cont +1.2438558252e+01  rst +1.2285995795e+01  rel 1.227e-02
+    mass    cont +1.9124557053e+26  rst +1.9124563105e+26  rel 3.164e-07
+    1-mom   cont +3.7911802652e+31  rst +3.8236989733e+31  rel 8.505e-03
+    2-mom   cont -4.5943233875e+15  rst -4.0847137875e+15  rel 1.109e-01
+    3-mom   cont -4.0434922479e+16  rst -3.7740821953e+16  rel 6.663e-02
+    tot-E   cont +5.0508977422e+41  rst +5.0512603848e+41  rel 7.179e-05
+    1-KE    cont +1.2397290524e+37  rst +1.8076110971e+37  rel 3.142e-01
+    2-KE    cont +1.0138493996e+10  rst +1.0100510574e+10  rel 3.746e-03
+    3-KE    cont +9.0523234078e+09  rst +9.0215974079e+09  rel 3.394e-03
+########## newNF CONT (/viper/u2/jinma/ATHENAK/bench/wt_he4/tests_r7/athena_v3) problem/rt_rad_force=false
+Terminating on time limit
+########## newNF RST (/viper/u2/jinma/ATHENAK/bench/wt_he4/tests_r7/athena_v3)
+### red_giant: MLT closure state read from the restart file (103 faces, seeded = 1)
+Terminating on time limit
+---------- newNF hst
+# 201 lines in A, 100 in B, 35 shared times
+# bitwise-identical shared lines: 0 / 35
+# worst relative difference: 1.954e+00 at t = 2.7571289430323091e+03, column 5
+# resumed line 0, t = 2373.520713 (continuous line at t = 2373.520713)
+    dt      cont +1.2459056781e+01  rst +1.2459056781e+01  rel 0.000e+00
+    mass    cont +1.9124626271e+26  rst +1.9124626271e+26  rel 0.000e+00
+    1-mom   cont +3.7045568077e+31  rst +3.7045568077e+31  rel 1.216e-16
+    2-mom   cont -4.1532044332e+15  rst -3.8078106770e+15  rel 8.316e-02
+    3-mom   cont -3.7861236354e+16  rst -3.7653645261e+16  rel 5.483e-03
+    tot-E   cont +5.0505605111e+41  rst +5.0505605111e+41  rel 0.000e+00
+    1-KE    cont +1.2018273578e+37  rst +1.2018273578e+37  rel 9.823e-16
+    2-KE    cont +9.6768605285e+09  rst +9.6635252748e+09  rel 1.378e-03
+    3-KE    cont +8.6272908336e+09  rst +8.6247778273e+09  rel 2.913e-04
+# resumed line 1, t = 2398.423499 (continuous line at t = 2398.423499)
+    dt      cont +1.2448834235e+01  rst +1.2448834235e+01  rel 3.995e-15
+    mass    cont +1.9124590071e+26  rst +1.9124590071e+26  rel 0.000e+00
+    1-mom   cont +3.7481081753e+31  rst +3.7481081753e+31  rel 1.442e-15
+    2-mom   cont -4.2174273773e+15  rst -3.8639393969e+15  rel 8.382e-02
+    3-mom   cont -3.8889977614e+16  rst -3.8998235517e+16  rel 2.776e-03
+    tot-E   cont +5.0507269975e+41  rst +5.0507269975e+41  rel 3.064e-16
+    1-KE    cont +1.2208625394e+37  rst +1.2208625394e+37  rel 2.901e-15
+    2-KE    cont +9.9092236095e+09  rst +9.8931453610e+09  rel 1.623e-03
+    3-KE    cont +8.8358174267e+09  rst +8.8221418925e+09  rel 1.548e-03
+# resumed line 2, t = 2423.30576 (continuous line at t = 2423.30576)
+    dt      cont +1.2438558252e+01  rst +1.2438558252e+01  rel 1.428e-15
+    mass    cont +1.9124557053e+26  rst +1.9124557053e+26  rel 0.000e+00
+    1-mom   cont +3.7911802652e+31  rst +3.7911802652e+31  rel 2.613e-15
+    2-mom   cont -4.5943233875e+15  rst -4.8322305983e+15  rel 4.923e-02
+    3-mom   cont -4.0434922479e+16  rst -4.0353942617e+16  rel 2.003e-03
+    tot-E   cont +5.0508977422e+41  rst +5.0508977422e+41  rel 0.000e+00
+    1-KE    cont +1.2397290524e+37  rst +1.2397290524e+37  rel 4.571e-15
+    2-KE    cont +1.0138493996e+10  rst +1.0121641855e+10  rel 1.662e-03
+    3-KE    cont +9.0523234078e+09  rst +9.0300253753e+09  rel 2.463e-03
+########## oldF CONT (/viper/u2/jinma/ATHENAK/bench/wt_he4/tests_r4/athena_v2) 

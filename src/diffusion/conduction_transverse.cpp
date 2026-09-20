@@ -146,6 +146,21 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
   auto &size = pmy_pack->pmb->mb_size;
   auto &mb_bcs = pmy_pack->pmb->mb_bcs;
   const bool three_d = pmy_pack->pmesh->three_d;
+  // ---- CUBED-SPHERE GEOMETRY.  Everything here is inert off a cubed sphere: curv gates
+  // the CELL VOLUME (the Cartesian face coefficients already carry the 1/dx that the
+  // flux-divergence form applies, so V_i = 1 there and the division is by an exact 1.0),
+  // and csx gates the METRIC CROSS TERM.  See docs/dev/cs_implicit_transverse.md.
+  // SPHERICAL POLAR is admitted by the constructor only as a WEDGE that excludes the
+  // axis: it needs the same area-carrying coefficients and volume division (curv), is
+  // orthogonal (no cross term, csx off) and has no panel seams (iscs gates those).
+  const bool iscs = pmy_pack->pmesh->use_cubed_sphere;
+  const bool curv = iscs || pmy_pack->pmesh->use_spherical_polar;
+  const bool csx = iscs && rad_cs_exact && three_d;
+  auto vol_ = pmy_pack->pcoord->volume;
+  auto dx2c_ = pmy_pack->pcoord->dx2;
+  auto dx3c_ = pmy_pack->pcoord->dx3;
+  auto g2 = csx ? cap_g2 : DvceArray4D<Real>("radtrg2dummy", 1, 1, 1, 1);
+  auto g3 = csx ? cap_g3 : DvceArray4D<Real>("radtrg3dummy", 1, 1, 1, 1);
   // ---- THE GHOST-SKIN BOOKKEEPING (rad_tr_halo_every).  N = 1 is the old loop: the
   // increment is exchanged before every substage and computed on the ACTIVE cells only.
   //
@@ -322,16 +337,31 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
   // whose increment nothing computes.  block and periodic neighbours are real and are
   // filled by the exchange below.  Both cells of a face test the same face index, so
   // they cannot disagree.
+  // A PANEL SEAM is a real, flux-carrying face: the cell on its far side is a live cell
+  // of another panel and the module's own exchange fills it (MeshBoundaryValuesCC does
+  // the index permutation and the along-seam resample for a cell-centred scalar).  It is
+  // OPEN but not LINKED: no tridiagonal line can cross it, because the neighbouring
+  // panel's x2 may be this panel's x3 and the two charts' cells do not coincide along
+  // the seam.  The ADI therefore leaves seam faces out of its sweeps and applies them in
+  // its own pair-implicit sub-step; RKL1 has no line structure and treats them as
+  // ordinary open faces.  On a Cartesian mesh `panel` never occurs, so open == linked
+  // and every truth table below is what it was.
+  auto bflag2 = [=] (const int m, const int jf) {
+    if (jf == js) return mb_bcs.d_view(m,BoundaryFace::inner_x2);
+    if (jf == je+1) return mb_bcs.d_view(m,BoundaryFace::outer_x2);
+    return BoundaryFlag::block;
+  };
   auto open2 = [=] (const int m, const int jf) {
-    if (jf == js) {
-      const BoundaryFlag f = mb_bcs.d_view(m,BoundaryFace::inner_x2);
-      return (f == BoundaryFlag::block || f == BoundaryFlag::periodic);
-    }
-    if (jf == je+1) {
-      const BoundaryFlag f = mb_bcs.d_view(m,BoundaryFace::outer_x2);
-      return (f == BoundaryFlag::block || f == BoundaryFlag::periodic);
-    }
-    return true;
+    const BoundaryFlag f = bflag2(m,jf);
+    return (f == BoundaryFlag::block || f == BoundaryFlag::periodic ||
+            f == BoundaryFlag::panel);
+  };
+  auto lnk2 = [=] (const int m, const int jf) {
+    const BoundaryFlag f = bflag2(m,jf);
+    return (f == BoundaryFlag::block || f == BoundaryFlag::periodic);
+  };
+  auto seam2 = [=] (const int m, const int jf) {
+    return (bflag2(m,jf) == BoundaryFlag::panel);
   };
   // An x1 face is in the stencil only if it is INTERIOR.  The two physical x1 faces are
   // left to the explicit path (see the file comment), and the whole x1 extent is in one
@@ -341,16 +371,81 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
   auto open1 = [=] (const int i) {
     return (i > is && i < ie+1);
   };
+  auto bflag3 = [=] (const int m, const int kf) {
+    if (kf == ks) return mb_bcs.d_view(m,BoundaryFace::inner_x3);
+    if (kf == ke+1) return mb_bcs.d_view(m,BoundaryFace::outer_x3);
+    return BoundaryFlag::block;
+  };
   auto open3 = [=] (const int m, const int kf) {
-    if (kf == ks) {
-      const BoundaryFlag f = mb_bcs.d_view(m,BoundaryFace::inner_x3);
-      return (f == BoundaryFlag::block || f == BoundaryFlag::periodic);
-    }
-    if (kf == ke+1) {
-      const BoundaryFlag f = mb_bcs.d_view(m,BoundaryFace::outer_x3);
-      return (f == BoundaryFlag::block || f == BoundaryFlag::periodic);
-    }
-    return true;
+    const BoundaryFlag f = bflag3(m,kf);
+    return (f == BoundaryFlag::block || f == BoundaryFlag::periodic ||
+            f == BoundaryFlag::panel);
+  };
+  auto lnk3 = [=] (const int m, const int kf) {
+    const BoundaryFlag f = bflag3(m,kf);
+    return (f == BoundaryFlag::block || f == BoundaryFlag::periodic);
+  };
+  auto seam3 = [=] (const int m, const int kf) {
+    return (bflag3(m,kf) == BoundaryFlag::panel);
+  };
+
+  // ---- THE METRIC CROSS TERM.  On the gnomonic panel the xi and eta lines meet at an
+  // angle alpha, so the total flux through an x2 face is
+  //     Phi_f = -C_f (T_j - T_i) + G_f ge_f,   G_f = C_f dl_f cos(alpha),
+  // with ge_f the face-tangential (eta) derivative -- the SAME two-cell average the
+  // explicit cubed-sphere face flux of AddIsotropicHeatFluxRadiative forms, so the two
+  // operators cannot disagree about the geometry.  The second term couples j to k and is
+  // therefore not part of the 5-point/tridiagonal structure: it is carried explicitly.
+  // Th = T* + alpha y when a register is supplied (usey), T* alone otherwise.
+  auto thof = [=] (const DvceArray5D<Real> &yv, const bool usey,
+                   const int m, const int k, const int j, const int i) {
+    return usey ? (st(m,it_,k,j,i) + st(m,ia_,k,j,i)*yv(m,0,k,j,i))
+                : st(m,it_,k,j,i);
+  };
+  auto cross2 = [=] (const DvceArray5D<Real> &yv, const bool usey,
+                     const int m, const int k, const int j, const int i) {
+    const Real gg = g2(m,k,j,i);
+    const Real dzm = 0.5*dx3c_(m,k-1,j-1,i) + dx3c_(m,k,j-1,i) + 0.5*dx3c_(m,k+1,j-1,i);
+    const Real dzp = 0.5*dx3c_(m,k-1,j,i) + dx3c_(m,k,j,i) + 0.5*dx3c_(m,k+1,j,i);
+    const Real ge = 0.5*((thof(yv,usey,m,k+1,j-1,i) - thof(yv,usey,m,k-1,j-1,i))/dzm
+                       + (thof(yv,usey,m,k+1,j,i) - thof(yv,usey,m,k-1,j,i))/dzp);
+    const Real q = gg*ge;
+    return isfinite(q) ? q : static_cast<Real>(0.0);
+  };
+  auto cross3 = [=] (const DvceArray5D<Real> &yv, const bool usey,
+                     const int m, const int k, const int j, const int i) {
+    const Real gg = g3(m,k,j,i);
+    const Real dym = 0.5*dx2c_(m,k-1,j-1,i) + dx2c_(m,k-1,j,i) + 0.5*dx2c_(m,k-1,j+1,i);
+    const Real dyp = 0.5*dx2c_(m,k,j-1,i) + dx2c_(m,k,j,i) + 0.5*dx2c_(m,k,j+1,i);
+    const Real gx = 0.5*((thof(yv,usey,m,k-1,j+1,i) - thof(yv,usey,m,k-1,j-1,i))/dym
+                       + (thof(yv,usey,m,k,j+1,i) - thof(yv,usey,m,k,j-1,i))/dyp);
+    const Real q = gg*gx;
+    return isfinite(q) ? q : static_cast<Real>(0.0);
+  };
+  // the cross term's contribution to the Gershgorin ROW RADIUS of the face: the sum of
+  // |entry| over the four cells its stencil reads, each weighted by that cell's alpha
+  auto crad2 = [=] (const int m, const int k, const int j, const int i) {
+    const Real gg = fabs(g2(m,k,j,i));
+    if (!(gg > 0.0)) return static_cast<Real>(0.0);
+    const Real dzm = 0.5*dx3c_(m,k-1,j-1,i) + dx3c_(m,k,j-1,i) + 0.5*dx3c_(m,k+1,j-1,i);
+    const Real dzp = 0.5*dx3c_(m,k-1,j,i) + dx3c_(m,k,j,i) + 0.5*dx3c_(m,k+1,j,i);
+    const Real r = 0.5*gg*((st(m,ia_,k+1,j-1,i) + st(m,ia_,k-1,j-1,i))/dzm
+                         + (st(m,ia_,k+1,j,i) + st(m,ia_,k-1,j,i))/dzp);
+    return isfinite(r) ? r : static_cast<Real>(0.0);
+  };
+  auto crad3 = [=] (const int m, const int k, const int j, const int i) {
+    const Real gg = fabs(g3(m,k,j,i));
+    if (!(gg > 0.0)) return static_cast<Real>(0.0);
+    const Real dym = 0.5*dx2c_(m,k-1,j-1,i) + dx2c_(m,k-1,j,i) + 0.5*dx2c_(m,k-1,j+1,i);
+    const Real dyp = 0.5*dx2c_(m,k,j-1,i) + dx2c_(m,k,j,i) + 0.5*dx2c_(m,k,j+1,i);
+    const Real r = 0.5*gg*((st(m,ia_,k-1,j+1,i) + st(m,ia_,k-1,j-1,i))/dym
+                         + (st(m,ia_,k,j+1,i) + st(m,ia_,k,j-1,i))/dyp);
+    return isfinite(r) ? r : static_cast<Real>(0.0);
+  };
+  // V_i.  Exactly 1.0 off a cubed sphere, so the divisions below are bitwise no-ops
+  // there (see the note on the Cartesian face coefficients above).
+  auto vcell = [=] (const int m, const int k, const int j, const int i) {
+    return curv ? vol_(m,k,j,i) : static_cast<Real>(1.0);
   };
 
   // ---- the stiffness of the step: the largest Gershgorin row radius of tau dM/dy.  A
@@ -374,7 +469,23 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
         sumc += cl3 + cr3;
         sumca += cl3*st(m,ia_,k-1,j,i) + cr3*st(m,ia_,k+1,j,i);
       }
-      const Real zi = tau*(ai*sumc + sumca);
+      // the cubed-sphere cross term adds four entries per face to the row; V_i = 1 off
+      // a cubed sphere, so the Cartesian radius is bitwise what it was
+      // the CARTESIAN expression is kept VERBATIM in its own branch: adding a
+      // zero cross radius and dividing by an exact 1.0 are algebraic no-ops, but they
+      // change how the compiler contracts the product into an FMA, and this radius
+      // decides the substage count and the active-plane bracket
+      Real zi;
+      if (curv) {
+        Real xrad = 0.0;
+        if (csx) {
+          xrad = crad2(m,k,j,i) + crad2(m,k,j+1,i)
+               + crad3(m,k,j,i) + crad3(m,k+1,j,i);
+        }
+        zi = tau*(ai*sumc + sumca + xrad)/vol_(m,k,j,i);
+      } else {
+        zi = tau*(ai*sumc + sumca);
+      }
       if (isfinite(zi) && zi > 0.0) Kokkos::atomic_max(&zpl(i - isv), zi);
     });
     Kokkos::deep_copy(tr_zpl_h, zpl);
@@ -415,8 +526,20 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
         sumca += cl1*st(m,ia_,k,j,i-1) + cr1*st(m,ia_,k,j,i+1);
       }
       // V_i = 1 on a Cartesian mesh: the face coefficients already carry the 1/dx that
-      // the flux-divergence form of the RK update applies (see BuildAngularCoeffs)
-      const Real zi = tau*(ai*sumc + sumca);
+      // the flux-divergence form of the RK update applies (see BuildAngularCoeffs).  On
+      // a cubed sphere they carry the face AREA instead and the volume divides here, and
+      // the metric cross term adds four entries per face to the row.
+      Real zi;
+      if (curv) {
+        Real xrad = 0.0;
+        if (csx) {
+          xrad = crad2(m,k,j,i) + crad2(m,k,j+1,i)
+               + crad3(m,k,j,i) + crad3(m,k+1,j,i);
+        }
+        zi = tau*(ai*sumc + sumca + xrad)/vol_(m,k,j,i);
+      } else {
+        zi = tau*(ai*sumc + sumca);
+      }
       if (isfinite(zi) && zi > zres) zres = zi;
     }, Kokkos::Max<Real>(zmax));
 #if MPI_PARALLEL_ENABLED
@@ -484,6 +607,14 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
     auto ab0 = tr_ab0;
     const bool adilod = rad_adi_lod;
     const int scm = rad_adi_scm;
+    // a cubed sphere ALWAYS has panel seams (every panel edge is one), and a Cartesian
+    // mesh never has any.  A collective flag, because the seam sub-step exchanges.
+    const bool anyseam = iscs;
+    // A cubed-sphere line is an OPEN CHAIN (it ends at the two panel seams); a Cartesian
+    // multi-block line is a CLOSED RING (it is required to be periodic).  Only the
+    // GATHER differs -- see (2) below; the reduced system itself is the same cyclic
+    // assembly, which degenerates to the chain because a seam face gives a_1 = c_n = 0.
+    const bool openchain = iscs;
 
     // ---- the active plane bracket, from the per-plane Gershgorin radii computed above
     int alo = nplane, ahi = -1;
@@ -503,10 +634,19 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
     const int nx1_ = indcs.nx1, nx2_ = indcs.nx2, nx3_ = indcs.nx3;
     const int nkji_ = nx3_*nx2_*nx1_, nji_ = nx2_*nx1_;
 
-    // ---- the ring of MeshBlocks each line crosses.  One entry per (direction, local
-    // block): this block's ABSOLUTE index along the direction, and the rank and local id
-    // of its two face neighbours, from the neighbour table (no SMR, so one neighbour per
-    // face and the same-level slot is the only one filled).
+    // ---- the CHAIN of MeshBlocks each line crosses.  One entry per (direction, local
+    // block): this block's index along the direction WITHIN ITS OWN PANEL, and the rank
+    // and local id of its two face neighbours, from the neighbour table (no SMR, so one
+    // neighbour per face and the same-level slot is the only one filled).
+    //
+    // A neighbour counts here only if the face is LINKED, i.e. `block` or `periodic` --
+    // the same truth table lnk2/lnk3 use, so the chain of the gather and the chain of
+    // the tridiagonal system cannot disagree.  A PANEL SEAM is therefore an END of the
+    // chain: the line stops there and the seam face is applied by the pair-implicit
+    // sub-step below.  Each panel tree is its own root grid, so ll.lx2/ll.lx3 already
+    // count blocks WITHIN the panel and adi_nb2/adi_nb3 are blocks PER PANEL.  On a
+    // Cartesian mesh nothing here changes: every multi-block direction is periodic, so
+    // every face of it is linked and the chain is the old closed ring.
     const int nmbl = nmb1 + 1;
     std::vector<int> ab0h(2*nmbl, 0), lrk(2*nmbl, -1), rrk(2*nmbl, -1);
     std::vector<int> llid(2*nmbl, -1), rlid(2*nmbl, -1);
@@ -515,6 +655,8 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
       auto &gidh = pmy_pack->pmb->mb_gid;
       const int nl2 = NeighborIndex(0,-1,0,0,0), nr2 = NeighborIndex(0,1,0,0,0);
       const int nl3 = NeighborIndex(0,0,-1,0,0), nr3 = NeighborIndex(0,0,1,0,0);
+      const int bface[4] = {BoundaryFace::inner_x2, BoundaryFace::outer_x2,
+                            BoundaryFace::inner_x3, BoundaryFace::outer_x3};
       for (int m=0; m<nmbl; ++m) {
         const LogicalLocation &ll = pmy_pack->pmesh->lloc_eachmb[gidh.h_view(m)];
         ab0h[m] = static_cast<int>(ll.lx2);
@@ -522,6 +664,8 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
         const int slot[4] = {nl2, nr2, nl3, nr3};
         for (int q=0; q<4; ++q) {
           if (q >= 2 && !three_d) continue;
+          const BoundaryFlag bf = mb_bcs.h_view(m,bface[q]);
+          if (!(bf == BoundaryFlag::block || bf == BoundaryFlag::periodic)) continue;
           const int gg = nghbr.h_view(m,slot[q]).gid;
           const int rr = nghbr.h_view(m,slot[q]).rank;
           if (gg < 0) continue;
@@ -649,6 +793,30 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
         sfrst[s] = ((s % 2) == 0) ? 1 : 0;
       }
     }
+    // ---- THE OUTER CROSS-TERM ITERATION (cubed sphere only).  The metric cross term
+    // is not in the tridiagonal, so one ADI step carries it frozen at T*.  That is
+    // unconditionally stable (the cross/diagonal symbol ratio is <= 1/2, and -> 0 at the
+    // Nyquist checkerboard), but a mid-band mode is left with amplification ~ -1/4
+    // instead of ~0.  rad_adi_cross_iter > 1 re-solves with the cross term evaluated at
+    // the previous answer, a fixed-point iteration with that same contraction factor.
+    // ncrit = 1 off the cubed sphere, and then `lag` is never read.
+    const int ncrit = (csx && rad_adi_cross_iter > 1) ? rad_adi_cross_iter : 1;
+    auto lag = (ncrit > 1) ? tr_ylg : tr_ya;
+    bool uselg = false;
+    // the x1 window of every exchange this section makes, as in the refresh above
+    const int sla_ = rad_tr_window ? is : -1, sua_ = rad_tr_window ? ie : -1;
+    for (int cit=0; cit<ncrit; ++cit) {
+    if (cit > 0) {
+      Kokkos::deep_copy(lag, yy);
+      pbval_tr->InitRecv(1);
+      pbval_tr->PackAndSendCC(lag, tr_ycoar, sla_, sua_);
+      while (pbval_tr->RecvAndUnpackCC(lag, tr_ycoar, sla_, sua_)
+             != TaskStatus::complete) {}
+      Kokkos::fence();
+      while (pbval_tr->ClearRecv() != TaskStatus::complete) {}
+      while (pbval_tr->ClearSend() != TaskStatus::complete) {}
+      uselg = true;
+    }
     for (int pass=0; pass<nsb*nsweep; ++pass) {
       const int sb = pass/nsweep;
       const int dpass = pass - sb*nsweep;
@@ -675,6 +843,8 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
         const bool ub3 = three_d && ((dpass == 0) ? (adilod ? !d2 : true) : !d2);
         const int lmode = (dpass == 0) ? smode[sb] : 2;    // 2 = add in place
         auto o_ = yy;
+        auto lg_ = lag;
+        const bool ulg_ = uselg;
         par_for("radtradirhs", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
         KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
           const Real ai = st(m,ia_,k,j,i);
@@ -682,21 +852,41 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
           Real mi = 0.0;
           if (ub2) {
             const Real alm2 = st(m,ia_,k,j-1,i), alp2 = st(m,ia_,k,j+1,i);
-            Real fl = (open2(m,j) && ai > 0.0 && alm2 > 0.0)
+            Real fl = (lnk2(m,j) && ai > 0.0 && alm2 > 0.0)
                       ? c2(m,k,j,i)*(phc - st(m,it_,k,j-1,i)) : 0.0;
-            Real fr = (open2(m,j+1) && ai > 0.0 && alp2 > 0.0)
+            Real fr = (lnk2(m,j+1) && ai > 0.0 && alp2 > 0.0)
                       ? c2(m,k,j+1,i)*(st(m,it_,k,j+1,i) - phc) : 0.0;
+            // the metric cross term of the SAME faces, explicit: it is the part of
+            // M(0) the tridiagonal cannot carry (rad_adi_cross_iter re-evaluates it at
+            // the current answer instead of at T*)
+            if (csx) {
+              if (lnk2(m,j) && ai > 0.0 && alm2 > 0.0) {
+                fl -= cross2(lg_, ulg_, m, k, j, i);
+              }
+              if (lnk2(m,j+1) && ai > 0.0 && alp2 > 0.0) {
+                fr -= cross2(lg_, ulg_, m, k, j+1, i);
+              }
+            }
             mi = fr - fl;
           }
           if (ub3) {
             const Real alm3 = st(m,ia_,k-1,j,i), alp3 = st(m,ia_,k+1,j,i);
-            const Real gl = (open3(m,k) && ai > 0.0 && alm3 > 0.0)
+            Real gl = (lnk3(m,k) && ai > 0.0 && alm3 > 0.0)
                     ? c3(m,k,j,i)*(phc - st(m,it_,k-1,j,i)) : 0.0;
-            const Real gr = (open3(m,k+1) && ai > 0.0 && alp3 > 0.0)
+            Real gr = (lnk3(m,k+1) && ai > 0.0 && alp3 > 0.0)
                     ? c3(m,k+1,j,i)*(st(m,it_,k+1,j,i) - phc) : 0.0;
+            if (csx) {
+              if (lnk3(m,k) && ai > 0.0 && alm3 > 0.0) {
+                gl -= cross3(lg_, ulg_, m, k, j, i);
+              }
+              if (lnk3(m,k+1) && ai > 0.0 && alp3 > 0.0) {
+                gr -= cross3(lg_, ulg_, m, k+1, j, i);
+              }
+            }
             const Real m3 = gr - gl;
             mi = ub2 ? (mi + m3) : m3;
           }
+          if (curv) mi /= vcell(m,k,j,i);
           if (!isfinite(mi)) mi = 0.0;
           if (lmode == 0) {
             o_(m,0,k,j,i) = dts*mi;
@@ -740,18 +930,34 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
           if (d2) {
             alm = st(m,ia_,k,j-1,i);
             alp = st(m,ia_,k,j+1,i);
-            cl = (open2(m,j) && ai > 0.0 && alm > 0.0) ? c2(m,k,j,i) : 0.0;
-            cr = (open2(m,j+1) && ai > 0.0 && alp > 0.0) ? c2(m,k,j+1,i) : 0.0;
+            cl = (lnk2(m,j) && ai > 0.0 && alm > 0.0) ? c2(m,k,j,i) : 0.0;
+            cr = (lnk2(m,j+1) && ai > 0.0 && alp > 0.0) ? c2(m,k,j+1,i) : 0.0;
           } else {
             alm = st(m,ia_,k-1,j,i);
             alp = st(m,ia_,k+1,j,i);
-            cl = (open3(m,k) && ai > 0.0 && alm > 0.0) ? c3(m,k,j,i) : 0.0;
-            cr = (open3(m,k+1) && ai > 0.0 && alp > 0.0) ? c3(m,k+1,j,i) : 0.0;
+            cl = (lnk3(m,k) && ai > 0.0 && alm > 0.0) ? c3(m,k,j,i) : 0.0;
+            cr = (lnk3(m,k+1) && ai > 0.0 && alp > 0.0) ? c3(m,k+1,j,i) : 0.0;
           }
+          // The row of (I - thtau A_d).  The three Cartesian statements are kept
+          // EXACTLY as they were, in exactly this order, and the curvilinear form is
+          // appended as an overwrite: A_d carries the 1/V_i of the flux divergence and
+          // V_i is exactly 1.0 off a cubed sphere, but neither dividing by that 1.0 nor
+          // hoisting the same expressions into an if/else is a compile no-op -- both
+          // change how the product contracts into an FMA, and MEASURED on the He-star
+          // FeCZ box (the production Cartesian configuration) that moves the last bit of
+          // the tridiagonal row and, through it, the solution.  This is the one hunk of
+          // this branch that broke the Cartesian bitwise regression; see tests_adi.
           Real dj = 1.0 + thtau*ai*(cl + cr);
           if (!(dj > 0.0) || !isfinite(dj)) dj = 1.0;
           Real aj = -thtau*cl*alm;
           Real cj = -thtau*cr*alp;
+          if (curv) {
+            const Real thv = thtau/vol_(m,k,j,i);
+            dj = 1.0 + thv*ai*(cl + cr);
+            if (!(dj > 0.0) || !isfinite(dj)) dj = 1.0;
+            aj = -thv*cl*alm;
+            cj = -thv*cr*alp;
+          }
           if (!isfinite(aj)) aj = 0.0;
           if (!isfinite(cj)) cj = 0.0;
           Real e1 = 0.0, en = 0.0;
@@ -813,9 +1019,71 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
       // index.  A neighbour on this rank is a device copy; one on another rank is a
       // message on the module's own communicator, tagged with the RECEIVER's local id (a
       // rank can receive one slab per local block per round, so that is unique).
+      //
+      // ON THE CUBED SPHERE the chain is OPEN and a cyclic shift has nothing to walk, so
+      // the same shift is run TWICE, once in each direction: pass 0 carries slabs
+      // rightward (block b receives slab b-r from its left neighbour, which holds it
+      // after round r-1), pass 1 carries them leftward (slab b+r from the right
+      // neighbour).  A round is skipped where the slab index leaves [0,nb) or the face is
+      // not linked, which is what makes the two ends of the chain ends.  After nb-1
+      // rounds each way every block of the chain again holds all nb slabs, indexed by the
+      // block's index WITHIN THE PANEL.  The extra tag bit (p << 4) is free: r < NADIB=8
+      // uses bits 1..3 only.
       Real *rbase = rd_.data();
       const int chunk = nlmax_*6;
-      for (int r=1; r<nb; ++r) {
+      for (int p=0; openchain && p<2; ++p) {
+        const bool rt = (p == 0);
+        for (int r=1; r<nb; ++r) {
+          Kokkos::fence();
+#if MPI_PARALLEL_ENABLED
+          std::vector<MPI_Request> reqs;
+#endif
+          // what I receive, and from which side
+          for (int m=0; m<nmbl; ++m) {
+            const int b0 = ab0h[doff + m];
+            const int br = rt ? (b0 - r) : (b0 + r);
+            if (br < 0 || br >= nb) continue;
+            const int srk = rt ? lrk[doff + m] : rrk[doff + m];
+            const int slid = rt ? llid[doff + m] : rlid[doff + m];
+            if (srk < 0) continue;
+            if (srk == global_variable::my_rank) {
+              Kokkos::deep_copy(
+                Kokkos::subview(rd_, m, br, Kokkos::make_pair(0, nline), Kokkos::ALL),
+                Kokkos::subview(rd_, slid, br, Kokkos::make_pair(0, nline), Kokkos::ALL));
+            } else {
+#if MPI_PARALLEL_ENABLED
+              MPI_Request rq;
+              const int tg = (m << 5) | (p << 4) | (r << 1) | (d2 ? 0 : 1);
+              MPI_Irecv(rbase + (static_cast<std::size_t>(m)*nbm_ + br)*chunk,
+                        6*nline, MPI_ATHENA_REAL, srk, tg, adi_comm, &rq);
+              reqs.push_back(rq);
+#endif
+            }
+          }
+          // what I send, and to which side: the slab my downstream neighbour needs
+          for (int m=0; m<nmbl; ++m) {
+            const int b0 = ab0h[doff + m];
+            const int bs = rt ? (b0 - r + 1) : (b0 + r - 1);
+            if (bs < 0 || bs >= nb) continue;
+            const int drk = rt ? rrk[doff + m] : lrk[doff + m];
+            const int dlid = rt ? rlid[doff + m] : llid[doff + m];
+            if (drk < 0 || drk == global_variable::my_rank) continue;
+#if MPI_PARALLEL_ENABLED
+            MPI_Request rq;
+            const int tg = (dlid << 5) | (p << 4) | (r << 1) | (d2 ? 0 : 1);
+            MPI_Isend(rbase + (static_cast<std::size_t>(m)*nbm_ + bs)*chunk,
+                      6*nline, MPI_ATHENA_REAL, drk, tg, adi_comm, &rq);
+            reqs.push_back(rq);
+#endif
+          }
+#if MPI_PARALLEL_ENABLED
+          if (!reqs.empty()) {
+            MPI_Waitall(static_cast<int>(reqs.size()), reqs.data(), MPI_STATUSES_IGNORE);
+          }
+#endif
+        }
+      }
+      for (int r=1; !openchain && r<nb; ++r) {
         Kokkos::fence();
 #if MPI_PARALLEL_ENABLED
         std::vector<MPI_Request> reqs;
@@ -942,6 +1210,91 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
         y_(m,0,k,j,i) = yv;
       });
     }
+
+    // ---- THE PANEL-SEAM SUB-STEP.  A tridiagonal line cannot cross a panel seam, so
+    // the sweeps above left every panel face out of the system.  Adding it as a plain
+    // explicit source would put an EXPLICIT face inside an implicit operator: for the
+    // mode that is uniform on each side and jumps at the seam, every other face carries
+    // nothing, the amplification is 1 - 2 z, and at the production z ~ 1e3 that is a
+    // blow-up.  Each seam face is therefore solved as an ISOLATED TWO-CELL backward
+    // Euler problem,
+    //     delta = tau [ C_f (Th_B - Th_A) + s_f Q_f ]
+    //             / ( 1 + tau C_f (alpha_A/V_A + alpha_B/V_B) ),    y_A += delta/V_A,
+    // which is L-stable -- as tau -> infinity delta saturates at the pair's equilibrium
+    // exchange and never overshoots -- and exactly conservative: the cell on the far
+    // side forms the same expression with the roles swapped and gets -delta, up to the
+    // along-seam RESAMPLE of the halo, which is the same error the explicit cubed-sphere
+    // operator already makes at a seam.  (rad_ang_solver = sts needs none of this: RKL1
+    // has no line structure and a panel face is an ordinary open face to it.)
+    if (anyseam) {
+      pbval_tr->InitRecv(1);
+      pbval_tr->PackAndSendCC(yy, tr_ycoar, sla_, sua_);
+      while (pbval_tr->RecvAndUnpackCC(yy, tr_ycoar, sla_, sua_)
+             != TaskStatus::complete) {}
+      Kokkos::fence();
+      while (pbval_tr->ClearRecv() != TaskStatus::complete) {}
+      while (pbval_tr->ClearSend() != TaskStatus::complete) {}
+      // a SNAPSHOT, so that a cell with two seam faces (a cube-vertex block) reads the
+      // pre-step value on both of them and the exchange with each neighbour stays
+      // antisymmetric
+      Kokkos::deep_copy(uu, yy);
+      auto y_ = yy;
+      auto sn_ = uu;
+      // WHERE THE SEAM FLUX IS EVALUATED.  The sub-step runs AFTER the sweeps, so
+      // reading the post-sweep Th (w = 1) makes the seam flux one sub-step out of phase
+      // with the interior -- a Lie splitting error of relative size ~ z, which shows up
+      // as a 3x local residual at the CUBE VERTICES, where a cell has two seam faces.
+      // w = 1/2 is the trapezoidal evaluation between the state the sweeps started from
+      // (y = 0) and the one they ended at, i.e. second order in the sub-step, and it
+      // leaves the ISOLATED pair (the sweeps move nothing) exactly backward Euler, so
+      // the L-stability argument above is untouched.
+      const Real wsm = rad_adi_seam_w;
+      par_for("radtradiseam", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        const Real ai = st(m,ia_,k,j,i);
+        const Real va = vcell(m,k,j,i);
+        if (!(ai > 0.0) || !(va > 0.0)) return;
+        const Real tha = st(m,it_,k,j,i) + ai*wsm*sn_(m,0,k,j,i);
+        Real dy = 0.0;
+        for (int f=0; f<4; ++f) {
+          if (f >= 2 && !three_d) break;
+          int kn = k, jn = j;
+          Real cf = 0.0, qf = 0.0, sgn = 1.0;
+          if (f == 0) {
+            if (!seam2(m,j)) continue;
+            jn = j - 1;
+            cf = c2(m,k,j,i);
+            if (csx) qf = cross2(sn_, true, m, k, j, i);
+          } else if (f == 1) {
+            if (!seam2(m,j+1)) continue;
+            jn = j + 1;
+            cf = c2(m,k,j+1,i);
+            sgn = -1.0;
+            if (csx) qf = cross2(sn_, true, m, k, j+1, i);
+          } else if (f == 2) {
+            if (!seam3(m,k)) continue;
+            kn = k - 1;
+            cf = c3(m,k,j,i);
+            if (csx) qf = cross3(sn_, true, m, k, j, i);
+          } else {
+            if (!seam3(m,k+1)) continue;
+            kn = k + 1;
+            cf = c3(m,k+1,j,i);
+            sgn = -1.0;
+            if (csx) qf = cross3(sn_, true, m, k+1, j, i);
+          }
+          const Real ab = st(m,ia_,kn,jn,i);
+          const Real vb = vcell(m,kn,jn,i);
+          if (!(cf > 0.0) || !(ab > 0.0) || !(vb > 0.0)) continue;
+          const Real thb = st(m,it_,kn,jn,i) + ab*wsm*sn_(m,0,kn,jn,i);
+          const Real den = 1.0 + tau*cf*(ai/va + ab/vb);
+          const Real dlt = tau*(cf*(thb - tha) + sgn*qf)/den;
+          if (isfinite(dlt)) dy += dlt/va;
+        }
+        if (dy != 0.0) y_(m,0,k,j,i) += dy;
+      });
+    }
+    }
     ++sts_ncall;
 
     // ---- write the increment into the energy and measure what it did to the total
@@ -958,7 +1311,8 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
         Real y = y_(m,0,k,j,i);
         if (!isfinite(y)) y = 0.0;
         u0(m,IEN,k,j,i) += y;
-        const Real dv = size.d_view(m).dx1*size.d_view(m).dx2*size.d_view(m).dx3;
+        const Real dv = curv ? vol_(m,k,j,i)
+                           : size.d_view(m).dx1*size.d_view(m).dx2*size.d_view(m).dx3;
         ssum += dv*y;
         sabs += dv*fabs(y);
         smax = fmax(smax, fabs(y));
@@ -1171,13 +1525,28 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
                 ? c2(m,k,j,i)*(thc - (st(m,it_,k,j-1,i) + alm2*yc_(m,0,k,j-1,i))) : 0.0;
       Real fr = (open2(m,j+1) && ai > 0.0 && alp2 > 0.0)
                 ? c2(m,k,j+1,i)*((st(m,it_,k,j+1,i) + alp2*yc_(m,0,k,j+1,i)) - thc) : 0.0;
+      // the CUBED-SPHERE cross flux of the same two faces, at the SAME Th the diagonal
+      // part uses -- so RKL1 integrates the exact cubed-sphere operator, cross term and
+      // all, and the Gershgorin radius above covers the extra entries
+      if (csx) {
+        if (open2(m,j) && ai > 0.0 && alm2 > 0.0) fl -= cross2(yc_, true, m, k, j, i);
+        if (open2(m,j+1) && ai > 0.0 && alp2 > 0.0) {
+          fr -= cross2(yc_, true, m, k, j+1, i);
+        }
+      }
       Real mi = fr - fl;
       if (three_d) {
         const Real alm3 = st(m,ia_,k-1,j,i), alp3 = st(m,ia_,k+1,j,i);
-        const Real gl = (open3(m,k) && ai > 0.0 && alm3 > 0.0)
+        Real gl = (open3(m,k) && ai > 0.0 && alm3 > 0.0)
                 ? c3(m,k,j,i)*(thc - (st(m,it_,k-1,j,i) + alm3*yc_(m,0,k-1,j,i))) : 0.0;
-        const Real gr = (open3(m,k+1) && ai > 0.0 && alp3 > 0.0)
+        Real gr = (open3(m,k+1) && ai > 0.0 && alp3 > 0.0)
                 ? c3(m,k+1,j,i)*((st(m,it_,k+1,j,i) + alp3*yc_(m,0,k+1,j,i)) - thc) : 0.0;
+        if (csx) {
+          if (open3(m,k) && ai > 0.0 && alm3 > 0.0) gl -= cross3(yc_, true, m, k, j, i);
+          if (open3(m,k+1) && ai > 0.0 && alp3 > 0.0) {
+            gr -= cross3(yc_, true, m, k+1, j, i);
+          }
+        }
         mi += gr - gl;
       }
       if (sts1) {
@@ -1188,6 +1557,9 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
                 ? c1(m,k,j,i+1)*((st(m,it_,k,j,i+1) + alp1*yc_(m,0,k,j,i+1)) - thc) : 0.0;
         mi += hr - hl;
       }
+      // the face sum is a sum of TOTAL face fluxes; the cell volume divides it here,
+      // outside the sum, so the flux form still cancels between the two cells of a face
+      if (curv) mi /= vcell(m,k,j,i);
       if (!isfinite(mi)) mi = 0.0;
       yn_(m,0,k,j,i) = muj*yc_(m,0,k,j,i) + nuj*yo_(m,0,k,j,i) + mutp*mi;
     });
@@ -1230,7 +1602,8 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
       }
       if (!isfinite(y)) y = 0.0;
       u0(m,IEN,k,j,i) += y;
-      const Real dv = size.d_view(m).dx1*size.d_view(m).dx2*size.d_view(m).dx3;
+      const Real dv = curv ? vol_(m,k,j,i)
+                           : size.d_view(m).dx1*size.d_view(m).dx2*size.d_view(m).dx3;
       ssum += dv*y;
       sabs += dv*fabs(y);
       smax = fmax(smax, fabs(y));

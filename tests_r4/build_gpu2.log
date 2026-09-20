@@ -1,0 +1,8 @@
+[  1%] Built target kokkossimd
+[ 14%] Built target kokkoscore
+[ 14%] Built target AlwaysCheckGit
+[ 15%] Built target kokkoscontainers
+[ 16%] Built target impl_git_version
+[ 16%] Building CXX object src/CMakeFiles/athena.dir/pgen/red_giant.cpp.o
+[ 17%] Linking CXX executable athena
+[100%] Built target athena

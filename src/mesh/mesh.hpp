@@ -34,12 +34,19 @@ struct RegionSize {
 //! \struct RegionIndcs
 //! \brief Cell indices and number of active and ghost cells in a Mesh or a MeshBlock
 
+//! EVERY MEMBER IS ZERO INITIALISED, and that is not cosmetic: restart.cpp STEP 1 writes
+//! `mesh_indcs` and `mb_indcs` to the file as raw structs, while the coarse-cell fields
+//! `cnx1..cke` are only ever assigned on a MULTILEVEL mesh.  On a uniform grid they were
+//! indeterminate, so every restart file carried ~21 bytes of whatever had been on the
+//! stack and two runs of the same binary wrote DIFFERENT files -- harmless to a restart
+//! (the reader takes the coarse indices from the input) but it put uninitialised memory
+//! on disk and made a byte-for-byte restart regression test impossible (tests_r7 B.2a).
 struct RegionIndcs {
-  int ng;                       // number of ghost cells
-  int nx1, nx2, nx3;            // number of active cells (not including ghost zones)
-  int is,ie,js,je,ks,ke;        // indices of ACTIVE cells
-  int cnx1, cnx2, cnx3;         // number of active coarse cells (not including gzs)
-  int cis,cie,cjs,cje,cks,cke;  // indices of ACTIVE coarse cells
+  int ng = 0;                   // number of ghost cells
+  int nx1 = 0, nx2 = 0, nx3 = 0;  // number of active cells (not including ghost zones)
+  int is = 0, ie = 0, js = 0, je = 0, ks = 0, ke = 0;   // indices of ACTIVE cells
+  int cnx1 = 0, cnx2 = 0, cnx3 = 0;  // number of active coarse cells (not including gzs)
+  int cis = 0, cie = 0, cjs = 0, cje = 0, cks = 0, cke = 0;  // ACTIVE coarse cells
 };
 
 //----------------------------------------------------------------------------------------
@@ -80,14 +87,27 @@ struct EventCounters {
   // its own bracket three decades outside the table and returns a saturated
   // temperature and sound speed that no longer depend on e at all.
   int neos_tclamp;
+  // Cells whose FLOORED state was rebuilt from a TEMPERATURE, under
+  // <block>/efloor_as_tfloor: e was set to e(rho,T) for the T the floors and the table
+  // clamp left, so that re-inverting the cell returns that same T and the cached p,
+  // Gamma_1 and sound speed belong to the energy the cell actually carries.  Counted
+  // separately from neos_efloor because it is a repair OF a floor, not a floor.
+  int neos_tset;
   // Energy density CREATED by the internal-energy/pressure floor since the counters were
   // last reset, summed over cells (code units, not volume weighted -- a cell count's
   // worth of erg/cm^3).  A floor that fires is only a diagnostic; a floor that fires
   // while donating a large energy is the run being driven by its own repair.
   Real efloor_de;
+  // Kinetic energy density the VELOCITY CEILING clipped since the counters were last
+  // reset, summed over cells the same way efloor_de is.  By default that energy is
+  // DELETED from the conserved total -- an uncounted sink, which is why it is counted
+  // here; under <block>/vceil_thermalise it becomes internal energy instead and the
+  // column measures the dissipation the ceiling is doing.  HYDRO only: the general-MHD
+  // and ideal-MHD inversions have no accumulator to thread it through.
+  Real vceil_de;
   EventCounters() : nfofc(0), neos_dfloor(0), neos_efloor(0), neos_tfloor(0),
                     neos_vceil(0), neos_fail(0), maxit_c2p(0), neos_tclamp(0),
-                    efloor_de(0.0) {}
+                    neos_tset(0), efloor_de(0.0), vceil_de(0.0) {}
 };
 
 //----------------------------------------------------------------------------------------

@@ -13,6 +13,7 @@
 #include <utility>
 #include <algorithm>
 #include <cstdio>
+#include <cstring>
 
 #include "athena.hpp"
 #include "geodesic-grid/geodesic_grid.hpp"
@@ -228,9 +229,18 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     std::memcpy(&(pturb->rstate), &(rng_data[0]), sizeof(RNG_State));
   }
 
-  // root process reads size of CC and FC data arrays from restart file
+  // --- THE OPTIONAL PGEN STATE BLOCK (see kPgenRstMagic in pgen.hpp).  It is marked, so
+  // the eight bytes read here decide: the marker means a block follows and the variable
+  // data size comes after it, anything else IS the variable data size of the old layout
+  // and has already been read.  That is why the read is unconditional and needs no switch
+  // from the input file -- a file written without the block, which is every file every
+  // other problem generator writes and every file written before this existed, takes the
+  // second branch and sees exactly the bytes it always did.
   IOWrapperSizeT variablesize = sizeof(IOWrapperSizeT);
   char *variabledata = new char[variablesize];
+  static_assert(sizeof(kPgenRstMagic) == sizeof(IOWrapperSizeT),
+                "the pgen state marker must be exactly as long as the data size it "
+                "stands in front of, or the peek below cannot fall back");
   if (global_variable::my_rank == 0 || single_file_per_rank) {
     if (resfile.Read_bytes(variabledata, 1, variablesize, single_file_per_rank)
         != variablesize) {
@@ -246,6 +256,54 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     MPI_Bcast(variabledata, variablesize, MPI_CHAR, 0, MPI_COMM_WORLD);
   }
 #endif
+  if (std::memcmp(variabledata, &(kPgenRstMagic[0]), sizeof(kPgenRstMagic)) == 0) {
+    // the marker: read the length, then the payload, then the real data size
+    IOWrapperSizeT nb = 0;
+    if (global_variable::my_rank == 0 || single_file_per_rank) {
+      if (resfile.Read_bytes(&nb, 1, sizeof(IOWrapperSizeT), single_file_per_rank)
+          != sizeof(IOWrapperSizeT)) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "the problem generator state block of this restart "
+                  << "file has no length, restart file is broken." << std::endl;
+        exit(EXIT_FAILURE);
+      }
+    }
+#if MPI_PARALLEL_ENABLED
+    if (!single_file_per_rank) {
+      MPI_Bcast(&nb, sizeof(IOWrapperSizeT), MPI_CHAR, 0, MPI_COMM_WORLD);
+    }
+#endif
+    pgen_rststate.resize(nb);
+    if (nb > 0) {
+      if (global_variable::my_rank == 0 || single_file_per_rank) {
+        if (resfile.Read_bytes(pgen_rststate.data(), 1, nb, single_file_per_rank) != nb) {
+          std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                    << std::endl << "the problem generator state block of this restart "
+                    << "file is short, restart file is broken." << std::endl;
+          exit(EXIT_FAILURE);
+        }
+      }
+#if MPI_PARALLEL_ENABLED
+      if (!single_file_per_rank) {
+        MPI_Bcast(pgen_rststate.data(), nb, MPI_CHAR, 0, MPI_COMM_WORLD);
+      }
+#endif
+    }
+    if (global_variable::my_rank == 0 || single_file_per_rank) {
+      if (resfile.Read_bytes(variabledata, 1, variablesize, single_file_per_rank)
+          != variablesize) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "Variable data size read from restart file is "
+                  << "incorrect, restart file is broken." << std::endl;
+        exit(EXIT_FAILURE);
+      }
+    }
+#if MPI_PARALLEL_ENABLED
+    if (!single_file_per_rank) {
+      MPI_Bcast(variabledata, variablesize, MPI_CHAR, 0, MPI_COMM_WORLD);
+    }
+#endif
+  }
   IOWrapperSizeT data_size;
   std::memcpy(&data_size, &(variabledata[0]), sizeof(IOWrapperSizeT));
 

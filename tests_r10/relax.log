@@ -1,0 +1,117 @@
+=================== CASE n0_t100_r2.0  n=0 tau=100 rout/rin=2.0
+stage1 exit 0  cpu time used  = 1.456826e+01
+zone-cycles/cpu_second = 1.686955e+05
+particle-updates/cpu_second = 0.000000e+00
+stage2 exit 0  cpu time used  = 1.095847e-01
+zone-cycles/cpu_second = 1.121324e+05
+particle-updates/cpu_second = 0.000000e+00
+=================== CASE n1_t100_r2.0  n=1 tau=100 rout/rin=2.0
+stage1 exit 0  cpu time used  = 1.453458e+01
+zone-cycles/cpu_second = 1.690864e+05
+particle-updates/cpu_second = 0.000000e+00
+stage2 exit 0  cpu time used  = 1.003529e-01
+zone-cycles/cpu_second = 1.224479e+05
+particle-updates/cpu_second = 0.000000e+00
+=================== CASE n3_t100_r2.0  n=3 tau=100 rout/rin=2.0
+stage1 exit 0  cpu time used  = 1.434872e+01
+zone-cycles/cpu_second = 1.712766e+05
+particle-updates/cpu_second = 0.000000e+00
+stage2 exit 0  cpu time used  = 9.899544e-02
+zone-cycles/cpu_second = 1.241269e+05
+particle-updates/cpu_second = 0.000000e+00
+=================== CASE n7_t100_r2.0  n=7 tau=100 rout/rin=2.0
+stage1 exit 0  cpu time used  = 1.432911e+01
+zone-cycles/cpu_second = 1.715109e+05
+particle-updates/cpu_second = 0.000000e+00
+stage2 exit 0  cpu time used  = 1.039353e-01
+zone-cycles/cpu_second = 1.182274e+05
+particle-updates/cpu_second = 0.000000e+00
+=================== CASE n3_t30_r2.0  n=3 tau=30 rout/rin=2.0
+stage1 exit 0  cpu time used  = 1.460229e+01
+zone-cycles/cpu_second = 1.683024e+05
+particle-updates/cpu_second = 0.000000e+00
+stage2 exit 0  cpu time used  = 1.077068e-01
+zone-cycles/cpu_second = 1.140875e+05
+particle-updates/cpu_second = 0.000000e+00
+=================== CASE n3_t300_r2.0  n=3 tau=300 rout/rin=2.0
+stage1 exit 0  cpu time used  = 1.418365e+01
+zone-cycles/cpu_second = 1.732699e+05
+particle-updates/cpu_second = 0.000000e+00
+stage2 exit 0  cpu time used  = 1.017151e-01
+zone-cycles/cpu_second = 1.208080e+05
+particle-updates/cpu_second = 0.000000e+00
+=================== CASE n3_t100_r1.1  n=3 tau=100 rout/rin=1.1
+stage1 exit 0  cpu time used  = 1.242298e+01
+zone-cycles/cpu_second = 1.978270e+05
+particle-updates/cpu_second = 0.000000e+00
+stage2 exit 0  cpu time used  = 9.462295e-02
+zone-cycles/cpu_second = 1.298628e+05
+particle-updates/cpu_second = 0.000000e+00
+=================== CASE n3_t100_r1.5  n=3 tau=100 rout/rin=1.5
+stage1 exit 0  cpu time used  = 1.401785e+01
+zone-cycles/cpu_second = 1.753193e+05
+particle-updates/cpu_second = 0.000000e+00
+stage2 exit 0  cpu time used  = 1.046876e-01
+zone-cycles/cpu_second = 1.173778e+05
+particle-updates/cpu_second = 0.000000e+00
+=================== CASE n8_t100_r2.0  n=8 tau=100 rout/rin=2.0
+stage1 exit 0  cpu time used  = 1.427585e+01
+zone-cycles/cpu_second = 1.721509e+05
+particle-updates/cpu_second = 0.000000e+00
+stage2 exit 0  cpu time used  = 1.040576e-01
+zone-cycles/cpu_second = 1.180885e+05
+particle-updates/cpu_second = 0.000000e+00
+=================== CASE n9_t100_r2.0  n=9 tau=100 rout/rin=2.0
+stage1 exit 0  cpu time used  = 1.424926e+01
+zone-cycles/cpu_second = 1.724721e+05
+particle-updates/cpu_second = 0.000000e+00
+stage2 exit 0  cpu time used  = 1.044771e-01
+zone-cycles/cpu_second = 1.176143e+05
+particle-updates/cpu_second = 0.000000e+00
+                                  
+================================= 
+Global information about the job: 
+================================= 
+  
+Job owner: jinma(28895)
+Job name:  thickrelax
+Node list: vipa1327
+Job start: Fri Sep 18 01:30:19 CEST 2026
+Job end:   Fri Sep 18 01:33:18 CEST 2026
+Work dir:  /viper/u2/jinma/ATHENAK/bench/wt_he4/tests_r10
+Command:   /viper/u2/jinma/ATHENAK/bench/wt_he4/tests_r10/run_relax.sh
+  
+  
+  
+==========================================================================================
+Information on jobsteps (Note: MaxRSS/AveRSS is the maximum/average over all 
+tasks of the per-task memory high-water marks; cf. "man sacct"): 
+==========================================================================================
+  
+JobID            JobName NNodes NTasks  NCPUS       MaxRSS       AveRSS    Elapsed ExitCode
+------------- ---------- ------ ------ ------ ------------ ------------ ---------- --------
+11788100      thickrelax      1            16                             00:02:59      0:0
+11788100.0        athena      1      1     16      927.87M      927.87M   00:00:17      0:0
+11788100.1        athena      1      1     16       35.38M       35.38M   00:00:03      0:0
+11788100.2        athena      1      1     16      925.79M      925.79M   00:00:17      0:0
+11788100.3        athena      1      1     16       36.37M       36.37M   00:00:03      0:0
+11788100.4        athena      1      1     16      925.91M      925.91M   00:00:15      0:0
+11788100.5        athena      1      1     16       35.38M       35.38M   00:00:02      0:0
+11788100.6        athena      1      1     16      925.87M      925.87M   00:00:16      0:0
+11788100.7        athena      1      1     16       35.38M       35.38M   00:00:02      0:0
+11788100.8        athena      1      1     16      927.85M      927.85M   00:00:17      0:0
+11788100.9        athena      1      1     16       35.38M       35.38M   00:00:03      0:0
+11788100.10       athena      1      1     16      925.86M      925.86M   00:00:15      0:0
+11788100.11       athena      1      1     16       36.37M       36.37M   00:00:02      0:0
+11788100.12       athena      1      1     16      925.81M      925.81M   00:00:14      0:0
+11788100.13       athena      1      1     16       35.38M       35.38M   00:00:01      0:0
+11788100.14       athena      1      1     16      925.76M      925.76M   00:00:15      0:0
+11788100.15       athena      1      1     16       35.37M       35.37M   00:00:02      0:0
+11788100.16       athena      1      1     16      929.66M      929.66M   00:00:15      0:0
+11788100.17       athena      1      1     16       34.38M       34.38M   00:00:01      0:0
+11788100.18       athena      1      1     16      927.70M      927.70M   00:00:16      0:0
+11788100.19       athena      1      1     16       35.38M       35.38M   00:00:01      0:0
+  
+Maximum memory per node: 0.974817 GB (defined as MaxRSS*Ntasks/NNodes)
+CPU utilization: 7.0 %
+  

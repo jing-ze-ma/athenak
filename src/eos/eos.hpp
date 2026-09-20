@@ -108,6 +108,36 @@ struct EOS_Data {
   // Firings are counted in EventCounters::neos_vceil (event-log column eos_vceil).
   Real vceil = 0.0;
 
+  // <hydro>/vceil_thermalise, <mhd>/vceil_thermalise -- THERMALISE the clipped kinetic
+  // energy instead of deleting it (default false = the historical behaviour).
+  //
+  // The ceiling above removes (1 - fs^2) KE from the CONSERVED TOTAL, so the clipped
+  // kinetic energy leaves the simulation entirely: it is an uncounted energy SINK, of
+  // the same kind an unphysical floor is a source.  In an envelope run where the flow
+  // reaches the ceiling routinely the sink is not small -- 9.7e40 erg, twice the
+  // envelope's internal energy, in the He4 presupernova arms -- and it silently breaks
+  // the global energy budget (d(tot-E)/dt no longer matches L_in - L_out).
+  //
+  // With this set the momentum is rescaled exactly as before but the TOTAL energy is
+  // left alone, so e = E - KE_new picks the clipped kinetic energy up as INTERNAL
+  // energy: the ceiling becomes a (crude, cell-local) dissipation rather than a sink,
+  // and the total energy is conserved through it.  Everything downstream in the same
+  // c2p call -- the temperature solve, the pressure/temperature/entropy floors,
+  // efloor_as_tfloor, and the p and Gamma_1 handed to the reconstruction -- then runs
+  // on that larger internal energy, so the returned primitive, wtemp, wder and the
+  // conserved state written back are mutually consistent.
+  //
+  // CAVEAT: a cell that is BOTH at the density floor and above the ceiling is heated by
+  // KE/rho per unit mass, which in a near-vacuum cell can be a very large temperature.
+  // That heat is real in the sense that the momentum was real, but the momentum in such
+  // a cell is usually numerical; the temperature floor/clamp and efloor_as_tfloor bound
+  // the damage, and the event-log column vceil_de makes the size of it visible.
+  //
+  // The energy converted (or, with this off, removed) is summed into
+  // EventCounters::vceil_de -- HYDRO only; the general-MHD inversion has no energy
+  // accumulator to thread it through and is not counted.
+  bool vceil_thermalise = false;
+
   // <block>/eos_floor_consistent -- make the TABULATED EOS thermodynamically consistent
   // below the lowest tabulated temperature.  The temperature inversion brackets on
   // [10^(ymin-3), 10^(ymax+3)]; once e falls under e(rho, 10^(ymin-3)) it pins on that
@@ -129,9 +159,31 @@ struct EOS_Data {
   // in the residual case E < e_floor.
   bool efloor_from_ekin = false;
 
-  // TRUE when NONE of the four floor switches above (dfloor_keep_velocity, vceil,
-  // floor_consistent, efloor_from_ekin) is enabled, i.e. when the floors behave exactly
-  // as they did before they were added.  Set once in ReadEOS_Params().
+  // <block>/efloor_as_tfloor -- REBUILD A FLOORED STATE FROM ITS TEMPERATURE.
+  //
+  // Under a tabulated EOS the energy floor and the table's own temperature clamp leave
+  // the cell INCONSISTENT: `pfloor` sets e to e(rho,pfloor), and EOSTable::ClampLogT
+  // returns the state at the table's lowest tabulated row whenever e lies below it --
+  // so T, p, Gamma_1 and the sound speed are those of the clamp row while the conserved
+  // energy is still that of a colder gas the table cannot represent.  Every consumer
+  // then disagrees with every other: the Riemann solver sees a pressure the cell's own
+  // energy does not support, the timestep sees the clamp row's sound speed, and the
+  // two-stream reads a Planck function the energy cannot pay for.
+  //
+  // With this on, whenever a floor fires or the inversion is clamped the internal energy
+  // is set to e(rho, T) for the temperature that was settled on -- at least `tfloor`,
+  // and the clamp row where the clamp bound -- and the conserved energy is corrected to
+  // match.  Re-inverting the cell then returns that same T by construction.  It also
+  // makes `tfloor` the floor that actually binds, which is why ReadEOS_Params() raises
+  // tfloor to the table's own lowest temperature when it is set below it: a tfloor under
+  // the table is unreachable, because the clamp intercepts every state that would trip
+  // it.  Counted in EventCounters::neos_tset.
+  bool efloor_as_tfloor = false;
+
+  // TRUE when NONE of the five floor switches above (dfloor_keep_velocity, vceil,
+  // floor_consistent, efloor_from_ekin, efloor_as_tfloor) is enabled, i.e. when the
+  // floors behave exactly as they did before they were added.  Set once in
+  // ReadEOS_Params().
   //
   // Why a flag rather than the switches' own tests: adding them rewrote the kernels that
   // apply the floors -- expressions regrouped, temporaries hoisted, writes moved, and in
@@ -463,6 +515,15 @@ struct EOS_Data {
   KOKKOS_INLINE_FUNCTION
   bool BelowPressureFloor(const Real d, const Real e, const Real t) const {
     return (Pressure(d, e, t) < pfloor);
+  }
+
+  //! \fn Real TableTempMin
+  //! \brief the LOWEST TABULATED temperature, in CODE units; -1 when no table is active.
+  //! This is the temperature EOSTable::ClampLogT holds a sub-table state at, and
+  //! therefore the lowest temperature any floor can actually reach.
+  KOKKOS_INLINE_FUNCTION
+  Real TableTempMin() const {
+    return tbl.active ? (EOSTable::Pow10(tbl.ymin)/temp_cgs) : -1.0;
   }
 
   //! \fn Real EnergyFloorBound

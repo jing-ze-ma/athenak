@@ -651,6 +651,9 @@ void BoxConvBoxInt(Mesh *pm, Real &etot, Real &erad) {
   const bool gen = eos.IsGeneral();
   const bool tap = gen && eos.tbl.rad_taper;
   const Real xlo = eos.tbl.rad_lrho_lo, xhi = eos.tbl.rad_lrho_hi;
+  // the same w the EOS used, temperature gate included (rad_taper::WeightGated)
+  const Real ylo = eos.tbl.rad_lt_lo, yhi = eos.tbl.rad_lt_hi;
+  const bool tg = eos.tbl.rad_tgate;
   const Real arad = eos.tbl.arad;
   const Real tcgs = eos.temp_cgs;
   Real se = 0.0, sr = 0.0;
@@ -666,8 +669,10 @@ void BoxConvBoxInt(Mesh *pm, Real &etot, Real &erad) {
     const Real dv = size.d_view(m).dx1*size.d_view(m).dx2*size.d_view(m).dx3;
     le += u0(m,IEN,k,j,i)*dv;
     if (tap) {
-      const Real wr = rad_taper::WeightOnly(log10(w0(m,IDN,k,j,i)), xlo, xhi);
       const Real tk = wt(m,k,j,i)*tcgs;
+      Real wr, dwdx, dwdy;
+      rad_taper::WeightGated(log10(w0(m,IDN,k,j,i)), xlo, xhi, log10(tk), ylo, yhi,
+                             tg, wr, dwdx, dwdy);
       lr += wr*arad*tk*tk*tk*tk*dv;
     }
   }, se, sr);
@@ -2199,6 +2204,19 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                   << "(1-w) rho kappa F/c + Prad grad w, with w from the EOS taper"
                   << std::endl;
       }
+    }
+    // problem/rt_force_tau_gate: gate the force above by the optical depth to the top
+    // (see two_stream_rt.hpp).  Default OFF and bitwise off.
+    ts::rt_force_tau_gate = pin->GetOrAddBoolean("problem", "rt_force_tau_gate", false);
+    ts::rt_force_tau_lo = pin->GetOrAddReal("problem", "rt_force_tau_lo", 0.3);
+    ts::rt_force_tau_hi = pin->GetOrAddReal("problem", "rt_force_tau_hi", 3.0);
+    if (ts::rt_force_tau_gate &&
+        (!(ts::rt_force_tau_lo > 0.0) ||
+         !(ts::rt_force_tau_hi > ts::rt_force_tau_lo))) {
+      std::cout << "### FATAL ERROR in box_convection: problem/rt_force_tau_gate needs "
+                << "0 < rt_force_tau_lo < rt_force_tau_hi (the ramp is a smoothstep "
+                << "in log10 tau)" << std::endl;
+      std::exit(EXIT_FAILURE);
     }
     // ck_nquad: 1 = hemispheric mean (mu = 1/1.66), 2 = two-point Gauss-Legendre
     correlated_k::ck_nq = pin->GetOrAddInteger("problem", "rt_nquad", 2);

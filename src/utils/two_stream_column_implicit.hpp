@@ -341,6 +341,11 @@ struct RTCol3 {
   DvceArray1D<Real> stat;         // 12 reduction slots, see the launcher
   DualArray1D<RegionSize> size;
   DvceArray4D<Real> dx1;
+  // the radial-mesh geometry of the SPHERICAL DILUTION (derived in two_stream_rt.hpp):
+  // the x1 face areas and the cell volumes.  Both are 1x1x1x1 placeholders on a
+  // Cartesian mesh, which is why every read goes through Av/Ac/Vc and their pp branch.
+  DvceArray4D<Real> vol;
+  DvceArray4D<Real> area1;
   EOS_Data eos;
   // ---- switches and scalars --------------------------------------------------------
   Real bdt = 0.0;
@@ -514,6 +519,123 @@ struct RTCol3 {
   Real Dx(const int m, const int k, const int j, const int i) const {
     return pp ? size.d_view(m).dx1 : dx1(m,k,j,i);
   }
+  //! \brief the x1 FACE area A(i), the cell's MEAN area V/dx1 -- the weight of a source
+  //! endpoint that sits at the cell CENTRE -- and the cell VOLUME.  THE UNKNOWNS D_q,
+  //! U_q OF THIS SOLVE ARE THE AREA-WEIGHTED INTENSITIES J = A I the sweep carries (the
+  //! SPHERICAL DILUTION derivation in two_stream_rt.hpp): the transfer equation in J is
+  //! the plane-parallel one with the source function A B, so every source endpoint is
+  //! scaled by the area at its own position, the deep-segment diffusion fluxes and the
+  //! entry-state face fluxes are scaled by their face area, every divergence is per
+  //! VOLUME, and a flux REPORTED to the rest of the code (Fb, stat(16)) is divided by
+  //! its face area again to become a flux per unit area.  Under problem/
+  //! rt_plane_parallel all three collapse to A = 1 and V = Dx, so every new factor is a
+  //! multiplication or division by exactly 1.0 and the box is bitwise unchanged.
+  //!
+  //! THE REFERENCE AREA, AND WHY THE AREAS ARE NOT ABSOLUTE.  All three are carried
+  //! RELATIVE to the column's top face, Ar = A(ie+1).  The scaling cancels identically
+  //! -- every source endpoint, boundary datum and face flux of this solve carries ONE
+  //! power of the area and every divergence one power of 1/V, so J, Src, Fb, the
+  //! Jacobian and every reduction slot are unchanged by it -- but the MAGNITUDE of the
+  //! unknowns is not.  With absolute areas D_q, U_q are A I ~ 1e22 x b while the fifth
+  //! unknown of the same 5x5 block is b itself, so the transport rows' b-column entries
+  //! (t^2 A and the source coefficients, all O(A)) sit 22 decades above their unit
+  //! diagonals.  Row equilibration then drives the transport pivots to ~1/A, the
+  //! single-precision pivot test of RTCol3Inv5X fires on EVERY block, and
+  //! problem/rt_impl_mixed silently degenerates into the double path plus a wasted
+  //! float factorisation (measured on the 1-D He column: 10464 fallbacks per call,
+  //! i.e. every cell, against 0 with the reference area).  Relative areas are O(1)
+  //! -- A(i)/A(ie+1) spans the domain's area ratio and nothing more -- so the block is
+  //! commensurate again.  Under rt_plane_parallel Ar is not read at all.
+  KOKKOS_INLINE_FUNCTION
+  Real Ar(const int m, const int k, const int j) const {
+    return area1(m,k,j,ie+1);
+  }
+  KOKKOS_INLINE_FUNCTION
+  Real Av(const int m, const int k, const int j, const int i) const {
+    return pp ? 1.0 : area1(m,k,j,i)/Ar(m,k,j);
+  }
+  KOKKOS_INLINE_FUNCTION
+  Real Ac(const int m, const int k, const int j, const int i) const {
+    return pp ? 1.0 : vol(m,k,j,i)/(dx1(m,k,j,i)*Ar(m,k,j));
+  }
+  KOKKOS_INLINE_FUNCTION
+  Real Vc(const int m, const int k, const int j, const int i) const {
+    return pp ? size.d_view(m).dx1 : vol(m,k,j,i)/Ar(m,k,j);
+  }
+  //! \brief THE SPHERICAL FORM (this replaces the J = A I substitution of 1159a8f3).
+  //!
+  //! The exact spherically symmetric moment pair of the two-stream closure is, with
+  //! S = (I+ + I-)/2 ~ E and D = (I+ - I-)/2 ~ F and the Eddington factor f = mu^2 =
+  //! 1/3 (so the sphericity term (3f-1)E/r vanishes identically),
+  //!     mu d(A D)/dr = -kappa rho A (S - B)      the ZEROTH moment: r^2 dilution
+  //!     mu dS/dr     = -kappa rho D              the FIRST  moment: NO area factor
+  //! The area belongs to the ANTISYMMETRIC part alone.  Weighting BOTH moments with it,
+  //! which is what transporting J = A I against a source A B does, leaves the first
+  //! moment with a spurious 2 B/r and makes the diffusion-limit flux
+  //! F_2s/F_exact = 1 - H_T/(2r): a factor of two on a stellar envelope and the WRONG
+  //! SIGN where H_T > 2r (tests_r2/thick measures exactly that, to 1e-4).
+  //!
+  //! DISCRETELY.  Each cell carries a CONSTANT frame area A_i = V_i/dx_i (Ac) and the
+  //! layer solve inside it is the plane-parallel one it always was, per unit area, with
+  //! the source function B -- no area weight on any endpoint.  The whole geometry sits
+  //! in the FACE conditions: at every face S is continuous and A D is continuous, so
+  //! with u the upward and d the downward intensity on the two sides of face f,
+  //!     u_above = u_below + c,   d_below = d_above + c,   c = beta (d_above - u_below),
+  //!     beta = (A_above - A_below)/(A_above + A_below),
+  //! which is the unique pair conserving S and A D (verify: the two S are equal by
+  //! inspection, and A_a(1-beta) = A_b(1+beta)).  A_below(f) = A_{f-1} and A_above(f) =
+  //! A_f, except at the two ends of the column, where the boundary datum lives in the
+  //! FACE's own frame and the area there is the face area A(f) itself.
+  //!
+  //! WHAT THIS BUYS.  (i) The deposit is exactly the plane-parallel divergence again:
+  //! Phi = A_i F is single-valued at every face, Phi_hi - Phi_lo = A_i (F_hi - F_lo),
+  //! and V_i = A_i dx_i, so Src_i = -(F_hi - F_lo)/dx_i telescopes cell by cell to
+  //! -(A_top F_top - A_bot F_bot)/V with no area in sight.  That is why every 1/Vc of
+  //! the thin segment becomes 1/Dx here.  (ii) A face flux REPORTED to the rest of the
+  //! code is Phi_f/A(f) = (A_i/A(f)) F_i, the factor Afl below.  (iii) Transparent
+  //! limit: no sources, so Phi is constant and L = 4 pi r^2 Fb is exactly conserved --
+  //! the rg1d gate -- while S stays constant (the known weakness of the f = 1/3 closure
+  //! in the streaming limit: it is E, not the luminosity, that it gets wrong).
+  //! (iv) Thick limit: within a cell mu dS/dr = -kappa rho D exactly, S is continuous
+  //! across faces and D = Phi/A_i, so the first moment carries no area at all and the
+  //! diffusion flux is right to O(dx^2).
+  //!
+  //! The DEEP (hybrid) segment already had the right form -- F = kflx dB/dtau with no
+  //! area and a Phi = A(f) F divergence per volume -- and is unchanged.
+  //!
+  //! beta of face f.  Exactly 0 under rt_plane_parallel, where the whole correction c is
+  //! identically zero and every expression below is the one the box always ran.
+  KOKKOS_INLINE_FUNCTION
+  Real Bt(const int m, const int k, const int j, const int f, const int ib) const {
+    if (pp) return 0.0;
+    const Real ab = (f <= ib) ? area1(m,k,j,f)
+                              : vol(m,k,j,f-1)/dx1(m,k,j,f-1);
+    const Real aa = (f > ie) ? area1(m,k,j,f) : vol(m,k,j,f)/dx1(m,k,j,f);
+    return (aa - ab)/(aa + ab);
+  }
+  //! the mixing itself: c = beta (d_above - u_below), added to BOTH sides
+  KOKKOS_INLINE_FUNCTION
+  Real Mix(const Real bt, const Real ub, const Real da) const {
+    return bt*(da - ub);
+  }
+  //! A_cell/A_face at face i: what turns a cell-frame per-area flux into the face's own.
+  //! Under rt_plane_parallel this is 1.0/Av(i) = 1.0 and the caller keeps its division.
+  KOKKOS_INLINE_FUNCTION
+  Real Afl(const int m, const int k, const int j, const int i) const {
+    return pp ? 1.0/Av(m,k,j,i) : vol(m,k,j,i)/(dx1(m,k,j,i)*area1(m,k,j,i));
+  }
+  //! \brief the area factor an expression of the OLD J = A I form still spells out and
+  //! the spherical form no longer carries.  Exactly 1.0 either way -- but read from the
+  //! area View under rt_plane_parallel, so that the box's expression DAG, and with it
+  //! hipcc's -ffp-contract=fast decisions, is untouched.
+  KOKKOS_INLINE_FUNCTION
+  Real Aun(const int m, const int k, const int j, const int i) const {
+    return pp ? Av(m,k,j,i) : 1.0;
+  }
+  KOKKOS_INLINE_FUNCTION
+  Real Acn(const int m, const int k, const int j, const int i) const {
+    return pp ? Ac(m,k,j,i) : 1.0;
+  }
   //! kappa_R * rho, the emissivity the layers are built from
   KOKKOS_INLINE_FUNCTION
   Real Kr(const int m, const int k, const int j, const int i) const {
@@ -548,6 +670,11 @@ struct RTCol3 {
   void SourceVals(const int m, const int k, const int j, const int i, const int ic,
                   const RTCol3Hyb &hb, const Real cutc, Real &sl, Real &su, Real &sfu,
                   Real &sfd) const;
+  template <bool TLAY>
+  KOKKOS_INLINE_FUNCTION
+  void FormalSph(const int m, const int k, const int j, const int ib,
+                 const RTCol3Hyb &hb, const Real cutc, const Real Ubot[2],
+                 const Real Dtop[2]) const;
   template <bool TLAY>
   KOKKOS_INLINE_FUNCTION
   Real ResidRel(const int m, const int k, const int j, const int i,
@@ -706,6 +833,17 @@ void RTCol3::SourceCoef(const int m, const int k, const int j, const int i, cons
     su[1] = 1.0;
     sfd[1] = 1.0;
   }
+  // THE SOURCE IS B, PER UNIT AREA (see the SPHERICAL FORM note on Bt): the layer solve
+  // inside a cell is plane-parallel in its own constant frame, so no endpoint carries an
+  // area weight any more.  The three factors are 1.0, read from the area Views under
+  // rt_plane_parallel only so that the box keeps the expression it had.
+  const Real ac_ = Acn(m,k,j,i), afu_ = Aun(m,k,j,i+1), afd_ = Aun(m,k,j,i);
+  for (int c=0; c<3; ++c) {
+    sl[c] *= ac_;
+    su[c] *= ac_;
+    sfu[c] *= afu_;
+    sfd[c] *= afd_;
+  }
 }
 
 //----------------------------------------------------------------------------------------
@@ -727,7 +865,101 @@ void RTCol3::SourceVals(const int m, const int k, const int j, const int i, cons
   su  = cu[0]*bm + cu[1]*b0 + cu[2]*bp;
   sfu = cfu[0]*bm + cfu[1]*b0 + cfu[2]*bp;
   // at a hybrid interface the offset is already in cfd[0]*b(i-1), not a frozen constant
-  sfd = cfd[0]*bm + cfd[1]*b0 + cfd[2]*bp + ((i == ic && !hb.on) ? cutc : 0.0);
+  sfd = cfd[0]*bm + cfd[1]*b0 + cfd[2]*bp
+      + ((i == ic && !hb.on) ? cutc*Aun(m,k,j,i) : 0.0);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RTCol3::FormalSph
+//! \brief THE SPHERICAL FORMAL SOLUTION at the current b: the exact solution of the
+//! coupled two-ray system of the SPHERICAL FORM note (see RTCol3::Bt), and the source it
+//! implies.  Shared by the serial and the partitioned solver -- the segmented scan of
+//! two_stream_column_partition.hpp decomposes a ONE-directional recursion, which the face
+//! mixing is not, so under a curvilinear mesh that path calls this once per team instead.
+//! Plane-parallel columns never reach here: there beta = 0, the rays decouple and both
+//! solvers keep their own sweeps, bit for bit.
+
+template <bool TLAY>
+KOKKOS_INLINE_FUNCTION
+void RTCol3::FormalSph(const int m, const int k, const int j, const int ib,
+                       const RTCol3Hyb &hb, const Real cutc, const Real Ubot[2],
+                       const Real Dtop[2]) const {
+  const int EE = 20, CI = 22, CO = 24, DD = 27, UU = 29, SA = 32;
+    // ---- SPHERICAL: the face mixing couples the two rays, so the formal solution is a
+    // 2x2 block tridiagonal per angle.  It is solved EXACTLY by a Riccati pair -- a
+    // backward pass that writes D_q(i) = p_i U_q(i) + q_i, then a forward pass for U --
+    // so the transport rows stay satisfied to round-off at every Newton iterate and
+    // rv[0..3] remain 0, exactly as in the plane-parallel branch.  p and q are parked in
+    // the UU and DD slots, which the forward pass then overwrites; each is read before
+    // it is written.
+    Real sup[2] = {0.0, 0.0};        // Sigma_u of cell i+1, carried down
+    for (int i=ie; i>=ib; --i) {
+      Real sl, su, sfu, sfd;
+      SourceVals<TLAY>(m, k, j, i, ib, hb, cutc, sl, su, sfu, sfd);
+      const Real bhi = Bt(m,k,j,i+1,ib);
+      for (int q=0; q<nq; ++q) {
+        const Real E = Wk<TLAY>(m,EE+q,i,k,j), t = 1.0 - E;
+        const Real ci = Wk<TLAY>(m,CI+q,i,k,j), co = Wk<TLAY>(m,CO+q,i,k,j);
+        const Real t2 = t*t;
+        const Real sd = t*(ci*sfu + co*sl) + (ci*su + co*sfd);
+        const Real sut = t*(ci*sfd + co*su) + (ci*sl + co*sfu);
+        Real pi_, qi_;
+        if (i == ie) {
+          pi_ = -t2*bhi;
+          qi_ = t2*(1.0 + bhi)*Dtop[q] + sd;
+        } else {
+          const Real pu = Wk<TLAY>(m,UU+q,i+1,k,j);
+          const Real qu = Wk<TLAY>(m,DD+q,i+1,k,j);
+          const Real tu = 1.0 - Wk<TLAY>(m,EE+q,i+1,k,j);
+          const Real t2u = tu*tu;
+          const Real den = 1.0 - pu*t2u*bhi;
+          const Real pm = pu*t2u*(1.0 - bhi)/den;
+          const Real qm = (pu*sup[q] + qu)/den;
+          pi_ = t2*((1.0 + bhi)*pm - bhi);
+          qi_ = t2*(1.0 + bhi)*qm + sd;
+        }
+        Wk<TLAY>(m,UU+q,i,k,j) = pi_;
+        Wk<TLAY>(m,DD+q,i,k,j) = qi_;
+        sup[q] = sut;
+      }
+    }
+    Real Uin[2];
+    for (int q=0; q<nq; ++q) Uin[q] = Ubot[q];
+    for (int i=ib; i<=ie; ++i) {
+      Real sl, su, sfu, sfd;
+      SourceVals<TLAY>(m, k, j, i, ib, hb, cutc, sl, su, sfu, sfd);
+      const Real blo = Bt(m,k,j,i,ib);
+      for (int q=0; q<nq; ++q) {
+        const Real t = 1.0 - Wk<TLAY>(m,EE+q,i,k,j);
+        const Real ci = Wk<TLAY>(m,CI+q,i,k,j), co = Wk<TLAY>(m,CO+q,i,k,j);
+        const Real t2 = t*t;
+        const Real sut = t*(ci*sfd + co*su) + (ci*sl + co*sfu);
+        const Real pi_ = Wk<TLAY>(m,UU+q,i,k,j);
+        const Real qi_ = Wk<TLAY>(m,DD+q,i,k,j);
+        const Real uu = (t2*(1.0 - blo)*Uin[q] + t2*blo*qi_ + sut)
+                      / (1.0 - t2*blo*pi_);
+        Wk<TLAY>(m,UU+q,i,k,j) = uu;
+        Wk<TLAY>(m,DD+q,i,k,j) = pi_*uu + qi_;
+        Uin[q] = uu;
+      }
+    }
+    // the source, straight from the converged intensities: the plane-parallel divergence
+    // of the cell-frame flux, which is the spherical one because A_i is constant inside
+    // the cell and V_i = A_i dx_i (see the SPHERICAL FORM note)
+    for (int i=ib; i<=ie; ++i) {
+      const Real W = 1.0/Dx(m,k,j,i);
+      const Real blo = Bt(m,k,j,i,ib);
+      const Real bhi = Bt(m,k,j,i+1,ib);
+      Real acc = 0.0;
+      for (int q=0; q<nq; ++q) {
+        const Real ub = (i == ib) ? Ubot[q] : Wk<TLAY>(m,UU+q,i-1,k,j);
+        const Real da = Wk<TLAY>(m,DD+q,i,k,j);
+        const Real dp = (i == ie) ? Dtop[q] : Wk<TLAY>(m,DD+q,i+1,k,j);
+        const Real uo = Wk<TLAY>(m,UU+q,i,k,j);
+        acc += wf[q]*W*((ub + Mix(blo, ub, da) - uo) + (dp + Mix(bhi, uo, dp) - da));
+      }
+      Wk<TLAY>(m,SA,i,k,j) = acc;
+    }
 }
 
 //----------------------------------------------------------------------------------------
@@ -796,7 +1028,16 @@ void RTCol3::BuildRow(const int m, const int k, const int j, const int i, const 
             ESs = 34;
   Real cl[3], cu[3], cfu[3], cfd[3];
   SourceCoef(m, k, j, i, ic, hb, cl, cu, cfu, cfd);
+  // THE DEPOSIT IS THE PLANE-PARALLEL DIVERGENCE (see the SPHERICAL FORM note on Bt):
+  // with a constant frame area per cell, A_i (F_hi - F_lo)/V_i = (F_hi - F_lo)/dx_i.
   const Real W = 1.0/Dx(m,k,j,i);
+  // U enters this cell's LOWER face; the boundary datum there is a plain intensity now
+  const Real avl = Aun(m,k,j,i);
+  // THE FACE MIXING of the two rays: beta of this cell's lower and upper faces.  Both
+  // are identically 0 under rt_plane_parallel, where every (1 +- beta) below is a
+  // multiplication by an exact 1.0 and the two cross terms are not written at all.
+  const Real blo = Bt(m,k,j,i,ic);
+  const Real bhi = Bt(m,k,j,i+1,ic);
   Real dsdb[3] = {0.0, 0.0, 0.0};
   Real cdu[2] = {0.0, 0.0};
   for (int q=0; q<nq; ++q) {
@@ -805,16 +1046,21 @@ void RTCol3::BuildRow(const int m, const int k, const int j, const int i, const 
     // ---- the two transport rows -----------------------------------------------------
     Bm[q][q] = 1.0;
     Bm[2+q][2+q] = 1.0;
-    if (i < ie) C3[q][q] = -t*t;
+    if (i < ie) C3[q][q] = -t*t*(1.0 + bhi);
     if (i > ic) {
-      A3[2+q][q] = -t*t;
+      A3[2+q][q] = -t*t*(1.0 - blo);
     } else if (hb.on) {
       // U enters at the INTERFACE as the deep limit, linear in b(i) and in b(i-1)
-      Bm[2+q][4] -= t*t*(1.0 - hb.am[q]);
-      A1[2+q] -= t*t*hb.am[q];
+      Bm[2+q][4] -= t*t*(1.0 - blo)*(1.0 - hb.am[q])*avl;
+      A1[2+q] -= t*t*(1.0 - blo)*hb.am[q]*avl;
     } else {
-      Bm[2+q][4] -= t*t;              // U enters at the cut as b(icut) + a constant
+      Bm[2+q][4] -= t*t*(1.0 - blo)*avl;   // U enters at the cut as b(icut) + a const
     }
+    // the mixing c = beta (d_above - u_below) couples the two rays WITHIN the block:
+    // the downward row picks up U_q(i) at the upper face, the upward row D_q(i) at the
+    // lower one.  Not written when beta is exactly 0, i.e. never on a Cartesian mesh.
+    if (bhi != 0.0) Bm[q][2+q] = t*t*bhi;
+    if (blo != 0.0) Bm[2+q][q] = -t*t*blo;
     for (int c=0; c<3; ++c) {
       const Real demd = t*ci*cfu[c] + t*co*cl[c] + ci*cu[c] + co*cfd[c];
       const Real demu = t*ci*cfd[c] + t*co*cu[c] + ci*cl[c] + co*cfu[c];
@@ -888,29 +1134,32 @@ void RTCol3::BuildRow(const int m, const int k, const int j, const int i, const 
   }
   C3[4][2] = fj*dsdb[2];
   for (int q=0; q<nq; ++q) {
-    if (i < ie) C3[4][q] = fj*cdu[q];
+    if (i < ie) C3[4][q] = fj*cdu[q]*(1.0 + bhi);
     if (i > ic) {
-      A3[4][q] = fj*cdu[q];
+      A3[4][q] = fj*cdu[q]*(1.0 - blo);
     } else if (hb.on) {
-      Bm[4][4] += fj*cdu[q]*(1.0 - hb.am[q]);
-      A1[4] += fj*cdu[q]*hb.am[q];
+      Bm[4][4] += fj*cdu[q]*(1.0 - blo)*(1.0 - hb.am[q])*avl;
+      A1[4] += fj*cdu[q]*(1.0 - blo)*hb.am[q]*avl;
     } else {
-      Bm[4][4] += fj*cdu[q];
+      Bm[4][4] += fj*cdu[q]*(1.0 - blo)*avl;
     }
+    // the mixed entry intensities depend on this cell's OWN two unknowns as well
+    if (blo != 0.0) Bm[4][q] += fj*cdu[q]*blo;
+    if (bhi != 0.0) Bm[4][2+q] -= fj*cdu[q]*bhi;
   }
   if (xj) {
     const Real cfl = bdt*wlo*W, cfh = bdt*whi*W;
     for (int q=0; q<nq; ++q) {
-      Bm[4][2+q] -= cfh*wf[q];                    // U_q(i),  the cell's upper face
-      Bm[4][q] -= cfl*wf[q];                      // D_q(i),  the cell's lower face
-      if (i < ie) C3[4][q] += cfh*wf[q];          // D_q(i+1); Dtop is frozen at i = ie
+      Bm[4][2+q] -= cfh*wf[q]*(1.0 + bhi);        // U_q(i),  the cell's upper face
+      Bm[4][q] -= cfl*wf[q]*(1.0 - blo);          // D_q(i),  the cell's lower face
+      if (i < ie) C3[4][q] += cfh*wf[q]*(1.0 + bhi);  // D_q(i+1); Dtop frozen at i = ie
       if (i > ic) {
-        A3[4][q] += cfl*wf[q];                    // U_q(i-1)
+        A3[4][q] += cfl*wf[q]*(1.0 - blo);        // U_q(i-1)
       } else if (hb.on) {
-        Bm[4][4] += cfl*wf[q]*(1.0 - hb.am[q]);   // U(interface), implicit in both b
-        A1[4] += cfl*wf[q]*hb.am[q];
+        Bm[4][4] += cfl*wf[q]*(1.0 - blo)*(1.0 - hb.am[q])*avl;  // U(if), in both b
+        A1[4] += cfl*wf[q]*(1.0 - blo)*hb.am[q]*avl;
       } else {
-        Bm[4][4] += cfl*wf[q];                    // U(ic-1) = b(ic) + Ucut
+        Bm[4][4] += cfl*wf[q]*(1.0 - blo)*avl;    // U(ic-1) = b(ic) + Ucut
       }
     }
   }
@@ -981,7 +1230,7 @@ void RTCol3::DeepRow(const int m, const int k, const int j, const int i, const i
     dd = 1.0;                                  // an unusable state takes no part
     return;
   }
-  const Real W = 1.0/Dx(m,k,j,i);
+  const Real W = 1.0/Vc(m,k,j,i);
   const Real wlo = taublend ? wblend(m,k,j,i) : 0.0;
   const Real whi = taublend ? wblend(m,k,j,i+1) : 0.0;
   const Real wb = 1.0 - 0.5*(wlo + whi);
@@ -1002,13 +1251,13 @@ void RTCol3::DeepRow(const int m, const int k, const int j, const int i, const i
   dd = dedb;
   if (i > ic) {                                // the lower face: pure diffusion
     const Real dtm = Ht(m,k,j,i-1) + Ht(m,k,j,i);
-    const Real kk = (dtm > 0.0) ? kflx/dtm : 0.0;
+    const Real kk = (dtm > 0.0) ? kflx/dtm*Av(m,k,j,i) : 0.0;
     aa -= bdt*clo*W*kk;
     dd += bdt*clo*W*kk;
   }                                            // at i = ic the flux is imposed, d/db = 0
   if (i + 1 < hb.isp) {                        // the upper face: pure diffusion
     const Real dtp = Ht(m,k,j,i) + Ht(m,k,j,i+1);
-    const Real kk = (dtp > 0.0) ? kflx/dtp : 0.0;
+    const Real kk = (dtp > 0.0) ? kflx/dtp*Av(m,k,j,i+1) : 0.0;
     dd += bdt*chi*W*kk;
     cc -= bdt*chi*W*kk;
   } else {                                     // the upper face IS the interface
@@ -1018,8 +1267,10 @@ void RTCol3::DeepRow(const int m, const int k, const int j, const int i, const i
       sap += wf[q]*(1.0 - hb.am[q]);           // d F_if / d b(isp)
       C5[q] = -bdt*chi*W*wf[q];                // d F_if / d D_q(isp) = -w_q
     }
-    dd += bdt*chi*W*sam;
-    C5[2] = bdt*chi*W*sap;
+    // the interface flux is built from the deep-limit U at that FACE: A(i+1) b
+    const Real avi = Av(m,k,j,i+1);
+    dd += bdt*chi*W*sam*avi;
+    C5[2] = bdt*chi*W*sap*avi;
   }
   rv = -(enew - es - bdt*(wb*Wk<TLAY>(m,SAs,i,k,j) + Wk<TLAY>(m,EXs,i,k,j)));
   if (!(dd > 0.0)) Kokkos::atomic_add(&stat(11), 1.0);
@@ -1119,15 +1370,19 @@ void RTCol3::Solve(const int m, const int k, const int j) const {
   // the downward intensity entering the top face, frozen.  The launcher fills it with
   // exactly the sweep's unresolved-column model (RTTopDtau of the top slot's opacity and
   // pressure), so mode 3 and mode 0 see the same boundary.
-  for (int q=0; q<nq; ++q) Dtop[q] = dtop(m,q,k,j);
+  // the boundary datum lives in the FACE's own frame, as a plain intensity: avt is
+  // exactly 1.0 here and is read from the area View only to keep the box's expressions
+  const Real avt = Aun(m,k,j,ie+1);
+  for (int q=0; q<nq; ++q) Dtop[q] = dtop(m,q,k,j)*avt;
 
   // ---- 3. the tau-blend handover, frozen from the entry-state sweep -----------------
   for (int i=ic; i<=ie; ++i) {
     Real ex = 0.0;
     if (taublend) {
-      const Real dxi = Dx(m,k,j,i);
+      const Real dxi = Vc(m,k,j,i);
       const Real wb = 0.5*(wblend(m,k,j,i) + wblend(m,k,j,i+1));
-      const Real ft = Fb(m,0,i+1,k,j), fb = Fb(m,0,i,k,j);
+      const Real ft = Fb(m,0,i+1,k,j)*Av(m,k,j,i+1);
+      const Real fb = Fb(m,0,i,k,j)*Av(m,k,j,i);
       if (direct) {
         ex = wb*Src(m,0,i,k,j)
            + (wblend(m,k,j,i+1)*ft - wblend(m,k,j,i)*fb)/dxi;
@@ -1160,12 +1415,17 @@ void RTCol3::Solve(const int m, const int k, const int j) const {
       cutc_i = dbd*Ht(m,k,j,ib);
       for (int q=0; q<nq; ++q) Ucut_i[q] = cutc_i + mu[q]*dbd;
     }
+    const Real avb = Aun(m,k,j,ib);
+    Real Ubot[2];
+    for (int q=0; q<nq; ++q) Ubot[q] = (Wk<false>(m,BB,ib,k,j) + Ucut_i[q])*avb;
+    if (pp) {
+    // ---- PLANE-PARALLEL: the rays decouple, and these are the two sweeps verbatim ----
     Real Din[2];
     for (int q=0; q<nq; ++q) Din[q] = Dtop[q];
     for (int i=ie; i>=ib; --i) {
       Real sl, su, sfu, sfd;
       SourceVals<false>(m, k, j, i, ib, hb, cutc, sl, su, sfu, sfd);
-      const Real W = 1.0/Dx(m,k,j,i);
+      const Real W = 1.0/Vc(m,k,j,i);
       Real acc = 0.0;
       for (int q=0; q<nq; ++q) {
         const Real E = Wk<false>(m,EE+q,i,k,j), t = 1.0 - E;
@@ -1179,11 +1439,11 @@ void RTCol3::Solve(const int m, const int k, const int j) const {
       Wk<false>(m,SA,i,k,j) += acc;
     }
     Real Uin[2];
-    for (int q=0; q<nq; ++q) Uin[q] = Wk<false>(m,BB,ib,k,j) + Ucut_i[q];
+    for (int q=0; q<nq; ++q) Uin[q] = Ubot[q];
     for (int i=ib; i<=ie; ++i) {
       Real sl, su, sfu, sfd;
       SourceVals<false>(m, k, j, i, ib, hb, cutc, sl, su, sfu, sfd);
-      const Real W = 1.0/Dx(m,k,j,i);
+      const Real W = 1.0/Vc(m,k,j,i);
       Real acc = 0.0;
       for (int q=0; q<nq; ++q) {
         const Real E = Wk<false>(m,EE+q,i,k,j), t = 1.0 - E;
@@ -1196,28 +1456,41 @@ void RTCol3::Solve(const int m, const int k, const int j) const {
       }
       Wk<false>(m,SA,i,k,j) += acc;
     }
+    } else {
+      FormalSph<false>(m, k, j, ib, hb, cutc, Ubot, Dtop);
+    }
     // ---- 4a''. THE DEEP SEGMENT: the diffusion fluxes and their divergence ---------
     // The interface flux is the two-stream's OWN net flux at that face, built from the
     // deep-limit U (implicit in b(isp-1), b(isp)) and the solved D(isp): the deep cell
     // loses upward exactly what the thin cell gains at its lower face, so the column
     // still telescopes across the interface.
     if (hb.on) {
+      // Phi = A F at the interface, from the FACE-frame pair (u_below, d_below): the
+      // deep segment carries A(f) F and the thin one A_cell F, and the face mixing is
+      // exactly what makes the two equal (see the SPHERICAL FORM note).
       fif = 0.0;
-      for (int q=0; q<nq; ++q) {
-        fif += wf[q]*((Wk<false>(m,BB,ib,k,j) + Ucut_i[q]) - Wk<false>(m,DD+q,ib,k,j));
+      {
+        const Real bif = Bt(m,k,j,ib,ib);
+        for (int q=0; q<nq; ++q) {
+          const Real da = Wk<false>(m,DD+q,ib,k,j);
+          fif += wf[q]*(Ubot[q] - (da + Mix(bif, Ubot[q], da)));
+        }
+        fif *= Av(m,k,j,ib);
       }
       for (int i=ic; i<ib; ++i) {
-        Real flo = fbot;
+        // the deep fluxes are per unit area; carry them as A F like every other face
+        Real flo = fbot*Av(m,k,j,ic);
         if (i > ic) {
           const Real dtm = Ht(m,k,j,i-1) + Ht(m,k,j,i);
           flo = (dtm > 0.0)
-              ? kflx*(Wk<false>(m,BB,i-1,k,j) - Wk<false>(m,BB,i,k,j))/dtm : 0.0;
+              ? kflx*(Wk<false>(m,BB,i-1,k,j) - Wk<false>(m,BB,i,k,j))/dtm
+                *Av(m,k,j,i) : 0.0;
         }
         Wk<false>(m,FL,i,k,j) = flo;
       }
       for (int i=ic; i<ib; ++i) {
         const Real fhi = (i + 1 < ib) ? Wk<false>(m,FL,i+1,k,j) : fif;
-        Wk<false>(m,SA,i,k,j) = (Wk<false>(m,FL,i,k,j) - fhi)/Dx(m,k,j,i);
+        Wk<false>(m,SA,i,k,j) = (Wk<false>(m,FL,i,k,j) - fhi)/Vc(m,k,j,i);
       }
     }
     // ---- 4a'. the handover, re-formed from THIS column's OWN flux ------------------
@@ -1238,18 +1511,26 @@ void RTCol3::Solve(const int m, const int k, const int j) const {
           const Real fhi = (i + 1 < ib) ? Wk<false>(m,FL,i+1,k,j) : fif;
           const Real wlo = wblend(m,k,j,i), whi = wblend(m,k,j,i+1);
           Wk<false>(m,EX,i,k,j) = 0.5*(wlo + whi)*Wk<false>(m,SA,i,k,j)
-                     + (whi*fhi - wlo*Wk<false>(m,FL,i,k,j))/Dx(m,k,j,i) + Qb(m,0,i,k,j);
+                     + (whi*fhi - wlo*Wk<false>(m,FL,i,k,j))/Vc(m,k,j,i)
+                     + Qb(m,0,i,k,j);
         }
       }
       for (int i=ib; i<=ie; ++i) {
         Real f3lo = 0.0, f3hi = 0.0;
+        const Real blo = Bt(m,k,j,i,ib);
+        const Real bhi = Bt(m,k,j,i+1,ib);
         for (int q=0; q<nq; ++q) {
-          const Real ulo = (i == ib) ? (Wk<false>(m,BB,ib,k,j) + Ucut_i[q]) : Wk<false>(m,UU+q,i-1,k,j);
-          const Real dhi = (i == ie) ? Dtop[q] : Wk<false>(m,DD+q,i+1,k,j);
-          f3lo += wf[q]*(ulo - Wk<false>(m,DD+q,i,k,j));
-          f3hi += wf[q]*(Wk<false>(m,UU+q,i,k,j) - dhi);
+          const Real ulo0 = (i == ib) ? Ubot[q] : Wk<false>(m,UU+q,i-1,k,j);
+          const Real dcur = Wk<false>(m,DD+q,i,k,j);
+          const Real ucur = Wk<false>(m,UU+q,i,k,j);
+          const Real dhi0 = (i == ie) ? Dtop[q] : Wk<false>(m,DD+q,i+1,k,j);
+          const Real ulo = ulo0 + Mix(blo, ulo0, dcur);
+          const Real dhi = dhi0 + Mix(bhi, ucur, dhi0);
+          f3lo += wf[q]*(ulo - dcur);
+          f3hi += wf[q]*(ucur - dhi);
         }
         const Real wlo = wblend(m,k,j,i), whi = wblend(m,k,j,i+1);
+        // the cell-frame fluxes divide by dx, not by the volume: A_i cancels
         Wk<false>(m,EX,i,k,j) = 0.5*(wlo + whi)*Wk<false>(m,SA,i,k,j)
                        + (whi*f3hi - wlo*f3lo)/Dx(m,k,j,i) + Qb(m,0,i,k,j);
       }
@@ -1456,21 +1737,33 @@ void RTCol3::Solve(const int m, const int k, const int j) const {
   Real budget = 0.0, bscale = 0.0, rtmax = 0.0, ubmax = 0.0;
   Real rhsum = 0.0, srsum = 0.0;
   for (int i=ic; i<=ie; ++i) {
-    const Real dxi = Dx(m,k,j,i);
+    const Real dxi = Vc(m,k,j,i);
     const Real wb = taublend ? (1.0 - 0.5*(wblend(m,k,j,i) + wblend(m,k,j,i+1))) : 1.0;
     rhsum += bdt*(wb*Wk<false>(m,SA,i,k,j) + Wk<false>(m,EX,i,k,j))*dxi;
     srsum += Wk<false>(m,SA,i,k,j)*dxi;
     RTCol3WarmStore(*this, m, k, j, i, Wk<false>(m,BB,i,k,j));
   }
+  // THE FACE FLUXES OF THE CONVERGED FIELD, as Phi = A F, which is what srsum (a sum of
+  // Src_i V_i) telescopes to.  The top face's datum lives in its own frame, so its area
+  // is the face area; the cut's is the cell frame's A_cell (Ac), the two being made
+  // equal by the face mixing.
   Real fnet = 0.0, ftopn = 0.0;
-  for (int q=0; q<nq; ++q) ftopn += wf[q]*(Wk<false>(m,UU+q,ie,k,j) - Dtop[q]);
+  const Real btop = Bt(m,k,j,ie+1,ib);
+  const Real bcut = Bt(m,k,j,ic,ib);
+  for (int q=0; q<nq; ++q) {
+    const Real uo = Wk<false>(m,UU+q,ie,k,j);
+    ftopn += wf[q]*(uo + Mix(btop, uo, Dtop[q]) - Dtop[q]);
+  }
   if (hb.on) {
-    fnet = Wk<false>(m,FL,ic,k,j) - ftopn;      // the imposed deep bottom flux
+    fnet = Wk<false>(m,FL,ic,k,j) - Av(m,k,j,ie+1)*ftopn;
   } else {
     for (int q=0; q<nq; ++q) {
-      fnet += wf[q]*((Wk<false>(m,BB,ic,k,j) + Ucut[q]) - Wk<false>(m,DD+q,ic,k,j));
+      const Real ub = (Wk<false>(m,BB,ic,k,j) + Ucut[q])*Aun(m,k,j,ic);
+      const Real da = Wk<false>(m,DD+q,ic,k,j);
+      fnet += wf[q]*(ub + Mix(bcut, ub, da) - da);
     }
-    fnet -= ftopn;
+    fnet *= Ac(m,k,j,ic);
+    fnet -= Av(m,k,j,ie+1)*ftopn;
   }
   Kokkos::atomic_add(&stat(12), rhsum);
   Kokkos::atomic_add(&stat(13), srsum);
@@ -1482,8 +1775,12 @@ void RTCol3::Solve(const int m, const int k, const int j) const {
   // the two must agree, and how well is the statement that mode 3 has not moved the
   // radiation field away from the formal solution the sweep was validated against.
   Real ftop3 = 0.0;
-  for (int q=0; q<nq; ++q) ftop3 += wf[q]*(Wk<false>(m,UU+q,ie,k,j) - Dtop[q]);
-  Kokkos::atomic_add(&stat(16), ftop3);
+  for (int q=0; q<nq; ++q) {
+    const Real uo = Wk<false>(m,UU+q,ie,k,j);
+    ftop3 += wf[q]*(uo + Mix(btop, uo, Dtop[q]) - Dtop[q]);
+  }
+  // stat(16) is compared against Fb, a flux PER UNIT AREA, so undo the area weight
+  Kokkos::atomic_add(&stat(16), ftop3/avt);
   Kokkos::atomic_add(&stat(17), Fb(m,0,ie+1,k,j));
 
   // ---- THE FLUX-TELESCOPING DUMP (problem/rt_outer_verbose, first cycle only) -------
@@ -1503,18 +1800,24 @@ void RTCol3::Solve(const int m, const int k, const int j) const {
       const Real fhi = (i + 1 < ib) ? Wk<false>(m,FL,i+1,k,j) : fif;
       Kokkos::printf("### rt_col3_deep i=%d dtau=%.4e srcdx=%.10e Flo=%.10e Fhi=%.10e "
                      "b=%.6e db_rel=%.4e\n",
-                     i, 2.0*Ht(m,k,j,i), Wk<false>(m,SA,i,k,j)*Dx(m,k,j,i),
+                     i, 2.0*Ht(m,k,j,i), Wk<false>(m,SA,i,k,j)*Vc(m,k,j,i),
                      Wk<false>(m,FL,i,k,j), fhi, Wk<false>(m,BB,i,k,j),
                      (Bb(m,0,i,k,j) > 0.0) ? (Wk<false>(m,BB,i,k,j)/Bb(m,0,i,k,j) - 1.0)
                                            : 0.0);
     }
     for (int i=ib; i<=ie; ++i) {
       Real f3lo = 0.0, f3hi = 0.0;
+      const Real blo = Bt(m,k,j,i,ib);
+      const Real bhi = Bt(m,k,j,i+1,ib);
       for (int q=0; q<nq; ++q) {
-        const Real ulo = (i == ib) ? (Wk<false>(m,BB,ib,k,j) + Ucut_i[q]) : Wk<false>(m,UU+q,i-1,k,j);
-        const Real dhi = (i == ie) ? Dtop[q] : Wk<false>(m,DD+q,i+1,k,j);
-        f3lo += wf[q]*(ulo - Wk<false>(m,DD+q,i,k,j));
-        f3hi += wf[q]*(Wk<false>(m,UU+q,i,k,j) - dhi);
+        const Real ulo0 = (i == ib)
+            ? (Wk<false>(m,BB,ib,k,j) + Ucut_i[q])*Aun(m,k,j,ib)
+            : Wk<false>(m,UU+q,i-1,k,j);
+        const Real dcur = Wk<false>(m,DD+q,i,k,j);
+        const Real ucur = Wk<false>(m,UU+q,i,k,j);
+        const Real dhi0 = (i == ie) ? Dtop[q] : Wk<false>(m,DD+q,i+1,k,j);
+        f3lo += wf[q]*(ulo0 + Mix(blo, ulo0, dcur) - dcur);
+        f3hi += wf[q]*(ucur - (dhi0 + Mix(bhi, ucur, dhi0)));
       }
       const Real dxi = Dx(m,k,j,i);
       const Real wlo = taublend ? wblend(m,k,j,i) : 0.0;
@@ -1523,10 +1826,11 @@ void RTCol3::Solve(const int m, const int k, const int j) const {
       const Real srcdx = Wk<false>(m,SA,i,k,j)*dxi;
       const Real divf = f3lo - f3hi;
       Kokkos::printf("### rt_col3_flux i=%d dtau=%.4e w=%.4e srcdx=%.10e divF=%.10e "
-                     "dif=%.4e sw_srcdx=%.10e F3lo=%.10e Fblo=%.10e exdx=%.10e "
+                     "dif=%.4e sw_srcdx=%.10e F3lo/A=%.10e Fblo=%.10e exdx=%.10e "
                      "appdx=%.10e db_rel=%.4e\n",
                      i, 2.0*Ht(m,k,j,i), 1.0 - wb, srcdx, divf, srcdx - divf,
-                     Src(m,0,i,k,j)*dxi, f3lo, Fb(m,0,i,k,j), Wk<false>(m,EX,i,k,j)*dxi,
+                     Src(m,0,i,k,j)*dxi, f3lo*Afl(m,k,j,i), Fb(m,0,i,k,j),
+                     Wk<false>(m,EX,i,k,j)*dxi,
                      (wb*Wk<false>(m,SA,i,k,j) + Wk<false>(m,EX,i,k,j))*dxi,
                      (Bb(m,0,i,k,j) > 0.0) ? (Wk<false>(m,BB,i,k,j)/Bb(m,0,i,k,j) - 1.0) : 0.0);
     }
@@ -1578,7 +1882,7 @@ void RTCol3::Solve(const int m, const int k, const int j) const {
       Kokkos::atomic_add(&stat(8), 1.0);
     }
     u0(m,IEN,k,j,i) += de;
-    const Real dxi = Dx(m,k,j,i);
+    const Real dxi = Vc(m,k,j,i);
     budget += de*dxi;
     bscale += fabs(de)*dxi;
   }
@@ -1599,17 +1903,22 @@ void RTCol3::Solve(const int m, const int k, const int j) const {
   // after stat(17) so that slot still reports what Fb held on entry (the PREVIOUS call's
   // converged Ftop here, and 0 on the first one).
   if (wrflux) {
-    for (int i=ic; i<ib; ++i) Fb(m,0,i,k,j) = Wk<false>(m,FL,i,k,j);
+    for (int i=ic; i<ib; ++i) Fb(m,0,i,k,j) = Wk<false>(m,FL,i,k,j)/Av(m,k,j,i);
     for (int i=ib; i<=ie; ++i) {
       Real f3lo = 0.0;
+      const Real blo = Bt(m,k,j,i,ib);
       for (int q=0; q<nq; ++q) {
-        const Real ulo = (i == ib) ? (Wk<false>(m,BB,ib,k,j) + Ucut_i[q])
-                                   : Wk<false>(m,UU+q,i-1,k,j);
-        f3lo += wf[q]*(ulo - Wk<false>(m,DD+q,i,k,j));
+        const Real ulo0 = (i == ib)
+            ? (Wk<false>(m,BB,ib,k,j) + Ucut_i[q])*Aun(m,k,j,ib)
+            : Wk<false>(m,UU+q,i-1,k,j);
+        const Real dcur = Wk<false>(m,DD+q,i,k,j);
+        f3lo += wf[q]*(ulo0 + Mix(blo, ulo0, dcur) - dcur);
       }
-      Fb(m,0,i,k,j) = f3lo;
+      // Phi_i/A(i): the cell-frame flux times A_cell/A_face (Afl), which is 1/Av = 1
+      // under rt_plane_parallel, i.e. the division the box always did
+      Fb(m,0,i,k,j) = f3lo*Afl(m,k,j,i);
     }
-    Fb(m,0,ie+1,k,j) = ftop3;
+    Fb(m,0,ie+1,k,j) = ftop3/avt;
   }
 }
 

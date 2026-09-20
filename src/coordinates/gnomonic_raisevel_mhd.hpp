@@ -79,7 +79,10 @@ void GnomonicRaiseVelMHDFloors(const Real c, const EOS_Data &eos_, const bool ge
       const Real fs = vceil_/sqrt(vsq);
       m1 *= fs; m2 *= fs; m3 *= fs;
       v1 *= fs; v2 *= fs; v3 *= fs;
-      etot -= (1.0 - fs*fs)*ekin;
+      // <mhd>/vceil_thermalise: leave the conserved total alone instead, so the clipped
+      // kinetic energy lands in `eint` below (see EOS_Data::vceil_thermalise).  Not
+      // accumulated: the MHD inversion has no energy accumulator.
+      if (!eos_.vceil_thermalise) etot -= (1.0 - fs*fs)*ekin;
       ekin *= fs*fs;
       ceil_used = true;
     }

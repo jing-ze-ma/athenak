@@ -57,6 +57,22 @@ rad_kappa_fac  = 0.01
 rad_flux_inner = 0.0
 rad_met        = 0.0
 rad_cs_exact   = true
+# The IMPLICIT transverse operator, at its OFF default so that this input still runs the
+# explicit path bitwise as before; test_rad_cs_implicit_ang_* flips these from the
+# command line to run the same problem through conduction_transverse.cpp.
+# rad_ang_solver = sts is the RKL1 loop (no line structure, panel seams are ordinary
+# open faces), adi is the alternating-direction solve (lines end at a panel seam and the
+# seam faces are applied by the pair-implicit sub-step).
+# rad_implicit_x1 removes the RADIAL conduction timestep as well, which is what lets
+# the stability arm drive the transverse diffusion number D dt/dx^2 up to ~1e3.
+rad_implicit_x1   = false
+rad_implicit_ang  = false
+rad_ang_solver    = sts
+rad_adi_scheme    = lod2
+rad_adi_cross_iter = 1
+rad_adi_seam_w    = 0.5
+rad_ang_verbose   = false
+rad_ang_maxit     = 200
 
 <units>
 length_cgs = 1.0e8
@@ -66,9 +82,19 @@ mu         = 2.3
 
 <problem>
 iprob = 15
+# the degree of the initial harmonic: 2 (the l = 2 direction-cosine combination) or 6
+# (the zonal P_6(cos), Laplacian_S f = -42 f)
+lharm = 2
 d0    = 1.0
 p0    = 1.0
 amp   = 0.01
+# STATIC seam-halo accuracy scan: with time/nlim = 0 the only thing that has touched the
+# ghosts is one boundary exchange, and the exact ghost value of this initial state is
+# known analytically, so this measures the panel-seam halo and nothing else.  1 = the
+# per-block/per-face/per-layer table, 2 = the full along-seam profiles.  See
+# tests_seam4/README.md.  It is listed here at its off default because a command-line
+# override cannot ADD a parameter.
+seam_halo_scan = 0
 
 <output1>
 file_type = bin

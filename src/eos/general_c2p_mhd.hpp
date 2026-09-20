@@ -42,6 +42,10 @@ void SingleC2P_GeneralMHD(MHDCons1D &u, const EOS_Data &eos, HydPrim1D &w,
   Real e_k = 0.5*di*(SQR(u.mx) + SQR(u.my) + SQR(u.mz));
   Real e_m = 0.5*(SQR(u.bx) + SQR(u.by) + SQR(u.bz));
   // THE VELOCITY CEILING: identical to the block in ideal_c2p_mhd.hpp; see eos.hpp.
+  // <mhd>/vceil_thermalise leaves the TOTAL energy alone, so that w.e below picks the
+  // clipped kinetic energy up as internal energy; the magnetic energy is not involved
+  // either way.  The converted energy is NOT accumulated here: this inversion has no
+  // energy accumulator (see EOS_Data::vceil_thermalise).
   if (eos.vceil > 0.0) {
     const Real vsq = SQR(w.vx) + SQR(w.vy) + SQR(w.vz);
     if (vsq > SQR(eos.vceil)) {
@@ -50,7 +54,7 @@ void SingleC2P_GeneralMHD(MHDCons1D &u, const EOS_Data &eos, HydPrim1D &w,
         const Real fs = eos.vceil/sqrt(vsq);
         u.mx *= fs; u.my *= fs; u.mz *= fs;
         w.vx *= fs; w.vy *= fs; w.vz *= fs;
-        u.e -= (1.0 - fs*fs)*e_k;
+        if (!eos.vceil_thermalise) u.e -= (1.0 - fs*fs)*e_k;
         e_k *= fs*fs;
         vceil_used = true;
       }

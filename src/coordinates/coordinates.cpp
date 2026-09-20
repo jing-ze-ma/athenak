@@ -919,13 +919,19 @@ void Coordinates::GnomonicEquiangleRaiseVel(DvceArray5D<Real> &u0,
   // this routine, not ConsToPrim, is where the energy floor is actually applied (see
   // EOS_Data::defer_cons_floors), so it is the only place that number exists.
   Real efloor_de_ = 0.0;
+  // the energy the velocity ceiling clipped, which on the cubed sphere is likewise only
+  // formed here: see EventCounters::vceil_de
+  Real vceil_de_ = 0.0;
   int nceilv_ = 0;
+  // <hydro>/efloor_as_tfloor fires HERE on the cubed sphere, for the same reason the
+  // energy floor does (EOS_Data::defer_cons_floors), so this is where it is counted.
+  int ntset_ = 0;
   const int nkji = (ku - kl + 1)*(ju - jl + 1)*(iu - il + 1);
   const int nji = (ju - jl + 1)*(iu - il + 1);
   const int ni = (iu - il + 1);
   Kokkos::parallel_reduce("cs_raisev",
   Kokkos::RangePolicy<>(DevExeSpace(), 0, (nmb1 + 1)*nkji),
-  KOKKOS_LAMBDA(const int &idx, int &sumv, Real &sumde) {
+  KOKKOS_LAMBDA(const int &idx, int &sumv, int &sumts, Real &sumde, Real &sumvde) {
     const int m = idx/nkji;
     const int k = (idx - m*nkji)/nji + kl;
     const int j = (idx - m*nkji - (k - kl)*nji)/ni + jl;
@@ -945,13 +951,13 @@ void Coordinates::GnomonicEquiangleRaiseVel(DvceArray5D<Real> &u0,
     // ...and only in ACTIVE cells: see the note on act_ above.
     const bool act_ = (i >= ais && i <= aie && j >= ajs && j <= aje &&
                        k >= aks && k <= ake);
-    Real v1, v2, v3, eint, pnew, g1new, temp, de;
-    bool ceil_used, floored;
+    Real v1, v2, v3, eint, pnew, g1new, temp, de, vde;
+    bool ceil_used, floored, tset_used;
     GnomonicRaiseVelFloors(c, eos_, gen_, keepv_, keept_, vceil_, act_,
                            (keepv_ || keept_) ? dflfv_(m,k,j,i) : 1.0,
                            gen_ ? wtemp_(m,k,j,i) : 0.0, d,
                            m1, m2, m3, etot, v1, v2, v3, eint, pnew, g1new, temp,
-                           ceil_used, floored, de);
+                           ceil_used, floored, tset_used, de, vde);
     u0(m,IM1,k,j,i) = m1;
     u0(m,IM2,k,j,i) = m2;
     u0(m,IM3,k,j,i) = m3;
@@ -962,14 +968,19 @@ void Coordinates::GnomonicEquiangleRaiseVel(DvceArray5D<Real> &u0,
       wtemp_(m,k,j,i) = temp;
     }
     if (ceil_used) { sumv++; }
+    if (tset_used) { sumts++; }
     sumde += de;
+    sumvde += vde;
     w0(m,IVX,k,j,i) = v1;
     w0(m,IVY,k,j,i) = v2;
     w0(m,IVZ,k,j,i) = v3;
     w0(m,IEN,k,j,i) = eint;
-  }, Kokkos::Sum<int>(nceilv_), Kokkos::Sum<Real>(efloor_de_));
+  }, Kokkos::Sum<int>(nceilv_), Kokkos::Sum<int>(ntset_),
+     Kokkos::Sum<Real>(efloor_de_), Kokkos::Sum<Real>(vceil_de_));
   pmy_pack->pmesh->ecounter.efloor_de += efloor_de_;
+  pmy_pack->pmesh->ecounter.vceil_de += vceil_de_;
   pmy_pack->pmesh->ecounter.neos_vceil += nceilv_;
+  pmy_pack->pmesh->ecounter.neos_tset += ntset_;
   return;
 }
 

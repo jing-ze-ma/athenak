@@ -1,0 +1,117 @@
+=========== rb_cont: one piece to 1.0 turnover, rst written at 0.5
+MeshBlock-cycles = 2328
+cpu time used  = 3.222756e+01
+zone-cycles/cpu_second = 1.109550e+05
+particle-updates/cpu_second = 0.000000e+00
+total 7858
+drwxr-xr-x 2 jinma mpa    4096 Sep 17 21:46 .
+drwxr-xr-x 5 jinma mpa    4096 Sep 17 21:46 ..
+-rw-r--r-- 1 jinma mpa 2969749 Sep 17 21:46 he4.00000.rst
+-rw-r--r-- 1 jinma mpa 2969749 Sep 17 21:46 he4.00001.rst
+-rw-r--r-- 1 jinma mpa 2969749 Sep 17 21:46 he4.00002.rst
+=========== rb_rst: restart from /viper/u2/jinma/ATHENAK/bench/wt_he4/tests_r7/rb_cont/rst/he4.00001.rst to 1.0 turnover
+tlim=4.705000e+03 nlim=-1
+
+MeshBlock-cycles = 1206
+cpu time used  = 1.708457e+01
+zone-cycles/cpu_second = 1.084263e+05
+particle-updates/cpu_second = 0.000000e+00
+=========== the hst comparison
+# 202 lines in A, 101 in B, 1 shared times
+# bitwise-identical shared lines: 0 / 1
+# worst relative difference: 1.443e+00 at t = 4.7050000000000000e+03, column 6
+=========== ARM x_noforce : problem/rt_rad_force=false
+elapsed=5.232549e+01 cycle=600 time=6.696760e+03 dt=7.819861e+00
+elapsed=5.954255e+01 cycle=700 time=7.427614e+03 dt=6.786072e+00
+elapsed=6.678640e+01 cycle=800 time=8.036928e+03 dt=6.237533e+00
+elapsed=7.404046e+01 cycle=900 time=8.648247e+03 dt=5.600362e+00
+elapsed=8.117414e+01 cycle=1000 time=9.108365e+03 dt=3.528479e+00
+elapsed=8.824418e+01 cycle=1100 time=9.429072e+03 dt=2.998199e+00
+elapsed=9.528193e+01 cycle=1200 time=9.690465e+03 dt=2.375668e+00
+elapsed=1.024069e+02 cycle=1300 time=9.926389e+03 dt=2.202657e+00
+elapsed=1.095395e+02 cycle=1400 time=1.013821e+04 dt=1.889217e+00
+elapsed=1.168455e+02 cycle=1500 time=1.030942e+04 dt=1.581706e+00
+elapsed=1.241661e+02 cycle=1600 time=1.045967e+04 dt=1.498508e+00
+elapsed=1.316188e+02 cycle=1700 time=1.059606e+04 dt=1.383023e+00
+elapsed=1.389129e+02 cycle=1800 time=1.073607e+04 dt=1.413124e+00
+elapsed=1.462103e+02 cycle=1900 time=1.087471e+04 dt=1.254495e+00
+elapsed=1.535422e+02 cycle=2000 time=1.097966e+04 dt=9.676185e-01
+elapsed=1.609475e+02 cycle=2100 time=1.107862e+04 dt=9.743185e-01
+elapsed=1.683044e+02 cycle=2200 time=1.118107e+04 dt=1.088408e+00
+elapsed=1.756169e+02 cycle=2300 time=1.129347e+04 dt=1.135057e+00
+Terminating on wall clock limit
+time=1.136564e+04 cycle=2360
+=========== ARM x_nostrang : problem/rt_strang=false
+    r=2.377242e+11 rho=7.411294e-10 T=1.220634e+14 p=2.450156e+09 cs=4.351227e+09 v=(-1.000000e+08,3.882244e+03,-2.819359e+04)
+### dt COLLAPSE cycle=628 time=6.651251e+03 dtold=3.186665e-01 dt=7.886258e-02 | hydro=7.886258e-02 mhd=-1.000000e+00 cond=8.988466e+306 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+    hydro dt is set by cell (m,k,j,i) = (0,3,3,95) gid = 0
+    r=2.383770e+11 rho=6.194522e-10 T=9.863186e+13 p=3.521669e+08 cs=2.367844e+09 v=(1.000000e+08,-1.791816e+03,-9.279994e+01)
+### dt COLLAPSE cycle=639 time=6.654681e+03 dtold=2.245223e-01 dt=5.139927e-02 | hydro=5.139927e-02 mhd=-1.000000e+00 cond=8.988466e+306 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+    hydro dt is set by cell (m,k,j,i) = (3,6,3,93) gid = 3
+    r=2.370646e+11 rho=8.216345e-10 T=1.111900e+14 p=2.501715e+09 cs=3.766443e+09 v=(1.000000e+08,-5.898775e+02,4.400370e+03)
+elapsed=6.819117e+01 cycle=700 time=6.655821e+03 dt=1.394303e-02
+elapsed=7.926166e+01 cycle=800 time=6.657125e+03 dt=1.288458e-02
+elapsed=9.025963e+01 cycle=900 time=6.658423e+03 dt=1.248535e-02
+elapsed=1.012020e+02 cycle=1000 time=6.659666e+03 dt=1.152752e-02
+elapsed=1.121308e+02 cycle=1100 time=6.660801e+03 dt=1.131595e-02
+elapsed=1.230970e+02 cycle=1200 time=6.661910e+03 dt=1.117000e-02
+elapsed=1.340437e+02 cycle=1300 time=6.663013e+03 dt=1.071588e-02
+elapsed=1.449793e+02 cycle=1400 time=6.664072e+03 dt=1.050695e-02
+elapsed=1.559050e+02 cycle=1500 time=6.665118e+03 dt=1.041423e-02
+elapsed=1.668391e+02 cycle=1600 time=6.666157e+03 dt=1.039835e-02
+elapsed=1.776879e+02 cycle=1700 time=6.667195e+03 dt=1.036267e-02
+Terminating on wall clock limit
+time=6.667424e+03 cycle=1722
+=========== ARM x_base : 
+elapsed=2.367386e+01 cycle=200 time=2.519932e+03 dt=1.235892e+01
+elapsed=3.216141e+01 cycle=300 time=3.723523e+03 dt=1.165940e+01
+elapsed=4.086396e+01 cycle=400 time=4.840854e+03 dt=1.052822e+01
+### dt COLLAPSE cycle=480 time=5.541283e+03 dtold=3.378714e+00 dt=1.514094e-01 | hydro=1.514094e-01 mhd=-1.000000e+00 cond=8.988466e+306 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+    hydro dt is set by cell (m,k,j,i) = (5,5,6,36) gid = 5
+    r=1.876574e+11 rho=2.937253e-09 T=1.470946e+14 p=2.470506e+10 cs=3.348821e+09 v=(7.053203e+07,6.852361e+03,3.287853e+03)
+elapsed=4.998392e+01 cycle=500 time=5.546326e+03 dt=2.972224e-01
+elapsed=6.129071e+01 cycle=600 time=5.584889e+03 dt=3.858060e-01
+elapsed=7.282326e+01 cycle=700 time=5.587809e+03 dt=1.977396e-02
+elapsed=8.438726e+01 cycle=800 time=5.589788e+03 dt=2.063237e-02
+elapsed=9.594732e+01 cycle=900 time=5.591867e+03 dt=1.680135e-02
+elapsed=1.074908e+02 cycle=1000 time=5.593809e+03 dt=2.164025e-02
+elapsed=1.190127e+02 cycle=1100 time=5.595644e+03 dt=1.773401e-02
+elapsed=1.305149e+02 cycle=1200 time=5.597461e+03 dt=1.563251e-02
+elapsed=1.419930e+02 cycle=1300 time=5.599273e+03 dt=1.834965e-02
+elapsed=1.534633e+02 cycle=1400 time=5.601008e+03 dt=1.731051e-02
+elapsed=1.649448e+02 cycle=1500 time=5.602656e+03 dt=1.608091e-02
+elapsed=1.763899e+02 cycle=1600 time=5.604242e+03 dt=1.572346e-02
+Terminating on wall clock limit
+time=5.604749e+03 cycle=1632
+                                  
+================================= 
+Global information about the job: 
+================================= 
+  
+Job owner: jinma(28895)
+Job name:  r7_chk
+Node list: vipa1001
+Job start: Thu Sep 17 21:45:55 CEST 2026
+Job end:   Thu Sep 17 21:56:15 CEST 2026
+Work dir:  /viper/u2/jinma/ATHENAK/bench/wt_he4/tests_r7
+Command:   /viper/u2/jinma/ATHENAK/bench/wt_he4/tests_r7/chk.sh
+  
+  
+  
+==========================================================================================
+Information on jobsteps (Note: MaxRSS/AveRSS is the maximum/average over all 
+tasks of the per-task memory high-water marks; cf. "man sacct"): 
+==========================================================================================
+  
+JobID            JobName NNodes NTasks  NCPUS       MaxRSS       AveRSS    Elapsed ExitCode
+------------- ---------- ------ ------ ------ ------------ ------------ ---------- --------
+11782626          r7_chk      1            16                             00:10:20      0:0
+11782626.0     athena_v3      1      1     16      934.77M      934.77M   00:00:41      0:0
+11782626.1     athena_v3      1      1     16      933.11M      933.11M   00:00:33      0:0
+11782626.2     athena_v3      1      1     16      958.37M      958.37M   00:03:01      0:0
+11782626.3     athena_v3      1      1     16      948.89M      948.89M   00:03:02      0:0
+11782626.4     athena_v3      1      1     16      949.69M      949.69M   00:03:01      0:0
+  
+Maximum memory per node: 1.004919 GB (defined as MaxRSS*Ntasks/NNodes)
+CPU utilization: 12.4 %
+  

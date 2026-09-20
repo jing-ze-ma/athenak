@@ -1,0 +1,52 @@
+Loading openmpi_gpu/5.0
+  Loading requirement: openmpi/5.0
+=========== ARM d_taperup : hydro/eos_rad_rho_hi=9.0918e-10 hydro/eos_rad_rho_lo=2.7774e-10 hydro/eos_rad_t_hi=5.18187e4 hydro/eos_rad_t_lo=4.26635e4 problem/ic_profile=/viper/u2/jinma/ATHENAK/bench/wt_he4/tests_r9/ic_he4_presn_sph_tau1.txt
+elapsed=3.403678e+03 cycle=30600 time=1.397276e+04 dt=5.440225e-02
+elapsed=3.415048e+03 cycle=30700 time=1.397820e+04 dt=5.423773e-02
+elapsed=3.426415e+03 cycle=30800 time=1.398361e+04 dt=5.406899e-02
+elapsed=3.437783e+03 cycle=30900 time=1.398900e+04 dt=5.083992e-02
+elapsed=3.449159e+03 cycle=31000 time=1.399420e+04 dt=5.260648e-02
+elapsed=3.460534e+03 cycle=31100 time=1.399947e+04 dt=5.348537e-02
+elapsed=3.471922e+03 cycle=31200 time=1.400478e+04 dt=5.327417e-02
+elapsed=3.483309e+03 cycle=31300 time=1.401007e+04 dt=5.256721e-02
+elapsed=3.494693e+03 cycle=31400 time=1.401531e+04 dt=5.179454e-02
+elapsed=3.506077e+03 cycle=31500 time=1.402052e+04 dt=5.187191e-02
+elapsed=3.517477e+03 cycle=31600 time=1.402564e+04 dt=5.068526e-02
+elapsed=3.528881e+03 cycle=31700 time=1.403068e+04 dt=5.024472e-02
+elapsed=3.540296e+03 cycle=31800 time=1.403563e+04 dt=4.945112e-02
+elapsed=3.551711e+03 cycle=31900 time=1.404052e+04 dt=4.900715e-02
+elapsed=3.563129e+03 cycle=32000 time=1.404549e+04 dt=4.976947e-02
+elapsed=3.574545e+03 cycle=32100 time=1.405043e+04 dt=4.753796e-02
+elapsed=3.585964e+03 cycle=32200 time=1.405530e+04 dt=4.931959e-02
+elapsed=3.597382e+03 cycle=32300 time=1.406024e+04 dt=4.944924e-02
+Terminating on wall clock limit
+time=1.406138e+04 cycle=32323
+=========== ARM d_taperup DONE
+                                  
+================================= 
+Global information about the job: 
+================================= 
+  
+Job owner: jinma(28895)
+Job name:  r9d
+Node list: vipa1163
+Job start: Thu Sep 17 23:41:21 CEST 2026
+Job end:   Fri Sep 18 00:41:26 CEST 2026
+Work dir:  /viper/u2/jinma/ATHENAK/bench/wt_he4/tests_r9
+Command:   /viper/u2/jinma/ATHENAK/bench/wt_he4/tests_r9/r9_arm.sh
+  
+  
+  
+==========================================================================================
+Information on jobsteps (Note: MaxRSS/AveRSS is the maximum/average over all 
+tasks of the per-task memory high-water marks; cf. "man sacct"): 
+==========================================================================================
+  
+JobID            JobName NNodes NTasks  NCPUS       MaxRSS       AveRSS    Elapsed ExitCode
+------------- ---------- ------ ------ ------ ------------ ------------ ---------- --------
+11785338             r9d      1            48                             01:00:05      0:0
+11785338.0     athena_v5      1      1     16     1318.29M     1318.29M   01:00:03      0:0
+  
+Maximum memory per node: 1.382330 GB (defined as MaxRSS*Ntasks/NNodes)
+CPU utilization: 4.3 %
+  

@@ -1,0 +1,219 @@
+=========== ARM d_base : 
+elapsed=7.487189e+00 cycle=0 time=0.000000e+00 dt=1.292915e+01
+face budget: gain/L  inner=-1.123613e-02 outer=2.082775e-07 | erg in=-6.744550e+37 out=4.988118e+32 | g in=-3.811777e+22 out=2.730224e+17 | L_rad,out/L = 9.382410e-01 L_rad,cut/L = 9.196280e-01 (t = 1.292915e+01 s)
+face budget: gain/L  inner=-1.111057e-02 outer=6.301147e-07 | erg in=-1.009258e+38 out=2.397582e+33 | g in=-5.628343e+22 out=1.314555e+18 | L_rad,out/L = 9.061919e-01 L_rad,cut/L = 9.795690e-01 (t = 2.599328e+01 s)
+face budget: gain/L  inner=-1.089000e-02 outer=8.945112e-07 | erg in=-1.343518e+38 out=5.143216e+33 | g in=-7.395240e+22 out=2.820530e+18 | L_rad,out/L = 7.515997e-01 L_rad,cut/L = 1.036757e+00 (t = 3.930042e+01 s)
+### red_giant sponge guard FIRED (rank 0, cycle 3, t = 3.930042e+01): 24 cell(s) not damped; first (m,k,j,i) = (2,3,3,94) d = 6.093250e-10 ei = -1.404683e+04 ke = 2.043398e+06 dphi = 1.076750e+06
+face budget: gain/L  inner=-3.011573e-03 outer=-1.054864e-02 | erg in=-1.437473e+38 out=-3.290432e+37 | g in=-7.889946e+22 out=-7.146177e+21 | L_rad,out/L = 1.724913e+00 L_rad,cut/L = 1.029471e+00 (t = 5.282588e+01 s)
+### WARNING in two_stream_rt: rt_use_cons gave a non-positive internal energy in 58 cell read(s); clamped to e(rho,tfloor) before the temperature/Planck evaluation. Reported once.
+### dt COLLAPSE cycle=5 time=5.656590e+01 dtold=3.740019e+00 dt=4.834281e-27 | hydro=4.834281e-27 mhd=-1.000000e+00 cond=8.988466e+306 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+face budget: gain/L  inner=0.000000e+00 outer=0.000000e+00 | erg in=-1.437473e+38 out=-3.290432e+37 | g in=-7.889946e+22 out=-7.146177e+21 | L_rad,out/L = 2.121937e+05 L_rad,cut/L = 1.065745e+00 (t = 5.656590e+01 s)
+### dt COLLAPSE cycle=47 time=5.656590e+01 dtold=5.856148e-18 dt=1.385209e-29 | hydro=1.385209e-29 mhd=-1.000000e+00 cond=8.988466e+306 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+### dt COLLAPSE cycle=86 time=5.656590e+01 dtold=3.807634e-18 dt=3.059179e-29 | hydro=3.059179e-29 mhd=-1.000000e+00 cond=8.988466e+306 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+elapsed=1.198063e+01 cycle=100 time=5.656590e+01 dt=5.012159e-25
+### dt COLLAPSE cycle=126 time=5.656590e+01 dtold=2.429458e-18 dt=8.632387e-30 | hydro=8.632387e-30 mhd=-1.000000e+00 cond=8.988466e+306 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+### dt COLLAPSE cycle=189 time=5.656590e+01 dtold=1.977801e-18 dt=5.984143e-38 | hydro=5.984143e-38 mhd=-1.000000e+00 cond=8.988466e+306 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+elapsed=1.632210e+01 cycle=200 time=5.656590e+01 dt=1.225552e-34
+### dt COLLAPSE cycle=248 time=5.656590e+01 dtold=1.724812e-20 dt=1.412196e-37 | hydro=1.412196e-37 mhd=-1.000000e+00 cond=8.988466e+306 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+elapsed=2.077781e+01 cycle=300 time=5.656590e+01 dt=6.359965e-22
+time=5.656590e+01 cycle=300
+=========== ARM d_noforce : problem/rt_rad_force=false
+face budget: gain/L  inner=-4.833984e-01 outer=-3.491151e-07 | erg in=-7.587155e+39 out=1.012389e+34 | g in=-5.920183e+23 out=5.364347e+18 | L_rad,out/L = 3.883089e+00 L_rad,cut/L = 1.764107e+01 (t = 5.556029e+02 s)
+face budget: gain/L  inner=-5.266044e-01 outer=-4.654723e-07 | erg in=-7.591015e+39 out=1.012048e+34 | g in=-5.921242e+23 out=5.362436e+18 | L_rad,out/L = 3.916669e+00 L_rad,cut/L = 1.762295e+01 (t = 5.556346e+02 s)
+face budget: gain/L  inner=-5.496516e-01 outer=-5.206837e-07 | erg in=-7.595390e+39 out=1.011634e+34 | g in=-5.922398e+23 out=5.360116e+18 | L_rad,out/L = 3.957933e+00 L_rad,cut/L = 1.760523e+01 (t = 5.556691e+02 s)
+face budget: gain/L  inner=-5.351975e-01 outer=-5.226781e-07 | erg in=-7.600246e+39 out=1.011160e+34 | g in=-5.923714e+23 out=5.357464e+18 | L_rad,out/L = 4.014617e+00 L_rad,cut/L = 1.758511e+01 (t = 5.557085e+02 s)
+face budget: gain/L  inner=-5.099936e-01 outer=-4.382106e-07 | erg in=-7.605392e+39 out=1.010717e+34 | g in=-5.925036e+23 out=5.354986e+18 | L_rad,out/L = 4.052263e+00 L_rad,cut/L = 1.756132e+01 (t = 5.557522e+02 s)
+face budget: gain/L  inner=-5.013661e-01 outer=-2.985741e-07 | erg in=-7.610800e+39 out=1.010395e+34 | g in=-5.926508e+23 out=5.353165e+18 | L_rad,out/L = 4.053650e+00 L_rad,cut/L = 1.753680e+01 (t = 5.557990e+02 s)
+face budget: gain/L  inner=-5.005967e-01 outer=-2.107524e-07 | erg in=-7.616477e+39 out=1.010156e+34 | g in=-5.928022e+23 out=5.351797e+18 | L_rad,out/L = 4.105855e+00 L_rad,cut/L = 1.751103e+01 (t = 5.558482e+02 s)
+face budget: gain/L  inner=-4.864326e-01 outer=-1.037664e-07 | erg in=-7.622305e+39 out=1.010032e+34 | g in=-5.929683e+23 out=5.351056e+18 | L_rad,out/L = 4.192096e+00 L_rad,cut/L = 1.748252e+01 (t = 5.559001e+02 s)
+face budget: gain/L  inner=-4.653010e-01 outer=-5.375235e-08 | erg in=-7.628035e+39 out=1.009966e+34 | g in=-5.931288e+23 out=5.350635e+18 | L_rad,out/L = 4.290299e+00 L_rad,cut/L = 1.745554e+01 (t = 5.559535e+02 s)
+face budget: gain/L  inner=-4.519529e-01 outer=2.135319e-08 | erg in=-7.633549e+39 out=1.009992e+34 | g in=-5.932748e+23 out=5.350723e+18 | L_rad,out/L = 4.417164e+00 L_rad,cut/L = 1.742901e+01 (t = 5.560064e+02 s)
+face budget: gain/L  inner=-4.469094e-01 outer=2.935957e-07 | erg in=-7.638850e+39 out=1.010340e+34 | g in=-5.934178e+23 out=5.352581e+18 | L_rad,out/L = 4.569058e+00 L_rad,cut/L = 1.739948e+01 (t = 5.560578e+02 s)
+face budget: gain/L  inner=-4.455604e-01 outer=2.852158e-07 | erg in=-7.643954e+39 out=1.010667e+34 | g in=-5.935648e+23 out=5.354322e+18 | L_rad,out/L = 4.741541e+00 L_rad,cut/L = 1.737244e+01 (t = 5.561075e+02 s)
+face budget: gain/L  inner=-4.408883e-01 outer=2.590810e-07 | erg in=-7.648828e+39 out=1.010953e+34 | g in=-5.937001e+23 out=5.355843e+18 | L_rad,out/L = 4.857562e+00 L_rad,cut/L = 1.734656e+01 (t = 5.561554e+02 s)
+face budget: gain/L  inner=-2.285312e-01 outer=1.986633e-07 | erg in=-7.651259e+39 out=1.011165e+34 | g in=-5.937692e+23 out=5.356979e+18 | L_rad,out/L = 4.837760e+00 L_rad,cut/L = 1.731899e+01 (t = 5.562015e+02 s)
+face budget: gain/L  inner=-4.459066e-01 outer=4.036055e-07 | erg in=-7.653642e+39 out=1.011380e+34 | g in=-5.938356e+23 out=5.358138e+18 | L_rad,out/L = 4.918501e+00 L_rad,cut/L = 1.730474e+01 (t = 5.562247e+02 s)
+face budget: gain/L  inner=-4.499614e-01 outer=4.455240e-07 | erg in=-7.656009e+39 out=1.011615e+34 | g in=-5.939030e+23 out=5.359401e+18 | L_rad,out/L = 5.110020e+00 L_rad,cut/L = 1.729097e+01 (t = 5.562475e+02 s)
+face budget: gain/L  inner=-4.491444e-01 outer=5.053975e-07 | erg in=-7.658357e+39 out=1.011879e+34 | g in=-5.939685e+23 out=5.360828e+18 | L_rad,out/L = 5.201641e+00 L_rad,cut/L = 1.727759e+01 (t = 5.562702e+02 s)
+face budget: gain/L  inner=-4.495647e-01 outer=5.884106e-07 | erg in=-7.660699e+39 out=1.012185e+34 | g in=-5.940355e+23 out=5.362487e+18 | L_rad,out/L = 5.410916e+00 L_rad,cut/L = 1.726388e+01 (t = 5.562927e+02 s)
+face budget: gain/L  inner=-4.432014e-01 outer=5.998310e-07 | erg in=-7.663002e+39 out=1.012497e+34 | g in=-5.940988e+23 out=5.364174e+18 | L_rad,out/L = 5.603178e+00 L_rad,cut/L = 1.725107e+01 (t = 5.563153e+02 s)
+face budget: gain/L  inner=-4.417734e-01 outer=6.236386e-07 | erg in=-7.665274e+39 out=1.012818e+34 | g in=-5.941625e+23 out=5.365911e+18 | L_rad,out/L = 5.754721e+00 L_rad,cut/L = 1.723772e+01 (t = 5.563376e+02 s)
+face budget: gain/L  inner=-4.387762e-01 outer=6.551678e-07 | erg in=-7.667500e+39 out=1.013150e+34 | g in=-5.942254e+23 out=5.367713e+18 | L_rad,out/L = 5.876338e+00 L_rad,cut/L = 1.722418e+01 (t = 5.563596e+02 s)
+face budget: gain/L  inner=-4.270505e-01 outer=6.804863e-07 | erg in=-7.669629e+39 out=1.013489e+34 | g in=-5.942838e+23 out=5.369553e+18 | L_rad,out/L = 6.030042e+00 L_rad,cut/L = 1.721150e+01 (t = 5.563812e+02 s)
+face budget: gain/L  inner=-4.044415e-01 outer=6.793606e-07 | erg in=-7.671564e+39 out=1.013815e+34 | g in=-5.943395e+23 out=5.371318e+18 | L_rad,out/L = 6.127995e+00 L_rad,cut/L = 1.719865e+01 (t = 5.564019e+02 s)
+elapsed=2.609498e+01 cycle=300 time=5.564208e+02 dt=2.776488e-02
+time=5.564208e+02 cycle=300
+=========== ARM d_nowb : hydro/wellbalance_dynamic=false
+elapsed=7.460458e+00 cycle=0 time=0.000000e+00 dt=1.292915e+01
+face budget: gain/L  inner=-2.131624e-04 outer=-9.787556e-05 | erg in=-3.543145e+35 out=-5.835917e+35 | g in=-7.424818e+18 out=-3.220753e+20 | L_rad,out/L = 9.368920e-01 L_rad,cut/L = 9.573175e-01 (t = 1.292915e+01 s)
+face budget: gain/L  inner=-4.915524e-04 outer=-9.705833e-05 | erg in=-1.835543e+36 out=-8.760643e+35 | g in=-9.356168e+20 out=-4.835097e+20 | L_rad,out/L = 9.058798e-01 L_rad,cut/L = 1.058472e+00 (t = 2.599327e+01 s)
+face budget: gain/L  inner=-7.573753e-04 outer=-9.383360e-05 | erg in=-4.160233e+36 out=-1.164077e+36 | g in=-2.336939e+21 out=-6.424894e+20 | L_rad,out/L = 9.001716e-01 L_rad,cut/L = 1.163436e+00 (t = 3.930031e+01 s)
+### red_giant sponge guard FIRED (rank 0, cycle 3, t = 3.930031e+01): 14 cell(s) not damped; first (m,k,j,i) = (3,5,3,91) d = 1.066752e-09 ei = -1.939394e+04 ke = 2.374684e+07 dphi = 1.869236e+06
+### dt COLLAPSE cycle=4 time=5.282544e+01 dtold=1.352513e+01 dt=1.852424e+00 | hydro=1.852424e+00 mhd=-1.000000e+00 cond=8.988466e+306 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+face budget: gain/L  inner=-1.241769e-04 outer=-1.064139e-05 | erg in=-4.547629e+36 out=-1.197275e+36 | g in=-2.565173e+21 out=-6.608087e+20 | L_rad,out/L = 2.129581e+00 L_rad,cut/L = 1.276059e+00 (t = 5.282544e+01 s)
+### WARNING in two_stream_rt: rt_use_cons gave a non-positive internal energy in 82 cell read(s); clamped to e(rho,tfloor) before the temperature/Planck evaluation. Reported once.
+### dt COLLAPSE cycle=5 time=5.467786e+01 dtold=1.852424e+00 dt=1.891516e-33 | hydro=1.891516e-33 mhd=-1.000000e+00 cond=8.988466e+306 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+face budget: gain/L  inner=0.000000e+00 outer=0.000000e+00 | erg in=-4.547629e+36 out=-1.197275e+36 | g in=-2.565173e+21 out=-6.608087e+20 | L_rad,out/L = 4.069334e+06 L_rad,cut/L = 1.293239e+00 (t = 5.467786e+01 s)
+### dt COLLAPSE cycle=48 time=5.467786e+01 dtold=4.009389e-21 dt=3.419166e-30 | hydro=3.419166e-30 mhd=-1.000000e+00 cond=8.988466e+306 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+### dt COLLAPSE cycle=91 time=5.467786e+01 dtold=6.647181e-20 dt=5.185747e-23 | hydro=5.185747e-23 mhd=-1.000000e+00 cond=8.988466e+306 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+elapsed=1.237109e+01 cycle=100 time=5.467786e+01 dt=2.655102e-20
+### dt COLLAPSE cycle=106 time=5.467786e+01 dtold=4.260757e-19 dt=3.758488e-24 | hydro=3.758488e-24 mhd=-1.000000e+00 cond=8.988466e+306 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+### dt COLLAPSE cycle=133 time=5.467786e+01 dtold=5.737452e-19 dt=8.835108e-28 | hydro=8.835108e-28 mhd=-1.000000e+00 cond=8.988466e+306 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+elapsed=1.719978e+01 cycle=200 time=5.467786e+01 dt=2.292372e-18
+### dt COLLAPSE cycle=218 time=5.467786e+01 dtold=3.296029e-18 dt=3.855709e-20 | hydro=3.855709e-20 mhd=-1.000000e+00 cond=8.988466e+306 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+### dt COLLAPSE cycle=260 time=5.467786e+01 dtold=7.646257e-18 dt=5.388090e-29 | hydro=5.388090e-29 mhd=-1.000000e+00 cond=8.988466e+306 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+elapsed=2.226864e+01 cycle=300 time=5.467786e+01 dt=8.229394e-18
+time=5.467786e+01 cycle=300
+=========== ARM d_nostrang : problem/rt_strang=false
+face budget: gain/L  inner=-1.184234e-02 outer=-7.072040e+21 | erg in=-3.473243e+37 out=-2.039741e+56 | g in=-2.021973e+22 out=-2.824715e+23 | L_rad,out/L = 8.786456e+06 L_rad,cut/L = 8.431352e-01 (t = 1.292917e+01 s)
+face budget: gain/L  inner=-1.187343e-02 outer=-6.821833e+21 | erg in=-3.473243e+37 out=-2.041907e+56 | g in=-2.021973e+22 out=-2.864106e+23 | L_rad,out/L = 8.788184e+06 L_rad,cut/L = 8.431352e-01 (t = 1.292917e+01 s)
+face budget: gain/L  inner=-1.190180e-02 outer=-6.574063e+21 | erg in=-3.473243e+37 out=-2.044018e+56 | g in=-2.021973e+22 out=-2.903094e+23 | L_rad,out/L = 8.789681e+06 L_rad,cut/L = 8.431352e-01 (t = 1.292917e+01 s)
+face budget: gain/L  inner=-1.192693e-02 outer=-6.330893e+21 | erg in=-3.473243e+37 out=-2.046077e+56 | g in=-2.021973e+22 out=-2.941901e+23 | L_rad,out/L = 8.790980e+06 L_rad,cut/L = 8.431352e-01 (t = 1.292918e+01 s)
+face budget: gain/L  inner=-1.195028e-02 outer=-6.096521e+21 | erg in=-3.473243e+37 out=-2.048089e+56 | g in=-2.021973e+22 out=-2.980762e+23 | L_rad,out/L = 8.792087e+06 L_rad,cut/L = 8.431352e-01 (t = 1.292918e+01 s)
+face budget: gain/L  inner=-1.197568e-02 outer=-5.873524e+21 | erg in=-3.473243e+37 out=-2.050062e+56 | g in=-2.021973e+22 out=-3.019927e+23 | L_rad,out/L = 8.792989e+06 L_rad,cut/L = 8.431352e-01 (t = 1.292918e+01 s)
+face budget: gain/L  inner=-1.200264e-02 outer=-5.659297e+21 | erg in=-3.473243e+37 out=-2.051999e+56 | g in=-2.021973e+22 out=-3.059759e+23 | L_rad,out/L = 8.793709e+06 L_rad,cut/L = 8.431352e-01 (t = 1.292918e+01 s)
+face budget: gain/L  inner=-1.200516e-02 outer=-5.444599e+21 | erg in=-3.473243e+37 out=-2.053903e+56 | g in=-2.021973e+22 out=-3.100631e+23 | L_rad,out/L = 8.794285e+06 L_rad,cut/L = 8.431352e-01 (t = 1.292918e+01 s)
+face budget: gain/L  inner=-1.197757e-02 outer=-5.208976e+21 | erg in=-3.473243e+37 out=-2.055765e+56 | g in=-2.021973e+22 out=-3.142642e+23 | L_rad,out/L = 8.794664e+06 L_rad,cut/L = 8.431352e-01 (t = 1.292918e+01 s)
+face budget: gain/L  inner=-1.198048e-02 outer=-4.976133e+21 | erg in=-3.473243e+37 out=-2.057578e+56 | g in=-2.021973e+22 out=-3.185966e+23 | L_rad,out/L = 8.794716e+06 L_rad,cut/L = 8.431352e-01 (t = 1.292918e+01 s)
+face budget: gain/L  inner=-1.198301e-02 outer=-4.757511e+21 | erg in=-3.473243e+37 out=-2.059346e+56 | g in=-2.021973e+22 out=-3.230896e+23 | L_rad,out/L = 8.794163e+06 L_rad,cut/L = 8.431352e-01 (t = 1.292918e+01 s)
+face budget: gain/L  inner=-1.198398e-02 outer=-4.555557e+21 | erg in=-3.473244e+37 out=-2.061072e+56 | g in=-2.021973e+22 out=-3.277768e+23 | L_rad,out/L = 8.792321e+06 L_rad,cut/L = 8.431352e-01 (t = 1.292918e+01 s)
+face budget: gain/L  inner=-1.197901e-02 outer=-4.368094e+21 | erg in=-3.473244e+37 out=-2.062761e+56 | g in=-2.021973e+22 out=-3.326949e+23 | L_rad,out/L = 8.787291e+06 L_rad,cut/L = 8.431352e-01 (t = 1.292918e+01 s)
+...[trimmed: repeated rad_cap_ang / dt COLLAPSE lines removed]...
+=========== ARM d_base : 
+elapsed=7.487189e+00 cycle=0 time=0.000000e+00 dt=1.292915e+01
+face budget: gain/L  inner=-1.123613e-02 outer=2.082775e-07 | erg in=-6.744550e+37 out=4.988118e+32 | g in=-3.811777e+22 out=2.730224e+17 | L_rad,out/L = 9.382410e-01 L_rad,cut/L = 9.196280e-01 (t = 1.292915e+01 s)
+face budget: gain/L  inner=-1.111057e-02 outer=6.301147e-07 | erg in=-1.009258e+38 out=2.397582e+33 | g in=-5.628343e+22 out=1.314555e+18 | L_rad,out/L = 9.061919e-01 L_rad,cut/L = 9.795690e-01 (t = 2.599328e+01 s)
+face budget: gain/L  inner=-1.089000e-02 outer=8.945112e-07 | erg in=-1.343518e+38 out=5.143216e+33 | g in=-7.395240e+22 out=2.820530e+18 | L_rad,out/L = 7.515997e-01 L_rad,cut/L = 1.036757e+00 (t = 3.930042e+01 s)
+### red_giant sponge guard FIRED (rank 0, cycle 3, t = 3.930042e+01): 24 cell(s) not damped; first (m,k,j,i) = (2,3,3,94) d = 6.093250e-10 ei = -1.404683e+04 ke = 2.043398e+06 dphi = 1.076750e+06
+face budget: gain/L  inner=-3.011573e-03 outer=-1.054864e-02 | erg in=-1.437473e+38 out=-3.290432e+37 | g in=-7.889946e+22 out=-7.146177e+21 | L_rad,out/L = 1.724913e+00 L_rad,cut/L = 1.029471e+00 (t = 5.282588e+01 s)
+### WARNING in two_stream_rt: rt_use_cons gave a non-positive internal energy in 58 cell read(s); clamped to e(rho,tfloor) before the temperature/Planck evaluation. Reported once.
+### dt COLLAPSE cycle=5 time=5.656590e+01 dtold=3.740019e+00 dt=4.834281e-27 | hydro=4.834281e-27 mhd=-1.000000e+00 cond=8.988466e+306 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+face budget: gain/L  inner=0.000000e+00 outer=0.000000e+00 | erg in=-1.437473e+38 out=-3.290432e+37 | g in=-7.889946e+22 out=-7.146177e+21 | L_rad,out/L = 2.121937e+05 L_rad,cut/L = 1.065745e+00 (t = 5.656590e+01 s)
+### dt COLLAPSE cycle=47 time=5.656590e+01 dtold=5.856148e-18 dt=1.385209e-29 | hydro=1.385209e-29 mhd=-1.000000e+00 cond=8.988466e+306 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+### dt COLLAPSE cycle=86 time=5.656590e+01 dtold=3.807634e-18 dt=3.059179e-29 | hydro=3.059179e-29 mhd=-1.000000e+00 cond=8.988466e+306 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+elapsed=1.198063e+01 cycle=100 time=5.656590e+01 dt=5.012159e-25
+### dt COLLAPSE cycle=126 time=5.656590e+01 dtold=2.429458e-18 dt=8.632387e-30 | hydro=8.632387e-30 mhd=-1.000000e+00 cond=8.988466e+306 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+### dt COLLAPSE cycle=189 time=5.656590e+01 dtold=1.977801e-18 dt=5.984143e-38 | hydro=5.984143e-38 mhd=-1.000000e+00 cond=8.988466e+306 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+elapsed=1.632210e+01 cycle=200 time=5.656590e+01 dt=1.225552e-34
+### dt COLLAPSE cycle=248 time=5.656590e+01 dtold=1.724812e-20 dt=1.412196e-37 | hydro=1.412196e-37 mhd=-1.000000e+00 cond=8.988466e+306 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+elapsed=2.077781e+01 cycle=300 time=5.656590e+01 dt=6.359965e-22
+time=5.656590e+01 cycle=300
+=========== ARM d_noforce : problem/rt_rad_force=false
+face budget: gain/L  inner=-4.833984e-01 outer=-3.491151e-07 | erg in=-7.587155e+39 out=1.012389e+34 | g in=-5.920183e+23 out=5.364347e+18 | L_rad,out/L = 3.883089e+00 L_rad,cut/L = 1.764107e+01 (t = 5.556029e+02 s)
+face budget: gain/L  inner=-5.266044e-01 outer=-4.654723e-07 | erg in=-7.591015e+39 out=1.012048e+34 | g in=-5.921242e+23 out=5.362436e+18 | L_rad,out/L = 3.916669e+00 L_rad,cut/L = 1.762295e+01 (t = 5.556346e+02 s)
+face budget: gain/L  inner=-5.496516e-01 outer=-5.206837e-07 | erg in=-7.595390e+39 out=1.011634e+34 | g in=-5.922398e+23 out=5.360116e+18 | L_rad,out/L = 3.957933e+00 L_rad,cut/L = 1.760523e+01 (t = 5.556691e+02 s)
+face budget: gain/L  inner=-5.351975e-01 outer=-5.226781e-07 | erg in=-7.600246e+39 out=1.011160e+34 | g in=-5.923714e+23 out=5.357464e+18 | L_rad,out/L = 4.014617e+00 L_rad,cut/L = 1.758511e+01 (t = 5.557085e+02 s)
+face budget: gain/L  inner=-5.099936e-01 outer=-4.382106e-07 | erg in=-7.605392e+39 out=1.010717e+34 | g in=-5.925036e+23 out=5.354986e+18 | L_rad,out/L = 4.052263e+00 L_rad,cut/L = 1.756132e+01 (t = 5.557522e+02 s)
+face budget: gain/L  inner=-5.013661e-01 outer=-2.985741e-07 | erg in=-7.610800e+39 out=1.010395e+34 | g in=-5.926508e+23 out=5.353165e+18 | L_rad,out/L = 4.053650e+00 L_rad,cut/L = 1.753680e+01 (t = 5.557990e+02 s)
+face budget: gain/L  inner=-5.005967e-01 outer=-2.107524e-07 | erg in=-7.616477e+39 out=1.010156e+34 | g in=-5.928022e+23 out=5.351797e+18 | L_rad,out/L = 4.105855e+00 L_rad,cut/L = 1.751103e+01 (t = 5.558482e+02 s)
+face budget: gain/L  inner=-4.864326e-01 outer=-1.037664e-07 | erg in=-7.622305e+39 out=1.010032e+34 | g in=-5.929683e+23 out=5.351056e+18 | L_rad,out/L = 4.192096e+00 L_rad,cut/L = 1.748252e+01 (t = 5.559001e+02 s)
+face budget: gain/L  inner=-4.653010e-01 outer=-5.375235e-08 | erg in=-7.628035e+39 out=1.009966e+34 | g in=-5.931288e+23 out=5.350635e+18 | L_rad,out/L = 4.290299e+00 L_rad,cut/L = 1.745554e+01 (t = 5.559535e+02 s)
+face budget: gain/L  inner=-4.519529e-01 outer=2.135319e-08 | erg in=-7.633549e+39 out=1.009992e+34 | g in=-5.932748e+23 out=5.350723e+18 | L_rad,out/L = 4.417164e+00 L_rad,cut/L = 1.742901e+01 (t = 5.560064e+02 s)
+face budget: gain/L  inner=-4.469094e-01 outer=2.935957e-07 | erg in=-7.638850e+39 out=1.010340e+34 | g in=-5.934178e+23 out=5.352581e+18 | L_rad,out/L = 4.569058e+00 L_rad,cut/L = 1.739948e+01 (t = 5.560578e+02 s)
+face budget: gain/L  inner=-4.455604e-01 outer=2.852158e-07 | erg in=-7.643954e+39 out=1.010667e+34 | g in=-5.935648e+23 out=5.354322e+18 | L_rad,out/L = 4.741541e+00 L_rad,cut/L = 1.737244e+01 (t = 5.561075e+02 s)
+face budget: gain/L  inner=-4.408883e-01 outer=2.590810e-07 | erg in=-7.648828e+39 out=1.010953e+34 | g in=-5.937001e+23 out=5.355843e+18 | L_rad,out/L = 4.857562e+00 L_rad,cut/L = 1.734656e+01 (t = 5.561554e+02 s)
+face budget: gain/L  inner=-2.285312e-01 outer=1.986633e-07 | erg in=-7.651259e+39 out=1.011165e+34 | g in=-5.937692e+23 out=5.356979e+18 | L_rad,out/L = 4.837760e+00 L_rad,cut/L = 1.731899e+01 (t = 5.562015e+02 s)
+face budget: gain/L  inner=-4.459066e-01 outer=4.036055e-07 | erg in=-7.653642e+39 out=1.011380e+34 | g in=-5.938356e+23 out=5.358138e+18 | L_rad,out/L = 4.918501e+00 L_rad,cut/L = 1.730474e+01 (t = 5.562247e+02 s)
+face budget: gain/L  inner=-4.499614e-01 outer=4.455240e-07 | erg in=-7.656009e+39 out=1.011615e+34 | g in=-5.939030e+23 out=5.359401e+18 | L_rad,out/L = 5.110020e+00 L_rad,cut/L = 1.729097e+01 (t = 5.562475e+02 s)
+face budget: gain/L  inner=-4.491444e-01 outer=5.053975e-07 | erg in=-7.658357e+39 out=1.011879e+34 | g in=-5.939685e+23 out=5.360828e+18 | L_rad,out/L = 5.201641e+00 L_rad,cut/L = 1.727759e+01 (t = 5.562702e+02 s)
+face budget: gain/L  inner=-4.495647e-01 outer=5.884106e-07 | erg in=-7.660699e+39 out=1.012185e+34 | g in=-5.940355e+23 out=5.362487e+18 | L_rad,out/L = 5.410916e+00 L_rad,cut/L = 1.726388e+01 (t = 5.562927e+02 s)
+face budget: gain/L  inner=-4.432014e-01 outer=5.998310e-07 | erg in=-7.663002e+39 out=1.012497e+34 | g in=-5.940988e+23 out=5.364174e+18 | L_rad,out/L = 5.603178e+00 L_rad,cut/L = 1.725107e+01 (t = 5.563153e+02 s)
+face budget: gain/L  inner=-4.417734e-01 outer=6.236386e-07 | erg in=-7.665274e+39 out=1.012818e+34 | g in=-5.941625e+23 out=5.365911e+18 | L_rad,out/L = 5.754721e+00 L_rad,cut/L = 1.723772e+01 (t = 5.563376e+02 s)
+face budget: gain/L  inner=-4.387762e-01 outer=6.551678e-07 | erg in=-7.667500e+39 out=1.013150e+34 | g in=-5.942254e+23 out=5.367713e+18 | L_rad,out/L = 5.876338e+00 L_rad,cut/L = 1.722418e+01 (t = 5.563596e+02 s)
+face budget: gain/L  inner=-4.270505e-01 outer=6.804863e-07 | erg in=-7.669629e+39 out=1.013489e+34 | g in=-5.942838e+23 out=5.369553e+18 | L_rad,out/L = 6.030042e+00 L_rad,cut/L = 1.721150e+01 (t = 5.563812e+02 s)
+face budget: gain/L  inner=-4.044415e-01 outer=6.793606e-07 | erg in=-7.671564e+39 out=1.013815e+34 | g in=-5.943395e+23 out=5.371318e+18 | L_rad,out/L = 6.127995e+00 L_rad,cut/L = 1.719865e+01 (t = 5.564019e+02 s)
+elapsed=2.609498e+01 cycle=300 time=5.564208e+02 dt=2.776488e-02
+time=5.564208e+02 cycle=300
+=========== ARM d_nowb : hydro/wellbalance_dynamic=false
+elapsed=7.460458e+00 cycle=0 time=0.000000e+00 dt=1.292915e+01
+face budget: gain/L  inner=-2.131624e-04 outer=-9.787556e-05 | erg in=-3.543145e+35 out=-5.835917e+35 | g in=-7.424818e+18 out=-3.220753e+20 | L_rad,out/L = 9.368920e-01 L_rad,cut/L = 9.573175e-01 (t = 1.292915e+01 s)
+face budget: gain/L  inner=-4.915524e-04 outer=-9.705833e-05 | erg in=-1.835543e+36 out=-8.760643e+35 | g in=-9.356168e+20 out=-4.835097e+20 | L_rad,out/L = 9.058798e-01 L_rad,cut/L = 1.058472e+00 (t = 2.599327e+01 s)
+face budget: gain/L  inner=-7.573753e-04 outer=-9.383360e-05 | erg in=-4.160233e+36 out=-1.164077e+36 | g in=-2.336939e+21 out=-6.424894e+20 | L_rad,out/L = 9.001716e-01 L_rad,cut/L = 1.163436e+00 (t = 3.930031e+01 s)
+### dt COLLAPSE cycle=4 time=5.282544e+01 dtold=1.352513e+01 dt=1.852424e+00 | hydro=1.852424e+00 mhd=-1.000000e+00 cond=8.988466e+306 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+face budget: gain/L  inner=-1.241769e-04 outer=-1.064139e-05 | erg in=-4.547629e+36 out=-1.197275e+36 | g in=-2.565173e+21 out=-6.608087e+20 | L_rad,out/L = 2.129581e+00 L_rad,cut/L = 1.276059e+00 (t = 5.282544e+01 s)
+### dt COLLAPSE cycle=5 time=5.467786e+01 dtold=1.852424e+00 dt=1.891516e-33 | hydro=1.891516e-33 mhd=-1.000000e+00 cond=8.988466e+306 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+### dt COLLAPSE cycle=48 time=5.467786e+01 dtold=4.009389e-21 dt=3.419166e-30 | hydro=3.419166e-30 mhd=-1.000000e+00 cond=8.988466e+306 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+### dt COLLAPSE cycle=91 time=5.467786e+01 dtold=6.647181e-20 dt=5.185747e-23 | hydro=5.185747e-23 mhd=-1.000000e+00 cond=8.988466e+306 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+elapsed=1.237109e+01 cycle=100 time=5.467786e+01 dt=2.655102e-20
+### dt COLLAPSE cycle=106 time=5.467786e+01 dtold=4.260757e-19 dt=3.758488e-24 | hydro=3.758488e-24 mhd=-1.000000e+00 cond=8.988466e+306 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+### dt COLLAPSE cycle=133 time=5.467786e+01 dtold=5.737452e-19 dt=8.835108e-28 | hydro=8.835108e-28 mhd=-1.000000e+00 cond=8.988466e+306 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+elapsed=1.719978e+01 cycle=200 time=5.467786e+01 dt=2.292372e-18
+### dt COLLAPSE cycle=218 time=5.467786e+01 dtold=3.296029e-18 dt=3.855709e-20 | hydro=3.855709e-20 mhd=-1.000000e+00 cond=8.988466e+306 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+### dt COLLAPSE cycle=260 time=5.467786e+01 dtold=7.646257e-18 dt=5.388090e-29 | hydro=5.388090e-29 mhd=-1.000000e+00 cond=8.988466e+306 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+elapsed=2.226864e+01 cycle=300 time=5.467786e+01 dt=8.229394e-18
+time=5.467786e+01 cycle=300
+=========== ARM d_nostrang : problem/rt_strang=false
+face budget: gain/L  inner=-1.184234e-02 outer=-7.072040e+21 | erg in=-3.473243e+37 out=-2.039741e+56 | g in=-2.021973e+22 out=-2.824715e+23 | L_rad,out/L = 8.786456e+06 L_rad,cut/L = 8.431352e-01 (t = 1.292917e+01 s)
+face budget: gain/L  inner=-1.187343e-02 outer=-6.821833e+21 | erg in=-3.473243e+37 out=-2.041907e+56 | g in=-2.021973e+22 out=-2.864106e+23 | L_rad,out/L = 8.788184e+06 L_rad,cut/L = 8.431352e-01 (t = 1.292917e+01 s)
+face budget: gain/L  inner=-1.190180e-02 outer=-6.574063e+21 | erg in=-3.473243e+37 out=-2.044018e+56 | g in=-2.021973e+22 out=-2.903094e+23 | L_rad,out/L = 8.789681e+06 L_rad,cut/L = 8.431352e-01 (t = 1.292917e+01 s)
+face budget: gain/L  inner=-1.192693e-02 outer=-6.330893e+21 | erg in=-3.473243e+37 out=-2.046077e+56 | g in=-2.021973e+22 out=-2.941901e+23 | L_rad,out/L = 8.790980e+06 L_rad,cut/L = 8.431352e-01 (t = 1.292918e+01 s)
+face budget: gain/L  inner=-1.195028e-02 outer=-6.096521e+21 | erg in=-3.473243e+37 out=-2.048089e+56 | g in=-2.021973e+22 out=-2.980762e+23 | L_rad,out/L = 8.792087e+06 L_rad,cut/L = 8.431352e-01 (t = 1.292918e+01 s)
+face budget: gain/L  inner=-1.197568e-02 outer=-5.873524e+21 | erg in=-3.473243e+37 out=-2.050062e+56 | g in=-2.021973e+22 out=-3.019927e+23 | L_rad,out/L = 8.792989e+06 L_rad,cut/L = 8.431352e-01 (t = 1.292918e+01 s)
+face budget: gain/L  inner=-1.200264e-02 outer=-5.659297e+21 | erg in=-3.473243e+37 out=-2.051999e+56 | g in=-2.021973e+22 out=-3.059759e+23 | L_rad,out/L = 8.793709e+06 L_rad,cut/L = 8.431352e-01 (t = 1.292918e+01 s)
+face budget: gain/L  inner=-1.200516e-02 outer=-5.444599e+21 | erg in=-3.473243e+37 out=-2.053903e+56 | g in=-2.021973e+22 out=-3.100631e+23 | L_rad,out/L = 8.794285e+06 L_rad,cut/L = 8.431352e-01 (t = 1.292918e+01 s)
+face budget: gain/L  inner=-1.197757e-02 outer=-5.208976e+21 | erg in=-3.473243e+37 out=-2.055765e+56 | g in=-2.021973e+22 out=-3.142642e+23 | L_rad,out/L = 8.794664e+06 L_rad,cut/L = 8.431352e-01 (t = 1.292918e+01 s)
+face budget: gain/L  inner=-1.198048e-02 outer=-4.976133e+21 | erg in=-3.473243e+37 out=-2.057578e+56 | g in=-2.021973e+22 out=-3.185966e+23 | L_rad,out/L = 8.794716e+06 L_rad,cut/L = 8.431352e-01 (t = 1.292918e+01 s)
+face budget: gain/L  inner=-1.198301e-02 outer=-4.757511e+21 | erg in=-3.473243e+37 out=-2.059346e+56 | g in=-2.021973e+22 out=-3.230896e+23 | L_rad,out/L = 8.794163e+06 L_rad,cut/L = 8.431352e-01 (t = 1.292918e+01 s)
+face budget: gain/L  inner=-1.198398e-02 outer=-4.555557e+21 | erg in=-3.473244e+37 out=-2.061072e+56 | g in=-2.021973e+22 out=-3.277768e+23 | L_rad,out/L = 8.792321e+06 L_rad,cut/L = 8.431352e-01 (t = 1.292918e+01 s)
+face budget: gain/L  inner=-1.197901e-02 outer=-4.368094e+21 | erg in=-3.473244e+37 out=-2.062761e+56 | g in=-2.021973e+22 out=-3.326949e+23 | L_rad,out/L = 8.787291e+06 L_rad,cut/L = 8.431352e-01 (t = 1.292918e+01 s)
+face budget: gain/L  inner=-1.197149e-02 outer=-4.199312e+21 | erg in=-3.473244e+37 out=-2.064416e+56 | g in=-2.021973e+22 out=-3.378918e+23 | L_rad,out/L = 8.772686e+06 L_rad,cut/L = 8.431352e-01 (t = 1.292918e+01 s)
+face budget: gain/L  inner=-1.195770e-02 outer=-4.058732e+21 | erg in=-3.473244e+37 out=-2.066046e+56 | g in=-2.021973e+22 out=-3.434417e+23 | L_rad,out/L = 8.727921e+06 L_rad,cut/L = 8.431352e-01 (t = 1.292918e+01 s)
+face budget: gain/L  inner=-1.193850e-02 outer=-3.981793e+21 | erg in=-3.473244e+37 out=-2.067674e+56 | g in=-2.021973e+22 out=-3.494683e+23 | L_rad,out/L = 8.597972e+06 L_rad,cut/L = 8.431352e-01 (t = 1.292918e+01 s)
+face budget: gain/L  inner=-1.192445e-02 outer=-4.059547e+21 | erg in=-3.473244e+37 out=-2.069361e+56 | g in=-2.021973e+22 out=-3.562005e+23 | L_rad,out/L = 8.263135e+06 L_rad,cut/L = 8.431352e-01 (t = 1.292918e+01 s)
+face budget: gain/L  inner=-1.190740e-02 outer=-4.466871e+21 | erg in=-3.473244e+37 out=-2.071244e+56 | g in=-2.021973e+22 out=-3.640596e+23 | L_rad,out/L = 7.595288e+06 L_rad,cut/L = 8.431352e-01 (t = 1.292918e+01 s)
+face budget: gain/L  inner=-1.188528e-02 outer=-5.377269e+21 | erg in=-3.473244e+37 out=-2.073542e+56 | g in=-2.021973e+22 out=-3.736681e+23 | L_rad,out/L = 6.726329e+06 L_rad,cut/L = 8.431352e-01 (t = 1.292918e+01 s)
+face budget: gain/L  inner=-1.185914e-02 outer=-6.636902e+21 | erg in=-3.473244e+37 out=-2.076412e+56 | g in=-2.021973e+22 out=-3.855561e+23 | L_rad,out/L = 6.042572e+06 L_rad,cut/L = 8.431352e-01 (t = 1.292918e+01 s)
+face budget: gain/L  inner=-1.179696e-02 outer=-7.789063e+21 | erg in=-3.473244e+37 out=-2.079811e+56 | g in=-2.021973e+22 out=-3.996432e+23 | L_rad,out/L = 5.635263e+06 L_rad,cut/L = 8.431352e-01 (t = 1.292918e+01 s)
+face budget: gain/L  inner=-1.174682e-02 outer=-8.758182e+21 | erg in=-3.473244e+37 out=-2.083650e+56 | g in=-2.021973e+22 out=-4.153025e+23 | L_rad,out/L = 5.433063e+06 L_rad,cut/L = 8.431352e-01 (t = 1.292918e+01 s)
+face budget: gain/L  inner=-1.172551e-02 outer=-9.515271e+21 | erg in=-3.473244e+37 out=-2.087819e+56 | g in=-2.021974e+22 out=-4.322093e+23 | L_rad,out/L = 5.410498e+06 L_rad,cut/L = 8.431352e-01 (t = 1.292918e+01 s)
+elapsed=2.029347e+01 cycle=300 time=1.292918e+01 dt=1.890005e-07
+time=1.292918e+01 cycle=300
+=========== ARM d_wall : problem/outer_bc=wall
+elapsed=7.495309e+00 cycle=0 time=0.000000e+00 dt=1.292915e+01
+face budget: gain/L  inner=-1.123613e-02 outer=9.472372e-05 | erg in=-6.744550e+37 out=6.943192e+35 | g in=-3.811777e+22 out=3.804828e+20 | L_rad,out/L = 9.382484e-01 L_rad,cut/L = 9.196280e-01 (t = 1.292915e+01 s)
+face budget: gain/L  inner=-1.111057e-02 outer=9.232014e-05 | erg in=-1.009258e+38 out=9.725142e+35 | g in=-5.628343e+22 out=5.328772e+20 | L_rad,out/L = 9.061962e-01 L_rad,cut/L = 9.795690e-01 (t = 2.599328e+01 s)
+face budget: gain/L  inner=-1.089000e-02 outer=9.179615e-05 | erg in=-1.343518e+38 out=1.254275e+36 | g in=-7.395240e+22 out=6.872145e+20 | L_rad,out/L = 7.527861e-01 L_rad,cut/L = 1.036757e+00 (t = 3.930042e+01 s)
+face budget: gain/L  inner=-3.011602e-03 outer=-1.855827e-05 | erg in=-1.437473e+38 out=1.196378e+36 | g in=-7.889950e+22 out=6.755215e+20 | L_rad,out/L = 1.730104e+00 L_rad,cut/L = 1.029471e+00 (t = 5.282588e+01 s)
+### dt COLLAPSE cycle=5 time=5.656594e+01 dtold=3.740056e+00 dt=4.830795e-27 | hydro=4.830795e-27 mhd=-1.000000e+00 cond=8.988466e+306 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+face budget: gain/L  inner=0.000000e+00 outer=-8.553214e-19 | erg in=-1.437473e+38 out=1.196378e+36 | g in=-7.889950e+22 out=6.755215e+20 | L_rad,out/L = 2.236928e+05 L_rad,cut/L = 1.064776e+00 (t = 5.656594e+01 s)
+### dt COLLAPSE cycle=55 time=5.656594e+01 dtold=2.105300e-22 dt=2.370040e-27 | hydro=2.370040e-27 mhd=-1.000000e+00 cond=8.988466e+306 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+### dt COLLAPSE cycle=99 time=5.656594e+01 dtold=6.710542e-18 dt=9.404635e-22 | hydro=9.404635e-22 mhd=-1.000000e+00 cond=8.988466e+306 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+### dt COLLAPSE cycle=100 time=5.656594e+01 dtold=9.404635e-22 dt=3.732489e-30 | hydro=3.732489e-30 mhd=-1.000000e+00 cond=8.988466e+306 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+elapsed=1.183854e+01 cycle=100 time=5.656594e+01 dt=3.732489e-30
+### dt COLLAPSE cycle=130 time=5.656594e+01 dtold=1.789997e-25 dt=1.473837e-31 | hydro=1.473837e-31 mhd=-1.000000e+00 cond=8.988466e+306 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+### dt COLLAPSE cycle=177 time=5.656594e+01 dtold=8.315966e-18 dt=4.304506e-29 | hydro=4.304506e-29 mhd=-1.000000e+00 cond=8.988466e+306 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+elapsed=1.599523e+01 cycle=200 time=5.656594e+01 dt=3.610881e-22
+### dt COLLAPSE cycle=212 time=5.656594e+01 dtold=7.395084e-19 dt=2.273962e-27 | hydro=2.273962e-27 mhd=-1.000000e+00 cond=8.988466e+306 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+### dt COLLAPSE cycle=246 time=5.656594e+01 dtold=1.175218e-17 dt=1.944342e-39 | hydro=1.944342e-39 mhd=-1.000000e+00 cond=8.988466e+306 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+elapsed=2.017730e+01 cycle=300 time=5.656594e+01 dt=1.733622e-26
+time=5.656594e+01 cycle=300
+=========== ARM d_nosponge : problem/vdamp_top_tau=0.0 problem/vdamp_bot_cells=0 problem/sponge=false
+### FATAL ERROR in /viper/u2/jinma/ATHENAK/bench/wt_he4/src/parameter_input.cpp at line 390
+=========== ARM d_norad : problem/rt_grey=false
+face budget: gain/L  inner=-1.316194e-02 outer=-6.158375e-05 | erg in=-8.423794e+39 out=-1.179101e+37 | g in=-1.113878e+25 out=-6.380075e+21 (t = 2.933685e+03 s)
+face budget: gain/L  inner=-1.365953e-02 outer=-6.290669e-05 | erg in=-8.450760e+39 out=-1.191520e+37 | g in=-1.117781e+25 out=-6.448081e+21 (t = 2.942243e+03 s)
+face budget: gain/L  inner=-1.383383e-02 outer=-6.262550e-05 | erg in=-8.479125e+39 out=-1.204361e+37 | g in=-1.121905e+25 out=-6.518373e+21 (t = 2.951133e+03 s)
+face budget: gain/L  inner=-1.384033e-02 outer=-6.330184e-05 | erg in=-8.508866e+39 out=-1.217963e+37 | g in=-1.126231e+25 out=-6.592855e+21 (t = 2.960449e+03 s)
+face budget: gain/L  inner=-1.227899e-02 outer=-5.978912e-05 | erg in=-8.536533e+39 out=-1.231435e+37 | g in=-1.130197e+25 out=-6.666600e+21 (t = 2.970217e+03 s)
+face budget: gain/L  inner=-1.238143e-02 outer=-5.944797e-05 | erg in=-8.564525e+39 out=-1.244875e+37 | g in=-1.134288e+25 out=-6.740166e+21 (t = 2.980019e+03 s)
+face budget: gain/L  inner=-1.214449e-02 outer=-5.892778e-05 | erg in=-8.592100e+39 out=-1.258256e+37 | g in=-1.138231e+25 out=-6.813414e+21 (t = 2.989863e+03 s)
+face budget: gain/L  inner=-1.205027e-02 outer=-5.845584e-05 | erg in=-8.619584e+39 out=-1.271588e+37 | g in=-1.142267e+25 out=-6.886391e+21 (t = 2.999751e+03 s)
+face budget: gain/L  inner=-1.224334e-02 outer=-5.652379e-05 | erg in=-8.647592e+39 out=-1.284518e+37 | g in=-1.146338e+25 out=-6.957127e+21 (t = 3.009668e+03 s)
+face budget: gain/L  inner=-1.221492e-02 outer=-5.765906e-05 | erg in=-8.675576e+39 out=-1.297728e+37 | g in=-1.150438e+25 out=-7.029430e+21 (t = 3.019601e+03 s)
+face budget: gain/L  inner=-1.212477e-02 outer=-5.895755e-05 | erg in=-8.703409e+39 out=-1.311262e+37 | g in=-1.154597e+25 out=-7.103541e+21 (t = 3.029553e+03 s)
+face budget: gain/L  inner=-1.252164e-02 outer=-5.794070e-05 | erg in=-8.732220e+39 out=-1.324593e+37 | g in=-1.159004e+25 out=-7.176512e+21 (t = 3.039528e+03 s)
+face budget: gain/L  inner=-1.182663e-02 outer=-5.844780e-05 | erg in=-8.759500e+39 out=-1.338075e+37 | g in=-1.163073e+25 out=-7.250306e+21 (t = 3.049528e+03 s)
+face budget: gain/L  inner=-1.205789e-02 outer=-5.775438e-05 | erg in=-8.787404e+39 out=-1.351441e+37 | g in=-1.167220e+25 out=-7.323498e+21 (t = 3.059561e+03 s)
+face budget: gain/L  inner=-1.191685e-02 outer=-5.377779e-05 | erg in=-8.815074e+39 out=-1.363927e+37 | g in=-1.171261e+25 out=-7.391805e+21 (t = 3.069627e+03 s)
+face budget: gain/L  inner=-1.220595e-02 outer=-5.272958e-05 | erg in=-8.843541e+39 out=-1.376225e+37 | g in=-1.175345e+25 out=-7.459042e+21 (t = 3.079739e+03 s)
+face budget: gain/L  inner=-1.220283e-02 outer=-5.506977e-05 | erg in=-8.872162e+39 out=-1.389141e+37 | g in=-1.179542e+25 out=-7.529674e+21 (t = 3.089907e+03 s)
+face budget: gain/L  inner=-1.005076e-02 outer=-4.499558e-05 | erg in=-8.895853e+39 out=-1.399747e+37 | g in=-1.183053e+25 out=-7.587692e+21 (t = 3.100126e+03 s)
+face budget: gain/L  inner=-1.166772e-02 outer=-5.342367e-05 | erg in=-8.918171e+39 out=-1.409966e+37 | g in=-1.186399e+25 out=-7.643620e+21 (t = 3.108419e+03 s)
+face budget: gain/L  inner=-1.529433e-02 outer=-6.642273e-05 | erg in=-8.944855e+39 out=-1.421555e+37 | g in=-1.190322e+25 out=-7.707052e+21 (t = 3.115982e+03 s)
+face budget: gain/L  inner=-1.187752e-02 outer=-5.640422e-05 | erg in=-8.969205e+39 out=-1.433119e+37 | g in=-1.193783e+25 out=-7.770358e+21 (t = 3.124871e+03 s)
+face budget: gain/L  inner=-5.234190e-03 outer=-2.452742e-05 | erg in=-8.979442e+39 out=-1.437915e+37 | g in=-1.195225e+25 out=-7.796613e+21 (t = 3.133349e+03 s)
+### dt COLLAPSE cycle=300 time=3.136909e+03 dtold=3.559276e+00 dt=7.101843e-09 | hydro=7.101843e-09 mhd=-1.000000e+00 cond=8.988466e+306 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+elapsed=1.670772e+01 cycle=300 time=3.136909e+03 dt=7.101843e-09
+time=3.136909e+03 cycle=300
+================================= 
+==========================================================================================
