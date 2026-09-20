@@ -139,42 +139,100 @@ HLL with `b_L = min(0, lam_-)`, `b_R = max(0, lam_+)` taken over both states.
 
 **The thick limit is the main trap.**  Plain HLL has `D_num = c dx/2` against the physical
 `c/(3 rho kappa)`: wrong as soon as `tau_cell = rho kappa_F dx > 1`; ours reach 1e3-1e6.
-Two corrections are implemented behind `<rad_m1>/thick_flux`, because they share
-everything else and the gates decide:
+The literature has three families; read at formula level (Berthon & Turpault 2011 in
+full, Bloch et al. 2021 incl. appendices, Jiang 2021 App. A, He, Wibking & Krumholz 2024,
+Rosdahl & Teyssier 2015; NOT read: Berthon, Charrier & Dubroca 2007, Jiang, Stone & Davis
+2014, Gonzalez et al. 2007; VETTAM and AREPO-IDORT only through summaries).
 
-`ap_hll` (default; Berthon, Charrier & Dubroca 2007):
-
-```
-alpha = (b_R - b_L) / (b_R - b_L + c tau_face),   tau_face = (rho kappa_F)_face dx
-F_E   = alpha * [ (b_R F_L - b_L F_R) + b_R b_L (E_R - E_L) ] / (b_R - b_L)
-```
-
-In the thick limit `alpha -> (b_R-b_L)/(c tau)`, `b = +-c/sqrt3`, and the dissipation term
-becomes `-(c/(3 rho kappa dx))(E_R - E_L)`: the compact two-point physical diffusion
-flux.  The `P`-flux and the source remainder follow Berthon's eqs. (UNVERIFIED here: read
-the paper before coding; the survey verified the `alpha` formula and the limit only).
-
-`blend` (Radice et al. 2022; upstream AthenaK): `F = F_c - A (1-phi)(F_c - F_LLF)`,
-`A = min(1, 1/tau_face)`, minmod ratio `phi`, plus their sawtooth switch.  Cheaper, but the
-thick-limit diffusion operator is centred on a `2 dx` stencil, i.e. it decouples odd and
-even cells; the sawtooth switch is there for that reason.  We have been bitten by
-checkerboards before (B-star photosphere), hence not the default.
-
-`none`: plain HLL, for the beam and shadow tests and as the failing control of T3.
-
-**Moving fluid.**  Bloch et al. (2021) state that the AP correction is not AP in a moving
-fluid: the advective enthalpy flux `v E + v.P` sits inside `F` and is multiplied by
-`alpha -> 0`.  Fix, to be proven by T4: split the face flux,
+`<rad_m1>/thick_flux = ap_hll` (default).  The asymptotic-preserving factor multiplies the
+E-flux only; the pressure flux is plain HLL (the Bloch et al. 2021 variant, eq. 12/C.1):
 
 ```
-F_E = upwind_v[ v_n E + (v.P)_n ]  +  ap_hll[ F - v E - v.P ]
+alpha = 1 / [ 1 - 3 tau_face (1 - f^2) lam+ lam- / (c (lam+ - lam-)) ]     (Bloch eq. 25)
+F_E   = alpha * [ (b_R F0_L - b_L F0_R) + b_R b_L (E_R - E_L) ] / (b_R - b_L)  + A_upwind
+F_F   = c^2 [ (b_R P_L - b_L P_R) ] / (b_R - b_L) + b_R b_L (F_R - F_L) / (b_R - b_L)
+tau_face = (1/2) [ (rho kappa_F)_L + (rho kappa_F)_R ] dx
 ```
 
-with the hydro face velocity; the same split for the `P`-flux is NOT obviously right and is
-the open design question of this note (section 8, R2).
+with `f` the face mean, and `(1 - f^2)` Bloch's guard that keeps `f < 1` near free
+streaming.  Isotropic limit: `lam = +-c/sqrt3`, `alpha -> 2/(sqrt3 tau_face)`, and the
+dissipation term becomes `-(c/(3 tau_face))(E_R - E_L)`: the compact two-point physical
+diffusion flux.  Checked here: when the cell fluxes sit at their diffusion value,
+`alpha F + (dissipation) = F` EXACTLY at every `tau_face`, i.e. the scheme is the blend
+`alpha F_HLL + (1 - alpha) F_diff` of Foucart et al. (2015) with a COMPACT `F_diff`.  This
+is what distinguishes it from the Radice/upstream-AthenaK blend, whose thick limit is the
+centred average of cell fluxes (a `2 dx` stencil with odd-even decoupling, hence their
+sawtooth switch); that variant is not implemented.
 
-Face opacity: harmonic mean of `rho kappa_F` (the diffusion-limit flux across an opacity
-jump, e.g. the Fe bump, is set by the harmonic mean).
+Face opacity is the ARITHMETIC mean of `rho kappa_F` (= harmonic mean of the diffusivity,
+the correct flux across an opacity jump such as the Fe bump; Bloch eq. 19).  An earlier
+draft of this note said harmonic mean of the opacity: that was wrong.
+
+Why not Berthon & Turpault's original (alpha on the WHOLE flux vector, their Sect. 4.3):
+it is the variant with the proof (E > 0 and |F| <= cE for CFL <= 1/2, Thm 3.1) and it is
+fully explicit, because its interface-based source has the bounded weight
+`c sigma/(2 + sigma~ dx)` plus the remainder `(alpha_{i+1/2} - alpha_{i-1/2})/dx f(w_i)`.
+But with alpha on `c^2 P` the discrete radiation momentum balance is
+`w_eff F = -alpha c^2 grad P`, so a force taken as minus the discrete F-source is
+`alpha grad P_rad -> 0` in thick cells.  For radiation hydrodynamics the gas must feel
+`-grad P_rad`; with the pressure flux unmodified and the true stiff `rho kappa_F` in the
+implicit source (section 4b) the force is conservative and correct.  The price: no
+admissibility proof (flux limiting of section 4 stays), and Bloch report spurious flux
+oscillations with their well-balanced source near free streaming (we use the cell-centred
+implicit source instead, which they recommend for the moving case anyway).
+
+`thick_flux = scaled`.  The modified HLLE of Jiang (2021, App. A) and AREPO-IDORT carried
+over to moments.  Their intensity flux has signal speeds
+`S = c |mu| sqrt[(1 - exp(-tau_c^2))/tau_c^2]` (downwind side `exp(-tau_c^4)`), with
+`tau_c = alpha_J (rho_L + rho_R)(kappa_L + kappa_R) dx`, `alpha_J = 5` (= 20 tau_cell;
+IDORT: `5 rho kappa dR`).  Its angular moments are an HLL for `(E, F)` with BOTH wave
+speeds scaled by `eps(tau) ~ 1/tau_c`: the VETTAM / KORAL (`a -> min(a, 4/(3 tau))`)
+family.  What it is: the physical diffusion comes from the centred average of the slaved
+cell fluxes (`2 dx` stencil) and the scaled HLLE term adds `D_num = S dx/2` on top, a
+FIXED fraction of the physical diffusivity, independent of `tau`:
+`D_num/D_phys = 3<|mu|>/(2 * 20) = 0.04` for Jiang's prefactor, `~0.15-0.25` for IDORT's.
+It does not vanish as `tau -> inf` (not AP in the strict sense; neither paper claims a
+proof), but it is compact, so unlike a pure centred flux it damps the odd-even mode, at
+4-20 % of the physical rate.  What does not carry over: the per-angle upwinding and the
+`tau^2`/`tau^4` asymmetry, and the positive/negative coefficient split and first-order
+reconstruction (those serve the implicit matrix only).  Moment form, prefactor exposed as
+`<rad_m1>/scaled_prefactor` (default 20):
+
+```
+eps = sqrt[ (1 - exp(-tau_c^2)) / tau_c^2 ],   b_L,R -> eps * b_L,R   in both fluxes
+```
+
+`thick_flux = none`: plain HLL; beam and shadow tests, and the failing control of T3.
+Note QUOKKA runs exactly this (PPM + uncorrected HLL) and obtains its AP property from the
+time integrator alone (section 5).  That removes the `c^2 dt` error mode of the time
+discretisation, but the HLL dissipation `(c/(2 sqrt3))(E_R - E_L)` is still in the E-flux:
+it is small only where the reconstruction makes the face jump small.  At a limiter-clipped
+extremum the jump is O(dx) and the numerical flux is `~tau_cell` times the physical one.
+Their AP demonstration at `tau_cell = 1e5` is a UNIFORM advected medium.  For turbulent
+convection at `tau_cell = 1e3-1e6` this is not acceptable as the default (own assessment,
+to be exhibited by T3c).
+
+**Moving fluid.**  Bloch et al. (Sect. 6.2, App. A): the thick limit in a moving fluid is
+`F -> -(c/(3 sigma)) grad E + (4/3) E v`, and since `alpha -> 0` switches off the
+transport flux that carries `(4/3) E v`, "this scheme does not capture the asymptotic
+regime in a moving fluid" (they say the same of Gonzalez et al. 2007 and Berthon &
+Turpault 2011).  Hence the split written above: `F0 = F - A`, `A = v E + v.P` per cell;
+`alpha` acts on the HLL flux of `F0`; `A_upwind` is the FULL enthalpy flux upwinded with
+the hydro face velocity from the reconstructed states.  Published relatives: Jiang (2021,
+eqs. 16-17) splits `c n I = (c n - f v) I + f v I`, `f = 1 - exp(-tau_c^2)`, and upwinds
+the second piece (moments: `f v E` and `f v (x) F`, i.e. `v E`, not the enthalpy flux:
+with a scaled HLLE nothing is switched off, so the split there only protects the advected
+piece from the HLLE dissipation); Rosdahl & Teyssier (2015) move trapped photons into a
+gas-advected variable (rejected here: AREPO-RT's objection that ~60 % of the flux is
+already trapped at `tau_c ~ 1` and the radiation pressure becomes isotropic); QUOKKA does
+not split (`F = (4/3) v E` is a fixed point of its implicit source); AREPO-IDORT rejects
+Jiang's split ("unstable behavior with local time-stepping") and lets the moving mesh
+carry the advection.  We sub-cycle with a global step, not local time-stepping, but T4
+runs with and without sub-cycling for that reason.  No split is applied in the F
+equation: `F` is slaved by the stiff source to `A - c grad.P/(rho kappa_F)` (section 4b
+is written in terms of `F0`), and advection of radiation momentum is O(beta^2).  With the
+light-speed CFL the advective Courant number is `~beta`, so even a centred `A` would be
+stable in the explicit scheme; upwinding is chosen because stage 3 (implicit) needs it.
 
 ---
 
@@ -233,9 +291,23 @@ loop (driver.cpp:430-445): new lists `m1_before_stagen / m1_stagen / m1_after_st
 seeds the closure before the solve, applies here too).  `dtnew` is NOT folded into
 `Mesh::NewTimeStep` unless `subcycle = false`.
 
-Each substep is IMEX: target PD-ARS (Chu et al. 2019 as used by QUOKKA, arXiv:2404.08247;
-AP, implicit stage cell-local; exact tableau UNVERIFIED, read before coding).  First
-implementation: two-stage SSP-RK2 transport with the section 4 solve after each stage.
+Each substep is IMEX PD-ARS (Chu et al. 2019) as used by QUOKKA (He, Wibking & Krumholz
+2024, eqs. 27-29, read), free parameter `eps = 0`; `L` = explicit transport, `S` = the
+section 4 solve, which is cell-local, so the implicit stages need no communication:
+
+```
+U1      = U^n + dt L(U^n)                     + dt S(U1)
+U^{n+1} = U^n + dt/2 [ L(U^n) + L(U1) ]       + dt/2 [ S(U1) + S(U^{n+1}) ]
+```
+
+Their analysis (eqs. 56-73) is the reason: any scheme with a stage that contains transport
+but not the source (SSP-RK2 with the source split off) leaves `F = F^n - (c dt/3) grad E`
+in that stage and a spurious diffusion `c^2 dt/3`, dominant as soon as
+`dt > 1/(c rho kappa)`, i.e. always for us (their Marshak front ran 2x too fast).  So the
+operator-split "transport, then coupling" of upstream AthenaK is NOT an option, and
+section 4 is called inside both stages.  PD-ARS is second order streaming, first order in
+the diffusion limit, and was run to radiation CFL ~ 10 in thick problems; with `ap_hll`
+the explicit limit stays the light-speed CFL (Berthon & Turpault: 1/2).
 
 `m1_stagen` chain, the upstream order: `CopyCons -> Closure -> Opacity -> Fluxes ->
 SendFlux -> RecvFlux -> Update -> Coupling -> RestrictU -> SendU -> RecvU -> PhysicalBCs
@@ -291,14 +363,30 @@ within 5 %, shadow `E < 1e-3` of the lit value behind the clump.
 
 **(T3) Static thick pulse: the AP gate.**  1-D Gaussian in `E`, scattering-dominated,
 `tau_cell` = 0.1, 10, 1e3, 1e6, no hydro.  Measure the variance growth rate against
-`2 c/(3 rho kappa)`.  Pass: within 2 % at every `tau_cell` for `ap_hll`; second order
+`2 c/(3 rho kappa)`.  Pass: within 2 % at every `tau_cell` for `ap_hll`; for `scaled`
+record the excess against the
+predicted `1 + 3<|mu|>/(2 prefactor)` (4 % at the default); second order
 between two resolutions at `tau_cell = 10`; control: `none` must FAIL at `tau_cell >= 10`
 (if it passes, the test is not testing).  Add a Nyquist-mode seed at `tau_cell = 1e3`:
-pass = monotone decay, no growth, for `ap_hll`; record what `blend` does.
+pass = decay at the physical rate of the Nyquist mode for `ap_hll`; record `scaled`
+(prediction: 4 % of that rate).  **(T3b) opacity jump** (Bloch Sect. 5.2): constant-flux
+steady state across a 1e3 jump in `rho kappa_F`; pass: flux uniform to 1e-3, no peak at
+the jump.  **(T3c) clipped extremum**: a top-hat in `E` at `tau_cell = 1e4` with
+`thick_flux = none` and PLM, to exhibit the `~tau_cell` excess flux at limiter-clipped
+cells that rules out the uncorrected solver; `ap_hll` must stay within 5 %.
 
-**(T4) Advected thick pulse: dynamic diffusion.**  QUOKKA AP-paper parameters: static
-`tau = 2.9e3, beta = 3.3e-5`; dynamic `tau = 1.4e4, beta = 1e-3` (`beta tau = 14`),
-periodic, prescribed `v`.  Pass: pulse centre at `x0 + v t` within one cell, width equal
+**(T4) Advected thick pulse: dynamic diffusion.**  QUOKKA AP-paper parameters (read):
+static `T0 = 1e7, T1 = 2e7, rho = 1.2, w = 24 cm, kappa = 100` (`tau = 2.9e3`,
+`beta = 3.3e-5`), 512 cells, their advected-vs-static difference < 0.03 %; dynamic
+`v = 3e7 cm/s, kappa = 500` (`tau = 1.4e4`, `beta = 1e-3`, `beta tau = 14`), where they
+needed 1024 cells "to reduce the magnitude of odd-even decoupling instability" (< 0.06 %);
+we run 512 AND 1024 and require no odd-even mode at 512 with `ap_hll`.  Periodic,
+prescribed `v`.  **(T4b)** their Sect. 5.5: uniform medium with `F = (4/3) v E`,
+`v = 0.01 c`, `tau_cell = 1e5` (`beta tau = 1e3`); pass: gas temperature drift < 1e-12
+(they get 4e-5 with O(v/c) sources, < 1e-15 with O(v^2/c^2)); this is the direct test of
+the section 1 source form and of the advective split.  Run T4 with and without
+sub-cycling (AREPO-IDORT found Jiang's split unstable under local time-stepping).
+Pass: pulse centre at `x0 + v t` within one cell, width equal
 to the static case within 2 %, no net gas heating beyond 1e-10 relative (this is the test
 that the `beta^2` terms cancel).  Control: the O(v/c)-truncated source must show the
 spurious heating.  Run at `chat = c` and once at `chat = c/10` to exhibit the
@@ -310,7 +398,9 @@ for every `dt`, no sign oscillation, `E_gas + (c/chat) E` conserved to round-off
 with the tabulated He EOS at (`rho = 1e-8`, `T = 2e5 K`).
 
 **(T6) Marshak wave / Su-Olson.**  Bloch et al. numbers: pass <= 2 % L1 (their AP scheme
-1.1 %, uncorrected HLL 84 %).
+1.1 %, uncorrected HLL 84 %).  Also QUOKKA's nonlinear Marshak
+(`chi = 300 (kT/keV)^-3` per cm, 60 cells on 0.66 cm, cell optical depth 3 to 3e9):
+they get 4.5 % at CFL 0.9; pass: <= 4.5 %.
 
 **(T7) Radiative shocks** (Lowrie & Edwards 2008), Mach 2 subcritical and Mach 5
 supercritical, coupled to hydro.  Pass: L1 < 2 % in `rho`, `T_gas`, `T_rad` at `chat = c`.
@@ -326,10 +416,13 @@ the sound speed for 100 sound crossings.  This is the precursor of the box.
 
 Open risks, to be closed by the gates above and not before:
 
-* **R1** thick-limit flux: `ap_hll` needs Berthon's `P`-flux and source remainder read
-  from the paper; T3 decides between `ap_hll` and `blend`.
-* **R2** the advective split of section 3 in the `F` equation; T4 decides.
-* **R3** PD-ARS tableau and its diffusion-limit order; T3/T6 at radiation CFL > 1.
+* **R1** (narrowed) thick-limit flux: formulas now read, default chosen (section 3); what
+  remains unproven is admissibility of the E-only `alpha` variant (no theorem; Bloch saw
+  `f > 1` near free streaming) and its second-order extension (none in print): T1-T3.
+* **R2** (narrowed) moving fluid: the enthalpy-flux split in the E equation is our own
+  construction (relatives: Jiang 2021, rejected by AREPO-IDORT under local
+  time-stepping); T4/T4b decide, with and without sub-cycling.
+* **R3** (closed) PD-ARS tableau read; residual: first order in the diffusion limit.
 * **R4** Planck-mean table for stellar mixtures: source to be chosen (OPAL/OP do not
   ship one; the correlated-k route exists for the hot Jupiter only).
 
@@ -350,7 +443,8 @@ Open risks, to be closed by the gates above and not before:
 ## References
 
 Audit et al. 2002 (astro-ph/0206281); Berthon, Charrier & Dubroca 2007 (J. Sci. Comput.
-31, 347); Gonzalez, Audit & Huynh 2007 (A&A 464, 429); Krumholz, Klein & McKee 2007
+31, 347); Berthon & Turpault 2011 (Numer. Methods PDE 27, 1396); Chu et al. 2019
+(PD-ARS); Gonzalez, Audit & Huynh 2007 (A&A 464, 429); Krumholz, Klein & McKee 2007
 (astro-ph/0611003); Lowrie, Morel & Hittinger 1999 (ApJ 521, 432); Jiang, Stone & Davis
 2012 (1201.2223); Skinner & Ostriker 2013 (1306.0010); Sadowski et al. 2013 (1212.5050);
 Rosdahl & Teyssier 2015 (1411.6440); Foucart et al. 2015 (1502.04146); Kannan et al.
