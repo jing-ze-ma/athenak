@@ -169,12 +169,14 @@ void Hydro::FOFC(Driver *pdriver, int stage) {
         Real m2 = utest_(m,IM2,k,j,i);
         Real m3 = utest_(m,IM3,k,j,i);
         Real etot = utest_(m,IEN,k,j,i);
-        Real v1, v2, v3, eint, pnew, g1new, temp, de;
+        Real v1, v2, v3, eint, pnew, g1new, temp, de, vde;
         bool ceil_used, floored, tset_used;
+        // the floor-TEST pass: `vde` is discarded, since this state is a trial one and
+        // nothing is written back (see EventCounters::vceil_de)
         GnomonicRaiseVelFloors(cosc_(m,k,j), eos_, gen_, false, false, vceil_, true,
                                1.0, gen_ ? wtemp_(m,k,j,i) : 0.0, d,
                                m1, m2, m3, etot, v1, v2, v3, eint, pnew, g1new, temp,
-                               ceil_used, floored, tset_used, de);
+                               ceil_used, floored, tset_used, de, vde);
         if (ceil_used || floored) {
           fofcc_(m,k,j,i) = true;
           sumf++;

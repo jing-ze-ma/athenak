@@ -45,6 +45,9 @@
 //! \param[out]    ceil_used, floored  whether the ceiling / any floor fired
 //! \param[out]    tset_used  whether <hydro>/efloor_as_tfloor rebuilt e from T
 //! \param[out]    de       energy CREATED by the floors (negative if removed)
+//! \param[out]    vde      kinetic energy the VELOCITY CEILING clipped -- removed from
+//!                         the conserved total, or converted to internal energy under
+//!                         <hydro>/vceil_thermalise
 
 KOKKOS_INLINE_FUNCTION
 void GnomonicRaiseVelFloors(const Real c, const EOS_Data &eos_, const bool gen_,
@@ -53,11 +56,12 @@ void GnomonicRaiseVelFloors(const Real c, const EOS_Data &eos_, const bool gen_,
     Real &m1, Real &m2, Real &m3, Real &etot,
     Real &v1, Real &v2, Real &v3, Real &eint,
     Real &pnew, Real &g1new, Real &temp,
-    bool &ceil_used, bool &floored, bool &tset_used, Real &de) {
+    bool &ceil_used, bool &floored, bool &tset_used, Real &de, Real &vde) {
   ceil_used = false;
   floored = false;
   tset_used = false;
   de = 0.0;
+  vde = 0.0;
   pnew = 0.0;
   g1new = 0.0;
   temp = -1.0;
@@ -85,14 +89,18 @@ void GnomonicRaiseVelFloors(const Real c, const EOS_Data &eos_, const bool gen_,
   // metric-correct kinetic energy formed above, which is the quantity ConsToPrim
   // cannot build on this grid.  Scale the momentum by fs = vceil/|v| and remove
   // (1 - fs^2) KE from the conserved total, so the INTERNAL energy below is exactly
-  // what it would have been.
+  // what it would have been.  Under <hydro>/vceil_thermalise the conserved total is
+  // left alone instead and the clipped kinetic energy lands in `eint` below; the
+  // floors that follow then run on that larger internal energy, exactly as they do in
+  // SingleC2P_GeneralHyd.  See EOS_Data::vceil_thermalise.
   if (vceil_ > 0.0 && act_ && ekin > 0.0 && d > 0.0) {
     const Real vsq = 2.0*ekin/d;
     if (vsq > vceil_*vceil_) {
       const Real fs = vceil_/sqrt(vsq);
       m1 *= fs; m2 *= fs; m3 *= fs;
       v1 *= fs; v2 *= fs; v3 *= fs;
-      etot -= (1.0 - fs*fs)*ekin;
+      if (!eos_.vceil_thermalise) etot -= (1.0 - fs*fs)*ekin;
+      vde += (1.0 - fs*fs)*ekin;
       ekin *= fs*fs;
       ceil_used = true;
     }

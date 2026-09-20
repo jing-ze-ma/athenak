@@ -79,6 +79,16 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
       std::exit(EXIT_FAILURE);
     }
   }
+  // <block>/vceil_thermalise: see the note on EOS_Data::vceil_thermalise.  Default off,
+  // so every existing run is bit-for-bit unchanged.  Meaningless without a ceiling, and
+  // a silently ignored switch is worse than a refusal, so refuse that combination.
+  eos_data.vceil_thermalise = pin->GetOrAddBoolean(bk,"vceil_thermalise",false);
+  if (eos_data.vceil_thermalise && !(eos_data.vceil > 0.0)) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+              << std::endl << "<" << bk << ">/vceil_thermalise is set but <" << bk
+              << ">/vceil is not: there is no ceiling to thermalise" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
   eos_data.pfloor = pin->GetOrAddReal(bk,"pfloor",(FLT_MIN));
   eos_data.tfloor = pin->GetOrAddReal(bk,"tfloor",(FLT_MIN));
 

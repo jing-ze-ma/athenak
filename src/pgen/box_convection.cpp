@@ -2205,6 +2205,19 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                   << std::endl;
       }
     }
+    // problem/rt_force_tau_gate: gate the force above by the optical depth to the top
+    // (see two_stream_rt.hpp).  Default OFF and bitwise off.
+    ts::rt_force_tau_gate = pin->GetOrAddBoolean("problem", "rt_force_tau_gate", false);
+    ts::rt_force_tau_lo = pin->GetOrAddReal("problem", "rt_force_tau_lo", 0.3);
+    ts::rt_force_tau_hi = pin->GetOrAddReal("problem", "rt_force_tau_hi", 3.0);
+    if (ts::rt_force_tau_gate &&
+        (!(ts::rt_force_tau_lo > 0.0) ||
+         !(ts::rt_force_tau_hi > ts::rt_force_tau_lo))) {
+      std::cout << "### FATAL ERROR in box_convection: problem/rt_force_tau_gate needs "
+                << "0 < rt_force_tau_lo < rt_force_tau_hi (the ramp is a smoothstep "
+                << "in log10 tau)" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
     // ck_nquad: 1 = hemispheric mean (mu = 1/1.66), 2 = two-point Gauss-Legendre
     correlated_k::ck_nq = pin->GetOrAddInteger("problem", "rt_nquad", 2);
     // The internal flux.  It enters the box ONCE, through the bottom wall as

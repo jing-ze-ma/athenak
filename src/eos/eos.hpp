@@ -108,6 +108,36 @@ struct EOS_Data {
   // Firings are counted in EventCounters::neos_vceil (event-log column eos_vceil).
   Real vceil = 0.0;
 
+  // <hydro>/vceil_thermalise, <mhd>/vceil_thermalise -- THERMALISE the clipped kinetic
+  // energy instead of deleting it (default false = the historical behaviour).
+  //
+  // The ceiling above removes (1 - fs^2) KE from the CONSERVED TOTAL, so the clipped
+  // kinetic energy leaves the simulation entirely: it is an uncounted energy SINK, of
+  // the same kind an unphysical floor is a source.  In an envelope run where the flow
+  // reaches the ceiling routinely the sink is not small -- 9.7e40 erg, twice the
+  // envelope's internal energy, in the He4 presupernova arms -- and it silently breaks
+  // the global energy budget (d(tot-E)/dt no longer matches L_in - L_out).
+  //
+  // With this set the momentum is rescaled exactly as before but the TOTAL energy is
+  // left alone, so e = E - KE_new picks the clipped kinetic energy up as INTERNAL
+  // energy: the ceiling becomes a (crude, cell-local) dissipation rather than a sink,
+  // and the total energy is conserved through it.  Everything downstream in the same
+  // c2p call -- the temperature solve, the pressure/temperature/entropy floors,
+  // efloor_as_tfloor, and the p and Gamma_1 handed to the reconstruction -- then runs
+  // on that larger internal energy, so the returned primitive, wtemp, wder and the
+  // conserved state written back are mutually consistent.
+  //
+  // CAVEAT: a cell that is BOTH at the density floor and above the ceiling is heated by
+  // KE/rho per unit mass, which in a near-vacuum cell can be a very large temperature.
+  // That heat is real in the sense that the momentum was real, but the momentum in such
+  // a cell is usually numerical; the temperature floor/clamp and efloor_as_tfloor bound
+  // the damage, and the event-log column vceil_de makes the size of it visible.
+  //
+  // The energy converted (or, with this off, removed) is summed into
+  // EventCounters::vceil_de -- HYDRO only; the general-MHD inversion has no energy
+  // accumulator to thread it through and is not counted.
+  bool vceil_thermalise = false;
+
   // <block>/eos_floor_consistent -- make the TABULATED EOS thermodynamically consistent
   // below the lowest tabulated temperature.  The temperature inversion brackets on
   // [10^(ymin-3), 10^(ymax+3)]; once e falls under e(rho, 10^(ymin-3)) it pins on that

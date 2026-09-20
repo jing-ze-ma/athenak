@@ -654,6 +654,62 @@ bool rt_no_heat_ = false; // problem/rt_no_heat, see RedGiantRTSplit
 int eledger_ = 0;         // problem/e_ledger, see RedGiantRTSplit
 bool mlt_split_dep_ = false, mlt_fconv_ready_ = false;
 Real mlt_owed_ = 0.0;
+// problem/mlt_split_sync (needs mlt_split_deposit + mlt_mean), default off: take the
+// GRID-SCALE MODE out of the closure's target, with one [1 2 1]/4 pass over the faces
+// before the target enters the relaxed profile.
+//
+// THE MECHANISM IT FIXES (tests_r17, measured with the periodic face dump
+// problem/mlt_dump_dt).  The closure asks for D = F_req - F_rad - F_res - F_2s, a ~3 %
+// difference of two ~L numbers, and under the split -div D is deposited into the state
+// the implicit column solve then linearises about.  The sweep answers that source: in
+// gas this optically thick the stiff solve absorbs an imposed source almost completely
+// within one step and carries it as a FACE FLUX, so F_2s picks up ~ -F_used, and the
+// next closure call -- which defines F_used as F_req - F_2s -- reads its own deposit
+// back with the sign that asks for more.  The loop is
+//     F_used^(n+1) = F_req - F_2s^n,   F_2s^n = F_2s^eq - a F_used^n,
+// a = theta/(1 + theta) with theta the sweep's diffusion number D dt/dx^2, so the gain
+// is a and any mismatch is amplified by 1/(1 - a) = 1 + theta.  theta is scale
+// dependent: negligible on the shell profile, ENORMOUS and linear in dt at the grid
+// scale.  That is the whole observed signature -- zigzag(F_2s) 0.002 -> 2.5 (sign
+// flipping, |F_2s| up to 4 F_req) over 1.5 turnovers while zigzag(T) stays at 1.3e-3
+// and zigzag(F_req) at 8e-4 (tests_r17/P3); the grid-scale density zigzag that follows
+// at r/R 0.67-0.81, because in a radiation-pressure-dominated envelope p = p(T) to 2 %
+// and density has no restoring force; amplitude falling like dt^2 between cfl 0.3,
+// 0.15 and 0.075; and nothing at all with the deposit inside the RK stages
+// (tests_r17/Pin, zigzag(F_2s) 8e-3), which however pays the O(dt) force dipole the
+// split removes.
+//
+// WHY THE SMOOTHER AND NOT THE OBVIOUS FIXES.  Re-forming the residual against the flux
+// of the sweep just done -- candidate (i)/(ii), make deficit and deposit simultaneous --
+// treats a stiff term explicitly and blows up at once (tests_r17/Y3: zigzag(rho) 3.9
+// within 0.14 turnovers).  Dropping the max(0, .) rectifier so the flux can go negative
+// makes it WORSE (tests_r17/Z3: 2.5 at 1.5 turnovers against 0.62 with it), because the
+// rectifier was clipping half of the mode.  The loop gain is a property of the grid-
+// scale mode alone, so the cure is to keep that mode out of the loop: [1 2 1]/4
+// annihilates it exactly, leaves what the shell profile resolves (F_req goes as 1/r^2
+// over 144 faces) untouched to O((dx/L)^2), and -- applied to the TARGET, not to the
+// relaxed state, and with the walls mirrored so the flux there stays zero -- keeps the
+// deposit exactly conservative and the relaxation filter exactly as it was.
+bool mlt_split_sync_ = false;
+DvceArray1D<Real> ftar1d_;   // (i): the unsmoothed target, mlt_split_sync only
+// problem/mlt_sync_passes (int, default 1, read only under mlt_split_sync): apply the
+// [1 2 1]/4 stencil this many times to the target instead of once.  One pass kills the
+// face-to-face mode exactly and nothing else; a 3-6 face standing oscillation between
+// F_2s and F_used survives it (tests_r18/out_part1_mltratio.txt, from the 3-D wedge
+// tests_r11/wedge9d: +-0.3 L at r/R 0.79-0.92).  n passes multiply a mode of wavelength
+// lambda faces by cos^{2n}(pi/lambda), so the 3-6 face band needs n > 1:
+//        lambda    n=1      n=2      n=4      n=8
+//             2    0        0        0        0
+//             3    0.250    0.0625   3.91e-3  1.53e-5
+//             4    0.500    0.250    0.0625   3.91e-3
+//             6    0.750    0.563    0.316    0.100
+//            12    0.933    0.871    0.758    0.574
+// The cost is the profile the closure is allowed to keep: at n = 8 a 12-face feature is
+// already down 43 %, and the smoother is a diffusion of 2n/4 faces^2 per call, so the
+// number should be the smallest one that reaches the band that is ringing.  Every pass
+// mirrors the walls exactly as the single pass does, so the deposit stays conservative.
+int mlt_sync_passes_ = 1;
+DvceArray1D<Real> ftar1d_b_;  // (i): ping-pong buffer, mlt_sync_passes > 1 only
 Real mlt_flux_fix_cap_ = 0.02, mlt_flux_fix_rmax_ = 0.0;
 // problem/mlt_relax_time [s], 0 = off: relax the applied 1-D profile toward the freshly
 // computed flux by dt/relax_time each call.  The deficit now contains the RESOLVED
@@ -661,9 +717,29 @@ Real mlt_flux_fix_cap_ = 0.02, mlt_flux_fix_rmax_ = 0.0;
 // applied subgrid flux should follow its mean, not its noise.  Seeded on the first call
 // so that t = 0 already carries the full closure.
 Real mlt_relax_ = 1.0e4;
+// problem/mlt_relax_down_time [s], default < 0 = use mlt_relax_time both ways: the
+// relaxation time to use on the calls where the (smoothed) target is BELOW the current
+// fmlt1d; 0 = drop to the target in one call.  The relaxation was written for a target
+// that flickers around a mean, but the deficit is RECTIFIED at zero: where resolved
+// convection has taken the load, D = 0 exactly and stays there, and the one-sided
+// filter then keeps paying out exp(-t/mlt_relax_time) -- 6-9 % of L for more than a
+// turnover in the 3-D wedge (tests_r11/wedge9d) -- on top of the two-stream flux that
+// has already taken over.  A short (or zero) down time makes the hand-over prompt while
+// the slow up time still averages the noise on the way in.  Applies at both relaxation
+// sites (with and without mlt_split_sync) and touches neither the seed nor the restart
+// state: fmlt1d is still the only thing carried.
+Real mlt_relax_dn_ = -1.0;
 bool mlt_relax_seeded_ = false;
 std::string mlt_dump_ = "";  // problem/mlt_dump: write the faces of one column once
 bool mlt_dumped_ = false;
+// problem/mlt_dump_dt [s], 0 = off (diagnostic, shell-mean path only): APPEND the same
+// face table to <mlt_dump>.ts every mlt_dump_dt of simulated time, with one extra
+// column, the flux actually deposited (fconv after the per-column cap).  The one-shot
+// dump above answers "what does the closure ask for at t = 0"; this one answers "does
+// F_used drift or alternate face to face as the run goes on", which is what the
+// grid-scale density zigzag at the base of the MLT zone needs (tests_r17).
+Real mlt_dump_dt_ = 0.0;
+Real mlt_dump_next_ = -1.0;
 // The dump has to wait for the two-stream.  On the FIRST source call of a run the RT
 // solver has not run yet, so its face-flux array does not exist and F_2s reads zero --
 // which made the t = 0 budget check show a full L unaccounted for above the photosphere
@@ -1446,6 +1522,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // a RESOLVED-convection run from a stratification that already carries L.
   const Real mlt_alpha_ic = pin->GetOrAddReal("problem", "mlt_alpha_ic", mlt_alpha_);
   mlt_dump_ = pin->GetOrAddString("problem", "mlt_dump", "");
+  mlt_dump_dt_ = pin->GetOrAddReal("problem", "mlt_dump_dt", 0.0);
   mlt_mean_ = pin->GetOrAddBoolean("problem", "mlt_mean", true);
   mlt_ramp_ = pin->GetOrAddReal("problem", "mlt_ramp_time", 0.0);
   mlt_ramp_dn_ = pin->GetOrAddReal("problem", "mlt_ramp_down_time", 0.0);
@@ -1453,9 +1530,19 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   mlt_x_thr_ = pin->GetOrAddReal("problem", "mlt_x_thr", 1.0e-4);
   mlt_flux_fix_ = pin->GetOrAddBoolean("problem", "mlt_flux_fix", false);
   mlt_split_dep_ = pin->GetOrAddBoolean("problem", "mlt_split_deposit", false);
+  mlt_split_sync_ = pin->GetOrAddBoolean("problem", "mlt_split_sync", false);
   mlt_flux_fix_cap_ = pin->GetOrAddReal("problem", "mlt_flux_fix_cap", 0.02);
   mlt_flux_fix_rmax_ = pin->GetOrAddReal("problem", "mlt_flux_fix_rmax", 0.0);
   mlt_relax_ = pin->GetOrAddReal("problem", "mlt_relax_time", 1.0e4);
+  mlt_relax_dn_ = pin->GetOrAddReal("problem", "mlt_relax_down_time", -1.0);
+  if (mlt_split_sync_) {
+    mlt_sync_passes_ = pin->GetOrAddInteger("problem", "mlt_sync_passes", 1);
+    if (mlt_sync_passes_ < 1) {
+      std::cout << "### FATAL ERROR in red_giant: problem/mlt_sync_passes = "
+                << mlt_sync_passes_ << " must be >= 1" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+  }
   // the shell mean indexes cells by their GLOBAL radial position, so a MeshBlock that
   // covers only part of the radius would average cells at different radii together
   if (mlt_alpha_ > 0.0 && mlt_mean_ &&
@@ -1465,6 +1552,14 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
               << pmy_mesh_->mesh_indcs.nx1 << " and meshblock/nx1 = "
               << pmy_mesh_->mb_indcs.nx1 << ". Set meshblock/nx1 = mesh/nx1, or set "
               << "problem/mlt_mean = false." << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  // the sync form smooths the shell-mean target: it has nowhere to live without the
+  // shell-mean closure, and nothing to fix without the split deposit
+  if (mlt_split_sync_ && !(mlt_split_dep_ && mlt_mean_)) {
+    std::cout << "### FATAL ERROR in red_giant: problem/mlt_split_sync needs "
+              << "problem/mlt_split_deposit = true and problem/mlt_mean = true"
+              << std::endl;
     std::exit(EXIT_FAILURE);
   }
   {
@@ -1890,6 +1985,25 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                   << std::endl;
       }
     }
+    // problem/rt_force_tau_gate: gate the force above by the optical depth to the top
+    // (see two_stream_rt.hpp).  Default OFF and bitwise off.
+    ts::rt_force_tau_gate = pin->GetOrAddBoolean("problem", "rt_force_tau_gate", false);
+    ts::rt_force_tau_lo = pin->GetOrAddReal("problem", "rt_force_tau_lo", 0.3);
+    ts::rt_force_tau_hi = pin->GetOrAddReal("problem", "rt_force_tau_hi", 3.0);
+    if (ts::rt_force_tau_gate) {
+      if (!(ts::rt_force_tau_lo > 0.0) ||
+          !(ts::rt_force_tau_hi > ts::rt_force_tau_lo)) {
+        std::cout << "### FATAL ERROR in red_giant: problem/rt_force_tau_gate needs "
+                  << "0 < rt_force_tau_lo < rt_force_tau_hi (the ramp is a smoothstep "
+                  << "in log10 tau)" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      if (global_variable::my_rank == 0) {
+        std::cout << "red_giant: RT force OPTICAL-DEPTH GATED -- s = 1 below tau "
+                  << ts::rt_force_tau_lo << ", 0 above tau " << ts::rt_force_tau_hi
+                  << "; f = s [rho kappa F/c + grad(w Prad)] + (1-s) [old]" << std::endl;
+      }
+    }
     // the TIME CENTRING of the two coupling terms mode 3 leaves first order.  Both are
     // default-off and bitwise off; both need the exact column solve.
     ts::rt_force_center = pin->GetOrAddInteger("problem", "rt_force_center", 0);
@@ -2116,6 +2230,14 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     Kokkos::realloc(shell_, n1m1+2, 13);
     Kokkos::realloc(fmlt1d_, n1m1+2);
     Kokkos::realloc(fmean_, n1m1+2, 17);
+    if (mlt_split_sync_) {
+      Kokkos::realloc(ftar1d_, n1m1+2);
+      Kokkos::deep_copy(ftar1d_, 0.0);   // a face the closure skips contributes nothing
+      if (mlt_sync_passes_ > 1) {        // the ping-pong buffer, only when it is used
+        Kokkos::realloc(ftar1d_b_, n1m1+2);
+        Kokkos::deep_copy(ftar1d_b_, 0.0);
+      }
+    }
     // the relaxed profile goes into, and comes out of, the restart file (see
     // RedGiantMltRestartState).  Enrolled only here, so a run with problem/mlt_alpha = 0
     // writes no block and every other pgen's restart format is untouched.
@@ -3484,7 +3606,9 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
       // the DEFICIT the other two carriers leave.  No tau taper and no mlt_rmax here:
       // the deficit IS the hand-over and it vanishes wherever radiation takes the load.
       auto fmean = fmean_;
-      const Real xthr = mlt_x_thr_, relaxt = mlt_relax_;
+      const Real xthr = mlt_x_thr_, relaxt = mlt_relax_, relaxdn = mlt_relax_dn_;
+      const bool sync = mlt_split_sync_;
+      auto ftar1d = mlt_split_sync_ ? ftar1d_ : fmlt1d_;   // unwritten unless sync
       const bool ffix = mlt_flux_fix_;
       const Real ffcap = mlt_flux_fix_cap_, ffrmax = mlt_flux_fix_rmax_;
       const bool seed = !mlt_relax_seeded_;
@@ -3633,13 +3757,64 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
         }
         // (d) relax the applied profile toward the target
         const Real fnew = ftar/(punit_*vunit);                         // code flux
-        if (relaxt > 0.0 && !seed) {
-          fmlt1d(i) += fmin(1.0, bdt*tunit/relaxt)*(fnew - fmlt1d(i));
+        // problem/mlt_split_sync relaxes toward the SMOOTHED target instead, which
+        // needs every face's target first: hold it aside and do it in a second pass
+        if (sync) { ftar1d(i) = fnew; return; }
+        // problem/mlt_relax_down_time: a separate time for the falling side
+        const Real trlx = (relaxdn >= 0.0 && fnew < fmlt1d(i)) ? relaxdn : relaxt;
+        if (trlx > 0.0 && !seed) {
+          fmlt1d(i) += fmin(1.0, bdt*tunit/trlx)*(fnew - fmlt1d(i));
         } else {
           fmlt1d(i) = fnew;
         }
         fmean(i,8) = fmlt1d(i)*punit_*vunit;
       });
+      // problem/mlt_split_sync: one [1 2 1]/4 pass over the faces before the target
+      // enters the relaxed profile.  That stencil ANNIHILATES the face-to-face mode
+      // exactly, which is the one the deposit-sweep loop amplifies (see the switch's
+      // declaration), and leaves everything the shell profile actually resolves --
+      // F_req goes as 1/r^2 over 144 faces -- untouched to O((dx/L)^2).  It is applied
+      // to the TARGET, not to the relaxed state: smoothing the state itself once per
+      // stage would be a diffusion operator running at the stage rate and would erase
+      // the profile.  The walls are mirrored, so the flux there stays zero and the
+      // deposit stays exactly conservative.
+      if (mlt_split_sync_) {
+        // problem/mlt_sync_passes > 1: the leading passes, ping-ponging between the
+        // target array and its buffer, so that the last one is the block below and the
+        // n = 1 path is untouched.  Each is the same mirrored stencil.
+        DvceArray1D<Real> psrc = ftar1d_, pdst = ftar1d_b_;
+        for (int p = 1; p < mlt_sync_passes_; ++p) {
+          auto ftar1d_p = psrc;
+          auto ftar1d_o = pdst;
+          par_for("rg_mlt_smooth_p", DevExeSpace(), is+1, ie, KOKKOS_LAMBDA(const int i) {
+            const Real fl = (i > is+1) ? ftar1d_p(i-1) : ftar1d_p(i);
+            const Real fr = (i < ie) ? ftar1d_p(i+1) : ftar1d_p(i);
+            ftar1d_o(i) = 0.25*fl + 0.5*ftar1d_p(i) + 0.25*fr;
+          });
+          DvceArray1D<Real> pswap = psrc; psrc = pdst; pdst = pswap;
+        }
+        auto ftar1d_s = psrc;
+        auto fmlt1d_s = fmlt1d_;
+        auto fmean_s = fmean_;
+        const Real relaxt_s = mlt_relax_, tunit_s = tunit;
+        const Real relaxdn_s = mlt_relax_dn_;
+        const Real punv = punit_*vunit;
+        const bool seed_s = !mlt_relax_seeded_;
+        par_for("rg_mlt_smooth", DevExeSpace(), is+1, ie, KOKKOS_LAMBDA(const int i) {
+          const Real fl = (i > is+1) ? ftar1d_s(i-1) : ftar1d_s(i);
+          const Real fr = (i < ie) ? ftar1d_s(i+1) : ftar1d_s(i);
+          const Real fsm = 0.25*fl + 0.5*ftar1d_s(i) + 0.25*fr;
+          // problem/mlt_relax_down_time: a separate time for the falling side
+          const Real trlx = (relaxdn_s >= 0.0 && fsm < fmlt1d_s(i)) ? relaxdn_s
+                                                                   : relaxt_s;
+          if (trlx > 0.0 && !seed_s) {
+            fmlt1d_s(i) += fmin(1.0, bdt*tunit_s/trlx)*(fsm - fmlt1d_s(i));
+          } else {
+            fmlt1d_s(i) = fsm;
+          }
+          fmean_s(i,8) = fmlt1d_s(i)*punv;
+        });
+      }
       mlt_relax_seeded_ = true;
     }
     // problem/mlt_ramp_time: fade the applied flux in, so the cut region heats over
@@ -3674,6 +3849,12 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
                               : (x1hi_ - x1lo_)/indcs.nx1;
         const Real fmax_ = 0.1*fmin(w0(m,IEN,k,j,i-1), w0(m,IEN,k,j,i))*dxl/bdt;
         fconv(m,k,j,i) = ramp*fmin(fmlt1d(i), fmax_);
+        // diagnostic only (problem/mlt_dump_dt): the deposited flux and the cap, so the
+        // periodic dump can tell "the closure asked for less" from "the cap bit"
+        if (m == 0 && k == ks && j == js) {
+          fdiag(i,6) = fmax_*punit_*vunit;
+          fdiag(i,7) = fconv(m,k,j,i)*punit_*vunit;
+        }
         return;
       }
       const Real x1lo = size.d_view(m).x1min, x1hi = size.d_view(m).x1max;
@@ -3771,6 +3952,26 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
           df << i;
           for (int q = 0; q < 8; ++q) df << " " << hd(i,q);
           df << "\n";
+        }
+      }
+    }
+    // problem/mlt_dump_dt: the same table, appended, once every mlt_dump_dt seconds
+    if (mlt_dump_dt_ > 0.0 && mltmean && !mlt_dump_.empty()
+        && global_variable::my_rank == 0) {
+      const Real tnow = pm->time*tunit;
+      if (mlt_dump_next_ < 0.0 || tnow >= mlt_dump_next_) {
+        mlt_dump_next_ = tnow + mlt_dump_dt_;
+        auto hm = Kokkos::create_mirror_view(fmean_);
+        Kokkos::deep_copy(hm, fmean_);
+        auto hd2 = Kokkos::create_mirror_view(fdiag_);
+        Kokkos::deep_copy(hd2, fdiag_);
+        std::ofstream tf(mlt_dump_ + ".ts", std::ios::app);
+        tf.precision(6);
+        tf << std::scientific << "# t " << pm->time*tunit << "\n";
+        for (int i = is+1; i <= ie; ++i) {
+          tf << i;
+          for (int q = 0; q < 17; ++q) tf << " " << hm(i,q);
+          tf << " " << hd2(i,7) << " " << hd2(i,6) << "\n";
         }
       }
     }
@@ -4978,6 +5179,8 @@ void RedGiantFinal(ParameterInput *pin, Mesh *pm) {
   fdiag_ = DvceArray2D<Real>();
   shell_ = DvceArray2D<Real>();
   fmlt1d_ = DvceArray1D<Real>();
+  ftar1d_ = DvceArray1D<Real>();
+  ftar1d_b_ = DvceArray1D<Real>();
   fmean_ = DvceArray2D<Real>();
   klT_ = DvceArray1D<Real>();
   klD_ = DvceArray1D<Real>();

@@ -372,6 +372,32 @@ inline bool rt_plane_parallel = false;
 // semi-implicit relaxation, which must not damp it.  Default OFF; box_convection requires
 // the EOS taper to be on with it.
 inline bool rt_rad_force = false;
+//----------------------------------------------------------------------------------------
+// problem/rt_force_tau_gate (default false, BITWISE OFF) -- the OPTICAL-DEPTH-GATED form
+// of the momentum source above, with rt_force_tau_lo / rt_force_tau_hi.
+//
+// WHY.  The form above splits the force by the EOS taper weight w(rho,T): the direct
+// deposit is scaled by (1-w) and the taper artefact Prad grad w is added back.  That is
+// the right split only where w itself is the statement "the gas no longer carries the
+// radiation".  On a star with a density inversion w is a function of the LOCAL density
+// (and, under the gate, the local T), so a dense cell sitting at tau < 1 gets w = 1 and
+// loses the whole kappa F/c deposit, while a thin cell deep inside the star gets w = 0
+// and is given a deposit it must not have: the force then has a dipole across the
+// inversion that no optical depth justifies.
+//
+// WHAT THE GATE DOES.  s(tau) = 1 for tau <= rt_force_tau_lo, 0 for tau >= tau_hi and
+// a cubic smoothstep in log10(tau) between, with tau the grey optical depth to the
+// TOP of the column.  Where s = 1 (the thin layers) the force is the honest optically
+// thin one,
+//     f = rho kappa F_net/c + grad(w Prad),
+// i.e. the FULL radiative deposit plus the gradient of whatever radiation pressure the
+// hydro still carries -- no (1-w) prefactor, because at tau < 1 the gas does not carry
+// the radiation whatever its density says.  Where s = 0 (tau above the ramp) the old
+// expressions are executed verbatim, so with the gate off, or in any cell with s = 0,
+// the arithmetic is bitwise the old one.  Default OFF.
+inline bool rt_force_tau_gate = false;
+inline Real rt_force_tau_lo = 0.3;
+inline Real rt_force_tau_hi = 3.0;
 // problem/rt_force_center (default 0, bitwise off; needs rt_implicit_column = 3): WHICH
 // face flux the radiative momentum source above is driven by.  In mode 3 the energy is
 // solved exactly and implicitly over the stage, but Fb is deliberately left at the
@@ -1013,6 +1039,35 @@ inline bool rt_stclamp_warned = false;
 KOKKOS_INLINE_FUNCTION
 bool RTBadState(const Real p, const Real t) {
   return !(t > 0.0) || !(p > 0.0) || !Kokkos::isfinite(t) || !Kokkos::isfinite(p);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn Real RTWPrad
+//! \brief w(rho,T) a T^4/3 -- the share of the LTE radiation pressure the hydro still
+//! carries in a cell, with w the SAME taper weight the EOS uses (rad_taper::WeightGated).
+//! Used only by the optical-depth-gated radiative momentum source
+//! (problem/rt_force_tau_gate), which differences it across a cell's neighbours.
+KOKKOS_INLINE_FUNCTION
+Real RTWPrad(const Real dd, const Real tt, const Real xlo, const Real xhi,
+             const Real ylo, const Real yhi, const bool tgate, const Real arad) {
+  if (!(dd > 0.0) || !(tt > 0.0)) return 0.0;
+  Real ww, dwx, dwy;
+  rad_taper::WeightGated(log10(dd), xlo, xhi, log10(tt), ylo, yhi, tgate, ww, dwx, dwy);
+  return ww*arad*tt*tt*tt*tt/3.0;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn Real RTForceTauGate
+//! \brief s(tau): 1 at and below tau_lo, 0 at and above tau_hi, a cubic smoothstep in
+//! log10(tau) between.  lg_lo/lg_hi are log10 of the two thresholds.
+KOKKOS_INLINE_FUNCTION
+Real RTForceTauGate(const Real tau, const Real lg_lo, const Real lg_hi) {
+  if (!(tau > 0.0)) return 1.0;
+  const Real lt = log10(tau);
+  if (lt <= lg_lo) return 1.0;
+  if (lt >= lg_hi) return 0.0;
+  const Real x = (lt - lg_lo)/(lg_hi - lg_lo);
+  return 1.0 - x*x*(3.0 - 2.0*x);
 }
 
 //----------------------------------------------------------------------------------------
@@ -4095,6 +4150,12 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
       const Real ylo_f = eos.tbl.rad_lt_lo, yhi_f = eos.tbl.rad_lt_hi;
       const bool tg_f = eos.tbl.rad_tgate;
       const bool md_f = pm->multi_d, td_f = pm->three_d;
+      // problem/rt_force_tau_gate: the optical-depth gate s(tau) on the force above.
+      // OFF (or s = 0) executes the old expressions verbatim -- see rt_force_tau_gate.
+      const bool ftg_ = radforce && rt_force_tau_gate;
+      const Real ftlg_lo = log10(rt_force_tau_lo);
+      const Real ftlg_hi = log10(rt_force_tau_hi);
+      const Real ft_hi = rt_force_tau_hi;
       const bool fverb = radforce && (rt_force_verbose > 0);
       if (fverb) --rt_force_verbose;
       // problem/rt_force_verbose normalises the cell balance by g.  rt_force_grav is a
@@ -4798,8 +4859,83 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
             fbc_ = 0.5*(Fb + fbs_a(m,k,j,i));
           }
           const Real fnet = 0.5*(ftc_ + fbc_);
-          Real f1 = (1.0 - wr)*rho*kc_g(m,0,i,k,j)*fnet*inv_c;
-          Real f2 = 0.0, f3 = 0.0, prgw = 0.0;
+          // problem/rt_force_tau_gate: s(tau) with tau the grey optical depth to the top
+          // of this column.  The ingredients are the ones the `tautop` diagnostic uses,
+          // kappa_grey rho dr summed over the cells above, plus half of this cell's own
+          // dtau; the sum is formed here because no per-cell tau-to-top array exists
+          // outside the tau blend (pcond_rt->rad_tauf, which is a FACE tau and only
+          // allocated when taublend is on).  It runs only with the gate on.
+          Real sgt_ = 0.0;
+          if (ftg_) {
+            Real tau_ = 0.5*kc_g(m,0,i,k,j)*rhoN(m,k,j,i)*DX1(m,k,j,i);
+            // s = 0 once tau passes tau_hi: deep cells leave after a cell or two
+            for (int i2=i+1; i2<=ie && tau_ < ft_hi; ++i2) {
+              tau_ += kc_g(m,0,i2,k,j)*rhoN(m,k,j,i2)*DX1(m,k,j,i2);
+            }
+            sgt_ = RTForceTauGate(tau_, ftlg_lo, ftlg_hi);
+          }
+          Real f1 = 0.0, f2 = 0.0, f3 = 0.0, prgw = 0.0;
+          if (sgt_ > 0.0) {
+            // ---- the GATED form (problem/rt_force_tau_gate) ------------------------
+            //   f = s [ rho kappa F/c + grad(w Prad) ] + (1-s) [ old ],
+            // with grad(w Prad) a centred difference of w(rho,T) a T^4/3 over the same
+            // neighbours and the same spacings the old Prad grad w term differences:
+            // X1V(i+1)-X1V(i-1) radially, the arc lengths 2 DX2 / 2 DX3 transversely.
+            const Real kfc = rho*kc_g(m,0,i,k,j)*fnet*inv_c;
+            const Real wpm = RTWPrad(rhoN(m,k,j,i-1), T_g(m,k,j,i-1), xlo_f, xhi_f,
+                                     ylo_f, yhi_f, tg_f, arad_f);
+            const Real wpp = RTWPrad(rhoN(m,k,j,i+1), T_g(m,k,j,i+1), xlo_f, xhi_f,
+                                     ylo_f, yhi_f, tg_f, arad_f);
+            Real g1 = kfc + (wpp - wpm)/(X1V(m,i+1) - X1V(m,i-1));
+            Real g2 = 0.0, g3 = 0.0;
+            if (md_f) {
+              g2 = (RTWPrad(rhoN(m,k,j+1,i), T_g(m,k,j+1,i), xlo_f, xhi_f,
+                            ylo_f, yhi_f, tg_f, arad_f)
+                  - RTWPrad(rhoN(m,k,j-1,i), T_g(m,k,j-1,i), xlo_f, xhi_f,
+                            ylo_f, yhi_f, tg_f, arad_f))/(2.0*DX2(m,k,j,i));
+            }
+            if (td_f) {
+              g3 = (RTWPrad(rhoN(m,k+1,j,i), T_g(m,k+1,j,i), xlo_f, xhi_f,
+                            ylo_f, yhi_f, tg_f, arad_f)
+                  - RTWPrad(rhoN(m,k-1,j,i), T_g(m,k-1,j,i), xlo_f, xhi_f,
+                            ylo_f, yhi_f, tg_f, arad_f))/(2.0*DX3(m,k,j,i));
+            }
+            // the ungated expressions, for the (1-s) share; identical algebra to the
+            // branch below, kept separate so that branch stays untouched
+            Real o1 = (1.0 - wr)*kfc;
+            Real o2 = 0.0, o3 = 0.0;
+            if (dwdx != 0.0 || dwdy != 0.0) {
+              const Real tk = tkc;
+              const Real cg = (arad_f*tk*tk*tk*tk/3.0)*dwdx*M_LOG10E/rho;
+              const Real ct = (dwdy != 0.0)
+                            ? (arad_f*tk*tk*tk*tk/3.0)*dwdy*M_LOG10E/tk : 0.0;
+              prgw = cg*(rhoN(m,k,j,i+1) - rhoN(m,k,j,i-1))/(X1V(m,i+1) - X1V(m,i-1));
+              if (ct != 0.0) {
+                prgw += ct*(T_g(m,k,j,i+1) - T_g(m,k,j,i-1))/(X1V(m,i+1) - X1V(m,i-1));
+              }
+              o1 += prgw;
+              if (md_f) {
+                o2 = cg*(rhoN(m,k,j+1,i) - rhoN(m,k,j-1,i))/(2.0*DX2(m,k,j,i));
+                if (ct != 0.0) {
+                  o2 += ct*(T_g(m,k,j+1,i) - T_g(m,k,j-1,i))/(2.0*DX2(m,k,j,i));
+                }
+              }
+              if (td_f) {
+                o3 = cg*(rhoN(m,k+1,j,i) - rhoN(m,k-1,j,i))/(2.0*DX3(m,k,j,i));
+                if (ct != 0.0) {
+                  o3 += ct*(T_g(m,k+1,j,i) - T_g(m,k-1,j,i))/(2.0*DX3(m,k,j,i));
+                }
+              }
+            }
+            const Real oms = 1.0 - sgt_;
+            f1 = sgt_*g1 + oms*o1;
+            f2 = sgt_*g2 + oms*o2;
+            f3 = sgt_*g3 + oms*o3;
+          } else {
+          // ---- the UNGATED form.  Left at its original indentation and untouched,
+          // so that with rt_force_tau_gate off the arithmetic executed is bitwise the
+          // arithmetic of every run before the gate existed.
+          f1 = (1.0 - wr)*rho*kc_g(m,0,i,k,j)*fnet*inv_c;
           if (dwdx != 0.0 || dwdy != 0.0) {
             // Prad grad w, with grad w = w'(x) grad rho/(rho ln10) -- the SAME derivative
             // the EOS put into chi_rho, so the two cancel in the continuum limit
@@ -4837,6 +4973,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
                 f3 += ct*(T_g(m,k+1,j,i) - T_g(m,k-1,j,i))/(2.0*DX3(m,k,j,i));
               }
             }
+          }
           }
           const Real dinv = 1.0/u0(m,IDN,k,j,i);
           const Real v1 = u0(m,IM1,k,j,i)*dinv;

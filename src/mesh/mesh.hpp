@@ -98,9 +98,16 @@ struct EventCounters {
   // worth of erg/cm^3).  A floor that fires is only a diagnostic; a floor that fires
   // while donating a large energy is the run being driven by its own repair.
   Real efloor_de;
+  // Kinetic energy density the VELOCITY CEILING clipped since the counters were last
+  // reset, summed over cells the same way efloor_de is.  By default that energy is
+  // DELETED from the conserved total -- an uncounted sink, which is why it is counted
+  // here; under <block>/vceil_thermalise it becomes internal energy instead and the
+  // column measures the dissipation the ceiling is doing.  HYDRO only: the general-MHD
+  // and ideal-MHD inversions have no accumulator to thread it through.
+  Real vceil_de;
   EventCounters() : nfofc(0), neos_dfloor(0), neos_efloor(0), neos_tfloor(0),
                     neos_vceil(0), neos_fail(0), maxit_c2p(0), neos_tclamp(0),
-                    neos_tset(0), efloor_de(0.0) {}
+                    neos_tset(0), efloor_de(0.0), vceil_de(0.0) {}
 };
 
 //----------------------------------------------------------------------------------------

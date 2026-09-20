@@ -135,7 +135,10 @@ void SingleC2P_IdealHyd(HydCons1D &u, const EOS_Data &eos,
         const Real fs = eos.vceil/sqrt(vsq);
         u.mx *= fs; u.my *= fs; u.mz *= fs;
         w.vx *= fs; w.vy *= fs; w.vz *= fs;
-        u.e -= (1.0 - fs*fs)*e_k;
+        // <block>/vceil_thermalise: leave the TOTAL energy alone, so that w.e below
+        // picks the clipped kinetic energy up as internal energy.  Not accumulated:
+        // this kernel has no energy accumulator (see EOS_Data::vceil_thermalise).
+        if (!eos.vceil_thermalise) u.e -= (1.0 - fs*fs)*e_k;
         e_k *= fs*fs;
         vceil_used = true;
       }
