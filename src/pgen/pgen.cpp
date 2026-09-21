@@ -360,13 +360,32 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
   // not a bitwise continuation.  A file written before this was added (or by a run whose
   // EOS is ideal) simply does not have the tail: accept that size too, and leave wtemp
   // as it is, which costs one cold start on the first conversion and nothing after.
+  //
+  // THE DERIVED CACHE (Hydro::wder, p and Gamma_1) follows it, for hydro only, and for
+  // the reason spelled out on outarray_wdp in outputs.hpp: restoring wtemp alone is not
+  // enough, because the first Fluxes call of the restarted cycle reconstructs p and
+  // Gamma_1 that no ConsToPrim of the restarted run has produced yet, and re-deriving
+  // them from the restored temperature moves them by an ULP (the log10/Pow10 round trip
+  // of T is not the identity).  Three tail lengths are therefore accepted -- both caches,
+  // wtemp only (a file written before the derived cache was added) and neither -- and
+  // only the first makes the restart a bitwise continuation.
   bool wt_hyd = (phydro != nullptr) && phydro->peos->eos_data.IsGeneral();
   bool wt_mhd = (pmhd != nullptr) && pmhd->peos->eos_data.IsGeneral();
+  bool wd_hyd = wt_hyd;
   IOWrapperSizeT wt_size = 0;
   if (wt_hyd) { wt_size += nout1*nout2*nout3*sizeof(Real); }
   if (wt_mhd) { wt_size += nout1*nout2*nout3*sizeof(Real); }
-  if ((data_size_ + wt_size) == data_size) {
+  IOWrapperSizeT wd_size = wd_hyd ? 2*nout1*nout2*nout3*sizeof(Real) : 0;
+  if ((data_size_ + wt_size + wd_size) == data_size) {
+    data_size_ += wt_size + wd_size;
+  } else if (wd_size > 0 && (data_size_ + wt_size) == data_size) {
     data_size_ += wt_size;
+    wd_hyd = false;
+    if (global_variable::my_rank == 0) {
+      std::cout << "### WARNING: restart file has no general-EOS derived (p, Gamma_1) "
+                << "cache (written before it was added); the first flux calculation "
+                << "re-derives it and this restart is not bitwise." << std::endl;
+    }
   } else {
     if (wt_size > 0 && data_size_ == data_size) {
       if (global_variable::my_rank == 0) {
@@ -377,6 +396,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     }
     wt_hyd = false;
     wt_mhd = false;
+    wd_hyd = false;
   }
 
   if (data_size_ != data_size) {
@@ -785,11 +805,15 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     myoffset = offset_myrank;
   }
 
-  // read the general-EOS temperature cache, written last (see the size check above)
+  // read the general-EOS temperature cache, written last (see the size check above),
+  // and the derived (p, Gamma_1) cache that follows it
   if (wt_hyd || wt_mhd) {
     HostArray4D<Real> wtin("rst-wt-in", 1, 1, 1, 1);
     Kokkos::realloc(wtin, nmb, nout3, nout2, nout1);
-    auto read_wtemp = [&](DvceArray4D<Real> &dst, const char *what) {
+    // fills wtin with the next per-MeshBlock slab and advances the offsets; the caller
+    // copies it where it belongs, which is a 4D array for wtemp and one channel of the
+    // 5D wder for the derived cache
+    auto read_slab = [&](const char *what) {
       for (int m=0;  m<noutmbs_max; ++m) {
         if (m < noutmbs_min) {
           auto mbptr = Kokkos::subview(wtin, m, Kokkos::ALL, Kokkos::ALL, Kokkos::ALL);
@@ -797,7 +821,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
           if (resfile.Read_Reals_at_all(mbptr.data(), mbcnt, myoffset,
                                         single_file_per_rank) != mbcnt) {
             std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                      << std::endl << what << " wtemp not read correctly from rst file, "
+                      << std::endl << what << " cache not read correctly from rst file, "
                       << "restart file is broken." << std::endl;
             exit(EXIT_FAILURE);
           }
@@ -808,20 +832,40 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
           if (resfile.Read_Reals_at(mbptr.data(), mbcnt, myoffset,
                                     single_file_per_rank) != mbcnt) {
             std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                      << std::endl << what << " wtemp not read correctly from rst file, "
+                      << std::endl << what << " cache not read correctly from rst file, "
                       << "restart file is broken." << std::endl;
             exit(EXIT_FAILURE);
           }
           myoffset += data_size;
         }
       }
-      Kokkos::deep_copy(Kokkos::subview(dst, std::make_pair(0,nmb), Kokkos::ALL,
-                        Kokkos::ALL, Kokkos::ALL), wtin);
       offset_myrank += nout1*nout2*nout3*sizeof(Real);
       myoffset = offset_myrank;
     };
-    if (wt_hyd) { read_wtemp(phydro->wtemp, "hydro"); }
-    if (wt_mhd) { read_wtemp(pmhd->wtemp, "mhd"); }
+    if (wt_hyd) {
+      read_slab("hydro");
+      Kokkos::deep_copy(Kokkos::subview(phydro->wtemp, std::make_pair(0,nmb), Kokkos::ALL,
+                        Kokkos::ALL, Kokkos::ALL), wtin);
+    }
+    if (wt_mhd) {
+      read_slab("mhd");
+      Kokkos::deep_copy(Kokkos::subview(pmhd->wtemp, std::make_pair(0,nmb), Kokkos::ALL,
+                        Kokkos::ALL, Kokkos::ALL), wtin);
+    }
+    if (wd_hyd) {
+      read_slab("hydro pressure");
+      Kokkos::deep_copy(Kokkos::subview(phydro->wder, std::make_pair(0,nmb),
+                        static_cast<int>(IDPR), Kokkos::ALL, Kokkos::ALL,
+                        Kokkos::ALL), wtin);
+      read_slab("hydro Gamma_1");
+      Kokkos::deep_copy(Kokkos::subview(phydro->wder, std::make_pair(0,nmb),
+                        static_cast<int>(IDG1), Kokkos::ALL, Kokkos::ALL,
+                        Kokkos::ALL), wtin);
+      // both caches are in place: the first conversion to primitives of this run must
+      // not re-derive them, or the restart is not a bitwise continuation.  See
+      // Hydro::c2p_freeze_derived.
+      phydro->c2p_freeze_derived = true;
+    }
   }
 
   // call problem generator again to re-initialize data, fn ptrs, as needed

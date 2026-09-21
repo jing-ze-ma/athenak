@@ -52,6 +52,7 @@ add_executable(
         eos/eos_table.cpp
         eos/general_hyd.cpp
         eos/general_hyd_floors.cpp
+        eos/general_hyd_frozen.cpp
         eos/general_mhd.cpp
         eos/ideal_hyd.cpp
         eos/ideal_hyd_floors.cpp
