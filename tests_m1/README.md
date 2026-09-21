@@ -1,7 +1,7 @@
 # `tests_m1` — verification gates for the grey M1 module (`<rad_m1>`)
 
 Analysis / reference-solution scripts for the test plan of
-`docs/dev/rad_m1_design.md` section 8 (T1-T6).  Each script takes AthenaK
+`docs/dev/rad_m1_design.md` section 8 (T1-T7).  Each script takes AthenaK
 `file_type = bin` dumps (read through `vis/python/bin_convert.py`) or a history
 file, prints one verdict line starting with `PASS` or `FAIL` plus the measured
 numbers, and exits non-zero on `FAIL`.  Every script has a `--selftest` that
@@ -219,23 +219,142 @@ energy <= `--tol` (2 %; Bloch et al.'s AP scheme reaches 1.1 %, uncorrected
 HLL 84 %).  QUOKKA's nonlinear Marshak variant (4.5 %) is not covered by this
 script.
 
+## `t7_radshock.py` — T7, Lowrie & Edwards radiative shocks
+
+```
+python3 t7_radshock.py --m0 2                       # reference + IC numbers
+python3 t7_radshock.py --m0 5 --athinput --write-ref ref_m5.txt
+python3 t7_radshock.py shock.out1.00100.bin --m0 2 [--tol 0.02]
+python3 t7_radshock.py --m0 2 --nondim shock.out1.00100.bin
+python3 t7_radshock.py --m0 2 --selftest [--selftest-fail]
+```
+
+Semi-analytic reference for the **steady planar grey two-temperature radiative
+shock** of Lowrie & Edwards (2008, Shock Waves 18, 129): Mach 2 subcritical and
+Mach 5 supercritical, `L1 < 2 %` in `rho`, `T_gas`, `T_rad` (design note
+section 8, T7).
+
+**Provenance (what could not be sourced).**  The Lowrie & Edwards paper itself
+could not be read from this machine.  The ODE system solved here is **derived
+in the script's docstring** from the steady grey non-equilibrium-diffusion
+equations as written out in Skinner & Ostriker 2013 (arXiv:1306.0010, Eqs.
+94-97) and Ferguson, Morel & Lowrie 2017 (arXiv:1612.06346, Eqs. 9-11), which
+restate the Lowrie-Edwards non-dimensionalisation.  The connection algorithm
+(matching the two branches at equal `Theta` and `F_r`) is our own.  No
+reference number is taken on faith; see the validation table below.
+
+**Non-dimensionalisation.**  `rho`, `T`, velocity in the upstream `rho0`, `T0`,
+`a0`; `p = rho T / gamma`; sound speed `sqrt(T)`; `P0 = a_r T0^4/(rho0 a0^2)`,
+`C = c/a0`, `sigma` = total cross section per unit reference length,
+`kappa = C/(3 sigma)` the radiative diffusivity, and `sigma_a` the
+Lowrie-Edwards emission coupling (`sigma_a = sigma~_a L~ C`).  The standard
+case `--sigma-a 1e6 --kappa 1` implies `C = sqrt(3 sigma_a) = 1732.05` and
+`sigma~_t L~ = 577.35`, which is the value Ferguson et al. quote for the same
+problem.  Only **constant** `sigma_a` / `kappa` are implemented; the power-law
+(Bremsstrahlung) opacities of the paper are **not**.
+
+**Method.**  (1) The two far-field equilibria follow from the three steady
+integrals (mass; momentum including `P0 Theta/3`; energy including the
+radiation enthalpy flux `4/3 P0 v Theta` and `F_r = -P0 kappa dTheta/dx`) by a
+2-D root find.  (2) Both equilibria are saddles; the precursor is launched from
+the upstream point along its unstable eigendirection and the relaxation region
+from the downstream point along its stable one (`--eps`, default `1e-6`), and
+both are integrated in **Mach space** with SciPy `LSODA` (in `x` the right-hand
+sides are singular at `M = 1`; `dx/dM` and `dT/dM` are not).  (3) The embedded
+hydrodynamic shock conserves `Theta` and `F_r` as well as the three integrals,
+so it maps the supersonic branch onto the subsonic one at equal `(Theta, F_r)`:
+it is located as the intersection of the two trajectories in that plane.
+Subcritical, supercritical and the Zel'dovich spike all come out of the same
+construction.
+
+**Caveat.**  Lowrie & Edwards use Eddington closure, `P_r = E_r/3`.  These
+shocks are optically thick, so an M1 code is in the diffusion regime and closes
+at 1/3 as well — which is why everyone gates on this solution — but the
+comparison is a diffusion-limit comparison and not a test of the M1 closure.
+Skinner & Ostriker attribute their own M1 residual to exactly this, and report
+1.7 / 6.1 / 7.8 % (`rho` / `T_gas` / `T_rad`) with computed eigenvalues against
+0.42 / 0.49 / 0.42 % with `lambda = +-c/sqrt3`; record both, as the design note
+asks.
+
+**Validation.**  Cross-checks actually run, not quoted from memory:
+
+| check | this script | reference |
+| --- | --- | --- |
+| RHS vs the published Lowrie-Edwards closed form (`cross_check`, run in every invocation) | max rel. diff `6.7e-16` | QUOKKA `extern/LowrieEdwards/radshock.py` |
+| `M0 = 3` downstream `rho1/rho0` | `3.0021677` | `17.08233/5.69 = 3.0021670` (QUOKKA `testRadhydroShockCGS.cpp`) |
+| `M0 = 3` downstream `T1/T0` | `3.6619127` | `7.98297e6/2.18e6 = 3.6619128` (same) |
+| `M0 = 3` downstream `v1` (cgs, `a0 = 1.73e7`) | `1.728751e7` | `1.72875e7` (same) |
+| `M0 = 3` domain length at `dT/T0 = 1e-4` | `1.57361e-2 cm` | `Lx = 0.01575 cm` (same) |
+| `M0 = 3` shock position | `1.31828e-2 cm` | `0.0132 cm` (same) |
+| `M0 = 3` character | subcritical (`T_p = 3.5536 < T1 = 3.6619`) | "sub-critical" (Skinner & Ostriker Sect. 4.3.5) |
+| `M0 = 2` character | subcritical, Zel'dovich spike, `T_rad,s = 1.872 < T1 = 2.078` | Ferguson et al. Fig. 8 caption |
+| `M0 = 5` character | supercritical (`T_p/T1 = 0.99938`), `rho1 = 3.598` | Ferguson et al. Fig. 5 and Fig. 11 (`rho` axis to 3.6) |
+
+(The Ferguson figures use `P0 = 8.53e-5`, `sigma_t = 577.35`, so those rows are
+qualitative.)
+
+**Parameter sets.**  Non-dimensional: `gamma = 5/3`, `P0 = 1e-4`,
+`sigma_a = 1e6`, `kappa = 1`, `M0 = 2` or `5`.  The cgs scaling is the Skinner
+& Ostriker / QUOKKA one (`--rho0 5.69 --t0 2.18e6 --mu 1.67353e-24
+--sigma-cgs 577`, giving `a0 = 1.7313e7 cm/s`, `L~ = 1.0003 cm`,
+`P0 = 1.0019e-4`):
+
+| | `M0 = 2` (subcritical) | `M0 = 5` (supercritical) |
+| --- | --- | --- |
+| `rho_l`, `v_l`, `T_l` | 5.69, 3.46264e7, 2.18e6 | 5.69, 8.65660e7, 2.18e6 |
+| `rho_r`, `v_r`, `T_r` | 13.0078, 1.51467e7, 4.52910e6 | 20.4721, 2.40601e7, 1.86547e7 |
+| nondim `rho1`, `T1` | 2.286075, 2.077570 | 3.597911, 8.557199 |
+| domain, shock at | 1.52978e-2 cm, 1.00251e-2 | 3.35316e-2 cm, 3.31574e-2 |
+
+`--athinput` prints exactly this as a pasteable `<problem>` block
+(`m1_shock_rho_l/_v_l/_t_l/_rho_r/_v_r/_t_r`, plus `m1_shock_xs` and the mesh
+line).  Start from the two equilibrium states separated at `m1_shock_xs`,
+Dirichlet on both x1 faces, and run several shock-crossing times to steady
+state.  At 512 cells the `M0 = 2` domain gives 335 cells of precursor and 177
+of relaxation; the `M0 = 5` domain is precursor-dominated (506 / 6), so raise
+`--ncells` (or `--dt-domain`) for that case — the script prints both cell
+counts.
+
+**Comparison mode** takes one dump plus the parameters, forms
+`T_gas = eint/(dens c_v)` (or `press/(gamma-1)` if `eint` is absent) and
+`T_rad = (m1_e/a_r)^{1/4}`, then slides the reference over the data
+(bounded search, `--max-shift` cells, initialised at the steepest `dens`
+gradient) minimising the summed L1 — a numerical shock drifts by a cell or two.
+The applied shift is reported in cells.  Errors are `common.l1_rel`, i.e.
+normalised by the L1 norm of the reference.  Use `--cv` / `--a-rad` if the run
+is not in the cgs units above, or `--nondim` if it is in the Lowrie-Edwards
+units (then `a_r -> P0`, `c_v -> 1/(gamma(gamma-1))`, `sigma -> 577.35`).
+
+Pass: all three relative L1 below `--tol` (2 %), **and** the internal checks —
+the three conservation integrals satisfied along the profile to `--cons-tol`
+(1e-8; they come out at 1e-16), the two profile ends within `--end-tol` of the
+equilibrium states, and the right-hand side agreeing with the published closed
+form to `--cross-tol`.
+
+`--selftest` resamples the reference onto `--selftest-nx` (512) cells and runs
+the whole comparison path on it (L1 ~ 1e-8).  `--selftest --selftest-fail`
+stretches the precursor by 20 % and puts a 5 % error on the Zel'dovich
+spike/relaxation region, giving L1(`T_gas`) = 3.1 % at `M0 = 2` and 13 % at
+`M0 = 5` — a FAIL.
+
 ---
 
 ## Selftest and lint
 
 ```
 cd tests_m1
-for s in t1_beam t1_pulse t3_pulse t3b_jump t4_advect t5_equil t6_marshak; do
+for s in t1_beam t1_pulse t3_pulse t3b_jump t4_advect t5_equil t6_marshak \
+         t7_radshock; do
   python3 $s.py --selftest --quiet; done
 python3 -m flake8 --max-line-length 90 .
 ```
 
 (`t3_pulse.py` additionally has `--selftest --nyquist`, `t4_advect.py` needs
-`--v`, and each script has the `--selftest-fail` counterpart that must exit 1.)
+`--v`, `t7_radshock.py` takes `--m0 2` / `--m0 5`, and each script has the
+`--selftest-fail` counterpart that must exit 1.)
 
 ## Not covered here
 
-T2 (shadow), T3c (clipped extremum), T7 (Lowrie & Edwards radiative shocks),
-T8 (conservation/restart/rank-invariance, which is a bitwise diff, not an
-analysis) and T9 (radiation-supported atmosphere) have no script in this
-directory yet.
+T2 (shadow), T3c (clipped extremum), T8 (conservation/restart/rank-invariance,
+which is a bitwise diff, not an analysis) and T9 (radiation-supported
+atmosphere) have no script in this directory yet.
