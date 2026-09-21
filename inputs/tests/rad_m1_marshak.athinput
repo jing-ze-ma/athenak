@@ -77,6 +77,7 @@ scaled_prefactor = 20.0
 ap_form      = alpha2   # alpha2 | unified
 advect_split = false
 source_form  = full
+f_source     = cell    # cell | wb (the interface F source, sect. 13)
 closure      = m1
 e_floor      = 1.0e-30
 subcycle     = true

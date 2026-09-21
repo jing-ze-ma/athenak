@@ -1,0 +1,34 @@
+Mesh: spherical-polar x3-face theta correction = rotate
+
+Root grid = 1 x 1 x 1 MeshBlocks
+Total number of MeshBlocks = 1
+Number of logical  levels of refinement = 0 (1 levels total)
+Number of physical levels of refinement = 0 (1 levels total)
+Number of parallel ranks = 1
+<rad_m1>: c=1 chat/c=1 cfl_rad=0.4 thick_flux=ap_hll ap_form=alpha2 recon=plm advect_split=false split_vel=recon source_form=full closure=m1 subcycle=true
+         kappa_p=0 kappa_e=0 kappa_f=0 kappa_s=1.28e+08 coupling=true gas_feedback=false arad=0
+
+Setup complete, executing task list(s)...
+
+elapsed=2.897157e-03 cycle=0 time=0.000000e+00 dt=2.964635e-02
+elapsed=1.511972e+01 cycle=10000 time=2.964635e+02 dt=2.964635e-02
+elapsed=3.038923e+01 cycle=20000 time=5.929271e+02 dt=2.964635e-02
+elapsed=4.529561e+01 cycle=30000 time=8.893906e+02 dt=2.964635e-02
+elapsed=5.972437e+01 cycle=40000 time=1.185854e+03 dt=2.964635e-02
+elapsed=7.399843e+01 cycle=50000 time=1.482318e+03 dt=2.964635e-02
+elapsed=8.823415e+01 cycle=60000 time=1.778781e+03 dt=2.964635e-02
+elapsed=1.026125e+02 cycle=70000 time=2.075245e+03 dt=2.964635e-02
+elapsed=1.154297e+02 cycle=80000 time=2.371708e+03 dt=2.964635e-02
+elapsed=1.269970e+02 cycle=90000 time=2.668172e+03 dt=2.964635e-02
+elapsed=1.381097e+02 cycle=100000 time=2.964635e+03 dt=2.964635e-02
+
+Terminating on time limit
+time=3.000000e+03 cycle=101193
+tlim=3.000000e+03 nlim=-1
+
+MeshBlock-cycles = 101193
+cpu time used  = 1.393557e+02
+zone-cycles/cpu_second = 9.294708e+04
+particle-updates/cpu_second = 0.000000e+00
+<rad_m1> implicit energy solve: cells=0.000000e+00 iterations mean=0.000000e+00 max=0.000000e+00 FAILURES=0.000000e+00 (no bracket: 0.000000e+00)
+exit=0

@@ -74,6 +74,11 @@ TaskStatus RadiationM1::Coupling(Driver *pdrive, int stage) {
   bool edd = eddington;
   bool feedback = gas_feedback;
   bool ovc = source_ovc;
+  // ---- BEGIN milestone 1d, <rad_m1>/f_source = wb (design sect. 13) ----------------
+  bool fswb = f_source_wb;
+  bool md = pmy_pack->pmesh->multi_d;
+  bool td = pmy_pack->pmesh->three_d;
+  // ---- END milestone 1d ------------------------------------------------------------
   // stage 1 integrates the source over dt, stage 2 over dt/2 (the PD-ARS tableau)
   Real dti = (stage == 1) ? dt_sub : (0.5*dt_sub);
   bool stage1 = (stage == 1);
@@ -238,10 +243,35 @@ TaskStatus RadiationM1::Coupling(Driver *pdrive, int stage) {
       Real a1 = v1*ep + sc*(v1*p11 + v2*p21 + v3*p31);
       Real a2 = v2*ep + sc*(v1*p12 + v2*p22 + v3*p32);
       Real a3 = v3*ep + sc*(v1*p13 + v2*p23 + v3*p33);
-      Real den = 1.0/(1.0 + ch*dti*rkt);
-      fp1 = (fs1 + ch*dti*rkt*a1 - ch*dti*v1*g0p)*den;
-      fp2 = (fs2 + ch*dti*rkt*a2 - ch*dti*v2*g0p)*den;
-      fp3 = (fs3 + ch*dti*rkt*a3 - ch*dti*v3*g0p)*den;
+      // ---- BEGIN milestone 1d, f_source = wb (design sect. 13) --------------------
+      // The opacity that relaxes F_d.  `cell` is rho*kappa of this cell; `wb` is the
+      // trapezoidal interface value (1/2)[(rho kappa)_{d-1/2} + (rho kappa)_{d+1/2}]
+      // with the same ARITHMETIC face mean the thick-limit flux uses, which reduces to
+      // the 1-2-1 average (rk_{d-1} + 2 rk_d + rk_{d+1})/4.  In a constant-flux steady
+      // state the discrete pressure gradient of cell i is
+      // -(c/3)(E_{i+1} - E_{i-1})/(2dx) = (1/2)[sigma_{i-1/2} + sigma_{i+1/2}] F, so
+      // dividing by exactly that combination returns F, and the analytic two-slope
+      // solution becomes an exact discrete steady state (well balanced).
+      Real rk1 = rkt, rk2 = rkt, rk3 = rkt;
+      if (fswb) {
+        rk1 = 0.25*(opac_(m,M1_OP_T,k,j,i-1) + 2.0*rkt + opac_(m,M1_OP_T,k,j,i+1));
+        if (md) {
+          rk2 = 0.25*(opac_(m,M1_OP_T,k,j-1,i) + 2.0*rkt + opac_(m,M1_OP_T,k,j+1,i));
+        }
+        if (td) {
+          rk3 = 0.25*(opac_(m,M1_OP_T,k-1,j,i) + 2.0*rkt + opac_(m,M1_OP_T,k+1,j,i));
+        }
+        rk1 = fmax(rk1, 0.0);
+        rk2 = fmax(rk2, 0.0);
+        rk3 = fmax(rk3, 0.0);
+      }
+      // ---- END milestone 1d -------------------------------------------------------
+      Real den1 = 1.0/(1.0 + ch*dti*rk1);
+      Real den2 = 1.0/(1.0 + ch*dti*rk2);
+      Real den3 = 1.0/(1.0 + ch*dti*rk3);
+      fp1 = (fs1 + ch*dti*rk1*a1 - ch*dti*v1*g0p)*den1;
+      fp2 = (fs2 + ch*dti*rk2*a2 - ch*dti*v2*g0p)*den2;
+      fp3 = (fs3 + ch*dti*rk3*a3 - ch*dti*v3*g0p)*den3;
     }
     Real dm1 = -(fp1 - fs1)/(ch*cl);
     Real dm2 = -(fp2 - fs2)/(ch*cl);

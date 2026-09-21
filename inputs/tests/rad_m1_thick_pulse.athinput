@@ -68,6 +68,7 @@ scaled_prefactor = 20.0
 ap_form      = alpha2   # alpha2 | unified (design sect. 10)
 advect_split = false    # moving-media split: no velocity in this test
 source_form  = full     # full | ovc (the O(v/c) control of T4/T4b)
+f_source     = cell    # cell | wb (the interface F source, sect. 13)
 closure      = m1
 e_floor      = 1.0e-30
 subcycle     = true

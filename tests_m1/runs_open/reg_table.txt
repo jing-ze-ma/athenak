@@ -1,0 +1,22 @@
+cell  t3_tau1e1    PASS T3 pulse: d(sigma^2)/dt=5.212454e-04  2D=5.208333e-04  ratio=1.000791 (target 1.000000 +- 0.02)
+cell  t3_tau1e3    PASS T3 pulse: d(sigma^2)/dt=5.208413e-06  2D=5.208333e-06  ratio=1.000015 (target 1.000000 +- 0.02)
+cell  t3_tau1e6    PASS T3 pulse: d(sigma^2)/dt=5.208333e-09  2D=5.208333e-09  ratio=1.000000 (target 1.000000 +- 0.02)
+cell  t3_nyquist   PASS T3 nyquist: rate=1.706600e-01  4D/dx^2=1.706667e-01  ratio=0.999961 (target 1.000000 +- 0.02)
+cell  t3c_tophat   PASS T3 pulse: d(sigma^2)/dt=5.208617e-07  2D=5.208333e-07  ratio=1.000054 (target 1.000000 +- 0.02)
+cell  t4_d512      PASS T4 advect: dcentre=0.054 cells (<= 1)  dwidth=7.888e-03 (<= 0.02)  gas drift=6.754e-03 (<= 1)  Tgas drift=2.290e-03  vs-static=2.405e-02  nyquist=8.323e-14
+cell  t4_d512ns    FAIL T4 advect: dcentre=-69.888 cells (<= 1)  dwidth=1.710e-01 (<= 0.02)  gas drift=3.815e-02 (<= 1)  Tgas drift=9.676e-04  vs-static=6.328e-01  nyquist=6.748e-08
+cell  t4b_full     FAIL T4 advect: dcentre=22.438 cells (<= 1)  dwidth=-2.297e-04 (<= 0.02)  gas drift=0.000e+00 (<= 1)  Tgas drift=0.000e+00  vs-static=nan  nyquist=0.000e+00
+cell  t4b_ovc      FAIL T4 advect: dcentre=26.991 cells (<= 1)  dwidth=1.279e-04 (<= 0.02)  gas drift=2.159e+05 (<= 1)  Tgas drift=2.159e+05  vs-static=nan  nyquist=0.000e+00
+cell  t6_n64       PASS T6 marshak: L1(E)=0.0148  L1(material)=0.0148 (<= 0.02)  reference=table runs_open/t6_ref_sn.txt
+cell  t6_n128      PASS T6 marshak: L1(E)=0.0019  L1(material)=0.0019 (<= 0.02)  reference=table runs_open/t6_ref_sn.txt
+wb    t3_tau1e1    PASS T3 pulse: d(sigma^2)/dt=5.212454e-04  2D=5.208333e-04  ratio=1.000791 (target 1.000000 +- 0.02)
+wb    t3_tau1e3    PASS T3 pulse: d(sigma^2)/dt=5.208413e-06  2D=5.208333e-06  ratio=1.000015 (target 1.000000 +- 0.02)
+wb    t3_tau1e6    PASS T3 pulse: d(sigma^2)/dt=5.208333e-09  2D=5.208333e-09  ratio=1.000000 (target 1.000000 +- 0.02)
+wb    t3_nyquist   PASS T3 nyquist: rate=1.706600e-01  4D/dx^2=1.706667e-01  ratio=0.999961 (target 1.000000 +- 0.02)
+wb    t3c_tophat   PASS T3 pulse: d(sigma^2)/dt=5.208617e-07  2D=5.208333e-07  ratio=1.000054 (target 1.000000 +- 0.02)
+wb    t4_d512      PASS T4 advect: dcentre=0.054 cells (<= 1)  dwidth=7.888e-03 (<= 0.02)  gas drift=6.754e-03 (<= 1)  Tgas drift=2.290e-03  vs-static=2.405e-02  nyquist=8.321e-14
+wb    t4_d512ns    FAIL T4 advect: dcentre=-69.888 cells (<= 1)  dwidth=1.710e-01 (<= 0.02)  gas drift=3.815e-02 (<= 1)  Tgas drift=9.676e-04  vs-static=6.328e-01  nyquist=6.747e-08
+wb    t4b_full     FAIL T4 advect: dcentre=22.438 cells (<= 1)  dwidth=-2.297e-04 (<= 0.02)  gas drift=0.000e+00 (<= 1)  Tgas drift=0.000e+00  vs-static=nan  nyquist=0.000e+00
+wb    t4b_ovc      FAIL T4 advect: dcentre=26.991 cells (<= 1)  dwidth=1.279e-04 (<= 0.02)  gas drift=2.159e+05 (<= 1)  Tgas drift=2.159e+05  vs-static=nan  nyquist=0.000e+00
+wb    t6_n64       PASS T6 marshak: L1(E)=0.0148  L1(material)=0.0148 (<= 0.02)  reference=table runs_open/t6_ref_sn.txt
+wb    t6_n128      PASS T6 marshak: L1(E)=0.0019  L1(material)=0.0019 (<= 0.02)  reference=table runs_open/t6_ref_sn.txt
