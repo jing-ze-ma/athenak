@@ -2308,6 +2308,24 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                 << "0, 1 or 2" << std::endl;
       std::exit(EXIT_FAILURE);
     }
+    // A RESTART IS THEN NOT A BITWISE CONTINUATION, and it is worth saying so out loud.
+    // The warm start is the previous call's converged Planck function, held per cell in
+    // two_stream_rt's rt_c3bp history.  That history is not in the restart file -- it is
+    // per-cell, per-rank state, which the pgen state block (a single rank-0 blob) cannot
+    // carry -- so the first column solve of a restarted run starts from the entry state
+    // while the straight run starts from the previous cycle's answer.  Newton converges
+    // to the same root either way, but to a different last digit: measured on the G1 box
+    // configuration, the first post-restart history row differs by 2e-15 in the mass and
+    // 2-5e-11 in the emergent flux, and the two runs separate from there.  Everything
+    // else about a restart of this problem generator IS bitwise; set rt_impl_warm = 0 in
+    // a run whose restarts have to reproduce the straight run exactly.
+    if (ts::rt_impl_warm > 0 && global_variable::my_rank == 0) {
+      std::cout << "### box_convection: problem/rt_impl_warm = " << ts::rt_impl_warm
+                << " -- the mode-3 Newton warm-start history is NOT carried in the "
+                << "restart file, so a restart of this run is not bitwise (it agrees "
+                << "to the solver tolerance).  Use rt_impl_warm = 0 if it must be."
+                << std::endl;
+    }
     ts::rt_impl_tau_min = pin->GetOrAddReal("problem", "rt_impl_tau_min", 1.0);
     ts::rt_impl_dtmax = pin->GetOrAddReal("problem", "rt_impl_dtmax", 0.25);
     ts::rt_impl_tau_blend = pin->GetOrAddReal("problem", "rt_impl_tau_blend", 1.0);
