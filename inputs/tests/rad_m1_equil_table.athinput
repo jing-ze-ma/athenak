@@ -105,6 +105,13 @@ implicit_tol          = 1.0e-8
 implicit_maxit        = 30
 implicit_opac_update  = false
 implicit_allow_multid = false
+implicit_flux         = central   # central | ap_hll  (milestone 3a2, LIMIT 1)
+implicit_recon        = dc        # dc | plm_dc       (milestone 3a2, LIMIT 1)
+implicit_partition    = gather    # none | gather     (milestone 3a2, LIMIT 4)
+implicit_recon_w      = -1.0      # plm_dc weight; <=0 = auto 1/(1+chat dt/dx)
+implicit_recon_lag    = picard     # step | picard (when the plm correction is re-made)
+implicit_res_floor    = 0.0       # Picard residual scale (0 = the 3a pure |dE|/E)
+implicit_bmom_half    = false     # boundary momentum (milestone 3a2, LIMIT 3)
 marshak_q             = 0.5
 implicit_bc_x1min     = auto      # auto|marshak|flux|reflect|periodic|efix
 implicit_bc_x1max     = auto

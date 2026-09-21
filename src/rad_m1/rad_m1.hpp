@@ -244,6 +244,33 @@ class RadiationM1 {
   DvceArray5D<Real> iw;         // per-cell work array of the solve, M1_NIW components
   Real impl_nstep, impl_itsum, impl_itmax, impl_nfail;   // host-side Picard counters
 
+  // ---- MILESTONE 3a2 (the limits of 3a).  See rad_m1_implicit.hpp for what each
+  // constant means and docs/dev/rad_m1_implicit_design.md sect. 7 for the measurements.
+  int impl_flux;                // M1_IFLUX_*: the spatial form of the implicit E-flux
+  int impl_recon;               // M1_IRECON_*: dc, or plm by deferred correction
+  Real impl_recon_w;            // implicit_recon = plm_dc: the weight the deferred
+                                // correction carries.  <= 0 (the default) means the
+                                // automatic 1/(1 + chat dt/dx), which is what keeps the
+                                // deferred-correction fixed-point iteration a contraction
+                                // at every CFL; 1.0 is the pure plm flux, which diverges
+                                // above CFL ~ 1.
+  int impl_part;                // M1_IPART_*: how a multi-block column is solved
+  DvceArray5D<Real> ifw;        // per-x1-FACE work array, M1_NIFW components
+  // the partitioned (gathered) line solve, LIMIT 4.  Every rank that owns a piece of a
+  // column sends its (a,b,c,r) rows to the column's ROOT rank, which runs the identical
+  // serial Thomas sweep and sends the solution back.
+  int part_nblk;                // MeshBlocks along x1 of one column (1 = no partition)
+  int part_ncol;               // columns whose root is on THIS rank
+  HostArray1D<Real> part_buf;   // host staging buffer of the gather/scatter
+  DualArray1D<Real> part_row;   // (4*nx1_global) rows of one gathered column
+  // the imposed-flux boundary hand-off, LIMIT 3.  See ImplicitSolve.
+  bool impl_recon_freeze;       // implicit_recon_lag = step: evaluate the deferred
+                                // correction once per step, not once per Picard pass
+  Real impl_res_floor;          // scale of the Picard convergence test: 0 = the pure
+                                // relative change of 3a, x > 0 = |dE|/max(E, x*max(E))
+  bool impl_bmom_half;          // give a physical boundary face HALF its flux to the one
+                                // interior cell (the cell-averaged share) instead of all
+
   // evolved variables
   DvceArray5D<Real> u0;         // (E, F1, F2, F3)
   DvceArray5D<Real> u1;         // state at the start of the substep
