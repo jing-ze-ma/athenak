@@ -488,11 +488,9 @@ void ProblemGenerator::RadiationM1Tests(ParameterInput *pin, const bool restart)
       u0(m,radm1::M1_F3,k,j,i) = 0.0;
     });
   } else {
-    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-      << std::endl << "<problem>/m1_test = '" << test << "' not implemented "
-      << "(beam | pulse1d | thick_pulse | tophat | jump | equil | advect_pulse "
-      << "| advect_uniform | advect_shear | marshak)" << std::endl;
-    std::exit(EXIT_FAILURE);
+    // milestone 1d (shadow, radshock): src/pgen/tests/rad_m1_tests2.cpp, which also
+    // owns the "not implemented" fatal
+    RadiationM1Tests2(pin, restart);
   }
   return;
 }
