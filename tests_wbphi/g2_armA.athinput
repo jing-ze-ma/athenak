@@ -1,0 +1,114 @@
+# =================================================================================
+# G2 of the wb-phieff branch: the He-star FeCZ column, 1-D, ADIABATIC.
+#
+# Cut down from bench/hestar_fecz/box_w8/he_box_w8.athinput.  EVERYTHING radiative is
+# gone -- no two-stream, no conduction object at all (<hydro>/isotropic_conduction is
+# ABSENT, which is what switches the module off), eos_radiation = false so the EOS is
+# gas-only -- and the seed and both sponges are off.  What is left is exactly the
+# question this branch is about: does the well-balanced scheme hold a column that is
+# hydrostatic under an EFFECTIVE gravity g - a_rad, when the radiative part of the
+# support is applied (or not) by an operator-split source?
+#
+# The three arms differ only in problem/wb_phi_eff and problem/wb_arad_force, set on
+# the command line by run_g2.sh.
+# =================================================================================
+
+<comment>
+problem = He-star FeCZ column, 1-D, well-balanced against an effective gravity
+
+<job>
+basename = wb1d
+
+<mesh>
+nghost    = 3
+nx1       = 134
+x1min     = -3.1410310e8
+x1max     =  4.1290910e7
+ix1_bc    = user
+ox1_bc    = user
+nx2       = 1
+x2min     = 0.0
+x2max     = 1.10331276e9
+ix2_bc    = periodic
+ox2_bc    = periodic
+nx3       = 1
+x3min     = 0.0
+x3max     = 1.10331276e9
+ix3_bc    = periodic
+ox3_bc    = periodic
+
+<meshblock>
+nx1       = 134
+nx2       = 1
+nx3       = 1
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim       = -1
+tlim       = 300.0
+dt_min     = 1.0e-6
+ndiag      = 500
+
+<units>
+length_cgs = 1.0
+mass_cgs   = 1.0
+time_cgs   = 1.0
+mu         = 1.0
+
+<hydro>
+eos                  = general
+general_eos          = table
+gamma                = 1.6666666667
+eos_h2               = false
+eos_ionization       = true
+eos_metal_ionization = false
+eos_radiation        = false   # arms A,B: gas-only
+eos_xh               = 0.0
+eos_yhe              = 0.98
+eos_logd_min         = -13.0
+eos_logd_max         = -3.0
+eos_logt_min         = 3.8
+eos_logt_max         = 6.5
+eos_dlog             = 0.02
+reconstruct = plm
+rsolver     = lhllc
+etotgrav    = true
+wellbalance_dynamic = true
+wb_x1               = true
+wb_option           = polytropic
+wb_cache_every      = 0
+
+<problem>
+user_srcs   = true
+g0          = 3.98107e5
+rho_base    = 1.509747e-06
+t_base      = 3.203880e5
+mu          = 1.3333333
+bc_mode     = 3
+dgrad       = 0.0
+cool_depth  = 5.0e7
+cool_tau    = 1.0e0
+cool_layer  = false
+vpert       = 0.0
+nfine       = 8192
+ic_profile  = /viper/u2/jinma/ATHENAK/bench/wt_wbphi/tests_wbphi/ic/ic_s11.txt
+column_dump = column_used.txt
+wb_phi_eff   = true
+wb_arad_force = true
+wb_arad_file = /viper/u2/jinma/ATHENAK/bench/wt_wbphi/tests_wbphi/ic/wb_arad.txt
+
+<output1>
+file_type  = hst
+dt         = 1.0
+data_format = %24.16e
+
+<output2>
+file_type  = bin
+variable   = hydro_w
+dt         = 5.0
+
+<output3>
+file_type  = rst
+dt         = 150.0
