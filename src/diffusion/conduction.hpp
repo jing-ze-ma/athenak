@@ -282,6 +282,40 @@ class Conduction {
   DvceArray1D<Real> rt_col_diag;
   int rt_col_lines = 0;
   void EnableRTColumn();
+  // rad_angular (<hydro>/ or <mhd>/rad_angular, default true): the MASTER SWITCH of the
+  // HORIZONTAL (x2/x3, "angular"/"transverse") part of the radiative conduction.  True is
+  // everything below and is bitwise the historical arithmetic.  FALSE removes the
+  // horizontal operator outright:
+  //   * AddIsotropicHeatFluxRadiative returns after the x1 faces, so NO radiative heat
+  //     flux is added to any x2/x3 face -- on every mesh type, cubed-sphere seam and
+  //     spherical-polar paths included, since those live inside the same two kernels;
+  //   * BuildAngularCoeffs returns immediately, so no frozen transverse conductance,
+  //     no cap_x/cap_c2/cap_c3 and no rad_cap_ang report are built (this also covers the
+  //     problem generators that call it themselves under problem/rt_split_transverse);
+  //   * NewTimeStep drops the transverse conduction limits dt2 and dt3.
+  // Everything RADIAL is untouched: the x1 face flux, rad_implicit_x1, the tau blend
+  // (rad_tau_lo/hi, rad_blend_radial), rad_flux_inner and the two-stream hand-over
+  // (rad_blend_use_2s, rad_f2s).  Ordinary (constant / spitzer) thermal conduction is not
+  // affected at all -- the switch is read and acted on only for
+  // isotropic_conduction = radiative.
+  //
+  // WHAT IT IS FOR.  The horizontal radiative diffusion is the stiff, expensive and
+  // physically dubious half of the operator (see rad_tr_tau_lo below); a run that wants
+  // no horizontal radiative transport at all -- because a column solver owns that
+  // transport, or because the arm is a deliberate ablation -- had to fake it by setting
+  // the smooth taper past the top of the domain (rad_tr_tau_lo = 1e30).  That route is
+  // bitwise equivalent to this one but still pays for the angular kernels, and it needs
+  // the tau blend to be on.  This switch is the direct statement.
+  //
+  // COMBINATIONS.  rad_angular = false is a FATAL with rad_implicit_ang, rad_sts_all,
+  // rad_sts_split and rad_ang_solver = adi: those ARE the transverse treatment, and
+  // silently running them with no transverse physics would be a trap.  rad_cap_ang > 0
+  // is instead accepted SILENTLY and becomes a no-op (the production inputs carry
+  // rad_cap_ang = 0.5 and must not have to be edited): nothing angular is built for it.
+  // Note that the dt-collapse report in Mesh::NewTimeStep keys its "capped" label on
+  // rad_cap_ang alone, so with rad_angular = false and rad_cap_ang = 0 it prints the
+  // sentinel dt2 = dt3 = -1 instead of a word; -1 means "no transverse constraint".
+  bool rad_angular = true;
   // rad_cap_ang (<hydro>/ or <mhd>/rad_cap_ang, default 0 = off): a CONSERVATIVE cap on
   // the explicit ANGULAR (x2/x3) radiative diffusion.  With the radial direction made
   // implicit the same evacuated-cell runaway simply migrates to the angular faces (the

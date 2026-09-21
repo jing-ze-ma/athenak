@@ -1,0 +1,14 @@
+Mesh: spherical-polar x3-face theta correction = rotate
+
+Root grid = 1 x 1 x 2 MeshBlocks
+Total number of MeshBlocks = 2
+Number of logical  levels of refinement = 1 (2 levels total)
+Number of physical levels of refinement = 0 (1 levels total)
+Number of parallel ranks = 1
+<hydro>/tfloor_kelvin = 200 K -> tfloor = 1.66289e+10 in code temperature (1.20272e-08 K per unit, general EOS)
+General EOS: tabulated on 281 x 451 nodes (15 MB), log10 rho[cgs] in [-14, 0], log10 T[K] in [1.5, 6]
+             X = 0.7381, Y = 0.2485, Z = 0.0134, H2 on, ionization on, radiation off
+             metal ionization on ([M/H] = 0, condensation on)
+             mu at the grid centre = 1.25764, n_e/n_tot = 0.000152915
+### FATAL ERROR in /u/jinma/ATHENAK/athenak/src/diffusion/conduction.cpp at line 215
+rad_angular = false switches the HORIZONTAL (x2/x3) radiative conduction off, so rad_implicit_ang, rad_sts_all, rad_sts_split and rad_ang_solver = adi -- which ARE the transverse treatment -- have nothing to solve

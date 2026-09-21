@@ -155,6 +155,9 @@ Conduction::Conduction(std::string block, MeshBlockPack *pp, ParameterInput *pin
       // 0 (the default) is off and bitwise inert.
       rad_tr_tau_lo = pin->GetOrAddReal(block,"rad_tr_tau_lo",0.0);
       rad_tr_tau_hi = pin->GetOrAddReal(block,"rad_tr_tau_hi",0.0);
+      // rad_angular: the master switch of the HORIZONTAL (x2/x3) radiative conduction.
+      // True (the default) is bitwise the historical arithmetic.  See conduction.hpp.
+      rad_angular = pin->GetOrAddBoolean(block,"rad_angular",true);
       // rad_blend_use_2s: the ramp faces carry w*F_2s, not w*(-K dT/dz).  See
       // conduction.hpp for the whole argument.
       rad_blend_use_2s = pin->GetOrAddInteger(block,"rad_blend_use_2s",0);
@@ -201,6 +204,25 @@ Conduction::Conduction(std::string block, MeshBlockPack *pp, ParameterInput *pin
           std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
                     << std::endl << "rad_ang_solver must be sts or adi" << std::endl;
           std::exit(EXIT_FAILURE);
+        }
+      }
+      // rad_angular = false: the transverse operator is gone, so anything that IS the
+      // transverse treatment is a contradiction and fatals here.  rad_cap_ang is NOT in
+      // that list on purpose -- it only slows a transverse operator down, so with none
+      // left it is a silent no-op (the production inputs all carry rad_cap_ang = 0.5).
+      if (!rad_angular) {
+        if (rad_implicit_ang || rad_sts_all || rad_sts_split || rad_ang_adi) {
+          std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
+                    << std::endl << "rad_angular = false switches the HORIZONTAL "
+                    << "(x2/x3) radiative conduction off, so rad_implicit_ang, "
+                    << "rad_sts_all, rad_sts_split and rad_ang_solver = adi -- which ARE "
+                    << "the transverse treatment -- have nothing to solve" << std::endl;
+          std::exit(EXIT_FAILURE);
+        }
+        if (global_variable::my_rank == 0) {
+          std::cout << "Conduction: rad_angular = false -- no radiative heat flux "
+                    << "through any x2/x3 face, no angular coefficients, and the "
+                    << "transverse conduction dt (dt2, dt3) is dropped" << std::endl;
         }
       }
       {
@@ -963,6 +985,9 @@ void Conduction::BuildAngularCoeffs(const DvceArray5D<Real> &w0, const EOS_Data 
                                     const Real beta_dt) {
   const Real capang = rad_cap_ang;
   const bool impang = rad_implicit_ang;
+  // rad_angular = false: no transverse operator exists, so no angular coefficients are
+  // built -- including for the problem generators that call this themselves.
+  if (!rad_angular) return;
   if (!(capang > 0.0) && !impang) return;
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie;
@@ -1629,6 +1654,11 @@ void Conduction::AddIsotropicHeatFluxRadiative(const DvceArray5D<Real> &w0,
     }
   }
   if (!multi_d) return;
+  // rad_angular = false: the HORIZONTAL (x2/x3) radiative conduction is switched off
+  // entirely.  Returning here leaves flx.x2f / flx.x3f untouched on every mesh type --
+  // the spherical-polar and cubed-sphere seam terms live inside the two kernels below --
+  // and skips BuildAngularCoeffs with them.  See conduction.hpp.
+  if (!rad_angular) return;
 
   // ------------------------------------------------------------------------------------
   // rad_cap_ang: the CONSERVATIVE per-face cap on the explicit transverse operator.
@@ -2902,7 +2932,11 @@ void Conduction::NewTimeStep(const DvceArray5D<Real> &w0, const EOS_Data &eos_da
   const bool impx1 = rad_implicit_x1 || rad_sts_all;
   // ...and the transverse operator carries no constraint either when rad_cap_ang caps
   // every face, or when rad_implicit_ang solves it implicitly, so dt2 and dt3 go with it
-  const bool capa = (rad_cap_ang > 0.0) || rad_implicit_ang;
+  // ...and rad_angular = false removes the transverse operator outright, so dt2 and dt3
+  // go with it as well.  Guarded on `radiative` so that ordinary (constant / spitzer)
+  // thermal conduction keeps its transverse limits whatever the radiative switch says.
+  const bool capa = (rad_cap_ang > 0.0) || rad_implicit_ang
+                    || (radiative && !rad_angular);
   auto &wf = rad_w;
   const bool ktab = (rad_kappa_tab && rad_kr_nT > 0);
   const bool krho = rad_kappa_rho;   // table axis is log rho, not log p
