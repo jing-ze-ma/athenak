@@ -54,6 +54,7 @@
 #include "utils/atm_column.hpp"
 #include "pgen/pgen_eos_utils.hpp"
 #include "utils/rad_taper.hpp"
+#include "utils/two_stream_warm_rst.hpp"
 #include "utils/two_stream_column_implicit.hpp"
 #include "utils/two_stream_column_partition.hpp"
 
@@ -853,15 +854,14 @@ inline int rt_col3_split_w = 8;   // problem/rt_col3_split_w, thin cost / deep c
 // two.  Only the ITERATE moves; the residual, the Jacobian, the tolerance and the entry
 // state are untouched, so the converged root is the same one and the answer is equal to
 // round-off rather than bitwise.  Costs one (warm = 1) or two (warm = 2) extra 4D arrays.
-inline int rt_impl_warm = 0;
+// rt_impl_warm, rt_c3bp_ptr, rt_c3bp2_ptr and rt_c3_bdt_prev are the warm start's own
+// state and live in utils/two_stream_warm_rst.hpp, which the restart writer and reader
+// also include: the history is carried in the restart file.
 inline DvceArray5D<Real> *rt_c3wk_ptr = nullptr;
 inline DvceArray5D<float> *rt_c3wkf_ptr = nullptr;
 inline DvceArray4D<Real> *rt_c3rd_ptr = nullptr;
 inline DvceArray4D<Real> *rt_c3top_ptr = nullptr;
 inline DvceArray1D<Real> *rt_c3stat_ptr = nullptr;
-inline DvceArray4D<Real> *rt_c3bp_ptr = nullptr;   // the warm-start history, level n
-inline DvceArray4D<Real> *rt_c3bp2_ptr = nullptr;  // the warm-start history, level n-1
-inline Real rt_c3_bdt_prev = 0.0;                  // the previous call's bdt
 inline int rt_c3_lines = 0;
 // problem/ck_int_at_cut: deliver the planet's internal flux sigma T_int^4 as an extra
 // upward source at the correlated-k cut (the historical behaviour, true). Set false when
@@ -3090,6 +3090,10 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
                                                  (rt_impl_warm > 1) ? wn3 : 1,
                                                  (rt_impl_warm > 1) ? wn2 : 1,
                                                  (rt_impl_warm > 1) ? wn1 : 1);
+            // ... unless this run is a restart whose file carried the history, in which
+            // case it is copied in here and the first solve of the restarted run starts
+            // where the straight run's solve at this cycle started.
+            RtWarmStageConsume();
             rt_c3rd_ptr = new DvceArray4D<Real>("rt_c3rd", nmb_c3, n3, n2,
                                                 c3par ? c3nseg*c3nrd : 1);
             // problem/rt_impl_mixed = 2: the compact SINGLE-precision factor workspace.

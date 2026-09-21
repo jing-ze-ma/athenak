@@ -269,6 +269,12 @@ class BaseTypeOutput {
   // wtemp is not bitwise (the log10/Pow10 round trip of the temperature moves the table
   // lookup by an ULP), so they are carried in the file too.  Hydro only; empty otherwise.
   HostArray4D<Real> outarray_wdp, outarray_wdg;
+  // the mode-3 two-stream Newton WARM-START history (two_stream_rt::rt_c3bp and, for
+  // problem/rt_impl_warm = 2, rt_c3bp2).  Same argument once more: the iterate the
+  // history sets decides which of the answers inside rt_impl_tol the Newton stops on, so
+  // a cold started restart is not a bitwise continuation.  Empty unless the warm start is
+  // on and has allocated; see utils/two_stream_warm_rst.hpp for the file format.
+  HostArray4D<Real> outarray_wm1, outarray_wm2;
   HostFaceFld4D<Real> outfield;  // FC output field on host
   std::vector<int> noutmbs;   // with MPI, number of output MBs across all ranks
   int noutmbs_min;            // with MPI, minimum number of output MBs across all ranks
