@@ -149,10 +149,23 @@ E-flux only; the pressure flux is plain HLL (the Bloch et al. 2021 variant, eq. 
 
 ```
 alpha = 1 / [ 1 - 3 tau_face (1 - f^2) lam+ lam- / (c (lam+ - lam-)) ]     (Bloch eq. 25)
-F_E   = alpha * [ (b_R F0_L - b_L F0_R) + b_R b_L (E_R - E_L) ] / (b_R - b_L)  + A_upwind
+F_E   = alpha * F_E^HLL(reconstructed L, R)  +  (1 - alpha) * F_diff  + A_upwind
+F_diff = - c [ E(i+1) - E(i) ] / (3 tau_face)            CELL-CENTRE values
 F_F   = c^2 [ (b_R P_L - b_L P_R) ] / (b_R - b_L) + b_R b_L (F_R - F_L) / (b_R - b_L)
 tau_face = (1/2) [ (rho kappa_F)_L + (rho kappa_F)_R ] dx
 ```
+
+**Second order.**  Berthon's scheme is first order, and no second-order extension is in
+print.  Its original form, `alpha * [HLL flux with the dissipation term
+b_R b_L (E_R - E_L)]`, recovers the diffusion flux only because `E_L, E_R` are the two
+cell values.  With PLM face states the jump is O(dx^2), the term vanishes, and the scheme
+would under-diffuse grossly (this was wrong in the first version of this note, caught
+before 1b was coded).  The blend above is algebraically identical to Berthon's flux for
+piecewise-constant states at the diffusion value of `F` (checked: `alpha * dissipation =
+(1 - alpha) F_diff` exactly in the isotropic limit), and is second order in both limits:
+reconstructed HLL where thin, central compact diffusion flux where thick.
+`<rad_m1>/reconstruct = dc | plm` (later `ppm4 | wenoz` from `src/reconstruct/`, which
+need `nghost >= 3`) selects the face states; `dc` reproduces the original scheme.
 
 with `f` the face mean, and `(1 - f^2)` Bloch's guard that keeps `f < 1` near free
 streaming.  Isotropic limit: `lam = +-c/sqrt3`, `alpha -> 2/(sqrt3 tau_face)`, and the
