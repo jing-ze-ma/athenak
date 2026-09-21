@@ -31,6 +31,7 @@ add_executable(
 
         coordinates/adm.cpp
         coordinates/coordinates.cpp
+        coordinates/gnomonic_raisevel_frozen.cpp
         coordinates/excision.cpp
 
         diffusion/conduction.cpp

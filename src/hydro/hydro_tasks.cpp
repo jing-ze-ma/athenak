@@ -948,6 +948,9 @@ TaskStatus Hydro::ConToPrim(Driver *pdrive, int stage) {
   if (use_etotgrav) {
     RemoveGravEtot(phicc0, u0, 0, n1m1, 0, n2m1, 0, n3m1);
   }
+  // remembered across the branch below because the cubed-sphere half of the inversion,
+  // which owns the cache on that grid, has to be frozen by the SAME call
+  const bool frozen = c2p_freeze_derived;
   if (c2p_freeze_derived) {
     // the first conversion of a RESTARTED run under a general EOS: the temperature and
     // the derived (p, Gamma_1) came out of the restart file and must survive this call
@@ -963,8 +966,17 @@ TaskStatus Hydro::ConToPrim(Driver *pdrive, int stage) {
   // gnomonic tangent basis. ConsToPrim cannot know that, so redo the velocity and the
   // internal energy with the metric. See Coordinates::GnomonicEquiangleRaiseVel.
   if (pmy_pack->pmesh->use_cubed_sphere) {
-    pmy_pack->pcoord->GnomonicEquiangleRaiseVel(u0, w0, peos->eos_data, wder, wtemp,
-                                                0, n1m1, 0, n2m1, 0, n3m1);
+    if (frozen) {
+      // ...and on this grid THIS routine, not ConsToPrim, is what re-solves wtemp/wder
+      // and re-applies the deferred floors, so the frozen conversion has to reach here
+      // too or the cache the restart file restored is overwritten a moment later.  See
+      // coordinates/gnomonic_raisevel_frozen.cpp.
+      pmy_pack->pcoord->GnomonicEquiangleRaiseVelFrozen(u0, w0, 0, n1m1, 0, n2m1,
+                                                        0, n3m1);
+    } else {
+      pmy_pack->pcoord->GnomonicEquiangleRaiseVel(u0, w0, peos->eos_data, wder, wtemp,
+                                                  0, n1m1, 0, n2m1, 0, n3m1);
+    }
   }
   if (use_etotgrav) {
     AddGravEtot(phicc0, u0, 0, n1m1, 0, n2m1, 0, n3m1);

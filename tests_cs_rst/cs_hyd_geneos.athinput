@@ -1,0 +1,115 @@
+# CUBED SPHERE + TABULATED (general) EOS, HYDRO: the restart gate problem.
+#
+# A RADIAL shock tube on the cubed sphere, built-in pgen "shock_tube" (no -D PROBLEM=
+# build is needed, so the gate binary does not depend on any user problem generator).
+# The tabulated-EOS block is copied from tests_mhd_rst/lw_hyd_geneos.athinput, so no
+# external table file is needed either.
+#
+# The left and right states carry a small TANGENTIAL velocity (vl/wl, vr/wr) so that the
+# metric cross term of the gnomonic tangent basis -- the reason
+# Coordinates::GnomonicEquiangleRaiseVel exists at all -- is nonzero everywhere off the
+# panel midlines, and the internal energy that the general-EOS cache is solved from is
+# genuinely the metric one.  The initial PrimToCons of the pgen is the orthonormal one
+# on this grid, so the IC is not exactly the state those primitives describe; that does
+# not matter here -- the gate asks whether a RESTART reproduces the run, not whether the
+# run is a physically meaningful shock tube.
+
+<comment>
+problem = cubed-sphere radial shock tube, tabulated general EOS
+
+<job>
+basename = cs_rst_hyd
+
+<mesh>
+nghost   = 2
+nx1      = 8            # RADIAL
+x1min    = 1.0e9
+x1max    = 2.0e9
+ix1_bc   = reflect
+ox1_bc   = reflect
+
+nx2      = 16           # xi;  nx2 must equal nx3
+x2min    = -1.0
+x2max    = 1.0
+ix2_bc   = panel
+ox2_bc   = panel
+
+nx3      = 16           # eta
+x3min    = -1.0
+x3max    = 1.0
+ix3_bc   = panel
+ox3_bc   = panel
+
+use_cubed_sphere = true
+
+<meshblock>
+nx1      = 8
+nx2      = 16
+nx3      = 16
+
+<mesh_refinement>
+refinement = none
+
+<units>
+length_cgs = 1.0
+mass_cgs   = 1.0
+time_cgs   = 1.0
+mu         = 1.0
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim       = 20
+tlim       = 1.0e30
+ndiag      = 100000
+
+<hydro>
+eos         = general
+general_eos = table
+reconstruct = plm
+rsolver     = hllc
+gamma       = 1.66666666667   # unused when general_eos = table
+dfloor      = 1.0e-14
+pfloor      = 1.0e-2
+tfloor      = 40.0
+
+eos_xh         = 0.7381
+eos_yhe        = 0.2485
+eos_h2         = true
+eos_ionization = true
+eos_radiation  = false
+eos_logd_min   = -14.0
+eos_logd_max   = 2.0
+eos_logt_min   = 1.5
+eos_logt_max   = 8.0
+eos_dlogd      = 0.05
+eos_dlogt      = 0.01
+
+<problem>
+pgen_name = shock_tube
+shock_dir = 1
+xshock    = 1.5e9
+dl        = 1.0e-6
+ul        = 0.0
+vl        = 1.0e5
+wl        = 5.0e4
+pl        = 6.5e5
+dr        = 1.0e-8
+ur        = 0.0
+vr        = 1.0e5
+wr        = 5.0e4
+pr        = 1.0e3
+
+<output1>
+file_type = hst
+dt        = 1.0e30
+
+<output2>
+file_type = rst
+dt        = 1.0e30
+
+<output3>
+file_type = bin
+variable  = hydro_u
+dt        = 1.0e30

@@ -1,0 +1,22 @@
+cycle   0  bitwise identical
+cycle   1  bitwise identical
+cycle   2  bitwise identical
+cycle   3  bitwise identical
+cycle   4  bitwise identical
+cycle   5  bitwise identical
+cycle   6  bitwise identical
+cycle   7  bitwise identical
+cycle   8  bitwise identical
+cycle   9  bitwise identical
+cycle  10  bitwise identical
+cycle  11  DIFFERS: worst ener  abs 8.535e-01  rel 3.241e-05
+cycle  12  DIFFERS: worst ener  abs 4.043e+00  rel 1.133e-04
+cycle  13  DIFFERS: worst ener  abs 7.527e+00  rel 1.455e-04
+cycle  14  DIFFERS: worst ener  abs 1.045e+01  rel 1.869e-04
+cycle  15  DIFFERS: worst ener  abs 1.588e+01  rel 2.203e-04
+cycle  16  DIFFERS: worst ener  abs 3.015e+01  rel 3.097e-04
+cycle  17  DIFFERS: worst ener  abs 6.034e+01  rel 4.503e-04
+cycle  18  DIFFERS: worst ener  abs 8.738e+02  rel 4.721e-03
+cycle  19  DIFFERS: worst ener  abs 9.708e+02  rel 3.420e-03
+cycle  20  DIFFERS: worst ener  abs 1.605e+03  rel 6.260e-03
+FAIL: first differing cycle 11 of 21 compared

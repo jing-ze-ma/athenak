@@ -1,0 +1,24 @@
+Mesh: spherical-polar x3-face theta correction = rotate
+
+Cubed sphere: Root grid = 6 x 1 x (1 x 1) MeshBlocks
+Total number of MeshBlocks = 6
+Number of logical  levels of refinement = 0 (1 levels total)
+Number of physical levels of refinement = 0 (1 levels total)
+Number of parallel ranks = 1
+General EOS: tabulated on 321 x 651 nodes (25 MB), log10 rho[cgs] in [-14, 2], log10 T[K] in [1.5, 8]
+             X = 0.7381, Y = 0.2485, Z = 0.0134, H2 on, ionization on, radiation off
+             metal ionization off
+             mu at the grid centre = 0.618037, n_e/n_tot = 0.508559
+
+Setup complete, executing task list(s)...
+
+elapsed=4.166866e+00 cycle=0 time=0.000000e+00 dt=1.908136e+01
+
+Terminating on cycle limit
+time=1.748988e+02 cycle=10
+tlim=1.000000e+30 nlim=10
+
+MeshBlock-cycles = 60
+cpu time used  = 7.142555e-01
+zone-cycles/cpu_second = 1.720393e+05
+particle-updates/cpu_second = 0.000000e+00

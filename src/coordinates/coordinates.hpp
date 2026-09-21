@@ -121,6 +121,18 @@ class Coordinates {
                                     const DvceArray4D<Real> &wtemp,
                                     const int il, const int iu, const int jl,
                                     const int ju, const int kl, const int ku);
+  // The FROZEN half of the two routines above, for the first conversion of a RESTARTED
+  // run under a general EOS: the metric velocity raise and the metric internal energy,
+  // with the thermodynamic cache (wtemp, wder) neither read nor written.  See
+  // coordinates/gnomonic_raisevel_frozen.cpp.
+  void GnomonicEquiangleRaiseVelFrozen(DvceArray5D<Real> &u0, DvceArray5D<Real> &w0,
+                                       const int il, const int iu, const int jl,
+                                       const int ju, const int kl, const int ku);
+  void GnomonicEquiangleRaiseVelMHDFrozen(DvceArray5D<Real> &u0,
+                                          const DvceFaceFld4D<Real> &b0,
+                                          DvceArray5D<Real> &bcc0, DvceArray5D<Real> &w0,
+                                          const int il, const int iu, const int jl,
+                                          const int ju, const int kl, const int ku);
   void GnomonicEquiangleLowerMom(const DvceArray5D<Real> &w0, DvceArray5D<Real> &u0,
                                  const int il, const int iu, const int jl, const int ju,
                                  const int kl, const int ku);
