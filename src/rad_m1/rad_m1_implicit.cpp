@@ -119,15 +119,12 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // the ceiling is raised (not the count: the loop still stops at convergence).
   impl_maxit = pin->GetOrAddInteger("rad_m1","implicit_maxit", full ? 200 : 30);
   impl_lin_tol = pin->GetOrAddReal("rad_m1","implicit_lin_tol",1.0e-10);
+  impl_lin_maxit = pin->GetOrAddInteger("rad_m1","implicit_lin_maxit",200);
   {std::string sv = pin->GetOrAddString("rad_m1","implicit_solver","line_jacobi");
   if (sv.compare("line_jacobi") == 0) {
     impl_solver = M1_ISOLV_LINE_JACOBI;
   } else if (sv.compare("bicgstab") == 0) {
     impl_solver = M1_ISOLV_BICGSTAB;
-    if (full) {
-      ImplFatal("<rad_m1>/implicit_solver = bicgstab is NOT implemented (3b phase B "
-                "ships line_jacobi only)");
-    }
   } else {
     ImplFatal("<rad_m1>/implicit_solver = '" + sv
               + "' is not a choice (line_jacobi | bicgstab)");
@@ -238,6 +235,9 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // which gave that cell 1.5 face-shares of radiative force: He column bottom-cell |v1|
   // 10.3 -> 0.47 v_MLT).  The key is kept so that `false` reproduces runs_3a/RESULTS.txt.
   impl_bmom_half = pin->GetOrAddBoolean("rad_m1","implicit_bmom_half",true);
+  if (impl_lin_maxit < 1) {
+    ImplFatal("<rad_m1>/implicit_lin_maxit must be >= 1");
+  }
   if (!(impl_tol > 0.0) || impl_maxit < 1) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
       << std::endl << "<rad_m1>/implicit_tol must be positive and implicit_maxit >= 1"
@@ -332,7 +332,14 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   Kokkos::deep_copy(f0x1, 0.0);
   Kokkos::realloc(f0x1n, nmb, ncells3, ncells2, ncells1+1);
   Kokkos::deep_copy(f0x1n, 0.0);
-  Kokkos::realloc(iw, nmb, (full ? M1_NIW : M1_NIW_X1), ncells3, ncells2, ncells1);
+  // MILESTONE 3b phase C: the BiCGStab wrapper needs the four/six transverse off-diagonal
+  // coefficients and ten Krylov vectors on top of the phase-B work array.  They are
+  // allocated only when it is selected AND the mesh is multi-D, so line_jacobi keeps the
+  // footprint (and, on a 1-D mesh, the solve IS the column solve and there is no system
+  // to wrap).
+  bicg_on = trans_on && (impl_solver == M1_ISOLV_BICGSTAB);
+  int niw = full ? (bicg_on ? M1_NIW_K : M1_NIW) : M1_NIW_X1;
+  Kokkos::realloc(iw, nmb, niw, ncells3, ncells2, ncells1);
   Kokkos::deep_copy(iw, 0.0);
   Kokkos::realloc(ifw, nmb, M1_NIFW, ncells3, ncells2, ncells1+1);
   Kokkos::deep_copy(ifw, 0.0);
@@ -356,14 +363,29 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     Kokkos::realloc(thw_c, nmb, M1_NHALO_T, 1, 1, 1);
     pbval_th = new MeshBoundaryValuesCC(pmy_pack, pin, false);
     pbval_th->InitializeBuffers(M1_NHALO_T);
+    if (bicg_on) {
+      // ONE more exchange object, for the single Krylov vector the operator application
+      // needs in its ghost zones.  It is used strictly SEQUENTIALLY with pbval_th (each
+      // exchange runs its InitRecv/Send/Recv/Clear chain to completion before the next
+      // starts) and every rank issues the identical SEQUENCE of exchanges -- the Picard
+      // count, the BiCGStab count and every breakdown decision are taken from GLOBAL
+      // reductions -- so MPI's non-overtaking guarantee keeps the two streams apart even
+      // though they share the tag space.
+      Kokkos::realloc(krw, nmb, 1, ncells3, ncells2, ncells1);
+      Kokkos::deep_copy(krw, 0.0);
+      Kokkos::realloc(krw_c, nmb, 1, 1, 1, 1);
+      pbval_kr = new MeshBoundaryValuesCC(pmy_pack, pin, false);
+      pbval_kr->InitializeBuffers(1);
+    }
   }
   ImplicitPartitionInit();
 
   if (global_variable::my_rank == 0) {
     std::cout << "<rad_m1>: transport=" << (full ? "implicit" : "implicit_x1")
               << (full ? (trans_x3 ? " (3-D)" : (trans_on ? " (2-D)" : " (1-D)")) : "")
-              << " solver=" << (full ? "line_jacobi" : "thomas")
-              << " lin_tol=" << impl_lin_tol << std::endl;
+              << " solver=" << (full ? (bicg_on ? "bicgstab" : "line_jacobi") : "thomas")
+              << " lin_tol=" << impl_lin_tol
+              << " lin_maxit=" << impl_lin_maxit << std::endl;
     std::cout << "         implicit_cfl="
               << impl_cfl << " tol=" << impl_tol << " maxit=" << impl_maxit
               << " opac_update=" << (impl_opac_update ? "true" : "false")
@@ -714,6 +736,10 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
   Real cl = c_light, ch = chat, dt = dt_sub;
   const bool thrd = trans_x3;
   const bool fst = first;
+  // MILESTONE 3b phase C: also store the transverse OFF-DIAGONAL coefficients of the
+  // frozen row, which is what the BiCGStab operator applies and what turns TRHS back into
+  // the right-hand side of the full system.
+  const bool bcg = bicg_on;
 
   // (1) the x2 face fluxes
   par_for("m1_impl_f2face", DevExeSpace(), 0, nmb1, ks, ke, js, je+1, is, ie,
@@ -817,6 +843,7 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
     Real d2c = M1EddDiag(chic, iw_(m,M1_IW_N2,k,j,i));
     Real a2c = iw_(m,M1_IW_A2,k,j,i);
     Real fp = 0.0, fm = 0.0;
+    Real cjp = 0.0, cjm = 0.0;
     if (!(j == je && p2hi)) {
       Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j,i) + iw_(m,M1_IW_KT,k,j+1,i));
       Real th = 1.0/(1.0 + ch*dt*ktf);
@@ -827,8 +854,13 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
         dia += nu2*cr*a2c;
       } else {
         fp += iw_(m,M1_IW_A2,k,j+1,i)*iw_(m,M1_IW_EP,k,j+1,i);
+        if (bcg) {cjp += nu2*cr*iw_(m,M1_IW_A2,k,j+1,i);}
       }
       dia += nu2*th*ch*ch*dt*d2c/dx2;
+      if (bcg) {
+        Real d2p = M1EddDiag(iw_(m,M1_IW_WCHI,k,j+1,i), iw_(m,M1_IW_N2,k,j+1,i));
+        cjp -= nu2*th*ch*ch*dt*d2p/dx2;
+      }
     }
     if (!(j == js && p2lo)) {
       Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j-1,i) + iw_(m,M1_IW_KT,k,j,i));
@@ -837,13 +869,24 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
       fm = f2_(m,k,j,i);
       if (vf > 0.0) {
         fm += iw_(m,M1_IW_A2,k,j-1,i)*iw_(m,M1_IW_EP,k,j-1,i);
+        if (bcg) {cjm -= nu2*cr*iw_(m,M1_IW_A2,k,j-1,i);}
       } else {
         fm += a2c*ec;
         dia -= nu2*cr*a2c;
       }
       dia += nu2*th*ch*ch*dt*d2c/dx2;
+      if (bcg) {
+        Real d2m = M1EddDiag(iw_(m,M1_IW_WCHI,k,j-1,i), iw_(m,M1_IW_N2,k,j-1,i));
+        cjm -= nu2*th*ch*ch*dt*d2m/dx2;
+      }
     }
     tt += nu2*cr*(fp - fm);
+    if (bcg) {
+      iw_(m,M1_IW_CJM,k,j,i) = cjm;
+      iw_(m,M1_IW_CJP,k,j,i) = cjp;
+      iw_(m,M1_IW_CKM,k,j,i) = 0.0;
+      iw_(m,M1_IW_CKP,k,j,i) = 0.0;
+    }
     if (thrd) {
       BoundaryFlag b5 = mbbcs.d_view(m,BoundaryFace::inner_x3);
       BoundaryFlag b6 = mbbcs.d_view(m,BoundaryFace::outer_x3);
@@ -853,6 +896,7 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
       Real d3c = M1EddDiag(chic, iw_(m,M1_IW_N3,k,j,i));
       Real a3c = iw_(m,M1_IW_A3,k,j,i);
       Real gp = 0.0, gm = 0.0;
+      Real ckp = 0.0, ckm = 0.0;
       if (!(k == ke && p3hi)) {
         Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j,i) + iw_(m,M1_IW_KT,k+1,j,i));
         Real th = 1.0/(1.0 + ch*dt*ktf);
@@ -863,8 +907,13 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
           dia += nu3*cr*a3c;
         } else {
           gp += iw_(m,M1_IW_A3,k+1,j,i)*iw_(m,M1_IW_EP,k+1,j,i);
+          if (bcg) {ckp += nu3*cr*iw_(m,M1_IW_A3,k+1,j,i);}
         }
         dia += nu3*th*ch*ch*dt*d3c/dx3;
+        if (bcg) {
+          Real d3p = M1EddDiag(iw_(m,M1_IW_WCHI,k+1,j,i), iw_(m,M1_IW_N3,k+1,j,i));
+          ckp -= nu3*th*ch*ch*dt*d3p/dx3;
+        }
       }
       if (!(k == ks && p3lo)) {
         Real ktf = 0.5*(iw_(m,M1_IW_KT,k-1,j,i) + iw_(m,M1_IW_KT,k,j,i));
@@ -873,13 +922,22 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
         gm = f3_(m,k,j,i);
         if (vf > 0.0) {
           gm += iw_(m,M1_IW_A3,k-1,j,i)*iw_(m,M1_IW_EP,k-1,j,i);
+          if (bcg) {ckm -= nu3*cr*iw_(m,M1_IW_A3,k-1,j,i);}
         } else {
           gm += a3c*ec;
           dia -= nu3*cr*a3c;
         }
         dia += nu3*th*ch*ch*dt*d3c/dx3;
+        if (bcg) {
+          Real d3m = M1EddDiag(iw_(m,M1_IW_WCHI,k-1,j,i), iw_(m,M1_IW_N3,k-1,j,i));
+          ckm -= nu3*th*ch*ch*dt*d3m/dx3;
+        }
       }
       tt += nu3*cr*(gp - gm);
+      if (bcg) {
+        iw_(m,M1_IW_CKM,k,j,i) = ckm;
+        iw_(m,M1_IW_CKP,k,j,i) = ckp;
+      }
     }
     Real unew = tt - dia*ec;
     Real uold = -iw_(m,M1_IW_TRHS,k,j,i);
@@ -1043,6 +1101,428 @@ void RadiationM1::ImplicitGatherSolve() {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::ImplicitTridiagSolve
+//! \brief the x1 LINE SOLVE of the assembled rows: read (M1_IW_TA, TB, TC, TR) and leave
+//! the solution in M1_IW_S2.  Plain Thomas, cyclic Thomas (Sherman-Morrison) when the x1
+//! boundaries are periodic inside one MeshBlock, or the gathered stack sweep when the
+//! column spans several blocks.
+//!
+//! It is BOTH the line-Jacobi pass (called once per Picard iteration with the lagged
+//! right-hand side) and the PRECONDITIONER of the BiCGStab wrapper (called twice per
+//! inner iteration with a Krylov vector in M1_IW_TR).  Extracting it changed no
+//! arithmetic: the two sweeps below are verbatim what the Picard loop used to run inline.
+
+void RadiationM1::ImplicitTridiagSolve() {
+  if (part_nblk > 1) {
+    ImplicitGatherSolve();
+    return;
+  }
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  int is = indcs.is, ie = indcs.ie;
+  int js = indcs.js, je = indcs.je;
+  int ks = indcs.ks, ke = indcs.ke;
+  int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto iw_ = iw;
+  const bool cyclic = (ibc_x1min == M1_IBC_PERIODIC);
+  par_for("m1_impl_thomas", DevExeSpace(), 0, nmb1, ks, ke, js, je,
+  KOKKOS_LAMBDA(const int m, const int k, const int j) {
+    if (!cyclic) {
+      Real bet = iw_(m,M1_IW_TB,k,j,is);
+      iw_(m,M1_IW_S2,k,j,is) = iw_(m,M1_IW_TR,k,j,is)/bet;
+      for (int i=is+1; i<=ie; ++i) {
+        iw_(m,M1_IW_S1,k,j,i) = iw_(m,M1_IW_TC,k,j,i-1)/bet;
+        bet = iw_(m,M1_IW_TB,k,j,i) - iw_(m,M1_IW_TA,k,j,i)*iw_(m,M1_IW_S1,k,j,i);
+        iw_(m,M1_IW_S2,k,j,i) = (iw_(m,M1_IW_TR,k,j,i)
+                                 - iw_(m,M1_IW_TA,k,j,i)*iw_(m,M1_IW_S2,k,j,i-1))/bet;
+      }
+      for (int i=ie-1; i>=is; --i) {
+        iw_(m,M1_IW_S2,k,j,i) -= iw_(m,M1_IW_S1,k,j,i+1)*iw_(m,M1_IW_S2,k,j,i+1);
+      }
+    } else {
+      // cyclic tridiagonal, Sherman-Morrison (Press et al. `cyclic`).  alpha is the
+      // BOTTOM-LEFT corner, c(ie) (row ie coupling to cell is), and beta the TOP-RIGHT
+      // one, a(is) (row is coupling to cell ie) -- that is the convention u and v below
+      // are built for, and swapping them is invisible on a symmetric matrix but wrong
+      // as soon as upwind advection makes the two off-diagonals differ: it produced a
+      // spurious dipole across the seam (-14 % in the first cell, +11 % in the last)
+      // on the very first step of T4b, where the exact answer is "nothing moves".
+      Real alpha = iw_(m,M1_IW_TC,k,j,ie);
+      Real beta = iw_(m,M1_IW_TA,k,j,is);
+      Real gam = -iw_(m,M1_IW_TB,k,j,is);
+      Real bb0 = iw_(m,M1_IW_TB,k,j,is) - gam;
+      Real bbn = iw_(m,M1_IW_TB,k,j,ie) - alpha*beta/gam;
+      // solve A' y = r and A' z = u with u = (gam,0,...,0,alpha)
+      Real bet = bb0;
+      iw_(m,M1_IW_S2,k,j,is) = iw_(m,M1_IW_TR,k,j,is)/bet;
+      iw_(m,M1_IW_S3,k,j,is) = gam/bet;
+      for (int i=is+1; i<=ie; ++i) {
+        Real bd = (i == ie) ? bbn : iw_(m,M1_IW_TB,k,j,i);
+        iw_(m,M1_IW_S1,k,j,i) = iw_(m,M1_IW_TC,k,j,i-1)/bet;
+        bet = bd - iw_(m,M1_IW_TA,k,j,i)*iw_(m,M1_IW_S1,k,j,i);
+        iw_(m,M1_IW_S2,k,j,i) = (iw_(m,M1_IW_TR,k,j,i)
+                                 - iw_(m,M1_IW_TA,k,j,i)*iw_(m,M1_IW_S2,k,j,i-1))/bet;
+        Real uu = (i == ie) ? alpha : 0.0;
+        iw_(m,M1_IW_S3,k,j,i) = (uu
+                                 - iw_(m,M1_IW_TA,k,j,i)*iw_(m,M1_IW_S3,k,j,i-1))/bet;
+      }
+      for (int i=ie-1; i>=is; --i) {
+        iw_(m,M1_IW_S2,k,j,i) -= iw_(m,M1_IW_S1,k,j,i+1)*iw_(m,M1_IW_S2,k,j,i+1);
+        iw_(m,M1_IW_S3,k,j,i) -= iw_(m,M1_IW_S1,k,j,i+1)*iw_(m,M1_IW_S3,k,j,i+1);
+      }
+      // x = y - z (v.y)/(1 + v.z),  v = (1,0,...,0,beta/gam)
+      Real vy = iw_(m,M1_IW_S2,k,j,is) + (beta/gam)*iw_(m,M1_IW_S2,k,j,ie);
+      Real vz = iw_(m,M1_IW_S3,k,j,is) + (beta/gam)*iw_(m,M1_IW_S3,k,j,ie);
+      Real fac = vy/(1.0 + vz);
+      for (int i=is; i<=ie; ++i) {
+        iw_(m,M1_IW_S2,k,j,i) -= fac*iw_(m,M1_IW_S3,k,j,i);
+      }
+    }
+  });
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::ImplicitKrylovHalo
+//! \brief milestone 3b phase C: put ONE component of the work array into the scratch
+//! array `krw`, exchange it with all six neighbours through the module's ordinary
+//! cell-centred boundary machinery (which is what supplies periodic wrap, edge/corner
+//! neighbours and MPI), and copy the ghost zones back.  PHYSICAL boundaries are not
+//! filled: the row's coefficient towards such a neighbour is identically zero, so the
+//! ghost value is multiplied by zero and never read in anger.
+
+void RadiationM1::ImplicitKrylovHalo(int comp) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  int n1 = indcs.nx1 + 2*(indcs.ng);
+  int n2 = (indcs.nx2 > 1)? (indcs.nx2 + 2*(indcs.ng)) : 1;
+  int n3 = (indcs.nx3 > 1)? (indcs.nx3 + 2*(indcs.ng)) : 1;
+  int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto iw_ = iw;
+  auto kr_ = krw;
+  const int nc = comp;
+  par_for("m1_impl_krpack", DevExeSpace(), 0, nmb1, 0, n3-1, 0, n2-1, 0, n1-1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    kr_(m,0,k,j,i) = iw_(m,nc,k,j,i);
+  });
+  while (pbval_kr->InitRecv(1) == TaskStatus::incomplete) {}
+  while (pbval_kr->PackAndSendCC(krw, krw_c) == TaskStatus::incomplete) {}
+  while (pbval_kr->RecvAndUnpackCC(krw, krw_c) == TaskStatus::incomplete) {}
+  while (pbval_kr->ClearSend() == TaskStatus::incomplete) {}
+  while (pbval_kr->ClearRecv() == TaskStatus::incomplete) {}
+  par_for("m1_impl_krunpack", DevExeSpace(), 0, nmb1, 0, n3-1, 0, n2-1, 0, n1-1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    iw_(m,nc,k,j,i) = kr_(m,0,k,j,i);
+  });
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::ImplicitApplyOp
+//! \brief milestone 3b phase C: y = A x for the FROZEN 7-point operator of the current
+//! Picard pass -- the assembled tridiagonal row (M1_IW_TA, TB, TC, with TB already
+//! carrying the transverse diagonal M1_IW_TDIA) plus the four/six transverse
+//! off-diagonals (M1_IW_CJM..CKP).  One halo exchange of x, then one stencil kernel.
+//!
+//! The x1 wrap of a periodic single-block column is handled exactly as the assembly
+//! handles it; with several blocks stacked along x1 the coupling to the neighbouring
+//! block is through the ghost cell the halo just filled, which is the same cell the
+//! gathered line solve treats as an interior row.
+
+void RadiationM1::ImplicitApplyOp(int xc, int yc) {
+  ImplicitKrylovHalo(xc);
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  int is = indcs.is, ie = indcs.ie;
+  int js = indcs.js, je = indcs.je;
+  int ks = indcs.ks, ke = indcs.ke;
+  int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto iw_ = iw;
+  const bool cyclic = (ibc_x1min == M1_IBC_PERIODIC);
+  const bool thrd = trans_x3;
+  const int cx = xc, cy = yc;
+  par_for("m1_impl_op", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    int im = (i > is) ? (i-1) : (cyclic ? ie : (is-1));
+    int ip = (i < ie) ? (i+1) : (cyclic ? is : (ie+1));
+    Real y = iw_(m,M1_IW_TB,k,j,i)*iw_(m,cx,k,j,i)
+             + iw_(m,M1_IW_TA,k,j,i)*iw_(m,cx,k,j,im)
+             + iw_(m,M1_IW_TC,k,j,i)*iw_(m,cx,k,j,ip)
+             + iw_(m,M1_IW_CJM,k,j,i)*iw_(m,cx,k,j-1,i)
+             + iw_(m,M1_IW_CJP,k,j,i)*iw_(m,cx,k,j+1,i);
+    if (thrd) {
+      y += iw_(m,M1_IW_CKM,k,j,i)*iw_(m,cx,k-1,j,i)
+           + iw_(m,M1_IW_CKP,k,j,i)*iw_(m,cx,k+1,j,i);
+    }
+    iw_(m,cy,k,j,i) = y;
+  });
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::ImplicitPrecond
+//! \brief milestone 3b phase C: z = M^{-1} r, with M the x1 line part of the row (the
+//! exact tridiagonal solve including the full diagonal).  It stages r through M1_IW_TR,
+//! which the assembly has already been read out of by the time the Krylov loop runs.
+
+void RadiationM1::ImplicitPrecond(int rc, int zc) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  int is = indcs.is, ie = indcs.ie;
+  int js = indcs.js, je = indcs.je;
+  int ks = indcs.ks, ke = indcs.ke;
+  int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto iw_ = iw;
+  const int cr = rc, cz = zc;
+  par_for("m1_impl_prein", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    iw_(m,M1_IW_TR,k,j,i) = iw_(m,cr,k,j,i);
+  });
+  ImplicitTridiagSolve();
+  par_for("m1_impl_preout", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    iw_(m,cz,k,j,i) = iw_(m,M1_IW_S2,k,j,i);
+  });
+}
+
+namespace {
+//----------------------------------------------------------------------------------------
+//! \fn M1GlobalSum2
+//! \brief two global SUMs in one MPI_Allreduce.  The per-rank part is a Kokkos reduction
+//! over the same fixed index range every time, so its summation order is reproducible on
+//! a given rank count, and the cross-rank part is one collective.
+
+void M1GlobalSum2(Real &a, Real &b) {
+#if MPI_PARALLEL_ENABLED
+  Real loc[2] = {a, b}, glb[2];
+  MPI_Allreduce(loc, glb, 2, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+  a = glb[0];
+  b = glb[1];
+#else
+  (void)a;
+  (void)b;
+#endif
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn M1GlobalMax
+void M1GlobalMax(Real &a) {
+#if MPI_PARALLEL_ENABLED
+  Real g;
+  MPI_Allreduce(&a, &g, 1, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+  a = g;
+#else
+  (void)a;
+#endif
+}
+} // namespace
+
+//----------------------------------------------------------------------------------------
+//! \fn int RadiationM1::ImplicitBiCGStab
+//! \brief milestone 3b phase C: solve the FROZEN 7-point linear system of one Picard pass
+//! by matrix-free BiCGStab, RIGHT-preconditioned by the exact x1 line solve, and leave
+//! the answer in M1_IW_S2 -- exactly where the line-Jacobi pass leaves it, so nothing
+//! downstream of step (e) of ImplicitSolve knows which solver ran.
+//!
+//! The system is A x = b with
+//!   A x = tridiag(TA,TB,TC) x + CJM x_{j-1} + CJP x_{j+1} + CKM x_{k-1} + CKP x_{k+1},
+//!   b   = TR + sum_nb C_nb E^k_nb,
+//! i.e. the right-hand side line Jacobi uses PLUS the lagged off-diagonal term it had
+//! moved there.  One line-Jacobi pass is x <- M^{-1}(b - sum C x) with the same M and the
+//! same A, so the two solvers have the SAME fixed point and converge to the same answer;
+//! only the number of passes differs.  The initial guess is the Picard iterate itself.
+//!
+//! Stopping is on the TRUE residual max|b - A x| relative to max|b|, below
+//! implicit_lin_tol: the recursive residual is monitored every iteration (it is free)
+//! and, when it passes, ONE extra operator application checks the true one.  If the true
+//! residual disagrees the recurrence is RESTARTED from it, which is the standard cure for
+//! the drift between the two.
+//!
+//! BREAKDOWN (rho or rhat.v underflowing, omega vanishing) restarts the recurrence once
+//! from the current iterate with a fresh shadow residual; a second breakdown in the same
+//! pass falls back to ONE line-Jacobi update, which always exists, and is counted.
+//!
+//! Three global reductions per iteration (rhat.r with r.r, rhat.v, and t.s with t.t),
+//! five scalars in all.
+
+int RadiationM1::ImplicitBiCGStab(Real rhsmax) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  int is = indcs.is, ie = indcs.ie;
+  int js = indcs.js, je = indcs.je;
+  int ks = indcs.ks, ke = indcs.ke;
+  int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto iw_ = iw;
+  const Real tol = impl_lin_tol;
+  const Real bscale = fmax(rhsmax, 1.0e-300);
+  Kokkos::MDRangePolicy<Kokkos::Rank<4>> rng(DevExeSpace(), {0,ks,js,is},
+                                             {nmb1+1,ke+1,je+1,ie+1});
+
+  // x0 = the Picard iterate; r0 = b - A x0
+  par_for("m1_impl_bcg_x0", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    iw_(m,M1_IW_KX,k,j,i) = iw_(m,M1_IW_EP,k,j,i);
+  });
+  ImplicitApplyOp(M1_IW_KX, M1_IW_KV);
+  par_for("m1_impl_bcg_r0", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    Real r = iw_(m,M1_IW_KB,k,j,i) - iw_(m,M1_IW_KV,k,j,i);
+    iw_(m,M1_IW_KR,k,j,i) = r;
+    iw_(m,M1_IW_KRH,k,j,i) = r;
+    iw_(m,M1_IW_KP,k,j,i) = 0.0;
+    iw_(m,M1_IW_KV,k,j,i) = 0.0;
+  });
+  Real rnorm = 0.0;
+  Kokkos::parallel_reduce("m1_impl_bcg_rn", rng,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &lmax) {
+    Real r = fabs(iw_(m,M1_IW_KR,k,j,i));
+    lmax = (r > lmax) ? r : lmax;
+  }, Kokkos::Max<Real>(rnorm));
+  M1GlobalMax(rnorm);
+  bcg_nred += 1.0;
+
+  int nit = 0;
+  int nrestart = 0;
+  Real rho = 1.0, alpha = 1.0, omega = 1.0;
+  bool done = (rnorm/bscale < tol);
+  bool fell_back = false;
+  while (!done && nit < impl_lin_maxit) {
+    ++nit;
+    // rho_new = (rhat, r)
+    Real rhon = 0.0;
+    Kokkos::parallel_reduce("m1_impl_bcg_rho", rng,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &ls) {
+      ls += iw_(m,M1_IW_KRH,k,j,i)*iw_(m,M1_IW_KR,k,j,i);
+    }, rhon);
+    Real dummy = 0.0;
+    M1GlobalSum2(rhon, dummy);
+    bcg_nred += 1.0;
+    bool breakdown = !(fabs(rhon) > M1_BCG_EPS) || !(fabs(omega) > M1_BCG_EPS);
+    if (!breakdown) {
+      Real beta = (rhon/rho)*(alpha/omega);
+      const Real bt = beta, om = omega;
+      par_for("m1_impl_bcg_p", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        iw_(m,M1_IW_KP,k,j,i) = iw_(m,M1_IW_KR,k,j,i)
+            + bt*(iw_(m,M1_IW_KP,k,j,i) - om*iw_(m,M1_IW_KV,k,j,i));
+      });
+      ImplicitPrecond(M1_IW_KP, M1_IW_KY);
+      ImplicitApplyOp(M1_IW_KY, M1_IW_KV);
+      Real rv = 0.0;
+      Kokkos::parallel_reduce("m1_impl_bcg_rv", rng,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &ls) {
+        ls += iw_(m,M1_IW_KRH,k,j,i)*iw_(m,M1_IW_KV,k,j,i);
+      }, rv);
+      Real d2 = 0.0;
+      M1GlobalSum2(rv, d2);
+      bcg_nred += 1.0;
+      if (!(fabs(rv) > M1_BCG_EPS)) {
+        breakdown = true;
+      } else {
+        alpha = rhon/rv;
+        const Real al = alpha;
+        par_for("m1_impl_bcg_s", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+        KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+          iw_(m,M1_IW_KS,k,j,i) = iw_(m,M1_IW_KR,k,j,i) - al*iw_(m,M1_IW_KV,k,j,i);
+        });
+        ImplicitPrecond(M1_IW_KS, M1_IW_KZ);
+        ImplicitApplyOp(M1_IW_KZ, M1_IW_KTT);
+        Real ts = 0.0, tt2 = 0.0;
+        Kokkos::parallel_reduce("m1_impl_bcg_ts", rng,
+        KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &ls) {
+          ls += iw_(m,M1_IW_KTT,k,j,i)*iw_(m,M1_IW_KS,k,j,i);
+        }, ts);
+        Kokkos::parallel_reduce("m1_impl_bcg_tt", rng,
+        KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &ls) {
+          ls += iw_(m,M1_IW_KTT,k,j,i)*iw_(m,M1_IW_KTT,k,j,i);
+        }, tt2);
+        M1GlobalSum2(ts, tt2);
+        bcg_nred += 1.0;
+        omega = (tt2 > 0.0) ? (ts/tt2) : 0.0;
+        const Real ow = omega;
+        par_for("m1_impl_bcg_upd", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+        KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+          iw_(m,M1_IW_KX,k,j,i) += al*iw_(m,M1_IW_KY,k,j,i) + ow*iw_(m,M1_IW_KZ,k,j,i);
+          iw_(m,M1_IW_KR,k,j,i) = iw_(m,M1_IW_KS,k,j,i) - ow*iw_(m,M1_IW_KTT,k,j,i);
+        });
+        rho = rhon;
+        rnorm = 0.0;
+        Kokkos::parallel_reduce("m1_impl_bcg_rn2", rng,
+        KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &lmax) {
+          Real r = fabs(iw_(m,M1_IW_KR,k,j,i));
+          lmax = (r > lmax) ? r : lmax;
+        }, Kokkos::Max<Real>(rnorm));
+        M1GlobalMax(rnorm);
+        bcg_nred += 1.0;
+        if (rnorm/bscale < tol) {
+          // the TRUE residual, which is what the tolerance is about
+          ImplicitApplyOp(M1_IW_KX, M1_IW_KTT);
+          par_for("m1_impl_bcg_true", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+          KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+            iw_(m,M1_IW_KR,k,j,i) = iw_(m,M1_IW_KB,k,j,i) - iw_(m,M1_IW_KTT,k,j,i);
+          });
+          Real rt = 0.0;
+          Kokkos::parallel_reduce("m1_impl_bcg_rnt", rng,
+          KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &lmax) {
+            Real r = fabs(iw_(m,M1_IW_KR,k,j,i));
+            lmax = (r > lmax) ? r : lmax;
+          }, Kokkos::Max<Real>(rt));
+          M1GlobalMax(rt);
+          bcg_nred += 1.0;
+          if (rt/bscale < tol) {
+            done = true;
+          } else {
+            breakdown = true;   // restart the recurrence from the true residual
+          }
+        }
+        if (!done && !(fabs(omega) > M1_BCG_EPS)) {breakdown = true;}
+      }
+    }
+    if (breakdown && !done) {
+      ++nrestart;
+      bcg_nbreak += 1.0;
+      if (nrestart > 2) {
+        // FALL BACK: one line-Jacobi update, which is always available -- its right-hand
+        // side is b minus the lagged off-diagonal term, i.e. the M1_IW_TR the assembly
+        // produced, rebuilt here because the preconditioner has overwritten it.
+        fell_back = true;
+        break;
+      }
+      ImplicitApplyOp(M1_IW_KX, M1_IW_KTT);
+      par_for("m1_impl_bcg_rs", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        Real r = iw_(m,M1_IW_KB,k,j,i) - iw_(m,M1_IW_KTT,k,j,i);
+        iw_(m,M1_IW_KR,k,j,i) = r;
+        iw_(m,M1_IW_KRH,k,j,i) = r;
+        iw_(m,M1_IW_KP,k,j,i) = 0.0;
+        iw_(m,M1_IW_KV,k,j,i) = 0.0;
+      });
+      rho = 1.0;
+      alpha = 1.0;
+      omega = 1.0;
+    }
+  }
+
+  if (fell_back) {
+    bcg_nfall += 1.0;
+    const bool thrd = trans_x3;
+    par_for("m1_impl_bcg_lj", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      Real r = iw_(m,M1_IW_KB,k,j,i)
+               - iw_(m,M1_IW_CJM,k,j,i)*iw_(m,M1_IW_EP,k,j-1,i)
+               - iw_(m,M1_IW_CJP,k,j,i)*iw_(m,M1_IW_EP,k,j+1,i);
+      if (thrd) {
+        r -= iw_(m,M1_IW_CKM,k,j,i)*iw_(m,M1_IW_EP,k-1,j,i)
+             + iw_(m,M1_IW_CKP,k,j,i)*iw_(m,M1_IW_EP,k+1,j,i);
+      }
+      iw_(m,M1_IW_TR,k,j,i) = r;
+    });
+    ImplicitTridiagSolve();
+  } else {
+    par_for("m1_impl_bcg_out", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      iw_(m,M1_IW_S2,k,j,i) = iw_(m,M1_IW_KX,k,j,i);
+    });
+  }
+  bcg_nsolve += 1.0;
+  bcg_itsum += static_cast<Real>(nit);
+  bcg_itmax = std::max(bcg_itmax, static_cast<Real>(nit));
+  return nit;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::SetImplicitX1BC
 //! \brief let a problem generator name the x1 boundary types (and the imposed fluxes) of
 //! the implicit solve, for a mesh whose x1 flags are `user` and whose own BC routine the
@@ -1070,9 +1550,23 @@ void RadiationM1::ImplicitReport() {
             << " NON-CONVERGED=" << impl_nfail << std::endl;
   if (trans_on) {
     Real lmean = (impl_nstep > 0.0) ? (impl_linsum/impl_nstep) : 0.0;
-    std::cout << "<rad_m1> implicit transverse (line_jacobi): final 7-point linear "
+    std::cout << "<rad_m1> implicit transverse ("
+              << (bicg_on ? "bicgstab" : "line_jacobi")
+              << "): final 7-point linear "
               << "residual mean=" << lmean << " max=" << impl_linmax
               << " tol=" << impl_lin_tol << std::endl;
+  }
+  if (bicg_on) {
+    Real imean = (bcg_nsolve > 0.0) ? (bcg_itsum/bcg_nsolve) : 0.0;
+    Real rper = (bcg_itsum > 0.0) ? (bcg_nred/bcg_itsum) : 0.0;
+    std::cout << "<rad_m1> bicgstab: outer passes=" << impl_itsum
+              << " linear solves=" << bcg_nsolve
+              << " inner iterations mean=" << imean << " max=" << bcg_itmax
+              << " total=" << bcg_itsum << std::endl;
+    std::cout << "<rad_m1> bicgstab: breakdowns=" << bcg_nbreak
+              << " line_jacobi fallbacks=" << bcg_nfall
+              << " global reductions=" << bcg_nred
+              << " (" << rper << " per inner iteration)" << std::endl;
   }
 }
 
@@ -1115,6 +1609,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   // configuration and for a 1-D mesh, so those paths keep their arithmetic bit for bit.
   const bool trans = trans_on;
   const bool thrd = trans_x3;
+  // MILESTONE 3b phase C: implicit_solver = bicgstab.  False for line_jacobi and for
+  // every 3a/3a2/3c configuration, so those paths keep their arithmetic bit for bit.
+  const bool bicg = bicg_on;
   auto f2_ = f0x2;
   auto f3_ = f0x3;
   if (trans) {
@@ -1732,6 +2229,14 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         bb = 1.0;
         cc = 0.0;
         rr = iw_(m,M1_IW_EN,k,j,i);
+        // the WHOLE row is replaced, transverse couplings included, or the BiCGStab
+        // operator would carry an off-diagonal the preconditioner's row does not have.
+        if (bicg) {
+          iw_(m,M1_IW_CJM,k,j,i) = 0.0;
+          iw_(m,M1_IW_CJP,k,j,i) = 0.0;
+          iw_(m,M1_IW_CKM,k,j,i) = 0.0;
+          iw_(m,M1_IW_CKP,k,j,i) = 0.0;
+        }
       }
       iw_(m,M1_IW_TA,k,j,i) = aa;
       iw_(m,M1_IW_TB,k,j,i) = bb;
@@ -1739,66 +2244,30 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       iw_(m,M1_IW_TR,k,j,i) = rr;
     });
 
-    // (e) one Thomas sweep per column (cyclic: Sherman-Morrison).  When the column
-    // spans several MeshBlocks the rows are gathered onto its root block and swept there
-    // by the identical serial recurrence (ImplicitGatherSolve).
-    if (nblkx1 > 1) {
-      ImplicitGatherSolve();
+    // (e) SOLVE the linear system of this pass.  With implicit_solver = line_jacobi
+    // that is ONE x1 line solve with the lagged transverse term already on the
+    // right-hand side (the outer Picard loop then IS the Jacobi iteration); with
+    // bicgstab the very same system -- the same matrix and the same right-hand side --
+    // is solved to implicit_lin_tol by a Krylov iteration preconditioned by that line
+    // solve, and the outer loop is left with the nonlinearity alone.
+    if (bicg) {
+      // b = TR + sum_nb C_nb E^k_nb: undo the move of the lagged off-diagonal term to
+      // the right-hand side, so that the operator and the right-hand side describe the
+      // same system.  EP still holds E^k here, ghosts included.
+      par_for("m1_impl_rhs", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        Real b = iw_(m,M1_IW_TR,k,j,i)
+                 + iw_(m,M1_IW_CJM,k,j,i)*iw_(m,M1_IW_EP,k,j-1,i)
+                 + iw_(m,M1_IW_CJP,k,j,i)*iw_(m,M1_IW_EP,k,j+1,i);
+        if (thrd) {
+          b += iw_(m,M1_IW_CKM,k,j,i)*iw_(m,M1_IW_EP,k-1,j,i)
+               + iw_(m,M1_IW_CKP,k,j,i)*iw_(m,M1_IW_EP,k+1,j,i);
+        }
+        iw_(m,M1_IW_KB,k,j,i) = b;
+      });
+      ImplicitBiCGStab(rhsmax);
     } else {
-    par_for("m1_impl_thomas", DevExeSpace(), 0, nmb1, ks, ke, js, je,
-    KOKKOS_LAMBDA(const int m, const int k, const int j) {
-      if (!cyclic) {
-        Real bet = iw_(m,M1_IW_TB,k,j,is);
-        iw_(m,M1_IW_S2,k,j,is) = iw_(m,M1_IW_TR,k,j,is)/bet;
-        for (int i=is+1; i<=ie; ++i) {
-          iw_(m,M1_IW_S1,k,j,i) = iw_(m,M1_IW_TC,k,j,i-1)/bet;
-          bet = iw_(m,M1_IW_TB,k,j,i) - iw_(m,M1_IW_TA,k,j,i)*iw_(m,M1_IW_S1,k,j,i);
-          iw_(m,M1_IW_S2,k,j,i) = (iw_(m,M1_IW_TR,k,j,i)
-                                   - iw_(m,M1_IW_TA,k,j,i)*iw_(m,M1_IW_S2,k,j,i-1))/bet;
-        }
-        for (int i=ie-1; i>=is; --i) {
-          iw_(m,M1_IW_S2,k,j,i) -= iw_(m,M1_IW_S1,k,j,i+1)*iw_(m,M1_IW_S2,k,j,i+1);
-        }
-      } else {
-        // cyclic tridiagonal, Sherman-Morrison (Press et al. `cyclic`).  alpha is the
-        // BOTTOM-LEFT corner, c(ie) (row ie coupling to cell is), and beta the TOP-RIGHT
-        // one, a(is) (row is coupling to cell ie) -- that is the convention u and v below
-        // are built for, and swapping them is invisible on a symmetric matrix but wrong
-        // as soon as upwind advection makes the two off-diagonals differ: it produced a
-        // spurious dipole across the seam (-14 % in the first cell, +11 % in the last)
-        // on the very first step of T4b, where the exact answer is "nothing moves".
-        Real alpha = iw_(m,M1_IW_TC,k,j,ie);
-        Real beta = iw_(m,M1_IW_TA,k,j,is);
-        Real gam = -iw_(m,M1_IW_TB,k,j,is);
-        Real bb0 = iw_(m,M1_IW_TB,k,j,is) - gam;
-        Real bbn = iw_(m,M1_IW_TB,k,j,ie) - alpha*beta/gam;
-        // solve A' y = r and A' z = u with u = (gam,0,...,0,alpha)
-        Real bet = bb0;
-        iw_(m,M1_IW_S2,k,j,is) = iw_(m,M1_IW_TR,k,j,is)/bet;
-        iw_(m,M1_IW_S3,k,j,is) = gam/bet;
-        for (int i=is+1; i<=ie; ++i) {
-          Real bd = (i == ie) ? bbn : iw_(m,M1_IW_TB,k,j,i);
-          iw_(m,M1_IW_S1,k,j,i) = iw_(m,M1_IW_TC,k,j,i-1)/bet;
-          bet = bd - iw_(m,M1_IW_TA,k,j,i)*iw_(m,M1_IW_S1,k,j,i);
-          iw_(m,M1_IW_S2,k,j,i) = (iw_(m,M1_IW_TR,k,j,i)
-                                   - iw_(m,M1_IW_TA,k,j,i)*iw_(m,M1_IW_S2,k,j,i-1))/bet;
-          Real uu = (i == ie) ? alpha : 0.0;
-          iw_(m,M1_IW_S3,k,j,i) = (uu
-                                   - iw_(m,M1_IW_TA,k,j,i)*iw_(m,M1_IW_S3,k,j,i-1))/bet;
-        }
-        for (int i=ie-1; i>=is; --i) {
-          iw_(m,M1_IW_S2,k,j,i) -= iw_(m,M1_IW_S1,k,j,i+1)*iw_(m,M1_IW_S2,k,j,i+1);
-          iw_(m,M1_IW_S3,k,j,i) -= iw_(m,M1_IW_S1,k,j,i+1)*iw_(m,M1_IW_S3,k,j,i+1);
-        }
-        // x = y - z (v.y)/(1 + v.z),  v = (1,0,...,0,beta/gam)
-        Real vy = iw_(m,M1_IW_S2,k,j,is) + (beta/gam)*iw_(m,M1_IW_S2,k,j,ie);
-        Real vz = iw_(m,M1_IW_S3,k,j,is) + (beta/gam)*iw_(m,M1_IW_S3,k,j,ie);
-        Real fac = vy/(1.0 + vz);
-        for (int i=is; i<=ie; ++i) {
-          iw_(m,M1_IW_S2,k,j,i) -= fac*iw_(m,M1_IW_S3,k,j,i);
-        }
-      }
-    });
+      ImplicitTridiagSolve();
     }
 
     // (f) accept E', solve for T' and measure the Picard residual

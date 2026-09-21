@@ -908,3 +908,111 @@ is also the case for a Krylov wrapper (the optional `bicgstab`, not implemented)
 `implicit_solver = bicgstab` (fatal); the asymptotic-preserving transverse fluxes;
 Marshak / imposed-flux transverse boundaries; SMR/AMR; GPU; the 2-D He slab (G7 of the
 brief) and therefore any statement about `box_convection`'s M1 wiring in 2-D.
+
+## 12. Findings of 3b phase C (2026-09-21; supersede sect. 4 and 8-11 where they differ)
+
+Phase C ships `<rad_m1>/implicit_solver = bicgstab`, the Krylov wrapper sect. 11 named as
+the remedy for the 131-pass line-Jacobi cases, and takes the first look at the 2-D He
+slab (G7 of the phase-B brief).  Gate tables and the exact commands:
+`tests_m1/runs_3b4/RESULTS.txt` and `runs_3b4/run_gates_3b4.py`.
+
+```
+<rad_m1>/implicit_solver  = line_jacobi | bicgstab
+          implicit_lin_tol   = 1e-10   the max-norm TRUE residual of the 7-point system,
+                                       relative to the max norm of its right-hand side
+          implicit_lin_maxit = 200     the BiCGStab iteration cap (new)
+```
+
+### The system the two solvers share
+
+The Picard pass already assembles the row
+`TA E_{i-1} + TB E_i + TC E_{i+1} = TR`, with `TB` carrying the transverse DIAGONAL
+`M1_IW_TDIA` and `TR` carrying the lagged off-diagonal term `M1_IW_TRHS`.  Phase C stores,
+in the same kernel, the four (six in 3-D) transverse OFF-DIAGONAL coefficients
+`M1_IW_CJM..CKP` that `TRHS` was built from, so the full row is
+
+```
+A E = tridiag(TA,TB,TC) E + CJM E_{j-1} + CJP E_{j+1} + CKM E_{k-1} + CKP E_{k+1}
+b   = TR + sum_nb C_nb E^k_nb
+```
+
+and ONE line-Jacobi pass is exactly `E <- M^{-1}(b - sum_nb C_nb E)` with
+`M = tridiag(TA,TB,TC)`.  The two solvers therefore have the SAME matrix, the SAME
+right-hand side and the SAME fixed point; only the number of passes differs, which is
+what makes the gate comparison meaningful.  `b` is rebuilt from `TR` rather than
+accumulated separately, so the identity holds by construction and not by agreement of two
+derivations.
+
+The off-diagonal Eddington divergence `sum_{e != d} d_e P_de`, the `F0^n` memory term and
+`g0` stay FROZEN inside a pass (they are part of the nonlinearity the outer loop handles),
+exactly as line Jacobi freezes them.
+
+### The solver
+
+Matrix-free BiCGStab, RIGHT-preconditioned by the exact x1 line solve (the phase-B Thomas
+/ cyclic-Thomas / gathered-stack sweep, now extracted as `ImplicitTridiagSolve` and called
+from both solvers -- no arithmetic changed, see the regression below).  Per inner
+iteration: two preconditioner applications, two operator applications (one halo exchange
+of one Krylov vector each, through a second `MeshBoundaryValuesCC` on a 1-variable scratch
+array), and **three global reductions** (`rhat.r`, `rhat.v`, `t.s` with `t.t`), five
+scalars; the measured average is 4.0-4.6 reductions per iteration because the max-norm
+residual check and the occasional true-residual check add one each.
+
+Stopping is on the TRUE residual: the recursive residual is monitored every iteration and,
+when it passes `implicit_lin_tol`, ONE extra operator application checks `max|b - A x|`;
+if the two disagree the recurrence is restarted from the true residual.  Breakdown
+(`|rho|`, `|rhat.v|` or `|omega|` underflowing) restarts once from the current iterate
+with a fresh shadow residual; a third breakdown in one pass falls back to a single
+line-Jacobi update and is counted.  The end-of-run line reports outer passes, linear
+solves, inner iterations mean/max/total, breakdowns, fallbacks and reductions.
+
+MPI: the Krylov halo is a second exchange object sharing the tag space with the phase-B
+one.  It is safe because the two are used strictly sequentially and every rank issues the
+identical SEQUENCE of exchanges -- the Picard count, the BiCGStab count and every
+breakdown decision come from global reductions -- so MPI's non-overtaking guarantee keeps
+the streams apart.  This was reasoned, not measured: all of phase C is serial CPU.
+
+### Gates (serial CPU, `build_cpu_m1`), numbers in `tests_m1/runs_3b4/RESULTS.txt`
+
+* **G1/G2 accuracy.**  `d(sigma^2)/dt / 2D` and the isotropy are the phase-B numbers to
+  six digits in every measurable 2-D and 3-D case at `tau_cell` 10 and 1e3 and
+  `implicit_cfl` 1 / 1e2 / 1e4, and with `dx2 = 4 dx1` and `dx2 = dx1/4`.  The isotropy
+  spread is 1e-9 to 1e-7, i.e. the two solvers differ only at the linear tolerance.
+* **Iterations.**  The 131-pass line-Jacobi cases become 5-7 OUTER passes with 5-6 inner
+  iterations each; the cheap cases (3-8 passes) become 3-5 outer passes with 0.3-1 inner
+  iterations, because the transverse system is then already solved by the first
+  preconditioner application.  Wall clock per step improves 7.7x on the expensive 2-D case
+  and is a wash (+-10 %) on the cheap ones.
+* **G4 decomposition** (2-D, 1 vs 2x2 MeshBlocks, `implicit_partition = gather`) and
+  **G5 restart** on a single block: see RESULTS.txt.
+* **G6 regression.**  `tests_gate_merge/postmerge.sh`: box G1 modes 3 and 0, **10/10 files
+  IDENTICAL**; the 1-D He column reproduces the reference line exactly (Picard mean
+  11.70892, max 23, `V1max` 1.8343925542664529e4, `F1top/Fin` 1.0000097,
+  `F1bot/Fin` 0.9998352).  Extracting the line solve into its own method changed nothing.
+
+### The 2-D He slab (G7 of the phase-B brief): what it showed
+
+`tests_m1/runs_3b4/he_slab_m1_2d.athinput` is the 1-D column of `runs_3a` widened to
+nx2 = 32 cells of the production width `dx2 = 4 dz`, x2 periodic, `transport = implicit`,
+true `c`.  **`box_convection` needed no fix**: its M1 wiring (the `a_rad_ref` fill, the
+IC reader, the x1 ghost fill and the six user-history columns) is already written over the
+full (k,j,i) range and the global-plane history of phase A1 is decomposition-safe.
+
+* **STATIC (no seed).**  `line_jacobi` does NOT converge here: the transverse diffusion
+  CFL in the optically thin top of the slab is enormous, and the final 7-point residual
+  sits at ~3e1 after the 200-pass cap on EVERY step.  `bicgstab` converges on every step
+  (final residual ~1e-10) and is ~1.45x faster in wall clock at the same time.  The slab
+  is as quiet as the 1-D column (numbers in RESULTS.txt).
+* **SEEDED.**  With any horizontal structure at all the OUTER loop diverges: the lagged
+  off-diagonal Eddington terms of the optically thin top are amplified by `(c dt/dx)^2`
+  (here 7e3), and the Picard iteration on them has no fixed point.  BiCGStab solves each
+  frozen linear system faithfully -- that is not the failure -- but the outer residual
+  grows to ~2e3 and the pass count pins at `implicit_maxit`.  **This, not the transverse
+  diffusion, is what blocks a production 3-D run**, and phase C does not fix it.
+
+### What is NOT done
+
+The lagged off-diagonal Eddington coupling in optically thin cells (the seeded-slab
+blocker above); the asymptotic-preserving transverse fluxes; Marshak / imposed-flux
+transverse boundaries; SMR/AMR; GPU; MPI (reasoned, not measured); a coarse space for the
+preconditioner, which sect. 4 expects to matter once the MeshBlock count grows.

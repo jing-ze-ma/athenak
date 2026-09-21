@@ -1,0 +1,39 @@
+
+=== G1  isotropy and rate, bicgstab vs line_jacobi ===
+g1_2d_tau10_cfl1/line_jacobi x=0.996514 y=0.996514 iso=0.000e+00 PASS line_jacobi outer=7.923077e+00/8.000000e+00 inner=-/- red/it=- brk=-  0.047 s/step rc=0
+g1_2d_tau10_cfl1/bicgstab    x=0.996514 y=0.996514 iso=1.920e-09 PASS bicgstab    outer=5.000000e+00/5.000000e+00 inner=1.200000e+00/3.000000e+00 red/it=5.487179e+00 brk=0.000000e+00  0.040 s/step rc=0
+g1_2d_tau10_cfl100/line_jacobi x=0.995494 y=0.995494 iso=8.817e-10 PASS line_jacobi outer=1.310833e+02/1.340000e+02 inner=-/- red/it=- brk=-  0.694 s/step rc=0
+g1_2d_tau10_cfl100/bicgstab  x=0.995494 y=0.995494 iso=9.185e-10 PASS bicgstab    outer=7.083333e+00/8.000000e+00 inner=6.423529e+00/2.600000e+01 red/it=4.269231e+00 brk=0.000000e+00  0.090 s/step rc=0
+g1_2d_tau10_cfl10000                                       NOT MEASURABLE (the diffusion length of 12 steps exceeds the box)
+g1_2d_tau1000_cfl1/line_jacobi x=0.999999 y=0.999999 iso=0.000e+00 PASS line_jacobi outer=3.000000e+00/3.000000e+00 inner=-/- red/it=- brk=-  0.020 s/step rc=0
+g1_2d_tau1000_cfl1/bicgstab  x=0.999999 y=0.999999 iso=1.349e-09 PASS bicgstab    outer=3.000000e+00/3.000000e+00 inner=3.333333e-01/1.000000e+00 red/it=8.000000e+00 brk=0.000000e+00  0.022 s/step rc=0
+g1_2d_tau1000_cfl100/line_jacobi x=1.000000 y=1.000000 iso=5.148e-10 PASS line_jacobi outer=7.923077e+00/8.000000e+00 inner=-/- red/it=- brk=-  0.047 s/step rc=0
+g1_2d_tau1000_cfl100/bicgstab x=1.000000 y=1.000000 iso=1.050e-09 PASS bicgstab    outer=3.000000e+00/3.000000e+00 inner=1.000000e+00/3.000000e+00 red/it=5.358974e+00 brk=0.000000e+00  0.026 s/step rc=0
+g1_2d_tau1000_cfl10000/line_jacobi x=0.995500 y=0.995500 iso=5.175e-10 PASS line_jacobi outer=1.312500e+02/1.350000e+02 inner=-/- red/it=- brk=-  0.694 s/step rc=0
+g1_2d_tau1000_cfl10000/bicgstab x=0.995500 y=0.995500 iso=6.824e-10 PASS bicgstab    outer=5.000000e+00/5.000000e+00 inner=4.816667e+00/2.600000e+01 red/it=4.325260e+00 brk=0.000000e+00  0.057 s/step rc=0
+g1_3d_tau10_cfl1/line_jacobi x=0.996434 y=0.996434 z=0.996434 iso=1.743e-09 PASS line_jacobi outer=1.000000e+01/1.000000e+01 inner=-/- red/it=- brk=-  0.597 s/step rc=0
+g1_3d_tau10_cfl1/bicgstab    x=0.996434 y=0.996434 z=0.996434 iso=2.513e-09 PASS bicgstab    outer=6.000000e+00/6.000000e+00 inner=1.680556e+00/4.000000e+00 red/it=5.090909e+00 brk=0.000000e+00  0.496 s/step rc=0
+g1_3d_tau10_cfl100                                         NOT MEASURABLE (the diffusion length of 12 steps exceeds the box)
+g1_3d_tau10_cfl10000                                       NOT MEASURABLE (the diffusion length of 12 steps exceeds the box)
+g1_3d_tau1000_cfl1/line_jacobi x=0.999998 y=0.999998 z=0.999998 iso=0.000e+00 PASS line_jacobi outer=3.996855e+00/4.000000e+00 inner=-/- red/it=- brk=-  0.262 s/step rc=0
+g1_3d_tau1000_cfl1/bicgstab  x=0.999998 y=0.999998 z=0.999998 iso=2.817e-08 PASS bicgstab    outer=3.000000e+00/3.000000e+00 inner=3.333333e-01/1.000000e+00 red/it=8.000000e+00 brk=0.000000e+00  0.232 s/step rc=0
+g1_3d_tau1000_cfl100/line_jacobi x=0.999999 y=0.999999 z=0.999999 iso=1.158e-09 PASS line_jacobi outer=1.000000e+01/1.000000e+01 inner=-/- red/it=- brk=-  0.597 s/step rc=0
+g1_3d_tau1000_cfl100/bicgstab x=0.999999 y=0.999999 z=0.999999 iso=0.000e+00 PASS bicgstab    outer=4.000000e+00/4.000000e+00 inner=1.500000e+00/4.000000e+00 red/it=5.166667e+00 brk=0.000000e+00  0.340 s/step rc=0
+g1_3d_tau1000_cfl10000                                     NOT MEASURABLE (the diffusion length of 12 steps exceeds the box)
+
+=== G2  anisotropic cells, dx2 = 4 dx1 and dx2 = dx1/4 ===
+g2_dx2_4dx1/line_jacobi      x=0.999999 y=0.999999 iso=1.646e-07 PASS line_jacobi outer=3.000000e+00/3.000000e+00 inner=-/- red/it=- brk=-  0.006 s/step rc=0
+g2_dx2_4dx1/bicgstab         x=0.999999 y=0.999999 iso=1.596e-07 PASS bicgstab    outer=3.000000e+00/3.000000e+00 inner=3.333333e-01/1.000000e+00 red/it=8.000000e+00 brk=0.000000e+00  0.006 s/step rc=0
+RUN FAILED                                                 line_jacobi outer=None/None inner=-/- red/it=- brk=-  223.626 s/step rc=-15
+RUN FAILED                                                 bicgstab    outer=None/None inner=-/- red/it=- brk=-  69.289 s/step rc=-15
+
+=== G3  bicgstab == line_jacobi on the SAME 2-D problem ===
+g3 cfl=1  max relative difference of the final (E,F1,F2) slice = 5.252e-09
+g3 cfl=10000  max relative difference of the final (E,F1,F2) slice = 1.298e-10
+
+=== G4  MeshBlock decomposition in 2-D, bicgstab ===
+g4a  maxdiff(single vs split) = 6.834e-16   dEtot/Etot: single -1.240e-08, split -1.240e-08   outer 5.000000e+00 / 5.000000e+00
+g4b  maxdiff(single vs split) = 6.075e-16   dEtot/Etot: single -1.240e-08, split -1.240e-08   outer 5.000000e+00 / 5.000000e+00
+
+=== G5  restart on a SINGLE MeshBlock, bicgstab ===
+g5  restart from m1_thick_pulse.00001.rst (rc=0): final slice BYTE-IDENTICAL

@@ -1,0 +1,228 @@
+MILESTONE 3b PHASE C -- <rad_m1>/implicit_solver = bicgstab, the matrix-free Krylov
+wrapper of the 7-point implicit transport, and the first look at the 2-D He slab.
+Serial CPU, build_cpu_m1 (thick-pulse gates) and build_cpu_box (He slab), 2026-09-21.
+Design note: docs/dev/rad_m1_implicit_design.md sect. 12.
+
+Drivers:  tests_m1/runs_3b4/run_gates_3b4.py  [g1 g2 g3 g4 g5 g6]
+          tests_m1/runs_3b4/heslab.py         (the He slab JSON record)
+Inputs:   tests_m1/runs_3b4/pulse_md.athinput   (= runs_3b3/pulse_md.athinput, with
+            implicit_solver / implicit_lin_maxit named so they can be overridden)
+          tests_m1/runs_3b4/pulse_md3.athinput  (the same, plus <output3>/slice_x3:
+            a formatted table needs BOTH slice planes in 3-D and refuses the extra one
+            in 2-D, which is why runs_3b3 could not run G3-G5 on a 3-D mesh)
+          tests_m1/runs_3b4/he_slab_m1_2d.athinput  (the 2-D He slab)
+Analysis: tests_m1/runs_3b3/pulse_md.py (unchanged)
+Raw logs: gates_g1_g2_g3_g4_g5.txt, gates_g6.txt
+JSON:     tests_m1/plots/impl3b4_iters.json, impl3b4_heslab.json
+Every case had its dumps deleted as soon as it was measured (viper inode quota).
+
+WHAT bicgstab SOLVES.  Exactly the system line Jacobi iterates on: the assembled row
+(TA,TB,TC,TR) of the Picard pass plus the four/six transverse off-diagonal coefficients
+that TR's lagged term was built from, with b = TR + sum_nb C_nb E^k_nb.  One line-Jacobi
+pass IS x <- M^{-1}(b - sum C x) with M the x1 line solve, so the two solvers have the
+same matrix, the same right-hand side and the same fixed point.  bicgstab is right-
+preconditioned by that same line solve (Thomas / cyclic Thomas / gathered stack), stops
+on the TRUE residual max|b - A x| / max|b| < implicit_lin_tol, and reports outer passes,
+inner iterations, breakdowns, fallbacks and global reductions at the end of the run.
+
+
+================================================================================
+G1 / G2  ACCURACY AND ITERATION COUNTS                                     PASS
+================================================================================
+The thick pulse of runs_3b3: pure scattering, static medium, periodic, tau_cell = 10 and
+1e3, implicit_cfl 1 / 1e2 / 1e4, 2-D 64^2 and 3-D 32^3; G2 adds dx2 = 4 dx1 (the He box
+ratio) and dx2 = dx1/4.  The rate is d(sigma^2)/dt / 2D per axis, `iso` the spread
+between axes.  Full lines in gates_g1_g2_g3_g4_g5.txt; the table below is their digest.
+
+case                     rate (both)   iso(lj/bcg)   outer lj -> bcg   inner  s/step lj -> bcg
+g1_2d_tau10_cfl1         0.996514      0e0 / 1.9e-9     7.9 ->  5.0    1.2/3    0.047 -> 0.040
+g1_2d_tau10_cfl100       0.995494      8.8e-10/9.2e-10  131 ->  7.1    6.4/26   0.694 -> 0.090
+g1_2d_tau10_cfl10000     NOT MEASURABLE (the diffusion length of 12 steps exceeds the box)
+g1_2d_tau1000_cfl1       0.999999      0e0 / 1.3e-9     3.0 ->  3.0    0.3/1    0.020 -> 0.022
+g1_2d_tau1000_cfl100     1.000000      5.1e-10/1.0e-9   7.9 ->  3.0    1.0/3    0.047 -> 0.026
+g1_2d_tau1000_cfl10000   0.995500      5.2e-10/6.8e-10  131 ->  5.0    4.8/26   0.694 -> 0.057
+g1_3d_tau10_cfl1         0.996434      1.7e-9 / 2.5e-9   10 ->  6.0    1.7/4    0.597 -> 0.496
+g1_3d_tau1000_cfl1       0.999998      0e0 / 2.8e-8     4.0 ->  3.0    0.3/1    0.262 -> 0.232
+g1_3d_tau1000_cfl100     0.999999      1.2e-9 / 0e0      10 ->  4.0    1.5/4    0.597 -> 0.340
+g2_dx2_4dx1              0.999999      1.6e-7 / 1.6e-7  3.0 ->  3.0    0.3/1    0.006 -> 0.006
+g2_dx2_dx1_4             0.999999      2.8e-8 / 2.9e-8  4.0 ->  3.0    0.3/1    0.096 -> 0.085
+   (the g2_dx2_dx1_4 line is from gates_g1_g2.txt, the first pass of the driver; in the
+    second pass both of its runs were killed by hand -- the node had slowed by a factor
+    ~20 and the case is 1270 steps on 64 x 256 -- and appear as RUN FAILED rc=-15 in
+    gates_g1_g2_g3_g4_g5.txt.  Nothing else in that file was interrupted.)
+
+  * the RATE is bit-for-bit the same printed number under both solvers in every case:
+    the answer does not depend on how the linear system is solved, which is the point.
+  * the ISOTROPY is 1e-9 to 1e-7 under both; where line Jacobi prints 0 exactly and
+    bicgstab does not, the two directions differ only by where each stops.
+  * THE 131-PASS CASES (the reason phase C exists) become 5-7 outer passes of 5-6 inner
+    iterations: 7.7x less wall clock per step at tau_cell 1e3 / implicit_cfl 1e4 and
+    tau_cell 10 / implicit_cfl 1e2.
+  * the CHEAP cases are a wash (+-10 %): the transverse system is then already solved by
+    the first preconditioner application and BiCGStab takes 0.3 iterations on average.
+  * GLOBAL REDUCTIONS: 3 per inner iteration by construction (rhat.r, rhat.v, and
+    t.s together with t.t; five scalars), measured 4.0-8.0 per iteration because the
+    max-norm residual check and the occasional true-residual check add one each and the
+    per-solve start-up reduction is amortised over very few iterations in the cheap cases.
+  * BREAKDOWNS: zero in every thick-pulse case.
+
+
+================================================================================
+G3  bicgstab == line_jacobi ON THE SAME PROBLEM
+================================================================================
+2-D 64^2, tau_cell = 1e3, implicit_cfl 1 and 1e4, the final double-precision x2 slice.
+  g3 cfl=1      max relative difference of the final (E,F1,F2) slice = 5.252e-09
+  g3 cfl=10000  max relative difference of the final (E,F1,F2) slice = 1.298e-10
+The two solvers are NOT bitwise (they take different arithmetic to the same fixed point);
+5e-9 and 1e-10 of the slice scale is agreement at the solver tolerance, and the looser
+number is the CHEAP case, where BiCGStab stops after its very first preconditioner
+application and line Jacobi takes three passes -- i.e. both are well inside the tolerance
+and the difference is where each stops, not what each converges to.
+
+
+================================================================================
+G4  MeshBlock DECOMPOSITION IN 2-D, bicgstab
+================================================================================
+nx = 64^2, tau_cell = 1e3, implicit_cfl = 1e4 (the expensive case), (a) 1 x 2 blocks with
+periodic x1 and (b) 2 x 2 blocks with REFLECTING x1 and implicit_partition = gather.
+  g4a (1 x 2, periodic x1)  maxdiff = 6.834e-16   dEtot/Etot single -1.240e-08, split
+                            -1.240e-08   outer passes 5 / 5
+  g4b (2 x 2, reflect x1,   maxdiff = 6.075e-16   dEtot/Etot single -1.240e-08, split
+       gather)              -1.240e-08   outer passes 5 / 5
+BITWISE is NOT expected here as it was under line_jacobi: the dot products are Kokkos
+reductions over each rank's own cells, so splitting the domain changes the summation
+ORDER and therefore alpha, beta and omega in the last digits.  Measured, that costs
+6e-16 -- two or three ULP -- and the energy change agrees to all eight printed digits
+between the two decompositions.  dEtot/Etot = -1.24e-8 is the precision of the
+single-precision `bin` writer the sum is taken from, as in 3b3 G4, not a drift.
+
+
+================================================================================
+G5  RESTART, single MeshBlock, bicgstab
+================================================================================
+2-D 64^2, implicit_cfl = 1e4, restarted from the mid-run rst the uninterrupted run wrote.
+BiCGStab adds no persistent state (every Krylov vector is scratch inside one pass), so
+the final double-precision slice must be byte-identical.  Measured:
+  g5  restart from m1_thick_pulse.00001.rst (rc=0): final slice BYTE-IDENTICAL
+
+
+================================================================================
+G6  REGRESSION                                                             PASS
+================================================================================
+tests_gate_merge/postmerge.sh (log: tests_m1/runs_3b4/gates_g6.txt):
+  box G1 mode 3: feczrt.hydro.hst, feczrt.user.hst, column_used.txt, rt_surface.bin,
+                 rt_profile.bin  -- all IDENTICAL   (5/5)
+  box G1 mode 0: the same five                      -- all IDENTICAL   (5/5)  => 10/10
+  1-D He column, transport = implicit_x1, 300 s: exit 0
+     Picard mean 11.70892, max 23, solves 1862, NON-CONVERGED 0
+     V1max      = 1.8343925542664529e4              (reference 1.8343926e4)
+     F1top/Fin  = 2.4752259854942720e15/2.475202e15 = 1.0000097
+     F1bot/Fin  = 2.4747941961720800e15/2.475202e15 = 0.9998352
+
+The x1 line solve was EXTRACTED from the Picard loop into ImplicitTridiagSolve() so that
+BiCGStab can call it as a preconditioner.  The two sweeps are verbatim what ran inline;
+the regression above is the proof that nothing moved.  Everything else new is behind
+`bicg`, which is false for line_jacobi and for every explicit / implicit_x1 run.
+
+Line_jacobi's own 3b3 numbers were re-measured: see the "g6_lj" line of the log
+(2-D, tau_cell 1e3, implicit_cfl 1e4: rate 0.995500, 131 passes -- the runs_3b3 value).
+
+
+================================================================================
+G7  THE 2-D He SLAB                                          PARTIAL -- see below
+================================================================================
+tests_m1/runs_3b4/he_slab_m1_2d.athinput: the 1-D column of runs_3a (84 cells,
+dz = 2.6521941e6 cm, imposed bottom flux 2.475202e15, Marshak top, m1_top_bc = vacuum,
+force_reference = wb_arad, well-balanced Phi_eff, no sponges) widened to nx2 = 32 cells
+of the PRODUCTION width dx2 = 4 dz = 1.0608776e7 cm, x2 periodic, transport = implicit at
+the true speed of light, one MeshBlock, serial.
+
+FIXES NEEDED IN box_convection: NONE.  Its M1 wiring runs in 2-D unchanged -- the
+a_rad_ref fill, the m1_ic_file reader and the x1 ghost fill are all written over the full
+(k,j,i) range, the x1 walls are the only user boundary (x2 is periodic and goes through
+the module's ordinary machinery), and the six user-history columns are the global-plane
+form of phase A1, which is already decomposition- and dimension-safe.  Two nuisances
+found, neither a code bug: (1) <output3> of the 3b3 thick-pulse input is a formatted
+table and needs slice_x3 in 3-D (hence pulse_md3.athinput); (2) vis/python/bin_convert.py
+splits every header line on "=" and unpacks two fields, so an athinput whose <comment>
+line carries two "=" cannot be read back -- the slab's comment line was reworded.
+
+(a) STATIC, no seed, 100 s (621 steps), one MeshBlock, serial:
+
+  quantity                        1-D column x 32      2-D slab, bicgstab    2-D slab, lj
+  max|v1| / v_MLT                 1.056615             1.056615              7.137481
+  max|v2| / v_MLT                 -                    0.000000              0.000000
+  max|v| / c_s                    -                    3.7338e-3             2.5351e-2
+  min E                           -                    1.651243e5            6.328281e4
+  F1top/F_in                      0.99998232           0.99998231            0.34280245
+  F1bot/F_in                      0.99985475           0.99985481            0.99984738
+  outer passes mean/max           11.64 / 23           79.21 / 139           200 / 200
+  inner iterations mean/max       -                    3.41 / 26             -
+  NON-CONVERGED solves            0 of 621             0 of 621              621 of 621
+  final 7-point residual          -                    8.2e-11 (max 1.0e-10) 24.9 (max 105)
+  dt collapses                    0                    0                     0
+  wall clock, 621 steps           9.76 s = 0.0157      830.19 s = 1.337      1237.30 s
+                                  s/step (x32 = 0.503) s/step                = 1.992 s/step
+
+  * THE SLAB IS AS QUIET AS THE COLUMN.  Under bicgstab the three column diagnostics
+    agree with the 1-D column at 100 s to EIGHT digits (V1max 1.9653046506e4 against
+    1.9653046391e4), max|v2| is EXACTLY zero, and max|v|/c_s is 4e-3.  The reference the
+    brief quotes is the 300 s column line (max|v1| 0.99 v_MLT, F1top/Fin 1.0000097,
+    F1bot/Fin 0.9998352); at 100 s the column itself sits at 1.057 v_MLT / 0.99998232 /
+    0.99985475, which is what the slab reproduces.
+  * LINE JACOBI CANNOT DO THIS PROBLEM.  The transverse diffusion CFL in the optically
+    thin top of the slab is enormous, the 200-pass cap is hit on EVERY step, the final
+    7-point residual sits at ~3e1 (i.e. 3e1 times the max norm of the right-hand side)
+    and the answer is garbage: by t = 74 s the emergent flux has fallen to 0.46 F_in and
+    max|v1| has grown to 7.1 v_MLT -- while max|v2| is still exactly 0, so the slab has
+    not gone multi-D, the RADIATION FIELD is simply wrong.  bicgstab is not an
+    optimisation here, it is what
+    makes the problem solvable at all.
+  * COST: the 2-D slab costs 2.66x the 1-D column x 32 per step (1.337 s against
+    0.503 s), and line_jacobi's non-converged 200-pass steps cost 1.49x the bicgstab
+    ones.  A hydro-only reference was NOT measured.
+
+(b) SEEDED -- the honest result: THE OUTER LOOP DIVERGES, and it is not the linear solver.
+
+  Seed keys SET (from bench/hestar_fecz/box_w8/he_box_w8.athinput, with the brief's
+  entropy variable in place of box_w8's v1):
+      problem/vpert      = 1.0e-3      (box_w8's amplitude)
+      problem/vpert_var  = eint        (CZ-confined ENTROPY seed; box_w8 uses v1)
+      problem/vpert_kmin = 4           (box_w8)
+      problem/vpert_kmax = 6           (box_w8)
+      problem/vpert_zlo  = -1.21152e8  (box_w8, tau = 50)
+      problem/vpert_zhi  = -3.84803e7  (box_w8, tau = 5)
+      problem/vpert_nk   = 16          (box_w8)
+      problem/vpert_seed = 1234        (box_w8)
+  A first arm at vpert = 1.0e-2 was abandoned: same behaviour, 3x slower.
+
+  With ANY horizontal structure the Picard loop stops converging.  Measured over the
+  first six steps: outer passes pinned at implicit_maxit = 200 on every step, inner
+  BiCGStab iterations 82.8 mean / 117 max, 24 breakdowns (all recovered by the restart,
+  no line_jacobi fallback), and the final 7-point residual ~2e3 -- i.e. GROWING.  Over
+  the 19-minute arm itself: 200/200 outer passes on every step and, at t = 1.91 s,
+  max|v1| = 442 v_MLT, max|v2| = 247 v_MLT, max|v|/c_s = 6.8, min E on the floor (1e-4),
+  F1top/F_in = 0.636.  The
+  linear solver is doing its job; what has no fixed point is the OUTER iteration on the
+  lagged off-diagonal Eddington terms sum_{e!=d} d_e P_de.  In the optically thin top of
+  the slab those terms are multiplied by (c dt/dx)^2 ~ 7e3 (theta -> 1 there), so a
+  purely explicit lagging of them cannot converge, and the run then walks away: at
+  t = 1.3 s max|v1| is already 4e2 v_MLT.  Wall clock is 11-13 s/step,
+  eight times the static value, because every step runs the full 200 passes.
+
+  In ~19 minutes of wall clock the seeded arm reached t = 1.91 s = 0.004 turnover
+  (H_p/v_MLT = 480 s), so NO growth rate, no F_rad/F_in(z) profile and no velocity
+  structure can be claimed, and none is.  The time series that exist (KE_1, KE_2 and dt
+  against time, and the last maps) are in impl3b4_heslab.json under `seeded`, as a record
+  of the divergence and not as a physical result.
+
+  THIS -- not the transverse diffusion -- IS WHAT BLOCKS A PRODUCTION 3-D RUN.
+
+
+================================================================================
+STYLE
+================================================================================
+cpplint (repo filter, tst/test_suite/style/check_athena_cpp_style.sh): 0 errors in
+src/rad_m1/rad_m1_implicit.cpp, rad_m1_implicit.hpp, rad_m1.cpp, rad_m1.hpp.
+No tabs, no trailing whitespace, all lines <= 90 columns, mode 644.
+flake8 (setup.cfg, 90 columns): clean on tests_m1/runs_3b4/.

@@ -91,6 +91,16 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   trans_on = false;
   trans_x3 = false;
   pbval_th = nullptr;
+  // ---- milestone 3b phase C
+  bicg_on = false;
+  impl_lin_maxit = 200;
+  pbval_kr = nullptr;
+  bcg_nsolve = 0.0;
+  bcg_itsum = 0.0;
+  bcg_itmax = 0.0;
+  bcg_nbreak = 0.0;
+  bcg_nfall = 0.0;
+  bcg_nred = 0.0;
   // ---- end of the 3a hook
   cfl_rad = pin->GetOrAddReal("rad_m1","cfl_rad",0.4);
   e_floor = pin->GetOrAddReal("rad_m1","e_floor",(FLT_MIN));
@@ -494,6 +504,7 @@ RadiationM1::~RadiationM1() {
   ImplicitReport();   // milestone 3a; a no-op in transport = explicit
   delete pbval_u;
   if (pbval_th != nullptr) {delete pbval_th;}
+  if (pbval_kr != nullptr) {delete pbval_kr;}
 }
 
 //----------------------------------------------------------------------------------------

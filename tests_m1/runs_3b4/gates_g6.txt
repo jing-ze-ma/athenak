@@ -1,0 +1,24 @@
+=== G6  regression: tests_gate_merge/postmerge.sh (3b phase C) ===
+m3 feczrt.hydro.hst IDENTICAL
+m3 feczrt.user.hst IDENTICAL
+m3 column_used.txt IDENTICAL
+m3 rt_surface.bin IDENTICAL
+m3 rt_profile.bin IDENTICAL
+m0 feczrt.hydro.hst IDENTICAL
+m0 feczrt.user.hst IDENTICAL
+m0 column_used.txt IDENTICAL
+m0 rt_surface.bin IDENTICAL
+m0 rt_profile.bin IDENTICAL
+hecol exit=0
+particle-updates/cpu_second = 0.000000e+00
+<rad_m1> implicit energy solve: cells=0.000000e+00 iterations mean=0.000000e+00 max=0.000000e+00 FAILURES=0.000000e+00 (no bracket: 0.000000e+00)
+<rad_m1> implicit transport: solves=1.862000e+03 Picard iterations mean=1.170892e+01 max=2.300000e+01 NON-CONVERGED=0.000000e+00
+   3.0000000000000000e+02   9.4621061112889038e-02   2.4752259854942720e+15   2.4752314399981740e+15   2.4747941961720800e+15   1.8343925542664529e+04   3.4872517944132541e+33   1.7291816619490147e-04
+POSTMERGE_DONE
+
+--- implicit_x1 thick pulse, tau_cell 1e3, implicit_cfl 100, central (the 3a/3a2/3b/3c reference) ---
+g6_i1_implicit_x1            x=1.000001 iso=0.000e+00 PASS
+<rad_m1> implicit transport: solves=1.600000e+01 Picard iterations mean=2.000000e+00 max=2.000000e+00 NON-CONVERGED=0.000000e+00
+
+--- line_jacobi 2-D pulse: its 3b3 numbers are reproduced in the G1 table above
+    (g1_2d_tau1000_cfl10000: rate 0.995500, 131.25 passes = the runs_3b3 value)

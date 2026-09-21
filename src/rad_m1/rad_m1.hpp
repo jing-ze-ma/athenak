@@ -309,7 +309,7 @@ class RadiationM1 {
 
   // ---- MILESTONE 3b phase B: transport = implicit, the TRANSVERSE (x2/x3) couplings.
   // All inert with transport = explicit | implicit_x1.
-  int impl_solver;              // M1_ISOLV_*: line_jacobi (bicgstab is a fatal)
+  int impl_solver;              // M1_ISOLV_*: line_jacobi | bicgstab
   Real impl_lin_tol;            // <rad_m1>/implicit_lin_tol: the max-norm residual of the
                                 // FULL 7-point linear system, relative to the right-hand
                                 // side, that the line-Jacobi outer iteration must reach.
@@ -328,6 +328,16 @@ class RadiationM1 {
                                 // machinery
   DvceArray5D<Real> thw_c;      // its (unused) coarse buffer; SMR/AMR is a fatal
   MeshBoundaryValuesCC *pbval_th;  // the exchange object of thw
+
+  // ---- MILESTONE 3b phase C: implicit_solver = bicgstab.  All null under line_jacobi.
+  bool bicg_on;                 // impl_solver == M1_ISOLV_BICGSTAB and trans_on
+  int impl_lin_maxit;           // <rad_m1>/implicit_lin_maxit, the BiCGStab iteration cap
+  DvceArray5D<Real> krw;        // (m,1,k,j,i) scratch: ONE Krylov vector, exchanged with
+                                // the same cell-centred machinery thw uses
+  DvceArray5D<Real> krw_c;      // its (unused) coarse buffer
+  MeshBoundaryValuesCC *pbval_kr;  // the exchange object of krw
+  Real bcg_nsolve, bcg_itsum, bcg_itmax;  // inner-iteration statistics
+  Real bcg_nbreak, bcg_nfall, bcg_nred;   // breakdowns, line-Jacobi fallbacks, reductions
 
   // evolved variables
   DvceArray5D<Real> u0;         // (E, F1, F2, F3)
@@ -399,6 +409,21 @@ class RadiationM1 {
   //! milestone 3b phase B: the lagged transverse (x2/x3) divergence of one Picard pass,
   //! split into its diagonal part (M1_IW_TDIA) and its right-hand side (M1_IW_TRHS)
   void ImplicitTransverseTerms(bool first);
+  //! milestone 3b phase C: the x1 line solve of the assembled rows (M1_IW_TA..TR ->
+  //! M1_IW_S2), Thomas or cyclic Thomas, gathered over the stack when part_nblk > 1.
+  //! It IS the preconditioner of the BiCGStab wrapper and the line-Jacobi pass itself.
+  void ImplicitTridiagSolve();
+  //! milestone 3b phase C: exchange ONE component of iw with all six neighbours
+  void ImplicitKrylovHalo(int comp);
+  //! milestone 3b phase C: y = A x with the frozen 7-point operator (one halo of x)
+  void ImplicitApplyOp(int xc, int yc);
+  //! milestone 3b phase C: z = M^{-1} r, the x1 line solve applied to an arbitrary
+  //! right-hand side (it overwrites M1_IW_TR and M1_IW_S1..S3)
+  void ImplicitPrecond(int rc, int zc);
+  //! milestone 3b phase C: solve the frozen 7-point system by BiCGStab; the answer is
+  //! left in M1_IW_S2, exactly where the line-Jacobi pass leaves it.  Returns the number
+  //! of inner iterations taken.
+  int ImplicitBiCGStab(Real rhsmax);
 
   // ...in "m1_before_stagen"
   TaskStatus InitRecv(Driver *d, int stage);

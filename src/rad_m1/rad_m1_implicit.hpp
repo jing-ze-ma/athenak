@@ -37,8 +37,15 @@ constexpr int M1_ISOLV_LINE_JACOBI = 0;  // outer line-Jacobi: the x1 tridiagona
                                          // stays on the matrix diagonal, so the full
                                          // 7-point M-matrix structure (and E' > 0) is
                                          // preserved at any dt.
-constexpr int M1_ISOLV_BICGSTAB = 1;     // NOT IMPLEMENTED (fatal): matrix-free BiCGStab
-                                         // right-preconditioned by the x1 line solve.
+constexpr int M1_ISOLV_BICGSTAB = 1;     // milestone 3b phase C: matrix-free BiCGStab on
+                                         // the SAME frozen 7-point system, RIGHT-
+                                         // preconditioned by the exact x1 line solve
+                                         // (the tridiagonal part plus the full diagonal,
+                                         // with the gather partition when blocks are
+                                         // stacked along x1).  Its fixed point is the
+                                         // fixed point line Jacobi converges to, so the
+                                         // two solvers answer the same question; only
+                                         // the number of passes differs.
 
 // x1 boundary conditions of the implicit solve, in FACE-FLUX form (design sect. 3).
 // The face value used is the TOTAL normal flux F at the boundary face.
@@ -198,6 +205,36 @@ constexpr int M1_IW_LRES = 31;  // |U(E^{k+1}) - U(E^k)|, the TRUE residual of t
 constexpr int M1_IW_F2   = 32;  // the derived cell-centred x2 flux of the iterate
 constexpr int M1_IW_F3   = 33;  // ...and the x3 one; both drive the lagged closure
 constexpr int M1_NIW = 34;
+// ---- MILESTONE 3b phase C, implicit_solver = bicgstab.  The four (six in 3-D) TRANSVERSE
+// OFF-DIAGONAL coefficients of the frozen 7-point row, and the ten Krylov vectors.  They
+// are allocated only when the solver is bicgstab, so line_jacobi keeps the array it had.
+//
+// The row of cell c is
+//   TA E_{i-1} + TB E_i + TC E_{i+1} + CJM E_{j-1} + CJP E_{j+1} + CKM E_{k-1}
+//     + CKP E_{k+1}  =  b_c ,
+// where TB ALREADY carries the transverse diagonal M1_IW_TDIA and b_c = TR + sum_nb C_nb
+// E^k_nb, i.e. the right-hand side line Jacobi would use PLUS the lagged off-diagonal
+// term it moved there.  Subtracting it back is what makes the two solvers solve the very
+// same linear system: one line-Jacobi pass is exactly x <- M^{-1}(b - sum C x).
+constexpr int M1_IW_CJM  = 34;  // coefficient of E_{j-1} (0 at a physical x2 face)
+constexpr int M1_IW_CJP  = 35;  // coefficient of E_{j+1}
+constexpr int M1_IW_CKM  = 36;  // coefficient of E_{k-1} (0 in 2-D)
+constexpr int M1_IW_CKP  = 37;  // coefficient of E_{k+1}
+constexpr int M1_IW_KB   = 38;  // b, the right-hand side of the frozen 7-point system
+constexpr int M1_IW_KX   = 39;  // the BiCGStab iterate (starts at the Picard iterate)
+constexpr int M1_IW_KR   = 40;  // the recursive residual r
+constexpr int M1_IW_KRH  = 41;  // the shadow residual rhat (fixed between restarts)
+constexpr int M1_IW_KP   = 42;  // the search direction p
+constexpr int M1_IW_KV   = 43;  // v = A M^{-1} p
+constexpr int M1_IW_KS   = 44;  // s = r - alpha v
+constexpr int M1_IW_KTT  = 45;  // t = A M^{-1} s
+constexpr int M1_IW_KY   = 46;  // y = M^{-1} p   (the preconditioned direction)
+constexpr int M1_IW_KZ   = 47;  // z = M^{-1} s
+constexpr int M1_NIW_K = 48;
+
+// BiCGStab breakdown thresholds: |rho| and |rhat.v| below these times the scale of the
+// right-hand side mean the shadow residual has become orthogonal to the Krylov space.
+constexpr Real M1_BCG_EPS = 1.0e-300;
 
 // the LAGGED quantities the transverse halo exchanges once per Picard pass.  Everything
 // the x2/x3 face fluxes, the lagged off-diagonal Eddington terms and the x1 assembly read
