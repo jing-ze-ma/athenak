@@ -95,6 +95,7 @@ using two_stream_rt::rt_Qb_ptr;
 using two_stream_rt::rt_Qv_ptr;
 using two_stream_rt::rt_T_ptr;
 using two_stream_rt::rt_cf_ptr;
+using two_stream_rt::ck_beam_sph;
 using two_stream_rt::ck_spherical;
 using two_stream_rt::rt_cell_report;
 using two_stream_rt::rt_report_every;
@@ -434,6 +435,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // (see two_stream_rt::ck_spherical).  Default false = bitwise the
   // plane-parallel arithmetic; refused on a Cartesian mesh at the first RT call.
   ck_spherical = pin->GetOrAddBoolean("problem","ck_spherical",false);
+  // problem/ck_beam_sph: the pseudo-spherical direct beam (see
+  // two_stream_rt::ck_beam_sph).  Independent of ck_spherical; default false = bitwise
+  // the plane-parallel slant path.
+  ck_beam_sph = pin->GetOrAddBoolean("problem","ck_beam_sph",false);
   // problem/rt_cell_report + problem/rt_report_every: the per-cell radiative-balance
   // report and, with it, the rt_desum line -- sum(src*dt*dx) against sum(de*dx), i.e.
   // what the sweep asked for against what the gas actually received once the

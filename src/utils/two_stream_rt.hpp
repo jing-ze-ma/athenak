@@ -1004,6 +1004,66 @@ inline bool rt_layer_legacy = false;
 // NOT CONVERTED, and refused: rt_layer_legacy (the staggered whole-cell ck layers) and
 // the mode-1/2 nearest-neighbour Jacobian, which the ck path never fills anyway.
 inline bool ck_spherical = false;
+// problem/ck_beam_sph: the PSEUDO-SPHERICAL direct stellar beam.  Default FALSE, which is
+// bitwise the plane-parallel slant path the correlated-k kernel has always used.
+// Independent of ck_spherical (that switch converts the THERMAL two-stream; this one the
+// BEAM), and the two compose.
+//
+// WHAT IS WRONG WITHOUT IT.  The beam's optical depth to a point is tau_vertical/mu0
+// through the column's own profile, with mu0 CLAMPED at 0.1 (facsw below), and mu0 <= 0
+// is simply dark.  On a 2.18 domain that is wrong three ways: the secant law diverges as
+// the terminator is approached and the clamp then silently caps it at 10x the vertical
+// depth; the true slant path through curved shells is finite at mu0 = 0 (the Chapman
+// function goes to sqrt(pi X/2), ~30 for X = r/H ~ 2000, not to infinity); and the
+// TWILIGHT region mu0 < 0, which on a real planet is lit down to the radius where the ray
+// grazes the opaque body, receives nothing at all.
+//
+// THE GEOMETRY (pseudo-spherical: straight rays, the column's own profile assumed on
+// every shell -- horizontally homogeneous, which is the standard approximation and is
+// what makes this a per-column calculation).  For a target at radius r with stellar
+// zenith angle theta0, cos theta0 = mu0, the impact parameter of the ray is
+//     b = r sin(theta0) = r sqrt(1 - mu0^2),
+// and a shell between faces r_j and r_{j+1} contributes the chord
+//     ds_j = sqrt(r_{j+1}^2 - b^2) - sqrt(max(r_j^2 - b^2, 0)),
+// the max() handling the shell that contains the tangent point exactly.  Then
+//     tau_ray(r) = sum_j w_j ds_j (kappa rho)_j,
+// with w_j = 1 for mu0 >= 0 and j from the target's own shell upward (the target's shell
+// contributes from r itself, which is what sqrt(r^2 - b^2) = r|mu0| gives), and for
+// mu0 < 0 the ray reaches the target through the TANGENT POINT at radius b: a NEAR leg
+// from r down to b and a FAR leg from b out to the top, so w_j = 2 for the shells below
+// the target (b <= r_j < r) and w_j = 1 above it, the sum starting at the shell that
+// contains b.  A mu0 < 0 ray is DARK if b <= the radius at which the column becomes
+// opaque, which here is the correlated-k cut face x1f(icut) (below it the grey optical
+// depth is ~1e4): the ray would have to pass through the planet.
+//
+// Above the domain top there is NOTHING: tau_ray(r_top) = 0.  The plane-parallel path
+// instead starts the beam with the unresolved hydrostatic ghost column's optical depth
+// (RTTopDtau); that term is ~2e-4 of the incident flux on this grid and is dropped here,
+// because a pseudo-spherical ray leaves the domain and the ghost column is a
+// plane-parallel construction with no radial extent.
+//
+// THE DEPOSIT IS UNCHANGED IN FORM -- the local absorption rate, no column-power
+// bookkeeping (see the retraction on the beam in 2db7095c).  Written as a flux difference
+// across the cell so that a thick layer does not under-deposit,
+//     Qb_i = (1-albedo) F_star w_b (kappa rho)_i [e^-tau(r_i) - e^-tau(r_{i+1})]
+//                                               / [tau(r_{i+1}) - tau(r_i)],
+// which is IDENTICALLY the plane-parallel expression when tau(r) = tau_vert(r)/mu0 (the
+// bracket is then dtau_i/mu0 and (kappa rho)_i/(dtau_i/mu0) = mu0/dz_i), and which never
+// divides by a chord that disagrees with the optical depths it is paired with.
+//
+// NO MATRIX IS STORED.  The chords depend only on (r, b) and b depends on the column only
+// through mu0, so a per-column triangular G_ij = ds_ij would be 128*129/2 entries x 6144
+// columns x 4 B = 203 MB on the production cubed-sphere mesh (6 x 32 x 32 x 128).  The
+// on-the-fly form costs ONE sqrt per (face, shell) pair, hoisted out of the g-point loop
+// because b does not depend on the chain, and needs no memory at all; on a GPU that trade
+// is obviously right.  mu0 is a pure function of the grid (rt_pre_geom: the substellar
+// point is fixed at phi = 0 in the mesh, this problem generator has no non-synchronous
+// option), so nothing here can go stale either.
+//
+// The only new per-thread storage is the (kappa rho) column, NC x NN, needed because
+// tau_ray(r_i) is not a running sum -- every target has its own chord set.  It is sized
+// to one element when the switch is off: the kernel is templated on the flag.
+inline bool ck_beam_sph = false;
 // problem/rt_top_re: what the unresolved column ABOVE the domain sends back down.
 // false (historical) makes it radiate at the ghost cell's own temperature. That is safe
 // only while the ghost is pinned to something outside the solution: with an open outer
@@ -1623,6 +1683,38 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
                 << std::endl;
       std::exit(EXIT_FAILURE);
     }
+    // problem/ck_beam_sph (see the flag's note): the pseudo-spherical direct beam.  Pure
+    // geometry, so meaningless on a Cartesian mesh and refused there; belongs to the ck
+    // kernel; and the legacy staggered ck layers carry their own copy of the beam, which
+    // was not converted.
+    if (ck_beam_sph) {
+      if (!(use_cubed_sphere_ || use_spherical_polar)) {
+        std::cout << "### FATAL ERROR in two_stream_rt: problem/ck_beam_sph is the "
+                  << "PSEUDO-SPHERICAL stellar beam and has no meaning on a Cartesian "
+                  << "mesh.  Leave it false there." << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      if (!rt_ck) {
+        std::cout << "### FATAL ERROR in two_stream_rt: problem/ck_beam_sph converts the "
+                  << "CORRELATED-K beam, but problem/rt_ck is false." << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      if (rt_layer_legacy) {
+        std::cout << "### FATAL ERROR in two_stream_rt: problem/ck_beam_sph with "
+                  << "problem/rt_layer_legacy: the staggered whole-cell correlated-k "
+                  << "layers carry their own copy of the beam and were not converted."
+                  << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      static bool ckb_announced = false;
+      if (!ckb_announced && global_variable::my_rank == 0) {
+        ckb_announced = true;
+        std::cout << "### two_stream_rt: PSEUDO-SPHERICAL stellar beam ON "
+                  << "(problem/ck_beam_sph): straight rays through the shells, no secant "
+                  << "clamp, twilight (mu0 < 0) lit down to the grazing radius."
+                  << std::endl;
+      }
+    }
     // problem/ck_spherical (see the flag's note): the spherical form of the correlated-k
     // thermal two-stream.  It is geometry, so it is meaningless on a Cartesian mesh and
     // REFUSED there rather than silently inert; it belongs to the ck kernel alone; and
@@ -1973,6 +2065,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
     const Real bot_flux = rt_bot_flux;          // see rt_bottom_flux
     const bool layer_legacy = rt_layer_legacy;  // see rt_layer_legacy
     const bool cksph_ = ck_spherical;           // see ck_spherical
+    const bool ckbsph_ = ck_beam_sph;           // see ck_beam_sph
     const bool top_re = rt_top_re;
     const bool top_vac = rt_top_vacuum;
     Real Iint = boltz_sigma/M_PI*Tint4;
@@ -3407,9 +3500,10 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
         // code it always was -- every ck_spherical test folds away, so nothing in its
         // expression DAG can shift -- and its per-thread face-mixing column (Cmx below)
         // shrinks to one element instead of NC x NN.  See ck_spherical.
-        auto launch_ck_chain = [&](auto nn_tag, auto sph_tag) {
+        auto launch_ck_chain = [&](auto nn_tag, auto sph_tag, auto bsp_tag) {
           constexpr int NN = decltype(nn_tag)::value;
           constexpr bool SPH = decltype(sph_tag)::value;
+          constexpr bool BSP = decltype(bsp_tag)::value;
           par_for("rt_chain_ck", DevExeSpace(), 0, nmb1, 0, nblk-1, ks, ke, js, je,
           KOKKOS_LAMBDA(const int m, const int blk, const int k, const int j) {
             constexpr int NC = RT_NB;
@@ -3432,6 +3526,11 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
             const Real mu0 = cf_g(m,k,j,3);
             const Real facsw = (mu0 > 0.1) ? (1.0/mu0) : (1.0/0.1);
             const bool lit = (mu0 > 0.0);
+            // problem/ck_beam_sph: no secant clamp and no dayside test -- the twilight
+            // columns are lit too, and whether a given ray reaches the target is decided
+            // per target by its own tangent radius.  sinz is sin(theta0).
+            const Real sinz = sqrt((mu0*mu0 < 1.0) ? (1.0 - mu0*mu0) : 0.0);
+            const bool lit_sph = true;
             Real tausw[NC];
             Real transw[NC];      // beam transmission at the face above the current cell
 
@@ -3496,6 +3595,11 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
             // face (measured: 0.7 % per cell, 19 % over the production column).  The
             // accuracy of c is then the probe's; its CONSISTENCY is exact.
             RtF Cmx[SPH ? NC : 1][SPH ? NN : 1];
+            // problem/ck_beam_sph: the (kappa rho) column, filled by the down-sweep and
+            // read by the ray integration.  tau_ray is NOT a running sum -- every target
+            // radius has its own chord set -- so the profile has to be kept.  One element
+            // when the switch is off.
+            RtF Krs[BSP ? NC : 1][BSP ? NN : 1];
 
             // Top: the column above the domain, using the top cell's opacity over the
             // hydrostatic column p/g -- the same construction the grey scheme uses.
@@ -3517,8 +3621,11 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
                 const RtF trans = RT_EXP(-static_cast<RtF>(dtau/muc[cc]));
                 I_down[cc][ie+1] = (static_cast<RtF>(1.0)-trans)
                                  * static_cast<RtF>(Bb_g(m,bandc[cc],ie+1,k,j));
-                tausw[cc] = dtau;               // beam already crossed the column above
-                transw[cc] = RT_EXP(-static_cast<RtF>(dtau*facsw));
+                // BSP: nothing above the domain top, so the ray enters unattenuated;
+                // the plane-parallel path instead charges it the ghost column's depth
+                tausw[cc] = BSP ? 0.0 : dtau;
+                transw[cc] = BSP ? static_cast<RtF>(1.0)
+                                 : RT_EXP(-static_cast<RtF>(dtau*facsw));
               }
             }
             if (layer_legacy) {
@@ -3919,6 +4026,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
                     step(dt_l, muc[cc], s_f, s_l, Idn[cc], dsrc);
                     Src_g(m,blk,i,k,j) += wfc[cc]/dz*dsrc;
                   }
+                  if (BSP) Krs[cc][i] = static_cast<RtF>(kro);   // see ck_beam_sph
                   kfar[cc] = kro;
                   // Direct beam, UNCHANGED: it crosses whole cells and carries no
                   // source, so the layer construction does not touch it.  Deposit the
@@ -3929,7 +4037,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
                   // at u = 1), losing a quarter of the incident flux down a column with
                   // u ~ 0.5 -- measured against Exo-FMS on an identical column.
                   tausw[cc] += kap*drho;
-                  if (lit) {
+                  if (lit && !BSP) {
                     const Real tnew = RT_EXP(-static_cast<RtF>(tausw[cc]*facsw));
                     // THE STELLAR BEAM IS NOT TOUCHED BY ck_spherical.  It is a parallel
                     // pencil, and a parallel pencil is NOT confined to a spherically
@@ -3969,6 +4077,94 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
                   step(0.5*kfar[cc]*dz, muc[cc], bcut, bcut, Idn[cc], dsrc);
                   Src_g(m,blk,icut,k,j) += wfc[cc]/dz*dsrc;
                   I_down[cc][icut] = Idn[cc];
+                }
+              }
+              // ================= problem/ck_beam_sph: THE PSEUDO-SPHERICAL BEAM =====
+              // Run here, after the down-sweep has left (kappa rho)_j in Krs for every
+              // shell of the correlated-k domain.  See the flag's note for the geometry;
+              // the sketch is in tests_ck_sph/README_beam.md.
+              //
+              //        star
+              //          \   theta0                     mu0 >= 0: the ray only climbs,
+              //           \                             shells j >= f, weight 1.
+              //   r_top ---\-------------------
+              //             \   * target r_f          mu0 < 0: NEAR leg r_f -> b and FAR
+              //   ...  -------\-*-----------------    leg b -> r_top, so the shells
+              //                \* b (tangent)         between b and r_f are crossed
+              //   r_cut --------o----------------     TWICE (weight 2) and those above
+              //         (opaque below; dark if        r_f once.  Dark if b <= r_cut.
+              //          b <= r_cut)
+              //
+              // ONE sqrt per (face, shell) pair, hoisted out of the g-point loop because
+              // the impact parameter does not depend on the chain.  Faces are walked from
+              // the top down so the transmission of the face above is already in hand and
+              // the deposit is the flux difference across the cell.
+              if (BSP && lit_sph) {
+                const Real rcut = X1F(m,icut);
+                RtF thi[NC];
+                Real tauh[NC];
+                // tau at the top face is 0: nothing above the domain (see ck_beam_sph)
+                for (int cc=0; cc<NC; ++cc) {
+                  tauh[cc] = 0.0;
+                  thi[cc] = static_cast<RtF>(1.0);
+                }
+                for (int i=ie; i>icut-1; --i) {
+                  // ---- tau_ray at the LOWER face of cell i
+                  const Real rf = X1F(m,i);
+                  const Real bb = rf*sinz;               // impact parameter
+                  const Real b2 = bb*bb;
+                  Real taul[NC];
+                  for (int cc=0; cc<NC; ++cc) taul[cc] = 0.0;
+                  bool dark = false;
+                  int jlo = i;
+                  if (mu0 < 0.0) {
+                    if (bb <= rcut) {
+                      dark = true;            // the ray passes through the body
+                    } else {
+                      jlo = icut;                        // the shell holding the tangent
+                      for (int jj=i-1; jj>=icut; --jj) {
+                        if (X1F(m,jj) <= bb) {
+                          jlo = jj;
+                          break;
+                        }
+                      }
+                    }
+                  }
+                  if (!dark) {
+                    const Real rl = X1F(m,jlo);
+                    Real prev = (rl*rl > b2) ? sqrt(rl*rl - b2) : 0.0;
+                    for (int jj=jlo; jj<ie+1; ++jj) {
+                      const Real ru = X1F(m,jj+1);
+                      const Real cur = sqrt(ru*ru - b2);
+                      const Real ds = (jj < i) ? 2.0*(cur - prev) : (cur - prev);
+                      prev = cur;
+                      for (int cc=0; cc<NC; ++cc) {
+                        taul[cc] += ds*static_cast<Real>(Krs[cc][jj]);
+                      }
+                    }
+                  }
+                  // ---- deposit in cell i: the flux difference along the ray, divided
+                  // by the path length the two optical depths themselves imply.
+                  // Identical to the plane-parallel expression when tau = tau_vert/mu0.
+                  for (int cc=0; cc<NC; ++cc) {
+                    const Real dtl = dark ? 1.0e30 : (taul[cc] - tauh[cc]);
+                    const RtF tlo = dark ? static_cast<RtF>(0.0)
+                                         : RT_EXP(-static_cast<RtF>(taul[cc]));
+                    const Real dif = static_cast<Real>(thi[cc]) - static_cast<Real>(tlo);
+                    // dif/dtau -> e^-tau as dtau -> 0; the guard is the same 1e-3 the
+                    // layer coefficients use
+                    const Real fac = (dtl > 1.0e-3)
+                        ? (dif/dtl)
+                        : (static_cast<Real>(thi[cc])*(1.0 - 0.5*dtl));
+                    Qb_g(m,blk,i,k,j) += (1.0-albedo)*Fstar*ckswf(bandc[cc])*wgc[cc]
+                                       * fac*static_cast<Real>(Krs[cc][i]);
+                    tauh[cc] = dark ? 1.0e30 : taul[cc];
+                    thi[cc] = tlo;
+                  }
+                  // the beam is dead: everything below it gets nothing
+                  Real tmin = tauh[0];
+                  for (int cc=1; cc<NC; ++cc) tmin = (tauh[cc] < tmin) ? tauh[cc] : tmin;
+                  if (tmin > 60.0) break;
                 }
               }
               // Bottom of the CORRELATED-K DOMAIN, not of the column, and now AT the cut
@@ -4101,22 +4297,30 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
             }
           });
         };
-        auto launch_ck_tier = [&](auto sph_tag) {
+        auto launch_ck_tier = [&](auto sph_tag, auto bsp_tag) {
           if (n1 <= 72) {
-            launch_ck_chain(std::integral_constant<int, 72>{}, sph_tag);
+            launch_ck_chain(std::integral_constant<int, 72>{}, sph_tag, bsp_tag);
           } else if (n1 <= 136) {
-            launch_ck_chain(std::integral_constant<int, 136>{}, sph_tag);
+            launch_ck_chain(std::integral_constant<int, 136>{}, sph_tag, bsp_tag);
           } else if (n1 <= 264) {
-            launch_ck_chain(std::integral_constant<int, 264>{}, sph_tag);
+            launch_ck_chain(std::integral_constant<int, 264>{}, sph_tag, bsp_tag);
           } else {
-            launch_ck_chain(std::integral_constant<int, 520>{}, sph_tag);
+            launch_ck_chain(std::integral_constant<int, 520>{}, sph_tag, bsp_tag);
           }
         };
         if (n1 <= 520) {
           if (cksph_) {
-            launch_ck_tier(std::true_type{});
+            if (ckbsph_) {
+              launch_ck_tier(std::true_type{}, std::true_type{});
+            } else {
+              launch_ck_tier(std::true_type{}, std::false_type{});
+            }
           } else {
-            launch_ck_tier(std::false_type{});
+            if (ckbsph_) {
+              launch_ck_tier(std::false_type{}, std::true_type{});
+            } else {
+              launch_ck_tier(std::false_type{}, std::false_type{});
+            }
           }
         } else {
           std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: n1 = " << n1

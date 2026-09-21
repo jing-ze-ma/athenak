@@ -318,6 +318,9 @@ rt_de_max    = 0.5
 # two_stream_rt::ck_spherical).  false = bitwise the plane-parallel arithmetic the ck
 # kernel has always run.
 ck_spherical = false
+# problem/ck_beam_sph: the PSEUDO-SPHERICAL direct beam (straight rays through the
+# shells, no secant clamp, twilight columns lit).  Independent of ck_spherical.
+ck_beam_sph  = false
 rt_cell_report  = false   # true also prints the rt_desum line (sweep vs gas energy)
 rt_report_every = 100
 rt_ck = true
