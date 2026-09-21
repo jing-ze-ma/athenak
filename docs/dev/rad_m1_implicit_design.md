@@ -153,3 +153,88 @@ response on the pulsation time scale (phase error ~ `dt/P`, harmless for `P` = 7
 `dt` = 0.16 s); (R3) the advected enthalpy flux inside the implicit operator at
 `beta tau >> 1` (upwind keeps the M-matrix; accuracy first order); (R4) the derived cell
 `F` near `f -> 1` (closure direction from face means).
+
+---
+
+## 6. Findings of 3a (implemented 2026-09-21; supersede the text above where they differ)
+
+Branch `m1-implicit-x1`.  Implementation: `src/rad_m1/rad_m1_implicit.{hpp,cpp}` plus
+delimited hooks in `rad_m1.{hpp,cpp}`, `rad_m1_tasks.cpp`, `rad_m1_newdt.cpp`,
+`driver.cpp`, `restart.cpp`/`pgen.cpp`/`outputs.hpp` (the face array in the restart
+file) and `src/CMakeLists.txt`.  Gate tables and the exact commands:
+`tests_m1/runs_3a/RESULTS.txt` and `runs_3a/run_gates.sh`.
+
+**The formulation holds.**  The tridiagonal M-matrix, the face elimination and the
+local Newton elimination of the emission term all behave as sect. 1-2 says.  `E` stayed
+positive in every run; no floor was ever active on the solution; the Picard loop
+converged in 1-4 iterations on everything but the Marshak front (6-14) and the He column
+(13.5).  The predicted thick-limit property is measured: at an opacity jump of 1000 the
+absolute flux error is **1.9e-3 %**, against 1.3 % for the explicit scheme (700x), and
+the peak deviation at the jump falls from 33 to 5.5e-6.  The diffusion rate is within
+0.1 % of `2D` at `tau_cell` = 10, 1e3, 1e6 at every CFL from 0.4 to 1e4, and the Nyquist
+mode is damped at **exactly** the backward-Euler rate `ln(1 + lam dt)/(lam dt)` (five
+digits, at CFL 0.4 to 100): first order in time, confirmed, with no growth anywhere.
+
+**Three things the note did not say, that the implementation had to decide.**
+
+1. *The gas energy must be set from the source the ASSEMBLED ROW applied*, `q = SRCR -
+   SRCB E'`, not from `rho kappa_P a T'^4`.  The two differ by the Picard remainder of
+   the linearisation, and taking the second leaves `e_gas + (c/chat) E` drifting
+   2.8e-11 / 1.4e-9 / 1.3e-7 over 2000 steps of T5 at `dt` = 1e3 / 1e5 / 1e7 coupling
+   times.  With the first the drift is 2e-13 and the total energy of the dynamic T4 run
+   is conserved to 2.0e-16, better than the explicit scheme's 1.8e-13.
+2. *A Dirichlet end cell* (`implicit_bc_x1min|max = efix`, which freezes `E` in the
+   boundary cell) had to be added.  A pure-scattering column with an imposed flux on
+   both ends leaves the operator SINGULAR -- there is no source to anchor the level of
+   `E` -- so T3b cannot be run in the four boundary types of sect. 3 alone.  `efix` is
+   the face-flux-form equivalent of the fixed-`E` ghost the explicit tests use.
+3. *The Marshak boundary needs the incident bath*, `F_f = +-c q (E - E_bath)`
+   (`implicit_ebath_x1min|max`, default 0 = the plain free surface of sect. 3).
+
+**Momentum.**  Each x1 face hands `dt (rho k_t)_f F0'_f/c` to the gas, half to each of
+its two cells and all of it to the single interior cell at a physical boundary.  That is
+exactly what the implicit face source removed from the radiation, so the *exchanged*
+momentum is conservative to round-off.  The cell-centred `F` that `u0` carries also holds
+the advected enthalpy flux `A`, which is not an exchange, so the diagnostic invariant
+`sum(rho v + F/(chat c))` drifts 2.4e-8 on T4 (explicit: 1.1e-13).  Using the CELL
+opacity with the mean of the two faces would be more natural for a cell-centred momentum
+but is not conservative; the face rule was chosen for that reason.
+
+**The two weaknesses, both foreseen and both real.**
+
+* *Free streaming* (risk R4 was about the derived `F`; this is worse than that).  A
+  free-streaming pulse at `f = 1` loses 63 % of its amplitude in one box crossing at
+  CFL 0.4 and 92 % at CFL 100, against 5 % for the explicit scheme.  The operator is a
+  backward-Euler, non-upwinded discretisation of the wave system, and it damps the thin
+  limit hard *even below CFL 1*.  `implicit_x1` is therefore not a drop-in replacement:
+  it is for optically thick columns, and `transport = explicit` stays the default.
+* *The advected enthalpy flux* is donor-cell upwinded inside the operator (risk R3).  On
+  T4 dynamic the pulse width comes out 1.9 % too wide against the explicit 1.0 %,
+  independently of `dt`.  Reconstructing `A` at the face while keeping the M-matrix
+  (a flux-limited correction in the RHS, lagged in the Picard loop) is the obvious
+  3a-follow-up.
+* *Risk R1 is visible*: the Picard count grows with `dt` at a strongly nonlinear
+  emission front (Marshak with `a_rad` = 1e30): 6.6 -> 9.9 -> 14.1 iterations at CFL
+  1 -> 10 -> 100, and 8 of 259 solves hit `implicit_maxit` = 30 at CFL 100.  It never
+  hit the cap on the stellar column (13.5 mean, 23 max).
+
+**I8, the result the milestone exists for.**  The 1-D He FeCZ column at the true `c`,
+one solve per hydro step, bottom = imposed flux, top = Marshak: **the oscillation does
+not grow**.  The envelope decays (`gamma` = -2.9e-5/s) where the explicit `K = 10` arm
+e-folds in ~195 s and reaches 239 `v_MLT`; the drifts at 975 s are smaller than at
+400 s; `F1/F_in` stays inside 0.9968-1.0012 over all 84 cells where the explicit arm
+spans 0.77-1.40; the residual force is 5.1e-3 `g0` against 4.2e-1.  The residual
+`max|v1|` = 10.3 `v_MLT` is steady and sits in the BOTTOM cell, at the imposed-flux
+boundary.  Cost: 4.74e-3 s/step against 9.51e-3 s/step for explicit `K = 10` (and
+4.43e-4 s/step hydro-only), i.e. the implicit scheme at the true `c` is **twice as fast
+as the reduced-speed-of-light explicit one**.  The stage-2a suspicion that the RSLA
+drove the growing oscillation is supported.
+
+**Gaps.**  (i) The semi-analytic grey atmosphere of `bench/m1_stage2/ic/build_ic.py` was
+not run: there is no test problem generator for a static plane-parallel column with
+fixed gas, and I8 covers the same physics with the real column.  (ii) The partitioned
+line solve was not implemented -- more than one MeshBlock along x1 is a startup fatal.
+(iii) No MPI run; the solve is rank-local by construction and the Picard count is
+`MPI_MAX`-reduced so that ranks stay in step, but that path is untested.
+(iv) `F_2 = F_3 = 0` always in this mode, and `implicit_allow_multid` gives independent
+columns (verified bitwise for 1 vs 4 MeshBlocks along x2).  (v) No GPU run.

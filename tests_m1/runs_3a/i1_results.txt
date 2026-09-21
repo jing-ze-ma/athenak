@@ -1,0 +1,45 @@
+i1_tau1e1_c0.4         exit=0 solves=1.610000e+02 iterations mean=2.608696e+00 NON-CONVERGED=0.000000e+00  PASS T3 pulse: d(sigma^2)/dt=5.205012e-04  2D=5.208333e-04  ratio=0.999362 (target 1.000000 +- 0.02)
+i1_tau1e3_c0.4         exit=0 solves=3.840000e+03 iterations mean=2.000000e+00 NON-CONVERGED=0.000000e+00  PASS T3 pulse: d(sigma^2)/dt=5.208332e-06  2D=5.208333e-06  ratio=1.000000 (target 1.000000 +- 0.02)
+i1_tau1e6_c0.4         exit=0 solves=9.600000e+05 iterations mean=2.000000e+00 NON-CONVERGED=0.000000e+00  PASS T3 pulse: d(sigma^2)/dt=5.208335e-09  2D=5.208333e-09  ratio=1.000000 (target 1.000000 +- 0.02)
+i1_nyq_c0.4            exit=0 solves=6.400000e+03 iterations mean=2.000000e+00 NON-CONVERGED=0.000000e+00  PASS T3 nyquist: rate=1.706214e-01  4D/dx^2=1.706667e-01  ratio=0.999735 (target 1.000000 +- 0.02)
+i1_tau1e1_c1           exit=0 solves=6.400000e+01 iterations mean=3.000000e+00 NON-CONVERGED=0.000000e+00  PASS T3 pulse: d(sigma^2)/dt=5.204969e-04  2D=5.208333e-04  ratio=0.999354 (target 1.000000 +- 0.02)
+i1_tau1e3_c1           exit=0 solves=1.536000e+03 iterations mean=2.000000e+00 NON-CONVERGED=0.000000e+00  PASS T3 pulse: d(sigma^2)/dt=5.208329e-06  2D=5.208333e-06  ratio=0.999999 (target 1.000000 +- 0.02)
+i1_tau1e6_c1           exit=0 solves=3.840000e+05 iterations mean=2.000000e+00 NON-CONVERGED=0.000000e+00  PASS T3 pulse: d(sigma^2)/dt=5.208335e-09  2D=5.208333e-09  ratio=1.000000 (target 1.000000 +- 0.02)
+i1_nyq_c1              exit=0 solves=2.560000e+03 iterations mean=2.000000e+00 NON-CONVERGED=0.000000e+00  PASS T3 nyquist: rate=1.705529e-01  4D/dx^2=1.706667e-01  ratio=0.999334 (target 1.000000 +- 0.02)
+i1_tau1e1_c10          exit=0 solves=7.000000e+00 iterations mean=3.428571e+00 NON-CONVERGED=0.000000e+00  PASS T3 pulse: d(sigma^2)/dt=5.203991e-04  2D=5.208333e-04  ratio=0.999166 (target 1.000000 +- 0.02)
+i1_tau1e3_c10          exit=0 solves=1.540000e+02 iterations mean=2.000000e+00 NON-CONVERGED=0.000000e+00  PASS T3 pulse: d(sigma^2)/dt=5.208328e-06  2D=5.208333e-06  ratio=0.999999 (target 1.000000 +- 0.02)
+i1_tau1e6_c10          exit=0 solves=3.840000e+04 iterations mean=2.000000e+00 NON-CONVERGED=0.000000e+00  PASS T3 pulse: d(sigma^2)/dt=5.208336e-09  2D=5.208333e-09  ratio=1.000000 (target 1.000000 +- 0.02)
+i1_nyq_c10             exit=0 solves=2.560000e+02 iterations mean=2.000000e+00 NON-CONVERGED=0.000000e+00  PASS T3 nyquist: rate=1.695390e-01  4D/dx^2=1.706667e-01  ratio=0.993393 (target 1.000000 +- 0.02)
+i1_tau1e1_c100         exit=0 solves=1.000000e+00 iterations mean=4.000000e+00 NON-CONVERGED=0.000000e+00  usage: t3_pulse.py [-h] [--bin-convert-dir BIN_CONVERT_DIR] [--all-ranks]
+                   [--selftest] [--quiet] [--c C] [--rho RHO] [--kappa KAPPA]
+                   [--tol TOL] [--expect-excess EXPECT_EXCESS] [--skip SKIP]
+                   [--background BACKGROUND] [--subtract-min] [--nyquist]
+                   [--axis {1,2,3}] [--reduce {mid,mean}] [--selftest-fail]
+                   [dumps ...]
+t3_pulse.py: error: at least three dumps are needed for the fit
+i1_tau1e3_c100         exit=0 solves=1.600000e+01 iterations mean=2.000000e+00 NON-CONVERGED=0.000000e+00  PASS T3 pulse: d(sigma^2)/dt=5.208337e-06  2D=5.208333e-06  ratio=1.000001 (target 1.000000 +- 0.02)
+i1_tau1e6_c100         exit=0 solves=3.840000e+03 iterations mean=2.000000e+00 NON-CONVERGED=0.000000e+00  PASS T3 pulse: d(sigma^2)/dt=5.208337e-09  2D=5.208333e-09  ratio=1.000001 (target 1.000000 +- 0.02)
+i1_nyq_c100            exit=0 solves=2.600000e+01 iterations mean=2.000000e+00 NON-CONVERGED=0.000000e+00  FAIL T3 nyquist: rate=1.602497e-01  4D/dx^2=1.706667e-01  ratio=0.938963 (target 1.000000 +- 0.02)
+i1_tau1e1_c10000       exit=0 solves=1.000000e+00 iterations mean=4.000000e+00 NON-CONVERGED=0.000000e+00  usage: t3_pulse.py [-h] [--bin-convert-dir BIN_CONVERT_DIR] [--all-ranks]
+                   [--selftest] [--quiet] [--c C] [--rho RHO] [--kappa KAPPA]
+                   [--tol TOL] [--expect-excess EXPECT_EXCESS] [--skip SKIP]
+                   [--background BACKGROUND] [--subtract-min] [--nyquist]
+                   [--axis {1,2,3}] [--reduce {mid,mean}] [--selftest-fail]
+                   [dumps ...]
+t3_pulse.py: error: at least three dumps are needed for the fit
+i1_tau1e3_c10000       exit=0 solves=1.000000e+00 iterations mean=3.000000e+00 NON-CONVERGED=0.000000e+00  usage: t3_pulse.py [-h] [--bin-convert-dir BIN_CONVERT_DIR] [--all-ranks]
+                   [--selftest] [--quiet] [--c C] [--rho RHO] [--kappa KAPPA]
+                   [--tol TOL] [--expect-excess EXPECT_EXCESS] [--skip SKIP]
+                   [--background BACKGROUND] [--subtract-min] [--nyquist]
+                   [--axis {1,2,3}] [--reduce {mid,mean}] [--selftest-fail]
+                   [dumps ...]
+t3_pulse.py: error: at least three dumps are needed for the fit
+i1_tau1e6_c10000       exit=0 solves=3.900000e+01 iterations mean=2.000000e+00 NON-CONVERGED=0.000000e+00  PASS T3 pulse: d(sigma^2)/dt=5.208326e-09  2D=5.208333e-09  ratio=0.999999 (target 1.000000 +- 0.02)
+i1_nyq_c10000          exit=0 solves=1.000000e+00 iterations mean=3.000000e+00 NON-CONVERGED=0.000000e+00  usage: t3_pulse.py [-h] [--bin-convert-dir BIN_CONVERT_DIR] [--all-ranks]
+                   [--selftest] [--quiet] [--c C] [--rho RHO] [--kappa KAPPA]
+                   [--tol TOL] [--expect-excess EXPECT_EXCESS] [--skip SKIP]
+                   [--background BACKGROUND] [--subtract-min] [--nyquist]
+                   [--axis {1,2,3}] [--reduce {mid,mean}] [--selftest-fail]
+                   [dumps ...]
+t3_pulse.py: error: at least three dumps are needed for the fit
+I1_DONE

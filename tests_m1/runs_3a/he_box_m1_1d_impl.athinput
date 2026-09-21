@@ -1,0 +1,193 @@
+# =================================================================================
+# MILESTONE 2a: the grey M1 module <rad_m1> inside the He-star FeCZ box, as a 1-D
+# STATIC COLUMN.  docs/dev/rad_m1_design.md sects. 1-6 and bench/m1_stage2/PLAN.md.
+#
+# The box is bench/hestar_fecz/box_w8 CUT at tau_bot = 100: 84 cells of the same
+# dz = 2.6521941e6 cm, bottom face z = -1.8149339e8, top z = +4.1290910e7 (tau 0.01).
+# The initial column (problem/ic_profile) is GAS-ONLY -- eos_radiation is false and the
+# radiation energy and pressure are EVOLVED by the module -- so it is not the box_w8
+# column: bench/m1_stage2/ic/build_ic.py rebuilt it, and problem/m1_ic_file carries the
+# matching plane-parallel grey atmosphere (E, F).
+#
+# WHAT HOLDS THE COLUMN UP.  The radiative acceleration reaches 0.75 g at the Fe
+# opacity peak, and an operator-split force of that size kicks the column at ~18 v_MLT
+# per step (tests_wbphi/README.md, arm B).  So the well-balanced x1 scheme is given the
+# EFFECTIVE potential Phi_eff = int (g0 - a_rad) dz (problem/wb_phi_eff +
+# problem/wb_arad_file), which already delivers rho*a_rad_ref, and the module is told
+# to apply only the RESIDUAL (<rad_m1>/force_reference = wb_arad).
+#
+# EVERYTHING of the old radiation stack is OFF and the pgen refuses it explicitly:
+# no rt_two_stream, no rt_rad_force, no wb_arad_force, no eos_radiation, no taper.
+# <hydro>/isotropic_conduction = radiative is KEPT only so that the Conduction object
+# exists to hold rad_flux_inner and the column optical depth; its blend weight is 0 on
+# every face (rad_tau_lo/hi = 1e5/1e6) and the pgen moves rad_flux_inner to the module
+# so that the luminosity is not injected twice.
+#
+# Every Real is written out at full precision on purpose: a DEFAULTED Real is
+# serialised into the restart file with only six digits (design sect. 12).
+# =================================================================================
+
+<comment>
+problem = He-star FeCZ column, 1-D, grey M1 radiation (<rad_m1> milestone 2a)
+
+<job>
+basename = m1col
+
+<mesh>
+nghost    = 3
+nx1       = 84
+x1min     = -1.8149339e8
+x1max     =  4.1290910e7
+ix1_bc    = user
+ox1_bc    = user
+nx2       = 1
+x2min     = 0.0
+x2max     = 1.10331276e9
+ix2_bc    = periodic
+ox2_bc    = periodic
+nx3       = 1
+x3min     = 0.0
+x3max     = 1.10331276e9
+ix3_bc    = periodic
+ox3_bc    = periodic
+
+<meshblock>
+nx1       = 84
+nx2       = 1
+nx3       = 1
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim       = -1
+tlim       = 1000.0
+dt_min     = 1.0e-6
+ndiag      = 1000
+
+<units>
+length_cgs = 1.0
+mass_cgs   = 1.0
+time_cgs   = 1.0
+mu         = 1.0
+
+<hydro>
+eos                  = general
+general_eos          = table
+gamma                = 1.6666666667
+eos_h2               = false
+eos_ionization       = true
+eos_metal_ionization = false
+eos_radiation        = false      # MANDATORY with <rad_m1> (the module fatals otherwise)
+eos_xh               = 0.0
+eos_yhe              = 0.98
+eos_logd_min         = -13.0
+eos_logd_max         = -3.0
+eos_logt_min         = 3.8
+eos_logt_max         = 6.5
+eos_dlog             = 0.02
+reconstruct = plm
+rsolver     = lhllc
+etotgrav    = true
+wellbalance_dynamic = true
+wb_x1               = true
+wb_option           = polytropic
+wb_cache_every      = 0
+isotropic_conduction = radiative  # KEPT for rad_flux_inner + rad_tauf ONLY; inert
+rad_kappa_src        = table_rho
+rad_kappa_fac        = 1.0
+rad_flux_inner       = 2.475202e15   # F = sigma Teff^4, Teff = 81283 K.  The pgen hands
+                                     # this to <rad_m1> and ZEROES it here.
+rad_flux_limit       = true
+rad_tau_lo  = 1.0e5               # weight 0 on every face: the operator adds nothing
+rad_tau_hi  = 1.0e6
+rad_kappa_rmax       = 0.0
+tfloor  = 5.0e3
+dfloor  = 5.7e-13                 # 1e-3 x the initial TOP-cell density 5.733e-10
+pfloor  = 1.0e0
+fofc    = true
+
+<rad_m1>
+c_light          = 2.99792458e10
+arad             = 1.583122e-46   # a_cgs*T_unit^4, T_unit = mu m_u/k_B = 1.202724e-8 K
+chat_over_c      = 1.0            # TRUE speed of light (milestone 3a)
+cfl_rad          = 0.4
+subcycle         = false
+thick_flux       = ap_hll
+ap_form          = alpha2
+reconstruct      = plm
+closure          = m1
+advect_split     = true
+split_vel        = recon
+source_form      = full
+opacity          = table
+temp_unit_kelvin = 1.202724e-8    # T[K] = T_code * this
+rho_unit_cgs     = 1.0
+kappa_unit       = 1.0
+e_floor          = 1.0e-4         # 1e-9 of E at the box top
+coupling         = true
+gas_feedback     = true
+force_reference  = wb_arad        # subtract what Phi_eff already carries
+rsla_vmax        = 8.6e4          # the column starts from rest: give the check a v_max
+rsla_warn        = 1.0e-1
+rsla_force       = false
+
+# ---- MILESTONE 3a: IMPLICIT x1 transport at the TRUE speed of light (I8).
+# One backward-Euler solve per hydro step, no sub-cycling, no reduced c.  The two x1
+# boundaries are given to the module in FACE-FLUX form: the imposed luminosity at the
+# bottom (the <hydro>/rad_flux_inner the pgen hands over) and a Marshak free surface at
+# the top, F = c q E with q = 1/2, which is the plane-parallel free-surface relation the
+# explicit scheme only gets indirectly through a dark ghost.
+transport             = implicit_x1
+implicit_cfl          = -1.0
+implicit_tol          = 1.0e-8
+implicit_maxit        = 30
+implicit_opac_update  = false
+implicit_allow_multid = false
+marshak_q             = 0.5
+implicit_bc_x1min     = flux
+implicit_bc_x1max     = marshak
+implicit_flux_x1min   = 2.475202e15
+implicit_flux_x1max   = 0.0
+implicit_ebath_x1min  = 0.0
+implicit_ebath_x1max  = 0.0
+
+<problem>
+user_srcs   = true
+user_hist   = true      # the six <rad_m1> columns (F1top/F1mid/F1bot/V1max/Etot/Fres)
+g0          = 3.98107e5
+rho_base    = 1.509747e-06
+t_base      = 3.203880e5
+mu          = 1.3333333
+bc_mode     = 3
+dgrad       = 0.0
+cool_depth  = 5.0e7
+cool_tau    = 1.0e0
+cool_layer  = false
+vpert       = 0.0
+nfine       = 8192
+ic_hse_retune = 0
+ic_profile  = /viper/u2/jinma/ATHENAK/bench/m1_stage2/ic/ic_m1_V2_pgen.txt
+m1_ic_file  = /viper/u2/jinma/ATHENAK/athenak/tests_m1/runs_2a/m1_rad_ic_V2.txt
+opac_table  = /viper/u2/jinma/ATHENAK/bench/hestar_fecz/rosseland_he_x0.0_z0.02.txt
+planck_table = /viper/u2/jinma/ATHENAK/athenak/data/stellar_opac/planck_he_x0.0_z0.02_ferg+tops.txt
+m1_top_bc    = vacuum   # vacuum (the module fill) | dark (zero incoming always)
+wb_phi_eff   = true
+wb_arad_file = /viper/u2/jinma/ATHENAK/bench/m1_stage2/ic/arad_V2.txt
+column_dump  = column_used.txt
+rt_profile_dt   = 25.0
+rt_profile_file = rt_profile.bin
+
+<output1>
+file_type  = hst
+dt         = 1.0
+data_format = %24.16e
+
+<output2>
+file_type  = bin
+variable   = hydro_w
+dt         = 100.0
+
+<output3>
+file_type  = rst
+dt         = 500.0
