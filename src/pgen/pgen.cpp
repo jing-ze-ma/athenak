@@ -28,6 +28,7 @@
 #include "z4c/z4c.hpp"
 #include "radiation/radiation.hpp"
 #include "rad_m1/rad_m1.hpp"
+#include "rad_m1/rad_m1_implicit.hpp"
 #include "srcterms/turb_driver.hpp"
 #include "pgen.hpp"
 
@@ -344,6 +345,9 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
   }
   if (pradm1 != nullptr) {
     data_size_ += nout1*nout2*nout3*nm1*sizeof(Real);    // rad_m1 u0
+    if (pradm1->transport == radm1::M1_TRANSPORT_IMPLICIT_X1) {
+      data_size_ += (nout1+1)*nout2*nout3*sizeof(Real);  // rad_m1 f0x1 (milestone 3a)
+    }
   }
   if (pturb != nullptr) {
     data_size_ += nout1*nout2*nout3*nforce*sizeof(Real); // forcing
@@ -662,6 +666,40 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
                       Kokkos::ALL, Kokkos::ALL, Kokkos::ALL), ccin);
     offset_myrank += nout1*nout2*nout3*nm1*sizeof(Real);    // rad_m1 u0
     myoffset = offset_myrank;
+
+    // milestone 3a: the x1 face fluxes, read back in the same order they were written
+    if (pradm1->transport == radm1::M1_TRANSPORT_IMPLICIT_X1) {
+      HostArray4D<Real> fcin("m1fcin", nmb, nout3, nout2, nout1+1);
+      for (int m=0;  m<noutmbs_max; ++m) {
+        if (m < noutmbs_min) {
+          auto mbptr = Kokkos::subview(fcin, m, Kokkos::ALL, Kokkos::ALL, Kokkos::ALL);
+          int mbcnt = mbptr.size();
+          if (resfile.Read_Reals_at_all(mbptr.data(), mbcnt, myoffset,
+                                        single_file_per_rank) != mbcnt) {
+            std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                      << std::endl << "rad_m1 face data not read correctly from rst "
+                      << "file, restart file is broken." << std::endl;
+            exit(EXIT_FAILURE);
+          }
+          myoffset += data_size;
+        } else if (m < pm->nmb_thisrank) {
+          auto mbptr = Kokkos::subview(fcin, m, Kokkos::ALL, Kokkos::ALL, Kokkos::ALL);
+          int mbcnt = mbptr.size();
+          if (resfile.Read_Reals_at(mbptr.data(), mbcnt, myoffset,
+                                    single_file_per_rank) != mbcnt) {
+            std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                      << std::endl << "rad_m1 face data not read correctly from rst "
+                      << "file, restart file is broken." << std::endl;
+            exit(EXIT_FAILURE);
+          }
+          myoffset += data_size;
+        }
+      }
+      Kokkos::deep_copy(Kokkos::subview(pradm1->f0x1, std::make_pair(0,nmb), Kokkos::ALL,
+                        Kokkos::ALL, Kokkos::ALL), fcin);
+      offset_myrank += (nout1+1)*nout2*nout3*sizeof(Real);   // rad_m1 f0x1
+      myoffset = offset_myrank;
+    }
   }
 
   if (pturb != nullptr) {
