@@ -304,6 +304,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <fstream>
 #include <iostream>
 #include <limits>
@@ -651,6 +652,46 @@ char prof_file_[256] = "rt_profile.bin";
 HostArray2D<Real> prof_h_;       // (kNProf, nx1): the plane SUMS, then the means
 DvceArray2D<Real> prof_d_;
 bool prof_alloc_ = false;
+
+//----------------------------------------------------------------------------------------
+//! \brief THE DUMP PHASE IN THE RESTART FILE (kPgenRstMagic in pgen.hpp).
+//! surf_next_ and prof_next_ are the only state the two dumps carry between calls, and
+//! they are NOT a function of the restored state: they are armed at the FIRST source
+//! call ("surf_next_ = pm->time") and then walk in steps of rt_surface_dt /
+//! rt_profile_dt.  A restart re-arms them at the RESTART time, so the restarted run
+//! dumps on a different clock than the straight run and the .bin files a restart chain
+//! writes are not the ones an uninterrupted run writes -- an extra record right after
+//! every restart, and the whole series shifted from there on.  Carrying the two numbers
+//! makes the series resume exactly.  Layout: int32 count (= 2), int32 pad, then the two
+//! Reals.  A file written without the block leaves them at -1, i.e. the old behaviour.
+
+std::vector<char> BoxConvRestartState() {
+  std::vector<char> out;
+  const std::int32_t hdr[2] = {2, 0};
+  const Real nx[2] = {surf_next_, prof_next_};
+  out.resize(sizeof(hdr) + sizeof(nx));
+  std::memcpy(out.data(), &(hdr[0]), sizeof(hdr));
+  std::memcpy(out.data() + sizeof(hdr), &(nx[0]), sizeof(nx));
+  return out;
+}
+
+//----------------------------------------------------------------------------------------
+//! \brief the other half: restore the dump phase, or say that the file has none.
+
+void BoxConvRestartRestore(const std::vector<char> &blk) {
+  if (blk.size() != 2*sizeof(std::int32_t) + 2*sizeof(Real)) {
+    if (global_variable::my_rank == 0 && (surf_dt_ > 0.0 || prof_dt_ > 0.0)) {
+      std::cout << "### box_convection: this restart file carries no dump phase; the "
+                << "rt_surface / rt_profile series restarts from the restart time"
+                << std::endl;
+    }
+    return;
+  }
+  Real nx[2];
+  std::memcpy(&(nx[0]), blk.data() + 2*sizeof(std::int32_t), sizeof(nx));
+  surf_next_ = nx[0];
+  prof_next_ = nx[1];
+}
 
 // --- problem/rt_budget_verbose: THE BOX ENERGY BUDGET, TERM BY TERM -----------------
 // Diagnostic only.  Every term is an ENERGY (erg), box-integrated and accumulated over
@@ -2528,6 +2569,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     }
     prof_next_ = -1.0;
     prof_alloc_ = false;
+    // the dump phase is pgen state, not a function of the restored fields: carry it in
+    // the restart file so a restart chain writes the series an uninterrupted run writes
+    pgen_rst_write_func = BoxConvRestartState;
+    if (restart) BoxConvRestartRestore(pgen_rststate);
     // ---- the thin-region radiative force (see two_stream_rt.hpp, rt_rad_force) ------
     // It is the other half of the EOS's radiation taper: the taper removes (1-w) of the
     // LTE radiation pressure from the gas, and this puts the force that pressure was
