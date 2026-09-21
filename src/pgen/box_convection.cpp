@@ -3906,6 +3906,18 @@ void BoxConvHistory(HistoryData *pdata, Mesh *pm) {
   //   Fres               max |kappa_R F/c - a_rad_ref|/g0, the residual-force norm
   // V1max and Fres are MAXIMA, so they are reduced with MPI_MAX here and contributed by
   // rank 0 alone: the history's own MPI_SUM over ranks then lands on the number itself.
+  //
+  // MILESTONE 3b, PHASE A1 -- DECOMPOSITION.  F1top/F1mid/F1bot and V1mid are PLANE MEANS
+  // at the GLOBAL top / middle / bottom active x1 cell, and they used to be read at each
+  // MeshBlock's OWN i = ie / is / is+nx1/2.  With blocks tiled in x2/x3 that was already
+  // right (inc divides by the MESH's nx2*nx3 and every column contributes once), but with
+  // blocks STACKED ALONG x1 every block contributed its own end plane, so the columns
+  // came out part_nblk times too large and mixed heights.  The planes are now selected by
+  // the GLOBAL x1 index of the cell -- gplane(m,*) below holds, per block, the LOCAL i of
+  // the global bottom / mid / top plane or -1 when this block does not own it -- so the
+  // three columns are proper horizontal means over the whole plane, wherever the owning
+  // block is, under MPI as well.  Etot and KEcol are volume sums and were always right;
+  // V1max and Fres are maxima and were always right.
   if (m1_on_) {
     MeshBlockPack *pmbp = pm->pmb_pack;
     radm1::RadiationM1 *pm1 = pmbp->pradm1;
@@ -3928,8 +3940,23 @@ void BoxConvHistory(HistoryData *pdata, Mesh *pm) {
     const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
     const int ks = indcs.ks, ke = indcs.ke;
     const int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
-    const int imid = is + nx1/2;
     const int nmb1 = pmbp->nmb_thispack - 1;
+    // the LOCAL x1 index of the global bottom / mid / top plane, per block, or -1.  The
+    // mesh is uniform here (<rad_m1> fatals on SMR/AMR), so the global index of a block's
+    // first active cell is lx1*nx1.
+    const int nx1g = pm->mesh_indcs.nx1;
+    const int gb = 0, gm = nx1g/2, gt = nx1g - 1;
+    DualArray2D<int> gplane("boxconv_m1_gplane", pmbp->nmb_thispack, 3);
+    for (int m=0; m<pmbp->nmb_thispack; ++m) {
+      const int off = static_cast<int>(pm->lloc_eachmb[pmbp->gids+m].lx1)*nx1;
+      const int gg[3] = {gb, gm, gt};
+      for (int n=0; n<3; ++n) {
+        const int il = gg[n] - off;
+        gplane.h_view(m,n) = (il >= 0 && il < nx1) ? (is + il) : (-1);
+      }
+    }
+    gplane.modify_host();
+    gplane.sync_device();
     const int ncell = pmbp->nmb_thispack*nx3*nx2*nx1;
     auto &size = pmbp->pmb->mb_size;
     auto &u0 = pmbp->phydro->u0;
@@ -3942,6 +3969,7 @@ void BoxConvHistory(HistoryData *pdata, Mesh *pm) {
     const Real inc = 1.0/(static_cast<Real>(pm->mesh_indcs.nx2)*
                           static_cast<Real>(pm->mesh_indcs.nx3));
     array_sum::GlobalSum sum_m1;
+    auto gpl = gplane;
     Kokkos::parallel_reduce("boxconv_m1hist",
     Kokkos::RangePolicy<>(DevExeSpace(), 0, ncell),
     KOKKOS_LAMBDA(const int idx, array_sum::GlobalSum &mb_sum) {
@@ -3960,11 +3988,11 @@ void BoxConvHistory(HistoryData *pdata, Mesh *pm) {
       const Real dv = size.d_view(m).dx1*size.d_view(m).dx2*size.d_view(m).dx3;
       array_sum::GlobalSum hvars;
       for (int n=0; n<NHISTORY_VARIABLES; ++n) hvars.the_array[n] = 0.0;
-      if (i == ie)   hvars.the_array[0] = inc*ru0(m,radm1::M1_F1,k,j,i);
-      if (i == imid) hvars.the_array[1] = inc*ru0(m,radm1::M1_F1,k,j,i);
-      if (i == is)   hvars.the_array[2] = inc*ru0(m,radm1::M1_F1,k,j,i);
+      if (i == gpl.d_view(m,2)) hvars.the_array[0] = inc*ru0(m,radm1::M1_F1,k,j,i);
+      if (i == gpl.d_view(m,1)) hvars.the_array[1] = inc*ru0(m,radm1::M1_F1,k,j,i);
+      if (i == gpl.d_view(m,0)) hvars.the_array[2] = inc*ru0(m,radm1::M1_F1,k,j,i);
       hvars.the_array[4] = dv*(eg + ctc*ru0(m,radm1::M1_E,k,j,i));
-      if (i == imid) hvars.the_array[6] = inc*u0(m,IM1,k,j,i)*id;
+      if (i == gpl.d_view(m,1)) hvars.the_array[6] = inc*u0(m,IM1,k,j,i)*id;
       hvars.the_array[7] = dv*0.5*(SQR(u0(m,IM1,k,j,i)) + SQR(u0(m,IM2,k,j,i))
                                    + SQR(u0(m,IM3,k,j,i)))*id;
       mb_sum += hvars;

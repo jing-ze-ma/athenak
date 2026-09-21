@@ -1,0 +1,140 @@
+MILESTONE 3b, PHASES 2-4 -- results.  Branch rt-integration, on top of d224ba5c.
+ONLY PHASE A (the two box_convection fixes) is DONE and gated.  PHASE B (transverse
+x2/x3 implicit transport, implicit_solver = line_jacobi | bicgstab), PHASE C (the He box
+in 2-D/3-D) and PHASE D (GPU) are NOT STARTED.  Design note: docs/dev/
+rad_m1_implicit_design.md sect. 10.
+
+Binaries (serial CPU, module purge; module load gcc/14 cmake/4.0):
+  build_cpu_box  cmake -S . -B build_cpu_box -D CMAKE_BUILD_TYPE=Release \
+                       -D PROBLEM=box_convection
+  build_cpu_m1   the same without PROBLEM (untouched this session)
+Two build directories at any time (viper inode quota); every run's dumps deleted as soon
+as they were measured.  No cluster job was submitted.
+
+
+PHASE A1 -- the six <rad_m1> user-history columns under decomposition
+---------------------------------------------------------------------
+src/pgen/box_convection.cpp, BoxConvHistory, the m1_on_ branch.
+
+THE DEFECT.  F1top / F1mid / F1bot and V1mid were read at each MeshBlock's OWN
+i = ie / is / is + nx1/2.  With blocks tiled in x2/x3 that was already a proper plane
+mean (`inc` divides by the MESH's nx2*nx3, so each column contributes once and the
+history's MPI_SUM lands on the mean).  With blocks STACKED ALONG x1 every block
+contributed its own end plane: the three flux columns came out part_nblk times too large
+and mixed heights, and V1mid became a sum over part_nblk different depths.
+
+THE FIX.  A per-block table gplane(m,0..2) built on the host from the block's logical
+x1 location holds the LOCAL i of the GLOBAL bottom / mid / top plane, or -1 when this
+block does not own it; the reduction tests against it.  Maxima (V1max, Fres) and volume
+sums (Etot, KEcol) were always decomposition-correct and are untouched.
+
+GATE, 1-D He column (he_box_m1_1d_impl.athinput, implicit_x1 + implicit_partition =
+gather), t = 20 s, last history row:
+
+                      F1top            F1mid            F1bot         V1mid
+  1 block      2.4752305922e15  2.4752258989e15  2.4750272290e15   -4.023417e2
+  2 blocks     2.4752305922e15  2.4752258988e15  2.4750272290e15   -4.023416e2
+  4 blocks     2.4752305922e15  2.4752258988e15  2.4750272290e15   -4.023417e2
+  2 blocks, OLD CODE (HEAD, rebuilt and rerun to confirm the size of the bug):
+               4.9504558536e15  4.9504282717e15  4.9502531278e15   +3.511064e3
+               i.e. EXACTLY 2x on the three flux columns, and V1mid a different
+               quantity of the wrong sign.
+The 1/2/4-block spread after the fix is 2e-11 relative on the flux columns, which is the
+trajectory divergence of A2 below, not a residue of the summation.
+
+ONE-BLOCK REGRESSION: the reference line is unchanged (see REGRESSION below), which is
+what the brief required.
+
+
+PHASE A2 -- is box_convection block-decomposition invariant along x1?
+----------------------------------------------------------------------
+VERDICT: there is NO BUG in the code paths the M1 box uses.  The non-invariance is
+ROUND-OFF IN THE MESH CELL-CENTRE COORDINATES, amplified ~1e7 by the fact that the total
+x1 momentum of a hydrostatic column starts at exactly zero and stays ~1e-8 of the force
+terms that cancel into it.  Nothing in wb_phi_eff, the a_rad_ref fill, the M1 IC reader,
+the bc_mode = 3 wall walk or the BC branch treats a MeshBlock's x1 extent as the column.
+
+THE MEASUREMENT (he_box_m1_1d_impl.athinput, meshblock/nx1 = 84 vs 42, nlim = 1,
+hydro_u and m1 tab dumps compared cell by cell after sorting on x1v):
+
+  dump 0 (the INITIAL CONDITION, before any step; max relative difference)
+      x1v   8.19e-14      <- the cell CENTRES already differ, ~2 ulp
+      dens  6.48e-15   ener 6.33e-15   mom1 0.0
+      M1 E  1.98e-15   M1 F1 0.0
+  dump 1 (after ONE cycle)
+      dens  5.54e-15   ener 4.53e-11   mom1 1.76e-06   (84 of 84 cells, not localised
+                                                        at the block interface i = 42)
+      M1 E  4.20e-12   M1 F1 8.66e-12   (identical in size with transport = explicit:
+                                         3.05e-12 / 2.26e-13, so it is NOT the gather
+                                         partition)
+
+WHY THE COORDINATES DIFFER.  x1v = CellCenterX(i-is, nx1, x1min, x1max) is evaluated from
+each MeshBlock's OWN (x1min, x1max, nx1); the block edges are not exact binary fractions
+of the mesh, so the same physical cell centre comes out ~2 ulp apart under a different
+decomposition.  The pgen interpolates the initial column, the M1 IC and a_rad_ref at
+those coordinates, so the initial state differs at 5e-15.  This is a generic AthenaK
+property, not a box_convection one.
+
+THE CONTROL that settles it.  A SINGLE-BLOCK run with mesh/x1min moved by ONE ULP
+(-1.8149339e8 -> -181493390.00000006) reproduces the same signature:
+
+                                       x1v       dens      mom1 (1 cycle)   ener
+  1 block, x1min + 1 ulp            5.43e-15   4.36e-15     5.00e-08      1.14e-12
+  1 vs 2 blocks                     8.19e-14   6.48e-15     1.76e-06      4.53e-11
+i.e. a coordinate perturbation 15x smaller gives a momentum perturbation 35x smaller, in
+the same channel and with the same "every cell, not the interface" pattern.  The
+amplification from the IC perturbation to mom1 after one step is ~1e7 in both.
+
+CONSEQUENCE FOR THE GATE.  "1 vs 2 vs 4 blocks bitwise" is NOT achievable for this
+problem and never was; the honest statement is: mass and total energy agree to round-off
+(1.4e-15 / 4e-16 relative over 60 s), the total x1 momentum -- a near-exact cancellation
+that starts at zero -- agrees to 1.9e-5 RELATIVE, i.e. 3e14 absolute on a 1e21 scale,
+seeded by a 5e-15 coordinate round-off.  The implicit partition contributes nothing to
+this: the Picard statistics are identical to the last digit for 1, 2 and 4 blocks, and
+the explicit transport shows the SAME divergence (3.2e-4 in 3b's measurement).
+
+NOT FIXED, REPORTED (out of scope, mesh-wide):  making x1v decomposition-invariant would
+mean computing cell centres from the GLOBAL mesh extents and the global index rather than
+from the block's own edges.  That would make this and every other stratified pgen
+reproducible under decomposition, and is the only way the gate above becomes bitwise.
+
+ALSO REPORTED, NOT TOUCHED (a two-stream-only path, as the brief directed): the non-M1
+branch of BoxConvHistory reads the emergent flux at fb(m,b,ie+1,k,j), the block's own top
+face, and its comment states the assumption "one MeshBlock spans the whole x1 extent".
+It has the same defect as A1 had, and would need the same treatment before a two-stream
+run is decomposed along x1.
+
+
+REGRESSION
+----------
+tests_gate_merge/postmerge.sh, after the A1 fix:
+  box G1 mode 3: feczrt.hydro.hst, feczrt.user.hst, column_used.txt, rt_surface.bin,
+                 rt_profile.bin   -- all 5 IDENTICAL
+  box G1 mode 0: the same 5                             -- all 5 IDENTICAL   (10/10)
+  1-D He column, implicit_x1, t = 300 s, ONE block:
+      F1top 2.4752259854942720e15 / Fin = 1.0000097
+      F1bot 2.4747941961720800e15 / Fin = 0.9998352
+      V1max 1.8343925542664529e4
+      Picard solves 1862, mean 11.70892, max 23, NON-CONVERGED 0
+      = the 3b reference line to every digit.  The A1 change is inert on one block, as
+        required.
+
+
+STYLE
+-----
+cpplint (repo CPPLINT.cfg, 90 columns) on src/pgen/box_convection.cpp: 6 reports, the
+SAME 6 as at HEAD (5 build/include_subdir, 1 whitespace/newline) -- 0 new.
+No line over 90 columns, no tabs, no trailing whitespace, no `}}` on one line, mode 644.
+flake8 --max-line-length 90 on tests_m1/runs_3b2: clean.
+
+
+NOT DONE
+--------
+PHASE B  transverse x2/x3 implicit transport (`<rad_m1>/transport = implicit`), the
+         persistent x2/x3 face fluxes and their restart treatment, the diagonal/off-
+         diagonal Eddington terms, `implicit_solver = line_jacobi | bicgstab`, the true
+         7-point residual test `implicit_lin_tol`, and the eight G-* gates.  NOT STARTED:
+         no line of it is in the tree, so `transport = implicit` is still an unknown
+         option and `implicit_x1` still gives independent columns.
+PHASE C  the 2-D / 3-D He box.  NOT STARTED (it needs phase B).
+PHASE D  GPU.  NOT STARTED.

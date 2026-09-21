@@ -1,0 +1,91 @@
+{
+ "milestone": "3b phases 2-4 (only PHASE A done)",
+ "note": "PHASE B (transverse implicit transport), C (2-D/3-D He box) and D (GPU) NOT STARTED",
+ "A1_history_columns": {
+  "problem": "he_box_m1_1d_impl.athinput, implicit_x1 + implicit_partition=gather, t=20 s",
+  "columns": [
+   "F1top",
+   "F1mid",
+   "F1bot",
+   "V1mid"
+  ],
+  "fixed_1blk": [
+   2475230592213059.5,
+   2475225898875560.0,
+   2475027229001253.0,
+   -402.3416515300099
+  ],
+  "fixed_2blk": [
+   2475230592167224.0,
+   2475225898808809.5,
+   2475027228998031.5,
+   -402.3416436994986
+  ],
+  "fixed_4blk": [
+   2475230592195559.5,
+   2475225898844364.0,
+   2475027228996139.5,
+   -402.34168517419386
+  ],
+  "old_2blk": [
+   4950455853644529.0,
+   4950428271720209.0,
+   4950253127806841.0,
+   3511.063711636363
+  ],
+  "old_2blk_over_fixed": [
+   2.0,
+   2.0,
+   2.0,
+   null
+  ]
+ },
+ "A2_decomposition": {
+  "seed": "cell-centre coordinate round-off (x1v from each block's own x1min/x1max)",
+  "max_rel_diff": {
+   "1v2blk_ic": {
+    "x1v": 8.19e-14,
+    "dens": 6.48e-15,
+    "ener": 6.33e-15,
+    "m1_E": 1.98e-15,
+    "mom1": 0.0
+   },
+   "1v2blk_cyc1": {
+    "x1v": 8.19e-14,
+    "dens": 5.54e-15,
+    "ener": 4.53e-11,
+    "m1_E": 4.2e-12,
+    "mom1": 1.76e-06
+   },
+   "1blk_x1min_plus_1ulp_cyc1": {
+    "x1v": 5.43e-15,
+    "dens": 4.36e-15,
+    "ener": 1.14e-12,
+    "mom1": 5e-08
+   },
+   "1v2blk_explicit_cyc1": {
+    "m1_E": 3.05e-12,
+    "m1_F1": 2.26e-13
+   }
+  },
+  "hst_60s_1v2blk": {
+   "mass": 1.387e-15,
+   "x1_momentum": 1.888e-05,
+   "tot_energy": 9.775e-12
+  }
+ },
+ "picard_1d": {
+  "problem": "1-D He column, 300 s, central/dc, true c",
+  "solves": 1862,
+  "mean": 11.70892,
+  "max": 23,
+  "nonconverged": 0
+ },
+ "regression": {
+  "box_G1_files_identical": 10,
+  "box_G1_files_total": 10,
+  "F1top_over_Fin": 1.0000097,
+  "F1bot_over_Fin": 0.9998352,
+  "V1max": 18343.92554266453
+ }
+}

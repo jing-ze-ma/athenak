@@ -709,3 +709,66 @@ neighbouring cell, and both are already in halo A of the 3b exchange.
  implicit_blend_mode  flux (dissipation is rejected, see above)
  implicit_recon_npass -1 (rejected, see above)
 ```
+
+---
+
+## 10. Findings of 3b phases 2-4 (2026-09-21; supersede sect. 6-9 where they differ)
+
+Phases 2-4 of milestone 3b were scoped as: (A) two `box_convection` fixes, (B) transverse
+x2/x3 implicit transport with `implicit_solver = line_jacobi | bicgstab`, (C) the He box
+in 2-D/3-D, (D) GPU.  **Only PHASE A is done and gated.  B, C and D are NOT STARTED** --
+`<rad_m1>/transport = implicit` does not exist, and a multi-dimensional run is still the
+set of independent x1 columns of sect. 8.  Gate tables and the exact commands:
+`tests_m1/runs_3b2/RESULTS.txt`.
+
+### PHASE A1 -- the six `<rad_m1>` user-history columns under decomposition
+
+The defect sect. 8 recorded is fixed.  `F1top`/`F1mid`/`F1bot` and `V1mid` were read at
+each MeshBlock's OWN `i = ie / is / is+nx1/2`.  Tiled in x2/x3 that was already a proper
+plane mean (`inc` divides by the MESH's `nx2*nx3`); STACKED ALONG x1 every block
+contributed its own end plane, so the three flux columns came out `part_nblk` times too
+large and mixed heights.  A per-block table built from the block's logical x1 location now
+holds the LOCAL `i` of the GLOBAL bottom / mid / top plane, or -1.  Maxima (`V1max`,
+`Fres`) and volume sums (`Etot`, `KEcol`) were always right.  Measured on the 1-D He
+column at t = 20 s: 1, 2 and 4 blocks along x1 now agree to 2e-11, where the HEAD code
+gave **exactly 2x** on 2 blocks and a `V1mid` of the wrong sign.  On ONE block the
+reference line is untouched (postmerge: `F1top/Fin` 1.0000097, `F1bot/Fin` 0.9998352,
+`V1max` 1.8343926e4, Picard 11.70892, box G1 10/10 identical).
+
+### PHASE A2 -- `box_convection` is not x1-decomposition invariant, and it is not a bug
+
+**The cause is round-off in the MESH CELL-CENTRE COORDINATES, amplified ~1e7 by the
+momentum cancellation.**  `x1v` is evaluated from each MeshBlock's own
+`(x1min, x1max, nx1)`, so the same physical cell centre comes out ~2 ulp apart under a
+different decomposition (measured: 8.2e-14 relative).  The pgen interpolates the initial
+column, the M1 IC and `a_rad_ref` at those coordinates, so the INITIAL STATE already
+differs at 5e-15 -- before any step -- and after one cycle `mom1` differs at 1.8e-6
+relative in EVERY cell, not at the block interface.  The control settles it: a
+single-block run with `mesh/x1min` moved by ONE ULP reproduces the same signature at the
+proportionally smaller size (coordinate 15x smaller, momentum 35x smaller).  The total
+x1 momentum of a hydrostatic column starts at exactly zero and remains ~1e-8 of the force
+terms that cancel into it, which is where the 1e7 comes from.  Nothing in `wb_phi_eff`,
+the `a_rad_ref` fill, the M1 IC reader, the `bc_mode = 3` wall walk or the BC branch
+treats a MeshBlock's x1 extent as the whole column; the implicit `gather` partition adds
+nothing (identical Picard statistics for 1, 2, 4 blocks, and `transport = explicit` shows
+the same divergence).
+
+**So the "1 vs 2 vs 4 blocks bitwise" gate is not achievable for this problem and never
+was.**  What holds: mass and total energy to round-off (1.4e-15 / 4e-16 over 60 s); the
+total x1 momentum to 1.9e-5 relative, seeded by 5e-15.  The only way to make it bitwise
+is to compute cell centres from the GLOBAL mesh extents and the global index instead of
+from each block's edges -- a mesh-wide change, not made here, and the recommendation to
+carry into any milestone that needs decomposition-invariant stratified columns.
+
+Reported and NOT touched (a two-stream-only path): the non-M1 branch of `BoxConvHistory`
+reads the emergent flux at the block's own `ie+1` face and its comment states the
+assumption that one MeshBlock spans the whole x1 extent; it has the same defect A1 had.
+
+### What phase B still needs
+
+Unchanged from sect. 8: the x1 halo of LIMIT 4 is the mechanism to extend to x2/x3
+neighbours (a per-iteration exchange driven from inside the Picard loop, deterministic),
+the persistent face-normal fluxes need the same restart treatment as `f0x1` with a
+backward-compatible read, and the linear-system residual of the full 7-point operator has
+to be tested separately from the Picard residual or lagging the transverse couplings will
+look converged when it has only stalled.
