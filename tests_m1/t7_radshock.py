@@ -571,6 +571,58 @@ def compare(sol, units, x, rho, tgas, trad, args):
     return errors(shift), shift, (shift - guess) / dx
 
 
+def spike_and_precursor(sol, units, x, tgas, shift, frac):
+    """Zel'dovich spike temperature and precursor length, code and reference.
+
+    The spike is ``max(T_gas)`` over the whole profile (it sits just behind
+    the embedded hydrodynamic shock); the precursor length is the distance
+    upstream of the shock over which ``T_gas`` exceeds the upstream value by
+    ``frac`` of the total jump ``T1 - T0``.  Both are measured the same way
+    on the code profile and on the semi-analytic reference sampled at the
+    same cell centres, so a resolution bias cancels in the comparison.
+    """
+    prof = sol.sample((x - shift) / units.length)
+    tref = prof["tgas"] * units.t0
+    t0 = float(sol.par.t0 if hasattr(sol.par, "t0") else 1.0) * units.t0
+    t1 = float(tref[-1])
+    t0 = float(tref[0])
+
+    def measure(tt):
+        thr = t0 + frac * (t1 - t0)
+        up = x < shift
+        if not up.any() or not (tt[up] > thr).any():
+            return float(tt.max()), 0.0
+        xfirst = float(x[up][np.argmax(tt[up] > thr)])
+        return float(tt.max()), float(shift - xfirst)
+
+    sc, pc = measure(tgas)
+    sr, pr = measure(tref)
+    return sc, sr, pc, pr
+
+
+def write_json(path, x, rho, tgas, trad, sol, units, shift, meta):
+    """Thinned profile JSON for the results page (code and reference)."""
+    import json
+    n = x.size
+    step = max(1, n // 260)
+    sel = slice(None, None, step)
+    prof = sol.sample((x - shift) / units.length)
+    out = {"x": [float(v) for v in x[sel]],
+           "series": {
+               "rho": [float(v) for v in rho[sel]],
+               "tgas": [float(v) for v in tgas[sel]],
+               "trad": [float(v) for v in trad[sel]],
+               "rho_ref": [float(v) for v in (prof["rho"]
+                                              * units.rho0)[sel]],
+               "tgas_ref": [float(v) for v in (prof["tgas"]
+                                               * units.t0)[sel]],
+               "trad_ref": [float(v) for v in (prof["trad"]
+                                               * units.t0)[sel]]},
+           "meta": meta}
+    with open(path, "w") as fp:
+        json.dump(out, fp)
+
+
 # ----------------------------------------------------------------------
 def selftest(sol, units, args):
     """Reference resampled onto a coarse grid, optionally corrupted."""
@@ -658,6 +710,14 @@ def main():
     p.add_argument("--end-tol", type=float, default=1.0e-3,
                    help="allowed offset of the profile ends from equilibrium")
     p.add_argument("--selftest-nx", type=int, default=512)
+    p.add_argument("--hydro", default=None,
+                   help="the matching hydro dump (file_type = tab writes one "
+                        "file per <output> block, so rho and eint are in a "
+                        "second file)")
+    p.add_argument("--json", default=None,
+                   help="write the thinned code+reference profiles here")
+    p.add_argument("--precursor-frac", type=float, default=0.01,
+                   help="fraction of T1 - T0 defining the precursor edge")
     p.add_argument("--axis", type=int, default=1, choices=(1, 2, 3))
     p.add_argument("--reduce", default="mid", choices=("mid", "mean"))
     p.add_argument("--selftest-fail", action="store_true",
@@ -707,9 +767,29 @@ def main():
     else:
         dump = common.load_dump(args.dump, args.bin_convert_dir,
                                 args.all_ranks)
+        if args.hydro:
+            hyd = common.load_dump(args.hydro, args.bin_convert_dir,
+                                   args.all_ranks)
+            for key, val in hyd.data.items():
+                dump.data.setdefault(key, val)
 
     x, rho, tgas, trad = dump_profiles(dump, args, units)
     errs, shift, cells = compare(sol, units, x, rho, tgas, trad, args)
+    sc, sr, pc, pr = spike_and_precursor(sol, units, x, tgas, shift,
+                                         args.precursor_frac)
+    common.report(args, "t=%.6g  shock aligned at x=%.6e  Zel'dovich spike "
+                        "T_gas = %.6e (reference %.6e, %+.2f %%)"
+                  % (dump.time, shift, sc, sr, 100.0 * (sc / sr - 1.0)))
+    common.report(args, "precursor length at %g of T1-T0: %.6e (reference "
+                        "%.6e, %+.2f %%)"
+                  % (args.precursor_frac, pc, pr,
+                     100.0 * (pc / pr - 1.0) if pr > 0.0 else float("nan")))
+    if args.json:
+        write_json(args.json, x, rho, tgas, trad, sol, units, shift,
+                   {"m0": args.m0, "time": dump.time, "shift": shift,
+                    "l1": [float(v) for v in errs],
+                    "spike": [sc, sr], "precursor": [pc, pr],
+                    "source": args.dump})
     ok = internal and bool((errs <= args.tol).all())
     common.verdict(ok, "T7 radshock M0=%g (%s): L1 rho=%.3e T_gas=%.3e "
                        "T_rad=%.3e (<= %.3g)  shift=%.2f cells  "
