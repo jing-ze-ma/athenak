@@ -1,0 +1,42 @@
+exp mb=64 ref  D_exp_64_ref                 amp= 0.74768  L1=  0.2601  Linf=  0.3406  edge=  0.3385  interior=  0.3406
+exp mb=64 after  D_exp_64_after               amp= 0.74768  L1=  0.2601  Linf=  0.3406  edge=  0.3385  interior=  0.3406
+exp mb=32 ref  D_exp_32_ref                 amp= 0.74768  L1=  0.2601  Linf=  0.3406  edge=  0.3385  interior=  0.3406
+exp mb=32 after  D_exp_32_after               amp= 0.74768  L1=  0.2601  Linf=  0.3406  edge=  0.3385  interior=  0.3406
+exp mb=16 ref  D_exp_16_ref                 amp= 0.74768  L1=  0.2601  Linf=  0.3406  edge=  0.3385  interior=  0.3406
+exp mb=16 after  D_exp_16_after               amp= 0.74768  L1=  0.2601  Linf=  0.3406  edge=  0.3385  interior=  0.3406
+adi mb=64 ref  Traceback (most recent call last):
+  File "/viper/u2/jinma/ATHENAK/athenak/tests_seam_cc_corner/../tests_adi/measure_cs.py", line 94, in <module>
+    r = measure(sys.argv[1], lh, kf)
+  File "/viper/u2/jinma/ATHENAK/athenak/tests_seam_cc_corner/../tests_adi/measure_cs.py", line 54, in measure
+    assert len(files) >= 2, "no dumps in " + rundir
+AssertionError: no dumps in D_adi_64_ref
+adi mb=64 after  Traceback (most recent call last):
+  File "/viper/u2/jinma/ATHENAK/athenak/tests_seam_cc_corner/../tests_adi/measure_cs.py", line 94, in <module>
+    r = measure(sys.argv[1], lh, kf)
+  File "/viper/u2/jinma/ATHENAK/athenak/tests_seam_cc_corner/../tests_adi/measure_cs.py", line 54, in measure
+    assert len(files) >= 2, "no dumps in " + rundir
+AssertionError: no dumps in D_adi_64_after
+adi mb=32 ref  Traceback (most recent call last):
+  File "/viper/u2/jinma/ATHENAK/athenak/tests_seam_cc_corner/../tests_adi/measure_cs.py", line 94, in <module>
+    r = measure(sys.argv[1], lh, kf)
+  File "/viper/u2/jinma/ATHENAK/athenak/tests_seam_cc_corner/../tests_adi/measure_cs.py", line 54, in measure
+    assert len(files) >= 2, "no dumps in " + rundir
+AssertionError: no dumps in D_adi_32_ref
+adi mb=32 after  Traceback (most recent call last):
+  File "/viper/u2/jinma/ATHENAK/athenak/tests_seam_cc_corner/../tests_adi/measure_cs.py", line 94, in <module>
+    r = measure(sys.argv[1], lh, kf)
+  File "/viper/u2/jinma/ATHENAK/athenak/tests_seam_cc_corner/../tests_adi/measure_cs.py", line 54, in measure
+    assert len(files) >= 2, "no dumps in " + rundir
+AssertionError: no dumps in D_adi_32_after
+adi mb=16 ref  Traceback (most recent call last):
+  File "/viper/u2/jinma/ATHENAK/athenak/tests_seam_cc_corner/../tests_adi/measure_cs.py", line 94, in <module>
+    r = measure(sys.argv[1], lh, kf)
+  File "/viper/u2/jinma/ATHENAK/athenak/tests_seam_cc_corner/../tests_adi/measure_cs.py", line 54, in measure
+    assert len(files) >= 2, "no dumps in " + rundir
+AssertionError: no dumps in D_adi_16_ref
+adi mb=16 after  Traceback (most recent call last):
+  File "/viper/u2/jinma/ATHENAK/athenak/tests_seam_cc_corner/../tests_adi/measure_cs.py", line 94, in <module>
+    r = measure(sys.argv[1], lh, kf)
+  File "/viper/u2/jinma/ATHENAK/athenak/tests_seam_cc_corner/../tests_adi/measure_cs.py", line 54, in measure
+    assert len(files) >= 2, "no dumps in " + rundir
+AssertionError: no dumps in D_adi_16_after

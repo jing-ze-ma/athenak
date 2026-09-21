@@ -1,0 +1,88 @@
+Mesh: spherical-polar x3-face theta correction = rotate
+
+Cubed sphere: Root grid = 6 x 1 x (1 x 1) MeshBlocks
+Total number of MeshBlocks = 6
+Number of logical  levels of refinement = 0 (1 levels total)
+Number of physical levels of refinement = 0 (1 levels total)
+Number of parallel ranks = 1
+
+Setup complete, executing task list(s)...
+
+elapsed=1.536523e-01 cycle=0 time=0.000000e+00 dt=9.355519e-04
+### CS CONSERVED SUMS at t = 2.99999999999999989e-01  (ncyc 278)
+###   volume 2.93215314335046813e+01
+###   mass   2.93215314335046955e+01
+###   energy 1.08771595925670482e+02
+###   Px     -7.33342504236427928e+00
+###   Py     -7.33342542389480556e+00
+###   Pz     -7.33827920159023606e+00
+###   Lx     9.09835400092992325e-05
+###   Ly     -9.10857451620111558e-05
+###   Lz     7.06136667876658165e-07
+### CS BLAST (iprob=12): centre (0.5774,0.5774,0.5774)  cap 0.250 rad  p_in 100  t 0.3000
+###   SPHERICAL-SYMMETRY residual (max-min)/mean per geodesic bin:  Linf=2.4637e+00 (bin 21 of 48)  mean=3.5858e-01
+###     restricted to cells within 2 cells of a panel seam:  Linf=2.1934e+00  mean=3.3274e-01
+###   min pressure 1.483322e+00   min density 9.688276e-02
+###   PROFILE  bin  angle      mean_p        min_p         max_p
+###   PROF   0   0.0327   3.76152e+00   3.58109e+00   3.97457e+00
+###   PROF   1   0.0982   3.79691e+00   3.62341e+00   3.99537e+00
+###   PROF   2   0.1636   3.86258e+00   3.72995e+00   4.02703e+00
+###   PROF   3   0.2291   3.95212e+00   3.86519e+00   4.06735e+00
+###   PROF   4   0.2945   4.03870e+00   3.96496e+00   4.13056e+00
+###   PROF   5   0.3600   4.13201e+00   4.03254e+00   4.26137e+00
+###   PROF   6   0.4254   4.24100e+00   4.09293e+00   4.49581e+00
+###   PROF   7   0.4909   4.37472e+00   4.09173e+00   4.98187e+00
+###   PROF   8   0.5563   4.64382e+00   4.05799e+00   6.04044e+00
+###   PROF   9   0.6218   4.62012e+00   4.02099e+00   5.96302e+00
+###   PROF  10   0.6872   4.17756e+00   3.39733e+00   4.69688e+00
+###   PROF  11   0.7527   4.24648e+00   3.52453e+00   4.95603e+00
+###   PROF  12   0.8181   4.70499e+00   3.99180e+00   5.75165e+00
+###   PROF  13   0.8836   5.46632e+00   4.01444e+00   7.69404e+00
+###   PROF  14   0.9490   6.51336e+00   4.07358e+00   1.06667e+01
+###   PROF  15   1.0145   8.06336e+00   4.14560e+00   1.64991e+01
+###   PROF  16   1.0799   9.58061e+00   4.26814e+00   1.98147e+01
+###   PROF  17   1.1454   8.82469e+00   4.45690e+00   1.88752e+01
+###   PROF  18   1.2108   5.35239e+00   1.48448e+00   8.40049e+00
+###   PROF  19   1.2763   3.90688e+00   1.48332e+00   7.59941e+00
+###   PROF  20   1.3417   2.94913e+00   1.48338e+00   6.97121e+00
+###   PROF  21   1.4072   1.96271e+00   1.48338e+00   6.31896e+00
+###   PROF  22   1.4726   1.51514e+00   1.48337e+00   2.24327e+00
+###   PROF  23   1.5381   1.50219e+00   1.48337e+00   1.51209e+00
+###   PROF  24   1.6035   1.50220e+00   1.48337e+00   1.51209e+00
+###   PROF  25   1.6690   1.50220e+00   1.48337e+00   1.51209e+00
+###   PROF  26   1.7344   1.50220e+00   1.48338e+00   1.51209e+00
+###   PROF  27   1.7999   1.50220e+00   1.48338e+00   1.51209e+00
+###   PROF  28   1.8653   1.50220e+00   1.48338e+00   1.51209e+00
+###   PROF  29   1.9308   1.50220e+00   1.48338e+00   1.51209e+00
+###   PROF  30   1.9962   1.50220e+00   1.48338e+00   1.51209e+00
+###   PROF  31   2.0617   1.50220e+00   1.48338e+00   1.51209e+00
+###   PROF  32   2.1271   1.50220e+00   1.48338e+00   1.51209e+00
+###   PROF  33   2.1926   1.50220e+00   1.48338e+00   1.51209e+00
+###   PROF  34   2.2580   1.50220e+00   1.48338e+00   1.51209e+00
+###   PROF  35   2.3235   1.50220e+00   1.48338e+00   1.51209e+00
+###   PROF  36   2.3889   1.50220e+00   1.48338e+00   1.51209e+00
+###   PROF  37   2.4544   1.50220e+00   1.48338e+00   1.51209e+00
+###   PROF  38   2.5198   1.50220e+00   1.48337e+00   1.51209e+00
+###   PROF  39   2.5853   1.50220e+00   1.48341e+00   1.51207e+00
+###   PROF  40   2.6507   1.50220e+00   1.48367e+00   1.51198e+00
+###   PROF  41   2.7162   1.50220e+00   1.48388e+00   1.51191e+00
+###   PROF  42   2.7816   1.50220e+00   1.48446e+00   1.51170e+00
+###   PROF  43   2.8471   1.50220e+00   1.48528e+00   1.51142e+00
+###   PROF  44   2.9125   1.50220e+00   1.48597e+00   1.51118e+00
+###   PROF  45   2.9780   1.50220e+00   1.48693e+00   1.51084e+00
+###   PROF  46   3.0434   1.50220e+00   1.48834e+00   1.51035e+00
+###   PROF  47   3.1089   1.50220e+00   1.48914e+00   1.51007e+00
+###   max p domain 1.9815e+01   max p within 2 cells of a seam 1.9128e+01   front reached 3.118 rad (seam at 0.785)
+###   max |sum A.B| / (|B| max A) = 9.5777e-14   (|B|max 5.2674e-01)
+###   max |B.rhat| at a RADIAL WALL = 1.3210e-03  (/|B|max = 2.5079e-03) -- the conserved sums are a CLOSED budget only if this is ~0
+###   NON-FINITE cells: 0 of 49152   (within 2 cells of a seam: 0 of 11520)
+### CS BLAST PROFILE written to cs_mhd_blast-blast.dat
+
+Terminating on time limit
+time=3.000000e-01 cycle=278
+tlim=3.000000e-01 nlim=-1
+
+MeshBlock-cycles = 1668
+cpu time used  = 3.157687e+01
+zone-cycles/cpu_second = 4.327300e+05
+particle-updates/cpu_second = 0.000000e+00

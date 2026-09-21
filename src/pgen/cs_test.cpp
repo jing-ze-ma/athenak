@@ -6243,6 +6243,67 @@ void CSTestSeamHaloScan(ParameterInput *pin, Mesh *pm) {
     std::printf("###   %s  n = %8lld  max = %12.4e\n", cnm[c],
                 static_cast<long long>(cnum[c]), cmax[c]);
   }
+
+  // ---- THIRD PASS: the x1x2x3 CORNER ghosts (slots 48-55) -------------------------
+  //
+  // x1 is RADIAL, so a corner ghost is a RADIAL ghost cell that is ALSO tangentially
+  // ghost in both x2 and x3.  It exists only when the mesh has more than one MeshBlock
+  // in x1 (otherwise the x1 direction has no neighbour at all and the cell is filled by
+  // the physical radial BC).  The analytic iprob = 15 state is a function of the
+  // DIRECTION COSINES alone, so the exact value in a radial ghost is the same harmonic
+  // of the ghost's own chart-continued (xi, eta) -- radius does not enter -- and the
+  // scan is identical to the tangential one.  Corner slot layout (nghbr_index.hpp):
+  // n = 48 + (ix+1)/2 + (iy+1) + 2*(iz+1), i.e. bit 0 = x1 side, bit 1 = x2 side,
+  // bit 2 = x3 side.
+  //   5 corner, both tangential flanks on the SAME panel
+  //   6 corner across a panel SEAM (exactly one tangential flank is a seam)
+  //   7 corner at a CUBE VERTEX (both tangential flanks are seams)
+  const char *knm[3] = {"corner, same panel", "corner, SEAM      ",
+                        "corner, CUBE VRTX "};
+  Real kmax[3] = {0.0, 0.0, 0.0};
+  std::int64_t knum[3] = {0, 0, 0};
+  for (int m=0; m<pmbp->nmb_thispack; ++m) {
+    const int p = mbpanel.h_view(m);
+    for (int k=ks-ng; k<=ke+ng; ++k) {
+      for (int j=js-ng; j<=je+ng; ++j) {
+        const bool joff = (j < js) || (j > je);
+        const bool koff = (k < ks) || (k > ke);
+        if (!joff || !koff) continue;
+        const int nj_id = (j < js) ? 8 : 12;
+        const int nk_id = (k < ks) ? 24 : 28;
+        const bool seamj = (nghbr.h_view(m,nj_id).gid >= 0) &&
+                           (nghbr.h_view(m,nj_id).panel != p);
+        const bool seamk = (nghbr.h_view(m,nk_id).gid >= 0) &&
+                           (nghbr.h_view(m,nk_id).panel != p);
+        const int cat = (seamj && seamk) ? 2 : ((seamj || seamk) ? 1 : 0);
+        for (int gi=0; gi<2*ng; ++gi) {
+          const int i = (gi < ng) ? (is - 1 - gi) : (ie + 1 + (gi - ng));
+          const int ibit = (gi < ng) ? 0 : 1;
+          const int jbit = (j < js) ? 0 : 1;
+          const int kbit = (k < ks) ? 0 : 1;
+          const int nc = 48 + ibit + 2*jbit + 4*kbit;
+          // no diagonal neighbour: radial physical BC, not a corner exchange
+          if (nghbr.h_view(m,nc).gid < 0) {
+            continue;
+          }
+          const Real xi = 0.25*M_PI*CellCenterX(j-js, indcs.nx2,
+                            size.h_view(m).x2min, size.h_view(m).x2max);
+          const Real eta = 0.25*M_PI*CellCenterX(k-ks, indcs.nx3,
+                            size.h_view(m).x3min, size.h_view(m).x3max);
+          const Real err = std::fabs(uh(m,IEN,k,j,i) - uexact(p, xi, eta));
+          if (err > kmax[cat]) {
+            kmax[cat] = err;
+          }
+          ++knum[cat];
+        }
+      }
+    }
+  }
+  std::cout << "### CORNER (x1x2x3, slots 48-55) SCAN: max |ghost - exact|\n";
+  for (int c=0; c<3; ++c) {
+    std::printf("###   %s  n = %8lld  max = %12.4e\n", knm[c],
+                static_cast<long long>(knum[c]), kmax[c]);
+  }
 }
 
 //----------------------------------------------------------------------------------------

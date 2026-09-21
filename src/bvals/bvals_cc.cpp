@@ -214,7 +214,23 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
             cs_seam = 2;
           } else if (n >= 24 && n < 40) {
             cs_seam = 3;
-          } else if (n >= 40 && n < 48) {
+          } else if (n >= 40 && n < 56) {
+            // x2x3 EDGE (40-47) and x1x2x3 CORNER (48-55) buffers.  Both are ghost in
+            // BOTH tangential directions, so the slot alone does not name an along-seam
+            // axis -- but the NEIGHBOUR TABLE does, and the treatment is identical.
+            //
+            // The CORNER half was added after the edges: x1 is RADIAL, so a corner ghost
+            // is a radial ghost cell that is also tangentially ghost in x2 and x3, read
+            // by multi-D stencils near a radial block boundary at a seam and by
+            // prolongation.  bvals_fc.cpp already covered slots 40-55 in one test; this
+            // brings bvals_cc.cpp to the same coverage.  Measured (static corner scan,
+            // iprob 15, max |ghost - exact| over corner ghosts with exactly one seam
+            // flank, 2 radial blocks): n = 32 per panel, 2x2 blocks 1.407e-4 -> 7.99e-8,
+            // 4x4 blocks 7.414e-4 -> 5.08e-6; n = 64, 2x2 3.498e-5 -> 4.28e-9, 4x4
+            // 3.538e-4 -> 5.64e-7 -- i.e. onto the x2x3 EDGE-seam bin to every digit.
+            // At 1 x 1 block per panel every cross-panel corner is a CUBE VERTEX (both
+            // flanks are seams), so cs_seam stays 0 there and 1 x 1 is bitwise unchanged.
+            //
             // x2x3 EDGE buffers.  These used to be left as a plain copy, on the grounds
             // that a doubly-ghost buffer "has no single along-seam axis".  It does:
             // EXACTLY ONE of the two flanking faces is a panel seam, because if both were
@@ -231,9 +247,21 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
             // halo was fixed.  Measured (static halo scan, n = 64 per panel, max
             // |ghost - exact| over the x2x3 edge ghosts that have a seam flank):
             // 2 x 2 blocks 3.50e-5 -> 5.6e-7, 4 x 4 blocks 3.54e-4 -> 5.6e-7.
-            const int q = n - 40;
-            const int nface2 = ((q/2)%2 == 0) ? 8 : 12;    // the flanking x2 face
-            const int nface3 = (q/4 == 0) ? 24 : 28;       // the flanking x3 face
+            // Slot -> flanking tangential faces.  x2x3 edge: n = 40 + n1 + 2*(iy>0) +
+            // 4*(iz>0).  Corner: n = 48 + (ix>0) + 2*(iy>0) + 4*(iz>0) -- bit 0 is the
+            // RADIAL side and carries no tangential information.
+            int fj, fk;
+            if (n < 48) {
+              const int q = n - 40;
+              fj = (q/2) & 1;
+              fk = (q/4) & 1;
+            } else {
+              const int q = n - 48;
+              fj = (q >> 1) & 1;
+              fk = (q >> 2) & 1;
+            }
+            const int nface2 = (fj == 0) ? 8 : 12;         // the flanking x2 face
+            const int nface3 = (fk == 0) ? 24 : 28;        // the flanking x3 face
             const bool s2 = (nghbr.d_view(m,nface2).gid >= 0) &&
                             (nghbr.d_view(m,nface2).panel != my_panel);
             const bool s3 = (nghbr.d_view(m,nface3).gid >= 0) &&
