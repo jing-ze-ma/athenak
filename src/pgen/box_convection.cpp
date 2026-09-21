@@ -335,6 +335,7 @@ void BoxConvSrcs(Mesh *pm, Real bdt);
 void BoxConvRebuildRadWeights(Mesh *pm, Real bdt);
 void BoxConvTransverseApply(Mesh *pm, Real dt);
 void BoxConvRTSplit(Mesh *pm, Real bdt);
+void BoxConvARadForce(Mesh *pm, Real bdt);
 void BoxConvRTBeforeFlux(Mesh *pm, Real bdt);
 void BoxConvRTImEx(Mesh *pm, Driver *pdrive, const int estage);
 void BoxConvBC(Mesh *pm);
@@ -347,6 +348,32 @@ DvceArray1D<Real> cd_, ce_, cp_, ct_;   // density, eint, pressure, temperature 
 Real g0_ = 0.0, zlo_ = 0.0, dzf_ = 1.0, zmin_ = 0.0;
 Real zcool_ = 0.0, zmax_ = 0.0, tcool_ = 1.0;
 int nfine_ = 0, bc_mode_ = 2;
+// ---- THE EFFECTIVE-GRAVITY WELL-BALANCED OPTION (<problem>/wb_phi_eff).
+// a_rad(z), and its running integral Phi_arad(z) = int_zlo^z a_rad dz', both on the
+// column's own uniform fine grid so that the device lookup is the one this file already
+// uses for the cooling layer.  The additive constant of Phi_arad is irrelevant: the WB
+// walk reads only DIFFERENCES of the potential, and the effective potential is used
+// nowhere else (the conserved energy carries the TRUE potential).
+DvceArray1D<Real> car_, cphar_;
+bool wb_phi_eff_ = false;    // the WB x1 walk and the WB gravity source use Phi_eff
+bool arad_force_ = false;    // apply rho*a_rad as an operator-split momentum source
+
+//----------------------------------------------------------------------------------------
+//! \fn Real ColInterp
+//! \brief linear interpolation of a column quantity on the uniform fine grid, clamped to
+//! the end nodes.  The same rule the cooling layer and the wall states already use,
+//! written once so that the cell centres and the x1 faces of the effective potential
+//! cannot drift apart.
+
+KOKKOS_INLINE_FUNCTION
+Real ColInterp(const DvceArray1D<Real> &c, const Real zlo, const Real dzf,
+               const int nfine, const Real z) {
+  Real t = (z - zlo)/dzf;
+  int ii = static_cast<int>(t);
+  ii = (ii < 0) ? 0 : ((ii > nfine-2) ? nfine-2 : ii);
+  const Real f = t - static_cast<Real>(ii);
+  return c(ii)*(1.0 - f) + c(ii+1)*f;
+}
 // problem/bc_mode_top (default -1 = the same wall as bc_mode).  The only extra
 // value is 4: an OPEN (outflow) top.  See the header block.
 int bc_mode_top_ = -1;
@@ -1632,6 +1659,111 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   }
   cd_ = cd.d_view; ce_ = ce.d_view; cp_ = cp.d_view; ct_ = ct.d_view;
 
+  // ---- problem/wb_phi_eff: THE WELL-BALANCED SCHEME AGAINST AN EFFECTIVE GRAVITY.
+  // A radiative acceleration a_rad(z) that is applied by an OPERATOR-SPLIT source
+  // (today the grey two-stream's rt_rad_force, tomorrow the M1 module) supports part of
+  // the weight of the column, so the stratification the code integrates is hydrostatic
+  // under g_eff = g - a_rad and NOT under g.  The well-balanced pair -- the background
+  // the x1 reconstruction subtracts and re-adds, and the gravity source, which IS that
+  // background's own pressure drop -- must then be built with the potential of g_eff:
+  //
+  //     Phi_eff(z) = g0*(z - zmin) - int_{zlo}^{z} a_rad(z') dz'.
+  //
+  // It is a SECOND potential.  phicc0 / phi0 stay the true one, because <hydro>/etotgrav
+  // carries rho*Phi in the conserved energy and only gravity is a potential force there.
+  //
+  // WHAT THEN HAPPENS TO THE SPLIT FORCE.  With Phi_eff in the WB pair the WB source
+  // already delivers -rho*g + rho*a_rad, so the split module must apply the RESIDUAL
+  // rho*(a_rad_actual - a_rad), not the whole force.  That residual is what makes the
+  // fix work: it is zero at t = 0 by construction and grows only as the radiation field
+  // departs from the reference profile, instead of being the full rho*kappa_R*F/c, whose
+  // per-step velocity excursion reaches ~18 v_MLT on the He column.  The
+  // problem/wb_arad_force test source below is exactly that residual (see
+  // BoxConvARadForce), so it is identically zero when wb_phi_eff is on.
+  wb_phi_eff_ = pin->GetOrAddBoolean("problem", "wb_phi_eff", false);
+  arad_force_ = pin->GetOrAddBoolean("problem", "wb_arad_force", false);
+  const std::string aradf = pin->GetOrAddString("problem", "wb_arad_file", "");
+  if (wb_phi_eff_ || arad_force_) {
+    if (wb_phi_eff_ && !(wbdyn && pmbp->phydro->use_wb_x1)) {
+      std::cout << "### FATAL ERROR in box_convection: problem/wb_phi_eff needs "
+                << "<hydro>/wellbalance_dynamic and <hydro>/wb_x1: the effective "
+                << "potential is read ONLY by the x1 well-balanced walk and by the "
+                << "well-balanced form of the gravity source" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    if (aradf.empty()) {
+      std::cout << "### FATAL ERROR in box_convection: problem/wb_phi_eff or "
+                << "wb_arad_force is set but problem/wb_arad_file is empty" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    std::ifstream af(aradf);
+    if (!af.good()) {
+      std::cout << "### FATAL ERROR in box_convection: cannot open "
+                << "problem/wb_arad_file '" << aradf << "'" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    std::vector<Real> za, aa;
+    std::string line;
+    while (std::getline(af, line)) {
+      if (line.empty() || line[0] == '#') continue;
+      std::istringstream is(line);
+      Real a, b;
+      if (!(is >> a >> b)) continue;
+      if (!za.empty() && a <= za.back()) {
+        std::cout << "### FATAL ERROR in box_convection: problem/wb_arad_file '"
+                  << aradf << "' is not strictly increasing in z at z = " << a
+                  << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      za.push_back(a);
+      aa.push_back(b);
+    }
+    if (za.size() < 2) {
+      std::cout << "### FATAL ERROR in box_convection: problem/wb_arad_file '" << aradf
+                << "' has " << za.size() << " usable rows; it must be two columns "
+                << "z a_rad with at least two rows" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    // resample onto the column's fine grid, LINEAR in z with CONSTANT extrapolation
+    // beyond the file's first and last node, then integrate with the trapezoid rule on
+    // that grid -- one discretisation for the cell centres and for the x1 faces alike,
+    // since both read the same running integral through the same linear interpolant.
+    DualArray1D<Real> car("car", nfine), cphar("cphar", nfine);
+    std::size_t kk = 0;
+    for (int i=0; i<nfine; ++i) {
+      const Real z = zlo + i*dzf;
+      Real a;
+      if (z <= za.front()) {
+        a = aa.front();
+      } else if (z >= za.back()) {
+        a = aa.back();
+      } else {
+        while (kk + 2 < za.size() && za[kk+1] < z) ++kk;
+        const Real w = (z - za[kk])/(za[kk+1] - za[kk]);
+        a = aa[kk]*(1.0 - w) + aa[kk+1]*w;
+      }
+      car.h_view(i) = a;
+    }
+    cphar.h_view(0) = 0.0;
+    for (int i=1; i<nfine; ++i) {
+      cphar.h_view(i) = cphar.h_view(i-1)
+                        + 0.5*dzf*(car.h_view(i-1) + car.h_view(i));
+    }
+    car.modify_host();  car.sync_device();
+    cphar.modify_host();  cphar.sync_device();
+    car_ = car.d_view;  cphar_ = cphar.d_view;
+    if (wb_phi_eff_) pmbp->phydro->EnableWBEffectivePotential();
+    if (global_variable::my_rank == 0) {
+      std::cout << "box_convection: problem/wb_arad_file = " << aradf << " ("
+                << za.size() << " rows, z = " << za.front() << " .. " << za.back()
+                << "); wb_phi_eff = " << (wb_phi_eff_ ? "true" : "false")
+                << ", wb_arad_force = " << (arad_force_ ? "true" : "false")
+                << "; a_rad/g0 over the box spans "
+                << (car.h_view(i0)/g0) << " .. "
+                << (car.h_view(nfine-1)/g0) << std::endl;
+    }
+  }
+
   // --- the derived scales of the base state, and the cooling layer
   const Real p_b = cp.h_view(i0);
   const Real hp0 = p_b/(rho_b*g0);
@@ -2389,6 +2521,31 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     }
   }
 
+  // --- problem/wb_arad_force: enrol the split hook if nothing else did.  The a_rad test
+  // source must act EXACTLY where a radiation module's force will act -- the Strang
+  // half-steps around the time integrator -- so that the test reproduces the splitting
+  // situation, not an in-stage source.
+  if (arad_force_) {
+    if (rt_on_ && !(rt_strang_ || rt_once_ || rt_col3_once_)) {
+      std::cout << "### FATAL ERROR in box_convection: problem/wb_arad_force needs the "
+                << "split hook, which problem/rt_two_stream is using in-stage here; run "
+                << "the a_rad test with the two-stream off, or with rt_strang"
+                << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    user_split_func = BoxConvRTSplit;
+    if (global_variable::my_rank == 0) {
+      std::cout << "### box_convection: problem/wb_arad_force = true, rho*a_rad is "
+                << "applied as a STRANG-SPLIT momentum source (plus its v1 work term)"
+                << ((wb_phi_eff_) ? "; wb_phi_eff is ON, so the residual it applies is "
+                                    "IDENTICALLY ZERO -- the well-balanced background "
+                                    "carries the whole of a_rad"
+                                  : " with the FULL a_rad: the well-balanced background "
+                                    "balances the TRUE gravity only")
+                << std::endl;
+    }
+  }
+
   // --- the start-up report: every number the design rests on
   if (global_variable::my_rank == 0) {
     std::printf("box_convection: base rho = %.5e g/cm^3, T = %.5e K, p = %.5e\n",
@@ -2502,6 +2659,30 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         ph3(m,k,j,i) = phi_c;
         if (j == n2m1) ph2(m,k,j+1,i) = phi_c;
         if (k == n3m1) ph3(m,k+1,j,i) = phi_c;
+      });
+    }
+    // ---- and the EFFECTIVE potential of problem/wb_phi_eff, filled HERE for the same
+    // reason the true one is: it is pgen state, not restart state, so a restart must
+    // rebuild it identically.  It does, bit for bit: the file is re-read, resampled onto
+    // the same fine grid and integrated with the same trapezoid rule, and this kernel is
+    // the same kernel.
+    if (pmbp->phydro->use_phi_wb) {
+      DvceArray4D<Real> pccw = pmbp->phydro->phicc_wb;
+      DvceArray4D<Real> pf1w = pmbp->phydro->phi_wb_x1f;
+      auto cphar = cphar_;
+      const Real zlo = zlo_, dzf = dzf_;
+      const int nfine = nfine_;
+      par_for("boxconv_phiwb", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1, 0, n1m1,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        const Real x1min = size.d_view(m).x1min, x1max = size.d_view(m).x1max;
+        const Real z = CellCenterX(i-is, indcs.nx1, x1min, x1max);
+        const Real x1l = LeftEdgeX(i-is, indcs.nx1, x1min, x1max);
+        const Real x1r = LeftEdgeX(i+1-is, indcs.nx1, x1min, x1max);
+        pccw(m,k,j,i) = g0*(z - zmin) - ColInterp(cphar, zlo, dzf, nfine, z);
+        pf1w(m,k,j,i) = g0*(x1l - zmin) - ColInterp(cphar, zlo, dzf, nfine, x1l);
+        if (i == n1m1) {
+          pf1w(m,k,j,i+1) = g0*(x1r - zmin) - ColInterp(cphar, zlo, dzf, nfine, x1r);
+        }
       });
     }
   }
@@ -2703,8 +2884,13 @@ void BoxConvSrcs(Mesh *pm, Real bdt) {
   const bool wbdyn = pmbp->phydro->use_wellbalance_dynamic;
   const bool wbx1 = pmbp->phydro->use_wb_x1;
   const WBOption wbo = pmbp->phydro->wb_option;
-  DvceArray4D<Real> phicc = pmbp->phydro->phicc0;
-  DvceArray4D<Real> ph1 = pmbp->phydro->phi0.x1f;
+  // the WELL-BALANCED gravity source reads the potential the WB walk used, which is the
+  // EFFECTIVE potential when problem/wb_phi_eff is on and phicc0 / phi0.x1f (the very
+  // same allocation) otherwise -- so the default path is bit for bit unchanged.  The
+  // plain -rho*g0 source below is NOT touched: it is the non-WB gravity path and keeps
+  // the true gravity (wb_phi_eff refuses to run without wellbalance_dynamic + wb_x1).
+  DvceArray4D<Real> phicc = pmbp->phydro->phicc_wb;
+  DvceArray4D<Real> ph1 = pmbp->phydro->phi_wb_x1f;
   DvceArray5D<Real> wbq0 = pmbp->phydro->wbq0;
   const Real g0 = g0_, zlo = zlo_, dzf = dzf_;
   const Real zcool = zcool_, zmax = zmax_, tcool = tcool_;
@@ -3087,7 +3273,60 @@ void BoxConvSrcs(Mesh *pm, Real bdt) {
 //! Nothing else moves: this is exactly the call BoxConvSrcs makes when rt_strang is
 //! off, with a different dt and at a different point in the cycle.
 
+//----------------------------------------------------------------------------------------
+//! \fn void BoxConvARadForce
+//! \brief problem/wb_arad_force: the prescribed radiative acceleration applied as an
+//! OPERATOR-SPLIT momentum source, in the place a radiation module's force would act.
+//!
+//! WHAT IT APPLIES.  The RESIDUAL between the radiative acceleration that is actually
+//! acting and the one the well-balanced background already carries:
+//!
+//!     du/dt = rho*(a_rad_actual - a_rad_in_Phi_eff),
+//!
+//! which for this test source -- whose a_rad_actual IS the file profile, constant in
+//! time -- is the whole rho*a_rad when problem/wb_phi_eff is off and IDENTICALLY ZERO
+//! when it is on.  That is the whole content of the fix: with Phi_eff the WB pair
+//! already delivers -rho*g + rho*a_rad exactly at the discrete level (the source is the
+//! background's own pressure drop, and it cancels the flux difference of the same
+//! background), so the split operator is left with nothing to kick the column with.
+//! A real module would leave the departure of its instantaneous kappa_R*F/c from the
+//! reference profile, which is zero at t = 0 and grows only as the radiation field moves.
+//!
+//! THE ENERGY.  The work rho*a_rad*v1 IS added to the conserved total energy.  Under
+//! <hydro>/etotgrav the total energy carries rho*Phi and gravity therefore needs no
+//! explicit work term -- but a_rad is NOT in that potential (only the WB scheme sees
+//! Phi_eff), so its work has to be done explicitly: a bare momentum source would raise
+//! the kinetic energy at fixed total energy and silently cool the gas by exactly the work
+//! the radiation did on it.  v1 is taken at the start of the half-step, i.e. explicitly,
+//! which is what the non-etotgrav gravity source in BoxConvSrcs also does.
+
+void BoxConvARadForce(Mesh *pm, Real bdt) {
+  if (!arad_force_ || wb_phi_eff_) return;
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmbp->nmb_thispack - 1;
+  auto &size = pmbp->pmb->mb_size;
+  auto &u0 = pmbp->phydro->u0;
+  auto &w0 = pmbp->phydro->w0;
+  auto car = car_;
+  const Real zlo = zlo_, dzf = dzf_;
+  const int nfine = nfine_;
+  par_for("boxconv_aradf", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const Real x1min = size.d_view(m).x1min, x1max = size.d_view(m).x1max;
+    const Real z = CellCenterX(i-is, indcs.nx1, x1min, x1max);
+    const Real a = ColInterp(car, zlo, dzf, nfine, z);
+    const Real src = bdt*a*w0(m,IDN,k,j,i);
+    u0(m,IM1,k,j,i) += src;
+    u0(m,IEN,k,j,i) += src*w0(m,IVX,k,j,i);
+  });
+  return;
+}
+
 void BoxConvRTSplit(Mesh *pm, Real bdt) {
+  BoxConvARadForce(pm, bdt);
   if (!rt_on_) return;
   // the same budget bookkeeping the in-stage call does, so the energy budget and the
   // Ftop/Fcut integrals stay complete when the source moves out of the stage
@@ -3471,6 +3710,13 @@ void BoxConvBC(Mesh *pm) {
   DvceArray4D<Real> phicc = pmbp->phydro->phicc0;
   const Real g0 = g0_, zlo = zlo_, dzf = dzf_, zmin = zmin_;
   const int nfine = nfine_;
+  // problem/wb_phi_eff: the two HYDROSTATIC WALL CONTINUATIONS (bc_mode 3's WB walk and
+  // bc_mode_top 4's isothermal lid) integrate dp/dPhi, so they must use the SAME
+  // effective potential the interior WB scheme uses or the wall face carries a residual
+  // force of exactly the size the option exists to remove.  Off by default, and then not
+  // one operation is added: the potential difference is formed as before.
+  const bool phieff_on = wb_phi_eff_;
+  auto cphar = cphar_;   // an EMPTY View when the option is off, and never read then
   const bool etotgrav = etotgrav_;
   auto cd_d = cd_, ce_d = ce_;
   // the TOP wall may run a different mode; -1 means "the same as bc_mode"
@@ -3554,8 +3800,13 @@ void BoxConvBC(Mesh *pm) {
       state_i(m, k, j, km, jm, im, da, ea);
       const Real ta = eos.Temperature(da, ea);
       const Real pa = eos.Pressure(da, ea, ta);
+      Real dpht = g0*(zg - zm);
+      if (phieff_on) {
+        dpht -= ColInterp(cphar, zlo, dzf, nfine, zg)
+                - ColInterp(cphar, zlo, dzf, nfine, zm);
+      }
       Real xarg = 0.0;
-      if ((da > 0.0) && (pa > 0.0)) xarg = -g0*(zg - zm)*da/pa;
+      if ((da > 0.0) && (pa > 0.0)) xarg = -dpht*da/pa;
       xarg = (xarg < -30.0) ? -30.0 : ((xarg > 30.0) ? 30.0 : xarg);
       Real dgh = da*Kokkos::exp(xarg);
       Real egh = eos.EnergyFromTemperature(dgh, ta);
@@ -3626,13 +3877,22 @@ void BoxConvBC(Mesh *pm) {
       Real dlntdphi = 0.0;
       if (wopt == 3) {
         const Real zn = CellCenterX(in-is, indcs.nx1, x1min, x1max);
-        const Real dphn = g0*(zn - zm);
+        Real dphn = g0*(zn - zm);
+        if (phieff_on) {
+          dphn -= ColInterp(cphar, zlo, dzf, nfine, zn)
+                  - ColInterp(cphar, zlo, dzf, nfine, zm);
+        }
         if (dphn != 0.0) {
           dlntdphi = (eos.Temperature(dnn, enn, tmm) - tmm)/dphn;
         }
       }
       Real dw = dmm, ew = emm, tw = tmm;
-      WBAdvance(eos, wopt, dmm, emm, g0*(zg - zm), dw, ew, tw, tmm, dlntdphi, tmm, tmm);
+      Real dphw = g0*(zg - zm);
+      if (phieff_on) {
+        dphw -= ColInterp(cphar, zlo, dzf, nfine, zg)
+                - ColInterp(cphar, zlo, dzf, nfine, zm);
+      }
+      WBAdvance(eos, wopt, dmm, emm, dphw, dw, ew, tw, tmm, dlntdphi, tmm, tmm);
       // GUARD THE WALK.  A hydrostatic continuation is only meaningful out of a cell that
       // is itself physical.  At the top of a radiation-dominated atmosphere the wall cell
       // can reach a state the EOS table can only clamp (T ~ 1e13 K at rho ~ 2e-9), and
@@ -3726,6 +3986,8 @@ void BoxConvFinal(ParameterInput *pin, Mesh *pm) {
   ce_ = DvceArray1D<Real>();
   cp_ = DvceArray1D<Real>();
   ct_ = DvceArray1D<Real>();
+  car_ = DvceArray1D<Real>();
+  cphar_ = DvceArray1D<Real>();
   // the surface-dump buffers are namespace-scope Views, so their destructors run at
   // static-destruction time, which is AFTER Kokkos::finalize(): release them here
   surf_h_ = HostArray2D<Real>();

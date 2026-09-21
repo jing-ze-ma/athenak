@@ -37,6 +37,8 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
     uflx("uflx",1,1,1,1,1),
     phi0("phi_fc",1,1,1,1),
     phicc0("phi_cc",1,1,1,1),
+    phicc_wb("phi_cc",1,1,1,1),
+    phi_wb_x1f("phi_fc",1,1,1,1),
     u0wb("conswb",1,1,1,1,1),
     w0wb("primwb",1,1,1,1,1),
     w0facewb("primfwb",1,1,1,1,1),
@@ -206,6 +208,12 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
       // 5 stencil states x 3 channels (d, e, p) of the local hydrostatic background
       Kokkos::realloc(wbq0, nmb, 15, ncells3, ncells2, ncells1);
     }
+  }
+  // the x1 well-balanced scheme sees the TRUE potential unless a problem generator calls
+  // EnableWBEffectivePotential(): these are shallow copies, the very same allocations
+  if (!use_phi_wb) {
+    phicc_wb = phicc0;
+    phi_wb_x1f = phi0.x1f;
   }
   if (use_wellbalance_dynamic) {
     // select well-balanced scheme assumption (no default).  Test for compatibility of options

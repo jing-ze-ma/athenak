@@ -168,6 +168,23 @@ class Hydro {
   DvceFaceFld4D<Real> phi0;     // face-centered gravitational potential energy
   DvceArray4D<Real> phicc0;     // cell-centered gravitational potential energy
   DvceArray5D<Real> wbq0;       // per-cell well-balanced background (BuildWBCache)
+  // ---- THE EFFECTIVE POTENTIAL OF THE WELL-BALANCED x1 SCHEME.
+  // Phi_eff = Phi - int a_rad dz, i.e. the potential of the EFFECTIVE gravity
+  // g_eff = g - a_rad, where a_rad is a radiative acceleration that a separate module
+  // (a grey two-stream, or M1) exerts on the gas.  It is used ONLY by the x1
+  // well-balanced walk (BuildWBCache and the WB x1 reconstruction) and by the problem
+  // generator's WB gravity source, which together deliver -rho g_eff exactly.  Every
+  // other use of the potential -- the etotgrav energy bookkeeping (AddGravEtot /
+  // RemoveGravEtot / AddGravFlux), the x2/x3 backgrounds, diagnostics -- keeps the TRUE
+  // potential phicc0 / phi0, because the conserved energy carries rho*Phi and only the
+  // true gravity is a potential force.
+  // Unless EnableWBEffectivePotential() is called these two Views ARE phicc0 and
+  // phi0.x1f (a Kokkos View assignment is a shallow copy: same data pointer, same
+  // extents), so the default path executes exactly the same arithmetic on exactly the
+  // same memory and is bitwise unchanged.
+  bool use_phi_wb = false;
+  DvceArray4D<Real> phicc_wb;    // cell-centered potential seen by the x1 WB scheme
+  DvceArray4D<Real> phi_wb_x1f;  // x1-face potential seen by the x1 WB scheme
   int wb_cache_every = 0;       // rebuild wbq0 every stage (0) or every N-th cycle
   // Kokkos team-scratch level for the flux kernels: 0 = LDS (64 kB per workgroup on
   // AMD, which caps meshblock nx1 at a few hundred), 1 = global memory, no cap (~1% cost)
@@ -271,6 +288,16 @@ class Hydro {
   // evaluate the background pressure from the static background state
   void SetWbBackgroundPressure();
   void BuildWBCache(const int jl, const int ju, const int kl, const int ku);
+  // give the x1 well-balanced scheme its own potential (see phicc_wb above).  Must be
+  // called before the problem generator fills it, on EVERY start INCLUDING a restart:
+  // the potential is not restart state.
+  void EnableWBEffectivePotential();
+  // fill it from host arrays with the shapes of phicc0 and phi0.x1f.  Provided so that a
+  // later milestone can hand over a profile built from a radiation module's initial
+  // state instead of from a file; the problem generator may equally fill the Views in a
+  // device kernel of its own.
+  void SetWBEffectivePotential(const HostArray4D<Real> &phicc_in,
+                               const HostArray4D<Real> &phix1f_in);
   void RemoveWbFlux(const DvceFaceFld4D<Real> &pfacewb, DvceFaceFld5D<Real> &flx);
   void AddWbVar(const DvceArray5D<Real> &varwb, DvceArray5D<Real> &var);
   void RemoveWbVar(const DvceArray5D<Real> &varwb, DvceArray5D<Real> &var);
