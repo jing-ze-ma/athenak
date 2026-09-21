@@ -947,6 +947,55 @@ inline Real rt_bot_flux = 0.0;
 //
 // Default false, i.e. THE FIX IS ON.  Set true to reproduce a pre-fix run bitwise.
 inline bool rt_layer_legacy = false;
+// problem/ck_spherical: give the CORRELATED-K thermal two-stream the SPHERICAL form of
+// 8bca3dfa, the one the grey centre-to-centre sweep and the mode-3 column solve already
+// carry.  Default FALSE, which is bitwise the plane-parallel arithmetic the ck kernel
+// has always run.
+//
+// WHY IT IS NEEDED NOW.  8bca3dfa converted the grey path and documented the ck kernel
+// as "not converted", justified by r_out/r_in < 1.3 hot-Jupiter domains.  The deep
+// hot-Jupiter production grid spans x1 = 9.44e9 .. 2.0556e10 cm, r_out/r_in = 2.18 and
+// an AREA RATIO of 4.75, so on that grid the unconverted kernel (a) does not dilute the
+// thermal flux, i.e. L = A F grows like r^2 through a transparent shell, and (b) misses
+// the -2F/r term of the deposit, so the thin upper atmosphere is irradiated from below
+// by an undiluted thermal flux.
+//
+// THE FORM.  Exactly the one derived on RTCol3::Bt in two_stream_column_implicit.hpp and
+// reused by the grey sweep: inside a cell the frame area A_i = V_i/dx_i is constant and
+// the layer solve is the plane-parallel one, per unit area, against the source function
+// B; ALL the geometry sits in the face conditions, where S = (I+ + I-)/2 and A D =
+// A (I+ - I-)/2 are passed continuously,
+//     u_above = u_below + c,  d_below = d_above + c,  c = beta (d_above - u_below),
+//     beta = (A_above - A_below)/(A_above + A_below),
+// which is the BTF/MIXF pair below.  Consequences, all of them shared with the grey
+// path: Phi = A F is single-valued at every face, so Src_g stays the plane-parallel
+// divergence (nothing in the deposit changes) and telescopes to -(A_t F_t - A_b F_b)/V
+// exactly; Fb_g stays a flux PER UNIT AREA at its own face, reported as Phi_f/A(f).
+//
+// THE DOWN RAY IS LAGGED, as it is in the grey mode-0 sweep and for the same reason: the
+// down-sweep's mixing needs the UPWARD intensity at each face, which it does not yet
+// have, so a plane-parallel PROBE up-sweep supplies it to O(beta), leaving the down
+// ray's mixing exact to O(beta^2).  The probe costs one extra ck_kappa lookup per cell
+// and chain -- roughly +50 % on the chain kernel's table traffic -- which is why this is
+// a switch and not unconditional.  The probe is stored IN the I_down column (each face
+// slot is read one statement before the real down-sweep overwrites it), so it costs no
+// extra per-thread memory.
+//
+// THE STELLAR BEAM IS NOT DILUTED.  It is a parallel pencil from a source at infinity,
+// intercepted by the column's TOP FACE and carried down the slant path 1/mu0; its
+// cross-section does not shrink with r the way a radial ray bundle's does, and dividing
+// its flux by r^2 would be simply wrong.  What must hold is that the column deposits
+// every watt it intercepts, so the conserved quantity is the beam's POWER,
+//     Phi_beam(f) = A(ie+1) F_star mu0 T(f),
+// with T the (unchanged) slant transmission, and the deposit in cell i is
+// (Phi_beam(f_hi) - Phi_beam(f_lo))/V_i, i.e. the old per-unit-area expression times
+// A(ie+1)/A_i.  Summed over the column that is A(ie+1) F_star mu0 (1 - T_bot): exact,
+// and identically zero in a transparent column, which a local-face-area form would not
+// be.  The slant path itself stays the plane-parallel dz/mu0 it always was.
+//
+// NOT CONVERTED, and refused: rt_layer_legacy (the staggered whole-cell ck layers) and
+// the mode-1/2 nearest-neighbour Jacobian, which the ck path never fills anyway.
+inline bool ck_spherical = false;
 // problem/rt_top_re: what the unresolved column ABOVE the domain sends back down.
 // false (historical) makes it radiate at the ghost cell's own temperature. That is safe
 // only while the ghost is pinned to something outside the solution: with an open outer
@@ -1566,6 +1615,40 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
                 << std::endl;
       std::exit(EXIT_FAILURE);
     }
+    // problem/ck_spherical (see the flag's note): the spherical form of the correlated-k
+    // thermal two-stream.  It is geometry, so it is meaningless on a Cartesian mesh and
+    // REFUSED there rather than silently inert; it belongs to the ck kernel alone; and
+    // the legacy staggered ck layers were never converted.
+    if (ck_spherical) {
+      if (!(use_cubed_sphere_ || use_spherical_polar)) {
+        std::cout << "### FATAL ERROR in two_stream_rt: problem/ck_spherical is the "
+                  << "SPHERICAL form of the correlated-k two-stream and has no meaning "
+                  << "on a Cartesian mesh.  Leave it false there." << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      if (!rt_ck) {
+        std::cout << "### FATAL ERROR in two_stream_rt: problem/ck_spherical converts "
+                  << "the CORRELATED-K kernel, but problem/rt_ck is false.  The grey "
+                  << "sweep is spherical already (8bca3dfa) and needs no switch."
+                  << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      if (rt_layer_legacy) {
+        std::cout << "### FATAL ERROR in two_stream_rt: problem/ck_spherical with "
+                  << "problem/rt_layer_legacy: the staggered whole-cell correlated-k "
+                  << "layers were NOT converted to the spherical form.  Use the "
+                  << "centre-to-centre layers (rt_layer_legacy = false)." << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      static bool cksph_announced = false;
+      if (!cksph_announced && global_variable::my_rank == 0) {
+        cksph_announced = true;
+        std::cout << "### two_stream_rt: correlated-k SPHERICAL form ON "
+                  << "(problem/ck_spherical): face mixing on both rays, Phi = A F "
+                  << "single-valued, stellar beam carried as a power, not a flux."
+                  << std::endl;
+      }
+    }
     const int is_pp = is;
     const int nx1_pp = indcs.nx1;
     auto X1V = [=] (const int m, const int i) {
@@ -1880,6 +1963,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
     const bool cut_legacy = rt_cut_bc_legacy;   // see rt_cut_bc_legacy
     const Real bot_flux = rt_bot_flux;          // see rt_bottom_flux
     const bool layer_legacy = rt_layer_legacy;  // see rt_layer_legacy
+    const bool cksph_ = ck_spherical;           // see ck_spherical
     const bool top_re = rt_top_re;
     const bool top_vac = rt_top_vacuum;
     Real Iint = boltz_sigma/M_PI*Tint4;
@@ -3309,8 +3393,14 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
         // that taxes every run, the kernel is instantiated at a few sizes and the
         // smallest
         // one that fits is dispatched at run time.
-        auto launch_ck_chain = [&](auto nn_tag) {
+        // The SPHERICAL form is a COMPILE-TIME parameter of this kernel, not a runtime
+        // branch, for two reasons: the plane-parallel instantiation is then literally the
+        // code it always was -- every ck_spherical test folds away, so nothing in its
+        // expression DAG can shift -- and its per-thread face-mixing column (Cmx below)
+        // shrinks to one element instead of NC x NN.  See ck_spherical.
+        auto launch_ck_chain = [&](auto nn_tag, auto sph_tag) {
           constexpr int NN = decltype(nn_tag)::value;
+          constexpr bool SPH = decltype(sph_tag)::value;
           par_for("rt_chain_ck", DevExeSpace(), 0, nmb1, 0, nblk-1, ks, ke, js, je,
           KOKKOS_LAMBDA(const int m, const int blk, const int k, const int j) {
             constexpr int NC = RT_NB;
@@ -3388,6 +3478,15 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
             // neutral (454 vs 457 ms), which confirms the diagnosis. Neutral is not a
             // reason to change it, so the column stays.
             RtF I_down[NC][NN];
+            // THE FACE MIXING, STORED.  Conservation needs the two rays to use the SAME
+            // c at a face -- that, and only that, is what makes A_below (u_b - d_b) =
+            // A_above (u_a - d_a) hold and the deposit telescope.  The down-sweep forms
+            // c from its exact d_above and the probe's u_below and parks it here; the
+            // up-sweep REUSES it instead of re-forming it from its own u_below, which
+            // would be a different number and would break the telescoping at O(beta) per
+            // face (measured: 0.7 % per cell, 19 % over the production column).  The
+            // accuracy of c is then the probe's; its CONSISTENCY is exact.
+            RtF Cmx[SPH ? NC : 1][SPH ? NN : 1];
 
             // Top: the column above the domain, using the top cell's opacity over the
             // hydrostatic column p/g -- the same construction the grey scheme uses.
@@ -3591,8 +3690,169 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
                 dsrc = static_cast<Real>(e0*I - em);
                 I = (one - e0)*I + em;
               };
+              // ---- problem/ck_spherical: THE TWO PROBE PASSES.  See the flag's note.
+              //
+              // The real down-sweep's face mixing c = beta (d_above - u_below) needs the
+              // UPWARD intensity at every face, which it does not have.  CONSERVATION,
+              // though, does not care whether c is accurate -- it cares only that the
+              // two rays use the SAME c, which is what Cmx enforces.  So the probe's
+              // only job is to make c ACCURATE, and for that it must reproduce the one
+              // thing that dominates u on a deep grid: the r^-2 dilution.  A bare
+              // plane-parallel up-sweep does not (it is the A_top/A_cut = 3.8 error this
+              // switch exists to remove), and feeding its u into c over-dilutes the real
+              // up ray by the same factor -- MEASURED, A F then varies by 26 % over the
+              // top twelve faces.  So the probe is two passes:
+              //   P1  a plane-parallel DOWN pass, d0, parked in I_down;
+              //   P2  an UP pass carrying the face mixing against d0, whose u_below at
+              //       each face is parked in Cmx.
+              // P2 therefore dilutes correctly and u_probe - u_true is O(beta) in d
+              // alone, i.e. c is right to O(beta^2), which is the grey mode-0 bound.
+              // Neither pass accumulates anything.  Itop holds the top face's incoming
+              // datum across the borrowing of I_down.
+              RtF Itop[NC];
               for (int cc=0; cc<NC; ++cc) {
-                Idn[cc] = I_down[cc][ie+1];
+                Itop[cc] = I_down[cc][ie+1];
+              }
+              const Real bt_top = SPH ? BTF(m,k,j,ie+1,icut) : 0.0;
+              const Real atop_f = SPH ? AFC(m,k,j,ie+1) : 1.0;
+              if (SPH) {
+                // ---- P1: the plane-parallel down probe, d0 -> I_down
+                RtF Idp[NC];
+                Real kdp[NC];
+                for (int cc=0; cc<NC; ++cc) {
+                  Idp[cc] = Itop[cc];
+                  I_down[cc][ie+1] = Itop[cc];
+                }
+                for (int i=ie; i>icut-1; --i) {
+                  const Real rho = rhoN(m,k,j,i);
+                  const Real dz = dx1(m,k,j,i);
+                  const Real dzf = (i < ie) ? dx1(m,k,j,i+1) : dz;
+                  const Real xTv = xT_g(m,k,j,i);
+                  const Real xPv = xP_g(m,k,j,i);
+                  const int iT = static_cast<int>(xTv);
+                  const int iP = static_cast<int>(xPv);
+                  const Real fT = xTv - static_cast<Real>(iT);
+                  const Real fP = xPv - static_cast<Real>(iP);
+                  for (int cc=0; cc<NC; ++cc) {
+                    const int b = bandc[cc];
+                    const Real kro = (ck_kappa(cklk, iT, fT, iP, fP, b, gc[cc])
+                                      + kc_g(m,b,i,k,j))*rho;
+                    const Real bown = Bb_g(m,b,i,k,j);
+                    Real dsrc;
+                    if (i == ie) {
+                      step(0.5*kro*dz, muc[cc], bown, bown, Idp[cc], dsrc);
+                    } else {
+                      const Real kru = kdp[cc];
+                      const Real bfar = Bb_g(m,b,i+1,k,j);
+                      const Real dt_u = 0.5*kru*dzf;
+                      const Real dt_l = 0.5*kro*dz;
+                      const Real s_l = BFace(kru, kro, bfar, bown, bface_on);
+                      const Real s_u = BFace(kro, kru, bown, bfar, bface_on);
+                      const Real dtc = dt_l + dt_u;
+                      const Real s_f = (dtc > 0.0) ? (s_l + (s_u - s_l)*(dt_l/dtc))
+                                                   : (0.5*(s_l + s_u));
+                      step(dt_u, muc[cc], s_u, s_f, Idp[cc], dsrc);
+                      I_down[cc][i+1] = Idp[cc];
+                      step(dt_l, muc[cc], s_f, s_l, Idp[cc], dsrc);
+                    }
+                    kdp[cc] = kro;
+                  }
+                }
+                {
+                  const Real dz = dx1(m,k,j,icut);
+                  for (int cc=0; cc<NC; ++cc) {
+                    const Real bcut = Bb_g(m,bandc[cc],icut,k,j);
+                    Real dsrc;
+                    step(0.5*kdp[cc]*dz, muc[cc], bcut, bcut, Idp[cc], dsrc);
+                    I_down[cc][icut] = Idp[cc];
+                  }
+                }
+                // ---- P2: the up probe, WITH the face mixing against d0.  u_below at
+                // each face goes to Cmx, which the real down-sweep reads and then
+                // overwrites with the c it forms from it.
+                RtF Iup_p[NC];
+                Real kpr[NC];
+                {
+                  const Real dz = dx1(m,k,j,icut);
+                  const Real rho = rhoN(m,k,j,icut);
+                  const Real xTv = xT_g(m,k,j,icut);
+                  const Real xPv = xP_g(m,k,j,icut);
+                  const int iT = static_cast<int>(xTv);
+                  const int iP = static_cast<int>(xPv);
+                  const Real fT = xTv - static_cast<Real>(iT);
+                  const Real fP = xPv - static_cast<Real>(iP);
+                  const Real bt_c = BTF(m,k,j,icut,icut);
+                  for (int cc=0; cc<NC; ++cc) {
+                    const int b = bandc[cc];
+                    const Real Iint_b = (int_at_cut ? boltz_sigma/M_PI*Tint4
+                                    * ck_planck_frac(ckpf, pfl0, pfid, Tint, b) : 0.0);
+                    const Real bcut = Bb_g(m,b,icut,k,j);
+                    Iup_p[cc] = static_cast<RtF>(bcut + Iint_b);
+                    Iup_p[cc] += static_cast<RtF>(MIXF(bt_c,
+                                     static_cast<Real>(Iup_p[cc]),
+                                     static_cast<Real>(I_down[cc][icut])));
+                    kpr[cc] = (ck_kappa(cklk, iT, fT, iP, fP, b, gc[cc])
+                               + kc_g(m,b,icut,k,j))*rho;
+                    Real dsrc;
+                    step(0.5*kpr[cc]*dz, muc[cc], bcut, bcut, Iup_p[cc], dsrc);
+                  }
+                }
+                for (int i=icut; i<ie; ++i) {
+                  const Real rhou = rhoN(m,k,j,i+1);
+                  const Real dzu = dx1(m,k,j,i+1);
+                  const Real dzl = dx1(m,k,j,i);
+                  const Real xTv = xT_g(m,k,j,i+1);
+                  const Real xPv = xP_g(m,k,j,i+1);
+                  const int iT = static_cast<int>(xTv);
+                  const int iP = static_cast<int>(xPv);
+                  const Real fT = xTv - static_cast<Real>(iT);
+                  const Real fP = xPv - static_cast<Real>(iP);
+                  const Real bt_f = BTF(m,k,j,i+1,icut);
+                  for (int cc=0; cc<NC; ++cc) {
+                    const int b = bandc[cc];
+                    const Real kru = (ck_kappa(cklk, iT, fT, iP, fP, b, gc[cc])
+                                      + kc_g(m,b,i+1,k,j))*rhou;
+                    const Real krl = kpr[cc];
+                    const Real bl = Bb_g(m,b,i,k,j);
+                    const Real bu = Bb_g(m,b,i+1,k,j);
+                    const Real dt_l = 0.5*krl*dzl;
+                    const Real dt_u = 0.5*kru*dzu;
+                    const Real s_l = BFace(kru, krl, bu, bl, bface_on);
+                    const Real s_u = BFace(krl, kru, bl, bu, bface_on);
+                    const Real dtc = dt_l + dt_u;
+                    const Real s_f = (dtc > 0.0) ? (s_l + (s_u - s_l)*(dt_l/dtc))
+                                                 : (0.5*(s_l + s_u));
+                    Real dsrc;
+                    step(dt_l, muc[cc], s_l, s_f, Iup_p[cc], dsrc);
+                    Cmx[cc][i+1] = Iup_p[cc];        // u_below, for the real down-sweep
+                    Iup_p[cc] += static_cast<RtF>(MIXF(bt_f,
+                                     static_cast<Real>(Iup_p[cc]),
+                                     static_cast<Real>(I_down[cc][i+1])));
+                    step(dt_u, muc[cc], s_f, s_u, Iup_p[cc], dsrc);
+                    kpr[cc] = kru;
+                  }
+                }
+                {
+                  const Real dz = dx1(m,k,j,ie);
+                  for (int cc=0; cc<NC; ++cc) {
+                    const Real btop = Bb_g(m,bandc[cc],ie,k,j);
+                    Real dsrc;
+                    step(0.5*kpr[cc]*dz, muc[cc], btop, btop, Iup_p[cc], dsrc);
+                    Cmx[cc][ie+1] = Iup_p[cc];       // u_below at the top face
+                  }
+                }
+              }
+              for (int cc=0; cc<NC; ++cc) {
+                Idn[cc] = Itop[cc];
+                if (SPH) {
+                  // c from the probe's u_below at the top face and the boundary datum
+                  const RtF cmx = static_cast<RtF>(MIXF(bt_top,
+                                      static_cast<Real>(Cmx[cc][ie+1]),
+                                      static_cast<Real>(Itop[cc])));
+                  Cmx[cc][ie+1] = cmx;              // the up-sweep reuses this exact c
+                  Idn[cc] += cmx;
+                  I_down[cc][ie+1] = Itop[cc];      // give the slot back
+                }
               }
               // down-sweep, recording the FACE intensity in between the two halves
               for (int i=ie; i>icut-1; --i) {
@@ -3600,6 +3860,10 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
                 const Real dz = dx1(m,k,j,i);
                 const Real drho = rho*dz;
                 const Real dzf = (i < ie) ? dx1(m,k,j,i+1) : dz;
+                // the face between cells i+1 and i, and the beam's area rescaling for
+                // cell i (see ck_spherical: the beam carries a POWER, not a flux)
+                const Real bt_d = SPH ? BTF(m,k,j,i+1,icut) : 0.0;
+                const Real bsc = SPH ? atop_f*dx1(m,k,j,i)/volume(m,k,j,i) : 1.0;
                 const Real xTv = xT_g(m,k,j,i);
                 const Real xPv = xP_g(m,k,j,i);
                 const int iT = static_cast<int>(xTv);
@@ -3633,9 +3897,19 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
                     const Real dtc = dt_l + dt_u;
                     const Real s_f = (dtc > 0.0) ? (s_l + (s_u - s_l)*(dt_l/dtc))
                                                  : (0.5*(s_l + s_u));
+                    // the probe's u_below at this face, read before the real
+                    // down-sweep reclaims the slot for c (see Cmx)
+                    const Real ubf = SPH ? static_cast<Real>(Cmx[cc][i+1]) : 0.0;
                     step(dt_u, muc[cc], s_u, s_f, Idn[cc], dsrc);
                     Src_g(m,blk,i+1,k,j) += wfc[cc]/dzf*dsrc;
                     I_down[cc][i+1] = Idn[cc];
+                    if (SPH) {
+                      // d_below = d_above + beta (d_above - u_below): into cell i's frame
+                      const RtF cmx = static_cast<RtF>(MIXF(bt_d, ubf,
+                                          static_cast<Real>(Idn[cc])));
+                      Cmx[cc][i+1] = cmx;           // the up-sweep reuses this exact c
+                      Idn[cc] += cmx;
+                    }
                     step(dt_l, muc[cc], s_f, s_l, Idn[cc], dsrc);
                     Src_g(m,blk,i,k,j) += wfc[cc]/dz*dsrc;
                   }
@@ -3651,8 +3925,18 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
                   tausw[cc] += kap*drho;
                   if (lit) {
                     const Real tnew = RT_EXP(-static_cast<RtF>(tausw[cc]*facsw));
-                    Qb_g(m,blk,i,k,j) += (1.0-albedo)*Fstar*ckswf(b)*wgc[cc]/facsw
-                              * (transw[cc] - tnew)/dz;
+                    // ck_spherical: the beam is a parallel pencil intercepted by the top
+                    // FACE, so what is conserved is its POWER A(ie+1) F mu0 T, and the
+                    // deposit is the old per-unit-area one times A(ie+1)/A_i.  Summed
+                    // down the column that is exactly the intercepted power, and it is
+                    // identically zero where the column is transparent.
+                    if (SPH) {
+                      Qb_g(m,blk,i,k,j) += (1.0-albedo)*Fstar*ckswf(b)*wgc[cc]/facsw
+                                * (transw[cc] - tnew)*bsc/dz;
+                    } else {
+                      Qb_g(m,blk,i,k,j) += (1.0-albedo)*Fstar*ckswf(b)*wgc[cc]/facsw
+                                * (transw[cc] - tnew)/dz;
+                    }
                     transw[cc] = tnew;
                   }
                 }
@@ -3673,13 +3957,33 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
               // thermalised to e^-tau and the upward intensity is its own Planck
               // function; the planet's internal flux is delivered here as an extra
               // band-weighted source.  Below the cut nothing radiative is applied.
+              //
+              // ck_spherical NOTE.  The internal flux is delivered in the CUT face's own
+              // frame, so under the spherical form the luminosity it represents is
+              // A(icut) sigma Tint^4 and what emerges at the top is diluted to
+              // (r_cut/r_top)^2 of it -- Tint is a boundary datum at the cut, not at the
+              // top.  That is the physically consistent reading of "the internal flux
+              // enters at the bottom of the radiative domain"; it is also a real change
+              // in the emergent internal flux on a deep grid, and it is measured in
+              // tests_ck_sph/README.md rather than quietly rescaled here.
+              const Real bt_cut = SPH ? BTF(m,k,j,icut,icut) : 0.0;
               RtF I_up[NC];
               for (int cc=0; cc<NC; ++cc) {
                 const int b = bandc[cc];
                 const Real Iint_b = (int_at_cut ? boltz_sigma/M_PI*Tint4
                                   * ck_planck_frac(ckpf, pfl0, pfid, Tint, b) : 0.0);
                 I_up[cc] = static_cast<RtF>(Bb_g(m,b,icut,k,j) + Iint_b);
-                Fb_g(m,blk,icut,k,j) += wfc[cc]*(I_up[cc] - I_down[cc][icut]);
+                if (SPH) {
+                  // Phi = A(icut) (u_below - d_below), reported per unit area of that
+                  // same face, so the scale factor is A(icut)/A(icut) = 1
+                  const Real cmx = MIXF(bt_cut, static_cast<Real>(I_up[cc]),
+                                        static_cast<Real>(I_down[cc][icut]));
+                  Fb_g(m,blk,icut,k,j) += wfc[cc]*(static_cast<Real>(I_up[cc])
+                      - (static_cast<Real>(I_down[cc][icut]) + cmx));
+                  I_up[cc] += static_cast<RtF>(cmx);   // -> cell icut's own frame
+                } else {
+                  Fb_g(m,blk,icut,k,j) += wfc[cc]*(I_up[cc] - I_down[cc][icut]);
+                }
               }
               // up-sweep: the cut half layer first, on the opacity the down-sweep left
               // in kfar, then centre to centre.  Em_g is now the cell's OWN emission,
@@ -3705,6 +4009,10 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
                 const int iP = static_cast<int>(xPv);
                 const Real fT = xTv - static_cast<Real>(iT);
                 const Real fP = xPv - static_cast<Real>(iP);
+                // the factor that turns Phi built on the LOWER side, A_cell(i) F, into
+                // Phi/A(i+1), and the frame change A_below/A_above for the up ray
+                const Real fsc_u = SPH ? ACC(m,k,j,i)/AFC(m,k,j,i+1) : 1.0;
+                const Real rat_u = SPH ? ACC(m,k,j,i)/ACC(m,k,j,i+1) : 1.0;
                 for (int cc=0; cc<NC; ++cc) {
                   const int b = bandc[cc];
                   const Real kapu = ck_kappa(cklk, iT, fT, iP, fP, b, gc[cc])
@@ -3723,7 +4031,26 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
                   Real dsrc;
                   step(dt_l, muc[cc], s_l, s_f, I_up[cc], dsrc);
                   Src_g(m,blk,i,k,j) += wfc[cc]/dzl*dsrc;
-                  Fb_g(m,blk,i+1,k,j) += wfc[cc]*(I_up[cc] - I_down[cc][i+1]);
+                  if (SPH) {
+                    // A D CONTINUOUS, ENFORCED, NOT INFERRED.  c is the one the down ray
+                    // used (Cmx), formed from the probe's u_below; forming a second c
+                    // here from the up ray's own u_below would make the two sides of the
+                    // face disagree by beta times the probe's lag, and the deposit would
+                    // then telescope only to that accuracy (MEASURED: 8.8 % of the
+                    // emergent luminosity over the production column).  So the up ray's
+                    // frame change is taken straight from the conservation law,
+                    //     A_above (u_a - d_a) = A_below (u_b - d_b),
+                    // which is what the mixing is FOR.  Exact to round-off whatever the
+                    // probe did; the probe's lag survives only as an O(beta) shift in
+                    // u_a itself, i.e. in S, which nothing conserves.
+                    const Real db = static_cast<Real>(I_down[cc][i+1] + Cmx[cc][i+1]);
+                    const Real dif = static_cast<Real>(I_up[cc]) - db;
+                    Fb_g(m,blk,i+1,k,j) += wfc[cc]*dif*fsc_u;
+                    I_up[cc] = static_cast<RtF>(static_cast<Real>(I_down[cc][i+1])
+                                                + dif*rat_u);
+                  } else {
+                    Fb_g(m,blk,i+1,k,j) += wfc[cc]*(I_up[cc] - I_down[cc][i+1]);
+                  }
                   step(dt_u, muc[cc], s_f, s_u, I_up[cc], dsrc);
                   Src_g(m,blk,i+1,k,j) += wfc[cc]/dzu*dsrc;
                   Em_g(m,blk,i+1,k,j) += 2.0*(wfc[cc]/muc[cc])*kru*bu;
@@ -3733,25 +4060,45 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
               // the top half of cell ie, back out through the top face
               {
                 const Real dz = dx1(m,k,j,ie);
+                // at the TOP face A_above is the face area itself: the boundary datum
+                // lives in the face's own frame, so fsc and the frame change coincide
+                const Real fsc_t = SPH ? ACC(m,k,j,ie)/AFC(m,k,j,ie+1) : 1.0;
                 for (int cc=0; cc<NC; ++cc) {
                   const Real btop = Bb_g(m,bandc[cc],ie,k,j);
                   Real dsrc;
                   step(0.5*kfar[cc]*dz, muc[cc], btop, btop, I_up[cc], dsrc);
                   Src_g(m,blk,ie,k,j) += wfc[cc]/dz*dsrc;
-                  Fb_g(m,blk,ie+1,k,j) += wfc[cc]*(I_up[cc] - I_down[cc][ie+1]);
+                  if (SPH) {
+                    const Real db = static_cast<Real>(I_down[cc][ie+1] + Cmx[cc][ie+1]);
+                    const Real dif = static_cast<Real>(I_up[cc]) - db;
+                    Fb_g(m,blk,ie+1,k,j) += wfc[cc]*dif*fsc_t;
+                    I_up[cc] = static_cast<RtF>(static_cast<Real>(I_down[cc][ie+1])
+                                                + dif*fsc_t);
+                  } else {
+                    Fb_g(m,blk,ie+1,k,j) += wfc[cc]*(I_up[cc] - I_down[cc][ie+1]);
+                  }
                 }
               }
             }
           });
         };
-        if (n1 <= 72) {
-          launch_ck_chain(std::integral_constant<int, 72>{});
-        } else if (n1 <= 136) {
-          launch_ck_chain(std::integral_constant<int, 136>{});
-        } else if (n1 <= 264) {
-          launch_ck_chain(std::integral_constant<int, 264>{});
-        } else if (n1 <= 520) {
-          launch_ck_chain(std::integral_constant<int, 520>{});
+        auto launch_ck_tier = [&](auto sph_tag) {
+          if (n1 <= 72) {
+            launch_ck_chain(std::integral_constant<int, 72>{}, sph_tag);
+          } else if (n1 <= 136) {
+            launch_ck_chain(std::integral_constant<int, 136>{}, sph_tag);
+          } else if (n1 <= 264) {
+            launch_ck_chain(std::integral_constant<int, 264>{}, sph_tag);
+          } else {
+            launch_ck_chain(std::integral_constant<int, 520>{}, sph_tag);
+          }
+        };
+        if (n1 <= 520) {
+          if (cksph_) {
+            launch_ck_tier(std::true_type{});
+          } else {
+            launch_ck_tier(std::false_type{});
+          }
         } else {
           std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: n1 = " << n1
                     << " exceeds the largest correlated-k radial tier (520). Add a tier "
@@ -5084,14 +5431,25 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
         const int jd = (rt_dump_j >= 0) ? rt_dump_j : (js + je)/2;
         const int kd = (rt_dump_k >= 0) ? rt_dump_k : (ks + ke)/2;
         const int md = (rt_dump_m <= nmb1) ? rt_dump_m : 0;
-        DvceArray2D<Real> col("rt_col", n1, 9);
+        DvceArray2D<Real> col("rt_col", n1, 12);
         par_for("rt_dumpcol", DevExeSpace(), is, ie+1, KOKKOS_LAMBDA(const int i) {
           Real Fs = 0.0;
           Real Qs = 0.0;
+          Real Ss = 0.0;
           for (int b=0; b<nblk; ++b) {
             Fs += Fb_g(md,b,i,kd,jd);
             Qs += Qb_g(md,b,i,kd,jd);
+            Ss += Src_g(md,b,i,kd,jd);
           }
+          // THE ENERGY BUDGET OF THE COLUMN, in the solver's own geometry: the thermal
+          // deposit per unit volume, the cell's FRAME area A_i = V_i/dx_i and its
+          // volume.  With these three the telescoping identity of the spherical form,
+          //     sum_i V_i Src_i = -(A_top F_top - A_bot F_bot),
+          // is checkable from the dump alone, on any mesh, with no analytic
+          // reconstruction of the geometry (see tests_ck_sph/README.md).
+          col(i,9)  = Ss;
+          col(i,10) = ACC(md,kd,jd,i);
+          col(i,11) = VLA(md,kd,jd,i);
           col(i,0) = pb_g(md,kd,jd,i);
           col(i,1) = T_g(md,kd,jd,i);
           col(i,2) = Fs;
@@ -5129,12 +5487,14 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
             << "# fluxes are cgs: 1 erg/s/cm^2 = 1e-3 W/m^2. F_lw is NET (up minus "
                 << "down)\n"
             << "# i  r_face[cm]  p[bar]  T[K]  F_lw_net[erg/s/cm2]  Q_sw[erg/s/cm3]"
-            << "  Gamma_1  grad_ad  tau_R(face)  w_diff(face)\n";
+            << "  Gamma_1  grad_ad  tau_R(face)  w_diff(face)"
+            << "  Src_lw[erg/s/cm3]  A_cell[cm2]  V_cell[cm3]\n";
           for (int i=is; i<ie+2; ++i) {
             f << i << " " << hc(i,4) << " " << hc(i,0) << " " << hc(i,1)
               << " " << hc(i,2) << " " << hc(i,3)
               << " " << hc(i,5) << " " << hc(i,6)
-              << " " << hc(i,7) << " " << hc(i,8) << "\n";
+              << " " << hc(i,7) << " " << hc(i,8)
+              << " " << hc(i,9) << " " << hc(i,10) << " " << hc(i,11) << "\n";
           }
           f.close();
           std::cout << "two_stream_rt: wrote "

@@ -95,6 +95,9 @@ using two_stream_rt::rt_Qb_ptr;
 using two_stream_rt::rt_Qv_ptr;
 using two_stream_rt::rt_T_ptr;
 using two_stream_rt::rt_cf_ptr;
+using two_stream_rt::ck_spherical;
+using two_stream_rt::rt_cell_report;
+using two_stream_rt::rt_report_every;
 using two_stream_rt::rt_ck;
 using two_stream_rt::rt_ck_pcut;
 using two_stream_rt::rt_de_max;
@@ -427,6 +430,19 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // blocked-band RT scaling harness: sized once, before any RT call
   rt_split = pin->GetOrAddBoolean("problem","rt_split",false);
   rt_ck = pin->GetOrAddBoolean("problem","rt_ck",false);
+  // problem/ck_spherical: the SPHERICAL form of the correlated-k two-stream
+  // (see two_stream_rt::ck_spherical).  Default false = bitwise the
+  // plane-parallel arithmetic; refused on a Cartesian mesh at the first RT call.
+  ck_spherical = pin->GetOrAddBoolean("problem","ck_spherical",false);
+  // problem/rt_cell_report + problem/rt_report_every: the per-cell radiative-balance
+  // report and, with it, the rt_desum line -- sum(src*dt*dx) against sum(de*dx), i.e.
+  // what the sweep asked for against what the gas actually received once the
+  // semi-implicit relaxation, the rt_de_max limiter and the floors have had their say.
+  // red_giant.cpp and box_convection.cpp already read these; this path did not, so the
+  // diagnostic was unreachable here.  Defaults are the namespace defaults, so this is
+  // inert unless asked for.
+  rt_cell_report = pin->GetOrAddBoolean("problem","rt_cell_report",false);
+  rt_report_every = pin->GetOrAddInteger("problem","rt_report_every",100);
   rt_star_teff = pin->GetOrAddReal("problem","ck_star_teff",6000.0);
   rt_dump_file = pin->GetOrAddString("problem","ck_dump_file","");
   rt_dump_m = pin->GetOrAddInteger("problem","ck_dump_m",0);
