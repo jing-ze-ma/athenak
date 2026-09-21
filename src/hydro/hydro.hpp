@@ -197,6 +197,12 @@ class Hydro {
   // well-balanced for those cycles, which kicks a deep hydrostatic star hard.  Force the
   // first call after start OR restart to build it.
   bool wb_cache_built = false;
+  // Set by the restart reader when the file carried BOTH general-EOS caches (wtemp and
+  // the derived p, Gamma_1).  The very first ConToPrim of a restarted run must then not
+  // re-derive them -- the inversion is not idempotent and would move them by a few ULP,
+  // which is enough to make the restart stop being a bitwise continuation.  Cleared by
+  // that call; see GeneralHydro::ConsToPrimFrozen.
+  bool c2p_freeze_derived = false;
     
   // following used for well-balanced scheme
   bool use_wellbalance_static = false;    // flag to enable static wellbalance

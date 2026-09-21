@@ -124,6 +124,17 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
     Kokkos::deep_copy(outarray_wtm, Kokkos::subview(pmhd->wtemp,
                       std::make_pair(0,nmb), Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
   }
+  // the general-EOS derived cache p and Gamma_1, see the note on outarray_wdp
+  if (phydro != nullptr && phydro->peos->eos_data.IsGeneral()) {
+    Kokkos::realloc(outarray_wdp, nmb, nout3, nout2, nout1);
+    Kokkos::deep_copy(outarray_wdp, Kokkos::subview(phydro->wder,
+                      std::make_pair(0,nmb), static_cast<int>(IDPR),
+                      Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
+    Kokkos::realloc(outarray_wdg, nmb, nout3, nout2, nout1);
+    Kokkos::deep_copy(outarray_wdg, Kokkos::subview(phydro->wder,
+                      std::make_pair(0,nmb), static_cast<int>(IDG1),
+                      Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
+  }
   if (prad != nullptr) {
     Kokkos::realloc(outarray_rad, nmb, nrad, nout3, nout2, nout1);
     Kokkos::deep_copy(outarray_rad, Kokkos::subview(prad->i0, std::make_pair(0,nmb),
@@ -349,6 +360,9 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   }
   if (wt_mhd) {
     data_size += nout1*nout2*nout3*sizeof(Real);        // mhd wtemp
+  }
+  if (wt_hyd) {
+    data_size += 2*nout1*nout2*nout3*sizeof(Real);      // hydro wder (IDPR, IDG1)
   }
   if (global_variable::my_rank == 0 || single_file_per_rank) {
     resfile.Write_any_type(&(data_size), sizeof(IOWrapperSizeT), "byte",
@@ -731,7 +745,7 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
         if (resfile.Write_any_type_at_all(mbptr.data(),mbcnt,myoffset,"Real",
                                           single_file_per_rank) != mbcnt) {
           std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                    << std::endl << what << " wtemp not written correctly to rst file, "
+                    << std::endl << what << " cache not written correctly to rst file, "
                     << "restart file is broken." << std::endl;
           exit(EXIT_FAILURE);
         }
@@ -742,7 +756,7 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
         if (resfile.Write_any_type_at(mbptr.data(), mbcnt, myoffset,"Real",
                                       single_file_per_rank) != mbcnt) {
           std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                    << std::endl << what << " wtemp not written correctly to rst file, "
+                    << std::endl << what << " cache not written correctly to rst file, "
                     << "restart file is broken." << std::endl;
           exit(EXIT_FAILURE);
         }
@@ -754,6 +768,11 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   };
   if (wt_hyd) { write_wtemp(outarray_wth, "hydro"); }
   if (wt_mhd) { write_wtemp(outarray_wtm, "mhd"); }
+  // the derived cache follows it, same layout, same loop (see outarray_wdp)
+  if (wt_hyd) {
+    write_wtemp(outarray_wdp, "hydro pressure");
+    write_wtemp(outarray_wdg, "hydro Gamma_1");
+  }
 
   // close file, clean up
   resfile.Close(single_file_per_rank);

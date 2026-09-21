@@ -948,7 +948,16 @@ TaskStatus Hydro::ConToPrim(Driver *pdrive, int stage) {
   if (use_etotgrav) {
     RemoveGravEtot(phicc0, u0, 0, n1m1, 0, n2m1, 0, n3m1);
   }
-  peos->ConsToPrim(u0, w0, false, 0, n1m1, 0, n2m1, 0, n3m1);
+  if (c2p_freeze_derived) {
+    // the first conversion of a RESTARTED run under a general EOS: the temperature and
+    // the derived (p, Gamma_1) came out of the restart file and must survive this call
+    // untouched, or the restart is not a bitwise continuation.  One call only.
+    static_cast<GeneralHydro*>(peos)->ConsToPrimFrozen(u0, w0, 0, n1m1, 0, n2m1,
+                                                       0, n3m1);
+    c2p_freeze_derived = false;
+  } else {
+    peos->ConsToPrim(u0, w0, false, 0, n1m1, 0, n2m1, 0, n3m1);
+  }
   // On the cubed sphere the conserved momentum is COVARIANT while the primitive velocity
   // must be CONTRAVARIANT, and the two differ by the non-orthogonal metric of the
   // gnomonic tangent basis. ConsToPrim cannot know that, so redo the velocity and the

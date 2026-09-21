@@ -304,6 +304,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <fstream>
 #include <iostream>
 #include <limits>
@@ -652,6 +653,46 @@ char prof_file_[256] = "rt_profile.bin";
 HostArray2D<Real> prof_h_;       // (kNProf, nx1): the plane SUMS, then the means
 DvceArray2D<Real> prof_d_;
 bool prof_alloc_ = false;
+
+//----------------------------------------------------------------------------------------
+//! \brief THE DUMP PHASE IN THE RESTART FILE (kPgenRstMagic in pgen.hpp).
+//! surf_next_ and prof_next_ are the only state the two dumps carry between calls, and
+//! they are NOT a function of the restored state: they are armed at the FIRST source
+//! call ("surf_next_ = pm->time") and then walk in steps of rt_surface_dt /
+//! rt_profile_dt.  A restart re-arms them at the RESTART time, so the restarted run
+//! dumps on a different clock than the straight run and the .bin files a restart chain
+//! writes are not the ones an uninterrupted run writes -- an extra record right after
+//! every restart, and the whole series shifted from there on.  Carrying the two numbers
+//! makes the series resume exactly.  Layout: int32 count (= 2), int32 pad, then the two
+//! Reals.  A file written without the block leaves them at -1, i.e. the old behaviour.
+
+std::vector<char> BoxConvRestartState() {
+  std::vector<char> out;
+  const std::int32_t hdr[2] = {2, 0};
+  const Real nx[2] = {surf_next_, prof_next_};
+  out.resize(sizeof(hdr) + sizeof(nx));
+  std::memcpy(out.data(), &(hdr[0]), sizeof(hdr));
+  std::memcpy(out.data() + sizeof(hdr), &(nx[0]), sizeof(nx));
+  return out;
+}
+
+//----------------------------------------------------------------------------------------
+//! \brief the other half: restore the dump phase, or say that the file has none.
+
+void BoxConvRestartRestore(const std::vector<char> &blk) {
+  if (blk.size() != 2*sizeof(std::int32_t) + 2*sizeof(Real)) {
+    if (global_variable::my_rank == 0 && (surf_dt_ > 0.0 || prof_dt_ > 0.0)) {
+      std::cout << "### box_convection: this restart file carries no dump phase; the "
+                << "rt_surface / rt_profile series restarts from the restart time"
+                << std::endl;
+    }
+    return;
+  }
+  Real nx[2];
+  std::memcpy(&(nx[0]), blk.data() + 2*sizeof(std::int32_t), sizeof(nx));
+  surf_next_ = nx[0];
+  prof_next_ = nx[1];
+}
 
 // --- problem/rt_budget_verbose: THE BOX ENERGY BUDGET, TERM BY TERM -----------------
 // Diagnostic only.  Every term is an ENERGY (erg), box-integrated and accumulated over
@@ -2272,6 +2313,24 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                 << "0, 1 or 2" << std::endl;
       std::exit(EXIT_FAILURE);
     }
+    // A RESTART IS THEN NOT A BITWISE CONTINUATION, and it is worth saying so out loud.
+    // The warm start is the previous call's converged Planck function, held per cell in
+    // two_stream_rt's rt_c3bp history.  That history is not in the restart file -- it is
+    // per-cell, per-rank state, which the pgen state block (a single rank-0 blob) cannot
+    // carry -- so the first column solve of a restarted run starts from the entry state
+    // while the straight run starts from the previous cycle's answer.  Newton converges
+    // to the same root either way, but to a different last digit: measured on the G1 box
+    // configuration, the first post-restart history row differs by 2e-15 in the mass and
+    // 2-5e-11 in the emergent flux, and the two runs separate from there.  Everything
+    // else about a restart of this problem generator IS bitwise; set rt_impl_warm = 0 in
+    // a run whose restarts have to reproduce the straight run exactly.
+    if (ts::rt_impl_warm > 0 && global_variable::my_rank == 0) {
+      std::cout << "### box_convection: problem/rt_impl_warm = " << ts::rt_impl_warm
+                << " -- the mode-3 Newton warm-start history is NOT carried in the "
+                << "restart file, so a restart of this run is not bitwise (it agrees "
+                << "to the solver tolerance).  Use rt_impl_warm = 0 if it must be."
+                << std::endl;
+    }
     ts::rt_impl_tau_min = pin->GetOrAddReal("problem", "rt_impl_tau_min", 1.0);
     ts::rt_impl_dtmax = pin->GetOrAddReal("problem", "rt_impl_dtmax", 0.25);
     ts::rt_impl_tau_blend = pin->GetOrAddReal("problem", "rt_impl_tau_blend", 1.0);
@@ -2533,6 +2592,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     }
     prof_next_ = -1.0;
     prof_alloc_ = false;
+    // the dump phase is pgen state, not a function of the restored fields: carry it in
+    // the restart file so a restart chain writes the series an uninterrupted run writes
+    pgen_rst_write_func = BoxConvRestartState;
+    if (restart) BoxConvRestartRestore(pgen_rststate);
     // ---- the thin-region radiative force (see two_stream_rt.hpp, rt_rad_force) ------
     // It is the other half of the EOS's radiation taper: the taper removes (1-w) of the
     // LTE radiation pressure from the gas, and this puts the force that pressure was

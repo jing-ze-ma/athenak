@@ -261,6 +261,14 @@ class BaseTypeOutput {
   // temperature in the last digits and is no longer a bitwise continuation.  Written to
   // (and read from) the restart file for that reason; empty for an ideal gas.
   HostArray4D<Real> outarray_wth, outarray_wtm;
+  // the general EOS DERIVED thermodynamic cache (Hydro::wder, channels IDPR and IDG1).
+  // The same argument as for wtemp, one step further: p and Gamma_1 are evaluated by
+  // ConsToPrim at the temperature the root find just returned, they are what the Riemann
+  // solvers reconstruct, and the first Fluxes call of the restarted cycle reads them
+  // BEFORE any ConsToPrim of the restarted run has run.  Recomputing them from a restored
+  // wtemp is not bitwise (the log10/Pow10 round trip of the temperature moves the table
+  // lookup by an ULP), so they are carried in the file too.  Hydro only; empty otherwise.
+  HostArray4D<Real> outarray_wdp, outarray_wdg;
   HostFaceFld4D<Real> outfield;  // FC output field on host
   std::vector<int> noutmbs;   // with MPI, number of output MBs across all ranks
   int noutmbs_min;            // with MPI, minimum number of output MBs across all ranks
