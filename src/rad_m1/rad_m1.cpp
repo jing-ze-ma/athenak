@@ -20,6 +20,7 @@
 #include "bvals/bvals.hpp"
 #include "rad_m1/rad_m1.hpp"
 #include "rad_m1/rad_m1_closure.hpp"
+#include "rad_m1/rad_m1_implicit.hpp"
 
 #if MPI_PARALLEL_ENABLED
 #include <mpi.h>
@@ -49,6 +50,38 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     std::exit(EXIT_FAILURE);
   }
   chat = chat_over_c*c_light;
+  // ---- MILESTONE 3a hook: which transport scheme runs.  Everything the implicit one
+  // needs is read and allocated by ImplicitInit at the end of this constructor.
+  {std::string tr = pin->GetOrAddString("rad_m1","transport","explicit");
+  if (tr.compare("explicit") == 0) {
+    transport = M1_TRANSPORT_EXPLICIT;
+  } else if (tr.compare("implicit_x1") == 0) {
+    transport = M1_TRANSPORT_IMPLICIT_X1;
+  } else {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+      << std::endl << "<rad_m1>/transport = '" << tr << "' is not a valid choice "
+      << "(explicit | implicit_x1)" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  }
+  nstage = M1_NSTAGE;
+  impl_cfl = -1.0;
+  impl_tol = 1.0e-8;
+  impl_maxit = 30;
+  impl_opac_update = false;
+  impl_allow_multid = false;
+  marshak_q = 0.5;
+  ibc_x1min = M1_IBC_MARSHAK;
+  ibc_x1max = M1_IBC_MARSHAK;
+  iflux_x1min = 0.0;
+  iflux_x1max = 0.0;
+  iebath_x1min = 0.0;
+  iebath_x1max = 0.0;
+  impl_nstep = 0.0;
+  impl_itsum = 0.0;
+  impl_itmax = 0.0;
+  impl_nfail = 0.0;
+  // ---- end of the 3a hook
   cfl_rad = pin->GetOrAddReal("rad_m1","cfl_rad",0.4);
   e_floor = pin->GetOrAddReal("rad_m1","e_floor",(FLT_MIN));
   subcycle = pin->GetOrAddBoolean("rad_m1","subcycle",true);
@@ -375,6 +408,10 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     Kokkos::realloc(coarse_u0, nmb, M1_NVAR, nccells3, nccells2, nccells1);
   }
 
+  // (4b) MILESTONE 3a hook: the implicit solver's own parameters, checks and arrays.
+  // Returns immediately with transport = explicit.
+  ImplicitInit(pin);
+
   // (5) boundary buffers
   pbval_u = new MeshBoundaryValuesCC(ppack, pin, false);
   pbval_u->InitializeBuffers(M1_NVAR);
@@ -430,6 +467,7 @@ void RadiationM1::SetForceReference(const DvceArray4D<Real> &a) {
 
 RadiationM1::~RadiationM1() {
   ReportCounters();
+  ImplicitReport();   // milestone 3a; a no-op in transport = explicit
   delete pbval_u;
 }
 

@@ -214,6 +214,28 @@ class RadiationM1 {
   // sub-cycling is off OR when no other module sets the mesh timestep
   bool sets_mesh_dt;
 
+  // ---- MILESTONE 3a: IMPLICIT x1 TRANSPORT (docs/dev/rad_m1_implicit_design.md).
+  // Everything below is inert with the default <rad_m1>/transport = explicit; see
+  // rad_m1_implicit.hpp / rad_m1_implicit.cpp.
+  int transport;                // M1_TRANSPORT_*
+  int nstage;                   // stages per substep: M1_NSTAGE explicit, 1 implicit
+  Real impl_cfl;                // <rad_m1>/implicit_cfl: dtnew = impl_cfl*dx/c (<=0 off)
+  Real impl_tol;                // Picard tolerance on max(|dE|/E, |dT|/T)
+  int impl_maxit;               // maximum Picard iterations per solve
+  bool impl_opac_update;        // re-evaluate the opacities inside the Picard loop
+  bool impl_allow_multid;       // run a 2-D/3-D set of INDEPENDENT x1 columns
+  Real marshak_q;               // free-surface condition F_f = c*marshak_q*E
+  int ibc_x1min, ibc_x1max;     // M1_IBC_*
+  Real iflux_x1min, iflux_x1max;  // the imposed face flux of M1_IBC_FLUX
+  Real iebath_x1min, iebath_x1max;  // M1_IBC_MARSHAK: the INCIDENT bath
+                                // energy density, F_f = +-c q (E - E_bath);
+                                // 0 is the plain free surface
+  DvceArray4D<Real> f0x1;       // face-normal comoving flux on x1 faces, (m,k,j,i);
+                                // PERSISTENT state, carried by the restart file
+  DvceArray4D<Real> f0x1n;      // its start-of-step copy (not restarted)
+  DvceArray5D<Real> iw;         // per-cell work array of the solve, M1_NIW components
+  Real impl_nstep, impl_itsum, impl_itmax, impl_nfail;   // host-side Picard counters
+
   // evolved variables
   DvceArray5D<Real> u0;         // (E, F1, F2, F3)
   DvceArray5D<Real> u1;         // state at the start of the substep
@@ -260,6 +282,16 @@ class RadiationM1 {
   //! design sect. 2: evaluate and print v_max*tau_max/chat.  Runs once, from the first
   //! Opacity task that has a filled array (tau needs rho*kappa, which the ctor has not).
   void RSLACheck();
+  // ---- milestone 3a (rad_m1_implicit.cpp)
+  //! read the implicit-solver parameters and allocate its arrays; a no-op in
+  //! transport = explicit
+  void ImplicitInit(ParameterInput *pin);
+  //! print the Picard statistics of the implicit solver (from the destructor, rank 0)
+  void ImplicitReport();
+  //! let a problem generator name the x1 boundary types of the implicit solve
+  void SetImplicitX1BC(int lo_type, Real lo_flux, int hi_type, Real hi_flux);
+  //! the whole backward-Euler step, in place of the explicit stage chain
+  TaskStatus ImplicitSolve(Driver *d, int stage);
 
   // ...in "m1_before_stagen"
   TaskStatus InitRecv(Driver *d, int stage);

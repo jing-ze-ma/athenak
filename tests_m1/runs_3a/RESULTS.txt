@@ -1,0 +1,234 @@
+MILESTONE 3a -- IMPLICIT x1 TRANSPORT, <rad_m1>/transport = implicit_x1
+=======================================================================
+viper, serial CPU Release, gcc/14, branch m1-implicit-x1 on top of eadd6f0a, 2026-09-21.
+Binaries: build_cpu_m1 (no -D PROBLEM) and build_cpu_box (-D PROBLEM=box_convection),
+built one at a time (inode quota).  Commands: runs_3a/run_gates.sh, runs_3a/run_i1.sh,
+runs_3a/step0.sh.  All dumps deleted; only run.log / history files are kept, under i8/.
+
+WHAT RUNS: one backward-Euler solve per hydro step at the TRUE speed of light, no
+sub-cycling, no PD-ARS; the normal flux lives on the x1 faces and is eliminated there,
+leaving one tridiagonal M-matrix system for E per column (plain Thomas, or cyclic
+Sherman-Morrison for a periodic column).  ONE MeshBlock along x1 is enforced (fatal
+otherwise); the partitioned line solve of two_stream_column_partition.hpp is NOT used.
+
+
+STEP 0  the EXPLICIT scheme is unchanged
+----------------------------------------
+PASS T3 pulse tau_cell 1e3, plm: ratio 1.000015          (runs_1cB RESULTS.txt: 1.000015)
+PASS T4 d512 split  : dcentre 0.059, dwidth 1.014e-2, gas drift 8.630e-3,
+                      Tgas drift 2.941e-3, vs-static 2.248e-3, nyquist 3.722e-15
+                                                          (runs_2a G0b: identical)
+     T4 d512 nosplit: dcentre -69.888, dwidth 1.710e-1    (identical)
+     T4b full / ovc : Tgas drift 0.000e+00 / 2.159e+05    (identical)
+BOX G1 (build_cpu_box, he_box_w8 16x16, 50 cycles, modes 3 and 0, vs
+        athenak/tests_gate_merge/g1_new_m{3,0}): 12/12 files IDENTICAL
+        (column_used.txt, feczrt.log, feczrt.hydro.hst, feczrt.user.hst, rt_profile.bin,
+         rt_surface.bin, both modes).
+
+
+I1  THICK PULSE, 128 cells, vs the analytic diffusion rate 2D, D = c/(3 rho kappa)
+----------------------------------------------------------------------------------
+rate ratio d(sigma^2)/dt / 2D, target 1 +- 0.02;  "it" = mean Picard iterations/step
+                 CFL 0.4    CFL 1      CFL 10     CFL 100    CFL 1e4
+ tau_cell 10     0.999362   0.999354   0.999166   0.999971*  (a)
+ tau_cell 1e3    1.000000   0.999999   0.999999   1.000001   0.999901*
+ tau_cell 1e6    1.000000   1.000000   1.000000   1.000001   0.999999
+ iterations      2.0-2.6    2.0-3.0    2.0-3.4    2.0-4.0    2.0-4.0
+ NON-CONVERGED   0          0          0          0          0
+ (*) tlim raised so that the run takes more than one step (8 resp. 1200 instead of
+     0.5 / 12); (a) at tau_cell = 10 one step at CFL 1e4 is dt = 78, longer than the
+     diffusion time of the pulse, so after two steps the Gaussian has filled the
+     periodic box and the variance SATURATES (measured ratio 0.047).  That is the
+     problem running out of physics, not the scheme: nothing grows, nothing goes
+     negative.
+The explicit scheme's value at tau_cell 1e3 is 1.000015, so the implicit operator is
+if anything more accurate (the face-eliminated flux is the compact 3-point diffusion
+operator exactly, with no HLL dissipation left to cancel).
+
+NYQUIST mode (kappa 128000, nyquist_amp 1e-3), decay rate / (4D/dx^2):
+   CFL 0.4  0.999735   CFL 1  0.999334   CFL 10  0.993393   CFL 100  0.938963
+   CFL 1e4: the mode is annihilated in the first step (amplitude below round-off).
+FIRST ORDER IN TIME, exactly: backward Euler decays a mode of rate lam by
+ln(1 + lam dt)/(lam dt) per unit time.  With lam = 4D/dx^2 = 0.1706667 and
+dt = CFL dx/c, x = lam dt = 1.3333e-3 CFL, the prediction is
+   CFL 0.4 -> 0.999733 (0.999735), 1 -> 0.999334 (0.999334),
+   10 -> 0.993377 (0.993393), 100 -> 0.938950 (0.938963)
+i.e. the measured rates ARE the backward-Euler answer to 5 digits, and the error is
+first order in dt (6.7e-4 -> 6.6e-3 -> 6.1e-2 for dt x10 x10).  NO GROWTH at any CFL.
+
+
+I2  T3b OPACITY JUMP (x1000 at x = 0.5), 64 cells, steady state at t = 200
+--------------------------------------------------------------------------
+                     max|E/E_ex-1|  slope err L/R     ratio err  face flux: uniform to /
+                                                                 offset / peak at jump
+ explicit plm        1.050e-01      9.35e-3 / 9.74e-3  3.94e-4   1.59e-1 / 1.31e-2 / 33.4
+ explicit dc         1.241e-01      7.88e-3 / 8.69e-3  8.17e-4   1.12e-3 / 8.26e-3 / 123
+ implicit CFL 1      1.126e-04      2.47e-5 / 1.71e-5  7.59e-6   8.11e-5 / 1.91e-5 / 5.6e-6
+ implicit CFL 10     1.126e-04      2.47e-5 / 1.71e-5  7.58e-6   8.11e-5 / 1.91e-5 / 5.6e-6
+ implicit CFL 100    1.126e-04      2.46e-5 / 1.71e-5  7.47e-6   8.09e-5 / 1.91e-5 / 5.5e-6
+The absolute flux error falls from 1.31 % (explicit, the milestone-1c figure) to
+1.9e-3 %, i.e. 700x, and is INDEPENDENT of the time step -- so it is the spatial
+operator, exactly as the design note predicts: no cell-centred F enters the transport,
+the face diffusivity is the harmonic mean by construction, and the peak deviation AT the
+jump drops from 33 (plm) / 123 (dc) to 5.5e-6.  Design target < 0.1 %: met with room.
+T3c TOP-HAT (tau_cell 1e3, t = 12), rate ratio, target 1 +- 0.05:
+   explicit 1.000479 | implicit CFL 1 0.999999 | implicit CFL 100 1.000001
+
+
+I3  EQUILIBRATION (single zone, 2000 steps), ideal gas
+------------------------------------------------------
+dt/coupling time     1e3          1e5          1e7
+ cold start (e=1e2)  dE_eq 6.7e-13  5.1e-13     2.4e-13
+                     cons  6.7e-13  5.1e-13     2.6e-13
+ hot start  (e=1e10) dE_eq 3.1e-14  3.9e-13     2.2e-13
+                     cons  3.1e-14  3.9e-13     2.3e-13
+ iterations          1.002        1.002        1.002 (max 3-4), 0 non-converged
+ sign flips of T_gas - T_rad: 0 everywhere
+Equilibrium is reached to 1e-13..1e-12 at every dt and the invariant e_gas + (c/chat) E
+drifts by 2e-13..7e-13 over 2000 steps (script tolerance 1e-13; the explicit local solve
+is exact to round-off, 0.0).  CONSERVATION BUG FOUND AND FIXED HERE: setting the gas
+energy from rho kappa_P a T'^4 -- the nonlinear emission -- while E' solves the LINEARISED
+row leaves the two sides of the invariant a Picard remainder apart, and the drift was
+2.8e-11 / 1.4e-9 / 1.3e-7 at the three dt.  The gas energy is now set from the source the
+assembled row actually applied, q = SRCR - SRCB E', which is algebraically the same
+number the radiation received; the drift above is what is left.
+TABULATED He EOS (rad_m1_equil_table, 1000 steps, implicit_cfl 1e-4):
+   final e_gas 3.99011920941564e5 vs explicit 3.99011920948692e5  (1.8e-11)
+   final E     2.17059880759836e7 vs explicit 2.17059880790513e7  (1.4e-9)
+   iterations 1.009 (max 4), 0 non-converged.
+   The implicit run leaves F1 = 4.1e2 in a zone where the exact answer is 0; that is
+   f = F/(cE) = 6e-16, i.e. round-off in the face gradient, not a defect.
+
+
+I4  MARSHAK WAVE (constant c_v), t = 202, vs the S_N reference
+--------------------------------------------------------------
+L1(E) = L1(material); the implicit x1min boundary is the Robin condition
+F = -c q (E - E_bath), q = 1/2, E_bath = 1e-10, i.e. the classical Marshak condition.
+   128 cells   explicit 0.0019 | implicit CFL 1 0.0144 | CFL 10 0.0143 | CFL 100 0.0135
+    64 cells   explicit 0.0148 | implicit CFL 1 0.0294 | CFL 10 0.0293 | CFL 100 0.0277
+   iterations/step  128 cells: 6.6 (CFL 1), 9.9 (CFL 10), 14.1 (CFL 100), max 14/25/30
+                     64 cells: 5.0, 6.5, 9.8, max 14/17/30
+   NON-CONVERGED solves at implicit_maxit = 30: 0 / 0 / 8 of 259 (128 cells),
+                                                0 / 0 / 1 of 130 (64 cells).
+The error is CFL-INDEPENDENT, so it is not backward Euler: it is the boundary condition
+and the first-order wave front.  Passes the 2 % design target at 128 cells at every CFL,
+fails it at 64 (2.9 %) where the explicit scheme passes at 1.5 %.  This is the one gate
+where the implicit scheme is WORSE than the explicit one, and it is the expected place:
+a steep, optically thin-to-thick front is what backward Euler with a face-eliminated,
+non-upwinded flux smears (see I6).  Risk R1 of the design note is visible in the
+iteration count: it grows with dt at the a T^4 front (1e30 a_rad) and reaches the cap.
+
+
+I5  MOVING MEDIUM
+-----------------
+T4 dynamic, 512 cells, beta tau = 14, kappa 500, v = 3e7:
+            dcentre[cells]  dwidth    gas drift  Tgas drift  nyquist   iterations
+ explicit    0.059          1.014e-2  8.630e-3   2.941e-3    3.7e-15   --
+ implicit dt = dt_hydro (radiation CFL 186)
+            -0.051          1.905e-2  1.262e-2   3.990e-3    1.6e-13   4.0
+ implicit CFL 10
+             0.007          1.790e-2  1.208e-2   3.867e-3    1.3e-13   3.0
+The advected thick pulse arrives in the right place (both pass the 1-cell gate) and the
+width is 1.8-1.9 % against the explicit 1.0 %: the enthalpy flux A = vE + v.P is
+DONOR-CELL upwinded inside the implicit operator (first order, design risk R3), while
+the explicit scheme reconstructs it.
+T4b uniform medium at the exact fixed point: Tgas drift 6.300e-8 (explicit exactly 0.0),
+dwidth -2.3e-4.  The fixed point is preserved to 6e-8 per run, not exactly, because de0
+and the upwind coefficient are lagged.
+
+
+I6  FREE STREAMING and the thin limit -- THE HONEST NUMBER
+----------------------------------------------------------
+pulse1d, f = 1, 128 cells, one box crossing, no opacity; the exact answer is the initial
+condition.  Peak-to-trough amplitude of E, final/initial:
+   explicit          0.953
+   implicit CFL 0.4  0.369   CFL 1  0.319   CFL 10  0.285   CFL 100  0.076
+The implicit scheme does NOT propagate a free-streaming front: it damps it heavily even
+at CFL < 1, because the face-eliminated operator is a backward-Euler discretisation of
+the wave system with no upwinding.  This is the intended (and stated) behaviour of the
+scheme in the thin limit, and it is why `transport = explicit` stays the default.  It
+also means implicit_x1 must not be used for beams, shadows or any thin-region dynamics.
+NOT DONE: the semi-analytic grey/M1 atmosphere of bench/m1_stage2/ic/build_ic.py
+(chi(f)/f = q0 + tau).  There is no test problem generator for a static plane-parallel
+column with fixed gas in this tree, and writing one was traded for I8, which is the same
+physics with the real stellar column.  See "gaps".
+
+
+I7  CONSISTENCY, CONSERVATION, RESTART, MESHBLOCKS
+---------------------------------------------------
+consistency at small CFL: T3 tau_cell 1e3 at CFL 0.4 gives 1.000000 against the explicit
+   1.000015; T6 at CFL 1 gives L1 0.0144 against the explicit 0.0019 -- the two schemes
+   do NOT agree to truncation error on T6, because the boundary conditions differ
+   (fixed-E ghost + HLL vs the Marshak flux relation), not because of the time integrator.
+conservation, T4 dynamic 512, 194 steps, 5 dumps:
+   max|dE_total/E| = 2.016e-16  (explicit 1.842e-13)
+   max|dP|/|P|     = 2.397e-08  (explicit 1.071e-13)
+   Energy is now better than the explicit scheme's.  Momentum is not: the script's
+   invariant is sum(rho v + F_cell/(chat c)) and the cell F carries the advected
+   enthalpy flux A, which the face-based momentum deposit does not account for; the
+   exchanged part is conservative by construction (each face hands
+   dt (rho k_t)_f F0_f/c to the gas, half to each neighbour, all of it to the single
+   interior cell at a physical boundary).
+restart: T4 dynamic 128, restart from cycle 95, final tab file BITWISE IDENTICAL to the
+   uninterrupted run.  This is also the gate on the new face array in the restart file:
+   without it F0 would restart from zero and the first step would differ.
+MeshBlocks: 2-D set of independent columns (implicit_allow_multid = true), 128 x 16,
+   1 block vs 4 blocks along x2: max|E_1 - E_4| = 0.0, max|F1_1 - F1_4| = 0.0, BITWISE.
+1 vs 2 vs 4 blocks along x1: NOT APPLICABLE, the partitioned line solve was not
+   implemented; more than one block along x1 is a fatal error at startup.
+
+
+I8  THE 1-D He COLUMN AT TRUE c -- the number this milestone exists for
+-----------------------------------------------------------------------
+inputs: runs_3a/he_box_m1_1d_impl.athinput (= inputs/hydro/he_box_m1_1d.athinput with
+chat_over_c = 1, subcycle = false, transport = implicit_x1, bottom boundary = imposed
+flux 2.475202e15, top boundary = Marshak q = 1/2), problem/m1_top_bc = dark, t = 1000 s.
+CONTROL: the same input with transport = explicit, chat_over_c = 2.847e-3 (K = 10),
+subcycle = true -- the milestone 2a G1 arm, rerun on this binary.
+
+                                   implicit, true c        explicit, K = 10
+ steps to t = 1000 s               6417                    6313 (x13 substeps)
+ dt                                0.1614 s (= dt_hydro)   0.1591 s
+ wall clock per step               4.74e-3 s               9.51e-3 s
+                                   (hydro-only: 4.43e-4 s/step, runs_2a)
+ Picard iterations / step          13.5 mean, 23 max, 0 non-converged
+ max|v1|  t = 0-200 s              2.42e5 = 13.0 v_MLT     8.32e4 =   4.5 v_MLT
+          t = 200-400              1.92e5 = 10.3           1.24e5 =   6.7
+          t = 400-600              1.92e5 = 10.3           4.92e5 =  26.5
+          t = 600-800              1.92e5 = 10.3           2.78e6 = 149.7
+          t = 800-1000             1.92e5 = 10.3           4.45e6 = 239.4
+ envelope growth rate              -2.85e-05 /s (DECAYING) +5.1e-3 /s, e-folding ~195 s
+ where max|v1| sits                i = 0 (bottom cell)     i = 82 (top)
+ oscillation period (FFT / zero    49.7 s / 54.0 s, at a constant amplitude
+   crossings, second half)
+ at t = 975 s  max|drho/rho|       1.93e-2                 5.76e-1
+               max|dT/T|           7.18e-4                 1.37e-1
+               max|dE/E|           2.91e-3                 4.46e-1
+               F1/F_in range       0.9968 .. 1.0012        0.7745 .. 1.4037
+               F1/F_in top cell    1.0000                  1.1118
+               max|T_gas/T_rad-1|  3.58e-4 (at i = 0)      1.36e-4
+               residual force      5.13e-3 g0              4.2e-1 g0
+               E_total drift       +6.74e-5                -2.83e-2
+
+ANSWER: the oscillation does NOT grow.  At the true speed of light, with no sub-cycling
+and one backward-Euler solve per hydro step, the column settles within ~200 s and then
+DECAYS (gamma = -2.9e-5/s); the drifts at t = 975 s are SMALLER than at t = 400 s
+(drho 1.9e-2 vs 5.8e-2).  The residual max|v1| = 10.3 v_MLT is steady and sits in the
+BOTTOM cell, at the imposed-flux boundary, not in the interior and not at the surface:
+it is a boundary-layer flow, not a mode.  The emergent flux is right to 1e-4 everywhere
+(the explicit K = 10 arm is 23-40 % wrong by t = 975 s) and the column carries the
+imposed luminosity through all 84 cells.  And it costs HALF of the explicit K = 10 run
+(2.0x faster per step, 10.7x hydro-only), because 13 explicit substeps with two PD-ARS
+stages each are replaced by 13.5 Picard iterations of one tridiagonal solve.
+The 2a diagnosis that the reduced speed of light was a suspect for the growing 72 s
+oscillation is therefore SUPPORTED: removing it removes the growth.  (Note the residual
+oscillation here has a period of ~50 s, not 72 s, and a constant amplitude.)
+
+
+STYLE
+-----
+cpplint (repo CPPLINT.cfg, 90 columns): 0 errors on the two new files and on every
+changed C++ file except src/pgen/pgen.cpp, whose 5 whitespace complaints are at lines
+45/119/136 -- pre-existing, in the file header, untouched here.
+Mode 644, no tabs, no trailing whitespace, no `}}` on a line, #pragma left-justified.
+flake8 --max-line-length 90 on runs_3a/make_plots_3a.py and the tests_m1 scripts: clean.

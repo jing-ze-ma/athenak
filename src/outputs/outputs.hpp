@@ -255,6 +255,10 @@ class BaseTypeOutput {
   HostArray5D<Real> outarray;
   HostArray5D<Real> outarray_hyd, outarray_mhd, outarray_rad, outarray_m1,
                     outarray_force, outarray_z4c, outarray_adm;
+  // <rad_m1>/transport = implicit_x1 (milestone 3a): the x1 FACE fluxes are persistent
+  // state of that scheme and are written as one more block after the moments, with
+  // (nout1+1) values per row.  Empty -- and not one byte written -- in every other run.
+  HostArray4D<Real> outarray_m1f;
   // the general EOS temperature cache (Hydro/MHD::wtemp).  It is not state in the sense
   // of an evolved variable, but it IS the warm start of the c2p temperature root find,
   // which converges only to `logtol`: a restart that cold starts it lands on a different

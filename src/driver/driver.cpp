@@ -462,7 +462,9 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       if (pmesh->pmb_pack->pradm1 != nullptr) {
         int nsub = pmesh->pmb_pack->pradm1->SetSubsteps(pmesh->dt);
         for (int nst=0; nst<nsub; ++nst) {
-          for (int stage=1; stage<=(radm1::M1_NSTAGE); ++stage) {
+          // nstage is M1_NSTAGE for the explicit scheme and 1 for the implicit one
+          // (milestone 3a: one backward-Euler solve per hydro step)
+          for (int stage=1; stage<=(pmesh->pmb_pack->pradm1->nstage); ++stage) {
             ExecuteTaskList(pmesh, "m1_before_stagen", stage);
             ExecuteTaskList(pmesh, "m1_stagen", stage);
             ExecuteTaskList(pmesh, "m1_after_stagen", stage);
