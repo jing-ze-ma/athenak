@@ -60,6 +60,14 @@
 //!             The initial condition is the EDDINGTON solution E = 3(F/c)(tau + 2/3),
 //!             which is 40 % off at the surface, so the gate measures the convergence to
 //!             the steady state and not the initial condition.
+//!
+//!   radwave   (milestone 3b phase E, gate T10) LINEAR RADIATION-MODIFIED ACOUSTIC WAVE
+//!             in a uniform, optically thick, radiation-pressure-significant medium,
+//!             laid down along x1, x2, x3 or the x1-x2 diagonal (<problem>/radwave_dir).
+//!             The SAME wave rotated onto a transverse axis is what isolates the
+//!             transverse gas-radiation coupling of transport = implicit from the x1
+//!             path that milestones 3a-3b already validate.  See the branch below for
+//!             the eigenmode and the mixture exponents.
 
 #include <math.h>
 
@@ -153,8 +161,10 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
   int n3 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*ng) : 1;
   int &is = indcs.is;
   int &js = indcs.js;
+  int &ks = indcs.ks;
   int nx1 = indcs.nx1;
   int nx2 = indcs.nx2;
+  int nx3 = indcs.nx3;
   int nmb1 = (pmbp->nmb_thispack - 1);
   auto &size = pmbp->pmb->mb_size;
   auto u0 = pmbp->pradm1->u0;
@@ -393,12 +403,116 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
       u0(m,radm1::M1_F2,k,j,i) = 0.0;
       u0(m,radm1::M1_F3,k,j,i) = 0.0;
     });
+  } else if (test.compare("radwave") == 0) {
+    // MILESTONE 3b phase E (design sect. 14).  LINEAR RADIATION-MODIFIED ACOUSTIC WAVE
+    // in a uniform, optically thick, radiation-pressure-significant medium.  The point
+    // of the test is that the SAME wave can be laid down along x1, along x2, along x3 or
+    // on the diagonal of the x1-x2 plane, so that the transverse gas-radiation coupling
+    // (the x2/x3 momentum deposit, the work term, the enthalpy flux A_2/A_3 and the
+    // velocity-dependent E0 corrections) is exercised against a path -- x1 -- that every
+    // earlier gate has already validated.
+    //
+    // With tau per wavelength >> 1 and c >> c_s the gas and the radiation are in
+    // EQUILIBRIUM DIFFUSION: T_rad = T_gas, and the mixture behaves as a single fluid
+    // with Chandrasekhar's generalised adiabatic exponents.  With beta = P_gas/P_tot,
+    //
+    //   Gamma_1   = beta + (4 - 3 beta)^2 (gamma-1)/[beta + 12 (gamma-1)(1 - beta)]
+    //   Gamma_3-1 = (Gamma_1 - beta)/(4 - 3 beta)          (= dlnT/dlnrho on the adiabat)
+    //   c_s^2     = Gamma_1 (P_gas + P_rad)/rho
+    //
+    // (beta = 1 gives Gamma_1 = gamma and Gamma_3-1 = gamma-1; beta = 0 gives 4/3 and
+    // 1/3).  The eigenmode of a RIGHT-travelling wave of amplitude A is then
+    //
+    //   drho/rho = A cos(phi),  dv = n c_s A cos(phi),  dT/T = (Gamma_3-1) A cos(phi),
+    //   dE_rad   = 4 E_rad (Gamma_3-1) A cos(phi),
+    //   F_rad    = n [ (4/3) dv E_rad + (c/(3 kappa rho)) |k| dE_rad sin(phi) ],
+    //
+    // the second piece of F being the diffusive flux -c grad E/(3 kappa rho), which is
+    // O(1/tau) and is what damps the wave.  phi = k.x with k one wavelength across the
+    // box in each direction the wave runs.
+    std::string wdir = pin->GetOrAddString("problem","radwave_dir","x1");
+    Real amp = pin->GetOrAddReal("problem","radwave_amp",1.0e-6);
+    Real d0 = pin->GetOrAddReal("problem","radwave_rho",1.0);
+    Real t0 = pin->GetOrAddReal("problem","radwave_t",1.0);
+    Real gm1 = pmbp->phydro->peos->eos_data.gamma - 1.0;
+    Real kapf = pmbp->pradm1->kappa_f;
+    Real pgas = d0*t0;
+    Real er0 = ar*t0*t0*t0*t0;
+    Real ptot = pgas + er0/3.0;
+    Real bet = pgas/ptot;
+    Real gam1 = bet + SQR(4.0 - 3.0*bet)*gm1/(bet + 12.0*gm1*(1.0 - bet));
+    Real g3m1 = (gam1 - bet)/(4.0 - 3.0*bet);
+    Real cs = sqrt(gam1*ptot/d0);
+    int mx = 0, my = 0, mz = 0;
+    if (wdir.compare("x1") == 0) {
+      mx = 1;
+    } else if (wdir.compare("x2") == 0) {
+      my = 1;
+    } else if (wdir.compare("x3") == 0) {
+      mz = 1;
+    } else if (wdir.compare("xy") == 0) {
+      mx = 1;
+      my = 1;
+    } else {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+        << std::endl << "<problem>/radwave_dir = '" << wdir
+        << "' is not a choice (x1 | x2 | x3 | xy)" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    auto &msz = pmy_mesh_->mesh_size;
+    Real twopi = 2.0*M_PI;
+    Real kx = twopi*mx/(msz.x1max - msz.x1min);
+    Real ky = twopi*my/(msz.x2max - msz.x2min);
+    Real kz = twopi*mz/(msz.x3max - msz.x3min);
+    Real kmag = sqrt(kx*kx + ky*ky + kz*kz);
+    Real nx = kx/kmag, ny = ky/kmag, nz = kz/kmag;
+    Real lam = twopi/kmag;
+    Real dvv = amp*cs;
+    Real derad = 4.0*er0*g3m1*amp;
+    Real fdif = (cl/(3.0*kapf*d0))*kmag*derad;
+    if (global_variable::my_rank == 0) {
+      std::cout << "  m1_test = radwave: dir=" << wdir << " beta=" << bet
+                << " Gamma1=" << gam1 << " Gamma3-1=" << g3m1 << std::endl
+                << "    c_s=" << cs << " c/c_s=" << (cl/cs) << " lambda=" << lam
+                << " period=" << (lam/cs) << " tau_lambda=" << (kapf*d0*lam)
+                << std::endl;
+    }
+    if (restart) return;
+    auto uh = pmbp->phydro->u0;
+    par_for("m1_radwave_ic", DevExeSpace(), 0,nmb1,0,(n3-1),0,(n2-1),0,(n1-1),
+    KOKKOS_LAMBDA(int m, int k, int j, int i) {
+      Real &x1min = size.d_view(m).x1min;
+      Real &x1max = size.d_view(m).x1max;
+      Real &x2min = size.d_view(m).x2min;
+      Real &x2max = size.d_view(m).x2max;
+      Real &x3min = size.d_view(m).x3min;
+      Real &x3max = size.d_view(m).x3max;
+      Real x1v = CellCenterX(i-is, nx1, x1min, x1max);
+      Real x2v = (nx2 > 1) ? CellCenterX(j-js, nx2, x2min, x2max) : 0.0;
+      Real x3v = (nx3 > 1) ? CellCenterX(k-ks, nx3, x3min, x3max) : 0.0;
+      Real ph = kx*x1v + ky*x2v + kz*x3v;
+      Real cp = cos(ph), sp = sin(ph);
+      Real d = d0*(1.0 + amp*cp);
+      Real tt = t0*(1.0 + g3m1*amp*cp);
+      Real vv = dvv*cp;
+      uh(m,IDN,k,j,i) = d;
+      uh(m,IM1,k,j,i) = d*vv*nx;
+      uh(m,IM2,k,j,i) = d*vv*ny;
+      uh(m,IM3,k,j,i) = d*vv*nz;
+      uh(m,IEN,k,j,i) = d*tt/gm1 + 0.5*d*vv*vv;
+      Real ee = er0 + derad*cp;
+      Real ff = (4.0/3.0)*vv*er0 + fdif*sp;
+      u0(m,radm1::M1_E,k,j,i) = fmax(ee, efl);
+      u0(m,radm1::M1_F1,k,j,i) = ff*nx;
+      u0(m,radm1::M1_F2,k,j,i) = ff*ny;
+      u0(m,radm1::M1_F3,k,j,i) = ff*nz;
+    });
   } else {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
       << std::endl << "<problem>/m1_test = '" << test << "' not implemented "
       << "(beam | pulse1d | thick_pulse | tophat | jump | equil | advect_pulse "
       << "| advect_uniform | advect_shear | marshak | shadow | radshock "
-      << "| atmosphere)" << std::endl;
+      << "| atmosphere | radwave)" << std::endl;
     std::exit(EXIT_FAILURE);
   }
   return;

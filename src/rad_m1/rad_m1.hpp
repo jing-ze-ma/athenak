@@ -218,6 +218,12 @@ class RadiationM1 {
                        // relaxes its flux, but the gas receives NO momentum and no work
   bool dbg_gas_heat;   // <rad_m1>/dbg_gas_heat = false: skip the energy exchange (a)
                        // entirely, so gas and radiation exchange no energy
+  bool dbg_gas_force_trans;  // 3b phase E, transport = implicit only:
+                       // <rad_m1>/dbg_gas_force_trans = false keeps the x1 radiative
+                       // force (and with it the well-balanced reference) but hands the
+                       // gas NO x2/x3 momentum and no transverse work -- which is the
+                       // one piece of the multi-D coupling that has no hydrostatic
+                       // reference to be measured against
 
   // true when this module's dtnew must be folded into Mesh::NewTimeStep, i.e. when
   // sub-cycling is off OR when no other module sets the mesh timestep

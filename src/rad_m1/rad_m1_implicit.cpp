@@ -1855,11 +1855,15 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   bool edd = eddington;
   bool ovc = source_ovc;
   bool feedback = gas_feedback;
-  // the DEBUG switches of the explicit coupling (dbg_gas_force / dbg_gas_heat /
-  // opac_freeze) are not on this branch point; the implicit path runs the production
-  // values unconditionally.
-  const bool dbgf = true;
-  const bool dbgh = true;
+  // MILESTONE 3b phase E: the DEBUG switches of the explicit coupling are honoured here
+  // too (they used to be hard-wired to `true` on this branch).  Both default to `true`,
+  // so every earlier configuration is bitwise unchanged; what they buy is the ability to
+  // ask a multi-D run which HALF of the gas coupling drives a flow -- the radiative FORCE
+  // (dbg_gas_force) or the energy exchange (dbg_gas_heat) -- exactly as the 1-D
+  // pulsation diagnosis did.  `opac_freeze` is still not on this branch.
+  const bool dbgf = dbg_gas_force;
+  const bool dbgh = dbg_gas_heat;
+  const bool dbgft = dbg_gas_force_trans;
   // LIMIT 3 of the 3a findings.  A physical boundary face hands its whole
   // dt (rho k_t)_f F0_f/c to its ONE interior cell in 3a, so that cell receives 1.5
   // face-shares of radiative force where every interior cell receives 1.0; the residual
@@ -2844,7 +2848,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         }
         dm1 = (dt/cl)*(wl*ktl*fl + wr*ktr*fr);
         dmref = fref ? (dt*dd*aref_(m,k,j,i)) : 0.0;
-        if (trans) {
+        if (trans && dbgft) {
           // the same rule per transverse direction: each face hands
           // dt (rho k_t)_f F0_f/c to the gas, half to each of its two cells, and a
           // PHYSICAL boundary face (where F0 is zero anyway) half as well under
@@ -2879,7 +2883,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           Real idg = 1.0/fmax(dd, 1.0e-300);
           Real w1 = (uh(m,IM1,k,j,i) + dm1)*idg;
           work = 0.5*(v1 + w1)*dm1;
-          if (trans) {
+          if (trans && dbgft) {
             Real w2n = (uh(m,IM2,k,j,i) + dm2)*idg;
             work += 0.5*(v2 + w2n)*dm2;
             if (thrd) {
@@ -2899,7 +2903,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     u0_(m,M1_F3,k,j,i) = fp3;
     if (have_hydro && feedback) {
       uh(m,IM1,k,j,i) = uh(m,IM1,k,j,i) + dm1 - dmref;
-      if (trans) {
+      if (trans && dbgft) {
         uh(m,IM2,k,j,i) = uh(m,IM2,k,j,i) + dm2;
         if (thrd) {uh(m,IM3,k,j,i) = uh(m,IM3,k,j,i) + dm3;}
       }

@@ -266,12 +266,14 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   opac_frozen = false;
   dbg_gas_force = pin->GetOrAddBoolean("rad_m1","dbg_gas_force",true);
   dbg_gas_heat = pin->GetOrAddBoolean("rad_m1","dbg_gas_heat",true);
-  if ((opac_freeze || !dbg_gas_force || !dbg_gas_heat) &&
+  dbg_gas_force_trans = pin->GetOrAddBoolean("rad_m1","dbg_gas_force_trans",true);
+  if ((opac_freeze || !dbg_gas_force || !dbg_gas_heat || !dbg_gas_force_trans) &&
       global_variable::my_rank == 0) {
     std::cout << "### WARNING: <rad_m1> DEBUG switches are active: opac_freeze="
               << (opac_freeze ? "true" : "false") << " dbg_gas_force="
               << (dbg_gas_force ? "true" : "false") << " dbg_gas_heat="
-              << (dbg_gas_heat ? "true" : "false")
+              << (dbg_gas_heat ? "true" : "false") << " dbg_gas_force_trans="
+              << (dbg_gas_force_trans ? "true" : "false")
               << " -- this is not a physical configuration" << std::endl;
   }
   if (coupling && !have_hydro) {

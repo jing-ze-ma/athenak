@@ -1,0 +1,187 @@
+MILESTONE 3b PHASE E -- the TRANSVERSE gas-radiation coupling of <rad_m1>/transport =
+implicit.  Serial CPU, build_cpu_m1 (the wave gate, a BUILT-IN pgen) and build_cpu_box
+(the He slab), 2026-09-21.  Design note: docs/dev/rad_m1_implicit_design.md sect. 14.
+
+Driver (the exact commands): tests_m1/runs_3b6/run_gates_3b6.sh
+New test:  <problem>/m1_test = radwave in src/pgen/tests/rad_m1_tests2.cpp
+Input:     inputs/tests/rad_m1_radwave.athinput
+Analysis:  tests_m1/t10_radwave.py          (PASS/FAIL, --selftest, flake8-clean)
+           tests_m1/runs_3b4/heslab.py      (the He slab JSON, unchanged)
+Inputs:    tests_m1/runs_3b6/he_slab_m1_2d.athinput (= runs_3b5, with the three
+             dbg_gas_* keys named so the gate can override them)
+JSON:      tests_m1/plots/impl3b6_radwave.json, tests_m1/plots/impl3b6_heslab.json
+Dumps were deleted as soon as each case was measured (viper inode quota).
+
+
+================================================================================
+THE HEADLINE: THE TRANSVERSE COUPLING IS NOT THE BUG
+================================================================================
+Phase D named "the transverse radiative force without a well-balanced reference" as the
+leading suspect for the seeded slab's 0.157 /s KE_2 growth.  The new T10 wave gate
+measures exactly that coupling -- the x2/x3 momentum deposit, the bmom_half rule, the
+derived F_2 = face mean + A_2 E, the work term with transverse components, the
+upwinding of A_2 and the velocity-dependent E0 correction -- against the x1 path that
+3a/3b already gate, and finds NO difference: the same wave rotated by 90 degrees
+travels at the same speed and damps at the same rate to 1.2e-7 / 1.9e-5, and for two
+arms that share a mesh shape the agreement is BITWISE.  No bug was found and none was
+fixed; what changed in src/ is diagnostic (see "Source changes" below).
+
+
+================================================================================
+T10 -- THE RADIATION-MODIFIED ACOUSTIC WAVE (new)                           PASS
+================================================================================
+Uniform medium, rho0 = T0 = 1 (P_gas = 1), arad = 3 (E_rad = 3, P_rad = 1, beta = 1/2),
+gamma = 5/3, so Chandrasekhar's mixture exponents are Gamma_1 = 1.4259259259 and
+Gamma_3 - 1 = 0.3703703704 and
+
+    c_s = sqrt(Gamma_1 P_tot/rho) = 1.6887426837300739     (gas alone: 1.29099)
+
+c_light = 1000 c_s, kappa_P = kappa_E = kappa_F = 1e5 on a unit box, so c/c_s = 1e3 and
+tau per wavelength = 1e5 (the He-box stiffness).  One wavelength, 64 cells, amplitude
+1e-4, 2 periods, hydro CFL 0.3 (c dt/dx ~ 300).  The measurement is the complex Fourier
+coefficient of drho at the box fundamental: the unwrapped phase gives the phase speed,
+ln|Z| the decay rate.
+
+  arm            dir  transport             c_phase       c/c_s-1   decay/period
+  a_x1_implx1    x1   implicit_x1 (1-D)   1.6884023     -2.016e-04   -6.6561e-02
+  b_x1_impl2d    x1   implicit   (2-D)    1.68840254    -2.014e-04   -6.6561e-02
+  c_x2_impl2d    x2   implicit   (2-D)    1.68840251    -2.014e-04   -6.6560e-02
+  e_xy_impl2d    xy   implicit   (2-D)    1.68813290    -3.610e-04   -9.2813e-02
+  d1_x1_expl2d   x1   explicit   (2-D)    1.67027218    -1.094e-02   -5.4967e-01
+  d2_x2_expl2d   x2   explicit   (2-D)    1.67027218    -1.094e-02   -5.4967e-01
+  f1_x1_thin     x1   implicit, tau=1e2   0.999975039   -4.079e-01   -1.2388e-01
+  f2_x2_thin     x2   implicit, tau=1e2   0.999975039   -4.079e-01   -1.2388e-01
+
+  cross-arm   b vs a   dc/c = 1.37e-07   dGamma/Gamma = 4.5e-06
+              c vs a   dc/c = 1.20e-07   dGamma/Gamma = 1.9e-05
+              d2 vs d1 dc/c = 0.0        dGamma/Gamma = 0.0        BITWISE
+              f2 vs f1 dc/c = 0.0        dGamma/Gamma = 0.0        BITWISE
+
+  * (a) = (b) = (c): the transverse path is the x1 path to truncation error.  NOTHING
+    in the transverse gas coupling is wrong in this regime, and the coupling is really
+    exercised -- the radiative force carries a large share of the restoring force (the
+    gas-only speed is 1.291, the measured one 1.688).
+  * The implicit scheme hits the analytic mixture sound speed to 2.0e-4; the 45-degree
+    wave to 3.6e-4 at 64/sqrt(2) = 45 cells per wavelength and with 1.4x the damping,
+    as its resolution implies.  No arm grows.
+  * The EXPLICIT scheme is gated in multi-D with gas feedback for the FIRST time.  It is
+    isotropic to the last bit (d2 == d1 bitwise) but 1.1 % slow and damps 8x too fast at
+    tau_cell = 1.6e3: the ordinary non-asymptotic-preserving O(c dx) numerical diffusion.
+    It is a cross-check here, not a gate.
+  * At tau per wavelength = 1e2 the radiation is a fast heat bath and the wave becomes
+    ISOTHERMAL: 0.999975 against sqrt(P_gas/rho) = 1 exactly, in both directions.  A
+    second, independent physical check of the transverse coupling, in a regime where the
+    transverse face flux is no longer a pure diffusion.
+
+WHAT T10 DOES NOT COVER: stratification and gravity; the well-balanced effective
+potential and force_reference = wb_arad, whose reference acceleration is a function of z
+alone and is subtracted from the x1 momentum ONLY; an optically THIN region, where the
+face-eliminated CENTRAL transverse flux has no HLL dissipation and c^2 dt/dx ~ c x 7e3
+turns a 1e-3 relative E asymmetry into a super-luminal face flux; the free surface and
+the imposed-flux bottom; the seed itself.  All of those are in the He slab.
+
+
+================================================================================
+REGRESSION                                                                  PASS
+================================================================================
+tests_gate_merge/postmerge.sh:
+  box G1 modes 3 and 0:  10/10 files IDENTICAL
+  1-D He column: Picard mean 11.70892 max 23, NON-CONVERGED 0,
+                 V1max 1.8343925542664529e4,
+                 F1top/Fin 1.0000096903179103, F1bot/Fin 0.999835244223332
+
+tests_m1/runs_3b5 G-static (2-D He slab, 100 s, operator + closure_lag = step), rerun
+with the phase-E tree in tests_m1/runs_3b6/g_static:
+  F1top/Fin  0.9999829697589924   (3b5: 0.9999829698)
+  F1bot/Fin  0.9998548084764343   (3b5: 0.9998548085)
+  V1max/vMLT 1.0566227254759382   (3b5: 1.0566227)
+  outer passes 2512/621 = 4.045 (3b5: 4.05), inner 7.705016 mean / 23 max (3b5 7.71/23)
+  positivity fallbacks 0, 7-point residual 0.0
+
+tests_m1/runs_3b5 G-pulse, rerun in tests_m1/runs_3b6/g_p_tau10 and g_p_tau1e3:
+  tau_cell 10,  implicit_cfl 1    x = y = 0.996514, iso 1.920e-09   (3b5: 1.92e-9)
+  tau_cell 1e3, implicit_cfl 1e4  x = y = 0.995500, iso 5.765e-10   (3b5: 5.77e-10)
+
+
+================================================================================
+G-SEED, SPLIT BY COUPLING PIECE (the seeded 2-D He slab)      STILL UNPHYSICAL
+================================================================================
+he_slab_m1_2d.athinput, the production entropy seed (vpert = 1.0e-3, vpert_var = eint,
+k 4-6), 200 s = 1393 steps, serial, one MeshBlock, implicit_offdiag = operator +
+implicit_closure_lag = step.  The convective rate is v_MLT/H_p = 2.1e-3 /s
+(v_MLT = 1.86e4 cm/s); the growth rates below are d ln KE/dt fitted over 1 < t < 20 s.
+
+  quantity                     s_base      s_notrans     s_noheat     s_noforce
+                               (production) (no x2 force) (force only) (heat only)
+  d ln KE_1/dt  [1/s]           0.1807       0.1904        0.1621       0.1599
+  d ln KE_2/dt  [1/s]           0.1568       0.3236        0.0981       0.2042
+  KE_1 at 200 s                 6.86e28      7.99e28       4.68e29      8.95e27
+  KE_2 at 200 s                 1.01e29      7.34e27       4.56e29      1.35e27
+  max|v1| / v_MLT                178.76       191.14        108.43      100.12
+  max|v2| / v_MLT                739.92       107.71        452.47       45.19
+  max|v| / c_s                    2.584        6.207         0.721        0.809
+  F1top/F_in                     0.39389      0.09002       0.29015      0.12985
+  F1bot/F_in                     0.99992      0.99984       0.99960      1.00003
+  min E in the last dump          199.0        0.0317      1.0e-4         15.65
+  Picard mean / NON-CONVERGED   12.75 / 9    12.03 / 12    7.33 / 1     16.06 / 24
+  BiCGStab inner mean / breakd. 38.6 / 151   37.5 / 111    43.3 / 148   42.3 / 423
+  7-point residual mean         5.68e-11     7.51e-11      1.30e-11     1.63e-10
+  dt collapses                      0            0             0            0
+
+  * s_base REPRODUCES runs_3b5/seed_op BITWISE (the first 100 history lines are
+    identical, and so are Picard 12.75090 mean / 9 NON-CONVERGED, inner 38.62696,
+    breakdowns 151 / 1 lj fallback, residual 5.680650e-11 mean / 2.573882e-08 max,
+    max|v1| 178.76, max|v2| 739.92, F1top/Fin 0.39389, min E 199.0).  That is the proof
+    that honouring dbg_gas_force / dbg_gas_heat in the implicit write-back is INERT at
+    the production defaults.
+  * KE_1 GROWS AT 0.16-0.19 /s IN EVERY ARM, 80-90x the convective rate -- including
+    the arm with NO radiative force at all.  The growth rate is not carried by any one
+    piece of the gas coupling.
+  * The TRANSVERSE force is an AMPLIFIER, not the driver: switching it off cuts
+    max|v2| by 6.9x (740 -> 108 v_MLT) and KE_2 at 200 s by 14x, but the x2 growth RATE
+    goes UP (0.157 -> 0.324 /s) and everything else gets WORSE -- max|v|/c_s 2.6 -> 6.2,
+    F1top/Fin 0.39 -> 0.09, min E 199 -> 0.032.  That is expected: with the transverse
+    deposit off the momentum the radiation loses is not given to anything, so the arm
+    is a diagnostic, not a candidate fix.
+  * s_noheat (the FORCE alone) is as bad as the base run or worse (KE_2 4.6e29), so the
+    instability does not need the gas-radiation ENERGY exchange.
+  * s_noforce is NOT a clean control: with force_reference = wb_arad the well-balanced
+    gravity source subtracts rho a_rad_ref from the momentum on the assumption that the
+    radiation puts it back, so removing the force leaves the slab out of hydrostatic
+    balance by the whole radiative support.  It is reported because its KE_1 growth rate
+    (0.160 /s) is within 12 % of the base one, i.e. the growth survives the removal.
+
+WHAT REMAINS (the phase-E "not done" list).  The seeded slab is still unphysical and the
+cause is NOT in the transverse gas coupling, which T10 now gates.  The remaining
+differences between T10 and the slab, in the order they should be attacked:
+  (1) the optically THIN top, where the face-eliminated CENTRAL transverse flux has no
+      HLL dissipation and c^2 dt/dx ~ c x 7e3: a 1e-3 relative E asymmetry between
+      horizontally adjacent cells gives a super-luminal face flux, and the positivity
+      fallback fires on 1388 of 1393 steps in the base arm.  An asymptotic-preserving /
+      HLL-blended transverse face flux (already on the phase-D "not done" list) is the
+      obvious next build, and T10 at tau_lambda = 1e2 is the regime where it can be
+      gated;
+  (2) the well-balanced reference: force_reference = wb_arad subtracts rho a_rad_ref(z)
+      from the x1 momentum ONLY, and there is no equivalent horizontal balance -- a
+      2-D static-slab gate with a horizontal perturbation of rho alone would say whether
+      the x2 force is well balanced at rest;
+  (3) the imposed-flux bottom and the Marshak free surface in 2-D (T10 is periodic);
+  (4) the seed itself: whether the same seed in the two-stream production run and in the
+      M1 slab excite the same modes has not been compared.
+
+
+================================================================================
+SOURCE CHANGES (all diagnostic; the production defaults are bitwise unchanged)
+================================================================================
+src/pgen/tests/rad_m1_tests2.cpp   NEW <problem>/m1_test = radwave (+ the file header)
+inputs/tests/rad_m1_radwave.athinput  NEW
+tests_m1/t10_radwave.py               NEW (PASS/FAIL, --selftest, flake8-clean)
+tests_m1/runs_3b6/run_gates_3b6.sh    NEW driver
+src/rad_m1/rad_m1_implicit.cpp        ImplicitSolve now honours dbg_gas_force /
+    dbg_gas_heat (they were hard-wired `true` on this branch) and the new
+    dbg_gas_force_trans
+src/rad_m1/rad_m1.cpp, rad_m1.hpp     <rad_m1>/dbg_gas_force_trans (default true)
+
+Style: cpplint with the repo CPPLINT.cfg gives the SAME 50 whitespace/newline errors on
+the four touched C++ files as HEAD does (0 new); no tabs, no `}}` on one line, no
+trailing whitespace, all <= 90 columns, mode 644.  flake8 clean on t10_radwave.py.
