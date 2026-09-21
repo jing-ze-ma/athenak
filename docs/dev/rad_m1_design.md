@@ -453,6 +453,53 @@ Open risks, to be closed by the gates above and not before:
 4. Stage 4 (separate note): spherical-polar, then cubed sphere (geometric sources for
    `F`, seam basis transform as for the momentum).
 
+## 10. Findings from the implementation (supersede the text above where they differ)
+
+Milestone 1a `6b9a14f9`, 1b `f271d57d`.
+
+* **Section 3, `ap_hll`.**  The identity "`alpha F_HLL` = physical flux" holds for
+  piecewise-constant states, so with `reconstruct = dc` the flux is Berthon's
+  `alpha F_HLL` and NOTHING is added (adding `(1-alpha) F_diff` double counts: measured
+  1.8966 at `tau_cell = 10`, predicted 1.8965).  With `plm` the flux is
+  `alpha F_HLL + (1-alpha) F_diff`, and the reconstructed dissipation term inside
+  `F_HLL` carries `alpha^2`, not `alpha`: at a kink the limiter returns the cell values,
+  the dissipation is then as large as `F_diff` itself, and a weight `alpha` left 65 % of
+  the flux as excess at an opacity jump and +2 % in the smooth pulse.  Measured diffusion
+  rate / exact: dc 1.000102 / 1.000001 / 1.000000, plm 1.00079 / 1.000015 / 1.000000 at
+  `tau_cell` = 10 / 1e3 / 1e6; plm second order (error ratio 5.1 per doubling); Nyquist
+  mode decays at 0.99996 of the physical rate; clipped top-hat 1.00005 (plain HLL: 78.7x;
+  smooth pulse at `tau_cell` 1e6: 21365x).  To try in 1c: the single form
+  `alpha F_HLL + (1-alpha) F_diff * (1 - dE_recon/dE_cell)`, which reduces to both cases
+  without a switch.
+* **`scaled`** (Jiang / AREPO-IDORT form in moments): +4.3 % with dc at every `tau_cell`,
+  as predicted; -1 % with plm; but it damps the Nyquist mode at only 1.5 % of the
+  physical rate.  Kept as an option, not the default.
+* **Section 5, stability.**  With the source inside both PD-ARS stages the thick regime is
+  stable and answer-unchanged to `cfl_rad = 8`; the thin limit degrades at 1.0 and is
+  clean to 0.6-0.8.  Sub-cycling `nsub = 10` reproduces `nsub = 1` to 6 digits.
+* **Section 4.**  The root find must be `rtsafe` (Newton only when it shrinks the bracket
+  faster than bisection): on the tabulated EOS `c_v` is a separate interpolated surface,
+  not the slope of its own `e(T)`, and plain Newton stalls.  `EOS_Data::ThermoAt` serves
+  both the ideal and the tabulated branch.  Code temperature of the tabulated EOS is not
+  kelvin: `arad = a_cgs temp_cgs^4 / pres_cgs`.  The T5 coupling time that probes the
+  solver is the thermal one, `rho c_v/(4 c rho kappa a T^3)`, not `1/(c rho kappa)`.
+* **Coupling and hydro ghosts.**  After the coupling writes hydro `u0`, a `ConToPrim` is
+  not enough: the next hydro fluxes read ghosts exchanged earlier.  The module refreshes
+  the hydro ghosts before the inversion (without it: spurious momentum, 2e-10
+  conservation break).  Cost item for stage 2: once per substep block may suffice.
+* **T3b (opacity jump) as specified fails, and the specification was wrong.**  In steady
+  state the FACE energy flux is uniform by conservation and `E(x)` is correct (one 8e-5
+  bump); what deviates (0.88 at a 1e3 jump) is the CELL-centred `F` of the two cells
+  straddling the jump, because the implicit source divides a centred `2 dx` pressure
+  gradient by the cell's own opacity.  The radiation force, `rho kappa F/c`, is then
+  exactly the centred `-grad P_rad`, the same discretisation as the gas pressure force:
+  correct and conservative.  The cell `F` also enters `alpha avg(F)`, which is negligible
+  when the cells are thick and matters only for a jump at `tau_cell ~ 1`.  T3b is
+  redefined: `E(x)` against the analytic two-slope solution, for jumps at `tau_cell`
+  = 1e3 and ~1; Bloch's interface source stays rejected unless the second case fails.
+* `<hydro>/evolution = static` skips the driver loop; tests use a cold dynamic gas or
+  `<rad_m1>/gas_feedback = false`.
+
 ## References
 
 Audit et al. 2002 (astro-ph/0206281); Berthon, Charrier & Dubroca 2007 (J. Sci. Comput.
