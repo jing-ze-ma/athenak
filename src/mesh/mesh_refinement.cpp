@@ -155,6 +155,9 @@ void MeshRefinement::AdaptiveMeshRefinement(Driver *pdriver, ParameterInput *pin
 
     nmb_created += nnew;
     nmb_deleted += ndel;
+
+    // Mark one mesh-topology update event (AMR and any resulting load balancing).
+    pmy_mesh->MarkMeshUpdated();
   }
   return;
 }

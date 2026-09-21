@@ -21,7 +21,7 @@
     #error NHISTORY > NREDUCTION in outputs.hpp
 #endif
 
-#define NOUTPUT_CHOICES 160
+#define NOUTPUT_CHOICES 161
 // choices for output variables used in <ouput> blocks in input file
 // TO ADD MORE CHOICES:
 //   - add more strings to array below, change NOUTPUT_CHOICES above appropriately
@@ -105,7 +105,10 @@ static const char *var_choice[NOUTPUT_CHOICES] = {
   "hydro_fofc", "mhd_fofc",
 
   // grey M1 radiation, <rad_m1> (155-159)
-  "m1_e", "m1_f1", "m1_f2", "m1_f3", "m1"
+  "m1_e", "m1_f1", "m1_f2", "m1_f3", "m1",
+
+  // self-gravity potential (160)
+  "grav_phi"
 };
 
 
