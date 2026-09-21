@@ -1,0 +1,32 @@
+MILESTONE 3i -- VET SCAFFOLDING: does the multi-D implicit solve take an Eddington tensor that is
+NOT derived from the cell's own flux?  2026-09-21/22, serial CPU, build_cpu_box, HEAD de7a52bb +
+the diagnostic <rad_m1>/dbg_tensor = none | frozen | tilt | tau (+ dbg_tensor_tilt), default none
+(T0: seeded slab tlim = 3 byte-identical to runs_3b8/Ga_new).
+Input he_slab_tensor.athinput = runs_3b8 slab (V2 Levermore column, closure = m1), seeded
+vpert = 1e-3, implicit_offdiag = operator, implicit_closure_lag = step, NO limiter, 200 s, 1241 solves.
+
+  frozen  tensor computed once from the initial state (chi(z) 1/3 -> 0.46, n = x1), never updated
+  tau     tensor REBUILT EVERY STEP from the evolving gas: chi = exact grey K/J(tau) (Hopf fit) at
+          the column optical depth, axis along -grad tau; never reads the local flux
+  tilt    frozen tensor with its axis rotated by 0.3 sin(2 pi x2/L2) rad: prescribed, horizontally
+          varying OFF-DIAGONAL components (D_12 up to ~0.06) in every layer incl. the thin top
+
+  arm               Picard mean/max  non-conv  positivity fb  min E      F1top/Fin  dt      KE_1/KE_2 (200 s)
+  T1_frozen         4.22 / 6         0         0              1.649e5    1.0000     0.161   1.1e26 / 1.8e21
+  T3_tau            4.13 / 5         0         0              1.651e5    1.0000     0.161   1.2e26 / 1.9e21
+  T2_tilt           4.65 / 7         0         0              1.604e5    1.0000     0.161   7.4e27 / 2.1e28
+  T2b_tilt_noforce  4.01 / 6         0         0              1.605e5    1.0000     0.161   2.2e27 / 7.8e27
+  (references: eddington S2 1.09e26 / 1.8e21; Levermore from the local flux: F 0.66, 198/203 fallbacks)
+
+  top cells at 200 s (cmp_prof.py): frozen dE/E 1e-7, max f2 4e-6; tau dE/E 4e-6, max f2 7e-5;
+  tilt dE/E 3-5e-2, max f2 0.02-0.07, rms v2 3-6e5 cm/s -- the tilt arm's flow is the gas responding
+  to a tensor that is deliberately inconsistent with a plane-parallel field (smooth, k = 1 in x2),
+  not grid-scale fragmentation; KE grows steadily, the solver statistics do not move.
+
+VERDICT.  With the tensor supplied from outside the local flux the solver is clean in all three
+cases: a realistic chi(z) != 1/3 in the optically thin top, genuine off-diagonal components at
+c dt/dx ~ 7e3 (no loss of positivity), and a tensor refreshed EVERY STEP from the evolving state
+(the VET feedback structure).  The thin-top instability of runs_3b8 is therefore specific to the
+algebraic closure (chi, n) = function of the cell's own F, and does not carry over to a
+short-characteristics VET.  Not tested: a tensor with grid-scale noise (as a real formal solver
+with few angles may deliver), 3-D, MPI.

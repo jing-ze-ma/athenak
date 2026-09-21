@@ -219,6 +219,11 @@ class RadiationM1 {
                        // relaxes its flux, but the gas receives NO momentum and no work
   bool dbg_gas_heat;   // <rad_m1>/dbg_gas_heat = false: skip the energy exchange (a)
                        // entirely, so gas and radiation exchange no energy
+  int dbg_tensor;            // DIAGNOSTIC (VET scaffolding, 3i): 0 none | 1 frozen |
+                       // 2 tilt | 3 tau: where the Eddington tensor of the multi-D
+                       // implicit solve comes from (see ImplicitSolve step (b))
+  Real dbg_tensor_tilt;      // amplitude [rad] of the prescribed tilt, dbg_tensor = tilt
+  bool dbg_tensor_init;      // frozen / tilt: the stored tensor exists
   Real dbg_trans_memory;     // DIAGNOSTIC (3b phase G): weight of the F^n memory term
                        // of the transverse face flux; 1 = backward Euler (bitwise)
   bool dbg_gas_force_trans;  // 3b phase E, transport = implicit only:

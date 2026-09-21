@@ -2507,6 +2507,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   const Real crw = impl_crelax;
   const bool crthin = impl_crelax_thin;
   const bool clagst = impl_clag_step;
+  // DIAGNOSTIC dbg_tensor = frozen | tilt: the stored tensor axis survives the step reset
+  const bool tpers = (dbg_tensor == 1 || dbg_tensor == 2) && dbg_tensor_init;
   auto f2_ = f0x2;
   auto f3_ = f0x3;
   if (trans) {
@@ -2602,9 +2604,11 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       iw_(m,M1_IW_V3,k,j,i) = 0.0;
       iw_(m,M1_IW_F2,k,j,i) = u0_(m,M1_F2,k,j,i);
       iw_(m,M1_IW_F3,k,j,i) = u0_(m,M1_F3,k,j,i);
-      iw_(m,M1_IW_N1,k,j,i) = 0.0;
-      iw_(m,M1_IW_N2,k,j,i) = 0.0;
-      iw_(m,M1_IW_N3,k,j,i) = 0.0;
+      if (!tpers) {
+        iw_(m,M1_IW_N1,k,j,i) = 0.0;
+        iw_(m,M1_IW_N2,k,j,i) = 0.0;
+        iw_(m,M1_IW_N3,k,j,i) = 0.0;
+      }
       iw_(m,M1_IW_A2,k,j,i) = 0.0;
       iw_(m,M1_IW_A3,k,j,i) = 0.0;
       iw_(m,M1_IW_TDIA,k,j,i) = 0.0;
@@ -2729,6 +2733,19 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     // implicit_closure_lag = step
     const bool dorel = (crw < 1.0) && (it > 0);
     const bool dofreeze = clagst && (it > 0);
+    // DIAGNOSTIC dbg_tensor (VET scaffolding): tkeep = read the stored tensor; ttau =
+    // rebuild it from the optical depth (first pass of every step); ttilt = rotate the
+    // axis of the tensor computed on the very first pass of the run
+    const int tmode = dbg_tensor;
+    const bool tkeep = (tmode != 0) && ((it > 0) || (tmode != 3 && dbg_tensor_init));
+    const bool ttau = (tmode == 3) && (it == 0);
+    const bool ttilt = (tmode == 2) && (it == 0) && !dbg_tensor_init;
+    const Real talp = dbg_tensor_tilt;
+    const Real tx2min = pmy_pack->pmesh->mesh_size.x2min;
+    const Real tx2len = pmy_pack->pmesh->mesh_size.x2max - tx2min;
+    if (tmode == 3 && pmy_pack->pmesh->mesh_indcs.nx1 != indcs.nx1) {
+      ImplFatal("<rad_m1>/dbg_tensor = tau needs ONE MeshBlock along x1");
+    }
     // (a) optional opacity re-evaluation at the current temperature iterate
     if (impl_opac_update && it > 0 && have_hydro && !opac_zero) {
       int otype = opacity_type;
@@ -2793,7 +2810,42 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         //   implicit_closure_relax = w   under-relaxes them between passes, optionally
         //     only where the cell is optically thin (theta > 1/2), which is where the
         //     closure feeds back on the solve through (c dt/dx)^2.
-        if (dofreeze) {
+        if (ttau) {
+          // column optical depth to the top of the block at j-1, j, j+1 (cell centres)
+          Real dx1 = mbsize.d_view(m).dx1;
+          Real dx2 = mbsize.d_view(m).dx2;
+          Real tm = 0.5*iw_(m,M1_IW_KT,k,j-1,i)*dx1;
+          Real tc = 0.5*iw_(m,M1_IW_KT,k,j,i)*dx1;
+          Real tq = 0.5*iw_(m,M1_IW_KT,k,j+1,i)*dx1;
+          for (int ii = i+1; ii <= ie; ++ii) {
+            tm += iw_(m,M1_IW_KT,k,j-1,ii)*dx1;
+            tc += iw_(m,M1_IW_KT,k,j,ii)*dx1;
+            tq += iw_(m,M1_IW_KT,k,j+1,ii)*dx1;
+          }
+          // exact grey plane-parallel K/J = (tau + q_inf)/(3 (tau + q(tau))), q = Hopf
+          Real qh = 0.710446 - 0.133054*exp(-3.4488*tc);
+          chi = (tc + 0.710446)/(3.0*(tc + qh));
+          Real g1 = -iw_(m,M1_IW_KT,k,j,i);
+          Real g2 = (tq - tm)/(2.0*dx2);
+          Real ign = 1.0/fmax(sqrt(g1*g1 + g2*g2), 1.0e-300);
+          n1 = -g1*ign;
+          n2 = -g2*ign;
+          n3 = 0.0;
+        } else if (ttilt) {
+          Real dx2 = mbsize.d_view(m).dx2;
+          Real x2v = mbsize.d_view(m).x2min + (static_cast<Real>(j - js) + 0.5)*dx2;
+          Real al = talp*sin(2.0*M_PI*(x2v - tx2min)/tx2len);
+          Real ca = cos(al), sa = sin(al);
+          Real r1 = ca*n1 - sa*n2, r2 = sa*n1 + ca*n2;
+          n1 = r1;
+          n2 = r2;
+        }
+        if (tkeep) {
+          chi = iw_(m,M1_IW_WCHI,k,j,i);
+          n1 = iw_(m,M1_IW_N1,k,j,i);
+          n2 = iw_(m,M1_IW_N2,k,j,i);
+          n3 = iw_(m,M1_IW_N3,k,j,i);
+        } else if (dofreeze) {
           chi = iw_(m,M1_IW_WCHI,k,j,i);
           n1 = iw_(m,M1_IW_N1,k,j,i);
           n2 = iw_(m,M1_IW_N2,k,j,i);
@@ -2869,6 +2921,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       if (r0 < -1.0) {r0 = -1.0;}
       iw_(m,M1_IW_RF0,k,j,i) = r0;
     });
+    if ((tmode == 1 || tmode == 2) && it == 0) {dbg_tensor_init = true;}
 
     // the x1 halo of the LAGGED quantities (w, a, g0, v1, the comoving reduced flux and
     // the transport opacity).  Every face of the stack is then assembled by both of its

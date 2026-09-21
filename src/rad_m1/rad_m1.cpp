@@ -296,6 +296,34 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   dbg_gas_heat = pin->GetOrAddBoolean("rad_m1","dbg_gas_heat",true);
   dbg_gas_force_trans = pin->GetOrAddBoolean("rad_m1","dbg_gas_force_trans",true);
   dbg_trans_memory = pin->GetOrAddReal("rad_m1","dbg_trans_memory",1.0);
+  // DIAGNOSTIC, VET scaffolding (tests_m1/runs_3i_tensor): the Eddington tensor of the
+  // multi-D implicit solve is NOT taken from the cell's own flux.
+  //   frozen  computed once from the initial state (selected closure), never updated
+  //   tilt    frozen, with the tensor axis rotated by tilt*sin(2 pi x2/L2) about x3
+  //   tau     rebuilt EVERY step from the evolving gas: chi = exact grey K/J at
+  //           the column optical depth, axis along -grad tau; never reads the local flux
+  {std::string st = pin->GetOrAddString("rad_m1","dbg_tensor","none");
+  dbg_tensor_init = false;
+  dbg_tensor_tilt = pin->GetOrAddReal("rad_m1","dbg_tensor_tilt",0.3);
+  if (st.compare("none") == 0) {
+    dbg_tensor = 0;
+  } else if (st.compare("frozen") == 0) {
+    dbg_tensor = 1;
+  } else if (st.compare("tilt") == 0) {
+    dbg_tensor = 2;
+  } else if (st.compare("tau") == 0) {
+    dbg_tensor = 3;
+  } else {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+      << std::endl << "<rad_m1>/dbg_tensor = '" << st << "' not implemented "
+      << "(none | frozen | tilt | tau)" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  if (dbg_tensor != 0) {
+    std::cout << "<rad_m1> DIAGNOSTIC dbg_tensor = " << st << " (tilt amplitude "
+              << dbg_tensor_tilt << ")" << std::endl;
+  }
+  }
   if ((opac_freeze || !dbg_gas_force || !dbg_gas_heat || !dbg_gas_force_trans) &&
       global_variable::my_rank == 0) {
     std::cout << "### WARNING: <rad_m1> DEBUG switches are active: opac_freeze="
