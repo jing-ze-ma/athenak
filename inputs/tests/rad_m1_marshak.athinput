@@ -99,7 +99,7 @@ implicit_opac_update  = false
 implicit_allow_multid = false
 implicit_flux         = central   # central | ap_hll  (milestone 3a2, LIMIT 1)
 implicit_recon        = dc        # dc | plm_dc       (milestone 3a2, LIMIT 1)
-implicit_partition    = gather    # none | gather     (milestone 3a2, LIMIT 4)
+implicit_partition    = none      # none | gather (gather is NOT implemented yet)
 implicit_recon_w      = -1.0      # plm_dc weight; <=0 = auto 1/(1+chat dt/dx)
 implicit_recon_lag    = picard     # step | picard (when the plm correction is re-made)
 implicit_res_floor    = 0.0       # Picard residual scale (0 = the 3a pure |dE|/E)

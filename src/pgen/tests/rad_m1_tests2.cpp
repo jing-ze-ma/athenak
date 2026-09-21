@@ -55,7 +55,7 @@
 //!             f(0) = q = <rad_m1>/marshak_q exactly, hence the CONSISTENT PAIR is
 //!
 //!               q0 = chi(marshak_q)/marshak_q,   and for marshak_q = 1/2,
-//!               chi(1/2) = 0.46478322, q0 = 0.92956644.
+//!               chi(1/2) = 0.46481586, q0 = 0.92963172.
 //!
 //!             The initial condition is the EDDINGTON solution E = 3(F/c)(tau + 2/3),
 //!             which is 40 % off at the surface, so the gate measures the convergence to

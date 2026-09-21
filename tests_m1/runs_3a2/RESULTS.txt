@@ -142,3 +142,78 @@ stellar columns this milestone exists for, LIMIT 2 is the one that matters, so
 implicit_flux = central stays the RECOMMENDED DEFAULT; berthon is for problems where a
 thin front has to propagate, and is then 1.5x better than central at CFL 0.4 (2.2x with
 plm_dc).
+
+
+LIMIT 3  THE RESIDUAL OSCILLATION AT THE IMPOSED-FLUX BOTTOM BOUNDARY -- FIXED
+===============================================================================
+build_cpu_box (-D PROBLEM=box_convection), input runs_3a/he_box_m1_1d_impl.athinput
+(+ runs_2a/m1_rad_ic_V2.txt), problem/m1_top_bc=dark, t = 1000 s, v_MLT = 1.86e4 cm/s.
+Logs and the user history are under runs_3a2/i8/{base,half}; analysis runs_3a2/he_v1.py.
+
+DIAGNOSIS: candidate (a) of the brief, confirmed and quantified.  In 3a a PHYSICAL
+BOUNDARY FACE hands its whole dt (rho k_t)_f F0_f/c to its one interior cell, while every
+interior cell receives half of each of its two faces.  The bottom cell therefore gets
+1.5 face-shares of radiative force where every other cell gets 1.0, and the extra half
+share is a STEADY force that the well-balanced reference a_rad_ref (built from the
+cell-centred flux) does not carry.  That residual is the driver.  It is not the hydro
+wall (candidate c): the flow does not propagate away from i = 0, and it is not the
+imposed flux itself (candidate b): F1bot/F_in is right to 1e-3 in both arms.
+
+FIX: <rad_m1>/implicit_bmom_half = true -- the boundary face gives HALF, like any other
+face, so the cell-averaged radiative force is (rho k_t F/c) with F the mean of the cell's
+two faces EVERYWHERE.  The other half leaves the domain with the radiation, which is
+where it physically goes; the *exchanged* momentum inside the domain stays conservative.
+
+                                    3a (base)            implicit_bmom_half = true
+ steps to t = 1000 s                6417                 6206
+ wall clock                         30.5 s               26.2 s
+ Picard iterations / step           13.46 mean, 23 max   11.66 mean, 23 max, 0 failed
+ max|v1|  t =   0-200 s             2.416e5 = 12.99 vMLT  3.117e4 = 1.68 vMLT
+          t = 200-400               1.917e5 = 10.30       2.049e4 = 1.10
+          t = 400-600               1.917e5 = 10.30       1.955e4 = 1.05
+          t = 600-800               1.916e5 = 10.30       1.933e4 = 1.04
+          t = 800-1000              1.916e5 = 10.30       1.904e4 = 1.02  (still falling)
+ where max|v1| sits (last dump)     i = 0, the BOTTOM cell i = 83, the TOP cell
+ |v1| in the BOTTOM cell            1.916e5 = 10.30 vMLT  8.811e3 = 0.47 vMLT   (22x)
+ |v1| in the TOP cell               7.540e4 =  4.05 vMLT  1.791e4 = 0.96 vMLT   (4.2x)
+ F1/F_in  top / mid / bot           1.000020 / 1.000019 / 0.999998 / 1.000001 /
+                                    1.000934              0.999835
+ |F1bot/F_in - 1|, late half        9.3e-4 .. 1.15e-3     1.65e-4
+ residual force (Fres), last        5.133e-3 g0           1.995e-4 g0            (26x)
+ column kinetic energy at 1000 s    4.109e+28             3.358e+26             (122x)
+
+GATE.  "bottom-cell |v1| << v_MLT": MET (0.47 v_MLT, and still decaying).  "whole-column
+max|v1| < 1 v_MLT in the bulk, the top cells allowed a few": MET -- the maximum is now
+0.96-1.05 v_MLT and sits in the TOP cell, i.e. it is the free surface, not the imposed-
+flux boundary.  "F1bot/F_in within 1e-4": 1.65e-4, a factor 6 better than 3a but 1.65x
+the target; the residual is the half-cell offset between the imposed FACE flux and the
+cell-centred F1 the history reports, not a transport error (top and mid are now 2e-6 and
+1e-6, against 2.0e-5 and 1.9e-5 in 3a, so there is NO regression of the top/mid
+agreement -- they improved by an order of magnitude).
+RECOMMENDED DEFAULT: implicit_bmom_half = true.
+
+The baseline arm reproduces runs_3a I8 exactly (6417 steps, 13.5 mean / 23 max Picard
+iterations, 0 non-converged, max|v1| 1.92e5 = 10.3 v_MLT in the bottom cell, residual
+force 5.13e-3 g0), so the 3a behaviour is intact under the new defaults.
+
+
+LIMIT 4  PARTITIONED LINE SOLVE -- NOT IMPLEMENTED
+===================================================
+More than one MeshBlock along x1 is still a startup fatal.  <rad_m1>/implicit_partition
+is parsed (none | gather) so that input files can name it, and `gather` fatals with
+"NOT IMPLEMENTED" rather than silently doing something else.  The intended design is
+recorded in the report: gather each column's assembled (a,b,c,r) rows onto the rank that
+owns its lowest block, run the IDENTICAL serial Thomas sweep there and scatter the
+solution back -- which is bitwise independent of the partition by construction, because
+the arithmetic order is unchanged -- at a cost of two messages per Picard iteration per
+column group.
+
+LIMIT 5  GPU (HIP) -- NOT RUN
+==============================
+No HIP build and no apudev run were made in this milestone.  Nothing in the new code
+uses anything the 3a kernels did not: the added face work array `ifw` is an ordinary
+DvceArray5D, the new kernels are plain par_for over (m,k,j,i) with only Views and
+scalars captured by value, and the one new host-side reduction (the column peak of E,
+used by implicit_res_floor) is a Kokkos::Max parallel_reduce of the same shape as the
+Picard residual reduction 3a already ran on the device.  PLM() from reconstruct/plm.hpp
+is KOKKOS_INLINE_FUNCTION.  So there is no known blocker, but it is UNTESTED.

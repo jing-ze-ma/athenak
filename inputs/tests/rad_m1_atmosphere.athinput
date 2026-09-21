@@ -9,7 +9,7 @@
 #   chi(f)/f = q0 + tau,   E(tau) = F/(c f(tau)),   q0 = chi(marshak_q)/marshak_q,
 #
 # with tau measured downward from the TOP MESH FACE.  With marshak_q = 1/2 the surface
-# reduced flux is f(0) = 1/2 exactly and q0 = 0.92956644.
+# reduced flux is f(0) = 1/2 exactly and q0 = 0.92963172.
 #
 # The grid: rho = 0.128 exp[(1 - z)/0.113], kappa = 1, 128 cells on [0,1], which gives
 # tau(top cell centre) = 5.0e-4, tau(top cell face) = 1.0e-3 and tau_bot = 100.8.
@@ -98,7 +98,7 @@ implicit_opac_update  = false
 implicit_allow_multid = false
 implicit_flux         = central   # central | ap_hll      (3a2, LIMIT 1)
 implicit_recon        = dc        # dc | plm_dc           (3a2, LIMIT 1)
-implicit_partition    = gather    # none | gather         (3a2, LIMIT 4)
+implicit_partition    = none      # none | gather (gather is NOT implemented yet)
 implicit_recon_w      = -1.0      # plm_dc weight; <=0 = auto 1/(1+chat dt/dx)
 implicit_recon_lag    = picard     # step | picard (when the plm correction is re-made)
 implicit_res_floor    = 0.0       # Picard residual scale (0 = the 3a pure |dE|/E)

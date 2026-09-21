@@ -115,40 +115,48 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   marshak_q = pin->GetOrAddReal("rad_m1","marshak_q",0.5);
   // ---- milestone 3a2 options.  All three default to the 3a behaviour, so an input file
   // that does not name them reproduces RESULTS.txt of runs_3a exactly.
-  {std::string s = pin->GetOrAddString("rad_m1","implicit_flux","central");
-  if (s.compare("central") == 0) {
+  std::string sfx = pin->GetOrAddString("rad_m1","implicit_flux","central");
+  if (sfx.compare("central") == 0) {
     impl_flux = M1_IFLUX_CENTRAL;
-  } else if (s.compare("ap_hll") == 0) {
+  } else if (sfx.compare("ap_hll") == 0) {
     impl_flux = M1_IFLUX_APHLL;
-  } else if (s.compare("berthon") == 0) {
+  } else if (sfx.compare("berthon") == 0) {
     impl_flux = M1_IFLUX_BERTHON;
   } else {
-    ImplFatal("<rad_m1>/implicit_flux = '" + s
+    ImplFatal("<rad_m1>/implicit_flux = '" + sfx
               + "' is not a choice (central | ap_hll | berthon)");
-  }}
-  {std::string s = pin->GetOrAddString("rad_m1","implicit_recon","dc");
-  if (s.compare("dc") == 0) {
+  }
+  std::string srn = pin->GetOrAddString("rad_m1","implicit_recon","dc");
+  if (srn.compare("dc") == 0) {
     impl_recon = M1_IRECON_DC;
-  } else if (s.compare("plm_dc") == 0) {
+  } else if (srn.compare("plm_dc") == 0) {
     impl_recon = M1_IRECON_PLMDC;
   } else {
-    ImplFatal("<rad_m1>/implicit_recon = '" + s + "' is not a choice (dc | plm_dc)");
-  }}
-  {std::string s = pin->GetOrAddString("rad_m1","implicit_partition","gather");
-  if (s.compare("none") == 0) {
+    ImplFatal("<rad_m1>/implicit_recon = '" + srn + "' is not a choice (dc | plm_dc)");
+  }
+  // LIMIT 4 of the 3a findings is NOT implemented in 3a2: a column still has to live
+  // inside one MeshBlock along x1 (the fatal below).  The option is parsed so that the
+  // input files and the gate scripts can already name it, and `gather` fatals rather
+  // than silently doing something else.
+  std::string spt = pin->GetOrAddString("rad_m1","implicit_partition","none");
+  if (spt.compare("none") == 0) {
     impl_part = M1_IPART_NONE;
-  } else if (s.compare("gather") == 0) {
-    impl_part = M1_IPART_GATHER;
+  } else if (spt.compare("gather") == 0) {
+    ImplFatal("<rad_m1>/implicit_partition = gather (the line solve partitioned over "
+              "MeshBlocks and ranks) is NOT IMPLEMENTED; milestone 3a2 still needs one "
+              "MeshBlock per x1 column");
   } else {
-    ImplFatal("<rad_m1>/implicit_partition = '" + s + "' is not a choice (none | gather)");
-  }}
+    ImplFatal("<rad_m1>/implicit_partition = '" + spt
+              + "' is not a choice (none | gather)");
+  }
   impl_recon_w = pin->GetOrAddReal("rad_m1","implicit_recon_w",-1.0);
   impl_res_floor = pin->GetOrAddReal("rad_m1","implicit_res_floor",0.0);
-  {std::string s = pin->GetOrAddString("rad_m1","implicit_recon_lag","picard");
-  impl_recon_freeze = (s.compare("step") == 0);
-  if (!impl_recon_freeze && s.compare("picard") != 0) {
-    ImplFatal("<rad_m1>/implicit_recon_lag = '" + s + "' is not a choice (step | picard)");
-  }}
+  std::string slg = pin->GetOrAddString("rad_m1","implicit_recon_lag","picard");
+  impl_recon_freeze = (slg.compare("step") == 0);
+  if (!impl_recon_freeze && slg.compare("picard") != 0) {
+    ImplFatal("<rad_m1>/implicit_recon_lag = '" + slg
+              + "' is not a choice (step | picard)");
+  }
   impl_bmom_half = pin->GetOrAddBoolean("rad_m1","implicit_bmom_half",false);
   if (!(impl_tol > 0.0) || impl_maxit < 1) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
