@@ -396,6 +396,7 @@ void CSTestLevelFluxCheck(Mesh *pm);
 void CSTestConsSums(Mesh *pm);
 void CSTestHistory(HistoryData *pdata, Mesh *pm);
 void CSTestSeamHaloScan(ParameterInput *pin, Mesh *pm);
+void CSTestSeamHaloScanFC(ParameterInput *pin, Mesh *pm);
 
 //----------------------------------------------------------------------------------------
 //! \fn ProblemGenerator::UserProblem
@@ -486,6 +487,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   }
   if (iprob == 11) {
     pgen_final_func = CSTestResistCheck;
+  }
+  // iprob = 11, <problem>/seam_halo_scan_fc > 0: the STATIC seam-halo scan of the
+  // FACE-CENTRED field, the face-centred twin of CSTestSeamHaloScan.  It replaces the
+  // resistive check (which needs a run) and is meant for time/nlim = 0.
+  if (iprob == 11 && pin->GetOrAddInteger("problem", "seam_halo_scan_fc", 0) != 0) {
+    pgen_final_func = CSTestSeamHaloScanFC;
   }
   // iprob = 15: the STATIC seam-halo accuracy scan.  Run it with time/nlim = 0, so the
   // only thing that has touched the ghosts is one boundary exchange.
@@ -6235,5 +6242,232 @@ void CSTestSeamHaloScan(ParameterInput *pin, Mesh *pm) {
   for (int c=0; c<5; ++c) {
     std::printf("###   %s  n = %8lld  max = %12.4e\n", cnm[c],
                 static_cast<long long>(cnum[c]), cmax[c]);
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn CSTestSeamHaloScanFC
+//! \brief STATIC accuracy scan of the panel-seam halo of the FACE-CENTRED field
+//!        (iprob = 11, <problem>/seam_halo_scan_fc > 0, run with time/nlim = 0).
+//!
+//! The face-centred twin of CSTestSeamHaloScan.  The iprob = 11 field
+//! B = b0c*(-y,x,0) + B_unif is a smooth, divergence-free CARTESIAN field, so its exact
+//! face-normal projection in a GHOST face is known with no reference to the neighbour
+//! panel: evaluate it at that face's OWN chart-continued (xi, eta) and project on the
+//! chart-continued panel normal there.  That is exactly what the seam transform plus the
+//! along-seam resample are supposed to produce.  At nlim = 0 the only thing that has
+//! touched the ghosts is one boundary exchange.
+//!
+//! Run it with <problem>/faces_from_potential = false: the active faces are then the
+//! ANALYTIC projections to the last bit, so the ghost error measures the halo and
+//! nothing else (with the vector-potential initialisation the active faces themselves
+//! carry an O(h^2) discretisation offset which would floor the scan).
+//!
+//! Two passes, both per COMPONENT, because the three components are staggered
+//! differently along the seam and a defect need not hit them alike:
+//!   * per block, per seam face, per ghost layer, the max |ghost - exact| and the
+//!     ALONG-SEAM INDEX where it occurs -- which localises a defect to a block end;
+//!   * every tangential ghost face binned by what fills it (face/edge, same panel/seam/
+//!     cube vertex), which separates the face-buffer defect from the x2x3-edge one.
+void CSTestSeamHaloScanFC(ParameterInput *pin, Mesh *pm) {
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  if (pmbp->pmhd == nullptr) return;
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie;
+  const int js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int ng = indcs.ng;
+  const int verb = pin->GetOrAddInteger("problem", "seam_halo_scan_fc", 0);
+  auto &size = pmbp->pmb->mb_size;
+  size.sync_host();
+  auto &mbpanel = pmbp->pmb->mb_panel;
+  mbpanel.sync_host();
+  auto &nghbr = pmbp->pmb->nghbr;
+  nghbr.sync_host();
+  auto &gids = pmbp->pmb->mb_gid;
+  gids.sync_host();
+  auto b1h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pmhd->b0.x1f);
+  auto b2h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pmhd->b0.x2f);
+  auto b3h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pmhd->b0.x3f);
+  // the radial stretch: CellCenterX/LeftEdgeX come out UNSTRETCHED
+  const bool str_r_ = pmbp->pmesh->use_grid_stretch_r;
+  const bool str_rp_ = pmbp->pmesh->use_grid_stretch_r_poly;
+  const Real fstr_r_ = pmbp->pmesh->fStretchR;
+  const Real rmin_ = pmbp->pmesh->mesh_size.x1min;
+  const Real rmax_ = pmbp->pmesh->mesh_size.x1max;
+  Real cpoly_[NSTRETCH_R_POLY];
+  for (int n=0; n<NSTRETCH_R_POLY; ++n) { cpoly_[n] = pmbp->pmesh->fStretchRPoly[n]; }
+  const Real bazi = cs_bazi, bux = cs_bvx, buy = cs_bvy, buz = cs_bvz;
+  // WHICH RADIAL SHELL IS SCANNED.  0 = the middle ACTIVE shell, which isolates the
+  // tangential halo; a NEGATIVE value scans `is + ioff`, i.e. a RADIAL GHOST shell, which
+  // is where the x1x2x3 CORNER buffers (slots 48-55) live -- the only ghosts that are
+  // ghost in all three directions.  A radial ghost is only a real halo when x1 is split
+  // into more than one MeshBlock; otherwise it is the physical boundary.
+  const int ioff = pin->GetOrAddInteger("problem", "seam_halo_scan_fc_i", 0);
+  const int imid = (ioff == 0) ? (is + ie)/2 : (is + ioff);
+
+  // exact face-normal projection of B at a chart-continued (xi, eta), for component c,
+  // on the radial face (c == 0) or at the radial centroid (c = 1, 2) of radial cell i
+  auto bexact = [&](const int m, const int p, const int c, const Real xi, const Real eta,
+                    const int i) {
+    Real rl = LeftEdgeX(i-is, indcs.nx1, size.h_view(m).x1min, size.h_view(m).x1max);
+    Real rr = LeftEdgeX(i+1-is, indcs.nx1, size.h_view(m).x1min, size.h_view(m).x1max);
+    ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rl);
+    ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rr);
+    const Real rc = RadialCentroid(rl, rr);
+    const Real rq = (c == 0) ? rl : rc;
+    Real cx, cy, cz, n1[3], n2[3];
+    PanelToCart(p, xi, eta, cx, cy, cz);
+    PanelNormals(p, xi, eta, n1, n2);
+    const Real bx = -bazi*rq*cy + bux;
+    const Real by = bazi*rq*cx + buy;
+    if (c == 0) { return bx*cx + by*cy + buz*cz; }
+    if (c == 1) { return bx*n1[0] + by*n1[1] + buz*n1[2]; }
+    return bx*n2[0] + by*n2[1] + buz*n2[2];
+  };
+  // the stored face value
+  auto bval = [&](const int m, const int c, const int k, const int j, const int i) {
+    if (c == 0) { return b1h(m,k,j,i); }
+    if (c == 1) { return b2h(m,k,j,i); }
+    return b3h(m,k,j,i);
+  };
+  // the angles of component c's face at index (j,k): the component is offset to the
+  // LEFT EDGE of the direction it is staggered in, and sits at the CELL CENTRE of the
+  // other one.  This is the `angles` lambda of the face-centred packer.
+  auto fang = [&](const int m, const int c, const int k, const int j,
+                  Real &xi, Real &eta) {
+    xi = 0.25*M_PI*((c == 1) ? LeftEdgeX(j-js, indcs.nx2, size.h_view(m).x2min,
+                                                          size.h_view(m).x2max)
+                             : CellCenterX(j-js, indcs.nx2, size.h_view(m).x2min,
+                                                            size.h_view(m).x2max));
+    eta = 0.25*M_PI*((c == 2) ? LeftEdgeX(k-ks, indcs.nx3, size.h_view(m).x3min,
+                                                           size.h_view(m).x3max)
+                              : CellCenterX(k-ks, indcs.nx3, size.h_view(m).x3min,
+                                                             size.h_view(m).x3max));
+  };
+
+  const char *cnmc[3] = {"b.x1f", "b.x2f", "b.x3f"};
+  // ---- FIRST PASS: the x2/x3 FACE ghosts of a panel seam, localised along the seam.
+  struct FaceQ { int slot; int ax; int side; const char *nm; };
+  const FaceQ fq[4] = { {8, 2, -1, "-x2"}, {12, 2, 1, "+x2"},
+                        {24, 3, -1, "-x3"}, {28, 3, 1, "+x3"} };
+  std::cout << "### CS STATIC SEAM-HALO SCAN, FACE-CENTRED B"
+            << " (one exchange, exact ghost known)\n";
+  std::cout << "###  gid pnl lx2 lx3 face cmp lay    maxerr      at s"
+            << "       end0      end1      mid\n";
+  Real gmax = 0.0;
+  for (int m=0; m<pmbp->nmb_thispack; ++m) {
+    const int p = mbpanel.h_view(m);
+    const int gid = gids.h_view(m);
+    for (int q=0; q<4; ++q) {
+      const int n = fq[q].slot;
+      if (nghbr.h_view(m,n).gid < 0) continue;
+      if (nghbr.h_view(m,n).panel == p) continue;   // not a seam
+      for (int c=0; c<3; ++c) {
+        // the along-seam extent of this component: one more face than cells when the
+        // component is staggered along the seam
+        const bool along_k = (fq[q].ax == 2);
+        const int ns = (along_k ? indcs.nx3 : indcs.nx2)
+                     + ((along_k && c == 2) || (!along_k && c == 1) ? 1 : 0);
+        for (int g=0; g<ng; ++g) {
+          Real emax = 0.0, e0 = 0.0, e1 = 0.0, emid = 0.0;
+          int smax = -1;
+          for (int s=0; s<ns; ++s) {
+            int j, k;
+            if (along_k) {
+              // ghost in x2; b.x2f at the HIGH side is staggered one face further out
+              j = (fq[q].side < 0) ? (js - 1 - g)
+                                   : (je + 1 + g + ((c == 1) ? 1 : 0));
+              k = ks + s;
+            } else {
+              k = (fq[q].side < 0) ? (ks - 1 - g)
+                                   : (ke + 1 + g + ((c == 2) ? 1 : 0));
+              j = js + s;
+            }
+            // THE OUTERMOST STAGGERED FACE IS NOT PART OF THE HALO.  A component
+            // staggered along a ghost direction has one more face than there are ghost
+            // cells, and that last face (index je+1+ng, ke+1+ng) is filled by the x2/x3
+            // FACE buffers but not by the x1-edge ones, so including it would report a
+            // stale value as a halo error.  The established face-centred ghost scan in
+            // CSTestResistCheck stops at je+ng / ke+ng for every component; do the same.
+            if (j > je + ng || k > ke + ng) { continue; }
+            Real xi, eta;
+            fang(m, c, k, j, xi, eta);
+            const Real err = std::fabs(bval(m,c,k,j,imid)
+                                       - bexact(m,p,c,xi,eta,imid));
+            if (err > emax) { emax = err; smax = s; }
+            if (s == 0) { e0 = err; }
+            if (s == ns-1) { e1 = err; }
+            if (s == ns/2) { emid = err; }
+            if (verb >= 2) {
+              std::printf("###   PROF gid %3d face %s %s lay %d s %3d err %12.4e\n",
+                          gid, fq[q].nm, cnmc[c], g, s, err);
+            }
+          }
+          if (emax > gmax) { gmax = emax; }
+          if (verb >= 1) {
+            std::printf("###  %4d %3d %3d %3d  %s %s %2d  %11.4e  %4d  %9.2e %9.2e"
+                        " %9.2e\n", gid, p,
+                        static_cast<int>(pm->lloc_eachmb[gid].lx2),
+                        static_cast<int>(pm->lloc_eachmb[gid].lx3), fq[q].nm, cnmc[c],
+                        g, emax, smax, e0, e1, emid);
+          }
+        }
+      }
+    }
+  }
+  std::printf("### FC SEAM-HALO GLOBAL MAX |ghost - exact| = %.6e\n", gmax);
+
+  // ---- SECOND PASS: EVERY tangential ghost face, binned by what fills it, per
+  // component.  Same five categories as the cell-centred scan.
+  const char *cnm[5] = {"face, same panel ", "face, SEAM       ",
+                        "edge, same panel ", "edge, seam       ",
+                        "edge, CUBE VERTEX"};
+  Real cmax[5][3];
+  std::int64_t cnum[5][3];
+  for (int q=0; q<5; ++q) {
+    for (int c=0; c<3; ++c) { cmax[q][c] = 0.0; cnum[q][c] = 0; }
+  }
+  for (int m=0; m<pmbp->nmb_thispack; ++m) {
+    const int p = mbpanel.h_view(m);
+    for (int c=0; c<3; ++c) {
+      // the face-index range of component c: one extra face where it is staggered
+      const int jhi = je + ((c == 1) ? 1 : 0);
+      const int khi = ke + ((c == 2) ? 1 : 0);
+      for (int k=ks-ng; k<=khi+ng; ++k) {
+        for (int j=js-ng; j<=jhi+ng; ++j) {
+          const bool joff = (j < js) || (j > jhi);
+          const bool koff = (k < ks) || (k > khi);
+          if (!joff && !koff) continue;
+          if (j > je + ng || k > ke + ng) { continue; }   // see the note in pass 1
+          const int nj_id = (j < js) ? 8 : 12;
+          const int nk_id = (k < ks) ? 24 : 28;
+          const bool sj = (nghbr.h_view(m,nj_id).gid >= 0) &&
+                          (nghbr.h_view(m,nj_id).panel != p);
+          const bool sk = (nghbr.h_view(m,nk_id).gid >= 0) &&
+                          (nghbr.h_view(m,nk_id).panel != p);
+          int cat;
+          if (joff && koff) {
+            cat = (sj && sk) ? 4 : (((joff && sj) || (koff && sk)) ? 3 : 2);
+          } else {
+            cat = ((joff && sj) || (koff && sk)) ? 1 : 0;
+          }
+          Real xi, eta;
+          fang(m, c, k, j, xi, eta);
+          const Real err = std::fabs(bval(m,c,k,j,imid) - bexact(m,p,c,xi,eta,imid));
+          if (err > cmax[cat][c]) { cmax[cat][c] = err; }
+          ++cnum[cat][c];
+        }
+      }
+    }
+  }
+  std::cout << "### FC GHOST SCAN BY CATEGORY: max |ghost - exact|\n";
+  for (int q=0; q<5; ++q) {
+    std::printf("###   %s ", cnm[q]);
+    for (int c=0; c<3; ++c) {
+      std::printf("  %s n=%7lld max=%11.4e", cnmc[c],
+                  static_cast<long long>(cnum[q][c]), cmax[q][c]);
+    }
+    std::printf("\n");
   }
 }

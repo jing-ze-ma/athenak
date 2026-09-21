@@ -1,0 +1,26 @@
+== resist divB+EMF, 1x1 ==
+### CS RESISTIVE EMF CHECK (iprob=11): nx1=8 nx2=32  eta=5.000e-01  |2*eta*b0c|=1.000e-01
+###   GHOST SCAN tangent ghost  Linf=1.0109e-04 (d1 1.0109e-04) (n>1e-2: 0) on x3f at (i,j,k)=(4,32,32) of block 2 panel 2
+###   GHOST SCAN r x EDGE  SEAM Linf=3.1250e-05 (d1 1.9340e-05) (n>1e-2: 0) on x1f at (i,j,k)=(8,33,4) of block 3 panel 3
+###   GHOST SCAN r x CORNER SEAM Linf=1.5776e-05 (d1 6.9779e-06) (n>1e-2: 0) on x1f at (i,j,k)=(8,33,32) of block 0 panel 0
+###   max |sum A.B| / (|B| max A):  seam 2.470e-14   interior 2.257e-14
+###   Ohmic heating: <dp> measured 2.673203e-03  exact (gam-1)*eta*J^2*t 2.666668e-03  ratio 1.002451   max|v| 6.416e-05
+###   x1e worst at panel 2 (i,j,k)=(6,34,34);  L1 over the 2-cell panel-edge ring = 3.4336e-04, panel interior = 3.1007e-04
+== resist divB+EMF, 2x2 ==
+### CS RESISTIVE EMF CHECK (iprob=11): nx1=8 nx2=16  eta=5.000e-01  |2*eta*b0c|=1.000e-01
+###   GHOST SCAN tangent ghost  Linf=1.0109e-04 (d1 1.0109e-04) (n>1e-2: 0) on x3f at (i,j,k)=(4,16,16) of block 11 panel 2
+###   GHOST SCAN r x EDGE  SEAM Linf=3.1250e-05 (d1 1.9340e-05) (n>1e-2: 0) on x1f at (i,j,k)=(8,17,4) of block 13 panel 3
+###   GHOST SCAN r x CORNER SEAM Linf=1.7249e-05 (d1 1.6663e-05) (n>1e-2: 0) on x1f at (i,j,k)=(8,-2,17) of block 7 panel 1
+###   max |sum A.B| / (|B| max A):  seam 2.534e-14   interior 1.962e-14
+###   Ohmic heating: <dp> measured 2.673203e-03  exact (gam-1)*eta*J^2*t 2.666668e-03  ratio 1.002451   max|v| 6.416e-05
+###   x1e worst at panel 2 (i,j,k)=(6,18,18);  L1 over the 2-cell panel-edge ring = 3.1011e-04, panel interior = 3.1873e-04
+== resist divB+EMF, 4x4 ==
+### CS RESISTIVE EMF CHECK (iprob=11): nx1=8 nx2=8  eta=5.000e-01  |2*eta*b0c|=1.000e-01
+###   GHOST SCAN tangent ghost  Linf=1.0111e-04 (d1 1.0111e-04) (n>1e-2: 0) on x3f at (i,j,k)=(4,8,8) of block 47 panel 2
+###   GHOST SCAN r x EDGE  SEAM Linf=3.1217e-05 (d1 2.1258e-05) (n>1e-2: 0) on x1f at (i,j,k)=(8,9,4) of block 53 panel 3
+###   GHOST SCAN r x CORNER SEAM Linf=2.8883e-05 (d1 2.1258e-05) (n>1e-2: 0) on x1f at (i,j,k)=(8,-1,9) of block 27 panel 1
+###   max |sum A.B| / (|B| max A):  seam 2.836e-14   interior 2.145e-14
+###   Ohmic heating: <dp> measured 2.673187e-03  exact (gam-1)*eta*J^2*t 2.666668e-03  ratio 1.002445   max|v| 6.416e-05
+###   x1e worst at panel 2 (i,j,k)=(6,10,10);  L1 over the 2-cell panel-edge ring = 3.1621e-04, panel interior = 3.1495e-04
+
+[exited with code 0]

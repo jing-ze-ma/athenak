@@ -102,3 +102,14 @@ bhx      = 0.37      # its direction.  Deliberately TILTED.
 bhy      = 0.61
 bhz      = 0.70
 user_bcs = true
+# STATIC seam-halo accuracy scan of the FACE-CENTRED field.  With time/nlim = 0 the only
+# thing that has touched the ghosts is one boundary exchange, and the exact ghost value
+# of this static analytic field is known, so this measures the panel-seam halo of B and
+# nothing else.  1 = the per-block/per-face/per-component/per-layer table plus the
+# category bins, 2 = the full along-seam profiles.  Use it with
+# faces_from_potential = false, so the ACTIVE faces are the analytic projections exactly
+# and do not floor the scan.  See tests_seam_fc/README.md.  Both are listed here at
+# their defaults because a command line cannot ADD a parameter.
+seam_halo_scan_fc     = 0
+seam_halo_scan_fc_i   = 0
+faces_from_potential  = true

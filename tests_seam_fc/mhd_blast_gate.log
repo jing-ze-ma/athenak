@@ -1,0 +1,71 @@
+== mhd_blast, 1x1 ==
+### CS CONSERVED SUMS at t = 2.99999999999999989e-01  (ncyc 278)
+###   volume 2.93215314335046813e+01
+###   mass   2.93215314335046955e+01
+###   energy 1.08771595925670482e+02
+###   Px     -7.33342504236427928e+00
+###   Py     -7.33342542389480556e+00
+###   Pz     -7.33827920159023606e+00
+###   Lx     9.09835400092992325e-05
+###   Ly     -9.10857451620111558e-05
+###   Lz     7.06136667876658165e-07
+### CS BLAST (iprob=12): centre (0.5774,0.5774,0.5774)  cap 0.250 rad  p_in 100  t 0.3000
+###   SPHERICAL-SYMMETRY residual (max-min)/mean per geodesic bin:  Linf=2.4637e+00 (bin 21 of 48)  mean=3.5858e-01
+###     restricted to cells within 2 cells of a panel seam:  Linf=2.1934e+00  mean=3.3274e-01
+###   min pressure 1.483322e+00   min density 9.688276e-02
+###   PROFILE  bin  angle      mean_p        min_p         max_p
+###   PROF   0   0.0327   3.76152e+00   3.58109e+00   3.97457e+00
+###   PROF   1   0.0982   3.79691e+00   3.62341e+00   3.99537e+00
+###   PROF   2   0.1636   3.86258e+00   3.72995e+00   4.02703e+00
+###   PROF   3   0.2291   3.95212e+00   3.86519e+00   4.06735e+00
+###   PROF   4   0.2945   4.03870e+00   3.96496e+00   4.13056e+00
+###   PROF   5   0.3600   4.13201e+00   4.03254e+00   4.26137e+00
+###   PROF   6   0.4254   4.24100e+00   4.09293e+00   4.49581e+00
+== mhd_blast, 2x2 ==
+### CS CONSERVED SUMS at t = 2.99999999999999989e-01  (ncyc 278)
+###   volume 2.93215314335046067e+01
+###   mass   2.93215314335047665e+01
+###   energy 1.08771595317749885e+02
+###   Px     -7.33342296390594495e+00
+###   Py     -7.33342348943328304e+00
+###   Pz     -7.33827745174361379e+00
+###   Lx     9.10564333613356170e-05
+###   Ly     -9.09663368439604626e-05
+###   Lz     1.00922434981398546e-06
+### CS BLAST (iprob=12): centre (0.5774,0.5774,0.5774)  cap 0.250 rad  p_in 100  t 0.3000
+###   SPHERICAL-SYMMETRY residual (max-min)/mean per geodesic bin:  Linf=2.4637e+00 (bin 21 of 48)  mean=3.5858e-01
+###     restricted to cells within 2 cells of a panel seam:  Linf=2.4118e+00  mean=3.4276e-01
+###   min pressure 1.483322e+00   min density 9.688296e-02
+###   PROFILE  bin  angle      mean_p        min_p         max_p
+###   PROF   0   0.0327   3.76152e+00   3.58111e+00   3.97457e+00
+###   PROF   1   0.0982   3.79692e+00   3.62344e+00   3.99537e+00
+###   PROF   2   0.1636   3.86259e+00   3.72996e+00   4.02703e+00
+###   PROF   3   0.2291   3.95212e+00   3.86521e+00   4.06736e+00
+###   PROF   4   0.2945   4.03870e+00   3.96496e+00   4.13056e+00
+###   PROF   5   0.3600   4.13201e+00   4.03254e+00   4.26138e+00
+###   PROF   6   0.4254   4.24100e+00   4.09293e+00   4.49583e+00
+== mhd_blast, 4x4 ==
+### CS CONSERVED SUMS at t = 2.99999999999999989e-01  (ncyc 279)
+###   volume 2.93215314335045996e+01
+###   mass   2.93215314335046777e+01
+###   energy 1.08771596424242233e+02
+###   Px     -7.33350399072225834e+00
+###   Py     -7.33350365261816339e+00
+###   Pz     -7.33835531805133900e+00
+###   Lx     9.11817682508593791e-05
+###   Ly     -9.11973525796971017e-05
+###   Lz     2.33243305549530130e-06
+### CS BLAST (iprob=12): centre (0.5774,0.5774,0.5774)  cap 0.250 rad  p_in 100  t 0.3000
+###   SPHERICAL-SYMMETRY residual (max-min)/mean per geodesic bin:  Linf=2.4637e+00 (bin 21 of 48)  mean=3.5854e-01
+###     restricted to cells within 2 cells of a panel seam:  Linf=2.4512e+00  mean=3.4917e-01
+###   min pressure 1.483322e+00   min density 9.685547e-02
+###   PROFILE  bin  angle      mean_p        min_p         max_p
+###   PROF   0   0.0327   3.76156e+00   3.58137e+00   3.97460e+00
+###   PROF   1   0.0982   3.79697e+00   3.62372e+00   3.99535e+00
+###   PROF   2   0.1636   3.86258e+00   3.73007e+00   4.02689e+00
+###   PROF   3   0.2291   3.95210e+00   3.86522e+00   4.06731e+00
+###   PROF   4   0.2945   4.03869e+00   3.96498e+00   4.13020e+00
+###   PROF   5   0.3600   4.13206e+00   4.03260e+00   4.26095e+00
+###   PROF   6   0.4254   4.24107e+00   4.09285e+00   4.49574e+00
+
+[exited with code 0]

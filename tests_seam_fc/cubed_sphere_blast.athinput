@@ -1,0 +1,136 @@
+# Cubed sphere, A SHOCK THROUGH A SEAM AND A CUBE VERTEX.  Build with -D PROBLEM=cs_test.
+#
+# WHY THIS EXISTS.  Every other cubed-sphere test in this directory is a SMOOTH field, and
+# several are exact equilibria, so none of them says anything about shock capturing.  Two
+# pieces of the seam machinery are built on smoothness and are worth testing on a jump:
+# the along-seam resample is an UNLIMITED 3-point Lagrange quadratic, and the cube-vertex
+# corner is an UNLIMITED extrapolation amplifying its input by 7 (d=1) to 17 (d=2).  Both
+# are exactly the shapes that overshoot on a discontinuity, and `negative internal energy
+# at panel corners` is already a known symptom on SMOOTH problems.
+#
+# THE GATE NEEDS NO EXACT SOLUTION.  On a sphere the blast problem is invariant under
+# rotation, so the answer is spherically symmetric about the blast centre wherever that
+# centre sits relative to the grid.  So:
+#
+#   WITHIN a run   bin every cell by geodesic angle from the centre; the spread inside a
+#                  bin is grid imprinting, and is zero for a perfect scheme.
+#   BETWEEN runs   the SAME blast centred in a panel INTERIOR, on a SEAM, and on a cube
+#                  VERTEX must agree.  The interior run is the control; the others differ
+#                  from it ONLY in where the grid sits under identical physics.
+#
+# THREE PLACEMENTS, by overriding problem/blast_x,y,z (they are normalised internally):
+#
+#   INTERIOR (control)   blast_x=0   blast_y=0   blast_z=1     panel centre
+#   SEAM                 blast_x=1   blast_y=0   blast_z=1     edge midpoint, 2 panels
+#   VERTEX               blast_x=1   blast_y=1   blast_z=1     cube vertex, 3 panels
+#
+# The overpressure is uniform in RADIUS, so the shock runs TANGENTIALLY -- which is what
+# drives it through the seam.  Radial boundaries are reflecting to keep it that way rather
+# than draining the blast radially.
+#
+# WHAT WAS MEASURED (nx2 = 32, tlim = 0.30, blast_ang = 0.25, varying blast_p, i.e. the
+# initial pressure CONTRAST against p0 = 1).  BEFORE the seam-resample limiter:
+#
+#   centred in a panel INTERIOR   survives 100,  fails at 300
+#   centred on a SEAM             survives  50,  fails at  70
+#   centred on a cube VERTEX      survives  50,  fails at  70
+#
+# WITH the limiter (bvals_cc.cpp / bvals_fc.cpp): ALL THREE placements survive a contrast
+# of 1000, the largest tried.  That is the point of this input -- it is the only test in
+# the repo that exercises the seam machinery on a discontinuity.
+#
+# FOUR CONCLUSIONS, and the first two were both surprises:
+#
+#  1. A SHOCK CROSSES A SEAM PERFECTLY WELL even without the limiter.  The interior blast
+#     at contrast 100 drives its shock past the seam (front at 1.163 rad against a seam at
+#     0.785, p ~ 28 still at the seam) and finishes clean.  Seams are not a barrier to a
+#     PASSING shock; what fails is strong structure sitting ON one.
+#  2. Every failure -- interior, seam and vertex alike -- came from ONE thing: the
+#     UNLIMITED along-seam resample on the CELL-CENTRED variables.  The interior case
+#     failed only once its own shock reached a seam.  There is no separate "scheme limit".
+#  3. The cube VERTEX needed the CELL-CENTRED clamp to be UNCONDITIONAL.  A guard meant to
+#     protect smooth extrema (skip when the stencil is not monotone) skipped exactly the
+#     cells that needed it, because a blast cap has a FLAT TOP and a stencil astride its
+#     edge is not monotone.  Non-monotone does not imply smooth.
+#  4. FOFC, the usual remedy for a strong shock, is still a startup FATAL on this grid, so
+#     there is no fallback to switch on if a run does get into trouble.
+#
+# THE FAILURE IS SILENT.  Nothing aborts and no floor is reported: the run finishes
+# normally, prints "Terminating on time limit", and every cell is NaN.  That is why this
+# check counts NON-FINITE cells explicitly -- it is the only thing that notices.
+#
+# WHAT TO READ.  CSTestBlastCheck prints, in order: the spherical-symmetry residual over
+# the whole domain and restricted to cells within 2 cells of a panel edge; the max
+# pressure overall and near a seam, with how far the front has run; min pressure and
+# density; and the NON-FINITE count, split by seam proximity.
+#
+# HONEST LIMIT OF THE SYMMETRY RESIDUAL: as defined it is (max-min)/mean inside a geodesic
+# bin, so a bin straddling the shock front reports the FRONT'S OWN WIDTH, not imprinting,
+# and is O(1) even for a perfect scheme.  Use it to compare the SAME time between the
+# three placements, not as an absolute.  The primary gates here are the NON-FINITE count
+# and the strength threshold above.
+#
+# AXES: x1 is RADIAL, x2 = xi and x3 = eta are the panel-tangential angles.  Must be 3D.
+
+<comment>
+problem = cubed sphere blast through a panel seam and a cube vertex
+
+<job>
+basename = cs_blast
+
+<mesh>
+nghost   = 2
+nx1      = 8            # RADIAL direction
+x1min    = 1.0
+x1max    = 2.0
+ix1_bc   = reflect
+ox1_bc   = reflect
+
+nx2      = 32           # xi;  nx2 must equal nx3 (Mesh checks this)
+x2min    = -1.0
+x2max    = 1.0
+ix2_bc   = panel
+ox2_bc   = panel
+
+nx3      = 32           # eta
+x3min    = -1.0
+x3max    = 1.0
+ix3_bc   = panel
+ox3_bc   = panel
+
+use_cubed_sphere = true
+
+<meshblock>
+nx1      = 8
+nx2      = 32
+nx3      = 32
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim       = -1
+tlim       = 0.30
+ndiag      = 1000
+
+<hydro>
+eos         = ideal
+reconstruct = plm
+rsolver     = hllc
+gamma       = 1.666667
+
+<problem>
+iprob      = 12
+d0         = 1.0
+p0         = 1.0
+blast_p    = 100.0      # strong: a Mach ~4 shock, not a linear wave
+blast_ang  = 0.25       # angular radius of the overpressure cap, radians
+blast_x    = 1.0        # centre direction; DEFAULT here is the CUBE VERTEX
+blast_y    = 1.0
+blast_z    = 1.0
+user_bcs   = false      # true with ix1_bc = user holds the ambient state in the radial ghosts
+
+<output1>
+file_type = bin
+variable  = hydro_w
+dt        = 1.0e-9
