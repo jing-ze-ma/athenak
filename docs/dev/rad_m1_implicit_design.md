@@ -238,3 +238,171 @@ line solve was not implemented -- more than one MeshBlock along x1 is a startup 
 `MPI_MAX`-reduced so that ranks stay in step, but that path is untested.
 (iv) `F_2 = F_3 = 0` always in this mode, and `implicit_allow_multid` gives independent
 columns (verified bitwise for 1 vs 4 MeshBlocks along x2).  (v) No GPU run.
+
+---
+
+## 7. Findings of 3a2 (implemented 2026-09-21; supersede sect. 6 where they differ)
+
+Branch `m1-implicit-2`.  Milestone 3a2 attacks the five limits listed at the end of
+sect. 6.  Gate tables: `tests_m1/runs_3a2/RESULTS.txt`.  New options, ALL defaulting to
+the 3a behaviour so that `runs_3a/RESULTS.txt` is reproduced by an input file that does
+not name them:
+
+```
+<rad_m1>/implicit_flux     = central | ap_hll | berthon      (LIMIT 1)
+         implicit_recon    = dc | plm_dc                      (LIMIT 1)
+         implicit_recon_w  = <= 0 (auto 1/(1+chat dt/dx)) | w  (LIMIT 1)
+         implicit_recon_lag= picard | step                     (LIMIT 1)
+         implicit_res_floor= 0 | x  (Picard residual scale)     (LIMIT 1)
+         implicit_bmom_half= false | true                       (LIMIT 3)
+         implicit_partition= none | gather                      (LIMIT 4, see gaps)
+<problem>/m1_test = atmosphere                                  (LIMIT 2)
+```
+
+### LIMIT 1 -- the thin limit.  Three corrections the note did not anticipate.
+
+The face flux can now be written `G_f = A_up + alpha F_HLL + (1-alpha) F_diff`, linear
+in `E'` because the reduced flux `f` and the wave speeds `b_L <= 0 <= b_R` are LAGGED.
+With `F_L = c f_L E'_L`, `F_R = c f_R E'_R`,
+
+```
+G_HLL = [b_R chat f_L E'_L - b_L chat f_R E'_R + b_R b_L (E'_R - E'_L)]/(b_R - b_L)
+      = c_L E'_L + c_R E'_R,
+c_L = b_R (chat f_L - b_L)/(b_R - b_L) >= 0,   c_R = b_L (b_R - chat f_R)/(b_R - b_L) <= 0
+```
+
+both signs following from the HLL consistency condition `b_L <= chat f <= b_R`, which
+holds on the M1 admissible set.  **The M-matrix argument is by COLUMNS, not rows.**  Each
+face contributes `+nu c_L` to the diagonal of its left cell and `-nu c_L` to the lower
+off-diagonal of its right cell, and `+nu c_R` to the upper off-diagonal of the left cell
+and `-nu c_R` to the diagonal of the right cell; every column of the matrix therefore sums
+to exactly `1 + SRCB >= 1` while all off-diagonals are `<= 0`.  That is strict column
+diagonal dominance, hence a nonsingular M-matrix and `E' > 0` at any `dt`, for the HLL
+part, for the diffusion part (same argument) and for any convex blend of them.  Row
+diagonal dominance does NOT hold and is not needed.  The code carries `fmax`/`fmin` guards
+on `c_L`, `c_R` anyway, because `alpha < 1` rescales the advective and dissipative parts
+differently and can turn `c_R` positive; the clamp only makes the flux more upwind and
+leaves conservation exact (one number per face, used with opposite signs).
+
+*(a) The literal blend counts the diffusion TWICE.*  At the piecewise-constant states the
+MATRIX is built from, the HLL dissipation `b_R b_L (E_R - E_L)/(b_R - b_L) -> -c dE/3` IS
+the physical diffusion -- that is what `alpha` is constructed to make true -- so adding
+`(1 - alpha) F_diff` on top doubles it: gate I1 came out at **2.0021 x** the analytic
+`2D` at `tau_cell` = 1e3, at every CFL.  Weighting the dissipation `alpha^2` (the explicit
+scheme's `alpha2` form) repairs `tau_cell` >= 1e3 (1.0010) but leaves **+10.7 %** at
+`tau_cell` = 10 and **destroys T3b** (97 % face-flux error at the opacity jump).  What
+works is Berthon's form, `implicit_flux = berthon`: `alpha F_HLL` with NO `F_diff` at all,
+both parts of the HLL flux weighted by `alpha`.  The advective part then supplies the
+`1/(0.866 tau)` the dissipation alone is short of, and I1 comes out 0.984 / 0.9998 /
+1.0000 at `tau_cell` = 10 / 1e3 / 1e6 at every CFL.  `ap_hll` is kept as the literal
+blend of the design brief, with its numbers, and is NOT recommended.
+
+*(b) The lagged reduced flux must not be the cell mean of the two faces* (design risk R4,
+worse than the note supposed).  In free streaming the upwind face flux is `c E_{i-1}`, so
+the cell mean is `c (E_{i-1}+E_i)/2` and the derived `f` is `(1 + E_{i-1}/E_i)/2`, i.e.
+0.5 rather than 1 on the steep side of a pulse.  The wave speeds reopen to `+-c/sqrt(3)`,
+the HLL flux turns CENTRED and the I6 pulse is flattened to its box mean in one crossing
+(amplitude ratio **0.0014**).  Each FACE flux is normalised instead by the `E` of the cell
+it comes FROM, and the cell value is the mean of the two ratios: exactly 1 for an upwind
+free-streaming face.  That single change takes I6 from 0.0014 to 0.561.
+
+*(c) The plm deferred correction needs an admissibility clamp AND a weight.*  The
+correction is the explicit difference between the plm and the dc flux at the previous
+iterate, so the matrix stays the low-order M-matrix.  Two failures had to be fixed:
+the reconstructed face energy can exceed the DONOR cell's own (`plm` puts
+`E_i (r-1)/(r+1)` on top of `E_i` for a geometric ratio `r`), and `c` times that is faster
+than the donor can emit, so on an exponentially falling background the drain cascades --
+the I6 background collapsed onto the floor and the peak grew 7x.  Clamping the corrected
+flux to `[-c E_R, +c E_L]` fixes it.  Second, a deferred correction is a fixed-point
+iteration with contraction factor `~ 2 nu/(1 + nu)`, `nu = chat dt/dx`: it DIVERGES above
+CFL ~ 1 (measured, I6 amplitude 3.85 at `implicit_cfl` = 10).  Weighting the correction by
+`w = 1/(1 + nu)` (`implicit_recon_w <= 0`, the default) makes the factor `2 nu/(1+nu)^2
+<= 1/2` at every CFL and the fixed point a convex blend of the dc and plm fluxes -- still
+monotone, second order where `w -> 1`.
+
+**I6, free-streaming pulse, 128 cells, one box crossing** (peak-to-trough amplitude,
+final/initial; explicit plm = 0.953):
+
+```
+ implicit_cfl                 0.4      1        10       100
+ central (3a)                 0.369    0.319    0.285    0.076
+ berthon / ap_hll, dc         0.561    0.492    0.145    0.079
+ berthon / ap_hll, plm_dc     0.818    0.695    0.190    0.079
+```
+
+so the 3a figure of 0.37 at CFL 0.4 becomes **0.82**, against 0.95 for the explicit
+scheme.  `berthon` and `ap_hll` are identical here because `alpha = 1` with no opacity.
+`plm_dc` costs `implicit_maxit` Picard passes against 2 (see "Picard" below).
+
+### LIMIT 2 -- steady-state accuracy in a thin layer.  The result reverses the brief.
+
+`<problem>/m1_test = atmosphere` (`src/pgen/tests/rad_m1_tests2.cpp`,
+`inputs/tests/rad_m1_atmosphere.athinput`, gate `tests_m1/t9_atmosphere.py`): a static
+plane-parallel pure-scattering column, prescribed gas, `rho = 0.128 exp[(1-z)/0.113]`,
+`kappa = 1`, 128 cells, imposed flux at the bottom face and a free surface at the top.
+`tau` at the top cell centre is 5.0e-4, `tau_bot` = 100.8.  The steady state is the
+closed-form M1 solution `chi(f)/f = q0 + tau`, `E = F/(c f)`.
+
+**The consistent pair.**  The Marshak condition `F = c q E_top` fixes the surface reduced
+flux to `f(0) = q = <rad_m1>/marshak_q` EXACTLY, so `q0 = chi(q)/q`; nothing else in the
+problem determines it.  For `q = 1/2`, `chi(1/2) = 0.46481586` and **`q0 = 0.92963172`**.
+`chi(f)/f` has a minimum 0.89806 at `f` = 0.82504 and the solution stays on the decreasing
+branch for any `q0` above it.
+
+```
+ max|E/E_exact - 1| over the column / over the top 5 cells      L1(E)
+ implicit central, CFL 100 and 1e4      1.35e-3 / 1.35e-3       5.0e-4
+ implicit berthon, CFL 100 and 1e4      3.68e-1 / 1.21e-1       2.2e-1
+ implicit ap_hll,  CFL 100              3.53e-1 / 5.50e-2       1.9e-1
+ explicit plm (tau_bot ~ 10 column)     4.86e-1 / 4.86e-1       8.4e-2
+ implicit central (same tau_bot ~ 10)   1.35e-3 / 1.35e-3       5.1e-4
+ steps to |dE/E| < 1e-10 (central): CFL 1e4: 16-32   CFL 100: 1024-2048
+                                    CFL 1: > 8192 (still 1.9e-3 per doubling)
+```
+
+**The 3a `central` flux passes the 1 % target with a factor 7 to spare, and every upwind
+form fails it by a factor 40.**  The reason is exactly the reason `central` damps a
+propagating front: the face-eliminated form has NO numerical dissipation, while the
+upwind HLL flux carries `0.289 c dx`, which exceeds the physical `c/(3 rho kappa)`
+wherever `tau_cell < 1.15` and then sets the gradient of `E` itself.  Below `tau ~ 20`
+the berthon column is systematically too bright, reaching +37 % at `tau` = 0.3.
+`plm_dc` does not rescue it (the automatic weight is 1/101 at CFL 100; forcing `w = 1`
+diverges).
+
+**LIMIT 1 and LIMIT 2 therefore pull in opposite directions**, and for the stellar
+columns this milestone exists for, LIMIT 2 is the one that matters: `implicit_flux =
+central` stays the recommended default, and `berthon` is for problems where a thin
+front must PROPAGATE.  The explicit scheme's 49 % surface error on the same problem
+(its dark ghost lets `f -> 1` at the free surface instead of imposing `f = 1/2`) is a
+separate point in favour of the implicit face-flux boundary.
+
+### Other gates with the new fluxes
+
+```
+ I2  T3b opacity jump x1000, max|E/E_ex-1| / face-flux error at the jump
+     explicit plm   1.05e-1 / 33         central (3a)  1.13e-4 / 5.6e-6
+     berthon        5.88e-3 / 2.0e-3     ap_hll        8.2e-3  / 9.8e-1  FAIL
+ I4  Marshak wave, 128 cells, L1 vs the S_N reference (explicit 0.0019)
+     central dc    0.0144 (CFL 1) 0.0135 (CFL 100)      <- 3a, reproduced
+     berthon dc    0.0104          0.0098
+     berthon plm_dc 0.2647 FAIL    0.0089
+     The 0.5 % target of the brief is NOT met by any implicit variant; berthon dc is
+     the best at 1.0 %, a 28 % improvement on 3a.  plm_dc is unusable at a sharp
+     emission front at CFL 1.
+ STEP 0  transport = explicit: T3 tau_cell 1e3 plm ratio 1.000015, identical to
+     runs_1cB and runs_3a.  The explicit path is untouched.
+```
+
+### Picard statistics with the new flux
+
+`berthon`/`ap_hll` with `dc` converge in **2 passes** on every test that 3a needed 2-4
+for; the lagged `f` and wave speeds cost nothing.  `plm_dc` never meets `implicit_tol`
+= 1e-8: the plm limiter switches on a handful of cells and the iteration is a small
+limit cycle.  The SOLUTION is converged -- `implicit_maxit` 30 and 100 give the same I6
+amplitude to five digits -- but the strict test is never passed, so `plm_dc` costs
+`implicit_maxit` passes per step.  Under-relaxing the correction by 1/2 across passes
+(implemented, always on) does not break the cycle; nor does scaling the residual by the
+column peak (`implicit_res_floor`, added for this and kept because it is the right test
+for a column with a large dynamic range).  Evaluating the correction once per step
+(`implicit_recon_lag = step`) makes the loop converge in 2 passes but is an EXPLICIT
+anti-diffusion and blows up (I6 amplitude 7.3 at CFL 0.4); `picard` is the default.

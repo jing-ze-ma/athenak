@@ -1,0 +1,144 @@
+MILESTONE 3a2 -- REMOVING THE LIMITS OF 3a, branch m1-implicit-2 on top of 7a2c9382
+====================================================================================
+viper, serial CPU Release, gcc/14, 2026-09-21.  Binary: build_cpu_m1 (no -D PROBLEM)
+and build_cpu_box (-D PROBLEM=box_convection), built ONE AT A TIME (inode quota).
+All dumps deleted; commands in runs_3a2/run_gates_3a2.sh.  JSON profiles for the
+results page: tests_m1/plots/impl2_*.json.
+
+NEW OPTIONS, all defaulting to the 3a behaviour:
+  <rad_m1>/implicit_flux      = central | ap_hll | berthon
+            implicit_recon    = dc | plm_dc
+            implicit_recon_w  = -1 (auto 1/(1+chat dt/dx)) | w
+            implicit_recon_lag= picard | step
+            implicit_res_floor= 0 | x
+            implicit_bmom_half= false | true
+  <problem>/m1_test = atmosphere          (the new static plane-parallel column)
+
+
+STEP 0  the EXPLICIT scheme is unchanged
+----------------------------------------
+PASS T3 pulse tau_cell 1e3, plm, tlim 12: ratio 1.000015
+     (runs_1cB and runs_3a RESULTS.txt: 1.000015 -- identical)
+
+
+REGRESSION: implicit_flux = central, implicit_recon = dc reproduces 3a
+----------------------------------------------------------------------
+I1  T3 rate ratio, tau_cell 1e3: CFL 0.4 0.999996 / 1 0.999998 / 10 0.999995 /
+    100 0.999994                              (runs_3a: 1.000000 .. 1.000001)
+I2  T3b max|E/E_ex-1| 1.126e-04, slope err 2.47e-5/1.71e-5, face flux uniform to
+    8.11e-5, 1.91e-5 offset, 5.6e-6 peak at the jump, at CFL 1 and 100
+                                              (runs_3a: IDENTICAL to every digit)
+I4  T6 Marshak 128 cells: L1 0.0144 (CFL 1), 0.0135 (CFL 100)
+                                              (runs_3a: 0.0144, 0.0135 -- identical)
+I6  free-streaming pulse amplitude: 0.369 / 0.319 / 0.285 / 0.076 at CFL
+    0.4 / 1 / 10 / 100                        (runs_3a: 0.369 / 0.319 / 0.285 / 0.076)
+
+
+LIMIT 1  THE THIN LIMIT -- the upwind implicit face flux
+=========================================================
+I1  THICK PULSE rate ratio d(sigma^2)/dt / 2D, 128 cells, target 1 +- 0.02
+                       tau_cell 10   tau_cell 1e3   tau_cell 1e6
+  central (3a)  CFL 0.4    0.9994       1.0000          1.0000
+  berthon       CFL 0.4    0.9842       0.99983         0.99998
+  berthon       CFL 100    0.9852       0.99982         1.00077
+  ap_hll        CFL 0.4    1.1070       1.00098         0.99998   <- see below
+  ap_hll        CFL 100    1.0866       1.00097         1.00077
+  ap_hll with the DISSIPATION WEIGHTED alpha (the literal blend of the design brief):
+                           2.0021 at tau_cell 1e3, at EVERY CFL.  The HLL dissipation
+                           at piecewise-constant states IS the physical diffusion, so
+                           alpha F_HLL + (1-alpha) F_diff counts it twice.  alpha^2 on
+                           the dissipation (= what `ap_hll` now is) repairs the deep
+                           limit but not tau_cell = 10, and destroys T3b.  BERTHON --
+                           alpha F_HLL and no F_diff -- is the form that works.
+
+I6  FREE STREAMING, pulse1d f = 1, 128 cells, one box crossing.  Peak-to-trough
+    amplitude of E, final/initial.  The exact answer is 1.  EXPLICIT plm = 0.953.
+                            CFL 0.4   CFL 1    CFL 10   CFL 100
+  central (3a)              0.369     0.319    0.285    0.076
+  berthon / ap_hll, dc      0.561     0.492    0.145    0.079
+  berthon / ap_hll, plm_dc  0.818     0.695    0.190    0.079
+  Picard passes/step        2 (dc), implicit_maxit = 30 (plm_dc, never converged; the
+                            answer is the same at maxit 100 to five digits)
+  Two defects had to be fixed first, both worth recording:
+   * the lagged reduced flux taken as the CELL MEAN of the two face fluxes gives
+     f = 0.5 instead of 1 on the steep side of the pulse (design risk R4) and the
+     pulse is flattened to its box mean: amplitude 0.0014.  Normalising each face flux
+     by the E of the cell it comes FROM gives 0.561.
+   * the plm deferred correction without an admissibility clamp against the donor cell
+     drains an exponentially falling background onto the floor: amplitude 6.98, Picard
+     divergent.  With the clamp and the weight w = 1/(1+chat dt/dx): 0.818.
+     Forcing w = 1 (implicit_recon_w=1) gives 8.52 -- divergent, as the contraction
+     estimate 2 nu/(1+nu) > 1 above CFL 1 predicts.
+
+I2  T3b OPACITY JUMP x1000, 64 cells, steady state at t = 200
+                     max|E/E_ex-1|  slope err L/R      face flux: uniform / offset / peak
+  explicit plm       1.050e-01      9.35e-3 / 9.74e-3  1.59e-1 / 1.31e-2 / 33.4
+  central (3a)       1.126e-04      2.47e-5 / 1.71e-5  8.11e-5 / 1.91e-5 / 5.6e-6
+  berthon CFL 1      5.883e-03      2.76e-3 / 7.27e-4  7.93e-3 / 1.64e-3 / 2.0e-3
+  berthon CFL 100    5.881e-03      2.84e-3 / 7.27e-4  7.97e-3 / 1.68e-3 / 1.9e-3
+  ap_hll  CFL 1      8.212e-03      9.71e-1 / 1.57e-3  9.71e-1 / 4.85e-1 / 9.76e-1 FAIL
+  berthon is 18x better than the explicit scheme and 52x worse than `central`.
+
+I4  MARSHAK WAVE, t = 202, 128 cells, L1 vs the S_N reference (target of the brief 0.005)
+  explicit           0.0019
+  central dc         0.0144 (CFL 1)   0.0135 (CFL 100)
+  central plm_dc     0.0144           0.0135      (plm_dc is inert under `central`)
+  berthon dc         0.0104           0.0098      <- best implicit, 28 % better than 3a
+  berthon plm_dc     0.2647 FAIL      0.0089
+  The 0.5 % target is NOT met by any implicit variant.  plm_dc is unusable at a sharp
+  emission front at CFL 1.
+
+
+LIMIT 2  STEADY-STATE ACCURACY IN A THIN LAYER -- the gate 3a skipped
+======================================================================
+NEW TEST <problem>/m1_test = atmosphere (src/pgen/tests/rad_m1_tests2.cpp),
+input inputs/tests/rad_m1_atmosphere.athinput, gate tests_m1/t9_atmosphere.py
+(--selftest and --selftest-fail both behave).
+  static plane-parallel pure-scattering column, PRESCRIBED gas (a user source term
+  re-imposes it every stage, gas_feedback = false), rho = 0.128 exp[(1-z)/0.113],
+  kappa = 1, 128 cells on [0,1], imposed flux F = 1 at the bottom face, Marshak free
+  surface at the top.  tau(top cell centre) = 5.0e-4, tau(top face) = 1.0e-3,
+  tau_bot = 100.8.  Initial condition = the EDDINGTON solution, 40 % off at the surface.
+
+THE CONSISTENT PAIR (marshak_q, q0).  The Marshak condition F = c q E_top fixes the
+surface reduced flux to f(0) = q = <rad_m1>/marshak_q EXACTLY; nothing else in the
+problem determines the integration constant.  Hence
+       q0 = chi(marshak_q)/marshak_q,   and for marshak_q = 1/2,
+       chi(1/2) = 0.46481586,  q0 = 0.92963172.
+chi(f)/f has a minimum 0.89806 at f = 0.82504; q0 is above it, so the solution stays on
+the decreasing branch at every tau >= 0.
+
+  max relative error of E(tau) and of f(tau) against chi(f)/f = q0 + tau:
+                                     max|dE/E|  max|df/f|  top 5 cells  L1(E)
+  implicit central   CFL 100         1.353e-03  1.355e-03  1.353e-03   5.01e-04  PASS
+  implicit central   CFL 1e4         1.353e-03  1.355e-03  1.353e-03   5.01e-04  PASS
+  implicit central   CFL 1           (same steady state, see the step count below)
+  implicit berthon   CFL 100 / 1e4   3.681e-01  2.691e-01  1.207e-01   2.19e-01  FAIL
+  implicit ap_hll    CFL 100         3.531e-01  5.457e-01  5.498e-02   1.89e-01  FAIL
+  implicit berthon + plm_dc CFL 100  3.798e-01  2.753e-01  1.249e-01   2.29e-01  FAIL
+  implicit central  + plm_dc CFL 100 1.353e-03  1.355e-03  1.353e-03   5.01e-04  PASS
+  thinner column, tau_bot ~ 10 (atm_scale_h = 0.162), for the EXPLICIT comparison:
+  EXPLICIT plm, t = 300             4.862e-01  1.003e+00  4.862e-01   8.43e-02  FAIL
+  implicit central, CFL 1e4         1.346e-03  1.348e-03  1.346e-03   5.09e-04  PASS
+  implicit berthon, CFL 1e4         3.666e-01  2.683e-01  1.161e-01   2.75e-01  FAIL
+
+  STEPS to |dE/E| per step < 1e-10 (implicit central):
+     CFL 1e4:  between 16 and 32        CFL 100: between 1024 and 2048
+     CFL 1:    > 8192 (still 1.9e-3 per doubling of the step count at 8192)
+
+TARGET (E within 1 % everywhere including the top 5 cells): MET by `central` with a
+factor 7 to spare, at every CFL, and MISSED by a factor 40 by every upwind form.
+WHY: the face-eliminated central flux has NO numerical dissipation, while the upwind
+HLL flux carries 0.289 c dx, which exceeds the physical c/(3 rho kappa) wherever
+tau_cell < 1.15 and then sets the gradient of E itself.  The berthon column is
+systematically too bright below tau ~ 20, reaching +37 % at tau = 0.3 (the profile is
+in plots/impl2_atm_berthon.json).
+The explicit scheme's 49 % surface error is its DARK GHOST: it lets f -> 1 at the free
+surface instead of imposing f = 1/2, which the implicit face-flux Marshak boundary does
+exactly.
+
+CONCLUSION.  LIMIT 1 and LIMIT 2 pull in opposite directions.  For the optically thick
+stellar columns this milestone exists for, LIMIT 2 is the one that matters, so
+implicit_flux = central stays the RECOMMENDED DEFAULT; berthon is for problems where a
+thin front has to propagate, and is then 1.5x better than central at CFL 0.4 (2.2x with
+plm_dc).
