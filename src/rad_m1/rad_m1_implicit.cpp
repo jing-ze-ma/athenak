@@ -485,10 +485,28 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     Kokkos::realloc(thw_c, nmb, M1_NHALO_T, 1, 1, 1);
     pbval_th = new MeshBoundaryValuesCC(pmy_pack, pin, false);
     pbval_th->InitializeBuffers(M1_NHALO_T);
-    if (bicg_on) {
+    // the NARROW exchange of the same list: the M1_NHALO_Q components a Picard pass can
+    // move once the closure is frozen.  A separate array because the exchange takes the
+    // variable count from the array's second extent, and a prefix subview of a
+    // LayoutRight array is not one.
+    Kokkos::realloc(thq, nmb, M1_NHALO_Q, ncells3, ncells2, ncells1);
+    Kokkos::deep_copy(thq, 0.0);
+    Kokkos::realloc(thq_c, nmb, M1_NHALO_Q, 1, 1, 1);
+    pbval_tq = new MeshBoundaryValuesCC(pmy_pack, pin, false);
+    pbval_tq->InitializeBuffers(M1_NHALO_Q);
+    // the deep interior of the scratch arrays is neither read by a send nor written by a
+    // receive when every neighbour is at the SAME level (a same-level buffer reaches ng
+    // cells in from the active boundary, buffs_cc.cpp) and neither the cubed-sphere
+    // resample nor the polar transform is in play; then the copies to and from iw can
+    // skip it.  SMR/AMR is already a fatal above.
+    halo_shell = !(pmy_pack->pmesh->multilevel || pmy_pack->pmesh->use_cubed_sphere ||
+                   pmy_pack->pmesh->use_polar_boundary);
+    {
       // ONE more exchange object, for the single Krylov vector the operator application
-      // needs in its ghost zones.  It is used strictly SEQUENTIALLY with pbval_th (each
-      // exchange runs its InitRecv/Send/Recv/Clear chain to completion before the next
+      // needs in its ghost zones -- and for the one-component exchange of E alone, which
+      // is why it is allocated under every solver.  It is used strictly SEQUENTIALLY
+      // with pbval_th and pbval_tq (each exchange runs its
+      // InitRecv/Send/Recv/Clear chain to completion before the next
       // starts) and every rank issues the identical SEQUENCE of exchanges -- the Picard
       // count, the BiCGStab count and every breakdown decision are taken from GLOBAL
       // reductions -- so MPI's non-overtaking guarantee keeps the two streams apart even
@@ -836,30 +854,106 @@ void RadiationM1::ImplicitX1Halo(bool eponly) {
 //! PHYSICAL (non-periodic) boundaries are NOT filled here: every kernel below branches on
 //! the boundary flag instead and imposes F = 0 on a physical x2/x3 face (reflecting).
 
-void RadiationM1::ImplicitTransverseHalo() {
+void RadiationM1::ImplicitTransverseHalo(int nq) {
   if (!trans_on) return;
+  ImplicitHaloExchange(nq, -1);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::ImplicitHaloCopy
+//! \brief copy `nq` components between iw and the scratch halo array `sc` (`topack`
+//! picks the direction), over the HALO SHELL only.
+//!
+//! What the exchange reads out of `sc` is the outermost ng ACTIVE cells, and what it
+//! writes back into it is the ghost zones (buffs_cc.cpp, isame); with same-level
+//! neighbours only -- which is all the implicit solve allows -- nothing else in `sc` is
+//! ever touched.  The box [is+ng,ie-ng] x [js+ng,je-ng] x [ks+ng,ke-ng] is therefore
+//! neither sent nor received and need not be copied in either direction: on the way in
+//! its value is never read, and on the way back it is a copy of what the pack put there.
+//! At a 2-D 84 x 32 block with ng = 2 that is 480 cells per component instead of 3168.
+//! `halo_shell` falls back to the full copy for the exchanges that reach deeper (the
+//! cubed-sphere resample and the polar transform read the whole strip).
+//!
+//! The loop carries (m,n,k,j) and runs the contiguous i direction inside, so the index
+//! arithmetic of the flattened range policy (an integer division per index) is paid once
+//! per ROW instead of once per cell.
+
+void RadiationM1::ImplicitHaloCopy(DvceArray5D<Real> &sc, int nq, int c0, bool topack) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int n1 = indcs.nx1 + 2*(indcs.ng);
   int n2 = (indcs.nx2 > 1)? (indcs.nx2 + 2*(indcs.ng)) : 1;
   int n3 = (indcs.nx3 > 1)? (indcs.nx3 + 2*(indcs.ng)) : 1;
   int nmb1 = pmy_pack->nmb_thispack - 1;
+  // the deep interior, as an index box.  A direction with no neighbour (a degenerate
+  // dimension) is interior everywhere; a direction too thin to have one (nx <= 2 ng), or
+  // a run whose exchange reaches deeper, makes the box empty and the copy full.
+  int ng = indcs.ng;
+  int ilo = halo_shell ? (indcs.is + ng) : n1;
+  int ihi = halo_shell ? (indcs.ie - ng) : (n1 - 1);
+  int jlo = (indcs.nx2 > 1) ? (indcs.js + ng) : 0;
+  int jhi = (indcs.nx2 > 1) ? (indcs.je - ng) : 0;
+  int klo = (indcs.nx3 > 1) ? (indcs.ks + ng) : 0;
+  int khi = (indcs.nx3 > 1) ? (indcs.ke - ng) : 0;
+  if (ilo > ihi) {
+    ilo = n1;
+    ihi = n1 - 1;
+  }
+  const int il_ = ilo, iu_ = ihi, jl_ = jlo, ju_ = jhi, kl_ = klo, ku_ = khi;
+  const int nc0 = c0, nn1 = n1;
+  const bool pack_ = topack;
   auto iw_ = iw;
-  auto th_ = thw;
-  par_for("m1_impl_thpack", DevExeSpace(), 0, nmb1, 0, M1_NHALO_T-1, 0, n3-1, 0, n2-1,
-          0, n1-1,
-  KOKKOS_LAMBDA(const int m, const int n, const int k, const int j, const int i) {
-    th_(m,n,k,j,i) = iw_(m,M1HaloCompT(n),k,j,i);
+  auto sc_ = sc;
+  par_for("m1_impl_hcpy", DevExeSpace(), 0, nmb1, 0, nq-1, 0, n3-1, 0, n2-1,
+  KOKKOS_LAMBDA(const int m, const int n, const int k, const int j) {
+    const int nc = (nc0 >= 0) ? nc0 : M1HaloCompT(n);
+    // the two i runs this row copies: the whole row unless the row is interior
+    int ia = 0, ib = nn1 - 1, ic = nn1, id = nn1 - 1;
+    if ((k >= kl_) && (k <= ku_) && (j >= jl_) && (j <= ju_)) {
+      ib = il_ - 1;
+      ic = iu_ + 1;
+    }
+    if (pack_) {
+      for (int i=ia; i<=ib; ++i) {
+        sc_(m,n,k,j,i) = iw_(m,nc,k,j,i);
+      }
+      for (int i=ic; i<=id; ++i) {
+        sc_(m,n,k,j,i) = iw_(m,nc,k,j,i);
+      }
+    } else {
+      for (int i=ia; i<=ib; ++i) {
+        iw_(m,nc,k,j,i) = sc_(m,n,k,j,i);
+      }
+      for (int i=ic; i<=id; ++i) {
+        iw_(m,nc,k,j,i) = sc_(m,n,k,j,i);
+      }
+    }
   });
-  while (pbval_th->InitRecv(M1_NHALO_T) == TaskStatus::incomplete) {}
-  while (pbval_th->PackAndSendCC(thw, thw_c) == TaskStatus::incomplete) {}
-  while (pbval_th->RecvAndUnpackCC(thw, thw_c) == TaskStatus::incomplete) {}
-  while (pbval_th->ClearSend() == TaskStatus::incomplete) {}
-  while (pbval_th->ClearRecv() == TaskStatus::incomplete) {}
-  par_for("m1_impl_thunpack", DevExeSpace(), 0, nmb1, 0, M1_NHALO_T-1, 0, n3-1, 0, n2-1,
-          0, n1-1,
-  KOKKOS_LAMBDA(const int m, const int n, const int k, const int j, const int i) {
-    iw_(m,M1HaloCompT(n),k,j,i) = th_(m,n,k,j,i);
-  });
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::ImplicitHaloExchange
+//! \brief the common core: pack, exchange through the ordinary cell-centred boundary
+//! machinery on the PERSISTENT scratch array whose width matches `nq`, unpack.  The
+//! three widths (M1_NHALO_T, M1_NHALO_Q, 1) have one array and one boundary object each;
+//! they are used strictly sequentially, so they may share the MPI tag space.
+
+void RadiationM1::ImplicitHaloExchange(int nq, int c0) {
+  DvceArray5D<Real> *pa, *pc;
+  MeshBoundaryValuesCC *pb;
+  if (nq == M1_NHALO_T) {
+    pa = &thw; pc = &thw_c; pb = pbval_th;
+  } else if (nq == M1_NHALO_Q) {
+    pa = &thq; pc = &thq_c; pb = pbval_tq;
+  } else {
+    pa = &krw; pc = &krw_c; pb = pbval_kr;
+  }
+  ImplicitHaloCopy(*pa, nq, c0, true);
+  while (pb->InitRecv(nq) == TaskStatus::incomplete) {}
+  while (pb->PackAndSendCC(*pa, *pc) == TaskStatus::incomplete) {}
+  while (pb->RecvAndUnpackCC(*pa, *pc) == TaskStatus::incomplete) {}
+  while (pb->ClearSend() == TaskStatus::incomplete) {}
+  while (pb->ClearRecv() == TaskStatus::incomplete) {}
+  ImplicitHaloCopy(*pa, nq, c0, false);
 }
 
 //----------------------------------------------------------------------------------------
@@ -1552,27 +1646,7 @@ void RadiationM1::ImplicitTridiagSolve() {
 //! ghost value is multiplied by zero and never read in anger.
 
 void RadiationM1::ImplicitKrylovHalo(int comp) {
-  auto &indcs = pmy_pack->pmesh->mb_indcs;
-  int n1 = indcs.nx1 + 2*(indcs.ng);
-  int n2 = (indcs.nx2 > 1)? (indcs.nx2 + 2*(indcs.ng)) : 1;
-  int n3 = (indcs.nx3 > 1)? (indcs.nx3 + 2*(indcs.ng)) : 1;
-  int nmb1 = pmy_pack->nmb_thispack - 1;
-  auto iw_ = iw;
-  auto kr_ = krw;
-  const int nc = comp;
-  par_for("m1_impl_krpack", DevExeSpace(), 0, nmb1, 0, n3-1, 0, n2-1, 0, n1-1,
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    kr_(m,0,k,j,i) = iw_(m,nc,k,j,i);
-  });
-  while (pbval_kr->InitRecv(1) == TaskStatus::incomplete) {}
-  while (pbval_kr->PackAndSendCC(krw, krw_c) == TaskStatus::incomplete) {}
-  while (pbval_kr->RecvAndUnpackCC(krw, krw_c) == TaskStatus::incomplete) {}
-  while (pbval_kr->ClearSend() == TaskStatus::incomplete) {}
-  while (pbval_kr->ClearRecv() == TaskStatus::incomplete) {}
-  par_for("m1_impl_krunpack", DevExeSpace(), 0, nmb1, 0, n3-1, 0, n2-1, 0, n1-1,
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    iw_(m,nc,k,j,i) = kr_(m,0,k,j,i);
-  });
+  ImplicitHaloExchange(1, comp);
 }
 
 //----------------------------------------------------------------------------------------
@@ -2621,7 +2695,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   // Under transport = implicit the SIX-neighbour exchange of ImplicitTransverseHalo
   // carries all of that and seven quantities more, so the hand-rolled x1 halo is not run.
   if (trans) {
-    ImplicitTransverseHalo();
+    ImplicitTransverseHalo(M1_NHALO_T);
   } else {
     ImplicitX1Halo(true);
   }
@@ -2800,7 +2874,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     // the transport opacity).  Every face of the stack is then assembled by both of its
     // blocks from bit-identical numbers.
     if (trans) {
-      ImplicitTransverseHalo();
+      // ...and only the M1_NHALO_Q of them a pass can still move when the
+      // closure is frozen for the step (see M1HaloCompT).
+      ImplicitTransverseHalo(dofreeze ? M1_NHALO_Q : M1_NHALO_T);
       // (b1) the lagged transverse operator: the x2/x3 face fluxes of this iterate, their
       // diagonal contribution to the matrix and their lagged right-hand side.
       ImplicitTransverseTerms(it == 0);
@@ -3353,7 +3429,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     // the new iterate's E has to reach the ghost cells before the FACE update, or the
     // two blocks that share a face would build it from different states.
     if (trans) {
-      ImplicitTransverseHalo();
+      // E is the ONLY halo quantity the pass changed since the exchange
+      // above, so one component goes, not the whole list.
+      ImplicitTransverseHalo(1);
     } else {
       ImplicitX1Halo(true);
     }
@@ -3507,7 +3585,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     if (accel && !converged && (it + 1 < impl_maxit)) {
       ImplicitAccelApply(it);
       if (trans) {
-        ImplicitTransverseHalo();
+        // the acceleration rewrites the cell flux F1 as well as E
+        ImplicitTransverseHalo(M1_NHALO_T);
       } else {
         ImplicitX1Halo(true);
       }

@@ -91,6 +91,8 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   trans_on = false;
   trans_x3 = false;
   pbval_th = nullptr;
+  pbval_tq = nullptr;
+  halo_shell = false;
   // ---- milestone 3b phase C
   bicg_on = false;
   impl_lin_maxit = 200;
@@ -554,6 +556,7 @@ RadiationM1::~RadiationM1() {
   ImplicitReport();   // milestone 3a; a no-op in transport = explicit
   delete pbval_u;
   if (pbval_th != nullptr) {delete pbval_th;}
+  if (pbval_tq != nullptr) {delete pbval_tq;}
   if (pbval_kr != nullptr) {delete pbval_kr;}
 }
 

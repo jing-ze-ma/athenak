@@ -337,6 +337,14 @@ class RadiationM1 {
                                 // machinery
   DvceArray5D<Real> thw_c;      // its (unused) coarse buffer; SMR/AMR is a fatal
   MeshBoundaryValuesCC *pbval_th;  // the exchange object of thw
+  DvceArray5D<Real> thq;        // (m,M1_NHALO_Q,k,j,i) the NARROW transverse halo: the
+                                // components a Picard pass moves once the closure is
+                                // frozen (implicit_closure_lag = step)
+  DvceArray5D<Real> thq_c;      // its (unused) coarse buffer
+  MeshBoundaryValuesCC *pbval_tq;  // the exchange object of thq
+  bool halo_shell;              // the deep interior of the scratch halo arrays may be
+                                // skipped (same-level neighbours only, no cubed sphere,
+                                // no polar boundary)
 
   // ---- MILESTONE 3b phase C: implicit_solver = bicgstab.  All null under line_jacobi.
   bool bicg_on;                 // impl_solver == M1_ISOLV_BICGSTAB and trans_on
@@ -488,10 +496,21 @@ class RadiationM1 {
   void ImplicitX1Halo(bool eponly);
   //! gather the assembled rows onto the roots, run Thomas there, scatter back
   void ImplicitGatherSolve();
-  //! milestone 3b phase B: exchange the 13 lagged quantities the x2/x3 faces need with
+  //! milestone 3b phase B: exchange the LAGGED quantities the x2/x3 faces need with
   //! ALL six neighbours (periodic wrap and MPI included), through the module's ordinary
-  //! cell-centred boundary machinery on the scratch array thw
-  void ImplicitTransverseHalo();
+  //! cell-centred boundary machinery on the scratch array thw.  `nq` is how many of the
+  //! M1HaloCompT list go: M1_NHALO_T (all of them), M1_NHALO_Q (the components a Picard
+  //! pass can move once the closure is frozen) or 1 (E of the new iterate alone)
+  void ImplicitTransverseHalo(int nq);
+  //! the common core of the two halo exchanges: pack `nq` components into the scratch
+  //! array that matches that width, run the ordinary CC exchange, unpack.  `c0 >= 0`
+  //! carries ONE named component of iw (the Krylov vector) instead of the M1HaloCompT
+  //! list
+  void ImplicitHaloExchange(int nq, int c0);
+  //! copy the halo components between iw and the scratch array `sc` over the HALO SHELL
+  //! (`topack` picks the direction); see the definition for why the deep interior is
+  //! neither sent nor received
+  void ImplicitHaloCopy(DvceArray5D<Real> &sc, int nq, int c0, bool topack);
   //! milestone 3b phase B: the lagged transverse (x2/x3) divergence of one Picard pass,
   //! split into its diagonal part (M1_IW_TDIA) and its right-hand side (M1_IW_TRHS)
   void ImplicitTransverseTerms(bool first);

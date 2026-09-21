@@ -1,0 +1,205 @@
+================================================================================
+MILESTONE 3h -- the cost of the halo exchanges inside the implicit M1 solve
+================================================================================
+Date:      2026-09-21, viper, serial CPU (one core), gcc/14, Release.
+Branch:    rt-integration.  Reference = HEAD 8d09252b, binaries copied aside as
+           athena_ref_box (-D PROBLEM=box_convection) and athena_ref_m1.
+Scripts:   h1.sh (bitwise gates), h1d.sh (the pulse subset), h2.sh (timings).
+Dumps:     every bin/ rst/ tab/ deleted after measuring (inode quota).
+NOT COMMITTED.
+
+--------------------------------------------------------------------------------
+1.  WHERE THE TIME WENT  (perf record -g on the HEAD binary, seeded Eddington
+    slab, runs_3g_newton_T/he_slab_m1_2d_V3edd.athinput problem/vpert=1.0e-3
+    time/tlim=10 rad_m1/implicit_gas_newton=true; 84 x 32 cells, ng = 2)
+--------------------------------------------------------------------------------
+  45.69 %  EOSCompositionModel::EvaluateAt
+   7.28 %  RadiationM1::ImplicitTransverseHalo()
+   6.17 %  RadiationM1::ImplicitOffDiagOp
+   4.80 %  RadiationM1::ImplicitKrylovHalo(int)
+   ...
+   0.23 %  MeshBoundaryValuesCC::PackAndSendCC
+   0.15 %  MeshBoundaryValuesCC::RecvAndUnpackCC
+
+The two halo functions were 12.1 % of the run.  The boundary machinery they
+call -- InitRecv, PackAndSendCC, RecvAndUnpackCC, ClearSend, ClearRecv, i.e.
+the buffer pack/unpack and the MPI-less copies -- was 0.4 % of the run TOGETHER.
+So essentially NONE of the 12.1 % was the exchange: it was the two par_for
+copies each function ran between iw and its scratch array, INLINED into the
+function (Kokkos::Serial), which is why they showed up as the functions
+themselves.  perf annotate confirms it: the hot instructions are `idivl` plus
+the index multiply-adds of the flattened RangePolicy (par_for unflattens the 1-D
+index with an integer division per index PER CELL), and a single `movsd` pair.
+
+Two wastes, both structural:
+  (a) both copies ran over the WHOLE MeshBlock, 88 x 36 = 3168 cells per
+      component, although a same-level exchange only ever READS the outermost
+      ng active cells and only ever WRITES the ghost zones -- 480 cells.
+      6.6x too much work here, and it is a surface/volume ratio, see sect. 4.
+  (b) ImplicitTransverseHalo always carried all M1_NHALO_T = 14 components,
+      three times per Picard pass, although at two of the three call sites only
+      ONE component had moved since the previous exchange.
+
+--------------------------------------------------------------------------------
+2.  WHAT CHANGED  (no new user parameter; the default path itself gets faster)
+--------------------------------------------------------------------------------
+src/rad_m1/rad_m1_implicit.hpp
+  * M1HaloCompT reordered so that a PREFIX of the list is a legal exchange:
+      0..3  EP, G0, F1, KT        = M1_NHALO_Q, what a pass can still move when
+                                    the closure is frozen
+      4..10 WCHI, N1..N3, ADV, A2, A3
+      11..13 V1, V2, V3           (never move inside a step at all)
+    Reordering changes which SLOT of the scratch array holds what; the values
+    exchanged per component are untouched.
+
+src/rad_m1/rad_m1_implicit.cpp
+  * ImplicitHaloCopy(sc, nq, c0, topack): the single copy routine.
+    - SHELL ONLY.  The box [is+ng,ie-ng] x [js+ng,je-ng] x [ks+ng,ke-ng] is
+      neither read by a send nor written by a receive (buffs_cc.cpp, isame:
+      a same-level buffer reaches ng cells in from the active boundary), so it
+      is skipped in both directions: on the way in nothing reads it, on the way
+      back it would be a copy of what the pack just put there.  A degenerate
+      direction counts as interior everywhere; a direction with nx <= 2 ng
+      makes the interior box empty and the copy full.
+      Guarded by the new member `halo_shell`, false under SMR/AMR (already a
+      fatal for implicit transport), the cubed sphere and the polar boundary,
+      whose exchanges read deeper -- those fall back to the full copy.
+    - The loop carries (m,n,k,j) and runs the contiguous i direction INSIDE, so
+      the flattened-index integer divisions are paid once per ROW, not per cell.
+  * ImplicitHaloExchange(nq, c0): pack / InitRecv / PackAndSend / RecvAndUnpack /
+    ClearSend / ClearRecv / unpack, on the PERSISTENT array whose width matches
+    nq.  Three widths, one array and one MeshBoundaryValuesCC each (thw 14,
+    the new thq 4, krw 1).  A prefix subview of a LayoutRight array is not a
+    LayoutRight array, and the exchange takes its variable count from the
+    array's second extent, hence three arrays rather than one.  They are used
+    strictly sequentially, as thw and krw already were, so sharing the MPI tag
+    space is unchanged.  krw/pbval_kr are now allocated under every solver (they
+    were bicgstab-only), because the E-only exchange uses them.
+  * ImplicitTransverseHalo(nq) and ImplicitKrylovHalo(comp) are now thin
+    wrappers.  Call sites, per Picard pass:
+      pre-loop                          14  (unchanged)
+      after the lagged-closure kernel   14, or 4 when the closure is frozen
+                                            for the step (implicit_closure_lag
+                                            = step, pass > 0)
+      after the accept kernel            1  (E alone: the ONLY halo quantity the
+                                            pass changed since the exchange
+                                            above -- F1 is rebuilt AFTER it)
+      after ImplicitAccelApply          14  (it rewrites F1 as well as E;
+                                            implicit_accel = none by default)
+    Why 4 is enough with closure_lag = step: the pass re-derives ADV/A2/A3 from
+    a FROZEN chi, n and v with the same expressions, so they come out
+    bit-identical and their ghost layer is still the one the previous exchange
+    left; V1..V3 do not move inside a step; EP, G0, F1 always move and KT moves
+    under implicit_opac_update.  With closure_lag = pass the closure set still
+    goes every pass (the 14-wide exchange), and only the E-only saving applies.
+    No kernel writes iw in the ghost zones, so a ghost value stays valid until
+    the next exchange of that component.
+
+src/rad_m1/rad_m1.hpp, rad_m1.cpp: thq / thq_c / pbval_tq / halo_shell members,
+    the new declarations, the destructor.
+
+--------------------------------------------------------------------------------
+3.  GATES
+--------------------------------------------------------------------------------
+H1  BITWISE vs the HEAD reference binary.  Every output file of the run
+    (hst, bin, rst, tab, rt_profile.bin) compared with cmp; "OK" = every byte
+    of every file identical.  h1.sh / h1d.sh.
+
+      a_step  seeded Eddington slab, tlim=10, gas_newton=true,
+              implicit_closure_lag=step                     OK (10 files)
+      a_pass  the same with implicit_closure_lag=pass       OK (10 files)
+      b_lev   Levermore slab runs_3b8/he_slab_m1_2d.athinput vpert=1e-3
+              implicit_offdiag=operator implicit_closure_lag=step
+              implicit_trans_limit=lp tlim=3  (exercises F1 in the halo)
+                                                            OK (10 files)
+      c_col   1-D He column runs_3g_newton_T/he_box_m1_1d_impl.athinput
+              tlim=10                                       OK (8 files)
+      d_p1    thick multi-D pulse (runs_3b5/pulse_md.athinput, 64x64,
+              kappa_s=64000, implicit_cfl=1e4, tlim=1875, bicgstab,
+              offdiag=operator), ONE MeshBlock                OK (6 files)
+      d_p2    the same, 1 x 2 MeshBlocks (meshblock/nx2=32)   OK (6 files)
+      e_g1    the same + reflect x1 + implicit_partition=gather,
+              ONE MeshBlock                                   OK (6 files)
+      e_g4    the same, 2 x 2 MeshBlocks                      OK (6 files)
+
+    1 vs multi-block, as in runs_3b4 G4 (the split is NOT bitwise against the
+    single block there either -- different summation order in the line solve --
+    so the gate is that the number is UNCHANGED):
+      d_p1 vs d_p2   ref 5.825e-11   new 5.825e-11
+      e_g1 vs e_g4   ref 7.708e-11   new 7.708e-11
+    i.e. identical to the reference's own, digit for digit.
+
+    (MPI itself could not be tested: this build is serial.  The exchange path,
+    the buffers and the tag use are unchanged; only how much of the scratch
+    array is copied around it, and how many components are sent, changed.)
+
+H2  SPEED.  Seeded Eddington slab, tlim=40, serial, ONE RUN AT A TIME (h2.sh).
+
+      arm                              cpu time     zone-cycles/cpu_second
+      implicit_gas_newton=true  HEAD   2.3058e+01   2.8911e+04
+      implicit_gas_newton=true  new    1.6832e+01   3.9604e+04    +36.98 %
+      implicit_gas_newton=false HEAD   3.1656e+01   2.1059e+04
+      implicit_gas_newton=false new    2.5636e+01   2.6004e+04    +23.49 %
+
+    (the two tlim=40 arms are bitwise as well: m1slab.user.hst identical.)
+
+    perf report --no-children --stdio | head -25 of the AFTER binary
+    (same tlim=10 seeded slab, gas_newton=true; prof_new/after_perf25.txt):
+
+    52.14 %  EOSCompositionModel::EvaluateAt
+     7.04 %  RadiationM1::ImplicitOffDiagOp
+     4.57 %  M1POff
+     4.01 %  RadiationM1::ImplicitPrecond
+     3.29 %  EOSTable::Interpolate<false,true>
+     2.65 %  RadiationM1::ImplicitApplyOp
+     2.58 %  exp
+     1.55 %  RadiationM1::ImplicitTridiagSolve
+     1.14 %  par_for BiCGStab lambda #10
+     1.02 %  __log10_finite
+     1.01 %  par_for BiCGStab lambda #5
+     1.00 %  par_for BiCGStab lambda #7
+     0.99 %  EOSTable::HermitePatch
+     0.83 %  RosselandTable
+     0.59 %  RadiationM1::Opacity
+     0.45 %  Conduction::BuildRadWeights
+     ...
+     0.23 %  RadiationM1::ImplicitHaloCopy        <-- the whole halo cost
+     0.00 %  RadiationM1::ImplicitHaloExchange
+     0.26 %  MeshBoundaryValuesCC::PackAndSendCC
+     0.13 %  MeshBoundaryValuesCC::RecvAndUnpackCC
+
+    12.08 % -> 0.62 % of the run (the copies alone 12.08 % -> 0.23 %).  The
+    remaining halo cost IS the buffer pack/unpack of the boundary machinery,
+    which is irreducible without a protocol of our own.
+
+--------------------------------------------------------------------------------
+4.  HOW THIS SCALES
+--------------------------------------------------------------------------------
+The part that was removed is a VOLUME cost (copy the whole block) replaced by a
+SURFACE one, so the win grows with block size, while what is left (the buffer
+pack/unpack) was already a surface cost.  Per component and MeshBlock, cells
+copied before / after:
+
+    block (2-D, ng=2)      full      shell     ratio
+    84 x 32 (this test)    3168       480       6.6
+    64 x 64                4624       544       8.5
+    128 x 128             17424      1056      16.5
+    3-D 64^3             314432     51200       6.1
+    3-D 128^3           2097152    204800      10.2
+
+On top of that the component count of the transverse exchange per Picard pass
+went 14 + 14 (+14 under accel) -> 14-or-4 + 1, i.e. 28 -> 5 component-exchanges
+per pass in the default (closure_lag = step) configuration, which is a saving in
+the buffer traffic and the MPI message size too, not only in the copies.  On a
+production-size block the halo share of the implicit solve should therefore fall
+further than the 20x measured here, not less.
+
+--------------------------------------------------------------------------------
+5.  STYLE
+--------------------------------------------------------------------------------
+cpplint (CPPLINT.cfg, 90 columns) on the four touched files:
+    HEAD  93 errors (9 build/include_subdir, 84 whitespace/newline)
+    new   94 errors (9 build/include_subdir, 85 whitespace/newline)
+The one added whitespace/newline is `if (pbval_tq != nullptr) {delete pbval_tq;}`
+in the destructor, written exactly like the two lines above it.  No tabs, no
+trailing whitespace, no `}}` lines, no line over 90 columns, src/ files 644.

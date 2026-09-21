@@ -355,25 +355,34 @@ constexpr Real M1_BCG_EPS = 1.0e-300;
 // face mean of the lagged x1 reduced flux and must build it from numbers both blocks of
 // a shared face agree on; it is not read anywhere else, so carrying it changes no
 // arithmetic under implicit_trans_limit = none.
+//
+// The list is ordered so that a PREFIX of it is a legal exchange on its own.  The first
+// M1_NHALO_Q entries are the only ones a Picard pass can move once the closure is frozen
+// (implicit_closure_lag = step): E and T' of the iterate feed G0, the pass re-derives the
+// cell flux F1, and KT moves only under implicit_opac_update.  Everything after them --
+// the closure (chi, n), the advective coefficients built from it and the gas velocities
+// -- is recomputed by the pass from FROZEN inputs with the same expressions, so it comes
+// out bit-identical and its ghost layer is still the one the previous exchange left.
+// The last three (the velocities) never move inside a step at all.
 constexpr int M1_NHALO_T = 14;
+constexpr int M1_NHALO_Q = 4;
 KOKKOS_INLINE_FUNCTION
 int M1HaloCompT(const int n) {
   switch (n) {
     case 0: return M1_IW_EP;
-    case 1: return M1_IW_WCHI;
-    case 2: return M1_IW_N1;
-    case 3: return M1_IW_N2;
-    case 4: return M1_IW_N3;
-    case 5: return M1_IW_KT;
-    case 6: return M1_IW_V1;
-    case 7: return M1_IW_V2;
-    case 8: return M1_IW_V3;
-    case 9: return M1_IW_ADV;
-    case 10: return M1_IW_A2;
-    case 11: return M1_IW_A3;
-    case 12: return M1_IW_G0;
-    case 13: return M1_IW_F1;
-    default: return M1_IW_EP;
+    case 1: return M1_IW_G0;
+    case 2: return M1_IW_F1;
+    case 3: return M1_IW_KT;
+    case 4: return M1_IW_WCHI;
+    case 5: return M1_IW_N1;
+    case 6: return M1_IW_N2;
+    case 7: return M1_IW_N3;
+    case 8: return M1_IW_ADV;
+    case 9: return M1_IW_A2;
+    case 10: return M1_IW_A3;
+    case 11: return M1_IW_V1;
+    case 12: return M1_IW_V2;
+    default: return M1_IW_V3;
   }
 }
 
