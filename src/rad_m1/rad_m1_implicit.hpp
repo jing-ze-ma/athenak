@@ -73,6 +73,21 @@ constexpr int M1_OD_NONE     = 2;  // drop them: P is taken DIAGONAL in the grid
                                    // field is isotropic (chi = 1/3), wrong for an oblique
                                    // beam; the size of that error is gate G-oblique.
 
+// <rad_m1>/implicit_trans_limit: the REALIZABILITY limiter of the transverse (x2/x3)
+// face fluxes.  The face-eliminated flux F_f' = theta_f [...] has no free-streaming
+// bound: in steady state it is the unlimited diffusive flux F = -c grad P/(rho kappa),
+// which is super-luminal wherever rho kappa is tiny (the optically thin top of the 2-D
+// He slab, where |F_2|/(c E) saturates at the post-solve clip of 1).
+constexpr int M1_TLIM_NONE = 0;  // no limiter; the arithmetic of phase D, bit for bit.
+constexpr int M1_TLIM_LP   = 1;  // add a lagged "limiter opacity" klim_f = |G_f|/(phi_f
+                                 // E_f) to the face transport opacity, with G_f the face
+                                 // pressure divergence the flux kernel already forms and
+                                 // phi_f = fmax sqrt(max(1 - f1_f^2, 0.01)).  In steady
+                                 // state |F_f| = c|G|/(rho kappa + |G|/(phi E)) <= c phi
+                                 // E, and where R = |G|/(rho kappa E) << 1 the change is
+                                 // O(R).  theta_f only SHRINKS, so the 7-point M-matrix
+                                 // property of phase B is untouched.
+
 // x1 boundary conditions of the implicit solve, in FACE-FLUX form (design sect. 3).
 // The face value used is the TOTAL normal flux F at the boundary face.
 constexpr int M1_IBC_MARSHAK  = 0;   // free surface, F_f = +- c*marshak_q*E_boundary
@@ -267,7 +282,11 @@ constexpr Real M1_BCG_EPS = 1.0e-300;
 // the x2/x3 face fluxes, the lagged off-diagonal Eddington terms and the x1 assembly read
 // at a NEIGHBOURING cell is in this list, so the two blocks that share a face build it
 // from bit-identical numbers.
-constexpr int M1_NHALO_T = 13;
+// M1_IW_F1 is in the list ONLY for the transverse realizability limiter, which needs the
+// face mean of the lagged x1 reduced flux and must build it from numbers both blocks of
+// a shared face agree on; it is not read anywhere else, so carrying it changes no
+// arithmetic under implicit_trans_limit = none.
+constexpr int M1_NHALO_T = 14;
 KOKKOS_INLINE_FUNCTION
 int M1HaloCompT(const int n) {
   switch (n) {
@@ -284,6 +303,7 @@ int M1HaloCompT(const int n) {
     case 10: return M1_IW_A2;
     case 11: return M1_IW_A3;
     case 12: return M1_IW_G0;
+    case 13: return M1_IW_F1;
     default: return M1_IW_EP;
   }
 }

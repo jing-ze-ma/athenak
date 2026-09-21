@@ -1,0 +1,213 @@
+MILESTONE 3b PHASE F -- WHERE the seeded 2-D He slab grows, and why.  Serial CPU,
+build_cpu_box (-D PROBLEM=box_convection), 2026-09-21, branch rt-integration (9ac1ad7f
+plus one default-off pgen switch, see SOURCE CHANGES).  Nothing committed, nothing
+submitted to the cluster.
+
+Inputs:   tests_m1/runs_3b7/he_slab_hydro_2d.athinput  (the runs_3b5 slab with the WHOLE
+            <rad_m1> block, <output5> and the Conduction object removed, wb_arad_force
+            added, hst every 0.5 s; hydro-only arms)
+          tests_m1/runs_3b7/he_slab_m1_2d.athinput     (= runs_3b5, with
+            problem/m1_seed_consistent named so the gate can override it)
+Analysis: tests_m1/runs_3b7/h1.py (the linear criterion), an.py, prof.py, mkjson.py
+JSON:     tests_m1/plots/impl3b7_growth.json
+Dumps were deleted as soon as each case was measured (viper inode quota).
+
+
+================================================================================
+THE HEADLINE
+================================================================================
+The 0.16-0.19 /s is NOT a growth rate of a mode -- it is the slope of a ONE-OFF RAMP
+that saturates by t ~ 5 s in every arm (KE_1 in s_base: 1.4e26 at 1 s, 2.7e28 at 5 s,
+4.0e28 at 10 s, 6.9e28 at 200 s; d ln KE/dt over 20-200 s is 0.0011 /s).  What the
+question really is, is WHY the ramp stops at KE ~ 1e29 (v_rms ~ 7 v_MLT, max|v| 740
+v_MLT) instead of at the hydrostatic noise floor.
+
+THE ANSWER IS H3, and it is not close:
+  * 99.0-99.5 % of the horizontally averaged v^2 of the seeded M1 slab sits at
+    tau < 1, and the peak is at tau = 0.004-0.08, i.e. in the four or five optically
+    THINNEST cells -- NOT in the seed window (tau 5-50) and NOT in the layer H1 makes
+    unstable (tau 14-45).
+  * Cutting the box at tau = 1 (A5) removes it: KE_2 falls by 7.6 decades, F1top/Fin
+    goes from 0.394 to 0.99970, max|v| from 740 to 14 v_MLT, and the positivity fallback
+    from 1388 of 1393 steps to ZERO of 1240.
+  * Hydro alone with the SAME frozen reference acceleration and the SAME seed (A1)
+    reaches max|v| = 0.21 v_MLT in 200 s.  H1 and H2 are dead as explanations of the
+    0.16 /s.
+
+
+================================================================================
+THE ARMS
+================================================================================
+200 s (0.42 turnover) each, 84 x 32, one MeshBlock, serial.  v_MLT = 1.86e4 cm/s, the
+convective rate v_MLT/H_p = 2.1e-3 /s.  "early" = d ln KE/dt fitted over 1 < t < 20 s
+(the ramp; the number phase E quotes), "late" = the same over 20 < t < 200 s.  The
+depth column is where the horizontally averaged v1^2 + v2^2 peaks, in tau.
+
+  arm            what it is                     early g1 / g2   late g1 / g2
+  ---------------------------------------------------------------------------------
+  A0 s_base      M1, seeded (the reference)      0.181  0.157    0.0011  0.0007
+  A1_hydro       HYDRO ONLY, Phi_eff, seeded     0.111 -0.083   -0.0044  0.0014
+  A1_static      HYDRO ONLY, Phi_eff, NO seed    0.181   --      0.0026   --
+  A2_1d          A1 with nx2 = 1 (uniform seed)  0.040   --     -0.0001   --
+  A3_lo          A1, vpert x 0.1                 0.129 -0.083   -0.0017  0.0015
+  A3_hi          A1, vpert x 10                  0.110 -0.083   -0.0048  0.0010
+  A3_cfl         A1, hydro CFL 0.3 -> 0.15       0.113 -0.081   -0.0044  0.0014
+  A4_nophi       A1 with wb_phi_eff = false      0.041 -0.075    0.0021  0.0310
+                 (a_rad as an ordinary split force)
+  A4_norad       A1 with NO a_rad at all         0.181 -0.053   -0.0069  0.0154
+  A5_cut         M1, seeded, box CUT at tau = 1  0.017 -0.021   -0.0027 -0.0100
+  A6_seedcons    M1, seeded, E = a T^4 of the    0.139  0.111  (tracks A0; see below)
+                 perturbed gas in the seed cells
+
+  arm          KE_1(200 s)  KE_2(200 s)  max|v|/v_MLT  max|v|/c_s  depth of the peak
+  ---------------------------------------------------------------------------------
+  A0 s_base      6.86e28      1.01e29        740         2.58      tau 0.004 - 0.08
+  A1_hydro       2.30e24      1.68e24       0.21       0.0012      tau 8.6 - 17
+  A1_static      2.68e22      0.0            --           --       --
+  A2_1d          1.71e23      0.0            --           --       --
+  A3_lo          5.10e22      1.70e22        --           --       --
+  A3_hi          2.07e26      1.54e26        --           --       --
+  A3_cfl         2.30e24      1.68e24       0.21       0.0012      tau 8.6 - 17
+  A4_nophi       3.24e28      3.71e26       14.5        0.063      the BOTTOM wall
+  A4_norad       9.09e30      1.07e27        153        0.919      tau 9.5 - 50
+  A5_cut         3.42e27      2.35e21       14.0        0.100      the new TOP wall
+  A6_seedcons    (see below)  (see below)    --           --       tau < 0.1
+
+Extra M1 numbers.  A0: F1top/Fin 0.394, positivity fallbacks 1388/1393, Picard 12.75
+mean with 9 NON-CONVERGED steps.  A5: F1top/Fin 0.99970, F1bot/Fin 0.99987, positivity
+fallbacks 0 of 1240, Picard 4.18 mean / 7 max, NON-CONVERGED 0, min E from the solve
++1.620e5 (never negative), no dt collapse.  A5's residual KE_1 is a STEADY boundary
+layer in the three cells against the new Marshak wall (44-62 % of the column v^2 there
+at every time, flat from t = 25 s on), not a growing mode.
+
+WHAT EACH ARM SETTLES
+  * A1 vs A0: the frozen reference acceleration carried in Phi_eff, given the production
+    entropy seed in 2-D, produces max|v| = 0.21 v_MLT over 200 s.  Not the driver.
+  * A1_static: the same 0.181 /s "rate" with NO SEED AT ALL, off a KE that is 6 decades
+    below A1's and 6.4 below A0's.  This is the proof that the fitted 1-20 s slope
+    measures the start-up ramp of a column released from rest, not an instability.
+  * A2 (1-D): 0.040 /s, saturating at 1.7e23.  Nothing in 1-D.
+  * A3: the rate is amplitude-independent (0.129 / 0.110 / 0.111 over two decades of
+    vpert) and KE scales as vpert^2 to within 2.5x, i.e. the ramp is LINEAR; halving the
+    hydro CFL changes KE_1(200 s) in the 4th digit (2.300e24 both).  Not numerical
+    (time-step) in the hydro.
+  * A4_nophi: the "unfixed" split force is 1.4e4 times worse in KE_1 than A1 and its
+    max|v| = 14.5 v_MLT reproduces tests_wbphi arm B (10.6 v_MLT) on a 2-D mesh; the
+    velocity sits at the BOTTOM wall.  A4_norad (no radiative support at all) reaches
+    153 v_MLT and 0.92 c_s.  Both are controls: wb_phi_eff is doing its job.
+  * A5: the decisive arm.  Same physics, same seed, same solver, only 65 cells instead
+    of 84 -- the top face moved from tau = 0.01 down to tau = 1.07 (x1max
+    -9.1007735e6, dz unchanged).  Everything that phase D/E called unphysical is gone.
+  * A6: making the seed radiatively consistent changes NOTHING (K1/K2 at t = 1, 5, 10,
+    20, 30 s are 4.3e26/1.4e27, 2.7e28/7.2e28, 5.1e28/8.4e28, 4.2e28/9.6e28,
+    4.8e28/1.9e29 against A0's 1.4e26/6.5e26, 2.7e28/4.8e28, 4.0e28/8.0e28,
+    6.0e28/1.5e29, 6.3e28/1.6e29 -- the same curve to within the arms' own scatter).
+    H4 is dead.
+
+
+================================================================================
+H1 -- THE LINEAR ESTIMATE, AND WHERE IT WOULD ACT
+================================================================================
+From bench/m1_stage2/ic/ic_m1_V2.txt, with nabla = d ln T/d ln P, H_p = P/(rho g) and
+sigma = sqrt(-N^2) = sqrt((g/H_p)(nabla_ad - nabla)) (the large-k limit, the fastest
+rate any ideal buoyant mode can have):
+
+  GAS-ONLY under g_eff = g - a_rad (what the split formulation actually presents to
+  the hydro), nabla_ad = 0.4:
+
+     z [cm]      tau    beta   g/g_eff  nabla_gas   sigma_gas [1/s]
+    -1.14e8     44.5    0.399    3.43     0.404        0.0021
+    -1.06e8     38.9    0.413    3.71     0.478        0.0088
+    -9.80e7     33.4    0.431    3.89     0.549        0.0118
+    -9.00e7     28.0    0.456    3.92     0.610        0.0142
+    -8.20e7     22.8    0.485    3.61     0.611        0.0159
+    -7.67e7     19.6    0.505    3.30     0.588        0.0163  <- maximum
+    -7.41e7     18.1    0.517    3.05     0.548        0.0161
+    -6.61e7     13.9    0.548    2.54     0.465        0.0133
+    -5.82e7     10.5    0.574    2.16     0.393        0    (stable)
+
+  H1 IS REAL: beta*g/g_eff reaches 1.8 and the gas-only stratification IS strongly
+  Schwarzschild-unstable over tau = 14-45, with nabla_gas up to 0.61 against 0.40.
+  But its MAXIMUM growth rate is 0.0163 /s -- TEN TIMES BELOW the 0.16-0.19 /s in
+  question, and only 8x the true convective rate.  To reach 0.16 /s one would need
+  nabla - nabla_ad ~ 40, which no stratification has.
+
+  THE TRUE (mixture) CRITERION, nabla_tot against the Chandrasekhar
+  nabla_ad,mix = (Gamma_3-1)/Gamma_1 under the full g:
+
+     tau        beta   nabla_tot  nabla_ad,mix  sigma_mix [1/s]
+     62         0.381    0.259       0.255        0.0041
+     39         0.413    0.311       0.256        0.0176
+     18         0.517    0.348       0.261        0.0271  <- maximum
+     10.5       0.574    0.316       0.264        0.0235
+     5.6        0.610    0.278       0.267        0.0117
+     3.9        0.618    0.263       0.268        0    (stable)
+
+  i.e. the FeCZ (tau 4-64) is MILDLY unstable as it must be, at up to 0.027 /s, and the
+  gas-only split version is a factor ~2 LESS unstable in rate but over a similar band.
+
+WHERE THE MEASURED GROWTH IS, next to that.  A1_hydro -- the only arm in which H1 is
+the only mechanism present -- does put its velocity exactly in the H1 band: the
+horizontally averaged v_rms peaks at tau = 8.6-17 at every dump (2.3e3 cm/s at t = 25,
+1.5e3 at 100, 1.8e3 at 200), and only 11-13 % of the column v^2 is above tau = 1.  The
+seeded M1 slab does the OPPOSITE: 99 % above tau = 1, peak at tau = 0.004-0.08, nothing
+at all in the H1 band.  The two are not the same phenomenon.
+
+
+================================================================================
+VERDICT
+================================================================================
+H3.  The 0.16-0.19 /s ramp and the 1e29 plateau of the seeded 2-D He slab are made in
+the OPTICALLY THIN TOP (tau < 0.1), by the multi-D implicit transport there, and by
+nothing else on the list.  The mechanism is the one phase E already named as suspect
+(1): the face-eliminated CENTRAL transverse flux has no HLL dissipation, and at
+c^2 dt/dx ~ c x 7e3 a per-mille horizontal asymmetry in E -- which the seed's own
+acoustic adjustment delivers to the surface within a sound crossing, ~5 s, exactly the
+ramp time -- becomes a super-luminal transverse face flux; the positivity fallback then
+fires on 1388 of 1393 steps, i.e. after its first pass nearly every step runs in the
+22 %-error `none` mode.  Move the top face to tau = 1 and every symptom disappears at
+once (KE_2 -7.6 decades, F1top/Fin 0.394 -> 0.9997, fallbacks 1388 -> 0, Picard 12.75
+-> 4.18, NON-CONVERGED 9 -> 0).
+
+H1 is REAL BUT NOT THE DRIVER, and this still matters for the formulation.  A frozen
+reference acceleration is not a neutral bookkeeping device: presenting the hydro with
+g_eff = g - a_rad_ref and a GAS-ONLY equation of state makes the stratification
+Schwarzschild-unstable over tau 14-45 at up to 0.0163 /s, against a true mixture
+instability of 0.027 /s over tau 4-64 -- the split formulation gets the sign right and
+the layer roughly right, but it is a DIFFERENT unstable layer with a DIFFERENT rate,
+and it is only the residual force plus the thermal coupling that can restore the
+mixture's buoyancy.  At the level this 200 s experiment can see (A1 saturates at 0.21
+v_MLT, 25 e-foldings short of anything), the frozen reference is harmless; over a
+turnover time it is not obviously so, and a longer A1 (5-10 turnovers, hydro only) is
+the cheap way to find out -- it costs 20 s of CPU per 200 s of model.
+
+H2 is REFUTED as a driver: A1 and A3_cfl are identical to four digits, the ramp is
+amplitude-linear, and the well-balanced effective potential is measurably BETTER than
+the alternatives (A1 0.21 v_MLT against A4_nophi 14.5 and A4_norad 153).
+H4 is REFUTED: A6 tracks A0.
+
+WHAT TO TEST NEXT (in this order)
+ 1. The asymptotic-preserving / HLL-blended TRANSVERSE face flux for the implicit
+    operator -- already the phase-E "next build".  It now has a gate at each end: T10 at
+    tau_lambda = 1e2 for correctness, and A5 vs A0 here for the cure (the fix must make
+    the FULL 84-cell slab behave like the 65-cell one).
+ 2. A positivity-preserving 9-/19-point operator, so the fallback to `none` stops being
+    the normal mode of the thin top.
+ 3. Independently of 1-2: a longer HYDRO-ONLY A1 (5-10 turnovers) to measure what the
+    frozen a_rad_ref actually does to the stratification on a convective timescale, and
+    then, if it does anything, the two candidate cures -- refreshing a_rad_ref every N
+    steps from the horizontal mean of kappa_R F/c, or dropping the reference and making
+    the well-balanced x1 scheme aware of the instantaneous radiative force.
+ 4. NOT a priority: the seed.  It is exonerated.
+
+
+================================================================================
+SOURCE CHANGES
+================================================================================
+src/pgen/box_convection.cpp   ONE new option, <problem>/m1_seed_consistent, default
+    FALSE.  When true, the M1 initial E in the seeded cells is multiplied by efac^4
+    (efac being the same entropy-seed factor the gas internal energy is scaled by), so
+    that E = a T^4 of the PERTURBED gas in the T ~ e/rho sense.  Default-off inertness:
+    the seeded slab rerun on the new binary reproduces runs_3b6/s_base's first seven
+    history lines of BOTH m1slab.hydro.hst and m1slab.user.hst byte for byte.
+No other file in src/ was touched.  The design notes were not touched.

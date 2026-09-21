@@ -109,6 +109,8 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   impl_crelax = 1.0;
   impl_crelax_thin = false;
   impl_clag_step = false;
+  impl_tlim = M1_TLIM_NONE;
+  impl_tfmax = 1.0;
   // ---- end of the 3a hook
   cfl_rad = pin->GetOrAddReal("rad_m1","cfl_rad",0.4);
   e_floor = pin->GetOrAddReal("rad_m1","e_floor",(FLT_MIN));
@@ -267,6 +269,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   dbg_gas_force = pin->GetOrAddBoolean("rad_m1","dbg_gas_force",true);
   dbg_gas_heat = pin->GetOrAddBoolean("rad_m1","dbg_gas_heat",true);
   dbg_gas_force_trans = pin->GetOrAddBoolean("rad_m1","dbg_gas_force_trans",true);
+  dbg_trans_memory = pin->GetOrAddReal("rad_m1","dbg_trans_memory",1.0);
   if ((opac_freeze || !dbg_gas_force || !dbg_gas_heat || !dbg_gas_force_trans) &&
       global_variable::my_rank == 0) {
     std::cout << "### WARNING: <rad_m1> DEBUG switches are active: opac_freeze="

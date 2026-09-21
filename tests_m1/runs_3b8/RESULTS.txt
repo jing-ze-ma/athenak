@@ -1,0 +1,203 @@
+MILESTONE 3b PHASE G -- the TRANSVERSE REALIZABILITY LIMITER of the implicit M1 solve.
+Serial CPU, 2026-09-21, branch rt-integration (3b909d6c + the change below).  Nothing
+committed, nothing submitted to the cluster.  Dumps deleted after measurement (inode
+quota); hst + log kept.
+
+
+================================================================================
+WHAT WAS BUILT
+================================================================================
+Two new <rad_m1> parameters, both inert at their defaults:
+
+  implicit_trans_limit = none | lp      (default none)
+  implicit_trans_fmax  = <Real>         (default 1.0)
+
+Under `lp` every TRANSVERSE (x2/x3) face of the face-eliminated implicit transport gets
+a lagged "limiter opacity"
+
+  klim_f  = |G_f| / (phi_f E_f),     G_f = gr_f + off_f  (the face pressure divergence
+                                     the flux kernel already forms, lagged iterate)
+  E_f     = (E_L + E_R)/2 of the lagged iterate, floored
+  phi_f   = fmax * sqrt(max(1 - f1_f^2, 0.01)),  f1_f = face mean of the lagged cell
+                                     F1/(c E), clipped to [-1,1]
+  theta_f = 1/(1 + c dt (kt_f + klim_f))
+
+so that in steady state |F_f| = c|G_f|/(kt_f + |G_f|/(phi_f E_f)) <= c phi_f E_f, while
+where R = |G_f|/(kt_f E_f) << 1 (every optically thick face) the change is O(R).  It is
+a Levermore-Pomraning limiter written as an opacity, so that it enters the ALREADY
+linear face elimination.  klim only SHRINKS theta, so the 7-point M-matrix property is
+preserved.
+
+theta is computed ONCE per evaluation into the new face arrays thx2/thx3
+(RadiationM1::ImplicitTransTheta) and READ by: the x2/x3 face-flux kernels, the
+cell-terms kernel (TDIA, CJM/CJP/CKM/CKP), ImplicitOffDiagOp (hence the BiCGStab
+operator) and the post-solve reconstruction -- they cannot drift apart.  klim follows
+implicit_closure_lag: frozen at the entry state for the whole step under `step`,
+recomputed each Picard pass under `pass`.
+
+FILES TOUCHED (src/)
+  src/rad_m1/rad_m1.hpp            impl_tlim, impl_tfmax, thx2/thx3, klx2/klx3,
+                                   ImplicitTransTheta declaration
+  src/rad_m1/rad_m1.cpp            the two defaults in the constructor
+  src/rad_m1/rad_m1_implicit.hpp   M1_TLIM_NONE / M1_TLIM_LP, M1_NHALO_T 13 -> 14 with
+                                   M1_IW_F1 as halo component 13 (so that both blocks of
+                                   a shared face build f1_f from identical numbers; it
+                                   is read by nothing else)
+  src/rad_m1/rad_m1_implicit.cpp   parameter parsing + validation, allocation (only when
+                                   trans_on and the limiter is on), the startup print,
+                                   ImplicitTransTheta (new), and the theta reads in
+                                   ImplicitTransverseTerms and ImplicitOffDiagOp
+  docs/dev/rad_m1_implicit_design.md   new sect. 15
+Under implicit_trans_limit = none the OLD theta expression is taken, term for term
+(if/else), and klim is not formed at all.
+src/pgen/box_convection.cpp was NOT touched (its uncommitted change was left alone).
+cpplint (--filter=-build/include_subdir) reports no error on any line of the new code.
+
+RUNS
+  script  tests_m1/runs_3b8/run_3b8.sh          (slab, build_cpu_box)
+          tests_m1/runs_3b8/run_t10_3b8.sh      (T10,  build_cpu_m1)
+  inputs  tests_m1/runs_3b8/he_slab_m1_2d.athinput   = runs_3b7's, plus the two new
+          tests_m1/runs_3b8/rad_m1_radwave.athinput  = inputs/tests', plus the two new
+          (a command-line override only works for a parameter the input file names)
+  All slab arms: 84 x 32, one MeshBlock, serial, under `timeout 1200`,
+  rad_m1/implicit_offdiag=operator rad_m1/implicit_closure_lag=step.
+
+
+================================================================================
+G-a  DEFAULT-OFF INERTNESS  --  PASS
+================================================================================
+Seeded slab (problem/vpert=1.0e-3), time/tlim=3, pre-change binary vs new binary,
+implicit_trans_limit not named anywhere:
+
+  cmp Ga_pre/m1slab.hydro.hst Ga_new/m1slab.hydro.hst   ->  BYTE IDENTICAL
+  cmp Ga_pre/m1slab.user.hst  Ga_new/m1slab.user.hst    ->  BYTE IDENTICAL
+
+and the two logs agree in every solver statistic (breakdowns 2, global reductions 21216,
+positivity fallbacks 14, min E -5.957282e+06).
+
+
+================================================================================
+G-b  THE LIMITER IS HARMLESS WHERE IT SHOULD BE
+================================================================================
+(i) STATIC slab (problem/vpert=0.0, tlim=20), limiter off vs limiter on (fmax = 1):
+    max relative difference 0.000e+00 in BOTH m1slab.hydro.hst and m1slab.user.hst --
+    bitwise identical, not merely within 1e-12.  That is the expected answer and not a
+    trivial one: with no horizontal structure G_f = 0 exactly, hence klim = 0 and theta
+    is unchanged.  Solver statistics identical as well (0 positivity fallbacks, 0
+    breakdowns, min E +1.649428e+05 in both).
+
+(ii) T10, the radiation-modified acoustic wave (build_cpu_m1,
+     tests_m1/runs_3b8/run_t10_3b8.sh; the runs_3b6 recipe, 2 periods,
+     background beta = 0.5, Gamma_1 = 1.425925926, c_s = 1.68874268373):
+
+  arm                    dir      c_phase     c/c_s-1    gamma[1/t]   decay/period
+  ------------------------------------------------------------------------------
+  a_x1_off (reference)   x1     1.6884023   -2.02e-04   -1.1240e-01    -6.66e-02
+  c_x2_off               x2     1.6884025   -2.01e-04   -1.1240e-01    -6.66e-02
+  c_x2_on   (limiter)    x2     1.6884023   -2.02e-04   -1.1240e-01    -6.66e-02
+  e_xy_off               xy     1.6881329   -3.61e-04   -2.2171e-01    -9.28e-02
+  e_xy_on   (limiter)    xy     1.6881329   -3.61e-04   -2.2171e-01    -9.28e-02
+
+  peer test against the x1 column path:
+    c_x2_off vs a_x1_off   dc/c = 1.20e-07   dgamma/gamma = 1.89e-05
+    c_x2_on  vs a_x1_off   dc/c = 0.00e+00   dgamma/gamma = 0.00e+00
+
+  PASS T10 radwave: 5 arms, |c/c_s-1| <= 1.0e-02, growth <= 1.0e-03 per period, peers
+  within 1.0e-04.  The limiter does not move the 45-degree arm in any printed digit and
+  moves the x2 arm only in the 7th (onto the x1 answer): in a smooth, optically thick
+  wave R = |G|/(kt E) is tiny and klim is a negligible addition to kt, exactly as
+  designed.
+
+================================================================================
+G-c  THE CURE  --  PARTIAL, AND fmax = 0.5 IS THE BEST OF THE THREE
+================================================================================
+Seeded slab (vpert=1.0e-3), tlim=30, output5/dt=2 output2/dt=1000.  KE_1/KE_2 are
+hydro.hst cols 8,9; F = F1top/Fin = user.hst col 3 / 2.475202e15.
+
+  arm         limiter          KE_1(30s)  KE_2(30s)   F(1s)   F(10s)  F(30s)  dt(30s)
+  ----------------------------------------------------------------------------------
+  Gc_off      none (reference)  6.08e28    1.72e29    0.070   0.368   0.662   3.3e-02
+  Gc_f1       lp, fmax=1.0      6.56e27    2.79e27    0.821   0.949   0.928   1.61e-01
+  Gc_f05      lp, fmax=0.5      3.30e27    6.82e26    1.002   1.001   0.946   1.61e-01
+  Gc_f1_pass  lp, fmax=1.0,     (TIMED OUT at t = 9.0 s of 30 under timeout 1200;
+              closure_lag=pass   at t = 5 s: KE 9.8e27 / 2.1e27, F 0.961, dt 4.2e-02)
+
+  full KE table (KE_1 / KE_2)
+    t [s]      Gc_off               Gc_f1                Gc_f05
+      1     1.42e26 / 6.51e26    4.91e24 / 4.30e24    9.05e23 / 9.73e23
+      5     2.71e28 / 4.84e28    4.84e27 / 5.82e26    2.05e27 / 1.42e26
+     10     3.97e28 / 8.01e28    1.24e28 / 5.23e26    6.56e27 / 1.88e26
+     20     6.01e28 / 1.45e29    1.19e28 / 1.19e27    7.79e27 / 3.43e26
+     30     6.08e28 / 1.72e29    6.56e27 / 2.79e27    3.30e27 / 6.82e26
+
+  solver statistics over the 30 s (186-203 steps)
+    arm       Picard mean / max   NON-CONVERGED   positivity fallbacks   min E
+    Gc_off        12.48 / 200           1             198 of 203      -5.96e+07
+    Gc_f1          7.87 /   9           0             179 of 186      -2.94e+07
+    Gc_f05         7.57 /  10           0             172 of 186      -5.62e+07
+
+WHAT IS CURED
+  * KE_2 (the HORIZONTAL kinetic energy, the unphysical part) falls 1.8 decades at
+    fmax = 1 and 2.4 decades at fmax = 0.5.  KE_1 falls by one decade.
+  * F1top/Fin, i.e. whether the slab still transports its imposed flux out of the top,
+    goes from 0.07-0.66 to 0.82-0.95 (fmax 1) and 0.95-1.00 (fmax 0.5).  A7_implx1
+    (no transverse flux at all) is the quiet reference at 1.000; fmax = 0.5 is on it.
+  * The Picard loop is healthy again: 7.6-7.9 mean, 9-10 max, ZERO non-converged, against
+    12.5 mean / 200 max and one non-converged step with the limiter off.
+  * dt no longer erodes: 0.1613 s at every output against 0.033 s at 30 s.
+
+WHAT IS NOT CURED
+  * The positivity fallback still fires on 172-179 of 186 steps (off: 198 of 203), and
+    min E from the linear solve is still negative.  The fallback is a property of the
+    9-point `operator` mode, not of the face flux; the limiter does not address it.
+  * The per-depth map (python3 ../../runs_3b7/fmap.py, last dump t = 30 s) still shows
+    max |F2|/(cE) ~ 1 in the top cells.  The bound is on the face-MEAN E, so a cell with
+    E_min/E_mean ~ 0.03 in its row can still sit on the clip.  But the top is far less
+    pathological than it was:
+
+      i (z)      Gc_off: Emin/Emean  <f1>      Gc_f05: Emin/Emean  <f1>
+      83 top       2.7e-01          0.165          9.2e-02        0.367
+      82           4.1e-03          0.054          3.1e-02        0.342
+      81           4.3e-03         -0.018          3.3e-02        0.414
+      80           7.4e-02          0.124          1.2e-01        0.487
+      79           1.5e-03          0.062          1.3e-01        0.545
+      78           1.0e-03          0.128          2.2e-01        0.634
+      77           3.3e-04          0.243          2.4e-01        0.645
+      76           2.4e-02          0.019          3.1e-01        0.645
+      75           5.5e-03          0.178          3.5e-01        0.607
+      74           1.8e-01          0.058          4.5e-01        0.568
+      73           1.0e-03          0.231          4.8e-01        0.524
+      72           2.2e-01          0.060          5.5e-01        0.509
+      64 (tau~1)   7.8e-01          0.171          8.9e-01        0.176
+      40           9.96e-01         0.018          9.98e-01       0.018
+
+    i.e. with the limiter the horizontal E contrast in the thin top is 1-2 decades
+    SMALLER and the mean x1 reduced flux is 0.34-0.65 (a real outgoing beam) instead of
+    0.02-0.24 (transport lost to the transverse flux).
+  * implicit_closure_lag = pass is NOT usable here: it is roughly 4x slower per second
+    of model (dt 4.2e-2 against 1.61e-1) and did not finish 30 s in 1200 s.  Its
+    behaviour up to t = 9 s is no better than `step` at the same fmax.
+
+RECOMMENDATION
+  implicit_trans_limit = lp with implicit_trans_fmax = 0.5 and
+  implicit_closure_lag = step, as a DEFAULT-OFF option; the thin top of the seeded slab
+  is improved by 2.4 decades in KE_2 and the flux gate is met, but the positivity
+  fallback and the per-cell f2 clip are still open and an asymptotic-preserving
+  transverse face flux (phase E's "next build") is still the proper fix.
+
+================================================================================
+ADDENDUM (main session, 09-21 evening): what makes E negative
+================================================================================
+New DIAGNOSTIC <rad_m1>/dbg_trans_memory (Real, default 1.0 = bitwise): weight of the F^n
+memory term of the transverse face flux.  Seeded slab, tlim = 30, closure_lag = step:
+  arm                              KE_1 / KE_2 (30 s)   F1top/Fin(30 s)  fallbacks   min E
+  Gc_f05   lp 0.5, operator        3.3e27 / 6.8e26      0.946            172/186     < 0
+  Gd_mem0_f05  same, memory 0      3.1e27 / 7.3e26      0.944            171/186     -1.8e7
+  Gd_mem0_none no limiter, mem 0   5.8e28 / 1.8e29      0.631            197/202     -2.0e7
+  Ge_f05_odnone lp 0.5, offdiag=none 2.1e27 / 3.0e26    0.978            0/186       never < 0
+  (runs_3b7/A7_implx1, quiet target: 2.2e25 / 4.9e22, 1.000)
+=> the F^n memory is innocent; the NEGATIVE E comes from the off-diagonal Eddington
+(P_12) terms under implicit_offdiag = operator.  lp 0.5 + offdiag = none: no fallback,
+Picard 6.3 mean / 7 max.  REMAINING: KE_1 ~ 2e27 (100x the x1-only run), 80 % of it above
+i = 42 (tau <~ 10), v1_rms 0.3-1.9e5 cm/s rising to the top, KE_2 only 6 % of it;
+F1top/Fin dips to 0.92 at 10 s.  Not yet understood.

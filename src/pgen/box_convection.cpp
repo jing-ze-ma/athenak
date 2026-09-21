@@ -3118,11 +3118,33 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     auto ru0 = pmbp->pradm1->u0;
     const Real zlo_r = zlo, dzf_r = dzf;
     const int nf_r = nfine;
+    // problem/m1_seed_consistent (default false, i.e. bitwise the old behaviour): the
+    // entropy seed scales the gas internal energy by efac at fixed density and leaves
+    // the radiation field at its file value, so the seeded cells start OUT of radiative
+    // equilibrium by construction.  With this switch the initial E is scaled by the
+    // same cells' efac^4, i.e. E = a T^4 of the perturbed gas in the T ~ e/rho sense.
+    const bool seedcons = pin->GetOrAddBoolean("problem", "m1_seed_consistent", false);
+    const Real vpert_r = seedcons ? vpert : 0.0;
     par_for("boxconv_m1ic", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1, 0, n1m1,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       const Real x1min = size.d_view(m).x1min, x1max = size.d_view(m).x1max;
+      const Real x2min = size.d_view(m).x2min, x2max = size.d_view(m).x2max;
+      const Real x3min = size.d_view(m).x3min, x3max = size.d_view(m).x3max;
       const Real z = CellCenterX(i-is, indcs.nx1, x1min, x1max);
-      ru0(m,radm1::M1_E, k,j,i) = ColInterp(mce_d, zlo_r, dzf_r, nf_r, z);
+      Real efac4 = 1.0;
+      if (vpert_r > 0.0 && pvar == 1 && z > pzlo && z < pzhi) {
+        const Real x2v = CellCenterX(j-js, indcs.nx2, x2min, x2max);
+        const Real x3v = CellCenterX(k-ks, indcs.nx3, x3min, x3max);
+        Real amp = 0.0;
+        for (int n=0; n<nk; ++n) {
+          amp += md_d(n,2)*sin(2.0*M_PI*(md_d(n,0)*(x2v - x2min_m)/(x2max_m - x2min_m)
+                                       + md_d(n,1)*(x3v - x3min_m)/(x3max_m - x3min_m))
+                               + md_d(n,3));
+        }
+        const Real ef = 1.0 + vpert_r*sin(M_PI*(z - pzlo)/plz)*amp;
+        efac4 = ef*ef*ef*ef;
+      }
+      ru0(m,radm1::M1_E, k,j,i) = efac4*ColInterp(mce_d, zlo_r, dzf_r, nf_r, z);
       ru0(m,radm1::M1_F1,k,j,i) = ColInterp(mcf_d, zlo_r, dzf_r, nf_r, z);
       ru0(m,radm1::M1_F2,k,j,i) = 0.0;
       ru0(m,radm1::M1_F3,k,j,i) = 0.0;

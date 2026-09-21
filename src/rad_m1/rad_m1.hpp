@@ -218,6 +218,8 @@ class RadiationM1 {
                        // relaxes its flux, but the gas receives NO momentum and no work
   bool dbg_gas_heat;   // <rad_m1>/dbg_gas_heat = false: skip the energy exchange (a)
                        // entirely, so gas and radiation exchange no energy
+  Real dbg_trans_memory;     // DIAGNOSTIC (3b phase G): weight of the F^n memory term
+                       // of the transverse face flux; 1 = backward Euler (bitwise)
   bool dbg_gas_force_trans;  // 3b phase E, transport = implicit only:
                        // <rad_m1>/dbg_gas_force_trans = false keeps the x1 radiative
                        // force (and with it the well-balanced reference) but hands the
@@ -362,6 +364,17 @@ class RadiationM1 {
                                 // at the START-of-step state for the whole step, so each
                                 // step is one linear solve plus the T nonlinearity
 
+  // ---- the TRANSVERSE realizability limiter, <rad_m1>/implicit_trans_limit.
+  // Default `none` = not allocated and not referenced, so every earlier configuration
+  // is bitwise unchanged.  See ImplicitTransTheta.
+  int impl_tlim;                // M1_TLIM_*: none | lp
+  Real impl_tfmax;              // <rad_m1>/implicit_trans_fmax, the reduced-flux cap
+  DvceArray4D<Real> thx2, thx3;  // theta_f = 1/(1 + c dt (kt_f + klim_f)) on the x2/x3
+                                // faces, the ONE number every use of the transverse
+                                // theta reads
+  DvceArray4D<Real> klx2, klx3;  // the lagged limiter opacity klim_f itself, which
+                                // follows implicit_closure_lag
+
   // evolved variables
   DvceArray5D<Real> u0;         // (E, F1, F2, F3)
   DvceArray5D<Real> u1;         // state at the start of the substep
@@ -432,6 +445,10 @@ class RadiationM1 {
   //! milestone 3b phase B: the lagged transverse (x2/x3) divergence of one Picard pass,
   //! split into its diagonal part (M1_IW_TDIA) and its right-hand side (M1_IW_TRHS)
   void ImplicitTransverseTerms(bool first);
+  //! the TRANSVERSE realizability limiter: fill thx2/thx3 (and, when newk, the lagged
+  //! limiter opacity klx2/klx3) for the current pass.  Inert under
+  //! implicit_trans_limit = none, where thx2/thx3 are not even allocated.
+  void ImplicitTransTheta(bool newk);
   //! milestone 3b phase C: the x1 line solve of the assembled rows (M1_IW_TA..TR ->
   //! M1_IW_S2), Thomas or cyclic Thomas, gathered over the stack when part_nblk > 1.
   //! It IS the preconditioner of the BiCGStab wrapper and the line-Jacobi pass itself.

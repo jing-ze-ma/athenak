@@ -162,6 +162,23 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
               + "' is not a choice (pass | step)");
   }
   }
+  // ---- the TRANSVERSE realizability limiter.  `none` is not merely the default: it
+  // takes the OLD expression for theta everywhere (see ImplicitTransTheta), so an input
+  // file that does not name it is bitwise unchanged.
+  {std::string st = pin->GetOrAddString("rad_m1","implicit_trans_limit","none");
+  if (st.compare("none") == 0) {
+    impl_tlim = M1_TLIM_NONE;
+  } else if (st.compare("lp") == 0) {
+    impl_tlim = M1_TLIM_LP;
+  } else {
+    ImplFatal("<rad_m1>/implicit_trans_limit = '" + st
+              + "' is not a choice (none | lp)");
+  }
+  }
+  impl_tfmax = pin->GetOrAddReal("rad_m1","implicit_trans_fmax",1.0);
+  if (!(impl_tfmax > 0.0)) {
+    ImplFatal("<rad_m1>/implicit_trans_fmax must be positive");
+  }
   impl_opac_update = pin->GetOrAddBoolean("rad_m1","implicit_opac_update",false);
   impl_allow_multid = pin->GetOrAddBoolean("rad_m1","implicit_allow_multid",false);
   marshak_q = pin->GetOrAddReal("rad_m1","marshak_q",0.5);
@@ -398,6 +415,18 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       Kokkos::realloc(f0x3n, nmb, ncells3+1, ncells2, ncells1);
       Kokkos::deep_copy(f0x3n, 0.0);
     }
+    if (impl_tlim != M1_TLIM_NONE) {
+      Kokkos::realloc(thx2, nmb, ncells3, ncells2+1, ncells1);
+      Kokkos::deep_copy(thx2, 0.0);
+      Kokkos::realloc(klx2, nmb, ncells3, ncells2+1, ncells1);
+      Kokkos::deep_copy(klx2, 0.0);
+      if (trans_x3) {
+        Kokkos::realloc(thx3, nmb, ncells3+1, ncells2, ncells1);
+        Kokkos::deep_copy(thx3, 0.0);
+        Kokkos::realloc(klx3, nmb, ncells3+1, ncells2, ncells1);
+        Kokkos::deep_copy(klx3, 0.0);
+      }
+    }
     // the transverse halo rides the module's ORDINARY cell-centred boundary machinery on
     // a scratch array, which is what gives it periodic wrap, corner/edge neighbours and
     // MPI for free; the hand-rolled x1 halo of 3b is then not used at all under
@@ -451,7 +480,12 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
                 << (od_auto ? " (auto)" : "")
                 << " closure_relax=" << impl_crelax
                 << (impl_crelax_thin ? " (thin faces only)" : "")
-                << " closure_lag=" << (impl_clag_step ? "step" : "pass") << std::endl;
+                << " closure_lag=" << (impl_clag_step ? "step" : "pass")
+                << " trans_limit="
+                << ((impl_tlim == M1_TLIM_LP) ? "lp" : "none")
+                << ((impl_tlim == M1_TLIM_LP)
+                    ? (" fmax=" + std::to_string(impl_tfmax)) : std::string(""))
+                << std::endl;
     }
     std::cout << "         x1 boundaries: min=" << ibc_x1min << " max=" << ibc_x1max
               << " (0 marshak, 1 flux, 2 reflect, 3 periodic) flux_min=" << iflux_x1min
@@ -744,6 +778,171 @@ void RadiationM1::ImplicitTransverseHalo() {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::ImplicitTransTheta
+//! \brief the TRANSVERSE realizability limiter: fill thx2/thx3, the ONE face theta every
+//! use of the transverse face elimination reads (the face-flux kernels, the cell-terms
+//! kernel, ImplicitOffDiagOp and the post-solve reconstruction).
+//!
+//! The face-eliminated transverse flux
+//!   F_f' = theta_f [F_f^n - c^2 dt G_f - c dt v_f g0_f],  G_f = gr_f + off_f,
+//!   theta_f = 1/(1 + c dt kt_f)
+//! has NO free-streaming bound.  Its steady state is F_f = -c G_f/kt_f, the unlimited
+//! diffusive flux, which at c dt/dx ~ 7e3 is super-luminal wherever rho kappa is tiny:
+//! in the optically thin top of the 2-D He slab |F_2|/(c E) saturates at the post-solve
+//! clip of 1 and E goes horizontally unphysical within 2 s.
+//!
+//! Under implicit_trans_limit = lp each face gets a LAGGED limiter opacity
+//!   klim_f = |G_f| / (phi_f E_f),   E_f = (E_L + E_R)/2 of the lagged iterate,
+//!   phi_f  = fmax sqrt(max(1 - f1_f^2, 0.01)),  f1_f the face mean of the lagged cell
+//!            x1 reduced flux F1/(c E), clipped to [-1,1],
+//! and theta_f = 1/(1 + c dt (kt_f + klim_f)).  Then in steady state
+//!   |F_f| = c |G_f| / (kt_f + |G_f|/(phi_f E_f)) <= c phi_f E_f,
+//! i.e. the transverse flux can never exceed the room the x1 flux leaves in the
+//! realizability cone, while where R = |G_f|/(kt_f E_f) << 1 -- every optically thick
+//! face -- the change is O(R) and the diffusion limit is untouched.  This is a flux
+//! limiter of exactly the Levermore-Pomraning form, written as an opacity so that it
+//! enters the ALREADY linear face elimination.
+//!
+//! klim only ever makes theta_f SMALLER, and theta_f multiplies the transverse
+//! off-diagonals of the 7-point row (and its own diagonal contribution by the same
+//! factor), so the row stays diagonally dominant with the same signs: the M-matrix
+//! property that guarantees E' > 0 at any dt is preserved.
+//!
+//! klim follows implicit_closure_lag: with `step` it is computed ONCE per step, from the
+//! entry state (newk is then true only on the first Picard pass), and frozen for every
+//! later pass and every Krylov application of that step; with `pass` it is recomputed at
+//! each pass, from that pass' lagged iterate.  Either way it is a lagged coefficient and
+//! the linear system stays linear.
+
+void RadiationM1::ImplicitTransTheta(bool newk) {
+  if (impl_tlim == M1_TLIM_NONE) return;
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  int is = indcs.is, ie = indcs.ie;
+  int js = indcs.js, je = indcs.je;
+  int ks = indcs.ks, ke = indcs.ke;
+  int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto iw_ = iw;
+  auto th2_ = thx2;
+  auto kl2_ = klx2;
+  auto th3_ = thx3;
+  auto kl3_ = klx3;
+  auto &mbsize = pmy_pack->pmb->mb_size;
+  auto &mbbcs = pmy_pack->pmb->mb_bcs;
+  Real cl = c_light, ch = chat, dt = dt_sub;
+  Real efl = e_floor;
+  Real fmx = impl_tfmax;
+  const bool thrd = trans_x3;
+  const bool nk = newk;
+  const int odm = od_now;
+
+  par_for("m1_impl_tlim2", DevExeSpace(), 0, nmb1, ks, ke, js, je+1, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    BoundaryFlag blo = mbbcs.d_view(m,BoundaryFace::inner_x2);
+    BoundaryFlag bhi = mbbcs.d_view(m,BoundaryFace::outer_x2);
+    bool plo = (blo != BoundaryFlag::block) && (blo != BoundaryFlag::periodic);
+    bool phi = (bhi != BoundaryFlag::block) && (bhi != BoundaryFlag::periodic);
+    if ((j == js && plo) || (j == je+1 && phi)) {
+      // a physical x2 face is reflecting: its flux is zero and its theta is never read
+      kl2_(m,k,j,i) = 0.0;
+      th2_(m,k,j,i) = 1.0;
+      return;
+    }
+    int jm = j - 1;
+    if (nk) {
+      Real dx1 = mbsize.d_view(m).dx1;
+      Real dx2 = mbsize.d_view(m).dx2;
+      Real dx3 = mbsize.d_view(m).dx3;
+      BoundaryFlag a1 = mbbcs.d_view(m,BoundaryFace::inner_x1);
+      BoundaryFlag a2 = mbbcs.d_view(m,BoundaryFace::outer_x1);
+      BoundaryFlag a5 = mbbcs.d_view(m,BoundaryFace::inner_x3);
+      BoundaryFlag a6 = mbbcs.d_view(m,BoundaryFace::outer_x3);
+      bool pi1 = (a1 != BoundaryFlag::block) && (a1 != BoundaryFlag::periodic);
+      bool pi2 = (a2 != BoundaryFlag::block) && (a2 != BoundaryFlag::periodic);
+      int il = pi1 ? is : is-1;
+      int iu = pi2 ? ie : ie+1;
+      int kl = (!thrd || ((a5 != BoundaryFlag::block) &&
+                          (a5 != BoundaryFlag::periodic))) ? ks : ks-1;
+      int ku = (!thrd || ((a6 != BoundaryFlag::block) &&
+                          (a6 != BoundaryFlag::periodic))) ? ke : ke+1;
+      int jl = plo ? js : js-1;
+      int ju = phi ? je : je+1;
+      Real el = fmax(iw_(m,M1_IW_EP,k,jm,i), efl);
+      Real er = fmax(iw_(m,M1_IW_EP,k,j,i), efl);
+      Real dl = M1EddDiag(iw_(m,M1_IW_WCHI,k,jm,i), iw_(m,M1_IW_N2,k,jm,i));
+      Real dr = M1EddDiag(iw_(m,M1_IW_WCHI,k,j,i), iw_(m,M1_IW_N2,k,j,i));
+      Real gf = (dr*iw_(m,M1_IW_EP,k,j,i) - dl*iw_(m,M1_IW_EP,k,jm,i))/dx2;
+      if (odm != M1_OD_NONE) {
+        gf += 0.5*(M1OffDiv(iw_,m,1,k,jm,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,M1_IW_EP)
+                   + M1OffDiv(iw_,m,1,k,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,M1_IW_EP));
+      }
+      Real rl = iw_(m,M1_IW_F1,k,jm,i)/(cl*el);
+      Real rr = iw_(m,M1_IW_F1,k,j,i)/(cl*er);
+      rl = fmin(fmax(rl, -1.0), 1.0);
+      rr = fmin(fmax(rr, -1.0), 1.0);
+      Real f1f = fmin(fmax(0.5*(rl + rr), -1.0), 1.0);
+      Real phif = fmx*sqrt(fmax(1.0 - f1f*f1f, 0.01));
+      Real ef = fmax(0.5*(el + er), 1.0e-300);
+      kl2_(m,k,j,i) = fabs(gf)/(phif*ef);
+    }
+    Real ktf = 0.5*(iw_(m,M1_IW_KT,k,jm,i) + iw_(m,M1_IW_KT,k,j,i));
+    th2_(m,k,j,i) = 1.0/(1.0 + ch*dt*(ktf + kl2_(m,k,j,i)));
+  });
+
+  if (!thrd) return;
+  par_for("m1_impl_tlim3", DevExeSpace(), 0, nmb1, ks, ke+1, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    BoundaryFlag blo = mbbcs.d_view(m,BoundaryFace::inner_x3);
+    BoundaryFlag bhi = mbbcs.d_view(m,BoundaryFace::outer_x3);
+    bool plo = (blo != BoundaryFlag::block) && (blo != BoundaryFlag::periodic);
+    bool phi = (bhi != BoundaryFlag::block) && (bhi != BoundaryFlag::periodic);
+    if ((k == ks && plo) || (k == ke+1 && phi)) {
+      kl3_(m,k,j,i) = 0.0;
+      th3_(m,k,j,i) = 1.0;
+      return;
+    }
+    int km = k - 1;
+    if (nk) {
+      Real dx1 = mbsize.d_view(m).dx1;
+      Real dx2 = mbsize.d_view(m).dx2;
+      Real dx3 = mbsize.d_view(m).dx3;
+      BoundaryFlag a1 = mbbcs.d_view(m,BoundaryFace::inner_x1);
+      BoundaryFlag a2 = mbbcs.d_view(m,BoundaryFace::outer_x1);
+      BoundaryFlag a3 = mbbcs.d_view(m,BoundaryFace::inner_x2);
+      BoundaryFlag a4 = mbbcs.d_view(m,BoundaryFace::outer_x2);
+      bool pi1 = (a1 != BoundaryFlag::block) && (a1 != BoundaryFlag::periodic);
+      bool pi2 = (a2 != BoundaryFlag::block) && (a2 != BoundaryFlag::periodic);
+      bool pj1 = (a3 != BoundaryFlag::block) && (a3 != BoundaryFlag::periodic);
+      bool pj2 = (a4 != BoundaryFlag::block) && (a4 != BoundaryFlag::periodic);
+      int il = pi1 ? is : is-1;
+      int iu = pi2 ? ie : ie+1;
+      int jl = pj1 ? js : js-1;
+      int ju = pj2 ? je : je+1;
+      int kl = plo ? ks : ks-1;
+      int ku = phi ? ke : ke+1;
+      Real el = fmax(iw_(m,M1_IW_EP,km,j,i), efl);
+      Real er = fmax(iw_(m,M1_IW_EP,k,j,i), efl);
+      Real dl = M1EddDiag(iw_(m,M1_IW_WCHI,km,j,i), iw_(m,M1_IW_N3,km,j,i));
+      Real dr = M1EddDiag(iw_(m,M1_IW_WCHI,k,j,i), iw_(m,M1_IW_N3,k,j,i));
+      Real gf = (dr*iw_(m,M1_IW_EP,k,j,i) - dl*iw_(m,M1_IW_EP,km,j,i))/dx3;
+      if (odm != M1_OD_NONE) {
+        gf += 0.5*(M1OffDiv(iw_,m,2,km,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,M1_IW_EP)
+                   + M1OffDiv(iw_,m,2,k,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,M1_IW_EP));
+      }
+      Real rl = iw_(m,M1_IW_F1,km,j,i)/(cl*el);
+      Real rr = iw_(m,M1_IW_F1,k,j,i)/(cl*er);
+      rl = fmin(fmax(rl, -1.0), 1.0);
+      rr = fmin(fmax(rr, -1.0), 1.0);
+      Real f1f = fmin(fmax(0.5*(rl + rr), -1.0), 1.0);
+      Real phif = fmx*sqrt(fmax(1.0 - f1f*f1f, 0.01));
+      Real ef = fmax(0.5*(el + er), 1.0e-300);
+      kl3_(m,k,j,i) = fabs(gf)/(phif*ef);
+    }
+    Real ktf = 0.5*(iw_(m,M1_IW_KT,km,j,i) + iw_(m,M1_IW_KT,k,j,i));
+    th3_(m,k,j,i) = 1.0/(1.0 + ch*dt*(ktf + kl3_(m,k,j,i)));
+  });
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::ImplicitTransverseTerms
 //! \brief milestone 3b phase B: one line-Jacobi evaluation of the TRANSVERSE (x2, x3)
 //! part of the operator at the current Picard iterate.
@@ -774,6 +973,10 @@ void RadiationM1::ImplicitTransverseHalo() {
 
 void RadiationM1::ImplicitTransverseTerms(bool first) {
   if (!trans_on) return;
+  // the transverse realizability limiter: one evaluation of theta for the whole pass,
+  // which everything below and the Krylov operator then READ.  klim itself follows the
+  // closure lag (frozen for the step under implicit_closure_lag = step).
+  ImplicitTransTheta(!impl_clag_step || first);
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
   int js = indcs.js, je = indcs.je;
@@ -784,11 +987,19 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
   auto f2n_ = f0x2n;
   auto f3_ = f0x3;
   auto f3n_ = f0x3n;
+  // the transverse realizability limiter.  Under `none` the OLD expression for theta is
+  // taken, term for term, so the arithmetic of every earlier configuration is bitwise
+  // unchanged; under `lp` every use below reads the SAME thx2/thx3 the Krylov operator
+  // reads.
+  const bool lm = (impl_tlim != M1_TLIM_NONE);
+  auto th2_ = thx2;
+  auto th3_ = thx3;
   auto &mbsize = pmy_pack->pmb->mb_size;
   auto &mbbcs = pmy_pack->pmb->mb_bcs;
   Real cl = c_light, ch = chat, dt = dt_sub;
   const bool thrd = trans_x3;
   const bool fst = first;
+  const Real wmem = dbg_trans_memory;
   // MILESTONE 3b phase C: also store the transverse OFF-DIAGONAL coefficients of the
   // frozen row, which is what the BiCGStab operator applies and what turns TRHS back into
   // the right-hand side of the full system.
@@ -830,7 +1041,7 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
     int ju = phi ? je : je+1;
     int jm = j - 1;
     Real ktf = 0.5*(iw_(m,M1_IW_KT,k,jm,i) + iw_(m,M1_IW_KT,k,j,i));
-    Real th = 1.0/(1.0 + ch*dt*ktf);
+    Real th = lm ? th2_(m,k,j,i) : 1.0/(1.0 + ch*dt*ktf);
     Real dl = M1EddDiag(iw_(m,M1_IW_WCHI,k,jm,i), iw_(m,M1_IW_N2,k,jm,i));
     Real dr = M1EddDiag(iw_(m,M1_IW_WCHI,k,j,i), iw_(m,M1_IW_N2,k,j,i));
     Real gr = (dr*iw_(m,M1_IW_EP,k,j,i) - dl*iw_(m,M1_IW_EP,k,jm,i))/dx2;
@@ -841,7 +1052,7 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
       off = 0.5*(M1OffDiv(iw_,m,1,k,jm,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,M1_IW_EP)
                  + M1OffDiv(iw_,m,1,k,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,M1_IW_EP));
     }
-    f2_(m,k,j,i) = th*(f2n_(m,k,j,i) - ch*cl*dt*gr - ch*dt*vf*g0f - ch*cl*dt*off);
+    f2_(m,k,j,i) = th*(wmem*f2n_(m,k,j,i) - ch*cl*dt*gr - ch*dt*vf*g0f - ch*cl*dt*off);
   });
 
   // (2) the x3 face fluxes
@@ -875,7 +1086,7 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
       int ku = phi ? ke : ke+1;
       int km = k - 1;
       Real ktf = 0.5*(iw_(m,M1_IW_KT,km,j,i) + iw_(m,M1_IW_KT,k,j,i));
-      Real th = 1.0/(1.0 + ch*dt*ktf);
+      Real th = lm ? th3_(m,k,j,i) : 1.0/(1.0 + ch*dt*ktf);
       Real dl = M1EddDiag(iw_(m,M1_IW_WCHI,km,j,i), iw_(m,M1_IW_N3,km,j,i));
       Real dr = M1EddDiag(iw_(m,M1_IW_WCHI,k,j,i), iw_(m,M1_IW_N3,k,j,i));
       Real gr = (dr*iw_(m,M1_IW_EP,k,j,i) - dl*iw_(m,M1_IW_EP,km,j,i))/dx3;
@@ -886,7 +1097,8 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
         off = 0.5*(M1OffDiv(iw_,m,2,km,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,M1_IW_EP)
                    + M1OffDiv(iw_,m,2,k,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,M1_IW_EP));
       }
-      f3_(m,k,j,i) = th*(f3n_(m,k,j,i) - ch*cl*dt*gr - ch*dt*vf*g0f - ch*cl*dt*off);
+      f3_(m,k,j,i) = th*(wmem*f3n_(m,k,j,i)
+                         - ch*cl*dt*gr - ch*dt*vf*g0f - ch*cl*dt*off);
     });
   }
 
@@ -911,7 +1123,7 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
     Real cjp = 0.0, cjm = 0.0;
     if (!(j == je && p2hi)) {
       Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j,i) + iw_(m,M1_IW_KT,k,j+1,i));
-      Real th = 1.0/(1.0 + ch*dt*ktf);
+      Real th = lm ? th2_(m,k,j+1,i) : 1.0/(1.0 + ch*dt*ktf);
       Real vf = 0.5*(iw_(m,M1_IW_V2,k,j,i) + iw_(m,M1_IW_V2,k,j+1,i));
       fp = f2_(m,k,j+1,i);
       if (vf > 0.0) {
@@ -929,7 +1141,7 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
     }
     if (!(j == js && p2lo)) {
       Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j-1,i) + iw_(m,M1_IW_KT,k,j,i));
-      Real th = 1.0/(1.0 + ch*dt*ktf);
+      Real th = lm ? th2_(m,k,j,i) : 1.0/(1.0 + ch*dt*ktf);
       Real vf = 0.5*(iw_(m,M1_IW_V2,k,j-1,i) + iw_(m,M1_IW_V2,k,j,i));
       fm = f2_(m,k,j,i);
       if (vf > 0.0) {
@@ -964,7 +1176,7 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
       Real ckp = 0.0, ckm = 0.0;
       if (!(k == ke && p3hi)) {
         Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j,i) + iw_(m,M1_IW_KT,k+1,j,i));
-        Real th = 1.0/(1.0 + ch*dt*ktf);
+        Real th = lm ? th3_(m,k+1,j,i) : 1.0/(1.0 + ch*dt*ktf);
         Real vf = 0.5*(iw_(m,M1_IW_V3,k,j,i) + iw_(m,M1_IW_V3,k+1,j,i));
         gp = f3_(m,k+1,j,i);
         if (vf > 0.0) {
@@ -982,7 +1194,7 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
       }
       if (!(k == ks && p3lo)) {
         Real ktf = 0.5*(iw_(m,M1_IW_KT,k-1,j,i) + iw_(m,M1_IW_KT,k,j,i));
-        Real th = 1.0/(1.0 + ch*dt*ktf);
+        Real th = lm ? th3_(m,k,j,i) : 1.0/(1.0 + ch*dt*ktf);
         Real vf = 0.5*(iw_(m,M1_IW_V3,k-1,j,i) + iw_(m,M1_IW_V3,k,j,i));
         gm = f3_(m,k,j,i);
         if (vf > 0.0) {
@@ -1317,6 +1529,12 @@ void RadiationM1::ImplicitOffDiagOp(int xc, int yc, Real sgn) {
   const int nblkx1 = part_nblk;
   const bool cyclic = (ibc_x1min == M1_IBC_PERIODIC);
   const bool thrd = trans_x3;
+  // the TRANSVERSE face theta of the operator must be the very number the face fluxes
+  // and the cell terms used, limiter or not (ImplicitTransTheta).  The x1 faces are not
+  // limited.
+  const bool lm = (impl_tlim != M1_TLIM_NONE);
+  auto th2_ = thx2;
+  auto th3_ = thx3;
   const int bclo = ibc_x1min, bchi = ibc_x1max;
   Real cl = c_light, ch = chat, dt = dt_sub;
   const int cx = xc, cy = yc;
@@ -1373,14 +1591,14 @@ void RadiationM1::ImplicitOffDiagOp(int xc, int yc, Real sgn) {
     Real nu2 = dt/dx2;
     if (!(j == je && p2hi)) {
       Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j,i) + iw_(m,M1_IW_KT,k,j+1,i));
-      Real th = 1.0/(1.0 + ch*dt*ktf);
+      Real th = lm ? th2_(m,k,j+1,i) : 1.0/(1.0 + ch*dt*ktf);
       Real od = 0.5*(M1OffDiv(iw_,m,1,k,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,cx)
                      + M1OffDiv(iw_,m,1,k,j+1,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,cx));
       y -= nu2*cr*th*kk*od;
     }
     if (!(j == js && p2lo)) {
       Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j-1,i) + iw_(m,M1_IW_KT,k,j,i));
-      Real th = 1.0/(1.0 + ch*dt*ktf);
+      Real th = lm ? th2_(m,k,j,i) : 1.0/(1.0 + ch*dt*ktf);
       Real od = 0.5*(M1OffDiv(iw_,m,1,k,j-1,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,cx)
                      + M1OffDiv(iw_,m,1,k,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,cx));
       y += nu2*cr*th*kk*od;
@@ -1390,14 +1608,14 @@ void RadiationM1::ImplicitOffDiagOp(int xc, int yc, Real sgn) {
       Real nu3 = dt/dx3;
       if (!(k == ke && p3hi)) {
         Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j,i) + iw_(m,M1_IW_KT,k+1,j,i));
-        Real th = 1.0/(1.0 + ch*dt*ktf);
+        Real th = lm ? th3_(m,k+1,j,i) : 1.0/(1.0 + ch*dt*ktf);
         Real od = 0.5*(M1OffDiv(iw_,m,2,k,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,cx)
                        + M1OffDiv(iw_,m,2,k+1,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,cx));
         y -= nu3*cr*th*kk*od;
       }
       if (!(k == ks && p3lo)) {
         Real ktf = 0.5*(iw_(m,M1_IW_KT,k-1,j,i) + iw_(m,M1_IW_KT,k,j,i));
-        Real th = 1.0/(1.0 + ch*dt*ktf);
+        Real th = lm ? th3_(m,k,j,i) : 1.0/(1.0 + ch*dt*ktf);
         Real od = 0.5*(M1OffDiv(iw_,m,2,k-1,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,cx)
                        + M1OffDiv(iw_,m,2,k,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,cx));
         y += nu3*cr*th*kk*od;

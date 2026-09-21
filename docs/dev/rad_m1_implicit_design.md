@@ -1286,3 +1286,84 @@ function of `z` alone; (3) the imposed-flux bottom and the Marshak free surface 
 as in the two-stream production runs.  Also still open from phase D: the 9 non-converged
 steps, a positivity-preserving 9-/19-point operator, transverse Marshak / imposed-flux
 boundaries, SMR/AMR, GPU, MPI (reasoned, not measured), a coarse preconditioner space.
+
+---
+
+## 15. The TRANSVERSE realizability limiter (`implicit_trans_limit`, default off)
+
+### What it is
+
+Two new `<rad_m1>` parameters, both inert at their defaults:
+
+| parameter | default | meaning |
+| --- | --- | --- |
+| `implicit_trans_limit` | `none` | `none` \| `lp`.  `none` takes the OLD expression for the transverse face `theta` term for term, so every earlier configuration is bitwise unchanged (gate G-a). |
+| `implicit_trans_fmax` | `1.0` | the reduced-flux cap `fmax` of the `lp` limiter. |
+
+### Why
+
+The face-eliminated transverse (x2/x3) flux of sect. 11,
+
+```
+F_f' = theta_f [ F_f^n - c^2 dt G_f - c dt v_f g0_f ],   G_f = gr_f + off_f,
+theta_f = 1/(1 + c dt kt_f)
+```
+
+has **no free-streaming bound**.  Its steady state is `F_f = -c G_f / kt_f`, the
+unlimited diffusive flux `-c grad P/(rho kappa)`, which at `c dt/dx ~ 7e3` is
+super-luminal wherever `rho kappa` is tiny.  In the optically thin top of the seeded 2-D
+He slab (sect. 14) that is exactly what happens: `|F_2|/(c E)` saturates at the
+post-solve clip of 1 in the top ~12 cells, `E` varies horizontally by 2-5 decades, the
+x1 transport collapses (`F1top/Fin` 0.07-0.66) and the positivity fallback fires on
+nearly every step.
+
+### The formula
+
+Under `lp` every transverse face carries a LAGGED "limiter opacity"
+
+```
+klim_f = |G_f| / (phi_f E_f),
+E_f    = (E_L + E_R)/2 of the lagged iterate (floored),
+phi_f  = fmax sqrt(max(1 - f1_f^2, 0.01)),
+f1_f   = face mean of the lagged cell x1 reduced flux F1/(c E), clipped to [-1,1],
+theta_f = 1/(1 + c dt (kt_f + klim_f)).
+```
+
+Then in steady state `|F_f| = c|G_f| / (kt_f + |G_f|/(phi_f E_f)) <= c phi_f E_f`: the
+transverse flux can never exceed the room the x1 flux leaves in the realizability cone.
+Where `R = |G_f|/(kt_f E_f) << 1` -- every optically thick face -- the change is `O(R)`
+and the diffusion limit is untouched.  This is a Levermore-Pomraning flux limiter
+written as an opacity, so that it enters the already-linear face elimination.
+
+`klim` only ever makes `theta_f` SMALLER, and `theta_f` multiplies the transverse
+off-diagonals of the 7-point row together with their own diagonal contribution, so the
+row keeps its signs and its diagonal dominance: the M-matrix property of sect. 11 is
+preserved.
+
+`theta_f` is computed ONCE per evaluation, in `RadiationM1::ImplicitTransTheta`, into
+the face arrays `thx2`/`thx3`, and the face-flux kernels, the cell-terms kernel
+(`TDIA`, `CJM..CKP`), `ImplicitOffDiagOp` (hence the BiCGStab operator) and the
+post-solve reconstruction all READ that one number, so they cannot drift apart.  `klim`
+follows `implicit_closure_lag`: frozen at the entry state for the whole step under
+`step`, recomputed each Picard pass under `pass`.  `M1_IW_F1` was added to the
+transverse halo (`M1_NHALO_T` 13 -> 14) so that both blocks of a shared face build
+`f1_f` from bit-identical numbers; nothing else reads it.
+
+### Gates (serial CPU, `tests_m1/runs_3b8/RESULTS.txt`)
+
+* **G-a, default-off inertness**: the seeded slab to `tlim = 3` gives `m1slab.hydro.hst`
+  and `m1slab.user.hst` BYTE-IDENTICAL to the pre-change binary.
+* **G-b(i), the static slab** (`vpert = 0`, `tlim = 20`): limiter on = limiter off,
+  bitwise, in both history files -- with no horizontal structure `G_f = 0`, so
+  `klim = 0`.
+* **G-b(ii), T10** along x2 and at 45 degrees with the limiter on: still PASS, with the
+  phase speed unchanged in the digits T10 reports.
+* **G-c, the cure** (seeded slab, `tlim = 30`): at `fmax = 0.5`, `KE_2(30 s)` falls from
+  `1.7e29` to `6.8e26` (2.4 decades), `F1top/Fin` from 0.07-0.66 to 0.95-1.00, the
+  Picard count from 12.5 mean / 200 max with 1 non-converged step to 7.6 / 10 with
+  none, and `dt` stops eroding (constant 0.1613 s against 0.033 s at 30 s).  What the
+  limiter does NOT fix: the positivity fallback still fires on 172 of 186 steps and the
+  per-cell `|F_2|/(c E)` still reaches 1 in the topmost cells -- the bound is on the
+  face-MEAN `E`, and with `E_min/E_mean ~ 0.03` across a row the thin cell can still sit
+  on the clip.  A positivity-preserving operator and/or an AP transverse face flux are
+  still needed.
