@@ -23,6 +23,12 @@
 
 namespace radm1 {
 
+// <rad_m1>/thick_flux: which asymptotic-preserving correction the face flux carries
+// (design sect. 3).  Device code branches on these, so they are plain ints.
+constexpr int M1_THICK_NONE   = 0;   // plain HLL
+constexpr int M1_THICK_APHLL  = 1;   // Bloch et al. (2021) alpha on the E-flux only
+constexpr int M1_THICK_SCALED = 2;   // Jiang (2021) App. A: both wave speeds x eps(tau)
+
 //----------------------------------------------------------------------------------------
 //! \fn M1Chi
 //! \brief Levermore closure factor chi as a function of the reduced flux magnitude.
@@ -149,12 +155,49 @@ void M1WaveSpeeds(const Real fnorm, const Real mu, Real &lam_m, Real &lam_p) {
 //! which is the true M1 system with every characteristic speed multiplied by chat/c;
 //! hence the eigenvalues above are used scaled by chat.  thick_flux = none: this is
 //! plain HLL, with b_L = min(0, lam_-) and b_R = max(0, lam_+) over BOTH states.
+//!
+//! THICK LIMIT (design sect. 3), selected by `thick` and supplied with the face optical
+//! depth tau_face = (1/2)[(rho kappa_F+rho kappa_s)_L + (..)_R] dx of THIS direction:
+//!
+//!  * M1_THICK_APHLL: alpha = 1/[1 - 3 tau_face (1-f^2) lam_+ lam_-/(c(lam_+ - lam_-))]
+//!    (Bloch et al. 2021 eq. 25, f the face mean of |f|) blends the HLL E-flux with the
+//!    compact two-point diffusion flux,
+//!
+//!      F_E = alpha F_E^HLL(reconstructed states) + (1 - alpha) F_diff,
+//!      F_diff = -(chat/c) c (E_{i+1} - E_i)/(3 tau_face)    [CELL-CENTRE E, not the
+//!                                                            reconstructed face states]
+//!
+//!    which is what survives a SECOND-ORDER reconstruction: with PLM the face jump
+//!    E_R - E_L is O(dx^2) in smooth regions, so the dissipation term of Berthon's
+//!    original AP-HLL flux -- which is what carries the physical diffusion there --
+//!    vanishes and that scheme grossly UNDER-diffuses.  The
+//!    blend is NOT the same scheme as Berthon's: with piecewise-constant states
+//!    alpha F^HLL is ALREADY exactly the physical flux (the identity of design sect. 3),
+//!    so adding (1-alpha) F_diff on top double counts and the diffusion comes out a
+//!    factor 1 + (sqrt3/2)tau/(1 + (sqrt3/2)tau) -> 2 too large.  The two forms are
+//!    therefore selected by the reconstruction: `berthon` (set by the caller for
+//!    reconstruct = dc) is alpha F^HLL alone, the blend is used with PLM.  The
+//!    diffusion limit of the blend is dE/dt = div[(chat/(3 rho kappa)) grad E], i.e. the
+//!    physical diffusivity c/(3 rho kappa) carrying the (chat/c) of the evolved E
+//!    equation.  F_diff uses the Eddington value 1/3 deliberately: the (1-f^2) guard and
+//!    a small tau_face both send alpha -> 1 wherever the closure departs from 1/3.
+//!    The F-flux (the pressure flux) stays plain HLL with the reconstructed states,
+//!    which is what keeps -grad P_rad on the gas (sect. 3).
+//!  * M1_THICK_SCALED: both HLL wave speeds are multiplied by
+//!    eps = sqrt[(1 - exp(-tau_c^2))/tau_c^2], tau_c = scaled_pref*tau_face, in BOTH
+//!    fluxes (Jiang 2021 App. A in moment form).
+//!
+//! MILESTONE 1c HOOK: the advective enthalpy-flux split for moving media replaces the
+//! per-side normal flux entering the E-flux by the comoving F0_n = F_n - (v E + v.P)_n
+//! and adds the upwinded full enthalpy flux A afterwards; the two marked locals f0ln /
+//! f0rn and the separate assembly of flx[0] are there so that lands as a local change.
 
 KOKKOS_INLINE_FUNCTION
 void M1HLLFlux(const int ivx, const Real cl, const Real chat, const bool eddington,
                const Real el, const Real fl1, const Real fl2, const Real fl3,
                const Real er, const Real fr1, const Real fr2, const Real fr3,
-               Real *flx) {
+               const int thick, const Real tau_face, const Real scaled_pref,
+               const bool berthon, const Real ecl, const Real ecr, Real *flx) {
   // reduced fluxes and closure factors
   Real rl1, rl2, rl3, rlnorm, rr1, rr2, rr3, rrnorm;
   M1ReducedFlux(cl, el, fl1, fl2, fl3, rl1, rl2, rl3, rlnorm);
@@ -197,6 +240,30 @@ void M1HLLFlux(const int ivx, const Real cl, const Real chat, const bool eddingt
     br = chat*fmax(fmax(lpl, lpr), 0.0);
   }
 
+  // thick-limit corrections.  alpha = 1 and eps = 1 leave the plain HLL flux, and the
+  // arithmetic below is then bit-identical to milestone 1a.
+  Real alpha = 1.0;
+  if (thick == M1_THICK_SCALED && tau_face > 0.0) {
+    Real tc = scaled_pref*tau_face;
+    // eps = sqrt[(1 - exp(-tc^2))/tc^2]; the series is used where the ratio is 0/0
+    Real eps = 1.0;
+    if (tc > 1.0e-4) {
+      eps = sqrt(-expm1(-tc*tc))/tc;
+    } else {
+      eps = sqrt(fmax(1.0 - 0.5*tc*tc, 0.0));
+    }
+    bl *= eps;
+    br *= eps;
+  } else if (thick == M1_THICK_APHLL && tau_face > 0.0) {
+    Real fbar = 0.5*(rlnorm + rrnorm);
+    Real guard = fmax(1.0 - fbar*fbar, 0.0);
+    // lam_+ lam_-/(lam_+ - lam_-) in units of the true light speed
+    Real lp = br/chat;
+    Real lm = bl/chat;
+    Real den = 1.0 - 3.0*tau_face*guard*lp*lm/(lp - lm + 1.0e-300);
+    alpha = 1.0/fmax(den, 1.0);
+  }
+
   // HLL
   Real ul[4], ur[4];
   ul[0] = el;
@@ -208,9 +275,35 @@ void M1HLLFlux(const int ivx, const Real cl, const Real chat, const bool eddingt
   ur[2] = fr2;
   ur[3] = fr3;
   Real invb = 1.0/(br - bl + 1.0e-300);
-  for (int n=0; n<4; ++n) {
+  for (int n=1; n<4; ++n) {
     flx[n] = (br*fxl[n] - bl*fxr[n] + br*bl*(ur[n] - ul[n]))*invb;
   }
+  // the E-flux, assembled separately: it is the one the thick-limit blend touches, and
+  // the one milestone 1c splits into a comoving part plus an upwinded enthalpy flux A.
+  Real f0ln = fxl[0];   // 1c: (chat/c)(F_n - (v E + v.P)_n) of the LEFT state
+  Real f0rn = fxr[0];   // 1c: the same of the RIGHT state
+  Real fe = (br*f0ln - bl*f0rn + br*bl*(ur[0] - ul[0]))*invb;
+  if (thick == M1_THICK_APHLL && tau_face > 0.0 && alpha < 1.0) {
+    if (berthon) {
+      fe *= alpha;
+    } else {
+      // (chat/c)*[-c (E_R - E_L)/(3 tau_face)] = -chat (E_R - E_L)/(3 tau_face)
+      Real fdiff = -chat*(ecr - ecl)/(3.0*tau_face);
+      Real fadv = (br*f0ln - bl*f0rn)*invb;
+      Real fdis = br*bl*(ur[0] - ul[0])*invb;
+      // The HLL DISSIPATION carries weight alpha^2, not alpha.  It is spurious once
+      // F_diff supplies the physical diffusion, and it has to vanish FASTER than that
+      // flux does: D_HLL ~ c dE while F_diff ~ c dE/tau, so a weight alpha ~ 1/tau
+      // leaves a residual of the same order as the physical flux.  That is invisible on
+      // a smooth profile, where the reconstructed jump dE is O(dx^2), but at a KINK --
+      // an opacity jump (T3b), a limiter-clipped extremum (T3c) -- dE is O(dx) and the
+      // residual is O(F): 65 % of the flux at the 1e3 jump of T3b, measured, before
+      // this was squared.  alpha^2 ~ 1/tau^2 removes it and leaves the thin limit
+      // (alpha -> 1) untouched.
+      fe = alpha*fadv + alpha*alpha*fdis + (1.0 - alpha)*fdiff;
+    }
+  }
+  flx[0] = fe;          // 1c: + A_upwind
 }
 
 } // namespace radm1

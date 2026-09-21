@@ -460,6 +460,11 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
             ExecuteTaskList(pmesh, "m1_stagen", stage);
             ExecuteTaskList(pmesh, "m1_after_stagen", stage);
           }
+          // final admissibility pass of the substep (milestone 1b).  Without it the
+          // state left by the last stage -- and so every dump and restart -- can carry
+          // E below the floor or |f| slightly above 1 (1a saw f = 1 + 3e-5); inside the
+          // substep the next stage's ApplyClosureLimits would have repaired it.
+          (void) pmesh->pmb_pack->pradm1->ApplyClosureLimits(this, 1);
         }
         (void) pmesh->pmb_pack->pradm1->NewTimeStep(this, 1);
       }

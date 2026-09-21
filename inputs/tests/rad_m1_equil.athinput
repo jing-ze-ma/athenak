@@ -1,0 +1,105 @@
+# AthenaK input file for the grey M1 single-zone equilibration test (design note T5)
+#
+# CODE UNITS ARE CGS.  HERACLES / Turner & Stone numbers: rho = 1e-7 g/cc,
+# E_r = 1e12 erg/cc held by the radiation, sigma = rho kappa = 4e-8 /cm (kappa = 0.4),
+# ideal gas with gamma = 5/3 and mu = 0.6, gas energy density 1e2 (cold start) or 1e10
+# (hot start) erg/cc.  The equilibrium is kappa_E E = kappa_P a T^4, i.e.
+# T -> 3.3907e6 K and e_gas -> 7.048e7 erg/cc, with E_r essentially unchanged.
+#
+# <rad_m1>/arad is the radiation constant in CODE units, i.e. the number for which
+# arad*T^4 is an energy density with T the code temperature.  AthenaK's ideal gas uses
+# T_code = p/rho = k T_K/(mu m_u) (the mu_ref = 1 convention of eos.hpp), so
+#   arad_code = a_cgs (mu m_u/k)^4 = 7.565733e-15 * (7.2163413e-9)^4 = 2.0517256e-47
+# for mu = 0.6.  A TABULATED EOS carries its own temperature scale (EOS_Data::temp_cgs)
+# and a run in cgs units then wants arad = a_cgs itself.
+#
+# The zone is uniform, so the transport is identically zero and only the implicit solve
+# runs.  dt is set by the radiation alone (subcycle = false makes <rad_m1> own the mesh
+# step): dt = cfl_rad*dx/c = 33.356*cfl_rad s with dx = 1e12 cm.  The thermal coupling
+# time at equilibrium is rho c_v/(4 c sigma a T^3) = 1.4693e-8 s, so the gate's
+# "0.1 to 1e5 coupling times" is cfl_rad = 4.4e-11 to 4.4e-5.  (The other coupling time
+# one might mean, 1/(c sigma) = 8.339e-4 s, is 5.7e4 times longer.)
+
+<comment>
+problem = grey M1 single-zone equilibration
+
+<job>
+basename = m1_equil
+
+<mesh>
+nghost    = 2
+nx1       = 8
+x1min     = 0.0
+x1max     = 8.0e12
+ix1_bc    = periodic
+ox1_bc    = periodic
+
+nx2       = 1
+x2min     = -0.5
+x2max     = 0.5
+ix2_bc    = periodic
+ox2_bc    = periodic
+
+nx3       = 1
+x3min     = -0.5
+x3max     = 0.5
+ix3_bc    = periodic
+ox3_bc    = periodic
+
+<meshblock>
+nx1       = 8
+nx2       = 1
+nx3       = 1
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim       = 2000
+tlim       = 1.0e10
+ndiag      = 100000
+
+<hydro>
+eos         = ideal
+reconstruct = plm
+rsolver     = hllc
+gamma       = 1.666666666666667
+
+<rad_m1>
+c_light      = 2.99792458e10
+chat_over_c  = 1.0
+cfl_rad      = 4.4e-7      # dt = 33.356*cfl_rad s ~ 1e3 thermal coupling times
+thick_flux   = none
+closure      = m1
+e_floor      = 1.0e-30
+subcycle     = false       # <rad_m1> owns the mesh timestep, so dt = cfl_rad*dx/c
+opacity      = const
+kappa_p      = 0.4
+kappa_e      = 0.4
+kappa_f      = 0.4
+kappa_s      = 0.0
+arad         = 2.0517256e-47
+coupling     = true
+gas_feedback = true
+
+<problem>
+pgen_name = rad_m1_beam
+m1_test   = equil
+gas_rho   = 1.0e-7
+gas_eint  = 1.0e2          # cold start; the hot start is 1.0e10
+e_rad     = 1.0e12
+
+# The gate measures an equilibrium to 1e-10 and a conservation drift to round-off, and
+# the bin writer is SINGLE precision (its round-off is 6e-8), so the numbers are taken
+# from a formatted table with an explicit 17-digit data_format.
+<output1>
+file_type   = tab
+variable    = m1
+data_format = %26.17e
+dt          = 1.0e-9
+
+<output2>
+file_type   = tab
+variable    = hydro_u
+data_format = %26.17e
+dt          = 1.0e-9

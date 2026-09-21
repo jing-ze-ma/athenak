@@ -19,6 +19,11 @@
 #include "mesh/mesh.hpp"
 #include "bvals/bvals.hpp"
 #include "rad_m1/rad_m1.hpp"
+#include "rad_m1/rad_m1_closure.hpp"
+
+#if MPI_PARALLEL_ENABLED
+#include <mpi.h>
+#endif
 
 namespace radm1 {
 //----------------------------------------------------------------------------------------
@@ -48,22 +53,110 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   e_floor = pin->GetOrAddReal("rad_m1","e_floor",(FLT_MIN));
   subcycle = pin->GetOrAddBoolean("rad_m1","subcycle",true);
 
-  // thick-limit flux.  Design sect. 3 makes ap_hll the eventual default; milestone 1a
-  // implements the plain HLL flux only, so anything else is refused rather than
-  // silently run as "none".
+  // thick-limit flux (design sect. 3, and the 1b correction to it recorded in
+  // rad_m1_closure.hpp: ap_hll is the BLEND form, which is what survives PLM).
   thick_flux_str = pin->GetOrAddString("rad_m1","thick_flux","none");
-  if (thick_flux_str.compare("none") != 0) {
-    if (thick_flux_str.compare("ap_hll") == 0 ||
-        thick_flux_str.compare("scaled") == 0) {
-      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-        << std::endl << "<rad_m1>/thick_flux = '" << thick_flux_str
-        << "' is not implemented yet (milestone 1a implements 'none' only)" << std::endl;
-    } else {
-      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-        << std::endl << "<rad_m1>/thick_flux = '" << thick_flux_str
-        << "' is not a valid choice (none | ap_hll | scaled)" << std::endl;
-    }
+  if (thick_flux_str.compare("none") == 0) {
+    thick_flux = M1_THICK_NONE;
+  } else if (thick_flux_str.compare("ap_hll") == 0) {
+    thick_flux = M1_THICK_APHLL;
+  } else if (thick_flux_str.compare("scaled") == 0) {
+    thick_flux = M1_THICK_SCALED;
+  } else {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+      << std::endl << "<rad_m1>/thick_flux = '" << thick_flux_str
+      << "' is not a valid choice (none | ap_hll | scaled)" << std::endl;
     std::exit(EXIT_FAILURE);
+  }
+  scaled_pref = pin->GetOrAddReal("rad_m1","scaled_prefactor",20.0);
+  if (!(scaled_pref > 0.0)) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+      << std::endl << "<rad_m1>/scaled_prefactor must be positive" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+
+  // (1b) opacities, per unit mass, in code units.  kappa_e defaults to kappa_p and
+  // kappa_f to kappa_p as well, so a single kappa_p gives a grey absorbing medium.
+  {std::string op = pin->GetOrAddString("rad_m1","opacity","const");
+  if (op.compare("const") == 0) {
+    opacity_type = M1_OPAC_CONST;
+  } else if (op.compare("powerlaw") == 0) {
+    opacity_type = M1_OPAC_POWERLAW;
+  } else if (op.compare("user") == 0) {
+    opacity_type = M1_OPAC_USER;
+  } else {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+      << std::endl << "<rad_m1>/opacity = '" << op << "' is not a valid choice "
+      << "(const | powerlaw | user)" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  }
+  kappa_p = pin->GetOrAddReal("rad_m1","kappa_p",0.0);
+  kappa_e = pin->GetOrAddReal("rad_m1","kappa_e",kappa_p);
+  kappa_f = pin->GetOrAddReal("rad_m1","kappa_f",kappa_p);
+  kappa_s = pin->GetOrAddReal("rad_m1","kappa_s",0.0);
+  opac_rho_ref = pin->GetOrAddReal("rad_m1","rho_ref",1.0);
+  opac_t_ref = pin->GetOrAddReal("rad_m1","t_ref",1.0);
+  opac_a = pin->GetOrAddReal("rad_m1","opac_a",0.0);
+  opac_b = pin->GetOrAddReal("rad_m1","opac_b",0.0);
+  if (!(opac_rho_ref > 0.0) || !(opac_t_ref > 0.0)) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+      << std::endl << "<rad_m1>/rho_ref and t_ref must be positive" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  if (kappa_p < 0.0 || kappa_e < 0.0 || kappa_f < 0.0 || kappa_s < 0.0) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+      << std::endl << "<rad_m1> opacities must be non-negative" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  opac_zero = (kappa_p == 0.0 && kappa_e == 0.0 && kappa_f == 0.0 && kappa_s == 0.0 &&
+               opacity_type != M1_OPAC_USER);
+
+  // (1c) matter coupling.  It reads rho, v and the gas energy from hydro's CONSERVED
+  // u0 and writes u0(IEN) and u0(IM1..3) back, so it needs a <hydro> block unless every
+  // opacity vanishes (the pure-transport tests of milestone 1a).
+  bool have_hydro = pin->DoesBlockExist("hydro");
+  coupling = pin->GetOrAddBoolean("rad_m1","coupling",!opac_zero);
+  gas_feedback = pin->GetOrAddBoolean("rad_m1","gas_feedback",true);
+  if (coupling && !have_hydro) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+      << std::endl << "<rad_m1> matter coupling requires a <hydro> block" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  if (!opac_zero && !coupling) {
+    std::cout << "### WARNING: <rad_m1> has non-zero opacities but coupling = false: "
+      << "the opacity enters the thick-limit FLUX only" << std::endl;
+  }
+  // an isothermal gas has no energy equation to couple to
+  if (have_hydro && (coupling || !opac_zero)) {
+    std::string heos = pin->GetOrAddString("hydro","eos","ideal");
+    if (heos.compare("isothermal") == 0) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+        << std::endl << "<rad_m1> needs a hydro EOS with an energy equation, not "
+        << "'isothermal'" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+  }
+  // the design's gas-only EOS requirement (sect. 1)
+  if (have_hydro && pin->GetOrAddBoolean("hydro","eos_radiation",false)) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+      << std::endl << "<rad_m1> requires a GAS-ONLY EOS: <hydro>/eos_radiation must be "
+      << "false (the radiation energy and pressure are evolved, not in the EOS)"
+      << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  // radiation constant, code units: the equilibrium energy density is arad*T^4 with T
+  // the EOS's own code temperature.  Required whenever there is emission/absorption.
+  if (coupling && (kappa_p > 0.0 || kappa_e > 0.0 ||
+                   opacity_type == M1_OPAC_USER)) {
+    arad = pin->GetReal("rad_m1","arad");
+    if (!(arad > 0.0)) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+        << std::endl << "<rad_m1>/arad must be positive" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+  } else {
+    arad = pin->GetOrAddReal("rad_m1","arad",0.0);
   }
 
   // closure
@@ -84,10 +177,14 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   {std::string xorder = pin->GetOrAddString("rad_m1","reconstruct","plm");
   if (xorder.compare("plm") == 0) {
     recon_method = ReconstructionMethod::plm;
+  } else if (xorder.compare("dc") == 0) {
+    // piecewise constant.  Added in 1b so that the thick-limit blend can be compared
+    // with the first-order scheme it reduces to (Berthon & Turpault / Bloch et al.).
+    recon_method = ReconstructionMethod::dc;
   } else {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
       << std::endl << "<rad_m1>/reconstruct = '" << xorder << "' not implemented "
-      << "(plm only in milestone 1a)" << std::endl;
+      << "(dc | plm)" << std::endl;
     std::exit(EXIT_FAILURE);
   }
   }
@@ -129,6 +226,17 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   Kokkos::realloc(uflx.x1f, nmb, M1_NVAR, ncells3, ncells2, ncells1);
   Kokkos::realloc(uflx.x2f, nmb, M1_NVAR, ncells3, ncells2, ncells1);
   Kokkos::realloc(uflx.x3f, nmb, M1_NVAR, ncells3, ncells2, ncells1);
+  // rho*kappa is needed in the GHOST cells too: the face opacity at the first and last
+  // active face is the arithmetic mean over a ghost and an active cell.
+  Kokkos::realloc(opac, nmb, M1_NOPAC, ncells3, ncells2, ncells1);
+  Kokkos::deep_copy(opac, 0.0);
+  if (coupling) {
+    Kokkos::realloc(ugas1, nmb, 4, ncells3, ncells2, ncells1);
+  }
+  Kokkos::realloc(cnt, M1_NCNT);
+  for (int n=0; n<M1_NCNT; ++n) {cnt.h_view(n) = 0.0;}
+  cnt.template modify<HostMemSpace>();
+  cnt.template sync<DevExeSpace>();
 
   if (ppack->pmesh->multilevel) {
     int nccells1 = indcs.cnx1 + 2*(indcs.ng);
@@ -146,6 +254,11 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
               << " cfl_rad=" << cfl_rad << " thick_flux=" << thick_flux_str
               << " closure=" << (eddington ? "eddington" : "m1")
               << " subcycle=" << (subcycle ? "true" : "false") << std::endl;
+    std::cout << "         kappa_p=" << kappa_p << " kappa_e=" << kappa_e
+              << " kappa_f=" << kappa_f << " kappa_s=" << kappa_s
+              << " coupling=" << (coupling ? "true" : "false")
+              << " gas_feedback=" << (gas_feedback ? "true" : "false")
+              << " arad=" << arad << std::endl;
   }
 }
 
@@ -153,7 +266,39 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
 // destructor
 
 RadiationM1::~RadiationM1() {
+  ReportCounters();
   delete pbval_u;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::ReportCounters
+//! \brief one line at the end of the run with the cost and the health of the implicit
+//! energy-exchange solve.  A non-zero failure count means cells left the bracketed
+//! Newton at M1_MAXIT without reaching M1_RTOL and is a result to distrust.
+
+void RadiationM1::ReportCounters() {
+  if (!coupling) return;
+  cnt.template modify<DevExeSpace>();
+  cnt.template sync<HostMemSpace>();
+  Real nsolve = cnt.h_view(M1_CNT_NSOLVE);
+#if MPI_PARALLEL_ENABLED
+  {
+    Real loc[M1_NCNT], glob[M1_NCNT];
+    for (int n=0; n<M1_NCNT; ++n) {loc[n] = cnt.h_view(n);}
+    MPI_Reduce(loc, glob, M1_NCNT, MPI_ATHENA_REAL, MPI_SUM, 0, MPI_COMM_WORLD);
+    Real lmax = cnt.h_view(M1_CNT_ITMAX), gmax;
+    MPI_Reduce(&lmax, &gmax, 1, MPI_ATHENA_REAL, MPI_MAX, 0, MPI_COMM_WORLD);
+    for (int n=0; n<M1_NCNT; ++n) {cnt.h_view(n) = glob[n];}
+    cnt.h_view(M1_CNT_ITMAX) = gmax;
+    nsolve = cnt.h_view(M1_CNT_NSOLVE);
+  }
+#endif
+  if (global_variable::my_rank != 0) return;
+  Real mean = (nsolve > 0.0) ? (cnt.h_view(M1_CNT_ITSUM)/nsolve) : 0.0;
+  std::cout << "<rad_m1> implicit energy solve: cells=" << nsolve
+            << " iterations mean=" << mean << " max=" << cnt.h_view(M1_CNT_ITMAX)
+            << " FAILURES=" << cnt.h_view(M1_CNT_NFAIL)
+            << " (no bracket: " << cnt.h_view(M1_CNT_NBRAK) << ")" << std::endl;
 }
 
 //----------------------------------------------------------------------------------------

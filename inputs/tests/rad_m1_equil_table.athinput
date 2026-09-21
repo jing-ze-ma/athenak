@@ -1,0 +1,116 @@
+# AthenaK input file for the grey M1 single-zone equilibration on the TABULATED EOS
+# (design note T5, second half: "repeat with the tabulated He EOS at rho = 1e-8,
+# T = 2e5 K").
+#
+# Same test as rad_m1_equil.athinput, with the general/tabulated EOS of the He-star box
+# (bench/hestar_fecz/box_w8) in place of the ideal gas -- minus its radiation, since
+# <rad_m1> requires a GAS-ONLY EOS and refuses eos_radiation = true (design sect. 1).
+# Units are cgs, but the CODE TEMPERATURE is not kelvin: EOS_Data::temp_cgs is
+# Units::temperature_cgs()/mu = v_code^2 m_u/(k mu) (general_hyd.cpp:55), which with
+# length = time = mass = 1 cgs and <units>/mu = 1 is 1.2027236e-8 K per code unit.  The
+# radiation constant in code units is therefore
+#   arad = a_cgs*temp_cgs^4/pres_cgs = 7.565733e-15*(1.2027236e-8)^4 = 1.5831216e-46,
+# which is the SAME rule as the ideal-gas case of rad_m1_equil.athinput (there the
+# factor is mu m_u/k with the run's physical mu; here the table carries the composition
+# itself and <units>/mu is 1).  E_r = a (2e5 K)^4 = 1.2105e7 erg/cc, and the gas --
+# whose energy density at that temperature is ~2e5 erg/cc -- equilibrates at T = 2e5 K
+# whatever it starts from.
+
+<comment>
+problem = grey M1 single-zone equilibration, tabulated EOS
+
+<job>
+basename = m1_equil_tab
+
+<mesh>
+nghost    = 2
+nx1       = 8
+x1min     = 0.0
+x1max     = 8.0e12
+ix1_bc    = periodic
+ox1_bc    = periodic
+
+nx2       = 1
+x2min     = -0.5
+x2max     = 0.5
+ix2_bc    = periodic
+ox2_bc    = periodic
+
+nx3       = 1
+x3min     = -0.5
+x3max     = 0.5
+ix3_bc    = periodic
+ox3_bc    = periodic
+
+<meshblock>
+nx1       = 8
+nx2       = 1
+nx3       = 1
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim       = 1000
+tlim       = 1.0e10
+ndiag      = 100000
+
+<units>
+length_cgs = 1.0
+mass_cgs   = 1.0
+time_cgs   = 1.0
+mu         = 1.0
+
+<hydro>
+eos                  = general
+general_eos          = table
+gamma                = 1.6666666667
+eos_h2               = false
+eos_ionization       = true
+eos_metal_ionization = false
+eos_radiation        = false      # REQUIRED by <rad_m1>: the radiation is evolved
+eos_xh               = 0.0
+eos_yhe              = 0.98
+eos_logd_min         = -13.0
+eos_logd_max         = -3.0
+eos_logt_min         = 3.8
+eos_logt_max         = 6.5
+eos_dlog             = 0.02
+reconstruct = plm
+rsolver     = hllc
+
+<rad_m1>
+c_light      = 2.99792458e10
+chat_over_c  = 1.0
+cfl_rad      = 1.0e-4
+thick_flux   = none
+closure      = m1
+e_floor      = 1.0e-30
+subcycle     = false
+opacity      = const
+kappa_p      = 0.4
+kappa_e      = 0.4
+kappa_f      = 0.4
+kappa_s      = 0.0
+arad         = 1.5831216e-46
+coupling     = true
+gas_feedback = true
+
+<problem>
+pgen_name = rad_m1_beam
+m1_test   = equil
+gas_rho   = 1.0e-8
+gas_eint  = 1.0e7
+e_rad     = 1.2105e7
+
+<output1>
+file_type   = tab
+variable    = m1
+data_format = %26.17e
+dt          = 1.0e-9
+
+<output2>
+file_type   = tab
+variable    = hydro_u
+data_format = %26.17e
+dt          = 1.0e-9

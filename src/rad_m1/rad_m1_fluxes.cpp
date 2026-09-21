@@ -107,13 +107,20 @@ TaskStatus RadiationM1::CalculateFluxes(Driver *pdrive, int stage) {
   bool &three_d = pmy_pack->pmesh->three_d;
 
   auto u0_ = u0;
+  auto opac_ = opac;
   auto flx1 = uflx.x1f;
   auto flx2 = uflx.x2f;
   auto flx3 = uflx.x3f;
+  auto &mbsize = pmy_pack->pmb->mb_size;
   Real cl = c_light;
   Real ch = chat;
   Real efl = e_floor;
   bool edd = eddington;
+  bool dc = (recon_method == ReconstructionMethod::dc);
+  // the thick-limit correction needs a face opacity; with none stored there is nothing
+  // to correct and the flux is plain HLL (and bit-identical to milestone 1a)
+  int thick = (opac_zero) ? M1_THICK_NONE : thick_flux;
+  Real spref = scaled_pref;
 
   //--------------------------------------------------------------------------------- x1
   par_for("m1_flx1", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
@@ -124,13 +131,24 @@ TaskStatus RadiationM1::CalculateFluxes(Driver *pdrive, int stage) {
     M1Prim(u0_, m, k, j, i  , cl, efl, qc);
     M1Prim(u0_, m, k, j, i+1, cl, efl, qd);
     for (int n=0; n<M1_NVAR; ++n) {
-      PLM(qa[n], qb[n], qc[n], ql[n], dum);
-      PLM(qb[n], qc[n], qd[n], dum, qr[n]);
+      if (dc) {
+        ql[n] = qb[n];
+        qr[n] = qc[n];
+      } else {
+        PLM(qa[n], qb[n], qc[n], ql[n], dum);
+        PLM(qb[n], qc[n], qd[n], dum, qr[n]);
+      }
+    }
+    Real tauf = 0.0;
+    if (thick != M1_THICK_NONE) {
+      tauf = 0.5*(opac_(m,M1_OP_T,k,j,i-1) + opac_(m,M1_OP_T,k,j,i))
+             *mbsize.d_view(m).dx1;
     }
     Real el, fl1, fl2, fl3, er, fr1, fr2, fr3, flx[4];
     M1Rebuild(ql, cl, efl, el, fl1, fl2, fl3);
     M1Rebuild(qr, cl, efl, er, fr1, fr2, fr3);
-    M1HLLFlux(1, cl, ch, edd, el, fl1, fl2, fl3, er, fr1, fr2, fr3, flx);
+    M1HLLFlux(1, cl, ch, edd, el, fl1, fl2, fl3, er, fr1, fr2, fr3,
+              thick, tauf, spref, dc, qb[0], qc[0], flx);
     for (int n=0; n<M1_NVAR; ++n) {
       flx1(m,n,k,j,i) = flx[n];
     }
@@ -146,13 +164,24 @@ TaskStatus RadiationM1::CalculateFluxes(Driver *pdrive, int stage) {
       M1Prim(u0_, m, k, j  , i, cl, efl, qc);
       M1Prim(u0_, m, k, j+1, i, cl, efl, qd);
       for (int n=0; n<M1_NVAR; ++n) {
-        PLM(qa[n], qb[n], qc[n], ql[n], dum);
-        PLM(qb[n], qc[n], qd[n], dum, qr[n]);
+        if (dc) {
+          ql[n] = qb[n];
+          qr[n] = qc[n];
+        } else {
+          PLM(qa[n], qb[n], qc[n], ql[n], dum);
+          PLM(qb[n], qc[n], qd[n], dum, qr[n]);
+        }
+      }
+      Real tauf = 0.0;
+      if (thick != M1_THICK_NONE) {
+        tauf = 0.5*(opac_(m,M1_OP_T,k,j-1,i) + opac_(m,M1_OP_T,k,j,i))
+               *mbsize.d_view(m).dx2;
       }
       Real el, fl1, fl2, fl3, er, fr1, fr2, fr3, flx[4];
       M1Rebuild(ql, cl, efl, el, fl1, fl2, fl3);
       M1Rebuild(qr, cl, efl, er, fr1, fr2, fr3);
-      M1HLLFlux(2, cl, ch, edd, el, fl1, fl2, fl3, er, fr1, fr2, fr3, flx);
+      M1HLLFlux(2, cl, ch, edd, el, fl1, fl2, fl3, er, fr1, fr2, fr3,
+                thick, tauf, spref, dc, qb[0], qc[0], flx);
       for (int n=0; n<M1_NVAR; ++n) {
         flx2(m,n,k,j,i) = flx[n];
       }
@@ -169,13 +198,24 @@ TaskStatus RadiationM1::CalculateFluxes(Driver *pdrive, int stage) {
       M1Prim(u0_, m, k  , j, i, cl, efl, qc);
       M1Prim(u0_, m, k+1, j, i, cl, efl, qd);
       for (int n=0; n<M1_NVAR; ++n) {
-        PLM(qa[n], qb[n], qc[n], ql[n], dum);
-        PLM(qb[n], qc[n], qd[n], dum, qr[n]);
+        if (dc) {
+          ql[n] = qb[n];
+          qr[n] = qc[n];
+        } else {
+          PLM(qa[n], qb[n], qc[n], ql[n], dum);
+          PLM(qb[n], qc[n], qd[n], dum, qr[n]);
+        }
+      }
+      Real tauf = 0.0;
+      if (thick != M1_THICK_NONE) {
+        tauf = 0.5*(opac_(m,M1_OP_T,k-1,j,i) + opac_(m,M1_OP_T,k,j,i))
+               *mbsize.d_view(m).dx3;
       }
       Real el, fl1, fl2, fl3, er, fr1, fr2, fr3, flx[4];
       M1Rebuild(ql, cl, efl, el, fl1, fl2, fl3);
       M1Rebuild(qr, cl, efl, er, fr1, fr2, fr3);
-      M1HLLFlux(3, cl, ch, edd, el, fl1, fl2, fl3, er, fr1, fr2, fr3, flx);
+      M1HLLFlux(3, cl, ch, edd, el, fl1, fl2, fl3, er, fr1, fr2, fr3,
+                thick, tauf, spref, dc, qb[0], qc[0], flx);
       for (int n=0; n<M1_NVAR; ++n) {
         flx3(m,n,k,j,i) = flx[n];
       }

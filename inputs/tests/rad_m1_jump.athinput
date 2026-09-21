@@ -1,0 +1,92 @@
+# AthenaK input file for the grey M1 opacity-jump test (design note T3b; Bloch et al.
+# 2021 sect. 5.2)
+#
+# A constant-flux steady state across a factor 1e3 jump in rho*kappa_F at x = 0.5.  The
+# jump is carried by the GAS DENSITY at constant gas pressure, so hydro itself is in
+# equilibrium and stays there; <rad_m1>/gas_feedback = false keeps the radiation from
+# pushing it.  With kappa_f = 0.64 and 64 cells the cell optical depth is 0.01 on the
+# left and 10 on the right.
+#
+# The initial condition IS the analytic steady state (dE/dx = -3 rho kappa F/c on each
+# side), and the two end values of E are held in the ghost zones by a user BC while F is
+# left free, so the run only has to relax the discrete solution onto its own steady
+# state.  Gate: max |F/<F> - 1| < 1e-3 overall and in the cells around the jump.
+
+<comment>
+problem = grey M1 opacity jump
+
+<job>
+basename = m1_jump
+
+<mesh>
+nghost    = 2
+nx1       = 64
+x1min     = 0.0
+x1max     = 1.0
+ix1_bc    = user
+ox1_bc    = user
+
+nx2       = 1
+x2min     = -0.5
+x2max     = 0.5
+ix2_bc    = periodic
+ox2_bc    = periodic
+
+nx3       = 1
+x3min     = -0.5
+x3max     = 0.5
+ix3_bc    = periodic
+ox3_bc    = periodic
+
+<meshblock>
+nx1       = 64
+nx2       = 1
+nx3       = 1
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.4
+nlim       = -1
+tlim       = 200.0
+ndiag      = 10000
+
+<hydro>
+eos         = ideal
+reconstruct = plm
+rsolver     = hllc
+gamma       = 1.666666666666667
+
+<rad_m1>
+c_light      = 1.0
+chat_over_c  = 1.0
+cfl_rad      = 0.4
+reconstruct  = plm
+thick_flux   = ap_hll
+scaled_prefactor = 20.0
+closure      = m1
+e_floor      = 1.0e-30
+subcycle     = true
+opacity      = const
+kappa_p      = 0.0
+kappa_e      = 0.0
+kappa_f      = 0.64
+kappa_s      = 0.0
+coupling     = true
+gas_feedback = false
+
+<problem>
+pgen_name  = rad_m1_beam
+m1_test    = jump
+user_bcs   = true
+gas_rho    = 1.0
+gas_pres   = 0.01
+x_jump     = 0.5
+jump_ratio = 1.0e3
+e_left     = 1.0
+jump_flux  = 1.0e-3
+
+<output1>
+file_type   = bin
+variable    = m1
+dt          = 50.0

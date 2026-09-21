@@ -38,12 +38,14 @@ void RadiationM1::AssembleRadM1Tasks(std::map<std::string,
   // "m1_stagen"
   id.copyu   = tl["m1_stagen"]->AddTask(&RadiationM1::CopyCons, this, none);
   id.closure = tl["m1_stagen"]->AddTask(&RadiationM1::ApplyClosureLimits,this,id.copyu);
-  id.flux    = tl["m1_stagen"]->AddTask(&RadiationM1::CalculateFluxes,this,id.closure);
+  id.opac    = tl["m1_stagen"]->AddTask(&RadiationM1::Opacity, this, id.closure);
+  id.flux    = tl["m1_stagen"]->AddTask(&RadiationM1::CalculateFluxes, this, id.opac);
   id.sendf   = tl["m1_stagen"]->AddTask(&RadiationM1::SendFlux, this, id.flux);
   id.recvf   = tl["m1_stagen"]->AddTask(&RadiationM1::RecvFlux, this, id.sendf);
   id.update  = tl["m1_stagen"]->AddTask(&RadiationM1::Update, this, id.recvf);
   id.coupl   = tl["m1_stagen"]->AddTask(&RadiationM1::Coupling, this, id.update);
-  id.restu   = tl["m1_stagen"]->AddTask(&RadiationM1::RestrictU, this, id.coupl);
+  id.c2p     = tl["m1_stagen"]->AddTask(&RadiationM1::HydroConToPrim,this,id.coupl);
+  id.restu   = tl["m1_stagen"]->AddTask(&RadiationM1::RestrictU, this, id.c2p);
   id.sendu   = tl["m1_stagen"]->AddTask(&RadiationM1::SendU, this, id.restu);
   id.recvu   = tl["m1_stagen"]->AddTask(&RadiationM1::RecvU, this, id.sendu);
   id.bcs     = tl["m1_stagen"]->AddTask(&RadiationM1::ApplyPhysicalBCs,this,id.recvu);
@@ -82,19 +84,6 @@ TaskStatus RadiationM1::CopyCons(Driver *pdrive, int stage) {
   if (stage == 1) {
     Kokkos::deep_copy(DevExeSpace(), u1, u0);
   }
-  return TaskStatus::complete;
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn TaskStatus RadiationM1::Coupling
-//! \brief MILESTONE 1b HOOK.  The implicit local matter coupling of design sect. 4 goes
-//! here, and it is called inside BOTH explicit stages (that is the whole point of the
-//! PD-ARS tableau: a stage that contains transport but not the source leaves a spurious
-//! c^2 dt/3 diffusion).  In milestone 1a the source S is identically zero, so this task
-//! is deliberately empty; the task itself exists so the dependency chain does not have
-//! to be rewired when 1b lands.
-
-TaskStatus RadiationM1::Coupling(Driver *pdrive, int stage) {
   return TaskStatus::complete;
 }
 

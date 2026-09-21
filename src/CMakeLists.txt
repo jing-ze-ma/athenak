@@ -151,8 +151,10 @@ add_executable(
         pgen/tests/z4c_linear_wave.cpp
 
         rad_m1/rad_m1.cpp
+        rad_m1/rad_m1_coupling.cpp
         rad_m1/rad_m1_fluxes.cpp
         rad_m1/rad_m1_newdt.cpp
+        rad_m1/rad_m1_opacity.cpp
         rad_m1/rad_m1_tasks.cpp
         rad_m1/rad_m1_update.cpp
         radiation/radiation.cpp
