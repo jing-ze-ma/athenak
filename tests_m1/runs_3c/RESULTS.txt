@@ -1,0 +1,226 @@
+MILESTONE 3c -- implicit_flux = blend, the SMOOTH PER-FACE BLEND of `central` and
+`berthon`, on top of rt-integration 441762eb
+=====================================================================================
+viper, serial CPU Release, gcc/14, 2026-09-21.  Binaries build_cpu_m1 (no -D PROBLEM)
+and build_cpu_box (-D PROBLEM=box_convection).  Every run's dumps were deleted as soon
+as they were measured; the numbers are in runs_3c/results_*.json and the profiles for
+the results page in tests_m1/plots/impl3c_*.json.  Driver: runs_3c/run_gates_3c.py.
+
+NEW OPTIONS (all inert unless implicit_flux = blend, and see REGRESSION below):
+  <rad_m1>/implicit_flux        = central | ap_hll | berthon | blend
+            implicit_blend      = tau | f | tau_f     (W1 | W2 | W3)
+            implicit_blend_fmode= max | mean          (f_face from the two cells)
+            implicit_blend_mode = flux | dissipation  (what is blended)
+            implicit_blend_tau0 = 1.0                 (W1: w = exp(-(tau_f/tau0)^2))
+            implicit_blend_flo  = 0.6                 (W2: smoothstep lower edge)
+            implicit_blend_fhi  = 0.9                 (W2: smoothstep upper edge)
+            implicit_recon_npass= -1    (freeze the plm correction after N passes)
+
+THE FORM.  F_f = (1 - w_f) F_central + w_f F_berthon with w_f in [0,1] from LAGGED face
+quantities, stored per FACE in ifw(M1_IFW_AL / HCL / HCR / DG), so both cells that
+share a face assemble from the same number and conservation is exact.
+  W1 (tau)   w = exp(-(tau_face/tau0)^2)                      the user's suggestion
+  W2 (f)     w = smoothstep((f_face - f_lo)/(f_hi - f_lo)),  f_face = max|f| of the two
+  W3 (tau_f) W1*W2
+w_f = 1 with mode = flux is BITWISE `berthon`, w_f = 0 is BITWISE `central` (the code
+multiplies by exactly 1.0 or 0.0), which is what every "= central" / "= berthon" entry
+below means literally.
+
+M-MATRIX AND POSITIVITY.  The 3a2 argument is by COLUMNS.  A face contributes +nu c_L
+to the diagonal of its left cell and -nu c_L to the lower off-diagonal of its right cell
+(and +nu c_R / -nu c_R the other way), so each contribution has ZERO column sum and
+non-positive off-diagonals; the central (face-eliminated) contribution has the same
+structure with c_L = th c^2 dt w_i/dx.  A CONVEX combination with the SAME w_f in both
+cells therefore again has zero column sum and non-positive off-diagonals, and the column
+sums of the whole matrix stay 1 + SRCB >= 1: nonsingular M-matrix, E' > 0 at any dt.
+The `dissipation` mode adds +w dk / -w dk pairs, which is the same structure, so it too
+keeps the property.  The F0^n MEMORY term of the central form rides on the same weight
+(the row uses om = 1 - w and the face update uses fn = (1-w) fn + (c/chat) gh), so the
+stored face flux is always the flux the row applied.  NUMERICAL CHECK: minimum E over
+the final dump, floor 1e-15, negatives counted:
+  free-streaming pulse, W3/plm_dc, CFL 0.4 / 10 / 100:  5.59e-6 / 2.53e-2 / 1.34e-1, 0
+  atmosphere, W3, CFL 1 / 100 / 1e4:                    2.000000e+00, 0
+The floor was never active on a blend solution in any gate.
+
+
+G1  STATIC GREY ATMOSPHERE (t9_atmosphere.py, rad_m1_atmosphere.athinput, 128 cells)
+=====================================================================================
+max|dE/E| over the column / over the top 5 cells / L1(E); target <= 2e-3.
+                    implicit_cfl 1        1e2                1e4
+  central           1.353e-3/1.353e-3     same               same   L1 5.008e-4  PASS
+  berthon           3.681e-1/1.207e-1     3.681e-1/1.207e-1  same   L1 2.186e-1  FAIL
+  W1 (tau)          3.681e-1/1.207e-1     3.652e-1/1.206e-1  3.628e-1/1.201e-1  FAIL
+  W2 (f)            1.353e-3/1.353e-3     same               same   L1 5.008e-4  PASS
+  W3 (tau_f)        1.353e-3/1.353e-3     same               same   L1 5.008e-4  PASS
+  W3 + plm_dc       1.353e-3 PASS         W3, dissipation mode 1.353e-3 PASS
+  W1, dissipation   1.477e-1 / top5 1.435e-3 / L1 4.632e-2                       FAIL
+W2 and W3 are BITWISE the central column at every CFL.  W1 is the predicted failure and
+is the whole point of the gate: the top of a grey atmosphere is optically THIN and
+DIFFUSE (f -> marshak_q = 1/2), so a tau-only weight sends it to the upwind form, whose
+0.289 c dx of numerical dissipation then sets the gradient of E.
+
+G2  FREE-STREAMING PULSE (rad_m1_pulse1d, 128 cells, one box crossing; explicit 0.953)
+=====================================================================================
+peak-to-trough amplitude final/initial, and Picard passes per step.
+                         CFL 0.4   CFL 1    CFL 10   CFL 100   Picard
+  central       dc       0.369     0.319    0.285    0.076     13.2 / 23.6 / 27.5
+  central       plm_dc   0.369     0.319    0.285              (plm_dc is inert here)
+  berthon       dc       0.561     0.492    0.145    0.079     2 / 2 / 2
+  berthon       plm_dc   0.818     0.695    0.190              30 (never converged)
+  W1 = W2 = W3  dc       0.561     0.492    0.145              2 / 2 / 2
+  W2 = W3       plm_dc   0.922     0.718    0.786              30 (never converged)
+  W3 dissipation dc      0.324     0.293    0.297              17 / 26 / 28
+  W1 dissipation dc      0.503     0.344    0.283              17 / 27 / 28
+  W3 plm_dc, implicit_recon_npass = 3     0.444 / 0.407 / 0.142   27 / 30 / 30
+  W3 plm_dc, implicit_blend_fmode = mean  0.498 / --    / 0.351   30 (never converged)
+Here tau = 0 and f = 1 everywhere, so every weight is 1 and all three blends are BITWISE
+`berthon` with dc.  TARGET (>= 0.80 at CFL 0.4): MET by W2/W3 with plm_dc at 0.922, the
+best implicit number on this gate (berthon plm_dc 0.818, explicit 0.953), and the blend
+also holds 0.786 at CFL 10 where berthon plm_dc collapses to 0.190 -- the deferred
+correction carries the weight w, so it is switched off exactly in the diffuse tails of
+the pulse where the unweighted plm correction fights the solve.
+
+G3  MARSHAK WAVE (t6_marshak.py --marshak, vs the S_N reference; explicit 0.0019/0.0148)
+=====================================================================================
+L1(E), 128 and 64 cells.
+                      128 cells                      64 cells
+                      CFL 1   CFL 10  CFL 100        CFL 1   CFL 10  CFL 100
+  central     dc      0.0144  0.0143  0.0135         0.0294  0.0293  0.0277
+  berthon     dc      0.0104  0.0103  0.0098         0.0248  0.0246  0.0232
+  berthon     plm_dc  0.2647  --      0.0089  FAIL   0.2363  --      0.0194  FAIL
+  W1          dc      0.0143  0.0142  0.0135         0.0294  0.0293  0.0277
+  W2          dc      0.0144  0.0143  0.0135         0.0295  0.0293  0.0277
+  W3          dc      0.0144  0.0143  0.0135         0.0294  0.0293  0.0277
+  W3          plm_dc  0.0144          0.0135         0.0294          0.0277
+  Picard mean, 128 cells, CFL 1/10/100:
+      central 6.61 / 9.93 / 14.14 (8 of 259 non-converged at CFL 100)
+      berthon 8.68 / 10.83 / 12.90 (0 non-converged)
+      berthon plm_dc 23.77 (47 non-converged at CFL 1)
+      W3      6.61 / 9.93 / 14.14  = central;  W3 plm_dc 6.61 = W3 dc
+THE 0.5 % TARGET IS NOT MET BY ANY VARIANT (as in 3a2).  G3 IS NOT IMPROVED BY THE
+BLEND: the blends land on the central answer.  berthon's 28 % advantage here comes from
+faces where the field is DIFFUSE (f well below f_lo) and moderately thick -- exactly the
+faces the atmosphere gate forces to stay central.  Measured directly: opening the window
+to f_lo = 0.52/f_hi = 0.75 and even f_lo = 0.3/f_hi = 0.6 leaves L1 at 0.0144, i.e. no
+f-window recovers berthon's Marshak number, and a tau-only weight (W1) gains 0.0001.
+The BLEND DOES repair the two plm_dc defects of 3a2: L1 0.0144 instead of 0.2647 at
+CFL 1, and 6.6 Picard passes instead of 23.8, because w = 0 at the emission front kills
+the correction there.
+
+G4  T3b OPACITY JUMP x1000 (efix/efix, 64 cells), absolute face-flux error at the jump
+=====================================================================================
+                  max|E/E_ex-1|   face flux uniform to / peak at the jump
+  central         1.126e-4        8.107e-5 / 5.557e-6
+  berthon         5.883e-3        7.931e-3 / 1.977e-3
+  W1              1.123e-4        8.715e-4 / 8.718e-4      (157x worse than central)
+  W2, W3          1.126e-4        8.107e-5 / 5.557e-6      = central, BITWISE
+identical at implicit_cfl 1 and 100.  W2/W3 keep the 700x advantage of the face-
+eliminated form over the explicit scheme; W1 throws most of it away.
+T3c top-hat: not re-run -- W2/W3 are bitwise `central` on every thick/diffuse
+configuration measured here, so the 3a number stands unchanged.
+
+G5  THICK PULSE, diffusion rate d(sigma^2)/dt / 2D (128 cells)
+=====================================================================================
+                  tau_cell 10    tau_cell 1e3   tau_cell 1e6
+  central  CFL 1  0.999710       0.999998       1.000336
+           CFL 100 0.999221      0.999994       1.000774
+  berthon  CFL 1  0.984245       0.999824       1.000336
+  W1,W2,W3 CFL 1  0.999710       0.999998       1.000336   = central, BITWISE
+           CFL 100 0.999221      0.999994       1.000774   = central, BITWISE
+All within 0.08 %.  implicit_cfl 1e4 could not be fitted (the default tlim leaves fewer
+than the three dumps t3_pulse.py needs for the rate fit); since every blend is bitwise
+`central` on this problem at CFL 1 and 100, the 3a CFL-1e4 and Nyquist numbers (damped
+at exactly the backward-Euler rate, no growth) carry over unchanged.
+
+G6  MOVING MEDIUM (T4 dynamic 512, beta tau = 14, implicit_cfl 10; T4b drift)
+=====================================================================================
+  central   dcentre 0.007 cells  dwidth 1.790e-2  gas drift 1.208e-2  Picard 3.00
+  berthon   dcentre 0.008        dwidth 1.789e-2  gas drift 1.208e-2  Picard 2.16
+  W3        dcentre 0.007        dwidth 1.790e-2  gas drift 1.208e-2  Picard 3.00
+            = central, BITWISE; the 3a CFL-10 line (0.007, 1.790e-2) reproduced.
+  T4b uniform medium: central and W3 identical, dwidth 5.606e-5, Tgas drift 1.287e-8.
+  (t4_advect.py reports FAIL on T4b's `dcentre` -- the centroid of a uniform field --
+  exactly as in 3a; the quantities the gate is about are the drift and the width.)
+
+G7  EQUILIBRATION (T5 ideal gas, and the tabulated He EOS)
+=====================================================================================
+  ideal, implicit_cfl 4.4e-5 (1e5 coupling times), cold e = 1e2 / hot e = 1e10:
+     central  dE_eq 5.064e-13 / 3.886e-13, conservation 5.063e-13 / 3.884e-13,
+              Picard 1.002 mean, 0 non-converged
+     W3       IDENTICAL to every digit
+  tabulated He EOS (rad_m1_equil_table, implicit_cfl 1e-4), W3:
+     final E = 2.17059880790512525e7, i.e. the explicit reference 2.170598807905e7;
+     Picard 1.009 mean, max 4, 0 non-converged.
+
+G8  THE 1-D He FeCZ COLUMN (build_cpu_box, runs_3a/he_box_m1_1d_impl.athinput, 300 s)
+=====================================================================================
+                          F1top/Fin  F1bot/Fin  V1max(cm/s)  Fres[g0]  Picard  wall
+  central (reference)     1.0000097  0.9998352  1.83439e4    1.73e-4   11.709  15.1 s
+  blend W3 (tau_f)        1.0000097  0.9998352  1.83439e4    1.73e-4   11.709  15.2 s
+  blend W2 (f)            1.0000097  0.9998352  1.83439e4    1.73e-4   11.709  15.2 s
+  blend W1 (tau)          0.9999013  0.9997920  8.04202e4    4.25e-2   30.000  22.4 s
+  berthon                 1.0000440  0.9997010  1.38591e5    4.69e-2   30.000  21.8 s
+W2 and W3 reproduce the 3b reference line EXACTLY (V1max = 1.8343925542664529e4,
+Picard mean 11.70892, max 23, 0 non-converged).  W1 and berthon are catastrophic on the
+very problem the milestone exists for: the residual velocity grows by 4.4x and 7.6x, the
+residual force by 245x and 271x, and the Picard loop NEVER converges (mean = max =
+implicit_maxit = 30, 1864 and 1868 non-converged solves).
+The column's top cells are exactly the atmosphere case: tau_cell 1e-3..1e-1 and f ~ 1/2.
+
+G9  PARTITION: implicit_partition = gather, 1 vs 2 vs 4 MeshBlocks along x1
+=====================================================================================
+final .tab, all four moments, sorted by x1, difference against the serial ONE-BLOCK run:
+  static grey atmosphere, implicit_cfl 100, blend W1   1 vs 2: 0.0   1 vs 4: 0.0
+  static grey atmosphere, implicit_cfl 100, blend W3   1 vs 2: 0.0   1 vs 4: 0.0
+  Marshak wave,           implicit_cfl 100, blend W1   1 vs 2: 0.0   1 vs 4: 0.0
+  Marshak wave,           implicit_cfl 100, blend W3   1 vs 2: 0.0   1 vs 4: 0.0
+BITWISE, with identical Picard statistics (atmosphere W1 3.086719 mean / 142 non-
+converged and W3 1.369531 mean, Marshak 14.15058 and 14.13514 mean, for 1, 2 and 4
+blocks alike).  W1 is the meaningful case: its weight VARIES strongly across the column
+and therefore across block faces, while W3's weight is identically 0 there.  No new
+halo was needed -- the weight reads only M1_IW_RF0 and M1_IW_KT of the neighbouring
+cell, and both are already in halo A of the 3b x1 exchange.
+
+REGRESSION
+=====================================================================================
+  implicit_flux = central, dc: G2 0.369/0.319/0.285/0.076 (3a2: identical);
+      G1 1.353e-3 / L1 5.008e-4; G3 0.0144/0.0143/0.0135 and 0.0294/0.0293/0.0277;
+      G4 1.126e-4, peak 5.557e-6; G5 0.999710/0.999998/1.000336.  ALL = 3a2/3b.
+  implicit_flux = berthon, dc: G2 0.561/0.492/0.145/0.079; plm_dc 0.818/0.695/0.190;
+      G1 3.681e-1; G3 0.0104/0.0103/0.0098 and plm_dc 0.2647 FAIL at CFL 1;
+      G4 5.883e-3.  ALL = 3a2.
+  transport = explicit, T3 tau_cell 1e3 plm: ratio 1.000015 (= runs_1cB/3a/3a2/3b).
+  tests_gate_merge/postmerge.sh: box G1 mode 3 and mode 0, 10/10 files IDENTICAL;
+      the 1-D He column smoke test t = 300: F1top 2.4752259854942720e15,
+      F1bot 2.4747941961720800e15, V1max 1.8343925542664529e4, Picard mean 11.70892,
+      max 23, NON-CONVERGED 0 -- the 3b reference line exactly.
+
+STYLE
+=====================================================================================
+cpplint (repo CPPLINT.cfg, pip cpplint): rad_m1_implicit.cpp 19 vs 19 at HEAD (no new),
+rad_m1.hpp 2 vs 2, rad_m1_implicit.hpp 5 vs 3 -- the 2 new are `whitespace/newline`
+("Controlled statements inside brackets of if clause"), the one-line `{x = y;}` form the
+file already uses and which the upstream cpplint.py the CI downloads does not flag.
+No line over 90 columns, no tabs, no trailing whitespace, no `}}` on one line, mode 644.
+flake8 --max-line-length 90 on tests_m1/runs_3c: clean.
+
+VERDICT
+=====================================================================================
+RECOMMENDED: implicit_flux = blend, implicit_blend = tau_f (W3), implicit_recon = dc for
+production columns and plm_dc where a front must propagate.  It is bitwise `central` on
+every diffuse problem measured (G1, G3, G4, G5, G6, G7, G8) and bitwise `berthon` in
+free streaming (G2), so it costs nothing and buys 1.5x (dc) to 2.5x (plm_dc) on G2.
+THE DEFAULT IS NOT CHANGED: the decision rule for a new default was "at least as good as
+central everywhere AND improves G2 AND G3", and G3 is NOT improved (0.0144 = central,
+against berthon's 0.0104).  `implicit_flux = central` therefore stays the default.
+implicit_blend_fmode = max is the right choice: `mean` halves the free-streaming gain
+(0.498 against 0.922 at CFL 0.4, 0.351 against 0.786 at CFL 10) because at the EDGE of a
+pulse one of the two cells is still diffuse and the mean pulls the weight down exactly
+where the upwind part is needed; on the atmosphere the two are identical (1.353e-3).
+The user's tau-only weight (W1) must NOT be used: it fails G1 (3.7e-1), degrades G4 by
+157x and wrecks G8 (245x the residual force, Picard never converging).
+implicit_blend_mode = dissipation is REJECTED: it does not help the front (0.324 at
+CFL 0.4, below plain central's 0.369) and destroys the Picard convergence (17-28 passes
+against 2).  implicit_recon_npass (freezing the plm limiter after N passes) is REJECTED:
+npass = 3 makes G2 worse (0.444 against 0.922) and does not restore convergence -- the
+limit cycle is driven by the re-lagged closure and wave speeds, not by the limiter.

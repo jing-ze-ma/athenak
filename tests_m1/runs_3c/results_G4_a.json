@@ -1,0 +1,92 @@
+{
+ "central@1": {
+  "out": "PASS T3b jump: max|E/E_exact-1|=1.126e-04  slope err 2.466e-05 / 1.707e-05  slope ratio err 7.592e-06  face flux: uniform to 8.107e-05, 1.911e-05 below the imposed value, 5.557e-06 peak at the jump (< 0.01)  [cell F err 2.936e-05, diagnostic]",
+  "picard": {
+   "solves": 12800.0,
+   "mean": 1.182578,
+   "max": 4.0,
+   "nfail": 0.0
+  }
+ },
+ "central@100": {
+  "out": "PASS T3b jump: max|E/E_exact-1|=1.126e-04  slope err 2.455e-05 / 1.709e-05  slope ratio err 7.467e-06  face flux: uniform to 8.090e-05, 1.906e-05 below the imposed value, 5.500e-06 peak at the jump (< 0.01)  [cell F err 2.948e-05, diagnostic]",
+  "picard": {
+   "solves": 128.0,
+   "mean": 2.078125,
+   "max": 4.0,
+   "nfail": 0.0
+  }
+ },
+ "berthon@1": {
+  "out": "PASS T3b jump: max|E/E_exact-1|=5.883e-03  slope err 2.756e-03 / 7.266e-04  slope ratio err 2.035e-03  face flux: uniform to 7.931e-03, 1.641e-03 below the imposed value, 1.977e-03 peak at the jump (< 0.01)  [cell F err 4.596e-03, diagnostic]",
+  "picard": {
+   "solves": 12800.0,
+   "mean": 2.016563,
+   "max": 30.0,
+   "nfail": 3.0
+  }
+ },
+ "berthon@100": {
+  "out": "PASS T3b jump: max|E/E_exact-1|=5.881e-03  slope err 2.835e-03 / 7.270e-04  slope ratio err 2.114e-03  face flux: uniform to 7.965e-03, 1.678e-03 below the imposed value, 1.936e-03 peak at the jump (< 0.01)  [cell F err 4.600e-03, diagnostic]",
+  "picard": {
+   "solves": 128.0,
+   "mean": 10.23438,
+   "max": 30.0,
+   "nfail": 4.0
+  }
+ },
+ "W1@1": {
+  "out": "PASS T3b jump: max|E/E_exact-1|=1.123e-04  slope err 1.706e-03 / 1.864e-05  slope ratio err 1.721e-03  face flux: uniform to 8.715e-04, 8.453e-04 below the imposed value, 8.718e-04 peak at the jump (< 0.01)  [cell F err 3.007e-05, diagnostic]",
+  "picard": {
+   "solves": 12800.0,
+   "mean": 1.150547,
+   "max": 30.0,
+   "nfail": 7.0
+  }
+ },
+ "W1@100": {
+  "out": "PASS T3b jump: max|E/E_exact-1|=1.122e-04  slope err 1.695e-03 / 1.864e-05  slope ratio err 1.710e-03  face flux: uniform to 8.660e-04, 8.397e-04 below the imposed value, 8.662e-04 peak at the jump (< 0.01)  [cell F err 3.011e-05, diagnostic]",
+  "picard": {
+   "solves": 128.0,
+   "mean": 3.140625,
+   "max": 30.0,
+   "nfail": 5.0
+  }
+ },
+ "W2@1": {
+  "out": "PASS T3b jump: max|E/E_exact-1|=1.126e-04  slope err 2.466e-05 / 1.707e-05  slope ratio err 7.592e-06  face flux: uniform to 8.107e-05, 1.911e-05 below the imposed value, 5.557e-06 peak at the jump (< 0.01)  [cell F err 2.936e-05, diagnostic]",
+  "picard": {
+   "solves": 12800.0,
+   "mean": 1.182578,
+   "max": 4.0,
+   "nfail": 0.0
+  }
+ },
+ "W2@100": {
+  "out": "PASS T3b jump: max|E/E_exact-1|=1.126e-04  slope err 2.455e-05 / 1.709e-05  slope ratio err 7.467e-06  face flux: uniform to 8.090e-05, 1.906e-05 below the imposed value, 5.500e-06 peak at the jump (< 0.01)  [cell F err 2.948e-05, diagnostic]",
+  "picard": {
+   "solves": 128.0,
+   "mean": 2.078125,
+   "max": 4.0,
+   "nfail": 0.0
+  }
+ },
+ "W3@1": {
+  "out": "PASS T3b jump: max|E/E_exact-1|=1.126e-04  slope err 2.466e-05 / 1.707e-05  slope ratio err 7.592e-06  face flux: uniform to 8.107e-05, 1.911e-05 below the imposed value, 5.557e-06 peak at the jump (< 0.01)  [cell F err 2.936e-05, diagnostic]",
+  "picard": {
+   "solves": 12800.0,
+   "mean": 1.182578,
+   "max": 4.0,
+   "nfail": 0.0
+  }
+ },
+ "W3@100": {
+  "out": "PASS T3b jump: max|E/E_exact-1|=1.126e-04  slope err 2.455e-05 / 1.709e-05  slope ratio err 7.467e-06  face flux: uniform to 8.090e-05, 1.906e-05 below the imposed value, 5.500e-06 peak at the jump (< 0.01)  [cell F err 2.948e-05, diagnostic]",
+  "picard": {
+   "solves": 128.0,
+   "mean": 2.078125,
+   "max": 4.0,
+   "nfail": 0.0
+  }
+ }
+}

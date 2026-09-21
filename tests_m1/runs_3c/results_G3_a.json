@@ -1,0 +1,272 @@
+{
+ "central/dc/n128@1": {
+  "out": "PASS T6 marshak: L1(E)=0.0144  L1(material)=0.0144 (<= 0.02)  reference=table /viper/u2/jinma/ATHENAK/athenak/tests_m1/runs_3a/t6_ref_sn.txt",
+  "picard": {
+   "solves": 25856.0,
+   "mean": 6.614171,
+   "max": 14.0,
+   "nfail": 0.0
+  }
+ },
+ "central/dc/n128@10": {
+  "out": "PASS T6 marshak: L1(E)=0.0143  L1(material)=0.0143 (<= 0.02)  reference=table /viper/u2/jinma/ATHENAK/athenak/tests_m1/runs_3a/t6_ref_sn.txt",
+  "picard": {
+   "solves": 2586.0,
+   "mean": 9.930394,
+   "max": 25.0,
+   "nfail": 0.0
+  }
+ },
+ "central/dc/n128@100": {
+  "out": "PASS T6 marshak: L1(E)=0.0135  L1(material)=0.0135 (<= 0.02)  reference=table /viper/u2/jinma/ATHENAK/athenak/tests_m1/runs_3a/t6_ref_sn.txt",
+  "picard": {
+   "solves": 259.0,
+   "mean": 14.13514,
+   "max": 30.0,
+   "nfail": 8.0
+  }
+ },
+ "central/dc/n64@1": {
+  "out": "FAIL T6 marshak: L1(E)=0.0294  L1(material)=0.0294 (<= 0.02)  reference=table /viper/u2/jinma/ATHENAK/athenak/tests_m1/runs_3a/t6_ref_sn.txt",
+  "picard": {
+   "solves": 12928.0,
+   "mean": 5.046179,
+   "max": 14.0,
+   "nfail": 0.0
+  }
+ },
+ "central/dc/n64@10": {
+  "out": "FAIL T6 marshak: L1(E)=0.0293  L1(material)=0.0293 (<= 0.02)  reference=table /viper/u2/jinma/ATHENAK/athenak/tests_m1/runs_3a/t6_ref_sn.txt",
+  "picard": {
+   "solves": 1293.0,
+   "mean": 6.485692,
+   "max": 17.0,
+   "nfail": 0.0
+  }
+ },
+ "central/dc/n64@100": {
+  "out": "FAIL T6 marshak: L1(E)=0.0277  L1(material)=0.0277 (<= 0.02)  reference=table /viper/u2/jinma/ATHENAK/athenak/tests_m1/runs_3a/t6_ref_sn.txt",
+  "picard": {
+   "solves": 130.0,
+   "mean": 9.776923,
+   "max": 30.0,
+   "nfail": 1.0
+  }
+ },
+ "berthon/dc/n128@1": {
+  "out": "PASS T6 marshak: L1(E)=0.0104  L1(material)=0.0104 (<= 0.02)  reference=table /viper/u2/jinma/ATHENAK/athenak/tests_m1/runs_3a/t6_ref_sn.txt",
+  "picard": {
+   "solves": 25856.0,
+   "mean": 8.680654,
+   "max": 26.0,
+   "nfail": 0.0
+  }
+ },
+ "berthon/dc/n128@10": {
+  "out": "PASS T6 marshak: L1(E)=0.0103  L1(material)=0.0103 (<= 0.02)  reference=table /viper/u2/jinma/ATHENAK/athenak/tests_m1/runs_3a/t6_ref_sn.txt",
+  "picard": {
+   "solves": 2586.0,
+   "mean": 10.82715,
+   "max": 19.0,
+   "nfail": 0.0
+  }
+ },
+ "berthon/dc/n128@100": {
+  "out": "PASS T6 marshak: L1(E)=0.0098  L1(material)=0.0098 (<= 0.02)  reference=table /viper/u2/jinma/ATHENAK/athenak/tests_m1/runs_3a/t6_ref_sn.txt",
+  "picard": {
+   "solves": 259.0,
+   "mean": 12.89575,
+   "max": 16.0,
+   "nfail": 0.0
+  }
+ },
+ "berthon/dc/n64@1": {
+  "out": "FAIL T6 marshak: L1(E)=0.0248  L1(material)=0.0248 (<= 0.02)  reference=table /viper/u2/jinma/ATHENAK/athenak/tests_m1/runs_3a/t6_ref_sn.txt",
+  "picard": {
+   "solves": 12928.0,
+   "mean": 6.871983,
+   "max": 22.0,
+   "nfail": 0.0
+  }
+ },
+ "berthon/dc/n64@10": {
+  "out": "FAIL T6 marshak: L1(E)=0.0246  L1(material)=0.0246 (<= 0.02)  reference=table /viper/u2/jinma/ATHENAK/athenak/tests_m1/runs_3a/t6_ref_sn.txt",
+  "picard": {
+   "solves": 1293.0,
+   "mean": 8.136118,
+   "max": 14.0,
+   "nfail": 0.0
+  }
+ },
+ "berthon/dc/n64@100": {
+  "out": "FAIL T6 marshak: L1(E)=0.0232  L1(material)=0.0232 (<= 0.02)  reference=table /viper/u2/jinma/ATHENAK/athenak/tests_m1/runs_3a/t6_ref_sn.txt",
+  "picard": {
+   "solves": 130.0,
+   "mean": 10.06154,
+   "max": 14.0,
+   "nfail": 0.0
+  }
+ },
+ "W1/dc/n128@1": {
+  "out": "PASS T6 marshak: L1(E)=0.0143  L1(material)=0.0143 (<= 0.02)  reference=table /viper/u2/jinma/ATHENAK/athenak/tests_m1/runs_3a/t6_ref_sn.txt",
+  "picard": {
+   "solves": 25856.0,
+   "mean": 6.629177,
+   "max": 14.0,
+   "nfail": 0.0
+  }
+ },
+ "W1/dc/n128@10": {
+  "out": "PASS T6 marshak: L1(E)=0.0142  L1(material)=0.0142 (<= 0.02)  reference=table /viper/u2/jinma/ATHENAK/athenak/tests_m1/runs_3a/t6_ref_sn.txt",
+  "picard": {
+   "solves": 2586.0,
+   "mean": 9.935035,
+   "max": 25.0,
+   "nfail": 0.0
+  }
+ },
+ "W1/dc/n128@100": {
+  "out": "PASS T6 marshak: L1(E)=0.0135  L1(material)=0.0135 (<= 0.02)  reference=table /viper/u2/jinma/ATHENAK/athenak/tests_m1/runs_3a/t6_ref_sn.txt",
+  "picard": {
+   "solves": 259.0,
+   "mean": 14.15058,
+   "max": 30.0,
+   "nfail": 8.0
+  }
+ },
+ "W1/dc/n64@1": {
+  "out": "FAIL T6 marshak: L1(E)=0.0294  L1(material)=0.0294 (<= 0.02)  reference=table /viper/u2/jinma/ATHENAK/athenak/tests_m1/runs_3a/t6_ref_sn.txt",
+  "picard": {
+   "solves": 12928.0,
+   "mean": 5.046179,
+   "max": 14.0,
+   "nfail": 0.0
+  }
+ },
+ "W1/dc/n64@10": {
+  "out": "FAIL T6 marshak: L1(E)=0.0293  L1(material)=0.0293 (<= 0.02)  reference=table /viper/u2/jinma/ATHENAK/athenak/tests_m1/runs_3a/t6_ref_sn.txt",
+  "picard": {
+   "solves": 1293.0,
+   "mean": 6.485692,
+   "max": 17.0,
+   "nfail": 0.0
+  }
+ },
+ "W1/dc/n64@100": {
+  "out": "FAIL T6 marshak: L1(E)=0.0277  L1(material)=0.0277 (<= 0.02)  reference=table /viper/u2/jinma/ATHENAK/athenak/tests_m1/runs_3a/t6_ref_sn.txt",
+  "picard": {
+   "solves": 130.0,
+   "mean": 9.776923,
+   "max": 30.0,
+   "nfail": 1.0
+  }
+ },
+ "W2/dc/n128@1": {
+  "out": "PASS T6 marshak: L1(E)=0.0144  L1(material)=0.0144 (<= 0.02)  reference=table /viper/u2/jinma/ATHENAK/athenak/tests_m1/runs_3a/t6_ref_sn.txt",
+  "picard": {
+   "solves": 25856.0,
+   "mean": 6.618812,
+   "max": 30.0,
+   "nfail": 1.0
+  }
+ },
+ "W2/dc/n128@10": {
+  "out": "PASS T6 marshak: L1(E)=0.0143  L1(material)=0.0143 (<= 0.02)  reference=table /viper/u2/jinma/ATHENAK/athenak/tests_m1/runs_3a/t6_ref_sn.txt",
+  "picard": {
+   "solves": 2586.0,
+   "mean": 9.930394,
+   "max": 25.0,
+   "nfail": 0.0
+  }
+ },
+ "W2/dc/n128@100": {
+  "out": "PASS T6 marshak: L1(E)=0.0135  L1(material)=0.0135 (<= 0.02)  reference=table /viper/u2/jinma/ATHENAK/athenak/tests_m1/runs_3a/t6_ref_sn.txt",
+  "picard": {
+   "solves": 259.0,
+   "mean": 14.13514,
+   "max": 30.0,
+   "nfail": 8.0
+  }
+ },
+ "W2/dc/n64@1": {
+  "out": "FAIL T6 marshak: L1(E)=0.0295  L1(material)=0.0295 (<= 0.02)  reference=table /viper/u2/jinma/ATHENAK/athenak/tests_m1/runs_3a/t6_ref_sn.txt",
+  "picard": {
+   "solves": 12928.0,
+   "mean": 5.046334,
+   "max": 13.0,
+   "nfail": 0.0
+  }
+ },
+ "W2/dc/n64@10": {
+  "out": "FAIL T6 marshak: L1(E)=0.0293  L1(material)=0.0293 (<= 0.02)  reference=table /viper/u2/jinma/ATHENAK/athenak/tests_m1/runs_3a/t6_ref_sn.txt",
+  "picard": {
+   "solves": 1293.0,
+   "mean": 6.485692,
+   "max": 17.0,
+   "nfail": 0.0
+  }
+ },
+ "W2/dc/n64@100": {
+  "out": "FAIL T6 marshak: L1(E)=0.0277  L1(material)=0.0277 (<= 0.02)  reference=table /viper/u2/jinma/ATHENAK/athenak/tests_m1/runs_3a/t6_ref_sn.txt",
+  "picard": {
+   "solves": 130.0,
+   "mean": 9.776923,
+   "max": 30.0,
+   "nfail": 1.0
+  }
+ },
+ "W3/dc/n128@1": {
+  "out": "PASS T6 marshak: L1(E)=0.0144  L1(material)=0.0144 (<= 0.02)  reference=table /viper/u2/jinma/ATHENAK/athenak/tests_m1/runs_3a/t6_ref_sn.txt",
+  "picard": {
+   "solves": 25856.0,
+   "mean": 6.614209,
+   "max": 14.0,
+   "nfail": 0.0
+  }
+ },
+ "W3/dc/n128@10": {
+  "out": "PASS T6 marshak: L1(E)=0.0143  L1(material)=0.0143 (<= 0.02)  reference=table /viper/u2/jinma/ATHENAK/athenak/tests_m1/runs_3a/t6_ref_sn.txt",
+  "picard": {
+   "solves": 2586.0,
+   "mean": 9.930394,
+   "max": 25.0,
+   "nfail": 0.0
+  }
+ },
+ "W3/dc/n128@100": {
+  "out": "PASS T6 marshak: L1(E)=0.0135  L1(material)=0.0135 (<= 0.02)  reference=table /viper/u2/jinma/ATHENAK/athenak/tests_m1/runs_3a/t6_ref_sn.txt",
+  "picard": {
+   "solves": 259.0,
+   "mean": 14.13514,
+   "max": 30.0,
+   "nfail": 8.0
+  }
+ },
+ "W3/dc/n64@1": {
+  "out": "FAIL T6 marshak: L1(E)=0.0294  L1(material)=0.0294 (<= 0.02)  reference=table /viper/u2/jinma/ATHENAK/athenak/tests_m1/runs_3a/t6_ref_sn.txt",
+  "picard": {
+   "solves": 12928.0,
+   "mean": 5.046179,
+   "max": 14.0,
+   "nfail": 0.0
+  }
+ },
+ "W3/dc/n64@10": {
+  "out": "FAIL T6 marshak: L1(E)=0.0293  L1(material)=0.0293 (<= 0.02)  reference=table /viper/u2/jinma/ATHENAK/athenak/tests_m1/runs_3a/t6_ref_sn.txt",
+  "picard": {
+   "solves": 1293.0,
+   "mean": 6.485692,
+   "max": 17.0,
+   "nfail": 0.0
+  }
+ },
+ "W3/dc/n64@100": {
+  "out": "FAIL T6 marshak: L1(E)=0.0277  L1(material)=0.0277 (<= 0.02)  reference=table /viper/u2/jinma/ATHENAK/athenak/tests_m1/runs_3a/t6_ref_sn.txt",
+  "picard": {
+   "solves": 130.0,
+   "mean": 9.776923,
+   "max": 30.0,
+   "nfail": 1.0
+  }
+ }
+}

@@ -1,0 +1,47 @@
+{
+ "central@1": {
+  "out": "PASS T9 atmosphere: q0=0.92963248 max|dE/E|=1.353e-03 max|df/f|=1.355e-03  top5: dE=1.353e-03 df=1.355e-03  L1(E)=5.008e-04 (tol 0.01)",
+  "picard": {
+   "solves": 256000.0,
+   "mean": 1.082988,
+   "max": 15.0,
+   "nfail": 0.0
+  }
+ },
+ "berthon@1": {
+  "out": "FAIL T9 atmosphere: q0=0.92963248 max|dE/E|=3.681e-01 max|df/f|=2.691e-01  top5: dE=1.207e-01 df=1.077e-01  L1(E)=2.186e-01 (tol 0.01)",
+  "picard": {
+   "solves": 256000.0,
+   "mean": 1.259273,
+   "max": 30.0,
+   "nfail": 1396.0
+  }
+ },
+ "W1@1": {
+  "out": "FAIL T9 atmosphere: q0=0.92963248 max|dE/E|=3.681e-01 max|df/f|=2.690e-01  top5: dE=1.207e-01 df=1.077e-01  L1(E)=2.140e-01 (tol 0.01)",
+  "picard": {
+   "solves": 256000.0,
+   "mean": 1.25809,
+   "max": 30.0,
+   "nfail": 1426.0
+  }
+ },
+ "W2@1": {
+  "out": "PASS T9 atmosphere: q0=0.92963248 max|dE/E|=1.353e-03 max|df/f|=1.355e-03  top5: dE=1.353e-03 df=1.355e-03  L1(E)=5.008e-04 (tol 0.01)",
+  "picard": {
+   "solves": 256000.0,
+   "mean": 1.082988,
+   "max": 15.0,
+   "nfail": 0.0
+  }
+ },
+ "W3@1": {
+  "out": "PASS T9 atmosphere: q0=0.92963248 max|dE/E|=1.353e-03 max|df/f|=1.355e-03  top5: dE=1.353e-03 df=1.355e-03  L1(E)=5.008e-04 (tol 0.01)",
+  "picard": {
+   "solves": 256000.0,
+   "mean": 1.082988,
+   "max": 15.0,
+   "nfail": 0.0
+  }
+ }
+}

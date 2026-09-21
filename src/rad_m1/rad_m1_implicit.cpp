@@ -123,9 +123,49 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     impl_flux = M1_IFLUX_APHLL;
   } else if (sfx.compare("berthon") == 0) {
     impl_flux = M1_IFLUX_BERTHON;
+  } else if (sfx.compare("blend") == 0) {
+    impl_flux = M1_IFLUX_BLEND;
   } else {
     ImplFatal("<rad_m1>/implicit_flux = '" + sfx
-              + "' is not a choice (central | ap_hll | berthon)");
+              + "' is not a choice (central | ap_hll | berthon | blend)");
+  }
+  // ---- milestone 3c.  The weight of implicit_flux = blend.  Inert for every other
+  // flux, and the two ends of the blend are BITWISE central and berthon.
+  std::string sbl = pin->GetOrAddString("rad_m1","implicit_blend","tau_f");
+  if (sbl.compare("tau") == 0) {
+    impl_blend = M1_IBLEND_TAU;
+  } else if (sbl.compare("f") == 0) {
+    impl_blend = M1_IBLEND_F;
+  } else if (sbl.compare("tau_f") == 0) {
+    impl_blend = M1_IBLEND_TAUF;
+  } else {
+    ImplFatal("<rad_m1>/implicit_blend = '" + sbl
+              + "' is not a choice (tau | f | tau_f)");
+  }
+  std::string sbm = pin->GetOrAddString("rad_m1","implicit_blend_fmode","max");
+  if (sbm.compare("max") == 0) {
+    impl_blend_fmode = M1_IBFM_MAX;
+  } else if (sbm.compare("mean") == 0) {
+    impl_blend_fmode = M1_IBFM_MEAN;
+  } else {
+    ImplFatal("<rad_m1>/implicit_blend_fmode = '" + sbm
+              + "' is not a choice (max | mean)");
+  }
+  std::string sbw = pin->GetOrAddString("rad_m1","implicit_blend_mode","flux");
+  if (sbw.compare("flux") == 0) {
+    impl_blend_mode = M1_IBMODE_FLUX;
+  } else if (sbw.compare("dissipation") == 0) {
+    impl_blend_mode = M1_IBMODE_DISSIP;
+  } else {
+    ImplFatal("<rad_m1>/implicit_blend_mode = '" + sbw
+              + "' is not a choice (flux | dissipation)");
+  }
+  impl_blend_tau0 = pin->GetOrAddReal("rad_m1","implicit_blend_tau0",1.0);
+  impl_blend_flo = pin->GetOrAddReal("rad_m1","implicit_blend_flo",0.6);
+  impl_blend_fhi = pin->GetOrAddReal("rad_m1","implicit_blend_fhi",0.9);
+  if (!(impl_blend_tau0 > 0.0) || !(impl_blend_fhi > impl_blend_flo)) {
+    ImplFatal("<rad_m1>: implicit_blend_tau0 must be positive and implicit_blend_fhi "
+              "must exceed implicit_blend_flo");
   }
   std::string srn = pin->GetOrAddString("rad_m1","implicit_recon","dc");
   if (srn.compare("dc") == 0) {
@@ -152,6 +192,13 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   impl_res_floor = pin->GetOrAddReal("rad_m1","implicit_res_floor",0.0);
   std::string slg = pin->GetOrAddString("rad_m1","implicit_recon_lag","picard");
   impl_recon_freeze = (slg.compare("step") == 0);
+  // MILESTONE 3c: freeze the deferred correction, and with it the plm limiter's choice,
+  // after this many Picard passes.  The 3a2 finding is that the limiter keeps switching
+  // on a handful of cells and the iteration is a small limit cycle that never meets
+  // implicit_tol, so plm_dc costs implicit_maxit passes per step; freezing the
+  // correction after a few passes leaves an ordinary linear system to converge.
+  // <= 0 (the default) never freezes, i.e. reproduces 3a2.
+  impl_recon_npass = pin->GetOrAddInteger("rad_m1","implicit_recon_npass",-1);
   if (!impl_recon_freeze && slg.compare("picard") != 0) {
     ImplFatal("<rad_m1>/implicit_recon_lag = '" + slg
               + "' is not a choice (step | picard)");
@@ -256,7 +303,10 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
               << " marshak_q=" << marshak_q << std::endl;
     std::cout << "         implicit_flux="
               << ((impl_flux == M1_IFLUX_APHLL) ? "ap_hll" :
-                  ((impl_flux == M1_IFLUX_BERTHON) ? "berthon" : "central"))
+                  ((impl_flux == M1_IFLUX_BERTHON) ? "berthon" :
+                   ((impl_flux == M1_IFLUX_BLEND) ? "blend" : "central")))
+              << ((impl_flux == M1_IFLUX_BLEND) ? (":" + sbl + "/" + sbm + "/" + sbw)
+                                                : std::string(""))
               << " implicit_recon="
               << ((impl_recon == M1_IRECON_PLMDC) ? "plm_dc" : "dc")
               << " implicit_partition="
@@ -705,11 +755,20 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   auto iw_ = iw;
   auto ifw_ = ifw;
   const bool aphll = (impl_flux != M1_IFLUX_CENTRAL);
-  const bool berth = (impl_flux == M1_IFLUX_BERTHON);
+  const bool berth = (impl_flux == M1_IFLUX_BERTHON) || (impl_flux == M1_IFLUX_BLEND);
+  // MILESTONE 3c: the smooth per-face convex blend.  `bkind` etc. are read only when
+  // `blend` is true, and `blend` is false for every 3a/3a2 flux, so those paths keep the
+  // arithmetic they had (the weight enters as an exact multiplication by 1.0).
+  const bool blend = (impl_flux == M1_IFLUX_BLEND);
+  const int bkind = impl_blend, bfm = impl_blend_fmode;
+  const bool bdis = blend && (impl_blend_mode == M1_IBMODE_DISSIP);
+  const Real btau0 = impl_blend_tau0;
+  const Real bflo = impl_blend_flo, bfhi = impl_blend_fhi;
   const bool plmdc = (impl_recon == M1_IRECON_PLMDC);
   const Real rwin = impl_recon_w;
   const Real rfl_ = impl_res_floor;
   const bool rfreeze = impl_recon_freeze;
+  const int rnpass = impl_recon_npass;
   auto f0_ = f0x1;
   // F0^n, the face flux at the START of the step: the Picard loop overwrites f0x1 with
   // each new iterate, so the backward-Euler right-hand side needs its own copy
@@ -923,7 +982,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     const int iter = it;
     const bool doface = aphll && (it == 0 || !rfreeze);
     if (doface) {
-      const bool dodg = plmdc && (it == 0 || !rfreeze);
+      const bool dodg = plmdc && (it == 0
+                                  || (!rfreeze && (rnpass <= 0 || it < rnpass)));
       par_for("m1_impl_aphll", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         int ipos = pos_.d_view(m);
@@ -999,9 +1059,25 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         // supplying the 1/(0.866 tau) that the dissipation alone is short of.  The
         // F_diff weight is then zero, which is what storing AL = 1 below means.
         Real wdis = berth ? al : (al*al);
-        Real ccl = fmax(al*adl + wdis*dk, 0.0);
-        Real ccr = fmin(al*adr - wdis*dk, 0.0);
-        ifw_(m,M1_IFW_AL,k,j,i) = berth ? 1.0 : al;
+        // MILESTONE 3c.  w_f in [0,1] from the LAGGED face quantities: the whole face
+        // flux is (1 - w_f) F_central + w_f F_berthon (implicit_blend_mode = flux), or
+        // the FULL central flux plus w_f times the HLL DISSIPATION alone
+        // (= dissipation).  w_f = 1 with mode = flux reproduces `berthon` bitwise and
+        // w_f = 0 reproduces `central` bitwise: the multiplications below are by exactly
+        // 1.0 or exactly 0.0.  Every input of the weight lives in iw, which the x1 halo
+        // of the partitioned solve already carries.
+        Real wf = 1.0;
+        if (blend) {
+          wf = M1BlendWeight(bkind, bfm, tauf, btau0, rfl, rfr, bflo, bfhi);
+        }
+        // In `dissipation` mode the advective part of the HLL flux is NOT added (the
+        // central flux already carries the transport); only the jump term is.
+        Real wadv = bdis ? 0.0 : al;
+        Real wdsq = bdis ? al : wdis;
+        Real ccl = wf*fmax(wadv*adl + wdsq*dk, 0.0);
+        Real ccr = wf*fmin(wadv*adr - wdsq*dk, 0.0);
+        // how much of the CENTRAL (face-eliminated) flux the row keeps is 1 - AL.
+        ifw_(m,M1_IFW_AL,k,j,i) = bdis ? 0.0 : (berth ? wf : al);
         ifw_(m,M1_IFW_HCL,k,j,i) = ccl;
         ifw_(m,M1_IFW_HCR,k,j,i) = ccr;
         // the plm DEFERRED CORRECTION: the difference between the plm and the dc HLL
@@ -1027,8 +1103,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
             PLM(iw_(m,M1_IW_RF0,k,j,im), iw_(m,M1_IW_RF0,k,j,ip),
                 iw_(m,M1_IW_RF0,k,j,ipp), dum, frp);
             Real ecl = iw_(m,M1_IW_EP,k,j,im), ecr = iw_(m,M1_IW_EP,k,j,ip);
-            Real gp = al*(br*ch*flp*elp - bl*ch*frp*erp)*invb
-                      + wdis*(-dk)*(erp - elp);
+            // the deferred correction applies to the UPWIND part only, so it carries the
+            // same weight w_f the upwind part carries (3c).
+            Real gp = wf*(wadv*(br*ch*flp*elp - bl*ch*frp*erp)*invb
+                          + wdsq*(-dk)*(erp - elp));
             Real gc = ccl*ecl + ccr*ecr;
             // ADMISSIBILITY of the corrected face flux against the DONOR cell.  The
             // reconstructed face energy may exceed the donor cell's own (plm puts
@@ -1040,7 +1118,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
             // (amplitude ratio 6.98, Picard never converging).  The low-order flux gc
             // already satisfies this bound, so the clamp never removes the whole
             // correction, only the inadmissible part of it.
-            Real gmax = ch*ecl, gmin = -ch*ecr;
+            Real gmax = wf*ch*ecl, gmin = -wf*ch*ecr;
             gp = fmin(fmax(gp, gmin), gmax);
             // The DEFERRED-CORRECTION WEIGHT.  A deferred correction is a fixed-point
             // iteration x <- A_low^-1 (b + (A_low - A_high) x), and for advection its
@@ -1324,8 +1402,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         // The F0^n MEMORY term sits entirely in the F_diff branch: in the thin limit
         // alpha -> 1 and it must NOT survive, or the lagged flux would fight the upwind
         // HLL flux and the front would be damped exactly as it is under `central`.
+        // (3c) the test is on the FLUX FORM, not on al: with implicit_blend_mode =
+        // dissipation the central weight is 1 (al = 0) and the HLL part is still there.
         Real al = ifw_(m,M1_IFW_AL,k,j,i);
-        if (al > 0.0) {
+        if (aphll) {
           Real gh = ifw_(m,M1_IFW_HCL,k,j,i)*iw_(m,M1_IW_EP,k,j,im)
                     + ifw_(m,M1_IFW_HCR,k,j,i)*iw_(m,M1_IW_EP,k,j,ip)
                     + ifw_(m,M1_IFW_DG,k,j,i);

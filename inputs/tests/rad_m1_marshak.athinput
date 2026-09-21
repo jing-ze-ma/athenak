@@ -97,11 +97,18 @@ implicit_tol          = 1.0e-8
 implicit_maxit        = 30
 implicit_opac_update  = false
 implicit_allow_multid = false
-implicit_flux         = central   # central | ap_hll  (milestone 3a2, LIMIT 1)
+implicit_flux         = central   # central | ap_hll | berthon | blend
 implicit_recon        = dc        # dc | plm_dc       (milestone 3a2, LIMIT 1)
+implicit_blend        = tau_f     # tau | f | tau_f   (milestone 3c, blend weight)
+implicit_blend_fmode  = max       # max | mean        (3c: f_face from the two cells)
+implicit_blend_mode   = flux      # flux | dissipation (3c: what is blended)
+implicit_blend_tau0   = 1.0       # 3c: w = exp(-(tau_face/tau0)^2)
+implicit_blend_flo    = 0.6       # 3c: smoothstep lower edge in the reduced flux
+implicit_blend_fhi    = 0.9       # 3c: smoothstep upper edge in the reduced flux
 implicit_partition    = none      # none | gather (gather is NOT implemented yet)
 implicit_recon_w      = -1.0      # plm_dc weight; <=0 = auto 1/(1+chat dt/dx)
 implicit_recon_lag    = picard     # step | picard (when the plm correction is re-made)
+implicit_recon_npass  = -1        # 3c: freeze the plm correction after N passes
 implicit_res_floor    = 0.0       # Picard residual scale (0 = the 3a pure |dE|/E)
 implicit_bmom_half    = false     # boundary momentum (milestone 3a2, LIMIT 3)
 marshak_q             = 0.5

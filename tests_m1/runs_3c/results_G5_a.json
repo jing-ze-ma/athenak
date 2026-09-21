@@ -1,0 +1,407 @@
+{
+ "central/k1280@1": {
+  "out": "PASS T3 pulse: d(sigma^2)/dt=5.206824e-04  2D=5.208333e-04  ratio=0.999710 (target 1.000000 +- 0.02)",
+  "picard": {
+   "solves": 128.0,
+   "mean": 3.0,
+   "max": 3.0,
+   "nfail": 0.0
+  }
+ },
+ "central/k1280@100": {
+  "out": "PASS T3 pulse: d(sigma^2)/dt=5.204276e-04  2D=5.208333e-04  ratio=0.999221 (target 1.000000 +- 0.02)",
+  "picard": {
+   "solves": 2.0,
+   "mean": 3.5,
+   "max": 4.0,
+   "nfail": 0.0
+  }
+ },
+ "central/k1280@10000": {
+  "out": "usage: t3_pulse.py [-h] [--bin-convert-dir BIN_CONVERT_DIR] [--all-ranks]\n                   [--selftest] [--quiet] [--c C] [--rho RHO] [--kappa KAPPA]\n                   [--tol TOL] [--expect-excess EXPECT_EXCESS] [--skip SKIP]\n                   [--background BACKGROUND] [--subtract-min] [--nyquist]\n                   [--axis {1,2,3}] [--reduce {mid,mean}] [--selftest-fail]\n                   [dumps ...]\nt3_pulse.py: error: at least three dumps are needed for the fit",
+  "picard": {
+   "solves": 1.0,
+   "mean": 4.0,
+   "max": 4.0,
+   "nfail": 0.0
+  }
+ },
+ "central/k128000@1": {
+  "out": "PASS T3 pulse: d(sigma^2)/dt=5.208323e-06  2D=5.208333e-06  ratio=0.999998 (target 1.000000 +- 0.02)",
+  "picard": {
+   "solves": 128.0,
+   "mean": 2.0,
+   "max": 2.0,
+   "nfail": 0.0
+  }
+ },
+ "central/k128000@100": {
+  "out": "PASS T3 pulse: d(sigma^2)/dt=5.208300e-06  2D=5.208333e-06  ratio=0.999994 (target 1.000000 +- 0.02)",
+  "picard": {
+   "solves": 2.0,
+   "mean": 2.0,
+   "max": 2.0,
+   "nfail": 0.0
+  }
+ },
+ "central/k128000@10000": {
+  "out": "usage: t3_pulse.py [-h] [--bin-convert-dir BIN_CONVERT_DIR] [--all-ranks]\n                   [--selftest] [--quiet] [--c C] [--rho RHO] [--kappa KAPPA]\n                   [--tol TOL] [--expect-excess EXPECT_EXCESS] [--skip SKIP]\n                   [--background BACKGROUND] [--subtract-min] [--nyquist]\n                   [--axis {1,2,3}] [--reduce {mid,mean}] [--selftest-fail]\n                   [dumps ...]\nt3_pulse.py: error: at least three dumps are needed for the fit",
+  "picard": {
+   "solves": 1.0,
+   "mean": 2.0,
+   "max": 2.0,
+   "nfail": 0.0
+  }
+ },
+ "central/k1.28e+08@1": {
+  "out": "PASS T3 pulse: d(sigma^2)/dt=5.210082e-09  2D=5.208333e-09  ratio=1.000336 (target 1.000000 +- 0.02)",
+  "picard": {
+   "solves": 128.0,
+   "mean": 2.0,
+   "max": 2.0,
+   "nfail": 0.0
+  }
+ },
+ "central/k1.28e+08@100": {
+  "out": "PASS T3 pulse: d(sigma^2)/dt=5.212367e-09  2D=5.208333e-09  ratio=1.000774 (target 1.000000 +- 0.02)",
+  "picard": {
+   "solves": 2.0,
+   "mean": 2.0,
+   "max": 2.0,
+   "nfail": 0.0
+  }
+ },
+ "central/k1.28e+08@10000": {
+  "out": "usage: t3_pulse.py [-h] [--bin-convert-dir BIN_CONVERT_DIR] [--all-ranks]\n                   [--selftest] [--quiet] [--c C] [--rho RHO] [--kappa KAPPA]\n                   [--tol TOL] [--expect-excess EXPECT_EXCESS] [--skip SKIP]\n                   [--background BACKGROUND] [--subtract-min] [--nyquist]\n                   [--axis {1,2,3}] [--reduce {mid,mean}] [--selftest-fail]\n                   [dumps ...]\nt3_pulse.py: error: at least three dumps are needed for the fit",
+  "picard": {
+   "solves": 1.0,
+   "mean": 2.0,
+   "max": 2.0,
+   "nfail": 0.0
+  }
+ },
+ "berthon/k1280@1": {
+  "out": "PASS T3 pulse: d(sigma^2)/dt=5.126276e-04  2D=5.208333e-04  ratio=0.984245 (target 1.000000 +- 0.02)",
+  "picard": {
+   "solves": 128.0,
+   "mean": 4.929688,
+   "max": 7.0,
+   "nfail": 0.0
+  }
+ },
+ "berthon/k1280@100": {
+  "out": "PASS T3 pulse: d(sigma^2)/dt=5.131154e-04  2D=5.208333e-04  ratio=0.985182 (target 1.000000 +- 0.02)",
+  "picard": {
+   "solves": 2.0,
+   "mean": 8.0,
+   "max": 9.0,
+   "nfail": 0.0
+  }
+ },
+ "berthon/k1280@10000": {
+  "out": "usage: t3_pulse.py [-h] [--bin-convert-dir BIN_CONVERT_DIR] [--all-ranks]\n                   [--selftest] [--quiet] [--c C] [--rho RHO] [--kappa KAPPA]\n                   [--tol TOL] [--expect-excess EXPECT_EXCESS] [--skip SKIP]\n                   [--background BACKGROUND] [--subtract-min] [--nyquist]\n                   [--axis {1,2,3}] [--reduce {mid,mean}] [--selftest-fail]\n                   [dumps ...]\nt3_pulse.py: error: at least three dumps are needed for the fit",
+  "picard": {
+   "solves": 1.0,
+   "mean": 9.0,
+   "max": 9.0,
+   "nfail": 0.0
+  }
+ },
+ "berthon/k128000@1": {
+  "out": "PASS T3 pulse: d(sigma^2)/dt=5.207416e-06  2D=5.208333e-06  ratio=0.999824 (target 1.000000 +- 0.02)",
+  "picard": {
+   "solves": 128.0,
+   "mean": 2.007812,
+   "max": 3.0,
+   "nfail": 0.0
+  }
+ },
+ "berthon/k128000@100": {
+  "out": "PASS T3 pulse: d(sigma^2)/dt=5.207419e-06  2D=5.208333e-06  ratio=0.999824 (target 1.000000 +- 0.02)",
+  "picard": {
+   "solves": 2.0,
+   "mean": 3.0,
+   "max": 4.0,
+   "nfail": 0.0
+  }
+ },
+ "berthon/k128000@10000": {
+  "out": "usage: t3_pulse.py [-h] [--bin-convert-dir BIN_CONVERT_DIR] [--all-ranks]\n                   [--selftest] [--quiet] [--c C] [--rho RHO] [--kappa KAPPA]\n                   [--tol TOL] [--expect-excess EXPECT_EXCESS] [--skip SKIP]\n                   [--background BACKGROUND] [--subtract-min] [--nyquist]\n                   [--axis {1,2,3}] [--reduce {mid,mean}] [--selftest-fail]\n                   [dumps ...]\nt3_pulse.py: error: at least three dumps are needed for the fit",
+  "picard": {
+   "solves": 1.0,
+   "mean": 4.0,
+   "max": 4.0,
+   "nfail": 0.0
+  }
+ },
+ "berthon/k1.28e+08@1": {
+  "out": "PASS T3 pulse: d(sigma^2)/dt=5.210082e-09  2D=5.208333e-09  ratio=1.000336 (target 1.000000 +- 0.02)",
+  "picard": {
+   "solves": 128.0,
+   "mean": 2.0,
+   "max": 2.0,
+   "nfail": 0.0
+  }
+ },
+ "berthon/k1.28e+08@100": {
+  "out": "PASS T3 pulse: d(sigma^2)/dt=5.212367e-09  2D=5.208333e-09  ratio=1.000774 (target 1.000000 +- 0.02)",
+  "picard": {
+   "solves": 2.0,
+   "mean": 2.0,
+   "max": 2.0,
+   "nfail": 0.0
+  }
+ },
+ "berthon/k1.28e+08@10000": {
+  "out": "usage: t3_pulse.py [-h] [--bin-convert-dir BIN_CONVERT_DIR] [--all-ranks]\n                   [--selftest] [--quiet] [--c C] [--rho RHO] [--kappa KAPPA]\n                   [--tol TOL] [--expect-excess EXPECT_EXCESS] [--skip SKIP]\n                   [--background BACKGROUND] [--subtract-min] [--nyquist]\n                   [--axis {1,2,3}] [--reduce {mid,mean}] [--selftest-fail]\n                   [dumps ...]\nt3_pulse.py: error: at least three dumps are needed for the fit",
+  "picard": {
+   "solves": 1.0,
+   "mean": 2.0,
+   "max": 2.0,
+   "nfail": 0.0
+  }
+ },
+ "W1/k1280@1": {
+  "out": "PASS T3 pulse: d(sigma^2)/dt=5.206824e-04  2D=5.208333e-04  ratio=0.999710 (target 1.000000 +- 0.02)",
+  "picard": {
+   "solves": 128.0,
+   "mean": 3.0,
+   "max": 3.0,
+   "nfail": 0.0
+  }
+ },
+ "W1/k1280@100": {
+  "out": "PASS T3 pulse: d(sigma^2)/dt=5.204276e-04  2D=5.208333e-04  ratio=0.999221 (target 1.000000 +- 0.02)",
+  "picard": {
+   "solves": 2.0,
+   "mean": 3.5,
+   "max": 4.0,
+   "nfail": 0.0
+  }
+ },
+ "W1/k1280@10000": {
+  "out": "usage: t3_pulse.py [-h] [--bin-convert-dir BIN_CONVERT_DIR] [--all-ranks]\n                   [--selftest] [--quiet] [--c C] [--rho RHO] [--kappa KAPPA]\n                   [--tol TOL] [--expect-excess EXPECT_EXCESS] [--skip SKIP]\n                   [--background BACKGROUND] [--subtract-min] [--nyquist]\n                   [--axis {1,2,3}] [--reduce {mid,mean}] [--selftest-fail]\n                   [dumps ...]\nt3_pulse.py: error: at least three dumps are needed for the fit",
+  "picard": {
+   "solves": 1.0,
+   "mean": 4.0,
+   "max": 4.0,
+   "nfail": 0.0
+  }
+ },
+ "W1/k128000@1": {
+  "out": "PASS T3 pulse: d(sigma^2)/dt=5.208323e-06  2D=5.208333e-06  ratio=0.999998 (target 1.000000 +- 0.02)",
+  "picard": {
+   "solves": 128.0,
+   "mean": 2.0,
+   "max": 2.0,
+   "nfail": 0.0
+  }
+ },
+ "W1/k128000@100": {
+  "out": "PASS T3 pulse: d(sigma^2)/dt=5.208300e-06  2D=5.208333e-06  ratio=0.999994 (target 1.000000 +- 0.02)",
+  "picard": {
+   "solves": 2.0,
+   "mean": 2.0,
+   "max": 2.0,
+   "nfail": 0.0
+  }
+ },
+ "W1/k128000@10000": {
+  "out": "usage: t3_pulse.py [-h] [--bin-convert-dir BIN_CONVERT_DIR] [--all-ranks]\n                   [--selftest] [--quiet] [--c C] [--rho RHO] [--kappa KAPPA]\n                   [--tol TOL] [--expect-excess EXPECT_EXCESS] [--skip SKIP]\n                   [--background BACKGROUND] [--subtract-min] [--nyquist]\n                   [--axis {1,2,3}] [--reduce {mid,mean}] [--selftest-fail]\n                   [dumps ...]\nt3_pulse.py: error: at least three dumps are needed for the fit",
+  "picard": {
+   "solves": 1.0,
+   "mean": 2.0,
+   "max": 2.0,
+   "nfail": 0.0
+  }
+ },
+ "W1/k1.28e+08@1": {
+  "out": "PASS T3 pulse: d(sigma^2)/dt=5.210082e-09  2D=5.208333e-09  ratio=1.000336 (target 1.000000 +- 0.02)",
+  "picard": {
+   "solves": 128.0,
+   "mean": 2.0,
+   "max": 2.0,
+   "nfail": 0.0
+  }
+ },
+ "W1/k1.28e+08@100": {
+  "out": "PASS T3 pulse: d(sigma^2)/dt=5.212367e-09  2D=5.208333e-09  ratio=1.000774 (target 1.000000 +- 0.02)",
+  "picard": {
+   "solves": 2.0,
+   "mean": 2.0,
+   "max": 2.0,
+   "nfail": 0.0
+  }
+ },
+ "W1/k1.28e+08@10000": {
+  "out": "usage: t3_pulse.py [-h] [--bin-convert-dir BIN_CONVERT_DIR] [--all-ranks]\n                   [--selftest] [--quiet] [--c C] [--rho RHO] [--kappa KAPPA]\n                   [--tol TOL] [--expect-excess EXPECT_EXCESS] [--skip SKIP]\n                   [--background BACKGROUND] [--subtract-min] [--nyquist]\n                   [--axis {1,2,3}] [--reduce {mid,mean}] [--selftest-fail]\n                   [dumps ...]\nt3_pulse.py: error: at least three dumps are needed for the fit",
+  "picard": {
+   "solves": 1.0,
+   "mean": 2.0,
+   "max": 2.0,
+   "nfail": 0.0
+  }
+ },
+ "W2/k1280@1": {
+  "out": "PASS T3 pulse: d(sigma^2)/dt=5.206824e-04  2D=5.208333e-04  ratio=0.999710 (target 1.000000 +- 0.02)",
+  "picard": {
+   "solves": 128.0,
+   "mean": 3.0,
+   "max": 3.0,
+   "nfail": 0.0
+  }
+ },
+ "W2/k1280@100": {
+  "out": "PASS T3 pulse: d(sigma^2)/dt=5.204276e-04  2D=5.208333e-04  ratio=0.999221 (target 1.000000 +- 0.02)",
+  "picard": {
+   "solves": 2.0,
+   "mean": 3.5,
+   "max": 4.0,
+   "nfail": 0.0
+  }
+ },
+ "W2/k1280@10000": {
+  "out": "usage: t3_pulse.py [-h] [--bin-convert-dir BIN_CONVERT_DIR] [--all-ranks]\n                   [--selftest] [--quiet] [--c C] [--rho RHO] [--kappa KAPPA]\n                   [--tol TOL] [--expect-excess EXPECT_EXCESS] [--skip SKIP]\n                   [--background BACKGROUND] [--subtract-min] [--nyquist]\n                   [--axis {1,2,3}] [--reduce {mid,mean}] [--selftest-fail]\n                   [dumps ...]\nt3_pulse.py: error: at least three dumps are needed for the fit",
+  "picard": {
+   "solves": 1.0,
+   "mean": 4.0,
+   "max": 4.0,
+   "nfail": 0.0
+  }
+ },
+ "W2/k128000@1": {
+  "out": "PASS T3 pulse: d(sigma^2)/dt=5.208323e-06  2D=5.208333e-06  ratio=0.999998 (target 1.000000 +- 0.02)",
+  "picard": {
+   "solves": 128.0,
+   "mean": 2.0,
+   "max": 2.0,
+   "nfail": 0.0
+  }
+ },
+ "W2/k128000@100": {
+  "out": "PASS T3 pulse: d(sigma^2)/dt=5.208300e-06  2D=5.208333e-06  ratio=0.999994 (target 1.000000 +- 0.02)",
+  "picard": {
+   "solves": 2.0,
+   "mean": 2.0,
+   "max": 2.0,
+   "nfail": 0.0
+  }
+ },
+ "W2/k128000@10000": {
+  "out": "usage: t3_pulse.py [-h] [--bin-convert-dir BIN_CONVERT_DIR] [--all-ranks]\n                   [--selftest] [--quiet] [--c C] [--rho RHO] [--kappa KAPPA]\n                   [--tol TOL] [--expect-excess EXPECT_EXCESS] [--skip SKIP]\n                   [--background BACKGROUND] [--subtract-min] [--nyquist]\n                   [--axis {1,2,3}] [--reduce {mid,mean}] [--selftest-fail]\n                   [dumps ...]\nt3_pulse.py: error: at least three dumps are needed for the fit",
+  "picard": {
+   "solves": 1.0,
+   "mean": 2.0,
+   "max": 2.0,
+   "nfail": 0.0
+  }
+ },
+ "W2/k1.28e+08@1": {
+  "out": "PASS T3 pulse: d(sigma^2)/dt=5.210082e-09  2D=5.208333e-09  ratio=1.000336 (target 1.000000 +- 0.02)",
+  "picard": {
+   "solves": 128.0,
+   "mean": 2.0,
+   "max": 2.0,
+   "nfail": 0.0
+  }
+ },
+ "W2/k1.28e+08@100": {
+  "out": "PASS T3 pulse: d(sigma^2)/dt=5.212367e-09  2D=5.208333e-09  ratio=1.000774 (target 1.000000 +- 0.02)",
+  "picard": {
+   "solves": 2.0,
+   "mean": 2.0,
+   "max": 2.0,
+   "nfail": 0.0
+  }
+ },
+ "W2/k1.28e+08@10000": {
+  "out": "usage: t3_pulse.py [-h] [--bin-convert-dir BIN_CONVERT_DIR] [--all-ranks]\n                   [--selftest] [--quiet] [--c C] [--rho RHO] [--kappa KAPPA]\n                   [--tol TOL] [--expect-excess EXPECT_EXCESS] [--skip SKIP]\n                   [--background BACKGROUND] [--subtract-min] [--nyquist]\n                   [--axis {1,2,3}] [--reduce {mid,mean}] [--selftest-fail]\n                   [dumps ...]\nt3_pulse.py: error: at least three dumps are needed for the fit",
+  "picard": {
+   "solves": 1.0,
+   "mean": 2.0,
+   "max": 2.0,
+   "nfail": 0.0
+  }
+ },
+ "W3/k1280@1": {
+  "out": "PASS T3 pulse: d(sigma^2)/dt=5.206824e-04  2D=5.208333e-04  ratio=0.999710 (target 1.000000 +- 0.02)",
+  "picard": {
+   "solves": 128.0,
+   "mean": 3.0,
+   "max": 3.0,
+   "nfail": 0.0
+  }
+ },
+ "W3/k1280@100": {
+  "out": "PASS T3 pulse: d(sigma^2)/dt=5.204276e-04  2D=5.208333e-04  ratio=0.999221 (target 1.000000 +- 0.02)",
+  "picard": {
+   "solves": 2.0,
+   "mean": 3.5,
+   "max": 4.0,
+   "nfail": 0.0
+  }
+ },
+ "W3/k1280@10000": {
+  "out": "usage: t3_pulse.py [-h] [--bin-convert-dir BIN_CONVERT_DIR] [--all-ranks]\n                   [--selftest] [--quiet] [--c C] [--rho RHO] [--kappa KAPPA]\n                   [--tol TOL] [--expect-excess EXPECT_EXCESS] [--skip SKIP]\n                   [--background BACKGROUND] [--subtract-min] [--nyquist]\n                   [--axis {1,2,3}] [--reduce {mid,mean}] [--selftest-fail]\n                   [dumps ...]\nt3_pulse.py: error: at least three dumps are needed for the fit",
+  "picard": {
+   "solves": 1.0,
+   "mean": 4.0,
+   "max": 4.0,
+   "nfail": 0.0
+  }
+ },
+ "W3/k128000@1": {
+  "out": "PASS T3 pulse: d(sigma^2)/dt=5.208323e-06  2D=5.208333e-06  ratio=0.999998 (target 1.000000 +- 0.02)",
+  "picard": {
+   "solves": 128.0,
+   "mean": 2.0,
+   "max": 2.0,
+   "nfail": 0.0
+  }
+ },
+ "W3/k128000@100": {
+  "out": "PASS T3 pulse: d(sigma^2)/dt=5.208300e-06  2D=5.208333e-06  ratio=0.999994 (target 1.000000 +- 0.02)",
+  "picard": {
+   "solves": 2.0,
+   "mean": 2.0,
+   "max": 2.0,
+   "nfail": 0.0
+  }
+ },
+ "W3/k128000@10000": {
+  "out": "usage: t3_pulse.py [-h] [--bin-convert-dir BIN_CONVERT_DIR] [--all-ranks]\n                   [--selftest] [--quiet] [--c C] [--rho RHO] [--kappa KAPPA]\n                   [--tol TOL] [--expect-excess EXPECT_EXCESS] [--skip SKIP]\n                   [--background BACKGROUND] [--subtract-min] [--nyquist]\n                   [--axis {1,2,3}] [--reduce {mid,mean}] [--selftest-fail]\n                   [dumps ...]\nt3_pulse.py: error: at least three dumps are needed for the fit",
+  "picard": {
+   "solves": 1.0,
+   "mean": 2.0,
+   "max": 2.0,
+   "nfail": 0.0
+  }
+ },
+ "W3/k1.28e+08@1": {
+  "out": "PASS T3 pulse: d(sigma^2)/dt=5.210082e-09  2D=5.208333e-09  ratio=1.000336 (target 1.000000 +- 0.02)",
+  "picard": {
+   "solves": 128.0,
+   "mean": 2.0,
+   "max": 2.0,
+   "nfail": 0.0
+  }
+ },
+ "W3/k1.28e+08@100": {
+  "out": "PASS T3 pulse: d(sigma^2)/dt=5.212367e-09  2D=5.208333e-09  ratio=1.000774 (target 1.000000 +- 0.02)",
+  "picard": {
+   "solves": 2.0,
+   "mean": 2.0,
+   "max": 2.0,
+   "nfail": 0.0
+  }
+ },
+ "W3/k1.28e+08@10000": {
+  "out": "usage: t3_pulse.py [-h] [--bin-convert-dir BIN_CONVERT_DIR] [--all-ranks]\n                   [--selftest] [--quiet] [--c C] [--rho RHO] [--kappa KAPPA]\n                   [--tol TOL] [--expect-excess EXPECT_EXCESS] [--skip SKIP]\n                   [--background BACKGROUND] [--subtract-min] [--nyquist]\n                   [--axis {1,2,3}] [--reduce {mid,mean}] [--selftest-fail]\n                   [dumps ...]\nt3_pulse.py: error: at least three dumps are needed for the fit",
+  "picard": {
+   "solves": 1.0,
+   "mean": 2.0,
+   "max": 2.0,
+   "nfail": 0.0
+  }
+ }
+}

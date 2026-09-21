@@ -62,6 +62,46 @@ constexpr int M1_IFLUX_BERTHON = 2;  // G_f = A_up + alpha F_HLL, with NO F_diff
                                      // added; the price is that the face diffusivity is
                                      // the arithmetic tau_face and not the exact harmonic
                                      // mean the face-eliminated form carries.
+constexpr int M1_IFLUX_BLEND   = 3;  // milestone 3c: a SMOOTH per-face convex blend of
+                                     // the two forms above,
+                                     //   F_f = (1 - w_f) F_central + w_f F_berthon,
+                                     // with w_f in [0,1] built from LAGGED face
+                                     // quantities (the previous Picard iterate), so the
+                                     // row stays linear.  Both forms contribute to the
+                                     // SAME two unknowns with the sign structure of the
+                                     // column-wise M-matrix argument of sect. 7, and a
+                                     // convex combination of two column-sum-preserving
+                                     // contributions preserves the column sums, so
+                                     // E' > 0 survives at any dt.  w_f = 1 is bitwise
+                                     // `berthon` and w_f = 0 is bitwise `central`.
+
+// <rad_m1>/implicit_blend: how the per-face weight w_f of M1_IFLUX_BLEND is built.
+constexpr int M1_IBLEND_TAU  = 0;    // w = exp(-(tau_face/tau0)^2): upwind where the face
+                                     // is optically THIN, central where it is thick
+                                     // (Jiang 2021 uses 1 - exp(-tau^2) for the opposite
+                                     // sense).  <rad_m1>/implicit_blend_tau0.
+constexpr int M1_IBLEND_F    = 1;    // w = smoothstep((f_face - f_lo)/(f_hi - f_lo)) on
+                                     // the LAGGED comoving reduced flux at the face: a
+                                     // DIFFUSE field (f -> 1/2, which is what a grey
+                                     // surface with marshak_q = 1/2 has) stays central, a
+                                     // beam or a front (f -> 1) goes upwind.
+constexpr int M1_IBLEND_TAUF = 2;    // the product of the two: upwind only where the face
+                                     // is thin AND the field is beamed.
+
+// <rad_m1>/implicit_blend_fmode: which of the two cells' lagged reduced fluxes sets
+// f_face.
+constexpr int M1_IBFM_MAX  = 0;
+constexpr int M1_IBFM_MEAN = 1;
+
+// <rad_m1>/implicit_blend_mode: WHAT is blended.
+constexpr int M1_IBMODE_FLUX   = 0;  // the whole face flux (the convex blend above)
+constexpr int M1_IBMODE_DISSIP = 1;  // the central flux in FULL plus w_f times the HLL
+                                     // DISSIPATION alone: F = F_central + w alpha dk
+                                     // (E_L - E_R).  The extra term contributes +w dk to
+                                     // the diagonal of the left cell and -w dk to the
+                                     // upper off-diagonal (and the mirror image to the
+                                     // right cell), so the column sums are untouched and
+                                     // the M-matrix survives as well.
 
 // <rad_m1>/implicit_recon: the states the HLL part of the implicit flux is built from.
 constexpr int M1_IRECON_DC    = 0;   // piecewise constant; the matrix IS the operator
@@ -138,6 +178,33 @@ int M1HaloCompA(const int n) {
     case 4: return M1_IW_RF0;
     default: return M1_IW_KT;
   }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn M1BlendWeight
+//! \brief the per-face blend weight w_f in [0,1] of implicit_flux = blend, from the
+//! LAGGED face optical depth and the LAGGED comoving reduced fluxes of the two cells.
+//! Every quantity it reads lives in the iw work array, so the x1 halo of the partitioned
+//! solve already carries what a face on a block boundary needs (milestone 3b, LIMIT 4).
+
+KOKKOS_INLINE_FUNCTION
+Real M1BlendWeight(const int kind, const int fmode, const Real tauf, const Real tau0,
+                   const Real rfl, const Real rfr, const Real flo, const Real fhi) {
+  Real wt = 1.0;
+  if (kind != M1_IBLEND_F) {
+    Real x = tauf/tau0;
+    wt = exp(-x*x);
+  }
+  Real wf = 1.0;
+  if (kind != M1_IBLEND_TAU) {
+    Real afl = fabs(rfl), afr = fabs(rfr);
+    Real ff = (fmode == M1_IBFM_MEAN) ? (0.5*(afl + afr)) : fmax(afl, afr);
+    Real s = (ff - flo)/fmax(fhi - flo, 1.0e-300);
+    if (s < 0.0) {s = 0.0;}
+    if (s > 1.0) {s = 1.0;}
+    wf = s*s*(3.0 - 2.0*s);
+  }
+  return wt*wf;
 }
 
 // safeguarded root find for T' inside the Picard loop

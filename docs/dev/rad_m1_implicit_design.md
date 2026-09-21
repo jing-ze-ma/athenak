@@ -602,3 +602,110 @@ the gather/scatter stages `part_sbuf`/`part_rbuf` through HOST mirrors for MPI: 
 that is a device-to-host round trip per Picard pass and would be the first thing to
 replace with GPU-aware MPI (the arithmetic stays on the device either way, which is what
 keeps the partition bitwise).
+
+---
+
+## 9. Findings of 3c (implemented 2026-09-21; supersede sect. 6-8 where they differ)
+
+Milestone 3c answers the question sect. 7 left open: LIMIT 1 (`berthon`, good at fronts)
+and LIMIT 2 (`central`, good at a diffuse steady field) pull in opposite directions --
+can a SMOOTH per-face blend have both?  Gate tables and the exact commands:
+`tests_m1/runs_3c/RESULTS.txt` and `runs_3c/run_gates_3c.py`.  New options, all inert
+unless `implicit_flux = blend`:
+
+```
+<rad_m1>/implicit_flux        = central | ap_hll | berthon | blend
+          implicit_blend      = tau | f | tau_f          (W1 | W2 | W3)
+          implicit_blend_fmode= max | mean               (f_face from the two cells)
+          implicit_blend_mode = flux | dissipation       (what is blended)
+          implicit_blend_tau0 = 1.0    implicit_blend_flo = 0.6   implicit_blend_fhi = 0.9
+          implicit_recon_npass= -1     (freeze the plm correction after N Picard passes)
+```
+
+**The form.**  `F_f = (1 - w_f) F_central + w_f F_berthon`, `w_f` in [0,1] built from the
+PREVIOUS Picard iterate at the face, so the row stays linear.  It needed no new
+machinery: the 3a2 assembly already scales the central (face-eliminated) contribution by
+`om = 1 - ifw(AL)` and adds `ifw(HCL) E_L + ifw(HCR) E_R + ifw(DG)`, so the blend is
+`AL = w_f` with the berthon coefficients multiplied by `w_f`.  `w_f = 1` is therefore
+BITWISE `berthon` and `w_f = 0` BITWISE `central` (the code multiplies by exactly 1.0 or
+0.0), and the face update carries the same weight, so the stored `F0_f` -- the restart
+state, the momentum deposit and the next iterate's reduced flux -- is the flux the row
+applied.  Three weights were built and measured: `tau`, `w = exp(-(tau_f/tau0)^2)` (the
+brief's suggestion, after Jiang 2021); `f`, a smoothstep in the lagged comoving reduced
+flux at the face between `f_lo` and `f_hi`; and `tau_f`, their product.
+
+**The M-matrix survives, by the column argument of sect. 7.**  Each face contributes
+`+nu c` to the diagonal of one cell and `-nu c` to an off-diagonal of the other, i.e.
+each contribution has ZERO column sum and non-positive off-diagonals -- true of the HLL
+part (sect. 7) and, with `c = th c^2 dt w_i/dx`, of the face-eliminated part.  A convex
+combination with the SAME `w_f` in both cells has the same structure, so the column sums
+of the whole matrix stay `1 + SRCB >= 1`: nonsingular M-matrix, `E' > 0` at any `dt`.
+Verified numerically: the floor was never active on a blend solution in any gate (the
+worst case, the free-streaming pulse with `plm_dc`, keeps `min E = 5.6e-6` against a
+floor of `1e-15`).
+
+**The result: an f-gated blend is free, and the tau-only weight is harmful.**  W2 and W3
+are BITWISE `central` on every diffuse problem -- the grey atmosphere (1.353e-3 at CFL
+1, 1e2, 1e4), the Marshak wave (L1 0.0144/0.0135), the T3b opacity jump (1.126e-4, face
+flux peak 5.6e-6), the thick pulse at `tau_cell` 10/1e3/1e6, T4 dynamic and T4b, T5 with
+both EOS, and the 1-D He column (`F1top/Fin` 1.0000097, `F1bot/Fin` 0.9998352, `V1max`
+1.83439e4, Picard 11.709 -- the 3b reference line to the last digit) -- and BITWISE
+`berthon` in free streaming, where every weight is 1.  **W1 fails exactly where the
+brief predicted it would**: the top of a grey atmosphere is thin AND diffuse
+(`f -> marshak_q = 1/2`), so a tau-only weight sends it upwind and the gate goes from
+1.35e-3 to 3.7e-1; it also degrades the T3b face flux 157x and, on the He column,
+multiplies the residual force by 245 and stops the Picard loop converging at all.
+
+**Free streaming, the gain.**  With `plm_dc` the blend reaches **0.922** of the initial
+pulse amplitude after one box crossing at CFL 0.4 (explicit 0.953, `berthon` + `plm_dc`
+0.818, `central` 0.369), and holds **0.786 at CFL 10** where `berthon` + `plm_dc`
+collapses to 0.190.  The reason is that the deferred correction carries `w_f` as well,
+so it is switched off in the diffuse tails where the unweighted plm correction fights
+the solve.  The same weighting repairs the two `plm_dc` defects of sect. 7: the Marshak
+wave no longer fails at CFL 1 (L1 0.0144 against 0.2647) and costs 6.6 Picard passes
+instead of 23.8, because `w_f = 0` at the emission front removes the correction there.
+
+**What the blend does NOT do.**  It does not recover `berthon`'s 28 % Marshak advantage
+(L1 0.0104): that advantage comes from faces where the field is DIFFUSE and only
+moderately thick, which is precisely where the atmosphere gate forces the blend to stay
+central.  Measured, not assumed: opening the window to `f_lo = 0.3, f_hi = 0.6` leaves
+L1 at 0.0144, and the tau-only weight gains 0.0001.  **The two limits are reconcilable
+in free streaming and not in a semi-thick emission front.**
+
+**Two variants rejected.**  `implicit_blend_mode = dissipation` (the full central flux
+plus `w_f` times the HLL dissipation alone) keeps the M-matrix but does not help the
+front -- 0.324 at CFL 0.4, BELOW plain `central`'s 0.369 -- and destroys the Picard
+convergence (17-28 passes against 2).  `implicit_recon_npass` (freeze the plm limiter
+after N passes, to break the `plm_dc` limit cycle of sect. 7) makes the pulse worse
+(0.444 against 0.922 at npass = 3) and does NOT restore convergence: the limit cycle is
+driven by the re-lagged closure and wave speeds, not by the limiter.  Both keys are kept
+(defaults `flux` and `-1`) with these numbers recorded.
+
+**Partition.**  `implicit_partition = gather` with the blend is BITWISE for 1 vs 2 vs 4
+MeshBlocks along x1, on the atmosphere and the Marshak wave, with both W1 (whose weight
+varies strongly across block faces) and W3, and with identical Picard statistics.  No
+new halo was needed: the weight reads only `M1_IW_RF0` and `M1_IW_KT` of the
+neighbouring cell, and both are already in halo A of the 3b exchange.
+
+### Recommended defaults after 3c
+
+```
+ implicit_flux   central   UNCHANGED.  The decision rule for promoting a blend was
+                           "at least as good as central everywhere AND improves the
+                           free-streaming gate AND the Marshak gate"; the Marshak gate
+                           is NOT improved, so the default stays.
+ blend           use `implicit_flux = blend` + `implicit_blend = tau_f` (or `f`) for any
+                 problem with both diffuse regions and a propagating front: it is
+                 bitwise `central` in the diffuse regions and bitwise `berthon` in free
+                 streaming, i.e. it costs nothing and removes the reason `berthon`
+                 could not be used.  Add `implicit_recon = plm_dc` where the front
+                 matters (0.922 against 0.561, and without the 3a2 Marshak failure).
+ implicit_blend  NEVER `tau`: it fails the atmosphere gate, the opacity jump and the
+                 He column.  The weight has to know that the field is BEAMED, not only
+                 that the cell is thin.
+ implicit_blend_fmode max.  `mean` halves the free-streaming gain (0.498 against 0.922
+                      at CFL 0.4) because at the EDGE of a pulse one of the two cells is
+                      still diffuse; on the atmosphere the two are identical.
+ implicit_blend_mode  flux (dissipation is rejected, see above)
+ implicit_recon_npass -1 (rejected, see above)
+```

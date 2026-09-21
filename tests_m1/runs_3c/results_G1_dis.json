@@ -1,0 +1,20 @@
+{
+ "W1-dis@100": {
+  "out": "FAIL T9 atmosphere: q0=0.92963248 max|dE/E|=1.477e-01 max|df/f|=1.732e-01  top5: dE=1.435e-03 df=1.437e-03  L1(E)=4.632e-02 (tol 0.01)",
+  "picard": {
+   "solves": 2560.0,
+   "mean": 1.597656,
+   "max": 29.0,
+   "nfail": 0.0
+  }
+ },
+ "W3-dis@100": {
+  "out": "PASS T9 atmosphere: q0=0.92963248 max|dE/E|=1.353e-03 max|df/f|=1.355e-03  top5: dE=1.353e-03 df=1.355e-03  L1(E)=5.008e-04 (tol 0.01)",
+  "picard": {
+   "solves": 2560.0,
+   "mean": 1.369531,
+   "max": 29.0,
+   "nfail": 0.0
+  }
+ }
+}

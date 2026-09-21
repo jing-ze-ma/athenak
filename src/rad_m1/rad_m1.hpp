@@ -256,6 +256,15 @@ class RadiationM1 {
                                 // at every CFL; 1.0 is the pure plm flux, which diverges
                                 // above CFL ~ 1.
   int impl_part;                // M1_IPART_*: how a multi-block column is solved
+  // ---- MILESTONE 3c: implicit_flux = blend, the smooth per-face convex blend of the
+  // central and the berthon face flux.  All inert unless implicit_flux = blend.
+  int impl_blend;               // M1_IBLEND_*: which lagged weight w_f is used
+  int impl_blend_fmode;         // M1_IBFM_*: max or mean of the two cells' reduced flux
+  int impl_blend_mode;          // M1_IBMODE_*: blend the whole flux, or add the HLL
+                                // dissipation alone on top of the full central flux
+  Real impl_blend_tau0;         // w = exp(-(tau_face/tau0)^2)
+  Real impl_blend_flo;          // smoothstep lower edge in the reduced flux
+  Real impl_blend_fhi;          // smoothstep upper edge in the reduced flux
   DvceArray5D<Real> ifw;        // per-x1-FACE work array, M1_NIFW components
   // the partitioned (gathered) line solve, LIMIT 4.  Every rank that owns a piece of a
   // column sends its (a,b,c,r) rows to the column's ROOT rank, which runs the identical
@@ -289,6 +298,10 @@ class RadiationM1 {
   // the imposed-flux boundary hand-off, LIMIT 3.  See ImplicitSolve.
   bool impl_recon_freeze;       // implicit_recon_lag = step: evaluate the deferred
                                 // correction once per step, not once per Picard pass
+  int impl_recon_npass;         // implicit_recon_npass: FREEZE the plm deferred
+                                // correction (and with it the limiter's choice) after
+                                // this many Picard passes, to break the limit cycle the
+                                // limiter otherwise drives.  <= 0 = never freeze (3a2)
   Real impl_res_floor;          // scale of the Picard convergence test: 0 = the pure
                                 // relative change of 3a, x > 0 = |dE|/max(E, x*max(E))
   bool impl_bmom_half;          // give a physical boundary face HALF its flux to the one
