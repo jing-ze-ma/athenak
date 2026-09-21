@@ -27,6 +27,7 @@
 #include "diffusion/resistivity.hpp"
 #include "diffusion/conduction.hpp"
 #include "radiation/radiation.hpp"
+#include "rad_m1/rad_m1.hpp"
 #include "particles/particles.hpp"
 #include "srcterms/srcterms.hpp"
 #include "outputs/io_wrapper.hpp"
@@ -975,6 +976,14 @@ void Mesh::NewTimeStep(const Real tlim) {
   // Radiation timestep
   if (pmb_pack->prad != nullptr) {
     dt = std::min(dt, (cfl_no)*(pmb_pack->prad->dtnew) );
+  }
+  // rad_m1 timestep.  Only folded in when the module owns the mesh step (sub-cycling
+  // off, or nothing else sets a dt); its own <rad_m1>/cfl_rad is already in dtnew, so
+  // <time>/cfl_number is NOT applied a second time here.
+  if (pmb_pack->pradm1 != nullptr) {
+    if (pmb_pack->pradm1->sets_mesh_dt) {
+      dt = std::min(dt, (pmb_pack->pradm1->dtnew) );
+    }
   }
   // Particles timestep
   if (pmb_pack->ppart != nullptr) {

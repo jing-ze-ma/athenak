@@ -26,6 +26,7 @@ add_executable(
         bvals/physics/hydro_bcs.cpp
         bvals/physics/bfield_bcs.cpp
         bvals/physics/radiation_bcs.cpp
+        bvals/physics/rad_m1_bcs.cpp
         bvals/physics/z4c_bcs.cpp
 
         coordinates/adm.cpp
@@ -144,10 +145,16 @@ add_executable(
         pgen/tests/wb_atm.cpp
         pgen/tests/rad_beam.cpp
         pgen/tests/rad_diff2d.cpp
+        pgen/tests/rad_m1_tests.cpp
         pgen/tests/rad_linear_wave.cpp
         pgen/tests/z4c_boosted_puncture.cpp
         pgen/tests/z4c_linear_wave.cpp
 
+        rad_m1/rad_m1.cpp
+        rad_m1/rad_m1_fluxes.cpp
+        rad_m1/rad_m1_newdt.cpp
+        rad_m1/rad_m1_tasks.cpp
+        rad_m1/rad_m1_update.cpp
         radiation/radiation.cpp
         radiation/radiation_fluxes.cpp
         radiation/radiation_newdt.cpp

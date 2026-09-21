@@ -27,6 +27,7 @@
 #include "z4c/compact_object_tracker.hpp"
 #include "z4c/z4c.hpp"
 #include "radiation/radiation.hpp"
+#include "rad_m1/rad_m1.hpp"
 #include "srcterms/turb_driver.hpp"
 #include "pgen.hpp"
 
@@ -154,6 +155,14 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
   z4c::Z4c* pz4c = pm->pmb_pack->pz4c;
   radiation::Radiation* prad=pm->pmb_pack->prad;
   TurbulenceDriver* pturb=pm->pmb_pack->pturb;
+  // MILESTONE 1a: <rad_m1> state is not in the restart file (see restart.cpp), so a
+  // restart would start the radiation field from whatever the pgen sets, silently.
+  if (pm->pmb_pack->pradm1 != nullptr) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+      << std::endl << "Restarting a run with <rad_m1> is not supported yet: the M1 "
+      << "moments (E, F_i) are not stored in the restart file." << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
   int nrad = 0, nhydro = 0, nmhd = 0, nforce = 3, nadm = 0, nz4c = 0;
   if (phydro != nullptr) {
     nhydro = phydro->nhydro + phydro->nscalars;
@@ -1078,6 +1087,8 @@ void ProblemGenerator::CallProblemGenerator(ParameterInput *pin, bool is_restart
     RadiationLinearWave(pin, is_restart);
   } else if (pgen_fun_name.compare("rad_beam") == 0) {
     RadiationBeam(pin, is_restart);
+  } else if (pgen_fun_name.compare("rad_m1_beam") == 0) {
+    RadiationM1Tests(pin, is_restart);
   } else if (pgen_fun_name.compare("rad_diff2d") == 0) {
     RadDiff2D(pin, is_restart);
   } else if (pgen_fun_name.compare("shock_tube") == 0) {

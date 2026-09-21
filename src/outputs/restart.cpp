@@ -29,6 +29,7 @@
 #include "z4c/compact_object_tracker.hpp"
 #include "z4c/z4c.hpp"
 #include "radiation/radiation.hpp"
+#include "rad_m1/rad_m1.hpp"
 #include "srcterms/turb_driver.hpp"
 #include "pgen/pgen.hpp"
 //#include "outputs.hpp"
@@ -54,6 +55,16 @@ RestartOutput::RestartOutput(ParameterInput *pin, Mesh *pm, OutputParameters op)
 // variables, including ghost zones.
 
 void RestartOutput::LoadOutputData(Mesh *pm) {
+  // MILESTONE 1a: <rad_m1> has no restart support yet.  Writing a restart file would
+  // silently drop the radiation moments, so refuse rather than lose state.
+  if (pm->pmb_pack->pradm1 != nullptr) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+      << std::endl << "Restart output is not supported with <rad_m1> yet: the M1 "
+      << "moments (E, F_i) are not written to the restart file, so the state would be "
+      << "silently lost.  Remove the <output*> block with file_type = rst."
+      << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
   // get spatial dimensions of arrays, including ghost zones
   auto &indcs = pm->pmb_pack->pmesh->mb_indcs;
   int nout1 = indcs.nx1 + 2*(indcs.ng);

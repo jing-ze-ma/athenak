@@ -26,6 +26,7 @@
 #include "dyn_grmhd/dyn_grmhd.hpp"
 #include "ion-neutral/ion-neutral.hpp"
 #include "radiation/radiation.hpp"
+#include "rad_m1/rad_m1.hpp"
 #include "driver.hpp"
 #include "diffusion/resistivity.hpp"
 
@@ -347,6 +348,9 @@ void Driver::Initialize(Mesh *pmesh, ParameterInput *pin, Outputs *pout, bool re
     if (prad != nullptr) {
       (void) pmesh->pmb_pack->prad->NewTimeStep(this, nexp_stages);
     }
+    if (pmesh->pmb_pack->pradm1 != nullptr) {
+      (void) pmesh->pmb_pack->pradm1->NewTimeStep(this, nexp_stages);
+    }
     if (pz4c != nullptr) {
       (void) pmesh->pmb_pack->pz4c->NewTimeStep(this, nexp_stages);
     }
@@ -442,6 +446,22 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
             ExecuteTaskList(pmesh, "after_rkg_timeintegrator", 1);
           }
         }
+      }
+
+      // Operator-split, sub-cycled grey M1 radiation transport (design sect. 5).
+      // N_sub = ceil(dt_mesh/dt_rad); each substep runs the module's own two-stage
+      // PD-ARS chain with dt_sub = dt_mesh/N_sub.  Skipped entirely -- lists empty,
+      // loop not entered -- when there is no <rad_m1> block.
+      if (pmesh->pmb_pack->pradm1 != nullptr) {
+        int nsub = pmesh->pmb_pack->pradm1->SetSubsteps(pmesh->dt);
+        for (int nst=0; nst<nsub; ++nst) {
+          for (int stage=1; stage<=(radm1::M1_NSTAGE); ++stage) {
+            ExecuteTaskList(pmesh, "m1_before_stagen", stage);
+            ExecuteTaskList(pmesh, "m1_stagen", stage);
+            ExecuteTaskList(pmesh, "m1_after_stagen", stage);
+          }
+        }
+        (void) pmesh->pmb_pack->pradm1->NewTimeStep(this, 1);
       }
 
       // Work after time integrator indicated by "1" in stage
@@ -888,6 +908,19 @@ void Driver::InitBoundaryValuesAndPrimitives(Mesh *pm, bool keep_ghosts) {
       }
       (void) pdyngr->ConToPrim(this, 0);
     }
+  }
+
+  // Initialize rad_m1: ghost zones on the moments (everywhere)
+  radm1::RadiationM1 *pradm1 = pm->pmb_pack->pradm1;
+  if (pradm1 != nullptr && !keep_ghosts) {
+    (void) pradm1->RestrictU(this, 0);
+    (void) pradm1->InitRecv(this, -1);  // stage < 0 suppresses InitFluxRecv
+    (void) pradm1->SendU(this, 0);
+    (void) pradm1->ClearSend(this, -1);
+    (void) pradm1->ClearRecv(this, -1);
+    (void) pradm1->RecvU(this, 0);
+    (void) pradm1->ApplyPhysicalBCs(this, 0);
+    (void) pradm1->Prolongate(this, 0);
   }
 
   // Initialize radiation: ghost zones and intensity (everywhere)

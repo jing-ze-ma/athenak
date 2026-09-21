@@ -28,6 +28,7 @@
 #include "z4c/z4c.hpp"
 #include "srcterms/srcterms.hpp"
 #include "srcterms/turb_driver.hpp"
+#include "rad_m1/rad_m1.hpp"
 #include "outputs.hpp"
 
 #if MPI_PARALLEL_ENABLED
@@ -177,6 +178,13 @@ BaseTypeOutput::BaseTypeOutput(ParameterInput *pin, Mesh *pm, OutputParameters o
        << "Output variable 'mhd_fofc' requested in <output> block '"
        << out_params.block_name << "', but FOFC is not enabled."
        << std::endl << "Input file needs <mhd>/fofc = true" << std::endl;
+    exit(EXIT_FAILURE);
+  }
+  if ((ivar>=155) && (ivar<160) && (pm->pmb_pack->pradm1 == nullptr)) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
+       << "Output of M1 radiation moments requested in <output> block '"
+       << out_params.block_name << "' but no RadiationM1 object has been constructed."
+       << std::endl << "Input file is likely missing a <rad_m1> block" << std::endl;
     exit(EXIT_FAILURE);
   }
   if ((ivar>=151) && (ivar<153) && (pm->pmb_pack->ppart == nullptr)) {
@@ -627,6 +635,20 @@ BaseTypeOutput::BaseTypeOutput(ParameterInput *pin, Mesh *pm, OutputParameters o
       outvars.emplace_back("mhd_dynamo_U^2",6,&(derived_var));
       outvars.emplace_back("mhd_dynamo_dU",7,&(derived_var));
       out_params.n_derived += 8;
+    }
+
+    // grey M1 radiation moments
+    if (variable.compare("m1_e") == 0 || variable.compare("m1") == 0) {
+      outvars.emplace_back("m1_e",radm1::M1_E,&(pm->pmb_pack->pradm1->u0));
+    }
+    if (variable.compare("m1_f1") == 0 || variable.compare("m1") == 0) {
+      outvars.emplace_back("m1_f1",radm1::M1_F1,&(pm->pmb_pack->pradm1->u0));
+    }
+    if (variable.compare("m1_f2") == 0 || variable.compare("m1") == 0) {
+      outvars.emplace_back("m1_f2",radm1::M1_F2,&(pm->pmb_pack->pradm1->u0));
+    }
+    if (variable.compare("m1_f3") == 0 || variable.compare("m1") == 0) {
+      outvars.emplace_back("m1_f3",radm1::M1_F3,&(pm->pmb_pack->pradm1->u0));
     }
 
     // turbulent forcing

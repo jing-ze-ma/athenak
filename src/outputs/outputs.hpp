@@ -21,7 +21,7 @@
     #error NHISTORY > NREDUCTION in outputs.hpp
 #endif
 
-#define NOUTPUT_CHOICES 155
+#define NOUTPUT_CHOICES 160
 // choices for output variables used in <ouput> blocks in input file
 // TO ADD MORE CHOICES:
 //   - add more strings to array below, change NOUTPUT_CHOICES above appropriately
@@ -102,7 +102,10 @@ static const char *var_choice[NOUTPUT_CHOICES] = {
 
   // FOFC per-cell flag count (153-154).  NEW CHOICES GO AFTER THIS LINE, NOT BEFORE:
   // the physics checks in the BaseTypeOutput constructor test index RANGES.
-  "hydro_fofc", "mhd_fofc"
+  "hydro_fofc", "mhd_fofc",
+
+  // grey M1 radiation, <rad_m1> (155-159)
+  "m1_e", "m1_f1", "m1_f2", "m1_f3", "m1"
 };
 
 
