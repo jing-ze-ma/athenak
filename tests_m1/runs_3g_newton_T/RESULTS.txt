@@ -1,0 +1,216 @@
+================================================================================
+tests_m1/runs_3g_newton_T -- MILESTONE 3g: making the GAS-RADIATION ENERGY
+COUPLING of the implicit M1 solve cheaper
+2026-09-21, viper, serial CPU.
+  reference binary = HEAD 3ed12a80, unmodified, rebuilt in build_cpu_box /
+                     build_cpu_m1 before any source edit
+  new binary       = the same trees after the 3g patch
+Design note: docs/dev/rad_m1_implicit_design.md sect. 17 (equations, cache,
+these numbers).
+================================================================================
+
+WHAT WAS BUILT.  Two <rad_m1> options, BOTH DEFAULT false:
+
+  implicit_gas_newton   (A)  T' is taken from the ELIMINATED (Schur) relation
+                             B_k dT = R_k + c dt rho kappa_E E' that step (c)
+                             already builds, instead of re-running the
+                             bracketed root find in every Picard pass.  ZERO
+                             EOS evaluations in step (f).  The converged state
+                             solves the SAME nonlinear backward-Euler gas
+                             equation (dT -> 0 forces R_k + c dt rho kappa_E E'
+                             -> 0, with e(T) and T^4 exact at the final T), and
+                             the gas energy is still set from q = SRCR - SRCB E'
+                             so conservation is algebraically what it was.
+                             Per-cell fallback to the bracketed root find on
+                             c_v <= 0, T' <= 0, |dT| > 0.5 T_k, or a step that
+                             does not decrease the exact nonlinear residual;
+                             counted in ImplicitReport.
+  implicit_eos_cache    (B)  rho is frozen over the step, so the density
+                             direction of the tabulated e surface is collapsed
+                             ONCE per cell into a 1-D cubic Hermite in ln T on
+                             the TABLE'S OWN nodes (2*nt+1 cells,
+                             implicit_eos_cache_nt, default 2).  A temperature
+                             outside the window, an off-table density, a
+                             sub-table temperature or eos_rad_taper fall back to
+                             the real table and are counted as misses.
+                             implicit_eos_cache_check (default true) makes one
+                             TRUE-table evaluation per cell at the end of the
+                             step and reports the accuracy.
+
+Files touched: src/rad_m1/rad_m1_implicit.hpp, src/rad_m1/rad_m1_implicit.cpp,
+src/rad_m1/rad_m1.hpp, src/rad_m1/rad_m1.cpp, docs/dev/rad_m1_implicit_design.md.
+cpplint (Google, 90 columns) clean on all four sources, zero errors, mode 644.
+NOT committed.
+
+--------------------------------------------------------------------------------
+G1  INERT: both options absent -> BYTE-IDENTICAL hst vs the HEAD reference
+--------------------------------------------------------------------------------
+(i)  seeded Eddington slab, runs_3d_edd/he_slab_m1_2d_V3edd.athinput
+       problem/vpert=1.0e-3 time/tlim=3      (19 solves, Picard 4.053)
+       cmp m1slab.hydro.hst  IDENTICAL
+       cmp m1slab.user.hst   IDENTICAL                            (g1a_ref/g1a_new)
+(ii) 1-D implicit He column, runs_3a/he_box_m1_1d_impl.athinput time/tlim=10
+       (62 solves, Picard 11.694)
+       cmp m1col.hydro.hst   IDENTICAL
+       cmp m1col.user.hst    IDENTICAL                            (g1b_ref/g1b_new)
+VERDICT: PASS.
+
+--------------------------------------------------------------------------------
+G2  SAME ANSWER (arms: ref / A / B / A+B)
+--------------------------------------------------------------------------------
+UNIT GATES (build_cpu_m1, run_gates.sh, gates/*).  Largest difference of the
+LAST dump against the reference arm, scaled by the column maximum:
+
+  gate                                        A          B          A+B
+  T3   thick pulse (implicit_x1, cfl 10)   BITWISE    BITWISE    BITWISE
+  T3b  opacity jump (efix, cfl 10)         BITWISE    BITWISE    BITWISE
+         (pure scattering: the gas coupling is off, so the options are
+          unreachable and the answer must be bit for bit -- it is)
+  T5   equilibration, ideal gas    E       2.44e-16   BITWISE    2.44e-16
+                                   E_gas   7.23e-14   BITWISE    7.23e-14
+  T5   equilibration, He TABLE EOS E       3.43e-16   BITWISE    3.43e-16
+                                   E_gas   1.17e-15   BITWISE    1.17e-15
+  T6   Marshak, 128 cells          E       2.40e-15   BITWISE    2.40e-15
+         (A/A+B: 20 Newton fallbacks out of 3.29e6 cell-passes, at the
+          wave front -- the trust region doing its job)
+  T10  radwave x1 (implicit_x1)  + x2 (implicit/bicgstab/operator):
+         PASS in ALL FOUR arms (t10_radwave.py): c_phase 1.6884023..1.6884025
+         vs c_s = 1.68874268, |c/c_s - 1| = 2.0e-4, decay -6.66e-2 per period;
+         the two directions agree to dc/c = 1.2e-07 (ref, B) and 2.3e-09
+         (A, A+B) in every arm.
+  (T7 radiative shocks is an EXPLICIT gate -- runs_open/run_t7.sh uses no
+   implicit transport -- so these options are not reachable there.)
+
+  The T5 m1_f1 column differs at 1e-3 OF ITSELF between arms.  F1 is
+  identically zero in that single-zone problem and the runs carry
+  F1/(cE) ~ 1e-18, i.e. round-off in the face gradient (the same remark is in
+  runs_3a/RESULTS.txt for the reference scheme); E agrees to 3e-16.
+
+1-D He COLUMN, 300 s, 1862 solves (c_ref, c_A, c_B, c_AB):
+  quantity        reference            A          B          A+B
+  max|v1|         3.116597e+04      3.9e-09    2.1e-10    2.6e-09
+  F1top/Fin       1.000009690       5.4e-12    4.2e-12    2.1e-12
+  total energy    -                 8.3e-14    9.9e-13    1.5e-12
+  (relative differences; the gate asked for 1e-6 -- met with 3 orders to spare)
+
+SEEDED 2-D EDDINGTON SLAB, tlim = 200, 1241 solves (g2s_*):
+  quantity        reference            A          B          A+B
+  KE_1            1.08799167e+26    3.1e-09    4.4e-09    5.6e-10
+  KE_2            1.78400286e+21    1.4e-07    1.8e-07    1.9e-07
+  tot-E           8.04759413e+32    3.2e-11    4.6e-12    3.2e-11
+  mass            1.27383774e+19    1.6e-15    4.3e-15    1.9e-15
+  F1top           2.47523591e+15    5.8e-12    1.5e-11    9.3e-12
+  V1max           1.87292508e+04    1.3e-09    2.2e-09    4.8e-09
+  (RESULTS of runs_3d_edd quote KE_1 1.09e26, KE_2 1.8e21 at 200 s: reproduced.)
+
+  ARE THEY AT SOLVER-TOLERANCE LEVEL?  NO -- they are BELOW it, at round-off
+  amplified by a convecting flow.  Tightening implicit_tol by 100x (1e-8 ->
+  1e-10) on tlim = 40 does not shrink them:
+      tol = 1e-8    ref vs A+B:  KE_1 1.29e-09  KE_2 4.64e-08  tot-E 5.06e-13
+      tol = 1e-10   ref vs A+B:  KE_1 2.47e-09  KE_2 4.04e-08  tot-E 5.54e-12
+  The CONSERVED total energy agrees to 5e-13 in both, and KE_2 is 5 orders
+  below KE_1, so 4e-8 on it is 1e-12 of the kinetic energy.  The two schemes
+  converge to the same limit; what is left is the Lyapunov amplification of
+  floating-point round-off in a seeded convective slab.
+VERDICT: PASS.
+
+EOS-CACHE ACCURACY ACTUALLY ACHIEVED (implicit_eos_cache_check, whole run):
+  max |e_cache - e_table|/e_table          2.1e-14  (every run)
+  max relative error of the exchanged
+    energy q = SRCR - SRCB E'              2.1e-04  (slab, 1241 steps)
+                                           5.4e-05  (1-D column, 1862 steps)
+  The first is the summation-order round-off the collapse implies (the cache IS
+  the table's own Hermite spline, not a fit).  The second is that round-off
+  AMPLIFIED by the near-cancellation in q: the column sits close to radiative
+  equilibrium, where rho kappa_P a T^4 and rho kappa_E E cancel to ~1e-8 of
+  either, so a 1e-14 change in e(T) is a 1e-6..1e-4 change in their difference.
+  The reference scheme's own round-off is amplified by the same factor -- which
+  is exactly what the G2 table above measures, and it is 3e-11 on the conserved
+  total energy after 1241 steps.
+
+--------------------------------------------------------------------------------
+G3  SPEED (one run at a time; seeded 2-D slab, tlim = 40, 248 solves)
+--------------------------------------------------------------------------------
+  arm        zone-cycles/cpu_s   speed-up   cpu(s)   Picard mean/max  fallbacks
+  reference       2.110e4          1.00      31.60     4.109 / 5        -
+  A               2.897e4          1.373     23.01     4.282 / 5        0
+  B               2.410e4          1.142     27.66     4.101 / 5        - (5.19
+                                                       cache misses per cell-pass)
+  A+B             2.889e4          1.370     23.07     4.294 / 5        0, 0 misses
+
+  Same on the 200 s slab: ref 2.066e4, A 2.819e4 (1.364x), B 2.346e4 (1.136x),
+  A+B 2.814e4 (1.362x).
+
+  1-D He COLUMN, 300 s, 1862 solves, 11.71 passes/step -- the case where the
+  solve is almost nothing but the gas coupling:
+  arm        zone-cycles/cpu_s   speed-up   cpu(s)   Picard mean
+  reference       1.966e4          1.00       7.96     11.709
+  A               1.003e5          5.099      1.56     11.708
+  B               3.036e4          1.544      5.15     11.709
+  A+B             1.034e5          5.262      1.51     11.709
+
+  perf record -F 150 on A+B (2-D slab, tlim = 40), perf_AB/:
+    19.4 %  EOSCompositionModel::EvaluateAt      <- START-UP table build
+    12.9 %  ImplicitTransverseHalo
+    10.9 %  ImplicitOffDiagOp
+     7.9 %  ImplicitKrylovHalo
+     6.5 %  M1POff
+     5.8 %  ImplicitPrecond
+     4.7 %  EOSTable::Interpolate<false,true>
+     4.3 %  ImplicitApplyOp
+     2.3 %  ImplicitTridiagSolve
+     1.4 %  RosselandTable   1.3 % exp   1.0 % HermitePatch   1.0 % log10
+  The EOS share of the RUN (start-up build excluded, as in runs_3f_prof) is
+  down from ~27 % to ~8 %, and what is left is the start-of-step
+  eos.Temperature() inversion and hydro's own C2P, not the Picard loop.  The
+  next speed-up has to come from the halos and the off-diagonal operator.
+VERDICT: PASS.
+
+--------------------------------------------------------------------------------
+WHAT DID NOT WORK / HONEST LIMITS
+--------------------------------------------------------------------------------
+1.  A AND B ARE LARGELY REDUNDANT.  Once (A) removes the root find there is one
+    table evaluation per cell-pass left, and building the cache costs about what
+    it saves: A+B is within 0.3 % of A on the 2-D slab and 3 % on the 1-D
+    column.  (B) is worth having on its own (1.14x / 1.54x) and as insurance for
+    a configuration with many more passes; it is not additive with (A).
+2.  NOT FASTER-CONVERGING.  The Picard count goes slightly UP with (A) (4.109 ->
+    4.282 on the slab; unchanged at 11.709 on the 1-D column), because T is now
+    one Newton step behind instead of an exact local root.  The outer loop is
+    limited by the lagged closure and the transverse couplings, not by the gas
+    nonlinearity.  ALL of the gain is per-pass cost.
+3.  THE CACHE BARELY HELPS THE BRACKETED ROOT FIND: 5.19 misses per cell-pass
+    with B alone, because the root find brackets by walking T <- T/2 (or 2T),
+    which leaves a +-9.6 % window (nt = 2, table dlog = 0.02) on the first step.
+    A window wide enough to hold the walk would cost more to build than it
+    saves.  With (A) the walk is never taken and the miss rate is 0.
+4.  FIRST ATTEMPT AT THE NEWTON SAFEGUARD FAILED: without a floor on the
+    residual, "the step did not decrease |y|" fires in every converged cell (y
+    is then a difference cancelling to round-off) and 13 % of all cell-passes
+    fell back to the root find, costing a third of the gain.  Skipping the test
+    below |y| = 1e-12 max(rho e^n, c dt rho kappa_E E') gives 0 fallbacks on
+    every gate here.
+5.  NOTHING IS CORRECTED at the end of a cached step.  The gas energy is set
+    from the ASSEMBLED row, which is what makes e_gas + (c/chat) E change by the
+    fluxes and the work term alone to round-off; re-evaluating q after the solve
+    would break that balance.  Consistency with the real table is structural
+    instead (the evolved state is (rho, e_gas), T' is not persistent, and the
+    next step re-inverts e_gas through the real table), and the end-of-step
+    true-table pass MEASURES the error rather than patching it.
+6.  MEMORY.  iw grows by 5 components and, with the cache, ecache adds
+    4(2nt+1)+1 = 21 Reals per cell at nt = 2.  Both only when the option is on.
+
+--------------------------------------------------------------------------------
+HOW TO REPRODUCE
+--------------------------------------------------------------------------------
+  bash run.sh <exe> <name> <athinput> [overrides...]     (single arm)
+  bash run_gates.sh                                       (the G2 unit gates)
+  python3 ../runs_3d_edd/an.py <dir>...                   (slab summary)
+  inp/  holds copies of inputs/tests/rad_m1_*.athinput with the four new
+  parameters written in at their defaults (a command-line override needs the
+  parameter to exist in the file); he_slab_m1_2d_V3edd.athinput and
+  he_box_m1_1d_impl.athinput here are the same copies of the runs_3d_edd /
+  runs_3a inputs.  G1 was run against the UNTOUCHED originals, and repeated
+  (g1a_new2, g1b_new2) against the FINAL binary: still byte-identical.
+  All *.bin, tab/ and rst/ were deleted after the numbers above were measured
+  (GPFS inode quota).

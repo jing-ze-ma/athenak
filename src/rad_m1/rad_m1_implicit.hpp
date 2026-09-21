@@ -16,6 +16,7 @@
 #include <math.h>
 
 #include "athena.hpp"
+#include "eos/eos_table.hpp"
 
 namespace radm1 {
 
@@ -312,6 +313,36 @@ constexpr int M1_IW_KY   = 46;  // y = M^{-1} p   (the preconditioned direction)
 constexpr int M1_IW_KZ   = 47;  // z = M^{-1} s
 constexpr int M1_NIW_K = 48;
 
+// ---- MILESTONE 3g: the GAS-RADIATION energy coupling, <rad_m1>/implicit_gas_newton and
+// <rad_m1>/implicit_eos_cache.  Both default to false, neither allocates anything then
+// and neither is referenced, so every earlier configuration is bitwise unchanged.
+//
+// The five components below are APPENDED after whichever base component count the solve
+// uses (M1_NIW_X1 / M1_NIW / M1_NIW_K), so the base indices above never move; the offset
+// of the block is RadiationM1::iw_gas, a runtime int the kernels capture.
+constexpr int M1_NIW_GAS = 5;
+constexpr int M1_IWG_BK = 0;   // B_k = rho c_v + 4 c dt rho kappa_P a T_k^3, the
+                               // derivative d/dT of the LOCAL gas energy equation
+constexpr int M1_IWG_RK = 1;   // R_k = rho e^n - rho e(T_k) - c dt rho kappa_P a T_k^4
+                               //       + c dt rho kappa_E de0, its residual at E' = 0
+constexpr int M1_IWG_YR = 2;   // |R_k + c dt rho kappa_E E'| of the pass that produced
+                               // the current T iterate: the nonlinear gas residual the
+                               // NEXT pass checks the Newton step against (0 = the step
+                               // was an exact root find, no check needed)
+constexpr int M1_IWG_FB = 3;   // per-cell count of Newton fallbacks in this step
+constexpr int M1_IWG_MS = 4;   // per-cell count of EOS-cache misses in this step
+
+// The TRUST REGION of the Newton temperature update: a step larger than this fraction of
+// T_k is refused and the bracketed root find runs instead.  y(T) = rho e(T) + A T^4 -
+// target is increasing and (for a table whose c_v increases with T, which is what
+// ionization does) convex, so Newton from either side converges monotonically; the guard
+// is there for the cells where that is not true -- a recombination shoulder in c_v, or a
+// first pass that moves T by a factor.  It is a heuristic, not a proof: the PROOF that
+// the converged state solves the exact nonlinear equation is that at the fixed point
+// dT -> 0 forces R_k + c dt rho kappa_E E' -> 0, which IS that equation, with e(T) and
+// T^4 evaluated exactly (never linearised) at the final T.
+constexpr Real M1_NEWT_TRUST = 0.5;
+
 // BiCGStab breakdown thresholds: |rho| and |rhat.v| below these times the scale of the
 // right-hand side mean the shadow residual has become orthogonal to the Krylov space.
 constexpr Real M1_BCG_EPS = 1.0e-300;
@@ -468,6 +499,174 @@ Real M1BlendWeight(const int kind, const int fmode, const Real tauf, const Real 
   return wt*wf;
 }
 
+//----------------------------------------------------------------------------------------
+//! MILESTONE 3g, the FROZEN-DENSITY EOS CACHE, <rad_m1>/implicit_eos_cache.
+//!
+//! The density is frozen over the radiation step, so every e(rho,T) the gas solve asks
+//! for during the Picard loop lies on ONE line of the table.  The tabulated surface is a
+//! bicubic Hermite patch in (x,y) = (log10 rho, log10 T),
+//!
+//!   f(u,v) = sum_{a,b} c_ab hu_a(u) hv_b(v),
+//!
+//! with u frozen; collapsing the x direction ONCE per step,
+//!
+//!   C_b = sum_a hu_a(u) c_ab   ->   f(v) = sum_b C_b hv_b(v),
+//!
+//! leaves a 1-D cubic Hermite in ln T whose four coefficients are stored per cell.  It is
+//! the table's OWN spline, on the table's OWN temperature nodes -- not a fit -- so a
+//! cached evaluation differs from the direct one only by the summation order, i.e. by
+//! floating-point round-off (measured in ImplicitReport as `eos_cache: max |de|/e`).
+//!
+//! One set of coefficients is valid on one table cell in T.  The cache therefore holds
+//! 2*nt+1 consecutive cells centred on the cell of T^n (<rad_m1>/implicit_eos_cache_nt),
+//! and a temperature that leaves that window falls back to the real table for that ONE
+//! evaluation and is counted as a miss.
+//!
+//! NOT cached, and falling back to the table unconditionally: a density off the table, a
+//! sub-table temperature (the <block>/eos_floor_consistent continuation), and a tapered
+//! radiation term (<block>/eos_rad_taper), whose weight depends on BOTH x and y.
+//!
+//! Layout of the per-cell record ec(m,n,k,j,i): n = 0 is iy0, the lowest table T node of
+//! the window, or -1 when the cell has no cache; n = 1 + 4c + b is C_b of cell c.
+
+constexpr int M1_EC_NTMAX = 8;   // cap on implicit_eos_cache_nt
+
+KOKKOS_INLINE_FUNCTION
+int M1EosCacheNComp(const int nt) { return 4*(2*nt + 1) + 1; }
+
+//----------------------------------------------------------------------------------------
+//! \fn M1EosCacheBuild
+//! \brief collapse the density direction of the tabulated energy surface at (rho, T^n)
+//! and store the 1-D Hermite coefficients of the window.  Called once per cell per step.
+
+template <class EosT, class V>
+KOKKOS_INLINE_FUNCTION
+void M1EosCacheBuild(const EosT &eos, const V &ec, const int m, const int k,
+                     const int j, const int i, const int nt,
+                     const Real dd, const Real tt) {
+  ec(m,0,k,j,i) = -1.0;
+  const auto &tb = eos.tbl;
+  if (!tb.active || tb.rad_taper) {return;}
+  const Real rho = dd*eos.dens_cgs;
+  const Real tk = tt*eos.temp_cgs;
+  if (!(rho > 0.0) || !(tk > 0.0)) {return;}
+  const Real gx = (log10(rho) - tb.xmin)*tb.dxi;
+  const int ix = static_cast<int>(floor(gx));
+  if (ix < 0 || ix > tb.nx-2) {return;}
+  const Real u = gx - static_cast<Real>(ix);
+  if (u < 0.0 || u > 1.0) {return;}
+  const int nc = 2*nt + 1;
+  if (tb.ny-1 < nc) {return;}
+  const Real gy = (log10(tk) - tb.ymin)*tb.dyi;
+  int iy0 = static_cast<int>(floor(gy)) - nt;
+  if (iy0 < 0) {iy0 = 0;}
+  if (iy0 > tb.ny-1-nc) {iy0 = tb.ny-1-nc;}
+  const Real u2 = u*u, u3 = u2*u;
+  const Real hu[4] = {2.0*u3 - 3.0*u2 + 1.0, u3 - 2.0*u2 + u,
+                      -2.0*u3 + 3.0*u2, u3 - u2};
+  for (int c=0; c<nc; ++c) {
+    const int iy = iy0 + c;
+    for (int b=0; b<4; ++b) {
+      // the Hermite coefficient matrix of HermitePatch(): row r -> node ix + (r>>1) and
+      // the dx-scaled slope surface when r is odd, column b -> node iy + (b>>1) and the
+      // dy-scaled slope surface when b is odd.
+      const int j0 = iy + (b >> 1);
+      const Real sy = (b & 1) ? tb.dy : 1.0;
+      Real s = 0.0;
+      for (int a=0; a<4; ++a) {
+        const int i0 = ix + (a >> 1);
+        const Real sx = (a & 1) ? tb.dx : 1.0;
+        s += hu[a]*tb.tbl(j0, i0, ITE + (a & 1) + 2*(b & 1))*sx*sy;
+      }
+      ec(m,1+4*c+b,k,j,i) = s;
+    }
+  }
+  ec(m,0,k,j,i) = static_cast<Real>(iy0);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn M1EosCacheEval
+//! \brief e(T) and c_v = de/dT at the frozen density from the cached coefficients, in
+//! CODE units and with exactly the arithmetic EOS_Data::ThermoAt() would apply to the
+//! same interpolated surface.  Returns false (leaving ee, cv untouched) on a miss.
+
+template <class EosT, class V>
+KOKKOS_INLINE_FUNCTION
+bool M1EosCacheEval(const EosT &eos, const V &ec, const int m, const int k, const int j,
+                    const int i, const int nt, const Real dd, const Real tt,
+                    Real &ee, Real &cv) {
+  const Real fy0 = ec(m,0,k,j,i);
+  if (fy0 < 0.0) {return false;}
+  const auto &tb = eos.tbl;
+  const Real tk = tt*eos.temp_cgs;
+  if (!(tk > 0.0)) {return false;}
+  const Real gy = (log10(tk) - tb.ymin)*tb.dyi;
+  const int iq = static_cast<int>(floor(gy));
+  const int c = iq - static_cast<int>(fy0);
+  if (c < 0 || c > 2*nt) {return false;}
+  const Real v = gy - static_cast<Real>(iq);
+  if (v < 0.0 || v > 1.0) {return false;}
+  const Real v2 = v*v, v3 = v2*v;
+  const Real hv[4] = {2.0*v3 - 3.0*v2 + 1.0, v3 - 2.0*v2 + v,
+                      -2.0*v3 + 3.0*v2, v3 - v2};
+  const Real dv[4] = {6.0*v2 - 6.0*v, 3.0*v2 - 4.0*v + 1.0,
+                      -6.0*v2 + 6.0*v, 3.0*v2 - 2.0*v};
+  Real f = 0.0, fy = 0.0;
+  for (int b=0; b<4; ++b) {
+    const Real q = ec(m,1+4*c+b,k,j,i);
+    f += q*hv[b];
+    fy += q*dv[b];
+  }
+  fy *= tb.dyi;
+  const Real rho = dd*eos.dens_cgs;
+  const Real egas = rho*EOSTable::Pow10(f);
+  Real e = egas;
+  Real cvg = (egas/rho)*fy/tk;
+  if (tb.radiation) {
+    const Real erad = tb.arad*tk*tk*tk*tk;
+    e += erad;
+    cvg += 4.0*erad/(rho*tk);
+  }
+  ee = e/eos.pres_cgs;
+  cv = cvg*eos.dens_cgs*eos.temp_cgs/eos.pres_cgs;
+  return true;
+}
+
+//----------------------------------------------------------------------------------------
+//! \struct M1EosDirect
+//! \brief the (e, c_v) accessor the gas solve uses when the cache is OFF: one
+//! EOS_Data::ThermoAt() call, in the order the pre-3g code made it.
+
+template <class EosT>
+struct M1EosDirect {
+  EosT eos;
+  KOKKOS_INLINE_FUNCTION
+  void operator()(const Real dd, const Real t, Real &ee, Real &cv) const {
+    Real pp, cr, ct;
+    eos.ThermoAt(dd, t, ee, pp, cr, ct, cv);
+  }
+};
+
+//----------------------------------------------------------------------------------------
+//! \struct M1EosCached
+//! \brief the same accessor served from the per-cell cache, with the table as fallback.
+//! `nm` points at a thread-local miss counter (may be null).
+
+template <class EosT, class V>
+struct M1EosCached {
+  EosT eos;
+  V ec;
+  int m, k, j, i, nt;
+  Real *nm;
+  KOKKOS_INLINE_FUNCTION
+  void operator()(const Real dd, const Real t, Real &ee, Real &cv) const {
+    if (M1EosCacheEval(eos, ec, m, k, j, i, nt, dd, t, ee, cv)) {return;}
+    if (nm != nullptr) {*nm += 1.0;}
+    Real pp, cr, ct;
+    eos.ThermoAt(dd, t, ee, pp, cr, ct, cv);
+  }
+};
+
 // safeguarded root find for T' inside the Picard loop
 constexpr int  M1_IMPL_TMAXIT = 100;
 constexpr Real M1_IMPL_TRTOL  = 1.0e-12;
@@ -490,19 +689,19 @@ constexpr Real M1_IMPL_TRTOL  = 1.0e-12;
 //!
 //! Returns the number of function evaluations; `ok` is false if no bracket was found.
 
-template <class EosT>
+template <class ThermoT>
 KOKKOS_INLINE_FUNCTION
-int M1ImplTemperature(const EosT &eos, const Real dd, const Real tguess,
-                      const Real egn, const Real cdtkp_a, const Real rhs_abs,
-                      Real &tout, bool &ok) {
+int M1ImplTemperatureT(const ThermoT &th, const Real dd, const Real tguess,
+                       const Real egn, const Real cdtkp_a, const Real rhs_abs,
+                       Real &tout, bool &ok) {
   // y(T) = ee(T) + cdtkp_a*T^4 - (egn + rhs_abs)
   Real target = egn + rhs_abs;
   Real tlo = tguess, thi = tguess;
   Real ylo, yhi;
   int nev = 0;
   {
-    Real ee, pp, cr, ct, cv;
-    eos.ThermoAt(dd, tguess, ee, pp, cr, ct, cv);
+    Real ee, cv;
+    th(dd, tguess, ee, cv);
     Real t2 = tguess*tguess;
     Real y0 = ee + cdtkp_a*t2*t2 - target;
     ylo = y0;
@@ -513,8 +712,8 @@ int M1ImplTemperature(const EosT &eos, const Real dd, const Real tguess,
   if (ylo > 0.0) {
     for (int it=0; it<80 && ylo > 0.0; ++it) {
       tlo *= 0.5;
-      Real ee, pp, cr, ct, cv;
-      eos.ThermoAt(dd, tlo, ee, pp, cr, ct, cv);
+      Real ee, cv;
+      th(dd, tlo, ee, cv);
       Real t2 = tlo*tlo;
       ylo = ee + cdtkp_a*t2*t2 - target;
       ++nev;
@@ -523,8 +722,8 @@ int M1ImplTemperature(const EosT &eos, const Real dd, const Real tguess,
   } else if (yhi < 0.0) {
     for (int it=0; it<80 && yhi < 0.0; ++it) {
       thi *= 2.0;
-      Real ee, pp, cr, ct, cv;
-      eos.ThermoAt(dd, thi, ee, pp, cr, ct, cv);
+      Real ee, cv;
+      th(dd, thi, ee, cv);
       Real t2 = thi*thi;
       yhi = ee + cdtkp_a*t2*t2 - target;
       ++nev;
@@ -541,8 +740,8 @@ int M1ImplTemperature(const EosT &eos, const Real dd, const Real tguess,
   Real dx = dxold;
   bool conv = (tlo == thi);
   for (int it=0; it<M1_IMPL_TMAXIT && !conv; ++it) {
-    Real ee, pp, cr, ct, cv;
-    eos.ThermoAt(dd, tp, ee, pp, cr, ct, cv);
+    Real ee, cv;
+    th(dd, tp, ee, cv);
     ++nev;
     Real t3 = tp*tp*tp;
     Real y = ee + cdtkp_a*tp*t3 - target;
@@ -559,6 +758,21 @@ int M1ImplTemperature(const EosT &eos, const Real dd, const Real tguess,
   }
   tout = tp;
   return nev;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn M1ImplTemperature
+//! \brief the pre-3g entry point: the same safeguarded root find, reading the EOS table
+//! directly.  Kept so that every call site that does not use the cache makes exactly the
+//! sequence of EOS_Data::ThermoAt() calls it made before, bit for bit.
+
+template <class EosT>
+KOKKOS_INLINE_FUNCTION
+int M1ImplTemperature(const EosT &eos, const Real dd, const Real tguess,
+                      const Real egn, const Real cdtkp_a, const Real rhs_abs,
+                      Real &tout, bool &ok) {
+  M1EosDirect<EosT> th{eos};
+  return M1ImplTemperatureT(th, dd, tguess, egn, cdtkp_a, rhs_abs, tout, ok);
 }
 
 } // namespace radm1

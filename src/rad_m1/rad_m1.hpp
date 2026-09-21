@@ -376,6 +376,31 @@ class RadiationM1 {
   DvceArray4D<Real> klx2, klx3;  // the lagged limiter opacity klim_f itself, which
                                 // follows implicit_closure_lag
 
+  // ---- MILESTONE 3g: the GAS-RADIATION energy coupling of the implicit solve.
+  // Both options default to false; nothing below is then allocated or referenced, so
+  // every earlier configuration is bitwise unchanged.  See ImplicitSolve steps (c)/(f).
+  bool impl_gas_newton;         // <rad_m1>/implicit_gas_newton: update T' from the
+                                // ELIMINATED (Schur) relation instead of re-running the
+                                // bracketed root find in every Picard pass
+  bool impl_eos_cache;          // <rad_m1>/implicit_eos_cache: serve e(T), c_v from a
+                                // per-cell 1-D Hermite in ln T built once per step
+  int impl_ecnt;                // <rad_m1>/implicit_eos_cache_nt, the half-width of the
+                                // cached window in TABLE temperature cells
+  bool impl_eccheck;            // <rad_m1>/implicit_eos_cache_check: one TRUE-table
+                                // evaluation per cell at the end of the step, which
+                                // measures the cache error and corrects T'
+  int iw_gas;                   // first iw component of the M1_NIW_GAS block (see
+                                // rad_m1_implicit.hpp); < 0 when neither option is on
+  int impl_nec;                 // components of `ecache`
+  DvceArray5D<Real> ecache;     // (m,nec,k,j,i) the frozen-density e(T) cache
+  Real newt_nfb;                // Newton fallbacks to the bracketed root find, whole run
+  Real gas_ncell;               // cell-passes of the gas solve, whole run (the scale the
+                                // two counters above and below are read against)
+  Real ec_nmiss;                // EOS-cache misses, whole run
+  Real ec_emax;                 // max |e_cache - e_table|/e_table at the end of a step
+  Real ec_tmax;                 // max relative error of the exchanged energy q =
+                                // SRCR - SRCB E', measured against the true table
+
   // ---- MILESTONE 3e: ANDERSON ACCELERATION of the Picard map, <rad_m1>/implicit_accel.
   // Default `none` = nothing below is allocated and nothing is called, so every earlier
   // configuration is bitwise unchanged.  See ImplicitAccelApply.

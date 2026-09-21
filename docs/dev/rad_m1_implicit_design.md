@@ -1482,3 +1482,191 @@ next to the existing Picard mean/max/NON-CONVERGED line.
 `ImplicitSolve` also gained a diagnostic (unconditional, but printed only for a step
 that fails to converge): one line with the pass count, the Picard and linear residuals
 and the `(m,k,j,i)` of the worst cell.  It changes no number.
+
+---
+
+## 17. The GAS-RADIATION energy coupling: Newton elimination and a frozen-density EOS cache (`implicit_gas_newton`, `implicit_eos_cache`, both default off)
+
+### What the reference scheme spends its time on
+
+`tests_m1/runs_3f_prof/PROFILE.txt` (seeded 2-D Eddington He slab, 84x32, `closure =
+eddington`, 4.1 Picard passes/step) measures **~27-32 % of the run in EOS TABLE lookups**
+(`EOSTable::Interpolate`, `HermitePatch`, `EvalFromLogs`, `log10`/`exp`), all of them
+inside the per-cell gas-energy solve that every Picard pass repeats.  Per cell and per
+pass the pre-3g scheme makes
+
+* **one** `EOS_Data::ThermoAt(rho, T_k)` in step (c), to build the linearised emission
+  row, and
+* **five to seven more**, inside the safeguarded bracketed root find
+  `M1ImplTemperature` of step (f), which re-solves the *nonlinear* local gas equation
+  from scratch at the new `E'`.
+
+The density does not move over the radiation step, so all of them lie on one line of a
+two-dimensional table.
+
+### (A) `implicit_gas_newton`: the gas is already eliminated -- use the same relation for T
+
+Step (c) linearises the local gas energy equation about the iterate `T_k`,
+
+```
+  rho e(T') + c dt rho kappa_P a T'^4 = rho e^n + c dt rho kappa_E (E' + de0)
+  e(T') ~ e(T_k) + c_v dT,   T'^4 ~ T_k^4 + 4 T_k^3 dT
+  =>  B_k dT = R_k + c dt rho kappa_E E'
+      B_k = rho c_v + 4 c dt rho kappa_P a T_k^3                       (iw: M1_IWG_BK)
+      R_k = rho e^n - rho e(T_k) - c dt rho kappa_P a T_k^4
+            + c dt rho kappa_E de0                                     (iw: M1_IWG_RK)
+```
+
+and substitutes `dT` into the radiation row.  That substitution -- the **Schur complement**
+of the 2x2 local `(E,T)` block -- is what the pre-3g code already does: it puts
+
+```
+  + emis 4 T_k^3 (c dt rho kappa_E)/B_k       on the DIAGONAL (SRCB), and
+  + emis 4 T_k^3 R_k/B_k                      on the RIGHT-HAND SIDE (SRCR),
+  emis = dt chat rho kappa_P a.
+```
+
+The diagonal addition is **non-negative whenever `B_k > 0`**, so the elimination only
+strengthens the diagonal and the column-sum M-matrix argument of sect. 7 survives it
+untouched.  Nothing here is new.
+
+What **is** new is that `implicit_gas_newton` takes `T'` from *that same relation*,
+
+```
+  T' = T_k + (R_k + c dt rho kappa_E E')/B_k ,
+```
+
+instead of re-running the bracketed root find.  The whole Picard loop then becomes a
+**Newton iteration on the coupled `(E,T)` system with the gas eliminated locally**: one
+linear solve for `E` and one algebraic `dT` per pass, and **zero** EOS evaluations in
+step (f).
+
+*The converged state is the same one.*  The loop stops on `max(|dE|/E, |dT|/T) <
+implicit_tol` (the `|dT|/T` term is in the residual of the pre-3g code already), and
+`dT -> 0` forces `R_k + c dt rho kappa_E E' -> 0`, which **is** the exact nonlinear
+backward-Euler gas equation with `e(T)` and `T^4` evaluated -- never linearised -- at the
+final `T`.  Energy conservation is untouched: the write-back still sets the gas energy
+from `q = SRCR - SRCB E'`, the amount the solved `E` actually received.
+
+*Per-cell fallbacks to the bracketed root find*, counted in `ImplicitReport`:
+
+1. `B_k <= 0` (a non-positive `c_v`), or a non-positive `T'`;
+2. `|dT| > 0.5 T_k` (`M1_NEWT_TRUST`), the trust region on the curvature of `e(T)`,
+   which a table with an ionization shoulder does not bound analytically;
+3. the step **did not decrease** the exact nonlinear residual `|y| = |R_k + c dt rho
+   kappa_E E'|`.  This test costs nothing: it is made at the top of the *next* pass,
+   where `e(T)` has just been evaluated anyway and `E'` has not yet moved, so the two
+   values of `y` differ by the Newton step alone.  It is skipped where `|y|` has fallen
+   to `1e-12` of `max(rho e^n, c dt rho kappa_E E')` -- once a cell is converged, `y` is
+   a difference of numbers that cancel to round-off and stops decreasing monotonically;
+   without that floor 13 % of all cell-passes fell back, with it **0 %** on every gate
+   below.
+
+The option is honoured by `transport = implicit_x1` and `= implicit` (both
+`line_jacobi` and `bicgstab`), and is orthogonal to the closure, the off-diagonal mode
+and the transverse limiter: it touches only steps (c) and (f), which are the same code
+for all of them.  `g0`, `de0`, the `v.F` work terms and the `kappa_P` vs `kappa_E`
+distinction enter exactly where they did -- `de0` inside `R_k`, `g0` in the face
+equation, the momentum/work coupling in the write-back -- and nothing that was lagged
+has been un-lagged.
+
+### (B) `implicit_eos_cache`: collapse the density direction of the table once per step
+
+The tabulated energy surface is a bicubic Hermite patch in `(x,y) = (log10 rho, log10 T)`,
+`f(u,v) = sum_ab c_ab hu_a(u) hv_b(v)`.  With `u` frozen for the whole step,
+
+```
+  C_b = sum_a hu_a(u) c_ab     ->     f(v) = sum_b C_b hv_b(v)
+```
+
+is a **1-D cubic Hermite in ln T on the table's own temperature nodes** -- the table's own
+spline, not a fit.  `M1EosCacheBuild` stores the four `C_b` of each of `2 nt + 1`
+consecutive table cells centred on the cell of `T^n`
+(`implicit_eos_cache_nt`, default 2), i.e. `4(2nt+1)+1` Reals per cell;
+`M1EosCacheEval` returns `e(T)` and `c_v = de/dT` from them with exactly the arithmetic
+`ThermoAt()` applies to the same interpolated surface, plus the analytic `a T^4` term
+when `<block>/eos_radiation` is on.  The difference from a direct table call is the
+**summation order only**: measured `max |de|/e = 2.1e-14` over every gate below.
+
+Falling back to the real table, and counted as a miss: a temperature outside the cached
+window, a density off the table, a sub-table temperature (the
+`<block>/eos_floor_consistent` continuation) and `<block>/eos_rad_taper` (whose weight
+depends on both `x` and `y`).
+
+`implicit_eos_cache_check` (default true) makes **one true-table evaluation per cell at
+the end of the step** and reports two numbers: `max |de|/e` and the relative error of the
+exchanged energy `q = SRCR - SRCB E'` rebuilt from the true table, which is the only
+channel through which the cache can reach the evolved state.  **Nothing is corrected**:
+the gas energy is set from the *assembled* row, which is what makes
+`e_gas + (c/chat) E` change by the fluxes and the work term alone to round-off, and
+overwriting `q` after the solve would break exactly that balance.  Consistency with the
+real table is structural instead -- the evolved state is `(rho, e_gas)`, `T'` is not
+persistent, and the next step re-inverts `e_gas` through the real table.
+
+### Parameters (all inert at their defaults)
+
+| parameter | default | meaning |
+| --- | --- | --- |
+| `implicit_gas_newton` | `false` | (A) above |
+| `implicit_eos_cache` | `false` | (B) above |
+| `implicit_eos_cache_nt` | `2` | half-width of the cached window, in TABLE T cells |
+| `implicit_eos_cache_check` | `true` | the end-of-step true-table accuracy measurement |
+
+With both off, `iw` keeps the component count it had, `ecache` is not allocated and every
+branch above is dead: the gates below confirm **byte-identical** history files.
+
+### Gates (serial CPU, `tests_m1/runs_3g_newton_T/RESULTS.txt`)
+
+* **G1, inert.**  Byte-identical `.hst` against the HEAD reference binary on the seeded
+  Eddington slab (`vpert = 1e-3`, `tlim = 3`) and on the 1-D implicit He column
+  (`tlim = 10`).
+* **G2, same answer.**  T3 thick pulse and T3b opacity jump (pure scattering, no gas
+  coupling): **bitwise**.  T5 equilibration, ideal gas and tabulated He EOS: `E` agrees
+  to `2.4e-16` / `3.4e-16`, the gas total energy to `7e-14` / `1.2e-15`.  T6 Marshak
+  (128 cells): `E` to `2.4e-15`, with 20 Newton fallbacks out of 3.29e6 cell-passes.  T10 radiation-modified acoustic wave (`x1`
+  `implicit_x1` and `x2` `implicit`/`bicgstab`/`operator`): **PASS** in all four arms,
+  the two directions agreeing to `dc/c = 2.3e-9` with (A).  1-D He column, 300 s (1862 solves):
+  `max|v1|` to `3.9e-9`, `F1top/Fin` to `5.4e-12`, total energy to `1.5e-12`.  Seeded
+  2-D Eddington slab, 200 s (1241 solves): `KE_1` `1.09e26` to `5.6e-10`, `KE_2`
+  `1.78e21` to `1.9e-7`, total energy to `3.2e-11`.  Tightening `implicit_tol` by 100x
+  (1e-8 -> 1e-10) does **not** shrink those differences (`KE_1` 1.3e-9 -> 2.5e-9 at
+  `tlim = 40`): they are round-off amplified by a convecting flow, not iteration error,
+  and the conserved total energy agrees to 5e-13 in both.
+* **G3, speed** (seeded 2-D slab, `tlim = 40`, 248 solves, one run at a time):
+
+  | arm | zone-cycles/cpu_s | speed-up | Picard mean | Newton fallbacks | cache misses |
+  | --- | --- | --- | --- | --- | --- |
+  | reference | 2.110e4 | 1.00 | 4.109 | - | - |
+  | A | 2.897e4 | **1.37** | 4.282 | 0 | - |
+  | B | 2.410e4 | 1.14 | 4.101 | - | 5.19/cell-pass |
+  | A+B | 2.889e4 | 1.37 | 4.294 | 0 | 0 |
+
+  and on the **1-D He column** (300 s, 1862 solves, 11.71 passes/step, where the solve is
+  almost nothing but the gas coupling): reference `1.97e4`, A `1.00e5` (**5.10x**), B
+  `3.04e4` (1.54x), A+B `1.03e5` (**5.26x**).
+
+  `perf record -F 150` on A+B (2-D slab): the EOS share is down to
+  `Interpolate<false,true>` 4.7 % + `HermitePatch` 1.0 % + `exp` 1.3 % + `log10` 1.0 %
+  ~ **8 %** (from ~27 %), and what is left is the start-of-step `eos.Temperature()`
+  inversion and hydro's own C2P, not the Picard loop.  The remaining cost is the halos
+  (`ImplicitTransverseHalo` 12.9 %, `ImplicitKrylovHalo` 7.9 %) and the off-diagonal
+  operator (`ImplicitOffDiagOp` 10.9 % + `M1POff` 6.5 %), which is where the next
+  speed-up has to come from.
+
+### What did NOT work
+
+* **The two options are largely redundant.**  Once (A) removes the root find there is
+  only ONE table evaluation per cell-pass left, and building the cache costs about as
+  much as the four or five evaluations it saves: A+B measures within 0.3 % of A on the
+  2-D slab and 3 % on the 1-D column.  The cache earns its keep on its own (1.14x /
+  1.54x), or with (A) as insurance for a run with many more Picard passes.
+* **The outer iteration is NOT faster-converging.**  The Picard count goes *up* slightly
+  with (A) (4.109 -> 4.282 on the slab; unchanged, 11.71, on the 1-D column), because the
+  temperature iterate is now one Newton step behind instead of an exact local root.  The
+  outer loop is limited by the lagged closure and the transverse couplings, not by the
+  gas nonlinearity, so eliminating the gas better cannot shorten it.  **All of the gain
+  is per-pass cost.**
+* **The cache barely helps the bracketed root find** (5.19 misses per cell-pass with B
+  alone): the root find brackets by walking `T <- T/2` or `T <- 2T`, which leaves a
+  `+-9.6 %` window on the first step.  A window wide enough to hold the walk would cost
+  more to build than it saves.  With (A) the walk is never taken and the miss rate is 0.

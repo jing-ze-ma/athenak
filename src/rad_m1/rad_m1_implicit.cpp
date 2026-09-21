@@ -192,6 +192,16 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
               + "' is not a choice (none | anderson)");
   }
   }
+  // ---- MILESTONE 3g: the GAS-RADIATION energy coupling.  Both default false; neither
+  // allocates anything nor is referenced then, so an input file that does not name them
+  // is bitwise unchanged.
+  impl_gas_newton = pin->GetOrAddBoolean("rad_m1","implicit_gas_newton",false);
+  impl_eos_cache = pin->GetOrAddBoolean("rad_m1","implicit_eos_cache",false);
+  impl_ecnt = pin->GetOrAddInteger("rad_m1","implicit_eos_cache_nt",2);
+  impl_eccheck = pin->GetOrAddBoolean("rad_m1","implicit_eos_cache_check",true);
+  if (impl_ecnt < 0 || impl_ecnt > M1_EC_NTMAX) {
+    ImplFatal("<rad_m1>/implicit_eos_cache_nt must lie in [0,8]");
+  }
   impl_and_m = pin->GetOrAddInteger("rad_m1","implicit_anderson_m",5);
   impl_and_beta = pin->GetOrAddReal("rad_m1","implicit_anderson_beta",1.0);
   impl_and_start = pin->GetOrAddInteger("rad_m1","implicit_anderson_start",1);
@@ -427,6 +437,18 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   }
   od_now = impl_offdiag;
   int niw = full ? (bicg_on ? M1_NIW_K : M1_NIW) : M1_NIW_X1;
+  // MILESTONE 3g: the five per-cell components of the gas coupling are APPENDED, so
+  // every index above keeps the value it had and the array grows only when asked for.
+  iw_gas = -1;
+  if (impl_gas_newton || impl_eos_cache) {
+    iw_gas = niw;
+    niw += M1_NIW_GAS;
+  }
+  if (impl_eos_cache) {
+    impl_nec = M1EosCacheNComp(impl_ecnt);
+    Kokkos::realloc(ecache, nmb, impl_nec, ncells3, ncells2, ncells1);
+    Kokkos::deep_copy(ecache, -1.0);
+  }
   Kokkos::realloc(iw, nmb, niw, ncells3, ncells2, ncells1);
   Kokkos::deep_copy(iw, 0.0);
   Kokkos::realloc(ifw, nmb, M1_NIFW, ncells3, ncells2, ncells1+1);
@@ -540,6 +562,16 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
                      + " start=" + std::to_string(impl_and_start)
                      + " ncomp=" + std::to_string(aa_nc))
                   : std::string("")) << std::endl;
+    if (impl_gas_newton || impl_eos_cache) {
+      std::cout << "         implicit_gas_newton="
+                << (impl_gas_newton ? "true" : "false")
+                << " implicit_eos_cache=" << (impl_eos_cache ? "true" : "false")
+                << (impl_eos_cache ? (" nt=" + std::to_string(impl_ecnt)
+                                      + " ncomp=" + std::to_string(impl_nec)
+                                      + " check="
+                                      + (impl_eccheck ? "true" : "false"))
+                                   : std::string("")) << std::endl;
+    }
     std::cout << "         x1 boundaries: min=" << ibc_x1min << " max=" << ibc_x1max
               << " (0 marshak, 1 flux, 2 reflect, 3 periodic) flux_min=" << iflux_x1min
               << " flux_max=" << iflux_x1max << std::endl;
@@ -2323,6 +2355,22 @@ void RadiationM1::ImplicitReport() {
               << " global reductions=" << bcg_nred
               << " (" << rper << " per inner iteration)" << std::endl;
   }
+  if (impl_gas_newton || impl_eos_cache) {
+    Real fpc = (gas_ncell > 0.0) ? (newt_nfb/gas_ncell) : 0.0;
+    Real mpc = (gas_ncell > 0.0) ? (ec_nmiss/gas_ncell) : 0.0;
+    std::cout << "<rad_m1> gas coupling: newton="
+              << (impl_gas_newton ? "true" : "false")
+              << " eos_cache=" << (impl_eos_cache ? "true" : "false")
+              << " cell-passes=" << gas_ncell
+              << " newton fallbacks=" << newt_nfb << " (" << fpc << " per cell-pass)"
+              << std::endl;
+    if (impl_eos_cache) {
+      std::cout << "<rad_m1> eos_cache: nt=" << impl_ecnt
+                << " misses=" << ec_nmiss << " (" << mpc << " per cell-pass)"
+                << " max |de|/e vs the table=" << ec_emax
+                << " max |dq|/q of the exchanged energy=" << ec_tmax << std::endl;
+    }
+  }
   if (trans_on) {
     std::cout << "<rad_m1> offdiag="
               << ((impl_offdiag == M1_OD_OPERATOR) ? "operator" :
@@ -2439,6 +2487,18 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
 
   const bool have_hydro = (pmy_pack->phydro != nullptr);
   const bool src_on = have_hydro && coupling && dbgh && !opac_zero;
+  // MILESTONE 3g: the gas-radiation energy coupling.  Both are false by default and
+  // every branch they guard is then dead, so the pre-3g arithmetic is untouched.
+  const bool gnewt = impl_gas_newton && src_on;
+  const bool usec = impl_eos_cache && have_hydro;
+  const bool gasx = (iw_gas >= 0);
+  const int igb = gasx ? (iw_gas + M1_IWG_BK) : 0;
+  const int igr = gasx ? (iw_gas + M1_IWG_RK) : 0;
+  const int igy = gasx ? (iw_gas + M1_IWG_YR) : 0;
+  const int igf = gasx ? (iw_gas + M1_IWG_FB) : 0;
+  const int igm = gasx ? (iw_gas + M1_IWG_MS) : 0;
+  const int ecnt = impl_ecnt;
+  auto ec_ = ecache;
   auto uh = have_hydro ? pmy_pack->phydro->u0 : u0;
   const bool etg = have_hydro ? pmy_pack->phydro->use_etotgrav : false;
   auto phicc = have_hydro ? pmy_pack->phydro->phicc0 : arad_ref;
@@ -2458,6 +2518,11 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     iw_(m,M1_IW_TP,k,j,i) = 0.0;
     iw_(m,M1_IW_EGN,k,j,i) = 0.0;
     iw_(m,M1_IW_KT,k,j,i) = opac_(m,M1_OP_T,k,j,i);
+    if (gasx) {
+      iw_(m,igy,k,j,i) = 0.0;
+      iw_(m,igf,k,j,i) = 0.0;
+      iw_(m,igm,k,j,i) = 0.0;
+    }
     if (trans) {
       iw_(m,M1_IW_V2,k,j,i) = 0.0;
       iw_(m,M1_IW_V3,k,j,i) = 0.0;
@@ -2492,6 +2557,17 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         iw_(m,M1_IW_V3,k,j,i) = uh(m,IM3,k,j,i)*idd;
       }
     });
+    // MILESTONE 3g: the FROZEN-DENSITY e(T) cache.  rho does not move over the step, so
+    // the density direction of the tabulated energy surface is collapsed ONCE here and
+    // every pass of the Picard loop reads a 1-D cubic in ln T instead of the 2-D table.
+    if (usec) {
+      auto eos = pmy_pack->phydro->peos->eos_data;
+      par_for("m1_impl_ecb", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        M1EosCacheBuild(eos, ec_, m, k, j, i, ecnt, uh(m,IDN,k,j,i),
+                        iw_(m,M1_IW_TP,k,j,i));
+      });
+    }
   }
 
   // The SCALE of the Picard convergence test.  With implicit_res_floor = 0 (the 3a
@@ -2921,13 +2997,70 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         }
         Real dd = uh(m,IDN,k,j,i);
         Real tk = iw_(m,M1_IW_TP,k,j,i);
-        Real ee, pp, cr, ct, cv;
-        eos.ThermoAt(dd, tk, ee, pp, cr, ct, cv);
+        Real nmiss = 0.0;
+        M1EosCached<decltype(eos), decltype(ec_)> thc{eos, ec_, m, k, j, i, ecnt,
+                                                      &nmiss};
+        M1EosDirect<decltype(eos)> thd{eos};
+        Real ee, cv;
+        if (usec) {
+          thc(dd, tk, ee, cv);
+        } else {
+          thd(dd, tk, ee, cv);
+        }
         Real t3 = tk*tk*tk;
         Real t4 = t3*tk;
         Real de0 = iw_(m,M1_IW_DE0,k,j,i);
         Real bk = dd*cv + 4.0*cl*dt*rkpv*ar*t3;
         Real rk = iw_(m,M1_IW_EGN,k,j,i) - ee - cl*dt*rkpv*ar*t4 + cl*dt*rkev*de0;
+        // MILESTONE 3g, the Newton SAFEGUARD.  The temperature this pass starts from was
+        // produced by the Newton step of the previous pass, whose linearisation dropped
+        // the curvature of e(T) and of T^4.  Here -- where e(T_k) has just been
+        // evaluated anyway, so the test is FREE -- the exact nonlinear gas residual
+        //   y(T) = rho e(T) + c dt rho kappa_P a T^4 - rho e^n - c dt rho kappa_E E0'
+        //        = -(R_k + c dt rho kappa_E E')
+        // is compared with the value it had BEFORE that step, at the SAME E' (the solve
+        // has not moved E since).  If it did not decrease, the Newton step is discarded
+        // and the bracketed root find of the pre-3g scheme is run for this cell.
+        if (gnewt) {
+          Real yprev = iw_(m,igy,k,j,i);
+          if (yprev > 0.0) {
+            Real ep = iw_(m,M1_IW_EP,k,j,i);
+            Real ynow = fabs(rk + cl*dt*rkev*ep);
+            // ...but only where the residual still MEANS something.  Once the cell has
+            // converged, y is a difference of numbers that cancel to round-off and it
+            // stops decreasing monotonically; without this floor every converged cell
+            // buys a bracketed root find in every remaining pass (measured: 13 % of all
+            // cell-passes fell back, against 0.6 % with it).
+            Real ysc = fmax(fabs(iw_(m,M1_IW_EGN,k,j,i)), cl*dt*rkev*fmax(ep, 0.0));
+            if (!(ynow < yprev) && ynow > M1_IMPL_TRTOL*ysc) {
+              Real tn = tk;
+              bool ok = true;
+              if (usec) {
+                (void) M1ImplTemperatureT(thc, dd, tk, iw_(m,M1_IW_EGN,k,j,i),
+                                          cl*dt*rkpv*ar, cl*dt*rkev*(ep + de0), tn, ok);
+              } else {
+                (void) M1ImplTemperatureT(thd, dd, tk, iw_(m,M1_IW_EGN,k,j,i),
+                                          cl*dt*rkpv*ar, cl*dt*rkev*(ep + de0), tn, ok);
+              }
+              if (ok && tn > 0.0) {
+                tk = tn;
+                iw_(m,M1_IW_TP,k,j,i) = tk;
+                if (usec) {thc(dd, tk, ee, cv);} else {thd(dd, tk, ee, cv);}
+                t3 = tk*tk*tk;
+                t4 = t3*tk;
+                bk = dd*cv + 4.0*cl*dt*rkpv*ar*t3;
+                rk = iw_(m,M1_IW_EGN,k,j,i) - ee - cl*dt*rkpv*ar*t4
+                     + cl*dt*rkev*de0;
+              }
+              iw_(m,igf,k,j,i) += 1.0;
+            }
+          }
+          iw_(m,igb,k,j,i) = bk;
+          iw_(m,igr,k,j,i) = rk;
+        }
+        if (gasx) {
+          iw_(m,igm,k,j,i) += nmiss;
+        }
         Real emis = dt*ch*rkpv*ar;
         Real kk = (bk > 0.0) ? (emis*4.0*t3*cl*dt*rkev/bk) : 0.0;
         iw_(m,M1_IW_SRCB,k,j,i) = dt*ch*rkev - kk;
@@ -3152,9 +3285,53 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           Real dd = uh(m,IDN,k,j,i);
           Real de0 = iw_(m,M1_IW_DE0,k,j,i);
           bool ok = true;
-          (void) M1ImplTemperature(eos, dd, told, iw_(m,M1_IW_EGN,k,j,i),
-                                   cl*dt*rkpv*ar, cl*dt*rkev*(enew + de0), tnew, ok);
-          if (!ok) {tnew = told;}
+          // MILESTONE 3g.  The gas has ALREADY been eliminated locally to build the row
+          // (step (c)): the linearised energy equation is B_k dT = R_k + c dt rho
+          // kappa_E E', whose dT is exactly what put -4 a T_k^3 c dt rho kappa_E/B_k on
+          // the diagonal and the rest on the right-hand side.  With
+          // implicit_gas_newton the SAME relation supplies T', at no table evaluation at
+          // all, instead of re-solving the nonlinear equation from scratch in every
+          // pass.  It is one Newton step of that equation, so the Picard loop is now a
+          // Newton iteration on the coupled (E,T) system, and its fixed point -- where
+          // the loop stops, |dT|/T < implicit_tol -- satisfies
+          // R_k + c dt rho kappa_E E' = 0, i.e. the EXACT nonlinear backward-Euler gas
+          // equation with e(T) and T^4 evaluated (not linearised) at the final T.
+          // The elimination only ADDS to the diagonal of the radiation row (the
+          // coefficient 4 a T^3 c dt rho kappa_E emis/B_k is >= 0 whenever B_k > 0), so
+          // the M-matrix property of sect. 7 is untouched by it.
+          bool done = false;
+          if (gnewt) {
+            Real bk = iw_(m,igb,k,j,i);
+            Real rk = iw_(m,igr,k,j,i);
+            Real yk = rk + cl*dt*rkev*enew;
+            Real dtk = (bk > 0.0) ? (yk/bk) : 0.0;
+            if (bk > 0.0 && fabs(dtk) <= M1_NEWT_TRUST*told && (told + dtk) > 0.0) {
+              tnew = told + dtk;
+              iw_(m,igy,k,j,i) = fabs(yk);
+              done = true;
+            }
+          }
+          if (!done) {
+            // the pre-3g bracketed root find: also the per-cell FALLBACK of the Newton
+            // update (c_v <= 0, a step outside the trust region, a non-positive T).
+            if (usec) {
+              Real nmiss = 0.0;
+              M1EosCached<decltype(eos), decltype(ec_)> thc{eos, ec_, m, k, j, i, ecnt,
+                                                            &nmiss};
+              (void) M1ImplTemperatureT(thc, dd, told, iw_(m,M1_IW_EGN,k,j,i),
+                                        cl*dt*rkpv*ar, cl*dt*rkev*(enew + de0), tnew,
+                                        ok);
+              if (gasx) {iw_(m,igm,k,j,i) += nmiss;}
+            } else {
+              (void) M1ImplTemperature(eos, dd, told, iw_(m,M1_IW_EGN,k,j,i),
+                                       cl*dt*rkpv*ar, cl*dt*rkev*(enew + de0), tnew, ok);
+            }
+            if (!ok) {tnew = told;}
+            if (gnewt) {
+              iw_(m,igy,k,j,i) = 0.0;
+              iw_(m,igf,k,j,i) += 1.0;
+            }
+          }
         }
         iw_(m,M1_IW_EP,k,j,i) = enew;
         iw_(m,M1_IW_TP,k,j,i) = tnew;
@@ -3389,6 +3566,96 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                 << " worst cell of rank 0 (m,k,j,i)=(" << lmb << "," << (lk+ks) << ","
                 << (lj+js) << "," << (li+is) << ")" << std::endl;
     }
+  }
+
+  // MILESTONE 3g: the per-cell counters of the gas coupling, reduced ONCE per step.
+  if (gasx) {
+    Real sfb = 0.0, sms = 0.0;
+    Kokkos::parallel_reduce("m1_impl_gcnt",
+    Kokkos::MDRangePolicy<Kokkos::Rank<4>>(DevExeSpace(), {0,ks,js,is},
+                                           {nmb1+1,ke+1,je+1,ie+1}),
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &lf) {
+      lf += iw_(m,igf,k,j,i);
+    }, Kokkos::Sum<Real>(sfb));
+    Kokkos::parallel_reduce("m1_impl_gms",
+    Kokkos::MDRangePolicy<Kokkos::Rank<4>>(DevExeSpace(), {0,ks,js,is},
+                                           {nmb1+1,ke+1,je+1,ie+1}),
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &ls) {
+      ls += iw_(m,igm,k,j,i);
+    }, Kokkos::Sum<Real>(sms));
+    Real ncell = static_cast<Real>(nmb1+1)*static_cast<Real>(ke-ks+1)
+                 *static_cast<Real>(je-js+1)*static_cast<Real>(ie-is+1);
+#if MPI_PARALLEL_ENABLED
+    {Real lo[3] = {sfb, sms, ncell}, gl[3];
+    MPI_Allreduce(lo, gl, 3, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+    sfb = gl[0];
+    sms = gl[1];
+    ncell = gl[2];}
+#endif
+    newt_nfb += sfb;
+    ec_nmiss += sms;
+    gas_ncell += ncell*static_cast<Real>(it);
+  }
+
+  // MILESTONE 3g: ONE TRUE-TABLE evaluation per cell at the state the step ends on, to
+  // MEASURE what the cache cost.  Two numbers are taken: the relative error of e(T')
+  // itself, and the relative error of the energy q = SRCR - SRCB E' the gas actually
+  // exchanges with the radiation -- the only channel through which the cache can reach
+  // the evolved state.
+  //
+  // Nothing is CORRECTED here, deliberately.  The gas energy is set from the ASSEMBLED
+  // row (see the write-back below), which is what makes e_gas + (c/chat) E change by the
+  // fluxes and the work term alone to round-off; overwriting q after the solve with a
+  // re-evaluated one would break exactly that algebraic balance.  Consistency with the
+  // real table is instead structural: the evolved gas state is (rho, e_gas), T' is not
+  // persistent, and the next step re-inverts e_gas through the real table.
+  if (usec && impl_eccheck && src_on) {
+    auto eos = pmy_pack->phydro->peos->eos_data;
+    Real emx = 0.0, qmx = 0.0;
+    Kokkos::parallel_reduce("m1_impl_eck",
+    Kokkos::MDRangePolicy<Kokkos::Rank<4>>(DevExeSpace(), {0,ks,js,is},
+                                           {nmb1+1,ke+1,je+1,ie+1}),
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &lmax) {
+      iw_(m,igm,k,j,i) = 0.0;
+      Real rkpv = opac_(m,M1_OP_P,k,j,i);
+      Real rkev = opac_(m,M1_OP_E,k,j,i);
+      if (rkpv == 0.0 && rkev == 0.0) {return;}
+      Real dd = uh(m,IDN,k,j,i);
+      Real tk = iw_(m,M1_IW_TP,k,j,i);
+      Real ce, ccv;
+      if (!M1EosCacheEval(eos, ec_, m, k, j, i, ecnt, dd, tk, ce, ccv)) {return;}
+      Real te, pp, cr, ct, tcv;
+      eos.ThermoAt(dd, tk, te, pp, cr, ct, tcv);
+      lmax = fmax(lmax, fabs(ce - te)/fmax(fabs(te), 1.0e-300));
+      // the same row the pass assembled, re-made with the TRUE table
+      Real t3 = tk*tk*tk, t4 = t3*tk;
+      Real de0 = iw_(m,M1_IW_DE0,k,j,i);
+      Real ep = iw_(m,M1_IW_EP,k,j,i);
+      Real emis = dt*ch*rkpv*ar;
+      Real bkc = dd*ccv + 4.0*cl*dt*rkpv*ar*t3;
+      Real bkt = dd*tcv + 4.0*cl*dt*rkpv*ar*t3;
+      Real rkc = iw_(m,M1_IW_EGN,k,j,i) - ce - cl*dt*rkpv*ar*t4 + cl*dt*rkev*de0;
+      Real rkt = iw_(m,M1_IW_EGN,k,j,i) - te - cl*dt*rkpv*ar*t4 + cl*dt*rkev*de0;
+      Real qc = emis*t4 - dt*ch*rkev*de0 - (dt*ch*rkev)*ep;
+      Real qt = qc;
+      if (bkc > 0.0) {qc += emis*4.0*t3*(rkc + cl*dt*rkev*ep)/bkc;}
+      if (bkt > 0.0) {qt += emis*4.0*t3*(rkt + cl*dt*rkev*ep)/bkt;}
+      iw_(m,igm,k,j,i) = fabs(qt - qc)/fmax(fabs(qt), 1.0e-300);
+    }, Kokkos::Max<Real>(emx));
+    Kokkos::parallel_reduce("m1_impl_eckq",
+    Kokkos::MDRangePolicy<Kokkos::Rank<4>>(DevExeSpace(), {0,ks,js,is},
+                                           {nmb1+1,ke+1,je+1,ie+1}),
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &lmax) {
+      lmax = fmax(lmax, iw_(m,igm,k,j,i));
+    }, Kokkos::Max<Real>(qmx));
+#if MPI_PARALLEL_ENABLED
+    {Real lo[2] = {emx, qmx}, gl[2];
+    MPI_Allreduce(lo, gl, 2, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+    emx = gl[0];
+    qmx = gl[1];}
+#endif
+    ec_emax = std::max(ec_emax, emx);
+    ec_tmax = std::max(ec_tmax, qmx);
   }
 
   //------------------------------------------------------------------------- write back

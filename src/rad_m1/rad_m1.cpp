@@ -123,6 +123,18 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   aa_fnp = -1.0;
   aa_nacc = 0.0;
   aa_nrst = 0.0;
+  // ---- milestone 3g: the gas-radiation energy coupling
+  impl_gas_newton = false;
+  impl_eos_cache = false;
+  impl_ecnt = 2;
+  impl_eccheck = true;
+  iw_gas = -1;
+  impl_nec = 0;
+  newt_nfb = 0.0;
+  gas_ncell = 0.0;
+  ec_nmiss = 0.0;
+  ec_emax = 0.0;
+  ec_tmax = 0.0;
   // ---- end of the 3a hook
   cfl_rad = pin->GetOrAddReal("rad_m1","cfl_rad",0.4);
   e_floor = pin->GetOrAddReal("rad_m1","e_floor",(FLT_MIN));
