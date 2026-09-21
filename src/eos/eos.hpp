@@ -1277,6 +1277,17 @@ class GeneralMHD : public EquationOfState {
                   const bool only_testfloors,
                   const int il, const int iu, const int jl, const int ju,
                   const int kl, const int ku) override;
+  // THE FROZEN CONVERSION, used once, by the first ConToPrim of a RESTARTED run.  The
+  // MHD counterpart of GeneralHydro::ConsToPrimFrozen (see general_hyd_frozen.cpp): the
+  // primitives and the cell-centred field come out of the conserved variables and the
+  // face field exactly as they always do, but the temperature and the derived
+  // (p, Gamma_1) are taken from wtemp / wder as the restart file restored them instead
+  // of being solved for again.  See MHD::c2p_freeze_derived.  Its own translation unit,
+  // for the reason given on EOS_Data::floors_legacy.
+  void ConsToPrimFrozen(DvceArray5D<Real> &cons, const DvceFaceFld4D<Real> &b,
+                        DvceArray5D<Real> &prim, DvceArray5D<Real> &bcc,
+                        const int il, const int iu, const int jl, const int ju,
+                        const int kl, const int ku);
   void PrimToCons(const DvceArray5D<Real> &prim, const DvceArray5D<Real> &bcc,
                   DvceArray5D<Real> &cons, const int il, const int iu,
                   const int jl, const int ju, const int kl, const int ku) override;

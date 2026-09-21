@@ -139,6 +139,19 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
                       std::make_pair(0,nmb), static_cast<int>(IDG1),
                       Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
   }
+  // and the MHD one, which is the same cache of the same two channels: see the note on
+  // outarray_wdpm.  The general-EOS MHD runs (the deep hot Jupiter) are chained restarts
+  // and every link boundary was a discontinuity without it.
+  if (pmhd != nullptr && pmhd->peos->eos_data.IsGeneral()) {
+    Kokkos::realloc(outarray_wdpm, nmb, nout3, nout2, nout1);
+    Kokkos::deep_copy(outarray_wdpm, Kokkos::subview(pmhd->wder,
+                      std::make_pair(0,nmb), static_cast<int>(IDPR),
+                      Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
+    Kokkos::realloc(outarray_wdgm, nmb, nout3, nout2, nout1);
+    Kokkos::deep_copy(outarray_wdgm, Kokkos::subview(pmhd->wder,
+                      std::make_pair(0,nmb), static_cast<int>(IDG1),
+                      Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
+  }
   // the mode-3 Newton warm-start history, see the note on outarray_wm1
   {
     const int nwm = two_stream_rt::RtWarmLevels();
@@ -431,6 +444,9 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   }
   if (wt_hyd) {
     data_size += 2*nout1*nout2*nout3*sizeof(Real);      // hydro wder (IDPR, IDG1)
+  }
+  if (wt_mhd) {
+    data_size += 2*nout1*nout2*nout3*sizeof(Real);      // mhd wder (IDPR, IDG1)
   }
   if (nwarm > 0) {
     data_size += nwarm*nout1*nout2*nout3*sizeof(Real);  // rt_c3bp (+ rt_c3bp2)
@@ -919,6 +935,10 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   if (wt_hyd) {
     write_wtemp(outarray_wdp, "hydro pressure");
     write_wtemp(outarray_wdg, "hydro Gamma_1");
+  }
+  if (wt_mhd) {
+    write_wtemp(outarray_wdpm, "mhd pressure");
+    write_wtemp(outarray_wdgm, "mhd Gamma_1");
   }
   // and the warm-start history behind that, same layout, same loop
   if (nwarm > 0) { write_wtemp(outarray_wm1, "rt warm start"); }

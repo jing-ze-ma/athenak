@@ -275,6 +275,11 @@ class BaseTypeOutput {
   // wtemp is not bitwise (the log10/Pow10 round trip of the temperature moves the table
   // lookup by an ULP), so they are carried in the file too.  Hydro only; empty otherwise.
   HostArray4D<Real> outarray_wdp, outarray_wdg;
+  // the same two channels of MHD::wder, for a general-EOS MHD run; the argument on
+  // outarray_wdp applies unchanged -- the MHD Riemann solvers reconstruct wder too, and
+  // the first Fluxes call of a restarted cycle reads it before any ConsToPrim of the
+  // restarted run has written it.  MHD only; empty otherwise.
+  HostArray4D<Real> outarray_wdpm, outarray_wdgm;
   // the mode-3 two-stream Newton WARM-START history (two_stream_rt::rt_c3bp and, for
   // problem/rt_impl_warm = 2, rt_c3bp2).  Same argument once more: the iterate the
   // history sets decides which of the answers inside rt_impl_tol the Newton stops on, so

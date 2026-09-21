@@ -446,29 +446,49 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
   // EOS is ideal) simply does not have the tail: accept that size too, and leave wtemp
   // as it is, which costs one cold start on the first conversion and nothing after.
   //
-  // THE DERIVED CACHE (Hydro::wder, p and Gamma_1) follows it, for hydro only, and for
+  // THE DERIVED CACHE (Hydro::wder and MHD::wder, p and Gamma_1) follows it, for
   // the reason spelled out on outarray_wdp in outputs.hpp: restoring wtemp alone is not
   // enough, because the first Fluxes call of the restarted cycle reconstructs p and
   // Gamma_1 that no ConsToPrim of the restarted run has produced yet, and re-deriving
   // them from the restored temperature moves them by an ULP (the log10/Pow10 round trip
-  // of T is not the identity).  Three tail lengths are therefore accepted -- both caches,
-  // wtemp only (a file written before the derived cache was added) and neither -- and
-  // only the first makes the restart a bitwise continuation.
+  // of T is not the identity).  The hydro derived cache comes first, the MHD one behind
+  // it.  Four tail lengths are therefore accepted -- both caches; the hydro derived
+  // cache but not the MHD one (a file written after the hydro feature and before the MHD
+  // one, which only a hydro+MHD ion-neutral run can see); wtemp only (a file written
+  // before either derived cache existed, which is what every general-EOS MHD file up to
+  // now is); and neither -- and only the first makes the restart a bitwise continuation.
   bool wt_hyd = (phydro != nullptr) && phydro->peos->eos_data.IsGeneral();
   bool wt_mhd = (pmhd != nullptr) && pmhd->peos->eos_data.IsGeneral();
   bool wd_hyd = wt_hyd;
+  bool wd_mhd = wt_mhd;
   IOWrapperSizeT wt_size = 0;
   if (wt_hyd) { wt_size += nout1*nout2*nout3*sizeof(Real); }
   if (wt_mhd) { wt_size += nout1*nout2*nout3*sizeof(Real); }
-  IOWrapperSizeT wd_size = wd_hyd ? 2*nout1*nout2*nout3*sizeof(Real) : 0;
+  IOWrapperSizeT wd_size = 0;
+  if (wd_hyd) { wd_size += 2*nout1*nout2*nout3*sizeof(Real); }
+  if (wd_mhd) { wd_size += 2*nout1*nout2*nout3*sizeof(Real); }
   // and behind both of them, the mode-3 warm-start history: nwarm_file slabs, a number
   // the marked header above gave us rather than something inferred from the length
   IOWrapperSizeT wm_size = nwarm_file*nout1*nout2*nout3*sizeof(Real);
   if ((data_size_ + wt_size + wd_size + wm_size) == data_size) {
     data_size_ += wt_size + wd_size + wm_size;
+  } else if (wd_hyd && wd_mhd &&
+             (data_size_ + wt_size + wd_size/2 + wm_size) == data_size) {
+    // a run with BOTH a general-EOS hydro and a general-EOS MHD module (ion-neutral)
+    // reading a file written while only the hydro derived cache existed: the hydro half
+    // of the tail is there, the MHD half is not
+    data_size_ += wt_size + wd_size/2 + wm_size;
+    wd_mhd = false;
+    if (global_variable::my_rank == 0) {
+      std::cout << "### WARNING: restart file has no general-EOS MHD derived "
+                << "(p, Gamma_1) cache (written before it was added); the first flux "
+                << "calculation re-derives it and this restart is not bitwise."
+                << std::endl;
+    }
   } else if (wd_size > 0 && (data_size_ + wt_size + wm_size) == data_size) {
     data_size_ += wt_size + wm_size;
     wd_hyd = false;
+    wd_mhd = false;
     if (global_variable::my_rank == 0) {
       std::cout << "### WARNING: restart file has no general-EOS derived (p, Gamma_1) "
                 << "cache (written before it was added); the first flux calculation "
@@ -485,6 +505,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     wt_hyd = false;
     wt_mhd = false;
     wd_hyd = false;
+    wd_mhd = false;
     data_size_ += wm_size;
   }
 
@@ -1069,6 +1090,18 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
       // not re-derive them, or the restart is not a bitwise continuation.  See
       // Hydro::c2p_freeze_derived.
       phydro->c2p_freeze_derived = true;
+    }
+    if (wd_mhd) {
+      read_slab("mhd pressure");
+      Kokkos::deep_copy(Kokkos::subview(pmhd->wder, std::make_pair(0,nmb),
+                        static_cast<int>(IDPR), Kokkos::ALL, Kokkos::ALL,
+                        Kokkos::ALL), wtin);
+      read_slab("mhd Gamma_1");
+      Kokkos::deep_copy(Kokkos::subview(pmhd->wder, std::make_pair(0,nmb),
+                        static_cast<int>(IDG1), Kokkos::ALL, Kokkos::ALL,
+                        Kokkos::ALL), wtin);
+      // the MHD counterpart of the line above; see MHD::c2p_freeze_derived
+      pmhd->c2p_freeze_derived = true;
     }
     if (nwarm_read > 0) {
       namespace ts = two_stream_rt;

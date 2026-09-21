@@ -1,0 +1,22 @@
+cycle   0  bitwise identical
+cycle   1  bitwise identical
+cycle   2  bitwise identical
+cycle   3  bitwise identical
+cycle   4  bitwise identical
+cycle   5  bitwise identical
+cycle   6  bitwise identical
+cycle   7  bitwise identical
+cycle   8  bitwise identical
+cycle   9  bitwise identical
+cycle  10  bitwise identical
+cycle  11  DIFFERS: worst mom1  abs 1.124e-15  rel 7.459e-05
+cycle  12  DIFFERS: worst mom1  abs 1.374e-15  rel 6.523e-04
+cycle  13  DIFFERS: worst mom1  abs 1.147e-15  rel 1.057e-04
+cycle  14  DIFFERS: worst mom1  abs 1.409e-15  rel 3.753e-04
+cycle  15  DIFFERS: worst mom1  abs 1.645e-15  rel 3.175e-02
+cycle  16  DIFFERS: worst mom1  abs 1.520e-15  rel 2.002e-04
+cycle  17  DIFFERS: worst mom1  abs 2.158e-15  rel 2.938e-04
+cycle  18  DIFFERS: worst mom1  abs 2.803e-15  rel 7.709e-04
+cycle  19  DIFFERS: worst mom1  abs 1.714e-15  rel 4.085e-04
+cycle  20  DIFFERS: worst mom1  abs 3.185e-15  rel 2.565e-04
+FAIL: first differing cycle 11 of 21 compared
