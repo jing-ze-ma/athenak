@@ -19,6 +19,7 @@
 #include "mesh/mesh.hpp"
 #include "driver/driver.hpp"
 #include "rad_m1/rad_m1.hpp"
+#include "rad_m1/rad_m1_implicit.hpp"
 
 namespace radm1 {
 //----------------------------------------------------------------------------------------
@@ -49,6 +50,16 @@ TaskStatus RadiationM1::NewTimeStep(Driver *pdriver, int stage) {
   Real dxmin = dt1;
   if (pmy_pack->pmesh->multi_d) {dxmin = std::min(dxmin, dt2);}
   if (pmy_pack->pmesh->three_d) {dxmin = std::min(dxmin, dt3);}
+
+  // ---- MILESTONE 3a hook: the implicit scheme has no light-speed CFL.  It takes the
+  // step it is given; <rad_m1>/implicit_cfl > 0 asks for a radiation CFL c dt/dx, which
+  // is how the radiation-only tests choose their step.
+  if (transport == M1_TRANSPORT_IMPLICIT_X1) {
+    dtnew = (impl_cfl > 0.0) ? (impl_cfl*dxmin/c_light)
+                             : static_cast<Real>(std::numeric_limits<float>::max());
+    return TaskStatus::complete;
+  }
+  // ---- end of the 3a hook
 
   dtnew = cfl_rad*dxmin/chat;
   return TaskStatus::complete;

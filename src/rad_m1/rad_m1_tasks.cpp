@@ -22,6 +22,7 @@
 #include "mesh/mesh.hpp"
 #include "bvals/bvals.hpp"
 #include "rad_m1/rad_m1.hpp"
+#include "rad_m1/rad_m1_implicit.hpp"
 
 namespace radm1 {
 //----------------------------------------------------------------------------------------
@@ -34,6 +35,26 @@ void RadiationM1::AssembleRadM1Tasks(std::map<std::string,
 
   // "m1_before_stagen": work that must complete over all MeshBlocks before the stage
   id.irecv = tl["m1_before_stagen"]->AddTask(&RadiationM1::InitRecv, this, none);
+
+  // ---- MILESTONE 3a hook: the implicit column solve replaces the whole explicit stage
+  // chain (closure limits -> opacity -> fluxes -> update -> coupling).  Everything after
+  // the solve -- the hydro inversion and the ghost-zone exchange of the moments -- is
+  // the same as in the explicit path.
+  if (transport == M1_TRANSPORT_IMPLICIT_X1) {
+    id.closure = tl["m1_stagen"]->AddTask(&RadiationM1::ApplyClosureLimits,this,none);
+    id.opac    = tl["m1_stagen"]->AddTask(&RadiationM1::Opacity, this, id.closure);
+    id.update  = tl["m1_stagen"]->AddTask(&RadiationM1::ImplicitSolve, this, id.opac);
+    id.c2p     = tl["m1_stagen"]->AddTask(&RadiationM1::HydroConToPrim,this,id.update);
+    id.restu   = tl["m1_stagen"]->AddTask(&RadiationM1::RestrictU, this, id.c2p);
+    id.sendu   = tl["m1_stagen"]->AddTask(&RadiationM1::SendU, this, id.restu);
+    id.recvu   = tl["m1_stagen"]->AddTask(&RadiationM1::RecvU, this, id.sendu);
+    id.bcs     = tl["m1_stagen"]->AddTask(&RadiationM1::ApplyPhysicalBCs,this,id.recvu);
+    id.prol    = tl["m1_stagen"]->AddTask(&RadiationM1::Prolongate, this, id.bcs);
+    id.csend = tl["m1_after_stagen"]->AddTask(&RadiationM1::ClearSend, this, none);
+    id.crecv = tl["m1_after_stagen"]->AddTask(&RadiationM1::ClearRecv, this, id.csend);
+    return;
+  }
+  // ---- end of the 3a hook
 
   // "m1_stagen"
   id.copyu   = tl["m1_stagen"]->AddTask(&RadiationM1::CopyCons, this, none);
