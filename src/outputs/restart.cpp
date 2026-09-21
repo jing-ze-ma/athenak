@@ -55,16 +55,6 @@ RestartOutput::RestartOutput(ParameterInput *pin, Mesh *pm, OutputParameters op)
 // variables, including ghost zones.
 
 void RestartOutput::LoadOutputData(Mesh *pm) {
-  // MILESTONE 1a: <rad_m1> has no restart support yet.  Writing a restart file would
-  // silently drop the radiation moments, so refuse rather than lose state.
-  if (pm->pmb_pack->pradm1 != nullptr) {
-    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-      << std::endl << "Restart output is not supported with <rad_m1> yet: the M1 "
-      << "moments (E, F_i) are not written to the restart file, so the state would be "
-      << "silently lost.  Remove the <output*> block with file_type = rst."
-      << std::endl;
-    std::exit(EXIT_FAILURE);
-  }
   // get spatial dimensions of arrays, including ghost zones
   auto &indcs = pm->pmb_pack->pmesh->mb_indcs;
   int nout1 = indcs.nx1 + 2*(indcs.ng);
@@ -78,8 +68,15 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
   adm::ADM* padm = pm->pmb_pack->padm;
   z4c::Z4c* pz4c = pm->pmb_pack->pz4c;
   radiation::Radiation* prad = pm->pmb_pack->prad;
+  // <rad_m1>: the four evolved moments (E, F_i), written and read as one more
+  // cell-centred block.  Guarded by the pointer everywhere, so a file written by a run
+  // WITHOUT <rad_m1> has exactly the layout and the bytes it had before (design sect.6)
+  radm1::RadiationM1* pradm1 = pm->pmb_pack->pradm1;
   TurbulenceDriver* pturb=pm->pmb_pack->pturb;
-  int nhydro=0, nmhd=0, nrad=0, nforce=3, nadm=0, nz4c=0;
+  int nhydro=0, nmhd=0, nrad=0, nm1=0, nforce=3, nadm=0, nz4c=0;
+  if (pradm1 != nullptr) {
+    nm1 = radm1::M1_NVAR;
+  }
   if (phydro != nullptr) {
     nhydro = phydro->nhydro + phydro->nscalars;
   }
@@ -132,6 +129,11 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
     Kokkos::deep_copy(outarray_rad, Kokkos::subview(prad->i0, std::make_pair(0,nmb),
                       Kokkos::ALL, Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
   }
+  if (pradm1 != nullptr) {
+    Kokkos::realloc(outarray_m1, nmb, nm1, nout3, nout2, nout1);
+    Kokkos::deep_copy(outarray_m1, Kokkos::subview(pradm1->u0, std::make_pair(0,nmb),
+                      Kokkos::ALL, Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
+  }
   if (pturb != nullptr) {
     Kokkos::realloc(outarray_force, nmb, nforce, nout3, nout2, nout1);
     Kokkos::deep_copy(outarray_force, Kokkos::subview(pturb->force, std::make_pair(0,nmb),
@@ -169,6 +171,7 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   hydro::Hydro* phydro = pm->pmb_pack->phydro;
   mhd::MHD* pmhd = pm->pmb_pack->pmhd;
   radiation::Radiation* prad = pm->pmb_pack->prad;
+  radm1::RadiationM1* pradm1 = pm->pmb_pack->pradm1;
   TurbulenceDriver* pturb=pm->pmb_pack->pturb;
   z4c::Z4c* pz4c = pm->pmb_pack->pz4c;
   adm::ADM* padm = pm->pmb_pack->padm;
@@ -179,7 +182,10 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   if (pm->pgen != nullptr && pm->pgen->pgen_rst_write_func != nullptr) {
     pgen_state = (pm->pgen->pgen_rst_write_func)();
   }
-  int nhydro=0, nmhd=0, nrad=0, nforce=3, nz4c=0, nadm=0, nco=0;
+  int nhydro=0, nmhd=0, nrad=0, nm1=0, nforce=3, nz4c=0, nadm=0, nco=0;
+  if (pradm1 != nullptr) {
+    nm1 = radm1::M1_NVAR;
+  }
   if (phydro != nullptr) {
     nhydro = phydro->nhydro + phydro->nscalars;
   }
@@ -326,6 +332,9 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   }
   if (prad != nullptr) {
     data_size += nout1*nout2*nout3*nrad*sizeof(Real);   // radiation i0
+  }
+  if (pradm1 != nullptr) {
+    data_size += nout1*nout2*nout3*nm1*sizeof(Real);    // rad_m1 u0
   }
   if (pturb != nullptr) {
     data_size += nout1*nout2*nout3*nforce*sizeof(Real); // forcing
@@ -565,6 +574,41 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
       }
     }
     offset_myrank += nout1*nout2*nout3*nrad*sizeof(Real);   // radiation i0
+    myoffset = offset_myrank;
+  }
+
+  if (pradm1 != nullptr) {
+    for (int m=0;  m<noutmbs_max; ++m) {
+      // every rank has a MB to write, so write collectively
+      if (m < noutmbs_min) {
+        auto mbptr = Kokkos::subview(outarray_m1, m, Kokkos::ALL, Kokkos::ALL,
+                                     Kokkos::ALL, Kokkos::ALL);
+        int mbcnt = mbptr.size();
+        if (resfile.Write_any_type_at_all(mbptr.data(),mbcnt,myoffset,"Real",
+                                          single_file_per_rank) != mbcnt) {
+          std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+          << std::endl << "cell-centered rad_m1 data not written correctly to rst file, "
+          << "restart file is broken." << std::endl;
+          exit(EXIT_FAILURE);
+        }
+        myoffset += data_size;
+
+      // some ranks are finished writing, so use non-collective write
+      } else if (m < pm->nmb_thisrank) {
+        auto mbptr = Kokkos::subview(outarray_m1, m, Kokkos::ALL, Kokkos::ALL,
+                                     Kokkos::ALL, Kokkos::ALL);
+        int mbcnt = mbptr.size();
+        if (resfile.Write_any_type_at(mbptr.data(),mbcnt,myoffset,"Real",
+                                      single_file_per_rank) != mbcnt) {
+          std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                    << std::endl << "cell-centered rad_m1 data not written correctly"
+                    << " to rst file, restart file is broken." << std::endl;
+          exit(EXIT_FAILURE);
+        }
+        myoffset += data_size;
+      }
+    }
+    offset_myrank += nout1*nout2*nout3*nm1*sizeof(Real);    // rad_m1 u0
     myoffset = offset_myrank;
   }
 

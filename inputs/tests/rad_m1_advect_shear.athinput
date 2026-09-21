@@ -1,0 +1,115 @@
+# AthenaK input file for the grey M1 SHEARED ADVECTED PULSE (design note T4c, 1c-B)
+#
+# The T4 dynamic pulse (Krumholz, Klein & McKee 2007 Sect. 4.3 / QUOKKA AP paper
+# Sect. 5, kappa = 500, beta tau = 14) carried by a velocity field that VARIES along x,
+#
+#   v(x) = v0 [1 + shear_amp sin(2 pi (x - x1min)/L)]
+#
+# PRESCRIBED and held fixed: the problem generator enrols a user source term that
+# re-imposes the whole gas state (rho, rho v, E_gas), ghost zones included, at the end
+# of every hydro stage, and <rad_m1>/gas_feedback = false keeps the matter coupling from
+# writing hydro back.  The gas the radiation sees is therefore the analytic field to the
+# last bit, on every MeshBlock and at every substep.
+#
+# What it tests: the face value of the enthalpy flux A = v E + v.P of the advective
+# split (design sect. 3, "Moving fluid").  With <rad_m1>/split_vel = cell (the 1c-A
+# behaviour) A is built from each side's CELL velocity and is only first-order accurate
+# at the face as soon as v has a gradient; with split_vel = recon the velocity is
+# reconstructed to the face with the same method as (E, f_i).  A uniform v cannot see
+# the difference, which is why T4 could not.
+#
+# There is no closed-form solution (the prescribed v is not divergence free), so the
+# gate is convergence against a 4x finer run of the same problem: see
+# tests_m1/t4c_shear.py.
+#
+# UNITS: as rad_m1_advect_pulse.athinput (cgs with T_code = k T_K/(mu m_H), mu = 2.33).
+
+<comment>
+problem = grey M1 sheared advected pulse
+
+<job>
+basename = m1_advect_shear
+
+<mesh>
+nghost    = 2
+nx1       = 512
+x1min     = -256.0
+x1max     = 256.0
+ix1_bc    = periodic
+ox1_bc    = periodic
+
+nx2       = 1
+x2min     = -0.5
+x2max     = 0.5
+ix2_bc    = periodic
+ox2_bc    = periodic
+
+nx3       = 1
+x3min     = -0.5
+x3max     = 0.5
+ix3_bc    = periodic
+ox3_bc    = periodic
+
+<meshblock>
+nx1       = 512
+nx2       = 1
+nx3       = 1
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.4
+nlim       = -1
+tlim       = 4.8e-6
+ndiag      = 100000
+
+<hydro>
+eos         = ideal
+reconstruct = plm
+rsolver     = hllc
+gamma       = 1.666666666666667
+
+<rad_m1>
+c_light      = 2.99792458e10
+chat_over_c  = 1.0
+cfl_rad      = 0.4
+reconstruct  = plm
+thick_flux   = ap_hll   # none | ap_hll | scaled
+scaled_prefactor = 20.0
+ap_form      = alpha2   # alpha2 | unified
+advect_split = true     # the moving-media enthalpy-flux split (design sect. 3)
+split_vel    = recon    # recon | cell: the velocity that builds A = v E + v.P
+source_form  = full     # full | ovc  (ovc is the FAILING CONTROL)
+closure      = m1
+e_floor      = 1.0e-10
+subcycle     = true
+opacity      = const
+kappa_p      = 500.0    # ABSORPTION (kappa_e and kappa_f default to it), so gas and
+kappa_s      = 0.0      # radiation are locked to one temperature, as the test assumes
+arad         = 4.8032223745536764e-45
+coupling     = true
+gas_feedback = false
+
+<problem>
+pgen_name   = rad_m1_beam
+m1_test     = advect_shear
+user_srcs   = true   # RadM1ShearGas re-imposes the prescribed gas every stage
+gas_rho     = 1.2
+pulse_t0    = 3.5426608899723244e14
+pulse_t1    = 7.0853217799446490e14
+pulse_width = 24.0
+pulse_x0    = 0.0
+pulse_v     = 3.0e7
+shear_amp   = 0.2
+
+<output1>
+file_type   = tab
+variable    = m1
+data_format = %26.17e
+dt          = 4.8e-6
+
+<output2>
+file_type   = tab
+variable    = hydro_w
+data_format = %26.17e
+dt          = 4.8e-6

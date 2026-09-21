@@ -155,15 +155,15 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
   z4c::Z4c* pz4c = pm->pmb_pack->pz4c;
   radiation::Radiation* prad=pm->pmb_pack->prad;
   TurbulenceDriver* pturb=pm->pmb_pack->pturb;
-  // MILESTONE 1a: <rad_m1> state is not in the restart file (see restart.cpp), so a
-  // restart would start the radiation field from whatever the pgen sets, silently.
-  if (pm->pmb_pack->pradm1 != nullptr) {
-    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-      << std::endl << "Restarting a run with <rad_m1> is not supported yet: the M1 "
-      << "moments (E, F_i) are not stored in the restart file." << std::endl;
-    std::exit(EXIT_FAILURE);
+  // <rad_m1>: the four evolved moments, read back in the SAME order in which
+  // restart.cpp writes them (after the <radiation> intensities, before the turbulence
+  // forcing).  Guarded by the pointer, so a file from a run without <rad_m1> is
+  // unchanged and still readable.
+  radm1::RadiationM1* pradm1 = pm->pmb_pack->pradm1;
+  int nrad = 0, nm1 = 0, nhydro = 0, nmhd = 0, nforce = 3, nadm = 0, nz4c = 0;
+  if (pradm1 != nullptr) {
+    nm1 = radm1::M1_NVAR;
   }
-  int nrad = 0, nhydro = 0, nmhd = 0, nforce = 3, nadm = 0, nz4c = 0;
   if (phydro != nullptr) {
     nhydro = phydro->nhydro + phydro->nscalars;
   }
@@ -341,6 +341,9 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
   }
   if (prad != nullptr) {
     data_size_ += nout1*nout2*nout3*nrad*sizeof(Real);   // rad i0
+  }
+  if (pradm1 != nullptr) {
+    data_size_ += nout1*nout2*nout3*nm1*sizeof(Real);    // rad_m1 u0
   }
   if (pturb != nullptr) {
     data_size_ += nout1*nout2*nout3*nforce*sizeof(Real); // forcing
@@ -620,6 +623,44 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     Kokkos::deep_copy(Kokkos::subview(prad->i0, std::make_pair(0,nmb), Kokkos::ALL,
                       Kokkos::ALL, Kokkos::ALL, Kokkos::ALL), ccin);
     offset_myrank += nout1*nout2*nout3*nrad*sizeof(Real);   // radiation i0
+    myoffset = offset_myrank;
+  }
+
+  if (pradm1 != nullptr) {
+    Kokkos::realloc(ccin, nmb, nm1, nout3, nout2, nout1);
+    for (int m=0;  m<noutmbs_max; ++m) {
+      // every rank has a MB to read, so read collectively
+      if (m < noutmbs_min) {
+        auto mbptr = Kokkos::subview(ccin, m, Kokkos::ALL, Kokkos::ALL, Kokkos::ALL,
+                                     Kokkos::ALL);
+        int mbcnt = mbptr.size();
+        if (resfile.Read_Reals_at_all(mbptr.data(), mbcnt, myoffset,
+                                      single_file_per_rank) != mbcnt) {
+          std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                    << std::endl << "CC rad_m1 data not read correctly from rst file, "
+                    << "restart file is broken." << std::endl;
+          exit(EXIT_FAILURE);
+        }
+        myoffset += data_size;
+
+      // some ranks are finished reading, so use non-collective read
+      } else if (m < pm->nmb_thisrank) {
+        auto mbptr = Kokkos::subview(ccin, m, Kokkos::ALL, Kokkos::ALL, Kokkos::ALL,
+                                     Kokkos::ALL);
+        int mbcnt = mbptr.size();
+        if (resfile.Read_Reals_at(mbptr.data(), mbcnt, myoffset,
+                                  single_file_per_rank) != mbcnt) {
+          std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                    << std::endl << "CC rad_m1 data not read correctly from rst file, "
+                    << "restart file is broken." << std::endl;
+          exit(EXIT_FAILURE);
+        }
+        myoffset += data_size;
+      }
+    }
+    Kokkos::deep_copy(Kokkos::subview(pradm1->u0, std::make_pair(0,nmb), Kokkos::ALL,
+                      Kokkos::ALL, Kokkos::ALL, Kokkos::ALL), ccin);
+    offset_myrank += nout1*nout2*nout3*nm1*sizeof(Real);    // rad_m1 u0
     myoffset = offset_myrank;
   }
 

@@ -60,6 +60,15 @@ constexpr int M1_OPAC_CONST    = 0;
 constexpr int M1_OPAC_POWERLAW = 1;
 constexpr int M1_OPAC_USER     = 2;
 
+// <rad_m1>/reconstruct, as a plain int for the device (same order as the code-wide
+// ReconstructionMethod enum, so the two can be compared).  ppm4 and above read a
+// 5-cell stencil per face state and need <mesh>/nghost >= 3.
+constexpr int M1_RECON_DC    = 0;
+constexpr int M1_RECON_PLM   = 1;
+constexpr int M1_RECON_PPM4  = 2;
+constexpr int M1_RECON_PPMX  = 3;
+constexpr int M1_RECON_WENOZ = 4;
+
 // entries of the implicit-solve diagnostic counter (see RadiationM1::cnt)
 constexpr int M1_CNT_NSOLVE = 0;   // cells handed to the bracketed Newton
 constexpr int M1_CNT_ITSUM  = 1;   // total iterations over those cells
@@ -118,6 +127,11 @@ class RadiationM1 {
   std::string ap_form_str;      // unified | alpha2
   int ap_form;                  // M1_APFORM_*
   bool advect_split;            // the advective enthalpy-flux split of the E equation
+  bool split_vel_recon;         // <rad_m1>/split_vel = recon: the velocity that builds
+                                // the enthalpy flux A = v E + v.P is RECONSTRUCTED to
+                                // the face with the same method as (E, f_i).  = cell
+                                // reverts to the 1c-A behaviour (each side's own cell
+                                // velocity), which is first order at the face.
   bool source_ovc;              // TRUNCATE the source to O(v/c) -- the control of T4/T4b,
                                 // NOT a production option: it drops the beta^2 E and
                                 // beta.P.beta pieces of E0 and uses F instead of F0 in
@@ -166,8 +180,10 @@ class RadiationM1 {
   // PD-ARS explicit-stage weights, u0 = gam0*u0 + gam1*u1 - beta*dt_sub*div(F)
   Real gam0[M1_NSTAGE], gam1[M1_NSTAGE], beta[M1_NSTAGE];
 
-  // reconstruction method (PLM only in milestone 1a)
+  // reconstruction method
   ReconstructionMethod recon_method;
+  int recon_code;               // M1_RECON_*, the device-side copy of recon_method
+  std::string recon_str;
 
   RadiationM1TaskIDs id;
 

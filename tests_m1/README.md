@@ -382,12 +382,49 @@ spike/relaxation region, giving L1(`T_gas`) = 3.1 % at `M0 = 2` and 13 % at
 
 ---
 
+## `t4c_shear.py` — T4c, sheared advected pulse (milestone 1c-B)
+
+The T4 dynamic pulse carried by a PRESCRIBED velocity field that varies along
+x, `v(x) = v0 [1 + shear_amp sin(2 pi (x - x1min)/L)]`, held fixed by a user
+source term (`<problem>/m1_test = advect_shear`, `<problem>/user_srcs = true`,
+`<rad_m1>/gas_feedback = false`).  What it isolates is the FACE value of the
+enthalpy flux `A = v E + v.P` of the advective split: `<rad_m1>/split_vel =
+cell` builds it from each side's cell velocity and is first order at the face
+once `v` has a gradient, `split_vel = recon` (the default since 1c-B)
+reconstructs `v` there with the same method as `(E, f_i)`.  T4 cannot see the
+difference because its `v` is uniform.
+
+There is no closed-form solution (the prescribed `v` is not divergence free),
+so the reference is the same problem on a 4x finer grid, block averaged down:
+
+```
+python3 t4c_shear.py --ref runs_1cB/shear_ref2048/tab/m1_advect_shear.m1.00001.tab \
+    --run 128 runs_1cB/shear_recon_128/tab/m1_advect_shear.m1.00001.tab \
+    --run 256 ... --run 512 ...
+```
+
+## `t8_conserve.py` — T8c, conserved totals
+
+Relative drift of `sum[e_int + rho v^2/2 + (c/chat) E]` and of
+`sum[rho v_x + F_x/(chat c)]` over a series of `tab` dumps of the same run
+(design sect. 1).  Reads the `*.m1.*` dumps and the matching `*.hydro_w.*`
+dumps; the momentum drift is normalised by `sum|rho v_x| + sum|F_x/(chat c)|`
+because the two contributions can cancel.
+
+## `make_plots.py` — the JSON behind the results page
+
+Writes `plots/*.json`, one `{"x": [...], "series": {...}, "meta": {...}}` per
+figure (the beam file also carries a coarsened 2-D `"map"`), at most 260
+points per series, in double precision from the `tab` dumps.  No plotting
+library is involved.  It reads the run directories produced by
+`runs_1cB/run_plots.sh`, `run_recon.sh`, `run_shear.sh` and `step0.sh`.
+
 ## Selftest and lint
 
 ```
 cd tests_m1
-for s in t1_beam t1_pulse t3_pulse t3b_jump t4_advect t5_equil t6_marshak \
-         t7_radshock; do
+for s in t1_beam t1_pulse t3_pulse t3b_jump t4_advect t4c_shear t5_equil \
+         t6_marshak t7_radshock t8_conserve; do
   python3 $s.py --selftest --quiet; done
 python3 -m flake8 --max-line-length 90 .
 ```
@@ -398,6 +435,8 @@ python3 -m flake8 --max-line-length 90 .
 
 ## Not covered here
 
-T2 (shadow), T3c (clipped extremum), T8 (conservation/restart/rank-invariance,
-which is a bitwise diff, not an analysis) and T9 (radiation-supported
-atmosphere) have no script in this directory yet.
+T2 (shadow), T3c (clipped extremum), T8a/T8b (restart and rank invariance,
+which are bitwise `cmp` of dumps, not analyses -- see
+`runs_1cB/run_t8a.sh` and `run_t8b.sh`) and T9 (radiation-supported
+atmosphere) have no script in this directory yet.  T8c does:
+`t8_conserve.py`.

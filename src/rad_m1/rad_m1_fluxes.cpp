@@ -6,9 +6,23 @@
 //! \file rad_m1_fluxes.cpp
 //! \brief closure/limit pass and the transport fluxes of the M1 moments.
 //!
-//! Design sect. 3: reconstruct (E, f_i = F_i/(c E)) with PLM and rebuild F = c E f, so
-//! that |f| <= 1 survives reconstruction (QUOKKA).  The face flux is then plain HLL with
+//! Design sect. 3: reconstruct (E, f_i = F_i/(c E)) and rebuild F = c E f, so that
+//! |f| <= 1 survives reconstruction (QUOKKA).  The face flux is then plain HLL with
 //! the Skinner & Ostriker (2013) closed-form wave speeds (thick_flux = none).
+//!
+//! MILESTONE 1c-B: <rad_m1>/reconstruct = dc | plm | ppm4 | ppmx | wenoz, using the
+//! scalar kernels of src/reconstruct/.  The three high-order ones read a 5-cell stencil
+//! per face state, so the face at i needs cells i-3..i+2 and <mesh>/nghost >= 3; dc and
+//! plm keep the 4-cell load of 1c-A and are bit-identical to it.  In the ap_hll flux
+//! only `dc` selects Berthon's form: every reconstruction that puts a second-order (or
+//! better) polynomial on the face makes the face jump O(dx^2) and needs the alpha2
+//! blend, exactly as plm does.
+//!
+//! MILESTONE 1c-B, the advective split: the velocity that builds the enthalpy flux
+//! A = v E + v.P is reconstructed to the face with the SAME method as (E, f_i) when
+//! <rad_m1>/split_vel = recon (the default), instead of each side's cell velocity
+//! (= split_vel is cell, the 1c-A behaviour).  The upwind direction is the mean of the
+//! two reconstructed face-normal velocities.
 
 #include <math.h>
 
@@ -17,10 +31,41 @@
 #include "driver/driver.hpp"
 #include "hydro/hydro.hpp"
 #include "reconstruct/plm.hpp"
+#include "reconstruct/ppm.hpp"
+#include "reconstruct/wenoz.hpp"
 #include "rad_m1/rad_m1.hpp"
 #include "rad_m1/rad_m1_closure.hpp"
 
 namespace radm1 {
+
+//----------------------------------------------------------------------------------------
+//! \fn M1ReconFace
+//! \brief One scalar reconstructed to the two sides of the face between cell c (= i-1)
+//! and cell d (= i), from the six cell values a..f = q(i-3) .. q(i+2).  ql is the state
+//! on the LEFT of the face (the right edge of cell i-1), qr the state on the RIGHT (the
+//! left edge of cell i).  a and f are read only by the high-order methods.
+
+KOKKOS_INLINE_FUNCTION
+void M1ReconFace(const int meth, const Real a, const Real b, const Real c,
+                 const Real d, const Real e, const Real f, Real &ql, Real &qr) {
+  Real dum;
+  if (meth == M1_RECON_DC) {
+    ql = c;
+    qr = d;
+  } else if (meth == M1_RECON_PLM) {
+    PLM(b, c, d, ql, dum);
+    PLM(c, d, e, dum, qr);
+  } else if (meth == M1_RECON_PPM4) {
+    PPM4(a, b, c, d, e, ql, dum);
+    PPM4(b, c, d, e, f, dum, qr);
+  } else if (meth == M1_RECON_PPMX) {
+    PPMX(a, b, c, d, e, ql, dum);
+    PPMX(b, c, d, e, f, dum, qr);
+  } else {
+    WENOZ(a, b, c, d, e, ql, dum);
+    WENOZ(b, c, d, e, f, dum, qr);
+  }
+}
 
 //----------------------------------------------------------------------------------------
 //! \fn M1Vel
@@ -111,7 +156,7 @@ TaskStatus RadiationM1::ApplyClosureLimits(Driver *pdrive, int stage) {
 
 //----------------------------------------------------------------------------------------
 //! \fn TaskStatus RadiationM1::CalculateFluxes
-//! \brief PLM + HLL fluxes of (E, F_i) on all cell faces
+//! \brief reconstructed HLL fluxes of (E, F_i) on all cell faces
 
 TaskStatus RadiationM1::CalculateFluxes(Driver *pdrive, int stage) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -132,7 +177,12 @@ TaskStatus RadiationM1::CalculateFluxes(Driver *pdrive, int stage) {
   Real ch = chat;
   Real efl = e_floor;
   bool edd = eddington;
-  bool dc = (recon_method == ReconstructionMethod::dc);
+  int rmeth = recon_code;
+  bool dc = (rmeth == M1_RECON_DC);
+  // stencil slots actually loaded, of the six (i-3 .. i+2).  dc and plm read four, so
+  // with <mesh>/nghost = 2 the outer two are never touched (they stay zero).
+  int s0 = (rmeth >= M1_RECON_PPM4) ? 0 : 1;
+  int s1 = (rmeth >= M1_RECON_PPM4) ? 5 : 4;
   // the thick-limit correction needs a face opacity; with none stored there is nothing
   // to correct and the flux is plain HLL (and bit-identical to milestone 1a)
   int thick = (opac_zero) ? M1_THICK_NONE : thick_flux;
@@ -142,23 +192,46 @@ TaskStatus RadiationM1::CalculateFluxes(Driver *pdrive, int stage) {
   // there is no medium to move and the switch is forced off (u0 is captured as a dummy
   // in that case, and never read)
   bool split = advect_split && (pmy_pack->phydro != nullptr);
+  bool vrec = split && split_vel_recon;
   auto uh = (pmy_pack->phydro != nullptr) ? pmy_pack->phydro->u0 : u0;
 
   //--------------------------------------------------------------------------------- x1
   par_for("m1_flx1", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    Real qa[4], qb[4], qc[4], qd[4], ql[4], qr[4], dum;
-    M1Prim(u0_, m, k, j, i-2, cl, efl, qa);
-    M1Prim(u0_, m, k, j, i-1, cl, efl, qb);
-    M1Prim(u0_, m, k, j, i  , cl, efl, qc);
-    M1Prim(u0_, m, k, j, i+1, cl, efl, qd);
+    Real qs[6][4], vs[6][3];
+    for (int s=0; s<6; ++s) {
+      for (int n=0; n<4; ++n) {
+        qs[s][n] = 0.0;
+      }
+      for (int n=0; n<3; ++n) {
+        vs[s][n] = 0.0;
+      }
+    }
+    for (int s=s0; s<=s1; ++s) {
+      M1Prim(u0_, m, k, j, i-3+s, cl, efl, qs[s]);
+      if (vrec) {
+        M1Vel(uh, m, k, j, i-3+s, vs[s]);
+      }
+    }
+    if (split && !vrec) {
+      M1Vel(uh, m, k, j, i-1, vs[2]);
+      M1Vel(uh, m, k, j, i, vs[3]);
+    }
+    Real ql[4], qr[4];
     for (int n=0; n<M1_NVAR; ++n) {
-      if (dc) {
-        ql[n] = qb[n];
-        qr[n] = qc[n];
-      } else {
-        PLM(qa[n], qb[n], qc[n], ql[n], dum);
-        PLM(qb[n], qc[n], qd[n], dum, qr[n]);
+      M1ReconFace(rmeth, qs[0][n], qs[1][n], qs[2][n], qs[3][n], qs[4][n], qs[5][n],
+                  ql[n], qr[n]);
+    }
+    Real vl[3] = {0.0, 0.0, 0.0}, vr[3] = {0.0, 0.0, 0.0};
+    if (split) {
+      for (int n=0; n<3; ++n) {
+        if (vrec) {
+          M1ReconFace(rmeth, vs[0][n], vs[1][n], vs[2][n], vs[3][n], vs[4][n], vs[5][n],
+                      vl[n], vr[n]);
+        } else {
+          vl[n] = vs[2][n];
+          vr[n] = vs[3][n];
+        }
       }
     }
     Real tauf = 0.0;
@@ -169,13 +242,8 @@ TaskStatus RadiationM1::CalculateFluxes(Driver *pdrive, int stage) {
     Real el, fl1, fl2, fl3, er, fr1, fr2, fr3, flx[4];
     M1Rebuild(ql, cl, efl, el, fl1, fl2, fl3);
     M1Rebuild(qr, cl, efl, er, fr1, fr2, fr3);
-    Real vl[3] = {0.0, 0.0, 0.0}, vr[3] = {0.0, 0.0, 0.0};
-    if (split) {
-      M1Vel(uh, m, k, j, i-1, vl);
-      M1Vel(uh, m, k, j, i, vr);
-    }
     M1HLLFlux(1, cl, ch, edd, el, fl1, fl2, fl3, er, fr1, fr2, fr3,
-              thick, tauf, spref, dc, qb[0], qc[0], apform, split, vl, vr, flx);
+              thick, tauf, spref, dc, qs[2][0], qs[3][0], apform, split, vl, vr, flx);
     for (int n=0; n<M1_NVAR; ++n) {
       flx1(m,n,k,j,i) = flx[n];
     }
@@ -185,18 +253,40 @@ TaskStatus RadiationM1::CalculateFluxes(Driver *pdrive, int stage) {
   if (multi_d) {
     par_for("m1_flx2", DevExeSpace(), 0, nmb1, ks, ke, js, je+1, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      Real qa[4], qb[4], qc[4], qd[4], ql[4], qr[4], dum;
-      M1Prim(u0_, m, k, j-2, i, cl, efl, qa);
-      M1Prim(u0_, m, k, j-1, i, cl, efl, qb);
-      M1Prim(u0_, m, k, j  , i, cl, efl, qc);
-      M1Prim(u0_, m, k, j+1, i, cl, efl, qd);
+      Real qs[6][4], vs[6][3];
+      for (int s=0; s<6; ++s) {
+        for (int n=0; n<4; ++n) {
+          qs[s][n] = 0.0;
+        }
+        for (int n=0; n<3; ++n) {
+          vs[s][n] = 0.0;
+        }
+      }
+      for (int s=s0; s<=s1; ++s) {
+        M1Prim(u0_, m, k, j-3+s, i, cl, efl, qs[s]);
+        if (vrec) {
+          M1Vel(uh, m, k, j-3+s, i, vs[s]);
+        }
+      }
+      if (split && !vrec) {
+        M1Vel(uh, m, k, j-1, i, vs[2]);
+        M1Vel(uh, m, k, j, i, vs[3]);
+      }
+      Real ql[4], qr[4];
       for (int n=0; n<M1_NVAR; ++n) {
-        if (dc) {
-          ql[n] = qb[n];
-          qr[n] = qc[n];
-        } else {
-          PLM(qa[n], qb[n], qc[n], ql[n], dum);
-          PLM(qb[n], qc[n], qd[n], dum, qr[n]);
+        M1ReconFace(rmeth, qs[0][n], qs[1][n], qs[2][n], qs[3][n], qs[4][n], qs[5][n],
+                    ql[n], qr[n]);
+      }
+      Real vl[3] = {0.0, 0.0, 0.0}, vr[3] = {0.0, 0.0, 0.0};
+      if (split) {
+        for (int n=0; n<3; ++n) {
+          if (vrec) {
+            M1ReconFace(rmeth, vs[0][n], vs[1][n], vs[2][n], vs[3][n], vs[4][n],
+                        vs[5][n], vl[n], vr[n]);
+          } else {
+            vl[n] = vs[2][n];
+            vr[n] = vs[3][n];
+          }
         }
       }
       Real tauf = 0.0;
@@ -207,13 +297,8 @@ TaskStatus RadiationM1::CalculateFluxes(Driver *pdrive, int stage) {
       Real el, fl1, fl2, fl3, er, fr1, fr2, fr3, flx[4];
       M1Rebuild(ql, cl, efl, el, fl1, fl2, fl3);
       M1Rebuild(qr, cl, efl, er, fr1, fr2, fr3);
-      Real vl[3] = {0.0, 0.0, 0.0}, vr[3] = {0.0, 0.0, 0.0};
-      if (split) {
-        M1Vel(uh, m, k, j-1, i, vl);
-        M1Vel(uh, m, k, j, i, vr);
-      }
       M1HLLFlux(2, cl, ch, edd, el, fl1, fl2, fl3, er, fr1, fr2, fr3,
-                thick, tauf, spref, dc, qb[0], qc[0], apform, split, vl, vr, flx);
+                thick, tauf, spref, dc, qs[2][0], qs[3][0], apform, split, vl, vr, flx);
       for (int n=0; n<M1_NVAR; ++n) {
         flx2(m,n,k,j,i) = flx[n];
       }
@@ -224,18 +309,40 @@ TaskStatus RadiationM1::CalculateFluxes(Driver *pdrive, int stage) {
   if (three_d) {
     par_for("m1_flx3", DevExeSpace(), 0, nmb1, ks, ke+1, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      Real qa[4], qb[4], qc[4], qd[4], ql[4], qr[4], dum;
-      M1Prim(u0_, m, k-2, j, i, cl, efl, qa);
-      M1Prim(u0_, m, k-1, j, i, cl, efl, qb);
-      M1Prim(u0_, m, k  , j, i, cl, efl, qc);
-      M1Prim(u0_, m, k+1, j, i, cl, efl, qd);
+      Real qs[6][4], vs[6][3];
+      for (int s=0; s<6; ++s) {
+        for (int n=0; n<4; ++n) {
+          qs[s][n] = 0.0;
+        }
+        for (int n=0; n<3; ++n) {
+          vs[s][n] = 0.0;
+        }
+      }
+      for (int s=s0; s<=s1; ++s) {
+        M1Prim(u0_, m, k-3+s, j, i, cl, efl, qs[s]);
+        if (vrec) {
+          M1Vel(uh, m, k-3+s, j, i, vs[s]);
+        }
+      }
+      if (split && !vrec) {
+        M1Vel(uh, m, k-1, j, i, vs[2]);
+        M1Vel(uh, m, k, j, i, vs[3]);
+      }
+      Real ql[4], qr[4];
       for (int n=0; n<M1_NVAR; ++n) {
-        if (dc) {
-          ql[n] = qb[n];
-          qr[n] = qc[n];
-        } else {
-          PLM(qa[n], qb[n], qc[n], ql[n], dum);
-          PLM(qb[n], qc[n], qd[n], dum, qr[n]);
+        M1ReconFace(rmeth, qs[0][n], qs[1][n], qs[2][n], qs[3][n], qs[4][n], qs[5][n],
+                    ql[n], qr[n]);
+      }
+      Real vl[3] = {0.0, 0.0, 0.0}, vr[3] = {0.0, 0.0, 0.0};
+      if (split) {
+        for (int n=0; n<3; ++n) {
+          if (vrec) {
+            M1ReconFace(rmeth, vs[0][n], vs[1][n], vs[2][n], vs[3][n], vs[4][n],
+                        vs[5][n], vl[n], vr[n]);
+          } else {
+            vl[n] = vs[2][n];
+            vr[n] = vs[3][n];
+          }
         }
       }
       Real tauf = 0.0;
@@ -246,13 +353,8 @@ TaskStatus RadiationM1::CalculateFluxes(Driver *pdrive, int stage) {
       Real el, fl1, fl2, fl3, er, fr1, fr2, fr3, flx[4];
       M1Rebuild(ql, cl, efl, el, fl1, fl2, fl3);
       M1Rebuild(qr, cl, efl, er, fr1, fr2, fr3);
-      Real vl[3] = {0.0, 0.0, 0.0}, vr[3] = {0.0, 0.0, 0.0};
-      if (split) {
-        M1Vel(uh, m, k-1, j, i, vl);
-        M1Vel(uh, m, k, j, i, vr);
-      }
       M1HLLFlux(3, cl, ch, edd, el, fl1, fl2, fl3, er, fr1, fr2, fr3,
-                thick, tauf, spref, dc, qb[0], qc[0], apform, split, vl, vr, flx);
+                thick, tauf, spref, dc, qs[2][0], qs[3][0], apform, split, vl, vr, flx);
       for (int n=0; n<M1_NVAR; ++n) {
         flx3(m,n,k,j,i) = flx[n];
       }

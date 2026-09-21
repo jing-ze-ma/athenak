@@ -94,3 +94,12 @@ nyquist_amp = 0.0
 file_type   = bin
 variable    = m1
 dt          = 0.1
+
+# The bin writer is SINGLE precision.  Gates and figures that need more (the profile
+# plots of the results page, the Nyquist amplitude at late times) read this
+# DOUBLE-precision table instead; the bin dumps above are kept for the rate fits.
+<output2>
+file_type   = tab
+variable    = m1
+data_format = %26.17e
+dt          = 0.1

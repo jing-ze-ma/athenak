@@ -137,6 +137,21 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   // thick_flux = scaled | none it is available for comparison but off by default.
   advect_split = pin->GetOrAddBoolean("rad_m1","advect_split",
                                       have_hydro && (thick_flux == M1_THICK_APHLL));
+  // (1c-B) which velocity builds the enthalpy flux at the face.  `cell` is the 1c-A
+  // behaviour and is first order there; `recon` reconstructs v with the same method as
+  // (E, f_i), which is what makes A second order in a sheared flow.
+  {std::string sv = pin->GetOrAddString("rad_m1","split_vel","recon");
+  if (sv.compare("recon") == 0) {
+    split_vel_recon = true;
+  } else if (sv.compare("cell") == 0) {
+    split_vel_recon = false;
+  } else {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+      << std::endl << "<rad_m1>/split_vel = '" << sv << "' is not a valid choice "
+      << "(recon | cell)" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  }
   // the O(v/c) CONTROL of T4/T4b.  Never a production setting: it is here to exhibit the
   // spurious heating ~ (4/3) c rho kappa beta^2 E that the full source form cancels.
   {std::string sf = pin->GetOrAddString("rad_m1","source_form","full");
@@ -211,28 +226,40 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   }
   }
 
-  // reconstruction (PLM only for now: the design reconstructs (E, f_i) with PLM)
-  {std::string xorder = pin->GetOrAddString("rad_m1","reconstruct","plm");
-  if (xorder.compare("plm") == 0) {
+  // reconstruction of (E, f_i).  dc was added in 1b so that the thick-limit blend can
+  // be compared with the first-order scheme it reduces to (Berthon & Turpault / Bloch
+  // et al.); the three high-order kernels of src/reconstruct/ were added in 1c-B.
+  recon_str = pin->GetOrAddString("rad_m1","reconstruct","plm");
+  if (recon_str.compare("plm") == 0) {
     recon_method = ReconstructionMethod::plm;
-  } else if (xorder.compare("dc") == 0) {
-    // piecewise constant.  Added in 1b so that the thick-limit blend can be compared
-    // with the first-order scheme it reduces to (Berthon & Turpault / Bloch et al.).
+    recon_code = M1_RECON_PLM;
+  } else if (recon_str.compare("dc") == 0) {
     recon_method = ReconstructionMethod::dc;
+    recon_code = M1_RECON_DC;
+  } else if (recon_str.compare("ppm4") == 0) {
+    recon_method = ReconstructionMethod::ppm4;
+    recon_code = M1_RECON_PPM4;
+  } else if (recon_str.compare("ppmx") == 0) {
+    recon_method = ReconstructionMethod::ppmx;
+    recon_code = M1_RECON_PPMX;
+  } else if (recon_str.compare("wenoz") == 0) {
+    recon_method = ReconstructionMethod::wenoz;
+    recon_code = M1_RECON_WENOZ;
   } else {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-      << std::endl << "<rad_m1>/reconstruct = '" << xorder << "' not implemented "
-      << "(dc | plm)" << std::endl;
+      << std::endl << "<rad_m1>/reconstruct = '" << recon_str << "' not implemented "
+      << "(dc | plm | ppm4 | ppmx | wenoz)" << std::endl;
     std::exit(EXIT_FAILURE);
   }
-  }
 
-  // PLM of (E, f_i) reads two cells beyond the face, so two ghost zones are the minimum
+  // PLM of (E, f_i) reads two cells beyond the face, so two ghost zones are the
+  // minimum; the 5-cell kernels need the face stencil i-3..i+2, hence three.
   auto &indcs = pmy_pack->pmesh->mb_indcs;
-  if (indcs.ng < 2) {
+  int ng_need = (recon_code >= M1_RECON_PPM4) ? 3 : 2;
+  if (indcs.ng < ng_need) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-      << std::endl << "<rad_m1> requires at least 2 ghost zones, but <mesh>/nghost="
-      << indcs.ng << std::endl;
+      << std::endl << "<rad_m1>/reconstruct = " << recon_str << " requires at least "
+      << ng_need << " ghost zones, but <mesh>/nghost=" << indcs.ng << std::endl;
     std::exit(EXIT_FAILURE);
   }
 
@@ -291,7 +318,9 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     std::cout << "<rad_m1>: c=" << c_light << " chat/c=" << chat_over_c
               << " cfl_rad=" << cfl_rad << " thick_flux=" << thick_flux_str
               << " ap_form=" << ap_form_str
+              << " recon=" << recon_str
               << " advect_split=" << (advect_split ? "true" : "false")
+              << " split_vel=" << (split_vel_recon ? "recon" : "cell")
               << " source_form=" << (source_ovc ? "ovc" : "full")
               << " closure=" << (eddington ? "eddington" : "m1")
               << " subcycle=" << (subcycle ? "true" : "false") << std::endl;

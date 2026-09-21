@@ -76,6 +76,11 @@ Real m1_beam_f = 1.0 - 1.0e-6;
 Real m1_beam_y0 = 0.0;
 Real m1_beam_y1 = 0.125;
 int  m1_test_id = 0;   // 0 = beam, 1 = pulse1d, 2 = jump
+// advect_shear (T4c, milestone 1c-B): the PRESCRIBED gas state, re-imposed every hydro
+// stage by RadM1ShearGas so that the velocity field really is held fixed
+Real m1_sh_t0 = 1.0, m1_sh_t1 = 1.0, m1_sh_w = 1.0, m1_sh_x0 = 0.0;
+Real m1_sh_v = 0.0, m1_sh_amp = 0.0, m1_sh_ar = 0.0, m1_sh_ptot = 1.0;
+Real m1_sh_gm1 = 1.0, m1_sh_xl = 0.0, m1_sh_len = 1.0;
 // jump test: the two boundary values of E held fixed in the ghost zones
 Real m1_jump_el = 1.0;
 Real m1_jump_er = 0.0;
@@ -84,6 +89,7 @@ Real m1_jump_er = 0.0;
 // prototypes for the user BCs
 void RadM1BeamBC(Mesh *pm);
 void RadM1FixedEBC(Mesh *pm);
+void RadM1ShearGas(Mesh *pm, const Real bdt);
 
 namespace {
 //----------------------------------------------------------------------------------------
@@ -117,7 +123,12 @@ void M1SetUniformGas(MeshBlockPack *pmbp, Real d, Real e) {
 //! \fn void ProblemGenerator::RadiationM1Tests()
 
 void ProblemGenerator::RadiationM1Tests(ParameterInput *pin, const bool restart) {
-  if (restart) return;
+  // NOTE on RESTARTS (milestone 1c-B).  The evolved fields come back from the restart
+  // file, but the function POINTERS do not: a test with user boundary conditions or a
+  // user source term has to re-enrol them, and the namespace constants those hooks read
+  // have to be recomputed, or the run dies in pgen.cpp's "not enrolled during restart"
+  // check.  So this function is NOT skipped on a restart; each branch runs its
+  // parameter reads and its enrolment and then returns just before writing the arrays.
   MeshBlockPack *pmbp = pmy_mesh_->pmb_pack;
   if (pmbp->pradm1 == nullptr) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
@@ -159,6 +170,7 @@ void ProblemGenerator::RadiationM1Tests(ParameterInput *pin, const bool restart)
     m1_beam_y1 = pin->GetOrAddReal("problem","beam_y1",0.125);
     user_bcs_func = RadM1BeamBC;
 
+    if (restart) return;
     // vacuum everywhere
     par_for("m1_beam_ic", DevExeSpace(), 0,nmb1,0,(n3-1),0,(n2-1),0,(n1-1),
     KOKKOS_LAMBDA(int m, int k, int j, int i) {
@@ -174,6 +186,7 @@ void ProblemGenerator::RadiationM1Tests(ParameterInput *pin, const bool restart)
     Real x0 = pin->GetOrAddReal("problem","pulse_x0",0.5);
     Real bg = pin->GetOrAddReal("problem","pulse_bg",1.0e-4);
 
+    if (restart) return;
     par_for("m1_pulse_ic", DevExeSpace(), 0,nmb1,0,(n3-1),0,(n2-1),0,(n1-1),
     KOKKOS_LAMBDA(int m, int k, int j, int i) {
       Real &x1min = size.d_view(m).x1min;
@@ -197,6 +210,7 @@ void ProblemGenerator::RadiationM1Tests(ParameterInput *pin, const bool restart)
     Real nyq = pin->GetOrAddReal("problem","nyquist_amp",0.0);
     Real dgas = pin->GetOrAddReal("problem","gas_rho",1.0);
     Real egas = pin->GetOrAddReal("problem","gas_eint",1.0);
+    if (restart) return;
     M1SetUniformGas(pmbp, dgas, egas);
 
     // the Nyquist seed is (-1)^(global cell index), so it must not restart at each
@@ -249,6 +263,7 @@ void ProblemGenerator::RadiationM1Tests(ParameterInput *pin, const bool restart)
 
     Real gm1 = pmbp->phydro->peos->eos_data.gamma - 1.0;
     Real eint = pgas/gm1;
+    if (restart) return;
     auto uh = pmbp->phydro->u0;
     par_for("m1_jump_ic", DevExeSpace(), 0,nmb1,0,(n3-1),0,(n2-1),0,(n1-1),
     KOKKOS_LAMBDA(int m, int k, int j, int i) {
@@ -292,6 +307,7 @@ void ProblemGenerator::RadiationM1Tests(ParameterInput *pin, const bool restart)
     Real kap = pmbp->pradm1->kappa_f + pmbp->pradm1->kappa_s;
     Real gm1 = pmbp->phydro->peos->eos_data.gamma - 1.0;
     Real ptot = d0*t0 + ar*t0*t0*t0*t0/3.0;
+    if (restart) return;
     auto uh = pmbp->phydro->u0;
     par_for("m1_advpulse_ic", DevExeSpace(), 0,nmb1,0,(n3-1),0,(n2-1),0,(n1-1),
     KOKKOS_LAMBDA(int m, int k, int j, int i) {
@@ -313,6 +329,70 @@ void ProblemGenerator::RadiationM1Tests(ParameterInput *pin, const bool restart)
       uh(m,IM2,k,j,i) = 0.0;
       uh(m,IM3,k,j,i) = 0.0;
       uh(m,IEN,k,j,i) = d*tt/gm1 + 0.5*d*vx*vx;
+      u0(m,radm1::M1_E,k,j,i) = fmax(e, efl);
+      u0(m,radm1::M1_F1,k,j,i) = ff;
+      u0(m,radm1::M1_F2,k,j,i) = 0.0;
+      u0(m,radm1::M1_F3,k,j,i) = 0.0;
+    });
+  } else if (test.compare("advect_shear") == 0) {
+    // T4c (milestone 1c-B).  The T4 dynamic pulse in a velocity field that VARIES
+    // along x,  v(x) = v0 [1 + shear_amp sin(2 pi (x - x1min)/L)],  prescribed and held
+    // fixed: RadM1ShearGas re-imposes the whole gas state (rho, rho v, E_gas) at the
+    // end of every hydro stage, and <rad_m1>/gas_feedback = false keeps the coupling
+    // from writing it back.  The enthalpy flux A = v E + v.P then has a face value that
+    // the CELL velocity of either side gets wrong at first order, which is what
+    // <rad_m1>/split_vel = recon fixes.  There is no closed-form solution (the
+    // prescribed v is not divergence free), so the gate is convergence to a 4x finer
+    // run of the same problem.
+    m1_test_id = 9;
+    Real t0 = pin->GetReal("problem","pulse_t0");
+    Real t1 = pin->GetReal("problem","pulse_t1");
+    Real d0 = pin->GetReal("problem","gas_rho");
+    Real wid = pin->GetReal("problem","pulse_width");
+    Real x0 = pin->GetOrAddReal("problem","pulse_x0",0.0);
+    Real vx = pin->GetOrAddReal("problem","pulse_v",0.0);
+    Real amp = pin->GetOrAddReal("problem","shear_amp",0.2);
+    Real ar = pmbp->pradm1->arad;
+    Real kap = pmbp->pradm1->kappa_f + pmbp->pradm1->kappa_s;
+    Real gm1 = pmbp->phydro->peos->eos_data.gamma - 1.0;
+    Real ptot = d0*t0 + ar*t0*t0*t0*t0/3.0;
+    Real xl = pmy_mesh_->mesh_size.x1min;
+    Real len = pmy_mesh_->mesh_size.x1max - xl;
+    m1_sh_t0 = t0;
+    m1_sh_t1 = t1;
+    m1_sh_w = wid;
+    m1_sh_x0 = x0;
+    m1_sh_v = vx;
+    m1_sh_amp = amp;
+    m1_sh_ar = ar;
+    m1_sh_ptot = ptot;
+    m1_sh_gm1 = gm1;
+    m1_sh_xl = xl;
+    m1_sh_len = len;
+    user_srcs_func = RadM1ShearGas;
+
+    if (restart) return;
+    auto uh = pmbp->phydro->u0;
+    par_for("m1_shear_ic", DevExeSpace(), 0,nmb1,0,(n3-1),0,(n2-1),0,(n1-1),
+    KOKKOS_LAMBDA(int m, int k, int j, int i) {
+      Real &x1min = size.d_view(m).x1min;
+      Real &x1max = size.d_view(m).x1max;
+      Real x1v = CellCenterX(i-is, nx1, x1min, x1max);
+      Real s = (x1v - x0)/wid;
+      Real g = exp(-0.5*s*s);
+      Real tt = t0 + (t1 - t0)*g;
+      Real t4 = tt*tt*tt*tt;
+      Real d = (ptot - ar*t4/3.0)/tt;
+      Real e = ar*t4;
+      Real vv = vx*(1.0 + amp*sin(2.0*M_PI*(x1v - xl)/len));
+      Real dtdx = -(t1 - t0)*g*(x1v - x0)/(wid*wid);
+      Real dedx = 4.0*ar*tt*tt*tt*dtdx;
+      Real ff = (4.0/3.0)*vv*e - cl*dedx/(3.0*d*kap);
+      uh(m,IDN,k,j,i) = d;
+      uh(m,IM1,k,j,i) = d*vv;
+      uh(m,IM2,k,j,i) = 0.0;
+      uh(m,IM3,k,j,i) = 0.0;
+      uh(m,IEN,k,j,i) = d*tt/gm1 + 0.5*d*vv*vv;
       u0(m,radm1::M1_E,k,j,i) = fmax(e, efl);
       u0(m,radm1::M1_F1,k,j,i) = ff;
       u0(m,radm1::M1_F2,k,j,i) = 0.0;
@@ -350,6 +430,7 @@ void ProblemGenerator::RadiationM1Tests(ParameterInput *pin, const bool restart)
                 << " E=" << erad << " F=" << frad << " F/((4/3)vE)="
                 << frad/((4.0/3.0)*vx*erad) << std::endl;
     }
+    if (restart) return;
     auto uh = pmbp->phydro->u0;
     par_for("m1_advunif_ic", DevExeSpace(), 0,nmb1,0,(n3-1),0,(n2-1),0,(n1-1),
     KOKKOS_LAMBDA(int m, int k, int j, int i) {
@@ -381,6 +462,7 @@ void ProblemGenerator::RadiationM1Tests(ParameterInput *pin, const bool restart)
     m1_jump_er = ar*tini*tini*tini*tini;
     user_bcs_func = RadM1FixedEBC;
     Real e_ini = fmax(ar*tini*tini*tini*tini, efl);
+    if (restart) return;
     M1SetUniformGas(pmbp, dgas, dgas*tini/gm1);
     par_for("m1_marshak_ic", DevExeSpace(), 0,nmb1,0,(n3-1),0,(n2-1),0,(n1-1),
     KOKKOS_LAMBDA(int m, int k, int j, int i) {
@@ -396,6 +478,7 @@ void ProblemGenerator::RadiationM1Tests(ParameterInput *pin, const bool restart)
     Real dgas = pin->GetOrAddReal("problem","gas_rho",1.0e-7);
     Real egas = pin->GetReal("problem","gas_eint");
     Real erad = pin->GetReal("problem","e_rad");
+    if (restart) return;
     M1SetUniformGas(pmbp, dgas, egas);
     par_for("m1_equil_ic", DevExeSpace(), 0,nmb1,0,(n3-1),0,(n2-1),0,(n1-1),
     KOKKOS_LAMBDA(int m, int k, int j, int i) {
@@ -408,9 +491,54 @@ void ProblemGenerator::RadiationM1Tests(ParameterInput *pin, const bool restart)
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
       << std::endl << "<problem>/m1_test = '" << test << "' not implemented "
       << "(beam | pulse1d | thick_pulse | tophat | jump | equil | advect_pulse "
-      << "| advect_uniform | marshak)" << std::endl;
+      << "| advect_uniform | advect_shear | marshak)" << std::endl;
     std::exit(EXIT_FAILURE);
   }
+  return;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadM1ShearGas()
+//! \brief advect_shear (T4c): re-impose the PRESCRIBED gas state everywhere, ghost
+//! zones included, at the end of every hydro stage.  Enrolled as user_srcs_func, which
+//! the hydro stage chain calls after the RK update and before the ghost exchange and
+//! the inversion, so the gas the radiation module sees is the analytic one to the last
+//! bit -- in the active cells and in the ghosts, on every MeshBlock.  bdt is unused:
+//! this is not a source term, it is a constraint.
+
+void RadM1ShearGas(Mesh *pm, const Real bdt) {
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  if (pmbp->phydro == nullptr) return;
+  auto &indcs = pm->mb_indcs;
+  int &ng = indcs.ng;
+  int n1 = indcs.nx1 + 2*ng;
+  int n2 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*ng) : 1;
+  int n3 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*ng) : 1;
+  int &is = indcs.is;
+  int nx1 = indcs.nx1;
+  int nmb1 = (pmbp->nmb_thispack - 1);
+  auto &size = pmbp->pmb->mb_size;
+  auto uh = pmbp->phydro->u0;
+  Real t0 = m1_sh_t0, t1 = m1_sh_t1, wid = m1_sh_w, x0 = m1_sh_x0;
+  Real vx = m1_sh_v, amp = m1_sh_amp, ar = m1_sh_ar, ptot = m1_sh_ptot;
+  Real gm1 = m1_sh_gm1, xl = m1_sh_xl, len = m1_sh_len;
+
+  par_for("m1_shear_reset", DevExeSpace(), 0,nmb1,0,(n3-1),0,(n2-1),0,(n1-1),
+  KOKKOS_LAMBDA(int m, int k, int j, int i) {
+    Real &x1min = size.d_view(m).x1min;
+    Real &x1max = size.d_view(m).x1max;
+    Real x1v = CellCenterX(i-is, nx1, x1min, x1max);
+    Real s = (x1v - x0)/wid;
+    Real g = exp(-0.5*s*s);
+    Real tt = t0 + (t1 - t0)*g;
+    Real d = (ptot - ar*tt*tt*tt*tt/3.0)/tt;
+    Real vv = vx*(1.0 + amp*sin(2.0*M_PI*(x1v - xl)/len));
+    uh(m,IDN,k,j,i) = d;
+    uh(m,IM1,k,j,i) = d*vv;
+    uh(m,IM2,k,j,i) = 0.0;
+    uh(m,IM3,k,j,i) = 0.0;
+    uh(m,IEN,k,j,i) = d*tt/gm1 + 0.5*d*vv*vv;
+  });
   return;
 }
 

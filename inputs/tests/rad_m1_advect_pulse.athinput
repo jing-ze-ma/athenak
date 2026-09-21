@@ -80,6 +80,7 @@ thick_flux   = ap_hll   # none | ap_hll | scaled
 scaled_prefactor = 20.0
 ap_form      = alpha2   # alpha2 | unified
 advect_split = true     # the moving-media enthalpy-flux split (design sect. 3)
+split_vel    = recon    # recon | cell: the velocity that builds A = v E + v.P
 source_form  = full     # full | ovc  (ovc is the FAILING CONTROL)
 closure      = m1
 e_floor      = 1.0e-10

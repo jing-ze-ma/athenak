@@ -253,7 +253,7 @@ class BaseTypeOutput {
   // CC output data on host with dims (n,m,k,j,i) except
   // for restarts, where dims are (m,n,k,j,i)
   HostArray5D<Real> outarray;
-  HostArray5D<Real> outarray_hyd, outarray_mhd, outarray_rad,
+  HostArray5D<Real> outarray_hyd, outarray_mhd, outarray_rad, outarray_m1,
                     outarray_force, outarray_z4c, outarray_adm;
   // the general EOS temperature cache (Hydro/MHD::wtemp).  It is not state in the sense
   // of an evolved variable, but it IS the warm start of the c2p temperature root find,

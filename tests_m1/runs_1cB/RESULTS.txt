@@ -1,0 +1,120 @@
+### Step 0  the 1c-A defaults on the post-merge binary
+PASS T3 pulse: d(sigma^2)/dt=5.208413e-06  2D=5.208333e-06  ratio=1.000015 (target 1.000000 +- 0.02)
+split      PASS T4 advect: dcentre=0.074 cells (<= 1)  dwidth=1.015e-02 (<= 0.02)  gas drift=8.630e-03 (<= 1)  Tgas drift=2.940e-03  vs-static=3.785e-03  nyquist=2.884e-15
+nosplit    FAIL T4 advect: dcentre=-69.888 cells (<= 1)  dwidth=1.710e-01 (<= 0.02)  gas drift=3.815e-02 (<= 1)  Tgas drift=9.676e-04  vs-static=6.325e-01  nyquist=6.748e-08
+full   FAIL T4 advect: dcentre=22.438 cells (<= 1)  dwidth=-2.297e-04 (<= 0.02)  gas drift=0.000e+00 (<= 1)  Tgas drift=0.000e+00  vs-static=nan  nyquist=0.000e+00
+ovc    FAIL T4 advect: dcentre=26.991 cells (<= 1)  dwidth=1.279e-04 (<= 0.02)  gas drift=2.159e+05 (<= 1)  Tgas drift=2.159e+05  vs-static=nan  nyquist=0.000e+00
+
+### G-recon  pulse1d convergence (N = 32..512)
+plm    FAIL T1 pulse: orders [1.422, 1.630, 1.763, 1.883], min=1.422 (>= 1.8), L1(finest)=2.811e-03
+ppm4   FAIL T1 pulse: orders [1.190, 1.424, 1.103, 0.829], min=0.829 (>= 1.8), L1(finest)=7.246e-03
+ppmx   FAIL T1 pulse: orders [2.279, 1.798, 1.951, 1.988], min=1.798 (>= 1.8), L1(finest)=4.330e-04
+wenoz  FAIL T1 pulse: orders [1.685, 1.996, 2.000, 2.000], min=1.685 (>= 1.8), L1(finest)=4.342e-04
+### G-recon  beam
+plm    FAIL T1 beam: FWHM=11.382 cells (<= 25)  min(E)/max(E)=8.186e-10 (>= -1e-12)  max f=1.000000070116 (<= 1+1e-10)
+ppm4   FAIL T1 beam: FWHM=11.315 cells (<= 25)  min(E)/max(E)=9.999e-16 (>= -1e-12)  max f=1.000000082705 (<= 1+1e-10)
+ppmx   FAIL T1 beam: FWHM=11.382 cells (<= 25)  min(E)/max(E)=9.975e-16 (>= -1e-12)  max f=1.000000065688 (<= 1+1e-10)
+wenoz  FAIL T1 beam: FWHM=11.313 cells (<= 25)  min(E)/max(E)=9.995e-16 (>= -1e-12)  max f=1.000000044615 (<= 1+1e-10)
+### G-recon  T3 rates
+plm    tau1e1   PASS T3 pulse: d(sigma^2)/dt=5.212454e-04  2D=5.208333e-04  ratio=1.000791 (target 1.000000 +- 0.02)
+plm    tau1e3   PASS T3 pulse: d(sigma^2)/dt=5.208413e-06  2D=5.208333e-06  ratio=1.000015 (target 1.000000 +- 0.02)
+plm    tau1e6   PASS T3 pulse: d(sigma^2)/dt=5.208333e-09  2D=5.208333e-09  ratio=1.000000 (target 1.000000 +- 0.02)
+plm    nyquist  PASS T3 nyquist: rate=1.706600e-01  4D/dx^2=1.706667e-01  ratio=0.999961 (target 1.000000 +- 0.02)
+ppm4   tau1e1   PASS T3 pulse: d(sigma^2)/dt=5.206370e-04  2D=5.208333e-04  ratio=0.999623 (target 1.000000 +- 0.02)
+ppm4   tau1e3   PASS T3 pulse: d(sigma^2)/dt=5.208327e-06  2D=5.208333e-06  ratio=0.999999 (target 1.000000 +- 0.02)
+ppm4   tau1e6   PASS T3 pulse: d(sigma^2)/dt=5.208333e-09  2D=5.208333e-09  ratio=1.000000 (target 1.000000 +- 0.02)
+ppm4   nyquist  PASS T3 nyquist: rate=1.706204e-01  4D/dx^2=1.706667e-01  ratio=0.999729 (target 1.000000 +- 0.02)
+ppmx   tau1e1   PASS T3 pulse: d(sigma^2)/dt=5.205492e-04  2D=5.208333e-04  ratio=0.999454 (target 1.000000 +- 0.02)
+ppmx   tau1e3   PASS T3 pulse: d(sigma^2)/dt=5.208316e-06  2D=5.208333e-06  ratio=0.999997 (target 1.000000 +- 0.02)
+ppmx   tau1e6   PASS T3 pulse: d(sigma^2)/dt=5.208333e-09  2D=5.208333e-09  ratio=1.000000 (target 1.000000 +- 0.02)
+ppmx   nyquist  PASS T3 nyquist: rate=1.706163e-01  4D/dx^2=1.706667e-01  ratio=0.999705 (target 1.000000 +- 0.02)
+wenoz  tau1e1   PASS T3 pulse: d(sigma^2)/dt=5.205498e-04  2D=5.208333e-04  ratio=0.999456 (target 1.000000 +- 0.02)
+wenoz  tau1e3   PASS T3 pulse: d(sigma^2)/dt=5.208317e-06  2D=5.208333e-06  ratio=0.999997 (target 1.000000 +- 0.02)
+wenoz  tau1e6   PASS T3 pulse: d(sigma^2)/dt=5.208333e-09  2D=5.208333e-09  ratio=1.000000 (target 1.000000 +- 0.02)
+wenoz  nyquist  PASS T3 nyquist: rate=1.705773e-01  4D/dx^2=1.706667e-01  ratio=0.999476 (target 1.000000 +- 0.02)
+### G-recon  T3 rate error vs N at tau_cell = 10
+plm    N=64   PASS T3 pulse: d(sigma^2)/dt=1.045260e-03  2D=1.041667e-03  ratio=1.003450 (target 1.000000 +- 0.02)
+plm    N=128  PASS T3 pulse: d(sigma^2)/dt=5.212454e-04  2D=5.208333e-04  ratio=1.000791 (target 1.000000 +- 0.02)
+plm    N=256  PASS T3 pulse: d(sigma^2)/dt=2.604572e-04  2D=2.604167e-04  ratio=1.000156 (target 1.000000 +- 0.02)
+plm    N=512  PASS T3 pulse: d(sigma^2)/dt=1.302102e-04  2D=1.302083e-04  ratio=1.000014 (target 1.000000 +- 0.02)
+ppm4   N=64   PASS T3 pulse: d(sigma^2)/dt=1.041462e-03  2D=1.041667e-03  ratio=0.999803 (target 1.000000 +- 0.02)
+ppm4   N=128  PASS T3 pulse: d(sigma^2)/dt=5.206370e-04  2D=5.208333e-04  ratio=0.999623 (target 1.000000 +- 0.02)
+ppm4   N=256  PASS T3 pulse: d(sigma^2)/dt=2.603712e-04  2D=2.604167e-04  ratio=0.999825 (target 1.000000 +- 0.02)
+ppm4   N=512  PASS T3 pulse: d(sigma^2)/dt=1.301987e-04  2D=1.302083e-04  ratio=0.999926 (target 1.000000 +- 0.02)
+ppmx   N=64   PASS T3 pulse: d(sigma^2)/dt=1.041068e-03  2D=1.041667e-03  ratio=0.999426 (target 1.000000 +- 0.02)
+ppmx   N=128  PASS T3 pulse: d(sigma^2)/dt=5.205492e-04  2D=5.208333e-04  ratio=0.999454 (target 1.000000 +- 0.02)
+ppmx   N=256  PASS T3 pulse: d(sigma^2)/dt=2.603654e-04  2D=2.604167e-04  ratio=0.999803 (target 1.000000 +- 0.02)
+ppmx   N=512  PASS T3 pulse: d(sigma^2)/dt=1.301983e-04  2D=1.302083e-04  ratio=0.999923 (target 1.000000 +- 0.02)
+wenoz  N=64   PASS T3 pulse: d(sigma^2)/dt=1.040493e-03  2D=1.041667e-03  ratio=0.998873 (target 1.000000 +- 0.02)
+wenoz  N=128  PASS T3 pulse: d(sigma^2)/dt=5.205498e-04  2D=5.208333e-04  ratio=0.999456 (target 1.000000 +- 0.02)
+wenoz  N=256  PASS T3 pulse: d(sigma^2)/dt=2.603653e-04  2D=2.604167e-04  ratio=0.999803 (target 1.000000 +- 0.02)
+wenoz  N=512  PASS T3 pulse: d(sigma^2)/dt=1.301983e-04  2D=1.302083e-04  ratio=0.999923 (target 1.000000 +- 0.02)
+
+### G-shear  T4c, split_vel = recon vs cell, against the 2048-cell reference
+recon  PASS T4c shear: L1(E) ['4.4082e-03', '1.0594e-03', '3.2890e-04', '1.2208e-04'] orders ['2.057', '1.688', '1.430'] (N = 64,128,256,512)
+cell   PASS T4c shear: L1(E) ['4.4065e-03', '1.0599e-03', '3.2941e-04', '1.2221e-04'] orders ['2.056', '1.686', '1.431'] (N = 64,128,256,512)
+
+### G-split-vel  T4 dynamic, split_vel = recon vs cell (the deciding gate)
+512   recon  PASS T4 advect: dcentre=0.059 cells (<= 1)  dwidth=1.014e-02 (<= 0.02)  gas drift=8.630e-03 (<= 1)  Tgas drift=2.941e-03  vs-static=2.356e-03  nyquist=3.722e-15
+512   cell   PASS T4 advect: dcentre=0.074 cells (<= 1)  dwidth=1.015e-02 (<= 0.02)  gas drift=8.630e-03 (<= 1)  Tgas drift=2.940e-03  vs-static=3.785e-03  nyquist=2.884e-15
+1024  recon  PASS T4 advect: dcentre=0.049 cells (<= 1)  dwidth=1.000e-02 (<= 0.02)  gas drift=8.549e-03 (<= 1)  Tgas drift=2.923e-03  vs-static=9.404e-04  nyquist=1.885e-15
+1024  cell   PASS T4 advect: dcentre=0.064 cells (<= 1)  dwidth=1.000e-02 (<= 0.02)  gas drift=8.549e-03 (<= 1)  Tgas drift=2.923e-03  vs-static=1.665e-03  nyquist=3.166e-15
+
+### G-cons  T8c, 200 cycles of T4 dynamic
+PASS T8c conserve: max|dE/E|=1.842e-13  max|dP|/|P|=1.071e-13 (<= 1.0e-12, 5 dumps)
+
+### Step 0  post-merge box G1 (tests_gate_merge/g1_m1cB_m{3,0} vs g1_new_m{3,0})
+6/6 files identical in mode 3, 6/6 in mode 0  ->  12/12   (column_used.txt, feczrt.log,
+feczrt.hydro.hst, feczrt.user.hst, rt_profile.bin, rt_surface.bin)
+
+### G-restart  byte identity of a restart file written by a run WITHOUT <rad_m1>
+box_convection (general EOS, so the wtemp tail is exercised), 20 cycles, rst every step:
+4/4 .rst files byte-identical between tests_gate_merge/athena_box_new (pre-change) and
+the rebuilt build_cpu_box (post-change).
+
+### G-restart  T8a, restart at mid-run vs the uninterrupted run
+T4 dynamic 512 (coupled, moving, sub-cycled): m1 tab, hydro_w tab and the hydro .hst all
+BITWISE identical.
+2-D beam 128^2 (radiation alone): bin dump BITWISE identical -- once beam_angle is given
+in the input at full precision.  With it DEFAULTED the restart differs by 3e-6 in E,
+because ParameterInput serialises a defaulted Real into the embedded input as 0.785398
+(six digits).  Code-wide ParameterInput property, not a <rad_m1> bug.
+One-file-per-rank layout (rst/rank_00000000/): written and read back, BITWISE identical.
+
+### G-mpi  T8b, 1 rank vs 4 ranks (openmpi/4.1, build_mpi_m1, deleted afterwards)
+T4 dynamic 512 on 4 MeshBlocks: 4/4 tab files identical.
+2-D beam 128^2 on 4 MeshBlocks:  2/2 bin files identical.
+
+### G-blocks  the second 1c-A gap: hydro ghosts when the module does not write hydro u0
+T4 dynamic 512, m1 tab dumps, 1 vs 2 vs 4 MeshBlocks:
+  gas_feedback = true   1blk vs 2blk vs 4blk   L1 = 0.000e+00 (bitwise)
+  gas_feedback = false  1blk vs 2blk vs 4blk   L1 = 0.000e+00 (bitwise)
+  coupling     = false  1blk vs 2blk           L1 = 0.000e+00 (bitwise)
+No stale-ghost effect exists: hydro exchanges its own u0 ghosts every stage, and when
+the coupling does write them HydroConToPrim refreshes them.  No code change needed.
+
+### G-recon  bit-preservation of the 1c-A paths after the flux-kernel rewrite
+reconstruct = plm, split_vel = cell, T4 dynamic 512: BITWISE identical to the 1c-A
+binary (step0/t4_d512_split), all 10 tab files.
+reconstruct = dc, T3 at tau_cell = 10: ratio 1.000102, the 1c-A value to the last digit.
+plm at nghost 2 and nghost 3: identical beam diagnostics (FWHM 11.382, max f 1+7.01e-8).
+
+### G-recon  cost per cell-update relative to plm (serial, 256 cells)
+                        plm      ppm4     ppmx     wenoz
+pure transport (none)   1.00x    1.64x    1.71x    1.24x
+ap_hll + coupling       1.00x    1.39x    1.36x    1.17x
+
+### G-recon  direct effect of split_vel on the sheared run (L1(recon-cell)/L1(E))
+N =  64   7.731e-06      N = 128   2.218e-06
+N = 256   5.787e-07      N = 512   1.476e-07      (second order small)
+
+### G-style
+cpplint (repo filter -build/include_subdir) on the 7 changed C++ files: 0 NEW errors
+(the surviving 17 are all present at HEAD, category by category, verified by a stashed
+baseline run).  No tabs, no `}}` lines, no trailing whitespace added, all lines <= 90
+columns, all changed src/ files mode 644.
+flake8 --max-line-length 90 on tests_m1: clean.
+t4c_shear.py and t8_conserve.py: --selftest passes, --selftest --selftest-fail exits 1.
+
+### Plots
+tests_m1/plots/: 10 JSON files, 147 kB total (limit 1.5 MB), <= 260 points per series.

@@ -164,8 +164,11 @@ before 1b was coded).  The blend above is algebraically identical to Berthon's f
 piecewise-constant states at the diffusion value of `F` (checked: `alpha * dissipation =
 (1 - alpha) F_diff` exactly in the isotropic limit), and is second order in both limits:
 reconstructed HLL where thin, central compact diffusion flux where thick.
-`<rad_m1>/reconstruct = dc | plm` (later `ppm4 | wenoz` from `src/reconstruct/`, which
-need `nghost >= 3`) selects the face states; `dc` reproduces the original scheme.
+`<rad_m1>/reconstruct = dc | plm | ppm4 | ppmx | wenoz` (the last three from
+`src/reconstruct/`, and they need `nghost >= 3`) selects the face states; `dc` reproduces
+the original scheme, and only `dc` selects Berthon's form of the E-flux -- every
+reconstruction that puts a second-order or better polynomial on the face makes the face
+jump O(dx^2) and needs the `alpha2` blend, exactly as plm does (milestone 1c-B).
 
 with `f` the face mean, and `(1 - f^2)` Bloch's guard that keeps `f < 1` near free
 streaming.  Isotropic limit: `lam = +-c/sqrt3`, `alpha -> 2/(sqrt3 tau_face)`, and the
@@ -339,8 +342,14 @@ Touched: `meshblock_pack.{hpp,cpp}` (`<rad_m1>` branch after :188, fatal with
 `<radiation>` and with `eos_radiation`), `driver.cpp` (sub-cycle loop), `mesh.cpp:890`,
 `mesh_refinement.cpp:517,554,591` and `load_balance.cpp` (~7 sites),
 `basetype_output.cpp` (`m1_e`, `m1_f1..3`, derived `m1_f`, `m1_chi`, `m1_tr`),
-`restart.cpp:73-85,173-179,306-331` with the mirror in `pgen.cpp:155-165,323-342,577+`
-(same order in writer and reader; upstream has no restart support at all).
+`restart.cpp` and the mirror in `pgen.cpp` (same order in writer and reader; upstream
+has no restart support at all).  DONE in milestone 1c-B: the four moments are written as
+one more cell-centred block, immediately after the `<radiation>` intensities and before
+the turbulence forcing, in both size sums and both loops, for the single-file and the
+one-file-per-rank layouts, and behind `pradm1 != nullptr` throughout, so a restart file
+written by a run without `<rad_m1>` is byte-identical to what it was before (verified).
+Nothing else of the module is written: the PD-ARS stage-1 gas increment `ugas1` is
+intra-step state and the `EventCounters`-style solve counters are diagnostics.
 
 Variables: `u0(m, n, k, j, i)`, `n = 0..3` = `E, F1, F2, F3`, one
 `MeshBoundaryValuesCC` with `InitializeBuffers(4)`, `coarse_u0` when multilevel.
@@ -561,6 +570,100 @@ source control, the T4/T4b/T6 problem generators and the redefined T3b.
   read `file_type = tab` with `data_format = %26.17e`.  The apparent `|f| = 1 + 7e-8`
   admissibility violation of the beam dump is float32 rounding: in double precision the
   same run gives `max |f| = 0.9999992`.
+
+## 12. Findings from milestone 1c-B (restart, higher-order reconstruction, T8)
+
+Milestone 1c-B: restart support for `<rad_m1>`, the four high-order reconstructions,
+the reconstructed velocity in the advective split, the `advect_shear` test and T8.
+
+* **Restart.**  The two fatals are gone and the four moments travel in the restart file
+  (section 6).  A `.rst` written by a run WITHOUT `<rad_m1>` is byte-identical to one
+  written by the pre-change binary (box_convection, general EOS, 4 files).  T8a is
+  bitwise for T4 dynamic (coupled, moving, sub-cycled: both `tab` dumps and the hydro
+  `hst` identical to the last digit) and for the 2-D beam.
+* **Test problem generators must run on a restart.**  `RadiationM1Tests` used to return
+  at once when `restart` was set, so a test with user BCs or a user source term died in
+  `pgen.cpp`'s "not enrolled during restart" check: the FIELDS come back from the file,
+  the function POINTERS do not.  Each branch now does its parameter reads and its
+  enrolment and returns just before writing the arrays.
+* **A DEFAULTED Real is serialised into the restart file with six digits.**  The beam
+  restart was not bitwise (3e-6 in E) until `beam_angle` was written into the input file
+  at full precision: `GetOrAddReal` records its default in the embedded parameter dump
+  as `0.785398`, and the restarted run therefore builds a slightly different beam
+  direction.  This is a code-wide property of `ParameterInput`, not a `<rad_m1>` bug,
+  but any pgen whose state is DERIVED from a defaulted Real is not bitwise restartable.
+* **Higher-order reconstruction: worth having, not worth defaulting to.**  pulse1d
+  (free streaming, the only exactly solvable M1 case) L1(E) at 512 cells and the orders
+  over N = 32..512: plm 2.81e-3 (1.42/1.63/1.76/1.88), ppm4 7.25e-3
+  (1.19/1.42/1.10/0.83), ppmx 4.33e-4 (2.28/1.80/1.95/1.99), wenoz 4.34e-4
+  (1.69/2.00/2.00/2.00).  ppmx and wenoz are 6.5x more accurate than plm at 512 and
+  reach the second order that the RK2 time integration caps them at; **ppm4 is worse
+  than plm and loses order** -- its Colella-Woodward limiter clips the reconstructed
+  `(E, f_i)` pair hard enough to destroy the convergence, and it should not be used.
+  The beam FWHM is 11.38 / 11.32 / 11.38 / 11.31 cells (plm / ppm4 / ppmx / wenoz)
+  against the 11.3-cell exact width, `min(E) > 0` in every case, and the apparent
+  `max|f| = 1 + 4e-8 .. 8e-8` is the float32 bin dump as in section 11.
+* **...but the AP gate does NOT improve, and at high resolution it degrades.**  T3
+  `d(sigma^2)/dt` / exact at `tau_cell` = 10 / 1e3 / 1e6: plm 1.000791 / 1.000015 /
+  1.000000, ppm4 0.999623 / 0.999999 / 1.000000, ppmx 0.999454 / 0.999997 / 1.000000,
+  wenoz 0.999456 / 0.999997 / 1.000000.  All pass the 2 % gate, but the resolution
+  sequence at fixed `tau_cell` = 10 (N = 64..512, error `|ratio - 1|`) is plm
+  3.45e-3 / 7.91e-4 / 1.56e-4 / 1.4e-5 (order 2.1-3.5) against wenoz
+  1.13e-3 / 5.44e-4 / 1.97e-4 / 7.7e-5 (order ~1.4); the high-order methods start
+  better and END WORSE, converging to a floor that plm passes through.  The Nyquist
+  decay rate at `tau_cell` = 1e3 is 0.99996 (plm) against 0.99973 (ppm4), 0.99971
+  (ppmx), 0.99948 (wenoz).  The reason is that the `alpha2` thick-limit blend is built
+  around the assumption that the reconstructed face jump is O(dx^2): a 5-cell stencil
+  changes the residual dissipation term, not the physical `F_diff`.
+* **Cost per cell-update relative to plm** (serial, 256 cells): pure transport
+  (`thick_flux = none`) ppm4 1.64x, ppmx 1.71x, wenoz 1.24x; the production
+  configuration (`ap_hll` + the implicit coupling) ppm4 1.39x, ppmx 1.36x, wenoz 1.17x.
+* **DECISION: plm stays the default.**  wenoz is the one to reach for when free
+  streaming accuracy is what matters (the beam, shadows, a thin atmosphere) and costs
+  17-24 %; it must not be used where the thick limit is the point, and it needs
+  `nghost = 3`.  ppm4 is a trap.  Two risks that the gates do not close: near `f -> 1`
+  the 5-cell kernels reconstruct `f_i` components whose rebuilt `|f|` is then clipped by
+  `M1Rebuild`, i.e. the limiting happens AFTER the interpolation and the effective
+  reconstruction of the direction is not monotone; and at a thick/thin transition the
+  face state jump is O(dx) for any method, so the `alpha2` dissipation weight is doing
+  the work and the extra order buys nothing (T3b is unchanged by the reconstruction).
+* **The velocity in the advective split: `split_vel = recon` is the new default and it
+  IMPROVES T4.**  It reconstructs `v` to the face with the same method as `(E, f_i)`
+  and upwinds on the mean of the two reconstructed face-normal velocities; `cell` is the
+  1c-A behaviour and is bit-identical to the 1c-A binary (checked: the whole flux-kernel
+  rewrite is bit-preserving on the `dc`/`plm` path).  On T4 dynamic at 512 cells the two
+  differ by L1 1.8e-3 of E -- NOT round-off, because hydro gives the pulse a real
+  velocity structure -- and `recon` is the better one on every T4 metric.  At 512 cells:
+  pulse centre 0.059 vs 0.074 cells from `x0 + v t`, advected-vs-static difference
+  2.356e-3 vs 3.785e-3, width error 1.014e-2 vs 1.015e-2.  At 1024 cells: 0.049 vs
+  0.064 cells, 9.404e-4 vs 1.665e-3, width 1.000e-2 both.  The QUOKKA metric is 1.6-1.8x
+  smaller with `recon` at both resolutions and converges slightly faster (order 1.33 vs
+  1.18), so this is a genuine accuracy gain, not a reshuffling.
+* **`advect_shear` (T4c) exists but is not the discriminating test it was meant to be.**
+  The T4 dynamic pulse in `v(x) = v0[1 + 0.2 sin(2 pi (x - x1min)/L)]`, prescribed and
+  re-imposed every hydro stage by a user source term with `gas_feedback = false`,
+  converges against a 2048-cell reference with L1(E) 4.408e-3 / 1.059e-3 / 3.289e-4 /
+  1.221e-4 at N = 64/128/256/512 (orders 2.06/1.69/1.43, the tail limited by the
+  reference's own error), and `recon` and `cell` agree to three digits in that L1; the two
+  differ by only 7.7e-6 / 2.2e-6 / 5.8e-7 / 1.5e-7 of L1(E) at N = 64..512, i.e. second
+  order small.  A SMOOTH prescribed shear is the case in which the two velocities differ
+  by a clean O(dx) that largely cancels between `F0 = F - A` and the `A` added back
+  (the residual weight is `-b_L/(b_R - b_L)`); what T4 has and T4c does not is a
+  velocity field with structure on the scale of the pulse itself.  T4c is kept as the
+  convergence test of the split in a non-uniform flow; T4 stays the gate that decides
+  the option.
+* **The stale-hydro-ghost gap does not exist.**  T4 dynamic at 512 cells on 1, 2 and 4
+  MeshBlocks is BITWISE identical in the `tab` dumps with `gas_feedback = true`, with
+  `gas_feedback = false` and with `coupling = false`.  When the module does not write
+  hydro `u0`, hydro's own stage chain has already exchanged its ghosts; when it does,
+  `HydroConToPrim` refreshes them (the 1b finding).  No code change was needed.
+* **T8b.**  1 rank vs 4 ranks bitwise for T4 dynamic on 4 MeshBlocks (`tab`, 17 digits)
+  and for the 2-D beam on 4 MeshBlocks (`bin`).  The ROMIO limitation stands: the output
+  directories must pre-exist and must not be on `/tmp`.
+* **T8c.**  Over exactly 200 cycles of T4 dynamic (512 cells), `max |d(E_gas +
+  (c/chat) E)/E| = 1.8e-13` and `max |d(rho v + F/(chat c))|/|.| = 1.1e-13`, i.e.
+  ~1e-15 per cycle: round-off, accumulated as a drift.  Over the full 4.8e-6 s run
+  (770 cycles) the two are 3.5e-13 and 3.2e-13.
 
 ## References
 
