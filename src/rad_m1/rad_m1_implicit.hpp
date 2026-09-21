@@ -37,6 +37,57 @@ constexpr int M1_IBC_EFIX     = 4;   // Dirichlet: the boundary CELL keeps the E
                                      // of E in a pure-scattering column (imposed flux on
                                      // both ends leaves the operator singular).
 
+// <rad_m1>/implicit_flux: which spatial form the implicit E-flux takes at a face
+// (milestone 3a2, LIMIT 1 of the 3a findings).
+constexpr int M1_IFLUX_CENTRAL = 0;  // 3a: the face-eliminated central (diffusion) form
+                                     // at EVERY optical depth.  Exact in the thick limit,
+                                     // heavily damped in the thin one (a non-upwinded
+                                     // backward-Euler discretisation of the wave system).
+constexpr int M1_IFLUX_APHLL   = 1;  // the same asymptotic-preserving blend the EXPLICIT
+                                     // scheme uses, linearised in E':
+                                     //   G_f = A_up + alpha F_HLL + (1-alpha) F_diff
+                                     // with F_HLL built from the LAGGED reduced flux and
+                                     // the closed-form M1 wave speeds.  alpha -> 1 in the
+                                     // thin limit (upwind transport is recovered) and
+                                     // alpha -> 0 in the thick one (3a is recovered).
+                                     // The HLL DISSIPATION carries alpha^2 here, not
+                                     // alpha, or the physical diffusion is counted twice
+                                     // (see rad_m1_implicit.cpp).
+constexpr int M1_IFLUX_BERTHON = 2;  // G_f = A_up + alpha F_HLL, with NO F_diff at all:
+                                     // Berthon's asymptotic-preserving flux, which is
+                                     // what the explicit scheme uses with piecewise-
+                                     // constant states.  alpha is built so that
+                                     // alpha (F_adv + F_dis) IS the physical diffusion at
+                                     // every tau, so no second diffusive flux may be
+                                     // added; the price is that the face diffusivity is
+                                     // the arithmetic tau_face and not the exact harmonic
+                                     // mean the face-eliminated form carries.
+
+// <rad_m1>/implicit_recon: the states the HLL part of the implicit flux is built from.
+constexpr int M1_IRECON_DC    = 0;   // piecewise constant; the matrix IS the operator
+constexpr int M1_IRECON_PLMDC = 1;   // plm as a DEFERRED CORRECTION: the difference
+                                     // between the plm and the dc flux, evaluated at the
+                                     // PREVIOUS Picard iterate, goes into the right-hand
+                                     // side, so the matrix stays the low-order M-matrix.
+
+// <rad_m1>/implicit_partition: how a column that spans several MeshBlocks (and ranks) is
+// solved (milestone 3a2, LIMIT 4).
+constexpr int M1_IPART_NONE   = 0;   // one MeshBlock per column; fatal otherwise (3a)
+constexpr int M1_IPART_GATHER = 1;   // the column's tridiagonal rows are GATHERED onto
+                                     // the rank that owns its lowest block, solved by the
+                                     // very same serial Thomas sweep, and scattered back.
+                                     // Bitwise independent of the partition by
+                                     // construction: the arithmetic order is identical.
+
+// components of the implicit FACE work array RadiationM1::ifw (m,n,k,j,i), i the x1 FACE
+// index (face i is the one between cells i-1 and i), filled once per Picard iteration by
+// the implicit_flux = ap_hll path and identically zero under `central`.
+constexpr int M1_IFW_AL  = 0;   // alpha, the asymptotic-preserving weight of F_HLL
+constexpr int M1_IFW_HCL = 1;   // alpha * (coefficient of E'_L in F_HLL), >= 0
+constexpr int M1_IFW_HCR = 2;   // alpha * (coefficient of E'_R in F_HLL), <= 0
+constexpr int M1_IFW_DG  = 3;   // the plm deferred correction, alpha (F^plm - F^dc)
+constexpr int M1_NIFW = 4;
+
 // components of the implicit work array RadiationM1::iw (m,n,k,j,i).  All are per-cell
 // and live only for the duration of one solve, except EN/EGN which carry the
 // start-of-step state through the Picard loop.
@@ -60,7 +111,11 @@ constexpr int M1_IW_S2   = 16;  // Thomas solution
 constexpr int M1_IW_S3   = 17;  // second Thomas solution (cyclic / Sherman-Morrison)
 constexpr int M1_IW_RES  = 18;  // per-cell Picard residual
 constexpr int M1_IW_F1   = 19;  // the derived cell-centred x1 flux of the iterate
-constexpr int M1_NIW = 20;
+constexpr int M1_IW_RF0  = 20;  // the COMOVING reduced flux F0_cell/(c E) of the iterate,
+                                // clipped to [-1,1]: what the HLL part of the ap_hll
+                                // implicit flux lags (the closure chi keeps using the LAB
+                                // reduced flux, as the explicit scheme does)
+constexpr int M1_NIW = 21;
 
 // safeguarded root find for T' inside the Picard loop
 constexpr int  M1_IMPL_TMAXIT = 100;

@@ -1,0 +1,132 @@
+# AthenaK input file for the grey M1 STATIC PLANE-PARALLEL ATMOSPHERE (milestone 3a2,
+# gate I6b: the steady-state accuracy of the implicit scheme in a thin surface layer).
+#
+# A constant flux F = 1 is imposed at the bottom face, the top is a free surface
+# (Marshak, no incoming radiation), the gas is PRESCRIBED (re-imposed every stage by a
+# user source term) and the opacity is pure scattering, so the steady state is the
+# closed-form M1 moment solution
+#
+#   chi(f)/f = q0 + tau,   E(tau) = F/(c f(tau)),   q0 = chi(marshak_q)/marshak_q,
+#
+# with tau measured downward from the TOP MESH FACE.  With marshak_q = 1/2 the surface
+# reduced flux is f(0) = 1/2 exactly and q0 = 0.92963172.
+#
+# The grid: rho = 0.128 exp[(1 - z)/0.113], kappa = 1, 128 cells on [0,1], which gives
+# tau(top cell centre) = 5.0e-4, tau(top cell face) = 1.0e-3 and tau_bot = 100.8.
+#
+#   athena -i rad_m1_atmosphere.athinput rad_m1/transport=implicit_x1 \
+#          rad_m1/implicit_cfl=1e4 rad_m1/implicit_flux=ap_hll time/cfl_number=1e6
+#   python3 tests_m1/t9_atmosphere.py <dir>/tab/*.m1.*.tab --quiet
+#
+# The EXPLICIT reference needs ~tau_bot^2 light crossings to relax, so run it with
+# problem/atm_scale_h=0.163 (tau_bot ~ 10) and a correspondingly long tlim.
+
+<comment>
+problem = grey M1 static plane-parallel grey atmosphere
+
+<job>
+basename = m1_atm
+
+<mesh>
+nghost    = 2
+nx1       = 128
+x1min     = 0.0
+x1max     = 1.0
+ix1_bc    = user
+ox1_bc    = user
+
+nx2       = 1
+x2min     = -0.5
+x2max     = 0.5
+ix2_bc    = periodic
+ox2_bc    = periodic
+
+nx3       = 1
+x3min     = -0.5
+x3max     = 0.5
+ix3_bc    = periodic
+ox3_bc    = periodic
+
+<meshblock>
+nx1       = 128
+nx2       = 1
+nx3       = 1
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.4
+nlim       = -1
+tlim       = 4000.0
+ndiag      = 1000000
+
+<hydro>
+eos         = ideal
+reconstruct = plm
+rsolver     = hllc
+gamma       = 1.666666666666667
+
+<rad_m1>
+c_light      = 1.0
+chat_over_c  = 1.0
+cfl_rad      = 0.4
+reconstruct  = plm
+thick_flux   = ap_hll   # none | ap_hll | scaled
+scaled_prefactor = 20.0
+ap_form      = alpha2   # alpha2 | unified
+advect_split = false
+source_form  = full
+f_source     = wb
+closure      = m1
+e_floor      = 1.0e-30
+subcycle     = true
+opacity      = const
+kappa_p      = 0.0      # PURE SCATTERING: no emission, no absorption, fixed gas
+kappa_e      = 0.0
+kappa_f      = 0.0
+kappa_s      = 1.0
+coupling     = true
+gas_feedback = false
+
+# ---- MILESTONE 3a / 3a2: implicit x1 transport.  Listed here at their DEFAULTS so that
+# the gate scripts can override them on the command line.
+transport             = explicit  # explicit | implicit_x1
+implicit_cfl          = -1.0
+implicit_tol          = 1.0e-8
+implicit_maxit        = 30
+implicit_opac_update  = false
+implicit_allow_multid = false
+implicit_flux         = central   # central | ap_hll      (3a2, LIMIT 1)
+implicit_recon        = dc        # dc | plm_dc           (3a2, LIMIT 1)
+implicit_partition    = none      # none | gather (gather is NOT implemented yet)
+implicit_recon_w      = -1.0      # plm_dc weight; <=0 = auto 1/(1+chat dt/dx)
+implicit_recon_lag    = picard     # step | picard (when the plm correction is re-made)
+implicit_res_floor    = 0.0       # Picard residual scale (0 = the 3a pure |dE|/E)
+implicit_bmom_half    = false     # 3a2, LIMIT 3
+marshak_q             = 0.5
+implicit_bc_x1min     = flux
+implicit_bc_x1max     = marshak
+implicit_flux_x1min   = 1.0
+implicit_flux_x1max   = 0.0
+implicit_ebath_x1min  = 0.0
+implicit_ebath_x1max  = 0.0
+
+<problem>
+pgen_name    = rad_m1_beam
+m1_test      = atmosphere
+user_bcs     = true
+user_srcs    = true
+atm_rho_top  = 0.128
+atm_scale_h  = 0.113
+atm_flux     = 1.0
+atm_temp     = 1.0
+
+<output1>
+file_type   = tab
+variable    = m1
+data_format = %26.17e
+dt          = 4000.0
+
+<output2>
+file_type   = hst
+dt          = 4000.0

@@ -52,6 +52,7 @@
 #include "driver/driver.hpp"
 #include "eos/eos.hpp"
 #include "hydro/hydro.hpp"
+#include "reconstruct/plm.hpp"
 #include "rad_m1/rad_m1.hpp"
 #include "rad_m1/rad_m1_closure.hpp"
 #include "rad_m1/rad_m1_opacity.hpp"
@@ -86,6 +87,15 @@ int ImplBCFromString(const std::string &s, const BoundaryFlag mbc) {
   std::exit(EXIT_FAILURE);
   return M1_IBC_MARSHAK;
 }
+
+//----------------------------------------------------------------------------------------
+//! \fn ImplFatal
+//! \brief one fatal-error exit with a message, used by the 3a2 option parsers
+
+void ImplFatal(const std::string &msg) {
+  std::cout << "### FATAL ERROR in " << __FILE__ << std::endl << msg << std::endl;
+  std::exit(EXIT_FAILURE);
+}
 } // namespace
 
 //----------------------------------------------------------------------------------------
@@ -103,6 +113,51 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   impl_opac_update = pin->GetOrAddBoolean("rad_m1","implicit_opac_update",false);
   impl_allow_multid = pin->GetOrAddBoolean("rad_m1","implicit_allow_multid",false);
   marshak_q = pin->GetOrAddReal("rad_m1","marshak_q",0.5);
+  // ---- milestone 3a2 options.  All three default to the 3a behaviour, so an input file
+  // that does not name them reproduces RESULTS.txt of runs_3a exactly.
+  std::string sfx = pin->GetOrAddString("rad_m1","implicit_flux","central");
+  if (sfx.compare("central") == 0) {
+    impl_flux = M1_IFLUX_CENTRAL;
+  } else if (sfx.compare("ap_hll") == 0) {
+    impl_flux = M1_IFLUX_APHLL;
+  } else if (sfx.compare("berthon") == 0) {
+    impl_flux = M1_IFLUX_BERTHON;
+  } else {
+    ImplFatal("<rad_m1>/implicit_flux = '" + sfx
+              + "' is not a choice (central | ap_hll | berthon)");
+  }
+  std::string srn = pin->GetOrAddString("rad_m1","implicit_recon","dc");
+  if (srn.compare("dc") == 0) {
+    impl_recon = M1_IRECON_DC;
+  } else if (srn.compare("plm_dc") == 0) {
+    impl_recon = M1_IRECON_PLMDC;
+  } else {
+    ImplFatal("<rad_m1>/implicit_recon = '" + srn + "' is not a choice (dc | plm_dc)");
+  }
+  // LIMIT 4 of the 3a findings is NOT implemented in 3a2: a column still has to live
+  // inside one MeshBlock along x1 (the fatal below).  The option is parsed so that the
+  // input files and the gate scripts can already name it, and `gather` fatals rather
+  // than silently doing something else.
+  std::string spt = pin->GetOrAddString("rad_m1","implicit_partition","none");
+  if (spt.compare("none") == 0) {
+    impl_part = M1_IPART_NONE;
+  } else if (spt.compare("gather") == 0) {
+    ImplFatal("<rad_m1>/implicit_partition = gather (the line solve partitioned over "
+              "MeshBlocks and ranks) is NOT IMPLEMENTED; milestone 3a2 still needs one "
+              "MeshBlock per x1 column");
+  } else {
+    ImplFatal("<rad_m1>/implicit_partition = '" + spt
+              + "' is not a choice (none | gather)");
+  }
+  impl_recon_w = pin->GetOrAddReal("rad_m1","implicit_recon_w",-1.0);
+  impl_res_floor = pin->GetOrAddReal("rad_m1","implicit_res_floor",0.0);
+  std::string slg = pin->GetOrAddString("rad_m1","implicit_recon_lag","picard");
+  impl_recon_freeze = (slg.compare("step") == 0);
+  if (!impl_recon_freeze && slg.compare("picard") != 0) {
+    ImplFatal("<rad_m1>/implicit_recon_lag = '" + slg
+              + "' is not a choice (step | picard)");
+  }
+  impl_bmom_half = pin->GetOrAddBoolean("rad_m1","implicit_bmom_half",false);
   if (!(impl_tol > 0.0) || impl_maxit < 1) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
       << std::endl << "<rad_m1>/implicit_tol must be positive and implicit_maxit >= 1"
@@ -170,12 +225,21 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   Kokkos::deep_copy(f0x1n, 0.0);
   Kokkos::realloc(iw, nmb, M1_NIW, ncells3, ncells2, ncells1);
   Kokkos::deep_copy(iw, 0.0);
+  Kokkos::realloc(ifw, nmb, M1_NIFW, ncells3, ncells2, ncells1+1);
+  Kokkos::deep_copy(ifw, 0.0);
 
   if (global_variable::my_rank == 0) {
     std::cout << "<rad_m1>: transport=implicit_x1 (milestone 3a) implicit_cfl="
               << impl_cfl << " tol=" << impl_tol << " maxit=" << impl_maxit
               << " opac_update=" << (impl_opac_update ? "true" : "false")
               << " marshak_q=" << marshak_q << std::endl;
+    std::cout << "         implicit_flux="
+              << ((impl_flux == M1_IFLUX_APHLL) ? "ap_hll" :
+                  ((impl_flux == M1_IFLUX_BERTHON) ? "berthon" : "central"))
+              << " implicit_recon="
+              << ((impl_recon == M1_IRECON_PLMDC) ? "plm_dc" : "dc")
+              << " implicit_partition="
+              << ((impl_part == M1_IPART_GATHER) ? "gather" : "none") << std::endl;
     std::cout << "         x1 boundaries: min=" << ibc_x1min << " max=" << ibc_x1max
               << " (0 marshak, 1 flux, 2 reflect, 3 periodic) flux_min=" << iflux_x1min
               << " flux_max=" << iflux_x1max << std::endl;
@@ -224,6 +288,13 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
 
   auto u0_ = u0;
   auto iw_ = iw;
+  auto ifw_ = ifw;
+  const bool aphll = (impl_flux != M1_IFLUX_CENTRAL);
+  const bool berth = (impl_flux == M1_IFLUX_BERTHON);
+  const bool plmdc = (impl_recon == M1_IRECON_PLMDC);
+  const Real rwin = impl_recon_w;
+  const Real rfl_ = impl_res_floor;
+  const bool rfreeze = impl_recon_freeze;
   auto f0_ = f0x1;
   // F0^n, the face flux at the START of the step: the Picard loop overwrites f0x1 with
   // each new iterate, so the backward-Euler right-hand side needs its own copy
@@ -244,6 +315,15 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   // values unconditionally.
   const bool dbgf = true;
   const bool dbgh = true;
+  // LIMIT 3 of the 3a findings.  A physical boundary face hands its whole
+  // dt (rho k_t)_f F0_f/c to its ONE interior cell in 3a, so that cell receives 1.5
+  // face-shares of radiative force where every interior cell receives 1.0; the residual
+  // is a steady force the well-balanced reference a_rad_ref does not carry, and it drives
+  // the 10.3 v_MLT bottom-cell flow of I8.  With implicit_bmom_half the boundary face
+  // gives HALF, like any other face: the cell-averaged radiative force is then
+  // (rho k_t F/c) with F the mean of the cell's two faces, everywhere.  The other half
+  // leaves the domain with the radiation, which is where it physically goes.
+  const bool bmhalf = impl_bmom_half;
   bool fref = (force_ref == M1_FREF_WB_ARAD);
   auto aref_ = arad_ref;
   Real mq = marshak_q;
@@ -289,6 +369,31 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       iw_(m,M1_IW_V1,k,j,i) = uh(m,IM1,k,j,i)*idd;
     });
   }
+
+  // The SCALE of the Picard convergence test.  With implicit_res_floor = 0 (the 3a
+  // default) the residual is the pure relative change |dE|/E, which in a run with a large
+  // dynamic range is dominated by cells many orders below the peak: on gate I6 with
+  // implicit_recon = plm_dc the tail cells sit 9 orders under the maximum and keep the
+  // reported residual above the tolerance for ever, although the SOLUTION is converged
+  // (maxit 30 and maxit 100 give the same amplitude to five digits).  A positive
+  // implicit_res_floor scales those cells by the column peak instead,
+  // res = |dE|/max(E, implicit_res_floor*max(E)).
+  Real emax0 = 0.0;
+  if (rfl_ > 0.0) {
+    Kokkos::parallel_reduce("m1_impl_emax",
+    Kokkos::MDRangePolicy<Kokkos::Rank<4>>(DevExeSpace(), {0,ks,js,is},
+                                           {nmb1+1,ke+1,je+1,ie+1}),
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &lmax) {
+      Real r = iw_(m,M1_IW_EN,k,j,i);
+      lmax = (r > lmax) ? r : lmax;
+    }, Kokkos::Max<Real>(emax0));
+#if MPI_PARALLEL_ENABLED
+    {Real g;
+    MPI_Allreduce(&emax0, &g, 1, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+    emax0 = g;}
+#endif
+  }
+  const Real escale = rfl_*emax0;
 
   //--------------------------------------------------------------------- the Picard loop
   int it = 0;
@@ -339,7 +444,188 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       Real tp = iw_(m,M1_IW_TP,k,j,i);
       Real t2 = tp*tp;
       iw_(m,M1_IW_G0,k,j,i) = rkev*(e + de0) - rkpv*ar*t2*t2;
+      // The COMOVING reduced flux of the iterate, which is what the HLL part of the
+      // ap_hll flux lags (the HLL acts on F0 only; the enthalpy flux A is added back
+      // upwinded, exactly as in the explicit advective split).  The LAB f above still
+      // drives the closure chi, as it does in the explicit scheme.
+      //
+      // It is NOT F0_cell/(c E) with F0_cell the arithmetic mean of the two faces.  That
+      // is design risk R4 and it is fatal here: in free streaming the upwind face flux is
+      // c E_{i-1}, so the cell mean is c (E_{i-1}+E_i)/2 and the derived f is
+      // (1 + E_{i-1}/E_i)/2, i.e. 0.5 rather than 1 on the steep side of a pulse.  The
+      // wave speeds then reopen to +-c/sqrt(3), the HLL flux turns CENTRED, and the
+      // I6 pulse is flattened to its box mean in one crossing (amplitude ratio 0.0014).
+      // Each FACE flux is therefore normalised by the E of the cell it comes FROM, which
+      // is exactly 1 for an upwind free-streaming face, and the cell value is the mean of
+      // the two face ratios.  On a cold start (f0x1 is zero-initialised and the problem
+      // generator's state lives in u0) the cell flux is used instead.
+      Real r0;
+      Real fl = f0_(m,k,j,i), fr = f0_(m,k,j,i+1);
+      if (fabs(fl) + fabs(fr) > 0.0) {
+        int iml = (i > is) ? (i-1) : (cyclic ? ie : is);
+        int ipr = (i < ie) ? (i+1) : (cyclic ? is : ie);
+        Real eul = fmax((fl > 0.0) ? iw_(m,M1_IW_EP,k,j,iml) : e, efl);
+        Real eur = fmax((fr > 0.0) ? e : iw_(m,M1_IW_EP,k,j,ipr), efl);
+        r0 = 0.5*(fl/(cl*eul) + fr/(cl*eur));
+      } else {
+        r0 = (f1 - iw_(m,M1_IW_ADV,k,j,i)*e)/(cl*e);
+      }
+      if (r0 > 1.0) {r0 = 1.0;}
+      if (r0 < -1.0) {r0 = -1.0;}
+      iw_(m,M1_IW_RF0,k,j,i) = r0;
     });
+
+    // (b2) the FACE coefficients of the asymptotic-preserving HLL blend.  Nothing here
+    // runs under implicit_flux = central, where ifw stays identically zero and the row
+    // assembled below is bitwise the 3a one.
+    // The deferred correction is by default evaluated ONCE per step, at the start-of-step
+    // state (implicit_recon_lag = step).  Recomputing it every Picard pass
+    // (= picard) makes the loop a limit cycle: the plm limiter keeps switching on a few
+    // cells and the strict tolerance is never reached, at 30 iterations per step against
+    // 2, although the answer is the same to five digits.  The correction is a lagged,
+    // explicit term in any case, so evaluating it at E^n costs nothing in order.
+    const int iter = it;
+    const bool doface = aphll && (it == 0 || !rfreeze);
+    if (doface) {
+      const bool dodg = plmdc && (it == 0 || !rfreeze);
+      par_for("m1_impl_aphll", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        bool phys = ((i == is) || (i == ie+1)) && !cyclic;
+        if (phys) {
+          // a physical boundary face: the flux is IMPOSED there (flux / Marshak /
+          // reflect / efix), so there is no Riemann problem and no blend.
+          ifw_(m,M1_IFW_AL,k,j,i) = 0.0;
+          ifw_(m,M1_IFW_HCL,k,j,i) = 0.0;
+          ifw_(m,M1_IFW_HCR,k,j,i) = 0.0;
+          ifw_(m,M1_IFW_DG,k,j,i) = 0.0;
+          return;
+        }
+        int im = (i == is) ? ie : (i-1);
+        int ip = (i == ie+1) ? is : i;
+        Real dx = mbsize.d_view(m).dx1;
+        Real rfl = iw_(m,M1_IW_RF0,k,j,im);
+        Real rfr = iw_(m,M1_IW_RF0,k,j,ip);
+        // closed-form M1 wave speeds of the two LAGGED states (1-D: mu = sign f)
+        Real bl, br;
+        if (edd) {
+          br = ch/sqrt(3.0);
+          bl = -br;
+        } else {
+          Real lml, lpl, lmr, lpr;
+          M1WaveSpeeds(fabs(rfl), (rfl >= 0.0) ? 1.0 : -1.0, lml, lpl);
+          M1WaveSpeeds(fabs(rfr), (rfr >= 0.0) ? 1.0 : -1.0, lmr, lpr);
+          bl = ch*fmin(fmin(lml, lmr), 0.0);
+          br = ch*fmax(fmax(lpl, lpr), 0.0);
+        }
+        // alpha: Bloch et al. (2021) eq. 25 with the (1-f^2) guard and the arithmetic
+        // face mean of the CELL optical depth.  lp*lm <= 0, so den >= 1 and alpha <= 1.
+        Real tauf = 0.5*(opac_(m,M1_OP_T,k,j,im) + opac_(m,M1_OP_T,k,j,ip))*dx;
+        Real al = 1.0;
+        if (tauf > 0.0) {
+          Real fbar = 0.5*(fabs(rfl) + fabs(rfr));
+          Real guard = fmax(1.0 - fbar*fbar, 0.0);
+          Real lp = br/ch, lm = bl/ch;
+          Real den = 1.0 - 3.0*tauf*guard*lp*lm/(lp - lm + 1.0e-300);
+          al = 1.0/fmax(den, 1.0);
+        }
+        // F_HLL = [b_R c_h f_L E'_L - b_L c_h f_R E'_R + b_R b_L (E'_R - E'_L)]/(b_R-b_L)
+        // is linear in E'.  Split into the ADVECTIVE part (the two physical fluxes) and
+        // the DISSIPATION (the jump term), because the two carry different weights:
+        //
+        //   F = alpha F_adv + alpha^2 F_dis + (1 - alpha) F_diff.
+        //
+        // The dissipation must carry alpha^2 and not alpha.  At piecewise-constant states
+        // -- which is what the MATRIX is built from, whatever implicit_recon says -- the
+        // HLL dissipation IS the physical diffusion (b_R b_L dE/(b_R-b_L) -> -c dE/3),
+        // so weighting it alpha and adding (1-alpha) F_diff on top counts the diffusion
+        // TWICE: measured on gate I1 at tau_cell = 1e3, d(sigma^2)/dt came out 2.0022 x
+        // the analytic 2D at every CFL.  alpha^2 ~ 1/tau^2 kills it against F_diff
+        // ~ 1/tau and leaves the thin limit (alpha -> 1) exactly the plain HLL flux.
+        // This is the `alpha2` form of the explicit scheme (rad_m1_closure.hpp), reached
+        // here for the same reason.
+        //
+        // The two fmax()/fmin() are the M-MATRIX GUARDS.  At alpha = 1 they are provably
+        // inactive (the HLL consistency condition b_L <= c_h f <= b_R holds on the M1
+        // admissible set), but alpha < 1 rescales the two parts differently and the
+        // E'_R coefficient can turn positive; the clamp then drops it to zero, which
+        // only makes the face flux more upwind and leaves conservation exact (it is one
+        // number per face, used with opposite signs by the two cells).
+        Real invb = 1.0/(br - bl + 1.0e-300);
+        Real adl = br*ch*rfl*invb;        // E'_L coefficient of F_adv
+        Real adr = -bl*ch*rfr*invb;       // E'_R coefficient of F_adv
+        Real dk = -br*bl*invb;            // >= 0, the dissipation coefficient
+        //
+        // implicit_flux = berthon drops F_diff altogether and weights BOTH parts of the
+        // HLL flux by alpha, which is what alpha was constructed for: alpha (F_adv +
+        // F_dis) is the physical diffusion to first order in 1/tau, the advective part
+        // supplying the 1/(0.866 tau) that the dissipation alone is short of.  The
+        // F_diff weight is then zero, which is what storing AL = 1 below means.
+        Real wdis = berth ? al : (al*al);
+        Real ccl = fmax(al*adl + wdis*dk, 0.0);
+        Real ccr = fmin(al*adr - wdis*dk, 0.0);
+        ifw_(m,M1_IFW_AL,k,j,i) = berth ? 1.0 : al;
+        ifw_(m,M1_IFW_HCL,k,j,i) = ccl;
+        ifw_(m,M1_IFW_HCR,k,j,i) = ccr;
+        // the plm DEFERRED CORRECTION: the difference between the plm and the dc HLL
+        // flux at the PREVIOUS iterate.  It goes to the right-hand side, so the matrix
+        // stays the low-order M-matrix.  Both E and the comoving reduced flux are
+        // reconstructed, with the same limiter the explicit scheme uses; a face whose
+        // 4-cell stencil leaves the block falls back to dc (zero correction).
+        Real dg = 0.0;
+        if (dodg && al > 0.0) {
+          int imm = (im > is) ? (im-1) : (cyclic ? ie : -1);
+          int ipp = (ip < ie) ? (ip+1) : (cyclic ? is : -1);
+          if (imm >= 0 && ipp >= 0) {
+            Real dum;
+            Real elp, erp, flp, frp;
+            PLM(iw_(m,M1_IW_EP,k,j,imm), iw_(m,M1_IW_EP,k,j,im),
+                iw_(m,M1_IW_EP,k,j,ip), elp, dum);
+            PLM(iw_(m,M1_IW_EP,k,j,im), iw_(m,M1_IW_EP,k,j,ip),
+                iw_(m,M1_IW_EP,k,j,ipp), dum, erp);
+            PLM(iw_(m,M1_IW_RF0,k,j,imm), iw_(m,M1_IW_RF0,k,j,im),
+                iw_(m,M1_IW_RF0,k,j,ip), flp, dum);
+            PLM(iw_(m,M1_IW_RF0,k,j,im), iw_(m,M1_IW_RF0,k,j,ip),
+                iw_(m,M1_IW_RF0,k,j,ipp), dum, frp);
+            Real ecl = iw_(m,M1_IW_EP,k,j,im), ecr = iw_(m,M1_IW_EP,k,j,ip);
+            Real gp = al*(br*ch*flp*elp - bl*ch*frp*erp)*invb
+                      + wdis*(-dk)*(erp - elp);
+            Real gc = ccl*ecl + ccr*ecr;
+            // ADMISSIBILITY of the corrected face flux against the DONOR cell.  The
+            // reconstructed face energy may exceed the donor cell's own (plm puts
+            // E_i (r-1)/(r+1) on top of E_i for a geometric ratio r), and c times that is
+            // then faster than the donor can physically emit: the cell drains below what
+            // it receives and, on an exponentially falling background, the drain
+            // cascades.  Measured on I6 before this clamp: the 1e-4 background of the
+            // free-streaming pulse collapsed onto the floor and the peak grew 7x
+            // (amplitude ratio 6.98, Picard never converging).  The low-order flux gc
+            // already satisfies this bound, so the clamp never removes the whole
+            // correction, only the inadmissible part of it.
+            Real gmax = ch*ecl, gmin = -ch*ecr;
+            gp = fmin(fmax(gp, gmin), gmax);
+            // The DEFERRED-CORRECTION WEIGHT.  A deferred correction is a fixed-point
+            // iteration x <- A_low^-1 (b + (A_low - A_high) x), and for advection its
+            // contraction factor is ~ 2 nu/(1 + nu) with nu = chat dt/dx: it converges
+            // only below CFL ~ 1 and DIVERGES above it (measured: Picard never converges
+            // at implicit_cfl = 10 and the I6 pulse amplitude comes out 3.85).  The
+            // correction is therefore weighted by w = 1/(1 + nu) unless
+            // <rad_m1>/implicit_recon_w names a fixed value.  That makes the contraction
+            // factor 2 nu/(1 + nu)^2 <= 1/2 at EVERY CFL, and the fixed point a convex
+            // blend of the dc and plm fluxes -- still a monotone flux, second-order where
+            // w -> 1 (nu << 1, which is where a propagating front is resolved in time at
+            // all) and dc where the step is so long that the front is not resolved.
+            Real wdc = (rwin > 0.0) ? rwin : (1.0/(1.0 + ch*dt/dx));
+            dg = wdc*(gp - gc);
+            // UNDER-RELAXATION across the Picard passes.  The plm limiter keeps switching
+            // on a handful of cells and the un-relaxed iteration is a small-amplitude
+            // limit cycle that never meets the tolerance (30 passes per step against 2,
+            // with the answer already right to five digits).  Averaging with the previous
+            // pass leaves the fixed point untouched and breaks the cycle.
+            if (iter > 0) {dg = 0.5*(dg + ifw_(m,M1_IFW_DG,k,j,i));}
+          }
+        }
+        ifw_(m,M1_IFW_DG,k,j,i) = dg;
+      });
+    }
 
     // (c) the emission/absorption source, linearised in T about the iterate
     if (src_on) {
@@ -386,14 +672,20 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       // ---- face i+1/2
       if (i < ie || cyclic) {
         int ip = (i < ie) ? (i+1) : is;
+        Real om = 1.0 - ifw_(m,M1_IFW_AL,k,j,i+1);
         Real ktf = 0.5*(opac_(m,M1_OP_T,k,j,i) + opac_(m,M1_OP_T,k,j,ip));
         Real th = 1.0/(1.0 + ch*dt*ktf);
-        Real df = th*ch*ch*dt/dx;
+        Real df = om*th*ch*ch*dt/dx;
         bb += nu*df*wi;
         cc -= nu*df*iw_(m,M1_IW_WCHI,k,j,ip);
         Real vf = 0.5*(vi + iw_(m,M1_IW_V1,k,j,ip));
         Real g0f = 0.5*(iw_(m,M1_IW_G0,k,j,i) + iw_(m,M1_IW_G0,k,j,ip));
-        rr -= nu*cr*th*(f0n_(m,k,j,i+1) - ch*dt*vf*g0f);
+        rr -= nu*cr*om*th*(f0n_(m,k,j,i+1) - ch*dt*vf*g0f);
+        // the HLL part: its E'_L coefficient is >= 0 (diagonal) and its E'_R coefficient
+        // <= 0 (upper off-diagonal), so the blend keeps the M-matrix.
+        bb += nu*ifw_(m,M1_IFW_HCL,k,j,i+1);
+        cc += nu*ifw_(m,M1_IFW_HCR,k,j,i+1);
+        rr -= nu*ifw_(m,M1_IFW_DG,k,j,i+1);
         if (vf > 0.0) {
           bb += nu*cr*ai;
         } else {
@@ -409,14 +701,18 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       // ---- face i-1/2
       if (i > is || cyclic) {
         int im = (i > is) ? (i-1) : ie;
+        Real om = 1.0 - ifw_(m,M1_IFW_AL,k,j,i);
         Real ktf = 0.5*(opac_(m,M1_OP_T,k,j,im) + opac_(m,M1_OP_T,k,j,i));
         Real th = 1.0/(1.0 + ch*dt*ktf);
-        Real df = th*ch*ch*dt/dx;
+        Real df = om*th*ch*ch*dt/dx;
         bb += nu*df*wi;
         aa -= nu*df*iw_(m,M1_IW_WCHI,k,j,im);
         Real vf = 0.5*(iw_(m,M1_IW_V1,k,j,im) + vi);
         Real g0f = 0.5*(iw_(m,M1_IW_G0,k,j,im) + iw_(m,M1_IW_G0,k,j,i));
-        rr += nu*cr*th*(f0n_(m,k,j,i) - ch*dt*vf*g0f);
+        rr += nu*cr*om*th*(f0n_(m,k,j,i) - ch*dt*vf*g0f);
+        aa -= nu*ifw_(m,M1_IFW_HCL,k,j,i);
+        bb -= nu*ifw_(m,M1_IFW_HCR,k,j,i);
+        rr += nu*ifw_(m,M1_IFW_DG,k,j,i);
         if (vf > 0.0) {
           aa -= nu*cr*iw_(m,M1_IW_ADV,k,j,im);
         } else {
@@ -521,7 +817,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         }
         iw_(m,M1_IW_EP,k,j,i) = enew;
         iw_(m,M1_IW_TP,k,j,i) = tnew;
-        Real re = fabs(enew - eold)/fmax(fabs(enew), 1.0e-300);
+        Real re = fabs(enew - eold)/fmax(fmax(fabs(enew), escale), 1.0e-300);
         Real rt = fabs(tnew - told)/fmax(fabs(tnew), 1.0e-300);
         iw_(m,M1_IW_RES,k,j,i) = fmax(re, rt);
       });
@@ -531,7 +827,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         Real enew = fmax(iw_(m,M1_IW_S2,k,j,i), efl);
         Real eold = iw_(m,M1_IW_EP,k,j,i);
         iw_(m,M1_IW_EP,k,j,i) = enew;
-        iw_(m,M1_IW_RES,k,j,i) = fabs(enew - eold)/fmax(fabs(enew), 1.0e-300);
+        iw_(m,M1_IW_RES,k,j,i) = fabs(enew - eold)
+                                 /fmax(fmax(fabs(enew), escale), 1.0e-300);
       });
     }
 
@@ -567,6 +864,19 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                    - iw_(m,M1_IW_WCHI,k,j,im)*iw_(m,M1_IW_EP,k,j,im))/dx;
         Real fn = th*(f0n_(m,k,j,(i == ie+1 && cyclic) ? is : i)
                       - ch*cl*dt*gr - ch*dt*vf*g0f);
+        // the SAME blend the row was assembled with, so that the stored comoving face
+        // flux (which the restart file carries, which the momentum deposit uses and which
+        // the next iterate's reduced flux is built from) is the flux the solve applied.
+        // The F0^n MEMORY term sits entirely in the F_diff branch: in the thin limit
+        // alpha -> 1 and it must NOT survive, or the lagged flux would fight the upwind
+        // HLL flux and the front would be damped exactly as it is under `central`.
+        Real al = ifw_(m,M1_IFW_AL,k,j,i);
+        if (al > 0.0) {
+          Real gh = ifw_(m,M1_IFW_HCL,k,j,i)*iw_(m,M1_IW_EP,k,j,im)
+                    + ifw_(m,M1_IFW_HCR,k,j,i)*iw_(m,M1_IW_EP,k,j,ip)
+                    + ifw_(m,M1_IFW_DG,k,j,i);
+          fn = (1.0 - al)*fn + (cl/ch)*gh;
+        }
         f0_(m,k,j,i) = fn;
       }
     });
@@ -645,14 +955,14 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         Real wl = 0.5, wr = 0.5;
         if (i == is && !cyclic) {
           ktl = opac_(m,M1_OP_T,k,j,i);
-          wl = 1.0;
+          wl = bmhalf ? 0.5 : 1.0;
         } else {
           int im = (i == is) ? ie : (i-1);
           ktl = 0.5*(opac_(m,M1_OP_T,k,j,im) + opac_(m,M1_OP_T,k,j,i));
         }
         if (i == ie && !cyclic) {
           ktr = opac_(m,M1_OP_T,k,j,i);
-          wr = 1.0;
+          wr = bmhalf ? 0.5 : 1.0;
         } else {
           int ip = (i == ie) ? is : (i+1);
           ktr = 0.5*(opac_(m,M1_OP_T,k,j,i) + opac_(m,M1_OP_T,k,j,ip));
