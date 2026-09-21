@@ -151,6 +151,7 @@ class RadiationM1 {
   Real cfl_rad;        // CFL number for the radiation substep (default 0.4)
   Real e_floor;        // floor on E
   bool subcycle;       // sub-cycle the module inside the mesh timestep
+  int chi_kind;        // M1_CHI_*: levermore (closure = m1) | minerbo | kershaw
   bool eddington;      // closure = eddington (chi = 1/3); default is the M1 closure
   std::string thick_flux_str;   // none | ap_hll | scaled
   int thick_flux;               // M1_THICK_*

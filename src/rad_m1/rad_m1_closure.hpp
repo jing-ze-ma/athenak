@@ -36,13 +36,29 @@ constexpr int M1_APFORM_ALPHA2  = 1;  // the 1b pair: Berthon for dc, alpha^2 fo
 
 //----------------------------------------------------------------------------------------
 //! \fn M1Chi
-//! \brief Levermore closure factor chi as a function of the reduced flux magnitude.
-//! chi(0) = 1/3 (isotropic), chi(1) = 1 (free streaming).
+//! \brief closure factor chi as a function of the reduced flux magnitude; chi(0) = 1/3
+//! (isotropic), chi(1) = 1 (free streaming) for every kind.
+//!   M1_CHI_LEVERMORE  Levermore (1984), the Lorentz-boosted isotropic field (default)
+//!   M1_CHI_MINERBO    Minerbo (1978) classical maximum entropy, the usual polynomial fit
+//!                     chi = 1/3 + (2 f^2/15)(3 - f + 3 f^2)
+//!   M1_CHI_KERSHAW    Kershaw (1976), chi = (1 + 2 f^2)/3
+//! The explicit HLL wave speeds are Levermore's, so the other two are accepted with the
+//! implicit transports only (docs/dev/rad_m1_closure_survey.md).
+
+constexpr int M1_CHI_LEVERMORE = 0;
+constexpr int M1_CHI_MINERBO   = 1;
+constexpr int M1_CHI_KERSHAW   = 2;
 
 KOKKOS_INLINE_FUNCTION
-Real M1Chi(const Real fnorm) {
+Real M1Chi(const Real fnorm, const int kind = M1_CHI_LEVERMORE) {
   Real f2 = fnorm*fnorm;
   if (f2 > 1.0) {f2 = 1.0;}
+  if (kind == M1_CHI_MINERBO) {
+    Real f = sqrt(f2);
+    return 1.0/3.0 + (2.0*f2/15.0)*(3.0 - f + 3.0*f2);
+  } else if (kind == M1_CHI_KERSHAW) {
+    return (1.0 + 2.0*f2)/3.0;
+  }
   Real s = sqrt(fmax(4.0 - 3.0*f2, 0.0));
   return (3.0 + 4.0*f2)/(5.0 + 2.0*s);
 }

@@ -99,6 +99,7 @@ TaskStatus RadiationM1::Coupling(Driver *pdrive, int stage) {
   Real efl = e_floor;
   Real ar = arad;
   bool edd = eddington;
+  const int chk = chi_kind;
   bool feedback = gas_feedback;
   bool ovc = source_ovc;
   bool fref = (force_ref == M1_FREF_WB_ARAD);
@@ -161,7 +162,7 @@ TaskStatus RadiationM1::Coupling(Driver *pdrive, int stage) {
     // closure of the (*) state, used for P* and kept as the flux DIRECTION in (b)
     Real r1, r2, r3, rn;
     M1ReducedFlux(cl, es, fs1, fs2, fs3, r1, r2, r3, rn);
-    Real chi = edd ? (1.0/3.0) : M1Chi(rn);
+    Real chi = edd ? (1.0/3.0) : M1Chi(rn, chk);
     Real p11, p21, p31, p12, p22, p32, p13, p23, p33;
     M1PressureCol(1, es, r1, r2, r3, rn, chi, p11, p21, p31);
     M1PressureCol(2, es, r1, r2, r3, rn, chi, p12, p22, p32);

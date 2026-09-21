@@ -2071,6 +2071,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   Real ar = arad;
   Real dt = dt_sub;
   bool edd = eddington;
+  const int chk = chi_kind;
   bool ovc = source_ovc;
   bool feedback = gas_feedback;
   // MILESTONE 3b phase E: the DEBUG switches of the explicit coupling are honoured here
@@ -2263,7 +2264,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       Real rf = f1/(cl*e);
       if (rf > 1.0) {rf = 1.0;}
       if (rf < -1.0) {rf = -1.0;}
-      Real chi = edd ? (1.0/3.0) : M1Chi(fabs(rf));
+      Real chi = edd ? (1.0/3.0) : M1Chi(fabs(rf), chk);
       Real v1 = iw_(m,M1_IW_V1,k,j,i);
       Real de0;
       if (!trans) {
@@ -2283,7 +2284,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         Real fm = sqrt(f1*f1 + f2c*f2c + f3c*f3c);
         Real rfm = fm/(cl*e);
         if (rfm > 1.0) {rfm = 1.0;}
-        chi = edd ? (1.0/3.0) : M1Chi(rfm);
+        chi = edd ? (1.0/3.0) : M1Chi(rfm, chk);
         Real ifm = 1.0/fmax(fm, 1.0e-300);
         Real n1 = f1*ifm, n2 = f2c*ifm, n3 = f3c*ifm;
         Real v2 = iw_(m,M1_IW_V2,k,j,i), v3 = iw_(m,M1_IW_V3,k,j,i);

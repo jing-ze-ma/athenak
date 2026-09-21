@@ -353,14 +353,27 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
 
   // closure
   {std::string cl = pin->GetOrAddString("rad_m1","closure","m1");
+  chi_kind = M1_CHI_LEVERMORE;
   if (cl.compare("m1") == 0) {
     eddington = false;
+  } else if (cl.compare("minerbo") == 0) {
+    eddington = false;
+    chi_kind = M1_CHI_MINERBO;
+  } else if (cl.compare("kershaw") == 0) {
+    eddington = false;
+    chi_kind = M1_CHI_KERSHAW;
   } else if (cl.compare("eddington") == 0) {
     eddington = true;
   } else {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
       << std::endl << "<rad_m1>/closure = '" << cl << "' not implemented "
-      << "(m1 | eddington)" << std::endl;
+      << "(m1 | minerbo | kershaw | eddington)" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  if (chi_kind != M1_CHI_LEVERMORE && transport == M1_TRANSPORT_EXPLICIT) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+      << std::endl << "<rad_m1>/closure = '" << cl << "' needs an implicit transport: "
+      << "the explicit HLL wave speeds are Levermore's" << std::endl;
     std::exit(EXIT_FAILURE);
   }
   }

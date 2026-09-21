@@ -201,3 +201,35 @@ memory term of the transverse face flux.  Seeded slab, tlim = 30, closure_lag = 
 Picard 6.3 mean / 7 max.  REMAINING: KE_1 ~ 2e27 (100x the x1-only run), 80 % of it above
 i = 42 (tau <~ 10), v1_rms 0.3-1.9e5 cm/s rising to the top, KE_2 only 6 % of it;
 F1top/Fin dips to 0.92 at 10 s.  Not yet understood.
+
+ADDENDUM 2 (main session, 09-21 night): the thin-top instability is the M1 CLOSURE feedback
+  Profiles (cmp_prof.py; H_x1 = implicit_x1, H_lp = lp 0.5 + offdiag none, I_edd = 2-D,
+  closure = eddington, NO limiter, offdiag = operator), seeded slab, top cells at t = 5 s:
+    arm     dE/E (horizontal)  de/e       max f2      rms(v1-<v1>)   fallbacks  Picard
+    H_x1    4e-6               2e-6       0           0.2-10 cm/s    --         --
+    H_lp    0.4-0.5            0.09-0.13  1.0 / 0.2-0.5  1e5 cm/s    0          6.3
+    I_edd   < 1e-7             < 1e-7     2e-7        0.01-0.2 cm/s  0          4.1
+  I_edd at 30 s: KE_2 5.8e21, F1top/Fin 1.000, dE/E <= 3e-6, max f2 <= 1e-5.  Its KE_1
+  (2.7e26) is 100 % the horizontally coherent part: a 1-D adjustment, because the IC column
+  (m1_rad_ic_V2) was built with the Levermore closure, not chi = 1/3.
+  => the limiter only caps the instability (H_lp still fragments the top 5 decades above
+  the seed); with a FIXED Eddington factor the 2-D implicit transport is clean.  The
+  unstable loop is the per-step LAGGED M1 closure (chi, n) in optically thin cells at
+  c dt/dx ~ 7e3 (phase D's Picard divergence of the closure, moved from inside the step
+  to step-to-step by implicit_closure_lag = step).
+
+ADDENDUM 3 (09-21 night): published alternatives to Levermore do NOT survive either
+  New <rad_m1>/closure = minerbo | kershaw (implicit transports only; default m1 verified
+  byte-identical on the 3 s seeded slab, J_m1 == Ga_new).  Seeded slab, no limiter,
+  offdiag = operator, closure_lag = step, 30 s:
+    closure    KE_1 / KE_2 (30 s)   F1top/Fin   fallbacks  top dE/E   max f2   Picard
+    eddington  2.7e26 / 5.8e21      1.000       0/186      < 3e-6     1e-5     4.1
+    levermore  6.1e28 / 1.7e29      0.66        198/203    ~1         1.0      12.5
+    minerbo    4.7e28 / 2.0e29      0.36        200/206    0.5-1.3    1.0      13.8 (2 NC)
+    kershaw    5.7e28 / 1.7e29      0.43        201/206    0.8-1.3    1.0      10.9
+  => every chi(f) closure with the per-step lagged (chi, n) is unstable in the thin top;
+  only the fixed Eddington factor is clean.  The instability is a property of the lagged
+  nonlinear closure at c dt/dx ~ 7e3, not of Levermore's particular chi(f).
+  COST (serial CPU, 84x32, zone-cycles/cpu-s, runs shared the node so +-20 %): hydro only
+  2.1e5; implicit_x1 2.1e4; implicit 2-D eddington 2.0e4 (Picard 4.1); lp+none 1.6e4;
+  levermore/minerbo broken arms 4-5e3.
