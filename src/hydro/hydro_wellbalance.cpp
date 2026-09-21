@@ -6,6 +6,9 @@
 //! \file hydro_wellbalance.cpp
 //! \brief Implements functions for deviation-based well-balanced scheme.
 
+#include <cstdlib>
+#include <iostream>
+
 #include "athena.hpp"
 #include "mesh/mesh.hpp"
 #include "driver/driver.hpp"
@@ -288,8 +291,8 @@ void Hydro::BuildWBCache(const int jl, const int ju, const int kl, const int ku)
   const WBOption wbo = wb_option;
   const bool gen = eos.IsGeneral();
   auto &w0_ = w0;
-  auto &phicc = phicc0;
-  auto &phi = phi0.x1f;
+  auto &phicc = phicc_wb;
+  auto &phi = phi_wb_x1f;
   auto &wt = wtemp;
   auto &c = wbq0;
   par_for("wbcache", DevExeSpace(), 0, nmb1, kl, ku, jl, ju, is-1, ie+1,
@@ -325,6 +328,69 @@ void Hydro::BuildWBCache(const int jl, const int ju, const int kl, const int ku)
       for (int q=0; q<5; ++q) c(m,10+q,k,j,i) = gm1*c(m,5+q,k,j,i);
     }
   });
+  return;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void Hydro::EnableWBEffectivePotential()
+//! \brief give the x1 well-balanced scheme its OWN potential, separate from phicc0 and
+//! phi0.x1f.
+//!
+//! WHY.  When a radiative acceleration a_rad(z) supports part of the weight of the
+//! column -- an operator-split radiation force, which the gas pressure gradient does not
+//! see inside the hydro stage -- the stratification the code integrates is hydrostatic
+//! under g_eff = g - a_rad, not under g.  The well-balanced pair (the background the
+//! reconstruction subtracts and re-adds, and the gravity source, which IS that
+//! background's own pressure drop) then has to be built with the potential of g_eff, or
+//! it is not balanced at all and the split source kicks the column every step.
+//!
+//! WHAT THIS DOES NOT TOUCH.  The conserved energy under <hydro>/etotgrav carries
+//! rho*Phi with the TRUE potential, and so do the gravitational flux and every
+//! diagnostic: a_rad is not a potential force, its work is done by the module that
+//! applies it.  Only BuildWBCache, the x1 WB reconstruction and the problem generator's
+//! WB gravity source read these arrays.
+//!
+//! The caller must fill them afterwards, on EVERY start INCLUDING a restart: like
+//! phicc0, they are problem-generator state and restart.cpp does not carry them.
+
+void Hydro::EnableWBEffectivePotential() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int nmb = pmy_pack->nmb_thispack;
+  const int ncells1 = indcs.nx1 + 2*(indcs.ng);
+  const int ncells2 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*(indcs.ng)) : 1;
+  const int ncells3 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*(indcs.ng)) : 1;
+  // NOT Kokkos::realloc: these Views currently ALIAS phicc0 and phi0.x1f (the ctor makes
+  // them shallow copies) and have exactly their extents, and realloc keeps the existing
+  // allocation when the extents are unchanged -- which would leave the effective
+  // potential writing straight into the TRUE one.  That is not a subtle failure: the
+  // conserved energy carries rho*phicc0 under etotgrav, so ConToPrim would hand back an
+  // internal energy wrong by rho*(Phi - Phi_eff), a factor of several at the top of the
+  // column.  Assign brand-new Views instead.
+  phicc_wb = DvceArray4D<Real>("phi_cc_wb", nmb, ncells3, ncells2, ncells1);
+  phi_wb_x1f = DvceArray4D<Real>("phi_fc_wb", nmb, ncells3, ncells2, ncells1+1);
+  use_phi_wb = true;
+  return;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void Hydro::SetWBEffectivePotential(...)
+//! \brief copy a host-built effective potential into the device arrays.
+//!
+//! Provided for the milestone in which a radiation module, not a file, supplies a_rad:
+//! build Phi_eff on the host with whatever discretisation that module implies and hand
+//! it over here.  A problem generator that can build it on the device may equally write
+//! phicc_wb / phi_wb_x1f directly.
+
+void Hydro::SetWBEffectivePotential(const HostArray4D<Real> &phicc_in,
+                                    const HostArray4D<Real> &phix1f_in) {
+  if (!use_phi_wb) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+              << std::endl << "SetWBEffectivePotential called before "
+              << "EnableWBEffectivePotential" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  Kokkos::deep_copy(phicc_wb, phicc_in);
+  Kokkos::deep_copy(phi_wb_x1f, phix1f_in);
   return;
 }
 
