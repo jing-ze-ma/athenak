@@ -1,0 +1,11 @@
+perf profile, serial CPU, seeded 2-D He slab 84x32, transport = implicit, closure = eddington,
+offdiag = operator, closure_lag = step, 40 s (248 steps, Picard 4.1), binary 56c97566.  09-21.
+Shares of total samples (start-up EOS table build EOSCompositionModel::EvaluateAt = 14.7 %, excluded
+below; hydro-only is ~10x faster per step, so hydro is ~10 % of the run):
+  EOS table lookups inside the per-cell gas-energy / T solve
+     (Interpolate 11.7, HermitePatch 6.6, EvalFromLogs 3.7, log10/exp 3.7, lambda#12 1.4)  ~27 %
+  off-diagonal Krylov operator (ImplicitOffDiagOp 8.1 + M1POff 5.8) -- identically ZERO
+     work for chi = 1/3                                                                   ~14 %
+  halos (ImplicitTransverseHalo 9.1 + ImplicitKrylovHalo 6.5)                             ~16 %
+  the solver proper (Precond 5.0, ApplyOp 3.3, Tridiag 1.8, BiCGStab vector ops 3.7)      ~14 %
+  opacity tables ~2 %; everything else (hydro, outputs, ...) the rest.

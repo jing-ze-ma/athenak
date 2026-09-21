@@ -376,6 +376,30 @@ class RadiationM1 {
   DvceArray4D<Real> klx2, klx3;  // the lagged limiter opacity klim_f itself, which
                                 // follows implicit_closure_lag
 
+  // ---- MILESTONE 3e: ANDERSON ACCELERATION of the Picard map, <rad_m1>/implicit_accel.
+  // Default `none` = nothing below is allocated and nothing is called, so every earlier
+  // configuration is bitwise unchanged.  See ImplicitAccelApply.
+  int impl_accel;               // M1_IACC_*: none | anderson
+  int impl_and_m;               // <rad_m1>/implicit_anderson_m, the history depth
+  Real impl_and_beta;           // <rad_m1>/implicit_anderson_beta, the mixing parameter
+  int impl_and_start;           // <rad_m1>/implicit_anderson_start, the first (0-based)
+                                // Picard pass that is accelerated; earlier passes are
+                                // plain Picard and only feed the history
+  int aa_nc;                    // components of the fixed-point vector: 4 in multi-D
+                                // (E,F1,F2,F3), 2 on an x1-only solve (E,F1)
+  DvceArray5D<Real> aa_xc;      // (m,nc,k,j,i) x_k, the SCALED state entering the pass
+  DvceArray5D<Real> aa_fc;      // (m,nc,k,j,i) g_k = G(x_k) - x_k, scaled
+  DvceArray5D<Real> aa_xp, aa_fp;  // the previous pass' pair, for the differences
+  DvceArray6D<Real> aa_dx;      // (m,q,nc,k,j,i) history of dX_q = x_{q+1} - x_q
+  DvceArray6D<Real> aa_df;      // ...and of dG_q = g_{q+1} - g_q; a RING of impl_and_m
+  DvceArray4D<Real> aa_sc;      // (m,k,j,i) the per-cell scale max(E^n, e_floor), fixed
+                                // over the step, that makes E and F/c commensurate
+  int aa_nh;                    // history columns in use
+  int aa_head;                  // ring head (the column the next difference overwrites)
+  bool aa_hasp;                 // aa_xp/aa_fp hold a usable previous pass
+  Real aa_fnp;                  // ||g|| of the previous pass (< 0: none)
+  Real aa_nacc, aa_nrst;        // accelerated passes and history restarts, whole run
+
   // evolved variables
   DvceArray5D<Real> u0;         // (E, F1, F2, F3)
   DvceArray5D<Real> u1;         // state at the start of the substep
@@ -450,6 +474,14 @@ class RadiationM1 {
   //! limiter opacity klx2/klx3) for the current pass.  Inert under
   //! implicit_trans_limit = none, where thx2/thx3 are not even allocated.
   void ImplicitTransTheta(bool newk);
+  //! milestone 3e: snapshot the SCALED state entering a Picard pass (x_k) into aa_xc.
+  //! Called at the top of every pass when implicit_accel = anderson.
+  void ImplicitAccelSave();
+  //! milestone 3e: at the end of Picard pass `it` the iw state is G(x_k).  Form the
+  //! fixed-point residual g_k, push (dX, dG) onto the history, solve the small least-
+  //! squares problem and overwrite the iw state with the accelerated iterate x_{k+1}
+  //! (realizability re-applied).  The statistics go into aa_nacc / aa_nrst.
+  void ImplicitAccelApply(int it);
   //! milestone 3b phase C: the x1 line solve of the assembled rows (M1_IW_TA..TR ->
   //! M1_IW_S2), Thomas or cyclic Thomas, gathered over the stack when part_nblk > 1.
   //! It IS the preconditioner of the BiCGStab wrapper and the line-Jacobi pass itself.

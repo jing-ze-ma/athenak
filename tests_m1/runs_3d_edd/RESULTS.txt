@@ -1,0 +1,243 @@
+================================================================================
+tests_m1/runs_3d_edd -- AN EDDINGTON-CONSISTENT He-SLAB COLUMN (V3edd) AND ITS
+                        STATIC / SEEDED 2-D SLAB TESTS
+2026-09-21, viper, serial CPU, frozen binary tests_m1/runs_3d_edd/athena_56c97566
+(= commit 56c97566; no source edits, no rebuild).
+================================================================================
+
+WHY.  runs_3b8 (ADDENDUM 2/3) showed that the 2-D implicit M1 transport at the true
+speed of light is stable ONLY with a FIXED Eddington factor, <rad_m1>/closure =
+eddington; every chi(f) closure with the per-step lagged (chi, n) fragments the
+optically thin top.  But the column we were running it on (ic_m1_V2* + m1_rad_ic_V2)
+was built by bench/m1_stage2/ic/build_ic.py for the LEVERMORE closure, and the
+mismatch showed up as a coherent 1-D adjustment: I_edd's KE_1 = 2.7e26 at 30 s was
+100 % horizontally coherent.  This directory rebuilds the column for chi = 1/3 and
+measures what is left.
+
+--------------------------------------------------------------------------------
+1.  WHAT WAS BUILT
+--------------------------------------------------------------------------------
+build_ic.py (bench/m1_stage2/ic/) gained two options; NOTHING else changed:
+
+    --closure levermore|eddington   (default levermore = the old behaviour)
+    --label NAME                    (name used in the output file names)
+
+With --closure eddington the single function m1_chi(f) returns 1/3 instead of the
+Levermore expression.  Everything downstream is untouched, so the same closed form
+still integrates the plane-parallel radiation ODE,
+
+    dP_rad/dz = -rho kappa_R F/c ,  P_rad = chi E ,  f = F/(cE)
+    ->  chi(f)/f = q0 + tau   ->   E(tau) = 3 (F/c) (q0 + tau),  f = 1/(3(q0+tau)),
+
+i.e. the textbook Eddington grey atmosphere; the hydrostatic + radiative-equilibrium
++ EOS solve, the shooting on rho at the tau_bot face, the grid and the writers are
+bit-for-bit the same code path.
+
+REGRESSION.  `python3 build_ic.py --variant V2 --outdir <tmp>` with the default
+closure reproduces ic_m1_V2.txt, ic_m1_V2_pgen.txt and arad_V2.txt BYTE-IDENTICALLY
+(cmp, all three).  (The printed grad_ad numbers in the new run.log differ from the
+old bench/m1_stage2/ic/run.log because of an unrelated chit/chir factor-2 fix made to
+build_ic.py after V2 was written; the solution itself is unaffected.  The V2 rows
+quoted below come from that FRESH regeneration, not from the stale run.log.)
+
+COMMAND ACTUALLY RUN
+    cd bench/m1_stage2/ic
+    python3 build_ic.py --variant V2 --closure eddington --label V3edd \
+                        --outdir . > run_V3edd.log
+
+FILES PRODUCED
+    bench/m1_stage2/ic/ic_m1_V3edd.txt        (12-column diagnostic table, 94 nodes)
+    bench/m1_stage2/ic/ic_m1_V3edd_pgen.txt   (z rho eint, 3009 fine nodes)  <- problem/ic_profile
+    bench/m1_stage2/ic/arad_V3edd.txt         (z, kappa_R F/c, 3009 nodes)   <- problem/wb_arad_file
+    bench/m1_stage2/ic/run_V3edd.log
+    bench/m1_stage2/ic/ic_m1_compare_V3edd.png  (the figure of this run; the original
+                                  V1+V2 ic_m1_compare.png was restored in place)
+    tests_m1/runs_3d_edd/m1_rad_ic_V3edd.txt  (z E F1, 94 nodes = cols 1,5,6 of
+                                  ic_m1_V3edd.txt, same %.10e format as V2)
+Grid and cut are IDENTICAL to V2: 84 cells of dz = 2.6521941e6 from z = -1.8149339e8
+to +4.1290910e7, cut at the mesh face nearest tau = 100 (tau_face = 99.03).
+
+--------------------------------------------------------------------------------
+2.  THE TOP CONDITION, AND WHY
+--------------------------------------------------------------------------------
+The implicit solver's top boundary is <rad_m1>/implicit_bc_x1max = marshak with
+marshak_q = 0.5.  In rad_m1_implicit.cpp the top face flux is built as
+
+    F_face = sgn * c * mq * (E_topcell - E_bath) ,   mq = marshak_q = 0.5, E_bath = 0
+
+(the face-flux block near line 2849, and the matching matrix row near line 2666).
+So the DISCRETE steady state with F = F_in demands E in the topmost ACTIVE CELL
+= 2 F/c exactly, i.e. f = F/(cE) = 1/2 there -- and indeed every I_* run of runs_3b8
+ends with "min E from the solve = 1.651198e+05" = 2 F/c.
+
+I therefore kept the V2 convention f(tau = 0) = 1/2, which with chi = 1/3 gives
+
+    q0 = chi/f = (1/3)/(1/2) = 2/3          (the classical Eddington q(0) = 2/3)
+    E(tau) = (F/c) (2 + 3 tau)
+
+The one approximation in that choice is that it pins f = 1/2 at the mesh top FACE
+(tau = 0) rather than at the top cell CENTRE (tau = 1.1e-3).  The two anchors differ
+by 3*tau_topcell/2 = 0.17 % in E, far below everything else in the column, and V2 was
+built the same way, so the S0/S1 comparison is clean.  A POSTERIORI (step 3): the
+static V3edd run keeps <f1> in the top cell at 0.5000 for the whole 100 s, and the
+V2-built Levermore column relaxes to the same 0.5000 -- the BC is satisfied by both,
+which is exactly why the Levermore column has to MOVE to get there.
+
+Side check that falls out of chi = 1/3: the diffusion flux the profile carries,
+-c/(3 rho kappa) dE/dz, is now 0.9999-1.0000 of F at tau > 10 (V2: 1.0000-1.0014),
+and T(tau = 2/3) = 81281 K vs T_eff = 81283 K (0.003 %), as the Eddington solution must.
+
+--------------------------------------------------------------------------------
+3.  V3edd vs V2 (both on the 94 written nodes; "top" = topmost ACTIVE cell, i = 83)
+--------------------------------------------------------------------------------
+  quantity                          V2 (Levermore)     V3edd        ratio
+  chi at the top cell                  0.464014      0.333333       0.718
+  f   at the top cell                  0.498551      0.499176       1.0013
+  E   at the top cell [erg/cc]         1.65608e+05   1.65400e+05    0.99875
+  P_rad = chi E at the top [barye]     7.6844e+04    5.5133e+04     0.717
+  T   at the top cell [K]              68400         68379          0.99969
+  rho at the top cell [g/cc]           1.81339e-09   1.82344e-09    1.00554
+  P_gas at the top cell [barye]        7587.6        7627.3         1.0052
+  tau at the top cell                  0.0010927     0.0011008
+  T(tau = 2/3) [K]                     83471         81281  (= T_eff)
+  z(tau = 2/3) [cm]                   -3.599e+06    -2.548e+06
+  z(tau = 1)   [cm]                   -9.360e+06    -8.228e+06
+  kappa_R peak [cm^2/g]                3.6168        3.6197
+  tau at the kappa_R peak              29.616        29.871
+  min g_eff/g in the box               0.24991       0.2493
+  column mass [g/cm^2]                 33.959        34.011
+  FeCZ edges, grad_rad > grad_ad(mix)  tau 4.476 .. 63.967   tau 4.363 .. 64.270
+  tau at the bottom active cell        97.564        97.813
+
+  WHOLE ACTIVE COLUMN, V3edd/V2 - 1:
+    max |d rho/rho| = 2.81 %      max |d T/T|    = 1.95 %
+    max |d P_gas/P_gas| = 0.93 %  max |d E/E|    = 7.59 %
+
+So the GAS structure barely moves (< 3 %), while the RADIATION pressure at the
+surface drops 28 % -- P_rad = chi E with chi 0.464 -> 1/3 at the same E.  That 28 %
+is precisely the support the Levermore column was carrying and the Eddington run does
+not, and it is what the S0 adjustment below is made of.
+
+--------------------------------------------------------------------------------
+4.  THE THREE RUNS
+--------------------------------------------------------------------------------
+All: 84 x 32, serial, `timeout 1500`, binary athena_56c97566, closure = eddington,
+implicit_offdiag = operator, implicit_closure_lag = step, implicit_trans_limit = none,
+transport = implicit, chat = c.  v_MLT = 1.86e4 cm/s, F_in = 2.475202e15.
+
+  S0  V2 (Levermore) files + closure = eddington, vpert = 0, tlim = 100  [the control]
+        bash run_3d.sh S0 ../runs_3b8/he_slab_m1_2d.athinput \
+             rad_m1/closure=eddington rad_m1/implicit_offdiag=operator \
+             rad_m1/implicit_closure_lag=step rad_m1/implicit_trans_limit=none \
+             problem/vpert=0.0 time/tlim=100.0
+  S1  V3edd files, vpert = 0, tlim = 100
+        bash run_3d.sh S1 he_slab_m1_2d_V3edd.athinput problem/vpert=0.0 time/tlim=100.0
+  S2  V3edd files, vpert = 1.0e-3 (eint seed), tlim = 200, output2/5 dt = 50
+        bash run_3d.sh S2 he_slab_m1_2d_V3edd.athinput problem/vpert=1.0e-3 \
+             time/tlim=200.0 output5/dt=50.0 output2/dt=50.0
+
+STATIC ARMS (hydro.hst col 8 = 1-KE, user.hst col 6 = V1max, col 3 = F1top)
+
+      t [s]        KE_1 (S0)     KE_1 (S1)   V1max S0    V1max S1   F1top/Fin (S1)
+        1          4.66e+24      4.81e+23    3.83e+03    3.43e+03     1.0000
+        5          8.85e+25      5.69e+24    1.93e+04    9.92e+03     1.0000
+       10          1.90e+26      1.38e+25    3.20e+04    1.29e+04     1.0000
+       30          2.73e+26      2.17e+25    4.43e+04    1.82e+04     1.0000
+      100          3.80e+26      8.72e+25    7.49e+04    2.00e+04     1.0000
+    max|v1| over the run  1.089e+05 = 5.86 v_MLT   3.228e+04 = 1.74 v_MLT
+    F1top/Fin range       1.0000 .. 1.0005        1.0000 .. 1.0000
+    Picard mean/max       4.01 / 5                4.04 / 5
+    NON-CONVERGED         0                       0
+    positivity fallbacks  0                       0
+    bicgstab breakdowns   0                       0
+    zone-cycles/cpu-s     2.36e+04                2.43e+04
+
+  => V3edd is 12.6x quieter than the V2 column (S0) in KE_1 at 30 s, 4.4x at 100 s, and 3.4x
+     quieter in max|v1|.  S0's KE_1 at 30 s (2.73e26) reproduces runs_3b8/I_edd
+     (2.7e26) to 1 %, confirming that I_edd's KE_1 was entirely this IC mismatch.
+     S1 at 30 s (2.17e25) sits ON TOP of the quiet reference, runs_3b7/A7_implx1
+     (implicit_x1, no transverse flux): KE_1 = 2.2e25.  The residual 1.7 v_MLT is
+     therefore NOT a 2-D/closure artefact; it is whatever the 1-D implicit arm also
+     has (see "open" below).
+
+SEEDED ARM S2 (vpert = 1.0e-3, eint seed, k = 4..6, tau 5..50)
+
+      t [s]      KE_1        KE_2       V1max      F1top/Fin
+        1      4.91e+23    5.67e+22    3.43e+03     1.0000
+        5      5.70e+24    1.18e+22    9.92e+03     1.0000
+       10      1.39e+25    3.28e+22    1.29e+04     1.0000
+       30      2.17e+25    5.54e+21    1.82e+04     1.0000
+      100      8.72e+25    2.41e+21    2.00e+04     1.0000
+      200      1.09e+26    1.78e+21    1.87e+04     1.0000
+    max|v1| 3.265e+04 = 1.76 v_MLT;  KE_2 max 6.41e+22 (at t < 1 s), then DECAYS
+    F1top/Fin = 1.0000 over the whole 200 s
+    Picard mean 4.16 / max 5, NON-CONVERGED 0, positivity fallbacks 0,
+    bicgstab breakdowns 8, line_jacobi fallbacks 0, min E from the solve 1.649163e+05
+    zone-cycles/cpu-s 2.05e+04
+
+  Reference: the implicit_x1 (no transverse flux) arm had KE_1 2.2e25 / KE_2 4.9e22
+  at 30 s.  S2 has 2.17e25 / 5.5e21 -- the same KE_1, and KE_2 NINE TIMES SMALLER.
+  The hydro-only seeded arm reached 0.21 v_MLT at 200 s; S2's horizontal motion is
+  far below that and falling.
+
+LAYER TABLE, `python3 ../runs_3b8/cmp_prof.py S2`, LAST dump (t = 200 s):
+  S2  KE1 mean-part 2.19e+02  fluct-part 2.33e-02   (i.e. 99.99 % horizontally coherent)
+   i=83 <v1> +1.87e+04  rms(v1-<v1>) 8.0e+00  rms v2 7.0e+01  dE/E 1.7e-07  de/e 1.5e-05  <f1> 0.5000  max f2 6.9e-06
+   i=80 <v1> -5.04e+03  rms(v1-<v1>) 3.5e+01  rms v2 5.8e+01  dE/E 1.4e-07  de/e 1.1e-05  <f1> 0.4911  max f2 2.1e-06
+   i=76 <v1> +2.41e+03  rms(v1-<v1>) 2.1e+01  rms v2 1.3e+01  dE/E 7.5e-07  de/e 5.5e-06  <f1> 0.4586  max f2 2.5e-06
+   i=72 <v1> +6.06e+03  rms(v1-<v1>) 9.6e+00  rms v2 1.7e+01  dE/E 9.8e-07  de/e 1.9e-06  <f1> 0.3826  max f2 1.2e-06
+   i=68 <v1> +6.73e+03  rms(v1-<v1>) 8.4e+00  rms v2 1.0e+01  dE/E 5.2e-07  de/e 2.3e-06  <f1> 0.2759  max f2 4.6e-07
+   i=64 <v1> +4.53e+03  rms(v1-<v1>) 6.5e+00  rms v2 7.8e+00  dE/E 5.0e-07  de/e 2.2e-06  <f1> 0.1828  max f2 2.6e-07
+   i=58 <v1> +1.29e+03  rms(v1-<v1>) 1.5e+01  rms v2 1.2e+01  dE/E 5.9e-07  de/e 1.7e-06  <f1> 0.0959  max f2 1.4e-07
+   i=50 <v1> +3.95e+03  rms(v1-<v1>) 3.4e+01  rms v2 3.1e+01  dE/E 3.6e-07  de/e 1.2e-06  <f1> 0.0428  max f2 4.3e-08
+   i=40 <v1> +2.57e+03  rms(v1-<v1>) 8.9e+01  rms v2 1.3e+01  dE/E 3.1e-07  de/e 2.8e-07  <f1> 0.0176  max f2 1.4e-08
+   i=25 <v1> -3.00e+03  rms(v1-<v1>) 2.0e+01  rms v2 1.6e+01  dE/E 8.3e-08  de/e 2.2e-07  <f1> 0.0073  max f2 2.0e-09
+   i= 5 <v1> +5.28e+03  rms(v1-<v1>) 7.5e-01  rms v2 2.4e+00  dE/E 8.3e-08  de/e 1.4e-07  <f1> 0.0039  max f2 5.5e-10
+  (For contrast, the broken Levermore arms of runs_3b8 had dE/E ~ 1 and max f2 = 1.0
+  in these same cells.)
+
+--------------------------------------------------------------------------------
+5.  VERDICT AND WHAT IS STILL OPEN
+--------------------------------------------------------------------------------
+* The IC mismatch was real and is now removed: with V3edd the Eddington slab is
+  12.6x quieter at 30 s and reproduces the quiet 1-D implicit_x1 reference exactly.
+  The top-BC choice is self-consistent -- <f1> in the top cell sits at 0.5000 for
+  200 s without moving.
+* The 2-D implicit transport itself is clean on the seeded arm: dE/E <= 1e-6,
+  max f2 <= 7e-6, KE_2 DECAYING, F1top/Fin = 1.0000, 0 NON-CONVERGED, 0 positivity
+  fallbacks, Picard 4.2 mean / 5 max, at ~2e4 zone-cycles/cpu-s.
+* SURPRISE / OPEN 1.  The target ("max|v| <~ 1 v_MLT") is missed by 1.8x: both S1 and
+  S2 settle at max|v1| ~ 1.75 v_MLT, and KE_1 is still CREEPING UP at 200 s
+  (1.09e26 vs 8.7e25 at 100 s), 99.99 % of it horizontally coherent.  It is NOT a
+  closure-IC artefact any more (S1 == A7_implx1 at 30 s), so it belongs to the 1-D
+  implicit column: candidates are the discrete hydrostatic balance (the fine-grid
+  trapezoid residual is 9e-12, but the CENTRED residual the well-balanced scheme sees
+  is up to 8.9e-3, median 6.0e-4), the frozen a_rad_ref (wb_arad) against the evolving
+  kappa_R F/c, and the half-share momentum deposit at the two x1 boundary faces.
+  Worth one arm each before reading anything physical off this slab.
+* SURPRISE / OPEN 2.  The seed DECAYS.  The gas-only EOS makes the column
+  Schwarzschild stable by the criterion that applies to it: build_ic.py reports
+  grad_rad > grad_ad(GAS ONLY) NOWHERE in the box (the "unstable tau 4.36 .. 64.27"
+  row uses grad_ad of a gas+radiation MIXTURE, which is not the EOS being evolved).
+  So on this column no convection should be expected at all, with either closure --
+  which is a separate problem from the 85x growth of the 3b7 seeded slab and should
+  be settled before any convection claim is made on a V3edd slab.
+
+--------------------------------------------------------------------------------
+6.  HOUSEKEEPING
+--------------------------------------------------------------------------------
+*.bin and rst/ of S0/S1/S2 were deleted after the numbers above were measured (GPFS
+inode quota); log.txt, m1slab.hydro.hst, m1slab.user.hst, column_used.txt and
+rt_profile.bin are kept.  Scripts: run_3d.sh (launcher), an.py (hst summary).
+No C++ source was edited, nothing was built, nothing was committed, no Slurm job was
+submitted.  build_ic.py was edited IN PLACE in bench/m1_stage2/ic/ (the --closure /
+--label options only); bench/m1_stage2/ic/build_ic.py.orig is untouched.
+
+ADDENDUM (main session): S3_long = S2 continued to 2400 s (5 turnovers), 14894 solves, Picard
+4.20 mean / 6 max, 0 non-converged, 0 positivity fallbacks, F1top/Fin 1.0000 throughout, dt 0.161
+constant, 2006 cpu-s serial.  KE_1 flat at 1.1e26 (the coherent ~1 v_MLT 1-D drift).  KE_2 decays
+to 1.8e21 by 200 s, then GROWS exponentially: 2.0e21 (400) 3.9e21 (1000) 1.3e22 (2000) 2.1e22
+(2400), d ln KE_2/dt = 1.2e-3 /s, i.e. a velocity growth rate 6e-4 /s = 0.3 v_MLT/H_p.  So the
+column IS convectively unstable (the "seed decays" reading of S2 was the transient), but the
+growth is ~30x below the ideal large-k estimate of runs_3b7 (0.016-0.027 /s): radiatively damped,
+inefficient convection.  The two-stream box_w8 onset was slow too (0.9 v_MLT after 13 turnovers).

@@ -1367,3 +1367,118 @@ transverse halo (`M1_NHALO_T` 13 -> 14) so that both blocks of a shared face bui
   face-MEAN `E`, and with `E_min/E_mean ~ 0.03` across a row the thin cell can still sit
   on the clip.  A positivity-preserving operator and/or an AP transverse face flux are
   still needed.
+
+## 16. ANDERSON acceleration of the Picard map (`implicit_accel`, default off)
+
+### What it is for
+
+`transport = implicit` solves the face-eliminated scalar-`E` system with the closure
+`(chi, n)` LAGGED, either per Picard pass (`implicit_closure_lag = pass`) or frozen over
+the step (`= step`).  On the seeded 2-D He slab at `c dt/dx ~ 7e3` neither works: per pass
+the Picard iteration DIVERGES in the optically thin top (under-relaxation to 0.3 diverges
+too), and per step each step converges but the run is unstable step to step (sect. 15).
+The mechanism is that terms like `c^2 dt d_1(P_12)`, `P_12 = (3 chi - 1)/2 n_1 n_2 E`, act
+as an advection of the transverse flux treated EXPLICITLY at that CFL, so the fixed-point
+map has gain >> 1.  A CONVERGED nonlinear (backward-Euler) closure should be stable, and
+the cheapest way to converge a divergent fixed-point map without building a Jacobian is
+Anderson acceleration (Walker & Ni 2011, SIAM J. Numer. Anal. **49**, 1715), which is
+equivalent to a multisecant quasi-Newton method on `g(x) = G(x) - x`.
+
+### The fixed-point vector
+
+One Picard pass is the map `x -> G(x)` with
+
+    x = ( E , F_1 , F_2 , F_3 )   per cell,
+
+the four quantities the TOP of a pass rebuilds the closure from (`rf = |F|/(cE)` gives
+`chi`, `n = F/|F|`, hence the whole Eddington tensor, `D_ab`, the enthalpy-flux
+coefficients `a_d` and `de0`).  Nothing else a pass reads is independent state: the face
+fluxes `f0x1/f0x2/f0x3` are recomputed from `E` at the end of every pass, the velocities
+and (by default) the opacities are frozen over the step, and `T'` is slaved to `E'` by the
+scalar root find.  Accelerating `E` alone would be inconsistent -- the closure would still
+be built from the unaccelerated `F`.
+
+**Scaling.**  `E` and `F` are not commensurate (`F ~ c E`) and `E` spans ~10 decades
+between the base and the thin top, which is exactly where the iteration needs the help.
+Every cell is therefore divided by its OWN energy scale `S = max(E^n, e_floor)`, frozen
+over the step so that the least-squares problem stays linear across passes, and the flux
+components by `c S`:
+
+    x = ( E/S , F_1/(c S) , F_2/(c S) , F_3/(c S) ) ,
+
+i.e. the Anderson residual is the RELATIVE fixed-point residual cell by cell.  On an
+x1-only solve `iw` has no `F_2/F_3` slot and the vector is `(E/S, F_1/(cS))`.
+
+### The algorithm
+
+With `g_k = G(x_k) - x_k` and the histories `dX_t = x_{t+1} - x_t`, `dG_t = g_{t+1} - g_t`
+of the last `m` passes,
+
+    gamma   = argmin || g_k - dG gamma ||_2 ,
+    x_{k+1} = x_k + beta g_k - (dX + beta dG) gamma .
+
+`beta = 1` is the undamped form; `gamma = 0` (empty history) is plain Picard.  The least
+squares is solved on the HOST from the normal equations `(dG^T dG + lambda I) gamma =
+dG^T g_k` with `lambda = 1e-10 tr(dG^T dG)/m` (Tikhonov, so a nearly dependent history is
+harmless), `m <= 10`.  Every inner product is a GLOBAL sum: one `MPI_Allreduce` of `m+1`
+doubles per history row (`M1GlobalSumArr`), so the answer does not depend on the
+decomposition.  The histories are device Views in a ring buffer, allocated only when the
+acceleration is on.
+
+Safeguards:
+
+* the accelerated iterate has the realizability limits re-applied (`E >= e_floor`,
+  `|F| <= c E`) before it becomes the next lagged state;
+* if `||g_k||` grows by more than 10x over the previous pass the history is DROPPED and
+  that pass falls back to plain Picard (counted as a "history restart");
+* the last pass of a step is never accelerated, so the state a step ends on is the one the
+  stored face fluxes were built from;
+* the convergence test is UNCHANGED (`implicit_tol` on `|dE|/E` plus the true 7-point
+  linear residual against `implicit_lin_tol`), measured on the UNACCELERATED map, which is
+  the fixed-point residual itself.
+
+### Parameters (all inert at their defaults)
+
+    implicit_accel          = none | anderson   (default none = bitwise the 3b/3c code)
+    implicit_anderson_m     = 5                 (history depth, 1..10)
+    implicit_anderson_beta  = 1.0               (mixing, (0,1])
+    implicit_anderson_start = 1                 (first 0-based pass that is accelerated)
+
+`ImplicitReport` prints `accelerated passes` (total and per solve) and `history restarts`
+next to the existing Picard mean/max/NON-CONVERGED line.
+
+### Gates (serial CPU, `tests_m1/runs_3e_newton/RESULTS.txt`)
+
+* **N-a, default-off inertness**: the seeded slab to `tlim = 3` with
+  `implicit_closure_lag = step` gives `m1slab.hydro.hst` and `m1slab.user.hst`
+  BYTE-IDENTICAL to the stored pre-change output, and every solver statistic agrees
+  (19 solves, Picard mean 8.157895, max 11, 14 positivity fallbacks, min E -5.957282e6).
+* **N-b, the static slab** (`vpert = 0`, `tlim = 20`, `lag = pass`): `m = 5`, `beta = 1`
+  cuts the Picard count from **80.35 mean / 129 max to 22.74 / 50** (3.5x / 2.6x) with
+  0 non-converged steps in both and 16 history restarts, and the BiCGStab reductions
+  fall 155120 -> 75688.  The answer is unchanged: mass agrees to 1.1e-14, total energy
+  to 6.3e-12, the transverse momenta and kinetic energies exactly; the SIGNED,
+  zero-crossing `1-mom` and `V1mid` agree to 2.0e-8 of their own amplitude at t = 1.1,
+  drifting to 1.6e-7 by t = 20 -- the accumulation of two iterations stopping at
+  different points inside the same `implicit_tol = 1e-8`, not a defect.
+* **N-c, the seeded slab: FAIL.**  With `lag = pass` and the closure per pass, *every*
+  step of *every* arm exhausts `implicit_maxit = 200` and is NON-CONVERGED -- no
+  acceleration (72/72 steps), `m = 5, beta = 1` (56/56), `m = 10, beta = 0.5` (42/42),
+  and `m = 5` plus `implicit_trans_limit = lp, fmax = 1` (19/19).  The residual stalls
+  at a MEDIAN `|dE|/E ~ 1.9e2` with excursions to 1e8-1e10, always in the optically
+  thin top: the worst cell's depth index is confined to `i = 75..86` of the active
+  range `3..86` (the top 12 cells, tau < ~0.1), never below.  The positivity fallback
+  fires on 100 % of the steps in all four arms and the linear solve returns
+  `min E = -3e6 .. -3e7`, i.e. the closure is handed a non-realizable state every pass.
+  What the acceleration does buy is a monotone improvement in the final 7-point linear
+  residual (mean 1.0e3 with none, 1.5e2 at `m = 10, beta = 0.5`, 7.2e1 with the lp
+  limiter) and, with the limiter, a `dt` that stays at its initial 0.1613 s.
+  **Conclusion:** the stall is not the RATE of the outer iteration, so accelerating this
+  map further is not the way forward; the non-M-matrix 9-point off-diagonal operator and
+  the unbounded transverse face flux are.  A positivity/asymptotic-preserving transverse
+  flux, or a true Newton step on the coupled `(E,F)` system with the closure Jacobian,
+  is what the evidence asks for.
+
+`ImplicitSolve` also gained a diagnostic (unconditional, but printed only for a step
+that fails to converge): one line with the pass count, the Picard and linear residuals
+and the `(m,k,j,i)` of the worst cell.  It changes no number.

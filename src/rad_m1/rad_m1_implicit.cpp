@@ -179,6 +179,33 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (!(impl_tfmax > 0.0)) {
     ImplFatal("<rad_m1>/implicit_trans_fmax must be positive");
   }
+  // ---- MILESTONE 3e: ANDERSON acceleration of the outer (Picard) iteration.  `none` is
+  // not merely the default: nothing below is allocated and ImplicitAccelSave/Apply are
+  // never called, so an input file that does not name it is bitwise unchanged.
+  {std::string sa = pin->GetOrAddString("rad_m1","implicit_accel","none");
+  if (sa.compare("none") == 0) {
+    impl_accel = M1_IACC_NONE;
+  } else if (sa.compare("anderson") == 0) {
+    impl_accel = M1_IACC_ANDERSON;
+  } else {
+    ImplFatal("<rad_m1>/implicit_accel = '" + sa
+              + "' is not a choice (none | anderson)");
+  }
+  }
+  impl_and_m = pin->GetOrAddInteger("rad_m1","implicit_anderson_m",5);
+  impl_and_beta = pin->GetOrAddReal("rad_m1","implicit_anderson_beta",1.0);
+  impl_and_start = pin->GetOrAddInteger("rad_m1","implicit_anderson_start",1);
+  if (impl_accel == M1_IACC_ANDERSON) {
+    if (impl_and_m < 1 || impl_and_m > M1_AND_MMAX) {
+      ImplFatal("<rad_m1>/implicit_anderson_m must lie in [1,10]");
+    }
+    if (!(impl_and_beta > 0.0) || impl_and_beta > 1.0) {
+      ImplFatal("<rad_m1>/implicit_anderson_beta must lie in (0,1]");
+    }
+    if (impl_and_start < 1) {
+      ImplFatal("<rad_m1>/implicit_anderson_start must be >= 1 (pass 0 has no history)");
+    }
+  }
   impl_opac_update = pin->GetOrAddBoolean("rad_m1","implicit_opac_update",false);
   impl_allow_multid = pin->GetOrAddBoolean("rad_m1","implicit_allow_multid",false);
   marshak_q = pin->GetOrAddReal("rad_m1","marshak_q",0.5);
@@ -451,6 +478,24 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       pbval_kr->InitializeBuffers(1);
     }
   }
+  // MILESTONE 3e: the Anderson histories.  Allocated ONLY when the acceleration is on.
+  if (impl_accel != M1_IACC_NONE) {
+    aa_nc = trans_on ? 4 : 2;
+    Kokkos::realloc(aa_xc, nmb, aa_nc, ncells3, ncells2, ncells1);
+    Kokkos::deep_copy(aa_xc, 0.0);
+    Kokkos::realloc(aa_fc, nmb, aa_nc, ncells3, ncells2, ncells1);
+    Kokkos::deep_copy(aa_fc, 0.0);
+    Kokkos::realloc(aa_xp, nmb, aa_nc, ncells3, ncells2, ncells1);
+    Kokkos::deep_copy(aa_xp, 0.0);
+    Kokkos::realloc(aa_fp, nmb, aa_nc, ncells3, ncells2, ncells1);
+    Kokkos::deep_copy(aa_fp, 0.0);
+    Kokkos::realloc(aa_dx, nmb, impl_and_m, aa_nc, ncells3, ncells2, ncells1);
+    Kokkos::deep_copy(aa_dx, 0.0);
+    Kokkos::realloc(aa_df, nmb, impl_and_m, aa_nc, ncells3, ncells2, ncells1);
+    Kokkos::deep_copy(aa_df, 0.0);
+    Kokkos::realloc(aa_sc, nmb, ncells3, ncells2, ncells1);
+    Kokkos::deep_copy(aa_sc, 1.0);
+  }
   ImplicitPartitionInit();
 
   if (global_variable::my_rank == 0) {
@@ -487,6 +532,14 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
                     ? (" fmax=" + std::to_string(impl_tfmax)) : std::string(""))
                 << std::endl;
     }
+    std::cout << "         implicit_accel="
+              << ((impl_accel == M1_IACC_ANDERSON) ? "anderson" : "none")
+              << ((impl_accel == M1_IACC_ANDERSON)
+                  ? (" m=" + std::to_string(impl_and_m)
+                     + " beta=" + std::to_string(impl_and_beta)
+                     + " start=" + std::to_string(impl_and_start)
+                     + " ncomp=" + std::to_string(aa_nc))
+                  : std::string("")) << std::endl;
     std::cout << "         x1 boundaries: min=" << ibc_x1min << " max=" << ibc_x1max
               << " (0 marshak, 1 flux, 2 reflect, 3 periodic) flux_min=" << iflux_x1min
               << " flux_max=" << iflux_x1max << std::endl;
@@ -1717,6 +1770,66 @@ void M1GlobalSum2(Real &a, Real &b) {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn M1GlobalSumArr
+//! \brief n global SUMs in one MPI_Allreduce (milestone 3e: the row of the Anderson
+//! normal equations).  Same reproducibility argument as M1GlobalSum2.
+
+void M1GlobalSumArr(Real *a, const int n) {
+#if MPI_PARALLEL_ENABLED
+  Real glb[NREDUCTION_VARIABLES];
+  MPI_Allreduce(a, glb, n, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+  for (int q = 0; q < n; ++q) {a[q] = glb[q];}
+#else
+  (void)a;
+  (void)n;
+#endif
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn M1SolveSPD
+//! \brief solve the small SYMMETRIC system A g = b in place by Gaussian elimination with
+//! partial pivoting (n <= M1_AND_MMAX).  Returns false if the matrix is numerically
+//! singular, in which case the caller falls back to a plain Picard pass.
+
+bool M1SolveSPD(Real *a, Real *b, const int n) {
+  for (int p = 0; p < n; ++p) {
+    int piv = p;
+    Real amx = fabs(a[p*n + p]);
+    for (int r = p+1; r < n; ++r) {
+      Real v = fabs(a[r*n + p]);
+      if (v > amx) {amx = v; piv = r;}
+    }
+    if (!(amx > 0.0)) {return false;}
+    if (piv != p) {
+      for (int q = 0; q < n; ++q) {
+        Real t = a[p*n + q];
+        a[p*n + q] = a[piv*n + q];
+        a[piv*n + q] = t;
+      }
+      Real t = b[p];
+      b[p] = b[piv];
+      b[piv] = t;
+    }
+    Real ip = 1.0/a[p*n + p];
+    for (int r = p+1; r < n; ++r) {
+      Real fct = a[r*n + p]*ip;
+      if (fct == 0.0) {continue;}
+      for (int q = p; q < n; ++q) {a[r*n + q] -= fct*a[p*n + q];}
+      b[r] -= fct*b[p];
+    }
+  }
+  for (int r = n-1; r >= 0; --r) {
+    Real s = b[r];
+    for (int q = r+1; q < n; ++q) {s -= a[r*n + q]*b[q];}
+    b[r] = s/a[r*n + r];
+  }
+  for (int r = 0; r < n; ++r) {
+    if (!std::isfinite(b[r])) {return false;}
+  }
+  return true;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn M1GlobalMax
 void M1GlobalMax(Real &a) {
 #if MPI_PARALLEL_ENABLED
@@ -1728,6 +1841,213 @@ void M1GlobalMax(Real &a) {
 #endif
 }
 } // namespace
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::ImplicitAccelSave
+//! \brief MILESTONE 3e: snapshot the SCALED state x_k entering a Picard pass.
+//!
+//! The fixed-point vector is the COMPLETE lagged state one pass maps to the next: the
+//! solve unknown E and the three cell-centred fluxes F_1, F_2, F_3, which are what the
+//! top of the next pass rebuilds the closure (chi, n, hence the whole Eddington tensor)
+//! from.  Nothing else a pass reads is independent state: the face fluxes f0x1/f0x2/f0x3
+//! are recomputed from E at the end of every pass, the velocities and opacities are
+//! frozen over the step, and the temperature is slaved to E by the scalar root find.
+//!
+//! SCALING.  E and F are not commensurate (F ~ c E), and an unscaled 2-norm would be
+//! dominated by the optically thick base, where E is ~ 10 orders above the thin top --
+//! which is exactly where the iteration does NOT need help.  Each cell is therefore
+//! divided by its OWN energy scale S = max(E^n, e_floor), fixed over the whole step (so
+//! the least-squares problem stays linear across passes), and the flux components by c S:
+//!   x = ( E/S , F_1/(c S) , F_2/(c S) , F_3/(c S) ) ,
+//! i.e. the Anderson residual is the RELATIVE fixed-point residual, cell by cell, and the
+//! thin top carries the same weight as the base.
+
+void RadiationM1::ImplicitAccelSave() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  int is = indcs.is, ie = indcs.ie;
+  int js = indcs.js, je = indcs.je;
+  int ks = indcs.ks, ke = indcs.ke;
+  int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto iw_ = iw;
+  auto xc_ = aa_xc;
+  auto sc_ = aa_sc;
+  const Real cl = c_light;
+  const int nc = aa_nc;
+  par_for("m1_acc_save", DevExeSpace(), 0, nmb1, 0, nc-1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int c, const int k, const int j, const int i) {
+    Real w = 1.0/(sc_(m,k,j,i)*((c == 0) ? 1.0 : cl));
+    xc_(m,c,k,j,i) = iw_(m,M1AccComp(c),k,j,i)*w;
+  });
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::ImplicitAccelApply
+//! \brief MILESTONE 3e: ANDERSON ACCELERATION (Walker & Ni 2011, SIAM J. Numer.
+//! Anal. 49, 1715) of the Picard map, applied at the END of pass `it`, where the iw
+//! state is G(x_k).
+//!
+//! With g_k = G(x_k) - x_k and the histories dX_t = x_{t+1} - x_t and dG_t = g_{t+1} -
+//! g_t of the last m passes, the accelerated iterate is
+//!
+//!   gamma = argmin_gamma || g_k - dG gamma ||_2 ,
+//!   x_{k+1} = x_k + beta g_k - (dX + beta dG) gamma ,
+//!
+//! i.e. the beta-mixed map evaluated at the point of the affine span of the last m
+//! iterates whose linear residual model is smallest.  beta = 1 is the plain (undamped)
+//! form.  The least-squares problem is solved on the HOST from the NORMAL equations
+//! (dG^T dG + lambda I) gamma = dG^T g_k, with lambda = M1_AND_REG tr(dG^T dG)/m a
+//! Tikhonov term that makes a nearly dependent history harmless; every inner product is a
+//! GLOBAL sum (one MPI_Allreduce of m+1 doubles per history row), so the answer does not
+//! depend on the decomposition.
+//!
+//! REALIZABILITY is re-applied to the accelerated iterate (E >= e_floor, |F| <= c E)
+//! before it is written back: the extrapolation is a linear combination of realizable
+//! states and the M1 admissible set is convex in (E,F), but the E floor and the per-cell
+//! scaling break exact convexity, and an inadmissible lagged state would give the next
+//! pass a closure with chi outside [1/3,1].
+//!
+//! SAFEGUARD: if ||g_k|| exceeds 10x the previous pass', the history is dropped and the
+//! pass falls back to plain Picard (x_{k+1} = G(x_k)); the event is counted.  The
+//! convergence test of the outer loop is untouched -- it still measures |dE|/E and the
+//! true linear residual of the UNACCELERATED map, which is the fixed-point residual.
+
+void RadiationM1::ImplicitAccelApply(int it) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  int is = indcs.is, ie = indcs.ie;
+  int js = indcs.js, je = indcs.je;
+  int ks = indcs.ks, ke = indcs.ke;
+  int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto iw_ = iw;
+  auto xc_ = aa_xc;
+  auto fc_ = aa_fc;
+  auto xp_ = aa_xp;
+  auto fp_ = aa_fp;
+  auto dx_ = aa_dx;
+  auto df_ = aa_df;
+  auto sc_ = aa_sc;
+  const Real cl = c_light;
+  const Real efl = e_floor;
+  const int nc = aa_nc;
+  const int mm = impl_and_m;
+
+  // (1) the fixed-point residual of this pass, in the scaled variables
+  par_for("m1_acc_res", DevExeSpace(), 0, nmb1, 0, nc-1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int c, const int k, const int j, const int i) {
+    Real w = 1.0/(sc_(m,k,j,i)*((c == 0) ? 1.0 : cl));
+    fc_(m,c,k,j,i) = iw_(m,M1AccComp(c),k,j,i)*w - xc_(m,c,k,j,i);
+  });
+
+  // (2) its GLOBAL 2-norm
+  Real fn2 = 0.0;
+  Kokkos::parallel_reduce("m1_acc_nrm",
+  Kokkos::MDRangePolicy<Kokkos::Rank<5>>(DevExeSpace(), {0,0,ks,js,is},
+                                         {nmb1+1,nc,ke+1,je+1,ie+1}),
+  KOKKOS_LAMBDA(const int m, const int c, const int k, const int j, const int i,
+                Real &lsum) {
+    lsum += SQR(fc_(m,c,k,j,i));
+  }, Kokkos::Sum<Real>(fn2));
+  {Real dum = 0.0;
+  M1GlobalSum2(fn2, dum);}
+  Real fnorm = sqrt(fmax(fn2, 0.0));
+
+  // (3) the divergence safeguard
+  bool restart = false;
+  if (aa_fnp > 0.0 && fnorm > 10.0*aa_fnp) {
+    aa_nh = 0;
+    aa_head = 0;
+    aa_hasp = false;
+    aa_nrst += 1.0;
+    restart = true;
+  }
+
+  // (4) push (dX, dG) onto the ring, then remember this pass
+  if (aa_hasp) {
+    const int q = aa_head;
+    par_for("m1_acc_push", DevExeSpace(), 0, nmb1, 0, nc-1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int c, const int k, const int j, const int i) {
+      dx_(m,q,c,k,j,i) = xc_(m,c,k,j,i) - xp_(m,c,k,j,i);
+      df_(m,q,c,k,j,i) = fc_(m,c,k,j,i) - fp_(m,c,k,j,i);
+    });
+    aa_head = (aa_head + 1) % mm;
+    aa_nh = std::min(aa_nh + 1, mm);
+  }
+  Kokkos::deep_copy(DevExeSpace(), aa_xp, aa_xc);
+  Kokkos::deep_copy(DevExeSpace(), aa_fp, aa_fc);
+  aa_hasp = true;
+  aa_fnp = fnorm;
+
+  // nothing to extrapolate from (or the safeguard fired, or the pass is before
+  // implicit_anderson_start): leave the iw state as G(x_k), which IS the Picard iterate
+  if (restart || it < impl_and_start || aa_nh < 1) {return;}
+
+  // (5) the m x m normal equations, one GLOBAL reduction of m+1 numbers per row.  The
+  // history columns in use are the last aa_nh pushed onto the ring.
+  const int nh = aa_nh;
+  int cid[M1_AND_MMAX];
+  for (int t = 0; t < nh; ++t) {cid[t] = (aa_head - nh + t + mm) % mm;}
+  Real amat[M1_AND_MMAX*M1_AND_MMAX], bvec[M1_AND_MMAX];
+  Real trc = 0.0;
+  for (int t = 0; t < nh; ++t) {
+    const int qr = cid[t];
+    array_sum::GlobalSum row;
+    Kokkos::parallel_reduce("m1_acc_dot",
+    Kokkos::MDRangePolicy<Kokkos::Rank<5>>(DevExeSpace(), {0,0,ks,js,is},
+                                           {nmb1+1,nc,ke+1,je+1,ie+1}),
+    KOKKOS_LAMBDA(const int m, const int c, const int k, const int j, const int i,
+                  array_sum::GlobalSum &lsum) {
+      Real dq = df_(m,qr,c,k,j,i);
+      for (int r = 0; r < nh; ++r) {
+        lsum.the_array[r] += dq*df_(m,cid[r],c,k,j,i);
+      }
+      lsum.the_array[nh] += dq*fc_(m,c,k,j,i);
+    }, Kokkos::Sum<array_sum::GlobalSum>(row));
+    M1GlobalSumArr(row.the_array, nh+1);
+    for (int r = 0; r < nh; ++r) {amat[t*nh + r] = row.the_array[r];}
+    bvec[t] = row.the_array[nh];
+    trc += row.the_array[t];
+  }
+  const Real lam = M1_AND_REG*fmax(trc, 1.0e-300)/static_cast<Real>(nh);
+  for (int t = 0; t < nh; ++t) {amat[t*nh + t] += lam;}
+  if (!M1SolveSPD(amat, bvec, nh)) {return;}
+
+  // (6) the accelerated iterate, with the realizability limits re-applied
+  Real gam[M1_AND_MMAX];
+  for (int t = 0; t < nh; ++t) {gam[t] = bvec[t];}
+  const Real bta = impl_and_beta;
+  par_for("m1_acc_upd", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    Real xn[4] = {0.0, 0.0, 0.0, 0.0};
+    for (int c = 0; c < nc; ++c) {
+      Real v = xc_(m,c,k,j,i) + bta*fc_(m,c,k,j,i);
+      for (int t = 0; t < nh; ++t) {
+        const int q = cid[t];
+        v -= gam[t]*(dx_(m,q,c,k,j,i) + bta*df_(m,q,c,k,j,i));
+      }
+      xn[c] = v;
+    }
+    Real s = sc_(m,k,j,i);
+    Real e = xn[0]*s;
+    if (!(e > efl)) {e = efl;}
+    Real f1 = xn[1]*cl*s;
+    Real f2 = (nc > 2) ? (xn[2]*cl*s) : 0.0;
+    Real f3 = (nc > 3) ? (xn[3]*cl*s) : 0.0;
+    Real fm = sqrt(f1*f1 + f2*f2 + f3*f3);
+    Real fmx = cl*e;
+    if (fm > fmx) {
+      Real sf = fmx/fm;
+      f1 *= sf;
+      f2 *= sf;
+      f3 *= sf;
+    }
+    iw_(m,M1_IW_EP,k,j,i) = e;
+    iw_(m,M1_IW_F1,k,j,i) = f1;
+    if (nc > 2) {
+      iw_(m,M1_IW_F2,k,j,i) = f2;
+      iw_(m,M1_IW_F3,k,j,i) = f3;
+    }
+  });
+  aa_nacc += 1.0;
+}
 
 //----------------------------------------------------------------------------------------
 //! \fn int RadiationM1::ImplicitBiCGStab
@@ -1974,6 +2294,15 @@ void RadiationM1::ImplicitReport() {
   std::cout << "<rad_m1> implicit transport: solves=" << impl_nstep
             << " Picard iterations mean=" << mean << " max=" << impl_itmax
             << " NON-CONVERGED=" << impl_nfail << std::endl;
+  if (impl_accel == M1_IACC_ANDERSON) {
+    Real apst = (impl_nstep > 0.0) ? (aa_nacc/impl_nstep) : 0.0;
+    std::cout << "<rad_m1> anderson: m=" << impl_and_m
+              << " beta=" << impl_and_beta
+              << " start=" << impl_and_start
+              << " accelerated passes=" << aa_nacc
+              << " (" << apst << " per solve)"
+              << " history restarts=" << aa_nrst << std::endl;
+  }
   if (trans_on) {
     Real lmean = (impl_nstep > 0.0) ? (impl_linsum/impl_nstep) : 0.0;
     std::cout << "<rad_m1> implicit transverse ("
@@ -2221,11 +2550,29 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     ImplicitX1Halo(true);
   }
 
+  // MILESTONE 3e: the Anderson histories start empty at every step, and the per-cell
+  // scale of the fixed-point vector is frozen at the start-of-step energy (see
+  // ImplicitAccelSave).  Nothing here runs under implicit_accel = none.
+  const bool accel = (impl_accel != M1_IACC_NONE);
+  if (accel) {
+    aa_nh = 0;
+    aa_head = 0;
+    aa_hasp = false;
+    aa_fnp = -1.0;
+    auto sc_ = aa_sc;
+    par_for("m1_acc_scale", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      sc_(m,k,j,i) = fmax(iw_(m,M1_IW_EN,k,j,i), efl);
+    });
+  }
+
   //--------------------------------------------------------------------- the Picard loop
   int it = 0;
   Real resid = 0.0;
   bool converged = false;
   for (it = 0; it < impl_maxit && !converged; ++it) {
+    // MILESTONE 3e: x_k, the state this pass maps
+    if (accel) {ImplicitAccelSave();}
     // the off-diagonal mode of THIS pass (the positivity fallback can change it)
     const int odm = od_now;
     // the closure moves only after the first pass, and not at all under
@@ -2975,6 +3322,19 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       lresid /= rhsmax;
     }
     converged = (resid < impl_tol) && (!trans || (lresid < impl_lin_tol));
+    // MILESTONE 3e: ACCELERATE.  Only on a pass that is followed by another one: the
+    // state the step ENDS on must be the one the face fluxes of step (g) were built
+    // from, so a converged pass -- and the last pass of a non-converged step -- keeps
+    // the plain Picard iterate.  The accelerated E then has to reach the ghost cells
+    // before the next pass assembles a row from it.
+    if (accel && !converged && (it + 1 < impl_maxit)) {
+      ImplicitAccelApply(it);
+      if (trans) {
+        ImplicitTransverseHalo();
+      } else {
+        ImplicitX1Halo(true);
+      }
+    }
   }
   if (trans) {
     // refresh the stored transverse face fluxes with the CONVERGED E, so that the
@@ -2996,7 +3356,40 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   impl_nstep += 1.0;
   impl_itsum += static_cast<Real>(it);
   impl_itmax = std::max(impl_itmax, static_cast<Real>(it));
-  if (!converged) {impl_nfail += 1.0;}
+  if (!converged) {
+    impl_nfail += 1.0;
+    // MILESTONE 3e: WHERE the outer iteration stalled.  One line per non-converged step
+    // with the cell that owns the largest Picard residual -- the depth index i is what
+    // says whether the stall is in the optically thin top or at the base.  Nothing here
+    // changes any number; a step that converges (every step of every earlier gate)
+    // prints nothing.
+    using MaxLoc = Kokkos::MaxLoc<Real,int>;
+    MaxLoc::value_type mloc;
+    const int nj = je - js + 1, ni = ie - is + 1;
+    Kokkos::parallel_reduce("m1_impl_resloc",
+    Kokkos::MDRangePolicy<Kokkos::Rank<4>>(DevExeSpace(), {0,ks,js,is},
+                                           {nmb1+1,ke+1,je+1,ie+1}),
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i,
+                  MaxLoc::value_type &lmx) {
+      Real r = iw_(m,M1_IW_RES,k,j,i);
+      if (r > lmx.val) {
+        lmx.val = r;
+        lmx.loc = ((m*(ke-ks+1) + (k-ks))*nj + (j-js))*ni + (i-is);
+      }
+    }, MaxLoc(mloc));
+    int lmb = mloc.loc/((ke-ks+1)*nj*ni);
+    int lrem = mloc.loc - lmb*(ke-ks+1)*nj*ni;
+    int lk = lrem/(nj*ni);
+    int lj = (lrem - lk*nj*ni)/ni;
+    int li = lrem - lk*nj*ni - lj*ni;
+    if (global_variable::my_rank == 0) {
+      std::cout << "<rad_m1> Picard NON-CONVERGED after " << it << " passes:"
+                << " resid=" << resid << " (tol " << impl_tol << ")"
+                << " lin_resid=" << lresid
+                << " worst cell of rank 0 (m,k,j,i)=(" << lmb << "," << (lk+ks) << ","
+                << (lj+js) << "," << (li+is) << ")" << std::endl;
+    }
+  }
 
   //------------------------------------------------------------------------- write back
   par_for("m1_impl_wb", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,

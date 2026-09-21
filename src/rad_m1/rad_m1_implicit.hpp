@@ -102,6 +102,25 @@ constexpr int M1_IBC_EFIX     = 4;   // Dirichlet: the boundary CELL keeps the E
                                      // of E in a pure-scattering column (imposed flux on
                                      // both ends leaves the operator singular).
 
+// <rad_m1>/implicit_accel: how the OUTER (Picard) fixed-point iteration on the lagged
+// closure is accelerated (milestone 3e).  The Picard map of one pass is
+//   x = (E, F_1, F_2, F_3)  ->  G(x) = the state the pass leaves behind,
+// the closure (chi, n) being rebuilt from x at the top of the pass.  In the optically
+// thin top of the seeded 2-D He slab the map has gain >> 1 (the transverse pressure
+// divergence acts as an advection at c dt/dx ~ 7e3 treated explicitly), so plain Picard
+// -- and plain under-relaxation -- diverge.
+constexpr int M1_IACC_NONE     = 0;  // the bare Picard map; bitwise the pre-3e code.
+constexpr int M1_IACC_ANDERSON = 1;  // Anderson acceleration (Walker & Ni 2011): the next
+                                     // iterate is the beta-mixed G over the affine span
+                                     // of the last m iterates that minimises the
+                                     // fixed-point residual g = G(x) - x in the 2-norm.
+constexpr Real M1_AND_REG = 1.0e-10;  // the Tikhonov weight of the normal equations,
+                                      // relative to tr(dG^T dG)/m
+constexpr int M1_AND_MMAX = 10;      // the hard cap on implicit_anderson_m: the m x m
+                                     // normal equations are solved on the HOST and the
+                                     // per-column dot products ride one GlobalSum of
+                                     // m + 1 <= NREDUCTION_VARIABLES entries.
+
 // <rad_m1>/implicit_flux: which spatial form the implicit E-flux takes at a face
 // (milestone 3a2, LIMIT 1 of the 3a findings).
 constexpr int M1_IFLUX_CENTRAL = 0;  // 3a: the face-eliminated central (diffusion) form
@@ -246,6 +265,25 @@ constexpr int M1_IW_LRES = 31;  // |U(E^{k+1}) - U(E^k)|, the TRUE residual of t
 constexpr int M1_IW_F2   = 32;  // the derived cell-centred x2 flux of the iterate
 constexpr int M1_IW_F3   = 33;  // ...and the x3 one; both drive the lagged closure
 constexpr int M1_NIW = 34;
+
+//----------------------------------------------------------------------------------------
+//! \fn M1AccComp
+//! \brief MILESTONE 3e: the iw component that carries component c of the Anderson
+//! fixed-point vector.  c = 0 is E and c = 1..3 the cell-centred fluxes F_1, F_2, F_3 --
+//! that is, the state the top of a Picard pass rebuilds the closure (chi, n) from, so
+//! that one pass IS the map x -> G(x) whose fixed point is being sought.  The x1-only
+//! solve has no F_2/F_3 slot in iw and uses c = 0,1 alone.
+
+KOKKOS_INLINE_FUNCTION
+int M1AccComp(const int c) {
+  switch (c) {
+    case 0: return M1_IW_EP;
+    case 1: return M1_IW_F1;
+    case 2: return M1_IW_F2;
+    default: return M1_IW_F3;
+  }
+}
+
 // ---- MILESTONE 3b phase C, implicit_solver = bicgstab.  The four (six in 3-D)
 // TRANSVERSE
 // OFF-DIAGONAL coefficients of the frozen 7-point row, and the ten Krylov vectors.  They

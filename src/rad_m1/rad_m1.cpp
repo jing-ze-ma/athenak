@@ -111,6 +111,18 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   impl_clag_step = false;
   impl_tlim = M1_TLIM_NONE;
   impl_tfmax = 1.0;
+  // ---- milestone 3e: Anderson acceleration of the Picard map
+  impl_accel = M1_IACC_NONE;
+  impl_and_m = 5;
+  impl_and_beta = 1.0;
+  impl_and_start = 1;
+  aa_nc = 0;
+  aa_nh = 0;
+  aa_head = 0;
+  aa_hasp = false;
+  aa_fnp = -1.0;
+  aa_nacc = 0.0;
+  aa_nrst = 0.0;
   // ---- end of the 3a hook
   cfl_rad = pin->GetOrAddReal("rad_m1","cfl_rad",0.4);
   e_floor = pin->GetOrAddReal("rad_m1","e_floor",(FLT_MIN));
