@@ -95,6 +95,8 @@ class ParameterInput {
   bool GetOrAddBoolean(std::string block, std::string name, bool value);
   bool SetBoolean(std::string block, std::string name, bool value);
   std::string GetString(std::string block, std::string name);
+  //! shortest round-tripping decimal text for a Real (see parameter_input.cpp)
+  static std::string RealToString(Real value);
   std::string GetOrAddString(std::string block, std::string name, std::string value);
   std::string SetString(std::string block, std::string name, std::string value);
 

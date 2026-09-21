@@ -1,0 +1,14 @@
+Standalone unit tests, not wired into run_test_suite.py.  Build against an existing
+AthenaK build tree (here <build> = a configured/built directory such as ../../build):
+
+  g++ -std=c++17 -O2 -I ../../src -I ../../kokkos/core/src \
+      -I ../../kokkos/containers/src -I ../../kokkos/algorithms/src \
+      -I ../../kokkos/simd/src -I <build>/kokkos \
+      test_pin_real_roundtrip.cpp ../../src/parameter_input.cpp \
+      ../../src/globals.cpp ../../src/outputs/io_wrapper.cpp \
+      <build>/kokkos/core/src/libkokkoscore.a -ldl -o test_pin_real_roundtrip
+  ./test_pin_real_roundtrip      # prints PASS / FAIL, exit status 0 on success
+
+test_pin_real_roundtrip: a Real recorded into the parameter list by GetOrAddReal() or
+SetReal() must survive a ParameterDump() -> LoadFromStream() round trip bit-exactly,
+because that is what a restart does with the input embedded in the restart file.

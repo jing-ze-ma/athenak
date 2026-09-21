@@ -37,8 +37,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <iostream>
+#include <limits>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -50,6 +52,29 @@
 #if OPENMP_PARALLEL_ENABLED
 #include <omp.h>
 #endif
+
+//----------------------------------------------------------------------------------------
+//! \fn std::string ParameterInput::RealToString(Real value)
+//  \brief convert a Real to the SHORTEST decimal text that parses back (with atof(), the
+//  converter used everywhere in this file) to bit-identical value.  Writing a Real with
+//  the default ostream precision keeps only 6 significant digits; since the effective
+//  input is embedded in restart files and re-parsed on restart, any value recorded that
+//  way (a GetOrAddReal() default, or a SetReal() bookkeeping value such as an output
+//  block's last_time) silently changed by ~1e-7 relative across a restart.
+
+std::string ParameterInput::RealToString(Real value) {
+  // max_digits10 round-trips exactly (17 for double, 9 for float); try shorter forms
+  // first so that exactly-representable values stay readable ("0.3", not "0.29999...").
+  constexpr int max_digits = std::numeric_limits<Real>::max_digits10;
+  char buf[64];
+  for (int prec = max_digits - 2; prec <= max_digits; ++prec) {
+    std::snprintf(buf, sizeof(buf), "%.*g", prec, static_cast<double>(value));
+    if (static_cast<Real>(std::atof(buf)) == value) {
+      break;
+    }
+  }
+  return std::string(buf);
+}
 
 //----------------------------------------------------------------------------------------
 // ParameterInput constructor(s)
@@ -629,7 +654,6 @@ int ParameterInput::GetOrAddInteger(std::string block, std::string name, int def
 Real ParameterInput::GetOrAddReal(std::string block, std::string name, Real def_value) {
   InputBlock* pb;
   InputLine *pl;
-  std::stringstream ss_value;
   Real ret;
 
   Lock();
@@ -640,8 +664,8 @@ Real ParameterInput::GetOrAddReal(std::string block, std::string name, Real def_
     ret = static_cast<Real>(atof(val.c_str()));
   } else {
     pb = FindOrAddBlock(block);
-    ss_value << def_value;
-    AddParameter(pb, name, ss_value.str(), default_comment);
+    // record with round-trip precision: this text is re-parsed after a restart
+    AddParameter(pb, name, RealToString(def_value), default_comment);
     ret = def_value;
   }
   Unlock();
@@ -731,12 +755,11 @@ int ParameterInput::SetInteger(std::string block, std::string name, int value) {
 
 Real ParameterInput::SetReal(std::string block, std::string name, Real value) {
   InputBlock* pb;
-  std::stringstream ss_value;
 
   Lock();
   pb = FindOrAddBlock(block);
-  ss_value << value;
-  AddParameter(pb, name, ss_value.str(), "# Updated during run time");
+  // record with round-trip precision: this text is re-parsed after a restart
+  AddParameter(pb, name, RealToString(value), "# Updated during run time");
   Unlock();
   return value;
 }
