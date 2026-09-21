@@ -1085,6 +1085,39 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     });
   }
 
+  // THE GRAVITATIONAL POTENTIAL, for the K&M (dynamic) well-balanced RADIAL
+  // reconstruction.  <mhd>/wellbalance_dynamic + wb_x1 reconstructs the radial face
+  // states about a LOCAL hydrostatic background built from the cell state and the
+  // potential DIFFERENCES the pgen supplies in phicc0 / phi0.x1f; with those arrays left
+  // at zero (nothing else in this file filled them) the scheme would silently reconstruct
+  // about a background with no gravity in it, which is not the scheme.
+  //
+  // iprob = 13's gravity is a CONSTANT inward g, so Phi = g*(r - r0) exactly, evaluated
+  // at the same x1v / xx1f the reconstruction reads -- x1v is the volume CENTROID on this
+  // grid, not the arithmetic midpoint, and a potential sampled at the midpoint instead
+  // would put a first-order inconsistency into a scheme whose whole purpose is to cancel
+  // to round-off.  The gravity SOURCE term is unchanged (CSTestGravSrc): this option
+  // changes the reconstruction only.
+  if (is_mhd && iprob == 13 && pmbp->pmhd->use_wellbalance_dynamic) {
+    auto phicc = pmbp->pmhd->phicc0;
+    auto phif1 = pmbp->pmhd->phi0.x1f;
+    auto &x1v = pmbp->pcoord->x1v;
+    auto &x1f = pmbp->pcoord->xx1f;
+    const Real gacc = cs_gacc, r0 = cs_r0;
+    const int n1 = indcs.nx1 + 2*indcs.ng;
+    const int n2 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*indcs.ng) : 1;
+    const int n3 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*indcs.ng) : 1;
+    par_for("pgen_cs_phi", DevExeSpace(), 0,(pmbp->nmb_thispack-1),
+            0,n3-1, 0,n2-1, 0,n1-1,
+    KOKKOS_LAMBDA(int m, int k, int j, int i) {
+      phicc(m,k,j,i) = gacc*(x1v(m,i) - r0);
+      phif1(m,k,j,i) = gacc*(x1f(m,i) - r0);
+      if (i == n1-1) {
+        phif1(m,k,j,i+1) = gacc*(x1f(m,i+1) - r0);
+      }
+    });
+  }
+
   return;
 }
 
@@ -2674,7 +2707,11 @@ void CSTestResistCheck(ParameterInput *pin, Mesh *pm) {
   // and the total still converges at the full rate.  Classified by ANGLE so it does not
   // depend on how many MeshBlocks span a panel -- within `nbr` cells of |xi| = pi/4 or
   // |eta| = pi/4, and a VERTEX cell is within that of BOTH.
-  const int nbr = 2;
+  // Width IN CELLS, overridable with <problem>/conv_nband -- the SAME knob the
+  // cell-centred region split in CSTestConvErrors uses, so a sweep that scales the band
+  // with the resolution (to hold its PHYSICAL width fixed, which is what makes a
+  // per-region order meaningful) moves both tables together.
+  const int nbr = pin->GetOrAddInteger("problem", "conv_nband", 2);
   Real l1f_r[3] = {0.0, 0.0, 0.0}, mxf_r[3] = {0.0, 0.0, 0.0};
   std::int64_t ncf_r[3] = {0, 0, 0};
   // The same error binned by DISTANCE from the nearest panel edge, in cells.  The region

@@ -1,0 +1,56 @@
+Mesh: spherical-polar x3-face theta correction = rotate
+
+Cubed sphere: Root grid = 6 x 1 x (1 x 1) MeshBlocks
+Total number of MeshBlocks = 6
+Number of logical  levels of refinement = 0 (1 levels total)
+Number of physical levels of refinement = 0 (1 levels total)
+Number of parallel ranks = 1
+
+Setup complete, executing task list(s)...
+
+elapsed=7.461111e-02 cycle=0 time=0.000000e+00 dt=2.614352e-03
+### CS CONSERVED SUMS at t = 4.00000000000000008e-02  (ncyc 16)
+###   volume 9.94837673636769715e+00
+###   mass   1.50517329111055753e+00
+###   energy 7.23103528213943747e-01
+###   Px     -3.38891187969633056e-10
+###   Py     1.88388184901118573e-08
+###   Pz     -3.07781674272381740e-08
+###   Lx     1.85365897974400165e-06
+###   Ly     2.01051911121001159e-07
+###   Lz     -3.04149195790789336e-08
+### CS SEAM FLUX MISMATCH (spurious source rate, sum over shared faces)
+###   dM/dt = -1.03090e-19  (away -1.79285e-19, cube vertex  7.61945e-20)
+###   dE/dt = -7.62099e-19  (away -8.84306e-19, cube vertex  1.22207e-19)
+###   per-face max |dFm| =  1.29173e-20 away,  1.05350e-20 at a vertex;  max|area*Fm| =  3.41676e-07
+###   shared faces: 1536 away + 1536 within 3 cells of a vertex;  max area mismatch 6.160e-14
+###   NULL (same-panel block faces): sum  0.00000e+00  max  0.00000e+00  over 0
+###   spurious TORQUE (dL/dt): x -4.78027e-16  y  3.07578e-16  z  3.85230e-16
+### CS LEVEL-BOUNDARY FLUX TELESCOPING
+   same level (NULL CONTROL, must be round-off): 0 faces  max|dM|  0.0000e+00  max|dE|  0.0000e+00  (scale  0.0000e+00)
+   coarse/fine boundary:                         0 faces  max|dM|  0.0000e+00  max|dE|  0.0000e+00  (scale  0.0000e+00)
+   summed spurious mass source:  same level  0.0000e+00   coarse/fine  0.0000e+00
+     same-level by direction x1(r)    n      0  max|dM|  0.0000e+00  sum  0.0000e+00
+     same-level by direction x2(xi)   n      0  max|dM|  0.0000e+00  sum  0.0000e+00
+     same-level by direction x3(eta)  n      0  max|dM|  0.0000e+00  sum  0.0000e+00
+     same-level on COARSE blocks   n      0  max|dM|  0.0000e+00  sum  0.0000e+00
+     same-level on FINE   blocks   n      0  max|dM|  0.0000e+00  sum  0.0000e+00
+### CS CONVERGENCE (iprob=13): nx2=16 t=0.040000  L1(B)=0.000000e+00  Linf(B)=0.000000e+00  L1(v)=5.133715e-04  L1(p)=1.694066e-02
+###   MAX norms over active cells:  Linf(v)=7.614237e-03  Linf(p)=1.254231e-01
+###   REGION panel INTERIOR (    13824 cells)  L1(v)=4.3386e-04 L1(p)=1.6723e-02 L1(B)=0.0000e+00  Linf(v)=4.2919e-03 Linf(p)=1.0624e-01 Linf(B)=0.0000e+00
+###   REGION panel SEAM     (     9216 cells)  L1(v)=5.8158e-04 L1(p)=1.7172e-02 L1(B)=0.0000e+00  Linf(v)=7.6142e-03 Linf(p)=1.2188e-01 Linf(B)=0.0000e+00
+###   REGION CUBE VERTEX    (     1536 cells)  L1(v)=8.1966e-04 L1(p)=1.7517e-02 L1(B)=0.0000e+00  Linf(v)=5.0809e-03 Linf(p)=1.2542e-01 Linf(B)=0.0000e+00
+###   REGION panel INTERIOR  TANGENTIAL ONLY   L1(v_t)=2.1690e-04  Linf(v_t)=3.6744e-03
+###   REGION panel SEAM      TANGENTIAL ONLY   L1(v_t)=3.3462e-04  Linf(v_t)=6.3125e-03
+###   REGION CUBE VERTEX     TANGENTIAL ONLY   L1(v_t)=5.2791e-04  Linf(v_t)=4.7599e-03
+###   flow rate omega_fit/omega = 1.000000000  (s-1 = +0.0000e+00);  a field frozen into it would lag by 0.0000e+00 rad at t=0.040
+
+Terminating on time limit
+time=4.000000e-02 cycle=16
+tlim=4.000000e-02 nlim=-1
+
+MeshBlock-cycles = 96
+cpu time used  = 1.515615e+00
+zone-cycles/cpu_second = 2.594431e+05
+particle-updates/cpu_second = 0.000000e+00
+WALLCLOCK 1.59 s

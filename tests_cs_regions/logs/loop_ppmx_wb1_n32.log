@@ -1,0 +1,109 @@
+Mesh: spherical-polar x3-face theta correction = rotate
+
+Cubed sphere: Root grid = 6 x 1 x (1 x 1) MeshBlocks
+Total number of MeshBlocks = 6
+Number of logical  levels of refinement = 0 (1 levels total)
+Number of physical levels of refinement = 0 (1 levels total)
+Number of parallel ranks = 1
+
+Setup complete, executing task list(s)...
+
+elapsed=5.026153e-01 cycle=0 time=0.000000e+00 dt=7.262006e-03
+### CS CORNER-HALO bcc SMOOTHNESS IN INDEX SPACE
+  |d2| = |f(n-1) - 2f(n) + f(n+1)| along the j index, at i=mid.
+  panel  comp   d2 at CORNER crossing   d2 deep INTERIOR   ratio
+     0   B.r          2.420761e-05       1.972429e-07      122.7
+     0   B.xi         5.417350e-05       1.159884e-08     4670.6
+     0   B.f2         1.706169e-04       4.725626e-07      361.0
+     1   B.r          2.426138e-05       1.972439e-07      123.0
+     1   B.xi         5.144222e-05       1.159454e-08     4436.8
+     1   B.f2         1.582110e-04       4.725629e-07      334.8
+     2   B.r          2.434027e-05       1.972448e-07      123.4
+     2   B.xi         5.422361e-05       1.160156e-08     4673.8
+     2   B.f2         1.704461e-04       4.725631e-07      360.7
+     3   B.r          2.653906e-06       2.785426e-09      952.8
+     3   B.xi         8.777214e-05       3.306485e-08     2654.5
+     3   B.f2         1.643234e-04       2.620227e-05        6.3
+     4   B.r          2.421628e-05       1.972477e-07      122.8
+     4   B.xi         5.141452e-05       1.160462e-08     4430.5
+     4   B.f2         1.581927e-04       4.725633e-07      334.8
+     5   B.r          2.672155e-06       2.785431e-09      959.3
+     5   B.xi         8.772317e-05       3.306485e-08     2653.1
+     5   B.f2         1.644952e-04       2.620227e-05        6.3
+  --- where does the kink enter? same index line, panel 0 ---
+  quantity     d2 at CORNER crossing   d2 deep INTERIOR
+  b0.x2f           2.849352e-04       1.040039e-06
+  b0.x3f           1.926005e-04       2.077978e-06
+  b0.x3f across the SAME j crossing, by along-seam position k:
+    k=ks (AT the vertex)   d2 =   1.926005e-04
+    k=mid-seam             d2 =   3.869170e-05
+    k=ke (other vertex)    d2 =   1.485773e-04
+  sin_cell         2.628224e-04       1.448307e-06
+  cos_cell         1.145440e-03       1.450926e-06
+### CS CONSERVED SUMS at t = 2.50000000000000000e-01  (ncyc 35)
+###   volume 2.93215314335073884e+01
+###   mass   2.93215314335045534e+01
+###   energy 3.93077319519232162e+01
+###   Px     1.49029920052061907e-09
+###   Py     -1.68978088442090868e-09
+###   Pz     -5.68738407383287743e-10
+###   Lx     -7.00765912614931773e-11
+###   Ly     4.00184366491300003e-10
+###   Lz     -3.93000582229851132e-10
+### CS SEAM FLUX MISMATCH (spurious source rate, sum over shared faces)
+###   dM/dt = -2.98993e-20  (away -3.02732e-20, cube vertex  3.73886e-22)
+###   dE/dt = -8.20497e-20  (away -8.28686e-20, cube vertex  8.18909e-22)
+###   per-face max |dFm| =  1.88862e-20 away,  3.16976e-21 at a vertex;  max|area*Fm| =  4.19977e-07
+###   shared faces: 9216 away + 3072 within 3 cells of a vertex;  max area mismatch 3.513e-13
+###   NULL (same-panel block faces): sum  0.00000e+00  max  0.00000e+00  over 0
+###   spurious TORQUE (dL/dt): x  1.62525e-17  y -9.42572e-15  z  4.15009e-15
+### CS LEVEL-BOUNDARY FLUX TELESCOPING
+   same level (NULL CONTROL, must be round-off): 0 faces  max|dM|  0.0000e+00  max|dE|  0.0000e+00  (scale  0.0000e+00)
+   coarse/fine boundary:                         0 faces  max|dM|  0.0000e+00  max|dE|  0.0000e+00  (scale  0.0000e+00)
+   summed spurious mass source:  same level  0.0000e+00   coarse/fine  0.0000e+00
+     same-level by direction x1(r)    n      0  max|dM|  0.0000e+00  sum  0.0000e+00
+     same-level by direction x2(xi)   n      0  max|dM|  0.0000e+00  sum  0.0000e+00
+     same-level by direction x3(eta)  n      0  max|dM|  0.0000e+00  sum  0.0000e+00
+     same-level on COARSE blocks   n      0  max|dM|  0.0000e+00  sum  0.0000e+00
+     same-level on FINE   blocks   n      0  max|dM|  0.0000e+00  sum  0.0000e+00
+### CS RESIST CHECK: no <mhd>/ohmic_resistivity -- EMF and Ohmic checks skipped; the static-field error below still runs
+###   EVOLVED FIELD error vs the exact static B (all three face components):  L1=1.7937e-05  Linf=2.3454e-04  (over 608256 faces)
+###     Linf on x3f at panel 4 (i,j,k)=(31,1,1) of block 4;  block x1 = 1..2
+###     REGION panel INTERIOR (   335232 faces)  L1=1.3861e-05  Linf=1.1603e-04
+###     REGION panel SEAM     (   232704 faces)  L1=2.0508e-05  Linf=1.9039e-04
+###     REGION CUBE VERTEX    (    40320 faces)  L1=3.6998e-05  Linf=2.3454e-04
+###     BY RADIAL INDEX: i0=9.439e-06 i1=1.061e-05 i2=1.000e-05 i3=1.003e-05 i4=1.012e-05 i5=1.051e-05 i6=1.120e-05 i7=1.179e-05 i8=1.172e-05 i9=1.088e-05 i10=9.141e-06 i11=7.602e-06 i12=7.425e-06 i13=7.800e-06 i14=8.461e-06 i15=8.929e-06 i16=9.096e-06 i17=1.115e-05 i18=1.531e-05 i19=1.914e-05 i20=2.050e-05 i21=1.737e-05 i22=1.001e-05 i23=7.913e-06 i24=1.000e-05 i25=9.985e-06 i26=8.323e-06 i27=7.806e-06 i28=8.246e-06 i29=8.650e-06 i30=1.070e-05 i31=1.046e-05
+###     BY DISTANCE from the panel edge (cells):  d0=2.626e-05  d1=2.674e-05  d2=1.911e-05  d3=1.788e-05  d4=1.695e-05  d5=1.327e-05
+###   AUDIT of 48 on-rank neighbour slots: 0 non-reciprocal, 0 size mismatches
+###   GHOST SCAN interior       Linf=1.3961e-04 (d1 1.3961e-04) (n>1e-2: 0) on x3f at (i,j,k)=(31,1,1) of block 4 panel 4
+###        owner lev 0,  x1 neighbour (slot 4) lev -99
+###   GHOST SCAN radial ghost   Linf=4.6900e-02 (d1 9.3980e-03) (n>1e-2: 26960) on x2f at (i,j,k)=(34,0,16) of block 4 panel 4
+###        owner lev 0,  x1 neighbour (slot 4) lev -99
+###   GHOST SCAN tangent ghost  Linf=1.9655e-04 (d1 1.4057e-04) (n>1e-2: 0) on x3f at (i,j,k)=(31,33,32) of block 3 panel 3
+###        owner lev 0,  x1 neighbour (slot 4) lev -99
+###   GHOST SCAN r x EDGE  same Linf=0.0000e+00 (d1 0.0000e+00) (n>1e-2: 0) on --- at (i,j,k)=(-1,-1,-1) of block -1 panel -1
+###   GHOST SCAN r x EDGE  SEAM Linf=4.6922e-02 (d1 9.4048e-03) (n>1e-2: 12208) on x2f at (i,j,k)=(34,-3,16) of block 1 panel 1
+###        owner lev 0,  x1 neighbour (slot 4) lev -99
+###   GHOST SCAN r x CORNER same Linf=0.0000e+00 (d1 0.0000e+00) (n>1e-2: 0) on --- at (i,j,k)=(-1,-1,-1) of block -1 panel -1
+###   GHOST SCAN r x CORNER SEAM Linf=3.9742e-02 (d1 7.6595e-03) (n>1e-2: 1664) on x2f at (i,j,k)=(34,-3,-1) of block 0 panel 0
+###        owner lev 0,  x1 neighbour (slot 4) lev -99
+###   GHOST SCAN r x CORNER SEAM split: x1 INTERIOR 0.0000e+00,  x1 PHYSICAL 3.9742e-02
+###   ERROR JUMP in B.rhat across a shared face (ghost - active):
+###     PANEL SEAM      L1=1.9246e-05  max=7.3170e-05  over 19344 faces
+###     same-panel CTRL L1=0.0000e+00  max=0.0000e+00  over 0 faces
+###       x1f(B.rhat) seam L1=1.9246e-05   ctrl L1=0.0000e+00   NONswap=1.7711e-05   SWAP=2.0014e-05
+###       x2f         seam L1=7.0007e-06   ctrl L1=0.0000e+00   NONswap=3.6672e-06   SWAP=8.6674e-06
+###       x3f         seam L1=1.6931e-05   ctrl L1=0.0000e+00   NONswap=4.3115e-05   SWAP=3.8387e-06
+###       x1f(B.rhat) NONswap by position (0=midpoint 3=vertex):  u0=8.884e-06  u1=1.573e-05  u2=2.554e-05  u3=2.963e-05
+###       x2f         NONswap by position (0=midpoint 3=vertex):  u0=4.652e-06  u1=3.438e-06  u2=2.982e-06  u3=3.386e-06
+###       x3f         NONswap by position (0=midpoint 3=vertex):  u0=1.472e-05  u1=3.616e-05  u2=6.620e-05  u3=9.220e-05
+
+Terminating on time limit
+time=2.500000e-01 cycle=35
+tlim=2.500000e-01 nlim=-1
+
+MeshBlock-cycles = 210
+cpu time used  = 2.051089e+01
+zone-cycles/cpu_second = 3.354939e+05
+particle-updates/cpu_second = 0.000000e+00
+WALLCLOCK 21.02 s

@@ -1,0 +1,1136 @@
+==========================================================================================
+CUBED-SPHERE PER-REGION ERROR GATE
+  tests: strat = iprob 13 hydrostatic atmosphere at rest (|v| IS the error)
+         rot   = iprob 9  rigid rotation + uniform field (exact at all t)
+         loop  = iprob 11 toroidal field from its vector potential (static)
+  regions by angle; band half-width = 2/4/8 cells at n = 16/32/64
+==========================================================================================
+
+------------------------------------------------------------------------------------------
+loop  recon=plm    cs_wellbalanced_src=OFF  tlim=short
+  n=16: cyc=18 dtbar=1.389e-02 t=0.2500 wall=1.5s | n=32: cyc=35 dtbar=7.143e-03 t=0.2500 wall=14.8s | n=64: cyc=69 dtbar=3.623e-03 t=0.2500 wall=178.9s
+  L1(B_face)           n=16  order        n=32  order        n=64  order
+    INTERIOR    5.601e-05          1.376e-05   2.03   3.441e-06   2.00
+    SEAM        7.611e-05          1.973e-05   1.95   5.246e-06   1.91
+    VERTEX      9.810e-05          3.312e-05   1.57   1.054e-05   1.65
+    VTX/INT          1.75               2.41               3.06       
+    SEAM/INT         1.36               1.43               1.52       
+  Linf(B_face)         n=16  order        n=32  order        n=64  order
+    INTERIOR    3.667e-04          1.236e-04   1.57   4.154e-05   1.57
+    SEAM        5.118e-04          1.954e-04   1.39   7.614e-05   1.36
+    VERTEX      4.276e-04          2.005e-04   1.09   1.029e-04   0.96
+    VTX/INT          1.17               1.62               2.48       
+    SEAM/INT         1.40               1.58               1.83       
+
+------------------------------------------------------------------------------------------
+loop  recon=plm    cs_wellbalanced_src=ON   tlim=short
+  n=16: cyc=18 dtbar=1.389e-02 t=0.2500 wall=1.6s | n=32: cyc=35 dtbar=7.143e-03 t=0.2500 wall=15.5s
+  L1(B_face)           n=16  order        n=32  order
+    INTERIOR    5.917e-05          1.418e-05   2.06
+    SEAM        7.859e-05          2.017e-05   1.96
+    VERTEX      9.910e-05          3.341e-05   1.57
+    VTX/INT          1.67               2.36       
+    SEAM/INT         1.33               1.42       
+  Linf(B_face)         n=16  order        n=32  order
+    INTERIOR    3.884e-04          1.276e-04   1.61
+    SEAM        5.241e-04          1.854e-04   1.50
+    VERTEX      4.002e-04          1.914e-04   1.06
+    VTX/INT          1.03               1.50       
+    SEAM/INT         1.35               1.45       
+
+------------------------------------------------------------------------------------------
+loop  recon=ppm4   cs_wellbalanced_src=OFF  tlim=short
+  n=32: cyc=35 dtbar=7.143e-03 t=0.2500 wall=19.7s
+  L1(B_face)           n=32  order
+    INTERIOR    1.399e-05       
+    SEAM        2.026e-05       
+    VERTEX      3.633e-05       
+    VTX/INT          2.60       
+    SEAM/INT         1.45       
+  Linf(B_face)         n=32  order
+    INTERIOR    1.196e-04       
+    SEAM        1.866e-04       
+    VERTEX      2.436e-04       
+    VTX/INT          2.04       
+    SEAM/INT         1.56       
+
+------------------------------------------------------------------------------------------
+loop  recon=ppm4   cs_wellbalanced_src=ON   tlim=short
+  n=32: cyc=35 dtbar=7.143e-03 t=0.2500 wall=20.4s
+  L1(B_face)           n=32  order
+    INTERIOR    1.432e-05       
+    SEAM        2.071e-05       
+    VERTEX      3.658e-05       
+    VTX/INT          2.55       
+    SEAM/INT         1.45       
+  Linf(B_face)         n=32  order
+    INTERIOR    1.228e-04       
+    SEAM        1.899e-04       
+    VERTEX      2.401e-04       
+    VTX/INT          1.96       
+    SEAM/INT         1.55       
+
+------------------------------------------------------------------------------------------
+loop  recon=ppmx   cs_wellbalanced_src=OFF  tlim=short
+  n=32: cyc=35 dtbar=7.143e-03 t=0.2500 wall=20.3s
+  L1(B_face)           n=32  order
+    INTERIOR    1.362e-05       
+    SEAM        2.008e-05       
+    VERTEX      3.673e-05       
+    VTX/INT          2.70       
+    SEAM/INT         1.47       
+  Linf(B_face)         n=32  order
+    INTERIOR    1.137e-04       
+    SEAM        1.876e-04       
+    VERTEX      2.305e-04       
+    VTX/INT          2.03       
+    SEAM/INT         1.65       
+
+------------------------------------------------------------------------------------------
+loop  recon=ppmx   cs_wellbalanced_src=ON   tlim=short
+  n=32: cyc=35 dtbar=7.143e-03 t=0.2500 wall=21.0s
+  L1(B_face)           n=32  order
+    INTERIOR    1.386e-05       
+    SEAM        2.051e-05       
+    VERTEX      3.700e-05       
+    VTX/INT          2.67       
+    SEAM/INT         1.48       
+  Linf(B_face)         n=32  order
+    INTERIOR    1.160e-04       
+    SEAM        1.904e-04       
+    VERTEX      2.345e-04       
+    VTX/INT          2.02       
+    SEAM/INT         1.64       
+
+------------------------------------------------------------------------------------------
+loop  recon=wenoz  cs_wellbalanced_src=OFF  tlim=short
+  n=32: cyc=35 dtbar=7.143e-03 t=0.2500 wall=18.0s
+  L1(B_face)           n=32  order
+    INTERIOR    1.361e-05       
+    SEAM        2.008e-05       
+    VERTEX      3.564e-05       
+    VTX/INT          2.62       
+    SEAM/INT         1.48       
+  Linf(B_face)         n=32  order
+    INTERIOR    1.139e-04       
+    SEAM        1.565e-04       
+    VERTEX      1.793e-04       
+    VTX/INT          1.57       
+    SEAM/INT         1.37       
+
+------------------------------------------------------------------------------------------
+loop  recon=wenoz  cs_wellbalanced_src=ON   tlim=short
+  n=16: cyc=18 dtbar=1.389e-02 t=0.2500 wall=1.8s | n=32: cyc=35 dtbar=7.143e-03 t=0.2500 wall=18.6s
+  L1(B_face)           n=16  order        n=32  order
+    INTERIOR    5.774e-05          1.385e-05   2.06
+    SEAM        7.641e-05          2.052e-05   1.90
+    VERTEX      1.028e-04          3.604e-05   1.51
+    VTX/INT          1.78               2.60       
+    SEAM/INT         1.32               1.48       
+  Linf(B_face)         n=16  order        n=32  order
+    INTERIOR    3.478e-04          1.162e-04   1.58
+    SEAM        4.039e-04          1.503e-04   1.43
+    VERTEX      3.015e-04          1.781e-04   0.76
+    VTX/INT          0.87               1.53       
+    SEAM/INT         1.16               1.29       
+
+------------------------------------------------------------------------------------------
+rot  recon=plm    cs_wellbalanced_src=OFF  tlim=short
+  n=16: cyc=23 dtbar=1.087e-02 t=0.2500 wall=2.1s | n=32: cyc=45 dtbar=5.556e-03 t=0.2500 wall=20.0s | n=64: cyc=90 dtbar=2.778e-03 t=0.2500 wall=239.8s
+  L1(v)                n=16  order        n=32  order        n=64  order
+    INTERIOR    7.096e-04          2.337e-04   1.60   9.467e-05   1.30
+    SEAM        8.311e-04          2.651e-04   1.65   9.999e-05   1.41
+    VERTEX      1.057e-03          3.143e-04   1.75   1.127e-04   1.48
+    VTX/INT          1.49               1.35               1.19       
+    SEAM/INT         1.17               1.13               1.06       
+  Linf(v)              n=16  order        n=32  order        n=64  order
+    INTERIOR    2.690e-03          1.330e-03   1.02   4.737e-04   1.49
+    SEAM        3.407e-03          1.350e-03   1.34   5.119e-04   1.40
+    VERTEX      2.583e-03          1.023e-03   1.34   4.623e-04   1.15
+    VTX/INT          0.96               0.77               0.98       
+    SEAM/INT         1.27               1.01               1.08       
+  L1(v_tang)           n=16  order        n=32  order        n=64  order
+    INTERIOR    4.930e-04          1.740e-04   1.50   7.292e-05   1.25
+    SEAM        6.009e-04          1.991e-04   1.59   7.677e-05   1.37
+    VERTEX      6.861e-04          2.117e-04   1.70   8.190e-05   1.37
+    VTX/INT          1.39               1.22               1.12       
+    SEAM/INT         1.22               1.14               1.05       
+  Linf(v_tang)         n=16  order        n=32  order        n=64  order
+    INTERIOR    2.358e-03          1.187e-03   0.99   4.270e-04   1.48
+    SEAM        2.726e-03          1.303e-03   1.06   4.882e-04   1.42
+    VERTEX      2.254e-03          9.615e-04   1.23   4.402e-04   1.13
+    VTX/INT          0.96               0.81               1.03       
+    SEAM/INT         1.16               1.10               1.14       
+  L1(p)                n=16  order        n=32  order        n=64  order
+    INTERIOR    5.226e-04          1.301e-04   2.01   3.605e-05   1.85
+    SEAM        5.316e-04          1.334e-04   1.99   3.795e-05   1.81
+    VERTEX      7.465e-04          1.798e-04   2.05   4.670e-05   1.94
+    VTX/INT          1.43               1.38               1.30       
+    SEAM/INT         1.02               1.02               1.05       
+  L1(B)                n=16  order        n=32  order        n=64  order
+    INTERIOR    1.551e-04          5.793e-05   1.42   2.576e-05   1.17
+    SEAM        1.940e-04          6.724e-05   1.53   2.724e-05   1.30
+    VERTEX      2.545e-04          8.905e-05   1.52   3.351e-05   1.41
+    VTX/INT          1.64               1.54               1.30       
+    SEAM/INT         1.25               1.16               1.06       
+  Linf(B)              n=16  order        n=32  order        n=64  order
+    INTERIOR    1.670e-03          6.705e-04   1.32   2.805e-04   1.26
+    SEAM        1.873e-03          7.575e-04   1.31   3.047e-04   1.31
+    VERTEX      1.757e-03          4.994e-04   1.81   2.687e-04   0.89
+    VTX/INT          1.05               0.74               0.96       
+    SEAM/INT         1.12               1.13               1.09       
+
+------------------------------------------------------------------------------------------
+rot  recon=plm    cs_wellbalanced_src=ON   tlim=short
+  n=16: cyc=23 dtbar=1.087e-02 t=0.2500 wall=2.1s | n=32: cyc=45 dtbar=5.556e-03 t=0.2500 wall=20.9s
+  L1(v)                n=16  order        n=32  order
+    INTERIOR    8.075e-04          2.584e-04   1.64
+    SEAM        9.111e-04          2.867e-04   1.67
+    VERTEX      1.163e-03          3.430e-04   1.76
+    VTX/INT          1.44               1.33       
+    SEAM/INT         1.13               1.11       
+  Linf(v)              n=16  order        n=32  order
+    INTERIOR    2.502e-03          1.235e-03   1.02
+    SEAM        3.611e-03          1.320e-03   1.45
+    VERTEX      2.635e-03          1.023e-03   1.36
+    VTX/INT          1.05               0.83       
+    SEAM/INT         1.44               1.07       
+  L1(v_tang)           n=16  order        n=32  order
+    INTERIOR    5.388e-04          1.833e-04   1.56
+    SEAM        5.987e-04          1.994e-04   1.59
+    VERTEX      6.991e-04          2.183e-04   1.68
+    VTX/INT          1.30               1.19       
+    SEAM/INT         1.11               1.09       
+  Linf(v_tang)         n=16  order        n=32  order
+    INTERIOR    2.159e-03          1.183e-03   0.87
+    SEAM        2.768e-03          1.229e-03   1.17
+    VERTEX      2.231e-03          9.812e-04   1.18
+    VTX/INT          1.03               0.83       
+    SEAM/INT         1.28               1.04       
+  L1(p)                n=16  order        n=32  order
+    INTERIOR    5.468e-04          1.360e-04   2.01
+    SEAM        5.171e-04          1.299e-04   1.99
+    VERTEX      6.753e-04          1.648e-04   2.04
+    VTX/INT          1.24               1.21       
+    SEAM/INT         0.95               0.96       
+  L1(B)                n=16  order        n=32  order
+    INTERIOR    1.593e-04          5.906e-05   1.43
+    SEAM        1.984e-04          6.801e-05   1.54
+    VERTEX      2.636e-04          9.015e-05   1.55
+    VTX/INT          1.66               1.53       
+    SEAM/INT         1.25               1.15       
+  Linf(B)              n=16  order        n=32  order
+    INTERIOR    1.708e-03          6.915e-04   1.30
+    SEAM        1.891e-03          6.936e-04   1.45
+    VERTEX      1.644e-03          5.366e-04   1.61
+    VTX/INT          0.96               0.78       
+    SEAM/INT         1.11               1.00       
+
+------------------------------------------------------------------------------------------
+rot  recon=ppm4   cs_wellbalanced_src=OFF  tlim=short
+  n=32: cyc=45 dtbar=5.556e-03 t=0.2500 wall=26.3s
+  L1(v)                n=32  order
+    INTERIOR    2.798e-04       
+    SEAM        3.156e-04       
+    VERTEX      4.014e-04       
+    VTX/INT          1.43       
+    SEAM/INT         1.13       
+  Linf(v)              n=32  order
+    INTERIOR    2.125e-03       
+    SEAM        2.257e-03       
+    VERTEX      2.319e-03       
+    VTX/INT          1.09       
+    SEAM/INT         1.06       
+  L1(v_tang)           n=32  order
+    INTERIOR    2.174e-04       
+    SEAM        2.527e-04       
+    VERTEX      3.249e-04       
+    VTX/INT          1.49       
+    SEAM/INT         1.16       
+  Linf(v_tang)         n=32  order
+    INTERIOR    2.069e-03       
+    SEAM        2.192e-03       
+    VERTEX      2.276e-03       
+    VTX/INT          1.10       
+    SEAM/INT         1.06       
+  L1(p)                n=32  order
+    INTERIOR    1.328e-04       
+    SEAM        1.417e-04       
+    VERTEX      1.602e-04       
+    VTX/INT          1.21       
+    SEAM/INT         1.07       
+  L1(B)                n=32  order
+    INTERIOR    6.944e-05       
+    SEAM        6.894e-05       
+    VERTEX      7.982e-05       
+    VTX/INT          1.15       
+    SEAM/INT         0.99       
+  Linf(B)              n=32  order
+    INTERIOR    9.110e-04       
+    SEAM        1.406e-03       
+    VERTEX      8.137e-04       
+    VTX/INT          0.89       
+    SEAM/INT         1.54       
+
+------------------------------------------------------------------------------------------
+rot  recon=ppm4   cs_wellbalanced_src=ON   tlim=short
+  n=32: cyc=45 dtbar=5.556e-03 t=0.2500 wall=27.3s
+  L1(v)                n=32  order
+    INTERIOR    2.774e-04       
+    SEAM        3.153e-04       
+    VERTEX      3.995e-04       
+    VTX/INT          1.44       
+    SEAM/INT         1.14       
+  Linf(v)              n=32  order
+    INTERIOR    2.051e-03       
+    SEAM        2.339e-03       
+    VERTEX      2.337e-03       
+    VTX/INT          1.14       
+    SEAM/INT         1.14       
+  L1(v_tang)           n=32  order
+    INTERIOR    2.098e-04       
+    SEAM        2.418e-04       
+    VERTEX      3.151e-04       
+    VTX/INT          1.50       
+    SEAM/INT         1.15       
+  Linf(v_tang)         n=32  order
+    INTERIOR    2.021e-03       
+    SEAM        2.239e-03       
+    VERTEX      2.223e-03       
+    VTX/INT          1.10       
+    SEAM/INT         1.11       
+  L1(p)                n=32  order
+    INTERIOR    1.379e-04       
+    SEAM        1.353e-04       
+    VERTEX      1.505e-04       
+    VTX/INT          1.09       
+    SEAM/INT         0.98       
+  L1(B)                n=32  order
+    INTERIOR    6.989e-05       
+    SEAM        6.939e-05       
+    VERTEX      8.103e-05       
+    VTX/INT          1.16       
+    SEAM/INT         0.99       
+  Linf(B)              n=32  order
+    INTERIOR    8.909e-04       
+    SEAM        1.493e-03       
+    VERTEX      7.803e-04       
+    VTX/INT          0.88       
+    SEAM/INT         1.68       
+
+------------------------------------------------------------------------------------------
+rot  recon=ppmx   cs_wellbalanced_src=OFF  tlim=short
+  n=32: cyc=45 dtbar=5.556e-03 t=0.2500 wall=26.7s
+  L1(v)                n=32  order
+    INTERIOR    2.225e-04       
+    SEAM        2.233e-04       
+    VERTEX      2.541e-04       
+    VTX/INT          1.14       
+    SEAM/INT         1.00       
+  Linf(v)              n=32  order
+    INTERIOR    8.143e-04       
+    SEAM        8.531e-04       
+    VERTEX      9.528e-04       
+    VTX/INT          1.17       
+    SEAM/INT         1.05       
+  L1(v_tang)           n=32  order
+    INTERIOR    1.616e-04       
+    SEAM        1.619e-04       
+    VERTEX      1.786e-04       
+    VTX/INT          1.10       
+    SEAM/INT         1.00       
+  Linf(v_tang)         n=32  order
+    INTERIOR    7.135e-04       
+    SEAM        7.681e-04       
+    VERTEX      8.997e-04       
+    VTX/INT          1.26       
+    SEAM/INT         1.08       
+  L1(p)                n=32  order
+    INTERIOR    1.226e-04       
+    SEAM        1.275e-04       
+    VERTEX      1.433e-04       
+    VTX/INT          1.17       
+    SEAM/INT         1.04       
+  L1(B)                n=32  order
+    INTERIOR    4.975e-05       
+    SEAM        5.185e-05       
+    VERTEX      5.873e-05       
+    VTX/INT          1.18       
+    SEAM/INT         1.04       
+  Linf(B)              n=32  order
+    INTERIOR    4.635e-04       
+    SEAM        4.552e-04       
+    VERTEX      4.487e-04       
+    VTX/INT          0.97       
+    SEAM/INT         0.98       
+
+------------------------------------------------------------------------------------------
+rot  recon=ppmx   cs_wellbalanced_src=ON   tlim=short
+  n=32: cyc=45 dtbar=5.556e-03 t=0.2500 wall=27.8s
+  L1(v)                n=32  order
+    INTERIOR    2.092e-04       
+    SEAM        2.121e-04       
+    VERTEX      2.373e-04       
+    VTX/INT          1.13       
+    SEAM/INT         1.01       
+  Linf(v)              n=32  order
+    INTERIOR    7.455e-04       
+    SEAM        8.372e-04       
+    VERTEX      9.015e-04       
+    VTX/INT          1.21       
+    SEAM/INT         1.12       
+  L1(v_tang)           n=32  order
+    INTERIOR    1.441e-04       
+    SEAM        1.413e-04       
+    VERTEX      1.554e-04       
+    VTX/INT          1.08       
+    SEAM/INT         0.98       
+  Linf(v_tang)         n=32  order
+    INTERIOR    7.113e-04       
+    SEAM        7.811e-04       
+    VERTEX      8.713e-04       
+    VTX/INT          1.22       
+    SEAM/INT         1.10       
+  L1(p)                n=32  order
+    INTERIOR    1.251e-04       
+    SEAM        1.197e-04       
+    VERTEX      1.260e-04       
+    VTX/INT          1.01       
+    SEAM/INT         0.96       
+  L1(B)                n=32  order
+    INTERIOR    5.070e-05       
+    SEAM        5.158e-05       
+    VERTEX      5.900e-05       
+    VTX/INT          1.16       
+    SEAM/INT         1.02       
+  Linf(B)              n=32  order
+    INTERIOR    4.675e-04       
+    SEAM        4.629e-04       
+    VERTEX      4.500e-04       
+    VTX/INT          0.96       
+    SEAM/INT         0.99       
+
+------------------------------------------------------------------------------------------
+rot  recon=wenoz  cs_wellbalanced_src=OFF  tlim=short
+  n=16: cyc=23 dtbar=1.087e-02 t=0.2500 wall=2.4s | n=32: cyc=45 dtbar=5.556e-03 t=0.2500 wall=24.1s
+  L1(v)                n=16  order        n=32  order
+    INTERIOR    6.240e-04          2.210e-04   1.50
+    SEAM        6.359e-04          2.220e-04   1.52
+    VERTEX      7.536e-04          2.531e-04   1.57
+    VTX/INT          1.21               1.15       
+    SEAM/INT         1.02               1.00       
+  Linf(v)              n=16  order        n=32  order
+    INTERIOR    1.771e-03          8.048e-04   1.14
+    SEAM        1.861e-03          8.435e-04   1.14
+    VERTEX      2.011e-03          9.227e-04   1.12
+    VTX/INT          1.14               1.15       
+    SEAM/INT         1.05               1.05       
+  L1(v_tang)           n=16  order        n=32  order
+    INTERIOR    4.002e-04          1.602e-04   1.32
+    SEAM        4.158e-04          1.607e-04   1.37
+    VERTEX      4.675e-04          1.771e-04   1.40
+    VTX/INT          1.17               1.11       
+    SEAM/INT         1.04               1.00       
+  Linf(v_tang)         n=16  order        n=32  order
+    INTERIOR    1.488e-03          7.016e-04   1.08
+    SEAM        1.538e-03          7.549e-04   1.03
+    VERTEX      1.763e-03          8.650e-04   1.03
+    VTX/INT          1.18               1.23       
+    SEAM/INT         1.03               1.08       
+  L1(p)                n=16  order        n=32  order
+    INTERIOR    4.833e-04          1.226e-04   1.98
+    SEAM        4.818e-04          1.274e-04   1.92
+    VERTEX      5.433e-04          1.436e-04   1.92
+    VTX/INT          1.12               1.17       
+    SEAM/INT         1.00               1.04       
+  L1(B)                n=16  order        n=32  order
+    INTERIOR    1.050e-04          4.959e-05   1.08
+    SEAM        1.177e-04          5.138e-05   1.20
+    VERTEX      1.385e-04          5.836e-05   1.25
+    VTX/INT          1.32               1.18       
+    SEAM/INT         1.12               1.04       
+  Linf(B)              n=16  order        n=32  order
+    INTERIOR    9.161e-04          4.627e-04   0.99
+    SEAM        9.060e-04          4.552e-04   0.99
+    VERTEX      8.684e-04          4.470e-04   0.96
+    VTX/INT          0.95               0.97       
+    SEAM/INT         0.99               0.98       
+
+------------------------------------------------------------------------------------------
+rot  recon=wenoz  cs_wellbalanced_src=ON   tlim=short
+  n=16: cyc=23 dtbar=1.087e-02 t=0.2500 wall=2.4s | n=32: cyc=45 dtbar=5.556e-03 t=0.2500 wall=24.9s
+  L1(v)                n=16  order        n=32  order
+    INTERIOR    5.457e-04          2.077e-04   1.39
+    SEAM        5.606e-04          2.105e-04   1.41
+    VERTEX      6.422e-04          2.344e-04   1.45
+    VTX/INT          1.18               1.13       
+    SEAM/INT         1.03               1.01       
+  Linf(v)              n=16  order        n=32  order
+    INTERIOR    1.476e-03          7.451e-04   0.99
+    SEAM        1.715e-03          8.387e-04   1.03
+    VERTEX      1.797e-03          9.010e-04   1.00
+    VTX/INT          1.22               1.21       
+    SEAM/INT         1.16               1.13       
+  L1(v_tang)           n=16  order        n=32  order
+    INTERIOR    3.247e-04          1.426e-04   1.19
+    SEAM        3.224e-04          1.397e-04   1.21
+    VERTEX      3.498e-04          1.521e-04   1.20
+    VTX/INT          1.08               1.07       
+    SEAM/INT         0.99               0.98       
+  Linf(v_tang)         n=16  order        n=32  order
+    INTERIOR    1.387e-03          7.048e-04   0.98
+    SEAM        1.589e-03          7.838e-04   1.02
+    VERTEX      1.745e-03          8.673e-04   1.01
+    VTX/INT          1.26               1.23       
+    SEAM/INT         1.15               1.11       
+  L1(p)                n=16  order        n=32  order
+    INTERIOR    4.894e-04          1.251e-04   1.97
+    SEAM        4.510e-04          1.194e-04   1.92
+    VERTEX      4.639e-04          1.258e-04   1.88
+    VTX/INT          0.95               1.01       
+    SEAM/INT         0.92               0.95       
+  L1(B)                n=16  order        n=32  order
+    INTERIOR    1.099e-04          5.065e-05   1.12
+    SEAM        1.161e-04          5.122e-05   1.18
+    VERTEX      1.392e-04          5.857e-05   1.25
+    VTX/INT          1.27               1.16       
+    SEAM/INT         1.06               1.01       
+  Linf(B)              n=16  order        n=32  order
+    INTERIOR    8.577e-04          4.675e-04   0.88
+    SEAM        8.864e-04          4.599e-04   0.95
+    VERTEX      8.280e-04          4.501e-04   0.88
+    VTX/INT          0.97               0.96       
+    SEAM/INT         1.03               0.98       
+
+------------------------------------------------------------------------------------------
+strat  recon=plm    cs_wellbalanced_src=OFF  tlim=1.20
+  n=16: cyc=460 dtbar=2.609e-03 t=1.2000 wall=43.0s
+  L1(v)                n=16  order
+    INTERIOR    2.726e-03       
+    SEAM        2.690e-03       
+    VERTEX      2.531e-03       
+    VTX/INT          0.93       
+    SEAM/INT         0.99       
+  Linf(v)              n=16  order
+    INTERIOR    1.672e-02       
+    SEAM        2.301e-02       
+    VERTEX      1.455e-02       
+    VTX/INT          0.87       
+    SEAM/INT         1.38       
+  L1(v_tang)           n=16  order
+    INTERIOR    1.878e-03       
+    SEAM        1.863e-03       
+    VERTEX      1.782e-03       
+    VTX/INT          0.95       
+    SEAM/INT         0.99       
+  Linf(v_tang)         n=16  order
+    INTERIOR    9.151e-03       
+    SEAM        1.345e-02       
+    VERTEX      1.200e-02       
+    VTX/INT          1.31       
+    SEAM/INT         1.47       
+  L1(p)                n=16  order
+    INTERIOR    2.098e-02       
+    SEAM        2.922e-02       
+    VERTEX      3.375e-02       
+    VTX/INT          1.61       
+    SEAM/INT         1.39       
+  max|v|/c_s      5.637e-02       
+
+------------------------------------------------------------------------------------------
+strat  recon=plm    cs_wellbalanced_src=OFF  tlim=1.20_mhd_wellbalance_dynamic_true_mhd_wb_x1_true
+  n=16: cyc=460 dtbar=2.609e-03 t=1.2000 wall=46.4s
+  L1(v)                n=16  order
+    INTERIOR    3.353e-03       
+    SEAM        3.027e-03       
+    VERTEX      3.092e-03       
+    VTX/INT          0.92       
+    SEAM/INT         0.90       
+  Linf(v)              n=16  order
+    INTERIOR    1.983e-02       
+    SEAM        2.408e-02       
+    VERTEX      1.650e-02       
+    VTX/INT          0.83       
+    SEAM/INT         1.21       
+  L1(v_tang)           n=16  order
+    INTERIOR    2.188e-03       
+    SEAM        2.045e-03       
+    VERTEX      2.283e-03       
+    VTX/INT          1.04       
+    SEAM/INT         0.93       
+  Linf(v_tang)         n=16  order
+    INTERIOR    1.035e-02       
+    SEAM        1.416e-02       
+    VERTEX      1.166e-02       
+    VTX/INT          1.13       
+    SEAM/INT         1.37       
+  L1(p)                n=16  order
+    INTERIOR    3.282e-02       
+    SEAM        3.893e-02       
+    VERTEX      4.213e-02       
+    VTX/INT          1.28       
+    SEAM/INT         1.19       
+  max|v|/c_s      5.898e-02       
+
+------------------------------------------------------------------------------------------
+strat  recon=plm    cs_wellbalanced_src=OFF  tlim=1.20_mhd_wellbalance_dynamic_true_mhd_wb_x1_true_mhd_wb_cache_every_1
+  n=16: cyc=460 dtbar=2.609e-03 t=1.2000 wall=45.0s
+  L1(v)                n=16  order
+    INTERIOR    3.353e-03       
+    SEAM        3.027e-03       
+    VERTEX      3.092e-03       
+    VTX/INT          0.92       
+    SEAM/INT         0.90       
+  Linf(v)              n=16  order
+    INTERIOR    1.983e-02       
+    SEAM        2.408e-02       
+    VERTEX      1.649e-02       
+    VTX/INT          0.83       
+    SEAM/INT         1.21       
+  L1(v_tang)           n=16  order
+    INTERIOR    2.188e-03       
+    SEAM        2.045e-03       
+    VERTEX      2.283e-03       
+    VTX/INT          1.04       
+    SEAM/INT         0.93       
+  Linf(v_tang)         n=16  order
+    INTERIOR    1.035e-02       
+    SEAM        1.416e-02       
+    VERTEX      1.166e-02       
+    VTX/INT          1.13       
+    SEAM/INT         1.37       
+  L1(p)                n=16  order
+    INTERIOR    3.282e-02       
+    SEAM        3.893e-02       
+    VERTEX      4.213e-02       
+    VTX/INT          1.28       
+    SEAM/INT         1.19       
+  max|v|/c_s      5.898e-02       
+
+------------------------------------------------------------------------------------------
+strat  recon=plm    cs_wellbalanced_src=OFF  tlim=1.20_mhd_wellbalance_dynamic_true_mhd_wb_x1_true_mhd_wb_cache_every_10
+  n=16: cyc=460 dtbar=2.609e-03 t=1.2000 wall=43.6s
+  L1(v)                n=16  order
+    INTERIOR    3.351e-03       
+    SEAM        3.026e-03       
+    VERTEX      3.091e-03       
+    VTX/INT          0.92       
+    SEAM/INT         0.90       
+  Linf(v)              n=16  order
+    INTERIOR    1.981e-02       
+    SEAM        2.406e-02       
+    VERTEX      1.648e-02       
+    VTX/INT          0.83       
+    SEAM/INT         1.21       
+  L1(v_tang)           n=16  order
+    INTERIOR    2.187e-03       
+    SEAM        2.045e-03       
+    VERTEX      2.282e-03       
+    VTX/INT          1.04       
+    SEAM/INT         0.93       
+  Linf(v_tang)         n=16  order
+    INTERIOR    1.035e-02       
+    SEAM        1.415e-02       
+    VERTEX      1.165e-02       
+    VTX/INT          1.13       
+    SEAM/INT         1.37       
+  L1(p)                n=16  order
+    INTERIOR    3.281e-02       
+    SEAM        3.893e-02       
+    VERTEX      4.212e-02       
+    VTX/INT          1.28       
+    SEAM/INT         1.19       
+  max|v|/c_s      5.894e-02       
+
+------------------------------------------------------------------------------------------
+strat  recon=plm    cs_wellbalanced_src=ON   tlim=1.20
+  n=16: cyc=460 dtbar=2.609e-03 t=1.2000 wall=44.0s
+  L1(v)                n=16  order
+    INTERIOR    2.640e-03       
+    SEAM        2.818e-03       
+    VERTEX      3.062e-03       
+    VTX/INT          1.16       
+    SEAM/INT         1.07       
+  Linf(v)              n=16  order
+    INTERIOR    1.081e-02       
+    SEAM        2.005e-02       
+    VERTEX      1.036e-02       
+    VTX/INT          0.96       
+    SEAM/INT         1.86       
+  L1(v_tang)           n=16  order
+    INTERIOR    1.946e-03       
+    SEAM        2.103e-03       
+    VERTEX      2.325e-03       
+    VTX/INT          1.19       
+    SEAM/INT         1.08       
+  Linf(v_tang)         n=16  order
+    INTERIOR    7.512e-03       
+    SEAM        1.201e-02       
+    VERTEX      8.429e-03       
+    VTX/INT          1.12       
+    SEAM/INT         1.60       
+  L1(p)                n=16  order
+    INTERIOR    2.351e-02       
+    SEAM        3.018e-02       
+    VERTEX      3.453e-02       
+    VTX/INT          1.47       
+    SEAM/INT         1.28       
+  max|v|/c_s      4.911e-02       
+
+------------------------------------------------------------------------------------------
+strat  recon=wenoz  cs_wellbalanced_src=OFF  tlim=1.20
+  n=16: cyc=460 dtbar=2.609e-03 t=1.2000 wall=48.7s
+  L1(v)                n=16  order
+    INTERIOR    8.894e-04       
+    SEAM        8.798e-04       
+    VERTEX      1.132e-03       
+    VTX/INT          1.27       
+    SEAM/INT         0.99       
+  Linf(v)              n=16  order
+    INTERIOR    4.044e-03       
+    SEAM        4.346e-03       
+    VERTEX      4.629e-03       
+    VTX/INT          1.14       
+    SEAM/INT         1.07       
+  L1(v_tang)           n=16  order
+    INTERIOR    6.125e-04       
+    SEAM        6.022e-04       
+    VERTEX      7.861e-04       
+    VTX/INT          1.28       
+    SEAM/INT         0.98       
+  Linf(v_tang)         n=16  order
+    INTERIOR    3.492e-03       
+    SEAM        3.736e-03       
+    VERTEX      4.167e-03       
+    VTX/INT          1.19       
+    SEAM/INT         1.07       
+  L1(p)                n=16  order
+    INTERIOR    1.181e-02       
+    SEAM        1.432e-02       
+    VERTEX      1.524e-02       
+    VTX/INT          1.29       
+    SEAM/INT         1.21       
+  max|v|/c_s      1.134e-02       
+
+------------------------------------------------------------------------------------------
+strat  recon=wenoz  cs_wellbalanced_src=ON   tlim=1.20
+  n=16: cyc=460 dtbar=2.609e-03 t=1.2000 wall=49.4s
+  L1(v)                n=16  order
+    INTERIOR    1.843e-03       
+    SEAM        1.692e-03       
+    VERTEX      2.023e-03       
+    VTX/INT          1.10       
+    SEAM/INT         0.92       
+  Linf(v)              n=16  order
+    INTERIOR    7.192e-03       
+    SEAM        7.472e-03       
+    VERTEX      7.548e-03       
+    VTX/INT          1.05       
+    SEAM/INT         1.04       
+  L1(v_tang)           n=16  order
+    INTERIOR    1.241e-03       
+    SEAM        1.102e-03       
+    VERTEX      1.405e-03       
+    VTX/INT          1.13       
+    SEAM/INT         0.89       
+  Linf(v_tang)         n=16  order
+    INTERIOR    3.303e-03       
+    SEAM        3.735e-03       
+    VERTEX      4.337e-03       
+    VTX/INT          1.31       
+    SEAM/INT         1.13       
+  L1(p)                n=16  order
+    INTERIOR    1.250e-02       
+    SEAM        1.446e-02       
+    VERTEX      1.497e-02       
+    VTX/INT          1.20       
+    SEAM/INT         1.16       
+  max|v|/c_s      1.849e-02       
+
+------------------------------------------------------------------------------------------
+strat  recon=plm    cs_wellbalanced_src=OFF  tlim=short
+  n=16: cyc=16 dtbar=2.500e-03 t=0.0400 wall=1.6s | n=32: cyc=32 dtbar=1.250e-03 t=0.0400 wall=15.8s | n=64: cyc=65 dtbar=6.154e-04 t=0.0400 wall=197.6s
+  L1(v)                n=16  order        n=32  order        n=64  order
+    INTERIOR    3.793e-04          9.846e-05   1.95   2.401e-05   2.04
+    SEAM        5.301e-04          1.377e-04   1.95   3.489e-05   1.98
+    VERTEX      7.079e-04          1.970e-04   1.85   4.972e-05   1.99
+    VTX/INT          1.87               2.00               2.07       
+    SEAM/INT         1.40               1.40               1.45       
+  Linf(v)              n=16  order        n=32  order        n=64  order
+    INTERIOR    3.995e-03          1.957e-03   1.03   6.756e-04   1.53
+    SEAM        6.602e-03          2.959e-03   1.16   1.163e-03   1.35
+    VERTEX      4.778e-03          2.138e-03   1.16   6.234e-04   1.78
+    VTX/INT          1.20               1.09               0.92       
+    SEAM/INT         1.65               1.51               1.72       
+  L1(v_tang)           n=16  order        n=32  order        n=64  order
+    INTERIOR    1.931e-04          5.063e-05   1.93   1.186e-05   2.09
+    SEAM        3.389e-04          8.789e-05   1.95   2.202e-05   2.00
+    VERTEX      4.871e-04          1.377e-04   1.82   3.409e-05   2.01
+    VTX/INT          2.52               2.72               2.88       
+    SEAM/INT         1.76               1.74               1.86       
+  Linf(v_tang)         n=16  order        n=32  order        n=64  order
+    INTERIOR    3.865e-03          1.739e-03   1.15   5.179e-04   1.75
+    SEAM        6.139e-03          2.669e-03   1.20   9.346e-04   1.51
+    VERTEX      4.554e-03          1.930e-03   1.24   5.818e-04   1.73
+    VTX/INT          1.18               1.11               1.12       
+    SEAM/INT         1.59               1.53               1.80       
+  L1(p)                n=16  order        n=32  order        n=64  order
+    INTERIOR    1.668e-02          4.070e-03   2.03   1.002e-03   2.02
+    SEAM        1.710e-02          4.132e-03   2.05   1.012e-03   2.03
+    VERTEX      1.746e-02          4.179e-03   2.06   1.017e-03   2.04
+    VTX/INT          1.05               1.03               1.01       
+    SEAM/INT         1.03               1.02               1.01       
+  max|v|/c_s      1.617e-02          7.249e-03          2.850e-03       
+
+------------------------------------------------------------------------------------------
+strat  recon=plm    cs_wellbalanced_src=OFF  tlim=short_mhd_wellbalance_dynamic_true_mhd_wb_x1_true
+  n=16: cyc=16 dtbar=2.500e-03 t=0.0400 wall=1.7s | n=32: cyc=32 dtbar=1.250e-03 t=0.0400 wall=17.3s | n=64: cyc=65 dtbar=6.154e-04 t=0.0400 wall=219.3s
+  L1(v)                n=16  order        n=32  order        n=64  order
+    INTERIOR    4.241e-04          1.089e-04   1.96   2.666e-05   2.03
+    SEAM        5.684e-04          1.465e-04   1.96   3.699e-05   1.99
+    VERTEX      8.134e-04          2.222e-04   1.87   5.547e-05   2.00
+    VTX/INT          1.92               2.04               2.08       
+    SEAM/INT         1.34               1.34               1.39       
+  Linf(v)              n=16  order        n=32  order        n=64  order
+    INTERIOR    4.086e-03          1.767e-03   1.21   5.785e-04   1.61
+    SEAM        6.309e-03          2.884e-03   1.13   1.045e-03   1.46
+    VERTEX      5.048e-03          2.207e-03   1.19   6.387e-04   1.79
+    VTX/INT          1.24               1.25               1.10       
+    SEAM/INT         1.54               1.63               1.81       
+  L1(v_tang)           n=16  order        n=32  order        n=64  order
+    INTERIOR    1.953e-04          5.138e-05   1.93   1.210e-05   2.09
+    SEAM        3.403e-04          8.828e-05   1.95   2.213e-05   2.00
+    VERTEX      4.873e-04          1.375e-04   1.83   3.401e-05   2.02
+    VTX/INT          2.50               2.68               2.81       
+    SEAM/INT         1.74               1.72               1.83       
+  Linf(v_tang)         n=16  order        n=32  order        n=64  order
+    INTERIOR    3.903e-03          1.677e-03   1.22   5.039e-04   1.73
+    SEAM        6.167e-03          2.679e-03   1.20   9.361e-04   1.52
+    VERTEX      4.542e-03          1.936e-03   1.23   5.886e-04   1.72
+    VTX/INT          1.16               1.15               1.17       
+    SEAM/INT         1.58               1.60               1.86       
+  L1(p)                n=16  order        n=32  order        n=64  order
+    INTERIOR    1.671e-02          4.079e-03   2.03   1.005e-03   2.02
+    SEAM        1.707e-02          4.136e-03   2.05   1.014e-03   2.03
+    VERTEX      1.744e-02          4.184e-03   2.06   1.020e-03   2.04
+    VTX/INT          1.04               1.03               1.01       
+    SEAM/INT         1.02               1.01               1.01       
+  max|v|/c_s      1.545e-02          7.064e-03          2.560e-03       
+
+------------------------------------------------------------------------------------------
+strat  recon=plm    cs_wellbalanced_src=ON   tlim=short
+  n=16: cyc=16 dtbar=2.500e-03 t=0.0400 wall=1.6s | n=32: cyc=32 dtbar=1.250e-03 t=0.0400 wall=16.4s | n=64: cyc=65 dtbar=6.154e-04 t=0.0400 wall=207.6s
+  L1(v)                n=16  order        n=32  order        n=64  order
+    INTERIOR    4.339e-04          1.114e-04   1.96   2.735e-05   2.03
+    SEAM        5.816e-04          1.492e-04   1.96   3.724e-05   2.00
+    VERTEX      8.197e-04          2.251e-04   1.86   5.610e-05   2.00
+    VTX/INT          1.89               2.02               2.05       
+    SEAM/INT         1.34               1.34               1.36       
+  Linf(v)              n=16  order        n=32  order        n=64  order
+    INTERIOR    4.292e-03          2.151e-03   1.00   7.165e-04   1.59
+    SEAM        7.614e-03          3.091e-03   1.30   1.192e-03   1.37
+    VERTEX      5.081e-03          2.230e-03   1.19   6.431e-04   1.79
+    VTX/INT          1.18               1.04               0.90       
+    SEAM/INT         1.77               1.44               1.66       
+  L1(v_tang)           n=16  order        n=32  order        n=64  order
+    INTERIOR    2.169e-04          5.664e-05   1.94   1.353e-05   2.07
+    SEAM        3.346e-04          8.686e-05   1.95   2.136e-05   2.02
+    VERTEX      5.279e-04          1.497e-04   1.82   3.646e-05   2.04
+    VTX/INT          2.43               2.64               2.69       
+    SEAM/INT         1.54               1.53               1.58       
+  Linf(v_tang)         n=16  order        n=32  order        n=64  order
+    INTERIOR    3.674e-03          1.727e-03   1.09   5.194e-04   1.73
+    SEAM        6.313e-03          2.589e-03   1.29   9.138e-04   1.50
+    VERTEX      4.760e-03          2.008e-03   1.25   6.052e-04   1.73
+    VTX/INT          1.30               1.16               1.17       
+    SEAM/INT         1.72               1.50               1.76       
+  L1(p)                n=16  order        n=32  order        n=64  order
+    INTERIOR    1.672e-02          4.074e-03   2.04   1.003e-03   2.02
+    SEAM        1.717e-02          4.138e-03   2.05   1.012e-03   2.03
+    VERTEX      1.752e-02          4.181e-03   2.07   1.017e-03   2.04
+    VTX/INT          1.05               1.03               1.01       
+    SEAM/INT         1.03               1.02               1.01       
+  max|v|/c_s      1.865e-02          7.572e-03          2.920e-03       
+
+------------------------------------------------------------------------------------------
+strat  recon=ppm4   cs_wellbalanced_src=OFF  tlim=short
+  n=32: cyc=32 dtbar=1.250e-03 t=0.0400 wall=20.3s
+  L1(v)                n=32  order
+    INTERIOR    9.167e-05       
+    SEAM        1.113e-04       
+    VERTEX      1.213e-04       
+    VTX/INT          1.32       
+    SEAM/INT         1.21       
+  Linf(v)              n=32  order
+    INTERIOR    1.560e-03       
+    SEAM        2.753e-03       
+    VERTEX      2.014e-03       
+    VTX/INT          1.29       
+    SEAM/INT         1.77       
+  L1(v_tang)           n=32  order
+    INTERIOR    4.086e-05       
+    SEAM        6.015e-05       
+    VERTEX      7.287e-05       
+    VTX/INT          1.78       
+    SEAM/INT         1.47       
+  Linf(v_tang)         n=32  order
+    INTERIOR    1.406e-03       
+    SEAM        2.409e-03       
+    VERTEX      1.969e-03       
+    VTX/INT          1.40       
+    SEAM/INT         1.71       
+  L1(p)                n=32  order
+    INTERIOR    3.935e-03       
+    SEAM        3.948e-03       
+    VERTEX      3.940e-03       
+    VTX/INT          1.00       
+    SEAM/INT         1.00       
+  max|v|/c_s      6.745e-03       
+
+------------------------------------------------------------------------------------------
+strat  recon=ppm4   cs_wellbalanced_src=ON   tlim=short
+  n=32: cyc=32 dtbar=1.250e-03 t=0.0400 wall=21.1s
+  L1(v)                n=32  order
+    INTERIOR    7.994e-05       
+    SEAM        1.011e-04       
+    VERTEX      1.276e-04       
+    VTX/INT          1.60       
+    SEAM/INT         1.26       
+  Linf(v)              n=32  order
+    INTERIOR    1.640e-03       
+    SEAM        2.840e-03       
+    VERTEX      1.688e-03       
+    VTX/INT          1.03       
+    SEAM/INT         1.73       
+  L1(v_tang)           n=32  order
+    INTERIOR    3.107e-05       
+    SEAM        4.867e-05       
+    VERTEX      7.242e-05       
+    VTX/INT          2.33       
+    SEAM/INT         1.57       
+  Linf(v_tang)         n=32  order
+    INTERIOR    1.331e-03       
+    SEAM        2.319e-03       
+    VERTEX      1.651e-03       
+    VTX/INT          1.24       
+    SEAM/INT         1.74       
+  L1(p)                n=32  order
+    INTERIOR    3.936e-03       
+    SEAM        3.948e-03       
+    VERTEX      3.943e-03       
+    VTX/INT          1.00       
+    SEAM/INT         1.00       
+  max|v|/c_s      6.957e-03       
+
+------------------------------------------------------------------------------------------
+strat  recon=ppmx   cs_wellbalanced_src=OFF  tlim=short
+  n=32: cyc=32 dtbar=1.250e-03 t=0.0400 wall=20.5s
+  L1(v)                n=32  order
+    INTERIOR    7.690e-05       
+    SEAM        8.405e-05       
+    VERTEX      8.989e-05       
+    VTX/INT          1.17       
+    SEAM/INT         1.09       
+  Linf(v)              n=32  order
+    INTERIOR    2.394e-04       
+    SEAM        3.593e-04       
+    VERTEX      3.744e-04       
+    VTX/INT          1.56       
+    SEAM/INT         1.50       
+  L1(v_tang)           n=32  order
+    INTERIOR    2.721e-05       
+    SEAM        3.494e-05       
+    VERTEX      4.334e-05       
+    VTX/INT          1.59       
+    SEAM/INT         1.28       
+  Linf(v_tang)         n=32  order
+    INTERIOR    1.536e-04       
+    SEAM        2.852e-04       
+    VERTEX      2.819e-04       
+    VTX/INT          1.83       
+    SEAM/INT         1.86       
+  L1(p)                n=32  order
+    INTERIOR    3.934e-03       
+    SEAM        3.934e-03       
+    VERTEX      3.934e-03       
+    VTX/INT          1.00       
+    SEAM/INT         1.00       
+  max|v|/c_s      9.170e-04       
+
+------------------------------------------------------------------------------------------
+strat  recon=ppmx   cs_wellbalanced_src=ON   tlim=short
+  n=32: cyc=32 dtbar=1.250e-03 t=0.0400 wall=20.9s
+  L1(v)                n=32  order
+    INTERIOR    6.310e-05       
+    SEAM        7.025e-05       
+    VERTEX      9.133e-05       
+    VTX/INT          1.45       
+    SEAM/INT         1.11       
+  Linf(v)              n=32  order
+    INTERIOR    1.353e-04       
+    SEAM        3.284e-04       
+    VERTEX      3.744e-04       
+    VTX/INT          2.77       
+    SEAM/INT         2.43       
+  L1(v_tang)           n=32  order
+    INTERIOR    1.504e-05       
+    SEAM        1.950e-05       
+    VERTEX      3.738e-05       
+    VTX/INT          2.49       
+    SEAM/INT         1.30       
+  Linf(v_tang)         n=32  order
+    INTERIOR    9.956e-05       
+    SEAM        2.644e-04       
+    VERTEX      2.891e-04       
+    VTX/INT          2.90       
+    SEAM/INT         2.66       
+  L1(p)                n=32  order
+    INTERIOR    3.935e-03       
+    SEAM        3.934e-03       
+    VERTEX      3.934e-03       
+    VTX/INT          1.00       
+    SEAM/INT         1.00       
+  max|v|/c_s      9.171e-04       
+
+------------------------------------------------------------------------------------------
+strat  recon=wenoz  cs_wellbalanced_src=OFF  tlim=short
+  n=16: cyc=16 dtbar=2.500e-03 t=0.0400 wall=1.8s | n=32: cyc=32 dtbar=1.250e-03 t=0.0400 wall=18.6s
+  L1(v)                n=16  order        n=32  order
+    INTERIOR    2.993e-04          7.690e-05   1.96
+    SEAM        3.250e-04          8.398e-05   1.95
+    VERTEX      3.278e-04          8.996e-05   1.87
+    VTX/INT          1.10               1.17       
+    SEAM/INT         1.09               1.09       
+  Linf(v)              n=16  order        n=32  order
+    INTERIOR    8.210e-04          2.384e-04   1.78
+    SEAM        1.222e-03          3.714e-04   1.72
+    VERTEX      1.185e-03          3.800e-04   1.64
+    VTX/INT          1.44               1.59       
+    SEAM/INT         1.49               1.56       
+  L1(v_tang)           n=16  order        n=32  order
+    INTERIOR    1.047e-04          2.721e-05   1.94
+    SEAM        1.326e-04          3.490e-05   1.93
+    VERTEX      1.475e-04          4.328e-05   1.77
+    VTX/INT          1.41               1.59       
+    SEAM/INT         1.27               1.28       
+  Linf(v_tang)         n=16  order        n=32  order
+    INTERIOR    5.400e-04          1.536e-04   1.81
+    SEAM        9.111e-04          3.004e-04   1.60
+    VERTEX      9.168e-04          3.086e-04   1.57
+    VTX/INT          1.70               2.01       
+    SEAM/INT         1.69               1.96       
+  L1(p)                n=16  order        n=32  order
+    INTERIOR    1.569e-02          3.934e-03   2.00
+    SEAM        1.568e-02          3.933e-03   2.00
+    VERTEX      1.568e-02          3.936e-03   1.99
+    VTX/INT          1.00               1.00       
+    SEAM/INT         1.00               1.00       
+  max|v|/c_s      2.993e-03          9.308e-04       
+
+------------------------------------------------------------------------------------------
+strat  recon=wenoz  cs_wellbalanced_src=ON   tlim=short
+  n=16: cyc=16 dtbar=2.500e-03 t=0.0400 wall=1.8s | n=32: cyc=32 dtbar=1.250e-03 t=0.0400 wall=19.2s | n=64: cyc=65 dtbar=6.154e-04 t=0.0400 wall=252.2s
+  L1(v)                n=16  order        n=32  order        n=64  order
+    INTERIOR    2.505e-04          6.310e-05   1.99   1.587e-05   1.99
+    SEAM        2.732e-04          7.026e-05   1.96   1.790e-05   1.97
+    VERTEX      3.443e-04          9.144e-05   1.91   2.357e-05   1.96
+    VTX/INT          1.37               1.45               1.49       
+    SEAM/INT         1.09               1.11               1.13       
+  Linf(v)              n=16  order        n=32  order        n=64  order
+    INTERIOR    4.677e-04          1.356e-04   1.79   3.627e-05   1.90
+    SEAM        8.553e-04          3.450e-04   1.31   9.215e-05   1.90
+    VERTEX      1.133e-03          3.730e-04   1.60   1.090e-04   1.77
+    VTX/INT          2.42               2.75               3.01       
+    SEAM/INT         1.83               2.54               2.54       
+  L1(v_tang)           n=16  order        n=32  order        n=64  order
+    INTERIOR    5.920e-05          1.505e-05   1.98   3.822e-06   1.98
+    SEAM        7.164e-05          1.951e-05   1.88   5.162e-06   1.92
+    VERTEX      1.311e-04          3.745e-05   1.81   9.976e-06   1.91
+    VTX/INT          2.22               2.49               2.61       
+    SEAM/INT         1.21               1.30               1.35       
+  Linf(v_tang)         n=16  order        n=32  order        n=64  order
+    INTERIOR    3.193e-04          1.006e-04   1.67   2.747e-05   1.87
+    SEAM        6.107e-04          2.761e-04   1.15   8.203e-05   1.75
+    VERTEX      8.330e-04          3.097e-04   1.43   8.828e-05   1.81
+    VTX/INT          2.61               3.08               3.21       
+    SEAM/INT         1.91               2.74               2.99       
+  L1(p)                n=16  order        n=32  order        n=64  order
+    INTERIOR    1.570e-02          3.935e-03   2.00   9.843e-04   2.00
+    SEAM        1.569e-02          3.933e-03   2.00   9.840e-04   2.00
+    VERTEX      1.568e-02          3.935e-03   1.99   9.846e-04   2.00
+    VTX/INT          1.00               1.00               1.00       
+    SEAM/INT         1.00               1.00               1.00       
+  max|v|/c_s      2.776e-03          9.137e-04          2.671e-04       
+
+==========================================================================================
+CONFIGURATION COMPARISON  (error relative to the plm / wb OFF baseline
+at the same test and resolution; < 1 is an improvement)
+==========================================================================================
+
+  strat, n=16
+    config                 L1(v_t).INT  L1(v_t).SEA  L1(v_t).VERLinf(v_t).INTLinf(v_t).SEALinf(v_t).VER    L1(v).INT    L1(v).SEA    L1(v).VER
+    plm/wb0                     1.000        1.000        1.000        1.000        1.000        1.000        1.000        1.000        1.000
+    plm/wb1                     1.123        0.987        1.084        0.951        1.028        1.045        1.144        1.097        1.158
+    wenoz/wb0                   0.542        0.391        0.303        0.140        0.148        0.201        0.789        0.613        0.463
+    wenoz/wb1                   0.307        0.211        0.269        0.083        0.099        0.183        0.660        0.515        0.486
+
+  strat, n=32
+    config                 L1(v_t).INT  L1(v_t).SEA  L1(v_t).VERLinf(v_t).INTLinf(v_t).SEALinf(v_t).VER    L1(v).INT    L1(v).SEA    L1(v).VER
+    plm/wb0                     1.000        1.000        1.000        1.000        1.000        1.000        1.000        1.000        1.000
+    plm/wb1                     1.119        0.988        1.087        0.993        0.970        1.041        1.132        1.084        1.143
+    ppm4/wb0                    0.807        0.684        0.529        0.808        0.902        1.020        0.931        0.808        0.616
+    ppm4/wb1                    0.614        0.554        0.526        0.765        0.869        0.855        0.812        0.735        0.648
+    ppmx/wb0                    0.537        0.398        0.315        0.088        0.107        0.146        0.781        0.610        0.456
+    ppmx/wb1                    0.297        0.222        0.271        0.057        0.099        0.150        0.641        0.510        0.464
+    wenoz/wb0                   0.537        0.397        0.314        0.088        0.113        0.160        0.781        0.610        0.457
+    wenoz/wb1                   0.297        0.222        0.272        0.058        0.103        0.160        0.641        0.510        0.464
+
+  strat, n=64
+    config                 L1(v_t).INT  L1(v_t).SEA  L1(v_t).VERLinf(v_t).INTLinf(v_t).SEALinf(v_t).VER    L1(v).INT    L1(v).SEA    L1(v).VER
+    plm/wb0                     1.000        1.000        1.000        1.000        1.000        1.000        1.000        1.000        1.000
+    plm/wb1                     1.141        0.970        1.070        1.003        0.978        1.040        1.139        1.067        1.128
+    wenoz/wb1                   0.322        0.234        0.293        0.053        0.088        0.152        0.661        0.513        0.474
+
+  rot, n=16
+    config                 L1(v_t).INT  L1(v_t).SEA  L1(v_t).VERLinf(v_t).INTLinf(v_t).SEALinf(v_t).VER    L1(v).INT    L1(v).SEA    L1(v).VER
+    plm/wb0                     1.000        1.000        1.000        1.000        1.000        1.000        1.000        1.000        1.000
+    plm/wb1                     1.093        0.996        1.019        0.916        1.015        0.990        1.138        1.096        1.100
+    wenoz/wb0                   0.812        0.692        0.681        0.631        0.564        0.782        0.879        0.765        0.713
+    wenoz/wb1                   0.659        0.537        0.510        0.588        0.583        0.774        0.769        0.674        0.608
+
+  rot, n=32
+    config                 L1(v_t).INT  L1(v_t).SEA  L1(v_t).VERLinf(v_t).INTLinf(v_t).SEALinf(v_t).VER    L1(v).INT    L1(v).SEA    L1(v).VER
+    plm/wb0                     1.000        1.000        1.000        1.000        1.000        1.000        1.000        1.000        1.000
+    plm/wb1                     1.054        1.002        1.031        0.997        0.943        1.020        1.106        1.081        1.091
+    ppm4/wb0                    1.250        1.269        1.535        1.743        1.682        2.367        1.198        1.190        1.277
+    ppm4/wb1                    1.206        1.215        1.488        1.703        1.718        2.312        1.187        1.189        1.271
+    ppmx/wb0                    0.929        0.813        0.844        0.601        0.589        0.936        0.952        0.842        0.808
+    ppmx/wb1                    0.828        0.710        0.734        0.599        0.599        0.906        0.895        0.800        0.755
+    wenoz/wb0                   0.921        0.807        0.837        0.591        0.579        0.900        0.946        0.837        0.805
+    wenoz/wb1                   0.820        0.702        0.718        0.594        0.601        0.902        0.889        0.794        0.746
+
+  rot, n=64
+    config                 L1(v_t).INT  L1(v_t).SEA  L1(v_t).VERLinf(v_t).INTLinf(v_t).SEALinf(v_t).VER    L1(v).INT    L1(v).SEA    L1(v).VER
+    plm/wb0                     1.000        1.000        1.000        1.000        1.000        1.000        1.000        1.000        1.000
+
+  loop, n=16
+    config                      L1.INT       L1.SEA       L1.VER     Linf.INT     Linf.SEA     Linf.VER
+    plm/wb0                     1.000        1.000        1.000        1.000        1.000        1.000
+    plm/wb1                     1.056        1.033        1.010        1.059        1.024        0.936
+    wenoz/wb1                   1.031        1.004        1.048        0.948        0.789        0.705
+
+  loop, n=32
+    config                      L1.INT       L1.SEA       L1.VER     Linf.INT     Linf.SEA     Linf.VER
+    plm/wb0                     1.000        1.000        1.000        1.000        1.000        1.000
+    plm/wb1                     1.030        1.022        1.009        1.032        0.949        0.955
+    ppm4/wb0                    1.017        1.027        1.097        0.968        0.955        1.215
+    ppm4/wb1                    1.041        1.050        1.104        0.993        0.971        1.198
+    ppmx/wb0                    0.990        1.018        1.109        0.920        0.960        1.150
+    ppmx/wb1                    1.007        1.039        1.117        0.939        0.974        1.170
+    wenoz/wb0                   0.989        1.018        1.076        0.922        0.801        0.894
+    wenoz/wb1                   1.006        1.040        1.088        0.940        0.769        0.888
+
+  loop, n=64
+    config                      L1.INT       L1.SEA       L1.VER     Linf.INT     Linf.SEA     Linf.VER
+    plm/wb0                     1.000        1.000        1.000        1.000        1.000        1.000
+

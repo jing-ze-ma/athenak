@@ -1,0 +1,169 @@
+# Cubed sphere, MHD: the STRATIFIED LOW-BETA test.  Build with -D PROBLEM=cs_test.
+#
+# WHY THIS EXISTS.  Every other cubed-sphere MHD test in this directory is UNSTRATIFIED,
+# and the hot-Jupiter run that fails on this grid is a stratified low-beta atmosphere.
+# iprob = 13 is the smallest problem carrying both.
+#
+#   * constant inward gravity g, applied as a user source term (<srcterms> is refused on
+#     the cubed sphere; a purely RADIAL source needs none -- see CSTestGravSrc)
+#   * an isothermal profile rho = d0 exp(-(r-r0)/H), H = (p0/d0)/g
+#   * the same UNIFORM CARTESIAN field iprob = 8 uses, so curl B = 0 and it exerts no
+#     force at any beta.
+#
+# THE EXACT SOLUTION IS THE INITIAL CONDITION, FOREVER, and v is exactly zero in it -- so
+# |v| IS the error and there is no reference solution to argue about.
+#
+# ONE RUN SWEEPS BETA.  p falls by exp(-5) = 6.7e-3 over the domain while |B| does not, so
+# beta = 2 p / b0c^2 runs from 2.0 at the base to 1.3e-2 at the top, straddling the
+# beta ~ 1 threshold at which the cubed-sphere vertex operator was measured to lose
+# consistency.  Change b0c to move the whole ladder.
+#
+# HOW TO USE IT.  The gate is the PER-STEP error by region at nlim = 1, refining nx2:
+#
+#   for n in 16 32 64; do
+#     build_cs/src/athena -i inputs/tests/cubed_sphere_mhd_strat.athinput -d . \
+#       mesh/nx2=$n mesh/nx3=$n meshblock/nx2=$n meshblock/nx3=$n time/nlim=1
+#   done
+#
+# and read the CUBE VERTEX row of the per-region table.  It must be ~2nd order.  Do NOT
+# gate on a many-step run, where accumulation muddies the order, and do not read an order
+# off the panel INTERIOR alone -- the defect this test exists for is codim-2.
+#
+# AXES: x1 is RADIAL, x2 = xi and x3 = eta are the panel-tangential angles.  Must be 3D.
+
+<comment>
+problem = cubed sphere hydrostatic atmosphere carrying a uniform force-free field
+
+<job>
+basename = cs_reg_strat
+
+<mesh>
+nghost   = 3
+nx1      = 32           # RADIAL.  H = 0.1 and the domain is 5 H, so 6.4 cells per H.
+x1min    = 1.0
+x1max    = 1.5
+ix1_bc   = user
+ox1_bc   = user
+
+nx2      = 32           # xi;  nx2 must equal nx3 (Mesh checks this)
+x2min    = -1.0
+x2max    = 1.0
+ix2_bc   = panel
+ox2_bc   = panel
+
+nx3      = 32           # eta
+x3min    = -1.0
+x3max    = 1.0
+ix3_bc   = panel
+ox3_bc   = panel
+
+use_cubed_sphere = true
+
+<meshblock>
+nx1      = 32
+nx2      = 32
+nx3      = 32
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim       = -1
+tlim       = 1.0
+ndiag      = 100
+
+<mhd>
+eos         = ideal
+reconstruct = plm
+rsolver     = hlld
+gamma       = 1.666667
+
+# RHS-SPLIT DIAGNOSTICS.  The tangential momentum RHS on this grid is a flux divergence
+# plus a geometric source term which must cancel; set exactly one of these to true to
+# measure one half of that cancellation on its own at nlim = 1.  Both change the answer
+# and are declared here only so they can be overridden on the command line.
+cs_diag_no_coordsrc = false   # drop the geometric source -> the step measures -div F
+cs_diag_no_divf     = false   # drop the flux divergence  -> the step measures the source
+cs_diag_no_magsrc   = false   # drop the MAGNETIC terms of the geometric source only
+
+# THE WELL-BALANCED GEOMETRIC SOURCE.  Builds the source as the face sum
+# (1/V) sum_f A_f (T_cell.nhat_f).e_i(x_f) with CARTESIAN vectors, which is what the flux
+# divergence forms, so the two cancel to round-off whenever the face states equal the cell
+# state -- instead of only for the ISOTROPIC part, as the analytic form manages.
+cs_wellbalanced_src = false
+
+# THE K&M (DYNAMIC) WELL-BALANCED RADIAL RECONSTRUCTION -- a DIFFERENT lever from the one
+# above.  cs_wellbalanced_src rebuilds the GEOMETRIC source as a face sum, which attacks
+# the ANGULAR (flux-divergence vs source) cancellation; this one reconstructs the radial
+# face states about a local hydrostatic background, which attacks the RADIAL hydrostatic
+# truncation error -- the dominant term of this problem.  It needs the gravitational
+# potential, which cs_test fills for iprob = 13 only (Phi = g*(r - r0), sampled at x1v and
+# xx1f).  wb_cache_every: 0 = rebuild the local background every stage, N = every N-th
+# cycle, i.e. reconstruct against a background up to N cycles STALE.
+wellbalance_dynamic = false
+wb_x1               = false
+wb_option           = isothermal   # exactly this atmosphere's stratification
+wb_cache_every      = 0
+
+# THE CORNER EMF is the GS07 upwind reconstruction on every grid (no switch since
+# 2026-09-05).  bs_emf = true would substitute the plain four-face average for diagnosis.
+bs_emf = false
+
+# THE LOW-BETA FALLBACK, and the reason this test exists.  Plasma beta below which the
+# flux falls back per FACE from HLLD to HLLE.  Defaults to 0.5 on the cubed sphere (0 =
+# off); it is what makes this test stable.  See rsolvers/cs_lowbeta_fallback.hpp.
+cs_lowbeta_fallback = 0.5
+# MEASUREMENT ONLY: print, every N cycles, the fraction of faces the fallback above
+# actually fired on and the smallest beta it saw, binned by radial index.  0 = off, and it
+# changes no answer either way.  This problem is the natural gate for it: beta is 2.0 at
+# the base and 1.3e-2 at the top, so the printed profile must switch from all-miss to
+# all-hit at the radius where beta crosses the threshold, and the min-beta column must
+# reproduce the analytic profile.
+cs_lowbeta_diag = 0
+# MEASUREMENT ONLY: the seam-halo internal-energy consistency test (mhd_seam_diag.cpp).
+# NOTE: it needs MORE THAN ONE MeshBlock PER PANEL, or every tangential boundary is a seam
+# and the same-panel block-face NULL CONTROL row comes back empty.  With nx2=nx3=32 use
+# meshblock/nx2=16 meshblock/nx3=16 to get 2x2 blocks per panel.
+cs_seam_diag = 0
+# THE FIX the diagnostic above exists to gate: exchange 0.5|B_cc|^2 across the seam and
+# swap the resampled source value for the ghost cell's own, so the ghost's total energy is
+# consistent with the field the ghost actually carries.  See mhd_seam_econsist.cpp.
+cs_seam_econsist = false
+
+<problem>
+iprob    = 13
+d0       = 1.0
+p0       = 0.1       # with d0 = 1 and grav = 1 this makes H = 0.1
+omega    = 0.0       # the exact state is at rest; iprob=13 forces this to zero anyway
+grav     = 1.0       # constant inward g.  H = (p0/d0)/grav
+b0c      = 0.3162    # beta = 2 p0 / b0c^2 = 2.0 at the base, 1.3e-2 at the top
+bhx      = 0.37      # field direction.  Deliberately TILTED, as in iprob = 8/9: an
+bhy      = 0.61      # axis-aligned field is invariant under some of the panel maps and
+bhz      = 0.70      # would let a broken scheme look correct.
+user_bcs = true
+user_srcs = true
+conv_errors = 1     # force CSTestConvErrors on another iprob (the unstratified control)
+exact_panel_ghosts = 0  # 1 = replace the panel ghosts with the ANALYTIC halo (state and
+                        #     face fields); 2 = face ghosts only.  The halo-vs-operator
+                        #     discriminator -- see CSTestRadialBC.
+bazi     = 0.0          # AZIMUTHAL amplitude, used only by iprob = 11: adds
+                        # bazi*(-y,x,0), whose curl is uniform, so the field carries a
+                        # REAL CURRENT and the pressure has to balance a real J x B.
+bunif    = 0.1          # UNIFORM amplitude for iprob = 11 ONLY.  Careful: on that iprob
+                        # b0c is the AZIMUTHAL amplitude of bazi*(-y,x,0), whose curl is
+                        # the uniform 2*bazi*zhat -- so that field carries a REAL CURRENT
+                        # and the pressure balances a real J x B.  For a LOW-BETA
+                        # current-carrying equilibrium make bunif strong and b0c weak, and
+                        # keep p0 above the cross term 2*b0c*|Bunif|*r_max or the pressure
+                        # goes negative.
+b0r      = 1.0          # RADIAL MONOPOLE strength, used only by the iprob = 1 control:
+                        # B_r = b0r*(r0/r)^2 is force-free too, but has NO tangential
+                        # component, so it isolates the angular operators.
+conv_nband = 2          # width, IN CELLS, of the seam and cube-vertex error bins.  A
+                        # fixed cell count shrinks physically as the grid refines, so to
+                        # read an ORDER off a bin, double it with the resolution
+                        # (2 at nx2=16, 4 at 32, 8 at 64).
+
+<output1>
+file_type = hst
+dt        = 0.1

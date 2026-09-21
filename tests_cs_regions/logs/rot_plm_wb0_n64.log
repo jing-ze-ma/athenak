@@ -1,0 +1,63 @@
+Mesh: spherical-polar x3-face theta correction = rotate
+
+Cubed sphere: Root grid = 6 x 1 x (1 x 1) MeshBlocks
+Total number of MeshBlocks = 6
+Number of logical  levels of refinement = 0 (1 levels total)
+Number of physical levels of refinement = 0 (1 levels total)
+Number of parallel ranks = 1
+
+Setup complete, executing task list(s)...
+
+elapsed=1.814637e+00 cycle=0 time=0.000000e+00 dt=2.801878e-03
+### CS CONSERVED SUMS at t = 2.50000000000000000e-01  (ncyc 90)
+###   volume 2.93215314334982438e+01
+###   mass   2.93215221408024327e+01
+###   energy 6.12398244628300006e+01
+###   Px     -1.98928567574693099e-15
+###   Py     8.79907481783365891e-15
+###   Pz     6.95878254051535749e-15
+###   Lx     5.50816134372264922e-04
+###   Ly     8.64784488698630452e-04
+###   Lz     1.03870821202899393e+01
+### CS SEAM FLUX MISMATCH (spurious source rate, sum over shared faces)
+###   dM/dt = -1.39393e-14  (away -1.40728e-14, cube vertex  1.33469e-16)
+###   dE/dt = -2.73593e-14  (away -2.77930e-14, cube vertex  4.33681e-16)
+###   per-face max |dFm| =  5.68190e-17 away,  2.37034e-17 at a vertex;  max|area*Fm| =  2.34344e-04
+###   shared faces: 43008 away + 6144 within 3 cells of a vertex;  max area mismatch 1.362e-12
+###   NULL (same-panel block faces): sum  0.00000e+00  max  0.00000e+00  over 0
+###   spurious TORQUE (dL/dt): x  3.45769e-13  y -1.07062e-13  z -3.49851e-15
+### CS LEVEL-BOUNDARY FLUX TELESCOPING
+   same level (NULL CONTROL, must be round-off): 0 faces  max|dM|  0.0000e+00  max|dE|  0.0000e+00  (scale  0.0000e+00)
+   coarse/fine boundary:                         0 faces  max|dM|  0.0000e+00  max|dE|  0.0000e+00  (scale  0.0000e+00)
+   summed spurious mass source:  same level  0.0000e+00   coarse/fine  0.0000e+00
+     same-level by direction x1(r)    n      0  max|dM|  0.0000e+00  sum  0.0000e+00
+     same-level by direction x2(xi)   n      0  max|dM|  0.0000e+00  sum  0.0000e+00
+     same-level by direction x3(eta)  n      0  max|dM|  0.0000e+00  sum  0.0000e+00
+     same-level on COARSE blocks   n      0  max|dM|  0.0000e+00  sum  0.0000e+00
+     same-level on FINE   blocks   n      0  max|dM|  0.0000e+00  sum  0.0000e+00
+### CS CONVERGENCE (iprob=9): nx2=64 t=0.250000  L1(B)=2.680004e-05  Linf(B)=3.047344e-04  L1(v)=9.779272e-05  L1(p)=3.743203e-05
+###   MAX norms over active cells:  Linf(v)=5.118972e-04  Linf(p)=1.579371e-04
+###   REGION panel INTERIOR (   884736 cells)  L1(v)=9.4673e-05 L1(p)=3.6054e-05 L1(B)=2.5758e-05  Linf(v)=4.7375e-04 Linf(p)=1.5794e-04 Linf(B)=2.8049e-04
+###   REGION panel SEAM     (   589824 cells)  L1(v)=9.9987e-05 L1(p)=3.7954e-05 L1(B)=2.7244e-05  Linf(v)=5.1190e-04 Linf(p)=1.5189e-04 Linf(B)=3.0473e-04
+###   REGION CUBE VERTEX    (    98304 cells)  L1(v)=1.1271e-04 L1(p)=4.6703e-05 L1(B)=3.3512e-05  Linf(v)=4.6234e-04 Linf(p)=1.3629e-04 Linf(B)=2.6869e-04
+###   REGION panel INTERIOR  TANGENTIAL ONLY   L1(v_t)=7.2925e-05  Linf(v_t)=4.2699e-04
+###   REGION panel SEAM      TANGENTIAL ONLY   L1(v_t)=7.6768e-05  Linf(v_t)=4.8820e-04
+###   REGION CUBE VERTEX     TANGENTIAL ONLY   L1(v_t)=8.1903e-05  Linf(v_t)=4.4018e-04
+###   best-fit UNIFORM B = (3.392544e-01,6.280239e-01,7.003498e-01)
+###   exact           B = (3.392200e-01,6.280441e-01,7.003503e-01)
+###   systematic |Bfit-Bex|/3/b0c = 1.834007e-05   vs  L1(B) = 2.680004e-05
+###   L1(B) budget: seam 45.9% (688128 cells)  radial 33.5% (221184)  interior 20.6% (663552)
+###   L1(B) per cell vs seam distance (cells):  d0:2.974e-05  d1:3.011e-05  d2:2.900e-05  d4:2.660e-05  d8:2.548e-05  d16:2.610e-05
+###   L1(B) per cell vs RADIAL-boundary distance:  r0:6.401e-05  r1:7.620e-05  r2:6.849e-05  r4:5.448e-05  r8:2.758e-05  r16:8.868e-06
+###   Linf(B) at panel 1  (i,j,k) = (63,32,2)  of block 1 [lev 0, x1 nghbr lev -1 / -1, x1 = 1..2]
+###   flow rate omega_fit/omega = 0.999950194  (s-1 = -4.9806e-05);  a field frozen into it would lag by 2.4903e-06 rad at t=0.250
+
+Terminating on time limit
+time=2.500000e-01 cycle=90
+tlim=2.500000e-01 nlim=-1
+
+MeshBlock-cycles = 540
+cpu time used  = 2.379752e+02
+zone-cycles/cpu_second = 5.948426e+05
+particle-updates/cpu_second = 0.000000e+00
+WALLCLOCK 239.81 s

@@ -1,0 +1,85 @@
+# CUBED-SPHERE PER-REGION GATE, test "rot".  Build with -D PROBLEM=cs_test.
+#
+# cs_test iprob = 9: the rigid-rotation equilibrium v = Omega zhat x r (the pressure
+# supplies the centripetal force) CARRYING the uniform, force-free Cartesian field of
+# iprob = 8.  The exact solution is known at EVERY time -- rho, v, p unchanged and
+# B(t) = Rz(Omega t) B0 -- so this measures the EVOLVED solution, and it is the test in
+# which material and field are advected ACROSS panel seams and over cube vertices.
+#
+# This is inputs/tests/cubed_sphere_mhd_conv.athinput with the three knobs the region
+# gate overrides on the command line DECLARED here, because AthenaK refuses a
+# command-line override of a parameter that the input file never mentions:
+#     <mhd>/cs_wellbalanced_src, <problem>/conv_errors, <problem>/conv_nband.
+# Driven by tests_cs_regions/run_regions.sh; see tests_cs_regions/README.md.
+#
+# AXES: x1 is RADIAL, x2 = xi and x3 = eta are the panel-tangential angles.  Must be 3D.
+
+<comment>
+problem = cs region gate: rigid rotation carrying a uniform force-free field
+
+<job>
+basename = cs_reg_rot
+
+<mesh>
+nghost   = 3            # 3, not 2: ppm4/ppmx/wenoz need >= 3, and holding it fixed
+                        # keeps the halo width out of the reconstruction comparison
+nx1      = 16           # RADIAL.  Refined JOINTLY with the angular axes -- refine the
+x1min    = 1.0          # angles alone and the order stalls on radial truncation error.
+x1max    = 2.0
+ix1_bc   = user
+ox1_bc   = user
+
+nx2      = 16           # xi;  nx2 must equal nx3 (Mesh checks this)
+x2min    = -1.0
+x2max    = 1.0
+ix2_bc   = panel
+ox2_bc   = panel
+
+nx3      = 16           # eta
+x3min    = -1.0
+x3max    = 1.0
+ix3_bc   = panel
+ox3_bc   = panel
+
+use_cubed_sphere = true
+
+<meshblock>
+nx1      = 16
+nx2      = 16
+nx3      = 16
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim       = -1
+tlim       = 0.04
+ndiag      = 1000
+
+<mhd>
+eos         = ideal
+reconstruct = plm       # plm | ppm4 | ppmx | wenoz.  On the cubed sphere this governs
+                        # the ANGULAR (x2, x3) sweeps only; the radial sweep always
+                        # takes the position-aware GridPiecewiseLinearX1.
+rsolver     = hlld
+gamma       = 1.666667
+cs_lowbeta_fallback = 0.5
+cs_seam_econsist = false
+cs_wellbalanced_src = false   # the face-sum (well-balanced) geometric source term
+
+<problem>
+iprob    = 9
+d0       = 1.0
+p0       = 1.0
+omega    = 0.2
+b0c      = 1.0
+bhx      = 0.37         # TILTED on purpose: an axis-aligned field is invariant under
+bhy      = 0.61         # the rotation and some panel maps, and would let a broken
+bhz      = 0.70         # scheme look correct.
+user_bcs = true
+conv_errors = 1
+conv_nband  = 2         # band half-width in CELLS; scale it with the resolution
+
+<output1>
+file_type = hst
+dt        = 1.0
