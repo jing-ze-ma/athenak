@@ -84,6 +84,13 @@ Real m1_sh_gm1 = 1.0, m1_sh_xl = 0.0, m1_sh_len = 1.0;
 // jump test: the two boundary values of E held fixed in the ghost zones
 Real m1_jump_el = 1.0;
 Real m1_jump_er = 0.0;
+// MILESTONE 1d: the analytic dE/dx to continue into the GHOST cells of RadM1FixedEBC,
+// times dx.  Zero (the default, and the only value before 1d) fills every ghost with the
+// end value itself, i.e. it imposes E at the boundary FACE in the ghost cell CENTRE: a
+// half-cell offset that costs the steady state dE_total/nx1 of driving, which is the
+// bulk of the "absolute flux 1.4 % low" of design sect. 11.  See sect. 13.
+Real m1_jump_dl = 0.0;
+Real m1_jump_dr = 0.0;
 } // namespace
 
 // prototypes for the user BCs
@@ -259,6 +266,16 @@ void ProblemGenerator::RadiationM1Tests(ParameterInput *pin, const bool restart)
     Real ej = e_l + s_l*(xj - x1l);
     m1_jump_el = e_l;
     m1_jump_er = ej + s_r*(x1r - xj);
+    // <problem>/exact_ghost continues the analytic slope into the ghost cells instead
+    // of repeating the end value (milestone 1d; default false = the 1c behaviour)
+    Real dxm = (x1r - x1l)/static_cast<Real>(pmy_mesh_->mesh_indcs.nx1);
+    if (pin->GetOrAddBoolean("problem","exact_ghost",false)) {
+      m1_jump_dl = s_l*dxm;
+      m1_jump_dr = s_r*dxm;
+    } else {
+      m1_jump_dl = 0.0;
+      m1_jump_dr = 0.0;
+    }
     user_bcs_func = RadM1FixedEBC;
 
     Real gm1 = pmbp->phydro->peos->eos_data.gamma - 1.0;
@@ -488,11 +505,9 @@ void ProblemGenerator::RadiationM1Tests(ParameterInput *pin, const bool restart)
       u0(m,radm1::M1_F3,k,j,i) = 0.0;
     });
   } else {
-    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-      << std::endl << "<problem>/m1_test = '" << test << "' not implemented "
-      << "(beam | pulse1d | thick_pulse | tophat | jump | equil | advect_pulse "
-      << "| advect_uniform | advect_shear | marshak)" << std::endl;
-    std::exit(EXIT_FAILURE);
+    // milestone 1d (shadow, radshock): src/pgen/tests/rad_m1_tests2.cpp, which also
+    // owns the "not implemented" fatal
+    RadiationM1Tests2(pin, restart);
   }
   return;
 }
@@ -561,12 +576,13 @@ void RadM1FixedEBC(Mesh *pm) {
   auto &mb_bcs = pmbp->pmb->mb_bcs;
   auto u0 = pmbp->pradm1->u0;
   Real el = m1_jump_el, er = m1_jump_er;
+  Real dl = m1_jump_dl, dr = m1_jump_dr;
 
   par_for("m1_fixede_bc", DevExeSpace(), 0,nmb1,0,(n3-1),0,(n2-1),
   KOKKOS_LAMBDA(int m, int k, int j) {
     if (mb_bcs.d_view(m,BoundaryFace::inner_x1) == BoundaryFlag::user) {
       for (int i=0; i<ng; ++i) {
-        u0(m,radm1::M1_E,k,j,is-i-1) = el;
+        u0(m,radm1::M1_E,k,j,is-i-1) = el - dl*(static_cast<Real>(i) + 0.5);
         u0(m,radm1::M1_F1,k,j,is-i-1) = u0(m,radm1::M1_F1,k,j,is);
         u0(m,radm1::M1_F2,k,j,is-i-1) = 0.0;
         u0(m,radm1::M1_F3,k,j,is-i-1) = 0.0;
@@ -574,7 +590,7 @@ void RadM1FixedEBC(Mesh *pm) {
     }
     if (mb_bcs.d_view(m,BoundaryFace::outer_x1) == BoundaryFlag::user) {
       for (int i=0; i<ng; ++i) {
-        u0(m,radm1::M1_E,k,j,ie+i+1) = er;
+        u0(m,radm1::M1_E,k,j,ie+i+1) = er + dr*(static_cast<Real>(i) + 0.5);
         u0(m,radm1::M1_F1,k,j,ie+i+1) = u0(m,radm1::M1_F1,k,j,ie);
         u0(m,radm1::M1_F2,k,j,ie+i+1) = 0.0;
         u0(m,radm1::M1_F3,k,j,ie+i+1) = 0.0;

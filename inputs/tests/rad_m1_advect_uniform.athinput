@@ -67,6 +67,7 @@ ap_form      = alpha2   # alpha2 | unified
 advect_split = true
 split_vel    = recon    # recon | cell: the velocity that builds A = v E + v.P
 source_form  = full     # full | ovc (the FAILING CONTROL)
+f_source     = cell    # cell | wb (the interface F source, sect. 13)
 closure      = m1
 e_floor      = 1.0e-10
 subcycle     = true

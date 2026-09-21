@@ -166,6 +166,14 @@ class RadiationM1 {
                                 // NOT a production option: it drops the beta^2 E and
                                 // beta.P.beta pieces of E0 and uses F instead of F0 in
                                 // the beta.g work term (Skinner & Ostriker type form)
+  // MILESTONE 1d, design sect. 13.  <rad_m1>/f_source = cell | wb.  `cell` (the 1c
+  // behaviour) divides the centred 2 dx radiation-pressure gradient by the cell's OWN
+  // rho*kappa_F, which is wrong by O(1) in the two cells straddling an opacity jump;
+  // `wb` uses the Bloch et al. (2021) eq. 18 trapezoidal interface source instead, i.e.
+  // an effective opacity (1/2)[(rho kappa)_{i-1/2} + (rho kappa)_{i+1/2}] per direction
+  // with the same arithmetic face mean the thick-limit flux uses.  The two agree exactly
+  // wherever rho*kappa is linear across the cell, so only a jump can see the difference.
+  bool f_source_wb;
 
   // opacities, per unit mass, in code units (design sect. 4).  kappa = kappa0 for
   // opacity = const, kappa0 (rho/rho_ref)^opac_a (T/t_ref)^opac_b for powerlaw.

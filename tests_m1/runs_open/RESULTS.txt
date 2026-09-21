@@ -1,0 +1,104 @@
+Milestone 1d (branch m1-open-gates): the three open items of stage 1.
+Binary: bench/wt_m1gates/build (serial CPU, gcc/14, Release).  Every run directory
+under runs_open/ keeps its run.log; the dumps were deleted after measuring.
+
+### BITWISE  default path vs the pristine rt-integration HEAD binary
+Same input files, same command lines, HEAD binary vs the 1d binary with
+f_source = cell: T3 (tau_cell 1e3, nghost 3), T3c top-hat, T4 dynamic 512,
+T4b, T6 (128 cells), T3b case A.
+   68 files compared, 0 differ.   (runs_open/run_bitwise.sh, runs_open/bw/)
+
+### A  T2 shadow (runs_open/run_t2.sh; 280 x 80, 10 light crossing times)
+arrival of the front at x = 0.98 (leading edge, 1 % of the incident E, lit lane
+  y = 0.115):            3.1893e-11 s   vs   x/c = 3.2689e-11 s   (-2.44 %)   PASS (5 %)
+front speed, linear fit: 1.0053 c   (at the 50 % threshold it is 0.8678 c and the
+  arrival is +8.54 %: the PLM+HLL smearing of the front, not a wave speed)
+shadow depth E(0.8, 0)/E(0.8, 0.115), M1:        7.727e-02      FAIL (1e-3)
+   time series, one light crossing apart, t/t_cross = 0..10:
+   1.000e+00 1.013e+00 2.110e-03 6.635e-03 3.713e-02 9.634e-02 8.392e-02 6.137e-02
+   6.414e-02 7.477e-02 7.780e-02 7.557e-02 7.645e-02 7.417e-02 7.722e-02 7.536e-02
+   7.549e-02 7.621e-02 7.844e-02 7.422e-02 7.727e-02
+   i.e. the umbra deepens to 2e-3 at 1 crossing, then fills to a PLATEAU of
+   7.4-7.8e-2 by 4 crossings and is steady from there.
+control, closure = eddington:                    8.858e-01   = 11.5x the M1 value
+   (the shadow is essentially destroyed: the umbra reaches 89 % of the lit value)
+re-emission floor of the ambient gas, a T0^4/(0.905 E_in) = 8.5e-4, so the 7.7e-2
+   is leakage, not emission.
+NOTE the design note names (0.8, 0.1) as the lit reference; the Fermi edge
+   (delta = 10) puts rho = 2.3 rho0 at y = 0.1 and 7.7 rho0 at y = 0.09, so y = 0.1
+   is inside the halo's penumbra (E there is 0.45 of the free-streaming value) and
+   the ratio taken with it is 0.974, meaningless.  y = 0.115 is the first fully lit
+   lane and is the script's default.
+
+### B  T7 radiative shocks (runs_open/run_t7.sh; Dirichlet ends, started from the
+###    semi-analytic profile, t = 1e-10 s, chat = c unless stated; L1 gate 2 %)
+                       L1 rho     L1 T_gas   L1 T_rad   shift (cells)
+M0=2  M1, 512          4.029e-03  6.255e-03  9.994e-03  -0.24   PASS
+M0=2  eddington, 512   4.252e-04  4.939e-04  8.837e-05  -0.40   PASS
+M0=2  chat/c = 0.1     4.089e-03  6.262e-03  9.990e-03  -0.18   PASS
+M0=2  chat/c = 0.01    4.584e-03  6.307e-03  1.002e-02  +0.35   PASS
+M0=2  subcycle = true  4.094e-03  6.292e-03  9.971e-03  -0.16   PASS   (N_sub = 571)
+M0=5  M1, 2048         2.480e-03  5.684e-03  7.541e-03  +0.25   PASS
+M0=5  M1, 1024         2.992e-03  5.599e-03  7.208e-03  +0.02   PASS
+M0=5  eddington, 1024  4.052e-04  5.205e-04  1.307e-04  -0.50   PASS
+M0=5  chat/c = 0.1     3.149e-03  5.618e-03  7.225e-03  +0.04   PASS
+M0=5  chat/c = 0.01    3.640e-03  6.220e-03  7.788e-03  -0.08   PASS
+Zel'dovich spike T_gas vs the reference, and the precursor length at 1 % of T1-T0:
+M0=2  M1, 512          4.788e+06 (-0.25 %)   5.237e-03 cm (+11.4 %)
+M0=2  eddington        4.843e+06 (+0.90 %)   4.694e-03 cm (+0.00 %)
+M0=5  M1, 2048         2.276e+07 (-2.96 %)   2.731e-02 cm (+4.12 %)
+M0=5  M1, 1024         2.136e+07 (-5.01 %)   2.729e-02 cm (+4.12 %)
+M0=5  eddington, 1024  2.137e+07 (-8.47 %)   2.623e-02 cm (+0.00 %)
+Conservation residuals of the reference itself: 4.4e-16 (M0=2), 6.7e-16 (M0=5).
+M1 vs eddington: the diffusion closure is 8-100x more accurate on all three L1
+  norms, which is the Skinner & Ostriker result (they report 1.7/6.1/7.8 % for M1
+  with computed eigenvalues against 0.42/0.49/0.42 % for lambda = +-c/sqrt3); our
+  M1 numbers are 4-10x better than theirs, and the ordering is the same.
+RSLA: at chat/c = 0.1 nothing moves; at 0.01 the errors grow by 14 % (M0=2) and
+  22 % (M0=5) RELATIVE, i.e. 0.40 -> 0.46 % and 0.30 -> 0.36 % in rho.  This is
+  much smaller than PLUTO's >40 % at c/1000 because the STEADY state of the
+  moment system is chat-independent (at d/dt = 0 the chat on the transport and
+  the chat on the source cancel), so with the shock held in its own frame and
+  started from the solution, RSLA can only show up through the transient and
+  through terms of order v/chat -- and at c/1000 the supercritical v = 8.7e7 cm/s
+  would EXCEED chat = 3e7, which is where PLUTO's number comes from.
+N_sub: with subcycle = false (the default in the input) the mesh step IS the
+  radiation step; with subcycle = true the hydro step is 2.28e-13 s against the
+  radiation 3.99e-16 s, N_sub = 571, and the answer is the same to 1.6 % of the
+  error itself.
+
+### C  T3b, the flux deficit at an opacity jump
+See docs/dev/rad_m1_design.md sect. 13.1 for the diagnosis.  Steady state, 64
+cells, <problem>/exact_ghost = true (the half-cell Dirichlet ghost offset removed),
+jump window 6 cells:
+                            A cell     A wb       B cell     B wb
+absolute flux error         1.346e-03  1.780e-05  3.467e-03  4.892e-04
+max|E/E_exact - 1|          1.288e-04  2.997e-06  3.094e-04  2.539e-04
+slope ratio error           2.369e-07  6.887e-08  2.300e-06  4.310e-06
+cell-centred F error        4.325e+01  6.559e-01  1.287e-01  9.708e-02
+face-flux peak at the jump  1.803e+01  8.806e-01  1.815e+01  7.712e+01
+Gate (< 0.2 % absolute flux): wb passes BOTH (0.0018 %, 0.049 %); cell passes A
+(0.135 %) and fails B (0.347 %).
+The 128-cell pair of case A was lost (its output directory was cleaned while the run
+was still going) and is NOT reported.
+Controls at the same settings (case A): thick_flux = none slope ratio 0.676 (fails
+outright), thick_flux = scaled 1.77e-3.
+THE BOUNDARY CONTROL that reassigns the old 1.40 %: jump_ratio = 1 (NO jump),
+tau_cell = 1 uniform, same Dirichlet ends:
+   default ghosts   flux 6.756e-03 (64 cells)  2.820e-03 (128)   first order in dx
+   exact ghosts     flux 2.798e-14 (64 cells)  5.296e-13 (128)   EXACT
+### C  regression, default vs wb (runs_open/reg_table.txt)
+see that file; every uniform-opacity gate is bit-identical, T4 dynamic differs by
+2e-4 relative in the Nyquist power and by nothing else at the printed precision.
+
+### style
+cpplint (repo filter -build/include_subdir) on the 6 changed/new C++ files: 1 error,
+  the pre-existing trailing whitespace at src/pgen/pgen.hpp:84 -- 0 NEW.
+no tabs, no `}}` lines, no trailing whitespace added, all lines <= 90 columns, all
+  changed src/ files mode 644.
+flake8 --max-line-length 90 on tests_m1: clean.
+t2_shadow.py --selftest passes and --selftest --selftest-fail exits 1; the same for
+  t7_radshock.py --m0 2 and --m0 5 after the --hydro/--json additions.
+### plots
+tests_m1/plots/: t2_shadow.json (258 kB), t7_m2_c1/t7_m2_edd/t7_m5_c1/t7_m5_edd
+  (208 kB), t3b_jump.json (17 kB) = 483 kB added.

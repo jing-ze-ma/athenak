@@ -678,3 +678,196 @@ Rosdahl & Teyssier 2015 (1411.6440); Foucart et al. 2015 (1502.04146); Kannan et
 Krumholz 2022 (2110.01792); Menon et al. 2022 (2202.08778); Radice et al. 2022
 (2111.14858); He, Wibking & Krumholz 2024 (2404.08247, 2407.18304); Ma, Pakmor, Justham
 & de Mink 2025 (2503.16627).
+
+## 13. Findings from milestone 1d (T2 shadow, T7 radiative shocks, T3b closed)
+
+Milestone 1d closes the three items left open at the end of stage 1: the shadow test
+(T2), the coupled radiative shocks (T7) and the T3b flux deficit.  New code:
+`src/pgen/tests/rad_m1_tests2.cpp` (the `shadow` and `radshock` generators, dispatched
+from the existing `rad_m1_tests.cpp` entry), `<rad_m1>/f_source = cell | wb`, and
+`tests_m1/t2_shadow.py`.  The default path is BITWISE unchanged: 68/68 dump files of
+T3 (`tau_cell` 1e3), T3c (top-hat), T4 dynamic 512, T4b, T6 (128) and T3b case A are
+byte-identical to the pristine `rt-integration` HEAD binary run on the same inputs.
+
+### 13.1 T3b: the flux deficit was mostly the TEST, and `wb` fixes the rest
+
+Section 11 attributed the "absolute slopes 1.40 % (case A) / 0.33 % (case B) low" to a
+one-cell `E` bump at the jump acting as an extra resistance.  **That attribution is
+retracted.**  The decisive control is the SAME run with `jump_ratio = 1`, i.e. a uniform
+medium at `tau_cell = 1` with the same Dirichlet ends: it shows a flux deficit of
+0.676 % at 64 cells and 0.282 % at 128, first order in `dx` and with no jump anywhere.
+The cause is in `RadM1FixedEBC`: it filled every ghost cell with the end value `E(x1min)`,
+i.e. it imposed the boundary FACE value at the ghost cell CENTRE.  That half-cell offset
+removes `dE_total/nx1` of driving from a problem whose flux is fixed by the total `dE`
+across the domain.  `<problem>/exact_ghost = true` (default false, so nothing moves
+without it) continues the analytic slope into the ghosts; with it the uniform case is
+EXACT to 1e-11 in every metric -- the scheme is already well balanced on a constant
+`rho kappa_F` -- and what is left in the jump runs is the jump error alone.
+
+With `exact_ghost` on, and the jump window widened to 6 cells so that the script's
+reconstructed face flux is not sampled inside the kink (steady state, `t = 1e5` for
+case A and `2000` for case B, 64 cells):
+
+| | A `cell` | A `wb` | B `cell` | B `wb` |
+| --- | --- | --- | --- | --- |
+| absolute flux error | 1.346e-3 | **1.780e-5** | 3.467e-3 | **4.892e-4** |
+| `max｜E/E_exact-1｜` | 1.288e-4 | **3.00e-6** | 3.094e-4 | 2.539e-4 |
+| slope ratio error | 2.37e-7 | 6.89e-8 | 2.30e-6 | 4.31e-6 |
+| cell-centred `F` error | 43.25 | **0.656** | 0.1287 | 0.0971 |
+| face-flux peak at the jump | 18.03 | **0.881** | 18.15 | 77.1 |
+
+So the < 0.2 % gate is met by `wb` in both cases (0.0018 % and 0.049 %) and by the
+default only in case A (0.135 %; case B is 0.347 %).
+
+**The diagnosis.**  Mechanism (i) of the brief is the real one and `wb` removes it.  In a
+constant-flux steady state the implicit `F` source balances the discrete centred
+`2 dx` pressure gradient against the cell's OWN `rho kappa_F`, and
+`-(c/3)(E_{i+1}-E_{i-1})/(2dx) = (1/2)[sigma_{i-1/2} + sigma_{i+1/2}] F0`, so the cell
+`F` comes out `F0 (sigma_{i-1} + 2 sigma_i + sigma_{i+1})/(4 sigma_i)` -- 250x too large
+in the last thin cell of case A (measured 43x after the neighbouring faces have reacted).
+That wrong `F` enters the E-flux through `alpha*avg(F0)` on the neighbouring face, where
+`tau_face ~ 1` and `alpha ~ 0.5`.  `f_source = wb` divides by the Bloch et al. (2021)
+eq. 18 trapezoidal interface value instead, `(1/2)[sigma_{i-1/2} + sigma_{i+1/2}]` with
+the same ARITHMETIC face mean the thick-limit flux uses, i.e. the 1-2-1 average
+`(sigma_{i-1} + 2 sigma_i + sigma_{i+1})/4`, per direction.  The analytic two-slope
+solution is then an exact discrete steady state of BOTH the `E` and the `F` equation,
+which is why case A collapses to 1.8e-5.  Mechanism (ii) (the arithmetic face mean in
+`alpha`) is NOT a defect: for the two-slope solution the arithmetic mean of `rho kappa`
+is exactly the right face resistance, and `F_diff` built with it reproduces the analytic
+`dE` at every face including the jump face to round-off.
+
+What survives in case B is a third thing, neither (i) nor (ii): at `tau_cell = 1e-3 -> 1`
+the jump face has `tau_face ~ 0.5` and `alpha^2 ~ 0.25`, and the PLM limiter CLIPS the
+reconstruction on the thick side, leaving a face jump `E_R - E_L` of order half the cell
+step.  The residual HLL dissipation `alpha^2 b_+ b_- (E_R - E_L)/(b_+ - b_-)` is then a
+real O(10 %) flux error at that one face, which the steady state pays for with a slightly
+depressed global flux.  `alpha^2` only kills it where `alpha` is small.  No remedy for
+that is shipped: it needs a reconstruction that knows about the opacity kink, which is
+outside the scope of stage 1.
+
+**The force on the gas.**  `wb` does not touch the momentum exchange, which is
+`delta(rho v) = -(F' - F*)/(chat c)` by construction and therefore conservative to
+round-off whatever opacity the `F` update uses.  In steady state the force per unit time
+is `-dP_rad/dx` with the same centred discretisation as the gas pressure force, exactly as
+with `cell` (the opacity cancels: `F sigma_eff = -c dP/dx` gives
+`delta(rho v)/dt = -dP_rad/dx`).  Out of steady state the two cells straddling a jump
+exchange momentum at the interface-averaged opacity rather than at their own, which is
+the same averaging the flux already uses.
+
+**Regression (default vs `wb`, plm, otherwise stage-1 defaults).**
+
+| gate | `cell` | `wb` |
+| --- | --- | --- |
+| T3 `d(sigma^2)/dt`/exact, `tau_cell` 10 | 1.000791 | 1.000791 |
+| ... `tau_cell` 1e3 | 1.000015 | 1.000015 |
+| ... `tau_cell` 1e6 | 1.000000 | 1.000000 |
+| T3 Nyquist decay / physical | 0.999961 | 0.999961 |
+| T3c clipped top-hat | 1.000054 | 1.000054 |
+| T4 dynamic 512, `dcentre` (cells) | 0.054 | 0.054 |
+| T4 dynamic 512, Nyquist power | 8.323e-14 | 8.321e-14 |
+| T4b `dT_gas/T` drift | 0.0 | 0.0 |
+| T6 Marshak L1(E), 64 / 128 | 0.0148 / 0.0019 | 0.0148 / 0.0019 |
+
+Every uniform-opacity gate is bit-identical (a 1-2-1 average of a constant IS the
+constant); T4, whose `rho kappa_F` varies smoothly across the pulse, differs by 2e-4
+relative in the Nyquist power and by nothing else at the printed precision.
+
+**Should `wb` be the default?**  Recommended, but left OFF in this branch.  It is free
+where the opacity is smooth (bitwise), it is the only setting that meets the T3b gate in
+both cases, and stage 2 runs a tabulated stellar opacity whose Fe bump is exactly the
+`tau_cell ~ 1` jump case A models.  Cost: four extra loads of `opac` per cell in the
+coupling kernel.  The switch should be flipped together with the stage-2 opacity table,
+with the box G1 gate re-run.
+
+### 13.2 T2, the shadow test
+
+`<problem>/m1_test = shadow` (`inputs/tests/rad_m1_shadow.athinput`), the design note's
+HERACLES numbers: 1 cm x 0.12 cm on 280 x 80, ambient `rho0 = 1 g/cc` (the design note's
+value; the classic Hayes & Norman setup uses 1e-3, but only `rho/rho0` enters the opacity
+law so the two are the same problem), an elliptical clump at `(0.5, 0)` with semi-axes
+`(0.1, 0.06)` and 1000x the ambient density with a Fermi edge of width `delta = 10`,
+`sigma = 0.1 (T/T0)^-3.5 (rho/rho0)^2` per cm as the module's `powerlaw` law
+(`kappa0 = 0.1, opac_a = 1, opac_b = -3.5, rho_ref = 1, t_ref = 290`), absorption only
+(`kappa_P = kappa_E = kappa_F`, no scattering), `T0 = 290 K` for gas and radiation, and a
+source at `T_r = 1740 K` entering the inner-x1 face with `f = 1 - 1e-6`.  Outer-x1 and
+outer-x2 are `vacuum`; the inner-x2 face is `reflect`, i.e. the upper half of the
+symmetric problem is modelled.  Units are cgs with the gas temperature carried in kelvin
+(`e = rho T/(gamma-1)`, `arad = 7.5657e-15`); `gas_feedback = false` and a user source
+term re-impose the gas every hydro stage, so the medium is exactly static and the opacity
+is a pure function of position -- the gas heat capacity in these units exceeds `a T0^4` by
+ten orders of magnitude, so it is a thermostat in any case.  `subcycle = false`, so the
+mesh timestep IS the radiation one.
+
+### 13.3 T7, the radiative shocks
+
+`<problem>/m1_test = radshock`, Lowrie & Edwards Mach 2 subcritical and Mach 5
+supercritical with the parameter sets printed by `tests_m1/t7_radshock.py --athinput`
+(`P0 = 1e-4`, `sigma_a = 1e6`, `kappa = 1`; cgs `rho0 = 5.69`, `T0 = 2.18e6 K`,
+`sigma = 577.16` per cm -- 577.35 per `L~ = 1.0003 cm`).  The runs are INITIALISED FROM
+THE SEMI-ANALYTIC PROFILE (`--write-ref`, read by the generator and shifted by
+`m1_shock_xs`), not from a step: at the light-speed CFL a step start would need several
+flow-through times (4.4e-10 s at `dt = 4e-16 s`) to build the precursor, which is
+~5e6 substeps on one core.  Both x1 faces are Dirichlet at the far-field states, so the
+shock is held in its own frame and the run measures whether the scheme KEEPS the
+solution.  Opacity: `powerlaw` with `opac_a = -1`, which stores a constant `rho kappa`
+independently of `rho`, as the problem specifies.  Units are honest cgs with the code
+temperature `T_code = [k/(mu m_H)] T_kelvin` (`m1_shock_tunit = 8.2499208e7`) and
+`arad = a_cgs/tunit^4 = 1.6332399e-46`, which reproduces the `c_v = 1.2374881e8`
+the analysis script expects.
+
+
+**T2 result.**  The front arrives at `x = 0.98` at `3.1893e-11 s` against `x/c =
+3.2689e-11 s`, i.e. `-2.44 %`, and a linear fit of the 1 % contour gives a front speed of
+`1.0053 c`: PASS on the 5 % criterion.  Taken at the HALF maximum instead, the arrival is
+`+8.54 %` late and the fitted speed `0.868 c`; that is the PLM + HLL smearing of the
+front over tens of cells, not a wave-speed error, which is why the gate is written on the
+leading edge and both numbers are reported.  The shadow depth
+`E(0.8, 0)/E(0.8, 0.115)` deepens to `2.1e-3` after one crossing and then FILLS to a
+steady plateau of `7.4-7.8e-2` from four crossings on; the final value is `7.727e-2`.
+That does NOT meet the design note's `< 1e-3`, and it is not the ambient re-emission
+either (`a T0^4` is `8.5e-4` of the lit value).  The `closure = eddington` control gives
+`8.858e-1`, i.e. the umbra reaches 89 % of the lit value and the shadow is destroyed:
+M1 is 11.5x sharper, which is the qualitative statement the test exists to make, but the
+7.7 % residual is a real M1-plus-PLM artefact at this resolution and is recorded as such.
+One deviation from the brief: the lit reference is taken at `y = 0.115`, not at the
+`y = 0.1` the design note names, because the Fermi edge puts `rho = 2.3 rho0` at
+`y = 0.1` and `7.7 rho0` at `y = 0.09`, so `y = 0.1` sits in the halo's penumbra (`E`
+there is 0.45 of the free-streaming value) and a ratio formed with it is 0.974.
+
+**T7 result** (`t = 1e-10 s`, L1 gate 2 %, `rho / T_gas / T_rad`):
+
+| run | L1 `rho` | L1 `T_gas` | L1 `T_rad` |
+| --- | --- | --- | --- |
+| M0=2 M1, 512 | 4.03e-3 | 6.26e-3 | 9.99e-3 |
+| M0=2 eddington, 512 | 4.25e-4 | 4.94e-4 | 8.84e-5 |
+| M0=2 `chat/c` 0.1 / 0.01 | 4.09e-3 / 4.58e-3 | 6.26e-3 / 6.31e-3 | 9.99e-3 / 1.00e-2 |
+| M0=5 M1, 2048 | 2.48e-3 | 5.68e-3 | 7.54e-3 |
+| M0=5 M1, 1024 | 2.99e-3 | 5.60e-3 | 7.21e-3 |
+| M0=5 eddington, 1024 | 4.05e-4 | 5.21e-4 | 1.31e-4 |
+| M0=5 `chat/c` 0.1 / 0.01 | 3.15e-3 / 3.64e-3 | 5.62e-3 / 6.22e-3 | 7.23e-3 / 7.79e-3 |
+
+All PASS.  Zel'dovich spike and precursor length against the reference: M0=2 M1
+`-0.25 %` and `+11.4 %`; M0=5 M1 `-2.96 %` (2048) / `-5.01 %` (1024) and `+4.1 %`; the
+spike error halves between 1024 and 2048 because the M0=5 relaxation region is only 6
+cells wide at 512 and 23 at 2048.  `closure = eddington` is 8-100x more accurate on
+every L1 norm, which is the Skinner & Ostriker ordering (they report 1.7/6.1/7.8 % for
+M1 with computed eigenvalues against 0.42/0.49/0.42 % for `lambda = +-c/sqrt3`); our M1
+numbers are 4-10x better than theirs, but the ordering stands, and it is a diffusion-limit
+comparison, not a test of the closure.
+
+**RSLA.**  `chat/c = 0.1` changes nothing; `chat/c = 0.01` grows the errors by 14 %
+(M0=2) and 22 % (M0=5) RELATIVE, i.e. 0.40 -> 0.46 % and 0.30 -> 0.36 % in `rho`.  This
+is far smaller than PLUTO's `> 40 %` at `c/1000`, and the reason is worth recording: at
+`d/dt = 0` the `chat` on the transport term and the `chat` on the source CANCEL, so the
+steady state of the moment system is chat-independent.  A shock held in its own frame and
+started from the semi-analytic profile can therefore only expose RSLA through the
+transient and through terms of order `v/chat`; PLUTO's number comes from `c/1000`, where
+the supercritical upstream `v = 8.7e7 cm/s` EXCEEDS `chat = 3e7 cm/s` and the scheme is
+not even hyperbolically sensible.  That is a stronger statement of section 2's condition,
+not a weaker one: RSLA is safe for a steady state and wrong for everything time
+dependent.
+
+**Sub-cycling.**  With `subcycle = false` (the input's default for this test) the mesh
+step IS the radiation step.  With `subcycle = true` the hydro step is `2.28e-13 s` against
+the radiation `3.99e-16 s`, so `N_sub = 571`, and the three L1 norms agree with the
+un-sub-cycled run to 1.6 % of the error itself.

@@ -217,6 +217,20 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     std::exit(EXIT_FAILURE);
   }
   }
+  // (1d) the interface (well-balanced) form of the implicit F source, design sect. 13.
+  // Default `cell` reproduces milestone 1c bit for bit.
+  {std::string fs = pin->GetOrAddString("rad_m1","f_source","cell");
+  if (fs.compare("cell") == 0) {
+    f_source_wb = false;
+  } else if (fs.compare("wb") == 0) {
+    f_source_wb = true;
+  } else {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+      << std::endl << "<rad_m1>/f_source = '" << fs << "' is not a valid choice "
+      << "(cell | wb)" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  }
   coupling = pin->GetOrAddBoolean("rad_m1","coupling",!opac_zero);
   gas_feedback = pin->GetOrAddBoolean("rad_m1","gas_feedback",true);
   // debug switches (see rad_m1.hpp); every default is the production value

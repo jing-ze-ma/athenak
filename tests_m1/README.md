@@ -105,6 +105,32 @@ order between consecutive pairs.
 Pass: every measured order >= `--min-order` (default 1.8, i.e. the PLM second
 order of section 3).
 
+## `t2_shadow.py` — T2, the shadow test (milestone 1d)
+
+```
+python3 t2_shadow.py runs_open/t2_m1/bin/*.bin \
+    --arrival-dumps runs_open/t2_arr_m1/bin/*.bin \
+    --control runs_open/t2_eddington/bin/<last>.bin --json plots/t2_shadow.json
+python3 t2_shadow.py --selftest [--selftest-fail]
+```
+
+Input: the 2-D time series of the Hayes & Norman / HERACLES shadow run
+(`<problem>/m1_test = shadow`).  Two numbers are gated: the ARRIVAL time of
+the front at `--x-arrival` in the lit lane against `x/c`, and the SHADOW
+DEPTH `E(x_shadow, y_shadow)/E(x_shadow, y_lit)` at the final time, with the
+whole time series reported.  `--control` adds the final dump of an otherwise
+identical `closure = eddington` run, which must fill the shadow in.
+
+Two defaults deviate from the design note, both deliberately (section 13.2):
+the arrival threshold is 1 % of the incident `E` — the LEADING EDGE, which is
+what travels at `c`; at the half maximum the PLM + HLL smearing of the front
+adds ~8 % of lag, and the fitted front speed at whichever threshold is chosen
+is reported next to it.  And `--y-lit` is 0.115, not the 0.1 of the design
+note: the clump's Fermi edge puts `rho = 2.3 rho0` at `y = 0.1`, so that lane
+is inside the halo's penumbra.  Because the arrival needs a fine output
+cadence but only just past one crossing, it is taken from a separate short
+run through `--arrival-dumps`.
+
 ## `t3_pulse.py` — T3, static thick pulse (the AP gate)
 
 ```
@@ -358,6 +384,12 @@ of relaxation; the `M0 = 5` domain is precursor-dominated (506 / 6), so raise
 `--ncells` (or `--dt-domain`) for that case — the script prints both cell
 counts.
 
+Milestone 1d adds `--hydro` (the matching hydro `tab` file, since
+`file_type = tab` writes one file per `<output>` block), `--json` (the
+thinned code + reference profiles for the results page) and, in the report,
+the Zel'dovich spike temperature and the precursor length measured the same
+way on the code profile and on the reference.
+
 **Comparison mode** takes one dump plus the parameters, forms
 `T_gas = eint/(dens c_v)` (or `press/(gamma-1)` if `eint` is absent) and
 `T_rad = (m1_e/a_r)^{1/4}`, then slides the reference over the data
@@ -435,7 +467,7 @@ python3 -m flake8 --max-line-length 90 .
 
 ## Not covered here
 
-T2 (shadow), T3c (clipped extremum), T8a/T8b (restart and rank invariance,
+T3c (clipped extremum), T8a/T8b (restart and rank invariance,
 which are bitwise `cmp` of dumps, not analyses -- see
 `runs_1cB/run_t8a.sh` and `run_t8b.sh`) and T9 (radiation-supported
 atmosphere) have no script in this directory yet.  T8c does:
