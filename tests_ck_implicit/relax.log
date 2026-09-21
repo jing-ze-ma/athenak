@@ -1,0 +1,9 @@
+off exit 0 zone-cycles/cpu_second = 3.173614e+04
+on exit 0 zone-cycles/cpu_second = 4.568935e+03
+d_col_night_off 134 lines
+d_col_day92_off 134 lines
+d_col_day38_off 134 lines
+d_col_night_on 134 lines
+d_col_day92_on 134 lines
+d_col_day38_on 134 lines
+relax done

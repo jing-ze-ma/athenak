@@ -1,0 +1,286 @@
+Mesh: spherical-polar x3-face theta correction = rotate
+
+Root grid = 1 x 1 x 2 MeshBlocks
+Total number of MeshBlocks = 2
+Number of logical  levels of refinement = 1 (2 levels total)
+Number of physical levels of refinement = 0 (1 levels total)
+Number of parallel ranks = 1
+<hydro>/tfloor_kelvin = 200 K -> tfloor = 1.66289e+10 in code temperature (1.20272e-08 K per unit, general EOS)
+General EOS: tabulated on 281 x 451 nodes (15 MB), log10 rho[cgs] in [-14, 0], log10 T[K] in [1.5, 6]
+             X = 0.7381, Y = 0.2485, Z = 0.0134, H2 on, ionization on, radiation off
+             metal ionization on ([M/H] = 0, condensation on)
+             mu at the grid centre = 1.25764, n_e/n_tot = 0.000152915
+deep_hot_jupiter_rt: outer-x1 Maxwell-stress term in the ghost extrapolation is ON
+deep_hot_jupiter_rt: correlated-k source is IMPLICIT (ck_implicit), tol 1e-08, maxit 8
+deep_hot_jupiter_rt: RT two-stream source is SEMI-IMPLICIT
+deep_hot_jupiter_rt: problem/rt_ck implies problem/rt_split; enabling the split RT path
+deep_hot_jupiter_rt: correlated-k table '/viper/u2/jinma/ATHENAK/athenak/data/exo_fms_ck/ck/Premixed_1x_g8_11.txt'
+  38 T x 34 p x 11 bands x 8 g, T = 100 .. 6100 K, p = 1e-08 .. 1000 bar
+  bands 0.26 .. 324.68 um, g weights sum to 1
+  correlated-k applied where p < 10 bar
+  Planck fractions tabulated on 512 points, T = 50 .. 20000 K; worst |sum_b f_b - 1| = 2.22045e-16
+  >1% of the Planck function falls bluer than 0.26 um above T = 5571.75 K; beyond that the 11-band grid stops
+  capturing the spectrum and folding the tail into the bluest band is no longer a small correction
+  (with the p < 10 bar cut this setup tops out near 4800 K, where the tail is 3e-3)
+  stellar spectrum: blackbody at T_eff = 6000 K
+    1.67436 % of it is bluer than the grid's 0.26 um edge and is folded into the bluest band
+  continuum: FastChem composition 241 T x 34 p, 4 CIA pairs, 4 Rayleigh species
+  band-mean kappa at 0.1 bar [cm^2/g]:  reddest band  13.6107 (800 K) -> 3.83348 (2500 K)
+                                       bluest band   1.28114e-07 (800 K) -> 30.9807 (2500 K)
+  continuum at 3500 K, 0.1 bar, rho=1 [cm^-1], reddest to bluest:
+    1.07509e-06 1.11788e-07 2.62562e-08 1.17621e-08 6.63404e-09 3.96185e-09 3.70228e-09 4.23501e-08 4.33847e-08 3.30788e-08 2.00535e-08
+  two-stream self-test: isothermal net flux |F|/sigmaT^4 <= 2.57992e-17, transparent slab F/sigmaT^4 = 1
+  11 bands x 8 g-points x 1 angular point(s) = 88 column solves per cell (diffusivity factor 1.66)
+
+### WARNING! in /u/jinma/ATHENAK/athenak/src/pgen/deep_hot_jupiter_rt.cpp at line 784
+<problem>/Rgas = 4.593e+07 implies mean molecular weight 1.81025, but the general EOS supplies its own composition and is being asked for temperature directly.
+Rgas is now unused; this run will NOT reproduce the eos=ideal run. Set Rgas = 8.31446e+07 for that comparison.
+
+  Rosseland table for the radiative diffusion (ck + continuum), 38 T x 34 p; kappa_R / Freedman+2014:
+    T = 1000 K, p = 1 bar: 0.0235563 / 0.013942 = 1.68959
+    T = 1000 K, p = 21.3796 bar: 0.0662144 / 0.0822416 = 0.805121
+    T = 2500 K, p = 1 bar: 0.0310734 / 0.0421017 = 0.738056
+    T = 2500 K, p = 21.3796 bar: 0.114051 / 0.136979 = 0.832617
+    T = 3700 K, p = 1 bar: 0.220489 / 0.145127 = 1.51929
+    T = 3700 K, p = 21.3796 bar: 0.608166 / 0.799208 = 0.760961
+    T = 4900 K, p = 1 bar: 1.20168 / 0.251724 = 4.77377
+    T = 4900 K, p = 21.3796 bar: 6.17839 / 1.3803 = 4.47613
+  radiative diffusion: wall flux sigma T_int^4 = 4.73518e+06 erg/s/cm^2 (T_int = 537.565 K)
+
+Setup complete, executing task list(s)...
+
+elapsed=5.546599e+00 cycle=0 time=0.000000e+00 dt=2.897698e+01
+### rad_cap_ang rank 0 cycle 0 t = 0.000000e+00: max x_i = 1.142435e-07 (cap 5.000000e-01) at (m,k,j,i) = (0,2,5,36) gid = 0 r = 1.132709e+10 | cells over cap = 0, faces capped = 0
+### two_stream_rt: PSEUDO-SPHERICAL stellar beam ON (problem/ck_beam_sph): straight rays through the shells, no secant clamp, twilight (mu0 < 0) lit down to the grazing radius.
+### two_stream_rt: thermodynamic state read from u0 (CONSERVED, problem/rt_use_cons = true)
+deep_hot_jupiter_rt: RT split path ON, 22 chain block(s) of 4 -> 22x the thread count of the monolithic kernel
+### ck_implicit ncycle=0 passes=8 res=1.145286e-05 dstep=6.201938e-03 ckdesum=-7.583339e-06 capped=0 fallback=0 NOT-CONVERGED
+### rad_cap_ang rank 0 cycle 0 t = 0.000000e+00: max x_i = 5.712056e-08 (cap 5.000000e-01) at (m,k,j,i) = (0,5,5,36) gid = 0 r = 1.132709e+10 | cells over cap = 0, faces capped = 0
+### ck_implicit ncycle=0 passes=8 res=5.874618e-09 dstep=5.925727e-06 ckdesum=-4.136760e-09 capped=0 fallback=0
+### rad_cap_ang rank 0 cycle 1 t = 2.897698e+01: max x_i = 1.142179e-07 (cap 5.000000e-01) at (m,k,j,i) = (0,5,5,36) gid = 0 r = 1.132709e+10 | cells over cap = 0, faces capped = 0
+### ck_implicit ncycle=1 passes=8 res=1.194803e-06 dstep=3.197247e-04 ckdesum=-2.272376e-07 capped=0 fallback=0 NOT-CONVERGED
+### rad_cap_ang rank 0 cycle 1 t = 2.897698e+01: max x_i = 5.710802e-08 (cap 5.000000e-01) at (m,k,j,i) = (0,5,5,36) gid = 0 r = 1.132709e+10 | cells over cap = 0, faces capped = 0
+### ck_implicit ncycle=1 passes=7 res=5.621184e-09 dstep=4.360267e-06 ckdesum=6.362006e-09 capped=0 fallback=0
+### rad_cap_ang rank 0 cycle 2 t = 5.794799e+01: max x_i = 1.141929e-07 (cap 5.000000e-01) at (m,k,j,i) = (1,2,5,36) gid = 1 r = 1.132709e+10 | cells over cap = 0, faces capped = 0
+### ck_implicit ncycle=2 passes=8 res=1.030058e-06 dstep=2.084344e-04 ckdesum=-1.505138e-07 capped=0 fallback=0 NOT-CONVERGED
+### rad_cap_ang rank 0 cycle 2 t = 5.794799e+01: max x_i = 5.709579e-08 (cap 5.000000e-01) at (m,k,j,i) = (1,2,5,36) gid = 1 r = 1.132709e+10 | cells over cap = 0, faces capped = 0
+### ck_implicit ncycle=2 passes=6 res=9.497624e-09 dstep=8.250871e-06 ckdesum=-2.420765e-08 capped=0 fallback=0
+### rad_cap_ang rank 0 cycle 3 t = 8.691307e+01: max x_i = 1.141686e-07 (cap 5.000000e-01) at (m,k,j,i) = (1,2,5,36) gid = 1 r = 1.132709e+10 | cells over cap = 0, faces capped = 0
+### ck_implicit ncycle=3 passes=8 res=4.207143e-07 dstep=7.301445e-05 ckdesum=-1.270554e-07 capped=0 fallback=0 NOT-CONVERGED
+### rad_cap_ang rank 0 cycle 3 t = 8.691307e+01: max x_i = 5.708388e-08 (cap 5.000000e-01) at (m,k,j,i) = (1,2,5,36) gid = 1 r = 1.132709e+10 | cells over cap = 0, faces capped = 0
+### ck_implicit ncycle=3 passes=6 res=8.337370e-09 dstep=7.938576e-06 ckdesum=-2.135616e-08 capped=0 fallback=0
+### rad_cap_ang rank 0 cycle 4 t = 1.158723e+02: max x_i = 1.141449e-07 (cap 5.000000e-01) at (m,k,j,i) = (1,2,5,36) gid = 1 r = 1.132709e+10 | cells over cap = 0, faces capped = 0
+### ck_implicit ncycle=4 passes=8 res=3.358548e-07 dstep=5.817577e-05 ckdesum=-1.083300e-07 capped=0 fallback=0 NOT-CONVERGED
+### rad_cap_ang rank 0 cycle 4 t = 1.158723e+02: max x_i = 5.707227e-08 (cap 5.000000e-01) at (m,k,j,i) = (1,2,5,36) gid = 1 r = 1.132709e+10 | cells over cap = 0, faces capped = 0
+### ck_implicit ncycle=4 passes=7 res=5.357687e-09 dstep=2.349110e-06 ckdesum=5.168260e-09 capped=0 fallback=0
+### rad_cap_ang rank 0 cycle 5 t = 1.448256e+02: max x_i = 1.141218e-07 (cap 5.000000e-01) at (m,k,j,i) = (1,2,5,36) gid = 1 r = 1.132709e+10 | cells over cap = 0, faces capped = 0
+### ck_implicit ncycle=5 passes=8 res=3.108529e-07 dstep=4.625583e-05 ckdesum=-8.184062e-08 capped=0 fallback=0 NOT-CONVERGED
+### rad_cap_ang rank 0 cycle 5 t = 1.448256e+02: max x_i = 5.706095e-08 (cap 5.000000e-01) at (m,k,j,i) = (1,2,5,36) gid = 1 r = 1.132709e+10 | cells over cap = 0, faces capped = 0
+### ck_implicit ncycle=5 passes=7 res=4.009873e-09 dstep=1.801537e-06 ckdesum=3.763406e-09 capped=0 fallback=0
+### rad_cap_ang rank 0 cycle 6 t = 1.737731e+02: max x_i = 1.140993e-07 (cap 5.000000e-01) at (m,k,j,i) = (1,2,6,36) gid = 1 r = 1.132709e+10 | cells over cap = 0, faces capped = 0
+### ck_implicit ncycle=6 passes=8 res=2.282001e-07 dstep=2.890049e-05 ckdesum=-5.758932e-08 capped=0 fallback=0 NOT-CONVERGED
+### rad_cap_ang rank 0 cycle 6 t = 1.737731e+02: max x_i = 5.704989e-08 (cap 5.000000e-01) at (m,k,j,i) = (1,2,5,36) gid = 1 r = 1.132709e+10 | cells over cap = 0, faces capped = 0
+### ck_implicit ncycle=6 passes=6 res=6.881653e-09 dstep=4.460062e-06 ckdesum=-7.567794e-09 capped=0 fallback=0
+### rad_cap_ang rank 0 cycle 7 t = 2.027148e+02: max x_i = 1.140774e-07 (cap 5.000000e-01) at (m,k,j,i) = (1,2,5,36) gid = 1 r = 1.132709e+10 | cells over cap = 0, faces capped = 0
+### ck_implicit ncycle=7 passes=8 res=1.411607e-07 dstep=1.693577e-05 ckdesum=-4.014659e-08 capped=0 fallback=0 NOT-CONVERGED
+### rad_cap_ang rank 0 cycle 7 t = 2.027148e+02: max x_i = 5.703910e-08 (cap 5.000000e-01) at (m,k,j,i) = (1,2,6,36) gid = 1 r = 1.132709e+10 | cells over cap = 0, faces capped = 0
+### ck_implicit ncycle=7 passes=6 res=5.312887e-09 dstep=4.352303e-06 ckdesum=-5.315062e-09 capped=0 fallback=0
+### rad_cap_ang rank 0 cycle 8 t = 2.316508e+02: max x_i = 1.140560e-07 (cap 5.000000e-01) at (m,k,j,i) = (1,2,5,36) gid = 1 r = 1.132709e+10 | cells over cap = 0, faces capped = 0
+### ck_implicit ncycle=8 passes=8 res=7.564479e-08 dstep=1.328753e-05 ckdesum=-2.962286e-08 capped=0 fallback=0 NOT-CONVERGED
+### rad_cap_ang rank 0 cycle 8 t = 2.316508e+02: max x_i = 5.702855e-08 (cap 5.000000e-01) at (m,k,j,i) = (1,2,5,36) gid = 1 r = 1.132709e+10 | cells over cap = 0, faces capped = 0
+### ck_implicit ncycle=8 passes=5 res=8.815949e-09 dstep=1.565483e-05 ckdesum=-1.592591e-08 capped=0 fallback=0
+### rad_cap_ang rank 0 cycle 9 t = 2.605812e+02: max x_i = 1.140350e-07 (cap 5.000000e-01) at (m,k,j,i) = (1,2,5,36) gid = 1 r = 1.132709e+10 | cells over cap = 0, faces capped = 0
+### ck_implicit ncycle=9 passes=8 res=8.415175e-08 dstep=1.349759e-05 ckdesum=-1.901627e-08 capped=0 fallback=0 NOT-CONVERGED
+### rad_cap_ang rank 0 cycle 9 t = 2.605812e+02: max x_i = 5.701824e-08 (cap 5.000000e-01) at (m,k,j,i) = (1,2,6,36) gid = 1 r = 1.132709e+10 | cells over cap = 0, faces capped = 0
+### ck_implicit ncycle=9 passes=6 res=4.311111e-09 dstep=3.332503e-06 ckdesum=-2.718900e-09 capped=0 fallback=0
+### ck_implicit ncycle=10 passes=8 res=7.506533e-08 dstep=9.178034e-06 ckdesum=-1.061390e-08 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=10 passes=5 res=8.009770e-09 dstep=1.318491e-05 ckdesum=-2.141415e-08 capped=0 fallback=0
+### ck_implicit ncycle=11 passes=8 res=8.498596e-08 dstep=1.174997e-05 ckdesum=-5.229126e-09 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=11 passes=5 res=7.069780e-09 dstep=1.220656e-05 ckdesum=-2.235391e-08 capped=0 fallback=0
+### ck_implicit ncycle=12 passes=8 res=7.110944e-08 dstep=1.071216e-05 ckdesum=-1.022045e-09 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=12 passes=5 res=7.364287e-09 dstep=1.034611e-05 ckdesum=-2.341217e-08 capped=0 fallback=0
+### ck_implicit ncycle=13 passes=8 res=9.942571e-08 dstep=1.233496e-05 ckdesum=3.046602e-09 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=13 passes=5 res=6.660278e-09 dstep=1.006542e-05 ckdesum=-2.431732e-08 capped=0 fallback=0
+### ck_implicit ncycle=14 passes=8 res=7.015488e-08 dstep=1.237017e-05 ckdesum=5.400297e-09 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=14 passes=5 res=4.432025e-09 dstep=9.807017e-06 ckdesum=-2.511998e-08 capped=0 fallback=0
+### ck_implicit ncycle=15 passes=8 res=8.268377e-08 dstep=1.299291e-05 ckdesum=8.632560e-09 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=15 passes=5 res=7.133167e-09 dstep=8.937624e-06 ckdesum=-2.594595e-08 capped=0 fallback=0
+### ck_implicit ncycle=16 passes=8 res=7.613333e-08 dstep=1.367435e-05 ckdesum=1.025729e-08 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=16 passes=5 res=6.088951e-09 dstep=1.186606e-05 ckdesum=-2.656299e-08 capped=0 fallback=0
+### ck_implicit ncycle=17 passes=8 res=6.394616e-08 dstep=1.412125e-05 ckdesum=1.158426e-08 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=17 passes=4 res=6.256637e-09 dstep=7.713661e-05 ckdesum=-1.746709e-06 capped=0 fallback=0
+### ck_implicit ncycle=18 passes=8 res=3.504468e-08 dstep=1.426857e-05 ckdesum=1.289963e-08 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=18 passes=4 res=9.727734e-09 dstep=1.028191e-04 ckdesum=-1.743606e-06 capped=0 fallback=0
+### ck_implicit ncycle=19 passes=8 res=7.089830e-08 dstep=1.439650e-05 ckdesum=1.417634e-08 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=19 passes=5 res=4.964370e-09 dstep=3.107850e-05 ckdesum=-2.865468e-08 capped=0 fallback=0
+### ck_implicit ncycle=20 passes=8 res=6.192147e-08 dstep=1.492411e-05 ckdesum=1.575285e-08 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=20 passes=5 res=4.544546e-09 dstep=4.019109e-05 ckdesum=-2.944519e-08 capped=0 fallback=0
+### ck_implicit ncycle=21 passes=8 res=5.429570e-08 dstep=1.530409e-05 ckdesum=1.707524e-08 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=21 passes=5 res=3.606690e-09 dstep=3.807151e-05 ckdesum=-2.993457e-08 capped=0 fallback=0
+### ck_implicit ncycle=22 passes=8 res=5.411783e-08 dstep=1.554206e-05 ckdesum=1.843578e-08 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=22 passes=5 res=3.183806e-09 dstep=3.467478e-05 ckdesum=-3.041324e-08 capped=0 fallback=0
+### ck_implicit ncycle=23 passes=8 res=5.956103e-08 dstep=1.652857e-05 ckdesum=2.000526e-08 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=23 passes=4 res=9.239783e-09 dstep=1.119127e-04 ckdesum=-1.727514e-06 capped=0 fallback=0
+### ck_implicit ncycle=24 passes=8 res=5.616463e-08 dstep=1.632689e-05 ckdesum=2.114982e-08 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=24 passes=4 res=6.952491e-09 dstep=8.078885e-05 ckdesum=-1.725748e-06 capped=0 fallback=0
+### ck_implicit ncycle=25 passes=8 res=5.569857e-08 dstep=1.668441e-05 ckdesum=2.219865e-08 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=25 passes=4 res=6.037179e-09 dstep=5.239788e-05 ckdesum=-1.724496e-06 capped=0 fallback=0
+### ck_implicit ncycle=26 passes=8 res=5.639496e-08 dstep=1.705176e-05 ckdesum=2.346536e-08 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=26 passes=4 res=6.170992e-09 dstep=3.217400e-05 ckdesum=-1.723012e-06 capped=0 fallback=0
+### ck_implicit ncycle=27 passes=8 res=5.722429e-08 dstep=1.742125e-05 ckdesum=2.472936e-08 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=27 passes=4 res=6.338747e-09 dstep=2.232933e-05 ckdesum=-1.721146e-06 capped=0 fallback=0
+### ck_implicit ncycle=28 passes=8 res=5.791692e-08 dstep=1.774984e-05 ckdesum=2.602621e-08 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=28 passes=4 res=6.511414e-09 dstep=1.803426e-05 ckdesum=-1.719216e-06 capped=0 fallback=0
+### ck_implicit ncycle=29 passes=8 res=6.111026e-08 dstep=1.805262e-05 ckdesum=2.747480e-08 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=29 passes=4 res=7.303997e-09 dstep=1.832940e-05 ckdesum=-1.717074e-06 capped=0 fallback=0
+### ck_implicit ncycle=30 passes=8 res=6.250491e-08 dstep=1.831558e-05 ckdesum=2.890493e-08 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=30 passes=4 res=7.573835e-09 dstep=2.035943e-05 ckdesum=-1.714693e-06 capped=0 fallback=0
+### ck_implicit ncycle=31 passes=8 res=7.248506e-08 dstep=1.964077e-05 ckdesum=3.065856e-08 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=31 passes=4 res=7.882459e-09 dstep=2.295533e-05 ckdesum=-1.712317e-06 capped=0 fallback=0
+### ck_implicit ncycle=32 passes=8 res=7.557900e-08 dstep=2.045790e-05 ckdesum=3.231426e-08 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=32 passes=4 res=8.145834e-09 dstep=2.541664e-05 ckdesum=-1.709799e-06 capped=0 fallback=0
+### ck_implicit ncycle=33 passes=8 res=7.852812e-08 dstep=2.123272e-05 ckdesum=3.397168e-08 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=33 passes=4 res=8.365401e-09 dstep=2.724145e-05 ckdesum=-1.707326e-06 capped=0 fallback=0
+### ck_implicit ncycle=34 passes=8 res=8.103639e-08 dstep=2.188491e-05 ckdesum=3.559017e-08 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=34 passes=4 res=8.568875e-09 dstep=2.851365e-05 ckdesum=-1.704872e-06 capped=0 fallback=0
+### ck_implicit ncycle=35 passes=8 res=8.035205e-08 dstep=2.165254e-05 ckdesum=3.721845e-08 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=35 passes=4 res=8.682284e-09 dstep=2.917452e-05 ckdesum=-1.702628e-06 capped=0 fallback=0
+### ck_implicit ncycle=36 passes=8 res=7.953568e-08 dstep=2.138784e-05 ckdesum=3.883856e-08 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=36 passes=4 res=8.993543e-09 dstep=2.907034e-05 ckdesum=-1.700358e-06 capped=0 fallback=0
+### ck_implicit ncycle=37 passes=8 res=7.883479e-08 dstep=2.115406e-05 ckdesum=4.047526e-08 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=37 passes=4 res=9.166119e-09 dstep=2.833998e-05 ckdesum=-1.697843e-06 capped=0 fallback=0
+### ck_implicit ncycle=38 passes=8 res=7.813638e-08 dstep=2.155142e-05 ckdesum=4.206498e-08 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=38 passes=4 res=9.293326e-09 dstep=2.718935e-05 ckdesum=-1.695685e-06 capped=0 fallback=0
+### ck_implicit ncycle=39 passes=8 res=7.774928e-08 dstep=2.206304e-05 ckdesum=4.371477e-08 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=39 passes=4 res=9.421472e-09 dstep=2.576356e-05 ckdesum=-1.693382e-06 capped=0 fallback=0
+### ck_implicit ncycle=40 passes=8 res=7.782522e-08 dstep=2.255817e-05 ckdesum=4.543005e-08 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=40 passes=4 res=9.661880e-09 dstep=2.418228e-05 ckdesum=-1.691237e-06 capped=0 fallback=0
+### ck_implicit ncycle=41 passes=8 res=8.013340e-08 dstep=2.303737e-05 ckdesum=4.714531e-08 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=41 passes=4 res=9.933362e-09 dstep=2.193169e-05 ckdesum=-1.689538e-06 capped=0 fallback=0
+### ck_implicit ncycle=42 passes=8 res=8.423572e-08 dstep=2.387341e-05 ckdesum=4.884130e-08 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=42 passes=5 res=5.184445e-09 dstep=6.740324e-06 ckdesum=-3.822142e-08 capped=0 fallback=0
+### ck_implicit ncycle=43 passes=8 res=9.902622e-08 dstep=2.522665e-05 ckdesum=5.224366e-08 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=43 passes=5 res=5.788098e-09 dstep=7.019037e-06 ckdesum=-3.903176e-08 capped=0 fallback=0
+### ck_implicit ncycle=44 passes=8 res=1.085295e-07 dstep=2.638838e-05 ckdesum=5.479343e-08 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=44 passes=5 res=6.120613e-09 dstep=7.293048e-06 ckdesum=-3.967386e-08 capped=0 fallback=0
+### ck_implicit ncycle=45 passes=8 res=1.146405e-07 dstep=2.746366e-05 ckdesum=5.694214e-08 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=45 passes=5 res=6.289719e-09 dstep=7.572322e-06 ckdesum=-4.022524e-08 capped=0 fallback=0
+### ck_implicit ncycle=46 passes=8 res=1.184711e-07 dstep=2.849422e-05 ckdesum=5.886892e-08 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=46 passes=5 res=6.366101e-09 dstep=7.819428e-06 ckdesum=-4.075516e-08 capped=0 fallback=0
+### ck_implicit ncycle=47 passes=8 res=1.207370e-07 dstep=2.982776e-05 ckdesum=6.070863e-08 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=47 passes=5 res=6.361927e-09 dstep=8.060135e-06 ckdesum=-4.126173e-08 capped=0 fallback=0
+### ck_implicit ncycle=48 passes=8 res=1.218438e-07 dstep=3.130611e-05 ckdesum=6.249430e-08 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=48 passes=5 res=6.369969e-09 dstep=8.298462e-06 ckdesum=-4.175806e-08 capped=0 fallback=0
+### ck_implicit ncycle=49 passes=8 res=1.220547e-07 dstep=3.280070e-05 ckdesum=6.425274e-08 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=49 passes=5 res=6.482298e-09 dstep=8.531048e-06 ckdesum=-4.224760e-08 capped=0 fallback=0
+### ck_implicit ncycle=50 passes=8 res=1.215530e-07 dstep=3.430989e-05 ckdesum=6.600201e-08 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=50 passes=5 res=6.592859e-09 dstep=8.758679e-06 ckdesum=-4.274195e-08 capped=0 fallback=0
+### ck_implicit ncycle=51 passes=8 res=1.204735e-07 dstep=3.582586e-05 ckdesum=6.772354e-08 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=51 passes=5 res=6.704921e-09 dstep=8.980409e-06 ckdesum=-4.323683e-08 capped=0 fallback=0
+### ck_implicit ncycle=52 passes=8 res=1.189133e-07 dstep=3.734670e-05 ckdesum=6.941427e-08 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=52 passes=5 res=6.818287e-09 dstep=9.197145e-06 ckdesum=-4.374782e-08 capped=0 fallback=0
+### ck_implicit ncycle=53 passes=8 res=1.169408e-07 dstep=3.887839e-05 ckdesum=7.114266e-08 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=53 passes=5 res=6.929006e-09 dstep=9.508119e-06 ckdesum=-4.423979e-08 capped=0 fallback=0
+### ck_implicit ncycle=54 passes=8 res=1.196441e-07 dstep=4.077068e-05 ckdesum=7.284344e-08 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=54 passes=5 res=7.039061e-09 dstep=9.836748e-06 ckdesum=-4.473699e-08 capped=0 fallback=0
+### ck_implicit ncycle=55 passes=8 res=1.243871e-07 dstep=4.271318e-05 ckdesum=7.450296e-08 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=55 passes=5 res=7.150105e-09 dstep=1.015573e-05 ckdesum=-4.525610e-08 capped=0 fallback=0
+### ck_implicit ncycle=56 passes=8 res=1.291173e-07 dstep=4.463919e-05 ckdesum=7.609673e-08 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=56 passes=5 res=7.255289e-09 dstep=1.047288e-05 ckdesum=-4.578499e-08 capped=0 fallback=0
+### ck_implicit ncycle=57 passes=8 res=1.338391e-07 dstep=4.651831e-05 ckdesum=7.784144e-08 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=57 passes=5 res=7.571565e-09 dstep=1.078251e-05 ckdesum=-4.628878e-08 capped=0 fallback=0
+### ck_implicit ncycle=58 passes=8 res=1.384083e-07 dstep=4.838014e-05 ckdesum=7.962981e-08 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=58 passes=5 res=7.926738e-09 dstep=1.108059e-05 ckdesum=-4.687227e-08 capped=0 fallback=0
+### ck_implicit ncycle=59 passes=8 res=1.428849e-07 dstep=5.023638e-05 ckdesum=8.141433e-08 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=59 passes=5 res=8.267159e-09 dstep=1.138268e-05 ckdesum=-4.740580e-08 capped=0 fallback=0
+### ck_implicit ncycle=60 passes=8 res=1.472372e-07 dstep=5.213717e-05 ckdesum=8.314799e-08 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=60 passes=5 res=8.600519e-09 dstep=1.168573e-05 ckdesum=-4.793538e-08 capped=0 fallback=0
+### ck_implicit ncycle=61 passes=8 res=1.510727e-07 dstep=5.400690e-05 ckdesum=8.490186e-08 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=61 passes=5 res=8.926456e-09 dstep=1.199094e-05 ckdesum=-4.847197e-08 capped=0 fallback=0
+### ck_implicit ncycle=62 passes=8 res=1.523159e-07 dstep=5.586183e-05 ckdesum=8.667050e-08 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=62 passes=5 res=9.238262e-09 dstep=1.229532e-05 ckdesum=-4.901396e-08 capped=0 fallback=0
+### ck_implicit ncycle=63 passes=8 res=1.533593e-07 dstep=5.769332e-05 ckdesum=8.848512e-08 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=63 passes=5 res=9.533067e-09 dstep=1.259665e-05 ckdesum=-4.954820e-08 capped=0 fallback=0
+### ck_implicit ncycle=64 passes=8 res=1.577354e-07 dstep=5.949583e-05 ckdesum=9.033897e-08 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=64 passes=5 res=9.815972e-09 dstep=1.288481e-05 ckdesum=-5.008552e-08 capped=0 fallback=0
+### ck_implicit ncycle=65 passes=8 res=1.616484e-07 dstep=6.126692e-05 ckdesum=9.221153e-08 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=65 passes=6 res=5.438467e-09 dstep=5.867782e-06 ckdesum=1.006529e-08 capped=0 fallback=0
+### ck_implicit ncycle=66 passes=8 res=1.550105e-07 dstep=6.160523e-05 ckdesum=9.276145e-08 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=66 passes=5 res=9.694770e-09 dstep=1.322580e-05 ckdesum=-5.088182e-08 capped=0 fallback=0
+### ck_implicit ncycle=67 passes=8 res=1.627633e-07 dstep=6.406972e-05 ckdesum=9.533493e-08 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=67 passes=6 res=5.513866e-09 dstep=6.115493e-06 ckdesum=1.039208e-08 capped=0 fallback=0
+### ck_implicit ncycle=68 passes=8 res=1.607470e-07 dstep=6.456660e-05 ckdesum=9.605701e-08 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=68 passes=5 res=9.941106e-09 dstep=1.370484e-05 ckdesum=-5.189951e-08 capped=0 fallback=0
+### ck_implicit ncycle=69 passes=8 res=1.699974e-07 dstep=6.712257e-05 ckdesum=9.852607e-08 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=69 passes=6 res=5.701278e-09 dstep=6.416879e-06 ckdesum=1.080975e-08 capped=0 fallback=0
+### ck_implicit ncycle=70 passes=8 res=1.681965e-07 dstep=6.743104e-05 ckdesum=9.927898e-08 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=70 passes=6 res=5.542252e-09 dstep=6.432789e-06 ckdesum=1.092164e-08 capped=0 fallback=0
+### ck_implicit ncycle=71 passes=8 res=1.691479e-07 dstep=6.825982e-05 ckdesum=1.007700e-07 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=71 passes=6 res=5.500829e-09 dstep=6.503091e-06 ckdesum=1.107430e-08 capped=0 fallback=0
+### ck_implicit ncycle=72 passes=8 res=1.712746e-07 dstep=6.927845e-05 ckdesum=1.026035e-07 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=72 passes=6 res=5.521170e-09 dstep=6.621960e-06 ckdesum=1.126217e-08 capped=0 fallback=0
+### ck_implicit ncycle=73 passes=8 res=1.738610e-07 dstep=7.033261e-05 ckdesum=1.045089e-07 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=73 passes=6 res=5.623252e-09 dstep=6.741409e-06 ckdesum=1.144766e-08 capped=0 fallback=0
+### ck_implicit ncycle=74 passes=8 res=1.765808e-07 dstep=7.126967e-05 ckdesum=1.064839e-07 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=74 passes=6 res=5.729129e-09 dstep=6.857355e-06 ckdesum=1.166655e-08 capped=0 fallback=0
+### ck_implicit ncycle=75 passes=8 res=1.792055e-07 dstep=7.216169e-05 ckdesum=1.083802e-07 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=75 passes=6 res=5.833792e-09 dstep=6.968219e-06 ckdesum=1.186225e-08 capped=0 fallback=0
+### ck_implicit ncycle=76 passes=8 res=1.817389e-07 dstep=7.317388e-05 ckdesum=1.102732e-07 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=76 passes=6 res=5.932240e-09 dstep=7.044988e-06 ckdesum=1.205367e-08 capped=0 fallback=0
+### ck_implicit ncycle=77 passes=8 res=1.843654e-07 dstep=7.414983e-05 ckdesum=1.121482e-07 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=77 passes=6 res=6.024258e-09 dstep=7.121409e-06 ckdesum=1.223415e-08 capped=0 fallback=0
+### ck_implicit ncycle=78 passes=8 res=1.886096e-07 dstep=7.494926e-05 ckdesum=1.138368e-07 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=78 passes=6 res=6.112552e-09 dstep=7.266897e-06 ckdesum=1.241596e-08 capped=0 fallback=0
+### ck_implicit ncycle=79 passes=8 res=1.925417e-07 dstep=7.558160e-05 ckdesum=1.155168e-07 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=79 passes=6 res=6.206346e-09 dstep=7.592875e-06 ckdesum=1.269426e-08 capped=0 fallback=0
+### ck_implicit ncycle=80 passes=8 res=1.962116e-07 dstep=7.640105e-05 ckdesum=1.174641e-07 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=80 passes=6 res=6.281407e-09 dstep=7.738153e-06 ckdesum=1.290470e-08 capped=0 fallback=0
+### ck_implicit ncycle=81 passes=8 res=1.996176e-07 dstep=7.726728e-05 ckdesum=1.194440e-07 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=81 passes=6 res=6.346655e-09 dstep=7.842020e-06 ckdesum=1.309772e-08 capped=0 fallback=0
+### ck_implicit ncycle=82 passes=8 res=2.026942e-07 dstep=7.784529e-05 ckdesum=1.214562e-07 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=82 passes=6 res=6.401684e-09 dstep=7.917622e-06 ckdesum=1.329521e-08 capped=0 fallback=0
+### ck_implicit ncycle=83 passes=8 res=2.054691e-07 dstep=7.858390e-05 ckdesum=1.235491e-07 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=83 passes=6 res=6.447771e-09 dstep=7.982628e-06 ckdesum=1.354924e-08 capped=0 fallback=0
+### ck_implicit ncycle=84 passes=8 res=2.079265e-07 dstep=7.944376e-05 ckdesum=1.257168e-07 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=84 passes=6 res=6.484693e-09 dstep=8.040401e-06 ckdesum=1.376008e-08 capped=0 fallback=0
+### ck_implicit ncycle=85 passes=8 res=2.100180e-07 dstep=7.968080e-05 ckdesum=1.277679e-07 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=85 passes=6 res=6.510022e-09 dstep=8.079595e-06 ckdesum=1.396533e-08 capped=0 fallback=0
+### ck_implicit ncycle=86 passes=8 res=2.118222e-07 dstep=7.988984e-05 ckdesum=1.297505e-07 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=86 passes=6 res=7.532371e-09 dstep=8.109269e-06 ckdesum=1.416147e-08 capped=0 fallback=0
+### ck_implicit ncycle=87 passes=8 res=2.461329e-07 dstep=8.023232e-05 ckdesum=1.314671e-07 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=87 passes=6 res=7.541278e-09 dstep=8.171702e-06 ckdesum=1.434869e-08 capped=0 fallback=0
+### ck_implicit ncycle=88 passes=8 res=2.472700e-07 dstep=8.073852e-05 ckdesum=1.332925e-07 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=88 passes=6 res=7.551706e-09 dstep=8.249781e-06 ckdesum=1.460742e-08 capped=0 fallback=0
+### ck_implicit ncycle=89 passes=8 res=2.477928e-07 dstep=8.196911e-05 ckdesum=1.356069e-07 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=89 passes=6 res=7.537536e-09 dstep=8.295030e-06 ckdesum=1.486839e-08 capped=0 fallback=0
+### ck_implicit ncycle=90 passes=8 res=2.478527e-07 dstep=8.301414e-05 ckdesum=1.378311e-07 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=90 passes=6 res=7.513552e-09 dstep=8.325639e-06 ckdesum=1.511775e-08 capped=0 fallback=0
+### ck_implicit ncycle=91 passes=8 res=2.475930e-07 dstep=8.412750e-05 ckdesum=1.400428e-07 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=91 passes=6 res=7.483823e-09 dstep=8.333753e-06 ckdesum=1.534348e-08 capped=0 fallback=0
+### ck_implicit ncycle=92 passes=8 res=2.466795e-07 dstep=8.527913e-05 ckdesum=1.421888e-07 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=92 passes=6 res=7.455349e-09 dstep=8.336573e-06 ckdesum=1.556047e-08 capped=0 fallback=0
+### ck_implicit ncycle=93 passes=8 res=2.453483e-07 dstep=8.621423e-05 ckdesum=1.444469e-07 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=93 passes=6 res=7.434744e-09 dstep=8.329207e-06 ckdesum=1.577575e-08 capped=0 fallback=0
+### ck_implicit ncycle=94 passes=8 res=2.438855e-07 dstep=8.669342e-05 ckdesum=1.466736e-07 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=94 passes=6 res=7.411421e-09 dstep=8.313311e-06 ckdesum=1.597431e-08 capped=0 fallback=0
+### ck_implicit ncycle=95 passes=8 res=2.413400e-07 dstep=8.682426e-05 ckdesum=1.485310e-07 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=95 passes=6 res=7.377565e-09 dstep=8.360471e-06 ckdesum=1.614871e-08 capped=0 fallback=0
+### ck_implicit ncycle=96 passes=8 res=2.335886e-07 dstep=8.681205e-05 ckdesum=1.503157e-07 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=96 passes=6 res=7.348554e-09 dstep=8.429371e-06 ckdesum=1.646665e-08 capped=0 fallback=0
+### ck_implicit ncycle=97 passes=8 res=2.330774e-07 dstep=8.654382e-05 ckdesum=1.528068e-07 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=97 passes=6 res=7.325880e-09 dstep=8.466565e-06 ckdesum=1.675627e-08 capped=0 fallback=0
+### ck_implicit ncycle=98 passes=8 res=2.343828e-07 dstep=8.637008e-05 ckdesum=1.553123e-07 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=98 passes=6 res=7.375354e-09 dstep=8.488241e-06 ckdesum=1.698517e-08 capped=0 fallback=0
+### ck_implicit ncycle=99 passes=8 res=2.352801e-07 dstep=8.608555e-05 ckdesum=1.576144e-07 capped=0 fallback=0 NOT-CONVERGED
+### ck_implicit ncycle=99 passes=6 res=7.419568e-09 dstep=8.489023e-06 ckdesum=1.720454e-08 capped=0 fallback=0
+photosphere: written to 'photo.txt'
+elapsed=1.376730e+02 cycle=100 time=2.874094e+03 dt=2.862226e+01
+
+Terminating on cycle limit
+time=2.874094e+03 cycle=100
+tlim=8.640000e+07 nlim=100
+
+MeshBlock-cycles = 200
+cpu time used  = 1.321264e+02
+zone-cycles/cpu_second = 6.200124e+03
+particle-updates/cpu_second = 0.000000e+00

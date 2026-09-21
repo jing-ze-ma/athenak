@@ -439,6 +439,30 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // two_stream_rt::ck_beam_sph).  Independent of ck_spherical; default false = bitwise
   // the plane-parallel slant path.
   ck_beam_sph = pin->GetOrAddBoolean("problem","ck_beam_sph",false);
+  // problem/ck_implicit: the BACKWARD-EULER correlated-k column solve (see
+  // two_stream_rt::ck_implicit and utils/two_stream_column_ck.hpp).  Default false =
+  // bitwise the semi-implicit per-cell apply this path has always run.  With it on the
+  // gas receives exactly the converged flux divergence -- no relaxation factor, no
+  // rt_de_max clip -- at ck_impl_maxit ck sweeps per RK stage instead of one.
+  two_stream_rt::ck_implicit =
+      pin->GetOrAddBoolean("problem","ck_implicit",false);
+  two_stream_rt::ck_impl_tol = pin->GetOrAddReal("problem","ck_impl_tol",1.0e-8);
+  two_stream_rt::ck_impl_dtol = pin->GetOrAddReal("problem","ck_impl_dtol",1.0e-8);
+  two_stream_rt::ck_impl_norm_eps =
+      pin->GetOrAddReal("problem","ck_impl_norm_eps",1.0e-3);
+  two_stream_rt::ck_impl_maxit = pin->GetOrAddInteger("problem","ck_impl_maxit",8);
+  two_stream_rt::ck_impl_dtmax = pin->GetOrAddReal("problem","ck_impl_dtmax",0.5);
+  two_stream_rt::ck_impl_verbose =
+      pin->GetOrAddBoolean("problem","ck_impl_verbose",false);
+  two_stream_rt::ck_impl_demax = pin->GetOrAddReal("problem","ck_impl_demax",0.5);
+  two_stream_rt::ck_impl_debug = pin->GetOrAddInteger("problem","ck_impl_debug",0);
+  two_stream_rt::ck_impl_refresh_kappa =
+      pin->GetOrAddBoolean("problem","ck_impl_refresh_kappa",false);
+  if (two_stream_rt::ck_implicit && global_variable::my_rank == 0) {
+    std::cout << "deep_hot_jupiter_rt: correlated-k source is IMPLICIT "
+              << "(ck_implicit), tol " << two_stream_rt::ck_impl_tol << ", maxit "
+              << two_stream_rt::ck_impl_maxit << std::endl;
+  }
   // problem/rt_cell_report + problem/rt_report_every: the per-cell radiative-balance
   // report and, with it, the rt_desum line -- sum(src*dt*dx) against sum(de*dx), i.e.
   // what the sweep asked for against what the gas actually received once the
