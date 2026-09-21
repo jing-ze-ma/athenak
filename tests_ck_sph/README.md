@@ -33,7 +33,8 @@ element** as its bottom face, multiplied by **the same** `AFC(m,k,j,i+1)`.  So
 summed: what cell `i` loses, cell `i+1` gains, to the last bit.  This is true with the
 switch off as well — the apply kernel was always area-correct.  **What was wrong was the
 flux itself**: `Fb_g` carried no r^-2 dilution, so `A F` grew like r^2 through a
-transparent shell (§3c), and the stellar beam was not in flux form at all.
+transparent shell (§3c).  The beam was, and remains, a local volumetric absorption
+rate; see the retraction below.
 
 Each face value is written exactly once per band block, on the **lower** side, as
 `Phi_f/A_f`:
@@ -90,44 +91,72 @@ internal flux enters at the bottom of the radiative domain", it is a real change
 **not** silently rescaled.  When the tau blend is active `ck_int_at_cut` is forced false
 (`:2145`) because the diffusion operator then carries `F_int` itself.
 
-**The stellar beam.**  `Qb_g` is added to the gas as a volumetric rate
-(`:4288-4296`), so its flux form rests on the kernel's own construction: `transw[cc]` is a
-**single running scalar per chain**, updated once per cell (`:3934-3940`), so the value at
-face `f` that closes cell `i+1`'s deposit is the identical variable that opens cell `i`'s.
-With `ck_spherical` the deposit is `(Phi_beam(f_hi) - Phi_beam(f_lo))/V_i` with
-`Phi_beam(f) = A(ie+1) (1-albedo) F_star mu0 T(f)`: the beam is a **parallel pencil
-intercepted by the top face**, its cross-section does not shrink with r the way a radial
-ray bundle's does, so its flux must **not** be divided by r^2 — but using the *local* face
-area with an undiluted flux would make a transparent column absorb `(A_top - A_bot)F` out of
-nothing.  Conserving the beam's *power* is the only form that is both.
+**The stellar beam — RETRACTION.**  An earlier revision of this switch (and of this file)
+carried the beam as a conserved power, `Phi_beam(f) = A(ie+1)(1-albedo) F* mu0 T(f)`, on
+the argument that a column must deposit every watt it intercepts at its top face.  **That
+is wrong, and it is retracted.**  A parallel pencil is not confined to a spherically
+diverging column: the column widens with r, the beam does not, so rays that enter the top
+face leave through the column's sides.  The power intercepted at the top face is therefore
+*not* what the column absorbs.  That form made the planet absorb `pi r_top^2 F*`
+(`r_top = 2.06e10`) instead of `~pi r_abs^2 F*` with `r_abs` the radius where the slant
+optical depth reaches 1 — measured below at `1.24e10` — i.e. it over-heated the dayside by
+`(r_top/r_abs)^2 ~ 2.7`.  **The claim in an earlier version of this README that the
+plane-parallel form "under-heats the dayside by a factor 2.6" was that same error seen from
+the wrong side and is withdrawn.**
 
-## 0.2 Per-cell identity, production radial grid (`r_out/r_in` of the ck domain = 1.96, area ratio 3.83)
+The beam is therefore **untouched by `ck_spherical`**: under both instantiations the deposit
+is the local volumetric absorption rate `kappa rho F* exp(-tau_ray)`, written as a flux
+difference across the cell so that the column integral is `F* mu0 (1 - e^-tau_tot)` by
+construction, with the pre-existing slant-path approximation `tau_ray = tau/mu0`
+(`two_stream_rt.hpp:3925-3952`).  It is bit-for-bit the same arithmetic in both — verified
+in §0.2, where every beam number is identical off and on.  `Qb_g` is added to the gas as a
+volumetric rate (`:4288-4296`); its single-valuedness rests on `transw[cc]` being one
+running scalar per chain, so the face value closing cell `i+1` is the identical variable
+that opens cell `i`.
 
-`max_i |V_i dep_i - (Phi_lo - Phi_hi)| / max|Phi|`, thermal part, from the column dump's
-own `A_cell`, `V_cell`, `Src_lw`, `F_lw_net` (`budget.py`):
+**Scattered / diffuse beam term:** there is none.  The correlated-k shortwave is a pure
+direct beam: `Qb_g` goes straight into the gas energy (`rt_apply`, `:4288-4296`) and is
+never added as a source to the thermal two-stream.  The only coupling back is through the
+gas temperature and hence the Planck function `Bb_g` on the next call.  Scattering (albedo)
+enters only as the scalar `(1-albedo)` attenuating the incident flux, Parmentier+2015
+(`get_albedo`); no scattered radiation is re-emitted into the diffuse field.
 
-| | max per cell | integrated over the column |
+## 0.2 Per-cell identity and the beam, production radial grid (ck domain area ratio 3.83)
+
+`budget2.py`, t = 0, tau blend off so `icut` follows `ck_pcut_bar`.  Two columns,
+`mu0 = 0.922` (m0k5) and `mu0 = 0.382` (m1k3).
+
+**THERMAL**, `max_i |V_i dep_i - (Phi_lo - Phi_hi)| / max|Phi|` and the column budget
+`[sum V Src + (A_t F_t - A_b F_b)]/max|A F|` — identical for both columns:
+
+| | max per cell | column budget |
 | --- | --- | --- |
-| `ck_spherical = false` | **1.80e-02** | **6.26e-01** |
-| `ck_spherical = true` | **1.02e-10** | **1.30e-10** |
+| `ck_spherical = false` | **1.80e-02** | **+6.26e-01** |
+| `ck_spherical = true` | **2.05e-10** | **+2.62e-09** |
 
-1e-10 is round-off *at the solver's own precision* — the chain intensities are `RtF`,
-single by default.  The `false` residual is smooth, largest at the top and decaying
-downward: it is exactly the missing `-2F/r`.
+1e-10/1e-9 is round-off at the solver's own precision (`RtF`, single by default).  The
+`false` residual is smooth, largest at the top and decaying downward: it is the missing
+`-2F/r`.
 
-**Beam, per cell:** exact by construction, as argued in §0.1 — the same `transw` scalar is
-the "out" of one cell and the "in" of the next, so there is no second evaluation to
-disagree with.  The integrated statement, as a fraction of the power the top face
-intercepts, `A(ie+1) F_star mu0`:
+**BEAM** — every number below is **bit-identical off and on**, which is the check that the
+correction landed:
 
-| | `sum_i V_i Qb_i / (A_top F_star mu0)` |
-| --- | --- |
-| `ck_spherical = false` | **0.378** |
-| `ck_spherical = true` | **0.991** |
+| | `mu0 = 0.922` | `mu0 = 0.382` |
+| --- | --- | --- |
+| absorbed power `sum_i V_i Qb_i` | 1.31810e+29 | 5.66056e+28 |
+| `/ (A_top mu0 F*)` | **0.378** | **0.392** |
+| `r` at `tau_slant = 1` | 1.2409e+10 (p = 2.0e-2 bar) | 1.2597e+10 (p = 1.2e-2 bar) |
+| `/ (A(tau_slant=1) mu0 F*)` | **1.038** | **1.044** |
+| beam flux at the top face `/ (F* mu0)` | 0.99133 | 0.99107 |
 
-0.991 is `(1-albedo)` times the beam that does not survive to the cut; 0.378 is the old
-form depositing as if the column's cross-section were the *local* shell area, i.e.
-under-heating the dayside by a factor 2.6 on this grid.
+`(1-albedo) = 0.991541` for this configuration (Parmentier+2015 at `Teff0 = 3082.6 K`,
+`g = 942`), so the downward beam flux entering the top face is `(1-albedo) F* mu0` to
+**2.1e-4** and **4.7e-4** respectively; the shortfall is exactly the unresolved hydrostatic
+ghost column above the domain (`RTTopDtau`), which is intended and is `T_ghost = 0.9998`,
+`0.9995`.  The absorbed power is `1.04 x A(tau_slant=1) mu0 F*` and only `0.38 x
+A_top mu0 F*` — i.e. the column absorbs what a disc of radius `r_abs` intercepts, not what
+crosses the domain top, which is the coordinator's point and the reason the power form was
+withdrawn.
 
 ## 0.3 Column budget, and what the gas actually receives
 
@@ -149,8 +178,12 @@ production radial grid, the two meshblocks reported separately:
 
 | cycle | `ck_spherical = false` | `ck_spherical = true` |
 | --- | --- | --- |
-| 50 | **-39.1 % / -36.3 %** | **-4.6 % / -2.3 %** |
-| 75 | **-40.5 % / -37.8 %** | **-4.2 % / -2.0 %** |
+| 50 | -39.7 % / -36.8 % | -5.9 % / -3.1 % |
+| 75 | **-40.5 % / -37.7 %** | **-5.6 % / -2.9 %** |
+
+(`f2_desum_*`, with the corrected beam and the production conduction + tau blend; the
+earlier `f_desum_*` run, without the blend and with the retracted beam, gave -40.5/-37.8 %
+and -4.2/-2.0 % — the gap is insensitive to both.)
 
 So the semi-implicit apply currently swallows 2-5 % of the radiative source even in the
 corrected run, and 36-40 % in the uncorrected one (whose source is far larger and far
@@ -204,7 +237,7 @@ Inside `rt_chain_ck`, on the centre-to-centre layers (`rt_layer_legacy = false`,
 | thermal sweep, per (band, g-point, angle) chain | two independent formal sweeps, down then up, over half layers split at each face | **none** — plain intensities, no area anywhere |
 | face flux `Fb_g(f)` | `wfc*(I_up - I_down[f])` | **none** — no dilution, so `L = A F` grew like r^2 |
 | deposit `Src_g(i)` | `wfc/dz*(I_in - I_out)` | plane-parallel divergence; `-2F/r` missing |
-| stellar beam | slant path `1/mu0`, deposit `F_star w mu0 (T_hi - T_lo)/dz` | none — and it also did not conserve the intercepted power on a shell |
+| stellar beam | slant path `1/mu0`, deposit `F_star w mu0 (T_hi - T_lo)/dz` | none, and **correctly so** — see the retraction in §0.1; `ck_spherical` leaves this untouched |
 | internal flux | intensity at the cut face | none |
 | top boundary | unresolved hydrostatic column `p/g` above the domain (`RTTopDtau`) | none |
 | OLR / photosphere dump | read `Fb_g`, a flux per unit area at its own face | consumer-side only |
@@ -227,7 +260,8 @@ Specific to this kernel:
   switch is off (the kernel is templated on the flag, so the `SPH = false` instantiation is
   literally the previous code).
 * **`A D` continuity is enforced, not inferred** — §0.4 item 1.
-* **The stellar beam is carried as a power, not a flux** — §0.1.
+* **The stellar beam is untouched** — §0.1, including the retraction of the
+  conserved-power form that the first revision of this switch carried.
 
 Refused at startup: a Cartesian mesh (the switch is geometry and has no meaning there —
 verified by inspection only, since no Cartesian pgen reads it), `rt_ck = false` (verified,
@@ -235,7 +269,7 @@ fatals), and `rt_layer_legacy = true`.
 
 Code: `src/utils/two_stream_rt.hpp` — flag + doc note `~:950-1000`; startup guards
 `~:1615-1655`; `rt_chain_ck` templated on the flag, the two probe passes `~:3690-3840`, the
-face mixing `:3852,:3910,:4046,:4072`, the beam rescaling `:3928-3940`, the `A D` frame
+face mixing `:3852,:3910,:4046,:4072`, the `A D` frame
 change `:4046-4051,:4070-4077`; three diagnostic columns in `rt_dumpcol` `~:5330-5400`.
 `src/pgen/deep_hot_jupiter_rt.cpp:98-100,431-444`.
 `inputs/tests/dhj_ck_spherical.athinput` (new).
@@ -308,6 +342,94 @@ at 10 bar) and satisfies the per-cell identity to 1e-10 along with the rest.  Wh
 `-(4 sigma/3) dT^4/dtau` through the ck path.  Note that the ck kernel never carried the
 `J = A I` substitution 8bca3dfa was correcting, so that scheme's `1 - H_T/(2r)` error never
 applied to it.
+
+### (3) "agrees with the injected flux from below" — NIGHT column
+
+Production radial grid AND the production physics below the cut: `isotropic_conduction =
+radiative`, `rad_implicit_x1`, `rad_cap_ang = 0.5`, `rad_tau_lo/hi = 30/300`,
+`rad_kappa_src = table`, `rad_flux_inner = -1` (so `ck_int_at_cut` is forced false and the
+diffusion operator carries `F_int`).  **`sigma T_int^4` is imposed per unit area at
+`x1min`** — `conduction.cpp:1533-1537`, `if (i == is && fin != 0.0) flx1(m,IEN,k,j,i) +=
+fin` — so the injected luminosity is `L_int = A(x1min) sigma T_int^4 = 4.26139e+25`
+(`T_int = 537.565 K`).  4000 cycles, `t = 1.114e5 s` (off) / `1.062e5 s` (on); the column
+dumped is `mu0 = -0.922`, restarted from the clean-exit restart.
+
+**How steady:** `d(tot-E)/dt` has fallen from `-5.5e32` at `t = 0` to `+2.9e30` (off) /
+`-5.5e30` (on), a factor 100-190, and the total energy has moved by -0.27 %.  The
+atmosphere is **not** in global radiative equilibrium — it starts from an analytic
+hydrostatic state at `Teq = 2500 K` and is still shedding that heat, so every column
+radiates ~10^3 `L_int`.  The gate therefore tests the **shape** of `L(r)`, which is what
+the geometry controls, not its absolute normalisation.
+
+`L(r)/L_int` over the faces the two-stream owns alone (`w = 0`):
+
+| region | `ck_spherical = false` | `ck_spherical = true` |
+| --- | --- | --- |
+| `r = 1.307e10 .. 2.056e10` (area ratio **2.47**) | **869.1 -> 2149.2**, a factor **2.473** | **1003.85 -> 1005.04**, flat to **1.2e-3** |
+| `r = 1.360e10 .. 2.056e10` (area ratio 2.28) | 940.9 -> 2149.2, factor 2.284 | 1004.93 -> 1005.04, flat to **1.1e-4** |
+| `L(top)/L_int` | 2149.2 | 1005.04 |
+
+The `false` column's `L(r)` grows by **exactly the area ratio** (2.473 against 2.470,
+2.284 against 2.283) — the flux per unit area is constant instead of the luminosity.  The
+`true` column's `L(r)` is flat to `1e-4` once above the last cells that are still
+exchanging energy.  ON is flat; it is not at 1, and the reason is the unrelaxed initial
+state, not the discretisation: a genuinely star-off, fully relaxed atmosphere would take
+far longer than is affordable here and was not run.
+
+Also visible: in the `false` run every cell above `r = 1.52e10` sits on `pfloor`
+(`p = 1.000e-09 bar` exactly) with `T` at 557-561 K; in the `true` run the same cells are
+at `p = 2e-9 .. 5e-5 bar` and `T ~ 3900-4400 K`.
+
+### (4) "agrees with the beam from above" — DAY columns
+
+Same runs; `A_top F_top,thermal` against `L_int + P_beam`, both normalised by `L_int`:
+
+| column | | `L(top)/L_int` | target `1 + P_beam/L_int` | ratio |
+| --- | --- | --- | --- | --- |
+| `mu0 = +0.922` | off | 5387.9 | 3122.5 | **1.725** |
+| | **on** | 2899.3 | 3024.6 | **0.959** |
+| `mu0 = +0.382` | off | 3694.9 | 1317.1 | **2.805** |
+| | **on** | 2018.6 | 1254.3 | **1.609** |
+
+`P_beam` is the same physical quantity in both (the beam is untouched); it differs between
+off and on only because the relaxed *states* differ (3121.5 vs 3023.6, 1316.1 vs 1253.3).
+The `mu0 = 0.922` column closes to **-4.1 %** with the switch on against **+72.5 %** with
+it off.  The `mu0 = 0.382` column is still 61 % over: that column is neither relaxed nor
+isolated — this is a 3-D run and horizontal advection moves energy between columns, which
+a per-column budget cannot see.  Both are large improvements; neither is a converged
+equilibrium, and the residual is dominated by the two effects just named plus the 3-6 % of
+the source the semi-implicit apply swallows (§0.3).
+
+### (5) T(p) of the relaxed columns, with the corrected beam
+
+From the same restarted dumps, so this is a **real T(p) in kelvin** (the correlated-k
+column dump carries the EOS temperature; the earlier version of this gate used `e/rho`
+from the binary output because it had no relaxed column dump).  `dT = T_on - T_off`:
+
+| region | night (`mu0 = -0.92`) | day (`mu0 = +0.92`) | day (`mu0 = +0.38`) |
+| --- | --- | --- | --- |
+| `p > 10 bar` (below the cut) | -0.4 .. +0.3 K | -0.5 .. +0.1 K | -0.5 .. +0.1 K |
+| `1 .. 10 bar` | +0.3 .. +5.1 K (mean +1.9) | -1.8 .. +0.1 K | 0.0 .. +1.3 K |
+| `1e-3 .. 1 bar` (photosphere) | -440 .. +133 K (mean **-144**) | -197 .. +472 K (mean **+17**) | -259 .. +450 K (mean **+24**) |
+| `< 1e-3 bar` (upper atmosphere) | 0 .. +1615 K (mean +879) | +533 .. +3805 K (mean +2862) | +486 .. +3636 K (mean +2758) |
+
+The deep region is untouched (sub-kelvin), as it must be: it is optically thick and below
+the ck cut.  The photospheric band moves by a few hundred K either way with a small mean —
+the **sign now differs between night and day** (night -144 K, day +17/+24 K), which the
+earlier, beam-over-heated version of this gate could not have shown: there the whole
+dayside was inflated by the 2.6x beam error.  The upper atmosphere is again a qualitative
+difference and not a percentage: with the switch **off** it collapses onto `pfloor`
+(`p = 1.000e-09 bar` exactly) and `T` falls to ~560 K; with it **on** the same cells stay
+at `p = 1e-9 .. 5e-5 bar` and `T ~ 3900-4400 K`.  That collapse is driven by the *thermal*
+error alone now (the beam is identical in both runs), i.e. by an undiluted thermal flux
+irradiating the thin upper atmosphere from below.
+
+### (e) SUPERSEDED
+
+The earlier gate (e) (`e_relax_*`, `relaxcmp.py`) was run with the retracted beam and
+without the conduction / tau blend.  Its photospheric numbers (+12.9 % mean, +41.9 % max
+in `e/rho`) contained the 2.6x beam over-heating and are superseded by (5) above.  The
+directories are kept only so the retraction can be checked.
 
 ### (e) relaxation on the production radial grid
 

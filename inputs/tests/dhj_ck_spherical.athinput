@@ -182,6 +182,21 @@ time_cgs   = 1.0
 mu         = 1.0
 
 <hydro>
+# RADIATIVE CONDUCTION + THE OPTICAL-DEPTH BLEND, as bench/cs_mhd_prod3 runs them (it
+# carries them in its <mhd> block; rad_implicit_x1 is <hydro>-only, conduction.cpp:173-180,
+# so a hydro copy is the only place they can all be set).  With rad_tau_hi > 0 the blend
+# owns the deep region, ck_int_at_cut is forced false (two_stream_rt.hpp:2145) and the
+# internal flux enters ONCE, as sigma T_int^4 per unit area through the face i = is, i.e.
+# AT x1min (conduction.cpp:1533-1537), so the luminosity it injects is
+# A(x1min) sigma T_int^4.
+isotropic_conduction = radiative
+rad_implicit_x1 = true
+rad_cap_ang     = 0.5
+rad_tau_lo      = 30.0
+rad_tau_hi      = 300.0
+rad_kappa_src   = table
+rad_flux_inner  = -1.0            # sigma T_int^4 from Teq, set by the problem generator
+rad_met         = 0.0
 eos             = general
 general_eos     = table
 reconstruct     = plm

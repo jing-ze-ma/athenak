@@ -981,17 +981,25 @@ inline bool rt_layer_legacy = false;
 // slot is read one statement before the real down-sweep overwrites it), so it costs no
 // extra per-thread memory.
 //
-// THE STELLAR BEAM IS NOT DILUTED.  It is a parallel pencil from a source at infinity,
-// intercepted by the column's TOP FACE and carried down the slant path 1/mu0; its
-// cross-section does not shrink with r the way a radial ray bundle's does, and dividing
-// its flux by r^2 would be simply wrong.  What must hold is that the column deposits
-// every watt it intercepts, so the conserved quantity is the beam's POWER,
-//     Phi_beam(f) = A(ie+1) F_star mu0 T(f),
-// with T the (unchanged) slant transmission, and the deposit in cell i is
-// (Phi_beam(f_hi) - Phi_beam(f_lo))/V_i, i.e. the old per-unit-area expression times
-// A(ie+1)/A_i.  Summed over the column that is A(ie+1) F_star mu0 (1 - T_bot): exact,
-// and identically zero in a transparent column, which a local-face-area form would not
-// be.  The slant path itself stays the plane-parallel dz/mu0 it always was.
+// THE STELLAR BEAM IS NOT TOUCHED AT ALL.  This switch converts the THERMAL two-stream
+// and nothing else.  The beam is a parallel pencil from a source at infinity, and a
+// parallel pencil is NOT confined to a spherically diverging column: the column widens
+// with r, the beam does not, so rays entering the column's top face leave through its
+// sides.  The power a column intercepts at its top face is therefore NOT the power it
+// absorbs, and the only exact local statement is the volumetric absorption rate
+// kappa rho F_star exp(-tau_ray) -- which is exactly what the kernel already computes,
+// written as a flux difference across the cell so that the column integral comes out
+// F_star mu0 (1 - e^-tau_tot) by construction.  Neither an r^-2 dilution nor a
+// conserved-power form belongs here.
+//
+// RETRACTED.  The first revision of this switch carried the beam as a conserved power
+// Phi_beam(f) = A(ie+1) F_star mu0 T(f), on the argument that a column must deposit every
+// watt it intercepts.  It must not.  That made every dayside column absorb the power
+// crossing the DOMAIN TOP, i.e. the planet absorbed pi r_top^2 F_star instead of
+// pi r_abs^2 F_star with r_abs the radius where the slant optical depth reaches 1 --
+// an over-heating by (r_top/r_abs)^2, a factor ~3 on the production grid.  The claim in
+// tests_ck_sph/README.md that the plane-parallel form "under-heats the dayside by a
+// factor 2.6" was that error seen from the wrong side, and is retracted there.
 //
 // NOT CONVERTED, and refused: rt_layer_legacy (the staggered whole-cell ck layers) and
 // the mode-1/2 nearest-neighbour Jacobian, which the ck path never fills anyway.
@@ -1645,7 +1653,8 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
         cksph_announced = true;
         std::cout << "### two_stream_rt: correlated-k SPHERICAL form ON "
                   << "(problem/ck_spherical): face mixing on both rays, Phi = A F "
-                  << "single-valued, stellar beam carried as a power, not a flux."
+                  << "single-valued for the THERMAL two-stream; the stellar beam is "
+                  << "unchanged (a parallel pencil is not confined to the column)."
                   << std::endl;
       }
     }
@@ -3714,7 +3723,6 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
                 Itop[cc] = I_down[cc][ie+1];
               }
               const Real bt_top = SPH ? BTF(m,k,j,ie+1,icut) : 0.0;
-              const Real atop_f = SPH ? AFC(m,k,j,ie+1) : 1.0;
               if (SPH) {
                 // ---- P1: the plane-parallel down probe, d0 -> I_down
                 RtF Idp[NC];
@@ -3860,10 +3868,8 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
                 const Real dz = dx1(m,k,j,i);
                 const Real drho = rho*dz;
                 const Real dzf = (i < ie) ? dx1(m,k,j,i+1) : dz;
-                // the face between cells i+1 and i, and the beam's area rescaling for
-                // cell i (see ck_spherical: the beam carries a POWER, not a flux)
+                // the face between cells i+1 and i
                 const Real bt_d = SPH ? BTF(m,k,j,i+1,icut) : 0.0;
-                const Real bsc = SPH ? atop_f*dx1(m,k,j,i)/volume(m,k,j,i) : 1.0;
                 const Real xTv = xT_g(m,k,j,i);
                 const Real xPv = xP_g(m,k,j,i);
                 const int iT = static_cast<int>(xTv);
@@ -3925,18 +3931,31 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
                   tausw[cc] += kap*drho;
                   if (lit) {
                     const Real tnew = RT_EXP(-static_cast<RtF>(tausw[cc]*facsw));
-                    // ck_spherical: the beam is a parallel pencil intercepted by the top
-                    // FACE, so what is conserved is its POWER A(ie+1) F mu0 T, and the
-                    // deposit is the old per-unit-area one times A(ie+1)/A_i.  Summed
-                    // down the column that is exactly the intercepted power, and it is
-                    // identically zero where the column is transparent.
-                    if (SPH) {
-                      Qb_g(m,blk,i,k,j) += (1.0-albedo)*Fstar*ckswf(b)*wgc[cc]/facsw
-                                * (transw[cc] - tnew)*bsc/dz;
-                    } else {
-                      Qb_g(m,blk,i,k,j) += (1.0-albedo)*Fstar*ckswf(b)*wgc[cc]/facsw
-                                * (transw[cc] - tnew)/dz;
-                    }
+                    // THE STELLAR BEAM IS NOT TOUCHED BY ck_spherical.  It is a parallel
+                    // pencil, and a parallel pencil is NOT confined to a spherically
+                    // diverging column: the column widens with r, the beam does not, so
+                    // rays that enter the top face leave through the column's sides.  The
+                    // power a column intercepts at its TOP face is therefore NOT the
+                    // power it absorbs, and the only exact local statement is the volume
+                    // absorption rate kappa rho F* exp(-tau_ray) -- which is what the
+                    // expression below already is, written as a flux difference across
+                    // the cell so that the column integral is F* mu0 (1 - e^-tau_tot) by
+                    // construction (see the note above on u e^-u/(1 - e^-u)).
+                    //
+                    // RETRACTED: an earlier revision of this switch carried the beam as a
+                    // conserved POWER A(ie+1) F* mu0 T(f), on the argument that a column
+                    // must deposit every watt it intercepts.  It must not.  That form
+                    // made every dayside column absorb the power crossing the DOMAIN TOP,
+                    // the planet absorbed pi r_top^2 F* instead of pi r_abs^2 F* with
+                    // r_abs where the slant optical depth reaches 1 -- an over-heating by
+                    // (r_top/r_abs)^2 ~ 3 on the production grid.  See
+                    // tests_ck_sph/README.md, which keeps the retraction.
+                    //
+                    // So this is bit-for-bit the plane-parallel expression under BOTH
+                    // instantiations, and ck_spherical touches the THERMAL two-stream
+                    // alone.  The slant path stays the plane-parallel dz/mu0 it was.
+                    Qb_g(m,blk,i,k,j) += (1.0-albedo)*Fstar*ckswf(b)*wgc[cc]/facsw
+                              * (transw[cc] - tnew)/dz;
                     transw[cc] = tnew;
                   }
                 }
