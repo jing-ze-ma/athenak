@@ -26,49 +26,8 @@
 #include "rad_m1/rad_m1.hpp"
 #include "rad_m1/rad_m1_closure.hpp"
 
-namespace {
-// mode 0 = plain copy, 1 = reflect (flip normal), 2 = vacuum (normal outgoing only).
-// inorm = 1,2,3 selects the face-normal flux component; sgn = +1 when "outgoing" is the
-// positive coordinate direction.
-KOKKOS_INLINE_FUNCTION
-void RadM1FillGhost(const DvceArray5D<Real> &u, const int m,
-                    const int kg, const int jg, const int ig,
-                    const int ka, const int ja, const int ia,
-                    const int inorm, const int mode, const Real sgn,
-                    const Real cl, const Real efl) {
-  Real e  = u(m,radm1::M1_E, ka,ja,ia);
-  Real f1 = u(m,radm1::M1_F1,ka,ja,ia);
-  Real f2 = u(m,radm1::M1_F2,ka,ja,ia);
-  Real f3 = u(m,radm1::M1_F3,ka,ja,ia);
-  if (mode == 1) {
-    if (inorm == 1) {
-      f1 = -f1;
-    } else if (inorm == 2) {
-      f2 = -f2;
-    } else {
-      f3 = -f3;
-    }
-  } else if (mode == 2) {
-    // Free streaming OUT, nothing in.  When the interior flux already points away from
-    // this face there is nothing outside to bring in, so the ghost is dark; otherwise
-    // the state is copied and the radiation leaves transparently.  Zeroing only the
-    // normal component instead (an earlier version of this file) leaves the ghost as a
-    // reservoir of E with no flux, and the HLL flux then PUMPS energy into the domain
-    // -- measured as a 38% growth of the beam amplitude along a grazing boundary.
-    Real fn = (inorm == 1) ? f1 : ((inorm == 2) ? f2 : f3);
-    if (sgn*fn < 0.0) {
-      e = efl;
-      f1 = 0.0;
-      f2 = 0.0;
-      f3 = 0.0;
-    }
-  }
-  u(m,radm1::M1_E, kg,jg,ig) = e;
-  u(m,radm1::M1_F1,kg,jg,ig) = f1;
-  u(m,radm1::M1_F2,kg,jg,ig) = f2;
-  u(m,radm1::M1_F3,kg,jg,ig) = f3;
-}
-} // namespace
+//! The per-cell ghost fill lives in rad_m1_closure.hpp as radm1::M1FillGhost, so that a
+//! problem generator with `user` x1 walls can run exactly the same fill.
 
 //----------------------------------------------------------------------------------------
 //! \fn void MeshBoundaryValues::RadM1BCs()
@@ -95,18 +54,18 @@ void MeshBoundaryValues::RadM1BCs(MeshBlockPack *ppack, DualArray2D<Real> u_in,
       switch (mb_bcs.d_view(m,BoundaryFace::inner_x1)) {
         case BoundaryFlag::outflow:
           for (int i=0; i<ng; ++i) {
-            RadM1FillGhost(u0,m,k,j,is-i-1,k,j,is,1,0,-1.0,cl,e_floor);
+            radm1::M1FillGhost(u0,m,k,j,is-i-1,k,j,is,1,0,-1.0,cl,e_floor);
           }
           break;
         case BoundaryFlag::reflect:
           for (int i=0; i<ng; ++i) {
-            RadM1FillGhost(u0,m,k,j,is-i-1,k,j,is+i,1,1,-1.0,cl,e_floor);
+            radm1::M1FillGhost(u0,m,k,j,is-i-1,k,j,is+i,1,1,-1.0,cl,e_floor);
           }
           break;
         case BoundaryFlag::vacuum:
         case BoundaryFlag::diode:
           for (int i=0; i<ng; ++i) {
-            RadM1FillGhost(u0,m,k,j,is-i-1,k,j,is,1,2,-1.0,cl,e_floor);
+            radm1::M1FillGhost(u0,m,k,j,is-i-1,k,j,is,1,2,-1.0,cl,e_floor);
           }
           break;
         case BoundaryFlag::inflow:
@@ -123,18 +82,18 @@ void MeshBoundaryValues::RadM1BCs(MeshBlockPack *ppack, DualArray2D<Real> u_in,
       switch (mb_bcs.d_view(m,BoundaryFace::outer_x1)) {
         case BoundaryFlag::outflow:
           for (int i=0; i<ng; ++i) {
-            RadM1FillGhost(u0,m,k,j,ie+i+1,k,j,ie,1,0,1.0,cl,e_floor);
+            radm1::M1FillGhost(u0,m,k,j,ie+i+1,k,j,ie,1,0,1.0,cl,e_floor);
           }
           break;
         case BoundaryFlag::reflect:
           for (int i=0; i<ng; ++i) {
-            RadM1FillGhost(u0,m,k,j,ie+i+1,k,j,ie-i,1,1,1.0,cl,e_floor);
+            radm1::M1FillGhost(u0,m,k,j,ie+i+1,k,j,ie-i,1,1,1.0,cl,e_floor);
           }
           break;
         case BoundaryFlag::vacuum:
         case BoundaryFlag::diode:
           for (int i=0; i<ng; ++i) {
-            RadM1FillGhost(u0,m,k,j,ie+i+1,k,j,ie,1,2,1.0,cl,e_floor);
+            radm1::M1FillGhost(u0,m,k,j,ie+i+1,k,j,ie,1,2,1.0,cl,e_floor);
           }
           break;
         case BoundaryFlag::inflow:
@@ -160,18 +119,18 @@ void MeshBoundaryValues::RadM1BCs(MeshBlockPack *ppack, DualArray2D<Real> u_in,
       switch (mb_bcs.d_view(m,BoundaryFace::inner_x2)) {
         case BoundaryFlag::outflow:
           for (int j=0; j<ng; ++j) {
-            RadM1FillGhost(u0,m,k,js-j-1,i,k,js,i,2,0,-1.0,cl,e_floor);
+            radm1::M1FillGhost(u0,m,k,js-j-1,i,k,js,i,2,0,-1.0,cl,e_floor);
           }
           break;
         case BoundaryFlag::reflect:
           for (int j=0; j<ng; ++j) {
-            RadM1FillGhost(u0,m,k,js-j-1,i,k,js+j,i,2,1,-1.0,cl,e_floor);
+            radm1::M1FillGhost(u0,m,k,js-j-1,i,k,js+j,i,2,1,-1.0,cl,e_floor);
           }
           break;
         case BoundaryFlag::vacuum:
         case BoundaryFlag::diode:
           for (int j=0; j<ng; ++j) {
-            RadM1FillGhost(u0,m,k,js-j-1,i,k,js,i,2,2,-1.0,cl,e_floor);
+            radm1::M1FillGhost(u0,m,k,js-j-1,i,k,js,i,2,2,-1.0,cl,e_floor);
           }
           break;
         case BoundaryFlag::inflow:
@@ -188,18 +147,18 @@ void MeshBoundaryValues::RadM1BCs(MeshBlockPack *ppack, DualArray2D<Real> u_in,
       switch (mb_bcs.d_view(m,BoundaryFace::outer_x2)) {
         case BoundaryFlag::outflow:
           for (int j=0; j<ng; ++j) {
-            RadM1FillGhost(u0,m,k,je+j+1,i,k,je,i,2,0,1.0,cl,e_floor);
+            radm1::M1FillGhost(u0,m,k,je+j+1,i,k,je,i,2,0,1.0,cl,e_floor);
           }
           break;
         case BoundaryFlag::reflect:
           for (int j=0; j<ng; ++j) {
-            RadM1FillGhost(u0,m,k,je+j+1,i,k,je-j,i,2,1,1.0,cl,e_floor);
+            radm1::M1FillGhost(u0,m,k,je+j+1,i,k,je-j,i,2,1,1.0,cl,e_floor);
           }
           break;
         case BoundaryFlag::vacuum:
         case BoundaryFlag::diode:
           for (int j=0; j<ng; ++j) {
-            RadM1FillGhost(u0,m,k,je+j+1,i,k,je,i,2,2,1.0,cl,e_floor);
+            radm1::M1FillGhost(u0,m,k,je+j+1,i,k,je,i,2,2,1.0,cl,e_floor);
           }
           break;
         case BoundaryFlag::inflow:
@@ -225,18 +184,18 @@ void MeshBoundaryValues::RadM1BCs(MeshBlockPack *ppack, DualArray2D<Real> u_in,
     switch (mb_bcs.d_view(m,BoundaryFace::inner_x3)) {
       case BoundaryFlag::outflow:
         for (int k=0; k<ng; ++k) {
-          RadM1FillGhost(u0,m,ks-k-1,j,i,ks,j,i,3,0,-1.0,cl,e_floor);
+          radm1::M1FillGhost(u0,m,ks-k-1,j,i,ks,j,i,3,0,-1.0,cl,e_floor);
         }
         break;
       case BoundaryFlag::reflect:
         for (int k=0; k<ng; ++k) {
-          RadM1FillGhost(u0,m,ks-k-1,j,i,ks+k,j,i,3,1,-1.0,cl,e_floor);
+          radm1::M1FillGhost(u0,m,ks-k-1,j,i,ks+k,j,i,3,1,-1.0,cl,e_floor);
         }
         break;
       case BoundaryFlag::vacuum:
       case BoundaryFlag::diode:
         for (int k=0; k<ng; ++k) {
-          RadM1FillGhost(u0,m,ks-k-1,j,i,ks,j,i,3,2,-1.0,cl,e_floor);
+          radm1::M1FillGhost(u0,m,ks-k-1,j,i,ks,j,i,3,2,-1.0,cl,e_floor);
         }
         break;
       case BoundaryFlag::inflow:
@@ -253,18 +212,18 @@ void MeshBoundaryValues::RadM1BCs(MeshBlockPack *ppack, DualArray2D<Real> u_in,
     switch (mb_bcs.d_view(m,BoundaryFace::outer_x3)) {
       case BoundaryFlag::outflow:
         for (int k=0; k<ng; ++k) {
-          RadM1FillGhost(u0,m,ke+k+1,j,i,ke,j,i,3,0,1.0,cl,e_floor);
+          radm1::M1FillGhost(u0,m,ke+k+1,j,i,ke,j,i,3,0,1.0,cl,e_floor);
         }
         break;
       case BoundaryFlag::reflect:
         for (int k=0; k<ng; ++k) {
-          RadM1FillGhost(u0,m,ke+k+1,j,i,ke-k,j,i,3,1,1.0,cl,e_floor);
+          radm1::M1FillGhost(u0,m,ke+k+1,j,i,ke-k,j,i,3,1,1.0,cl,e_floor);
         }
         break;
       case BoundaryFlag::vacuum:
       case BoundaryFlag::diode:
         for (int k=0; k<ng; ++k) {
-          RadM1FillGhost(u0,m,ke+k+1,j,i,ke,j,i,3,2,1.0,cl,e_floor);
+          radm1::M1FillGhost(u0,m,ke+k+1,j,i,ke,j,i,3,2,1.0,cl,e_floor);
         }
         break;
       case BoundaryFlag::inflow:

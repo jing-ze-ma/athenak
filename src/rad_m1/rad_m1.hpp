@@ -59,6 +59,36 @@ constexpr int M1_NOPAC = 3;
 constexpr int M1_OPAC_CONST    = 0;
 constexpr int M1_OPAC_POWERLAW = 1;
 constexpr int M1_OPAC_USER     = 2;
+constexpr int M1_OPAC_TABLE    = 3;   // stellar Rosseland + Planck tables (milestone 2a)
+
+// <rad_m1>/force_reference: what the momentum coupling SUBTRACTS from the radiative
+// force before handing it to the gas.  See RadiationM1::arad_ref and the bookkeeping
+// note at the head of rad_m1_coupling.cpp.
+constexpr int M1_FREF_NONE    = 0;
+constexpr int M1_FREF_WB_ARAD = 1;
+
+//----------------------------------------------------------------------------------------
+//! \struct M1OpacTab
+//! \brief the two stellar opacity tables, as device Views held BY VALUE on the module so
+//! that the whole struct can be captured by value in a device lambda (a host pointer
+//! cannot be dereferenced there).  Both tables share ONE (log10 T, log10 rho) grid -- the
+//! format src/pgen/box_convection.cpp's ReadOpacityTable produces -- and both are read
+//! with diffusion/conduction.hpp's RosselandTable, unchanged.
+//!
+//! The lookup is in KELVIN and g/cm^3: `tunit` converts the EOS's CODE temperature to
+//! kelvin (T[K] = T_code*tunit, the same direction Conduction uses with
+//! Units::temperature_cgs()), `dunit` the code density to g/cm^3, and `kunit` the
+//! tabulated cm^2/g back to code units.
+
+struct M1OpacTab {
+  DvceArray2D<Real> kr;        // log10 kappa_Rosseland [cm^2/g], (iT, iD)
+  DvceArray2D<Real> kp;        // log10 kappa_Planck    [cm^2/g], same grid
+  DvceArray1D<Real> lT, lD;    // log10 T[K], log10 rho[g/cm^3]
+  int nT = 0, nD = 0;
+  Real tunit = 1.0;
+  Real dunit = 1.0;
+  Real kunit = 1.0;
+};
 
 // <rad_m1>/reconstruct, as a plain int for the device (same order as the code-wide
 // ReconstructionMethod enum, so the two can be compared).  ppm4 and above read a
@@ -143,6 +173,20 @@ class RadiationM1 {
   Real kappa_p, kappa_e, kappa_f, kappa_s;
   Real opac_rho_ref, opac_t_ref, opac_a, opac_b;
   bool opac_zero;               // all four opacities are identically zero
+  M1OpacTab otab;               // opacity = table: filled by SetOpacityTables
+
+  // <rad_m1>/force_reference (milestone 2a).  With M1_FREF_WB_ARAD the momentum handed
+  // to the gas is the RESIDUAL between the instantaneous radiative force and the
+  // reference acceleration arad_ref(z) that an external well-balanced scheme already
+  // carries (box_convection's Phi_eff).  arad_ref is a per-cell device array filled by
+  // the problem generator through SetForceReference.
+  int force_ref;
+  DvceArray4D<Real> arad_ref;   // (m,k,j,i), a reference x1 acceleration, code units
+
+  // RSLA start-up check (design sect. 2): v_max*tau_max/chat, evaluated once, on the
+  // first filled opacity array.  rsla_vmax <= 0 means "measure max |v| over the domain".
+  Real rsla_warn, rsla_vmax;
+  bool rsla_force, rsla_done;
 
   // matter coupling (design sect. 4)
   bool coupling;       // run the implicit local solve at all
@@ -193,6 +237,16 @@ class RadiationM1 {
   int SetSubsteps(Real dt_mesh);
   //! print the implicit-solve counters (called from the destructor, rank 0)
   void ReportCounters();
+  //! hand the module its two opacity tables (opacity = table); called by the pgen
+  void SetOpacityTables(const DvceArray2D<Real> &kr, const DvceArray2D<Real> &kp,
+                        const DvceArray1D<Real> &lT, const DvceArray1D<Real> &lD,
+                        const int nT, const int nD);
+  //! the per-cell reference acceleration of force_reference = wb_arad; the caller owns
+  //! the array and must keep it alive for the run
+  void SetForceReference(const DvceArray4D<Real> &a);
+  //! design sect. 2: evaluate and print v_max*tau_max/chat.  Runs once, from the first
+  //! Opacity task that has a filled array (tau needs rho*kappa, which the ctor has not).
+  void RSLACheck();
 
   // ...in "m1_before_stagen"
   TaskStatus InitRecv(Driver *d, int stage);

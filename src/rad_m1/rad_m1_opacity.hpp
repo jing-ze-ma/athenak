@@ -16,8 +16,38 @@
 #include <math.h>
 #include "athena.hpp"
 #include "rad_m1/rad_m1.hpp"
+#include "diffusion/conduction.hpp"   // RosselandTable: ONE tabulated-opacity lookup
 
 namespace radm1 {
+
+//----------------------------------------------------------------------------------------
+//! \fn M1TableOpacities
+//! \brief <rad_m1>/opacity = table: the stellar Rosseland and Planck means, looked up in
+//! KELVIN and g/cm^3 on the shared (log10 T, log10 rho) grid of M1OpacTab.
+//!
+//! THE CONSISTENT SET (stage-2 plan sect. 4).  The tabulated Rosseland total ALREADY
+//! contains electron scattering, so it must not be added a second time: the transport
+//! opacity is kappa_F = kappa_R with kappa_s = 0.  The Planck table is absorption only
+//! and serves both the emission and the absorption mean, kappa_P = kappa_E = kappa_Pl.
+//! On the He column the two differ by 15x to 527x, which is why the design refuses
+//! planck_from_rosseland for any quoted result.
+//!
+//! \param[in]  tab   the two tables and their unit conversions
+//! \param[in]  d, t  density and temperature of the cell, CODE units
+//! \param[out] op,oe,of,os  the four opacities per unit mass, CODE units
+
+KOKKOS_INLINE_FUNCTION
+void M1TableOpacities(const M1OpacTab &tab, const Real d, const Real t,
+                      Real &op, Real &oe, Real &of, Real &os) {
+  const Real tk = t*tab.tunit;
+  const Real dc = d*tab.dunit;
+  const Real kr = RosselandTable(tab.kr, tab.lT, tab.lD, tab.nT, tab.nD, tk, dc);
+  const Real kp = RosselandTable(tab.kp, tab.lT, tab.lD, tab.nT, tab.nD, tk, dc);
+  op = kp*tab.kunit;
+  oe = op;
+  of = kr*tab.kunit;
+  os = 0.0;
+}
 
 //----------------------------------------------------------------------------------------
 //! \fn M1UserOpacity

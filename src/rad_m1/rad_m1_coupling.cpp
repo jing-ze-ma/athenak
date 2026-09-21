@@ -34,6 +34,28 @@
 //! start of the substep and stage 2 replaces g by (g + g^n)/2 before solving.  Without
 //! that the two halves of the invariant get different weights and conservation of
 //! e_gas + (c/chat) E breaks at O(dt).
+//!
+//! THE REFERENCE FORCE, <rad_m1>/force_reference = wb_arad (milestone 2a).  When an
+//! external well-balanced scheme already carries part of the radiative support -- the
+//! effective potential Phi_eff of box_convection, whose gravity source delivers
+//! -rho*g + rho*arad_ref to the gas momentum and NO energy term, because a_rad is not in
+//! the etotgrav potential -- the coupling must not hand the gas that part a second time.
+//! The bookkeeping that makes the split exact is: MOMENTUM residual, WORK full.
+//!
+//!   radiation field:  F' - F*                 (the full force; unchanged)
+//!   gas momentum:     dm_res = dm - dt rho arad_ref,   dm = -(F' - F*)/(chat c)
+//!   gas energy:       u(IEN) += W with W = vbar.dm, the work of the FULL force
+//!   radiation energy: E' -= (chat/c) W
+//!
+//! Momentum is conserved because the WB source supplies exactly the dt rho arad_ref that
+//! was taken out here.  Energy: writing u(IEN) = e_gas + KE_old + W while the momentum
+//! actually applied is dm_res raises the gas INTERNAL energy by vbar.(dm - dm_res) =
+//! vbar.dt rho arad_ref -- precisely the amount the WB momentum source will then remove
+//! from it when it adds dt rho arad_ref to IM1 without an energy term.  Over the cycle
+//! the internal energy is left alone and the radiation field has paid for the whole of
+//! the kinetic work, exactly once.  The two vbar are a stage apart, so the cancellation
+//! is exact to O(dt^2), the order of the operator split itself.
+//!
 
 #include <math.h>
 
@@ -66,6 +88,11 @@ TaskStatus RadiationM1::Coupling(Driver *pdrive, int stage) {
   auto uh = pmy_pack->phydro->u0;
   auto eos = pmy_pack->phydro->peos->eos_data;
   auto cnt_ = cnt;
+  // <hydro>/etotgrav keeps rho*Phi inside the conserved energy.  The implicit solve is
+  // about the gas INTERNAL energy, so the potential term is peeled off on the way in and
+  // put back on the way out; with etotgrav off phicc0 is never read.
+  const bool etg = pmy_pack->phydro->use_etotgrav;
+  auto phicc = pmy_pack->phydro->phicc0;
 
   Real cl = c_light;
   Real ch = chat;
@@ -74,6 +101,8 @@ TaskStatus RadiationM1::Coupling(Driver *pdrive, int stage) {
   bool edd = eddington;
   bool feedback = gas_feedback;
   bool ovc = source_ovc;
+  bool fref = (force_ref == M1_FREF_WB_ARAD);
+  auto aref_ = arad_ref;
   // stage 1 integrates the source over dt, stage 2 over dt/2 (the PD-ARS tableau)
   Real dti = (stage == 1) ? dt_sub : (0.5*dt_sub);
   bool stage1 = (stage == 1);
@@ -113,7 +142,8 @@ TaskStatus RadiationM1::Coupling(Driver *pdrive, int stage) {
     Real idd = 1.0/fmax(dd, 1.0e-300);
     Real v1 = gi[1]*idd, v2 = gi[2]*idd, v3 = gi[3]*idd;
     Real ekin = 0.5*dd*(v1*v1 + v2*v2 + v3*v3);
-    Real eg = gi[0] - ekin;                       // gas INTERNAL energy density
+    Real egrv = etg ? (dd*phicc(m,k,j,i)) : 0.0;  // rho*Phi, carried by etotgrav
+    Real eg = gi[0] - ekin - egrv;                // gas INTERNAL energy density
 
     Real es = fmax(u0_(m,M1_E,k,j,i), efl);
     Real fs1 = u0_(m,M1_F1,k,j,i);
@@ -246,6 +276,11 @@ TaskStatus RadiationM1::Coupling(Driver *pdrive, int stage) {
     Real dm1 = -(fp1 - fs1)/(ch*cl);
     Real dm2 = -(fp2 - fs2)/(ch*cl);
     Real dm3 = -(fp3 - fs3)/(ch*cl);
+    // force_reference = wb_arad: the x1 momentum an external well-balanced scheme
+    // already gives the gas.  Subtracted from what the GAS receives only -- the
+    // radiation field and the work term below both keep the full force (see the header).
+    // Summed over the PD-ARS tableau the two stages integrate it over dt/2 + dt/2 = dt.
+    Real dmref = fref ? (dti*dd*aref_(m,k,j,i)) : 0.0;
 
     // ---------------------------------------------------------------- (c) work
     Real work = 0.0;
@@ -274,11 +309,14 @@ TaskStatus RadiationM1::Coupling(Driver *pdrive, int stage) {
     u0_(m,M1_F2,k,j,i) = fp2;
     u0_(m,M1_F3,k,j,i) = fp3;
     if (feedback) {
-      uh(m,IM1,k,j,i) = gi[1] + dm1;
+      uh(m,IM1,k,j,i) = gi[1] + dm1 - dmref;
       uh(m,IM2,k,j,i) = gi[2] + dm2;
       uh(m,IM3,k,j,i) = gi[3] + dm3;
-      // e_gas(new) + KE(old) + W, and W is exactly KE(new) - KE(old)
-      uh(m,IEN,k,j,i) = eg + ekin + work;
+      // e_gas(new) + KE(old) + W.  With force_reference = none W is exactly
+      // KE(new) - KE(old) and the internal energy is untouched; with wb_arad it is the
+      // work of the FULL force, so the internal energy is left higher by vbar*dmref --
+      // exactly what the external well-balanced momentum source then takes out of it.
+      uh(m,IEN,k,j,i) = eg + ekin + egrv + work;
     }
   });
 

@@ -1,0 +1,84 @@
+# MILESTONE 2a: <rad_m1> inside box_convection as a 1-D static He column
+# viper, serial CPU Release, gcc/14, build_cpu_box (-D PROBLEM=box_convection),
+# branch rt-integration on top of 2d3a5b... (HEAD 2d5c6ba1), 2026-09-21.
+# Input: inputs/hydro/he_box_m1_1d.athinput.  Runs in this directory, dumps deleted.
+
+G0  BITWISE, no <rad_m1>: 10/10 IDENTICAL
+    tests_gate_merge/g1_m1_2a_m{3,0} vs g1_new_m{3,0}: feczrt.hydro.hst,
+    feczrt.user.hst, column_used.txt, rt_surface.bin, rt_profile.bin, both modes.
+
+G1  STATIC COLUMN, K = 10 (chat/c = 2.847e-3), t = 1000 s (235 sound crossings of
+    H_p = 8.93e6 cm at c_s = 2.11e6).  problem/m1_top_bc = dark (see below).
+    Newton FAILURES = 0, no bracket = 0, mean 23.6 iterations, max 44.
+    N_sub = 13 (dt_rad = cfl_rad dz/chat = 1.243e-2 s, dt_hyd = 0.1615 s).
+    cost: 9.44e-3 s/step with M1 against 4.43e-4 s/step hydro-only = 21x (1-D is the
+    worst case for this ratio: the hydro step is trivial here).
+
+    at t = 400 s (94 crossings)        at t = 975 s
+      max|drho/rho|   1.80e-1            5.76e-1
+      max|dT/T|       1.48e-1            1.37e-1
+      max|dE/E|       4.74e-1            4.46e-1
+      F1/F_imposed    0.989 .. 1.013     0.77 .. 1.40
+        (top cell)    1.055              1.112
+      max|Tgas/Trad-1| 7.8e-6            1.4e-4
+      max|v1|         1.19e5 = 6.4 v_MLT 4.45e6 = 239 v_MLT   (both in the top 5 cells)
+      max|v1| i<=75   5.6e4  = 3.0 v_MLT 2.05e6 = 110 v_MLT
+      residual force  3.7e-2 g0 (t=200)  4.2e-1 g0
+    max|v1| in the bulk grows monotonically from the start: 1.1 / 1.8 / 3.8 / 9 / 25 /
+    64 / 110 v_MLT at t = 75 / 150 / 300 / 450 / 600 / 750 / 975 s, e-folding ~ 195 s.
+    => G1 does NOT pass the "|v1| << v_MLT, no secular drift" criterion.
+
+G2  K SENSITIVITY, differences from the K = 10 arm at the SAME time t = 300 s:
+      K = 30  (chat/c 8.54e-3, N_sub 39): max|dT/T| 2.23e-2, max|dF/F| 1.95e-2,
+                                          max|dE/E| 9.22e-2; cost 2.92x K=10
+      K = 100 (chat/c 2.85e-2, N_sub 131): max|dT/T| 7.24e-3, max|dF/F| 8.10e-3,
+                                          max|dE/E| 2.86e-2
+    These are TRANSIENT differences, not steady-state RSLA errors: the column never
+    settles (G1), so the ~3/K scaling cannot be read off them.  K = 100 lies closer to
+    K = 10 than K = 30 does, which is the signature of a transient, not of convergence.
+
+G3  CONTROL, wb_phi_eff = false + force_reference = none, 300 s:
+    max|v1| settles at 2.90e5 cm/s = 15.6 v_MLT and stays there.
+    Against 1.1-3.8 v_MLT over the same interval in G1: the residual-force wiring is
+    worth a factor 4-14.  (tests_wbphi arm B, the same split without radiation, was
+    10.6 v_MLT; the PLAN estimated up to 18.)
+
+G4  RESTART from t = 200 s, compared over t = 201..400 s (200 history rows):
+    NOT bitwise.  max relative difference per column:
+      dt 1.9e-5, F1top 1.4e-6, F1mid 5.3e-7, F1bot 7.7e-6, V1max 1.9e-4,
+      Etot 2.0e-7, Fres 3.9e-5.
+    Before the bottom-ghost fix below the same numbers were 6.9e-4 / 1.6e-4 / 1.7e-4 /
+    4.0e-4 / 7.9e-2 / 3.4e-5 / 1.8e-2.  What is left is amplified round-off: this
+    configuration is dynamically unstable (G1), so it cannot be bitwise the way
+    tests_wbphi's adiabatic arms were (they reached 1e-10).
+
+G5  STYLE: cpplint (repo filter) 0 errors on all eight changed C++ files; no line
+    over 90 columns, no tabs, no `}}`, no trailing whitespace, all mode 644.
+
+--------------------------------------------------------------------------------------
+THE TOP BOUNDARY.  With the module's own `vacuum` fill (copy the interior state when the
+flux points out) the column FAILS OUTRIGHT: within 25 s the top E has flattened and
+risen 2.5x, f = F/(cE) has fallen 0.50 -> 0.17, and by t = 1000 s the emergent flux is
+0.36 of the imposed one, E at the top is 137x its initial value, the upper 25 cells are
+isothermal at 2.34e5 K (hotter than the base) and the box invariant has grown 3.5x --
+still growing linearly.  Reason: at a plane-parallel free SURFACE f = 1/2, not 1, so a
+copied ghost leaves dE/dz = 0 at the face and imposes NO relation between F and E; the
+Marshak condition F ~ c E/2 is absent and the surface value of E floats.  With a DARK
+ghost (zero incoming radiation always) the HLL flux supplies that relation: the box
+invariant is then flat to -2.4% over 1000 s and the emergent flux sits at 1.03-1.05 of
+the imposed one.  problem/m1_top_bc = vacuum | dark, default vacuum (as briefed); the
+milestone input sets dark.
+
+G0b RAD_M1 REGRESSION (build_cpu_m1, rebuilt once; tests_m1/runs_1cB/step0.sh):
+      T3 tau_cell 1e3 plm   ratio 1.000015   (1c-B RESULTS.txt: 1.000015)
+      T4 d512 split         dcentre 0.059 cells, dwidth 1.014e-2,
+                            gas drift 8.630e-3, Tgas drift 2.941e-3
+                            (1c-B G-split-vel 512 recon: 0.059 / 1.014e-2 /
+                             8.630e-3 / 2.941e-3; vs-static 2.248e-3 here against
+                             2.356e-3 there, the static reference being rerun)
+      T4 d512 nosplit       dcentre -69.888, dwidth 1.710e-1  (identical)
+      T4b full / ovc        Tgas drift 0.0 / 2.159e+05        (identical)
+    The 2a edits inside those code paths are bitwise-inert by construction (x - 0.0,
+    ternaries that return 0.0, untaken branches); the one live change is the RSLA
+    check, which is SKIPPED at chat = c -- without that gate T4 dynamic
+    (v tau/chat = 14 at chat = c, where there is no RSLA at all) would have fatalled.

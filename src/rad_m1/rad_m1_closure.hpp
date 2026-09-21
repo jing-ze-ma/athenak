@@ -349,5 +349,57 @@ void M1HLLFlux(const int ivx, const Real cl, const Real chat, const bool eddingt
   flx[0] = fe + aup;
 }
 
+//----------------------------------------------------------------------------------------
+//! \fn M1FillGhost
+//! \brief ONE ghost cell of the physical x1/x2/x3 boundaries, from the CONSERVED moments
+//! of the active cell (ka,ja,ia) it continues.  Moved here verbatim from the anonymous
+//! namespace of bvals/physics/rad_m1_bcs.cpp so that a problem generator whose mesh flag
+//! is `user` -- and whose own BC routine therefore replaces RadM1BCs on that face -- can
+//! reuse the SAME fill instead of re-deriving it (box_convection's M1 top wall).
+//!
+//! mode 0 = plain copy, 1 = reflect (flip the normal flux), 2 = vacuum (free streaming
+//! out, nothing in).  inorm = 1,2,3 selects the face-normal flux component; sgn = +1 when
+//! "outgoing" is the positive coordinate direction.
+
+KOKKOS_INLINE_FUNCTION
+void M1FillGhost(const DvceArray5D<Real> &u, const int m,
+                 const int kg, const int jg, const int ig,
+                 const int ka, const int ja, const int ia,
+                 const int inorm, const int mode, const Real sgn,
+                 const Real cl, const Real efl) {
+  Real e  = u(m,M1_E, ka,ja,ia);
+  Real f1 = u(m,M1_F1,ka,ja,ia);
+  Real f2 = u(m,M1_F2,ka,ja,ia);
+  Real f3 = u(m,M1_F3,ka,ja,ia);
+  if (mode == 1) {
+    if (inorm == 1) {
+      f1 = -f1;
+    } else if (inorm == 2) {
+      f2 = -f2;
+    } else {
+      f3 = -f3;
+    }
+  } else if (mode == 2) {
+    // Free streaming OUT, nothing in.  When the interior flux already points away from
+    // this face there is nothing outside to bring in, so the ghost is dark; otherwise
+    // the state is copied and the radiation leaves transparently.  Zeroing only the
+    // normal component instead (an earlier version of this file) leaves the ghost as a
+    // reservoir of E with no flux, and the HLL flux then PUMPS energy into the domain
+    // -- measured as a 38% growth of the beam amplitude along a grazing boundary.
+    Real fn = (inorm == 1) ? f1 : ((inorm == 2) ? f2 : f3);
+    if (sgn*fn < 0.0) {
+      e = efl;
+      f1 = 0.0;
+      f2 = 0.0;
+      f3 = 0.0;
+    }
+  }
+  (void) cl;
+  u(m,M1_E, kg,jg,ig) = e;
+  u(m,M1_F1,kg,jg,ig) = f1;
+  u(m,M1_F2,kg,jg,ig) = f2;
+  u(m,M1_F3,kg,jg,ig) = f3;
+}
+
 } // namespace radm1
 #endif // RAD_M1_RAD_M1_CLOSURE_HPP_

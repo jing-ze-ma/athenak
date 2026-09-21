@@ -99,12 +99,27 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     opacity_type = M1_OPAC_POWERLAW;
   } else if (op.compare("user") == 0) {
     opacity_type = M1_OPAC_USER;
+  } else if (op.compare("table") == 0) {
+    opacity_type = M1_OPAC_TABLE;
   } else {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
       << std::endl << "<rad_m1>/opacity = '" << op << "' is not a valid choice "
-      << "(const | powerlaw | user)" << std::endl;
+      << "(const | powerlaw | user | table)" << std::endl;
     std::exit(EXIT_FAILURE);
   }
+  }
+  // the unit conversions of the TABLE lookup, which is in kelvin and g/cm^3 (design
+  // sect. 4 / the stage-2 plan sect. 4).  T[K] = T_code*temp_unit_kelvin: the same
+  // direction Conduction uses with Units::temperature_cgs(), which for the He box's
+  // <units> 1/1/1 with mu = 1 is mu m_u/k_B = 1.202724e-8 K per code unit.
+  otab.tunit = pin->GetOrAddReal("rad_m1","temp_unit_kelvin",1.0);
+  otab.dunit = pin->GetOrAddReal("rad_m1","rho_unit_cgs",1.0);
+  otab.kunit = pin->GetOrAddReal("rad_m1","kappa_unit",1.0);
+  if (!(otab.tunit > 0.0) || !(otab.dunit > 0.0) || !(otab.kunit > 0.0)) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+      << std::endl << "<rad_m1>/temp_unit_kelvin, rho_unit_cgs and kappa_unit must all "
+      << "be positive" << std::endl;
+    std::exit(EXIT_FAILURE);
   }
   kappa_p = pin->GetOrAddReal("rad_m1","kappa_p",0.0);
   kappa_e = pin->GetOrAddReal("rad_m1","kappa_e",kappa_p);
@@ -125,7 +140,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     std::exit(EXIT_FAILURE);
   }
   opac_zero = (kappa_p == 0.0 && kappa_e == 0.0 && kappa_f == 0.0 && kappa_s == 0.0 &&
-               opacity_type != M1_OPAC_USER);
+               opacity_type != M1_OPAC_USER && opacity_type != M1_OPAC_TABLE);
 
   // (1c) matter coupling.  It reads rho, v and the gas energy from hydro's CONSERVED
   // u0 and writes u0(IEN) and u0(IM1..3) back, so it needs a <hydro> block unless every
@@ -201,7 +216,8 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   // radiation constant, code units: the equilibrium energy density is arad*T^4 with T
   // the EOS's own code temperature.  Required whenever there is emission/absorption.
   if (coupling && (kappa_p > 0.0 || kappa_e > 0.0 ||
-                   opacity_type == M1_OPAC_USER)) {
+                   opacity_type == M1_OPAC_USER ||
+                   opacity_type == M1_OPAC_TABLE)) {
     arad = pin->GetReal("rad_m1","arad");
     if (!(arad > 0.0)) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
@@ -211,6 +227,36 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   } else {
     arad = pin->GetOrAddReal("rad_m1","arad",0.0);
   }
+
+  // (2a) <rad_m1>/force_reference.  `wb_arad` means: an EXTERNAL well-balanced scheme
+  // already delivers rho*arad_ref(z) to the gas momentum (box_convection's effective
+  // potential), so the coupling must hand the gas only the RESIDUAL radiative force.
+  // The reference array itself comes from the problem generator (SetForceReference);
+  // without it the option is a fatal, not a silent no-op.
+  {std::string fr = pin->GetOrAddString("rad_m1","force_reference","none");
+  if (fr.compare("none") == 0) {
+    force_ref = M1_FREF_NONE;
+  } else if (fr.compare("wb_arad") == 0) {
+    force_ref = M1_FREF_WB_ARAD;
+  } else {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+      << std::endl << "<rad_m1>/force_reference = '" << fr << "' is not a valid choice "
+      << "(none | wb_arad)" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  }
+  if (force_ref != M1_FREF_NONE && !(coupling && gas_feedback)) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+      << std::endl << "<rad_m1>/force_reference needs coupling = true and "
+      << "gas_feedback = true: it modifies the momentum handed to the gas" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+
+  // (2a) the RSLA start-up check of design sect. 2
+  rsla_warn = pin->GetOrAddReal("rad_m1","rsla_warn",0.1);
+  rsla_vmax = pin->GetOrAddReal("rad_m1","rsla_vmax",-1.0);
+  rsla_force = pin->GetOrAddBoolean("rad_m1","rsla_force",false);
+  rsla_done = false;
 
   // closure
   {std::string cl = pin->GetOrAddString("rad_m1","closure","m1");
@@ -298,6 +344,12 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   if (coupling) {
     Kokkos::realloc(ugas1, nmb, 4, ncells3, ncells2, ncells1);
   }
+  // force_reference: allocated (and zeroed) here so that the kernel always has a valid
+  // View to capture; the pgen REPLACES it with its own through SetForceReference.
+  if (force_ref != M1_FREF_NONE) {
+    Kokkos::realloc(arad_ref, nmb, ncells3, ncells2, ncells1);
+    Kokkos::deep_copy(arad_ref, 0.0);
+  }
   Kokkos::realloc(cnt, M1_NCNT);
   for (int n=0; n<M1_NCNT; ++n) {cnt.h_view(n) = 0.0;}
   cnt.template modify<HostMemSpace>();
@@ -329,7 +381,35 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
               << " coupling=" << (coupling ? "true" : "false")
               << " gas_feedback=" << (gas_feedback ? "true" : "false")
               << " arad=" << arad << std::endl;
+    std::cout << "         opacity=" << (opacity_type == M1_OPAC_TABLE ? "table" : "")
+              << " force_reference="
+              << (force_ref == M1_FREF_WB_ARAD ? "wb_arad" : "none")
+              << " temp_unit_kelvin=" << otab.tunit
+              << " rho_unit_cgs=" << otab.dunit << std::endl;
   }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::SetOpacityTables
+
+void RadiationM1::SetOpacityTables(const DvceArray2D<Real> &kr,
+                                   const DvceArray2D<Real> &kp,
+                                   const DvceArray1D<Real> &lT,
+                                   const DvceArray1D<Real> &lD,
+                                   const int nT, const int nD) {
+  otab.kr = kr;
+  otab.kp = kp;
+  otab.lT = lT;
+  otab.lD = lD;
+  otab.nT = nT;
+  otab.nD = nD;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::SetForceReference
+
+void RadiationM1::SetForceReference(const DvceArray4D<Real> &a) {
+  arad_ref = a;
 }
 
 //----------------------------------------------------------------------------------------
