@@ -406,3 +406,78 @@ column peak (`implicit_res_floor`, added for this and kept because it is the rig
 for a column with a large dynamic range).  Evaluating the correction once per step
 (`implicit_recon_lag = step`) makes the loop converge in 2 passes but is an EXPLICIT
 anti-diffusion and blows up (I6 amplitude 7.3 at CFL 0.4); `picard` is the default.
+
+### LIMIT 3 -- the residual flow at the imposed-flux bottom boundary.  Found and fixed.
+
+It is candidate (a) of the brief.  A PHYSICAL BOUNDARY FACE hands its whole
+`dt (rho k_t)_f F0_f/c` to its one interior cell, while every interior cell receives half
+of each of its two faces; the bottom cell therefore feels 1.5 face-shares of radiative
+force where every other cell feels 1.0, and the extra half share is a STEADY force that
+the well-balanced reference `arad_ref` -- built from the cell-centred flux -- does not
+carry.  `<rad_m1>/implicit_bmom_half = true` gives the boundary face HALF, like any other
+face; the missing half leaves the domain with the radiation, which is where it goes, and
+the momentum EXCHANGED inside the domain stays conservative to round-off.
+
+On the 1-D He FeCZ column at the true `c`, 1000 s, against the 3a arm rerun on the same
+binary (`v_MLT` = 1.86e4 cm/s):
+
+```
+                              3a            bmom_half = true
+ |v1| in the BOTTOM cell      10.30 v_MLT   0.47 v_MLT          (22x)
+ whole-column max |v1|        10.30         1.05, and it MOVES to the TOP cell
+ |v1| in the TOP cell          4.05         0.96                (4.2x)
+ |F1bot/F_in - 1|             9.3e-4        1.65e-4
+ F1top, F1mid deviation       2.0e-5, 1.9e-5   2e-6, 1e-6       (no regression: better)
+ residual force               5.13e-3 g0    2.00e-4 g0          (26x)
+ column KE at 1000 s          4.11e28       3.36e26             (122x)
+ cost / Picard passes         30.5 s, 13.46 26.2 s, 11.66
+```
+
+The remaining 1 `v_MLT` sits in the TOP cell, i.e. at the free surface, which the gate
+allows; and it is still falling at 1000 s.  Candidates (b) and (c) are ruled out: the
+imposed flux is carried to 1e-3 in BOTH arms, and the flow never propagated away from
+`i = 0`.
+
+### LIMITS 4 and 5 -- not done
+
+*(4) The partitioned line solve is NOT implemented.*  More than one MeshBlock along x1 is
+still a startup fatal.  `<rad_m1>/implicit_partition` is parsed (`none | gather`) so that
+input files can already name it, and `gather` fatals with "NOT IMPLEMENTED".  The design
+to implement: `two_stream_column_partition.hpp` does NOT fit -- it partitions one column
+over a Kokkos THREAD TEAM inside one MeshBlock (Schur-style segment condensation into a
+reduced block-tridiagonal system over the segment boundaries), not over MeshBlocks or
+ranks.  For the scalar tridiagonal with Picard-lagged coefficients the simplest design
+that is BITWISE independent of the partition is to gather each column's assembled
+`(a,b,c,r)` rows onto the rank that owns its lowest block, run the IDENTICAL serial
+Thomas sweep there, and scatter the solution back: the arithmetic order is then literally
+unchanged, so 1, 2 and 4 blocks agree to the last bit by construction.  Cost: two
+messages per Picard iteration per column group (a gather of `4 nx1` reals and a scatter
+of `nx1`), and a serial bottleneck of `nx1` that is irrelevant at the 84-512 cells these
+columns have.  A segment-condensation variant removes that bottleneck but cannot be
+bitwise, and would have to be quantified (<= 1e-14 relative, non-accumulating).
+
+*(5) No GPU run.*  Nothing new needs anything the 3a kernels did not: `ifw` is an ordinary
+`DvceArray5D`, the new kernels are plain `par_for` over `(m,k,j,i)` capturing only Views
+and scalars by value, `PLM()` is `KOKKOS_INLINE_FUNCTION`, and the one new host-side
+reduction (the column peak of `E` for `implicit_res_floor`) has the same shape as the
+Picard residual reduction 3a already ran on the device.  No known blocker; UNTESTED.
+
+### Recommended defaults
+
+```
+ implicit_flux      central   KEEP.  It is the only form that passes the atmosphere gate,
+                              which is what the stellar columns need.  Use `berthon` only
+                              where a thin front must PROPAGATE (1.5x better than central
+                              on I6 at CFL 0.4, 2.2x with plm_dc), never `ap_hll`.
+ implicit_recon     dc        KEEP.  plm_dc helps only the free-streaming gate, costs
+                              implicit_maxit Picard passes instead of 2, and fails the
+                              Marshak gate at CFL 1 (L1 0.26 against 0.010).
+ implicit_recon_w   -1 (auto) KEEP; a fixed 1.0 is divergent above CFL 1.
+ implicit_recon_lag picard    KEEP; `step` is an explicit anti-diffusion and blows up.
+ implicit_res_floor 0         CHANGE to ~1e-8 for any column with a large dynamic range:
+                              the pure |dE|/E test is dominated by cells orders below the
+                              peak.  Left at 0 so that 3a is reproduced.
+ implicit_bmom_half false     **CHANGE to true.**  This is a bug fix, not a tuning knob;
+                              it is left false only so that runs_3a/RESULTS.txt is
+                              reproducible from the same source.
+```
