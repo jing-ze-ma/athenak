@@ -500,6 +500,68 @@ Milestone 1a `6b9a14f9`, 1b `f271d57d`.
 * `<hydro>/evolution = static` skips the driver loop; tests use a cold dynamic gas or
   `<rad_m1>/gas_feedback = false`.
 
+## 11. Findings from milestone 1c (moving media, and the remaining radiation-only gates)
+
+Milestone 1c: the advective enthalpy-flux split, the unified `ap_hll` form, the O(v/c)
+source control, the T4/T4b/T6 problem generators and the redefined T3b.
+
+* **The unified `ap_hll` form was tried and REJECTED as the default, contrary to the
+  guess in section 10.**  `F_E = alpha F_HLL + (1-alpha) F_diff (1 - dE_recon/dE_cell)`
+  (ratio clamped to [0,1], = 1 where `dE_cell` vanishes) does reduce to Berthon's
+  `alpha F_HLL` for `dc` **exactly** (measured: bit-identical T3 rates) and to the blend
+  for smooth `plm`, so it removes the reconstruct-dependent switch.  But it is worse
+  wherever the two forms differ: T3 `plm` rate error 1.23e-3 vs 7.9e-4 at
+  `tau_cell = 10`, resolution-error ratio 3.2 vs 5.1 per doubling (i.e. 1.7th vs
+  2.3rd order), Nyquist decay 1.019 vs 0.99996 of the physical rate, T6 L1 0.48 % vs
+  0.19 %.  It is better only on the clipped top-hat (1.00000 vs 1.00005) and at
+  `tau_cell = 1e3`.  `<rad_m1>/ap_form = alpha2` (the 1b pair) is the default;
+  `unified` is kept as an option.
+* **The advective split is what makes the thick moving limit work, by a factor 1000.**
+  T4 dynamic (`beta tau = 14`, 512 cells): with `advect_split = true` the pulse centre
+  lands 0.07 cells from `x0 + v t`; with it off, 69.9 cells short of it (half the
+  advection distance) and 17 % too wide.  With `thick_flux = none` the split changes
+  nothing (0.053 vs 0.086 cells), which is the direct confirmation of Bloch et al.'s
+  mechanism: it is `alpha -> 0` switching off the transport flux that carries
+  `(4/3) E v`, not the HLL dissipation.  `scaled` reproduces `ap_hll` with the split.
+* **The O(v/c) control.**  With a SINGLE opacity (`kappa_E = kappa_F`) the `beta^2 E`
+  and `beta.P.beta` terms cancel analytically between `E0` and `beta.g`, but NOT in the
+  discretisation: `E0` enters the implicit backward-Euler energy solve (bounded), while
+  `beta.g` is the explicit work term (unbounded).  `source_form = ovc` therefore leaves
+  exactly the design's spurious heating `(4/3) c rho kappa beta^2 E`.  T4b measures
+  `d ln T_gas` = 0.735 in ONE radiation substep against the predicted 0.634 (16 %,
+  the excess from the two source applications of PD-ARS); the full form gives 0.0
+  exactly.  At `beta tau_cell = 1e3` the O(v/c) truncation is not a small error.
+* **T4b cannot see the split**: the medium is uniform, so `div F = 0` whichever way the
+  flux is assembled, and split and no-split are identical to the last digit.  T4b tests
+  the SOURCE form; T4 tests the split.
+* **T4b must be initialised at the exact fixed point** (`F0_i = 0` and `E0 = arad T^4`,
+  i.e. `f = beta(1 + chi(f))` solved for and `E = arad T^4/[(1+beta^2) - 2 beta f +
+  beta^2 chi]`, which is `arad T^4 (1 + (4/3) beta^2)` to leading order).  Setting
+  `E = arad T^4` with `F = (4/3) v E` instead leaves a REAL O(beta^2) relaxation that
+  has nothing to do with the scheme.
+* **T3b, redefined, does not pass at 1 %.**  Slope RATIO across the jump (which isolates
+  the jump treatment from the overall flux the Dirichlet ends settle on): 2.2e-5
+  (`tau_cell` 1 -> 1e3) and 5.4e-5 (1e-3 -> 1) -- excellent.  But the ABSOLUTE slopes are
+  1.40 % (first case) and 0.33 % (second) low, because the one-cell `E` bump on the thin
+  side of the jump acts as an extra resistance and depresses the steady flux by the same
+  amount.  The face flux reconstructed from `E` is uniform to 4-11 % away from the jump
+  and has an O(20) spike on the face next to it.  The 1b claim "E(x) is correct, one
+  8e-5 bump" was measured at `tau_cell` 0.01 -> 10, where the thin side carries 100x more
+  optical depth per unit length; at `tau_cell ~ 1` the same bump costs 1.4 % of the flux.
+  `thick_flux = none` fails outright (slope ratio 0.81).  Bloch's interface source is
+  therefore NOT clearly refused any more: this is the case that was supposed to decide.
+* **T6 is the constant-c_v Marshak wave, not Su-Olson.**  `c_v = alpha T^3` needs
+  `e ~ T^4`, which no EOS here has; `t6_marshak.py --marshak` runs its own S_N reference
+  with the same constant `c_v` and an incident isotropic bath.  L1(E) at `tau_cell` 2.3:
+  0.19 % (`alpha2`), 0.48 % (`unified`), 0.22 % (`scaled`), 1.76 % (`none`); at
+  `tau_cell` 4.7: 1.5 / 1.9 / 0.67 / 5.1 %; at 9.4: 4.3 / 4.8 / 2.8 / 16 %.  `none` is
+  the failing control from `tau_cell` ~ 4 up.  The reference's own self-error is 0.15 %.
+* **The bin writer is single precision** and several of these gates need more: the T3b
+  thin side changes `E` by 3e-6 per cell and the T4b drift target is 1e-12.  Those gates
+  read `file_type = tab` with `data_format = %26.17e`.  The apparent `|f| = 1 + 7e-8`
+  admissibility violation of the beam dump is float32 rounding: in double precision the
+  same run gives `max |f| = 0.9999992`.
+
 ## References
 
 Audit et al. 2002 (astro-ph/0206281); Berthon, Charrier & Dubroca 2007 (J. Sci. Comput.

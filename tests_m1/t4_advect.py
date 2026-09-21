@@ -41,6 +41,36 @@ def gas_energy(dump, gamma):
     return None
 
 
+def gas_temperature(dump, gamma):
+    """Volume mean of the code temperature T = P/rho of an ideal gas."""
+    if not dump.has("dens"):
+        return None
+    rho = dump.var("dens")
+    if dump.has("eint"):
+        tt = dump.var("eint") * (gamma - 1.0) / rho
+    elif dump.has("press"):
+        tt = dump.var("press") / rho
+    else:
+        return None
+    return float(tt.mean())
+
+
+def merge_hydro(dumps, hydro):
+    """Fold the variables of a parallel hydro series into the m1 dumps.
+
+    ``file_type = tab`` writes one file per output block, so the radiation
+    and the hydro variables of the same snapshot are in two files; they are
+    matched by time.
+    """
+    for d in dumps:
+        best = min(hydro, key=lambda h: abs(h.time - d.time))
+        if abs(best.time - d.time) > 1e-8 * max(abs(d.time), 1.0):
+            raise ValueError("no hydro dump at t = %.17g" % d.time)
+        for k, v in best.data.items():
+            d.data.setdefault(k, v)
+    return dumps
+
+
 def measure(dump, args):
     x, e = common.extract_1d(dump, "m1_e", axis=args.axis,
                              reduce=args.reduce)
@@ -48,9 +78,10 @@ def measure(dump, args):
     length = x.size * dx
     bg = e.min() if args.subtract_min else args.background
     mean, var = circular_moments(x, e, length, background=bg)
-    return dict(t=dump.time, x=x, dx=dx, length=length, centre=mean,
+    return dict(t=dump.time, x=x, e=e, dx=dx, length=length, centre=mean,
                 sigma=np.sqrt(var), nyq=common.nyquist_power_fraction(e),
-                egas=gas_energy(dump, args.gamma))
+                egas=gas_energy(dump, args.gamma),
+                tgas=gas_temperature(dump, args.gamma))
 
 
 def selftest(args):
@@ -81,6 +112,18 @@ def selftest(args):
 def main():
     p = common.base_parser(__doc__.splitlines()[0])
     p.add_argument("dumps", nargs="*", help="time series of bin dumps")
+    p.add_argument("--hydro", nargs="*", default=[],
+                   help="parallel series of hydro dumps (file_type = tab "
+                        "writes one file per <output> block), matched by time")
+    p.add_argument("--static", default=None,
+                   help="final dump of the STATIC run at the same time; the "
+                        "advected profile is compared with it shifted by v t "
+                        "(QUOKKA report < 0.03 %% static, < 0.06 %% dynamic)")
+    p.add_argument("--static-tol", type=float, default=None,
+                   help="pass threshold on that relative L1 difference")
+    p.add_argument("--temp-tol", type=float, default=None,
+                   help="if given, also require the relative drift of the "
+                        "mean gas temperature to stay below this (T4b)")
     p.add_argument("--c", type=float, default=1.0,
                    help="speed of light in code units")
     p.add_argument("--v", type=float, default=0.0,
@@ -118,6 +161,9 @@ def main():
             p.error("at least two dumps are needed (initial and final)")
         dumps = common.load_series(args.dumps, args.bin_convert_dir,
                                    args.all_ranks)
+        if args.hydro:
+            dumps = merge_hydro(dumps, common.load_series(
+                args.hydro, args.bin_convert_dir, args.all_ranks))
 
     m = [measure(d, args) for d in dumps]
     first, last = m[0], m[-1]
@@ -140,16 +186,37 @@ def main():
     for mm in m:
         common.report(args, "t=%.6e  centre=%.6e  sigma=%.6e  nyq=%.3e"
                       % (mm["t"], mm["centre"], mm["sigma"], mm["nyq"]))
+    sdiff = float("nan")
+    if args.static:
+        sd = common.load_dump(args.static, args.bin_convert_dir,
+                              args.all_ranks)
+        xs, es = common.extract_1d(sd, "m1_e", axis=args.axis,
+                                   reduce=args.reduce)
+        # the static profile evaluated at x - v t, periodically
+        shift = args.v * (last["t"] - first["t"])
+        xq = (last["x"] - shift - xs[0]) % length + xs[0]
+        ref = np.interp(xq, np.append(xs, xs[0] + length),
+                        np.append(es, es[0]))
+        sdiff = common.l1_rel(last["e"], ref)
+
+    tdrift = float("nan")
+    if first["tgas"] is not None and first["tgas"] != 0.0:
+        tdrift = abs(last["tgas"] / first["tgas"] - 1.0)
+
     ok = (abs(dcen_cells) <= args.centre_tol
           and abs(dwidth) <= args.width_tol
           and drift <= args.drift_tol)
     if args.nyq_tol is not None:
         ok = ok and last["nyq"] <= args.nyq_tol
+    if args.temp_tol is not None:
+        ok = ok and (tdrift == tdrift) and tdrift <= args.temp_tol
+    if args.static_tol is not None:
+        ok = ok and (sdiff == sdiff) and sdiff <= args.static_tol
     common.verdict(ok, "T4 advect: dcentre=%.3f cells (<= %.3g)  "
                        "dwidth=%.3e (<= %.3g)  gas drift=%.3e (<= %.3g)  "
-                       "nyquist=%.3e"
+                       "Tgas drift=%.3e  vs-static=%.3e  nyquist=%.3e"
                    % (dcen_cells, args.centre_tol, dwidth, args.width_tol,
-                      drift, args.drift_tol, last["nyq"]))
+                      drift, args.drift_tol, tdrift, sdiff, last["nyq"]))
 
 
 if __name__ == "__main__":

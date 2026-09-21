@@ -28,7 +28,31 @@ Shared helpers, no command line of its own:
   `read_all_ranks_binary`), MeshBlocks stitched into global `(nx3, nx2, nx1)`
   arrays plus cell-centre coordinates; a `.npz` with keys `time, x1, x2, x3`
   and one array per variable is accepted as well, which is what the selftests
-  feed in.
+  feed in, and so is a `.tab` file (see below).
+
+  MeshBlocks are placed from `mb_geometry` (each block's own `x1min/x1max/…`),
+  NOT from `mb_index`: that field is the block's index range **inside its own
+  output slab**, and for a collapsed or sliced direction it comes back as `-2`.
+  The milestone-1b version of this loader used it as a global index range, so
+  for every 1-D and 2-D dump it wrote nothing at all and each gate silently saw
+  an array of zeros.  1-, 2- and 3-D, many blocks and sliced outputs all work
+  now; overlapping or non-tiling blocks raise instead of returning zeros.
+* `load_tab` — an AthenaK `file_type = tab` output.  **The `bin` writer is
+  single precision**; wherever a gate needs more than ~7 digits (the T3b thin
+  side changes `E` by 3e-6 per cell, the T4b drift target is 1e-12) the run
+  writes `file_type = tab` with `data_format = %26.17e` and the gate reads
+  that.  Two traps in `formatted_table.cpp` are handled here: the header names
+  a coordinate pair for every direction that is not *sliced* while the rows
+  carry one only for directions with more than one cell, and with several
+  MeshBlocks the rows come out in block order, not coordinate order.
+  `file_type = tab` writes one file per `<output>` block, so the radiation and
+  hydro variables of one snapshot are in two files; `t4_advect.py --hydro`,
+  `t5_equil.py --hydro` and `t6_marshak.py --hydro` take the second one.
+* `python3 common.py --selftest` — reads the REAL dumps in `data/`
+  (`loader_1d.bin`, `loader_1d.tab`, `loader_2d.bin`, produced by
+  `data/loader_1d.athinput`, 32 cells in 2 MeshBlocks and 16 x 8 in 4) and
+  checks them against the analytic initial condition of that input.
+  `--selftest-fail` must FAIL.
 * `extract_1d` (1-D cut along x1/x2/x3, `--reduce mid|mean`), `sample_2d`
   (bilinear), `moments`, `linfit`, `l1_rel`, `nyquist_amplitude`,
   `nyquist_power_fraction`, `read_history` / `hist_column`,
@@ -109,22 +133,29 @@ rate of the compact 3-point diffusion operator at the Nyquist wavenumber,
 `4 D / dx^2`.  Same `--tol` / `--expect-excess` logic (`scaled` is predicted to
 reach only ~4 % of that rate).
 
-## `t3b_jump.py` — T3b, opacity jump
+## `t3b_jump.py` — T3b, opacity jump (REDEFINED in milestone 1c)
 
 ```
-python3 t3b_jump.py jump.out1.00050.bin [--x-jump 0.5] [--tol 1e-3]
+python3 t3b_jump.py jump.out2.00002.tab --c 1 --kappa 64 --flux 1e-6
 python3 t3b_jump.py --selftest
 ```
 
-Input: one dump of the steady constant-flux state across a 1e3 jump in
-`rho kappa_F` (Bloch et al. 2021 Sect. 5.2).  The jump position is taken from
-`--x-jump`, or found automatically as the largest step in `log dens` when the
-dump carries `dens`.  `--trim` excludes cells at the two ends (boundary
-layers), `--jump-cells` sets the half-width of the window around the jump.
+The original gate ("the cell-centred `F` must be uniform to 1e-3") was wrong;
+design note section 10 says why.  What is gated now, on one steady-state dump:
 
-Pass: `max |F/<F> - 1| < --tol` (default 1e-3) both over the whole profile and
-inside the jump window (no peak at the jump — the arithmetic-mean face opacity
-of section 3).
+* `max |E/E_exact - 1|` against the analytic two-slope solution
+  `dE/dx = -3 rho kappa F/c`;
+* the two slopes, fitted away from the jump (`--fit-cells`), and their RATIO,
+  which is independent of the overall flux the two Dirichlet ends settle on and
+  so isolates the treatment of the jump itself;
+* the FACE energy flux reconstructed from `E` with the scheme's own compact
+  two-point diffusion flux and the arithmetic-mean face opacity: its
+  uniformity away from the jump, its offset from the imposed flux, and, as a
+  separate number, its peak deviation inside `--jump-cells` of the jump.
+
+The cell-centred `m1_f1` error is printed as a **diagnostic only**.  Read the
+run from the `tab` output: on the thin side of a 1e3 jump `E` changes by
+~3e-6 per cell and single precision is not enough.
 
 ## `t4_advect.py` — T4, advected thick pulse
 
@@ -146,10 +177,17 @@ total gas energy, and the fraction of fluctuation power sitting in the Nyquist
 mode of `E`.
 
 Pass: centre within `--centre-tol` (1 cell), width within `--width-tol` (2 %),
-gas drift below `--drift-tol` (1e-10 — this is the test that the `beta^2` terms
-of section 1 cancel; for T4b use 1e-12).  The odd-even diagnostic is
-report-only unless `--nyq-tol` is given; the design note requires no odd-even
-mode at 512 cells with `ap_hll`.
+gas drift below `--drift-tol`.  The odd-even diagnostic is report-only unless
+`--nyq-tol` is given; the design note requires no odd-even mode at 512 cells
+with `ap_hll`.
+
+Added in 1c: `--hydro` (the parallel hydro tab series, matched by time),
+`--temp-tol` (relative drift of the mean gas temperature — this is the T4b
+gate) and `--static DUMP` (the final dump of the STATIC run at the same time;
+the advected profile is compared with it shifted by `v t`, which is QUOKKA's
+"advected vs static" number).  Note that the gas-energy drift of the PULSE is
+physical — a radiating pulse exchanges energy with the gas — so the 1e-10
+target of the design note belongs to T4b (uniform medium), not to T4.
 
 ## `t5_equil.py` — T5, single-zone equilibration
 
@@ -199,15 +237,20 @@ dV/dt = eps sigma c (E - V),   E = (1/c) int I dmu,  V = a T^4 = eps U_material
 ```
 
 (grey, constant opacity, `c_v = alpha T^3`, `eps = 4a/alpha`, unit source in
-`0 < x < x0` switched off at `t0`, cold start, reflecting at `x = 0`).  The
-solver is minmod-limited upwind per ordinate (2nd order in space), SSP-RK2 in
-time, Gauss-Legendre in `mu`.  `--ref-convergence` doubles `nx` and `nmu` and
-prints the self-error: **0.42 % in E at the default `nx=2000, nmu=16` (3 s) and
-0.13 % at `nx=4000, nmu=32` (40 s)** for the selftest configuration — so run
-the gate at 4000/32, where the reference is ~15x below the 2 % threshold.
-If the published table is obtained later, feed it with
-`--table FILE` (whitespace columns `x E V`, converted to code units) and the
-solver is bypassed; nothing else changes.
+`0 < x < x0` switched off at `t0`, cold start, reflecting at `x = 0`).
+
+**`--marshak` (milestone 1c).**  `c_v = alpha T^3` means `e ~ T^4`, which no
+EOS in this tree can represent, so what the code runs is the CONSTANT-`c_v`
+non-equilibrium Marshak wave and the same switch puts the script's reference on
+the same problem: `U = rho c_v T` with `dU/dt = sigma c (E - a T^4)`
+(nonlinear emission) and an incident isotropic bath `I(mu>0) = c E_b/2` at
+`x = 0` instead of a reflection.  `--cv --rho --a-rad --t-init --e-bath` set
+it, and the material profile of the dump is converted to `a T^4` with the same
+`c_v`.  Use `--cfl 0.15`: at 0.4 the explicit reference sits on the stability
+edge of its own emission term and overflows.  This is NOT Su-Olson, and the
+published Su-Olson table does not apply to it.  `--hydro` takes the matching
+hydro tab file.
+
 
 Inputs from the run: `m1_e` and the material energy density
 (`--material-var`, default `eint`, converted with `V = eps * U_material`;

@@ -36,10 +36,23 @@ def minmod(a, b):
 
 
 def sn_reference(args, nx=None, nmu=None):
-    """Converged S_N solution of the Su-Olson system, in code units.
+    """Converged S_N solution, in code units.
 
-    Returns (x_centres, E(x), V(x)) at t = --tend on [0, Lz] with a
-    reflecting boundary at x = 0 (the problem is symmetric).
+    Two problems, selected by ``--marshak``:
+
+    * default: the SU-OLSON system (``c_v = alpha T^3``, so ``V = a T^4`` is
+      linear in the material energy), a volumetric source in ``0 < x < x0``
+      switched off at ``t0``, reflecting at ``x = 0``;
+    * ``--marshak``: the CONSTANT-``c_v`` non-equilibrium Marshak wave, which
+      is what an ideal-gas EOS can represent (design note section 10: ``e``
+      proportional to ``T^4`` would need a user EOS).  The material energy
+      ``U = rho c_v T`` is evolved with ``dU/dt = sigma c (E - a T^4)``, the
+      emission term is nonlinear, and the left boundary is an incident
+      isotropic bath of energy density ``--e-bath`` (``I(mu>0) = c E_b/2``,
+      i.e. an incoming flux ``c E_b/4``) instead of a reflection.
+
+    Returns (x_centres, E(x), V(x)) at t = --tend on [0, Lz]; ``V`` is
+    ``a T^4`` in both cases, which is what the code's dumps are converted to.
     """
     nx = nx or args.nx
     nmu = nmu or args.nmu
@@ -48,18 +61,32 @@ def sn_reference(args, nx=None, nmu=None):
     dx = args.lz / nx
     sig = args.sigma
     cee = args.c
+    mk = args.marshak
     inten = np.zeros((nmu, nx))
-    vmat = np.zeros(nx)
+    if mk:
+        umat = np.full(nx, args.rho * args.cv * args.t_init)
+        vmat = args.a_rad * args.t_init ** 4 * np.ones(nx)
+        inten = 0.5 * cee * vmat[None, :] * np.ones((nmu, 1))
+        iin = 0.5 * cee * args.e_bath
+    else:
+        vmat = np.zeros(nx)
+        umat = None
     qsrc = np.where(x < args.x0, args.q0, 0.0)
     dt = args.cfl * dx / cee
     nt = max(1, int(np.ceil(args.tend / dt)))
     dt = args.tend / nt
 
-    def rhs(inten, vmat, time):
+    def rhs(inten, mat, time):
         big = np.zeros((nmu, nx + 4))
         big[:, 2:-2] = inten
-        big[:, 1] = inten[::-1, 0]
-        big[:, 0] = inten[::-1, 1]
+        if mk:
+            big[:, 1] = iin
+            big[:, 0] = iin
+            big[:, -2] = inten[:, -1]
+            big[:, -1] = inten[:, -1]
+        else:
+            big[:, 1] = inten[::-1, 0]
+            big[:, 0] = inten[::-1, 1]
         d1 = big[:, 1:-1] - big[:, :-2]
         d2 = big[:, 2:] - big[:, 1:-1]
         slope = minmod(d1, d2)
@@ -68,23 +95,34 @@ def sn_reference(args, nx=None, nmu=None):
         up = np.where(mu[:, None] > 0.0, lstate, rstate)
         flux = cee * mu[:, None] * up
         didt = -(flux[:, 1:] - flux[:, :-1]) / dx
-        qnow = qsrc if time < args.t0 else 0.0 * qsrc
-        didt += cee * sig * (0.5 * cee * vmat[None, :] - inten)
-        didt += 0.5 * cee * qnow[None, :]
         erad = (wmu[:, None] * inten).sum(axis=0) / cee
-        dvdt = args.eps * sig * cee * (erad - vmat)
-        return didt, dvdt
+        if mk:
+            tt = mat / (args.rho * args.cv)
+            vv = args.a_rad * tt ** 4
+            didt += cee * sig * (0.5 * cee * vv[None, :] - inten)
+            dmdt = sig * cee * (erad - vv)
+        else:
+            qnow = qsrc if time < args.t0 else 0.0 * qsrc
+            didt += cee * sig * (0.5 * cee * mat[None, :] - inten)
+            didt += 0.5 * cee * qnow[None, :]
+            dmdt = args.eps * sig * cee * (erad - mat)
+        return didt, dmdt
 
+    mat = umat if mk else vmat
     time = 0.0
     for _ in range(nt):
-        k1i, k1v = rhs(inten, vmat, time)
+        k1i, k1v = rhs(inten, mat, time)
         i1 = inten + dt * k1i
-        v1 = vmat + dt * k1v
+        v1 = mat + dt * k1v
         k2i, k2v = rhs(i1, v1, time + dt)
         inten = 0.5 * (inten + i1 + dt * k2i)
-        vmat = 0.5 * (vmat + v1 + dt * k2v)
+        mat = 0.5 * (mat + v1 + dt * k2v)
         time += dt
     erad = (wmu[:, None] * inten).sum(axis=0) / cee
+    if mk:
+        vmat = args.a_rad * (mat / (args.rho * args.cv)) ** 4
+    else:
+        vmat = mat
     return x, erad, vmat
 
 
@@ -100,7 +138,19 @@ def code_profiles(dump, args):
     if args.material_var and dump.has(args.material_var):
         _, umat = common.extract_1d(dump, args.material_var, axis=args.axis,
                                     reduce=args.reduce)
-        vmat = umat if args.material_is_v else args.eps * umat
+        if args.material_is_v:
+            vmat = umat
+        elif args.marshak:
+            # constant c_v: the dump holds the internal energy density, and
+            # the reference is compared in a T^4
+            if dump.has("dens"):
+                _, rho = common.extract_1d(dump, "dens", axis=args.axis,
+                                           reduce=args.reduce)
+            else:
+                rho = args.rho
+            vmat = args.a_rad * (umat / (rho * args.cv)) ** 4
+        else:
+            vmat = args.eps * umat
     else:
         vmat = None
     return xabs, erad, vmat
@@ -108,7 +158,10 @@ def code_profiles(dump, args):
 
 def main():
     p = common.base_parser(__doc__.splitlines()[0])
-    p.add_argument("dump", nargs="?", help="bin dump at t = --tend")
+    p.add_argument("dump", nargs="?", help="dump at t = --tend (bin or tab)")
+    p.add_argument("--hydro", default=None,
+                   help="the matching hydro dump (file_type = tab writes one "
+                        "file per <output> block)")
     p.add_argument("--table", default=None,
                    help="published reference table (x E V, code units); "
                         "bypasses the built-in S_N solver")
@@ -116,6 +169,20 @@ def main():
                    help="rho * kappa, per unit length")
     p.add_argument("--eps", type=float, default=1.0,
                    help="eps = 4 a / alpha (Su-Olson retardation parameter)")
+    p.add_argument("--marshak", action="store_true",
+                   help="constant-c_v non-equilibrium Marshak wave with an "
+                        "incident bath at x = 0, instead of Su-Olson")
+    p.add_argument("--cv", type=float, default=1.5,
+                   help="--marshak: material heat capacity per unit mass "
+                        "(an ideal gas has c_v = 1/(gamma-1) in code units)")
+    p.add_argument("--rho", type=float, default=1.0,
+                   help="--marshak: material density")
+    p.add_argument("--a-rad", type=float, default=1.0,
+                   help="--marshak: radiation constant in code units")
+    p.add_argument("--t-init", type=float, default=0.0,
+                   help="--marshak: initial material/radiation temperature")
+    p.add_argument("--e-bath", type=float, default=1.0,
+                   help="--marshak: energy density of the incident bath")
     p.add_argument("--c", type=float, default=1.0,
                    help="speed of light in code units")
     p.add_argument("--x0", type=float, default=0.5,
@@ -181,6 +248,11 @@ def main():
             p.error("a dump is required unless --selftest is given")
         dump = common.load_dump(args.dump, args.bin_convert_dir,
                                 args.all_ranks)
+        if args.hydro:
+            hyd = common.load_dump(args.hydro, args.bin_convert_dir,
+                                   args.all_ranks)
+            for k, v in hyd.data.items():
+                dump.data.setdefault(k, v)
         xc, ec, vc = code_profiles(dump, args)
         time = dump.time
 

@@ -1,0 +1,87 @@
+### G2/item1  T3 (static thick pulse), ap_form = unified vs alpha2
+unified  tau1e1_dc          PASS T3 pulse: d(sigma^2)/dt=5.208862e-04  2D=5.208333e-04  ratio=1.000102 (target 1.000000 +- 0.02)
+unified  tau1e1_plm         PASS T3 pulse: d(sigma^2)/dt=5.201931e-04  2D=5.208333e-04  ratio=0.998771 (target 1.000000 +- 0.02)
+unified  tau1e3_dc          PASS T3 pulse: d(sigma^2)/dt=5.208337e-06  2D=5.208333e-06  ratio=1.000001 (target 1.000000 +- 0.02)
+unified  tau1e3_plm         PASS T3 pulse: d(sigma^2)/dt=5.208271e-06  2D=5.208333e-06  ratio=0.999988 (target 1.000000 +- 0.02)
+unified  tau1e6_dc          PASS T3 pulse: d(sigma^2)/dt=5.208333e-09  2D=5.208333e-09  ratio=1.000000 (target 1.000000 +- 0.02)
+unified  tau1e6_plm         PASS T3 pulse: d(sigma^2)/dt=5.208333e-09  2D=5.208333e-09  ratio=1.000000 (target 1.000000 +- 0.02)
+unified  tau1e1_plm_n256    PASS T3 pulse: d(sigma^2)/dt=2.603175e-04  2D=2.604167e-04  ratio=0.999619 (target 1.000000 +- 0.02)
+unified  nyquist            PASS T3 nyquist: rate=1.739563e-01  4D/dx^2=1.706667e-01  ratio=1.019275 (target 1.000000 +- 0.02)
+unified  tophat             PASS T3 pulse: d(sigma^2)/dt=5.208313e-07  2D=5.208333e-07  ratio=0.999996 (target 1.000000 +- 0.02)
+alpha2   tau1e1_dc          PASS T3 pulse: d(sigma^2)/dt=5.208862e-04  2D=5.208333e-04  ratio=1.000102 (target 1.000000 +- 0.02)
+alpha2   tau1e1_plm         PASS T3 pulse: d(sigma^2)/dt=5.212454e-04  2D=5.208333e-04  ratio=1.000791 (target 1.000000 +- 0.02)
+alpha2   tau1e3_dc          PASS T3 pulse: d(sigma^2)/dt=5.208337e-06  2D=5.208333e-06  ratio=1.000001 (target 1.000000 +- 0.02)
+alpha2   tau1e3_plm         PASS T3 pulse: d(sigma^2)/dt=5.208413e-06  2D=5.208333e-06  ratio=1.000015 (target 1.000000 +- 0.02)
+alpha2   tau1e6_dc          PASS T3 pulse: d(sigma^2)/dt=5.208333e-09  2D=5.208333e-09  ratio=1.000000 (target 1.000000 +- 0.02)
+alpha2   tau1e6_plm         PASS T3 pulse: d(sigma^2)/dt=5.208333e-09  2D=5.208333e-09  ratio=1.000000 (target 1.000000 +- 0.02)
+alpha2   tau1e1_plm_n256    PASS T3 pulse: d(sigma^2)/dt=2.604572e-04  2D=2.604167e-04  ratio=1.000156 (target 1.000000 +- 0.02)
+alpha2   nyquist            PASS T3 nyquist: rate=1.706600e-01  4D/dx^2=1.706667e-01  ratio=0.999961 (target 1.000000 +- 0.02)
+alpha2   tophat             PASS T3 pulse: d(sigma^2)/dt=5.208617e-07  2D=5.208333e-07  ratio=1.000054 (target 1.000000 +- 0.02)
+
+### G6  T3b redefined, case A: tau_cell 1 -> 1e3 (t = 1e5)
+ap_unified   FAIL T3b jump: max|E/E_exact-1|=1.507e-03  slope err 1.397e-02 / 1.394e-02  slope ratio err 3.537e-05  face flux: uniform to 4.672e-02, 1.493e-02 below the imposed value, 2.361e+01 peak at the jump (< 0.01)  [cell F err 4.039e+01, diagnostic]
+ap_alpha2    FAIL T3b jump: max|E/E_exact-1|=1.504e-03  slope err 1.404e-02 / 1.402e-02  slope ratio err 2.180e-05  face flux: uniform to 4.041e-02, 1.493e-02 below the imposed value, 1.804e+01 peak at the jump (< 0.01)  [cell F err 4.257e+01, diagnostic]
+none         FAIL T3b jump: max|E/E_exact-1|=1.372e-02  slope err 6.276e+00 / 3.868e-01  slope ratio err 8.094e-01  face flux: uniform to 9.283e-01, 3.217e+00 below the imposed value, 1.131e+00 peak at the jump (< 0.01)  [cell F err 9.578e+00, diagnostic]
+scaled       FAIL T3b jump: max|E/E_exact-1|=1.314e-03  slope err 1.012e-03 / 2.756e-03  slope ratio err 1.743e-03  face flux: uniform to 5.515e-01, 1.088e-03 below the imposed value, 9.196e-01 peak at the jump (< 0.01)  [cell F err 2.819e-01, diagnostic]
+### G6  T3b redefined, case B: tau_cell 1e-3 -> 1 (t = 2000)
+B_ap_unified   FAIL T3b jump: max|E/E_exact-1|=9.787e-04  slope err 9.047e-03 / 8.946e-03  slope ratio err 1.020e-04  face flux: uniform to 9.116e-02, 1.108e-02 below the imposed value, 4.052e+01 peak at the jump (< 0.01)  [cell F err 8.417e-02, diagnostic]
+B_ap_alpha2    FAIL T3b jump: max|E/E_exact-1|=6.868e-04  slope err 3.322e-03 / 3.268e-03  slope ratio err 5.432e-05  face flux: uniform to 1.075e-01, 5.793e-03 below the imposed value, 1.819e+01 peak at the jump (< 0.01)  [cell F err 1.345e-01, diagnostic]
+B_none         FAIL T3b jump: max|E/E_exact-1|=6.600e-04  slope err 1.125e-02 / 1.115e-02  slope ratio err 9.569e-05  face flux: uniform to 7.592e-03, 1.091e-02 below the imposed value, 2.105e-01 peak at the jump (< 0.01)  [cell F err 2.011e-01, diagnostic]
+B_scaled       FAIL T3b jump: max|E/E_exact-1|=4.647e-04  slope err 1.996e-03 / 1.755e-03  slope ratio err 2.418e-04  face flux: uniform to 1.476e-01, 4.438e-04 below the imposed value, 4.911e+01 peak at the jump (< 0.01)  [cell F err 1.063e-01, diagnostic]
+
+### G3  T4, dynamic case (kappa 500, v = 3e7, beta tau = 14)
+d512_aphll_split         PASS T4 advect: dcentre=0.074 cells (<= 1)  dwidth=1.015e-02 (<= 0.02)  gas drift=8.629e-03 (<= 1)  Tgas drift=2.940e-03  vs-static=3.785e-03  nyquist=2.963e-15
+d512_aphll_nosplit       FAIL T4 advect: dcentre=-69.889 cells (<= 1)  dwidth=1.710e-01 (<= 0.02)  gas drift=3.815e-02 (<= 1)  Tgas drift=9.664e-04  vs-static=6.325e-01  nyquist=6.385e-08
+d512_scaled_split        PASS T4 advect: dcentre=0.074 cells (<= 1)  dwidth=1.015e-02 (<= 0.02)  gas drift=8.633e-03 (<= 1)  Tgas drift=2.942e-03  vs-static=3.751e-03  nyquist=8.270e-12
+d512_none_split          PASS T4 advect: dcentre=0.086 cells (<= 1)  dwidth=1.430e-02 (<= 0.02)  gas drift=1.046e-02 (<= 1)  Tgas drift=3.563e-03  vs-static=2.494e-02  nyquist=6.426e-19
+d512_none_nosplit        PASS T4 advect: dcentre=0.053 cells (<= 1)  dwidth=1.429e-02 (<= 0.02)  gas drift=1.046e-02 (<= 1)  Tgas drift=3.563e-03  vs-static=2.464e-02  nyquist=1.188e-19
+d512_aphll_split_ovc     PASS T4 advect: dcentre=0.073 cells (<= 1)  dwidth=1.011e-02 (<= 0.02)  gas drift=8.656e-03 (<= 1)  Tgas drift=2.978e-03  vs-static=3.812e-03  nyquist=2.830e-15
+d512_aphll_split_nsub1   PASS T4 advect: dcentre=0.033 cells (<= 1)  dwidth=9.884e-03 (<= 0.02)  gas drift=8.481e-03 (<= 1)  Tgas drift=2.909e-03  vs-static=2.675e-03  nyquist=7.062e-14
+a2_d512_split            PASS T4 advect: dcentre=0.074 cells (<= 1)  dwidth=1.015e-02 (<= 0.02)  gas drift=8.630e-03 (<= 1)  Tgas drift=2.940e-03  vs-static=3.785e-03  nyquist=2.884e-15
+a2_d512_nosplit          FAIL T4 advect: dcentre=-69.888 cells (<= 1)  dwidth=1.710e-01 (<= 0.02)  gas drift=3.815e-02 (<= 1)  Tgas drift=9.676e-04  vs-static=6.325e-01  nyquist=6.748e-08
+d1024_aphll_split        PASS T4 advect: dcentre=0.064 cells (<= 1)  dwidth=1.000e-02 (<= 0.02)  gas drift=8.549e-03 (<= 1)  Tgas drift=2.923e-03  vs-static=1.782e-03  nyquist=3.182e-15
+d1024_aphll_nosplit      FAIL T4 advect: dcentre=-138.385 cells (<= 1)  dwidth=1.691e-01 (<= 0.02)  gas drift=3.788e-02 (<= 1)  Tgas drift=1.170e-03  vs-static=6.311e-01  nyquist=1.914e-09
+### G3  T4, static case (kappa 100, v = 1e6, beta = 3.3e-5)
+k100_v1e6_512            FAIL T4 advect: dcentre=0.027 cells (<= 1)  dwidth=2.052e-02 (<= 0.02)  gas drift=2.601e-02 (<= 1)  Tgas drift=7.656e-03  vs-static=1.110e-03  nyquist=4.470e-13
+k100_v1e6_1024           FAIL T4 advect: dcentre=0.027 cells (<= 1)  dwidth=2.052e-02 (<= 0.02)  gas drift=2.599e-02 (<= 1)  Tgas drift=7.648e-03  vs-static=5.528e-04  nyquist=8.688e-15
+
+### G4  T4b, uniform medium, beta tau_cell = 1e3
+aphll_split_full     FAIL T4 advect: dcentre=22.438 cells (<= 1)  dwidth=-2.297e-04 (<= 0.02)  gas drift=0.000e+00 (<= 1)  Tgas drift=0.000e+00  vs-static=nan  nyquist=0.000e+00
+aphll_split_ovc      FAIL T4 advect: dcentre=26.991 cells (<= 1)  dwidth=1.279e-04 (<= 0.02)  gas drift=2.159e+05 (<= 1)  Tgas drift=2.159e+05  vs-static=nan  nyquist=0.000e+00
+aphll_nosplit_full   FAIL T4 advect: dcentre=22.438 cells (<= 1)  dwidth=-2.297e-04 (<= 0.02)  gas drift=0.000e+00 (<= 1)  Tgas drift=0.000e+00  vs-static=nan  nyquist=0.000e+00
+aphll_nosplit_ovc    FAIL T4 advect: dcentre=26.991 cells (<= 1)  dwidth=1.279e-04 (<= 0.02)  gas drift=2.159e+05 (<= 1)  Tgas drift=2.159e+05  vs-static=nan  nyquist=0.000e+00
+none_split_full      FAIL T4 advect: dcentre=22.438 cells (<= 1)  dwidth=-2.297e-04 (<= 0.02)  gas drift=0.000e+00 (<= 1)  Tgas drift=0.000e+00  vs-static=nan  nyquist=0.000e+00
+scaled_split_full    FAIL T4 advect: dcentre=22.438 cells (<= 1)  dwidth=-2.297e-04 (<= 0.02)  gas drift=0.000e+00 (<= 1)  Tgas drift=0.000e+00  vs-static=nan  nyquist=0.000e+00
+
+### G5  T6, constant-c_v Marshak wave, reference = runs_1c/t6_ref_sn.txt
+n128_      ap_unified   PASS T6 marshak: L1(E)=0.0048  L1(material)=0.0048 (<= 0.02)  reference=table runs_1c/t6_ref_sn.txt
+n128_      ap_alpha2    PASS T6 marshak: L1(E)=0.0019  L1(material)=0.0019 (<= 0.02)  reference=table runs_1c/t6_ref_sn.txt
+n128_      none         PASS T6 marshak: L1(E)=0.0176  L1(material)=0.0176 (<= 0.02)  reference=table runs_1c/t6_ref_sn.txt
+n128_      scaled       PASS T6 marshak: L1(E)=0.0022  L1(material)=0.0022 (<= 0.02)  reference=table runs_1c/t6_ref_sn.txt
+n64_       ap_unified   PASS T6 marshak: L1(E)=0.0191  L1(material)=0.0191 (<= 0.02)  reference=table runs_1c/t6_ref_sn.txt
+n64_       ap_alpha2    PASS T6 marshak: L1(E)=0.0148  L1(material)=0.0148 (<= 0.02)  reference=table runs_1c/t6_ref_sn.txt
+n64_       none         FAIL T6 marshak: L1(E)=0.0507  L1(material)=0.0507 (<= 0.02)  reference=table runs_1c/t6_ref_sn.txt
+n64_       scaled       PASS T6 marshak: L1(E)=0.0067  L1(material)=0.0067 (<= 0.02)  reference=table runs_1c/t6_ref_sn.txt
+n32_       ap_unified   FAIL T6 marshak: L1(E)=0.0481  L1(material)=0.0481 (<= 0.02)  reference=table runs_1c/t6_ref_sn.txt
+n32_       ap_alpha2    FAIL T6 marshak: L1(E)=0.0429  L1(material)=0.0428 (<= 0.02)  reference=table runs_1c/t6_ref_sn.txt
+n32_       none         FAIL T6 marshak: L1(E)=0.1600  L1(material)=0.1600 (<= 0.02)  reference=table runs_1c/t6_ref_sn.txt
+n32_       scaled       FAIL T6 marshak: L1(E)=0.0279  L1(material)=0.0279 (<= 0.02)  reference=table runs_1c/t6_ref_sn.txt
+
+### G1  box_convection bitwise without <rad_m1> (tests_gate_merge/g1_m1c_m{3,0} vs g1_new_m{3,0})
+5/5 files identical in mode 3, 5/5 in mode 0  ->  10/10
+
+### G2  the rest of the 1b regression, DEFAULT parameters
+beam        : identical bitwise to ap_form=alpha2+advect_split=false (thick_flux=none, no hydro)
+beam FWHM   : 20.03 cells (<= 25); max|f| = 1+7.0e-8 in the FLOAT32 bin dump, 0.9999992 in tab
+pulse1d     : orders 1.763 / 1.883 at 128/256/512, L1(512)=2.811e-03 (code path unchanged from 1b)
+T5 equil    : conservation 0.000e+00, sign flips 0, at cfl_rad 4.4e-7 and 4.4e-10, cold and hot
+
+### G4  T4b, O(v/c) spurious-heating RATE (subcycle=false, nlim steps of dt = 1.3343e-11 s)
+full  nlim=1: dT/T = 0.000000e+00     nlim=8: -3.26e-13
+ovc   nlim=1: dT/T = 7.345986e-01     nlim=2: 5.944  nlim=4: 1.340e+03  nlim=8: 3.482e+05
+predicted (4/3) c rho kappa beta^2 E/e_gas * dt = 0.634 per step
+
+### G7  style
+cpplint (repo filter) on the 6 changed C++ files: 0 errors; no tabs, no }} lines, no trailing
+whitespace, all mode 644, all lines <= 90 columns; flake8 --max-line-length 90 on tests_m1: clean
+every tests_m1 --selftest passes and every --selftest-fail exits 1, including common.py

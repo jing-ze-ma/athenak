@@ -73,6 +73,7 @@ TaskStatus RadiationM1::Coupling(Driver *pdrive, int stage) {
   Real ar = arad;
   bool edd = eddington;
   bool feedback = gas_feedback;
+  bool ovc = source_ovc;
   // stage 1 integrates the source over dt, stage 2 over dt/2 (the PD-ARS tableau)
   Real dti = (stage == 1) ? dt_sub : (0.5*dt_sub);
   bool stage1 = (stage == 1);
@@ -133,8 +134,10 @@ TaskStatus RadiationM1::Coupling(Driver *pdrive, int stage) {
     Real bdotf = (b1*fs1 + b2*fs2 + b3*fs3)/cl;
     Real bpb = b1*(p11*b1 + p12*b2 + p13*b3) + b2*(p21*b1 + p22*b2 + p23*b3)
              + b3*(p31*b1 + p32*b2 + p33*b3);
-    // E0 = (1 + beta^2) E - 2 beta.F/c + beta.P.beta; only the correction is explicit
-    Real de0 = b2sq*es - 2.0*bdotf + bpb;
+    // E0 = (1 + beta^2) E - 2 beta.F/c + beta.P.beta; only the correction is explicit.
+    // source_form = ovc keeps the O(v/c) piece alone: that leaves the spurious heating
+    // (4/3) c rho kappa beta^2 E of design sect. 1, which is what T4/T4b exhibit.
+    Real de0 = ovc ? (-2.0*bdotf) : (b2sq*es - 2.0*bdotf + bpb);
 
     Real ctc = cl/ch;
     Real inv = 1.0/(1.0 + ch*dti*rke);
@@ -250,7 +253,17 @@ TaskStatus RadiationM1::Coupling(Driver *pdrive, int stage) {
       Real w1 = (gi[1] + dm1)*idd;
       Real w2 = (gi[2] + dm2)*idd;
       Real w3 = (gi[3] + dm3)*idd;
-      work = 0.5*((v1 + w1)*dm1 + (v2 + w2)*dm2 + (v3 + w3)*dm3);
+      // beta.g, evaluated as vbar.delta(rho v) since delta(rho v) = dt g_i exactly.
+      // source_form = ovc uses the LAB flux F' in g_i here instead of F0' (the
+      // Skinner & Ostriker beta-correction), while the momentum the gas actually
+      // receives stays the physical one: the difference is the spurious work.
+      Real dw1 = dm1, dw2 = dm2, dw3 = dm3;
+      if (ovc && rkt > 0.0) {
+        dw1 = dti*rkt*fp1/cl;
+        dw2 = dti*rkt*fp2/cl;
+        dw3 = dti*rkt*fp3/cl;
+      }
+      work = 0.5*((v1 + w1)*dw1 + (v2 + w2)*dw2 + (v3 + w3)*dw3);
       ep -= (ch/cl)*work;
     }
 

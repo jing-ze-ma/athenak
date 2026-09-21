@@ -29,6 +29,11 @@ constexpr int M1_THICK_NONE   = 0;   // plain HLL
 constexpr int M1_THICK_APHLL  = 1;   // Bloch et al. (2021) alpha on the E-flux only
 constexpr int M1_THICK_SCALED = 2;   // Jiang (2021) App. A: both wave speeds x eps(tau)
 
+// <rad_m1>/ap_form: which algebraic form of the thick_flux = ap_hll E-flux is used
+// (design sect. 10 and the 1c measurement recorded there).
+constexpr int M1_APFORM_UNIFIED = 0;  // alpha F_HLL + (1-alpha) F_diff(1 - dEr/dEc)
+constexpr int M1_APFORM_ALPHA2  = 1;  // the 1b pair: Berthon for dc, alpha^2 for plm
+
 //----------------------------------------------------------------------------------------
 //! \fn M1Chi
 //! \brief Levermore closure factor chi as a function of the reduced flux magnitude.
@@ -187,17 +192,37 @@ void M1WaveSpeeds(const Real fnorm, const Real mu, Real &lam_m, Real &lam_p) {
 //!    eps = sqrt[(1 - exp(-tau_c^2))/tau_c^2], tau_c = scaled_pref*tau_face, in BOTH
 //!    fluxes (Jiang 2021 App. A in moment form).
 //!
-//! MILESTONE 1c HOOK: the advective enthalpy-flux split for moving media replaces the
-//! per-side normal flux entering the E-flux by the comoving F0_n = F_n - (v E + v.P)_n
-//! and adds the upwinded full enthalpy flux A afterwards; the two marked locals f0ln /
-//! f0rn and the separate assembly of flx[0] are there so that lands as a local change.
+//! AP FORM (milestone 1c, design sect. 10).  `ap_form = unified` replaces the pair of
+//! 1b forms by the single expression
+//!
+//!   F_E = alpha F_HLL(reconstructed) + (1 - alpha) F_diff (1 - dE_recon/dE_cell),
+//!   dE_recon = E_R - E_L (face states),  dE_cell = E(i+1) - E(i),
+//!
+//! with the ratio clamped to [0,1] and set to 1 where dE_cell vanishes (no gradient, so
+//! no F_diff correction is needed).  It reduces to Berthon's alpha F_HLL for dc, where
+//! the face states ARE the cell values and the ratio is exactly 1, and to the blend for
+//! smooth plm, where the reconstructed jump is O(dx^2) and the ratio is ~0 -- without a
+//! reconstruct-dependent switch, and without needing the alpha^2 weight on the
+//! dissipation, because at a limiter-clipped kink the ratio returns to 1 and removes
+//! F_diff rather than removing the dissipation.  `ap_form = alpha2` keeps the 1b pair.
+//!
+//! MOVING MEDIA (milestone 1c, design sect. 3 "Moving fluid").  With `split` the
+//! per-side normal flux entering the E-flux is the comoving F0_n = F_n - A_n,
+//! A_n = (v E + v.P)_n built from the reconstructed face state and the cell's own
+//! velocity; alpha and the HLL act on F0 only, and the FULL enthalpy flux A is added
+//! back upwinded by the sign of the face-normal velocity (the mean of the two cells').
+//! Nothing is split in the F equation.  Bloch et al. (2021 Sect. 6.2): without this,
+//! alpha -> 0 switches off the transport flux that carries (4/3) E v and the scheme
+//! does not reach the asymptotic regime in a moving fluid.
 
 KOKKOS_INLINE_FUNCTION
 void M1HLLFlux(const int ivx, const Real cl, const Real chat, const bool eddington,
                const Real el, const Real fl1, const Real fl2, const Real fl3,
                const Real er, const Real fr1, const Real fr2, const Real fr3,
                const int thick, const Real tau_face, const Real scaled_pref,
-               const bool berthon, const Real ecl, const Real ecr, Real *flx) {
+               const bool berthon, const Real ecl, const Real ecr,
+               const int apform, const bool split,
+               const Real *vl, const Real *vr, Real *flx) {
   // reduced fluxes and closure factors
   Real rl1, rl2, rl3, rlnorm, rr1, rr2, rr3, rrnorm;
   M1ReducedFlux(cl, el, fl1, fl2, fl3, rl1, rl2, rl3, rlnorm);
@@ -279,18 +304,36 @@ void M1HLLFlux(const int ivx, const Real cl, const Real chat, const bool eddingt
     flx[n] = (br*fxl[n] - bl*fxr[n] + br*bl*(ur[n] - ul[n]))*invb;
   }
   // the E-flux, assembled separately: it is the one the thick-limit blend touches, and
-  // the one milestone 1c splits into a comoving part plus an upwinded enthalpy flux A.
-  Real f0ln = fxl[0];   // 1c: (chat/c)(F_n - (v E + v.P)_n) of the LEFT state
-  Real f0rn = fxr[0];   // 1c: the same of the RIGHT state
+  // the one the advective split divides into a comoving part plus an upwinded A.
+  Real anl = 0.0, anr = 0.0, aup = 0.0;
+  if (split) {
+    Real vln = (ivx == 1) ? vl[0] : ((ivx == 2) ? vl[1] : vl[2]);
+    Real vrn = (ivx == 1) ? vr[0] : ((ivx == 2) ? vr[1] : vr[2]);
+    anl = vln*el + (vl[0]*pl1 + vl[1]*pl2 + vl[2]*pl3);
+    anr = vrn*er + (vr[0]*pr1 + vr[1]*pr2 + vr[2]*pr3);
+    Real vfn = 0.5*(vln + vrn);
+    aup = (chat/cl)*((vfn > 0.0) ? anl : anr);
+  }
+  Real f0ln = (chat/cl)*(fln - anl);   // (chat/c)(F_n - (v E + v.P)_n), LEFT state
+  Real f0rn = (chat/cl)*(frn - anr);   // the same of the RIGHT state
   Real fe = (br*f0ln - bl*f0rn + br*bl*(ur[0] - ul[0]))*invb;
   if (thick == M1_THICK_APHLL && tau_face > 0.0 && alpha < 1.0) {
-    if (berthon) {
-      fe *= alpha;
+    // (chat/c)*[-c (E_R - E_L)/(3 tau_face)] = -chat (E_R - E_L)/(3 tau_face)
+    Real fdiff = -chat*(ecr - ecl)/(3.0*tau_face);
+    Real fadv = (br*f0ln - bl*f0rn)*invb;
+    Real fdis = br*bl*(ur[0] - ul[0])*invb;
+    if (apform == M1_APFORM_UNIFIED) {
+      // ratio = dE_recon/dE_cell, clamped to [0,1]; 1 where there is no cell gradient
+      Real dce = ecr - ecl;
+      Real ratio = 1.0;
+      if (dce != 0.0) {
+        ratio = (er - el)/dce;
+        ratio = fmin(fmax(ratio, 0.0), 1.0);
+      }
+      fe = alpha*(fadv + fdis) + (1.0 - alpha)*fdiff*(1.0 - ratio);
+    } else if (berthon) {
+      fe = alpha*(fadv + fdis);
     } else {
-      // (chat/c)*[-c (E_R - E_L)/(3 tau_face)] = -chat (E_R - E_L)/(3 tau_face)
-      Real fdiff = -chat*(ecr - ecl)/(3.0*tau_face);
-      Real fadv = (br*f0ln - bl*f0rn)*invb;
-      Real fdis = br*bl*(ur[0] - ul[0])*invb;
       // The HLL DISSIPATION carries weight alpha^2, not alpha.  It is spurious once
       // F_diff supplies the physical diffusion, and it has to vanish FASTER than that
       // flux does: D_HLL ~ c dE while F_diff ~ c dE/tau, so a weight alpha ~ 1/tau
@@ -303,7 +346,7 @@ void M1HLLFlux(const int ivx, const Real cl, const Real chat, const bool eddingt
       fe = alpha*fadv + alpha*alpha*fdis + (1.0 - alpha)*fdiff;
     }
   }
-  flx[0] = fe;          // 1c: + A_upwind
+  flx[0] = fe + aup;
 }
 
 } // namespace radm1

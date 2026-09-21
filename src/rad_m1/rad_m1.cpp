@@ -68,6 +68,21 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       << "' is not a valid choice (none | ap_hll | scaled)" << std::endl;
     std::exit(EXIT_FAILURE);
   }
+  // which algebraic form of the ap_hll E-flux (design sect. 10; milestone 1c).
+  // `unified` needs no reconstruct-dependent switch, but it is MEASURABLY worse on
+  // every 1b gate that discriminates (T3 at tau_cell = 10, the resolution order, the
+  // Nyquist decay rate, T6), so the 1b pair stays the default: see rad_m1_closure.hpp.
+  ap_form_str = pin->GetOrAddString("rad_m1","ap_form","alpha2");
+  if (ap_form_str.compare("unified") == 0) {
+    ap_form = M1_APFORM_UNIFIED;
+  } else if (ap_form_str.compare("alpha2") == 0) {
+    ap_form = M1_APFORM_ALPHA2;
+  } else {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+      << std::endl << "<rad_m1>/ap_form = '" << ap_form_str
+      << "' is not a valid choice (unified | alpha2)" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
   scaled_pref = pin->GetOrAddReal("rad_m1","scaled_prefactor",20.0);
   if (!(scaled_pref > 0.0)) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
@@ -116,6 +131,29 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   // u0 and writes u0(IEN) and u0(IM1..3) back, so it needs a <hydro> block unless every
   // opacity vanishes (the pure-transport tests of milestone 1a).
   bool have_hydro = pin->DoesBlockExist("hydro");
+  // (1c) the advective enthalpy-flux split of the E equation (design sect. 3 "Moving
+  // fluid").  It is what carries (4/3) E v where alpha -> 0 switches the transport flux
+  // off, so it is on by default exactly where alpha exists and there is a medium; with
+  // thick_flux = scaled | none it is available for comparison but off by default.
+  advect_split = pin->GetOrAddBoolean("rad_m1","advect_split",
+                                      have_hydro && (thick_flux == M1_THICK_APHLL));
+  // the O(v/c) CONTROL of T4/T4b.  Never a production setting: it is here to exhibit the
+  // spurious heating ~ (4/3) c rho kappa beta^2 E that the full source form cancels.
+  {std::string sf = pin->GetOrAddString("rad_m1","source_form","full");
+  if (sf.compare("full") == 0) {
+    source_ovc = false;
+  } else if (sf.compare("ovc") == 0) {
+    source_ovc = true;
+    std::cout << "### WARNING: <rad_m1>/source_form = ovc truncates the matter coupling "
+      << "to O(v/c); this is the FAILING CONTROL of T4/T4b, not a physical option"
+      << std::endl;
+  } else {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+      << std::endl << "<rad_m1>/source_form = '" << sf << "' is not a valid choice "
+      << "(full | ovc)" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  }
   coupling = pin->GetOrAddBoolean("rad_m1","coupling",!opac_zero);
   gas_feedback = pin->GetOrAddBoolean("rad_m1","gas_feedback",true);
   if (coupling && !have_hydro) {
@@ -252,6 +290,9 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   if (global_variable::my_rank == 0) {
     std::cout << "<rad_m1>: c=" << c_light << " chat/c=" << chat_over_c
               << " cfl_rad=" << cfl_rad << " thick_flux=" << thick_flux_str
+              << " ap_form=" << ap_form_str
+              << " advect_split=" << (advect_split ? "true" : "false")
+              << " source_form=" << (source_ovc ? "ovc" : "full")
               << " closure=" << (eddington ? "eddington" : "m1")
               << " subcycle=" << (subcycle ? "true" : "false") << std::endl;
     std::cout << "         kappa_p=" << kappa_p << " kappa_e=" << kappa_e

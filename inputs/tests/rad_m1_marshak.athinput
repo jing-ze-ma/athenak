@@ -1,0 +1,108 @@
+# AthenaK input file for the grey M1 non-equilibrium MARSHAK WAVE (design note T6)
+#
+# DEVIATION FROM THE DESIGN NOTE, stated up front.  The Su-Olson benchmark needs a
+# material heat capacity c_v = alpha T^3, i.e. e proportional to T^4, which no EOS in
+# this tree can represent (an ideal gas has c_v = 1/(gamma-1) = const in code units).
+# What is run here is therefore the CONSTANT-c_v non-equilibrium Marshak wave, and
+# tests_m1/t6_marshak.py's own S_N reference is run with the same constant c_v
+# (--marshak --cv 1.5): the comparison is like for like, but it is NOT Su-Olson and the
+# published Su-Olson table would not apply to it.
+#
+# Setup: a cold, uniform, static slab on [0, 1] with a constant absorption opacity,
+# heated from x = 0 by a radiation bath of energy density e_bath held in the ghost
+# zones (Dirichlet in E, zero-gradient in F -- the same user BC as the jump test).
+#
+# UNITS.  c = 1, rho = 1, kappa = 300 (so tau_cell = 2.34 at nx1 = 128 and the total
+# optical depth is 300), arad = 1e30 and T_bath = 1e-10, chosen so that
+#   * arad T_b^4 = 1e-10 = the bath energy density, and the material energy at the bath
+#     temperature, rho c_v T_b = 1.5e-10, is comparable to it (a genuinely retarded,
+#     non-equilibrium wave rather than an equilibrium diffusion wave);
+#   * the gas sound speed at T_b is 1.3e-5 c, so over the whole run the medium moves by
+#     ~1e-4 cells and the "static medium" the reference assumes is a good description.
+#     (Radiation still pushes and heats it: gas_feedback is ON, as it must be -- the
+#     material energy IS the test.)
+
+<comment>
+problem = grey M1 non-equilibrium Marshak wave
+
+<job>
+basename = m1_marshak
+
+<mesh>
+nghost    = 2
+nx1       = 128
+x1min     = 0.0
+x1max     = 1.0
+ix1_bc    = user
+ox1_bc    = user
+
+nx2       = 1
+x2min     = -0.5
+x2max     = 0.5
+ix2_bc    = periodic
+ox2_bc    = periodic
+
+nx3       = 1
+x3min     = -0.5
+x3max     = 0.5
+ix3_bc    = periodic
+ox3_bc    = periodic
+
+<meshblock>
+nx1       = 128
+nx2       = 1
+nx3       = 1
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.4
+nlim       = -1
+tlim       = 202.0
+ndiag      = 100000
+
+<hydro>
+eos         = ideal
+reconstruct = plm
+rsolver     = hllc
+gamma       = 1.666666666666667
+
+<rad_m1>
+c_light      = 1.0
+chat_over_c  = 1.0
+cfl_rad      = 0.4
+reconstruct  = plm
+thick_flux   = ap_hll   # none | ap_hll | scaled
+scaled_prefactor = 20.0
+ap_form      = alpha2   # alpha2 | unified
+advect_split = false
+source_form  = full
+closure      = m1
+e_floor      = 1.0e-30
+subcycle     = true
+opacity      = const
+kappa_p      = 300.0    # absorption; kappa_e and kappa_f default to it
+kappa_s      = 0.0
+arad         = 1.0e30
+coupling     = true
+gas_feedback = true
+
+<problem>
+pgen_name  = rad_m1_beam
+m1_test    = marshak
+user_bcs   = true
+gas_rho    = 1.0
+gas_temp   = 1.0e-12    # cold start
+e_bath     = 1.0e-10    # arad T_bath^4 with T_bath = 1e-10
+
+<output1>
+file_type   = tab
+variable    = m1
+data_format = %26.17e
+dt          = 202.0
+
+<output2>
+file_type   = tab
+variable    = hydro_w
+data_format = %26.17e
+dt          = 202.0

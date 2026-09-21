@@ -15,11 +15,27 @@
 #include "athena.hpp"
 #include "mesh/mesh.hpp"
 #include "driver/driver.hpp"
+#include "hydro/hydro.hpp"
 #include "reconstruct/plm.hpp"
 #include "rad_m1/rad_m1.hpp"
 #include "rad_m1/rad_m1_closure.hpp"
 
 namespace radm1 {
+
+//----------------------------------------------------------------------------------------
+//! \fn M1Vel
+//! \brief the three velocity components of one cell, from hydro's CONSERVED u0 (the
+//! coupling writes u0 inside the substep, so w0 is one ConToPrim behind -- the same rule
+//! the opacity kernel follows).
+
+KOKKOS_INLINE_FUNCTION
+void M1Vel(const DvceArray5D<Real> &uh, const int m, const int k, const int j,
+           const int i, Real *v) {
+  Real id = 1.0/fmax(uh(m,IDN,k,j,i), 1.0e-300);
+  v[0] = uh(m,IM1,k,j,i)*id;
+  v[1] = uh(m,IM2,k,j,i)*id;
+  v[2] = uh(m,IM3,k,j,i)*id;
+}
 
 //----------------------------------------------------------------------------------------
 //! \fn M1Prim
@@ -121,6 +137,12 @@ TaskStatus RadiationM1::CalculateFluxes(Driver *pdrive, int stage) {
   // to correct and the flux is plain HLL (and bit-identical to milestone 1a)
   int thick = (opac_zero) ? M1_THICK_NONE : thick_flux;
   Real spref = scaled_pref;
+  int apform = ap_form;
+  // the advective enthalpy-flux split needs the hydro velocity field; with no <hydro>
+  // there is no medium to move and the switch is forced off (u0 is captured as a dummy
+  // in that case, and never read)
+  bool split = advect_split && (pmy_pack->phydro != nullptr);
+  auto uh = (pmy_pack->phydro != nullptr) ? pmy_pack->phydro->u0 : u0;
 
   //--------------------------------------------------------------------------------- x1
   par_for("m1_flx1", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
@@ -147,8 +169,13 @@ TaskStatus RadiationM1::CalculateFluxes(Driver *pdrive, int stage) {
     Real el, fl1, fl2, fl3, er, fr1, fr2, fr3, flx[4];
     M1Rebuild(ql, cl, efl, el, fl1, fl2, fl3);
     M1Rebuild(qr, cl, efl, er, fr1, fr2, fr3);
+    Real vl[3] = {0.0, 0.0, 0.0}, vr[3] = {0.0, 0.0, 0.0};
+    if (split) {
+      M1Vel(uh, m, k, j, i-1, vl);
+      M1Vel(uh, m, k, j, i, vr);
+    }
     M1HLLFlux(1, cl, ch, edd, el, fl1, fl2, fl3, er, fr1, fr2, fr3,
-              thick, tauf, spref, dc, qb[0], qc[0], flx);
+              thick, tauf, spref, dc, qb[0], qc[0], apform, split, vl, vr, flx);
     for (int n=0; n<M1_NVAR; ++n) {
       flx1(m,n,k,j,i) = flx[n];
     }
@@ -180,8 +207,13 @@ TaskStatus RadiationM1::CalculateFluxes(Driver *pdrive, int stage) {
       Real el, fl1, fl2, fl3, er, fr1, fr2, fr3, flx[4];
       M1Rebuild(ql, cl, efl, el, fl1, fl2, fl3);
       M1Rebuild(qr, cl, efl, er, fr1, fr2, fr3);
+      Real vl[3] = {0.0, 0.0, 0.0}, vr[3] = {0.0, 0.0, 0.0};
+      if (split) {
+        M1Vel(uh, m, k, j-1, i, vl);
+        M1Vel(uh, m, k, j, i, vr);
+      }
       M1HLLFlux(2, cl, ch, edd, el, fl1, fl2, fl3, er, fr1, fr2, fr3,
-                thick, tauf, spref, dc, qb[0], qc[0], flx);
+                thick, tauf, spref, dc, qb[0], qc[0], apform, split, vl, vr, flx);
       for (int n=0; n<M1_NVAR; ++n) {
         flx2(m,n,k,j,i) = flx[n];
       }
@@ -214,8 +246,13 @@ TaskStatus RadiationM1::CalculateFluxes(Driver *pdrive, int stage) {
       Real el, fl1, fl2, fl3, er, fr1, fr2, fr3, flx[4];
       M1Rebuild(ql, cl, efl, el, fl1, fl2, fl3);
       M1Rebuild(qr, cl, efl, er, fr1, fr2, fr3);
+      Real vl[3] = {0.0, 0.0, 0.0}, vr[3] = {0.0, 0.0, 0.0};
+      if (split) {
+        M1Vel(uh, m, k-1, j, i, vl);
+        M1Vel(uh, m, k, j, i, vr);
+      }
       M1HLLFlux(3, cl, ch, edd, el, fl1, fl2, fl3, er, fr1, fr2, fr3,
-                thick, tauf, spref, dc, qb[0], qc[0], flx);
+                thick, tauf, spref, dc, qb[0], qc[0], apform, split, vl, vr, flx);
       for (int n=0; n<M1_NVAR; ++n) {
         flx3(m,n,k,j,i) = flx[n];
       }

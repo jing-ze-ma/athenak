@@ -14,8 +14,14 @@
 //!
 //! MILESTONE 1b adds: analytic (constant / power-law / user-hook) opacities stored as
 //! rho*kappa per cell, the two thick-limit fluxes (ap_hll, scaled), and the implicit
-//! local matter coupling to <hydro>, called inside BOTH PD-ARS stages.  Still absent
-//! (milestone 1c): the advective enthalpy-flux split of the E equation for moving media.
+//! local matter coupling to <hydro>, called inside BOTH PD-ARS stages.
+//!
+//! MILESTONE 1c adds: the advective enthalpy-flux split of the E equation for moving
+//! media (<rad_m1>/advect_split, design sect. 3 "Moving fluid"), the unified form of the
+//! ap_hll E-flux (<rad_m1>/ap_form, kept as an option -- the 1b pair measures better,
+//! design sect. 11), and the O(v/c) source truncation used as the failing control of
+//! T4/T4b (<rad_m1>/source_form).  Still absent: implicit transport (stage 3) and any
+//! geometry but Cartesian (stage 4).
 
 #include <map>
 #include <memory>
@@ -109,6 +115,13 @@ class RadiationM1 {
   std::string thick_flux_str;   // none | ap_hll | scaled
   int thick_flux;               // M1_THICK_*
   Real scaled_pref;             // thick_flux = scaled: tau_c = scaled_pref*tau_face
+  std::string ap_form_str;      // unified | alpha2
+  int ap_form;                  // M1_APFORM_*
+  bool advect_split;            // the advective enthalpy-flux split of the E equation
+  bool source_ovc;              // TRUNCATE the source to O(v/c) -- the control of T4/T4b,
+                                // NOT a production option: it drops the beta^2 E and
+                                // beta.P.beta pieces of E0 and uses F instead of F0 in
+                                // the beta.g work term (Skinner & Ostriker type form)
 
   // opacities, per unit mass, in code units (design sect. 4).  kappa = kappa0 for
   // opacity = const, kappa0 (rho/rho_ref)^opac_a (T/t_ref)^opac_b for powerlaw.

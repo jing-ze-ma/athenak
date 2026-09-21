@@ -140,12 +140,22 @@ def load_code_series(args):
         return t, erad, egas
     dumps = common.load_series(args.dumps, args.bin_convert_dir,
                                args.all_ranks)
+    if args.hydro:
+        hyd = common.load_series(args.hydro, args.bin_convert_dir,
+                                 args.all_ranks)
+        for d in dumps:
+            best = min(hyd, key=lambda h: abs(h.time - d.time))
+            for k, v in best.data.items():
+                d.data.setdefault(k, v)
     t, erad, egas = [], [], []
     for d in dumps:
         t.append(d.time)
         erad.append(float(d.var("m1_e").mean()))
         if d.has("eint"):
             egas.append(float(d.var("eint").mean()))
+        elif d.has("ener"):
+            # hydro_u output: the TOTAL energy density; these zones are at rest
+            egas.append(float(d.var("ener").mean()))
         else:
             egas.append(float(d.var("press").mean()) / (args.gamma - 1.0))
     return np.array(t), np.array(erad), np.array(egas)
@@ -166,6 +176,9 @@ def selftest(args, zone):
 def main():
     p = common.base_parser(__doc__.splitlines()[0])
     p.add_argument("dumps", nargs="*", help="single-zone dumps (time series)")
+    p.add_argument("--hydro", nargs="*", default=[],
+                   help="parallel series of hydro dumps (file_type = tab "
+                        "writes one file per <output> block)")
     p.add_argument("--hist", default=None,
                    help="history file instead of dumps")
     p.add_argument("--hist-time", default="time")
