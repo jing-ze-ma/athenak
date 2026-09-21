@@ -292,8 +292,8 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
       rf.h_view(3,n) = vtg[n];
       rf.h_view(4,n) = vtr[n];
     }
-    rf.template modify<HostMemSpace>();
-    rf.template sync<DevExeSpace>();
+    rf.modify_host();
+    rf.sync_device();
     auto rf_ = rf;
     int nr = nref;
     auto uh = pmbp->phydro->u0;

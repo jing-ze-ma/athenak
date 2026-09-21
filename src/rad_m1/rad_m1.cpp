@@ -512,8 +512,8 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   }
   Kokkos::realloc(cnt, M1_NCNT);
   for (int n=0; n<M1_NCNT; ++n) {cnt.h_view(n) = 0.0;}
-  cnt.template modify<HostMemSpace>();
-  cnt.template sync<DevExeSpace>();
+  cnt.modify_host();
+  cnt.sync_device();
 
   if (ppack->pmesh->multilevel) {
     int nccells1 = indcs.cnx1 + 2*(indcs.ng);
@@ -596,8 +596,8 @@ RadiationM1::~RadiationM1() {
 
 void RadiationM1::ReportCounters() {
   if (!coupling) return;
-  cnt.template modify<DevExeSpace>();
-  cnt.template sync<HostMemSpace>();
+  cnt.modify_device();
+  cnt.sync_host();
   Real nsolve = cnt.h_view(M1_CNT_NSOLVE);
 #if MPI_PARALLEL_ENABLED
   {

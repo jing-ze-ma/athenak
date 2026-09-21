@@ -170,11 +170,11 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     tfine.h_view(i) = t_b - dzf*dTdz(t_m, p_m);
     lnp.h_view(i) = lnp.h_view(i+1) + dzf*g_m/t_m;
   }
-  tfine.template modify<HostMemSpace>();
-  tfine.template sync<DevExeSpace>();
+  tfine.modify_host();
+  tfine.sync_device();
   auto tfine_d = tfine.d_view;
-  lnp.template modify<HostMemSpace>();
-  lnp.template sync<DevExeSpace>();
+  lnp.modify_host();
+  lnp.sync_device();
   auto lnp_d = lnp.d_view;
   const Real gm1 = gamma - 1.0;
   lnp_d_ = lnp.d_view; tfine_d_ = tfine.d_view; zlo_ = zlo; dzf_ = dzf; zmin_ = zmin;
