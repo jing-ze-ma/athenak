@@ -384,14 +384,15 @@ bool m1_on_ = false;             // <rad_m1> exists on this pack
 Real m1_fin_ = 0.0;              // the imposed bottom flux, code units (= rad_flux_inner)
 Real m1_cl_ = 0.0;               // c in code units, for the boundary fill
 Real m1_efl_ = 0.0;              // <rad_m1>/e_floor
-// problem/m1_top_bc: `vacuum` is the module's own fill (rad_m1_bcs.cpp) -- copy the
-// interior state when the flux already points out, dark ghost only for an incoming flux.
-// `dark` ALWAYS hands the top face a zero-incoming ghost.  The distinction is not
-// cosmetic here: at a plane-parallel free SURFACE the reduced flux is f = 1/2, not 1, so
-// the copy leaves dE/dz = 0 at the boundary and imposes no relation between F and E --
-// the Marshak condition F ~ c E/2 is simply absent and the surface value of E floats.
+// problem/m1_top_bc: `vacuum` is the module's own fill (radm1::M1FillGhost mode 2),
+// which since the 2a diagnosis ALWAYS hands the face a dark ghost, so `vacuum` and
+// `dark` are now the same boundary and the two keys are kept only for compatibility.
+// `outflow` is the OLD copy fill (mode 0) and is kept for diagnosis only: at a
+// plane-parallel free SURFACE the reduced flux is f = 1/2, not 1, so a copied ghost
+// leaves dE/dz = 0 at the boundary and imposes no relation between F and E -- the
+// Marshak condition F ~ c E/2 is absent and the surface value of E floats.
 // See tests_m1/runs_2a/RESULTS.txt.
-int m1_top_bc_ = 0;              // 0 = vacuum (the module's fill), 1 = dark
+int m1_top_bc_ = 0;              // 0 = vacuum (the module's fill), 1 = dark, 2 = outflow
 // The REFERENCE radiative acceleration of <rad_m1>/force_reference = wb_arad: the same
 // number the well-balanced effective potential integrates, held per cell so that the
 // module's momentum coupling can subtract it.  pgen state, rebuilt identically on a
@@ -1040,12 +1041,13 @@ void BoxConvProfileDump(Mesh *pm) {
   const int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
   const int nmb = pmbp->nmb_thispack;
   const int nkj = nmb*nx3*nx2;
-  // three extra rows with <rad_m1> on: the lab radiation energy density E, the lab flux
-  // F_1, and the radiative acceleration rho*kappa_F*F_1/(rho c) that the module's
-  // momentum coupling is built from.  The record carries its own nvar, so a reader needs
-  // no switch.
+  // four extra rows with <rad_m1> on: the lab radiation energy density E, the lab flux
+  // F_1, the radiative acceleration rho*kappa_F*F_1/(rho c) that the module's momentum
+  // coupling is built from, and the GAS pressure (which the work integral
+  // W = oint P_tot d(1/rho), P_tot = p_gas + E/3, needs and cannot get from e_int alone
+  // on a tabulated EOS).  The record carries its own nvar, so a reader needs no switch.
   const bool m1p = m1_on_ && (pmbp->pradm1 != nullptr);
-  const int nprof = kNProf + (m1p ? 3 : 0);
+  const int nprof = kNProf + (m1p ? 4 : 0);
   if (!prof_alloc_ || prof_d_.extent_int(1) != nx1 ||
       prof_d_.extent_int(0) != nprof) {
     Kokkos::realloc(prof_d_, nprof, nx1);
@@ -1090,6 +1092,7 @@ void BoxConvProfileDump(Mesh *pm) {
         ls.the_array[9] += f1r;
         ls.the_array[10] += (d > 0.0)
                             ? (rop(m,radm1::M1_OP_T,k,j,i)*f1r/(d*clp)) : 0.0;
+        ls.the_array[11] += pg;
       }
     }, Kokkos::Sum<array_sum::GlobalSum>(sum));
     Kokkos::single(Kokkos::PerTeam(tmember), [&]() {
@@ -2020,9 +2023,11 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         m1_top_bc_ = 0;
       } else if (tb.compare("dark") == 0) {
         m1_top_bc_ = 1;
+      } else if (tb.compare("outflow") == 0) {
+        m1_top_bc_ = 2;
       } else {
         std::cout << "### FATAL ERROR in box_convection: problem/m1_top_bc = '" << tb
-                  << "' is not a valid choice (vacuum | dark)" << std::endl;
+                  << "' is not a valid choice (vacuum | dark | outflow)" << std::endl;
         std::exit(EXIT_FAILURE);
       }
     }
@@ -3850,13 +3855,19 @@ void BoxConvHistory(HistoryData *pdata, Mesh *pm) {
   if (m1_on_) {
     MeshBlockPack *pmbp = pm->pmb_pack;
     radm1::RadiationM1 *pm1 = pmbp->pradm1;
-    pdata->nhist = 6;
+    pdata->nhist = 8;
     pdata->label[0] = "F1top";
     pdata->label[1] = "F1mid";
     pdata->label[2] = "F1bot";
     pdata->label[3] = "V1max";
     pdata->label[4] = "Etot";
     pdata->label[5] = "Fres";
+    // V1mid is SIGNED and read at ONE fixed cell: a mid-box oscillator trace whose
+    // period and growth rate can be fitted, which the max |v1| of V1max cannot give
+    // (it is dominated by whichever cell happens to be extremal).  KEcol is the column
+    // kinetic energy, whose growth rate is 2 gamma.
+    pdata->label[6] = "V1mid";
+    pdata->label[7] = "KEcol";
     for (int n=0; n<pdata->nhist; ++n) pdata->hdata[n] = 0.0;
     if (pm1 == nullptr) return;
     auto &indcs = pm->mb_indcs;
@@ -3899,6 +3910,9 @@ void BoxConvHistory(HistoryData *pdata, Mesh *pm) {
       if (i == imid) hvars.the_array[1] = inc*ru0(m,radm1::M1_F1,k,j,i);
       if (i == is)   hvars.the_array[2] = inc*ru0(m,radm1::M1_F1,k,j,i);
       hvars.the_array[4] = dv*(eg + ctc*ru0(m,radm1::M1_E,k,j,i));
+      if (i == imid) hvars.the_array[6] = inc*u0(m,IM1,k,j,i)*id;
+      hvars.the_array[7] = dv*0.5*(SQR(u0(m,IM1,k,j,i)) + SQR(u0(m,IM2,k,j,i))
+                                   + SQR(u0(m,IM3,k,j,i)))*id;
       mb_sum += hvars;
     }, Kokkos::Sum<array_sum::GlobalSum>(sum_m1));
     Real vmx = 0.0;
@@ -3938,6 +3952,8 @@ void BoxConvHistory(HistoryData *pdata, Mesh *pm) {
     pdata->hdata[1] = sum_m1.the_array[1];
     pdata->hdata[2] = sum_m1.the_array[2];
     pdata->hdata[4] = sum_m1.the_array[4];
+    pdata->hdata[6] = sum_m1.the_array[6];
+    pdata->hdata[7] = sum_m1.the_array[7];
     if (global_variable::my_rank == 0) {
       pdata->hdata[3] = vmx;
       pdata->hdata[5] = fres;
@@ -4374,9 +4390,9 @@ void BoxConvBC(Mesh *pm) {
   // sect. 3).  As for hydro, the ghosts are built from the CONSERVED moments only --
   // never from any primitive -- so a restart is a bitwise continuation.
   //
-  //   TOP     : the module's own `vacuum` state, radm1::M1FillGhost mode 2 (free
-  //             streaming out, a dark ghost when the interior flux points inward), the
-  //             exact analogue of rt_top_vacuum and the fill rad_m1_bcs.cpp uses.
+  //   TOP     : the module's own `vacuum` state, radm1::M1FillGhost mode 2, which is a
+  //             DARK ghost (no incoming radiation); problem/m1_top_bc = outflow selects
+  //             the old copy fill (mode 0) for diagnosis.
   //   BOTTOM  : the imposed internal flux.  F_n = <hydro>/rad_flux_inner, transverse
   //             flux zero, and E from the DIFFUSION LIMIT continued ghost by ghost,
   //             E_g(n) = E_1 + (n+1) 3 rho kappa_F dz F/c, with rho*kappa_F the first
@@ -4388,7 +4404,7 @@ void BoxConvBC(Mesh *pm) {
     auto rop = pmbp->pradm1->opac;
     auto aref = m1_aref_;
     const Real fin = m1_fin_, clm1 = m1_cl_, eflm1 = m1_efl_;
-    const bool topdark = (m1_top_bc_ == 1);
+    const bool topdark = (m1_top_bc_ != 2);
     // THE FIRST BOUNDARY CALL OF A RUN has no opacity array yet: the module fills it in
     // its own stage chain, and Driver::InitBoundaryValuesAndPrimitives applies the BCs
     // first.  Reading the zero there makes the bottom ghost a plain zero-gradient E for
@@ -4420,7 +4436,7 @@ void BoxConvBC(Mesh *pm) {
           ru0(m,radm1::M1_F2,k,j,ie+1+n) = 0.0;
           ru0(m,radm1::M1_F3,k,j,ie+1+n) = 0.0;
         } else {
-          radm1::M1FillGhost(ru0, m, k, j, ie+1+n, k, j, ie, 1, 2, 1.0, clm1, eflm1);
+          radm1::M1FillGhost(ru0, m, k, j, ie+1+n, k, j, ie, 1, 0, 1.0, clm1, eflm1);
         }
       }
     });

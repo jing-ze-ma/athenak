@@ -186,6 +186,19 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   }
   coupling = pin->GetOrAddBoolean("rad_m1","coupling",!opac_zero);
   gas_feedback = pin->GetOrAddBoolean("rad_m1","gas_feedback",true);
+  // debug switches (see rad_m1.hpp); every default is the production value
+  opac_freeze = pin->GetOrAddBoolean("rad_m1","opac_freeze",false);
+  opac_frozen = false;
+  dbg_gas_force = pin->GetOrAddBoolean("rad_m1","dbg_gas_force",true);
+  dbg_gas_heat = pin->GetOrAddBoolean("rad_m1","dbg_gas_heat",true);
+  if ((opac_freeze || !dbg_gas_force || !dbg_gas_heat) &&
+      global_variable::my_rank == 0) {
+    std::cout << "### WARNING: <rad_m1> DEBUG switches are active: opac_freeze="
+              << (opac_freeze ? "true" : "false") << " dbg_gas_force="
+              << (dbg_gas_force ? "true" : "false") << " dbg_gas_heat="
+              << (dbg_gas_heat ? "true" : "false")
+              << " -- this is not a physical configuration" << std::endl;
+  }
   if (coupling && !have_hydro) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
       << std::endl << "<rad_m1> matter coupling requires a <hydro> block" << std::endl;

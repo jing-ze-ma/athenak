@@ -197,6 +197,19 @@ class RadiationM1 {
   Real arad;           // radiation constant in CODE units: the equilibrium energy
                        // density is arad*T^4 with T the EOS's code temperature
 
+  // ---- DEBUG SWITCHES.  All default to the production value, so that leaving them out
+  // of an input file is bitwise inert; they exist to take the coupling apart when a
+  // configuration is unstable and it has to be decided WHICH piece drives it.
+  bool opac_freeze;    // <rad_m1>/opac_freeze: fill the opacity array ONCE, at the first
+                       // call, and never again.  Kills the kappa-mechanism feedback
+                       // loop (a compression that raises kappa raises the trapped
+                       // energy) while leaving transport and coupling otherwise intact.
+  bool opac_frozen;    // internal: the first fill has happened
+  bool dbg_gas_force;  // <rad_m1>/dbg_gas_force = false: the radiation field still
+                       // relaxes its flux, but the gas receives NO momentum and no work
+  bool dbg_gas_heat;   // <rad_m1>/dbg_gas_heat = false: skip the energy exchange (a)
+                       // entirely, so gas and radiation exchange no energy
+
   // true when this module's dtnew must be folded into Mesh::NewTimeStep, i.e. when
   // sub-cycling is off OR when no other module sets the mesh timestep
   bool sets_mesh_dt;

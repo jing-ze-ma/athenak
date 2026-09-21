@@ -41,6 +41,9 @@ TaskStatus RadiationM1::Opacity(Driver *pdrive, int stage) {
   // thick-limit flux and the coupling are both switched off: nothing to do
   if (opac_zero) return TaskStatus::complete;
   if (pmy_pack->phydro == nullptr) return TaskStatus::complete;
+  // <rad_m1>/opac_freeze (debug): fill the array once and leave it alone afterwards, so
+  // that the opacity no longer responds to the state.  Default false -> bitwise inert.
+  if (opac_freeze && opac_frozen) return TaskStatus::complete;
   if (opacity_type == M1_OPAC_TABLE && otab.nT <= 0) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
       << std::endl << "<rad_m1>/opacity = table, but no tables were handed to the "
@@ -95,6 +98,7 @@ TaskStatus RadiationM1::Opacity(Driver *pdrive, int stage) {
     opac_(m,M1_OP_T,k,j,i) = d*(of + os);
   });
 
+  opac_frozen = true;
   if (!rsla_done) RSLACheck();
   return TaskStatus::complete;
 }

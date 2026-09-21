@@ -131,6 +131,9 @@ force_reference  = wb_arad        # subtract what Phi_eff already carries
 rsla_vmax        = 8.6e4          # the column starts from rest: give the check a v_max
 rsla_warn        = 1.0e-1
 rsla_force       = false
+opac_freeze      = false          # DEBUG (all three at their production value here):
+dbg_gas_force    = true           #   freeze kappa at t=0 / no momentum+work to the gas
+dbg_gas_heat     = true           #   / no gas-radiation energy exchange
 
 <problem>
 user_srcs   = true
@@ -155,6 +158,11 @@ m1_top_bc    = vacuum   # vacuum (the module fill) | dark (zero incoming always)
 wb_phi_eff   = true
 wb_arad_file = /viper/u2/jinma/ATHENAK/bench/m1_stage2/ic/arad_V2.txt
 column_dump  = column_used.txt
+vdamp_top_tau       = 0.0        # SPONGES OFF (these are the code defaults, listed so
+vdamp_top_time      = 20.0       # that a command-line override can switch them on:
+vdamp_bot_cells     = 0          # production box_w8 uses 0.1 / 20 / 48 / 20, and the
+vdamp_bot_time      = 20.0       # 48-cell bottom sponge has to be resized to this box)
+vdamp_bot_mean_only = false
 rt_profile_dt   = 25.0
 rt_profile_file = rt_profile.bin
 

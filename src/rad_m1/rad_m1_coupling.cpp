@@ -102,6 +102,9 @@ TaskStatus RadiationM1::Coupling(Driver *pdrive, int stage) {
   bool feedback = gas_feedback;
   bool ovc = source_ovc;
   bool fref = (force_ref == M1_FREF_WB_ARAD);
+  // debug switches (rad_m1.hpp); both default true, so the kernel is bitwise unchanged
+  bool dbgf = dbg_gas_force;
+  bool dbgh = dbg_gas_heat;
   auto aref_ = arad_ref;
   // stage 1 integrates the source over dt, stage 2 over dt/2 (the PD-ARS tableau)
   Real dti = (stage == 1) ? dt_sub : (0.5*dt_sub);
@@ -175,7 +178,8 @@ TaskStatus RadiationM1::Coupling(Driver *pdrive, int stage) {
     Real ep = es;
 
     // ---------------------------------------------------------------- (a) energy
-    if (rkp > 0.0 || rke > 0.0) {
+    // dbg_gas_heat = false skips the exchange entirely: E' = E*, e_gas untouched.
+    if ((rkp > 0.0 || rke > 0.0) && dbgh) {
       Real ca = ch*dti*rkp*ar;                   // E'(T) = (es + ca T^4 + cb)*inv
       Real cb = -ch*dti*rke*de0;
       Real tg = eos.Temperature(dd, fmax(eg, 1.0e-300));
@@ -284,7 +288,7 @@ TaskStatus RadiationM1::Coupling(Driver *pdrive, int stage) {
 
     // ---------------------------------------------------------------- (c) work
     Real work = 0.0;
-    if (feedback) {
+    if (feedback && dbgf) {
       Real w1 = (gi[1] + dm1)*idd;
       Real w2 = (gi[2] + dm2)*idd;
       Real w3 = (gi[3] + dm3)*idd;
@@ -309,9 +313,12 @@ TaskStatus RadiationM1::Coupling(Driver *pdrive, int stage) {
     u0_(m,M1_F2,k,j,i) = fp2;
     u0_(m,M1_F3,k,j,i) = fp3;
     if (feedback) {
-      uh(m,IM1,k,j,i) = gi[1] + dm1 - dmref;
-      uh(m,IM2,k,j,i) = gi[2] + dm2;
-      uh(m,IM3,k,j,i) = gi[3] + dm3;
+      // dbg_gas_force = false: the radiation field keeps the full flux update, the gas
+      // receives no momentum and no work.  Momentum is then NOT conserved: this is a
+      // diagnostic configuration, not a physical one.
+      uh(m,IM1,k,j,i) = dbgf ? (gi[1] + dm1 - dmref) : gi[1];
+      uh(m,IM2,k,j,i) = dbgf ? (gi[2] + dm2) : gi[2];
+      uh(m,IM3,k,j,i) = dbgf ? (gi[3] + dm3) : gi[3];
       // e_gas(new) + KE(old) + W.  With force_reference = none W is exactly
       // KE(new) - KE(old) and the internal energy is untouched; with wb_arad it is the
       // work of the FULL force, so the internal energy is left higher by vbar*dmref --

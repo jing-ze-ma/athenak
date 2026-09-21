@@ -357,9 +357,9 @@ void M1HLLFlux(const int ivx, const Real cl, const Real chat, const bool eddingt
 //! is `user` -- and whose own BC routine therefore replaces RadM1BCs on that face -- can
 //! reuse the SAME fill instead of re-deriving it (box_convection's M1 top wall).
 //!
-//! mode 0 = plain copy, 1 = reflect (flip the normal flux), 2 = vacuum (free streaming
-//! out, nothing in).  inorm = 1,2,3 selects the face-normal flux component; sgn = +1 when
-//! "outgoing" is the positive coordinate direction.
+//! mode 0 = plain copy (outflow), 1 = reflect (flip the normal flux), 2 = vacuum, i.e. a
+//! DARK ghost: no incoming radiation, ever.  inorm = 1,2,3 selects the face-normal flux
+//! component; sgn = +1 when "outgoing" is the positive coordinate direction.
 
 KOKKOS_INLINE_FUNCTION
 void M1FillGhost(const DvceArray5D<Real> &u, const int m,
@@ -380,19 +380,26 @@ void M1FillGhost(const DvceArray5D<Real> &u, const int m,
       f3 = -f3;
     }
   } else if (mode == 2) {
-    // Free streaming OUT, nothing in.  When the interior flux already points away from
-    // this face there is nothing outside to bring in, so the ghost is dark; otherwise
-    // the state is copied and the radiation leaves transparently.  Zeroing only the
-    // normal component instead (an earlier version of this file) leaves the ghost as a
-    // reservoir of E with no flux, and the HLL flux then PUMPS energy into the domain
-    // -- measured as a 38% growth of the beam amplitude along a grazing boundary.
-    Real fn = (inorm == 1) ? f1 : ((inorm == 2) ? f2 : f3);
-    if (sgn*fn < 0.0) {
-      e = efl;
-      f1 = 0.0;
-      f2 = 0.0;
-      f3 = 0.0;
-    }
+    // VACUUM: the ghost is ALWAYS dark, E = e_floor and F = 0, i.e. no incoming
+    // radiation whatever the interior state does.  A beam at f = 1 still leaves
+    // unimpeded, because the HLL left wave speed of a dark state is b_L = 0.
+    //
+    // The earlier "copy the interior when the interior flux points out" fill was
+    // wrong for two reasons.  Zeroing only the normal component (the version before
+    // that) leaves the ghost a reservoir of E with no flux and the HLL flux then PUMPS
+    // energy in (38 % growth of a grazing beam).  Copying the WHOLE state is the same
+    // defect in a milder form: it represents incoming radiation equal to the interior's
+    // own inward half, so dE/dn = 0 at the face and NO relation between F and E is
+    // imposed.  At a plane-parallel free surface the physical condition is f = 1/2, not
+    // 1, and with the copy the surface value of E floats -- measured on the He column:
+    // E at the top grew 137x over 1000 s and the emergent flux fell to 0.36 of the
+    // imposed one.  A dark ghost supplies the Marshak-like relation through the HLL
+    // flux and the same column stays flat to 2.4 %.
+    (void) sgn;
+    e = efl;
+    f1 = 0.0;
+    f2 = 0.0;
+    f3 = 0.0;
   }
   (void) cl;
   u(m,M1_E, kg,jg,ig) = e;
