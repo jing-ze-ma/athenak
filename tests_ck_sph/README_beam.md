@@ -235,3 +235,130 @@ rebuilt whenever `mu0` changed.
   night composition and temperature gradients along the ray are not seen.
 * Refraction, and the beam's own scattering, are not represented; `albedo` remains a scalar
   attenuation.
+
+## 6. Exact photon budget — gate (e)'s "not photon-conserving" is RETRACTED
+
+`photon_budget.py`.  Gate (e) integrates one 1-D profile used for **every** column, i.e. a
+**spherically symmetric** atmosphere.  For such an atmosphere the pseudo-spherical beam is
+not an approximation at all: the "column's own profile" *is* the profile, the chords are
+the true chords, and the scheme is exact ray tracing.  The double-counting argument in §4e
+describes a real limitation of the approximation (day/night **inhomogeneity** is not
+seen), but it does not apply to what §4e measures, and it is **not** what gave 1.1064.
+
+### 6.1 What the kernel does with the power that reaches the cut: it is DROPPED
+
+`src/utils/two_stream_rt.hpp:4111` walks faces only down to `icut`
+(`for (int i=ie; i>icut-1; --i)`) and the block ends at `:4169` with no term for the
+residual transmission `e^-tau(r_cut)`; a `mu0 < 0` ray whose impact parameter falls below
+the cut is marked `dark` at `:4121-4122` and `:4150-4152` then deposits exactly zero.
+Nothing is deposited at the cut and nothing is handed to the conduction/interior region.
+The scheme-consistent reference is therefore
+
+```
+    P_exact = F*(1-albedo) int_0^{r_top} 2 pi b a(b) db,
+    a(b) = 1 - e^-tau_chord(b)  (b >  r_cut, both legs)
+    a(b) = 1 - e^-tau_in(b)     (b <= r_cut, the single incoming leg down to the cut)
+```
+
+not `a(b) = 1` below the cut.  On the real profile the difference is 0.003 % (the cut is
+opaque), so the choice does not matter here; both are printed.
+
+### 6.2 Profiles
+
+The correlated-k column dumps carry no opacity, so gate (e)'s per-g-point `kappa` is not
+recoverable from the artefacts.  Two profiles are used instead.
+
+* **(A) real, effective grey.**  The old plane-parallel deposit is
+  `Qb_i = (1-A) F* mu0 (T_{i+1} - T_i)/dz_i`, so the cumulative `sum Q dz` from the top of
+  `bd_p979_old/col.txt` — gate (e)'s **own** artefact — gives the band-summed
+  vertical transmission `T(r_i)` exactly, hence `tau_vert = -mu0 ln T` and
+  `(kappa rho)_j` on every shell.  Real stratification, real total depth (`T` at the
+  cut `= 2.04e-4`, `tau_vert(cut) = 8.32`).  It is **grey**: it reproduces the real
+  vertical transmission but not the non-grey slowing of decay along long chords
+  (quantified in 6.5).
+* **(B1/B2) analytic** isothermal exponential on the same 128-shell grid, `X = r/H = 7.6`
+  (`H = 1.24e9`, the §4c2 production `H`), `tau_vert(r_abs) = 1`; and a 4-g-point non-grey
+  variant (`kappa x 0.03 .. 30`, equal weights) to show the property is **per g-point**.
+
+Both kernels are line-by-line transcriptions: the new beam from `:4102-4169` (chords,
+weight 2 below the target, the tangent-shell `max()`, the `dtau > 1e-3` guard, the
+`tau > 60` break, the dark rule), the old one from `:4041-4068`.
+
+### 6.3 The budget
+
+`P_scheme = 2 pi int_{-1}^{1} dmu0 sum_i Qb_i(mu0) (r_{i+1}^3 - r_i^3)/3` — the deposit is
+per unit **volume**, so the radial weight is `r^2 dr`, not `dz`.  Gauss-Legendre, 400
+nodes in `mu0` (converged to 2e-6, table below); `b` quadrature 24-point Gauss-Legendre
+per shell.
+
+| profile | `P_new/P_exact` | `P_old/P_exact` |
+| --- | --- | --- |
+| (A) real, effective grey | **0.999998** | 0.8614 |
+| (B1) analytic, `X = 7.6`, grey | **1.000003** | 0.7645 |
+| (B2) analytic, non-grey, 4 g-points | **1.000491** | 0.7906 |
+
+The new beam is photon-conserving to **2e-6 (grey) / 5e-4 (non-grey)**.  The residual is
+pure discretisation of the deposit formula, not a model property: the pair
+`[e^-tau(r_i), e^-tau(r_{i+1})]` belongs to two *different* rays (`b = r sin theta0` is a
+function of the face radius), and the flux-difference form divides by the optical-depth
+difference of that pair; plus the `dtau <= 1e-3` linearisation.  It is largest for the
+non-grey case, where the four chains have very different `dtau` across the same cell.
+
+The **old** beam is not conserving: it loses **14 %** of the power on the real profile
+(24 % on the analytic one), the missing photons being the twilight ring it never lights
+and the limb chords the `1/mu0` clamp truncates.  It looked like 1.0015 in §4e only
+because that normalisation is itself wrong by the same kind of factor (6.5).
+
+Where the photons go, profile (A): **43.5 %** at `b > r_cut` — i.e. on chords that miss
+the opaque body entirely, the twilight/limb ring — and 56.5 % at `b <= r_cut`.  Only
+0.003 % reaches the cut and is dropped.
+
+### 6.4 The effective absorbing radius — 1.106 (and 1.270) are simply right
+
+```
+  r(tau_vertical = 1)        = 1.24003e10 cm        (= README.md's r_abs, 1.2409e10)
+  r(tau_chord, limb = 1)     = 1.33762e10 cm        = r(tau_v=1) + 2.65 H
+  r_eff = sqrt(P_exact/(pi F*(1-A)))  = 1.39832e10  = r(tau_v=1) + 4.30 H
+  (r_eff/r_abs)^2            = 1.2698
+```
+
+with `H = 3.68e8 cm` the local pressure scale height at `r_abs` (`X = r/H = 33.7`; the
+`H = 1.24e9` of §4c2 is the deep value).  This is the ordinary **transit-radius** effect:
+the limb is opaque along grazing chords several scale heights above the vertical `tau = 1`
+level, so an extended atmosphere legitimately absorbs more than `pi r_abs^2 F*`.  A number
+above 1 is the *expected* answer, and the exact one here is **1.270**, not 1.
+
+### 6.5 So where did 1.1064 come from?
+
+Reproduced exactly by the script (`1.00152` / `1.10639`), and it is a **quadrature and
+weighting** artefact, not physics:
+
+* gate (e) puts every absorbed photon at `r_abs`: it integrates `sum Q dz` (per unit top
+  area) and multiplies by `2 pi r_abs^2`.  The absorption actually happens over
+  `r_abs .. r_top`, so the correct weight `r^2 dr` is larger.  Using the code's own six
+  columns with `r^2 dr` instead of `dz r_abs^2` already moves the numbers to
+  **old 1.0650, new 1.1825**.
+* six `mu0` samples plus a linear extrapolation to `mu0 = 1` under-resolve both the
+  dayside peak and the twilight ring.
+
+The remaining gap between 1.1825 and the exact 1.270 is profile (A)'s greyness: a grey gas
+with the same *vertical* depth is more opaque along the long twilight chords than the real
+correlated-k mixture, where the transparent g-points keep escaping.  The script prints the
+comparison column by column — the transcription reproduces the **old** code to
+`<= 0.1 %` at all six `mu0` (which validates both the transcription and the reconstructed
+`kappa rho`), while for the **new** beam the grey profile absorbs 1.03x (`mu0 = +0.435`),
+1.16x (`+0.102`), 1.6x (`-0.102`) and 33x (`-0.513`) the code's non-grey value.  That
+spread bounds the real `r_eff` between about 1.18 and 1.27 in units of `pi r_abs^2 F*`;
+`P_new/P_exact = 1` is unaffected by it, as (B2) shows directly.
+
+### 6.6 Verdict
+
+`P_new/P_exact = 1.000` on every profile tested.  **The statement in §4e that the
+pseudo-spherical beam "is not photon-conserving" is retracted**: for the spherically
+symmetric atmosphere that §4e integrates it conserves photons exactly, and 1.1064 was a
+low estimate of a number whose true value is ~1.27 for the reason the retraction should
+have named — the transit-radius effect.  What remains true, and is worth keeping in §4e in
+that form, is the narrower statement: the pseudo-spherical approximation assumes the
+column's own profile along the whole ray, so on a *horizontally inhomogeneous* planet the
+beam is transported through the wrong medium, and there is then no global photon budget
+to appeal to.  That is a statement about day/night contrast, not about the geometry.
