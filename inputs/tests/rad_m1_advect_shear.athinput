@@ -90,6 +90,23 @@ arad         = 4.8032223745536764e-45
 coupling     = true
 gas_feedback = false
 
+# ---- MILESTONE 3a: implicit x1 transport (docs/dev/rad_m1_implicit_design.md).  Listed
+# here at their DEFAULTS so that the gate scripts can override them on the command line
+# (AthenaK only accepts a command-line override of a parameter the input file names).
+transport             = explicit  # explicit | implicit_x1
+implicit_cfl          = -1.0      # implicit_x1 only: dt = implicit_cfl*dx/c (<=0: off)
+implicit_tol          = 1.0e-8
+implicit_maxit        = 30
+implicit_opac_update  = false
+implicit_allow_multid = false
+marshak_q             = 0.5
+implicit_bc_x1min     = auto      # auto|marshak|flux|reflect|periodic|efix
+implicit_bc_x1max     = auto
+implicit_flux_x1min   = 0.0
+implicit_flux_x1max   = 0.0
+implicit_ebath_x1min   = 0.0
+implicit_ebath_x1max   = 0.0
+
 <problem>
 pgen_name   = rad_m1_beam
 m1_test     = advect_shear
