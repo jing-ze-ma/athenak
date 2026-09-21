@@ -9,8 +9,10 @@
 #include <sys/stat.h>  // mkdir
 
 #include <algorithm>
+#include <cstdint>
 #include <cstdio>      // fwrite(), fclose(), fopen(), fnprintf(), snprintf()
 #include <cstdlib>
+#include <cstring>
 #include <iomanip>
 #include <iostream>
 #include <sstream>
@@ -33,6 +35,7 @@
 #include "rad_m1/rad_m1_implicit.hpp"
 #include "srcterms/turb_driver.hpp"
 #include "pgen/pgen.hpp"
+#include "utils/two_stream_warm_rst.hpp"
 //#include "outputs.hpp"
 
 //----------------------------------------------------------------------------------------
@@ -136,6 +139,20 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
                       std::make_pair(0,nmb), static_cast<int>(IDG1),
                       Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
   }
+  // the mode-3 Newton warm-start history, see the note on outarray_wm1
+  {
+    const int nwm = two_stream_rt::RtWarmLevels();
+    if (nwm > 0) {
+      Kokkos::realloc(outarray_wm1, nmb, nout3, nout2, nout1);
+      Kokkos::deep_copy(outarray_wm1, Kokkos::subview(*two_stream_rt::rt_c3bp_ptr,
+                        std::make_pair(0,nmb), Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
+    }
+    if (nwm > 1) {
+      Kokkos::realloc(outarray_wm2, nmb, nout3, nout2, nout1);
+      Kokkos::deep_copy(outarray_wm2, Kokkos::subview(*two_stream_rt::rt_c3bp2_ptr,
+                        std::make_pair(0,nmb), Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
+    }
+  }
   if (prad != nullptr) {
     Kokkos::realloc(outarray_rad, nmb, nrad, nout3, nout2, nout1);
     Kokkos::deep_copy(outarray_rad, Kokkos::subview(prad->i0, std::make_pair(0,nmb),
@@ -199,6 +216,19 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   std::vector<char> pgen_state;
   if (pm->pgen != nullptr && pm->pgen->pgen_rst_write_func != nullptr) {
     pgen_state = (pm->pgen->pgen_rst_write_func)();
+  }
+  // the mode-3 Newton warm-start history: how many levels this run keeps (0 when the
+  // warm start is off, or on but not yet allocated), and the little marked header that
+  // says so -- int32 nlev, int32 pad, then the previous call's bdt, which is the
+  // denominator of the rt_impl_warm = 2 extrapolation ratio and is state as much as the
+  // levels are.  See utils/two_stream_warm_rst.hpp.
+  const int nwarm = two_stream_rt::RtWarmLevels();
+  char warm_hdr[2*sizeof(std::int32_t) + sizeof(Real)];
+  {
+    const std::int32_t hdr[2] = {static_cast<std::int32_t>(nwarm), 0};
+    const Real bdtp = two_stream_rt::rt_c3_bdt_prev;
+    std::memcpy(&(warm_hdr[0]), &(hdr[0]), sizeof(hdr));
+    std::memcpy(&(warm_hdr[0]) + sizeof(hdr), &bdtp, sizeof(bdtp));
   }
   int nhydro=0, nmhd=0, nrad=0, nm1=0, nforce=3, nz4c=0, nadm=0, nco=0;
   if (pradm1 != nullptr) {
@@ -325,6 +355,16 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
       resfile.Write_any_type(&nb, sizeof(IOWrapperSizeT), "byte", single_file_per_rank);
       resfile.Write_any_type(pgen_state.data(), nb, "byte", single_file_per_rank);
     }
+    // the mode-3 warm-start header, marker then length then payload, read by the same
+    // eight-byte peek the pgen state block uses (utils/two_stream_warm_rst.hpp)
+    if (nwarm > 0) {
+      IOWrapperSizeT nb = sizeof(warm_hdr);
+      resfile.Write_any_type(&(two_stream_rt::kRtWarmRstMagic[0]),
+                             sizeof(two_stream_rt::kRtWarmRstMagic), "byte",
+                             single_file_per_rank);
+      resfile.Write_any_type(&nb, sizeof(IOWrapperSizeT), "byte", single_file_per_rank);
+      resfile.Write_any_type(&(warm_hdr[0]), nb, "byte", single_file_per_rank);
+    }
   }
 
   //--- STEP 4.  All ranks write data over all MeshBlocks (5D arrays) in parallel
@@ -374,6 +414,9 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   if (wt_hyd) {
     data_size += 2*nout1*nout2*nout3*sizeof(Real);      // hydro wder (IDPR, IDG1)
   }
+  if (nwarm > 0) {
+    data_size += nwarm*nout1*nout2*nout3*sizeof(Real);  // rt_c3bp (+ rt_c3bp2)
+  }
   if (global_variable::my_rank == 0 || single_file_per_rank) {
     resfile.Write_any_type(&(data_size), sizeof(IOWrapperSizeT), "byte",
                             single_file_per_rank);
@@ -389,6 +432,10 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   if (pturb != nullptr) step3size += sizeof(RNG_State);
   if (!pgen_state.empty()) {
     step3size += sizeof(kPgenRstMagic) + sizeof(IOWrapperSizeT) + pgen_state.size();
+  }
+  if (nwarm > 0) {
+    step3size += sizeof(two_stream_rt::kRtWarmRstMagic) + sizeof(IOWrapperSizeT)
+                 + sizeof(warm_hdr);
   }
 
   // write cell-centered variables in parallel
@@ -816,6 +863,9 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
     write_wtemp(outarray_wdp, "hydro pressure");
     write_wtemp(outarray_wdg, "hydro Gamma_1");
   }
+  // and the warm-start history behind that, same layout, same loop
+  if (nwarm > 0) { write_wtemp(outarray_wm1, "rt warm start"); }
+  if (nwarm > 1) { write_wtemp(outarray_wm2, "rt warm start 2"); }
 
   // close file, clean up
   resfile.Close(single_file_per_rank);

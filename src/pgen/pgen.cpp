@@ -12,8 +12,10 @@
 #include <string>
 #include <utility>
 #include <algorithm>
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <vector>
 
 #include "athena.hpp"
 #include "geodesic-grid/geodesic_grid.hpp"
@@ -30,6 +32,7 @@
 #include "rad_m1/rad_m1.hpp"
 #include "rad_m1/rad_m1_implicit.hpp"
 #include "srcterms/turb_driver.hpp"
+#include "utils/two_stream_warm_rst.hpp"
 #include "pgen.hpp"
 
 
@@ -314,6 +317,74 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     }
 #endif
   }
+
+  // --- THE MODE-3 WARM-START HEADER (kRtWarmRstMagic, utils/two_stream_warm_rst.hpp).
+  // The same eight-byte peek once more, immediately behind the pgen state block: the
+  // marker means the little header follows and the variable data size comes after it,
+  // anything else IS the variable data size and has already been read.  The header says
+  // how many per-cell history levels the tail carries -- which the tail's LENGTH cannot,
+  // since one extra slab is also what an mhd wtemp looks like and two are what the hydro
+  // derived cache looks like -- and carries the previous call's bdt with them.
+  int nwarm_file = 0;
+  Real warm_bdt_prev = 0.0;
+  if (std::memcmp(variabledata, &(two_stream_rt::kRtWarmRstMagic[0]),
+                  sizeof(two_stream_rt::kRtWarmRstMagic)) == 0) {
+    char warm_hdr[2*sizeof(std::int32_t) + sizeof(Real)];
+    IOWrapperSizeT nb = 0;
+    if (global_variable::my_rank == 0 || single_file_per_rank) {
+      if (resfile.Read_bytes(&nb, 1, sizeof(IOWrapperSizeT), single_file_per_rank)
+          != sizeof(IOWrapperSizeT)) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "the warm-start header of this restart file has no "
+                  << "length, restart file is broken." << std::endl;
+        exit(EXIT_FAILURE);
+      }
+    }
+#if MPI_PARALLEL_ENABLED
+    if (!single_file_per_rank) {
+      MPI_Bcast(&nb, sizeof(IOWrapperSizeT), MPI_CHAR, 0, MPI_COMM_WORLD);
+    }
+#endif
+    if (nb != sizeof(warm_hdr)) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "the warm-start header of this restart file is "
+                << nb << " bytes, not " << sizeof(warm_hdr) << ", restart file is "
+                << "broken." << std::endl;
+      exit(EXIT_FAILURE);
+    }
+    if (global_variable::my_rank == 0 || single_file_per_rank) {
+      if (resfile.Read_bytes(&(warm_hdr[0]), 1, nb, single_file_per_rank) != nb) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "the warm-start header of this restart file is short, "
+                  << "restart file is broken." << std::endl;
+        exit(EXIT_FAILURE);
+      }
+      if (resfile.Read_bytes(variabledata, 1, variablesize, single_file_per_rank)
+          != variablesize) {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "Variable data size read from restart file is "
+                  << "incorrect, restart file is broken." << std::endl;
+        exit(EXIT_FAILURE);
+      }
+    }
+#if MPI_PARALLEL_ENABLED
+    if (!single_file_per_rank) {
+      MPI_Bcast(&(warm_hdr[0]), nb, MPI_CHAR, 0, MPI_COMM_WORLD);
+      MPI_Bcast(variabledata, variablesize, MPI_CHAR, 0, MPI_COMM_WORLD);
+    }
+#endif
+    std::int32_t hdr[2];
+    std::memcpy(&(hdr[0]), &(warm_hdr[0]), sizeof(hdr));
+    std::memcpy(&warm_bdt_prev, &(warm_hdr[0]) + sizeof(hdr), sizeof(warm_bdt_prev));
+    nwarm_file = static_cast<int>(hdr[0]);
+    if (nwarm_file < 0 || nwarm_file > 2) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "the warm-start header of this restart file claims "
+                << nwarm_file << " history levels, restart file is broken." << std::endl;
+      exit(EXIT_FAILURE);
+    }
+  }
+
   IOWrapperSizeT data_size;
   std::memcpy(&data_size, &(variabledata[0]), sizeof(IOWrapperSizeT));
 
@@ -380,10 +451,13 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
   if (wt_hyd) { wt_size += nout1*nout2*nout3*sizeof(Real); }
   if (wt_mhd) { wt_size += nout1*nout2*nout3*sizeof(Real); }
   IOWrapperSizeT wd_size = wd_hyd ? 2*nout1*nout2*nout3*sizeof(Real) : 0;
-  if ((data_size_ + wt_size + wd_size) == data_size) {
-    data_size_ += wt_size + wd_size;
-  } else if (wd_size > 0 && (data_size_ + wt_size) == data_size) {
-    data_size_ += wt_size;
+  // and behind both of them, the mode-3 warm-start history: nwarm_file slabs, a number
+  // the marked header above gave us rather than something inferred from the length
+  IOWrapperSizeT wm_size = nwarm_file*nout1*nout2*nout3*sizeof(Real);
+  if ((data_size_ + wt_size + wd_size + wm_size) == data_size) {
+    data_size_ += wt_size + wd_size + wm_size;
+  } else if (wd_size > 0 && (data_size_ + wt_size + wm_size) == data_size) {
+    data_size_ += wt_size + wm_size;
     wd_hyd = false;
     if (global_variable::my_rank == 0) {
       std::cout << "### WARNING: restart file has no general-EOS derived (p, Gamma_1) "
@@ -391,7 +465,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
                 << "re-derives it and this restart is not bitwise." << std::endl;
     }
   } else {
-    if (wt_size > 0 && data_size_ == data_size) {
+    if (wt_size > 0 && (data_size_ + wm_size) == data_size) {
       if (global_variable::my_rank == 0) {
         std::cout << "### WARNING: restart file has no general-EOS temperature cache "
                   << "(written before it was added); the first conversion to primitives "
@@ -401,6 +475,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     wt_hyd = false;
     wt_mhd = false;
     wd_hyd = false;
+    data_size_ += wm_size;
   }
 
   if (data_size_ != data_size) {
@@ -845,7 +920,32 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
 
   // read the general-EOS temperature cache, written last (see the size check above),
   // and the derived (p, Gamma_1) cache that follows it
-  if (wt_hyd || wt_mhd) {
+  // THE WARM-START HISTORY comes behind them, and is wanted only by a run that will
+  // actually keep one: problem/rt_impl_warm > 0 under the mode-3 column solve.  It is
+  // read here but cannot be delivered here -- the Views it belongs in are allocated by
+  // the first RT call, long after this -- so it is parked in the staging of
+  // utils/two_stream_warm_rst.hpp and the lazy allocation consumes it.  Asking pin
+  // rather than two_stream_rt::rt_impl_warm because the problem generator has not run
+  // yet and has therefore not set it.
+  int warm_want = 0;
+  if (pin->DoesParameterExist("problem", "rt_impl_warm") &&
+      pin->DoesParameterExist("problem", "rt_implicit_column")) {
+    if (pin->GetInteger("problem", "rt_implicit_column") == 3) {
+      warm_want = pin->GetInteger("problem", "rt_impl_warm");
+    }
+  }
+  int nwarm_read = (warm_want > 0) ? nwarm_file : 0;
+  if (warm_want > 0 && nwarm_file == 0 && global_variable::my_rank == 0) {
+    std::cout << "### WARNING: restart file has no mode-3 warm-start history (written "
+              << "before it was added, or by a run without one); the first column solve "
+              << "cold starts and this restart is not bitwise." << std::endl;
+  }
+  if (warm_want > 1 && nwarm_file == 1 && global_variable::my_rank == 0) {
+    std::cout << "### WARNING: restart file carries only one mode-3 warm-start history "
+              << "level and problem/rt_impl_warm = 2 wants two; the first column solve "
+              << "does not extrapolate and this restart is not bitwise." << std::endl;
+  }
+  if (wt_hyd || wt_mhd || nwarm_read > 0) {
     HostArray4D<Real> wtin("rst-wt-in", 1, 1, 1, 1);
     Kokkos::realloc(wtin, nmb, nout3, nout2, nout1);
     // fills wtin with the next per-MeshBlock slab and advances the offsets; the caller
@@ -903,6 +1003,22 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
       // not re-derive them, or the restart is not a bitwise continuation.  See
       // Hydro::c2p_freeze_derived.
       phydro->c2p_freeze_derived = true;
+    }
+    if (nwarm_read > 0) {
+      namespace ts = two_stream_rt;
+      ts::rt_warm_stage_nmb = nmb;
+      ts::rt_warm_stage_n3 = nout3;
+      ts::rt_warm_stage_n2 = nout2;
+      ts::rt_warm_stage_n1 = nout1;
+      ts::rt_warm_stage_nlev = nwarm_read;
+      ts::rt_c3_bdt_prev = warm_bdt_prev;
+      const std::size_t nw = static_cast<std::size_t>(nmb)*nout3*nout2*nout1;
+      read_slab("rt warm start");
+      ts::rt_warm_stage.assign(wtin.data(), wtin.data() + nw);
+      if (nwarm_read > 1) {
+        read_slab("rt warm start 2");
+        ts::rt_warm_stage2.assign(wtin.data(), wtin.data() + nw);
+      }
     }
   }
 
