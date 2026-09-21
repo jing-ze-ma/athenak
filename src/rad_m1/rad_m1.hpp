@@ -339,6 +339,23 @@ class RadiationM1 {
   Real bcg_nsolve, bcg_itsum, bcg_itmax;  // inner-iteration statistics
   Real bcg_nbreak, bcg_nfall, bcg_nred;   // breakdowns, line-Jacobi fallbacks, reductions
 
+  // ---- MILESTONE 3b phase D: the OFF-DIAGONAL Eddington terms and the closure lag.
+  // All inert with transport = explicit | implicit_x1 and on a 1-D mesh.
+  int impl_offdiag;             // M1_OD_*: lagged | operator | none
+  int od_now;                   // the mode this STEP is running: impl_offdiag, or
+                                // M1_OD_NONE after an operator step produced a
+                                // non-positive E (the positivity fallback)
+  Real od_nfall;                // how often that fallback fired
+  Real od_emin;                 // the smallest E the linear solve produced in the run
+  Real impl_crelax;             // <rad_m1>/implicit_closure_relax: the weight w of
+                                // chi^{k+1} = (1-w) chi^k + w chi(f^{k+1}) between Picard
+                                // passes (1 = no relaxation), and the same for n
+  bool impl_crelax_thin;        // relax only where the cell is optically THIN
+                                // (theta = 1/(1 + c dt rho kappa_t) > 1/2)
+  bool impl_clag_step;          // <rad_m1>/implicit_closure_lag = step: freeze chi and n
+                                // at the START-of-step state for the whole step, so each
+                                // step is one linear solve plus the T nonlinearity
+
   // evolved variables
   DvceArray5D<Real> u0;         // (E, F1, F2, F3)
   DvceArray5D<Real> u1;         // state at the start of the substep
@@ -417,6 +434,12 @@ class RadiationM1 {
   void ImplicitKrylovHalo(int comp);
   //! milestone 3b phase C: y = A x with the frozen 7-point operator (one halo of x)
   void ImplicitApplyOp(int xc, int yc);
+  //! milestone 3b phase D: accumulate sgn * L_off(x) into the component yc, with
+  //! L_off the cell-row contribution of the OFF-DIAGONAL Eddington terms of every face
+  //! equation, evaluated at the component xc with the closure of this Picard pass
+  //! FROZEN (so it is linear in x).  No communication: the caller has already put x in
+  //! the ghost zones (ImplicitApplyOp) or x IS the iterate, whose halo is current.
+  void ImplicitOffDiagOp(int xc, int yc, Real sgn);
   //! milestone 3b phase C: z = M^{-1} r, the x1 line solve applied to an arbitrary
   //! right-hand side (it overwrites M1_IW_TR and M1_IW_S1..S3)
   void ImplicitPrecond(int rc, int zc);

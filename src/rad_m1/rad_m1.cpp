@@ -101,6 +101,14 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   bcg_nbreak = 0.0;
   bcg_nfall = 0.0;
   bcg_nred = 0.0;
+  // ---- milestone 3b phase D
+  impl_offdiag = M1_OD_LAGGED;
+  od_now = M1_OD_LAGGED;
+  od_nfall = 0.0;
+  od_emin = 1.0e300;
+  impl_crelax = 1.0;
+  impl_crelax_thin = false;
+  impl_clag_step = false;
   // ---- end of the 3a hook
   cfl_rad = pin->GetOrAddReal("rad_m1","cfl_rad",0.4);
   e_floor = pin->GetOrAddReal("rad_m1","e_floor",(FLT_MIN));

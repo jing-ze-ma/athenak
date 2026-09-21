@@ -130,6 +130,38 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
               + "' is not a choice (line_jacobi | bicgstab)");
   }
   }
+  // ---- MILESTONE 3b phase D: what happens to the off-diagonal Eddington terms, and how
+  // fast the closure is allowed to move between Picard passes.  The defaults reproduce
+  // phase C on every 1-D / implicit_x1 configuration (there are no off-diagonal terms and
+  // no transverse closure there), and `operator` is the default in multi-D, where lagging
+  // them has no fixed point in an optically thin cell.
+  std::string sod = pin->GetOrAddString("rad_m1","implicit_offdiag","auto");
+  bool od_auto = (sod.compare("auto") == 0);
+  if (od_auto || sod.compare("lagged") == 0) {
+    impl_offdiag = M1_OD_LAGGED;
+  } else if (sod.compare("operator") == 0) {
+    impl_offdiag = M1_OD_OPERATOR;
+  } else if (sod.compare("none") == 0) {
+    impl_offdiag = M1_OD_NONE;
+  } else {
+    ImplFatal("<rad_m1>/implicit_offdiag = '" + sod
+              + "' is not a choice (auto | lagged | operator | none)");
+  }
+  impl_crelax = pin->GetOrAddReal("rad_m1","implicit_closure_relax",1.0);
+  if (!(impl_crelax > 0.0) || impl_crelax > 1.0) {
+    ImplFatal("<rad_m1>/implicit_closure_relax must lie in (0,1]");
+  }
+  impl_crelax_thin = pin->GetOrAddBoolean("rad_m1","implicit_closure_relax_thin",false);
+  {std::string sc = pin->GetOrAddString("rad_m1","implicit_closure_lag","pass");
+  if (sc.compare("pass") == 0) {
+    impl_clag_step = false;
+  } else if (sc.compare("step") == 0) {
+    impl_clag_step = true;
+  } else {
+    ImplFatal("<rad_m1>/implicit_closure_lag = '" + sc
+              + "' is not a choice (pass | step)");
+  }
+  }
   impl_opac_update = pin->GetOrAddBoolean("rad_m1","implicit_opac_update",false);
   impl_allow_multid = pin->GetOrAddBoolean("rad_m1","implicit_allow_multid",false);
   marshak_q = pin->GetOrAddReal("rad_m1","marshak_q",0.5);
@@ -338,6 +370,18 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // footprint (and, on a 1-D mesh, the solve IS the column solve and there is no system
   // to wrap).
   bicg_on = trans_on && (impl_solver == M1_ISOLV_BICGSTAB);
+  // MILESTONE 3b phase D.  `auto` = the off-diagonal Eddington terms go INTO the operator
+  // wherever there is a Krylov solver to carry them, and stay LAGGED otherwise, which is
+  // what every line_jacobi and implicit_x1 configuration did before phase D.
+  if (od_auto) {
+    impl_offdiag = bicg_on ? M1_OD_OPERATOR : M1_OD_LAGGED;
+  }
+  if (impl_offdiag == M1_OD_OPERATOR && trans_on && !bicg_on) {
+    ImplFatal("<rad_m1>/implicit_offdiag = operator needs implicit_solver = bicgstab: "
+              "the off-diagonal Eddington terms are a 9-/19-point coupling and the "
+              "x1 line solve of line_jacobi cannot carry them");
+  }
+  od_now = impl_offdiag;
   int niw = full ? (bicg_on ? M1_NIW_K : M1_NIW) : M1_NIW_X1;
   Kokkos::realloc(iw, nmb, niw, ncells3, ncells2, ncells1);
   Kokkos::deep_copy(iw, 0.0);
@@ -400,6 +444,15 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
               << ((impl_recon == M1_IRECON_PLMDC) ? "plm_dc" : "dc")
               << " implicit_partition="
               << ((impl_part == M1_IPART_GATHER) ? "gather" : "none") << std::endl;
+    if (trans_on) {
+      std::cout << "         implicit_offdiag="
+                << ((impl_offdiag == M1_OD_OPERATOR) ? "operator" :
+                    ((impl_offdiag == M1_OD_NONE) ? "none" : "lagged"))
+                << (od_auto ? " (auto)" : "")
+                << " closure_relax=" << impl_crelax
+                << (impl_crelax_thin ? " (thin faces only)" : "")
+                << " closure_lag=" << (impl_clag_step ? "step" : "pass") << std::endl;
+    }
     std::cout << "         x1 boundaries: min=" << ibc_x1min << " max=" << ibc_x1max
               << " (0 marshak, 1 flux, 2 reflect, 3 periodic) flux_min=" << iflux_x1min
               << " flux_max=" << iflux_x1max << std::endl;
@@ -740,6 +793,12 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
   // frozen row, which is what the BiCGStab operator applies and what turns TRHS back into
   // the right-hand side of the full system.
   const bool bcg = bicg_on;
+  // MILESTONE 3b phase D: implicit_offdiag.  The face flux stored here is the PHYSICAL
+  // one and keeps the off-diagonal term at the current iterate under `lagged` and
+  // `operator` alike; what changes between the two is the row the solve is given (see
+  // ImplicitSolve step (e), where the term is subtracted from the right-hand side and
+  // handed to the operator instead).  Under `none` it is dropped everywhere.
+  const int odm = od_now;
 
   // (1) the x2 face fluxes
   par_for("m1_impl_f2face", DevExeSpace(), 0, nmb1, ks, ke, js, je+1, is, ie,
@@ -777,8 +836,11 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
     Real gr = (dr*iw_(m,M1_IW_EP,k,j,i) - dl*iw_(m,M1_IW_EP,k,jm,i))/dx2;
     Real vf = 0.5*(iw_(m,M1_IW_V2,k,jm,i) + iw_(m,M1_IW_V2,k,j,i));
     Real g0f = 0.5*(iw_(m,M1_IW_G0,k,jm,i) + iw_(m,M1_IW_G0,k,j,i));
-    Real off = 0.5*(M1OffDiv(iw_,m,1,k,jm,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku)
-                    + M1OffDiv(iw_,m,1,k,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku));
+    Real off = 0.0;
+    if (odm != M1_OD_NONE) {
+      off = 0.5*(M1OffDiv(iw_,m,1,k,jm,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,M1_IW_EP)
+                 + M1OffDiv(iw_,m,1,k,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,M1_IW_EP));
+    }
     f2_(m,k,j,i) = th*(f2n_(m,k,j,i) - ch*cl*dt*gr - ch*dt*vf*g0f - ch*cl*dt*off);
   });
 
@@ -819,8 +881,11 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
       Real gr = (dr*iw_(m,M1_IW_EP,k,j,i) - dl*iw_(m,M1_IW_EP,km,j,i))/dx3;
       Real vf = 0.5*(iw_(m,M1_IW_V3,km,j,i) + iw_(m,M1_IW_V3,k,j,i));
       Real g0f = 0.5*(iw_(m,M1_IW_G0,km,j,i) + iw_(m,M1_IW_G0,k,j,i));
-      Real off = 0.5*(M1OffDiv(iw_,m,2,km,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku)
-                      + M1OffDiv(iw_,m,2,k,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku));
+      Real off = 0.0;
+      if (odm != M1_OD_NONE) {
+        off = 0.5*(M1OffDiv(iw_,m,2,km,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,M1_IW_EP)
+                   + M1OffDiv(iw_,m,2,k,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,M1_IW_EP));
+      }
       f3_(m,k,j,i) = th*(f3n_(m,k,j,i) - ch*cl*dt*gr - ch*dt*vf*g0f - ch*cl*dt*off);
     });
   }
@@ -1214,6 +1279,135 @@ void RadiationM1::ImplicitKrylovHalo(int comp) {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::ImplicitOffDiagOp
+//! \brief MILESTONE 3b phase D: accumulate sgn * L_off(x) into the component yc, where
+//! L_off is the contribution the OFF-DIAGONAL Eddington terms of the face equations make
+//! to the cell row:
+//!
+//!   L_off(x)_c = - sum_d (dt/dx_d) (chat/c) chat c dt
+//!                  [ theta_{d,+} od_{d,+}(x) - theta_{d,-} od_{d,-}(x) ],
+//!   od_{d,f}(x) = (1/2) [ (sum_{e!=d} d_e D_de x)_L + (sum_{e!=d} d_e D_de x)_R ],
+//!
+//! i.e. exactly the term the face fluxes of ImplicitTransverseTerms and of the x1
+//! assembly carry, with the LAGGED energy replaced by the argument x.  The closure
+//! (chi, n, hence D_ab) is frozen inside a Picard pass, so this IS a linear operator: a
+//! 9-point stencil in 2-D and a 19-point one in 3-D, built from the same one-layer halo
+//! the 7-point operator already exchanges (a cell-centred exchange fills the edge and
+//! corner neighbours, which is what the cross derivatives read).
+//!
+//! It is used twice per Picard pass under implicit_offdiag = operator: once with x = E^k
+//! to REMOVE the lagged term from the right-hand side the assembly produced, and inside
+//! every operator application to put it back on the left.  Both use the same routine, so
+//! the two cannot drift apart.
+//!
+//! The boundary logic mirrors the assembly face by face: a physical x1 face carries an
+//! imposed flux and no off-diagonal term, a physical x2/x3 face is reflecting (F = 0),
+//! and an M1_IBC_EFIX Dirichlet row is replaced whole and gets nothing at all.
+
+void RadiationM1::ImplicitOffDiagOp(int xc, int yc, Real sgn) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  int is = indcs.is, ie = indcs.ie;
+  int js = indcs.js, je = indcs.je;
+  int ks = indcs.ks, ke = indcs.ke;
+  int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto iw_ = iw;
+  auto &mbsize = pmy_pack->pmb->mb_size;
+  auto &mbbcs = pmy_pack->pmb->mb_bcs;
+  auto pos_ = part_pos;
+  const int nblkx1 = part_nblk;
+  const bool cyclic = (ibc_x1min == M1_IBC_PERIODIC);
+  const bool thrd = trans_x3;
+  const int bclo = ibc_x1min, bchi = ibc_x1max;
+  Real cl = c_light, ch = chat, dt = dt_sub;
+  const int cx = xc, cy = yc;
+  const Real sg = sgn;
+  par_for("m1_impl_odop", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    int ipos = pos_.d_view(m);
+    bool botb = (ipos == 0), topb = (ipos == nblkx1-1);
+    if (!cyclic && ((i == is && botb && bclo == M1_IBC_EFIX) ||
+                    (i == ie && topb && bchi == M1_IBC_EFIX))) {
+      return;
+    }
+    Real dx1 = mbsize.d_view(m).dx1;
+    Real dx2 = mbsize.d_view(m).dx2;
+    Real dx3 = mbsize.d_view(m).dx3;
+    BoundaryFlag q1 = mbbcs.d_view(m,BoundaryFace::inner_x1);
+    BoundaryFlag q2 = mbbcs.d_view(m,BoundaryFace::outer_x1);
+    BoundaryFlag q3 = mbbcs.d_view(m,BoundaryFace::inner_x2);
+    BoundaryFlag q4 = mbbcs.d_view(m,BoundaryFace::outer_x2);
+    BoundaryFlag q5 = mbbcs.d_view(m,BoundaryFace::inner_x3);
+    BoundaryFlag q6 = mbbcs.d_view(m,BoundaryFace::outer_x3);
+    bool p2lo = (q3 != BoundaryFlag::block) && (q3 != BoundaryFlag::periodic);
+    bool p2hi = (q4 != BoundaryFlag::block) && (q4 != BoundaryFlag::periodic);
+    bool p3lo = (q5 != BoundaryFlag::block) && (q5 != BoundaryFlag::periodic);
+    bool p3hi = (q6 != BoundaryFlag::block) && (q6 != BoundaryFlag::periodic);
+    int il = is, iu = ie, jl = js, ju = je, kl = ks, ku = ke;
+    if ((q1 == BoundaryFlag::block) || (q1 == BoundaryFlag::periodic)) {il = is-1;}
+    if ((q2 == BoundaryFlag::block) || (q2 == BoundaryFlag::periodic)) {iu = ie+1;}
+    if (!p2lo) {jl = js-1;}
+    if (!p2hi) {ju = je+1;}
+    if (thrd && !p3lo) {kl = ks-1;}
+    if (thrd && !p3hi) {ku = ke+1;}
+    Real cr = ch/cl;
+    Real kk = ch*cl*dt;
+    Real y = 0.0;
+    // ---- the two x1 faces
+    if (i < ie || cyclic || !topb) {
+      int ip = (i < ie) ? (i+1) : (cyclic ? is : (ie+1));
+      Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j,i) + iw_(m,M1_IW_KT,k,j,ip));
+      Real th = 1.0/(1.0 + ch*dt*ktf);
+      Real od = 0.5*(M1OffDiv(iw_,m,0,k,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,cx)
+                     + M1OffDiv(iw_,m,0,k,j,ip,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,cx));
+      y -= (dt/dx1)*cr*th*kk*od;
+    }
+    if (i > is || cyclic || !botb) {
+      int im = (i > is) ? (i-1) : (cyclic ? ie : (is-1));
+      Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j,im) + iw_(m,M1_IW_KT,k,j,i));
+      Real th = 1.0/(1.0 + ch*dt*ktf);
+      Real od = 0.5*(M1OffDiv(iw_,m,0,k,j,im,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,cx)
+                     + M1OffDiv(iw_,m,0,k,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,cx));
+      y += (dt/dx1)*cr*th*kk*od;
+    }
+    // ---- the two x2 faces
+    Real nu2 = dt/dx2;
+    if (!(j == je && p2hi)) {
+      Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j,i) + iw_(m,M1_IW_KT,k,j+1,i));
+      Real th = 1.0/(1.0 + ch*dt*ktf);
+      Real od = 0.5*(M1OffDiv(iw_,m,1,k,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,cx)
+                     + M1OffDiv(iw_,m,1,k,j+1,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,cx));
+      y -= nu2*cr*th*kk*od;
+    }
+    if (!(j == js && p2lo)) {
+      Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j-1,i) + iw_(m,M1_IW_KT,k,j,i));
+      Real th = 1.0/(1.0 + ch*dt*ktf);
+      Real od = 0.5*(M1OffDiv(iw_,m,1,k,j-1,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,cx)
+                     + M1OffDiv(iw_,m,1,k,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,cx));
+      y += nu2*cr*th*kk*od;
+    }
+    // ---- the two x3 faces
+    if (thrd) {
+      Real nu3 = dt/dx3;
+      if (!(k == ke && p3hi)) {
+        Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j,i) + iw_(m,M1_IW_KT,k+1,j,i));
+        Real th = 1.0/(1.0 + ch*dt*ktf);
+        Real od = 0.5*(M1OffDiv(iw_,m,2,k,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,cx)
+                       + M1OffDiv(iw_,m,2,k+1,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,cx));
+        y -= nu3*cr*th*kk*od;
+      }
+      if (!(k == ks && p3lo)) {
+        Real ktf = 0.5*(iw_(m,M1_IW_KT,k-1,j,i) + iw_(m,M1_IW_KT,k,j,i));
+        Real th = 1.0/(1.0 + ch*dt*ktf);
+        Real od = 0.5*(M1OffDiv(iw_,m,2,k-1,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,cx)
+                       + M1OffDiv(iw_,m,2,k,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,cx));
+        y += nu3*cr*th*kk*od;
+      }
+    }
+    iw_(m,cy,k,j,i) += sg*y;
+  });
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::ImplicitApplyOp
 //! \brief milestone 3b phase C: y = A x for the FROZEN 7-point operator of the current
 //! Picard pass -- the assembled tridiagonal row (M1_IW_TA, TB, TC, with TB already
@@ -1251,6 +1445,13 @@ void RadiationM1::ImplicitApplyOp(int xc, int yc) {
     }
     iw_(m,cy,k,j,i) = y;
   });
+  // MILESTONE 3b phase D: the off-diagonal Eddington coupling, when it is part of the
+  // operator.  The halo of x above is a full cell-centred exchange, so the edge and
+  // corner neighbours the cross derivatives read are already filled: the 9-/19-point
+  // stencil costs one extra kernel and no communication at all.
+  if (od_now == M1_OD_OPERATOR) {
+    ImplicitOffDiagOp(xc, yc, 1.0);
+  }
 }
 
 //----------------------------------------------------------------------------------------
@@ -1509,6 +1710,13 @@ int RadiationM1::ImplicitBiCGStab(Real rhsmax) {
       }
       iw_(m,M1_IW_TR,k,j,i) = r;
     });
+    // MILESTONE 3b phase D: the right-hand side of a LINE-JACOBI update is the assembled
+    // TR, which under implicit_offdiag = operator still carries -L_off(E^k) -- and the
+    // caller has just added L_off(E^k) to b.  Take it out again, so that the fallback is
+    // the same update it was before phase D.
+    if (od_now == M1_OD_OPERATOR) {
+      ImplicitOffDiagOp(M1_IW_EP, M1_IW_TR, -1.0);
+    }
     ImplicitTridiagSolve();
   } else {
     par_for("m1_impl_bcg_out", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
@@ -1568,6 +1776,15 @@ void RadiationM1::ImplicitReport() {
               << " global reductions=" << bcg_nred
               << " (" << rper << " per inner iteration)" << std::endl;
   }
+  if (trans_on) {
+    std::cout << "<rad_m1> offdiag="
+              << ((impl_offdiag == M1_OD_OPERATOR) ? "operator" :
+                  ((impl_offdiag == M1_OD_NONE) ? "none" : "lagged"))
+              << " closure_relax=" << impl_crelax
+              << " closure_lag=" << (impl_clag_step ? "step" : "pass")
+              << " positivity fallbacks=" << od_nfall
+              << " min E from the solve=" << od_emin << std::endl;
+  }
 }
 
 //----------------------------------------------------------------------------------------
@@ -1612,6 +1829,15 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   // MILESTONE 3b phase C: implicit_solver = bicgstab.  False for line_jacobi and for
   // every 3a/3a2/3c configuration, so those paths keep their arithmetic bit for bit.
   const bool bicg = bicg_on;
+  // MILESTONE 3b phase D.  Every step STARTS in the configured off-diagonal mode; the
+  // positivity fallback below may drop this step to `none` (the operator is not an
+  // M-matrix, so E' > 0 is no longer guaranteed by construction).
+  od_now = impl_offdiag;
+  // the closure under-relaxation and the start-of-step closure freeze.  Both are inert
+  // at their defaults (w = 1, lag = pass), so phase C arithmetic is untouched.
+  const Real crw = impl_crelax;
+  const bool crthin = impl_crelax_thin;
+  const bool clagst = impl_clag_step;
   auto f2_ = f0x2;
   auto f3_ = f0x3;
   if (trans) {
@@ -1777,6 +2003,12 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   Real resid = 0.0;
   bool converged = false;
   for (it = 0; it < impl_maxit && !converged; ++it) {
+    // the off-diagonal mode of THIS pass (the positivity fallback can change it)
+    const int odm = od_now;
+    // the closure moves only after the first pass, and not at all under
+    // implicit_closure_lag = step
+    const bool dorel = (crw < 1.0) && (it > 0);
+    const bool dofreeze = clagst && (it > 0);
     // (a) optional opacity re-evaluation at the current temperature iterate
     if (impl_opac_update && it > 0 && have_hydro && !opac_zero) {
       int otype = opacity_type;
@@ -1833,6 +2065,33 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         Real ifm = 1.0/fmax(fm, 1.0e-300);
         Real n1 = f1*ifm, n2 = f2c*ifm, n3 = f3c*ifm;
         Real v2 = iw_(m,M1_IW_V2,k,j,i), v3 = iw_(m,M1_IW_V3,k,j,i);
+        // MILESTONE 3b phase D: how fast the LAGGED closure is allowed to move.
+        //   implicit_closure_lag = step  freezes (chi, n) at the start-of-step state for
+        //     the whole step (the Eddington tensor is then explicit in time, as in a VET
+        //     code that reuses the previous step's tensor), leaving ONE linear solve plus
+        //     the temperature nonlinearity per step;
+        //   implicit_closure_relax = w   under-relaxes them between passes, optionally
+        //     only where the cell is optically thin (theta > 1/2), which is where the
+        //     closure feeds back on the solve through (c dt/dx)^2.
+        if (dofreeze) {
+          chi = iw_(m,M1_IW_WCHI,k,j,i);
+          n1 = iw_(m,M1_IW_N1,k,j,i);
+          n2 = iw_(m,M1_IW_N2,k,j,i);
+          n3 = iw_(m,M1_IW_N3,k,j,i);
+        } else if (dorel && (!crthin || (ch*dt*iw_(m,M1_IW_KT,k,j,i) < 1.0))) {
+          Real w1 = 1.0 - crw;
+          chi = w1*iw_(m,M1_IW_WCHI,k,j,i) + crw*chi;
+          n1 = w1*iw_(m,M1_IW_N1,k,j,i) + crw*n1;
+          n2 = w1*iw_(m,M1_IW_N2,k,j,i) + crw*n2;
+          n3 = w1*iw_(m,M1_IW_N3,k,j,i) + crw*n3;
+          Real nn = sqrt(n1*n1 + n2*n2 + n3*n3);
+          if (nn > 0.0) {
+            Real inn = 1.0/nn;
+            n1 *= inn;
+            n2 *= inn;
+            n3 *= inn;
+          }
+        }
         iw_(m,M1_IW_WCHI,k,j,i) = chi;
         iw_(m,M1_IW_N1,k,j,i) = n1;
         iw_(m,M1_IW_N2,k,j,i) = n2;
@@ -2165,9 +2424,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         // the OFF-diagonal Eddington terms of the x1 flux equation, d_2 P_12 + d_3 P_13,
         // fully lagged and therefore a right-hand-side term
         Real od = 0.0;
-        if (trans) {
-          od = 0.5*(M1OffDiv(iw_,m,0,k,j,i,dx,dx2,dx3,thrd,il,iu,jl,ju,kl,ku)
-                    + M1OffDiv(iw_,m,0,k,j,ip,dx,dx2,dx3,thrd,il,iu,jl,ju,kl,ku));
+        if (trans && odm != M1_OD_NONE) {
+          od = 0.5*(M1OffDiv(iw_,m,0,k,j,i,dx,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,M1_IW_EP)
+                    + M1OffDiv(iw_,m,0,k,j,ip,dx,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,
+                               M1_IW_EP));
         }
         rr -= nu*cr*om*th*(f0n_(m,k,j,i+1) - ch*dt*vf*g0f - ch*cl*dt*od);
         // the HLL part: its E'_L coefficient is >= 0 (diagonal) and its E'_R coefficient
@@ -2201,9 +2461,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         Real vf = 0.5*(iw_(m,M1_IW_V1,k,j,im) + vi);
         Real g0f = 0.5*(iw_(m,M1_IW_G0,k,j,im) + iw_(m,M1_IW_G0,k,j,i));
         Real od = 0.0;
-        if (trans) {
-          od = 0.5*(M1OffDiv(iw_,m,0,k,j,im,dx,dx2,dx3,thrd,il,iu,jl,ju,kl,ku)
-                    + M1OffDiv(iw_,m,0,k,j,i,dx,dx2,dx3,thrd,il,iu,jl,ju,kl,ku));
+        if (trans && odm != M1_OD_NONE) {
+          od = 0.5*(M1OffDiv(iw_,m,0,k,j,im,dx,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,M1_IW_EP)
+                    + M1OffDiv(iw_,m,0,k,j,i,dx,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,M1_IW_EP));
         }
         rr += nu*cr*om*th*(f0n_(m,k,j,i) - ch*dt*vf*g0f - ch*cl*dt*od);
         aa -= nu*ifw_(m,M1_IFW_HCL,k,j,i);
@@ -2265,7 +2525,44 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         }
         iw_(m,M1_IW_KB,k,j,i) = b;
       });
+      // MILESTONE 3b phase D.  Under implicit_offdiag = operator the assembly has put
+      // -L_off(E^k) on the right-hand side (it is inside TR, through the face fluxes);
+      // adding L_off(E^k) back takes it out again, and the operator application adds
+      // L_off(x) on the LEFT.  The two changes cancel at x = E^k by construction, so the
+      // residual the linear solver measures is the residual of the same system the
+      // lagged form measures -- what changes is where the term is solved.
+      if (odm == M1_OD_OPERATOR) {
+        ImplicitOffDiagOp(M1_IW_EP, M1_IW_KB, 1.0);
+      }
       ImplicitBiCGStab(rhsmax);
+      if (odm == M1_OD_OPERATOR) {
+        // POSITIVITY.  The cross-derivative coefficients have mixed signs, so the
+        // 9-/19-point operator is not an M-matrix and E' > 0 is no longer guaranteed.
+        // Measure the smallest E the solve produced and, if any cell is non-positive,
+        // drop the REST of this step to implicit_offdiag = NONE and count the event.
+        // `none` is the M-matrix form that survives: `lagged` is not an alternative
+        // here, because lagging these terms in an optically thin cell is exactly what
+        // has no fixed point (measured: the seeded He slab blows up in 14 steps with
+        // lagged + a frozen closure, and runs with none + a frozen closure).
+        Real emin = 1.0e300;
+        Kokkos::parallel_reduce("m1_impl_odmin",
+        Kokkos::MDRangePolicy<Kokkos::Rank<4>>(DevExeSpace(), {0,ks,js,is},
+                                               {nmb1+1,ke+1,je+1,ie+1}),
+        KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &lmin) {
+          Real r = iw_(m,M1_IW_S2,k,j,i);
+          lmin = (r < lmin) ? r : lmin;
+        }, Kokkos::Min<Real>(emin));
+#if MPI_PARALLEL_ENABLED
+        {Real g;
+        MPI_Allreduce(&emin, &g, 1, MPI_ATHENA_REAL, MPI_MIN, MPI_COMM_WORLD);
+        emin = g;}
+#endif
+        od_emin = std::min(od_emin, emin);
+        if (!(emin > 0.0)) {
+          od_now = M1_OD_NONE;
+          od_nfall += 1.0;
+        }
+      }
     } else {
       ImplicitTridiagSolve();
     }
@@ -2352,7 +2649,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         }
         Real gr = (wp*iw_(m,M1_IW_EP,k,j,ip) - wm*iw_(m,M1_IW_EP,k,j,im))/dx;
         Real od = 0.0;
-        if (trans) {
+        if (trans && odm != M1_OD_NONE) {
           Real dx2 = mbsize.d_view(m).dx2;
           Real dx3 = mbsize.d_view(m).dx3;
           int il = is, iu = ie, jl = js, ju = je, kl = ks, ku = ke;
@@ -2370,8 +2667,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                        (q5 == BoundaryFlag::periodic))) {kl = ks-1;}
           if (thrd && ((q6 == BoundaryFlag::block) ||
                        (q6 == BoundaryFlag::periodic))) {ku = ke+1;}
-          od = 0.5*(M1OffDiv(iw_,m,0,k,j,im,dx,dx2,dx3,thrd,il,iu,jl,ju,kl,ku)
-                    + M1OffDiv(iw_,m,0,k,j,ip,dx,dx2,dx3,thrd,il,iu,jl,ju,kl,ku));
+          od = 0.5*(M1OffDiv(iw_,m,0,k,j,im,dx,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,M1_IW_EP)
+                    + M1OffDiv(iw_,m,0,k,j,ip,dx,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,
+                               M1_IW_EP));
         }
         Real fn = th*(f0n_(m,k,j,(i == ie+1 && cyclic) ? is : i)
                       - ch*cl*dt*gr - ch*dt*vf*g0f - ch*cl*dt*od);

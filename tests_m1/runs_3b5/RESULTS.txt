@@ -1,0 +1,220 @@
+MILESTONE 3b PHASE D -- the OFF-DIAGONAL Eddington terms in the operator
+(<rad_m1>/implicit_offdiag) and the CLOSURE lag (<rad_m1>/implicit_closure_lag,
+implicit_closure_relax).  Serial CPU, build_cpu_m1 (pulse gates) and build_cpu_box
+(He slab), 2026-09-21.  Design note: docs/dev/rad_m1_implicit_design.md sect. 13.
+
+Driver (the exact commands): tests_m1/runs_3b5/run_gates_3b5.sh
+Analysis:  tests_m1/runs_3b5/oblique.py           (G-oblique, new)
+           tests_m1/runs_3b3/pulse_md.py          (G-pulse, unchanged)
+           tests_m1/runs_3b4/heslab.py            (the He slab JSON, unchanged)
+Inputs:    tests_m1/runs_3b5/pulse_md.athinput, pulse_md3.athinput (= the runs_3b4 pair
+             with implicit_offdiag / implicit_closure_* named so they can be overridden)
+           tests_m1/runs_3b5/he_slab_m1_2d.athinput (= runs_3b4, solver bicgstab and the
+             new keys named)
+JSON:      tests_m1/plots/impl3b5_heslab.json (140 kB: seeded operator, seeded none,
+             static; KE_1/KE_2/dt vs t, F_rad/F_in(z), the v2 map, the solver lines)
+Dumps were deleted as soon as each case was measured (viper inode quota).
+
+
+================================================================================
+THE HEADLINE: PHASE C's DIAGNOSIS WAS WRONG
+================================================================================
+Phase C blamed the divergence of the seeded 2-D He slab on the LAGGED OFF-DIAGONAL
+Eddington terms.  Three runs of the seeded slab, three steps each, settle it:
+
+  implicit_offdiag  implicit_closure_lag   Picard passes   final 7-point residual
+  lagged (phase C)  pass (phase C)         200 / 200       3.0e3      DIVERGES
+  none              pass                   200 / 200       1.6e3      DIVERGES
+  operator          pass                   200 / 200       ~1e3       DIVERGES
+  operator          STEP                   4 / 4           2.4e-15    CONVERGES
+  none              STEP                   4 / 4           2.4e-15    CONVERGES
+  operator          pass, closure_relax 0.3 200 / 200      6.6e2      DIVERGES
+
+Dropping the off-diagonal terms ENTIRELY does not help; freezing the CLOSURE (chi and
+the flux direction n) over the step fixes it with the off-diagonal terms left exactly
+where phase C had them.  The divergent fixed-point iteration is the one on the CLOSURE:
+each pass rebuilds the Eddington tensor from the flux of the iterate, and in an
+optically thin cell an O(1) change of n changes the face flux by c E.  Under-relaxing
+the closure between passes (implicit_closure_relax = 0.3, and 0.5 on thin faces only)
+does NOT restore a contraction -- it only slows the walk.
+
+
+================================================================================
+G-OBLIQUE  (new; what `none` costs)                                         PASS
+================================================================================
+2-D 64^2 thick-pulse pgen at tau_cell = 0.1, implicit_cfl = 1, t = 0.2: the pulse
+free-streams and its flux direction sweeps every angle, so the off-diagonal Eddington
+components are maximal at 45 degrees to the grid.  The exact solution of a circular
+pulse in a uniform medium stays CIRCULARLY SYMMETRIC, so the cos(4 phi) amplitude of E
+(normalised by the peak) measures the oblique error directly.  oblique.py, last dump:
+
+  case                aniso      cos4phi     vs the EXPLICIT scheme: max      L1
+  ob_explicit         1.899e-2   1.688e-2    (reference)
+  ob_lagged           1.523e-2   1.315e-2    1.848e-1                   2.333e-2
+  ob_operator         1.523e-2   1.315e-2    1.848e-1                   2.333e-2
+  ob_none             6.617e-2   2.175e-1    4.395e-1                   3.539e-2
+  ob_operator_step    1.515e-2   1.357e-2    1.823e-1                   2.276e-2
+
+  * `none` is wrong by 22 % of the peak in the four-fold (grid vs diagonal) mode, and
+    by 44 % of the peak against the explicit scheme: dropping the off-diagonal terms is
+    NOT an option, it is a fallback.
+  * operator vs lagged: max difference 0.000e+00 -- BITWISE.  That is the proof that the
+    operator form has the same fixed point as the lagged one and that the sign
+    bookkeeping of ImplicitOffDiagOp is right (b <- b + L_off(E^k), A <- A + L_off).
+  * closure_lag = step moves the answer by 6.7e-2 of the peak on THIS problem, where the
+    field is genuinely time dependent at c dt/dx = 1 -- the honest upper bound on the
+    price of an explicit-in-time closure.  It costs 3 Picard passes instead of 44.6.
+  * Picard passes: none 57.0, lagged 44.8, operator 44.6, operator+step 3.0.
+
+
+================================================================================
+G-PULSE  (the phase-B/C rates must not move)                                PASS
+================================================================================
+d(sigma^2)/dt / 2D per axis, 2-D 64^2 and 3-D 32^3, and the spread between axes:
+
+  case                          x          y          z        iso       passes
+  p_tau10_lagged   (cfl 1)      0.996514   0.996514   -        1.92e-9   5.0
+  p_tau10_operator (cfl 1)      0.996514   0.996514   -        1.92e-9   5.0
+  p_tau10_opstep   (cfl 1)      0.996512   0.996512   -        0.00e+0   3.0
+  p_tau1e3_lagged  (cfl 1e4)    0.995500   0.995500   -        6.82e-10  5.0
+  p_tau1e3_operator(cfl 1e4)    0.995500   0.995500   -        5.77e-10  5.0
+  p_tau1e3_opstep  (cfl 1e4)    0.995500   0.995500   -        4.01e-9   3.0
+  p3d_lagged   (3-D, cfl 1)     0.999998   0.999998   0.999998 2.82e-8   3.0
+  p3d_operator (3-D, cfl 1)     0.999998   0.999998   0.999998 2.68e-8   3.0
+
+The phase-B/C table gives 0.996514 and 0.995500 for the two 2-D cases and 0.999998 for
+the 3-D one: UNCHANGED to six digits under `operator`, and changed in the sixth digit
+only (0.996512) by the start-of-step closure.  p3d_* is also the only test of the
+19-point 3-D stencil: it runs, it is isotropic to 2.7e-8 and it needs no positivity
+fallback.
+
+
+================================================================================
+G-STATIC  (the 2-D He slab must still be the 1-D column)                    PASS
+================================================================================
+he_slab_m1_2d.athinput, no seed, 100 s = 621 steps, one MeshBlock, serial, bicgstab.
+Reference = the phase-C line of runs_3b4/RESULTS.txt.
+
+  quantity              phase C (lagged,  operator,        operator,       none,
+                        closure pass)     closure pass     closure STEP    closure STEP
+  F1top/F_in            0.99998231        0.9999823136     0.9999829698    0.9999829698
+  F1bot/F_in            0.99985481        0.9998548080     0.9998548085    0.9998548085
+  max|v1| / v_MLT       1.056615          1.0566154        1.0566227       1.0566227
+  max|v2| / v_MLT       0.000000          0.0000000        0.0000000       0.0000000
+  max|v| / c_s          3.7338e-3         3.73384e-3       3.73387e-3      3.73387e-3
+  min E                 1.651243e5        1.651243e5       1.651244e5      1.651244e5
+  outer passes mean/max 79.21 / 139       79.21 / 139      4.05 / 5        4.05 / 5
+  inner iterations      3.41 / 26         3.41 / 26        7.71 / 23       7.71 / 23
+  NON-CONVERGED         0 of 621          0 of 621         0 of 621        0 of 621
+  positivity fallbacks  -                 0                0               -
+  wall clock / step     1.337 s           1.487 s          0.108 s         0.093 s
+
+  * OPERATOR REPRODUCES THE EIGHT-DIGIT REFERENCE.  On this problem the flux is along
+    x1 and n_2 = 0, so the off-diagonal terms vanish identically and operator == lagged
+    to the last digit, at the same pass count: the change is inert where it should be.
+  * closure_lag = STEP costs 6.6e-7 relative on F1top, 5e-10 on F1bot and 6.9e-6 on
+    max|v1| -- and is 12x faster in wall clock (0.108 against 1.337 s/step).  This is
+    the measured price of an explicit-in-time Eddington tensor on a quasi-static field.
+  * `none` and `operator` are BITWISE identical here (n_2 = 0), as they must be.
+
+
+================================================================================
+G-SEED  (the seeded 2-D He slab)                     PARTIAL -- honest smoke test
+================================================================================
+The production entropy seed of runs_3b4 (vpert = 1.0e-3, vpert_var = eint, k 4-6, the
+box_w8 window/mode count/seed), 200 s, 1393 steps, serial, one MeshBlock.  Phase C got
+to t = 1.91 s in 19 minutes with 200/200 passes on every step.
+
+  quantity                       operator + closure STEP   none + closure STEP
+  reached                        t = 200.0 s (1393 steps)  t = 200.0 s (1413 steps)
+  wall clock                     751 s = 0.539 s/step      627 s = 0.444 s/step
+  dt COLLAPSES                   0                         0
+  outer passes mean / max        12.75 / 200               11.50 / 200
+  inner BiCGStab mean / max      38.6 / 200                34.7 / 100
+  NON-CONVERGED steps            9 of 1393                 9 of 1413
+  final 7-point residual mean    5.68e-11 (max 2.6e-8)     8.27e-11 (max 4.0e-8)
+  breakdowns / lj fallbacks      151 / 1                   74 / 0
+  positivity fallbacks           1388 of 1393 steps        - (none has none)
+  min E from the solve           -1.09e8 (then floored)    -
+  min E in the final dump        199.0 (floor 1e-4)        1229.7
+  max|v1| / v_MLT at 200 s       178.8                     207.3
+  max|v2| / v_MLT at 200 s       739.9                     411.1
+  max|v| / c_s                   2.58                      1.48
+  F1top/F_in at 200 s            0.394                     0.268
+  F1bot/F_in at 200 s            0.99992                   0.99985
+  min of F_rad/F_in(z)           -0.438                    -0.339
+  KE_2 growth, t < 20 s          0.157 /s                  0.276 /s
+  KE_1 / KE_2 growth, 20-200 s   0.0011 / 0.0008 /s        0.0012 / 0.0009 /s
+
+WHAT PASSES.  The slab now RUNS: 200 s instead of 1.9 s, at 0.54 s/step instead of
+11-13, with no dt collapse, bounded outer passes (12.75 mean) and a 7-point residual at
+the tolerance.  The linear and the outer iteration are no longer the failure.
+
+WHAT DOES NOT.  (a) NINE steps of 1393 still hit implicit_maxit -- the gate asked for
+zero; the same nine appear with `none`, so they are not the off-diagonal terms.  (b) The
+DYNAMICS ARE NOT SENSIBLE: KE_2 grows at 0.157 /s over the first 20 s, which is 75x the
+convective rate v_MLT/H_p = 2.1e-3 /s, and by 200 s (0.42 turnover) the slab carries
+max|v2| = 740 v_MLT, is supersonic (max|v|/c_s = 2.6), has lost 61 % of its emergent
+flux and has F_rad/F_in(z) NEGATIVE in places.  No growth rate, no F_conv/F and no
+velocity structure can be claimed from this run and none is: it is a SMOKE TEST that
+says the solver survives, not a convection run.  (c) The positivity fallback fires on
+1388 of 1393 steps, i.e. after its first pass nearly every step runs in `none` -- and
+`none` is the mode G-oblique measures at 22 % error.  That the operator arm is
+nonetheless BETTER than the pure-`none` arm in every column (half the early KE_2 growth,
+1.5x the retained flux, less negative F) is the one physical argument in its favour.
+
+WHAT THE NEXT SUSPECT IS, and what it is NOT.  It is not the linear solver, not the
+lagged off-diagonal terms and not the closure iteration: all three are now converged to
+1e-11.  The 2-D slab has two things the 1-D column does not: a TRANSVERSE radiative
+force dm2 with no well-balanced reference (force_reference = wb_arad subtracts
+rho a_rad_ref in x1 only) and no sponge of any kind.  The 0.16 /s early growth is in
+KE_2, i.e. exactly there.
+
+A THIRD ARM, `lagged` + closure STEP, BLOWS UP: dt collapses to 8e-33 at cycle 14 with
+v = 4e38 cm/s.  So with the closure frozen the three modes order as
+operator > none >> lagged, which is the phase-C mechanism (a lagged term amplified by
+(c dt/dx)^2 in the thin top) showing up as an instability rather than as a
+non-converging iteration.  This is why the positivity fallback goes to `none` and not
+to `lagged`.
+
+
+================================================================================
+REGRESSION                                                                  PASS
+================================================================================
+tests_gate_merge/postmerge.sh:
+  box G1 mode 3: feczrt.hydro.hst, feczrt.user.hst, column_used.txt, rt_surface.bin,
+                 rt_profile.bin  -- all IDENTICAL   (5/5)
+  box G1 mode 0: the same five                      -- all IDENTICAL   (5/5)  => 10/10
+  1-D He column, transport = implicit_x1, 300 s: exit 0
+     Picard mean 11.70892, max 23, NON-CONVERGED 0
+     V1max      = 1.8343925542664529e4              (reference 1.8343926e4)
+     F1top/Fin  = 2.4752259854942720e15/2.475202e15 = 1.0000097
+     F1bot/Fin  = 2.4747941961720800e15/2.475202e15 = 0.9998352
+Every new branch is behind `trans` (multi-D) or `bicg`, and implicit_closure_* is read
+only in the multi-D branch of the closure kernel, so implicit_x1 and explicit are
+untouched arithmetically -- which is what the line above measures.
+
+
+================================================================================
+DEFAULTS SHIPPED
+================================================================================
+  implicit_offdiag      = auto   -> operator under bicgstab, lagged otherwise, so every
+                                    line_jacobi and implicit_x1 run is bit-unchanged
+  implicit_closure_relax      = 1.0     (not a remedy; kept as an option)
+  implicit_closure_relax_thin = false
+  implicit_closure_lag        = pass    (step moves G-static in the 7th digit, and
+                                         G-static is an 8-digit gate)
+RECOMMENDED for any 2-D/3-D run with horizontal structure:
+  implicit_solver = bicgstab, implicit_offdiag = operator (or auto),
+  implicit_closure_lag = step.
+
+
+================================================================================
+STYLE
+================================================================================
+cpplint (repo filter, --filter=-build/include_subdir): 0 errors in
+src/rad_m1/rad_m1_implicit.cpp, rad_m1_implicit.hpp, rad_m1.cpp, rad_m1.hpp.  (One
+PRE-EXISTING 91-column comment line in rad_m1_implicit.hpp, line 208 at HEAD, was
+rewrapped: it was already over the limit before this work.)
+No tabs, no trailing whitespace, all lines <= 90 columns, all files mode 644.
+flake8 (setup.cfg, 90 columns): clean on tests_m1/runs_3b5/.

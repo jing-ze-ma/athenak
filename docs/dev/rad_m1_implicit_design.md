@@ -1016,3 +1016,125 @@ The lagged off-diagonal Eddington coupling in optically thin cells (the seeded-s
 blocker above); the asymptotic-preserving transverse fluxes; Marshak / imposed-flux
 transverse boundaries; SMR/AMR; GPU; MPI (reasoned, not measured); a coarse space for the
 preconditioner, which sect. 4 expects to matter once the MeshBlock count grows.
+
+## 13. Findings of 3b phase D (2026-09-21; supersede sect. 4 and 8-12 where they differ)
+
+Phase D set out to fix the blocker phase C left: with the production entropy seed the
+2-D He slab's OUTER (Picard) loop diverges within 2 s of simulated time.  Phase C's
+diagnosis was the LAGGED OFF-DIAGONAL Eddington terms `sum_{e!=d} d_e P_de`, amplified by
+`(c dt/dx)^2 ~ 7e3` in the optically thin top.  **That diagnosis is wrong, and the
+measurement that shows it is one line: dropping those terms entirely
+(`implicit_offdiag = none`) does NOT make the seeded slab converge -- it still pins at
+`implicit_maxit` with a 7-point residual of 1.6e3 -- while freezing the CLOSURE over the
+step (`implicit_closure_lag = step`), with the off-diagonal terms left exactly where
+phase C had them, converges in 4 passes with a residual of 2.4e-15.**  What has no
+contraction is the Picard iteration on `chi` and `n`, i.e. on the closure itself: each
+pass rebuilds the Eddington tensor from the flux of the iterate, and in a thin cell an
+O(1) change of `n` changes the face flux by `c E`, which changes `E` again.
+
+```
+<rad_m1>/implicit_offdiag  = auto | lagged | operator | none
+              auto     = operator where implicit_solver = bicgstab, lagged otherwise
+                         (so every line_jacobi and implicit_x1 run is unchanged)
+          implicit_closure_relax  = w in (0,1]   chi,n <- (1-w) old + w new per pass
+          implicit_closure_relax_thin = false    relax only where theta_f > 1/2
+          implicit_closure_lag    = pass | step  freeze chi,n at the START of the step
+```
+
+### (1) `operator`: the off-diagonal terms inside the Krylov operator
+
+With the closure frozen inside a Picard pass, `d_e(D_de E)` for `e != d` is LINEAR in
+`E'`, so it belongs in the matrix.  `ImplicitOffDiagOp(xc, yc, sgn)` accumulates exactly
+the cell-row contribution the face fluxes carry, with the lagged `E` replaced by any
+component of the work array; it is called twice per pass: once with `E^k` to ADD
+`L_off(E^k)` to the right-hand side (undoing the assembly's lagged term) and once inside
+every `ImplicitApplyOp` to put `L_off(x)` on the left.  Both use the same routine, so the
+two cannot drift.  The stencil is 9-point in 2-D and 19-point in 3-D and needs NO extra
+communication: the Krylov halo is the module's ordinary cell-centred exchange, which
+fills edge and corner neighbours anyway.  Boundaries follow the assembly face by face
+(imposed-flux x1 faces and reflecting x2/x3 faces carry no off-diagonal term; an EFIX
+Dirichlet row is replaced whole).  It is a fatal with `implicit_solver = line_jacobi`.
+
+The system is then NOT an M-matrix, and `E' > 0` is no longer guaranteed.  The smallest
+`E` of every linear solve is reduced globally; a non-positive cell drops the REST of that
+step to `none` and is counted (`<rad_m1> offdiag=... positivity fallbacks=N min E=...`).
+
+### (2) closure under-relaxation, and (3) the start-of-step closure
+
+`implicit_closure_relax = 0.3` on the seeded slab: still 200/200 passes, residual 6.6e2.
+Under-relaxing the closure between passes does NOT recover a contraction (it only slows
+the walk), and it is not a remedy.  `implicit_closure_lag = step` is: the Eddington
+tensor is then EXPLICIT in time, as in a VET code that reuses the previous step's tensor.
+The cost is formally first order in `dt` in the closure alone; the radiation field is
+quasi-static on the hydro `dt` and the closure moves by `O(v dt/L)` per step, which is
+what the gates below measure directly (7e-6 relative on the static He slab, 2e-6 on the
+thick-pulse diffusion rate, 6.7e-2 of the peak on a free-streaming 2-D pulse at
+`c dt/dx = 1`, where the field is NOT quasi-static).
+
+### Gates (serial CPU; `build_cpu_m1` for the pulse, `build_cpu_box` for the slab)
+
+Numbers, commands and raw logs: `tests_m1/runs_3b5/RESULTS.txt`.
+
+* **G-oblique** (new; the test sect. 12 did not have).  2-D 64^2 thick-pulse pgen at
+  `tau_cell = 0.1`, where the pulse free-streams and its flux direction sweeps every
+  angle.  The exact solution stays circularly symmetric, so the `cos 4 phi` amplitude of
+  `E` is a direct measure of the off-diagonal error: **explicit 1.7e-2, lagged 1.3e-2,
+  operator 1.3e-2, none 2.2e-1** -- `none` is wrong by 22 % of the peak (and by 44 %
+  against the explicit scheme in max norm).  `operator` and `lagged` agree **BITWISE**
+  (max difference 0.000e+00), which is the proof that the operator form and the lagged
+  form have the same fixed point and that the sign bookkeeping above is right.
+* **G-static**: the static 2-D He slab at 100 s, against the phase-C reference
+  (`F1top/Fin` 0.99998231, `F1bot/Fin` 0.99985481, `max|v1|` 1.056615 v_MLT).
+  `operator` with the closure per pass reproduces all three to **eight digits** and takes
+  the phase-C pass count (79.21 mean / 139 max), with 0 positivity fallbacks.  With
+  `closure_lag = step` the three become 0.99998297 / 0.99985481 / 1.0566227, i.e. 7e-6
+  relative, and the cost drops from 79.2 to **4.05 passes** and from 1.487 to 0.108
+  s/step: **12x faster** than phase C at the same answer to six digits.
+* **G-pulse**: `d(sigma^2)/dt / 2D` at `tau_cell` 10 / `implicit_cfl` 1 and `tau_cell`
+  1e3 / `implicit_cfl` 1e4 is 0.996514 and 0.995500 under both `lagged` and `operator` --
+  the phase-B/C numbers to six digits -- with isotropy 2e-9 to 7e-10.  With
+  `closure_lag = step` they are 0.996512 and 0.995500 at 3 passes instead of 5.
+* **G-seed**, the seeded 2-D He slab, `operator` + `closure_lag = step`: it now **runs
+  to t = 200 s** (1393 steps, 0.54 s/step) where phase C reached 1.91 s at 11-13 s/step,
+  with no dt collapse, 12.75 outer passes mean and a 7-point residual of 5.7e-11.  It is
+  a SMOKE TEST and nothing more: 9 steps of 1393 still hit `implicit_maxit` (the same
+  nine under `none`, so they are not the off-diagonal terms), and the DYNAMICS ARE NOT
+  PHYSICAL -- `KE_2` grows at 0.157 /s over the first 20 s, 75x the convective rate
+  `v_MLT/H_p` = 2.1e-3 /s, and by 200 s (0.42 turnover) the slab is supersonic
+  (`max|v|/c_s` 2.6, `max|v2|` 740 v_MLT) and has lost 61 % of its emergent flux.  The
+  positivity fallback fires on 1388 of 1393 steps, so after its first pass nearly every
+  step runs in `none`.  A third arm, `lagged` + `closure_lag = step`, BLOWS UP at cycle
+  14 (dt 8e-33, v 4e38): with the closure frozen the three modes order
+  `operator > none >> lagged`, which is the phase-C mechanism -- a term amplified by
+  `(c dt/dx)^2` in the thin top -- appearing as an instability instead of as a
+  non-converging iteration.  That is why the positivity fallback goes to `none`.
+  **The next suspect is no longer the transport solve**: the linear system, the lagged
+  off-diagonal terms and the closure iteration are all converged to 1e-11.  The 2-D slab
+  has two things the 1-D column has not: a TRANSVERSE radiative force `dm2` with no
+  well-balanced reference (`force_reference = wb_arad` subtracts `rho a_rad_ref` in x1
+  only) and no sponge; the 0.16 /s growth is in `KE_2`, i.e. exactly there.
+* **Regression** (`tests_gate_merge/postmerge.sh`): box G1 modes 3 and 0 **10/10 files
+  IDENTICAL**; the 1-D He column reproduces the reference line exactly (Picard mean
+  11.70892, max 23, NON-CONVERGED 0, `V1max` 1.8343925542664529e4,
+  `F1top/Fin` 1.0000097, `F1bot/Fin` 0.9998352).
+
+### Recommended defaults
+
+`implicit_offdiag = auto` (shipped): `operator` under `bicgstab`, `lagged` otherwise.
+`operator` is never worse than `lagged` (same fixed point, bitwise on G-oblique) and is
+the only form that can be solved implicitly; `none` is a fallback, not a choice -- 22 %
+of the peak on an oblique flux.
+
+`implicit_closure_lag` is shipped at `pass`, because `step` moves the static He slab in
+the seventh digit and G-static is an eight-digit gate.  **Every 2-D/3-D production run
+should set `implicit_closure_lag = step`**: it is what makes a seeded slab converge at
+all, and it is 12x cheaper.  `implicit_closure_relax` stays at 1 (it is not a remedy).
+
+### What is NOT done
+
+The 9 non-converged steps of the seeded slab; the transverse radiative force without a
+well-balanced reference, which is now the leading suspect for the slab's 0.16 /s `KE_2`
+growth; a positivity-preserving form of the 9-/19-point operator (the fallback to `none`
+fires on nearly every seeded step, and `none` is 22 % wrong on G-oblique); the
+asymptotic-preserving transverse fluxes; Marshak / imposed-flux transverse boundaries;
+SMR/AMR; GPU; MPI (still reasoned, not measured); a coarse space for the preconditioner.

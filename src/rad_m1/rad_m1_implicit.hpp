@@ -47,6 +47,32 @@ constexpr int M1_ISOLV_BICGSTAB = 1;     // milestone 3b phase C: matrix-free Bi
                                          // two solvers answer the same question; only
                                          // the number of passes differs.
 
+// <rad_m1>/implicit_offdiag: what is done with the OFF-DIAGONAL Eddington terms
+// sum_{e != d} d_e P_de of the face-flux equations (milestone 3b phase D).  They are the
+// only part of the operator that is not in the 7-point stencil, and in an optically THIN
+// cell they are multiplied by (c dt/dx)^2: lagging them is then a fixed-point iteration
+// with no contraction and the outer loop diverges (the seeded 2-D He slab of phase C).
+constexpr int M1_OD_LAGGED   = 0;  // phase B/C: evaluated at the previous Picard iterate
+                                   // and put on the right-hand side of the face equation.
+constexpr int M1_OD_OPERATOR = 1;  // phase D: with the closure (chi, n, hence D_ab)
+                                   // FROZEN inside a Picard pass, d_e(D_de E) is LINEAR
+                                   // in E', so it belongs in the matrix.  The right-hand
+                                   // side is then built WITHOUT it and the matrix-free
+                                   // operator application adds it back -- a 9-point
+                                   // stencil in 2-D, 19-point in 3-D, through the halo
+                                   // the Krylov vector is exchanged in anyway, so at no
+                                   // extra communication.  The system is no longer an
+                                   // M-matrix (the cross-derivative coefficients have
+                                   // mixed signs) and E' > 0 is no longer guaranteed by
+                                   // construction, so min E is monitored and a step that
+                                   // produces a non-positive cell falls back to `none`.
+                                   // Requires implicit_solver = bicgstab: the line-Jacobi
+                                   // preconditioner alone cannot carry it.
+constexpr int M1_OD_NONE     = 2;  // drop them: P is taken DIAGONAL in the grid frame.
+                                   // Exact wherever the flux is along a grid axis or the
+                                   // field is isotropic (chi = 1/3), wrong for an oblique
+                                   // beam; the size of that error is gate G-oblique.
+
 // x1 boundary conditions of the implicit solve, in FACE-FLUX form (design sect. 3).
 // The face value used is the TOTAL normal flux F at the boundary face.
 constexpr int M1_IBC_MARSHAK  = 0;   // free surface, F_f = +- c*marshak_q*E_boundary
@@ -205,7 +231,8 @@ constexpr int M1_IW_LRES = 31;  // |U(E^{k+1}) - U(E^k)|, the TRUE residual of t
 constexpr int M1_IW_F2   = 32;  // the derived cell-centred x2 flux of the iterate
 constexpr int M1_IW_F3   = 33;  // ...and the x3 one; both drive the lagged closure
 constexpr int M1_NIW = 34;
-// ---- MILESTONE 3b phase C, implicit_solver = bicgstab.  The four (six in 3-D) TRANSVERSE
+// ---- MILESTONE 3b phase C, implicit_solver = bicgstab.  The four (six in 3-D)
+// TRANSVERSE
 // OFF-DIAGONAL coefficients of the frozen 7-point row, and the ten Krylov vectors.  They
 // are allocated only when the solver is bicgstab, so line_jacobi keeps the array it had.
 //
@@ -283,14 +310,17 @@ Real M1EddOff(const Real chi, const Real na, const Real nb) {
 //----------------------------------------------------------------------------------------
 //! \fn M1POff
 //! \brief the OFF-diagonal radiation pressure P_ab = D_ab E at one cell, from the LAGGED
-//! closure of the previous Picard pass.  a, b are 0-based directions.
+//! closure of the previous Picard pass.  a, b are 0-based directions.  `ec` names the
+//! component of the work array the energy is taken from: M1_IW_EP for the lagged form,
+//! and a KRYLOV VECTOR when the term is applied as part of the linear operator
+//! (implicit_offdiag = operator), where the closure is frozen and the term is linear.
 
 template <class V>
 KOKKOS_INLINE_FUNCTION
 Real M1POff(const V &iw, const int m, const int a, const int b,
-            const int k, const int j, const int i) {
+            const int k, const int j, const int i, const int ec) {
   return M1EddOff(iw(m,M1_IW_WCHI,k,j,i), iw(m,M1_IW_N1+a,k,j,i),
-                  iw(m,M1_IW_N1+b,k,j,i))*iw(m,M1_IW_EP,k,j,i);
+                  iw(m,M1_IW_N1+b,k,j,i))*iw(m,ec,k,j,i);
 }
 
 //----------------------------------------------------------------------------------------
@@ -311,27 +341,27 @@ Real M1OffDiv(const V &iw, const int m, const int d, const int k, const int j,
               const int i, const Real dx1, const Real dx2, const Real dx3,
               const bool thrd,
               const int il, const int iu, const int jl, const int ju,
-              const int kl, const int ku) {
+              const int kl, const int ku, const int ec) {
   Real s = 0.0;
   if (d != 0) {
     int ia = (i+1 <= iu) ? (i+1) : i;
     int ib = (i-1 >= il) ? (i-1) : i;
     if (ia != ib) {
-      s += (M1POff(iw,m,d,0,k,j,ia) - M1POff(iw,m,d,0,k,j,ib))/((ia - ib)*dx1);
+      s += (M1POff(iw,m,d,0,k,j,ia,ec) - M1POff(iw,m,d,0,k,j,ib,ec))/((ia - ib)*dx1);
     }
   }
   if (d != 1) {
     int ja = (j+1 <= ju) ? (j+1) : j;
     int jb = (j-1 >= jl) ? (j-1) : j;
     if (ja != jb) {
-      s += (M1POff(iw,m,d,1,k,ja,i) - M1POff(iw,m,d,1,k,jb,i))/((ja - jb)*dx2);
+      s += (M1POff(iw,m,d,1,k,ja,i,ec) - M1POff(iw,m,d,1,k,jb,i,ec))/((ja - jb)*dx2);
     }
   }
   if (thrd && d != 2) {
     int ka = (k+1 <= ku) ? (k+1) : k;
     int kb = (k-1 >= kl) ? (k-1) : k;
     if (ka != kb) {
-      s += (M1POff(iw,m,d,2,ka,j,i) - M1POff(iw,m,d,2,kb,j,i))/((ka - kb)*dx3);
+      s += (M1POff(iw,m,d,2,ka,j,i,ec) - M1POff(iw,m,d,2,kb,j,i,ec))/((ka - kb)*dx3);
     }
   }
   return s;
