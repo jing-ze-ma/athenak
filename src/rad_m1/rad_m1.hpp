@@ -307,6 +307,28 @@ class RadiationM1 {
   bool impl_bmom_half;          // give a physical boundary face HALF its flux to the one
                                 // interior cell (the cell-averaged share) instead of all
 
+  // ---- MILESTONE 3b phase B: transport = implicit, the TRANSVERSE (x2/x3) couplings.
+  // All inert with transport = explicit | implicit_x1.
+  int impl_solver;              // M1_ISOLV_*: line_jacobi (bicgstab is a fatal)
+  Real impl_lin_tol;            // <rad_m1>/implicit_lin_tol: the max-norm residual of the
+                                // FULL 7-point linear system, relative to the right-hand
+                                // side, that the line-Jacobi outer iteration must reach.
+                                // It is tested SEPARATELY from the Picard residual: a
+                                // lagged transverse coupling can stall and look
+                                // converged.
+  Real impl_linsum, impl_linmax;  // statistics of the final linear residual per solve
+  bool trans_on;                // transport == implicit AND the mesh is multi-D
+  bool trans_x3;                // ...and three-dimensional
+  DvceArray4D<Real> f0x2, f0x3;   // face-normal comoving fluxes on the x2 / x3 faces,
+                                // (m,k,j,i).  PERSISTENT state, carried by the restart
+                                // file next to f0x1; allocated only when trans_on.
+  DvceArray4D<Real> f0x2n, f0x3n;  // their start-of-step copies (not restarted)
+  DvceArray5D<Real> thw;        // (m,M1_NHALO_T,k,j,i) scratch the transverse halo
+                                // exchanges through the module's ordinary CC boundary
+                                // machinery
+  DvceArray5D<Real> thw_c;      // its (unused) coarse buffer; SMR/AMR is a fatal
+  MeshBoundaryValuesCC *pbval_th;  // the exchange object of thw
+
   // evolved variables
   DvceArray5D<Real> u0;         // (E, F1, F2, F3)
   DvceArray5D<Real> u1;         // state at the start of the substep
@@ -370,6 +392,13 @@ class RadiationM1 {
   void ImplicitX1Halo(bool eponly);
   //! gather the assembled rows onto the roots, run Thomas there, scatter back
   void ImplicitGatherSolve();
+  //! milestone 3b phase B: exchange the 13 lagged quantities the x2/x3 faces need with
+  //! ALL six neighbours (periodic wrap and MPI included), through the module's ordinary
+  //! cell-centred boundary machinery on the scratch array thw
+  void ImplicitTransverseHalo();
+  //! milestone 3b phase B: the lagged transverse (x2/x3) divergence of one Picard pass,
+  //! split into its diagonal part (M1_IW_TDIA) and its right-hand side (M1_IW_TRHS)
+  void ImplicitTransverseTerms(bool first);
 
   // ...in "m1_before_stagen"
   TaskStatus InitRecv(Driver *d, int stage);

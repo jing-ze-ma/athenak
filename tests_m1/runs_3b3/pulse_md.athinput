@@ -1,4 +1,7 @@
-# AthenaK input file for the grey M1 static thick pulse (design note T3, the AP gate)
+# Milestone 3b phase B gates (tests_m1/runs_3b3): the thick pulse in 1-D / 2-D / 3-D
+# with <rad_m1>/transport = implicit.  Same physics as
+# inputs/tests/rad_m1_thick_pulse.athinput, with the 1-D-only <output2> table dropped
+# and implicit_maxit raised to the transport = implicit default.
 #
 # 1-D periodic Gaussian in E in a scattering-dominated STATIC medium: rho = 1, a pure
 # scattering opacity kappa_s, and <rad_m1>/gas_feedback = false so the gas is never
@@ -86,7 +89,7 @@ gas_feedback = false    # static medium
 transport             = explicit  # explicit | implicit_x1 | implicit
 implicit_cfl          = -1.0      # implicit_x1 only: dt = implicit_cfl*dx/c (<=0: off)
 implicit_tol          = 1.0e-8
-implicit_maxit        = 30
+implicit_maxit        = 200
 implicit_opac_update  = false
 implicit_allow_multid = false
 implicit_flux         = central   # central | ap_hll | berthon | blend
@@ -104,7 +107,7 @@ implicit_recon_w      = -1.0      # plm_dc weight; <=0 = auto 1/(1+chat dt/dx)
 implicit_recon_lag    = picard     # step | picard (when the plm correction is re-made)
 implicit_recon_npass  = -1        # 3c: freeze the plm correction after N passes
 implicit_res_floor    = 0.0       # Picard residual scale (0 = the 3a pure |dE|/E)
-implicit_bmom_half    = false     # boundary momentum (milestone 3a2, LIMIT 3)
+implicit_bmom_half    = true     # boundary momentum (milestone 3a2, LIMIT 3)
 marshak_q             = 0.5
 implicit_bc_x1min     = auto      # auto|marshak|flux|reflect|periodic|efix
 implicit_bc_x1max     = auto
@@ -124,6 +127,7 @@ pulse_x0    = 0.5
 pulse_y0    = 0.0
 pulse_z0    = 0.0
 pulse_bg    = 1.0e-3
+pulse_1d    = false
 nyquist_amp = 0.0
 
 <output1>
@@ -131,11 +135,18 @@ file_type   = bin
 variable    = m1
 dt          = 0.1
 
-# The bin writer is SINGLE precision.  Gates and figures that need more (the profile
-# plots of the results page, the Nyquist amplitude at late times) read this
-# DOUBLE-precision table instead; the bin dumps above are kept for the rate fits.
-<output2>
+
+# A 1-D x2 SLICE in DOUBLE precision.  The bin writer above is single precision, which
+# is enough for the diffusion-rate fits of G1/G2 but not for the 1e-14 comparisons of
+# G3 (implicit vs implicit_x1 on an x2-uniform problem) and G4 (1 vs 2x2 MeshBlocks).
+<output3>
 file_type   = tab
 variable    = m1
 data_format = %26.17e
-dt          = 0.1
+slice_x2    = 0.5
+dt          = 1.0e30
+
+# The restart file, for the bitwise restart gate G5.
+<output4>
+file_type   = rst
+dt          = 1.0e30

@@ -163,10 +163,22 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
     Kokkos::deep_copy(outarray_m1, Kokkos::subview(pradm1->u0, std::make_pair(0,nmb),
                       Kokkos::ALL, Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
     // milestone 3a: the persistent x1 face fluxes of the implicit scheme
-    if (pradm1->transport == radm1::M1_TRANSPORT_IMPLICIT_X1) {
+    if (pradm1->transport >= radm1::M1_TRANSPORT_IMPLICIT_X1) {
       Kokkos::realloc(outarray_m1f, nmb, nout3, nout2, nout1+1);
       Kokkos::deep_copy(outarray_m1f, Kokkos::subview(pradm1->f0x1,
                         std::make_pair(0,nmb), Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
+    }
+    // milestone 3b phase B: the transverse face fluxes, in the SAME order the reader
+    // (src/pgen/pgen.cpp) takes them back: f0x1, then f0x2, then f0x3.
+    if (pradm1->trans_on) {
+      Kokkos::realloc(outarray_m1f2, nmb, nout3, nout2+1, nout1);
+      Kokkos::deep_copy(outarray_m1f2, Kokkos::subview(pradm1->f0x2,
+                        std::make_pair(0,nmb), Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
+      if (pradm1->trans_x3) {
+        Kokkos::realloc(outarray_m1f3, nmb, nout3+1, nout2, nout1);
+        Kokkos::deep_copy(outarray_m1f3, Kokkos::subview(pradm1->f0x3,
+                          std::make_pair(0,nmb), Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
+      }
     }
   }
   if (pturb != nullptr) {
@@ -393,8 +405,14 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   }
   if (pradm1 != nullptr) {
     data_size += nout1*nout2*nout3*nm1*sizeof(Real);    // rad_m1 u0
-    if (pradm1->transport == radm1::M1_TRANSPORT_IMPLICIT_X1) {
+    if (pradm1->transport >= radm1::M1_TRANSPORT_IMPLICIT_X1) {
       data_size += (nout1+1)*nout2*nout3*sizeof(Real);  // rad_m1 f0x1 (milestone 3a)
+    }
+    if (pradm1->trans_on) {
+      data_size += nout1*(nout2+1)*nout3*sizeof(Real);  // rad_m1 f0x2 (3b phase B)
+      if (pradm1->trans_x3) {
+        data_size += nout1*nout2*(nout3+1)*sizeof(Real);  // rad_m1 f0x3
+      }
     }
   }
   if (pturb != nullptr) {
@@ -682,8 +700,37 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
     offset_myrank += nout1*nout2*nout3*nm1*sizeof(Real);    // rad_m1 u0
     myoffset = offset_myrank;
 
-    // milestone 3a: the x1 face fluxes, same loop, same order
-    if (pradm1->transport == radm1::M1_TRANSPORT_IMPLICIT_X1) {
+    // milestone 3a / 3b phase B: the persistent face fluxes, same loop, same order.
+    // ONE writer for the three face arrays, so that the order here cannot drift from the
+    // order of the reader in src/pgen/pgen.cpp.
+    auto wrface = [&](HostArray4D<Real> &arr) {
+      for (int m=0;  m<noutmbs_max; ++m) {
+        if (m < noutmbs_min) {
+          auto mbptr = Kokkos::subview(arr, m, Kokkos::ALL, Kokkos::ALL, Kokkos::ALL);
+          int mbcnt = mbptr.size();
+          if (resfile.Write_any_type_at_all(mbptr.data(),mbcnt,myoffset,"Real",
+                                            single_file_per_rank) != mbcnt) {
+            std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+            << std::endl << "rad_m1 face data not written correctly to rst file, "
+            << "restart file is broken." << std::endl;
+            exit(EXIT_FAILURE);
+          }
+          myoffset += data_size;
+        } else if (m < pm->nmb_thisrank) {
+          auto mbptr = Kokkos::subview(arr, m, Kokkos::ALL, Kokkos::ALL, Kokkos::ALL);
+          int mbcnt = mbptr.size();
+          if (resfile.Write_any_type_at(mbptr.data(),mbcnt,myoffset,"Real",
+                                        single_file_per_rank) != mbcnt) {
+            std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                      << std::endl << "rad_m1 face data not written correctly"
+                      << " to rst file, restart file is broken." << std::endl;
+            exit(EXIT_FAILURE);
+          }
+          myoffset += data_size;
+        }
+      }
+    };
+    if (pradm1->transport >= radm1::M1_TRANSPORT_IMPLICIT_X1) {
       for (int m=0;  m<noutmbs_max; ++m) {
         if (m < noutmbs_min) {
           auto mbptr = Kokkos::subview(outarray_m1f, m, Kokkos::ALL, Kokkos::ALL,
@@ -713,6 +760,16 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
       }
       offset_myrank += (nout1+1)*nout2*nout3*sizeof(Real);   // rad_m1 f0x1
       myoffset = offset_myrank;
+    }
+    if (pradm1->trans_on) {
+      wrface(outarray_m1f2);
+      offset_myrank += nout1*(nout2+1)*nout3*sizeof(Real);   // rad_m1 f0x2
+      myoffset = offset_myrank;
+      if (pradm1->trans_x3) {
+        wrface(outarray_m1f3);
+        offset_myrank += nout1*nout2*(nout3+1)*sizeof(Real);   // rad_m1 f0x3
+        myoffset = offset_myrank;
+      }
     }
   }
 

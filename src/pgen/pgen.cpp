@@ -416,10 +416,20 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
   }
   if (pradm1 != nullptr) {
     data_size_ += nout1*nout2*nout3*nm1*sizeof(Real);    // rad_m1 u0
-    if (pradm1->transport == radm1::M1_TRANSPORT_IMPLICIT_X1) {
+    if (pradm1->transport >= radm1::M1_TRANSPORT_IMPLICIT_X1) {
       data_size_ += (nout1+1)*nout2*nout3*sizeof(Real);  // rad_m1 f0x1 (milestone 3a)
     }
   }
+  // milestone 3b phase B: the x2/x3 face-normal fluxes of transport = implicit.  A file
+  // written before they existed (or by an implicit_x1 run) simply does not have them:
+  // that length is accepted below, with one warning, and the arrays stay zero.
+  IOWrapperSizeT m1f23_size = 0;
+  if (pradm1 != nullptr && pradm1->trans_on) {
+    m1f23_size += nout1*(nout2+1)*nout3*sizeof(Real);
+    if (pradm1->trans_x3) {m1f23_size += nout1*nout2*(nout3+1)*sizeof(Real);}
+  }
+  bool m1_have_f23 = (m1f23_size > 0);
+  data_size_ += m1f23_size;
   if (pturb != nullptr) {
     data_size_ += nout1*nout2*nout3*nforce*sizeof(Real); // forcing
   }
@@ -476,6 +486,18 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     wt_mhd = false;
     wd_hyd = false;
     data_size_ += wm_size;
+  }
+
+  // the file predates the transverse face fluxes (or was written by an implicit_x1 run)
+  if (data_size_ != data_size && m1f23_size > 0 &&
+      (data_size_ - m1f23_size) == data_size) {
+    data_size_ -= m1f23_size;
+    m1_have_f23 = false;
+    if (global_variable::my_rank == 0) {
+      std::cout << "### WARNING: restart file carries no <rad_m1> x2/x3 face fluxes "
+                << "(written before transport = implicit existed); they are "
+                << "zero-initialised and the first step rebuilds them." << std::endl;
+    }
   }
 
   if (data_size_ != data_size) {
@@ -762,8 +784,36 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     offset_myrank += nout1*nout2*nout3*nm1*sizeof(Real);    // rad_m1 u0
     myoffset = offset_myrank;
 
-    // milestone 3a: the x1 face fluxes, read back in the same order they were written
-    if (pradm1->transport == radm1::M1_TRANSPORT_IMPLICIT_X1) {
+    // milestone 3a / 3b phase B: the persistent face fluxes, read back in the same order
+    // the writer (src/outputs/restart.cpp) put them down: f0x1, then f0x2, then f0x3.
+    auto rdface = [&](HostArray4D<Real> &arr) {
+      for (int m=0;  m<noutmbs_max; ++m) {
+        if (m < noutmbs_min) {
+          auto mbptr = Kokkos::subview(arr, m, Kokkos::ALL, Kokkos::ALL, Kokkos::ALL);
+          int mbcnt = mbptr.size();
+          if (resfile.Read_Reals_at_all(mbptr.data(), mbcnt, myoffset,
+                                        single_file_per_rank) != mbcnt) {
+            std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                      << std::endl << "rad_m1 face data not read correctly from rst "
+                      << "file, restart file is broken." << std::endl;
+            exit(EXIT_FAILURE);
+          }
+          myoffset += data_size;
+        } else if (m < pm->nmb_thisrank) {
+          auto mbptr = Kokkos::subview(arr, m, Kokkos::ALL, Kokkos::ALL, Kokkos::ALL);
+          int mbcnt = mbptr.size();
+          if (resfile.Read_Reals_at(mbptr.data(), mbcnt, myoffset,
+                                    single_file_per_rank) != mbcnt) {
+            std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                      << std::endl << "rad_m1 face data not read correctly from rst "
+                      << "file, restart file is broken." << std::endl;
+            exit(EXIT_FAILURE);
+          }
+          myoffset += data_size;
+        }
+      }
+    };
+    if (pradm1->transport >= radm1::M1_TRANSPORT_IMPLICIT_X1) {
       HostArray4D<Real> fcin("m1fcin", nmb, nout3, nout2, nout1+1);
       for (int m=0;  m<noutmbs_max; ++m) {
         if (m < noutmbs_min) {
@@ -794,6 +844,22 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
                         Kokkos::ALL, Kokkos::ALL), fcin);
       offset_myrank += (nout1+1)*nout2*nout3*sizeof(Real);   // rad_m1 f0x1
       myoffset = offset_myrank;
+    }
+    if (m1_have_f23) {
+      HostArray4D<Real> f2in("m1f2in", nmb, nout3, nout2+1, nout1);
+      rdface(f2in);
+      Kokkos::deep_copy(Kokkos::subview(pradm1->f0x2, std::make_pair(0,nmb), Kokkos::ALL,
+                        Kokkos::ALL, Kokkos::ALL), f2in);
+      offset_myrank += nout1*(nout2+1)*nout3*sizeof(Real);   // rad_m1 f0x2
+      myoffset = offset_myrank;
+      if (pradm1->trans_x3) {
+        HostArray4D<Real> f3in("m1f3in", nmb, nout3+1, nout2, nout1);
+        rdface(f3in);
+        Kokkos::deep_copy(Kokkos::subview(pradm1->f0x3, std::make_pair(0,nmb),
+                          Kokkos::ALL, Kokkos::ALL, Kokkos::ALL), f3in);
+        offset_myrank += nout1*nout2*(nout3+1)*sizeof(Real);   // rad_m1 f0x3
+        myoffset = offset_myrank;
+      }
     }
   }
 

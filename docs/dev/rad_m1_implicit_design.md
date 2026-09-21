@@ -772,3 +772,139 @@ the persistent face-normal fluxes need the same restart treatment as `f0x1` with
 backward-compatible read, and the linear-system residual of the full 7-point operator has
 to be tested separately from the Picard residual or lagging the transverse couplings will
 look converged when it has only stalled.
+
+---
+
+## 11. Findings of 3b phase B (2026-09-21; supersede sect. 4 and 8-10 where they differ)
+
+Phase B is the TRANSVERSE implicit transport sect. 8 and sect. 10 left open:
+`<rad_m1>/transport = implicit`, the same face-eliminated backward-Euler solve as 3a with
+the x2 and x3 couplings added.  **Implemented and gated with
+`implicit_solver = line_jacobi`; `bicgstab` is a clean fatal.**  Gate tables and the
+exact commands: `tests_m1/runs_3b3/RESULTS.txt` and `runs_3b3/run_gates_3b3.py`.
+
+```
+<rad_m1>/transport        = explicit | implicit_x1 | implicit
+          implicit_solver = line_jacobi | bicgstab     (bicgstab: NOT IMPLEMENTED)
+          implicit_lin_tol= 1e-10   the max-norm residual of the FULL 7-point system
+          implicit_maxit  defaults to 200 under transport = implicit (30 otherwise)
+<problem>/pulse_1d, pulse_y0, pulse_z0   the 2-D/3-D thick pulse of the gate
+```
+
+### The operator
+
+Per direction `d` and face `f`, exactly the x1 form of sect. 1, with the diagonal
+Eddington component of that direction and the off-diagonal ones lagged:
+
+```
+F0_f' = th_f [ F0_f^n - c^2 dt (D_dd,R E'_R - D_dd,L E'_L)/dx_d - c dt v_f g0_f
+               - c^2 dt (sum_{e != d} d_e P_de)_f ]
+th_f  = 1/(1 + c dt (rho kappa_t)_f)        (rho kappa_t)_f arithmetic face mean
+D_ab  = (1-chi)/2 delta_ab + (3 chi - 1)/2 n_a n_b     (lagged chi and flux direction n)
+A_d   = v_d E + (v.P)_d = a_d E,  a_d = v_d + (v.D)_d,  upwinded with the face velocity
+```
+
+The off-diagonal divergence is evaluated with centred differences of the PREVIOUS pass'
+`E` and closure (one-sided at a physical boundary) and is a pure right-hand-side term; it
+enters the x1 face equation as well, so a multi-D x1 flux is no longer the 1-D one.
+
+**The x1 couplings stay in the tridiagonal matrix** and are solved exactly per `(k,j)`
+column, with the 3b `gather` partition when blocks are stacked along x1.  The x2/x3
+couplings are LINE JACOBI: the neighbours' `E` is the previous pass', but their DIAGONAL
+contribution `dT/dE_c >= 0` is kept on the matrix diagonal.  That is what preserves the
+full 7-point M-matrix -- every face still contributes `+nu` to one diagonal and `-nu` to
+one off-diagonal, so the column sums stay `>= 1` and `E' > 0` at any dt.  It is also why
+the line-Jacobi iteration converges at all: what is lagged is strictly off-diagonal.
+
+`transport = implicit` accepts `implicit_flux = central` only (fatal otherwise): the
+asymptotic-preserving forms of 3a2/3c carry per-face coefficients (`ifw`) built for the x1
+faces, and silently running them as `central` in x2/x3 would be a trap.
+
+### Halo: the module's ORDINARY cell-centred exchange on a scratch array
+
+The hand-rolled `ImplicitX1Halo` of 3b was NOT extended.  Instead the 13 lagged
+quantities the transverse faces and the lagged off-diagonal terms read at a neighbour
+(`E`, `chi`, `n_1..n_3`, `rho kappa_t`, `v_1..v_3`, `a_1..a_3`, `g0`) are copied into a
+scratch 5-D array `thw` and exchanged with `MeshBoundaryValuesCC` once per Picard pass,
+then copied back into the ghost zones of `iw`.  That buys periodic wrap, edge and corner
+neighbours and MPI with no new protocol, and it is still bit-exact in the sense that
+matters: a block reads the VERY NUMBERS its neighbour computed, so the two blocks that
+share a face build that face's flux from identical inputs and the face flux is
+single-valued (gate G4: bitwise).  Two exchanges per pass (before the assembly, and after
+the accepted iterate for the face update).  Under `transport = implicit` the x1 halo is
+not run at all -- this exchange carries its six quantities and seven more.
+
+PHYSICAL (non-periodic) x2/x3 boundaries are not filled by the exchange: every kernel
+branches on the MeshBlock boundary flag and imposes `F = 0` there (reflecting).  Marshak /
+imposed-flux transverse boundaries are NOT implemented.
+
+### Convergence: the Picard test is not enough
+
+`implicit_tol` on `max(|dE|/E, |dT|/T)` and, separately, the TRUE residual of the full
+7-point system below `implicit_lin_tol`.  The residual is free: after the line solve
+`E^{k+1}` satisfies `D1(E^{k+1}) + TDIA E^{k+1} + U(E^k) = b` with
+`U(E) = T(E) - TDIA E_c`, so the residual of the FULL system at `E^{k+1}` is exactly
+`U(E^k) - U(E^{k+1})` -- the change of the lagged off-diagonal term between two passes,
+normalised by the max norm of the right-hand side.  It costs one extra pass (the first
+pass has no previous `U`), which is why the `implicit` Picard counts are one above the
+`implicit_x1` ones on an x2-uniform problem.
+
+### State and restart
+
+`f0x2` (and `f0x3` in 3-D) are allocated only when `transport = implicit` and the mesh is
+multi-D, and are written to and read from the restart file immediately after `f0x1`, in
+the same order in writer and reader (one shared lambda each, so the order cannot drift).
+A file that does not carry them is accepted with one warning and the arrays start at zero;
+that negotiation is unambiguous only when the general-EOS `wtemp`/`wder` tail is absent
+(it is a single extra length, added to the same total).
+
+### Gates (serial CPU, `build_cpu_m1`)
+
+All numbers in `tests_m1/runs_3b3/RESULTS.txt`.  Summary:
+
+* **G1 isotropy and rate.**  2-D 64^2 and 3-D 32^3 thick pulse, pure scattering,
+  `gas_feedback = false`, `tau_cell` 10 and 1e3, `implicit_cfl` 1 / 1e2 / 1e4.
+  `d(sigma^2)/dt / 2D` is 0.9955-1.0000 in every measurable case (tolerance 2 %) and the
+  spread BETWEEN directions is 0 to 1.7e-9, i.e. three to six orders better than the
+  1e-3 the brief asked for.  Three (tau, CFL) combinations are marked NOT MEASURABLE:
+  the diffusion length of the twelve steps needed for a rate fit then exceeds the box.
+* **G2 anisotropic cells.**  `dx2 = 4 dx1` (the He box ratio) and `dx2 = dx1/4`, same
+  accuracy (0.999999 in both directions), isotropy 1.6e-7 / 2.8e-8, and the pass count
+  moves from 3 to 4.
+* **G3 a problem uniform in x2** (`nx2 = 4`, `problem/pulse_1d`): `transport = implicit`
+  reproduces `transport = implicit_x1` to **9.9e-14** of the column scale (`E` to 4.3e-14
+  absolute on a peak of 0.91, `F1` to 7.2e-18 on a peak of 7.3e-5), with `F2` identically
+  zero.  NOT bitwise, and cannot be: the multi-D closure builds `D_11` from
+  `(1-chi)/2 + (3chi-1)/2 n_1^2` where the 1-D one uses `chi` directly, and the linear
+  residual test adds one Picard pass.
+* **G4 decomposition.**  1 x 2 MeshBlocks with periodic x1, and 2 x 2 MeshBlocks with
+  REFLECTING x1 and `implicit_partition = gather` (periodic x1 across several blocks is
+  the clean fatal of sect. 8): **bitwise**, difference exactly 0.000e+00 at
+  `implicit_lin_tol` 1e-10 and 1e-13.  Total E is conserved to 5.9e-9 relative, which is
+  the precision of the single-precision `bin` dump the sum is taken from, not a drift of
+  the solve; the two decompositions give the same number to the last digit.
+* **G5 restart**, 2-D 64^2, 2 x 2 blocks, restarted from the mid-run `rst` the
+  uninterrupted run itself wrote at t = 9.92: the final double-precision slice is
+  **BYTE-IDENTICAL**.  `f0x1` + `f0x2` are therefore the complete persistent state.
+* **G6 regression**: `tests_gate_merge/postmerge.sh` -- box G1 modes 3 and 0, **10/10
+  files IDENTICAL**; the 1-D He column reproduces the reference line (Picard mean
+  11.70892, max 23, `V1max` 1.8343925542664529e4, `F1top/F1bot` 0.99982556 = the
+  1.0000097 / 0.9998352 of the reference to eight digits).  `implicit_x1` thick pulse,
+  `tau_cell` 1e3, `implicit_cfl` 100, `central`: ratio **1.000001**, Picard mean 2.000 --
+  the 3a/3a2/3b/3c number.  Nothing on the `explicit` or `implicit_x1` paths changed
+  arithmetically: every new branch is behind `trans`, which is false for both.
+
+### Pass counts
+
+The cost parameter is the DIFFUSION CFL of the transverse direction,
+`nu_t = c dt/(3 tau_cell dx)`, not `c dt/dx`: at `tau_cell = 1e3` the 2-D pulse takes 3
+passes at `implicit_cfl` 1, 8 at 1e2 and 131 at 1e4, and at `tau_cell = 10` it already
+takes 131 at `implicit_cfl` 1e2.  That is the expected behaviour of a Jacobi iteration on
+the transverse direction and it is the reason `implicit_maxit` defaults to 200 here.  It
+is also the case for a Krylov wrapper (the optional `bicgstab`, not implemented).
+
+### What is NOT done
+
+`implicit_solver = bicgstab` (fatal); the asymptotic-preserving transverse fluxes;
+Marshak / imposed-flux transverse boundaries; SMR/AMR; GPU; the 2-D He slab (G7 of the
+brief) and therefore any statement about `box_convection`'s M1 wiring in 2-D.

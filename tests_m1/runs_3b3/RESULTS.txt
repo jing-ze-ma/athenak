@@ -1,0 +1,167 @@
+MILESTONE 3b PHASE B -- <rad_m1>/transport = implicit, the TRANSVERSE (x2/x3) implicit
+solve with implicit_solver = line_jacobi.  Serial CPU, build_cpu_m1 (default build, no
+PROBLEM), 2026-09-21.  Design note: docs/dev/rad_m1_implicit_design.md sect. 11.
+
+Driver:  tests_m1/runs_3b3/run_gates_3b3.py  [g1 g2 g3 g4 g5]
+Input:   tests_m1/runs_3b3/pulse_md.athinput  (the thick pulse of
+         inputs/tests/rad_m1_thick_pulse.athinput, without the 1-D-only <output2> table,
+         with implicit_maxit = 200 and implicit_bmom_half = true, plus a double-precision
+         x2 slice <output3> and a restart <output4>)
+Analysis: tests_m1/runs_3b3/pulse_md.py  (marginal variance per axis vs 2 D t)
+Raw logs: gates_g1.txt, gates_g2.txt, gates_g3_g4_g5.txt, gates_g6_postmerge.txt
+Every case had its dumps deleted as soon as it was measured (viper inode quota).
+
+The pulse is a Gaussian in E in a STATIC pure-scattering medium (kappa_p = kappa_e =
+kappa_f = 0, gas_feedback = false), periodic in every direction; tau_cell = kappa_s*dx.
+The marginal variance of E must grow at 2 D with D = c/(3 rho kappa) in EVERY direction.
+
+
+================================================================================
+G1  ISOTROPY AND RATE                                                     PASS
+================================================================================
+2-D 64^2 and 3-D 32^3, tau_cell 10 and 1e3, implicit_cfl 1 / 1e2 / 1e4.
+Tolerance: rate within 2 % of 1, spread between axes <= 1e-3.
+
+case                          d(sigma^2)/dt / 2D          iso      Picard mean/max  lin.res
+g1_2d_tau10_cfl1        x=0.996514 y=0.996514            0.0e+00   7.92 / 8     1.01e-11
+g1_2d_tau10_cfl100      x=0.995494 y=0.995494            8.8e-10   131.1 / 134  9.52e-11
+g1_2d_tau10_cfl10000    NOT MEASURABLE (see the note below)
+g1_2d_tau1000_cfl1      x=0.999999 y=0.999999            0.0e+00   3.00 / 3     3.60e-11
+g1_2d_tau1000_cfl100    x=1.000000 y=1.000000            5.1e-10   7.92 / 8     1.91e-11
+g1_2d_tau1000_cfl10000  x=0.995500 y=0.995500            5.2e-10   131.3 / 135  9.45e-11
+g1_3d_tau10_cfl1        x=y=z=0.996434                   1.7e-09   10.0 / 10    1.22e-11
+g1_3d_tau10_cfl100      NOT MEASURABLE
+g1_3d_tau10_cfl10000    NOT MEASURABLE
+g1_3d_tau1000_cfl1      x=y=z=0.999998                   0.0e+00   4.00 / 4     5.25e-13
+g1_3d_tau1000_cfl100    x=y=z=0.999999                   1.2e-09   10.0 / 10    2.47e-11
+g1_3d_tau1000_cfl10000  NOT MEASURABLE
+
+The ISOTROPY is 0 to 1.7e-9, three to six orders better than the 1e-3 asked for; where it
+is not exactly 0 the two directions differ only through the order in which the Picard
+loop stops.  The RATE is 0.9955-1.0000 everywhere.
+
+NOT MEASURABLE means the diffusion length of the twelve steps a rate fit needs already
+exceeds the box (2 D t > 0.02 with sigma0^2 = 1.25e-3), so no window exists in which the
+pulse is still a pulse.  That is a property of the problem, not of the solver: at
+tau_cell = 10 one step at implicit_cfl = 1e4 diffuses across the whole domain.
+
+
+================================================================================
+G2  ANISOTROPIC CELLS                                                     PASS
+================================================================================
+Same physical box (1 x 1), nx1 = 64, tau_cell(x1) = 1e3, implicit_cfl = 1.
+
+case               nx2   dx2/dx1   rate                    iso      Picard  lin.res
+g2_dx2_4dx1         16     4       x=0.999999 y=0.999999  1.6e-07   3.00    5.79e-14
+g2_dx2_dx1_4       256     1/4     x=0.999999 y=0.999999  2.8e-08   4.00    5.17e-13
+
+Same accuracy at both ratios (the He box ratio is dx2 = 4 dx1).  The pass count moves
+from 3 to 4 when the transverse direction is refined 4x, i.e. with the transverse
+diffusion CFL, as a Jacobi iteration must.
+
+
+================================================================================
+G3  A PROBLEM UNIFORM IN x2 (nx2 = 4): implicit vs implicit_x1             PASS
+================================================================================
+nx1 = 64, nx2 = 4, problem/pulse_1d = true (the Gaussian is a function of x1 alone),
+tau_cell = 1e3, implicit_cfl = 1, t = 19.84 (1270 steps).
+
+  max difference of the final (E,F1) slice, relative to the column's own max: 9.932e-14
+    E  : 4.32e-14 absolute on a peak of 0.9106
+    F1 : 7.24e-18 absolute on a peak of 7.294e-05
+  F2 identically 0.000e+00 in both
+  Picard mean: implicit 2.999, implicit_x1 2.000
+
+NOT bitwise, and it cannot be:
+  (1) the multi-D closure builds D_11 = (1-chi)/2 + (3 chi - 1)/2 n_1^2 where the 1-D one
+      uses chi directly -- algebraically the same number for n_1 = +-1, not the same
+      floating-point expression;
+  (2) the extra linear-residual test costs one Picard pass (the first pass has no
+      previous off-diagonal term to compare with), so the `implicit` answer is one pass
+      MORE converged.
+1e-14 is the agreement the brief allows.
+
+
+================================================================================
+G4  MeshBlock DECOMPOSITION IN 2-D                                        PASS
+================================================================================
+nx = 64^2, tau_cell = 1e3, implicit_cfl = 1, t = 19.84.
+(a) 1 x 2 MeshBlocks, periodic x1.
+(b) 2 x 2 MeshBlocks, REFLECTING x1 with implicit_partition = gather.  Periodic x1 across
+    several MeshBlocks is the clean fatal of sect. 8 and cannot be decomposed.
+
+case  lin_tol    maxdiff(single vs split)   dEtot/Etot single   split    Picard
+g4a   1.0e-10    0.000e+00                  5.881e-09           5.881e-09   3 / 3
+g4b   1.0e-10    0.000e+00                  5.881e-09           5.881e-09   3 / 3
+g4a   1.0e-13    0.000e+00                  5.881e-09           5.881e-09   4 / 4
+g4b   1.0e-13    0.000e+00                  5.881e-09           5.881e-09   4 / 4
+
+BITWISE, not "within the solver tolerance": the difference is exactly zero, so the
+"shrinks when implicit_lin_tol is tightened to 1e-13" clause of the gate is vacuous --
+there is nothing left to shrink.  That is by construction: the transverse halo moves the
+very numbers the neighbour computed, so both blocks build a shared face's flux from
+identical inputs and the face flux is single-valued.
+
+dEtot/Etot is the change of the volume sum of E between the first and the last dump.  It
+is 5.9e-9 in EVERY case, single and split, to the last digit -- and that number is the
+precision of the SINGLE-precision `bin` writer the sum is taken from (4096 values), not a
+drift of the solve.  A tighter conservation statement needs a double-precision full-field
+dump and was not made.
+
+
+================================================================================
+G5  RESTART                                                               PASS
+================================================================================
+2-D 64^2, 2 x 2 MeshBlocks (reflecting x1, implicit_partition = gather), restarted with
+-r from the mid-run restart file the UNINTERRUPTED run itself wrote at t = 9.92:
+
+  final double-precision x2 slice: BYTE-IDENTICAL
+
+So f0x1 + f0x2 are the complete persistent state of the 2-D implicit transport, and the
+restart write/read order (f0x1, then f0x2, then f0x3) is consistent.
+
+
+================================================================================
+G6  REGRESSION                                                            PASS
+================================================================================
+tests_gate_merge/postmerge.sh:
+  box G1 mode 3: feczrt.hydro.hst, feczrt.user.hst, column_used.txt, rt_surface.bin,
+                 rt_profile.bin  -- all IDENTICAL   (5/5)
+  box G1 mode 0: the same five                      -- all IDENTICAL   (5/5)   => 10/10
+  1-D He column, transport = implicit_x1, 300 s: exit 0
+     Picard mean 11.70892, max 23, solves 1862, NON-CONVERGED 0
+     V1max = 1.8343925542664529e4                  (reference 1.8343926e4)
+     F1top/F1bot = 0.99982556                      (= 1.0000097/0.9998352 of the
+                                                     reference line, to 8 digits)
+
+implicit_x1 thick pulse, tau_cell = 1e3, implicit_cfl = 100, implicit_flux = central:
+  d(sigma^2)/dt = 5.208337e-06, 2D = 5.208333e-06, ratio = 1.000001, Picard mean 2.000
+  (the 3a/3a2/3b/3c reference number)
+
+Nothing on the explicit or implicit_x1 paths changed arithmetically: every new branch in
+rad_m1_implicit.cpp is behind `trans`, which is false for both.
+
+
+================================================================================
+G7  THE 2-D STATIC He SLAB                                            NOT RUN
+================================================================================
+Out of budget.  box_convection's M1 wiring in 2-D is therefore UNTESTED, and no claim is
+made about it.
+
+
+================================================================================
+PASS COUNTS -- what they scale with
+================================================================================
+The cost parameter of the line-Jacobi outer iteration is the TRANSVERSE DIFFUSION CFL,
+nu_t = c dt / (3 tau_cell dx), not c dt/dx:
+
+  tau_cell   implicit_cfl    2-D passes    3-D passes
+     1e3          1              3             4
+     1e3        1e2              8            10
+     1e3        1e4            131             -
+      10          1              8            10
+      10        1e2            131             -
+
+i.e. passes ~ 1 + O(nu_t) once nu_t > 1.  This is why implicit_maxit defaults to 200
+under transport = implicit.  A Krylov wrapper (implicit_solver = bicgstab) is the
+intended remedy and is NOT implemented.

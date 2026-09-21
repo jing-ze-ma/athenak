@@ -259,6 +259,8 @@ class BaseTypeOutput {
   // state of that scheme and are written as one more block after the moments, with
   // (nout1+1) values per row.  Empty -- and not one byte written -- in every other run.
   HostArray4D<Real> outarray_m1f;
+  // milestone 3b phase B: the x2/x3 face-normal fluxes of transport = implicit
+  HostArray4D<Real> outarray_m1f2, outarray_m1f3;
   // the general EOS temperature cache (Hydro/MHD::wtemp).  It is not state in the sense
   // of an evolved variable, but it IS the warm start of the c2p temperature root find,
   // which converges only to `logtol`: a restart that cold starts it lands on a different

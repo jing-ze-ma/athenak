@@ -106,11 +106,33 @@ void ImplFatal(const std::string &msg) {
 //! constructor, from the delimited hook there, and a no-op in explicit mode.
 
 void RadiationM1::ImplicitInit(ParameterInput *pin) {
-  if (transport != M1_TRANSPORT_IMPLICIT_X1) return;
+  if (transport < M1_TRANSPORT_IMPLICIT_X1) return;
 
+  // ---- MILESTONE 3b phase B.  `implicit` = the full 7-point solve; `implicit_x1` keeps
+  // every branch below on the 3a/3a2/3c arithmetic, bit for bit.
+  const bool full = (transport == M1_TRANSPORT_IMPLICIT);
+  trans_on = false;
+  trans_x3 = false;
   impl_cfl = pin->GetOrAddReal("rad_m1","implicit_cfl",-1.0);
   impl_tol = pin->GetOrAddReal("rad_m1","implicit_tol",1.0e-8);
-  impl_maxit = pin->GetOrAddInteger("rad_m1","implicit_maxit",30);
+  // a lagged transverse coupling needs more outer passes than a pure column solve, so
+  // the ceiling is raised (not the count: the loop still stops at convergence).
+  impl_maxit = pin->GetOrAddInteger("rad_m1","implicit_maxit", full ? 200 : 30);
+  impl_lin_tol = pin->GetOrAddReal("rad_m1","implicit_lin_tol",1.0e-10);
+  {std::string sv = pin->GetOrAddString("rad_m1","implicit_solver","line_jacobi");
+  if (sv.compare("line_jacobi") == 0) {
+    impl_solver = M1_ISOLV_LINE_JACOBI;
+  } else if (sv.compare("bicgstab") == 0) {
+    impl_solver = M1_ISOLV_BICGSTAB;
+    if (full) {
+      ImplFatal("<rad_m1>/implicit_solver = bicgstab is NOT implemented (3b phase B "
+                "ships line_jacobi only)");
+    }
+  } else {
+    ImplFatal("<rad_m1>/implicit_solver = '" + sv
+              + "' is not a choice (line_jacobi | bicgstab)");
+  }
+  }
   impl_opac_update = pin->GetOrAddBoolean("rad_m1","implicit_opac_update",false);
   impl_allow_multid = pin->GetOrAddBoolean("rad_m1","implicit_allow_multid",false);
   marshak_q = pin->GetOrAddReal("rad_m1","marshak_q",0.5);
@@ -128,6 +150,14 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   } else {
     ImplFatal("<rad_m1>/implicit_flux = '" + sfx
               + "' is not a choice (central | ap_hll | berthon | blend)");
+  }
+  // 3b phase B: the transverse operator is built for the face-eliminated (central) form
+  // only.  The HLL/berthon/blend face fluxes carry per-face coefficients (ifw) that exist
+  // for the x1 faces alone, so anything but `central` would silently be central in x2/x3.
+  if (full && impl_flux != M1_IFLUX_CENTRAL) {
+    ImplFatal("<rad_m1>/transport = implicit supports implicit_flux = central only "
+              "(the asymptotic-preserving forms are built for the x1 faces); use "
+              "transport = implicit_x1 for ap_hll | berthon | blend");
   }
   // ---- milestone 3c.  The weight of implicit_flux = blend.  Inert for every other
   // flux, and the two ends of the blend are BITWISE central and berthon.
@@ -260,7 +290,19 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (part_nblk > 1 && indcs.ng < 2) {
     ImplFatal("<rad_m1>/implicit_partition = gather needs <mesh>/nghost >= 2");
   }
-  if ((indcs.nx2 > 1 || indcs.nx3 > 1) && !impl_allow_multid) {
+  if (full) {
+    trans_on = pmy_pack->pmesh->multi_d;
+    trans_x3 = pmy_pack->pmesh->three_d;
+    if (!trans_on) {
+      // a 1-D mesh has no transverse direction: the solve IS the x1 column solve, and
+      // gate G3 is exactly this statement.
+      if (global_variable::my_rank == 0) {
+        std::cout << "<rad_m1>: transport=implicit on a 1-D mesh is the x1 column solve"
+                  << std::endl;
+      }
+    }
+  }
+  if ((indcs.nx2 > 1 || indcs.nx3 > 1) && !impl_allow_multid && !full) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
       << std::endl << "<rad_m1>/transport = implicit_x1 does NOT transport along x2/x3. "
       << "Set <rad_m1>/implicit_allow_multid = true to run a set of INDEPENDENT x1 "
@@ -290,14 +332,39 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   Kokkos::deep_copy(f0x1, 0.0);
   Kokkos::realloc(f0x1n, nmb, ncells3, ncells2, ncells1+1);
   Kokkos::deep_copy(f0x1n, 0.0);
-  Kokkos::realloc(iw, nmb, M1_NIW, ncells3, ncells2, ncells1);
+  Kokkos::realloc(iw, nmb, (full ? M1_NIW : M1_NIW_X1), ncells3, ncells2, ncells1);
   Kokkos::deep_copy(iw, 0.0);
   Kokkos::realloc(ifw, nmb, M1_NIFW, ncells3, ncells2, ncells1+1);
   Kokkos::deep_copy(ifw, 0.0);
+  if (trans_on) {
+    Kokkos::realloc(f0x2, nmb, ncells3, ncells2+1, ncells1);
+    Kokkos::deep_copy(f0x2, 0.0);
+    Kokkos::realloc(f0x2n, nmb, ncells3, ncells2+1, ncells1);
+    Kokkos::deep_copy(f0x2n, 0.0);
+    if (trans_x3) {
+      Kokkos::realloc(f0x3, nmb, ncells3+1, ncells2, ncells1);
+      Kokkos::deep_copy(f0x3, 0.0);
+      Kokkos::realloc(f0x3n, nmb, ncells3+1, ncells2, ncells1);
+      Kokkos::deep_copy(f0x3n, 0.0);
+    }
+    // the transverse halo rides the module's ORDINARY cell-centred boundary machinery on
+    // a scratch array, which is what gives it periodic wrap, corner/edge neighbours and
+    // MPI for free; the hand-rolled x1 halo of 3b is then not used at all under
+    // transport = implicit (this exchange carries its six quantities and seven more).
+    Kokkos::realloc(thw, nmb, M1_NHALO_T, ncells3, ncells2, ncells1);
+    Kokkos::deep_copy(thw, 0.0);
+    Kokkos::realloc(thw_c, nmb, M1_NHALO_T, 1, 1, 1);
+    pbval_th = new MeshBoundaryValuesCC(pmy_pack, pin, false);
+    pbval_th->InitializeBuffers(M1_NHALO_T);
+  }
   ImplicitPartitionInit();
 
   if (global_variable::my_rank == 0) {
-    std::cout << "<rad_m1>: transport=implicit_x1 (milestone 3a) implicit_cfl="
+    std::cout << "<rad_m1>: transport=" << (full ? "implicit" : "implicit_x1")
+              << (full ? (trans_x3 ? " (3-D)" : (trans_on ? " (2-D)" : " (1-D)")) : "")
+              << " solver=" << (full ? "line_jacobi" : "thomas")
+              << " lin_tol=" << impl_lin_tol << std::endl;
+    std::cout << "         implicit_cfl="
               << impl_cfl << " tol=" << impl_tol << " maxit=" << impl_maxit
               << " opac_update=" << (impl_opac_update ? "true" : "false")
               << " marshak_q=" << marshak_q << std::endl;
@@ -559,6 +626,270 @@ void RadiationM1::ImplicitX1Halo(bool eponly) {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::ImplicitTransverseHalo
+//! \brief milestone 3b phase B: put the M1_NHALO_T LAGGED quantities the x2/x3 faces (and
+//! the lagged off-diagonal Eddington terms of every face) read at a neighbouring cell
+//! into the scratch array `thw`, exchange it with ALL six neighbours through the module's
+//! ORDINARY cell-centred boundary machinery -- which is what supplies periodic wrap,
+//! edge/corner neighbours and MPI without another hand-rolled protocol -- and copy the
+//! ghost zones back into `iw`.
+//!
+//! The values a block reads in its ghost zones are therefore the VERY NUMBERS its
+//! neighbour computed, so the two blocks that share a face assemble that face's flux from
+//! bit-identical inputs: the face flux is single-valued and the scheme is conservative
+//! across a MeshBlock boundary (gate G4).
+//!
+//! PHYSICAL (non-periodic) boundaries are NOT filled here: every kernel below branches on
+//! the boundary flag instead and imposes F = 0 on a physical x2/x3 face (reflecting).
+
+void RadiationM1::ImplicitTransverseHalo() {
+  if (!trans_on) return;
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  int n1 = indcs.nx1 + 2*(indcs.ng);
+  int n2 = (indcs.nx2 > 1)? (indcs.nx2 + 2*(indcs.ng)) : 1;
+  int n3 = (indcs.nx3 > 1)? (indcs.nx3 + 2*(indcs.ng)) : 1;
+  int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto iw_ = iw;
+  auto th_ = thw;
+  par_for("m1_impl_thpack", DevExeSpace(), 0, nmb1, 0, M1_NHALO_T-1, 0, n3-1, 0, n2-1,
+          0, n1-1,
+  KOKKOS_LAMBDA(const int m, const int n, const int k, const int j, const int i) {
+    th_(m,n,k,j,i) = iw_(m,M1HaloCompT(n),k,j,i);
+  });
+  while (pbval_th->InitRecv(M1_NHALO_T) == TaskStatus::incomplete) {}
+  while (pbval_th->PackAndSendCC(thw, thw_c) == TaskStatus::incomplete) {}
+  while (pbval_th->RecvAndUnpackCC(thw, thw_c) == TaskStatus::incomplete) {}
+  while (pbval_th->ClearSend() == TaskStatus::incomplete) {}
+  while (pbval_th->ClearRecv() == TaskStatus::incomplete) {}
+  par_for("m1_impl_thunpack", DevExeSpace(), 0, nmb1, 0, M1_NHALO_T-1, 0, n3-1, 0, n2-1,
+          0, n1-1,
+  KOKKOS_LAMBDA(const int m, const int n, const int k, const int j, const int i) {
+    iw_(m,M1HaloCompT(n),k,j,i) = th_(m,n,k,j,i);
+  });
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::ImplicitTransverseTerms
+//! \brief milestone 3b phase B: one line-Jacobi evaluation of the TRANSVERSE (x2, x3)
+//! part of the operator at the current Picard iterate.
+//!
+//! Per direction d and face f, exactly the face-eliminated form the x1 faces use:
+//!
+//!   F0_f' = theta_f [ F0_f^n - c^2 dt (P_dd,R - P_dd,L)/dx_d - c dt v_f g0_f
+//!                     - c^2 dt (sum_{e != d} d_e P_de)_f ]
+//!   theta_f = 1/(1 + c dt (rho kappa_t)_f),  (rho kappa_t)_f the arithmetic face mean
+//!
+//! with P_dd = D_dd E of the LAGGED closure, D_dd = (1-chi)/2 + (3 chi - 1)/2 n_d^2, and
+//! the off-diagonal divergence fully lagged (centred differences of the previous pass' E
+//! and closure), so it is a pure right-hand-side term.  The advective enthalpy flux
+//! A_d = v_d E + (v.P)_d is upwinded with the face velocity, exactly as in x1.
+//!
+//! The result is split into
+//!   M1_IW_TDIA = dT/dE_c >= 0, which goes on the matrix DIAGONAL, and
+//!   M1_IW_TRHS = -(T(E^k) - TDIA E^k_c), the neighbours' lagged contribution.
+//! Keeping the diagonal part on the matrix is what preserves the full 7-point M-matrix:
+//! the column sums stay >= 1 and E' > 0 at any dt.
+//!
+//! It also measures the TRUE residual of the full 7-point linear system.  After the line
+//! solve E^{k+1} satisfies  D1(E^{k+1}) + TDIA E^{k+1} + U(E^k) = b  with
+//! U(E) = T(E) - TDIA E_c, so the residual of the FULL system at E^{k+1} is exactly
+//! U(E^k) - U(E^{k+1}): the change of the lagged off-diagonal term between two passes.
+//! That is what M1_IW_LRES holds, and it is tested separately from the Picard residual --
+//! a lagged coupling can stall and look converged on |dE|/E alone.
+
+void RadiationM1::ImplicitTransverseTerms(bool first) {
+  if (!trans_on) return;
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  int is = indcs.is, ie = indcs.ie;
+  int js = indcs.js, je = indcs.je;
+  int ks = indcs.ks, ke = indcs.ke;
+  int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto iw_ = iw;
+  auto f2_ = f0x2;
+  auto f2n_ = f0x2n;
+  auto f3_ = f0x3;
+  auto f3n_ = f0x3n;
+  auto &mbsize = pmy_pack->pmb->mb_size;
+  auto &mbbcs = pmy_pack->pmb->mb_bcs;
+  Real cl = c_light, ch = chat, dt = dt_sub;
+  const bool thrd = trans_x3;
+  const bool fst = first;
+
+  // (1) the x2 face fluxes
+  par_for("m1_impl_f2face", DevExeSpace(), 0, nmb1, ks, ke, js, je+1, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    BoundaryFlag blo = mbbcs.d_view(m,BoundaryFace::inner_x2);
+    BoundaryFlag bhi = mbbcs.d_view(m,BoundaryFace::outer_x2);
+    bool plo = (blo != BoundaryFlag::block) && (blo != BoundaryFlag::periodic);
+    bool phi = (bhi != BoundaryFlag::block) && (bhi != BoundaryFlag::periodic);
+    if ((j == js && plo) || (j == je+1 && phi)) {
+      f2_(m,k,j,i) = 0.0;
+      return;
+    }
+    Real dx1 = mbsize.d_view(m).dx1;
+    Real dx2 = mbsize.d_view(m).dx2;
+    Real dx3 = mbsize.d_view(m).dx3;
+    BoundaryFlag a1 = mbbcs.d_view(m,BoundaryFace::inner_x1);
+    BoundaryFlag a2 = mbbcs.d_view(m,BoundaryFace::outer_x1);
+    BoundaryFlag a5 = mbbcs.d_view(m,BoundaryFace::inner_x3);
+    BoundaryFlag a6 = mbbcs.d_view(m,BoundaryFace::outer_x3);
+    bool pi1 = (a1 != BoundaryFlag::block) && (a1 != BoundaryFlag::periodic);
+    bool pi2 = (a2 != BoundaryFlag::block) && (a2 != BoundaryFlag::periodic);
+    int il = pi1 ? is : is-1;
+    int iu = pi2 ? ie : ie+1;
+    int kl = (!thrd || ((a5 != BoundaryFlag::block) &&
+                        (a5 != BoundaryFlag::periodic))) ? ks : ks-1;
+    int ku = (!thrd || ((a6 != BoundaryFlag::block) &&
+                        (a6 != BoundaryFlag::periodic))) ? ke : ke+1;
+    int jl = plo ? js : js-1;
+    int ju = phi ? je : je+1;
+    int jm = j - 1;
+    Real ktf = 0.5*(iw_(m,M1_IW_KT,k,jm,i) + iw_(m,M1_IW_KT,k,j,i));
+    Real th = 1.0/(1.0 + ch*dt*ktf);
+    Real dl = M1EddDiag(iw_(m,M1_IW_WCHI,k,jm,i), iw_(m,M1_IW_N2,k,jm,i));
+    Real dr = M1EddDiag(iw_(m,M1_IW_WCHI,k,j,i), iw_(m,M1_IW_N2,k,j,i));
+    Real gr = (dr*iw_(m,M1_IW_EP,k,j,i) - dl*iw_(m,M1_IW_EP,k,jm,i))/dx2;
+    Real vf = 0.5*(iw_(m,M1_IW_V2,k,jm,i) + iw_(m,M1_IW_V2,k,j,i));
+    Real g0f = 0.5*(iw_(m,M1_IW_G0,k,jm,i) + iw_(m,M1_IW_G0,k,j,i));
+    Real off = 0.5*(M1OffDiv(iw_,m,1,k,jm,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku)
+                    + M1OffDiv(iw_,m,1,k,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku));
+    f2_(m,k,j,i) = th*(f2n_(m,k,j,i) - ch*cl*dt*gr - ch*dt*vf*g0f - ch*cl*dt*off);
+  });
+
+  // (2) the x3 face fluxes
+  if (thrd) {
+    par_for("m1_impl_f3face", DevExeSpace(), 0, nmb1, ks, ke+1, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      BoundaryFlag blo = mbbcs.d_view(m,BoundaryFace::inner_x3);
+      BoundaryFlag bhi = mbbcs.d_view(m,BoundaryFace::outer_x3);
+      bool plo = (blo != BoundaryFlag::block) && (blo != BoundaryFlag::periodic);
+      bool phi = (bhi != BoundaryFlag::block) && (bhi != BoundaryFlag::periodic);
+      if ((k == ks && plo) || (k == ke+1 && phi)) {
+        f3_(m,k,j,i) = 0.0;
+        return;
+      }
+      Real dx1 = mbsize.d_view(m).dx1;
+      Real dx2 = mbsize.d_view(m).dx2;
+      Real dx3 = mbsize.d_view(m).dx3;
+      BoundaryFlag a1 = mbbcs.d_view(m,BoundaryFace::inner_x1);
+      BoundaryFlag a2 = mbbcs.d_view(m,BoundaryFace::outer_x1);
+      BoundaryFlag a3 = mbbcs.d_view(m,BoundaryFace::inner_x2);
+      BoundaryFlag a4 = mbbcs.d_view(m,BoundaryFace::outer_x2);
+      bool pi1 = (a1 != BoundaryFlag::block) && (a1 != BoundaryFlag::periodic);
+      bool pi2 = (a2 != BoundaryFlag::block) && (a2 != BoundaryFlag::periodic);
+      bool pj1 = (a3 != BoundaryFlag::block) && (a3 != BoundaryFlag::periodic);
+      bool pj2 = (a4 != BoundaryFlag::block) && (a4 != BoundaryFlag::periodic);
+      int il = pi1 ? is : is-1;
+      int iu = pi2 ? ie : ie+1;
+      int jl = pj1 ? js : js-1;
+      int ju = pj2 ? je : je+1;
+      int kl = plo ? ks : ks-1;
+      int ku = phi ? ke : ke+1;
+      int km = k - 1;
+      Real ktf = 0.5*(iw_(m,M1_IW_KT,km,j,i) + iw_(m,M1_IW_KT,k,j,i));
+      Real th = 1.0/(1.0 + ch*dt*ktf);
+      Real dl = M1EddDiag(iw_(m,M1_IW_WCHI,km,j,i), iw_(m,M1_IW_N3,km,j,i));
+      Real dr = M1EddDiag(iw_(m,M1_IW_WCHI,k,j,i), iw_(m,M1_IW_N3,k,j,i));
+      Real gr = (dr*iw_(m,M1_IW_EP,k,j,i) - dl*iw_(m,M1_IW_EP,km,j,i))/dx3;
+      Real vf = 0.5*(iw_(m,M1_IW_V3,km,j,i) + iw_(m,M1_IW_V3,k,j,i));
+      Real g0f = 0.5*(iw_(m,M1_IW_G0,km,j,i) + iw_(m,M1_IW_G0,k,j,i));
+      Real off = 0.5*(M1OffDiv(iw_,m,2,km,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku)
+                      + M1OffDiv(iw_,m,2,k,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku));
+      f3_(m,k,j,i) = th*(f3n_(m,k,j,i) - ch*cl*dt*gr - ch*dt*vf*g0f - ch*cl*dt*off);
+    });
+  }
+
+  // (3) the cell terms: the diagonal part, the lagged right-hand side and the residual
+  // of the full 7-point system
+  par_for("m1_impl_tcell", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    Real dx2 = mbsize.d_view(m).dx2;
+    Real dx3 = mbsize.d_view(m).dx3;
+    Real cr = ch/cl;
+    Real ec = iw_(m,M1_IW_EP,k,j,i);
+    Real chic = iw_(m,M1_IW_WCHI,k,j,i);
+    Real dia = 0.0, tt = 0.0;
+    BoundaryFlag b3 = mbbcs.d_view(m,BoundaryFace::inner_x2);
+    BoundaryFlag b4 = mbbcs.d_view(m,BoundaryFace::outer_x2);
+    bool p2lo = (b3 != BoundaryFlag::block) && (b3 != BoundaryFlag::periodic);
+    bool p2hi = (b4 != BoundaryFlag::block) && (b4 != BoundaryFlag::periodic);
+    Real nu2 = dt/dx2;
+    Real d2c = M1EddDiag(chic, iw_(m,M1_IW_N2,k,j,i));
+    Real a2c = iw_(m,M1_IW_A2,k,j,i);
+    Real fp = 0.0, fm = 0.0;
+    if (!(j == je && p2hi)) {
+      Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j,i) + iw_(m,M1_IW_KT,k,j+1,i));
+      Real th = 1.0/(1.0 + ch*dt*ktf);
+      Real vf = 0.5*(iw_(m,M1_IW_V2,k,j,i) + iw_(m,M1_IW_V2,k,j+1,i));
+      fp = f2_(m,k,j+1,i);
+      if (vf > 0.0) {
+        fp += a2c*ec;
+        dia += nu2*cr*a2c;
+      } else {
+        fp += iw_(m,M1_IW_A2,k,j+1,i)*iw_(m,M1_IW_EP,k,j+1,i);
+      }
+      dia += nu2*th*ch*ch*dt*d2c/dx2;
+    }
+    if (!(j == js && p2lo)) {
+      Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j-1,i) + iw_(m,M1_IW_KT,k,j,i));
+      Real th = 1.0/(1.0 + ch*dt*ktf);
+      Real vf = 0.5*(iw_(m,M1_IW_V2,k,j-1,i) + iw_(m,M1_IW_V2,k,j,i));
+      fm = f2_(m,k,j,i);
+      if (vf > 0.0) {
+        fm += iw_(m,M1_IW_A2,k,j-1,i)*iw_(m,M1_IW_EP,k,j-1,i);
+      } else {
+        fm += a2c*ec;
+        dia -= nu2*cr*a2c;
+      }
+      dia += nu2*th*ch*ch*dt*d2c/dx2;
+    }
+    tt += nu2*cr*(fp - fm);
+    if (thrd) {
+      BoundaryFlag b5 = mbbcs.d_view(m,BoundaryFace::inner_x3);
+      BoundaryFlag b6 = mbbcs.d_view(m,BoundaryFace::outer_x3);
+      bool p3lo = (b5 != BoundaryFlag::block) && (b5 != BoundaryFlag::periodic);
+      bool p3hi = (b6 != BoundaryFlag::block) && (b6 != BoundaryFlag::periodic);
+      Real nu3 = dt/dx3;
+      Real d3c = M1EddDiag(chic, iw_(m,M1_IW_N3,k,j,i));
+      Real a3c = iw_(m,M1_IW_A3,k,j,i);
+      Real gp = 0.0, gm = 0.0;
+      if (!(k == ke && p3hi)) {
+        Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j,i) + iw_(m,M1_IW_KT,k+1,j,i));
+        Real th = 1.0/(1.0 + ch*dt*ktf);
+        Real vf = 0.5*(iw_(m,M1_IW_V3,k,j,i) + iw_(m,M1_IW_V3,k+1,j,i));
+        gp = f3_(m,k+1,j,i);
+        if (vf > 0.0) {
+          gp += a3c*ec;
+          dia += nu3*cr*a3c;
+        } else {
+          gp += iw_(m,M1_IW_A3,k+1,j,i)*iw_(m,M1_IW_EP,k+1,j,i);
+        }
+        dia += nu3*th*ch*ch*dt*d3c/dx3;
+      }
+      if (!(k == ks && p3lo)) {
+        Real ktf = 0.5*(iw_(m,M1_IW_KT,k-1,j,i) + iw_(m,M1_IW_KT,k,j,i));
+        Real th = 1.0/(1.0 + ch*dt*ktf);
+        Real vf = 0.5*(iw_(m,M1_IW_V3,k-1,j,i) + iw_(m,M1_IW_V3,k,j,i));
+        gm = f3_(m,k,j,i);
+        if (vf > 0.0) {
+          gm += iw_(m,M1_IW_A3,k-1,j,i)*iw_(m,M1_IW_EP,k-1,j,i);
+        } else {
+          gm += a3c*ec;
+          dia -= nu3*cr*a3c;
+        }
+        dia += nu3*th*ch*ch*dt*d3c/dx3;
+      }
+      tt += nu3*cr*(gp - gm);
+    }
+    Real unew = tt - dia*ec;
+    Real uold = -iw_(m,M1_IW_TRHS,k,j,i);
+    iw_(m,M1_IW_LRES,k,j,i) = fst ? 1.0e30 : fabs(unew - uold);
+    iw_(m,M1_IW_TDIA,k,j,i) = dia;
+    iw_(m,M1_IW_TRHS,k,j,i) = -unew;
+  });
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::ImplicitGatherSolve
 //! \brief gather the assembled rows (a,b,c,r) of every x1 stack onto its root block, run
 //! there the IDENTICAL serial Thomas sweep the single-block solve runs, and scatter the
@@ -729,7 +1060,7 @@ void RadiationM1::SetImplicitX1BC(int lo_type, Real lo_flux, int hi_type, Real h
 //! \brief one line at the end of the run with the Picard statistics
 
 void RadiationM1::ImplicitReport() {
-  if (transport != M1_TRANSPORT_IMPLICIT_X1) return;
+  if (transport < M1_TRANSPORT_IMPLICIT_X1) return;
   // the Picard iteration count is MPI_MAX-reduced every step (see ImplicitSolve), so
   // every rank holds the same three numbers and no reduction is needed here
   if (global_variable::my_rank != 0) return;
@@ -737,6 +1068,12 @@ void RadiationM1::ImplicitReport() {
   std::cout << "<rad_m1> implicit transport: solves=" << impl_nstep
             << " Picard iterations mean=" << mean << " max=" << impl_itmax
             << " NON-CONVERGED=" << impl_nfail << std::endl;
+  if (trans_on) {
+    Real lmean = (impl_nstep > 0.0) ? (impl_linsum/impl_nstep) : 0.0;
+    std::cout << "<rad_m1> implicit transverse (line_jacobi): final 7-point linear "
+              << "residual mean=" << lmean << " max=" << impl_linmax
+              << " tol=" << impl_lin_tol << std::endl;
+  }
 }
 
 //----------------------------------------------------------------------------------------
@@ -774,6 +1111,17 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   // each new iterate, so the backward-Euler right-hand side needs its own copy
   auto f0n_ = f0x1n;
   Kokkos::deep_copy(DevExeSpace(), f0x1n, f0x1);
+  // MILESTONE 3b phase B: the transverse couplings.  `trans` is false for every 3a/3a2/3c
+  // configuration and for a 1-D mesh, so those paths keep their arithmetic bit for bit.
+  const bool trans = trans_on;
+  const bool thrd = trans_x3;
+  auto f2_ = f0x2;
+  auto f3_ = f0x3;
+  if (trans) {
+    Kokkos::deep_copy(DevExeSpace(), f0x2n, f0x2);
+    if (thrd) {Kokkos::deep_copy(DevExeSpace(), f0x3n, f0x3);}
+  }
+  auto &mbbcs = pmy_pack->pmb->mb_bcs;
   auto opac_ = opac;
   auto &mbsize = pmy_pack->pmb->mb_size;
   Real cl = c_light;
@@ -835,6 +1183,20 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     iw_(m,M1_IW_TP,k,j,i) = 0.0;
     iw_(m,M1_IW_EGN,k,j,i) = 0.0;
     iw_(m,M1_IW_KT,k,j,i) = opac_(m,M1_OP_T,k,j,i);
+    if (trans) {
+      iw_(m,M1_IW_V2,k,j,i) = 0.0;
+      iw_(m,M1_IW_V3,k,j,i) = 0.0;
+      iw_(m,M1_IW_F2,k,j,i) = u0_(m,M1_F2,k,j,i);
+      iw_(m,M1_IW_F3,k,j,i) = u0_(m,M1_F3,k,j,i);
+      iw_(m,M1_IW_N1,k,j,i) = 0.0;
+      iw_(m,M1_IW_N2,k,j,i) = 0.0;
+      iw_(m,M1_IW_N3,k,j,i) = 0.0;
+      iw_(m,M1_IW_A2,k,j,i) = 0.0;
+      iw_(m,M1_IW_A3,k,j,i) = 0.0;
+      iw_(m,M1_IW_TDIA,k,j,i) = 0.0;
+      iw_(m,M1_IW_TRHS,k,j,i) = 0.0;
+      iw_(m,M1_IW_LRES,k,j,i) = 0.0;
+    }
   });
 
   if (have_hydro) {
@@ -850,6 +1212,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       iw_(m,M1_IW_EGN,k,j,i) = eg;
       iw_(m,M1_IW_TP,k,j,i) = eos.Temperature(dd, fmax(eg, 1.0e-300));
       iw_(m,M1_IW_V1,k,j,i) = uh(m,IM1,k,j,i)*idd;
+      if (trans) {
+        iw_(m,M1_IW_V2,k,j,i) = uh(m,IM2,k,j,i)*idd;
+        iw_(m,M1_IW_V3,k,j,i) = uh(m,IM3,k,j,i)*idd;
+      }
     });
   }
 
@@ -878,9 +1244,36 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   }
   const Real escale = rfl_*emax0;
 
+  // the SCALE the TRUE linear residual is measured against: the max norm of the
+  // right-hand side of the 7-point system, which is E^n plus the (small) source terms.
+  Real rhsmax = 1.0;
+  if (trans) {
+    Real rm = 0.0;
+    Kokkos::parallel_reduce("m1_impl_rhsmax",
+    Kokkos::MDRangePolicy<Kokkos::Rank<4>>(DevExeSpace(), {0,ks,js,is},
+                                           {nmb1+1,ke+1,je+1,ie+1}),
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &lmax) {
+      Real r = fabs(iw_(m,M1_IW_EN,k,j,i));
+      lmax = (r > lmax) ? r : lmax;
+    }, Kokkos::Max<Real>(rm));
+#if MPI_PARALLEL_ENABLED
+    {Real g;
+    MPI_Allreduce(&rm, &g, 1, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+    rm = g;}
+#endif
+    rhsmax = fmax(rm, 1.0e-300);
+  }
+  Real lresid = 0.0;
+
   // the x1 ghost layers the partitioned solve reads.  E of the start-of-step state is
   // sent once here; the six lagged quantities and the new E are sent inside the loop.
-  ImplicitX1Halo(true);
+  // Under transport = implicit the SIX-neighbour exchange of ImplicitTransverseHalo
+  // carries all of that and seven quantities more, so the hand-rolled x1 halo is not run.
+  if (trans) {
+    ImplicitTransverseHalo();
+  } else {
+    ImplicitX1Halo(true);
+  }
 
   //--------------------------------------------------------------------- the Picard loop
   int it = 0;
@@ -921,11 +1314,47 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       if (rf < -1.0) {rf = -1.0;}
       Real chi = edd ? (1.0/3.0) : M1Chi(fabs(rf));
       Real v1 = iw_(m,M1_IW_V1,k,j,i);
-      iw_(m,M1_IW_WCHI,k,j,i) = chi;
-      iw_(m,M1_IW_ADV,k,j,i) = v1*(1.0 + chi);
-      // E0 - E with F_2 = F_3 = 0: P_11 = chi E, P_22 = P_33 = (1-chi) E/2
-      Real b1 = v1/cl;
-      Real de0 = ovc ? (-2.0*b1*f1/cl) : (b1*b1*e - 2.0*b1*f1/cl + b1*b1*chi*e);
+      Real de0;
+      if (!trans) {
+        iw_(m,M1_IW_WCHI,k,j,i) = chi;
+        iw_(m,M1_IW_ADV,k,j,i) = v1*(1.0 + chi);
+        // E0 - E with F_2 = F_3 = 0: P_11 = chi E, P_22 = P_33 = (1-chi) E/2
+        Real b1 = v1/cl;
+        de0 = ovc ? (-2.0*b1*f1/cl) : (b1*b1*e - 2.0*b1*f1/cl + b1*b1*chi*e);
+      } else {
+        // MILESTONE 3b phase B: the closure of the MULTI-DIMENSIONAL solve.  The reduced
+        // flux is the MAGNITUDE |F|/(c E) and the Eddington tensor is built around the
+        // unit flux direction n, D_ab = (1-chi)/2 delta_ab + (3 chi - 1)/2 n_a n_b.  In
+        // 1-D this is the branch above with n = (+-1,0,0), which is why the 1-D mesh is
+        // handled there (gate G3) and nothing about implicit_x1 changes.
+        Real f2c = iw_(m,M1_IW_F2,k,j,i);
+        Real f3c = iw_(m,M1_IW_F3,k,j,i);
+        Real fm = sqrt(f1*f1 + f2c*f2c + f3c*f3c);
+        Real rfm = fm/(cl*e);
+        if (rfm > 1.0) {rfm = 1.0;}
+        chi = edd ? (1.0/3.0) : M1Chi(rfm);
+        Real ifm = 1.0/fmax(fm, 1.0e-300);
+        Real n1 = f1*ifm, n2 = f2c*ifm, n3 = f3c*ifm;
+        Real v2 = iw_(m,M1_IW_V2,k,j,i), v3 = iw_(m,M1_IW_V3,k,j,i);
+        iw_(m,M1_IW_WCHI,k,j,i) = chi;
+        iw_(m,M1_IW_N1,k,j,i) = n1;
+        iw_(m,M1_IW_N2,k,j,i) = n2;
+        iw_(m,M1_IW_N3,k,j,i) = n3;
+        // a_d = v_d + (v.D)_d, so that the enthalpy flux A_d = v_d E + (v.P)_d = a_d E
+        Real d11 = M1EddDiag(chi,n1), d22 = M1EddDiag(chi,n2), d33 = M1EddDiag(chi,n3);
+        Real d12 = M1EddOff(chi,n1,n2), d13 = M1EddOff(chi,n1,n3);
+        Real d23 = M1EddOff(chi,n2,n3);
+        iw_(m,M1_IW_ADV,k,j,i) = v1 + (v1*d11 + v2*d12 + v3*d13);
+        iw_(m,M1_IW_A2,k,j,i) = v2 + (v1*d12 + v2*d22 + v3*d23);
+        iw_(m,M1_IW_A3,k,j,i) = v3 + (v1*d13 + v2*d23 + v3*d33);
+        // E0 - E to O(beta^2), with the full pressure tensor
+        Real b1 = v1/cl, b2 = v2/cl, b3 = v3/cl;
+        Real bf = (b1*f1 + b2*f2c + b3*f3c)/cl;
+        Real bpb = (b1*b1*d11 + b2*b2*d22 + b3*b3*d33
+                    + 2.0*(b1*b2*d12 + b1*b3*d13 + b2*b3*d23))*e;
+        Real b2sq = b1*b1 + b2*b2 + b3*b3;
+        de0 = ovc ? (-2.0*bf) : (b2sq*e - 2.0*bf + bpb);
+      }
       iw_(m,M1_IW_DE0,k,j,i) = de0;
       Real rkev = opac_(m,M1_OP_E,k,j,i);
       Real rkpv = opac_(m,M1_OP_P,k,j,i);
@@ -968,7 +1397,14 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     // the x1 halo of the LAGGED quantities (w, a, g0, v1, the comoving reduced flux and
     // the transport opacity).  Every face of the stack is then assembled by both of its
     // blocks from bit-identical numbers.
-    ImplicitX1Halo(false);
+    if (trans) {
+      ImplicitTransverseHalo();
+      // (b1) the lagged transverse operator: the x2/x3 face fluxes of this iterate, their
+      // diagonal contribution to the matrix and their lagged right-hand side.
+      ImplicitTransverseTerms(it == 0);
+    } else {
+      ImplicitX1Halo(false);
+    }
 
     // (b2) the FACE coefficients of the asymptotic-preserving HLL blend.  Nothing here
     // runs under implicit_flux = central, where ifw stays identically zero and the row
@@ -1183,11 +1619,38 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       int ipos = pos_.d_view(m);
       bool botb = (ipos == 0), topb = (ipos == nblkx1-1);
       Real wi = iw_(m,M1_IW_WCHI,k,j,i);
+      // in 1-D the stored closure IS the diagonal Eddington component (P_11/E = chi);
+      // in multi-D it is chi and D_11 has to be built from the lagged flux direction.
+      if (trans) {wi = M1EddDiag(wi, iw_(m,M1_IW_N1,k,j,i));}
       Real ai = iw_(m,M1_IW_ADV,k,j,i);
       Real vi = iw_(m,M1_IW_V1,k,j,i);
       Real aa = 0.0, bb = 1.0, cc = 0.0;
       Real rr = iw_(m,M1_IW_EN,k,j,i) + iw_(m,M1_IW_SRCR,k,j,i);
       bb += iw_(m,M1_IW_SRCB,k,j,i);
+      // MILESTONE 3b phase B: the LINE-JACOBI transverse couplings.  Their diagonal part
+      // stays on the diagonal (the 7-point M-matrix), the neighbours' lagged part goes to
+      // the right-hand side.
+      int il = is, iu = ie, jl = js, ju = je, kl = ks, ku = ke;
+      if (trans) {
+        bb += iw_(m,M1_IW_TDIA,k,j,i);
+        rr += iw_(m,M1_IW_TRHS,k,j,i);
+        BoundaryFlag q1 = mbbcs.d_view(m,BoundaryFace::inner_x1);
+        BoundaryFlag q2 = mbbcs.d_view(m,BoundaryFace::outer_x1);
+        BoundaryFlag q3 = mbbcs.d_view(m,BoundaryFace::inner_x2);
+        BoundaryFlag q4 = mbbcs.d_view(m,BoundaryFace::outer_x2);
+        BoundaryFlag q5 = mbbcs.d_view(m,BoundaryFace::inner_x3);
+        BoundaryFlag q6 = mbbcs.d_view(m,BoundaryFace::outer_x3);
+        if ((q1 == BoundaryFlag::block) || (q1 == BoundaryFlag::periodic)) {il = is-1;}
+        if ((q2 == BoundaryFlag::block) || (q2 == BoundaryFlag::periodic)) {iu = ie+1;}
+        if ((q3 == BoundaryFlag::block) || (q3 == BoundaryFlag::periodic)) {jl = js-1;}
+        if ((q4 == BoundaryFlag::block) || (q4 == BoundaryFlag::periodic)) {ju = je+1;}
+        if (thrd && ((q5 == BoundaryFlag::block) ||
+                     (q5 == BoundaryFlag::periodic))) {kl = ks-1;}
+        if (thrd && ((q6 == BoundaryFlag::block) ||
+                     (q6 == BoundaryFlag::periodic))) {ku = ke+1;}
+      }
+      Real dx2 = mbsize.d_view(m).dx2;
+      Real dx3 = mbsize.d_view(m).dx3;
 
       // ---- face i+1/2
       if (i < ie || cyclic || !topb) {
@@ -1197,10 +1660,19 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         Real th = 1.0/(1.0 + ch*dt*ktf);
         Real df = om*th*ch*ch*dt/dx;
         bb += nu*df*wi;
-        cc -= nu*df*iw_(m,M1_IW_WCHI,k,j,ip);
+        Real wp = iw_(m,M1_IW_WCHI,k,j,ip);
+        if (trans) {wp = M1EddDiag(wp, iw_(m,M1_IW_N1,k,j,ip));}
+        cc -= nu*df*wp;
         Real vf = 0.5*(vi + iw_(m,M1_IW_V1,k,j,ip));
         Real g0f = 0.5*(iw_(m,M1_IW_G0,k,j,i) + iw_(m,M1_IW_G0,k,j,ip));
-        rr -= nu*cr*om*th*(f0n_(m,k,j,i+1) - ch*dt*vf*g0f);
+        // the OFF-diagonal Eddington terms of the x1 flux equation, d_2 P_12 + d_3 P_13,
+        // fully lagged and therefore a right-hand-side term
+        Real od = 0.0;
+        if (trans) {
+          od = 0.5*(M1OffDiv(iw_,m,0,k,j,i,dx,dx2,dx3,thrd,il,iu,jl,ju,kl,ku)
+                    + M1OffDiv(iw_,m,0,k,j,ip,dx,dx2,dx3,thrd,il,iu,jl,ju,kl,ku));
+        }
+        rr -= nu*cr*om*th*(f0n_(m,k,j,i+1) - ch*dt*vf*g0f - ch*cl*dt*od);
         // the HLL part: its E'_L coefficient is >= 0 (diagonal) and its E'_R coefficient
         // <= 0 (upper off-diagonal), so the blend keeps the M-matrix.
         bb += nu*ifw_(m,M1_IFW_HCL,k,j,i+1);
@@ -1226,10 +1698,17 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         Real th = 1.0/(1.0 + ch*dt*ktf);
         Real df = om*th*ch*ch*dt/dx;
         bb += nu*df*wi;
-        aa -= nu*df*iw_(m,M1_IW_WCHI,k,j,im);
+        Real wm = iw_(m,M1_IW_WCHI,k,j,im);
+        if (trans) {wm = M1EddDiag(wm, iw_(m,M1_IW_N1,k,j,im));}
+        aa -= nu*df*wm;
         Real vf = 0.5*(iw_(m,M1_IW_V1,k,j,im) + vi);
         Real g0f = 0.5*(iw_(m,M1_IW_G0,k,j,im) + iw_(m,M1_IW_G0,k,j,i));
-        rr += nu*cr*om*th*(f0n_(m,k,j,i) - ch*dt*vf*g0f);
+        Real od = 0.0;
+        if (trans) {
+          od = 0.5*(M1OffDiv(iw_,m,0,k,j,im,dx,dx2,dx3,thrd,il,iu,jl,ju,kl,ku)
+                    + M1OffDiv(iw_,m,0,k,j,i,dx,dx2,dx3,thrd,il,iu,jl,ju,kl,ku));
+        }
+        rr += nu*cr*om*th*(f0n_(m,k,j,i) - ch*dt*vf*g0f - ch*cl*dt*od);
         aa -= nu*ifw_(m,M1_IFW_HCL,k,j,i);
         bb -= nu*ifw_(m,M1_IFW_HCR,k,j,i);
         rr += nu*ifw_(m,M1_IFW_DG,k,j,i);
@@ -1360,7 +1839,11 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
 
     // the new iterate's E has to reach the ghost cells before the FACE update, or the
     // two blocks that share a face would build it from different states.
-    ImplicitX1Halo(true);
+    if (trans) {
+      ImplicitTransverseHalo();
+    } else {
+      ImplicitX1Halo(true);
+    }
 
     // (g) the face fluxes of the new iterate, and the derived cell flux
     par_for("m1_impl_face", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
@@ -1392,10 +1875,37 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         Real th = 1.0/(1.0 + ch*dt*ktf);
         Real vf = 0.5*(iw_(m,M1_IW_V1,k,j,im) + iw_(m,M1_IW_V1,k,j,ip));
         Real g0f = 0.5*(iw_(m,M1_IW_G0,k,j,im) + iw_(m,M1_IW_G0,k,j,ip));
-        Real gr = (iw_(m,M1_IW_WCHI,k,j,ip)*iw_(m,M1_IW_EP,k,j,ip)
-                   - iw_(m,M1_IW_WCHI,k,j,im)*iw_(m,M1_IW_EP,k,j,im))/dx;
+        Real wp = iw_(m,M1_IW_WCHI,k,j,ip);
+        Real wm = iw_(m,M1_IW_WCHI,k,j,im);
+        if (trans) {
+          wp = M1EddDiag(wp, iw_(m,M1_IW_N1,k,j,ip));
+          wm = M1EddDiag(wm, iw_(m,M1_IW_N1,k,j,im));
+        }
+        Real gr = (wp*iw_(m,M1_IW_EP,k,j,ip) - wm*iw_(m,M1_IW_EP,k,j,im))/dx;
+        Real od = 0.0;
+        if (trans) {
+          Real dx2 = mbsize.d_view(m).dx2;
+          Real dx3 = mbsize.d_view(m).dx3;
+          int il = is, iu = ie, jl = js, ju = je, kl = ks, ku = ke;
+          BoundaryFlag q1 = mbbcs.d_view(m,BoundaryFace::inner_x1);
+          BoundaryFlag q2 = mbbcs.d_view(m,BoundaryFace::outer_x1);
+          BoundaryFlag q3 = mbbcs.d_view(m,BoundaryFace::inner_x2);
+          BoundaryFlag q4 = mbbcs.d_view(m,BoundaryFace::outer_x2);
+          BoundaryFlag q5 = mbbcs.d_view(m,BoundaryFace::inner_x3);
+          BoundaryFlag q6 = mbbcs.d_view(m,BoundaryFace::outer_x3);
+          if ((q1 == BoundaryFlag::block) || (q1 == BoundaryFlag::periodic)) {il = is-1;}
+          if ((q2 == BoundaryFlag::block) || (q2 == BoundaryFlag::periodic)) {iu = ie+1;}
+          if ((q3 == BoundaryFlag::block) || (q3 == BoundaryFlag::periodic)) {jl = js-1;}
+          if ((q4 == BoundaryFlag::block) || (q4 == BoundaryFlag::periodic)) {ju = je+1;}
+          if (thrd && ((q5 == BoundaryFlag::block) ||
+                       (q5 == BoundaryFlag::periodic))) {kl = ks-1;}
+          if (thrd && ((q6 == BoundaryFlag::block) ||
+                       (q6 == BoundaryFlag::periodic))) {ku = ke+1;}
+          od = 0.5*(M1OffDiv(iw_,m,0,k,j,im,dx,dx2,dx3,thrd,il,iu,jl,ju,kl,ku)
+                    + M1OffDiv(iw_,m,0,k,j,ip,dx,dx2,dx3,thrd,il,iu,jl,ju,kl,ku));
+        }
         Real fn = th*(f0n_(m,k,j,(i == ie+1 && cyclic) ? is : i)
-                      - ch*cl*dt*gr - ch*dt*vf*g0f);
+                      - ch*cl*dt*gr - ch*dt*vf*g0f - ch*cl*dt*od);
         // the SAME blend the row was assembled with, so that the stored comoving face
         // flux (which the restart file carries, which the momentum deposit uses and which
         // the next iterate's reduced flux is built from) is the flux the solve applied.
@@ -1425,6 +1935,15 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       iw_(m,M1_IW_F1,k,j,i) = 0.5*(f0_(m,k,j,i) + f0_(m,k,j,i+1))
                               + iw_(m,M1_IW_ADV,k,j,i)*iw_(m,M1_IW_EP,k,j,i);
+      if (trans) {
+        Real ep = iw_(m,M1_IW_EP,k,j,i);
+        iw_(m,M1_IW_F2,k,j,i) = 0.5*(f2_(m,k,j,i) + f2_(m,k,j+1,i))
+                                + iw_(m,M1_IW_A2,k,j,i)*ep;
+        if (thrd) {
+          iw_(m,M1_IW_F3,k,j,i) = 0.5*(f3_(m,k,j,i) + f3_(m,k+1,j,i))
+                                  + iw_(m,M1_IW_A3,k,j,i)*ep;
+        }
+      }
     });
 
     // (h) convergence
@@ -1445,7 +1964,35 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     MPI_Allreduce(&resid, &rg, 1, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
     resid = rg;}
 #endif
-    converged = (resid < impl_tol);
+    // MILESTONE 3b phase B.  The Picard test alone is NOT enough once the transverse
+    // couplings are lagged: |dE|/E can stall while the off-diagonal terms are still
+    // moving.  The TRUE residual of the full 7-point system is measured separately (see
+    // ImplicitTransverseTerms) and both have to be met.
+    lresid = 0.0;
+    if (trans) {
+      Kokkos::parallel_reduce("m1_impl_lres",
+      Kokkos::MDRangePolicy<Kokkos::Rank<4>>(DevExeSpace(), {0,ks,js,is},
+                                             {nmb1+1,ke+1,je+1,ie+1}),
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &lmax) {
+        Real r = iw_(m,M1_IW_LRES,k,j,i);
+        lmax = (r > lmax) ? r : lmax;
+      }, Kokkos::Max<Real>(lresid));
+#if MPI_PARALLEL_ENABLED
+      {Real lg;
+      MPI_Allreduce(&lresid, &lg, 1, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+      lresid = lg;}
+#endif
+      lresid /= rhsmax;
+    }
+    converged = (resid < impl_tol) && (!trans || (lresid < impl_lin_tol));
+  }
+  if (trans) {
+    // refresh the stored transverse face fluxes with the CONVERGED E, so that the
+    // persistent state the restart file carries, the momentum deposit and the derived
+    // F_2/F_3 are the fluxes the solve ended on (exactly what step (g) does for x1).
+    ImplicitTransverseTerms(false);
+    impl_linmax = std::max(impl_linmax, lresid);
+    impl_linsum += lresid;
   }
 #if MPI_PARALLEL_ENABLED
   {
@@ -1467,13 +2014,30 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     Real ep = iw_(m,M1_IW_EP,k,j,i);
     Real fl = f0_(m,k,j,i), fr = f0_(m,k,j,i+1);
     Real fp1 = 0.5*(fl + fr) + iw_(m,M1_IW_ADV,k,j,i)*ep;
+    // MILESTONE 3b phase B: the derived cell-centred transverse fluxes, the face means
+    // plus the enthalpy flux, exactly as in x1.
+    Real fp2 = 0.0, fp3 = 0.0;
+    Real g2l = 0.0, g2r = 0.0, g3l = 0.0, g3r = 0.0;
+    if (trans) {
+      g2l = f2_(m,k,j,i);
+      g2r = f2_(m,k,j+1,i);
+      fp2 = 0.5*(g2l + g2r) + iw_(m,M1_IW_A2,k,j,i)*ep;
+      if (thrd) {
+        g3l = f3_(m,k,j,i);
+        g3r = f3_(m,k+1,j,i);
+        fp3 = 0.5*(g3l + g3r) + iw_(m,M1_IW_A3,k,j,i)*ep;
+      }
+    }
 
     Real work = 0.0, dm1 = 0.0, dmref = 0.0, eg = 0.0, ekin = 0.0, egrv = 0.0;
-    Real dd = 0.0, v1 = 0.0;
+    Real dm2 = 0.0, dm3 = 0.0;
+    Real dd = 0.0, v1 = 0.0, v2 = 0.0, v3 = 0.0;
     if (have_hydro) {
       dd = uh(m,IDN,k,j,i);
       Real idd = 1.0/fmax(dd, 1.0e-300);
       v1 = uh(m,IM1,k,j,i)*idd;
+      v2 = uh(m,IM2,k,j,i)*idd;
+      v3 = uh(m,IM3,k,j,i)*idd;
       ekin = 0.5*(SQR(uh(m,IM1,k,j,i)) + SQR(uh(m,IM2,k,j,i)) +
                   SQR(uh(m,IM3,k,j,i)))*idd;
       egrv = etg ? (dd*phicc(m,k,j,i)) : 0.0;
@@ -1513,22 +2077,65 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         }
         dm1 = (dt/cl)*(wl*ktl*fl + wr*ktr*fr);
         dmref = fref ? (dt*dd*aref_(m,k,j,i)) : 0.0;
+        if (trans) {
+          // the same rule per transverse direction: each face hands
+          // dt (rho k_t)_f F0_f/c to the gas, half to each of its two cells, and a
+          // PHYSICAL boundary face (where F0 is zero anyway) half as well under
+          // implicit_bmom_half.
+          BoundaryFlag q3 = mbbcs.d_view(m,BoundaryFace::inner_x2);
+          BoundaryFlag q4 = mbbcs.d_view(m,BoundaryFace::outer_x2);
+          bool p2lo = (q3 != BoundaryFlag::block) && (q3 != BoundaryFlag::periodic);
+          bool p2hi = (q4 != BoundaryFlag::block) && (q4 != BoundaryFlag::periodic);
+          Real ktc = iw_(m,M1_IW_KT,k,j,i);
+          Real kl2 = (j == js && p2lo) ? ktc
+                     : 0.5*(iw_(m,M1_IW_KT,k,j-1,i) + ktc);
+          Real kr2 = (j == je && p2hi) ? ktc
+                     : 0.5*(ktc + iw_(m,M1_IW_KT,k,j+1,i));
+          Real u2 = ((j == js && p2lo) && !bmhalf) ? 1.0 : 0.5;
+          Real w2 = ((j == je && p2hi) && !bmhalf) ? 1.0 : 0.5;
+          dm2 = (dt/cl)*(u2*kl2*g2l + w2*kr2*g2r);
+          if (thrd) {
+            BoundaryFlag q5 = mbbcs.d_view(m,BoundaryFace::inner_x3);
+            BoundaryFlag q6 = mbbcs.d_view(m,BoundaryFace::outer_x3);
+            bool p3lo = (q5 != BoundaryFlag::block) && (q5 != BoundaryFlag::periodic);
+            bool p3hi = (q6 != BoundaryFlag::block) && (q6 != BoundaryFlag::periodic);
+            Real kl3 = (k == ks && p3lo) ? ktc
+                       : 0.5*(iw_(m,M1_IW_KT,k-1,j,i) + ktc);
+            Real kr3 = (k == ke && p3hi) ? ktc
+                       : 0.5*(ktc + iw_(m,M1_IW_KT,k+1,j,i));
+            Real u3 = ((k == ks && p3lo) && !bmhalf) ? 1.0 : 0.5;
+            Real w3 = ((k == ke && p3hi) && !bmhalf) ? 1.0 : 0.5;
+            dm3 = (dt/cl)*(u3*kl3*g3l + w3*kr3*g3r);
+          }
+        }
         if (feedback) {
-          Real w1 = (uh(m,IM1,k,j,i) + dm1)/fmax(dd, 1.0e-300);
+          Real idg = 1.0/fmax(dd, 1.0e-300);
+          Real w1 = (uh(m,IM1,k,j,i) + dm1)*idg;
           work = 0.5*(v1 + w1)*dm1;
+          if (trans) {
+            Real w2n = (uh(m,IM2,k,j,i) + dm2)*idg;
+            work += 0.5*(v2 + w2n)*dm2;
+            if (thrd) {
+              Real w3n = (uh(m,IM3,k,j,i) + dm3)*idg;
+              work += 0.5*(v3 + w3n)*dm3;
+            }
+          }
           ep -= (ch/cl)*work;
         }
       }
     }
 
-    Real f2 = 0.0, f3 = 0.0;
-    M1ApplyLimits(cl, efl, ep, fp1, f2, f3);
+    M1ApplyLimits(cl, efl, ep, fp1, fp2, fp3);
     u0_(m,M1_E,k,j,i) = ep;
     u0_(m,M1_F1,k,j,i) = fp1;
-    u0_(m,M1_F2,k,j,i) = 0.0;
-    u0_(m,M1_F3,k,j,i) = 0.0;
+    u0_(m,M1_F2,k,j,i) = fp2;
+    u0_(m,M1_F3,k,j,i) = fp3;
     if (have_hydro && feedback) {
       uh(m,IM1,k,j,i) = uh(m,IM1,k,j,i) + dm1 - dmref;
+      if (trans) {
+        uh(m,IM2,k,j,i) = uh(m,IM2,k,j,i) + dm2;
+        if (thrd) {uh(m,IM3,k,j,i) = uh(m,IM3,k,j,i) + dm3;}
+      }
       uh(m,IEN,k,j,i) = eg + ekin + egrv + work;
     }
   });

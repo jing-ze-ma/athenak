@@ -22,6 +22,23 @@ namespace radm1 {
 // <rad_m1>/transport
 constexpr int M1_TRANSPORT_EXPLICIT   = 0;   // stages 1-2: PD-ARS, sub-cycled
 constexpr int M1_TRANSPORT_IMPLICIT_X1 = 1;  // stage 3a: backward Euler on x1 columns
+constexpr int M1_TRANSPORT_IMPLICIT = 2;     // stage 3b phase B: the same backward-Euler
+                                             // solve with the x2/x3 couplings added, the
+                                             // x1 direction still solved exactly per
+                                             // column and the transverse ones LAGGED
+                                             // (line Jacobi) or wrapped in a Krylov
+                                             // iteration.
+
+// <rad_m1>/implicit_solver: how the full 7-point system is solved (transport = implicit)
+constexpr int M1_ISOLV_LINE_JACOBI = 0;  // outer line-Jacobi: the x1 tridiagonal
+                                         // system is solved exactly, the x2/x3
+                                         // couplings are taken
+                                         // from the PREVIOUS pass.  Their DIAGONAL part
+                                         // stays on the matrix diagonal, so the full
+                                         // 7-point M-matrix structure (and E' > 0) is
+                                         // preserved at any dt.
+constexpr int M1_ISOLV_BICGSTAB = 1;     // NOT IMPLEMENTED (fatal): matrix-free BiCGStab
+                                         // right-preconditioned by the x1 line solve.
 
 // x1 boundary conditions of the implicit solve, in FACE-FLUX form (design sect. 3).
 // The face value used is the TOTAL normal flux F at the boundary face.
@@ -162,7 +179,126 @@ constexpr int M1_IW_KT   = 21;  // a verbatim copy of opac(M1_OP_T) = rho (kappa
                                 // halo of the partitioned solve exchanges (milestone 3b,
                                 // LIMIT 4).  Single-block runs are bitwise unaffected:
                                 // it is a copy, read where opac was read before.
-constexpr int M1_NIW = 22;
+// ---- the components above are ALL the x1-only solve (transport = implicit_x1) needs.
+constexpr int M1_NIW_X1 = 22;
+// ---- MILESTONE 3b phase B, transport = implicit: the transverse (x2/x3) couplings.
+constexpr int M1_IW_V2   = 22;  // the x2 gas velocity (0 without <hydro>)
+constexpr int M1_IW_V3   = 23;  // the x3 gas velocity
+constexpr int M1_IW_N1   = 24;  // the LAGGED flux direction n_1 = F_1/|F| (unit vector)
+constexpr int M1_IW_N2   = 25;  // n_2
+constexpr int M1_IW_N3   = 26;  // n_3
+constexpr int M1_IW_A2   = 27;  // a_2 = v_2 + (v.D)_2, so that A_2 = a_2 E
+constexpr int M1_IW_A3   = 28;  // a_3 = v_3 + (v.D)_3
+constexpr int M1_IW_TDIA = 29;  // the DIAGONAL part of the transverse couplings: what the
+                                // line-Jacobi pass keeps on the matrix diagonal
+constexpr int M1_IW_TRHS = 30;  // -(T(E^k) - TDIA E^k), the lagged transverse term that
+                                // goes to the right-hand side
+constexpr int M1_IW_LRES = 31;  // |U(E^{k+1}) - U(E^k)|, the TRUE residual of the full
+                                // 7-point linear system (see the note in ImplicitSolve)
+constexpr int M1_IW_F2   = 32;  // the derived cell-centred x2 flux of the iterate
+constexpr int M1_IW_F3   = 33;  // ...and the x3 one; both drive the lagged closure
+constexpr int M1_NIW = 34;
+
+// the LAGGED quantities the transverse halo exchanges once per Picard pass.  Everything
+// the x2/x3 face fluxes, the lagged off-diagonal Eddington terms and the x1 assembly read
+// at a NEIGHBOURING cell is in this list, so the two blocks that share a face build it
+// from bit-identical numbers.
+constexpr int M1_NHALO_T = 13;
+KOKKOS_INLINE_FUNCTION
+int M1HaloCompT(const int n) {
+  switch (n) {
+    case 0: return M1_IW_EP;
+    case 1: return M1_IW_WCHI;
+    case 2: return M1_IW_N1;
+    case 3: return M1_IW_N2;
+    case 4: return M1_IW_N3;
+    case 5: return M1_IW_KT;
+    case 6: return M1_IW_V1;
+    case 7: return M1_IW_V2;
+    case 8: return M1_IW_V3;
+    case 9: return M1_IW_ADV;
+    case 10: return M1_IW_A2;
+    case 11: return M1_IW_A3;
+    case 12: return M1_IW_G0;
+    default: return M1_IW_EP;
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn M1EddDiag
+//! \brief the DIAGONAL Eddington-tensor component D_dd = P_dd/E of direction d (0,1,2)
+//! from the lagged closure: D_ab = (1-chi)/2 delta_ab + (3 chi - 1)/2 n_a n_b.
+
+KOKKOS_INLINE_FUNCTION
+Real M1EddDiag(const Real chi, const Real nd) {
+  return 0.5*(1.0 - chi) + 0.5*(3.0*chi - 1.0)*nd*nd;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn M1EddOff
+//! \brief the OFF-diagonal component D_ab = (3 chi - 1)/2 n_a n_b, a != b.
+
+KOKKOS_INLINE_FUNCTION
+Real M1EddOff(const Real chi, const Real na, const Real nb) {
+  return 0.5*(3.0*chi - 1.0)*na*nb;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn M1POff
+//! \brief the OFF-diagonal radiation pressure P_ab = D_ab E at one cell, from the LAGGED
+//! closure of the previous Picard pass.  a, b are 0-based directions.
+
+template <class V>
+KOKKOS_INLINE_FUNCTION
+Real M1POff(const V &iw, const int m, const int a, const int b,
+            const int k, const int j, const int i) {
+  return M1EddOff(iw(m,M1_IW_WCHI,k,j,i), iw(m,M1_IW_N1+a,k,j,i),
+                  iw(m,M1_IW_N1+b,k,j,i))*iw(m,M1_IW_EP,k,j,i);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn M1OffDiv
+//! \brief sum_{e != d} d_e P_de at one cell: the OFF-DIAGONAL part of the divergence of
+//! the radiation pressure that drives the face-normal flux of direction d.  It is fully
+//! LAGGED (previous-pass E and closure) and enters the right-hand side of the face-flux
+//! equation; the diagonal part d_d P_dd is what the matrix carries.
+//!
+//! Centred differences, with the index range [il,iu] x [jl,ju] x [kl,ku] the caller may
+//! read -- one ghost layer wide wherever a neighbouring MeshBlock (or a periodic wrap)
+//! has filled it, and the active range at a PHYSICAL boundary, where the difference
+//! silently becomes one-sided (the divisor counts the cells actually used).
+
+template <class V>
+KOKKOS_INLINE_FUNCTION
+Real M1OffDiv(const V &iw, const int m, const int d, const int k, const int j,
+              const int i, const Real dx1, const Real dx2, const Real dx3,
+              const bool thrd,
+              const int il, const int iu, const int jl, const int ju,
+              const int kl, const int ku) {
+  Real s = 0.0;
+  if (d != 0) {
+    int ia = (i+1 <= iu) ? (i+1) : i;
+    int ib = (i-1 >= il) ? (i-1) : i;
+    if (ia != ib) {
+      s += (M1POff(iw,m,d,0,k,j,ia) - M1POff(iw,m,d,0,k,j,ib))/((ia - ib)*dx1);
+    }
+  }
+  if (d != 1) {
+    int ja = (j+1 <= ju) ? (j+1) : j;
+    int jb = (j-1 >= jl) ? (j-1) : j;
+    if (ja != jb) {
+      s += (M1POff(iw,m,d,1,k,ja,i) - M1POff(iw,m,d,1,k,jb,i))/((ja - jb)*dx2);
+    }
+  }
+  if (thrd && d != 2) {
+    int ka = (k+1 <= ku) ? (k+1) : k;
+    int kb = (k-1 >= kl) ? (k-1) : k;
+    if (ka != kb) {
+      s += (M1POff(iw,m,d,2,ka,j,i) - M1POff(iw,m,d,2,kb,j,i))/((ka - kb)*dx3);
+    }
+  }
+  return s;
+}
 
 // the six LAGGED quantities the x1 halo of the partitioned solve exchanges once per
 // Picard iteration (halo "A"), in the order the pack kernel uses.  The seventh exchange

@@ -40,7 +40,7 @@ void RadiationM1::AssembleRadM1Tasks(std::map<std::string,
   // chain (closure limits -> opacity -> fluxes -> update -> coupling).  Everything after
   // the solve -- the hydro inversion and the ghost-zone exchange of the moments -- is
   // the same as in the explicit path.
-  if (transport == M1_TRANSPORT_IMPLICIT_X1) {
+  if (transport >= M1_TRANSPORT_IMPLICIT_X1) {
     id.closure = tl["m1_stagen"]->AddTask(&RadiationM1::ApplyClosureLimits,this,none);
     id.opac    = tl["m1_stagen"]->AddTask(&RadiationM1::Opacity, this, id.closure);
     id.update  = tl["m1_stagen"]->AddTask(&RadiationM1::ImplicitSolve, this, id.opac);

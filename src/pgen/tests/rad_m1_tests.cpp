@@ -160,6 +160,7 @@ void ProblemGenerator::RadiationM1Tests(ParameterInput *pin, const bool restart)
   int n2 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*ng) : 1;
   int n3 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*ng) : 1;
   int &is = indcs.is;
+  int js = indcs.js, ks = indcs.ks;
   int nx1 = indcs.nx1;
   int nmb1 = (pmbp->nmb_thispack - 1);
   auto &size = pmbp->pmb->mb_size;
@@ -217,6 +218,18 @@ void ProblemGenerator::RadiationM1Tests(ParameterInput *pin, const bool restart)
     Real nyq = pin->GetOrAddReal("problem","nyquist_amp",0.0);
     Real dgas = pin->GetOrAddReal("problem","gas_rho",1.0);
     Real egas = pin->GetOrAddReal("problem","gas_eint",1.0);
+    // MILESTONE 3b phase B: the same pulse in 2-D / 3-D.  The Gaussian becomes
+    // ISOTROPIC in whichever directions the mesh has, exp(-r^2/wid^2) with r the
+    // distance from (pulse_x0, pulse_y0, pulse_z0), so that the variance of E must grow
+    // at 2 D in EVERY direction (gate G1).  A 1-D mesh is bitwise what it was.
+    Real y0 = pin->GetOrAddReal("problem","pulse_y0",0.0);
+    Real z0 = pin->GetOrAddReal("problem","pulse_z0",0.0);
+    // problem/pulse_1d keeps the Gaussian a function of x1 ALONE on a multi-D mesh:
+    // gate G3 of 3b phase B, where transport = implicit must reproduce implicit_x1.
+    bool p1d = pin->GetOrAddBoolean("problem","pulse_1d",false);
+    bool md = pmy_mesh_->multi_d && !p1d;
+    bool td = pmy_mesh_->three_d && !p1d;
+    int nx2 = indcs.nx2, nx3 = indcs.nx3;
     if (restart) return;
     M1SetUniformGas(pmbp, dgas, egas);
 
@@ -230,11 +243,27 @@ void ProblemGenerator::RadiationM1Tests(ParameterInput *pin, const bool restart)
       Real &x1min = size.d_view(m).x1min;
       Real &x1max = size.d_view(m).x1max;
       Real x1v = CellCenterX(i-is, nx1, x1min, x1max);
+      Real r2 = SQR(x1v - x0);
+      Real rmx = fabs(x1v - x0);
+      if (md) {
+        Real &x2min = size.d_view(m).x2min;
+        Real &x2max = size.d_view(m).x2max;
+        Real x2v = CellCenterX(j-js, nx2, x2min, x2max);
+        r2 += SQR(x2v - y0);
+        rmx = fmax(rmx, fabs(x2v - y0));
+      }
+      if (td) {
+        Real &x3min = size.d_view(m).x3min;
+        Real &x3max = size.d_view(m).x3max;
+        Real x3v = CellCenterX(k-ks, nx3, x3min, x3max);
+        r2 += SQR(x3v - z0);
+        rmx = fmax(rmx, fabs(x3v - z0));
+      }
       Real e = bg;
       if (tophat) {
-        e += (fabs(x1v - x0) < wid) ? amp : 0.0;
+        e += (rmx < wid) ? amp : 0.0;
       } else {
-        e += amp*exp(-SQR((x1v - x0)/wid));
+        e += amp*exp(-r2/SQR(wid));
       }
       if (nyq != 0.0) {
         int ig = static_cast<int>(floor((x1v - mx1min)/dxm));

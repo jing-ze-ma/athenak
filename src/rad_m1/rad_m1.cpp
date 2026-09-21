@@ -57,10 +57,12 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     transport = M1_TRANSPORT_EXPLICIT;
   } else if (tr.compare("implicit_x1") == 0) {
     transport = M1_TRANSPORT_IMPLICIT_X1;
+  } else if (tr.compare("implicit") == 0) {
+    transport = M1_TRANSPORT_IMPLICIT;
   } else {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
       << std::endl << "<rad_m1>/transport = '" << tr << "' is not a valid choice "
-      << "(explicit | implicit_x1)" << std::endl;
+      << "(explicit | implicit_x1 | implicit)" << std::endl;
     std::exit(EXIT_FAILURE);
   }
   }
@@ -81,6 +83,14 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   impl_itsum = 0.0;
   impl_itmax = 0.0;
   impl_nfail = 0.0;
+  // ---- milestone 3b phase B
+  impl_solver = M1_ISOLV_LINE_JACOBI;
+  impl_linsum = 0.0;
+  impl_linmax = 0.0;
+  impl_lin_tol = 1.0e-10;
+  trans_on = false;
+  trans_x3 = false;
+  pbval_th = nullptr;
   // ---- end of the 3a hook
   cfl_rad = pin->GetOrAddReal("rad_m1","cfl_rad",0.4);
   e_floor = pin->GetOrAddReal("rad_m1","e_floor",(FLT_MIN));
@@ -483,6 +493,7 @@ RadiationM1::~RadiationM1() {
   ReportCounters();
   ImplicitReport();   // milestone 3a; a no-op in transport = explicit
   delete pbval_u;
+  if (pbval_th != nullptr) {delete pbval_th;}
 }
 
 //----------------------------------------------------------------------------------------
