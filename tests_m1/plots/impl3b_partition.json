@@ -1,0 +1,116 @@
+{
+ "milestone": "3b",
+ "note": "phases 0-1 only; transverse transport (phase 2) and GPU (phase 4) not started",
+ "restart_bitwise_1d_he": {
+  "hydro_hst_maxdiff": 0.0,
+  "user_hst_maxdiff": 0.0,
+  "final_bin": "identical",
+  "rows": 150,
+  "t0": 150.0895,
+  "t1": 300.0
+ },
+ "partition_bitwise": {
+  "comment": "max |difference| of every moment in the final tab file vs the serial one-block run",
+  "thick_pulse_tau1e3_cfl100": {
+   "central_dc": {
+    "b2": 0.0,
+    "b4": 0.0,
+    "picard_mean": 2.0,
+    "picard_max": 2
+   },
+   "central_plm_dc": {
+    "b2": 0.0,
+    "b4": 0.0,
+    "picard_mean": 2.0,
+    "picard_max": 2
+   },
+   "berthon_dc": {
+    "b2": 0.0,
+    "b4": 0.0,
+    "picard_mean": 3.0,
+    "picard_max": 4
+   },
+   "berthon_plm_dc": {
+    "b2": 0.0,
+    "b4": 0.0,
+    "picard_mean": 8.0,
+    "picard_max": 9
+   }
+  },
+  "marshak_cfl100": {
+   "b2": 0.0,
+   "b4": 0.0,
+   "picard_mean": 14.135,
+   "picard_max": 30,
+   "solves": 259
+  },
+  "atmosphere_cfl100": {
+   "b2": 0.0,
+   "b4": 0.0,
+   "picard_mean": 1.18477,
+   "picard_max": 29,
+   "solves": 5120
+  },
+  "mpi_vs_serial_4blocks": {
+   "thick_pulse_berthon_plm_dc": {
+    "r2": 0.0,
+    "r4": 0.0
+   },
+   "marshak": {
+    "r2": 0.0,
+    "r4": 0.0
+   },
+   "atmosphere": {
+    "r2": 0.0,
+    "r4": 0.0
+   }
+  }
+ },
+ "partition_cost_serial_cpu": {
+  "he_column_84cells_373steps_s": {
+   "1": 1.580156,
+   "2": 1.617271,
+   "4": 1.63626
+  },
+  "marshak_128cells_259steps_s": {
+   "1": 0.1450965,
+   "4": 0.1847941
+  },
+  "comment": "single column: the pathological limit of the serial root sweep"
+ },
+ "picard_vs_cfl_thick_pulse_tau1e3": {
+  "central": {
+   "1": 2.0,
+   "100": 2.0
+  },
+  "berthon": {
+   "1": 2.000651,
+   "100": 3.0
+  }
+ },
+ "i1_diffusion_ratio_tau1e3": {
+  "central": {
+   "1": 0.999999,
+   "100": 1.000001
+  },
+  "berthon": {
+   "1": 0.999825,
+   "100": 0.999827
+  },
+  "explicit_plm": 1.000015
+ },
+ "he_column_not_decomposition_invariant": {
+  "implicit_gather_1v2_maxrel_hydro_hst": 1.888e-05,
+  "explicit_1v2_maxrel_hydro_hst": 0.00032114,
+  "picard_mean_1_2_4_blocks": [
+   11.76139,
+   11.76139,
+   11.76139
+  ]
+ },
+ "messages_per_nonroot_block_per_picard_pass": {
+  "gather_scatter": 2,
+  "halo": 4,
+  "allreduce_doubles_global": 1
+ }
+}

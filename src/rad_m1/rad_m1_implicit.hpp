@@ -115,7 +115,30 @@ constexpr int M1_IW_RF0  = 20;  // the COMOVING reduced flux F0_cell/(c E) of th
                                 // clipped to [-1,1]: what the HLL part of the ap_hll
                                 // implicit flux lags (the closure chi keeps using the LAB
                                 // reduced flux, as the explicit scheme does)
-constexpr int M1_NIW = 21;
+constexpr int M1_IW_KT   = 21;  // a verbatim copy of opac(M1_OP_T) = rho (kappa_F +
+                                // kappa_s).  It exists only so that EVERY quantity the
+                                // assembly and the face update read at a neighbouring
+                                // cell lives in ONE array, which is what the x1 ghost
+                                // halo of the partitioned solve exchanges (milestone 3b,
+                                // LIMIT 4).  Single-block runs are bitwise unaffected:
+                                // it is a copy, read where opac was read before.
+constexpr int M1_NIW = 22;
+
+// the six LAGGED quantities the x1 halo of the partitioned solve exchanges once per
+// Picard iteration (halo "A"), in the order the pack kernel uses.  The seventh exchange
+// (halo "B") carries M1_IW_EP alone, after the line solve has accepted the new iterate.
+constexpr int M1_NHALO_A = 6;
+KOKKOS_INLINE_FUNCTION
+int M1HaloCompA(const int n) {
+  switch (n) {
+    case 0: return M1_IW_WCHI;
+    case 1: return M1_IW_ADV;
+    case 2: return M1_IW_G0;
+    case 3: return M1_IW_V1;
+    case 4: return M1_IW_RF0;
+    default: return M1_IW_KT;
+  }
+}
 
 // safeguarded root find for T' inside the Picard loop
 constexpr int  M1_IMPL_TMAXIT = 100;

@@ -150,7 +150,7 @@ implicit_partition    = none      # none | gather (gather is NOT implemented yet
 implicit_recon_w      = -1.0      # plm_dc weight; <=0 = auto 1/(1+chat dt/dx)
 implicit_recon_lag    = picard     # step | picard (when the plm correction is re-made)
 implicit_res_floor    = 0.0       # Picard residual scale (0 = the 3a pure |dE|/E)
-implicit_bmom_half    = false     # boundary momentum (milestone 3a2, LIMIT 3)
+implicit_bmom_half    = true      # boundary momentum (3a2 LIMIT 3; default since 3b)
 marshak_q             = 0.5
 implicit_bc_x1min     = flux
 implicit_bc_x1max     = marshak

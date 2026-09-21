@@ -26,6 +26,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "athena.hpp"
 #include "parameter_input.hpp"
@@ -259,10 +260,32 @@ class RadiationM1 {
   // the partitioned (gathered) line solve, LIMIT 4.  Every rank that owns a piece of a
   // column sends its (a,b,c,r) rows to the column's ROOT rank, which runs the identical
   // serial Thomas sweep and sends the solution back.
+  // MILESTONE 3b, LIMIT 4: every rank that owns a piece of an x1 column sends the
+  // assembled rows (a,b,c,r) of that column to the ROOT block (the one with the lowest
+  // x1 logical location), which runs the IDENTICAL serial Thomas sweep on the whole
+  // column and sends the solution back.  The arithmetic order is literally unchanged, so
+  // 1, 2 and 4 MeshBlocks along x1 agree to the last bit by construction.
   int part_nblk;                // MeshBlocks along x1 of one column (1 = no partition)
-  int part_ncol;               // columns whose root is on THIS rank
-  HostArray1D<Real> part_buf;   // host staging buffer of the gather/scatter
-  DualArray1D<Real> part_row;   // (4*nx1_global) rows of one gathered column
+  int part_nroot;               // x1 stacks whose root block is on THIS rank
+  int part_nx1g;                // part_nblk*nx1, rows of one gathered column
+  int part_nlay;                // ghost layers the x1 halo of the solve exchanges
+  int part_nqa;                 // quantities of halo A (see ImplicitX1Halo)
+  DualArray1D<int> part_pos;    // (nmb) position of block m in its x1 stack
+  DualArray1D<int> part_slot;   // (nmb) gather slot of m's root, or -1 if it is remote
+  DualArray1D<int> part_nbr;    // (2*nmb) local index of m's x1 neighbours (lo,hi), or -1
+  DvceArray5D<Real> part_sys;   // (nroot,6,nk,nj,nx1g) gathered rows + Thomas scratch
+  DvceArray2D<Real> part_sbuf;  // (nmb, 4*nk*nj*nx1) MPI staging of a member block
+  DvceArray2D<Real> part_rbuf;  // (nroot*nblk, 4*nk*nj*nx1) MPI staging of a root
+  HostArray2D<Real> part_sbuf_h, part_rbuf_h;
+  DvceArray3D<Real> part_hbuf;  // (nmb,4,nq*nlay*nk*nj) x1 halo: send lo/hi, recv lo/hi
+  HostArray3D<Real> part_hbuf_h;
+  std::vector<int> part_mrank;  // (nroot*nblk) rank of each member of a rooted stack
+  std::vector<int> part_mgid;   // (nroot*nblk) global id of each member
+  std::vector<int> part_rootgid;  // (nmb) global id of block m's root
+  std::vector<int> part_rootrank;  // (nmb) rank of block m's root
+  std::vector<int> part_nbrrank;  // (2*nmb) rank of m's x1 neighbours, or -1
+  std::vector<int> part_nbrgid;   // (2*nmb) global id of m's x1 neighbours, or -1
+  bool part_any_mpi;            // true if any stack or x1 halo crosses a rank
   // the imposed-flux boundary hand-off, LIMIT 3.  See ImplicitSolve.
   bool impl_recon_freeze;       // implicit_recon_lag = step: evaluate the deferred
                                 // correction once per step, not once per Picard pass
@@ -327,6 +350,13 @@ class RadiationM1 {
   void SetImplicitX1BC(int lo_type, Real lo_flux, int hi_type, Real hi_flux);
   //! the whole backward-Euler step, in place of the explicit stage chain
   TaskStatus ImplicitSolve(Driver *d, int stage);
+  //! milestone 3b LIMIT 4: build the x1 stack topology of the gathered line solve
+  void ImplicitPartitionInit();
+  //! exchange the x1 ghost layers the multi-block solve needs; `eponly` picks the
+  //! one-quantity set (E of the new iterate) instead of the six lagged ones
+  void ImplicitX1Halo(bool eponly);
+  //! gather the assembled rows onto the roots, run Thomas there, scatter back
+  void ImplicitGatherSolve();
 
   // ...in "m1_before_stagen"
   TaskStatus InitRecv(Driver *d, int stage);

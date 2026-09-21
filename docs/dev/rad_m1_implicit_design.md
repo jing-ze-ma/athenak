@@ -481,3 +481,124 @@ Picard residual reduction 3a already ran on the device.  No known blocker; UNTES
                               it is left false only so that runs_3a/RESULTS.txt is
                               reproducible from the same source.
 ```
+
+---
+
+## 8. Findings of 3b (implemented 2026-09-21; supersede sect. 6-7 where they differ)
+
+Milestone 3b was scoped as five phases (defaults + restart, the partitioned x1 line
+solve, transverse transport, the He box in 2-D/3-D, GPU).  **Phases 0 and 1 are done and
+gated; phases 2, 3 and 4 are NOT started.**  Gate tables and the exact commands:
+`tests_m1/runs_3b/RESULTS.txt`.
+
+### PHASE 0 -- defaults, and the restart gate 3a left open
+
+`<rad_m1>/implicit_bmom_half` now DEFAULTS TO `true` (sect. 7, LIMIT 3: it is a bug fix,
+the boundary face handing its whole momentum to one interior cell; He column bottom-cell
+`|v1|` 10.3 -> 0.47 `v_MLT`).  The key is kept, so `false` still reproduces
+`runs_3a/RESULTS.txt` from the same source, and
+`tests_m1/runs_3a/he_box_m1_1d_impl.athinput` now names `true`.
+
+**Restart is BITWISE.**  The 1-D He column (`implicit_x1`, true `c`, `central`/`dc`),
+300 s, restarted from the restart file the uninterrupted run itself wrote at t = 150.09 s:
+the hydro history, the six-column user history and the final `hydro_w` binary dump are
+byte-identical over t = 150-300 s.  (The restart must be taken from a dump the
+uninterrupted run wrote; stopping a separate run at `tlim` = 150 truncates its last step
+and is a different trajectory -- that is a property of the driver, not of the solve.)
+So the face-flux array `f0x1` carried by the restart file is the complete persistent
+state of the implicit transport: nothing else has to be saved.
+
+### PHASE 1 -- `<rad_m1>/implicit_partition = gather`, the line solve across MeshBlocks
+and ranks (LIMIT 4 of sect. 6, closed)
+
+What is implemented is exactly the design recorded in sect. 7: each column's assembled
+rows `(a,b,c,r)` are gathered onto the block with the lowest x1 logical location, the
+IDENTICAL serial Thomas recurrence is run there over `part_nblk*nx1` rows, and the
+solution is scattered back.  Three things the design note did not say:
+
+1. *The gather alone is not enough.*  The ASSEMBLY of a row next to a block face reads
+   the lagged closure `w`, the enthalpy coefficient `a`, `g0`, `v1`, the comoving reduced
+   flux and the transport opacity of the neighbouring cell, and the FACE update reads the
+   new `E` there as well.  A per-Picard-pass x1 ghost exchange (`ImplicitX1Halo`) was
+   added, of exactly those six lagged quantities after the lag kernel and of `E` after
+   the line solve.  It moves the VERY NUMBERS the neighbour computed -- never a quantity
+   recomputed from a hydro or opacity ghost, which would be bitwise-fragile -- and that is
+   what makes the partition bit-exact.  The transport opacity was copied into a new
+   component `M1_IW_KT` of the work array for the same reason: every quantity read at a
+   neighbouring cell now lives in one array.
+2. *The convergence test has to be global.*  3a reduced only the final iteration count.
+   With a partitioned column the ranks must take the same number of passes or the gather
+   deadlocks, and even with rank-local columns a per-rank test makes the answer depend on
+   the decomposition.  One `MPI_Allreduce(MAX)` of one double per Picard pass was added
+   (unconditional, so rank-local multi-column runs became decomposition-independent too).
+3. *Periodic x1 across several MeshBlocks is a CLEAN FATAL.*  The cyclic (Sherman-Morrison)
+   sweep of 3a wraps inside one block; a wrapped gathered column would need the halo to
+   wrap as well.  One block along x1, or a non-periodic x1 pair.  SMR/AMR and a non-integer
+   block count along x1 are fatal as before.
+
+**Communication.**  Per non-root block and Picard pass: 2 gather/scatter messages
+(`4*nk*nj*nx1` reals up, `nk*nj*nx1` down) plus up to 4 halo messages
+(`nq*nlay*nk*nj` reals, `nq` = 6 or 1, `nlay` = min(nghost,2)), plus one `MPI_Allreduce`
+of one double per pass for the whole communicator.  Same-rank stack members and same-rank
+x1 neighbours are plain device copies and send nothing.
+
+**Cost.**  The root sweeps `part_nblk*nx1` rows serially per column; the kernel is
+parallel over (root, k, j), so this is free as long as there are many columns, and it is
+the serial bottleneck when there are not.  Measured on this serial CPU: the 1-D He column
+(84 cells, ONE column, the worst possible case for a serial sweep) costs 1.58 / 1.62 /
+1.64 s of CPU for 1 / 2 / 4 blocks along x1, i.e. **+2.3 % and +3.5 %**; the Marshak wave
+(128 cells, one column) 0.145 / 0.185 s, +27 % at 4 blocks.  The scalable successor,
+which is NOT implemented and cannot be bitwise, is Schur condensation to the
+block-interface unknowns (two local sweeps plus one reduced tridiagonal system of
+`part_nblk` rows per column) or cyclic reduction.
+
+**Gates -- all BITWISE, 1 vs 2 vs 4 MeshBlocks along x1 and 2 vs 4 MPI ranks against the
+serial single-block run** (final `.tab`, all four moments, `maxabs` difference exactly 0,
+and identical Picard statistics):
+
+```
+ thick pulse tau_cell 1e3, implicit_cfl 100, reflecting x1
+    implicit_flux = central | berthon   x   implicit_recon = dc | plm_dc   (4 cases)
+ Marshak wave,  implicit_cfl 100, marshak/marshak                 (Picard 14.14 mean)
+ static grey atmosphere, implicit_cfl 100, flux/marshak           (Picard 1.18 mean)
+ MPI: 2 and 4 ranks x 4 blocks along x1, berthon/plm_dc pulse, Marshak, atmosphere
+```
+
+`bitwise` here is literal and by construction, not "to the solver tolerance": the
+arithmetic sequence of the Thomas sweep and of every kernel is unchanged by the
+partition.
+
+**The 1-D He column is NOT a valid decomposition gate.**  With 1 vs 2 MeshBlocks along x1
+its history differs at 1.9e-5 (relative, total x1 momentum) -- but the SAME input with
+`transport = explicit` differs at 3.2e-4, i.e. the `box_convection` problem generator
+itself is not block-decomposition invariant (the well-balanced wall continuation
+`bc_mode = 3` and the column diagnostics are per-block).  The implicit partition adds
+nothing to that: the Picard statistics are identical to the last digit (373 solves, mean
+11.76139, max 23) for 1, 2 and 4 blocks.  The six user-history columns `F1top/F1mid/F1bot`
+are summed over blocks by the pgen's history hook and come out `nblk` times too large;
+that is a pgen diagnostic bug to fix before any multi-block He run is judged by them.
+
+### Regression
+
+`tests_gate_merge/postmerge.sh`: box G1 modes 3 and 0, 10/10 files IDENTICAL; the 1-D He
+column smoke test reproduces the new reference line exactly (t = 300, F1top/Fin 1.0000097,
+F1bot/Fin 0.9998352, V1max 1.8344e4, Picard mean 11.709).  `transport = explicit`, T3
+`tau_cell` = 1e3 plm: ratio **1.000015**, identical to runs_1cB, 3a and 3a2.  I1 at
+`tau_cell` = 1e3: central 0.999999 (CFL 1) / 1.000001 (CFL 100), berthon 0.999825 /
+0.999827 -- the 3a and 3a2 numbers.
+
+### PHASES 2-5 -- not done
+
+*(2) Transverse (x2/x3) implicit transport, `implicit_solver = line_jacobi | bicgstab`:
+not started.*  `transport = implicit` (as opposed to `implicit_x1`) does not exist; a
+multi-dimensional run is still a set of INDEPENDENT x1 columns under
+`implicit_allow_multid`.  The x1 halo built for LIMIT 4 is the piece a line-Jacobi outer
+iteration would reuse: it already shows that a hand-rolled per-iteration exchange driven
+from inside the Picard loop works and stays bitwise, so the transverse couplings can be
+lagged through the same mechanism (extended to x2/x3 neighbours) without restructuring
+the solve into a task loop.  *(3) The He box in 2-D/3-D, (4) GPU: not started.*  The 3a2
+assessment of the GPU risk is unchanged and now also covers the new kernels, except that
+the gather/scatter stages `part_sbuf`/`part_rbuf` through HOST mirrors for MPI: on a GPU
+that is a device-to-host round trip per Picard pass and would be the first thing to
+replace with GPU-aware MPI (the arithmetic stays on the device either way, which is what
+keeps the partition bitwise).

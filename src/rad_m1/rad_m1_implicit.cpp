@@ -44,6 +44,7 @@
 #include <cmath>
 #include <iostream>
 #include <string>
+#include <vector>
 
 #include "athena.hpp"
 #include "globals.hpp"
@@ -142,9 +143,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (spt.compare("none") == 0) {
     impl_part = M1_IPART_NONE;
   } else if (spt.compare("gather") == 0) {
-    ImplFatal("<rad_m1>/implicit_partition = gather (the line solve partitioned over "
-              "MeshBlocks and ranks) is NOT IMPLEMENTED; milestone 3a2 still needs one "
-              "MeshBlock per x1 column");
+    impl_part = M1_IPART_GATHER;
   } else {
     ImplFatal("<rad_m1>/implicit_partition = '" + spt
               + "' is not a choice (none | gather)");
@@ -157,7 +156,11 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     ImplFatal("<rad_m1>/implicit_recon_lag = '" + slg
               + "' is not a choice (step | picard)");
   }
-  impl_bmom_half = pin->GetOrAddBoolean("rad_m1","implicit_bmom_half",false);
+  // LIMIT 3 of the 3a findings: the DEFAULT is now `true`.  It is a bug fix, not a
+  // tuning knob (the boundary face used to hand its whole momentum to one interior cell,
+  // which gave that cell 1.5 face-shares of radiative force: He column bottom-cell |v1|
+  // 10.3 -> 0.47 v_MLT).  The key is kept so that `false` reproduces runs_3a/RESULTS.txt.
+  impl_bmom_half = pin->GetOrAddBoolean("rad_m1","implicit_bmom_half",true);
   if (!(impl_tol > 0.0) || impl_maxit < 1) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
       << std::endl << "<rad_m1>/implicit_tol must be positive and implicit_maxit >= 1"
@@ -186,12 +189,29 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // ---- the restrictions of 3a
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   auto &mindcs = pmy_pack->pmesh->mesh_indcs;
+  part_nblk = 1;
   if (mindcs.nx1 != indcs.nx1) {
-    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-      << std::endl << "<rad_m1>/transport = implicit_x1 (milestone 3a) needs exactly ONE "
-      << "MeshBlock along x1: <meshblock>/nx1 must equal <mesh>/nx1 (" << indcs.nx1
-      << " vs " << mindcs.nx1 << ")" << std::endl;
-    std::exit(EXIT_FAILURE);
+    if (impl_part != M1_IPART_GATHER) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+        << std::endl << "<rad_m1>/transport = implicit_x1 with implicit_partition = none "
+        << "needs exactly ONE MeshBlock along x1: <meshblock>/nx1 must equal <mesh>/nx1 ("
+        << indcs.nx1 << " vs " << mindcs.nx1 << ").  Set <rad_m1>/implicit_partition = "
+        << "gather for the line solve partitioned over MeshBlocks and ranks" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    if ((mindcs.nx1 % indcs.nx1) != 0) {
+      ImplFatal("<rad_m1>/implicit_partition = gather needs <mesh>/nx1 to be an exact "
+                "multiple of <meshblock>/nx1 (uniform mesh only)");
+    }
+    part_nblk = mindcs.nx1/indcs.nx1;
+  }
+  if (part_nblk > 1 && (ibc_x1min == M1_IBC_PERIODIC)) {
+    ImplFatal("<rad_m1>/implicit_partition = gather does not support PERIODIC x1 across "
+              "more than one MeshBlock (the cyclic Thomas sweep of 3a wraps inside one "
+              "block).  Use one MeshBlock along x1, or a non-periodic x1 boundary pair");
+  }
+  if (part_nblk > 1 && indcs.ng < 2) {
+    ImplFatal("<rad_m1>/implicit_partition = gather needs <mesh>/nghost >= 2");
   }
   if ((indcs.nx2 > 1 || indcs.nx3 > 1) && !impl_allow_multid) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
@@ -227,6 +247,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   Kokkos::deep_copy(iw, 0.0);
   Kokkos::realloc(ifw, nmb, M1_NIFW, ncells3, ncells2, ncells1+1);
   Kokkos::deep_copy(ifw, 0.0);
+  ImplicitPartitionInit();
 
   if (global_variable::my_rank == 0) {
     std::cout << "<rad_m1>: transport=implicit_x1 (milestone 3a) implicit_cfl="
@@ -244,6 +265,400 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
               << " (0 marshak, 1 flux, 2 reflect, 3 periodic) flux_min=" << iflux_x1min
               << " flux_max=" << iflux_x1max << std::endl;
   }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::ImplicitPartitionInit
+//! \brief milestone 3b, LIMIT 4: build the topology of the x1 stacks and allocate the
+//! gather/scatter and halo buffers.  A "stack" is the set of MeshBlocks that share the
+//! same (x2,x3) footprint, ordered by their x1 logical location; its ROOT is the block
+//! with the lowest one.  Uniform mesh only (the caller has already fatalled on SMR/AMR
+//! and on a non-integer block count along x1), so the stack of a block is found by a
+//! scan of the global LogicalLocation list.
+//!
+//! Nothing is allocated and nothing is communicated when part_nblk == 1: the 3a path is
+//! then bitwise what it was.
+
+void RadiationM1::ImplicitPartitionInit() {
+  part_nroot = 0;
+  part_nx1g = 0;
+  part_nlay = 0;
+  part_nqa = M1_NHALO_A;
+  part_any_mpi = false;
+
+  Mesh *pm = pmy_pack->pmesh;
+  auto &indcs = pm->mb_indcs;
+  int nmb = pmy_pack->nmb_thispack;
+  int g0 = pmy_pack->gids;
+  // the three per-block tables are ALWAYS allocated: ImplicitSolve reads part_pos in
+  // every kernel, and with one MeshBlock per column the defaults (position 0 of a stack
+  // of one) select exactly the 3a branches.
+  Kokkos::realloc(part_pos, nmb);
+  Kokkos::realloc(part_slot, nmb);
+  Kokkos::realloc(part_nbr, 2*nmb);
+  for (int m=0; m<nmb; ++m) {
+    part_pos.h_view(m) = 0;
+    part_slot.h_view(m) = -1;
+    part_nbr.h_view(2*m) = -1;
+    part_nbr.h_view(2*m+1) = -1;
+  }
+  if (part_nblk <= 1) {
+    part_pos.modify_host();
+    part_pos.sync_device();
+    part_slot.modify_host();
+    part_slot.sync_device();
+    part_nbr.modify_host();
+    part_nbr.sync_device();
+    return;
+  }
+  part_nx1g = part_nblk*indcs.nx1;
+  part_nlay = std::min(indcs.ng, 2);
+
+  // (1) for every LOCAL block: its position in the stack, the global ids of the stack
+  // members and of its two x1 neighbours.
+  part_rootgid.assign(nmb, -1);
+  part_rootrank.assign(nmb, -1);
+  part_nbrrank.assign(2*nmb, -1);
+  part_nbrgid.assign(2*nmb, -1);
+  std::vector<int> stack(part_nblk);
+  for (int m=0; m<nmb; ++m) {
+    LogicalLocation &lm = pm->lloc_eachmb[g0+m];
+    for (int p=0; p<part_nblk; ++p) {stack[p] = -1;}
+    for (int g=0; g<pm->nmb_total; ++g) {
+      LogicalLocation &lg = pm->lloc_eachmb[g];
+      if (lg.lx2 == lm.lx2 && lg.lx3 == lm.lx3 && lg.level == lm.level) {
+        if (lg.lx1 >= 0 && lg.lx1 < part_nblk) {stack[lg.lx1] = g;}
+      }
+    }
+    for (int p=0; p<part_nblk; ++p) {
+      if (stack[p] < 0) {
+        ImplFatal("<rad_m1>/implicit_partition = gather: the x1 stack of a MeshBlock is "
+                  "incomplete (a non-uniform mesh?)");
+      }
+    }
+    int pos = static_cast<int>(lm.lx1);
+    part_pos.h_view(m) = pos;
+    part_rootgid[m] = stack[0];
+    part_rootrank[m] = pm->rank_eachmb[stack[0]];
+    if (pos > 0) {
+      part_nbrgid[2*m] = stack[pos-1];
+      part_nbrrank[2*m] = pm->rank_eachmb[stack[pos-1]];
+    }
+    if (pos < part_nblk-1) {
+      part_nbrgid[2*m+1] = stack[pos+1];
+      part_nbrrank[2*m+1] = pm->rank_eachmb[stack[pos+1]];
+    }
+    for (int s=0; s<2; ++s) {
+      int gn = part_nbrgid[2*m+s];
+      bool loc = (gn >= 0) && (part_nbrrank[2*m+s] == global_variable::my_rank);
+      part_nbr.h_view(2*m+s) = loc ? (gn - g0) : -1;
+      if (gn >= 0 && part_nbrrank[2*m+s] != global_variable::my_rank) {
+        part_any_mpi = true;
+      }
+    }
+    if (part_rootrank[m] != global_variable::my_rank) {part_any_mpi = true;}
+  }
+
+  // (2) the local ROOTS and their member lists
+  part_mrank.clear();
+  part_mgid.clear();
+  std::vector<int> rootmb;
+  for (int m=0; m<nmb; ++m) {
+    if (part_pos.h_view(m) != 0) continue;
+    rootmb.push_back(m);
+    LogicalLocation &lm = pm->lloc_eachmb[g0+m];
+    for (int p=0; p<part_nblk; ++p) {
+      int gfound = -1;
+      for (int g=0; g<pm->nmb_total; ++g) {
+        LogicalLocation &lg = pm->lloc_eachmb[g];
+        if (lg.lx2 == lm.lx2 && lg.lx3 == lm.lx3 && lg.level == lm.level && lg.lx1 == p) {
+          gfound = g;
+        }
+      }
+      part_mgid.push_back(gfound);
+      part_mrank.push_back(pm->rank_eachmb[gfound]);
+      if (pm->rank_eachmb[gfound] != global_variable::my_rank) {part_any_mpi = true;}
+    }
+  }
+  part_nroot = static_cast<int>(rootmb.size());
+  for (int m=0; m<nmb; ++m) {
+    int sl = -1;
+    if (part_rootrank[m] == global_variable::my_rank) {
+      for (int s=0; s<part_nroot; ++s) {
+        if (rootmb[s] + g0 == part_rootgid[m]) {sl = s;}
+      }
+    }
+    part_slot.h_view(m) = sl;
+  }
+  part_pos.modify_host();
+  part_pos.sync_device();
+  part_slot.modify_host();
+  part_slot.sync_device();
+  part_nbr.modify_host();
+  part_nbr.sync_device();
+
+  // (3) buffers
+  int ncells2 = (indcs.nx2 > 1)? (indcs.nx2 + 2*(indcs.ng)) : 1;
+  int ncells3 = (indcs.nx3 > 1)? (indcs.nx3 + 2*(indcs.ng)) : 1;
+  Kokkos::realloc(part_sys, std::max(part_nroot,1), 6, ncells3, ncells2, part_nx1g);
+  Kokkos::deep_copy(part_sys, 0.0);
+  int nrow = 4*ncells3*ncells2*indcs.nx1;
+  Kokkos::realloc(part_sbuf, nmb, nrow);
+  Kokkos::realloc(part_rbuf, std::max(part_nroot*part_nblk,1), nrow);
+  Kokkos::realloc(part_sbuf_h, nmb, nrow);
+  Kokkos::realloc(part_rbuf_h, std::max(part_nroot*part_nblk,1), nrow);
+  int nhal = M1_NHALO_A*part_nlay*ncells3*ncells2;
+  Kokkos::realloc(part_hbuf, nmb, 4, nhal);
+  Kokkos::realloc(part_hbuf_h, nmb, 4, nhal);
+
+  if (global_variable::my_rank == 0) {
+    std::cout << "         implicit_partition=gather: " << part_nblk
+              << " MeshBlocks per x1 column, " << part_nx1g << " rows per gathered line, "
+              << part_nlay << " halo layers" << std::endl;
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::ImplicitX1Halo
+//! \brief exchange the x1 ghost layers of the work array `iw` between the MeshBlocks of
+//! one x1 stack.  `eponly` picks the one-quantity set (M1_IW_EP, the new iterate, needed
+//! by the face update and by the next pass) instead of the six LAGGED quantities
+//! (M1HaloCompA).
+//!
+//! What makes the partitioned solve BITWISE identical to a single-block solve is that
+//! the ghost value a block reads is the VERY NUMBER its neighbour computed, copied, and
+//! never a quantity recomputed from a hydro ghost: this routine moves nothing else.
+
+void RadiationM1::ImplicitX1Halo(bool eponly) {
+  if (part_nblk <= 1) return;
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  int is = indcs.is, ie = indcs.ie;
+  int js = indcs.js, je = indcs.je;
+  int ks = indcs.ks, ke = indcs.ke;
+  int nmb = pmy_pack->nmb_thispack;
+  int nl = part_nlay;
+  int nq = eponly ? 1 : M1_NHALO_A;
+  const bool ep1 = eponly;
+  auto iw_ = iw;
+  auto nbr_ = part_nbr;
+  int nj = je - js + 1, nk = ke - ks + 1;
+
+  // (1) same-rank neighbours: a plain device copy, neighbour ACTIVE -> my GHOST
+  par_for("m1_impl_halo_loc", DevExeSpace(), 0, nmb-1, 0, nq-1, 0, nl-1,
+          ks, ke, js, je,
+  KOKKOS_LAMBDA(const int m, const int n, const int l, const int k, const int j) {
+    int nc = ep1 ? M1_IW_EP : M1HaloCompA(n);
+    int mlo = nbr_.d_view(2*m);
+    int mhi = nbr_.d_view(2*m+1);
+    if (mlo >= 0) {iw_(m,nc,k,j,is-1-l) = iw_(mlo,nc,k,j,ie-l);}
+    if (mhi >= 0) {iw_(m,nc,k,j,ie+1+l) = iw_(mhi,nc,k,j,is+l);}
+  });
+  if (!part_any_mpi) return;
+
+#if MPI_PARALLEL_ENABLED
+  // (2) remote neighbours.  Buffer slots: 0 = send to lo, 1 = send to hi,
+  // 2 = recv from lo, 3 = recv from hi.
+  auto hb_ = part_hbuf;
+  par_for("m1_impl_halo_pack", DevExeSpace(), 0, nmb-1, 0, nq-1, 0, nl-1,
+          ks, ke, js, je,
+  KOKKOS_LAMBDA(const int m, const int n, const int l, const int k, const int j) {
+    int nc = ep1 ? M1_IW_EP : M1HaloCompA(n);
+    int idx = (((n*nl + l)*nk + (k-ks))*nj + (j-js));
+    hb_(m,0,idx) = iw_(m,nc,k,j,is+l);
+    hb_(m,1,idx) = iw_(m,nc,k,j,ie-l);
+  });
+  int nbuf = nq*nl*nk*nj;
+  Kokkos::deep_copy(part_hbuf_h, part_hbuf);
+  std::vector<MPI_Request> req;
+  // the tag identifies (receiving local block, receiving side, which halo set); the
+  // source rank is named in the receive, so it need only be unique per rank pair.
+  int te = eponly ? 1 : 0;
+  int *gr = pmy_pack->pmesh->gids_eachrank;
+  for (int m=0; m<nmb; ++m) {
+    for (int s=0; s<2; ++s) {
+      int rk = part_nbrrank[2*m+s];
+      if (rk < 0 || rk == global_variable::my_rank) continue;
+      req.push_back(MPI_REQUEST_NULL);
+      MPI_Irecv(&part_hbuf_h(m,2+s,0), nbuf, MPI_ATHENA_REAL, rk,
+                4*m + 2*s + te, MPI_COMM_WORLD, &req.back());
+    }
+  }
+  for (int m=0; m<nmb; ++m) {
+    for (int s=0; s<2; ++s) {
+      int rk = part_nbrrank[2*m+s];
+      if (rk < 0 || rk == global_variable::my_rank) continue;
+      // the neighbour receives this message into ITS slot 2+(1-s)
+      int lidn = part_nbrgid[2*m+s] - gr[rk];
+      req.push_back(MPI_REQUEST_NULL);
+      MPI_Isend(&part_hbuf_h(m,s,0), nbuf, MPI_ATHENA_REAL, rk,
+                4*lidn + 2*(1-s) + te, MPI_COMM_WORLD, &req.back());
+    }
+  }
+  MPI_Waitall(static_cast<int>(req.size()), req.data(), MPI_STATUSES_IGNORE);
+  Kokkos::deep_copy(part_hbuf, part_hbuf_h);
+  auto nbrk = part_nbr;
+  par_for("m1_impl_halo_unpack", DevExeSpace(), 0, nmb-1, 0, nq-1, 0, nl-1,
+          ks, ke, js, je,
+  KOKKOS_LAMBDA(const int m, const int n, const int l, const int k, const int j) {
+    int nc = ep1 ? M1_IW_EP : M1HaloCompA(n);
+    int idx = (((n*nl + l)*nk + (k-ks))*nj + (j-js));
+    if (nbrk.d_view(2*m) < 0) {iw_(m,nc,k,j,is-1-l) = hb_(m,2,idx);}
+    if (nbrk.d_view(2*m+1) < 0) {iw_(m,nc,k,j,ie+1+l) = hb_(m,3,idx);}
+  });
+#endif
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::ImplicitGatherSolve
+//! \brief gather the assembled rows (a,b,c,r) of every x1 stack onto its root block, run
+//! there the IDENTICAL serial Thomas sweep the single-block solve runs, and scatter the
+//! solution back into iw(M1_IW_S2).  Two messages per Picard iteration per non-root
+//! block (a gather of 4*nx1 reals per column and a scatter of nx1).
+//!
+//! Cost: the root sweeps part_nblk*nx1 rows serially per column.  That is acceptable
+//! here (the columns are independent and the kernel is parallel over (root,k,j), and
+//! these columns are 84-512 cells long), but it is the serial bottleneck of the scheme;
+//! the scalable successor is Schur condensation to the block-interface unknowns (one
+//! reduced tridiagonal system of part_nblk rows per column, solved after two local
+//! sweeps) or cyclic reduction, neither of which can be bitwise.
+
+void RadiationM1::ImplicitGatherSolve() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  int is = indcs.is, ie = indcs.ie;
+  int js = indcs.js, je = indcs.je;
+  int ks = indcs.ks, ke = indcs.ke;
+  int nmb = pmy_pack->nmb_thispack;
+  int nx1 = indcs.nx1, nx1g = part_nx1g;
+  int nj = je - js + 1, nk = ke - ks + 1;
+  auto iw_ = iw;
+  auto sys_ = part_sys;
+  auto pos_ = part_pos;
+  auto slot_ = part_slot;
+
+  // (1) same-rank members: copy their rows straight into the root's gathered system
+  par_for("m1_impl_gth_loc", DevExeSpace(), 0, nmb-1, 0, 3, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int n, const int k, const int j, const int i) {
+    int sl = slot_.d_view(m);
+    if (sl < 0) return;
+    sys_(sl,n,k,j,pos_.d_view(m)*(ie-is+1) + (i-is)) = iw_(m,M1_IW_TA+n,k,j,i);
+  });
+
+#if MPI_PARALLEL_ENABLED
+  int nrow = 4*nk*nj*nx1;
+  std::vector<MPI_Request> req;
+  if (part_any_mpi) {
+    auto sb_ = part_sbuf;
+    par_for("m1_impl_gth_pack", DevExeSpace(), 0, nmb-1, 0, 3, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int n, const int k, const int j, const int i) {
+      if (slot_.d_view(m) >= 0) return;
+      sb_(m,((n*nk + (k-ks))*nj + (j-js))*(ie-is+1) + (i-is)) = iw_(m,M1_IW_TA+n,k,j,i);
+    });
+    Kokkos::deep_copy(part_sbuf_h, part_sbuf);
+    int *gr = pmy_pack->pmesh->gids_eachrank;
+    for (int s=0; s<part_nroot; ++s) {
+      for (int p=0; p<part_nblk; ++p) {
+        int rk = part_mrank[s*part_nblk+p];
+        if (rk == global_variable::my_rank) continue;
+        req.push_back(MPI_REQUEST_NULL);
+        MPI_Irecv(&part_rbuf_h(s*part_nblk+p,0), nrow, MPI_ATHENA_REAL, rk,
+                  2*(part_mgid[s*part_nblk+p] - gr[rk]), MPI_COMM_WORLD, &req.back());
+      }
+    }
+    for (int m=0; m<nmb; ++m) {
+      if (part_slot.h_view(m) >= 0) continue;
+      req.push_back(MPI_REQUEST_NULL);
+      MPI_Isend(&part_sbuf_h(m,0), nrow, MPI_ATHENA_REAL, part_rootrank[m],
+                2*m, MPI_COMM_WORLD, &req.back());
+    }
+    MPI_Waitall(static_cast<int>(req.size()), req.data(), MPI_STATUSES_IGNORE);
+    req.clear();
+    if (part_nroot > 0) {
+      Kokkos::deep_copy(part_rbuf, part_rbuf_h);
+      auto rb_ = part_rbuf;
+      // which (slot,position) pairs are remote: encoded as a host loop over kernels
+      for (int s=0; s<part_nroot; ++s) {
+        for (int p=0; p<part_nblk; ++p) {
+          if (part_mrank[s*part_nblk+p] == global_variable::my_rank) continue;
+          const int ss = s, pp = p, row = s*part_nblk + p;
+          par_for("m1_impl_gth_unp", DevExeSpace(), 0, 3, ks, ke, js, je, 0, nx1-1,
+          KOKKOS_LAMBDA(const int n, const int k, const int j, const int i) {
+            sys_(ss,n,k,j,pp*nx1 + i) =
+                rb_(row,((n*nk + (k-ks))*nj + (j-js))*nx1 + i);
+          });
+        }
+      }
+    }
+  }
+#endif
+
+  // (2) the gathered Thomas sweep: the same arithmetic, over nx1g rows
+  if (part_nroot > 0) {
+    par_for("m1_impl_gth_thomas", DevExeSpace(), 0, part_nroot-1, ks, ke, js, je,
+    KOKKOS_LAMBDA(const int s, const int k, const int j) {
+      Real bet = sys_(s,1,k,j,0);
+      sys_(s,5,k,j,0) = sys_(s,3,k,j,0)/bet;
+      for (int i=1; i<nx1g; ++i) {
+        sys_(s,4,k,j,i) = sys_(s,2,k,j,i-1)/bet;
+        bet = sys_(s,1,k,j,i) - sys_(s,0,k,j,i)*sys_(s,4,k,j,i);
+        sys_(s,5,k,j,i) = (sys_(s,3,k,j,i) - sys_(s,0,k,j,i)*sys_(s,5,k,j,i-1))/bet;
+      }
+      for (int i=nx1g-2; i>=0; --i) {
+        sys_(s,5,k,j,i) -= sys_(s,4,k,j,i+1)*sys_(s,5,k,j,i+1);
+      }
+    });
+  }
+
+  // (3) scatter
+#if MPI_PARALLEL_ENABLED
+  if (part_any_mpi) {
+    int nsol = nk*nj*nx1;
+    if (part_nroot > 0) {
+      auto rb_ = part_rbuf;
+      for (int s=0; s<part_nroot; ++s) {
+        for (int p=0; p<part_nblk; ++p) {
+          if (part_mrank[s*part_nblk+p] == global_variable::my_rank) continue;
+          const int ss = s, pp = p, row = s*part_nblk + p;
+          par_for("m1_impl_sct_pack", DevExeSpace(), ks, ke, js, je, 0, nx1-1,
+          KOKKOS_LAMBDA(const int k, const int j, const int i) {
+            rb_(row,((k-ks)*nj + (j-js))*nx1 + i) = sys_(ss,5,k,j,pp*nx1 + i);
+          });
+        }
+      }
+      Kokkos::deep_copy(part_rbuf_h, part_rbuf);
+    }
+    int *gr = pmy_pack->pmesh->gids_eachrank;
+    for (int m=0; m<nmb; ++m) {
+      if (part_slot.h_view(m) >= 0) continue;
+      req.push_back(MPI_REQUEST_NULL);
+      MPI_Irecv(&part_sbuf_h(m,0), nsol, MPI_ATHENA_REAL, part_rootrank[m],
+                2*m + 1, MPI_COMM_WORLD, &req.back());
+    }
+    for (int s=0; s<part_nroot; ++s) {
+      for (int p=0; p<part_nblk; ++p) {
+        int rk = part_mrank[s*part_nblk+p];
+        if (rk == global_variable::my_rank) continue;
+        req.push_back(MPI_REQUEST_NULL);
+        MPI_Isend(&part_rbuf_h(s*part_nblk+p,0), nsol, MPI_ATHENA_REAL, rk,
+                  2*(part_mgid[s*part_nblk+p] - gr[rk]) + 1, MPI_COMM_WORLD,
+                  &req.back());
+      }
+    }
+    MPI_Waitall(static_cast<int>(req.size()), req.data(), MPI_STATUSES_IGNORE);
+    Kokkos::deep_copy(part_sbuf, part_sbuf_h);
+    auto sb_ = part_sbuf;
+    par_for("m1_impl_sct_unp", DevExeSpace(), 0, nmb-1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      if (slot_.d_view(m) >= 0) return;
+      iw_(m,M1_IW_S2,k,j,i) = sb_(m,((k-ks)*nj + (j-js))*(ie-is+1) + (i-is));
+    });
+  }
+#endif
+  par_for("m1_impl_sct_loc", DevExeSpace(), 0, nmb-1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    int sl = slot_.d_view(m);
+    if (sl < 0) return;
+    iw_(m,M1_IW_S2,k,j,i) = sys_(sl,5,k,j,pos_.d_view(m)*(ie-is+1) + (i-is));
+  });
 }
 
 //----------------------------------------------------------------------------------------
@@ -331,6 +746,14 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   Real fxlo = iflux_x1min, fxhi = iflux_x1max;
   Real eblo = iebath_x1min, ebhi = iebath_x1max;
   bool cyclic = (bclo == M1_IBC_PERIODIC);
+  // MILESTONE 3b, LIMIT 4.  With more than one MeshBlock along x1 a block is at a
+  // PHYSICAL x1 boundary only when it sits at the corresponding end of its stack; the
+  // faces it shares with a stack neighbour are ordinary interior faces whose other cell
+  // is a GHOST cell, filled by ImplicitX1Halo with the very numbers the neighbour
+  // computed.  With part_nblk == 1 every block is both ends and nothing below changes.
+  const int nblkx1 = part_nblk;
+  auto pos_ = part_pos;
+  const int nlay_ = (part_nblk > 1) ? part_nlay : 0;
 
   const bool have_hydro = (pmy_pack->phydro != nullptr);
   const bool src_on = have_hydro && coupling && dbgh && !opac_zero;
@@ -352,6 +775,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     iw_(m,M1_IW_G0,k,j,i) = 0.0;
     iw_(m,M1_IW_TP,k,j,i) = 0.0;
     iw_(m,M1_IW_EGN,k,j,i) = 0.0;
+    iw_(m,M1_IW_KT,k,j,i) = opac_(m,M1_OP_T,k,j,i);
   });
 
   if (have_hydro) {
@@ -395,6 +819,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   }
   const Real escale = rfl_*emax0;
 
+  // the x1 ghost layers the partitioned solve reads.  E of the start-of-step state is
+  // sent once here; the six lagged quantities and the new E are sent inside the loop.
+  ImplicitX1Halo(true);
+
   //--------------------------------------------------------------------- the Picard loop
   int it = 0;
   Real resid = 0.0;
@@ -420,6 +848,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         opac_(m,M1_OP_P,k,j,i) = d*op;
         opac_(m,M1_OP_E,k,j,i) = d*oe;
         opac_(m,M1_OP_T,k,j,i) = d*(of + os);
+        iw_(m,M1_IW_KT,k,j,i) = d*(of + os);
       });
     }
 
@@ -462,8 +891,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       Real r0;
       Real fl = f0_(m,k,j,i), fr = f0_(m,k,j,i+1);
       if (fabs(fl) + fabs(fr) > 0.0) {
-        int iml = (i > is) ? (i-1) : (cyclic ? ie : is);
-        int ipr = (i < ie) ? (i+1) : (cyclic ? is : ie);
+        int iml = (i > is) ? (i-1)
+                  : (cyclic ? ie : ((pos_.d_view(m) > 0) ? (is-1) : is));
+        int ipr = (i < ie) ? (i+1)
+                  : (cyclic ? is : ((pos_.d_view(m) < nblkx1-1) ? (ie+1) : ie));
         Real eul = fmax((fl > 0.0) ? iw_(m,M1_IW_EP,k,j,iml) : e, efl);
         Real eur = fmax((fr > 0.0) ? e : iw_(m,M1_IW_EP,k,j,ipr), efl);
         r0 = 0.5*(fl/(cl*eul) + fr/(cl*eur));
@@ -474,6 +905,11 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       if (r0 < -1.0) {r0 = -1.0;}
       iw_(m,M1_IW_RF0,k,j,i) = r0;
     });
+
+    // the x1 halo of the LAGGED quantities (w, a, g0, v1, the comoving reduced flux and
+    // the transport opacity).  Every face of the stack is then assembled by both of its
+    // blocks from bit-identical numbers.
+    ImplicitX1Halo(false);
 
     // (b2) the FACE coefficients of the asymptotic-preserving HLL blend.  Nothing here
     // runs under implicit_flux = central, where ifw stays identically zero and the row
@@ -490,7 +926,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       const bool dodg = plmdc && (it == 0 || !rfreeze);
       par_for("m1_impl_aphll", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-        bool phys = ((i == is) || (i == ie+1)) && !cyclic;
+        int ipos = pos_.d_view(m);
+        bool phys = (((i == is) && (ipos == 0)) ||
+                     ((i == ie+1) && (ipos == nblkx1-1))) && !cyclic;
         if (phys) {
           // a physical boundary face: the flux is IMPOSED there (flux / Marshak /
           // reflect / efix), so there is no Riemann problem and no blend.
@@ -500,8 +938,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           ifw_(m,M1_IFW_DG,k,j,i) = 0.0;
           return;
         }
-        int im = (i == is) ? ie : (i-1);
-        int ip = (i == ie+1) ? is : i;
+        int im = (cyclic && i == is) ? ie : (i-1);
+        int ip = (cyclic && i == ie+1) ? is : i;
         Real dx = mbsize.d_view(m).dx1;
         Real rfl = iw_(m,M1_IW_RF0,k,j,im);
         Real rfr = iw_(m,M1_IW_RF0,k,j,ip);
@@ -519,7 +957,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         }
         // alpha: Bloch et al. (2021) eq. 25 with the (1-f^2) guard and the arithmetic
         // face mean of the CELL optical depth.  lp*lm <= 0, so den >= 1 and alpha <= 1.
-        Real tauf = 0.5*(opac_(m,M1_OP_T,k,j,im) + opac_(m,M1_OP_T,k,j,ip))*dx;
+        Real tauf = 0.5*(iw_(m,M1_IW_KT,k,j,im) + iw_(m,M1_IW_KT,k,j,ip))*dx;
         Real al = 1.0;
         if (tauf > 0.0) {
           Real fbar = 0.5*(fabs(rfl) + fabs(rfr));
@@ -573,8 +1011,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         // 4-cell stencil leaves the block falls back to dc (zero correction).
         Real dg = 0.0;
         if (dodg && al > 0.0) {
-          int imm = (im > is) ? (im-1) : (cyclic ? ie : -1);
-          int ipp = (ip < ie) ? (ip+1) : (cyclic ? is : -1);
+          int ilo = is - ((ipos > 0) ? nlay_ : 0);
+          int ihi = ie + ((ipos < nblkx1-1) ? nlay_ : 0);
+          int imm = (im > ilo) ? (im-1) : (cyclic ? ie : -1);
+          int ipp = (ip < ihi) ? (ip+1) : (cyclic ? is : -1);
           if (imm >= 0 && ipp >= 0) {
             Real dum;
             Real elp, erp, flp, frp;
@@ -662,6 +1102,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       Real dx = mbsize.d_view(m).dx1;
       Real nu = dt/dx;
       Real cr = ch/cl;
+      int ipos = pos_.d_view(m);
+      bool botb = (ipos == 0), topb = (ipos == nblkx1-1);
       Real wi = iw_(m,M1_IW_WCHI,k,j,i);
       Real ai = iw_(m,M1_IW_ADV,k,j,i);
       Real vi = iw_(m,M1_IW_V1,k,j,i);
@@ -670,10 +1112,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       bb += iw_(m,M1_IW_SRCB,k,j,i);
 
       // ---- face i+1/2
-      if (i < ie || cyclic) {
-        int ip = (i < ie) ? (i+1) : is;
+      if (i < ie || cyclic || !topb) {
+        int ip = (i < ie) ? (i+1) : (cyclic ? is : (ie+1));
         Real om = 1.0 - ifw_(m,M1_IFW_AL,k,j,i+1);
-        Real ktf = 0.5*(opac_(m,M1_OP_T,k,j,i) + opac_(m,M1_OP_T,k,j,ip));
+        Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j,i) + iw_(m,M1_IW_KT,k,j,ip));
         Real th = 1.0/(1.0 + ch*dt*ktf);
         Real df = om*th*ch*ch*dt/dx;
         bb += nu*df*wi;
@@ -699,10 +1141,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       }
 
       // ---- face i-1/2
-      if (i > is || cyclic) {
-        int im = (i > is) ? (i-1) : ie;
+      if (i > is || cyclic || !botb) {
+        int im = (i > is) ? (i-1) : (cyclic ? ie : (is-1));
         Real om = 1.0 - ifw_(m,M1_IFW_AL,k,j,i);
-        Real ktf = 0.5*(opac_(m,M1_OP_T,k,j,im) + opac_(m,M1_OP_T,k,j,i));
+        Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j,im) + iw_(m,M1_IW_KT,k,j,i));
         Real th = 1.0/(1.0 + ch*dt*ktf);
         Real df = om*th*ch*ch*dt/dx;
         bb += nu*df*wi;
@@ -727,8 +1169,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
 
       // a Dirichlet end cell: the whole row is replaced, which keeps the matrix an
       // M-matrix and anchors the level of E (see M1_IBC_EFIX)
-      if (!cyclic && ((i == is && bclo == M1_IBC_EFIX) ||
-                      (i == ie && bchi == M1_IBC_EFIX))) {
+      if (!cyclic && ((i == is && botb && bclo == M1_IBC_EFIX) ||
+                      (i == ie && topb && bchi == M1_IBC_EFIX))) {
         aa = 0.0;
         bb = 1.0;
         cc = 0.0;
@@ -740,7 +1182,12 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       iw_(m,M1_IW_TR,k,j,i) = rr;
     });
 
-    // (e) one Thomas sweep per column (cyclic: Sherman-Morrison)
+    // (e) one Thomas sweep per column (cyclic: Sherman-Morrison).  When the column
+    // spans several MeshBlocks the rows are gathered onto its root block and swept there
+    // by the identical serial recurrence (ImplicitGatherSolve).
+    if (nblkx1 > 1) {
+      ImplicitGatherSolve();
+    } else {
     par_for("m1_impl_thomas", DevExeSpace(), 0, nmb1, ks, ke, js, je,
     KOKKOS_LAMBDA(const int m, const int k, const int j) {
       if (!cyclic) {
@@ -795,6 +1242,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         }
       }
     });
+    }
 
     // (f) accept E', solve for T' and measure the Picard residual
     if (src_on) {
@@ -832,11 +1280,17 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       });
     }
 
+    // the new iterate's E has to reach the ghost cells before the FACE update, or the
+    // two blocks that share a face would build it from different states.
+    ImplicitX1Halo(true);
+
     // (g) the face fluxes of the new iterate, and the derived cell flux
     par_for("m1_impl_face", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       Real dx = mbsize.d_view(m).dx1;
-      bool lo = (i == is), hi = (i == ie+1);
+      int ipos = pos_.d_view(m);
+      bool lo = (i == is) && (ipos == 0);
+      bool hi = (i == ie+1) && (ipos == nblkx1-1);
       if ((lo || hi) && !cyclic) {
         int bc = lo ? bclo : bchi;
         int ic = lo ? is : ie;
@@ -854,9 +1308,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         }
         f0_(m,k,j,i) = fb;
       } else {
-        int im = (i == is) ? ie : (i-1);
-        int ip = (i == ie+1) ? is : i;
-        Real ktf = 0.5*(opac_(m,M1_OP_T,k,j,im) + opac_(m,M1_OP_T,k,j,ip));
+        int im = (cyclic && i == is) ? ie : (i-1);
+        int ip = (cyclic && i == ie+1) ? is : i;
+        Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j,im) + iw_(m,M1_IW_KT,k,j,ip));
         Real th = 1.0/(1.0 + ch*dt*ktf);
         Real vf = 0.5*(iw_(m,M1_IW_V1,k,j,im) + iw_(m,M1_IW_V1,k,j,ip));
         Real g0f = 0.5*(iw_(m,M1_IW_G0,k,j,im) + iw_(m,M1_IW_G0,k,j,ip));
@@ -902,6 +1356,15 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       Real r = iw_(m,M1_IW_RES,k,j,i);
       lmax = (r > lmax) ? r : lmax;
     }, Kokkos::Max<Real>(resid));
+#if MPI_PARALLEL_ENABLED
+    // the convergence test must be GLOBAL: with a partitioned column the ranks would
+    // otherwise take different numbers of Picard passes and the gather would deadlock,
+    // and even with rank-local columns a per-rank test makes the answer depend on the
+    // decomposition.  One MPI_MAX of one double per pass.
+    {Real rg;
+    MPI_Allreduce(&resid, &rg, 1, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+    resid = rg;}
+#endif
     converged = (resid < impl_tol);
   }
 #if MPI_PARALLEL_ENABLED
@@ -953,19 +1416,20 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       if (coupling && dbgf) {
         Real ktl, ktr;
         Real wl = 0.5, wr = 0.5;
-        if (i == is && !cyclic) {
-          ktl = opac_(m,M1_OP_T,k,j,i);
+        int ipos = pos_.d_view(m);
+        if (i == is && ipos == 0 && !cyclic) {
+          ktl = iw_(m,M1_IW_KT,k,j,i);
           wl = bmhalf ? 0.5 : 1.0;
         } else {
-          int im = (i == is) ? ie : (i-1);
-          ktl = 0.5*(opac_(m,M1_OP_T,k,j,im) + opac_(m,M1_OP_T,k,j,i));
+          int im = (cyclic && i == is) ? ie : (i-1);
+          ktl = 0.5*(iw_(m,M1_IW_KT,k,j,im) + iw_(m,M1_IW_KT,k,j,i));
         }
-        if (i == ie && !cyclic) {
-          ktr = opac_(m,M1_OP_T,k,j,i);
+        if (i == ie && ipos == nblkx1-1 && !cyclic) {
+          ktr = iw_(m,M1_IW_KT,k,j,i);
           wr = bmhalf ? 0.5 : 1.0;
         } else {
-          int ip = (i == ie) ? is : (i+1);
-          ktr = 0.5*(opac_(m,M1_OP_T,k,j,i) + opac_(m,M1_OP_T,k,j,ip));
+          int ip = (cyclic && i == ie) ? is : (i+1);
+          ktr = 0.5*(iw_(m,M1_IW_KT,k,j,i) + iw_(m,M1_IW_KT,k,j,ip));
         }
         dm1 = (dt/cl)*(wl*ktl*fl + wr*ktr*fr);
         dmref = fref ? (dt*dd*aref_(m,k,j,i)) : 0.0;

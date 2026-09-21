@@ -1,0 +1,121 @@
+MILESTONE 3b -- results.  Branch rt-integration, on top of a766ef98.
+Phases 0 and 1 done and gated; phases 2 (transverse transport), 3 (He box 2-D/3-D) and
+4 (GPU) NOT started.  Design note: docs/dev/rad_m1_implicit_design.md sect. 8.
+Binaries (serial CPU, module purge; module load gcc/14 cmake/4.0):
+  build_cpu_m1   cmake -S . -B build_cpu_m1  -D CMAKE_BUILD_TYPE=Release
+  build_cpu_box  ... -D PROBLEM=box_convection
+  build_mpi_m1   ... -D Athena_ENABLE_MPI=ON   (module load gcc/14 openmpi/5.0 cmake/4.0)
+Only two build directories existed at any time (viper inode quota); every run's dumps
+were deleted as soon as they were measured.
+
+
+PHASE 0 -- implicit_bmom_half default, and the restart gate
+-----------------------------------------------------------
+<rad_m1>/implicit_bmom_half default false -> TRUE (src/rad_m1/rad_m1_implicit.cpp);
+tests_m1/runs_3a/he_box_m1_1d_impl.athinput updated to name true.
+
+RESTART, 1-D He column, true c, transport = implicit_x1, central/dc, 300 s:
+  $XB -i runs_3a/he_box_m1_1d_impl.athinput time/tlim=300 problem/m1_top_bc=dark \
+      output2/dt=150 output3/dt=150            (the uninterrupted run)
+  $XB -r <that run>/rst/m1col.00001.rst -d <new dir> time/tlim=300
+                                     restart vs uninterrupted, t = 150.09 .. 300 s
+  m1col.hydro.hst   150 rows   max|diff| = 0.0   BITWISE
+  m1col.user.hst    150 rows   max|diff| = 0.0   BITWISE
+  bin/m1col.hydro_w.00002.bin  cmp: identical   BITWISE
+PASS.  f0x1 (the x1 face fluxes) is the complete persistent state; nothing else needs
+saving.  NOTE: the restart file must be one the UNINTERRUPTED run wrote.  A separate run
+stopped at time/tlim = 150 truncates its last step to land on tlim exactly and is a
+different trajectory; restarting from that is not the same problem (driver behaviour,
+not the solve).
+
+
+PHASE 1 -- implicit_partition = gather
+---------------------------------------
+New code: RadiationM1::ImplicitPartitionInit / ImplicitX1Halo / ImplicitGatherSolve in
+src/rad_m1/rad_m1_implicit.cpp, members in src/rad_m1/rad_m1.hpp, M1_IW_KT and
+M1HaloCompA in src/rad_m1/rad_m1_implicit.hpp.  Uniform mesh only.  Fatals kept: SMR/AMR;
+<mesh>/nx1 not a multiple of <meshblock>/nx1; nghost < 2; PERIODIC x1 with more than one
+MeshBlock along x1 (clean fatal with a message naming the two ways out).
+
+All gates: final tab file, all four moments, sorted by x1, difference against the SERIAL
+ONE-BLOCK run.  "0.0" is literal.
+
+ (a) thick pulse, kappa_s = 128000 (tau_cell = 1e3), implicit_cfl = 100,
+     time/cfl_number = 1e6, x1 reflecting (mesh + rad_m1), 128 cells:
+       flux/recon        1 vs 2 blocks     1 vs 4 blocks     Picard mean/max
+       central  dc         0.0               0.0               2 / 2
+       central  plm_dc     0.0               0.0               2 / 2
+       berthon  dc         0.0               0.0               3 / 4
+       berthon  plm_dc     0.0               0.0               8 / 9
+     ALL BITWISE.
+ (b) Marshak wave (rad_m1_marshak.athinput), implicit_cfl 100, marshak/marshak,
+     implicit_ebath_x1min = 1e-10, 128 cells, 259 solves, Picard 14.135 mean / 30 max:
+       1 vs 2 blocks 0.0    1 vs 4 blocks 0.0    BITWISE (identical Picard statistics)
+ (c) static grey atmosphere (rad_m1_atmosphere.athinput), implicit_cfl 100, 128 cells,
+     5120 solves, Picard 1.1848 mean / 29 max:
+       1 vs 2 blocks 0.0    1 vs 4 blocks 0.0    BITWISE
+ (d) MPI (build_mpi_m1, mpirun --oversubscribe -n R, meshblock/nx1 = 32 = 4 blocks/x1),
+     against the SERIAL one-block run:
+       thick pulse berthon/plm_dc   R = 2: 0.0    R = 4: 0.0   BITWISE
+       Marshak                      R = 2: 0.0    R = 4: 0.0   BITWISE
+       atmosphere                   R = 2: 0.0    R = 4: 0.0   BITWISE
+     Picard statistics identical to serial in every case.
+ (e) periodic x1 + 2 blocks: startup FATAL, message as designed.
+
+COST (serial CPU, one column, the worst case for a serial root sweep):
+  He column 84 cells, 373 steps:  1.580 / 1.617 / 1.636 s CPU for 1 / 2 / 4 blocks
+                                  (+2.3 % / +3.5 %)
+  Marshak   128 cells, 259 steps: 0.1451 / 0.1848 s for 1 / 4 blocks (+27 %)
+With many columns the gather/Thomas kernel is parallel over (root,k,j) and the serial
+sweep length is irrelevant; these numbers are the pathological single-column limit.
+
+COMMUNICATION, per non-root block per Picard pass:
+  2 gather/scatter messages  (4*nk*nj*nx1 reals up, nk*nj*nx1 down)
+  up to 4 halo messages      (nq*nlay*nk*nj reals; nq = 6 lagged, then 1 for E;
+                              nlay = min(nghost,2))
+  plus ONE MPI_Allreduce(MAX) of one double per pass, for the whole communicator
+  (the global Picard convergence test, new in 3b).
+Same-rank stack members and same-rank x1 neighbours exchange nothing (device copies).
+
+THE 1-D He COLUMN IS NOT A DECOMPOSITION GATE:
+  he_box_m1_1d_impl.athinput, 60 s, 1 vs 2 blocks along x1:
+    implicit_x1 + gather : max relative difference of the hydro history 1.9e-5 (col 4,
+                           the total x1 momentum, which is near zero)
+    transport = explicit : 3.2e-4 on the SAME comparison
+  i.e. src/pgen/box_convection.cpp is not block-decomposition invariant by itself
+  (bc_mode = 3 wall continuation, per-block column diagnostics).  The implicit partition
+  adds nothing: the Picard statistics are identical to the last digit for 1, 2 and 4
+  blocks (373 solves, mean 11.76139, max 23).
+  SEPARATE PGEN BUG found on the way: the six <rad_m1> user-history columns
+  (F1top/F1mid/F1bot/...) are SUMMED over MeshBlocks, so they come out nblk times too
+  large on a decomposed run.  Fix before judging any multi-block He run by them.
+
+
+REGRESSION
+----------
+tests_gate_merge/postmerge.sh:
+  box G1 mode 3: feczrt.hydro.hst, feczrt.user.hst, column_used.txt, rt_surface.bin,
+                 rt_profile.bin  -- all IDENTICAL
+  box G1 mode 0: the same five            -- all IDENTICAL
+  1-D He column implicit smoke test, t = 300:
+      F1top/Fin 1.0000097, F1bot/Fin 0.9998352, V1max 1.8343926e4,
+      Picard mean 11.70892, max 23, NON-CONVERGED 0
+      = the 3b reference line exactly.
+EXPLICIT path, T3 tau_cell 1e3 plm:  ratio 1.000015  (runs_1cB = 3a = 3a2 = 3b)
+IMPLICIT I1, tau_cell 1e3:  central 0.999999 (cfl 1) 1.000001 (cfl 100)
+                            berthon 0.999825 (cfl 1) 0.999827 (cfl 100)   = 3a / 3a2
+
+
+STYLE
+-----
+cpplint (repo CPPLINT.cfg, 90 columns) on the three changed files: 24 reports against 20
+for the same three files at HEAD.  The 4 new ones are all `whitespace/newline`
+("Controlled statements inside brackets of if clause"), the one-line `{x = y;}` form the
+file already uses 20 times and which the upstream cpplint.py the CI downloads does not
+flag (this count is from the pip cpplint).  No new line_length, no tabs, no trailing
+whitespace, no `}}` on one line, mode 644 on every touched file.
+flake8 --max-line-length 90 on tests_m1: clean.
+
+
+NOT DONE (phases 2, 3, 4): transverse x2/x3 implicit transport and the line_jacobi /
+bicgstab solvers, the 2-D/3-D He box, and any GPU run.  See design note sect. 8.
