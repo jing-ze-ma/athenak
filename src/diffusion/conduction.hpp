@@ -57,23 +57,14 @@ class Conduction {
   // non-finite, with the inputs that made it.  Default false; nothing runs when off.
   bool nan_report = false;
   bool rad_flux_limit = true;
-  // rad_flim_legacy (<hydro>/ or <mhd>/rad_flim_legacy, default FALSE): the FREE-
-  // STREAMING FLUX the limiter saturates at.  The limiter is
+  // The FREE-STREAMING FLUX the limiter saturates at.  The limiter is
   //     F = -K grad T / sqrt(1 + (K grad T/F_free)^2),
   // and F_free must be the largest flux the radiation field can carry, which for an
   // isotropic LTE field of energy density E = a T^4 streaming freely is
   //     F_free = c E = c a T^4 = 4 sigma T^4.
-  // Every version of this module before 2026-09-14 used sigma T^4, i.e. F_free too small
-  // by 4, so the limiter bit four times too early and the diffusion flux was suppressed
-  // wherever it approached the (wrong) ceiling.  MEASURED on the He-star 1-D column: the
-  // face flux changes by 6 % at tau = 3, 0.8 % at tau = 10 and < 1e-3 at tau > 30 --
-  // a RAMP-LAYER effect, which is exactly where the tau blend hands over.
-  // Set true to get sigma T^4 back for a bitwise comparison with a pre-fix run.
-  bool rad_flim_legacy = false;
-  // 4 when the fix is on, 1 in the legacy mode.  THE ONE PLACE the factor enters: every
-  // limiter in this module (the explicit face flux, RadFaceKCode, the implicit radial
-  // solve, and both timestep estimates) multiplies sigma T^4 by it, so they cannot drift.
-  Real rad_flim_fac = 4.0;
+  // Every limiter in this module (the explicit face flux, RadFaceKCode, the implicit
+  // radial solve, and both timestep estimates) uses this factor of 4, so they cannot
+  // drift.
   // OPTICAL-DEPTH BLEND (rad_tau_hi > 0): instead of the pressure cut, each x1 face
   // carries a weight w(tau_R) rising smoothly from 0 at rad_tau_lo to 1 at rad_tau_hi,
   // tau_R the column's Rosseland depth from the top; the diffusion flux is multiplied
@@ -204,15 +195,9 @@ class Conduction {
   DvceArray5D<Real> imp_wrk;
   DvceArray1D<int> imp_flag;   // 1 element: has the first bad cell been recorded?
   DvceArray1D<Real> imp_rec;   // 8 elements: that cell's identity and state
-  // ---- DIAGNOSTIC ONLY (<hydro>/<mhd>/rad_x1_verbose): measure the error made by
-  // linearising the radial conduction in T with the face conductance frozen.  Nothing
-  // below is read by the solve; it is written and printed only when the switch is on.
-  bool rad_x1_verbose = false;
-  int rad_x1_every = 1;
-  DvceArray1D<Real> imp_x1dg;  // 16 slots, see ImplicitRadialUpdate
-  int x1dbg_lines = 0;
   // ---- <hydro>/<mhd>/rad_x1_uform and rad_x1_kiter: the two cures for the frozen-K
-  // error the audit above measures.  Both default to off/1, and with them off not one
+  // error linearising the radial conduction in T with the face conductance frozen makes.
+  // Both default to off/1, and with them off not one
   // expression of the solve changes (bitwise).
   //
   // rad_x1_uform.  At frozen opacity the radiative flux is EXACTLY linear in u = T^4,
@@ -371,13 +356,10 @@ class Conduction {
   // ALTERNATING-DIRECTION IMPLICIT step: the SAME frozen coefficients, the SAME flux-form
   // 5-point stencil and the SAME conservation check, but the linear ODE
   //     dy/dt = b + A y,   A = A2 + A3 (the x2 and the x3 faces),   y(0) = 0
-  // is advanced over the whole stage tau = beta_dt in ONE step, by the Douglas scheme
-  //     (I - theta tau A2) Y1 = tau b,      (I - theta tau A3) y = Y1,
-  // i.e. two tridiagonal LINE solves instead of s explicit substages.  Its product form
-  // is (I - theta tau A2)(I - theta tau A3) y = tau b, so theta = 1 is backward Euler up
-  // to the O(tau^2 A2 A3) splitting term (unconditionally stable, damping in the stiff
-  // limit) and theta = 0.5 is the Peaceman-Rachford / Crank-Nicolson variant, second
-  // order in tau.  <hydro>/rad_adi_theta selects it; 1.0 is the default.
+  // is advanced over the whole stage tau = beta_dt in ONE step by a sequential
+  // backward-Euler (LOD) splitting -- two tridiagonal LINE solves instead of s explicit
+  // substages -- which is stiffly accurate, unlike the theta-weighted (Douglas) scheme
+  // this module used to also offer.
   //
   // COST.  Two line solves and NO cell halo exchange at all: the only communication is
   // the T*/alpha refresh exchange the operator already does, the Gershgorin Allreduce,
@@ -404,35 +386,21 @@ class Conduction {
   // IGNORED with a warning: there is no substage recurrence whose ghost skin it could run
   // down.  rad_sts_once is orthogonal and works unchanged.
   bool rad_ang_adi = false;
-  // rad_adi_scheme (lod | douglas, "lod" by default): WHICH splitting the two sweeps
-  // implement.  See the long note at the right-hand side in conduction_transverse.cpp:
-  // douglas is the textbook theta-weighted scheme and is NOT stiffly accurate (it relaxes
-  // a mode stiff in both transverse directions by only ~2/(tau|lambda|) of what it
-  // should, which killed the B-star box at cycle 3411), lod is the sequential
-  // backward-Euler splitting, which is.  rad_adi_theta applies to douglas only.
+  // rad_adi_scheme (lod | lod2 | lod2a, "lod" by default): WHICH splitting the two
+  // sweeps implement.  See the long note at the schemes in conduction_transverse.cpp.
   //
   // lod is only FIRST order, and under-damps a moderately stiff mode (1/(1+z) against
   // the exact e^-z): on the Gaussian test its L1 is 5.6x RKL1's at 32^2 and on the B-star
-  // gate box dT_tau10/dT_tau1 come out 7-8x RKL1's.  Two more values fix that, both of
-  // them sequences of the SAME lod sub-step (same sweeps, same plane skip, same
-  // partitioned line solve), only over different intervals:
-  //   lodn  -- rad_adi_nsub sub-steps of tau/N, sweep order alternating between them.
-  //            The brute-force fallback; amplification 1/(1+z/N)^N.
+  // gate box dT_tau10/dT_tau1 come out 7-8x RKL1's.
   //   lod2  -- RICHARDSON extrapolation in the step size: y = 2 LOD(tau/2)^2 - LOD(tau),
   //            the two half-steps taken with the sweep order alternated.  SECOND order,
   //            and still L-stable: R(z) = 2/(1+z/2)^2 - 1/(1+z) -> 0 as z -> infinity and
   //            |R| <= 1 on z >= 0.  THREE sweep pairs per stage and TWO factorisation
   //            sets (tau and tau/2 share nothing), i.e. ~3x the lod cost.
-  // See the long note at the schemes in conduction_transverse.cpp.
-  static constexpr int ADISCM_DOUGLAS = 0;
   static constexpr int ADISCM_LOD = 1;
   static constexpr int ADISCM_LOD2 = 2;
-  static constexpr int ADISCM_LODN = 3;
   static constexpr int ADISCM_LOD2A = 4;   // lod2 with the half-step order alternated
-  bool rad_adi_lod = true;             // every scheme but douglas
   int rad_adi_scm = ADISCM_LOD;
-  int rad_adi_nsub = 1;                // lodn only: sub-steps per stage
-  Real rad_adi_theta = 1.0;
   // rad_adi_cross_iter (cubed sphere only, default 1): outer iterations of the ADI step
   // in which the EXPLICIT metric cross term is re-evaluated at the current answer
   // Th = T* + alpha y instead of at T*.  The fixed-point contraction factor is the
@@ -554,12 +522,9 @@ class Conduction {
   // make it second order, because the operator is not part of the RK right-hand side --
   // so this trades nothing but the size of the first-order term.
   bool rad_sts_once = false;
-  // rad_sts_margin (default 0.10): the round-off margin on the RKL1 stability limit.  An
-  // s-substage RKL1 super-step covers |lambda| tau <= s^2+s, and the substage count is
-  // chosen from R = 0.5 (1 + margin) max_i z_i.  0.10 is the value this operator has
-  // always used; 0.02 is safe (the bound on z_i is a Gershgorin radius, i.e. already an
-  // over-estimate of |lambda|) and trims a few per cent off the substage count.
-  Real rad_sts_margin = 0.10;
+  // The round-off margin on the RKL1 stability limit is a fixed 0.10 (see
+  // conduction_transverse.cpp): an s-substage RKL1 super-step covers |lambda| tau <=
+  // s^2+s, and the substage count is chosen from R = 0.5 (1 + 0.10) max_i z_i.
   // rad_sts_perplane (default false): PER-PLANE SUBSTAGE COUNTS.  The transverse
   // operator couples cells only inside a horizontal plane of fixed x1 index i -- its
   // stencil has no x1 face at all -- so the planes are INDEPENDENT linear systems that
@@ -590,20 +555,11 @@ class Conduction {
   // false = exchange the FULL x1 range every time, which is the pre-window behaviour
   // and a control for any placement- or window-dependent difference.
   bool rad_tr_window = true;
-  // ---- COMMUNICATION COST OF THE RKL1 TRANSVERSE OPERATOR.  Both switches change only
+  // ---- COMMUNICATION COST OF THE RKL1 TRANSVERSE OPERATOR.  This switch changes only
   // WHICH GHOST CELLS ARE EXCHANGED AND WHEN; the arithmetic every ACTIVE cell performs
-  // is untouched, so both are bitwise-inert at their defaults and both are meant to stay
-  // bitwise when on.  See the bookkeeping note in conduction_transverse.cpp.
+  // is untouched, so it is bitwise-inert at its default and meant to stay bitwise when
+  // on.  See the bookkeeping note in conduction_transverse.cpp.
   //
-  // rad_tr_halo_faces_only (default false): the substage stencil is a 5-POINT CROSS --
-  // (k,j+-1) and (k+-1,j) at a fixed i -- and never reads a cell that is ghost in x2 and
-  // x3 at once.  So the x2x3 EDGE and CORNER buffers (slots 40..55) of pbval_tr carry
-  // nothing the operator reads: this drops them from the pack, the unpack, the
-  // MPI_Irecv/Isend, the completion test and the waits together.  With one MeshBlock per
-  // rank, periodic x2/x3 and physical x1 boundaries that is 8 messages per swap down to
-  // 4.  ONLY legal at rad_tr_halo_every = 1 (a ghost SKIN needs the diagonal ghosts --
-  // see below), and the constructor turns it off with a note if both are set.
-  bool rad_tr_halo_faces_only = false;
   // rad_tr_halo_every (int, default 1 = exchange every substage): exchange the RKL1
   // increment only every N substages and compute the intermediate substages on a GHOST
   // SKIN as well, letting the skin shrink by one layer per substage.  N is clamped to
@@ -659,86 +615,12 @@ class Conduction {
   // conduction operator fully on.  NewTimeStep builds the weights itself if this is
   // still false, which is the case at initialisation.
   bool rad_w_built = false;
-  // rad_blend_use_2s (<hydro>/ or <mhd>/rad_blend_use_2s, default 0 = off): inside the
-  // tau ramp, take the DIFFUSION operator's share of each x1 face from the TWO-STREAM
-  // instead of forming it from -K dT/dz.  Two modes, 1 and 2; see below.
-  //
-  // WHY.  In the ramp the blended flux is F = (1 - w) F_2s + w F_diff, and the two
-  // solvers do not agree there: on the He-star column F_diff exceeds the code's F_2s by
-  // 3.2 % at tau = 10 and 1.9 % at tau = 3.  The disagreement enters the gas as
-  //     -d/dz[(1 - w)(F_2s - F_diff)],
-  // a dipole of heating and cooling that sits still in the ramp and rings the box's
-  // acoustic mode: MEASURED peak-to-peak swings in F_top/F_bot of 1.58, 0.50, 0.056 and
-  // 0.002 for rad_tau_lo/hi = 3/10, 10/100, 30/100 and 100/300, i.e. the shallower the
-  // handover the worse it is, which is the signature of a mismatch and not of physics.
-  //
-  // WHAT THIS DOES.  On every x1 face with 0 < w < 1 the diffusion operator contributes
-  // w F_2s rather than w (-K dT/dz), so F = (1 - w) F_2s + w F_2s = F_2s identically and
-  // the handover term vanishes by construction.  At w = 1 the diffusion operator resumes
-  // in full and at w = 0 the two-stream owns the face alone, both unchanged.  The number
-  // is written into the face flux, so the two cells sharing a face see the same value and
-  // the exchange is conservative to round-off.
-  //
-  // MODE 1, PRESCRIBED FLUX.  A face with 0 < w < 1 leaves the implicit system outright:
-  // ImplicitRadialUpdate sets its conductance to zero, dropping it from the tridiagonal
-  // coupling, and the whole w F_2s is added explicitly in the face-flux kernel.  This is
-  // exact -- the blended flux IS F_2s -- but it makes the ramp faces an EXPLICIT radial
-  // operator again, and that is precisely what rad_implicit_x1 exists to avoid: on the
-  // He-star arms (chi_rad ~ 1e17-1e18 cm^2/s, explicit radial dt ~ 1e-4 s against a 0.1 s
-  // hydro CFL) the lagged feedback T -> F_2s -> deposition runs away inside ten seconds,
-  // dt collapses to the hydro CFL and v reaches 1e8 cm/s.  Kept for the explicit-x1 path
-  // and for diagnosis; NOT usable with rad_implicit_x1 on a stiff column.
-  //
-  // MODE 2, DEFECT CORRECTION -- the usable one.  The face KEEPS its conductance and
-  // stays in the implicit system, so the stiff part is still solved implicitly; what is
-  // added explicitly is only the DEFECT
-  //     w (F_2s - F_diff*),
-  // F_diff* being the diffusion flux at the frozen state the solve linearises about.  The
-  // implicit solve then contributes w F_diff(T_new), and the two sum to w F_2s wherever
-  // T_new is close to T*, i.e. the handover term is removed to first order while the
-  // damping that makes the step stable is untouched.  The defect is ~3 % of w F, so it is
-  // small AND it is the only explicit piece.  On the explicit-x1 path modes 1 and 2 are
-  // identical by construction.
-  //
-  // MEASURED, AND WHY THE SWITCH IS REFUSED WITH rad_implicit_x1.  Both modes were run
-  // on the four He-star 1-D arms (bench/hestar_fecz/instab1d, rad_tau_lo/hi = 3/10,
-  // 10/100, 30/100, 100/300, rad_implicit_x1 = true).  BOTH collapse at cycle 2-3: dt
-  // falls to the hydro CFL and the bottom cells reach T ~ 1e14 K within ten seconds.
-  // Two reasons, and neither is fixable from this side:
-  //
-  //   (i) WHAT IS PUT EXPLICITLY IS STIFF.  chi_rad is 1e17-1e18 cm^2/s in these
-  //       columns, so the EXPLICIT radial radiative dt is ~1e-4 s against a 0.1 s hydro
-  //       step -- which is exactly why rad_implicit_x1 is mandatory here.  Mode 1 makes
-  //       the whole ramp face explicit and lagged; mode 2's defect still carries
-  //       -w F_diff*, whose response to a cell's own temperature is the unstable
-  //       feedback.  Removing that feedback needs dF_2s/dT inside the tridiagonal
-  //       system, i.e. a linearised two-stream, not a corrected flux.
-  //
-  //  (ii) F_2s IS NOT ACCURATE ENOUGH IN THE RAMP TO PIN THE BLEND TO.  From the
-  //       solver's own column dump on the 100/300 arm, with F_int = sigma Teff^4 =
-  //       2.475e15: across the ramp (dtau per cell 3-6) F_2s/F_int runs 0.73 .. 1.06,
-  //       while ABOVE the ramp, where dtau per cell is below 2, it settles at 0.99.
-  //       That is the layer-source error documented at the down-sweep in
-  //       two_stream_rt.hpp, and it is +-25 % at these dtau, not the 4 % it is at
-  //       dtau ~ 1-3.  Forcing the blended flux to follow F_2s therefore starves the
-  //       layers below it of a quarter of the stellar flux.  The handover mismatch is
-  //       the smaller of the two errors.
-  //
-  // So the switch is refused with rad_implicit_x1 and with rad_sts_all, and is usable
-  // only on an explicit-x1 column -- where the two modes coincide -- and only once the
-  // sweep is accurate at the ramp's dtau per cell.  It is kept because it is the right
-  // construction once that holds: it is the only way to make the handover term vanish
-  // identically.
-  //
-  // ONE STAGE OF LAG.  The two-stream runs in the source-term task, after the flux task,
-  // so F_2s here is the previous stage's.  The cancellation is still exact -- both
-  // operators multiply THE SAME stored number by w and 1 - w -- and F_2s in the ramp
-  // evolves on the thermal time of a tau ~ 10-100 layer, far above a step.
+  // rad_blend_use_2s: REMOVED as a runtime switch (measured a net loss on every arm it
+  // was tried on -- see git history).  This module can no longer turn it on, but the
+  // two members below survive because src/utils/two_stream_rt.hpp still names them
+  // (guarded by rad_blend_use_2s > 0, which is now permanently false): rad_f2s stays
+  // unallocated and rad_f2s_ready stays false forever.
   int rad_blend_use_2s = 0;
-  // the two-stream's net x1-face flux in code flux units, written by
-  // two_stream_rt::picket_fence_two_stream_RT once per RT call.  Allocated only when the
-  // switch is on; rad_f2s_ready stays false until the first RT call has filled it, and
-  // until then the ordinary diffusion flux is used.
   DvceArray4D<Real> rad_f2s;
   bool rad_f2s_ready = false;
   void BuildRadWeights(const DvceArray5D<Real> &w, const EOS_Data &eos);

@@ -112,9 +112,6 @@ inline Real ck_impl_dtmax = 0.5;
 inline Real ck_impl_demax = 0.5;
 // problem/ck_impl_verbose: print the per-call pass count and residual.
 inline bool ck_impl_verbose = false;
-// problem/ck_impl_debug: print at most this many CAPPED cells per pass, with the row
-// that produced them.  Diagnostic only.
-inline int ck_impl_debug = 0;
 // problem/ck_impl_refresh_kappa: re-look-up the correlated-k opacity (and hence the beam
 // transmission tau_ray) at every Newton pass instead of freezing it over the step.  OFF
 // by default.  Cost: the pre-opacity kernel is a ck_continuum call plus two table index
@@ -224,7 +221,6 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
   const Real eps = ck_impl_norm_eps;
   const Real dcap = ck_impl_dtmax;
   const Real detot = ck_impl_demax;
-  const int ndbg = ck_impl_debug;
 
   // ---- pass 1: the residual norm of the CURRENT iterate --------------------------
   par_for("ck_impl_res", DevExeSpace(), 0, nmb1, ks, ke, js, je,
@@ -325,14 +321,6 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
       prev = de;
       const Real ei = ei_(m,k,j,i);
       const Real lim = dcap*ei;
-      if (ndbg > 0 && fabs(de) > 0.999*lim &&
-          Kokkos::atomic_fetch_add(&cnv_(6), 1.0) < static_cast<Real>(ndbg)) {
-        Kokkos::printf("### ck_impl_cap m=%d k=%d j=%d i=%d e=%.6e T=%.6e "
-                       "est=%.6e src=%.6e R=%.6e j0=%.6e j1=%.6e j2=%.6e de=%.6e\n",
-                       m, k, j, i, ei, T_(m,k,j,i), est_(m,k,j,i), src_(m,k,j,i),
-                       ei - est_(m,k,j,i) - bdt*src_(m,k,j,i), jac_(m,0,k,j,i),
-                       jac_(m,1,k,j,i), jac_(m,2,k,j,i), de);
-      }
       if (de > lim) {
         de = lim;
         cap = true;

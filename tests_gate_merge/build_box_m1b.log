@@ -1,0 +1,65 @@
+make: Entering directory '/viper/u2/jinma/ATHENAK/athenak/build_cpu_box'
+-- Including user-specified problem generator file: box_convection
+-- Setting default Kokkos CXX standard to 17
+-- Kokkos version: 4.6.2
+-- The project name is: Kokkos
+-- Using internal gtest for testing
+-- Using -std=c++17 for C++17 standard as feature
+-- Built-in Execution Spaces:
+--     Device Parallel: NoTypeDefined
+--     Host Parallel: NoTypeDefined
+--       Host Serial: SERIAL
+-- 
+-- Architectures:
+-- Using internal desul_atomics copy
+-- Experimental mdspan support is enabled
+-- Using internal mdspan directory /viper/u2/jinma/ATHENAK/athenak/kokkos/tpls/mdspan/include
+-- Kokkos Backends: SERIAL
+-- Configuring done (1.2s)
+-- Generating done (0.1s)
+-- Build files have been written to: /viper/u2/jinma/ATHENAK/athenak/build_cpu_box
+make[1]: Entering directory '/viper/u2/jinma/ATHENAK/athenak/build_cpu_box'
+make[2]: Entering directory '/viper/u2/jinma/ATHENAK/athenak/build_cpu_box'
+make[2]: Entering directory '/viper/u2/jinma/ATHENAK/athenak/build_cpu_box'
+make[2]: Entering directory '/viper/u2/jinma/ATHENAK/athenak/build_cpu_box'
+make[2]: Leaving directory '/viper/u2/jinma/ATHENAK/athenak/build_cpu_box'
+make[2]: Leaving directory '/viper/u2/jinma/ATHENAK/athenak/build_cpu_box'
+make[2]: Entering directory '/viper/u2/jinma/ATHENAK/athenak/build_cpu_box'
+[  1%] Built target kokkossimd
+make[2]: Leaving directory '/viper/u2/jinma/ATHENAK/athenak/build_cpu_box'
+[  1%] Built target AlwaysCheckGit
+make[2]: Entering directory '/viper/u2/jinma/ATHENAK/athenak/build_cpu_box'
+make[2]: Leaving directory '/viper/u2/jinma/ATHENAK/athenak/build_cpu_box'
+make[2]: Leaving directory '/viper/u2/jinma/ATHENAK/athenak/build_cpu_box'
+[ 10%] Built target kokkoscore
+[ 11%] Built target impl_git_version
+make[2]: Entering directory '/viper/u2/jinma/ATHENAK/athenak/build_cpu_box'
+make[2]: Leaving directory '/viper/u2/jinma/ATHENAK/athenak/build_cpu_box'
+[ 12%] Built target kokkoscontainers
+make[2]: Entering directory '/viper/u2/jinma/ATHENAK/athenak/build_cpu_box'
+make[2]: Leaving directory '/viper/u2/jinma/ATHENAK/athenak/build_cpu_box'
+make[2]: Entering directory '/viper/u2/jinma/ATHENAK/athenak/build_cpu_box'
+[ 13%] Building CXX object src/CMakeFiles/athena.dir/bvals/physics/rad_m1_bcs.cpp.o
+[ 13%] Building CXX object src/CMakeFiles/athena.dir/driver/driver.cpp.o
+[ 13%] Building CXX object src/CMakeFiles/athena.dir/mesh/load_balance.cpp.o
+[ 14%] Building CXX object src/CMakeFiles/athena.dir/mesh/mesh.cpp.o
+[ 14%] Building CXX object src/CMakeFiles/athena.dir/mesh/meshblock_pack.cpp.o
+[ 14%] Building CXX object src/CMakeFiles/athena.dir/mesh/mesh_refinement.cpp.o
+[ 14%] Building CXX object src/CMakeFiles/athena.dir/outputs/basetype_output.cpp.o
+[ 15%] Building CXX object src/CMakeFiles/athena.dir/outputs/restart.cpp.o
+[ 16%] Building CXX object src/CMakeFiles/athena.dir/pgen/pgen.cpp.o
+[ 16%] Building CXX object src/CMakeFiles/athena.dir/pgen/tests/rad_m1_tests.cpp.o
+[ 16%] Building CXX object src/CMakeFiles/athena.dir/rad_m1/rad_m1.cpp.o
+[ 17%] Building CXX object src/CMakeFiles/athena.dir/rad_m1/rad_m1_coupling.cpp.o
+[ 17%] Building CXX object src/CMakeFiles/athena.dir/rad_m1/rad_m1_fluxes.cpp.o
+[ 18%] Building CXX object src/CMakeFiles/athena.dir/rad_m1/rad_m1_newdt.cpp.o
+[ 18%] Building CXX object src/CMakeFiles/athena.dir/rad_m1/rad_m1_opacity.cpp.o
+[ 19%] Building CXX object src/CMakeFiles/athena.dir/rad_m1/rad_m1_tasks.cpp.o
+[ 19%] Building CXX object src/CMakeFiles/athena.dir/rad_m1/rad_m1_update.cpp.o
+[ 20%] Linking CXX executable athena
+make[2]: Leaving directory '/viper/u2/jinma/ATHENAK/athenak/build_cpu_box'
+[100%] Built target athena
+make[1]: Leaving directory '/viper/u2/jinma/ATHENAK/athenak/build_cpu_box'
+make: Leaving directory '/viper/u2/jinma/ATHENAK/athenak/build_cpu_box'
+MAKE_EXIT=0
+BUILD_DONE

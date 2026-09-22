@@ -74,7 +74,6 @@ ndiag      = 100
 
 <mhd>
 cs_lowbeta_fallback = 0.5
-cs_seam_econsist = false
 eos         = ideal
 reconstruct = plm
 rsolver     = hlld

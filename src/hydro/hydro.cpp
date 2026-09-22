@@ -184,7 +184,6 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
   wb_cache_every = pin->GetOrAddInteger("hydro","wb_cache_every",0);
   scratch_level = pin->GetOrAddInteger("hydro","scratch_level",0);
   use_wb_x2 = pin->GetOrAddBoolean("hydro","wb_x2",false);
-  use_wb_x3 = pin->GetOrAddBoolean("hydro","wb_x3",false);
   use_wb_rho = pin->GetOrAddBoolean("hydro","wb_rho",false);
   // switch the x1 well-balanced reconstruction off above this radius (0 = never); see
   // the declaration in hydro.hpp.  Only the position-aware x1 path (spherical polar and
@@ -240,7 +239,7 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
       std::exit(EXIT_FAILURE);
     }
       // select well-balanced scheme direction
-      if (!use_wb_x1 && !use_wb_x2 && !use_wb_x3) {
+      if (!use_wb_x1 && !use_wb_x2) {
         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                   << std::endl << "<hydro> wb_direction not set!" << std::endl;
         std::exit(EXIT_FAILURE);

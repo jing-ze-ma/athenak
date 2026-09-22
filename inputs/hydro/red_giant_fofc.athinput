@@ -118,9 +118,8 @@ rad_cap_ang          = 0.5
 rad_gate_rho         = 1.0e-16
 rad_gate_dex         = 0.5
 # NO radius cutoff on the opacity (I5/J3: the cutoff radiated 9000 K gas as a blackbody
-# and produced the spurious 3 L emergent flux).  V9f's from-scratch input set
-# rad_kappa_rmax = 3.652820e12; this run states the zeros explicitly instead.
-rad_kappa_rmax  = 0.0
+# and produced the spurious 3 L emergent flux); that radial cutoff was removed from the
+# code (superseded by the density gate below).
 rad_kappa_above = 0.0
 # DENSITY gate instead of the radius cutoff: the opacity follows the gas, so the
 # 1e-15-class corona stays inert wherever it sits and stellar material that inflates

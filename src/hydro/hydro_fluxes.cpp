@@ -115,7 +115,6 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
   const bool use_wb_rho_ = use_wb_rho;
   const bool use_wb_x1_ = use_wb_x1;
   const bool use_wb_x2_ = use_wb_x2;
-  const bool use_wb_x3_ = use_wb_x3;
   const bool use_wellbalance_dynamic_ = use_wellbalance_dynamic;
   const Real wb_rmax_ = wb_rmax;
   const Real wb_rmin_ = wb_rmin;
@@ -704,13 +703,6 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
         if (use_spherical_polar) {
           GridPiecewiseLinearX3(member, m, k, j, is-1, ie+1, w0_, x3v_, x3f_, wl_kp1, wr);
         } else {
-          
-        if (use_wellbalance_dynamic_ && use_wb_x3_)
-        {
-          WbLocalPiecewiseLinearX3(member, eos_, wb_option_, use_wb_rho_,
-              m, k, j, il, iu, w0_, phicc0_, phi0_x3f, wl_kp1, wr);
-        } else {
-
         // Reconstruct qR[k] and qL[k+1]
         switch (recon_method_) {
           case ReconstructionMethod::dc:
@@ -729,10 +721,8 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
           default:
             break;
         }
-              
         }
-        }
-          
+
         // Reconstruct the derived thermodynamic variables (general EOS only)
         if (nder > 0) {
           if (use_spherical_polar) {
@@ -741,11 +731,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
         WbStaticPiecewiseLinearDerX3(member, m, k, j, il, iu,
                                      pwb_, pfacewb_x3f,
                                     wder_, dl_kp1, dr);
-      } else if (use_wellbalance_dynamic_ && use_wb_x3_) {
-            WbPiecewiseLinearDerX3(member, eos_, wb_option_,
-                m, k, j, il, iu, w0_, wder_,
-                                   phicc0_, phi0_x3f, dl_kp1, dr);
-          } else {
+      } else {
           switch (recon_method_) {
             case ReconstructionMethod::dc:
               DonorCellX3(member, m, k, j, il, iu, wder_, dl_kp1, dr);

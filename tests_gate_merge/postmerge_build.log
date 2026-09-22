@@ -1,0 +1,24 @@
+make: Entering directory '/viper/u2/jinma/ATHENAK/athenak/build_cpu_box'
+make[1]: Entering directory '/viper/u2/jinma/ATHENAK/athenak/build_cpu_box'
+make[2]: Entering directory '/viper/u2/jinma/ATHENAK/athenak/build_cpu_box'
+make[2]: Entering directory '/viper/u2/jinma/ATHENAK/athenak/build_cpu_box'
+make[2]: Entering directory '/viper/u2/jinma/ATHENAK/athenak/build_cpu_box'
+make[2]: Leaving directory '/viper/u2/jinma/ATHENAK/athenak/build_cpu_box'
+make[2]: Leaving directory '/viper/u2/jinma/ATHENAK/athenak/build_cpu_box'
+make[2]: Entering directory '/viper/u2/jinma/ATHENAK/athenak/build_cpu_box'
+make[2]: Leaving directory '/viper/u2/jinma/ATHENAK/athenak/build_cpu_box'
+[  1%] Built target kokkossimd
+[ 10%] Built target kokkoscore
+make[2]: Entering directory '/viper/u2/jinma/ATHENAK/athenak/build_cpu_box'
+make[2]: Leaving directory '/viper/u2/jinma/ATHENAK/athenak/build_cpu_box'
+make[2]: Leaving directory '/viper/u2/jinma/ATHENAK/athenak/build_cpu_box'
+[ 11%] Built target kokkoscontainers
+[ 11%] Built target AlwaysCheckGit
+make[2]: Entering directory '/viper/u2/jinma/ATHENAK/athenak/build_cpu_box'
+make[2]: Leaving directory '/viper/u2/jinma/ATHENAK/athenak/build_cpu_box'
+[ 12%] Built target impl_git_version
+make[2]: Entering directory '/viper/u2/jinma/ATHENAK/athenak/build_cpu_box'
+make[2]: Leaving directory '/viper/u2/jinma/ATHENAK/athenak/build_cpu_box'
+[100%] Built target athena
+make[1]: Leaving directory '/viper/u2/jinma/ATHENAK/athenak/build_cpu_box'
+make: Leaving directory '/viper/u2/jinma/ATHENAK/athenak/build_cpu_box'

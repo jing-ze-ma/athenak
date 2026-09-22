@@ -77,8 +77,6 @@ struct MHDTaskIDs {
   TaskID recvb;
   TaskID sendb_shr;
   TaskID recvb_shr;
-  TaskID sendme;
-  TaskID recvme;
   TaskID bcs;
   TaskID prol;
   TaskID c2p;
@@ -181,13 +179,6 @@ class MHD {
   // drops to.  Non-relativistic only: there is no single-state HLLE for SR/GR MHD.
   bool fofc_hlle = false;
 
-  // CUBED-SPHERE DIAGNOSTICS. The momentum RHS on a gnomonic grid is the sum of a flux
-  // divergence and a geometric source term that must cancel to the accuracy of the
-  // scheme; these two flags drop one half each so a single step measures each half on
-  // its own. They change the answer and are for measurement only.
-  bool cs_diag_no_coordsrc = false;  // skip SrcTermsGnomonicEquiangleMHD
-  bool cs_diag_no_divf = false;      // skip the flux divergence in the RK update
-
   // CUBED SPHERE: use the GS07 upwind corner EMF instead of the plain four-face average.
   // Needs the gnomonic cell-centred EMF, e_cc_3d_cs in mhd_corner_e.cpp.
   bool use_bs_emf = false;
@@ -210,37 +201,7 @@ class MHD {
   // everywhere, 0 = HLLD everywhere; true/false are accepted as 7/0.
   int polar_hlle_rows = 6;
 
-  // CUBED SPHERE, MEASUREMENT ONLY: report how often that fallback actually FIRES, as a
-  // profile in radius, every N cycles (0 = off).  It changes no answer.  The question it
-  // exists to settle is whether the fallback is engaged in the shell where a round-off
-  // perturbation is observed to grow: beta there is ~1e-2, two decades below the default
-  // threshold of 0.5, so it should be on everywhere in that shell -- and if the growth
-  // happens anyway, added dissipation is not the cure for THIS route.
-  int cs_lowbeta_diag = 0;
 
-  // CUBED SPHERE, MEASUREMENT ONLY: every N cycles, test whether a SEAM ghost cell's
-  // internal energy is consistent with its own ghost field.  See mhd_seam_diag.cpp for
-  // the hypothesis, the null control and what would falsify it.  0 = off.
-  int cs_seam_diag = 0;
-
-  // CUBED SPHERE: make a seam ghost cell's TOTAL ENERGY consistent with its own ghost
-  // field, by exchanging 0.5|B_cc|^2 across the seam and swapping the resampled source
-  // value for the ghost's own.  See mhd_seam_econsist.cpp.  Default OFF: it changes
-  // answers and costs one extra cell-centred halo exchange per stage.
-  bool cs_seam_econsist = false;
-  DvceArray5D<Real> me0, coarse_me0;   // (m,0,k,j,i) = 0.5|B_cc|^2, the exchanged scalar
-  MeshBoundaryValuesCC *pbval_me = nullptr;
-  void FillSeamME();
-  void SeamEnergyFix();
-  // (nx1, LBD_NSLOT), binned by RADIAL CELL INDEX: faces examined, faces switched to
-  // HLLE, and the smallest beta seen on any face in the bin.  Zeroed and refilled by the
-  // one stage-1 sweep that reports, so it is a snapshot of that sweep, not a running sum.
-  DvceArray2D<Real> lb_diag;
-  static constexpr int LBD_NFACE = 0;
-  static constexpr int LBD_NSWITCH = 1;
-  static constexpr int LBD_MINBETA = 2;
-  static constexpr int LBD_NSLOT = 3;
-    
   // following only used for including time-independent gravity in the conserved energy equation
   bool use_etotgrav = false;   // flag to enable etotgrav
   DvceFaceFld4D<Real> phi0;     // face-centered gravitational potential energy
@@ -268,7 +229,6 @@ class MHD {
   bool use_wellbalance_dynamic = false;    // flag to enable dynamical well-balanced method by Kappeli & Mishra 2014, 2016
   bool use_wb_x1 = false;    // flag for directions
   bool use_wb_x2 = false;    // flag for directions
-  bool use_wb_x3 = false;    // flag for directions
   bool use_wb_rho = false;   // flag to enable local well-balanced method also in reconstructing rho
   // Radius (x1v, which IS the radius on the spherical grids) beyond which the dynamic
   // well-balanced x1 reconstruction is switched off cell by cell; 0 = never.  The
@@ -343,9 +303,6 @@ class MHD {
   TaskStatus ApplyPhysicalBCs(Driver* pdrive, int stage);
   TaskStatus Prolongate(Driver* pdrive, int stage);
   TaskStatus ConToPrim(Driver *d, int stage);
-  void SeamHaloDiag();   // measurement only; see mhd_seam_diag.cpp
-  TaskStatus SendME(Driver *d, int stage);
-  TaskStatus RecvME(Driver *d, int stage);
   TaskStatus NewTimeStep(Driver *d, int stage);
   // ...in "after_stagen_tl" task list
   TaskStatus ClearSend(Driver *d, int stage);
@@ -538,50 +495,6 @@ class MHD {
         return;
       };
       
-      KOKKOS_INLINE_FUNCTION
-      static void WbLocalPiecewiseLinearX3(TeamMember_t const &member,
-           const EOS_Data &eos, const WBOption wb_option, const bool use_wb_rho,
-           const int m, const int k, const int j,
-           const int il, const int iu, const DvceArray5D<Real> &q, const DvceArray4D<Real> &phicc, const DvceArray4D<Real> &phi,
-           ScrArray2D<Real> &ql_kp1, ScrArray2D<Real> &qr_k) {
-        Real igm1 = 1.0/(eos.gamma-1.0);
-        int nvar = q.extent_int(1);
-        for (int n=0; n<nvar; ++n) {
-          if (n == (IEN) || (n == (IDN) && use_wb_rho)) {
-            par_for_inner(member, il, iu, [&](const int i) {
-              Real q0_km1, q0_kp1, q0_kmh, q0_kph, q0_k;
-              getWBq0(eos, wb_option, (n == (IEN)) ? WBVar::wb_eint : WBVar::wb_dens,
-                       q(m,IDN,k-1,j,i),q(m,IDN,k,j,i),q(m,IDN,k+1,j,i),
-                       q(m,IEN,k-1,j,i),q(m,IEN,k,j,i),q(m,IEN,k+1,j,i),
-                       phicc(m,k-1,j,i),phi(m,k,j,i),phicc(m,k,j,i),phi(m,k+1,j,i),phicc(m,k+1,j,i),
-                       q0_km1, q0_kmh, q0_k, q0_kph, q0_kp1);
-                
-              Real q1_km1 = q(m,n,k-1,j,i) - q0_km1;
-              Real q1_k = q(m,n,k,j,i) - q0_k;
-              Real q1_kp1 = q(m,n,k+1,j,i) - q0_kp1;
-                
-              PLM(q1_km1, q1_k, q1_kp1, ql_kp1(n,i), qr_k(n,i));
-                
-              ql_kp1(n,i) += q0_kph;
-              qr_k(n,i) += q0_kmh;
-                
-                // Left/right slopes (properly scaled)
-                Real sL = q(m,n,k,j,i)   - q(m,n,k-1,j,i);
-                Real sR = q(m,n,k+1,j,i) - q(m,n,k,j,i);
-                
-                if (ql_kp1(n,i) < 0.0 || qr_k(n,i) < 0.0 || sL * sR <= 0.0) {
-                    PLM(q(m,n,k-1,j,i), q(m,n,k,j,i), q(m,n,k+1,j,i), ql_kp1(n,i), qr_k(n,i));
-                }
-            });
-          } else {
-            par_for_inner(member, il, iu, [&](const int i) {
-              PLM(q(m,n,k-1,j,i), q(m,n,k,j,i), q(m,n,k+1,j,i), ql_kp1(n,i), qr_k(n,i));
-            });
-          }
-        }
-        return;
-      };
-    
     //------------------------------------------------------------------------------------
     //! \fn WbStaticPiecewiseLinearDerX1()
     //! \brief static well-balanced reconstruction of the derived thermodynamic variables.
@@ -809,50 +722,6 @@ class MHD {
         } else {
           par_for_inner(member, il, iu, [&](const int i) {
             PLM(qd(m,n,k,j-1,i), qd(m,n,k,j,i), qd(m,n,k,j+1,i), dl_jp1(n,i), dr_j(n,i));
-          });
-        }
-      }
-      return;
-    };
-
-    KOKKOS_INLINE_FUNCTION
-    static void WbPiecewiseLinearDerX3(TeamMember_t const &member,
-         const EOS_Data &eos, const WBOption wb_option,
-         const int m, const int k, const int j, const int il, const int iu,
-         const DvceArray5D<Real> &q, const DvceArray5D<Real> &qd,
-         const DvceArray4D<Real> &phicc, const DvceArray4D<Real> &phi,
-         ScrArray2D<Real> &dl_kp1, ScrArray2D<Real> &dr_k) {
-      int nvar = qd.extent_int(1);
-      for (int n=0; n<nvar; ++n) {
-        if (n == (IDPR)) {
-          par_for_inner(member, il, iu, [&](const int i) {
-            Real q0_km1, q0_kmh, q0_k, q0_kph, q0_kp1;
-            getWBq0(eos, wb_option, WBVar::wb_pres,
-                    q(m,IDN,k-1,j,i),q(m,IDN,k,j,i),q(m,IDN,k+1,j,i),
-                    q(m,IEN,k-1,j,i),q(m,IEN,k,j,i),q(m,IEN,k+1,j,i),
-                    phicc(m,k-1,j,i),phi(m,k,j,i),phicc(m,k,j,i),
-                    phi(m,k+1,j,i),phicc(m,k+1,j,i),
-                    q0_km1, q0_kmh, q0_k, q0_kph, q0_kp1);
-
-            Real q1_km1 = qd(m,n,k-1,j,i) - q0_km1;
-            Real q1_k   = qd(m,n,k,j,i)   - q0_k;
-            Real q1_kp1 = qd(m,n,k+1,j,i) - q0_kp1;
-
-            PLM(q1_km1, q1_k, q1_kp1, dl_kp1(n,i), dr_k(n,i));
-
-            dl_kp1(n,i) += q0_kph;
-            dr_k(n,i)   += q0_kmh;
-
-            Real sL = qd(m,n,k,j,i)   - qd(m,n,k-1,j,i);
-            Real sR = qd(m,n,k+1,j,i) - qd(m,n,k,j,i);
-            if (dl_kp1(n,i) < 0.0 || dr_k(n,i) < 0.0 || sL * sR <= 0.0) {
-              PLM(qd(m,n,k-1,j,i), qd(m,n,k,j,i), qd(m,n,k+1,j,i),
-                  dl_kp1(n,i), dr_k(n,i));
-            }
-          });
-        } else {
-          par_for_inner(member, il, iu, [&](const int i) {
-            PLM(qd(m,n,k-1,j,i), qd(m,n,k,j,i), qd(m,n,k+1,j,i), dl_kp1(n,i), dr_k(n,i));
           });
         }
       }

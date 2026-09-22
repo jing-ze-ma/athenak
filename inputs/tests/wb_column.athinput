@@ -46,7 +46,6 @@ gamma       = 1.4
 etotgrav    = true
 wellbalance_dynamic = false
 wb_x1       = false
-wb_x3       = false
 wb_option   = polytropic
 wb_cache_every = 0
 

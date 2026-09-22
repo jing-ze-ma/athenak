@@ -302,7 +302,6 @@ class Mesh {
     
   bool use_cubed_sphere;      // true if using cubed sphere
   bool cs_vertex_fill;        // true to fill the cube-vertex corner by exchange
-  bool cs_corner_poison;      // DEBUG: overwrite the cube-vertex corner ghosts with 1e30
   int npanels;                // 6 if using cubed sphere; 1 otherwise
   bool use_spherical_polar;   // true if using spherical polar grid
   bool use_grid_stretch_r;      // true if using grid stretching in r
@@ -323,13 +322,6 @@ class Mesh {
   // theta shift of EVERY variable, 863e8337 -- bisected to the polar-row radial-field
   // blow-up, 2026-09-10), 3 = scalar (rotate the vectors, shift the scalars).
   int polar_x3_shift;
-  // SPHERICAL POLAR: keep the theta-face field at the pole single-valued by
-  // azimuthally averaging it into one Cartesian vector each step
-  // (PolarAzimuthalAverageBxBy).  Its call had been commented out since the polar
-  // boundary was introduced; measured on sp_dhj_ctl, B_r at the axis is ~200x more
-  // non-axisymmetric than axisymmetric without it.  Default OFF so existing
-  // spherical-polar answers are unchanged.
-  bool use_polar_average_b;
   // SPHERICAL POLAR + RESISTIVITY: the polar azimuthal average of the edge EMF E_r runs
   // at the end of CornerE, but the RESISTIVE EMF is added to the same array afterwards,
   // so the resistive part of E_r at the axis was never averaged and is free to be

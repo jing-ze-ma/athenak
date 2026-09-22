@@ -192,11 +192,6 @@ class Coordinates {
     }
 
   // functions
-  // CUBED-SPHERE DIAGNOSTIC: drop the MAGNETIC terms from the gnomonic geometric
-  // source, leaving the hydro ones. The scheme is then inconsistent for MHD -- this is
-  // a probe for whether the low-beta instability's feedback lives in that source.
-  bool cs_diag_no_magsrc = false;
-
   // WELL-BALANCED geometric source (<mhd>/cs_wellbalanced_src on the cubed sphere,
   // <mhd>/sp_wellbalanced_src on the spherical-polar grid).  See the long note at
   // SrcTermsCurvilinearWB.
@@ -221,13 +216,6 @@ class Coordinates {
   int sp_face_avg_terms = 3;
   void SphericalPolarFaceAverageFluxes(DvceFaceFld5D<Real> &uflx, const int nvar);
   DvceArray5D<Real> sp_favg2, sp_favg3;   // scratch for the face-average corrections
-  // CARTESIAN momentum update on the WHOLE cubed sphere (<mhd>/cs_cart_momentum): no
-  // geometric source at all; see SrcTermsGnomonicCartMomentum.
-  bool cs_cart_momentum = false;
-  void SrcTermsGnomonicCartMomentum(const DvceArray5D<Real> &w0,
-       const DvceArray5D<Real> &bcc0, const bool is_mhd,
-       const DvceArray5D<Real> &wder, const DvceFaceFld5D<Real> uflx,
-       const EOS_Data &eos_data, const Real bdt, DvceArray5D<Real> &u0);
   void SrcTermsSphericalPolarCartRows(const DvceArray5D<Real> &w0,
        const DvceArray5D<Real> &bcc0, const bool is_mhd,
        const DvceArray5D<Real> &wder, const DvceFaceFld5D<Real> uflx,

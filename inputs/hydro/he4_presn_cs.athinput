@@ -233,8 +233,6 @@ rad_ang_solver   = adi           # alternating-direction implicit, tridiagonal x
 rad_adi_scheme   = lod2          # Richardson-extrapolated LOD: second order in the step
 rad_ang_maxit    = 400           # the cubed-sphere cross-term outer iteration cap
 rad_sts_perplane = true
-rad_tr_tau_lo    = 0.0           # no tau blend on the transverse operator: the whole-column
-rad_tr_tau_hi    = 0.0           # two-stream already owns the radiation above rad_gate_rho
 # (rad_cap_ang, the explicit stiffness cap of the old fallback, is REMOVED: it and
 # rad_implicit_ang are two treatments of the same operator and the code refuses both.)
 tfloor  = 5.0e3                  # rt_use_cons clamps a non-positive e to e(rho, tfloor).

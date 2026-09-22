@@ -429,10 +429,10 @@ inline Real rt_src_theta = 1.0;
 // WORK term v.f is accumulated, box-integrated over the step, into slot 10 of this
 // array.  Diagnostic only: nothing here changes a source term.
 inline DvceArray1D<Real> *rt_bud_ptr = nullptr;
-// problem/rt_src_dump: dump the grey sweep's per-cell source assembly for ONE column
-// (m = 0, k = ks, j = js) on the next N apply-kernel calls, every cell from the band cut
-// to the top: the raw face fluxes, both forms of the divergence, the assembled source
-// and the source actually applied.  Diagnostic only.
+// problem/rt_src_dump: the per-cell source-assembly debug dump this counted down was
+// removed as dead code (never set above its default of 0 in any production input or
+// test); box_convection.cpp still reads the pin key into this global and refuses to run
+// it under rt_col3_skip_sweep if it is set, so the symbol is kept, always inert now.
 inline int rt_src_dump = 0;
 // problem/rt_force_verbose -- print the hydrostatic balance of every cell inside the
 // taper ramp for this many RT calls, then stop.  a_p + a_g + a_f normalised by g: inside
@@ -2238,24 +2238,6 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
       auto tauf_g = taublend ? pcond_rt->rad_tauf
                              : DvceArray4D<Real>("rt_tau_dummy",1,1,1,1);
       if (taublend) int_at_cut = false;
-      // rt_top_re is silently a no-op when the ghost is radiatively inert: see the note
-      // on rt_top_re.  Say so once, from rank 0; the behaviour is unchanged.
-      {
-        static bool topre_warned = false;
-        // NOTE the DENSITY gate is deliberately not part of this test: with
-        // rad_gate_rho the top ghost's opacity is G(rho_top)*kappa, which is zero only
-        // where the gate is actually closed, so rt_top_re is a no-op there and live
-        // everywhere else.  Warning on it would be wrong more often than right.
-        if (top_re && !topre_warned && pcond_rt != nullptr &&
-            pcond_rt->rad_kappa_rmax > 0.0 && pcond_rt->rad_kappa_above == 0.0 &&
-            global_variable::my_rank == 0) {
-          topre_warned = true;
-          std::cout << "### WARNING in two_stream_rt: problem/rt_top_re is ON but "
-                    << "rad_kappa_above = 0, so the top ghost has zero optical depth and "
-                    << "the back-radiation it hands down is exactly zero. The switch has "
-                    << "no effect in this configuration." << std::endl;
-        }
-      }
       auto kc_g   = (band_on) ? *rt_kc_ptr : Fb_g;
       auto Bb_g   = (band_on) ? *rt_Bb_ptr : Fb_g;
       auto T_g    = (band_on) ? *rt_T_ptr  : tau_g;
@@ -2349,14 +2331,6 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
       const int grey_nT = grey_ktab ? pcond_rt->rad_kr_nT : 0;
       const int grey_nP = grey_ktab ? pcond_rt->rad_kr_nP : 0;
       const Real grey_kfac = (pcond_rt != nullptr) ? pcond_rt->rad_kappa_fac : 1.0;
-      // the radiatively inert region the conduction module defines (rad_kappa_rmax): the
-      // two-stream has to go quiet over exactly the same cells, or the corona the
-      // diffusion refuses to touch would still be cooled by the band solver.  Zero
-      // opacity is exact here, not a limit: dtau = 0 gives e0 = -expm1(0) = 0, so alp,
-      // bet and gm all vanish, Src and Em pick up nothing, and rt_apply's Newton branch
-      // is skipped because Em <= 0.  With tau flat through the corona the blend weight w
-      // is 0 there too, so the w*F handover term adds nothing either.
-      const Real grey_krmax = (pcond_rt != nullptr) ? pcond_rt->rad_kappa_rmax : 0.0;
       const Real grey_kabove = (pcond_rt != nullptr) ? pcond_rt->rad_kappa_above : 0.0;
       // ...and its DENSITY form (rad_gate_rho), which is the one to use when the
       // artificial medium and the star exchange gas: kappa_eff = G kappa + (1-G) kabove
@@ -2490,8 +2464,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
             // RTBadState).  Such a cell takes NO part in this RT call: zero opacity and
             // zero emission make the layer transparent (e0 = 0, so alp = bet = 0, the
             // streams pass through untouched, Src and Em pick up nothing and rt_apply's
-            // Newton branch is skipped) -- the same "exact" inert state the corona above
-            // rad_kappa_rmax already has.  Giving it a FLOOR state instead would hand a
+            // Newton branch is skipped).  Giving it a FLOOR state instead would hand a
             // 0.1 K blackbody to a cell with 8000 K neighbours, which collapses dt.
             if (!(T_g(m,k,j,i) > 0.0)) {
               kc_g(m,0,i,k,j) = 0.0;
@@ -2501,12 +2474,10 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
             const Real TT = T_g(m,k,j,i);
             const Real pcgs = pb_g(m,k,j,i)*1.0e6;
             const Real rho = rhoN(m,k,j,ii);
-            Real kr = (grey_krmax > 0.0 && X1V(m,i) > grey_krmax)
-                ? grey_kabove
-                : (grey_ktab
+            Real kr = grey_ktab
                    ? RosselandTable(grey_kt, grey_klT, grey_klP, grey_nT, grey_nP, TT,
                                     grey_krho ? rho : pcgs)
-                   : RosselandFreedman2014(TT, pcgs, met));
+                   : RosselandFreedman2014(TT, pcgs, met);
             if (gate_rho > 0.0) {
               const Real g = RadGate(rho, gate_rho, gate_dex);
               kr = g*kr + (1.0 - g)*grey_kabove;
@@ -4972,30 +4943,8 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
       const int vcyc = pm->ncycle;
       auto eos_f = eos;
       // problem/rt_budget_verbose: the v.f work accumulator (see rt_bud_ptr)
-      // problem/rt_src_dump: one column, this call only (see rt_src_dump)
-      const bool sdump_ = (rt_src_dump > 0);
-      if (sdump_) --rt_src_dump;
-      const int sdcyc_ = pm->ncycle;
       const bool budg_ = (rt_bud_ptr != nullptr) && radforce;
       auto bud_ = budg_ ? *rt_bud_ptr : DvceArray1D<Real>("rtbuddummy", 1);
-      // ---- rad_blend_use_2s: hand the conduction module this sweep's face flux -----
-      // (see conduction.hpp).  The NET radial face flux of the band solver, summed over
-      // its blocks, in the same code flux units the conduction operator works in.  It is
-      // COPIED OUT rather than read back through rt_face_flux(), so the conduction module
-      // needs no compile-time knowledge of this header, and it is written before the
-      // source is applied so that the number the diffusion operator scales by w is
-      // exactly the number this call scales by 1 - w.
-      if (taublend && pcond_rt->rad_blend_use_2s > 0 && outer_last) {
-        auto f2s_out = pcond_rt->rad_f2s;
-        const int nblk_f = nblk;
-        par_for("rt_f2s", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
-        KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-          Real ff = 0.0;
-          for (int b=0; b<nblk_f; ++b) ff += Fb_g(m,b,i,k,j);
-          f2s_out(m,k,j,i) = ff;
-        });
-        pcond_rt->rad_f2s_ready = true;
-      }
       par_reduce_clip4("rt_apply", 0, nmb1, ks, ke, js, je, is, ie, nclip,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, int &nc) {
         Real Ft = 0.0, Fb = 0.0;
@@ -5022,7 +4971,6 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
         const Real afb_a = ckpp_ ? 1.0 : AFC(m,k,j,i);
         const Real vla_a = ckpp_ ? DX1(m,k,j,i) : VLA(m,k,j,i);
         // the two-stream's share of each face in the tau blend
-        Real dg_srcd = 0.0;     // problem/rt_src_dump: the raw absorbed-minus-emitted sum
         Real src;
         // THE BLEND HANDOVER IS NOT AN EMISSION, AND MUST NOT BE RELAXED.  src below is
         // the divergence of the two-stream's BLENDED share, and inside the tau ramp it
@@ -5058,7 +5006,6 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
           // is non-zero the cell is at tau > 10 and its energy dwarfs that round-off.
           src = 0.0;
           for (int b=0; b<nblk; ++b) src += Src_g(m,b,i,k,j);
-          dg_srcd = src;
           src_relax = src;
           if (taublend) {
             src += (w_g(m,k,j,i+1)*(Ft*aft_a)
@@ -5591,26 +5538,6 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
         // the part of de this cell applies ITSELF: all of it when the tridiagonal owns
         // none of the cell, none when it owns all
         const Real de_app = implcol_ ? (1.0 - wthk_)*de : de;
-        if (sdump_ && m == 0 && k == ks && j == js &&
-            (!band_on || i >= icut_g(m,k,j))) {
-          const Real dxc = DX1(m,k,j,i);
-          const Real wb_ = taublend ? w_g(m,k,j,i) : 0.0;
-          const Real wt_ = taublend ? w_g(m,k,j,i+1) : 0.0;
-          const Real dtauc = kc_g(m,0,i,k,j)*rhoN(m,k,j,i)*dxc;
-          Kokkos::printf("### rt_srcdump cyc=%d i=%d w_b=%.6f w_t=%.6f dtau=%.4e "
-                         "T=%.6e dx=%.6e Fb=%.8e Ft=%.8e divf=%.8e divw=%.8e "
-                         "srcdir=%.8e src=%.8e src_relax=%.8e de_o_dt=%.8e "
-                         "A=%.8e Em=%.8e AoE_m1=%.8e deq=%.8e x=%.8e nsub=%d "
-                         "nit=%d resc=%d clip=%d ei=%.8e de=%.8e\n",
-                         sdcyc_, i, wb_, wt_, dtauc, T_g(m,k,j,i), dxc, Fb, Ft,
-                         -(Ft - Fb)/dxc,
-                         -((1.0 - wt_)*Ft - (1.0 - wb_)*Fb)/dxc,
-                         dg_srcd, src, src_relax, de/bdt,
-                         dg_A, dg_Em, (dg_Em != 0.0) ? (dg_A/dg_Em - 1.0) : 0.0,
-                         dg_deq, (dg_deq != 0.0) ? (src_relax*bdt/dg_deq) : 0.0,
-                         dg_nsub, dg_nit, dg_resc ? 1 : 0,
-                         (de != de_pre) ? 1 : 0, eiN(m,k,j,i), de);
-        }
         if (implcol_ && wthk_ < 1.0) {
           // Record the change in this cell's Planck function that its own relaxation is
           // applying, so a neighbouring row can take the exchange with the part of it

@@ -121,7 +121,7 @@ bool IsCubeVertexCorner(const NghbrView &nghbr, const PanelView &mbpanel,
 //! These are exactly the buffers that are ghost in BOTH x2 and x3, i.e. the DIAGONAL
 //! transverse neighbours.  A 5-point cross stencil (k+-1 at fixed j, or j+-1 at fixed k)
 //! never reads them, so an exchange dedicated to such a stencil can drop them entirely:
-//! see MeshBoundaryValues::skip_x2x3_diag and <hydro>/rad_tr_halo_faces_only.  The slot
+//! see MeshBoundaryValues::skip_x2x3_diag.  The slot
 //! layout is the one nghbr_index.hpp builds (0-7 x1 faces, 8-15 x2 faces, 16-23 x1x2
 //! edges, 24-31 x3 faces, 32-39 x3x1 edges, 40-47 x2x3 edges, 48-55 corners); in 1D/2D
 //! nnghbr is 8/24 and no slot reaches 40, so the predicate is inert there.
@@ -240,7 +240,6 @@ class MeshBoundaryValues {
                        Real cl, Real e_floor);
   static void Z4cBCs(MeshBlockPack *pp, DualArray2D<Real> uin, DvceArray5D<Real> u0,
                      DvceArray5D<Real> coarse_u0);
-  static void PolarAzimuthalAverageBxBy(MeshBlockPack *pp, DvceFaceFld4D<Real> b0);
 
  protected:
   // must use pointer to MBPack and not parent physics module since parent can be one of
@@ -255,8 +254,8 @@ class MeshBoundaryValues {
   // so the two sides skip the identical slots and nothing is ever left unmatched.  Only
   // legal for a caller whose stencil is a 5-POINT CROSS and therefore never reads a
   // cell that is ghost in x2 and x3 at once.  Set on the RKL1 transverse-conduction
-  // object alone (Conduction::pbval_tr, <hydro>/rad_tr_halo_faces_only); every other
-  // MeshBoundaryValues leaves it false and is bitwise untouched.
+  // object alone (Conduction::pbval_tr); every other MeshBoundaryValues leaves it false
+  // and is bitwise untouched.
   bool skip_x2x3_diag = false;
 };
 

@@ -1,0 +1,33 @@
+reg_ref/rg.hydro.hst reg_new/rg.hydro.hst differ: byte 296, line 4
+DIFFER rg.hydro.hst
+IDENTICAL column.txt
+GATE_DONE
+                                  
+================================= 
+Global information about the job: 
+================================= 
+  
+Job owner: jinma(28895)
+Job name:  rg_gate
+Node list: vipa1001
+Job start: Mon Sep 21 00:48:24 CEST 2026
+Job end:   Mon Sep 21 00:48:51 CEST 2026
+Work dir:  /viper/u2/jinma/ATHENAK/athenak/tests_gate_merge
+Command:   /viper/u2/jinma/ATHENAK/athenak/tests_gate_merge/sub_gate.sh
+  
+  
+  
+==========================================================================================
+Information on jobsteps (Note: MaxRSS/AveRSS is the maximum/average over all 
+tasks of the per-task memory high-water marks; cf. "man sacct"): 
+==========================================================================================
+  
+JobID            JobName NNodes NTasks  NCPUS       MaxRSS       AveRSS    Elapsed ExitCode
+------------- ---------- ------ ------ ------ ------------ ------------ ---------- --------
+11890468         rg_gate      1            16                             00:00:27      0:0
+11890468.0    athena_ref      1      1     16      955.08M      955.08M   00:00:12      0:0
+11890468.1    athena_new      1      1     16      957.65M      957.65M   00:00:13      0:0
+  
+Maximum memory per node: 1.004168 GB (defined as MaxRSS*Ntasks/NNodes)
+CPU utilization: 7.9 %
+  

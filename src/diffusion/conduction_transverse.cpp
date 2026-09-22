@@ -171,9 +171,9 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
   //
   // THE VALID REGION.  Call d(y) the number of x2/x3 ghost layers on which y is correct
   // (a FULL frame -- the x2x3 edge/corner ghosts included, which is why this switch
-  // needs the diagonal buffers and rad_tr_halo_faces_only is refused with it).  An
-  // exchange sets d = ng.  The recurrence Y_j = mu Y_{j-1} + nu Y_{j-2} + mu~ tau
-  // M(Y_{j-1}) reads Y_{j-1} through the 5-POINT CROSS (one layer of reach) and Y_{j-2}
+  // needs the diagonal buffers).  An exchange sets d = ng.  The recurrence
+  // Y_j = mu Y_{j-1} + nu Y_{j-2} + mu~ tau M(Y_{j-1}) reads Y_{j-1} through the
+  // 5-POINT CROSS (one layer of reach) and Y_{j-2}
   // POINTWISE, so
   //     d(Y_j) = min( d(Y_{j-1}) - 1, d(Y_{j-2}) ),
   // which is tracked exactly below in dcur/dold and must never go negative on the active
@@ -558,13 +558,8 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
   //     (A y)_i = (1/V_i) sum_f s_f C_f (alpha_j y_j - alpha_i y_i),
   // over the SAME open faces, with the SAME alpha > 0 gates and the SAME flux-form
   // expression, so ADI and RKL1 are two time discretisations of ONE operator.  Split
-  // A = A2 + A3 by direction and integrate y(0) = 0 to tau = beta_dt by the DOUGLAS
-  // scheme, theta-weighted:
-  //     (I - theta tau A2) Y1 = tau b,      (I - theta tau A3) y = Y1,
-  // whose product form is (I - theta tau A2)(I - theta tau A3) y = tau b.  theta = 1 is
-  // backward Euler plus the O(tau^2 A2 A3) splitting term -- unconditionally stable and
-  // damping in the stiff limit, which is what a stiff transverse operator needs -- and
-  // theta = 0.5 is the Peaceman-Rachford variant, second order in tau.  One step is taken
+  // A = A2 + A3 by direction and integrate y(0) = 0 to tau = beta_dt by a sequential
+  // (LOD) backward-Euler splitting -- see the scheme note below.  One step is taken
   // however stiff the row is: there is no substage count.
   //
   // CONSERVATION.  sum_i V_i (A v)_i = 0 identically for any v (the flux form telescopes,
@@ -605,7 +600,6 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
     auto rd_ = tr_ared;
     auto act = tr_aact;
     auto ab0 = tr_ab0;
-    const bool adilod = rad_adi_lod;
     const int scm = rad_adi_scm;
     // a cubed sphere ALWAYS has panel seams (every panel edge is one), and a Cartesian
     // mesh never has any.  A collective flag, because the seam sub-step exchanges.
@@ -686,19 +680,6 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
     // dts, starting from a given y_in.  Written out, with b = b2 + b3 the direction-split
     // source and A = A2 + A3 the direction-split matrix:
     //
-    // DOUGLAS (rad_adi_scheme = douglas) puts the WHOLE source in the first sweep,
-    //     (I - th dts A2) Y1 = y_in + dts b,    (I - th dts A3) y = Y1,
-    // product form (I - th dts A2)(I - th dts A3) y = y_in + dts b.  It is the textbook
-    // scheme and second order at th = 0.5, but it is NOT STIFFLY ACCURATE: for one
-    // Fourier mode with dts lambda2 = -a, dts lambda3 = -b it returns
-    //     y = -(dT/alpha) (a + b)/((1+a)(1+b))
-    // against the exact -(dT/alpha)(1 - e^-(a+b)).  A mode stiff in BOTH directions --
-    // the horizontal checkerboard, which is what this operator exists to damp -- has
-    // a = b >> 1 and gets ~2/a of the relaxation it needs: at the B-star box's z ~ 1500
-    // that is 0.3 %, i.e. the operator does essentially NOTHING to the checkerboard.
-    // MEASURED: the B-star 1-rank gate arm dies at cycle 3411 with the transverse kinetic
-    // energy 2e4 times the RKL1 arm's.  Kept only as a switch, for the record.
-    //
     // LOD (the default), the sequential (Lie / locally-one-dimensional) splitting: one
     // BACKWARD-EULER step of each sub-problem in turn over the whole interval, each
     // carrying ITS OWN part of the source,
@@ -707,23 +688,16 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
     // telescopes on its own), first order in dts -- but the stiff limit is
     //     y = -(dT/alpha) [a/(1+a) + b]/(1+b)  ->  -(dT/alpha),
     // i.e. a mode stiff in either or both directions is relaxed essentially completely,
-    // which is what backward Euler on the unsplit operator would do.  L-stable, and that
-    // is why it, not Douglas, is what a stiff transverse operator can use.
+    // which is what backward Euler on the unsplit operator would do.  L-stable, which is
+    // why it is what a stiff transverse operator can use.
     //
     // WHAT LOD STILL COSTS: it is only FIRST order, and its stiff damping factor is the
     // backward-Euler 1/(1+z), which for a moderately stiff mode is far above the exact
     // e^-z -- the mode is UNDER-DAMPED.  MEASURED on the Gaussian test: L1 5.78e-7 (32^2)
     // and 1.61e-7 (64^2) against RKL1's 1.04e-7 and 2.79e-8, and on the B-star gate box
-    // dT_tau10 and dT_tau1 come out 7-8x the RKL1 arm's.  The two cures below both keep
-    // the sweeps, the plane skip and the partitioned line solve exactly as they are and
-    // only change WHICH sub-steps are taken:
-    //
-    // LODN (rad_adi_scheme = lodn, rad_adi_nsub = N): N sequential LOD sub-steps of
-    // dts = tau/N, with the SWEEP ORDER ALTERNATED between sub-steps (x2-x3, then x3-x2,
-    // ...), which cancels the leading Lie splitting error over each pair (Strang-like)
-    // without a half-step.  Still first order in the backward-Euler sense, amplification
-    // 1/(1+z/N)^N, so it converges to the exact e^-z only as N grows: the honest
-    // brute-force fallback, and the comparison the extrapolation has to beat.
+    // dT_tau10 and dT_tau1 come out 7-8x the RKL1 arm's.  The cure below keeps the
+    // sweeps, the plane skip and the partitioned line solve exactly as they are and only
+    // changes WHICH sub-steps are taken:
     //
     // LOD2 (rad_adi_scheme = lod2): RICHARDSON EXTRAPOLATION of LOD in the step size,
     //     y_full = LOD(tau) from 0,
@@ -763,8 +737,6 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
     int nsb = 1;
     if (scm == ADISCM_LOD2 || scm == ADISCM_LOD2A) {
       nsb = 3;
-    } else if (scm == ADISCM_LODN) {
-      nsb = (rad_adi_nsub > 1) ? rad_adi_nsub : 1;
     }
     std::vector<Real> sdt(nsb, tau);
     std::vector<int> smode(nsb, 1), sfrst(nsb, 1);
@@ -823,8 +795,8 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
       const Real dts = sdt[sb];
       const bool dfrst = three_d ? (sfrst[sb] != 0) : true;
       // LOD is a sequence of BACKWARD-EULER sub-steps: the implicit weight is 1 by
-      // construction (rad_adi_theta is refused with it, see conduction.cpp)
-      const Real thtau = adilod ? dts : (rad_adi_theta*dts);
+      // construction.
+      const Real thtau = dts;
       const bool d2 = ((dpass == 0) == dfrst);
       // LOD2: the full-step answer is stashed before the half-step sequence restarts
       if (dpass == 0 && sb == 1 && (scm == ADISCM_LOD2 ||
@@ -838,9 +810,9 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
       // plane -- which no sweep touches -- still accumulates the full tau b, the answer
       // the RKL1 path's single substage gives it, in every scheme (and the Richardson
       // combination of 2 x (tau/2) b and tau b is again tau b).
-      if (dpass == 0 || adilod) {
-        const bool ub2 = (dpass == 0) ? (adilod ? d2 : true) : d2;
-        const bool ub3 = three_d && ((dpass == 0) ? (adilod ? !d2 : true) : !d2);
+      {
+        const bool ub2 = d2;
+        const bool ub3 = three_d && !d2;
         const int lmode = (dpass == 0) ? smode[sb] : 2;    // 2 = add in place
         auto o_ = yy;
         auto lg_ = lag;
@@ -1334,12 +1306,9 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
         ++ang_lines;
         std::cout << "### rad_implicit_ang cycle " << pmy_pack->pmesh->ncycle
                   << " t = " << pmy_pack->pmesh->time
-                  << ": adi " << ((scm == ADISCM_DOUGLAS) ? "douglas" :
-                                  (scm == ADISCM_LOD2) ? "lod2" :
-                                  (scm == ADISCM_LOD2A) ? "lod2a" :
-                                  (scm == ADISCM_LODN) ? "lodn" : "lod")
+                  << ": adi " << ((scm == ADISCM_LOD2) ? "lod2" :
+                                  (scm == ADISCM_LOD2A) ? "lod2a" : "lod")
                   << ", sweep pairs = " << nsb
-                  << ", theta = " << (adilod ? 1.0 : rad_adi_theta)
                   << ", max z_i = " << zmax
                   << ", planes active/total = " << (anyact ? (ahi - alo + 1) : 0)
                   << "/" << nplane
@@ -1354,11 +1323,10 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
 
   // ---- the substage count.  R is the super-step in units of the explicit limit
   // 2/lambda_max, with 10 % of round-off margin; RKL1 with s stages covers (s^2+s)/2.
-  // rad_sts_margin: the round-off margin on the RKL1 stability limit, 0.10 by default
-  // (0.5 x 1.1 = 0.55, the value this loop has always used).  z_i is a Gershgorin radius
-  // and therefore already an over-estimate of |lambda|, so 0.02 is safe and buys a few
-  // per cent of the substage count.
-  const Real rstiff = 0.5*(1.0 + rad_sts_margin)*zmax;
+  // The round-off margin on the RKL1 stability limit is 0.10 (0.5 x 1.1 = 0.55, the
+  // value this loop has always used).  z_i is a Gershgorin radius and therefore already
+  // an over-estimate of |lambda|.
+  const Real rstiff = 0.5*(1.0 + 0.10)*zmax;
   int nsub = static_cast<int>(std::ceil(0.5*(std::sqrt(1.0 + 8.0*rstiff) - 1.0)));
   if (nsub < 1) nsub = 1;
   bool clamped = false;
@@ -1375,7 +1343,7 @@ void Conduction::RklConductionUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
     splmin = nsub;
     splsum = 0;
     for (int p=0; p<nplane; ++p) {
-      const Real rp = 0.5*(1.0 + rad_sts_margin)*tr_zpl_h(p);
+      const Real rp = 0.5*(1.0 + 0.10)*tr_zpl_h(p);
       int sp = static_cast<int>(std::ceil(0.5*(std::sqrt(1.0 + 8.0*rp) - 1.0)));
       if (sp < 1) sp = 1;
       if (sp > rad_ang_maxit) sp = rad_ang_maxit;

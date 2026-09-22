@@ -38,8 +38,6 @@
 
 namespace mhd {
 
-void ReportLowBetaDiag(const DvceArray2D<Real> &lbd, const int nbin, const Real thresh);
-
 //----------------------------------------------------------------------------------------
 //! \fn void MHD::CalculateFlux
 //! \brief Calculate fluxes of conserved variables, and face-centered area-averaged EMFs
@@ -94,24 +92,10 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
   const bool polar_hlle_x1_ = (polar_hlle_rows & 1) != 0;
   const bool polar_hlle_x2_ = (polar_hlle_rows & 2) != 0;
   const bool polar_hlle_x3_ = (polar_hlle_rows & 4) != 0;
-  // MEASUREMENT ONLY: count the fallback's hits on ONE stage-1 sweep every N cycles, so
-  // the printed profile is a snapshot of a single sweep rather than a running sum whose
-  // denominator depends on how long the run has been going.
-  const int lbd_on = (cs_lowbeta_diag > 0 && stage == 1 &&
-                      (pmy_pack->pmesh->ncycle % cs_lowbeta_diag) == 0) ? 1 : 0;
-  const int lbd_nbin = indcs_.nx1;
-  auto lbd_ = lb_diag;
-  if (lbd_on) {
-    const Real big = std::numeric_limits<Real>::max();
-    par_for("lbdiag_zero", DevExeSpace(), 0, lbd_nbin-1, KOKKOS_LAMBDA(const int b) {
-      lbd_(b,0) = 0.0; lbd_(b,1) = 0.0; lbd_(b,2) = big;
-    });
-  }
   const auto wb_option_ = wb_option;
   const bool use_wb_rho_ = use_wb_rho;
   const bool use_wb_x1_ = use_wb_x1;
   const bool use_wb_x2_ = use_wb_x2;
-  const bool use_wb_x3_ = use_wb_x3;
   const bool use_wellbalance_dynamic_ = use_wellbalance_dynamic;
   const Real wb_rmax_ = wb_rmax;
   const Real wb_rmin_ = wb_rmin;
@@ -384,7 +368,7 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
       // low-beta dissipation fallback, BEFORE the rotation into covariant slots
       if (cs_lb_beta > 0.0) {
         CSLowBetaFallback(member,eos,eos.IsGeneral(),m,k,j,il,iu,IVX,cs_lb_beta,
-                     wl,wr,bl,br,dl,dr,bx,flx1,e31,e21,lbd_on,is,lbd_nbin,lbd_);
+                     wl,wr,bl,br,dl,dr,bx,flx1,e31,e21);
         member.team_barrier();
       }
       GnomonicEquiangleFluxX1(gtrig_cell,member,m,k,j,il,iu,flx1);
@@ -639,7 +623,7 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
           if (use_cubed_sphere) {
             if (cs_lb_beta > 0.0) {
               CSLowBetaFallback(member,eos,eos.IsGeneral(),m,k,j,is-1,ie+1,IVY,cs_lb_beta,
-                           wl,wr,bl,br,dl,dr,by,flx2,e12,e32,lbd_on,is,lbd_nbin,lbd_);
+                           wl,wr,bl,br,dl,dr,by,flx2,e12,e32);
               member.team_barrier();
             }
             GnomonicEquiangleFluxX2(gtrig_xi,member,m,k,j,is-1,ie+1,flx2);
@@ -720,19 +704,6 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
           GridPiecewiseLinearX3(member, m, k, j, is-1, ie+1, w0_, x3v_, x3f_, wl_kp1, wr);
           GridPiecewiseLinearX3(member, m, k, j, is-1, ie+1, b0_, x3v_, x3f_, bl_kp1, br);
         } else {
-            
-        if (use_wellbalance_dynamic_ && use_wb_x3_)
-        {
-          // is-1,ie+1, not il,iu -- the b0_ line below, the spherical-polar branch
-          // above, the whole default switch, and the Riemann solver all use
-          // is-1,ie+1.  With il,iu (the x1 sweep's limits, never reset for x2/x3)
-          // this leaves wl_kp1/wr unwritten at i = is-1, which the solver reads.
-          WbLocalPiecewiseLinearX3(member, eos_, wb_option_, use_wb_rho_,
-              m, k, j, is-1, ie+1, w0_,
-                                   phicc0_, phi0_x3f, wl_kp1, wr);
-          PiecewiseLinearX3(member, m, k, j, is-1, ie+1, b0_, bl_kp1, br);
-        } else {
-
         // Reconstruct qR[k] and qL[k+1], for both W and Bcc
         switch (recon_method_) {
           case ReconstructionMethod::dc:
@@ -755,10 +726,8 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
           default:
             break;
         }
-            
         }
-        }
-          
+
         // Reconstruct the derived thermodynamic variables (general EOS only); range
         // matches the Riemann solver below, as in the j-direction sweep above.
         if (nder > 0) {
@@ -769,11 +738,7 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
         WbStaticPiecewiseLinearDerX3(member, m, k, j, is-1, ie+1,
                                      pwb_, pfacewb_x3f,
                                     wder_, dl_kp1, dr);
-      } else if (use_wellbalance_dynamic_ && use_wb_x3_) {
-            WbPiecewiseLinearDerX3(member, eos_, wb_option_,
-                m, k, j, is-1, ie+1, w0_, wder_,
-                                   phicc0_, phi0_x3f, dl_kp1, dr);
-          } else {
+      } else {
           switch (recon_method_) {
             case ReconstructionMethod::dc:
               DonorCellX3(member, m, k, j, is-1, ie+1, wder_, dl_kp1, dr);
@@ -929,7 +894,7 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
           if (use_cubed_sphere) {
             if (cs_lb_beta > 0.0) {
               CSLowBetaFallback(member,eos,eos.IsGeneral(),m,k,j,is-1,ie+1,IVZ,cs_lb_beta,
-                           wl,wr,bl,br,dl,dr,bz,flx3,e23,e13,lbd_on,is,lbd_nbin,lbd_);
+                           wl,wr,bl,br,dl,dr,bz,flx3,e23,e13);
               member.team_barrier();
             }
             GnomonicEquiangleFluxX3(gtrig_eta,member,m,k,j,is-1,ie+1,flx3);
@@ -953,8 +918,6 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
     });
   }
 
-  if (lbd_on) { ReportLowBetaDiag(lbd_, lbd_nbin, cs_lb_beta); }
-
   // whole-mesh Cartesian momentum on spherical polar: fourth-order face averages of the
   // hydrodynamic fluxes (see Coordinates::SphericalPolarFaceAverageFluxes)
   if (pmy_pack->pcoord->sp_cart_all_momentum) {
@@ -962,61 +925,6 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
   }
 
   return;
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn void ReportLowBetaDiag
-//! \brief print the low-beta fallback's hit rate as a profile in radius.
-//!
-//! MEASUREMENT ONLY; see mhd.hpp and rsolvers/cs_lowbeta_fallback.hpp.  The counters are
-//! summed over every MeshBlock and all three flux directions on this sweep, so "faces" is
-//! the number of faces the switch examined, not the number of cells.  Radial bins are
-//! grouped for printing: nx1 = 128 rows would bury the answer.
-
-void ReportLowBetaDiag(const DvceArray2D<Real> &lbd, const int nbin, const Real thresh) {
-  auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), lbd);
-  std::vector<double> nface(nbin), nsw(nbin), bmin(nbin);
-  for (int b=0; b<nbin; ++b) {
-    nface[b] = h(b,0); nsw[b] = h(b,1); bmin[b] = h(b,2);
-  }
-#if MPI_PARALLEL_ENABLED
-  MPI_Allreduce(MPI_IN_PLACE, nface.data(), nbin, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
-  MPI_Allreduce(MPI_IN_PLACE, nsw.data(),   nbin, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
-  MPI_Allreduce(MPI_IN_PLACE, bmin.data(),  nbin, MPI_DOUBLE, MPI_MIN, MPI_COMM_WORLD);
-#endif
-  if (global_variable::my_rank != 0) return;
-
-  const int ngroup = (nbin < 16) ? nbin : 16;
-  const Real big = 0.5*static_cast<Real>(std::numeric_limits<Real>::max());
-  double tface = 0.0, tsw = 0.0;
-  std::cout << "## cs_lowbeta_diag (threshold beta < " << thresh
-            << "): faces examined / switched to HLLE, by radial index" << std::endl;
-  std::cout << "##   i-range        faces      switched   frac     min beta" << std::endl;
-  for (int g=0; g<ngroup; ++g) {
-    const int lo = (g*nbin)/ngroup, hi = ((g+1)*nbin)/ngroup;
-    double f = 0.0, w = 0.0, bm = std::numeric_limits<double>::max();
-    for (int b=lo; b<hi; ++b) {
-      f += nface[b]; w += nsw[b];
-      if (bmin[b] < bm) { bm = bmin[b]; }
-    }
-    tface += f; tsw += w;
-    std::cout << "##  " << std::setw(4) << lo << "-" << std::setw(4) << hi
-              << std::setw(14) << static_cast<std::int64_t>(f)
-              << std::setw(14) << static_cast<std::int64_t>(w)
-              << std::setw(9) << std::fixed << std::setprecision(4)
-              << ((f > 0.0) ? w/f : 0.0);
-    // a bin with no field anywhere never recorded a beta at all
-    if (bm < big) {
-      std::cout << "  " << std::scientific << std::setprecision(3) << bm << std::endl;
-    } else {
-      std::cout << "        --" << std::endl;
-    }
-  }
-  std::cout << "##  total" << std::setw(18) << static_cast<std::int64_t>(tface)
-            << std::setw(14) << static_cast<std::int64_t>(tsw)
-            << std::setw(9) << std::fixed << std::setprecision(4)
-            << ((tface > 0.0) ? tsw/tface : 0.0) << std::endl;
-  std::cout.unsetf(std::ios_base::floatfield);
 }
 
 // function definitions for each template parameter

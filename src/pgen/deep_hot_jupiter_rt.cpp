@@ -455,7 +455,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   two_stream_rt::ck_impl_verbose =
       pin->GetOrAddBoolean("problem","ck_impl_verbose",false);
   two_stream_rt::ck_impl_demax = pin->GetOrAddReal("problem","ck_impl_demax",0.5);
-  two_stream_rt::ck_impl_debug = pin->GetOrAddInteger("problem","ck_impl_debug",0);
   two_stream_rt::ck_impl_refresh_kappa =
       pin->GetOrAddBoolean("problem","ck_impl_refresh_kappa",false);
   if (two_stream_rt::ck_implicit && global_variable::my_rank == 0) {
@@ -478,12 +477,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   rt_dump_j = pin->GetOrAddInteger("problem","ck_dump_j",-1);
   rt_dump_k = pin->GetOrAddInteger("problem","ck_dump_k",-1);
   rt_ck_pcut = pin->GetOrAddReal("problem","ck_pcut_bar",10.0);
-  // the two grey-sweep fixes, wired here so a dhj run can reproduce a pre-fix run
-  // bitwise.  Both default to the FIX (false); see utils/two_stream_rt.hpp.
-  // rt_cut_bc_legacy: the upward intensity at the cut used to be isotropic at B, which
-  // is exactly half the flux the column supports.
-  two_stream_rt::rt_cut_bc_legacy =
-      pin->GetOrAddBoolean("problem","rt_cut_bc_legacy",false);
+  // the grey-sweep fix, wired here so a dhj run can reproduce a pre-fix run bitwise.
+  // Defaults to the FIX (false); see utils/two_stream_rt.hpp.
   // rt_layer_legacy: every layer used to span a whole cell in optical depth but carry a
   // source running between two cell CENTRES, offset from it by half a cell.
   two_stream_rt::rt_layer_legacy =

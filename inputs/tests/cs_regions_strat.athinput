@@ -82,9 +82,6 @@ gamma       = 1.666667
 # plus a geometric source term which must cancel; set exactly one of these to true to
 # measure one half of that cancellation on its own at nlim = 1.  Both change the answer
 # and are declared here only so they can be overridden on the command line.
-cs_diag_no_coordsrc = false   # drop the geometric source -> the step measures -div F
-cs_diag_no_divf     = false   # drop the flux divergence  -> the step measures the source
-cs_diag_no_magsrc   = false   # drop the MAGNETIC terms of the geometric source only
 
 # THE WELL-BALANCED GEOMETRIC SOURCE.  Builds the source as the face sum
 # (1/V) sum_f A_f (T_cell.nhat_f).e_i(x_f) with CARTESIAN vectors, which is what the flux
@@ -119,16 +116,13 @@ cs_lowbeta_fallback = 0.5
 # the base and 1.3e-2 at the top, so the printed profile must switch from all-miss to
 # all-hit at the radius where beta crosses the threshold, and the min-beta column must
 # reproduce the analytic profile.
-cs_lowbeta_diag = 0
 # MEASUREMENT ONLY: the seam-halo internal-energy consistency test (mhd_seam_diag.cpp).
 # NOTE: it needs MORE THAN ONE MeshBlock PER PANEL, or every tangential boundary is a seam
 # and the same-panel block-face NULL CONTROL row comes back empty.  With nx2=nx3=32 use
 # meshblock/nx2=16 meshblock/nx3=16 to get 2x2 blocks per panel.
-cs_seam_diag = 0
 # THE FIX the diagnostic above exists to gate: exchange 0.5|B_cc|^2 across the seam and
 # swap the resampled source value for the ghost cell's own, so the ghost's total energy is
 # consistent with the field the ghost actually carries.  See mhd_seam_econsist.cpp.
-cs_seam_econsist = false
 
 <problem>
 iprob    = 13

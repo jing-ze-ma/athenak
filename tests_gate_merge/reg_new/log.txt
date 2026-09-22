@@ -1,0 +1,50 @@
+srun: Step created for StepId=11890468.1
+Mesh: spherical-polar x3-face theta correction = rotate
+
+Cubed sphere: Root grid = 6 x 1 x (1 x 1) MeshBlocks
+Total number of MeshBlocks = 6
+Number of logical  levels of refinement = 0 (1 levels total)
+Number of physical levels of refinement = 0 (1 levels total)
+Number of parallel ranks = 1
+General EOS: tabulated on 281 x 451 nodes (15 MB), log10 rho[cgs] in [-14, 0], log10 T[K] in [2, 6.5]
+             X = 0.7, Y = 0.286, Z = 0.014, H2 on, ionization on, radiation off
+             metal ionization on ([M/H] = 0)
+             mu at the grid centre = 0.698158, n_e/n_tot = 0.464671
+red_giant: opacity table '/viper/u2/jinma/ATHENAK/athenak/data/stellar_opac/rosseland_gs98_x0.7_z0.014.txt', 217 x 481 nodes, log10 T 2.6..8, log10 rho -24..0 (200 rows prepended below the file's -14 at the floor, so the clamp cannot hand back real opacity for a thin cell); 41020 prepended nodes (rho below the file) set to problem/opac_floor = 1e-05 cm^2/g (optically thin; the merge edge-filled them)
+red_giant: inner flux L/(4 pi rin^2) = 5.94966e+10 erg/cm^2/s = sigma (5691.41 K)^4
+deep_hot_jupiter_rt: correlated-k table '/viper/u2/jinma/ATHENAK/athenak/data/exo_fms_ck/ck/Premixed_1x_g8_11.txt'
+  38 T x 34 p x 11 bands x 8 g, T = 100 .. 6100 K, p = 1e-08 .. 1000 bar
+  bands 0.26 .. 324.68 um, g weights sum to 1
+  correlated-k applied where p < 1e+30 bar
+  Planck fractions tabulated on 512 points, T = 50 .. 20000 K; worst |sum_b f_b - 1| = 2.22045e-16
+  >1% of the Planck function falls bluer than 0.26 um above T = 5571.75 K; beyond that the 11-band grid stops
+  capturing the spectrum and folding the tail into the bluest band is no longer a small correction
+  (with the p < 1e+30 bar cut this setup tops out near 4800 K, where the tail is 3e-3)
+  stellar spectrum 'sw_band_flux_W121_11.txt' (file), band fractions 0.149713 (bluest) .. 5.74319e-05 (reddest)
+  continuum: FastChem composition 241 T x 34 p, 4 CIA pairs, 4 Rayleigh species
+  band-mean kappa at 0.1 bar [cm^2/g]:  reddest band  13.6107 (800 K) -> 3.83348 (2500 K)
+                                       bluest band   1.28114e-07 (800 K) -> 30.9807 (2500 K)
+  continuum at 3500 K, 0.1 bar, rho=1 [cm^-1], reddest to bluest:
+    1.07509e-06 1.11788e-07 2.62562e-08 1.17621e-08 6.63404e-09 3.96185e-09 3.70228e-09 4.23501e-08 4.33847e-08 3.30788e-08 2.00535e-08
+  two-stream self-test: isothermal net flux |F|/sigmaT^4 <= 1.93303e-17, transparent slab F/sigmaT^4 = 1
+red_giant: correlated-k two-stream ON, T_int = 4000 K, no irradiation
+red_giant: no cell is denser than the opacity table's valid window logR = [-8, 1]; cells below it carry problem/opac_floor
+red_giant: M = 2.983e+33 g, L = 1.914e+36 erg/s, Teff = 4000 K, rin = 1.6e+12 cm, rout = 3.52e+12 cm
+           wall p/T: outer 3 / 3363.59 K, inner 8.19963e+10 / 166910 K
+           tau = 2/3 at r = 3.4269e+12 cm, T = 3959.49 K; radiative-convective boundary at r = 3.41279e+12 cm
+
+Setup complete, executing task list(s)...
+
+elapsed=5.657532e+00 cycle=0 time=0.000000e+00 dt=1.630157e+01
+### two_stream_rt: thermodynamic state read from w0 (previous ConToPrim; rt_use_cons = false)
+deep_hot_jupiter_rt: RT split path ON, 22 chain block(s) of 4 -> 22x the thread count of the monolithic kernel
+elapsed=1.062361e+01 cycle=100 time=1.575275e+03 dt=1.507724e+01
+
+Terminating on cycle limit
+time=1.575275e+03 cycle=100
+tlim=1.000000e+30 nlim=100
+
+MeshBlock-cycles = 600
+cpu time used  = 4.966111e+00
+zone-cycles/cpu_second = 5.938490e+06
+particle-updates/cpu_second = 0.000000e+00

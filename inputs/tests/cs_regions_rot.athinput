@@ -64,7 +64,6 @@ reconstruct = plm       # plm | ppm4 | ppmx | wenoz.  On the cubed sphere this g
 rsolver     = hlld
 gamma       = 1.666667
 cs_lowbeta_fallback = 0.5
-cs_seam_econsist = false
 cs_wellbalanced_src = false   # the face-sum (well-balanced) geometric source term
 
 <problem>

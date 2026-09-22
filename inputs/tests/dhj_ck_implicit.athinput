@@ -328,7 +328,6 @@ ck_impl_maxit = 8
 ck_impl_dtmax = 0.5
 ck_impl_demax = 0.5
 ck_impl_verbose = false
-ck_impl_debug = 0
 ck_impl_refresh_kappa = false
 rt_de_max    = 0.5
 # problem/ck_spherical: the SPHERICAL form of the correlated-k two-stream (see

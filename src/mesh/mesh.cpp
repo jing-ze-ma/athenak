@@ -127,10 +127,6 @@ Mesh::Mesh(ParameterInput *pin) :
   // a 64-cell one.  Turn it OFF to reproduce the pre-fill answers exactly.
   cs_vertex_fill = use_cubed_sphere &&
                    pin->GetOrAddBoolean("mesh", "cs_vertex_fill", true);
-  // DEBUG ONLY: poison every cube-vertex corner ghost cell filled by FillPanelCornersCC
-  // with 1e30, to test whether any active cell ever reads them.
-  cs_corner_poison = use_cubed_sphere &&
-                     pin->GetOrAddBoolean("mesh", "cs_corner_poison", false);
   npanels = (use_cubed_sphere ? 6 : 1);
   if (use_cubed_sphere) {
     strictly_periodic = false;
@@ -228,7 +224,6 @@ Mesh::Mesh(ParameterInput *pin) :
                 << std::endl;
     }
   }
-  use_polar_average_b = pin->GetOrAddBoolean("mesh", "use_polar_average_b", false);
   // default ON: without it the resistive E_r at the one physical pole edge differs
   // between the phi cells that share it and the polar-row div B grows to ~1e-3 b0/L
   // (sp_test iprob=11); with it div B stays at round-off and the errors are unchanged.

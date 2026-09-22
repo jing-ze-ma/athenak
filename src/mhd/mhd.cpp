@@ -216,7 +216,6 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
     // removes it.
     wb_cache_every = pin->GetOrAddInteger("mhd","wb_cache_every",0);
     use_wb_x2 = pin->GetOrAddBoolean("mhd","wb_x2",false);
-    use_wb_x3 = pin->GetOrAddBoolean("mhd","wb_x3",false);
     use_wb_rho = pin->GetOrAddBoolean("mhd","wb_rho",false);
     // switch the x1 well-balanced reconstruction off above this radius (0 = never); see
     // the declaration in mhd.hpp.  Only the position-aware x1 path (spherical polar and
@@ -265,7 +264,7 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
         std::exit(EXIT_FAILURE);
       }
         // select well-balanced scheme direction
-        if (!use_wb_x1 && !use_wb_x2 && !use_wb_x3) {
+        if (!use_wb_x1 && !use_wb_x2) {
           std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                     << std::endl << "<mhd> wb_direction not set!" << std::endl;
           std::exit(EXIT_FAILURE);
@@ -339,9 +338,6 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
       }
     }
 
-    // cubed-sphere RHS-split diagnostics (see mhd.hpp); both default off
-    cs_diag_no_coordsrc = pin->GetOrAddBoolean("mhd","cs_diag_no_coordsrc",false);
-    cs_diag_no_divf = pin->GetOrAddBoolean("mhd","cs_diag_no_divf",false);
     // Diagnostic: the plain four-face average in place of the GS05 upwind corner EMF.
     // The GS05 derivative terms are fed by the transverse-face EMFs, which DO see the
     // (-1)^(i+k) CT null mode that the cell-centred field cannot; in a radial outflow
@@ -369,88 +365,6 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
       else if (s == "false") polar_hlle_rows = 0;
       else polar_hlle_rows = std::stoi(s);
     }
-
-    // MEASUREMENT ONLY (mhd.hpp): a radial profile of how often that fallback fires,
-    // printed every N cycles.  Refused rather than silently mis-reported when it could
-    // not mean what it says.
-    cs_lowbeta_diag = pin->GetOrAddInteger("mhd","cs_lowbeta_diag",0);
-    if (cs_lowbeta_diag > 0) {
-      if (cs_lowbeta_fallback <= 0.0) {
-        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-          << std::endl << "<mhd>/cs_lowbeta_diag counts how often the low-beta fallback "
-          << "fires, but <mhd>/cs_lowbeta_fallback=" << cs_lowbeta_fallback
-          << " disables it, so the count could only ever be zero." << std::endl;
-        std::exit(EXIT_FAILURE);
-      }
-      auto &mindcs = pmy_pack->pmesh->mesh_indcs;
-      auto &bindcs = pmy_pack->pmesh->mb_indcs;
-      // The bin is the cell's index WITHIN its MeshBlock, which is the global radial
-      // index only while x1 is not split.  For the problems this grid is for it never is
-      // (RT is a column solve in x1), but a split would silently fold every radial shell
-      // onto the wrong bin, so check instead of assuming.
-      if (mindcs.nx1 != bindcs.nx1) {
-        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-          << std::endl << "<mhd>/cs_lowbeta_diag bins by the radial index within a "
-          << "MeshBlock, which is the global radial index only if x1 is not split, but "
-          << "mesh nx1=" << mindcs.nx1 << " and meshblock nx1=" << bindcs.nx1 << "."
-          << std::endl;
-        std::exit(EXIT_FAILURE);
-      }
-      Kokkos::realloc(lb_diag, bindcs.nx1, LBD_NSLOT);
-    }
-
-    // MEASUREMENT ONLY (mhd_seam_diag.cpp): the seam-halo internal-energy consistency
-    // test.  Refused off the cubed sphere, where there are no seams to measure and the
-    // "seam" row would silently count nothing.
-    cs_seam_diag = pin->GetOrAddInteger("mhd","cs_seam_diag",0);
-    if (cs_seam_diag > 0 && !(pmy_pack->pmesh->use_cubed_sphere)) {
-      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-        << std::endl << "<mhd>/cs_seam_diag measures panel-SEAM ghost cells, but this is "
-        << "not a cubed-sphere mesh, so it would report an empty seam row." << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
-
-    // CUBED SPHERE: the seam-halo energy-consistency correction (mhd_seam_econsist.cpp).
-    // Refused off the cubed sphere: there are no seams, the correction is identically
-    // zero, and switching it on would only buy an extra halo exchange per stage.
-    cs_seam_econsist = pin->GetOrAddBoolean("mhd","cs_seam_econsist",false);
-    if (cs_seam_econsist && !(pmy_pack->pmesh->use_cubed_sphere)) {
-      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-        << std::endl << "<mhd>/cs_seam_econsist corrects panel-SEAM ghost cells, but "
-        << "is not a cubed-sphere mesh, so it would correct nothing." << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
-    // NOT MPI-SAFE YET.  On one rank this is validated end to end (the diagnostic it
-    // exists to move does move, nothing else changes, and the flag off is bit-identical).
-    // On TWO ranks the run hangs during SETUP -- before any stage executes, so it is in
-    // this object's construction or its first InitRecv, not in the correction kernels.
-    // Unresolved.  Refused rather than left switchable, because every production run is
-    // multi-rank and a hang there would be blamed on the physics.
-    if (cs_seam_econsist && global_variable::nranks > 1) {
-      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-        << std::endl << "<mhd>/cs_seam_econsist is not MPI-safe yet: on more than one "
-        << "rank the run hangs during setup.  It is validated on a single rank only."
-        << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
-    // The seam magnetic-energy scalar gets its own exchange.  Its own MeshBoundaryValues
-    // object means its own MPI_Comm_dup'd communicator, so its tags -- which encode only
-    // receiver lid and bufid -- cannot collide with the u0 or b0 traffic in flight.
-    if (cs_seam_econsist) {
-      // ncells*/n_ccells* above are block-scoped, so recompute them here
-      auto &ind_ = ppack->pmesh->mb_indcs;
-      const int nc1 = ind_.nx1 + 2*(ind_.ng);
-      const int nc2 = (ind_.nx2 > 1) ? (ind_.nx2 + 2*(ind_.ng)) : 1;
-      const int nc3 = (ind_.nx3 > 1) ? (ind_.nx3 + 2*(ind_.ng)) : 1;
-      const int cc1 = ind_.cnx1 + 2*(ind_.ng);
-      const int cc2 = (ind_.cnx2 > 1) ? (ind_.cnx2 + 2*(ind_.ng)) : 1;
-      const int cc3 = (ind_.cnx3 > 1) ? (ind_.cnx3 + 2*(ind_.ng)) : 1;
-      Kokkos::realloc(me0, nmb, 1, nc3, nc2, nc1);
-      Kokkos::realloc(coarse_me0, nmb, 1, cc3, cc2, cc1);
-      pbval_me = new MeshBoundaryValuesCC(ppack, pin, false);
-      pbval_me->InitializeBuffers(1);
-    }
-
 
     // select reconstruction method (default PLM)
     std::string xorder = pin->GetOrAddString("mhd","reconstruct","plm");

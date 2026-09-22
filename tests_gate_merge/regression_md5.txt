@@ -1,0 +1,4 @@
+e2dba98adaa2c85add79adcfbf07d5b4  reg_new/rg.hydro.hst
+28468f4be3ef5c30a0ba4f6db02a5b22  reg_ref/rg.hydro.hst
+37b60538a9c2b17b3afdd71536aa89d4  reg_new/column.txt
+37b60538a9c2b17b3afdd71536aa89d4  reg_ref/column.txt
