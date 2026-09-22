@@ -84,8 +84,12 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
   // it would be parsed and silently ignored, so refuse it there instead.  The existence
   // check has to run before GetOrAddReal below, which would otherwise add the default
   // and make the question answer itself (same trap as tfloor_set above).
+  // Read it (and record the default) for MHD only: a GetOrAdd in a <hydro> block would be
+  // written into the restart file and then refused on reload as "MHD only".
   const bool hlld_tol_set = pin->DoesParameterExist(bk,"hlld_bx_zero_tol");
-  eos_data.hlld_bx_zero_tol = pin->GetOrAddReal(bk,"hlld_bx_zero_tol",1.0e-4);
+  if (bk.compare("mhd") == 0) {
+    eos_data.hlld_bx_zero_tol = pin->GetOrAddReal(bk,"hlld_bx_zero_tol",1.0e-4);
+  }
   if (hlld_tol_set && bk.compare("mhd") != 0) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
               << std::endl << "<" << bk << ">/hlld_bx_zero_tol is implemented only "
