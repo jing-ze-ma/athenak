@@ -116,11 +116,46 @@ this evidence the production `dE/E = -4.5e-5 .. -8.9e-5` is physical, not an art
 * The `tests_ck_sph` thermal gates are untouched by construction: the default arithmetic
   is bitwise unchanged, and 3b is an input value, not code.
 
-## 5. Left open
+## 5. GPU confirmation (2026-09-22, apudev job 11941092)
 
-* A GPU / cubed-sphere confirmation on `bench/cs_mhd_prod3/rst/dhj.00567.rst` at rot 283:
-  expect `eos_efloor` to fall back to the legacy rate with `hydro/pfloor` lowered, and the
-  `dE/E` to stay where it is.
+Done on the real 3-D cubed-sphere state.  Full numbers in `bench/pfloor_ab/README.md`.
+Two arms restarting `bench/cs_mhd_prod3/rst/dhj.00567.rst` (rot ~283) with the production
+`ck_spherical + ck_beam_sph` input, the **same binary**, 2 GPUs, 13 min each, differing in
+one line: `bench/ck_sph_ab/sphbeam` (`pfloor = 1e-3`, the control) and
+`bench/pfloor_ab/p1e5` (`pfloor = 1e-5`).  8200 cycles, `t = 8.64096e7 -> 8.6515e7`.
+
+**It holds.**  `eos_efloor` falls **7.4x** (3391 -> 457 per cycle) and in the written
+state the pressure floor is gone completely: 1 active cell of 786432 sat exactly on
+`pfloor` in the control, **0** in the `1e-5` arm; the lowest active pressure goes from
+`1.0000e-3` barye (on the floor) to `8.135e-4` barye, 81x above its floor.
+`dt` is **identical**
+(same plateau `1.285230e+01`, same set of values), throughput costs 0.4 %, `eos_dfloor` is
+unchanged (+0.4 %), and `eos_fail`, `fofc`, `c2p_it`, `vceil` are 0 in both.  Night-side
+T(p) at 1e-6 .. 1e-3 bar agrees to <= 15 K (0.9 %), and the history agrees on mass and
+total energy to all printed digits, with the same `dE/E = -2.0273e-4` — so section 3c's
+conclusion (the c2c energy loss is physical, not the floor laundering energy) survives on
+the production state.
+
+Two corrections to the text above:
+
+* the key is **`<mhd>/pfloor`** for this MHD production run, not `<hydro>/pfloor`: it is
+  read from the physics block (`src/eos/eos.cpp:109`).  The units are code pressure =
+  cgs barye, so `1e-3` means `1e-9` bar, not `1e-3` bar.
+* `eos_efloor` does **not** go to zero here as it did on the CPU reproducer.  The residual
+  457/cycle, and a compensating **4.25x rise in `eos_tfloor`** (751 -> 3192 per cycle),
+  are
+  ghost-zone/intermediate work at the top radial boundary and the cubed-sphere seam halos:
+  the counters cover every C2P call over the full index range, ghosts included
+  (`mhd_tasks.cpp:694`).  **No active cell is near the 200 K floor in either arm** — the
+  coldest is 456 K against 561 K in the control, and zero cells sit on `tfloor` — so this
+  is a bookkeeping swap, not new floor activity in the solution, and it carries none of
+  the
+  50 K-floor failure signature (`dt` 10 s -> 1e9 s in ~1500 cycles); `dt` here is
+  unchanged
+  to every digit.
+
+## 6. Left open
+
 * Unrelated, found on the way: `src/eos/eos.cpp:87-91` fatals on a **hydro restart**
   (`<hydro>/hlld_bx_zero_tol is implemented only for MHD`) because the parameter is
   recorded into the restart by its own `GetOrAddReal`.  Every restart here had to be run
