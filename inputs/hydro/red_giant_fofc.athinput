@@ -166,8 +166,6 @@ rt_rescue_eq  = true
 rt_semi_lin   = false
 rt_top_clamp  = true
 bc_use_cons = true
-opac_tmin   = -1.0          # CLAMP OFF (I3 test): full grain/molecular opacity
-                            # molecular knee (3200-2500 K) removed
 user_srcs   = true
 mstar       = 2.983e33
 lstar       = 1.914e36
@@ -225,7 +223,6 @@ bg_rtop     = 3.52e12        # the column is anchored at ptop HERE, not at x1max
                              # star is IDENTICAL to V7's (V7 anchored at its x1max = 3.52e12)
 s_relax_cs  = 0.1
 s_relax_cp  = 0.3
-open_budget = 0
 face_budget = 200
 mlt_dump    =                # if set: dump one column's MLT faces at the first call
 # --- the correlated-k two-stream for the optically thin layers.  DEFAULT ON here: the
@@ -254,7 +251,6 @@ ck_dump_j   = -1             # -1 = the meshblock centre in that direction
 ck_dump_k   = -1
 ck_dump_t2  = 1.0e6           # >= 0: dump a SECOND column once t reaches this
 ck_dump_file2 = rtcol_late.txt
-opac_compare  =              # if set: write the ck-derived Rosseland table for comparison
 opac_table  = /viper/u2/jinma/ATHENAK/athenak/data/stellar_opac/rosseland_gs98_x0.7_z0.014.txt
 column_dump = column.txt
 

@@ -1,0 +1,22 @@
+Mesh: spherical-polar x3-face theta correction = rotate
+
+Root grid = 1 x 1 x 2 MeshBlocks
+Total number of MeshBlocks = 2
+Number of logical  levels of refinement = 1 (2 levels total)
+Number of physical levels of refinement = 0 (1 levels total)
+Number of parallel ranks = 1
+
+Setup complete, executing task list(s)...
+
+elapsed=1.427911e-02 cycle=0 time=0.000000e+00 dt=1.946926e-03
+###   BLAST: max |div B| L/b0 = 1.261e-14 at t = 0.0451
+### SP BLAST PROFILE written to sp_blast_mhd-blast.dat (blast_dir 2)
+
+Terminating on cycle limit
+time=4.509537e-02 cycle=20
+tlim=2.000000e-01 nlim=20
+
+MeshBlock-cycles = 40
+cpu time used  = 2.843134e-01
+zone-cycles/cpu_second = 2.881328e+05
+particle-updates/cpu_second = 0.000000e+00

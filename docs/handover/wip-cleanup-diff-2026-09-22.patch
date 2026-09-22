@@ -1,3 +1,1472 @@
+diff --git a/docs/handover/wip-cleanup-diff-2026-09-22.patch b/docs/handover/wip-cleanup-diff-2026-09-22.patch
+index 87d1ad8b..e69de29b 100644
+--- a/docs/handover/wip-cleanup-diff-2026-09-22.patch
++++ b/docs/handover/wip-cleanup-diff-2026-09-22.patch
+@@ -1,1464 +0,0 @@
+-diff --git a/inputs/hydro/he4_presn_cs.athinput b/inputs/hydro/he4_presn_cs.athinput
+-index 62154352..0ffd75a2 100644
+---- a/inputs/hydro/he4_presn_cs.athinput
+-+++ b/inputs/hydro/he4_presn_cs.athinput
+-@@ -233,8 +233,6 @@ rad_ang_solver   = adi           # alternating-direction implicit, tridiagonal x
+- rad_adi_scheme   = lod2          # Richardson-extrapolated LOD: second order in the step
+- rad_ang_maxit    = 400           # the cubed-sphere cross-term outer iteration cap
+- rad_sts_perplane = true
+--rad_tr_tau_lo    = 0.0           # no tau blend on the transverse operator: the whole-column
+--rad_tr_tau_hi    = 0.0           # two-stream already owns the radiation above rad_gate_rho
+- # (rad_cap_ang, the explicit stiffness cap of the old fallback, is REMOVED: it and
+- # rad_implicit_ang are two treatments of the same operator and the code refuses both.)
+- tfloor  = 5.0e3                  # rt_use_cons clamps a non-positive e to e(rho, tfloor).
+-diff --git a/inputs/hydro/he4_presn_sp.athinput b/inputs/hydro/he4_presn_sp.athinput
+-index 8c130d3d..7e6a5cf5 100644
+---- a/inputs/hydro/he4_presn_sp.athinput
+-+++ b/inputs/hydro/he4_presn_sp.athinput
+-@@ -238,8 +238,6 @@ rad_ang_solver   = adi           # alternating-direction implicit, tridiagonal x
+- rad_adi_scheme   = lod2          # Richardson-extrapolated LOD: second order in the step
+- rad_ang_maxit    = 400           # the cubed-sphere cross-term outer iteration cap
+- rad_sts_perplane = true
+--rad_tr_tau_lo    = 0.0           # no tau blend on the transverse operator: the whole-column
+--rad_tr_tau_hi    = 0.0           # two-stream already owns the radiation above rad_gate_rho
+- # (rad_cap_ang, the explicit stiffness cap of the old fallback, is REMOVED: it and
+- # rad_implicit_ang are two treatments of the same operator and the code refuses both.)
+- tfloor  = 5.0e3                  # rt_use_cons clamps a non-positive e to e(rho, tfloor).
+-diff --git a/inputs/tests/dhj_ck_implicit.athinput b/inputs/tests/dhj_ck_implicit.athinput
+-index 101732c3..677ec4c1 100644
+---- a/inputs/tests/dhj_ck_implicit.athinput
+-+++ b/inputs/tests/dhj_ck_implicit.athinput
+-@@ -328,7 +328,6 @@ ck_impl_maxit = 8
+- ck_impl_dtmax = 0.5
+- ck_impl_demax = 0.5
+- ck_impl_verbose = false
+--ck_impl_debug = 0
+- ck_impl_refresh_kappa = false
+- rt_de_max    = 0.5
+- # problem/ck_spherical: the SPHERICAL form of the correlated-k two-stream (see
+-diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
+-index e0d1af80..779bd95b 100644
+---- a/src/CMakeLists.txt
+-+++ b/src/CMakeLists.txt
+-@@ -105,8 +105,6 @@ add_executable(
+- 
+-         mhd/mhd.cpp
+-         mhd/mhd_corner_e.cpp
+--        mhd/mhd_seam_diag.cpp
+--        mhd/mhd_seam_econsist.cpp
+-         mhd/mhd_ct.cpp
+-         mhd/mhd_fluxes.cpp
+-         mhd/mhd_fofc.cpp
+-diff --git a/src/bvals/bvals_cc.cpp b/src/bvals/bvals_cc.cpp
+-index dad66ef9..bdadfa05 100644
+---- a/src/bvals/bvals_cc.cpp
+-+++ b/src/bvals/bvals_cc.cpp
+-@@ -951,7 +951,6 @@ void MeshBoundaryValuesCC::FillPanelCornersCC(DvceArray5D<Real> &a, bool coarse)
+-   auto &nghbr = pmy_pack->pmb->nghbr;
+-   auto &mbpanel = pmy_pack->pmb->mb_panel;
+-   auto &mblev = pmy_pack->pmb->mb_lev;
+--  const bool poison_ = pmy_pack->pmesh->cs_corner_poison;
+-   auto a_ = a;
+- 
+-   // par_for takes at most five ranges, so the ng x ng corner block is flattened into g
+-@@ -1003,7 +1002,6 @@ void MeshBoundaryValuesCC::FillPanelCornersCC(DvceArray5D<Real> &a, bool coarse)
+-     ek = SignPreserveCS(ek, k0, k1, k2);
+-     ej = SignPreserveCS(ej, j0, j1, j2);
+-     a_(m,v,kt,jt,i) = 0.5*(ek + ej);
+--    if (poison_) { a_(m,v,kt,jt,i) = 1.0e30; }   // DEBUG: see <mesh>/cs_corner_poison
+-   });
+-   return;
+- }
+-diff --git a/src/coordinates/coordinates.cpp b/src/coordinates/coordinates.cpp
+-index e43f1705..df6cd60f 100644
+---- a/src/coordinates/coordinates.cpp
+-+++ b/src/coordinates/coordinates.cpp
+-@@ -40,7 +40,6 @@ Coordinates::Coordinates(ParameterInput *pin, MeshBlockPack *ppack) :
+-   // Read only if <mhd> already exists: GetOrAdd would CREATE the block, and
+-   // MeshBlockPack::AddPhysics decides which modules to build from which blocks exist.
+-   if (pin->DoesBlockExist("mhd")) {
+--    cs_diag_no_magsrc = pin->GetOrAddBoolean("mhd","cs_diag_no_magsrc",false);
+-     cs_wellbalanced_src = pin->GetOrAddBoolean("mhd","cs_wellbalanced_src",false);
+-     sp_wellbalanced_src = pin->GetOrAddBoolean("mhd","sp_wellbalanced_src",false);
+-     sp_cart_polar_momentum = pin->GetOrAddBoolean("mhd","sp_cart_polar_momentum",false);
+-@@ -48,7 +47,6 @@ Coordinates::Coordinates(ParameterInput *pin, MeshBlockPack *ppack) :
+-     if (sp_cart_all_momentum) sp_cart_polar_momentum = true;
+-     sp_face_avg = pin->GetOrAddBoolean("mhd","sp_face_avg",false);
+-     sp_face_avg_terms = pin->GetOrAddInteger("mhd","sp_face_avg_terms",3);
+--    cs_cart_momentum = pin->GetOrAddBoolean("mhd","cs_cart_momentum",false);
+-   } else if (pin->DoesBlockExist("hydro")) {
+-     sp_wellbalanced_src = pin->GetOrAddBoolean("hydro","sp_wellbalanced_src",false);
+-     sp_cart_polar_momentum = pin->GetOrAddBoolean("hydro","sp_cart_polar_momentum",
+-@@ -57,7 +55,6 @@ Coordinates::Coordinates(ParameterInput *pin, MeshBlockPack *ppack) :
+-     if (sp_cart_all_momentum) sp_cart_polar_momentum = true;
+-     sp_face_avg = pin->GetOrAddBoolean("hydro","sp_face_avg",false);
+-     sp_face_avg_terms = pin->GetOrAddInteger("hydro","sp_face_avg_terms",3);
+--    cs_cart_momentum = pin->GetOrAddBoolean("hydro","cs_cart_momentum",false);
+-   }
+- 
+-   if (pmy_pack->pmesh->use_cubed_sphere || pmy_pack->pmesh->use_spherical_polar) {
+-@@ -1360,7 +1357,7 @@ void Coordinates::SrcTermsCurvilinearWB(const DvceArray5D<Real> &w0,
+-   const bool gen_ = eos_.IsGeneral();
+-   auto &wder_ = wder;
+-   auto &bcc_ = bcc0;
+--  const bool mhd_ = is_mhd && !cs_diag_no_magsrc;
+-+  const bool mhd_ = is_mhd;
+-   auto volume_ = volume;
+-   auto area_ = area;
+-   auto pwb_ = pwb;
+-@@ -1487,14 +1484,10 @@ void Coordinates::SrcTermsGnomonicEquiangleImpl(const DvceArray5D<Real> &w0,
+-   const bool gen_ = eos_.IsGeneral();
+-   auto &wder_ = wder;
+-   auto &bcc_ = bcc0;
+--  const bool mhd_ = is_mhd && !cs_diag_no_magsrc;
+-+  const bool mhd_ = is_mhd;
+-   auto pwb_ = pwb;
+-   const bool wbs_ = use_wb_static;
+- 
+--  if (cs_cart_momentum) {
+--    SrcTermsGnomonicCartMomentum(w0, bcc0, is_mhd, wder, uflx, eos_data, bdt, u0);
+--    return;
+--  }
+-   if (cs_wellbalanced_src) {
+-     SrcTermsCurvilinearWB(w0, bcc0, is_mhd, wder, eos_data, bdt, u0,
+-                           pwb, use_wb_static);
+-@@ -1956,154 +1949,6 @@ void Coordinates::SrcTermsSphericalPolarCartRows(const DvceArray5D<Real> &w0,
+-   });
+- }
+- 
+--//----------------------------------------------------------------------------------------
+--//! \fn Coordinates::SrcTermsGnomonicCartMomentum
+--//! \brief CARTESIAN momentum update on the cubed sphere, every cell: the counterpart of
+--//! SrcTermsSphericalPolarCartRows.  The RK update applied the covariant flux divergence
+--//! sum_f sig A_f F_i(f) and this kernel adds the difference to the Cartesian balance
+--//!   sum_f sig [ A_f Fvec_f + T~_f . (Avec_f - A_f nhat_f) ]  projected on the cell basis,
+--//! with NO geometric source.  Fvec_f is the face's covariant momentum flux raised with the
+--//! face metric g = [[1,c],[c,1]] and assembled on the face triad; T~_f is the mean
+--//! Cartesian stress of the two cells sharing the face.  The angular faces of a gnomonic
+--//! cell are PLANAR (great-circle planes), so their point normal closes exactly and the
+--//! correction is zero there; the radial faces' vector areas follow from closure,
+--//!   (r_r^2 - r_l^2) Omega = - sum_sides sig A_s N_s,   Avec_r(r) = r^2 Omega.
+--//! A uniform stress therefore cancels to round-off and hydrostatic balance is untouched.
+--
+--void Coordinates::SrcTermsGnomonicCartMomentum(const DvceArray5D<Real> &w0,
+--    const DvceArray5D<Real> &bcc0, const bool is_mhd,
+--    const DvceArray5D<Real> &wder, const DvceFaceFld5D<Real> uflx,
+--    const EOS_Data &eos_data, const Real bdt, DvceArray5D<Real> &u0) {
+--  auto &indcs = pmy_pack->pmesh->mb_indcs;
+--  int &is = indcs.is; int &ie = indcs.ie;
+--  int &js = indcs.js; int &je = indcs.je;
+--  int &ks = indcs.ks; int &ke = indcs.ke;
+--  int nmb1 = pmy_pack->nmb_thispack - 1;
+--  auto eos_ = eos_data;
+--  const bool gen_ = eos_.IsGeneral();
+--  auto &wder_ = wder;
+--  auto &bcc_ = bcc0;
+--  const bool mhd_ = is_mhd && !cs_diag_no_magsrc;
+--  auto volume_ = volume;
+--  auto area_ = area;
+--  auto xx1f_ = xx1f;
+--  if (pmy_pack->pmesh->adaptive ||
+--      static_cast<int>(wb_geom.extent(0)) != pmy_pack->nmb_thispack) {
+--    BuildWBGeometry();
+--  }
+--  auto geom = wb_geom;
+--
+--  par_for("cssrc_cart", DevExeSpace(), 0,nmb1,ks,ke,js,je,is,ie,
+--  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+--    // Cartesian stress of cell (kk,jj,ii) on its own triad
+--    auto stress = [&](const int kk, const int jj, const int ii, Real T[3][3]) {
+--      Real rh[3], e1[3], e2[3];
+--      for (int c=0; c<3; ++c) {
+--        rh[c] = geom(m,kk,jj,c); e1[c] = geom(m,kk,jj,3+c); e2[c] = geom(m,kk,jj,6+c);
+--      }
+--      const Real c2 = geom(m,kk,jj,9), s2 = geom(m,kk,jj,10);
+--      const Real rho = w0(m,IDN,kk,jj,ii);
+--      const Real pr = gen_ ? wder_(m,IDPR,kk,jj,ii)
+--                           : eos_.Pressure(w0(m,IDN,kk,jj,ii), w0(m,IEN,kk,jj,ii));
+--      Real vv[3], bb[3] = {0.0, 0.0, 0.0};
+--      for (int c=0; c<3; ++c) {
+--        vv[c] = w0(m,IVX,kk,jj,ii)*rh[c] + w0(m,IVY,kk,jj,ii)*e1[c]
+--              + w0(m,IVZ,kk,jj,ii)*e2[c];
+--      }
+--      Real bsq = 0.0;
+--      if (mhd_) {
+--        const Real b1 = bcc_(m,IBX,kk,jj,ii), b2 = bcc_(m,IBY,kk,jj,ii);
+--        const Real b3 = bcc_(m,IBZ,kk,jj,ii);
+--        for (int c=0; c<3; ++c) bb[c] = b1*rh[c] + b2*e1[c] + b3*(e2[c] - c2*e1[c])/s2;
+--        bsq = b1*b1 + b2*b2 + b3*b3;
+--      }
+--      const Real ptot = pr + 0.5*bsq;
+--      for (int a=0; a<3; ++a) {
+--        for (int b=0; b<3; ++b) {
+--          T[a][b] = ((a == b) ? ptot : 0.0) + rho*vv[a]*vv[b] - bb[a]*bb[b];
+--        }
+--      }
+--    };
+--
+--    Real dcart[3] = {0.0, 0.0, 0.0};
+--    Real dloc[3]  = {0.0, 0.0, 0.0};
+--    // one face: covariant flux fl[3], triad (rf,e1f,e2f) with e1f.e2f = cf, area ar,
+--    // point normal nh, exact vector area av, and the two cells sharing it
+--    auto addface = [&](const Real sig, const Real ar, const Real fl[3],
+--                       const Real rf[3], const Real e1f[3], const Real e2f[3],
+--                       const Real nh[3], const Real av[3],
+--                       const int ka, const int ja, const int ia,
+--                       const int kb, const int jb, const int ib) {
+--      const Real cf = e1f[0]*e2f[0] + e1f[1]*e2f[1] + e1f[2]*e2f[2];
+--      const Real isf2 = 1.0/fmax(1.0e-16, 1.0 - cf*cf);
+--      // raise the covariant tangential components with the face metric
+--      const Real f2 = (fl[1] - cf*fl[2])*isf2, f3 = (fl[2] - cf*fl[1])*isf2;
+--      Real Ta[3][3], Tb[3][3];
+--      stress(ka, ja, ia, Ta);
+--      stress(kb, jb, ib, Tb);
+--      for (int c=0; c<3; ++c) {
+--        const Real fvec = fl[0]*rf[c] + f2*e1f[c] + f3*e2f[c];
+--        Real corr = 0.0;
+--        for (int d=0; d<3; ++d) corr += 0.5*(Ta[c][d] + Tb[c][d])*(av[d] - ar*nh[d]);
+--        dcart[c] += sig*(ar*fvec + corr);
+--        dloc[c]  += sig*ar*fl[c];
+--      }
+--    };
+--
+--    Real rc[3], e1c[3], e2c[3];
+--    for (int c=0; c<3; ++c) {
+--      rc[c] = geom(m,k,j,c); e1c[c] = geom(m,k,j,3+c); e2c[c] = geom(m,k,j,6+c);
+--    }
+--    // side faces first: planar, av = ar*nh; accumulate the closure sum for the r-faces
+--    Real omega[3] = {0.0, 0.0, 0.0};
+--    Real fl[3], av[3];
+--    for (int f=0; f<4; ++f) {
+--      const int b = 11 + 12*f;
+--      Real nh[3], rf[3], e1f[3], e2f[3];
+--      for (int c=0; c<3; ++c) {
+--        nh[c] = geom(m,k,j,b+c);    rf[c] = geom(m,k,j,b+3+c);
+--        e1f[c] = geom(m,k,j,b+6+c); e2f[c] = geom(m,k,j,b+9+c);
+--      }
+--      const Real sig = (f % 2 == 0) ? -1.0 : 1.0;
+--      Real ar;
+--      int ka, ja, ia, kb, jb, ib;
+--      if (f < 2) {
+--        const int jj = j + f;
+--        ar = area_.x2f(m,k,jj,i);
+--        for (int c=0; c<3; ++c) fl[c] = uflx.x2f(m,IM1+c,k,jj,i);
+--        ka = k; ja = jj-1; ia = i; kb = k; jb = jj; ib = i;
+--      } else {
+--        const int kk = k + (f - 2);
+--        ar = area_.x3f(m,kk,j,i);
+--        for (int c=0; c<3; ++c) fl[c] = uflx.x3f(m,IM1+c,kk,j,i);
+--        ka = kk-1; ja = j; ia = i; kb = kk; jb = j; ib = i;
+--      }
+--      for (int c=0; c<3; ++c) { av[c] = ar*nh[c]; omega[c] -= sig*ar*nh[c]; }
+--      addface(sig, ar, fl, rf, e1f, e2f, nh, av, ka, ja, ia, kb, jb, ib);
+--    }
+--    // radial faces: Avec(r) = r^2 Omega with Omega from closure of this cell
+--    const Real r_l = xx1f_(m,i), r_r = xx1f_(m,i+1);
+--    const Real inv = 1.0/(r_r*r_r - r_l*r_l);
+--    for (int f=0; f<2; ++f) {
+--      const int ii = i + f;
+--      const Real rr = (f == 0) ? r_l : r_r;
+--      for (int c=0; c<3; ++c) { fl[c] = uflx.x1f(m,IM1+c,k,j,ii); av[c] = rr*rr*omega[c]*inv; }
+--      addface((f == 0) ? -1.0 : 1.0, area_.x1f(m,k,j,ii), fl, rc, e1c, e2c, rc, av,
+--              k, j, ii-1, k, j, ii);
+--    }
+--
+--    const Real ivol = 1.0/volume_(m,k,j,i);
+--    // covariant components of the Cartesian balance = dot products with the cell basis
+--    Real dc1 = 0.0, dc2 = 0.0, dc3 = 0.0;
+--    for (int c=0; c<3; ++c) {
+--      dc1 += dcart[c]*rc[c]; dc2 += dcart[c]*e1c[c]; dc3 += dcart[c]*e2c[c];
+--    }
+--    u0(m,IM1,k,j,i) += bdt*ivol*(dloc[0] - dc1);
+--    u0(m,IM2,k,j,i) += bdt*ivol*(dloc[1] - dc2);
+--    u0(m,IM3,k,j,i) += bdt*ivol*(dloc[2] - dc3);
+--  });
+--}
+--
+- //----------------------------------------------------------------------------------------
+- //! \fn Coordinates::SphericalPolarFaceAverageFluxes
+- //! \brief Fourth-order FACE AVERAGES of the x2 and x3 fluxes on the spherical-polar grid,
+-diff --git a/src/coordinates/coordinates.hpp b/src/coordinates/coordinates.hpp
+-index fad9d0bd..568263c7 100644
+---- a/src/coordinates/coordinates.hpp
+-+++ b/src/coordinates/coordinates.hpp
+-@@ -192,11 +192,6 @@ class Coordinates {
+-     }
+- 
+-   // functions
+--  // CUBED-SPHERE DIAGNOSTIC: drop the MAGNETIC terms from the gnomonic geometric
+--  // source, leaving the hydro ones. The scheme is then inconsistent for MHD -- this is
+--  // a probe for whether the low-beta instability's feedback lives in that source.
+--  bool cs_diag_no_magsrc = false;
+--
+-   // WELL-BALANCED geometric source (<mhd>/cs_wellbalanced_src on the cubed sphere,
+-   // <mhd>/sp_wellbalanced_src on the spherical-polar grid).  See the long note at
+-   // SrcTermsCurvilinearWB.
+-@@ -221,13 +216,6 @@ class Coordinates {
+-   int sp_face_avg_terms = 3;
+-   void SphericalPolarFaceAverageFluxes(DvceFaceFld5D<Real> &uflx, const int nvar);
+-   DvceArray5D<Real> sp_favg2, sp_favg3;   // scratch for the face-average corrections
+--  // CARTESIAN momentum update on the WHOLE cubed sphere (<mhd>/cs_cart_momentum): no
+--  // geometric source at all; see SrcTermsGnomonicCartMomentum.
+--  bool cs_cart_momentum = false;
+--  void SrcTermsGnomonicCartMomentum(const DvceArray5D<Real> &w0,
+--       const DvceArray5D<Real> &bcc0, const bool is_mhd,
+--       const DvceArray5D<Real> &wder, const DvceFaceFld5D<Real> uflx,
+--       const EOS_Data &eos_data, const Real bdt, DvceArray5D<Real> &u0);
+-   void SrcTermsSphericalPolarCartRows(const DvceArray5D<Real> &w0,
+-        const DvceArray5D<Real> &bcc0, const bool is_mhd,
+-        const DvceArray5D<Real> &wder, const DvceFaceFld5D<Real> uflx,
+-diff --git a/src/mesh/mesh.cpp b/src/mesh/mesh.cpp
+-index e5b7735d..e5f95ac8 100644
+---- a/src/mesh/mesh.cpp
+-+++ b/src/mesh/mesh.cpp
+-@@ -127,10 +127,6 @@ Mesh::Mesh(ParameterInput *pin) :
+-   // a 64-cell one.  Turn it OFF to reproduce the pre-fill answers exactly.
+-   cs_vertex_fill = use_cubed_sphere &&
+-                    pin->GetOrAddBoolean("mesh", "cs_vertex_fill", true);
+--  // DEBUG ONLY: poison every cube-vertex corner ghost cell filled by FillPanelCornersCC
+--  // with 1e30, to test whether any active cell ever reads them.
+--  cs_corner_poison = use_cubed_sphere &&
+--                     pin->GetOrAddBoolean("mesh", "cs_corner_poison", false);
+-   npanels = (use_cubed_sphere ? 6 : 1);
+-   if (use_cubed_sphere) {
+-     strictly_periodic = false;
+-diff --git a/src/mesh/mesh.hpp b/src/mesh/mesh.hpp
+-index 70944fcd..e7de1f08 100644
+---- a/src/mesh/mesh.hpp
+-+++ b/src/mesh/mesh.hpp
+-@@ -302,7 +302,6 @@ class Mesh {
+-     
+-   bool use_cubed_sphere;      // true if using cubed sphere
+-   bool cs_vertex_fill;        // true to fill the cube-vertex corner by exchange
+--  bool cs_corner_poison;      // DEBUG: overwrite the cube-vertex corner ghosts with 1e30
+-   int npanels;                // 6 if using cubed sphere; 1 otherwise
+-   bool use_spherical_polar;   // true if using spherical polar grid
+-   bool use_grid_stretch_r;      // true if using grid stretching in r
+-diff --git a/src/mhd/mhd.cpp b/src/mhd/mhd.cpp
+-index fa8de7f3..61ea72f4 100644
+---- a/src/mhd/mhd.cpp
+-+++ b/src/mhd/mhd.cpp
+-@@ -216,7 +216,6 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
+-     // removes it.
+-     wb_cache_every = pin->GetOrAddInteger("mhd","wb_cache_every",0);
+-     use_wb_x2 = pin->GetOrAddBoolean("mhd","wb_x2",false);
+--    use_wb_x3 = pin->GetOrAddBoolean("mhd","wb_x3",false);
+-     use_wb_rho = pin->GetOrAddBoolean("mhd","wb_rho",false);
+-     // switch the x1 well-balanced reconstruction off above this radius (0 = never); see
+-     // the declaration in mhd.hpp.  Only the position-aware x1 path (spherical polar and
+-@@ -265,7 +264,7 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
+-         std::exit(EXIT_FAILURE);
+-       }
+-         // select well-balanced scheme direction
+--        if (!use_wb_x1 && !use_wb_x2 && !use_wb_x3) {
+-+        if (!use_wb_x1 && !use_wb_x2) {
+-           std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+-                     << std::endl << "<mhd> wb_direction not set!" << std::endl;
+-           std::exit(EXIT_FAILURE);
+-@@ -339,9 +338,6 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
+-       }
+-     }
+- 
+--    // cubed-sphere RHS-split diagnostics (see mhd.hpp); both default off
+--    cs_diag_no_coordsrc = pin->GetOrAddBoolean("mhd","cs_diag_no_coordsrc",false);
+--    cs_diag_no_divf = pin->GetOrAddBoolean("mhd","cs_diag_no_divf",false);
+-     // Diagnostic: the plain four-face average in place of the GS05 upwind corner EMF.
+-     // The GS05 derivative terms are fed by the transverse-face EMFs, which DO see the
+-     // (-1)^(i+k) CT null mode that the cell-centred field cannot; in a radial outflow
+-@@ -370,88 +366,6 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
+-       else polar_hlle_rows = std::stoi(s);
+-     }
+- 
+--    // MEASUREMENT ONLY (mhd.hpp): a radial profile of how often that fallback fires,
+--    // printed every N cycles.  Refused rather than silently mis-reported when it could
+--    // not mean what it says.
+--    cs_lowbeta_diag = pin->GetOrAddInteger("mhd","cs_lowbeta_diag",0);
+--    if (cs_lowbeta_diag > 0) {
+--      if (cs_lowbeta_fallback <= 0.0) {
+--        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+--          << std::endl << "<mhd>/cs_lowbeta_diag counts how often the low-beta fallback "
+--          << "fires, but <mhd>/cs_lowbeta_fallback=" << cs_lowbeta_fallback
+--          << " disables it, so the count could only ever be zero." << std::endl;
+--        std::exit(EXIT_FAILURE);
+--      }
+--      auto &mindcs = pmy_pack->pmesh->mesh_indcs;
+--      auto &bindcs = pmy_pack->pmesh->mb_indcs;
+--      // The bin is the cell's index WITHIN its MeshBlock, which is the global radial
+--      // index only while x1 is not split.  For the problems this grid is for it never is
+--      // (RT is a column solve in x1), but a split would silently fold every radial shell
+--      // onto the wrong bin, so check instead of assuming.
+--      if (mindcs.nx1 != bindcs.nx1) {
+--        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+--          << std::endl << "<mhd>/cs_lowbeta_diag bins by the radial index within a "
+--          << "MeshBlock, which is the global radial index only if x1 is not split, but "
+--          << "mesh nx1=" << mindcs.nx1 << " and meshblock nx1=" << bindcs.nx1 << "."
+--          << std::endl;
+--        std::exit(EXIT_FAILURE);
+--      }
+--      Kokkos::realloc(lb_diag, bindcs.nx1, LBD_NSLOT);
+--    }
+--
+--    // MEASUREMENT ONLY (mhd_seam_diag.cpp): the seam-halo internal-energy consistency
+--    // test.  Refused off the cubed sphere, where there are no seams to measure and the
+--    // "seam" row would silently count nothing.
+--    cs_seam_diag = pin->GetOrAddInteger("mhd","cs_seam_diag",0);
+--    if (cs_seam_diag > 0 && !(pmy_pack->pmesh->use_cubed_sphere)) {
+--      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+--        << std::endl << "<mhd>/cs_seam_diag measures panel-SEAM ghost cells, but this is "
+--        << "not a cubed-sphere mesh, so it would report an empty seam row." << std::endl;
+--      std::exit(EXIT_FAILURE);
+--    }
+--
+--    // CUBED SPHERE: the seam-halo energy-consistency correction (mhd_seam_econsist.cpp).
+--    // Refused off the cubed sphere: there are no seams, the correction is identically
+--    // zero, and switching it on would only buy an extra halo exchange per stage.
+--    cs_seam_econsist = pin->GetOrAddBoolean("mhd","cs_seam_econsist",false);
+--    if (cs_seam_econsist && !(pmy_pack->pmesh->use_cubed_sphere)) {
+--      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+--        << std::endl << "<mhd>/cs_seam_econsist corrects panel-SEAM ghost cells, but "
+--        << "is not a cubed-sphere mesh, so it would correct nothing." << std::endl;
+--      std::exit(EXIT_FAILURE);
+--    }
+--    // NOT MPI-SAFE YET.  On one rank this is validated end to end (the diagnostic it
+--    // exists to move does move, nothing else changes, and the flag off is bit-identical).
+--    // On TWO ranks the run hangs during SETUP -- before any stage executes, so it is in
+--    // this object's construction or its first InitRecv, not in the correction kernels.
+--    // Unresolved.  Refused rather than left switchable, because every production run is
+--    // multi-rank and a hang there would be blamed on the physics.
+--    if (cs_seam_econsist && global_variable::nranks > 1) {
+--      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+--        << std::endl << "<mhd>/cs_seam_econsist is not MPI-safe yet: on more than one "
+--        << "rank the run hangs during setup.  It is validated on a single rank only."
+--        << std::endl;
+--      std::exit(EXIT_FAILURE);
+--    }
+--    // The seam magnetic-energy scalar gets its own exchange.  Its own MeshBoundaryValues
+--    // object means its own MPI_Comm_dup'd communicator, so its tags -- which encode only
+--    // receiver lid and bufid -- cannot collide with the u0 or b0 traffic in flight.
+--    if (cs_seam_econsist) {
+--      // ncells*/n_ccells* above are block-scoped, so recompute them here
+--      auto &ind_ = ppack->pmesh->mb_indcs;
+--      const int nc1 = ind_.nx1 + 2*(ind_.ng);
+--      const int nc2 = (ind_.nx2 > 1) ? (ind_.nx2 + 2*(ind_.ng)) : 1;
+--      const int nc3 = (ind_.nx3 > 1) ? (ind_.nx3 + 2*(ind_.ng)) : 1;
+--      const int cc1 = ind_.cnx1 + 2*(ind_.ng);
+--      const int cc2 = (ind_.cnx2 > 1) ? (ind_.cnx2 + 2*(ind_.ng)) : 1;
+--      const int cc3 = (ind_.cnx3 > 1) ? (ind_.cnx3 + 2*(ind_.ng)) : 1;
+--      Kokkos::realloc(me0, nmb, 1, nc3, nc2, nc1);
+--      Kokkos::realloc(coarse_me0, nmb, 1, cc3, cc2, cc1);
+--      pbval_me = new MeshBoundaryValuesCC(ppack, pin, false);
+--      pbval_me->InitializeBuffers(1);
+--    }
+--
+--
+-     // select reconstruction method (default PLM)
+-     std::string xorder = pin->GetOrAddString("mhd","reconstruct","plm");
+-     if (xorder.compare("dc") == 0) {
+-diff --git a/src/mhd/mhd.hpp b/src/mhd/mhd.hpp
+-index 6a92f853..87b78794 100644
+---- a/src/mhd/mhd.hpp
+-+++ b/src/mhd/mhd.hpp
+-@@ -77,8 +77,6 @@ struct MHDTaskIDs {
+-   TaskID recvb;
+-   TaskID sendb_shr;
+-   TaskID recvb_shr;
+--  TaskID sendme;
+--  TaskID recvme;
+-   TaskID bcs;
+-   TaskID prol;
+-   TaskID c2p;
+-@@ -181,13 +179,6 @@ class MHD {
+-   // drops to.  Non-relativistic only: there is no single-state HLLE for SR/GR MHD.
+-   bool fofc_hlle = false;
+- 
+--  // CUBED-SPHERE DIAGNOSTICS. The momentum RHS on a gnomonic grid is the sum of a flux
+--  // divergence and a geometric source term that must cancel to the accuracy of the
+--  // scheme; these two flags drop one half each so a single step measures each half on
+--  // its own. They change the answer and are for measurement only.
+--  bool cs_diag_no_coordsrc = false;  // skip SrcTermsGnomonicEquiangleMHD
+--  bool cs_diag_no_divf = false;      // skip the flux divergence in the RK update
+--
+-   // CUBED SPHERE: use the GS07 upwind corner EMF instead of the plain four-face average.
+-   // Needs the gnomonic cell-centred EMF, e_cc_3d_cs in mhd_corner_e.cpp.
+-   bool use_bs_emf = false;
+-@@ -210,37 +201,7 @@ class MHD {
+-   // everywhere, 0 = HLLD everywhere; true/false are accepted as 7/0.
+-   int polar_hlle_rows = 6;
+- 
+--  // CUBED SPHERE, MEASUREMENT ONLY: report how often that fallback actually FIRES, as a
+--  // profile in radius, every N cycles (0 = off).  It changes no answer.  The question it
+--  // exists to settle is whether the fallback is engaged in the shell where a round-off
+--  // perturbation is observed to grow: beta there is ~1e-2, two decades below the default
+--  // threshold of 0.5, so it should be on everywhere in that shell -- and if the growth
+--  // happens anyway, added dissipation is not the cure for THIS route.
+--  int cs_lowbeta_diag = 0;
+--
+--  // CUBED SPHERE, MEASUREMENT ONLY: every N cycles, test whether a SEAM ghost cell's
+--  // internal energy is consistent with its own ghost field.  See mhd_seam_diag.cpp for
+--  // the hypothesis, the null control and what would falsify it.  0 = off.
+--  int cs_seam_diag = 0;
+--
+--  // CUBED SPHERE: make a seam ghost cell's TOTAL ENERGY consistent with its own ghost
+--  // field, by exchanging 0.5|B_cc|^2 across the seam and swapping the resampled source
+--  // value for the ghost's own.  See mhd_seam_econsist.cpp.  Default OFF: it changes
+--  // answers and costs one extra cell-centred halo exchange per stage.
+--  bool cs_seam_econsist = false;
+--  DvceArray5D<Real> me0, coarse_me0;   // (m,0,k,j,i) = 0.5|B_cc|^2, the exchanged scalar
+--  MeshBoundaryValuesCC *pbval_me = nullptr;
+--  void FillSeamME();
+--  void SeamEnergyFix();
+--  // (nx1, LBD_NSLOT), binned by RADIAL CELL INDEX: faces examined, faces switched to
+--  // HLLE, and the smallest beta seen on any face in the bin.  Zeroed and refilled by the
+--  // one stage-1 sweep that reports, so it is a snapshot of that sweep, not a running sum.
+--  DvceArray2D<Real> lb_diag;
+--  static constexpr int LBD_NFACE = 0;
+--  static constexpr int LBD_NSWITCH = 1;
+--  static constexpr int LBD_MINBETA = 2;
+--  static constexpr int LBD_NSLOT = 3;
+--    
+-+
+-   // following only used for including time-independent gravity in the conserved energy equation
+-   bool use_etotgrav = false;   // flag to enable etotgrav
+-   DvceFaceFld4D<Real> phi0;     // face-centered gravitational potential energy
+-@@ -268,7 +229,6 @@ class MHD {
+-   bool use_wellbalance_dynamic = false;    // flag to enable dynamical well-balanced method by Kappeli & Mishra 2014, 2016
+-   bool use_wb_x1 = false;    // flag for directions
+-   bool use_wb_x2 = false;    // flag for directions
+--  bool use_wb_x3 = false;    // flag for directions
+-   bool use_wb_rho = false;   // flag to enable local well-balanced method also in reconstructing rho
+-   // Radius (x1v, which IS the radius on the spherical grids) beyond which the dynamic
+-   // well-balanced x1 reconstruction is switched off cell by cell; 0 = never.  The
+-@@ -343,9 +303,6 @@ class MHD {
+-   TaskStatus ApplyPhysicalBCs(Driver* pdrive, int stage);
+-   TaskStatus Prolongate(Driver* pdrive, int stage);
+-   TaskStatus ConToPrim(Driver *d, int stage);
+--  void SeamHaloDiag();   // measurement only; see mhd_seam_diag.cpp
+--  TaskStatus SendME(Driver *d, int stage);
+--  TaskStatus RecvME(Driver *d, int stage);
+-   TaskStatus NewTimeStep(Driver *d, int stage);
+-   // ...in "after_stagen_tl" task list
+-   TaskStatus ClearSend(Driver *d, int stage);
+-@@ -538,50 +495,6 @@ class MHD {
+-         return;
+-       };
+-       
+--      KOKKOS_INLINE_FUNCTION
+--      static void WbLocalPiecewiseLinearX3(TeamMember_t const &member,
+--           const EOS_Data &eos, const WBOption wb_option, const bool use_wb_rho,
+--           const int m, const int k, const int j,
+--           const int il, const int iu, const DvceArray5D<Real> &q, const DvceArray4D<Real> &phicc, const DvceArray4D<Real> &phi,
+--           ScrArray2D<Real> &ql_kp1, ScrArray2D<Real> &qr_k) {
+--        Real igm1 = 1.0/(eos.gamma-1.0);
+--        int nvar = q.extent_int(1);
+--        for (int n=0; n<nvar; ++n) {
+--          if (n == (IEN) || (n == (IDN) && use_wb_rho)) {
+--            par_for_inner(member, il, iu, [&](const int i) {
+--              Real q0_km1, q0_kp1, q0_kmh, q0_kph, q0_k;
+--              getWBq0(eos, wb_option, (n == (IEN)) ? WBVar::wb_eint : WBVar::wb_dens,
+--                       q(m,IDN,k-1,j,i),q(m,IDN,k,j,i),q(m,IDN,k+1,j,i),
+--                       q(m,IEN,k-1,j,i),q(m,IEN,k,j,i),q(m,IEN,k+1,j,i),
+--                       phicc(m,k-1,j,i),phi(m,k,j,i),phicc(m,k,j,i),phi(m,k+1,j,i),phicc(m,k+1,j,i),
+--                       q0_km1, q0_kmh, q0_k, q0_kph, q0_kp1);
+--                
+--              Real q1_km1 = q(m,n,k-1,j,i) - q0_km1;
+--              Real q1_k = q(m,n,k,j,i) - q0_k;
+--              Real q1_kp1 = q(m,n,k+1,j,i) - q0_kp1;
+--                
+--              PLM(q1_km1, q1_k, q1_kp1, ql_kp1(n,i), qr_k(n,i));
+--                
+--              ql_kp1(n,i) += q0_kph;
+--              qr_k(n,i) += q0_kmh;
+--                
+--                // Left/right slopes (properly scaled)
+--                Real sL = q(m,n,k,j,i)   - q(m,n,k-1,j,i);
+--                Real sR = q(m,n,k+1,j,i) - q(m,n,k,j,i);
+--                
+--                if (ql_kp1(n,i) < 0.0 || qr_k(n,i) < 0.0 || sL * sR <= 0.0) {
+--                    PLM(q(m,n,k-1,j,i), q(m,n,k,j,i), q(m,n,k+1,j,i), ql_kp1(n,i), qr_k(n,i));
+--                }
+--            });
+--          } else {
+--            par_for_inner(member, il, iu, [&](const int i) {
+--              PLM(q(m,n,k-1,j,i), q(m,n,k,j,i), q(m,n,k+1,j,i), ql_kp1(n,i), qr_k(n,i));
+--            });
+--          }
+--        }
+--        return;
+--      };
+--    
+-     //------------------------------------------------------------------------------------
+-     //! \fn WbStaticPiecewiseLinearDerX1()
+-     //! \brief static well-balanced reconstruction of the derived thermodynamic variables.
+-@@ -815,50 +728,6 @@ class MHD {
+-       return;
+-     };
+- 
+--    KOKKOS_INLINE_FUNCTION
+--    static void WbPiecewiseLinearDerX3(TeamMember_t const &member,
+--         const EOS_Data &eos, const WBOption wb_option,
+--         const int m, const int k, const int j, const int il, const int iu,
+--         const DvceArray5D<Real> &q, const DvceArray5D<Real> &qd,
+--         const DvceArray4D<Real> &phicc, const DvceArray4D<Real> &phi,
+--         ScrArray2D<Real> &dl_kp1, ScrArray2D<Real> &dr_k) {
+--      int nvar = qd.extent_int(1);
+--      for (int n=0; n<nvar; ++n) {
+--        if (n == (IDPR)) {
+--          par_for_inner(member, il, iu, [&](const int i) {
+--            Real q0_km1, q0_kmh, q0_k, q0_kph, q0_kp1;
+--            getWBq0(eos, wb_option, WBVar::wb_pres,
+--                    q(m,IDN,k-1,j,i),q(m,IDN,k,j,i),q(m,IDN,k+1,j,i),
+--                    q(m,IEN,k-1,j,i),q(m,IEN,k,j,i),q(m,IEN,k+1,j,i),
+--                    phicc(m,k-1,j,i),phi(m,k,j,i),phicc(m,k,j,i),
+--                    phi(m,k+1,j,i),phicc(m,k+1,j,i),
+--                    q0_km1, q0_kmh, q0_k, q0_kph, q0_kp1);
+--
+--            Real q1_km1 = qd(m,n,k-1,j,i) - q0_km1;
+--            Real q1_k   = qd(m,n,k,j,i)   - q0_k;
+--            Real q1_kp1 = qd(m,n,k+1,j,i) - q0_kp1;
+--
+--            PLM(q1_km1, q1_k, q1_kp1, dl_kp1(n,i), dr_k(n,i));
+--
+--            dl_kp1(n,i) += q0_kph;
+--            dr_k(n,i)   += q0_kmh;
+--
+--            Real sL = qd(m,n,k,j,i)   - qd(m,n,k-1,j,i);
+--            Real sR = qd(m,n,k+1,j,i) - qd(m,n,k,j,i);
+--            if (dl_kp1(n,i) < 0.0 || dr_k(n,i) < 0.0 || sL * sR <= 0.0) {
+--              PLM(qd(m,n,k-1,j,i), qd(m,n,k,j,i), qd(m,n,k+1,j,i),
+--                  dl_kp1(n,i), dr_k(n,i));
+--            }
+--          });
+--        } else {
+--          par_for_inner(member, il, iu, [&](const int i) {
+--            PLM(qd(m,n,k-1,j,i), qd(m,n,k,j,i), qd(m,n,k+1,j,i), dl_kp1(n,i), dr_k(n,i));
+--          });
+--        }
+--      }
+--      return;
+--    };
+--
+-     KOKKOS_INLINE_FUNCTION
+-     static void PLM_nonuniform(const Real &q_im1, const Real &q_i, const Real &q_ip1,
+-                         const Real &dxL, const Real &dxR, const Real &dxLh, const Real &dxRh,
+-diff --git a/src/mhd/mhd_fluxes.cpp b/src/mhd/mhd_fluxes.cpp
+-index 5f7f0aeb..d830fb2d 100644
+---- a/src/mhd/mhd_fluxes.cpp
+-+++ b/src/mhd/mhd_fluxes.cpp
+-@@ -964,61 +964,6 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
+-   return;
+- }
+- 
+--//----------------------------------------------------------------------------------------
+--//! \fn void ReportLowBetaDiag
+--//! \brief print the low-beta fallback's hit rate as a profile in radius.
+--//!
+--//! MEASUREMENT ONLY; see mhd.hpp and rsolvers/cs_lowbeta_fallback.hpp.  The counters are
+--//! summed over every MeshBlock and all three flux directions on this sweep, so "faces" is
+--//! the number of faces the switch examined, not the number of cells.  Radial bins are
+--//! grouped for printing: nx1 = 128 rows would bury the answer.
+--
+--void ReportLowBetaDiag(const DvceArray2D<Real> &lbd, const int nbin, const Real thresh) {
+--  auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), lbd);
+--  std::vector<double> nface(nbin), nsw(nbin), bmin(nbin);
+--  for (int b=0; b<nbin; ++b) {
+--    nface[b] = h(b,0); nsw[b] = h(b,1); bmin[b] = h(b,2);
+--  }
+--#if MPI_PARALLEL_ENABLED
+--  MPI_Allreduce(MPI_IN_PLACE, nface.data(), nbin, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+--  MPI_Allreduce(MPI_IN_PLACE, nsw.data(),   nbin, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+--  MPI_Allreduce(MPI_IN_PLACE, bmin.data(),  nbin, MPI_DOUBLE, MPI_MIN, MPI_COMM_WORLD);
+--#endif
+--  if (global_variable::my_rank != 0) return;
+--
+--  const int ngroup = (nbin < 16) ? nbin : 16;
+--  const Real big = 0.5*static_cast<Real>(std::numeric_limits<Real>::max());
+--  double tface = 0.0, tsw = 0.0;
+--  std::cout << "## cs_lowbeta_diag (threshold beta < " << thresh
+--            << "): faces examined / switched to HLLE, by radial index" << std::endl;
+--  std::cout << "##   i-range        faces      switched   frac     min beta" << std::endl;
+--  for (int g=0; g<ngroup; ++g) {
+--    const int lo = (g*nbin)/ngroup, hi = ((g+1)*nbin)/ngroup;
+--    double f = 0.0, w = 0.0, bm = std::numeric_limits<double>::max();
+--    for (int b=lo; b<hi; ++b) {
+--      f += nface[b]; w += nsw[b];
+--      if (bmin[b] < bm) { bm = bmin[b]; }
+--    }
+--    tface += f; tsw += w;
+--    std::cout << "##  " << std::setw(4) << lo << "-" << std::setw(4) << hi
+--              << std::setw(14) << static_cast<std::int64_t>(f)
+--              << std::setw(14) << static_cast<std::int64_t>(w)
+--              << std::setw(9) << std::fixed << std::setprecision(4)
+--              << ((f > 0.0) ? w/f : 0.0);
+--    // a bin with no field anywhere never recorded a beta at all
+--    if (bm < big) {
+--      std::cout << "  " << std::scientific << std::setprecision(3) << bm << std::endl;
+--    } else {
+--      std::cout << "        --" << std::endl;
+--    }
+--  }
+--  std::cout << "##  total" << std::setw(18) << static_cast<std::int64_t>(tface)
+--            << std::setw(14) << static_cast<std::int64_t>(tsw)
+--            << std::setw(9) << std::fixed << std::setprecision(4)
+--            << ((tface > 0.0) ? tsw/tface : 0.0) << std::endl;
+--  std::cout.unsetf(std::ios_base::floatfield);
+--}
+--
+- // function definitions for each template parameter
+- template void MHD::CalculateFluxes<MHD_RSolver::advect>(Driver *pdriver, int stage);
+- template void MHD::CalculateFluxes<MHD_RSolver::llf>(Driver *pdriver, int stage);
+-diff --git a/src/mhd/mhd_seam_diag.cpp b/src/mhd/mhd_seam_diag.cpp
+-deleted file mode 100644
+-index 3acf58be..00000000
+---- a/src/mhd/mhd_seam_diag.cpp
+-+++ /dev/null
+-@@ -1,207 +0,0 @@
+--//========================================================================================
+--// AthenaXXX astrophysical plasma code
+--// Copyright(C) 2020 James M. Stone <jmstone@ias.edu> and the Athena code team
+--// Licensed under the 3-clause BSD License (the "LICENSE")
+--//========================================================================================
+--//! \file mhd_seam_diag.cpp
+--//! \brief CUBED SPHERE, MEASUREMENT ONLY: is a seam ghost cell's INTERNAL ENERGY
+--//! inconsistent with its own ghost field?
+--//!
+--//! THE HYPOTHESIS.  The cell-centred halo carries the CONSERVED variables -- SendU packs
+--//! u0, whose IEN is the TOTAL energy with 0.5|B_src|^2 already inside it -- while the
+--//! face field b0 crosses the seam through a SEPARATE exchange with its own co-location,
+--//! gnomonic transform, along-seam resample and monotone clamp.  ConsToPrim then forms
+--//!
+--//!     e_int = E_ghost - KE_ghost - 0.5|B_ghost|^2
+--//!
+--//! from two halves that were resampled by DIFFERENT operators: the energy as a scalar,
+--//! the field componentwise and then squared.  Resample-then-square is not
+--//! square-then-resample, and the whole residual lands in e_int, amplified by 1/beta.  If
+--//! that is large it is a floor trigger IN THE HALO -- boundary-associated, worst at low
+--//! beta, and invisible to every improvement made to the interior scheme.
+--//!
+--//! HOW IT IS MEASURED, without needing a second communication.  A seam is normal to x2 or
+--//! x3, i.e. to a PANEL-TANGENTIAL direction, along which the solution is smooth (the
+--//! atmosphere's steep gradient is radial).  So a quadratic extrapolation from the three
+--//! active cells nearest the boundary predicts what the first ghost cell should hold, to
+--//! O(h^3).  The diagnostic reports |q_ghost - q_extrap|/|q_extrap| for three quantities:
+--//!
+--//!     dens   -- a plainly communicated scalar.  THE CONTROL: it shares the resample
+--//!               but not the E - 0.5B^2 subtraction, so it carries the resample alone.
+--//!     eint   -- the suspect.
+--//!     magE   -- 0.5|bcc|^2, to show how big the magnetic energy is that gets subtracted.
+--//!
+--//! and splits every count two ways that make the answer falsifiable:
+--//!
+--//!     SEAM        vs  same-panel BLOCK FACE.  A block face uses the same halo machinery
+--//!                     with NO transform and NO resample -- a plain copy -- so it is the
+--//!                     null control.  If eint's anomaly is no worse at a seam than at a
+--//!                     block face, this mechanism is dead.
+--//!     low beta    vs  high beta.  The hypothesis is specifically that the residual is
+--//!                     amplified by 1/beta, so the seam/low-beta cell must be the worst
+--//!                     of the four by a wide margin.  If eint tracks dens everywhere,
+--//!                     the subtraction is innocent and only the resample is at work.
+--//!
+--//! It changes no answer: it reads w0 and bcc0 after ConsToPrim has filled them over the
+--//! ghost zones, and writes only its own counters.
+--
+--#include <iostream>
+--#include <cstdint>
+--#include <iomanip>
+--#include <limits>
+--#include <vector>
+--
+--#include "athena.hpp"
+--#include "globals.hpp"
+--#include "mesh/mesh.hpp"
+--#include "mhd.hpp"
+--#include "eos/eos.hpp"
+--
+--namespace mhd {
+--
+--// rows: 0 = seam & low beta, 1 = seam & high beta, 2 = block face & low beta,
+--//       3 = block face & high beta.  cols: 3*q + {sum, count, max} for q in
+--//       {dens, eint, magE}.
+--static constexpr int NROW = 4;
+--static constexpr int NCOL = 9;
+--
+--
+--//----------------------------------------------------------------------------------------
+--//! helpers.  Plain KOKKOS_INLINE_FUNCTIONs rather than lambdas: an extended device lambda
+--//! captured inside another device lambda is the construct hipcc and nvcc restrict.
+--
+--//! quadratic extrapolation one cell beyond the last active cell, L(-1) from points 0,1,2
+--KOKKOS_INLINE_FUNCTION
+--static Real Extrap3(const Real q0, const Real q1, const Real q2) {
+--  return 3.0*q0 - 3.0*q1 + q2;
+--}
+--
+--KOKKOS_INLINE_FUNCTION
+--static Real MagE(const DvceArray5D<Real> &b, const int m, const int k, const int j,
+--                 const int i) {
+--  return 0.5*(SQR(b(m,IBX,k,j,i)) + SQR(b(m,IBY,k,j,i)) + SQR(b(m,IBZ,k,j,i)));
+--}
+--
+--//! accumulate one ghost cell into the (seam/block) x (low/high beta) row.
+--//! beta is only a BIN BOUNDARY here, so the proxy 2*eint/B^2 is used rather than a real
+--//! EOS pressure: it differs from 2p/B^2 by the Gamma_1 - 1 factor, well inside one bin.
+--KOKKOS_INLINE_FUNCTION
+--static void Tally(const DvceArray2D<Real> &a, const int seam,
+--                  const Real dg, const Real eg, const Real bg,
+--                  const Real de, const Real ee, const Real be) {
+--  const Real beta = (bg > 0.0) ? (eg/bg) : 1.0e30;
+--  const int row = 2*(seam ? 0 : 1) + ((beta < 1.0) ? 0 : 1);
+--  const Real rq[3] = {(de != 0.0) ? fabs(dg - de)/fabs(de) : 0.0,
+--                      (ee != 0.0) ? fabs(eg - ee)/fabs(ee) : 0.0,
+--                      (be != 0.0) ? fabs(bg - be)/fabs(be) : 0.0};
+--  for (int q=0; q<3; ++q) {
+--    Kokkos::atomic_add(&a(row, 3*q+0), rq[q]);
+--    Kokkos::atomic_add(&a(row, 3*q+1), 1.0);
+--    Kokkos::atomic_max(&a(row, 3*q+2), rq[q]);
+--  }
+--}
+--
+--//----------------------------------------------------------------------------------------
+--//! \fn void MHD::SeamHaloDiag
+--//! \brief accumulate and print the halo consistency measurement described above.
+--
+--void MHD::SeamHaloDiag() {
+--  auto &indcs = pmy_pack->pmesh->mb_indcs;
+--  const int is = indcs.is, ie = indcs.ie;
+--  const int js = indcs.js, je = indcs.je;
+--  const int ks = indcs.ks, ke = indcs.ke;
+--  const int nmb1 = pmy_pack->nmb_thispack - 1;
+--  auto w0_ = w0;
+--  auto bcc_ = bcc0;
+--  auto &size_ = pmy_pack->pmb->mb_size;
+--  // A panel spans [-1,1] in both tangential coordinates, so a block whose x2min sits on
+--  // the mesh x2min has its x2-lo face ON a panel edge, i.e. a SEAM.  Everything else is
+--  // an ordinary same-panel block face.  Comparing the block's own extent against the mesh
+--  // extent needs no neighbour lookup and no panel table.
+--  const Real mx2min = pmy_pack->pmesh->mesh_size.x2min;
+--  const Real mx2max = pmy_pack->pmesh->mesh_size.x2max;
+--  const Real mx3min = pmy_pack->pmesh->mesh_size.x3min;
+--  const Real mx3max = pmy_pack->pmesh->mesh_size.x3max;
+--  const Real tol = 1.0e-10*(mx2max - mx2min);
+--
+--  DvceArray2D<Real> acc("seam_diag", NROW, NCOL);
+--  Kokkos::deep_copy(acc, 0.0);
+--
+--  // ---- the two x2 boundaries
+--  par_for("seamdiag_x2", DevExeSpace(), 0, nmb1, ks, ke, is, ie,
+--  KOKKOS_LAMBDA(const int m, const int k, const int i) {
+--    for (int side=0; side<2; ++side) {
+--      const bool lo = (side == 0);
+--      const int jg = lo ? (js-1) : (je+1);
+--      const int j0 = lo ? js : je;
+--      const int j1 = lo ? (js+1) : (je-1);
+--      const int j2 = lo ? (js+2) : (je-2);
+--      const Real edge = lo ? size_.d_view(m).x2min : size_.d_view(m).x2max;
+--      const Real panel = lo ? mx2min : mx2max;
+--      const int seam = (fabs(edge - panel) < tol) ? 1 : 0;
+--      Tally(acc, seam,
+--            w0_(m,IDN,k,jg,i), w0_(m,IEN,k,jg,i), MagE(bcc_,m,k,jg,i),
+--            Extrap3(w0_(m,IDN,k,j0,i), w0_(m,IDN,k,j1,i), w0_(m,IDN,k,j2,i)),
+--            Extrap3(w0_(m,IEN,k,j0,i), w0_(m,IEN,k,j1,i), w0_(m,IEN,k,j2,i)),
+--            Extrap3(MagE(bcc_,m,k,j0,i), MagE(bcc_,m,k,j1,i), MagE(bcc_,m,k,j2,i)));
+--    }
+--  });
+--
+--  // ---- the two x3 boundaries
+--  par_for("seamdiag_x3", DevExeSpace(), 0, nmb1, js, je, is, ie,
+--  KOKKOS_LAMBDA(const int m, const int j, const int i) {
+--    for (int side=0; side<2; ++side) {
+--      const bool lo = (side == 0);
+--      const int kg = lo ? (ks-1) : (ke+1);
+--      const int k0 = lo ? ks : ke;
+--      const int k1 = lo ? (ks+1) : (ke-1);
+--      const int k2 = lo ? (ks+2) : (ke-2);
+--      const Real edge = lo ? size_.d_view(m).x3min : size_.d_view(m).x3max;
+--      const Real panel = lo ? mx3min : mx3max;
+--      const int seam = (fabs(edge - panel) < tol) ? 1 : 0;
+--      Tally(acc, seam,
+--            w0_(m,IDN,kg,j,i), w0_(m,IEN,kg,j,i), MagE(bcc_,m,kg,j,i),
+--            Extrap3(w0_(m,IDN,k0,j,i), w0_(m,IDN,k1,j,i), w0_(m,IDN,k2,j,i)),
+--            Extrap3(w0_(m,IEN,k0,j,i), w0_(m,IEN,k1,j,i), w0_(m,IEN,k2,j,i)),
+--            Extrap3(MagE(bcc_,m,k0,j,i), MagE(bcc_,m,k1,j,i), MagE(bcc_,m,k2,j,i)));
+--    }
+--  });
+--
+--  auto h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), acc);
+--  std::vector<double> v(NROW*NCOL);
+--  for (int r=0; r<NROW; ++r) { for (int c=0; c<NCOL; ++c) { v[r*NCOL+c] = h(r,c); } }
+--#if MPI_PARALLEL_ENABLED
+--  // sums and counts add; the maxima have to be reduced as maxima, so they go separately
+--  std::vector<double> mx(NROW*3);
+--  for (int r=0; r<NROW; ++r) {
+--    for (int q=0; q<3; ++q) { mx[r*3+q] = v[r*NCOL+3*q+2]; v[r*NCOL+3*q+2] = 0.0; }
+--  }
+--  MPI_Allreduce(MPI_IN_PLACE, v.data(), NROW*NCOL, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+--  MPI_Allreduce(MPI_IN_PLACE, mx.data(), NROW*3, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
+--  for (int r=0; r<NROW; ++r) {
+--    for (int q=0; q<3; ++q) { v[r*NCOL+3*q+2] = mx[r*3+q]; }
+--  }
+--#endif
+--  if (global_variable::my_rank != 0) return;
+--
+--  const char *rname[NROW] = {"SEAM  beta<1", "SEAM  beta>1",
+--                             "block beta<1", "block beta>1"};
+--  std::cout << "## cs_seam_diag: |ghost - quadratic extrapolation| / |extrapolation|"
+--            << std::endl;
+--  std::cout << "##   region          ncell        dens mean/max         "
+--            << "eint mean/max         magE mean/max" << std::endl;
+--  for (int r=0; r<NROW; ++r) {
+--    const double n = v[r*NCOL+1];
+--    std::cout << "##  " << rname[r] << std::setw(11)
+--              << static_cast<std::int64_t>(n);
+--    for (int q=0; q<3; ++q) {
+--      const double mean = (n > 0.0) ? v[r*NCOL+3*q+0]/n : 0.0;
+--      std::cout << "   " << std::scientific << std::setprecision(2) << mean
+--                << " " << v[r*NCOL+3*q+2];
+--    }
+--    std::cout << std::endl;
+--  }
+--  std::cout.unsetf(std::ios_base::floatfield);
+--}
+--
+--}  // namespace mhd
+-diff --git a/src/mhd/mhd_seam_econsist.cpp b/src/mhd/mhd_seam_econsist.cpp
+-deleted file mode 100644
+-index 417cbd3c..00000000
+---- a/src/mhd/mhd_seam_econsist.cpp
+-+++ /dev/null
+-@@ -1,162 +0,0 @@
+--//========================================================================================
+--// AthenaXXX astrophysical plasma code
+--// Copyright(C) 2020 James M. Stone <jmstone@ias.edu> and the Athena code team
+--// Licensed under the 3-clause BSD License (the "LICENSE")
+--//========================================================================================
+--//! \file mhd_seam_econsist.cpp
+--//! \brief CUBED SPHERE: make a seam ghost cell's TOTAL ENERGY consistent with its own
+--//! ghost magnetic field.
+--//!
+--//! THE DEFECT, measured by <mhd>/cs_seam_diag (mhd_seam_diag.cpp).  The cell-centred halo
+--//! carries the CONSERVED variables, so IEN arrives as the TOTAL energy with
+--//! 0.5|B_src|^2 already inside it, resampled across the seam AS A SCALAR.  The face field
+--//! arrives through a SEPARATE exchange and is resampled COMPONENTWISE, then squared by
+--//! ConsToPrim.  Resample-then-square is not square-then-resample, so
+--//!
+--//!     e_int = E_ghost - KE - 0.5|B_ghost|^2
+--//!
+--//! keeps the whole residual, divided by beta.  Measured on the stratified test: at a seam
+--//! below beta = 1 the internal-energy anomaly is 285x the density anomaly in the same
+--//! cells, and it grows 30x across beta = 1 while density's does not.
+--//!
+--//! THE FIX.  Exchange the FIELD-FREE part of the energy, E - 0.5|B_cc|^2, across the
+--//! seam, and rebuild the ghost's total energy from it and the ghost's OWN field:
+--//!
+--//!     E_ghost  <-  R[E_src - 0.5|B_src|^2]  +  0.5|B_cc,ghost|^2
+--//!
+--//! RESAMPLE THE SMALL QUANTITY, DO NOT SUBTRACT TWO LARGE ONES.  The first version of
+--//! this exchanged 0.5|B|^2 and corrected additively,
+--//! E_ghost <- E_ghost - R[0.5|B_src|^2] + 0.5|B_ghost|^2, which is algebraically the same
+--//! thing ONLY IF R IS LINEAR.  It is not: the along-seam resample carries a MONOTONE
+--//! CLAMP, and at low beta 0.5|B|^2 dominates E, so the clamp acts differently on the two
+--//! large numbers and most of the residual survives.  Measured: the additive form removed
+--//! 14 % of the seam low-beta anomaly, this one removes far more, for the same traffic.
+--//!
+--//! WHY IT NEEDS ITS OWN EXCHANGE, AFTER CT.  The magnetic energy that belongs inside
+--//! E^{n+1} is the one built from B^{n+1}, and CT does not run until AFTER SendU: at
+--//! SendU the face field is still B^n.  Correcting with B^n would trade an O(h^2)
+--//! inconsistency for an O(dt) one.  So the scalar rides its own cell-centred exchange
+--//! placed after RecvB.  That is safe against the existing halo traffic because every
+--//! MeshBoundaryValues object MPI_Comm_dup's its own communicator, so its tags -- which
+--//! encode only receiver lid and bufid -- cannot collide with the u0 or b0 exchange.
+--//!
+--//! WHAT IT DOES NOT FIX.  The kinetic term has the same structure: momentum is
+--//! transformed exactly and then resampled, so KE = |m|^2/2rho in the ghost is again
+--//! square-of-resample against the resample-of-square inside E.  That residual grows
+--//! with the Mach number rather than with 1/beta, and in a subsonic atmosphere it is far
+--//! smaller, so it is deliberately left alone here.
+--
+--#include "athena.hpp"
+--#include "mesh/mesh.hpp"
+--#include "mhd.hpp"
+--#include "coordinates/cell_locations.hpp"
+--
+--namespace mhd {
+--
+--//----------------------------------------------------------------------------------------
+--//! \fn void MHD::FillSeamME
+--//! \brief fill me0 with E - 0.5|B_cc|^2 over the ACTIVE cells, using the post-CT field.
+--//!
+--//! The triple must be built EXACTLY as Coordinates::GnomonicEquiangleRaiseVelMHD builds
+--//! it -- orthonormal frame, and the stretched-grid weighting in the radial slot -- or the
+--//! value subtracted here is not the value ConsToPrim will add back, and the correction
+--//! would inject the difference instead of removing it.
+--
+--void MHD::FillSeamME() {
+--  auto &indcs = pmy_pack->pmesh->mb_indcs;
+--  const int is = indcs.is, ie = indcs.ie;
+--  const int js = indcs.js, je = indcs.je;
+--  const int ks = indcs.ks, ke = indcs.ke;
+--  const int nmb1 = pmy_pack->nmb_thispack - 1;
+--  auto me_ = me0;
+--  auto u0_ = u0;
+--  auto b0_ = b0;
+--  auto &ccell = pmy_pack->pcoord->cos_cell;
+--  auto &scell = pmy_pack->pcoord->sin_cell;
+--  const bool str_x1_ = (pmy_pack->pmesh->use_grid_stretch_r ||
+--                        pmy_pack->pmesh->use_grid_stretch_r_poly);
+--  auto &x1v_ = pmy_pack->pcoord->x1v;
+--  auto &x1f_ = pmy_pack->pcoord->xx1f;
+--
+--  par_for("seam_me_fill", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+--  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+--    const Real c = ccell(m,k,j);
+--    const Real sn = scell(m,k,j);
+--    const Real bx = str_x1_ ?
+--        CellCenteredRadialFld(b0_.x1f(m,k,j,i), b0_.x1f(m,k,j,i+1),
+--                              x1f_(m,i), x1f_(m,i+1), x1v_(m,i)) :
+--        0.5*(b0_.x1f(m,k,j,i) + b0_.x1f(m,k,j,i+1));
+--    const Real by_n = 0.5*(b0_.x2f(m,k,j,i) + b0_.x2f(m,k,j+1,i));
+--    const Real bz_n = 0.5*(b0_.x3f(m,k,j,i) + b0_.x3f(m,k+1,j,i));
+--    const Real by = (by_n + c*bz_n)/sn;
+--    const Real bz = bz_n;
+--    me_(m,0,k,j,i) = u0_(m,IEN,k,j,i) - 0.5*(bx*bx + by*by + bz*bz);
+--  });
+--  return;
+--}
+--
+--//----------------------------------------------------------------------------------------
+--//! \fn void MHD::SeamEnergyFix
+--//! \brief swap the resampled source magnetic energy for the ghost cell's own.
+--//!
+--//! Applied over the TANGENTIAL ghost layers only -- x2 and x3, where the seams are.  The
+--//! radial ghosts are physical boundaries whose me0 was never exchanged, so touching them
+--//! would write whatever the buffer happened to hold.
+--//!
+--//! AND ONLY ACROSS A GENUINE SEAM.  Rebuilding as (E - 0.5B^2) + 0.5B^2 is not bitwise
+--//! identity in floating point, so applying it at a same-panel block face -- where the
+--//! halo is a plain copy and there is nothing to correct -- would perturb every ghost cell
+--//! by round-off for no reason.  A block whose x2min sits on the mesh x2min has its x2-lo
+--//! face ON a panel edge; that comparison needs no neighbour lookup.  A corner ghost
+--//! counts as a seam if EITHER of its two faces is one.
+--
+--void MHD::SeamEnergyFix() {
+--  auto &indcs = pmy_pack->pmesh->mb_indcs;
+--  const int is = indcs.is, ie = indcs.ie;
+--  const int js = indcs.js, je = indcs.je;
+--  const int ks = indcs.ks, ke = indcs.ke;
+--  const int ng = indcs.ng;
+--  const int nmb1 = pmy_pack->nmb_thispack - 1;
+--  auto u0_ = u0;
+--  auto me_ = me0;
+--  auto b0_ = b0;
+--  auto &ccell = pmy_pack->pcoord->cos_cell;
+--  auto &scell = pmy_pack->pcoord->sin_cell;
+--  const bool str_x1_ = (pmy_pack->pmesh->use_grid_stretch_r ||
+--                        pmy_pack->pmesh->use_grid_stretch_r_poly);
+--  auto &x1v_ = pmy_pack->pcoord->x1v;
+--  auto &x1f_ = pmy_pack->pcoord->xx1f;
+--
+--  const Real mx2min = pmy_pack->pmesh->mesh_size.x2min;
+--  const Real mx2max = pmy_pack->pmesh->mesh_size.x2max;
+--  const Real mx3min = pmy_pack->pmesh->mesh_size.x3min;
+--  const Real mx3max = pmy_pack->pmesh->mesh_size.x3max;
+--  const Real tol = 1.0e-10*(mx2max - mx2min);
+--  auto &size_ = pmy_pack->pmb->mb_size;
+--
+--  par_for("seam_e_fix", DevExeSpace(), 0, nmb1, ks-ng, ke+ng, js-ng, je+ng, is, ie,
+--  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+--    // tangential ghost layers only
+--    if (j >= js && j <= je && k >= ks && k <= ke) { return; }
+--    bool seam = false;
+--    if (j < js) { seam = seam || (fabs(size_.d_view(m).x2min - mx2min) < tol); }
+--    if (j > je) { seam = seam || (fabs(size_.d_view(m).x2max - mx2max) < tol); }
+--    if (k < ks) { seam = seam || (fabs(size_.d_view(m).x3min - mx3min) < tol); }
+--    if (k > ke) { seam = seam || (fabs(size_.d_view(m).x3max - mx3max) < tol); }
+--    if (!seam) { return; }
+--    const Real c = ccell(m,k,j);
+--    const Real sn = scell(m,k,j);
+--    const Real bx = str_x1_ ?
+--        CellCenteredRadialFld(b0_.x1f(m,k,j,i), b0_.x1f(m,k,j,i+1),
+--                              x1f_(m,i), x1f_(m,i+1), x1v_(m,i)) :
+--        0.5*(b0_.x1f(m,k,j,i) + b0_.x1f(m,k,j,i+1));
+--    const Real by_n = 0.5*(b0_.x2f(m,k,j,i) + b0_.x2f(m,k,j+1,i));
+--    const Real bz_n = 0.5*(b0_.x3f(m,k,j,i) + b0_.x3f(m,k+1,j,i));
+--    const Real by = (by_n + c*bz_n)/sn;
+--    const Real bz = bz_n;
+--    u0_(m,IEN,k,j,i) = me_(m,0,k,j,i) + 0.5*(bx*bx + by*by + bz*bz);
+--  });
+--  return;
+--}
+--
+--}  // namespace mhd
+-diff --git a/src/mhd/mhd_tasks.cpp b/src/mhd/mhd_tasks.cpp
+-index a1838739..1d20f78d 100644
+---- a/src/mhd/mhd_tasks.cpp
+-+++ b/src/mhd/mhd_tasks.cpp
+-@@ -81,12 +81,7 @@ void MHD::AssembleMHDTasks(std::map<std::string, std::shared_ptr<TaskList>> tl)
+-   id.recvb     = tl["stagen"]->AddTask(&MHD::RecvB, this, id.sendb);
+-   id.sendb_shr = tl["stagen"]->AddTask(&MHD::SendB_Shr, this, id.recvb);
+-   id.recvb_shr = tl["stagen"]->AddTask(&MHD::RecvB_Shr, this, id.sendb_shr);
+--  // CUBED SPHERE seam energy consistency: must sit AFTER RecvB, because the magnetic
+--  // energy that belongs inside E^{n+1} is the one built from B^{n+1}, and CT does not run
+--  // until after SendU.  See mhd_seam_econsist.cpp.
+--  id.sendme    = tl["stagen"]->AddTask(&MHD::SendME, this, id.recvb_shr);
+--  id.recvme    = tl["stagen"]->AddTask(&MHD::RecvME, this, id.sendme);
+--  id.bcs       = tl["stagen"]->AddTask(&MHD::ApplyPhysicalBCs, this, id.recvme);
+-+  id.bcs       = tl["stagen"]->AddTask(&MHD::ApplyPhysicalBCs, this, id.recvb_shr);
+-   id.prol      = tl["stagen"]->AddTask(&MHD::Prolongate, this, id.bcs);
+-   id.c2p       = tl["stagen"]->AddTask(&MHD::ConToPrim, this, id.prol);
+-   id.newdt     = tl["stagen"]->AddTask(&MHD::NewTimeStep, this, id.c2p);
+-@@ -127,8 +122,6 @@ TaskStatus MHD::InitRecv(Driver *pdrive, int stage) {
+-   // post receives for B
+-   tstat = pbval_b->InitRecv(3);
+-   if (tstat != TaskStatus::complete) return tstat;
+--  if (cs_seam_econsist) { tstat = pbval_me->InitRecv(1); }
+--  if (tstat != TaskStatus::complete) return tstat;
+- 
+-   // with SMR/AMR post receives for fluxes of U, always post receives for fluxes of B
+-   // do not post receives for fluxes when stage < 0 (i.e. ICs)
+-@@ -334,7 +327,7 @@ TaskStatus MHD::MHDSrcTerms(Driver *pdrive, int stage) {
+-   }
+-     
+-   // Add coordinate source terms in curvi-linear grid.  Again, must be computed with only primitives.
+--  if (pmy_pack->pmesh->use_cubed_sphere && !cs_diag_no_coordsrc) {
+-+  if (pmy_pack->pmesh->use_cubed_sphere) {
+-     pmy_pack->pcoord->SrcTermsGnomonicEquiangleMHD(w0, bcc0, wder, pwb, uflx,
+-                                                    peos->eos_data, beta_dt, u0);
+-   }
+-@@ -678,30 +671,6 @@ TaskStatus MHD::Prolongate(Driver *pdrive, int stage) {
+-   return TaskStatus::complete;
+- }
+- 
+--//----------------------------------------------------------------------------------------
+--//! \fn TaskStatus MHD::SendME
+--//! \brief fill the seam magnetic-energy scalar and start its exchange.  A no-op unless
+--//! <mhd>/cs_seam_econsist is on; see mhd_seam_econsist.cpp.
+--
+--TaskStatus MHD::SendME(Driver *pdrive, int stage) {
+--  if (!cs_seam_econsist) return TaskStatus::complete;
+--  FillSeamME();
+--  return pbval_me->PackAndSendCC(me0, coarse_me0);
+--}
+--
+--//----------------------------------------------------------------------------------------
+--//! \fn TaskStatus MHD::RecvME
+--//! \brief finish that exchange, then swap each ghost cell's resampled source magnetic
+--//! energy for its own.
+--
+--TaskStatus MHD::RecvME(Driver *pdrive, int stage) {
+--  if (!cs_seam_econsist) return TaskStatus::complete;
+--  TaskStatus tstat = pbval_me->RecvAndUnpackCC(me0, coarse_me0);
+--  if (tstat != TaskStatus::complete) return tstat;
+--  SeamEnergyFix();
+--  return TaskStatus::complete;
+--}
+--
+- //----------------------------------------------------------------------------------------
+- //! \fn TaskStatus MHD::ConToPrim
+- //! \brief Wrapper task list function to call ConsToPrim over entire mesh (including gz)
+-@@ -748,13 +717,6 @@ TaskStatus MHD::ConToPrim(Driver *pdrive, int stage) {
+-                                                      0, n1m1, 0, n2m1, 0, n3m1);
+-     }
+-   }
+--  // MEASUREMENT ONLY: run here, where w0 and bcc0 have just been filled over the ghost
+--  // zones and before anything consumes them.  Stage 1 only, so the printed numbers are
+--  // one sweep rather than a running mixture of stages.
+--  if (cs_seam_diag > 0 && stage == 1 &&
+--      (pmy_pack->pmesh->ncycle % cs_seam_diag) == 0) {
+--    SeamHaloDiag();
+--  }
+-   if (use_etotgrav) {
+-     AddGravEtot(phicc0, u0, 0, n1m1, 0, n2m1, 0, n3m1);
+-   }
+-@@ -776,10 +738,6 @@ TaskStatus MHD::ConToPrim(Driver *pdrive, int stage) {
+- //! If stage=(-4):              clears                                 U_Shr, B_Shr
+- 
+- TaskStatus MHD::ClearSend(Driver *pdrive, int stage) {
+--  if (cs_seam_econsist) {
+--    TaskStatus tst = pbval_me->ClearSend();
+--    if (tst != TaskStatus::complete) return tst;
+--  }
+-   TaskStatus tstat;
+-   if ((stage >= 0) || (stage == -1)) {
+-     // check sends of U complete
+-@@ -840,10 +798,6 @@ TaskStatus MHD::ClearSend(Driver *pdrive, int stage) {
+- //! If stage=(-4):              clears                                 U_Shr, B_Shr
+- 
+- TaskStatus MHD::ClearRecv(Driver *pdrive, int stage) {
+--  if (cs_seam_econsist) {
+--    TaskStatus tst = pbval_me->ClearRecv();
+--    if (tst != TaskStatus::complete) return tst;
+--  }
+-   TaskStatus tstat;
+-   if ((stage >= 0) || (stage == -1)) {
+-     // check receives of U complete
+-diff --git a/src/mhd/mhd_update.cpp b/src/mhd/mhd_update.cpp
+-index 8483a42d..3f74fd6c 100644
+---- a/src/mhd/mhd_update.cpp
+-+++ b/src/mhd/mhd_update.cpp
+-@@ -41,9 +41,7 @@ TaskStatus MHD::RKUpdate(Driver *pdriver, int stage) {
+-   auto flx2 = uflx.x2f;
+-   auto flx3 = uflx.x3f;
+-   auto &mbsize = pmy_pack->pmb->mb_size;
+--  // cubed-sphere RHS-split diagnostic: drop the flux divergence entirely
+--  const Real dfac = cs_diag_no_divf ? 0.0 : 1.0;
+--    
+-+
+-   auto &use_cubed_sphere = pmy_pack->pmesh->use_cubed_sphere;
+-   auto &use_spherical_polar = pmy_pack->pmesh->use_spherical_polar;
+-   auto &volume = pmy_pack->pcoord->volume;
+-@@ -117,7 +115,7 @@ TaskStatus MHD::RKUpdate(Driver *pdriver, int stage) {
+- 
+-     par_for_inner(member, is, ie, [&](const int i) {
+-       u0_(m,n,k,j,i) = gam0*u0_(m,n,k,j,i) + gam1*u1_(m,n,k,j,i)
+--                       - dfac*beta_dt*divf(i);
+-+                       - beta_dt*divf(i);
+-     });
+-   });
+-   return TaskStatus::complete;
+-diff --git a/src/mhd/rsolvers/cs_lowbeta_fallback.hpp b/src/mhd/rsolvers/cs_lowbeta_fallback.hpp
+-index 403e2e92..e4c1943c 100644
+---- a/src/mhd/rsolvers/cs_lowbeta_fallback.hpp
+-+++ b/src/mhd/rsolvers/cs_lowbeta_fallback.hpp
+-@@ -48,10 +48,6 @@
+- //! supersonic.  Same stabilisation, less smearing of everything else.
+- //!
+- //! The L/R states are the RECONSTRUCTED ones, so the switch costs dissipation, not order.
+--//!
+--//! MEASURING IT.  <mhd>/cs_lowbeta_diag = N prints, every N cycles, the fraction of faces
+--//! this fired on and the minimum beta seen, binned by radial index.  It changes nothing:
+--//! the counters are written under `if (diag)` and read by nobody in the update.
+- 
+- #include "athena.hpp"
+- #include "eos/eos.hpp"
+-@@ -75,8 +71,7 @@ void CSLowBetaFallback(TeamMember_t const &member, const EOS_Data &eos, const bo
+-      const ScrArray2D<Real> &bl, const ScrArray2D<Real> &br,
+-      const ScrArray2D<Real> &dl, const ScrArray2D<Real> &dr,
+-      const DvceArray4D<Real> &bx,
+--     DvceArray5D<Real> flx, DvceArray4D<Real> ey, DvceArray4D<Real> ez,
+--     const int diag, const int ibin0, const int nbin, const DvceArray2D<Real> &lbd) {
+-+     DvceArray5D<Real> flx, DvceArray4D<Real> ey, DvceArray4D<Real> ez) {
+-   const int ivy = IVX + ((ivx-IVX)+1)%3;
+-   const int ivz = IVX + ((ivx-IVX)+2)%3;
+-   const int iby = ((ivx-IVX) + 1)%3;
+-@@ -101,20 +96,6 @@ void CSLowBetaFallback(TeamMember_t const &member, const EOS_Data &eos, const bo
+-     // beta = 2p/B^2, written as a product so a vanishing field never divides
+-     const bool fire = ((pl + pr) < beta_thresh*bsq);
+- 
+--    // MEASUREMENT ONLY: which faces were examined, which switched, and how much margin
+--    // there was.  Counted BEFORE the early return, so the denominator is every face the
+--    // switch looked at and the reported fraction is the fraction it actually fired on.
+--    if (diag) {
+--      const int b = i - ibin0;
+--      if (b >= 0 && b < nbin) {
+--        Kokkos::atomic_add(&lbd(b, 0), 1.0);
+--        if (fire) { Kokkos::atomic_add(&lbd(b, 1), 1.0); }
+--        // With no field there is no beta; such a face is not low-beta and is left out of
+--        // the minimum rather than dividing by zero or being recorded as beta = 0.
+--        if (bsq > 0.0) { Kokkos::atomic_min(&lbd(b, 2), (pl + pr)/bsq); }
+--      }
+--    }
+--
+-     if (!fire) return;
+- 
+-     MHDCons1D flux;
+-diff --git a/src/pgen/deep_hot_jupiter_rt.cpp b/src/pgen/deep_hot_jupiter_rt.cpp
+-index 77683948..39ff4c89 100644
+---- a/src/pgen/deep_hot_jupiter_rt.cpp
+-+++ b/src/pgen/deep_hot_jupiter_rt.cpp
+-@@ -455,7 +455,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
+-   two_stream_rt::ck_impl_verbose =
+-       pin->GetOrAddBoolean("problem","ck_impl_verbose",false);
+-   two_stream_rt::ck_impl_demax = pin->GetOrAddReal("problem","ck_impl_demax",0.5);
+--  two_stream_rt::ck_impl_debug = pin->GetOrAddInteger("problem","ck_impl_debug",0);
+-   two_stream_rt::ck_impl_refresh_kappa =
+-       pin->GetOrAddBoolean("problem","ck_impl_refresh_kappa",false);
+-   if (two_stream_rt::ck_implicit && global_variable::my_rank == 0) {
+-@@ -478,12 +477,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
+-   rt_dump_j = pin->GetOrAddInteger("problem","ck_dump_j",-1);
+-   rt_dump_k = pin->GetOrAddInteger("problem","ck_dump_k",-1);
+-   rt_ck_pcut = pin->GetOrAddReal("problem","ck_pcut_bar",10.0);
+--  // the two grey-sweep fixes, wired here so a dhj run can reproduce a pre-fix run
+--  // bitwise.  Both default to the FIX (false); see utils/two_stream_rt.hpp.
+--  // rt_cut_bc_legacy: the upward intensity at the cut used to be isotropic at B, which
+--  // is exactly half the flux the column supports.
+--  two_stream_rt::rt_cut_bc_legacy =
+--      pin->GetOrAddBoolean("problem","rt_cut_bc_legacy",false);
+-+  // the grey-sweep fix, wired here so a dhj run can reproduce a pre-fix run bitwise.
+-+  // Defaults to the FIX (false); see utils/two_stream_rt.hpp.
+-   // rt_layer_legacy: every layer used to span a whole cell in optical depth but carry a
+-   // source running between two cell CENTRES, offset from it by half a cell.
+-   two_stream_rt::rt_layer_legacy =
+-diff --git a/src/utils/two_stream_column_ck.hpp b/src/utils/two_stream_column_ck.hpp
+-index 9b2901aa..e93f5d96 100644
+---- a/src/utils/two_stream_column_ck.hpp
+-+++ b/src/utils/two_stream_column_ck.hpp
+-@@ -112,9 +112,6 @@ inline Real ck_impl_dtmax = 0.5;
+- inline Real ck_impl_demax = 0.5;
+- // problem/ck_impl_verbose: print the per-call pass count and residual.
+- inline bool ck_impl_verbose = false;
+--// problem/ck_impl_debug: print at most this many CAPPED cells per pass, with the row
+--// that produced them.  Diagnostic only.
+--inline int ck_impl_debug = 0;
+- // problem/ck_impl_refresh_kappa: re-look-up the correlated-k opacity (and hence the beam
+- // transmission tau_ray) at every Newton pass instead of freezing it over the step.  OFF
+- // by default.  Cost: the pre-opacity kernel is a ck_continuum call plus two table index
+-@@ -224,7 +221,6 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
+-   const Real eps = ck_impl_norm_eps;
+-   const Real dcap = ck_impl_dtmax;
+-   const Real detot = ck_impl_demax;
+--  const int ndbg = ck_impl_debug;
+- 
+-   // ---- pass 1: the residual norm of the CURRENT iterate --------------------------
+-   par_for("ck_impl_res", DevExeSpace(), 0, nmb1, ks, ke, js, je,
+-@@ -325,14 +321,6 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
+-       prev = de;
+-       const Real ei = ei_(m,k,j,i);
+-       const Real lim = dcap*ei;
+--      if (ndbg > 0 && fabs(de) > 0.999*lim &&
+--          Kokkos::atomic_fetch_add(&cnv_(6), 1.0) < static_cast<Real>(ndbg)) {
+--        Kokkos::printf("### ck_impl_cap m=%d k=%d j=%d i=%d e=%.6e T=%.6e "
+--                       "est=%.6e src=%.6e R=%.6e j0=%.6e j1=%.6e j2=%.6e de=%.6e\n",
+--                       m, k, j, i, ei, T_(m,k,j,i), est_(m,k,j,i), src_(m,k,j,i),
+--                       ei - est_(m,k,j,i) - bdt*src_(m,k,j,i), jac_(m,0,k,j,i),
+--                       jac_(m,1,k,j,i), jac_(m,2,k,j,i), de);
+--      }
+-       if (de > lim) {
+-         de = lim;
+-         cap = true;
+-diff --git a/src/utils/two_stream_rt.hpp b/src/utils/two_stream_rt.hpp
+-index f5d40ff3..ef476e42 100644
+---- a/src/utils/two_stream_rt.hpp
+-+++ b/src/utils/two_stream_rt.hpp
+-@@ -429,10 +429,10 @@ inline Real rt_src_theta = 1.0;
+- // WORK term v.f is accumulated, box-integrated over the step, into slot 10 of this
+- // array.  Diagnostic only: nothing here changes a source term.
+- inline DvceArray1D<Real> *rt_bud_ptr = nullptr;
+--// problem/rt_src_dump: dump the grey sweep's per-cell source assembly for ONE column
+--// (m = 0, k = ks, j = js) on the next N apply-kernel calls, every cell from the band cut
+--// to the top: the raw face fluxes, both forms of the divergence, the assembled source
+--// and the source actually applied.  Diagnostic only.
+-+// problem/rt_src_dump: the per-cell source-assembly debug dump this counted down was
+-+// removed as dead code (never set above its default of 0 in any production input or
+-+// test); box_convection.cpp still reads the pin key into this global and refuses to run
+-+// it under rt_col3_skip_sweep if it is set, so the symbol is kept, always inert now.
+- inline int rt_src_dump = 0;
+- // problem/rt_force_verbose -- print the hydrostatic balance of every cell inside the
+- // taper ramp for this many RT calls, then stop.  a_p + a_g + a_f normalised by g: inside
+-@@ -2238,24 +2238,6 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
+-       auto tauf_g = taublend ? pcond_rt->rad_tauf
+-                              : DvceArray4D<Real>("rt_tau_dummy",1,1,1,1);
+-       if (taublend) int_at_cut = false;
+--      // rt_top_re is silently a no-op when the ghost is radiatively inert: see the note
+--      // on rt_top_re.  Say so once, from rank 0; the behaviour is unchanged.
+--      {
+--        static bool topre_warned = false;
+--        // NOTE the DENSITY gate is deliberately not part of this test: with
+--        // rad_gate_rho the top ghost's opacity is G(rho_top)*kappa, which is zero only
+--        // where the gate is actually closed, so rt_top_re is a no-op there and live
+--        // everywhere else.  Warning on it would be wrong more often than right.
+--        if (top_re && !topre_warned && pcond_rt != nullptr &&
+--            pcond_rt->rad_kappa_rmax > 0.0 && pcond_rt->rad_kappa_above == 0.0 &&
+--            global_variable::my_rank == 0) {
+--          topre_warned = true;
+--          std::cout << "### WARNING in two_stream_rt: problem/rt_top_re is ON but "
+--                    << "rad_kappa_above = 0, so the top ghost has zero optical depth and "
+--                    << "the back-radiation it hands down is exactly zero. The switch has "
+--                    << "no effect in this configuration." << std::endl;
+--        }
+--      }
+-       auto kc_g   = (band_on) ? *rt_kc_ptr : Fb_g;
+-       auto Bb_g   = (band_on) ? *rt_Bb_ptr : Fb_g;
+-       auto T_g    = (band_on) ? *rt_T_ptr  : tau_g;
+-@@ -2349,14 +2331,6 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
+-       const int grey_nT = grey_ktab ? pcond_rt->rad_kr_nT : 0;
+-       const int grey_nP = grey_ktab ? pcond_rt->rad_kr_nP : 0;
+-       const Real grey_kfac = (pcond_rt != nullptr) ? pcond_rt->rad_kappa_fac : 1.0;
+--      // the radiatively inert region the conduction module defines (rad_kappa_rmax): the
+--      // two-stream has to go quiet over exactly the same cells, or the corona the
+--      // diffusion refuses to touch would still be cooled by the band solver.  Zero
+--      // opacity is exact here, not a limit: dtau = 0 gives e0 = -expm1(0) = 0, so alp,
+--      // bet and gm all vanish, Src and Em pick up nothing, and rt_apply's Newton branch
+--      // is skipped because Em <= 0.  With tau flat through the corona the blend weight w
+--      // is 0 there too, so the w*F handover term adds nothing either.
+--      const Real grey_krmax = (pcond_rt != nullptr) ? pcond_rt->rad_kappa_rmax : 0.0;
+-       const Real grey_kabove = (pcond_rt != nullptr) ? pcond_rt->rad_kappa_above : 0.0;
+-       // ...and its DENSITY form (rad_gate_rho), which is the one to use when the
+-       // artificial medium and the star exchange gas: kappa_eff = G kappa + (1-G) kabove
+-@@ -2490,8 +2464,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
+-             // RTBadState).  Such a cell takes NO part in this RT call: zero opacity and
+-             // zero emission make the layer transparent (e0 = 0, so alp = bet = 0, the
+-             // streams pass through untouched, Src and Em pick up nothing and rt_apply's
+--            // Newton branch is skipped) -- the same "exact" inert state the corona above
+--            // rad_kappa_rmax already has.  Giving it a FLOOR state instead would hand a
+-+            // Newton branch is skipped).  Giving it a FLOOR state instead would hand a
+-             // 0.1 K blackbody to a cell with 8000 K neighbours, which collapses dt.
+-             if (!(T_g(m,k,j,i) > 0.0)) {
+-               kc_g(m,0,i,k,j) = 0.0;
+-@@ -2501,12 +2474,10 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
+-             const Real TT = T_g(m,k,j,i);
+-             const Real pcgs = pb_g(m,k,j,i)*1.0e6;
+-             const Real rho = rhoN(m,k,j,ii);
+--            Real kr = (grey_krmax > 0.0 && X1V(m,i) > grey_krmax)
+--                ? grey_kabove
+--                : (grey_ktab
+-+            Real kr = grey_ktab
+-                    ? RosselandTable(grey_kt, grey_klT, grey_klP, grey_nT, grey_nP, TT,
+-                                     grey_krho ? rho : pcgs)
+--                   : RosselandFreedman2014(TT, pcgs, met));
+-+                   : RosselandFreedman2014(TT, pcgs, met);
+-             if (gate_rho > 0.0) {
+-               const Real g = RadGate(rho, gate_rho, gate_dex);
+-               kr = g*kr + (1.0 - g)*grey_kabove;
+-@@ -4972,10 +4943,6 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
+-       const int vcyc = pm->ncycle;
+-       auto eos_f = eos;
+-       // problem/rt_budget_verbose: the v.f work accumulator (see rt_bud_ptr)
+--      // problem/rt_src_dump: one column, this call only (see rt_src_dump)
+--      const bool sdump_ = (rt_src_dump > 0);
+--      if (sdump_) --rt_src_dump;
+--      const int sdcyc_ = pm->ncycle;
+-       const bool budg_ = (rt_bud_ptr != nullptr) && radforce;
+-       auto bud_ = budg_ ? *rt_bud_ptr : DvceArray1D<Real>("rtbuddummy", 1);
+-       // ---- rad_blend_use_2s: hand the conduction module this sweep's face flux -----
+-@@ -5022,7 +4989,6 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
+-         const Real afb_a = ckpp_ ? 1.0 : AFC(m,k,j,i);
+-         const Real vla_a = ckpp_ ? DX1(m,k,j,i) : VLA(m,k,j,i);
+-         // the two-stream's share of each face in the tau blend
+--        Real dg_srcd = 0.0;     // problem/rt_src_dump: the raw absorbed-minus-emitted sum
+-         Real src;
+-         // THE BLEND HANDOVER IS NOT AN EMISSION, AND MUST NOT BE RELAXED.  src below is
+-         // the divergence of the two-stream's BLENDED share, and inside the tau ramp it
+-@@ -5058,7 +5024,6 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
+-           // is non-zero the cell is at tau > 10 and its energy dwarfs that round-off.
+-           src = 0.0;
+-           for (int b=0; b<nblk; ++b) src += Src_g(m,b,i,k,j);
+--          dg_srcd = src;
+-           src_relax = src;
+-           if (taublend) {
+-             src += (w_g(m,k,j,i+1)*(Ft*aft_a)
+-@@ -5591,26 +5556,6 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
+-         // the part of de this cell applies ITSELF: all of it when the tridiagonal owns
+-         // none of the cell, none when it owns all
+-         const Real de_app = implcol_ ? (1.0 - wthk_)*de : de;
+--        if (sdump_ && m == 0 && k == ks && j == js &&
+--            (!band_on || i >= icut_g(m,k,j))) {
+--          const Real dxc = DX1(m,k,j,i);
+--          const Real wb_ = taublend ? w_g(m,k,j,i) : 0.0;
+--          const Real wt_ = taublend ? w_g(m,k,j,i+1) : 0.0;
+--          const Real dtauc = kc_g(m,0,i,k,j)*rhoN(m,k,j,i)*dxc;
+--          Kokkos::printf("### rt_srcdump cyc=%d i=%d w_b=%.6f w_t=%.6f dtau=%.4e "
+--                         "T=%.6e dx=%.6e Fb=%.8e Ft=%.8e divf=%.8e divw=%.8e "
+--                         "srcdir=%.8e src=%.8e src_relax=%.8e de_o_dt=%.8e "
+--                         "A=%.8e Em=%.8e AoE_m1=%.8e deq=%.8e x=%.8e nsub=%d "
+--                         "nit=%d resc=%d clip=%d ei=%.8e de=%.8e\n",
+--                         sdcyc_, i, wb_, wt_, dtauc, T_g(m,k,j,i), dxc, Fb, Ft,
+--                         -(Ft - Fb)/dxc,
+--                         -((1.0 - wt_)*Ft - (1.0 - wb_)*Fb)/dxc,
+--                         dg_srcd, src, src_relax, de/bdt,
+--                         dg_A, dg_Em, (dg_Em != 0.0) ? (dg_A/dg_Em - 1.0) : 0.0,
+--                         dg_deq, (dg_deq != 0.0) ? (src_relax*bdt/dg_deq) : 0.0,
+--                         dg_nsub, dg_nit, dg_resc ? 1 : 0,
+--                         (de != de_pre) ? 1 : 0, eiN(m,k,j,i), de);
+--        }
+-         if (implcol_ && wthk_ < 1.0) {
+-           // Record the change in this cell's Planck function that its own relaxation is
+-           // applying, so a neighbouring row can take the exchange with the part of it
 diff --git a/inputs/hydro/he4_presn_cs.athinput b/inputs/hydro/he4_presn_cs.athinput
 index 62154352..0ffd75a2 100644
 --- a/inputs/hydro/he4_presn_cs.athinput
@@ -307,6 +1776,360 @@ index fad9d0bd..568263c7 100644
    void SrcTermsSphericalPolarCartRows(const DvceArray5D<Real> &w0,
         const DvceArray5D<Real> &bcc0, const bool is_mhd,
         const DvceArray5D<Real> &wder, const DvceFaceFld5D<Real> uflx,
+diff --git a/src/diffusion/conduction.cpp b/src/diffusion/conduction.cpp
+index 22913277..50a3a6a3 100644
+--- a/src/diffusion/conduction.cpp
++++ b/src/diffusion/conduction.cpp
+@@ -105,9 +105,6 @@ Conduction::Conduction(std::string block, MeshBlockPack *pp, ParameterInput *pin
+         std::exit(EXIT_FAILURE);
+       }
+       rad_met = pin->GetOrAddReal(block,"rad_met",0.0);
+-      // pressure cut in bar; the flux through the wall in erg/cm^2/s
+-      rad_pcut = pin->GetOrAddReal(block,"rad_pcut_bar",0.0)*1.0e6
+-                 /pp->punit->pressure_cgs();
+       // negative: the problem generator sets it (deep_hot_jupiter_rt: sigma T_int^4)
+       rad_flux_inner = pin->GetOrAddReal(block,"rad_flux_inner",0.0);
+       if (rad_flux_inner > 0.0) {
+@@ -116,30 +113,13 @@ Conduction::Conduction(std::string block, MeshBlockPack *pp, ParameterInput *pin
+       rad_kappa_fac = pin->GetOrAddReal(block,"rad_kappa_fac",1.0);
+       nan_report = pin->GetOrAddBoolean("problem","nan_report",false);
+       rad_flux_limit = pin->GetOrAddBoolean(block,"rad_flux_limit",true);
+-      // the free-streaming ceiling of that limiter: c a T^4 = 4 sigma T^4, or the
+-      // historical sigma T^4 with rad_flim_legacy.  See conduction.hpp.
+-      rad_flim_legacy = pin->GetOrAddBoolean(block,"rad_flim_legacy",false);
+-      rad_flim_fac = rad_flim_legacy ? 1.0 : 4.0;
+       rad_tau_lo = pin->GetOrAddReal(block,"rad_tau_lo",0.0);
+       rad_tau_hi = pin->GetOrAddReal(block,"rad_tau_hi",0.0);
+       rad_tau_mode = (rad_tau_hi > 0.0);
+-      // ceiling on the temperature entering kappa_rad; 0 = off (bitwise inert)
+-      rad_tmax = pin->GetOrAddReal(block,"rad_tmax_kappa",0.0);
+-      if (rad_tmax > 0.0 && global_variable::my_rank == 0) {
+-        std::cout << "Conduction: radiative kappa temperature ceiling rad_tmax_kappa = "
+-                  << rad_tmax << " K" << std::endl;
+-      }
+       rad_cs_exact = pin->GetOrAddBoolean(block,"rad_cs_exact",true);
+-      rad_kappa_rmax = pin->GetOrAddReal(block,"rad_kappa_rmax",0.0);
+       rad_kappa_above = pin->GetOrAddReal(block,"rad_kappa_above",0.0);
+       rad_gate_rho = pin->GetOrAddReal(block,"rad_gate_rho",0.0);
+       rad_gate_dex = pin->GetOrAddReal(block,"rad_gate_dex",0.5);
+-      if (rad_gate_rho > 0.0 && rad_kappa_rmax > 0.0) {
+-        std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
+-                  << std::endl << "rad_gate_rho and rad_kappa_rmax are two forms of the "
+-                  << "same switch: set one or the other, not both" << std::endl;
+-        std::exit(EXIT_FAILURE);
+-      }
+       if (rad_gate_rho > 0.0 && !(rad_gate_dex > 0.0)) {
+         std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
+                   << std::endl << "rad_gate_dex must be positive" << std::endl;
+@@ -151,22 +131,9 @@ Conduction::Conduction(std::string block, MeshBlockPack *pp, ParameterInput *pin
+       // owns the whole column (w = 0 everywhere), or there is no horizontal radiative
+       // transport left at all.  See conduction.hpp.
+       rad_blend_transverse = pin->GetOrAddBoolean(block,"rad_blend_transverse",true);
+-      // the SMOOTH TRANSVERSE TAPER in the column optical depth; see conduction.hpp.
+-      // 0 (the default) is off and bitwise inert.
+-      rad_tr_tau_lo = pin->GetOrAddReal(block,"rad_tr_tau_lo",0.0);
+-      rad_tr_tau_hi = pin->GetOrAddReal(block,"rad_tr_tau_hi",0.0);
+       // rad_angular: the master switch of the HORIZONTAL (x2/x3) radiative conduction.
+       // True (the default) is bitwise the historical arithmetic.  See conduction.hpp.
+       rad_angular = pin->GetOrAddBoolean(block,"rad_angular",true);
+-      // rad_blend_use_2s: the ramp faces carry w*F_2s, not w*(-K dT/dz).  See
+-      // conduction.hpp for the whole argument.
+-      rad_blend_use_2s = pin->GetOrAddInteger(block,"rad_blend_use_2s",0);
+-      if (rad_blend_use_2s < 0 || rad_blend_use_2s > 2) {
+-        std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
+-                  << std::endl << "rad_blend_use_2s is 0 (off), 1 (prescribed flux) or "
+-                  << "2 (defect correction)" << std::endl;
+-        std::exit(EXIT_FAILURE);
+-      }
+       rad_implicit_x1 = pin->GetOrAddBoolean(block,"rad_implicit_x1",false);
+       rad_cap_ang = pin->GetOrAddReal(block,"rad_cap_ang",0.0);
+       rad_implicit_ang = pin->GetOrAddBoolean(block,"rad_implicit_ang",false);
+@@ -305,31 +272,6 @@ Conduction::Conduction(std::string block, MeshBlockPack *pp, ParameterInput *pin
+         const int ncells3 = (indcs.nx3 > 1)? (indcs.nx3 + 2*indcs.ng) : 1;
+         Kokkos::realloc(rad_w, nmb, ncells3, ncells2, ncells1+1);
+         Kokkos::realloc(rad_tauf, nmb, ncells3, ncells2, ncells1+1);
+-        if (rad_blend_use_2s) {
+-          if (!rad_blend_radial) {
+-            std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
+-                      << std::endl << "rad_blend_use_2s replaces the RADIAL blend flux "
+-                      << "and needs rad_blend_radial = true" << std::endl;
+-            std::exit(EXIT_FAILURE);
+-          }
+-          Kokkos::realloc(rad_f2s, nmb, ncells3, ncells2, ncells1+1);
+-          Kokkos::deep_copy(rad_f2s, 0.0);
+-        }
+-      } else if (rad_blend_use_2s) {
+-        std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
+-                  << std::endl << "rad_blend_use_2s is a property of the tau blend and "
+-                  << "needs rad_tau_hi > 0" << std::endl;
+-        std::exit(EXIT_FAILURE);
+-      }
+-      if (rad_implicit_x1 && rad_blend_use_2s > 0) {
+-        std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
+-                  << std::endl << "rad_blend_use_2s puts part of the ramp's radial flux "
+-                  << "back on an EXPLICIT, lagged footing, and rad_implicit_x1 is on "
+-                  << "because the explicit radial radiative dt on this column is orders "
+-                  << "below the step. Measured on the He-star 1-D arms: dt collapses at "
+-                  << "cycle 2-3 in both modes. See conduction.hpp, rad_blend_use_2s."
+-                  << std::endl;
+-        std::exit(EXIT_FAILURE);
+       }
+       if (rad_implicit_x1) {
+         // hydro and MHD both: ImplicitRadialUpdate subtracts the magnetic energy from
+@@ -435,15 +377,6 @@ Conduction::Conduction(std::string block, MeshBlockPack *pp, ParameterInput *pin
+         }
+       }
+       if (rad_sts_all) {
+-        // the RKL1 stencil owns every interior x1 face, so a prescribed-flux face would
+-        // have to be cut out of IT as well as out of the tridiagonal solve; not done
+-        if (rad_blend_use_2s) {
+-          std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
+-                    << std::endl << "rad_blend_use_2s is not implemented for the "
+-                    << "super-time-stepped radial operator: use rad_implicit_x1 or the "
+-                    << "explicit x1 path" << std::endl;
+-          std::exit(EXIT_FAILURE);
+-        }
+         // ONE operator over all three directions: the tridiagonal radial solve is not
+         // part of it and running both would apply the radial operator twice
+         if (rad_implicit_x1) {
+@@ -494,26 +427,6 @@ Conduction::Conduction(std::string block, MeshBlockPack *pp, ParameterInput *pin
+                   << std::endl << "rad_sts_margin must be >= 0" << std::endl;
+         std::exit(EXIT_FAILURE);
+       }
+-      if (rad_tr_tau_lo > 0.0) {
+-        // the taper reads the COLUMN optical depth rad_tauf, which only BuildRadWeights
+-        // fills and only when the tau blend is on
+-        if (!rad_tau_mode) {
+-          std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
+-                    << std::endl << "rad_tr_tau_lo needs the column optical depth, i.e. "
+-                    << "rad_tau_hi > 0 (the tau blend)" << std::endl;
+-          std::exit(EXIT_FAILURE);
+-        }
+-        if (!(rad_tr_tau_hi > rad_tr_tau_lo)) {
+-          std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
+-                    << std::endl << "need 0 < rad_tr_tau_lo < rad_tr_tau_hi" << std::endl;
+-          std::exit(EXIT_FAILURE);
+-        }
+-        if (global_variable::my_rank == 0) {
+-          std::cout << "Conduction: transverse tau taper on, w = 0 below tau = "
+-                    << rad_tr_tau_lo << ", w = 1 below tau = " << rad_tr_tau_hi
+-                    << std::endl;
+-        }
+-      }
+       if (rad_ang_adi) {
+         if (!rad_implicit_ang) {
+           std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
+@@ -852,13 +765,10 @@ void Conduction::BuildRadWeights(const DvceArray5D<Real> &w0, const EOS_Data &eo
+   auto &krlT = rad_kr_lT;
+   auto &krlP = rad_kr_lP;
+   const int krnT = rad_kr_nT, krnP = rad_kr_nP;
+-  // the radiatively inert region above rad_kappa_rmax: tau accumulates at rad_kappa_above
+-  // there, so it does not grow through the corona and the blend weight stays 0
+-  const Real krmax = rad_kappa_rmax, kabove = rad_kappa_above;
++  const Real kabove = rad_kappa_above;
+   // the DENSITY gate (rad_gate_rho): the same inert medium, selected by what the gas is
+   // rather than by where it is.  kappa_eff = G kappa_table + (1 - G) rad_kappa_above.
+   const Real gaterho = rad_gate_rho, gatedex = rad_gate_dex;
+-  auto &x1v_t = pmy_pack->pcoord->x1v;
+   par_for("radtau", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1,
+   KOKKOS_LAMBDA(const int m, const int k, const int j) {
+     Real tau = 0.0;
+@@ -869,12 +779,10 @@ void Conduction::BuildRadWeights(const DvceArray5D<Real> &w0, const EOS_Data &eo
+       const Real p = (gen ? wder_(m,IDPR,k,j,i) : w0(m,IEN,k,j,i)*gm1);
+       const Real rho = w0(m,IDN,k,j,i)*dens_unit;
+       const Real dr = (curv ? dx1_(m,k,j,i) : size.d_view(m).dx1)*len_unit;
+-      Real kr = (krmax > 0.0 && x1v_t(m,i) > krmax)
+-          ? kabove
+-          : (ktab
++      Real kr = ktab
+              ? RosselandTable(krt, krlT, krlP, krnT, krnP, t*temp_unit,
+                               krho ? rho : p*pres_unit)
+-             : RosselandFreedman2014(t*temp_unit, p*pres_unit, met));
++             : RosselandFreedman2014(t*temp_unit, p*pres_unit, met);
+       if (gaterho > 0.0) {
+         const Real g = RadGate(rho, gaterho, gatedex);
+         kr = g*kr + (1.0 - g)*kabove;
+@@ -957,8 +865,7 @@ Real RadFaceKCode(const Real kap, const Real tk, const Real gradn, const bool li
+   Real lf = 1.0;
+   if (limit) {
+     const Real f = -kap*gradn*temp_unit/len_unit;
+-    // ffac = Conduction::rad_flim_fac: 4 (c a T^4, the true free-streaming flux) or 1
+-    // (sigma T^4, the pre-2026-09-14 behaviour).  See rad_flim_legacy.
++    // ffac = 4 (c a T^4, the true free-streaming flux).
+     const Real ffree = ffac*5.670374419e-5*tk*tk*tk*tk;
+     lf = (ffree > 0.0) ? 1.0/sqrt(1.0 + SQR(f/ffree)) : 0.0;
+   }
+@@ -1018,7 +925,7 @@ void Conduction::BuildAngularCoeffs(const DvceArray5D<Real> &w0, const EOS_Data
+   const bool taumode = rad_tau_mode;
+   auto &wf = rad_w;
+   const bool limit = rad_flux_limit;
+-  const Real ffac = rad_flim_fac;      // 4 sigma T^4, or 1 with rad_flim_legacy
++  const Real ffac = 4.0;                // c a T^4 = 4 sigma T^4, the free-streaming flux
+   const bool ktab = (rad_kappa_tab && rad_kr_nT > 0);
+   const bool krho = rad_kappa_rho;
+   auto &krt = rad_kr_tab;
+@@ -1449,7 +1356,7 @@ void Conduction::AddIsotropicHeatFluxRadiative(const DvceArray5D<Real> &w0,
+   auto &tf = rad_tauf;
+   auto &wf = rad_w;
+   const bool limit = rad_flux_limit;
+-  const Real ffac = rad_flim_fac;      // 4 sigma T^4, or 1 with rad_flim_legacy
++  const Real ffac = 4.0;                // c a T^4 = 4 sigma T^4, the free-streaming flux
+   const Real sigma_sb = 5.670374419e-5;
+ 
+   // the heat flux across one face in CODE units, from the two adjacent cell states and
+@@ -1898,7 +1805,7 @@ void Conduction::ImplicitRadialUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos
+   const bool taumode = rad_tau_mode;
+   const bool blend_r = rad_blend_radial;
+   const bool limit = rad_flux_limit;
+-  const Real ffac = rad_flim_fac;      // 4 sigma T^4, or 1 with rad_flim_legacy
++  const Real ffac = 4.0;                // c a T^4 = 4 sigma T^4, the free-streaming flux
+   const Real krmax = rad_kappa_rmax;
+   // the density gate, on the same face-averaged density the explicit x1 face uses
+   const Real gaterho = rad_gate_rho, gatedex = rad_gate_dex;
+@@ -2925,7 +2832,7 @@ void Conduction::NewTimeStep(const DvceArray5D<Real> &w0, const EOS_Data &eos_da
+   const Real trlo = rad_tr_tau_lo, trhi = rad_tr_tau_hi;
+   auto &tfn = rad_tauf;
+   const bool limit = rad_flux_limit;
+-  const Real ffac = rad_flim_fac;      // 4 sigma T^4, or 1 with rad_flim_legacy
++  const Real ffac = 4.0;                // c a T^4 = 4 sigma T^4, the free-streaming flux
+   // the radial operator is unconditionally stable when it is solved implicitly, so it
+   // carries no timestep constraint; x2/x3 are still explicit and still do
+   // rad_sts_all removes it in the same way, by putting the x1 faces in the RKL1 loop
+diff --git a/src/hydro/hydro.cpp b/src/hydro/hydro.cpp
+index 4d75663e..1f3fb55d 100644
+--- a/src/hydro/hydro.cpp
++++ b/src/hydro/hydro.cpp
+@@ -184,7 +184,6 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
+   wb_cache_every = pin->GetOrAddInteger("hydro","wb_cache_every",0);
+   scratch_level = pin->GetOrAddInteger("hydro","scratch_level",0);
+   use_wb_x2 = pin->GetOrAddBoolean("hydro","wb_x2",false);
+-  use_wb_x3 = pin->GetOrAddBoolean("hydro","wb_x3",false);
+   use_wb_rho = pin->GetOrAddBoolean("hydro","wb_rho",false);
+   // switch the x1 well-balanced reconstruction off above this radius (0 = never); see
+   // the declaration in hydro.hpp.  Only the position-aware x1 path (spherical polar and
+@@ -240,7 +239,7 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
+       std::exit(EXIT_FAILURE);
+     }
+       // select well-balanced scheme direction
+-      if (!use_wb_x1 && !use_wb_x2 && !use_wb_x3) {
++      if (!use_wb_x1 && !use_wb_x2) {
+         std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                   << std::endl << "<hydro> wb_direction not set!" << std::endl;
+         std::exit(EXIT_FAILURE);
+diff --git a/src/hydro/hydro.hpp b/src/hydro/hydro.hpp
+index 11e01492..c23b40d4 100644
+--- a/src/hydro/hydro.hpp
++++ b/src/hydro/hydro.hpp
+@@ -210,7 +210,6 @@ class Hydro {
+   bool use_wellbalance_dynamic = false;    // flag to enable dynamical well-balanced method by Kappeli & Mishra 2014, 2016
+   bool use_wb_x1 = false;    // flag for directions
+   bool use_wb_x2 = false;    // flag for directions
+-  bool use_wb_x3 = false;    // flag for directions
+   bool use_wb_rho = false;   // flag to enable local well-balanced method also in reconstructing rho
+   // Radius (x1v, which IS the radius on the spherical grids) beyond which the dynamic
+   // well-balanced x1 reconstruction is switched off cell by cell; 0 = never.  The
+@@ -463,50 +462,6 @@ class Hydro {
+       return;
+     };
+     
+-    KOKKOS_INLINE_FUNCTION
+-    static void WbLocalPiecewiseLinearX3(TeamMember_t const &member,
+-         const EOS_Data &eos, const WBOption wb_option, const bool use_wb_rho,
+-         const int m, const int k, const int j,
+-         const int il, const int iu, const DvceArray5D<Real> &q, const DvceArray4D<Real> &phicc, const DvceArray4D<Real> &phi,
+-         ScrArray2D<Real> &ql_kp1, ScrArray2D<Real> &qr_k) {
+-      Real igm1 = 1.0/(eos.gamma-1.0);
+-      int nvar = q.extent_int(1);
+-      for (int n=0; n<nvar; ++n) {
+-        if (n == (IEN) || (n == (IDN) && use_wb_rho)) {
+-          par_for_inner(member, il, iu, [&](const int i) {
+-            Real q0_km1, q0_kp1, q0_kmh, q0_kph, q0_k;
+-            getWBq0(eos, wb_option, (n == (IEN)) ? WBVar::wb_eint : WBVar::wb_dens,
+-                     q(m,IDN,k-1,j,i),q(m,IDN,k,j,i),q(m,IDN,k+1,j,i),
+-                     q(m,IEN,k-1,j,i),q(m,IEN,k,j,i),q(m,IEN,k+1,j,i),
+-                     phicc(m,k-1,j,i),phi(m,k,j,i),phicc(m,k,j,i),phi(m,k+1,j,i),phicc(m,k+1,j,i),
+-                     q0_km1, q0_kmh, q0_k, q0_kph, q0_kp1);
+-              
+-            Real q1_km1 = q(m,n,k-1,j,i) - q0_km1;
+-            Real q1_k = q(m,n,k,j,i) - q0_k;
+-            Real q1_kp1 = q(m,n,k+1,j,i) - q0_kp1;
+-              
+-            PLM(q1_km1, q1_k, q1_kp1, ql_kp1(n,i), qr_k(n,i));
+-              
+-            ql_kp1(n,i) += q0_kph;
+-            qr_k(n,i) += q0_kmh;
+-              
+-              // Left/right slopes (properly scaled)
+-              Real sL = q(m,n,k,j,i)   - q(m,n,k-1,j,i);
+-              Real sR = q(m,n,k+1,j,i) - q(m,n,k,j,i);
+-              
+-              if (ql_kp1(n,i) < 0.0 || qr_k(n,i) < 0.0 || sL * sR <= 0.0) {
+-                  PLM(q(m,n,k-1,j,i), q(m,n,k,j,i), q(m,n,k+1,j,i), ql_kp1(n,i), qr_k(n,i));
+-              }
+-          });
+-        } else {
+-          par_for_inner(member, il, iu, [&](const int i) {
+-            PLM(q(m,n,k-1,j,i), q(m,n,k,j,i), q(m,n,k+1,j,i), ql_kp1(n,i), qr_k(n,i));
+-          });
+-        }
+-      }
+-      return;
+-    };
+-    
+     //------------------------------------------------------------------------------------
+     //! \fn WbStaticPiecewiseLinearDerX1()
+     //! \brief static well-balanced reconstruction of the derived thermodynamic variables.
+diff --git a/src/hydro/hydro_fluxes.cpp b/src/hydro/hydro_fluxes.cpp
+index fb001b8a..0c5d3807 100644
+--- a/src/hydro/hydro_fluxes.cpp
++++ b/src/hydro/hydro_fluxes.cpp
+@@ -115,7 +115,6 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
+   const bool use_wb_rho_ = use_wb_rho;
+   const bool use_wb_x1_ = use_wb_x1;
+   const bool use_wb_x2_ = use_wb_x2;
+-  const bool use_wb_x3_ = use_wb_x3;
+   const bool use_wellbalance_dynamic_ = use_wellbalance_dynamic;
+   const Real wb_rmax_ = wb_rmax;
+   const Real wb_rmin_ = wb_rmin;
+@@ -704,13 +703,6 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
+         if (use_spherical_polar) {
+           GridPiecewiseLinearX3(member, m, k, j, is-1, ie+1, w0_, x3v_, x3f_, wl_kp1, wr);
+         } else {
+-          
+-        if (use_wellbalance_dynamic_ && use_wb_x3_)
+-        {
+-          WbLocalPiecewiseLinearX3(member, eos_, wb_option_, use_wb_rho_,
+-              m, k, j, il, iu, w0_, phicc0_, phi0_x3f, wl_kp1, wr);
+-        } else {
+-
+         // Reconstruct qR[k] and qL[k+1]
+         switch (recon_method_) {
+           case ReconstructionMethod::dc:
+@@ -729,10 +721,8 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
+           default:
+             break;
+         }
+-              
+-        }
+         }
+-          
++
+         // Reconstruct the derived thermodynamic variables (general EOS only)
+         if (nder > 0) {
+           if (use_spherical_polar) {
+@@ -741,11 +731,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
+         WbStaticPiecewiseLinearDerX3(member, m, k, j, il, iu,
+                                      pwb_, pfacewb_x3f,
+                                     wder_, dl_kp1, dr);
+-      } else if (use_wellbalance_dynamic_ && use_wb_x3_) {
+-            WbPiecewiseLinearDerX3(member, eos_, wb_option_,
+-                m, k, j, il, iu, w0_, wder_,
+-                                   phicc0_, phi0_x3f, dl_kp1, dr);
+-          } else {
++      } else {
+           switch (recon_method_) {
+             case ReconstructionMethod::dc:
+               DonorCellX3(member, m, k, j, il, iu, wder_, dl_kp1, dr);
 diff --git a/src/mesh/mesh.cpp b/src/mesh/mesh.cpp
 index e5b7735d..e5f95ac8 100644
 --- a/src/mesh/mesh.cpp

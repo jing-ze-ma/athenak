@@ -1,0 +1,167 @@
+Mesh: spherical-polar x3-face theta correction = rotate
+
+Cubed sphere: Root grid = 6 x 1 x (1 x 1) MeshBlocks
+Total number of MeshBlocks = 6
+Number of logical  levels of refinement = 0 (1 levels total)
+Number of physical levels of refinement = 0 (1 levels total)
+Number of parallel ranks = 1
+General EOS: tabulated on 581 x 551 nodes (39 MB), log10 rho[cgs] in [-27, 2], log10 T[K] in [2, 7.5]
+             X = 0.7, Y = 0.286, Z = 0.014, H2 on, ionization on, radiation off
+             metal ionization on ([M/H] = 0)
+             mu at the grid centre = 0.623372, n_e/n_tot = 0.522015
+red_giant: opacity table '/viper/u2/jinma/ATHENAK/athenak/data/stellar_opac/rosseland_gs98_x0.7_z0.014.txt', 217 x 481 nodes, log10 T 2.6..8, log10 rho -24..0 (200 rows prepended below the file's -14 at the floor, so the clamp cannot hand back real opacity for a thin cell); 41020 prepended nodes (rho below the file) set to problem/opac_floor = 1e-05 cm^2/g (optically thin; the merge edge-filled them)
+red_giant: inner flux L/(4 pi rin^2) = 1.65268e+13 erg/cm^2/s = sigma (23235.1 K)^4
+red_giant: GREY two-stream (problem/rt_grey), opacity from the conduction module's table, 2-point angular quadrature
+           column above the domain: radiative equilibrium, it radiates to space
+red_giant: HYDROSTATIC corona at T = 20000 K, join at r = 3.6522e+12 cm, H = 1.76852e+11 cm = 0.0484233 r (mu = 0.625435)
+red_giant:   i = 15794 r = 3.65195e+12 p = 0.000217949 rho = 1.01627e-15 T = 3363.57
+red_giant:   i = 15795 r = 3.6522e+12 p = 0.00021764 rho = 8.24516e-17 T = 20000
+red_giant:   i = 15800 r = 3.65346e+12 p = 0.000216102 rho = 8.18644e-17 T = 20000
+red_giant:   i = 19439 r = 4.5664e+12 p = 3.59674e-06 rho = 1.34863e-18 T = 20000
+red_giant: ambient medium rho = 1e-15 g/cm^3, T = 20000 K, from r = 3.6522e+12 cm (0.877934 of x1max) outward; the star's column is anchored at p = problem/ptop at r = 3.52e+12 cm
+red_giant: no cell is denser than the opacity table's valid window logR = [-8, 1]; cells below it carry problem/opac_floor
+red_giant: OPEN outer boundary -- the ghosts continue the top active cell hydrostatically at its own temperature, outflow only. Mass and energy CAN leave the domain; problem/face_budget reports how much.
+red_giant: M = 2.983e+33 g, L = 1.914e+36 erg/s, Teff = 4000 K, rin = 9.6e+10 cm, rout = 4.16e+12 cm
+           wall p/T: outer 3 / 3363.59 K, inner 1.11466e+14 / 5.53461e+06 K
+           tau = 2/3 at r = 3.42667e+12 cm, T = 3973.8 K; radiative-convective boundary at r = 3.41287e+12 cm
+red_giant: chart-free seed + 32 random plane waves, lambda in [1.14133e+12, 5.5292e+12] cm, seed 1234, amp 1
+rg_open_bc_out i=483 im=482: d_i=6.756904e-18 e_i=1.348799e-04 p_i=1.800445e-05 t_i=2.000000e+04 dphi=6.928206e+10 p_g=1.754235e-05 d_g=6.583298e-18 e_g=1.314306e-04 v1=0.000000e+00
+rg_open_bc_out i=484 im=482: d_i=6.756904e-18 e_i=1.348799e-04 p_i=1.800445e-05 t_i=2.000000e+04 dphi=1.378126e+11 p_g=1.709693e-05 d_g=6.415969e-18 e_g=1.281053e-04 v1=0.000000e+00
+rg_open_bc_out i=485 im=482: d_i=6.756904e-18 e_i=1.348799e-04 p_i=1.800445e-05 t_i=2.000000e+04 dphi=2.055706e+11 p_g=1.666765e-05 d_g=6.254712e-18 e_g=1.248998e-04 v1=0.000000e+00
+
+Setup complete, executing task list(s)...
+
+elapsed=8.870233e+00 cycle=0 time=0.000000e+00 dt=6.029599e+01
+### rad_cap_ang rank 0 cycle 0 t = 0.000000e+00: max x_i = 8.058005e-07 (cap 5.000000e-01) at (m,k,j,i) = (5,10,10,326) gid = 5 r = 3.410459e+12 | cells over cap = 0, faces capped = 0
+### two_stream_rt: thermodynamic state read from u0 (CONSERVED, problem/rt_use_cons = true)
+deep_hot_jupiter_rt: RT split path ON, 1 chain block(s) of 4 -> 1x the thread count of the monolithic kernel
+### rt_cell_report FIXED ncycle=0 t=0.000000e+00 m=0 k=3 j=3 i=398 r=3.650440e+12
+    rho=1.1294e-15 T=3.363714e+03 kap=9.9990e-06 kaprho=1.1292e-20 dtau=5.3790e-11 tau_to_top=6.5388e-11 dt=6.0296e+01
+    I_dn(i+1)=-4.070918e+08 I_dn(i)=-4.114906e+08 I_up(i)=2.752338e+09 I_up(i+1)=2.748198e+09 F(i)=1.458377e+10 F(i+1)=1.454450e+10
+    B(i-1)=2.309467e+09 B(i)=2.310682e+09 B(i+1)=2.885890e+12 T(i-1)=3.3633e+03 T(i+1)=1.9997e+04 kap(i-1)=1.000e-05 kap(i+1)=3.099e-06
+    abs_dn=-2.397389e-11 abs_up=1.620869e-10 emi_dn=8.504397e-08 emi_up=8.504397e-08 src=-2.406557e-08 Em=3.278976e-10 A=-2.373767e-08
+    e=2.058413e-03 deq=-2.058413e-03 e_eq=0.000000e+00 de=-1.450754e-06 de/e=-7.047927e-04 rescued=0 nit=2
+    ei_w0=2.058102e-03 ei_u0=2.058413e-03 stale=1.5090e-04 rho_w0=1.129192e-15 rho_u0=1.129353e-15
+    newton de: -1.450754e-06 -1.450754e-06 0.000000e+00 0.000000e+00 0.000000e+00 0.000000e+00 0.000000e+00 0.000000e+00
+### rt_cell_report FIXED ncycle=0 t=0.000000e+00 m=1 k=3 j=3 i=398 r=3.650440e+12
+    rho=1.1294e-15 T=3.363714e+03 kap=9.9990e-06 kaprho=1.1292e-20 dtau=5.3790e-11 tau_to_top=6.5388e-11 dt=6.0296e+01
+    I_dn(i+1)=-4.070918e+08 I_dn(i)=-4.114906e+08 I_up(i)=2.752338e+09 I_up(i+1)=2.748198e+09 F(i)=1.458371e+10 F(i+1)=1.454445e+10
+    B(i-1)=2.309467e+09 B(i)=2.310682e+09 B(i+1)=2.885890e+12 T(i-1)=3.3633e+03 T(i+1)=1.9997e+04 kap(i-1)=1.000e-05 kap(i+1)=3.099e-06
+    abs_dn=-2.397389e-11 abs_up=1.620869e-10 emi_dn=8.504397e-08 emi_up=8.504397e-08 src=-2.406557e-08 Em=3.278976e-10 A=-2.373767e-08
+    e=2.058413e-03 deq=-2.058413e-03 e_eq=0.000000e+00 de=-1.450754e-06 de/e=-7.047928e-04 rescued=0 nit=2
+    ei_w0=2.058102e-03 ei_u0=2.058413e-03 stale=1.5090e-04 rho_w0=1.129192e-15 rho_u0=1.129353e-15
+    newton de: -1.450754e-06 -1.450754e-06 0.000000e+00 0.000000e+00 0.000000e+00 0.000000e+00 0.000000e+00 0.000000e+00
+### rt_cell_report FIXED ncycle=0 t=0.000000e+00 m=2 k=3 j=3 i=398 r=3.650440e+12
+    rho=1.1294e-15 T=3.363714e+03 kap=9.9990e-06 kaprho=1.1292e-20 dtau=5.3790e-11 tau_to_top=6.5388e-11 dt=6.0296e+01
+    I_dn(i+1)=-4.070918e+08 I_dn(i)=-4.114906e+08 I_up(i)=2.752338e+09 I_up(i+1)=2.748198e+09 F(i)=1.458382e+10 F(i+1)=1.454456e+10
+    B(i-1)=2.309467e+09 B(i)=2.310682e+09 B(i+1)=2.885890e+12 T(i-1)=3.3633e+03 T(i+1)=1.9997e+04 kap(i-1)=1.000e-05 kap(i+1)=3.099e-06
+    abs_dn=-2.397389e-11 abs_up=1.620869e-10 emi_dn=8.504397e-08 emi_up=8.504397e-08 src=-2.406556e-08 Em=3.278976e-10 A=-2.373767e-08
+    e=2.058413e-03 deq=-2.058413e-03 e_eq=0.000000e+00 de=-1.450754e-06 de/e=-7.047927e-04 rescued=0 nit=2
+    ei_w0=2.058102e-03 ei_u0=2.058413e-03 stale=1.5090e-04 rho_w0=1.129192e-15 rho_u0=1.129353e-15
+    newton de: -1.450754e-06 -1.450754e-06 0.000000e+00 0.000000e+00 0.000000e+00 0.000000e+00 0.000000e+00 0.000000e+00
+### rt_cell_report FIXED ncycle=0 t=0.000000e+00 m=3 k=3 j=3 i=398 r=3.650440e+12
+    rho=1.1294e-15 T=3.363714e+03 kap=9.9990e-06 kaprho=1.1292e-20 dtau=5.3790e-11 tau_to_top=6.5388e-11 dt=6.0296e+01
+    I_dn(i+1)=-4.070918e+08 I_dn(i)=-4.114906e+08 I_up(i)=2.752338e+09 I_up(i+1)=2.748198e+09 F(i)=1.458368e+10 F(i+1)=1.454442e+10
+    B(i-1)=2.309467e+09 B(i)=2.310682e+09 B(i+1)=2.885890e+12 T(i-1)=3.3633e+03 T(i+1)=1.9997e+04 kap(i-1)=1.000e-05 kap(i+1)=3.099e-06
+    abs_dn=-2.397389e-11 abs_up=1.620869e-10 emi_dn=8.504397e-08 emi_up=8.504397e-08 src=-2.406557e-08 Em=3.278976e-10 A=-2.373767e-08
+    e=2.058413e-03 deq=-2.058413e-03 e_eq=0.000000e+00 de=-1.450754e-06 de/e=-7.047928e-04 rescued=0 nit=2
+    ei_w0=2.058102e-03 ei_u0=2.058413e-03 stale=1.5090e-04 rho_w0=1.129192e-15 rho_u0=1.129353e-15
+    newton de: -1.450754e-06 -1.450754e-06 0.000000e+00 0.000000e+00 0.000000e+00 0.000000e+00 0.000000e+00 0.000000e+00
+### rt_cell_report FIXED ncycle=0 t=0.000000e+00 m=4 k=3 j=3 i=398 r=3.650440e+12
+    rho=1.1294e-15 T=3.363714e+03 kap=9.9990e-06 kaprho=1.1292e-20 dtau=5.3790e-11 tau_to_top=6.5388e-11 dt=6.0296e+01
+    I_dn(i+1)=-4.070918e+08 I_dn(i)=-4.114906e+08 I_up(i)=2.752338e+09 I_up(i+1)=2.748198e+09 F(i)=1.458374e+10 F(i+1)=1.454448e+10
+    B(i-1)=2.309467e+09 B(i)=2.310682e+09 B(i+1)=2.885890e+12 T(i-1)=3.3633e+03 T(i+1)=1.9997e+04 kap(i-1)=1.000e-05 kap(i+1)=3.099e-06
+    abs_dn=-2.397389e-11 abs_up=1.620869e-10 emi_dn=8.504397e-08 emi_up=8.504397e-08 src=-2.406557e-08 Em=3.278976e-10 A=-2.373767e-08
+    e=2.058413e-03 deq=-2.058413e-03 e_eq=0.000000e+00 de=-1.450754e-06 de/e=-7.047927e-04 rescued=0 nit=2
+    ei_w0=2.058102e-03 ei_u0=2.058413e-03 stale=1.5090e-04 rho_w0=1.129192e-15 rho_u0=1.129353e-15
+    newton de: -1.450754e-06 -1.450754e-06 0.000000e+00 0.000000e+00 0.000000e+00 0.000000e+00 0.000000e+00 0.000000e+00
+### rt_cell_report FIXED ncycle=0 t=0.000000e+00 m=5 k=3 j=3 i=398 r=3.650440e+12
+    rho=1.1294e-15 T=3.363714e+03 kap=9.9990e-06 kaprho=1.1292e-20 dtau=5.3790e-11 tau_to_top=6.5388e-11 dt=6.0296e+01
+    I_dn(i+1)=-4.070918e+08 I_dn(i)=-4.114906e+08 I_up(i)=2.752338e+09 I_up(i+1)=2.748198e+09 F(i)=1.458370e+10 F(i+1)=1.454444e+10
+    B(i-1)=2.309467e+09 B(i)=2.310682e+09 B(i+1)=2.885890e+12 T(i-1)=3.3633e+03 T(i+1)=1.9997e+04 kap(i-1)=1.000e-05 kap(i+1)=3.099e-06
+    abs_dn=-2.397389e-11 abs_up=1.620869e-10 emi_dn=8.504397e-08 emi_up=8.504397e-08 src=-2.406557e-08 Em=3.278976e-10 A=-2.373767e-08
+    e=2.058413e-03 deq=-2.058413e-03 e_eq=0.000000e+00 de=-1.450754e-06 de/e=-7.047928e-04 rescued=0 nit=2
+    ei_w0=2.058102e-03 ei_u0=2.058413e-03 stale=1.5090e-04 rho_w0=1.129192e-15 rho_u0=1.129353e-15
+    newton de: -1.450754e-06 -1.450754e-06 0.000000e+00 0.000000e+00 0.000000e+00 0.000000e+00 0.000000e+00 0.000000e+00
+### rt_desum ncycle=0 sum(src*dt*dx) = -3.795163e+14  sum(de*dx) = -2.519675e+14  rel = -3.360826e-01
+two_stream_rt: wrote grey column dump to 'rtcol_t0.txt' (k = 6, j = 6, mu0 = -9.904384e-01)
+rg_open_bc_out i=483 im=482: d_i=6.756904e-18 e_i=1.348799e-04 p_i=1.800444e-05 t_i=2.000000e+04 dphi=6.928206e+10 p_g=1.754234e-05 d_g=6.583298e-18 e_g=1.314306e-04 v1=0.000000e+00
+rg_open_bc_out i=484 im=482: d_i=6.756904e-18 e_i=1.348799e-04 p_i=1.800444e-05 t_i=2.000000e+04 dphi=1.378126e+11 p_g=1.709693e-05 d_g=6.415969e-18 e_g=1.281052e-04 v1=0.000000e+00
+rg_open_bc_out i=485 im=482: d_i=6.756904e-18 e_i=1.348799e-04 p_i=1.800444e-05 t_i=2.000000e+04 dphi=2.055706e+11 p_g=1.666765e-05 d_g=6.254712e-18 e_g=1.248998e-04 v1=0.000000e+00
+### rad_cap_ang rank 0 cycle 0 t = 0.000000e+00: max x_i = 3.935688e-07 (cap 5.000000e-01) at (m,k,j,i) = (0,10,10,326) gid = 0 r = 3.410459e+12 | cells over cap = 0, faces capped = 0
+### rt_cell_report FIXED ncycle=0 t=0.000000e+00 m=0 k=3 j=3 i=398 r=3.650440e+12
+    rho=1.1294e-15 T=3.357274e+03 kap=9.9990e-06 kaprho=1.1293e-20 dtau=5.3791e-11 tau_to_top=6.5388e-11 dt=3.0148e+01
+    I_dn(i+1)=-4.063085e+08 I_dn(i)=-4.106989e+08 I_up(i)=2.747000e+09 I_up(i+1)=2.742869e+09 F(i)=1.457606e+10 F(i+1)=1.453681e+10
+    B(i-1)=2.309363e+09 B(i)=2.293036e+09 B(i+1)=2.885309e+12 T(i-1)=3.3632e+03 T(i+1)=1.9995e+04 kap(i-1)=1.000e-05 kap(i+1)=3.098e-06
+    abs_dn=-2.392793e-11 abs_up=1.617737e-10 emi_dn=8.502695e-08 emi_up=8.502695e-08 src=-2.405483e-08 Em=3.253959e-10 A=-2.372943e-08
+    e=2.057705e-03 deq=-2.057705e-03 e_eq=0.000000e+00 de=-7.251292e-07 de/e=-3.523971e-04 rescued=0 nit=2
+    ei_w0=2.056962e-03 ei_u0=2.057705e-03 stale=3.6130e-04 rho_w0=1.129353e-15 rho_u0=1.129361e-15
+    newton de: -7.251292e-07 -7.251292e-07 0.000000e+00 0.000000e+00 0.000000e+00 0.000000e+00 0.000000e+00 0.000000e+00
+### rt_cell_report FIXED ncycle=0 t=0.000000e+00 m=1 k=3 j=3 i=398 r=3.650440e+12
+    rho=1.1294e-15 T=3.357274e+03 kap=9.9990e-06 kaprho=1.1293e-20 dtau=5.3791e-11 tau_to_top=6.5388e-11 dt=3.0148e+01
+    I_dn(i+1)=-4.063084e+08 I_dn(i)=-4.106988e+08 I_up(i)=2.747000e+09 I_up(i+1)=2.742868e+09 F(i)=1.457596e+10 F(i+1)=1.453672e+10
+    B(i-1)=2.309363e+09 B(i)=2.293036e+09 B(i+1)=2.885309e+12 T(i-1)=3.3632e+03 T(i+1)=1.9995e+04 kap(i-1)=1.000e-05 kap(i+1)=3.098e-06
+    abs_dn=-2.392793e-11 abs_up=1.617737e-10 emi_dn=8.502695e-08 emi_up=8.502695e-08 src=-2.405483e-08 Em=3.253959e-10 A=-2.372943e-08
+    e=2.057705e-03 deq=-2.057705e-03 e_eq=0.000000e+00 de=-7.251293e-07 de/e=-3.523971e-04 rescued=0 nit=2
+    ei_w0=2.056962e-03 ei_u0=2.057705e-03 stale=3.6130e-04 rho_w0=1.129353e-15 rho_u0=1.129361e-15
+    newton de: -7.251293e-07 -7.251293e-07 0.000000e+00 0.000000e+00 0.000000e+00 0.000000e+00 0.000000e+00 0.000000e+00
+### rt_cell_report FIXED ncycle=0 t=0.000000e+00 m=2 k=3 j=3 i=398 r=3.650440e+12
+    rho=1.1294e-15 T=3.357274e+03 kap=9.9990e-06 kaprho=1.1293e-20 dtau=5.3791e-11 tau_to_top=6.5388e-11 dt=3.0148e+01
+    I_dn(i+1)=-4.063085e+08 I_dn(i)=-4.106989e+08 I_up(i)=2.747000e+09 I_up(i+1)=2.742869e+09 F(i)=1.457614e+10 F(i+1)=1.453690e+10
+    B(i-1)=2.309363e+09 B(i)=2.293036e+09 B(i+1)=2.885309e+12 T(i-1)=3.3632e+03 T(i+1)=1.9995e+04 kap(i-1)=1.000e-05 kap(i+1)=3.098e-06
+    abs_dn=-2.392793e-11 abs_up=1.617737e-10 emi_dn=8.502695e-08 emi_up=8.502695e-08 src=-2.405482e-08 Em=3.253959e-10 A=-2.372943e-08
+    e=2.057705e-03 deq=-2.057705e-03 e_eq=0.000000e+00 de=-7.251292e-07 de/e=-3.523970e-04 rescued=0 nit=2
+    ei_w0=2.056962e-03 ei_u0=2.057705e-03 stale=3.6130e-04 rho_w0=1.129353e-15 rho_u0=1.129361e-15
+    newton de: -7.251292e-07 -7.251292e-07 0.000000e+00 0.000000e+00 0.000000e+00 0.000000e+00 0.000000e+00 0.000000e+00
+### rt_cell_report FIXED ncycle=0 t=0.000000e+00 m=3 k=3 j=3 i=398 r=3.650440e+12
+    rho=1.1294e-15 T=3.357274e+03 kap=9.9990e-06 kaprho=1.1293e-20 dtau=5.3791e-11 tau_to_top=6.5388e-11 dt=3.0148e+01
+    I_dn(i+1)=-4.063084e+08 I_dn(i)=-4.106988e+08 I_up(i)=2.747000e+09 I_up(i+1)=2.742868e+09 F(i)=1.457592e+10 F(i+1)=1.453668e+10
+    B(i-1)=2.309363e+09 B(i)=2.293036e+09 B(i+1)=2.885309e+12 T(i-1)=3.3632e+03 T(i+1)=1.9995e+04 kap(i-1)=1.000e-05 kap(i+1)=3.098e-06
+    abs_dn=-2.392793e-11 abs_up=1.617737e-10 emi_dn=8.502695e-08 emi_up=8.502695e-08 src=-2.405483e-08 Em=3.253959e-10 A=-2.372943e-08
+    e=2.057705e-03 deq=-2.057705e-03 e_eq=0.000000e+00 de=-7.251293e-07 de/e=-3.523971e-04 rescued=0 nit=2
+    ei_w0=2.056962e-03 ei_u0=2.057705e-03 stale=3.6130e-04 rho_w0=1.129353e-15 rho_u0=1.129361e-15
+    newton de: -7.251293e-07 -7.251293e-07 0.000000e+00 0.000000e+00 0.000000e+00 0.000000e+00 0.000000e+00 0.000000e+00
+### rt_cell_report FIXED ncycle=0 t=0.000000e+00 m=4 k=3 j=3 i=398 r=3.650440e+12
+    rho=1.1294e-15 T=3.357274e+03 kap=9.9990e-06 kaprho=1.1293e-20 dtau=5.3791e-11 tau_to_top=6.5388e-11 dt=3.0148e+01
+    I_dn(i+1)=-4.063084e+08 I_dn(i)=-4.106989e+08 I_up(i)=2.747000e+09 I_up(i+1)=2.742868e+09 F(i)=1.457602e+10 F(i+1)=1.453678e+10
+    B(i-1)=2.309363e+09 B(i)=2.293036e+09 B(i+1)=2.885309e+12 T(i-1)=3.3632e+03 T(i+1)=1.9995e+04 kap(i-1)=1.000e-05 kap(i+1)=3.098e-06
+    abs_dn=-2.392793e-11 abs_up=1.617737e-10 emi_dn=8.502695e-08 emi_up=8.502695e-08 src=-2.405483e-08 Em=3.253959e-10 A=-2.372943e-08
+    e=2.057705e-03 deq=-2.057705e-03 e_eq=0.000000e+00 de=-7.251293e-07 de/e=-3.523971e-04 rescued=0 nit=2
+    ei_w0=2.056962e-03 ei_u0=2.057705e-03 stale=3.6130e-04 rho_w0=1.129353e-15 rho_u0=1.129361e-15
+    newton de: -7.251293e-07 -7.251293e-07 0.000000e+00 0.000000e+00 0.000000e+00 0.000000e+00 0.000000e+00 0.000000e+00
+### rt_cell_report FIXED ncycle=0 t=0.000000e+00 m=5 k=3 j=3 i=398 r=3.650440e+12
+    rho=1.1294e-15 T=3.357274e+03 kap=9.9990e-06 kaprho=1.1293e-20 dtau=5.3791e-11 tau_to_top=6.5388e-11 dt=3.0148e+01
+    I_dn(i+1)=-4.063084e+08 I_dn(i)=-4.106988e+08 I_up(i)=2.747000e+09 I_up(i+1)=2.742868e+09 F(i)=1.457595e+10 F(i+1)=1.453670e+10
+    B(i-1)=2.309363e+09 B(i)=2.293036e+09 B(i+1)=2.885309e+12 T(i-1)=3.3632e+03 T(i+1)=1.9995e+04 kap(i-1)=1.000e-05 kap(i+1)=3.098e-06
+    abs_dn=-2.392793e-11 abs_up=1.617737e-10 emi_dn=8.502695e-08 emi_up=8.502695e-08 src=-2.405483e-08 Em=3.253959e-10 A=-2.372943e-08
+    e=2.057705e-03 deq=-2.057705e-03 e_eq=0.000000e+00 de=-7.251293e-07 de/e=-3.523971e-04 rescued=0 nit=2
+    ei_w0=2.056962e-03 ei_u0=2.057705e-03 stale=3.6130e-04 rho_w0=1.129353e-15 rho_u0=1.129361e-15
+    newton de: -7.251293e-07 -7.251293e-07 0.000000e+00 0.000000e+00 0.000000e+00 0.000000e+00 0.000000e+00 0.000000e+00
+### rt_desum ncycle=0 sum(src*dt*dx) = -1.892890e+14  sum(de*dx) = -1.467879e+14  rel = -2.245302e-01
+### rad_cap_ang rank 0 cycle 1 t = 6.029599e+01: max x_i = 7.837679e-07 (cap 5.000000e-01) at (m,k,j,i) = (0,10,10,326) gid = 0 r = 3.410459e+12 | cells over cap = 0, faces capped = 0
+### rad_cap_ang rank 0 cycle 1 t = 6.029599e+01: max x_i = 3.834107e-07 (cap 5.000000e-01) at (m,k,j,i) = (0,10,10,326) gid = 0 r = 3.410459e+12 | cells over cap = 0, faces capped = 0
+### rad_cap_ang rank 0 cycle 2 t = 1.205919e+02: max x_i = 7.634395e-07 (cap 5.000000e-01) at (m,k,j,i) = (0,10,10,326) gid = 0 r = 3.410459e+12 | cells over cap = 0, faces capped = 0
+### rad_cap_ang rank 0 cycle 2 t = 1.205919e+02: max x_i = 3.739312e-07 (cap 5.000000e-01) at (m,k,j,i) = (0,10,10,326) gid = 0 r = 3.410459e+12 | cells over cap = 0, faces capped = 0
+### rad_cap_ang rank 0 cycle 3 t = 1.808876e+02: max x_i = 7.444665e-07 (cap 5.000000e-01) at (m,k,j,i) = (0,10,10,326) gid = 0 r = 3.410459e+12 | cells over cap = 0, faces capped = 0
+### rad_cap_ang rank 0 cycle 3 t = 1.808876e+02: max x_i = 3.651248e-07 (cap 5.000000e-01) at (m,k,j,i) = (0,10,10,326) gid = 0 r = 3.410459e+12 | cells over cap = 0, faces capped = 0
+### rad_cap_ang rank 0 cycle 4 t = 2.411832e+02: max x_i = 7.268626e-07 (cap 5.000000e-01) at (m,k,j,i) = (0,10,10,326) gid = 0 r = 3.410459e+12 | cells over cap = 0, faces capped = 0
+### rad_cap_ang rank 0 cycle 4 t = 2.411832e+02: max x_i = 3.569762e-07 (cap 5.000000e-01) at (m,k,j,i) = (0,10,10,326) gid = 0 r = 3.410459e+12 | cells over cap = 0, faces capped = 0
+### rad_cap_ang rank 0 cycle 5 t = 3.014788e+02: max x_i = 7.105940e-07 (cap 5.000000e-01) at (m,k,j,i) = (0,10,10,326) gid = 0 r = 3.410459e+12 | cells over cap = 0, faces capped = 0
+### rad_cap_ang rank 0 cycle 5 t = 3.014788e+02: max x_i = 3.494795e-07 (cap 5.000000e-01) at (m,k,j,i) = (0,10,10,326) gid = 0 r = 3.410459e+12 | cells over cap = 0, faces capped = 0
+### rad_cap_ang rank 0 cycle 6 t = 3.617743e+02: max x_i = 6.956595e-07 (cap 5.000000e-01) at (m,k,j,i) = (0,10,10,326) gid = 0 r = 3.410459e+12 | cells over cap = 0, faces capped = 0
+### rad_cap_ang rank 0 cycle 6 t = 3.617743e+02: max x_i = 3.426400e-07 (cap 5.000000e-01) at (m,k,j,i) = (0,10,10,326) gid = 0 r = 3.410459e+12 | cells over cap = 0, faces capped = 0
+### rad_cap_ang rank 0 cycle 7 t = 4.220698e+02: max x_i = 6.820661e-07 (cap 5.000000e-01) at (m,k,j,i) = (0,10,10,326) gid = 0 r = 3.410459e+12 | cells over cap = 0, faces capped = 0
+### rad_cap_ang rank 0 cycle 7 t = 4.220698e+02: max x_i = 3.364466e-07 (cap 5.000000e-01) at (m,k,j,i) = (0,10,10,326) gid = 0 r = 3.410459e+12 | cells over cap = 0, faces capped = 0
+### rad_cap_ang rank 0 cycle 8 t = 4.823652e+02: max x_i = 6.697906e-07 (cap 5.000000e-01) at (m,k,j,i) = (0,10,10,326) gid = 0 r = 3.410459e+12 | cells over cap = 0, faces capped = 0
+### rad_cap_ang rank 0 cycle 8 t = 4.823652e+02: max x_i = 3.308803e-07 (cap 5.000000e-01) at (m,k,j,i) = (0,10,10,326) gid = 0 r = 3.410459e+12 | cells over cap = 0, faces capped = 0
+### rad_cap_ang rank 0 cycle 9 t = 5.426606e+02: max x_i = 6.587927e-07 (cap 5.000000e-01) at (m,k,j,i) = (0,10,10,326) gid = 0 r = 3.410459e+12 | cells over cap = 0, faces capped = 0
+### rad_cap_ang rank 0 cycle 9 t = 5.426606e+02: max x_i = 3.259169e-07 (cap 5.000000e-01) at (m,k,j,i) = (0,10,10,326) gid = 0 r = 3.410459e+12 | cells over cap = 0, faces capped = 0
+
+Terminating on cycle limit
+time=1.205906e+03 cycle=20
+tlim=9.000000e+05 nlim=20
+
+MeshBlock-cycles = 120
+cpu time used  = 7.566771e+01
+zone-cycles/cpu_second = 4.871827e+04
+particle-updates/cpu_second = 0.000000e+00

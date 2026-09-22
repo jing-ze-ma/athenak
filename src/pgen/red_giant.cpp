@@ -153,7 +153,6 @@
 #include "pgen_eos_utils.hpp"
 #include "utils/correlated_k.hpp"
 #include "utils/two_stream_rt.hpp"
-#include "utils/runaway_scan.hpp"
 #include "utils/eint_from_cons.hpp"
 
 using pgen_eos::DensFromPT;
@@ -320,18 +319,7 @@ bool bg_hydrostatic_ = false;           // problem/bg_hydrostatic
 // transparent: at 1e-5 cm^2/g and 1e-22 g/cm^3 the optical depth across the whole ambient
 // shell is ~1e-15.
 Real opac_floor_ = 1.0e-5;
-// problem/opac_tmin [K]: if > 0, the table is CLAMPED in temperature -- every row below
-// it is a copy of the first row at or above it.  The merged table is AESOPUS with grains,
-// and kappa_R at 1e-11 g/cm^3 rises from 2e-5 cm^2/g at 2600 K to 1e-2 at 2000 K; this
-// switches that condensation step off for a test (opac_tmin = 2500 leaves the molecular
-// opacity above it untouched).  Default off.
-Real opac_tmin_ = -1.0;
 Real cs_change_ = 0.1, cp_change_ = 0.3;
-// problem/open_budget (cycles, 0 = off): the open boundary is meant to be the star's
-// ENERGY SOURCE, but each of its three passes rewrites the base shell's total energy and
-// none of them is conservative by construction.  Accumulate what each one adds, in erg,
-// and report it against L so a drain of the size of the luminosity cannot hide.
-int open_budget_ = 0;
 // problem/open_conserve (default true): make the density-restoring pass energy neutral.
 // That pass adds the SAME drho to every cell of the base shell at the cell's own
 // specific energy, so it moves mass between hot and cold columns and the total energy
@@ -439,9 +427,7 @@ int face_budget_ = 0;
 int face_cycle_ = -1;
 Real face_E_in_ = 0.0, face_E_out_ = 0.0, face_M_in_ = 0.0, face_M_out_ = 0.0;
 Real face_E_in_l_ = 0.0, face_E_out_l_ = 0.0, face_t_last_ = 0.0;
-Real open_dE_ent_ = 0.0, open_dE_prs_ = 0.0, open_dE_den_ = 0.0;
-Real open_lstar_ = 0.0, open_t_last_ = 0.0;
-Real open_dE_ent_l_ = 0.0, open_dE_prs_l_ = 0.0, open_dE_den_l_ = 0.0;
+Real open_lstar_ = 0.0;
 // --- OPERATOR-SPLIT SCHEDULING, ported from box_convection.cpp (:1922-2110).
 // problem/rt_strang: the radiation operator (the two-stream column solve, its radiative
 // force and, with rt_split_transverse, the implicit transverse diffusion) is applied as
@@ -1053,21 +1039,6 @@ void ReadOpacityTable(const std::string &fname, DvceArray2D<Real> &tab,
       }
     }
   }
-  // problem/opac_tmin: clamp the table in T (see opac_tmin_).  Done after the floor so
-  // the prepended rows keep their floor value in every copied row too.
-  int nclampT = 0;
-  if (opac_tmin_ > 0.0) {
-    const Real ltmin = log10(opac_tmin_);
-    int iref = 0;
-    while (iref < nT-1 && hlT(iref) < ltmin) ++iref;
-    for (int i=0; i<iref; ++i) {
-      for (int j=0; j<nD; ++j) htab(i,j) = htab(iref,j);
-      ++nclampT;
-    }
-    std::cout << "red_giant: problem/opac_tmin = " << opac_tmin_ << " K: " << nclampT
-              << " table rows below log10 T = " << hlT(iref) << " replaced by that row"
-              << " (grain opacity OFF)" << std::endl;
-  }
   Kokkos::deep_copy(tab, htab);
   Kokkos::deep_copy(lT, hlT);
   Kokkos::deep_copy(lD, hlD);
@@ -1417,7 +1388,6 @@ void RedGiantRTSweep(Mesh *pm, Real bdt) {
   }
   two_stream_rt::picket_fence_two_stream_RT(pm, bdt);
   RGNanScan(pm, "RT_two_stream");
-  runaway_scan::Scan(pm, "RT_two_stream");
 }
 
 } // namespace
@@ -1579,15 +1549,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   wb_ramp_ = pin->GetOrAddReal("problem", "wb_ramp", 0.0)/lunit;
   sponge_on_ = pin->GetOrAddBoolean("problem", "sponge", true);
   nan_report_ = pin->GetOrAddBoolean("problem", "nan_report", false);
-  runaway_scan::on = pin->GetOrAddBoolean("problem","runaway_scan",false);
-  runaway_scan::rmin = pin->GetOrAddReal("problem","runaway_rmin",3.3e12);
-  runaway_scan::ratio_print = pin->GetOrAddReal("problem","runaway_ratio",3.0);
-  runaway_scan::ratio_state = pin->GetOrAddReal("problem","runaway_ratio_state",10.0);
   two_stream_rt::rt_nan_report = nan_report_;
   sponge_zbot_ = pin->GetOrAddReal("problem", "sponge_zbot", 0.96);
   sponge_c_ = pin->GetOrAddReal("problem", "sponge_c", 0.1);
   opac_floor_ = pin->GetOrAddReal("problem", "opac_floor", 1.0e-5);
-  opac_tmin_ = pin->GetOrAddReal("problem", "opac_tmin", -1.0);
   const std::string opac = pin->GetString("problem", "opac_table");
   const std::string dump = pin->GetOrAddString("problem", "column_dump", "");
   // problem/ic_profile: an EXTERNALLY SUPPLIED 1-D stratification, three columns
@@ -2158,50 +2123,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                                               "sw_band_flux_W121_11.txt"), 0.0);
     ck::ck_selftest();
     ck::ck_rt_selftest();
-    // problem/opac_compare: write the Rosseland mean DERIVED FROM THE CK TABLE on its own
-    // (T, p) grid, so it can be compared against the stellar table the diffusion uses.
-    // The blend hands over between the two, and they are different data for the same gas:
-    // if they disagree where they overlap, the handover is not conservative.  Built into
-    // the conduction object and then undone, since the run must keep the stellar table.
-    {
-      const std::string ocmp = pin->GetOrAddString("problem", "opac_compare", "");
-      if (!ocmp.empty() && pc != nullptr && pc->rad_kappa_tab) {
-        auto sv_tab = pc->rad_kr_tab;
-        auto sv_lT = pc->rad_kr_lT;
-        auto sv_lP = pc->rad_kr_lP;
-        const int sv_nT = pc->rad_kr_nT, sv_nP = pc->rad_kr_nP;
-        const bool sv_rho = pc->rad_kappa_rho;
-        pc->rad_kappa_rho = false;
-        ck::ck_build_rosseland_table(pc);
-        auto hk = Kokkos::create_mirror_view(pc->rad_kr_tab);
-        auto hT = Kokkos::create_mirror_view(pc->rad_kr_lT);
-        auto hP = Kokkos::create_mirror_view(pc->rad_kr_lP);
-        Kokkos::deep_copy(hk, pc->rad_kr_tab);
-        Kokkos::deep_copy(hT, pc->rad_kr_lT);
-        Kokkos::deep_copy(hP, pc->rad_kr_lP);
-        if (global_variable::my_rank == 0) {
-          std::ofstream f(ocmp);
-          f.precision(10);
-          f << "# Rosseland mean from the CORRELATED-K table + continuum\n"
-            << "# nT nP, then nT values of log10 T[K], nP of log10 p[dyn/cm^2], then\n"
-            << "# nT*nP values of log10 kappa_R [cm^2/g], T slowest\n"
-            << pc->rad_kr_nT << " " << pc->rad_kr_nP << "\n";
-          for (int i = 0; i < pc->rad_kr_nT; ++i) f << hT(i) << "\n";
-          for (int j = 0; j < pc->rad_kr_nP; ++j) f << hP(j) << "\n";
-          for (int i = 0; i < pc->rad_kr_nT; ++i) {
-            for (int j = 0; j < pc->rad_kr_nP; ++j) f << hk(i, j) << "\n";
-          }
-          std::cout << "red_giant: ck-derived Rosseland table written to '" << ocmp
-                    << "'" << std::endl;
-        }
-        pc->rad_kr_tab = sv_tab;
-        pc->rad_kr_lT = sv_lT;
-        pc->rad_kr_lP = sv_lP;
-        pc->rad_kr_nT = sv_nT;
-        pc->rad_kr_nP = sv_nP;
-        pc->rad_kappa_rho = sv_rho;
-      }
-    }
     std::cout << "red_giant: correlated-k two-stream ON, T_int = " << teff
               << " K, no irradiation" << std::endl;
   }
@@ -2685,7 +2606,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       }
       cs_change_ = pin->GetOrAddReal("problem", "s_relax_cs", 0.1);
       cp_change_ = pin->GetOrAddReal("problem", "s_relax_cp", 0.3);
-      open_budget_ = pin->GetOrAddInteger("problem", "open_budget", 0);
       face_budget_ = pin->GetOrAddInteger("problem", "face_budget", 0);
       open_debug_ = pin->GetOrAddInteger("problem", "open_debug", 0);
       wall_noflux_ = pin->GetOrAddBoolean("problem", "wall_noflux", true);
@@ -3330,7 +3250,6 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
   // u0(IEN).  The first is the state this routine INHERITS, i.e. everything RKUpdate
   // applied -- the hydro flux divergence and the conduction heat flux with it.
   RGNanScan(pm, "entry_after_RKUpdate+conduction");
-  runaway_scan::Scan(pm, "entry_after_RKUpdate+conduction");
   auto &u0 = is_mhd ? pmbp->pmhd->u0 : pmbp->phydro->u0;
   auto &w0 = is_mhd ? pmbp->pmhd->w0 : pmbp->phydro->w0;
   auto eos = is_mhd ? pmbp->pmhd->peos->eos_data : pmbp->phydro->peos->eos_data;
@@ -3410,7 +3329,6 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
     u0(m,IM1,k,j,i) += src;
   });
   RGNanScan(pm, "gravity_WB_source");
-  runaway_scan::Scan(pm, "gravity_WB_source");
 
   // --- the mixing-length convective flux (see the header): on each interior radial
   // face, where the face's d ln T / d ln p exceeds grad_ad,
@@ -4078,8 +3996,7 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
 #endif
     const Real meanP = (sN > 0.0) ? sumP/sN : 0.0;
     // Pass B: the inflow entropy relaxation, then the pressure damping.  Both rewrite
-    // u0(IEN); the budget (problem/open_budget) accumulates each one separately, which
-    // is the only way to see which of them is the star's energy source and which is not.
+    // u0(IEN).
     auto &vol_ = pmbp->pcoord->volume;
     const Real eunit = pmbp->punit->pressure_cgs()
                        *SQR(pmbp->punit->length_cgs())*pmbp->punit->length_cgs();
@@ -4220,28 +4137,6 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
         dEden = 0.0;
       }
     }
-    if (open_budget_ > 0) {
-      open_dE_ent_ += dEent;
-      open_dE_prs_ += dEprs;
-      open_dE_den_ += dEden;
-      if (pm->ncycle % open_budget_ == 0 && global_variable::my_rank == 0) {
-        const Real tnow = pm->time*pmbp->punit->time_cgs();
-        const Real dtw = tnow - open_t_last_;
-        const Real iL = 1.0/open_lstar_;
-        if (dtw > 0.0) {
-          std::cout << "open BC budget: rate/L  entropy="
-                    << (open_dE_ent_ - open_dE_ent_l_)/dtw*iL << " pressure="
-                    << (open_dE_prs_ - open_dE_prs_l_)/dtw*iL << " density="
-                    << (open_dE_den_ - open_dE_den_l_)/dtw*iL
-                    << " | total erg = " << open_dE_ent_ + open_dE_prs_ + open_dE_den_
-                    << " (t = " << tnow << " s)" << std::endl;
-        }
-        open_t_last_ = tnow;
-        open_dE_ent_l_ = open_dE_ent_;
-        open_dE_prs_l_ = open_dE_prs_;
-        open_dE_den_l_ = open_dE_den_;
-      }
-    }
     RGNanScan(pm, "open_inner_BC");
   }
 
@@ -4358,7 +4253,6 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
       }
     }
     RGNanScan(pm, "sponge");
-  runaway_scan::Scan(pm, "sponge");
   }
 
   // --- THE TAU-BASED TOP SPONGE (problem/vdamp_top_tau; see the declaration of
@@ -4588,7 +4482,6 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
       (void) gm1;
     });
     RGNanScan(pm, "grey_relax");
-  runaway_scan::Scan(pm, "grey_relax");
   }
   return;
 }

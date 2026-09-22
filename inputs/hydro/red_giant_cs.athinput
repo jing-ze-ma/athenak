@@ -155,7 +155,6 @@ ck_dump_j   = -1             # -1 = the meshblock centre in that direction
 ck_dump_k   = -1
 ck_dump_t2  = -1.0           # >= 0: dump a SECOND column once t reaches this
 ck_dump_file2 =
-opac_compare  =              # if set: write the ck-derived Rosseland table for comparison
 opac_table  = /orion/u/jinma/ATHENAK/athenak/data/stellar_opac/rosseland_gs98_x0.7_z0.014.txt
 column_dump = column.txt
 
