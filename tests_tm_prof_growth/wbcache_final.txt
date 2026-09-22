@@ -1,0 +1,2 @@
+every1: rot=14.88 dt=dt=1.355689e+01 fatal=0 Terminating on wall clock limit
+every10: rot=14.57 dt=dt=1.355689e+01 fatal=0 Terminating on wall clock limit
