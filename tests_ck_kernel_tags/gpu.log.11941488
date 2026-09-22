@@ -1,0 +1,48 @@
+rc_r0=0
+plain.err:WALL_r0 34.20 s
+plain.log:cpu time used  = 2.168314e+01
+plain.log:zone-cycles/cpu_second = 1.088078e+07
+rc_r1=0
+plain.err:WALL_r1 32.10 s
+plain.log:cpu time used  = 1.965612e+01
+plain.log:zone-cycles/cpu_second = 1.200286e+07
+rc_r2=0
+plain.err:WALL_r2 32.35 s
+plain.log:cpu time used  = 2.094938e+01
+plain.log:zone-cycles/cpu_second = 1.126189e+07
+rc_r3=0
+plain.err:WALL_r3 32.11 s
+plain.log:cpu time used  = 2.071028e+01
+plain.log:zone-cycles/cpu_second = 1.139191e+07
+CKTAG_JOB_DONE
+                                  
+================================= 
+Global information about the job: 
+================================= 
+  
+Job owner: jinma(28895)
+Job name:  cktag0922
+Node list: vipa1001
+Job start: Tue Sep 22 19:24:18 CEST 2026
+Job end:   Tue Sep 22 19:26:30 CEST 2026
+Work dir:  /viper/u2/jinma/ATHENAK/bench/cktag_0922/gpu
+Command:   /viper/u2/jinma/ATHENAK/bench/cktag_0922/gpu/submit.sh
+  
+  
+  
+==========================================================================================
+Information on jobsteps (Note: MaxRSS/AveRSS is the maximum/average over all 
+tasks of the per-task memory high-water marks; cf. "man sacct"): 
+==========================================================================================
+  
+JobID            JobName NNodes NTasks  NCPUS       MaxRSS       AveRSS    Elapsed ExitCode
+------------- ---------- ------ ------ ------ ------------ ------------ ---------- --------
+11941488       cktag0922      1            96                             00:02:12      0:0
+11941488.0        athena      1      2     96     1460.03M     1189.89M   00:00:35      0:0
+11941488.1        athena      1      2     96     1478.74M     1207.58M   00:00:32      0:0
+11941488.2        athena      1      2     96     1461.97M     1190.84M   00:00:32      0:0
+11941488.3        athena      1      2     96     1476.72M     1205.62M   00:00:32      0:0
+  
+Maximum memory per node: 3.101139 GB (defined as MaxRSS*Ntasks/NNodes)
+CPU utilization: 3.2 %
+  

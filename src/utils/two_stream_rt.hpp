@@ -2184,6 +2184,8 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
       // it replaces.  Refused with ck_impl_refresh_kappa (which wants the opacity rebuilt
       // every pass) and with the legacy staggered layers (which ck_implicit already
       // refuses).
+      // ckfop_ picks the kernel's FOP INSTANTIATION at launch (see launch_ck_cache);
+      // ckfst_/ckfus_ are read inside the FOP = 1 kernel only.
       const bool ckfop_ = ckimp_ && ck_impl_frozen_op && !ck_impl_refresh_kappa
                           && !rt_layer_legacy;
       const bool ckfst_ = ckfop_ && (ck_impl_pass <= 0);
@@ -3361,15 +3363,28 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
           });
         }
         auto launch_ck_chain = [&](auto nn_tag, auto sph_tag, auto bsp_tag,
-                                   auto cch_tag, auto frm_tag) {
+                                   auto cch_tag, auto frm_tag, auto fop_tag) {
           constexpr int NN = decltype(nn_tag)::value;
           constexpr bool SPH = decltype(sph_tag)::value;
           constexpr bool BSP = decltype(bsp_tag)::value;
           constexpr int CCH = decltype(cch_tag)::value;    // see ck_sweep_cache
           constexpr int FRM = decltype(frm_tag)::value;    // see ck_sweep_form
+          // problem/ck_impl_frozen_op: a COMPILE-TIME tag, exactly like CCH.  The frozen
+          // operator is reachable only under ck_implicit, so with FOP = 0 the store and
+          // re-apply branches below (about eight per (cell, chain)) and the loads from
+          // the five stored-operator Views fold away and this kernel is the one the
+          // explicit sweep compiled to before the flag existed.  A default-off switch
+          // that stays a runtime bool inside this kernel costs ~28 % of the whole RT
+          // loop; that is measured in bench/bisect_cost/README.md.
+          constexpr bool FOP = decltype(fop_tag)::value;   // see ck_impl_frozen_op
           par_for("rt_chain_ck", DevExeSpace(), 0, nmb1, 0, nblk-1, ks, ke, js, je,
           KOKKOS_LAMBDA(const int m, const int blk, const int k, const int j) {
             constexpr int NC = RT_NB;
+            // the frozen-operator pass selectors.  With the tag off these are
+            // compile-time false and every frozen branch below is dead code; see FOP.
+            const bool ckfst = FOP && ckfst_;   // this pass STORES the operator
+            const bool ckfus = FOP && ckfus_;   // this pass RE-APPLIES it
+            const bool ckfcf = FOP && ckfcf_;   // ... including the coefficient triple
             // ck_impl_colskip: a converged column keeps the fluxes and the source its
             // last pass left, so the zeroing below must not run for it either
             if (ckskip_ && ckdone_g(m,k,j) > 0.0) return;
@@ -3378,7 +3393,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               // ck_impl_frozen_op: the direct beam is exactly temperature-independent at
               // frozen opacity, so a frozen pass keeps the deposit pass 0 left and never
               // re-runs the ray integration
-              if (!ckfus_) Qb_g(m,blk,i,k,j) = 0.0;
+              if (!ckfus) Qb_g(m,blk,i,k,j) = 0.0;
               Em_g(m,blk,i,k,j) = 0.0;
               Src_g(m,blk,i,k,j) = 0.0;
             }
@@ -3484,7 +3499,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               for (int cc=0; cc<NC; ++cc) {
                 // ck_impl_frozen_op: the top layer contributes (1 - e^-dtau) B_ghost, and
                 // the factor depends on the opacity alone
-                if (ckfus_) {
+                if (ckfus) {
                   I_down[cc][ie+1] = static_cast<RtF>(cktpf_g(m,blk*NC+cc,k,j))
                                    * static_cast<RtF>(Bb_g(m,bandc[cc],ie+1,k,j));
                   tausw[cc] = 0.0;
@@ -3497,7 +3512,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                                             EffGravAt(grav, ap, x1v_(m,ie+1),
                                                       grav_pmass, omega, mu0, tide));
                 const RtF trans = RT_EXP(-static_cast<RtF>(dtau/muc[cc]));
-                if (ckfst_) {
+                if (ckfst) {
                   cktpf_g(m,blk*NC+cc,k,j) =
                       static_cast<Real>(static_cast<RtF>(1.0)-trans);
                 }
@@ -3712,7 +3727,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                               const Real s_in, const Real s_out, RtF &I, Real &dsrc,
                               const bool fill, const bool first) {
                 RtF e0, cin, cout;
-                if (ckfus_ && ckfcf_) {
+                if (ckfus && ckfcf) {
                   e0 = static_cast<RtF>(ckc0_g(m,blk*NC+cc,ic,k,j));
                   cin = static_cast<RtF>(ckci_g(m,blk*NC+cc,ic,k,j));
                   cout = static_cast<RtF>(ckco_g(m,blk*NC+cc,ic,k,j));
@@ -3732,7 +3747,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                                                        : (x/2 - x*x/3);
                   cout = (x > static_cast<RtF>(1.0e-3)) ? (one - e0/x)
                                                         : (x/2 - x*x/6);
-                  if (ckfst_ && ckfcf_) {
+                  if (ckfst && ckfcf) {
                     ckc0_g(m,blk*NC+cc,ic,k,j) = static_cast<Real>(e0);
                     ckci_g(m,blk*NC+cc,ic,k,j) = static_cast<Real>(cin);
                     ckco_g(m,blk*NC+cc,ic,k,j) = static_cast<Real>(cout);
@@ -3762,7 +3777,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               auto cofs = [&](const int cc, const int ic, const Real dtau,
                               RtF &e0, RtF &cin, RtF &cout,
                               const bool fill, const bool first) {
-                if (ckfus_ && ckfcf_) {
+                if (ckfus && ckfcf) {
                   e0 = static_cast<RtF>(ckc0_g(m,blk*NC+cc,ic,k,j));
                   cin = static_cast<RtF>(ckci_g(m,blk*NC+cc,ic,k,j));
                   cout = static_cast<RtF>(ckco_g(m,blk*NC+cc,ic,k,j));
@@ -3782,7 +3797,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                                                        : (x/2 - x*x/3);
                   cout = (x > static_cast<RtF>(1.0e-3)) ? (one - e0/x)
                                                         : (x/2 - x*x/6);
-                  if (ckfst_ && ckfcf_) {
+                  if (ckfst && ckfcf) {
                     ckc0_g(m,blk*NC+cc,ic,k,j) = static_cast<Real>(e0);
                     ckci_g(m,blk*NC+cc,ic,k,j) = static_cast<Real>(cin);
                     ckco_g(m,blk*NC+cc,ic,k,j) = static_cast<Real>(cout);
@@ -3818,9 +3833,9 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               auto krof = [&](const int cc, const int ic, const int b, const int iT,
                               const Real fT, const int iP, const Real fP,
                               const Real rho, const bool fill) {
-                if (ckfus_) return ckkro_g(m,blk*NC+cc,ic,k,j);
+                if (ckfus) return ckkro_g(m,blk*NC+cc,ic,k,j);
                 const Real kr = kapof(cc, ic, b, iT, fT, iP, fP, fill)*rho;
-                if (ckfst_) ckkro_g(m,blk*NC+cc,ic,k,j) = kr;
+                if (ckfst) ckkro_g(m,blk*NC+cc,ic,k,j) = kr;
                 return kr;
               };
               // ---- problem/ck_implicit: THE SAME HALF LAYER, DIFFERENTIATED ---------
@@ -3848,7 +3863,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               // exponential either.  Under RT_FP32 the sweep's coefficients are floats
               // and the Jacobian's are not, so the store is not usable and the triple is
               // recomputed -- which is what it always did.
-              const bool jfrz = ckfus_ && ckfcf_ && (RT_FP32 == 0);
+              const bool jfrz = ckfus && ckfcf && (RT_FP32 == 0);
               auto jcof = [&](const int cc, const int ic, const Real dtau, const Real mu,
                               Real &e0, Real &cin, Real &cout) {
                 if (jfrz) {
@@ -4128,7 +4143,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                     // it crosses whole cells, carries no source and is not touched by
                     // the face mixing, so it rides this pass exactly as it rode the
                     // four-pass down-sweep.
-                    if (!ckfus_) {
+                    if (!ckfus) {
                       const Real kap = kapof(cc, i, b, iTc, fTc, iPc, fPc, false);
                       if (BSP) Krs[cc][i] = static_cast<RtF>(kro);
                       tausw[cc] += kap*drho;
@@ -4150,7 +4165,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                 // block in the four-pass sweep below, which carries the derivation and
                 // the sketch; it is repeated rather than shared because the two forms
                 // reach it from different places.
-                if (BSP && lit_sph && !ckfus_) {
+                if (BSP && lit_sph && !ckfus) {
                   const Real rcut = X1F(m,icut);
                   RtF thi[NC];
                   Real tauh[NC];
@@ -4400,14 +4415,14 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                   // ck_sweep_cache: under the spherical form P1 has already been here,
                   // so this reads Kpc; the plane-parallel path makes this the filling
                   // pass.  Same expression, same value, either way.
-                  const Real kap = ckfus_ ? 0.0
+                  const Real kap = ckfus ? 0.0
                       : kapof(cc, i, b, iT, fT, iP, fP, !SPH);
                   Real kro;
-                  if (ckfus_) {
+                  if (ckfus) {
                     kro = ckkro_g(m,blk*NC+cc,i,k,j);
                   } else {
                     kro = kap*rho;
-                    if (ckfst_) ckkro_g(m,blk*NC+cc,i,k,j) = kro;
+                    if (ckfst) ckkro_g(m,blk*NC+cc,i,k,j) = kro;
                   }
                   const Real bown = Bb_g(m,b,i,k,j);
                   Real dsrc;
@@ -4488,7 +4503,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                       jdn[cc] = (1.0 - e0l)*al + cil*dfl + col*pl;
                     }
                   }
-                  if (BSP && !ckfus_) Krs[cc][i] = static_cast<RtF>(kro);
+                  if (BSP && !ckfus) Krs[cc][i] = static_cast<RtF>(kro);
                   kfar[cc] = kro;
                   // Direct beam, UNCHANGED: it crosses whole cells and carries no
                   // source, so the layer construction does not touch it.  Deposit the
@@ -4498,7 +4513,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                   // deposited to absorbed is u e^-u/(1 - e^-u), 0.95 at u = 0.1 but 0.58
                   // at u = 1), losing a quarter of the incident flux down a column with
                   // u ~ 0.5 -- measured against Exo-FMS on an identical column.
-                  if (ckfus_) continue;    // the beam is frozen: see ck_impl_frozen_op
+                  if (ckfus) continue;    // the beam is frozen: see ck_impl_frozen_op
                   tausw[cc] += kap*drho;
                   if (lit && !BSP) {
                     const Real tnew = RT_EXP(-static_cast<RtF>(tausw[cc]*facsw));
@@ -4572,7 +4587,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               // the deposit is the flux difference across the cell.
               // ck_impl_frozen_op: at frozen opacity this whole ray integration is
               // temperature-independent, so a frozen pass keeps the deposit of pass 0
-              if (BSP && lit_sph && !ckfus_) {
+              if (BSP && lit_sph && !ckfus) {
                 const Real rcut = X1F(m,icut);
                 RtF thi[NC];
                 Real tauh[NC];
@@ -4818,37 +4833,50 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
             }
           });
         };
-        auto launch_ck_cache = [&](auto nn_tag, auto sph_tag, auto bsp_tag,
-                                   auto frm_tag) {
+        auto launch_ck_cch = [&](auto nn_tag, auto sph_tag, auto bsp_tag,
+                                 auto frm_tag, auto fop_tag) {
           if (ckcache_ >= 2) {       // see ck_sweep_cache
             launch_ck_chain(nn_tag, sph_tag, bsp_tag,
-                            std::integral_constant<int, 2>{}, frm_tag);
+                            std::integral_constant<int, 2>{}, frm_tag, fop_tag);
           } else if (ckcache_ == 1) {
             launch_ck_chain(nn_tag, sph_tag, bsp_tag,
-                            std::integral_constant<int, 1>{}, frm_tag);
+                            std::integral_constant<int, 1>{}, frm_tag, fop_tag);
           } else {
             launch_ck_chain(nn_tag, sph_tag, bsp_tag,
-                            std::integral_constant<int, 0>{}, frm_tag);
+                            std::integral_constant<int, 0>{}, frm_tag, fop_tag);
+          }
+        };
+        // problem/ck_impl_frozen_op: the second compile-time tag on this kernel.  It is
+        // dispatched here rather than at the top so that it multiplies the cached forms
+        // only: the probe-free ck_sweep_form recurrences are refused under ck_implicit,
+        // which is the only way the frozen operator can be on.
+        auto launch_ck_cache = [&](auto nn_tag, auto sph_tag, auto bsp_tag,
+                                   auto frm_tag) {
+          if (ckfop_) {
+            launch_ck_cch(nn_tag, sph_tag, bsp_tag, frm_tag, std::true_type{});
+          } else {
+            launch_ck_cch(nn_tag, sph_tag, bsp_tag, frm_tag, std::false_type{});
           }
         };
         // problem/ck_sweep_form: the probe-free forms exist only where there IS a face
         // coupling to solve, so they are instantiated under the SPHERICAL tag alone --
         // and only at ck_sweep_cache = 2, which is the default wherever they can run.
-        // That keeps the instantiation count (and the compile time of this kernel) to
-        // 8 per radial tier instead of 12.  The startup guard refuses the other cases
-        // rather than silently changing them.
+        // That keeps the instantiation count (and the compile time of this kernel) down:
+        // 4 of the 28 per radial tier, instead of the 8 a full product would add.  The
+        // startup guard refuses the other cases rather than silently changing them.
+        // (The other 24 are 2 SPH x 2 BSP x 3 CCH x 2 FOP.)
         auto launch_ck_form = [&](auto nn_tag, auto sph_tag, auto bsp_tag) {
           constexpr bool SPHF = decltype(sph_tag)::value;
           if constexpr (SPHF) {
             if (ckform_ == 1) {
               launch_ck_chain(nn_tag, sph_tag, bsp_tag,
                               std::integral_constant<int, 2>{},
-                              std::integral_constant<int, 1>{});
+                              std::integral_constant<int, 1>{}, std::false_type{});
               return;
             } else if (ckform_ == 2) {
               launch_ck_chain(nn_tag, sph_tag, bsp_tag,
                               std::integral_constant<int, 2>{},
-                              std::integral_constant<int, 2>{});
+                              std::integral_constant<int, 2>{}, std::false_type{});
               return;
             }
           }
