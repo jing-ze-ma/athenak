@@ -1,0 +1,93 @@
+MILESTONE 3j -- THE FIRST REAL VET: <rad_m1>/closure = vet_sc, a grey SHORT-CHARACTERISTICS
+formal solution on the M1 grid feeding the multi-D implicit solve.  2026-09-22, serial CPU
+(gcc/14, Release, PROBLEM=box_convection), snapshot of HEAD 886bd677 in
+/viper/u2/jinma/ATHENAK/bench/m1_vet_0922 (runs in runs_3j_vet/), UNCOMMITTED:
+bench/m1_vet_0922/vet_sc.patch (git apply --check against HEAD: clean; cpplint clean, 90 col).
+
+WHAT WAS BUILT (src/rad_m1/rad_m1_vet.cpp, new; hooks in rad_m1.cpp/.hpp, rad_m1_implicit.cpp)
+  * once per hydro step, at the start-of-step state (before the Picard loop), solve
+    mu.grad I = chi (S - I), chi = opac(M1_OP_T) = rho (kappa_F + kappa_s),
+    S = eps_th a T^4 + (1 - eps_th) E,  eps_th = min(kappa_P/chi, 1)   [E units, J = M1 E]
+  * angles: double-Gauss in mu_1 (vet_nmu per hemisphere, default 4) x vet_nphi uniform
+    azimuths about x1 (default 8) = 64 rays; no horizontal ray.
+  * sweep: layer by layer in x1; the ray into a cell centre is traced back to the PLANE of
+    cell centres of the upwind layer, I/chi/S (bi)linearly interpolated there (periodic
+    wrap in x2/x3), linear-in-tau source on the segment (positive first-order SC weights).
+    Up rays (layer is+l) and down rays (ie-l) share one launch per l: nx1 launches, each a
+    par_for over the (k,j) plane with the rays looped inside -> moments without atomics;
+    two plane buffers of I (no full I array).  3-D = same code with the x3 shift on.
+  * boundaries: bottom face, up rays: eps = E + 3 F.Omega/c of the bottom cell (diffusion),
+    S at the face linearly extrapolated; top face, down rays: vacuum.
+  * tensor -> solver: through the dbg_tensor hook of step (b) (read on every Picard pass,
+    i.e. lagged by one hydro step).  The solver takes a UNIAXIAL D(chi, n); projection
+    (vet_axis = flux, default): n = H_sc/|H_sc| (the formal solution's OWN flux, not the
+    cell's M1 flux), chi = n.D.n clamped to [1/3, 1]; trace and the along-flux component
+    exact, the two perpendicular ones averaged.
+  * new inputs: closure = vet_sc, vet_nmu, vet_nphi, vet_axis (flux|eigen), vet_milne
+    (diag), vet_dump/vet_dump_every (column dumps).  Cost line at the end of the log.
+  * ORDERING / LIMITS (fatal at start-up): ONE MeshBlock, one rank, periodic x2 (x3).
+    Several blocks need the upwind plane from neighbours every layer: a halo of width
+    dx1 |mu_perp/mu_1| (up to 3.6 dx2 here for the shallowest ray) plus a pipelined sweep
+    along the x1 stack (the up and down sweeps run opposite ways); not done.  No MPI.
+
+GATE 1  default path byte-identical to HEAD.  Seeded slab, tlim = 3 (19 steps), bin every
+  1 s: all 14 output files (hst, bin, rst, column, rt_profile) cmp-identical, log identical
+  except timings (runs_3j_vet/G1_head vs G1_vet, final binary).
+
+GATE 2  seeded 2-D He slab, he_slab_vet.athinput = runs_3i input + vet_* lines, vpert 1e-3,
+  implicit_closure_lag = step, 200 s (gate2.py -> gate2.txt):
+
+  arm                Picard mean/max nonconv posfb  min E    F1top/Fin (run min/max)  dt      KE_1 / KE_2 (200 s)  cpu
+  V2_vet_sc_flux     4.14 / 6        0       0      1.651e5  1.0000 (1.0000/1.0003)   0.1612  1.29e26 / 1.81e21    143.0 s
+  T3_tau (rerun)     4.13 / 5        0       0      1.651e5  1.0000 (1.0000/1.0003)   0.1612  1.23e26 / 1.87e21    140.5 s
+  T1_frozen (3i)     4.22 / 6        0       0      1.649e5  1.0000 (1.0000/1.0000)   0.1611  1.08e26 / 1.84e21    131.9 s
+  -- failed variants on the way (kept, they are the lessons):
+  V1_vet_sc_eigen    4.14 / 6        0       0      1.651e5  1.0000                   0.1611  1.32e26 / 6.65e25    149.3 s
+  V0_vet_sc_netsrc   6.48 / 7        0       0      1.588e5  0.9980 (0.9913/1.0025)   0.1567  2.04e29 / 1.59e29    282.8 s
+
+  V2 = T3 in every statistic; KE_2 decays like T3 (6.4e22 at 1 s -> 1.8e21 at 200 s); rms v2
+  per row matches T3 to ~10 % at every height (prof_v2.py).  rms v1 is 1.3-3x T3 in the top
+  (i 64-80: 1.9e3 vs 6.4e2 cm/s at i=64, 2.0e4 vs 1.6e4 at i=80): the SC chi at tau ~ 0.2
+  is 0.352 against Hopf 0.361, i.e. a slightly different vertical equilibrium, not noise.
+  V0: S = E + (kappa_P aT^4 - kappa_E E)/chi (the module's net emission) is unusable,
+    kappa_P >> kappa_R in the Fe bump amplifies T_gas - T_rad by kappa_P/chi: S clipped to 0
+    at tau 2-9 by t = 65 s, K/J = 0.48 there, 1000x KE.  -> convex blend (above).
+  V1: chi = largest eigenvalue, n its vector: in the nearly isotropic interior
+    (|D - 1/3| ~ 1e-4) the axis flips x1 <-> x2 <-> x3 cell to cell, D_22 jumps by
+    1.5 (chi - 1/3), and the huge deep E makes that a horizontal force: rms v2 1.8e4 cm/s in
+    the bottom cell, KE_2 3.5e4 x T3.  -> the flux axis (smooth, H_sc/J >= 0.0029 everywhere).
+
+GATE 3  plane-parallel static atmosphere, vet_milne = true (one step, the slab's own chi(z)
+  and 84 cells, tau_bot = 97.6): S = 3H (tau + q(tau)) (Hopf fit), vacuum top, deep Milne
+  intensity at the bottom.  Reference = the EXACT formal solution of the same S with the
+  E_1/E_2/E_3 kernels (milne_err.py -> gate3_milne.txt):
+
+  nmu (rays)   max |K/J_sc - exact|, tau < 1     tau >= 1              max |H/J err| tau<1
+  2  (32)      6.5e-3 (1.7 %) at tau 0.04        1.1e-3                7.8e-3
+  4  (64)      2.2e-3 (0.5 %) at tau 0.013       1.3e-5                3.0e-3
+  8  (128)     6.4e-4 (0.16 %) at tau 0.004      2.4e-6                8.8e-4
+  deep: K/J = 1/3 to < 1e-9 for tau 8-80; bottom cell 0.3333310 (boundary, 7e-6).
+  top cell (tau 1.2e-3): K/J 0.4102 (nmu 4) vs exact 0.4095; H/J 0.576 vs 1/(3 q0) 0.577.
+  Converges with angles, i.e. the residual is angular quadrature, not the SC spatial
+  discretisation.  NOTE: in a semi-infinite plane-parallel atmosphere K/J -> 0.41 at
+  tau = 0, not 1; K/J -> 1 needs a geometrically thin top above a finite source (not
+  in this box).  The Hopf FIT itself is off by up to 1.9 % in q (q(0.1): 0.616 vs 0.628),
+  so the exact E_n reference, not the fit formula, is the yardstick.
+
+GATE 4  cost (serial CPU, 84 x 32, 64 rays; fenced Kokkos::Timer, VetReport line):
+  SC per hydro step 5.60e-3 s; implicit solve without SC 9.18e-2 s per step
+  -> SC = 6.1 % of the implicit M1 solve (V2: 6.94 s of 120.8 s over 1241 steps).
+  Whole run 143.0 s vs 140.5 s for T3_tau (+1.8 %).  CPU only; no GPU timing arm (the
+  per-layer launch has only nx2*nx3 threads, 32 here -- GPU needs rays in the parallel
+  dimension and per-ray moment buffers or atomics).
+
+OPEN PROBLEMS
+  1. Multi-block / MPI sweep (above).  2. The uniaxial API: the perpendicular eigenvalues
+  are averaged; K22 != K33 in 2-D and 3-D shear of the field are lost -- a full-tensor
+  path (6 components + their halo) through M1EddDiag/M1EddOff is the real fix.
+  3. Top boundary consistency: the M1 Marshak q = 0.5 gives F/cE = 0.50 in the top cell
+  while the SC field has H/J = 0.57 (q_0 = 1/sqrt 3): feed the SC H/J to the Marshak
+  factor.  4. Source: no scattering split in the tables (kappa_s = 0), eps_th = kappa_P/chi
+  is a proxy; no lambda iteration (J = M1 E lagged).  5. First-order linear SC in the
+  horizontal interpolation diffuses beams (irrelevant for this slab, matters for shadows).
+  6. Not tested: 3-D, long runs (> 200 s), the unseeded / production box.

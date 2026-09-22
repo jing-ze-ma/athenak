@@ -413,12 +413,34 @@ Real M1EddOff(const Real chi, const Real na, const Real nb) {
 //! and a KRYLOV VECTOR when the term is applied as part of the linear operator
 //! (implicit_offdiag = operator), where the closure is frozen and the term is linear.
 
+//!
+//! FULL TENSOR (<rad_m1>/closure = vet_sc, vet_tensor = full): with `full` the component
+//! is read from the guarded D_ab = K_ab/J of the formal solution, RadiationM1::vet_cell
+//! (vd), instead of being built from the uniaxial (chi, n).  With full = false vd is
+//! never touched and the arithmetic is that of the uniaxial form, term for term.
+
 template <class V>
 KOKKOS_INLINE_FUNCTION
 Real M1POff(const V &iw, const int m, const int a, const int b,
-            const int k, const int j, const int i, const int ec) {
+            const int k, const int j, const int i, const int ec,
+            const V &vd, const bool full) {
+  if (full) {return vd(m,M1_VET_D11+2+a+b,k,j,i)*iw(m,ec,k,j,i);}
   return M1EddOff(iw(m,M1_IW_WCHI,k,j,i), iw(m,M1_IW_N1+a,k,j,i),
                   iw(m,M1_IW_N1+b,k,j,i))*iw(m,ec,k,j,i);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn M1DDiag
+//! \brief the DIAGONAL Eddington component D_dd of direction d (0,1,2) at one cell of the
+//! MULTI-D solve: M1EddDiag of the lagged uniaxial closure (WCHI, N1+d), or with `full`
+//! the guarded D_dd of the formal solution (see M1POff).
+
+template <class V>
+KOKKOS_INLINE_FUNCTION
+Real M1DDiag(const V &iw, const V &vd, const bool full, const int m, const int d,
+             const int k, const int j, const int i) {
+  if (full) {return vd(m,M1_VET_D11+d,k,j,i);}
+  return M1EddDiag(iw(m,M1_IW_WCHI,k,j,i), iw(m,M1_IW_N1+d,k,j,i));
 }
 
 //----------------------------------------------------------------------------------------
@@ -439,27 +461,31 @@ Real M1OffDiv(const V &iw, const int m, const int d, const int k, const int j,
               const int i, const Real dx1, const Real dx2, const Real dx3,
               const bool thrd,
               const int il, const int iu, const int jl, const int ju,
-              const int kl, const int ku, const int ec) {
+              const int kl, const int ku, const int ec,
+              const V &vd, const bool full) {
   Real s = 0.0;
   if (d != 0) {
     int ia = (i+1 <= iu) ? (i+1) : i;
     int ib = (i-1 >= il) ? (i-1) : i;
     if (ia != ib) {
-      s += (M1POff(iw,m,d,0,k,j,ia,ec) - M1POff(iw,m,d,0,k,j,ib,ec))/((ia - ib)*dx1);
+      s += (M1POff(iw,m,d,0,k,j,ia,ec,vd,full)
+            - M1POff(iw,m,d,0,k,j,ib,ec,vd,full))/((ia - ib)*dx1);
     }
   }
   if (d != 1) {
     int ja = (j+1 <= ju) ? (j+1) : j;
     int jb = (j-1 >= jl) ? (j-1) : j;
     if (ja != jb) {
-      s += (M1POff(iw,m,d,1,k,ja,i,ec) - M1POff(iw,m,d,1,k,jb,i,ec))/((ja - jb)*dx2);
+      s += (M1POff(iw,m,d,1,k,ja,i,ec,vd,full)
+            - M1POff(iw,m,d,1,k,jb,i,ec,vd,full))/((ja - jb)*dx2);
     }
   }
   if (thrd && d != 2) {
     int ka = (k+1 <= ku) ? (k+1) : k;
     int kb = (k-1 >= kl) ? (k-1) : k;
     if (ka != kb) {
-      s += (M1POff(iw,m,d,2,ka,j,i,ec) - M1POff(iw,m,d,2,kb,j,i,ec))/((ka - kb)*dx3);
+      s += (M1POff(iw,m,d,2,ka,j,i,ec,vd,full)
+            - M1POff(iw,m,d,2,kb,j,i,ec,vd,full))/((ka - kb)*dx3);
     }
   }
   return s;

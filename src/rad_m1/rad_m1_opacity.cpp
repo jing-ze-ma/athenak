@@ -21,6 +21,7 @@
 
 #include "athena.hpp"
 #include "globals.hpp"
+#include "coordinates/cell_locations.hpp"
 #include "mesh/mesh.hpp"
 #include "driver/driver.hpp"
 #include "eos/eos.hpp"
@@ -97,6 +98,27 @@ TaskStatus RadiationM1::Opacity(Driver *pdrive, int stage) {
     opac_(m,M1_OP_E,k,j,i) = d*oe;
     opac_(m,M1_OP_T,k,j,i) = d*(of + os);
   });
+
+  // DIAGNOSTIC <rad_m1>/dbg_opac_patch: a horizontally inhomogeneous absorber (the three
+  // opacities times f inside a box of x1 x x2, ghost cells included).  Off by default.
+  if (dbg_opac_patch != 1.0) {
+    const Real pf = dbg_opac_patch;
+    const Real x1a = dbg_opac_x1lo, x1b = dbg_opac_x1hi;
+    const Real x2a = dbg_opac_x2lo, x2b = dbg_opac_x2hi;
+    const int is = indcs.is, js = indcs.js;
+    const int nx1 = indcs.nx1, nx2 = indcs.nx2;
+    auto &size = pmy_pack->pmb->mb_size;
+    par_for("m1_opac_patch", DevExeSpace(), 0, nmb1, 0, n3-1, 0, n2-1, 0, n1-1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      Real x1v = CellCenterX(i-is, nx1, size.d_view(m).x1min, size.d_view(m).x1max);
+      Real x2v = CellCenterX(j-js, nx2, size.d_view(m).x2min, size.d_view(m).x2max);
+      if (x1v >= x1a && x1v <= x1b && x2v >= x2a && x2v <= x2b) {
+        opac_(m,M1_OP_P,k,j,i) *= pf;
+        opac_(m,M1_OP_E,k,j,i) *= pf;
+        opac_(m,M1_OP_T,k,j,i) *= pf;
+      }
+    });
+  }
 
   opac_frozen = true;
   if (!rsla_done) RSLACheck();

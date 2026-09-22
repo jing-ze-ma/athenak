@@ -411,6 +411,26 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   rsla_done = false;
 
   // closure
+  vet_sc = false;
+  vet_full = false;
+  vet_eig_min = 0.0;
+  vet_nguard = 0.0;
+  vet_ncell = 0.0;
+  vet_guard_max = 0.0;
+  vet_d11_min = 1.0;
+  // read only when given, so that an input without it writes a byte-identical restart
+  dbg_opac_patch = 1.0;
+  dbg_opac_x1lo = dbg_opac_x1hi = dbg_opac_x2lo = dbg_opac_x2hi = 0.0;
+  if (pin->DoesParameterExist("rad_m1","dbg_opac_patch")) {
+    dbg_opac_patch = pin->GetReal("rad_m1","dbg_opac_patch");
+    dbg_opac_x1lo = pin->GetReal("rad_m1","dbg_opac_x1lo");
+    dbg_opac_x1hi = pin->GetReal("rad_m1","dbg_opac_x1hi");
+    dbg_opac_x2lo = pin->GetReal("rad_m1","dbg_opac_x2lo");
+    dbg_opac_x2hi = pin->GetReal("rad_m1","dbg_opac_x2hi");
+  }
+  vet_time = 0.0;
+  vet_itime = 0.0;
+  vet_ncall = 0.0;
   {std::string cl = pin->GetOrAddString("rad_m1","closure","m1");
   chi_kind = M1_CHI_LEVERMORE;
   if (cl.compare("m1") == 0) {
@@ -423,10 +443,22 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     chi_kind = M1_CHI_KERSHAW;
   } else if (cl.compare("eddington") == 0) {
     eddington = true;
+  } else if (cl.compare("vet_sc") == 0) {
+    // the implicit multi-D solve reads (chi, n) from the short-characteristics formal
+    // solution (rad_m1_vet.cpp); every other use of chi (explicit wave speeds, the
+    // 1-D branch) keeps Levermore's
+    eddington = false;
+    vet_sc = true;
   } else {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
       << std::endl << "<rad_m1>/closure = '" << cl << "' not implemented "
-      << "(m1 | minerbo | kershaw | eddington)" << std::endl;
+      << "(m1 | minerbo | kershaw | eddington | vet_sc)" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  if (vet_sc && transport != M1_TRANSPORT_IMPLICIT) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+      << std::endl << "<rad_m1>/closure = vet_sc needs <rad_m1>/transport = implicit "
+      << "on a multi-D mesh" << std::endl;
     std::exit(EXIT_FAILURE);
   }
   if (chi_kind != M1_CHI_LEVERMORE && transport == M1_TRANSPORT_EXPLICIT) {
@@ -587,6 +619,7 @@ void RadiationM1::SetForceReference(const DvceArray4D<Real> &a) {
 RadiationM1::~RadiationM1() {
   ReportCounters();
   ImplicitReport();   // milestone 3a; a no-op in transport = explicit
+  if (vet_sc) {VetReport();}
   delete pbval_u;
   if (pbval_th != nullptr) {delete pbval_th;}
   if (pbval_tq != nullptr) {delete pbval_tq;}

@@ -614,6 +614,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
               << " (0 marshak, 1 flux, 2 reflect, 3 periodic) flux_min=" << iflux_x1min
               << " flux_max=" << iflux_x1max << std::endl;
   }
+  if (vet_sc) {VetInit(pin);}
 }
 
 //----------------------------------------------------------------------------------------
@@ -1023,6 +1024,8 @@ void RadiationM1::ImplicitTransTheta(bool newk) {
   auto iw_ = iw;
   auto th2_ = thx2;
   auto kl2_ = klx2;
+  auto vd_ = vet_cell;   // vet_tensor = full (M1DDiag, M1OffDiv)
+  const bool dfull = vet_full;
   auto th3_ = thx3;
   auto kl3_ = klx3;
   auto &mbsize = pmy_pack->pmb->mb_size;
@@ -1067,12 +1070,14 @@ void RadiationM1::ImplicitTransTheta(bool newk) {
       int ju = phi ? je : je+1;
       Real el = fmax(iw_(m,M1_IW_EP,k,jm,i), efl);
       Real er = fmax(iw_(m,M1_IW_EP,k,j,i), efl);
-      Real dl = M1EddDiag(iw_(m,M1_IW_WCHI,k,jm,i), iw_(m,M1_IW_N2,k,jm,i));
-      Real dr = M1EddDiag(iw_(m,M1_IW_WCHI,k,j,i), iw_(m,M1_IW_N2,k,j,i));
+      Real dl = M1DDiag(iw_,vd_,dfull,m,1,k,jm,i);
+      Real dr = M1DDiag(iw_,vd_,dfull,m,1,k,j,i);
       Real gf = (dr*iw_(m,M1_IW_EP,k,j,i) - dl*iw_(m,M1_IW_EP,k,jm,i))/dx2;
       if (odm != M1_OD_NONE) {
-        gf += 0.5*(M1OffDiv(iw_,m,1,k,jm,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,M1_IW_EP)
-                   + M1OffDiv(iw_,m,1,k,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,M1_IW_EP));
+        gf += 0.5*(M1OffDiv(iw_,m,1,k,jm,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,M1_IW_EP,
+                            vd_,dfull)
+                   + M1OffDiv(iw_,m,1,k,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,M1_IW_EP,
+                              vd_,dfull));
       }
       Real rl = iw_(m,M1_IW_F1,k,jm,i)/(cl*el);
       Real rr = iw_(m,M1_IW_F1,k,j,i)/(cl*er);
@@ -1120,12 +1125,14 @@ void RadiationM1::ImplicitTransTheta(bool newk) {
       int ku = phi ? ke : ke+1;
       Real el = fmax(iw_(m,M1_IW_EP,km,j,i), efl);
       Real er = fmax(iw_(m,M1_IW_EP,k,j,i), efl);
-      Real dl = M1EddDiag(iw_(m,M1_IW_WCHI,km,j,i), iw_(m,M1_IW_N3,km,j,i));
-      Real dr = M1EddDiag(iw_(m,M1_IW_WCHI,k,j,i), iw_(m,M1_IW_N3,k,j,i));
+      Real dl = M1DDiag(iw_,vd_,dfull,m,2,km,j,i);
+      Real dr = M1DDiag(iw_,vd_,dfull,m,2,k,j,i);
       Real gf = (dr*iw_(m,M1_IW_EP,k,j,i) - dl*iw_(m,M1_IW_EP,km,j,i))/dx3;
       if (odm != M1_OD_NONE) {
-        gf += 0.5*(M1OffDiv(iw_,m,2,km,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,M1_IW_EP)
-                   + M1OffDiv(iw_,m,2,k,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,M1_IW_EP));
+        gf += 0.5*(M1OffDiv(iw_,m,2,km,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,M1_IW_EP,
+                            vd_,dfull)
+                   + M1OffDiv(iw_,m,2,k,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,M1_IW_EP,
+                              vd_,dfull));
       }
       Real rl = iw_(m,M1_IW_F1,km,j,i)/(cl*el);
       Real rr = iw_(m,M1_IW_F1,k,j,i)/(cl*er);
@@ -1183,6 +1190,8 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
   int nmb1 = pmy_pack->nmb_thispack - 1;
   auto iw_ = iw;
   auto f2_ = f0x2;
+  auto vd_ = vet_cell;   // vet_tensor = full (M1DDiag, M1OffDiv)
+  const bool dfull = vet_full;
   auto f2n_ = f0x2n;
   auto f3_ = f0x3;
   auto f3n_ = f0x3n;
@@ -1241,15 +1250,17 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
     int jm = j - 1;
     Real ktf = 0.5*(iw_(m,M1_IW_KT,k,jm,i) + iw_(m,M1_IW_KT,k,j,i));
     Real th = lm ? th2_(m,k,j,i) : 1.0/(1.0 + ch*dt*ktf);
-    Real dl = M1EddDiag(iw_(m,M1_IW_WCHI,k,jm,i), iw_(m,M1_IW_N2,k,jm,i));
-    Real dr = M1EddDiag(iw_(m,M1_IW_WCHI,k,j,i), iw_(m,M1_IW_N2,k,j,i));
+    Real dl = M1DDiag(iw_,vd_,dfull,m,1,k,jm,i);
+    Real dr = M1DDiag(iw_,vd_,dfull,m,1,k,j,i);
     Real gr = (dr*iw_(m,M1_IW_EP,k,j,i) - dl*iw_(m,M1_IW_EP,k,jm,i))/dx2;
     Real vf = 0.5*(iw_(m,M1_IW_V2,k,jm,i) + iw_(m,M1_IW_V2,k,j,i));
     Real g0f = 0.5*(iw_(m,M1_IW_G0,k,jm,i) + iw_(m,M1_IW_G0,k,j,i));
     Real off = 0.0;
     if (odm != M1_OD_NONE) {
-      off = 0.5*(M1OffDiv(iw_,m,1,k,jm,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,M1_IW_EP)
-                 + M1OffDiv(iw_,m,1,k,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,M1_IW_EP));
+      off = 0.5*(M1OffDiv(iw_,m,1,k,jm,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,M1_IW_EP,vd_,
+                          dfull)
+                 + M1OffDiv(iw_,m,1,k,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,M1_IW_EP,vd_,
+                            dfull));
     }
     f2_(m,k,j,i) = th*(wmem*f2n_(m,k,j,i) - ch*cl*dt*gr - ch*dt*vf*g0f - ch*cl*dt*off);
   });
@@ -1286,15 +1297,17 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
       int km = k - 1;
       Real ktf = 0.5*(iw_(m,M1_IW_KT,km,j,i) + iw_(m,M1_IW_KT,k,j,i));
       Real th = lm ? th3_(m,k,j,i) : 1.0/(1.0 + ch*dt*ktf);
-      Real dl = M1EddDiag(iw_(m,M1_IW_WCHI,km,j,i), iw_(m,M1_IW_N3,km,j,i));
-      Real dr = M1EddDiag(iw_(m,M1_IW_WCHI,k,j,i), iw_(m,M1_IW_N3,k,j,i));
+      Real dl = M1DDiag(iw_,vd_,dfull,m,2,km,j,i);
+      Real dr = M1DDiag(iw_,vd_,dfull,m,2,k,j,i);
       Real gr = (dr*iw_(m,M1_IW_EP,k,j,i) - dl*iw_(m,M1_IW_EP,km,j,i))/dx3;
       Real vf = 0.5*(iw_(m,M1_IW_V3,km,j,i) + iw_(m,M1_IW_V3,k,j,i));
       Real g0f = 0.5*(iw_(m,M1_IW_G0,km,j,i) + iw_(m,M1_IW_G0,k,j,i));
       Real off = 0.0;
       if (odm != M1_OD_NONE) {
-        off = 0.5*(M1OffDiv(iw_,m,2,km,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,M1_IW_EP)
-                   + M1OffDiv(iw_,m,2,k,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,M1_IW_EP));
+        off = 0.5*(M1OffDiv(iw_,m,2,km,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,M1_IW_EP,
+                            vd_,dfull)
+                   + M1OffDiv(iw_,m,2,k,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,M1_IW_EP,
+                              vd_,dfull));
       }
       f3_(m,k,j,i) = th*(wmem*f3n_(m,k,j,i)
                          - ch*cl*dt*gr - ch*dt*vf*g0f - ch*cl*dt*off);
@@ -1309,14 +1322,13 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
     Real dx3 = mbsize.d_view(m).dx3;
     Real cr = ch/cl;
     Real ec = iw_(m,M1_IW_EP,k,j,i);
-    Real chic = iw_(m,M1_IW_WCHI,k,j,i);
     Real dia = 0.0, tt = 0.0;
     BoundaryFlag b3 = mbbcs.d_view(m,BoundaryFace::inner_x2);
     BoundaryFlag b4 = mbbcs.d_view(m,BoundaryFace::outer_x2);
     bool p2lo = (b3 != BoundaryFlag::block) && (b3 != BoundaryFlag::periodic);
     bool p2hi = (b4 != BoundaryFlag::block) && (b4 != BoundaryFlag::periodic);
     Real nu2 = dt/dx2;
-    Real d2c = M1EddDiag(chic, iw_(m,M1_IW_N2,k,j,i));
+    Real d2c = M1DDiag(iw_,vd_,dfull,m,1,k,j,i);
     Real a2c = iw_(m,M1_IW_A2,k,j,i);
     Real fp = 0.0, fm = 0.0;
     Real cjp = 0.0, cjm = 0.0;
@@ -1334,7 +1346,7 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
       }
       dia += nu2*th*ch*ch*dt*d2c/dx2;
       if (bcg) {
-        Real d2p = M1EddDiag(iw_(m,M1_IW_WCHI,k,j+1,i), iw_(m,M1_IW_N2,k,j+1,i));
+        Real d2p = M1DDiag(iw_,vd_,dfull,m,1,k,j+1,i);
         cjp -= nu2*th*ch*ch*dt*d2p/dx2;
       }
     }
@@ -1352,7 +1364,7 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
       }
       dia += nu2*th*ch*ch*dt*d2c/dx2;
       if (bcg) {
-        Real d2m = M1EddDiag(iw_(m,M1_IW_WCHI,k,j-1,i), iw_(m,M1_IW_N2,k,j-1,i));
+        Real d2m = M1DDiag(iw_,vd_,dfull,m,1,k,j-1,i);
         cjm -= nu2*th*ch*ch*dt*d2m/dx2;
       }
     }
@@ -1369,7 +1381,7 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
       bool p3lo = (b5 != BoundaryFlag::block) && (b5 != BoundaryFlag::periodic);
       bool p3hi = (b6 != BoundaryFlag::block) && (b6 != BoundaryFlag::periodic);
       Real nu3 = dt/dx3;
-      Real d3c = M1EddDiag(chic, iw_(m,M1_IW_N3,k,j,i));
+      Real d3c = M1DDiag(iw_,vd_,dfull,m,2,k,j,i);
       Real a3c = iw_(m,M1_IW_A3,k,j,i);
       Real gp = 0.0, gm = 0.0;
       Real ckp = 0.0, ckm = 0.0;
@@ -1387,7 +1399,7 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
         }
         dia += nu3*th*ch*ch*dt*d3c/dx3;
         if (bcg) {
-          Real d3p = M1EddDiag(iw_(m,M1_IW_WCHI,k+1,j,i), iw_(m,M1_IW_N3,k+1,j,i));
+          Real d3p = M1DDiag(iw_,vd_,dfull,m,2,k+1,j,i);
           ckp -= nu3*th*ch*ch*dt*d3p/dx3;
         }
       }
@@ -1405,7 +1417,7 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
         }
         dia += nu3*th*ch*ch*dt*d3c/dx3;
         if (bcg) {
-          Real d3m = M1EddDiag(iw_(m,M1_IW_WCHI,k-1,j,i), iw_(m,M1_IW_N3,k-1,j,i));
+          Real d3m = M1DDiag(iw_,vd_,dfull,m,2,k-1,j,i);
           ckm -= nu3*th*ch*ch*dt*d3m/dx3;
         }
       }
@@ -1886,6 +1898,8 @@ void RadiationM1::ImplicitOffDiagOp(int xc, int yc, Real sgn) {
   auto &mbsize = pmy_pack->pmb->mb_size;
   auto &mbbcs = pmy_pack->pmb->mb_bcs;
   auto pos_ = part_pos;
+  auto vd_ = vet_cell;   // vet_tensor = full (M1DDiag, M1OffDiv)
+  const bool dfull = vet_full;
   const int nblkx1 = part_nblk;
   const bool cyclic = (ibc_x1min == M1_IBC_PERIODIC);
   const bool thrd = trans_x3;
@@ -1935,16 +1949,20 @@ void RadiationM1::ImplicitOffDiagOp(int xc, int yc, Real sgn) {
       int ip = (i < ie) ? (i+1) : (cyclic ? is : (ie+1));
       Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j,i) + iw_(m,M1_IW_KT,k,j,ip));
       Real th = 1.0/(1.0 + ch*dt*ktf);
-      Real od = 0.5*(M1OffDiv(iw_,m,0,k,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,cx)
-                     + M1OffDiv(iw_,m,0,k,j,ip,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,cx));
+      Real od = 0.5*(M1OffDiv(iw_,m,0,k,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,cx,vd_,
+                              dfull)
+                     + M1OffDiv(iw_,m,0,k,j,ip,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,cx,vd_,
+                                dfull));
       y -= (dt/dx1)*cr*th*kk*od;
     }
     if (i > is || cyclic || !botb) {
       int im = (i > is) ? (i-1) : (cyclic ? ie : (is-1));
       Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j,im) + iw_(m,M1_IW_KT,k,j,i));
       Real th = 1.0/(1.0 + ch*dt*ktf);
-      Real od = 0.5*(M1OffDiv(iw_,m,0,k,j,im,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,cx)
-                     + M1OffDiv(iw_,m,0,k,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,cx));
+      Real od = 0.5*(M1OffDiv(iw_,m,0,k,j,im,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,cx,vd_,
+                              dfull)
+                     + M1OffDiv(iw_,m,0,k,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,cx,vd_,
+                                dfull));
       y += (dt/dx1)*cr*th*kk*od;
     }
     // ---- the two x2 faces
@@ -1952,15 +1970,19 @@ void RadiationM1::ImplicitOffDiagOp(int xc, int yc, Real sgn) {
     if (!(j == je && p2hi)) {
       Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j,i) + iw_(m,M1_IW_KT,k,j+1,i));
       Real th = lm ? th2_(m,k,j+1,i) : 1.0/(1.0 + ch*dt*ktf);
-      Real od = 0.5*(M1OffDiv(iw_,m,1,k,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,cx)
-                     + M1OffDiv(iw_,m,1,k,j+1,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,cx));
+      Real od = 0.5*(M1OffDiv(iw_,m,1,k,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,cx,vd_,
+                              dfull)
+                     + M1OffDiv(iw_,m,1,k,j+1,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,cx,vd_,
+                                dfull));
       y -= nu2*cr*th*kk*od;
     }
     if (!(j == js && p2lo)) {
       Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j-1,i) + iw_(m,M1_IW_KT,k,j,i));
       Real th = lm ? th2_(m,k,j,i) : 1.0/(1.0 + ch*dt*ktf);
-      Real od = 0.5*(M1OffDiv(iw_,m,1,k,j-1,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,cx)
-                     + M1OffDiv(iw_,m,1,k,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,cx));
+      Real od = 0.5*(M1OffDiv(iw_,m,1,k,j-1,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,cx,vd_,
+                              dfull)
+                     + M1OffDiv(iw_,m,1,k,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,cx,vd_,
+                                dfull));
       y += nu2*cr*th*kk*od;
     }
     // ---- the two x3 faces
@@ -1969,15 +1991,19 @@ void RadiationM1::ImplicitOffDiagOp(int xc, int yc, Real sgn) {
       if (!(k == ke && p3hi)) {
         Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j,i) + iw_(m,M1_IW_KT,k+1,j,i));
         Real th = lm ? th3_(m,k+1,j,i) : 1.0/(1.0 + ch*dt*ktf);
-        Real od = 0.5*(M1OffDiv(iw_,m,2,k,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,cx)
-                       + M1OffDiv(iw_,m,2,k+1,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,cx));
+        Real od = 0.5*(M1OffDiv(iw_,m,2,k,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,cx,vd_,
+                                dfull)
+                       + M1OffDiv(iw_,m,2,k+1,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,cx,
+                                  vd_,dfull));
         y -= nu3*cr*th*kk*od;
       }
       if (!(k == ks && p3lo)) {
         Real ktf = 0.5*(iw_(m,M1_IW_KT,k-1,j,i) + iw_(m,M1_IW_KT,k,j,i));
         Real th = lm ? th3_(m,k,j,i) : 1.0/(1.0 + ch*dt*ktf);
-        Real od = 0.5*(M1OffDiv(iw_,m,2,k-1,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,cx)
-                       + M1OffDiv(iw_,m,2,k,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,cx));
+        Real od = 0.5*(M1OffDiv(iw_,m,2,k-1,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,cx,vd_,
+                                dfull)
+                       + M1OffDiv(iw_,m,2,k,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,cx,vd_,
+                                  dfull));
         y += nu3*cr*th*kk*od;
       }
     }
@@ -2675,6 +2701,15 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   int ks = indcs.ks, ke = indcs.ke;
   int nmb1 = pmy_pack->nmb_thispack - 1;
 
+  // closure = vet_sc: the cost of the whole solve is timed against the formal solution
+  const bool vetsc = vet_sc;
+  auto vc_ = vet_cell;
+  // vet_tensor = full: every D_ab of the solve is read from vet_cell (M1DDiag, M1POff)
+  auto vd_ = vet_cell;
+  const bool dfull = vet_full;
+  Kokkos::Timer vtimer;
+  if (vetsc) {Kokkos::fence(); vtimer.reset();}
+
   auto u0_ = u0;
   auto iw_ = iw;
   auto ifw_ = ifw;
@@ -2911,6 +2946,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     ImplicitX1Halo(true);
   }
 
+  // closure = vet_sc: the formal solution of the start-of-step state.  (chi, n) are
+  // then read by step (b) on every Picard pass: the tensor is lagged by one hydro step.
+  if (vetsc) {VetShortChar();}
+
   // MILESTONE 3e: the Anderson histories start empty at every step, and the per-cell
   // scale of the fixed-point vector is frozen at the start-of-step energy (see
   // ImplicitAccelSave).  Nothing here runs under implicit_accel = none.
@@ -3047,7 +3086,12 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           n1 = r1;
           n2 = r2;
         }
-        if (tkeep) {
+        if (vetsc) {
+          chi = vc_(m,M1_VET_CHI,k,j,i);
+          n1 = vc_(m,M1_VET_N1,k,j,i);
+          n2 = vc_(m,M1_VET_N1+1,k,j,i);
+          n3 = vc_(m,M1_VET_N1+2,k,j,i);
+        } else if (tkeep) {
           chi = iw_(m,M1_IW_WCHI,k,j,i);
           n1 = iw_(m,M1_IW_N1,k,j,i);
           n2 = iw_(m,M1_IW_N2,k,j,i);
@@ -3079,6 +3123,15 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         Real d11 = M1EddDiag(chi,n1), d22 = M1EddDiag(chi,n2), d33 = M1EddDiag(chi,n3);
         Real d12 = M1EddOff(chi,n1,n2), d13 = M1EddOff(chi,n1,n3);
         Real d23 = M1EddOff(chi,n2,n3);
+        if (dfull) {
+          // vet_tensor = full: the guarded K/J of the formal solution, all six components
+          d11 = vd_(m,M1_VET_D11,k,j,i);
+          d22 = vd_(m,M1_VET_D11+1,k,j,i);
+          d33 = vd_(m,M1_VET_D11+2,k,j,i);
+          d12 = vd_(m,M1_VET_D11+3,k,j,i);
+          d13 = vd_(m,M1_VET_D11+4,k,j,i);
+          d23 = vd_(m,M1_VET_D11+5,k,j,i);
+        }
         iw_(m,M1_IW_ADV,k,j,i) = v1 + (v1*d11 + v2*d12 + v3*d13);
         iw_(m,M1_IW_A2,k,j,i) = v2 + (v1*d12 + v2*d22 + v3*d23);
         iw_(m,M1_IW_A3,k,j,i) = v3 + (v1*d13 + v2*d23 + v3*d33);
@@ -3416,7 +3469,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       Real wi = iw_(m,M1_IW_WCHI,k,j,i);
       // in 1-D the stored closure IS the diagonal Eddington component (P_11/E = chi);
       // in multi-D it is chi and D_11 has to be built from the lagged flux direction.
-      if (trans) {wi = M1EddDiag(wi, iw_(m,M1_IW_N1,k,j,i));}
+      if (trans) {wi = M1DDiag(iw_,vd_,dfull,m,0,k,j,i);}
       Real ai = iw_(m,M1_IW_ADV,k,j,i);
       Real vi = iw_(m,M1_IW_V1,k,j,i);
       Real aa = 0.0, bb = 1.0, cc = 0.0;
@@ -3456,7 +3509,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         Real df = om*th*ch*ch*dt/dx;
         bb += nu*df*wi;
         Real wp = iw_(m,M1_IW_WCHI,k,j,ip);
-        if (trans) {wp = M1EddDiag(wp, iw_(m,M1_IW_N1,k,j,ip));}
+        if (trans) {wp = M1DDiag(iw_,vd_,dfull,m,0,k,j,ip);}
         cc -= nu*df*wp;
         Real vf = 0.5*(vi + iw_(m,M1_IW_V1,k,j,ip));
         Real g0f = 0.5*(iw_(m,M1_IW_G0,k,j,i) + iw_(m,M1_IW_G0,k,j,ip));
@@ -3464,9 +3517,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         // fully lagged and therefore a right-hand-side term
         Real od = 0.0;
         if (trans && odm != M1_OD_NONE) {
-          od = 0.5*(M1OffDiv(iw_,m,0,k,j,i,dx,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,M1_IW_EP)
+          od = 0.5*(M1OffDiv(iw_,m,0,k,j,i,dx,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,M1_IW_EP,vd_,
+                             dfull)
                     + M1OffDiv(iw_,m,0,k,j,ip,dx,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,
-                               M1_IW_EP));
+                               M1_IW_EP,vd_,dfull));
         }
         rr -= nu*cr*om*th*(f0n_(m,k,j,i+1) - ch*dt*vf*g0f - ch*cl*dt*od);
         // the HLL part: its E'_L coefficient is >= 0 (diagonal) and its E'_R coefficient
@@ -3495,14 +3549,16 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         Real df = om*th*ch*ch*dt/dx;
         bb += nu*df*wi;
         Real wm = iw_(m,M1_IW_WCHI,k,j,im);
-        if (trans) {wm = M1EddDiag(wm, iw_(m,M1_IW_N1,k,j,im));}
+        if (trans) {wm = M1DDiag(iw_,vd_,dfull,m,0,k,j,im);}
         aa -= nu*df*wm;
         Real vf = 0.5*(iw_(m,M1_IW_V1,k,j,im) + vi);
         Real g0f = 0.5*(iw_(m,M1_IW_G0,k,j,im) + iw_(m,M1_IW_G0,k,j,i));
         Real od = 0.0;
         if (trans && odm != M1_OD_NONE) {
-          od = 0.5*(M1OffDiv(iw_,m,0,k,j,im,dx,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,M1_IW_EP)
-                    + M1OffDiv(iw_,m,0,k,j,i,dx,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,M1_IW_EP));
+          od = 0.5*(M1OffDiv(iw_,m,0,k,j,im,dx,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,M1_IW_EP,
+                             vd_,dfull)
+                    + M1OffDiv(iw_,m,0,k,j,i,dx,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,M1_IW_EP,
+                               vd_,dfull));
         }
         rr += nu*cr*om*th*(f0n_(m,k,j,i) - ch*dt*vf*g0f - ch*cl*dt*od);
         aa -= nu*ifw_(m,M1_IFW_HCL,k,j,i);
@@ -3729,8 +3785,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         Real wp = iw_(m,M1_IW_WCHI,k,j,ip);
         Real wm = iw_(m,M1_IW_WCHI,k,j,im);
         if (trans) {
-          wp = M1EddDiag(wp, iw_(m,M1_IW_N1,k,j,ip));
-          wm = M1EddDiag(wm, iw_(m,M1_IW_N1,k,j,im));
+          wp = M1DDiag(iw_,vd_,dfull,m,0,k,j,ip);
+          wm = M1DDiag(iw_,vd_,dfull,m,0,k,j,im);
         }
         Real gr = (wp*iw_(m,M1_IW_EP,k,j,ip) - wm*iw_(m,M1_IW_EP,k,j,im))/dx;
         Real od = 0.0;
@@ -3752,9 +3808,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                        (q5 == BoundaryFlag::periodic))) {kl = ks-1;}
           if (thrd && ((q6 == BoundaryFlag::block) ||
                        (q6 == BoundaryFlag::periodic))) {ku = ke+1;}
-          od = 0.5*(M1OffDiv(iw_,m,0,k,j,im,dx,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,M1_IW_EP)
+          od = 0.5*(M1OffDiv(iw_,m,0,k,j,im,dx,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,M1_IW_EP,
+                             vd_,dfull)
                     + M1OffDiv(iw_,m,0,k,j,ip,dx,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,
-                               M1_IW_EP));
+                               M1_IW_EP,vd_,dfull));
         }
         Real fn = th*(f0n_(m,k,j,(i == ie+1 && cyclic) ? is : i)
                       - ch*cl*dt*gr - ch*dt*vf*g0f - ch*cl*dt*od);
@@ -4129,6 +4186,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     }
   });
 
+  if (vetsc) {Kokkos::fence(); vet_itime += vtimer.seconds();}
   return TaskStatus::complete;
 }
 

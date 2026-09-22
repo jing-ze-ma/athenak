@@ -50,6 +50,18 @@ constexpr int M1_NVAR = 4;
 constexpr int M1_NSTAGE = 2;
 
 // components of the per-cell opacity array, all stored as rho*kappa (inverse length)
+// components of RadiationM1::vet_cell (closure = vet_sc)
+constexpr int M1_VET_CHX = 0;   // extinction rho (kappa_F + kappa_s) [1/length]
+constexpr int M1_VET_SRC = 1;   // source function in E units (4 pi S / c)
+constexpr int M1_VET_J   = 2;   // E of the formal solution (4 pi J / c)
+constexpr int M1_VET_K11 = 3;   // K_ab in E units: 11 22 33 12 13 23
+constexpr int M1_VET_H1  = 9;   // F_a / c of the formal solution: 1 2 3
+constexpr int M1_VET_CHI = 12;  // the uniaxial projection: chi, n1, n2, n3
+constexpr int M1_VET_N1  = 13;
+constexpr int M1_VET_D11 = 16;  // vet_tensor = full: the GUARDED D = K/J handed to the
+                                // solve, 11 22 33 12 13 23, ghosts filled (periodic)
+constexpr int M1_VET_GD  = 22;  // full: |D_guarded - D_raw| (max norm) of the cell
+constexpr int M1_VET_NC  = 23;
 constexpr int M1_OP_P = 0;   // rho kappa_P, Planck (emission) mean
 constexpr int M1_OP_E = 1;   // rho kappa_E, energy (absorption) mean
 constexpr int M1_OP_T = 2;   // rho (kappa_F + kappa_s), the TRANSPORT opacity: what the
@@ -224,6 +236,28 @@ class RadiationM1 {
                        // implicit solve comes from (see ImplicitSolve step (b))
   Real dbg_tensor_tilt;      // amplitude [rad] of the prescribed tilt, dbg_tensor = tilt
   bool dbg_tensor_init;      // frozen / tilt: the stored tensor exists
+  // ---- VET by SHORT CHARACTERISTICS (rad_m1_vet.cpp), <rad_m1>/closure = vet_sc: the
+  // Eddington tensor of the multi-D implicit solve is K/J of a grey formal solution for
+  // the specific intensity, computed ONCE per hydro step from the start-of-step state
+  bool vet_sc;               // closure = vet_sc (default false)
+  int vet_nmu, vet_nphi, vet_nray;  // mu nodes per hemisphere, azimuths, rays
+  bool vet_milne;            // DIAGNOSTIC: source = exact grey Milne S(tau), gate 3
+  bool vet_axis_flux;        // uniaxial axis: the SC flux (true) or the principal axis
+  bool vet_full;             // vet_tensor = full: the solve reads all six D_ab = K_ab/J
+  Real vet_eig_min;          // vet_tensor = full: eigenvalue floor of the guarded D
+  Real vet_nguard, vet_ncell;  // full: cell-calls the guard changed D / all cell-calls
+  Real vet_guard_max;        // full: largest |D_guarded - D_raw| (max norm) of the run
+  Real vet_d11_min;          // full: smallest guarded D_11 of the run (x1 line diagonal)
+  // DIAGNOSTIC <rad_m1>/dbg_opac_patch = f (default 1 = off): all three opacities are
+  // multiplied by f inside the box [x1lo,x1hi] x [x2lo,x2hi] -- a horizontally
+  // inhomogeneous absorber that casts a shadow (full-tensor VET test)
+  Real dbg_opac_patch, dbg_opac_x1lo, dbg_opac_x1hi, dbg_opac_x2lo, dbg_opac_x2hi;
+  int vet_dump_every;        // column dump every N calls (0 = the first call only)
+  std::string vet_dump;      // column dump file stem ("" = no dump)
+  Real vet_time, vet_itime, vet_ncall;  // SC seconds, implicit-solve seconds, calls
+  DvceArray2D<Real> vet_ang;   // (nray, 4): mu1, mu2, mu3, weight (sum of weights = 1)
+  DvceArray5D<Real> vet_cell;  // (nmb, M1_VET_NC, k, j, i): see M1_VET_* below
+  DvceArray5D<Real> vet_ipl;   // (nmb, 2, nray, k, j): intensity of the last two layers
   Real dbg_trans_memory;     // DIAGNOSTIC (3b phase G): weight of the F^n memory term
                        // of the transverse face flux; 1 = backward Euler (bitwise)
   bool dbg_gas_force_trans;  // 3b phase E, transport = implicit only:
@@ -499,6 +533,16 @@ class RadiationM1 {
   void ImplicitInit(ParameterInput *pin);
   //! print the Picard statistics of the implicit solver (from the destructor, rank 0)
   void ImplicitReport();
+  //! VET (rad_m1_vet.cpp): read <rad_m1>/vet_*, check the mesh, allocate
+  void VetInit(ParameterInput *pin);
+  //! VET: the short-characteristics formal solution and the uniaxial tensor (chi, n)
+  void VetShortChar();
+  //! VET, vet_tensor = full: the guarded D = K/J (and its ghosts) for the solve
+  void VetFullTensor();
+  //! VET: write the column of j = js (m = 0) of the last formal solution to `fname`
+  void VetDump(const std::string &fname);
+  //! VET: cost line at the end of the run
+  void VetReport();
   //! let a problem generator name the x1 boundary types of the implicit solve
   void SetImplicitX1BC(int lo_type, Real lo_flux, int hi_type, Real hi_flux);
   //! the whole backward-Euler step, in place of the explicit stage chain

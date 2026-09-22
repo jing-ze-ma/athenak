@@ -171,6 +171,7 @@ add_executable(
         rad_m1/rad_m1_opacity.cpp
         rad_m1/rad_m1_tasks.cpp
         rad_m1/rad_m1_update.cpp
+        rad_m1/rad_m1_vet.cpp
         radiation/radiation.cpp
         radiation/radiation_fluxes.cpp
         radiation/radiation_newdt.cpp
