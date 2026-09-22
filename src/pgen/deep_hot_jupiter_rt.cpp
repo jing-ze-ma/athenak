@@ -463,6 +463,34 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       (use_spherical_polar || use_cubed_sphere_) && rt_ck && !layer_legacy_peek;
   ck_spherical = pin->GetOrAddBoolean("problem","ck_spherical",cksph_default);
   ck_beam_sph = pin->GetOrAddBoolean("problem","ck_beam_sph",cksph_default);
+  // problem/ck_sweep_cache (0 off / 1 per-pass carry / 2 per-column store): keep the
+  // per-(cell, chain) layer operator in the thread instead of rebuilding it in each of
+  // the four column passes.  Bitwise at every setting; the switch exists so the A/B can
+  // be run on one binary.  Mode 2 pays private memory for it and is worth it only when
+  // there ARE four passes, i.e. under ck_spherical -- so that is the default there and
+  // mode 1 is the default otherwise.  See two_stream_rt::ck_sweep_cache and
+  // tests_ck_sweep_cost/README.md.
+  two_stream_rt::ck_sweep_cache =
+      pin->GetOrAddInteger("problem","ck_sweep_cache", ck_spherical ? 2 : 1);
+  if (two_stream_rt::ck_sweep_cache < 0 || two_stream_rt::ck_sweep_cache > 2) {
+    std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: problem/ck_sweep_cache must "
+              << "be 0, 1 or 2, got " << two_stream_rt::ck_sweep_cache << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  // problem/ck_sweep_form (0 four-pass / 1 tm / 2 sd): solve the spherical face
+  // coupling EXACTLY in two column passes instead of estimating it with two probe
+  // passes.  See two_stream_rt::ck_sweep_form for the two recurrences, and
+  // tests_ck_sweep_form/README.md for what the probe's lag was worth.  The remaining
+  // refusals (ck_spherical off, ck_sweep_cache != 2, ck_implicit) are stated at the
+  // first RT call, where those flags are all final.
+  two_stream_rt::ck_sweep_form =
+      pin->GetOrAddInteger("problem","ck_sweep_form", 0);
+  if (two_stream_rt::ck_sweep_form < 0 || two_stream_rt::ck_sweep_form > 2) {
+    std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: problem/ck_sweep_form must "
+              << "be 0 (four-pass), 1 (tm) or 2 (sd), got "
+              << two_stream_rt::ck_sweep_form << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
   // The refusal, stated here rather than only at the first RT call, so that a Cartesian
   // input naming either flag dies at startup with the reason.
   if ((ck_spherical || ck_beam_sph) &&
@@ -516,6 +544,23 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       pin->GetOrAddBoolean("problem","ck_impl_frozen_cof",true);
   two_stream_rt::ck_impl_warm =
       pin->GetOrAddBoolean("problem","ck_impl_warm",false);
+  // problem/ck_impl_reuse_jac (0 off / 1 chord / 2 scaled chord) and problem/ck_impl_seed
+  // (0 off / 1 semi-implicit / 2 exact lagged): the two phase-4 levers, both default off.
+  // See tests_ck_implicit/README_phase4.md.
+  two_stream_rt::ck_impl_reuse_jac =
+      pin->GetOrAddInteger("problem","ck_impl_reuse_jac",0);
+  two_stream_rt::ck_impl_seed = pin->GetOrAddInteger("problem","ck_impl_seed",0);
+  if (two_stream_rt::ck_impl_reuse_jac < 0 || two_stream_rt::ck_impl_reuse_jac > 2) {
+    std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: problem/ck_impl_reuse_jac "
+              << "must be 0, 1 or 2, got " << two_stream_rt::ck_impl_reuse_jac
+              << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  if (two_stream_rt::ck_impl_seed < 0 || two_stream_rt::ck_impl_seed > 2) {
+    std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: problem/ck_impl_seed must be "
+              << "0, 1 or 2, got " << two_stream_rt::ck_impl_seed << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
   if (two_stream_rt::ck_impl_frozen_op && two_stream_rt::ck_impl_refresh_kappa &&
       global_variable::my_rank == 0) {
     std::cout << "### WARNING in deep_hot_jupiter_rt: problem/ck_impl_frozen_op is "

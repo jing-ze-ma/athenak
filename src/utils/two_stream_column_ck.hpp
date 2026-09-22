@@ -210,9 +210,49 @@ inline bool ck_impl_frozen_cof = true;
 // start, which is correct, only slower for one step.
 inline bool ck_impl_warm = false;
 
+// problem/ck_impl_reuse_jac: QUASI-NEWTON.  The tridiagonal is rebuilt from scratch by
+// every pass today, at the cost of ~10 atomic_add per (cell, chain) inside the sweep plus
+// the CK_NB pair of Planck-fraction look-ups per cell that dB_b/dT needs.  With the
+// exchange operator frozen (ck_impl_frozen_op) the ONLY thing in J that moves between
+// passes is dB_b/dT, which is a smooth O(T^3) factor, so the matrix of the FIRST
+// Newton pass is a good approximation to every later one.  This is the chord (modified
+// Newton) method: the fixed point is untouched -- the residual is still re-formed by a
+// full sweep every pass -- and only the convergence RATE can suffer.
+//   0 = off, rebuild every pass (today's).
+//   1 = CHORD: build J on the first pass that takes a Newton step, reuse the bits.
+//   2 = SCALED CHORD: as 1, but each entry is rescaled by (T_col/T_col^0)^3, T_col being
+//       the temperature of the CELL THE COLUMN OF J POINTS AT (entry 0 -> i-1,
+//       1 -> i, 2 -> i+1).  dB_b/dT = d(sigma T^4 f_b(T)/pi)/dT is 4 sigma T^3 f_b/pi to
+//       within the band fraction's own (weak) T dependence, so this recovers the dominant
+//       part of the update for three multiplies per row and no sweep work at all.
+// The M-matrix property is preserved by both (the rescaling is positive), so the Thomas
+// sweep still needs no pivoting.
+inline int ck_impl_reuse_jac = 0;
+// problem/ck_impl_seed: THE INITIAL GUESS.  ck_impl_warm starts the Newton from the
+// PREVIOUS call's increment, which perturbs calls that do not converge (README_phase3
+// section 4).  This instead starts it from a guess formed inside THIS call, from this
+// call's own first sweep, and so carries none of that history:
+//   0 = off: pass 0 takes the ordinary Newton step (today's).
+//   1 = SEMI-IMPLICIT: pass 0 takes the step the DEFAULT (ck_implicit = false) scheme
+//       would take, de = (S/lambda)(1 - e^{-lambda bdt}), lambda = 4 E/e -- the
+//       rt_semi_lin form of the apply block, per cell, absorbed field lagged.
+//   2 = EXACT LAGGED: pass 0 takes the per-cell BRACKETED backward-Euler step
+//       CkThinSolve, i.e. the exact root of x - e* - bdt(A - E (x/e)^4) with A lagged.
+//       Strictly better than 1 (it is the same balance without the (1-e^-x) damping and
+//       without the linearisation), positivity-preserving, and it costs 60 bisections in
+//       a kernel that is already memory bound.
+// Both are applied through the SAME Thomas sweep as an identity row (a = c = 0, b = 1),
+// so the per-pass caps ck_impl_dtmax / ck_impl_demax act on them exactly as on a Newton
+// step and nothing downstream knows the difference.  The residual of the seeded iterate
+// is measured at the top of pass 1, which is where every other pass is measured.
+inline int ck_impl_seed = 0;
+
 // the Newton pass index inside one RT call; read by the pass function to decide whether
 // the opacity is rebuilt.  -1 = ck_implicit is off.
 inline int ck_impl_pass = -1;
+// the pass that BUILDS the Jacobian under ck_impl_reuse_jac: the first one that takes a
+// Newton step, i.e. pass 1 when pass 0 is a seed step and pass 0 otherwise.
+inline int CkImplJacPass() { return (ck_impl_seed > 0) ? 1 : 0; }
 
 // dSrc_i/dT_{i-1,i,i+1}, (m, 3, k, j, i), summed over bands and g-points
 inline DvceArray5D<Real> *ck_jac_ptr = nullptr;
@@ -239,6 +279,8 @@ inline DvceArray3D<Real> *ck_done_ptr = nullptr;
 // the Thomas sweep's two work rows, (m,k,j,i)
 inline DvceArray4D<Real> *ck_cp_ptr = nullptr;
 inline DvceArray4D<Real> *ck_dp_ptr = nullptr;
+// problem/ck_impl_reuse_jac = 2: the temperature the reused Jacobian was built at
+inline DvceArray4D<Real> *ck_t0_ptr = nullptr;
 // ---- problem/ck_impl_frozen_op: the STORED OPERATOR, laid out (m, chain, i, k, j) like
 // Bb_g and kc_g, so that the lanes of a wave -- which vary in j -- read adjacent Reals.
 // kappa rho per cell and chain, and the three coefficients of that cell's HALF layer
@@ -346,6 +388,7 @@ inline void CkImplAlloc(const int nmb, const int nb, const int nch, const int n1
     delete ck_done_ptr;
     delete ck_dep_ptr;
     delete ck_seed_ptr;
+    delete ck_t0_ptr;
     if (ck_kro_ptr != nullptr) {
       delete ck_kro_ptr;
       delete ck_c0_ptr;
@@ -368,6 +411,11 @@ inline void CkImplAlloc(const int nmb, const int nb, const int nch, const int n1
   ck_done_ptr = new DvceArray3D<Real>("ck_done", nmb, n3, n2);
   ck_dep_ptr = new DvceArray4D<Real>("ck_dep", nmb, n3, n2, n1);
   ck_seed_ptr = new DvceArray4D<Real>("ck_seed", nmb, n3, n2, n1);
+  // problem/ck_impl_reuse_jac = 2 only; a 1-element dummy otherwise
+  ck_t0_ptr = new DvceArray4D<Real>("ck_t0", (ck_impl_reuse_jac == 2) ? nmb : 1,
+                                    (ck_impl_reuse_jac == 2) ? n3 : 1,
+                                    (ck_impl_reuse_jac == 2) ? n2 : 1,
+                                    (ck_impl_reuse_jac == 2) ? n1 : 1);
   // ---- problem/ck_impl_frozen_op: the stored operator.  The coefficient triple is the
   // memory-hungry half and is allocated only when ck_impl_frozen_cof asks for it; the
   // arrays are 1-element dummies otherwise, captured and never read.
@@ -477,6 +525,15 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
   const Real eps = ck_impl_norm_eps;
   const Real dcap = ck_impl_dtmax;
   const Real detot = ck_impl_demax;
+  // ---- problem/ck_impl_seed / ck_impl_reuse_jac ----------------------------------
+  // seedp_: this pass takes the per-cell initial guess instead of a Newton step.
+  // t0rec_: this pass is the one that BUILT the reused Jacobian, so the temperature it
+  // was built at is latched here for the rescaling of mode 2.
+  const int seedm_ = ck_impl_seed;
+  const bool seedp_ = (seedm_ > 0) && (ck_impl_pass == 0);
+  const int jscl_ = (ck_impl_reuse_jac == 2) ? 1 : 0;
+  const bool t0rec_ = (jscl_ > 0) && (ck_impl_pass == CkImplJacPass());
+  auto t0_ = *ck_t0_ptr;
 
   // ---- pass 1: the residual norm of the CURRENT iterate --------------------------
   par_for("ck_impl_res", DevExeSpace(), 0, nmb1, ks, ke, js, je,
@@ -500,6 +557,8 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
       const Real dx = dx1_(m,k,j,i);
       sg += (ei_(m,k,j,i) - est_(m,k,j,i))*dx;
       ss += bdt*src_(m,k,j,i)*dx;
+      // ck_impl_reuse_jac = 2: latch the T the Jacobian of this pass was built at
+      if (t0rec_) t0_(m,k,j,i) = T_(m,k,j,i);
     }
     Kokkos::atomic_max(&cnv_(0), rn);
     Kokkos::atomic_add(&cnv_(4), sg);
@@ -584,16 +643,68 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
       // in rt_chain_ck).  So the matrix stays the same M-matrix, one size smaller.
       const bool thin = !(thk_(m,k,j,i) > 0.0);
       Real a, b, c, d;
-      if (thin) {
+      if (seedp_) {
+        // ---- problem/ck_impl_seed: THE INITIAL GUESS, as an identity row ----------
+        // a = c = 0 and b = 1 make the Thomas sweep hand `d` back unchanged (cp = 0,
+        // dp = d), so the guess reaches the gas through the same caps and the same
+        // accounting as a Newton step, and the column stays decoupled.
+        const Real emc = em_(m,k,j,i);
+        const Real sc = src_(m,k,j,i);
+        a = 0.0;
+        b = 1.0;
+        c = 0.0;
+        if (seedm_ == 2) {
+          d = CkThinSolve(ei, est_(m,k,j,i), sc, emc, bdt) - ei;
+        } else {
+          // the rt_semi_lin step of the default scheme: relax the cell's own emission
+          // about the current state at lambda = 4 E/e, absorbed field lagged
+          const Real de0 = est_(m,k,j,i) - ei;   // the step already applied this stage
+          if (emc > 0.0) {
+            const Real lam = 4.0*emc/ei;
+            const Real x = lam*bdt;
+            d = de0 + ((x > 1.0e-4) ? (sc/lam)*(-expm1(-x)) : sc*bdt);
+          } else {
+            d = de0 + sc*bdt;
+          }
+        }
+      } else if (thin) {
         a = 0.0;
         b = 1.0;
         c = 0.0;
         d = CkThinSolve(ei, est_(m,k,j,i), src_(m,k,j,i), em_(m,k,j,i), bdt) - ei;
         Kokkos::atomic_add(&cnv_(7), 1.0);
       } else {
-        a = (q > 0) ? (-bdt*jac_(m,0,k,j,i)/cvm) : 0.0;
-        b = 1.0 - bdt*jac_(m,1,k,j,i)/cvi;
-        c = (q < n-1) ? (-bdt*jac_(m,2,k,j,i)/cvp) : 0.0;
+        // ---- problem/ck_impl_reuse_jac = 2: the SCALED CHORD.  Each column of the row
+        // is rescaled by (T/T_build)^3 of the cell that column points at, which is the
+        // dominant T dependence of the dB_b/dT the frozen entry carries.  Positive, so
+        // the M-matrix property survives.  Mode 1 leaves the entries alone (the
+        // rescaling is skipped by jscl_ = 0, not by a second branch, so the two modes
+        // share one code path).
+        Real s0 = 1.0, s1 = 1.0, s2 = 1.0;
+        if (jscl_ > 0) {
+          const Real tb = t0_(m,k,j,i);
+          if (Ti > 0.0 && tb > 0.0) {
+            const Real r = Ti/tb;
+            s1 = r*r*r;
+          }
+          if (q > 0) {
+            const Real tbm = t0_(m,k,j,i-1);
+            if (Tim > 0.0 && tbm > 0.0) {
+              const Real r = Tim/tbm;
+              s0 = r*r*r;
+            }
+          }
+          if (q < n-1) {
+            const Real tbp = t0_(m,k,j,i+1);
+            if (Tip > 0.0 && tbp > 0.0) {
+              const Real r = Tip/tbp;
+              s2 = r*r*r;
+            }
+          }
+        }
+        a = (q > 0) ? (-bdt*s0*jac_(m,0,k,j,i)/cvm) : 0.0;
+        b = 1.0 - bdt*s1*jac_(m,1,k,j,i)/cvi;
+        c = (q < n-1) ? (-bdt*s2*jac_(m,2,k,j,i)/cvp) : 0.0;
         d = -(ei - est_(m,k,j,i) - bdt*src_(m,k,j,i));
       }
       if (!(b > 0.0)) {

@@ -1,0 +1,6 @@
+=== (a) default off: new vs HEAD reference, dhj_ck_spherical, 20 cycles
+0 p4a_ref_spfalse 14.41
+0 p4a_new_spfalse 14.35
+0 p4a_ref_sptrue 17.21
+0 p4a_new_sptrue 17.22
+=== done

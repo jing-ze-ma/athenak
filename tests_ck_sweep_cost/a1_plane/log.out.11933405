@@ -1,0 +1,35 @@
+rc=0
+plain.err:PLAIN_WALL 24.56 s
+plain.log:cpu time used  = 1.747119e+01
+plain.log:zone-cycles/cpu_second = 1.350392e+07
+# Athena++ history data
+#  [1]=time      [2]=dt       [3]=mass    [4]=1-mom    [5]=2-mom    [6]=3-mom    [7]=tot-E    [8]=1-KE    [9]=2-KE    [10]=3-KE    [11]=1-ME    [12]=2-ME    [13]=3-ME    
+  8.64058e+07  2.04465e+01  3.55305e+26  9.76522e+27 -2.53892e+29  1.70392e+28  6.21526e+38  6.88106e+32  1.17779e+34  6.94232e+33  2.59697e+32  3.05971e+33  1.65824e+33
+                                  
+================================= 
+Global information about the job: 
+================================= 
+  
+Job owner: jinma(28895)
+Job name:  cksw_a1
+Node list: vipa1327
+Job start: Tue Sep 22 09:04:09 CEST 2026
+Job end:   Tue Sep 22 09:04:35 CEST 2026
+Work dir:  /viper/u2/jinma/ATHENAK/athenak/tests_ck_sweep_cost/a1_plane
+Command:   /viper/u2/jinma/ATHENAK/athenak/tests_ck_sweep_cost/a1_plane/submit.sh
+  
+  
+  
+==========================================================================================
+Information on jobsteps (Note: MaxRSS/AveRSS is the maximum/average over all 
+tasks of the per-task memory high-water marks; cf. "man sacct"): 
+==========================================================================================
+  
+JobID            JobName NNodes NTasks  NCPUS       MaxRSS       AveRSS    Elapsed ExitCode
+------------- ---------- ------ ------ ------ ------------ ------------ ---------- --------
+11933405         cksw_a1      1            96                             00:00:26      0:0
+11933405.0        athena      1      2     96     1443.75M     1172.64M   00:00:25      0:0
+  
+Maximum memory per node: 3.027769 GB (defined as MaxRSS*Ntasks/NNodes)
+CPU utilization: 3.2 %
+  

@@ -1,0 +1,21 @@
+=== (a) default off: new vs HEAD reference, dhj_ck_spherical, 20 cycles
+127 p4a_ref_spfalse Command exited with non-zero status 127
+0.00
+0 p4a_new_spfalse 13.26
+127 p4a_ref_sptrue Command exited with non-zero status 127
+0.00
+0 p4a_new_sptrue 16.00
+=== (b) 20 cycles with dumps: state and passes, each lever against the baseline
+0 p4b_base 44.72
+0 p4b_r1 29.20
+0 p4b_r2 42.84
+0 p4b_s1 51.55
+0 p4b_s2 36.24
+0 p4b_b1 29.05
+0 p4b_b2 28.81
+=== (c) cost, 100 cycles, no dumps
+0 p4c_semi 38.54
+0 p4c_base 160.32
+0 p4c_r1 140.16
+0 p4c_r2 113.96
+0 p4c_s1 452.47

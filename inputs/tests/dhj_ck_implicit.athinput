@@ -353,6 +353,16 @@ ck_impl_frozen_op = false
 ck_impl_frozen_cof = true
 # problem/ck_impl_warm: seed the Newton with the previous call's converged increment.
 ck_impl_warm = false
+# problem/ck_impl_reuse_jac: QUASI-NEWTON.  0 = rebuild the tridiagonal every pass,
+# 1 = build it on the first Newton pass and REUSE it (chord method), 2 = as 1 but rescale
+# each entry by (T/T_build)^3, the dominant temperature dependence of the dB_b/dT it
+# carries.  The residual is re-formed by a full sweep either way, so the fixed point does
+# not move.  See tests_ck_implicit/README_phase4.md.
+ck_impl_reuse_jac = 0
+# problem/ck_impl_seed: THE INITIAL GUESS.  0 = pass 0 takes an ordinary Newton step,
+# 1 = pass 0 takes the SEMI-IMPLICIT step the default scheme would take, 2 = pass 0 takes
+# the exact per-cell bracketed backward-Euler step with the absorbed field lagged.
+ck_impl_seed = 0
 rt_de_max    = 0.5
 # problem/ck_spherical: the SPHERICAL form of the correlated-k two-stream (see
 # two_stream_rt::ck_spherical).  false = bitwise the plane-parallel arithmetic the ck

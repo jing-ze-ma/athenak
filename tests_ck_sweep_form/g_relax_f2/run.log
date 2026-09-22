@@ -1,0 +1,131 @@
+Mesh: spherical-polar x3-face theta correction = rotate
+
+Root grid = 1 x 1 x 2 MeshBlocks
+Total number of MeshBlocks = 2
+Number of logical  levels of refinement = 1 (2 levels total)
+Number of physical levels of refinement = 0 (1 levels total)
+Number of parallel ranks = 1
+<hydro>/tfloor_kelvin = 200 K -> tfloor = 1.66289e+10 in code temperature (1.20272e-08 K per unit, general EOS)
+General EOS: tabulated on 281 x 451 nodes (15 MB), log10 rho[cgs] in [-14, 0], log10 T[K] in [1.5, 6]
+             X = 0.7381, Y = 0.2485, Z = 0.0134, H2 on, ionization on, radiation off
+             metal ionization on ([M/H] = 0, condensation on)
+             mu at the grid centre = 1.25764, n_e/n_tot = 0.000152915
+Radial (x1) reconstruction on the spherical polar grid (<hydro>/reconstruct_x1) = plm
+deep_hot_jupiter_rt: outer-x1 Maxwell-stress term in the ghost extrapolation is ON
+deep_hot_jupiter_rt: RT two-stream source is SEMI-IMPLICIT
+deep_hot_jupiter_rt: problem/rt_ck implies problem/rt_split; enabling the split RT path
+deep_hot_jupiter_rt: correlated-k table '/viper/u2/jinma/ATHENAK/athenak/data/exo_fms_ck/ck/Premixed_1x_g8_11.txt'
+  38 T x 34 p x 11 bands x 8 g, T = 100 .. 6100 K, p = 1e-08 .. 1000 bar
+  bands 0.26 .. 324.68 um, g weights sum to 1
+  correlated-k applied where p < 10 bar
+  Planck fractions tabulated on 512 points, T = 50 .. 20000 K; worst |sum_b f_b - 1| = 2.22045e-16
+  >1% of the Planck function falls bluer than 0.26 um above T = 5571.75 K; beyond that the 11-band grid stops
+  capturing the spectrum and folding the tail into the bluest band is no longer a small correction
+  (with the p < 10 bar cut this setup tops out near 4800 K, where the tail is 3e-3)
+  stellar spectrum: blackbody at T_eff = 6000 K
+    1.67436 % of it is bluer than the grid's 0.26 um edge and is folded into the bluest band
+  continuum: FastChem composition 241 T x 34 p, 4 CIA pairs, 4 Rayleigh species
+  band-mean kappa at 0.1 bar [cm^2/g]:  reddest band  13.6107 (800 K) -> 3.83348 (2500 K)
+                                       bluest band   1.28114e-07 (800 K) -> 30.9807 (2500 K)
+  continuum at 3500 K, 0.1 bar, rho=1 [cm^-1], reddest to bluest:
+    1.07509e-06 1.11788e-07 2.62562e-08 1.17621e-08 6.63404e-09 3.96185e-09 3.70228e-09 4.23501e-08 4.33847e-08 3.30788e-08 2.00535e-08
+  two-stream self-test: isothermal net flux |F|/sigmaT^4 <= 2.57992e-17, transparent slab F/sigmaT^4 = 1
+  11 bands x 8 g-points x 1 angular point(s) = 88 column solves per cell (diffusivity factor 1.66)
+
+### WARNING! in /u/jinma/ATHENAK/athenak/src/pgen/deep_hot_jupiter_rt.cpp at line 926
+<problem>/Rgas = 4.593e+07 implies mean molecular weight 1.81025, but the general EOS supplies its own composition and is being asked for temperature directly.
+Rgas is now unused; this run will NOT reproduce the eos=ideal run. Set Rgas = 8.31446e+07 for that comparison.
+
+  Rosseland table for the radiative diffusion (ck + continuum), 38 T x 34 p; kappa_R / Freedman+2014:
+    T = 1000 K, p = 1 bar: 0.0235563 / 0.013942 = 1.68959
+    T = 1000 K, p = 21.3796 bar: 0.0662144 / 0.0822416 = 0.805121
+    T = 2500 K, p = 1 bar: 0.0310734 / 0.0421017 = 0.738056
+    T = 2500 K, p = 21.3796 bar: 0.114051 / 0.136979 = 0.832617
+    T = 3700 K, p = 1 bar: 0.220489 / 0.145127 = 1.51929
+    T = 3700 K, p = 21.3796 bar: 0.608166 / 0.799208 = 0.760961
+    T = 4900 K, p = 1 bar: 1.20168 / 0.251724 = 4.77377
+    T = 4900 K, p = 21.3796 bar: 6.17839 / 1.3803 = 4.47613
+  radiative diffusion: wall flux sigma T_int^4 = 4.73518e+06 erg/s/cm^2 (T_int = 537.565 K)
+
+Setup complete, executing task list(s)...
+
+elapsed=5.546468e+00 cycle=0 time=0.000000e+00 dt=2.897698e+01
+### rad_cap_ang rank 0 cycle 0 t = 0.000000e+00: max x_i = 1.142435e-07 (cap 5.000000e-01) at (m,k,j,i) = (0,2,5,36) gid = 0 r = 1.132709e+10 | cells over cap = 0, faces capped = 0
+### two_stream_rt: correlated-k SPHERICAL form ON (problem/ck_spherical): face mixing on both rays, Phi = A F single-valued for the THERMAL two-stream; the stellar beam is unchanged (a parallel pencil is not confined to the column).
+### two_stream_rt: correlated-k PROBE-FREE sweep ON (problem/ck_sweep_form = 2, sd: S = (u+d)/2, D = (u-d)/2): two column passes, the face coupling exact.
+### two_stream_rt: thermodynamic state read from u0 (CONSERVED, problem/rt_use_cons = true)
+deep_hot_jupiter_rt: RT split path ON, 22 chain block(s) of 4 -> 22x the thread count of the monolithic kernel
+### rad_cap_ang rank 0 cycle 0 t = 0.000000e+00: max x_i = 5.711925e-08 (cap 5.000000e-01) at (m,k,j,i) = (0,5,5,36) gid = 0 r = 1.132709e+10 | cells over cap = 0, faces capped = 0
+### rad_cap_ang rank 0 cycle 1 t = 2.897698e+01: max x_i = 1.142152e-07 (cap 5.000000e-01) at (m,k,j,i) = (1,2,5,36) gid = 1 r = 1.132709e+10 | cells over cap = 0, faces capped = 0
+### rad_cap_ang rank 0 cycle 1 t = 2.897698e+01: max x_i = 5.710539e-08 (cap 5.000000e-01) at (m,k,j,i) = (0,5,5,36) gid = 0 r = 1.132709e+10 | cells over cap = 0, faces capped = 0
+### rad_cap_ang rank 0 cycle 2 t = 5.794799e+01: max x_i = 1.141876e-07 (cap 5.000000e-01) at (m,k,j,i) = (1,2,5,36) gid = 1 r = 1.132709e+10 | cells over cap = 0, faces capped = 0
+### rad_cap_ang rank 0 cycle 2 t = 5.794799e+01: max x_i = 5.709187e-08 (cap 5.000000e-01) at (m,k,j,i) = (1,2,5,36) gid = 1 r = 1.132709e+10 | cells over cap = 0, faces capped = 0
+### rad_cap_ang rank 0 cycle 3 t = 8.691307e+01: max x_i = 1.141607e-07 (cap 5.000000e-01) at (m,k,j,i) = (1,2,6,36) gid = 1 r = 1.132709e+10 | cells over cap = 0, faces capped = 0
+### rad_cap_ang rank 0 cycle 3 t = 8.691307e+01: max x_i = 5.707868e-08 (cap 5.000000e-01) at (m,k,j,i) = (1,2,5,36) gid = 1 r = 1.132709e+10 | cells over cap = 0, faces capped = 0
+### rad_cap_ang rank 0 cycle 4 t = 1.158723e+02: max x_i = 1.141344e-07 (cap 5.000000e-01) at (m,k,j,i) = (1,2,5,36) gid = 1 r = 1.132709e+10 | cells over cap = 0, faces capped = 0
+### rad_cap_ang rank 0 cycle 4 t = 1.158723e+02: max x_i = 5.706580e-08 (cap 5.000000e-01) at (m,k,j,i) = (1,2,5,36) gid = 1 r = 1.132709e+10 | cells over cap = 0, faces capped = 0
+### rad_cap_ang rank 0 cycle 5 t = 1.448256e+02: max x_i = 1.141088e-07 (cap 5.000000e-01) at (m,k,j,i) = (1,2,6,36) gid = 1 r = 1.132709e+10 | cells over cap = 0, faces capped = 0
+### rad_cap_ang rank 0 cycle 5 t = 1.448256e+02: max x_i = 5.705321e-08 (cap 5.000000e-01) at (m,k,j,i) = (1,2,6,36) gid = 1 r = 1.132709e+10 | cells over cap = 0, faces capped = 0
+### rad_cap_ang rank 0 cycle 6 t = 1.737731e+02: max x_i = 1.140838e-07 (cap 5.000000e-01) at (m,k,j,i) = (1,2,6,36) gid = 1 r = 1.132709e+10 | cells over cap = 0, faces capped = 0
+### rad_cap_ang rank 0 cycle 6 t = 1.737731e+02: max x_i = 5.704091e-08 (cap 5.000000e-01) at (m,k,j,i) = (1,2,5,36) gid = 1 r = 1.132709e+10 | cells over cap = 0, faces capped = 0
+### rad_cap_ang rank 0 cycle 7 t = 2.027148e+02: max x_i = 1.140593e-07 (cap 5.000000e-01) at (m,k,j,i) = (1,2,5,36) gid = 1 r = 1.132709e+10 | cells over cap = 0, faces capped = 0
+### rad_cap_ang rank 0 cycle 7 t = 2.027148e+02: max x_i = 5.702886e-08 (cap 5.000000e-01) at (m,k,j,i) = (1,2,5,36) gid = 1 r = 1.132709e+10 | cells over cap = 0, faces capped = 0
+### rad_cap_ang rank 0 cycle 8 t = 2.316508e+02: max x_i = 1.140354e-07 (cap 5.000000e-01) at (m,k,j,i) = (1,2,6,36) gid = 1 r = 1.132709e+10 | cells over cap = 0, faces capped = 0
+### rad_cap_ang rank 0 cycle 8 t = 2.316508e+02: max x_i = 5.701705e-08 (cap 5.000000e-01) at (m,k,j,i) = (1,2,6,36) gid = 1 r = 1.132709e+10 | cells over cap = 0, faces capped = 0
+### rad_cap_ang rank 0 cycle 9 t = 2.605812e+02: max x_i = 1.140120e-07 (cap 5.000000e-01) at (m,k,j,i) = (1,2,6,36) gid = 1 r = 1.132709e+10 | cells over cap = 0, faces capped = 0
+### rad_cap_ang rank 0 cycle 9 t = 2.605812e+02: max x_i = 5.700547e-08 (cap 5.000000e-01) at (m,k,j,i) = (1,2,5,36) gid = 1 r = 1.132709e+10 | cells over cap = 0, faces capped = 0
+elapsed=2.362068e+01 cycle=100 time=2.873444e+03 dt=2.861384e+01
+elapsed=4.173827e+01 cycle=200 time=5.724051e+03 dt=2.853622e+01
+elapsed=5.986948e+01 cycle=300 time=8.146493e+03 dt=2.086340e+01
+### WARNING in deep_hot_jupiter_rt: the explicit radiative source was clipped in 2 cell(s) by problem/rt_de_max = 5.000000e-01.
+    The radiative time e/|src| is shorter than the timestep there, so the radiation is outside
+    the regime this operator-split scheme is valid in. The usual cause is a pressure or
+    density floor pinning the top of the atmosphere; see docs/correlated_k_rt.md.
+    Reported once per run.
+elapsed=7.804525e+01 cycle=400 time=1.016515e+04 dt=2.005883e+01
+elapsed=9.625161e+01 cycle=500 time=1.236222e+04 dt=2.560481e+01
+elapsed=1.144793e+02 cycle=600 time=1.507146e+04 dt=2.216328e+01
+elapsed=1.326528e+02 cycle=700 time=1.705741e+04 dt=1.942904e+01
+elapsed=1.507876e+02 cycle=800 time=1.915773e+04 dt=2.460222e+01
+elapsed=1.689517e+02 cycle=900 time=2.186372e+04 dt=2.685527e+01
+elapsed=1.871441e+02 cycle=1000 time=2.448428e+04 dt=2.686932e+01
+elapsed=2.053208e+02 cycle=1100 time=2.731441e+04 dt=2.865522e+01
+elapsed=2.235050e+02 cycle=1200 time=3.018689e+04 dt=2.880888e+01
+elapsed=2.423502e+02 cycle=1300 time=3.305888e+04 dt=2.872194e+01
+elapsed=2.605216e+02 cycle=1400 time=3.586583e+04 dt=2.823704e+01
+elapsed=2.787027e+02 cycle=1500 time=3.873802e+04 dt=2.877668e+01
+elapsed=2.968863e+02 cycle=1600 time=4.161138e+04 dt=2.876129e+01
+elapsed=3.150621e+02 cycle=1700 time=4.447736e+04 dt=2.872812e+01
+elapsed=3.332476e+02 cycle=1800 time=4.735110e+04 dt=2.870812e+01
+elapsed=3.514325e+02 cycle=1900 time=5.022216e+04 dt=2.871323e+01
+elapsed=3.696001e+02 cycle=2000 time=5.308763e+04 dt=2.861762e+01
+elapsed=3.877675e+02 cycle=2100 time=5.594374e+04 dt=2.852241e+01
+elapsed=4.059281e+02 cycle=2200 time=5.879455e+04 dt=2.848610e+01
+elapsed=4.240929e+02 cycle=2300 time=6.163774e+04 dt=2.836644e+01
+elapsed=4.422601e+02 cycle=2400 time=6.446908e+04 dt=2.827237e+01
+elapsed=4.604154e+02 cycle=2500 time=6.729308e+04 dt=2.819751e+01
+elapsed=4.785638e+02 cycle=2600 time=7.010622e+04 dt=2.802271e+01
+elapsed=4.967142e+02 cycle=2700 time=7.288633e+04 dt=2.759856e+01
+elapsed=5.148595e+02 cycle=2800 time=7.563261e+04 dt=2.733302e+01
+elapsed=5.330050e+02 cycle=2900 time=7.834995e+04 dt=2.692884e+01
+elapsed=5.511537e+02 cycle=3000 time=8.102410e+04 dt=2.671282e+01
+elapsed=5.693102e+02 cycle=3100 time=8.367712e+04 dt=2.644684e+01
+elapsed=5.874663e+02 cycle=3200 time=8.632790e+04 dt=2.642165e+01
+elapsed=6.056237e+02 cycle=3300 time=8.895843e+04 dt=2.631159e+01
+elapsed=6.237811e+02 cycle=3400 time=9.160328e+04 dt=2.640826e+01
+elapsed=6.419376e+02 cycle=3500 time=9.422615e+04 dt=2.609754e+01
+elapsed=6.600907e+02 cycle=3600 time=9.683714e+04 dt=2.602575e+01
+elapsed=6.782482e+02 cycle=3700 time=9.942693e+04 dt=2.584107e+01
+elapsed=6.964054e+02 cycle=3800 time=1.020194e+05 dt=2.590763e+01
+elapsed=7.145614e+02 cycle=3900 time=1.045984e+05 dt=2.573242e+01
+photosphere: written to 'photo.txt'
+elapsed=7.327407e+02 cycle=4000 time=1.071796e+05 dt=2.596490e+01
+
+Terminating on cycle limit
+time=1.071796e+05 cycle=4000
+tlim=8.640000e+07 nlim=4000
+
+MeshBlock-cycles = 8000
+cpu time used  = 7.271942e+02
+zone-cycles/cpu_second = 4.506086e+04
+particle-updates/cpu_second = 0.000000e+00

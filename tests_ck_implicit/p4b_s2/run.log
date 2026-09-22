@@ -1,0 +1,127 @@
+Mesh: spherical-polar x3-face theta correction = rotate
+
+Root grid = 1 x 1 x 2 MeshBlocks
+Total number of MeshBlocks = 2
+Number of logical  levels of refinement = 1 (2 levels total)
+Number of physical levels of refinement = 0 (1 levels total)
+Number of parallel ranks = 1
+<hydro>/tfloor_kelvin = 200 K -> tfloor = 1.66289e+10 in code temperature (1.20272e-08 K per unit, general EOS)
+General EOS: tabulated on 281 x 451 nodes (15 MB), log10 rho[cgs] in [-14, 0], log10 T[K] in [1.5, 6]
+             X = 0.7381, Y = 0.2485, Z = 0.0134, H2 on, ionization on, radiation off
+             metal ionization on ([M/H] = 0, condensation on)
+             mu at the grid centre = 1.25764, n_e/n_tot = 0.000152915
+Radial (x1) reconstruction on the spherical polar grid (<hydro>/reconstruct_x1) = plm
+deep_hot_jupiter_rt: outer-x1 Maxwell-stress term in the ghost extrapolation is ON
+deep_hot_jupiter_rt: correlated-k source is IMPLICIT (ck_implicit), tol 1e-08, maxit 8
+deep_hot_jupiter_rt: RT two-stream source is SEMI-IMPLICIT
+deep_hot_jupiter_rt: problem/rt_ck implies problem/rt_split; enabling the split RT path
+deep_hot_jupiter_rt: correlated-k table '/viper/u2/jinma/ATHENAK/athenak/data/exo_fms_ck/ck/Premixed_1x_g8_11.txt'
+  38 T x 34 p x 11 bands x 8 g, T = 100 .. 6100 K, p = 1e-08 .. 1000 bar
+  bands 0.26 .. 324.68 um, g weights sum to 1
+  correlated-k applied where p < 10 bar
+  Planck fractions tabulated on 512 points, T = 50 .. 20000 K; worst |sum_b f_b - 1| = 2.22045e-16
+  >1% of the Planck function falls bluer than 0.26 um above T = 5571.75 K; beyond that the 11-band grid stops
+  capturing the spectrum and folding the tail into the bluest band is no longer a small correction
+  (with the p < 10 bar cut this setup tops out near 4800 K, where the tail is 3e-3)
+  stellar spectrum: blackbody at T_eff = 6000 K
+    1.67436 % of it is bluer than the grid's 0.26 um edge and is folded into the bluest band
+  continuum: FastChem composition 241 T x 34 p, 4 CIA pairs, 4 Rayleigh species
+  band-mean kappa at 0.1 bar [cm^2/g]:  reddest band  13.6107 (800 K) -> 3.83348 (2500 K)
+                                       bluest band   1.28114e-07 (800 K) -> 30.9807 (2500 K)
+  continuum at 3500 K, 0.1 bar, rho=1 [cm^-1], reddest to bluest:
+    1.07509e-06 1.11788e-07 2.62562e-08 1.17621e-08 6.63404e-09 3.96185e-09 3.70228e-09 4.23501e-08 4.33847e-08 3.30788e-08 2.00535e-08
+  two-stream self-test: isothermal net flux |F|/sigmaT^4 <= 2.57992e-17, transparent slab F/sigmaT^4 = 1
+  11 bands x 8 g-points x 1 angular point(s) = 88 column solves per cell (diffusivity factor 1.66)
+
+### WARNING! in /u/jinma/ATHENAK/athenak/src/pgen/deep_hot_jupiter_rt.cpp at line 898
+<problem>/Rgas = 4.593e+07 implies mean molecular weight 1.81025, but the general EOS supplies its own composition and is being asked for temperature directly.
+Rgas is now unused; this run will NOT reproduce the eos=ideal run. Set Rgas = 8.31446e+07 for that comparison.
+
+  Rosseland table for the radiative diffusion (ck + continuum), 38 T x 34 p; kappa_R / Freedman+2014:
+    T = 1000 K, p = 1 bar: 0.0235563 / 0.013942 = 1.68959
+    T = 1000 K, p = 21.3796 bar: 0.0662144 / 0.0822416 = 0.805121
+    T = 2500 K, p = 1 bar: 0.0310734 / 0.0421017 = 0.738056
+    T = 2500 K, p = 21.3796 bar: 0.114051 / 0.136979 = 0.832617
+    T = 3700 K, p = 1 bar: 0.220489 / 0.145127 = 1.51929
+    T = 3700 K, p = 21.3796 bar: 0.608166 / 0.799208 = 0.760961
+    T = 4900 K, p = 1 bar: 1.20168 / 0.251724 = 4.77377
+    T = 4900 K, p = 21.3796 bar: 6.17839 / 1.3803 = 4.47613
+  radiative diffusion: wall flux sigma T_int^4 = 4.73518e+06 erg/s/cm^2 (T_int = 537.565 K)
+
+Setup complete, executing task list(s)...
+
+elapsed=6.782785e+00 cycle=0 time=0.000000e+00 dt=2.897698e+01
+### rad_cap_ang rank 0 cycle 0 t = 0.000000e+00: max x_i = 1.142435e-07 (cap 5.000000e-01) at (m,k,j,i) = (0,2,5,36) gid = 0 r = 1.132709e+10 | cells over cap = 0, faces capped = 0
+### two_stream_rt: PSEUDO-SPHERICAL stellar beam ON (problem/ck_beam_sph): straight rays through the shells, no secant clamp, twilight (mu0 < 0) lit down to the grazing radius.
+### two_stream_rt: correlated-k SPHERICAL form ON (problem/ck_spherical): face mixing on both rays, Phi = A F single-valued for the THERMAL two-stream; the stellar beam is unchanged (a parallel pencil is not confined to the column).
+### two_stream_rt: thermodynamic state read from u0 (CONSERVED, problem/rt_use_cons = true)
+deep_hot_jupiter_rt: RT split path ON, 22 chain block(s) of 4 -> 22x the thread count of the monolithic kernel
+### ck_implicit ncycle=0 passes=8 res=1.792684e-05 dstep=1.049177e-02 ckdesum=-9.445782e-06 capped=0 fallback=0 thin=0 active=36 nsweep=8 rj=0 sd=2 NOT-CONVERGED
+### rad_cap_ang rank 0 cycle 0 t = 0.000000e+00: max x_i = 5.711895e-08 (cap 5.000000e-01) at (m,k,j,i) = (0,5,5,36) gid = 0 r = 1.132709e+10 | cells over cap = 0, faces capped = 0
+### ck_implicit ncycle=0 passes=8 res=9.314627e-09 dstep=1.158269e-05 ckdesum=-2.883186e-07 capped=0 fallback=0 thin=12 active=0 nsweep=16 rj=0 sd=2
+### rad_cap_ang rank 0 cycle 1 t = 2.897698e+01: max x_i = 1.142147e-07 (cap 5.000000e-01) at (m,k,j,i) = (1,2,5,36) gid = 1 r = 1.132709e+10 | cells over cap = 0, faces capped = 0
+### ck_implicit ncycle=1 passes=8 res=2.042277e-06 dstep=5.518135e-04 ckdesum=-1.801364e-07 capped=0 fallback=0 thin=0 active=32 nsweep=24 rj=0 sd=2 NOT-CONVERGED
+### rad_cap_ang rank 0 cycle 1 t = 2.897698e+01: max x_i = 5.710487e-08 (cap 5.000000e-01) at (m,k,j,i) = (0,5,5,36) gid = 0 r = 1.132709e+10 | cells over cap = 0, faces capped = 0
+### ck_implicit ncycle=1 passes=7 res=7.352344e-09 dstep=5.559741e-06 ckdesum=-2.926361e-07 capped=0 fallback=0 thin=0 active=0 nsweep=31 rj=0 sd=2
+### rad_cap_ang rank 0 cycle 2 t = 5.794799e+01: max x_i = 1.141866e-07 (cap 5.000000e-01) at (m,k,j,i) = (1,2,5,36) gid = 1 r = 1.132709e+10 | cells over cap = 0, faces capped = 0
+### ck_implicit ncycle=2 passes=8 res=7.073620e-07 dstep=1.452195e-04 ckdesum=-1.552353e-07 capped=0 fallback=0 thin=0 active=32 nsweep=39 rj=0 sd=2 NOT-CONVERGED
+### rad_cap_ang rank 0 cycle 2 t = 5.794799e+01: max x_i = 5.709115e-08 (cap 5.000000e-01) at (m,k,j,i) = (1,2,5,36) gid = 1 r = 1.132709e+10 | cells over cap = 0, faces capped = 0
+### ck_implicit ncycle=2 passes=6 res=8.991110e-09 dstep=1.055512e-05 ckdesum=-3.165113e-07 capped=0 fallback=0 thin=0 active=0 nsweep=45 rj=0 sd=2
+### rad_cap_ang rank 0 cycle 3 t = 8.691307e+01: max x_i = 1.141593e-07 (cap 5.000000e-01) at (m,k,j,i) = (1,2,5,36) gid = 1 r = 1.132709e+10 | cells over cap = 0, faces capped = 0
+### ck_implicit ncycle=3 passes=8 res=4.548308e-07 dstep=7.883656e-05 ckdesum=-1.483442e-07 capped=0 fallback=0 thin=0 active=32 nsweep=53 rj=0 sd=2 NOT-CONVERGED
+### rad_cap_ang rank 0 cycle 3 t = 8.691307e+01: max x_i = 5.707777e-08 (cap 5.000000e-01) at (m,k,j,i) = (1,2,5,36) gid = 1 r = 1.132709e+10 | cells over cap = 0, faces capped = 0
+### ck_implicit ncycle=3 passes=6 res=6.940867e-09 dstep=1.056649e-05 ckdesum=-3.143970e-07 capped=0 fallback=0 thin=0 active=0 nsweep=59 rj=0 sd=2
+### rad_cap_ang rank 0 cycle 4 t = 1.158723e+02: max x_i = 1.141327e-07 (cap 5.000000e-01) at (m,k,j,i) = (1,2,5,36) gid = 1 r = 1.132709e+10 | cells over cap = 0, faces capped = 0
+### ck_implicit ncycle=4 passes=8 res=3.739803e-07 dstep=6.507654e-05 ckdesum=-1.417321e-07 capped=0 fallback=0 thin=0 active=32 nsweep=67 rj=0 sd=2 NOT-CONVERGED
+### rad_cap_ang rank 0 cycle 4 t = 1.158723e+02: max x_i = 5.706472e-08 (cap 5.000000e-01) at (m,k,j,i) = (1,2,6,36) gid = 1 r = 1.132709e+10 | cells over cap = 0, faces capped = 0
+### ck_implicit ncycle=4 passes=7 res=9.802138e-09 dstep=2.936134e-06 ckdesum=-3.706425e-07 capped=0 fallback=0 thin=0 active=0 nsweep=74 rj=0 sd=2
+### rad_cap_ang rank 0 cycle 5 t = 1.448256e+02: max x_i = 1.141067e-07 (cap 5.000000e-01) at (m,k,j,i) = (1,2,6,36) gid = 1 r = 1.132709e+10 | cells over cap = 0, faces capped = 0
+### ck_implicit ncycle=5 passes=8 res=3.607026e-07 dstep=5.347348e-05 ckdesum=-1.255066e-07 capped=0 fallback=0 thin=0 active=32 nsweep=82 rj=0 sd=2 NOT-CONVERGED
+### rad_cap_ang rank 0 cycle 5 t = 1.448256e+02: max x_i = 5.705197e-08 (cap 5.000000e-01) at (m,k,j,i) = (1,2,6,36) gid = 1 r = 1.132709e+10 | cells over cap = 0, faces capped = 0
+### ck_implicit ncycle=5 passes=6 res=8.502422e-09 dstep=5.240075e-06 ckdesum=-4.273739e-07 capped=0 fallback=0 thin=0 active=0 nsweep=88 rj=0 sd=2
+### rad_cap_ang rank 0 cycle 6 t = 1.737731e+02: max x_i = 1.140814e-07 (cap 5.000000e-01) at (m,k,j,i) = (1,2,5,36) gid = 1 r = 1.132709e+10 | cells over cap = 0, faces capped = 0
+### ck_implicit ncycle=6 passes=8 res=2.755834e-07 dstep=3.482080e-05 ckdesum=-8.190723e-08 capped=0 fallback=0 thin=0 active=32 nsweep=96 rj=0 sd=2 NOT-CONVERGED
+### rad_cap_ang rank 0 cycle 6 t = 1.737731e+02: max x_i = 5.703950e-08 (cap 5.000000e-01) at (m,k,j,i) = (1,2,6,36) gid = 1 r = 1.132709e+10 | cells over cap = 0, faces capped = 0
+### ck_implicit ncycle=6 passes=6 res=8.105286e-09 dstep=4.043363e-06 ckdesum=-4.304512e-07 capped=0 fallback=0 thin=0 active=0 nsweep=102 rj=0 sd=2
+### rad_cap_ang rank 0 cycle 7 t = 2.027148e+02: max x_i = 1.140566e-07 (cap 5.000000e-01) at (m,k,j,i) = (1,2,6,36) gid = 1 r = 1.132709e+10 | cells over cap = 0, faces capped = 0
+### ck_implicit ncycle=7 passes=8 res=1.711532e-07 dstep=2.180200e-05 ckdesum=-7.076482e-08 capped=0 fallback=0 thin=0 active=20 nsweep=110 rj=0 sd=2 NOT-CONVERGED
+### rad_cap_ang rank 0 cycle 7 t = 2.027148e+02: max x_i = 5.702730e-08 (cap 5.000000e-01) at (m,k,j,i) = (1,2,5,36) gid = 1 r = 1.132709e+10 | cells over cap = 0, faces capped = 0
+### ck_implicit ncycle=7 passes=6 res=6.527779e-09 dstep=2.761905e-06 ckdesum=-4.312645e-07 capped=0 fallback=0 thin=0 active=0 nsweep=116 rj=0 sd=2
+### rad_cap_ang rank 0 cycle 8 t = 2.316508e+02: max x_i = 1.140324e-07 (cap 5.000000e-01) at (m,k,j,i) = (1,2,5,36) gid = 1 r = 1.132709e+10 | cells over cap = 0, faces capped = 0
+### ck_implicit ncycle=8 passes=8 res=1.234582e-07 dstep=1.346936e-05 ckdesum=-4.515893e-08 capped=0 fallback=0 thin=0 active=24 nsweep=124 rj=0 sd=2 NOT-CONVERGED
+### rad_cap_ang rank 0 cycle 8 t = 2.316508e+02: max x_i = 5.701535e-08 (cap 5.000000e-01) at (m,k,j,i) = (1,2,5,36) gid = 1 r = 1.132709e+10 | cells over cap = 0, faces capped = 0
+### ck_implicit ncycle=8 passes=6 res=8.861057e-09 dstep=1.947052e-06 ckdesum=-4.427895e-07 capped=0 fallback=0 thin=0 active=0 nsweep=130 rj=0 sd=2
+### rad_cap_ang rank 0 cycle 9 t = 2.605812e+02: max x_i = 1.140086e-07 (cap 5.000000e-01) at (m,k,j,i) = (1,2,6,36) gid = 1 r = 1.132709e+10 | cells over cap = 0, faces capped = 0
+### ck_implicit ncycle=9 passes=8 res=8.928490e-08 dstep=1.178260e-05 ckdesum=-5.813773e-08 capped=0 fallback=0 thin=0 active=28 nsweep=138 rj=0 sd=2 NOT-CONVERGED
+### rad_cap_ang rank 0 cycle 9 t = 2.605812e+02: max x_i = 5.700363e-08 (cap 5.000000e-01) at (m,k,j,i) = (1,2,6,36) gid = 1 r = 1.132709e+10 | cells over cap = 0, faces capped = 0
+### ck_implicit ncycle=9 passes=5 res=6.949476e-09 dstep=2.001120e-05 ckdesum=-4.588694e-07 capped=0 fallback=0 thin=0 active=0 nsweep=143 rj=0 sd=2
+### ck_implicit ncycle=10 passes=8 res=5.501097e-08 dstep=1.524747e-05 ckdesum=-5.663321e-08 capped=0 fallback=0 thin=0 active=20 nsweep=151 rj=0 sd=2 NOT-CONVERGED
+### ck_implicit ncycle=10 passes=5 res=6.395066e-09 dstep=2.063452e-05 ckdesum=-4.580830e-07 capped=0 fallback=0 thin=0 active=0 nsweep=156 rj=0 sd=2
+### ck_implicit ncycle=11 passes=8 res=3.935963e-08 dstep=1.298473e-05 ckdesum=-5.241643e-08 capped=0 fallback=0 thin=0 active=16 nsweep=164 rj=0 sd=2 NOT-CONVERGED
+### ck_implicit ncycle=11 passes=5 res=5.110395e-09 dstep=3.064268e-05 ckdesum=-4.574529e-07 capped=0 fallback=0 thin=0 active=0 nsweep=169 rj=0 sd=2
+### ck_implicit ncycle=12 passes=8 res=4.127608e-08 dstep=1.373785e-05 ckdesum=-6.728376e-08 capped=0 fallback=0 thin=0 active=16 nsweep=177 rj=0 sd=2 NOT-CONVERGED
+### ck_implicit ncycle=12 passes=5 res=3.422306e-09 dstep=4.838220e-05 ckdesum=-4.568552e-07 capped=0 fallback=0 thin=0 active=0 nsweep=182 rj=0 sd=2
+### ck_implicit ncycle=13 passes=8 res=4.218395e-08 dstep=1.463491e-05 ckdesum=-6.433452e-08 capped=0 fallback=0 thin=0 active=16 nsweep=190 rj=0 sd=2 NOT-CONVERGED
+### ck_implicit ncycle=13 passes=5 res=4.329455e-09 dstep=5.173072e-05 ckdesum=-4.557380e-07 capped=0 fallback=0 thin=0 active=0 nsweep=195 rj=0 sd=2
+### ck_implicit ncycle=14 passes=8 res=3.201510e-08 dstep=1.530647e-05 ckdesum=-8.000286e-08 capped=0 fallback=0 thin=0 active=16 nsweep=203 rj=0 sd=2 NOT-CONVERGED
+### ck_implicit ncycle=14 passes=5 res=3.570696e-09 dstep=5.056322e-05 ckdesum=-4.545221e-07 capped=0 fallback=0 thin=0 active=0 nsweep=208 rj=0 sd=2
+### ck_implicit ncycle=15 passes=8 res=3.874077e-08 dstep=1.587321e-05 ckdesum=-7.224567e-08 capped=0 fallback=0 thin=0 active=16 nsweep=216 rj=0 sd=2 NOT-CONVERGED
+### ck_implicit ncycle=15 passes=5 res=3.477138e-09 dstep=4.383178e-05 ckdesum=-4.529209e-07 capped=0 fallback=0 thin=0 active=0 nsweep=221 rj=0 sd=2
+### ck_implicit ncycle=16 passes=8 res=4.967372e-08 dstep=1.644649e-05 ckdesum=-8.883038e-08 capped=0 fallback=0 thin=0 active=16 nsweep=229 rj=0 sd=2 NOT-CONVERGED
+### ck_implicit ncycle=16 passes=5 res=3.510465e-09 dstep=3.216106e-05 ckdesum=-4.515055e-07 capped=0 fallback=0 thin=0 active=0 nsweep=234 rj=0 sd=2
+### ck_implicit ncycle=17 passes=8 res=4.100893e-08 dstep=1.704504e-05 ckdesum=-8.038064e-08 capped=0 fallback=0 thin=0 active=16 nsweep=242 rj=0 sd=2 NOT-CONVERGED
+### ck_implicit ncycle=17 passes=5 res=2.708530e-09 dstep=2.334543e-05 ckdesum=-4.500673e-07 capped=0 fallback=0 thin=0 active=0 nsweep=247 rj=0 sd=2
+### ck_implicit ncycle=18 passes=8 res=4.300782e-08 dstep=1.756401e-05 ckdesum=-7.961785e-08 capped=0 fallback=0 thin=0 active=12 nsweep=255 rj=0 sd=2 NOT-CONVERGED
+### ck_implicit ncycle=18 passes=5 res=3.638545e-09 dstep=1.378742e-05 ckdesum=-4.486388e-07 capped=0 fallback=0 thin=0 active=0 nsweep=260 rj=0 sd=2
+### ck_implicit ncycle=19 passes=8 res=5.783431e-08 dstep=1.797651e-05 ckdesum=-7.882260e-08 capped=0 fallback=0 thin=0 active=12 nsweep=268 rj=0 sd=2 NOT-CONVERGED
+### ck_implicit ncycle=19 passes=5 res=3.296083e-09 dstep=8.944648e-06 ckdesum=-4.472763e-07 capped=0 fallback=0 thin=0 active=0 nsweep=273 rj=0 sd=2
+photosphere: written to 'photo.txt'
+
+Terminating on cycle limit
+time=5.784515e+02 cycle=20
+tlim=8.640000e+07 nlim=20
+
+MeshBlock-cycles = 40
+cpu time used  = 2.945662e+01
+zone-cycles/cpu_second = 5.562078e+03
+particle-updates/cpu_second = 0.000000e+00

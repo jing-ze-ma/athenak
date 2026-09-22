@@ -1,0 +1,48 @@
+=== r0 sph=true cache=true : cpu time used  = 2.988566e+01
+=== r1 sph=true cache=false : cpu time used  = 2.978159e+01
+=== r2 sph=true cache=true : cpu time used  = 2.783641e+01
+=== r3 sph=false cache=false : cpu time used  = 2.185916e+01
+=== r4 sph=false cache=true : cpu time used  = 2.215228e+01
+---- summary ----
+r0/run.log:cpu time used  = 2.988566e+01
+r0/run.log:zone-cycles/cpu_second = 7.894408e+06
+r1/run.log:cpu time used  = 2.978159e+01
+r1/run.log:zone-cycles/cpu_second = 7.921996e+06
+r2/run.log:cpu time used  = 2.783641e+01
+r2/run.log:zone-cycles/cpu_second = 8.475576e+06
+r3/run.log:cpu time used  = 2.185916e+01
+r3/run.log:zone-cycles/cpu_second = 1.079317e+07
+r4/run.log:cpu time used  = 2.215228e+01
+r4/run.log:zone-cycles/cpu_second = 1.065035e+07
+                                  
+================================= 
+Global information about the job: 
+================================= 
+  
+Job owner: jinma(28895)
+Job name:  cksw_a2
+Node list: vipa1327
+Job start: Tue Sep 22 09:10:43 CEST 2026
+Job end:   Tue Sep 22 09:13:34 CEST 2026
+Work dir:  /viper/u2/jinma/ATHENAK/athenak/tests_ck_sweep_cost/a2_gpu
+Command:   /viper/u2/jinma/ATHENAK/athenak/tests_ck_sweep_cost/a2_gpu/submit.sh
+  
+  
+  
+==========================================================================================
+Information on jobsteps (Note: MaxRSS/AveRSS is the maximum/average over all 
+tasks of the per-task memory high-water marks; cf. "man sacct"): 
+==========================================================================================
+  
+JobID            JobName NNodes NTasks  NCPUS       MaxRSS       AveRSS    Elapsed ExitCode
+------------- ---------- ------ ------ ------ ------------ ------------ ---------- --------
+11933619         cksw_a2      1            96                             00:02:51      0:0
+11933619.0    athena.bas      1      2     96     1446.66M     1174.50M   00:00:38      0:0
+11933619.1    athena.opt      1      2     96     1453.60M     1186.44M   00:00:38      0:0
+11933619.2    athena.opt      1      2     96     1453.81M     1181.62M   00:00:35      0:0
+11933619.3    athena.opt      1      2     96     1451.55M     1186.47M   00:00:29      0:0
+11933619.4    athena.opt      1      2     96     1453.62M     1186.53M   00:00:29      0:0
+  
+Maximum memory per node: 3.048862 GB (defined as MaxRSS*Ntasks/NNodes)
+CPU utilization: 3.1 %
+  
