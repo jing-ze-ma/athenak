@@ -5,7 +5,7 @@ file; pushed to the FORK (jing-ze-ma/athenak) at the same commit; `origin` untou
 now: `docs/handover/claude-memory-2026-09-22d/` -- **read `master-todo-2026-09-22.md` first**; it is
 the running log of the whole day with every decision.
 
-## STATE: prod4 is ready to launch; it needs only the user's go
+## STATE: prod4 LAUNCHED 2026-09-22 ~20:45 (bench/cs_mhd_prod4, jobs 11941995-8, md5 f95130b2, from scratch); see memory cs-mhd-prod4-run.md
 `inputs/production/deep_hot_jupiter_cs_prod4.athinput` (DRAFT header still says so; remove the
 DRAFT banner when launching).  FROM SCRATCH (user's choice), 2 GPUs / 1 node (measured the efficient
 layout), `apu`, chained as bench/cs_mhd_prod3/{submit.sh,chain.sh}.  Binary: HIP build of HEAD from a

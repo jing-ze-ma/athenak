@@ -1,5 +1,7 @@
 ## RULE ZERO
 
+- **[cs_mhd_prod4 RUNNING since 09-22 20:45](cs-mhd-prod4-run.md)** — jobs 11941995-8, bench/cs_mhd_prod4; what to check at rot 0.5; do not relaunch/chain without the user
+
 - **[MASTER PLAN 09-22: wait for agents -> CLEAN UP -> lists A (dhj RT) / B (cs vertex) / C (production practice)](master-todo-2026-09-22.md)** — START HERE; in-flight jobs and agents listed inside
 
 - **[M1 PAUSED -> BACK TO dhj (user 09-21 night)](m1-paused-back-to-dhj.md)** — after the 3 VET tensor tests: do not touch M1 further; next project = deep hot Jupiter
