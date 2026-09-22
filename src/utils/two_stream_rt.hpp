@@ -1054,6 +1054,16 @@ inline int ck_sweep_cache = 2;
 // there is nothing to solve and the plane-parallel sweep is already the exact two-pass
 // form), rt_layer_legacy, and ck_implicit -- the tridiagonal assembly differentiates the
 // four-pass recurrence and would have to be rederived for the Riccati one.
+//
+// THE DEFAULT.  Since 2026-09-22 deep_hot_jupiter_rt defaults this to 1 (tm) wherever it
+// can run, i.e. under ck_spherical, and to 0 in exactly the cases refused above, so that
+// no working input is turned into a startup fatal by the flip.  The reason is that the
+// four-pass form's probe-lagged mixing constant is only O(beta^2) -- 2.3e-2 of the face
+// flux at the production area ratio 3.45 -- while tm and sd solve the coupled column
+// exactly (they agree to 3.5e-17), and tm is 1.36x faster on the GPU.  The value below
+// remains the flag's own zero-initialisation, i.e. the historical form: it is what any
+// other caller gets, and what the pgen falls back to.  See
+// tests_ck_sweep_form/README.md and README_default.md.
 inline int ck_sweep_form = 0;
 // problem/rt_top_re: what the unresolved column ABOVE the domain sends back down.
 // false (historical) makes it radiate at the ghost cell's own temperature. That is safe

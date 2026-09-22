@@ -483,13 +483,45 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // tests_ck_sweep_form/README.md for what the probe's lag was worth.  The remaining
   // refusals (ck_spherical off, ck_sweep_cache != 2, ck_implicit) are stated at the
   // first RT call, where those flags are all final.
+  //
+  // Since 2026-09-22 this DEFAULTS TO 1 (tm) wherever it can run, i.e. under
+  // ck_spherical.  The four-pass form's probe carries a mixing constant that is right
+  // only to O(beta^2) -- 2.3e-2 of the face flux at the production area ratio 3.45 --
+  // while tm and sd solve the coupled column exactly (they agree to 3.5e-17) and tm is
+  // 1.36x faster on the GPU; the numbers are in tests_ck_sweep_form/README.md.  The
+  // default is conditioned on every one of the flag's own refusals, so that flipping it
+  // cannot turn a working input into a startup fatal: it falls back to 0 with
+  // ck_spherical off (plane-parallel: the two-pass sweep IS the exact form there), with
+  // ck_implicit on (the column solve's tridiagonal differentiates the four-pass
+  // recurrence and has not been rederived) and at ck_sweep_cache != 2 (the only setting
+  // the probe-free forms are instantiated at).  Set the line explicitly to override.
+  // ck_implicit itself is read in full below; peek at it here, exactly as with
+  // rt_layer_legacy above.
+  const bool cksweepform_set = pin->DoesParameterExist("problem","ck_sweep_form");
+  const bool ck_implicit_peek = pin->GetOrAddBoolean("problem","ck_implicit",false);
+  const int cksweepform_default =
+      (ck_spherical && !ck_implicit_peek && two_stream_rt::ck_sweep_cache == 2) ? 1 : 0;
   two_stream_rt::ck_sweep_form =
-      pin->GetOrAddInteger("problem","ck_sweep_form", 0);
+      pin->GetOrAddInteger("problem","ck_sweep_form", cksweepform_default);
   if (two_stream_rt::ck_sweep_form < 0 || two_stream_rt::ck_sweep_form > 2) {
     std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: problem/ck_sweep_form must "
               << "be 0 (four-pass), 1 (tm) or 2 (sd), got "
               << two_stream_rt::ck_sweep_form << std::endl;
     std::exit(EXIT_FAILURE);
+  }
+  // State the RESOLVED value at startup, because the default is now conditional: an
+  // input that says nothing gets the exact form on a spherical ck run and the historical
+  // four-pass one everywhere else, and which of the two it got must not have to be
+  // inferred from the input file.
+  if (global_variable::my_rank == 0) {
+    static const char *const ckform_name[3] = {"four-pass (probe)", "tm", "sd"};
+    std::cout << "### deep_hot_jupiter_rt: problem/ck_sweep_form = "
+              << two_stream_rt::ck_sweep_form << " ("
+              << ckform_name[two_stream_rt::ck_sweep_form] << "), "
+              << (cksweepform_set ? "set explicitly" :
+                  (cksweepform_default == 1 ? "the default here (ck_spherical)" :
+                   "the default here (no spherical face coupling to solve, or "
+                   "ck_implicit / ck_sweep_cache != 2)")) << std::endl;
   }
   // The refusal, stated here rather than only at the first RT call, so that a Cartesian
   // input naming either flag dies at startup with the reason.
