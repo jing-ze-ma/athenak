@@ -8,9 +8,9 @@
 //!
 //! REFERENCE: Heng, Menou, Phillipps, MNRAS, 413, 2380 (2011); Deitrick, Mendonça, Schroffenegger, Grimm, Tsai, Heng, ApJS, 248, 30 (2020)
 //!
-//! problem/rt_use_cons (default FALSE, here and in red_giant.cpp; the FeCZ box
-//! pgen box_convection defaults it TRUE).  Where the two-stream sweep reads the cell's
-//! thermodynamic state from.  With it FALSE the sweep reads w0, the primitives the
+//! problem/rt_use_cons (default TRUE here since 2026-09-22, as in box_convection;
+//! red_giant defaults it to its mode-3 flag).  Where the two-stream sweep reads the
+//! cell's thermodynamic state from.  With it FALSE the sweep reads w0, the primitives the
 //! PREVIOUS ConToPrim wrote, i.e. the state at the START of the stage: the RK update,
 //! the explicit source terms and the implicit radial conduction have all moved the gas
 //! since, so the radiative source is computed against a state that is one whole stage
@@ -21,9 +21,11 @@
 //! rt-source-dt-forcing.md), which is why box_convection hands the sweep the post-RK
 //! state and why TRUE is the recommended setting for new runs here as well.
 //!
-//! It is left FALSE by default deliberately: flipping the default would silently change
-//! every red-giant and deep-hot-Jupiter run ever restarted from these inputs, and the
-//! two states differ by O(dt) in the radiative source.  Opt in from the input file.
+//! IT WAS FALSE UNTIL 2026-09-22, so that every run ever made from these inputs
+//! reproduced bit for bit.  The default is now TRUE: the two states differ by O(dt) in
+//! the radiative source and the lagged one is the wrong physics, so an input that wants
+//! the old answer has to say rt_use_cons = false.  sp_mhd_prod3-type inputs, which never
+//! set the line, therefore change; cs_mhd_prod3 already set it true and does not.
 //! (The conserved state is not guaranteed positive after an RK stage; the sweep's
 //! EintFromCons path carries its own non-positive guard -- see utils/two_stream_rt.hpp.)
 
@@ -427,17 +429,49 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     std::cout << "deep_hot_jupiter_rt: outer-x1 Maxwell-stress term in the ghost "
               << "extrapolation is " << (bc_outer_maxwell ? "ON" : "off") << std::endl;
   }
-  // blocked-band RT scaling harness: sized once, before any RT call
-  rt_split = pin->GetOrAddBoolean("problem","rt_split",false);
+  // blocked-band RT scaling harness: sized once, before any RT call.
+  // problem/rt_split: DEFAULT TRUE since 2026-09-22.  The three-kernel chain-parallel
+  // path is the same arithmetic in the same block-summation order as the monolithic
+  // loop, so it is bitwise identical, and rt_ck (here) / rt_grey (box_convection,
+  // red_giant) force it true anyway.  The serial path is kept -- the grey picket fence
+  // with rt_ck = false is the one configuration that can still reach it -- because the
+  // split grey sweep sizes its column at compile time and fatals when n1 > RT_NNC (72),
+  // which the monolithic path does not -- and because on THAT path the two are NOT
+  // bitwise equal (7.1 % in 1-KE after 20 cycles of deep_hot_jupiter_rt_ideal_xe; see
+  // two_stream_rt.hpp).  A picket-fence run that wants the old answer must say false.
+  rt_split = pin->GetOrAddBoolean("problem","rt_split",true);
   rt_ck = pin->GetOrAddBoolean("problem","rt_ck",false);
-  // problem/ck_spherical: the SPHERICAL form of the correlated-k two-stream
-  // (see two_stream_rt::ck_spherical).  Default false = bitwise the
-  // plane-parallel arithmetic; refused on a Cartesian mesh at the first RT call.
-  ck_spherical = pin->GetOrAddBoolean("problem","ck_spherical",false);
-  // problem/ck_beam_sph: the pseudo-spherical direct beam (see
-  // two_stream_rt::ck_beam_sph).  Independent of ck_spherical; default false = bitwise
-  // the plane-parallel slant path.
-  ck_beam_sph = pin->GetOrAddBoolean("problem","ck_beam_sph",false);
+  // problem/rt_layer_legacy is read in full below; peek at it here because the
+  // ck_spherical / ck_beam_sph defaults must not pick a value their own guard refuses.
+  const bool layer_legacy_peek =
+      pin->GetOrAddBoolean("problem","rt_layer_legacy",false);
+  // problem/ck_spherical and problem/ck_beam_sph: the SPHERICAL thermal two-stream and
+  // the PSEUDO-SPHERICAL direct beam of the correlated-k kernel (see
+  // two_stream_rt::ck_spherical / ::ck_beam_sph).  They are pure GEOMETRY, so since
+  // 2026-09-22 they DEFAULT TRUE on a curvilinear mesh -- pmesh->use_spherical_polar or
+  // pmesh->use_cubed_sphere -- and are REFUSED on a Cartesian one, where the
+  // plane-parallel form is the only one with a meaning.  The default is additionally
+  // conditioned on the two things the flags' own guards in two_stream_rt.hpp require,
+  // so that turning them on by default can never turn a working run into a fatal:
+  // rt_ck (they convert the correlated-k kernel alone; the grey sweep is spherical
+  // already, 8bca3dfa) and !rt_layer_legacy (the staggered whole-cell ck layers were
+  // never converted).  Set either line explicitly to override.
+  const bool cksph_default =
+      (use_spherical_polar || use_cubed_sphere_) && rt_ck && !layer_legacy_peek;
+  ck_spherical = pin->GetOrAddBoolean("problem","ck_spherical",cksph_default);
+  ck_beam_sph = pin->GetOrAddBoolean("problem","ck_beam_sph",cksph_default);
+  // The refusal, stated here rather than only at the first RT call, so that a Cartesian
+  // input naming either flag dies at startup with the reason.
+  if ((ck_spherical || ck_beam_sph) &&
+      !(use_spherical_polar || use_cubed_sphere_)) {
+    std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: problem/ck_spherical and "
+              << "problem/ck_beam_sph are the SPHERICAL forms of the correlated-k "
+              << "thermal two-stream and of the direct stellar beam.  They have no "
+              << "meaning on a Cartesian mesh (mesh/use_spherical_polar and "
+              << "mesh/use_cubed_sphere are both false), where the plane-parallel form "
+              << "is the geometry.  Remove the line, or set it false." << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
   // problem/ck_implicit: the BACKWARD-EULER correlated-k column solve (see
   // two_stream_rt::ck_implicit and utils/two_stream_column_ck.hpp).  Default false =
   // bitwise the semi-implicit per-cell apply this path has always run.  With it on the
@@ -504,9 +538,11 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // problem/rt_use_cons: read the RT solver's thermodynamic state from the CONSERVED
   // u0 instead of w0 (the previous stage's ConToPrim output, which the explicit source
   // terms and the implicit radial conduction have since moved).  See the long note in
-  // utils/two_stream_rt.hpp.  Default FALSE, so the default answer is unchanged; read
-  // here, the one site both the from-scratch and the restart path go through.
-  rt_use_cons = pin->GetOrAddBoolean("problem","rt_use_cons",false);
+  // utils/two_stream_rt.hpp.  DEFAULT TRUE since 2026-09-22 (it was false): the lagged
+  // w0 state is a delayed thermostat whose forcing is linear in dt, so an input that
+  // wants the old answer has to say rt_use_cons = false.  Read here, the one site both
+  // the from-scratch and the restart path go through.
+  rt_use_cons = pin->GetOrAddBoolean("problem","rt_use_cons",true);
   // per-cycle single-meshblock diagnostic dump. Read here, which is the one place both
   // the from-scratch and the restart path go through (CallProblemGenerator is called by
   // BOTH ProblemGenerator constructors), so the two can never drift apart -- see the

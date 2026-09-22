@@ -218,6 +218,18 @@ inline int rt_nchain = 4;
 // problem/rt_split: run the RT as three kernels with the chain-block index promoted to
 // a parallel dimension, instead of one kernel that loops over chains serially. Same
 // arithmetic, same block-summation order -- see the use site.
+// DEFAULT TRUE in deep_hot_jupiter_rt since 2026-09-22; box_convection and red_giant
+// force it true (the grey kernel lives on the split path).  The monolithic path is
+// therefore reachable only as the grey PICKET FENCE (rt_ck = false) with the flag set
+// false by hand, and is kept for that case: the split grey sweep sizes its column at
+// compile time and fatals when n1 > RT_NNC, which the monolithic one does not.
+//
+// THE "BITWISE IDENTICAL" CLAIM BELOW HOLDS FOR THE CORRELATED-K AND GREY KERNELS, NOT
+// FOR THE PICKET FENCE.  MEASURED 2026-09-22 on inputs/mhd/deep_hot_jupiter_rt_ideal_xe
+// (rt_ck = false, 20 cycles, same binary, deterministic on rerun): the two paths agree
+// on mass and total energy to the printed digits but differ by 7.1 % in the 1-KE
+// history column, so a picket-fence run that relied on the old default answers
+// differently now.  Unexplained; the difference is confined to that path.
 inline bool rt_split = false;
 // PER-CYCLE RT DIAGNOSTIC (deep_hot_jupiter_rt's problem/diag_gid).  Off by default and
 // costing nothing when off: the array is not even allocated.  (m,slot,k,j,i) with
@@ -454,8 +466,11 @@ inline bool rt_semi_lin = true;
 // equilibrium, the Newton iterate, the positivity guard and LimitRTSource are all
 // evaluated on a number that no longer exists while the step is applied to u0 anyway --
 // which is how a cell is driven to a negative internal energy, repaired by the floor,
-// and handed to the next Riemann solve as a 0.1 K cell beside a 1e4 K one.  Default
-// FALSE so every existing input reproduces bit-for-bit; the red-giant runs set it true.
+// and handed to the next Riemann solve as a 0.1 K cell beside a 1e4 K one.  The
+// namespace value below is only the pre-pgen initialiser: every problem generator that
+// uses this header sets it from problem/rt_use_cons, and since 2026-09-22 the default
+// there is TRUE in box_convection and deep_hot_jupiter_rt, and the mode-3 flag in
+// red_giant.
 inline bool rt_use_cons = false;
 // problem/rt_bface: the emissivity-weighted far-endpoint Planck source (see BFace).
 // It is a red-giant fix -- it exists because the corona/star join put a cell's emission
@@ -586,6 +601,10 @@ inline int rt_impl_maxit = 5;
 // src_ex from the COLUMN'S OWN converged face flux instead of the entry sweep's, so that
 // the applied source is the divergence of one field, div[(1-w)F_3], and telescopes.  See
 // two_stream_column_implicit.hpp, step 4a'.  Off = bitwise the frozen handover.
+// Read ONLY at the c3.ex_iter assignment below, inside the rt_implicit_column = 3
+// branch, so it is inert in every other mode.  problem/rt_col3_ex_iter defaults TRUE in
+// box_convection and red_giant since 2026-09-22; deep_hot_jupiter_rt never reads it
+// (it refuses rt_implicit_column != 0 outright).
 inline bool rt_col3_ex_iter = false;
 // problem/rt_col3_skip_sweep: under rt_implicit_column = 3 with the tau blend weight w
 // = 0 on EVERY face (rad_tau_lo deeper than the whole box, i.e. the rt_bottom_flux
@@ -787,8 +806,10 @@ inline Real rt_bot_flux = 0.0;
 inline bool rt_layer_legacy = false;
 // problem/ck_spherical: give the CORRELATED-K thermal two-stream the SPHERICAL form of
 // 8bca3dfa, the one the grey centre-to-centre sweep and the mode-3 column solve already
-// carry.  Default FALSE, which is bitwise the plane-parallel arithmetic the ck kernel
-// has always run.
+// carry.  Since 2026-09-22 problem/ck_spherical DEFAULTS TRUE on a spherical-polar or
+// cubed-sphere mesh (and only under rt_ck && !rt_layer_legacy, the two things the guard
+// below requires) and is REFUSED on a Cartesian one; false is bitwise the
+// plane-parallel arithmetic the ck kernel used to run.
 //
 // WHY IT IS NEEDED NOW.  8bca3dfa converted the grey path and documented the ck kernel
 // as "not converted", justified by r_out/r_in < 1.3 hot-Jupiter domains.  The deep
@@ -842,8 +863,10 @@ inline bool rt_layer_legacy = false;
 // NOT CONVERTED, and refused: rt_layer_legacy (the staggered whole-cell ck layers) and
 // the mode-1/2 nearest-neighbour Jacobian, which the ck path never fills anyway.
 inline bool ck_spherical = false;
-// problem/ck_beam_sph: the PSEUDO-SPHERICAL direct stellar beam.  Default FALSE, which is
-// bitwise the plane-parallel slant path the correlated-k kernel has always used.
+// problem/ck_beam_sph: the PSEUDO-SPHERICAL direct stellar beam.  Since 2026-09-22 it
+// follows the same rule as ck_spherical: DEFAULT TRUE on a spherical-polar or
+// cubed-sphere mesh (under rt_ck && !rt_layer_legacy), REFUSED on a Cartesian one.
+// False is bitwise the plane-parallel slant path the correlated-k kernel used to use.
 // Independent of ck_spherical (that switch converts the THERMAL two-stream; this one the
 // BEAM), and the two compose.
 //

@@ -85,7 +85,16 @@ def test_run():
         p, temp, flw, qsw = col[:, 2], col[:, 3], col[:, 4], col[:, 5]
         assert np.all(temp > 0.0) and np.all(p > 0.0), "unphysical column"
         assert np.all(np.diff(p) < 0.0), "pressure does not fall outwards"
-        assert np.all(qsw == 0.0), "shortwave heating on the nightside"
+        # problem/ck_beam_sph -- the PSEUDO-SPHERICAL beam, default TRUE on a
+        # curvilinear mesh since 2026-09-22 -- lights TWILIGHT columns: with mu0 < 0 the
+        # ray still grazes the limb, so a nightside column is no longer required to be
+        # exactly dark.  What must hold either way is that it absorbs nothing that
+        # matters; measured here it is 1e-28 of the insolation (the plane-parallel beam
+        # gives an exact zero).
+        assert np.all(qsw >= 0.0), "the shortwave cools on the nightside"
+        night_abs = np.sum(qsw[:-1] * np.diff(col[:, 1]))
+        assert night_abs < 1.0e-6 * ck.SIGMA_SB * hdr["T_irr"] ** 4, \
+            f"the nightside absorbs {night_abs:g} erg/cm^2/s of starlight"
         assert np.all(flw[:hdr["icut"] - int(col[0, 0])] == 0.0), \
             "longwave flux below the correlated-k cutoff"
 

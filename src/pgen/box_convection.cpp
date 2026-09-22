@@ -1852,8 +1852,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     }
     ts::rt_impl_tol = pin->GetOrAddReal("problem", "rt_impl_tol",
                                         (ts::rt_implicit_column == 3) ? 1.0e-8 : 1.0e-6);
+    // DEFAULT TRUE since 2026-09-22: re-form the tau-blend handover from the column's
+    // own converged flux, so the applied source is the divergence of one field and
+    // telescopes.  Consulted only by the mode-3 column solve, so it is inert under
+    // rt_implicit_column = 0.  Both FeCZ productions already state it explicitly.
     ts::rt_col3_ex_iter = pin->GetOrAddBoolean("problem", "rt_col3_ex_iter",
-                                                false);
+                                                true);
     // mode 3 (the exact block-tridiagonal column solve) converges in 2-4 Newton steps
     // and is cheap per step, so it gets one more than mode 0 by default
     ts::rt_impl_maxit = pin->GetOrAddInteger("problem", "rt_impl_maxit",

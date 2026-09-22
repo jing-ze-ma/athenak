@@ -13,8 +13,9 @@
 //! Runs on the cubed sphere and on spherical polar (x1 = r), and as a Cartesian x1
 //! column for one-dimensional tests (x1 is then r - rin + mesh x1min).
 //!
-//! problem/rt_use_cons (default FALSE, here and in deep_hot_jupiter_rt.cpp; the FeCZ box
-//! pgen box_convection defaults it TRUE).  Where the two-stream sweep reads the cell's
+//! problem/rt_use_cons (default HERE = the mode-3 flag col3, because the exact column
+//! solve requires it; box_convection and deep_hot_jupiter_rt default it TRUE outright).
+//! Where the two-stream sweep reads the cell's
 //! thermodynamic state from.  With it FALSE the sweep reads w0, the primitives the
 //! PREVIOUS ConToPrim wrote, i.e. the state at the START of the stage: the RK update,
 //! the explicit source terms and the implicit radial conduction have all moved the gas
@@ -26,9 +27,9 @@
 //! rt-source-dt-forcing.md), which is why box_convection hands the sweep the post-RK
 //! state and why TRUE is the recommended setting for new runs here as well.
 //!
-//! It is left FALSE by default deliberately: flipping the default would silently change
-//! every red-giant and deep-hot-Jupiter run ever restarted from these inputs, and the
-//! two states differ by O(dt) in the radiative source.  Opt in from the input file.
+//! It is left tied to col3 here deliberately: the red-giant production inputs all state
+//! rt_use_cons explicitly, and a blanket TRUE would silently change every mode-0
+//! red-giant run ever restarted from these inputs by O(dt) in the radiative source.
 //! (The conserved state is not guaranteed positive after an RK stage; the sweep's
 //! EintFromCons path carries its own non-positive guard -- see utils/two_stream_rt.hpp.)
 //!
@@ -587,7 +588,9 @@ Real mlt_hold_ = 0.0;
 // (1e-2..0.5 near the surface) and F_MLT(x) binds; below it only the DEFICIT is known,
 // and that is what gets carried.
 Real mlt_x_thr_ = 1.0e-4;
-// problem/mlt_split_deposit (needs problem/rt_strang): deposit div F_conv in the SAME
+// problem/mlt_split_deposit (default TRUE since 2026-09-22; needs problem/rt_strang,
+// problem/mlt_alpha > 0 and the two-stream, and is inert otherwise): deposit div F_conv
+// in the SAME
 // Strang half steps as the two-stream, not inside the RK stages.  In the MLT zone
 // div F_conv and div F_2s are each up to 6e-3 of eint per step and cancel; with one in
 // the stages and the other split, the stages see a pressure error ~ dt div F_conv, a
@@ -1428,7 +1431,14 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   mlt_ramp_dn_ = pin->GetOrAddReal("problem", "mlt_ramp_down_time", 0.0);
   mlt_hold_ = pin->GetOrAddReal("problem", "mlt_hold_time", 0.0);
   mlt_x_thr_ = pin->GetOrAddReal("problem", "mlt_x_thr", 1.0e-4);
-  mlt_split_dep_ = pin->GetOrAddBoolean("problem", "mlt_split_deposit", false);
+  // problem/mlt_split_deposit: DEFAULT TRUE since 2026-09-22 (it was false).  See the
+  // declaration: with div F_conv inside the RK stages and div F_2s Strang-split, the
+  // stages see a pressure error ~ dt div F_conv and a force dipole LINEAR in dt.  The
+  // flag only has an effect where all three of problem/rt_strang, problem/mlt_alpha > 0
+  // and the two-stream (problem/rt_ck or problem/rt_grey) are on, which is why the
+  // clean-up kept rt_strang: with rt_strang false there is no split half step to
+  // deposit into and the stage-local deposit runs whatever this flag says.
+  mlt_split_dep_ = pin->GetOrAddBoolean("problem", "mlt_split_deposit", true);
   mlt_split_sync_ = pin->GetOrAddBoolean("problem", "mlt_split_sync", false);
   mlt_relax_ = pin->GetOrAddReal("problem", "mlt_relax_time", 1.0e4);
   if (mlt_split_sync_) {
@@ -1722,7 +1732,11 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     ts::rt_semi_implicit = pin->GetOrAddBoolean("problem", "rt_semi_implicit", true);
     ts::rt_outer_verbose = pin->GetOrAddBoolean("problem", "rt_outer_verbose", false);
     ts::rt_impl_tol = pin->GetOrAddReal("problem", "rt_impl_tol", col3 ? 1.0e-8 : 1.0e-6);
-    ts::rt_col3_ex_iter = pin->GetOrAddBoolean("problem", "rt_col3_ex_iter", false);
+    // DEFAULT TRUE since 2026-09-22: the applied source is then the divergence of one
+    // field and telescopes.  Consulted ONLY by the mode-3 column solve
+    // (two_stream_rt.hpp, c3.ex_iter), so it is inert under rt_implicit_column = 0 --
+    // verified bitwise on red_giant_column and red_giant_fofc.
+    ts::rt_col3_ex_iter = pin->GetOrAddBoolean("problem", "rt_col3_ex_iter", true);
     // mode 3 converges in 2-4 Newton steps and is cheap per step, so it gets one more
     // than the linearised modes by default
     ts::rt_impl_maxit = pin->GetOrAddInteger("problem", "rt_impl_maxit", col3 ? 8 : 5);
