@@ -364,6 +364,138 @@ what matters for this problem.
 
 ---
 
+## Ohmic cap in `sphbeam`
+
+`ohmic.py` + `xe_model.py`, tables in `ohmic_tables.md`, figure `fig_ohmic.png`.
+Both per-cell limits are rebuilt from each arm's **last dump**, exactly as the code
+computes them:
+
+* CFL — `mhd_newdt.cpp`: `dt_i = cfl dx_i/(|v_i| + cf_i)`, `cf_{2,3}` divided by
+  `sin_cell` (this is `cfl.py`, reused unchanged);
+* Ohmic — `Resistivity::NewTimeStepGeneralResist`: `dt_i = cfl dx_i^2/(6 eta)` with
+  `dx` the *physical* curvilinear length, and
+  `eta = ResistivityEOS(x_e, T, max_eta) = 230 sqrt(T)/max(x_e, 230 sqrt(T)/max_eta)
+  + 5.2e11 * 20 / T^1.5`, clipped at `max_eta`.
+
+All four arms set `<mhd>/ohmic_resistivity = eos`, `max_eta = 1e13`, `use_rkg_sts =
+false`, `cfl_number = 0.3`. `x_e` therefore comes from the EOS's own Saha table, which
+the dumped `eos_table.txt` does **not** carry (it has only `log10 e/rho` and
+`log10 p/rho`). `xe_model.py` is a vectorised python port of
+`src/eos/eos_composition.hpp` — H2 dissociation, Saha for H/He/He+, the six metal
+donors (Na, K, Ca, Al, Mg, Fe) and the two-pass per-species condensation rainout — built
+on the *same* node grid (`log10 rho` −14…0 by 0.05, `log10 T` 1.5…6 by 0.01) the run
+tabulates, then bilinearly interpolated (the code uses a bicubic Hermite patch on those
+same nodes).
+
+**Validation.** The two limits combined reproduce each arm's running dt to 0.1–2.5 %:
+
+| arm | run dt (median, last 200 cycles) | reconstructed | CFL-only | Ohmic-only | binds | cells at `eta = max_eta` |
+|---|---|---|---|---|---|---|
+| prodbin | 19.92 | 19.81 | 19.81 | 22.45 | **CFL** | 0.00 % |
+| sph     | 12.85 | 12.53 | 17.36 | 12.53 | **Ohmic** | 1.43 % |
+| sphbeam | 12.85 | 12.85 | 18.00 | 12.85 | **Ohmic** | 0.30 % |
+| offfix  | 19.96 | 19.93 | 19.93 | 322.30 | **CFL** | 0.00 % |
+
+So the cold night side *is* still the whole story of the cap — it is simply not the
+night *top* (which `ck_beam_sph` does fix) but the night **r/Rp 1.23–1.28 shell**, which
+the beam barely touches.
+
+### (1) Which cells hold `sphbeam` at 12.85 s
+
+The 20 most limiting cells are all **Ohmic**, all on the **night side** (100 % of capped
+cells in both `sph` and `sphbeam` are at |lon_ss| > 105°; not one day-side or
+terminator cell is capped in any arm), all in one shell:
+
+| arm | binding shell | r/Rp | state of the limiting cells |
+|---|---|---|---|
+| sph | i = 41 | 1.236 | T 1385–1464 K, rho 1.4–1.7e-7, p 7–9 mbar, x_e 3–9e-10, beta 1e2–2e4 |
+| sphbeam | i = 42 | 1.241 | T 1406–1461 K, rho 1.1–1.5e-7, p 5.6–7.8 mbar, x_e 5–9e-10, beta 5e1–4e3 |
+
+They are **the same night-side shell cells as in `sph`, capped for the same reason**, not
+a new region: the beam does not create a twilight population at the cap. The only thing
+that changed is how many there are and how deep they reach:
+
+| i | r/Rp | dx_min [cm] | prodbin ncap / night T 1 % | sph | sphbeam | offfix |
+|---|---|---|---|---|---|---|
+| 40 | 1.230 | 4.95e7 | 0 / 2084 | 0 / 1716 | 0 / 1756 | 0 / 2074 |
+| 41 | 1.236 | 5.01e7 | 0 / 1992 | **5** / 1566 | 0 / 1605 | 0 / 2001 |
+| 42 | 1.241 | 5.07e7 | 0 / 1903 | 31 / 1446 | **18** / 1470 | 0 / 1948 |
+| 43 | 1.246 | 5.14e7 | 0 / 1862 | 127 / 1371 | 67 / 1406 | 0 / 1898 |
+| 45 | 1.257 | 5.28e7 | 0 / 1771 | 123 / 1329 | 33 / 1387 | 0 / 1847 |
+| 48 | 1.275 | 5.52e7 | 0 / 1745 | 175 / 1240 | 25 / 1336 | 0 / 1808 |
+
+Because every capped cell has the *same* eta (the ceiling), the binding cell is simply
+the **innermost capped cell**, where `dx_min` is smallest. `sphbeam` recovered exactly
+one shell — i = 41 is now clear — which is worth 12.53 → 12.85 s, 2.6 %. It did not
+recover i = 42. The beam's warming of this shell is only 20–40 K at the cold 1st
+percentile (1446 → 1470 K at i = 42), whereas production sits 430 K higher there
+(1903 K). The "within 45 K of production" recovery is real at the night **top**; at
+r/Rp 1.24 the night side is still ~350 K (median) to ~430 K (cold tail) below `prodbin`.
+
+`fig_ohmic.png` maps `log10 eta` on each arm's binding shell (lat vs lon from
+substellar, terminators marked): `prodbin`/`offfix` show a smooth day–night eta contrast
+topping out near 1e12, while `sph`/`sphbeam` show a mottled night hemisphere saturated
+at the 1e13 ceiling.
+
+### (2) The temperature at which eta reaches `max_eta`
+
+`eta = max_eta` exactly when `x_e <= 230 sqrt(T)/max_eta` (~8e-10 near 1400 K), i.e.
+when the alkali donors are not yet ionised. Bisecting `eta(rho,T) = max_eta` on T:
+
+| rho [g/cm^3] | 1e-10 | 1e-9 | 1e-8 | 1e-7 | 1e-6 | 1e-5 | 1e-4 |
+|---|---|---|---|---|---|---|---|
+| T_cap [K] | 1209 | 1278 | 1356 | **1444** | 1544 | 1658 | 1790 |
+
+At the binding shell's density (~1.3e-7) the threshold is **T_cap ≈ 1450–1475 K**.
+
+| arm | median T of capped cells | median T_cap there | median deficit | deficit at the binding shell |
+|---|---|---|---|---|
+| sph | 998 K | 1096 K | 89 K | **6 K** |
+| sphbeam | 1000 K | 1105 K | 87 K | **14 K** |
+| prodbin / offfix | — (no capped cells) | — | — | — |
+
+The binding cells are **marginal** — 6 K (sph) and 14 K (sphbeam) below their own
+threshold. The capped population as a whole (mostly higher up, r/Rp out to 2.17, where
+`dx` is too large to bind) sits ~90 K below. `prodbin`'s coldest night cell anywhere in
+i = 38…49 is 1732 K, ~300 K above threshold; `offfix`'s is 1755 K.
+
+### (3) What would change the binding limit
+
+**Raising `max_eta` makes it strictly worse** — the Ohmic dt goes as `1/eta`, and the
+capped cells are pinned *at* the ceiling, so the ceiling is the timestep:
+
+| arm | CFL-only | 1e12 | 3e12 | 5e12 | **1e13 (current)** | 3e13 | 1e14 |
+|---|---|---|---|---|---|---|---|
+| prodbin | 19.81 | 19.81 | 19.81 | 19.81 | 19.81 | 19.81 | 19.81 |
+| sph | 17.36 | 17.36 | 17.36 | 17.36 | **12.53** | 4.28 | 1.29 |
+| sphbeam | 18.00 | 18.00 | 18.00 | 18.00 | **12.85** | 4.40 | 1.57 |
+| offfix | 19.93 | 19.93 | 19.93 | 19.93 | 19.93 | 19.93 | 19.93 |
+
+**Lowering** `max_eta` to 5e12 hands both `sph` and `sphbeam` back to the CFL (17.4 and
+18.0 s) at no cost to `prodbin` or `offfix`, which never touch the ceiling — a pure
+input-side change, unrelated to RT. That is the cheapest lever, at the price of a
+factor-2 weaker resistivity cap in the coldest night cells (which are unresolved dead
+zones there in any case).
+
+**Warming the twilight** works too, but needs a lot of it. Applying a uniform `dT` and
+recomputing `x_e`, eta and the Ohmic limit (CFL held fixed):
+
+| arm | dT = 0 | 25 | 50 | 100 | 200 | 400 K |
+|---|---|---|---|---|---|---|
+| sph | 12.53 | 12.53 | 12.53 | 12.85 | 14.77 | 17.36 |
+| sphbeam | 12.85 | 12.85 | 13.19 | 13.19 | 16.18 | **18.00** |
+
+`sphbeam` needs ~+400 K on the night r/Rp 1.24 shell to reach its CFL ceiling — which is
+exactly the ~430 K deficit against `prodbin` measured above, and consistent: the thing
+`ck_beam_sph` has not yet fixed is the deep night shell, not the night top.
+
+**Ceiling if the cap were removed entirely** (CFL-only): `sph` 17.36 s, `sphbeam`
+18.00 s, against `prodbin` 19.81 s. So even a perfect fix to the Ohmic cap leaves
+`sphbeam` ~9 % short of production dt; the residual is a genuine MHD fast-mode
+difference on the night side, not resistivity.
+
+---
+
 ## What could not be determined from this data
 
 1. **Whether `ck_spherical` alone causes the dt loss, the magnetic decay or the energy
