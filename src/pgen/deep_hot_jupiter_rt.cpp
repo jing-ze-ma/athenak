@@ -157,6 +157,9 @@ void adjust_ad_pT_arr(const EOS_Data &eos, const Real &Rgas, const Real &gamma, 
 
 void DhjPhotosphereDump(ParameterInput *pin, Mesh *pm);
 void DhjCycleDiag(Mesh *pm);
+// problem/ck_impl_once: the whole correlated-k radiation, once per hydro step,
+// with the full cycle dt, after the last RK stage
+void DhjCkRtSplit(Mesh *pm, const Real dt);
 
 // PER-CYCLE SINGLE-MESHBLOCK DIAGNOSTIC (problem/diag_gid, default -1 = off).  Which
 // global meshblock to dump, and the inclusive cycle window.  File-scope because the
@@ -490,6 +493,38 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   two_stream_rt::ck_impl_demax = pin->GetOrAddReal("problem","ck_impl_demax",0.5);
   two_stream_rt::ck_impl_refresh_kappa =
       pin->GetOrAddBoolean("problem","ck_impl_refresh_kappa",false);
+  // problem/ck_impl_tau_min: the two-level split (thin cells take the bracketed per-cell
+  // implicit step, thick ones the tridiagonal).  This is what makes the Newton converge
+  // at 10x and 100x the production dt; see utils/two_stream_column_ck.hpp.
+  two_stream_rt::ck_impl_tau_min =
+      pin->GetOrAddReal("problem","ck_impl_tau_min",0.0);
+  two_stream_rt::ck_impl_arat = pin->GetOrAddReal("problem","ck_impl_arat",2.0);
+  two_stream_rt::ck_impl_debug = pin->GetOrAddInteger("problem","ck_impl_debug",0);
+  two_stream_rt::ck_impl_colskip =
+      pin->GetOrAddBoolean("problem","ck_impl_colskip",true);
+  two_stream_rt::ck_impl_once =
+      pin->GetOrAddBoolean("problem","ck_impl_once",false);
+  if (two_stream_rt::ck_impl_once && !two_stream_rt::ck_implicit) {
+    std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: problem/ck_impl_once moves "
+              << "the WHOLE radiation operator out of the RK stage and is only meant "
+              << "for the implicit column solve; set problem/ck_implicit = true."
+              << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  if (two_stream_rt::ck_impl_once && two_stream_rt::rt_rad_force) {
+    std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: problem/ck_impl_once is not "
+              << "compatible with problem/rt_rad_force -- the force is applied inside "
+              << "the RK stage from the sweep's arrays, which the split step no longer "
+              << "refreshes there." << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  if (two_stream_rt::ck_impl_once) {
+    // once per hydro step, with the full cycle dt, after the last RK stage.  The
+    // machinery is the generic operator split of hydro_tasks.cpp (user_split_func with
+    // user_split_once), the same one box_convection's rt_once_per_cycle used.
+    user_split_func = DhjCkRtSplit;
+    user_split_once = true;
+  }
   if (two_stream_rt::ck_implicit && global_variable::my_rank == 0) {
     std::cout << "deep_hot_jupiter_rt: correlated-k source is IMPLICIT "
               << "(ck_implicit), tol " << two_stream_rt::ck_impl_tol << ", maxit "
@@ -2529,7 +2564,9 @@ void SourceFunc(Mesh *pm, Real bdt) {
     
     Real time = pm->time;
     
-    picket_fence_two_stream_RT(pm, bdt);
+    // problem/ck_impl_once: the radiation has left the RK stage (see
+    // DhjCkRtSplit); nothing radiative is evaluated here.
+    if (!two_stream_rt::ck_impl_once) picket_fence_two_stream_RT(pm, bdt);
 
     // which fluid module is on, as VALUES: dereferencing the host pointer `pmbp`
     // inside a device lambda is illegal on a discrete GPU (see CLAUDE.md).
@@ -3994,6 +4031,19 @@ void adjust_ad_pT_arr(const EOS_Data &eos, const Real &Rgas, const Real &gamma, 
 //! Off unless problem/diag_gid >= 0, and then it costs one host copy of one meshblock.
 //! Anything not allocated (the RT arrays before the first RT call, the conduction arrays
 //! with no conduction module) is written as zeros, so the record layout is fixed.
+
+//--------------------------------------------------------------------------------
+//! \fn void DhjCkRtSplit
+//! \brief problem/ck_impl_once.  The correlated-k radiation applied ONCE per
+//! hydro step, with the FULL cycle dt, after the last RK stage
+//! (ProblemGenerator::user_split_once).  Under rk2 that is one implicit column
+//! solve per step instead of two, and the operator split is first order in dt --
+//! the same order the in-stage source already had, since an SSP-RK stage average
+//! of a per-stage relaxation is not second order in a stiff source either.
+
+void DhjCkRtSplit(Mesh *pm, const Real dt) {
+  picket_fence_two_stream_RT(pm, dt);
+}
 
 void DhjCycleDiag(Mesh *pm) {
   MeshBlockPack *pmbp = pm->pmb_pack;

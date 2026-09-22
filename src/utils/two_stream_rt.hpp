@@ -1401,11 +1401,14 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
     }
     int npass = ck_impl_maxit;
     bool conv = false;
+    // ck_impl_colskip: every column is live again at the start of a call
+    if (ck_done_ptr != nullptr) Kokkos::deep_copy(*ck_done_ptr, 0.0);
     for (int it=0; it<ck_impl_maxit; ++it) {
       ck_impl_pass = it;
       picket_fence_two_stream_RT_pass(pm, bdt);
       MeshBlockPack *pp = pm->pmb_pack;
       DvceArray5D<Real> u0c = (pp->pmhd != nullptr) ? pp->pmhd->u0 : pp->phydro->u0;
+      ++ck_impl_nsweep;
       if (CkImplStep(pm, u0c, *rt_icut_ptr, *rt_T_ptr, pp->pcoord->dx1, bdt) == 0) {
         npass = it + 1;
         conv = true;
@@ -1420,6 +1423,8 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
                 << " res=" << ck_impl_last_res << " dstep=" << ck_impl_last_dst
                 << " ckdesum=" << ck_impl_last_gap
                 << " capped=" << ck_impl_ncap << " fallback=" << ck_impl_nfall
+                << " thin=" << ck_impl_nthin << " active=" << ck_impl_nactive
+                << " nsweep=" << ck_impl_nsweep
                 << (conv ? "" : " NOT-CONVERGED") << std::endl;
     }
     return;
@@ -1971,6 +1976,14 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
       auto cksrc_g = ckimp_ ? *ck_src_ptr : DvceArray4D<Real>("ck_src_dummy",1,1,1,1);
       auto ckei_g = ckimp_ ? *ck_ei_ptr : DvceArray4D<Real>("ck_ei_dummy",1,1,1,1);
       auto ckest_g = ckimp_ ? *ck_estar_ptr : DvceArray4D<Real>("ck_est_dummy",1,1,1,1);
+      auto ckem_g = ckimp_ ? *ck_em_ptr : DvceArray4D<Real>("ck_em_dummy",1,1,1,1);
+      auto ckthk_g = ckimp_ ? *ck_thk_ptr : DvceArray4D<Real>("ck_thk_dummy",1,1,1,1);
+      auto ckthu_g = ckimp_ ? *ck_thu_ptr : DvceArray4D<Real>("ck_thu_dummy",1,1,1,1);
+      auto ckdone_g = ckimp_ ? *ck_done_ptr : DvceArray3D<Real>("ck_done_dummy",1,1,1);
+      // ck_impl_tau_min / ck_impl_colskip, as plain values for the device lambdas
+      const Real cktaumin_ = ck_impl_tau_min;
+      const Real ckarat_ = ck_impl_arat;
+      const bool ckskip_ = ckimp_ && ck_impl_colskip;
       const bool ck_on = rt_ck;
       // the grey path shares the correlated-k scaffolding: the per-cell (T, p) and
       // opacity precompute, the cut, the tau blend and the semi-implicit application.
@@ -2217,6 +2230,9 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
         par_for("rt_pre_opac", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
         KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
           if (i < icut_g(m,k,j)) return;          // deeper than the cut: never read
+          // ck_impl_colskip: a converged column is not swept again, so nothing it feeds
+          // is rebuilt either
+          if (ckskip_ && ckdone_g(m,k,j) > 0.0) return;
           const int ii = (topclamp && i > ie) ? ie : i;  // top slot: see rt_pre_tp
           if (!(T_g(m,k,j,i) > 0.0)) {            // unusable state: inert, see the grey
             xT_g(m,k,j,i) = 0.0;                  // kernel's note
@@ -2226,6 +2242,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               Bb_g(m,b,i,k,j) = 0.0;
               if (ckimp_) ckdb_g(m,b,i,k,j) = 0.0;
             }
+            if (ckimp_) ckthu_g(m,k,j,i) = 0.0;
             return;
           }
           const Real TT = T_g(m,k,j,i);
@@ -2247,29 +2264,60 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               ckdb_g(m,b,i,k,j) = (bd - bb)/(TTd - TT);
               if (ckfrz_) Bb_g(m,b,i,k,j) = bb;
             }
-            if (ckfrz_) return;
           }
-          const Real pbar = pb_g(m,k,j,i);
-          int iT, iP;
-          Real fT, fP;
-          ck_tp_index(cklT, ckNT, log10(TT), iT, fT);
-          ck_tp_index(cklP, ckNP, log10(pbar), iP, fP);
-          xT_g(m,k,j,i) = static_cast<Real>(iT) + fT;
-          xP_g(m,k,j,i) = static_cast<Real>(iP) + fP;
-          Real kcb[CK_NB];
-          ck_continuum(cece, celT, celP, ceNT, ceNP, cian, ciaT, ciak, rayx, ckwl,
-                       TT, pbar, rhoN(m,k,j,ii), kcb);
-          // the density gate.  The correlated-k path never carried the rad_kappa_rmax
-          // radius test -- the inert corona is a grey-path feature -- but the gate is a
-          // property of the GAS, so it must reach every band here as well or a ck run
-          // would keep heating the medium the grey run refuses to touch.
-          const Real gk = (gate_rho > 0.0)
-              ? RadGate(rhoN(m,k,j,ii), gate_rho, gate_dex) : 1.0;
-          const Real sigT4_pi = boltz_sigma/M_PI*SQR(SQR(TT));
-          for (int b=0; b<CK_NB; ++b) {
-            kc_g(m,b,i,k,j) = (gate_rho > 0.0)
-                ? (gk*kcb[b] + (1.0 - gk)*grey_kabove) : kcb[b];
-            Bb_g(m,b,i,k,j) = sigT4_pi*ck_planck_frac(ckpf, pfl0, pfid, TT, b);
+          if (!ckfrz_) {
+            const Real pbar = pb_g(m,k,j,i);
+            int iT, iP;
+            Real fT, fP;
+            ck_tp_index(cklT, ckNT, log10(TT), iT, fT);
+            ck_tp_index(cklP, ckNP, log10(pbar), iP, fP);
+            xT_g(m,k,j,i) = static_cast<Real>(iT) + fT;
+            xP_g(m,k,j,i) = static_cast<Real>(iP) + fP;
+            Real kcb[CK_NB];
+            ck_continuum(cece, celT, celP, ceNT, ceNP, cian, ciaT, ciak, rayx, ckwl,
+                         TT, pbar, rhoN(m,k,j,ii), kcb);
+            // the density gate.  The correlated-k path never carried the rad_kappa_rmax
+            // radius test -- the inert corona is a grey-path feature -- but the gate is
+            // a property of the GAS, so it must reach every band here as well or a ck
+            // run would keep heating the medium the grey run refuses to touch.
+            const Real gk = (gate_rho > 0.0)
+                ? RadGate(rhoN(m,k,j,ii), gate_rho, gate_dex) : 1.0;
+            const Real sigT4_pi = boltz_sigma/M_PI*SQR(SQR(TT));
+            for (int b=0; b<CK_NB; ++b) {
+              kc_g(m,b,i,k,j) = (gate_rho > 0.0)
+                  ? (gk*kcb[b] + (1.0 - gk)*grey_kabove) : kcb[b];
+              Bb_g(m,b,i,k,j) = sigT4_pi*ck_planck_frac(ckpf, pfl0, pfid, TT, b);
+            }
+          }
+          // ---- problem/ck_impl_tau_min: THICK OR THIN?  ----------------------------
+          // The cell's own optical depth, Planck-weighted over the bands, out of the
+          // SAME continuum cache the sweep builds its layers with.  The per-g-point LINE
+          // opacity is not in it -- it is a function of the g index, not of the cell --
+          // so this UNDER-estimates dtau and errs toward "thin".  That is the safe
+          // direction: a thin cell takes the bracketed per-cell implicit step and still
+          // converges to the same balance, only with its neighbours lagged; a cell
+          // wrongly called thick is the one that makes the Newton diverge.
+          // Zeroing dB/dT is how the cell leaves the tridiagonal: every off-diagonal
+          // entry a neighbour carries for it is proportional to it (see the jck block in
+          // rt_chain_ck), and its own diagonal is too.
+          if (ckimp_) {
+            // the A/E verdict the previous pass's apply left, AND -- if
+            // ck_impl_tau_min is set -- the cell's own CONTINUUM optical depth, which
+            // is all that is knowable here (the line opacity is a g-point quantity).
+            bool thk = (ckthk_g(m,k,j,i) > 0.0);
+            if (thk && cktaumin_ > 0.0) {
+              Real kb = 0.0, bs = 0.0;
+              for (int b=0; b<CK_NB; ++b) {
+                kb += kc_g(m,b,i,k,j)*Bb_g(m,b,i,k,j);
+                bs += Bb_g(m,b,i,k,j);
+              }
+              const Real kmn = (bs > 0.0) ? (kb/bs) : 0.0;
+              if (kmn*rhoN(m,k,j,ii)*DX1(m,k,j,ii) < cktaumin_) thk = false;
+            }
+            ckthu_g(m,k,j,i) = thk ? 1.0 : 0.0;
+            if (!thk) {
+              for (int b=0; b<CK_NB; ++b) ckdb_g(m,b,i,k,j) = 0.0;
+            }
           }
         });
         }
@@ -3079,6 +3127,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
         if (ckimp_) {
           par_for("ck_jac_zero", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
           KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+            if (ckskip_ && ckdone_g(m,k,j) > 0.0) return;
             ckjac_g(m,0,k,j,i) = 0.0;
             ckjac_g(m,1,k,j,i) = 0.0;
             ckjac_g(m,2,k,j,i) = 0.0;
@@ -3091,6 +3140,9 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
           par_for("rt_chain_ck", DevExeSpace(), 0, nmb1, 0, nblk-1, ks, ke, js, je,
           KOKKOS_LAMBDA(const int m, const int blk, const int k, const int j) {
             constexpr int NC = RT_NB;
+            // ck_impl_colskip: a converged column keeps the fluxes and the source its
+            // last pass left, so the zeroing below must not run for it either
+            if (ckskip_ && ckdone_g(m,k,j) > 0.0) return;
             for (int i=is; i<ie+2; ++i) {
               Fb_g(m,blk,i,k,j) = 0.0;
               Qb_g(m,blk,i,k,j) = 0.0;
@@ -4412,6 +4464,8 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
       auto bud_ = budg_ ? *rt_bud_ptr : DvceArray1D<Real>("rtbuddummy", 1);
       par_reduce_clip4("rt_apply", 0, nmb1, ks, ke, js, je, is, ie, nclip,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, int &nc) {
+        // ck_impl_colskip: a converged column is left exactly as its last pass left it
+        if (ckskip_ && ckdone_g(m,k,j) > 0.0) return;
         Real Ft = 0.0, Fb = 0.0;
         for (int b=0; b<nblk; ++b) {
           Ft += Fb_g(m,b,i+1,k,j);
@@ -4517,6 +4571,20 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
           const Real eic = eiN(m,k,j,i);
           ckei_g(m,k,j,i) = eic;
           if (ckpass0_) ckest_g(m,k,j,i) = eic;
+          // the cell's OWN emission, with EXACTLY the weights the semi-implicit block
+          // below gives it, so that S = A - E holds with the same E the two schemes
+          // mean.  The thin-cell solve and the fallback both need the split.
+          Real Emc = 0.0;
+          for (int b=0; b<nblk; ++b) Emc += Em_g(m,b,i,k,j);
+          if (taublend) Emc *= 1.0 - wbar;
+          if (band_on && i < icut_g(m,k,j)) Emc = 0.0;
+          ckem_g(m,k,j,i) = (Emc > 0.0) ? Emc : 0.0;
+          // ---- THE TWO-LEVEL SPLIT'S VERDICT, see ck_impl_arat.  A = S + E; a cell is
+          // safe to linearise while the field it absorbs is within ckarat_ of its own
+          // emission, and a COOLING cell (A < E) always is.  Read by rt_pre_opac of the
+          // NEXT pass, which is what freezes it for that pass's matrix and solve.
+          ckthk_g(m,k,j,i) =
+              ((Emc > 0.0) && (src + Emc <= ckarat_*Emc)) ? 1.0 : 0.0;
         }
         // SEMI-IMPLICIT APPLICATION.  The source splits as src = A - E(T), A being the
         // absorption of the field from elsewhere, fixed on this step, and E the cell's

@@ -329,6 +329,21 @@ ck_impl_dtmax = 0.5
 ck_impl_demax = 0.5
 ck_impl_verbose = false
 ck_impl_refresh_kappa = false
+# problem/ck_impl_tau_min: THE TWO-LEVEL SPLIT.  A cell whose own (Planck-weighted
+# continuum) optical depth kappa rho dr is below this keeps a bracketed, positivity-
+# preserving per-cell implicit step and enters the tridiagonal only through its field;
+# the rest is solved implicitly together.  This is what makes the Newton converge at 10x
+# and 100x the production dt.  0 = every cell in the tridiagonal (diverges at 10x).
+ck_impl_tau_min = 0.0
+# problem/ck_impl_arat: the discriminant that does the work -- a cell is thick only while
+# A <= arat*E.  See two_stream_column_ck.hpp.
+ck_impl_arat = 2.0
+ck_impl_debug = 0
+# problem/ck_impl_colskip: stop sweeping a column once it is converged.
+ck_impl_colskip = true
+# problem/ck_impl_once: the whole radiation once per HYDRO STEP with the full cycle dt,
+# after the last RK stage, instead of once per RK stage.  Halves the sweeps under rk2.
+ck_impl_once = false
 rt_de_max    = 0.5
 # problem/ck_spherical: the SPHERICAL form of the correlated-k two-stream (see
 # two_stream_rt::ck_spherical).  false = bitwise the plane-parallel arithmetic the ck
