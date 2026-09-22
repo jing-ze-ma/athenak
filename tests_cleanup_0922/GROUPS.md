@@ -368,3 +368,155 @@ those parameters.
 Run-dump directories `tests_cleanup_0922/{g1,g2,g4,g5,final}/` deleted at the end of the
 session; `{g1,g2,g4,g5,final}.md5`, `ref.md5`, `ref/`, `build.sh`, `gates.sh`, and this
 `GROUPS.md` are the only things kept in `tests_cleanup_0922/`.
+
+## G3 -- box_convection / red_giant / two-stream abandoned switches
+
+Scope: `src/pgen/box_convection.cpp`, `src/pgen/red_giant.cpp`,
+`src/pgen/deep_hot_jupiter_rt.cpp`, `src/pgen/pgen.hpp`, `src/hydro/hydro_tasks.cpp`,
+`src/hydro/hydro.hpp`, `src/diffusion/conduction.hpp`, `src/utils/two_stream_rt.hpp`,
+`src/utils/two_stream_column_implicit.hpp`, `src/utils/two_stream_column_partition.hpp`,
+plus the parameter lines in `inputs/**`, `tests_m1/**`, `tests_m3/he1d.athinput`,
+`tests_adi/he_box_w8_smoke.athinput`.
+
+REMOVED (default behaviour bitwise unchanged):
+`seed_fmode_amp`, `seed_fmode_m`, `seed_fmode_n`, `fmode_hist`, `work_hist` (with the
+whole `BoxConvWorkSnap/KE/Close/Probe/ProbeRT` block, the `Wflx..Sdsp` history slots --
+`nhist` is back to 5 -- `ProblemGenerator::user_probe_func` / `UserProbeFnPtr` and the
+`two_stream_rt::rt_probe` hook and its call site);
+`rt_strang`, `rt_once_per_cycle`, `rt_col3_once`, `rt_imex`, `rt_pair_sym`,
+`rt_before_flux`, `rt_split_transverse` -- **in box_convection only** (see KEPT below),
+together with `BoxConvRTSplit`, `BoxConvRTBeforeFlux`, `BoxConvRTImEx`,
+`BoxConvTransverseApply`, the `rtimex_src_` store, `ProblemGenerator::user_imex_func`,
+`UserImExFnPtr`, `user_rt_before_flux`, and the four now-unreachable Hydro tasks
+`RTBeforeFlux` / `RTImExFirst` / `RTImExConToPrim` / `RTImEx` with their TaskIDs
+(`imexpre`, `imexc2p`, `rtpre`, `imex`).  `box_convection`'s `rt_split_tr_` is now just
+`rt_col3_sub_ > 1` (the `rt_split_transverse` default was `true`, so this is bitwise);
+`user_split_func` survives because `problem/wb_arad_force` still uses it, and it is now
+enrolled directly as `BoxConvARadForce`.
+`rt_explicit`, `rt_outer_iter` (with `rt_deacc_ptr`/`rt_oconv_ptr`, `outer_on`,
+`outer_last`, the `oit/nit` parameters of `picket_fence_two_stream_RT_pass` and the
+pass loop), `rt_src_dump`, `rt_cut_bc_legacy` (the FIX, i.e. the current default, is
+kept; `RTCol3::cut_legacy` and its two column-solver branches went with it),
+`rt_kappa_frozen` (+ `rt_kfrz_d_ptr`/`rt_kfrz_h_ptr` and the `rt_kfrz_sum`/`rt_kfrz_put`
+kernels), `rt_impl_ablate`, `rt_impl_fixit`, `rt_impl_cvfreeze` (+ the `CVs` workspace
+slot), `rt_col3_split_deep`, `rt_col3_split_w` (`RTCol3::SegStart` is now the plain
+equal partition), `rt_force_center` (+ `rt_fbsave_ptr` and the `rt_fbsave` kernel),
+`rt_src_theta` (+ `RTCol3ThetaDe`), `bc_inflow_ghost`, `vdamp_bot_mean_only`
+(box_convection's copy; red_giant's was removed in the same group -- see below),
+`ad_dump_file` (+ the dhj stability-dump block), box_convection's dead `rt_dump_file`
+pin read (the global stays: `ck_dump_file` is its live consumer), and the
+`Conduction::rad_kappa_rmax` member together with box_convection's read-back fatal.
+`rad_pcut_bar` was already gone at HEAD (G1), so nothing was left to do for it.
+
+red_giant-only switches removed in the same group: `rt_no_heat`, `mlt_rmax`,
+`mlt_tau_lo`, `mlt_tau_hi` (defaults folded in as literals -- the taper is still live
+under the non-default `mlt_mean = false`), `mlt_flux_fix`, `mlt_flux_fix_cap`,
+`mlt_flux_fix_rmax`, `mlt_relax_down_time`, `wb_grav_source`, `wb_ramp`,
+`vdamp_bot_mean_only`.
+
+KEPT under rule 2 / rule 4, with the reason:
+- `problem/rt_semi_lin` -- the global default is **true** and `red_giant.cpp` reads it
+  with default `!col3`, so a non-mode-3 red-giant run and every `deep_hot_jupiter_rt`
+  run (which never reads it) execute the TRUE branch by default.  Removing it would
+  change those runs.
+- `problem/rt_top_re` -- same: `red_giant.cpp` defaults it to `!col3`, so the true
+  branch is the default for a non-mode-3 red-giant run.
+- `problem/rt_strang`, `problem/rt_once_per_cycle`, `problem/rt_split_transverse` --
+  **in `red_giant.cpp` only**.  `rt_strang = true` is set by four live inputs
+  (`inputs/hydro/he4_presn_cs.athinput`, `he4_presn_sp.athinput`,
+  `inputs/tests/two_stream_sph_thick.athinput`, `tests_m3/he1d.athinput`, and
+  `tests_r10/two_stream_sph_thick_relax.athinput`), and `problem/mlt_split_deposit` --
+  a live switch outside this task's list -- does something only under
+  `mlt_split_dep_ && rt_strang_`.  Removing rt_strang would silently gut it.
+  `pgen.hpp`'s `user_split_func` / `user_split_once` and `Hydro::RTStrangSplit` stay for
+  the same reason.
+
+Gates (`tests_cleanup_0922/gates.sh g3`, compared against a fresh `head` baseline run on
+the unmodified HEAD binaries with `tests_cleanup_0922/compare.sh`): **52/52 payload files
+bitwise identical** (all `.hst`, `.bin`, `.cbin` and `column_used.txt` of a1_m1slab,
+a2_g1_m3, a2_g1_m0, b1_rg_col, b2_rg_fofc, c_dhj_false, c_dhj_true, d_cs_blast,
+d_cs_mhd_blast, e_sp_blast_mhd), comparing `.bin`/`.cbin` past each file's own
+`header offset=` (the PAR_DUMP echo legitimately shrinks when a parameter is deleted).
+`tests_cleanup_0922/rstgate.sh g3` (= `tests_gate_merge/postmerge_rst.sh` on the clean
+build: box mode 3 with the production warm start, 50 cycles straight vs 25 + restart +
+25): every straight-run history row reproduced bit-for-bit in the chain,
+`rt_surface.bin` / `rt_profile.bin` identical, and the straight run itself byte-identical
+to the same gate on HEAD.  The `a2_g1_m3` / `a2_g1_m0` gates ARE the box_convection
+configurations of `tests_gate_merge/postmerge.sh` (mode 3 and mode 0).
+All five problem generators build (`build.sh`).
+
+`git diff --stat` (G3, measured before the G6 edits): 31 files changed,
+197 insertions(+), 2239 deletions(-) -- `src/pgen/box_convection.cpp` -1127,
+`src/pgen/red_giant.cpp` -322, `src/utils/two_stream_rt.hpp` -481,
+`src/utils/two_stream_column_implicit.hpp` -141, `src/hydro/hydro_tasks.cpp` -125,
+`src/utils/two_stream_column_partition.hpp` -51, `src/pgen/deep_hot_jupiter_rt.cpp` -50,
+`src/pgen/pgen.hpp` -38, `src/diffusion/conduction.hpp` -24, `src/hydro/hydro.hpp` -8,
+plus 21 input/test files (one or a few dead parameter lines each).
+
+## G6 -- implicit-column modes 1 and 2
+
+FIRST, the dependency check the brief asked for.  `grep` over `src/` confirms that the
+mode-1/2 code is selected exclusively by `implcol_ = (rt_implicit_column > 0) &&
+(rt_implicit_column != 3)`; mode 3 keys on its own `mode3_` and `problem/ck_implicit` on
+`ckimp_` with its own `ck_jac_ptr` Jacobian.  **No kept path needs a mode-1/2 piece**:
+- `BFaceW` IS still needed -- the `ck_implicit` Jacobian calls it at four sites -- so it
+  was KEPT (only its doc line was re-pointed at ck_implicit).
+- `RTLayerCoef` had no consumer left once the `jac_on` blocks went, so it was removed;
+  `two_stream_column_implicit.hpp` carries its own copy of the same coefficients.
+- `tests_ck_implicit/README.md` names `rt_impl_tau_min`'s two-level thin-cell split as a
+  FUTURE need for ck_implicit.  Nothing calls it today, so it was removed with modes 1
+  and 2; if that split is ever wanted for ck_implicit it has to be re-derived for the
+  ck residual anyway.
+
+REMOVED: the `implcol_` branch itself and everything only it reached --
+`two_stream_rt.hpp`: `implcol_`, `jac_on` (11 Jacobian-accumulation blocks in the grey
+chain and the ck/picket chain), the `rt_layer_w` lambda, `ddn_c/ddn_p/dup_c/dup_m`,
+`djd/djup/djuo`, `jac_g/res_g/dbt_g/dtx_g/tn_g`, `taumin_/taublnd_/rtdbg_`,
+`wthk_/thick_`, the `rtcol_asm` one-shot dump, the mode-1/2 startup fatal, and the
+`ImplicitRadialUpdate(..., rt_on, oit)` call in the wrapper; the globals
+`rt_impl_tau_min`, `rt_impl_dtmax`, `rt_impl_tau_blend` and their pin reads in both
+pgens.  `skip_de` is now `mode3_ || ckimp_` and `de_app` is just `de`.
+`conduction.{cpp,hpp}`: `rtc_`, `rtpass_`, `rtres_/rtjac_/rtdbt_/rttn_/rtdx_/rtdtmax_/
+rtdg_`, the 10 `rtc_`/`rtdbg_` blocks (matrix assembly, the dT cap, the two dumps, the
+M-matrix audit, the column energy budget), the `rad_x1_uform`/`rad_x1_kiter` mutual-
+exclusion fatal, `EnableRTColumn()` and the members `rt_col_active`, `rt_col_dtmax`,
+`rt_col_verbose`, `rt_col_dtex`, `rt_col_alloc`, `rt_col_res`, `rt_col_jac`,
+`rt_col_dbdt`, `rt_col_tn`, `rt_col_diag`, `rt_col_lines`; `ImplicitRadialUpdate` lost
+its `rt_on` / `rt_pass` parameters, and the `if (pcond->rt_col_active) return;` early
+exit went from `Hydro::ImplicitConduction` and `MHD::ImplicitConduction`.
+`rtexp` was KEPT: it is still the expected-sum accumulator of the `rad_x1_kiter` Picard
+passes, which are live.
+`rt_implicit_column = 1` or `2` is now a clear FATAL in `box_convection.cpp` and
+`red_giant.cpp` naming 0 | 3 ("The linearised modes 1 and 2 were removed"); verified by
+running the box input with `problem/rt_implicit_column=1`.
+`deep_hot_jupiter_rt.cpp` already fataled on any non-zero value and is unchanged apart
+from its comment.
+
+Gates: `tests_cleanup_0922/gates.sh g6` + `compare.sh g6 head` -> **52/52 payload files
+bitwise identical** to the HEAD baseline, including the mode-0 box run (a2_g1_m0) and the
+mode-3 box run (a2_g1_m3).  `rstgate.sh g6` (mode-3 warm-start restart) passes and its
+straight run is byte-identical to HEAD's.  All five pgens build.
+
+`git diff --stat` (G6 = the totals below minus the G3 totals above): 2 further files
+touched (`src/diffusion/conduction.cpp`, `src/mhd/mhd_tasks.cpp`),
+about +20 insertions / -600 deletions, i.e. `src/diffusion/conduction.cpp` -202,
+`src/utils/two_stream_rt.hpp` a further -333, `src/diffusion/conduction.hpp` -45,
+`src/mhd/mhd_tasks.cpp` -4.
+Combined G3+G6: **33 files changed, 217 insertions(+), 2839 deletions(-)**.
+
+## Style (both groups)
+
+`tst/run_test_suite.py --style` cannot complete in this environment: its Python-lint step
+shells out to a bare `python`, which does not exist on viper (pre-existing, unrelated to
+these changes).  The C++ half was therefore checked directly: `cpplint.py` (same version,
+same `CPPLINT.cfg`) was run over the HEAD copies and the working-tree copies of all 12
+touched `src/` files, and the two reports are **identical after normalising line numbers**
+(377 findings each, same categories, same messages) -- **no new cpplint violations**.  The
+custom AthenaK checks (tab characters, `}}` on one line, left-justified `#pragma`,
+trailing whitespace, >90-column lines) give exactly the same per-file counts before and
+after for every touched file; the non-zero ones (`hydro.hpp`, `deep_hot_jupiter_rt.cpp`,
+`mhd_tasks.cpp`, `pgen.hpp`, the two column headers) are all pre-existing and untouched.
+
+Run-dump directories `tests_cleanup_0922/{head,g3,g6,rst_head,rst_g3,rst_g6}` were
+deleted at the end; `compare.sh`, `rstgate.sh`, `{head,g3,g6}.md5` and this file were
+kept.

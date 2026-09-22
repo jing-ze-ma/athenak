@@ -80,7 +80,6 @@ using atm_column::TideAccR;
 using atm_column::TideAccT;
 using two_stream_rt::LimitRTSource;
 using two_stream_rt::RTSourceLimiterWarn;
-using two_stream_rt::ad_dump_file;
 using two_stream_rt::get_Tint;
 using two_stream_rt::get_albedo;
 using two_stream_rt::get_kapr;
@@ -525,7 +524,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
               << std::endl;
   }
   rt_int_at_cut = pin->GetOrAddBoolean("problem","ck_int_at_cut",true);
-  ad_dump_file = pin->GetOrAddString("problem","ad_dump_file","");
   if (rt_ck && !rt_split) {
     // The correlated-k solver only exists inside the split path. Without this, rt_ck=true
     // with rt_split=false silently ran the GREY picket fence and looked like it worked.
@@ -537,9 +535,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   }
   // The EXACT implicit column (problem/rt_implicit_column = 3) is GREY-ONLY on this
   // branch: the correlated-k / picket-fence band sweep uses the centre-to-centre layer
-  // branch, which never fills the mode-3 Jacobian (jac_g, djd/djup/djuo, BFaceW), so the
-  // column would be solved against a zero Jacobian.  This pgen also never forwards the
-  // parameter to two_stream_rt, so refuse it here instead of ignoring it silently.
+  // branch, which the mode-3 column solve does not linearise.  This pgen also never
+  // forwards the parameter to two_stream_rt, so refuse it here instead of ignoring it
+  // silently.
   if (pin->GetOrAddInteger("problem","rt_implicit_column",0) != 0) {
     std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: problem/rt_implicit_column is "
               << "not supported here.  The exact implicit column (mode 3) is GREY-ONLY "
@@ -3894,55 +3892,7 @@ void get_picket_fence_pT_arr(const EOS_Data &eos, const Real &Rgas, const Real &
         get_kapr(T, p, met, kapr);
     }
     
-    // Snapshot before the convective adjustment so the dump can show what it changed.
-    std::vector<double> Tpre;
-    if (!ad_dump_file.empty()) {
-      Tpre.resize(N);
-      for (int ip=0; ip<N; ++ip) Tpre[ip] = Tarr(ip);
-    }
-
     adjust_ad_pT_arr(eos, Rgas, gamma, N, Tarr, lgparr);
-
-    if (!ad_dump_file.empty() && global_variable::my_rank == 0) {
-      // index 0 is the TOP (lowest pressure); gradients are forward differences in
-      // log10 p, which is uniform here.  nabla > nabla_ad means convectively unstable.
-      std::ofstream f(ad_dump_file);
-      f.precision(10);
-      f << std::scientific;
-      f << "# deep_hot_jupiter_rt initial (p,T) profile and convective stability\n"
-        << "# N = " << N << ", index 0 = top.  adjust_ad_pT_arr uses 0.9*grad_ad.\n"
-        << "# nabla > nabla_ad_used  =>  CONVECTIVELY UNSTABLE at that level\n"
-        << "# ip  p[bar]  T_before[K]  T_after[K]  nabla_before  nabla_after  "
-        << "grad_ad  nabla_ad_used  unstable_before  unstable_after\n"
-        << "# 'unstable' means nabla exceeds nabla_ad_used by more than 1 % of grad_ad\n";
-      const double bar = 1.0e6;
-      int nub = 0, nua = 0;
-      for (int ip=0; ip<N-1; ++ip) {
-        const double dlgp = lgparr(ip+1) - lgparr(ip);
-        const double nb = (log10(Tpre[ip+1]) - log10(Tpre[ip]))/dlgp;
-        const double na = (log10(Tarr(ip+1)) - log10(Tarr(ip)))/dlgp;
-        const double pp = pow(10.0, lgparr(ip));
-        const double gad = GradAd(eos, gamma, Rgas, pp, Tarr(ip));
-        const double gus = 0.9*gad;
-        // TOLERANCE, not a bare `>`: the adjustment sets every level it touched to
-        // exactly 0.9*grad_ad, so an exact comparison reports round-off on all of them
-        // as instability -- 1169 spurious levels of 9999 on the shipped setup. 1 % of
-        // grad_ad is far below any real super-adiabaticity (the genuine band before the
-        // adjustment exceeds it by up to 0.25) and far above the noise.
-        const double tol = 0.01*gad;
-        const int ub = (nb - gus > tol) ? 1 : 0;
-        const int ua = (na - gus > tol) ? 1 : 0;
-        nub += ub; nua += ua;
-        f << ip << " " << pp/bar << " " << Tpre[ip] << " " << Tarr(ip) << " "
-          << nb << " " << na << " " << gad << " " << gus << " "
-          << ub << " " << ua << "\n";
-      }
-      f.close();
-      std::cout << "deep_hot_jupiter_rt: wrote initial-profile stability dump to '"
-                << ad_dump_file << "'; convectively unstable levels: "
-                << nub << " before the adjustment, " << nua << " after (of " << N-1
-                << ")" << std::endl;
-    }
 
     return;
 }

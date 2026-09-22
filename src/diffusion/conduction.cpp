@@ -1634,8 +1634,7 @@ void Conduction::AddIsotropicHeatFluxRadiative(const DvceArray5D<Real> &w0,
 //! u0(IEN) += x.  The field is frozen over the step exactly as T*, c_v and K_f are.
 
 void Conduction::ImplicitRadialUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
-                                      const Real beta_dt, const bool rt_on,
-                                      const int rt_pass) {
+                                      const Real beta_dt) {
   if (!rad_implicit_x1) return;
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie;
@@ -1693,44 +1692,9 @@ void Conduction::ImplicitRadialUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos
   auto wrk = imp_wrk;
   auto iflag = imp_flag;
   auto irec = imp_rec;
-  // ---- the merged two-stream column solve (<problem>/rt_implicit_column) ------------
-  // rt_on is passed true ONLY by two_stream_rt, which has just filled rt_col_res /
-  // rt_col_jac / rt_col_dbdt for the CURRENT state.  Everything below is behind it, so
-  // with the switch off not one expression of the original solve changes.
-  const bool rtc_ = rt_on && rt_col_active && rt_col_alloc;
-  const int rtpass_ = rt_pass;
-  auto rtres_ = rtc_ ? rt_col_res : DvceArray4D<Real>("rtc_res_d", 1, 1, 1, 1);
-  auto rtjac_ = rtc_ ? rt_col_jac : DvceArray5D<Real>("rtc_jac_d", 1, 1, 1, 1, 1);
-  auto rtdbt_ = rtc_ ? rt_col_dbdt : DvceArray4D<Real>("rtc_dbt_d", 1, 1, 1, 1);
-  auto rttn_ = rtc_ ? rt_col_tn : DvceArray4D<Real>("rtc_tn_d", 1, 1, 1, 1);
-  auto rtdx_ = rtc_ ? rt_col_dtex : DvceArray4D<Real>("rtc_dx_d", 1, 1, 1, 1);
-  const Real rtdtmax_ = rt_col_dtmax;
-  const bool rtdbg_ = rtc_ && rt_col_verbose;
-  auto rtdg_ = rtc_ ? rt_col_diag : DvceArray1D<Real>("rtc_dg_d", 8);
-  if (rtc_) Kokkos::deep_copy(rtdg_, 0.0);
   // ---- rad_x1_uform / rad_x1_kiter (see conduction.hpp) -----------------------------
-  // The MERGED two-stream solve (rt_implicit_column = 1 or 2) folds the sweep's source
-  // into THIS tridiagonal.  It carries its own linearisation of B(T) ~ T^4 and its own
-  // outer iteration on T^n; both would have to be re-derived in u and re-anchored, so
-  // the two are refused together rather than silently mixed.
-  //
-  // rt_implicit_column = 3 is NOT affected and is deliberately allowed.  The exact
-  // block-tridiagonal column solve owns the two-stream entirely and applies its own
-  // energy update inside the sweep; it never calls EnableRTColumn(), so rt_col_active --
-  // and with it rtc_ -- stays false and this operator runs as the plain radial
-  // conduction it always was, carrying only the w-weighted deep share of the flux.  The
-  // u-form and the Picard passes are then exactly the cure for the frozen-K error they
-  // are everywhere else, with nothing to mix.  The gate below keys on rtc_ for that
-  // reason, not on rt_implicit_column > 0.
   const bool uf_ = rad_x1_uform;
   const int nkit_ = rad_x1_kiter;
-  if (rtc_ && (uf_ || nkit_ > 1)) {
-    std::cout << "### FATAL ERROR in "<< __FILE__ <<" at line " << __LINE__
-              << std::endl << "rad_x1_uform/rad_x1_kiter are not supported together "
-              << "with the MERGED two-stream column solve (rt_implicit_column = 1 or 2; "
-              << "mode 3 solves the two-stream separately and is allowed)" << std::endl;
-    std::exit(EXIT_FAILURE);
-  }
   auto tn_ = (nkit_ > 1) ? imp_tn : DvceArray4D<Real>("imp_tn_d", 1, 1, 1, 1);
   // slot indices as plain locals: a static constexpr member would capture `this`
   const int e_ = IMPE, t_ = IMPT, al_ = IMPA, pr_ = IMPP;
@@ -1791,19 +1755,7 @@ void Conduction::ImplicitRadialUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos
       wrk(m,al_,k,j,i) = 1.0/(d*cv);
     });
 
-    // T^n, the temperature the OUTER iteration started from.  Passes 2..k must keep the
-    // heat-capacity term anchored on it, or each pass would take another FULL backward-
-    // Euler conduction step instead of correcting the one already taken.
-    if (rtc_ && rtpass_ == 0) {
-      auto wrk_tn = wrk;
-      const int t_tn = t_;
-      par_for("radimpx1_tn", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-        rttn_(m,k,j,i) = wrk_tn(m,t_tn,k,j,i);
-      });
-    }
-
-    // rad_x1_kiter: T^n, the state pass 0 started from.  Same role as rt_col_tn above.
+    // rad_x1_kiter: T^n, the state pass 0 started from.
     if (nkit_ > 1 && kit == 0) {
       par_for("radimpx1_tn2", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -1934,46 +1886,6 @@ void Conduction::ImplicitRadialUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos
         // J_ii <= 0 (the cell's own emission) raises the diagonal and J_{i,i+-1} >= 0 (it
         // absorbs what its neighbour emits) lowers the off-diagonals, so the row stays an
         // M-matrix; the audit below counts any row where that fails.
-        if (rtc_ && ac > 0.0) {
-          const Real jm = (i > is)
-              ? vi*rtjac_(m,0,k,j,i)*rtdbt_(m,k,j,i-1)*temp_unit : 0.0;
-          const Real j0 = vi*rtjac_(m,1,k,j,i)*rtdbt_(m,k,j,i)*temp_unit;
-          const Real jp = (i < ie)
-              ? vi*rtjac_(m,2,k,j,i)*rtdbt_(m,k,j,i+1)*temp_unit : 0.0;
-          if (isfinite(jm) && isfinite(j0) && isfinite(jp)) {
-            aa -= jm;
-            bb -= j0;
-            cc -= jp;
-          }
-          rhs += vi*rtres_(m,k,j,i);
-          // A neighbour left OUT of the system -- a thin cell that relaxed itself, or the
-          // ghost beyond the first/last row -- has dbdt = 0 above, so its exchange term
-          // dropped out of the matrix.  Put back the part of it that is already
-          // KNOWN: the change in that cell's Planck function, dB, which its own
-          // relaxation has just applied.  R_i was formed before that change, so
-          // without this the exchange across a thick/thin interface would be counted
-          // with the stale neighbour.
-          if (i > is) rhs += vi*rtjac_(m,0,k,j,i)*rtdx_(m,k,j,i-1);
-          if (i < ie) rhs += vi*rtjac_(m,2,k,j,i)*rtdx_(m,k,j,i+1);
-          if (rtpass_ > 0) rhs -= dg*(tc - rttn_(m,k,j,i));
-          const Real offs = fabs(aa) + fabs(cc);
-          if (bb > 0.0) {
-            const Real rat = offs/bb;
-            if (rat > 1.0) {
-              Kokkos::atomic_fetch_add(&rtdg_(0), 1.0);
-              Kokkos::atomic_max(&rtdg_(1), rat);
-            }
-          } else {
-            Kokkos::atomic_fetch_add(&rtdg_(0), 1.0);
-          }
-        }
-        if (rtdbg_ && m == 0 && k == ks && j == js) {
-          const Real j0d = vi*rtjac_(m,1,k,j,i)*rtdbt_(m,k,j,i)*temp_unit;
-          Kokkos::printf("### rtcol_row i=%d V=%.5e dg=%.6e cl=%.4e cr=%.4e VJii=%.6e "
-                         "aa=%.6e bb=%.6e cc=%.6e rhs=%.6e VR=%.6e T*=%.6e tu=%.4e\n",
-                         i, vi, dg, cl, cr, j0d, aa, bb, cc, rhs, vi*rtres_(m,k,j,i),
-                         tc, temp_unit);
-        }
         if (i == is) {
           wrk(m,cp_,k,j,i) = cc/bb;
           wrk(m,dp_,k,j,i) = rhs/bb;
@@ -1992,11 +1904,9 @@ void Conduction::ImplicitRadialUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos
       // next iteration, while a debt owed to i+1 is applied to u0 directly -- one
       // thread owns the whole column, so there is no race.
       Real xnext = 0.0, csum = 0.0, cabs = 0.0, pend = 0.0, eprev = 0.0;
-      // the merged solve is NOT source-free: the column exchanges energy with the two
-      // boundaries through the radiation field, so sum_i V_i de_i must come out equal to
-      // beta_dt times the LINEARISED two-stream source summed over the column, not to
-      // zero.  rtexp accumulates exactly that; it is identically zero with the switch
-      // off, so the residual reported below is the same number it always was.
+      // rad_x1_kiter: passes 2..k are corrections to the step pass 0 already took, so
+      // the EXPECTED sum is the energy those earlier passes put in, not zero.  rtexp
+      // accumulates that; it is identically zero on pass 0.
       Real rtexp = 0.0;
       for (int i=ie; i>=is; --i) {
         const Real vi = curvg ? vol_(m,k,j,i) : dx1c;
@@ -2010,23 +1920,6 @@ void Conduction::ImplicitRadialUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos
         // overshoot is unbounded -- the same divergence the per-cell relaxation
         // avoids by relaxing toward the true fixed point.  rt_impl_tau_min keeps those
         // cells out of the system; this is the belt for the ones that are in it.
-        if (rtc_ && rtdtmax_ > 0.0) {
-          const Real tcb = wrk(m,t_,k,j,i);
-          if (tcb > 0.0) {
-            const Real ycap = rtdtmax_*tcb;
-            if (fabs(y) > ycap) {
-              Kokkos::atomic_fetch_add(&rtdg_(4), 1.0);
-              Kokkos::atomic_max(&rtdg_(5), fabs(y)/tcb);
-              y = (y > 0.0) ? ycap : -ycap;
-            }
-          }
-        }
-        if (rtdbg_ && m == 0 && k == ks && j == js) {
-          Kokkos::printf("### rtcol_sol i=%d dT=%.6e T*=%.6e dT/T=%.4e de=%.6e\n",
-                         i, y, wrk(m,t_,k,j,i),
-                         (wrk(m,t_,k,j,i) > 0.0) ? y/wrk(m,t_,k,j,i) : 0.0,
-                         (wrk(m,al_,k,j,i) > 0.0) ? y/wrk(m,al_,k,j,i) : 0.0);
-        }
         const Real yprev = xnext;             // y_{i+1}, already solved
         xnext = y;
         // u-form: what the recurrence carries is z_i = du_i; what the energy update needs
@@ -2035,20 +1928,6 @@ void Conduction::ImplicitRadialUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos
         if (uf_) {
           const Real tcu = wrk(m,t_,k,j,i);
           y = (tcu > 0.0) ? y/(4.0*tcu*tcu*tcu) : 0.0;
-        }
-        if (rtc_ && ac > 0.0) {
-          // R_i + J_ii y_i + J_{i,i+1} y_{i+1}, and cell i+1's absorption of THIS cell's
-          // emission, V_{i+1} J_{i+1,i} y_i -- the only term of row i+1 still outstanding
-          rtexp += vi*rtres_(m,k,j,i);
-          rtexp += vi*rtjac_(m,1,k,j,i)*rtdbt_(m,k,j,i)*temp_unit*y;
-          // the same known dB of a neighbour left out of the system
-          if (i > is) rtexp += vi*rtjac_(m,0,k,j,i)*rtdx_(m,k,j,i-1);
-          if (i < ie) rtexp += vi*rtjac_(m,2,k,j,i)*rtdx_(m,k,j,i+1);
-          if (i < ie) {
-            const Real vp = curvg ? vol_(m,k,j,i+1) : dx1c;
-            rtexp += vi*rtjac_(m,2,k,j,i)*rtdbt_(m,k,j,i+1)*temp_unit*yprev;
-            rtexp += vp*rtjac_(m,0,k,j,i+1)*rtdbt_(m,k,j,i)*temp_unit*y;
-          }
         }
         // rad_x1_kiter, passes 2..k: the rows carry the T^n anchor, which is NOT a
         // flux divergence, so this pass's column sum is not zero -- it is minus the
@@ -2124,22 +2003,10 @@ void Conduction::ImplicitRadialUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos
             irec(7) = y;
           }
         }
-        if (rtc_ && rtres_(m,k,j,i) != 0.0) {
-          // the L-infinity energy increment the tridiagonal itself applies to a row that
-          // carries a two-stream source: the THICK half of the per-pass contraction
-          Kokkos::atomic_max(&rtdg_(6), fabs(x));
-          const Real tcc = wrk(m,t_,k,j,i);
-          if (tcc > 0.0) Kokkos::atomic_max(&rtdg_(7), fabs(y)/tcc);
-        }
         u0(m,IEN,k,j,i) += x;
         eprev = es + x;
         csum += vi*x;
         cabs += fabs(vi*x);
-      }
-      if (rtc_) {
-        rtexp *= beta_dt;
-        Kokkos::atomic_fetch_add(&rtdg_(2), csum);
-        Kokkos::atomic_fetch_add(&rtdg_(3), rtexp);
       }
       if (cabs > 0.0) mviol = fmax(mviol, fabs(csum - rtexp)/cabs);
     }, Kokkos::Max<Real>(mviol_p), nfail_p, nclip_p);
@@ -2176,66 +2043,7 @@ void Conduction::ImplicitRadialUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos
     }
   }
   // ---- the M-matrix audit of the merged rows, and the column energy budget ----------
-  if (rtc_) {
-    auto hg = Kokkos::create_mirror_view(rt_col_diag);
-    Kokkos::deep_copy(hg, rt_col_diag);
-    const bool viol = (hg(0) > 0.0);
-    if (viol || (rt_col_verbose && rt_col_lines < 60) ||
-        (nan_report && rt_col_lines < 20)) {
-      if (global_variable::my_rank == 0 && rt_col_lines < 200) {
-        ++rt_col_lines;
-        const Real den = fabs(hg(3)) + fabs(hg(2));
-        std::cout << "### rt_implicit_column rank " << global_variable::my_rank
-                  << " cycle " << pmy_pack->pmesh->ncycle
-                  << " pass " << rtpass_
-                  << ": M-matrix violations = " << static_cast<int64_t>(hg(0))
-                  << ", worst |offdiag|/diag = " << hg(1)
-                  << ", sum V de = " << hg(2) << ", expected = " << hg(3)
-                  << ", rel = " << ((den > 0.0) ? fabs(hg(2) - hg(3))/den : 0.0)
-                  << ", dT caps = " << static_cast<int64_t>(hg(4))
-                  << ", worst |dT|/T = " << hg(5)
-                  << ", max|de_thick| = " << hg(6)
-                  << ", max|dT/T|_thick = " << hg(7)
-                  << std::endl;
-      }
-    }
-  }
   return;
-}
-
-//----------------------------------------------------------------------------------------
-//! n void Conduction::EnableRTColumn
-//! rief allocate the four arrays the merged two-stream column solve exchanges with
-//! two_stream_rt.  Called once, from the RT header, the first time the switch is seen.
-
-void Conduction::EnableRTColumn() {
-  if (rt_col_alloc) return;
-  auto &indcs = pmy_pack->pmesh->mb_indcs;
-  const int ng = indcs.ng;
-  const int n1 = indcs.nx1 + 2*ng;
-  const int n2 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*ng) : 1;
-  const int n3 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*ng) : 1;
-  const int nmb = pmy_pack->nmb_thispack;
-  Kokkos::realloc(rt_col_res, nmb, n3, n2, n1);
-  Kokkos::realloc(rt_col_jac, nmb, 3, n3, n2, n1);
-  Kokkos::realloc(rt_col_dbdt, nmb, n3, n2, n1);
-  Kokkos::realloc(rt_col_tn, nmb, n3, n2, n1);
-  Kokkos::realloc(rt_col_dtex, nmb, n3, n2, n1);
-  Kokkos::realloc(rt_col_diag, 8);
-  Kokkos::deep_copy(rt_col_res, 0.0);
-  Kokkos::deep_copy(rt_col_jac, 0.0);
-  Kokkos::deep_copy(rt_col_dbdt, 0.0);
-  Kokkos::deep_copy(rt_col_tn, 0.0);
-  Kokkos::deep_copy(rt_col_dtex, 0.0);
-  Kokkos::deep_copy(rt_col_diag, 0.0);
-  rt_col_active = true;
-  rt_col_alloc = true;
-  if (!rad_implicit_x1) {
-    std::cout << "### FATAL ERROR in Conduction::EnableRTColumn: "
-              << "<problem>/rt_implicit_column needs rad_implicit_x1 = true."
-              << std::endl;
-    std::exit(EXIT_FAILURE);
-  }
 }
 
 //----------------------------------------------------------------------------------------

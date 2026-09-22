@@ -145,19 +145,10 @@ class Conduction {
   // this mode the pgen hands over (T, rho) directly and every lookup site already has
   // the face or cell density.  rad_kr_lP then holds log10 rho.
   bool rad_kappa_rho = false;
-  // rad_kappa_rmax > 0 [code length]: a RADIATIVELY INERT region above this radius.  The
-  // red-giant runs put a hot hydrostatic corona above the star, and that corona must
-  // neither cool nor set the timestep: it is a numerical lid, not a stellar layer, and a
-  // 6e5 K gas at 1e-24 g/cm^3 has a conduction time short enough to stop the run dead.
-  // Above rmax the radiative conduction flux is zero, the cell is dropped from the
-  // conduction timestep, and the optical depth integrated down from the top accumulates
-  // at rad_kappa_above instead of the table value -- so tau does not grow through the
-  // corona and the blend weight w stays 0 there.  The two-stream reads the same two
-  // numbers (see two_stream_rt.hpp) so both radiative operators go quiet together.
-  Real rad_kappa_rmax = 0.0;
-  // rad_kappa_above [cm^2/g]: the opacity used above rad_kappa_rmax.  0 (the default)
-  // makes the corona perfectly transparent; the grey chain handles kappa = 0 exactly
-  // (dtau = 0 gives e0 = 0, so both the source and the emission vanish identically).
+  // rad_kappa_above [cm^2/g]: the floor opacity of the rad_gate_rho blend.  0 (the
+  // default) makes the gated medium perfectly transparent; the grey chain handles
+  // kappa = 0 exactly (dtau = 0 gives e0 = 0, so both the source and the emission
+  // vanish identically).
   Real rad_kappa_above = 0.0;
   // rad_gate_rho [g/cm^3] > 0: the DENSITY form of the same idea, and the one to use
   // whenever the artificial medium can exchange gas with the star.  The radius test
@@ -169,8 +160,7 @@ class Conduction {
   // opacity follow the gas: the 1e-15 corona stays inert wherever it is, and stellar
   // material stays opaque wherever it goes.  The gate is a logistic in log10 rho (see
   // RadGate) rising from 0.1 to 0.9 over rad_gate_dex decades, and the effective opacity
-  // is  kappa_eff = G kappa_table + (1 - G) rad_kappa_above.  Mutually exclusive with
-  // rad_kappa_rmax (fatal if both are set): one criterion or the other.
+  // is  kappa_eff = G kappa_table + (1 - G) rad_kappa_above.
   Real rad_gate_rho = 0.0;
   Real rad_gate_dex = 0.5;
   // rad_implicit_x1 (<hydro>/ or <mhd>/rad_implicit_x1, default false): solve the RADIAL
@@ -223,50 +213,7 @@ class Conduction {
   DvceArray4D<Real> imp_tn;    // T^n, the state pass 0 started from (kiter > 1 only)
   int imp_lines = 0;           // lines printed so far by the debug report
   void ImplicitRadialUpdate(DvceArray5D<Real> &u0, const EOS_Data &eos,
-                            const Real beta_dt, const bool rt_on = false,
-                            const int rt_pass = 0);
-  // ---- THE MERGED TWO-STREAM COLUMN SOLVE (<problem>/rt_implicit_column) -------------
-  // The grey two-stream source is exactly linear in the cell Planck functions B_j at
-  // frozen opacity, so its nearest-neighbour linearisation folds straight into the
-  // tridiagonal above: the column is then solved for the radiative exchange AND the
-  // radiative diffusion at once, by one backward-Euler Newton step, instead of the
-  // two_stream's per-cell relaxation which damps each cell by its own (1 - e^-x)/x and
-  // so breaks the O(1e3)-to-O(1) cancellation between neighbours (the dt-linear velocity
-  // pump; see two_stream_rt.hpp, rt_implicit_column).
-  //
-  // two_stream_rt fills these three arrays instead of applying its own de, and then
-  // calls ImplicitRadialUpdate itself, once per outer pass.  The wrapper task
-  // ImplicitConduction is a no-op while rt_col_active: the solve has already happened.
-  //   rt_col_res  : R_i, the FULL explicit two-stream source at the current state, in
-  //                 code energy density per code time (what the old apply block would
-  //                 have multiplied by bdt).
-  //   rt_col_jac  : dR_i/dB_{i-1}, dR_i/dB_i, dR_i/dB_{i+1} at frozen opacity, summed
-  //                 over the quadrature chains.  Everything >= 2 cells away stays in R.
-  //   rt_col_dbdt : dB_i/dT_i with T in KELVIN, i.e. 4 B_i/T_i.  The Kelvin -> code
-  //                 conversion is applied here, where temperature_cgs() lives.
-  //   rt_col_tn   : T* at the START of the outer iteration, needed by passes 2..k so the
-  //                 heat-capacity term stays anchored on T^n and the conduction operator
-  //                 is not re-applied in full on every pass.
-  //   rt_col_dtex : for a THIN cell (see rt_impl_tau_min), the CHANGE in its own Planck
-  //                 function that its per-cell relaxation has just applied.  A thick row
-  //                 next to it keeps its Jacobian entry dR_i/dB_thin, but as a KNOWN
-  //                 right-hand-side contribution rather than an unknown, so the exchange
-  //                 across a thick/thin interface is still counted exactly once.
-  bool rt_col_active = false;       // <problem>/rt_implicit_column, set by two_stream_rt
-  Real rt_col_dtmax = 0.25;         // <problem>/rt_impl_dtmax: cap on |dT|/T per pass
-  bool rt_col_verbose = false;      // one-shot assembly dump of one column at cycle 0
-  DvceArray4D<Real> rt_col_dtex;
-  bool rt_col_alloc = false;
-  DvceArray4D<Real> rt_col_res;
-  DvceArray5D<Real> rt_col_jac;
-  DvceArray4D<Real> rt_col_dbdt;
-  DvceArray4D<Real> rt_col_tn;
-  // the M-matrix audit of the merged rows: how many rows had |off-diagonals| exceeding
-  // the diagonal, and the worst excess ratio.  Reported once per rad_col_report cycles.
-  // 6: nviol, worst ratio, sum V de, expected sum V de, dT caps, worst capped |dT|/T
-  DvceArray1D<Real> rt_col_diag;
-  int rt_col_lines = 0;
-  void EnableRTColumn();
+                            const Real beta_dt);
   // rad_angular (<hydro>/ or <mhd>/rad_angular, default true): the MASTER SWITCH of the
   // HORIZONTAL (x2/x3, "angular"/"transverse") part of the radiative conduction.  True is
   // everything below and is bitwise the historical arithmetic.  FALSE removes the
@@ -335,8 +282,8 @@ class Conduction {
   bool rad_implicit_ang = false;
   // rad_tr_split_out (set by a problem generator, not by the input file): the TRANSVERSE
   // operator has been taken OUT of the RK stage and is run by the same operator-split
-  // step that runs the radiation column (box_convection's problem/rt_strang and
-  // problem/rt_imex, through problem/rt_split_transverse).  Hydro::/MHD::
+  // step that runs the radiation column (red_giant's problem/rt_strang, through
+  // problem/rt_split_transverse; box_convection's problem/rt_col3_sub).  Hydro::/MHD::
   // ImplicitTransverseConduction is then a no-op: solving here as well would apply the
   // operator twice a stage.
   bool rad_tr_split_out = false;

@@ -272,7 +272,7 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
 
   // ---- 2. the frozen boundary data, formed redundantly on every thread --------------
   Real dbdtau = 0.0;
-  if (!c.cut_legacy && ic + 1 <= ie) {
+  if (ic + 1 <= ie) {
     const Real dtc = c.Ht(m,k,j,ic) + c.Ht(m,k,j,ic+1);
     if (dtc > 0.0) dbdtau = (c.Bb(m,0,ic,k,j) - c.Bb(m,0,ic+1,k,j))/dtc;
   }
@@ -342,9 +342,6 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
       for (int q=0; q<nq; ++q) Ucut_i[q] = cutc_i + c.mu[q]*dbd;
     }
     // ---- 4a. the formal solution, each segment with a ZERO incoming intensity --------
-    // problem/rt_impl_ablate bit 1 repeats the SEGMENT SWEEPS, which write absolutely
-    // and are therefore idempotent.  The entry-value scan and the correction that follow
-    // accumulate, so they are not repeated and their cost is not measured here.
     // THE SPHERICAL FORM couples the two rays at every face (RTCol3::Bt), so the formal
     // solution is no longer a one-directional recursion and the segmented scan below --
     // sweep with a zero entry value, record the homogeneous factor, scan the segments,
@@ -358,14 +355,11 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
       Ubot[q] = (c.Wk<true>(m,BB,ib,k,j) + Ucut_i[q])*avb;
     }
     if (!c.pp) {
-      for (int rep=(c.ablate & 1); rep>=0; --rep) {
       Kokkos::single(Kokkos::PerTeam(tm), [&]() {
         c.FormalSph<true>(m, k, j, ib, hb, cutc, Ubot, Dtop);
       });
       tm.team_barrier();
-      }
     } else {
-    for (int rep=(c.ablate & 1); rep>=0; --rep) {
     Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, nsg), [&](const int s) {
       const int i0 = c.SegStart(s,ic,nc,nsg,ib), i1 = c.SegStart(s+1,ic,nc,nsg,ib) - 1;
       if (i1 < ib) return;                    // a wholly DEEP segment: no two-stream here
@@ -410,7 +404,6 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
       }
     });
     tm.team_barrier();
-    }
     // the P segment entry intensities: a serial scan over SEGMENTS, not over cells
     Kokkos::single(Kokkos::PerTeam(tm), [&]() {
       Real de[2], ue[2];
@@ -549,24 +542,19 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
     // whether the pass may keep the previous factorisation -- so the switch turns this
     // block on by itself.  It is the same test on the same number, so a run with
     // rescheck off and reuse on takes the same break at the same pass.
-    if (c.rescheck || c.reuse > 0 || (c.ablate & 4)) {
+    if (c.rescheck || c.reuse > 0) {
       Real rpre = 0.0;
-      for (int rep=((c.ablate & 4) ? 1 : 0); rep>=0; --rep) {
-        rpre = 0.0;
-        Kokkos::parallel_reduce(Kokkos::TeamThreadRange(tm, nsg),
-        [&](const int s, Real &rmx) {
-          const int i0 = c.SegStart(s,ic,nc,nsg,ib);
-          const int i1 = c.SegStart(s+1,ic,nc,nsg,ib) - 1;
-          for (int i=i0; i<=i1; ++i) {
-            const Real rr = c.ResidRel<true>(m, k, j, i, eoff);
-            if (rr > rmx) rmx = rr;
-          }
-        }, Kokkos::Max<Real>(rpre));
-      }
-      if (c.rescheck || c.reuse > 0) {
-        rfin = rpre;
-        if (rpre < c.tol && !c.fixit) break;
-      }
+      Kokkos::parallel_reduce(Kokkos::TeamThreadRange(tm, nsg),
+      [&](const int s, Real &rmx) {
+        const int i0 = c.SegStart(s,ic,nc,nsg,ib);
+        const int i1 = c.SegStart(s+1,ic,nc,nsg,ib) - 1;
+        for (int i=i0; i<=i1; ++i) {
+          const Real rr = c.ResidRel<true>(m, k, j, i, eoff);
+          if (rr > rmx) rmx = rr;
+        }
+      }, Kokkos::Max<Real>(rpre));
+      rfin = rpre;
+      if (rpre < c.tol) break;
       // THE CONTRACTION CHECK.  A frozen Jacobian is still a contraction as long as the
       // residual keeps falling; the pass refactorises when it did not fall by at
       // least problem/rt_impl_reuse_rho, which is what keeps the quasi-Newton from
@@ -586,10 +574,8 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
     }
 
     // ---- 4b. the PARTITIONED forward elimination ------------------------------------
-    // ablate bit 2 repeats it: it writes absolutely out of b, so it is idempotent.
     Real rmax = 0.0;
     if (refac) {
-    for (int rep=(c.ablate & 2); rep>=0; --rep) {
     rmax = 0.0;
     Kokkos::parallel_reduce(Kokkos::TeamThreadRange(tm, nsg),
     [&](const int s, Real &rmx) {
@@ -814,12 +800,11 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
         }
       }
     }, Kokkos::Max<Real>(rmax));
-    }
     } else {
       // ---- 4b''. THE REUSE PASS -----------------------------------------------------
       // Nothing of the system has changed except the right-hand side: the Jacobian's
       // only iterate-dependent entry is de/db, which this pass holds at the value the
-      // last factorising pass used (exactly what rt_impl_cvfreeze does), and rv[0..3]
+      // last factorising pass used, and rv[0..3]
       // are identically zero, so the forward elimination collapses to
       //     d_i = rv4_i v_i - M_i d_{i-1}|(2,3,4),   v = Bi[:,4],  M = Bi A3,
       // one EOS call and 20 multiplies per cell in place of the assembly, the 5x5
@@ -888,7 +873,7 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
     }
     rfin = rmax;
     if (!(rmax < HUGE_VAL)) return;     // a singular block: leave the column alone
-    if (rmax < c.tol && !c.fixit) break;
+    if (rmax < c.tol) break;
 
     // ---- 4c. the REDUCED system, and the clamped update -----------------------------
     // The segment boundary unknowns y_s = x_{i1(s)} satisfy, exactly,
@@ -1419,7 +1404,6 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
       for (int s=0; s<nsg; ++s) ncl += c.rd(m,k,j,s*nrd+NCL);
       if (ncl > 0.0) Kokkos::atomic_add(&c.stat(3), ncl);
     });
-    if (c.fixit) continue;
     if (c.dstop && dbm < c.tol) break;
     if (dbm < 1.0e-14) break;
   }
@@ -1456,11 +1440,6 @@ void RTCol3TeamSolve(const RTCol3 &c, const TeamMember_t &tm,
         if (rt > rtmax) rtmax = rt;
       }
       Real de = enew - es;
-      // problem/rt_src_theta: the same re-centring the serial solver makes
-      if (c.theta != 1.0) {
-        de = RTCol3ThetaDe(de, c.bdt*(wb*c.Src(m,0,i,k,j) + c.Wk<true>(m,EX,i,k,j)),
-                           c.theta);
-      }
       const Real bz = c.Bb(m,0,i,k,j);
       if (bz > 0.0) {
         const Real rb = fabs(b/bz - 1.0);

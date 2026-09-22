@@ -186,24 +186,6 @@ bool curv_ = false;      // spherical polar or cubed sphere: x1 IS r
 Real rgas_ = 1.0;        // k/(mu m_H) for an ideal gas, code units
 Real gm1_ = 0.4;
 bool etotgrav_ = false;
-// <problem>/wb_grav_source = background (default) | plain.  Under wellbalance_dynamic the
-// radial gravity source is the BACKGROUND's own pressure difference across the cell,
-// which cancels the well-balanced reconstruction exactly.  With `plain` the source
-// reverts to -rho G M / r^2 (energy handled exactly as in the non-WB path) while the
-// reconstruction and the fluxes keep the deviation form: the cancellation is deliberately
-// broken, which separates an overstability living in the SOURCE (a delayed or weakened
-// restoring force) from one living in the RECONSTRUCTION.  Not a production option.
-bool wb_grav_plain_ = false;
-// <problem>/wb_ramp [cm], 0 = a hard edge.  The STATIC well-balanced background is set to
-// zero outside [<hydro>/wb_rmin, <hydro>/wb_rmax], which is exactly the plain scheme
-// there -- a zero background makes the deviation the full state, the face background adds
-// nothing, the flux removal removes nothing and the gravity source is -rho g.  But the
-// deviation is reconstructed with a THREE-CELL stencil, so a hard step in the background
-// puts a step of the background's own size into the slope of the cell beside it.  wb_ramp
-// takes the background to zero over a raised cosine of this width instead; a few radial
-// cells is enough.  The scheme stays exactly consistent for any background field -- the
-// tapered one is simply less completely cancelled, ending at the plain scheme.
-Real wb_ramp_ = 0.0;
 
 // the initial column on a fine uniform grid in r: ln p [code] and T [K]
 DvceArray1D<Real> lnp_d_, tk_d_;
@@ -452,13 +434,11 @@ bool rt_split_tr_ = false;
 // is positioned by radius fraction instead and both may run together.
 Real vdamp_tau_ = 0.0, vdamp_time_ = 20.0;
 bool vdamp_printed_ = false;
-// --- problem/vdamp_bot_cells, vdamp_bot_time, vdamp_bot_mean_only (0 = OFF, bitwise
-// inert): the bottom sponge (box_convection.cpp:1708-1710, kernel :2822), over the
-// lowest N ACTIVE RADIAL cells i = is .. is+N-1, with the ramp
+// --- problem/vdamp_bot_cells, vdamp_bot_time (0 = OFF, bitwise inert): the bottom
+// sponge (box_convection.cpp:1708-1710, kernel :2822), over the lowest N ACTIVE RADIAL
+// cells i = is .. is+N-1, with the ramp
 //     f = (1 + cos(pi (i-is)/N))/2,   g = 1 - exp(-f bdt/vdamp_bot_time),
-//     m1 -> m1 - g m1          (vdamp_bot_mean_only = false, the default), or
-//     m1 -> m1 - g rho <v1>_shell   (vdamp_bot_mean_only = true; the shell mean is taken
-//                                    over every angular cell at that radius, all ranks).
+//     m1 -> m1 - g m1.
 // The internal energy is conserved: the kinetic-energy change is written back to IEN.
 // Insurance against the deep g-mode cavity under an open inner boundary.
 // problem/vdamp_all_until (code time, 0 = off) and problem/vdamp_all_time: damp v1 in
@@ -470,9 +450,6 @@ DvceArray1D<Real> vda_d_;
 HostArray1D<Real> vda_h_;
 int vdb_cells_ = 0;
 Real vdb_time_ = 20.0;
-bool vdb_mean_ = false;
-DvceArray1D<Real> vdb_d_;        // (N): the shell sums of v1, then the shell means
-HostArray1D<Real> vdb_h_;
 
 // --- problem/rt_surface_dt, rt_surface_file: the EMERGENT TOP-FACE FLUX per angular
 // cell, the spherical reading of box_convection.cpp's rt_surface dump (:889-955).  Every
@@ -571,24 +548,15 @@ Real ck_dump_t2_ = -1.0;
 std::string ck_dump_file2_;
 bool ck_dumped2_ = false;
 Real mlt_alpha_ = 0.0;   // problem/mlt_alpha; > 0 turns the convective flux on
-// problem/mlt_rmax [cm], 0 = off: no MLT flux above this radius.  The column is built
-// RADIATIVE above tau = ic_tau_rad (10), where the two-stream / tau-blend carries L, so
-// the subgrid flux must hand over there too.  Left unbounded it runs up into the thin
-// layers, ends at whatever face the 10 %-of-e cap stops it, and dumps everything into
-// that one cell: measured 43-140 % hotter photosphere and atmosphere within 6e5 s,
-// Mach ~1.5 outflow at tau ~ 1 and a dt collapse (R1_mlt, 2026-09-09).
-Real mlt_rmax_ = 0.0;
-// problem/mlt_tau_lo, mlt_tau_hi: the SMOOTH hand-over to radiation, in the run's own
-// evolving Rosseland tau.  A hard radial cut (mlt_rmax) does not work: at t = 0 F_mlt
-// falls from 0.79 L to 0.03 L across the two cells at tau ~ 30, where the radiative
-// solution still carries only 6e-4 L, so ~0.9 L is deposited in those two cells; the
-// photosphere ran 45-150 % hot and the run NaN'd at the cut radius by t = 6.2e5
-// (R1b_mlt, 2026-09-09).  Radiation only takes over as tau falls, so the subgrid flux
-// is weighted by w = clamp(log10(tau/tau_lo)/log10(tau_hi/tau_lo), 0, 1): full MLT
-// below tau_hi, nothing above tau_lo, and three decades of grid cells in between over
-// which the two fluxes exchange the load.
-Real mlt_tau_lo_ = 30.0;
-Real mlt_tau_hi_ = 1.0e4;
+// The per-column path's SMOOTH hand-over to radiation, in the run's own evolving
+// Rosseland tau: the subgrid flux is weighted by
+// w = clamp(log10(tau/tau_lo)/log10(tau_hi/tau_lo), 0, 1) with tau_lo = 30, tau_hi = 1e4
+// -- full MLT below tau_hi, nothing above tau_lo, and three decades of grid cells in
+// between over which the two fluxes exchange the load.  A hard radial cut does not work:
+// at t = 0 F_mlt falls from 0.79 L to 0.03 L across the two cells at tau ~ 30, where the
+// radiative solution still carries only 6e-4 L, so ~0.9 L is deposited in those two
+// cells; the photosphere ran 45-150 % hot and the run NaN'd at the cut radius by
+// t = 6.2e5 (R1b_mlt, 2026-09-09).
 Real lstar_cgs_ = 0.0;   // L [erg/s], for the physical cap F_mlt <= L/(4 pi r^2)
 // problem/mlt_ramp_time [s], 0 = off: the applied MLT flux is multiplied by
 // min(1, t/mlt_ramp_time).  Switching a flux of order L on in a single step drives an
@@ -619,14 +587,6 @@ Real mlt_hold_ = 0.0;
 // (1e-2..0.5 near the surface) and F_MLT(x) binds; below it only the DEFICIT is known,
 // and that is what gets carried.
 Real mlt_x_thr_ = 1.0e-4;
-// problem/mlt_flux_fix (default false), shell-mean path only: on faces the closure leaves
-// alone (radiatively stable, or a negative deficit) carry the SIGNED shell residual
-// F_req - F_rad - F_res - F_2s, capped at mlt_flux_fix_cap*F_req, below mlt_flux_fix_rmax
-// [cm].  The initial column is in radiative equilibrium with ITS OWN transfer, not with
-// the run's two-stream on this grid: the mismatch is 0.1-0.3 % of L (tests_r12), which
-// on a Gamma ~ 0.95 envelope heats the layers under 0.93 R, cools those above and
-// drives the secular expansion.  This makes L(r) = L on every interior face in the mean.
-bool mlt_flux_fix_ = false;
 // problem/mlt_split_deposit (needs problem/rt_strang): deposit div F_conv in the SAME
 // Strang half steps as the two-stream, not inside the RK stages.  In the MLT zone
 // div F_conv and div F_2s are each up to 6e-3 of eint per step and cancel; with one in
@@ -636,7 +596,6 @@ bool mlt_flux_fix_ = false;
 // The stage call still builds fconv_.  mlt_owed_ carries the half step made before the
 // first build.
 Real cs_max_ = 0.0, cs_mass_added_ = 0.0;   // problem/cs_max, see RgCsCeiling
-bool rt_no_heat_ = false; // problem/rt_no_heat, see RedGiantRTSplit
 int eledger_ = 0;         // problem/e_ledger, see RedGiantRTSplit
 bool mlt_split_dep_ = false, mlt_fconv_ready_ = false;
 Real mlt_owed_ = 0.0;
@@ -696,25 +655,12 @@ DvceArray1D<Real> ftar1d_;   // (i): the unsmoothed target, mlt_split_sync only
 // mirrors the walls exactly as the single pass does, so the deposit stays conservative.
 int mlt_sync_passes_ = 1;
 DvceArray1D<Real> ftar1d_b_;  // (i): ping-pong buffer, mlt_sync_passes > 1 only
-Real mlt_flux_fix_cap_ = 0.02, mlt_flux_fix_rmax_ = 0.0;
 // problem/mlt_relax_time [s], 0 = off: relax the applied 1-D profile toward the freshly
 // computed flux by dt/relax_time each call.  The deficit now contains the RESOLVED
 // convective flux, which is a turbulent correlation and flickers from dump to dump; the
 // applied subgrid flux should follow its mean, not its noise.  Seeded on the first call
 // so that t = 0 already carries the full closure.
 Real mlt_relax_ = 1.0e4;
-// problem/mlt_relax_down_time [s], default < 0 = use mlt_relax_time both ways: the
-// relaxation time to use on the calls where the (smoothed) target is BELOW the current
-// fmlt1d; 0 = drop to the target in one call.  The relaxation was written for a target
-// that flickers around a mean, but the deficit is RECTIFIED at zero: where resolved
-// convection has taken the load, D = 0 exactly and stays there, and the one-sided
-// filter then keeps paying out exp(-t/mlt_relax_time) -- 6-9 % of L for more than a
-// turnover in the 3-D wedge (tests_r11/wedge9d) -- on top of the two-stream flux that
-// has already taken over.  A short (or zero) down time makes the hand-over prompt while
-// the slow up time still averages the noise on the way in.  Applies at both relaxation
-// sites (with and without mlt_split_sync) and touches neither the seed nor the restart
-// state: fmlt1d is still the only thing carried.
-Real mlt_relax_dn_ = -1.0;
 bool mlt_relax_seeded_ = false;
 std::string mlt_dump_ = "";  // problem/mlt_dump: write the faces of one column once
 bool mlt_dumped_ = false;
@@ -836,25 +782,13 @@ KOKKOS_INLINE_FUNCTION Real RadiusOf(const bool curv, const Real x1, const Real 
                                      const Real x1min) {
   return curv ? x1 : (rin + x1 - x1min);
 }
-// The STATIC well-balanced background's radial window: 1 inside [rmin, rmax], 0 outside,
-// with a raised-cosine ramp of width `ramp` on each side (ramp = 0: a hard edge).  A pure
-// function of r, so cells and faces see the same field and the scheme stays consistent.
-KOKKOS_INLINE_FUNCTION Real WbWindow(const Real r, const Real rmin, const Real rmax,
-                                     const Real ramp) {
-  Real w = 1.0;
-  if (rmax > 0.0) {
-    if (r >= rmax) return 0.0;
-    if (ramp > 0.0 && r > rmax - ramp) {
-      w *= 0.5*(1.0 - cos(M_PI*(rmax - r)/ramp));
-    }
-  }
-  if (rmin > 0.0) {
-    if (r <= rmin) return 0.0;
-    if (ramp > 0.0 && r < rmin + ramp) {
-      w *= 0.5*(1.0 - cos(M_PI*(r - rmin)/ramp));
-    }
-  }
-  return w;
+// The STATIC well-balanced background's radial window: 1 inside [rmin, rmax], 0 outside.
+// A pure function of r, so cells and faces see the same field and the scheme stays
+// consistent.
+KOKKOS_INLINE_FUNCTION Real WbWindow(const Real r, const Real rmin, const Real rmax) {
+  if (rmax > 0.0 && r >= rmax) return 0.0;
+  if (rmin > 0.0 && r <= rmin) return 0.0;
+  return 1.0;
 }
 
 // the STATIC background state at radius r: the initial column's (rho, e), tapered by the
@@ -864,7 +798,7 @@ KOKKOS_INLINE_FUNCTION
 void WbBgAt(const EOS_Data &eos, const Real rgas, const Real igm1,
             const DvceArray1D<Real> &lnp, const DvceArray1D<Real> &tk, const int nf,
             const Real rlo, const Real drf, const Real rmin, const Real rmax,
-            const Real ramp, const Real r, Real &dbg, Real &ebg);
+            const Real r, Real &dbg, Real &ebg);
 
 // the column at radius r: ln p (code) and T (K), linear in r between fine nodes
 KOKKOS_INLINE_FUNCTION void ColumnAt(const DvceArray1D<Real> &lnp,
@@ -882,11 +816,11 @@ KOKKOS_INLINE_FUNCTION
 void WbBgAt(const EOS_Data &eos, const Real rgas, const Real igm1,
             const DvceArray1D<Real> &lnp, const DvceArray1D<Real> &tk, const int nf,
             const Real rlo, const Real drf, const Real rmin, const Real rmax,
-            const Real ramp, const Real r, Real &dbg, Real &ebg) {
+            const Real r, Real &dbg, Real &ebg) {
   Real lp, t;
   ColumnAt(lnp, tk, nf, rlo, drf, r, lp, t);
   const Real d = DensFromPT(eos, rgas, exp(lp), t);
-  const Real w = WbWindow(r, rmin, rmax, ramp);
+  const Real w = WbWindow(r, rmin, rmax);
   dbg = w*d;
   ebg = w*EintFromDensT(eos, rgas, igm1, d, t);
 }
@@ -1397,7 +1331,6 @@ void RedGiantRTSweep(Mesh *pm, Real bdt) {
 
 void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   eledger_ = pin->GetOrAddInteger("problem", "e_ledger", 0);
-  rt_no_heat_ = pin->GetOrAddBoolean("problem", "rt_no_heat", false);
   cs_max_ = pin->GetOrAddReal("problem", "cs_max", 0.0);
   user_srcs_func = (eledger_ > 0 || cs_max_ > 0.0) ? RedGiantGravityLedger
                                                    : RedGiantGravity;
@@ -1483,9 +1416,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   const Real kfac = pin->GetOrAddReal("problem", "kappa_fac", 1.0);
   const Real kconst = pin->GetOrAddReal("problem", "kappa_const", 0.0);
   mlt_alpha_ = pin->GetOrAddReal("problem", "mlt_alpha", 0.0);
-  mlt_rmax_ = pin->GetOrAddReal("problem", "mlt_rmax", 0.0);
-  mlt_tau_lo_ = pin->GetOrAddReal("problem", "mlt_tau_lo", 30.0);
-  mlt_tau_hi_ = pin->GetOrAddReal("problem", "mlt_tau_hi", 1.0e4);
   // problem/mlt_alpha_ic: the mixing length used to build the INITIAL COLUMN, which is
   // a separate question from whether the MLT flux runs as a source term.  Defaults to
   // mlt_alpha, so setting one knob does both; set it alone (with mlt_alpha = 0) to start
@@ -1498,13 +1428,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   mlt_ramp_dn_ = pin->GetOrAddReal("problem", "mlt_ramp_down_time", 0.0);
   mlt_hold_ = pin->GetOrAddReal("problem", "mlt_hold_time", 0.0);
   mlt_x_thr_ = pin->GetOrAddReal("problem", "mlt_x_thr", 1.0e-4);
-  mlt_flux_fix_ = pin->GetOrAddBoolean("problem", "mlt_flux_fix", false);
   mlt_split_dep_ = pin->GetOrAddBoolean("problem", "mlt_split_deposit", false);
   mlt_split_sync_ = pin->GetOrAddBoolean("problem", "mlt_split_sync", false);
-  mlt_flux_fix_cap_ = pin->GetOrAddReal("problem", "mlt_flux_fix_cap", 0.02);
-  mlt_flux_fix_rmax_ = pin->GetOrAddReal("problem", "mlt_flux_fix_rmax", 0.0);
   mlt_relax_ = pin->GetOrAddReal("problem", "mlt_relax_time", 1.0e4);
-  mlt_relax_dn_ = pin->GetOrAddReal("problem", "mlt_relax_down_time", -1.0);
   if (mlt_split_sync_) {
     mlt_sync_passes_ = pin->GetOrAddInteger("problem", "mlt_sync_passes", 1);
     if (mlt_sync_passes_ < 1) {
@@ -1532,21 +1458,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
               << std::endl;
     std::exit(EXIT_FAILURE);
   }
-  {
-    std::string wbgs = pin->GetOrAddString("problem", "wb_grav_source", "background");
-    if (wbgs.compare("background") == 0) {
-      wb_grav_plain_ = false;
-    } else if (wbgs.compare("plain") == 0) {
-      wb_grav_plain_ = true;
-    } else {
-      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "<problem> wb_grav_source = '" << wbgs
-                << "' must be 'background' or 'plain'" << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
-  }
-  // the ramp that takes the STATIC background to zero at wb_rmin / wb_rmax [cm]
-  wb_ramp_ = pin->GetOrAddReal("problem", "wb_ramp", 0.0)/lunit;
   sponge_on_ = pin->GetOrAddBoolean("problem", "sponge", true);
   nan_report_ = pin->GetOrAddBoolean("problem", "nan_report", false);
   two_stream_rt::rt_nan_report = nan_report_;
@@ -1659,18 +1570,15 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       std::exit(EXIT_FAILURE);
     }
   }
-  // --- the BOTTOM SPONGE (problem/vdamp_bot_cells, vdamp_bot_time,
-  // vdamp_bot_mean_only), ported from box_convection.cpp:1707-1733.  The box additionally
-  // demands a CLOSED bottom wall; here the sponge exists precisely to tame the deep
-  // g-mode cavity under an OPEN inner boundary, so that check is dropped -- but the
-  // shell-mean variant needs every MeshBlock to span the whole radius, as the MLT shell
-  // mean does, because it indexes cells by their global radial position.
+  // --- the BOTTOM SPONGE (problem/vdamp_bot_cells, vdamp_bot_time), ported from
+  // box_convection.cpp:1707-1733.  The box additionally demands a CLOSED bottom wall;
+  // here the sponge exists precisely to tame the deep g-mode cavity under an OPEN inner
+  // boundary, so that check is dropped.
   vda_until_ = pin->GetOrAddReal("problem", "vdamp_all_until", 0.0);
   vda_time_ = pin->GetOrAddReal("problem", "vdamp_all_time", 20.0);
   vda_mean_ = pin->GetOrAddBoolean("problem", "vdamp_all_mean_only", false);
   vdb_cells_ = pin->GetOrAddInteger("problem", "vdamp_bot_cells", 0);
   vdb_time_ = pin->GetOrAddReal("problem", "vdamp_bot_time", 20.0);
-  vdb_mean_ = pin->GetOrAddBoolean("problem", "vdamp_bot_mean_only", false);
   if (vdb_cells_ > 0) {
     if (2*vdb_cells_ >= pmy_mesh_->mesh_indcs.nx1) {
       std::cout << "### FATAL ERROR in red_giant: problem/vdamp_bot_cells = "
@@ -1681,12 +1589,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     if (!(vdb_time_ > 0.0)) {
       std::cout << "### FATAL ERROR in red_giant: problem/vdamp_bot_time must be > 0"
                 << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
-    if (vdb_mean_ && pmy_mesh_->mesh_indcs.nx1 != pmy_mesh_->mb_indcs.nx1) {
-      std::cout << "### FATAL ERROR in red_giant: problem/vdamp_bot_mean_only averages "
-                << "over a shell at a GLOBAL radial index, so every MeshBlock must span "
-                << "the whole radius: set meshblock/nx1 = mesh/nx1." << std::endl;
       std::exit(EXIT_FAILURE);
     }
   }
@@ -1748,12 +1650,19 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // box_convection.cpp:1844-1921.  3 = the EXACT block-tridiagonal solve of the whole
     // radial column; 0 (the default) is the old per-cell semi-implicit apply and leaves
     // this problem generator bitwise unchanged.  It is read FIRST because the mode-3
-    // gate (two_stream_rt.hpp:1386-1414) demands rt_use_cons, rt_src_direct,
-    // rt_semi_implicit, !rt_explicit, !rt_layer_legacy, !rt_top_re and rt_outer_iter = 1,
+    // gate (two_stream_rt.hpp) demands rt_use_cons, rt_src_direct,
+    // rt_semi_implicit, !rt_layer_legacy and !rt_top_re,
     // i.e. the OPPOSITE of four of red_giant's legacy defaults: so every one of those
     // defaults is keyed on col3 below.  Each is still a GetOrAdd, so the input file
     // always wins and a mode-0 run reads exactly the values it read before.
     ts::rt_implicit_column = pin->GetOrAddInteger("problem", "rt_implicit_column", 0);
+    if (ts::rt_implicit_column != 0 && ts::rt_implicit_column != 3) {
+      std::cout << "### FATAL ERROR in red_giant: problem/rt_implicit_column must be 0 "
+                << "(the per-cell relaxation) or 3 (the exact block-tridiagonal column "
+                << "solve).  The linearised modes 1 and 2 were removed.  Got "
+                << ts::rt_implicit_column << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
     const bool col3 = (ts::rt_implicit_column == 3);
     ts::rt_de_max = pin->GetOrAddReal("problem", "rt_de_max", 0.5);
     // these five default to the OLD (pre-fix) solver under rt_implicit_column = 0, as
@@ -1761,7 +1670,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // inputs turn them on explicitly.  Under mode 3 they default to the FIXED solver,
     // which is what that gate requires anyway (see col3 above).
     ts::rt_semi_lin = pin->GetOrAddBoolean("problem", "rt_semi_lin", !col3);
-    ts::rt_explicit = pin->GetOrAddBoolean("problem", "rt_explicit", false);
     ts::rt_newton = pin->GetOrAddBoolean("problem", "rt_newton", col3);
     ts::rt_rescue_eq = pin->GetOrAddBoolean("problem", "rt_rescue_eq", col3);
     ts::rt_ali_diag = pin->GetOrAddBoolean("problem", "rt_ali_diag", true);
@@ -1786,10 +1694,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // and the box's production setting; here it was never read, so the mode-3 column,
     // with rt_top_re forced off, always used the column model (2026-09-18).
     ts::rt_top_vacuum = pin->GetOrAddBoolean("problem", "rt_top_vacuum", false);
-    // see two_stream_rt.hpp, rt_cut_bc_legacy: the grey sweep used to start the upward
-    // intensity at the cut isotropic at B, which is exactly half the flux the column
-    // supports.  The fix is the default here too; true restores the old boundary.
-    ts::rt_cut_bc_legacy = pin->GetOrAddBoolean("problem", "rt_cut_bc_legacy", false);
     // see two_stream_rt.hpp, rt_layer_legacy: every layer used to span a whole
     // cell in optical depth but carry a source running between two cell CENTRES.
     // The fix is the default here too; true restores the old layers.
@@ -1816,7 +1720,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // (:1844-1921).  Every name, and every default, is the box's, so the same input
     // line means the same thing in both problem generators.
     ts::rt_semi_implicit = pin->GetOrAddBoolean("problem", "rt_semi_implicit", true);
-    ts::rt_outer_iter = pin->GetOrAddInteger("problem", "rt_outer_iter", 1);
     ts::rt_outer_verbose = pin->GetOrAddBoolean("problem", "rt_outer_verbose", false);
     ts::rt_impl_tol = pin->GetOrAddReal("problem", "rt_impl_tol", col3 ? 1.0e-8 : 1.0e-6);
     ts::rt_col3_ex_iter = pin->GetOrAddBoolean("problem", "rt_col3_ex_iter", false);
@@ -1828,14 +1731,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     ts::rt_impl_norm_eps = pin->GetOrAddReal("problem", "rt_impl_norm_eps", 1.0e-3);
     ts::rt_impl_dstop = pin->GetOrAddBoolean("problem", "rt_impl_dstop", true);
     ts::rt_impl_rescheck = pin->GetOrAddBoolean("problem", "rt_impl_rescheck", true);
-    ts::rt_impl_ablate = pin->GetOrAddInteger("problem", "rt_impl_ablate", 0);
-    ts::rt_impl_fixit = pin->GetOrAddBoolean("problem", "rt_impl_fixit", false);
-    if (ts::rt_impl_ablate != 0 || ts::rt_impl_fixit) {
-      std::cout << "### WARNING in red_giant: problem/rt_impl_ablate or rt_impl_fixit "
-                << "is set.  These are TIMING INSTRUMENTATION and the mode-3 solve they "
-                << "produce is NOT a correct solve." << std::endl;
-    }
-    ts::rt_impl_cvfreeze = pin->GetOrAddInteger("problem", "rt_impl_cvfreeze", 0);
     // problem/rt_impl_mixed: 0 = double (default), 1 = single-precision Newton
     // correction, 2 = and single-precision stored factors.  See two_stream_rt.hpp.
     ts::rt_impl_mixed = pin->GetOrAddInteger("problem", "rt_impl_mixed", 0);
@@ -1869,8 +1764,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     }
     ts::rt_impl_redpar = pin->GetOrAddBoolean("problem", "rt_impl_redpar", false);
     ts::rt_col3_hybrid_tau = pin->GetOrAddReal("problem", "rt_col3_hybrid_tau", 0.0);
-    ts::rt_col3_split_deep = pin->GetOrAddBoolean("problem", "rt_col3_split_deep", false);
-    ts::rt_col3_split_w = pin->GetOrAddInteger("problem", "rt_col3_split_w", 8);
     // segments per column = the Kokkos team size of the PCR partitioned solve
     ts::rt_impl_nseg = pin->GetOrAddInteger("problem", "rt_impl_nseg", 64);
     if (ts::rt_impl_nseg < 1) {
@@ -1886,9 +1779,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                 << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    ts::rt_impl_tau_min = pin->GetOrAddReal("problem", "rt_impl_tau_min", 1.0);
-    ts::rt_impl_dtmax = pin->GetOrAddReal("problem", "rt_impl_dtmax", 0.25);
-    ts::rt_impl_tau_blend = pin->GetOrAddReal("problem", "rt_impl_tau_blend", 1.0);
     ts::rt_col3_skip_sweep = pin->GetOrAddBoolean("problem", "rt_col3_skip_sweep", false);
     if (ts::rt_col3_skip_sweep && !(col3 && ts::rt_col3_ex_iter && ts::rt_src_direct)) {
       std::cout << "### FATAL ERROR in red_giant: problem/rt_col3_skip_sweep needs "
@@ -1969,31 +1859,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                   << "; f = s [rho kappa F/c + grad(w Prad)] + (1-s) [old]" << std::endl;
       }
     }
-    // the TIME CENTRING of the two coupling terms mode 3 leaves first order.  Both are
-    // default-off and bitwise off; both need the exact column solve.
-    ts::rt_force_center = pin->GetOrAddInteger("problem", "rt_force_center", 0);
-    if (ts::rt_force_center < 0 || ts::rt_force_center > 2) {
-      std::cout << "### FATAL ERROR in red_giant: problem/rt_force_center must be 0 "
-                << "(entry flux), 1 (converged flux) or 2 (the average)" << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
-    if (ts::rt_force_center > 0 && !col3) {
-      std::cout << "### FATAL ERROR in red_giant: problem/rt_force_center needs "
-                << "problem/rt_implicit_column = 3 (only the exact column solve has a "
-                << "converged flux to centre against)" << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
-    ts::rt_src_theta = pin->GetOrAddReal("problem", "rt_src_theta", 1.0);
-    if (ts::rt_src_theta < 0.0 || ts::rt_src_theta > 1.0) {
-      std::cout << "### FATAL ERROR in red_giant: problem/rt_src_theta must be in [0, 1]"
-                << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
-    if (ts::rt_src_theta != 1.0 && !col3) {
-      std::cout << "### FATAL ERROR in red_giant: problem/rt_src_theta != 1 needs "
-                << "problem/rt_implicit_column = 3" << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
     // ---- problem/rt_bottom_flux (box_convection.cpp:2214) --------------------------
     // Hand the internal flux to the TWO-STREAM's own lower boundary instead of to the
     // conduction wall face.  Only consistent when the tau blend leaves the sweep the
@@ -2028,7 +1893,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // integrator (dt/2 before, dt/2 after) instead of being applied once per RK stage;
     // problem/rt_once_per_cycle applies it once with the full dt after the last stage.
     // Both take the source OUT of the stage, so the in-stage call below is skipped.
-    // problem/rt_imex is deliberately NOT ported.
     rt_strang_ = pin->GetOrAddBoolean("problem", "rt_strang", false);
     rt_once_ = pin->GetOrAddBoolean("problem", "rt_once_per_cycle", false);
     if (rt_strang_ && rt_once_) {
@@ -2078,7 +1942,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // these five default to the OLD (pre-fix) solver, as they must for every problem
     // generator sharing two_stream_rt.hpp; the red-giant inputs turn them on explicitly
     ts::rt_semi_lin = pin->GetOrAddBoolean("problem", "rt_semi_lin", true);
-    ts::rt_explicit = pin->GetOrAddBoolean("problem", "rt_explicit", false);
     ts::rt_newton = pin->GetOrAddBoolean("problem", "rt_newton", false);
     ts::rt_rescue_eq = pin->GetOrAddBoolean("problem", "rt_rescue_eq", false);
     ts::rt_ali_diag = pin->GetOrAddBoolean("problem", "rt_ali_diag", true);
@@ -2733,7 +2596,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   if (wbstat) {
     const Real wbrmax = is_mhd ? pmbp->pmhd->wb_rmax : pmbp->phydro->wb_rmax;
     const Real wbrmin = is_mhd ? pmbp->pmhd->wb_rmin : pmbp->phydro->wb_rmin;
-    const Real wbramp = wb_ramp_;
     auto u0wb = is_mhd ? pmbp->pmhd->u0wb : pmbp->phydro->u0wb;
     auto w0wb = is_mhd ? pmbp->pmhd->w0wb : pmbp->phydro->w0wb;
     auto wf1 = is_mhd ? pmbp->pmhd->w0facewb.x1f : pmbp->phydro->w0facewb.x1f;
@@ -2750,7 +2612,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       const Real rc = RadiusOf(curv, xc, rin, x1min);
       Real dbg, ebg;
       WbBgAt(eos, rgas, igm1, lnp_w, tk_w, nfw, rlo_w, drf_w,
-             wbrmin, wbrmax, wbramp, rc, dbg, ebg);
+             wbrmin, wbrmax, rc, dbg, ebg);
       w0wb(m,IDN,k,j,i) = dbg;
       w0wb(m,IVX,k,j,i) = 0.0;
       w0wb(m,IVY,k,j,i) = 0.0;
@@ -2780,14 +2642,14 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       // the RADIAL faces take their own radius
       const Real xl = curv ? x1f_(m,i) : LeftEdgeX(i-is, indcs.nx1, x1lo, x1hi);
       Real dfl, efl;
-      WbBgAt(eos, rgas, igm1, lnp_w, tk_w, nfw, rlo_w, drf_w, wbrmin, wbrmax, wbramp,
+      WbBgAt(eos, rgas, igm1, lnp_w, tk_w, nfw, rlo_w, drf_w, wbrmin, wbrmax,
              RadiusOf(curv, xl, rin, x1min), dfl, efl);
       wf1(m,IDN,k,j,i) = dfl; wf1(m,IEN,k,j,i) = efl;
       wf1(m,IVX,k,j,i) = 0.0; wf1(m,IVY,k,j,i) = 0.0; wf1(m,IVZ,k,j,i) = 0.0;
       if (i == n1m1) {
         const Real xr = curv ? x1f_(m,i+1) : LeftEdgeX(i+1-is, indcs.nx1, x1lo, x1hi);
         Real dfr, efr;
-        WbBgAt(eos, rgas, igm1, lnp_w, tk_w, nfw, rlo_w, drf_w, wbrmin, wbrmax, wbramp,
+        WbBgAt(eos, rgas, igm1, lnp_w, tk_w, nfw, rlo_w, drf_w, wbrmin, wbrmax,
                RadiusOf(curv, xr, rin, x1min), dfr, efr);
         wf1(m,IDN,k,j,i+1) = dfr; wf1(m,IEN,k,j,i+1) = efr;
         wf1(m,IVX,k,j,i+1) = 0.0; wf1(m,IVY,k,j,i+1) = 0.0; wf1(m,IVZ,k,j,i+1) = 0.0;
@@ -3272,8 +3134,6 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
   // <mhd>/wb_r* under MHD, <hydro>/wb_r* otherwise.
   const Real wbrmax = is_mhd ? pmbp->pmhd->wb_rmax : pmbp->phydro->wb_rmax;
   const Real wbrmin = is_mhd ? pmbp->pmhd->wb_rmin : pmbp->phydro->wb_rmin;
-  // <problem>/wb_grav_source = plain: keep the WB reconstruction, drop the WB source
-  const bool wbplain = wb_grav_plain_;
   const WBOption wbo = is_mhd ? pmbp->pmhd->wb_option : pmbp->phydro->wb_option;
   DvceArray4D<Real> phicc = is_mhd ? pmbp->pmhd->phicc0 : pmbp->phydro->phicc0;
   DvceArray4D<Real> ph1 = is_mhd ? pmbp->pmhd->phi0.x1f : pmbp->phydro->phi0.x1f;
@@ -3294,10 +3154,10 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
     const Real g = GravAt(gm, r);
     Real src = -bdt*g*d;
     if (!etotgrav) u0(m,IEN,k,j,i) += src*w0(m,IVX,k,j,i);
-    if (wbstat && !wbplain) {
+    if (wbstat) {
       src = -bdt*g*(d - w0wb(m,IDN,k,j,i));
     }
-    if (wbdyn && !wbplain && !(wbrmax > 0.0 && r > wbrmax) &&
+    if (wbdyn && !(wbrmax > 0.0 && r > wbrmax) &&
         !(wbrmin > 0.0 && r < wbrmin)) {
       Real pl, pr, d1, d2, d3;
       if (wbx1) {
@@ -3342,10 +3202,9 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
     auto fdiag = fdiag_;
     auto taumlt = taumlt_;
     const Real alpha = mlt_alpha_, rgas = rgas_, igm1 = 1.0/gm1_, gamma = gm1_ + 1.0;
-    const Real rmax_mlt = mlt_rmax_, lstar_c = lstar_cgs_;
+    const Real lstar_c = lstar_cgs_;
     const bool mltmean = mlt_mean_;
     auto fmlt1d = fmlt1d_;
-    const Real lgtlo = log10(mlt_tau_lo_), lgthi = log10(mlt_tau_hi_);
     const Real dunit = pmbp->punit->density_cgs();
     const Real punit_ = pmbp->punit->pressure_cgs();
     const Real vunit = pmbp->punit->velocity_cgs();
@@ -3521,14 +3380,12 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
       // thing on the sign of a discrete x that is round-off on the adiabat (14 % of L
       // uncarried at the RCB face, i = 7, where x came out at -3e-7).  v3 decides
       // instability with grad_rad > grad_ad, which differentiates nothing, and asks for
-      // the DEFICIT the other two carriers leave.  No tau taper and no mlt_rmax here:
+      // the DEFICIT the other two carriers leave.  No tau taper and no radius cut:
       // the deficit IS the hand-over and it vanishes wherever radiation takes the load.
       auto fmean = fmean_;
-      const Real xthr = mlt_x_thr_, relaxt = mlt_relax_, relaxdn = mlt_relax_dn_;
+      const Real xthr = mlt_x_thr_, relaxt = mlt_relax_;
       const bool sync = mlt_split_sync_;
       auto ftar1d = mlt_split_sync_ ? ftar1d_ : fmlt1d_;   // unwritten unless sync
-      const bool ffix = mlt_flux_fix_;
-      const Real ffcap = mlt_flux_fix_cap_, ffrmax = mlt_flux_fix_rmax_;
       const bool seed = !mlt_relax_seeded_;
       auto ktab = ktab_;
       auto klT = klT_;
@@ -3667,21 +3524,13 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
             ftar = fmax(0.0, f);
           }
         }
-        // problem/mlt_flux_fix: the signed residual where the closure carried nothing
-        if (ffix && ftar == 0.0 && (ffrmax <= 0.0 || rcm < ffrmax)) {
-          const Real f2sf = (wbl > 0.0) ? (1.0 - wbl)*f2s : f2s;
-          const Real res = freq - frad - fres - f2sf;
-          ftar = fmax(-ffcap*freq, fmin(ffcap*freq, res));
-        }
         // (d) relax the applied profile toward the target
         const Real fnew = ftar/(punit_*vunit);                         // code flux
         // problem/mlt_split_sync relaxes toward the SMOOTHED target instead, which
         // needs every face's target first: hold it aside and do it in a second pass
         if (sync) { ftar1d(i) = fnew; return; }
-        // problem/mlt_relax_down_time: a separate time for the falling side
-        const Real trlx = (relaxdn >= 0.0 && fnew < fmlt1d(i)) ? relaxdn : relaxt;
-        if (trlx > 0.0 && !seed) {
-          fmlt1d(i) += fmin(1.0, bdt*tunit/trlx)*(fnew - fmlt1d(i));
+        if (relaxt > 0.0 && !seed) {
+          fmlt1d(i) += fmin(1.0, bdt*tunit/relaxt)*(fnew - fmlt1d(i));
         } else {
           fmlt1d(i) = fnew;
         }
@@ -3715,18 +3564,14 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
         auto fmlt1d_s = fmlt1d_;
         auto fmean_s = fmean_;
         const Real relaxt_s = mlt_relax_, tunit_s = tunit;
-        const Real relaxdn_s = mlt_relax_dn_;
         const Real punv = punit_*vunit;
         const bool seed_s = !mlt_relax_seeded_;
         par_for("rg_mlt_smooth", DevExeSpace(), is+1, ie, KOKKOS_LAMBDA(const int i) {
           const Real fl = (i > is+1) ? ftar1d_s(i-1) : ftar1d_s(i);
           const Real fr = (i < ie) ? ftar1d_s(i+1) : ftar1d_s(i);
           const Real fsm = 0.25*fl + 0.5*ftar1d_s(i) + 0.25*fr;
-          // problem/mlt_relax_down_time: a separate time for the falling side
-          const Real trlx = (relaxdn_s >= 0.0 && fsm < fmlt1d_s(i)) ? relaxdn_s
-                                                                   : relaxt_s;
-          if (trlx > 0.0 && !seed_s) {
-            fmlt1d_s(i) += fmin(1.0, bdt*tunit_s/trlx)*(fsm - fmlt1d_s(i));
+          if (relaxt_s > 0.0 && !seed_s) {
+            fmlt1d_s(i) += fmin(1.0, bdt*tunit_s/relaxt_s)*(fsm - fmlt1d_s(i));
           } else {
             fmlt1d_s(i) = fsm;
           }
@@ -3778,7 +3623,6 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
       const Real x1lo = size.d_view(m).x1min, x1hi = size.d_view(m).x1max;
       const Real xf = curv ? x1f_(m,i) : LeftEdgeX(i-is, indcs.nx1, x1lo, x1hi);
       const Real rf = RadiusOf(curv, xf, rin, x1min);
-      if (rmax_mlt > 0.0 && rf*lunit > rmax_mlt) return;    // radiation's layers
       const Real dl = w0(m,IDN,k,j,i-1), dr_ = w0(m,IDN,k,j,i);
       const Real el = w0(m,IEN,k,j,i-1), er = w0(m,IEN,k,j,i);
       const Real pl = eos.Pressure(dl, el), pr = eos.Pressure(dr_, er);
@@ -3817,8 +3661,8 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
       const Real taul = taumlt(m,k,j,i-1), taur = taumlt(m,k,j,i);
       if (!(taul > 0.0) || !(taur > 0.0)) return;
       const Real lgtf = 0.5*(log10(taul) + log10(taur));
-      Real wtau = (lgthi > lgtlo) ? (lgtf - lgtlo)/(lgthi - lgtlo)
-                                  : ((lgtf >= lgthi) ? 1.0 : 0.0);
+      const Real lgtlo = log10(30.0), lgthi = log10(1.0e4);
+      Real wtau = (lgtf - lgtlo)/(lgthi - lgtlo);
       wtau = (wtau < 0.0) ? 0.0 : ((wtau > 1.0) ? 1.0 : wtau);
       if (!(wtau > 0.0)) return;
       f *= wtau;
@@ -4320,52 +4164,14 @@ void RedGiantGravity(Mesh *pm, Real bdt) {
   // and BEFORE the radiation source, so nothing injected this stage is cancelled by it.
   if (vdb_cells_ > 0) {
     const int nb = vdb_cells_;
-    if (vdb_d_.extent_int(0) != nb) {
-      Kokkos::realloc(vdb_d_, nb);
-      Kokkos::realloc(vdb_h_, nb);
-    }
-    auto vdb = vdb_d_;
-    if (vdb_mean_) {
-      // one team per radial index of the layer reduces v1 over that SHELL's (m,k,j); the
-      // sums are Allreduced (every rank applies the mean) and divided by the global count
-      const int lnx2 = indcs.nx2, lnx3 = indcs.nx3;
-      const int nkj = (nmb1+1)*lnx3*lnx2;
-      const int gnx2 = pm->mesh_indcs.nx2, gnx3 = pm->mesh_indcs.nx3;
-      const int npanel = pm->use_cubed_sphere ? 6 : 1;
-      Kokkos::TeamPolicy<> vpol(DevExeSpace(), nb, Kokkos::AUTO);
-      Kokkos::parallel_for("rg_vdbot_mean", vpol,
-      KOKKOS_LAMBDA(Kokkos::TeamPolicy<>::member_type tmember) {
-        const int i = is + tmember.league_rank();
-        Real vs = 0.0;
-        Kokkos::parallel_reduce(Kokkos::TeamThreadRange(tmember, nkj),
-        [&](const int idx, Real &ls) {
-          const int m = idx/(lnx3*lnx2);
-          const int kj = idx - m*(lnx3*lnx2);
-          const int k = ks + kj/lnx2;
-          const int j = js + (kj - (kj/lnx2)*lnx2);
-          ls += u0(m,IM1,k,j,i)/u0(m,IDN,k,j,i);
-        }, Kokkos::Sum<Real>(vs));
-        Kokkos::single(Kokkos::PerTeam(tmember), [&]() { vdb(i-is) = vs; });
-      });
-      Kokkos::fence();
-      Kokkos::deep_copy(vdb_h_, vdb_d_);
-#if MPI_PARALLEL_ENABLED
-      MPI_Allreduce(MPI_IN_PLACE, vdb_h_.data(), nb, MPI_ATHENA_REAL, MPI_SUM,
-                    MPI_COMM_WORLD);
-#endif
-      const Real fpl = 1.0/static_cast<Real>(gnx2*gnx3*npanel);
-      for (int q=0; q<nb; ++q) vdb_h_(q) *= fpl;
-      Kokkos::deep_copy(vdb_d_, vdb_h_);
-    }
     const Real vb_rate = bdt/vdb_time_;
-    const bool vb_mean = vdb_mean_;
     par_for("rg_vdbot", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, is+nb-1,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       const Real f = 0.5*(1.0 + cos(M_PI*static_cast<Real>(i-is)/nb));
       const Real gg = 1.0 - exp(-f*vb_rate);
       const Real dc = u0(m,IDN,k,j,i);
       const Real m1o = u0(m,IM1,k,j,i);
-      const Real m1n = m1o - gg*(vb_mean ? dc*vdb(i-is) : m1o);
+      const Real m1n = m1o - gg*m1o;
       u0(m,IM1,k,j,i) = m1n;
       u0(m,IEN,k,j,i) += 0.5*(SQR(m1n) - SQR(m1o))/dc;
     });
@@ -4622,36 +4428,10 @@ void RgShellAcc(Mesh *pm, const Real sign, const Real bdt) {
   }
 }
 
-// problem/rt_no_heat (diagnostic): the split operator keeps its MOMENTUM change (the
-// radiative force) but deposits no heat: u0(IEN) is put back to its entry value plus the
-// kinetic-energy change.  An adiabatic star with the force law intact.
-DvceArray5D<Real> rt_nh_save_;
 void RedGiantRTSplitBody(Mesh *pm, Real bdt);
 void RedGiantRTSplitLedger(Mesh *pm, Real bdt);
 void RedGiantRTSplit(Mesh *pm, Real bdt) {
-  if (!rt_no_heat_) { RedGiantRTSplitLedger(pm, bdt); return; }
-  MeshBlockPack *pmbp = pm->pmb_pack;
-  auto &u0 = (pmbp->pmhd != nullptr) ? pmbp->pmhd->u0 : pmbp->phydro->u0;
-  if (rt_nh_save_.extent(0) == 0) {
-    Kokkos::realloc(rt_nh_save_, u0.extent(0), 2, u0.extent(2), u0.extent(3),
-                    u0.extent(4));
-  }
-  auto sv = rt_nh_save_;
-  const int n1 = u0.extent(4) - 1, n2 = u0.extent(3) - 1, n3 = u0.extent(2) - 1;
-  const int nm = u0.extent(0) - 1;
-  par_for("rg_nh0", DevExeSpace(), 0, nm, 0, n3, 0, n2, 0, n1,
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    sv(m,0,k,j,i) = u0(m,IEN,k,j,i);
-    sv(m,1,k,j,i) = u0(m,IM1,k,j,i);
-  });
   RedGiantRTSplitLedger(pm, bdt);
-  par_for("rg_nh1", DevExeSpace(), 0, nm, 0, n3, 0, n2, 0, n1,
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    const Real d = u0(m,IDN,k,j,i);
-    const Real dke = (d > 0.0)
-                   ? 0.5*(SQR(u0(m,IM1,k,j,i)) - SQR(sv(m,1,k,j,i)))/d : 0.0;
-    u0(m,IEN,k,j,i) = sv(m,0,k,j,i) + dke;
-  });
 }
 
 void RedGiantRTSplitLedger(Mesh *pm, Real bdt) {
@@ -5080,11 +4860,9 @@ void RedGiantFinal(ParameterInput *pin, Mesh *pm) {
   tau_d_ = DvceArray1D<Real>();  // the seed's tau window (problem/vpert_tau_lo/hi)
   vda_d_ = DvceArray1D<Real>();
   vda_h_ = HostArray1D<Real>();
-  vdb_d_ = DvceArray1D<Real>();  // the bottom sponge's shell means...
-  vdb_h_ = HostArray1D<Real>();  // ...and its HOST mirror: Kokkos tracks host
-  surf_d_ = DvceArray2D<Real>(); // allocations too, and a default-constructed View
-  surf_h_ = HostArray2D<Real>(); // reallocated later carries the empty label "", which
-  prof_d_ = DvceArray2D<Real>(); // is what the abort at exit named
-  prof_h_ = HostArray2D<Real>();
+  surf_d_ = DvceArray2D<Real>(); // the surface dump's device buffer and its HOST mirror:
+  surf_h_ = HostArray2D<Real>(); // Kokkos tracks host allocations too, and a
+  prof_d_ = DvceArray2D<Real>(); // default-constructed View reallocated later carries
+  prof_h_ = HostArray2D<Real>(); // the empty label "", which the abort at exit named
   return;
 }

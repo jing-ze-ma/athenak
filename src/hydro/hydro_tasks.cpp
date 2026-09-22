@@ -194,30 +194,14 @@ void Hydro::AssembleHydroTasks(std::map<std::string, std::shared_ptr<TaskList>> 
 
   // assemble "stagen" task list
   id.copyu     = tl["stagen"]->AddTask(&Hydro::CopyCons, this, none);
-  // ---- problem/rt_imex: the EXTRA fully implicit stages the ImEx tableau puts before
-  // the first explicit stage.  They must run before Fluxes so the stage-1 flux
-  // divergence is evaluated on the implicitly updated state, hence the ConToPrim in
-  // between.  Both are no-ops unless a problem generator enrols user_imex_func.
-  id.imexpre   = tl["stagen"]->AddTask(&Hydro::RTImExFirst, this, id.copyu);
-  id.imexc2p   = tl["stagen"]->AddTask(&Hydro::RTImExConToPrim, this, id.imexpre);
-  // ---- problem/rt_before_flux: the REVERSED Lie ordering.  The whole radiation
-  // operator runs at the head of the stage, on the stage-start state, so the flux
-  // update that follows is built from the radiatively updated primitives (the task
-  // does its own ghost exchange and ConToPrim).  A no-op unless a problem generator
-  // enrols user_rt_before_flux.
-  id.rtpre     = tl["stagen"]->AddTask(&Hydro::RTBeforeFlux, this, id.imexc2p);
-  id.flux      = tl["stagen"]->AddTask(&Hydro::Fluxes,this,id.rtpre);
+  id.flux      = tl["stagen"]->AddTask(&Hydro::Fluxes,this,id.copyu);
   id.sendf     = tl["stagen"]->AddTask(&Hydro::SendFlux, this, id.flux);
   id.recvf     = tl["stagen"]->AddTask(&Hydro::RecvFlux, this, id.sendf);
   id.rkupdt    = tl["stagen"]->AddTask(&Hydro::RKUpdate, this, id.recvf);
   id.srctrms   = tl["stagen"]->AddTask(&Hydro::HydroSrcTerms, this, id.rkupdt);
-  // ---- problem/rt_imex: the implicit stage operator, in exactly the place the in-stage
-  // user source it replaces occupied -- after the explicit update and the explicit
-  // sources, before the ghost exchange, so what it writes is what is communicated
-  id.imex      = tl["stagen"]->AddTask(&Hydro::RTImEx, this, id.srctrms);
   // the implicit radial radiative diffusion (<hydro>/rad_implicit_x1) sits between the
   // explicit update and the ghost exchange, so what it writes is what is communicated
-  id.impcnd    = tl["stagen"]->AddTask(&Hydro::ImplicitConduction, this, id.imex);
+  id.impcnd    = tl["stagen"]->AddTask(&Hydro::ImplicitConduction, this, id.srctrms);
   // ... and the implicit TRANSVERSE radiative diffusion (<hydro>/rad_implicit_ang) right
   // after it: the two are operator-split from each other and from the hydro
   id.imptrc    = tl["stagen"]->AddTask(&Hydro::ImplicitTransverseConduction, this,
@@ -576,10 +560,6 @@ TaskStatus Hydro::ImplicitConduction(Driver *pdrive, int stage) {
   if (pcond == nullptr) return TaskStatus::complete;
   if (!(pcond->rad_implicit_x1)) return TaskStatus::complete;
   if (stage < 1) return TaskStatus::complete;
-  // <problem>/rt_implicit_column: the two-stream has already solved this column, with
-  // its own source folded into the same tridiagonal.  Solving again here would take a
-  // SECOND backward-Euler conduction step per stage.
-  if (pcond->rt_col_active) return TaskStatus::complete;
   Real beta_dt = (pdrive->beta[stage-1])*(pmy_pack->pmesh->dt);
   pcond->ImplicitRadialUpdate(u0, peos->eos_data, beta_dt);
   runaway_scan::Scan(pmy_pack->pmesh, "implicit_conduction");
@@ -621,12 +601,6 @@ TaskStatus Hydro::ImplicitTransverseConduction(Driver *pdrive, int stage) {
     pcond->ImplicitTransverseUpdate(u0, peos->eos_data, beta_dt);
   }
   runaway_scan::Scan(pmy_pack->pmesh, "implicit_transverse_conduction");
-  // problem/work_hist (box_convection): close the ADI interval of the mode-projected
-  // work integrals here.  A null hook is a no-op, so nothing changes without it.
-  if (pmy_pack->pmesh->pgen != nullptr &&
-      pmy_pack->pmesh->pgen->user_probe_func != nullptr) {
-    (pmy_pack->pmesh->pgen->user_probe_func)(pmy_pack->pmesh, 4);
-  }
   return TaskStatus::complete;
 }
 
@@ -764,8 +738,7 @@ TaskStatus Hydro::Prolongate(Driver *pdrive, int stage) {
 //----------------------------------------------------------------------------------------
 //! \fn void Hydro::RTOpSplitBvals
 //! \brief a COMPLETE ghost-zone update of u0 for an operator that ran OUTSIDE the stage's
-//! own communication window (the Strang half-steps of RTStrangSplit and the extra
-//! implicit pre-stages of RTImExFirst).
+//! own communication window (the Strang half-steps of RTStrangSplit).
 //!
 //! WHY THIS EXISTS.  Every in-stage source writes ACTIVE cells only and is followed,
 //! inside the same stage, by RestrictU -> SendU -> RecvU -> ApplyPhysicalBCs ->
@@ -777,8 +750,7 @@ TaskStatus Hydro::Prolongate(Driver *pdrive, int stage) {
 //! cycle is then evaluated across a discontinuity of one whole operator step at every
 //! block face and at both x1 boundaries.  In the optically thin lid the two-stream
 //! changes the top cell by order unity in a step, so the top ghost (built by the user BC
-//! from the last active cell) is order-unity wrong once per cycle -- which is the
-//! transonic-lid breakdown the rt_strang and rt_imex arms showed.
+//! from the last active cell) is order-unity wrong once per cycle.
 //!
 //! The sequence is exactly the stage's own tail, run synchronously: the receives are
 //! spun on rather than retried by the task machinery, which costs the MPI overlap once
@@ -827,7 +799,7 @@ TaskStatus Hydro::RTStrangSplit(Driver *pdrive, int stage) {
   if (pm->pgen == nullptr || pm->pgen->user_split_func == nullptr) {
     return TaskStatus::complete;
   }
-  // problem/rt_once_per_cycle: ONE full-dt call, after the last RK stage.  The
+  // user_split_once: ONE full-dt call, after the last RK stage.  The
   // "before_timeintegrator" half (stage = 0, see Driver::Execute) is skipped entirely,
   // so the source is applied once per cycle on the final state instead of being blended
   // by the SSP-RK stage weights.
@@ -841,97 +813,6 @@ TaskStatus Hydro::RTStrangSplit(Driver *pdrive, int stage) {
   // the half-step wrote ACTIVE cells only, outside any stage: bring the MeshBlock halos
   // and the physical x1 ghosts up to the state it produced before the stage reads them
   RTOpSplitBvals(false, false);
-  return TaskStatus::complete;
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn TaskStatus Hydro::RTBeforeFlux
-//! \brief problem/rt_before_flux: the radiation operator applied BEFORE the hydro flux
-//! update within each RK stage (ProblemGenerator::user_rt_before_flux), with this
-//! stage's beta_dt -- the same step the in-stage call it replaces would have used.
-//!
-//! WHY.  Today's stage is fluxes/RKUpdate (hydro advection) -> sources -> the stiff
-//! radiative projection: a first-order Lie split whose leading error is the commutator
-//! of the two operators, which is proportional to the advecting velocity and changes
-//! SIGN when the two are exchanged.  This task is the reversed ordering, everything
-//! else identical.
-//!
-//! The operator writes ACTIVE cells only and runs before the stage's own exchange, so
-//! the MeshBlock halos and the physical x1 wall/top ghosts are brought up to what it
-//! produced with RTOpSplitBvals (which ends in ConToPrim) before Fluxes reads w0 --
-//! exactly the update the Strang/ImEx paths needed for the same reason.  The receives
-//! have already been posted by "before_stagen", so they are consumed here and a fresh
-//! set posted for the stage's own SendU.
-//!
-//! A null hook returns immediately: every run that does not enrol one is bitwise
-//! unchanged.
-
-TaskStatus Hydro::RTBeforeFlux(Driver *pdrive, int stage) {
-  Mesh *pm = pmy_pack->pmesh;
-  if (pm->pgen == nullptr || pm->pgen->user_rt_before_flux == nullptr) {
-    return TaskStatus::complete;
-  }
-  Real beta_dt = (pdrive->beta[stage-1])*(pm->dt);
-  (pm->pgen->user_rt_before_flux)(pm, beta_dt);
-  RTOpSplitBvals(true, true);
-  return TaskStatus::complete;
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn TaskStatus Hydro::RTImExFirst
-//! \brief the extra fully implicit stages of the ImEx-RK integrator
-//! (ProblemGenerator::user_imex_func), run once at the head of explicit stage 1 with
-//! estage = -1 and 0 (istage = 1 and 2 in the module's numbering).  Mirrors
-//! IonNeutral::FirstTwoImpRK; CopyCons has already saved u1 = u0 = U^n.
-//!
-//! A null hook returns immediately: every run that does not enrol one is bitwise
-//! unchanged.
-
-TaskStatus Hydro::RTImExFirst(Driver *pdrive, int stage) {
-  Mesh *pm = pmy_pack->pmesh;
-  if (pm->pgen == nullptr || pm->pgen->user_imex_func == nullptr) {
-    return TaskStatus::complete;
-  }
-  if (stage != 1) return TaskStatus::complete;
-  (pm->pgen->user_imex_func)(pm, pdrive, -1);
-  (pm->pgen->user_imex_func)(pm, pdrive, 0);
-  // the pre-stages ran BEFORE the stage's own exchange, so the ghost zones -- the
-  // MeshBlock halos and the physical x1 wall/top ghosts alike -- are one (or two) whole
-  // implicit stages stale.  Update them here; "before_stagen" has already posted the
-  // receives for U, so consume those and post a fresh set for the stage's own SendU.
-  RTOpSplitBvals(true, true);
-  return TaskStatus::complete;
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn TaskStatus Hydro::RTImExConToPrim
-//! \brief the ConToPrim between the ImEx pre-stages (RTImExFirst) and Fluxes.  It exists
-//! ONLY to re-form w0 from the state those pre-stages wrote, so it must not run when no
-//! problem generator enrolled user_imex_func: an extra unconditional ConToPrim per stage
-//! is NOT a no-op under a general EOS, where it refreshes the temperature guess wtemp and
-//! shifts the next inversion by a few ULP.  A null hook therefore returns immediately and
-//! every run that does not use problem/rt_imex is bitwise unchanged.
-
-TaskStatus Hydro::RTImExConToPrim(Driver *pdrive, int stage) {
-  Mesh *pm = pmy_pack->pmesh;
-  if (pm->pgen == nullptr || pm->pgen->user_imex_func == nullptr) {
-    return TaskStatus::complete;
-  }
-  if (stage != 1) return TaskStatus::complete;
-  return ConToPrim(pdrive, stage);
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn TaskStatus Hydro::RTImEx
-//! \brief the implicit stage operator of the ImEx-RK integrator
-//! (ProblemGenerator::user_imex_func) for explicit stage n.  A null hook is a no-op.
-
-TaskStatus Hydro::RTImEx(Driver *pdrive, int stage) {
-  Mesh *pm = pmy_pack->pmesh;
-  if (pm->pgen == nullptr || pm->pgen->user_imex_func == nullptr) {
-    return TaskStatus::complete;
-  }
-  (pm->pgen->user_imex_func)(pm, pdrive, stage);
   return TaskStatus::complete;
 }
 

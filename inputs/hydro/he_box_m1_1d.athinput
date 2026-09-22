@@ -161,7 +161,6 @@ vdamp_top_tau       = 0.0        # SPONGES OFF (these are the code defaults, lis
 vdamp_top_time      = 20.0       # that a command-line override can switch them on:
 vdamp_bot_cells     = 0          # production box_w8 uses 0.1 / 20 / 48 / 20, and the
 vdamp_bot_time      = 20.0       # 48-cell bottom sponge has to be resized to this box)
-vdamp_bot_mean_only = false
 rt_profile_dt   = 25.0
 rt_profile_file = rt_profile.bin
 

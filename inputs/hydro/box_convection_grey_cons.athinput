@@ -118,20 +118,17 @@ ic_profile   = edd_column.txt
 rt_two_stream = true
 rt_semi_implicit = true
 rt_semi_lin   = false
-rt_explicit   = false
 rt_newton     = true
 rt_rescue_eq  = true
 rt_src_direct = true
 rt_top_clamp  = true
 rt_use_cons   = true
-rt_outer_iter = 1        # passes of the outer fixed-point iteration; see rt_outer_iter
 rt_bface      = true
 rt_de_max     = 0.5
 rt_int_at_cut = false
 rt_top_vacuum = true
 rt_nquad      = 2
 column_dump   = cons_column.txt
-rt_dump_file  = cons_rtcol.txt
 
 <output1>
 file_type = tab

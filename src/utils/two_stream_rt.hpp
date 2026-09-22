@@ -400,40 +400,10 @@ inline bool rt_rad_force = false;
 inline bool rt_force_tau_gate = false;
 inline Real rt_force_tau_lo = 0.3;
 inline Real rt_force_tau_hi = 3.0;
-// problem/rt_force_center (default 0, bitwise off; needs rt_implicit_column = 3): WHICH
-// face flux the radiative momentum source above is driven by.  In mode 3 the energy is
-// solved exactly and implicitly over the stage, but Fb is deliberately left at the
-// ENTRY sweep's (lambda-iteration) values, so the force alone still responds to the
-// stage-START radiation field: for a radiatively relaxed surface mode that is a phase
-// lag linear in dt, and the work f.v it does over a cycle is then an O(dt) forcing.
-//   0 = the entry sweep's flux (as now),
-//   1 = the flux of THIS stage's converged column solve (the column writes its own face
-//       flux, exactly as rt_col3_skip_sweep already makes it do),
-//   2 = the average of the two, i.e. a trapezoidal centring in the stage.
-// With the switch on the column writes Fb, so rad_f2s, the emergent-flux history and the
-// surface dumps read the CONVERGED flux too; the force itself is what mode 1/2 differ in.
-inline int rt_force_center = 0;
-inline DvceArray4D<Real> *rt_fbsave_ptr = nullptr;  // rt_force_center: the entry Fb sum
-// problem/rt_src_theta (default 1.0, bitwise off; needs rt_implicit_column = 3): the
-// time centring of the column's own energy deposit.  The solve is backward Euler within
-// the stage (theta = 1, bitwise the old code), which lags T' by O(bdt/t_rad); theta < 1
-// blends that deposit with the EXACT exponential relaxation of the same implied rate, in
-// factor space -- see RTCol3ThetaDe in two_stream_column_implicit.hpp for why a literal
-// theta*implicit + (1-theta)*explicit blend is unusable (it blew the He column up by a
-// factor 1e5 at theta = 0.5).  theta = 0.5 is the Crank-Nicolson-like centring, theta = 0
-// the exact linear relaxation.  Exact only in the linear limit, and NOT conservative
-// against the column's own flux divergence: a diagnostic switch, not a production one.
-// Needs the entry sweep, so it turns problem/rt_col3_skip_sweep off.
-inline Real rt_src_theta = 1.0;
 // problem/rt_budget_verbose (box_convection.cpp): when non-null, the radiative force's
 // WORK term v.f is accumulated, box-integrated over the step, into slot 10 of this
 // array.  Diagnostic only: nothing here changes a source term.
 inline DvceArray1D<Real> *rt_bud_ptr = nullptr;
-// problem/rt_src_dump: the per-cell source-assembly debug dump this counted down was
-// removed as dead code (never set above its default of 0 in any production input or
-// test); box_convection.cpp still reads the pin key into this global and refuses to run
-// it under rt_col3_skip_sweep if it is set, so the symbol is kept, always inert now.
-inline int rt_src_dump = 0;
 // problem/rt_force_verbose -- print the hydrostatic balance of every cell inside the
 // taper ramp for this many RT calls, then stop.  a_p + a_g + a_f normalised by g: inside
 // the ramp this is what says whether the Prad grad w correction is doing its job.
@@ -494,13 +464,6 @@ inline bool rt_use_cons = false;
 // therefore returns the old endpoint b_far bit for bit at every one of the seven call
 // sites; the red-giant inputs set it true.
 inline bool rt_bface = false;
-// problem/rt_explicit: take the source EXPLICITLY, de = src*bdt, and skip the whole
-// equilibrium block -- no closed form, no linearization, no Newton.  With the direct
-// (cancellation-free) source the explicit step's stability limit is the local radiative
-// time e/|src|, which is ~1e3 s at tau 1-10 against a 30 s timestep, so this is a usable
-// control and not just a diagnostic: it removes the semi-implicit update from the picture
-// entirely for the R9 death bisection.  rt_de_max still applies if it is set (> 0).
-inline bool rt_explicit = false;
 // how many cells the Newton loop had to be rescued from a non-positive internal energy
 // (see rt_apply).  A device counter, read back where the clip count is reported.
 inline DvceArray1D<int> *rt_efix_ptr = nullptr;
@@ -606,75 +569,17 @@ inline bool rt_top_clamp = false;
 // sphere deep_hot_jupiter 09-07 configuration it moves the kinetic energy by 3 % in 20
 // cycles (A/B 2026-09-09).  Runs that must reproduce pre-048dff30 results set it false,
 // which restores the plain explicit de = src*bdt.
-// NOTE: this and problem/rt_explicit above are two switches onto the same branch, kept
-// separate because their defaults differ.  The semi-implicit block runs only when
-// rt_semi_implicit is true AND rt_explicit is false, so each default (true / false)
-// reproduces its own side's behaviour and either flag alone selects the explicit step.
 inline bool rt_semi_implicit = true;
-// problem/rt_outer_iter: how many times the WHOLE two-stream source step is repeated
-// per stage.  Default 1 = the behaviour of every run so far, and bitwise so.
-//
-// WHAT IT TESTS.  With one pass the absorbed field A that each cell relaxes toward is
-// formed from ONE sweep of the UN-relaxed column: the intensities are those of the state
-// at the start of the stage, while the cell's own energy is then moved by the full stage
-// increment.  The non-local half of the exchange therefore lags the local half by one
-// stage, and that lag is proportional to bdt -- exactly the signature of the He-star
-// box's dt-LINEAR saturated v_rms.  Sub-cycling (rt_relax_sub) cannot see this: it
-// re-forms the cell's own emission but keeps A frozen, which is the whole point of it.
-//
-// WHAT IT DOES.  Pass k re-runs the column sweep on the CURRENT running state -- the
-// partially relaxed column, e = e^n + de_{k-1} -- and then recomputes the TOTAL stage
-// increment de_k from the ORIGINAL e^n against that updated field.  It is a fixed-point
-// iteration for the implicit balance e^{n+1} = e^n + bdt S(e^{n+1}), not an accumulation
-// of extra increments: de_k replaces de_{k-1} rather than adding to it, and u0 carries
-// only the difference.  The handover term src_ex is re-formed from the updated face
-// fluxes each pass too, since it is explicit and exact in flux form and should therefore
-// use the CONVERGED field.  k passes cost ~k times the RT time.
-//
-// REQUIREMENTS (checked at the top of the wrapper).  The sweep has to be able to SEE the
-// running state, so it needs problem/rt_use_cons (u0 is what the passes update; w0 is
-// stale until the next ConToPrim), the grey split path, and the semi-implicit apply.
-inline int rt_outer_iter = 1;
-// the running total stage increment de_k, (m,k,j,i); allocated only when rt_outer_iter>1
-inline DvceArray4D<Real> *rt_deacc_ptr = nullptr;
-// the fixed-point convergence of the pass: (max |de_k - de_{k-1}|/|de_k|, max |de_k|)
-inline DvceArray1D<Real> *rt_oconv_ptr = nullptr;
-// problem/rt_outer_verbose: print that convergence every rt_report_every cycles even
-// without problem/rt_cell_report.  Inert unless rt_outer_iter > 1.
+// problem/rt_outer_verbose: print the per-cycle clip/rescue census and the mode-3
+// convergence lines even without problem/rt_cell_report.
 inline bool rt_outer_verbose = false;
-// ---- problem/rt_implicit_column: THE MERGED IMPLICIT COLUMN SOLVE -------------------
-//
-// WHAT IS WRONG WITH THE PER-CELL RELAXATION.  The grey split sweep is exactly LINEAR in
-// the cell Planck functions B_j at frozen opacity: the net source is
-//     Src_i = kappa_i rho_i [(M B)_i + g_i] - 4 pi kappa_i rho_i B_i,
-// M the (dense, but strongly banded) exchange matrix the two sweeps build and g the
-// boundary terms.  The apply block then relaxes each cell SEPARATELY toward the
-// equilibrium of that one sweep, damping it by its own factor (1 - e^-x)/x.  Two
-// neighbours exchanging O(1e3) F of radiation with a net of O(1) F are damped by
-// DIFFERENT factors, so what survives the near-cancellation is not the net but a
-// residual proportional to dt -- a pump, not a relaxation.  That is the measured
-// dt-LINEAR saturated v_rms of the He-star box (5.29e4 / 1.61e5 / 2.82e5 cm/s over cfl
-// 0.15 / 0.30 / 0.45), and lagging the neighbours in an outer fixed point only contracts
-// it at ~0.9 per pass, which is useless.
-//
-// WHAT THIS DOES.  Per column the implicit balance is
-//     F(T) = C_v (T - T*)/(beta dt) - kappa rho (M - I) B(T) = 0,
-// whose Jacobian J = C_v/(beta dt) + kappa rho (I - M) dB/dT is an M-matrix.  Its
-// NEAREST-NEIGHBOUR part is accumulated during the sweep itself, out of the e0/alp/bet
-// layer quantities already in registers, and folded straight into the radial implicit
-// conduction tridiagonal (Conduction::ImplicitRadialUpdate), which is solved for the
-// same column and is already an M-matrix in dT.  Everything two cells away or further,
-// the stellar beam and the tau-blend handover stay in the EXPLICIT residual R_i, so the
-// fixed point of the outer iteration is the exact backward-Euler balance whatever the
-// truncated Jacobian gets wrong -- and the radiative exchange and the radiative
-// diffusion are then applied by ONE conservative column update instead of two split ones.
-//
-// With the switch on the two-stream applies NO de of its own: it stores R_i, the
-// three-point Jacobian and dB_i/dT_i on the Conduction object and calls the tridiagonal
-// itself, once per outer pass (rt_outer_iter), so Hydro/MHD::ImplicitConduction is a
-// no-op.  0 = the old per-cell relaxation, bitwise.
+// ---- problem/rt_implicit_column: THE IMPLICIT COLUMN SOLVE --------------------------
+// 0 = the per-cell semi-implicit relaxation of the apply block (the historical default,
+// bitwise).  3 = the EXACT block-tridiagonal column solve below, which is what both
+// stellar productions run.  The earlier linearised modes 1 and 2 were removed; the
+// problem generators fatal on any other value.
 inline int rt_implicit_column = 0;
-// convergence tolerance and pass cap of that Newton, used when rt_outer_iter is not set
+// convergence tolerance and pass cap of that Newton
 inline Real rt_impl_tol = 1.0e-6;
 inline int rt_impl_maxit = 5;
 // problem/rt_col3_ex_iter: under rt_implicit_column = 3, re-form the tau-blend handover
@@ -735,14 +640,6 @@ inline bool rt_impl_dstop = true;
 // so that the pass which only confirms convergence never factorises.  Bitwise identical
 // to the standard path (same test, same value, same iterate); see the note on RTCol3.
 inline bool rt_impl_rescheck = false;
-// problem/rt_impl_ablate, problem/rt_impl_fixit: TIMING INSTRUMENTATION ONLY, serial
-// (thomas) path only.  They do not produce a correct solve -- see RTCol3.
-inline int rt_impl_ablate = 0;
-inline bool rt_impl_fixit = false;
-// problem/rt_impl_cvfreeze: freeze de/dT (the only nonlinear entry of the block) after
-// this many passes, 0 = never.  The radiative part of the diagonal is exact and frozen
-// already, so this only quasi-Newtons the thin cells.
-inline int rt_impl_cvfreeze = 0;
 // problem/rt_impl_reuse: REUSE THE BLOCK FACTORISATION across Newton passes.  The
 // Jacobian of the column system is constant in the iterate except for the single entry
 // de/db (the gas heat capacity), and the right-hand side is one number per cell -- the
@@ -752,7 +649,7 @@ inline int rt_impl_cvfreeze = 0;
 // refactorises when the residual failed to fall by a factor 0.3), 2 = reuse always
 // (diagnostic).  0 (the default) is the old code, bitwise.  The converged answer is the
 // same root of the same residual to the same tolerance; only the iterates between the
-// first and the last differ, at O(the frozen de/db), like rt_impl_cvfreeze.  The
+// first and the last differ, at O(the frozen de/db).  The
 // PARTITIONED path (rt_impl_solver = pcr) only; thomas is refused.
 inline int rt_impl_reuse = 0;
 // problem/rt_impl_reuse_rho: the contraction a reuse pass must show for the NEXT pass to
@@ -760,34 +657,15 @@ inline int rt_impl_reuse = 0;
 // a frozen-Jacobian one, so a loose threshold buys cheap passes at the price of more of
 // them; tighten it to refactorise sooner.
 inline Real rt_impl_reuse_rho = 0.3;
-// problem/rt_impl_tau_min: THE TWO-LEVEL SPLIT.  Only a cell whose OWN Rosseland optical
-// depth kappa rho dr reaches this goes into the tridiagonal.  Linearising the emission
-// about the current state gives dT ~ (T/4)(A/E), which diverges as the cell's own
-// emission E -> 0: measured on the He-star box the first merged step emptied 33 cells and
-// collapsed dt by three decades, which is the divergence the apply block's own note
-// ("WHY NOT LINEARIZE ... DIVERGES as E -> 0") warns about.  In a cell with dtau >~ 1 the
-// field is within a factor of its own B, A/E = O(1), and the linearisation is excellent
-// -- and those are exactly the cells the (1 - e^-x)/x damping pumps.  Thin cells keep
-// the nonlinear per-cell relaxation, which relaxes toward the TRUE fixed point and is
-// bounded.
-inline Real rt_impl_tau_min = 1.0;
-// problem/rt_impl_dtmax: cap on |dT|/T per tridiagonal pass, the belt for the thick rows
-inline Real rt_impl_dtmax = 0.25;
-// problem/rt_impl_tau_blend: 1 = the hard switch above.  b > 1 makes the thick weight
-// rise LINEARLY IN log dtau from tau_min/b to tau_min*b, and the cell then does both:
-// the tridiagonal carries w R and w J, the per-cell relaxation applies (1-w) de, and a
-// neighbour's coupling to it is w-weighted with the remaining (1-w) handed over as the
-// known dB of rt_col_dtex.  At w = 0 and w = 1 this is bitwise the two pure branches.
-inline Real rt_impl_tau_blend = 1.0;
 // ---- rt_implicit_column = 3: THE EXACT IMPLICIT COLUMN SOLVE ------------------------
 // The intensities become unknowns alongside the gas energy, so the column system is
 // exactly block-tridiagonal (5x5) and a block Thomas solves it with no Jacobi/
-// Gauss-Seidel iteration at all -- which is what modes 1 and 2 could not do.  See
+// Gauss-Seidel iteration at all.  See
 // utils/two_stream_column_implicit.hpp for the rows, the M-matrix argument and what is
 // frozen.  Mode 3 REPLACES the two-stream's own semi-implicit apply and nothing else:
 // the tau-blend handover, the radial conduction tridiagonal (rad_implicit_x1) and the
-// transverse operator are untouched, and rt_col_active stays false so the conduction
-// wrapper task still runs.  Grey only; fatal under correlated-k or picket fence.
+// transverse operator are untouched, so the conduction wrapper task still runs.
+// Grey only; fatal under correlated-k or picket fence.
 // problem/rt_impl_solver: HOW the block-tridiagonal column system is solved.
 //   thomas (0, the default)  one thread per column, the serial block Thomas of
 //                            two_stream_column_implicit.hpp -- the reference bit pattern
@@ -836,19 +714,6 @@ inline bool rt_impl_redpar = false;
 // rt_impl_solver = pcr the deep segments run a scalar partitioned Thomas and the reduced
 // system has mixed block sizes.  See two_stream_column_partition.hpp.
 inline Real rt_col3_hybrid_tau = 0.0;
-// problem/rt_col3_split_deep: BALANCE the partitioned path's segments by WORK.  The
-// hybrid makes a deep cell a scalar row, but the team's segments are equal in CELLS and
-// every phase ends on a team barrier, so the lanes that hold the thin cells still carry
-// nc/nseg full 5x5 rows and the pass costs what it did with the hybrid off -- the 1.09x.
-// With this switch a thin cell counts rt_col3_split_w deep cells when the boundaries are
-// laid out, the thin cells spread over all nseg lanes, and the critical path falls to
-// about n_thin/nseg 5x5 rows.  Partition only: the answer moves by round-off.
-// MEASURED SLOWER, and kept off: see the note on RTCol3::split_deep.  The team's lanes
-// are one wavefront, so a cell loop costs deep-plus-thin and scales with the most cells
-// any lane holds; the equal partition already minimises that.  tau_hyb 30 on the B star:
-// 223.7 ms/call plain, 258.4 balanced, 293.1 with the hybrid off.
-inline bool rt_col3_split_deep = false;
-inline int rt_col3_split_w = 8;   // problem/rt_col3_split_w, thin cost / deep cost
 // problem/rt_impl_warm: WARM-START the mode-3 Newton from the previous call's converged
 // Planck function instead of from the entry state's.  0 = off (bitwise the old code),
 // 1 = the previous converged b per cell, 2 = linear extrapolation in time from the last
@@ -870,33 +735,6 @@ inline int rt_c3_lines = 0;
 // radiative with rad_flux_inner at the bottom wall -- so the cut's upward intensity is
 // just the thermalised Planck function and nothing is counted twice.
 inline bool rt_int_at_cut = true;
-// problem/rt_cut_bc_legacy: the UPWARD intensity the grey sweep starts with at the cut.
-//
-// The sweep used to start with the isotropic thermalised value I_up(mu) = B(icut) for
-// every mu.  That is the zeroth term of the deep expansion and it drops the first one,
-// which is the ONLY term that carries a flux: with I_up = B and the down-sweep already
-// carrying its own gradient, sum_q w_q (I_up - I_down) comes out at EXACTLY half the
-// diffusion flux the same column supports.  MEASURED on the He-star 1-D column
-// (bench/hestar_fecz/instab1d): F_2s(cut)/F_diff(cut) = 2.0002, healing over ~3 cells
-// above the cut, and the residual of that mismatch is what the tau blend then deposits
-// in the ramp.
-//
-// The first term is the standard diffusion limit,
-//     I_up(mu) = B + mu dB/dtau,
-// with tau increasing DOWNWARD (into the star, i.e. towards smaller i), so dB/dtau is
-// formed here from the two cell-centre Planck functions straddling the cut face and the
-// Rosseland optical depth between those two CENTRES,
-//     dB/dtau = (B_icut - B_{icut+1}) / (0.5 (kappa rho dz)_icut
-//                                        + 0.5 (kappa rho dz)_{icut+1}),
-// which is positive on a star (deeper is hotter) and so raises I_up above B.  With the
-// two-point Gauss-Legendre quadrature (rt_nquad = 2) this reproduces F = (4 pi/3) dB/dtau
-// exactly; with the hemispheric mean (rt_nquad = 1) it gives 2 pi mu_H dB/dtau = 0.904 of
-// it, which is the quadrature's own error and not this boundary's.
-//
-// Default false, i.e. THE FIX IS ON: the old behaviour was a bug.  Set true only to
-// reproduce a pre-fix run bitwise.  Grey split path only -- the correlated-k sweep keeps
-// its own cut boundary, which is never used under a tau blend.
-inline bool rt_cut_bc_legacy = false;
 // problem/rt_bottom_flux: THE IMPOSED FLUX ON THE TWO-STREAM'S OWN LOWER BOUNDARY.
 //
 // With the tau blend switched off (rad_tau_lo/hi beyond the bottom of the box, so the
@@ -911,7 +749,7 @@ inline bool rt_cut_bc_legacy = false;
 //     dB/dtau = 3 F_bot/(4 pi),
 // which with the two-point Gauss-Legendre quadrature returns sum_q w_q (I_up - I_down) =
 // F_bot exactly (rt_nquad = 1 returns 0.904 of it, the hemispheric mean's own error).
-// 0 = off, the local gradient of rt_cut_bc_legacy = false.  box_convection.cpp sets it
+// 0 = off, the local deep-limit gradient.  box_convection.cpp sets it
 // from <hydro>/rad_flux_inner under <problem>/rt_bottom_flux, and zeroes rad_flux_inner
 // at the same time so the flux is not also injected at the conduction wall face.
 inline Real rt_bot_flux = 0.0;
@@ -938,8 +776,7 @@ inline Real rt_bot_flux = 0.0;
 // the heating read are the formal solution AT the face, not an interpolation of it.  The
 // column is closed by two HALF layers: the upper half of cell ie, from the top face to
 // its centre, with the source held at B(ie); and the lower half of cell icut, between its
-// centre and the cut face, with B continued at the deep-limit gradient dB/dtau (zero
-// under rt_cut_bc_legacy, so that flag still recovers its own old behaviour).
+// centre and the cut face, with B continued at the deep-limit gradient dB/dtau.
 //
 // Each half layer lies entirely inside ONE cell, so the absorbed and emitted amounts that
 // build Src_g are attributed unambiguously: a cell's emission is simply split between its
@@ -1087,16 +924,6 @@ inline bool rt_top_re = false;
 // floors at 100 K.  A star or a brown dwarf sets it to its own T_eff (and Teq = 0, which
 // zeroes the stellar sweep).  0 keeps the historical behaviour exactly.
 inline Real rt_tint_override = 0.0;
-// problem/ad_dump_file: write the INITIAL (p, T) profile with its actual and adiabatic
-// logarithmic gradients, once, before and after adjust_ad_pT_arr. A diagnostic for
-// whether the starting atmosphere is convectively unstable where the adjustment did not
-// reach.
-// adjust_ad_pT_arr scans from the bottom, breaks at the FIRST crossing and enforces a
-// single adiabat below it, so with a general EOS -- where grad_ad dips at H2 dissociation
-// as well as at H ionization -- a second unstable zone could in principle survive it.
-// Measured on the deep hot Jupiter setup it does not: after the adjustment there are zero
-// super-adiabatic levels, H2 on or off, because there is only one crossing to begin with.
-inline std::string ad_dump_file = "";
 // problem/rt_apply_debug: print the energy balance the applied source actually sees, for
 // the top rt_apply_debug_n cells of the (rt_dump_m, rt_dump_k, rt_dump_j) column, on the
 // first N calls.  The column dump says what the SWEEP produced; this says what the CELL
@@ -1300,7 +1127,7 @@ Real BFace(const Real k_own, const Real k_far, const Real b_own, const Real b_fa
 //! \fn Real BFaceW
 //! \brief d(BFace)/d(b_far): BFace is a CONVEX COMBINATION of b_far and b_own at frozen
 //! opacity, so one weight describes it completely and the own-side weight is 1 - this.
-//! Used only by the merged column solve (rt_implicit_column) to linearise the sweep.
+//! Used by the correlated-k column solve (problem/ck_implicit) to linearise the sweep.
 KOKKOS_INLINE_FUNCTION
 Real BFaceW(const Real k_own, const Real k_far, const bool on) {
   if (!on) return 1.0;
@@ -1333,17 +1160,6 @@ void RTLayer(const Real dtau, const Real mu, const Real s_in, const Real s_out,
   absorbed = e0*intens;
   emitted  = c_in*s_in + c_out*s_out;
   intens   = (1.0 - e0)*intens + emitted;
-}
-
-//! \fn void RTLayerCoef
-//! \brief the three exponential coefficients RTLayer forms internally, without the
-//! transport.  Used only by rt_implicit_column, to linearise a layer in its endpoints.
-KOKKOS_INLINE_FUNCTION
-void RTLayerCoef(const Real dtau, const Real mu, Real &e0, Real &c_in, Real &c_out) {
-  const Real x = dtau/mu;
-  e0 = -expm1(-x);
-  c_in  = (x > 1.0e-3) ? (e0 - 1.0 + e0/x) : (x/2.0 - SQR(x)/3.0);
-  c_out = (x > 1.0e-3) ? (1.0 - e0/x)      : (x/2.0 - SQR(x)/6.0);
 }
 
 KOKKOS_INLINE_FUNCTION
@@ -1499,58 +1315,13 @@ void get_Tint(const Real &Teq, Real &Tint) {
   return;
 }
 
-inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
-                                           const int nit);
+inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt);
 
 //----------------------------------------------------------------------------------------
 //! \fn picket_fence_two_stream_RT
-//! \brief the two-stream source step.  One pass unless problem/rt_outer_iter > 1, in
-//! which case the whole step (sweep + apply) is repeated as a fixed-point iteration for
-//! the implicit balance; see rt_outer_iter.
-
-// ---- problem/work_hist: THE PER-OPERATOR PROBE (box_convection) ---------------------
-// A diagnostic hook, null by default.  The only call site in this header is at the end
-// of the mode-3 column solve, with tag 2: at that point the column has applied all of
-// its energy to u0 and the ONLY thing left in the call is the radiative momentum force
-// (rt_apply's energy branch is skipped under mode 3), so the interval that closes there
-// is exactly "column heating" and the interval that closes when the call returns is
-// exactly "radiative force".  Left null nothing is called and nothing changes.
-inline void (*rt_probe)(const int tag) = nullptr;
-
-// ---- problem/rt_kappa_frozen: THE MODE SEES NO OPACITY PERTURBATION -----------------
-// With this on, the grey opacity kc_g is replaced, after it has been built from the
-// local (rho,T) as usual, by its HORIZONTAL (x2,x3) MEAN in each x1 row.  So the mean
-// opacity profile still follows the mean state stage by stage, while delta kappa (the
-// part that carries the horizontal mode) is identically zero -- which kills the
-// kappa-mechanism channel in the column solve AND in the radiative force, both of which
-// read kc_g and nothing else for the opacity.  (It is the mean of kappa, not kappa of
-// the mean state; the two differ only at second order in the perturbation, which is
-// below the linear-mode test's resolution.)  The horizontal mean is GLOBAL: every rank
-// reduces its own plane sums and the result is broadcast back, because a per-rank mean
-// of a cos(k x) pattern is not zero.  The transverse ADI operator builds its own
-// conductances in Conduction and is NOT covered.  Grey path only.
-inline bool rt_kappa_frozen = false;
-inline DvceArray1D<Real> *rt_kfrz_d_ptr = nullptr;
-inline HostArray1D<Real> *rt_kfrz_h_ptr = nullptr;
+//! \brief the two-stream source step.
 
 inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
-  const int nit = (rt_outer_iter > 1) ? rt_outer_iter : 1;
-  if (nit > 1) {
-    static bool checked = false;
-    if (!checked) {
-      checked = true;
-      if (!(rt_grey && rt_split) || !rt_use_cons || rt_explicit || !rt_semi_implicit) {
-        std::cout << "### FATAL ERROR in two_stream_rt: problem/rt_outer_iter > 1 needs "
-                  << "the GREY SPLIT sweep (rt_grey + rt_split), problem/rt_use_cons "
-                  << "(the passes update u0, and w0 is stale until the next ConToPrim) "
-                  << "and the semi-implicit apply (rt_semi_implicit, !rt_explicit). "
-                  << "Got rt_grey=" << rt_grey << " rt_split=" << rt_split
-                  << " rt_use_cons=" << rt_use_cons << " rt_explicit=" << rt_explicit
-                  << " rt_semi_implicit=" << rt_semi_implicit << "." << std::endl;
-        std::exit(EXIT_FAILURE);
-      }
-    }
-  }
   // ---- problem/rt_implicit_column: the merged tridiagonal Newton --------------------
   // Requirements, checked once.  The column solve linearises the GREY SPLIT sweep, reads
   // the running state out of u0 (rt_use_cons) between passes, and replaces -- not
@@ -1568,40 +1339,20 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
     static bool c3checked = false;
     if (!c3checked) {
       c3checked = true;
-      if (!(rt_grey && rt_split) || rt_ck || !rt_use_cons || rt_explicit ||
-          !rt_semi_implicit || !rt_src_direct || rt_layer_legacy || rt_top_re ||
-          rt_outer_iter > 1) {
+      if (!(rt_grey && rt_split) || rt_ck || !rt_use_cons ||
+          !rt_semi_implicit || !rt_src_direct || rt_layer_legacy || rt_top_re) {
         std::cout << "### FATAL ERROR in two_stream_rt: problem/rt_implicit_column = 3 "
                   << "needs the GREY SPLIT sweep (rt_grey + rt_split, and NOT "
                   << "correlated-k or picket fence), problem/rt_use_cons, "
                   << "rt_src_direct, the centre-to-centre layers (rt_layer_legacy = "
-                  << "false), rt_top_re = false, rt_outer_iter = 1 and the semi-implicit "
-                  << "apply it replaces (rt_semi_implicit, !rt_explicit).  Got rt_grey="
+                  << "false), rt_top_re = false and the semi-implicit "
+                  << "apply it replaces (rt_semi_implicit).  Got rt_grey="
                   << rt_grey << " rt_split=" << rt_split << " rt_ck=" << rt_ck
-                  << " rt_use_cons=" << rt_use_cons << " rt_explicit=" << rt_explicit
+                  << " rt_use_cons=" << rt_use_cons
                   << " rt_semi_implicit=" << rt_semi_implicit
                   << " rt_src_direct=" << rt_src_direct
                   << " rt_layer_legacy=" << rt_layer_legacy
-                  << " rt_top_re=" << rt_top_re
-                  << " rt_outer_iter=" << rt_outer_iter << "." << std::endl;
-        std::exit(EXIT_FAILURE);
-      }
-    }
-  } else if (rt_implicit_column > 0) {
-    static bool cchecked = false;
-    if (!cchecked) {
-      cchecked = true;
-      if (!(rt_grey && rt_split) || !rt_use_cons || rt_explicit || !rt_semi_implicit ||
-          pc == nullptr || !pc->rad_implicit_x1) {
-        std::cout << "### FATAL ERROR in two_stream_rt: problem/rt_implicit_column "
-                  << "needs the GREY SPLIT sweep (rt_grey + rt_split), "
-                  << "problem/rt_use_cons, the semi-implicit apply (rt_semi_implicit, "
-                  << "!rt_explicit) and <hydro>/ or <mhd>/rad_implicit_x1 = true.  Got "
-                  << "rt_grey=" << rt_grey << " rt_split=" << rt_split
-                  << " rt_use_cons=" << rt_use_cons << " rt_explicit=" << rt_explicit
-                  << " rt_semi_implicit=" << rt_semi_implicit
-                  << " rad_implicit_x1="
-                  << ((pc != nullptr) ? pc->rad_implicit_x1 : false) << "." << std::endl;
+                  << " rt_top_re=" << rt_top_re << "." << std::endl;
         std::exit(EXIT_FAILURE);
       }
     }
@@ -1614,25 +1365,22 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
   // -- it only records S_i and e_i -- so the gas receives exactly the converged flux
   // divergence, with no relaxation factor and no rt_de_max clip.
   if (ck_implicit) {
-    if (!rt_ck || !rt_use_cons || rt_explicit || rt_layer_legacy ||
-        rt_implicit_column != 0 || rt_outer_iter != 1) {
+    if (!rt_ck || !rt_use_cons || rt_layer_legacy || rt_implicit_column != 0) {
       std::cout << "### FATAL ERROR in two_stream_rt: problem/ck_implicit needs the "
                 << "correlated-k sweep on the centre-to-centre layers (rt_ck, "
                 << "!rt_layer_legacy), problem/rt_use_cons (the passes read the running "
-                << "state out of u0), !rt_explicit, and neither of the two older "
-                << "iterations (rt_implicit_column = 0, rt_outer_iter = 1).  Got rt_ck="
+                << "state out of u0), and the older column iteration off "
+                << "(rt_implicit_column = 0).  Got rt_ck="
                 << rt_ck << " rt_use_cons=" << rt_use_cons
-                << " rt_explicit=" << rt_explicit
                 << " rt_layer_legacy=" << rt_layer_legacy
-                << " rt_implicit_column=" << rt_implicit_column
-                << " rt_outer_iter=" << rt_outer_iter << "." << std::endl;
+                << " rt_implicit_column=" << rt_implicit_column << "." << std::endl;
       std::exit(EXIT_FAILURE);
     }
     int npass = ck_impl_maxit;
     bool conv = false;
     for (int it=0; it<ck_impl_maxit; ++it) {
       ck_impl_pass = it;
-      picket_fence_two_stream_RT_pass(pm, bdt, 0, 1);
+      picket_fence_two_stream_RT_pass(pm, bdt);
       MeshBlockPack *pp = pm->pmb_pack;
       DvceArray5D<Real> u0c = (pp->pmhd != nullptr) ? pp->pmhd->u0 : pp->phydro->u0;
       if (CkImplStep(pm, u0c, *rt_icut_ptr, *rt_T_ptr, pp->pcoord->dx1, bdt) == 0) {
@@ -1653,29 +1401,12 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
     }
     return;
   }
-  for (int oit=0; oit<nit; ++oit) {
-    picket_fence_two_stream_RT_pass(pm, bdt, oit, nit);
-    // mode 3 solved and applied the column inside the pass; the radial conduction stays
-    // a separate operator, applied by the ImplicitConduction task as usual.
-    if (rt_implicit_column > 0 && rt_implicit_column != 3 && pc != nullptr) {
-      // the sweep wrote R, the Jacobian and dB/dT for the CURRENT state; solve the
-      // column for dT and let the tridiagonal apply the energy, radiative exchange and
-      // radiative diffusion together
-      MeshBlockPack *pp = pm->pmb_pack;
-      if (pp->pmhd != nullptr) {
-        pc->ImplicitRadialUpdate(pp->pmhd->u0, pp->pmhd->peos->eos_data, bdt, true, oit);
-      } else {
-        pc->ImplicitRadialUpdate(pp->phydro->u0, pp->phydro->peos->eos_data, bdt, true,
-                                 oit);
-      }
-    }
-  }
+  // mode 3 solves and applies the column inside the pass; the radial conduction stays
+  // a separate operator, applied by the ImplicitConduction task as usual.
+  picket_fence_two_stream_RT_pass(pm, bdt);
 }
 
-inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
-                                            const int nit) {
-  const bool outer_on = (nit > 1);
-  const bool outer_last = (oit == nit - 1);
+inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
   // the cubed sphere needs the cell's PANEL to turn (x2,x3) into a direction
   const bool use_cubed_sphere_ = pm->use_cubed_sphere;
   auto &mbpanel_ = pm->pmb_pack->pmb->mb_panel;
@@ -2109,7 +1840,6 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
     }
     Real Tint4 = SQR(SQR(Tint));
     bool int_at_cut = rt_int_at_cut;
-    const bool cut_legacy = rt_cut_bc_legacy;   // see rt_cut_bc_legacy
     const Real bot_flux = rt_bot_flux;          // see rt_bottom_flux
     const bool layer_legacy = rt_layer_legacy;  // see rt_layer_legacy
     const bool cksph_ = ck_spherical;           // see ck_spherical
@@ -2257,12 +1987,6 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
       auto iup_g = report_on ? *rt_iup_ptr : DvceArray4D<Real>("rt_iup_d", 1, 1, 1, 1);
       // the grey opacity: the conduction module's own table if it has one, else the
       // Freedman fit, which is what the old grey path used unconditionally
-      // ---- problem/rt_implicit_column: the merged tridiagonal Newton -----------------
-      // The requirements are checked once, in the wrapper.  The arrays are allocated on
-      // the Conduction object the first time through; with the switch off implcol_ is
-      // false everywhere and jac_g is a 1-element dummy that is captured and never read.
-      const bool implcol_ = (rt_implicit_column > 0) && (rt_implicit_column != 3) &&
-                            grey_on && rt_split;
       // rt_implicit_column = 3: the exact block-tridiagonal column solve.  It runs as a
       // separate kernel right after the sweep and owns the energy update, so the apply
       // block below skips de entirely (skip_de) and keeps only its diagnostics and the
@@ -2303,25 +2027,6 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
           }
         }
       }
-      if (implcol_ && pcond_rt != nullptr && !pcond_rt->rt_col_alloc) {
-        pcond_rt->EnableRTColumn();
-      }
-      auto jac_g = (implcol_ && pcond_rt != nullptr)
-                 ? pcond_rt->rt_col_jac : DvceArray5D<Real>("rt_jac_dummy",1,1,1,1,1);
-      auto res_g = (implcol_ && pcond_rt != nullptr)
-                 ? pcond_rt->rt_col_res : DvceArray4D<Real>("rt_res_dummy",1,1,1,1);
-      auto dbt_g = (implcol_ && pcond_rt != nullptr)
-                 ? pcond_rt->rt_col_dbdt : DvceArray4D<Real>("rt_dbt_dummy",1,1,1,1);
-      auto dtx_g = (implcol_ && pcond_rt != nullptr)
-                 ? pcond_rt->rt_col_dtex : DvceArray4D<Real>("rt_dtx_dummy",1,1,1,1);
-      auto tn_g = (implcol_ && pcond_rt != nullptr)
-                 ? pcond_rt->rt_col_tn : DvceArray4D<Real>("rt_tn_dummy",1,1,1,1);
-      const Real taumin_ = rt_impl_tau_min;
-      const Real taublnd_ = (rt_impl_tau_blend > 1.0) ? rt_impl_tau_blend : 0.0;
-      // the one-shot assembly dump, see rtcol_asm below
-      const bool rtdbg_ = implcol_ && rt_outer_verbose && (pm->ncycle == 0);
-      if (implcol_ && pcond_rt != nullptr) pcond_rt->rt_col_verbose = rtdbg_;
-      if (implcol_ && pcond_rt != nullptr) pcond_rt->rt_col_dtmax = rt_impl_dtmax;
       const bool grey_ktab = grey_on && pcond_rt != nullptr &&
                              pcond_rt->rad_kappa_tab && pcond_rt->rad_kr_nT > 0;
       const bool grey_krho = grey_ktab && pcond_rt->rad_kappa_rho;
@@ -2485,61 +2190,6 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
             kc_g(m,0,i,k,j) = grey_kfac*kr;
             Bb_g(m,0,i,k,j) = boltz_sigma/M_PI*SQR(SQR(TT));
           });
-          // ---- problem/rt_kappa_frozen: kc_g -> its horizontal mean in each x1 row ---
-          // See the note at the top of picket_fence_two_stream_RT.  Only the cells this
-          // call actually reads take part (i >= icut, T > 0), so a row that straddles a
-          // column cut is still the mean of the cells that are used; the cells below the
-          // cut are left alone because nothing reads them.  Off by default = no kernel.
-          if (rt_kappa_frozen) {
-            const int nr = ie + 2 - is;          // the rows i = is .. ie+1
-            if (rt_kfrz_d_ptr == nullptr) {
-              rt_kfrz_d_ptr = new DvceArray1D<Real>("rt_kfrz_d", 2*nr);
-              rt_kfrz_h_ptr = new HostArray1D<Real>("rt_kfrz_h", 2*nr);
-            }
-            auto kfd = *rt_kfrz_d_ptr;
-            auto kfh = *rt_kfrz_h_ptr;
-            const int nkj_f = (nmb1 + 1)*(ke - ks + 1)*(je - js + 1);
-            const int nx2_f = je - js + 1, nx3_f = ke - ks + 1;
-            Kokkos::TeamPolicy<> pol_f(DevExeSpace(), nr, Kokkos::AUTO);
-            Kokkos::parallel_for("rt_kfrz_sum", pol_f,
-            KOKKOS_LAMBDA(Kokkos::TeamPolicy<>::member_type tm) {
-              const int i = is + tm.league_rank();
-              array_sum::GlobalSum sm;
-              Kokkos::parallel_reduce(Kokkos::TeamThreadRange(tm, nkj_f),
-              [&](const int idx, array_sum::GlobalSum &ls) {
-                const int m = idx/(nx3_f*nx2_f);
-                const int kj = idx - m*(nx3_f*nx2_f);
-                const int k = ks + kj/nx2_f;
-                const int j = js + (kj - (kj/nx2_f)*nx2_f);
-                const bool ok = (i >= icut_g(m,k,j)) && (T_g(m,k,j,i) > 0.0);
-                array_sum::GlobalSum lv;
-                for (int n=0; n<NREDUCTION_VARIABLES; ++n) lv.the_array[n] = 0.0;
-                lv.the_array[0] = ok ? kc_g(m,0,i,k,j) : 0.0;
-                lv.the_array[1] = ok ? 1.0 : 0.0;
-                ls += lv;
-              }, Kokkos::Sum<array_sum::GlobalSum>(sm));
-              Kokkos::single(Kokkos::PerTeam(tm), [&]() {
-                kfd(tm.league_rank()) = sm.the_array[0];
-                kfd(nr + tm.league_rank()) = sm.the_array[1];
-              });
-            });
-            Kokkos::fence();
-            Kokkos::deep_copy(kfh, kfd);
-#if MPI_PARALLEL_ENABLED
-            MPI_Allreduce(MPI_IN_PLACE, kfh.data(), 2*nr, MPI_ATHENA_REAL, MPI_SUM,
-                          MPI_COMM_WORLD);
-#endif
-            for (int r=0; r<nr; ++r) {
-              kfh(r) = (kfh(nr + r) > 0.0) ? (kfh(r)/kfh(nr + r)) : 0.0;
-            }
-            Kokkos::deep_copy(kfd, kfh);
-            par_for("rt_kfrz_put", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
-            KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-              if (i < icut_g(m,k,j)) return;
-              if (!(T_g(m,k,j,i) > 0.0)) return;
-              kc_g(m,0,i,k,j) = kfd(i - is);
-            });
-          }
         } else {
         par_for("rt_pre_opac", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
         KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -2768,12 +2418,12 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
             }
             const int icut = icut_g(m,k,j);
             if (icut > ie) return;                  // whole column deeper than the cut
-            // THE DEEP-LIMIT GRADIENT AT THE CUT (see rt_cut_bc_legacy).  dB/dtau with
-            // tau increasing downward, from the two cell centres straddling the cut face
-            // and the Rosseland tau between those centres.  Zero in the legacy mode, and
-            // zero if the cut sits on the top cell (no i+1 to difference against).
+            // THE DEEP-LIMIT GRADIENT AT THE CUT.  dB/dtau with tau increasing
+            // downward, from the two cell centres straddling the cut face and the
+            // Rosseland tau between those centres.  Zero if the cut sits on the top
+            // cell (no i+1 to difference against).
             Real dbdtau_cut = 0.0;
-            if (!cut_legacy && icut + 1 <= ie) {
+            if (icut + 1 <= ie) {
               const Real krb0 = kc_g(m,0,icut,k,j)*rhoN(m,k,j,icut);
               const Real krb1 = kc_g(m,0,icut+1,k,j)*rhoN(m,k,j,icut+1);
               const Real dtc = 0.5*(krb0*DX1(m,k,j,icut) + krb1*DX1(m,k,j,icut+1));
@@ -2807,30 +2457,6 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
               s_u = BFace(kl, ku, bl, bu, bface_on);
               const Real dtc = dt_l + dt_u;
               s_f = (dtc > 0.0) ? (s_l + (s_u - s_l)*(dt_l/dtc)) : (0.5*(s_l + s_u));
-            };
-            // ---- rt_implicit_column: the SAME layer, differentiated -----------------
-            // Every source above is a convex combination of the two centre Planck
-            // functions, so four weights describe the layer completely:
-            //   ds_l/dB_l = p_l,  ds_l/dB_u = 1 - p_l,
-            //   ds_u/dB_u = p_u,  ds_u/dB_l = 1 - p_u
-            // and s_f inherits them through the same dt_l/(dt_l+dt_u) interpolation.
-            const bool jac_on = implcol_;
-            auto rt_layer_w = [&](const int iL, Real &dl_l, Real &dl_u, Real &du_l,
-                                  Real &du_u, Real &df_l, Real &df_u) {
-              const Real kl = kc_g(m,0,iL,k,j)*rhoN(m,k,j,iL);
-              const Real ku = kc_g(m,0,iL+1,k,j)*rhoN(m,k,j,iL+1);
-              const Real pl = BFaceW(ku, kl, bface_on);     // ds_l/dB_l
-              const Real pu = BFaceW(kl, ku, bface_on);     // ds_u/dB_u
-              const Real dtl = 0.5*kl*DX1(m,k,j,iL);
-              const Real dtu = 0.5*ku*DX1(m,k,j,iL+1);
-              const Real dtc = dtl + dtu;
-              const Real f = (dtc > 0.0) ? (dtl/dtc) : 0.5;
-              dl_l = pl;
-              dl_u = 1.0 - pl;
-              du_l = 1.0 - pu;
-              du_u = pu;
-              df_l = dl_l*(1.0 - f) + du_l*f;
-              df_u = dl_u*(1.0 - f) + du_u*f;
             };
             Real muq[2], wfq[2];
             if (nq == 1) {
@@ -3021,8 +2647,8 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
               const Real b_top = Bb_g(m,0,ie,k,j);
               // The cut half layer: the lower half of cell icut.  B is continued from
               // the centre to the cut face at the deep-limit gradient, the same
-              // linear-in-tau behaviour the cut boundary itself assumes (and zero under
-              // rt_cut_bc_legacy).  A thick half layer forgets its entry source anyway,
+              // linear-in-tau behaviour the cut boundary itself assumes.  A thick
+              // half layer forgets its entry source anyway,
               // since that coefficient falls off as 1/x.
               const Real dt_cut = 0.5*kc_g(m,0,icut,k,j)*rhoN(m,k,j,icut)
                                 * DX1(m,k,j,icut);
@@ -3031,19 +2657,6 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
               Real ab, em;
               // down-sweep: centre to centre, recording the face intensity in between
               Real Idn[2];
-              // dI_down(current face)/dB of the two cells nearest below it, per stream
-              Real ddn_c[2], ddn_p[2];
-              if (jac_on) {
-                for (int i=is; i<ie+2; ++i) {
-                  jac_g(m,0,k,j,i) = 0.0;
-                  jac_g(m,1,k,j,i) = 0.0;
-                  jac_g(m,2,k,j,i) = 0.0;
-                }
-                for (int q=0; q<2; ++q) {
-                  ddn_c[q] = 0.0;
-                  ddn_p[q] = 0.0;
-                }
-              }
               // THE PROBE UP-SWEEP (curvilinear only, see the SPHERICAL FORM note).
               // The down-sweep's face mixing c = beta (d_above - u_below) needs the
               // UPWARD intensity at each face, which the down-sweep does not have; the
@@ -3080,22 +2693,10 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
                 }
                 RTLayer(dt_top, muq[q], b_top*aftn_, b_top*act_, Idn[q], ab, em);
                 Src_g(m,0,ie,k,j) += wfq[q]/DX1(m,k,j,ie)*(ab - em);
-                if (jac_on) {
-                  // the top half layer: both endpoints are cell ie's own B
-                  Real e0t, cit, cot;
-                  RTLayerCoef(dt_top, muq[q], e0t, cit, cot);
-                  const Real W = wfq[q]/DX1(m,k,j,ie);
-                  jac_g(m,1,k,j,ie) -= W*(cit + cot);
-                  ddn_c[q] = cit + cot;      // dIdn/dB(ie), the cell it just crossed
-                  ddn_p[q] = 0.0;
-                }
               }
               for (int i=ie; i>icut; --i) {
                 Real dt_l, dt_u, s_l, s_u, s_f;
                 rt_layer(i-1, dt_l, dt_u, s_l, s_u, s_f);
-                Real wl_l = 0.0, wl_u = 0.0, wu_l = 0.0, wu_u = 0.0;
-                Real wf_l = 0.0, wf_u = 0.0;
-                if (jac_on) rt_layer_w(i-1, wl_l, wl_u, wu_l, wu_u, wf_l, wf_u);
                 const Real acd_u = ACN(m,k,j,i), afd_m = AUN(m,k,j,i);
                 const Real acd_l = ACN(m,k,j,i-1);
                 const Real bt_d = BTF(m,k,j,i,icut);
@@ -3108,31 +2709,6 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
                   if (!pp_) Idn[q] += MIXF(bt_d, I_upb[q][i], Idn[q]);
                   RTLayer(dt_l, muq[q], s_f*afd_m, s_l*acd_l, Idn[q], ab, em);
                   Src_g(m,0,i-1,k,j) += wfq[q]/DX1(m,k,j,i-1)*(ab - em);
-                  if (jac_on) {
-                    // upper half: enters at s_u (centre i), leaves at s_f; deposits in i
-                    Real e0u, ciu, cou, e0l, cil, col;
-                    RTLayerCoef(dt_u, muq[q], e0u, ciu, cou);
-                    RTLayerCoef(dt_l, muq[q], e0l, cil, col);
-                    const Real Wi = wfq[q]/DX1(m,k,j,i);
-                    const Real Wm = wfq[q]/DX1(m,k,j,i-1);
-                    const Real eu_u = ciu*wu_u + cou*wf_u;   // d(emitted upper)/dB_i
-                    const Real eu_l = ciu*wu_l + cou*wf_l;   // ... /dB_{i-1}
-                    jac_g(m,1,k,j,i)   += Wi*(e0u*ddn_c[q] - eu_u);
-                    jac_g(m,2,k,j,i)   += Wi*e0u*ddn_p[q];
-                    jac_g(m,0,k,j,i)   -= Wi*eu_l;
-                    // the intensity at the face between the two half layers
-                    const Real dm_u = (1.0-e0u)*ddn_c[q] + eu_u;
-                    const Real dm_l = eu_l;
-                    const Real el_l = cil*wf_l + col*wl_l;   // d(emitted lower)/dB_{i-1}
-                    const Real el_u = cil*wf_u + col*wl_u;   // ... /dB_i
-                    jac_g(m,1,k,j,i-1) += Wm*(e0l*dm_l - el_l);
-                    jac_g(m,2,k,j,i-1) += Wm*(e0l*dm_u - el_u);
-                    // what leaves the layer, for the next pair one cell down
-                    const Real do_l = (1.0-e0l)*dm_l + el_l;
-                    const Real do_u = (1.0-e0l)*dm_u + el_u;
-                    ddn_c[q] = do_l;
-                    ddn_p[q] = do_u;
-                  }
                 }
                 if (report_on) idn_g(m,k,j,i) = I_down[0][i];
               }
@@ -3144,7 +2720,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
               if (report_on) idn_g(m,k,j,icut) = I_down[0][icut];
               // Bottom of the RT domain, now AT the cut face: thermalised, plus the
               // internal flux if the layers below are not carrying it themselves (see
-              // rt_int_at_cut), plus the deep-limit gradient (see rt_cut_bc_legacy).
+              // rt_int_at_cut), plus the deep-limit gradient.
               for (int q=0; q<nq; ++q) {
                 I_up[q] = (b_cutf + (int_at_cut ? Iint : 0.0)
                            + muq[q]*dbdtau_cut)*afcn_;
@@ -3157,35 +2733,13 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
               }
               if (report_on) iup_g(m,k,j,icut) = I_up[0];
               // up-sweep
-              // dI_up(current face)/dB of the two cells nearest below it, per stream
-              Real dup_c[2], dup_m[2];
-              if (jac_on) {
-                for (int q=0; q<2; ++q) {
-                  dup_c[q] = 0.0;
-                  dup_m[q] = 0.0;
-                }
-              }
               for (int q=0; q<nq; ++q) {
                 RTLayer(dt_cut, muq[q], b_cutf*afcn_, b_cut*acc_, I_up[q], ab, em);
                 Src_g(m,0,icut,k,j) += wfq[q]/DX1(m,k,j,icut)*(ab - em);
-                if (jac_on) {
-                  // the cut half layer: both endpoints are cell icut's own B (b_cutf
-                  // adds only the frozen deep gradient), and I_up entered it from the
-                  // thermalised boundary, which is B(icut) as well
-                  Real e0c, cic, coc;
-                  RTLayerCoef(dt_cut, muq[q], e0c, cic, coc);
-                  const Real W = wfq[q]/DX1(m,k,j,icut);
-                  jac_g(m,1,k,j,icut) += W*(e0c - (cic + coc));
-                  dup_c[q] = (1.0-e0c) + cic + coc;
-                  dup_m[q] = 0.0;
-                }
               }
               for (int i=icut; i<ie; ++i) {
                 Real dt_l, dt_u, s_l, s_u, s_f;
                 rt_layer(i, dt_l, dt_u, s_l, s_u, s_f);
-                Real wl_l = 0.0, wl_u = 0.0, wu_l = 0.0, wu_u = 0.0;
-                Real wf_l = 0.0, wf_u = 0.0;
-                if (jac_on) rt_layer_w(i, wl_l, wl_u, wu_l, wu_u, wf_l, wf_u);
                 const Real acu_l = ACN(m,k,j,i), afu_m = AUN(m,k,j,i+1);
                 const Real acu_u = ACN(m,k,j,i+1);
                 const Real bt_u = BTF(m,k,j,i+1,icut);
@@ -3203,28 +2757,6 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
                   if (report_on && q == 0) iup_g(m,k,j,i+1) = I_up[0];
                   RTLayer(dt_u, muq[q], s_f*afu_m, s_u*acu_u, I_up[q], ab, em);
                   Src_g(m,0,i+1,k,j) += wfq[q]/DX1(m,k,j,i+1)*(ab - em);
-                  if (jac_on) {
-                    Real e0l, cil, col, e0u, ciu, cou;
-                    RTLayerCoef(dt_l, muq[q], e0l, cil, col);
-                    RTLayerCoef(dt_u, muq[q], e0u, ciu, cou);
-                    const Real Wi = wfq[q]/DX1(m,k,j,i);
-                    const Real Wp = wfq[q]/DX1(m,k,j,i+1);
-                    const Real el_l = cil*wl_l + col*wf_l;   // d(emitted lower)/dB_i
-                    const Real el_u = cil*wl_u + col*wf_u;   // ... /dB_{i+1}
-                    jac_g(m,1,k,j,i) += Wi*(e0l*dup_c[q] - el_l);
-                    jac_g(m,0,k,j,i) += Wi*e0l*dup_m[q];
-                    jac_g(m,2,k,j,i) -= Wi*el_u;
-                    const Real dm_c = (1.0-e0l)*dup_c[q] + el_l;
-                    const Real dm_u = el_u;
-                    const Real eu_u = ciu*wf_u + cou*wu_u;   // d(emitted upper)/dB_{i+1}
-                    const Real eu_l = ciu*wf_l + cou*wu_l;   // ... /dB_i
-                    jac_g(m,1,k,j,i+1) += Wp*(e0u*dm_u - eu_u);
-                    jac_g(m,0,k,j,i+1) += Wp*(e0u*dm_c - eu_l);
-                    const Real do_u = (1.0-e0u)*dm_u + eu_u;
-                    const Real do_c = (1.0-e0u)*dm_c + eu_l;
-                    dup_c[q] = do_u;
-                    dup_m[q] = do_c;
-                  }
                 }
               }
               const Real fsc_t = pp_ ? 1.0/aft_ : ACC(m,k,j,ie)/AFC(m,k,j,ie+1);
@@ -3235,13 +2767,6 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
                 Fb_g(m,0,ie+1,k,j) += wfq[q]*(I_up[q]
                                               - (I_down[q][ie+1] + cc))*fsc_t;
                 I_up[q] += cc;
-                if (jac_on) {
-                  Real e0t, cit, cot;
-                  RTLayerCoef(dt_top, muq[q], e0t, cit, cot);
-                  const Real W = wfq[q]/DX1(m,k,j,ie);
-                  jac_g(m,1,k,j,ie) += W*(e0t*dup_c[q] - (cit + cot));
-                  jac_g(m,0,k,j,ie) += W*e0t*dup_m[q];
-                }
               }
               if (report_on) iup_g(m,k,j,ie+1) = I_up[0];
               // the cell's own emission, exactly 4 sigma kappa rho T^4: each cell now
@@ -3357,7 +2882,6 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
                         << " nseg " << c3nseg
                         << (c3rp ? " redpar" : "")
                         << " hybrid_tau " << rt_col3_hybrid_tau
-                        << (rt_col3_split_deep ? " split_deep" : "")
                         << (rt_impl_reuse > 0
                             ? ((rt_impl_reuse > 1) ? " reuse(always)" : " reuse") : "")
                         << (rt_impl_mixed > 0
@@ -3402,25 +2926,6 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
             c3top(m,0,k,j) = (1.0 - exp(-dtau/mu3a))*bsrc;
             c3top(m,1,k,j) = (1.0 - exp(-dtau/mu3b))*bsrc;
           });
-          // ---- problem/rt_force_center: centre the flux the radiative force uses --
-          // The column below writes its OWN converged face flux into Fb (the
-          // rt_col3_skip_sweep path, RTCol3::wrflux); mode 2 needs the ENTRY flux as
-          // well, so it is summed over the blocks and saved here, before the solve.
-          const int fcen_ = rt_force_center;
-          if (fcen_ == 2 && rt_fbsave_ptr == nullptr) {
-            rt_fbsave_ptr = new DvceArray4D<Real>("rt_fbsave", nmb_c3, n3, n2, n1);
-          }
-          auto fbsv_ = (rt_fbsave_ptr != nullptr) ? *rt_fbsave_ptr
-                     : DvceArray4D<Real>("rt_fbsave_d", 1, 1, 1, 1);
-          if (fcen_ == 2) {
-            const int nblk_s = nblk;
-            par_for("rt_fbsave", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
-            KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-              Real ff = 0.0;
-              for (int b=0; b<nblk_s; ++b) ff += Fb_g(m,b,i,k,j);
-              fbsv_(m,k,j,i) = ff;
-            });
-          }
           RTCol3 c3;
           c3.u0 = u0;
           c3.bcc = bcc_uc_;
@@ -3463,9 +2968,6 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
           c3.exjac = rt_impl_exjac;
           c3.dstop = rt_impl_dstop;
           c3.rescheck = rt_impl_rescheck;
-          c3.ablate = rt_impl_ablate;
-          c3.fixit = rt_impl_fixit;
-          c3.cvfreeze = rt_impl_cvfreeze;
           c3.reuse = rt_impl_reuse;
           c3.reuse_rho = rt_impl_reuse_rho;
           c3.warm = rt_impl_warm;
@@ -3491,14 +2993,10 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
           c3.bface = bface_on;
           c3.taublend = taublend;
           c3.int_at_cut = int_at_cut;
-          c3.cut_legacy = cut_legacy;
           c3.direct = rt_src_direct;
           c3.ex_iter = rt_col3_ex_iter;
           c3.hyb_tau = rt_col3_hybrid_tau;
-          c3.split_deep = rt_col3_split_deep;
-          c3.split_w = rt_col3_split_w;
-          c3.wrflux = skipsweep_ || (fcen_ > 0);
-          c3.theta = rt_src_theta;
+          c3.wrflux = skipsweep_;
           c3.dump = rt_outer_verbose && (pm->ncycle == 0);
           if (c3par) {
             RTCol3TeamLaunch(c3, nmb1, ks, ke, js, je);
@@ -3539,10 +3037,6 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
                       << " Ftop_impl/Ftop_sweep="
                       << ((hs(17) != 0.0) ? hs(16)/hs(17) : 0.0) << std::endl;
           }
-          // problem/work_hist: CLOSE THE COLUMN-HEATING INTERVAL.  The column has just
-          // applied all of its energy to u0 and the only operator left in this call is
-          // the radiative momentum force.  Null hook = no-op.
-          if (rt_probe != nullptr) rt_probe(2);
         }
       } else if (ck_on) {
         // The private intensity column has to be sized at COMPILE time, but the radial
@@ -4530,11 +4024,6 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
       par_for("rt_chain", DevExeSpace(), 0, nmb1, 0, nblk-1, ks, ke, js, je,
       KOKKOS_LAMBDA(const int m, const int blk, const int k, const int j) {
         constexpr int NN = RT_NNC;
-        // ---- rt_implicit_column: the nearest-neighbour linearisation of this sweep ---
-        // dSrc_i/dB_{i-1,i,i+1} at frozen opacity, summed over the NC quadrature chains
-        // with their weights.  nblk == 1 on the grey path, so one thread owns the whole
-        // column and these are ordinary stores.  Nothing here reads back into the sweep.
-        const bool jac_on = implcol_;
         auto tau_down_r_f = Kokkos::subview(tau_g, m, k, j, Kokkos::ALL);
         auto B            = Kokkos::subview(B_g,   m, k, j, Kokkos::ALL);
         auto F_ir_f       = Kokkos::subview(Fb_g,  m, blk, k, j, Kokkos::ALL);
@@ -4547,23 +4036,6 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
           Fb_g(m,blk,i,k,j) = 0.0;
           Em_g(m,blk,i,k,j) = 0.0;
           Src_g(m,blk,i,k,j) = 0.0;
-        }
-        if (jac_on) {
-          for (int i=is; i<ie+2; ++i) {
-            jac_g(m,0,k,j,i) = 0.0;
-            jac_g(m,1,k,j,i) = 0.0;
-            jac_g(m,2,k,j,i) = 0.0;
-          }
-        }
-        // d I_down(entering face of the next layer)/dB(that layer's upper neighbour),
-        // and the two upward counterparts; carried along the sweeps, per chain
-        Real djd[NC], djup[NC], djuo[NC];
-        if (jac_on) {
-          for (int cc=0; cc<NC; ++cc) {
-            djd[cc] = 0.0;
-            djup[cc] = 0.0;
-            djuo[cc] = 0.0;
-          }
         }
           Real gamirc[NC], fbc[NC], muggc[NC], wggc[NC];
           for (int cc=0; cc<NC; ++cc) {
@@ -4832,7 +4304,6 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
       int nclip = 0;
       const Real demax = rt_de_max;
       const bool semilin = rt_semi_lin;
-      const bool explicit_on = rt_explicit;
       const bool newton_on = rt_newton;
       // see rt_ali_diag.  Only the band paths carry a per-cell continuum opacity in
       // kc_g, so the diagonal is available there and nowhere else.
@@ -4851,29 +4322,6 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
       }
       auto dsum_g = *rt_desum_ptr;
       Kokkos::deep_copy(dsum_g, 0.0);
-      // ---- the outer fixed-point iteration, see rt_outer_iter --------------------
-      // deacc holds de_{k-1}, the total stage increment this cell has already been
-      // given.  u0 carries it, so the next pass's sweep reads the partially relaxed
-      // column (rt_use_cons is required for exactly that reason) and the apply below
-      // recovers e^n as eiN - deacc.  With rt_outer_iter = 1 nothing here is allocated
-      // and every use of deacc is compiled behind outer_on, so the path is bitwise.
-      DvceArray4D<Real> deacc_g;
-      DvceArray1D<Real> oconv_g;
-      if (outer_on) {
-        if (rt_deacc_ptr == nullptr ||
-            rt_deacc_ptr->extent(0) != static_cast<size_t>(nmb1+1) ||
-            rt_deacc_ptr->extent(3) != static_cast<size_t>(n1)) {
-          if (rt_deacc_ptr != nullptr) delete rt_deacc_ptr;
-          rt_deacc_ptr = new DvceArray4D<Real>("rt_deacc", nmb1+1, n3, n2, n1);
-        }
-        if (rt_oconv_ptr == nullptr) {
-          rt_oconv_ptr = new DvceArray1D<Real>("rt_oconv", 6);
-        }
-        deacc_g = *rt_deacc_ptr;
-        oconv_g = *rt_oconv_ptr;
-        if (oit == 0) Kokkos::deep_copy(deacc_g, 0.0);
-        Kokkos::deep_copy(oconv_g, 0.0);
-      }
       const int efix_cyc = pm->ncycle;
       const bool resc_eq = rt_rescue_eq;
       // the sub-cycled local relaxation; see rt_relax_sub
@@ -4897,7 +4345,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
       const int dbg_j = (rt_dump_j >= 0) ? rt_dump_j : (js + je)/2;
       const int dbg_k = (rt_dump_k >= 0) ? rt_dump_k : (ks + ke)/2;
       const int dbg_n = rt_apply_debug_n;
-      if (dbg_on && outer_last) --rt_apply_debug;
+      if (dbg_on) --rt_apply_debug;
       // per-cycle diagnostic: an empty View captures fine, so the lambda needs no
       // branch on the pointer itself
       const bool diag = rt_diag;
@@ -4905,12 +4353,6 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
       if (diag) dg = *rt_diag_ptr;
       // ---- the radiative momentum source (problem/rt_rad_force) --------------------
       const bool radforce = rt_rad_force && grey_on;
-      // problem/rt_force_center: 0 = the entry sweep's flux (Fb as it stands), 1 = the
-      // converged column flux (mode 3 has already overwritten Fb with it above), 2 = the
-      // average of the two, with the entry flux taken from the saved copy.
-      const int fcen_a = (rt_implicit_column == 3) ? rt_force_center : 0;
-      auto fbs_a = (rt_fbsave_ptr != nullptr) ? *rt_fbsave_ptr
-                 : DvceArray4D<Real>("rt_fbs_dummy", 1, 1, 1, 1);
       const Real inv_c = 1.0/2.99792458e10;      // cgs: this path runs in cgs code units
       const Real arad_f = eos.tbl.arad;
       const Real xlo_f = eos.tbl.rad_lrho_lo, xhi_f = eos.tbl.rad_lrho_hi;
@@ -5084,74 +4526,10 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
         // The e ~ T behind e_eq is the same approximation the old rate made, and it
         // UNDER-estimates e_eq wherever H2 or H is partly dissociated, i.e. it errs
         // toward a smaller step.  problem/rt_semi_lin recovers the old linearization.
-        // ---- rt_implicit_column: hand the column solve the residual and the Jacobian
-        // R_i is the FULL source at this state -- handover, stellar beam and all -- so
-        // the outer iteration's fixed point is the exact backward-Euler balance.  The
-        // Jacobian is scaled by the same (1 - wbar) the relaxed part of the source
-        // carries, and zeroed below the band cut where no source is applied at all; the
-        // handover's own B-dependence is left in R.
-        // ---- THE TWO-LEVEL SPLIT, see rt_impl_tau_min ------------------------------
-        // dtau of the cell itself, straight out of the sweep's own tau array.
-        Real wthk_ = 0.0;              // this cell's share of the tridiagonal
-        bool thick_ = false;
-        if (implcol_) {
-          // kappa_R rho dr of the cell itself, from the SAME opacity cache the sweep
-          // built its layers with.  (tau_g is not filled on a box with no stellar beam,
-          // so it cannot be used for this.)
-          const Real dtau_c = kc_g(m,0,i,k,j)*rhoN(m,k,j,i)*DX1(m,k,j,i);
-          if (taublnd_ > 0.0) {
-            if (!(dtau_c > 0.0)) {
-              wthk_ = 0.0;
-            } else {
-              const Real u = log(dtau_c*taublnd_/taumin_)/log(taublnd_*taublnd_);
-              wthk_ = (u <= 0.0) ? 0.0 : ((u >= 1.0) ? 1.0 : u);
-            }
-          } else {
-            wthk_ = (dtau_c >= taumin_) ? 1.0 : 0.0;
-          }
-          thick_ = (wthk_ > 0.0);
-          Real jsc = taublend ? (1.0 - wbar) : 1.0;
-          if (band_on && i < icut_g(m,k,j)) jsc = 0.0;
-          jsc *= wthk_;             // a thin row carries NO two-stream term at all
-          if (jsc != 1.0) {
-            jac_g(m,0,k,j,i) *= jsc;
-            jac_g(m,1,k,j,i) *= jsc;
-            jac_g(m,2,k,j,i) *= jsc;
-          }
-          const Real tkc = T_g(m,k,j,i);
-          // dbdt doubles as the "how much of this cell is an unknown" weight: zero here
-          // removes the row's own diagonal AND a thick neighbour's coupling to it
-          dbt_g(m,k,j,i) = (tkc > 0.0) ? wthk_*4.0*boltz_sigma/M_PI*tkc*tkc*tkc : 0.0;
-          res_g(m,k,j,i) = wthk_*src;
-          dtx_g(m,k,j,i) = 0.0;     // filled below by the share the cell relaxes itself
-        }
-        // the share the tridiagonal owns is not applied here; the rest takes the old
-        // nonlinear relaxation, unchanged
         // ck_implicit deposits nothing here: the column solve owns the energy update,
         // and it takes the CONVERGED flux divergence with no relaxation factor and no
         // rt_de_max clip.  de below is kept only for the diagnostics.
-        const bool skip_de = (implcol_ && (wthk_ >= 1.0)) || mode3_ || ckimp_;
-        // ---- ONE-SHOT ASSEMBLY DUMP (problem/rt_outer_verbose, cycle 0, one column) --
-        // A and E are taken with EXACTLY the pre-existing apply block's definitions:
-        // E = Em, the per-volume emission the sweep subtracted, and A = src_relax + Em,
-        // so R = src = A - E + src_ex with the handover counted once and only once.
-        if (implcol_ && rtdbg_ && m == 0 && k == ks && j == js) {
-          Real Emd = 0.0;
-          for (int b=0; b<nblk; ++b) Emd += Em_g(m,b,i,k,j);
-          if (taublend) Emd *= 1.0 - wbar;
-          if (band_on && i < icut_g(m,k,j)) Emd = 0.0;
-          const Real dtau_c = kc_g(m,0,i,k,j)*rhoN(m,k,j,i)*DX1(m,k,j,i);
-          const Real tkd = T_g(m,k,j,i);
-          const Real dbd = (tkd > 0.0) ? 4.0*boltz_sigma/M_PI*tkd*tkd*tkd : 0.0;
-          Kokkos::printf("### rtcol_asm i=%d dtau=%.4e thick=%d T=%.5e rho=%.4e "
-                         "A=%.6e E=%.6e R=%.6e src_ex=%.4e jm=%.6e j0=%.6e jp=%.6e "
-                         "dBdT=%.6e sink=%.6e A/E=%.4e\n",
-                         i, dtau_c, thick_ ? 1 : 0, tkd, rhoN(m,k,j,i),
-                         src_relax + Emd, Emd, src, src - src_relax,
-                         jac_g(m,0,k,j,i), jac_g(m,1,k,j,i), jac_g(m,2,k,j,i), dbd,
-                         4.0*kc_g(m,0,i,k,j)*rhoN(m,k,j,i)*boltz_sigma*tkd*tkd*tkd,
-                         (Emd != 0.0) ? (src_relax + Emd)/Emd : 0.0);
-        }
+        const bool skip_de = mode3_ || ckimp_;
         // ---- rt_ali_diag: 1 - Lambda*_ii, the local escape factor -----------------
         Real ome_ = 1.0;
         if (ali_on) {
@@ -5180,11 +4558,10 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
         Real dg_it[8];
         int dg_nit = 0;
         bool dg_resc = false;
-        int dg_nsub = 1;   // rt_src_dump: the sub-cycle count actually used
+        int dg_nsub = 1;   // the sub-cycle count actually used
         for (int q=0; q<8; ++q) dg_it[q] = 0.0;
-        // problem/rt_explicit (or problem/rt_semi_implicit = false): nothing else
-        // touches de.  See rt_explicit and rt_semi_implicit.
-        if (!explicit_on && semi_imp && !skip_de) {
+        // problem/rt_semi_implicit = false: nothing else touches de.
+        if (semi_imp && !skip_de) {
           Real Em = 0.0;
           for (int b=0; b<nblk; ++b) Em += Em_g(m,b,i,k,j);
           if (taublend) {
@@ -5198,7 +4575,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
           // contrast, are deliberately the UPDATED state's: Em(T^{k-1}) together with
           // t0 = T^{k-1} is what makes the Newton's Em*(T(e^n+de)/t0)^4 the emission at
           // the NEW energy, i.e. F(de) = de - bdt(A - Em(e^n+de)) exactly.
-          const Real ei = outer_on ? (eiN(m,k,j,i) - deacc_g(m,k,j,i)) : eiN(m,k,j,i);
+          const Real ei = eiN(m,k,j,i);
           if (Em > 0.0 && ei > 0.0) {
             const Real src_ex = src - src_relax;     // the handover, applied exactly
             const Real sdt = src_relax*bdt;
@@ -5423,15 +4800,15 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
         const Real de_pre = de;
         if (demax > 0.0 && !skip_de) {
           const Real dl = LimitRTSource(de,
-              outer_on ? (eiN(m,k,j,i) - deacc_g(m,k,j,i)) : eiN(m,k,j,i), demax);
+              eiN(m,k,j,i), demax);
           if (dl != de) { ++nc; de = dl; }
         }
-        if (report_on && outer_last) {
+        if (report_on) {
           const Real dxb = DX1(m,k,j,i);
           Kokkos::atomic_add(&dsum_g(0), src*bdt*dxb);
           Kokkos::atomic_add(&dsum_g(1), de*dxb);
         }
-        if (diag && outer_last) {
+        if (diag) {
           Real Em_d = 0.0;
           for (int b=0; b<nblk; ++b) Em_d += Em_g(m,b,i,k,j);
           if (taublend) {
@@ -5446,7 +4823,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
           dg(m,5,k,j,i) = Qs_d;
           dg(m,6,k,j,i) = Em_d;
         }
-        if (dbg_on && outer_last && m == dbg_m && k == dbg_k && j == dbg_j &&
+        if (dbg_on && m == dbg_m && k == dbg_k && j == dbg_j &&
             i > ie - dbg_n) {
           Real Em = 0.0, Qs = 0.0;
           for (int b=0; b<nblk; ++b) { Em += Em_g(m,b,i,k,j); Qs += Qb_g(m,b,i,k,j); }
@@ -5467,7 +4844,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
                          afb_a, aft_a, ACC(m,k,j,i), vla_a);
         }
         // ---- rt_cell_report ---------------------------------------------------
-        if (report_on && outer_last) {
+        if (report_on) {
           const bool fixedcell = fixed_on && (k == rep_k) && (j == rep_j) &&
               (fabs(X1V(m,i) - rep_r) < 0.5*DX1(m,k,j,i));
           bool doprint = fixedcell;
@@ -5535,86 +4912,23 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
               dg_it[4], dg_it[5], dg_it[6], dg_it[7]);
           }
         }
-        // the part of de this cell applies ITSELF: all of it when the tridiagonal owns
-        // none of the cell, none when it owns all
-        const Real de_app = implcol_ ? (1.0 - wthk_)*de : de;
-        if (implcol_ && wthk_ < 1.0) {
-          // Record the change in this cell's Planck function that its own relaxation is
-          // applying, so a neighbouring row can take the exchange with the part of it
-          // that is NOT an unknown as a known right-hand-side term (see rt_col_dtex).
-          //
-          // IT IS MEASURED AGAINST THE STATE THE SWEEP SAW, not against e^n: R was formed
-          // from the running column, so the only thing the rows have not been shown is
-          // the step about to be taken.  de is the TOTAL stage increment (rt_outer_iter
-          // re-derives it from e^n every pass), hence the walk back through deacc.
-          const Real t0x = T_g(m,k,j,i);
-          const Real ei0 = outer_on ? (eiN(m,k,j,i) - deacc_g(m,k,j,i)) : eiN(m,k,j,i);
-          if (t0x > 0.0 && ei0 > 0.0 && (ei0 + de_app) > 0.0) {
-            Real t1x;
-            if (newton_on && eos.IsGeneral()) {
-              t1x = eos.Temperature(rhoN(m,k,j,i), ei0 + de_app)*eos.temp_cgs;
-            } else {
-              t1x = t0x*(ei0 + de_app)/eiN(m,k,j,i);
-            }
-            if (t1x > 0.0) {
-              dtx_g(m,k,j,i) = boltz_sigma/M_PI*(SQR(SQR(t1x)) - SQR(SQR(t0x)));
-              // AND RE-ANCHOR T^n.  The tridiagonal's heat-capacity term measures
-              // T^{k-1} - T^n to keep the conduction operator from being applied in full
-              // on every outer pass.  This cell's OWN relaxation also moved T^{k-1}, and
-              // that part is not an unconverged conduction increment: without moving the
-              // anchor with it the next pass's conduction row would try to undo it.  THIS
-              // IS THE OUTER-LOOP DEFECT that made the fixed point diverge.
-              if (outer_on && oit > 0 && eos.temp_cgs > 0.0) {
-                tn_g(m,k,j,i) += (t1x - t0x)/eos.temp_cgs;
-              }
-            }
-          }
-        }
+        const Real de_app = de;
         if (skip_de) {
           // NOTHING is applied here: the tridiagonal owns the energy update, and it is
           // called by the wrapper as soon as this kernel is done.  de is kept only for
           // the diagnostics above, where it is the EXPLICIT rate this state would give.
-          if (outer_on) {
-            const Real dprev = deacc_g(m,k,j,i);
-            deacc_g(m,k,j,i) = de;
-            const Real ade = fabs(de);
-            Kokkos::atomic_max(&oconv_g(0), (ade > 0.0) ? fabs(de - dprev)/ade : 0.0);
-            Kokkos::atomic_max(&oconv_g(1), ade);
-          }
-        } else if (outer_on) {
-          // de REPLACES de_{k-1}: u0 carries the running total, never a sum of passes
-          const Real dprev = deacc_g(m,k,j,i);
-          u0(m,IEN,k,j,i) += de_app - dprev;
-          deacc_g(m,k,j,i) = de_app;
-          const Real ade = fabs(de_app);
-          Kokkos::atomic_max(&oconv_g(0), (ade > 0.0) ? fabs(de_app - dprev)/ade : 0.0);
-          Kokkos::atomic_max(&oconv_g(1), ade);
-          // ABSOLUTE per class: the ratio above is a max over cells and is therefore
-          // owned by whichever cell has the SMALLEST |de_k|, which says nothing about
-          // convergence.  Slots 2/3 are the cells this kernel applies (thin, or the
-          // relaxed share of a blended one), 4/5 the ones that touch a tridiagonal row.
-          const int cls = (implcol_ && thick_) ? 4 : 2;
-          Kokkos::atomic_max(&oconv_g(cls), fabs(de_app - dprev));
-          Kokkos::atomic_max(&oconv_g(cls+1), ade);
         } else {
           u0(m,IEN,k,j,i) += de_app;
         }
         // ---- radiative momentum source, see rt_rad_force --------------------------
-        if (radforce && outer_last) {
+        if (radforce) {
           const Real rho = rhoN(m,k,j,i);
           const Real tkc = T_g(m,k,j,i);
           Real wr, dwdx, dwdy;
           rad_taper::WeightGated(log10(rho), xlo_f, xhi_f, log10(tkc), ylo_f, yhi_f,
                                  tg_f, wr, dwdx, dwdy);
-          // the cell's net two-stream flux, positive upward (rt_force_center: Ft/Fb
-          // are this call's Fb array, so 0/1 differ only in what the column wrote; 2
-          // averages it with the saved entry flux)
-          Real ftc_ = Ft, fbc_ = Fb;
-          if (fcen_a == 2) {
-            ftc_ = 0.5*(Ft + fbs_a(m,k,j,i+1));
-            fbc_ = 0.5*(Fb + fbs_a(m,k,j,i));
-          }
-          const Real fnet = 0.5*(ftc_ + fbc_);
+          // the cell's net two-stream flux, positive upward
+          const Real fnet = 0.5*(Ft + Fb);
           // problem/rt_force_tau_gate: s(tau) with tau the grey optical depth to the top
           // of this column.  The ingredients are the ones the `tautop` diagnostic uses,
           // kappa_grey rho dr summed over the cells above, plus half of this cell's own
@@ -5764,7 +5078,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
         }
       });
       rt_nclip_last = nclip;
-      if (outer_last) RTSourceLimiterWarn(nclip);
+      RTSourceLimiterWarn(nclip);
       // ---- the per-cycle clip/rescue CENSUS (problem/rt_outer_verbose) -------------
       // How many cells the per-STEP caps actually touched this stage: nclip is the
       // LimitRTSource count reduced over the apply kernel, efix(0..2) the running Newton
@@ -5775,18 +5089,6 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
         std::cout << "### rt_clip ncycle=" << pm->ncycle << " t=" << pm->time
                   << " nclip=" << nclip << " efix_tot=" << hcen(0)
                   << " resc_eq=" << hcen(1) << " resc_floor=" << hcen(2) << std::endl;
-      }
-      // ---- the fixed-point convergence of this pass, see rt_outer_iter ------------
-      if (outer_on && (rt_outer_verbose || report_on) && rt_report_every > 0 &&
-          (pm->ncycle % rt_report_every == 0) && global_variable::my_rank == 0) {
-        auto hc = Kokkos::create_mirror_view(oconv_g);
-        Kokkos::deep_copy(hc, oconv_g);
-        std::cout << "### rt_outer ncycle=" << pm->ncycle << " pass " << (oit+1)
-                  << "/" << nit << "  max|de_k-de_k-1|/|de_k| = " << hc(0)
-                  << "  max|de_k| = " << hc(1)
-                  << "  | relaxed: max|dde| = " << hc(2) << " max|de| = " << hc(3)
-                  << "  | interface: max|dde| = " << hc(4) << " max|de| = " << hc(5)
-                  << std::endl;
       }
       // The Newton positivity rescue should never fire.  Say so the first time it does,
       // with the running total, and stay quiet afterwards.
@@ -5822,7 +5124,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
       }
       // the source's energy budget: what the flux divergence asked for against what the
       // (sub-cycled, relaxed, limited) application actually deposited.  See rt_desum_ptr.
-      if (report_on && fixed_on && outer_last) {
+      if (report_on && fixed_on) {
         auto hd = Kokkos::create_mirror_view(dsum_g);
         Kokkos::deep_copy(hd, dsum_g);
         std::cout << "### rt_desum ncycle=" << pm->ncycle << " sum(src*dt*dx) = " << hd(0)

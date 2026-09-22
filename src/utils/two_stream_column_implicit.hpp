@@ -239,36 +239,6 @@ bool RTCol3Inv5X(const Real a[5][5], FT inv[5][5], int &nill) {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn Real RTCol3ThetaDe
-//! \brief problem/rt_src_theta: re-centre the column's energy deposit in time.
-//!
-//! The solve is backward Euler within the stage, which for a relaxation of rate 1/t_r
-//! over a step x = bdt/t_r applies the factor f_i = 1/(1 + x) to the EXPLICIT deposit
-//! de_x = -(e - e*) x.  A naive theta blend theta*de_i + (1 - theta)*de_x is unusable
-//! here: in an optically thick cell x is enormous and any explicit share blows the
-//! column up (measured: Ftop 1e5 x too large on the He column at theta = 0.5).  So the
-//! blend is taken in FACTOR space instead, between backward Euler and the EXACT
-//! exponential relaxation f_e = (1 - e^-x)/x, with x recovered from the solve's own
-//! factor as x = 1/f_i - 1:
-//!     de(theta) = de_x * (theta*f_i + (1 - theta)*f_e).
-//! theta = 1 is bitwise the backward-Euler deposit; theta = 0 is the exact linear
-//! relaxation, which is what removes the O(dt) phase lag backward Euler puts on T'.
-//! It is exact only in the linear limit -- the implicit branch is still the full
-//! nonlinear solve, and only the factor it implies is re-centred.  Cells where the
-//! implied factor is not in (0, 1] (sign flips, a floor rescue, a near-zero explicit
-//! deposit) keep the implicit deposit untouched.
-
-KOKKOS_INLINE_FUNCTION
-Real RTCol3ThetaDe(const Real de_impl, const Real de_expl, const Real theta) {
-  if (!(fabs(de_expl) > 0.0)) return de_impl;
-  const Real fi = de_impl/de_expl;
-  if (!(fi > 0.0) || fi > 1.0) return de_impl;
-  const Real x = 1.0/fi - 1.0;
-  const Real fe = (x > 1.0e-6) ? ((1.0 - exp(-x))/x) : (1.0 - 0.5*x);
-  return de_expl*(theta*fi + (1.0 - theta)*fe);
-}
-
-//----------------------------------------------------------------------------------------
 //! \struct RTCol3Hyb
 //! \brief THE HYBRID INTERFACE (<problem>/rt_col3_hybrid_tau), per column.
 //!
@@ -366,7 +336,6 @@ struct RTCol3 {
   bool redpar = false;
   int maxit = 6;
   int norm = 1;                   // problem/rt_impl_norm
-  int cvfreeze = 0;               // problem/rt_impl_cvfreeze
   // problem/rt_impl_reuse: keep the block factorisation of the first Newton pass and
   // reuse it (1 = with a contraction check, 2 = always).  Partitioned path only.
   int reuse = 0;
@@ -394,21 +363,6 @@ struct RTCol3 {
   // is BITWISE the answer of the standard path -- this is a scheduling change, not an
   // approximation.  Off by default only because every switch here is.
   bool rescheck = false;
-  // ---- TIMING INSTRUMENTATION (problem/rt_impl_ablate, problem/rt_impl_fixit) -------
-  // To apportion the cost of a Newton pass between its steps, ablate REPEATS a step
-  // rather than skipping it: steps 4a and 4b are IDEMPOTENT (4a zeroes Src before it
-  // accumulates, and 4b reads only b, which it does not touch), so running one of them
-  // twice leaves the answer BITWISE unchanged while adding exactly its own cost.
-  // Skipping instead would change the iterate, and with it the pass count, the timestep
-  // and -- with a diverging solve -- the branch mix, which is what makes a difference of
-  // wall times unreadable.  The bit mask: 1 = one extra step 4a, 2 = one extra step 4b,
-  // 4 = one extra residual-only loop (what a rescheck pass costs).  fixit removes the
-  // early exits so that every column runs exactly maxit passes, which gives the cost of
-  // a WHOLE pass as the slope in maxit; it is the only one of the two that moves the
-  // answer, and only by converging further.  Both branch on RUNTIME members, so nothing
-  // is dead-code eliminated.
-  int ablate = 0;
-  bool fixit = false;
   int is = 0, ie = 0;
   int is_pp = 0, nx1_pp = 1;
   bool pp = false;
@@ -418,7 +372,6 @@ struct RTCol3 {
   bool bface = false;
   bool taublend = false;
   bool int_at_cut = false;
-  bool cut_legacy = false;
   bool direct = true;
   bool ex_iter = false;          // see problem/rt_col3_ex_iter
   // problem/rt_col3_skip_sweep: the entry sweep did not run, so Fb holds nothing.  WRITE
@@ -427,36 +380,10 @@ struct RTCol3 {
   // very field mode 3 applies.  Src/Em are left alone (zero); their consumers are
   // refused at startup.
   bool wrflux = false;
-  // problem/rt_src_theta: the time centring of the deposit this solve applies.  1.0 is
-  // the fully implicit solve (bitwise the old code); theta < 1 blends in the explicit
-  // stage-start deposit.  See the note in two_stream_rt.hpp.
-  Real theta = 1.0;
   // problem/rt_col3_hybrid_tau: the column optical depth below which the column is
   // solved as DIFFUSION (1 unknown per cell) instead of as the full two-stream.
   // 0 = off, bitwise the whole-column solve.  See RTCol3Hyb.
   Real hyb_tau = 0.0;
-  // problem/rt_col3_split_deep: BALANCE the partitioned path's segments by WORK rather
-  // than by cell count.  The hybrid already makes a deep cell a scalar row, but the team
-  // splits [ic, ie] into nseg EQUAL segments and every phase runs behind a team barrier,
-  // so the wall time of a pass is the SLOWEST lane -- and the lanes holding the thin
-  // (two-stream) cells still carry nc/nseg full 5x5 cells each, exactly what they carried
-  // with the hybrid off.  That is why the hybrid measured only 1.09x.  With this switch a
-  // thin cell counts split_w times a deep one when the segment boundaries are laid out,
-  // so the ~n_thin two-stream cells are spread over ALL nseg lanes and the critical path
-  // falls from nc/nseg thin cells to about n_thin/nseg.  The partition is the only thing
-  // that changes: the spike composition is exact for the linear recurrence, so the answer
-  // moves by round-off only (and the clamp caveat of the partitioned path, unchanged).
-  // Off = bitwise the equal partition.
-  //
-  // MEASURED ON THE B STAR (prod_w4 restart, 2 MI300A, 162 calls, tau_hyb 30): the plain
-  // hybrid is 223.7 ms/call against 293.1 off, and BALANCING MAKES IT WORSE, 258.4.  The
-  // critical path is not the thin arithmetic per lane: the lanes of a team are one
-  // wavefront, so a cell loop costs the UNION of the deep and thin branches and scales
-  // with the MOST cells any lane holds.  The equal partition minimises that maximum (10.5
-  // cells here); balancing raises it to ~22 on the deep-heavy lanes and pays both
-  // branches on every one.  So the switch is kept OFF, as the measurement behind that.
-  bool split_deep = false;
-  int split_w = 8;                // problem/rt_col3_split_w, thin cost / deep cost
   bool dump = false;              // one-shot per-cell assembly dump of column (0,ks,js)
 
   // ---- the two state accessors, the rt_use_cons forms (mode 3 requires it) ----------
@@ -702,21 +629,11 @@ struct RTCol3 {
   KOKKOS_INLINE_FUNCTION
   int Interface(const int m, const int k, const int j, const int ic) const;
   //! the first cell of segment s of the partitioned path (s in [0, nsg]; segment s is
-  //! [SegStart(s), SegStart(s+1)-1]).  The equal partition unless rt_col3_split_deep.
+  //! [SegStart(s), SegStart(s+1)-1]).  The equal partition.
   KOKKOS_INLINE_FUNCTION
   int SegStart(const int s, const int ic, const int nc, const int nsg,
                const int ib) const {
-    if (!split_deep || ib <= ic || nsg >= nc) return ic + (nc*s)/nsg;
-    if (s <= 0) return ic;
-    if (s >= nsg) return ic + nc;
-    const int w = (split_w > 1) ? split_w : 1;
-    const int nd = ib - ic;                    // deep cells, [ic, ib-1]
-    const double wt = static_cast<double>(nd) + static_cast<double>(nc - nd)*w;
-    const int tg = static_cast<int>((wt*s)/nsg);
-    int i0 = (tg <= nd) ? (ic + tg) : (ib + (tg - nd + w - 1)/w);
-    if (i0 < ic + s) i0 = ic + s;              // >= 1 cell in every lane below
-    if (i0 > ic + nc - (nsg - s)) i0 = ic + nc - (nsg - s);   // ... and above
-    return i0;
+    return ic + (nc*s)/nsg;
   }
   KOKKOS_INLINE_FUNCTION
   void Solve(const int m, const int k, const int j) const;
@@ -1024,8 +941,7 @@ void RTCol3::BuildRow(const int m, const int k, const int j, const int i, const 
     }
     for (int c=0; c<5; ++c) Bm[r][c] = 0.0;
   }
-  const int EEs = 20, CIs = 22, COs = 24, BBs = 26, EXs = 31, SAs = 32, CVs = 33,
-            ESs = 34;
+  const int EEs = 20, CIs = 22, COs = 24, BBs = 26, EXs = 31, SAs = 32, ESs = 34;
   Real cl[3], cu[3], cfu[3], cfd[3];
   SourceCoef(m, k, j, i, ic, hb, cl, cu, cfu, cfd);
   // THE DEPOSIT IS THE PLANE-PARALLEL DIVERGENCE (see the SPHERICAL FORM note on Bt):
@@ -1119,13 +1035,7 @@ void RTCol3::BuildRow(const int m, const int k, const int j, const int i, const 
   const Real tnew = sqrt(sqrt(b*M_PI/sigma));
   const Real enew = EFromT(rho, tnew);
   // de/db = (de/dT) dT/db with b = sigma T^4/pi, i.e. dT_K/db = pi/(4 sigma T^3)
-  Real dedb;
-  if (cvfreeze > 0 && it >= cvfreeze) {
-    dedb = Wk<TLAY>(m,CVs,i,k,j);
-  } else {
-    dedb = dEdT(rho, enew, tnew)*M_PI/(4.0*sigma*tnew*tnew*tnew);
-    Wk<TLAY>(m,CVs,i,k,j) = dedb;
-  }
+  const Real dedb = dEdT(rho, enew, tnew)*M_PI/(4.0*sigma*tnew*tnew*tnew);
   Bm[4][4] = dedb + fj*dsdb[1];
   if (i > ic) {
     A3[4][2] = fj*dsdb[0];
@@ -1216,7 +1126,7 @@ KOKKOS_INLINE_FUNCTION
 void RTCol3::DeepRow(const int m, const int k, const int j, const int i, const int ic,
                      const RTCol3Hyb &hb, const Real kflx, const int it, Real &aa,
                      Real &dd, Real &cc, Real C5[3], Real &rv, Real &rsc) const {
-  const int BBs = 26, EXs = 31, SAs = 32, CVs = 33, ESs = 34;
+  const int BBs = 26, EXs = 31, SAs = 32, ESs = 34;
   aa = 0.0;
   cc = 0.0;
   rv = 0.0;
@@ -1241,13 +1151,7 @@ void RTCol3::DeepRow(const int m, const int k, const int j, const int i, const i
   const Real chi = xj ? (1.0 - whi) : wb;
   const Real tnew = sqrt(sqrt(b*M_PI/sigma));
   const Real enew = EFromT(rho, tnew);
-  Real dedb;
-  if (cvfreeze > 0 && it >= cvfreeze) {
-    dedb = Wk<TLAY>(m,CVs,i,k,j);
-  } else {
-    dedb = dEdT(rho, enew, tnew)*M_PI/(4.0*sigma*tnew*tnew*tnew);
-    Wk<TLAY>(m,CVs,i,k,j) = dedb;
-  }
+  const Real dedb = dEdT(rho, enew, tnew)*M_PI/(4.0*sigma*tnew*tnew*tnew);
   dd = dedb;
   if (i > ic) {                                // the lower face: pure diffusion
     const Real dtm = Ht(m,k,j,i-1) + Ht(m,k,j,i);
@@ -1349,7 +1253,7 @@ void RTCol3::Solve(const int m, const int k, const int j) const {
   // ---- 2. the frozen boundary data --------------------------------------------------
   // the deep-limit gradient at the cut, exactly as the sweep forms it
   Real dbdtau = 0.0;
-  if (!cut_legacy && ic + 1 <= ie) {
+  if (ic + 1 <= ie) {
     const Real dtc = Ht(m,k,j,ic) + Ht(m,k,j,ic+1);
     if (dtc > 0.0) dbdtau = (Bb(m,0,ic,k,j) - Bb(m,0,ic+1,k,j))/dtc;
   }
@@ -1408,7 +1312,6 @@ void RTCol3::Solve(const int m, const int k, const int j) const {
   for (int it=0; it<maxit; ++it) {
     nit = it + 1;
     // ---- 4a. the formal solution at the current b, and Src ---------------------------
-    for (int rep=(ablate & 1); rep>=0; --rep) {
     for (int i=ic; i<=ie; ++i) Wk<false>(m,SA,i,k,j) = 0.0;
     if (hb.on) {
       const Real dbd = (Wk<false>(m,BB,ib-1,k,j) - Wk<false>(m,BB,ib,k,j))/hb.dtc;
@@ -1535,25 +1438,19 @@ void RTCol3::Solve(const int m, const int k, const int j) const {
                        + (whi*f3hi - wlo*f3lo)/Dx(m,k,j,i) + Qb(m,0,i,k,j);
       }
     }
-    }
 
     // ---- 4a''. THE RESIDUAL-ONLY CONVERGENCE TEST (problem/rt_impl_rescheck) ---------
     // The same test step 4b makes, made before the factorisation instead of after it, so
     // that a pass which only confirms convergence never assembles or inverts a block.
     // See the switch's note on the struct: this is bitwise, not an approximation.
-    if (rescheck || (ablate & 4)) {
+    if (rescheck) {
       Real rpre = 0.0;
-      for (int rep=((ablate & 4) ? 1 : 0); rep>=0; --rep) {
-        rpre = 0.0;
-        for (int i=ic; i<=ie; ++i) {
-          const Real rr = ResidRel<false>(m, k, j, i, eoff);
-          if (rr > rpre) rpre = rr;
-        }
+      for (int i=ic; i<=ie; ++i) {
+        const Real rr = ResidRel<false>(m, k, j, i, eoff);
+        if (rr > rpre) rpre = rr;
       }
-      if (rescheck) {
-        rfin = rpre;
-        if (rpre < tol && !fixit) break;
-      }
+      rfin = rpre;
+      if (rpre < tol) break;
     }
 
     // ---- 4b. forward elimination ----------------------------------------------------
@@ -1564,7 +1461,6 @@ void RTCol3::Solve(const int m, const int k, const int j) const {
     }
     Real rmax = 0.0;
     bool ok = true;
-    for (int rep=(ablate & 2); rep>=0; --rep) {
     rmax = 0.0;
     ok = true;
     // ---- 4b-0. the DEEP segment: a SCALAR tridiagonal, one unknown per cell --------
@@ -1645,13 +1541,12 @@ void RTCol3::Solve(const int m, const int k, const int j) const {
         }
       }
     }
-    }
     if (!ok) {
       Kokkos::atomic_add(&stat(6), 1.0);
       return;
     }
     rfin = rmax;
-    if (rmax < tol && !fixit) break;
+    if (rmax < tol) break;
 
     // ---- 4c. back substitution and the clamped update -------------------------------
     Real dbm = 0.0;
@@ -1722,7 +1617,6 @@ void RTCol3::Solve(const int m, const int k, const int j) const {
     // the STEP-SIZE stopping rule (problem/rt_impl_dstop).  A Newton that has just taken
     // a negligible step is converged; making it assemble one more block system only to
     // read the residual back costs a whole pass and changes nothing.
-    if (fixit) continue;
     if (dstop && dbm < tol) break;
     if (dbm < 1.0e-14) break;
   }
@@ -1854,13 +1748,6 @@ void RTCol3::Solve(const int m, const int k, const int j) const {
       if (rt > rtmax) rtmax = rt;
     }
     Real de = enew - es;
-    // problem/rt_src_theta: re-centre the deposit in RELAXATION-FACTOR space.  See
-    // RTCol3::theta and RTCol3ThetaDe.
-    if (theta != 1.0) {
-      const Real wbt = taublend
-          ? (1.0 - 0.5*(wblend(m,k,j,i) + wblend(m,k,j,i+1))) : 1.0;
-      de = RTCol3ThetaDe(de, bdt*(wbt*Src(m,0,i,k,j) + Wk<false>(m,EX,i,k,j)), theta);
-    }
     // how far the implicit solve moved this cell from the state the explicit sweep saw,
     // and what the explicit source would have deposited instead
     const Real b0 = Bb(m,0,i,k,j);

@@ -156,17 +156,6 @@
 //!                 still enters exactly as it did, through the two-stream's lower
 //!                 boundary (rt_bottom_flux) or as <hydro>/rad_flux_inner in that same
 //!                 face's energy channel.
-//!   bc_inflow_ghost  false (DEFAULT) = the bottom ghost follows bc_mode (the WB
-//!                 continuation of the evolved interior) and only the INJECTED mass
-//!                 carries the base state; true = the ghost itself is the base state.
-//!                 MEASURED: true is a real perturbation, because the wall-face
-//!                 MOMENTUM flux is deliberately not cancelled and a frozen-column
-//!                 ghost therefore pushes on the wall cell.  On the 1-D B-star column
-//!                 (which loses no mass at all through the open top, so the controller
-//!                 is idle) the base-state ghost drove E/E0 to 1.40 and Ftop/Fbot to
-//!                 1.67 in 3.9e3 s, while the bc_mode ghost reproduced the closed-
-//!                 bottom control to 6 digits; on the He column it moved Ftop/Fbot from
-//!                 0.9995 to 1.021.
 //!   bc_inflow_time  tau_in [code time] of that controller; <= 0 -> one turnover
 //!                 H_p(base)/v*, which is what the startup line prints.
 //!   bc_inflow_vmax  the cap on v_in [code velocity]; <= 0 -> 0.1 c_s(base).
@@ -205,8 +194,6 @@
 //!   vpert_var     "v1" (default) seeds the vertical VELOCITY; "eint" instead multiplies
 //!                 the internal energy (and so the pressure) by
 //!                 1 + vpert*envelope*amp at FIXED density and zero velocity, i.e. an
-//!                 entropy perturbation.  The linear f-mode seed (seed_fmode_amp) is
-//!                 independent of this and always acts on the velocity.
 //!   nfine         nodes in the column march (default 8192)
 //!   opac_table    Rosseland table, "# nT nD lTmin dlT lDmin dlD" then nT*nD log10 kappa
 //!   column_dump   if set, write the initial column to this file
@@ -337,11 +324,7 @@
 
 void BoxConvSrcs(Mesh *pm, Real bdt);
 void BoxConvRebuildRadWeights(Mesh *pm, Real bdt);
-void BoxConvTransverseApply(Mesh *pm, Real dt);
-void BoxConvRTSplit(Mesh *pm, Real bdt);
 void BoxConvARadForce(Mesh *pm, Real bdt);
-void BoxConvRTBeforeFlux(Mesh *pm, Real bdt);
-void BoxConvRTImEx(Mesh *pm, Driver *pdrive, const int estage);
 void BoxConvBC(Mesh *pm);
 void BoxConvFinal(ParameterInput *pin, Mesh *pm);
 void BoxConvHistory(HistoryData *pdata, Mesh *pm);
@@ -415,7 +398,6 @@ Real inflow_mnow_ = 0.0;     // the current box mass
 int inflow_cyc_ = -1;        // the cycle the controller was last updated on
 int inflow_print_n_ = 100;   // print cadence in cycles; 0 = off
 Real inflow_eb_ = 0.0, inflow_pb_ = 0.0;   // the base state's eint and pressure
-bool inflow_ghost_ = false;  // bottom ghost = the base state (false: follow bc_mode)
 bool etotgrav_ = false;
 bool wall_noflux_ = false;   // cancel the wall-face flux after each stage (bc_mode 3)
 Real wall_walk_maxfac_ = 100.0;   // how far the bc_mode-3 walk may depart from the column
@@ -445,50 +427,16 @@ bool vdamp_printed_ = false;
 // cell ABOVE the layer (the topmost sponge cell still carries a small weight, so the
 // layer has no hard edge).  Per stage, with the exact exponential factor
 //     g = 1 - exp(-f bdt/vdamp_bot_time),
-//     m1 -> m1 - g m1                      (vdamp_bot_mean_only = false, DEFAULT), or
-//     m1 -> m1 - g rho <v1>_h              (vdamp_bot_mean_only = true),
-// where <v1>_h is the HORIZONTAL (x2,x3) mean of v1 at that x1 index, taken once per
-// stage from the u0 the gravity/cooling kernel just left, with an MPI_Allreduce of the
-// plane sums (every rank applies it).  The mean-only form exists for a box whose
-// convection reaches the bottom: a plane-coherent v1 IS the radial mode, while a
-// convective plume has zero plane mean, so damping the mean alone absorbs the mode and
-// leaves the convection untouched.  In the He box the bottom layer is STABLY
-// STRATIFIED (the convection zone is the top ~1 Mm), so the full-m1 form is the
-// default: it absorbs the g-modes as well.  m2 and m3 are never touched.
+//     m1 -> m1 - g m1.
+// m2 and m3 are never touched.
 // As for the top sponge, the kinetic energy removed is taken OUT of the total energy
 // rather than turned into heat.  The sponge is applied BEFORE the bottom inflow source
 // (bc_mode_bot = 5) in the same stage, so the momentum the inflow injects into the wall
 // cell survives the stage intact.
 int vdb_cells_ = 0;
 Real vdb_time_ = 20.0;
-bool vdb_mean_ = false;
-DvceArray1D<Real> vdb_d_;        // (N): the plane sums of v1, then the plane means
-HostArray1D<Real> vdb_h_;
 bool diff_flux_ = false;     // a diffusive flux shares the wall face's energy channel
 bool rt_on_ = false;      // problem/rt_two_stream
-// problem/rt_strang (default false, bitwise off): take the grey two-stream OUT of the
-// RK stage and apply it Strang-wise around the whole time integrator instead -- half
-// the cycle dt before it, half after, through ProblemGenerator::user_split_func.  The
-// in-stage call in BoxConvSrcs is then skipped.  It exists to test whether the residual
-// dt-INDEPENDENT box-mode forcing that survives the exact column solve
-// (rt_implicit_column = 3) is the operator SPLIT rather than the solve.
-bool rt_strang_ = false;
-// problem/rt_once_per_cycle (default false, bitwise off): like rt_strang, the two-stream
-// leaves the RK stage -- but instead of two half-steps it is applied ONCE with the FULL
-// cycle dt after the last stage ("after_timeintegrator", followed by ConToPrim).  It
-// exists to test whether the SSP-RK stage AVERAGING of an exact per-stage relaxation
-// (rt_implicit_column = 3 relaxes the column exactly inside every stage, and stage 2 of
-// rk2 then blends that fully relaxed state back with the un-relaxed u^n) is what drives
-// the residual dt-independent box mode.  Works for any rt_implicit_column mode.
-bool rt_once_ = false;
-// problem/rt_col3_once (default false, bitwise off): the SAME once-per-cycle split as
-// rt_once_per_cycle, but only legal for the exact block-tridiagonal column solve
-// (rt_implicit_column = 3).  In mode 3 the explicit sweep exists ONLY to build the
-// column solve's coefficients -- the per-cell apply it would otherwise feed is replaced
-// by the solve -- so taking the column out of the RK stage takes the sweep with it, and
-// the whole radiation source is then applied ONCE with the FULL cycle dt after the last
-// stage.  Halves the cost of the mode-3 source under rk2.
-bool rt_col3_once_ = false;
 // --- problem/rt_weights_per_stage: RE-CENTRE THE OPACITY/TAU CACHES ON THE STAGE
 // STATE.  Conduction::BuildRadWeights (the column optical depth rad_tauf and the
 // tau-blend weight rad_w) and Conduction::BuildAngularCoeffs (the transverse
@@ -502,32 +450,10 @@ bool rt_col3_once_ = false;
 // two-stream call, so everything the column and the force consume is centred on the
 // state they act on.  Default false and the code path is untouched when off.
 bool rtwps_ = false;
-// problem/rt_imex: the mode-3 column solve becomes the IMPLICIT STAGE OPERATOR of the
-// ImEx-RK integrator (<time>/integrator = imex2 or imex2+) instead of a source applied
-// inside the explicit RK stage.  The splitting error between the hydro update and the
-// column -- the O(dt) anti-damping that grows the surface f-mode at gamma = 0.615 dt[s]
-// per turnover -- is what this removes: ImEx is jointly second order in the explicit and
-// the implicit operator, the first-order split is not.
-//
-// The RADIATION OPERATOR IS TAKEN AS A WHOLE: the energy exchange AND the radiative
-// momentum force (problem/rt_rad_force) and its work are all part of S, so all four
-// components (IM1,IM2,IM3,IEN) are stored and recombined.  The force is not stiff, but
-// it is evaluated on the same fresh column solve as the energy source, so making it part
-// of the same operator costs nothing, needs no hook inside two_stream_rt.hpp, and leaves
-// no residual first-order split in the force either.
-bool rt_imex_ = false;
-// problem/rt_split_transverse (default TRUE whenever rt_strang / rt_once_per_cycle /
-// rt_col3_once / rt_imex is on): move the IMPLICIT TRANSVERSE radiative operator
-// (<hydro>/rad_implicit_ang, the horizontal ADI) OUT of the RK stage as well, and run it
-// inside the same split step as the column, immediately after it and over the SAME bdt.
-//
-// WHY.  In the lid the column solve is a projection onto radiative equilibrium and the
-// horizontal operator is a very fast diffusion (chi_rad ~ 5e17 cm^2/s); in the stage the
-// two are applied back to back over the same beta_dt and very nearly cancel.  Taking
-// only the column out leaves the horizontal operator acting, at its own stage weight, on
-// a state the column has not relaxed -- which is the SAME inconsistency as running with
-// the horizontal operator switched off (arm TR), and ARMS 4/5/7 show the same transonic
-// lid in all three cases.  Set false to reproduce the ARMS 4/5 behaviour.
+// the horizontal ADI operator travels WITH the column whenever the column is
+// sub-cycled inside the stage (problem/rt_col3_sub > 1): it then runs inside each
+// sub-step, over the same beta_dt/N, and the separate in-stage transverse task is
+// silenced (Conduction::rad_tr_split_out).
 bool rt_split_tr_ = false;
 // problem/rt_col3_sub (int, default 1 = today's behaviour, bitwise off): SUB-CYCLE the
 // whole radiation column operator inside each RK stage.  The hydro step is untouched --
@@ -544,7 +470,7 @@ bool rt_split_tr_ = false;
 // doubles with the cost), the reading is refuted.
 //
 // WHAT IS IN A SUB-STEP: the whole operator, in the "column + transverse together"
-// ordering rt_split_transverse established -- the mode-3 column solve (sweep + exact
+// ordering -- the mode-3 column solve (sweep + exact
 // block-tridiagonal solve + the radiative force and its work, i.e. all of
 // picket_fence_two_stream_RT) followed immediately by the horizontal ADI operator over
 // the SAME beta_dt/N.  The in-stage transverse task is therefore made a no-op
@@ -566,77 +492,8 @@ bool rt_split_tr_ = false;
 // up-to-date transverse neighbours.  What stays as stale as it is today is the mesh u0
 // ghost ring itself, which only the frozen face conductances on the outermost faces read.
 int rt_col3_sub_ = 1;
-// problem/rt_pair_sym (int, default 0 = today's ordering, bitwise off): make the COLUMN
-// SOLVE and the HORIZONTAL (transverse ADI) OPERATOR a SYMMETRIC (Strang) PAIR inside
-// each radiation call,
-//     ADI(bdt/2)  ->  column(bdt) [+ the radiative force, as today]  ->  ADI(bdt/2)
-// instead of the Lie ordering column(bdt) -> ADI(bdt) that rt_split_transverse
-// established.  WHY: the arm-set-B work budget (problem/work_hist) found that the
-// seeded linear f-mode's entire energy budget is the COLUMN HEATING (+1759 in units of
-// 2 gamma E) against the HORIZONTAL ADI (-1798), each ~1800x the growth rate and
-// cancelling to a net -38 -- i.e. the O(dt) growth IS the imbalance of that pair, which
-// is exactly what a Lie split of two operators evaluated at different states produces.
-// A symmetric pair makes that imbalance O(dt^2); the prediction is that Wtco+Wtad, and
-// with it gamma, drop by a large factor at fixed dt.
-//   value 1: the symmetric pair above.  It runs in the PLAIN in-stage path (the one
-//     production uses), once per RK stage, and once per rt_col3_sub sub-step when that
-//     is also on.  Cost: one extra ADI half-step plus one BoxConvRebuildRadWeights per
-//     stage (the frozen ADI face conductances must be formed with the HALF step; the
-//     SAME frozen coefficients are then used for both halves, which is what makes the
-//     pair adjoint-symmetric).  It implies rt_split_transverse, i.e. it sets
-//     Conduction::rad_tr_split_out so the separate in-stage transverse task is silenced
-//     and this is the only place the operator runs.
-//   value 2 (Picard iteration of the pair) is NOT implemented: it needs a saved copy of
-//     the whole start state plus a way to feed the first pass's heating back into the
-//     column solve as a lagged source, neither of which exists here (the mode-3 column
-//     solve writes u0(IEN) in place from its own converged flux).  See the README.
-// work_hist: tags 2/3/4 fire wherever the operators run, so the budget stays complete;
-// Wtad is then the SUM of the two half-steps and Wtco+Wtad is still the pair imbalance.
-int rt_pair_sym_ = 0;
-// problem/rt_before_flux (bool, default false, bitwise off): REVERSE THE LIE ORDER of
-// the two operators inside each RK stage.  Today the stage is
-//     fluxes + RKUpdate (hydro advection)  ->  BoxConvSrcs (gravity, then the column +
-//     radiative force, then the horizontal ADI)
-// i.e. a first-order Lie split of the hydro advection against the stiff radiative
-// projection.  The leading error of such a split is the COMMUTATOR of the two
-// operators: it is proportional to the advecting (convective) velocity -- it vanishes in
-// a box at rest -- and to dt, and it CHANGES SIGN when the two operators are exchanged.
-// The convecting box's surface f-mode grows at gamma = 1.31 omega^2 dt while the same
-// mode without convection is neutral at every dt, and every rearrangement INSIDE the
-// radiation step has been null, which leaves the commutator as the candidate.
-// With this switch the radiation block (column + force + horizontal ADI, exactly the
-// sequence BoxConvSrcs runs today, with the same beta_dt) is applied at the HEAD of the
-// stage, on the stage-start state, by Hydro::RTBeforeFlux -- which follows it with a
-// full ghost/BC update and a ConToPrim, so the fluxes are built from the radiatively
-// updated primitives -- and the radiation part of BoxConvSrcs is skipped for that stage.
-// Gravity, cooling, sponge, wall cancellation and inflow stay exactly where they are.
-// A sign flip of gamma identifies the commutator; an unchanged gamma refutes it.
-// work_hist: the tag-2/3/4 points fire wherever the operators run, so the intervals
-// still TILE the stage and the KE closure still holds exactly; only the ORDER changes
-// (radiation first, then "Wflx" = the RK combination + flux divergence, then "Wgrv").
-bool rt_before_flux_ = false;
-// the per-stage implicit sources S^(l), (nimp_stages, nmb, 4, n3, n2, n1), 4 = the
-// IM1/IM2/IM3/IEN components in that order.  Allocated on the first call (the Driver,
-// which owns nimp_stages, is built after the problem generator).  NOT restarted: every
-// slot is written before it is read inside the same cycle (see BoxConvRTImEx).
-DvceArray6D<Real> rtimex_src_;
 bool cool_on_ = true;     // the Newton cooling layer (off by default once RT is on)
 Real rgas_ = 0.0;         // R/mu in code units; the ideal branch's T = p/(Rgas rho)
-// --- THE LINEAR f-MODE TEST (problem/seed_fmode_amp, problem/fmode_hist) ------------
-// A single horizontal Fourier mode (m,n) of the box, seeded in v1 with the surface-
-// gravity-wave depth eigenfunction exp(k_h (z - z_top)), and a pair of history columns
-// that project v1 back onto that mode.  Both are inert at their defaults: with
-// seed_fmode_amp = 0 the initial state is bit-for-bit the unseeded one, and with
-// fmode_hist false the history carries exactly the columns it carried before.  The
-// point of the diagnostic is that the (m,n) amplitude of a LINEAR mode is a clean
-// exponentially-damped/growing sinusoid, so ln|a| against t measures the scheme's
-// numerical damping rate directly.
-int fm_m_ = 1, fm_n_ = 1;        // the horizontal mode numbers of the projection
-Real fm_kx_ = 0.0, fm_ky_ = 0.0; // 2 pi m / Lx, 2 pi n / Ly
-Real fm_kh_ = 0.0;               // sqrt(kx^2 + ky^2)
-Real fm_ztop_ = 0.0;             // x1max: the reference depth of the eigenfunction
-Real fm_x2min_ = 0.0, fm_x3min_ = 0.0;
-bool fm_hist_ = false;           // write the two projection columns
 // --- the per-column emergent-flux surface dump (problem/rt_surface_dt) --------------
 Real surf_dt_ = 0.0;             // <= 0 disables it
 Real surf_next_ = -1.0;          // next dump time; armed at the first source call
@@ -1182,218 +1039,6 @@ void BoxConvProfileDump(Mesh *pm) {
   return;
 }
 
-//----------------------------------------------------------------------------------------
-//! \fn void BoxConvWorkSnap / BoxConvWorkClose / the probes
-//! \brief problem/work_hist: THE MODE-PROJECTED, PER-OPERATOR WORK INTEGRALS.
-//!
-//! Diagnostic only; nothing here writes back to the state, and with problem/work_hist
-//! false (the default) not one kernel is launched and not one history column is added.
-//!
-//! WHAT IS MEASURED.  The seeded (m,n) mode is a LINEAR horizontal Fourier mode, so the
-//! box integral of any work rate f.v against it vanishes at first order: the only work
-//! that means anything is the work PROJECTED on the mode.  Define, for each x1 row and
-//! with W(y,z) = cos(k_x (y-y0)) cos(k_y (z-z0)) the seeded horizontal pattern,
-//!    s0 = sum_plane rho            s4 = sum_plane E W
-//!    s1 = sum_plane (rho v1) W     s5 = sum_plane p W
-//!    s2 = sum_plane (rho v2) W     s6 = sum_plane p
-//!    s3 = sum_plane (rho v3) W
-//! (plane sums over the WHOLE mesh: every MeshBlock spans x1, so a local i IS a global
-//! row, and the plane sums are MPI-reduced onto rank 0, which owns the accumulators.)
-//! The mode's momentum amplitude in the row is m_c = 4 s_c/N_h and its mean density
-//! R = s0/N_h, with N_h the global plane cell count, so the MODE KINETIC ENERGY is
-//!    E_mode = sum_rows (N_h/4) dV m_c^2/(2R)  =  sum_rows 2 dV (s1^2+s2^2+s3^2)/s0 ,
-//! which is the "Emod" column.  Everything else is a CHANGE of E_mode across one
-//! operator, or a mode-projected heating work.
-//!
-//! HOW THE TERMS ARE SEPARATED.  A snapshot is taken at five points of the cycle and
-//! each interval is charged to the operator that lies inside it.  Between the end of one
-//! interval and the start of the next NOTHING else writes u0 in the active cells (the
-//! boundary exchange fills ghosts, ConToPrim writes w0), so the intervals TILE the cycle
-//! and the KE columns close exactly:
-//!    tag 0  entry of BoxConvSrcs        -> "Wflx"  the RK combination + flux divergence
-//!                                          (the mode's own pressure and advection work)
-//!    tag 1  after the gravity block     -> "Wgrv"  the well-balanced gravity source and
-//!                                          the cooling/sponge/wall/inflow sources
-//!    tag 2  after the mode-3 column     -> "Wtco"  the COLUMN HEATING's mode work
-//!    tag 3  after picket_fence returns  -> "Wfrc"  the RADIATIVE FORCE's work on the
-//!                                          mode, and "Wtfr" its v.f heating work
-//!    tag 4  end of the transverse ADI   -> "Wtad"  the ADI OPERATOR's mode work
-//! "Woth" collects the KE change of the two intervals that should not carry any (the
-//! column and the ADI change energy, not momentum): it is the CLOSURE CONTROL, and
-//!    Emod(t) - Emod(0)  =  Wflx + Wgrv + Wfrc + Woth
-//! must hold to round-off.  What it does NOT contain is anything a floor or a C2P
-//! correction puts back into u0, which is exactly what makes it a control.
-//!
-//! THE HEATING WORK.  An operator that only changes the energy does no work on the mode
-//! directly; it drives (or damps) it through the pressure it leaves for the NEXT flux
-//! step.  The standard linear measure of that is the pdV work of the heating in phase
-//! with the compression, so for a heating that deposits dE per unit volume,
-//!    W_th = sum_rows (N_h/4) dV Q (P/Pbar)  =  sum_rows 4 dV dE_proj s5/s6 ,
-//! with Q = 4 dE_proj/N_h the mode amplitude of the deposited energy and P/Pbar = 4 s5/s6
-//! the mode amplitude of the relative pressure perturbation.  The pressure weight is
-//! taken from the state at the START of the interval (w0, i.e. stage-start primitives:
-//! the pressure is not re-derived mid-stage).  Its phase error is dt/P ~ 1.6e-3 of a
-//! period, far below the effect under test.  NOTE the normalisation: this is the work
-//! integral up to the thermodynamic factor (Gamma_3 - 1), which is not applied -- a
-//! POSITIVE Wtco/Wtad/Wtfr means heating in phase with compression, i.e. DRIVING, and
-//! the terms are compared with each other and with 2 gamma E_mode, not used absolutely.
-//!
-//! ALL SEVEN "W" COLUMNS ARE CUMULATIVE (erg, summed over every stage since t = 0), so
-//! the reader differentiates them and band-passes at the mode frequency.  "Sdsp" is the
-//! instantaneous mode amplitude of v1 in the TOP active row (cm/s), 4 s1/s0 there, whose
-//! time integral is the (m,n)-projected surface displacement.
-//!
-//! WHEN THE RADIATION OPERATORS MOVE (rt_strang, rt_imex, rt_col3_sub > 1) the tag-2/3/4
-//! points still fire wherever the operator runs, but the intervals no longer tile the
-//! stage in the order above; the KE closure still holds, the per-term split is still the
-//! operator's own, and only the label "Wflx" becomes "everything since the last tag".
-constexpr int kNWk = 7;
-bool work_on_ = false;            // problem/work_hist
-bool wk_alloc_ = false;
-bool wk_armed_ = false;           // the first snapshot has been taken
-int wk_nx1_ = 0;
-Mesh *wk_pm_ = nullptr;           // for the two_stream_rt probe, which takes no Mesh
-// heap-allocated and never freed, like the solver's own scratch: a file-scope Kokkos
-// View would be destroyed AFTER Kokkos::finalize and abort the run at exit
-DvceArray2D<Real> *wkd_ptr_ = nullptr;   // (kNWk, nx1) the plane sums
-HostArray2D<Real> *wkh_ptr_ = nullptr;
-std::vector<double> wk_now_, wk_old_;
-double wk_dv_ = 0.0;              // the cell volume (uniform mesh)
-double wk_acc_[7] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
-double wk_emod_ = 0.0, wk_sdsp_ = 0.0;
-
-void BoxConvWorkSnap(Mesh *pm) {
-  MeshBlockPack *pmbp = pm->pmb_pack;
-  auto &indcs = pm->mb_indcs;
-  const int is = indcs.is, js = indcs.js, ks = indcs.ks;
-  const int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
-  const int nmb = pmbp->nmb_thispack;
-  const int nkj = nmb*nx3*nx2;
-  if (!wk_alloc_ || wkd_ptr_->extent_int(1) != nx1) {
-    if (wkd_ptr_ == nullptr) {
-      wkd_ptr_ = new DvceArray2D<Real>("boxconv_wkd", kNWk, nx1);
-      wkh_ptr_ = new HostArray2D<Real>("boxconv_wkh", kNWk, nx1);
-    } else {
-      Kokkos::realloc(*wkd_ptr_, kNWk, nx1);
-      Kokkos::realloc(*wkh_ptr_, kNWk, nx1);
-    }
-    wk_now_.assign(kNWk*nx1, 0.0);
-    wk_old_.assign(kNWk*nx1, 0.0);
-    wk_nx1_ = nx1;
-    const double dx1 = static_cast<double>(pm->mesh_size.x1max - pm->mesh_size.x1min)
-                     / static_cast<double>(pm->mesh_indcs.nx1);
-    const double dx2 = static_cast<double>(pm->mesh_size.x2max - pm->mesh_size.x2min)
-                     / static_cast<double>(pm->mesh_indcs.nx2);
-    const double dx3 = static_cast<double>(pm->mesh_size.x3max - pm->mesh_size.x3min)
-                     / static_cast<double>(pm->mesh_indcs.nx3);
-    wk_dv_ = dx1*dx2*dx3;
-    wk_alloc_ = true;
-  }
-  auto &u0 = pmbp->phydro->u0;
-  auto &w0 = pmbp->phydro->w0;
-  auto &size = pmbp->pmb->mb_size;
-  auto wd = *wkd_ptr_;
-  const Real kx = fm_kx_, ky = fm_ky_;
-  const Real x2m = fm_x2min_, x3m = fm_x3min_;
-  Kokkos::TeamPolicy<> policy(DevExeSpace(), nx1, Kokkos::AUTO);
-  Kokkos::parallel_for("boxconv_wksnap", policy,
-  KOKKOS_LAMBDA(Kokkos::TeamPolicy<>::member_type tmember) {
-    const int i = is + tmember.league_rank();
-    array_sum::GlobalSum sum;
-    Kokkos::parallel_reduce(Kokkos::TeamThreadRange(tmember, nkj),
-    [&](const int idx, array_sum::GlobalSum &ls) {
-      const int m = idx/(nx3*nx2);
-      const int kj = idx - m*(nx3*nx2);
-      const int k = ks + kj/nx2;
-      const int j = js + (kj - (kj/nx2)*nx2);
-      const Real x2min = size.d_view(m).x2min, x2max = size.d_view(m).x2max;
-      const Real x3min = size.d_view(m).x3min, x3max = size.d_view(m).x3max;
-      const Real x2v = CellCenterX(j-js, nx2, x2min, x2max);
-      const Real x3v = CellCenterX(k-ks, nx3, x3min, x3max);
-      const Real cw = cos(kx*(x2v - x2m))*cos(ky*(x3v - x3m));
-      const Real pg = w0(m,IPR,k,j,i);
-      ls.the_array[0] += u0(m,IDN,k,j,i);
-      ls.the_array[1] += u0(m,IM1,k,j,i)*cw;
-      ls.the_array[2] += u0(m,IM2,k,j,i)*cw;
-      ls.the_array[3] += u0(m,IM3,k,j,i)*cw;
-      ls.the_array[4] += u0(m,IEN,k,j,i)*cw;
-      ls.the_array[5] += pg*cw;
-      ls.the_array[6] += pg;
-    }, Kokkos::Sum<array_sum::GlobalSum>(sum));
-    Kokkos::single(Kokkos::PerTeam(tmember), [&]() {
-      for (int n=0; n<kNWk; ++n) wd(n, i-is) = sum.the_array[n];
-    });
-  });
-  Kokkos::fence();
-  auto wkh_ = *wkh_ptr_;
-  Kokkos::deep_copy(wkh_, *wkd_ptr_);
-  for (int n=0; n<kNWk; ++n) {
-    for (int i=0; i<nx1; ++i) wk_now_[n*nx1+i] = static_cast<double>(wkh_(n,i));
-  }
-#if MPI_PARALLEL_ENABLED
-  std::vector<double> rbuf((global_variable::my_rank == 0) ? kNWk*nx1 : 1);
-  MPI_Reduce(wk_now_.data(), rbuf.data(), kNWk*nx1, MPI_DOUBLE, MPI_SUM, 0,
-             MPI_COMM_WORLD);
-  if (global_variable::my_rank == 0) wk_now_.swap(rbuf);
-#endif
-  return;
-}
-
-//! the mode kinetic energy of a snapshot, E_mode = sum_rows 2 dV (s1^2+s2^2+s3^2)/s0
-double BoxConvWorkKE(const std::vector<double> &s) {
-  const int n1 = wk_nx1_;
-  double e = 0.0;
-  for (int i=0; i<n1; ++i) {
-    const double s0 = s[i];
-    if (!(s0 > 0.0)) continue;
-    const double s1 = s[n1+i], s2 = s[2*n1+i], s3 = s[3*n1+i];
-    e += 2.0*wk_dv_*(s1*s1 + s2*s2 + s3*s3)/s0;
-  }
-  return e;
-}
-
-void BoxConvWorkClose(Mesh *pm, const int tag) {
-  if (!work_on_) return;
-  BoxConvWorkSnap(pm);
-  if (global_variable::my_rank == 0) {
-    if (wk_armed_) {
-      const int n1 = wk_nx1_;
-      // the KE bucket: 0 = flux, 1 = gravity, 2 = radiative force, 3 = the control
-      const int kb = (tag == 0) ? 0 : ((tag == 1) ? 1 : ((tag == 3) ? 2 : 3));
-      wk_acc_[kb] += BoxConvWorkKE(wk_now_) - BoxConvWorkKE(wk_old_);
-      if (tag >= 2) {
-        // the mode-projected heating work of this interval, with the pressure weight
-        // taken at its START (see the header block)
-        double wth = 0.0;
-        for (int i=0; i<n1; ++i) {
-          const double s6 = wk_old_[6*n1+i];
-          if (!(s6 > 0.0)) continue;
-          wth += 4.0*wk_dv_*(wk_now_[4*n1+i] - wk_old_[4*n1+i])*wk_old_[5*n1+i]/s6;
-        }
-        wk_acc_[(tag == 2) ? 4 : ((tag == 3) ? 5 : 6)] += wth;
-      }
-    }
-    wk_armed_ = true;
-    wk_emod_ = BoxConvWorkKE(wk_now_);
-    const int n1 = wk_nx1_;
-    const double s0t = wk_now_[n1-1];
-    wk_sdsp_ = (s0t > 0.0) ? 4.0*wk_now_[n1 + n1-1]/s0t : 0.0;
-  }
-  wk_old_.swap(wk_now_);
-  return;
-}
-
-//! the ProblemGenerator::user_probe_func hook (tag 4, the end of the transverse ADI)
-void BoxConvWorkProbe(Mesh *pm, const int tag) {
-  BoxConvWorkClose(pm, tag);
-  return;
-}
-
-//! the two_stream_rt::rt_probe hook (tag 2, the end of the mode-3 column solve)
-void BoxConvWorkProbeRT(const int tag) {
-  if (wk_pm_ != nullptr) BoxConvWorkClose(wk_pm_, tag);
-  return;
-}
 }  // namespace
 
 //----------------------------------------------------------------------------------------
@@ -1442,33 +1087,9 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   const Real rho_b = pin->GetReal("problem", "rho_base");
   const Real t_b = pin->GetReal("problem", "t_base");
   const Real vpert = pin->GetOrAddReal("problem", "vpert", 0.0);
-  // --- the linear f-mode seed and its history projection (see the globals above)
-  const Real fmamp = pin->GetOrAddReal("problem", "seed_fmode_amp", 0.0);
-  fm_m_ = pin->GetOrAddInteger("problem", "seed_fmode_m", 1);
-  fm_n_ = pin->GetOrAddInteger("problem", "seed_fmode_n", 1);
-  fm_hist_ = pin->GetOrAddBoolean("problem", "fmode_hist", (fmamp > 0.0));
-  // --- problem/work_hist: the mode-projected per-operator work integrals (see the
-  // block above BoxConvWorkSnap).  Diagnostic only, and off by default.
-  work_on_ = pin->GetOrAddBoolean("problem", "work_hist", false);
-  if (work_on_) {
-    if (!fm_hist_) {
-      std::cout << "### FATAL ERROR in box_convection: problem/work_hist needs "
-                << "problem/fmode_hist -- the work integrals are projections on the "
-                << "SAME (m,n) mode the history columns track" << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
-    wk_pm_ = pmy_mesh_;
-    user_probe_func = BoxConvWorkProbe;      // tag 4: the transverse ADI operator
-    two_stream_rt::rt_probe = BoxConvWorkProbeRT;   // tag 2: the mode-3 column solve
-    if (global_variable::my_rank == 0) {
-      std::cout << "### box_convection: problem/work_hist = true, the mode-projected "
-                << "work integrals Wflx/Wgrv/Wfrc/Woth/Wtco/Wtfr/Wtad + Emod/Sdsp are "
-                << "appended to the user history" << std::endl;
-    }
-  }
   // re-integrate the supplied ic_profile into EXACT hydrostatic balance under whatever
   // EOS is in force, keeping its T(z); needed when the EOS is changed under a profile
-  // that was relaxed with a different one (the radiation-free linear f-mode test)
+  // that was relaxed with a different one
   const int hse_retune = pin->GetOrAddInteger("problem", "ic_hse_retune", 0);
   if (hse_retune < 0 || hse_retune > 2) {
     std::cout << "### FATAL ERROR in box_convection: problem/ic_hse_retune must be 0 "
@@ -1873,7 +1494,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   inflow_vmax_ = pin->GetOrAddReal("problem", "bc_inflow_vmax", -1.0);
   if (inflow_vmax_ <= 0.0) inflow_vmax_ = 0.1*cs0;
   inflow_print_n_ = pin->GetOrAddInteger("problem", "bc_inflow_print", 100);
-  inflow_ghost_ = pin->GetOrAddBoolean("problem", "bc_inflow_ghost", false);
   inflow_area_ = (pmy_mesh_->mesh_size.x2max - pmy_mesh_->mesh_size.x2min)
                 *(pmy_mesh_->mesh_size.x3max - pmy_mesh_->mesh_size.x3min);
   {
@@ -1928,7 +1548,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // --- the bottom vertical-velocity sponge (see the note on vdb_cells_ above)
   vdb_cells_ = pin->GetOrAddInteger("problem", "vdamp_bot_cells", 0);
   vdb_time_ = pin->GetOrAddReal("problem", "vdamp_bot_time", 20.0);
-  vdb_mean_ = pin->GetOrAddBoolean("problem", "vdamp_bot_mean_only", false);
   if (vdb_cells_ > 0) {
     if (2*vdb_cells_ >= pmy_mesh_->mesh_indcs.nx1) {
       std::cout << "### FATAL ERROR in box_convection: problem/vdamp_bot_cells = "
@@ -1970,11 +1589,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       pc->rad_kr_nT = knT;
       pc->rad_kr_nP = knD;
     }
-    if (pc->rad_kappa_rmax > 0.0) {
-      std::cout << "### FATAL ERROR in box_convection: <hydro>/rad_kappa_rmax compares "
-                << "against x1v, which a Cartesian mesh never allocates" << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
   }
 
   // --- THE GREY M1 MODULE (<rad_m1>), milestone 2a.  docs/dev/rad_m1_design.md and
@@ -1993,10 +1607,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     }
     if (arad_force_) {
       bad += "\n  problem/wb_arad_force -- the module supplies the residual force itself";
-    }
-    if (fm_hist_ || work_on_) {
-      bad += "\n  problem/fmode_hist / problem/work_hist (they own history slots 5-15, "
-             "which the M1 columns use)";
     }
     if (!bad.empty()) {
       std::cout << "### FATAL ERROR in box_convection: <rad_m1> cannot run together "
@@ -2214,7 +1824,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // compatibility, a NEW problem generator defaults to the FIXED one -- the same six
     // opt-ins the production red-giant inputs state explicitly.
     ts::rt_semi_lin = pin->GetOrAddBoolean("problem", "rt_semi_lin", false);
-    ts::rt_explicit = pin->GetOrAddBoolean("problem", "rt_explicit", false);
     ts::rt_newton = pin->GetOrAddBoolean("problem", "rt_newton", true);
     ts::rt_rescue_eq = pin->GetOrAddBoolean("problem", "rt_rescue_eq", true);
     ts::rt_ali_diag = pin->GetOrAddBoolean("problem", "rt_ali_diag", true);
@@ -2222,29 +1831,31 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     ts::rt_relax_xcrit = pin->GetOrAddReal("problem", "rt_relax_xcrit", 1.0);
     ts::rt_relax_submax = pin->GetOrAddInteger("problem", "rt_relax_submax", 32);
     ts::rt_src_direct = pin->GetOrAddBoolean("problem", "rt_src_direct", true);
-    ts::rt_src_dump = pin->GetOrAddInteger("problem", "rt_src_dump", 0);
     ts::rt_top_clamp = pin->GetOrAddBoolean("problem", "rt_top_clamp", true);
     ts::rt_use_cons = pin->GetOrAddBoolean("problem", "rt_use_cons", true);
     ts::rt_bface = pin->GetOrAddBoolean("problem", "rt_bface", true);
-    // the deep-limit gradient in the grey sweep's upward intensity at the cut; the
-    // fix is the default, the switch only buys back the old bit pattern
-    ts::rt_cut_bc_legacy = pin->GetOrAddBoolean("problem", "rt_cut_bc_legacy", false);
     // the staggered layer source in the sweeps; see rt_layer_legacy.  The fix is
     // the default, the switch only buys back the old bit pattern
     ts::rt_layer_legacy = pin->GetOrAddBoolean("problem", "rt_layer_legacy", false);
     ts::rt_semi_implicit = pin->GetOrAddBoolean("problem", "rt_semi_implicit", true);
-    ts::rt_outer_iter = pin->GetOrAddInteger("problem", "rt_outer_iter", 1);
     ts::rt_outer_verbose = pin->GetOrAddBoolean("problem", "rt_outer_verbose",
                                                 false);
-    // the merged implicit column solve: the two-stream source folded into the radial
-    // implicit conduction tridiagonal (see two_stream_rt.hpp, rt_implicit_column)
+    // the implicit column solve: 0 = the per-cell semi-implicit relaxation, 3 = the
+    // exact block-tridiagonal column solve (see two_stream_rt.hpp)
     ts::rt_implicit_column = pin->GetOrAddInteger("problem", "rt_implicit_column", 0);
+    if (ts::rt_implicit_column != 0 && ts::rt_implicit_column != 3) {
+      std::cout << "### FATAL ERROR in box_convection: problem/rt_implicit_column must "
+                << "be 0 (the per-cell relaxation) or 3 (the exact block-tridiagonal "
+                << "column solve).  The linearised modes 1 and 2 were removed.  Got "
+                << ts::rt_implicit_column << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
     ts::rt_impl_tol = pin->GetOrAddReal("problem", "rt_impl_tol",
                                         (ts::rt_implicit_column == 3) ? 1.0e-8 : 1.0e-6);
     ts::rt_col3_ex_iter = pin->GetOrAddBoolean("problem", "rt_col3_ex_iter",
                                                 false);
     // mode 3 (the exact block-tridiagonal column solve) converges in 2-4 Newton steps
-    // and is cheap per step, so it gets one more than the linearised modes by default
+    // and is cheap per step, so it gets one more than mode 0 by default
     ts::rt_impl_maxit = pin->GetOrAddInteger("problem", "rt_impl_maxit",
                                              (ts::rt_implicit_column == 3) ? 8 : 5);
     ts::rt_impl_exjac = pin->GetOrAddBoolean("problem", "rt_impl_exjac", true);
@@ -2252,14 +1863,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     ts::rt_impl_norm_eps = pin->GetOrAddReal("problem", "rt_impl_norm_eps", 1.0e-3);
     ts::rt_impl_dstop = pin->GetOrAddBoolean("problem", "rt_impl_dstop", true);
     ts::rt_impl_rescheck = pin->GetOrAddBoolean("problem", "rt_impl_rescheck", true);
-    ts::rt_impl_ablate = pin->GetOrAddInteger("problem", "rt_impl_ablate", 0);
-    ts::rt_impl_fixit = pin->GetOrAddBoolean("problem", "rt_impl_fixit", false);
-    if (ts::rt_impl_ablate != 0 || ts::rt_impl_fixit) {
-      std::cout << "### WARNING in box_convection: problem/rt_impl_ablate or "
-                << "rt_impl_fixit is set.  These are TIMING INSTRUMENTATION and the "
-                << "mode-3 solve they produce is NOT a correct solve." << std::endl;
-    }
-    ts::rt_impl_cvfreeze = pin->GetOrAddInteger("problem", "rt_impl_cvfreeze", 0);
     // problem/rt_impl_reuse: reuse the block factorisation across Newton passes, with a
     // contraction check (1) or unconditionally (2).  0 (the default) is the old code.
     // problem/rt_impl_mixed: 0 = double (default), 1 = single-precision Newton
@@ -2295,9 +1898,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     }
     ts::rt_impl_redpar = pin->GetOrAddBoolean("problem", "rt_impl_redpar", false);
     ts::rt_col3_hybrid_tau = pin->GetOrAddReal("problem", "rt_col3_hybrid_tau", 0.0);
-    ts::rt_col3_split_deep = pin->GetOrAddBoolean("problem", "rt_col3_split_deep",
-                                                  false);
-    ts::rt_col3_split_w = pin->GetOrAddInteger("problem", "rt_col3_split_w", 8);
     ts::rt_impl_nseg = pin->GetOrAddInteger("problem", "rt_impl_nseg", 64);
     if (ts::rt_impl_nseg < 1) {
       std::cout << "### FATAL ERROR in box_convection: problem/rt_impl_nseg must be >= 1"
@@ -2322,84 +1922,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // wder tail and read back into the staging the lazy allocation consumes -- see
     // utils/two_stream_warm_rst.hpp -- so a restart with the warm start on is a bitwise
     // continuation again.  A file written before that carries no history and says so.
-    ts::rt_impl_tau_min = pin->GetOrAddReal("problem", "rt_impl_tau_min", 1.0);
-    ts::rt_impl_dtmax = pin->GetOrAddReal("problem", "rt_impl_dtmax", 0.25);
-    ts::rt_impl_tau_blend = pin->GetOrAddReal("problem", "rt_impl_tau_blend", 1.0);
-    rt_strang_ = pin->GetOrAddBoolean("problem", "rt_strang", false);
-    rt_once_ = pin->GetOrAddBoolean("problem", "rt_once_per_cycle", false);
-    rt_col3_once_ = pin->GetOrAddBoolean("problem", "rt_col3_once", false);
-    if (rt_strang_ && rt_once_) {
-      std::cout << "### FATAL ERROR in box_convection: problem/rt_strang and "
-                << "problem/rt_once_per_cycle are mutually exclusive" << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
-    if (rt_col3_once_ && (rt_strang_ || rt_once_)) {
-      std::cout << "### FATAL ERROR in box_convection: problem/rt_col3_once is the "
-                << "once-per-cycle split of the mode-3 column source and is mutually "
-                << "exclusive with problem/rt_strang and problem/rt_once_per_cycle"
-                << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
-    if (rt_col3_once_ && ts::rt_implicit_column != 3) {
-      std::cout << "### FATAL ERROR in box_convection: problem/rt_col3_once needs "
-                << "problem/rt_implicit_column = 3 (only there does the sweep exist "
-                << "solely to feed the column solve).  Got rt_implicit_column = "
-                << ts::rt_implicit_column << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
-    // ---- problem/rt_imex: the column solve as the ImEx implicit stage operator ----
-    rt_imex_ = pin->GetOrAddBoolean("problem", "rt_imex", false);
-    if (rt_imex_) {
-      const std::string integ = pin->GetOrAddString("time", "integrator", "rk2");
-      if (integ != "imex2" && integ != "imex2+") {
-        std::cout << "### FATAL ERROR in box_convection: problem/rt_imex needs "
-                  << "<time>/integrator = imex2 or imex2+ (the a_twid/a_impl weights "
-                  << "the implicit stages are combined with exist only there).  Got "
-                  << "integrator = " << integ << std::endl;
-        std::exit(EXIT_FAILURE);
-      }
-      if (ts::rt_implicit_column != 3) {
-        std::cout << "### FATAL ERROR in box_convection: problem/rt_imex needs "
-                  << "problem/rt_implicit_column = 3 -- the ImEx implicit stage must be "
-                  << "an exact solve of the whole column, which is what mode 3 is.  Got "
-                  << "rt_implicit_column = " << ts::rt_implicit_column << std::endl;
-        std::exit(EXIT_FAILURE);
-      }
-      if (rt_strang_ || rt_once_ || rt_col3_once_) {
-        std::cout << "### FATAL ERROR in box_convection: problem/rt_imex is mutually "
-                  << "exclusive with rt_strang, rt_once_per_cycle and rt_col3_once -- "
-                  << "they are alternative ways of splitting the SAME source"
-                  << std::endl;
-        std::exit(EXIT_FAILURE);
-      }
-      user_imex_func = BoxConvRTImEx;
-      if (global_variable::my_rank == 0) {
-        std::cout << "### box_convection: problem/rt_imex = true, the mode-3 column "
-                  << "solve is the IMPLICIT STAGE OPERATOR of " << integ
-                  << " and is NOT applied as an in-stage source" << std::endl;
-      }
-    }
-    // enrolled HERE, not next to user_srcs_func: the switch is read only now
-    if (rt_strang_ || rt_once_ || rt_col3_once_) {
-      user_split_func = BoxConvRTSplit;
-      user_split_once = (rt_once_ || rt_col3_once_);
-      if (global_variable::my_rank == 0) {
-        if (rt_col3_once_) {
-          std::cout << "### box_convection: problem/rt_col3_once = true, the mode-3 "
-                    << "column source (sweep + exact column solve) is applied ONCE per "
-                    << "cycle with the FULL dt after the last RK stage and is NOT "
-                    << "applied inside the stages" << std::endl;
-        } else if (rt_once_) {
-          std::cout << "### box_convection: problem/rt_once_per_cycle = true, the grey "
-                    << "two-stream is applied ONCE per cycle with the FULL dt after the "
-                    << "last RK stage and is NOT applied inside the stages" << std::endl;
-        } else {
-          std::cout << "### box_convection: problem/rt_strang = true, the grey two-stream"
-                    << " is STRANG-SPLIT around the time integrator (dt/2 before, dt/2 "
-                    << "after) and is NOT applied inside the RK stages" << std::endl;
-        }
-      }
-    }
     // ---- problem/rt_col3_sub: sub-cycle the whole column operator in the stage ----
     rt_col3_sub_ = pin->GetOrAddInteger("problem", "rt_col3_sub", 1);
     if (rt_col3_sub_ < 1) {
@@ -2423,13 +1945,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                   << "Got rt_implicit_column = " << ts::rt_implicit_column << std::endl;
         std::exit(EXIT_FAILURE);
       }
-      if (rt_strang_ || rt_once_ || rt_col3_once_ || rt_imex_) {
-        std::cout << "### FATAL ERROR in box_convection: problem/rt_col3_sub > 1 "
-                  << "sub-cycles the IN-STAGE column source and is mutually exclusive "
-                  << "with rt_strang, rt_once_per_cycle, rt_col3_once and rt_imex, which "
-                  << "all take that source out of the stage" << std::endl;
-        std::exit(EXIT_FAILURE);
-      }
       if (global_variable::my_rank == 0) {
         std::cout << "### box_convection: problem/rt_col3_sub = " << rt_col3_sub_
                   << ", the WHOLE radiation operator (mode-3 column solve + radiative "
@@ -2438,120 +1953,22 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                   << " each, at the unchanged hydro dt" << std::endl;
       }
     }
-    // ---- problem/rt_pair_sym: the column and the ADI as a symmetric pair -------
-    rt_pair_sym_ = pin->GetOrAddInteger("problem", "rt_pair_sym", 0);
-    if (rt_pair_sym_ < 0 || rt_pair_sym_ > 1) {
-      std::cout << "### FATAL ERROR in box_convection: problem/rt_pair_sym must be 0 "
-                << "(today's ordering) or 1 (ADI(dt/2) -> column(dt) -> ADI(dt/2)).  "
-                << "Value 2 (Picard) is not implemented -- see the declaration.  Got "
-                << rt_pair_sym_ << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
-    if (rt_pair_sym_ > 0) {
-      if (rt_strang_ || rt_once_ || rt_col3_once_ || rt_imex_) {
-        std::cout << "### FATAL ERROR in box_convection: problem/rt_pair_sym is the "
-                  << "IN-STAGE pair ordering and is mutually exclusive with rt_strang, "
-                  << "rt_once_per_cycle, rt_col3_once and rt_imex, which move the "
-                  << "column out of the stage" << std::endl;
-        std::exit(EXIT_FAILURE);
-      }
-      if (pmbp->phydro == nullptr || pmbp->phydro->pcond == nullptr ||
-          !pmbp->phydro->pcond->rad_implicit_ang) {
-        std::cout << "### FATAL ERROR in box_convection: problem/rt_pair_sym needs the "
-                  << "implicit transverse operator (<hydro>/rad_implicit_ang or "
-                  << "rad_sts_all): there is no horizontal operator to pair with"
-                  << std::endl;
-        std::exit(EXIT_FAILURE);
-      }
-      if (global_variable::my_rank == 0) {
-        std::cout << "### box_convection: problem/rt_pair_sym = " << rt_pair_sym_
-                  << ", the column solve and the horizontal ADI operator are a "
-                  << "SYMMETRIC pair in every radiation call: ADI(bdt/2) -> column(bdt)"
-                  << " + force -> ADI(bdt/2), with the face conductances formed at the "
-                  << "HALF step" << std::endl;
-      }
-    }
-    // ---- problem/rt_before_flux: the REVERSED Lie order within the stage ---------
-    rt_before_flux_ = pin->GetOrAddBoolean("problem", "rt_before_flux", false);
-    if (rt_before_flux_) {
-      if (rt_strang_ || rt_once_ || rt_col3_once_ || rt_imex_ || rt_pair_sym_ > 0 ||
-          rt_col3_sub_ > 1) {
-        std::cout << "### FATAL ERROR in box_convection: problem/rt_before_flux is the "
-                  << "IN-STAGE operator ORDER and is mutually exclusive with rt_strang, "
-                  << "rt_once_per_cycle, rt_col3_once, rt_imex, rt_pair_sym and "
-                  << "rt_col3_sub > 1, which move or repeat the radiation operator"
-                  << std::endl;
-        std::exit(EXIT_FAILURE);
-      }
-      if (!rt_on_) {
-        std::cout << "### FATAL ERROR in box_convection: problem/rt_before_flux needs "
-                  << "the two-stream radiation (<problem>/rt_two_stream)" << std::endl;
-        std::exit(EXIT_FAILURE);
-      }
-      if (pmbp->phydro == nullptr || pmbp->phydro->pcond == nullptr ||
-          !pmbp->phydro->pcond->rad_implicit_ang) {
-        std::cout << "### FATAL ERROR in box_convection: problem/rt_before_flux needs "
-                  << "the implicit transverse operator (<hydro>/rad_implicit_ang): the "
-                  << "whole radiation operator, ADI included, has to move together"
-                  << std::endl;
-        std::exit(EXIT_FAILURE);
-      }
-      user_rt_before_flux = BoxConvRTBeforeFlux;
-      if (global_variable::my_rank == 0) {
-        std::cout << "### box_convection: problem/rt_before_flux = true, the RADIATION "
-                  << "OPERATOR (column + force + horizontal ADI) runs at the HEAD of "
-                  << "each RK stage, on the stage-start state, BEFORE the hydro flux "
-                  << "update -- the REVERSED Lie order (commutator sign test)"
-                  << std::endl;
-      }
-    }
-    // problem/rt_split_transverse: with the column out of the stage, take the
-    // horizontal ADI operator out with it (see the declaration above).  Default ON
-    // whenever a split is active; a no-op otherwise.  rt_col3_sub > 1 keeps the column
-    // INSIDE the stage but still has to move the transverse operator into the sub-cycle
-    // loop, and uses the same Conduction flag to silence the in-stage task.
-    const bool splitout = (rt_strang_ || rt_once_ || rt_col3_once_ || rt_imex_);
-    rt_split_tr_ = (splitout || rt_col3_sub_ > 1 || rt_pair_sym_ > 0 ||
-                    rt_before_flux_) &&
-                   pin->GetOrAddBoolean("problem", "rt_split_transverse", true);
+    // rt_col3_sub > 1 keeps the column INSIDE the stage but has to move the transverse
+    // operator into the sub-cycle loop, and uses the Conduction flag to silence the
+    // in-stage task.
+    rt_split_tr_ = (rt_col3_sub_ > 1);
     if (rt_split_tr_ && pmbp->phydro != nullptr && pmbp->phydro->pcond != nullptr &&
         pmbp->phydro->pcond->rad_implicit_ang) {
       pmbp->phydro->pcond->rad_tr_split_out = true;
       if (global_variable::my_rank == 0) {
-        std::cout << "### box_convection: problem/rt_split_transverse = true, the "
-                  << "IMPLICIT TRANSVERSE radiative operator is run "
-                  << ((rt_pair_sym_ > 0) ? "as the SYMMETRIC PAIR around the column"
-                     : (rt_before_flux_ ? "with the column at the HEAD of the stage"
-                     : ((rt_col3_sub_ > 1) ? "inside each column SUB-STEP"
-                                           : "inside the split step with the column")))
-                  << " and NOT as its own in-stage task" << std::endl;
-      }
-    }
-    // ---- problem/rt_kappa_frozen: no opacity perturbation for the mode ----------
-    // See the note in two_stream_rt.hpp.  The grey opacity kc_g is replaced by its
-    // horizontal mean in each x1 row, which removes delta kappa from the column solve
-    // AND from the radiative force (both read kc_g) while leaving the mean profile
-    // free.  The transverse ADI operator builds its own conductances in Conduction and
-    // is NOT covered by this switch.  Off = bitwise unchanged.
-    ts::rt_kappa_frozen = pin->GetOrAddBoolean("problem", "rt_kappa_frozen", false);
-    if (ts::rt_kappa_frozen) {
-      if (!ts::rt_grey) {
-        std::cout << "### FATAL ERROR in box_convection: problem/rt_kappa_frozen is a "
-                  << "GREY-path switch (it freezes kc_g where the grey opacity kernel "
-                  << "fills it)" << std::endl;
-        std::exit(EXIT_FAILURE);
-      }
-      if (global_variable::my_rank == 0) {
-        std::cout << "### box_convection: problem/rt_kappa_frozen = true, the grey "
-                  << "opacity is the HORIZONTAL MEAN of each x1 row (delta kappa = 0 "
-                  << "for the mode) in the column solve and the radiative force; the "
-                  << "transverse ADI conductances are NOT frozen" << std::endl;
+        std::cout << "### box_convection: the IMPLICIT TRANSVERSE radiative operator "
+                  << "is run inside each column SUB-STEP and NOT as its own in-stage "
+                  << "task" << std::endl;
       }
     }
     ts::rt_apply_debug = pin->GetOrAddInteger("problem", "rt_apply_debug", 0);
     ts::rt_apply_debug_n = pin->GetOrAddInteger("problem", "rt_apply_debug_n", 8);
     ts::rt_nan_report = pin->GetOrAddBoolean("problem", "nan_report", false);
-    ts::rt_dump_file = pin->GetOrAddString("problem", "rt_dump_file", "");
     ts::rt_dump_m = pin->GetOrAddInteger("problem", "rt_dump_m", 0);
     ts::rt_dump_j = pin->GetOrAddInteger("problem", "rt_dump_j", -1);
     ts::rt_dump_k = pin->GetOrAddInteger("problem", "rt_dump_k", -1);
@@ -2694,9 +2111,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                "weight is 0 on every face and the handover is identically zero (the "
                "weights themselves are checked once, on the first RT call)";
       }
-      if (ts::rt_src_dump > 0) {
-        bad += "\n  problem/rt_src_dump reads the sweep's Src";
-      }
       if (ts::rt_apply_debug > 0) {
         bad += "\n  problem/rt_apply_debug reads the sweep's Em, Src and Qb";
       }
@@ -2724,50 +2138,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                     << "one's" << std::endl;
         }
       }
-    }
-    // ---- problem/rt_force_center, problem/rt_src_theta: the TIME CENTRING of the
-    // two coupling terms the mode-3 column leaves first-order (see two_stream_rt.hpp).
-    // Both are default-off and bitwise off; both need the exact column solve.
-    ts::rt_force_center = pin->GetOrAddInteger("problem", "rt_force_center", 0);
-    if (ts::rt_force_center < 0 || ts::rt_force_center > 2) {
-      std::cout << "### FATAL ERROR in box_convection: problem/rt_force_center must be "
-                << "0 (entry flux), 1 (converged flux) or 2 (the average)" << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
-    if (ts::rt_force_center > 0 && ts::rt_implicit_column != 3) {
-      std::cout << "### FATAL ERROR in box_convection: problem/rt_force_center needs "
-                << "problem/rt_implicit_column = 3 (only the exact column solve has a "
-                << "converged flux to centre against)" << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
-    ts::rt_src_theta = pin->GetOrAddReal("problem", "rt_src_theta", 1.0);
-    if (ts::rt_src_theta < 0.0 || ts::rt_src_theta > 1.0) {
-      std::cout << "### FATAL ERROR in box_convection: problem/rt_src_theta must be in "
-                << "[0, 1]" << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
-    if (ts::rt_src_theta != 1.0) {
-      if (ts::rt_implicit_column != 3) {
-        std::cout << "### FATAL ERROR in box_convection: problem/rt_src_theta != 1 needs "
-                  << "problem/rt_implicit_column = 3" << std::endl;
-        std::exit(EXIT_FAILURE);
-      }
-      if (ts::rt_col3_skip_sweep) {
-        // the explicit deposit IS the skipped sweep's source, so the sweep has to run:
-        // turn the skip off rather than refuse the switch (it costs ~11 % per cycle)
-        ts::rt_col3_skip_sweep = false;
-        if (global_variable::my_rank == 0) {
-          std::cout << "### WARNING in box_convection: problem/rt_src_theta != 1 needs "
-                    << "the entry sweep's source, so problem/rt_col3_skip_sweep is "
-                    << "turned OFF for this run" << std::endl;
-        }
-      }
-    }
-    if (global_variable::my_rank == 0 &&
-        (ts::rt_force_center > 0 || ts::rt_src_theta != 1.0)) {
-      std::cout << "### box_convection: RT coupling centring -- rt_force_center = "
-                << ts::rt_force_center << " (0 entry flux, 1 converged flux, 2 average), "
-                << "rt_src_theta = " << ts::rt_src_theta << std::endl;
     }
     ts::rt_tint_override = teff_bot;
     ts::rt_star_teff = 0.0;
@@ -2799,14 +2169,13 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // half-steps around the time integrator -- so that the test reproduces the splitting
   // situation, not an in-stage source.
   if (arad_force_) {
-    if (rt_on_ && !(rt_strang_ || rt_once_ || rt_col3_once_)) {
+    if (rt_on_) {
       std::cout << "### FATAL ERROR in box_convection: problem/wb_arad_force needs the "
                 << "split hook, which problem/rt_two_stream is using in-stage here; run "
-                << "the a_rad test with the two-stream off, or with rt_strang"
-                << std::endl;
+                << "the a_rad test with the two-stream off" << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    user_split_func = BoxConvRTSplit;
+    user_split_func = BoxConvARadForce;
     if (global_variable::my_rank == 0) {
       std::cout << "### box_convection: problem/wb_arad_force = true, rho*a_rad is "
                 << "applied as a STRANG-SPLIT momentum source (plus its v1 work term)"
@@ -2846,9 +2215,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     if (vdb_cells_ > 0) {
       const Real zbot = zmin + vdb_cells_*(zmax - zmin)/pmy_mesh_->mesh_indcs.nx1;
       std::printf("  bottom v1 sponge: i = is .. is+%d, z <= %.5e (%.4f H_p),"
-                  " f = 0.5(1+cos(pi (i-is)/N)), timescale %.4e s, %s\n",
-                  vdb_cells_-1, zbot, (zbot - zmin)/hp0, vdb_time_,
-                  vdb_mean_ ? "the PLANE MEAN of v1 only" : "the FULL v1");
+                  " f = 0.5(1+cos(pi (i-is)/N)), timescale %.4e s\n",
+                  vdb_cells_-1, zbot, (zbot - zmin)/hp0, vdb_time_);
     }
     std::printf("  x1 walls: bc_mode = %d (0 column ghost, 1 mirror, 2 mirror x the"
                 " column ratio, 3 WB continuation), wall_noflux = %d%s\n",
@@ -2866,18 +2234,17 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     if (bc_mode_bot_ >= 0) {
       std::printf("  x1 BOTTOM wall overridden: bc_mode_bot = %d%s\n", bc_mode_bot_,
                   (bc_mode_bot_ == 5)
-                  ? " = INFLOW (base-state ghost under bc_inflow_ghost, wall still"
-                    " impermeable, v_in injected as a source in the wall cell)"
+                  ? " = INFLOW (wall still impermeable, v_in injected as a source in"
+                    " the wall cell)"
                   : "");
     }
     if (bc_mode_bot_ == 5) {
       std::printf("  bottom inflow controller: M0 = %.8e (A = %.5e, rho_base = %.5e),"
                   " tau_in = %.5e s = %.4f turnover, v_in <= %.5e cm/s = %.4f c_s,"
-                  " e_base = %.5e, p_base = %.5e, ghost = %s, print every %d cycles\n",
+                  " e_base = %.5e, p_base = %.5e, print every %d cycles\n",
                   inflow_mass0_, inflow_area_, inflow_rhob_,
                   inflow_tau_, inflow_tau_/tturn, inflow_vmax_, inflow_vmax_/cs0,
-                  inflow_eb_, inflow_pb_,
-                  inflow_ghost_ ? "base state" : "bc_mode", inflow_print_n_);
+                  inflow_eb_, inflow_pb_, inflow_print_n_);
     }
     if (pc != nullptr) {
       std::printf("  rad_kappa_fac = %.5e (conductivity is 1/rad_kappa_fac x physical)\n",
@@ -2991,32 +2358,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   const Real x2min_m = pmy_mesh_->mesh_size.x2min, x2max_m = pmy_mesh_->mesh_size.x2max;
   const Real x3min_m = pmy_mesh_->mesh_size.x3min, x3max_m = pmy_mesh_->mesh_size.x3max;
   const Real plz = pzhi - pzlo;
-  // --- problem/seed_fmode_amp: the LINEAR SURFACE-GRAVITY-WAVE SEED.  One horizontal
-  // Fourier mode (m,n) of the box, in the vertical velocity only, with the f-mode's own
-  // depth eigenfunction exp(k_h (z - z_top)).  Density and pressure are left alone: the
-  // mode sorts its own thermodynamic part out within the first period, at the cost of
-  // shedding half the seed into the counter-propagating branch, which is irrelevant to
-  // a growth rate measured over periods 1-4.  The amplitude is in units of the sound
-  // speed at the TOP of the box, where the eigenfunction peaks.
-  fm_kx_ = 2.0*M_PI*fm_m_/(x2max_m - x2min_m);
-  fm_ky_ = (indcs.nx3 > 1) ? (2.0*M_PI*fm_n_/(x3max_m - x3min_m)) : 0.0;
-  fm_kh_ = std::sqrt(fm_kx_*fm_kx_ + fm_ky_*fm_ky_);
-  fm_ztop_ = zmax;  fm_x2min_ = x2min_m;  fm_x3min_ = x3min_m;
-  Real cs_top = 0.0;
-  {
-    int it = static_cast<int>((zmax - zlo)/dzf);
-    it = (it < 0) ? 0 : ((it > nfine-1) ? nfine-1 : it);
-    const Real dtop = cd.h_view(it), ptop = cp.h_view(it);
-    cs_top = std::sqrt(pgen_eos::HostGamma1FromP(eos, dtop, ptop)*ptop/dtop);
-  }
-  const Real fm_kx = fm_kx_, fm_ky = fm_ky_, fm_kh = fm_kh_;
-  const Real fm_v0 = fmamp*cs_top;
-  if (global_variable::my_rank == 0 && fmamp > 0.0) {
-    std::printf("box_convection: f-MODE SEED (%d,%d)  k_h = %.5e cm^-1  "
-                "omega^2 = g k_h = %.5e s^-2  P = %.4f s  amp = %.3e c_s(top) "
-                "= %.5e cm/s\n", fm_m_, fm_n_, fm_kh_, g0*fm_kh_,
-                2.0*M_PI/std::sqrt(g0*fm_kh_), fmamp, fm_v0);
-  }
   par_for("boxconv_ic", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1, 0, n1m1,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const Real x1min = size.d_view(m).x1min, x1max = size.d_view(m).x1max;
@@ -3049,10 +2390,6 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         // entropy seed: internal energy (and so the pressure) scaled at fixed density
         efac = 1.0 + vpert*env*amp;
       }
-    }
-    if (fm_v0 > 0.0 && z > zmin && z < zmax) {
-      v1 += fm_v0*exp(fm_kh*(z - zmax))*cos(fm_kx*(x2v - x2min_m))
-                                       *cos(fm_ky*(x3v - x3min_m));
     }
     u0(m,IDN,k,j,i) = d;
     u0(m,IM1,k,j,i) = d*v1;
@@ -3200,25 +2537,6 @@ void BoxConvRebuildRadWeights(Mesh *pm, Real bdt) {
 }
 
 //----------------------------------------------------------------------------------------
-//! \fn void BoxConvTransverseApply
-//! \brief one application of the horizontal (transverse ADI / RKL1) radiative operator
-//! over `dt`, on the state as it stands, plus the problem/work_hist tag-4 close.  It is
-//! exactly the call the rt_split_transverse paths make inline; it exists so that the
-//! symmetric pair (problem/rt_pair_sym) can make it twice with a half step.
-
-void BoxConvTransverseApply(Mesh *pm, Real dt) {
-  hydro::Hydro *ph = pm->pmb_pack->phydro;
-  if (ph == nullptr || ph->pcond == nullptr || !ph->pcond->rad_implicit_ang) return;
-  if (ph->pcond->rad_sts_all) {
-    ph->pcond->StsConductionUpdate(ph->u0, ph->peos->eos_data, dt);
-  } else {
-    ph->pcond->ImplicitTransverseUpdate(ph->u0, ph->peos->eos_data, dt);
-  }
-  BoxConvWorkClose(pm, 4);   // problem/work_hist: the transverse ADI operator
-  return;
-}
-
-//----------------------------------------------------------------------------------------
 //! \fn void BoxConvSrcs
 //! \brief constant gravity along x1 -- in the well-balanced form under
 //! wellbalance_dynamic -- plus the top cooling layer.
@@ -3235,10 +2553,6 @@ void BoxConvSrcs(Mesh *pm, Real bdt) {
       while (prof_next_ <= pm->time) prof_next_ += prof_dt_;
     }
   }
-  // problem/work_hist, tag 0: this task runs immediately after RKUpdate and nothing
-  // between them writes u0 in the active cells, so the interval that closes here is
-  // exactly the RK combination plus the flux divergence.
-  BoxConvWorkClose(pm, 0);
   MeshBlockPack *pmbp = pm->pmb_pack;
   auto &indcs = pm->mb_indcs;
   const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
@@ -3393,52 +2707,14 @@ void BoxConvSrcs(Mesh *pm, Real bdt) {
   // cancelled by the sponge in the same stage.
   if (vdb_cells_ > 0) {
     const int nb = vdb_cells_;
-    const int gnx2 = pm->mesh_indcs.nx2, gnx3 = pm->mesh_indcs.nx3;
-    if (vdb_d_.extent_int(0) != nb) {
-      Kokkos::realloc(vdb_d_, nb);
-      Kokkos::realloc(vdb_h_, nb);
-    }
-    auto vdb = vdb_d_;
-    if (vdb_mean_) {
-      // one team per x1 index of the layer sums v1 over that plane's (m,k,j); the plane
-      // SUMS are Allreduced (every rank applies the mean) and divided by the global
-      // plane cell count, exactly as the profile dump does
-      const int lnx2 = indcs.nx2, lnx3 = indcs.nx3;
-      const int nkj = (nmb1+1)*lnx3*lnx2;
-      Kokkos::TeamPolicy<> vpol(DevExeSpace(), nb, Kokkos::AUTO);
-      Kokkos::parallel_for("boxconv_vdbot_mean", vpol,
-      KOKKOS_LAMBDA(Kokkos::TeamPolicy<>::member_type tmember) {
-        const int i = is + tmember.league_rank();
-        Real vs = 0.0;
-        Kokkos::parallel_reduce(Kokkos::TeamThreadRange(tmember, nkj),
-        [&](const int idx, Real &ls) {
-          const int m = idx/(lnx3*lnx2);
-          const int kj = idx - m*(lnx3*lnx2);
-          const int k = ks + kj/lnx2;
-          const int j = js + (kj - (kj/lnx2)*lnx2);
-          ls += u0(m,IM1,k,j,i)/u0(m,IDN,k,j,i);
-        }, Kokkos::Sum<Real>(vs));
-        Kokkos::single(Kokkos::PerTeam(tmember), [&]() { vdb(i-is) = vs; });
-      });
-      Kokkos::fence();
-      Kokkos::deep_copy(vdb_h_, vdb_d_);
-#if MPI_PARALLEL_ENABLED
-      MPI_Allreduce(MPI_IN_PLACE, vdb_h_.data(), nb, MPI_ATHENA_REAL, MPI_SUM,
-                    MPI_COMM_WORLD);
-#endif
-      const Real fpl = 1.0/static_cast<Real>(gnx2*gnx3);
-      for (int q=0; q<nb; ++q) vdb_h_(q) *= fpl;
-      Kokkos::deep_copy(vdb_d_, vdb_h_);
-    }
     const Real vb_rate = bdt/vdb_time_;
-    const bool vb_mean = vdb_mean_;
     par_for("boxconv_vdbot", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, is+nb-1,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       const Real f = 0.5*(1.0 + std::cos(M_PI*static_cast<Real>(i-is)/nb));
       const Real gg = 1.0 - std::exp(-f*vb_rate);
       const Real dc = u0(m,IDN,k,j,i);
       const Real m1o = u0(m,IM1,k,j,i);
-      const Real m1n = m1o - gg*(vb_mean ? dc*vdb(i-is) : m1o);
+      const Real m1n = m1o - gg*m1o;
       u0(m,IM1,k,j,i) = m1n;
       u0(m,IEN,k,j,i) += 0.5*(SQR(m1n) - SQR(m1o))/dc;
     });
@@ -3560,44 +2836,23 @@ void BoxConvSrcs(Mesh *pm, Real bdt) {
     bud_e = e3;
   }
 
-  // problem/work_hist, tag 1: everything above -- the well-balanced gravity source, the
-  // cooling layer, the top sponge, the wall-flux cancellation and the bottom inflow.
-  BoxConvWorkClose(pm, 1);
-
   // --- the grey two-stream, after gravity and the cooling layer, exactly where
   // red_giant.cpp calls it: inside the stage, on the state the last ConToPrim left.
-  // problem/rt_before_flux: the whole block has already run at the head of this stage,
-  // in Hydro::RTBeforeFlux (BoxConvRTBeforeFlux), on the stage-start state.
-  if (rt_on_ && !rt_strang_ && !rt_once_ && !rt_col3_once_ && !rt_imex_ &&
-      !rt_before_flux_) {
+  if (rt_on_) {
     // problem/rt_col3_sub: N applications of the WHOLE radiation operator per stage with
     // beta_dt/N each, at the unchanged hydro dt.  N = 1 is one pass of exactly the call
     // that was here, with no rebuild and no transverse call -- bitwise the old code.
     const int nsub = rt_col3_sub_;
     const Real sdt = bdt/static_cast<Real>(nsub);
     for (int isub=0; isub<nsub; ++isub) {
-      // problem/rt_pair_sym = 1: the frozen ADI face conductances are formed with the
-      // HALF step and used for BOTH halves of the symmetric pair, which is what makes
-      // the pair adjoint-symmetric; the rebuild also refreshes w0 (and so the tau/blend
-      // weights) for the column solve that follows, exactly as the sub-cycle does.
-      if (rt_pair_sym_ == 1) {
-        BoxConvRebuildRadWeights(pm, 0.5*sdt);
-        BoxConvTransverseApply(pm, 0.5*sdt);
-      } else if (nsub > 1 || rtwps_) {
+      if (nsub > 1 || rtwps_) {
         BoxConvRebuildRadWeights(pm, sdt);
       }
       two_stream_rt::picket_fence_two_stream_RT(pm, sdt);
-      // problem/work_hist, tag 3: the column solve closed its own interval from inside
-      // (two_stream_rt::rt_probe, tag 2), so what closes here is the radiative momentum
-      // force and nothing else.
-      BoxConvWorkClose(pm, 3);
       // the horizontal ADI operator travels WITH the column, over the same sub-step and
-      // on the state the column solve has just relaxed (the ordering rt_split_transverse
-      // established).  The in-stage transverse task is a no-op under rad_tr_split_out.
-      if (rt_pair_sym_ == 1) {
-        // the closing half of the symmetric pair, on the state the column just relaxed
-        BoxConvTransverseApply(pm, 0.5*sdt);
-      } else if (nsub > 1 && rt_split_tr_) {
+      // on the state the column solve has just relaxed.  The in-stage transverse task
+      // is a no-op under rad_tr_split_out.
+      if (nsub > 1 && rt_split_tr_) {
         hydro::Hydro *ph = pm->pmb_pack->phydro;
         if (ph != nullptr && ph->pcond != nullptr && ph->pcond->rad_implicit_ang) {
           if (ph->pcond->rad_sts_all) {
@@ -3605,7 +2860,6 @@ void BoxConvSrcs(Mesh *pm, Real bdt) {
           } else {
             ph->pcond->ImplicitTransverseUpdate(ph->u0, ph->peos->eos_data, sdt);
           }
-          BoxConvWorkClose(pm, 4);  // problem/work_hist: the transverse ADI operator
         }
       }
       if (bud_on) {
@@ -3632,14 +2886,6 @@ void BoxConvSrcs(Mesh *pm, Real bdt) {
   }
   return;
 }
-
-//----------------------------------------------------------------------------------------
-//! \fn void BoxConvRTSplit
-//! \brief problem/rt_strang: the grey two-stream as a Strang-split operator around the
-//! time integrator.  Hydro::RTStrangSplit calls this twice a cycle with bdt = dt/2, on
-//! the state at the start and at the end of the cycle, and runs ConToPrim after each.
-//! Nothing else moves: this is exactly the call BoxConvSrcs makes when rt_strang is
-//! off, with a different dt and at a different point in the cycle.
 
 //----------------------------------------------------------------------------------------
 //! \fn void BoxConvARadForce
@@ -3693,221 +2939,6 @@ void BoxConvARadForce(Mesh *pm, Real bdt) {
   return;
 }
 
-void BoxConvRTSplit(Mesh *pm, Real bdt) {
-  BoxConvARadForce(pm, bdt);
-  if (!rt_on_) return;
-  // the same budget bookkeeping the in-stage call does, so the energy budget and the
-  // Ftop/Fcut integrals stay complete when the source moves out of the stage
-  const bool bud_on = (rtbud_n_ > 0);
-  Real e0 = 0.0, r0 = 0.0;
-  if (bud_on) BoxConvBoxInt(pm, e0, r0);
-  if (rtwps_) BoxConvRebuildRadWeights(pm, bdt);
-  two_stream_rt::picket_fence_two_stream_RT(pm, bdt);
-  BoxConvWorkClose(pm, 3);   // problem/work_hist: the radiative force (see tag 3 above)
-  // problem/rt_split_transverse: the horizontal ADI operator moves WITH the column, over
-  // the same bdt and on the state the column solve has just relaxed.  Its x2/x3 ghosts
-  // are the last exchange's, exactly as they are for the in-stage task it replaces
-  // (imptrc runs before SendU), so nothing is more stale than before.
-  if (rt_split_tr_) {
-    hydro::Hydro *ph = pm->pmb_pack->phydro;
-    if (ph != nullptr && ph->pcond != nullptr && ph->pcond->rad_implicit_ang) {
-      if (ph->pcond->rad_sts_all) {
-        ph->pcond->StsConductionUpdate(ph->u0, ph->peos->eos_data, bdt);
-      } else {
-        ph->pcond->ImplicitTransverseUpdate(ph->u0, ph->peos->eos_data, bdt);
-      }
-      BoxConvWorkClose(pm, 4);   // problem/work_hist: the transverse ADI operator
-    }
-  }
-  if (bud_on) {
-    Real e4, r4, ft, fc;
-    BoxConvBoxInt(pm, e4, r4);
-    rtbud_h_[9] += e4 - e0;
-    BoxConvFtopInt(pm, ft, fc);
-    rtbud_h_[11] += bdt*ft;
-    rtbud_h_[12] += bdt*fc;
-  }
-  if (surf_dt_ > 0.0 && two_stream_rt::rt_face_flux_ready()) {
-    if (surf_next_ < 0.0) surf_next_ = pm->time;
-    if (pm->time >= surf_next_) {
-      BoxConvSurfaceDump(pm);
-      while (surf_next_ <= pm->time) surf_next_ += surf_dt_;
-    }
-  }
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn void BoxConvRTBeforeFlux
-//! \brief problem/rt_before_flux: the WHOLE radiation operator at the HEAD of the RK
-//! stage, on the stage-start state, BEFORE the hydro flux update -- the reversed Lie
-//! order (see the declaration of rt_before_flux_).  Enrolled as
-//! ProblemGenerator::user_rt_before_flux; Hydro::RTBeforeFlux calls it once per stage
-//! with that stage's beta_dt and follows it with a ghost/BC update and a ConToPrim.
-//!
-//! The sequence is EXACTLY the one BoxConvSrcs runs today at rt_col3_sub = 1,
-//! rt_pair_sym = 0 -- the column solve + radiative force, then the horizontal ADI over
-//! the same step -- with the same budget bookkeeping and the same per-column surface
-//! dump, so nothing but the position in the stage changes.
-
-void BoxConvRTBeforeFlux(Mesh *pm, Real bdt) {
-  if (!rt_on_ || !rt_before_flux_) return;
-  const bool bud_on = (rtbud_n_ > 0);
-  Real e0 = 0.0, r0 = 0.0;
-  if (bud_on) BoxConvBoxInt(pm, e0, r0);
-  // The tau/blend weights and the frozen ADI face conductances are normally built inside
-  // Hydro::Fluxes, from the STAGE-START primitives -- which have not been built yet when
-  // this runs (and do not exist at all in the first stage of a run).  Build them here,
-  // from the same stage-start state, so the operator sees exactly the coefficients the
-  // in-stage ordering gives it: this is the rebuild rt_col3_sub / rt_pair_sym make.
-  BoxConvRebuildRadWeights(pm, bdt);
-  two_stream_rt::picket_fence_two_stream_RT(pm, bdt);
-  // problem/work_hist, tag 3: the column solve closed its own interval from inside
-  // (two_stream_rt::rt_probe, tag 2), so what closes here is the radiative force
-  BoxConvWorkClose(pm, 3);
-  // the horizontal ADI operator travels WITH the column (rt_split_transverse is forced
-  // on, so the in-stage transverse task is a no-op); tag 4 closes inside the call
-  BoxConvTransverseApply(pm, bdt);
-  if (bud_on) {
-    Real e4, r4, ft, fc;
-    BoxConvBoxInt(pm, e4, r4);
-    rtbud_h_[9] += e4 - e0;
-    BoxConvFtopInt(pm, ft, fc);
-    rtbud_h_[11] += bdt*ft;
-    rtbud_h_[12] += bdt*fc;
-  }
-  // the per-column surface dump, once per cycle (pm->time does not move between stages)
-  if (surf_dt_ > 0.0 && two_stream_rt::rt_face_flux_ready()) {
-    if (surf_next_ < 0.0) surf_next_ = pm->time;
-    if (pm->time >= surf_next_) {
-      BoxConvSurfaceDump(pm);
-      while (surf_next_ <= pm->time) surf_next_ += surf_dt_;
-    }
-  }
-  return;
-}
-
-//----------------------------------------------------------------------------------------
-//! \fn void BoxConvRTImEx
-//! \brief problem/rt_imex: the mode-3 column solve AS THE IMPLICIT STAGE OPERATOR of the
-//! ImEx-RK integrator (<time>/integrator = imex2 or imex2+).  Enrolled as
-//! ProblemGenerator::user_imex_func and called by Hydro::RTImEx (once per explicit
-//! stage, in the place the in-stage source it replaces occupied) and by
-//! Hydro::RTImExFirst (with estage = -1 and 0, at the head of stage 1, for the extra
-//! fully implicit stages the tableau adds).
-//!
-//! It mirrors IonNeutral::ImpRKUpdate exactly -- that is the only true ImEx user in the
-//! code, and its conventions are what the Driver's weights are written for:
-//!   istage = estage + 2         the implicit stage number, 1..nimp_stages+1
-//!   slot   = istage - 1         where this stage's source S^(l) is stored
-//!   row    = istage - 2         the a_twid row used to recombine the stored sources
-//! and the three steps per stage are
-//!   (a) u0 += dt*sum_{l<=row} a_twid[row][l]*S^(l)   the earlier sources, EXPLICITLY
-//!   (b) the implicit solve on that state with the effective step a_impl*dt
-//!   (c) S^(slot) = (u0_after - u0_before)/(a_impl*dt) = R(U^(istage))
-//! (b) and (c) are skipped on the LAST explicit stage (estage == nexp_stages), which is
-//! the final combination and does (a) only.  a_twid is NOT the implicit Butcher tableau
-//! and the diagonal is NOT a_twid[k][k]: the solve always uses a_impl (0.5 for imex2,
-//! 1+1/sqrt(2) for imex2+), exactly as ion-neutral does.
-//!
-//! Because the column solve is backward Euler over a_impl*dt (mode 3 solves the cell
-//! energies implicitly), the increment it returns divided by a_impl*dt IS the source
-//! evaluated on the state the solve produced, which is what (c) needs.
-//!
-//! WHAT IS IN THE OPERATOR: the energy exchange, the radiative momentum force
-//! (problem/rt_rad_force) and its work -- the whole of what picket_fence_two_stream_RT
-//! writes into u0 -- hence the four stored components IM1,IM2,IM3,IEN.  The force is
-//! therefore evaluated on THAT stage's fresh column solve (it is computed in the same
-//! kernel that applies the energy source) and recombined with the same weights.  The
-//! horizontal ADI operator (<hydro>/rad_implicit_ang) is NOT part of it: it stays the
-//! separate operator-split task it is today, right after this one.  It is the obvious
-//! next thing to fold in if a residual O(dt) mode survives.
-//!
-//! RESTARTS need no new state: slot l is written at implicit stage l+1 and first read at
-//! stage l+2 of the SAME cycle, so the array is rebuilt from scratch every cycle.
-
-void BoxConvRTImEx(Mesh *pm, Driver *pd, const int estage) {
-  if (!rt_on_ || !rt_imex_) return;
-  const int istage = estage + 2;
-  MeshBlockPack *pmbp = pm->pmb_pack;
-  auto &indcs = pm->mb_indcs;
-  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
-  const int ks = indcs.ks, ke = indcs.ke;
-  const int nmb1 = pmbp->nmb_thispack - 1;
-  auto &u0 = pmbp->phydro->u0;
-  const Real dt = pm->dt;
-
-  // allocated here, not in UserProblem: the Driver (which owns nimp_stages) is built
-  // after the problem generator.  Zeroed, so the coefficient-zero slots imex2+ never
-  // writes can still be read.
-  if (rtimex_src_.extent(0) == 0) {
-    const int nmb = std::max(pmbp->nmb_thispack, pm->nmb_maxperrank);
-    const int n1 = indcs.nx1 + 2*indcs.ng;
-    const int n2 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*indcs.ng) : 1;
-    const int n3 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*indcs.ng) : 1;
-    Kokkos::realloc(rtimex_src_, pd->nimp_stages, nmb, 4, n3, n2, n1);
-    Kokkos::deep_copy(rtimex_src_, 0.0);
-  }
-
-  // imex2+ (Krapp et al. 2024) has all-zero a_twid rows 0 and 1 and no implicit
-  // contribution at its first two implicit stages: they are NO-OPS, exactly as
-  // IonNeutral::ImpRKUpdate zeroes its coefficients there.  The practical gain is that
-  // imex2+ needs no pre-stage at all, so nothing is ever solved before the stage-1 flux
-  // divergence and no ghost zone is ever a stage stale (see the note in RTImExFirst).
-  const bool noop = (pd->integrator == "imex2+") && (istage < 3);
-  if (noop) return;
-
-  // ---- (a) the earlier stages' sources, re-applied EXPLICITLY --------------------
-  if (istage > 1) {
-    const int row = istage - 2;
-    Real wgt[4];
-    for (int l=0; l<4; ++l) wgt[l] = (l <= row) ? (pd->a_twid[row][l])*dt : 0.0;
-    const Real w0c = wgt[0], w1c = wgt[1], w2c = wgt[2], w3c = wgt[3];
-    const int nl = row;
-    auto s_ = rtimex_src_;
-    par_for("boxconv_imex_exp", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      Real d[4] = {0.0, 0.0, 0.0, 0.0};
-      const Real ww[4] = {w0c, w1c, w2c, w3c};
-      for (int l=0; l<=nl; ++l) {
-        for (int c=0; c<4; ++c) d[c] += ww[l]*s_(l,m,c,k,j,i);
-      }
-      u0(m,IM1,k,j,i) += d[0];
-      u0(m,IM2,k,j,i) += d[1];
-      u0(m,IM3,k,j,i) += d[2];
-      u0(m,IEN,k,j,i) += d[3];
-    });
-  }
-
-  // ---- (b) the implicit solve, and (c) the source it defines ---------------------
-  // Skipped on the last explicit stage, which only combines what is stored.
-  if (estage < pd->nexp_stages) {
-    const int sl = istage - 1;
-    const Real adt = (pd->a_impl)*dt;
-    auto s_ = rtimex_src_;
-    // stash -u0 in the slot: the increment is formed in place, no second array
-    par_for("boxconv_imex_pre", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      s_(sl,m,0,k,j,i) = -u0(m,IM1,k,j,i);
-      s_(sl,m,1,k,j,i) = -u0(m,IM2,k,j,i);
-      s_(sl,m,2,k,j,i) = -u0(m,IM3,k,j,i);
-      s_(sl,m,3,k,j,i) = -u0(m,IEN,k,j,i);
-    });
-    // the solve.  BoxConvRTSplit is the bare call plus the budget/Ftop/surface-dump
-    // bookkeeping the in-stage call also does; nothing in it depends on WHERE it is
-    // called from, only on the dt it is handed.
-    BoxConvRTSplit(pm, adt);
-    const Real iadt = 1.0/adt;
-    par_for("boxconv_imex_rec", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      s_(sl,m,0,k,j,i) = (s_(sl,m,0,k,j,i) + u0(m,IM1,k,j,i))*iadt;
-      s_(sl,m,1,k,j,i) = (s_(sl,m,1,k,j,i) + u0(m,IM2,k,j,i))*iadt;
-      s_(sl,m,2,k,j,i) = (s_(sl,m,2,k,j,i) + u0(m,IM3,k,j,i))*iadt;
-      s_(sl,m,3,k,j,i) = (s_(sl,m,3,k,j,i) + u0(m,IEN,k,j,i))*iadt;
-    });
-  }
-  return;
-}
-
 //----------------------------------------------------------------------------------------
 //! \fn void BoxConvHistory
 //! \brief the emergent-flux history columns.  See the header block for what each is and
@@ -3919,8 +2950,8 @@ void BoxConvRTImEx(Mesh *pm, Driver *pd, const int estage) {
 
 void BoxConvHistory(HistoryData *pdata, Mesh *pm) {
   // ---- THE <rad_m1> COLUMNS (milestone 2a).  They REPLACE the two-stream's five, which
-  // are dead with the module on (their source is two_stream_rt's face-flux array), and
-  // the pgen refuses fmode_hist / work_hist alongside, so slots 0..5 are free.
+  // are dead with the module on (their source is two_stream_rt's face-flux array), so
+  // slots 0..5 are free.
   //   F1top/F1mid/F1bot  plane-mean lab flux F_1 at the top, mid and bottom ACTIVE cell
   //                      -- luminosity constancy is F1(z)/F_imposed
   //   V1max              max |v1| over the box (cm/s; compare with v_MLT and c_s)
@@ -4064,85 +3095,14 @@ void BoxConvHistory(HistoryData *pdata, Mesh *pm) {
     }
     return;
   }
-  pdata->nhist = 5 + (fm_hist_ ? 2 : 0) + (work_on_ ? 9 : 0);
+  pdata->nhist = 5;
   pdata->label[0] = "Ftop";
   pdata->label[1] = "Ftop2";
   pdata->label[2] = "Fcut";
   pdata->label[3] = "Ttop";
   pdata->label[4] = "Ttop2";
-  if (fm_hist_) {
-    pdata->label[5] = "fmAc";
-    pdata->label[6] = "fmAs";
-  }
-  if (work_on_) {
-    pdata->label[7]  = "Wflx";   // cumulative mode-KE change across RKUpdate
-    pdata->label[8]  = "Wgrv";   // ... across the gravity/WB + layer sources
-    pdata->label[9]  = "Wfrc";   // ... across the radiative momentum force
-    pdata->label[10] = "Woth";   // ... across the column + ADI: the closure control
-    pdata->label[11] = "Wtco";   // the column heating's mode-projected pdV work
-    pdata->label[12] = "Wtfr";   // the radiative force's v.f heating work, same measure
-    pdata->label[13] = "Wtad";   // the transverse ADI operator's, same measure
-    pdata->label[14] = "Emod";   // the mode kinetic energy (instantaneous)
-    pdata->label[15] = "Sdsp";   // mode amplitude of v1 in the top row (cm/s)
-  }
   for (int n=0; n<pdata->nhist; ++n) pdata->hdata[n] = 0.0;
 
-  // --- problem/fmode_hist: the (m,n) amplitude of the vertical velocity, projected
-  // with the f-mode's own depth weight exp(k_h (z - z_top)).  fmAc is the cos.cos
-  // projection (the phase the seed is written in) and fmAs the sin.sin one, which the
-  // seed leaves at zero and which is therefore a free control on how much of the signal
-  // is the seeded mode and how much is everything else at the same |k|.  Both are box
-  // means in cm/s: the 4/N normalisation makes fmAc equal the weighted-mean amplitude of
-  // a pure cos.cos mode.  The cells are uniform on this mesh, so a cell count IS the
-  // volume weight.
-  if (fm_hist_) {
-    MeshBlockPack *pmbp = pm->pmb_pack;
-    auto &indcs = pm->mb_indcs;
-    const int is = indcs.is, js = indcs.js, ks = indcs.ks;
-    const int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
-    const int ncell = pmbp->nmb_thispack*nx3*nx2*nx1;
-    auto &size = pmbp->pmb->mb_size;
-    auto &w0 = pmbp->phydro->w0;
-    const Real kx = fm_kx_, ky = fm_ky_, kh = fm_kh_;
-    const Real ztop = fm_ztop_, x2m = fm_x2min_, x3m = fm_x3min_;
-    const Real inc = 4.0/(static_cast<Real>(pm->mesh_indcs.nx1)*
-                          static_cast<Real>(pm->mesh_indcs.nx2)*
-                          static_cast<Real>(pm->mesh_indcs.nx3));
-    array_sum::GlobalSum sum_fm;
-    Kokkos::parallel_reduce("boxconv_fmhist",
-    Kokkos::RangePolicy<>(DevExeSpace(), 0, ncell),
-    KOKKOS_LAMBDA(const int idx, array_sum::GlobalSum &mb_sum) {
-      const int m = idx/(nx3*nx2*nx1);
-      const int r = idx - m*(nx3*nx2*nx1);
-      const int k = ks + r/(nx2*nx1);
-      const int r2 = r - (r/(nx2*nx1))*(nx2*nx1);
-      const int j = js + r2/nx1;
-      const int i = is + r2 - (r2/nx1)*nx1;
-      const Real x1min = size.d_view(m).x1min, x1max = size.d_view(m).x1max;
-      const Real x2min = size.d_view(m).x2min, x2max = size.d_view(m).x2max;
-      const Real x3min = size.d_view(m).x3min, x3max = size.d_view(m).x3max;
-      const Real z = CellCenterX(i-is, nx1, x1min, x1max);
-      const Real x2v = CellCenterX(j-js, nx2, x2min, x2max);
-      const Real x3v = CellCenterX(k-ks, nx3, x3min, x3max);
-      const Real wz = exp(kh*(z - ztop))*w0(m,IVX,k,j,i);
-      array_sum::GlobalSum hvars;
-      for (int n=0; n<NHISTORY_VARIABLES; ++n) hvars.the_array[n] = 0.0;
-      hvars.the_array[5] = inc*wz*cos(kx*(x2v - x2m))*cos(ky*(x3v - x3m));
-      hvars.the_array[6] = inc*wz*sin(kx*(x2v - x2m))*sin(ky*(x3v - x3m));
-      mb_sum += hvars;
-    }, Kokkos::Sum<array_sum::GlobalSum>(sum_fm));
-    Kokkos::fence();
-    pdata->hdata[5] = sum_fm.the_array[5];
-    pdata->hdata[6] = sum_fm.the_array[6];
-  }
-  // problem/work_hist: the accumulators live on rank 0 (the plane sums they are built
-  // from are MPI-reduced there), so only rank 0 contributes and the history's own
-  // MPI_SUM over ranks lands on the number itself.
-  if (work_on_ && global_variable::my_rank == 0) {
-    for (int q=0; q<7; ++q) pdata->hdata[7+q] = wk_acc_[q];
-    pdata->hdata[14] = wk_emod_;
-    pdata->hdata[15] = wk_sdsp_;
-  }
   if (!rt_on_ || !two_stream_rt::rt_face_flux_ready()) return;
 
   MeshBlockPack *pmbp = pm->pmb_pack;
@@ -4193,11 +3153,7 @@ void BoxConvHistory(HistoryData *pdata, Mesh *pm) {
     mb_sum += hvars;
   }, Kokkos::Sum<array_sum::GlobalSum>(sum_this_mb));
   Kokkos::fence();
-  // slots 0..4 ONLY: the reduction above zeroes everything above 4, and the f-mode and
-  // work columns were already written above.  (It used to run to pdata->nhist, which
-  // silently wiped fmAc/fmAs in any run that had BOTH radiation and fmode_hist on --
-  // arm set L never saw it because it ran with rt_two_stream = false, which returns
-  // before this block.)
+  // slots 0..4 ONLY: the reduction above zeroes everything above 4.
   for (int n=0; n<5; ++n) pdata->hdata[n] = sum_this_mb.the_array[n];
   return;
 }
@@ -4235,15 +3191,15 @@ void BoxConvBC(Mesh *pm) {
   auto cd_d = cd_, ce_d = ce_;
   // the TOP wall may run a different mode; -1 means "the same as bc_mode"
   const int bcm_top = (bc_mode_top_ >= 0) ? bc_mode_top_ : bc_mode_;
-  const int bcm_bot = (bc_mode_bot_ == 5) ? (inflow_ghost_ ? 5 : bc_mode_)
+  const int bcm_bot = (bc_mode_bot_ == 5) ? bc_mode_
                     : ((bc_mode_bot_ >= 0) ? bc_mode_bot_ : bc_mode_);
   auto ct_d = ct_;
   // --- THE BOTTOM-INFLOW CONTROLLER.  One global reduction per CYCLE (not per stage:
   // this function is called once per stage on every rank, and pm->ncycle does not move
   // between the stages of a cycle), so v_in is a constant of the cycle.  Every rank
   // reaches this the same number of times, which is what the Allreduce needs.
-  // gated on bc_mode_bot_, NOT on bcm_bot: under bc_inflow_ghost = false the ghost
-  // follows bc_mode and bcm_bot is not 5, but the controller must still run
+  // gated on bc_mode_bot_, NOT on bcm_bot: the ghost follows bc_mode and bcm_bot is
+  // not 5, but the controller must still run
   if (bc_mode_bot_ == 5) {
     if (pm->ncycle != inflow_cyc_) {
       inflow_cyc_ = pm->ncycle;
@@ -4567,16 +3523,11 @@ void BoxConvFinal(ParameterInput *pin, Mesh *pm) {
   prof_h_ = HostArray2D<Real>();
   prof_d_ = DvceArray2D<Real>();
   prof_alloc_ = false;
-  // and the bottom sponge's plane-mean buffers
-  vdb_h_ = HostArray1D<Real>();
-  vdb_d_ = DvceArray1D<Real>();
   // and the <rad_m1> reference-acceleration array
   m1_aref_ = DvceArray4D<Real>();
   // and the rt_budget_verbose accumulator, for the same reason
   two_stream_rt::rt_bud_ptr = nullptr;
   rtbud_ = DvceArray1D<Real>();
   rtbud_n_ = 0;
-  // ...and the ImEx per-stage source store (problem/rt_imex), likewise
-  rtimex_src_ = DvceArray6D<Real>();
   return;
 }

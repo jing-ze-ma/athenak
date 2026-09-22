@@ -344,16 +344,13 @@ ic_tau_rad   = 10.0
 # the command line.  mlt_alpha = 1.5 turns on the shell-mean closure (mlt_mean, the
 # default): each radial face is asked for the DEFICIT L/(4 pi r^2) - F_conduction -
 # F_two-stream - F_resolved, so it hands over to resolved convection on its own; the
-# ramp-down withdraws it on a schedule regardless.  mlt_tau_lo/hi are the per-column
-# path's tau taper and are UNUSED under mlt_mean.
+# ramp-down withdraws it on a schedule regardless.
 mlt_mean           = true
 mlt_dump           = mltfaces.txt  # the t = 0 face budget: F_req, F_cond, F_2s,
                                  # F_resolved, the deficit D and F_used, per face
 mlt_dump_dt        = 0.0         # > 0 [s]: APPEND that table to <mlt_dump>.ts on this
                                  # cadence (diagnostic; 0 = the t = 0 dump only)
-mlt_flux_fix       = false       # true: signed flux residual on the faces the closure leaves alone (red_giant.cpp)
 cs_max             = 0.0         # cm/s; > 0: sound-speed ceiling as a density floor rho >= (10/9) e_int/cs_max^2
-rt_no_heat         = false       # diagnostic: split RT keeps its force, deposits no heat (adiabatic star)
 e_ledger           = 0           # cycles; > 0: per-operator energy ledger (single rank)
 mlt_split_deposit  = false       # true (with rt_strang): div F_conv in the Strang half steps, with the two-stream
 mlt_split_sync     = false       # true (with mlt_split_deposit): one [1 2 1]/4 pass over the
@@ -366,16 +363,8 @@ mlt_sync_passes    = 1           # only read with mlt_split_sync: number of [1 2
                                  # n = 1 kills only the face-to-face mode; the 3-6 face
                                  # standing F_2s/F_used oscillation seen in 3-D needs
                                  # n = 4-8 (red_giant.cpp)
-mlt_flux_fix_cap   = 0.02
-mlt_flux_fix_rmax  = 2.3243e11   # 0.98 R: below the taper ramp's fast transient
 mlt_relax_time     = 1.0e4       # 2 turnovers: follow the mean of the resolved flux,
                                  # not its flicker
-mlt_relax_down_time = -1.0       # s; < 0 = use mlt_relax_time both ways.  >= 0: the
-                                 # relaxation time used where the target has FALLEN
-                                 # below the applied flux (0 = drop at once), so the
-                                 # closure hands over promptly where the resolved flux
-                                 # has taken the load instead of paying out a
-                                 # 1e4 s exponential tail (red_giant.cpp)
 mlt_ramp_time      = 0.0         # no ramp-UP: the ic was built with alpha = 1.5, so the
                                  # deficit at t = 0 is the flux the column already assumes
 mlt_hold_time      = 0.0         # hand-over: full subgrid flux until this time ...
@@ -417,7 +406,6 @@ vdamp_bot_cells = 24             # the box uses 48 of its 134 cells; 48 of 96 wo
                                  # the nx1/2 guard, and 24 is the same FRACTION of the
                                  # radial domain that 48 of the 192-cell production grid is
 vdamp_bot_time  = 20.0
-vdamp_bot_mean_only = false
 vdamp_all_until = 0.0            # > 0: damp v1 everywhere until this time (relaxed-start test)
 vdamp_all_time  = 20.0
 vdamp_all_mean_only = false      # true: damp only the shell mean of v1 (the radial mode), not the fluctuations

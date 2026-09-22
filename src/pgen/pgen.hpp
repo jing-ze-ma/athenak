@@ -34,21 +34,11 @@ using ProblemFinalizeFnPtr = void (*)(ParameterInput *pin, Mesh *pm);
 using UserBoundaryFnPtr = void (*)(Mesh* pm);
 using UserSrctermFnPtr = void (*)(Mesh* pm, const Real bdt);
 using UserRefinementFnPtr = void (*)(MeshBlockPack* pmbp);
-// problem/rt_imex (box_convection): the implicit stage operator of an ImEx-RK
-// integrator.  Called with the DRIVER (for a_twid/a_impl/nexp_stages) and the number of
-// the EXPLICIT stage it belongs to, with estage <= 0 for the extra fully implicit
-// stages the ImEx tableau adds before the first explicit stage.
-class Driver;
-using UserImExFnPtr = void (*)(Mesh *pm, Driver *pdrive, const int estage);
 using UserHistoryFnPtr = void (*)(HistoryData *pdata, Mesh *pm);
 // called ONCE PER CYCLE, after Mesh::NewTimeStep in Driver::Execute, for problem
 // generators that want a per-cycle diagnostic. Not part of any task list: it sees the
 // state at the end of the cycle, with the new dt already computed.
 using UserCycleFnPtr = void (*)(Mesh *pm);
-// problem/work_hist (box_convection): a DIAGNOSTIC probe called at fixed points of the
-// task list so a problem generator can close a per-operator work interval there.  Left
-// null every call site is a no-op, so every existing run is bitwise unchanged.
-using UserProbeFnPtr = void (*)(Mesh *pm, const int tag);
 
 struct HotJupiterParam {
   // Initialised, because these are only filled when <problem>/hot_jupiter is true and the
@@ -103,27 +93,13 @@ class ProblemGenerator {
   // function pointer for user-enrolled BCs.  Called in ApplyPhysicalBCs in task list
   UserBoundaryFnPtr user_bcs_func=nullptr;
   UserSrctermFnPtr user_srcs_func=nullptr;
-  // problem/rt_strang (box_convection): an OPERATOR-SPLIT source applied Strang-wise
-  // around the whole time integrator -- half the cycle dt in "before_timeintegrator"
-  // and half in "after_timeintegrator", with the in-stage call switched off.  Left
-  // null the two tasks are no-ops, so every existing run is bitwise unchanged.
+  // an OPERATOR-SPLIT source applied Strang-wise around the whole time integrator --
+  // half the cycle dt in "before_timeintegrator" and half in "after_timeintegrator".
+  // Left null the two tasks are no-ops, so every existing run is bitwise unchanged.
   UserSrctermFnPtr user_split_func=nullptr;
-  // problem/rt_once_per_cycle (box_convection): when true the split source is applied
-  // ONCE per cycle with the FULL dt, in "after_timeintegrator" only -- the
-  // "before_timeintegrator" call is skipped.  Used to test whether the SSP-RK stage
-  // averaging of an exact per-stage relaxation is what drives the residual box mode.
+  // when true the split source is applied ONCE per cycle with the FULL dt, in
+  // "after_timeintegrator" only -- the "before_timeintegrator" call is skipped.
   bool user_split_once=false;
-  // problem/rt_imex (box_convection): the implicit stage operator of the ImEx-RK
-  // integrator.  Left null the two Hydro::RTImEx* tasks are no-ops, so every existing
-  // run is bitwise unchanged.
-  UserImExFnPtr user_imex_func=nullptr;
-  // problem/rt_before_flux (box_convection): the REVERSED Lie ordering inside each RK
-  // stage -- the whole radiation operator (column + force + horizontal ADI) applied at
-  // the HEAD of the stage, on the stage-start state, before the hydro flux update,
-  // with the in-stage radiation call switched off.  Called by Hydro::RTBeforeFlux with
-  // this stage's beta_dt.  Left null that task is a no-op, so every existing run is
-  // bitwise unchanged.
-  UserSrctermFnPtr user_rt_before_flux=nullptr;
   UserRefinementFnPtr user_ref_func=nullptr;
   UserHistoryFnPtr user_hist_func=nullptr;
   // the two halves of the optional pgen state block (see kPgenRstMagic).  A pgen enrols
@@ -134,10 +110,6 @@ class ProblemGenerator {
   std::vector<char> pgen_rststate;
   // called once per cycle after Mesh::NewTimeStep in Driver::Execute
   UserCycleFnPtr user_cycle_func=nullptr;
-  // problem/work_hist (box_convection): the per-operator work probe.  Tag 4 is called
-  // at the END of Hydro::ImplicitTransverseConduction (the horizontal ADI operator).
-  UserProbeFnPtr user_probe_func=nullptr;
-
   // predefined problem generator functions (default test suite)
   void CallProblemGenerator(ParameterInput *pin, bool is_restart);
   void Advection(ParameterInput *pin, const bool restart);
