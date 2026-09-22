@@ -8,6 +8,28 @@
 # reasons unrelated to ck_spherical), so ck_spherical/ck_beam_sph are NOT yet isolated from
 # confounds on this grid/resolution. Do not submit this file until offfix supersedes it.
 #
+# 7. <mhd> max_eta 1e13 -> 5e12 (2026-09-22, user decision).  With the spherical two-stream the
+#    night-side shell at r/Rp 1.24 (~7 mbar, T 1406-1461 K) sits 6-14 K below the alkali-ionisation
+#    temperature at which eta reaches max_eta, so the OHMIC limit (dt ~12.9 s) replaced the MHD CFL
+#    (~18-20 s) -- in sph AND sphbeam; the beam warms only the top (1e-6..1e-3 bar).  max_eta 5e12
+#    returns both to the CFL limit (sph 17.4, sphbeam 18.0 s) at no cost to the old form; 1e14 is
+#    worse.  tests_gpu_ab_0922/README.md "Ohmic cap in sphbeam".  Physics caveat: caps the
+#    resistivity lower in the neutral night side.
+# 8. <hydro|mhd> pfloor 1e-3 -> 1e-5 (2026-09-22, user decision).  The centre-to-centre ck layers
+#    (d8f00d49) give the top cell its correct (46 % larger) emission; the old staggered layer had
+#    averaged it with the ghost above the domain and kept the slab artificially warm, and pfloor
+#    1e-3 was calibrated for that.  With the correct emission the slab lands on the floor: efloor
+#    events 27048 -> 0 on the CPU reproducer with pfloor 1e-5, T(p) unchanged to 5 digits,
+#    dE/E = the physical radiative loss (tests_ck_topslab/README.md).  GPU confirmation arm
+#    bench/pfloor_ab/p1e5 pending at the time of writing; the earlier floor study
+#    (dhj-floors-for-1e-6-bar) chose 1e-3 with tfloor_kelvin 50 crashing -- re-check tfloor.
+# 9. <problem> ck_sweep_form = 1 (tm, 2026-09-22, user decision): the exact probe-free
+#    transfer-matrix (adding-doubling) spherical sweep.  The 4-pass form's probe-lagged mixing
+#    constant is only O(beta^2): 2.3e-2 in the face flux at the domain's area ratio; tm and the
+#    S/D form agree to 3.5e-17.  GPU 14.35 cycles/s vs 10.10 (4-pass) and 13.72 (plane-parallel):
+#    the spherical penalty is gone.  Refuses ck_implicit (not needed here) and ck_spherical=false.
+#    tests_ck_sweep_form/README.md.
+
 # Base = bench/cs_mhd_prod3/deep_hot_jupiter.athinput (reached rot 283 clean). Six changes
 # from that file, each documented below and reasoned against the current (2026-09-22) HEAD
 # of rt-integration:
@@ -231,10 +253,10 @@ eos_dlog        = 0.05
 
 # --- non-ideal MHD ---
 ohmic_resistivity = eos           # constant | perna | eos
-max_eta           = 1.0e13
+max_eta           = 5.0e12           # 09-22 (change 7): was 1e13; see header
 use_rkg_sts       = false
 
-pfloor = 1.0e-3
+pfloor = 1.0e-5                       # 09-22 (change 8): was 1e-3; see header
 dfloor = 5.0e-14
 tfloor_kelvin = 200.0
 
@@ -263,6 +285,7 @@ ck_nquad     = 1
 ck_star_teff = 6000.0
 ck_spherical = true              # NEW: spherical thermal two-stream. See change (1).
 ck_beam_sph  = true              # NEW: pseudo-spherical direct beam. See change (1).
+ck_sweep_form = 1                # 09-22 (change 9): tm = exact probe-free spherical sweep; see header
 ck_table     = /viper/u2/jinma/ATHENAK/athenak/data/exo_fms_ck/ck/Premixed_1x_g8_11.txt
 ck_data_dir  = /viper/u2/jinma/ATHENAK/athenak/data/exo_fms_ck   # CE_tables/, cia/, ray/, sw_flux/ live here
 
