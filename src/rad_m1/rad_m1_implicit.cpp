@@ -3097,6 +3097,11 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   const bool clagst = impl_clag_step;
   // DIAGNOSTIC dbg_tensor = frozen | tilt: the stored tensor axis survives the step reset
   const bool tpers = (dbg_tensor == 1 || dbg_tensor == 2) && dbg_tensor_init;
+  // closure = tau (rad_m1_tau.cpp): (chi, n) from the column optical depth, built on the
+  // first pass of the step and read by step (b) on every pass
+  const bool tauc = tau_closure;
+  if (tauc && !tau_ready) {TauClosureInit();}
+  auto tt_ = tau_ten;
   auto f2_ = f0x2;
   auto f3_ = f0x3;
   if (trans) {
@@ -3362,6 +3367,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       });
     }
 
+    if (tauc && it == 0) {TauClosureBuild();}
     // (b) the lagged closure, the enthalpy-flux coefficient, de0 and g0
     par_for("m1_impl_lag", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -3460,6 +3466,12 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
             n2 *= inn;
             n3 *= inn;
           }
+        }
+        if (tauc) {
+          chi = tt_(m,0,k,j,i);
+          n1 = tt_(m,1,k,j,i);
+          n2 = tt_(m,2,k,j,i);
+          n3 = tt_(m,3,k,j,i);
         }
         iw_(m,M1_IW_WCHI,k,j,i) = chi;
         iw_(m,M1_IW_N1,k,j,i) = n1;

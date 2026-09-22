@@ -432,6 +432,10 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   vet_time = 0.0;
   vet_itime = 0.0;
   vet_ncall = 0.0;
+  tau_closure = false;
+  tau_ready = false;
+  tau_time = 0.0;
+  tau_ncall = 0.0;
   {std::string cl = pin->GetOrAddString("rad_m1","closure","m1");
   chi_kind = M1_CHI_LEVERMORE;
   if (cl.compare("m1") == 0) {
@@ -450,15 +454,27 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // 1-D branch) keeps Levermore's
     eddington = false;
     vet_sc = true;
+  } else if (cl.compare("tau") == 0) {
+    // the multi-D implicit solve reads (chi, n) from the column optical depth
+    // (rad_m1_tau.cpp), in the uniaxial form; every other use of chi (explicit wave
+    // speeds, the 1-D branch, the explicit coupling) keeps Levermore's, as closure = m1
+    eddington = false;
+    tau_closure = true;
   } else {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
       << std::endl << "<rad_m1>/closure = '" << cl << "' not implemented "
-      << "(m1 | minerbo | kershaw | eddington | vet_sc)" << std::endl;
+      << "(m1 | minerbo | kershaw | eddington | vet_sc | tau)" << std::endl;
     std::exit(EXIT_FAILURE);
   }
   if (vet_sc && transport != M1_TRANSPORT_IMPLICIT) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
       << std::endl << "<rad_m1>/closure = vet_sc needs <rad_m1>/transport = implicit "
+      << "on a multi-D mesh" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  if (tau_closure && transport != M1_TRANSPORT_IMPLICIT) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+      << std::endl << "<rad_m1>/closure = tau needs <rad_m1>/transport = implicit "
       << "on a multi-D mesh" << std::endl;
     std::exit(EXIT_FAILURE);
   }
@@ -618,6 +634,7 @@ void RadiationM1::SetForceReference(const DvceArray4D<Real> &a) {
 // destructor
 
 RadiationM1::~RadiationM1() {
+  if (tau_closure) {TauClosureReport();}
   ReportCounters();
   ImplicitReport();   // milestone 3a; a no-op in transport = explicit
   if (vet_sc) {VetReport();}

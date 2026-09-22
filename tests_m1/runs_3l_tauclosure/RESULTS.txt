@@ -1,0 +1,101 @@
+MILESTONE 3l -- <rad_m1>/closure = tau: the column-optical-depth Eddington tensor as a
+real closure option, multi-MeshBlock / multi-rank along x1.   2026-09-22/23, NOT COMMITTED.
+
+Patch:   bench/m1_tau_0922/tau_closure.patch (md5 f4c3ccc6...), relative to 1d22a118
+         (rt-integration HEAD with PCR + VET); `git apply --check` passes on 1d22a118.
+         New file src/rad_m1/rad_m1_tau.cpp.  The hook in rad_m1_implicit.cpp is 3 small
+         insertions: declare tauc/tt_ (+ lazy init), call TauClosureBuild() on pass 0
+         before step (b), and overwrite (chi,n1,n2,n3) right before they are stored in
+         iw(M1_IW_WCHI/N1..N3).  rad_m1.cpp: the closure key + a fatal unless transport =
+         implicit; a report line in the destructor.  rad_m1.hpp: members.
+Option:  closure = tau.  (chi, n) go in through the UNIAXIAL path: they are stored in
+         iw(WCHI, N1..N3) and every D_ab of the solve reads them through M1DDiag / M1POff /
+         M1OffDiv with full = false (vet_full is set only by closure = vet_sc).  Every other
+         use of chi (explicit wave speeds, 1-D branch, explicit coupling) is Levermore's,
+         exactly as closure = m1, so gate 2 below can be bitwise.  dbg_tensor = tau is kept
+         untouched (its old single-block code still runs).
+Design:  tau from x1max = (running sum from the cell to the top of its own block, the
+         dbg_tensor arithmetic) + the column integrals S_q of the blocks above, summed top
+         down in a fixed order.  S_q go point-to-point between the members of an x1 stack
+         (one message of (nx3+2ng)(nx2+2ng) reals per pair of members on different ranks,
+         once per hydro step, MPI_COMM_WORLD tags 16384+lid); same-rank members are read in
+         place on the device.  The gather of implicit_partition = gather was NOT reused:
+         it moves 4 nx1 reals per column to a root and back every Picard pass because a
+         tridiagonal solve is a recurrence; a prefix sum splits exactly into partial sums
+         + offset, so 1 scalar per column per block, once per step, no root, no scatter.
+         Only its stack topology (same lx2,lx3,level; ordered by lx1) is rebuilt in the
+         new file so it does not depend on the gather/PCR internals.
+         Ghost columns: tau of the x2/x3 face-ghost columns is computed from the ghost
+         M1_IW_KT (filled by ImplicitTransverseHalo before the Picard loop) and the ghost-
+         column S of the blocks above, i.e. the neighbour's own numbers: bit-identical to
+         the tau the neighbour holds (verified below, x2 split bitwise).  Physical
+         (non-periodic) x2/x3 faces use a one-sided difference (NOT exercised by any gate:
+         both test inputs are periodic in x2/x3).  3-D: n3 = -dtau/dx3 / |grad tau| (the
+         diagnostic had n3 = 0).  FATAL: 1-D mesh, SMR/AMR, periodic x1, non-integer
+         blocks along x1.  Per-step path: 3 device kernels (column sums only if >1 block
+         per stack), host copies only around the MPI exchange.
+Builds:  bench/m1_tau_0922/{head3,snap3} = git archive 1d22a118 (+ patch), CPU gcc/14
+         openmpi/5.0 Release MPI PROBLEM=box_convection; GPU snap3/build_gpu hipcc rocm/6.3
+         gfx942_APU -> bench/m1_tau_0922/athena_gpu (md5 7e7cbd0b...).  snapT = snap3 + a
+         TEST-ONLY dump of the first tensor build (env TAU_DUMP; not in the patch).
+         (Gates 1-3 were also run on the 1715190b base, head2/snap2: same outcome.)
+
+GATE 1  default path byte-identical to 1d22a118.  Seeded 2-D slab (he_slab_tensor.athinput,
+        tlim 40, vpert 1e-3, closure_lag step), head3 vs snap3 (cpu/H_def, cpu/S_def):
+        hydro.hst, user.hst byte-identical; final hydro_w and m1 dumps identical.  PASS
+
+GATE 2  closure = tau (1 block) vs dbg_tensor = tau on the 1d22a118 binary (cpu/H_dbg vs
+        cpu/S_tau1): hst byte-identical, final dumps identical.  Picard 4.129 / 5 in both.
+        PASS (bitwise)
+
+GATE 3  decomposition, CPU.  (a) the TENSOR ITSELF, first build (snapT, cpu/D_*, cmpdump.py),
+        2-D slab 84x32 (2688 cells), max |a-b|/max|a|:
+          1 block  vs 2 or 4 blocks along x1 (1 rank)     tau 1.9e-15  chi 6.8e-16  n1 3.3e-16
+                                                          n2 2.6e-12 (n2 ~ 0: cancellation)
+          1 vs 2/4 blocks along x1 on 2/4 ranks           identical to the 1-rank 2/4-block runs
+          2 vs 2 ranks, 4 vs 4 ranks (same decomposition) BITWISE
+          1 block vs x2 split in 2 (2 ranks)              BITWISE (ghost tau = neighbour's)
+          2x2 blocks (x1 and x2) on 4 ranks vs 2 blocks   BITWISE
+        3-D (84x16x16, cpu/D3_b1 vs D3_r8 = 2x2x2 blocks, 8 ranks, stacks across ranks):
+          tau 3.9e-15  chi 4.1e-16  n1 6.7e-16  n2 2.4e-13  n3 2.2e-13
+        => ROUND-OFF along x1 (the block partial sum + offset re-associates the running
+        sum), BITWISE across ranks and across x2/x3 splits.
+        (b) the evolved state, 40 s (cpu/S_tau_* vs cpu/S_edd_* baseline, cmp.py, final
+        dumps): closure = tau 1 vs 2 / 4 blocks / 2 / 4 ranks / x2 split / mixed: max rel
+        1.2-1.7e-6 (in vely, a near-zero field), user.hst <= 1.9e-8; the SAME decompositions
+        with closure = eddington: 1.3-1.7e-6, user.hst <= 1.5e-8.  The code without the
+        tau closure is not decomposition invariant at this level (BiCGStab reductions,
+        known box_convection x1 non-invariance), so the tau closure adds nothing visible.
+        All tau arms: Picard 4.13-4.14 mean, max 5-6, 0 non-converged.  PASS (round-off)
+
+GATE 4  GPU stability, 3-D box he_slab_m1_3d_pcr.athinput (= runs_3k_gpu3d input +
+        implicit_line_solver = pcr), 84x104x104, 4 MeshBlocks 84x52x52 (split in x2/x3,
+        ONE block per x1 stack: the cross-rank x1 exchange is covered by gate 3 only),
+        closure = tau, job 11943377 (gpu/log.out.11943377, gpu/runs/G1, G2), 6.25 min each:
+                       G1 (1 GPU)                 G2 (2 GPUs)
+          t reached    186.3 s, 1156 steps        211.6 s, 1313 steps
+          Picard       5.05 mean / 6 max          5.04 / 6
+          non-conv     0                          0
+          positivity fallbacks 0, line_jacobi fallbacks 0 (both); min E 1.634e5
+          BiCGStab     25.7 inner/solve, 89 brk   25.4, 106 brk
+          F1top/Fin    0.99981 .. 1.00004         0.99981 .. 1.00004 (last 0.99998 / 0.99999)
+          F1bot/Fin    0.99983 at the end         0.99983
+          dt           0.16142 -> 0.16112         0.16142 -> 0.16112
+          V1max        <= 9.05e4 cm/s             same
+        G1 vs G2 user.hst: rel diff <= 8e-8 up to t = 186.  Stable.  PASS
+        (Reference, closure = eddington on the same box, runs_3k P1: Picard 4.81/6,
+        F1top/Fin 1.0000, dt 0.16142 -> 0.16117.)
+
+GATE 5  GPU timing, job 11943378 (gpu/log.out.11943378, gpu/runs/E*, T*), same binary,
+        1 GPU, arms interleaved E1 T1 E2 T2 E3 T3, 130 cycles each, ms/cycle over cycles
+        30..130 (gpu/timing.py), PCR line solve:
+          eddington  E1 274.4  E2 277.6  E3 279.3   mean 277.1 ms/cycle, Picard 4.53
+          tau        T1 285.3  T2 282.0  T3 289.8   mean 285.7 ms/cycle, Picard 4.91
+          => tau costs +3.1 % per step.  BiCGStab inner iterations are the same (14553 vs
+          14559 in 130 steps); the extra ~0.38 Picard pass per step is the difference.
+          Tensor build (fenced timer in TauClosureBuild): 0.115 ms per step in T1-T3
+          (0.103 ms in G1, 0.063 ms/rank in G2) = 0.04 % of the step.
+
+NOT DONE / OPEN: a GPU run with >1 block per x1 stack across GPUs; a non-periodic x2/x3
+boundary (one-sided gradient untested); the tensor is lagged one hydro step like the
+diagnostic (built from the start-of-step KT); long-term (> 200 s) behaviour of the 3-D box.

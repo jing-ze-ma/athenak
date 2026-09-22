@@ -169,6 +169,7 @@ add_executable(
         rad_m1/rad_m1_implicit.cpp
         rad_m1/rad_m1_newdt.cpp
         rad_m1/rad_m1_opacity.cpp
+        rad_m1/rad_m1_tau.cpp
         rad_m1/rad_m1_tasks.cpp
         rad_m1/rad_m1_update.cpp
         rad_m1/rad_m1_vet.cpp

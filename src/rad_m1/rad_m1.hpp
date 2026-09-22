@@ -619,6 +619,33 @@ class RadiationM1 {
   int ImplicitBiCGStabFused(Real rhsmax);
   void ImplicitBiCGStabEnd(int nit, bool fell_back);  // fallback / output / statistics
 
+  // ---- <rad_m1>/closure = tau (rad_m1_tau.cpp): the Eddington tensor of the multi-D
+  // implicit solve from the COLUMN OPTICAL DEPTH measured from the top of the domain
+  // (x1max): chi = exact grey plane-parallel K/J(tau) (Hopf fit), axis along -grad tau.
+  // Never reads the local flux.  Rebuilt once per hydro step from the start-of-step
+  // transport opacity; x1 stacks of MeshBlocks across MPI ranks are supported.
+  bool tau_closure;            // closure = tau (default false)
+  bool tau_ready;              // TauClosureInit has run
+  int tau_nblk;                // MeshBlocks per x1 stack (uniform mesh)
+  bool tau_any_mpi;            // some stack member of a local block is on another rank
+  Real tau_time, tau_ncall;    // seconds in TauClosureBuild (fenced), calls
+  DualArray1D<int> tau_pos;    // (m): x1 position of the block in its stack
+  DualArray1D<int> tau_loc;    // (m*nblk + q): local index of stack member q, -1 remote
+  std::vector<int> tau_mrank, tau_mlid;  // (m*nblk + q): rank / local id of member q
+  DvceArray3D<Real> tau_sum;   // (m,k,j): the block's own column integral of rho kappa_t
+  DvceArray4D<Real> tau_rcv;   // (m,q,k,j): column integrals received from member q
+  HostArray3D<Real> tau_sum_h;
+  HostArray4D<Real> tau_rcv_h;
+  DvceArray4D<Real> tau_col;   // (m,k,j,i): column optical depth at the cell centre
+  DvceArray5D<Real> tau_ten;   // (m,4,k,j,i): chi, n1, n2, n3 read by ImplicitSolve (b)
+  //! closure = tau: check the mesh, build the stack topology, allocate (first call)
+  void TauClosureInit();
+  //! closure = tau: fill tau_ten from the transport opacity M1_IW_KT of the work array
+  //! (its x2/x3 ghost layers must be current: called after the transverse halo)
+  void TauClosureBuild();
+  //! closure = tau: cost line at the end of the run
+  void TauClosureReport();
+
   // ...in "m1_before_stagen"
   TaskStatus InitRecv(Driver *d, int stage);
   // ...in "m1_stagen"
