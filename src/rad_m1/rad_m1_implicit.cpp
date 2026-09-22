@@ -219,6 +219,18 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (impl_pcr_team < 0 || impl_pcr_team > 1024) {
     ImplFatal("<rad_m1>/implicit_pcr_team must lie in [0,1024]");
   }
+  // SPEED-UP 3: the host synchronisations of the BiCGStab loop.  0 = the original loop;
+  // 1 = the same recurrence with fused reductions and vector updates (3 blocking
+  // reductions per iteration instead of 5); 2 = 1 with alpha kept on the device, so
+  // rhat.v does not block either (1 rank only; with more ranks 2 acts as 1).  Levels
+  // 1 and 2 sum in a different order than 0: same answer to round-off, not bitwise.
+  impl_bcg_sync = pin->GetOrAddInteger("rad_m1","implicit_bcg_sync",0);
+  if (impl_bcg_sync < 0 || impl_bcg_sync > 2) {
+    ImplFatal("<rad_m1>/implicit_bcg_sync must be 0, 1 or 2");
+  }
+  if (impl_bcg_sync == 2) {
+    bcg_rvd = Kokkos::View<Real, DevMemSpace>("m1_bcg_rvd");
+  }
   if (impl_ecnt < 0 || impl_ecnt > M1_EC_NTMAX) {
     ImplFatal("<rad_m1>/implicit_eos_cache_nt must lie in [0,8]");
   }
@@ -2072,10 +2084,12 @@ void RadiationM1::ImplicitPrecond(int rc, int zc) {
   int nmb1 = pmy_pack->nmb_thispack - 1;
   auto iw_ = iw;
   const int cr = rc, cz = zc;
-  par_for("m1_impl_prein", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    iw_(m,M1_IW_TR,k,j,i) = iw_(m,cr,k,j,i);
-  });
+  if (cr >= 0) {
+    par_for("m1_impl_prein", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      iw_(m,M1_IW_TR,k,j,i) = iw_(m,cr,k,j,i);
+    });
+  }
   ImplicitTridiagSolve();
   par_for("m1_impl_preout", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -2171,6 +2185,105 @@ void M1GlobalMax(Real &a) {
   a = g;
 #else
   (void)a;
+#endif
+}
+
+//----------------------------------------------------------------------------------------
+//! \struct M1BcgVal, M1BcgRed
+//! \brief implicit_bcg_sync > 0: ONE reduction kernel returns up to three sums and one
+//! max (e.g. rhat.r and max|r| straight from the kernel that updates r).  M1BcgRed is a
+//! Kokkos reducer of the same shape as Kokkos::Sum; |r| >= 0, so 0 is the identity of
+//! the max slot.
+
+struct M1BcgVal {
+  Real s0, s1, s2, mx;
+};
+
+template <class Space>
+struct M1BcgRed {
+ public:
+  using reducer = M1BcgRed<Space>;
+  using value_type = M1BcgVal;
+  using result_view_type = Kokkos::View<value_type, Space>;
+
+ private:
+  result_view_type value;
+  bool refs;
+
+ public:
+  KOKKOS_INLINE_FUNCTION
+  explicit M1BcgRed(value_type &v) : value(&v), refs(true) {}
+  KOKKOS_INLINE_FUNCTION
+  void join(value_type &d, const value_type &s) const {
+    d.s0 += s.s0;
+    d.s1 += s.s1;
+    d.s2 += s.s2;
+    d.mx = (s.mx > d.mx) ? s.mx : d.mx;
+  }
+  KOKKOS_INLINE_FUNCTION
+  void init(value_type &v) const {
+    v.s0 = 0.0;
+    v.s1 = 0.0;
+    v.s2 = 0.0;
+    v.mx = 0.0;
+  }
+  KOKKOS_INLINE_FUNCTION
+  value_type &reference() const {return *value.data();}
+  KOKKOS_INLINE_FUNCTION
+  result_view_type view() const {return value;}
+  KOKKOS_INLINE_FUNCTION
+  bool references_scalar() const {return refs;}
+};
+
+//! the flattened (m,k,j,i) index of the fused reductions, as par_for flattens it
+KOKKOS_INLINE_FUNCTION
+void M1BcgIdx(const int idx, const int nkji, const int nji, const int ni,
+              int &m, int &k, int &j, int &i) {
+  m = idx/nkji;
+  int r = idx - m*nkji;
+  k = r/nji;
+  r -= k*nji;
+  j = r/ni;
+  i = r - j*ni;
+}
+
+#if MPI_PARALLEL_ENABLED
+//! the MPI operation of M1GlobalBcg: sum the first three slots, max the fourth
+void M1BcgOpFn(void *in, void *inout, int *len, MPI_Datatype *) {
+  Real *a = static_cast<Real *>(in);
+  Real *b = static_cast<Real *>(inout);
+  for (int q = 0; q < *len; ++q) {
+    b[4*q] += a[4*q];
+    b[4*q + 1] += a[4*q + 1];
+    b[4*q + 2] += a[4*q + 2];
+    b[4*q + 3] = (a[4*q + 3] > b[4*q + 3]) ? a[4*q + 3] : b[4*q + 3];
+  }
+}
+#endif
+
+//----------------------------------------------------------------------------------------
+//! \fn M1GlobalBcg
+//! \brief the three sums and the max of an M1BcgVal over all ranks in ONE MPI_Allreduce
+//! (a 4-Real contiguous type with a user operation).  Nothing to do on one rank.
+
+void M1GlobalBcg(M1BcgVal &v) {
+#if MPI_PARALLEL_ENABLED
+  if (global_variable::nranks == 1) {return;}
+  static MPI_Datatype typ = MPI_DATATYPE_NULL;
+  static MPI_Op op = MPI_OP_NULL;
+  if (op == MPI_OP_NULL) {
+    MPI_Type_contiguous(4, MPI_ATHENA_REAL, &typ);
+    MPI_Type_commit(&typ);
+    MPI_Op_create(&M1BcgOpFn, 1, &op);
+  }
+  Real loc[4] = {v.s0, v.s1, v.s2, v.mx}, glb[4];
+  MPI_Allreduce(loc, glb, 1, typ, op, MPI_COMM_WORLD);
+  v.s0 = glb[0];
+  v.s1 = glb[1];
+  v.s2 = glb[2];
+  v.mx = glb[3];
+#else
+  (void)v;
 #endif
 }
 } // namespace
@@ -2411,6 +2524,7 @@ void RadiationM1::ImplicitAccelApply(int it) {
 //! five scalars in all.
 
 int RadiationM1::ImplicitBiCGStab(Real rhsmax) {
+  if (impl_bcg_sync > 0) {return ImplicitBiCGStabFused(rhsmax);}
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
   int js = indcs.js, je = indcs.je;
@@ -2567,6 +2681,22 @@ int RadiationM1::ImplicitBiCGStab(Real rhsmax) {
     }
   }
 
+  ImplicitBiCGStabEnd(nit, fell_back);
+  return nit;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::ImplicitBiCGStabEnd
+//! \brief the common end of both BiCGStab loops: the line-Jacobi fallback or the copy of
+//! the iterate into M1_IW_S2, and the inner-iteration statistics.
+
+void RadiationM1::ImplicitBiCGStabEnd(int nit, bool fell_back) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  int is = indcs.is, ie = indcs.ie;
+  int js = indcs.js, je = indcs.je;
+  int ks = indcs.ks, ke = indcs.ke;
+  int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto iw_ = iw;
   if (fell_back) {
     bcg_nfall += 1.0;
     const bool thrd = trans_x3;
@@ -2598,6 +2728,222 @@ int RadiationM1::ImplicitBiCGStab(Real rhsmax) {
   bcg_nsolve += 1.0;
   bcg_itsum += static_cast<Real>(nit);
   bcg_itmax = std::max(bcg_itmax, static_cast<Real>(nit));
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn int RadiationM1::ImplicitBiCGStabFused
+//! \brief implicit_bcg_sync = 1 | 2: the SAME right-preconditioned BiCGStab recurrence as
+//! ImplicitBiCGStab (same breakdown, restart, true-residual and fallback logic), with its
+//! host synchronisations and kernel launches cut.  On the GPU every reduction into a
+//! host scalar blocks the host until the queue is empty, and the next launch then starts
+//! on an idle device (measured: ~40 us per blocking reduction).  Per iteration:
+//!  * rho_{k+1} = (rhat, r_{k+1}) and max|r_{k+1}| come out of the kernel that updates x
+//!    and r, i.e. ONE reduction where the original has three kernels and two syncs
+//!    (upd, max|r|, and (rhat,r) at the top of the next iteration);
+//!  * (t,s) and (t,t) come out of one kernel;
+//!  * the vector updates p and s also stage the preconditioner input M1_IW_TR, which
+//!    removes the copy kernel of ImplicitPrecond;
+//!  * sync level 2 on ONE rank: rhat.v is reduced into a device scalar and s = r - alpha
+//!    v reads alpha from there, so rhat.v does not block; the host learns it from the
+//!    (t,s),(t,t) reduction and only then applies the |rhat.v| breakdown test.  If that
+//!    test fails, s/z/t are discarded and the recurrence restarts from x, which the
+//!    iteration had not touched -- exactly the original branch.
+//! Blocking reductions per iteration: 5 kernels / 4 MPI_Allreduce (level 0), 3 / 3
+//! (level 1), 2 / 0 (level 2, one rank).  The recurrence is identical in exact
+//! arithmetic; the sums are ordered differently, so the iterates agree to round-off only.
+
+int RadiationM1::ImplicitBiCGStabFused(Real rhsmax) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  int is = indcs.is, ie = indcs.ie;
+  int js = indcs.js, je = indcs.je;
+  int ks = indcs.ks, ke = indcs.ke;
+  int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto iw_ = iw;
+  const Real tol = impl_lin_tol;
+  const Real bscale = fmax(rhsmax, 1.0e-300);
+  const int ni = ie - is + 1;
+  const int nji = (je - js + 1)*ni;
+  const int nkji = (ke - ks + 1)*nji;
+  Kokkos::RangePolicy<DevExeSpace> pol(DevExeSpace(), 0, (nmb1 + 1)*nkji);
+  using HRed = M1BcgRed<Kokkos::HostSpace>;
+  const bool devrv = (impl_bcg_sync == 2) && (global_variable::nranks == 1);
+  auto rvd_ = bcg_rvd;
+
+  // x0 = the Picard iterate; r0 = b - A x0, with max|r0| and (r0,r0) in the same kernel
+  par_for("m1_impl_bcgf_x0", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    iw_(m,M1_IW_KX,k,j,i) = iw_(m,M1_IW_EP,k,j,i);
+  });
+  ImplicitApplyOp(M1_IW_KX, M1_IW_KV);
+  M1BcgVal red;
+  Kokkos::parallel_reduce("m1_impl_bcgf_r0", pol,
+  KOKKOS_LAMBDA(const int idx, M1BcgVal &v) {
+    int m, k, j, i;
+    M1BcgIdx(idx, nkji, nji, ni, m, k, j, i);
+    k += ks; j += js; i += is;
+    Real r = iw_(m,M1_IW_KB,k,j,i) - iw_(m,M1_IW_KV,k,j,i);
+    iw_(m,M1_IW_KR,k,j,i) = r;
+    iw_(m,M1_IW_KRH,k,j,i) = r;
+    iw_(m,M1_IW_KP,k,j,i) = 0.0;
+    iw_(m,M1_IW_KV,k,j,i) = 0.0;
+    v.s0 += r*r;
+    Real a = fabs(r);
+    v.mx = (a > v.mx) ? a : v.mx;
+  }, HRed(red));
+  M1GlobalBcg(red);
+  bcg_nred += 1.0;
+  Real rnorm = red.mx;
+  Real rhon = red.s0;   // (rhat, r) of the NEXT iteration, always known on entry
+
+  int nit = 0;
+  int nrestart = 0;
+  Real rho = 1.0, alpha = 1.0, omega = 1.0;
+  bool done = (rnorm/bscale < tol);
+  bool fell_back = false;
+  while (!done && nit < impl_lin_maxit) {
+    ++nit;
+    bool breakdown = !(fabs(rhon) > M1_BCG_EPS) || !(fabs(omega) > M1_BCG_EPS);
+    if (!breakdown) {
+      Real beta = (rhon/rho)*(alpha/omega);
+      const Real bt = beta, om = omega;
+      par_for("m1_impl_bcgf_p", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        Real p = iw_(m,M1_IW_KR,k,j,i)
+                 + bt*(iw_(m,M1_IW_KP,k,j,i) - om*iw_(m,M1_IW_KV,k,j,i));
+        iw_(m,M1_IW_KP,k,j,i) = p;
+        iw_(m,M1_IW_TR,k,j,i) = p;
+      });
+      ImplicitPrecond(-1, M1_IW_KY);
+      ImplicitApplyOp(M1_IW_KY, M1_IW_KV);
+      Real rv = 0.0;
+      auto rvf = KOKKOS_LAMBDA(const int idx, Real &ls) {
+        int m, k, j, i;
+        M1BcgIdx(idx, nkji, nji, ni, m, k, j, i);
+        k += ks; j += js; i += is;
+        ls += iw_(m,M1_IW_KRH,k,j,i)*iw_(m,M1_IW_KV,k,j,i);
+      };
+      if (devrv) {
+        // no host sync: alpha stays on the device until the (t,s) reduction
+        Kokkos::parallel_reduce("m1_impl_bcgf_rv", pol, rvf,
+                                Kokkos::Sum<Real, DevMemSpace>(rvd_));
+      } else {
+        Kokkos::parallel_reduce("m1_impl_bcgf_rv", pol, rvf, rv);
+        Real d2 = 0.0;
+        M1GlobalSum2(rv, d2);
+        bcg_nred += 1.0;
+        if (!(fabs(rv) > M1_BCG_EPS)) {
+          breakdown = true;
+        } else {
+          alpha = rhon/rv;
+        }
+      }
+      if (!breakdown) {
+        const Real al = alpha, rh = rhon;
+        const bool dv = devrv;
+        par_for("m1_impl_bcgf_s", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+        KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+          Real a = dv ? (rh/rvd_()) : al;
+          Real s = iw_(m,M1_IW_KR,k,j,i) - a*iw_(m,M1_IW_KV,k,j,i);
+          iw_(m,M1_IW_KS,k,j,i) = s;
+          iw_(m,M1_IW_TR,k,j,i) = s;
+        });
+        ImplicitPrecond(-1, M1_IW_KZ);
+        ImplicitApplyOp(M1_IW_KZ, M1_IW_KTT);
+        Kokkos::parallel_reduce("m1_impl_bcgf_ts", pol,
+        KOKKOS_LAMBDA(const int idx, M1BcgVal &v) {
+          int m, k, j, i;
+          M1BcgIdx(idx, nkji, nji, ni, m, k, j, i);
+          k += ks; j += js; i += is;
+          Real t = iw_(m,M1_IW_KTT,k,j,i);
+          v.s0 += t*iw_(m,M1_IW_KS,k,j,i);
+          v.s1 += t*t;
+          if (dv && idx == 0) {v.s2 += rvd_();}   // carries rhat.v to the host, exactly
+        }, HRed(red));
+        M1GlobalBcg(red);
+        bcg_nred += 1.0;
+        if (devrv) {
+          rv = red.s2;
+          if (!(fabs(rv) > M1_BCG_EPS)) {
+            breakdown = true;
+          } else {
+            alpha = rhon/rv;
+          }
+        }
+      }
+      if (!breakdown) {
+        const Real ts = red.s0, tt2 = red.s1;
+        omega = (tt2 > 0.0) ? (ts/tt2) : 0.0;
+        const Real al = alpha, ow = omega;
+        Kokkos::parallel_reduce("m1_impl_bcgf_upd", pol,
+        KOKKOS_LAMBDA(const int idx, M1BcgVal &v) {
+          int m, k, j, i;
+          M1BcgIdx(idx, nkji, nji, ni, m, k, j, i);
+          k += ks; j += js; i += is;
+          iw_(m,M1_IW_KX,k,j,i) += al*iw_(m,M1_IW_KY,k,j,i) + ow*iw_(m,M1_IW_KZ,k,j,i);
+          Real r = iw_(m,M1_IW_KS,k,j,i) - ow*iw_(m,M1_IW_KTT,k,j,i);
+          iw_(m,M1_IW_KR,k,j,i) = r;
+          v.s0 += iw_(m,M1_IW_KRH,k,j,i)*r;
+          Real a = fabs(r);
+          v.mx = (a > v.mx) ? a : v.mx;
+        }, HRed(red));
+        M1GlobalBcg(red);
+        bcg_nred += 1.0;
+        rho = rhon;
+        rhon = red.s0;
+        rnorm = red.mx;
+        if (rnorm/bscale < tol) {
+          // the TRUE residual, which is what the tolerance is about
+          ImplicitApplyOp(M1_IW_KX, M1_IW_KTT);
+          Kokkos::parallel_reduce("m1_impl_bcgf_true", pol,
+          KOKKOS_LAMBDA(const int idx, M1BcgVal &v) {
+            int m, k, j, i;
+            M1BcgIdx(idx, nkji, nji, ni, m, k, j, i);
+            k += ks; j += js; i += is;
+            Real r = iw_(m,M1_IW_KB,k,j,i) - iw_(m,M1_IW_KTT,k,j,i);
+            iw_(m,M1_IW_KR,k,j,i) = r;
+            Real a = fabs(r);
+            v.mx = (a > v.mx) ? a : v.mx;
+          }, HRed(red));
+          M1GlobalBcg(red);
+          bcg_nred += 1.0;
+          if (red.mx/bscale < tol) {
+            done = true;
+          } else {
+            breakdown = true;   // restart the recurrence from the true residual
+          }
+        }
+        if (!done && !(fabs(omega) > M1_BCG_EPS)) {breakdown = true;}
+      }
+    }
+    if (breakdown && !done) {
+      ++nrestart;
+      bcg_nbreak += 1.0;
+      if (nrestart > 2) {
+        fell_back = true;   // one line-Jacobi update (ImplicitBiCGStabEnd)
+        break;
+      }
+      ImplicitApplyOp(M1_IW_KX, M1_IW_KTT);
+      Kokkos::parallel_reduce("m1_impl_bcgf_rs", pol,
+      KOKKOS_LAMBDA(const int idx, M1BcgVal &v) {
+        int m, k, j, i;
+        M1BcgIdx(idx, nkji, nji, ni, m, k, j, i);
+        k += ks; j += js; i += is;
+        Real r = iw_(m,M1_IW_KB,k,j,i) - iw_(m,M1_IW_KTT,k,j,i);
+        iw_(m,M1_IW_KR,k,j,i) = r;
+        iw_(m,M1_IW_KRH,k,j,i) = r;
+        iw_(m,M1_IW_KP,k,j,i) = 0.0;
+        iw_(m,M1_IW_KV,k,j,i) = 0.0;
+        v.s0 += r*r;
+      }, HRed(red));
+      M1GlobalBcg(red);
+      bcg_nred += 1.0;
+      rhon = red.s0;
+      rho = 1.0;
+      alpha = 1.0;
+      omega = 1.0;
+    }
+  }
+  ImplicitBiCGStabEnd(nit, fell_back);
   return nit;
 }
 

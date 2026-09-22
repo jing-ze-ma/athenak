@@ -394,6 +394,10 @@ class RadiationM1 {
   MeshBoundaryValuesCC *pbval_kr;  // the exchange object of krw
   Real bcg_nsolve, bcg_itsum, bcg_itmax;  // inner-iteration statistics
   Real bcg_nbreak, bcg_nfall, bcg_nred;   // breakdowns, line-Jacobi fallbacks, reductions
+  int impl_bcg_sync;            // <rad_m1>/implicit_bcg_sync: 0 = the original loop
+                                // (5 blocking reductions per its), 1 = fused reductions
+                                // (3), 2 = 1 plus alpha kept on the device (2 on 1 rank)
+  Kokkos::View<Real, DevMemSpace> bcg_rvd;  // rhat.v on the device (sync level 2)
 
   // ---- MILESTONE 3b phase D: the OFF-DIAGONAL Eddington terms and the closure lag.
   // All inert with transport = explicit | implicit_x1 and on a 1-D mesh.
@@ -604,12 +608,16 @@ class RadiationM1 {
   //! the ghost zones (ImplicitApplyOp) or x IS the iterate, whose halo is current.
   void ImplicitOffDiagOp(int xc, int yc, Real sgn);
   //! milestone 3b phase C: z = M^{-1} r, the x1 line solve applied to an arbitrary
-  //! right-hand side (it overwrites M1_IW_TR and M1_IW_S1..S3)
+  //! right-hand side (it overwrites M1_IW_TR and M1_IW_S1..S3).  rc < 0: the caller
+  //! has already staged r in M1_IW_TR.
   void ImplicitPrecond(int rc, int zc);
   //! milestone 3b phase C: solve the frozen 7-point system by BiCGStab; the answer is
   //! left in M1_IW_S2, exactly where the line-Jacobi pass leaves it.  Returns the number
   //! of inner iterations taken.
   int ImplicitBiCGStab(Real rhsmax);
+  //! the same BiCGStab with fused reductions and vector updates (implicit_bcg_sync > 0)
+  int ImplicitBiCGStabFused(Real rhsmax);
+  void ImplicitBiCGStabEnd(int nit, bool fell_back);  // fallback / output / statistics
 
   // ...in "m1_before_stagen"
   TaskStatus InitRecv(Driver *d, int stage);

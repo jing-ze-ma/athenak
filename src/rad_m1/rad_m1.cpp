@@ -103,6 +103,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   bcg_nbreak = 0.0;
   bcg_nfall = 0.0;
   bcg_nred = 0.0;
+  impl_bcg_sync = 0;
   // ---- milestone 3b phase D
   impl_offdiag = M1_OD_LAGGED;
   od_now = M1_OD_LAGGED;
