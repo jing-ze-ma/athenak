@@ -48,11 +48,19 @@
 //! eps = E + 3 (F . Omega) / c of the bottom cell's M1 state, carried half a cell with
 //! S of that cell.  Top (x1max face), downward rays: vacuum.
 //!
-//! LIMITS (checked at start-up).  The whole horizontal plane must live in one MeshBlock
-//! and the sweep in x1 must not cross a block: ONE MeshBlock in the mesh, periodic x2
-//! (and x3).  Several blocks would need the upwind plane from the neighbours (a halo of
-//! width dx1 |mu_perp/mu_1| per layer, i.e. a pipelined sweep over the x1 stack and a
-//! horizontal exchange per layer); MPI is not supported for the same reason.
+//! SEVERAL MESHBLOCKS / MPI RANKS (VetSweepMB).  The same sweep over the GLOBAL layers,
+//! EXACT: the planes are banded by w = floor(max dx1 |mu_perp/mu_1|/dx_perp) + 1 cells
+//! in x2 (x3), the band of each new intensity plane is exchanged with the horizontal
+//! neighbours after every launch (device copy on a rank, MPI between ranks), and at an
+//! x1 block face the upwind plane is handed to the next block of the stack.  A split in
+//! x2/x3 runs every block of a layer in the same launch (no serialisation); a split in
+//! x1 sweeps the stack in turn, as the gathered x1 line solve does.  The alternative,
+//! block-Jacobi with the neighbours' intensities lagged by one sweep, is kept as the
+//! DIAGNOSTIC vet_mb_lag = K (VetMBSweeps).  The six D_ab of vet_tensor = full get their
+//! ghosts from the ordinary cell-centred exchange.
+//!
+//! LIMITS (checked at start-up).  Periodic x2 (and x3), uniform mesh, every MeshBlock at
+//! least w cells wide in x2 (x3) and 2 cells in x1; vet_milne needs one block along x1.
 
 #include <algorithm>
 #include <cmath>
@@ -67,9 +75,14 @@
 #include "globals.hpp"
 #include "parameter_input.hpp"
 #include "mesh/mesh.hpp"
+#include "bvals/bvals.hpp"
 #include "hydro/hydro.hpp"
 #include "rad_m1/rad_m1.hpp"
 #include "rad_m1/rad_m1_implicit.hpp"
+
+#if MPI_PARALLEL_ENABLED
+#include <mpi.h>
+#endif
 
 namespace radm1 {
 
@@ -194,6 +207,200 @@ void VetEigSym(Real a[3][3], Real lam[3], Real v[3][3]) {
 } // namespace
 
 //----------------------------------------------------------------------------------------
+//! \struct VetMBState
+//! \brief the state of the SEVERAL-MESHBLOCK sweep (VetSweepMB): banded plane buffers,
+//! neighbour tables, message buffers, and the block-Jacobi emulation of the diagnostic
+//! <rad_m1>/vet_mb_lag.
+//!
+//! Plane index convention: a banded plane is (kk, jj), kk in [0, n3w), jj in [0, n2w),
+//! with the active cells at kk = k - ks + w3, jj = j - js + w2; w2 (w3) is the band a
+//! ray reaches per layer, floor(max dx1 |mu_2|/(|mu_1| dx2)) + 1 cells.
+
+struct VetMBState {
+  int w2 = 0, w3 = 0;          // band widths in x2, x3 (w3 = 0 in 2-D)
+  int n2w = 1, n3w = 1;        // banded plane extents
+  int nbx1 = 1, nx1g = 0;      // MeshBlocks along x1, global layers along x1
+  int nof = 0;                 // horizontal neighbour slots: 2 (2-D) or 8 (3-D)
+  int maxreg = 0;              // largest band region (cells) of one slot
+  int maxcnt = 0;              // largest message (Reals) of one slot
+  Kokkos::Array<int, 8> oj, ok;  // slot offsets in (lx2, lx3); opposite slot = nof-1-o
+  DualArray1D<int> lx1;        // (nmb) x1 logical position of the block
+  DualArray1D<int> hloc;       // (8 nmb) local index of the slot's neighbour, -1 remote
+  DualArray1D<int> hself;      // (8 nmb) 1 if the slot's neighbour is the block itself
+  DualArray1D<int> xloc;       // (2 nmb) x1 neighbour lo/hi: local index, -1 remote,
+                               // -2 none (physical x1 face)
+  std::vector<int> hgid, hrank, xgid, xrank;
+  std::vector<int> gid0;       // (nranks) first global id of each rank
+  bool hmpi = false, xmpi = false;   // some horizontal / x1 neighbour is remote
+  DvceArray5D<Real> csw;       // (nmb, nx1+2, 2, n3w, n2w) extinction and source, banded,
+                               // layers 0 and nx1+1 = the x1 neighbours' face layers
+  DvceArray5D<Real> ipl;       // (nmb, 2, nray, n3w, n2w) I of the last two layers
+  DvceArray3D<Real> sbuf, rbuf;  // (nmb, nof, maxcnt) message buffers
+  MeshBoundaryValuesCC *pbd = nullptr;  // vet_tensor = full: ghost exchange of D
+  DvceArray5D<Real> dsc, dsc_c;         // its scratch array (nmb, 6, k, j, i) and dummy
+  // DIAGNOSTIC vet_mb_lag = K > 0: block-Jacobi emulation (see VetMBSweeps)
+  int nlag = 0;
+  DvceArray5D<Real> hist;      // (nmb, nx1g, nray, n3w, n2w) the last sweep's bands
+  DvceArray5D<Real> histx;     // (nmb, 2, nray, n3w, n2w) the last sweep's x1 planes
+  DvceArray5D<Real> kref;      // (nmb, 7, k, j, i) J, K_ab of the exact sweep
+  std::vector<double> e0max, emax, esum, erms;  // per sweep index: first call max; max,
+  double ncalls = 0.0;                           // sum of max, sum of rms over calls >= 1
+#if MPI_PARALLEL_ENABLED
+  MPI_Comm comm;
+#endif
+};
+
+namespace {
+
+// the band region of slot (dj, dk) on the RECEIVER: first plane index and extent
+KOKKOS_INLINE_FUNCTION
+void VetRegion(const int d, const int nx, const int w, int &r0, int &nr) {
+  r0 = (d < 0) ? 0 : ((d == 0) ? w : (w + nx));
+  nr = (d == 0) ? nx : w;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn VetBandExchange
+//! \brief fill the horizontal ghost band of the banded planes A(m, a0..a0+na-1,
+//! b0..b0+nb-1, kk, jj) from the (2 or 8) horizontal neighbours' active cells: periodic
+//! wrap, a device copy between blocks of this rank, MPI (device buffers, like the
+//! boundary machinery) between ranks.  Ghost and source regions never overlap, so the
+//! local copy has no race.
+
+void VetBandExchange(VetMBState &st, DvceArray5D<Real> &a, const int a0, const int na,
+                     const int b0, const int nb, const int nmb, const int nx2,
+                     const int nx3) {
+  const int nof = st.nof, w2 = st.w2, w3 = st.w3, mreg = st.maxreg;
+  const auto oj = st.oj;
+  const auto ok = st.ok;
+  auto hl_ = st.hloc;
+  auto a_ = a;
+  par_for("m1_vet_band_loc", DevExeSpace(), 0, nmb-1, 0, nof-1, 0, na*nb-1, 0, mreg-1,
+  KOKKOS_LAMBDA(const int m, const int o, const int ab, const int idx) {
+    const int n = hl_.d_view(8*m + o);
+    if (n < 0) return;
+    const int dj = oj[o], dk = ok[o];
+    int j0, nj, k0, nk;
+    VetRegion(dj, nx2, w2, j0, nj);
+    VetRegion(dk, nx3, w3, k0, nk);
+    if (idx >= nj*nk) return;
+    const int kr = idx/nj, jr = idx - kr*nj;
+    const int jj = j0 + jr, kk = k0 + kr;
+    const int aa = a0 + ab/nb, bb = b0 + ab%nb;
+    a_(m,aa,bb,kk,jj) = a_(n,aa,bb,kk - dk*nx3,jj - dj*nx2);
+  });
+#if MPI_PARALLEL_ENABLED
+  if (!st.hmpi) return;
+  auto sb_ = st.sbuf;
+  auto rb_ = st.rbuf;
+  // pack: slot o sends my cells that fill the neighbour's ghost region of slot nof-1-o
+  // (offset -o), i.e. its ghost index + o * nx
+  par_for("m1_vet_band_pack", DevExeSpace(), 0, nmb-1, 0, nof-1, 0, na*nb-1, 0, mreg-1,
+  KOKKOS_LAMBDA(const int m, const int o, const int ab, const int idx) {
+    if (hl_.d_view(8*m + o) >= 0) return;
+    const int dj = oj[o], dk = ok[o];
+    int j0, nj, k0, nk;
+    VetRegion(-dj, nx2, w2, j0, nj);
+    VetRegion(-dk, nx3, w3, k0, nk);
+    if (idx >= nj*nk) return;
+    const int kr = idx/nj, jr = idx - kr*nj;
+    const int aa = a0 + ab/nb, bb = b0 + ab%nb;
+    sb_(m,o,ab*nj*nk + idx) = a_(m,aa,bb,k0 + kr + dk*nx3,j0 + jr + dj*nx2);
+  });
+  Kokkos::fence();
+  std::vector<MPI_Request> req;
+  for (int m = 0; m < nmb; ++m) {
+    for (int o = 0; o < nof; ++o) {
+      if (st.hrank[8*m + o] == global_variable::my_rank) continue;
+      int nj = (st.oj[o] == 0) ? nx2 : w2, nk = (st.ok[o] == 0) ? nx3 : w3;
+      req.push_back(MPI_REQUEST_NULL);
+      MPI_Irecv(rb_.data() + (static_cast<size_t>(m)*nof + o)*st.maxcnt, na*nb*nj*nk,
+                MPI_ATHENA_REAL, st.hrank[8*m + o], 16*m + o, st.comm, &req.back());
+    }
+  }
+  for (int m = 0; m < nmb; ++m) {
+    for (int o = 0; o < nof; ++o) {
+      int rk = st.hrank[8*m + o];
+      if (rk == global_variable::my_rank) continue;
+      int nj = (st.oj[o] == 0) ? nx2 : w2, nk = (st.ok[o] == 0) ? nx3 : w3;
+      int lidn = st.hgid[8*m + o] - st.gid0[rk];
+      req.push_back(MPI_REQUEST_NULL);
+      MPI_Isend(sb_.data() + (static_cast<size_t>(m)*nof + o)*st.maxcnt, na*nb*nj*nk,
+                MPI_ATHENA_REAL, rk, 16*lidn + (nof - 1 - o), st.comm, &req.back());
+    }
+  }
+  MPI_Waitall(static_cast<int>(req.size()), req.data(), MPI_STATUSES_IGNORE);
+  par_for("m1_vet_band_unpk", DevExeSpace(), 0, nmb-1, 0, nof-1, 0, na*nb-1, 0, mreg-1,
+  KOKKOS_LAMBDA(const int m, const int o, const int ab, const int idx) {
+    if (hl_.d_view(8*m + o) >= 0) return;
+    const int dj = oj[o], dk = ok[o];
+    int j0, nj, k0, nk;
+    VetRegion(dj, nx2, w2, j0, nj);
+    VetRegion(dk, nx3, w3, k0, nk);
+    if (idx >= nj*nk) return;
+    const int kr = idx/nj, jr = idx - kr*nj;
+    const int aa = a0 + ab/nb, bb = b0 + ab%nb;
+    a_(m,aa,bb,k0 + kr,j0 + jr) = rb_(m,o,ab*nj*nk + idx);
+  });
+#endif
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn VetX1Move
+//! \brief copy whole banded planes A(nbr, as, b0..b0+nb-1, :, :) -> A(m, ad, ...) across
+//! the x1 faces between MeshBlocks.  Side s = 0: m receives from its LOWER x1 neighbour,
+//! s = 1 from its UPPER one; only the blocks with lx1 == rcv receive (rcv = -2: every
+//! block that has such a neighbour).  The planes are contiguous in A (LayoutRight), so
+//! MPI moves them in place.
+
+void VetX1Move(VetMBState &st, DvceArray5D<Real> &a, const int s, const int rcv,
+               const int ad, const int as, const int b0, const int nb, const int nmb) {
+  const int n2w = st.n2w, n3w = st.n3w;
+  auto xl_ = st.xloc;
+  auto lx_ = st.lx1;
+  auto a_ = a;
+  par_for("m1_vet_x1mv", DevExeSpace(), 0, nmb-1, 0, nb-1, 0, n3w-1, 0, n2w-1,
+  KOKKOS_LAMBDA(const int m, const int b, const int kk, const int jj) {
+    const int n = xl_.d_view(2*m + s);
+    if (n < 0) return;
+    if (rcv != -2 && lx_.d_view(m) != rcv) return;
+    a_(m,ad,b0 + b,kk,jj) = a_(n,as,b0 + b,kk,jj);
+  });
+#if MPI_PARALLEL_ENABLED
+  if (!st.xmpi) return;
+  Kokkos::fence();
+  const size_t cnt = static_cast<size_t>(nb)*n3w*n2w;
+  auto plane = [&](const int m, const int aa) {
+    return a.data() + (((static_cast<size_t>(m)*a.extent(1) + aa)*a.extent(2) + b0)
+                       *a.extent(3))*a.extent(4);
+  };
+  std::vector<MPI_Request> req;
+  for (int m = 0; m < nmb; ++m) {
+    const int lx = st.lx1.h_view(m);
+    // receive from my side-s neighbour
+    if (st.xloc.h_view(2*m + s) == -1 && (rcv == -2 || lx == rcv)) {
+      req.push_back(MPI_REQUEST_NULL);
+      MPI_Irecv(plane(m, ad), static_cast<int>(cnt), MPI_ATHENA_REAL, st.xrank[2*m + s],
+                16*m + 8 + s, st.comm, &req.back());
+    }
+    // send to my opposite-side neighbour, which receives on its side s
+    const int so = 1 - s;
+    const int lxn = (so == 1) ? (lx + 1) : (lx - 1);
+    if (st.xloc.h_view(2*m + so) == -1 && (rcv == -2 || lxn == rcv)) {
+      const int rk = st.xrank[2*m + so];
+      const int lidn = st.xgid[2*m + so] - st.gid0[rk];
+      req.push_back(MPI_REQUEST_NULL);
+      MPI_Isend(plane(m, as), static_cast<int>(cnt), MPI_ATHENA_REAL, rk,
+                16*lidn + 8 + s, st.comm, &req.back());
+    }
+  }
+  MPI_Waitall(static_cast<int>(req.size()), req.data(), MPI_STATUSES_IGNORE);
+#endif
+}
+
+} // namespace
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::VetInit
 
 void RadiationM1::VetInit(ParameterInput *pin) {
@@ -201,10 +408,12 @@ void RadiationM1::VetInit(ParameterInput *pin) {
   if (!trans_on) {
     VetFatal("<rad_m1>/closure = vet_sc needs transport = implicit on a MULTI-D mesh");
   }
-  if (pm->nmb_total != 1 || global_variable::nranks != 1) {
-    VetFatal("<rad_m1>/closure = vet_sc: the short-characteristics sweep needs ONE "
-             "MeshBlock (the whole horizontal plane and the whole x1 column) on one "
-             "rank");
+  // several MeshBlocks or ranks: the exact banded sweep of VetSweepMB.  vet_mb_force
+  // (DIAGNOSTIC, read only when given) runs it on one MeshBlock too, where it must
+  // reproduce the single-block sweep bit for bit.
+  bool mbpath = (pm->nmb_total != 1 || global_variable::nranks != 1);
+  if (pin->DoesParameterExist("rad_m1", "vet_mb_force")) {
+    mbpath = mbpath || pin->GetBoolean("rad_m1", "vet_mb_force");
   }
   if (pm->mesh_bcs[BoundaryFace::inner_x2] != BoundaryFlag::periodic ||
       (trans_x3 && pm->mesh_bcs[BoundaryFace::inner_x3] != BoundaryFlag::periodic)) {
@@ -275,8 +484,12 @@ void RadiationM1::VetInit(ParameterInput *pin) {
   int ncells3 = (indcs.nx3 > 1)? (indcs.nx3 + 2*(indcs.ng)) : 1;
   Kokkos::realloc(vet_cell, nmb, M1_VET_NC, ncells3, ncells2, ncells1);
   Kokkos::deep_copy(vet_cell, 0.0);
-  Kokkos::realloc(vet_ipl, nmb, 2, vet_nray, ncells3, ncells2);
-  Kokkos::deep_copy(vet_ipl, 0.0);
+  if (mbpath) {
+    VetMBInit(pin);   // the banded plane buffers live in vet_mbs
+  } else {
+    Kokkos::realloc(vet_ipl, nmb, 2, vet_nray, ncells3, ncells2);
+    Kokkos::deep_copy(vet_ipl, 0.0);
+  }
   if (global_variable::my_rank == 0) {
     std::cout << "<rad_m1> closure = vet_sc: short characteristics, " << vet_nray
               << " rays (double-Gauss nmu=" << vet_nmu << " x nphi=" << vet_nphi
@@ -284,6 +497,510 @@ void RadiationM1::VetInit(ParameterInput *pin) {
               << (vet_full ? ", FULL tensor D = K/J (eigenvalue floor " : "")
               << (vet_full ? std::to_string(vet_eig_min) + ")" : "")
               << std::endl;
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VetMBInit
+//! \brief several MeshBlocks / ranks: band widths, neighbour tables, buffers.  Uniform
+//! mesh (the implicit solve already fatals on SMR/AMR), periodic x2 (x3), every block at
+//! least as wide as the band.
+
+void RadiationM1::VetMBInit(ParameterInput *pin) {
+  Mesh *pm = pmy_pack->pmesh;
+  auto &indcs = pm->mb_indcs;
+  auto &mindcs = pm->mesh_indcs;
+  vet_mbs = new VetMBState;
+  VetMBState &st = *vet_mbs;
+  const int nmb = pmy_pack->nmb_thispack;
+  const int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
+  const bool thrd = trans_x3;
+  if ((mindcs.nx1 % nx1) != 0 || (mindcs.nx2 % nx2) != 0 ||
+      (thrd && (mindcs.nx3 % nx3) != 0)) {
+    VetFatal("<rad_m1>/closure = vet_sc on several MeshBlocks needs a uniform mesh");
+  }
+  st.nbx1 = mindcs.nx1/nx1;
+  const int nbx2 = mindcs.nx2/nx2;
+  const int nbx3 = thrd ? (mindcs.nx3/nx3) : 1;
+  st.nx1g = mindcs.nx1;
+  if (vet_milne && st.nbx1 > 1) {
+    VetFatal("<rad_m1>/vet_milne needs ONE MeshBlock along x1 (tau from the top)");
+  }
+  if (nx1 < 2) {
+    VetFatal("<rad_m1>/closure = vet_sc needs <meshblock>/nx1 >= 2");
+  }
+
+  // the band: the largest horizontal reach of a ray per layer, in cells
+  auto ah = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), vet_ang);
+  const Real dx1 = pmy_pack->pmb->mb_size.h_view(0).dx1;
+  const Real dx2 = pmy_pack->pmb->mb_size.h_view(0).dx2;
+  const Real dx3 = pmy_pack->pmb->mb_size.h_view(0).dx3;
+  Real s2 = 0.0, s3 = 0.0;
+  for (int r = 0; r < vet_nray; ++r) {
+    s2 = std::max(s2, dx1*std::fabs(ah(r,1))/(std::fabs(ah(r,0))*dx2));
+    s3 = std::max(s3, dx1*std::fabs(ah(r,2))/(std::fabs(ah(r,0))*dx3));
+  }
+  st.w2 = static_cast<int>(std::floor(s2)) + 1;
+  st.w3 = thrd ? (static_cast<int>(std::floor(s3)) + 1) : 0;
+  if (st.w2 > nx2 || (thrd && st.w3 > nx3)) {
+    VetFatal("<rad_m1>/closure = vet_sc: a ray crosses " + std::to_string(st.w2) + " x "
+             + std::to_string(st.w3) + " cells per layer, more than a MeshBlock ("
+             + std::to_string(nx2) + " x " + std::to_string(nx3)
+             + "): use wider MeshBlocks");
+  }
+  st.n2w = nx2 + 2*st.w2;
+  st.n3w = thrd ? (nx3 + 2*st.w3) : 1;
+  const int nx3e = thrd ? nx3 : 1;
+  if (thrd) {
+    st.nof = 8;
+    for (int t = 0, o = 0; t < 9; ++t) {
+      if (t == 4) continue;
+      st.oj[o] = t%3 - 1;
+      st.ok[o] = t/3 - 1;
+      ++o;
+    }
+  } else {
+    st.nof = 2;
+    st.oj[0] = -1;
+    st.oj[1] = 1;
+    st.ok[0] = st.ok[1] = 0;
+  }
+  for (int o = st.nof; o < 8; ++o) {
+    st.oj[o] = st.ok[o] = 0;
+  }
+  st.maxreg = thrd ? std::max(std::max(st.w2*nx3, nx2*st.w3), st.w2*st.w3) : st.w2;
+  st.maxcnt = std::max(vet_nray, 2*(nx1 + 2))*st.maxreg;
+
+  // neighbour tables from the global LogicalLocation list
+  const int nbt = st.nbx1*nbx2*nbx3;
+  std::vector<int> gof(nbt, -1);
+  for (int g = 0; g < pm->nmb_total; ++g) {
+    LogicalLocation &l = pm->lloc_eachmb[g];
+    gof[(l.lx3*nbx2 + l.lx2)*st.nbx1 + l.lx1] = g;
+  }
+  for (int t = 0; t < nbt; ++t) {
+    if (gof[t] < 0) {
+      VetFatal("<rad_m1>/closure = vet_sc: incomplete MeshBlock grid");
+    }
+  }
+  st.gid0.assign(global_variable::nranks, 0);
+  for (int rk = 0; rk < global_variable::nranks; ++rk) {
+    st.gid0[rk] = pm->gids_eachrank[rk];
+  }
+  const int me = global_variable::my_rank;
+  const int g0 = pmy_pack->gids;
+  Kokkos::realloc(st.lx1, nmb);
+  Kokkos::realloc(st.hloc, 8*nmb);
+  Kokkos::realloc(st.hself, 8*nmb);
+  Kokkos::realloc(st.xloc, 2*nmb);
+  st.hgid.assign(8*nmb, -1);
+  st.hrank.assign(8*nmb, me);
+  st.xgid.assign(2*nmb, -1);
+  st.xrank.assign(2*nmb, -1);
+  for (int m = 0; m < nmb; ++m) {
+    LogicalLocation &l = pm->lloc_eachmb[g0 + m];
+    st.lx1.h_view(m) = l.lx1;
+    for (int o = 0; o < 8; ++o) {
+      st.hloc.h_view(8*m + o) = -1;
+      st.hself.h_view(8*m + o) = 0;
+      if (o >= st.nof) continue;
+      const int l2 = (l.lx2 + st.oj[o] + nbx2) % nbx2;
+      const int l3 = (l.lx3 + st.ok[o] + nbx3) % nbx3;
+      const int g = gof[(l3*nbx2 + l2)*st.nbx1 + l.lx1];
+      st.hgid[8*m + o] = g;
+      st.hrank[8*m + o] = pm->rank_eachmb[g];
+      st.hself.h_view(8*m + o) = (g == g0 + m) ? 1 : 0;
+      if (pm->rank_eachmb[g] == me) {
+        st.hloc.h_view(8*m + o) = g - g0;
+      } else {
+        st.hmpi = true;
+      }
+    }
+    for (int s = 0; s < 2; ++s) {
+      const int lx = l.lx1 + ((s == 0) ? -1 : 1);
+      st.xloc.h_view(2*m + s) = -2;
+      if (lx < 0 || lx >= st.nbx1) continue;
+      const int g = gof[(l.lx3*nbx2 + l.lx2)*st.nbx1 + lx];
+      st.xgid[2*m + s] = g;
+      st.xrank[2*m + s] = pm->rank_eachmb[g];
+      if (pm->rank_eachmb[g] == me) {
+        st.xloc.h_view(2*m + s) = g - g0;
+      } else {
+        st.xloc.h_view(2*m + s) = -1;
+        st.xmpi = true;
+      }
+    }
+  }
+  st.lx1.modify_host();
+  st.lx1.sync_device();
+  st.hloc.modify_host();
+  st.hloc.sync_device();
+  st.hself.modify_host();
+  st.hself.sync_device();
+  st.xloc.modify_host();
+  st.xloc.sync_device();
+
+  Kokkos::realloc(st.csw, nmb, nx1 + 2, 2, st.n3w, st.n2w);
+  Kokkos::deep_copy(st.csw, 0.0);
+  Kokkos::realloc(st.ipl, nmb, 2, vet_nray, st.n3w, st.n2w);
+  Kokkos::deep_copy(st.ipl, 0.0);
+  Kokkos::realloc(st.sbuf, nmb, st.nof, st.maxcnt);
+  Kokkos::realloc(st.rbuf, nmb, st.nof, st.maxcnt);
+  Kokkos::realloc(vet_ipl, 1, 1, 1, 1, 1);
+  if (vet_full) {
+    const int n1 = nx1 + 2*indcs.ng;
+    const int n2 = nx2 + 2*indcs.ng;
+    const int n3 = thrd ? (nx3 + 2*indcs.ng) : 1;
+    Kokkos::realloc(st.dsc, nmb, 6, n3, n2, n1);
+    Kokkos::deep_copy(st.dsc, 0.0);
+    Kokkos::realloc(st.dsc_c, nmb, 6, 1, 1, 1);
+    st.pbd = new MeshBoundaryValuesCC(pmy_pack, pin, false);
+    st.pbd->InitializeBuffers(6);
+  }
+  // DIAGNOSTIC: vet_mb_lag = K (read only when given) emulates the BLOCK-JACOBI sweep
+  if (pin->DoesParameterExist("rad_m1", "vet_mb_lag")) {
+    st.nlag = pin->GetInteger("rad_m1", "vet_mb_lag");
+  }
+  if (st.nlag > 0) {
+    const int n1 = nx1 + 2*indcs.ng;
+    const int n2 = nx2 + 2*indcs.ng;
+    const int n3 = thrd ? (nx3 + 2*indcs.ng) : 1;
+    Kokkos::realloc(st.hist, nmb, st.nx1g, vet_nray, st.n3w, st.n2w);
+    Kokkos::deep_copy(st.hist, 0.0);
+    Kokkos::realloc(st.histx, nmb, 2, vet_nray, st.n3w, st.n2w);
+    Kokkos::deep_copy(st.histx, 0.0);
+    Kokkos::realloc(st.kref, nmb, 7, n3, n2, n1);
+    st.e0max.assign(st.nlag, 0.0);
+    st.emax.assign(st.nlag, 0.0);
+    st.esum.assign(st.nlag, 0.0);
+    st.erms.assign(st.nlag, 0.0);
+  }
+#if MPI_PARALLEL_ENABLED
+  MPI_Comm_dup(MPI_COMM_WORLD, &st.comm);
+#endif
+  if (global_variable::my_rank == 0) {
+    const double mb = 8.0e-6*(static_cast<double>(st.csw.size()) + st.ipl.size()
+                              + 2.0*st.sbuf.size() + st.dsc.size());
+    std::cout << "<rad_m1> vet_sc on " << pm->nmb_total << " MeshBlocks (" << st.nbx1
+              << " x " << nbx2 << " x " << nbx3 << "), " << global_variable::nranks
+              << " rank(s): exact banded sweep, band " << st.w2 << " x " << st.w3
+              << " cells, " << st.nof << " horizontal slots, " << mb
+              << " MB of sweep buffers on this rank"
+              << ((st.nlag > 0) ? (", DIAGNOSTIC block-Jacobi lag with "
+                                   + std::to_string(st.nlag) + " sweep(s) per call")
+                                : std::string(""))
+              << std::endl;
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VetFree
+
+void RadiationM1::VetFree() {
+  if (vet_mbs == nullptr) return;
+  if (vet_mbs->pbd != nullptr) {
+    delete vet_mbs->pbd;
+  }
+#if MPI_PARALLEL_ENABLED
+  MPI_Comm_free(&(vet_mbs->comm));
+#endif
+  delete vet_mbs;
+  vet_mbs = nullptr;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VetSweepMB
+//! \brief the short-characteristics sweep of VetShortChar over SEVERAL MeshBlocks, exact.
+//!
+//! Launch L (0 .. nx1g-1, the GLOBAL layers) does global layer L for the upward rays and
+//! nx1g-1-L for the downward ones in whichever block holds them; the other blocks return
+//! at once.  Before the sweep the extinction and source planes are copied into banded
+//! planes and their ghost band (x2/x3 neighbours) and x1 face layers are exchanged; after
+//! each launch the new intensity plane's ghost band is exchanged (VetBandExchange), and
+//! when the sweep crosses an x1 block face (L a multiple of nx1) the upwind plane is
+//! handed to the next block (VetX1Move).  Every value a block reads is the very number
+//! the neighbour computed, and the arithmetic is that of the single-block kernel term
+//! for term: with one MeshBlock (vet_mb_force) the moments are bit-identical to it.
+//! A split along x2/x3 costs no serialisation (all blocks of a layer run together);
+//! along x1 the stack is swept in turn, which the x1 line solve (implicit_partition =
+//! gather) already imposes.
+//!
+//! `lagged` (DIAGNOSTIC vet_mb_lag): after every exchange the ghost band (and the handed
+//! x1 plane) is SWAPPED with the one stored by the previous sweep -- each block then
+//! sweeps with the neighbours' intensities of the previous sweep, the block-Jacobi
+//! alternative, while the self-wrap of a block that spans the whole period stays exact.
+
+void RadiationM1::VetSweepMB(bool lagged) {
+  VetMBState &st = *vet_mbs;
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie;
+  const int js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nx1 = indcs.nx1, nx2 = indcs.nx2;
+  const int nx3 = trans_x3 ? indcs.nx3 : 1;
+  const int nmb = pmy_pack->nmb_thispack;
+  const bool thrd = trans_x3;
+  const int nray = vet_nray, nh = vet_nray/2;
+  const int nx1g = st.nx1g, nbx1 = st.nbx1;
+  const int w2 = st.w2, w3 = st.w3, n2w = st.n2w, n3w = st.n3w;
+  auto iw_ = iw;
+  auto vc_ = vet_cell;
+  auto cs_ = st.csw;
+  auto ip_ = st.ipl;
+  auto lx_ = st.lx1;
+  auto ang_ = vet_ang;
+  auto &mbsize = pmy_pack->pmb->mb_size;
+  const Real cl = c_light;
+  const Real efl = e_floor;
+  const bool milne = vet_milne;
+  const Real fmil = iflux_x1min;
+
+  // (a) the moments start from zero (a repeated sweep of vet_mb_lag); the banded
+  // extinction/source planes, layer i - is + 1
+  par_for("m1_vet_mb_csw", DevExeSpace(), 0, nmb-1, is, ie, ks, ke, js, je,
+  KOKKOS_LAMBDA(const int m, const int i, const int k, const int j) {
+    for (int n = M1_VET_J; n < M1_VET_CHI; ++n) {
+      vc_(m,n,k,j,i) = 0.0;
+    }
+    cs_(m,i-is+1,0,k-ks+w3,j-js+w2) = vc_(m,M1_VET_CHX,k,j,i);
+    cs_(m,i-is+1,1,k-ks+w3,j-js+w2) = vc_(m,M1_VET_SRC,k,j,i);
+  });
+  VetX1Move(st, st.csw, 0, -2, 0, nx1, 0, 2, nmb);
+  VetX1Move(st, st.csw, 1, -2, nx1 + 1, 1, 0, 2, nmb);
+  VetBandExchange(st, st.csw, 0, nx1 + 2, 0, 2, nmb, nx2, nx3);
+
+  auto hs_ = st.hist;
+  auto hx_ = st.histx;
+  auto hsf_ = st.hself;
+  auto xl_ = st.xloc;
+  const int nof = st.nof, mreg = st.maxreg;
+  const auto oj = st.oj;
+  const auto ok = st.ok;
+  for (int l = 0; l < nx1g; ++l) {
+    const int pw = l & 1, pr = pw ^ 1;
+    if (l > 0 && (l % nx1) == 0) {
+      // the sweep enters the next block of the stack: up rays from below, down from above
+      const int q = l/nx1;
+      VetX1Move(st, st.ipl, 0, q, pr, pr, 0, nh, nmb);
+      VetX1Move(st, st.ipl, 1, nbx1 - 1 - q, pr, pr, nh, nh, nmb);
+      if (lagged) {
+        par_for("m1_vet_mb_lagx", DevExeSpace(), 0, nmb-1, 0, nh-1, 0, n3w-1, 0, n2w-1,
+        KOKKOS_LAMBDA(const int m, const int r, const int kk, const int jj) {
+          for (int s = 0; s < 2; ++s) {
+            if (xl_.d_view(2*m + s) == -2) continue;
+            if (lx_.d_view(m) != ((s == 0) ? q : (nbx1 - 1 - q))) continue;
+            const int rr = r + s*nh;
+            const Real t = ip_(m,pr,rr,kk,jj);
+            ip_(m,pr,rr,kk,jj) = hx_(m,s,rr,kk,jj);
+            hx_(m,s,rr,kk,jj) = t;
+          }
+        });
+      }
+    }
+    par_for("m1_vet_mb_sweep", DevExeSpace(), 0, nmb-1, ks, ke, js, je,
+    KOKKOS_LAMBDA(const int m, const int k, const int j) {
+      const int lb = lx_.d_view(m);
+      const int lu = l - lb*nx1;
+      const int ld = (nx1g - 1 - l) - lb*nx1;
+      const bool ua = (lu >= 0 && lu < nx1), da = (ld >= 0 && ld < nx1);
+      if (!ua && !da) return;
+      const Real dx1 = mbsize.d_view(m).dx1;
+      const Real dx2 = mbsize.d_view(m).dx2;
+      const Real dx3 = mbsize.d_view(m).dx3;
+      const int iu = is + lu, id = is + ld;
+      const int jc = j - js + w2, kc = k - ks + w3;
+      Real acu[10], acd[10];
+      for (int n = 0; n < 10; ++n) {
+        acu[n] = 0.0;
+        acd[n] = 0.0;
+      }
+      for (int r = 0; r < nray; ++r) {
+        const Real m1 = ang_(r,0), m2 = ang_(r,1), m3 = ang_(r,2), wr = ang_(r,3);
+        const bool up = (m1 > 0.0);
+        if (up ? !ua : !da) continue;
+        const int i = up ? iu : id;
+        const Real am1 = fabs(m1);
+        const Real c0 = vc_(m,M1_VET_CHX,k,j,i);
+        const Real s0 = vc_(m,M1_VET_SRC,k,j,i);
+        Real iv;
+        if (l == 0) {
+          // the physical x1 face: VetShortChar, verbatim
+          const int iin = up ? (i + 1) : (i - 1);
+          const Real su = fmax(1.5*s0 - 0.5*vc_(m,M1_VET_SRC,k,j,iin), 0.0);
+          Real ib = 0.0;
+          if (up) {
+            if (milne) {
+              ib = su + 3.0*fmil/cl*m1;
+            } else {
+              Real e = fmax(iw_(m,M1_IW_EN,k,j,i), efl);
+              Real fo = iw_(m,M1_IW_F1,k,j,i)*m1 + iw_(m,M1_IW_F2,k,j,i)*m2
+                        + iw_(m,M1_IW_F3,k,j,i)*m3;
+              ib = fmax(e + 3.0*fo/cl, 0.0);
+            }
+          }
+          const Real dtau = 0.5*c0*dx1/am1;
+          const Real ex = exp(-dtau);
+          Real w0, wu;
+          if (dtau < 1.0e-3) {
+            w0 = dtau*(0.5 - dtau*(1.0/6.0 - dtau/24.0));
+            wu = dtau*(0.5 - dtau*(1.0/3.0 - dtau/8.0));
+          } else {
+            const Real g = (1.0 - ex)/dtau;
+            w0 = 1.0 - g;
+            wu = g - ex;
+          }
+          iv = ib*ex + wu*su + w0*s0;
+        } else {
+          // the upwind plane: banded layer i -+ 1 (0 and nx1+1 = the neighbour's face)
+          const int li = up ? (i - is) : (i - is + 2);
+          const Real sh2 = -dx1*m2/(am1*dx2);
+          const Real fl2 = floor(sh2);
+          const Real a2 = sh2 - fl2;
+          const int o2 = static_cast<int>(fl2);
+          const int ja = jc + o2;
+          const int jb = ja + 1;
+          int ka = kc, kb = kc;
+          Real a3 = 0.0;
+          if (thrd) {
+            const Real sh3 = -dx1*m3/(am1*dx3);
+            const Real fl3 = floor(sh3);
+            a3 = sh3 - fl3;
+            const int o3 = static_cast<int>(fl3);
+            ka = kc + o3;
+            kb = ka + 1;
+          }
+          const Real waa = (1.0 - a2)*(1.0 - a3), wab = a2*(1.0 - a3);
+          const Real wba = (1.0 - a2)*a3, wbb = a2*a3;
+          const Real iup_v = waa*ip_(m,pr,r,ka,ja) + wab*ip_(m,pr,r,ka,jb)
+                             + wba*ip_(m,pr,r,kb,ja) + wbb*ip_(m,pr,r,kb,jb);
+          const Real cu = waa*cs_(m,li,0,ka,ja) + wab*cs_(m,li,0,ka,jb)
+                          + wba*cs_(m,li,0,kb,ja) + wbb*cs_(m,li,0,kb,jb);
+          const Real su = waa*cs_(m,li,1,ka,ja) + wab*cs_(m,li,1,ka,jb)
+                          + wba*cs_(m,li,1,kb,ja) + wbb*cs_(m,li,1,kb,jb);
+          const Real dtau = 0.5*(cu + c0)*dx1/am1;
+          const Real ex = exp(-dtau);
+          Real w0, wu;
+          if (dtau < 1.0e-3) {
+            w0 = dtau*(0.5 - dtau*(1.0/6.0 - dtau/24.0));
+            wu = dtau*(0.5 - dtau*(1.0/3.0 - dtau/8.0));
+          } else {
+            const Real g = (1.0 - ex)/dtau;
+            w0 = 1.0 - g;
+            wu = g - ex;
+          }
+          iv = iup_v*ex + wu*su + w0*s0;
+        }
+        iv = fmax(iv, 0.0);
+        ip_(m,pw,r,kc,jc) = iv;
+        Real *ac = up ? acu : acd;
+        const Real a = wr*iv;
+        ac[0] += a;
+        ac[1] += a*m1*m1;
+        ac[2] += a*m2*m2;
+        ac[3] += a*m3*m3;
+        ac[4] += a*m1*m2;
+        ac[5] += a*m1*m3;
+        ac[6] += a*m2*m3;
+        ac[7] += a*m1;
+        ac[8] += a*m2;
+        ac[9] += a*m3;
+      }
+      for (int n = 0; n < 10; ++n) {
+        if (ua) {
+          vc_(m,M1_VET_J+n,k,j,iu) += acu[n];
+        }
+        if (da) {
+          vc_(m,M1_VET_J+n,k,j,id) += acd[n];
+        }
+      }
+    });
+    VetBandExchange(st, st.ipl, pw, 1, 0, nray, nmb, nx2, nx3);
+    if (lagged) {
+      // block-Jacobi: the band a block reads is the one of the PREVIOUS sweep
+      par_for("m1_vet_mb_lagb", DevExeSpace(), 0, nmb-1, 0, nof-1, 0, nray-1, 0, mreg-1,
+      KOKKOS_LAMBDA(const int m, const int o, const int r, const int idx) {
+        if (hsf_.d_view(8*m + o) != 0) return;
+        int j0, nj, k0, nk;
+        VetRegion(oj[o], nx2, w2, j0, nj);
+        VetRegion(ok[o], nx3, w3, k0, nk);
+        if (idx >= nj*nk) return;
+        const int kk = k0 + idx/nj, jj = j0 + idx%nj;
+        const Real t = ip_(m,pw,r,kk,jj);
+        ip_(m,pw,r,kk,jj) = hs_(m,l,r,kk,jj);
+        hs_(m,l,r,kk,jj) = t;
+      });
+    }
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::VetMBSweeps
+//! \brief the sweep(s) of one VetShortChar call on several MeshBlocks.  Default: ONE
+//! exact sweep.  DIAGNOSTIC vet_mb_lag = K: the exact sweep is kept as the reference
+//! (J, K_ab), then K block-Jacobi sweeps run, each with the neighbours' band of the
+//! sweep before (the last one of the previous call for the first); after each, max and
+//! rms over the mesh of max_ab |K_ab/J - (K_ab/J)_exact| are recorded.  The solve reads the K-th
+//! lagged sweep, i.e. the run IS the block-Jacobi scheme with K sweeps per step.
+
+void RadiationM1::VetMBSweeps() {
+  VetMBState &st = *vet_mbs;
+  VetSweepMB(false);
+  if (st.nlag <= 0) return;
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie;
+  const int js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb = pmy_pack->nmb_thispack;
+  auto vc_ = vet_cell;
+  auto kr_ = st.kref;
+  par_for("m1_vet_mb_kref", DevExeSpace(), 0, nmb-1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    for (int n = 0; n < 7; ++n) {
+      kr_(m,n,k,j,i) = vc_(m,M1_VET_J+n,k,j,i);
+    }
+  });
+  const int ni = ie - is + 1, nj = je - js + 1, nk = ke - ks + 1;
+  const int nc = nmb*nk*nj*ni;
+  for (int s = 0; s < st.nlag; ++s) {
+    VetSweepMB(true);
+    Real emx = 0.0, e2 = 0.0;
+    Kokkos::parallel_reduce("m1_vet_mb_err", Kokkos::RangePolicy<>(DevExeSpace(), 0, nc),
+    KOKKOS_LAMBDA(const int idx, Real &smx, Real &s2) {
+      const int m = idx/(nk*nj*ni);
+      int r = idx - m*(nk*nj*ni);
+      const int k = ks + r/(nj*ni);
+      r -= (k - ks)*(nj*ni);
+      const int j = js + r/ni;
+      const int i = is + r - (j - js)*ni;
+      const Real ja = vc_(m,M1_VET_J,k,j,i), jb = kr_(m,0,k,j,i);
+      Real d = 0.0;
+      if (ja > 0.0 && jb > 0.0) {
+        for (int n = 1; n < 7; ++n) {
+          d = fmax(d, fabs(vc_(m,M1_VET_J+n,k,j,i)/ja - kr_(m,n,k,j,i)/jb));
+        }
+      } else {
+        d = 1.0;
+      }
+      smx = fmax(smx, d);
+      s2 += d*d;
+    }, Kokkos::Max<Real>(emx), Kokkos::Sum<Real>(e2));
+    Real cnt = static_cast<Real>(nc);
+#if MPI_PARALLEL_ENABLED
+    MPI_Allreduce(MPI_IN_PLACE, &emx, 1, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+    MPI_Allreduce(MPI_IN_PLACE, &e2, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(MPI_IN_PLACE, &cnt, 1, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
+#endif
+    const double rms = std::sqrt(e2/cnt);
+    if (vet_ncall == 0.0) {
+      st.e0max[s] = emx;
+    } else {
+      st.emax[s] = std::max(st.emax[s], static_cast<double>(emx));
+      st.esum[s] += emx;
+      st.erms[s] += rms;
+    }
+  }
+  if (vet_ncall > 0.0) {
+    st.ncalls += 1.0;
   }
 }
 
@@ -343,8 +1060,13 @@ void RadiationM1::VetShortChar() {
   });
 
   // (2) the sweep: launch l does layer is+l for the upward rays and ie-l for the
-  // downward ones, reading the intensity of launch l-1 from the other plane buffer
-  for (int l = 0; l < nx1; ++l) {
+  // downward ones, reading the intensity of launch l-1 from the other plane buffer.
+  // Several MeshBlocks: the banded sweep over the global layers (VetSweepMB).
+  if (vet_mbs != nullptr) {
+    VetMBSweeps();
+  }
+  const int nlaunch = (vet_mbs != nullptr) ? 0 : nx1;   // the banded sweep ran instead
+  for (int l = 0; l < nlaunch; ++l) {
     const int pw = l & 1, pr = pw ^ 1;
     par_for("m1_vet_sweep", DevExeSpace(), 0, nmb1, ks, ke, js, je,
     KOKKOS_LAMBDA(const int m, const int k, const int j) {
@@ -622,18 +1344,51 @@ void RadiationM1::VetFullTensor() {
     vc_(m,M1_VET_GD,k,j,i) = hit ? dev : (-1.0 - dev);
   });
 
-  // ghosts: periodic in x2 (x3), edge copy in x1
-  par_for("m1_vet_full_gh", DevExeSpace(), 0, nmb1, 0, n3-1, 0, n2-1, 0, n1-1,
-  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    const bool act = (i >= is && i <= ie && j >= js && j <= je && k >= ks && k <= ke);
-    if (act) return;
-    const int ii = (i < is) ? is : ((i > ie) ? ie : i);
-    const int jj = js + VetWrap(j - js, nx2);
-    const int kk = thrd ? (ks + VetWrap(k - ks, nx3)) : k;
-    for (int n = 0; n < 6; ++n) {
-      vc_(m,M1_VET_D11+n,k,j,i) = vc_(m,M1_VET_D11+n,kk,jj,ii);
-    }
-  });
+  // ghosts: periodic in x2 (x3), edge copy in x1.  Several MeshBlocks: the six D_ab go
+  // through the ordinary cell-centred exchange (periodic wrap, edges, corners, MPI), and
+  // only a PHYSICAL x1 face takes the edge copy.
+  if (vet_mbs != nullptr) {
+    VetMBState &st = *vet_mbs;
+    auto ds_ = st.dsc;
+    auto lx_ = st.lx1;
+    const int nbx1 = st.nbx1;
+    par_for("m1_vet_full_dsc", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      for (int n = 0; n < 6; ++n) {
+        ds_(m,n,k,j,i) = vc_(m,M1_VET_D11+n,k,j,i);
+      }
+    });
+    MeshBoundaryValuesCC *pb = st.pbd;
+    while (pb->InitRecv(6) == TaskStatus::incomplete) {}
+    while (pb->PackAndSendCC(st.dsc, st.dsc_c) == TaskStatus::incomplete) {}
+    while (pb->RecvAndUnpackCC(st.dsc, st.dsc_c) == TaskStatus::incomplete) {}
+    while (pb->ClearSend() == TaskStatus::incomplete) {}
+    while (pb->ClearRecv() == TaskStatus::incomplete) {}
+    par_for("m1_vet_full_ghmb", DevExeSpace(), 0, nmb1, 0, n3-1, 0, n2-1, 0, n1-1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const bool act = (i >= is && i <= ie && j >= js && j <= je && k >= ks && k <= ke);
+      if (act) return;
+      const int lb = lx_.d_view(m);
+      int ii = i;
+      if (i < is && lb == 0) ii = is;
+      if (i > ie && lb == nbx1 - 1) ii = ie;
+      for (int n = 0; n < 6; ++n) {
+        vc_(m,M1_VET_D11+n,k,j,i) = ds_(m,n,k,j,ii);
+      }
+    });
+  } else {
+    par_for("m1_vet_full_gh", DevExeSpace(), 0, nmb1, 0, n3-1, 0, n2-1, 0, n1-1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const bool act = (i >= is && i <= ie && j >= js && j <= je && k >= ks && k <= ke);
+      if (act) return;
+      const int ii = (i < is) ? is : ((i > ie) ? ie : i);
+      const int jj = js + VetWrap(j - js, nx2);
+      const int kk = thrd ? (ks + VetWrap(k - ks, nx3)) : k;
+      for (int n = 0; n < 6; ++n) {
+        vc_(m,M1_VET_D11+n,k,j,i) = vc_(m,M1_VET_D11+n,kk,jj,ii);
+      }
+    });
+  }
 
   // run statistics of the guard (host reductions over the active cells)
   const int ni = ie - is + 1, nj = je - js + 1, nk = ke - ks + 1;
@@ -668,31 +1423,45 @@ void RadiationM1::VetDump(const std::string &fname) {
   auto ih = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), iw);
   Real dx1 = pmy_pack->pmb->mb_size.h_view(0).dx1;
   Real x1m = pmy_pack->pmb->mb_size.h_view(0).x1min;
-  {
-    // the whole (j, i) plane at k = ks: raw K/J, the uniaxial projection and, under
-    // vet_tensor = full, the guarded D the solve reads
+  // the whole (j, i) plane at k = ks: raw K/J, the uniaxial projection and, under
+  // vet_tensor = full, the guarded D the solve reads.  Several MeshBlocks: one file per
+  // local block, `.plane.g<gid>`, with GLOBAL (i, j) and 17 digits.
+  const int nmbd = (vet_mbs != nullptr) ? pmy_pack->nmb_thispack : 1;
+  for (int m = 0; m < nmbd; ++m) {
     const int je = indcs.je;
-    std::ofstream g(fname + ".plane");
-    g << "# closure = vet_sc plane dump, m = 0, k = ks; call "
+    std::string gname = fname + ".plane";
+    int i0 = 0, j0 = 0;
+    if (vet_mbs != nullptr) {
+      const int gid = pmy_pack->gids + m;
+      char gb[16];
+      std::snprintf(gb, sizeof(gb), ".g%05d", gid);
+      gname += gb;
+      LogicalLocation &ll = pmy_pack->pmesh->lloc_eachmb[gid];
+      i0 = ll.lx1*indcs.nx1;
+      j0 = ll.lx2*indcs.nx2;
+    }
+    std::ofstream g(gname);
+    g << "# closure = vet_sc plane dump, m = " << m << ", k = ks; call "
       << static_cast<int>(vet_ncall) << (vet_full ? " (full)" : " (uniaxial)") << "\n"
       << "# 1 i  2 j  3 J  4-9 K/J 11 22 33 12 13 23  10-12 H/J  13 chi  14-16 n  "
       << "17-22 D_guarded 11 22 33 12 13 23 (0 unless full)  23 E_m1  24 chi_ext\n";
-    g << std::setprecision(10);
+    g << std::setprecision((vet_mbs != nullptr) ? 17 : 10);
     for (int j = js; j <= je; ++j) {
       for (int i = is; i <= ie; ++i) {
-        Real jj = vh(0,M1_VET_J,ks,j,i);
+        Real jj = vh(m,M1_VET_J,ks,j,i);
         Real ij = (jj > 0.0) ? 1.0/jj : 0.0;
-        g << i - is << " " << j - js << " " << jj;
-        for (int n = 0; n < 6; ++n) {g << " " << vh(0,M1_VET_K11+n,ks,j,i)*ij;}
-        for (int n = 0; n < 3; ++n) {g << " " << vh(0,M1_VET_H1+n,ks,j,i)*ij;}
-        for (int n = 0; n < 4; ++n) {g << " " << vh(0,M1_VET_CHI+n,ks,j,i);}
+        g << i - is + i0 << " " << j - js + j0 << " " << jj;
+        for (int n = 0; n < 6; ++n) {g << " " << vh(m,M1_VET_K11+n,ks,j,i)*ij;}
+        for (int n = 0; n < 3; ++n) {g << " " << vh(m,M1_VET_H1+n,ks,j,i)*ij;}
+        for (int n = 0; n < 4; ++n) {g << " " << vh(m,M1_VET_CHI+n,ks,j,i);}
         for (int n = 0; n < 6; ++n) {
-          g << " " << (vet_full ? vh(0,M1_VET_D11+n,ks,j,i) : 0.0);
+          g << " " << (vet_full ? vh(m,M1_VET_D11+n,ks,j,i) : 0.0);
         }
-        g << " " << ih(0,M1_IW_EN,ks,j,i) << " " << vh(0,M1_VET_CHX,ks,j,i) << "\n";
+        g << " " << ih(m,M1_IW_EN,ks,j,i) << " " << vh(m,M1_VET_CHX,ks,j,i) << "\n";
       }
     }
   }
+  if (global_variable::my_rank != 0) return;
   std::ofstream f(fname);
   f << "# closure = vet_sc column dump, m = 0, k = ks, j = js; call "
     << static_cast<int>(vet_ncall) << "\n"
@@ -739,6 +1508,17 @@ void RadiationM1::VetReport() {
               << vet_ncell << " cell-calls (eigenvalue floor " << vet_eig_min
               << "); max |D_guarded - K/J|=" << vet_guard_max
               << " (incl. trace normalisation); min D_11=" << vet_d11_min << std::endl;
+  }
+  if (vet_mbs != nullptr && vet_mbs->nlag > 0) {
+    const VetMBState &st = *vet_mbs;
+    const double nc = std::max(st.ncalls, 1.0);
+    for (int s = 0; s < st.nlag; ++s) {
+      std::cout << "<rad_m1> vet_mb_lag sweep " << s + 1 << "/" << st.nlag
+                << ": max_ab |K/J - exact| call 0 max=" << st.e0max[s]
+                << "; calls >= 1 (" << st.ncalls << "): max=" << st.emax[s]
+                << " mean of max=" << st.esum[s]/nc << " mean rms=" << st.erms[s]/nc
+                << std::endl;
+    }
   }
 }
 

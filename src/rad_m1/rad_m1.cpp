@@ -414,6 +414,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   // closure
   vet_sc = false;
   vet_full = false;
+  vet_mbs = nullptr;
   vet_eig_min = 0.0;
   vet_nguard = 0.0;
   vet_ncell = 0.0;
@@ -638,6 +639,7 @@ RadiationM1::~RadiationM1() {
   ReportCounters();
   ImplicitReport();   // milestone 3a; a no-op in transport = explicit
   if (vet_sc) {VetReport();}
+  VetFree();
   delete pbval_u;
   if (pbval_th != nullptr) {delete pbval_th;}
   if (pbval_tq != nullptr) {delete pbval_tq;}

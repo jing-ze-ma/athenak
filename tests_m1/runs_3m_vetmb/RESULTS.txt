@@ -1,0 +1,187 @@
+================================================================================
+MILESTONE 3m -- closure = vet_sc on SEVERAL MeshBlocks and MPI ranks (uniform grid)
+================================================================================
+Date:    2026-09-22/23, viper.  NOT COMMITTED.
+Patch:   bench/m1_vetmb_0923/vetmb.patch (made vs 1d22a118; `git apply --check` passes on
+         eb060b1b too; patched eb060b1b builds (bench/m1_vetmb_0923/new_eb, CPU) and a 4-block
+         4-rank full-tensor run gives a user.hst identical to the 1d22a118+patch build).
+         Files: rad_m1_vet.cpp (almost all of it), rad_m1.hpp (forward decl, 1 pointer,
+         4 method decls), rad_m1.cpp (2 lines: pointer = nullptr, VetFree() in the dtor).
+         rad_m1_implicit.cpp is NOT touched.
+Builds:  bench/m1_vetmb_0923/{ref,new} = git archive HEAD (+ patch in new); CPU gcc/14
+         openmpi/5.0 Release MPI PROBLEM=box_convection (ref md5 d25626d9..., new
+         d55c9aca...); HIP rocm/6.3 gfx942_APU: bench/m1_vetmb_0923/athena_gpu (61835a95...).
+Runs:    bench/m1_vetmb_0923/runs (CPU), gpu_runs (GPU).  Plane comparison:
+         cmp_planes.py (this directory); run statistics: runs_3j_vet/gate2.py.
+
+--------------------------------------------------------------------------------
+CHOICE: exact banded sweep (neither pure A nor KBA B)
+--------------------------------------------------------------------------------
+The sweep already runs layer by layer in x1 with one launch per layer over the whole
+(k,j) plane.  A split in x2/x3 (the production decomposition, 84 x 52 x 52 blocks) does
+NOT serialise anything: every block holds the same x1 layer, so all blocks of a layer
+run in the same launch; the only extra is a halo exchange of the new intensity plane
+after each launch.  So the exact answer costs one band exchange per layer, not a
+pipeline.  Only a split in x1 serialises (the stack is swept block after block, with
+the upwind plane handed across the face) -- and the x1 line solve already needs
+implicit_partition = gather for that, and production has one block along x1.
+Hence: EXACT sweep for every decomposition.  Option A was implemented as a DIAGNOSTIC
+(<rad_m1>/vet_mb_lag = K) and measured below: it is not good enough.
+
+Implementation (VetSweepMB):
+ * banded planes: width w = floor(max_r dx1 |mu_perp/mu_1| / dx_perp) + 1 per side,
+   = 4 cells here (reach 3.6 dx2); fatal if a block is narrower than w.
+ * launch L = global layer L (up rays) and nx1g-1-L (down rays); blocks that hold
+   neither return at once.  Arithmetic identical to the single-block kernel.
+ * after each launch: band exchange of the new plane with 2 (2-D) or 8 (3-D, incl.
+   corners) horizontal neighbours: device copy on a rank, MPI with device buffers
+   (as the boundary machinery does, private dup'd communicator) between ranks.
+ * extinction and source: banded copy + x1-face layers exchanged once per call.
+ * at L = q nx1: the upwind plane (up rays from below, down rays from above) is moved
+   across the x1 face (device copy or MPI in place, planes are contiguous).
+ * vet_tensor = full: the six D_ab ghosts go through a MeshBoundaryValuesCC (6 vars);
+   edge copy only at a physical x1 face.  Uniaxial (chi,n) needs nothing: the solve
+   copies them into iw, whose halo the solver already exchanges.
+ * one MeshBlock on one rank: the old single-block code runs unchanged.
+   vet_mb_force = true (diagnostic) runs the banded path on one block.
+ * vet_dump on several blocks writes one .plane.g<gid> file per block, global (i,j).
+
+Memory added at production size (84 x 52 x 52 block, 64 rays, w = 4, ng = 3), per
+MeshBlock (the old path held vet_ipl 2 x 64 x 58 x 58 = 3.4 MB):
+   intensity planes 2 x 64 x 60 x 60              3.7 MB   (replaces vet_ipl)
+   banded chi,S     86 x 2 x 60 x 60              5.0 MB
+   message buffers  2 x 8 slots x 64 x 4 x 52     4.6 MB
+     (sized for the largest message, max(nray, 2(nx1+2)) x 208 cells)
+   D ghost scratch  6 x 58 x 58 x 90 (full only) 14.5 MB   (+ bvals buffers)
+   => ~28 MB per block (full), ~13 MB (uniaxial) by this count (computed, not
+   measured).  The start-up line of GPU run S1 (4 blocks, full) prints 111.0 MB of
+   sweep buffers on the rank (planes + chi,S + message buffers + D scratch) = 27.8 MB
+   per block, as counted.  The lag diagnostic adds nx1g x 64 x 60 x 60 per block
+   (155 MB) and is for CPU tests only.
+Per x1 face the x1 handoff moves nray/2 x 60 x 60 = 0.9 MB per crossing.
+
+--------------------------------------------------------------------------------
+GATE 1  byte-identity vs HEAD (CPU, seeded slab, tlim 3, bin/rst every 1 s)
+--------------------------------------------------------------------------------
+  default (closure m1)            16/16 files cmp-identical, log identical ex. timings
+  vet_sc uniaxial                 16/16 identical
+  vet_sc full                     16/16 identical
+  vet_sc uniaxial, input with the new keys present (vet_tensor/vet_mb_force/vet_mb_lag
+    = defaults)                   16/16 identical
+  (runs G1_ref_* vs G1_new_*)
+  vet_mb_force = true (banded path, ONE block; uniaxial and full): hst identical; every
+  bin/rst differs in exactly 5 bytes = the input echo of the forced key ("true "
+  vs "false"), i.e. the evolved data after 19 steps are bit-identical to the
+  single-block sweep (G1_new_uniF, G1_new_fullF vs G1_ref_uniM, G1_ref_full).
+
+--------------------------------------------------------------------------------
+GATE 2  CPU, seeded 2-D slab (he_slab_vet.athinput + vet_* keys = runs/he_slab_mb),
+        vpert 1e-3, closure_lag = step
+--------------------------------------------------------------------------------
+(a) D vs the one-block result, SAME state (call 0) and later calls (tlim 3, dump every
+    5 calls; cmp_planes.py; reference = S0_ref, one block via the banded path):
+
+  decomposition (blocks x ranks)     call 0: max |K/J - ref|   calls 5-15: max / rms
+  x2: 2 blocks, 1 rank               0 (bit-identical)          2.4e-11 / 4.3e-12
+  x2: 2 blocks, 2 ranks              0                          1.8e-11 / 4.2e-12
+  x2: 4 blocks, 1 rank               0                          2.3e-11 / 4.3e-12
+  x2: 4 blocks, 4 ranks              0                          2.2e-11 / 4.3e-12
+  x1: 2 blocks, 1 / 2 ranks          6.3e-15 / 6.3e-15          2.1e-11 / 4.3e-12
+  x1: 4 blocks, 1 / 4 ranks          6.4e-15 / 6.4e-15          2.7e-11 / 4.3e-12
+  x1 2 x x2 2, 4 ranks               6.3e-15                    2.1e-11 / 4.2e-12
+  x1 splits at call 0: the INPUT state already differs by 2e-15 (E) / 5e-14 (chi_ext)
+  -- the gathered line solve and the pgen are round-off different -- the sweep adds
+  nothing.  Later calls: the states have drifted by round-off (J rel 5e-10).
+
+(b) 200 s statistics (gate2.py; 1241 steps in every arm):
+
+  arm                 Picard  nonconv posfb minE     F1top/Fin (min/max)     dt      KE_1/KE_2
+  V2 1 block          4.14/6  0       0     1.651e5  1.0000 (1.0000/1.0003) 0.1612  1.29e26/1.81e21
+  V2 x2 2blk 2rk      4.14/5  0       0     1.651e5  1.0000 (1.0000/1.0003) 0.1612  1.29e26/1.81e21
+  V2 x2 4blk 1rk      4.14/6  0       0     1.651e5  1.0000 (1.0000/1.0003) 0.1612  1.29e26/1.81e21
+  V2 x2 4blk 4rk      4.14/6  0       0     1.651e5  1.0000 (1.0000/1.0003) 0.1612  1.29e26/1.81e21
+  V2 x1 2blk 2rk      4.14/6  0       0     1.651e5  1.0000 (1.0000/1.0003) 0.1612  1.29e26/1.81e21
+  V2 x1 4blk 4rk      4.14/6  0       0     1.651e5  1.0000 (1.0000/1.0003) 0.1612  1.29e26/1.81e21
+  F  1 block (full)   4.14/6  0       0     1.651e5  1.0000 (1.0000/1.0003) 0.1611  1.38e26/1.90e21
+  F  x2 4blk 4rk      4.13/6  0       0     1.651e5  1.0000 (1.0000/1.0003) 0.1611  1.38e26/1.90e21
+  F  x1 4blk 4rk      4.14/6  0       0     1.651e5  1.0000 (1.0000/1.0003) 0.1611  1.38e26/1.90e21
+  V2 1 block and F 1 block reproduce runs_3j_vet V2 and README_FULLTENSOR F_full.
+  KE_1, KE_2 histories (t >= 5) of every decomposed arm vs its one-block arm: max
+  relative difference 1.7-4.1e-8 (KE_1), 2.8-7.4e-7 (KE_2).
+
+(c) OPTION A measured: vet_mb_lag = K (the run IS block-Jacobi with K sweeps per step;
+    the exact sweep of the same state is the reference, every call).  Metric =
+    max_ab |K_ab/J - exact| over the mesh; "calls>=1" = 1240 calls of the 200 s run.
+
+  decomposition   K  sweep  call-0 max   calls>=1: max    mean(max)  mean(rms)
+  x1 2 blk        1   1     1.5e-2       1.8e-4           3.8e-7     4.3e-8
+  x1 4 blk        1   1     8.3e-2       2.3e-3           4.9e-6     2.2e-6
+  x2 2 blk        1   1     1.9e-1       2.0e-2           2.8e-5     4.5e-6
+  x2 4 blk        1   1     1.8e-1       4.6e-2           6.4e-5     1.3e-5
+  x2 4 blk        2   1/2   1.8e-1/4.0e-2  2.0e-2/9.7e-3   2.7e-5/1.1e-5  5.4e-6/1.8e-6
+  x2 4 blk        4   1..4  1.8e-1 .. 8.0e-3  3.5e-3 1.0e-3 4.6e-4 2.1e-4   9.1e-6 .. 6.3e-7
+
+  200 s effect (gate2.py):
+  A x2 2blk K=1   Picard 4.04/6  minE 1.261e5  F1top/Fin max 1.0004  KE_2 9.44e23 (520 x exact)
+  A x2 4blk K=1   Picard 4.07/6  minE 1.485e5  F1top/Fin max 1.0005  KE_2 1.34e24 (740 x)
+  A x2 4blk K=2   Picard 4.12/5  minE 1.636e5                        KE_2 1.08e22 (6 x)
+  A x2 4blk K=4   Picard 4.12/6  minE 1.651e5                        KE_2 1.94e21 (1.07 x)
+  A x1 2blk K=1                  minE 1.651e5                        KE_2 1.86e21 (1.03 x)
+  A x1 4blk K=1                  minE 1.645e5                        KE_2 1.87e21 (1.03 x)
+  Reading: the lag error lives where rays are long, in the thin top, and a HORIZONTAL
+  block face turns it into a horizontal jump of D, i.e. a horizontal radiative force:
+  with one lagged sweep per step the horizontal KE grows 500-740 x and min E drops
+  24 %.  The error falls ~2.5 x per extra sweep; K = 4 matches the exact run -- at 4 x
+  the sweep cost, while the exact sweep costs one band exchange per layer.  x1 splits
+  lag benignly (the incoming plane at an x1 face is deep and nearly isotropic), but
+  that is the decomposition production does not use.  -> exact sweep; vet_mb_lag
+  stays a diagnostic.
+
+--------------------------------------------------------------------------------
+GATE 3  GPU stability, 3-D box he_slab_m1_3d.athinput (84 x 104 x 104, 4 MeshBlocks
+        84 x 52 x 52), closure = vet_sc, vet_tensor = full, implicit_line_solver = pcr
+--------------------------------------------------------------------------------
+  Input bench/m1_vetmb_0923/gpu_runs/he_slab_m1_3d_vet.athinput (the runs_3k input + pcr,
+  vet_tensor = full, nmu 4, nphi 8), seeded vpert 1e-2.  apudev, -t 00:12:30, ran to the
+  wall-clock limit.  Stats: gpu_stats.py (this directory) on gpu_runs/S1, S2.
+
+  run       job       steps  t_end  Picard   nonconv posfb  line_jacobi  Newton fb    min E     F1top/Fin (min/max)   dt (min)
+  S1 1 GPU  11943413  2610   422.0  4.98/6   0       0      0            1.09e4       1.635e5   1.0000 (0.9998/1.0000) 0.16109 (0.16108)
+  S2 2 GPUs 11943414  2810   454.2  4.96/6   0       0      0            1.10e4       1.635e5   1.0000 (0.9998/1.0000) 0.16109 (0.16108)
+  (Newton fb per cell-pass 9.2e-7 / 8.6e-7; BiCGStab breakdowns 154 / 165, 4.07 global
+  reductions per inner iteration.)  Full-tensor guard: 0 triggers in 2.38e9 (S1) and
+  1.28e9 (S2, rank 0) cell-calls, min D_11 0.3316.  Stable for the whole job on 1 and 2
+  GPUs (422 s and 454 s of simulated time).
+  For comparison, runs_3k P1 (Eddington, thomas) min E 1.649e5; the vet_sc arms here
+  go to 1.635e5 within the first 100 steps (V1_*) and then stay there.
+
+--------------------------------------------------------------------------------
+GATE 4  GPU cost (job 11943415, one node vipa1327, same binary, interleaved E/V, x2)
+--------------------------------------------------------------------------------
+  3-D box as gate 3, nlim 100, ms/step = elapsed over cycles 10-100 in run.log.
+  SC = the "vet_sc: SC seconds" line (fenced Kokkos timer around the whole formal solution,
+  including the band exchanges and the D ghost exchange); its rank-0 value.
+
+  arm                    ms/step (r1, r2)   Picard  inner its/step*  SC ms/call (r1, r2)  SC share of step
+  E eddington, 1 GPU     266.8, 266.1       4.69    111.7            --                   --
+  V vet_sc full, 1 GPU   265.5, 268.3       4.94    112.0            18.47, 18.57         6.9 %
+  E eddington, 2 GPUs    236.4, 236.1       4.70    111.7            --                   --
+  V vet_sc full, 2 GPUs  251.4, 252.5       4.92    111.8            24.05, 23.88         9.5 %
+  * global reductions / 4.07 per inner iteration / 100 steps.
+
+  1 GPU: V costs the same as E within the repeat spread (266.9 vs 266.5 ms mean): the
+  18.5 ms of SC is offset elsewhere in the step (not resolved here; Picard is 5 % higher for
+  V, inner iterations equal).  2 GPUs: V is +15.7 ms/step (+6.6 %) over E; the SC grows
+  from 18.5 to 24.0 ms/call because the band exchange goes through MPI (8 slots per block,
+  84 layers).  2-GPU speed-up over 1 GPU: E 1.13x, V 1.06x.  The long runs agree:
+  S1 281.6 ms/step, S2 261.9 ms/step (1.08x).
+
+--------------------------------------------------------------------------------
+LIMITS / OPEN
+--------------------------------------------------------------------------------
+  * periodic x2/x3 still required; uniform mesh; block width >= w (4 cells here; nmu 8
+    reaches ~7 cells).
+  * per layer: 1 sweep launch + 1 band-copy launch (+ pack/unpack + 1 host sync and
+    up to 8 MPI messages per block when a neighbour is remote): ~2-4 x nx1g launches per
+    call.  Latency-bound on the GPU; measured in gate 4.
+  * x1 splits: the stack is swept in turn (idle blocks per launch), as expected.

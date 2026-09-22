@@ -128,6 +128,8 @@ constexpr Real M1_RTOL  = 1.0e-12;
 //! \struct RadiationM1TaskIDs
 //! \brief container to hold TaskIDs of all rad_m1 tasks
 
+struct VetMBState;   // rad_m1_vet.cpp: the multi-block short-characteristics sweep
+
 struct RadiationM1TaskIDs {
   TaskID irecv;
   TaskID copyu;
@@ -258,6 +260,10 @@ class RadiationM1 {
   DvceArray2D<Real> vet_ang;   // (nray, 4): mu1, mu2, mu3, weight (sum of weights = 1)
   DvceArray5D<Real> vet_cell;  // (nmb, M1_VET_NC, k, j, i): see M1_VET_* below
   DvceArray5D<Real> vet_ipl;   // (nmb, 2, nray, k, j): intensity of the last two layers
+  // several MeshBlocks / MPI ranks (rad_m1_vet.cpp): the halo-banded plane buffers, the
+  // neighbour tables and the exchange state of the exact layer-by-layer sweep; null on
+  // one MeshBlock (the single-block sweep above is then run unchanged)
+  VetMBState *vet_mbs;
   Real dbg_trans_memory;     // DIAGNOSTIC (3b phase G): weight of the F^n memory term
                        // of the transverse face flux; 1 = backward Euler (bitwise)
   bool dbg_gas_force_trans;  // 3b phase E, transport = implicit only:
@@ -547,6 +553,14 @@ class RadiationM1 {
   void VetDump(const std::string &fname);
   //! VET: cost line at the end of the run
   void VetReport();
+  //! VET, several MeshBlocks: allocate the banded buffers and neighbour tables
+  void VetMBInit(ParameterInput *pin);
+  //! VET, several MeshBlocks: the exact sweep with per-layer band exchange
+  void VetSweepMB(bool lagged);
+  //! VET, several MeshBlocks: the sweep(s) of one call (exact, or the lag diagnostic)
+  void VetMBSweeps();
+  //! VET: free the multi-block state (destructor)
+  void VetFree();
   //! let a problem generator name the x1 boundary types of the implicit solve
   void SetImplicitX1BC(int lo_type, Real lo_flux, int hi_type, Real hi_flux);
   //! the whole backward-Euler step, in place of the explicit stage chain
