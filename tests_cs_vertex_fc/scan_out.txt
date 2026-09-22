@@ -1,0 +1,74 @@
+########################################## faces_from_potential=true
+=== fc n=32 mb=32 cs_vertex_fill=false faces_from_potential=true
+### FC SEAM-HALO GLOBAL MAX |ghost - exact| = 2.967191e-04
+###   edge, CUBE VERTEX   b.x1f n=     96 max= 2.2107e-05  b.x2f n=     72 max= 2.7354e-04  b.x3f n=     72 max= 2.7354e-04
+=== fc n=32 mb=32 cs_vertex_fill=true faces_from_potential=true
+### FC SEAM-HALO GLOBAL MAX |ghost - exact| = 2.967191e-04
+###   edge, CUBE VERTEX   b.x1f n=     96 max= 5.5899e-05  b.x2f n=     72 max= 2.2580e-04  b.x3f n=     72 max= 1.2645e-04
+=== fc n=32 mb=16 cs_vertex_fill=false faces_from_potential=true
+### FC SEAM-HALO GLOBAL MAX |ghost - exact| = 2.715280e-04
+###   edge, CUBE VERTEX   b.x1f n=     96 max= 2.2107e-05  b.x2f n=     72 max= 2.7354e-04  b.x3f n=     72 max= 2.7354e-04
+=== fc n=32 mb=16 cs_vertex_fill=true faces_from_potential=true
+### FC SEAM-HALO GLOBAL MAX |ghost - exact| = 2.715280e-04
+###   edge, CUBE VERTEX   b.x1f n=     96 max= 5.5899e-05  b.x2f n=     72 max= 2.2580e-04  b.x3f n=     72 max= 1.2645e-04
+=== fc n=64 mb=64 cs_vertex_fill=false faces_from_potential=true
+### FC SEAM-HALO GLOBAL MAX |ghost - exact| = 2.729815e-04
+###   edge, CUBE VERTEX   b.x1f n=     96 max= 6.6486e-06  b.x2f n=     72 max= 2.1528e-04  b.x3f n=     72 max= 1.2673e-04
+=== fc n=64 mb=64 cs_vertex_fill=true faces_from_potential=true
+### FC SEAM-HALO GLOBAL MAX |ghost - exact| = 2.729815e-04
+###   edge, CUBE VERTEX   b.x1f n=     96 max= 1.3425e-05  b.x2f n=     72 max= 2.2356e-04  b.x3f n=     72 max= 1.1781e-04
+=== fc n=64 mb=32 cs_vertex_fill=false faces_from_potential=true
+### FC SEAM-HALO GLOBAL MAX |ghost - exact| = 2.713931e-04
+###   edge, CUBE VERTEX   b.x1f n=     96 max= 6.6486e-06  b.x2f n=     72 max= 2.1528e-04  b.x3f n=     72 max= 1.2673e-04
+=== fc n=64 mb=32 cs_vertex_fill=true faces_from_potential=true
+### FC SEAM-HALO GLOBAL MAX |ghost - exact| = 2.713931e-04
+###   edge, CUBE VERTEX   b.x1f n=     96 max= 1.3425e-05  b.x2f n=     72 max= 2.2356e-04  b.x3f n=     72 max= 1.1781e-04
+=== fc n=128 mb=128 cs_vertex_fill=false faces_from_potential=true
+### FC SEAM-HALO GLOBAL MAX |ghost - exact| = 2.715938e-04
+###   edge, CUBE VERTEX   b.x1f n=     96 max= 1.8414e-06  b.x2f n=     72 max= 2.2114e-04  b.x3f n=     72 max= 1.1244e-04
+=== fc n=128 mb=128 cs_vertex_fill=true faces_from_potential=true
+### FC SEAM-HALO GLOBAL MAX |ghost - exact| = 2.715938e-04
+###   edge, CUBE VERTEX   b.x1f n=     96 max= 3.2332e-06  b.x2f n=     72 max= 2.2254e-04  b.x3f n=     72 max= 1.1437e-04
+=== fc n=128 mb=64 cs_vertex_fill=false faces_from_potential=true
+### FC SEAM-HALO GLOBAL MAX |ghost - exact| = 2.713946e-04
+###   edge, CUBE VERTEX   b.x1f n=     96 max= 1.8414e-06  b.x2f n=     72 max= 2.2114e-04  b.x3f n=     72 max= 1.1244e-04
+=== fc n=128 mb=64 cs_vertex_fill=true faces_from_potential=true
+### FC SEAM-HALO GLOBAL MAX |ghost - exact| = 2.713946e-04
+###   edge, CUBE VERTEX   b.x1f n=     96 max= 3.2332e-06  b.x2f n=     72 max= 2.2254e-04  b.x3f n=     72 max= 1.1437e-04
+########################################## faces_from_potential=false
+=== fc n=32 mb=32 cs_vertex_fill=false faces_from_potential=false
+### FC SEAM-HALO GLOBAL MAX |ghost - exact| = 9.540884e-06
+###   edge, CUBE VERTEX   b.x1f n=     96 max= 1.2526e-16  b.x2f n=     72 max= 2.4562e-04  b.x3f n=     72 max= 2.6398e-04
+=== fc n=32 mb=32 cs_vertex_fill=true faces_from_potential=false
+### FC SEAM-HALO GLOBAL MAX |ghost - exact| = 9.540884e-06
+###   edge, CUBE VERTEX   b.x1f n=     96 max= 8.6736e-17  b.x2f n=     72 max= 7.5569e-06  b.x3f n=     72 max= 7.5569e-06
+=== fc n=32 mb=16 cs_vertex_fill=false faces_from_potential=false
+### FC SEAM-HALO GLOBAL MAX |ghost - exact| = 9.540884e-06
+###   edge, CUBE VERTEX   b.x1f n=     96 max= 1.2526e-16  b.x2f n=     72 max= 2.4562e-04  b.x3f n=     72 max= 2.6398e-04
+=== fc n=32 mb=16 cs_vertex_fill=true faces_from_potential=false
+### FC SEAM-HALO GLOBAL MAX |ghost - exact| = 9.540884e-06
+###   edge, CUBE VERTEX   b.x1f n=     96 max= 8.6736e-17  b.x2f n=     72 max= 7.5569e-06  b.x3f n=     72 max= 7.5569e-06
+=== fc n=64 mb=64 cs_vertex_fill=false faces_from_potential=false
+### FC SEAM-HALO GLOBAL MAX |ghost - exact| = 9.379567e-07
+###   edge, CUBE VERTEX   b.x1f n=     96 max= 1.3591e-17  b.x2f n=     72 max= 2.9254e-05  b.x3f n=     72 max= 3.5527e-05
+=== fc n=64 mb=64 cs_vertex_fill=true faces_from_potential=false
+### FC SEAM-HALO GLOBAL MAX |ghost - exact| = 9.379567e-07
+###   edge, CUBE VERTEX   b.x1f n=     96 max= 5.2042e-17  b.x2f n=     72 max= 9.0006e-07  b.x3f n=     72 max= 9.0006e-07
+=== fc n=64 mb=32 cs_vertex_fill=false faces_from_potential=false
+### FC SEAM-HALO GLOBAL MAX |ghost - exact| = 9.379567e-07
+###   edge, CUBE VERTEX   b.x1f n=     96 max= 1.3591e-17  b.x2f n=     72 max= 2.9254e-05  b.x3f n=     72 max= 3.5527e-05
+=== fc n=64 mb=32 cs_vertex_fill=true faces_from_potential=false
+### FC SEAM-HALO GLOBAL MAX |ghost - exact| = 9.379567e-07
+###   edge, CUBE VERTEX   b.x1f n=     96 max= 5.2042e-17  b.x2f n=     72 max= 9.0006e-07  b.x3f n=     72 max= 9.0006e-07
+=== fc n=128 mb=128 cs_vertex_fill=false faces_from_potential=false
+### FC SEAM-HALO GLOBAL MAX |ghost - exact| = 1.093230e-07
+###   edge, CUBE VERTEX   b.x1f n=     96 max= 1.3942e-17  b.x2f n=     72 max= 3.5157e-06  b.x3f n=     72 max= 3.8754e-06
+=== fc n=128 mb=128 cs_vertex_fill=true faces_from_potential=false
+### FC SEAM-HALO GLOBAL MAX |ghost - exact| = 1.093230e-07
+###   edge, CUBE VERTEX   b.x1f n=     96 max= 2.7756e-17  b.x2f n=     72 max= 1.0946e-07  b.x3f n=     72 max= 1.0946e-07
+=== fc n=128 mb=64 cs_vertex_fill=false faces_from_potential=false
+### FC SEAM-HALO GLOBAL MAX |ghost - exact| = 1.093230e-07
+###   edge, CUBE VERTEX   b.x1f n=     96 max= 1.3942e-17  b.x2f n=     72 max= 3.3192e-06  b.x3f n=     72 max= 3.8754e-06
+=== fc n=128 mb=64 cs_vertex_fill=true faces_from_potential=false
+### FC SEAM-HALO GLOBAL MAX |ghost - exact| = 1.093230e-07
+###   edge, CUBE VERTEX   b.x1f n=     96 max= 2.7756e-17  b.x2f n=     72 max= 1.0946e-07  b.x3f n=     72 max= 1.0946e-07

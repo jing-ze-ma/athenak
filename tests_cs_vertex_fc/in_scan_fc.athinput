@@ -80,5 +80,5 @@ d0       = 1.0
 p0       = 1.0
 b0c      = 0.3       # azimuthal amplitude; curl B = 2*b0c*zhat
 bunif    = 0.0       # NO uniform part: B.rhat = 0, the box is closed
-faces_from_potential = false   # required by CSTestSeamHaloScanFC (see tests_cs_vertex_fc)
+faces_from_potential = true
 user_bcs = true
