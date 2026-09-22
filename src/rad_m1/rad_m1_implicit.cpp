@@ -44,6 +44,7 @@
 #include <cmath>
 #include <iostream>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 #include "athena.hpp"
@@ -199,6 +200,25 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   impl_eos_cache = pin->GetOrAddBoolean("rad_m1","implicit_eos_cache",false);
   impl_ecnt = pin->GetOrAddInteger("rad_m1","implicit_eos_cache_nt",2);
   impl_eccheck = pin->GetOrAddBoolean("rad_m1","implicit_eos_cache_check",true);
+  // the x1 LINE SOLVE (preconditioner and line-Jacobi pass): thomas = one thread per
+  // column, serial recurrence (the original); pcr = one team per column, parallel
+  // cyclic reduction in team scratch (GPU).  Same system; the answers agree to
+  // round-off, not bitwise.  The gathered stack sweep (part_nblk > 1) is Thomas always.
+  {std::string ls = pin->GetOrAddString("rad_m1","implicit_line_solver","thomas");
+  if (ls.compare("thomas") == 0) {
+    impl_line_solver = 0;
+  } else if (ls.compare("pcr") == 0) {
+    impl_line_solver = 1;
+  } else {
+    ImplFatal("<rad_m1>/implicit_line_solver = '" + ls
+              + "' is not a choice (thomas | pcr)");
+  }
+  }
+  impl_pcr_team = pin->GetOrAddInteger("rad_m1","implicit_pcr_team",0);
+  impl_pcr_check = pin->GetOrAddBoolean("rad_m1","implicit_pcr_check",false);
+  if (impl_pcr_team < 0 || impl_pcr_team > 1024) {
+    ImplFatal("<rad_m1>/implicit_pcr_team must lie in [0,1024]");
+  }
   if (impl_ecnt < 0 || impl_ecnt > M1_EC_NTMAX) {
     ImplFatal("<rad_m1>/implicit_eos_cache_nt must lie in [0,8]");
   }
@@ -1573,6 +1593,67 @@ void RadiationM1::ImplicitTridiagSolve() {
     ImplicitGatherSolve();
     return;
   }
+  if (!impl_pcr_check) {
+    if (impl_line_solver == 1) {
+      ImplicitPCRSolve();
+    } else {
+      ImplicitThomasSolve();
+    }
+    return;
+  }
+  // implicit_pcr_check: run the OTHER solver first, keep its answer, then the selected
+  // one (whose answer stays in M1_IW_S2), and record max|dx|/max|x| over the pack.
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  int is = indcs.is, ie = indcs.ie;
+  int js = indcs.js, je = indcs.je;
+  int ks = indcs.ks, ke = indcs.ke;
+  int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto iw_ = iw;
+  if (pcr_chk.extent(0) == 0) {
+    Kokkos::realloc(pcr_chk, nmb1+1, indcs.nx3 + 2*indcs.ng*(indcs.nx3 > 1 ? 1 : 0),
+                    indcs.nx2 + 2*indcs.ng*(indcs.nx2 > 1 ? 1 : 0), indcs.nx1+2*indcs.ng);
+  }
+  auto ck_ = pcr_chk;
+  if (impl_line_solver == 1) {
+    ImplicitThomasSolve();
+  } else {
+    ImplicitPCRSolve();
+  }
+  par_for("m1_impl_pcrck_cp", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    ck_(m,k,j,i) = iw_(m,M1_IW_S2,k,j,i);
+  });
+  if (impl_line_solver == 1) {
+    ImplicitPCRSolve();
+  } else {
+    ImplicitThomasSolve();
+  }
+  const int nkji = (ke-ks+1)*(je-js+1)*(ie-is+1);
+  const int nji = (je-js+1)*(ie-is+1), ni = ie-is+1;
+  Real dmax = 0.0, xmax = 0.0;
+  Kokkos::parallel_reduce("m1_impl_pcrck_red",
+  Kokkos::RangePolicy<>(DevExeSpace(), 0, (nmb1+1)*nkji),
+  KOKKOS_LAMBDA(const int idx, Real &dm, Real &xm) {
+    int m = idx/nkji;
+    int k = (idx - m*nkji)/nji;
+    int j = (idx - m*nkji - k*nji)/ni;
+    int i = (idx - m*nkji - k*nji - j*ni) + is;
+    k += ks;
+    j += js;
+    dm = fmax(dm, fabs(iw_(m,M1_IW_S2,k,j,i) - ck_(m,k,j,i)));
+    xm = fmax(xm, fabs(ck_(m,k,j,i)));
+  }, Kokkos::Max<Real>(dmax), Kokkos::Max<Real>(xmax));
+  Real rel = (xmax > 0.0) ? dmax/xmax : dmax;
+  pcr_chk_max = fmax(pcr_chk_max, rel);
+  pcr_chk_n += 1.0;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::ImplicitThomasSolve
+//! \brief the Thomas / cyclic-Thomas line solve, one thread per (m,k,j) column (the
+//! original ImplicitTridiagSolve body, unchanged)
+
+void RadiationM1::ImplicitThomasSolve() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
   int js = indcs.js, je = indcs.je;
@@ -1632,6 +1713,126 @@ void RadiationM1::ImplicitTridiagSolve() {
       for (int i=is; i<=ie; ++i) {
         iw_(m,M1_IW_S2,k,j,i) -= fac*iw_(m,M1_IW_S3,k,j,i);
       }
+    }
+  });
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::ImplicitPCRSolve
+//! \brief implicit_line_solver = pcr: the same x1 line solve as the Thomas sweep of
+//! ImplicitTridiagSolve (non-cyclic, or cyclic by the same Sherman-Morrison split), by
+//! PARALLEL CYCLIC REDUCTION with one Kokkos team per (m,k,j) column.  The rows are
+//! loaded into team scratch with the team's threads running along i (coalesced), then
+//! ceil(log2 nx1) PCR rounds (double-buffered, one team barrier each) decouple every
+//! row, and x_i = r_i/b_i.  Out-of-range neighbours of a round are the identity row.
+//! Under the cyclic split the second right-hand side u = (gam,0,...,0,alpha) rides the
+//! same elimination.  Writes only M1_IW_S2 (the Thomas scratch S1/S3 is not touched and
+//! nothing else reads it).  O(n log n) work, so on a CPU (team size 1) it is slower than
+//! Thomas; it is meant for the GPU, where the Thomas sweep has one thread per column.
+
+void RadiationM1::ImplicitPCRSolve() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie;
+  const int js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb = pmy_pack->nmb_thispack;
+  const int nx = ie - is + 1;
+  const int nj = je - js + 1, nk = ke - ks + 1;
+  const int nkj = nk*nj;
+  auto iw_ = iw;
+  const bool cyclic = (ibc_x1min == M1_IBC_PERIODIC);
+  const int nv = cyclic ? 5 : 4;   // a, b, c, r (+ u) per buffer
+  size_t scr_size = ScrArray1D<Real>::shmem_size(2*nv*nx);
+  int nround = 0;
+  while ((1 << nround) < nx) ++nround;
+  Kokkos::TeamPolicy<DevExeSpace> policy;
+  if (!std::is_same<DevExeSpace, Kokkos::DefaultHostExecutionSpace>::value) {
+    // a GPU: an explicit team size (the threads run along i)
+    int ts = impl_pcr_team;
+    if (ts == 0) {
+      ts = 1;
+      while (ts < nx && ts < 256) ts *= 2;
+    }
+    policy = Kokkos::TeamPolicy<DevExeSpace>(DevExeSpace(), nmb*nkj, ts);
+  } else {
+    policy = Kokkos::TeamPolicy<DevExeSpace>(DevExeSpace(), nmb*nkj, Kokkos::AUTO);
+  }
+  Kokkos::parallel_for("m1_impl_pcr",
+                       policy.set_scratch_size(0, Kokkos::PerTeam(scr_size)),
+  KOKKOS_LAMBDA(TeamMember_t tm) {
+    const int m = tm.league_rank()/nkj;
+    const int k = (tm.league_rank() - m*nkj)/nj + ks;
+    const int j = (tm.league_rank() - m*nkj)%nj + js;
+    ScrArray1D<Real> sw(tm.team_scratch(0), 2*nv*nx);
+    // buffer q (0/1), variable v: sw(q*nv*nx + v*nx + i); v = 0 a, 1 b, 2 c, 3 r, 4 u
+    Real alpha = 0.0, beta = 0.0, gam = 1.0;
+    if (cyclic) {
+      alpha = iw_(m,M1_IW_TC,k,j,ie);
+      beta = iw_(m,M1_IW_TA,k,j,is);
+      gam = -iw_(m,M1_IW_TB,k,j,is);
+    }
+    Kokkos::parallel_for(Kokkos::TeamVectorRange(tm, nx), [&](const int i) {
+      const int ii = i + is;
+      Real bd = iw_(m,M1_IW_TB,k,j,ii);
+      if (cyclic) {
+        if (i == 0) bd -= gam;
+        if (i == nx-1) bd -= alpha*beta/gam;
+        sw(4*nx + i) = (i == 0) ? gam : ((i == nx-1) ? alpha : 0.0);
+      }
+      sw(i) = (i == 0) ? 0.0 : iw_(m,M1_IW_TA,k,j,ii);
+      sw(nx + i) = bd;
+      sw(2*nx + i) = (i == nx-1) ? 0.0 : iw_(m,M1_IW_TC,k,j,ii);
+      sw(3*nx + i) = iw_(m,M1_IW_TR,k,j,ii);
+    });
+    tm.team_barrier();
+    int src = 0;
+    for (int rd=0, s=1; rd<nround; ++rd, s*=2) {
+      const int o = src*nv*nx, d = (1-src)*nv*nx;
+      Kokkos::parallel_for(Kokkos::TeamVectorRange(tm, nx), [&](const int i) {
+        const int im = i - s, ip = i + s;
+        Real ai = sw(o + i), bi = sw(o + nx + i), ci = sw(o + 2*nx + i);
+        Real ri = sw(o + 3*nx + i);
+        Real ui = cyclic ? sw(o + 4*nx + i) : 0.0;
+        Real an = 0.0, cn = 0.0;
+        if (im >= 0) {
+          Real f = -ai/sw(o + nx + im);
+          an = f*sw(o + im);
+          bi += f*sw(o + 2*nx + im);
+          ri += f*sw(o + 3*nx + im);
+          if (cyclic) ui += f*sw(o + 4*nx + im);
+        }
+        if (ip < nx) {
+          Real g = -ci/sw(o + nx + ip);
+          cn = g*sw(o + 2*nx + ip);
+          bi += g*sw(o + ip);
+          ri += g*sw(o + 3*nx + ip);
+          if (cyclic) ui += g*sw(o + 4*nx + ip);
+        }
+        sw(d + i) = an;
+        sw(d + nx + i) = bi;
+        sw(d + 2*nx + i) = cn;
+        sw(d + 3*nx + i) = ri;
+        if (cyclic) sw(d + 4*nx + i) = ui;
+      });
+      tm.team_barrier();
+      src = 1 - src;
+    }
+    const int o = src*nv*nx;
+    if (!cyclic) {
+      Kokkos::parallel_for(Kokkos::TeamVectorRange(tm, nx), [&](const int i) {
+        iw_(m,M1_IW_S2,k,j,i+is) = sw(o + 3*nx + i)/sw(o + nx + i);
+      });
+    } else {
+      // x = y - z (v.y)/(1 + v.z),  v = (1,0,...,0,beta/gam)
+      Real y0 = sw(o + 3*nx)/sw(o + nx);
+      Real yn = sw(o + 4*nx - 1)/sw(o + 2*nx - 1);
+      Real z0 = sw(o + 4*nx)/sw(o + nx);
+      Real zn = sw(o + 5*nx - 1)/sw(o + 2*nx - 1);
+      Real fac = (y0 + (beta/gam)*yn)/(1.0 + z0 + (beta/gam)*zn);
+      Kokkos::parallel_for(Kokkos::TeamVectorRange(tm, nx), [&](const int i) {
+        Real bi = sw(o + nx + i);
+        iw_(m,M1_IW_S2,k,j,i+is) = sw(o + 3*nx + i)/bi - fac*(sw(o + 4*nx + i)/bi);
+      });
     }
   });
 }
@@ -2444,6 +2645,12 @@ void RadiationM1::ImplicitReport() {
                 << " max |de|/e vs the table=" << ec_emax
                 << " max |dq|/q of the exchanged energy=" << ec_tmax << std::endl;
     }
+  }
+  if (impl_pcr_check) {
+    std::cout << "<rad_m1> line solver=" << ((impl_line_solver == 1) ? "pcr" : "thomas")
+              << " pcr_check: calls=" << pcr_chk_n
+              << " max over calls of max|x_pcr - x_thomas|/max|x|=" << pcr_chk_max
+              << " (rank 0)" << std::endl;
   }
   if (trans_on) {
     std::cout << "<rad_m1> offdiag="

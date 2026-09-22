@@ -1,0 +1,216 @@
+================================================================================
+MILESTONE 3k -- implicit M1 (Eddington closure) in a 3-D He FeCZ box on the GPU,
+               first measurement, with a ranked list of speed-ups
+================================================================================
+Date:     2026-09-22, viper apudev (MI300A, gfx942 APU), 1 or 2 GPUs.
+Binary:   HEAD 886bd677 (rt-integration), NO source changes.  hipcc, gcc/14,
+          rocm/6.3, openmpi_gpu/5.0, Release, MPI on, PROBLEM=box_convection.
+          bench/m1_gpu3d_0922/athena_gpu, md5 ee9af42b...  Snapshot in
+          bench/m1_gpu3d_0922/snap (src + CMakeLists.txt + config.hpp.in, kokkos symlinked).
+Input:    he_slab_m1_3d.athinput (this directory) = runs_3g_newton_T/
+          he_slab_m1_2d_V3edd.athinput made 3-D at the box_w8 production width:
+          84 x 104 x 104 (x2, x3 periodic, dx2 = dx3 = 4 dz), 4 MeshBlocks of
+          84 x 52 x 52, transport = implicit (full 7-point), bicgstab with x1-line
+          Jacobi preconditioner, offdiag = operator, closure_lag = step, seeded
+          (vpert = 1e-2, eint), implicit_gas_newton = true, implicit_eos_cache = true.
+Jobs:     11942524 (bench/m1_gpu3d_0922/submit1.sh):  S, P1, P2  (unprofiled)
+          11942525 (bench/m1_gpu3d_0922/submit2.sh):  PP (rocprofv3), T1, TP
+          Run dirs bench/m1_gpu3d_0922/runs/<arm>/ (run.log, *.hst, prof/, split.txt).
+Script:   prof_split.py (this directory): kernel-trace split; window = from the
+          end of the last ProblemGenerator kernel to the end of the trace.
+NOT COMMITTED.
+
+--------------------------------------------------------------------------------
+1.  ARMS AND TIMINGS
+--------------------------------------------------------------------------------
+ms/cycle = elapsed difference over the last 100 cycles in run.log.
+Inner its = BiCGStab inner iterations per hydro step (log counters / cycles).
+
+ arm  grid / GPUs                 cells   cycles  ms/cycle  zone-cyc/s  inner its/step
+ S    84x52x52, 1 MB, 1 GPU        227k    442     334.1    7.17e5      102.2
+ P1   84x104x104, 4 MB, 1 GPU      908k    648     453.8    2.02e6      118.7
+ P2   same, 2 GPUs (2 MB each)     908k    563     427.2    2.21e6      118.7
+ PP   = P1 under rocprofv3, nlim=40  908k   40      ~490     1.91e6      120.5
+ T1   box_w8 two-stream, 1 GPU    1449k   1207     143.6    1.03e7      --
+      (bench/hestar_fecz/box_w8/he_box_w8.athinput, outputs off; 134x104x104, 8 MB)
+ TP   = T1 under rocprofv3, nlim=40                         9.89e6
+
+Per zone-cycle, M1 costs 5.1x the production two-stream stack (2.02e6 vs
+1.03e7).  Per unit of simulated time the gap is smaller: M1 dt = 0.1612 vs
+two-stream 0.1092 (different columns), so 2.82 s vs 1.32 s of wall per code time
+unit, on 0.63x the cells.
+
+--------------------------------------------------------------------------------
+2.  STABILITY  (P1, t = 0 .. 104.5, 648 steps; S and P2 the same)
+--------------------------------------------------------------------------------
+  Picard: mean 4.81, max 6 passes per step, NON-CONVERGED 0 (S 0, P2 0).
+  BiCGStab: 24.7 inner its per linear solve (max 129), 4.06 global reductions
+     per inner its, 29 breakdowns, line_jacobi fallbacks 0; final linear
+     residual mean 1.2e-12, max 9.9e-11 (tol 1e-10).
+  Positivity fallbacks 0; min E from the solve 1.649e5.
+  Gas Newton: 2.83e9 cell-passes, 1.70e4 fallbacks (6.0e-6 per cell-pass).
+     EOS cache misses 7.8e-5 per cell-pass, cache |de|/e vs the table 2.5e-14.
+  dt 0.16142 -> 0.16117 (constant to 0.2 %).
+  Fluxes (user.hst): F1top = 2.4752e15 = F_in throughout (ratio 1.0000),
+     F1bot 2.4748e15 (0.99985 F_in) at t = 104.
+  V1max <= 5.4e4 cm/s (t = 49), 2.9e4 at t = 104: the seed has NOT grown into
+     convection in 104 s.  So these runs test stability and cost, NOT
+     convection behaviour.
+  P1 and P2 give the same hst to all printed digits at t = 24, 49, 74.
+
+  FLAG, not explained: the eos_cache line "max |dq|/q of the exchanged energy"
+  reads 4.0e-3 (S), 6.7e-2 (P1), 1.2e-3 (PP), and 8.28e+04 (P2, 2 ranks).
+  Probably q ~ 0 in one cell (a relative error with a near-zero denominator),
+  but the 2-rank value is 6 orders above the 1-rank one.  Check this before
+  running multi-GPU production.
+
+--------------------------------------------------------------------------------
+3.  WHERE THE STEP GOES  (PP, rocprofv3 kernel trace, runs/PP/split.txt)
+--------------------------------------------------------------------------------
+Window 19.59 s = 40 cycles (~490 ms/cycle profiled, 454 unprofiled).
+3432 kernel launches per cycle; median kernel 51.9 us, median gap 39.1 us.
+GPU busy 74.6 % of the window, IDLE 25.4 % (~124 ms/cycle).  Gaps > 100 us
+make up 15.5 % of the window.
+
+Per cycle (kernel ms, % of the 490 ms wall):
+  KRYLOV (BiCGStab inner loop)                          ~338 ms   69 %
+    ImplicitTridiagSolve (the x1 line-Jacobi precond.)  173.3     35 %
+        719 us/call, 241 calls/cycle = 2 per inner its
+    ImplicitHaloCopy (scratch <-> iw copies)             56.2     11 %
+        108 us/call, 518 calls/cycle
+    PackAndSendCC + RecvAndUnpackCC (bvals buffers)      19.4      4 %
+    ImplicitOffDiagOp (7-point transverse part)          40.6      8 %
+        160 us/call, 2 per inner its
+    ImplicitBiCGStab vector updates + reductions         38.8      8 %
+        39 us avg, 988 calls/cycle; the 3 dot-product kernels 33-36 us each
+    ImplicitApplyOp + ImplicitPrecond (non-tridiag)       9.3      2 %
+  PICARD level (ImplicitSolve incl. the gas Newton +       7.5    1.5 %
+    EOS cache, TransverseTerms, Opacity)
+    -> the EOS evaluation, 46 % of the serial CPU run (runs_3h_halo), is at
+       most 5.6 ms/cycle = 1.1 % here: NOT a GPU priority.
+  HYDRO + conduction weights + BCs + sources + C2P       ~20 ms    4 %
+    (ConsToPrim 4.8, BuildRadWeights 5.2, fluxes 3.3, WBCache 1.8, ...)
+  IDLE (launch gaps + host syncs)                       ~124 ms   25 %
+
+Halo total (copies + pack/unpack) = 75.6 ms/cycle = 15 %.  Almost all of it is
+the Krylov E exchange: ~2 exchanges per inner its; the transverse 14/4-wide
+exchange runs a few times per Picard pass (230 passes in 40 cycles).
+
+Kernel top-10 (share of kernel time, by enclosing function#lambda):
+  47.4 %  ImplicitTridiagSolve #1      719.3 us x 9636
+  15.4 %  ImplicitHaloCopy #1          108.5 us x 20712
+  11.1 %  ImplicitOffDiagOp #1         160.3 us x 10126
+   2.9 %  MeshBoundaryValuesCC::PackAndSendCC     40.1 us x 10518
+   2.4 %  MeshBoundaryValuesCC::RecvAndUnpackCC   33.6 us x 10518
+   2.4 %  ImplicitBiCGStab #3           35.7 us x 9636
+   2.3 %  ImplicitBiCGStab #5           34.9 us x 9636
+   2.2 %  ImplicitBiCGStab #4           32.9 us x 9636
+   1.9 %  ImplicitBiCGStab #2           56.4 us x 5008
+   1.7 %  ImplicitBiCGStab #6           51.6 us x 4928
+  (then ImplicitApplyOp 1.6 %, ImplicitSolve 1.5 %, BuildRadWeights 1.4 %,
+   ConsToPrim 1.3 %)
+
+Two-stream reference (TP, runs/TP/split.txt): 477 launches per cycle (7.2x
+fewer), busy 78.7 %.  RTCol3TeamLaunch 62 % of kernel time (37.7 ms x 2 per
+cycle), BuildRadWeights 7 %, ImplicitRadialUpdate 5.5 %, ConsToPrim 4.9 %.
+
+--------------------------------------------------------------------------------
+4.  WHY 2 GPUs GIVE 1.1x AND THE SMALL BOX RUNS AT 0.72e6: SIZE-INDEPENDENT COST
+--------------------------------------------------------------------------------
+Time per inner BiCGStab iteration, which is what dominates a step:
+    S  (227k cells/GPU)   334.1/102.2 = 3.27 ms
+    P1 (908k cells/GPU)   453.8/118.7 = 3.82 ms
+    P2 (454k cells/GPU)   427.2/118.7 = 3.60 ms
+A fit t = a + b N to S and P1 gives a = 3.09 ms, b = 0.81 ms per Mcell.
+So on the production box 81 % of each inner iteration does NOT depend on the
+cell count.  P2 predicted from the fit: 3.46 ms, measured 3.60; the extra
+0.14 ms/its is the real MPI (4 Allreduce + 2 halo exchanges per iteration).
+The step is latency-bound, for two measured reasons:
+  (i) ImplicitTridiagSolve runs one thread per x1 column, and each thread does
+      a serial 84-cell Thomas recurrence: 10816 threads for the whole box,
+      2704 per MeshBlock.  MI300A needs ~10^5 resident threads.  Neighbouring
+      threads are 84+2ng doubles apart in memory (LayoutRight, i fastest), so
+      loads are not coalesced.  Measured: 908k cells in 719 us = 1.26 Gcell/s.
+      Its time is set by the column length, not the column count, so it does
+      not shrink when the columns are split over 2 GPUs.  (Inferred: S was not
+      profiled.)
+  (ii) 3432 launches and 489 host-blocking global reductions per step (4.06 per
+      inner its: each Kokkos::parallel_reduce into a host scalar plus an
+      MPI_Allreduce).  The median gap is 39 us, and the idle time is 124
+      ms/cycle, ~36 us per launch.  This cost is identical per GPU whatever
+      the box size, and on 2 GPUs every reduction also waits on the other rank.
+The same applies to ImplicitHaloCopy: runs_3h_halo made it loop over rows
+(m,n,k,j) with i serial inside, which removes an idiv per cell on the CPU.  On
+the GPU that means ~13k threads per component with strided accesses: 108 us
+per call for a shell copy.
+
+--------------------------------------------------------------------------------
+5.  HOST / DEVICE STATUS OF THE IMPLICIT-SOLVE KERNELS
+--------------------------------------------------------------------------------
+Every par_for and parallel_reduce in rad_m1_implicit.cpp is launched on
+DevExeSpace (source), and the trace shows each exercised function as a HIP
+kernel:
+  ImplicitSolve, ImplicitTransverseTerms, ImplicitTridiagSolve,
+  ImplicitOffDiagOp, ImplicitApplyOp, ImplicitPrecond, ImplicitBiCGStab,
+  ImplicitHaloCopy, Opacity, ApplyClosureLimits, NewTimeStep, RSLACheck.
+NO host fallback of any compute kernel.  Host-side parts:
+  * every reduction result goes to host (the syncs in sect. 4);
+  * the MPI_Allreduce of those scalars;
+  * ImplicitGatherSolve / partition staging (h_view, host buffers): host-staged,
+    but NOT exercised here (implicit_partition = none);
+  * ImplicitTransTheta returns early (trans_limit = none);
+  * ImplicitX1Halo and ImplicitAccel*: not called in this configuration.
+The EOS evaluation (gas Newton, EOS cache) runs inside the ImplicitSolve
+kernels on the device.
+
+--------------------------------------------------------------------------------
+6.  RANKED SPEED-UPS  (gain on P1's 454 ms/cycle; each tied to a number above)
+--------------------------------------------------------------------------------
+ 1. PARALLEL LINE SOLVE in the preconditioner (ImplicitTridiagSolve).
+    Measured: 173 ms/cycle = 35 % of wall, 47 % of kernel time, 1.26 Gcell/s,
+    size-independent (sect. 4 i).  Options: PCR / cyclic reduction with one
+    team per column in scratch memory (the two-stream already has one:
+    rt_impl_solver = pcr, two_stream_column_partition.hpp), or a transposed,
+    coalesced Thomas.
+    Gain: kernel ~10x faster -> ~-155 ms/cycle -> ~1.5x overall.  It also
+    removes the largest size-independent term, so small boxes and multi-GPU
+    improve most.
+    Effort: medium (1-3 days, port the PCR).  Risk: low; it only changes the
+    preconditioner, so the converged solution is untouched to tolerance.  Not
+    bitwise.
+ 2. INEXACT INNER SOLVES (input switch first, no code).  120 inner its per step
+    solved to 1e-12 mean residual (tol 1e-10) at every one of 4.8 Picard passes.
+    Early passes do not need 1e-10.  Try implicit_lin_tol 1e-6..1e-8, or a
+    forcing term tied to the Picard residual.
+    Gain: if inner its fall 30-50 %, the Krylov share (69 %) falls with them
+    -> 1.2-1.5x.  Effort: minutes for the input test (one apudev job), a day
+    for a forcing term.  Risk: medium; Picard pass count and NON-CONVERGED may
+    rise, so gate on the hst fluxes.
+ 3. FEWER HOST SYNCS IN BiCGStab.  489 blocking reductions + 3432 launches
+    per step; 25 % idle (124 ms/cycle); BiCGStab's own kernels 39 ms/cycle.
+    Fuse the per-iteration dot products into one multi-value reduction (at
+    most 2 syncs per its), keep scalars on the device where possible, fuse the
+    vector updates; optionally pipelined BiCGStab (1 sync per its).
+    Gain: ~-60..-90 ms/cycle -> 1.15-1.25x; more on 2+ GPUs, where each sync is
+    also an Allreduce.  Effort: medium.  Risk: low for fusion, medium for
+    pipelined BiCGStab (weaker stability; 29 breakdowns already in P1).
+ 4. GPU LAYOUT FOR ImplicitHaloCopy, or pack straight from iw.  56 ms/cycle =
+    11-12 %, 108 us/call; the CPU-tuned row loop (sect. 4) is uncoalesced on
+    the GPU.  Flatten over (m,k,j,i) of the shell under the device build, or
+    skip the scratch copy and let the bvals pack/unpack read and write iw.
+    Gain: ~-45..-50 ms -> ~1.1x.  Effort: low (hours).  Risk: low; the values
+    are identical, gate with cmp as in runs_3h_halo.
+ 5. ImplicitOffDiagOp: 40.6 ms/cycle (8 %), 160 us per call = 5.7 Gcell/s for
+    a 7-point operator.  Fuse it with ApplyOp and cut its array reads.
+    Gain ~1.05x.  Effort: low-medium.  Risk: low.
+ 6. MULTI-GPU: do not scale out before 1-4.  Today 2 GPUs give 1.06x per step
+    (453.8 -> 427.2 ms) because 81 % of an inner its is size-independent.
+    After 1-4, weak scaling (>= 0.9 Mcell per GPU) is the efficient regime.
+ 7. EOS / gas Newton: <= 1.1 % of the step on GPU.  No work warranted;
+    removing it entirely would save at most 1 %.
+
+Combined 1+3+4 (independent kernels): 454 -> ~200 ms/cycle, ~2.3x, i.e.
+~4.5e6 zone-cycles/s, which is within ~2.3x of the two-stream stack.  With a
+successful 2 on top, parity with the two-stream stack per unit of simulated
+time is plausible.  These are estimates from the measured shares, not
+measurements.

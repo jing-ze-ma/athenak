@@ -418,6 +418,15 @@ class RadiationM1 {
   // Default `none` = nothing below is allocated and nothing is called, so every earlier
   // configuration is bitwise unchanged.  See ImplicitAccelApply.
   int impl_accel;               // M1_IACC_*: none | anderson
+  int impl_line_solver;         // <rad_m1>/implicit_line_solver: 0 = thomas (one
+                                // thread per x1 column), 1 = pcr (one team per column,
+                                // parallel cyclic reduction in team scratch)
+  int impl_pcr_team;            // <rad_m1>/implicit_pcr_team: team size of the pcr
+                                // solve on a GPU (0 = next power of 2 >= nx1, max 256)
+  bool impl_pcr_check;          // <rad_m1>/implicit_pcr_check: run BOTH line solvers
+                                // every call and record max|dx|/max|x| (diagnostic)
+  Real pcr_chk_max, pcr_chk_n;  // the check's running max and call count
+  DvceArray4D<Real> pcr_chk;    // the other solver's answer (allocated on first use)
   int impl_and_m;               // <rad_m1>/implicit_anderson_m, the history depth
   Real impl_and_beta;           // <rad_m1>/implicit_anderson_beta, the mixing parameter
   int impl_and_start;           // <rad_m1>/implicit_anderson_start, the first (0-based)
@@ -535,6 +544,11 @@ class RadiationM1 {
   //! M1_IW_S2), Thomas or cyclic Thomas, gathered over the stack when part_nblk > 1.
   //! It IS the preconditioner of the BiCGStab wrapper and the line-Jacobi pass itself.
   void ImplicitTridiagSolve();
+  //! implicit_line_solver = pcr: the same line solve by parallel cyclic reduction,
+  //! one Kokkos team per x1 column (GPU)
+  void ImplicitPCRSolve();
+  //! the Thomas / cyclic-Thomas sweep (implicit_line_solver = thomas)
+  void ImplicitThomasSolve();
   //! milestone 3b phase C: exchange ONE component of iw with all six neighbours
   void ImplicitKrylovHalo(int comp);
   //! milestone 3b phase C: y = A x with the frozen 7-point operator (one halo of x)

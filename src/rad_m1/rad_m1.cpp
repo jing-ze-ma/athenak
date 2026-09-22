@@ -128,6 +128,11 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   // ---- milestone 3g: the gas-radiation energy coupling
   impl_gas_newton = false;
   impl_eos_cache = false;
+  impl_line_solver = 0;
+  impl_pcr_team = 0;
+  impl_pcr_check = false;
+  pcr_chk_max = 0.0;
+  pcr_chk_n = 0.0;
   impl_ecnt = 2;
   impl_eccheck = true;
   iw_gas = -1;
