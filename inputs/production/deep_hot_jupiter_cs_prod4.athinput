@@ -15,7 +15,7 @@
 #    returns both to the CFL limit (sph 17.4, sphbeam 18.0 s) at no cost to the old form; 1e14 is
 #    worse.  tests_gpu_ab_0922/README.md "Ohmic cap in sphbeam".  Physics caveat: caps the
 #    resistivity lower in the neutral night side.
-# 8. <hydro|mhd> pfloor 1e-3 -> 1e-5 (2026-09-22, user decision).  The centre-to-centre ck layers
+# 8. <mhd> pfloor 1e-3 -> 1e-5 BARYE (= 1e-9 -> 1e-11 bar; 2026-09-22, user decision).  The centre-to-centre ck layers
 #    (d8f00d49) give the top cell its correct (46 % larger) emission; the old staggered layer had
 #    averaged it with the ghost above the domain and kept the slab artificially warm, and pfloor
 #    1e-3 was calibrated for that.  With the correct emission the slab lands on the floor: efloor
@@ -256,7 +256,7 @@ ohmic_resistivity = eos           # constant | perna | eos
 max_eta           = 5.0e12           # 09-22 (change 7): was 1e13; see header
 use_rkg_sts       = false
 
-pfloor = 1.0e-5                       # 09-22 (change 8): was 1e-3; see header
+pfloor = 1.0e-5                       # 09-22 (change 8): was 1e-3; units BARYE (1e-6 bar); see header
 dfloor = 5.0e-14
 tfloor_kelvin = 200.0
 
