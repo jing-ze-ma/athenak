@@ -128,7 +128,7 @@ wellbalance_dynamic = true
 wb_x1               = true
 wb_option           = polytropic
 wb_cache_every      = 0
-cs_wellbalanced_src = true    # H3: read from <hydro> only with the 09-22 patch
+cs_wellbalanced_src = false   # 09-23 user: DROPPED. min beta at prod3 rot 283 = 1.22 (>> the ~2e-3 crossover); hurts hydro accuracy (tests_hyd4/README_wbsrc.md)
 isotropic_conduction = radiative
 rad_implicit_x1 = true
 rad_cap_ang     = 0.5    # silent no-op with rad_angular=false below; kept for the diff.
