@@ -1,0 +1,8 @@
+run k_bsemf mhd/bs_emf=true
+run k_vfillcc mesh/cs_vertex_fill_cc=true
+run k_ppmx mhd/reconstruct=ppmx
+run k_fofc mhd/fofc=true
+run k_nolowbeta mhd/cs_lowbeta_fallback=0.0
+run k_wbsrc mhd/cs_wellbalanced_src=true
+run k_novfill mesh/cs_vertex_fill=false
+run k_wenoz mhd/reconstruct=wenoz

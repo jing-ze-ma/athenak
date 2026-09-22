@@ -85,6 +85,7 @@ Real cs_bc_tfrac = 0.0;   // ghost time offset, in units of dt (problem/bc_time_
 int  cs_bc_bcc_match = 0; // ghost x1f matched to bcc (problem/bc_bcc_match)
 int  cs_bc_probe = 0;     // print the interior boundary-layer PHASE (problem/bc_probe)
 Real cs_bazi = 0.0;       // iprob=11 azimuthal amplitude; curl B = 2*cs_bazi*zhat
+int  cs_hist_nband = 2;   // region band half-width in cells for CSTestLoopHistory
 // iprob=14 (force-free resistive decay): B = ffb0 (sin az, cos az, 0), curl B = a B
 Real cs_ffb0 = 0.5, cs_alpha = 0.5*M_PI, cs_eta = 0.0;
 // iprob=3 rotation axis (unit vector); zhat is through two panel centres, (1,1,1)/sqrt3
@@ -395,6 +396,7 @@ void CSTestSeamFluxCheck(Mesh *pm);
 void CSTestLevelFluxCheck(Mesh *pm);
 void CSTestConsSums(Mesh *pm);
 void CSTestHistory(HistoryData *pdata, Mesh *pm);
+void CSTestLoopHistory(HistoryData *pdata, Mesh *pm);
 void CSTestSeamHaloScan(ParameterInput *pin, Mesh *pm);
 void CSTestSeamHaloScanFC(ParameterInput *pin, Mesh *pm);
 
@@ -479,6 +481,13 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // initial state IS the error at any time. Enable with <problem>/user_hist = true.
   if (iprob == 3) {
     user_hist_func = CSTestHistory;
+  }
+  // iprob = 11 is exactly static too, so the deviation from the initial state IS the
+  // error at any time.  This is the TIME SERIES of the per-region face-field L1 that
+  // CSTestResistCheck prints only once, at the end of the run.
+  if (iprob == 11) {
+    cs_hist_nband = pin->GetOrAddInteger("problem", "conv_nband", 2);
+    user_hist_func = CSTestLoopHistory;
   }
   // iprob = 9 is the CONVERGENCE test and has its own exact solution at every time, so it
   // reports L1 errors rather than the single-state gates CSTestGhostCheck runs.
@@ -4018,6 +4027,158 @@ void CSTestHistory(HistoryData *pdata, Mesh *pm) {
   }, Kokkos::Sum<array_sum::GlobalSum>(sum_this_mb));
 
   for (int n=0; n<pdata->nhist; ++n) {pdata->hdata[n] = sum_this_mb.the_array[n];}
+  return;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void CSTestLoopHistory(HistoryData *pdata, Mesh *pm)
+//! \brief iprob = 11 TIME SERIES of the per-region face-field error, the kinetic energy
+//! and max|v| per region, the magnetic energy and max|div B|.
+//!
+//! `CSTestResistCheck` prints the per-region L1 of the FACE field against the exact
+//! static solution ONCE, at the end of a run, so telling a saturating error from one that
+//! grows secularly needs a separate run per time. This writes the same norms into the
+//! `.hst` at the output cadence instead, with the SAME region classification (by angle,
+//! within `<problem>/conv_nband` cells of |xi| = pi/4 or |eta| = pi/4; VERTEX = both).
+//!
+//! Everything is reported as a SUM with its face/cell COUNT so that the history reduction
+//! (which adds across ranks) stays meaningful; divide afterwards. The three max|v| slots
+//! and max|div B| are MAXIMA and are only correct on ONE RANK -- every run driven by
+//! `run_loop.sh` is serial.
+//!
+//! The exact face values are the three expressions the initial condition used, repeated
+//! verbatim from `CSTestResistCheck`.
+
+void CSTestLoopHistory(HistoryData *pdata, Mesh *pm) {
+  pdata->nhist = 15;
+  pdata->label[0] = "L1B-in";   // sum |B_f - B_f,exact| over panel-INTERIOR faces
+  pdata->label[1] = "nf-in";
+  pdata->label[2] = "L1B-sm";   // the same over panel-SEAM faces
+  pdata->label[3] = "nf-sm";
+  pdata->label[4] = "L1B-vx";   // the same over CUBE-VERTEX faces
+  pdata->label[5] = "nf-vx";
+  pdata->label[6] = "KE-in";    // sum 0.5*rho*v^2*dV, by cell region
+  pdata->label[7] = "KE-sm";
+  pdata->label[8] = "KE-vx";
+  pdata->label[9] = "ME-tot";   // sum 0.5*|bcc|^2*dV over all cells
+  pdata->label[10] = "mxv-in";  // max |v|, by cell region  (MAX, serial only)
+  pdata->label[11] = "mxv-sm";
+  pdata->label[12] = "mxv-vx";
+  pdata->label[13] = "mxdivB";  // max |div B| * dx1 / |B|, dimensionless
+  pdata->label[14] = "Bmax";    // max |B_f,exact|, the L1 normalisation
+
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  for (int n=0; n<pdata->nhist; ++n) { pdata->hdata[n] = 0.0; }
+  if (pmbp->pmhd == nullptr) { return; }
+
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie;
+  const int js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  auto bf1h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pmhd->b0.x1f);
+  auto bf2h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pmhd->b0.x2f);
+  auto bf3h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pmhd->b0.x3f);
+  auto wh = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pmhd->w0);
+  auto bch = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pmhd->bcc0);
+  auto volh = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->volume);
+  auto a1h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->area.x1f);
+  auto a2h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->area.x2f);
+  auto a3h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->area.x3f);
+  auto d1h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), pmbp->pcoord->dx1);
+  auto &size = pmbp->pmb->mb_size;
+  auto &mbpanel = pmbp->pmb->mb_panel;
+  const bool str_r_ = pmbp->pmesh->use_grid_stretch_r;
+  const bool str_rp_ = pmbp->pmesh->use_grid_stretch_r_poly;
+  const Real fstr_r_ = pmbp->pmesh->fStretchR;
+  const Real rmin_ = pmbp->pmesh->mesh_size.x1min;
+  const Real rmax_ = pmbp->pmesh->mesh_size.x1max;
+  Real cpoly_[NSTRETCH_R_POLY];
+  for (int n=0; n<NSTRETCH_R_POLY; ++n) { cpoly_[n] = pmbp->pmesh->fStretchRPoly[n]; }
+  const Real bazi = cs_bazi;
+  const Real bux = cs_bvx, buy = cs_bvy, buz = cs_bvz;
+  const int nbr = cs_hist_nband;
+
+  Real l1f_r[3] = {0.0, 0.0, 0.0}, ke_r[3] = {0.0, 0.0, 0.0};
+  Real mxv_r[3] = {0.0, 0.0, 0.0};
+  std::int64_t ncf_r[3] = {0, 0, 0};
+  Real me = 0.0, bmax = 0.0, mxdb = 0.0;
+
+  for (int m=0; m<pmbp->nmb_thispack; ++m) {
+    const int p = mbpanel.h_view(m);
+    const Real x2min = size.h_view(m).x2min, x2max = size.h_view(m).x2max;
+    const Real x3min = size.h_view(m).x3min, x3max = size.h_view(m).x3max;
+    const Real x1min = size.h_view(m).x1min, x1max = size.h_view(m).x1max;
+    for (int k=ks; k<=ke+1; ++k) {
+      const Real ec = 0.25*M_PI*CellCenterX(k-ks, indcs.nx3, x3min, x3max);
+      const Real ef = 0.25*M_PI*LeftEdgeX(k-ks, indcs.nx3, x3min, x3max);
+      const Real dg3 = 0.25*M_PI*(x3max - x3min)/static_cast<Real>(indcs.nx3);
+      const bool nre = ((0.25*M_PI - fabs(ec))/dg3) < static_cast<Real>(nbr);
+      for (int j=js; j<=je+1; ++j) {
+        const Real xc = 0.25*M_PI*CellCenterX(j-js, indcs.nx2, x2min, x2max);
+        const Real xf = 0.25*M_PI*LeftEdgeX(j-js, indcs.nx2, x2min, x2max);
+        const Real dg2 = 0.25*M_PI*(x2max - x2min)/static_cast<Real>(indcs.nx2);
+        const bool nrx = ((0.25*M_PI - fabs(xc))/dg2) < static_cast<Real>(nbr);
+        const int rg = (nrx && nre) ? 2 : ((nrx || nre) ? 1 : 0);
+        Real n1[3], n2[3], cx, cy, cz;
+        for (int i=is; i<=ie+1; ++i) {
+          Real rc = LeftEdgeX(i-is, indcs.nx1, x1min, x1max);
+          Real rc_rr = LeftEdgeX(i+1-is, indcs.nx1, x1min, x1max);
+          ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rc);
+          ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rc_rr);
+          rc = RadialCentroid(rc, rc_rr);
+          Real rl = LeftEdgeX(i-is, indcs.nx1, x1min, x1max);
+          ApplyRStretch(str_r_, fstr_r_, str_rp_, cpoly_, rmin_, rmax_, rl);
+          if (j <= je && k <= ke) {
+            PanelToCart(p, xc, ec, cx, cy, cz);
+            const Real ex = (-bazi*rl*cy + bux)*cx + (bazi*rl*cx + buy)*cy + buz*cz;
+            const Real d = fabs(bf1h(m,k,j,i) - ex);
+            l1f_r[rg] += d; ++ncf_r[rg]; bmax = fmax(bmax, fabs(ex));
+          }
+          if (i <= ie && k <= ke) {
+            PanelToCart(p, xf, ec, cx, cy, cz);
+            PanelNormals(p, xf, ec, n1, n2);
+            const Real ex = (-bazi*rc*cy + bux)*n1[0] + (bazi*rc*cx + buy)*n1[1]
+                          + buz*n1[2];
+            const Real d = fabs(bf2h(m,k,j,i) - ex);
+            l1f_r[rg] += d; ++ncf_r[rg]; bmax = fmax(bmax, fabs(ex));
+          }
+          if (i <= ie && j <= je) {
+            PanelToCart(p, xc, ef, cx, cy, cz);
+            PanelNormals(p, xc, ef, n1, n2);
+            const Real ex = (-bazi*rc*cy + bux)*n2[0] + (bazi*rc*cx + buy)*n2[1]
+                          + buz*n2[2];
+            const Real d = fabs(bf3h(m,k,j,i) - ex);
+            l1f_r[rg] += d; ++ncf_r[rg]; bmax = fmax(bmax, fabs(ex));
+          }
+          // cell-centred quantities: KE and max|v| by region, ME, and div B
+          if (i <= ie && j <= je && k <= ke) {
+            const Real dv = volh(m,k,j,i);
+            const Real v2 = SQR(wh(m,IVX,k,j,i)) + SQR(wh(m,IVY,k,j,i))
+                          + SQR(wh(m,IVZ,k,j,i));
+            ke_r[rg] += 0.5*wh(m,IDN,k,j,i)*v2*dv;
+            mxv_r[rg] = fmax(mxv_r[rg], sqrt(v2));
+            const Real b2 = SQR(bch(m,IBX,k,j,i)) + SQR(bch(m,IBY,k,j,i))
+                          + SQR(bch(m,IBZ,k,j,i));
+            me += 0.5*b2*dv;
+            const Real db = (a1h(m,k,j,i+1)*bf1h(m,k,j,i+1) - a1h(m,k,j,i)*bf1h(m,k,j,i)
+                          +  a2h(m,k,j+1,i)*bf2h(m,k,j+1,i) - a2h(m,k,j,i)*bf2h(m,k,j,i)
+                          +  a3h(m,k+1,j,i)*bf3h(m,k+1,j,i) - a3h(m,k,j,i)*bf3h(m,k,j,i))
+                          / dv;
+            mxdb = fmax(mxdb, fabs(db)*d1h(m,k,j,i)/fmax(sqrt(b2), 1.0e-30));
+          }
+        }
+      }
+    }
+  }
+  for (int r=0; r<3; ++r) {
+    pdata->hdata[2*r] = l1f_r[r];
+    pdata->hdata[2*r+1] = static_cast<Real>(ncf_r[r]);
+    pdata->hdata[6+r] = ke_r[r];
+    pdata->hdata[10+r] = mxv_r[r];
+  }
+  pdata->hdata[9] = me;
+  pdata->hdata[13] = mxdb;
+  pdata->hdata[14] = bmax;
   return;
 }
 

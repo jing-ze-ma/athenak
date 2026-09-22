@@ -1,0 +1,44 @@
+Mesh: spherical-polar x3-face theta correction = rotate
+
+Root grid = 1 x 1 x 2 MeshBlocks
+Total number of MeshBlocks = 2
+Number of logical  levels of refinement = 1 (2 levels total)
+Number of physical levels of refinement = 0 (1 levels total)
+Number of parallel ranks = 1
+Radial (x1) reconstruction on the spherical polar grid (<mhd>/reconstruct_x1) = plm
+
+Setup complete, executing task list(s)...
+
+elapsed=3.475366e-02 cycle=0 time=0.000000e+00 dt=1.539729e-03
+elapsed=7.408097e+00 cycle=100 time=1.539819e-01 dt=1.539786e-03
+elapsed=1.493986e+01 cycle=200 time=3.079558e-01 dt=1.539717e-03
+elapsed=2.207958e+01 cycle=300 time=4.619284e-01 dt=1.539741e-03
+elapsed=2.893031e+01 cycle=400 time=6.159046e-01 dt=1.539785e-03
+elapsed=3.573389e+01 cycle=500 time=7.698846e-01 dt=1.539807e-03
+elapsed=4.248200e+01 cycle=600 time=9.238662e-01 dt=1.539827e-03
+elapsed=4.919148e+01 cycle=700 time=1.077850e+00 dt=1.539844e-03
+elapsed=5.597694e+01 cycle=800 time=1.231834e+00 dt=1.539841e-03
+elapsed=6.266736e+01 cycle=900 time=1.385818e+00 dt=1.539831e-03
+elapsed=6.936944e+01 cycle=1000 time=1.539800e+00 dt=1.539805e-03
+elapsed=7.608077e+01 cycle=1100 time=1.693780e+00 dt=1.539799e-03
+elapsed=8.274683e+01 cycle=1200 time=1.847760e+00 dt=1.539808e-03
+### SP TEST ERRORS iprob=12  t=2.000000e+00  nx1=16 nx2=32 nx3=64  polar band 2 rows
+###   L1 (per unit volume):  v 2.471540e-04  p 1.126338e-04  rho 8.987358e-05  B(faces) 1.427267e-04
+###   Linf:                  v 2.371761e-03  p 1.376991e-03  B 7.771859e-03  (B max on this rank at face type 2, j-js=0, i-is=13)
+###   POLAR rows:   L1 v 7.050816e-04  p 3.937844e-04  B 2.594504e-03   Linf v 2.371761e-03  B 7.771859e-03  (1.92% of the volume)
+###   INTERIOR:     L1 v 2.381826e-04  p 1.071257e-04  B 8.242988e-06
+###   max |div B| L/b0 = 6.654e-14  (round-off expected: the faces come from Stokes loops)
+###   RESISTIVE EMF vs exact eta*J, in units eta*|J| (this rank):
+###     E1 (r edges)     interior L1 1.512e-03 Linf 2.523e-02 | polar L1 1.504e-01 Linf 2.995e-01 (max at j-js=32 i-is=2; north 2.995e-01 south 2.995e-01)
+###     E2 (theta edges)  interior L1 3.598e-04 Linf 1.582e-03 | polar L1 2.428e-02 Linf 1.049e-01 (max at j-js=0 i-is=16; north 1.049e-01 south 1.049e-01)
+###     E3 (phi edges)   interior L1 3.210e-09 Linf 2.253e-07 | polar L1 1.037e-13 Linf 1.058e-12 (max at j-js=31 i-is=2; north 8.981e-13 south 1.058e-12)
+###   OHMIC BUDGET: E(0) 3.9301935988e+01  E(t) 3.9299386230e+01  gained -2.549758e-03  exact eta J^2 V t 2.111150e-11  ratio -120775764.000360  (eta=0: dE/E = -6.488e-05)
+
+Terminating on time limit
+time=2.000000e+00 cycle=1299
+tlim=2.000000e+00 nlim=1000000
+
+MeshBlock-cycles = 2598
+cpu time used  = 8.931148e+01
+zone-cycles/cpu_second = 4.765976e+05
+particle-updates/cpu_second = 0.000000e+00

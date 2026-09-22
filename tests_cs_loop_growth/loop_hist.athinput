@@ -1,0 +1,78 @@
+# CS FIELD-LOOP GROWTH TEST.  Build with -D PROBLEM=cs_test.
+#
+# tests_cs_regions/cs_regions_loop.athinput with (a) a USER HISTORY that writes the
+# per-region face-field L1, KE, ME, max|v| and max|div B| as a TIME SERIES, and (b) every
+# knob this study sweeps DECLARED, because AthenaK refuses a command-line override of a
+# parameter the input file never mentions.
+#
+# AXES: x1 is RADIAL, x2 = xi and x3 = eta are the panel-tangential angles.
+
+<comment>
+problem = cs loop growth: toroidal field from its vector potential, time series
+
+<job>
+basename = loop
+
+<mesh>
+nghost   = 3
+nx1      = 32
+x1min    = 1.0
+x1max    = 2.0
+ix1_bc   = reflect
+ox1_bc   = reflect
+
+nx2      = 32
+x2min    = -1.0
+x2max    = 1.0
+ix2_bc   = panel
+ox2_bc   = panel
+
+nx3      = 32
+x3min    = -1.0
+x3max    = 1.0
+ix3_bc   = panel
+ox3_bc   = panel
+
+use_cubed_sphere = true
+cs_vertex_fill    = true
+cs_vertex_fill_cc = false
+
+<meshblock>
+nx1      = 32
+nx2      = 32
+nx3      = 32
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim       = -1
+tlim       = 2.0
+ndiag      = 100000
+
+<mhd>
+eos         = ideal
+reconstruct = plm
+rsolver     = hlld
+gamma       = 1.666667
+cs_wellbalanced_src = false
+bs_emf              = false
+fofc                = false
+cs_lowbeta_fallback = 0.5
+
+<problem>
+iprob    = 11
+d0       = 1.0
+p0       = 1.0
+b0c      = 0.3
+bunif    = 0.0
+faces_from_potential = true
+user_bcs = true
+user_hist = true
+conv_errors = 0
+conv_nband  = 4
+
+<output1>
+file_type = hst
+dt        = 0.0625
+user_hist_only = true

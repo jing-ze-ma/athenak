@@ -1,0 +1,36 @@
+Mesh: spherical-polar x3-face theta correction = rotate
+
+Root grid = 1 x 1 x 2 MeshBlocks
+Total number of MeshBlocks = 2
+Number of logical  levels of refinement = 1 (2 levels total)
+Number of physical levels of refinement = 0 (1 levels total)
+Number of parallel ranks = 1
+Radial (x1) reconstruction on the spherical polar grid (<mhd>/reconstruct_x1) = plm
+
+Setup complete, executing task list(s)...
+
+elapsed=1.737963e-01 cycle=0 time=0.000000e+00 dt=3.791176e-04
+elapsed=2.469728e+02 cycle=100 time=3.791227e-02 dt=3.791245e-04
+elapsed=4.034119e+02 cycle=200 time=7.582452e-02 dt=3.791202e-04
+elapsed=4.546147e+02 cycle=300 time=1.137363e-01 dt=3.791164e-04
+elapsed=5.041770e+02 cycle=400 time=1.516479e-01 dt=3.791150e-04
+elapsed=5.539820e+02 cycle=500 time=1.895594e-01 dt=3.791147e-04
+elapsed=6.034099e+02 cycle=600 time=2.274708e-01 dt=3.791147e-04
+elapsed=6.530928e+02 cycle=700 time=2.653823e-01 dt=3.791148e-04
+elapsed=7.027430e+02 cycle=800 time=3.032938e-01 dt=3.791149e-04
+elapsed=7.522129e+02 cycle=900 time=3.412053e-01 dt=3.791150e-04
+elapsed=8.016809e+02 cycle=1000 time=3.791168e-01 dt=3.791152e-04
+elapsed=8.512917e+02 cycle=1100 time=4.170284e-01 dt=3.791155e-04
+elapsed=9.008209e+02 cycle=1200 time=4.549399e-01 dt=3.791159e-04
+elapsed=9.505137e+02 cycle=1300 time=4.928515e-01 dt=3.791164e-04
+elapsed=9.999643e+02 cycle=1400 time=5.307632e-01 dt=3.791170e-04
+elapsed=1.049509e+03 cycle=1500 time=5.686749e-01 dt=3.791176e-04
+elapsed=1.098851e+03 cycle=1600 time=6.065867e-01 dt=3.791184e-04
+elapsed=1.148195e+03 cycle=1700 time=6.444986e-01 dt=3.791192e-04
+elapsed=1.197534e+03 cycle=1800 time=6.824106e-01 dt=3.791199e-04
+elapsed=1.246872e+03 cycle=1900 time=7.203226e-01 dt=3.791202e-04
+elapsed=1.296202e+03 cycle=2000 time=7.582346e-01 dt=3.791204e-04
+elapsed=1.345516e+03 cycle=2100 time=7.961467e-01 dt=3.791207e-04
+elapsed=1.394921e+03 cycle=2200 time=8.340587e-01 dt=3.791210e-04
+elapsed=1.444523e+03 cycle=2300 time=8.719709e-01 dt=3.791214e-04
+elapsed=1.493839e+03 cycle=2400 time=9.098830e-01 dt=3.791217e-04
