@@ -91,6 +91,10 @@ class Hydro {
 
   // data
   ReconstructionMethod recon_method;
+  // <hydro>/reconstruct_x1 = plm (default) | ppm4 | wenoz -- reconstruction used on the
+  // RADIAL (x1) sweep on the cubed sphere and on spherical polar; see the note by the
+  // same name in mhd.hpp.
+  ReconstructionMethod recon_method_x1;
   Hydro_RSolver rsolver_method;
   EquationOfState *peos;  // chosen EOS
 

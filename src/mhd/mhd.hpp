@@ -97,6 +97,15 @@ class MHD {
 
   // data
   ReconstructionMethod recon_method;
+  // <mhd>/reconstruct_x1 = plm (default) | ppm4 | wenoz -- reconstruction used on the
+  // RADIAL (x1) sweep on the cubed sphere and on spherical polar, where x1 is always
+  // non-uniform (radial stretch) and `reconstruct` above only reaches the angular (x2/x3)
+  // sweeps (see the note above GridPiecewiseLinearX1's use in mhd_fluxes.cpp). ppm4 and
+  // wenoz are Mignone (2014)'s published curvilinear reconstructions (see
+  // reconstruct/mignone_curvilinear.hpp); ppmx is refused (no published curvilinear
+  // Colella-Sekora limiter). Ignored on every other grid, where the x1 sweep already
+  // honours `reconstruct`.
+  ReconstructionMethod recon_method_x1;
   MHD_RSolver rsolver_method;
   EquationOfState *peos;   // chosen EOS
 

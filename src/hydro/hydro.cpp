@@ -12,6 +12,7 @@
 #include <algorithm>
 
 #include "athena.hpp"
+#include "globals.hpp"
 #include "parameter_input.hpp"
 #include "mesh/mesh.hpp"
 #include "eos/eos.hpp"
@@ -326,6 +327,76 @@ Hydro::Hydro(MeshBlockPack *ppack, ParameterInput *pin) :
                 << std::endl << "<hydro> reconstruct = '" << xorder << "' not implemented"
                 << std::endl;
       std::exit(EXIT_FAILURE);
+    }
+
+    // select RADIAL (x1) reconstruction on the cubed sphere / spherical polar (default
+    // PLM, i.e. today's GridPiecewiseLinearX1, bitwise unchanged). `reconstruct` above
+    // never reaches the x1 sweep on those two grids -- see the note on str_r1_ in
+    // hydro_fluxes.cpp -- so this is a SEPARATE knob, not a fallback for it.
+    {
+      bool cs_or_sp = pmy_pack->pmesh->use_cubed_sphere ||
+                      pmy_pack->pmesh->use_spherical_polar;
+      std::string xorder1 = pin->GetOrAddString("hydro","reconstruct_x1","plm");
+      auto &indcs = pmy_pack->pmesh->mb_indcs;
+      if (xorder1.compare("plm") == 0) {
+        recon_method_x1 = ReconstructionMethod::plm;
+      } else if (xorder1.compare("ppmx") == 0) {
+        // See the identical refusal + citation in mhd.cpp: Mignone (2014) [JCP 270,
+        // 784, arXiv:1404.0537] gives no curvilinear Colella-Sekora extremum-preserving
+        // PPM limiter, only the CW84-style one (his Eqs. 45-48); use ppm4 instead.
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+          << std::endl << "<hydro>/reconstruct_x1=ppmx is not implemented: Mignone "
+          << "(2014) gives no curvilinear Colella-Sekora extremum-preserving PPM "
+          << "limiter; use reconstruct_x1=ppm4 (curvilinear CW84 limiter) or plm"
+          << std::endl;
+        std::exit(EXIT_FAILURE);
+      } else if (xorder1.compare("ppm4") == 0 ||
+                 xorder1.compare("wenoz") == 0) {
+        // The published, non-uniform-grid-EXACT reconstruction from A. Mignone, JCP
+        // 270, 784 (2014), arXiv:1404.0537: ppm4 = his curvilinear 4th-order PPM
+        // (Sec. 3.3); wenoz = his curvilinear WENO3 (Sec. 3.2, third order -- a genuine
+        // order reduction from the uniform-grid 5th-order WENO-Z used elsewhere, since
+        // the paper gives no higher-order curvilinear WENO). See
+        // reconstruct/mignone_curvilinear.hpp for the implementation.
+        if (indcs.ng < 3) {
+          std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+            << std::endl << "<hydro>/reconstruct_x1=" << xorder1 << " requires at least "
+            << "3 ghost zones, but <mesh>/nghost=" << indcs.ng << std::endl;
+          std::exit(EXIT_FAILURE);
+        }
+        if (use_fofc && indcs.ng < 4) {
+          std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+            << std::endl << "FOFC and <hydro>/reconstruct_x1=" << xorder1 << " require "
+            << "at least 4 ghost zones, but <mesh>/nghost=" << indcs.ng << std::endl;
+          std::exit(EXIT_FAILURE);
+        }
+        // The Kappeli & Mishra dynamic radial well-balancing is PLM-specific (see the
+        // identical refusal in mhd.cpp); refuse rather than silently drop it.
+        if (use_wellbalance_dynamic && use_wb_x1) {
+          std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+            << std::endl << "<hydro>/reconstruct_x1=" << xorder1 << " is not implemented "
+            << "with <hydro>/wellbalance_dynamic + wb_x1 (the K&M radial well-balancing "
+            << "is PLM-only); use <hydro>/reconstruct_x1=plm or turn wellbalance_dynamic "
+            << "off" << std::endl;
+          std::exit(EXIT_FAILURE);
+        }
+        if (xorder1.compare("ppm4") == 0) {
+          recon_method_x1 = ReconstructionMethod::ppm4;
+        } else {
+          recon_method_x1 = ReconstructionMethod::wenoz;
+        }
+      } else {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<hydro>/reconstruct_x1 = '" << xorder1
+                  << "' not implemented" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      if (cs_or_sp && global_variable::my_rank == 0) {
+        std::cout << "Radial (x1) reconstruction on the "
+                  << (pmy_pack->pmesh->use_cubed_sphere ? "cubed sphere" : "spherical "
+                      "polar") << " grid (<hydro>/reconstruct_x1) = " << xorder1
+                  << std::endl;
+      }
     }
 
     // select Riemann solver (no default).  Test for compatibility of options

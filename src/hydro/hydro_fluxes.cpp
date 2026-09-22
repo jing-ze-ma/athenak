@@ -17,6 +17,7 @@
 #include "reconstruct/plm.hpp"
 #include "reconstruct/ppm.hpp"
 #include "reconstruct/wenoz.hpp"
+#include "reconstruct/mignone_curvilinear.hpp"
 #include "hydro/rsolvers/advect_hyd.hpp"
 #include "hydro/rsolvers/llf_hyd.hpp"
 #include "hydro/rsolvers/hlle_hyd.hpp"
@@ -133,6 +134,8 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
   // (x1v is the volume centroid on both spherical grids, so the plain uniform stencil
   // is off-centre even without a stretch; `reconstruct` governs the ANGULAR sweeps)
   const bool str_r1_ = pmy_pack->pmesh->use_cubed_sphere;
+  // <hydro>/reconstruct_x1: separate knob for the radial sweep on cs/sp (see hydro.hpp).
+  const auto recon_method_x1_ = recon_method_x1;
   auto &mb_bcs_pq = pmy_pack->pmb->mb_bcs;
   const bool pquad_ = pmy_pack->pmesh->use_polar_quadratic_recon;
   const int px3_ = pmy_pack->pmesh->polar_x3_shift;
@@ -198,13 +201,27 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
     ScrArray2D<Real> dl(member.team_scratch(scr_level), nder, ncells1);
     ScrArray2D<Real> dr(member.team_scratch(scr_level), nder, ncells1);
 
-    if (use_spherical_polar || str_r1_)
+    if ((use_spherical_polar || str_r1_) && recon_method_x1_ == ReconstructionMethod::plm)
       {
         GridPiecewiseLinearX1(member, eos_, wb_option_, use_wb_rho_,
                               use_wellbalance_dynamic_,
                               use_wb_x1_, wb_rmax_, wb_rmin_,
                               m, k, j, il-1, iu, w0_, x1v_, x1f_, phicc_wb_,
                               phi_wb_x1f_, wbq0_, wl, wr);
+      } else if (use_spherical_polar || str_r1_) {
+        // reconstruct_x1 != plm: Mignone (2014) curvilinear reconstruction -- see
+        // reconstruct/mignone_curvilinear.hpp. wellbalance_dynamic+wb_x1 with this
+        // choice is refused at setup, so there is no background to subtract here.
+        switch (recon_method_x1_) {
+          case ReconstructionMethod::ppm4:
+            MignonePPM4X1(member,eos_,true, m,k,j,il-1,iu,w0_,x1v_,x1f_,wl,wr);
+            break;
+          case ReconstructionMethod::wenoz:
+            MignoneWENO3X1(member,eos_,true, m,k,j,il-1,iu,w0_,x1v_,x1f_,wl,wr);
+            break;
+          default:
+            break;
+        }
       } else {
 
     if (use_wellbalance_dynamic_ && use_wb_x1_)
@@ -242,13 +259,25 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
       // hands the Riemann solver this reconstructed pressure rather than recomputing it
       // from the reconstructed (d,e), so leaving it to plain PLM would put the entire
       // hydrostatic gradient back into the solver's pressure and unbalance the scheme.
-      if (use_spherical_polar || str_r1_) {
+      if ((use_spherical_polar || str_r1_) &&
+          recon_method_x1_ == ReconstructionMethod::plm) {
         GridPiecewiseLinearDerX1(member, eos_, wb_option_, use_wellbalance_dynamic_,
                                  use_wb_x1_, wb_rmax_, wb_rmin_,
                                  use_wellbalance_static_reconst_perturb_,
                                  pwb_, pfacewb_x1f,
                                  m, k, j, il-1, iu, w0_, wder_,
                                  x1v_, x1f_, phicc_wb_, phi_wb_x1f_, wbq0_, dl, dr);
+      } else if (use_spherical_polar || str_r1_) {
+        switch (recon_method_x1_) {
+          case ReconstructionMethod::ppm4:
+            MignonePPM4X1(member,eos_,false,m,k,j,il-1,iu,wder_,x1v_,x1f_,dl,dr);
+            break;
+          case ReconstructionMethod::wenoz:
+            MignoneWENO3X1(member,eos_,false,m,k,j,il-1,iu,wder_,x1v_,x1f_,dl,dr);
+            break;
+          default:
+            break;
+        }
       } else if (use_wellbalance_static_reconst_perturb_) {
         WbStaticPiecewiseLinearDerX1(member, m, k, j, il-1, iu,
                                      pwb_, pfacewb_x1f,

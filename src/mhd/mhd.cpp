@@ -412,6 +412,86 @@ MHD::MHD(MeshBlockPack *ppack, ParameterInput *pin) :
       std::exit(EXIT_FAILURE);
     }
 
+    // select RADIAL (x1) reconstruction on the cubed sphere / spherical polar (default
+    // PLM, i.e. today's GridPiecewiseLinearX1, bitwise unchanged). `reconstruct` above
+    // never reaches the x1 sweep on those two grids -- see the note on str_r1_ in
+    // mhd_fluxes.cpp -- so this is a SEPARATE knob, not a fallback for it.
+    {
+      bool cs_or_sp = pmy_pack->pmesh->use_cubed_sphere ||
+                      pmy_pack->pmesh->use_spherical_polar;
+      std::string xorder1 = pin->GetOrAddString("mhd","reconstruct_x1","plm");
+      auto &indcs = pmy_pack->pmesh->mb_indcs;
+      if (xorder1.compare("plm") == 0) {
+        recon_method_x1 = ReconstructionMethod::plm;
+      } else if (xorder1.compare("ppmx") == 0) {
+        // A. Mignone, JCP 270, 784 (2014) [arXiv:1404.0537] gives the published
+        // curvilinear (volume-coordinate) generalization of PPM (his Eqs. 45-48,
+        // implemented in reconstruct/mignone_curvilinear.hpp) but ONLY for the
+        // CW84-style limiter, not for the Colella & Sekora extremum-preserving one
+        // that this code's uniform-grid `ppmx` uses. Inventing that generalization
+        // is out of scope, so refuse rather than silently fall back to something
+        // unpublished; use reconstruct_x1=ppm4 (the curvilinear CW84-limiter PPM)
+        // instead.
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+          << std::endl << "<mhd>/reconstruct_x1=ppmx is not implemented: Mignone (2014) "
+          << "gives no curvilinear Colella-Sekora extremum-preserving PPM limiter; use "
+          << "reconstruct_x1=ppm4 (curvilinear CW84 limiter) or plm" << std::endl;
+        std::exit(EXIT_FAILURE);
+      } else if (xorder1.compare("ppm4") == 0 ||
+                 xorder1.compare("wenoz") == 0) {
+        // The published, non-uniform-grid-EXACT reconstruction from A. Mignone, "High-
+        // order conservative reconstruction schemes for finite volume methods in
+        // cylindrical and spherical coordinates", JCP 270, 784 (2014), arXiv:1404.0537:
+        // ppm4 = his curvilinear 4th-order PPM (Sec. 3.3, Eqs. 45-48); wenoz = his
+        // curvilinear WENO3 (Sec. 3.2, third order -- there is no published curvilinear
+        // WENO beyond third order, so this is a genuine order REDUCTION from the
+        // uniform-grid 5th-order WENO-Z used elsewhere). See
+        // reconstruct/mignone_curvilinear.hpp for the implementation and equation
+        // references, and tests_cs_radial_recon/ for the measured order.
+        if (indcs.ng < 3) {
+          std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+            << std::endl << "<mhd>/reconstruct_x1=" << xorder1 << " requires at least 3 "
+            << "ghost zones, but <mesh>/nghost=" << indcs.ng << std::endl;
+          std::exit(EXIT_FAILURE);
+        }
+        if (use_fofc && indcs.ng < 4) {
+          std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+            << std::endl << "FOFC and <mhd>/reconstruct_x1=" << xorder1 << " require at "
+            << "least 4 ghost zones, but <mesh>/nghost=" << indcs.ng << std::endl;
+          std::exit(EXIT_FAILURE);
+        }
+        // The Kappeli & Mishra dynamic radial well-balancing (GridPiecewiseLinearX1's
+        // background-subtracted branch) is a PLM-specific scheme (it subtracts a
+        // background then re-applies PLM_nonuniform to the deviation); there is no
+        // ppm4/ppmx/wenoz counterpart, so refuse the combination rather than silently
+        // dropping the well-balancing.
+        if (use_wellbalance_dynamic && use_wb_x1) {
+          std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+            << std::endl << "<mhd>/reconstruct_x1=" << xorder1 << " is not implemented "
+            << "with <mhd>/wellbalance_dynamic + wb_x1 (the K&M radial well-balancing is "
+            << "PLM-only); use <mhd>/reconstruct_x1=plm or turn wellbalance_dynamic off"
+            << std::endl;
+          std::exit(EXIT_FAILURE);
+        }
+        if (xorder1.compare("ppm4") == 0) {
+          recon_method_x1 = ReconstructionMethod::ppm4;
+        } else {
+          recon_method_x1 = ReconstructionMethod::wenoz;
+        }
+      } else {
+        std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                  << std::endl << "<mhd>/reconstruct_x1 = '" << xorder1
+                  << "' not implemented" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      if (cs_or_sp && global_variable::my_rank == 0) {
+        std::cout << "Radial (x1) reconstruction on the "
+                  << (pmy_pack->pmesh->use_cubed_sphere ? "cubed sphere" : "spherical "
+                      "polar") << " grid (<mhd>/reconstruct_x1) = " << xorder1
+                  << std::endl;
+      }
+    }
+
     // select Riemann solver (no default).  Test for compatibility of options
     std::string rsolver = pin->GetString("mhd","rsolver");
     // Special relativistic solvers
