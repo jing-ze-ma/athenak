@@ -1,0 +1,31 @@
+diff --git a/src/coordinates/coordinates.cpp b/src/coordinates/coordinates.cpp
+index df6cd60f..081216a2 100644
+--- a/src/coordinates/coordinates.cpp
++++ b/src/coordinates/coordinates.cpp
+@@ -48,6 +48,9 @@ Coordinates::Coordinates(ParameterInput *pin, MeshBlockPack *ppack) :
+     sp_face_avg = pin->GetOrAddBoolean("mhd","sp_face_avg",false);
+     sp_face_avg_terms = pin->GetOrAddInteger("mhd","sp_face_avg_terms",3);
+   } else if (pin->DoesBlockExist("hydro")) {
++    // pure hydro: the same well-balanced source, through the same shared
++    // SrcTermsGnomonicEquiangleImpl -> SrcTermsCurvilinearWB path (is_mhd = false)
++    cs_wellbalanced_src = pin->GetOrAddBoolean("hydro","cs_wellbalanced_src",false);
+     sp_wellbalanced_src = pin->GetOrAddBoolean("hydro","sp_wellbalanced_src",false);
+     sp_cart_polar_momentum = pin->GetOrAddBoolean("hydro","sp_cart_polar_momentum",
+                                                   false);
+diff --git a/src/coordinates/coordinates.hpp b/src/coordinates/coordinates.hpp
+index 568263c7..d06c08f5 100644
+--- a/src/coordinates/coordinates.hpp
++++ b/src/coordinates/coordinates.hpp
+@@ -192,9 +192,9 @@ class Coordinates {
+     }
+ 
+   // functions
+-  // WELL-BALANCED geometric source (<mhd>/cs_wellbalanced_src on the cubed sphere,
+-  // <mhd>/sp_wellbalanced_src on the spherical-polar grid).  See the long note at
+-  // SrcTermsCurvilinearWB.
++  // WELL-BALANCED geometric source (cs_wellbalanced_src on the cubed sphere,
++  // sp_wellbalanced_src on the spherical-polar grid; read from <mhd>, else <hydro>).
++  // See the long note at SrcTermsCurvilinearWB.
+   bool cs_wellbalanced_src = false;
+   bool sp_wellbalanced_src = false;
+   // CARTESIAN momentum update in the two POLAR cell rows (<mhd>/sp_cart_polar_momentum):

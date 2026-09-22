@@ -192,9 +192,9 @@ class Coordinates {
     }
 
   // functions
-  // WELL-BALANCED geometric source (<mhd>/cs_wellbalanced_src on the cubed sphere,
-  // <mhd>/sp_wellbalanced_src on the spherical-polar grid).  See the long note at
-  // SrcTermsCurvilinearWB.
+  // WELL-BALANCED geometric source (cs_wellbalanced_src on the cubed sphere,
+  // sp_wellbalanced_src on the spherical-polar grid; read from <mhd>, else <hydro>).
+  // See the long note at SrcTermsCurvilinearWB.
   bool cs_wellbalanced_src = false;
   bool sp_wellbalanced_src = false;
   // CARTESIAN momentum update in the two POLAR cell rows (<mhd>/sp_cart_polar_momentum):

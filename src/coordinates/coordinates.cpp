@@ -48,6 +48,9 @@ Coordinates::Coordinates(ParameterInput *pin, MeshBlockPack *ppack) :
     sp_face_avg = pin->GetOrAddBoolean("mhd","sp_face_avg",false);
     sp_face_avg_terms = pin->GetOrAddInteger("mhd","sp_face_avg_terms",3);
   } else if (pin->DoesBlockExist("hydro")) {
+    // pure hydro: the same well-balanced source, through the same shared
+    // SrcTermsGnomonicEquiangleImpl -> SrcTermsCurvilinearWB path (is_mhd = false)
+    cs_wellbalanced_src = pin->GetOrAddBoolean("hydro","cs_wellbalanced_src",false);
     sp_wellbalanced_src = pin->GetOrAddBoolean("hydro","sp_wellbalanced_src",false);
     sp_cart_polar_momentum = pin->GetOrAddBoolean("hydro","sp_cart_polar_momentum",
                                                   false);
