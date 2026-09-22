@@ -450,6 +450,30 @@ inline DvceArray3D<int> rt_cut_index() { return *rt_icut_ptr; }
 // energy per RT application. Applies to every EXPLICIT radiative update -- grey and
 // correlated-k, split and monolithic. Set <= 0 to disable the limiter entirely.
 inline Real rt_de_max = 0.5;
+// problem/rt_floor_consistent: THE RADIATIVE SOURCE MAY NOT COOL A CELL BELOW THE STATE
+// THE EOS FLOORS WILL PUT IT BACK AT.  Default FALSE = today's arithmetic, bit for bit.
+//
+// In the tenuous NIGHT-SIDE TOP SLAB of a hot Jupiter -- density on dfloor, pressure
+// within a factor of a few of pfloor, every correlated-k band optically thin -- the
+// two-stream's equilibrium for the topmost cell lies BELOW the pressure floor.  The two
+// operators then fight each other once per stage, forever: the sweep takes energy out,
+// ConsToPrim's pressure floor puts it straight back (this is the eos_efloor counter), and
+// the only trace left is a spurious energy source in the floor and, when the step is
+// large enough, the rt_de_max clip.  MEASURED on the shrunk production grid
+// (inputs/tests/dhj_ck_spherical.athinput, 4000 cycles): the centre-to-centre layers give
+// 27048 eos_efloor events against 0 for the staggered ones, and lose 1.7e-5 of the total
+// energy; from one shared state the same A/B is 16 floor events per cycle against 0.
+// The layers are NOT what is wrong -- their emission is the cell's own kappa rho B over
+// its own two halves, while the staggered layer averaged it with the GHOST cell above the
+// domain and so under-emitted the top cell by 46 % -- and neither is the floor.  What was
+// missing is that the apply did not know the floors exist.
+//
+// With this on, the decrement is bounded by the floor state itself: e^{n+1} >= e_floor =
+// max(e(rho, tfloor), e(rho, pfloor)), and a cell already at or below it is handed
+// nothing.  A HEATING step is untouched, as is every cell that stays clear of the floors,
+// so the change is confined to exactly the cells the floor was catching.  It costs one
+// EOS evaluation per COOLING cell and stage.
+inline bool rt_floor_consistent = false;
 // problem/rt_semi_lin: recover the OLD semi-implicit step, which linearized the emission
 // about the current state and relaxed at lambda = 4E/e.  See the long note in rt_apply:
 // that form bounds cooling but leaves heating explicit and unbounded, so a cold optically
@@ -1403,6 +1427,13 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
     bool conv = false;
     // ck_impl_colskip: every column is live again at the start of a call
     if (ck_done_ptr != nullptr) Kokkos::deep_copy(*ck_done_ptr, 0.0);
+    // problem/ck_impl_warm: reset the per-call increment accumulator and, when the
+    // switch is on, seed the gas with the previous call's converged increment
+    {
+      MeshBlockPack *pp0 = pm->pmb_pack;
+      DvceArray5D<Real> u0w = (pp0->pmhd != nullptr) ? pp0->pmhd->u0 : pp0->phydro->u0;
+      CkWarmSeed(pm, u0w);
+    }
     for (int it=0; it<ck_impl_maxit; ++it) {
       ck_impl_pass = it;
       picket_fence_two_stream_RT_pass(pm, bdt);
@@ -1943,7 +1974,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
           rt_Qb_ptr = new DvceArray5D<Real>("rt_Qb", nmb, nblk, n1, n3, n2);
           // problem/ck_implicit: the column solve's own scratch.  Nothing here exists
           // with the switch off (see utils/two_stream_column_ck.hpp).
-          if (ck_implicit) CkImplAlloc(nmb, nb_a, n1, n2, n3);
+          if (ck_implicit) CkImplAlloc(nmb, nb_a, nblk*NC, n1, n2, n3);
         }
         if (rt_diag) {
           rt_diag_ptr = new DvceArray5D<Real>("rt_diag", nmb, 7, n3, n2, n1);
@@ -1980,6 +2011,28 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
       auto ckthk_g = ckimp_ ? *ck_thk_ptr : DvceArray4D<Real>("ck_thk_dummy",1,1,1,1);
       auto ckthu_g = ckimp_ ? *ck_thu_ptr : DvceArray4D<Real>("ck_thu_dummy",1,1,1,1);
       auto ckdone_g = ckimp_ ? *ck_done_ptr : DvceArray3D<Real>("ck_done_dummy",1,1,1);
+      auto cksd_g = ckimp_ ? *ck_seed_ptr : DvceArray4D<Real>("ck_seed_dummy",1,1,1,1);
+      // ---- problem/ck_impl_frozen_op: STORE on the first pass, RE-APPLY on the rest.
+      // The stored quantities are the bits pass 0 computed and the optical depths are
+      // re-formed from them by the same expressions, so a frozen pass is bitwise the pass
+      // it replaces.  Refused with ck_impl_refresh_kappa (which wants the opacity rebuilt
+      // every pass) and with the legacy staggered layers (which ck_implicit already
+      // refuses).
+      const bool ckfop_ = ckimp_ && ck_impl_frozen_op && !ck_impl_refresh_kappa
+                          && !rt_layer_legacy;
+      const bool ckfst_ = ckfop_ && (ck_impl_pass <= 0);
+      const bool ckfus_ = ckfop_ && (ck_impl_pass > 0);
+      const bool ckfcf_ = ck_impl_frozen_cof;
+      auto ckkro_g = (ckfop_ && ck_kro_ptr != nullptr) ? *ck_kro_ptr
+                   : DvceArray5D<Real>("ck_kro_dummy",1,1,1,1,1);
+      auto ckc0_g = (ckfop_ && ck_c0_ptr != nullptr) ? *ck_c0_ptr
+                  : DvceArray5D<Real>("ck_c0_dummy",1,1,1,1,1);
+      auto ckci_g = (ckfop_ && ck_ci_ptr != nullptr) ? *ck_ci_ptr
+                  : DvceArray5D<Real>("ck_ci_dummy",1,1,1,1,1);
+      auto ckco_g = (ckfop_ && ck_co_ptr != nullptr) ? *ck_co_ptr
+                  : DvceArray5D<Real>("ck_co_dummy",1,1,1,1,1);
+      auto cktpf_g = (ckfop_ && ck_tpf_ptr != nullptr) ? *ck_tpf_ptr
+                   : DvceArray4D<Real>("ck_tpf_dummy",1,1,1,1);
       // ck_impl_tau_min / ck_impl_colskip, as plain values for the device lambdas
       const Real cktaumin_ = ck_impl_tau_min;
       const Real ckarat_ = ck_impl_arat;
@@ -3145,7 +3198,10 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
             if (ckskip_ && ckdone_g(m,k,j) > 0.0) return;
             for (int i=is; i<ie+2; ++i) {
               Fb_g(m,blk,i,k,j) = 0.0;
-              Qb_g(m,blk,i,k,j) = 0.0;
+              // ck_impl_frozen_op: the direct beam is exactly temperature-independent at
+              // frozen opacity, so a frozen pass keeps the deposit pass 0 left and never
+              // re-runs the ray integration
+              if (!ckfus_) Qb_g(m,blk,i,k,j) = 0.0;
               Em_g(m,blk,i,k,j) = 0.0;
               Src_g(m,blk,i,k,j) = 0.0;
             }
@@ -3249,12 +3305,25 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               iT = static_cast<int>(xTv); fT = xTv - static_cast<Real>(iT);
               iP = static_cast<int>(xPv); fP = xPv - static_cast<Real>(iP);
               for (int cc=0; cc<NC; ++cc) {
+                // ck_impl_frozen_op: the top layer contributes (1 - e^-dtau) B_ghost, and
+                // the factor depends on the opacity alone
+                if (ckfus_) {
+                  I_down[cc][ie+1] = static_cast<RtF>(cktpf_g(m,blk*NC+cc,k,j))
+                                   * static_cast<RtF>(Bb_g(m,bandc[cc],ie+1,k,j));
+                  tausw[cc] = 0.0;
+                  transw[cc] = static_cast<RtF>(1.0);
+                  continue;
+                }
                 const Real kap = ck_kappa(cklk, iT, fT, iP, fP, bandc[cc], gc[cc])
                                + kc_g(m,bandc[cc],ie+1,k,j);
                 const Real dtau = RTTopDtau(kap, ptop*1.0e6,
                                             EffGravAt(grav, ap, x1v_(m,ie+1),
                                                       grav_pmass, omega, mu0, tide));
                 const RtF trans = RT_EXP(-static_cast<RtF>(dtau/muc[cc]));
+                if (ckfst_) {
+                  cktpf_g(m,blk*NC+cc,k,j) =
+                      static_cast<Real>(static_cast<RtF>(1.0)-trans);
+                }
                 I_down[cc][ie+1] = (static_cast<RtF>(1.0)-trans)
                                  * static_cast<RtF>(Bb_g(m,bandc[cc],ie+1,k,j));
                 // BSP: nothing above the domain top, so the ray enters unattenuated;
@@ -3428,19 +3497,52 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               // coefficients the staggered layers used, handed the half interval.  dsrc
               // comes back as absorbed minus emitted, which is what Src_g wants and is
               // exactly the change in the intensity.
-              auto step = [&](const Real dtau, const Real mu, const Real s_in,
-                              const Real s_out, RtF &I, Real &dsrc) {
-                const RtF x = static_cast<RtF>(dtau/mu);
-                const RtF e0 = -RT_EXPM1(-x);
-                const RtF one = static_cast<RtF>(1.0);
-                const RtF cin = (x > static_cast<RtF>(1.0e-3)) ? (e0 - one + e0/x)
-                                                               : (x/2 - x*x/3);
-                const RtF cout = (x > static_cast<RtF>(1.0e-3)) ? (one - e0/x)
-                                                                : (x/2 - x*x/6);
+              //
+              // ---- problem/ck_impl_frozen_op ------------------------------------------
+              // EVERY half layer in this kernel is the half of ONE cell taken at ONE
+              // chain's mu -- the two probe passes, the down-sweep and the up-sweep all
+              // step across the same six half layers per cell pair -- so one coefficient
+              // triple per (cell, chain) describes the whole operator.  A frozen pass
+              // loads it instead of taking the exponential; a storing pass computes it
+              // exactly as it always did and writes it down.  The expression is otherwise
+              // untouched, so with the switch off nothing here changes.
+              auto step = [&](const int cc, const int ic, const Real dtau,
+                              const Real s_in, const Real s_out, RtF &I, Real &dsrc) {
+                RtF e0, cin, cout;
+                if (ckfus_ && ckfcf_) {
+                  e0 = static_cast<RtF>(ckc0_g(m,blk*NC+cc,ic,k,j));
+                  cin = static_cast<RtF>(ckci_g(m,blk*NC+cc,ic,k,j));
+                  cout = static_cast<RtF>(ckco_g(m,blk*NC+cc,ic,k,j));
+                } else {
+                  const RtF x = static_cast<RtF>(dtau/muc[cc]);
+                  e0 = -RT_EXPM1(-x);
+                  const RtF one = static_cast<RtF>(1.0);
+                  cin = (x > static_cast<RtF>(1.0e-3)) ? (e0 - one + e0/x)
+                                                       : (x/2 - x*x/3);
+                  cout = (x > static_cast<RtF>(1.0e-3)) ? (one - e0/x)
+                                                        : (x/2 - x*x/6);
+                  if (ckfst_ && ckfcf_) {
+                    ckc0_g(m,blk*NC+cc,ic,k,j) = static_cast<Real>(e0);
+                    ckci_g(m,blk*NC+cc,ic,k,j) = static_cast<Real>(cin);
+                    ckco_g(m,blk*NC+cc,ic,k,j) = static_cast<Real>(cout);
+                  }
+                }
                 const RtF em = cin*static_cast<RtF>(s_in)
                              + cout*static_cast<RtF>(s_out);
                 dsrc = static_cast<Real>(e0*I - em);
-                I = (one - e0)*I + em;
+                I = (static_cast<RtF>(1.0) - e0)*I + em;
+              };
+              // ck_impl_frozen_op: kappa rho of cell ic, chain cc -- loaded on a frozen
+              // pass (which is what removes the correlated-k table look-up, the dominant
+              // cost of a pass), computed and stored otherwise.
+              auto krof = [&](const int cc, const int ic, const int b, const int iT,
+                              const Real fT, const int iP, const Real fP,
+                              const Real rho) {
+                if (ckfus_) return ckkro_g(m,blk*NC+cc,ic,k,j);
+                const Real kr = (ck_kappa(cklk, iT, fT, iP, fP, b, gc[cc])
+                                 + kc_g(m,b,ic,k,j))*rho;
+                if (ckfst_) ckkro_g(m,blk*NC+cc,ic,k,j) = kr;
+                return kr;
               };
               // ---- problem/ck_implicit: THE SAME HALF LAYER, DIFFERENTIATED ---------
               // The three coefficients of `step`, recomputed in Real (the Jacobian does
@@ -3460,8 +3562,20 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               // everything further is attenuated by (1-e0) and belongs outside a
               // tridiagonal.  See utils/two_stream_column_ck.hpp.
               const bool jck = ckimp_;
-              auto jcof = [&](const Real dtau, const Real mu, Real &e0, Real &cin,
-                              Real &cout) {
+              // ck_impl_frozen_op: in double precision (the default) the stored triple IS
+              // this triple, so a frozen pass loads it here too and the assembly costs no
+              // exponential either.  Under RT_FP32 the sweep's coefficients are floats
+              // and the Jacobian's are not, so the store is not usable and the triple is
+              // recomputed -- which is what it always did.
+              const bool jfrz = ckfus_ && ckfcf_ && (RT_FP32 == 0);
+              auto jcof = [&](const int cc, const int ic, const Real dtau, const Real mu,
+                              Real &e0, Real &cin, Real &cout) {
+                if (jfrz) {
+                  e0 = ckc0_g(m,blk*NC+cc,ic,k,j);
+                  cin = ckci_g(m,blk*NC+cc,ic,k,j);
+                  cout = ckco_g(m,blk*NC+cc,ic,k,j);
+                  return;
+                }
                 const Real x = dtau/mu;
                 e0 = -expm1(-x);
                 cin = (x > 1.0e-3) ? (e0 - 1.0 + e0/x) : (x/2.0 - x*x/3.0);
@@ -3519,12 +3633,11 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                   const Real fP = xPv - static_cast<Real>(iP);
                   for (int cc=0; cc<NC; ++cc) {
                     const int b = bandc[cc];
-                    const Real kro = (ck_kappa(cklk, iT, fT, iP, fP, b, gc[cc])
-                                      + kc_g(m,b,i,k,j))*rho;
+                    const Real kro = krof(cc, i, b, iT, fT, iP, fP, rho);
                     const Real bown = Bb_g(m,b,i,k,j);
                     Real dsrc;
                     if (i == ie) {
-                      step(0.5*kro*dz, muc[cc], bown, bown, Idp[cc], dsrc);
+                      step(cc, i, 0.5*kro*dz, bown, bown, Idp[cc], dsrc);
                     } else {
                       const Real kru = kdp[cc];
                       const Real bfar = Bb_g(m,b,i+1,k,j);
@@ -3535,9 +3648,9 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                       const Real dtc = dt_l + dt_u;
                       const Real s_f = (dtc > 0.0) ? (s_l + (s_u - s_l)*(dt_l/dtc))
                                                    : (0.5*(s_l + s_u));
-                      step(dt_u, muc[cc], s_u, s_f, Idp[cc], dsrc);
+                      step(cc, i+1, dt_u, s_u, s_f, Idp[cc], dsrc);
                       I_down[cc][i+1] = Idp[cc];
-                      step(dt_l, muc[cc], s_f, s_l, Idp[cc], dsrc);
+                      step(cc, i, dt_l, s_f, s_l, Idp[cc], dsrc);
                     }
                     kdp[cc] = kro;
                   }
@@ -3547,7 +3660,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                   for (int cc=0; cc<NC; ++cc) {
                     const Real bcut = Bb_g(m,bandc[cc],icut,k,j);
                     Real dsrc;
-                    step(0.5*kdp[cc]*dz, muc[cc], bcut, bcut, Idp[cc], dsrc);
+                    step(cc, icut, 0.5*kdp[cc]*dz, bcut, bcut, Idp[cc], dsrc);
                     I_down[cc][icut] = Idp[cc];
                   }
                 }
@@ -3575,10 +3688,9 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                     Iup_p[cc] += static_cast<RtF>(MIXF(bt_c,
                                      static_cast<Real>(Iup_p[cc]),
                                      static_cast<Real>(I_down[cc][icut])));
-                    kpr[cc] = (ck_kappa(cklk, iT, fT, iP, fP, b, gc[cc])
-                               + kc_g(m,b,icut,k,j))*rho;
+                    kpr[cc] = krof(cc, icut, b, iT, fT, iP, fP, rho);
                     Real dsrc;
-                    step(0.5*kpr[cc]*dz, muc[cc], bcut, bcut, Iup_p[cc], dsrc);
+                    step(cc, icut, 0.5*kpr[cc]*dz, bcut, bcut, Iup_p[cc], dsrc);
                   }
                 }
                 for (int i=icut; i<ie; ++i) {
@@ -3594,8 +3706,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                   const Real bt_f = BTF(m,k,j,i+1,icut);
                   for (int cc=0; cc<NC; ++cc) {
                     const int b = bandc[cc];
-                    const Real kru = (ck_kappa(cklk, iT, fT, iP, fP, b, gc[cc])
-                                      + kc_g(m,b,i+1,k,j))*rhou;
+                    const Real kru = krof(cc, i+1, b, iT, fT, iP, fP, rhou);
                     const Real krl = kpr[cc];
                     const Real bl = Bb_g(m,b,i,k,j);
                     const Real bu = Bb_g(m,b,i+1,k,j);
@@ -3607,12 +3718,12 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                     const Real s_f = (dtc > 0.0) ? (s_l + (s_u - s_l)*(dt_l/dtc))
                                                  : (0.5*(s_l + s_u));
                     Real dsrc;
-                    step(dt_l, muc[cc], s_l, s_f, Iup_p[cc], dsrc);
+                    step(cc, i, dt_l, s_l, s_f, Iup_p[cc], dsrc);
                     Cmx[cc][i+1] = Iup_p[cc];        // u_below, for the real down-sweep
                     Iup_p[cc] += static_cast<RtF>(MIXF(bt_f,
                                      static_cast<Real>(Iup_p[cc]),
                                      static_cast<Real>(I_down[cc][i+1])));
-                    step(dt_u, muc[cc], s_f, s_u, Iup_p[cc], dsrc);
+                    step(cc, i+1, dt_u, s_f, s_u, Iup_p[cc], dsrc);
                     kpr[cc] = kru;
                   }
                 }
@@ -3621,7 +3732,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                   for (int cc=0; cc<NC; ++cc) {
                     const Real btop = Bb_g(m,bandc[cc],ie,k,j);
                     Real dsrc;
-                    step(0.5*kpr[cc]*dz, muc[cc], btop, btop, Iup_p[cc], dsrc);
+                    step(cc, ie, 0.5*kpr[cc]*dz, btop, btop, Iup_p[cc], dsrc);
                     Cmx[cc][ie+1] = Iup_p[cc];       // u_below at the top face
                   }
                 }
@@ -3654,22 +3765,30 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                 const Real fP = xPv - static_cast<Real>(iP);
                 for (int cc=0; cc<NC; ++cc) {
                   const int b = bandc[cc];
-                  const Real kap = ck_kappa(cklk, iT, fT, iP, fP, b, gc[cc])
-                                 + kc_g(m,b,i,k,j);
-                  const Real kro = kap*rho;
+                  // ck_impl_frozen_op: kap itself is needed only by the direct beam,
+                  // which a frozen pass does not re-run
+                  const Real kap = ckfus_ ? 0.0
+                      : (ck_kappa(cklk, iT, fT, iP, fP, b, gc[cc]) + kc_g(m,b,i,k,j));
+                  Real kro;
+                  if (ckfus_) {
+                    kro = ckkro_g(m,blk*NC+cc,i,k,j);
+                  } else {
+                    kro = kap*rho;
+                    if (ckfst_) ckkro_g(m,blk*NC+cc,i,k,j) = kro;
+                  }
                   const Real bown = Bb_g(m,b,i,k,j);
                   Real dsrc;
                   if (i == ie) {
                     // the top half layer: the upper half of cell ie, entered at the top
                     // face, its source held at the cell's own value -- there is nothing
                     // above it to interpolate towards
-                    step(0.5*kro*dz, muc[cc], bown, bown, Idn[cc], dsrc);
+                    step(cc, i, 0.5*kro*dz, bown, bown, Idn[cc], dsrc);
                     Src_g(m,blk,i,k,j) += wfc[cc]/dz*dsrc;
                     if (jck) {
                       // both endpoints are B_ie and the entering datum is a boundary
                       // condition, so the whole row entry is the layer's own emission
                       Real e0j, cij, coj;
-                      jcof(0.5*kro*dz, muc[cc], e0j, cij, coj);
+                      jcof(cc, i, 0.5*kro*dz, muc[cc], e0j, cij, coj);
                       Kokkos::atomic_add(&ckjac_g(m,1,k,j,i),
                           -(wfc[cc]/dz)*(cij + coj)*ckdb_g(m,b,i,k,j));
                       jdn[cc] = cij + coj;
@@ -3691,7 +3810,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                     // the probe's u_below at this face, read before the real
                     // down-sweep reclaims the slot for c (see Cmx)
                     const Real ubf = SPH ? static_cast<Real>(Cmx[cc][i+1]) : 0.0;
-                    step(dt_u, muc[cc], s_u, s_f, Idn[cc], dsrc);
+                    step(cc, i+1, dt_u, s_u, s_f, Idn[cc], dsrc);
                     Src_g(m,blk,i+1,k,j) += wfc[cc]/dzf*dsrc;
                     I_down[cc][i+1] = Idn[cc];
                     if (SPH) {
@@ -3701,12 +3820,12 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                       Cmx[cc][i+1] = cmx;           // the up-sweep reuses this exact c
                       Idn[cc] += cmx;
                     }
-                    step(dt_l, muc[cc], s_f, s_l, Idn[cc], dsrc);
+                    step(cc, i, dt_l, s_f, s_l, Idn[cc], dsrc);
                     Src_g(m,blk,i,k,j) += wfc[cc]/dz*dsrc;
                     if (jck) {
                       Real e0u, ciu, cou, e0l, cil, col;
-                      jcof(dt_u, muc[cc], e0u, ciu, cou);
-                      jcof(dt_l, muc[cc], e0l, cil, col);
+                      jcof(cc, i+1, dt_u, muc[cc], e0u, ciu, cou);
+                      jcof(cc, i, dt_l, muc[cc], e0l, cil, col);
                       const Real pl = BFaceW(kru, kro, bface_on);   // ds_l/dB_i
                       const Real pu = BFaceW(kro, kru, bface_on);   // ds_u/dB_{i+1}
                       const Real ff = (dtc > 0.0) ? (dt_l/dtc) : 0.5;
@@ -3736,7 +3855,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                       jdn[cc] = (1.0 - e0l)*al + cil*dfl + col*pl;
                     }
                   }
-                  if (BSP) Krs[cc][i] = static_cast<RtF>(kro);   // see ck_beam_sph
+                  if (BSP && !ckfus_) Krs[cc][i] = static_cast<RtF>(kro);
                   kfar[cc] = kro;
                   // Direct beam, UNCHANGED: it crosses whole cells and carries no
                   // source, so the layer construction does not touch it.  Deposit the
@@ -3746,6 +3865,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                   // deposited to absorbed is u e^-u/(1 - e^-u), 0.95 at u = 0.1 but 0.58
                   // at u = 1), losing a quarter of the incident flux down a column with
                   // u ~ 0.5 -- measured against Exo-FMS on an identical column.
+                  if (ckfus_) continue;    // the beam is frozen: see ck_impl_frozen_op
                   tausw[cc] += kap*drho;
                   if (lit && !BSP) {
                     const Real tnew = RT_EXP(-static_cast<RtF>(tausw[cc]*facsw));
@@ -3784,12 +3904,12 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                 for (int cc=0; cc<NC; ++cc) {
                   const Real bcut = Bb_g(m,bandc[cc],icut,k,j);
                   Real dsrc;
-                  step(0.5*kfar[cc]*dz, muc[cc], bcut, bcut, Idn[cc], dsrc);
+                  step(cc, icut, 0.5*kfar[cc]*dz, bcut, bcut, Idn[cc], dsrc);
                   Src_g(m,blk,icut,k,j) += wfc[cc]/dz*dsrc;
                   I_down[cc][icut] = Idn[cc];
                   if (jck) {
                     Real e0j, cij, coj;
-                    jcof(0.5*kfar[cc]*dz, muc[cc], e0j, cij, coj);
+                    jcof(cc, icut, 0.5*kfar[cc]*dz, muc[cc], e0j, cij, coj);
                     Kokkos::atomic_add(&ckjac_g(m,1,k,j,icut),
                         (wfc[cc]/dz)*(e0j*jdn[cc] - (cij + coj))
                         *ckdb_g(m,bandc[cc],icut,k,j));
@@ -3816,7 +3936,9 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               // the impact parameter does not depend on the chain.  Faces are walked from
               // the top down so the transmission of the face above is already in hand and
               // the deposit is the flux difference across the cell.
-              if (BSP && lit_sph) {
+              // ck_impl_frozen_op: at frozen opacity this whole ray integration is
+              // temperature-independent, so a frozen pass keeps the deposit of pass 0
+              if (BSP && lit_sph && !ckfus_) {
                 const Real rcut = X1F(m,icut);
                 RtF thi[NC];
                 Real tauh[NC];
@@ -3929,12 +4051,12 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                 for (int cc=0; cc<NC; ++cc) {
                   const Real bcut = Bb_g(m,bandc[cc],icut,k,j);
                   Real dsrc;
-                  step(0.5*kfar[cc]*dz, muc[cc], bcut, bcut, I_up[cc], dsrc);
+                  step(cc, icut, 0.5*kfar[cc]*dz, bcut, bcut, I_up[cc], dsrc);
                   Src_g(m,blk,icut,k,j) += wfc[cc]/dz*dsrc;
                   Em_g(m,blk,icut,k,j) += 2.0*(wfc[cc]/muc[cc])*kfar[cc]*bcut;
                   if (jck) {
                     Real e0j, cij, coj;
-                    jcof(0.5*kfar[cc]*dz, muc[cc], e0j, cij, coj);
+                    jcof(cc, icut, 0.5*kfar[cc]*dz, muc[cc], e0j, cij, coj);
                     Kokkos::atomic_add(&ckjac_g(m,1,k,j,icut),
                         (wfc[cc]/dz)*(e0j*jup[cc] - (cij + coj))
                         *ckdb_g(m,bandc[cc],icut,k,j));
@@ -3958,9 +4080,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                 const Real rat_u = SPH ? ACC(m,k,j,i)/ACC(m,k,j,i+1) : 1.0;
                 for (int cc=0; cc<NC; ++cc) {
                   const int b = bandc[cc];
-                  const Real kapu = ck_kappa(cklk, iT, fT, iP, fP, b, gc[cc])
-                                  + kc_g(m,b,i+1,k,j);
-                  const Real kru = kapu*rhou;
+                  const Real kru = krof(cc, i+1, b, iT, fT, iP, fP, rhou);
                   const Real krl = kfar[cc];
                   const Real bl = Bb_g(m,b,i,k,j);
                   const Real bu = Bb_g(m,b,i+1,k,j);
@@ -3972,7 +4092,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                   const Real s_f = (dtc > 0.0) ? (s_l + (s_u - s_l)*(dt_l/dtc))
                                                : (0.5*(s_l + s_u));
                   Real dsrc;
-                  step(dt_l, muc[cc], s_l, s_f, I_up[cc], dsrc);
+                  step(cc, i, dt_l, s_l, s_f, I_up[cc], dsrc);
                   Src_g(m,blk,i,k,j) += wfc[cc]/dzl*dsrc;
                   if (SPH) {
                     // A D CONTINUOUS, ENFORCED, NOT INFERRED.  c is the one the down ray
@@ -3994,13 +4114,13 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                   } else {
                     Fb_g(m,blk,i+1,k,j) += wfc[cc]*(I_up[cc] - I_down[cc][i+1]);
                   }
-                  step(dt_u, muc[cc], s_f, s_u, I_up[cc], dsrc);
+                  step(cc, i+1, dt_u, s_f, s_u, I_up[cc], dsrc);
                   Src_g(m,blk,i+1,k,j) += wfc[cc]/dzu*dsrc;
                   Em_g(m,blk,i+1,k,j) += 2.0*(wfc[cc]/muc[cc])*kru*bu;
                   if (jck) {
                     Real e0l, cil, col, e0u, ciu, cou;
-                    jcof(dt_l, muc[cc], e0l, cil, col);
-                    jcof(dt_u, muc[cc], e0u, ciu, cou);
+                    jcof(cc, i, dt_l, muc[cc], e0l, cil, col);
+                    jcof(cc, i+1, dt_u, muc[cc], e0u, ciu, cou);
                     const Real pl = BFaceW(kru, krl, bface_on);   // ds_l/dB_i
                     const Real pu = BFaceW(krl, kru, bface_on);   // ds_u/dB_{i+1}
                     const Real ff = (dtc > 0.0) ? (dt_l/dtc) : 0.5;
@@ -4040,11 +4160,11 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                 for (int cc=0; cc<NC; ++cc) {
                   const Real btop = Bb_g(m,bandc[cc],ie,k,j);
                   Real dsrc;
-                  step(0.5*kfar[cc]*dz, muc[cc], btop, btop, I_up[cc], dsrc);
+                  step(cc, ie, 0.5*kfar[cc]*dz, btop, btop, I_up[cc], dsrc);
                   Src_g(m,blk,ie,k,j) += wfc[cc]/dz*dsrc;
                   if (jck) {
                     Real e0j, cij, coj;
-                    jcof(0.5*kfar[cc]*dz, muc[cc], e0j, cij, coj);
+                    jcof(cc, ie, 0.5*kfar[cc]*dz, muc[cc], e0j, cij, coj);
                     Kokkos::atomic_add(&ckjac_g(m,1,k,j,ie),
                         (wfc[cc]/dz)*(e0j*jup[cc] - (cij + coj))
                         *ckdb_g(m,bandc[cc],ie,k,j));
@@ -4414,6 +4534,8 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
       const Real rep_time = pm->time;
       const bool direct_on = rt_src_direct && (ck_on || grey_on);
       const bool semi_imp = rt_semi_implicit;
+      // problem/rt_floor_consistent: bound the cooling step by the EOS floor state
+      const bool efc_ = rt_floor_consistent;
       // see rt_apply_debug: which column, and how many calls are left to print
       const bool dbg_on = (rt_apply_debug > 0);
       const int dbg_m = rt_dump_m;
@@ -4570,7 +4692,10 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
           cksrc_g(m,k,j,i) = src;
           const Real eic = eiN(m,k,j,i);
           ckei_g(m,k,j,i) = eic;
-          if (ckpass0_) ckest_g(m,k,j,i) = eic;
+          // e^n, recorded NET of any warm-start seed already applied to the gas (see
+          // ck_impl_warm; the seed array is 0 with the switch off, so this is bitwise the
+          // old expression there)
+          if (ckpass0_) ckest_g(m,k,j,i) = eic - cksd_g(m,k,j,i);
           // the cell's OWN emission, with EXACTLY the weights the semi-implicit block
           // below gives it, so that S = A - E holds with the same E the two schemes
           // mean.  The thin-cell solve and the fallback both need the split.
@@ -4893,6 +5018,27 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
           const Real dl = LimitRTSource(de,
               eiN(m,k,j,i), demax);
           if (dl != de) { ++nc; de = dl; }
+        }
+        // ---- problem/rt_floor_consistent: STOP AT THE FLOOR, DO NOT CROSS IT --------
+        // See the flag's note.  A cooling step is bounded by the state the EOS floors
+        // would restore this cell to anyway, so the sweep and ConsToPrim stop trading the
+        // same energy back and forth once per stage.  Only COOLING cells pay the EOS
+        // evaluation, and only a step that would actually cross the floor is changed --
+        // everything else is the identity, so with the switch off (and on, away from the
+        // floors) the arithmetic is untouched.
+        if (efc_ && !skip_de && de < 0.0) {
+          const Real dfl_ = rhoN(m,k,j,i);
+          const Real ei0_ = eiN(m,k,j,i);
+          Real emin_ = eos_f.EnergyFromTemperature(dfl_, eos_f.tfloor);
+          // the pressure floor, taken only where the cheap closed-form bound says the
+          // cell could be near it (that bound is exact for an ideal gas)
+          if (ei0_ + de < eos_f.EnergyFloorBound(dfl_)) {
+            const Real ep_ = eos_f.EnergyFromPressure(dfl_, eos_f.pfloor);
+            if (ep_ > emin_) emin_ = ep_;
+          }
+          if (ei0_ + de < emin_) {
+            de = (ei0_ > emin_) ? (emin_ - ei0_) : 0.0;
+          }
         }
         if (report_on) {
           const Real dxb = DX1(m,k,j,i);

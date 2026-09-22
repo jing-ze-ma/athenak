@@ -504,6 +504,24 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       pin->GetOrAddBoolean("problem","ck_impl_colskip",true);
   two_stream_rt::ck_impl_once =
       pin->GetOrAddBoolean("problem","ck_impl_once",false);
+  // problem/ck_impl_frozen_op: freeze the exchange operator over the Newton passes (the
+  // sweep is linear in B_b at frozen opacity, so only the opacity-dependent coefficients
+  // have to be rebuilt -- and they do not change); ck_impl_frozen_cof decides whether the
+  // layer coefficients are stored as well as kappa rho (memory against expm1); and
+  // ck_impl_warm starts the Newton from the previous call's converged increment.  See
+  // utils/two_stream_column_ck.hpp.
+  two_stream_rt::ck_impl_frozen_op =
+      pin->GetOrAddBoolean("problem","ck_impl_frozen_op",false);
+  two_stream_rt::ck_impl_frozen_cof =
+      pin->GetOrAddBoolean("problem","ck_impl_frozen_cof",true);
+  two_stream_rt::ck_impl_warm =
+      pin->GetOrAddBoolean("problem","ck_impl_warm",false);
+  if (two_stream_rt::ck_impl_frozen_op && two_stream_rt::ck_impl_refresh_kappa &&
+      global_variable::my_rank == 0) {
+    std::cout << "### WARNING in deep_hot_jupiter_rt: problem/ck_impl_frozen_op is "
+              << "IGNORED with ck_impl_refresh_kappa = true: the operator is frozen "
+              << "only where the opacity is." << std::endl;
+  }
   if (two_stream_rt::ck_impl_once && !two_stream_rt::ck_implicit) {
     std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: problem/ck_impl_once moves "
               << "the WHOLE radiation operator out of the RK stage and is only meant "
@@ -539,6 +557,16 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // inert unless asked for.
   rt_cell_report = pin->GetOrAddBoolean("problem","rt_cell_report",false);
   rt_report_every = pin->GetOrAddInteger("problem","rt_report_every",100);
+  // problem/rt_outer_verbose + problem/rt_apply_debug(_n): the two DIAGNOSTIC prints the
+  // apply kernel already carries -- the per-200-cycle clip/rescue census and the per-cell
+  // energy balance of the top rt_apply_debug_n cells of the (ck_dump_m, ck_dump_k,
+  // ck_dump_j) column.  Neither was reachable from a dhj input; both default off and
+  // change nothing that is applied to the gas.
+  two_stream_rt::rt_outer_verbose =
+      pin->GetOrAddBoolean("problem","rt_outer_verbose",false);
+  two_stream_rt::rt_apply_debug = pin->GetOrAddInteger("problem","rt_apply_debug",0);
+  two_stream_rt::rt_apply_debug_n =
+      pin->GetOrAddInteger("problem","rt_apply_debug_n",8);
   rt_star_teff = pin->GetOrAddReal("problem","ck_star_teff",6000.0);
   rt_dump_file = pin->GetOrAddString("problem","ck_dump_file","");
   rt_dump_m = pin->GetOrAddInteger("problem","ck_dump_m",0);
@@ -559,6 +587,11 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   two_stream_rt::rt_ali_diag =
       pin->GetOrAddBoolean("problem","rt_ali_diag",true);
   rt_de_max = pin->GetOrAddReal("problem","rt_de_max",0.5);
+  // problem/rt_floor_consistent: the radiative source may not cool a cell below the state
+  // the EOS floors restore it to.  Default false = today's arithmetic, bit for bit; see
+  // the long note in utils/two_stream_rt.hpp and tests_ck_topslab/README.md.
+  two_stream_rt::rt_floor_consistent =
+      pin->GetOrAddBoolean("problem","rt_floor_consistent",false);
   rt_semi_implicit = pin->GetOrAddBoolean("problem","rt_semi_implicit",true);
   // the sub-cycled local relaxation; see two_stream_rt.hpp, rt_relax_sub.  Default 1 =
   // the single-step form, bit for bit.  Read here, the one site both the from-scratch and

@@ -174,6 +174,41 @@ inline bool ck_impl_colskip = true;
 // user_split_once), instead of once per stage.  Halves the sweeps under rk2.  Enrolled by
 // the pgen; refused unless ck_implicit is on.
 inline bool ck_impl_once = false;
+// problem/ck_impl_frozen_op: FREEZE THE EXCHANGE OPERATOR over the Newton passes.
+// At frozen opacity the thermal two-stream is LINEAR in the band Planck functions: the
+// sweep is the application of a fixed operator M to B, and everything in M -- the layer
+// optical depths, the exponential coefficients, the BFace weights, the face mixing --
+// depends on the opacity and the geometry alone.  Pass 0 therefore STORES what the sweep
+// computed from the opacity (kappa rho per cell and chain, and -- see ck_impl_frozen_cof
+// -- the three half-layer coefficients of `step`), and every later pass re-applies the
+// operator to the new B_b(T) by the same recurrences with the table look-ups and the
+// exponentials replaced by loads.  The DIRECT BEAM is exactly temperature-independent at
+// frozen opacity, so its whole deposit Qb_g is frozen too and its pseudo-spherical ray
+// integration (the O(N^2) chord walk of ck_beam_sph) is not re-run at all.
+//
+// The arithmetic of a frozen pass is the SAME arithmetic: the stored quantities are the
+// bits pass 0 computed, the optical depths are re-formed from the stored kappa rho by the
+// same expressions, so a frozen pass is BITWISE the pass it replaces and the converged
+// state is bitwise the phase-2 one.  Refused (silently ignored) with
+// ck_impl_refresh_kappa, which by construction wants the opacity rebuilt every pass.
+inline bool ck_impl_frozen_op = false;
+// problem/ck_impl_frozen_cof: store the three half-layer coefficients (e0, cin, cout) as
+// well as kappa rho.  ON costs 4 Reals per (cell, chain) and removes every expm1 from a
+// frozen pass; OFF costs 1 Real and pays one expm1 per half layer, keeping only the table
+// look-ups.  THE MEMORY IS THE WHOLE TRADE: on the production mesh (6 x 32 x 32 columns,
+// ~128 radial cells, 88 chains at nquad = 1) the four arrays are 69 M entries, i.e.
+// 2.2 GB, against 0.55 GB for kappa rho alone.  The column solve is a CPU-side
+// deliverable today; on a GPU the default should be reconsidered per mesh, and the
+// natural third option -- storing per band block and looping the blocks -- is not built.
+inline bool ck_impl_frozen_cof = true;
+// problem/ck_impl_warm: start the Newton from the PREVIOUS call's converged increment.
+// The fixed point does not move -- only the initial iterate does -- so a warm start can
+// change the pass count and nothing else.  The seed is the total de the previous call
+// applied, clipped to ck_impl_dtmax of the cell's energy; e^n is recorded net of it, so
+// the balance being solved is unchanged.  NOT written to the restart file: after a
+// restart (and on the first call of a run) the seed array is zero and the call is a cold
+// start, which is correct, only slower for one step.
+inline bool ck_impl_warm = false;
 
 // the Newton pass index inside one RT call; read by the pass function to decide whether
 // the opacity is rebuilt.  -1 = ck_implicit is off.
@@ -204,6 +239,25 @@ inline DvceArray3D<Real> *ck_done_ptr = nullptr;
 // the Thomas sweep's two work rows, (m,k,j,i)
 inline DvceArray4D<Real> *ck_cp_ptr = nullptr;
 inline DvceArray4D<Real> *ck_dp_ptr = nullptr;
+// ---- problem/ck_impl_frozen_op: the STORED OPERATOR, laid out (m, chain, i, k, j) like
+// Bb_g and kc_g, so that the lanes of a wave -- which vary in j -- read adjacent Reals.
+// kappa rho per cell and chain, and the three coefficients of that cell's HALF layer
+// (every `step` in the sweep is the half layer of one cell, taken at that chain's mu, so
+// one triple per (cell, chain) serves the two probe passes, the down-sweep and the
+// up-sweep alike).
+inline DvceArray5D<Real> *ck_kro_ptr = nullptr;
+inline DvceArray5D<Real> *ck_c0_ptr = nullptr;
+inline DvceArray5D<Real> *ck_ci_ptr = nullptr;
+inline DvceArray5D<Real> *ck_co_ptr = nullptr;
+// the top boundary layer's transmission factor (1 - e^-dtau) per column and chain, which
+// multiplies the ghost cell's Planck function: the one piece of the operator that is not
+// per cell
+inline DvceArray4D<Real> *ck_tpf_ptr = nullptr;
+// ---- problem/ck_impl_warm: the total increment this call has applied so far, carried
+// over to seed the next one, and the seed actually applied (so that e^n can be recorded
+// net of it)
+inline DvceArray4D<Real> *ck_dep_ptr = nullptr;
+inline DvceArray4D<Real> *ck_seed_ptr = nullptr;
 // 0 = max |R|/(e + eps e_max), 1 = max |de|/e, 2 = capped-step count, 3 = fallback
 // count, 4 = sum (e - e*) dx, 5 = sum bdt S dx, 6 = columns still active, 7 = thin
 // cells.  Slots 4 and 5 are the DIRECT analogue
@@ -271,8 +325,8 @@ Real CkThinSolve(const Real ei, const Real est, const Real src, const Real em,
 //! \brief allocate the column-solve scratch on the first call.  Never reached with
 //! ck_implicit off.
 
-inline void CkImplAlloc(const int nmb, const int nb, const int n1, const int n2,
-                        const int n3) {
+inline void CkImplAlloc(const int nmb, const int nb, const int nch, const int n1,
+                        const int n2, const int n3) {
   if (ck_jac_ptr != nullptr &&
       ck_jac_ptr->extent(0) == static_cast<size_t>(nmb) &&
       ck_jac_ptr->extent(4) == static_cast<size_t>(n1)) {
@@ -290,6 +344,16 @@ inline void CkImplAlloc(const int nmb, const int nb, const int n1, const int n2,
     delete ck_thk_ptr;
     delete ck_thu_ptr;
     delete ck_done_ptr;
+    delete ck_dep_ptr;
+    delete ck_seed_ptr;
+    if (ck_kro_ptr != nullptr) {
+      delete ck_kro_ptr;
+      delete ck_c0_ptr;
+      delete ck_ci_ptr;
+      delete ck_co_ptr;
+      delete ck_tpf_ptr;
+      ck_kro_ptr = nullptr;
+    }
   }
   ck_jac_ptr = new DvceArray5D<Real>("ck_jac", nmb, 3, n3, n2, n1);
   ck_dbdt_ptr = new DvceArray5D<Real>("ck_dbdt", nmb, nb, n1, n3, n2);
@@ -302,9 +366,73 @@ inline void CkImplAlloc(const int nmb, const int nb, const int n1, const int n2,
   ck_thk_ptr = new DvceArray4D<Real>("ck_thk", nmb, n3, n2, n1);
   ck_thu_ptr = new DvceArray4D<Real>("ck_thu", nmb, n3, n2, n1);
   ck_done_ptr = new DvceArray3D<Real>("ck_done", nmb, n3, n2);
+  ck_dep_ptr = new DvceArray4D<Real>("ck_dep", nmb, n3, n2, n1);
+  ck_seed_ptr = new DvceArray4D<Real>("ck_seed", nmb, n3, n2, n1);
+  // ---- problem/ck_impl_frozen_op: the stored operator.  The coefficient triple is the
+  // memory-hungry half and is allocated only when ck_impl_frozen_cof asks for it; the
+  // arrays are 1-element dummies otherwise, captured and never read.
+  if (ck_impl_frozen_op && !ck_impl_refresh_kappa) {
+    const int nc3 = ck_impl_frozen_cof ? nch : 1;
+    const int n13 = ck_impl_frozen_cof ? n1 : 1;
+    const int n33 = ck_impl_frozen_cof ? n3 : 1;
+    const int n23 = ck_impl_frozen_cof ? n2 : 1;
+    ck_kro_ptr = new DvceArray5D<Real>("ck_kro", nmb, nch, n1, n3, n2);
+    ck_c0_ptr = new DvceArray5D<Real>("ck_c0", nmb, nc3, n13, n33, n23);
+    ck_ci_ptr = new DvceArray5D<Real>("ck_ci", nmb, nc3, n13, n33, n23);
+    ck_co_ptr = new DvceArray5D<Real>("ck_co", nmb, nc3, n13, n33, n23);
+    ck_tpf_ptr = new DvceArray4D<Real>("ck_tpf", nmb, nch, n3, n2);
+  }
   if (ck_conv_ptr == nullptr) {
     ck_conv_ptr = new DvceArray1D<Real>("ck_conv", 8);
   }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void CkWarmSeed
+//! \brief problem/ck_impl_warm.  Called ONCE at the top of every RT call, before the
+//! first sweep, and it does two things: it RESETS the per-call increment accumulator, and
+//! -- when the switch is on and the arrays carry a previous call -- it seeds the gas with
+//! the increment that call converged on, clipped to ck_impl_dtmax of the cell's energy.
+//!
+//! The seed is recorded in ck_seed so that the apply block of pass 0 can record e^n NET
+//! of it: the balance solved is then exactly the one the cold start solves, and the only
+//! thing that changed is where the Newton starts.  With the switch off the seed is 0 and
+//! the array is a no-op the apply subtracts, i.e. bitwise today's.
+//!
+//! RESTART.  Nothing here is written to the restart file; a fresh run and a restart both
+//! start from zeros, which is a cold start and is correct.
+
+inline void CkWarmSeed(Mesh *pm, DvceArray5D<Real> u0) {
+  if (ck_dep_ptr == nullptr) return;
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie;
+  const int js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pm->pmb_pack->nmb_thispack - 1;
+  auto dep_ = *ck_dep_ptr;
+  auto sd_ = *ck_seed_ptr;
+  auto ei_ = *ck_ei_ptr;
+  const bool warm = ck_impl_warm;
+  const Real cap = ck_impl_dtmax;
+  par_for("ck_warm_seed", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    Real s = 0.0;
+    if (warm) {
+      const Real e = ei_(m,k,j,i);          // the previous call's last iterate
+      s = dep_(m,k,j,i);
+      if (e > 0.0) {
+        const Real lim = cap*e;
+        if (s > lim) s = lim;
+        if (s < -lim) s = -lim;
+      } else {
+        s = 0.0;
+      }
+      if (!(s == s)) s = 0.0;
+      u0(m,IEN,k,j,i) += s;
+    }
+    sd_(m,k,j,i) = s;
+    dep_(m,k,j,i) = s;     // the accumulator starts from what has already been applied
+  });
 }
 
 //----------------------------------------------------------------------------------------
@@ -340,6 +468,8 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
   auto em_ = *ck_em_ptr;
   auto thk_ = *ck_thu_ptr;
   auto done_ = *ck_done_ptr;
+  // problem/ck_impl_warm: the running total this call has applied, carried to the next
+  auto dep_ = *ck_dep_ptr;
   const bool skipcol = ck_impl_colskip;
   Kokkos::deep_copy(cnv_, 0.0);
   const Real tol = ck_impl_tol;
@@ -491,6 +621,7 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
         if (de > lim) de = lim;
         if (de < -lim) de = -lim;
         u0(m,IEN,k,j,i) += de;
+        dep_(m,k,j,i) += de;
       }
       return;
     }
@@ -530,6 +661,7 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
         de = en - ei;
       }
       u0(m,IEN,k,j,i) += de;
+      dep_(m,k,j,i) += de;
       const Real s = (ei > 0.0) ? fabs(de)/ei : 0.0;
       if (s > dn) dn = s;
     }

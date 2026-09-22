@@ -1,6 +1,3 @@
-# deep_hot_jupiter_rt on the PRODUCTION RADIAL GRID, the ck_implicit gate input
-# (tests_ck_implicit/README.md).  Identical to dhj_ck_spherical.athinput plus the
-# problem/ck_implicit knobs and problem/rt_use_cons, all at their defaults.
 # deep_hot_jupiter_rt on the PRODUCTION RADIAL GRID, shrunk to a few columns so it
 # runs serially on a CPU in seconds.  This is bench/photosphere/in.athinput (nx1 = 128,
 # x1 = 9.44e9 .. 2.0556e10 cm, r_out/r_in = 2.18, area ratio 4.74, point-mass gravity,
@@ -316,44 +313,12 @@ bbot  = 3.0e0     # G at the base, r = ap. The lower of the two values run in
 # Defaults below are the shipped ones, listed explicitly because AthenaK's command-line
 # overrides only MODIFY parameters that already exist: without these lines,
 # `problem/rt_ck=true` on the command line fatals with "not found".
-rt_use_cons  = false
-# problem/ck_implicit: the BACKWARD-EULER correlated-k column solve.  false = bitwise the
-# semi-implicit per-cell apply.  See utils/two_stream_column_ck.hpp and
-# tests_ck_implicit/README.md.
-ck_implicit  = false
-ck_impl_tol  = 1.0e-8
-ck_impl_dtol = 1.0e-8
-ck_impl_norm_eps = 1.0e-3
-ck_impl_maxit = 8
-ck_impl_dtmax = 0.5
-ck_impl_demax = 0.5
-ck_impl_verbose = false
-ck_impl_refresh_kappa = false
-# problem/ck_impl_tau_min: THE TWO-LEVEL SPLIT.  A cell whose own (Planck-weighted
-# continuum) optical depth kappa rho dr is below this keeps a bracketed, positivity-
-# preserving per-cell implicit step and enters the tridiagonal only through its field;
-# the rest is solved implicitly together.  This is what makes the Newton converge at 10x
-# and 100x the production dt.  0 = every cell in the tridiagonal (diverges at 10x).
-ck_impl_tau_min = 0.0
-# problem/ck_impl_arat: the discriminant that does the work -- a cell is thick only while
-# A <= arat*E.  See two_stream_column_ck.hpp.
-ck_impl_arat = 2.0
-ck_impl_debug = 0
-# problem/ck_impl_colskip: stop sweeping a column once it is converged.
-ck_impl_colskip = true
-# problem/ck_impl_once: the whole radiation once per HYDRO STEP with the full cycle dt,
-# after the last RK stage, instead of once per RK stage.  Halves the sweeps under rk2.
-ck_impl_once = false
-# problem/ck_impl_frozen_op: FREEZE THE EXCHANGE OPERATOR over the Newton passes -- pass 0
-# stores what the sweep built from the opacity (kappa rho per cell and chain, and with
-# ck_impl_frozen_cof the three half-layer coefficients), every later pass re-applies it to
-# the new B_b(T) with no table look-up, no exponential and no beam.  Bitwise the same
-# iteration; see tests_ck_implicit/README_phase3.md.
-ck_impl_frozen_op = false
-ck_impl_frozen_cof = true
-# problem/ck_impl_warm: seed the Newton with the previous call's converged increment.
-ck_impl_warm = false
 rt_de_max    = 0.5
+rt_layer_legacy = false
+rt_floor_consistent = false
+rt_outer_verbose = false
+rt_apply_debug = 0
+rt_apply_debug_n = 12
 # problem/ck_spherical: the SPHERICAL form of the correlated-k two-stream (see
 # two_stream_rt::ck_spherical).  false = bitwise the plane-parallel arithmetic the ck
 # kernel has always run.

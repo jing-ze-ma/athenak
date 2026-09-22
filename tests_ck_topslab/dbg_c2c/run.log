@@ -1,0 +1,82 @@
+Mesh: spherical-polar x3-face theta correction = rotate
+
+Root grid = 1 x 1 x 2 MeshBlocks
+Total number of MeshBlocks = 2
+Number of logical  levels of refinement = 1 (2 levels total)
+Number of physical levels of refinement = 0 (1 levels total)
+Number of parallel ranks = 1
+<hydro>/tfloor_kelvin = 200 K -> tfloor = 1.66289e+10 in code temperature (1.20272e-08 K per unit, general EOS)
+General EOS: tabulated on 281 x 451 nodes (15 MB), log10 rho[cgs] in [-14, 0], log10 T[K] in [1.5, 6]
+             X = 0.7381, Y = 0.2485, Z = 0.0134, H2 on, ionization on, radiation off
+             metal ionization on ([M/H] = 0, condensation on)
+             mu at the grid centre = 1.25764, n_e/n_tot = 0.000152915
+Radial (x1) reconstruction on the spherical polar grid (<hydro>/reconstruct_x1) = plm
+deep_hot_jupiter_rt: outer-x1 Maxwell-stress term in the ghost extrapolation is ON
+deep_hot_jupiter_rt: RT two-stream source is SEMI-IMPLICIT
+deep_hot_jupiter_rt: problem/rt_ck implies problem/rt_split; enabling the split RT path
+deep_hot_jupiter_rt: correlated-k table '/viper/u2/jinma/ATHENAK/athenak/data/exo_fms_ck/ck/Premixed_1x_g8_11.txt'
+  38 T x 34 p x 11 bands x 8 g, T = 100 .. 6100 K, p = 1e-08 .. 1000 bar
+  bands 0.26 .. 324.68 um, g weights sum to 1
+  correlated-k applied where p < 10 bar
+  Planck fractions tabulated on 512 points, T = 50 .. 20000 K; worst |sum_b f_b - 1| = 2.22045e-16
+  >1% of the Planck function falls bluer than 0.26 um above T = 5571.75 K; beyond that the 11-band grid stops
+  capturing the spectrum and folding the tail into the bluest band is no longer a small correction
+  (with the p < 10 bar cut this setup tops out near 4800 K, where the tail is 3e-3)
+  stellar spectrum: blackbody at T_eff = 6000 K
+    1.67436 % of it is bluer than the grid's 0.26 um edge and is folded into the bluest band
+  continuum: FastChem composition 241 T x 34 p, 4 CIA pairs, 4 Rayleigh species
+  band-mean kappa at 0.1 bar [cm^2/g]:  reddest band  13.6107 (800 K) -> 3.83348 (2500 K)
+                                       bluest band   1.28114e-07 (800 K) -> 30.9807 (2500 K)
+  continuum at 3500 K, 0.1 bar, rho=1 [cm^-1], reddest to bluest:
+    1.07509e-06 1.11788e-07 2.62562e-08 1.17621e-08 6.63404e-09 3.96185e-09 3.70228e-09 4.23501e-08 4.33847e-08 3.30788e-08 2.00535e-08
+  two-stream self-test: isothermal net flux |F|/sigmaT^4 <= 2.57992e-17, transparent slab F/sigmaT^4 = 1
+  11 bands x 8 g-points x 1 angular point(s) = 88 column solves per cell (diffusivity factor 1.66)
+
+### WARNING! in /u/jinma/ATHENAK/athenak/src/pgen/deep_hot_jupiter_rt.cpp at line 876
+<problem>/Rgas = 4.593e+07 implies mean molecular weight 1.81025, but the general EOS supplies its own composition and is being asked for temperature directly.
+Rgas is now unused; this run will NOT reproduce the eos=ideal run. Set Rgas = 8.31446e+07 for that comparison.
+
+  Rosseland table for the radiative diffusion (ck + continuum), 38 T x 34 p; kappa_R / Freedman+2014:
+    T = 1000 K, p = 1 bar: 0.0235563 / 0.013942 = 1.68959
+    T = 1000 K, p = 21.3796 bar: 0.0662144 / 0.0822416 = 0.805121
+    T = 2500 K, p = 1 bar: 0.0310734 / 0.0421017 = 0.738056
+    T = 2500 K, p = 21.3796 bar: 0.114051 / 0.136979 = 0.832617
+    T = 3700 K, p = 1 bar: 0.220489 / 0.145127 = 1.51929
+    T = 3700 K, p = 21.3796 bar: 0.608166 / 0.799208 = 0.760961
+    T = 4900 K, p = 1 bar: 1.20168 / 0.251724 = 4.77377
+    T = 4900 K, p = 21.3796 bar: 6.17839 / 1.3803 = 4.47613
+  radiative diffusion: wall flux sigma T_int^4 = 4.73518e+06 erg/s/cm^2 (T_int = 537.565 K)
+
+Setup complete, executing task list(s)...
+
+elapsed=5.481629e+00 cycle=4000 time=1.087259e+05 dt=2.640759e+01
+### rad_cap_ang rank 0 cycle 4000 t = 1.087259e+05: max x_i = 1.494316e-07 (cap 5.000000e-01) at (m,k,j,i) = (0,2,5,36) gid = 0 r = 1.132709e+10 | cells over cap = 0, faces capped = 0
+### two_stream_rt: thermodynamic state read from u0 (CONSERVED, problem/rt_use_cons = true)
+deep_hot_jupiter_rt: RT split path ON, 22 chain block(s) of 4 -> 22x the thread count of the monolithic kernel
+rt_apply i=116 T=1.6241e+03 d=5.0807e-14 e=4.7960e-02 Fb=2.274664e+09 Ft=2.274664e+09 divF=-1.43330745038130e-07 srcraw=-1.43330743412548e-07 src=-1.4333e-07 Qs=0.0000e+00 Em=1.9745e-05 lamdt=4.3489e-02 de=-3.7039e-06 de/e=-7.7229e-05 tau=1.9581e-07 w=0.0000e+00 dx=1.4904e+08 Ab=1.000000e+00 At=1.000000e+00 Ac=3.381548e+19 V=1.490432e+08
+rt_apply i=117 T=1.6171e+03 d=5.0468e-14 e=4.5816e-02 Fb=2.274664e+09 Ft=2.274664e+09 divF=4.76993943886379e-08 srcraw=4.76993909257521e-08 src=4.7699e-08 Qs=0.0000e+00 Em=1.9548e-05 lamdt=4.5067e-02 de=1.2317e-06 de/e=2.6883e-05 tau=1.8136e-07 w=0.0000e+00 dx=1.5146e+08 Ab=1.000000e+00 At=1.000000e+00 Ac=3.437309e+19 V=1.514613e+08
+rt_apply i=118 T=1.6097e+03 d=5.0200e-14 e=4.3647e-02 Fb=2.274664e+09 Ft=2.274664e+09 divF=2.50088601538451e-07 srcraw=2.50088601712651e-07 src=2.5009e-07 Qs=0.0000e+00 Em=1.9374e-05 lamdt=4.6888e-02 de=6.4518e-06 de/e=1.4782e-04 tau=1.6692e-07 w=0.0000e+00 dx=1.5394e+08 Ab=1.000000e+00 At=1.000000e+00 Ac=3.494445e+19 V=1.539417e+08
+rt_apply i=119 T=1.6018e+03 d=5.0025e-14 e=4.1447e-02 Fb=2.274664e+09 Ft=2.274664e+09 divF=4.65283651323660e-07 srcraw=4.65283658769721e-07 src=4.6528e-07 Qs=0.0000e+00 Em=1.9235e-05 lamdt=4.9021e-02 de=1.1991e-05 de/e=2.8930e-04 tau=1.5248e-07 w=0.0000e+00 dx=1.5649e+08 Ab=1.000000e+00 At=1.000000e+00 Ac=3.553005e+19 V=1.564866e+08
+rt_apply i=120 T=1.5936e+03 d=4.9994e-14 e=3.9310e-02 Fb=2.274664e+09 Ft=2.274664e+09 divF=6.92594435837214e-07 srcraw=6.92594432488362e-07 src=6.9259e-07 Qs=0.0000e+00 Em=1.9150e-05 lamdt=5.1458e-02 de=1.7827e-05 de/e=4.5350e-04 tau=1.3802e-07 w=0.0000e+00 dx=1.5910e+08 Ab=1.000000e+00 At=1.000000e+00 Ac=3.613036e+19 V=1.590984e+08
+rt_apply i=121 T=1.5850e+03 d=4.9991e-14 e=3.7139e-02 Fb=2.274664e+09 Ft=2.274663e+09 divF=9.35813997120625e-07 srcraw=9.35813997262208e-07 src=9.3581e-07 Qs=0.0000e+00 Em=1.9073e-05 lamdt=5.4247e-02 de=2.4054e-05 de/e=6.4767e-04 tau=1.2350e-07 w=0.0000e+00 dx=1.6178e+08 Ab=1.000000e+00 At=1.000000e+00 Ac=3.674589e+19 V=1.617797e+08
+rt_apply i=122 T=1.5755e+03 d=4.9988e-14 e=3.4820e-02 Fb=2.274663e+09 Ft=2.274663e+09 divF=1.20758874439963e-06 srcraw=1.20758874384336e-06 src=1.2076e-06 Qs=0.0000e+00 Em=1.8990e-05 lamdt=5.7607e-02 de=3.0988e-05 de/e=8.8995e-04 tau=1.0893e-07 w=0.0000e+00 dx=1.6453e+08 Ab=1.000000e+00 At=1.000000e+00 Ac=3.737718e+19 V=1.645327e+08
+rt_apply i=123 T=1.5648e+03 d=4.9983e-14 e=3.2319e-02 Fb=2.274663e+09 Ft=2.274663e+09 divF=1.51976724826873e-06 srcraw=1.51976724520599e-06 src=1.5198e-06 Qs=0.0000e+00 Em=1.8898e-05 lamdt=6.1764e-02 de=3.8919e-05 de/e=1.2042e-03 tau=9.4313e-08 w=0.0000e+00 dx=1.6736e+08 Ab=1.000000e+00 At=1.000000e+00 Ac=3.802479e+19 V=1.673603e+08
+rt_apply i=124 T=1.5524e+03 d=4.9977e-14 e=2.9590e-02 Fb=2.274663e+09 Ft=2.274663e+09 divF=1.88901923174394e-06 srcraw=1.88901922938091e-06 src=1.8890e-06 Qs=0.0000e+00 Em=1.8792e-05 lamdt=6.7086e-02 de=4.8248e-05 de/e=1.6306e-03 tau=7.9685e-08 w=0.0000e+00 dx=1.7026e+08 Ab=1.000000e+00 At=1.000000e+00 Ac=3.868928e+19 V=1.702649e+08
+rt_apply i=125 T=1.5377e+03 d=4.9968e-14 e=2.6577e-02 Fb=2.274663e+09 Ft=2.274662e+09 divF=2.34068332285477e-06 srcraw=2.34068332754206e-06 src=2.3407e-06 Qs=0.0000e+00 Em=1.8670e-05 lamdt=7.4205e-02 de=5.9574e-05 de/e=2.2416e-03 tau=6.5079e-08 w=0.0000e+00 dx=1.7325e+08 Ab=1.000000e+00 At=1.000000e+00 Ac=3.937128e+19 V=1.732492e+08
+rt_apply i=126 T=1.5195e+03 d=4.9952e-14 e=2.3210e-02 Fb=2.274662e+09 Ft=2.274662e+09 divF=2.92263730967943e-06 srcraw=2.92263730567884e-06 src=2.9226e-06 Qs=0.0000e+00 Em=1.8519e-05 lamdt=8.4285e-02 de=7.4017e-05 de/e=3.1890e-03 tau=5.0546e-08 w=0.0000e+00 dx=1.7632e+08 Ab=1.000000e+00 At=1.000000e+00 Ac=4.007140e+19 V=1.763159e+08
+rt_apply i=127 T=1.4955e+03 d=4.9921e-14 e=1.9396e-02 Fb=2.274662e+09 Ft=2.274661e+09 divF=3.70310209673196e-06 srcraw=3.70310209763302e-06 src=3.7031e-06 Qs=0.0000e+00 Em=1.8178e-05 lamdt=9.9002e-02 de=9.3105e-05 de/e=4.8003e-03 tau=3.6166e-08 w=0.0000e+00 dx=1.7947e+08 Ab=1.000000e+00 At=1.000000e+00 Ac=4.079031e+19 V=1.794679e+08
+rt_apply i=128 T=1.4612e+03 d=4.9848e-14 e=1.5068e-02 Fb=2.274661e+09 Ft=2.274660e+09 divF=4.64209929313719e-06 srcraw=4.64209929381208e-06 src=4.6421e-06 Qs=0.0000e+00 Em=1.6830e-05 lamdt=1.1798e-01 de=1.1563e-04 de/e=7.6739e-03 tau=2.2210e-08 w=0.0000e+00 dx=1.8271e+08 Ab=1.000000e+00 At=1.000000e+00 Ac=4.152871e+19 V=1.827079e+08
+rt_apply i=129 T=1.4059e+03 d=4.9661e-14 e=1.0416e-02 Fb=2.274660e+09 Ft=2.274659e+09 divF=5.70229398822180e-06 srcraw=5.70229398894379e-06 src=5.7023e-06 Qs=0.0000e+00 Em=1.4822e-05 lamdt=1.5031e-01 de=1.3981e-04 de/e=1.3423e-02 tau=9.8958e-09 w=0.0000e+00 dx=1.8604e+08 Ab=1.000000e+00 At=1.000000e+00 Ac=4.228731e+19 V=1.860388e+08
+### rt_clip ncycle=4000 t=1.087259e+05 nclip=0 efix_tot=0 resc_eq=0 resc_floor=0
+### rad_cap_ang rank 0 cycle 4000 t = 1.087259e+05: max x_i = 7.471884e-08 (cap 5.000000e-01) at (m,k,j,i) = (0,2,5,36) gid = 0 r = 1.132709e+10 | cells over cap = 0, faces capped = 0
+### rt_clip ncycle=4000 t=1.087259e+05 nclip=0 efix_tot=0 resc_eq=0 resc_floor=0
+photosphere: written to 'photo.txt'
+
+Terminating on time limit
+time=1.087523e+05 cycle=4001
+tlim=1.087300e+05 nlim=1000000000
+
+MeshBlock-cycles = 2
+cpu time used  = 2.132678e-01
+zone-cycles/cpu_second = 3.841180e+04
+particle-updates/cpu_second = 0.000000e+00
