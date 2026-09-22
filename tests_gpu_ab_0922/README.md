@@ -1,8 +1,11 @@
 # `tests_gpu_ab_0922` — analysis of the 2026-09-22 apudev smoke A/B arms
 
-Read-only analysis of `bench/ck_sph_ab/{prodbin,sph,sphbeam}`, `bench/cs_noang/noang`
-(comparison 1) and `bench/cs_recon_ab/{plm_ctl,ppmx,wenoz}` (comparison 2).
-Nothing in `bench/` was written to.
+Read-only analysis of `bench/ck_sph_ab/{prodbin,sph,sphbeam,offfix}`, `bench/cs_noang/noang`
+(comparison 1) and `bench/cs_recon_ab/{plm_ctl,ppmx,wenoz}` (comparison 2). `offfix`
+(`bench/ck_sph_ab/offfix`, binary `8e41808b`, `ck_spherical=false` on the repaired
+plane-parallel path, same rot-283 restart as the other comparison-1 arms) was added
+2026-09-22 to isolate the effect of `ck_spherical` from the effect of the binary; see
+`bench/ck_sph_ab/README.md` §5 and the new section below. Nothing in `bench/` was written to.
 
 Scripts (all `python3 <name>.py` from this directory):
 
@@ -38,7 +41,10 @@ ensuing decay therefore belong to the HEAD binary / restart, **not** to `ck_sphe
 By the same token the dt result below cannot be attributed to `ck_spherical` alone —
 `off`'s own dt collapsed to ~1 s for an unrelated reason, so there is no usable control.
 
-Clean one-line comparisons in this set: `sph` vs `sphbeam`, and `sph` vs `noang`.
+Clean one-line comparisons in this set: `sph` vs `sphbeam`, `sph` vs `noang`, and now
+`sph` vs `offfix` (see the new section below) — the last is the actual `ck_spherical`
+on/off pair on (nearly) the same binary lineage, and `offfix` vs `prodbin` isolates the
+364-commit binary gap on top of it.
 
 ---
 
@@ -56,11 +62,22 @@ Per-cell reconstruction of `mhd_newdt.cpp` (dt_i = dx_i/(|v_i|+cf_i), cf_2,3 div
 | sph | 12.53 | 17.36 | 17.4 / 80.2 / 83.5 |
 | sphbeam | 12.85 | 18.00 | 18.0 / 84.5 / 89.2 |
 | noang | 12.53 | 17.85 | 17.8 / 80.2 / 83.5 |
+| offfix | 19.92 | **19.93** | 19.9 / 81.1 / 88.3 |
 
 **In `prodbin` the MHD CFL sets dt** (19.81 reconstructed vs 19.82 reported — a 0.05 %
 match, which also validates the metric and the EOS inversion). Its limiting cells are
 real gas: r/Rp 1.25, equator, night-ish (lon +150…+165), p 1e-2…1e-6 bar, T 1900–2700 K,
 |v| 6–12 km/s, none on `dfloor`. The limit is radial in every one of the top 10.
+
+**`offfix` reproduces this mechanism, not the HEAD-arm one.** Reconstructed CFL 19.93 s
+vs reported 19.92 s (0.05 % match, same as `prodbin`). Its top-10 cells sit at r/Rp
+1.25–1.40, lon +150…+167 (night side by the same convention), p 3e-4…1.4e-2 bar,
+T 1850–2725 K, none on `dfloor` — the same real-gas mechanism as `prodbin`, at slightly
+larger radius. So the Ohmic-cap collapse to ~12.5–12.9 s seen in `sph`/`sphbeam`/`noang`
+is **not** a generic property of "a HEAD-lineage binary on this restart" — `offfix` is
+built from the current `rt-integration` tip and still runs at the `prodbin` dt. It is
+specifically tied to `ck_spherical = true` cooling the r/Rp 1.23–1.25 shell enough to
+saturate `max_eta` there (see the new section below).
 
 **In the three HEAD arms the MHD CFL is *not* what limits dt.** Their MHD limit is 17–18 s,
 only ~10 % below `prodbin`, yet they run at 12.53/12.85 s. The reported dt is also
@@ -138,6 +155,7 @@ Day-night contrast [K]: 2370 (prodbin) / 2819 (sph) / 2373 (sphbeam) / 2812 (noa
 | sph | 1.59e5 | 2.03e4 | 6.16e3 |
 | sphbeam | 1.05e5 | 3.62e3 | 7.93e2 |
 | noang | 1.59e5 | 2.02e4 | 6.16e3 |
+| offfix | 1.44e5 | 1.50e3 | 5.39e1 |
 
 Density flooring is comparable (`sphbeam` is 25 % *lower* than `prodbin`), but energy and
 temperature flooring are **130x and 49x higher** in `sph`/`noang` than in `prodbin`, and
@@ -147,30 +165,50 @@ The claim that the spherical form floors *less* in the upper atmosphere is **not
 supported here**; the opposite is seen (with the binary caveat above).
 
 Location, last dump: floored cells (`rho <= dfloor` to 1e-4) are 5.00 % of the mesh in
-`prodbin`, 5.79 % in `sph`, 5.82 % in `noang`, 3.23 % in `sphbeam`. They are almost purely
-night-side (day-side fraction 0.003–0.014), spread over all longitudes with mean |lat| 28–31°,
-and the **inner edge of the floored slab moves down** from r/Rp 1.508 (prodbin) to 1.404
-(noang) / 1.381 (sph), while `sphbeam` keeps it at 1.499. `p <= pfloor` occurs in 242
-(sph) / 230 (noang) / 1 (sphbeam) / 0 (prodbin) cells.
+`prodbin`, 5.79 % in `sph`, 5.82 % in `noang`, 3.23 % in `sphbeam`, **5.00 % in `offfix`**
+— matching `prodbin` almost exactly. They are almost purely night-side (day-side fraction
+0.003–0.014, 0.002 in `offfix`), spread over all longitudes with mean |lat| 28–31° (30.2°
+in `offfix`), and the **inner edge of the floored slab moves down** from r/Rp 1.508
+(prodbin) to 1.404 (noang) / 1.381 (sph), while `sphbeam` keeps it at 1.499 and `offfix`
+sits at **1.588** — the deepest of any arm, and if anything slightly less floored than
+`prodbin` in depth even though the two per-cycle rates agree. `p <= pfloor` occurs in 242
+(sph) / 230 (noang) / 1 (sphbeam) / 0 (prodbin) / **0 (offfix)** cells. On both energy and
+density-floor location, `offfix` tracks `prodbin`, not the `ck_spherical=true` arms —
+consistent with Q1: the switch, not the binary, is what floors the upper atmosphere more.
 
 ## Q4 — energetics and `rt_desum`
 
 `fig_energy.png`. Over the run: `prodbin` |dE/E| and |dM/M| are below the 6-digit history
 precision (< 2e-6) over a full rotation; `sph`/`noang` lose 2.56e-4 of total energy and
-2.8e-5 of mass over 0.47 rot, `sphbeam` 2.03e-4 over 0.35 rot. Magnetic energy:
-4.98→4.71e33 (−5 % / rotation) in `prodbin`, 4.06→2.92e33 (−28 % in 0.47 rot) in
-`sph`/`noang`, 4.06→2.95e33 in `sphbeam`. Kinetic energy rises ~8 % in the HEAD arms and
-falls ~6 % in `prodbin`.
+2.8e-5 of mass over 0.47 rot, `sphbeam` 2.03e-4 over 0.35 rot. `offfix` loses **8.85e-5**
+of total energy and 1.13e-5 of mass over 0.84 rot — between `prodbin` and the
+`ck_spherical=true` arms, and much closer to `prodbin` per rotation (see below). Magnetic
+energy: 4.98→4.71e33 (−5.3 % over 0.97 rot, i.e. ≈ −5.5 %/rot) in `prodbin`, 4.06→2.92e33
+(−28.0 % over 0.44 rot, ≈ −64 %/rot) in `sph`/`noang`, 4.06→2.95e33 in `sphbeam`, and
+**4.06→2.85e33 in `offfix` (−29.8 % over 0.84 rot, ≈ −35 %/rot)**. Kinetic energy rises
+~8 % in the `ck_spherical=true` arms, falls ~6 % in `prodbin`, and falls ~2 % in `offfix`
+(1.881→1.838e34).
 
-**The expectation that the spherical form is the more conservative one is not confirmed —
-but neither is it refuted**, because the invalid `off` arm shows the same initial magnetic
-step and decay on the HEAD binary with the switch *off*.
+**The expectation that the spherical form is the more conservative one is now
+contradicted, not just unconfirmed.** `offfix` (switch off, repaired binary) decays its
+magnetic energy at ≈ −35 %/rot — faster than `prodbin`'s −5.5 %/rot but distinctly slower
+than `sph`'s ≈ −64 %/rot on the same restart. So turning `ck_spherical` on makes the
+secular ME drift *worse*, not better, on this binary; part of `prodbin`'s superior
+conservation is a genuine binary/algorithm difference over the 364 commits (offfix still
+loses 6x more ME per rotation than prodbin), but the further loss from `offfix` to `sph`
+is attributable to the switch itself.
 
 `rt_desum`: `prodbin`'s binary has no `rt_cell_report` parameter (`strings` count 0), so
-the plane-parallel side of the 36–40 % vs 2–5 % comparison **cannot be measured here at
-all**. On the 3-D grid the spherical arms give mean −7.8 % (range −12.4 %…−4.4 %), sph and
-sphbeam agreeing to 0.1 pp — i.e. consistent with the "on" end of the 1-D column result,
-with no baseline.
+the plane-parallel side of the 36–40 % vs 2–5 % comparison could not be measured on the
+production binary. **`offfix` now supplies that plane-parallel-off baseline** (28 lines):
+mean **−27.9 %**, range **−94.6 % … +47.5 %** — an order of magnitude larger in magnitude
+and, unlike the "on" arms, sign-changing from cell-report to cell-report. The "on" arms
+(`sph`/`sphbeam`/`noang`) still give a tight mean −7.8 % (range −12.4 %…−4.4 %). This
+matches the *direction* of the 1-D column result ("off" swallows/mismatches far more than
+"on") and puts a first real number on it in 3-D, though the "off" magnitude here (28 %,
+highly variable) is not the clean 36–40 % of the 1-D column, and the sign flips the 1-D
+result never showed — so this closes the direction of the open question in
+`tests_ck_sph/README.md` §0.3 but not the magnitude or the sign behaviour.
 
 ## Q5 — cost
 
@@ -180,12 +218,19 @@ with no baseline.
 | sph | 10900 | 768 | 14.2 | 182 | 0.36 |
 | sphbeam | 8700 | 764 | 11.4 | 147 | 0.29 |
 | noang | 10800 | 763 | 14.2 | 181 | 0.36 |
+| offfix | 13300 | 769 | 17.3 | 345 | 0.68 |
 
-Per cycle the HEAD arms are 1.78x more expensive (`sphbeam` 2.2x); the smaller dt costs a
-further 1.58x, so the throughput penalty is **2.8x** (`sphbeam` 3.4x). Part of the 1.78x
-is the binary difference, not the switch. `noang` is **not** cheaper than `sph`
-(14.16 vs 14.20 cycles/s, 0.3 %), so the transverse conduction planes are not a measurable
-cost here — contrary to the expectation in `cs_noang/README.md`.
+Per cycle the `ck_spherical=true` arms are 1.78x more expensive (`sphbeam` 2.2x); the
+smaller dt costs a further 1.58x, so the throughput penalty is **2.8x** (`sphbeam` 3.4x).
+`offfix` (switch off, current binary) is **1.46x** more expensive per cycle than
+`prodbin` — this is the pure 364-commit binary overhead, with `offfix`'s dt essentially
+unchanged from `prodbin`'s (19.98 vs 19.93 median) so throughput tracks per-cycle cost
+1:1 (0.68x). Subtracting: of the 1.78x per-cycle cost in `sph`, **1.46x is the binary and
+only ~1.22x is `ck_spherical` itself**; the remaining 2.8x/1.46x ≈ 1.9x extra throughput
+loss on top of the binary overhead is essentially all the Ohmic-cap dt collapse (Q1), not
+switch compute cost. `noang` is **not** cheaper than `sph` (14.16 vs 14.20 cycles/s,
+0.3 %), so the transverse conduction planes are not a measurable cost here — contrary to
+the expectation in `cs_noang/README.md`.
 
 ## Q6 — `noang` vs `sph`
 
@@ -206,6 +251,58 @@ eint 3.7e-5, velocity components 6–18 %, field components 3.7–4.8 %.
 upper atmosphere at the per-cell level but is dynamically and thermally negligible over
 half a rotation, and costs nothing either way.** The expectation of a colder night side
 and a sharper terminator is not seen at this duration.
+
+---
+
+## Isolation of `ck_spherical` (offfix)
+
+`offfix` = `bench/ck_sph_ab/offfix`, HEAD binary `8e41808b` (post-`ed188f69`, the fix to
+the `ck_spherical=false` plane-parallel path), `ck_spherical=false`, `ck_beam_sph=false`,
+same rot-283 restart, same `sph/deep_hot_jupiter.athinput` with one line changed. It is
+**not** the same literal binary as `sph`/`sphbeam`/`noang` (`916dc953`) or `prodbin`
+(`27ca5b13`), but it is on the current `rt-integration` tip and is the first valid
+plane-parallel control since the invalid `off` (`916dc953`) arm.
+
+**(1) Does `offfix` reproduce `prodbin`'s dt plateau and night-side T? Yes, closely.**
+dt: reconstructed MHD-CFL 19.93 s vs `prodbin`'s 19.81 s (+0.6 %); reported median 19.98 s
+vs 19.93 s. Both are set by the same mechanism — real night-side/equatorial gas, none on
+`dfloor` — not by the Ohmic cap. Night-side T at 1e-6 bar: **1960 K** (`offfix`) vs
+**1951 K** (`prodbin`), +9 K (0.5 %); at 1e-5/1e-4/1e-3 bar the gap is +11/+12/+60 K (all
+`tp_tables.md`). Floored-cell fraction (5.00 % vs 5.00 %) and per-cycle `eos_dfloor`
+(1.44e5 vs 1.41e5) also match to a few percent.
+
+**(2) `offfix` vs `sph` — the pure effect of the switch on one binary lineage.** Night
+side warms by +533 K at 1e-6 bar (1960 vs 1427 K), +559 K at 1e-5, +494 K at 1e-4,
+falling to +391/+34/+4 K at 1e-2/1e-1/1 bar — i.e. `ck_spherical=true` cools the whole
+upper night side by several hundred K, exactly the pattern Q2 attributed to the switch
+using the invalid `off` baseline, now confirmed with a valid one. dt: 19.9 s vs 12.5 s —
+turning the switch on is what saturates the Ohmic cap at r/Rp 1.23–1.25 by cooling that
+shell (Q1); `offfix` shows this shell never gets cold enough to cap when the switch is
+off. Cost per cycle: `offfix` 0.0577 s/cycle vs `sph` 0.0704 s/cycle, i.e. **`sph` is only
+~1.22x the per-cycle cost of `offfix`** once the binary term is removed — most of the
+throughput penalty in `sph` is the dt collapse, not extra compute. Magnetic-energy decay:
+≈ −35 %/rot (`offfix`) vs ≈ −64 %/rot (`sph`) — the switch roughly doubles the secular ME
+loss rate on this binary. `rt_desum`: −27.9 % mean, sign-changing (`offfix`, switch off)
+vs a tight −7.8 % (`sph`/`sphbeam`/`noang`, switch on) — the switch also tightens and
+roughly quarters the sweep-to-gas mismatch, consistent with it being the intended fix.
+
+**(3) `offfix` vs `prodbin` — the pure effect of the 364 commits, `ck_spherical` off in
+both.** dt and night-side T agree to <1 %/60 K as above — no regression there. What does
+differ: `offfix` loses energy 0.84 rot (dE/E = −8.85e-5, dM/M = −1.13e-5) where `prodbin`
+loses none measurable in a full rotation, and its ME decays at ≈ −35 %/rot vs `prodbin`'s
+≈ −5.5 %/rot — a real ~6x gap that has nothing to do with `ck_spherical`. Per-cycle floor
+counters differ too: `eos_efloor`/cycle is 9.5x higher in `offfix` (1.50e3 vs 1.58e2)
+though `eos_tfloor`/cycle is lower (53.9 vs 125) and `eos_dfloor`/cycle matches (1.44e5 vs
+1.41e5). Per-cycle cost is 1.46x higher in `offfix`. **The first-row ME step noted as
+undetermined in the caveat above is present in `offfix`** too: its first history row gives
+ME = 4.056e33 erg, matching `sph`/`noang`/the old invalid `off` (4.051–4.056e33) and
+**not** `prodbin` (4.977e33, +18.5 %). Since `offfix` and `sph` are different literal
+binaries that share only the post-`916dc953` lineage and the same restart file/warning
+("restart file has no general-EOS temperature cache … not bitwise"), this step is now
+seen on two independent HEAD builds and is confirmed to be a **restart/binary-lineage
+effect** (most likely the missing general-EOS temperature cache forcing a cold C2P start
+on the first cycle), reproducible regardless of `ck_spherical`, and unrelated to the
+switch.
 
 ---
 
@@ -270,18 +367,38 @@ what matters for this problem.
 ## What could not be determined from this data
 
 1. **Whether `ck_spherical` alone causes the dt loss, the magnetic decay or the energy
-   drift.** There is no valid HEAD-binary plane-parallel control; `ck_sph_ab/off` is the
-   regressed hybrid. The `off` arm does show that the first-output magnetic step is a
-   binary/restart effect, not the switch. A 15-min `ck_spherical = false` run on the
-   `916dc953` binary would settle all three at once.
+   drift — now resolved in direction with `offfix` (§"Isolation of ck_spherical"), not
+   with a bitwise-identical control.** `offfix` (HEAD binary `8e41808b`, repaired
+   plane-parallel path, same restart) reproduces `prodbin`'s dt plateau and night-side T,
+   and shows worse ME decay and a much larger/sign-changing `rt_desum` gap than `prodbin`
+   even with the switch off — so a real binary/lineage gap to `prodbin` remains (item 3
+   below is now measurable, not closed). But `offfix` vs `sph` isolates the switch itself:
+   turning `ck_spherical` on costs +533 K of night-side cooling at 1e-6 bar, collapses dt
+   from 19.9 to 12.5 s via the Ohmic cap, roughly doubles the ME decay rate, and only
+   modestly (~1.22x) raises per-cycle compute cost. `offfix` and `sph` are still not the
+   same literal binary, so this is not a bitwise A/B; a same-binary `ck_spherical=false`
+   rerun (i.e. `sph`'s own binary with the flag flipped) would remove the last gap.
 2. **Where `eta` saturates `max_eta`.** The dt arithmetic identifies the shell
    (r/Rp 1.230–1.241) to six digits, but resistivity and electron fraction are not in
    `mhd_w_bcc`, so the map of the capped region and its change between arms is inference
-   from T(r), not measurement.
-3. **The plane-parallel `rt_desum` baseline** — `prodbin`'s binary has no such counter.
+   from T(r), not measurement. `offfix` (which never saturates the cap) is consistent with
+   this being caused by `ck_spherical`'s cooling of that shell, not an independent effect.
+3. **The plane-parallel `rt_desum` baseline** — `prodbin`'s binary has no such counter, so
+   the true production-binary value is still unmeasured. `offfix` gives a HEAD-binary
+   plane-parallel value instead (mean −27.9 %, range −94.6 %…+47.5 %, 28 lines) — larger
+   in magnitude than the −7.8 % "on" arms, matching the 1-D column's direction, but with a
+   sign-changing spread the 1-D result did not show, so the exact 36–40 %/2–5 % figures
+   from `tests_ck_sph/README.md` §0.3 are still not reproduced in 3-D.
 4. **Same-instant comparisons.** Every arm stopped at its own wall clock, so all dump
    comparisons are at times differing by 0.02–0.06 rot (comparison 1) or 0.035 rot
-   (comparison 2). All history comparisons are exact in time; all dump comparisons are not.
+   (comparison 2). `offfix`'s dump is at t = 8.6667e7 (rot ≈ 284.13), 0.02–0.06 rot from
+   the other comparison-1 dumps, same caveat. All history comparisons are exact in time;
+   all dump comparisons are not.
 5. **Whether the `noang` difference is physics or chaotic divergence.** Both arms are the
    same binary with one parameter changed, but no bitwise-repeat control was run, so the
    2e-3 level differences cannot be separated from amplified round-off.
+6. **Whether the 364-commit binary gap seen in `offfix` vs `prodbin` (6x faster ME decay,
+   9.5x higher `eos_efloor`/cycle, 1.46x per-cycle cost, the first-row ME step) is one
+   regression or several**, and whether any of it is itself `ck_spherical`-adjacent code
+   that changed behavior even with the flag off. Not investigated here — would need
+   bisection between `27ca5b13` and `8e41808b`.

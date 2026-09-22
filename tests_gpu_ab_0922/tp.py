@@ -91,7 +91,7 @@ def main():
     fh.close()
 
     fig, ax = plt.subplots(1, 3, figsize=(14, 5), sharey=True)
-    col = dict(prodbin='k', sph='C0', sphbeam='C3', noang='C2')
+    col = dict(prodbin='k', sph='C0', sphbeam='C3', noang='C2', offfix='C1')
     for a_, reg, t in zip(ax, ['day', 'term', 'night'],
                           ['day (|lon|<30)', 'terminator', 'night (|lon|>150)']):
         for n, _ in C.ARMS1:

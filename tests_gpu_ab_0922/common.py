@@ -16,7 +16,8 @@ PFLOOR = 1.0e-3
 ARMS1 = [('prodbin', B + 'ck_sph_ab/prodbin'),
          ('sph',     B + 'ck_sph_ab/sph'),
          ('sphbeam', B + 'ck_sph_ab/sphbeam'),
-         ('noang',   B + 'cs_noang/noang')]
+         ('noang',   B + 'cs_noang/noang'),
+         ('offfix',  B + 'ck_sph_ab/offfix')]
 # comparison 2: cold-start reconstruction arms
 ARMS2 = [('plm_ctl', B + 'cs_recon_ab/plm_ctl'),
          ('ppmx',    B + 'cs_recon_ab/ppmx'),
