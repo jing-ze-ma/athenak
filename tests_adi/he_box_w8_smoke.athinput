@@ -12,13 +12,11 @@
 #   <problem> rt_profile_file     = rt_profile.bin(from box_w4_in)
 #   <problem> bc_mode_bot         = 5            (from box_w4_in: inflow controller)
 #   <problem> bc_inflow_time      = 1128         (from box_w4_in)
-#   <problem> bc_inflow_ghost     = false        (from box_w4_in)
 #   <problem> bc_inflow_print     = 100          (from box_w4_in)
 #   <problem> vdamp_top_tau       = 0.1          (from box_w4_in: top sponge)
 #   <problem> vdamp_top_time      = 20           (from box_w4_in)
 #   <problem> vdamp_bot_cells     = 48           (from box_w4_in link 2: bottom sponge)
 #   <problem> vdamp_bot_time      = 20.0         (from box_w4_in link 2)
-#   <problem> vdamp_bot_mean_only = false        (from box_w4_in link 2)
 #   <problem> rt_impl_warm        = 1            (accelerator; He gets warm + mixed)
 #   <problem> rt_impl_mixed       = 2            (accelerator)
 # NO rt_col3_hybrid_tau: the hybrid thick-column branch is a B-star-only acceleration.
@@ -258,8 +256,6 @@ rad_adi_scheme = lod2                    # W4: the symmetrised two-sub-step LOD 
 #                                        # mislead.  rad_sts_perplane is LEFT ON: adi does
 #                                        # not refuse it and forces the per-plane path
 #                                        # itself (conduction_transverse.cpp:198).
-rad_kappa_rmax       = 0.0               # MUST stay 0: it indexes x1v, never allocated on
-                                         # a Cartesian mesh (the pgen fatals otherwise)
 tfloor  = 5.0e3                          # rt_use_cons clamps a non-positive e to e(rho,tfloor)
 dfloor  = 2.3206e-12                     # CHANGED from the B star's 1e-12: 1e-3 x the
                                          # INITIAL TOP-CELL DENSITY 2.320647e-9 measured
@@ -408,10 +404,6 @@ bc_inflow_time = 1128            # tau_in [s] = 0.3 turnover (turnover = 3.761e3
                                  # v_in = min(vmax, max(0,(M0-M)/(rho_base A tau_in))).
                                  # PROPORTIONAL: a steady loss Mdot settles at a
                                  # deficit Mdot*tau_in, not at zero deficit.
-bc_inflow_ghost = false          # DEFAULT and the measured-correct choice: the bottom
-                                 # ghost follows bc_mode (WB continuation); only the
-                                 # INJECTED mass carries the base state.  ghost = true
-                                 # moved Ftop/Fbot from 0.9995 to 1.021 on the He column.
 # bc_inflow_vmax                 # LEFT AT THE CODE DEFAULT (<= 0 -> 0.1 c_s(base)).
 bc_inflow_print = 100            # controller state (cycle, t, v_in, M/M0) every 100 cyc
 vdamp_top_tau = 0.1              # TOP SPONGE on m1 only: f = 1 where the column tau <=
@@ -443,7 +435,6 @@ vdamp_top_time = 20              # 0.0333, f = 0 where tau >= 0.1, raised cosine
 # order effect, rho_base v_in^2) does decay on vdamp_bot_time in the wall cell.
 vdamp_bot_cells     = 48
 vdamp_bot_time      = 20.0
-vdamp_bot_mean_only = false      # damp the FULL v1: the bottom layer is stable, so the
 
 # LINK 2+ (09-16): the rt-integration merge (b775a270) accelerators, 1.27x per cycle.
 rt_impl_warm  = 1                # warm-start the mode-3 Newton from the previous call

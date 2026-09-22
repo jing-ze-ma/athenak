@@ -112,7 +112,6 @@ rad_kappa_fac        = 1.0
 rad_flux_limit       = true
 rad_tau_lo  = 1.0e5               # weight 0 on every face: the operator adds nothing
 rad_tau_hi  = 1.0e6
-rad_kappa_rmax       = 0.0
 tfloor  = 5.0e3
 dfloor  = 5.7e-13                 # 1e-3 x the initial TOP-cell density 5.733e-10
 pfloor  = 1.0e0

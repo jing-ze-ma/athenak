@@ -1,0 +1,38 @@
+Mesh: spherical-polar x3-face theta correction = rotate
+
+Root grid = 1 x 1 x 1 MeshBlocks
+Total number of MeshBlocks = 1
+Number of logical  levels of refinement = 0 (1 levels total)
+Number of physical levels of refinement = 0 (1 levels total)
+Number of parallel ranks = 1
+General EOS: tabulated on 501 x 676 nodes (41 MB), log10 rho[cgs] in [-13, -3], log10 T[K] in [3.8, 6.5]
+             X = 0, Y = 0.98, Z = 0.02, H2 off, ionization on, radiation off
+             metal ionization off
+             mu at the grid centre = 1.35912, n_e/n_tot = 0.665534
+box_convection: initial stratification READ FROM /viper/u2/jinma/ATHENAK/bench/m1_stage2/ic/ic_m1_V2_pgen.txt (3009 nodes); the isentropic march is overridden
+box_convection: base rho = 1.50975e-06 g/cm^3, T = 3.20388e+05 K, p = 5.36703e+06
+  g0 = 3.98107e+05 cm/s^2, H_p = 8.92956e+06 cm, Gamma_1 = 1.24754, c_s = 2.10592e+06 cm/s
+  domain x1 = [-1.81493e+08, 4.12909e+07] = 24.9491 H_p; a constant-g adiabat reaches T = 0 at z - x1min ~ 4.66844e+07 cm = 5.228 H_p
+  initial column: dln T/dln p = grad_ad + 0.00000e+00 (dgrad; 0 = exact adiabat)
+  column top:  T = 6.81313e+04 K, rho = 6.51206e-10, p = 2.71416e+03, ln(p_b/p_top) = 7.5895
+  F_bot = 0.00000e+00 erg/cm^2/s -> v* = 2.10592e+06 cm/s, Mach = 1.0000e+00, turnover H_p/v* = 4.24021e+00 s
+  cooling layer: z > -8.70909e+06 (top 5.5994 H_p), tau = 1.00000e+00 s = 0.2358 turnover
+  x1 walls: bc_mode = 3 (0 column ghost, 1 mirror, 2 mirror x the column ratio, 3 WB continuation), wall_noflux = 1 (mass and energy exact)
+
+Setup complete, executing task list(s)...
+
+elapsed=7.180909e+00 cycle=0 time=0.000000e+00 dt=1.614199e-01
+elapsed=1.845358e+01 cycle=1000 time=5.880833e+01 dt=4.402596e-02
+elapsed=2.930204e+01 cycle=2000 time=1.020134e+02 dt=3.156656e-02
+elapsed=4.019839e+01 cycle=3000 time=1.449466e+02 dt=4.588841e-02
+elapsed=5.108865e+01 cycle=4000 time=1.897289e+02 dt=4.332669e-02
+
+Terminating on time limit
+time=2.000000e+02 cycle=4234
+tlim=2.000000e+02 nlim=-1
+
+MeshBlock-cycles = 4234
+cpu time used  = 4.645523e+01
+zone-cycles/cpu_second = 2.449884e+05
+particle-updates/cpu_second = 0.000000e+00
+A4_norad exit 0

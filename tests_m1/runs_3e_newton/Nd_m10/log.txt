@@ -1,0 +1,97 @@
+Mesh: spherical-polar x3-face theta correction = rotate
+
+Root grid = 1 x 1 x 1 MeshBlocks
+Total number of MeshBlocks = 1
+Number of logical  levels of refinement = 0 (1 levels total)
+Number of physical levels of refinement = 0 (1 levels total)
+Number of parallel ranks = 1
+General EOS: tabulated on 501 x 676 nodes (41 MB), log10 rho[cgs] in [-13, -3], log10 T[K] in [3.8, 6.5]
+             X = 0, Y = 0.98, Z = 0.02, H2 off, ionization on, radiation off
+             metal ionization off
+             mu at the grid centre = 1.35912, n_e/n_tot = 0.665534
+<rad_m1>: transport=implicit (2-D) solver=bicgstab lin_tol=1e-10 lin_maxit=200
+         implicit_cfl=-1 tol=1e-08 maxit=200 opac_update=false marshak_q=0.5
+         implicit_flux=central implicit_recon=dc implicit_partition=none
+         implicit_offdiag=operator closure_relax=1 closure_lag=pass trans_limit=none
+         implicit_accel=anderson m=10 beta=0.500000 start=1 ncomp=4
+         x1 boundaries: min=1 max=0 (0 marshak, 1 flux, 2 reflect, 3 periodic) flux_min=2.4752e+15 flux_max=0
+<rad_m1>: c=2.99792e+10 chat/c=1 cfl_rad=0.4 thick_flux=ap_hll ap_form=alpha2 recon=plm advect_split=true split_vel=recon source_form=full closure=m1 subcycle=false
+         kappa_p=0 kappa_e=0 kappa_f=0 kappa_s=0 coupling=true gas_feedback=true arad=1.58312e-46
+         opacity=table force_reference=wb_arad temp_unit_kelvin=1.20272e-08 rho_unit_cgs=1
+box_convection: initial stratification READ FROM /viper/u2/jinma/ATHENAK/bench/m1_stage2/ic/ic_m1_V2_pgen.txt (3009 nodes); the isentropic march is overridden
+box_convection: problem/wb_arad_file = /viper/u2/jinma/ATHENAK/bench/m1_stage2/ic/arad_V2.txt (3009 rows, z = -1.94754e+08 .. 5.45519e+07); wb_phi_eff = true, wb_arad_force = false; a_rad/g0 over the box spans 0.540045 .. 0.0764073
+box_convection: <rad_m1> force_reference = wb_arad; the code's own kappa_R(rho,T) F/c on the initial column differs from problem/wb_arad_file by at most 2.1445e-05 (relative)
+box_convection: <rad_m1> ON -- Rosseland /viper/u2/jinma/ATHENAK/bench/hestar_fecz/rosseland_he_x0.0_z0.02.txt, Planck /viper/u2/jinma/ATHENAK/athenak/data/stellar_opac/planck_he_x0.0_z0.02_ferg+tops.txt (217 x 281), F_bot = 2.475202e+15 (code) = 2.475202e+15 erg/cm^2/s
+box_convection: base rho = 1.50975e-06 g/cm^3, T = 3.20388e+05 K, p = 5.36703e+06
+  g0 = 3.98107e+05 cm/s^2, H_p = 8.92956e+06 cm, Gamma_1 = 1.24754, c_s = 2.10592e+06 cm/s
+  domain x1 = [-1.81493e+08, 4.12909e+07] = 24.9491 H_p; a constant-g adiabat reaches T = 0 at z - x1min ~ 4.66844e+07 cm = 5.228 H_p
+  initial column: dln T/dln p = grad_ad + 0.00000e+00 (dgrad; 0 = exact adiabat)
+  column top:  T = 6.81313e+04 K, rho = 6.51206e-10, p = 2.71416e+03, ln(p_b/p_top) = 7.5895
+  F_bot = 2.47520e+15 erg/cm^2/s -> v* = 1.17915e+07 cm/s, Mach = 5.5992e+00, turnover H_p/v* = 7.57288e-01 s
+  cooling layer: z > -8.70909e+06 (top 5.5994 H_p), tau = 1.00000e+00 s = 1.3205 turnover
+  x1 walls: bc_mode = 3 (0 column ghost, 1 mirror, 2 mirror x the column ratio, 3 WB continuation), wall_noflux = 1 (mass exact, energy via enthalpy)
+  rad_kappa_fac = 1.00000e+00 (conductivity is 1/rad_kappa_fac x physical)
+box_convection: <rad_m1> initial field READ FROM /viper/u2/jinma/ATHENAK/athenak/tests_m1/runs_2a/m1_rad_ic_V2.txt (94 nodes), E = 2.73070e+07 .. 1.63016e+05, F1 = 2.475202e+15 .. 2.475202e+15
+
+Setup complete, executing task list(s)...
+
+elapsed=7.168650e+00 cycle=0 time=0.000000e+00 dt=1.614199e-01
+<rad_m1> RSLA check: chat = c, no reduced speed of light (tau_max=9.883889e+01, measured v_max=5.054630e+02)
+<rad_m1> Picard NON-CONVERGED after 200 passes: resid=2.376523e+01 (tol 1.000000e-08) lin_resid=4.457575e+02 worst cell of rank 0 (m,k,j,i)=(0,0,12,85)
+<rad_m1> Picard NON-CONVERGED after 200 passes: resid=3.259403e+08 (tol 1.000000e-08) lin_resid=3.368913e+02 worst cell of rank 0 (m,k,j,i)=(0,0,12,82)
+<rad_m1> Picard NON-CONVERGED after 200 passes: resid=3.452464e+02 (tol 1.000000e-08) lin_resid=1.325831e+02 worst cell of rank 0 (m,k,j,i)=(0,0,27,85)
+<rad_m1> Picard NON-CONVERGED after 200 passes: resid=3.745963e+01 (tol 1.000000e-08) lin_resid=1.386530e+02 worst cell of rank 0 (m,k,j,i)=(0,0,27,85)
+<rad_m1> Picard NON-CONVERGED after 200 passes: resid=3.040812e+01 (tol 1.000000e-08) lin_resid=1.310779e+02 worst cell of rank 0 (m,k,j,i)=(0,0,34,86)
+<rad_m1> Picard NON-CONVERGED after 200 passes: resid=2.459971e+01 (tol 1.000000e-08) lin_resid=3.486698e+01 worst cell of rank 0 (m,k,j,i)=(0,0,21,83)
+<rad_m1> Picard NON-CONVERGED after 200 passes: resid=1.883471e+01 (tol 1.000000e-08) lin_resid=8.434883e+01 worst cell of rank 0 (m,k,j,i)=(0,0,23,79)
+<rad_m1> Picard NON-CONVERGED after 200 passes: resid=2.788215e+01 (tol 1.000000e-08) lin_resid=1.539687e+02 worst cell of rank 0 (m,k,j,i)=(0,0,26,83)
+<rad_m1> Picard NON-CONVERGED after 200 passes: resid=1.016059e+08 (tol 1.000000e-08) lin_resid=2.910220e+01 worst cell of rank 0 (m,k,j,i)=(0,0,26,80)
+<rad_m1> Picard NON-CONVERGED after 200 passes: resid=4.526596e+04 (tol 1.000000e-08) lin_resid=1.514258e+01 worst cell of rank 0 (m,k,j,i)=(0,0,15,81)
+<rad_m1> Picard NON-CONVERGED after 200 passes: resid=8.602958e+01 (tol 1.000000e-08) lin_resid=2.687573e+02 worst cell of rank 0 (m,k,j,i)=(0,0,28,78)
+<rad_m1> Picard NON-CONVERGED after 200 passes: resid=4.082613e+07 (tol 1.000000e-08) lin_resid=2.520195e+02 worst cell of rank 0 (m,k,j,i)=(0,0,27,85)
+<rad_m1> Picard NON-CONVERGED after 200 passes: resid=2.421400e+08 (tol 1.000000e-08) lin_resid=1.634328e+02 worst cell of rank 0 (m,k,j,i)=(0,0,16,85)
+<rad_m1> Picard NON-CONVERGED after 200 passes: resid=2.729869e+08 (tol 1.000000e-08) lin_resid=2.887278e+02 worst cell of rank 0 (m,k,j,i)=(0,0,7,84)
+<rad_m1> Picard NON-CONVERGED after 200 passes: resid=1.350771e+02 (tol 1.000000e-08) lin_resid=6.107603e+02 worst cell of rank 0 (m,k,j,i)=(0,0,25,80)
+<rad_m1> Picard NON-CONVERGED after 200 passes: resid=5.911686e+01 (tol 1.000000e-08) lin_resid=4.415895e+01 worst cell of rank 0 (m,k,j,i)=(0,0,12,84)
+<rad_m1> Picard NON-CONVERGED after 200 passes: resid=5.579724e+01 (tol 1.000000e-08) lin_resid=4.458054e+01 worst cell of rank 0 (m,k,j,i)=(0,0,33,83)
+<rad_m1> Picard NON-CONVERGED after 200 passes: resid=4.846171e+01 (tol 1.000000e-08) lin_resid=5.478763e+01 worst cell of rank 0 (m,k,j,i)=(0,0,16,80)
+<rad_m1> Picard NON-CONVERGED after 200 passes: resid=4.850750e+01 (tol 1.000000e-08) lin_resid=2.546660e+02 worst cell of rank 0 (m,k,j,i)=(0,0,5,79)
+<rad_m1> Picard NON-CONVERGED after 200 passes: resid=3.362302e+01 (tol 1.000000e-08) lin_resid=1.081307e+02 worst cell of rank 0 (m,k,j,i)=(0,0,28,85)
+<rad_m1> Picard NON-CONVERGED after 200 passes: resid=4.777306e+01 (tol 1.000000e-08) lin_resid=3.102414e+02 worst cell of rank 0 (m,k,j,i)=(0,0,33,80)
+<rad_m1> Picard NON-CONVERGED after 200 passes: resid=2.190821e+08 (tol 1.000000e-08) lin_resid=1.330385e+02 worst cell of rank 0 (m,k,j,i)=(0,0,34,83)
+<rad_m1> Picard NON-CONVERGED after 200 passes: resid=3.655206e+01 (tol 1.000000e-08) lin_resid=2.595228e+02 worst cell of rank 0 (m,k,j,i)=(0,0,13,78)
+<rad_m1> Picard NON-CONVERGED after 200 passes: resid=9.436573e+08 (tol 1.000000e-08) lin_resid=9.662177e+01 worst cell of rank 0 (m,k,j,i)=(0,0,7,83)
+<rad_m1> Picard NON-CONVERGED after 200 passes: resid=2.192148e+08 (tol 1.000000e-08) lin_resid=1.190241e+02 worst cell of rank 0 (m,k,j,i)=(0,0,25,83)
+<rad_m1> Picard NON-CONVERGED after 200 passes: resid=2.253580e+01 (tol 1.000000e-08) lin_resid=1.981893e+02 worst cell of rank 0 (m,k,j,i)=(0,0,5,85)
+<rad_m1> Picard NON-CONVERGED after 200 passes: resid=8.509470e+01 (tol 1.000000e-08) lin_resid=4.231823e+01 worst cell of rank 0 (m,k,j,i)=(0,0,34,82)
+<rad_m1> Picard NON-CONVERGED after 200 passes: resid=8.579295e+06 (tol 1.000000e-08) lin_resid=9.697214e+01 worst cell of rank 0 (m,k,j,i)=(0,0,16,85)
+<rad_m1> Picard NON-CONVERGED after 200 passes: resid=5.796674e+02 (tol 1.000000e-08) lin_resid=3.295049e+02 worst cell of rank 0 (m,k,j,i)=(0,0,28,81)
+<rad_m1> Picard NON-CONVERGED after 200 passes: resid=8.422709e+01 (tol 1.000000e-08) lin_resid=3.088950e+01 worst cell of rank 0 (m,k,j,i)=(0,0,34,82)
+<rad_m1> Picard NON-CONVERGED after 200 passes: resid=7.228453e+01 (tol 1.000000e-08) lin_resid=4.452699e+00 worst cell of rank 0 (m,k,j,i)=(0,0,14,81)
+<rad_m1> Picard NON-CONVERGED after 200 passes: resid=1.085211e+02 (tol 1.000000e-08) lin_resid=1.128554e+02 worst cell of rank 0 (m,k,j,i)=(0,0,34,82)
+<rad_m1> Picard NON-CONVERGED after 200 passes: resid=1.722872e+02 (tol 1.000000e-08) lin_resid=2.392535e+02 worst cell of rank 0 (m,k,j,i)=(0,0,13,80)
+<rad_m1> Picard NON-CONVERGED after 200 passes: resid=4.542113e+01 (tol 1.000000e-08) lin_resid=1.382465e+02 worst cell of rank 0 (m,k,j,i)=(0,0,15,82)
+<rad_m1> Picard NON-CONVERGED after 200 passes: resid=2.377291e+02 (tol 1.000000e-08) lin_resid=3.645916e+01 worst cell of rank 0 (m,k,j,i)=(0,0,4,82)
+<rad_m1> Picard NON-CONVERGED after 200 passes: resid=5.545287e+01 (tol 1.000000e-08) lin_resid=1.945297e+02 worst cell of rank 0 (m,k,j,i)=(0,0,3,80)
+<rad_m1> Picard NON-CONVERGED after 200 passes: resid=2.583849e+01 (tol 1.000000e-08) lin_resid=4.680741e+01 worst cell of rank 0 (m,k,j,i)=(0,0,23,78)
+<rad_m1> Picard NON-CONVERGED after 200 passes: resid=5.763310e+01 (tol 1.000000e-08) lin_resid=9.236886e+01 worst cell of rank 0 (m,k,j,i)=(0,0,19,84)
+<rad_m1> Picard NON-CONVERGED after 200 passes: resid=8.511403e+01 (tol 1.000000e-08) lin_resid=1.245610e+02 worst cell of rank 0 (m,k,j,i)=(0,0,18,85)
+<rad_m1> Picard NON-CONVERGED after 200 passes: resid=5.433881e+01 (tol 1.000000e-08) lin_resid=6.817701e+01 worst cell of rank 0 (m,k,j,i)=(0,0,16,78)
+<rad_m1> Picard NON-CONVERGED after 200 passes: resid=8.791409e+01 (tol 1.000000e-08) lin_resid=7.420303e+01 worst cell of rank 0 (m,k,j,i)=(0,0,11,86)
+<rad_m1> Picard NON-CONVERGED after 200 passes: resid=6.331421e+01 (tol 1.000000e-08) lin_resid=4.606673e+01 worst cell of rank 0 (m,k,j,i)=(0,0,8,86)
+
+Terminating on time limit
+time=3.000000e+00 cycle=42
+tlim=3.000000e+00 nlim=-1
+
+MeshBlock-cycles = 42
+cpu time used  = 4.435181e+02
+zone-cycles/cpu_second = 2.545466e+02
+particle-updates/cpu_second = 0.000000e+00
+<rad_m1> implicit energy solve: cells=0.000000e+00 iterations mean=0.000000e+00 max=0.000000e+00 FAILURES=0.000000e+00 (no bracket: 0.000000e+00)
+<rad_m1> implicit transport: solves=4.200000e+01 Picard iterations mean=2.000000e+02 max=2.000000e+02 NON-CONVERGED=4.200000e+01
+<rad_m1> anderson: m=10 beta=5.000000e-01 start=1 accelerated passes=8.279000e+03 (1.971190e+02 per solve) history restarts=3.700000e+01
+<rad_m1> implicit transverse (bicgstab): final 7-point linear residual mean=1.520647e+02 max=6.107603e+02 tol=1.000000e-10
+<rad_m1> bicgstab: outer passes=8.400000e+03 linear solves=8.400000e+03 inner iterations mean=6.006524e+01 max=1.390000e+02 total=5.045480e+05
+<rad_m1> bicgstab: breakdowns=5.500000e+01 line_jacobi fallbacks=0.000000e+00 global reductions=2.035047e+06 (4.033406e+00 per inner iteration)
+<rad_m1> offdiag=operator closure_relax=1.000000e+00 closure_lag=pass positivity fallbacks=4.200000e+01 min E from the solve=-3.885038e+06

@@ -1,0 +1,29 @@
+Mesh: spherical-polar x3-face theta correction = rotate
+
+Root grid = 1 x 1 x 1 MeshBlocks
+Total number of MeshBlocks = 1
+Number of logical  levels of refinement = 0 (1 levels total)
+Number of physical levels of refinement = 0 (1 levels total)
+Number of parallel ranks = 1
+### WARNING: <rad_m1>/source_form = ovc truncates the matter coupling to O(v/c); this is the FAILING CONTROL of T4/T4b, not a physical option
+<rad_m1>: c=2.99792e+10 chat/c=1 cfl_rad=0.4 thick_flux=ap_hll ap_form=unified advect_split=false source_form=ovc closure=m1 subcycle=true
+         kappa_p=83333.3 kappa_e=83333.3 kappa_f=83333.3 kappa_s=0 coupling=true gas_feedback=true arad=4.80322e-45
+  m1_test = advect_uniform: beta=0.01 f=0.0133342 E=7.56674e+13 F=3.0248e+22 F/((4/3)vE)=1.00007
+
+Setup complete, executing task list(s)...
+
+elapsed=2.195170e-03 cycle=0 time=0.000000e+00 dt=1.234219e-09
+### dt COLLAPSE cycle=2 time=2.468439e-09 dtold=1.234219e-09 dt=2.607555e-11 | hydro=2.607555e-11 mhd=-1.000000e+00 cond=-1.000000e+00 visc=-1.000000e+00 srcterms=-1.000000e+00  (rank 0)
+    hydro dt is set by cell (m,k,j,i) = (0,0,0,2) gid = 0
+    r=5.000000e-01 rho=1.200000e+00 T=1.391935e+20 p=1.670322e+20 cs=1.523119e+10 v=(1.088488e+08,0.000000e+00,0.000000e+00)
+
+Terminating on time limit
+time=1.230000e-07 cycle=4598
+tlim=1.230000e-07 nlim=-1
+
+MeshBlock-cycles = 4598
+cpu time used  = 1.297304e+00
+zone-cycles/cpu_second = 2.268335e+05
+particle-updates/cpu_second = 0.000000e+00
+<rad_m1> implicit energy solve: cells=1.200256e+06 iterations mean=5.509315e+01 max=7.400000e+01 FAILURES=0.000000e+00 (no bracket: 0.000000e+00)
+exit=0

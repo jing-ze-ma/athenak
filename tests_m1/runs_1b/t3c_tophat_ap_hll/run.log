@@ -1,0 +1,23 @@
+Mesh: spherical-polar x3-face theta correction = rotate
+
+Root grid = 1 x 1 x 1 MeshBlocks
+Total number of MeshBlocks = 1
+Number of logical  levels of refinement = 0 (1 levels total)
+Number of physical levels of refinement = 0 (1 levels total)
+Number of parallel ranks = 1
+<rad_m1>: c=1 chat/c=1 cfl_rad=0.4 thick_flux=ap_hll closure=m1 subcycle=true
+         kappa_p=0 kappa_e=0 kappa_f=0 kappa_s=1.28e+06 coupling=true gas_feedback=false arad=0
+
+Setup complete, executing task list(s)...
+
+elapsed=1.660841e-03 cycle=0 time=0.000000e+00 dt=2.964635e-02
+
+Terminating on time limit
+time=1.000000e+02 cycle=3374
+tlim=1.000000e+02 nlim=-1
+
+MeshBlock-cycles = 3374
+cpu time used  = 2.996786e+00
+zone-cycles/cpu_second = 1.441118e+05
+particle-updates/cpu_second = 0.000000e+00
+<rad_m1> implicit energy solve: cells=0.000000e+00 iterations mean=0.000000e+00 max=0.000000e+00 FAILURES=0.000000e+00

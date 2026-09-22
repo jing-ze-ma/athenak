@@ -1,0 +1,27 @@
+Mesh: spherical-polar x3-face theta correction = rotate
+
+Root grid = 1 x 1 x 1 MeshBlocks
+Total number of MeshBlocks = 1
+Number of logical  levels of refinement = 0 (1 levels total)
+Number of physical levels of refinement = 0 (1 levels total)
+Number of parallel ranks = 1
+<rad_m1>: c=1688.74 chat/c=1 cfl_rad=0.4 thick_flux=none ap_form=alpha2 recon=plm advect_split=false split_vel=recon source_form=full closure=m1 subcycle=true
+         kappa_p=100000 kappa_e=100000 kappa_f=100000 kappa_s=0 coupling=true gas_feedback=true arad=3
+         opacity= force_reference=none temp_unit_kelvin=1 rho_unit_cgs=1
+  m1_test = radwave: dir=x2 beta=0.5 Gamma1=1.42593 Gamma3-1=0.37037
+    c_s=1.68874 c/c_s=1000 lambda=1 period=0.592157 tau_lambda=100000
+
+Setup complete, executing task list(s)...
+
+elapsed=2.311459e-03 cycle=0 time=0.000000e+00 dt=3.630380e-03
+<rad_m1> RSLA check: chat = c, no reduced speed of light (tau_max=1.000100e+05, measured v_max=1.686359e-04)
+
+Terminating on time limit
+time=1.184313e+00 cycle=327
+tlim=1.184313e+00 nlim=-1
+
+MeshBlock-cycles = 327
+cpu time used  = 1.414266e+02
+zone-cycles/cpu_second = 5.919113e+02
+particle-updates/cpu_second = 0.000000e+00
+<rad_m1> implicit energy solve: cells=1.639009e+08 iterations mean=2.399503e+01 max=4.000000e+01 FAILURES=0.000000e+00 (no bracket: 0.000000e+00)

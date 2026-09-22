@@ -1,0 +1,35 @@
+Mesh: spherical-polar x3-face theta correction = rotate
+
+Root grid = 1 x 1 x 1 MeshBlocks
+Total number of MeshBlocks = 1
+Number of logical  levels of refinement = 0 (1 levels total)
+Number of physical levels of refinement = 0 (1 levels total)
+Number of parallel ranks = 1
+General EOS: tabulated on 501 x 676 nodes (41 MB), log10 rho[cgs] in [-13, -3], log10 T[K] in [3.8, 6.5]
+             X = 0, Y = 0.98, Z = 0.02, H2 off, ionization on, radiation off
+             metal ionization off
+             mu at the grid centre = 1.35912, n_e/n_tot = 0.665534
+<rad_m1>: transport=implicit_x1 solver=thomas lin_tol=1e-10 lin_maxit=200
+         implicit_cfl=0.0001 tol=1e-08 maxit=30 opac_update=false marshak_q=0.5
+         implicit_flux=central implicit_recon=dc implicit_partition=none
+         implicit_accel=none
+         x1 boundaries: min=3 max=3 (0 marshak, 1 flux, 2 reflect, 3 periodic) flux_min=0 flux_max=0
+<rad_m1>: c=2.99792e+10 chat/c=1 cfl_rad=0.0001 thick_flux=none ap_form=alpha2 recon=plm advect_split=false split_vel=recon source_form=full closure=m1 subcycle=false
+         kappa_p=0.4 kappa_e=0.4 kappa_f=0.4 kappa_s=0 coupling=true gas_feedback=true arad=1.58312e-46
+         opacity= force_reference=none temp_unit_kelvin=1 rho_unit_cgs=1
+
+Setup complete, executing task list(s)...
+
+elapsed=6.996346e+00 cycle=0 time=0.000000e+00 dt=3.335641e-03
+<rad_m1> RSLA check: chat = c, no reduced speed of light (tau_max=3.200000e+04, measured v_max=0.000000e+00)
+
+Terminating on cycle limit
+time=3.335641e+00 cycle=1000
+tlim=1.000000e+10 nlim=1000
+
+MeshBlock-cycles = 1000
+cpu time used  = 4.048769e-01
+zone-cycles/cpu_second = 1.975909e+04
+particle-updates/cpu_second = 0.000000e+00
+<rad_m1> implicit energy solve: cells=0.000000e+00 iterations mean=0.000000e+00 max=0.000000e+00 FAILURES=0.000000e+00 (no bracket: 0.000000e+00)
+<rad_m1> implicit transport: solves=1.000000e+03 Picard iterations mean=1.009000e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00

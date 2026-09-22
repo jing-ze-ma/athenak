@@ -1,0 +1,27 @@
+Mesh: spherical-polar x3-face theta correction = rotate
+
+Root grid = 1 x 1 x 1 MeshBlocks
+Total number of MeshBlocks = 1
+Number of logical  levels of refinement = 0 (1 levels total)
+Number of physical levels of refinement = 0 (1 levels total)
+Number of parallel ranks = 1
+General EOS: tabulated on 501 x 676 nodes (41 MB), log10 rho[cgs] in [-13, -3], log10 T[K] in [3.8, 6.5]
+             X = 0, Y = 0.98, Z = 0.02, H2 off, ionization on, radiation off
+             metal ionization off
+             mu at the grid centre = 1.35912, n_e/n_tot = 0.665534
+<rad_m1>: c=2.99792e+10 chat/c=1 cfl_rad=0.1 thick_flux=none closure=m1 subcycle=false
+         kappa_p=0.4 kappa_e=0.4 kappa_f=0.4 kappa_s=0 coupling=true gas_feedback=true arad=7.56573e-15
+
+Setup complete, executing task list(s)...
+
+elapsed=7.181160e+00 cycle=0 time=0.000000e+00 dt=3.335641e+00
+
+Terminating on time limit
+time=1.334256e+03 cycle=401
+tlim=1.334256e+03 nlim=-1
+
+MeshBlock-cycles = 401
+cpu time used  = 1.312615e-01
+zone-cycles/cpu_second = 2.443976e+04
+particle-updates/cpu_second = 0.000000e+00
+<rad_m1> implicit energy solve: cells=6.416000e+03 iterations mean=6.104239e+01 max=7.400000e+01 FAILURES=8.000000e+00 (no bracket: 0.000000e+00)

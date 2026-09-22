@@ -1,0 +1,453 @@
+KokkosP: Simple Kernel Timer Library Initialized (sequence is 0, version: 20240906)
+Mesh: spherical-polar x3-face theta correction = rotate
+
+Root grid = 1 x 1 x 1 MeshBlocks
+Total number of MeshBlocks = 1
+Number of logical  levels of refinement = 0 (1 levels total)
+Number of physical levels of refinement = 0 (1 levels total)
+Number of parallel ranks = 1
+General EOS: tabulated on 501 x 676 nodes (41 MB), log10 rho[cgs] in [-13, -3], log10 T[K] in [3.8, 6.5]
+             X = 0, Y = 0.98, Z = 0.02, H2 off, ionization on, radiation off
+             metal ionization off
+             mu at the grid centre = 1.35912, n_e/n_tot = 0.665534
+<rad_m1>: transport=implicit (2-D) solver=bicgstab lin_tol=1e-10 lin_maxit=200
+         implicit_cfl=-1 tol=1e-08 maxit=200 opac_update=false marshak_q=0.5
+         implicit_flux=central implicit_recon=dc implicit_partition=none
+         implicit_offdiag=operator closure_relax=1 closure_lag=step trans_limit=none
+         x1 boundaries: min=1 max=0 (0 marshak, 1 flux, 2 reflect, 3 periodic) flux_min=2.4752e+15 flux_max=0
+<rad_m1>: c=2.99792e+10 chat/c=1 cfl_rad=0.4 thick_flux=ap_hll ap_form=alpha2 recon=plm advect_split=true split_vel=recon source_form=full closure=eddington subcycle=false
+         kappa_p=0 kappa_e=0 kappa_f=0 kappa_s=0 coupling=true gas_feedback=true arad=1.58312e-46
+         opacity=table force_reference=wb_arad temp_unit_kelvin=1.20272e-08 rho_unit_cgs=1
+box_convection: initial stratification READ FROM /viper/u2/jinma/ATHENAK/bench/m1_stage2/ic/ic_m1_V2_pgen.txt (3009 nodes); the isentropic march is overridden
+box_convection: problem/wb_arad_file = /viper/u2/jinma/ATHENAK/bench/m1_stage2/ic/arad_V2.txt (3009 rows, z = -1.94754e+08 .. 5.45519e+07); wb_phi_eff = true, wb_arad_force = false; a_rad/g0 over the box spans 0.540045 .. 0.0764073
+box_convection: <rad_m1> force_reference = wb_arad; the code's own kappa_R(rho,T) F/c on the initial column differs from problem/wb_arad_file by at most 2.1445e-05 (relative)
+box_convection: <rad_m1> ON -- Rosseland /viper/u2/jinma/ATHENAK/bench/hestar_fecz/rosseland_he_x0.0_z0.02.txt, Planck /viper/u2/jinma/ATHENAK/athenak/data/stellar_opac/planck_he_x0.0_z0.02_ferg+tops.txt (217 x 281), F_bot = 2.475202e+15 (code) = 2.475202e+15 erg/cm^2/s
+box_convection: base rho = 1.50975e-06 g/cm^3, T = 3.20388e+05 K, p = 5.36703e+06
+  g0 = 3.98107e+05 cm/s^2, H_p = 8.92956e+06 cm, Gamma_1 = 1.24754, c_s = 2.10592e+06 cm/s
+  domain x1 = [-1.81493e+08, 4.12909e+07] = 24.9491 H_p; a constant-g adiabat reaches T = 0 at z - x1min ~ 4.66844e+07 cm = 5.228 H_p
+  initial column: dln T/dln p = grad_ad + 0.00000e+00 (dgrad; 0 = exact adiabat)
+  column top:  T = 6.81313e+04 K, rho = 6.51206e-10, p = 2.71416e+03, ln(p_b/p_top) = 7.5895
+  F_bot = 2.47520e+15 erg/cm^2/s -> v* = 1.17915e+07 cm/s, Mach = 5.5992e+00, turnover H_p/v* = 7.57288e-01 s
+  cooling layer: z > -8.70909e+06 (top 5.5994 H_p), tau = 1.00000e+00 s = 1.3205 turnover
+  x1 walls: bc_mode = 3 (0 column ghost, 1 mirror, 2 mirror x the column ratio, 3 WB continuation), wall_noflux = 1 (mass exact, energy via enthalpy)
+  rad_kappa_fac = 1.00000e+00 (conductivity is 1/rad_kappa_fac x physical)
+box_convection: <rad_m1> initial field READ FROM /viper/u2/jinma/ATHENAK/athenak/tests_m1/runs_2a/m1_rad_ic_V2.txt (94 nodes), E = 2.73070e+07 .. 1.63016e+05, F1 = 2.475202e+15 .. 2.475202e+15
+
+Setup complete, executing task list(s)...
+
+elapsed=7.179460e+00 cycle=0 time=0.000000e+00 dt=1.614199e-01
+<rad_m1> RSLA check: chat = c, no reduced speed of light (tau_max=9.883889e+01, measured v_max=5.054630e+02)
+
+Terminating on time limit
+time=5.000000e+00 cycle=31
+tlim=5.000000e+00 nlim=-1
+
+MeshBlock-cycles = 31
+cpu time used  = 4.134421e+00
+zone-cycles/cpu_second = 2.015470e+04
+particle-updates/cpu_second = 0.000000e+00
+<rad_m1> implicit energy solve: cells=0.000000e+00 iterations mean=0.000000e+00 max=0.000000e+00 FAILURES=0.000000e+00 (no bracket: 0.000000e+00)
+<rad_m1> implicit transport: solves=3.100000e+01 Picard iterations mean=4.032258e+00 max=5.000000e+00 NON-CONVERGED=0.000000e+00
+<rad_m1> implicit transverse (bicgstab): final 7-point linear residual mean=2.248345e-15 max=4.891877e-15 tol=1.000000e-10
+<rad_m1> bicgstab: outer passes=1.250000e+02 linear solves=1.250000e+02 inner iterations mean=1.320000e+01 max=4.600000e+01 total=1.650000e+03
+<rad_m1> bicgstab: breakdowns=0.000000e+00 line_jacobi fallbacks=0.000000e+00 global reductions=6.788000e+03 (4.113939e+00 per inner iteration)
+<rad_m1> offdiag=operator closure_relax=1.000000e+00 closure_lag=step positivity fallbacks=0.000000e+00 min E from the solve=1.651261e+05
+
+ (Type)   Total Time, Call Count, Avg. Time per Call, %Total Time in Kernels, %Total Program Time
+-------------------------------------------------------------------------
+
+Regions: 
+
+
+-------------------------------------------------------------------------
+Kernels: 
+
+- m1_impl_tsolve
+ (ParFor)   1.116079 125 0.008929 26.865599 9.863839
+- m1_impl_odop
+ (ParFor)   0.727377 3613 0.000201 17.508999 6.428516
+- m1_impl_thunpack
+ (ParFor)   0.224051 281 0.000797 5.393236 1.980154
+- m1_impl_thpack
+ (ParFor)   0.222324 281 0.000791 5.351651 1.964885
+- m1_impl_krpack
+ (ParFor)   0.172649 3488 0.000049 4.155915 1.525865
+- hyd_c2p_gen
+ (ParRed)   0.169760 218 0.000779 4.086358 1.500327
+- m1_impl_krunpack
+ (ParFor)   0.163655 3488 0.000047 3.939414 1.446376
+- m1_impl_op
+ (ParFor)   0.159743 3488 0.000046 3.845242 1.411800
+- m1_impl_preout
+ (ParFor)   0.123912 3300 0.000038 2.982728 1.095124
+- m1_impl_prein
+ (ParFor)   0.123887 3300 0.000038 2.982126 1.094902
+- wbcache
+ (ParFor)   0.123610 62 0.001994 2.975474 1.092460
+- m1_impl_thomas
+ (ParFor)   0.096351 3300 0.000029 2.319297 0.851542
+- m1_impl_bcg_upd
+ (ParFor)   0.071678 1650 0.000043 1.725401 0.633489
+- m1_impl_bcg_p
+ (ParFor)   0.063164 1650 0.000038 1.520447 0.558240
+- m1_opacity
+ (ParFor)   0.060361 31 0.001947 1.452984 0.533470
+- m1_impl_bcg_s
+ (ParFor)   0.059799 1650 0.000036 1.439446 0.528500
+- boxconv_col
+ (ParFor)   0.039593 1 0.039593 0.953059 0.349920
+- m1_impl_src
+ (ParFor)   0.035009 125 0.000280 0.842708 0.309405
+- radtau
+ (ParFor)   0.034800 63 0.000552 0.837687 0.307561
+- radcond2
+ (ParFor)   0.034549 62 0.000557 0.831655 0.305346
+- radcond1
+ (ParFor)   0.033895 62 0.000547 0.815901 0.299562
+- m1_impl_asm
+ (ParFor)   0.029296 125 0.000234 0.705206 0.258920
+- boxconv_bc_x1
+ (ParFor)   0.023751 126 0.000189 0.571726 0.209912
+- m1_impl_i1
+ (ParFor)   0.019817 31 0.000639 0.477015 0.175138
+- hflux_x1
+ (ParFor)   0.015134 62 0.000244 0.364293 0.133752
+- cond_newdt
+ (ParRed)   0.015068 32 0.000471 0.362704 0.133168
+- m1_impl_f2face
+ (ParFor)   0.014973 156 0.000096 0.360414 0.132328
+- m1_impl_tcell
+ (ParFor)   0.014506 156 0.000093 0.349177 0.128202
+- m1_impl_face
+ (ParFor)   0.013577 125 0.000109 0.326817 0.119993
+- m1_impl_lag
+ (ParFor)   0.013491 125 0.000108 0.324745 0.119232
+- hflux_x2
+ (ParFor)   0.012052 62 0.000194 0.290099 0.106511
+- SendBuff
+ (ParFor)   0.009731 3895 0.000002 0.234240 0.086002
+- etotgravrem
+ (ParFor)   0.007725 156 0.000050 0.185952 0.068273
+- etotgravadd
+ (ParFor)   0.007463 156 0.000048 0.179639 0.065955
+- boxconv_colde
+ (ParFor)   0.006084 1 0.006084 0.146450 0.053770
+- Kokkos::View::initialization [] via memset
+ (ParFor)   0.006013 174 0.000035 0.144745 0.053144
+- RecvBuff
+ (ParFor)   0.005643 3895 0.000001 0.135844 0.049876
+- m1_impl_f1
+ (ParFor)   0.005487 125 0.000044 0.132079 0.048493
+- FOFC-newu
+ (ParFor)   0.005485 62 0.000088 0.132039 0.048479
+- m1_impl_rhs
+ (ParFor)   0.005305 125 0.000042 0.127706 0.046888
+- m1_impl_bcg_r0
+ (ParFor)   0.004914 125 0.000039 0.118294 0.043432
+- m1_impl_bcg_out
+ (ParFor)   0.004704 125 0.000038 0.113238 0.041576
+- m1_impl_bcg_x0
+ (ParFor)   0.004468 125 0.000036 0.107562 0.039492
+- m1_impl_bcg_rv
+ (ParRed)   0.004077 1650 0.000002 0.098150 0.036036
+- m1_impl_bcg_rho
+ (ParRed)   0.004053 1650 0.000002 0.097570 0.035823
+- m1_impl_bcg_ts
+ (ParRed)   0.003986 1650 0.000002 0.095957 0.035231
+- m1_impl_bcg_tt
+ (ParRed)   0.003953 1650 0.000002 0.095165 0.034940
+- m1_impl_wb
+ (ParFor)   0.003937 31 0.000127 0.094769 0.034795
+- h_update
+ (ParFor)   0.003110 62 0.000050 0.074866 0.027488
+- m1_impl_bcg_rn2
+ (ParRed)   0.002887 1650 0.000002 0.069494 0.025515
+- boxconv_filetp
+ (ParFor)   0.002747 1 0.002747 0.066126 0.024278
+- boxconv_srcs
+ (ParFor)   0.002678 62 0.000043 0.064456 0.023665
+- etotgrav1
+ (ParFor)   0.002436 62 0.000039 0.058630 0.021526
+- etotgrav2
+ (ParFor)   0.002430 62 0.000039 0.058504 0.021480
+- m1_impl_i0
+ (ParFor)   0.002380 31 0.000077 0.057287 0.021033
+- m1_impl_bcg_true
+ (ParFor)   0.002225 63 0.000035 0.053569 0.019668
+- m1_limits
+ (ParFor)   0.001631 62 0.000026 0.039267 0.014417
+- boxconv_wallflux
+ (ParFor)   0.001585 62 0.000026 0.038148 0.014006
+- FOFC-flx
+ (ParFor)   0.001507 62 0.000024 0.036265 0.013315
+- HydroNudt2
+ (ParRed)   0.001369 32 0.000043 0.032954 0.012099
+- FOFC-count
+ (ParFor)   0.000880 62 0.000014 0.021177 0.007775
+- boxconv_m1aref
+ (ParFor)   0.000832 1 0.000832 0.020024 0.007352
+- RadM1Nudt
+ (ParRed)   0.000586 32 0.000018 0.014101 0.005177
+- boxconv_m1hist
+ (ParRed)   0.000360 6 0.000060 0.008660 0.003180
+- boxconv_ic
+ (ParFor)   0.000328 1 0.000328 0.007897 0.002899
+- HistSums
+ (ParRed)   0.000325 6 0.000054 0.007817 0.002870
+- boxconv_bc_m1
+ (ParFor)   0.000299 126 0.000002 0.007208 0.002647
+- m1_impl_lres
+ (ParRed)   0.000264 125 0.000002 0.006347 0.002330
+- m1_impl_res
+ (ParRed)   0.000257 125 0.000002 0.006192 0.002274
+- m1_impl_bcg_rn
+ (ParRed)   0.000244 125 0.000002 0.005877 0.002158
+- m1_impl_odmin
+ (ParRed)   0.000234 125 0.000002 0.005630 0.002067
+- hydrobc_x1
+ (ParFor)   0.000123 94 0.000001 0.002950 0.001083
+- m1_impl_bcg_rnt
+ (ParRed)   0.000122 63 0.000002 0.002944 0.001081
+- Kokkos::View::initialization [cons] via memset
+ (ParFor)   0.000066 2 0.000033 0.001590 0.000584
+- m1_impl_rhsmax
+ (ParRed)   0.000066 31 0.000002 0.001590 0.000584
+- Kokkos::View::initialization [cons1] via memset
+ (ParFor)   0.000063 2 0.000031 0.001515 0.000556
+- Kokkos::View::initialization [uflx.x2f] via memset
+ (ParFor)   0.000062 2 0.000031 0.001498 0.000550
+- Kokkos::View::initialization [uflx.x3f] via memset
+ (ParFor)   0.000062 2 0.000031 0.001492 0.000548
+- Kokkos::View::initialization [d] via memset
+ (ParFor)   0.000062 372 0.000000 0.001481 0.000544
+- boxconv_phi
+ (ParFor)   0.000057 1 0.000057 0.001372 0.000504
+- Kokkos::View::initialization [m1_uflx.x3f] via memset
+ (ParFor)   0.000057 2 0.000028 0.001372 0.000504
+- boxconv_m1ic
+ (ParFor)   0.000056 1 0.000056 0.001349 0.000495
+- boxconv_phiwb
+ (ParFor)   0.000052 1 0.000052 0.001251 0.000459
+- Kokkos::View::initialization [uflx.x1f] via memset
+ (ParFor)   0.000052 2 0.000026 0.001251 0.000459
+- Kokkos::View::initialization [prim] via memset
+ (ParFor)   0.000052 2 0.000026 0.001251 0.000459
+- Kokkos::View::initialization [utest] via memset
+ (ParFor)   0.000052 2 0.000026 0.001251 0.000459
+- Kokkos::View::initialization [m1_u0] via memset
+ (ParFor)   0.000049 2 0.000024 0.001177 0.000432
+- Kokkos::View::initialization [m1_uflx.x1f] via memset
+ (ParFor)   0.000047 2 0.000023 0.001131 0.000415
+- boxconv_m1fres
+ (ParRed)   0.000046 6 0.000008 0.001096 0.000402
+- radm1bc_x1
+ (ParFor)   0.000044 32 0.000001 0.001067 0.000392
+- Kokkos::View::initialization [m1_uflx.x2f] via memset
+ (ParFor)   0.000043 2 0.000021 0.001033 0.000379
+- Kokkos::View::initialization [m1_u1] via memset
+ (ParFor)   0.000041 2 0.000021 0.000987 0.000362
+- boxconv_prof
+ (ParFor)   0.000040 1 0.000040 0.000964 0.000354
+- Kokkos::ViewCopy-3D
+ (ParFor)   0.000033 18 0.000002 0.000786 0.000289
+- Kokkos::View::initialization [ct] via memset
+ (ParFor)   0.000032 1 0.000032 0.000769 0.000282
+- boxconv_m1vmax
+ (ParRed)   0.000026 6 0.000004 0.000631 0.000232
+- Kokkos::View::initialization [cphar] via memset
+ (ParFor)   0.000025 1 0.000025 0.000603 0.000221
+- Kokkos::View::initialization [cd] via memset
+ (ParFor)   0.000025 1 0.000025 0.000603 0.000221
+- Kokkos::View::initialization [cp] via memset
+ (ParFor)   0.000025 1 0.000025 0.000597 0.000219
+- Kokkos::View::initialization [ce] via memset
+ (ParFor)   0.000024 1 0.000024 0.000580 0.000213
+- boxconv_m1arefcmp
+ (ParRed)   0.000023 1 0.000023 0.000551 0.000202
+- Kokkos::View::initialization [phi_fc.x3f] via memset
+ (ParFor)   0.000019 2 0.000010 0.000459 0.000169
+- pgen_eos_eval
+ (ParFor)   0.000014 2 0.000007 0.000344 0.000126
+- Kokkos::View::initialization [vdamp_unused] via memset
+ (ParFor)   0.000014 62 0.000000 0.000333 0.000122
+- Kokkos::View::initialization [car] via memset
+ (ParFor)   0.000013 1 0.000013 0.000316 0.000116
+- Kokkos::View::initialization [radsp2dummy] via memset
+ (ParFor)   0.000013 62 0.000000 0.000304 0.000112
+- Kokkos::View::initialization [radsp3dummy] via memset
+ (ParFor)   0.000012 62 0.000000 0.000298 0.000110
+- Kokkos::ViewCopy-4D
+ (ParFor)   0.000012 4 0.000003 0.000298 0.000110
+- Kokkos::View::initialization [phi_cc] via memset
+ (ParFor)   0.000012 3 0.000004 0.000287 0.000105
+- Kokkos::View::initialization [budwdummy] via memset
+ (ParFor)   0.000012 62 0.000000 0.000287 0.000105
+- m1_rsla_v
+ (ParRed)   0.000011 1 0.000011 0.000264 0.000097
+- Kokkos::View::initialization [fofc_cnt] via memset
+ (ParFor)   0.000011 2 0.000005 0.000264 0.000097
+- Kokkos::View::initialization [phi_fc.x2f] via memset
+ (ParFor)   0.000011 2 0.000005 0.000264 0.000097
+- Kokkos::View::initialization [DualView::modified_flags] via memset
+ (ParFor)   0.000011 39 0.000000 0.000258 0.000095
+- Kokkos::View::initialization [phi_fc.x1f] via memset
+ (ParFor)   0.000010 2 0.000005 0.000241 0.000088
+- Kokkos::View::initialization [phi_cc_wb] via memset
+ (ParFor)   0.000009 1 0.000009 0.000218 0.000080
+- Kokkos::View::initialization [phi_fc_wb] via memset
+ (ParFor)   0.000009 1 0.000009 0.000218 0.000080
+- Kokkos::View::initialization [radsp1dummy] via memset
+ (ParFor)   0.000009 62 0.000000 0.000212 0.000078
+- Kokkos::View::initialization [d_out_var] via memset
+ (ParFor)   0.000007 18 0.000000 0.000166 0.000061
+- Kokkos::View::initialization [d_out_var_mirror] via memset
+ (ParFor)   0.000006 18 0.000000 0.000143 0.000053
+- Kokkos::View::initialization [radf2sdummy] via memset
+ (ParFor)   0.000006 62 0.000000 0.000143 0.000053
+- Kokkos::View::initialization [x1v] via memset
+ (ParFor)   0.000005 1 0.000005 0.000121 0.000044
+- Kokkos::View::initialization [cc_outvar] via memset
+ (ParFor)   0.000003 6 0.000001 0.000075 0.000027
+- Kokkos::View::initialization [fc_outvar.x1f] via memset
+ (ParFor)   0.000002 4 0.000001 0.000052 0.000019
+- Kokkos::View::initialization [m1cf] via memset
+ (ParFor)   0.000002 1 0.000002 0.000052 0.000019
+- Kokkos::View::initialization [m1ce] via memset
+ (ParFor)   0.000002 1 0.000002 0.000046 0.000017
+- m1_rsla_tau
+ (ParRed)   0.000002 1 0.000002 0.000046 0.000017
+- Kokkos::View::initialization [primfwb.x2f] via memset
+ (ParFor)   0.000001 1 0.000001 0.000029 0.000011
+- Kokkos::View::initialization [iin] via memset
+ (ParFor)   0.000001 8 0.000000 0.000023 0.000008
+- Kokkos::View::initialization [boxconv_m1_gplane] via memset
+ (ParFor)   0.000001 6 0.000000 0.000023 0.000008
+- Kokkos::View::initialization [dx3] via memset
+ (ParFor)   0.000001 1 0.000001 0.000023 0.000008
+- Kokkos::View::initialization [x_ov_rD] via memset
+ (ParFor)   0.000001 1 0.000001 0.000023 0.000008
+- hyd_dtdiag
+ (ParFor)   0.000001 1 0.000001 0.000023 0.000008
+- Kokkos::View::initialization [cos_face_xi] via memset
+ (ParFor)   0.000000 1 0.000000 0.000000 0.000000
+- Kokkos::View::initialization [cos_face_eta] via memset
+ (ParFor)   0.000000 1 0.000000 0.000000 0.000000
+- Kokkos::View::initialization [mbbcs] via memset
+ (ParFor)   0.000000 1 0.000000 0.000000 0.000000
+- Kokkos::View::initialization [cos_cell] via memset
+ (ParFor)   0.000000 1 0.000000 0.000000 0.000000
+- Kokkos::View::initialization [cprim] via memset
+ (ParFor)   0.000000 1 0.000000 0.000000 0.000000
+- Kokkos::View::initialization [conswb] via memset
+ (ParFor)   0.000000 1 0.000000 0.000000 0.000000
+- Kokkos::View::initialization [pgen_eos_scalar] via memset
+ (ParFor)   0.000000 2 0.000000 0.000000 0.000000
+- Kokkos::View::initialization [md] via memset
+ (ParFor)   0.000000 1 0.000000 0.000000 0.000000
+- Kokkos::View::initialization [ccons] via memset
+ (ParFor)   0.000000 1 0.000000 0.000000 0.000000
+- Kokkos::View::initialization [mbsize] via memset
+ (ParFor)   0.000000 1 0.000000 0.000000 0.000000
+- Kokkos::View::initialization [excision_floor] via memset
+ (ParFor)   0.000000 1 0.000000 0.000000 0.000000
+- Kokkos::View::initialization [bin] via memset
+ (ParFor)   0.000000 8 0.000000 0.000000 0.000000
+- Kokkos::View::initialization [areae.x3e] via memset
+ (ParFor)   0.000000 1 0.000000 0.000000 0.000000
+- Kokkos::View::initialization [areae.x2e] via memset
+ (ParFor)   0.000000 1 0.000000 0.000000 0.000000
+- Kokkos::View::initialization [areae.x1e] via memset
+ (ParFor)   0.000000 1 0.000000 0.000000 0.000000
+- Kokkos::View::initialization [area.x3f] via memset
+ (ParFor)   0.000000 1 0.000000 0.000000 0.000000
+- Kokkos::View::initialization [area.x2f] via memset
+ (ParFor)   0.000000 1 0.000000 0.000000 0.000000
+- Kokkos::View::initialization [area.x1f] via memset
+ (ParFor)   0.000000 1 0.000000 0.000000 0.000000
+- Kokkos::View::initialization [mb_panel] via memset
+ (ParFor)   0.000000 1 0.000000 0.000000 0.000000
+- Kokkos::View::initialization [mb_lev] via memset
+ (ParFor)   0.000000 1 0.000000 0.000000 0.000000
+- Kokkos::View::initialization [mb_gid] via memset
+ (ParFor)   0.000000 1 0.000000 0.000000 0.000000
+- Kokkos::View::initialization [x2v] via memset
+ (ParFor)   0.000000 1 0.000000 0.000000 0.000000
+- Kokkos::View::initialization [presfwb.x3f] via memset
+ (ParFor)   0.000000 1 0.000000 0.000000 0.000000
+- Kokkos::View::initialization [preswb] via memset
+ (ParFor)   0.000000 1 0.000000 0.000000 0.000000
+- Kokkos::View::initialization [z_ov_rC] via memset
+ (ParFor)   0.000000 1 0.000000 0.000000 0.000000
+- Kokkos::View::initialization [y_ov_rC] via memset
+ (ParFor)   0.000000 1 0.000000 0.000000 0.000000
+- Kokkos::View::initialization [xx3f] via memset
+ (ParFor)   0.000000 1 0.000000 0.000000 0.000000
+- Kokkos::View::initialization [xx2f] via memset
+ (ParFor)   0.000000 1 0.000000 0.000000 0.000000
+- Kokkos::View::initialization [xx1f] via memset
+ (ParFor)   0.000000 1 0.000000 0.000000 0.000000
+- Kokkos::View::initialization [x3v] via memset
+ (ParFor)   0.000000 1 0.000000 0.000000 0.000000
+- Kokkos::View::initialization [presfwb.x2f] via memset
+ (ParFor)   0.000000 1 0.000000 0.000000 0.000000
+- Kokkos::View::initialization [volume] via memset
+ (ParFor)   0.000000 1 0.000000 0.000000 0.000000
+- Kokkos::View::initialization [uin] via memset
+ (ParFor)   0.000000 8 0.000000 0.000000 0.000000
+- Kokkos::View::initialization [primfwb.x1f] via memset
+ (ParFor)   0.000000 1 0.000000 0.000000 0.000000
+- Kokkos::View::initialization [sin_face_xi] via memset
+ (ParFor)   0.000000 1 0.000000 0.000000 0.000000
+- Kokkos::View::initialization [sin_face_eta] via memset
+ (ParFor)   0.000000 1 0.000000 0.000000 0.000000
+- Kokkos::View::initialization [sin_cell] via memset
+ (ParFor)   0.000000 1 0.000000 0.000000 0.000000
+- Kokkos::View::initialization [ru] via memset
+ (ParFor)   0.000000 1 0.000000 0.000000 0.000000
+- Kokkos::View::initialization [primwb] via memset
+ (ParFor)   0.000000 1 0.000000 0.000000 0.000000
+- Kokkos::View::initialization [dxf.x3f] via memset
+ (ParFor)   0.000000 1 0.000000 0.000000 0.000000
+- Kokkos::View::initialization [dx1] via memset
+ (ParFor)   0.000000 1 0.000000 0.000000 0.000000
+- Kokkos::View::initialization [dx2] via memset
+ (ParFor)   0.000000 1 0.000000 0.000000 0.000000
+- Kokkos::View::initialization [dxe.x1e] via memset
+ (ParFor)   0.000000 1 0.000000 0.000000 0.000000
+- Kokkos::View::initialization [dxe.x2e] via memset
+ (ParFor)   0.000000 1 0.000000 0.000000 0.000000
+- Kokkos::View::initialization [dxe.x3e] via memset
+ (ParFor)   0.000000 1 0.000000 0.000000 0.000000
+- Kokkos::View::initialization [dxf.x1f] via memset
+ (ParFor)   0.000000 1 0.000000 0.000000 0.000000
+- Kokkos::View::initialization [phi_fc] via memset
+ (ParFor)   0.000000 1 0.000000 0.000000 0.000000
+- Kokkos::View::initialization [dxf.x2f] via memset
+ (ParFor)   0.000000 1 0.000000 0.000000 0.000000
+- Kokkos::View::initialization [derived-var] via memset
+ (ParFor)   0.000000 4 0.000000 0.000000 0.000000
+- Kokkos::View::initialization [primfwb.x3f] via memset
+ (ParFor)   0.000000 1 0.000000 0.000000 0.000000
+- Kokkos::View::initialization [excision_flux] via memset
+ (ParFor)   0.000000 1 0.000000 0.000000 0.000000
+- Kokkos::View::initialization [fc_outvar.x2f] via memset
+ (ParFor)   0.000000 4 0.000000 0.000000 0.000000
+- Kokkos::View::initialization [fc_outvar.x3f] via memset
+ (ParFor)   0.000000 4 0.000000 0.000000 0.000000
+- Kokkos::View::initialization [fofc] via memset
+ (ParFor)   0.000000 2 0.000000 0.000000 0.000000
+- Kokkos::View::initialization [m1_coarse_u0] via memset
+ (ParFor)   0.000000 1 0.000000 0.000000 0.000000
+- Kokkos::View::initialization [presfwb.x1f] via memset
+ (ParFor)   0.000000 1 0.000000 0.000000 0.000000
+
+-------------------------------------------------------------------------
+Summary:
+
+Total Execution Time (incl. Kokkos + non-Kokkos):                  11.31485 seconds
+Total Time in Kokkos kernels:                                       4.15430 seconds
+   -> Time outside Kokkos kernels:                                  7.16055 seconds
+   -> Percentage in Kokkos kernels:                                   36.72 %
+Total Calls to Kokkos Kernels:                                        51015
+-------------------------------------------------------------------------
+

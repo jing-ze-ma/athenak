@@ -1,0 +1,73 @@
+# AthenaK input file for the grey M1 radiation beam test (design note T1)
+#
+# 2-D unit box, 128^2, c = 1, no opacity, thick_flux = none.  A beam enters at 45 deg
+# through the patch 0 <= y <= 0.125 of the inner-x1 face (a user BC, see
+# src/pgen/tests/rad_m1_tests.cpp) and crosses the box diagonally.  The run ends after
+# one diagonal light-crossing time (sqrt(2)/c = 1.414).
+#
+# Switch to the 1-D free-streaming pulse with
+#   problem/m1_test=pulse1d mesh/nx2=1 mesh/ix2_bc=periodic ... time/tlim=1.0
+
+<comment>
+problem = grey M1 radiation beam
+
+<job>
+basename = m1_beam
+
+<mesh>
+nghost    = 2
+nx1       = 128
+x1min     = 0.0
+x1max     = 1.0
+ix1_bc    = user       # beam inflow patch, filled by the problem generator
+ox1_bc    = vacuum     # free-streaming outflow, zero incoming
+
+nx2       = 128
+x2min     = 0.0
+x2max     = 1.0
+ix2_bc    = vacuum
+ox2_bc    = vacuum
+
+nx3       = 1
+x3min     = -0.5
+x3max     = 0.5
+ix3_bc    = periodic
+ox3_bc    = periodic
+
+<meshblock>
+nx1       = 64
+nx2       = 64
+nx3       = 1
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.4
+nlim       = -1
+tlim       = 1.5
+ndiag      = 100
+
+<rad_m1>
+c_light     = 1.0       # speed of light in code units
+chat_over_c = 1.0       # reduced speed of light factor
+cfl_rad     = 0.4       # CFL for the radiation substep
+thick_flux  = none      # none | ap_hll | scaled (only none implemented)
+closure     = m1        # m1 | eddington
+e_floor     = 1.0e-15
+subcycle    = true
+
+<problem>
+pgen_name = rad_m1_beam
+m1_test   = beam
+user_bcs  = true
+beam_e    = 1.0
+beam_f    = 0.999999
+beam_y0   = 0.0
+beam_y1   = 0.125
+
+<output1>
+file_type   = tab
+data_format = %26.17e
+slice_x2    = 0.0625
+variable    = m1
+dt          = 0.25

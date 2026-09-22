@@ -1,0 +1,49 @@
+Mesh: spherical-polar x3-face theta correction = rotate
+
+Root grid = 1 x 1 x 1 MeshBlocks
+Total number of MeshBlocks = 1
+Number of logical  levels of refinement = 0 (1 levels total)
+Number of physical levels of refinement = 0 (1 levels total)
+Number of parallel ranks = 1
+General EOS: tabulated on 501 x 676 nodes (41 MB), log10 rho[cgs] in [-13, -3], log10 T[K] in [3.8, 6.5]
+             X = 0, Y = 0.98, Z = 0.02, H2 off, ionization on, radiation off
+             metal ionization off
+             mu at the grid centre = 1.35912, n_e/n_tot = 0.665534
+<rad_m1>: transport=implicit_x1 solver=thomas lin_tol=1e-10 lin_maxit=200
+         implicit_cfl=-1 tol=1e-08 maxit=30 opac_update=false marshak_q=0.5
+         implicit_flux=central implicit_recon=dc implicit_partition=none
+         implicit_accel=none
+         x1 boundaries: min=1 max=0 (0 marshak, 1 flux, 2 reflect, 3 periodic) flux_min=2.4752e+15 flux_max=0
+<rad_m1>: c=2.99792e+10 chat/c=1 cfl_rad=0.4 thick_flux=ap_hll ap_form=alpha2 recon=plm advect_split=true split_vel=recon source_form=full closure=m1 subcycle=false
+         kappa_p=0 kappa_e=0 kappa_f=0 kappa_s=0 coupling=true gas_feedback=true arad=1.58312e-46
+         opacity=table force_reference=wb_arad temp_unit_kelvin=1.20272e-08 rho_unit_cgs=1
+box_convection: initial stratification READ FROM /viper/u2/jinma/ATHENAK/bench/m1_stage2/ic/ic_m1_V2_pgen.txt (3009 nodes); the isentropic march is overridden
+box_convection: problem/wb_arad_file = /viper/u2/jinma/ATHENAK/bench/m1_stage2/ic/arad_V2.txt (3009 rows, z = -1.94754e+08 .. 5.45519e+07); wb_phi_eff = true, wb_arad_force = false; a_rad/g0 over the box spans 0.540045 .. 0.0764073
+box_convection: <rad_m1> force_reference = wb_arad; the code's own kappa_R(rho,T) F/c on the initial column differs from problem/wb_arad_file by at most 2.1445e-05 (relative)
+box_convection: <rad_m1> ON -- Rosseland /viper/u2/jinma/ATHENAK/bench/hestar_fecz/rosseland_he_x0.0_z0.02.txt, Planck /viper/u2/jinma/ATHENAK/athenak/data/stellar_opac/planck_he_x0.0_z0.02_ferg+tops.txt (217 x 281), F_bot = 2.475202e+15 (code) = 2.475202e+15 erg/cm^2/s
+box_convection: base rho = 1.50975e-06 g/cm^3, T = 3.20388e+05 K, p = 5.36703e+06
+  g0 = 3.98107e+05 cm/s^2, H_p = 8.92956e+06 cm, Gamma_1 = 1.24754, c_s = 2.10592e+06 cm/s
+  domain x1 = [-1.81493e+08, 4.12909e+07] = 24.9491 H_p; a constant-g adiabat reaches T = 0 at z - x1min ~ 4.66844e+07 cm = 5.228 H_p
+  initial column: dln T/dln p = grad_ad + 0.00000e+00 (dgrad; 0 = exact adiabat)
+  column top:  T = 6.81313e+04 K, rho = 6.51206e-10, p = 2.71416e+03, ln(p_b/p_top) = 7.5895
+  F_bot = 2.47520e+15 erg/cm^2/s -> v* = 1.17915e+07 cm/s, Mach = 5.5992e+00, turnover H_p/v* = 7.57288e-01 s
+  cooling layer: z > -8.70909e+06 (top 5.5994 H_p), tau = 1.00000e+00 s = 1.3205 turnover
+  x1 walls: bc_mode = 3 (0 column ghost, 1 mirror, 2 mirror x the column ratio, 3 WB continuation), wall_noflux = 1 (mass exact, energy via enthalpy)
+  rad_kappa_fac = 1.00000e+00 (conductivity is 1/rad_kappa_fac x physical)
+box_convection: <rad_m1> initial field READ FROM /viper/u2/jinma/ATHENAK/athenak/tests_m1/runs_2a/m1_rad_ic_V2.txt (94 nodes), E = 2.73070e+07 .. 1.63016e+05, F1 = 2.475202e+15 .. 2.475202e+15
+
+Setup complete, executing task list(s)...
+
+elapsed=7.161331e+00 cycle=0 time=0.000000e+00 dt=1.614199e-01
+<rad_m1> RSLA check: chat = c, no reduced speed of light (tau_max=9.882427e+01, measured v_max=5.599721e+00)
+
+Terminating on time limit
+time=1.000000e+01 cycle=62
+tlim=1.000000e+01 nlim=-1
+
+MeshBlock-cycles = 62
+cpu time used  = 2.640632e-01
+zone-cycles/cpu_second = 1.972255e+04
+particle-updates/cpu_second = 0.000000e+00
+<rad_m1> implicit energy solve: cells=0.000000e+00 iterations mean=0.000000e+00 max=0.000000e+00 FAILURES=0.000000e+00 (no bracket: 0.000000e+00)
+<rad_m1> implicit transport: solves=6.200000e+01 Picard iterations mean=1.169355e+01 max=2.300000e+01 NON-CONVERGED=0.000000e+00

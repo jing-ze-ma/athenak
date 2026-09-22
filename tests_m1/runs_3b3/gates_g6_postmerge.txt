@@ -1,0 +1,16 @@
+m3 feczrt.hydro.hst IDENTICAL
+m3 feczrt.user.hst IDENTICAL
+m3 column_used.txt IDENTICAL
+m3 rt_surface.bin IDENTICAL
+m3 rt_profile.bin IDENTICAL
+m0 feczrt.hydro.hst IDENTICAL
+m0 feczrt.user.hst IDENTICAL
+m0 column_used.txt IDENTICAL
+m0 rt_surface.bin IDENTICAL
+m0 rt_profile.bin IDENTICAL
+hecol exit=0
+particle-updates/cpu_second = 0.000000e+00
+<rad_m1> implicit energy solve: cells=0.000000e+00 iterations mean=0.000000e+00 max=0.000000e+00 FAILURES=0.000000e+00 (no bracket: 0.000000e+00)
+<rad_m1> implicit transport: solves=1.862000e+03 Picard iterations mean=1.170892e+01 max=2.300000e+01 NON-CONVERGED=0.000000e+00
+   3.0000000000000000e+02   9.4621061112889038e-02   2.4752259854942720e+15   2.4752314399981740e+15   2.4747941961720800e+15   1.8343925542664529e+04   3.4872517944132541e+33   1.7291816619490147e-04
+POSTMERGE_DONE

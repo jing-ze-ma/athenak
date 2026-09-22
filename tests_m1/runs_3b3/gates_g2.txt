@@ -1,0 +1,22 @@
+
+=== G2  anisotropic cells, dx2 = 4 dx1 and dx2 = dx1/4 ===
+g2_dx2_4dx1                  x=0.999999 y=0.999999 iso=1.646e-07 PASS  picard=3.000000e+00/3.000000e+00 lres=5.792977e-14 rc=0
+g2_dx2_dx1_4                 x=0.999999 y=0.999999 iso=2.769e-08 PASS  picard=3.999803e+00/4.000000e+00 lres=5.173458e-13 rc=0
+
+=== G3  a problem UNIFORM in x2 (nx2 = 4): implicit == implicit_x1 ===
+g3  max relative difference of the final (E,F1) slice = 1.689e+00   max |F2| = 0.000e+00 (implicit), 0.000e+00 (implicit_x1)
+g3  picard implicit=2.999213e+00 implicit_x1=2.000000e+00
+
+=== G4  1 MeshBlock vs 2x2 MeshBlocks in 2-D ===
+Traceback (most recent call last):
+  File "/viper/u2/jinma/ATHENAK/athenak/tests_m1/runs_3b3/run_gates_3b3.py", line 250, in <module>
+    main()
+  File "/viper/u2/jinma/ATHENAK/athenak/tests_m1/runs_3b3/run_gates_3b3.py", line 244, in main
+    globals()[g](log)
+  File "/viper/u2/jinma/ATHENAK/athenak/tests_m1/runs_3b3/run_gates_3b3.py", line 179, in g4
+    e1, e2 = etot(d1), etot(d2)
+  File "/viper/u2/jinma/ATHENAK/athenak/tests_m1/runs_3b3/run_gates_3b3.py", line 134, in etot
+    for f in os.listdir(os.path.join(d, "bin")))
+FileNotFoundError: [Errno 2] No such file or directory: '/tmp/claude-28895/-viper-u2-jinma-ATHENAK-athenak/e67ee046-aa0b-46f4-881b-84099bfda99a/scratchpad/out/g4_b4_1.0e-10/bin'
+
+[exited with code 0]

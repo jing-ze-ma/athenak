@@ -1,0 +1,26 @@
+# Overhead  Command  Shared Object         Symbol                                                             
+# ........  .......  ....................  ...................................................................
+#
+    52.14%  athena   athena                [.] EOSCompositionModel::EvaluateAt(double, double, double const*) 
+     7.04%  athena   athena                [.] radm1::RadiationM1::ImplicitOffDiagOp(int, int, double)
+     4.57%  athena   athena                [.] double radm1::M1POff<Kokkos::View<double*****, Kokkos::LayoutRi
+     4.01%  athena   athena                [.] radm1::RadiationM1::ImplicitPrecond(int, int)
+     3.29%  athena   athena                [.] void EOSTable::Interpolate<false, true>(int, double, double, do
+     2.65%  athena   athena                [.] radm1::RadiationM1::ImplicitApplyOp(int, int)
+     2.58%  athena   libm.so.6             [.] exp
+     1.55%  athena   athena                [.] radm1::RadiationM1::ImplicitTridiagSolve()
+     1.14%  athena   athena                [.] void par_for<Kokkos::Serial, radm1::RadiationM1::ImplicitBiCGSt
+     1.02%  athena   libm.so.6             [.] __log10_finite
+     1.01%  athena   athena                [.] void par_for<Kokkos::Serial, radm1::RadiationM1::ImplicitBiCGSt
+     1.00%  athena   athena                [.] void par_for<Kokkos::Serial, radm1::RadiationM1::ImplicitBiCGSt
+     0.99%  athena   athena                [.] void EOSTable::HermitePatch<true, true>(int, int, int, double, 
+     0.83%  athena   athena                [.] RosselandTable(Kokkos::View<double**, Kokkos::LayoutRight, Kokk
+     0.59%  athena   athena                [.] radm1::RadiationM1::Opacity(Driver*, int)
+     0.45%  athena   athena                [.] Conduction::BuildRadWeights(Kokkos::View<double*****, Kokkos::L
+     0.32%  athena   libm.so.6             [.] 0x00000000000694ad
+     0.31%  athena   libm.so.6             [.] __exp_finite@plt
+     0.30%  athena   athena                [.] SingleC2P_GeneralHydLegacy(HydCons1D&, EOS_Data const&, HydPrim
+     0.29%  athena   athena                [.] exp@plt
+     0.27%  athena   athena                [.] void EOSTable::EvalFromLogs<false>(double, double, double, doub
+     0.27%  athena   athena                [.] void Kokkos::parallel_for<Kokkos::RangePolicy<Kokkos::Serial>, 
+     0.26%  athena   athena                [.] double radm1::M1OffDiv<Kokkos::View<double*****, Kokkos::Layout

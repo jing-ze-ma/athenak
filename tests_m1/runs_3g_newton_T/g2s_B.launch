@@ -1,0 +1,6 @@
+=== g2s_B rc=0
+cpu time used  = 1.422126e+02
+zone-cycles/cpu_second = 2.345649e+04
+<rad_m1> implicit transport: solves=1.241000e+03 Picard iterations mean=4.157131e+00 max=6.000000e+00 NON-CONVERGED=0.000000e+00
+<rad_m1> gas coupling: newton=false eos_cache=true cell-passes=1.386739e+07 newton fallbacks=0.000000e+00 (0.000000e+00 per cell-pass)
+<rad_m1> eos_cache: nt=2 misses=7.183545e+07 (5.180170e+00 per cell-pass) max |de|/e vs the table=2.149726e-14 max |dq|/q of the exchanged energy=2.470421e-04

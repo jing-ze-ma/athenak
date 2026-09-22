@@ -1,0 +1,25 @@
+Mesh: spherical-polar x3-face theta correction = rotate
+
+Root grid = 1 x 1 x 1 MeshBlocks
+Total number of MeshBlocks = 1
+Number of logical  levels of refinement = 0 (1 levels total)
+Number of physical levels of refinement = 0 (1 levels total)
+Number of parallel ranks = 1
+### WARNING: <rad_m1>/source_form = ovc truncates the matter coupling to O(v/c); this is the FAILING CONTROL of T4/T4b, not a physical option
+<rad_m1>: c=2.99792e+10 chat/c=1 cfl_rad=0.4 thick_flux=ap_hll ap_form=unified advect_split=true source_form=ovc closure=m1 subcycle=true
+         kappa_p=500 kappa_e=500 kappa_f=500 kappa_s=0 coupling=true gas_feedback=true arad=4.80322e-45
+
+Setup complete, executing task list(s)...
+
+elapsed=3.911664e-03 cycle=0 time=0.000000e+00 dt=6.214831e-09
+
+Terminating on time limit
+time=4.800000e-06 cycle=778
+tlim=4.800000e-06 nlim=-1
+
+MeshBlock-cycles = 778
+cpu time used  = 1.988766e+02
+zone-cycles/cpu_second = 2.002930e+03
+particle-updates/cpu_second = 0.000000e+00
+<rad_m1> implicit energy solve: cells=3.687782e+08 iterations mean=1.906059e+01 max=4.300000e+01 FAILURES=0.000000e+00 (no bracket: 0.000000e+00)
+exit=0

@@ -1,0 +1,16 @@
+
+=== G3  a problem UNIFORM in x2 (nx2 = 4): implicit == implicit_x1 ===
+g3  max relative difference of the final (E,F1) slice = 9.932e-14   max |F2| = 0.000e+00 (implicit), 0.000e+00 (implicit_x1)
+g3  picard implicit=2.999213e+00 implicit_x1=2.000000e+00
+
+=== G4  MeshBlock decomposition in 2-D ===
+    (a) 1 x 2 blocks, periodic x1;  (b) 2 x 2 blocks, REFLECTING x1 with
+    implicit_partition = gather -- periodic x1 across several blocks is the
+    clean fatal of 3b sect. 8 and cannot be decomposed.
+g4a lin_tol=1.0e-10  maxdiff = 0.000e+00   dEtot/Etot: single 5.881e-09, split 5.881e-09   picard 3.000000e+00 / 3.000000e+00
+g4b lin_tol=1.0e-10  maxdiff = 0.000e+00   dEtot/Etot: single 5.881e-09, split 5.881e-09   picard 3.000000e+00 / 3.000000e+00
+g4a lin_tol=1.0e-13  maxdiff = 0.000e+00   dEtot/Etot: single 5.881e-09, split 5.881e-09   picard 4.000000e+00 / 4.000000e+00
+g4b lin_tol=1.0e-13  maxdiff = 0.000e+00   dEtot/Etot: single 5.881e-09, split 5.881e-09   picard 4.000000e+00 / 4.000000e+00
+
+=== G5  restart, 2-D, 2x2 MeshBlocks ===
+g5  restart from m1_thick_pulse.00001.rst (rc=0): final slice BYTE-IDENTICAL

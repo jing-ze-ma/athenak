@@ -1,0 +1,9 @@
+Mesh: spherical-polar x3-face theta correction = rotate
+
+Root grid = 2 x 1 x 1 MeshBlocks
+Total number of MeshBlocks = 2
+Number of logical  levels of refinement = 1 (2 levels total)
+Number of physical levels of refinement = 0 (1 levels total)
+Number of parallel ranks = 1
+### FATAL ERROR in /u/jinma/ATHENAK/athenak/src/rad_m1/rad_m1_implicit.cpp
+<rad_m1>/implicit_partition = gather does not support PERIODIC x1 across more than one MeshBlock (the cyclic Thomas sweep of 3a wraps inside one block).  Use one MeshBlock along x1, or a non-periodic x1 boundary pair

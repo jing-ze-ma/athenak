@@ -1,0 +1,4 @@
+=== g2s_ref rc=0
+cpu time used  = 1.614809e+02
+zone-cycles/cpu_second = 2.065761e+04
+<rad_m1> implicit transport: solves=1.241000e+03 Picard iterations mean=4.157131e+00 max=5.000000e+00 NON-CONVERGED=0.000000e+00

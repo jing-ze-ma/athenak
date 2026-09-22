@@ -1,0 +1,37 @@
+Mesh: spherical-polar x3-face theta correction = rotate
+
+Root grid = 1 x 1 x 1 MeshBlocks
+Total number of MeshBlocks = 1
+Number of logical  levels of refinement = 0 (1 levels total)
+Number of physical levels of refinement = 0 (1 levels total)
+Number of parallel ranks = 1
+<rad_m1>: transport=implicit (2-D) solver=bicgstab lin_tol=1e-12 lin_maxit=200
+         implicit_cfl=-1 tol=1e-08 maxit=200 opac_update=false marshak_q=0.5
+         implicit_flux=central implicit_recon=dc implicit_partition=none
+         implicit_offdiag=operator closure_relax=1 closure_lag=step
+         x1 boundaries: min=3 max=3 (0 marshak, 1 flux, 2 reflect, 3 periodic) flux_min=0 flux_max=0
+<rad_m1>: c=1688.74 chat/c=1 cfl_rad=0.4 thick_flux=none ap_form=alpha2 recon=plm advect_split=false split_vel=recon source_form=full closure=m1 subcycle=false
+         kappa_p=100000 kappa_e=100000 kappa_f=100000 kappa_s=0 coupling=true gas_feedback=true arad=3
+         opacity= force_reference=none temp_unit_kelvin=1 rho_unit_cgs=1
+  m1_test = radwave: dir=xy beta=0.5 Gamma1=1.42593 Gamma3-1=0.37037
+    c_s=1.68874 c/c_s=1000 lambda=0.707107 period=0.418718 tau_lambda=70710.7
+
+Setup complete, executing task list(s)...
+
+elapsed=5.160666e-03 cycle=0 time=0.000000e+00 dt=3.630519e-03
+<rad_m1> RSLA check: chat = c, no reduced speed of light (tau_max=1.000000e+05, measured v_max=1.687274e-04)
+
+Terminating on time limit
+time=8.374358e-01 cycle=231
+tlim=8.374358e-01 nlim=-1
+
+MeshBlock-cycles = 231
+cpu time used  = 5.091382e+02
+zone-cycles/cpu_second = 1.858388e+03
+particle-updates/cpu_second = 0.000000e+00
+<rad_m1> implicit energy solve: cells=0.000000e+00 iterations mean=0.000000e+00 max=0.000000e+00 FAILURES=0.000000e+00 (no bracket: 0.000000e+00)
+<rad_m1> implicit transport: solves=2.310000e+02 Picard iterations mean=2.000000e+02 max=2.000000e+02 NON-CONVERGED=2.310000e+02
+<rad_m1> implicit transverse (bicgstab): final 7-point linear residual mean=3.335209e-11 max=4.129437e-11 tol=1.000000e-12
+<rad_m1> bicgstab: outer passes=4.620000e+04 linear solves=4.620000e+04 inner iterations mean=2.009372e+00 max=4.000000e+00 total=9.283300e+04
+<rad_m1> bicgstab: breakdowns=0.000000e+00 line_jacobi fallbacks=0.000000e+00 global reductions=4.637320e+05 (4.995336e+00 per inner iteration)
+<rad_m1> offdiag=operator closure_relax=1.000000e+00 closure_lag=step positivity fallbacks=0.000000e+00 min E from the solve=2.999552e+00
