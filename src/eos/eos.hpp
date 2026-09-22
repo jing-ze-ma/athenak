@@ -108,6 +108,22 @@ struct EOS_Data {
   // Firings are counted in EventCounters::neos_vceil (event-log column eos_vceil).
   Real vceil = 0.0;
 
+  // <mhd>/hlld_bx_zero_tol -- plasma-beta cut used by the HLLD family (hlld_mhd.hpp,
+  // hlld_uct_mhd.hpp, lhlld_mhd.hpp) to decide whether the rotational discontinuities
+  // (the ** states) are built at all.  The test is 0.5*Bx^2 < tol*pt*: since pt* is the
+  // TOTAL pressure, this is a comparison against plasma beta, and a tolerance of tol
+  // drops the ** states for every beta above ~2/tol, however dynamically strong the
+  // field is.  1.0e-4 is the historical AthenaK/Athena++ value (inherited from
+  // HLLD_SMALL_NUMBER, whose other two uses compare |rho sd sdm - Bx^2| ~ rho c_f^2, a
+  // different and unrelated scale) and is kept as the default so existing runs are
+  // unchanged.  At beta above ~2e4 with Alfven Mach number <~ 1 that default is
+  // unstable -- the Balsara advected-vortex test grows its kinetic and magnetic
+  // energies by 100-1000x with no NaN -- and setting this down to ~1.0e-8 restores the
+  // ** states and fixes it, at the cost of the full 5-state solver's extra numerical
+  // dissipation of the transverse field in very-high-beta (~1e4-1e8), dynamically weak
+  // regimes (e.g. deep hot-Jupiter envelopes), where the low value is the wrong choice.
+  Real hlld_bx_zero_tol = 1.0e-4;
+
   // <hydro>/vceil_thermalise, <mhd>/vceil_thermalise -- THERMALISE the clipped kinetic
   // energy instead of deleting it (default false = the historical behaviour).
   //

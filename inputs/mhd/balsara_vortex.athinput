@@ -45,6 +45,9 @@ eos         = ideal    # EOS type
 reconstruct = plm      # spatial reconstruction method
 rsolver     = hlld     # Riemann-solver to be used (hlld or lhlld)
 gamma       = 1.666666666666667   # gamma = C_p/C_v
+hlld_bx_zero_tol = 1.0e-8  # tiny Vtil makes the plasma beta here >> the default's
+                            # ~2e4 cutoff; without this the ** states are dropped and
+                            # the vortex is Alfven-Mach-unstable, see eos.hpp
 
 <problem>
 pgen_name   = balsara_vortex  # problem generator name

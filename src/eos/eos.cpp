@@ -79,6 +79,19 @@ EquationOfState::EquationOfState(std::string bk, MeshBlockPack* pp, ParameterInp
       std::exit(EXIT_FAILURE);
     }
   }
+  // <mhd>/hlld_bx_zero_tol: see the note on EOS_Data::hlld_bx_zero_tol.  Only the HLLD
+  // family (hlld_mhd.hpp, hlld_uct_mhd.hpp, lhlld_mhd.hpp) reads it; in any other block
+  // it would be parsed and silently ignored, so refuse it there instead.  The existence
+  // check has to run before GetOrAddReal below, which would otherwise add the default
+  // and make the question answer itself (same trap as tfloor_set above).
+  const bool hlld_tol_set = pin->DoesParameterExist(bk,"hlld_bx_zero_tol");
+  eos_data.hlld_bx_zero_tol = pin->GetOrAddReal(bk,"hlld_bx_zero_tol",1.0e-4);
+  if (hlld_tol_set && bk.compare("mhd") != 0) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+              << std::endl << "<" << bk << ">/hlld_bx_zero_tol is implemented only "
+              << "for MHD" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
   // <block>/vceil_thermalise: see the note on EOS_Data::vceil_thermalise.  Default off,
   // so every existing run is bit-for-bit unchanged.  Meaningless without a ceiling, and
   // a silently ignored switch is worse than a refusal, so refuse that combination.

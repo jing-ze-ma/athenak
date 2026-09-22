@@ -16,19 +16,19 @@
 
 namespace mhd {
 
-#ifndef HLLD_BX_ZERO_TOL
-// Tolerance for treating Bx as zero when deciding whether the rotational discontinuities
-// (the ** states) exist.  This test compares 0.5*Bx^2 to the TOTAL pressure pt*, so a
-// tolerance of tol drops the ** states for every plasma beta above ~2/tol regardless of
-// how dynamically strong the field is.  The inherited Athena++ value 1e-4 therefore
-// discards the rotational discontinuities for beta > 2e4, which at Alfven Mach number
-// <~ 1 is unstable: the Balsara advected-vortex test (V~ = 1e-3, beta_K = 1 and 1e2;
-// V~ = 1e-2, beta_K = 1) grows its kinetic and magnetic energies by 100-1000x with no
-// NaN.  1e-8 fixes all of those, is bitwise identical on 3D linear_wave_mhd, and moves
-// the fofc_mhd_blast conserved integrals by ~1e-7.  Kept separate from
-// HLLD_SMALL_NUMBER, whose other two uses compare |rho sd sdm - Bx^2| ~ rho c_f^2.
-#define HLLD_BX_ZERO_TOL 1.0e-8
-#endif
+// The tolerance for treating Bx as zero when deciding whether the rotational
+// discontinuities (the ** states) exist is now the runtime parameter
+// EOS_Data::hlld_bx_zero_tol (<mhd>/hlld_bx_zero_tol, default 1.0e-4, the historical
+// AthenaK/Athena++ value -- see the note on that field in eos.hpp).  This test compares
+// 0.5*Bx^2 to the TOTAL pressure pt*, so it is a plasma-beta cut: a tolerance of tol
+// drops the ** states for every beta above ~2/tol regardless of how dynamically strong
+// the field is.  At beta above ~2e4 with Alfven Mach number <~ 1 the default is
+// unstable (the Balsara advected-vortex test grows its kinetic and magnetic energies
+// 100-1000x with no NaN); setting the parameter down to ~1.0e-8 restores the ** states
+// and fixes that, at the cost of extra numerical dissipation of the transverse field in
+// very-high-beta, dynamically weak regimes (e.g. deep hot-Jupiter envelopes), where the
+// low value is the wrong choice.  Kept separate from HLLD_SMALL_NUMBER, whose other two
+// uses compare |rho sd sdm - Bx^2| ~ rho c_f^2, a different and unrelated scale.
 
 //----------------------------------------------------------------------------------------
 //! \fn
@@ -229,7 +229,7 @@ void HLLD_UCT(TeamMember_t const &member, const EOS_Data &eos,
       urst.e = (sdr*ur.e - ptr*wr_ivx + ptst*spd[2] +
                 bxi*(wr_ivx*bxi + (wr_ivy*ur.by + wr_ivz*ur.bz) - vbstr))*sdmr_inv;
       // ul** and ur** - if Bx is near zero, same as *-states
-      if (0.5*bxsq < (HLLD_BX_ZERO_TOL)*ptst) {
+      if (0.5*bxsq < eos.hlld_bx_zero_tol*ptst) {
         uldst = ulst;
         urdst = urst;
       } else {
