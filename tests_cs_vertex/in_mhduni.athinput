@@ -1,0 +1,109 @@
+# Cubed sphere, TEST A-MHD: static uniform state + a radial monopole field.
+# Build with -D PROBLEM=cs_test.
+#
+# rho = 1, p = 1, v = 0 on all six panels, plus B_r = b0r*(r0/r)^2 and no angular field.
+# That field is force-free (curl B = 0 for B_r ~ 1/r^2), so the exact solution is again
+# "unchanged, forever", and it is EXACTLY divergence-free on this grid independently of
+# the panel map: area.x1f carries a factor r^2, so B_r*A is the same on the inner and
+# outer radial face of every cell while the two angular faces carry no flux at all.
+#
+# PASSES (nx1=8, nx2=nx3=32): the angular momenta and kinetic energies stay at round-off
+# (~1e-31) and the magnetic energy is exactly constant at 3.56007.  The radial residual is
+# ordinary truncation error and converges at SECOND ORDER in nx1 -- 1-mom = 5.33e-3 /
+# 1.32e-3 / 3.25e-4 at nx1 = 8/16/32 (ratios 4.05, 4.05, measured at t = 0.1).
+# With b0r = 0 this must reproduce the pure-hydro cubed_sphere_uniform.athinput exactly:
+# mass 24.000000, tot-E 36.000000, dt 8.78109e-03.
+#
+# NOTE ix1_bc/ox1_bc MUST be `user`, not `reflect`.  B_r(r) is not reflection-symmetric,
+# so reflect manufactures a jump at the radial boundary; it gives mass 24 -> 24.72 and a
+# radial KE of 2.8e-2, three orders of magnitude worse, and it looks exactly like an
+# interior bug.  The user BC holds the exact state, including the ghost FACES -- `user` is
+# not one of the cases bfield_bcs.cpp handles, so the pgen fills b0 there itself.
+#
+# AXES: x1 is RADIAL, x2 = xi and x3 = eta are the panel-tangential angles.  Must be 3D.
+#
+# problem/iprob = 8 is the companion test of the NON-ORTHOGONAL BASIS, which the monopole
+# cannot see because a purely radial field has no tangential components.  It is a uniform
+# CARTESIAN field b0c*(bhx,bhy,bhz), also force-free and so also exactly static, whose
+# |B|^2 = b0c^2 analytically everywhere.  The pgen seeds u0(IEN) with that analytic value,
+# so the pressure ConsToPrim recovers measures the magnetic energy the inversion actually
+# subtracted.  Run it with nlim = 0 and reflect radial BCs:
+#   athena -i cubed_sphere_mhd.athinput problem/iprob=8 time/nlim=0 \
+#          mesh/ix1_bc=reflect mesh/ox1_bc=reflect
+# PASSES: max|dp/p| = 8.01e-4 / 2.01e-4 / 5.02e-5 at nx2 = nx3 = 16/32/64 (ratios 3.99,
+# 4.00, i.e. second order) and |v| identically zero.  Storing bcc as the raw face-normal
+# triple instead gives 9.3e-2 / 1.02e-1 / 1.07e-1 -- ~10 %, and NOT convergent.
+
+<comment>
+problem = cubed sphere uniform static state with a radial monopole field
+
+<job>
+basename = cs_mhd
+
+<mesh>
+cs_vertex_fill    = true
+cs_vertex_fill_cc = false
+nghost   = 2
+nx1      = 8            # RADIAL direction
+x1min    = 1.0
+x1max    = 2.0
+ix1_bc   = user
+ox1_bc   = user
+
+nx2      = 32           # xi;  nx2 must equal nx3 (Mesh checks this)
+x2min    = -1.0
+x2max    = 1.0
+ix2_bc   = panel
+ox2_bc   = panel
+
+nx3      = 32           # eta
+x3min    = -1.0
+x3max    = 1.0
+ix3_bc   = panel
+ox3_bc   = panel
+
+use_cubed_sphere = true
+
+# SPLITTING THE RADIAL DIRECTION.  <meshblock>/nx1 may be smaller than <mesh>/nx1, and
+# on a correct scheme that must change the answer only at round-off -- "same answer under
+# a different block decomposition" is the cheapest strong gate available on this grid,
+# and it is sensitive to exactly the class of bug that has dominated the cubed-sphere
+# work.  It is worth running: splitting x1 is the ONLY way, short of refinement, to give
+# a block an x1-direction neighbour, which is what brings the x1x2 and x3x1 EDGE flux
+# buffers into existence.  Those carry the tangential EMFs across a panel seam and need
+# the same index reversal, sign flip and slot swap as the face buffers; they had none
+# until 74cbc8df, which cost a plain two-radial-block run 2.4x in L1(B) and 36x in
+# Linf(B) with no refinement anywhere.  Every input in this directory uses ONE radial
+# block, which is why none of them caught it.
+<meshblock>
+nx1      = 8
+nx2      = 32
+nx3      = 32
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim       = 100
+tlim       = 100.0
+ndiag      = 50
+
+<mhd>
+eos         = ideal
+reconstruct = plm
+rsolver     = hlld
+gamma       = 1.666667
+
+<problem>
+iprob = 1
+d0    = 1.0
+p0    = 1.0
+b0r   = 1.0
+b0c   = 1.0        # iprob=8: uniform Cartesian field strength
+bhx   = 0.37       # iprob=8: field direction.  Deliberately TILTED -- an axis-aligned
+bhy   = 0.61       # field is accidentally invariant under some of the panel maps, so a
+bhz   = 0.70       # broken halo can copy it exactly and look correct.
+
+<output1>
+file_type = hst
+dt        = 0.01

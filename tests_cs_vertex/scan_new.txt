@@ -1,0 +1,98 @@
+######## CELL-CENTRED (iprob 15), arms: cs_vertex_fill_cc = false | true
+=== cc n=32 mb=32 cs_vertex_fill_cc=false
+### SEAM-HALO GLOBAL MAX |ghost - exact| = 4.102724e-06
+###   face, same panel   n =        0  max =   0.0000e+00
+###   face, SEAM         n =     3072  max =   4.1027e-06
+###   edge, same panel   n =        0  max =   0.0000e+00
+###   edge, seam         n =        0  max =   0.0000e+00
+###   edge, CUBE VERTEX  n =      192  max =   2.9113e-05
+###   corner, same panel  n =        0  max =   0.0000e+00
+###   corner, SEAM        n =        0  max =   0.0000e+00
+###   corner, CUBE VRTX   n =      384  max =   2.9113e-05
+=== cc n=32 mb=32 cs_vertex_fill_cc=true
+### SEAM-HALO GLOBAL MAX |ghost - exact| = 4.102724e-06
+###   face, same panel   n =        0  max =   0.0000e+00
+###   face, SEAM         n =     3072  max =   4.1027e-06
+###   edge, same panel   n =        0  max =   0.0000e+00
+###   edge, seam         n =        0  max =   0.0000e+00
+###   edge, CUBE VERTEX  n =      192  max =   2.5785e-06
+###   corner, same panel  n =        0  max =   0.0000e+00
+###   corner, SEAM        n =        0  max =   0.0000e+00
+###   corner, CUBE VRTX   n =      384  max =   2.5785e-06
+=== cc n=32 mb=16 cs_vertex_fill_cc=false
+### SEAM-HALO GLOBAL MAX |ghost - exact| = 4.102724e-06
+###   face, same panel   n =     3072  max =   0.0000e+00
+###   face, SEAM         n =     3072  max =   4.1027e-06
+###   edge, same panel   n =      192  max =   0.0000e+00
+###   edge, seam         n =      384  max =   7.9863e-08
+###   edge, CUBE VERTEX  n =      192  max =   2.9113e-05
+###   corner, same panel  n =      384  max =   0.0000e+00
+###   corner, SEAM        n =      768  max =   7.9863e-08
+###   corner, CUBE VRTX   n =      384  max =   2.9113e-05
+=== cc n=32 mb=16 cs_vertex_fill_cc=true
+### SEAM-HALO GLOBAL MAX |ghost - exact| = 4.102724e-06
+###   face, same panel   n =     3072  max =   0.0000e+00
+###   face, SEAM         n =     3072  max =   4.1027e-06
+###   edge, same panel   n =      192  max =   0.0000e+00
+###   edge, seam         n =      384  max =   7.9863e-08
+###   edge, CUBE VERTEX  n =      192  max =   2.5785e-06
+###   corner, same panel  n =      384  max =   0.0000e+00
+###   corner, SEAM        n =      768  max =   7.9863e-08
+###   corner, CUBE VRTX   n =      384  max =   2.5785e-06
+=== cc n=64 mb=64 cs_vertex_fill_cc=false
+### SEAM-HALO GLOBAL MAX |ghost - exact| = 5.575303e-07
+###   face, same panel   n =        0  max =   0.0000e+00
+###   face, SEAM         n =     6144  max =   5.5753e-07
+###   edge, same panel   n =        0  max =   0.0000e+00
+###   edge, seam         n =        0  max =   0.0000e+00
+###   edge, CUBE VERTEX  n =      192  max =   3.6619e-06
+###   corner, same panel  n =        0  max =   0.0000e+00
+###   corner, SEAM        n =        0  max =   0.0000e+00
+###   corner, CUBE VRTX   n =      384  max =   3.6619e-06
+=== cc n=64 mb=64 cs_vertex_fill_cc=true
+### SEAM-HALO GLOBAL MAX |ghost - exact| = 5.575303e-07
+###   face, same panel   n =        0  max =   0.0000e+00
+###   face, SEAM         n =     6144  max =   5.5753e-07
+###   edge, same panel   n =        0  max =   0.0000e+00
+###   edge, seam         n =        0  max =   0.0000e+00
+###   edge, CUBE VERTEX  n =      192  max =   3.4288e-07
+###   corner, same panel  n =        0  max =   0.0000e+00
+###   corner, SEAM        n =        0  max =   0.0000e+00
+###   corner, CUBE VRTX   n =      384  max =   3.4288e-07
+=== cc n=64 mb=32 cs_vertex_fill_cc=false
+### SEAM-HALO GLOBAL MAX |ghost - exact| = 5.575303e-07
+###   face, same panel   n =     6144  max =   0.0000e+00
+###   face, SEAM         n =     6144  max =   5.5753e-07
+###   edge, same panel   n =      192  max =   0.0000e+00
+###   edge, seam         n =      384  max =   4.2839e-09
+###   edge, CUBE VERTEX  n =      192  max =   3.6619e-06
+###   corner, same panel  n =      384  max =   0.0000e+00
+###   corner, SEAM        n =      768  max =   4.2839e-09
+###   corner, CUBE VRTX   n =      384  max =   3.6619e-06
+=== cc n=64 mb=32 cs_vertex_fill_cc=true
+### SEAM-HALO GLOBAL MAX |ghost - exact| = 5.575303e-07
+###   face, same panel   n =     6144  max =   0.0000e+00
+###   face, SEAM         n =     6144  max =   5.5753e-07
+###   edge, same panel   n =      192  max =   0.0000e+00
+###   edge, seam         n =      384  max =   4.2839e-09
+###   edge, CUBE VERTEX  n =      192  max =   3.4288e-07
+###   corner, same panel  n =      384  max =   0.0000e+00
+###   corner, SEAM        n =      768  max =   4.2839e-09
+###   corner, CUBE VRTX   n =      384  max =   3.4288e-07
+######## FACE-CENTRED (iprob 11), arms: cs_vertex_fill = false | true
+=== fc n=32 mb=32 cs_vertex_fill=false
+### FC SEAM-HALO GLOBAL MAX |ghost - exact| = 1.015713e-04
+=== fc n=32 mb=32 cs_vertex_fill=true
+### FC SEAM-HALO GLOBAL MAX |ghost - exact| = 1.015713e-04
+=== fc n=32 mb=16 cs_vertex_fill=false
+### FC SEAM-HALO GLOBAL MAX |ghost - exact| = 8.022235e-05
+=== fc n=32 mb=16 cs_vertex_fill=true
+### FC SEAM-HALO GLOBAL MAX |ghost - exact| = 8.022235e-05
+=== fc n=64 mb=64 cs_vertex_fill=false
+### FC SEAM-HALO GLOBAL MAX |ghost - exact| = 8.144140e-05
+=== fc n=64 mb=64 cs_vertex_fill=true
+### FC SEAM-HALO GLOBAL MAX |ghost - exact| = 8.144140e-05
+=== fc n=64 mb=32 cs_vertex_fill=false
+### FC SEAM-HALO GLOBAL MAX |ghost - exact| = 8.009499e-05
+=== fc n=64 mb=32 cs_vertex_fill=true
+### FC SEAM-HALO GLOBAL MAX |ghost - exact| = 8.009499e-05

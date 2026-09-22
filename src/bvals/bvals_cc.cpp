@@ -713,6 +713,12 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackCC(DvceArray5D<Real> &a,
   const int wlo_ = iwl, whi_ = iwu;
   const int mbis_ = pmy_pack->pmesh->mb_indcs.is;
   const int mbie_ = pmy_pack->pmesh->mb_indcs.ie;
+  // For the cell-centred cube-vertex corner fill's ownership test (see its use below).
+  const bool cs_vfill_cc_ = pmy_pack->pmesh->cs_vertex_fill_cc;
+  auto &wi_ = pmy_pack->pmesh->mb_indcs;
+  const int js_ = wi_.js, je_ = wi_.je, ks_ = wi_.ks, ke_ = wi_.ke;
+  const int nx2_ = wi_.nx2, nx3_ = wi_.nx3;
+  auto &mbsz = pmy_pack->pmb->mb_size;
 #if MPI_PARALLEL_ENABLED
   //----- STEP 1: check that recv boundary buffer communications have all completed
 
@@ -805,6 +811,50 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackCC(DvceArray5D<Real> &a,
         int k = idx / nj;
         int j = (idx - k * nj) + jl;
         k += kl;
+
+        // CUBE-VERTEX CORNER FILL: OWNERSHIP.  With `<mesh>/cs_vertex_fill_cc` the x2/x3
+        // face and x1x2/x3x1 edge buffers were widened by ng along the seam (see
+        // WidenForCubeVertex in buffs_cc.cpp) so the doubly-ghost corner block rides the
+        // face exchange.  Both flanking buffers reach that block, but each panel only
+        // genuinely COVERS the half of it on its own side of the diagonal, so write a
+        // doubly-ghost cell only from the neighbour whose panel contains that direction.
+        // Decided here, from the RECEIVER's own geometry, so it needs nothing from the
+        // sender and is identical on every rank.  ONLY the slots that were widened:
+        // 8-23 (x2 faces and x1x2 edges) and 24-39 (x3 faces and x3x1 edges).  The test
+        // MUST NOT reach the x2x3 edge (40-47) or corner (48-55) buffers, whose
+        // destinations are legitimately doubly-ghost -- gating them here would suppress
+        // the real edge and corner exchange.  Cells outside the corner block, and any
+        // grid that is not a cubed sphere, never enter this.
+        if (cs_vfill_cc_ && (n >= 8) && (n < 40) &&
+            (nghbr.d_view(m,n).lev == mblev.d_view(m)) &&
+            ((j < js_) || (j > je_)) && ((k < ks_) || (k > ke_))) {
+          // ONLY a CUBE VERTEX needs the fill.  At an ordinary block corner the diagonal
+          // neighbour exists and its own buffer (40..55, unpacked LATER in this same
+          // scalar n loop) is the correct filler, and the panel-edge geometry below is
+          // not even valid there.
+          const int sj = (j < js_) ? 0 : 1;
+          const int sk = (k < ks_) ? 0 : 1;
+          if (!IsCubeVertexCorner(nghbr.d_view, mbpanel.d_view, m,
+                                  40 + 2*(sj + 2*sk))) return;
+          // OWNERSHIP, exactly.  The corner ghost block is covered by the two flanking
+          // panels, split by the seam BETWEEN THEM, and in this panel's own gnomonic
+          // chart that seam is exactly the DIAGONAL.  Take P = +z: tan(xi) = x/z and
+          // tan(eta) = y/z, and the +x/+y panel boundary is the plane x = y, i.e.
+          // xi = eta.  With a = s2*xi - pi/4 and b = s3*eta - pi/4 measuring how far the
+          // cell lies beyond each panel edge, a > b means the direction belongs to the
+          // panel across the x2 face and a < b to the one across the x3 face; the other
+          // seven vertices follow by reflection, which is what the signs are.  The test
+          // is COMPLEMENTARY by construction, so one of the two buffers writes every
+          // cell of the block and neither writes a cell the other owns -- which matters
+          // because FillPanelCornersCC stops extrapolating the block once the fill is on.
+          const Real xi  = 0.25*M_PI*CellCenterX(j-js_, nx2_, mbsz.d_view(m).x2min,
+                                                              mbsz.d_view(m).x2max);
+          const Real eta = 0.25*M_PI*CellCenterX(k-ks_, nx3_, mbsz.d_view(m).x3min,
+                                                              mbsz.d_view(m).x3max);
+          const Real aa = (sj ? xi : -xi) - 0.25*M_PI;
+          const Real bb = (sk ? eta : -eta) - 0.25*M_PI;
+          if ((n < 24) != (aa >= bb)) return;
+        }
 
         // if neighbor is at same or finer level, load data directly into u0
         if (nghbr.d_view(m,n).lev >= mblev.d_view(m)) {
@@ -952,6 +1002,9 @@ void MeshBoundaryValuesCC::FillPanelCornersCC(DvceArray5D<Real> &a, bool coarse)
   auto &mbpanel = pmy_pack->pmb->mb_panel;
   auto &mblev = pmy_pack->pmb->mb_lev;
   auto a_ = a;
+  const bool vfill_ = pmy_pack->pmesh->cs_vertex_fill_cc;
+  const bool coar_ = coarse;
+  const int is_ = indcs.is, ie_ = indcs.ie;
 
   // par_for takes at most five ranges, so the ng x ng corner block is flattened into g
   par_for("cs_fill_corners_cc", DevExeSpace(), 0,(nmb-1), 0,3, 0,(nvar-1), 0,(n1-1),
@@ -975,7 +1028,31 @@ void MeshBoundaryValuesCC::FillPanelCornersCC(DvceArray5D<Real> &a, bool coarse)
     if (nghbr.d_view(m,nj_id).gid >= 0 && nghbr.d_view(m,nj_id).panel != mp) seamj = true;
     if (nghbr.d_view(m,nk_id).gid >= 0 && nghbr.d_view(m,nk_id).panel != mp) seamk = true;
     if (!(seamj && seamk)) return;
-
+    // THE SAMPLED FILL SUPERSEDES THIS, exactly as in FillPanelCornersFC.  When the two
+    // flanking neighbours are at the SAME level their widened buffers have already
+    // written this corner block with REAL data from the two panels that cover it, which
+    // is strictly better than any extrapolation, so do not overwrite it.  At a level
+    // boundary only `isame` was widened, so the extrapolation below is still the best
+    // available, and the same holds on the COARSE array, which is never widened.
+    //
+    // WHICH BUFFER REACHES WHICH RADIAL LAYER.  Over the ACTIVE radial range the two
+    // widened FACE buffers cover the block.  A RADIAL GHOST layer is triply ghost, so
+    // only a buffer already ghost in x1 can reach it: the x1x2 and x3x1 EDGE buffers,
+    // widened by the same rule.  BOTH must exist at this level, because ownership splits
+    // the block along the diagonal and one alone would leave half of it written by
+    // nothing.
+    const bool vfill_here = (vfill_ && !coar_ &&
+        nghbr.d_view(m,nj_id).lev == mblev.d_view(m) &&
+        nghbr.d_view(m,nk_id).lev == mblev.d_view(m));
+    if (vfill_here) {
+      const int s1 = (i < is_) ? -1 : 1;              // radial side of a ghost layer
+      const int e12 = 16 + (s1 + 1) + 2*(sj + 1);     // x1x2 edge (nghbr_index.hpp)
+      const int e31 = 24 + (s1 + 9) + 2*(sk + 1);     // x3x1 edge
+      const bool vfill_rg =
+          nghbr.d_view(m,e12).gid >= 0 && nghbr.d_view(m,e12).lev == mblev.d_view(m) &&
+          nghbr.d_view(m,e31).gid >= 0 && nghbr.d_view(m,e31).lev == mblev.d_view(m);
+      if ((i >= is_ && i <= ie_) || vfill_rg) return;
+    }
     // Quadratic Lagrange extrapolated d cells beyond an anchor, nodes 0,1,2 stepping
     // inward: w = ((d+1)(d+2)/2, -d(d+2), d(d+1)/2), which sums to 1.
     const Real dj = static_cast<Real>(gj + 1);

@@ -127,6 +127,21 @@ Mesh::Mesh(ParameterInput *pin) :
   // a 64-cell one.  Turn it OFF to reproduce the pre-fill answers exactly.
   cs_vertex_fill = use_cubed_sphere &&
                    pin->GetOrAddBoolean("mesh", "cs_vertex_fill", true);
+  // THE SAME FILL FOR CELL-CENTRED DATA, `<mesh>/cs_vertex_fill_cc`, DEFAULT OFF.
+  // `cs_vertex_fill` above widens only the FACE-CENTRED buffers; every cell-centred
+  // variable (the conserved state, the primitives, radiation, ...) still gets its
+  // cube-vertex corner block from the one-sided extrapolation in FillPanelCornersCC.
+  // With this on, the cell-centred x2/x3 face and x1x2/x3x1 edge buffers are widened by
+  // the SAME rule, the corner block rides the existing exchange, and the ownership test
+  // at unpack (bvals_cc.cpp) splits it between the two flanking panels along the
+  // receiving panel's own diagonal -- so it is MPI-safe by construction, exactly as the
+  // face-centred fill is.  It is read as a separate switch, and OFF by default, because
+  // it changes every cell-centred halo message on the grid: turning it on is not
+  // bitwise, and the measured payoff is in the corner ghosts themselves (see
+  // tests_cs_vertex/README.md), not yet in an evolved domain gate.  In the language of
+  // the two spellings: `extrapolate` is false here, `sample` is true.
+  cs_vertex_fill_cc = use_cubed_sphere &&
+                      pin->GetOrAddBoolean("mesh", "cs_vertex_fill_cc", false);
   npanels = (use_cubed_sphere ? 6 : 1);
   if (use_cubed_sphere) {
     strictly_periodic = false;

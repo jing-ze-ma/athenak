@@ -1,0 +1,6 @@
+run logs/loop_fcextrap_n16.log
+run logs/loop_fcextrap_n32.log
+run logs/loop_fcextrap_n64.log
+run logs/strat_fcextrap_n16.log
+run logs/strat_fcextrap_n32.log
+run logs/strat_fcextrap_n64.log

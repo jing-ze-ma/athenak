@@ -1,0 +1,6 @@
+run logs/loop_ccfill_n16.log
+run logs/loop_ccfill_n32.log
+run logs/loop_ccfill_n64.log
+run logs/strat_ccfill_n16.log
+run logs/strat_ccfill_n32.log
+run logs/strat_ccfill_n64.log

@@ -1,0 +1,86 @@
+# CUBED-SPHERE PER-REGION GATE, test "loop".  Build with -D PROBLEM=cs_test.
+#
+# cs_test iprob = 11 with its uniform part OFF: the purely azimuthal field
+# B = b0c (-y, x, 0), seeded from its VECTOR POTENTIAL (faces_from_potential, so div B is
+# at round-off), balanced by p = p0 - b0c^2 R^2.  The cubed sphere's field-loop test: the
+# field cuts every panel obliquely, carries a real current, and B.rhat = 0 so reflecting
+# radial walls close the budget.  The exact solution is STATIC, and the error reported by
+# region is the evolved FACE field against it.
+#
+# This is inputs/tests/cubed_sphere_toroidal.athinput with the knobs the region gate
+# overrides on the command line DECLARED (AthenaK refuses an override of a parameter the
+# input file never mentions).  Driven by tests_cs_regions/run_regions.sh.
+#
+# b0c must keep p0 - b0c^2 R^2 > 0 over the shell: b0c < sqrt(p0)/x1max.
+#
+# AXES: x1 is RADIAL, x2 = xi and x3 = eta are the panel-tangential angles.  Must be 3D.
+
+<comment>
+problem = cs region gate: toroidal field from its vector potential
+
+<job>
+basename = cs_reg_loop
+
+<mesh>
+nghost   = 3
+nx1      = 16
+x1min    = 1.0
+x1max    = 2.0
+ix1_bc   = reflect      # closed: B.rhat = 0, so no flux crosses
+ox1_bc   = reflect
+
+nx2      = 16
+x2min    = -1.0
+x2max    = 1.0
+ix2_bc   = panel
+ox2_bc   = panel
+
+nx3      = 16
+x3min    = -1.0
+x3max    = 1.0
+ix3_bc   = panel
+ox3_bc   = panel
+
+use_cubed_sphere = true
+
+<meshblock>
+nx1      = 16
+nx2      = 16
+nx3      = 16
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim       = -1
+tlim       = 0.04
+ndiag      = 1000
+
+<mhd>
+eos         = ideal
+reconstruct = plm
+rsolver     = hlld
+gamma       = 1.666667
+cs_wellbalanced_src = false
+
+<problem>
+iprob    = 11
+d0       = 1.0
+p0       = 1.0
+b0c      = 0.3          # azimuthal amplitude; curl B = 2*b0c*zhat
+bunif    = 0.0          # no uniform part: the box is closed
+faces_from_potential = true
+user_bcs = true
+conv_errors = 0         # iprob 11 has its own finaliser (CSTestResistCheck), which
+                        # prints the per-region FACE-FIELD table; conv_errors would
+                        # replace it with the (inapplicable) rigid-rotation comparison
+conv_nband  = 2
+
+<output1>
+file_type = hst
+dt        = 1.0
+
+<output9>
+file_type = bin
+variable  = mhd_w_bcc
+dt        = 1.0e6

@@ -1,0 +1,6 @@
+run logs/loop_base_n16.log
+run logs/loop_base_n32.log
+run logs/loop_base_n64.log
+run logs/strat_base_n16.log
+run logs/strat_base_n32.log
+run logs/strat_base_n64.log
