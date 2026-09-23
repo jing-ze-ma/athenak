@@ -949,6 +949,45 @@ inline bool ck_spherical = false;
 // tau_ray(r_i) is not a running sum -- every target has its own chord set.  It is sized
 // to one element when the switch is off: the kernel is templated on the flag.
 inline bool ck_beam_sph = false;
+// The beam's optical depth to the TOP face of a mu0 < 0 (twilight) column: the ray
+// enters the domain top on the far side, grazes the tangent radius b = r_top sin(theta0)
+// and climbs back to the target, so every shell between b and r_top is crossed TWICE.
+// Dark (tau = 1e30, transmission 0) if b <= r_cut: the ray would pass through the body.
+// Without this the top face was given tau = 0 (full, unattenuated beam) on every lit
+// twilight column, and the top cell absorbed as if the star were overhead-ish.
+template <typename XF, typename KR, typename RtFT, int NCT>
+KOKKOS_INLINE_FUNCTION
+void BeamTopTau(const Real rcut, const Real sinz, const int icut, const int ie,
+                const int m, const XF &X1F, const KR &Krs, Real (&tauh)[NCT],
+                RtFT (&thi)[NCT]) {
+  const Real bt = X1F(m,ie+1)*sinz;
+  if (bt <= rcut) {
+    for (int cc=0; cc<NCT; ++cc) {
+      tauh[cc] = 1.0e30;
+      thi[cc] = static_cast<RtFT>(0.0);
+    }
+    return;
+  }
+  const Real b2 = bt*bt;
+  int jlo = icut;
+  for (int jj=ie; jj>=icut; --jj) {
+    if (X1F(m,jj) <= bt) {
+      jlo = jj;
+      break;
+    }
+  }
+  const Real rl = X1F(m,jlo);
+  Real prev = (rl*rl > b2) ? sqrt(rl*rl - b2) : 0.0;
+  for (int jj=jlo; jj<ie+1; ++jj) {
+    const Real ru = X1F(m,jj+1);
+    const Real cur = sqrt(ru*ru - b2);
+    for (int cc=0; cc<NCT; ++cc) {
+      tauh[cc] += 2.0*(cur - prev)*static_cast<Real>(Krs[cc][jj]);
+    }
+    prev = cur;
+  }
+  for (int cc=0; cc<NCT; ++cc) thi[cc] = RT_EXP(-static_cast<RtFT>(tauh[cc]));
+}
 // problem/ck_sweep_cache: CACHE THE PER-(CELL, CHAIN) LAYER OPERATOR IN THE THREAD.
 //
 // Every half layer this kernel ever steps across is the half of ONE cell taken at ONE
@@ -4428,6 +4467,9 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                     tauh[cc] = 0.0;
                     thi[cc] = static_cast<RtF>(1.0);
                   }
+                  // mu0 < 0: the ray reaches the TOP face itself through its tangent
+                  // point, so tau there is not 0 (see BeamTopTau)
+                  if (mu0 < 0.0) BeamTopTau(rcut, sinz, icut, ie, m, X1F, Krs, tauh, thi);
                   for (int i=ie; i>icut-1; --i) {
                     const Real rf = X1F(m,i);
                     const Real bb = rf*sinz;
@@ -4468,7 +4510,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                                            : RT_EXP(-static_cast<RtF>(taul[cc]));
                       const Real dif = static_cast<Real>(thi[cc])
                                      - static_cast<Real>(tlo);
-                      const Real fac = (dtl > 1.0e-3)
+                      const Real fac = (fabs(dtl) > 1.0e-3)
                           ? (dif/dtl)
                           : (static_cast<Real>(thi[cc])*(1.0 - 0.5*dtl));
                       Qb_g(m,blk,i,k,j) += (1.0-albedo)*Fstar*ckswf(bandc[cc])*wgc[cc]
@@ -4846,11 +4888,14 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                 const Real rcut = X1F(m,icut);
                 RtF thi[NC];
                 Real tauh[NC];
-                // tau at the top face is 0: nothing above the domain (see ck_beam_sph)
+                // tau at the top face is 0 for mu0 >= 0: nothing above the domain (see
+                // ck_beam_sph).  For mu0 < 0 the ray reaches the top face through its
+                // tangent point, near + far leg, which is BeamTopTau.
                 for (int cc=0; cc<NC; ++cc) {
                   tauh[cc] = 0.0;
                   thi[cc] = static_cast<RtF>(1.0);
                 }
+                if (mu0 < 0.0) BeamTopTau(rcut, sinz, icut, ie, m, X1F, Krs, tauh, thi);
                 for (int i=ie; i>icut-1; --i) {
                   // ---- tau_ray at the LOWER face of cell i
                   const Real rf = X1F(m,i);
@@ -4896,7 +4941,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                     const Real dif = static_cast<Real>(thi[cc]) - static_cast<Real>(tlo);
                     // dif/dtau -> e^-tau as dtau -> 0; the guard is the same 1e-3 the
                     // layer coefficients use
-                    const Real fac = (dtl > 1.0e-3)
+                    const Real fac = (fabs(dtl) > 1.0e-3)
                         ? (dif/dtl)
                         : (static_cast<Real>(thi[cc])*(1.0 - 0.5*dtl));
                     Qb_g(m,blk,i,k,j) += (1.0-albedo)*Fstar*ckswf(bandc[cc])*wgc[cc]
