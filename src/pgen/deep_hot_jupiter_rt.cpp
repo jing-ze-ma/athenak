@@ -610,6 +610,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       pin->GetOrAddBoolean("problem","ck_impl_pred_chk",false);
   two_stream_rt::ck_impl_nosync =
       pin->GetOrAddBoolean("problem","ck_impl_nosync",false);
+  two_stream_rt::ck_impl_warm_step =
+      pin->GetOrAddBoolean("problem","ck_impl_warm_step",false);
   // problem/ck_impl_frozen_op: freeze the exchange operator over the Newton passes (the
   // sweep is linear in B_b at frozen opacity, so only the opacity-dependent coefficients
   // have to be rebuilt -- and they do not change); ck_impl_frozen_cof decides whether the

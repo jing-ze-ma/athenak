@@ -222,6 +222,11 @@ inline bool ck_impl_evalonly = false;
 // deep_copy in the RT pass path (cached dummies and host mirrors, stream-ordered
 // fills), and the apply's clip count reduced into a device View.
 inline bool ck_impl_nosync = false;
+// problem/ck_impl_warm_step (lever 4, with ck_impl_warm): pass 0 of a warm-started call
+// always takes a Newton step, even where the seeded state already meets tol, so that
+// the seed is never accepted as it is (the residual norm is loose in the thin top,
+// where e << ck_impl_norm_eps e_max).
+inline bool ck_impl_warm_step = false;
 
 //! \fn CkDum
 //! \brief a 1-element View for a capture that is never read.  CkDum<V>(label) builds a
@@ -943,6 +948,8 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
     const bool pred_ = ck_impl_pred;
     const Real pfac_ = ck_impl_pred_fac;
     const bool evo_ = ck_impl_evalonly;
+    // problem/ck_impl_warm_step: no column is accepted on the seeded state itself
+    const bool wfs_ = ck_impl_warm && ck_impl_warm_step && pz_;
     auto rprev_ = pred_ ? *ck_rprev_ptr : CkDum<DvceArray3D<Real>>("ck_rprev_d");
     const bool aarst_ = ck_impl_aa_rst;
     auto aah_ = (naa_ > 0) ? *ck_aah_ptr : CkDum<DvceArray5D<Real>>("ck_aah_d");
@@ -1002,18 +1009,20 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
         [&](const int i, Real &sm) {
           sm += bdt*src_(m,k,j,i)*dx1_(m,k,j,i);
         }, ss);
+        // ck_impl_warm_step: pass 0 of a warm-started call always takes a step
+        const bool cvd = (rn <= tol) && !wfs_;
         if (!pred_) {
           Kokkos::single(Kokkos::PerTeam(tm), [&]() {
             Kokkos::atomic_max(&cnv_(0), rn);
             Kokkos::atomic_add(&cnv_(4), sg);
             Kokkos::atomic_add(&cnv_(5), ss);
-            if (rn <= tol) {
+            if (cvd) {
               done_(m,k,j) = 1.0;
             } else {
               Kokkos::atomic_add(&cnv_(6), 1.0);
             }
           });
-          if (rn <= tol) return;
+          if (cvd) return;
         } else {
           // ck_impl_pred: the same bookkeeping, minus the stale residual of a column
           // already predicted converged; the contraction estimate for the rest
@@ -1022,14 +1031,14 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
             if (!pdone) Kokkos::atomic_max(&cnv_(0), rn);
             Kokkos::atomic_add(&cnv_(4), sg);
             Kokkos::atomic_add(&cnv_(5), ss);
-            if (rn <= tol) {
+            if (cvd) {
               done_(m,k,j) = 1.0;
             } else if (!pdone) {
               Kokkos::atomic_add(&cnv_(6), 1.0);
               rprev_(m,k,j) = rn;
             }
           });
-          if (rn <= tol || pdone || evo_) return;
+          if (cvd || pdone || evo_) return;
           pwill = (rp > 0.0) && (rn*rn <= pfac_*tol*rp);
         }
       } else {
