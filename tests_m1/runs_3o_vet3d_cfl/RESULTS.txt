@@ -78,3 +78,20 @@ KE_h cfl 0.3 / 0.15, ratio:           t=100                 t=1000
 All NON-CONVERGED 0. VERDICT: the 2nd-order coupling does NOT remove the dt dependence (KE_h ~ dt^2,
 i.e. v_h is an O(dt) error); plm+vimp changes nothing. Another first-order piece of the coupling
 remains outside the M1 solve. Bisection agent started 09-24 (runs in /viper/ptmp2/jinma/kehdt_0924).
+
+=== ROOT CAUSE (09-24, bisection in /viper/ptmp2/jinma/kehdt_0924, jobs 11951303-7, 11951491-4, 11951523) ===
+The KE_h dt dependence is a START-UP KICK, not an ongoing coupling error. ~88 % of KE_h is made in
+cycle 1 (cfl 0.3: 9.94e24 after one dt=0.161 step; cfl 0.15: 2.59e24 after dt=0.081; v_h ~ dt).
+Cause: the eint seed (box_convection.cpp:2381-2402) changes T_gas at fixed rho while the M1 E keeps its
+file value (m1_seed_consistent=false default, :2462-2488), so seeded cells start with T_gas != T_rad;
+the first hydro step feels the gas-pressure perturbation for a full dt before the implicit M1 solve
+(rad_m1_tasks.cpp:46) relaxes T_gas (physical relaxation time << dt, correct kick ~0). The kick is
+barely damped afterwards and carries the x4 through the run.
+DECISIVE: common restart at t=20 (R0, cfl 0.15) continued at cfl 0.3 and 0.15 to t=120:
+KE_h ratio 1.00/0.99/0.99/0.98/0.96/0.98 at t=21/25/40/70/100/120. Predictor/closure lag/solver
+settings (P4) change nothing; m1_seed_consistent=true only reduces the ratio to 2.5 (not an exact
+equilibrium for the ionizing EOS).
+CORRECTION of the earlier verdicts: "the coupling" was right only in the sense of the seed +
+first split step; H-ESDIRK2 could not fix it and its G5 is not a valid gate. Judge dt-independence
+from a common restart, or seed in thermal equilibrium (or with a velocity seed). Untested: the late
+vet_sc C30/C15 x15 at t=3750 (possibly this kick amplified by convection).
