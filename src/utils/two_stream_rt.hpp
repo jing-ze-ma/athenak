@@ -1654,6 +1654,14 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
         ck_impl_jac_again = (ck_impl_prev_res > 0.0)
                             && !(rr <= ck_impl_jreuse*ck_impl_prev_res);
         ck_impl_prev_res = rr;
+        // ck_impl_jreuse_act: once few columns are left the rebuild is cheap (the
+        // Jacobian kernels skip converged columns), and the few slow columns are the
+        // ones a stale chord holds back, so rebuild whatever the max residual did
+        const int ncol_ = pp->nmb_thispack*pm->mb_indcs.nx2*pm->mb_indcs.nx3;
+        if (ck_impl_jreuse_act > 0.0 &&
+            static_cast<Real>(ck_impl_nactive) < ck_impl_jreuse_act*ncol_) {
+          ck_impl_jac_again = true;
+        }
       }
       if (ck_impl_debug <= -2) {
         char hb[64];

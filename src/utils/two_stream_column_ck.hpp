@@ -202,6 +202,9 @@ inline Real ck_impl_jreuse = 0.0;
 // problem/ck_impl_jreuse_xc: with ck_impl_xstep, a call that re-applies the stored
 // operator also starts from the previous call's Jacobian instead of building one
 inline bool ck_impl_jreuse_xc = false;
+// problem/ck_impl_jreuse_act: with ck_impl_jreuse, also rebuild on any pass that follows
+// one on which fewer than this fraction of the rank's columns were still active
+inline Real ck_impl_jreuse_act = 0.25;
 inline bool ck_impl_jac_built = false;
 inline Real ck_impl_prev_res = -1.0;
 // problem/ck_impl_pred (lever 4): no confirmation pass.  A column whose residual r_p
@@ -209,7 +212,7 @@ inline Real ck_impl_prev_res = -1.0;
 // r_p^2 / r_{p-1} <= ck_impl_pred_fac tol, is marked converged right after the step, so
 // the call ends without a sweep whose only job is to verify it.  Needs ck_impl_fuse.
 inline bool ck_impl_pred = false;
-inline Real ck_impl_pred_fac = 1.0;
+inline Real ck_impl_pred_fac = 0.5;
 inline DvceArray3D<Real> *ck_rprev_ptr = nullptr;
 inline int ck_impl_npred = 0;              // columns ended by the prediction, last pass
 // problem/ck_impl_pred_chk (diagnostic, for the accuracy gates only): after a call the
