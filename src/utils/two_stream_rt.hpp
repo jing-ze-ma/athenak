@@ -1552,13 +1552,22 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
       DvceArray5D<Real> u0w = (pp0->pmhd != nullptr) ? pp0->pmhd->u0 : pp0->phydro->u0;
       CkWarmSeed(pm, u0w);
     }
+    // ck_impl_debug <= -2: the residual and the step of every pass, on the report line
+    std::string hist;
     for (int it=0; it<ck_impl_maxit; ++it) {
       ck_impl_pass = it;
       picket_fence_two_stream_RT_pass(pm, bdt);
       MeshBlockPack *pp = pm->pmb_pack;
       DvceArray5D<Real> u0c = (pp->pmhd != nullptr) ? pp->pmhd->u0 : pp->phydro->u0;
       ++ck_impl_nsweep;
-      if (CkImplStep(pm, u0c, *rt_icut_ptr, *rt_T_ptr, pp->pcoord->dx1, bdt) == 0) {
+      const int stp = CkImplStep(pm, u0c, *rt_icut_ptr, *rt_T_ptr, pp->pcoord->dx1, bdt);
+      if (ck_impl_debug <= -2) {
+        char hb[64];
+        std::snprintf(hb, sizeof(hb), "%s%.2e/%.2e/%d", (it > 0) ? "," : "",
+                      ck_impl_last_res, ck_impl_last_dst, ck_impl_nactive);
+        hist += hb;
+      }
+      if (stp == 0) {
         npass = it + 1;
         conv = true;
         break;
@@ -1569,7 +1578,7 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
     ck_impl_pass = -1;
     // ck_impl_debug = -1: the report line from EVERY rank, tagged; the Newton loop is
     // rank-local, so rank 0's verdict is not the call's
-    if (ck_impl_verbose && (global_variable::my_rank == 0 || ck_impl_debug == -1)) {
+    if (ck_impl_verbose && (global_variable::my_rank == 0 || ck_impl_debug < 0)) {
       std::cout << "### ck_implicit ncycle=" << pm->ncycle << " passes=" << npass
                 << " rank=" << global_variable::my_rank
                 << " res=" << ck_impl_last_res << " dstep=" << ck_impl_last_dst
@@ -1578,7 +1587,9 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
                 << " thin=" << ck_impl_nthin << " active=" << ck_impl_nactive
                 << " nsweep=" << ck_impl_nsweep
                 << " rj=" << ck_impl_reuse_jac << " sd=" << ck_impl_seed
-                << (conv ? "" : " NOT-CONVERGED") << std::endl;
+                << (conv ? "" : " NOT-CONVERGED")
+                << ((ck_impl_debug <= -2) ? (" hist=" + hist) : std::string(""))
+                << std::endl;
     }
     return;
   }
@@ -1749,6 +1760,23 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                   << "ck_implicit, ck_sweep_form = 1, ck_impl_frozen_op, "
                   << "ck_impl_frozen_cof, ck_impl_refresh_kappa = false and a "
                   << "double-precision chain (RT_FP32 = 0)." << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+    }
+    // problem/ck_impl_cvsec lives in the fused step only
+    if (ck_impl_cvsec && !ck_impl_fuse) {
+      std::cout << "### FATAL ERROR in two_stream_rt: problem/ck_impl_cvsec needs "
+                << "problem/ck_impl_fuse." << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    // problem/ck_impl_jac_lin: the Jacobian kernel reads the factorisation the linear
+    // kernel stores and writes the one-chain-per-thread partials
+    if (ck_impl_jac_lin) {
+      if (!ck_impl_lin || ck_impl_lin_thr != 1) {
+        std::cout << "### FATAL ERROR in two_stream_rt: problem/ck_impl_jac_lin needs "
+                  << "ck_impl_lin with ck_impl_lin_thr = 1; got ck_impl_lin="
+                  << ck_impl_lin << " ck_impl_lin_thr=" << ck_impl_lin_thr << "."
+                  << std::endl;
         std::exit(EXIT_FAILURE);
       }
     }
@@ -2186,6 +2214,9 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
       // utils/two_stream_column_ck.hpp.
       const bool ckjacp_ = ckimp_ && ((ck_impl_reuse_jac == 0)
                                       || (ck_impl_pass == CkImplJacPass()));
+      // problem/ck_impl_jac_lin: the tridiagonal of a pass that builds it comes from the
+      // stored factorisation of the linear kernel, never from the JAC chain kernel
+      const bool ckjl_ = ckimp_ && ck_impl_jac_lin;
       auto ckjac_g = ckimp_ ? *ck_jac_ptr
                             : DvceArray5D<Real>("ck_jac_dummy",1,1,1,1,1);
       auto ckdb_g = ckimp_ ? *ck_dbdt_ptr
@@ -5102,7 +5133,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               // problem/ck_impl_frozen_op (phase T2): the FOP instantiations, JAC or not,
               // exist only under ck_implicit; the production kernel is FOP = JAC = 0.
               constexpr int NNJ = decltype(nn_tag)::value;
-              if (ckjacp_) {
+              if (ckjacp_ && !ckjl_) {
                 if constexpr (NNJ <= 264) {
                   if (ckfop_) {
                     launch_ck_chain(nn_tag, sph_tag, bsp_tag,
@@ -5173,7 +5204,14 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
         // as the storing pass wrote it.
         const bool cklon_ = ckfop_ && ck_impl_lin && (ckform_ == 1);
         const bool cklbuild_ = cklon_ && ckfst_;
-        const bool cklin_ = cklon_ && ckfus_ && !ckjacp_;
+        // under ck_impl_jac_lin the pass that builds the Jacobian is a linear pass too
+        const bool cklin_ = cklon_ && ckfus_ && (!ckjacp_ || ckjl_);
+        // ck_impl_jac_lin: this pass builds the Jacobian from the factorisation (a pass
+        // that builds it, once the factorisation exists; not a ck_impl_seed pass, whose
+        // rows are identity rows)
+        const bool ckjlp_ = ckjl_ && cklon_ && ckjacp_
+                             && !(ck_impl_seed > 0 && ck_impl_pass == 0 && !ck_impl_jac0);
+        const bool cklw_ = ck_impl_lw;
         const bool cklchk_ = cklin_ && (ck_impl_lin_check > 0);
         const int nch_ = nblk*RT_NB;
         auto lP_g = cklon_ ? *ck_linP_ptr : DvceArray5D<Real>("ck_lP_d",1,1,1,1,1);
@@ -5338,7 +5376,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                    : DvceArray5D<Real>("ck_lpf_d",1,1,1,1,1);
         auto launch_ck_lin1 = [&](auto nn_tag) {
           constexpr int NN = decltype(nn_tag)::value;
-          par_for("rt_chain_ck_lin1", DevExeSpace(), 0, nmb1, 0, nch_-1, ks, ke, js, je,
+          CkParFor4("rt_chain_ck_lin1", cklw_, 0, nmb1, 0, nch_-1, ks, ke, js, je,
           KOKKOS_LAMBDA(const int m, const int c, const int k, const int j) {
             if (ckskip_ && ckdone_g(m,k,j) > 0.0) return;
             const int icut = icut_g(m,k,j);
@@ -5441,8 +5479,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               bown = bnext;
             }
           });
-          par_for("rt_chain_ck_lin_sum", DevExeSpace(), 0, nmb1, 0, nblk-1, ks, ke, js,
-                  je,
+          CkParFor4("rt_chain_ck_lin_sum", cklw_, 0, nmb1, 0, nblk-1, ks, ke, js, je,
           KOKKOS_LAMBDA(const int m, const int blk, const int k, const int j) {
             constexpr int NC = RT_NB;
             if (ckskip_ && ckdone_g(m,k,j) > 0.0) return;
@@ -5630,6 +5667,180 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               lP_g(m,3*nch_+c,ie+1,k,j) = static_cast<Real>(rr);
               const Real btt = BTF(m,k,j,ie+1,icut);
               lP_g(m,4*nch_+c,ie+1,k,j) = 1.0/(1.0 + static_cast<Real>(rr)*btt);
+            });
+          }
+          // ---- problem/ck_impl_jac_lin: THE TRIDIAGONAL FROM THE FACTORISATION ------
+          // The JAC recurrences of the tm body (see the JAC blocks in rt_chain_ck), term
+          // for term, on what ck_lin_build parked: pass 1 carries dSc_f/dB_{f-2,f-1,f}
+          // up and parks it at every face, pass 2 carries dd^+/dB_{i-1,i,i+1} and the
+          // reflection scalar W down and forms row i.  One thread per chain; each chain
+          // writes its three entries (times dB_b/dT, negative off-diagonal parts dropped
+          // as in the JAC assembly) to per-chain partials, and ck_jlin_sum adds them in
+          // chain order.  The dSc window parked at each face lives in the same three
+          // partials (pass 2 reads face i's window just before it writes row i there),
+          // so the kernel carries no per-thread column and no scratch.
+          if (ckjlp_) {
+            auto jac_g = ckjac_g;
+            auto db_g = ckdb_g;
+            auto lpj_g = *ck_lpj_ptr;
+            const bool jneg_ = ck_impl_jneg;
+            {
+              CkParFor4("rt_chain_ck_jlin", cklw_, 0, nmb1, 0, nch_-1, ks, ke, js, je,
+              KOKKOS_LAMBDA(const int m, const int c, const int k, const int j) {
+                if (ckskip_ && ckdone_g(m,k,j) > 0.0) return;
+                const int icut = icut_g(m,k,j);
+                if (icut > ie) return;
+                const int b = (ck_nq_ == 1) ? (c/CK_NG) : (c/(2*CK_NG));
+                const Real wfc = lC_g(0,c);
+                // PASS 1: dSc/dB in the window (B_{i-2}, B_{i-1}, B_i) below face i
+                Real jS0 = 0.0, jS1 = 0.0, jS2 = 1.0;
+                Real jfc0 = 0.0, jfc1 = 1.0, juc0 = 0.0, juc1 = 1.0;
+                for (int i=icut; i<ie+1; ++i) {
+                  lpf_g(m,c,i,k,j) = jS0;
+                  lps_g(m,c,i,k,j) = jS1;
+                  lpj_g(m,c,i,k,j) = jS2;
+                  // slots (B_{i-1}, B_i, B_{i+1}); the first is 0 for all three
+                  Real dlv1 = 1.0, dlv2 = 0.0, duu1 = 1.0, duu2 = 0.0;
+                  Real dfw1 = 1.0, dfw2 = 0.0;
+                  if (i < ie) {
+                    const Real wl = lP_g(m,5*nch_+c,i,k,j);
+                    const Real wu = lP_g(m,6*nch_+c,i,k,j);
+                    const Real ffj = lP_g(m,7*nch_+c,i,k,j);
+                    const Real dfl = (1.0 - ffj)*wl + ffj*(1.0 - wu);
+                    dlv1 = wl;
+                    dlv2 = 1.0 - wl;
+                    duu1 = 1.0 - wu;
+                    duu2 = wu;
+                    dfw1 = dfl;
+                    dfw2 = 1.0 - dfl;
+                  }
+                  const Real ci = lP_g(m,nch_+c,i,k,j);
+                  const Real co = lP_g(m,2*nch_+c,i,k,j);
+                  const Real tj = 1.0 - lP_g(m,c,i,k,j);
+                  const Real rj = lP_g(m,3*nch_+c,i,k,j);
+                  const Real idn = lP_g(m,4*nch_+c,i,k,j);
+                  const Real bt = lG_g(m,0,i,k,j);
+                  const Real r1 = (rj + bt)*idn;
+                  const Real r2 = tj*tj*r1;
+                  const Real c1 = (1.0 - bt)*idn;
+                  auto upd = [&](const Real dsf, const Real dsu, const Real dlv,
+                                 const Real dfw, const Real so) {
+                    const Real dpl = ci*dsf + co*dsu;
+                    const Real dql = ci*dsu + co*dsf;
+                    const Real dpu = ci*dlv + co*dfw;
+                    const Real dqu = ci*dfw + co*dlv;
+                    const Real s2 = tj*(r1*dql + c1*so) + dpl;
+                    return tj*(r2*dqu + s2) + dpu;
+                  };
+                  const Real n0 = upd(jfc0, juc0, 0.0, 0.0, jS1);
+                  const Real n1 = upd(jfc1, juc1, dlv1, dfw1, jS2);
+                  const Real n2 = upd(0.0, 0.0, dlv2, dfw2, 0.0);
+                  jS0 = n0;
+                  jS1 = n1;
+                  jS2 = n2;
+                  jfc0 = dfw1;
+                  jfc1 = dfw2;
+                  juc0 = duu1;
+                  juc1 = duu2;
+                }
+                // PASS 2: the top datum is fixed, so d^+ carries nothing and W = 0
+                Real jQ, jDu0, jDu1, jDu2, jdm0, jdm1, jdm2;
+                Real jfu0 = 1.0, jfu1 = 0.0, jlc0 = 1.0, jlc1 = 0.0;
+                {
+                  const Real bt = lG_g(m,0,ie+1,k,j);
+                  const Real idn = lP_g(m,4*nch_+c,ie+1,k,j);
+                  const Real al = (1.0 + bt)*idn;
+                  const Real be = bt*idn;
+                  jDu0 = al*jS0;
+                  jDu1 = al*jS1;
+                  jDu2 = al*jS2;
+                  jdm0 = -be*jS0;
+                  jdm1 = -be*jS1;
+                  jdm2 = -be*jS2;
+                  jQ = be;
+                }
+                for (int i=ie; i>icut-1; --i) {
+                  const Real ci = lP_g(m,nch_+c,i,k,j);
+                  const Real co = lP_g(m,2*nch_+c,i,k,j);
+                  const Real tj = 1.0 - lP_g(m,c,i,k,j);
+                  // the layer joining cells i-1 and i: slots (B_{i-1}, B_i); the third
+                  // (B_{i+1}) is 0 for all three
+                  Real duv0 = 0.0, duv1 = 1.0, dnl0 = 0.0, dnl1 = 1.0;
+                  Real dfw0 = 0.0, dfw1 = 1.0;
+                  if (i > icut) {
+                    const Real wc = lP_g(m,5*nch_+c,i-1,k,j);
+                    const Real wa = lP_g(m,6*nch_+c,i-1,k,j);
+                    const Real ffj = lP_g(m,7*nch_+c,i-1,k,j);
+                    const Real sw = (1.0 - ffj)*wc + ffj*(1.0 - wa);
+                    duv0 = 1.0 - wa;
+                    duv1 = wa;
+                    dnl0 = wc;
+                    dnl1 = 1.0 - wc;
+                    dfw0 = sw;
+                    dfw1 = 1.0 - sw;
+                  }
+                  // dd_i^+: the down ray's two half steps through cell i
+                  Real v0 = tj*jdm0;
+                  v0 = tj*v0 + ci*duv0 + co*dfw0;
+                  Real v1 = tj*jdm1 + ci*jfu0 + co*jlc0;
+                  v1 = tj*v1 + ci*duv1 + co*dfw1;
+                  Real v2 = tj*jdm2 + ci*jfu1 + co*jlc1;
+                  v2 = tj*v2;
+                  const Real rj = lP_g(m,3*nch_+c,i,k,j);
+                  const Real idn = lP_g(m,4*nch_+c,i,k,j);
+                  const Real bt = lG_g(m,0,i,k,j);
+                  const Real rat = lG_g(m,1,i,k,j);
+                  const Real al = (1.0 + bt)*idn;
+                  const Real be = bt*idn;
+                  const Real wr = tj*tj*tj*tj*(1.0 - bt)*idn*jQ;
+                  const Real s0 = lpf_g(m,c,i,k,j);
+                  const Real s1 = lps_g(m,c,i,k,j);
+                  const Real s2 = lpj_g(m,c,i,k,j);
+                  const Real omr = 1.0 - rj;
+                  const Real dd0 = al*(1.0 + omr*wr)*s0;
+                  const Real dd1 = al*(s1 - omr*v0);
+                  const Real dd2 = al*(s2 - omr*v1);
+                  const Real dd3 = -al*omr*v2;
+                  const Real wj = wfc*lG_g(m,3,i,k,j);
+                  const Real jm = wj*(rat*dd1 - jDu0);
+                  const Real j0 = wj*(rat*dd2 - jDu1);
+                  const Real jp = wj*(rat*dd3 - jDu2);
+                  lps_g(m,c,i,k,j) = j0*db_g(m,b,i,k,j);
+                  lpf_g(m,c,i,k,j) = (i > icut && (jneg_ || jm > 0.0))
+                                   ? jm*db_g(m,b,i-1,k,j) : 0.0;
+                  lpj_g(m,c,i,k,j) = (i < ie && (jneg_ || jp > 0.0))
+                                   ? jp*db_g(m,b,i+1,k,j) : 0.0;
+                  jDu0 = dd0;
+                  jDu1 = dd1;
+                  jDu2 = dd2;
+                  const Real qn = al*wr + be;
+                  jdm0 = -qn*s0;
+                  jdm1 = al*v0 - be*s1;
+                  jdm2 = al*v1 - be*s2;
+                  jQ = qn;
+                  jfu0 = dfw0;
+                  jfu1 = dfw1;
+                  jlc0 = dnl0;
+                  jlc1 = dnl1;
+                }
+              });
+            }
+            CkParFor4("ck_jlin_sum", cklw_, 0, nmb1, is, ie, ks, ke, js, je,
+            KOKKOS_LAMBDA(const int m, const int i, const int k, const int j) {
+              if (ckskip_ && ckdone_g(m,k,j) > 0.0) return;
+              const int icut = icut_g(m,k,j);
+              if (i < icut || icut > ie) return;
+              Real s0 = 0.0, s1 = 0.0, s2 = 0.0;
+              for (int c=0; c<nch_; ++c) {
+                s0 += lpf_g(m,c,i,k,j);
+                s1 += lps_g(m,c,i,k,j);
+                s2 += lpj_g(m,c,i,k,j);
+              }
+              // ck_impl_jneg: a negative NET off-diagonal is dropped (the M-matrix);
+              // without it every part is already >= 0
+              jac_g(m,0,k,j,i) = (s0 > 0.0) ? s0 : 0.0;
+              jac_g(m,1,k,j,i) = s1;
+              jac_g(m,2,k,j,i) = (s2 > 0.0) ? s2 : 0.0;
             });
           }
         } else {

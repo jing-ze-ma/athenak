@@ -76,6 +76,7 @@
 #include <cstdio>
 
 #include <iostream>
+#include <string>
 
 #include "athena.hpp"
 #include "mesh/mesh.hpp"
@@ -268,13 +269,92 @@ inline int ck_impl_reuse_jac = 0;
 // step and nothing downstream knows the difference.  The residual of the seeded iterate
 // is measured at the top of pass 1, which is where every other pass is measured.
 inline int ck_impl_seed = 0;
+// ---- phase T4 (tests_ck_implicit/README_T4.md): the cost of a call.  All default off,
+// in which case the call is T3's to the bit.
+// problem/ck_impl_fuse: ONE kernel for the residual test and the tridiagonal step, one
+// thread TEAM per column.  The rows are assembled and the step is capped and applied in
+// parallel over the cells (coalesced loads, CkThinSolve in parallel), and only the
+// Thomas recurrences run on one lane, out of team scratch.  Same arithmetic in the same
+// order as ck_impl_res + ck_impl_tri, so the state is bitwise theirs; only the order of
+// the two diagnostic sums (slots 4 and 5) changes.  Refused with ck_impl_debug > 0.
+inline bool ck_impl_fuse = false;
+// problem/ck_impl_jac_lin: build the tridiagonal from the STORED FACTORISATION of the
+// linear kernel instead of in the JAC instantiation of the chain kernel.  The JAC
+// recurrences of the tm sweep (dSc/dB carried up, dd^+/dB and the reflection scalar W
+// carried down; see the JAC blocks in rt_chain_ck) read only the half-layer triple, R,
+// 1/(1 + R beta), the BFace and face-interpolation weights, beta, the area ratio and 1/dz
+// -- all of which ck_lin_build already parks in lP/lG.  So a separate one-chain-per-
+// thread kernel re-runs them on the stored data, writes each chain's three entries to
+// per-chain partials, and a small kernel sums them in chain order (no atomics).  Same
+// entries as the JAC pass to round-off (the divides by 1 + R beta become multiplies by
+// the stored reciprocal), negative per-chain off-diagonal parts dropped exactly as there.
+// The residual of that pass comes from the linear kernel.  Needs ck_impl_lin with
+// ck_impl_lin_thr = 1.
+inline bool ck_impl_jac_lin = false;
+// problem/ck_impl_jneg: under ck_impl_jac_lin, keep the NEGATIVE per-chain off-diagonal
+// parts the JAC assembly drops, and drop only a negative NET entry (the M-matrix).
+inline bool ck_impl_jneg = false;
+// problem/ck_impl_cvsec: the heat capacity of the Jacobian rows.  cv = e/T (the header
+// note) is off by up to ~5x where H2 dissociates (README_T1_stall.md: d ln T/d ln e = 5.4
+// in the day-side top), and it enters every row.  With this on, each cell's cv is the
+// SECANT of its own last two iterates, (e_p - e_{p-1})/(T_p - T_{p-1}), taken from pass 1
+// on (pass 0 -> 1 is the seed step, a large and clean secant) and kept from the previous
+// pass wherever the step is too small to resolve it (|dT| < 1e-7 T) or the slope is not
+// within 1/50 .. 50 of e/T.  Jacobian only: the fixed point does not move.  Needs
+// ck_impl_fuse.
+inline bool ck_impl_cvsec = false;
+// problem/ck_impl_jac0: with ck_impl_seed > 0, build the Jacobian on pass 0 (at e^n,
+// together with the storing pass) instead of on pass 1 (at the seeded state).  Merges
+// the two full sweeps of T3 into one; the chord matrix is then one seed step stale.
+inline bool ck_impl_jac0 = false;
+// problem/ck_impl_lw: launch the implicit-only kernels (the fused step, the linear
+// kernel, its block sum and the Jacobian kernels) as LIGHT-WEIGHT Kokkos kernels.  A
+// functor of 512 B .. 32 kB otherwise takes the HIP constant-memory path, which waits for
+// the previous such kernel and copies the functor before every launch.  Under 4 kB the
+// light-weight path passes it as a kernel argument instead.  Same kernel body.
+inline bool ck_impl_lw = false;
 
 // the Newton pass index inside one RT call; read by the pass function to decide whether
 // the opacity is rebuilt.  -1 = ck_implicit is off.
 inline int ck_impl_pass = -1;
 // the pass that BUILDS the Jacobian under ck_impl_reuse_jac: the first one that takes a
 // Newton step, i.e. pass 1 when pass 0 is a seed step and pass 0 otherwise.
-inline int CkImplJacPass() { return (ck_impl_seed > 0) ? 1 : 0; }
+// problem/ck_impl_jac0 moves it to pass 0 in any case.
+inline int CkImplJacPass() { return (ck_impl_seed > 0 && !ck_impl_jac0) ? 1 : 0; }
+
+//----------------------------------------------------------------------------------------
+//! \fn void CkParFor4
+//! \brief the 4-D par_for of athena.hpp, launched LIGHT-WEIGHT when lw (ck_impl_lw) and
+//! by par_for itself otherwise.  For the implicit-only kernels.
+template <typename Function>
+inline void CkParFor4(const std::string &name, const bool lw, const int nl, const int nu,
+                      const int kl, const int ku, const int jl, const int ju,
+                      const int il, const int iu, const Function &function) {
+  if (!lw) {
+    par_for(name, DevExeSpace(), nl, nu, kl, ku, jl, ju, il, iu, function);
+    return;
+  }
+  const int nn = nu - nl + 1;
+  const int nk = ku - kl + 1;
+  const int nj = ju - jl + 1;
+  const int ni = iu - il + 1;
+  const int nkji = nk*nj*ni;
+  const int nji  = nj*ni;
+  const int nnkji = nn*nk*nj*ni;
+  auto pol = Kokkos::Experimental::require(
+      Kokkos::RangePolicy<DevExeSpace>(DevExeSpace(), 0, nnkji),
+      Kokkos::Experimental::WorkItemProperty::HintLightWeight);
+  Kokkos::parallel_for(name, pol, KOKKOS_LAMBDA(const int &idx) {
+    int n = (idx)/nkji;
+    int k = (idx - n*nkji)/nji;
+    int j = (idx - n*nkji - k*nji)/ni;
+    int i = (idx - n*nkji - k*nji - j*ni) + il;
+    n += nl;
+    k += kl;
+    j += jl;
+    function(n, k, j, i);
+  });
+}
 
 // dSrc_i/dT_{i-1,i,i+1}, (m, 3, k, j, i), summed over bands and g-points
 inline DvceArray5D<Real> *ck_jac_ptr = nullptr;
@@ -332,6 +412,13 @@ inline DvceArray5D<Real> *ck_lps_ptr = nullptr;
 inline DvceArray5D<Real> *ck_lpf_ptr = nullptr;
 // ck_impl_lin_check: the chain kernel's Src, Fb, Em on the checked pass, (m, 3*nblk, ...)
 inline DvceArray5D<Real> *ck_lchk_ptr = nullptr;
+// ck_impl_cvsec: the previous iterate's e and T, and the cv the rows use, (m,k,j,i)
+inline DvceArray4D<Real> *ck_ep_ptr = nullptr;
+inline DvceArray4D<Real> *ck_tp_ptr = nullptr;
+inline DvceArray4D<Real> *ck_cv_ptr = nullptr;
+// ck_impl_jac_lin: the per-chain partial of the third Jacobian entry (the first two go to
+// ck_lpf and ck_lps, free by then), (m, chain, i, k, j)
+inline DvceArray5D<Real> *ck_lpj_ptr = nullptr;
 // ---- problem/ck_impl_warm: the total increment this call has applied so far, carried
 // over to seed the next one, and the seed actually applied (so that e^n can be recorded
 // net of it)
@@ -449,6 +536,16 @@ inline void CkImplAlloc(const int nmb, const int nb, const int nch, const int n1
       delete ck_lchk_ptr;
       ck_lchk_ptr = nullptr;
     }
+    if (ck_lpj_ptr != nullptr) {
+      delete ck_lpj_ptr;
+      ck_lpj_ptr = nullptr;
+    }
+    if (ck_ep_ptr != nullptr) {
+      delete ck_ep_ptr;
+      delete ck_tp_ptr;
+      delete ck_cv_ptr;
+      ck_ep_ptr = nullptr;
+    }
   }
   ck_jac_ptr = new DvceArray5D<Real>("ck_jac", nmb, 3, n3, n2, n1);
   ck_dbdt_ptr = new DvceArray5D<Real>("ck_dbdt", nmb, nb, n1, n3, n2);
@@ -493,7 +590,15 @@ inline void CkImplAlloc(const int nmb, const int nb, const int nch, const int n1
       if (ck_impl_lin_check > 0) {
         ck_lchk_ptr = new DvceArray5D<Real>("ck_lchk", nmb, 3*nbk, n1, n3, n2);
       }
+      if (ck_impl_jac_lin && ck_impl_lin_thr == 1) {
+        ck_lpj_ptr = new DvceArray5D<Real>("ck_lpj", nmb, nch, n1, n3, n2);
+      }
     }
+  }
+  if (ck_impl_cvsec) {
+    ck_ep_ptr = new DvceArray4D<Real>("ck_ep", nmb, n3, n2, n1);
+    ck_tp_ptr = new DvceArray4D<Real>("ck_tp", nmb, n3, n2, n1);
+    ck_cv_ptr = new DvceArray4D<Real>("ck_cv", nmb, n3, n2, n1);
   }
   if (ck_conv_ptr == nullptr) {
     ck_conv_ptr = new DvceArray1D<Real>("ck_conv", 8);
@@ -599,6 +704,315 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
   const int jscl_ = (ck_impl_reuse_jac == 2) ? 1 : 0;
   const bool t0rec_ = (jscl_ > 0) && (ck_impl_pass == CkImplJacPass());
   auto t0_ = *ck_t0_ptr;
+
+  // ---- problem/ck_impl_fuse: the residual test and the step in ONE team kernel -----
+  // One team per column.  Everything per cell -- the residual, the row, the cap, the
+  // fallback -- runs in parallel over the cells; the Thomas recurrences run on one lane
+  // out of team scratch.  The arithmetic of every per-cell quantity and of the two
+  // recurrences is the unfused kernels' in the same order, so the state is bitwise
+  // theirs.  The two diagnostic sums (slots 4, 5) are team sums and differ at round-off.
+  if (ck_impl_fuse && ck_impl_debug <= 0) {
+    const int nk = ke - ks + 1;
+    const int nj = je - js + 1;
+    const int nkj = nk*nj;
+    const int nlg = (nmb1 + 1)*nkj;
+    const int ns = ie + 1;                   // scratch rows are indexed by q = i - ic
+    const size_t scr = 6*ScrArray1D<Real>::shmem_size(ns);
+    // problem/ck_impl_cvsec: the secant heat capacity (1-element dummies when off)
+    const bool cvs_ = ck_impl_cvsec;
+    const bool cv0_ = (ck_impl_pass <= 0);
+    auto ep_ = cvs_ ? *ck_ep_ptr : DvceArray4D<Real>("ck_ep_d", 1, 1, 1, 1);
+    auto tp_ = cvs_ ? *ck_tp_ptr : DvceArray4D<Real>("ck_tp_d", 1, 1, 1, 1);
+    auto cv_ = cvs_ ? *ck_cv_ptr : DvceArray4D<Real>("ck_cv_d", 1, 1, 1, 1);
+    // one wavefront per column on a device; the host backends take their own size
+#if defined(KOKKOS_ENABLE_HIP) || defined(KOKKOS_ENABLE_CUDA)
+    Kokkos::TeamPolicy<> tpol(DevExeSpace(), nlg, 64);
+#else
+    Kokkos::TeamPolicy<> tpol(DevExeSpace(), nlg, Kokkos::AUTO);
+#endif
+    tpol.set_scratch_size(0, Kokkos::PerTeam(scr));
+    auto body = KOKKOS_LAMBDA(TeamMember_t tm) {
+      const int lr = tm.league_rank();
+      const int m = lr/nkj;
+      const int k = (lr - m*nkj)/nj + ks;
+      const int j = (lr - m*nkj) % nj + js;
+      const int ic = icut_(m,k,j);
+      // ---- the residual of the column (ck_impl_res) ----
+      Real emax = 0.0;
+      Kokkos::parallel_reduce(Kokkos::TeamThreadRange(tm, ic, ie+1),
+      [&](const int i, Real &mx) {
+        const Real e = ei_(m,k,j,i);
+        if (e > mx) mx = e;
+      }, Kokkos::Max<Real>(emax));
+      if (!(emax > 0.0)) {
+        Kokkos::single(Kokkos::PerTeam(tm), [&]() { done_(m,k,j) = 1.0; });
+        return;
+      }
+      Real rn = 0.0, sg = 0.0, ss = 0.0;
+      Kokkos::parallel_reduce(Kokkos::TeamThreadRange(tm, ic, ie+1),
+      [&](const int i, Real &mx) {
+        const Real r = ei_(m,k,j,i) - est_(m,k,j,i) - bdt*src_(m,k,j,i);
+        const Real s = fabs(r)/(ei_(m,k,j,i) + eps*emax);
+        if (s > mx) mx = s;
+        if (t0rec_) t0_(m,k,j,i) = T_(m,k,j,i);
+      }, Kokkos::Max<Real>(rn));
+      if (!(rn > 0.0)) rn = 0.0;             // the unfused max starts from 0
+      Kokkos::parallel_reduce(Kokkos::TeamThreadRange(tm, ic, ie+1),
+      [&](const int i, Real &sm) {
+        sm += (ei_(m,k,j,i) - est_(m,k,j,i))*dx1_(m,k,j,i);
+      }, sg);
+      Kokkos::parallel_reduce(Kokkos::TeamThreadRange(tm, ic, ie+1),
+      [&](const int i, Real &sm) {
+        sm += bdt*src_(m,k,j,i)*dx1_(m,k,j,i);
+      }, ss);
+      Kokkos::single(Kokkos::PerTeam(tm), [&]() {
+        Kokkos::atomic_max(&cnv_(0), rn);
+        Kokkos::atomic_add(&cnv_(4), sg);
+        Kokkos::atomic_add(&cnv_(5), ss);
+        if (rn <= tol) {
+          done_(m,k,j) = 1.0;
+        } else {
+          Kokkos::atomic_add(&cnv_(6), 1.0);
+        }
+      });
+      if (rn <= tol) return;
+      // ---- the step (ck_impl_tri) ----
+      if (ic > ie) return;
+      if (done_(m,k,j) > 0.0) return;
+      const int n = ie - ic + 1;
+      ScrArray1D<Real> sa(tm.team_scratch(0), ns);
+      ScrArray1D<Real> sb(tm.team_scratch(0), ns);
+      ScrArray1D<Real> sc(tm.team_scratch(0), ns);
+      ScrArray1D<Real> sd(tm.team_scratch(0), ns);
+      ScrArray1D<Real> sx(tm.team_scratch(0), ns);
+      ScrArray1D<Real> sv(tm.team_scratch(0), ns);
+      // ck_impl_cvsec: this pass's cv of every cell, before any row reads a neighbour's
+      if (cvs_) {
+        Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, 0, n), [&](const int q) {
+          const int i = ic + q;
+          const Real ei = ei_(m,k,j,i);
+          const Real Ti = T_(m,k,j,i);
+          Real cv = (ei > 0.0 && Ti > 0.0) ? ei/Ti : 1.0;
+          if (!cv0_) {
+            const Real cvo = cv_(m,k,j,i);
+            const Real dT = Ti - tp_(m,k,j,i);
+            const Real de = ei - ep_(m,k,j,i);
+            Real cs = (cvo > 0.0) ? cvo : cv;
+            if (fabs(dT) > 1.0e-7*Ti) {
+              const Real r = de/dT;
+              if (r > 0.02*cv && r < 50.0*cv) cs = r;
+            }
+            cv = cs;
+          }
+          sv(q) = cv;
+        });
+        tm.team_barrier();
+      }
+      // the rows, in parallel; a row that the unfused sweep would call bad sets the flag.
+      // One int carries both counts: bad rows + 65536 x thin rows (n < 65536).
+      int nbt = 0;
+      Kokkos::parallel_reduce(Kokkos::TeamThreadRange(tm, 0, n),
+      [&](const int q, int &nb) {
+        const int i = ic + q;
+        const Real ei = ei_(m,k,j,i);
+        const Real Ti = T_(m,k,j,i);
+        if (!(ei > 0.0) || !(Ti > 0.0)) {
+          nb += 1;
+          return;
+        }
+        Real cvi = ei/Ti;
+        const Real eim = (q > 0) ? ei_(m,k,j,i-1) : 0.0;
+        const Real Tim = (q > 0) ? T_(m,k,j,i-1) : 1.0;
+        const Real eip = (q < n-1) ? ei_(m,k,j,i+1) : 0.0;
+        const Real Tip = (q < n-1) ? T_(m,k,j,i+1) : 1.0;
+        Real cvm = (q > 0 && Tim > 0.0 && eim > 0.0) ? (eim/Tim) : 1.0;
+        Real cvp = (q < n-1 && Tip > 0.0 && eip > 0.0) ? (eip/Tip) : 1.0;
+        if (cvs_) {
+          cvi = sv(q);
+          if (q > 0) cvm = sv(q-1);
+          if (q < n-1) cvp = sv(q+1);
+        }
+        const bool thin = !(thk_(m,k,j,i) > 0.0);
+        Real a, b, c, d;
+        if (seedp_) {
+          const Real emc = em_(m,k,j,i);
+          const Real sc0 = src_(m,k,j,i);
+          a = 0.0;
+          b = 1.0;
+          c = 0.0;
+          if (seedm_ == 2) {
+            d = CkThinSolve(ei, est_(m,k,j,i), sc0, emc, bdt) - ei;
+          } else {
+            const Real de0 = est_(m,k,j,i) - ei;
+            if (emc > 0.0) {
+              const Real lam = 4.0*emc/ei;
+              const Real x = lam*bdt;
+              d = de0 + ((x > 1.0e-4) ? (sc0/lam)*(-expm1(-x)) : sc0*bdt);
+            } else {
+              d = de0 + sc0*bdt;
+            }
+          }
+        } else if (thin) {
+          a = 0.0;
+          b = 1.0;
+          c = 0.0;
+          d = CkThinSolve(ei, est_(m,k,j,i), src_(m,k,j,i), em_(m,k,j,i), bdt) - ei;
+          nb += 65536;
+        } else {
+          Real s0 = 1.0, s1 = 1.0, s2 = 1.0;
+          if (jscl_ > 0) {
+            const Real tb = t0_(m,k,j,i);
+            if (Ti > 0.0 && tb > 0.0) {
+              const Real r = Ti/tb;
+              s1 = r*r*r;
+            }
+            if (q > 0) {
+              const Real tbm = t0_(m,k,j,i-1);
+              if (Tim > 0.0 && tbm > 0.0) {
+                const Real r = Tim/tbm;
+                s0 = r*r*r;
+              }
+            }
+            if (q < n-1) {
+              const Real tbp = t0_(m,k,j,i+1);
+              if (Tip > 0.0 && tbp > 0.0) {
+                const Real r = Tip/tbp;
+                s2 = r*r*r;
+              }
+            }
+          }
+          a = (q > 0) ? (-bdt*s0*jac_(m,0,k,j,i)/cvm) : 0.0;
+          b = 1.0 - bdt*s1*jac_(m,1,k,j,i)/cvi;
+          c = (q < n-1) ? (-bdt*s2*jac_(m,2,k,j,i)/cvp) : 0.0;
+          d = -(ei - est_(m,k,j,i) - bdt*src_(m,k,j,i));
+        }
+        if (!(b > 0.0)) nb += 1;
+        sa(q) = a;
+        sb(q) = b;
+        sc(q) = c;
+        sd(q) = d;
+      }, nbt);
+      const int nbad = nbt % 65536;
+      const int nthn = nbt/65536;
+      tm.team_barrier();
+      // the Thomas recurrences on one lane: cp overwrites c, dp overwrites d, and the
+      // uncapped solution (NaN-guarded, as the unfused back substitution carries it)
+      // goes to x
+      int bad = (nbad > 0) ? 1 : 0;
+      Kokkos::single(Kokkos::PerTeam(tm), [&](int &bd) {
+        if (bd == 0) {
+          for (int q=0; q<n; ++q) {
+            const Real a = sa(q);
+            const Real den = sb(q) - a*((q > 0) ? sc(q-1) : 0.0);
+            if (!(fabs(den) > 0.0)) {
+              bd = 1;
+              break;
+            }
+            const Real cq = sc(q);
+            sc(q) = cq/den;
+            sd(q) = (sd(q) - a*((q > 0) ? sd(q-1) : 0.0))/den;
+          }
+        }
+        if (bd == 0) {
+          Real prev = 0.0;
+          for (int q=n-1; q>=0; --q) {
+            Real de = sd(q) - sc(q)*prev;
+            if (!(de == de)) de = 0.0;
+            prev = de;
+            sx(q) = de;
+          }
+        }
+        if (nthn > 0) Kokkos::atomic_add(&cnv_(7), static_cast<Real>(nthn));
+      }, bad);
+      tm.team_barrier();
+      if (bad) {
+        Kokkos::single(Kokkos::PerTeam(tm), [&]() { Kokkos::atomic_add(&cnv_(3), 1.0); });
+        Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, ic, ie+1), [&](const int i) {
+          const Real ei = ei_(m,k,j,i);
+          if (!(ei > 0.0)) return;
+          Real de = CkThinSolve(ei, est_(m,k,j,i), src_(m,k,j,i), em_(m,k,j,i), bdt) - ei;
+          const Real lim = dcap*ei;
+          if (de > lim) de = lim;
+          if (de < -lim) de = -lim;
+          u0(m,IEN,k,j,i) += de;
+          dep_(m,k,j,i) += de;
+        });
+        return;
+      }
+      // the caps and the apply, in parallel; the cap flag of row q goes to sa(q)
+      Real dn = 0.0;
+      int ncp = 0;
+      Kokkos::parallel_reduce(Kokkos::TeamThreadRange(tm, 0, n),
+      [&](const int q, Real &mx) {
+        const int i = ic + q;
+        Real de = sx(q);
+        bool cap = false;
+        const Real ei = ei_(m,k,j,i);
+        const Real lim = dcap*ei;
+        if (de > lim) {
+          de = lim;
+          cap = true;
+        }
+        if (de < -lim) {
+          de = -lim;
+          cap = true;
+        }
+        const Real es = est_(m,k,j,i);
+        if (detot > 0.0 && es > 0.0) {
+          Real en = ei + de;
+          const Real ehi = es*(1.0 + detot);
+          const Real elo = es*(1.0 - detot);
+          if (en > ehi) {
+            en = ehi;
+            cap = true;
+          }
+          if (en < elo) {
+            en = elo;
+            cap = true;
+          }
+          de = en - ei;
+        }
+        u0(m,IEN,k,j,i) += de;
+        dep_(m,k,j,i) += de;
+        const Real s = (ei > 0.0) ? fabs(de)/ei : 0.0;
+        if (s > mx) mx = s;
+        sa(q) = cap ? 1.0 : 0.0;
+        if (cvs_) {
+          ep_(m,k,j,i) = ei;
+          tp_(m,k,j,i) = T_(m,k,j,i);
+          cv_(m,k,j,i) = sv(q);
+        }
+      }, Kokkos::Max<Real>(dn));
+      Kokkos::parallel_reduce(Kokkos::TeamThreadRange(tm, 0, n),
+      [&](const int q, int &nc) {
+        if (sa(q) > 0.0) nc += 1;
+      }, ncp);
+      if (!(dn > 0.0)) dn = 0.0;
+      Kokkos::single(Kokkos::PerTeam(tm), [&]() {
+        Kokkos::atomic_max(&cnv_(1), dn);
+        if (ncp > 0) Kokkos::atomic_add(&cnv_(2), 1.0);
+      });
+    };
+    if (ck_impl_lw) {
+      Kokkos::parallel_for("ck_impl_fused", Kokkos::Experimental::require(tpol,
+                           Kokkos::Experimental::WorkItemProperty::HintLightWeight),
+                           body);
+    } else {
+      Kokkos::parallel_for("ck_impl_fused", tpol, body);
+    }
+    auto hcf = Kokkos::create_mirror_view(cnv_);
+    Kokkos::deep_copy(hcf, cnv_);
+    ck_impl_last_res = hcf(0);
+    ck_impl_last_gap = (hcf(5) != 0.0) ? (hcf(4)/hcf(5) - 1.0) : 0.0;
+    ck_impl_nactive = static_cast<int>(hcf(6));
+    if (hcf(6) == 0.0) return 0;
+    ck_impl_last_dst = hcf(1);
+    ck_impl_ncap = static_cast<int>(hcf(2));
+    ck_impl_nfall = static_cast<int>(hcf(3));
+    ck_impl_nthin = static_cast<int>(hcf(7));
+    if (hcf(1) <= dtol && hcf(0) <= tol) return 0;
+    return 1;
+  }
 
   // ---- pass 1: the residual norm of the CURRENT iterate --------------------------
   par_for("ck_impl_res", DevExeSpace(), 0, nmb1, ks, ke, js, je,

@@ -590,6 +590,16 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
               << "must be 1 or 4, got " << two_stream_rt::ck_impl_lin_thr << std::endl;
     std::exit(EXIT_FAILURE);
   }
+  // phase T4 (tests_ck_implicit/README_T4.md): the fused residual + step kernel, the
+  // Jacobian from the linear kernel's stored factorisation, the Jacobian on pass 0, and
+  // light-weight launches.  All default off.  See utils/two_stream_column_ck.hpp.
+  two_stream_rt::ck_impl_fuse = pin->GetOrAddBoolean("problem","ck_impl_fuse",false);
+  two_stream_rt::ck_impl_jac_lin =
+      pin->GetOrAddBoolean("problem","ck_impl_jac_lin",false);
+  two_stream_rt::ck_impl_jac0 = pin->GetOrAddBoolean("problem","ck_impl_jac0",false);
+  two_stream_rt::ck_impl_jneg = pin->GetOrAddBoolean("problem","ck_impl_jneg",false);
+  two_stream_rt::ck_impl_cvsec = pin->GetOrAddBoolean("problem","ck_impl_cvsec",false);
+  two_stream_rt::ck_impl_lw = pin->GetOrAddBoolean("problem","ck_impl_lw",false);
   // problem/ck_impl_reuse_jac (0 off / 1 chord / 2 scaled chord) and problem/ck_impl_seed
   // (0 off / 1 semi-implicit / 2 exact lagged): the two phase-4 levers, both default off.
   // See tests_ck_implicit/README_phase4.md.
