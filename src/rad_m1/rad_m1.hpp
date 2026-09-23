@@ -423,6 +423,24 @@ class RadiationM1 {
                                 // Picard pass as a 19-point stencil, built once
   DvceArray5D<Real> ost;        // (m,19,k,j,i) that stencil
   bool st_edges;                // ...and whether any edge coefficient is non-zero
+  bool impl_vfold;              // <rad_m1>/implicit_vimp_fold (tests_m1/runs_4a_accel):
+                                // the implicit_vimp operator part folded into the stored
+                                // stencil (x2/x3 +-1 into slots 3-6, the +-2 neighbours
+                                // into slots 19-24) instead of M1VimpRow per apply
+  int impl_onep;                // <rad_m1>/implicit_one_pass: check period N (0 = off)
+  Real impl_onep_s;             // <rad_m1>/implicit_one_pass_safety (default 3)
+  Real onep_qa[3], onep_qb[3];  // last two measured contractions (be, stage 1, stage 2)
+  Real onep_cnt[3];             // solves since the last measurement
+  Real impl_onep_n, impl_onep_nchk;  // accepted after one pass / measurements (counters)
+  bool ew_tight;                // this pass: no Eisenstat-Walker loosening
+  int impl_pord;                // <rad_m1>/implicit_predictor_order: 1 (default) or 2
+  bool impl_opsplit;            // <rad_m1>/implicit_op_split_red: the stencil apply as a
+                                // plain par_for, then a separate read-only reduction
+                                // kernel (instead of the fused 4-value reduction)
+  bool impl_fastk;              // <rad_m1>/implicit_fast_kernels: bitwise-exact shortcuts
+  bool impl_odskip;             // ...its Eddington part: D_ab = 0 off the diagonal, so
+                                // the stencil build and the right-hand side skip the od
+                                // terms
   bool impl_prec_float;         // <rad_m1>/implicit_precond_float: the fast path's
                                 // line solves in float
   int impl_kfuse;               // <rad_m1>/implicit_krylov_fuse: 1 = the preconditioner

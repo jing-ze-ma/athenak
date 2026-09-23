@@ -414,7 +414,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
       std::memcpy(&(hdr[0]), &(pred_hdr[0]), sizeof(hdr));
       std::memcpy(&pred_dt_file, &(pred_hdr[0]) + sizeof(hdr), sizeof(pred_dt_file));
     }
-    if (!ok || hdr[0] != 1 || hdr[1] < 1 || hdr[1] > 3) {
+    if (!ok || hdr[0] != 1 || hdr[1] < 1 || hdr[1] > 5) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
                 << std::endl << "the <rad_m1> predictor header of this restart file is "
                 << "broken." << std::endl;
@@ -458,6 +458,37 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
       exit(EXIT_FAILURE);
     }
     nt2_file = static_cast<int>(hdr[1]);
+  }
+
+  // --- THE <rad_m1> implicit_one_pass HEADER (radm1::kM1OnePassRstMagic), behind the
+  // hesdirk2 one: 9 Reals, no slabs
+  bool onep_file = false;
+  Real onep_hv[9];
+  if (std::memcmp(variabledata, &(radm1::kM1OnePassRstMagic[0]),
+                  sizeof(radm1::kM1OnePassRstMagic)) == 0) {
+    IOWrapperSizeT nb = 0;
+    bool ok = true;
+    if (global_variable::my_rank == 0 || single_file_per_rank) {
+      ok = (resfile.Read_bytes(&nb, 1, sizeof(IOWrapperSizeT), single_file_per_rank)
+            == sizeof(IOWrapperSizeT)) && (nb == sizeof(onep_hv));
+      ok = ok && (resfile.Read_bytes(&(onep_hv[0]), 1, nb, single_file_per_rank) == nb);
+      ok = ok && (resfile.Read_bytes(variabledata, 1, variablesize, single_file_per_rank)
+                  == variablesize);
+    }
+#if MPI_PARALLEL_ENABLED
+    if (!single_file_per_rank) {
+      MPI_Bcast(&ok, sizeof(bool), MPI_CHAR, 0, MPI_COMM_WORLD);
+      MPI_Bcast(&(onep_hv[0]), sizeof(onep_hv), MPI_CHAR, 0, MPI_COMM_WORLD);
+      MPI_Bcast(variabledata, variablesize, MPI_CHAR, 0, MPI_COMM_WORLD);
+    }
+#endif
+    if (!ok) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "the <rad_m1> one-pass header of this restart file is "
+                << "broken." << std::endl;
+      exit(EXIT_FAILURE);
+    }
+    onep_file = true;
   }
 
   IOWrapperSizeT data_size;
@@ -1132,6 +1163,13 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
   if (t2_want && !t2_read && global_variable::my_rank == 0) {
     std::cout << "### WARNING: restart file has no <rad_m1> hesdirk2 slope; the first "
               << "step is backward Euler and this restart is not bitwise." << std::endl;
+  }
+  if (onep_file && pradm1 != nullptr && pradm1->impl_onep > 0) {
+    for (int t = 0; t < 3; ++t) {
+      pradm1->onep_qa[t] = onep_hv[t];
+      pradm1->onep_qb[t] = onep_hv[3+t];
+      pradm1->onep_cnt[t] = onep_hv[6+t];
+    }
   }
   if (wt_hyd || wt_mhd || nwarm_read > 0 || pred_read || t2_read) {
     const IOWrapperSizeT tail0 = offset_myrank;

@@ -48,6 +48,10 @@ constexpr int M1_T2_NVET = 10;
 // Real dt_prev, Real vprev; then nch cell slabs (K1, ipred2, vet_prev) behind the
 // predictor slabs.  Absent when no slope is stored: old files stay byte-identical.
 constexpr char kM1Time2RstMagic[8] = {'M', '1', 'T', 'I', 'M', 'E', '2', 'A'};
+// <rad_m1>/implicit_one_pass (tests_m1/runs_4a_accel): a marked header behind the
+// hesdirk2 one -- 9 Reals: the last two measured contractions and the solve counters of
+// the three kinds of solve.  Written only when implicit_one_pass > 0.
+constexpr char kM1OnePassRstMagic[8] = {'M', '1', 'O', 'N', 'E', 'P', '0', '1'};
 
 // <rad_m1>/transport
 constexpr int M1_TRANSPORT_EXPLICIT   = 0;   // stages 1-2: PD-ARS, sub-cycled

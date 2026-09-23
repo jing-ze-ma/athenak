@@ -1,0 +1,12 @@
+100 1000 x1 64 edd impl 24 enth=plm ny=4 nper=10 vimp=true ts=hesdirk2
+100 1000 x1 64 edd impl 48 enth=plm ny=4 nper=10 vimp=true ts=hesdirk2
+100 1000 x1 64 edd impl 24 enth=plm ny=4 nper=10 v0=1.2909944 vimp=true ts=hesdirk2
+100 1000 x1 64 edd impl 48 enth=plm ny=4 nper=10 v0=1.2909944 vimp=true ts=hesdirk2
+100 10 x1 64 edd impl 24 enth=plm ny=4 nper=10 vimp=true ts=hesdirk2
+100 10 x1 64 edd impl 48 enth=plm ny=4 nper=10 vimp=true ts=hesdirk2
+100 10 x1 64 edd impl 24 enth=plm ny=4 nper=10 v0=1.2909944 vimp=true ts=hesdirk2
+100 10 x1 64 edd impl 48 enth=plm ny=4 nper=10 v0=1.2909944 vimp=true ts=hesdirk2
+100 100000 x1 64 edd impl 24 enth=plm ny=4 nper=10 vimp=true ts=hesdirk2
+1 100000 x1 64 edd impl 24 enth=plm ny=4 nper=10 vimp=true ts=hesdirk2
+100 100000 x1 64 edd impl 24 enth=plm ny=4 nper=10 vimp=true
+1 100000 x1 64 edd impl 24 enth=plm ny=4 nper=10 vimp=true
