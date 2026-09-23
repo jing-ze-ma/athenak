@@ -600,6 +600,27 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   two_stream_rt::ck_impl_jneg = pin->GetOrAddBoolean("problem","ck_impl_jneg",false);
   two_stream_rt::ck_impl_cvsec = pin->GetOrAddBoolean("problem","ck_impl_cvsec",false);
   two_stream_rt::ck_impl_lw = pin->GetOrAddBoolean("problem","ck_impl_lw",false);
+  // problem/ck_impl_glob: Newton globalisation of the fused T4 step, none | ls | ls_sub
+  // (utils/two_stream_column_ck.hpp, tests_ck_implicit/README_glob.md).  none = bitwise.
+  {
+    const std::string gl = pin->GetOrAddString("problem","ck_impl_glob","none");
+    if (gl == "none") {
+      two_stream_rt::ck_impl_glob = 0;
+    } else if (gl == "ls") {
+      two_stream_rt::ck_impl_glob = 1;
+    } else if (gl == "ls_sub") {
+      two_stream_rt::ck_impl_glob = 2;
+    } else {
+      std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: problem/ck_impl_glob = " << gl
+                << " (none | ls | ls_sub)" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    two_stream_rt::ck_impl_ls_ntry =
+        pin->GetOrAddInteger("problem","ck_impl_ls_ntry",4);
+    two_stream_rt::ck_impl_ls_c = pin->GetOrAddReal("problem","ck_impl_ls_c",1.0e-4);
+    two_stream_rt::ck_impl_sub_max =
+        pin->GetOrAddInteger("problem","ck_impl_sub_max",8);
+  }
   // problem/ck_impl_reuse_jac (0 off / 1 chord / 2 scaled chord) and problem/ck_impl_seed
   // (0 off / 1 semi-implicit / 2 exact lagged): the two phase-4 levers, both default off.
   // See tests_ck_implicit/README_phase4.md.
