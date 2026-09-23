@@ -9,6 +9,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <utility>
 #include <iostream>
 
 #include "athena.hpp"
@@ -826,6 +827,20 @@ TaskStatus Hydro::ConToPrim(Driver *pdrive, int stage) {
   int n1m1 = indcs.nx1 + 2*ng - 1;
   int n2m1 = (indcs.nx2 > 1)? (indcs.nx2 + 2*ng - 1) : 0;
   int n3m1 = (indcs.nx3 > 1)? (indcs.nx3 + 2*ng - 1) : 0;
+  // A restart that carried the internal energy (kEintRstMagic, pgen/pgen.hpp): the
+  // frozen first conversion takes w0(IEN) from the file and hands u0(IEN) back exactly
+  // as the file had it.  Re-deriving the internal energy from the file's u0 goes through
+  // (E - rho phi) + rho phi - rho phi with etotgrav, which is not the E - rho phi of the
+  // straight run's last inversion; the restart then stopped being bitwise.
+  const bool eint_fix = c2p_freeze_derived && c2p_eint_rst;
+  DvceArray4D<Real> ekeep;
+  if (eint_fix) {
+    Kokkos::realloc(ekeep, eint_rst.extent(0), eint_rst.extent(1), eint_rst.extent(2),
+                    eint_rst.extent(3));
+    Kokkos::deep_copy(ekeep, Kokkos::subview(u0, std::make_pair(0,
+                      static_cast<int>(eint_rst.extent(0))), static_cast<int>(IEN),
+                      Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
+  }
   if (use_etotgrav) {
     RemoveGravEtot(phicc0, u0, 0, n1m1, 0, n2m1, 0, n3m1);
   }
@@ -861,6 +876,15 @@ TaskStatus Hydro::ConToPrim(Driver *pdrive, int stage) {
   }
   if (use_etotgrav) {
     AddGravEtot(phicc0, u0, 0, n1m1, 0, n2m1, 0, n3m1);
+  }
+  if (eint_fix) {
+    const int nmbe = static_cast<int>(eint_rst.extent(0));
+    Kokkos::deep_copy(Kokkos::subview(w0, std::make_pair(0,nmbe), static_cast<int>(IEN),
+                      Kokkos::ALL, Kokkos::ALL, Kokkos::ALL), eint_rst);
+    Kokkos::deep_copy(Kokkos::subview(u0, std::make_pair(0,nmbe), static_cast<int>(IEN),
+                      Kokkos::ALL, Kokkos::ALL, Kokkos::ALL), ekeep);
+    eint_rst = DvceArray4D<Real>();
+    c2p_eint_rst = false;
   }
   runaway_scan::Scan(pmy_pack->pmesh, "ConToPrim_floors");
   return TaskStatus::complete;

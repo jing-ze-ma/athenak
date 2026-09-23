@@ -203,6 +203,11 @@ class Hydro {
   // which is enough to make the restart stop being a bitwise continuation.  Cleared by
   // that call; see GeneralHydro::ConsToPrimFrozen.
   bool c2p_freeze_derived = false;
+  // The internal energy w0(IEN) the restart file carried (pgen/pgen.hpp kEintRstMagic).
+  // The frozen first ConToPrim puts it into w0 and leaves u0(IEN) as the file had it;
+  // then released.  Empty (and c2p_eint_rst false) otherwise.
+  bool c2p_eint_rst = false;
+  DvceArray4D<Real> eint_rst;
     
   // following used for well-balanced scheme
   bool use_wellbalance_static = false;    // flag to enable static wellbalance
