@@ -1,0 +1,10 @@
+g8_hm 8 he3d_fast.athinput meshblock/nx3=26  rad_m1/implicit_halo_mpi=true
+g8_hmo 8 he3d_fast.athinput meshblock/nx3=26  rad_m1/implicit_halo_mpi=true rad_m1/implicit_halo_overlap=true
+g8_ph 8 he3d_fast.athinput meshblock/nx3=26  rad_m1/implicit_halo_mpi=true rad_m1/implicit_krylov_pipe=true
+g8_pho 8 he3d_fast.athinput meshblock/nx3=26  rad_m1/implicit_halo_mpi=true rad_m1/implicit_krylov_pipe=true rad_m1/implicit_halo_overlap=true
+g8_hyd 8 he3d_hydro.athinput meshblock/nx3=26 
+w8_hm 8 he3d_fast.athinput meshblock/nx3=26 mesh/nx2=416 mesh/x2max=4.41325104e9 mesh/nx3=208 mesh/x3max=2.20662552e9 rad_m1/implicit_halo_mpi=true
+w8_hmo 8 he3d_fast.athinput meshblock/nx3=26 mesh/nx2=416 mesh/x2max=4.41325104e9 mesh/nx3=208 mesh/x3max=2.20662552e9 rad_m1/implicit_halo_mpi=true rad_m1/implicit_halo_overlap=true
+w8_ph 8 he3d_fast.athinput meshblock/nx3=26 mesh/nx2=416 mesh/x2max=4.41325104e9 mesh/nx3=208 mesh/x3max=2.20662552e9 rad_m1/implicit_halo_mpi=true rad_m1/implicit_krylov_pipe=true
+w8_pho 8 he3d_fast.athinput meshblock/nx3=26 mesh/nx2=416 mesh/x2max=4.41325104e9 mesh/nx3=208 mesh/x3max=2.20662552e9 rad_m1/implicit_halo_mpi=true rad_m1/implicit_krylov_pipe=true rad_m1/implicit_halo_overlap=true
+w8_hyd 8 he3d_hydro.athinput meshblock/nx3=26 mesh/nx2=416 mesh/x2max=4.41325104e9 mesh/nx3=208 mesh/x3max=2.20662552e9
