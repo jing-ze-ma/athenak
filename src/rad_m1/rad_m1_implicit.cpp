@@ -235,8 +235,16 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (impl_bcg_sync == 2) {
     bcg_rvd = Kokkos::View<Real, DevMemSpace>("m1_bcg_rvd");
   }
-  // GPU COST OF THE KRYLOV ITERATION (bench/m1_fast_0923).  All OFF by default, and
-  // off nothing is allocated or called: the default path is bitwise HEAD.
+  // GPU COST OF THE KRYLOV ITERATION (bench/m1_fast_0923).  Off, nothing is allocated
+  // or called and the path is bitwise the pre-0923 code.  Since
+  // tests_m1/runs_3p_fastdefault they DEFAULT ON (the `FAST` set of
+  // tests_m1/runs_3k_gpu3d/README_FAST.md: halo_direct, od_cache, krylov_fuse = 3,
+  // op_stencil, precond = rbgs_fwd; 2.0-2.4x on the GPU, the converged answer moved at
+  // the +-1-ulp level) for the closures whose tensor is fixed within a step (eddington,
+  // vet_sc, tau) whenever the configuration admits them: transport = implicit with
+  // bicgstab, implicit_bcg_sync = 1, implicit_line_solver = pcr, ONE MeshBlock along x1,
+  // no implicit_lin_cnorm, and (op_stencil) no periodic x1 wrap.  m1 / minerbo /
+  // kershaw keep them off (not gated there).  A key the input names keeps its value.
   //  implicit_halo_direct = true   the implicit exchanges as ONE on-rank copy kernel
   //    when every neighbour of every block is on its own rank at the same level
   //    (otherwise the ordinary exchange, as before).  Bitwise.
@@ -258,15 +266,29 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   //  implicit_precond = line | rbgs | rbgs_fwd   the preconditioner of the fused path:
   //    x1 line Jacobi (the original), symmetric / forward red-black transverse line
   //    Gauss-Seidel, block-local (ImplicitPrecondX).  Needs implicit_krylov_fuse >= 1.
-  impl_halo_direct = pin->GetOrAddBoolean("rad_m1","implicit_halo_direct",false);
-  impl_odc = pin->GetOrAddBoolean("rad_m1","implicit_od_cache",false);
-  impl_kfuse = pin->GetOrAddInteger("rad_m1","implicit_krylov_fuse",0);
-  impl_stencil = pin->GetOrAddBoolean("rad_m1","implicit_op_stencil",false);
+  const bool fixcl = eddington || vet_sc || tau_closure;
+  bool fdef = fixcl && full && (impl_solver == M1_ISOLV_BICGSTAB) &&
+              (impl_bcg_sync == 1) && (impl_line_solver == 1) &&
+              (pmy_pack->pmesh->mesh_indcs.nx1 == pmy_pack->pmesh->mb_indcs.nx1);
+  if (pin->DoesParameterExist("rad_m1","implicit_lin_cnorm") &&
+      pin->GetReal("rad_m1","implicit_lin_cnorm") > 0.0) {
+    fdef = false;
+  }
+  // the x1 wrap as the boundary parsing below will read it (same keys, same defaults)
+  const bool x1per = (ImplBCFromString(
+      pin->GetOrAddString("rad_m1","implicit_bc_x1min","auto"),
+      pmy_pack->pmesh->mesh_bcs[static_cast<int>(BoundaryFace::inner_x1)])
+      == M1_IBC_PERIODIC);
+  impl_halo_direct = pin->GetOrAddBoolean("rad_m1","implicit_halo_direct",fdef);
+  impl_odc = pin->GetOrAddBoolean("rad_m1","implicit_od_cache",fdef);
+  impl_kfuse = pin->GetOrAddInteger("rad_m1","implicit_krylov_fuse",fdef ? 3 : 0);
+  impl_stencil = pin->GetOrAddBoolean("rad_m1","implicit_op_stencil",fdef && !x1per);
   impl_prec_float = pin->GetOrAddBoolean("rad_m1","implicit_precond_float",false);
   if (impl_stencil && impl_bcg_sync != 1) {
     ImplFatal("<rad_m1>/implicit_op_stencil needs implicit_bcg_sync = 1");
   }
-  {std::string pc = pin->GetOrAddString("rad_m1","implicit_precond","line");
+  {std::string pc = pin->GetOrAddString("rad_m1","implicit_precond",
+                                        fdef ? "rbgs_fwd" : "line");
   if (pc.compare("line") == 0) {
     impl_prec = 0;
   } else if (pc.compare("rbgs") == 0) {
@@ -323,7 +345,6 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   //    the default for them since 0923, restart-safe).
   //  The Eisenstat-Walker default is 1e-2 with bcg_sync >= 1 and 0 (off) with
   //  bcg_sync = 0, so an input that asks for the original BiCGStab loop still runs.
-  const bool fixcl = eddington || vet_sc || tau_closure;
   impl_lres_test = pin->GetOrAddBoolean("rad_m1","implicit_lres_test",!fixcl);
   impl_conv_est = pin->GetOrAddBoolean("rad_m1","implicit_conv_est",fixcl);
   impl_ew_max = pin->GetOrAddReal("rad_m1","implicit_lin_ew_max",

@@ -1268,6 +1268,15 @@ void RadiationM1::VetMBInit(ParameterInput *pin) {
       VetFatal("<rad_m1>/vet_mb_kernel = '" + kn + "' not implemented (ray | cell)");
     }
   }
+  // DEFAULT vet_mb_halo = 3 (tests_m1/runs_3p_fastdefault; exact, 8.2 -> 5.6 ms per
+  // sweep on 2 GPUs, tests_m1/runs_3m_vetmb/README_SCALING.md) when the input does not
+  // name it, with the ray kernel and no vet_mb_lag, narrowed until the band fits a block.
+  if (!pin->DoesParameterExist("rad_m1", "vet_mb_halo") && st.raypar &&
+      !(pin->DoesParameterExist("rad_m1", "vet_mb_lag") &&
+        pin->GetInteger("rad_m1", "vet_mb_lag") > 0)) {
+    st.hk = 3;
+    while (st.hk > 1 && (st.hk*st.w2 > nx2 || (thrd && st.hk*st.w3 > nx3))) {--st.hk;}
+  }
   if (st.hk < 1) {
     VetFatal("<rad_m1>/vet_mb_halo must be >= 1");
   }
