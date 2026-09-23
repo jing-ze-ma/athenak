@@ -280,6 +280,8 @@ class BaseTypeOutput {
   // the first Fluxes call of a restarted cycle reads it before any ConsToPrim of the
   // restarted run has written it.  MHD only; empty otherwise.
   HostArray4D<Real> outarray_wdpm, outarray_wdgm;
+  // w0(IEN) of a general-EOS Hydro / MHD, see kEintRstMagic in pgen/pgen.hpp
+  HostArray4D<Real> outarray_weh, outarray_wem;
   // the mode-3 two-stream Newton WARM-START history (two_stream_rt::rt_c3bp and, for
   // problem/rt_impl_warm = 2, rt_c3bp2).  Same argument once more: the iterate the
   // history sets decides which of the answers inside rt_impl_tol the Newton stops on, so

@@ -152,6 +152,19 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
                       std::make_pair(0,nmb), static_cast<int>(IDG1),
                       Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
   }
+  // the internal energy the last inversion produced, see kEintRstMagic in pgen.hpp
+  if (phydro != nullptr && phydro->peos->eos_data.IsGeneral()) {
+    Kokkos::realloc(outarray_weh, nmb, nout3, nout2, nout1);
+    Kokkos::deep_copy(outarray_weh, Kokkos::subview(phydro->w0,
+                      std::make_pair(0,nmb), static_cast<int>(IEN),
+                      Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
+  }
+  if (pmhd != nullptr && pmhd->peos->eos_data.IsGeneral()) {
+    Kokkos::realloc(outarray_wem, nmb, nout3, nout2, nout1);
+    Kokkos::deep_copy(outarray_wem, Kokkos::subview(pmhd->w0,
+                      std::make_pair(0,nmb), static_cast<int>(IEN),
+                      Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
+  }
   // the mode-3 Newton warm-start history, see the note on outarray_wm1
   {
     const int nwm = two_stream_rt::RtWarmLevels();
@@ -297,6 +310,15 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
     }
     std::memcpy(&(t2_hdr[0]), &(hdr[0]), sizeof(hdr));
     std::memcpy(&(t2_hdr[0]) + sizeof(hdr), &(hv[0]), sizeof(hv));
+  }
+  // the general-EOS internal energy slabs (kEintRstMagic): one per general-EOS module
+  const bool we_hyd = (phydro != nullptr) && phydro->peos->eos_data.IsGeneral();
+  const bool we_mhd = (pmhd != nullptr) && pmhd->peos->eos_data.IsGeneral();
+  const int neint = (we_hyd ? 1 : 0) + (we_mhd ? 1 : 0);
+  char eint_hdr[2*sizeof(std::int32_t)];
+  {
+    const std::int32_t hdr[2] = {static_cast<std::int32_t>(neint), 0};
+    std::memcpy(&(eint_hdr[0]), &(hdr[0]), sizeof(hdr));
   }
   int nhydro=0, nmhd=0, nrad=0, nm1=0, nforce=3, nz4c=0, nadm=0, nco=0;
   if (pradm1 != nullptr) {
@@ -451,6 +473,14 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
       resfile.Write_any_type(&nb, sizeof(IOWrapperSizeT), "byte", single_file_per_rank);
       resfile.Write_any_type(&(t2_hdr[0]), nb, "byte", single_file_per_rank);
     }
+    // the internal energy header, same marked form, behind all the others
+    if (neint > 0) {
+      IOWrapperSizeT nb = sizeof(eint_hdr);
+      resfile.Write_any_type(&(kEintRstMagic[0]), sizeof(kEintRstMagic), "byte",
+                             single_file_per_rank);
+      resfile.Write_any_type(&nb, sizeof(IOWrapperSizeT), "byte", single_file_per_rank);
+      resfile.Write_any_type(&(eint_hdr[0]), nb, "byte", single_file_per_rank);
+    }
   }
 
   //--- STEP 4.  All ranks write data over all MeshBlocks (5D arrays) in parallel
@@ -518,6 +548,7 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   if (nt2 > 0) {
     data_size += nt2*nout1*nout2*nout3*sizeof(Real);    // rad_m1 hesdirk2 slope
   }
+  data_size += neint*nout1*nout2*nout3*sizeof(Real);    // hydro / mhd w0(IEN)
   if (global_variable::my_rank == 0 || single_file_per_rank) {
     resfile.Write_any_type(&(data_size), sizeof(IOWrapperSizeT), "byte",
                             single_file_per_rank);
@@ -545,6 +576,9 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   if (nt2 > 0) {
     step3size += sizeof(radm1::kM1Time2RstMagic) + sizeof(IOWrapperSizeT)
                  + sizeof(t2_hdr);
+  }
+  if (neint > 0) {
+    step3size += sizeof(kEintRstMagic) + sizeof(IOWrapperSizeT) + sizeof(eint_hdr);
   }
 
   // write cell-centered variables in parallel
@@ -1028,6 +1062,9 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
     write_wtemp(Kokkos::subview(outarray_m1t, Kokkos::ALL, n, Kokkos::ALL, Kokkos::ALL,
                                 Kokkos::ALL), "rad_m1 hesdirk2 slope");
   }
+  // and the internal energy last of all (kEintRstMagic)
+  if (we_hyd) { write_wtemp(outarray_weh, "hydro internal energy"); }
+  if (we_mhd) { write_wtemp(outarray_wem, "mhd internal energy"); }
 
   // close file, clean up
   resfile.Close(single_file_per_rank);

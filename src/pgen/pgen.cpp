@@ -460,6 +460,38 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     nt2_file = static_cast<int>(hdr[1]);
   }
 
+  // --- THE GENERAL-EOS INTERNAL ENERGY HEADER (kEintRstMagic, pgen.hpp), behind all the
+  // others: neint_file slabs of w0(IEN), hydro then mhd, are the LAST slabs of the tail.
+  int neint_file = 0;
+  if (std::memcmp(variabledata, &(kEintRstMagic[0]), sizeof(kEintRstMagic)) == 0) {
+    char eint_hdr[2*sizeof(std::int32_t)];
+    IOWrapperSizeT nb = 0;
+    bool ok = true;
+    if (global_variable::my_rank == 0 || single_file_per_rank) {
+      ok = (resfile.Read_bytes(&nb, 1, sizeof(IOWrapperSizeT), single_file_per_rank)
+            == sizeof(IOWrapperSizeT)) && (nb == sizeof(eint_hdr));
+      ok = ok && (resfile.Read_bytes(&(eint_hdr[0]), 1, nb, single_file_per_rank) == nb);
+      ok = ok && (resfile.Read_bytes(variabledata, 1, variablesize, single_file_per_rank)
+                  == variablesize);
+    }
+#if MPI_PARALLEL_ENABLED
+    if (!single_file_per_rank) {
+      MPI_Bcast(&ok, sizeof(bool), MPI_CHAR, 0, MPI_COMM_WORLD);
+      MPI_Bcast(&(eint_hdr[0]), sizeof(eint_hdr), MPI_CHAR, 0, MPI_COMM_WORLD);
+      MPI_Bcast(variabledata, variablesize, MPI_CHAR, 0, MPI_COMM_WORLD);
+    }
+#endif
+    std::int32_t hdr[2] = {0, 0};
+    if (ok) { std::memcpy(&(hdr[0]), &(eint_hdr[0]), sizeof(hdr)); }
+    if (!ok || hdr[0] < 1 || hdr[0] > 2) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "the internal energy header of this restart file is "
+                << "broken." << std::endl;
+      exit(EXIT_FAILURE);
+    }
+    neint_file = static_cast<int>(hdr[0]);
+  }
+
   IOWrapperSizeT data_size;
   std::memcpy(&data_size, &(variabledata[0]), sizeof(IOWrapperSizeT));
 
@@ -545,7 +577,8 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
   // and behind both of them, the mode-3 warm-start history: nwarm_file slabs, a number
   // the marked header above gave us rather than something inferred from the length
   // (and behind those the npred_file <rad_m1> predictor slabs, also header-declared)
-  IOWrapperSizeT wm_size = (nwarm_file + npred_file + nt2_file)*nout1*nout2*nout3
+  IOWrapperSizeT wm_size = (nwarm_file + npred_file + nt2_file + neint_file)
+                           *nout1*nout2*nout3
                            *sizeof(Real);
   if ((data_size_ + wt_size + wd_size + wm_size) == data_size) {
     data_size_ += wt_size + wd_size + wm_size;
@@ -1249,6 +1282,33 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
       pradm1->pred2_dt = t2_hv[0];
       pradm1->t2_dtprev = t2_hv[1];
       pradm1->t2_vprev = (t2_hv[2] > 0.5);
+    }
+    // the internal energy (kEintRstMagic): only with the full general-EOS tail, which is
+    // what makes the first conversion frozen; it goes into w0 in that conversion
+    const int neint_want = (wt_hyd ? 1 : 0) + (wt_mhd ? 1 : 0);
+    if (neint_file > 0 && neint_file == neint_want && wd_hyd == wt_hyd &&
+        wd_mhd == wt_mhd) {
+      int nprev = (wt_hyd ? 1 : 0) + (wt_mhd ? 1 : 0) + (wd_hyd ? 2 : 0)
+                  + (wd_mhd ? 2 : 0) + nwarm_file + npred_file + nt2_file;
+      offset_myrank = tail0 + nprev*nout1*nout2*nout3*sizeof(Real);
+      myoffset = offset_myrank;
+      if (wt_hyd) {
+        read_slab("hydro internal energy");
+        Kokkos::realloc(phydro->eint_rst, nmb, nout3, nout2, nout1);
+        Kokkos::deep_copy(phydro->eint_rst, wtin);
+        phydro->c2p_eint_rst = true;
+      }
+      if (wt_mhd) {
+        read_slab("mhd internal energy");
+        Kokkos::realloc(pmhd->eint_rst, nmb, nout3, nout2, nout1);
+        Kokkos::deep_copy(pmhd->eint_rst, wtin);
+        pmhd->c2p_eint_rst = true;
+      }
+    } else if (neint_want > 0 && (wd_hyd || wd_mhd) && global_variable::my_rank == 0) {
+      std::cout << "### WARNING: restart file has no general-EOS internal energy "
+                << "(written before it was added); with etotgrav the first conversion "
+                << "re-derives it from (E - rho phi) + rho phi and this restart is not "
+                << "bitwise." << std::endl;
     }
   }
 
