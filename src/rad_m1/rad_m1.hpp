@@ -293,6 +293,9 @@ class RadiationM1 {
   int ibc_x1min, ibc_x1max;     // M1_IBC_*
   Real iflux_x1min, iflux_x1max;  // the imposed face flux of M1_IBC_FLUX
   Real iebath_x1min, iebath_x1max;  // M1_IBC_MARSHAK: the INCIDENT bath
+  // implicit_bc_advect: a MARSHAK x1 end also carries the advected enthalpy flux
+  // A E (outflow: the end cell's E; inflow: the bath).  Default off (bitwise).
+  bool impl_bc_advect;
                                 // energy density, F_f = +-c q (E - E_bath);
                                 // 0 is the plain free surface
   DvceArray4D<Real> f0x1;       // face-normal comoving flux on x1 faces, (m,k,j,i);

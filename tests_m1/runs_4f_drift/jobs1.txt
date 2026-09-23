@@ -1,0 +1,16 @@
+m5_be_n512_c0.4 M5 512 be
+m5_be_n1024_c0.4 M5 1024 be
+m7_be_n512_c0.4 M7 512 be
+m7_be_n1024_c0.4 M7 1024 be
+m5_fix_be_n512_c0.4 M5 512 be rad_m1/implicit_bc_advect=true
+m5_fix_be_n1024_c0.4 M5 1024 be rad_m1/implicit_bc_advect=true
+m5_fix_be_n2048_c0.4 M5 2048 be rad_m1/implicit_bc_advect=true
+m5_fix_h2_n1024_c0.4 M5 1024 h2 rad_m1/implicit_bc_advect=true
+m7_fix_be_n512_c0.4 M7 512 be rad_m1/implicit_bc_advect=true
+m7_fix_be_n1024_c0.4 M7 1024 be rad_m1/implicit_bc_advect=true
+m7_fix_h2_n512_c0.4 M7 512 h2 rad_m1/implicit_bc_advect=true
+m7_fix_h2_n1024_c0.4 M7 1024 h2 rad_m1/implicit_bc_advect=true
+m5_efix_be_n512_c0.4 M5 512 be rad_m1/implicit_bc_x1min=efix rad_m1/implicit_bc_x1max=efix
+m5_efix_be_n1024_c0.4 M5 1024 be rad_m1/implicit_bc_x1min=efix rad_m1/implicit_bc_x1max=efix
+m7_efix_be_n512_c0.4 M7 512 be rad_m1/implicit_bc_x1min=efix rad_m1/implicit_bc_x1max=efix
+m7_efix_be_n1024_c0.4 M7 1024 be rad_m1/implicit_bc_x1min=efix rad_m1/implicit_bc_x1max=efix

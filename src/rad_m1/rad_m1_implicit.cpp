@@ -754,6 +754,12 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   iflux_x1max = pin->GetOrAddReal("rad_m1","implicit_flux_x1max",0.0);
   iebath_x1min = pin->GetOrAddReal("rad_m1","implicit_ebath_x1min",0.0);
   iebath_x1max = pin->GetOrAddReal("rad_m1","implicit_ebath_x1max",0.0);
+  // runs_4f_drift: without it the Marshak end face carries only the comoving flux
+  // c q (E - E_bath), so the lab-frame radiation energy advected with the gas,
+  // A E = v (1 + chi) E, cannot leave (or enter) through the end: the end cell's E is
+  // raised by ~(A/(c q)) E at an outflow end (lowered at an inflow end), and the
+  // Lowrie-Edwards shocks drift / carry an N-independent T error.
+  impl_bc_advect = pin->GetOrAddBoolean("rad_m1","implicit_bc_advect",false);
   if ((ibc_x1min == M1_IBC_PERIODIC) != (ibc_x1max == M1_IBC_PERIODIC)) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
       << std::endl << "<rad_m1> implicit x1 boundaries: periodic must be set on BOTH "
@@ -5329,6 +5335,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   int bclo = ibc_x1min, bchi = ibc_x1max;
   Real fxlo = iflux_x1min, fxhi = iflux_x1max;
   Real eblo = iebath_x1min, ebhi = iebath_x1max;
+  const bool badv = impl_bc_advect;
   bool cyclic = (bclo == M1_IBC_PERIODIC);
   // MILESTONE 3b, LIMIT 4.  With more than one MeshBlock along x1 a block is at a
   // PHYSICAL x1 boundary only when it sits at the corresponding end of its stack; the
@@ -6191,6 +6198,15 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       } else if (bchi == M1_IBC_MARSHAK) {
         bb += nu*ch*mq;
         rr += nu*ch*mq*ebhi;
+        // implicit_bc_advect: the enthalpy flux A E through the end face, upwinded with
+        // the end cell's velocity (outflow: this cell's E; inflow: the bath)
+        if (badv) {
+          if (vi > 0.0) {
+            bb += nu*cr*ai;
+          } else {
+            rr -= nu*cr*ai*ebhi;
+          }
+        }
       } else if (bchi == M1_IBC_FLUX) {
         rr -= nu*cr*fxhi;
       }
@@ -6247,6 +6263,13 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       } else if (bclo == M1_IBC_MARSHAK) {
         bb += nu*ch*mq;
         rr += nu*ch*mq*eblo;
+        if (badv) {
+          if (vi > 0.0) {
+            rr += nu*cr*ai*eblo;
+          } else {
+            bb -= nu*cr*ai;
+          }
+        }
       } else if (bclo == M1_IBC_FLUX) {
         rr += nu*cr*fxlo;
       }
