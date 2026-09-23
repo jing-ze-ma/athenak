@@ -20,6 +20,7 @@
 //! The result is printed as one line "BVALS_ROLES ... PASS|FAIL".  Run with nlim = 0.
 
 #include <cmath>
+#include <cstdint>
 #include <cstdlib>
 #include <iostream>
 #include <utility>
@@ -140,7 +141,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   auto hd = Kokkos::create_mirror_view_and_copy(HostMemSpace(), d);
   // counters: [0] ghosts filled, [1] A vs B(perm) mismatches, [2] D vs B mismatches,
   // [3] ghosts where C != A in the scalar slots 2,3, [4] where C != A in the pair 4,5
-  long long cnt[5] = {0, 0, 0, 0, 0};
+  int64_t cnt[5] = {0, 0, 0, 0, 0};
   for (int m=0; m<nmb; ++m) {
     for (int k=0; k<n3; ++k) for (int j=0; j<n2; ++j) for (int i=0; i<n1; ++i) {
       const bool act = (i >= is && i <= ie && j >= js && j <= je && k >= ks && k <= ke);
@@ -157,7 +158,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     }
   }
 #if MPI_PARALLEL_ENABLED
-  MPI_Allreduce(MPI_IN_PLACE, cnt, 5, MPI_LONG_LONG, MPI_SUM, MPI_COMM_WORLD);
+  MPI_Allreduce(MPI_IN_PLACE, cnt, 5, MPI_INT64_T, MPI_SUM, MPI_COMM_WORLD);
 #endif
   const bool pass = (cnt[0] > 0 && cnt[1] == 0 && cnt[2] == 0 && cnt[3] > 0 &&
                      cnt[4] > 0);

@@ -917,8 +917,11 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     // wrong (a latent trap while rad_m1 is a fatal on sp/cs, see rad_m1.cpp).
     {
       auto slot = [](const int iw) {
-        for (int n=0; n<M1_NHALO_T; ++n) {if (M1HaloCompT(n) == iw) return n;}
-        return -1;
+        int s = -1;
+        for (int n=0; n<M1_NHALO_T; ++n) {
+          if (M1HaloCompT(n) == iw) {s = n;}
+        }
+        return s;
       };
       pbval_th->SetVectorPairs(M1_NHALO_T, {{slot(M1_IW_N2), slot(M1_IW_N3)},
                                             {slot(M1_IW_A2), slot(M1_IW_A3)},
