@@ -14,4 +14,7 @@ editing a submit script cancel and resubmit. No sleep or poll loops: submit, che
 Timing and cost comparisons are ALWAYS measured on the GPU (apudev, same binary, interleaved arms,
 repeats): all productions run on GPUs. CPU runs are for correctness gates only; never report a CPU
 timing as a result.
+Every GPU sbatch script exports the validated ROCm settings: `export HSA_XNACK=1` and
+`export HSA_NO_SCRATCH_RECLAIM=1` (1.32x GPU time, identical output; see
+tests_m1/runs_3k_gpu3d/README_HALO.md and tests_env_tuning/README.md when it exists).
 Report measured numbers only, with the file or job they came from.
