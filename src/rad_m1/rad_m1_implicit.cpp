@@ -204,7 +204,9 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // column, serial recurrence (the original); pcr = one team per column, parallel
   // cyclic reduction in team scratch (GPU).  Same system; the answers agree to
   // round-off, not bitwise.  The gathered stack sweep (part_nblk > 1) is Thomas always.
-  {std::string ls = pin->GetOrAddString("rad_m1","implicit_line_solver","thomas");
+  // DEFAULT pcr since bench/m1_defaults_0923 (15x faster line solve on the GPU, +1 %
+  // wall on the host; thomas reproduces the earlier default bitwise).
+  {std::string ls = pin->GetOrAddString("rad_m1","implicit_line_solver","pcr");
   if (ls.compare("thomas") == 0) {
     impl_line_solver = 0;
   } else if (ls.compare("pcr") == 0) {
@@ -224,7 +226,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // reductions per iteration instead of 5); 2 = 1 with alpha kept on the device, so
   // rhat.v does not block either (1 rank only; with more ranks 2 acts as 1).  Levels
   // 1 and 2 sum in a different order than 0: same answer to round-off, not bitwise.
-  impl_bcg_sync = pin->GetOrAddInteger("rad_m1","implicit_bcg_sync",0);
+  // DEFAULT 1 since bench/m1_defaults_0923 (0 reproduces the earlier default).
+  impl_bcg_sync = pin->GetOrAddInteger("rad_m1","implicit_bcg_sync",1);
   if (impl_bcg_sync < 0 || impl_bcg_sync > 2) {
     ImplFatal("<rad_m1>/implicit_bcg_sync must be 0, 1 or 2");
   }
@@ -233,7 +236,15 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   }
   // the Picard pass count (bench/m1_picard_0923): a per-pass log, off by default
   impl_plog = pin->GetOrAddInteger("rad_m1","implicit_picard_log",0);
-  // ...and the options that cut it.  All OFF by default (bitwise the HEAD path):
+  // ...and the options that cut it.  Since bench/m1_defaults_0923 they DEFAULT ON for
+  // the closures that do not read the iterate (eddington, vet_sc, tau: 1.6x on the GPU,
+  // statistics moved at the solver-tolerance level) and stay OFF for m1 / minerbo /
+  // kershaw, whose closure moves with the iterate: there the lresid test is NOT
+  // redundant and the inexact (Eisenstat-Walker) pass 0 raised NON-CONVERGED steps
+  // (tests_m1/runs_3k_gpu3d/README_DEFAULTS.md).  The earlier default path is
+  // implicit_lres_test = true, implicit_conv_est = false, implicit_lin_ew_max = 0,
+  // implicit_predictor = none (with implicit_bcg_sync = 0 and implicit_line_solver =
+  // thomas it is bitwise the pre-flip code):
   //  implicit_lres_test = false  drop the pass-to-pass transverse-change test under
   //    bicgstab, where the transverse coupling is IN the operator and is solved to
   //    implicit_lin_tol on every pass (the test lags the Picard test by one pass);
@@ -246,9 +257,13 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   //    safeguard (bcg_sync >= 1 only);
   //  implicit_predictor = step   start the loop from the previous step's implicit
   //    increment scaled by dt/dt_prev (closures that do not read the iterate only).
-  impl_lres_test = pin->GetOrAddBoolean("rad_m1","implicit_lres_test",true);
-  impl_conv_est = pin->GetOrAddBoolean("rad_m1","implicit_conv_est",false);
-  impl_ew_max = pin->GetOrAddReal("rad_m1","implicit_lin_ew_max",0.0);
+  //  The Eisenstat-Walker default is 1e-2 with bcg_sync >= 1 and 0 (off) with
+  //  bcg_sync = 0, so an input that asks for the original BiCGStab loop still runs.
+  const bool fixcl = eddington || vet_sc || tau_closure;
+  impl_lres_test = pin->GetOrAddBoolean("rad_m1","implicit_lres_test",!fixcl);
+  impl_conv_est = pin->GetOrAddBoolean("rad_m1","implicit_conv_est",fixcl);
+  impl_ew_max = pin->GetOrAddReal("rad_m1","implicit_lin_ew_max",
+                                  (fixcl && impl_bcg_sync >= 1) ? 1.0e-2 : 0.0);
   impl_ew_gam = pin->GetOrAddReal("rad_m1","implicit_lin_ew_gamma",0.9);
   //  implicit_lin_cnorm > 0     the inner test on max_i |r_i|/(s_i E^k_i) < cnorm,
   //    s_i = 1 + SRCB_i the row excess: a bound on the per-cell relative error of E
@@ -265,6 +280,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     ImplFatal("<rad_m1>/implicit_lin_ew_max needs implicit_bcg_sync >= 1");
   }
   {std::string pr = pin->GetOrAddString("rad_m1","implicit_predictor","none");
+  // predictor = step is NOT a default yet: its state is not in the restart file, so a
+  // restart would not be bitwise (tests_m1/runs_3k_gpu3d/README_DEFAULTS.md).
   if (pr.compare("none") == 0) {
     impl_pred = false;
   } else if (pr.compare("step") == 0) {
