@@ -2,7 +2,6 @@
 """runs_3z item 4: cfl 0.3 vs 0.15 per scheme (and h2 vs be at cfl 0.15) from a common
 restart.  KE_h, KE_v ratios from the hydro hst and max |T(z)/T_ref - 1| (rt_profile row 5,
 all layers / layers 0..n-21 / top 20) at common profile times."""
-import sys
 import numpy as np
 import os
 import struct
@@ -27,6 +26,7 @@ def prof(d):
 
 def at(t, y, tt):
     return float(np.interp(tt, t, y))
+
 
 H = '/viper/ptmp2/jinma/validate_0923/he3d/'
 TT = (21., 25., 40., 70., 100., 150., 200., 300., 400., 500.)
@@ -53,4 +53,5 @@ for a, b in (('h2_c0.3', 'h2_c0.15'), ('be_c0.3', 'be_c0.15'), ('h2_c0.15', 'be_
         rel = ra[2][5] / rb[2][5] - 1.0
         n = rel.size
         print('  T(z) t=%6.1f/%6.1f max|dT/T| all %.3e  interior %.3e  top20 %.3e' % (
-            ra[0], rb[0], abs(rel).max(), abs(rel[:n - 20]).max(), abs(rel[n - 20:]).max()))
+            ra[0], rb[0], abs(rel).max(), abs(rel[:n - 20]).max(),
+            abs(rel[n - 20:]).max()))

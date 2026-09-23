@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
-"""Free-streaming Gaussian packet (problem/beam_packet): python3 packet_anal.py <run dirs>
-Per run, final bin dump vs the first: energy change, peak E ratio, centroid travel / (c t),
-RMS width PERPENDICULAR (transverse, the beam-width measure) and PARALLEL to the motion,
-both relative to the initial (exact free streaming keeps all of them), and the negative-E /
-|F| > cE cell counts.  Periodic box: coordinates are unwrapped about the expected centre."""
+"""Free-streaming Gaussian packet (problem/beam_packet).
+
+python3 packet_anal.py <run dirs>.  Per run, final bin dump vs the first:
+energy change, peak E ratio, centroid travel / (c t), RMS width PERPENDICULAR
+(transverse, the beam-width measure) and PARALLEL to the motion, both relative
+to the initial (exact free streaming keeps all of them), and the negative-E /
+|F| > cE cell counts.  Periodic box: coordinates are unwrapped about the
+expected centre."""
 import glob
 import os
 import re

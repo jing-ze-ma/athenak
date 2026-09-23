@@ -60,11 +60,12 @@ for d in sorted(glob.glob(os.path.join(top, 'm[257]_*'))):
         tt = re.search(r't=([0-9.e+-]+)\s+shock', out)
         if not l1:
             print('%-22s %s analysis failed: %s' % (name, os.path.basename(f),
-                                                     out[-300:]))
+                                                    out[-300:]))
             continue
         print('%-22s t=%-8s L1 rho %s Tg %s Tr %s dshift %6s | spike %6s%% '
               'prec %6s%% | dt %.3e Picard %s NC %s fallb %s BE %s'
               % (name, tt.group(1) if tt else '?', l1.group(1), l1.group(2),
-                 l1.group(3), '%+.2f' % (float(l1.group(4)) - s0), sp.group(1) if sp else '-',
+                 l1.group(3), '%+.2f' % (float(l1.group(4)) -
+                                         s0), sp.group(1) if sp else '-',
                  pr.group(1) if pr else '-', tend / max(cyc, 1), pic, nc, fb,
                  be))
