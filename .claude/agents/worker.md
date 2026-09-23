@@ -23,3 +23,8 @@ hydro tests from bench/cs_hyd4_prod/rst. State the rotation of the restart used.
 Keep your context small: read functions or line ranges (grep first), not whole large files or logs.
 If your jobs will run longer than ~20 min, submit them, leave an analysis script and stop; do not wait.
 Report measured numbers only, with the file or job they came from.
+Housekeeping costs minimal tokens: copies, moves, archive and cleanup are launched once in the
+background and not watched; no throughput diagnosis, no progress checks. Do not copy restart files
+or run trees you only need to read: read them in place, or symlink them (a production restart may
+be read directly as long as you never write into its directory). Builds and run trees go on
+/viper/ptmp2/jinma (u2 quota is tight).
