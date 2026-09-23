@@ -1,0 +1,2 @@
+100 1000 x1 64 edd impl 256 enth=plm ny=4 vimp=true ts=hesdirk2 rm_implicit_picard_log=600
+10 1000 x1 64 edd impl 256 enth=plm ny=4 vimp=true ts=hesdirk2 rm_implicit_picard_log=600

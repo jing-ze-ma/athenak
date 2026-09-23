@@ -299,6 +299,16 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   // <rad_m1> time_scheme = hesdirk2: the slope block, behind the predictor one --
   // int32 have, int32 nch, Real pred2_dt, Real dt_prev, Real vprev
   const int nt2 = (pradm1 != nullptr) ? pradm1->Time2RstNch() : 0;
+  // <rad_m1> implicit_one_pass: its state, behind the hesdirk2 header
+  const bool wonep = (pradm1 != nullptr) && (pradm1->impl_onep > 0);
+  Real onep_hdr[9];
+  if (wonep) {
+    for (int t = 0; t < 3; ++t) {
+      onep_hdr[t] = pradm1->onep_qa[t];
+      onep_hdr[3+t] = pradm1->onep_qb[t];
+      onep_hdr[6+t] = pradm1->onep_cnt[t];
+    }
+  }
   char t2_hdr[2*sizeof(std::int32_t) + 3*sizeof(Real)];
   {
     const std::int32_t hdr[2] = {(nt2 > 0) ? 1 : 0, static_cast<std::int32_t>(nt2)};
@@ -473,6 +483,14 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
       resfile.Write_any_type(&nb, sizeof(IOWrapperSizeT), "byte", single_file_per_rank);
       resfile.Write_any_type(&(t2_hdr[0]), nb, "byte", single_file_per_rank);
     }
+    if (wonep) {
+      IOWrapperSizeT nb = sizeof(onep_hdr);
+      resfile.Write_any_type(&(radm1::kM1OnePassRstMagic[0]),
+                             sizeof(radm1::kM1OnePassRstMagic), "byte",
+                             single_file_per_rank);
+      resfile.Write_any_type(&nb, sizeof(IOWrapperSizeT), "byte", single_file_per_rank);
+      resfile.Write_any_type(&(onep_hdr[0]), nb, "byte", single_file_per_rank);
+    }
     // the internal energy header, same marked form, behind all the others
     if (neint > 0) {
       IOWrapperSizeT nb = sizeof(eint_hdr);
@@ -576,6 +594,10 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   if (nt2 > 0) {
     step3size += sizeof(radm1::kM1Time2RstMagic) + sizeof(IOWrapperSizeT)
                  + sizeof(t2_hdr);
+  }
+  if (wonep) {
+    step3size += sizeof(radm1::kM1OnePassRstMagic) + sizeof(IOWrapperSizeT)
+                 + sizeof(onep_hdr);
   }
   if (neint > 0) {
     step3size += sizeof(kEintRstMagic) + sizeof(IOWrapperSizeT) + sizeof(eint_hdr);
