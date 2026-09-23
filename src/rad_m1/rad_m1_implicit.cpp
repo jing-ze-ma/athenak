@@ -660,13 +660,16 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   } else {
     ImplFatal("<rad_m1>/implicit_recon = '" + srn + "' is not a choice (dc | plm_dc)");
   }
-  // implicit_enthalpy (see rad_m1_implicit.hpp).  DEFAULT plm since m1-defaults
-  // (tests_m1/runs_3s_space2: second order, fewer Picard passes, NON-CONVERGED 0).  Up to
-  // d0c59f7c the key was read only when named, so a restart file written then carries
-  // it only if the input named it; such a restart that does NOT carry it keeps the old
-  // default, upwind.  The resolved value is echoed, so later restarts keep it.
+  // implicit_enthalpy (see rad_m1_implicit.hpp).  DEFAULT plm since m1-defaults for the
+  // closures fixed within a step (eddington, vet_sc, tau; tests_m1/runs_3s_space2: second
+  // order, fewer Picard passes, NON-CONVERGED 0); m1 / minerbo / kershaw keep upwind
+  // (not gated; tests_m1/runs_4b_defaults).  Up to d0c59f7c the key was read only
+  // when named, so a restart file written then carries it only if the input named it;
+  // such a restart that does NOT carry it keeps the old default, upwind.  The resolved
+  // value is echoed, so later restarts keep it.
+  const bool enth_up = global_variable::restart_run || !fixcl;
   const std::string sen = pin->GetOrAddString("rad_m1","implicit_enthalpy",
-                              global_variable::restart_run ? "upwind" : "plm");
+                                              enth_up ? "upwind" : "plm");
   if (sen.compare("upwind") == 0) {
     impl_enth = M1_IENTH_UPWIND;
   } else if (sen.compare("central") == 0) {
