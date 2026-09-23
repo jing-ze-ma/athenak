@@ -71,19 +71,28 @@ template <typename Function>
 inline void par_reduce_clip4(const std::string &name, const int ml, const int mu,
                              const int kl, const int ku, const int jl, const int ju,
                              const int il, const int iu, int &nclip,
-                             const Function &function) {
+                             const Function &function, const bool async = false) {
   const int nk = ku-kl+1, nj = ju-jl+1, ni = iu-il+1;
   const int nkji = nk*nj*ni, nji = nj*ni;
-  int cnt = 0;
-  Kokkos::parallel_reduce(name,
-  Kokkos::RangePolicy<>(DevExeSpace(), 0, (mu-ml+1)*nkji),
-  KOKKOS_LAMBDA(const int &idx, int &sum) {
+  auto body = KOKKOS_LAMBDA(const int &idx, int &sum) {
     int m = idx/nkji;
     int k = (idx - m*nkji)/nji;
     int j = (idx - m*nkji - k*nji)/ni;
     int i = (idx - m*nkji - k*nji - j*ni) + il;
     function(m+ml, k+kl, j+jl, i, sum);
-  }, cnt);
+  };
+  if (async) {
+    // problem/ck_impl_nosync: the count goes to a device scalar that nobody reads, so
+    // the launch does not block the host (the caller knows the count is 0)
+    static Kokkos::View<int, DevMemSpace> *dcnt = nullptr;
+    if (dcnt == nullptr) dcnt = new Kokkos::View<int, DevMemSpace>("rt_nclip_dev");
+    Kokkos::parallel_reduce(name,
+    Kokkos::RangePolicy<>(DevExeSpace(), 0, (mu-ml+1)*nkji), body, *dcnt);
+    return;
+  }
+  int cnt = 0;
+  Kokkos::parallel_reduce(name,
+  Kokkos::RangePolicy<>(DevExeSpace(), 0, (mu-ml+1)*nkji), body, cnt);
   nclip += cnt;
 }
 
@@ -496,6 +505,14 @@ inline bool rt_semi_lin = true;
 // there is TRUE in box_convection and deep_hot_jupiter_rt, and the mode-3 flag in
 // red_giant.
 inline bool rt_use_cons = false;
+// problem/rt_test_mu0 and problem/ck_test_kgrey: TEST HOOKS for the well-posed checks
+// of the implicit correlated-k solve (tests_ck_implicit/wellposed).  rt_test_mu0 >= -1
+// gives every correlated-k column the same stellar cos(zenith) (uniform irradiation);
+// ck_test_kgrey > 0 replaces the per-band continuum opacity of every band by this
+// constant [cm^2/g], which with a k-table of negligible line opacity makes the sweep GREY.
+// Defaults (-2, 0) are off, and off they change nothing: both are one untaken branch.
+inline Real rt_test_mu0 = -2.0;
+inline Real ck_test_kgrey = 0.0;
 // problem/rt_bface: the emissivity-weighted far-endpoint Planck source (see BFace).
 // It is a red-giant fix -- it exists because the corona/star join put a cell's emission
 // on a neighbour's Planck function 1e9 times its own -- and this header is shared with
@@ -1593,7 +1610,15 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
     int npass = nitmax;
     bool conv = false;
     // ck_impl_colskip: every column is live again at the start of a call
-    if (ck_done_ptr != nullptr) Kokkos::deep_copy(*ck_done_ptr, 0.0);
+    if (ck_done_ptr != nullptr) {
+      if (ck_impl_nosync) {
+        Kokkos::deep_copy(DevExeSpace(), *ck_done_ptr, 0.0);   // stream-ordered, no fence
+      } else {
+        Kokkos::deep_copy(*ck_done_ptr, 0.0);
+      }
+    }
+    // ck_impl_jreuse: the first pass of a call always builds the Jacobian
+    ck_impl_prev_res = -1.0;
     // ck_impl_glob: every column starts the call on level 0 with no pending trial
     ck_impl_nrej = 0;
     ck_impl_nsub = 0;
@@ -1622,6 +1647,14 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
       DvceArray5D<Real> u0c = (pp->pmhd != nullptr) ? pp->pmhd->u0 : pp->phydro->u0;
       ++ck_impl_nsweep;
       const int stp = CkImplStep(pm, u0c, *rt_icut_ptr, *rt_T_ptr, pp->pcoord->dx1, bdt);
+      // problem/ck_impl_jreuse: rebuild the chord Jacobian on the next pass only when the
+      // max residual contracted by less than ck_impl_jreuse over this pass
+      if (ck_impl_jreuse > 0.0 && ck_impl_glob == 0) {
+        const Real rr = ck_impl_last_res;
+        ck_impl_jac_again = (ck_impl_prev_res > 0.0)
+                            && !(rr <= ck_impl_jreuse*ck_impl_prev_res);
+        ck_impl_prev_res = rr;
+      }
       if (ck_impl_debug <= -2) {
         char hb[64];
         std::snprintf(hb, sizeof(hb), "%s%.2e/%.2e/%d", (it > 0) ? "," : "",
@@ -1655,6 +1688,11 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
                 << ((ck_impl_esc > 0) ? (" escx=" + std::to_string(ck_impl_nesc)
                     + " coarse=" + std::to_string(ck_impl_ncoarse)) : std::string(""))
                 << ((ck_impl_aa > 0) ? (" aa=" + std::to_string(ck_impl_naa))
+                    : std::string(""))
+                << ((ck_impl_xstep > 0) ? (std::string(" xs=")
+                    + (ck_impl_reuse_op ? "R" : "S") + " xsd="
+                    + std::to_string(ck_impl_xs_dmax)) : std::string(""))
+                << (ck_impl_pred ? (" pred=" + std::to_string(ck_impl_npred))
                     : std::string(""))
                 << (conv ? "" : " NOT-CONVERGED")
                 << ((ck_impl_debug <= -2) ? (" hist=" + hist) : std::string(""))
@@ -1979,7 +2017,10 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
       if (!(ei_fl > 0.0)) ei_fl = 1.0e-300;
       return ei_fl;
     };
-    if (usecons_ && !rt_eiclamp_warned) {
+    // problem/ck_impl_nosync: these two once-only warnings are checked on the first
+    // pass of a call only (one read-back each instead of one per pass)
+    const bool clchk_ = !(ck_impl_nosync && ck_impl_pass > 0);
+    if (usecons_ && !rt_eiclamp_warned && clchk_) {
       auto eicl_h = Kokkos::create_mirror_view(eicl_g);
       Kokkos::deep_copy(eicl_h, eicl_g);
       if (eicl_h(0) > 0) {
@@ -1999,7 +2040,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
       Kokkos::deep_copy(*rt_stclamp_cnt, 0);
     }
     auto stcl_g = *rt_stclamp_cnt;
-    if (!rt_stclamp_warned) {
+    if (!rt_stclamp_warned && clchk_) {
       auto stcl_h = Kokkos::create_mirror_view(stcl_g);
       Kokkos::deep_copy(stcl_h, stcl_g);
       if (stcl_h(0) > 0) {
@@ -2288,7 +2329,9 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
       const bool ckpass0_ = ckimp_ && (ck_impl_pass <= 0);
       // the opacity is FROZEN over the step by default: pass 0 builds it, later passes
       // rebuild only the Planck functions and their dB/dT.  See ck_impl_refresh_kappa.
-      const bool ckfrz_ = ckimp_ && (ck_impl_pass > 0) && !ck_impl_refresh_kappa;
+      // (not const: problem/ck_impl_xstep may turn pass 0 into a frozen pass once
+      // rt_pre_tp has measured the state; see the block after rt_pre_tp)
+      bool ckfrz_ = ckimp_ && (ck_impl_pass > 0) && !ck_impl_refresh_kappa;
       // ---- problem/ck_impl_reuse_jac: does THIS pass build the tridiagonal?  With the
       // chord method only the first pass that takes a Newton step does (pass 1 when
       // pass 0 is a ck_impl_seed guess, pass 0 otherwise); every later pass leaves
@@ -2297,24 +2340,26 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
       // Planck-fraction look-ups per cell that dB_b/dT costs.  See
       // utils/two_stream_column_ck.hpp.
       // ck_impl_glob = ls_sub: also the pass after a sub-step restart / advance
-      const bool ckjacp_ = ckimp_ && ((ck_impl_reuse_jac == 0)
+      // problem/ck_impl_jreuse (lever 3): the chord with an adaptive rebuild -- the
+      // driver sets ck_impl_jac_again when the residual stopped contracting
+      const bool ckjacp_ = ckimp_ && ((ck_impl_reuse_jac == 0 && !(ck_impl_jreuse > 0.0))
                                       || (ck_impl_pass == CkImplJacPass())
                                       || (ck_impl_jac_again && ck_impl_pass > 0));
       // problem/ck_impl_jac_lin: the tridiagonal of a pass that builds it comes from the
       // stored factorisation of the linear kernel, never from the JAC chain kernel
       const bool ckjl_ = ckimp_ && ck_impl_jac_lin;
       auto ckjac_g = ckimp_ ? *ck_jac_ptr
-                            : DvceArray5D<Real>("ck_jac_dummy",1,1,1,1,1);
+                            : CkDum<DvceArray5D<Real>>("ck_jac_dummy");
       auto ckdb_g = ckimp_ ? *ck_dbdt_ptr
-                           : DvceArray5D<Real>("ck_dbdt_dummy",1,1,1,1,1);
-      auto cksrc_g = ckimp_ ? *ck_src_ptr : DvceArray4D<Real>("ck_src_dummy",1,1,1,1);
-      auto ckei_g = ckimp_ ? *ck_ei_ptr : DvceArray4D<Real>("ck_ei_dummy",1,1,1,1);
-      auto ckest_g = ckimp_ ? *ck_estar_ptr : DvceArray4D<Real>("ck_est_dummy",1,1,1,1);
-      auto ckem_g = ckimp_ ? *ck_em_ptr : DvceArray4D<Real>("ck_em_dummy",1,1,1,1);
-      auto ckthk_g = ckimp_ ? *ck_thk_ptr : DvceArray4D<Real>("ck_thk_dummy",1,1,1,1);
-      auto ckthu_g = ckimp_ ? *ck_thu_ptr : DvceArray4D<Real>("ck_thu_dummy",1,1,1,1);
-      auto ckdone_g = ckimp_ ? *ck_done_ptr : DvceArray3D<Real>("ck_done_dummy",1,1,1);
-      auto cksd_g = ckimp_ ? *ck_seed_ptr : DvceArray4D<Real>("ck_seed_dummy",1,1,1,1);
+                           : CkDum<DvceArray5D<Real>>("ck_dbdt_dummy");
+      auto cksrc_g = ckimp_ ? *ck_src_ptr : CkDum<DvceArray4D<Real>>("ck_src_dummy");
+      auto ckei_g = ckimp_ ? *ck_ei_ptr : CkDum<DvceArray4D<Real>>("ck_ei_dummy");
+      auto ckest_g = ckimp_ ? *ck_estar_ptr : CkDum<DvceArray4D<Real>>("ck_est_dummy");
+      auto ckem_g = ckimp_ ? *ck_em_ptr : CkDum<DvceArray4D<Real>>("ck_em_dummy");
+      auto ckthk_g = ckimp_ ? *ck_thk_ptr : CkDum<DvceArray4D<Real>>("ck_thk_dummy");
+      auto ckthu_g = ckimp_ ? *ck_thu_ptr : CkDum<DvceArray4D<Real>>("ck_thu_dummy");
+      auto ckdone_g = ckimp_ ? *ck_done_ptr : CkDum<DvceArray3D<Real>>("ck_done_dummy");
+      auto cksd_g = ckimp_ ? *ck_seed_ptr : CkDum<DvceArray4D<Real>>("ck_seed_dummy");
       // ---- problem/ck_impl_frozen_op: STORE on the first pass, RE-APPLY on the rest.
       // The stored quantities are the bits pass 0 computed and the optical depths are
       // re-formed from them by the same expressions, so a frozen pass is bitwise the pass
@@ -2325,19 +2370,19 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
       // ckfst_/ckfus_ are read inside the FOP = 1 kernel only.
       const bool ckfop_ = ckimp_ && ck_impl_frozen_op && !ck_impl_refresh_kappa
                           && !rt_layer_legacy;
-      const bool ckfst_ = ckfop_ && (ck_impl_pass <= 0);
-      const bool ckfus_ = ckfop_ && (ck_impl_pass > 0);
+      bool ckfst_ = ckfop_ && (ck_impl_pass <= 0);
+      bool ckfus_ = ckfop_ && (ck_impl_pass > 0);
       const bool ckfcf_ = ck_impl_frozen_cof;
       auto ckkro_g = (ckfop_ && ck_kro_ptr != nullptr) ? *ck_kro_ptr
-                   : DvceArray5D<Real>("ck_kro_dummy",1,1,1,1,1);
+                   : CkDum<DvceArray5D<Real>>("ck_kro_dummy");
       auto ckc0_g = (ckfop_ && ck_c0_ptr != nullptr) ? *ck_c0_ptr
-                  : DvceArray5D<Real>("ck_c0_dummy",1,1,1,1,1);
+                  : CkDum<DvceArray5D<Real>>("ck_c0_dummy");
       auto ckci_g = (ckfop_ && ck_ci_ptr != nullptr) ? *ck_ci_ptr
-                  : DvceArray5D<Real>("ck_ci_dummy",1,1,1,1,1);
+                  : CkDum<DvceArray5D<Real>>("ck_ci_dummy");
       auto ckco_g = (ckfop_ && ck_co_ptr != nullptr) ? *ck_co_ptr
-                  : DvceArray5D<Real>("ck_co_dummy",1,1,1,1,1);
+                  : CkDum<DvceArray5D<Real>>("ck_co_dummy");
       auto cktpf_g = (ckfop_ && ck_tpf_ptr != nullptr) ? *ck_tpf_ptr
-                   : DvceArray4D<Real>("ck_tpf_dummy",1,1,1,1);
+                   : CkDum<DvceArray4D<Real>>("ck_tpf_dummy");
       // ck_impl_tau_min / ck_impl_colskip, as plain values for the device lambdas
       const Real cktaumin_ = ck_impl_tau_min;
       const Real ckarat_ = ck_impl_arat;
@@ -2358,9 +2403,9 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                                                             : pm->pmb_pack->phydro->pcond;
       const bool taublend = (band_on && pcond_rt != nullptr &&
                              pcond_rt->rad_tau_mode);
-      auto w_g = taublend ? pcond_rt->rad_w : DvceArray4D<Real>("rt_w_dummy",1,1,1,1);
+      auto w_g = taublend ? pcond_rt->rad_w : CkDum<DvceArray4D<Real>>("rt_w_dummy");
       auto tauf_g = taublend ? pcond_rt->rad_tauf
-                             : DvceArray4D<Real>("rt_tau_dummy",1,1,1,1);
+                             : CkDum<DvceArray4D<Real>>("rt_tau_dummy");
       if (taublend) int_at_cut = false;
       auto kc_g   = (band_on) ? *rt_kc_ptr : Fb_g;
       auto Bb_g   = (band_on) ? *rt_Bb_ptr : Fb_g;
@@ -2368,7 +2413,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
       auto pb_g   = (band_on) ? *rt_pb_ptr : tau_g;
       auto xT_g   = (band_on) ? *rt_xT_ptr : tau_g;
       auto xP_g   = (band_on) ? *rt_xP_ptr : tau_g;
-      auto icut_g = (band_on) ? *rt_icut_ptr : DvceArray3D<int>("dummy",1,1,1);
+      auto icut_g = (band_on) ? *rt_icut_ptr : CkDum<DvceArray3D<int>>("dummy");
       auto Qb_g   = (band_on) ? *rt_Qb_ptr : Fb_g;
       // see rt_cell_report: the per-face streams the report needs, q = 0 only
       const bool report_on = rt_cell_report && band_on;
@@ -2377,8 +2422,8 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
         rt_idn_ptr = new DvceArray4D<Real>("rt_idn", nmb_r, n3, n2, n1);
         rt_iup_ptr = new DvceArray4D<Real>("rt_iup", nmb_r, n3, n2, n1);
       }
-      auto idn_g = report_on ? *rt_idn_ptr : DvceArray4D<Real>("rt_idn_d", 1, 1, 1, 1);
-      auto iup_g = report_on ? *rt_iup_ptr : DvceArray4D<Real>("rt_iup_d", 1, 1, 1, 1);
+      auto idn_g = report_on ? *rt_idn_ptr : CkDum<DvceArray4D<Real>>("rt_idn_d");
+      auto iup_g = report_on ? *rt_iup_ptr : CkDum<DvceArray4D<Real>>("rt_iup_d");
       // the grey opacity: the conduction module's own table if it has one, else the
       // Freedman fit, which is what the old grey path used unconditionally
       // rt_implicit_column = 3: the exact block-tridiagonal column solve.  It runs as a
@@ -2424,9 +2469,9 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
       const bool grey_ktab = grey_on && pcond_rt != nullptr &&
                              pcond_rt->rad_kappa_tab && pcond_rt->rad_kr_nT > 0;
       const bool grey_krho = grey_ktab && pcond_rt->rad_kappa_rho;
-      auto grey_kt  = grey_ktab ? pcond_rt->rad_kr_tab : DvceArray2D<Real>("d",1,1);
-      auto grey_klT = grey_ktab ? pcond_rt->rad_kr_lT : DvceArray1D<Real>("d",1);
-      auto grey_klP = grey_ktab ? pcond_rt->rad_kr_lP : DvceArray1D<Real>("d",1);
+      auto grey_kt  = grey_ktab ? pcond_rt->rad_kr_tab : CkDum<DvceArray2D<Real>>("d");
+      auto grey_klT = grey_ktab ? pcond_rt->rad_kr_lT : CkDum<DvceArray1D<Real>>("d");
+      auto grey_klP = grey_ktab ? pcond_rt->rad_kr_lP : CkDum<DvceArray1D<Real>>("d");
       const int grey_nT = grey_ktab ? pcond_rt->rad_kr_nT : 0;
       const int grey_nP = grey_ktab ? pcond_rt->rad_kr_nP : 0;
       const Real grey_kfac = (pcond_rt != nullptr) ? pcond_rt->rad_kappa_fac : 1.0;
@@ -2438,20 +2483,20 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
       // up/down sweeps all go through it, so gating it here gates the whole solver.
       const Real gate_rho = (pcond_rt != nullptr) ? pcond_rt->rad_gate_rho : 0.0;
       const Real gate_dex = (pcond_rt != nullptr) ? pcond_rt->rad_gate_dex : 0.5;
-      auto ckswf  = (ck_on) ? *ck_swf_ptr : DvceArray1D<Real>("d",1);
-      auto cklk = (ck_on) ? *ck_lk_ptr : DvceArray4D<Real>("d",1,1,1,1);
-      auto cklT = (ck_on) ? *ck_lT_ptr : DvceArray1D<Real>("d",1);
-      auto cklP = (ck_on) ? *ck_lP_ptr : DvceArray1D<Real>("d",1);
-      auto ckgw = (ck_on) ? *ck_gw_ptr : DvceArray1D<Real>("d",1);
-      auto ckwl = (ck_on) ? *ck_wl_ptr : DvceArray1D<Real>("d",1);
-      auto ckpf = (ck_on) ? *ck_pf_ptr : DvceArray2D<Real>("d",1,1);
-      auto cece = (ck_on) ? *ce_ptr : DvceArray3D<Real>("d",1,1,1);
-      auto celT = (ck_on) ? *ce_lT_ptr : DvceArray1D<Real>("d",1);
-      auto celP = (ck_on) ? *ce_lP_ptr : DvceArray1D<Real>("d",1);
-      auto cian = (ck_on) ? *cia_nT_ptr : DvceArray1D<int>("d",1);
-      auto ciaT = (ck_on) ? *cia_T_ptr : DvceArray2D<Real>("d",1,1);
-      auto ciak = (ck_on) ? *cia_k_ptr : DvceArray3D<Real>("d",1,1,1);
-      auto rayx = (ck_on) ? *ray_x_ptr : DvceArray2D<Real>("d",1,1);
+      auto ckswf  = (ck_on) ? *ck_swf_ptr : CkDum<DvceArray1D<Real>>("d");
+      auto cklk = (ck_on) ? *ck_lk_ptr : CkDum<DvceArray4D<Real>>("d");
+      auto cklT = (ck_on) ? *ck_lT_ptr : CkDum<DvceArray1D<Real>>("d");
+      auto cklP = (ck_on) ? *ck_lP_ptr : CkDum<DvceArray1D<Real>>("d");
+      auto ckgw = (ck_on) ? *ck_gw_ptr : CkDum<DvceArray1D<Real>>("d");
+      auto ckwl = (ck_on) ? *ck_wl_ptr : CkDum<DvceArray1D<Real>>("d");
+      auto ckpf = (ck_on) ? *ck_pf_ptr : CkDum<DvceArray2D<Real>>("d");
+      auto cece = (ck_on) ? *ce_ptr : CkDum<DvceArray3D<Real>>("d");
+      auto celT = (ck_on) ? *ce_lT_ptr : CkDum<DvceArray1D<Real>>("d");
+      auto celP = (ck_on) ? *ce_lP_ptr : CkDum<DvceArray1D<Real>>("d");
+      auto cian = (ck_on) ? *cia_nT_ptr : CkDum<DvceArray1D<int>>("d");
+      auto ciaT = (ck_on) ? *cia_T_ptr : CkDum<DvceArray2D<Real>>("d");
+      auto ciak = (ck_on) ? *cia_k_ptr : CkDum<DvceArray3D<Real>>("d");
+      auto rayx = (ck_on) ? *ray_x_ptr : CkDum<DvceArray2D<Real>>("d");
       const int ckNT = ck_nT;
       const int ckNP = ck_nP;
       const int ceNT = ce_nT;
@@ -2479,6 +2524,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
       // with correlated-k on, the grey optical depth sweep, the grey Planck function and
       // the three-band Q_v that the old rt_pre computed are all dead: nothing reads them.
       if (band_on) {
+        const Real tmu_ = rt_test_mu0;
         par_for("rt_pre_geom", DevExeSpace(), 0, nmb1, ks, ke, js, je,
         KOKKOS_LAMBDA(const int m, const int k, const int j) {
           // PLANE-PARALLEL: there is no substellar direction, and x2v/x3v are 1x1
@@ -2504,6 +2550,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
           }
           Real mu0 = sin(theta)*cos(phi);
           if (test_oned) mu0 = cos(85.0/90.0*M_PI/2.0);
+          if (tmu_ >= -1.0) mu0 = tmu_;
           cf_g(m,k,j,3) = mu0;
         });
         // ONE ANGULAR GHOST EACH SIDE under rt_rad_force: the transverse Prad grad w term
@@ -2537,11 +2584,73 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
           T_g(m,k,j,i) = TT;
           pb_g(m,k,j,i) = pp*1.0e-6;
         });
+        // ---- problem/ck_impl_xstep (lever 2): does THIS call re-apply the operator an
+        // earlier call stored?  Decided on pass 0, on the state rt_pre_tp just measured.
+        // A re-applying call runs its pass 0 exactly like a later frozen pass of the
+        // storing call (no cut, no opacity, no chain sweep, no beam, no factorisation).
+        if (ckfop_ && ck_impl_xstep > 0 && ck_impl_pass <= 0) {
+          bool reu = (ck_impl_xs_cyc >= 0) && (ck_xsT_ptr != nullptr)
+                     && (pm->ncycle - ck_impl_xs_cyc < ck_impl_xstep);
+          const bool thr_on = (ck_impl_xstep_thr > 0.0);
+          if (reu && thr_on) {
+            auto t0_ = *ck_xsT_ptr;
+            auto d0_ = *ck_xsD_ptr;
+            Real dmx = 0.0;
+            const int nk_ = ke - ks + 1, nj_ = je - js + 1, ni_ = ie + 2 - is;
+            Kokkos::parallel_reduce("ck_xs_chk",
+              Kokkos::RangePolicy<>(DevExeSpace(), 0, (nmb1+1)*nk_*nj_*ni_),
+              KOKKOS_LAMBDA(const int idx, Real &mx) {
+                const int i = is + (idx % ni_);
+                const int j = js + ((idx/ni_) % nj_);
+                const int k = ks + ((idx/(ni_*nj_)) % nk_);
+                const int m = idx/(ni_*nj_*nk_);
+                if (i < icut_g(m,k,j)) return;
+                const Real t0 = t0_(m,k,j,i), d0 = d0_(m,k,j,i);
+                const Real tt = T_g(m,k,j,i);
+                const int ii = (topclamp && i > ie) ? ie : i;
+                Real r = 0.0;
+                if (t0 > 0.0 && tt > 0.0) r = fabs(tt/t0 - 1.0);
+                else if (t0 > 0.0 || tt > 0.0) r = 1.0e30;   // a cell went bad or back
+                if (d0 > 0.0) {
+                  const Real rd = fabs(rhoN(m,k,j,ii)/d0 - 1.0);
+                  if (rd > r) r = rd;
+                }
+                if (r > mx) mx = r;
+              }, Kokkos::Max<Real>(dmx));
+            ck_impl_xs_dmax = dmx;
+            reu = (dmx <= ck_impl_xstep_thr);
+          }
+          ck_impl_reuse_op = reu;
+          if (reu) {
+            ckfrz_ = ckimp_ && !ck_impl_refresh_kappa;
+            ckfst_ = false;
+            ckfus_ = true;
+            ++ck_impl_nreuse;
+          } else {
+            ck_impl_xs_cyc = pm->ncycle;
+            ++ck_impl_nstore;
+            if (ck_xsT_ptr == nullptr) {
+              ck_xsT_ptr = new DvceArray4D<Real>("ck_xsT", nmb1+1, n3, n2, n1);
+              ck_xsD_ptr = new DvceArray4D<Real>("ck_xsD", nmb1+1, n3, n2, n1);
+            }
+            if (thr_on) {
+              auto t0_ = *ck_xsT_ptr;
+              auto d0_ = *ck_xsD_ptr;
+              par_for("ck_xs_rec", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
+              KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+                const int ii = (topclamp && i > ie) ? ie : i;
+                t0_(m,k,j,i) = T_g(m,k,j,i);
+                d0_(m,k,j,i) = rhoN(m,k,j,ii);
+              });
+            }
+          }
+        }
         // problem/ck_impl_frozen_op: the CUT is frozen over the Newton passes with the
         // opacity.  The stored operator covers the cells pass 0 swept, so a cut that
         // moved down by one cell at a later pass would read a kappa rho this call never
         // stored.  With the switch off the kernel runs every pass, as it always did.
-        if (!(ckfop_ && ck_impl_pass > 0)) {
+        // problem/ck_impl_xstep: and over the calls that re-apply a stored operator.
+        if (!(ckfop_ && (ck_impl_pass > 0 || (ck_impl_xstep > 0 && ck_impl_reuse_op)))) {
         par_for("rt_pre_cut", DevExeSpace(), 0, nmb1, ks, ke, js, je,
         KOKKOS_LAMBDA(const int m, const int k, const int j) {
           // i = is is the bottom, so pressure falls as i rises: the cut is the deepest
@@ -2591,6 +2700,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
             Bb_g(m,0,i,k,j) = boltz_sigma/M_PI*SQR(SQR(TT));
           });
         } else {
+        const Real kgr_ = ck_test_kgrey;
         par_for("rt_pre_opac", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
         KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
           if (i < icut_g(m,k,j)) return;          // deeper than the cut: never read
@@ -2644,6 +2754,9 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
             Real kcb[CK_NB];
             ck_continuum(cece, celT, celP, ceNT, ceNP, cian, ciaT, ciak, rayx, ckwl,
                          TT, pbar, rhoN(m,k,j,ii), kcb);
+            if (kgr_ > 0.0) {
+              for (int b=0; b<CK_NB; ++b) kcb[b] = kgr_;
+            }
             // the density gate.  The correlated-k path never carried the rad_kappa_rmax
             // radius test -- the inert corona is a grey-path feature -- but the gate is
             // a property of the GAS, so it must reach every band here as well or a ck
@@ -3380,7 +3493,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
           c3.Src = Src_g;
           c3.Qb = Qb_g;
           c3.Tg = T_g;
-          c3.wblend = taublend ? w_g : DvceArray4D<Real>("rt_c3w_d",1,1,1,1);
+          c3.wblend = taublend ? w_g : CkDum<DvceArray4D<Real>>("rt_c3w_d");
           c3.icut = icut_g;
           c3.wk = c3wk;
           c3.wkf = c3wkf;
@@ -5306,9 +5419,9 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
         const bool cklw_ = ck_impl_lw;
         const bool cklchk_ = cklin_ && (ck_impl_lin_check > 0);
         const int nch_ = nblk*RT_NB;
-        auto lP_g = cklon_ ? *ck_linP_ptr : DvceArray5D<Real>("ck_lP_d",1,1,1,1,1);
-        auto lG_g = cklon_ ? *ck_linG_ptr : DvceArray5D<Real>("ck_lG_d",1,1,1,1,1);
-        auto lC_g = cklon_ ? *ck_linC_ptr : DvceArray2D<Real>("ck_lC_d",1,1);
+        auto lP_g = cklon_ ? *ck_linP_ptr : CkDum<DvceArray5D<Real>>("ck_lP_d");
+        auto lG_g = cklon_ ? *ck_linG_ptr : CkDum<DvceArray5D<Real>>("ck_lG_d");
+        auto lC_g = cklon_ ? *ck_linC_ptr : CkDum<DvceArray2D<Real>>("ck_lC_d");
         auto launch_ck_lin = [&](auto nn_tag) {
           constexpr int NN = decltype(nn_tag)::value;
           par_for("rt_chain_ck_lin", DevExeSpace(), 0, nmb1, 0, nblk-1, ks, ke, js, je,
@@ -5463,9 +5576,9 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
         // in chain order (Fb and Em in exactly the block kernel's order, Src per chain
         // first, i.e. equal to round-off).
         auto lps_g = (cklon_ && ck_lps_ptr != nullptr) ? *ck_lps_ptr
-                   : DvceArray5D<Real>("ck_lps_d",1,1,1,1,1);
+                   : CkDum<DvceArray5D<Real>>("ck_lps_d");
         auto lpf_g = (cklon_ && ck_lpf_ptr != nullptr) ? *ck_lpf_ptr
-                   : DvceArray5D<Real>("ck_lpf_d",1,1,1,1,1);
+                   : CkDum<DvceArray5D<Real>>("ck_lpf_d");
         auto launch_ck_lin1 = [&](auto nn_tag) {
           constexpr int NN = decltype(nn_tag)::value;
           CkParFor4("rt_chain_ck_lin1", cklw_, 0, nmb1, 0, nch_-1, ks, ke, js, je,
@@ -5641,7 +5754,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
         if (n1 <= 520) {
           if (cklin_) {
             // ck_impl_lin_check: the chain kernel on the same B first, kept aside
-            auto lchk_g = cklchk_ ? *ck_lchk_ptr : DvceArray5D<Real>("lchk_d",1,1,1,1,1);
+            auto lchk_g = cklchk_ ? *ck_lchk_ptr : CkDum<DvceArray5D<Real>>("lchk_d");
             if (cklchk_) {
               launch_ck_full();
               par_for("ck_lin_chk_cp", DevExeSpace(), 0, nmb1, 0, nblk-1, ks, ke, js, je,
@@ -6243,7 +6356,11 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
         rt_desum_ptr = new DvceArray1D<Real>("rt_desum", 2);
       }
       auto dsum_g = *rt_desum_ptr;
-      Kokkos::deep_copy(dsum_g, 0.0);
+      if (ck_impl_nosync) {
+        Kokkos::deep_copy(DevExeSpace(), dsum_g, 0.0);   // stream-ordered, no fence
+      } else {
+        Kokkos::deep_copy(dsum_g, 0.0);
+      }
       const int efix_cyc = pm->ncycle;
       const bool resc_eq = rt_rescue_eq;
       // the sub-cycled local relaxation; see rt_relax_sub
@@ -6251,8 +6368,17 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
       const int nsub_max = (rt_relax_submax > 1) ? rt_relax_submax : 1;
       const Real xcrit = rt_relax_xcrit;
       // rt_cell_report: claimed once per RT call, so only the FIRST rescued cell prints
-      DvceArray1D<int> repc_g(std::string("rt_repc"), 1);
-      Kokkos::deep_copy(repc_g, 0);
+      // (problem/ck_impl_nosync: one cached View, zeroed in stream order)
+      static DvceArray1D<int> *repc_c = nullptr;
+      DvceArray1D<int> repc_g;
+      if (ck_impl_nosync) {
+        if (repc_c == nullptr) repc_c = new DvceArray1D<int>(std::string("rt_repc"), 1);
+        repc_g = *repc_c;
+        Kokkos::deep_copy(DevExeSpace(), repc_g, 0);
+      } else {
+        repc_g = DvceArray1D<int>(std::string("rt_repc"), 1);
+        Kokkos::deep_copy(repc_g, 0);
+      }
       const bool fixed_on = report_on && (rt_report_every > 0) &&
                             (pm->ncycle % rt_report_every == 0);
       const Real rep_r = rt_report_r;
@@ -6303,14 +6429,14 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
       // the fallback for a mesh with no radius (the plane-parallel box).
       const Real gver = rt_force_grav;
       auto cfv_ = (rt_cf_ptr != nullptr) ? *rt_cf_ptr
-                : DvceArray4D<Real>("rt_cf_dummy", 1, 1, 1, 1);
+                : CkDum<DvceArray4D<Real>>("rt_cf_dummy");
       const bool cfv_on = (rt_cf_ptr != nullptr);
       const Real apo_ = ap;             // the orbit's a; the print shadows `ap` below
       const int vcyc = pm->ncycle;
       auto eos_f = eos;
       // problem/rt_budget_verbose: the v.f work accumulator (see rt_bud_ptr)
       const bool budg_ = (rt_bud_ptr != nullptr) && radforce;
-      auto bud_ = budg_ ? *rt_bud_ptr : DvceArray1D<Real>("rtbuddummy", 1);
+      auto bud_ = budg_ ? *rt_bud_ptr : CkDum<DvceArray1D<Real>>("rtbuddummy");
       par_reduce_clip4("rt_apply", 0, nmb1, ks, ke, js, je, is, ie, nclip,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, int &nc) {
         // ck_impl_colskip: a converged column is left exactly as its last pass left it
@@ -7040,7 +7166,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                            0.5*(Ft + Fb), kc_g(m,0,i,k,j));
           }
         }
-      });
+      }, ck_impl_nosync && ckimp_);   // ck_implicit never clips here (skip_de)
       rt_nclip_last = nclip;
       RTSourceLimiterWarn(nclip);
       // ---- the per-cycle clip/rescue CENSUS (problem/rt_outer_verbose) -------------
@@ -7055,8 +7181,9 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                   << " resc_eq=" << hcen(1) << " resc_floor=" << hcen(2) << std::endl;
       }
       // The Newton positivity rescue should never fire.  Say so the first time it does,
-      // with the running total, and stay quiet afterwards.
-      {
+      // with the running total, and stay quiet afterwards.  (problem/ck_impl_nosync:
+      // checked on the first pass of a call only.)
+      if (!(ck_impl_nosync && ck_impl_pass > 0)) {
         static bool efix_warned = false;
         static int efix_seen = 0;
         auto he = Kokkos::create_mirror_view(efix_g);
@@ -7198,8 +7325,8 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
       rt_nanrep_cnt = new DvceArray1D<int>("rt_nanrep_cnt", 1);
       rt_nanrep_rec = new DvceArray1D<Real>("rt_nanrep_rec", 16);
     }
-    auto nrcnt = nanrep_g ? *rt_nanrep_cnt : DvceArray1D<int>("d", 1);
-    auto nrrec = nanrep_g ? *rt_nanrep_rec : DvceArray1D<Real>("d", 1);
+    auto nrcnt = nanrep_g ? *rt_nanrep_cnt : CkDum<DvceArray1D<int>>("d");
+    auto nrrec = nanrep_g ? *rt_nanrep_rec : CkDum<DvceArray1D<Real>>("d");
     if (nanrep_g) {
       Kokkos::deep_copy(nrcnt, 0);
       Kokkos::deep_copy(nrrec, 0.0);

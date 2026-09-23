@@ -175,6 +175,71 @@ inline bool ck_impl_colskip = true;
 // user_split_once), instead of once per stage.  Halves the sweeps under rk2.  Enrolled by
 // the pgen; refused unless ck_implicit is on.
 inline bool ck_impl_once = false;
+// ---- ck-fast levers (tests_ck_implicit/README_fast.md).  All default off, and off each
+// is bitwise the code without it.
+// problem/ck_impl_xstep = k > 0 (lever 2): keep the STORED OPERATOR of ck_impl_frozen_op
+// (kappa rho, the coefficient triple, the tm factorisation, the cut and the frozen beam
+// deposit Qb) ACROSS calls.  A call re-applies the operator an earlier call stored, i.e.
+// its pass 0 is a frozen (linear) pass instead of the storing sweep, unless (a) no
+// operator is stored yet, (b) k or more cycles have passed since the store, or (c)
+// problem/ck_impl_xstep_thr > 0 and some cell of the ck domain has moved by more than
+// that relative amount in T or rho since the store (checked on the current state, after
+// rt_pre_tp of pass 0).  Needs frozen_op + lin + jac_lin.
+inline int ck_impl_xstep = 0;
+inline Real ck_impl_xstep_thr = 0.0;
+// set per call by the pass function (pass 0): this call re-applies a stored operator
+inline bool ck_impl_reuse_op = false;
+inline int ck_impl_xs_cyc = -1;           // ncycle of the last store, -1 = none yet
+inline Real ck_impl_xs_dmax = 0.0;        // the last measured max relative change
+inline int64_t ck_impl_nstore = 0;        // calls that stored / re-applied
+inline int64_t ck_impl_nreuse = 0;
+inline DvceArray4D<Real> *ck_xsT_ptr = nullptr;   // T and rho at the store
+inline DvceArray4D<Real> *ck_xsD_ptr = nullptr;
+// problem/ck_impl_jreuse = rho > 0 (lever 3): the Jacobian is built on pass 0 of a call
+// only and reused (chord) until the max residual contracts by less than rho per pass,
+// after which the next pass rebuilds it.
+inline Real ck_impl_jreuse = 0.0;
+inline Real ck_impl_prev_res = -1.0;
+// problem/ck_impl_pred (lever 4): no confirmation pass.  A column whose residual r_p
+// (after the step of pass p) is predicted by the observed contraction to be below tol,
+// r_p^2 / r_{p-1} <= ck_impl_pred_fac tol, is marked converged right after the step, so
+// the call ends without a sweep whose only job is to verify it.  Needs ck_impl_fuse.
+inline bool ck_impl_pred = false;
+inline Real ck_impl_pred_fac = 1.0;
+inline DvceArray3D<Real> *ck_rprev_ptr = nullptr;
+inline int ck_impl_npred = 0;              // columns ended by the prediction, last pass
+// problem/ck_impl_nosync (lever 5): no device allocation and no blocking scalar
+// deep_copy in the RT pass path (cached dummies and host mirrors, stream-ordered
+// fills), and the apply's clip count reduced into a device View.
+inline bool ck_impl_nosync = false;
+
+//! \fn CkDum
+//! \brief a 1-element View for a capture that is never read.  CkDum<V>(label) builds a
+//! fresh one (the old behaviour: an allocation, a zero fill and a free, each with a
+//! device synchronisation) unless problem/ck_impl_nosync, in which case one cached View
+//! per type is returned (never freed: it is leaked on purpose so that no View outlives
+//! Kokkos::finalize).
+template <typename V>
+inline V CkMakeDummy(const std::string &lab) {
+  if constexpr (V::rank == 1) {
+    return V(lab, 1);
+  } else if constexpr (V::rank == 2) {
+    return V(lab, 1, 1);
+  } else if constexpr (V::rank == 3) {
+    return V(lab, 1, 1, 1);
+  } else if constexpr (V::rank == 4) {
+    return V(lab, 1, 1, 1, 1);
+  } else {
+    return V(lab, 1, 1, 1, 1, 1);
+  }
+}
+template <typename V>
+inline V CkDum(const std::string &lab) {
+  if (!ck_impl_nosync) return CkMakeDummy<V>(lab);
+  static V *p = nullptr;
+  if (p == nullptr) p = new V(CkMakeDummy<V>("ck_cached_dummy"));
+  return *p;
+}
 // problem/ck_impl_frozen_op: FREEZE THE EXCHANGE OPERATOR over the Newton passes.
 // At frozen opacity the thermal two-stream is LINEAR in the band Planck functions: the
 // sweep is the application of a fixed operator M to B, and everything in M -- the layer
@@ -703,6 +768,11 @@ inline void CkImplAlloc(const int nmb, const int nb, const int nch, const int n1
       ck_sacc_ptr = new DvceArray4D<Real>("ck_sacc", nmb, n3, n2, n1);
     }
   }
+  // problem/ck_impl_pred: the previous pass's column residual
+  if (ck_impl_pred) {
+    if (ck_rprev_ptr != nullptr) delete ck_rprev_ptr;
+    ck_rprev_ptr = new DvceArray3D<Real>("ck_rprev", nmb, n3, n2);
+  }
   // problem/ck_impl_aa: the per-column Anderson history
   if (ck_impl_aa > 0) {
     ck_aah_ptr = new DvceArray5D<Real>("ck_aah", nmb, 2*ck_impl_aa + 2, n3, n2, n1);
@@ -800,7 +870,11 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
   // problem/ck_impl_warm: the running total this call has applied, carried to the next
   auto dep_ = *ck_dep_ptr;
   const bool skipcol = ck_impl_colskip;
-  Kokkos::deep_copy(cnv_, 0.0);
+  if (ck_impl_nosync) {
+    Kokkos::deep_copy(DevExeSpace(), cnv_, 0.0);   // stream-ordered, no fence
+  } else {
+    Kokkos::deep_copy(cnv_, 0.0);
+  }
   const Real tol = ck_impl_tol;
   const Real dtol = ck_impl_dtol;
   const Real eps = ck_impl_norm_eps;
@@ -837,15 +911,15 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
     // problem/ck_impl_cvsec: the secant heat capacity (1-element dummies when off)
     const bool cvs_ = ck_impl_cvsec;
     const bool cv0_ = (ck_impl_pass <= 0);
-    auto ep_ = cvs_ ? *ck_ep_ptr : DvceArray4D<Real>("ck_ep_d", 1, 1, 1, 1);
-    auto tp_ = cvs_ ? *ck_tp_ptr : DvceArray4D<Real>("ck_tp_d", 1, 1, 1, 1);
-    auto cv_ = cvs_ ? *ck_cv_ptr : DvceArray4D<Real>("ck_cv_d", 1, 1, 1, 1);
+    auto ep_ = cvs_ ? *ck_ep_ptr : CkDum<DvceArray4D<Real>>("ck_ep_d");
+    auto tp_ = cvs_ ? *ck_tp_ptr : CkDum<DvceArray4D<Real>>("ck_tp_d");
+    auto cv_ = cvs_ ? *ck_cv_ptr : CkDum<DvceArray4D<Real>>("ck_cv_d");
     // problem/ck_impl_glob: line search and sub-steps (1-element dummies when off)
     const bool glb_ = (ck_impl_glob > 0);
     const bool sub_ = (ck_impl_glob == 2);
-    auto lsc_ = glb_ ? *ck_lsc_ptr : DvceArray4D<Real>("ck_lsc_d", 1, 1, 1, 1);
-    auto lsd_ = glb_ ? *ck_lsd_ptr : DvceArray4D<Real>("ck_lsd_d", 1, 1, 1, 1);
-    auto sacc_ = sub_ ? *ck_sacc_ptr : DvceArray4D<Real>("ck_sacc_d", 1, 1, 1, 1);
+    auto lsc_ = glb_ ? *ck_lsc_ptr : CkDum<DvceArray4D<Real>>("ck_lsc_d");
+    auto lsd_ = glb_ ? *ck_lsd_ptr : CkDum<DvceArray4D<Real>>("ck_lsd_d");
+    auto sacc_ = sub_ ? *ck_sacc_ptr : CkDum<DvceArray4D<Real>>("ck_sacc_d");
     const int ntry_ = ck_impl_ls_ntry;
     const Real lsca_ = ck_impl_ls_c;
     const int maxit_ = ck_impl_maxit;
@@ -855,9 +929,13 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
     const Real escr_ = ck_impl_esc_rho;
     const int escx_ = ck_impl_esc_extra;
     const bool pz_ = (ck_impl_pass <= 0);
+    // ck_impl_pred (1-element dummy when off)
+    const bool pred_ = ck_impl_pred;
+    const Real pfac_ = ck_impl_pred_fac;
+    auto rprev_ = pred_ ? *ck_rprev_ptr : CkDum<DvceArray3D<Real>>("ck_rprev_d");
     const bool aarst_ = ck_impl_aa_rst;
-    auto aah_ = (naa_ > 0) ? *ck_aah_ptr : DvceArray5D<Real>("ck_aah_d", 1, 1, 1, 1, 1);
-    auto aac_ = (naa_ > 0) ? *ck_aac_ptr : DvceArray4D<Real>("ck_aac_d", 1, 1, 1, 1);
+    auto aah_ = (naa_ > 0) ? *ck_aah_ptr : CkDum<DvceArray5D<Real>>("ck_aah_d");
+    auto aac_ = (naa_ > 0) ? *ck_aac_ptr : CkDum<DvceArray4D<Real>>("ck_aac_d");
     // one wavefront per column on a device; the host backends take their own size
 #if defined(KOKKOS_ENABLE_HIP) || defined(KOKKOS_ENABLE_CUDA)
     Kokkos::TeamPolicy<> tpol(DevExeSpace(), nlg, 64);
@@ -890,6 +968,12 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
       int sst = 0, cnt = 0, lvl = 0;
       // ck_impl_aa: the largest e* of the column (the merit weights)
       Real esmax = 0.0;
+      // ck_impl_pred: this column's step is predicted to converge it
+      bool pwill = false;
+      // ck_impl_pred: a column marked converged by the prediction on an earlier pass
+      // of this call (its arrays hold the state BEFORE that last step, so its residual
+      // here is stale and must not steer anything)
+      const bool pdone = pred_ && (done_(m,k,j) > 0.0);
       if (!glb_) {
         Kokkos::parallel_reduce(Kokkos::TeamThreadRange(tm, ic, ie+1),
         [&](const int i, Real &mx) {
@@ -907,17 +991,36 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
         [&](const int i, Real &sm) {
           sm += bdt*src_(m,k,j,i)*dx1_(m,k,j,i);
         }, ss);
-        Kokkos::single(Kokkos::PerTeam(tm), [&]() {
-          Kokkos::atomic_max(&cnv_(0), rn);
-          Kokkos::atomic_add(&cnv_(4), sg);
-          Kokkos::atomic_add(&cnv_(5), ss);
-          if (rn <= tol) {
-            done_(m,k,j) = 1.0;
-          } else {
-            Kokkos::atomic_add(&cnv_(6), 1.0);
-          }
-        });
-        if (rn <= tol) return;
+        if (!pred_) {
+          Kokkos::single(Kokkos::PerTeam(tm), [&]() {
+            Kokkos::atomic_max(&cnv_(0), rn);
+            Kokkos::atomic_add(&cnv_(4), sg);
+            Kokkos::atomic_add(&cnv_(5), ss);
+            if (rn <= tol) {
+              done_(m,k,j) = 1.0;
+            } else {
+              Kokkos::atomic_add(&cnv_(6), 1.0);
+            }
+          });
+          if (rn <= tol) return;
+        } else {
+          // ck_impl_pred: the same bookkeeping, minus the stale residual of a column
+          // already predicted converged; the contraction estimate for the rest
+          const Real rp = pz_ ? 0.0 : rprev_(m,k,j);
+          Kokkos::single(Kokkos::PerTeam(tm), [&]() {
+            if (!pdone) Kokkos::atomic_max(&cnv_(0), rn);
+            Kokkos::atomic_add(&cnv_(4), sg);
+            Kokkos::atomic_add(&cnv_(5), ss);
+            if (rn <= tol) {
+              done_(m,k,j) = 1.0;
+            } else if (!pdone) {
+              Kokkos::atomic_add(&cnv_(6), 1.0);
+              rprev_(m,k,j) = rn;
+            }
+          });
+          if (rn <= tol || pdone) return;
+          pwill = (rp > 0.0) && (rn*rn <= pfac_*tol*rp);
+        }
       } else {
         // ---- problem/ck_impl_glob: evaluate the pending trial, then decide ----
         const Real phia = lsc_(m,0,k,j);
@@ -1476,6 +1579,12 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
       Kokkos::single(Kokkos::PerTeam(tm), [&]() {
         Kokkos::atomic_max(&cnv_(1), dn);
         if (ncp > 0) Kokkos::atomic_add(&cnv_(2), 1.0);
+        // ck_impl_pred: an uncapped Newton step predicted to land below tol ends the
+        // column here, without a confirmation sweep
+        if (pwill && ncp == 0) {
+          done_(m,k,j) = 1.0;
+          Kokkos::atomic_add(&cnv_(15), 1.0);
+        }
         if (glb_) {
           lsc_(m,0,k,j) = phi;
           lsc_(m,1,k,j) = sdc ? 0.0 : 1.0;      // a seed step is not line-searched
@@ -1495,7 +1604,12 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
     } else {
       Kokkos::parallel_for("ck_impl_fused", tpol, body);
     }
-    auto hcf = Kokkos::create_mirror_view(cnv_);
+    // ck_impl_nosync: one cached host mirror instead of an allocation per pass
+    static DvceArray1D<Real>::HostMirror *hcf_c = nullptr;
+    if (ck_impl_nosync && hcf_c == nullptr) {
+      hcf_c = new DvceArray1D<Real>::HostMirror(Kokkos::create_mirror_view(cnv_));
+    }
+    auto hcf = ck_impl_nosync ? *hcf_c : Kokkos::create_mirror_view(cnv_);
     Kokkos::deep_copy(hcf, cnv_);
     ck_impl_last_res = hcf(0);
     ck_impl_last_gap = (hcf(5) != 0.0) ? (hcf(4)/hcf(5) - 1.0) : 0.0;
@@ -1517,6 +1631,9 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
     ck_impl_nfall = static_cast<int>(hcf(3));
     ck_impl_nthin = static_cast<int>(hcf(7));
     if (hcf(1) <= dtol && hcf(0) <= tol) return 0;
+    // ck_impl_pred: every column still active has been predicted converged by its step
+    ck_impl_npred = static_cast<int>(hcf(15));
+    if (ck_impl_pred && hcf(15) >= hcf(6)) return 0;
     return 1;
   }
 
