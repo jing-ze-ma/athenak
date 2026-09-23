@@ -29,6 +29,15 @@ using PgenRestartStateFnPtr = std::vector<char> (*)();
 // eight bytes that cannot be a plausible IOWrapperSizeT (the data size that occupies this
 // position in a file without the block is O(1e6), i.e. five leading zero bytes)
 constexpr char kPgenRstMagic[8] = {'P', 'G', 'E', 'N', 'S', 'T', '0', '1'};
+// The general-EOS INTERNAL ENERGY block (w0(IEN) of Hydro and/or MHD), same marked form,
+// behind every other marked header.  With <hydro|mhd>/etotgrav the conserved energy in
+// the file is (E - rho phi) + rho phi, and the restart cannot recover from it the
+// E - rho phi the last inversion used: (x - y) + y - y != x - y in floating point.  The
+// internal energy then differed from the straight run's in the last bits in ~1e-2 of the
+// cells, which the dhj MHD run amplifies to ~3e-4 in T of the top cells in one cycle.
+// Header: int32 number of slabs (hydro, then mhd), int32 pad; the slabs are the LAST
+// ones of the tail.
+constexpr char kEintRstMagic[8] = {'E', 'I', 'N', 'T', 'R', 'S', 'T', '1'};
 
 using ProblemFinalizeFnPtr = void (*)(ParameterInput *pin, Mesh *pm);
 using UserBoundaryFnPtr = void (*)(Mesh* pm);

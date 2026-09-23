@@ -179,6 +179,33 @@ void ProblemGenerator::RadiationM1Tests(ParameterInput *pin, const bool restart)
     user_bcs_func = RadM1BeamBC;
 
     if (restart) return;
+    // problem/beam_packet = true (default off, read only when named): instead of the
+    // inflow patch, a free-streaming Gaussian PACKET travelling along (n1, n2) with
+    // reduced flux beam_f, for transports that cannot take a patch inflow (the implicit
+    // one).  Transverse 1/e half-width packet_w, longitudinal packet_l, centre
+    // (packet_x0, packet_y0).  Use periodic or outflow boundaries with user_bcs = false.
+    if (pin->DoesParameterExist("problem","beam_packet") &&
+        pin->GetBoolean("problem","beam_packet")) {
+      Real px0 = pin->GetReal("problem","packet_x0");
+      Real py0 = pin->GetReal("problem","packet_y0");
+      Real pw = pin->GetReal("problem","packet_w");
+      Real pl = pin->GetReal("problem","packet_l");
+      Real be = m1_beam_e, bf = m1_beam_f, bn1 = m1_beam_n1, bn2 = m1_beam_n2;
+      int nx2 = indcs.nx2;
+      par_for("m1_packet_ic", DevExeSpace(), 0,nmb1,0,(n3-1),0,(n2-1),0,(n1-1),
+      KOKKOS_LAMBDA(int m, int k, int j, int i) {
+        Real x1v = CellCenterX(i-is, nx1, size.d_view(m).x1min, size.d_view(m).x1max);
+        Real x2v = CellCenterX(j-js, nx2, size.d_view(m).x2min, size.d_view(m).x2max);
+        Real spar = (x1v - px0)*bn1 + (x2v - py0)*bn2;
+        Real sper = -(x1v - px0)*bn2 + (x2v - py0)*bn1;
+        Real e = be*exp(-SQR(sper/pw) - SQR(spar/pl));
+        u0(m,radm1::M1_E,k,j,i) = efl + e;
+        u0(m,radm1::M1_F1,k,j,i) = bf*cl*e*bn1;
+        u0(m,radm1::M1_F2,k,j,i) = bf*cl*e*bn2;
+        u0(m,radm1::M1_F3,k,j,i) = 0.0;
+      });
+      return;
+    }
     // vacuum everywhere
     par_for("m1_beam_ic", DevExeSpace(), 0,nmb1,0,(n3-1),0,(n2-1),0,(n1-1),
     KOKKOS_LAMBDA(int m, int k, int j, int i) {

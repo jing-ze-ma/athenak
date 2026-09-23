@@ -1,0 +1,5 @@
+p1_off 1 he3d_fast.athinput meshblock/nx3=26
+p1_tb3k13 1 he3d_fast.athinput meshblock/nx3=26 rad_m1/vet_mb_tblock=3 rad_m1/vet_mb_tblock_tk=13
+p2_off 2 he3d_fast.athinput meshblock/nx3=26
+p2_tb3k9 2 he3d_fast.athinput meshblock/nx3=26 rad_m1/vet_mb_tblock=3 rad_m1/vet_mb_tblock_tk=9
+p2_tb3j18k9 2 he3d_fast.athinput meshblock/nx3=26 rad_m1/vet_mb_tblock=3 rad_m1/vet_mb_tblock_tk=9 rad_m1/vet_mb_tblock_tj=18

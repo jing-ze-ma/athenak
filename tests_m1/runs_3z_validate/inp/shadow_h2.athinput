@@ -1,0 +1,139 @@
+# AthenaK input file for the grey M1 SHADOW test (design note T2; Hayes & Norman 2003,
+# HERACLES numbers as quoted in the design note).
+#
+# 1 cm x 0.12 cm, 280 x 80.  Ambient rho0 = 1 g/cc at T0 = 290 K; an elliptical clump of
+# semi-axes (0.1, 0.06) cm centred at (0.5, 0) with 1000x the ambient density and a
+# smooth Fermi edge (shadow_delta = 10).  Opacity sigma = 0.1 (T/T0)^-3.5 (rho/rho0)^2
+# per cm, i.e. the <rad_m1> powerlaw law with kappa0 = 0.1, opac_a = 1 (because the
+# module stores rho*kappa), opac_b = -3.5, rho_ref = 1, t_ref = 290.  Absorption only:
+# kappa_p = kappa_e = kappa_f, kappa_s = 0.  The inner-x1 face is illuminated by a source
+# at T_r = 1740 K streaming in +x (user BC); outer-x1 and outer-x2 are vacuum (free
+# streaming out), and the inner-x2 face is reflecting because only the upper half of the
+# symmetric problem is modelled.
+#
+# UNITS: cgs, except that the gas temperature is carried in KELVIN (the ideal-gas EOS
+# returns T = (gamma-1) e/rho, so e = rho T/(gamma-1) with T in kelvin).  arad is then
+# the cgs radiation constant 7.5657e-15 and E = a T^4 is in erg/cm^3.  The gas is a
+# PRESCRIBED static background: a user source term re-imposes it every hydro stage and
+# gas_feedback = false keeps the coupling from writing it back, so the opacity is a pure
+# function of position.  subcycle = false so the mesh timestep IS the radiation one and
+# the outputs land at the light-crossing times.
+#
+# t_cross = 1 cm / c = 3.3356e-11 s; tlim = 10 t_cross.
+
+<comment>
+problem = grey M1 shadow test
+
+<job>
+basename = m1_shadow
+
+<mesh>
+nghost    = 2
+nx1       = 280
+x1min     = 0.0
+x1max     = 1.0
+ix1_bc    = user
+ox1_bc    = vacuum
+
+nx2       = 80
+x2min     = 0.0
+x2max     = 0.12
+ix2_bc    = reflect
+ox2_bc    = reflect
+
+nx3       = 1
+x3min     = -0.5
+x3max     = 0.5
+ix3_bc    = periodic
+ox3_bc    = periodic
+
+<meshblock>
+nx1       = 280
+nx2       = 80
+nx3       = 1
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.4
+nlim       = -1
+tlim       = 3.3356e-10
+ndiag      = 2000
+
+<hydro>
+eos         = ideal
+reconstruct = plm
+rsolver      = hllc
+gamma       = 1.666666666666667
+
+<rad_m1>
+c_light      = 2.99792458e10
+chat_over_c  = 1.0
+cfl_rad      = 0.4
+reconstruct  = plm
+thick_flux   = ap_hll
+ap_form      = alpha2
+advect_split = false
+source_form  = full
+f_source     = cell
+closure      = m1
+arad         = 7.5657e-15
+e_floor      = 1.0e-30
+subcycle     = false
+opacity      = powerlaw
+kappa_p      = 0.1
+kappa_e      = 0.1
+kappa_f      = 0.1
+kappa_s      = 0.0
+rho_ref      = 1.0
+t_ref        = 290.0
+opac_a       = 1.0
+opac_b       = -3.5
+coupling     = true
+gas_feedback = true
+transport             = implicit
+implicit_solver       = bicgstab
+implicit_offdiag      = auto
+implicit_closure_lag  = step
+implicit_lin_maxit    = 200
+implicit_lin_tol      = 1.0e-10
+implicit_cfl          = 1.0
+implicit_tol          = 1.0e-8
+implicit_maxit        = 200
+implicit_flux         = central
+implicit_recon        = dc
+implicit_enthalpy     = plm
+implicit_vimp         = true
+time_scheme           = hesdirk2
+implicit_bc_x1min     = flux
+implicit_bc_x1max     = marshak
+marshak_q             = 1.0
+implicit_flux_x1min   = 2.07905899e+09
+
+<problem>
+pgen_name    = rad_m1_beam
+m1_test      = shadow
+user_bcs     = true
+user_srcs    = true
+shadow_rho0  = 1.0
+shadow_ratio = 1.0e3
+shadow_t0    = 290.0
+shadow_tr    = 1740.0
+shadow_x0    = 0.5
+shadow_y0    = 0.0
+shadow_ax    = 0.1
+shadow_ay    = 0.06
+shadow_delta = 10.0
+
+<output1>
+file_type   = bin
+variable    = m1
+dt          = 3.3356e-11
+
+# the E(y) cut behind the clump, in double precision: a 1-D x2 slice at x1 = 0.8
+<output2>
+file_type   = tab
+variable    = m1
+data_format = %26.17e
+slice_x1    = 0.8
+dt          = 3.3356e-11

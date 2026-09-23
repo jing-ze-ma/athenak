@@ -1,0 +1,96 @@
+# AthenaK input file for the grey M1 radiation beam test (design note T1)
+#
+# 2-D unit box, 128^2, c = 1, no opacity, thick_flux = none.  A beam enters at 45 deg
+# through the patch 0 <= y <= 0.125 of the inner-x1 face (a user BC, see
+# src/pgen/tests/rad_m1_tests.cpp) and crosses the box diagonally.  The run ends after
+# one diagonal light-crossing time (sqrt(2)/c = 1.414).
+#
+# Switch to the 1-D free-streaming pulse with
+#   problem/m1_test=pulse1d mesh/nx2=1 mesh/ix2_bc=periodic ... time/tlim=1.0
+
+<comment>
+problem = grey M1 radiation beam
+
+<job>
+basename = m1_beam
+
+<mesh>
+nghost    = 2
+nx1       = 128
+x1min     = 0.0
+x1max     = 1.0
+ix1_bc    = periodic
+ox1_bc    = periodic
+
+nx2       = 128
+x2min     = 0.0
+x2max     = 1.0
+ix2_bc    = periodic
+ox2_bc    = periodic
+
+nx3       = 1
+x3min     = -0.5
+x3max     = 0.5
+ix3_bc    = periodic
+ox3_bc    = periodic
+
+<meshblock>
+nx1       = 64
+nx2       = 64
+nx3       = 1
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.4
+nlim       = -1
+tlim       = 0.5
+ndiag      = 100
+
+<rad_m1>
+c_light     = 1.0       # speed of light in code units
+chat_over_c = 1.0       # reduced speed of light factor
+cfl_rad     = 0.4       # CFL for the radiation substep
+reconstruct = plm       # dc | plm | ppm4 | ppmx | wenoz (the last three
+                        # need <mesh>/nghost = 3)
+thick_flux  = none      # none | ap_hll | scaled
+closure     = m1        # m1 | eddington
+e_floor     = 1.0e-15
+transport             = implicit
+implicit_solver       = bicgstab
+implicit_offdiag      = auto
+implicit_closure_lag  = step
+implicit_lin_maxit    = 200
+implicit_lin_tol      = 1.0e-10
+implicit_cfl          = 0.5
+implicit_tol          = 1.0e-8
+implicit_maxit        = 200
+implicit_flux         = central
+implicit_recon        = dc
+time_scheme           = be
+implicit_bc_x1min     = periodic
+implicit_bc_x1max     = periodic
+subcycle    = false
+
+# ---- MILESTONE 3a: implicit x1 transport (docs/dev/rad_m1_implicit_design.md).  Listed
+# here at their DEFAULTS so that the gate scripts can override them on the command line
+# (AthenaK only accepts a command-line override of a parameter the input file names).
+
+<problem>
+pgen_name = rad_m1_beam
+m1_test   = beam
+user_bcs  = false
+beam_packet = true
+packet_x0 = 0.3
+packet_y0 = 0.3
+packet_w  = 0.05
+packet_l  = 0.05
+beam_e    = 1.0
+beam_f    = 0.999999
+beam_y0   = 0.0
+beam_y1   = 0.125
+
+<output1>
+file_type   = bin
+variable    = m1
+dt          = 0.125

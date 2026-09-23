@@ -1,0 +1,36 @@
+# runs_4a_accel stiff probes: base = d0c59f7c switches off (rw/stiff_0), L = implicit_fast_kernels + one_pass=4 + predictor_order=2 (rw/stiff_L)
+## 40-period probe (stiff_table.py)
+stiff_0  case                                                               max|Z|/A0 end|Z|/A0     exact  noise/A0   NC   fb
+stiff_0  P100_t100000_N32_nt24_tshesdirk2                                           1     0.719     0.799    0.0022    1    0
+stiff_0  P100_t100000_N64_nt32_tshesdirk2                                           1       0.8     0.799    0.0012    0    0
+stiff_0  P100_t100000_N64_nt48_tshesdirk2                                           1     0.801     0.799   0.00078    0    0
+stiff_L  case                                                               max|Z|/A0 end|Z|/A0     exact  noise/A0   NC   fb
+stiff_L  P100_t100000_N32_nt24_L_tshesdirk2         1     0.719     0.799    0.0022    1    0
+stiff_L  P100_t100000_N64_nt32_L_tshesdirk2         1       0.8     0.799    0.0012    0    0
+stiff_L  P100_t100000_N64_nt48_L_tshesdirk2         1     0.801     0.799   0.00078    0    0
+## 10-period arms (stab_table.py; NC and stage fallbacks from log.txt)
+stiff_0 P100_t100000_N64_nt24 max|Z|/A0 1.010 end 9.687e-01 exact 9.454e-01 noise 1.7e-03 NC=0.000000e+00 fallbacks=0.000000e+00
+stiff_0 P100_t1000_N64_nt24_v01.2909944 max|Z|/A0 1.000 end 5.149e-02 exact 6.269e-03 noise 1.0e-04 NC=0.000000e+00 fallbacks=0.000000e+00
+stiff_0 P100_t1000_N64_nt24 max|Z|/A0 1.000 end 5.611e-02 exact 3.559e-03 noise 3.9e-05 NC=0.000000e+00 fallbacks=0.000000e+00
+stiff_0 P100_t1000_N64_nt48_v01.2909944 max|Z|/A0 1.000 end 1.566e-02 exact 6.269e-03 noise 6.1e-05 NC=0.000000e+00 fallbacks=0.000000e+00
+stiff_0 P100_t1000_N64_nt48 max|Z|/A0 1.000 end 1.550e-02 exact 3.559e-03 noise 1.2e-05 NC=0.000000e+00 fallbacks=0.000000e+00
+stiff_0 P100_t10_N64_nt24_v01.2909944 max|Z|/A0 1.000 end 1.230e-04 exact 1.232e-04 noise 4.5e-07 NC=0.000000e+00 fallbacks=0.000000e+00
+stiff_0 P100_t10_N64_nt24 max|Z|/A0 1.000 end 2.006e-08 exact 5.900e-10 noise 3.4e-08 NC=0.000000e+00 fallbacks=0.000000e+00
+stiff_0 P100_t10_N64_nt48_v01.2909944 max|Z|/A0 1.000 end 1.230e-04 exact 1.232e-04 noise 4.5e-07 NC=0.000000e+00 fallbacks=0.000000e+00
+stiff_0 P100_t10_N64_nt48 max|Z|/A0 1.000 end 2.006e-08 exact 5.900e-10 noise 3.4e-08 NC=0.000000e+00 fallbacks=0.000000e+00
+stiff_0 P1_t100000_N64_nt24 max|Z|/A0 1.000 end 5.419e-01 exact 7.986e-01 noise 4.2e-03 NC=1.640000e+02 fallbacks=1.640000e+02
+stiff_L P100_t100000_N64_nt24_L max|Z|/A0 1.010 end 9.687e-01 exact 9.454e-01 noise 1.7e-03 NC=0.000000e+00 fallbacks=0.000000e+00
+stiff_L P100_t1000_N64_nt24_L_v01.2909944 max|Z|/A0 1.000 end 5.120e-02 exact 6.269e-03 noise 9.8e-05 NC=0.000000e+00 fallbacks=0.000000e+00
+stiff_L P100_t1000_N64_nt24_L max|Z|/A0 1.000 end 5.611e-02 exact 3.559e-03 noise 3.9e-05 NC=0.000000e+00 fallbacks=0.000000e+00
+stiff_L P100_t1000_N64_nt48_L_v01.2909944 max|Z|/A0 1.000 end 1.604e-02 exact 6.269e-03 noise 6.1e-05 NC=0.000000e+00 fallbacks=0.000000e+00
+stiff_L P100_t1000_N64_nt48_L max|Z|/A0 1.000 end 1.550e-02 exact 3.559e-03 noise 1.2e-05 NC=0.000000e+00 fallbacks=0.000000e+00
+stiff_L P100_t10_N64_nt24_L_v01.2909944 max|Z|/A0 1.000 end 1.230e-04 exact 1.232e-04 noise 4.5e-07 NC=0.000000e+00 fallbacks=0.000000e+00
+stiff_L P100_t10_N64_nt24_L max|Z|/A0 1.000 end 2.142e-06 exact 5.900e-10 noise 5.1e-08 NC=0.000000e+00 fallbacks=0.000000e+00
+stiff_L P100_t10_N64_nt48_L_v01.2909944 max|Z|/A0 1.000 end 1.230e-04 exact 1.232e-04 noise 4.5e-07 NC=0.000000e+00 fallbacks=0.000000e+00
+stiff_L P100_t10_N64_nt48_L max|Z|/A0 1.000 end 2.142e-06 exact 5.900e-10 noise 5.1e-08 NC=0.000000e+00 fallbacks=0.000000e+00
+stiff_L P1_t100000_N64_nt24_L max|Z|/A0 1.000 end 2.448e-01 exact 7.986e-01 noise 1.4e-03 NC=5.310000e+02 fallbacks=5.270000e+02
+## P=1 tau=1e5 nt24 at a reachable tolerance (rw/p1tau)
+one_pass4 tol1.0e-10  max|Z|/A0 1.000 end 7.950e-01 exact 7.986e-01 NC=0.000000e+00 fallbacks=0.000000e+00
+one_pass4 tol1.0e-9  max|Z|/A0 1.000 end 7.950e-01 exact 7.986e-01 NC=0.000000e+00 fallbacks=0.000000e+00
+tol1.0e-10  max|Z|/A0 1.000 end 7.950e-01 exact 7.986e-01 NC=0.000000e+00 fallbacks=0.000000e+00
+tol1.0e-9  max|Z|/A0 1.000 end 7.950e-01 exact 7.986e-01 NC=0.000000e+00 fallbacks=0.000000e+00

@@ -459,6 +459,27 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   impl_kfuse = pin->GetOrAddInteger("rad_m1","implicit_krylov_fuse",fdef ? 3 : 0);
   impl_stencil = pin->GetOrAddBoolean("rad_m1","implicit_op_stencil",fdef && !x1per);
   impl_prec_float = pin->GetOrAddBoolean("rad_m1","implicit_precond_float",false);
+  // tests_m1/runs_4a_accel levers (implicit_vimp_fold, implicit_one_pass,
+  // implicit_predictor_order, implicit_fast_kernels): resolved further down, once
+  // implicit_predictor and implicit_vimp are known (their defaults depend on them)
+  impl_vfold = false;
+  impl_onep = 0;
+  impl_onep_s = 3.0;
+  for (int t = 0; t < 3; ++t) {
+    onep_qa[t] = -1.0;
+    onep_qb[t] = -1.0;
+    onep_cnt[t] = 0.0;
+  }
+  impl_onep_n = 0.0;
+  impl_onep_nchk = 0.0;
+  ew_tight = false;
+  impl_pord = 1;
+  impl_opsplit = false;
+  if (pin->DoesParameterExist("rad_m1","implicit_op_split_red")) {
+    impl_opsplit = pin->GetBoolean("rad_m1","implicit_op_split_red");
+  }
+  impl_fastk = false;
+  impl_odskip = false;
   if (impl_stencil && impl_bcg_sync != 1) {
     ImplFatal("<rad_m1>/implicit_op_stencil needs implicit_bcg_sync = 1");
   }
@@ -506,12 +527,14 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   impl_halo_mpi = pin->GetOrAddBoolean("rad_m1","implicit_halo_mpi",hmdef);}
   hm_state = 0;
   hm_comm = nullptr;
-  // implicit_halo_overlap (rad_m1_krylov.cpp, tests_m1/runs_3y_halo_overlap): read
-  // only when named, so the parameter dump of a run without it is unchanged
-  impl_halo_ovl = false;
-  if (pin->DoesParameterExist("rad_m1","implicit_halo_overlap")) {
-    impl_halo_ovl = pin->GetBoolean("rad_m1","implicit_halo_overlap");
-  }
+  // implicit_halo_overlap (rad_m1_krylov.cpp, tests_m1/runs_3y_halo_overlap: round-off
+  // vs off, restarts bitwise).  DEFAULT true since m1-accmerge wherever it is valid:
+  // implicit_halo_mpi on and more than one rank; otherwise false, silently.  A restart
+  // whose file lacks the key (written before m1-accmerge, which read it only when
+  // named) keeps false; the resolved value is echoed; explicit input overrides.
+  impl_halo_ovl = pin->GetOrAddBoolean("rad_m1","implicit_halo_overlap",
+                      impl_halo_mpi && (global_variable::nranks > 1) &&
+                      !global_variable::restart_run);
   if (impl_halo_ovl && !impl_halo_mpi) {
     ImplFatal("<rad_m1>/implicit_halo_overlap needs implicit_halo_mpi = true");
   }
@@ -700,6 +723,62 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1","implicit_vimp_jscale")) {
     impl_vimp_jscale = pin->GetReal("rad_m1","implicit_vimp_jscale");
   }
+  // ---- THE runs_4a_accel LEVERS (tests_m1/runs_4a_accel, tests_m1/runs_4j_accmerge).
+  // DEFAULT ON since m1-accmerge for time_scheme = be with transport = implicit and a
+  // closure whose tensor is fixed within a step (eddington, vet_sc, tau), wherever each
+  // is valid:
+  //   implicit_fast_kernels = true   (bitwise-exact kernel shortcuts)
+  //   implicit_vimp_fold = true      where implicit_vimp and implicit_op_stencil are on
+  //   implicit_one_pass = 8          where the predictor is on
+  //   implicit_predictor_order = 2   where the predictor is on
+  // (1 GPU, 3-D He box: be 51.6 -> 43.5 ms/cycle Eddington, 57.5 -> 50.7 vet_sc with
+  // one_pass = 4; one_pass = 8 is the faster of the two in runs_4a_accel).  Up to the
+  // merge of m1-accel the keys were read only when named, so a restart file written
+  // before this default carries them only if its input named them; such a restart that
+  // does NOT carry a key keeps the old value (off / 0 / 1).  The resolved values are
+  // always echoed, so later restarts keep them.  Explicit input values override.
+  //  implicit_vimp_fold: fold the implicit_vimp operator part into the stored stencil
+  //    (x2/x3 +-1 into slots 3-6, +-2 neighbours into slots 19-24) instead of
+  //    M1VimpRow per apply (round-off).  Needs implicit_op_stencil.
+  //  implicit_one_pass = N: see ImplicitSolve; its state travels in M1ONEP01.
+  //  implicit_predictor_order = 2: the predictor extrapolates the increment rate g =
+  //    dE/dt linearly in time, g* = g1 + h dt1 with h = (g1 - g2)/dt2, h stored per cell
+  //    in ipred channels 3 (E) and 4 (T).  Under hesdirk2 the backward-Euler steps (first
+  //    step, fallbacks) then leave ipred alone, so that it holds stage-1 increments only.
+  //  implicit_fast_kernels: closure = eddington: D_ab = 0 off the diagonal, so the
+  //    stencil build and the right-hand side skip the off-diagonal (od) terms, which are
+  //    exactly zero; hesdirk2 + vet_sc without extrapolation (time2_vet_extrap = false):
+  //    the tensor save of Time2VetExtrapolate is a plain copy.
+  {
+  bool ts_be = true;
+  if (pin->DoesParameterExist("rad_m1","time_scheme")) {
+    ts_be = (pin->GetString("rad_m1","time_scheme").compare("be") == 0);
+  }
+  const bool ldef = full && ts_be && fixcl && !global_variable::restart_run;
+  impl_fastk = pin->GetOrAddBoolean("rad_m1","implicit_fast_kernels",ldef);
+  impl_vfold = pin->GetOrAddBoolean("rad_m1","implicit_vimp_fold",
+                                    ldef && impl_vimp && impl_stencil);
+  impl_onep = pin->GetOrAddInteger("rad_m1","implicit_one_pass",
+                                   (ldef && impl_pred) ? 8 : 0);
+  if (impl_onep != 0 && impl_onep < 2) {
+    ImplFatal("<rad_m1>/implicit_one_pass (the check period) must be 0 (off) or >= 2");
+  }
+  if (impl_onep > 0) {
+    impl_onep_s = pin->GetOrAddReal("rad_m1","implicit_one_pass_safety",3.0);
+    if (!(impl_onep_s >= 1.0)) {
+      ImplFatal("<rad_m1>/implicit_one_pass_safety must be >= 1");
+    }
+  }
+  impl_pord = pin->GetOrAddInteger("rad_m1","implicit_predictor_order",
+                                   (ldef && impl_pred) ? 2 : 1);
+  if (impl_pord != 1 && impl_pord != 2) {
+    ImplFatal("<rad_m1>/implicit_predictor_order must be 1 or 2");
+  }
+  impl_odskip = impl_fastk && eddington;
+  if (impl_vfold && !impl_stencil) {
+    ImplFatal("<rad_m1>/implicit_vimp_fold needs implicit_op_stencil = true");
+  }
+  }
   // LIMIT 4 of the 3a findings is NOT implemented in 3a2: a column still has to live
   // inside one MeshBlock along x1 (the fatal below).  The option is parsed so that the
   // input files and the gate scripts can already name it, and `gather` fatals rather
@@ -754,6 +833,15 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   iflux_x1max = pin->GetOrAddReal("rad_m1","implicit_flux_x1max",0.0);
   iebath_x1min = pin->GetOrAddReal("rad_m1","implicit_ebath_x1min",0.0);
   iebath_x1max = pin->GetOrAddReal("rad_m1","implicit_ebath_x1max",0.0);
+  // runs_4f_drift: without it the Marshak end face carries only the comoving flux
+  // c q (E - E_bath), so the lab-frame radiation energy advected with the gas,
+  // A E = v (1 + chi) E, cannot leave (or enter) through the end: the end cell's E is
+  // raised by ~(A/(c q)) E at an outflow end (lowered at an inflow end), and the
+  // Lowrie-Edwards shocks drift / carry an N-independent T error.  DEFAULT true since
+  // m1-bcadv (tests_m1/runs_4h_bcadv).  On a restart whose file lacks the key (written
+  // before 5c9e4432) the old value false is kept; files since then echo their value.
+  impl_bc_advect = pin->GetOrAddBoolean("rad_m1","implicit_bc_advect",
+                                        !global_variable::restart_run);
   if ((ibc_x1min == M1_IBC_PERIODIC) != (ibc_x1max == M1_IBC_PERIODIC)) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
       << std::endl << "<rad_m1> implicit x1 boundaries: periodic must be set on BOTH "
@@ -882,7 +970,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   Kokkos::realloc(iw, nmb, niw, ncells3, ncells2, ncells1);
   Kokkos::deep_copy(iw, 0.0);
   if (impl_pred) {
-    Kokkos::realloc(ipred, nmb, 3, ncells3, ncells2, ncells1);
+    Kokkos::realloc(ipred, nmb, (impl_pord == 2) ? 5 : 3, ncells3, ncells2, ncells1);
     Kokkos::deep_copy(ipred, 0.0);
     pred_ok = false;
   }
@@ -920,6 +1008,22 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     Kokkos::realloc(thw_c, nmb, M1_NHALO_T, 1, 1, 1);
     pbval_th = new MeshBoundaryValuesCC(pmy_pack, pin, false);
     pbval_th->InitializeBuffers(M1_NHALO_T);
+    // COMPONENT ROLES of the scratch halos (SetVectorPairs).  Slots 2,3 hold F1 and KT,
+    // SCALARS under the polar flip and the seam transform; the real tangential pairs
+    // are (N2,N3), (A2,A3), (V2,V3).  The default (IVY, IVZ) rule would get all of that
+    // wrong (a latent trap while rad_m1 is a fatal on sp/cs, see rad_m1.cpp).
+    {
+      auto slot = [](const int iw) {
+        int s = -1;
+        for (int n=0; n<M1_NHALO_T; ++n) {
+          if (M1HaloCompT(n) == iw) {s = n;}
+        }
+        return s;
+      };
+      pbval_th->SetVectorPairs(M1_NHALO_T, {{slot(M1_IW_N2), slot(M1_IW_N3)},
+                                            {slot(M1_IW_A2), slot(M1_IW_A3)},
+                                            {slot(M1_IW_V2), slot(M1_IW_V3)}});
+    }
     // the NARROW exchange of the same list: the M1_NHALO_Q components a Picard pass can
     // move once the closure is frozen.  A separate array because the exchange takes the
     // variable count from the array's second extent, and a prefix subview of a
@@ -929,6 +1033,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     Kokkos::realloc(thq_c, nmb, M1_NHALO_Q, 1, 1, 1);
     pbval_tq = new MeshBoundaryValuesCC(pmy_pack, pin, false);
     pbval_tq->InitializeBuffers(M1_NHALO_Q);
+    pbval_tq->SetVectorPairs(M1_NHALO_Q, {});   // E', G0, F1, KT: all scalars
     // the deep interior of the scratch arrays is neither read by a send nor written by a
     // receive when every neighbour is at the SAME level (a same-level buffer reaches ng
     // cells in from the active boundary, buffs_cc.cpp) and neither the cubed-sphere
@@ -951,6 +1056,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       Kokkos::realloc(krw_c, nmb, 1, 1, 1, 1);
       pbval_kr = new MeshBoundaryValuesCC(pmy_pack, pin, false);
       pbval_kr->InitializeBuffers(1);
+      pbval_kr->SetVectorPairs(1, {});   // one scalar Krylov vector
       // implicit_vimp: the per-pass exchange of the Jacobian rows and dv^k (same
       // sequential-use argument as above)
       if (impl_vimp) {
@@ -959,6 +1065,9 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
         Kokkos::realloc(vmw_c, nmb, M1_NVIMP_X, 1, 1, 1);
         pbval_vm = new MeshBoundaryValuesCC(pmy_pack, pin, false);
         pbval_vm->InitializeBuffers(M1_NVIMP_X);
+        // (DV2, DV3) is the tangential pair; the nine per-direction Jacobian rows P are
+        // treated as scalars (their proper curvilinear treatment is a later stage)
+        pbval_vm->SetVectorPairs(M1_NVIMP_X, {{M1_IV_DV + 1, M1_IV_DV + 2}});
       }
     }
     if (impl_halo_direct) {ImplicitHaloDirectInit();}
@@ -970,7 +1079,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       if (ibc_x1min == M1_IBC_PERIODIC) {
         ImplFatal("<rad_m1>/implicit_op_stencil does not take a periodic x1 wrap");
       }
-      Kokkos::realloc(ost, nmb, 19, ncells3, ncells2, ncells1);
+      Kokkos::realloc(ost, nmb, impl_vfold ? 25 : 19, ncells3, ncells2, ncells1);
       Kokkos::deep_copy(ost, 0.0);
     }
   }
@@ -1022,6 +1131,10 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       std::cout << "         implicit_enthalpy="
                 << ((impl_enth == M1_IENTH_PLM) ? "plm" : "central")
                 << " (deferred correction)" << std::endl;
+    }
+    if (ibc_x1min == M1_IBC_MARSHAK || ibc_x1max == M1_IBC_MARSHAK) {
+      std::cout << "         implicit_bc_advect=" << (impl_bc_advect ? "true" : "false")
+                << " (Marshak x1 end carries A E)" << std::endl;
     }
     if (trans_on) {
       std::cout << "         implicit_offdiag="
@@ -3017,7 +3130,11 @@ void RadiationM1::ImplicitStencilBuild() {
   auto th3_ = thx3;
   const int bclo = ibc_x1min, bchi = ibc_x1max;
   const Real cl = c_light, ch = chat, dt = dt_sub;
-  const bool odon = (od_now == M1_OD_OPERATOR);
+  const bool odon = (od_now == M1_OD_OPERATOR) && !impl_odskip;
+  // implicit_vimp_fold: the vimp part of the row goes into the stencil (slots 3-6 and
+  // 19-24), and ImplicitStencilOp does not call M1VimpRow
+  const bool vfold = impl_vfold && vimp_now;
+  const int ivb = iw_vimp;
   const int ni = ie - is + 1;
   const int nji = (je - js + 1)*ni;
   const int nkji = (ke - ks + 1)*nji;
@@ -3117,6 +3234,20 @@ void RadiationM1::ImplicitStencilBuild() {
     }
     for (int o = 0; o < 19; ++o) {st_(m,o,k,j,i) = c[o];}
     for (int o = 7; o < 19; ++o) {lmx = fmax(lmx, fabs(c[o]));}
+    if (vfold) {
+      st_(m,3,k,j,i) = c[3] + iw_(m,ivb+M1_IV_X2M2+1,k,j,i);
+      st_(m,4,k,j,i) = c[4] + iw_(m,ivb+M1_IV_X2M2+2,k,j,i);
+      st_(m,19,k,j,i) = iw_(m,ivb+M1_IV_X1M2,k,j,i);
+      st_(m,20,k,j,i) = iw_(m,ivb+M1_IV_X1P2,k,j,i);
+      st_(m,21,k,j,i) = iw_(m,ivb+M1_IV_X2M2,k,j,i);
+      st_(m,22,k,j,i) = iw_(m,ivb+M1_IV_X2M2+3,k,j,i);
+      if (thrd) {
+        st_(m,5,k,j,i) = c[5] + iw_(m,ivb+M1_IV_X3M2+1,k,j,i);
+        st_(m,6,k,j,i) = c[6] + iw_(m,ivb+M1_IV_X3M2+2,k,j,i);
+        st_(m,23,k,j,i) = iw_(m,ivb+M1_IV_X3M2,k,j,i);
+        st_(m,24,k,j,i) = iw_(m,ivb+M1_IV_X3M2+3,k,j,i);
+      }
+    }
   }, Kokkos::Max<Real>(emax));
   // no edge coefficient anywhere (the Eddington closure: D_ab = 0 off the diagonal, or
   // implicit_offdiag not operator): ImplicitStencilOp reads the 7 face/centre slots only,
@@ -3149,7 +3280,8 @@ void RadiationM1::ImplicitStencilOp(int xc, int yc, int red, Real *out) {
   const int nji = (je - js + 1)*ni;
   const int nkji = (ke - ks + 1)*nji;
   const bool edg = st_edges;
-  const bool vim = vimp_now;
+  const bool vfold = impl_vfold && vimp_now;
+  const bool vim = vimp_now && !vfold;
   const int ivb = iw_vimp;
   const bool cyclic = (ibc_x1min == M1_IBC_PERIODIC);
   auto row = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) -> Real {
@@ -3170,16 +3302,24 @@ void RadiationM1::ImplicitStencilOp(int xc, int yc, int red, Real *out) {
       }
     }
     if (vim) {y += M1VimpRow(iw_, ivb, cx, m, k, j, i, is, ie, cyclic, thrd);}
+    if (vfold) {
+      y += st_(m,19,k,j,i)*iw_(m,cx,k,j,i-2) + st_(m,20,k,j,i)*iw_(m,cx,k,j,i+2)
+           + st_(m,21,k,j,i)*iw_(m,cx,k,j-2,i) + st_(m,22,k,j,i)*iw_(m,cx,k,j+2,i);
+      if (thrd) {
+        y += st_(m,23,k,j,i)*iw_(m,cx,k-2,j,i) + st_(m,24,k,j,i)*iw_(m,cx,k+2,j,i);
+      }
+    }
     iw_(m,cy,k,j,i) = y;
     return y;
   };
-  if (rm == 0) {
+  if (rm == 0 || impl_opsplit) {
     par_for("m1_impl_sto", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       row(m, k, j, i);
     });
-    return;
+    if (rm == 0) {return;}
   }
+  const bool spl = impl_opsplit;   // implicit_op_split_red: y is already in cy
   // 256-thread blocks: the default 1024-thread block of a reduction with a 4-Real
   // value takes 33 kB of LDS, i.e. ONE block per CU (measured 97 us vs 47 us for the
   // same stencil as a par_for)
@@ -3195,7 +3335,7 @@ void RadiationM1::ImplicitStencilOp(int xc, int yc, int red, Real *out) {
     int j = r/ni;
     int i = r - j*ni;
     k += ks; j += js; i += is;
-    Real y = row(m, k, j, i);
+    Real y = spl ? iw_(m,cy,k,j,i) : row(m, k, j, i);
     if (rm == 1 || rm == 4) {
       l0 += iw_(m,M1_IW_KRH,k,j,i)*y;
       if (rm == 4) {
@@ -4354,7 +4494,7 @@ int RadiationM1::ImplicitBiCGStabFused(Real rhsmax) {
   // Eisenstat-Walker (implicit_lin_ew_max > 0): max|r0| IS the nonlinear residual of
   // the Picard iterate in the max norm (the system was re-linearised about it), so the
   // forcing term needs nothing that is not already here.  Off: the fixed test, as is.
-  const bool ew = (impl_ew_max > 0.0);
+  const bool ew = (impl_ew_max > 0.0) && !ew_tight;   // ew_tight: runs_4a_accel
   Real tabs = cn ? impl_lin_cnorm : (tol*bscale);
   if (ew) {
     Real eta = impl_ew_max;
@@ -4615,7 +4755,7 @@ int RadiationM1::ImplicitBiCGStabTwo(Real rhsmax) {
   Real rnorm = red.mx;
   Real rhon = red.s0;
   bcg_r0rel = rnorm/bscale;
-  const bool ew = (impl_ew_max > 0.0);
+  const bool ew = (impl_ew_max > 0.0) && !ew_tight;   // ew_tight: runs_4a_accel
   Real tabs = tol*bscale;
   if (ew) {
     Real eta = impl_ew_max;
@@ -4766,6 +4906,14 @@ void RadiationM1::ImplicitReport() {
   std::cout << "<rad_m1> implicit transport: solves=" << impl_nstep
             << " Picard iterations mean=" << mean << " max=" << impl_itmax
             << " NON-CONVERGED=" << impl_nfail << std::endl;
+  if (impl_onep > 0) {
+    std::cout << "<rad_m1> implicit_one_pass: period=" << impl_onep
+              << " safety=" << impl_onep_s
+              << " solves accepted after one pass=" << impl_onep_n
+              << " contraction measurements=" << impl_onep_nchk
+              << " last q (be, stage 1, stage 2)=" << onep_qa[0] << " " << onep_qa[1]
+              << " " << onep_qa[2] << std::endl;
+  }
   if (impl_accel == M1_IACC_ANDERSON) {
     Real apst = (impl_nstep > 0.0) ? (aa_nacc/impl_nstep) : 0.0;
     std::cout << "<rad_m1> anderson: m=" << impl_and_m
@@ -5308,6 +5456,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   int bclo = ibc_x1min, bchi = ibc_x1max;
   Real fxlo = iflux_x1min, fxhi = iflux_x1max;
   Real eblo = iebath_x1min, ebhi = iebath_x1max;
+  const bool badv = impl_bc_advect;
   bool cyclic = (bclo == M1_IBC_PERIODIC);
   // MILESTONE 3b, LIMIT 4.  With more than one MeshBlock along x1 a block is at a
   // PHYSICAL x1 boundary only when it sits at the corresponding end of its stack; the
@@ -5497,10 +5646,15 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   // measured from the stage START state (EP here), which under be is E^n = EN
   const bool p2 = (t2s == M1_T2S_STAGE2);
   auto pd_ = p2 ? ipred2 : ipred;
+  bool pred_started = false;
   if (pred) {
     const bool pok = p2 ? (pred2_ok && (pred2_dt > 0.0)) : (pred_ok && (pred_dt > 0.0));
+    pred_started = pok;
     const Real rat = pok ? (dt/(p2 ? pred2_dt : pred_dt)) : 0.0;
     const bool hh = have_hydro;
+    // implicit_predictor_order = 2: + dt dt1 h (h = 0 until two increments are known)
+    const bool po2 = (impl_pord == 2);
+    const Real r2 = po2 ? dt*(p2 ? pred2_dt : pred_dt) : 0.0;
     par_for("m1_impl_pred", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       Real tn = iw_(m,M1_IW_TP,k,j,i);
@@ -5508,9 +5662,11 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       if (!pok) {return;}
       Real ep = (t2st ? iw_(m,M1_IW_EP,k,j,i) : iw_(m,M1_IW_EN,k,j,i))
                 + rat*pd_(m,0,k,j,i);
+      if (po2) {ep += r2*pd_(m,3,k,j,i);}
       if (ep > efl) {iw_(m,M1_IW_EP,k,j,i) = ep;}
       if (hh) {
         Real tp = tn + rat*pd_(m,1,k,j,i);
+        if (po2) {tp += r2*pd_(m,4,k,j,i);}
         if (tp > 0.5*tn && tp < 2.0*tn) {iw_(m,M1_IW_TP,k,j,i) = tp;}
       }
     });
@@ -5546,8 +5702,23 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   ew_fprev = 0.0;
   ew_etaprev = 0.0;
   Real rprev = -1.0;
+  // implicit_one_pass = N (tests_m1/runs_4a_accel).  A solve that starts from the
+  // predictor takes its FIRST pass to the full linear tolerance (no Eisenstat-Walker
+  // loosening), so that the change of its second pass is the nonlinear (lagged-term)
+  // part alone: res_1 = q res_0 with q the Picard contraction.  q is MEASURED, per kind
+  // of solve (be / stage 1 / stage 2), on every solve that takes a second pass, and at
+  // least every N-th solve of a kind is made to take one.  The other solves are accepted
+  // after the first pass when res_0 qe/(1-qe) < implicit_tol, qe = safety * (the larger
+  // of the last two measured q), i.e. when the change a second pass would make is
+  // bounded below the tolerance.  The state (q, counters) travels in the restart file.
+  const bool onep = (impl_onep > 0) && pred && pred_started;
+  const int otyp = (t2s == M1_T2S_STAGE1) ? 1 : ((t2s == M1_T2S_STAGE2) ? 2 : 0);
+  const bool ocheck = onep && ((onep_qa[otyp] < 0.0) ||
+                               (onep_cnt[otyp] >= static_cast<Real>(impl_onep - 1)));
+  Real ores0 = -1.0, ores1 = -1.0;
   for (it = 0; it < impl_maxit && !converged; ++it) {
     int nin = -1;
+    ew_tight = onep && (it == 0);
     // MILESTONE 3e: x_k, the state this pass maps
     if (accel) {ImplicitAccelSave();}
     // the off-diagonal mode of THIS pass (the positivity fallback can change it)
@@ -6170,6 +6341,15 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       } else if (bchi == M1_IBC_MARSHAK) {
         bb += nu*ch*mq;
         rr += nu*ch*mq*ebhi;
+        // implicit_bc_advect: the enthalpy flux A E through the end face, upwinded with
+        // the end cell's velocity (outflow: this cell's E; inflow: the bath)
+        if (badv) {
+          if (vi > 0.0) {
+            bb += nu*cr*ai;
+          } else {
+            rr -= nu*cr*ai*ebhi;
+          }
+        }
       } else if (bchi == M1_IBC_FLUX) {
         rr -= nu*cr*fxhi;
       }
@@ -6226,6 +6406,13 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       } else if (bclo == M1_IBC_MARSHAK) {
         bb += nu*ch*mq;
         rr += nu*ch*mq*eblo;
+        if (badv) {
+          if (vi > 0.0) {
+            rr += nu*cr*ai*eblo;
+          } else {
+            bb -= nu*cr*ai;
+          }
+        }
       } else if (bclo == M1_IBC_FLUX) {
         rr += nu*cr*fxlo;
       }
@@ -6290,7 +6477,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       // L_off(x) on the LEFT.  The two changes cancel at x = E^k by construction, so the
       // residual the linear solver measures is the residual of the same system the
       // lagged form measures -- what changes is where the term is solved.
-      if (odm == M1_OD_OPERATOR) {
+      if (odm == M1_OD_OPERATOR && !impl_odskip) {
         ImplicitOffDiagOp(M1_IW_EP, M1_IW_KB, 1.0);
       }
       nin = ImplicitBiCGStab(rhsmax);
@@ -6597,10 +6784,18 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         Real q = resid/rprev;
         pc = (q < 0.5) && (resid*q/(1.0 - q) < impl_tol);
       }
+      if (onep && it == 0 && !pc && !ocheck) {
+        const Real qm = std::max(onep_qa[otyp], onep_qb[otyp]);
+        const Real qe = std::max(impl_onep_s*qm, 1.0e-6);
+        pc = (qe < 0.5) && (resid*qe/(1.0 - qe) < impl_tol);
+        if (pc) {impl_onep_n += 1.0;}
+      }
       bool lc = !trans || (lresid < impl_lin_tol) || (!impl_lres_test && bicg);
       converged = pc && lc;
     }
     rprev = resid;
+    if (it == 0) {ores0 = resid;}
+    if (it == 1) {ores1 = resid;}
     if (plog) {ImplicitPicardLog(it, nin, resid, lresid, src_on);}
     // MILESTONE 3e: ACCELERATE.  Only on a pass that is followed by another one: the
     // state the step ENDS on must be the one the face fluxes of step (g) were built
@@ -6617,13 +6812,39 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       }
     }
   }
-  if (pred) {
+  ew_tight = false;
+  if (onep) {
+    if (ores1 >= 0.0 && ores0 > 0.0) {
+      // a second pass was taken: its change measures the contraction
+      onep_qb[otyp] = onep_qa[otyp];
+      onep_qa[otyp] = ores1/ores0;
+      onep_cnt[otyp] = 0.0;
+      impl_onep_nchk += 1.0;
+    } else {
+      onep_cnt[otyp] += 1.0;
+    }
+  }
+  // implicit_predictor_order = 2 under hesdirk2: a backward-Euler step keeps ipred
+  const bool pskip = (impl_pord == 2) && (time_scheme == M1_TIME_HESDIRK2) && !t2st;
+  if (pred && !pskip) {
     const bool hh = have_hydro;
+    const bool po2 = (impl_pord == 2);
+    // the previous increment and its dt, for h = (g_new - g_old)/dt_old
+    const bool hv = po2 && (p2 ? (pred2_ok && pred2_dt > 0.0)
+                               : (pred_ok && pred_dt > 0.0));
+    const Real dto = hv ? (p2 ? pred2_dt : pred_dt) : 1.0;
+    const Real dtn = dt;
     par_for("m1_impl_pstore", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      pd_(m,0,k,j,i) = iw_(m,M1_IW_EP,k,j,i) - (t2st ? fmax(u0_(m,M1_E,k,j,i), efl)
-                                                      : iw_(m,M1_IW_EN,k,j,i));
-      pd_(m,1,k,j,i) = hh ? (iw_(m,M1_IW_TP,k,j,i) - pd_(m,2,k,j,i)) : 0.0;
+      const Real de = iw_(m,M1_IW_EP,k,j,i) - (t2st ? fmax(u0_(m,M1_E,k,j,i), efl)
+                                                    : iw_(m,M1_IW_EN,k,j,i));
+      const Real dtp = hh ? (iw_(m,M1_IW_TP,k,j,i) - pd_(m,2,k,j,i)) : 0.0;
+      if (po2) {
+        pd_(m,3,k,j,i) = hv ? (de/dtn - pd_(m,0,k,j,i)/dto)/dto : 0.0;
+        pd_(m,4,k,j,i) = hv ? (dtp/dtn - pd_(m,1,k,j,i)/dto)/dto : 0.0;
+      }
+      pd_(m,0,k,j,i) = de;
+      pd_(m,1,k,j,i) = dtp;
     });
     if (p2) {
       pred2_ok = true;
@@ -6818,6 +7039,15 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   par_for("m1_impl_wb", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     Real ep = iw_(m,M1_IW_EP,k,j,i);
+    // an M1_IBC_EFIX end cell: its row was replaced by E' = EN (the Dirichlet value),
+    // and that is the E it keeps -- the work term below must not move it.  It used to:
+    // the replaced row has no transverse coupling, so nothing damped the x2 structure
+    // the per-step work kicks left in the end column, and at the OUTFLOW end of the
+    // radiative shock (T7) it grew into an x2 mode (E, F2, gas v2) until the end cell
+    // hit the E floor (tests_m1/runs_4d_efix).
+    const int ipw = pos_.d_view(m);
+    const bool efc = !cyclic && ((i == is && ipw == 0 && bclo == M1_IBC_EFIX) ||
+                                 (i == ie && ipw == nblkx1-1 && bchi == M1_IBC_EFIX));
     Real fl = f0_(m,k,j,i), fr = f0_(m,k,j,i+1);
     Real fp1 = 0.5*(fl + fr) + iw_(m,M1_IW_ADV,k,j,i)*ep;
     // MILESTONE 3b phase B: the derived cell-centred transverse fluxes, the face means
@@ -6926,7 +7156,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
               work += 0.5*(v3 + w3n)*dm3;
             }
           }
-          ep -= (ch/cl)*work;
+          if (!efc) {
+            ep -= (ch/cl)*work;
+          }
         }
       }
     }

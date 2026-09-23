@@ -628,6 +628,10 @@ Conduction::~Conduction() {
               << (static_cast<double>(sts_nsub_tot)/static_cast<double>(sts_ncall))
               << " per call" << std::endl;
   }
+  if (rad_tauf_unread && global_variable::my_rank == 0) {
+    std::cout << "### rad_w builds: " << rad_skip_n << " skipped (all weights provably "
+              << "0), " << rad_sweep_n << " swept" << std::endl;
+  }
 #if MPI_PARALLEL_ENABLED
   if (adi_comm_set) MPI_Comm_free(&adi_comm);
 #endif
@@ -706,6 +710,58 @@ void Conduction::BuildRadWeights(const DvceArray5D<Real> &w0, const EOS_Data &eo
   // the DENSITY gate (rad_gate_rho): the same inert medium, selected by what the gas is
   // rather than by where it is.  kappa_eff = G kappa_table + (1 - G) rad_kappa_above.
   const Real gaterho = rad_gate_rho, gatedex = rad_gate_dex;
+  // THE INERT-BLEND SKIP (conduction.hpp, rad_tauf_unread).  S = max over columns of
+  // sum |kfac kappa rho dr| over the cells the sweep visits bounds every face tau the
+  // serial sweep computes, up to its rounding (recursive summation of n terms is off by
+  // at most (n-1) u sum|c|; the parallel sum by as much the other way): with the margin
+  // 1e-10 (n up to ~1e5) S <= lo proves tau <= lo on every face, where RadBlendWeight is
+  // exactly 0.  A NaN or inf anywhere makes S = 1e300 and the sweep runs.
+  if (rad_tauf_unread && lo > 0.0) {
+    const int n2c = n2m1 + 1, n3c = n3m1 + 1;
+    const int ncol = (nmb1 + 1)*n3c*n2c;
+    const int ilo = is - ng;
+    Real smax = 0.0;
+    Kokkos::parallel_reduce("radtau_bound",
+                            Kokkos::TeamPolicy<>(DevExeSpace(), ncol, Kokkos::AUTO),
+    KOKKOS_LAMBDA(TeamMember_t tm, Real &mx) {
+      const int c = tm.league_rank();
+      const int m = c/(n3c*n2c);
+      const int k = (c - m*n3c*n2c)/n2c;
+      const int j = c - m*n3c*n2c - k*n2c;
+      Real sc = 0.0;
+      Kokkos::parallel_reduce(Kokkos::TeamThreadRange(tm, ilo, ie+1),
+      [&](const int i, Real &ss) {
+        const Real t = (gen ? wtemp_(m,k,j,i) : w0(m,IEN,k,j,i)/w0(m,IDN,k,j,i)*gm1);
+        const Real p = (gen ? wder_(m,IDPR,k,j,i) : w0(m,IEN,k,j,i)*gm1);
+        const Real rho = w0(m,IDN,k,j,i)*dens_unit;
+        const Real dr = (curv ? dx1_(m,k,j,i) : size.d_view(m).dx1)*len_unit;
+        Real kr = ktab
+               ? RosselandTable(krt, krlT, krlP, krnT, krnP, t*temp_unit,
+                                krho ? rho : p*pres_unit)
+               : RosselandFreedman2014(t*temp_unit, p*pres_unit, met);
+        if (gaterho > 0.0) {
+          const Real g = RadGate(rho, gaterho, gatedex);
+          kr = g*kr + (1.0 - g)*kabove;
+        }
+        ss += fabs(kfac*kr*rho*dr);
+      }, sc);
+      const Real sv = (sc <= 1.0e300) ? sc : 1.0e300;   // NaN and inf -> 1e300
+      Kokkos::single(Kokkos::PerTeam(tm), [&]() {
+        if (sv > mx) mx = sv;
+      });
+    }, Kokkos::Max<Real>(smax));
+    if (smax*(1.0 + 1.0e-10) <= lo) {
+      if (!rad_w_zero) {
+        Kokkos::deep_copy(rad_w, 0.0);
+        rad_w_zero = true;
+      }
+      rad_w_built = true;
+      rad_skip_n += 1.0;
+      return;
+    }
+  }
+  rad_w_zero = false;
+  rad_sweep_n += 1.0;
   par_for("radtau", DevExeSpace(), 0, nmb1, 0, n3m1, 0, n2m1,
   KOKKOS_LAMBDA(const int m, const int k, const int j) {
     Real tau = 0.0;
@@ -2540,6 +2596,7 @@ void Conduction::NewTimeStep(const DvceArray5D<Real> &w0, const EOS_Data &eos_da
     const int dm = dtnew_m, dk = dtnew_k, dj = dtnew_j, di = dtnew_i;
     auto &x1v_ = pmy_pack->pcoord->x1v;
     auto &tfd = rad_tauf;
+    const bool tfok = !(rad_tauf_unread && rad_w_zero);   // skipped: rad_tauf not filled
     par_for("cond_dtdiag", DevExeSpace(), 0, 0, KOKKOS_LAMBDA(const int) {
       const Real temp = (gen ? wtemp_(dm,dk,dj,di)
                              : w0_(dm,IEN,dk,dj,di)/w0_(dm,IDN,dk,dj,di)*gm1);
@@ -2595,8 +2652,8 @@ void Conduction::NewTimeStep(const DvceArray5D<Real> &w0, const EOS_Data &eos_da
       dd.d_view(6)  = rcv;
       dd.d_view(7)  = taumode ? wf(dm,dk,dj,di)   : 1.0;
       dd.d_view(8)  = taumode ? wf(dm,dk,dj,di+1) : 1.0;
-      dd.d_view(9)  = taumode ? tfd(dm,dk,dj,di)  : -1.0;
-      dd.d_view(10) = taumode ? tfd(dm,dk,dj,di+1): -1.0;
+      dd.d_view(9)  = (taumode && tfok) ? tfd(dm,dk,dj,di)  : -1.0;
+      dd.d_view(10) = (taumode && tfok) ? tfd(dm,dk,dj,di+1): -1.0;
       dd.d_view(11) = s1v;
       dd.d_view(12) = (impx1 || !(w1*keff(s1v) > 0.0))
                       ? -1.0 : SQR(d1)/(w1*keff(s1v))*rcv*fac;

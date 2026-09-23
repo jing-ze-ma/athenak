@@ -8,10 +8,12 @@
 //! Mesh variables.
 //! Prolongation of CC variables  occurs in ProlongateCC() function called from task list
 
+#include <algorithm>
 #include <cstdlib>
 #include <iostream>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 #include "athena.hpp"
 #include "globals.hpp"
@@ -27,6 +29,33 @@
 MeshBoundaryValuesCC::MeshBoundaryValuesCC(MeshBlockPack *pp, ParameterInput *pin,
                                            bool z4c) :
   MeshBoundaryValues(pp, pin, z4c) {
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void MeshBoundaryValuesCC::SetVectorPairs()
+//! \brief Replace the default (IVY, IVZ) tangential-pair rule of this exchange by an
+//! explicit table: each {a,b} is a pair (a = x2 member, b = x3 member), every other slot
+//! of the nvar exchanged is a scalar (no polar sign flip, no seam basis transform).
+
+void MeshBoundaryValuesCC::SetVectorPairs(const int nvar,
+                                          const std::vector<std::pair<int,int>> &pairs) {
+  std::vector<int> r(nvar, -1);
+  for (const auto &p : pairs) {
+    const int a = p.first, b = p.second;
+    if (a < 0 || b < 0 || a >= nvar || b >= nvar || a == b || r[a] != -1 || r[b] != -1) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "SetVectorPairs: bad pair (" << a << "," << b
+                << ") for nvar = " << nvar << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    r[a] = 2*b;
+    r[b] = 2*a + 1;
+  }
+  Kokkos::realloc(vrole_, std::max(nvar, 1));
+  auto h = Kokkos::create_mirror_view(vrole_);
+  for (int v=0; v<nvar; ++v) {h(v) = r[v];}
+  Kokkos::deep_copy(vrole_, h);
+  vrole_set_ = true;
 }
 
 //----------------------------------------------------------------------------------------
@@ -69,6 +98,9 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
   auto rbuf = RecvBufDv();
   auto &is_z4c = is_z4c_;
   auto &multilevel = pmy_pack->pmesh->multilevel;
+  // the component-role table (SetVectorPairs); unset = the (IVY, IVZ) rule
+  const bool vtab_ = vrole_set_;
+  auto vrole = vrole_;
   // x1 index window (see the declaration): only buffers spanning the whole x1 extent
   const int wlo_ = iwl, whi_ = iwu;
   const int mbis_ = pmy_pack->pmesh->mb_indcs.is;
@@ -150,6 +182,22 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
         int sj = 1, sk = nj;
         int vv = v;
         bool cs_xform = false;
+        // THE COMPONENT ROLE of slot v: is it a member of a tangential vector pair, and
+        // which slots hold the pair's x2 (va_) and x3 (vb_) members.  Without a table
+        // (SetVectorPairs) this is the historical rule, slots (IVY, IVZ) of any array.
+        bool vec_ = (v == IVY) || (v == IVZ);
+        int va_ = IVY, vb_ = IVZ;
+        if (vtab_) {
+          const int r_ = vrole(v);
+          vec_ = (r_ >= 0);
+          if (vec_) {
+            if ((r_ & 1) == 0) {
+              va_ = v; vb_ = r_ >> 1;
+            } else {
+              va_ = r_ >> 1; vb_ = v;
+            }
+          }
+        }
         // A cross-panel neighbour at a COARSER level is served from the restricted
         // array ca, not a.  Before this existed the whole branch packed NOTHING, so the
         // buffer kept its zero-initialised contents and the coarse block read a ghost
@@ -178,7 +226,7 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
           // seam midline. They are transformed properly, per source cell, by
           // cubed_sphere::TransformMomentum -- see the note there. IVX is radial and
           // common to both charts, so it passes through.
-          cs_xform = (v == IVY) || (v == IVZ);
+          cs_xform = vec_;
           cs_dstpanel = ngh.panel;
           cs_srcpanel = my_panel;
 
@@ -294,8 +342,7 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
         } else if (do_pole) {
           aj = -1;
           bj = jl + ju;
-          if (v == IVY) signvar = -1;
-          if (v == IVZ) signvar = -1;
+          if (vec_) signvar = -1;
         }
 
         // THE SEAM GEOMETRY IS HOISTED OUT OF THE RADIAL LOOP.
@@ -430,10 +477,10 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
               return (cs_coar ? ca(m,vv,kq,jq,i) : a(m,vv,kq,jq,i))*signvar;
             }
             Real m2o, m3o;
-            const Real my_ = cs_coar ? ca(m,IVY,kq,jq,i) : a(m,IVY,kq,jq,i);
-            const Real mz_ = cs_coar ? ca(m,IVZ,kq,jq,i) : a(m,IVZ,kq,jq,i);
+            const Real my_ = cs_coar ? ca(m,va_,kq,jq,i) : a(m,va_,kq,jq,i);
+            const Real mz_ = cs_coar ? ca(m,vb_,kq,jq,i) : a(m,vb_,kq,jq,i);
             cubed_sphere::ApplyMomentumXform(xf[s], my_, mz_, m2o, m3o);
-            return (v == IVY) ? m2o : m3o;
+            return (v == va_) ? m2o : m3o;
           };
 
           // MONOTONICITY LIMIT, threshold-free.

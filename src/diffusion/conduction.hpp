@@ -562,6 +562,17 @@ class Conduction {
   // conduction operator fully on.  NewTimeStep builds the weights itself if this is
   // still false, which is the case at initialisation.
   bool rad_w_built = false;
+  // THE INERT-BLEND SKIP (tests_m1/runs_4j_accmerge).  A problem generator that reads
+  // neither rad_tauf nor anything derived from it (box_convection under <rad_m1>, which
+  // keeps <hydro>/isotropic_conduction = radiative only as the holder of rad_flux_inner,
+  // with rad_tau_lo above the column depth) sets rad_tauf_unread.  BuildRadWeights then
+  // first forms a rigorous upper bound on every column's face tau (a parallel sum of
+  // |kappa rho dr|, with a rounding margin); when it lies below rad_tau_lo every weight
+  // the sweep would write is exactly 0, so rad_w is zeroed (once) and the serial sweep
+  // is skipped -- bitwise the same weights.  rad_tauf is then NOT filled.
+  bool rad_tauf_unread = false;
+  bool rad_w_zero = false;       // rad_w currently holds the all-zero skip state
+  double rad_skip_n = 0.0, rad_sweep_n = 0.0;  // counters (skipped / full builds)
   // rad_blend_use_2s: REMOVED as a runtime switch (measured a net loss on every arm it
   // was tried on -- see git history).  This module can no longer turn it on, but the
   // two members below survive because src/utils/two_stream_rt.hpp still names them
