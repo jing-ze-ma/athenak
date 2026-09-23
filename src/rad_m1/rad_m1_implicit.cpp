@@ -152,6 +152,67 @@ Real M1EnthEf(const int mode, const Real el2, const Real el, const Real er,
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn M1EnthCorrT, M1EnthEfT
+//! \brief time_scheme = hesdirk2 stage solves (time2_enth_vel = start): M1EnthCorr and
+//! M1EnthEf with the plm face value of a reconstructed from the STAGE-START a = a - d
+//! (d = DA, the part of a carried by the old vector's FSAL velocity increment), and d
+//! added back as its face MEAN.  With d = 0 they are M1EnthCorr / M1EnthEf.
+
+KOKKOS_INLINE_FUNCTION
+Real M1EnthAfT(const int mode, const bool ok, const Real al2, const Real al,
+               const Real ar, const Real ar2, const Real dl2, const Real dl,
+               const Real dr, const Real dr2, const bool afc) {
+  if (afc) {return 0.5*(al + ar);}   // time2_enth_vel = central: a_f central
+  const Real sl2 = al2 - dl2, sl = al - dl, sr = ar - dr, sr2 = ar2 - dr2;
+  Real af = 0.5*(sl + sr);
+  if (mode == M1_IENTH_PLM && ok) {
+    Real dum, afl, afr;
+    PLM(sl2, sl, sr, afl, dum);
+    PLM(sl, sr, sr2, dum, afr);
+    af = 0.5*(afl + afr);
+  }
+  return af + 0.5*(dl + dr);
+}
+
+KOKKOS_INLINE_FUNCTION
+Real M1EnthCorrT(const int mode, const Real el2, const Real el, const Real er,
+                 const Real er2, const bool ok, const Real al2, const Real al,
+                 const Real ar, const Real ar2, const Real dl2, const Real dl,
+                 const Real dr, const Real dr2, const Real vf, const bool afc) {
+  const Real alow = (vf > 0.0) ? (al*el) : (ar*er);
+  const Real af = M1EnthAfT(mode, ok, al2, al, ar, ar2, dl2, dl, dr, dr2, afc);
+  Real ef = 0.5*(el + er);
+  if (mode == M1_IENTH_PLM && ok) {
+    Real dum;
+    if (af > 0.0) {
+      PLM(el2, el, er, ef, dum);
+    } else if (af < 0.0) {
+      PLM(el, er, er2, dum, ef);
+    }
+  }
+  return af*ef - alow;
+}
+
+KOKKOS_INLINE_FUNCTION
+Real M1EnthEfT(const int mode, const Real el2, const Real el, const Real er,
+               const Real er2, const bool ok, const Real al2, const Real al,
+               const Real ar, const Real ar2, const Real dl2, const Real dl,
+               const Real dr, const Real dr2, const Real vf, const bool afc) {
+  if (mode == M1_IENTH_UPWIND) {return (vf > 0.0) ? el : er;}
+  Real ef = 0.5*(el + er);
+  if (mode == M1_IENTH_PLM && ok) {
+    const Real af = M1EnthAfT(mode, ok, al2, al, ar, ar2, dl2, dl, dr, dr2, afc);
+    Real dum;
+    if (af > 0.0) {
+      PLM(el2, el, er, ef, dum);
+    } else if (af < 0.0) {
+      PLM(el, er, er2, dum, ef);
+    }
+  }
+  return ef;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn M1VimpRow
 //! \brief implicit_vimp: the part of the operator row outside the 7-point row (x1 +-2,
 //! x2 and x3 -2..+2 without 0), applied to the component cx.  b = RadiationM1::iw_vimp.
@@ -776,6 +837,11 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (impl_vimp) {
     iw_vimp = niw;
     niw += M1_NIW_VIMP;
+    // time_scheme = hesdirk2 (read in Time2Init, later): the DA components
+    if (pin->DoesParameterExist("rad_m1","time_scheme") &&
+        pin->GetString("rad_m1","time_scheme").compare("hesdirk2") == 0) {
+      niw += M1_NIW_VIMP_T2;
+    }
   }
   if (impl_eos_cache) {
     impl_nec = M1EosCacheNComp(impl_ecnt);
@@ -1694,6 +1760,11 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
   const int enm = impl_enth;
   const bool enth2 = (enm != M1_IENTH_UPWIND);
   const int ngh = indcs.ng;
+  // hesdirk2 stage solve, time2_enth_vel = start: see M1EnthCorrT
+  const bool t2vs = (t2_afmode != 0) && impl_vimp &&
+                    (t2_solve == M1_T2S_STAGE1 || t2_solve == M1_T2S_STAGE2);
+  const bool t2afc = (t2_afmode == 2);
+  const int t2da = impl_vimp ? (iw_vimp + M1_IV_DA) : 0;
   par_for("m1_impl_tcell", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     Real dx2 = mbsize.d_view(m).dx2;
@@ -1726,9 +1797,17 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
         bool o0, o3;
         int j0 = M1EnthIdx(j-1, js, je, false, p2lo ? 0 : ngh, p2hi ? 0 : ngh, o0);
         int j3 = M1EnthIdx(j+2, js, je, false, p2lo ? 0 : ngh, p2hi ? 0 : ngh, o3);
+        if (t2vs) {
+          fp += M1EnthCorrT(enm, iw_(m,M1_IW_EP,k,j0,i), ec, iw_(m,M1_IW_EP,k,j+1,i),
+                            iw_(m,M1_IW_EP,k,j3,i), o0 && o3, iw_(m,M1_IW_A2,k,j0,i),
+                            a2c, iw_(m,M1_IW_A2,k,j+1,i), iw_(m,M1_IW_A2,k,j3,i),
+                            iw_(m,t2da+1,k,j0,i), iw_(m,t2da+1,k,j,i),
+                            iw_(m,t2da+1,k,j+1,i), iw_(m,t2da+1,k,j3,i), vf, t2afc);
+        } else {
         fp += M1EnthCorr(enm, iw_(m,M1_IW_EP,k,j0,i), ec, iw_(m,M1_IW_EP,k,j+1,i),
                          iw_(m,M1_IW_EP,k,j3,i), o0 && o3, iw_(m,M1_IW_A2,k,j0,i),
                          a2c, iw_(m,M1_IW_A2,k,j+1,i), iw_(m,M1_IW_A2,k,j3,i), vf);
+        }
       }
       dia += nu2*th*ch*ch*dt*d2c/dx2;
       if (bcg) {
@@ -1752,9 +1831,17 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
         bool o0, o3;
         int j0 = M1EnthIdx(j-2, js, je, false, p2lo ? 0 : ngh, p2hi ? 0 : ngh, o0);
         int j3 = M1EnthIdx(j+1, js, je, false, p2lo ? 0 : ngh, p2hi ? 0 : ngh, o3);
+        if (t2vs) {
+          fm += M1EnthCorrT(enm, iw_(m,M1_IW_EP,k,j0,i), iw_(m,M1_IW_EP,k,j-1,i), ec,
+                            iw_(m,M1_IW_EP,k,j3,i), o0 && o3, iw_(m,M1_IW_A2,k,j0,i),
+                            iw_(m,M1_IW_A2,k,j-1,i), a2c, iw_(m,M1_IW_A2,k,j3,i),
+                            iw_(m,t2da+1,k,j0,i), iw_(m,t2da+1,k,j-1,i),
+                            iw_(m,t2da+1,k,j,i), iw_(m,t2da+1,k,j3,i), vf, t2afc);
+        } else {
         fm += M1EnthCorr(enm, iw_(m,M1_IW_EP,k,j0,i), iw_(m,M1_IW_EP,k,j-1,i), ec,
                          iw_(m,M1_IW_EP,k,j3,i), o0 && o3, iw_(m,M1_IW_A2,k,j0,i),
                          iw_(m,M1_IW_A2,k,j-1,i), a2c, iw_(m,M1_IW_A2,k,j3,i), vf);
+        }
       }
       dia += nu2*th*ch*ch*dt*d2c/dx2;
       if (bcg) {
@@ -1795,10 +1882,19 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
           bool o0, o3;
           int k0 = M1EnthIdx(k-1, ks, ke, false, p3lo ? 0 : ngh, p3hi ? 0 : ngh, o0);
           int k3 = M1EnthIdx(k+2, ks, ke, false, p3lo ? 0 : ngh, p3hi ? 0 : ngh, o3);
+          if (t2vs) {
+            gp += M1EnthCorrT(enm, iw_(m,M1_IW_EP,k0,j,i), ec, iw_(m,M1_IW_EP,k+1,j,i),
+                              iw_(m,M1_IW_EP,k3,j,i), o0 && o3,
+                              iw_(m,M1_IW_A3,k0,j,i), a3c, iw_(m,M1_IW_A3,k+1,j,i),
+                              iw_(m,M1_IW_A3,k3,j,i), iw_(m,t2da+2,k0,j,i),
+                              iw_(m,t2da+2,k,j,i), iw_(m,t2da+2,k+1,j,i),
+                              iw_(m,t2da+2,k3,j,i), vf, t2afc);
+          } else {
           gp += M1EnthCorr(enm, iw_(m,M1_IW_EP,k0,j,i), ec, iw_(m,M1_IW_EP,k+1,j,i),
                            iw_(m,M1_IW_EP,k3,j,i), o0 && o3,
                            iw_(m,M1_IW_A3,k0,j,i), a3c, iw_(m,M1_IW_A3,k+1,j,i),
                            iw_(m,M1_IW_A3,k3,j,i), vf);
+          }
         }
         dia += nu3*th*ch*ch*dt*d3c/dx3;
         if (bcg) {
@@ -1822,10 +1918,19 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
           bool o0, o3;
           int k0 = M1EnthIdx(k-2, ks, ke, false, p3lo ? 0 : ngh, p3hi ? 0 : ngh, o0);
           int k3 = M1EnthIdx(k+1, ks, ke, false, p3lo ? 0 : ngh, p3hi ? 0 : ngh, o3);
+          if (t2vs) {
+            gm += M1EnthCorrT(enm, iw_(m,M1_IW_EP,k0,j,i), iw_(m,M1_IW_EP,k-1,j,i), ec,
+                              iw_(m,M1_IW_EP,k3,j,i), o0 && o3,
+                              iw_(m,M1_IW_A3,k0,j,i), iw_(m,M1_IW_A3,k-1,j,i), a3c,
+                              iw_(m,M1_IW_A3,k3,j,i), iw_(m,t2da+2,k0,j,i),
+                              iw_(m,t2da+2,k-1,j,i), iw_(m,t2da+2,k,j,i),
+                              iw_(m,t2da+2,k3,j,i), vf, t2afc);
+          } else {
           gm += M1EnthCorr(enm, iw_(m,M1_IW_EP,k0,j,i), iw_(m,M1_IW_EP,k-1,j,i), ec,
                            iw_(m,M1_IW_EP,k3,j,i), o0 && o3,
                            iw_(m,M1_IW_A3,k0,j,i), iw_(m,M1_IW_A3,k-1,j,i), a3c,
                            iw_(m,M1_IW_A3,k3,j,i), vf);
+          }
         }
         dia += nu3*th*ch*ch*dt*d3c/dx3;
         if (bcg) {
@@ -4637,6 +4742,12 @@ void RadiationM1::ImplicitVimpBuild() {
   const int b = iw_vimp;
   auto uh = pmy_pack->phydro->u0;
   const Real jsc = impl_vimp_jscale;
+  // hesdirk2, time2_enth_vel = start: the plm face a is built from the stage-start a
+  // (a - DA) and DA enters as its face mean (M1EnthEfT)
+  const bool t2vs = (t2_afmode != 0) && (t2_solve == M1_T2S_STAGE1 ||
+                                          t2_solve == M1_T2S_STAGE2);
+  const bool t2afc = (t2_afmode == 2);
+  const int bda = b + M1_IV_DA;
 
   // (1) the Jacobian rows and dv^k
   par_for("m1_vimp_p", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
@@ -4776,7 +4887,7 @@ void RadiationM1::ImplicitVimpBuild() {
       const int ac = (d == 0) ? M1_IW_ADV : ((d == 1) ? M1_IW_A2 : M1_IW_A3);
       const int vc = (d == 0) ? M1_IW_V1 : ((d == 1) ? M1_IW_V2 : M1_IW_V3);
       // the cell at offset o along d (x1 wraps inside the block when cyclic)
-      Real E[5], A[5], D[5], V[3], P[3][3], DV[3][3], DO[3][3];
+      Real E[5], A[5], D[5], V[3], P[3][3], DV[3][3], DO[3][3], DA[5];
       bool av[5];
       for (int o = -2; o <= 2; ++o) {
         int kk = k, jj = j, ii = i;
@@ -4787,6 +4898,7 @@ void RadiationM1::ImplicitVimpBuild() {
         av[o+2] = okk;
         E[o+2] = iw_(m,M1_IW_EP,kk,jj,ii);
         A[o+2] = iw_(m,ac,kk,jj,ii);
+        DA[o+2] = t2vs ? iw_(m,bda+d,kk,jj,ii) : 0.0;
         D[o+2] = M1DDiag(iw_,vd_,dfull,m,d,kk,jj,ii);
         if (o >= -1 && o <= 1) {
           V[o+1] = iw_(m,vc,kk,jj,ii);
@@ -4806,8 +4918,11 @@ void RadiationM1::ImplicitVimpBuild() {
         const int xl = ol + 2;       // its index into E/A/D
         const bool ok = av[xl-1] && av[xl+2];
         const Real vf = 0.5*(V[ol+1] + V[ol+2]);
-        const Real ef = M1EnthEf(enm, E[xl-1], E[xl], E[xl+1], E[xl+2], ok, A[xl-1],
-                                 A[xl], A[xl+1], A[xl+2], vf);
+        const Real ef = t2vs
+            ? M1EnthEfT(enm, E[xl-1], E[xl], E[xl+1], E[xl+2], ok, A[xl-1], A[xl],
+                        A[xl+1], A[xl+2], DA[xl-1], DA[xl], DA[xl+1], DA[xl+2], vf, t2afc)
+            : M1EnthEf(enm, E[xl-1], E[xl], E[xl+1], E[xl+2], ok, A[xl-1],
+                       A[xl], A[xl+1], A[xl+2], vf);
         const Real ph = nu*cr*ef*(1.0 + 0.5*(D[xl] + D[xl+1]));
         phf[s] = ph;
         const Real dvk = 0.5*(DV[ol+1][d] + DV[ol+2][d]);
@@ -4933,6 +5048,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   const bool t2st = (t2s == M1_T2S_STAGE1) || (t2s == M1_T2S_STAGE2);
   auto t2i_ = t2inc;
   const bool t2k = (t2s != M1_T2S_NONE);
+  const bool t2vs = t2st && (t2_afmode != 0) && impl_vimp && trans;
+  const bool t2afc = (t2_afmode == 2);
+  const bool t2dav = t2vs && (t2_afmode == 1);   // the DA split is needed
+  const int t2da = impl_vimp ? (iw_vimp + M1_IV_DA) : 0;
   auto kk_ = (t2s == M1_T2S_STAGE1) ? t2k2 : t2k1;
   if (t2st) {
     par_for("m1_t2_f1n", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
@@ -5401,6 +5520,15 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         iw_(m,M1_IW_ADV,k,j,i) = v1 + (v1*d11 + v2*d12 + v3*d13);
         iw_(m,M1_IW_A2,k,j,i) = v2 + (v1*d12 + v2*d22 + v3*d23);
         iw_(m,M1_IW_A3,k,j,i) = v3 + (v1*d13 + v2*d23 + v3*d33);
+        if (t2dav) {
+          // hesdirk2: the part of a carried by the old vector's velocity increment
+          Real idg = 1.0/fmax(uh(m,IDN,k,j,i), 1.0e-300);
+          Real w1 = t2i_(m,M1_T2_M1,k,j,i)*idg, w2 = t2i_(m,M1_T2_M1+1,k,j,i)*idg;
+          Real w3 = t2i_(m,M1_T2_M1+2,k,j,i)*idg;
+          iw_(m,t2da,k,j,i) = w1 + (w1*d11 + w2*d12 + w3*d13);
+          iw_(m,t2da+1,k,j,i) = w2 + (w1*d12 + w2*d22 + w3*d23);
+          iw_(m,t2da+2,k,j,i) = w3 + (w1*d13 + w2*d23 + w3*d33);
+        }
         // E0 - E to O(beta^2), with the full pressure tensor
         Real b1 = v1/cl, b2 = v2/cl, b3 = v3/cl;
         Real bf = (b1*f1 + b2*f2c + b3*f3c)/cl;
@@ -5458,6 +5586,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       ImplicitTransverseHalo(dofreeze ? M1_NHALO_Q : M1_NHALO_T);
       // (b1) the lagged transverse operator: the x2/x3 face fluxes of this iterate, their
       // diagonal contribution to the matrix and their lagged right-hand side.
+      if (t2dav && (it == 0 || !(edd || vetsc || dofreeze))) {
+        for (int c = 0; c < 3; ++c) {ImplicitHaloExchange(1, t2da + c);}
+      }
       ImplicitTransverseTerms(it == 0);
     } else {
       ImplicitX1Halo(false);
@@ -5823,10 +5954,19 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           bool o0, o3;
           int i0 = M1EnthIdx(i-1, is, ie, cyclic, hxl, hxh, o0);
           int i3 = M1EnthIdx(i+2, is, ie, cyclic, hxl, hxh, o3);
+          if (t2vs) {
+            rr -= nu*cr*M1EnthCorrT(enm, iw_(m,M1_IW_EP,k,j,i0), iw_(m,M1_IW_EP,k,j,i),
+                                    iw_(m,M1_IW_EP,k,j,ip), iw_(m,M1_IW_EP,k,j,i3),
+                                    o0 && o3, iw_(m,M1_IW_ADV,k,j,i0), ai,
+                                    iw_(m,M1_IW_ADV,k,j,ip), iw_(m,M1_IW_ADV,k,j,i3),
+                                    iw_(m,t2da,k,j,i0), iw_(m,t2da,k,j,i),
+                                    iw_(m,t2da,k,j,ip), iw_(m,t2da,k,j,i3), vf, t2afc);
+          } else {
           rr -= nu*cr*M1EnthCorr(enm, iw_(m,M1_IW_EP,k,j,i0), iw_(m,M1_IW_EP,k,j,i),
                                  iw_(m,M1_IW_EP,k,j,ip), iw_(m,M1_IW_EP,k,j,i3),
                                  o0 && o3, iw_(m,M1_IW_ADV,k,j,i0), ai,
                                  iw_(m,M1_IW_ADV,k,j,ip), iw_(m,M1_IW_ADV,k,j,i3), vf);
+          }
         }
       } else if (bchi == M1_IBC_MARSHAK) {
         bb += nu*ch*mq;
@@ -5868,11 +6008,21 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           bool o0, o3;
           int i0 = M1EnthIdx(i-2, is, ie, cyclic, hxl, hxh, o0);
           int i3 = M1EnthIdx(i+1, is, ie, cyclic, hxl, hxh, o3);
+          if (t2vs) {
+            rr += nu*cr*M1EnthCorrT(enm, iw_(m,M1_IW_EP,k,j,i0), iw_(m,M1_IW_EP,k,j,im),
+                                    iw_(m,M1_IW_EP,k,j,i), iw_(m,M1_IW_EP,k,j,i3),
+                                    o0 && o3, iw_(m,M1_IW_ADV,k,j,i0),
+                                    iw_(m,M1_IW_ADV,k,j,im), ai,
+                                    iw_(m,M1_IW_ADV,k,j,i3), iw_(m,t2da,k,j,i0),
+                                    iw_(m,t2da,k,j,im), iw_(m,t2da,k,j,i),
+                                    iw_(m,t2da,k,j,i3), vf, t2afc);
+          } else {
           rr += nu*cr*M1EnthCorr(enm, iw_(m,M1_IW_EP,k,j,i0), iw_(m,M1_IW_EP,k,j,im),
                                  iw_(m,M1_IW_EP,k,j,i), iw_(m,M1_IW_EP,k,j,i3),
                                  o0 && o3, iw_(m,M1_IW_ADV,k,j,i0),
                                  iw_(m,M1_IW_ADV,k,j,im), ai, iw_(m,M1_IW_ADV,k,j,i3),
                                  vf);
+          }
         }
       } else if (bclo == M1_IBC_MARSHAK) {
         bb += nu*ch*mq;

@@ -467,6 +467,9 @@ class RadiationM1 {
   // time_scheme = be (default) nothing below is allocated or read.
   int time_scheme;              // M1_TIME_BE | M1_TIME_HESDIRK2
   bool t2_ok;                   // a valid FSAL slope K1 is stored
+  int t2_afmode;                // time2_enth_vel: 0 old | 1 start (plm a_f from the
+                                // stage-start a, the rest as a face mean) | 2 central
+                                // (a_f central, E_f plm), in stage solves with vimp
   int t2_solve;                 // what the next ImplicitSolve does (M1_T2S_*)
   bool t2_fail;                 // the last stage solve was not admissible
   int t2_dbg_fail;              // DEBUG time2_dbg_fail: fail stage 1 at this cycle

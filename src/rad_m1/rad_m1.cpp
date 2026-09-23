@@ -129,6 +129,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   pbval_vm = nullptr;
   time_scheme = 0;
   t2_ok = false;
+  t2_afmode = 0;
   t2_solve = 0;
   t2_fail = false;
   t2_dbg_fail = -1;

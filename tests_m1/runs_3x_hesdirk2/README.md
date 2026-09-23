@@ -146,3 +146,63 @@ Input variants are in `h2_3x/inp`: `*_h2` (hesdirk2) and `*_be` (be named explic
 | `time_table.py`, `stab_table.py` | analysis scripts |
 | `lists/` | case lists |
 | `RESULTS_g1_edd.txt`, `RESULTS_stab.txt`, `RESULTS_stiff_tau1e5.txt` | results |
+
+## Follow-up (09-23): fixing the P=100, tau_lambda=1e5 instability (`time2_enth_vel`)
+
+`<rad_m1>/time2_enth_vel` sets how a stage solve under `implicit_vimp` builds the enthalpy
+face coefficient a_f:
+
+| value | a_f is built as |
+|---|---|
+| `old` | the plm a_f of the old-vector velocity (the behaviour of commit 58598ee6) |
+| `start` | the plm a_f of the **stage-start** a (a - DA), with DA = the old-vector velocity increment (`t2inc/rho`) times (1 + D), added back as its face **mean** (`M1EnthCorrT`, `M1EnthEfT`) |
+| `central` | a_f = the mean of the two cells; E_f stays plm (van Leer, upwind of a_f) |
+
+- **Default is `central`.**
+- **Implementation.** The donor-cell matrix part stays the implicit `a(v_old) E'`; only the lagged correction changes. `DA` is 3 iw components behind the vimp block, allocated only when `time_scheme = hesdirk2` is named.
+- **be is untouched.** time_scheme = be is BITWISE unchanged with this binary: the radwave G0 list (4 cases x 34 dumps) and the 2-D He slab (hst, bin, rst: 12 files) are identical to 2c3c4178.
+- **Binaries.** `h2_3x/athena_mpi_v4` (md5 02b2096f) runs `central` and `old` via `ev=`. `start` was measured with `athena_mpi_v3` (a274425), when `start` was the default.
+
+### Stability (40 periods; `RESULTS_fix_central_af.txt`, `RESULTS_fix_start_af.txt`)
+
+| arm | `start` | `central` | be |
+|---|---|---|---|
+| P=100 tau=1e5 N64 nt48, amp 1e-5 / 1e-8 | NaN / NaN | bounded: end 0.801 / 0.797 (exact 0.799), noise 7.8e-4 / 1.9e-2 | 0.112 / 0.068, noise 1.4e-3 / 0.10 |
+| P=100 tau=1e5 N64 nt32, amp 1e-5 / 1e-8 | NaN / NaN | 0.800 / 0.792, noise 1.2e-3 / 3.5e-2 | - |
+| P=100 tau=1e5 N32 nt24, amp 1e-5 / 1e-8 | NaN / NaN | 0.719 / 0.731, noise 2.2e-3 / 4.2e-2 | 0.192 / 0.077, noise 4.9e-3 / 0.18 |
+| P=100 tau=1e5 N64, nt 16 / 24 / 64 / 96 / 128 | nt 24: 114x growth; nt 96: 444x; nt 128: 408x | all bounded (max \|Z\|/A0 <= 1.02), noise <= 1.3e-3 | - |
+| P=10 tau=1e5 N64, nt 16 ... 128 | bounded, noise up to 4.8e-2 | bounded, noise <= 1.3e-3; end 0.39-0.54 (exact 0.533) | - |
+| P=10 and P=100, tau=1e6, nt 16 ... 128, tol 1e-9 | NaN in every arm | bounded, NC 0, 0 fallbacks; end 0.93-0.94 (exact 0.939) at P=10 and 0.80-0.98 (exact 0.978) at P=100; noise 7e-4 to 7e-3 | nt32/96: 0.031/0.031 (P=10) and 0.131/0.053 (P=100) |
+
+Notes on the table:
+- **Run status.** Some `start` arms were killed early once the variant was known to fail. Each `start` arm's status is in its `log.txt` under `h2_3x/runs_v3`.
+- **tau=1e6 needs `tol=1e-9`.** At the default tol 1e-11 the Picard loop stalls at resid 2e-10 to 1e-9 under both schemes: be has 1090 (P=100) and 1280 (P=10) non-converged solves at nt32. Under hesdirk2 those solves become stage fallbacks, 191-4610 per run. The runs stay bounded but are backward-Euler damped.
+- **P=10 tau=1e5 nt48 at tol 1e-11:** 29 NC and 29 fallbacks, and the end amplitude is 0.39.
+- **Amplitude-1e-8 noise.** At amplitude 1e-8 the relative grid noise of `central` (2-4 %) is below that of be (10-18 %).
+
+### G1 Eddington order (`RESULTS_g1_edd_central_af.txt`, `RESULTS_g1_edd_start_af.txt`)
+
+The metric is the same as before: nt 128 ... 2048, amplitude 1e-5, tol 1e-11, median successive-difference order.
+
+| variant | lowest medians | other 10 cases |
+|---|---|---|
+| central | (100,10): 1.89; (1,1e3): 1.92 | 1.96-2.00 |
+| start | (100,10): 1.90; (1,1e3): 1.91 | same as central |
+| old | (100,10): 1.91 | - |
+
+- **Errors.** e128 = 3.8e-4 to 1.3e-3 and e1024 <= 1.7e-5 in every variant.
+- **Finer dt** (`RESULTS_g1_fine_dt.txt`). At (100,10) and (1,1e3) the successive-difference orders fall below 2 beyond nt 1024:
+  - `central`: p(2048-4096-8192) = 1.49 / 1.75 and 1.80 / 1.65.
+  - `old`: p = 1.21 / 1.29 at (100,10), and 1.86 / 1.77 at (1,1e3).
+- **What does not change it.** The tail does not move with the Picard tolerance (1e-11 and 1e-12 give identical differences). It is not proportional to the amplitude: amp 1e-4 still gives 1.35 at 4096/8192, and amp 1e-7 is noisier (0.17 ... 1.53).
+- **What does.** At amp 1e-4 the 128 ... 2048 medians rise to 1.93 at (100,10) and 1.90 at (1,1e3).
+- **Cause.** Not identified. It predates the fix: `old` shows it too.
+
+## STATUS after the follow-up
+
+- **`start` fails.** It is unstable in every tau >= 1e5 arm at P=100, and in all tau=1e6 arms. Its G1 order is 1.90-2.00.
+- **`central`** (a_f central inside stage solves only, E_f plm):
+  - bounded in every probe;
+  - grid noise at or below be;
+  - G1 order >= 1.9 in 11 of 12 cases, with (100,10) at 1.89 by the gate metric (1.93 at amp 1e-4).
+- **Stopped as instructed.** Per the follow-up brief (`start` failed, so try `central`, report both and stop), the remaining gates were not run: vet_sc G1, He slab, G8, fallback, G7, G5.

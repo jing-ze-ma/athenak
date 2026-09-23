@@ -11,10 +11,11 @@ import sys
 from collections import defaultdict
 
 runs, sub, pr = sys.argv[1], sys.argv[2], float(sys.argv[3])
+excl = [x for x in sys.argv[4].split(",") if x] if len(sys.argv) > 4 else []
 g = defaultdict(list)
 for f in glob.glob(os.path.join(runs, "*", "results.json")):
     tag = os.path.basename(os.path.dirname(f))
-    if sub not in tag:
+    if sub not in tag or any(x in tag for x in excl):
         continue
     if "tshesdirk2" in tag and "tshesdirk2" not in sub:
         continue

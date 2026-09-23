@@ -81,6 +81,27 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
               << "closure = tau" << std::endl;
     std::exit(EXIT_FAILURE);
   }
+  // time2_enth_vel = old | start | central (default central): how the enthalpy face
+  // coefficient a_f of a stage solve is built under implicit_vimp + implicit_enthalpy =
+  // plm (runs_3x_hesdirk2: `old` = plm a_f of the old-vector velocity, unstable at
+  // P = 100, tau_lambda = 1e5; `start` = plm a_f of the stage-start a plus the rest as a
+  // face mean, also unstable there; `central` = a_f the mean of the two cells, E_f plm)
+  t2_afmode = 2;
+  if (pin->DoesParameterExist("rad_m1", "time2_enth_vel")) {
+    std::string ev = pin->GetString("rad_m1", "time2_enth_vel");
+    if (ev.compare("old") == 0) {
+      t2_afmode = 0;
+    } else if (ev.compare("start") == 0) {
+      t2_afmode = 1;
+    } else if (ev.compare("central") == 0) {
+      t2_afmode = 2;
+    } else {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<rad_m1>/time2_enth_vel = '" << ev
+                << "' is not a choice (old | start | central)" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+  }
   t2_dbg_fail = -1;
   if (pin->DoesParameterExist("rad_m1", "time2_dbg_fail")) {
     t2_dbg_fail = pin->GetInteger("rad_m1", "time2_dbg_fail");

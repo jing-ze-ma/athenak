@@ -1,0 +1,6 @@
+100 10 x1 64 edd impl 1024 enth=plm ny=4 vimp=true ts=hesdirk2 tol=1.0e-12
+100 10 x1 64 edd impl 2048 enth=plm ny=4 vimp=true ts=hesdirk2 tol=1.0e-12
+100 10 x1 64 edd impl 4096 enth=plm ny=4 vimp=true ts=hesdirk2 tol=1.0e-12
+100 10 x1 64 edd impl 512 enth=plm ny=4 vimp=true ts=hesdirk2 tol=1.0e-12
+100 10 x1 64 edd impl 256 enth=plm ny=4 vimp=true ts=hesdirk2 tol=1.0e-12
+100 10 x1 64 edd impl 128 enth=plm ny=4 vimp=true ts=hesdirk2 tol=1.0e-12

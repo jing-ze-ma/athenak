@@ -260,6 +260,10 @@ constexpr int M1_IV_J1M   = 23;
 constexpr int M1_IV_J1P   = 24;
 constexpr int M1_IV_JRHS  = 25;   // added to the right-hand side
 constexpr int M1_NIW_VIMP = 26;
+// time_scheme = hesdirk2 (time2_enth_vel = start): 3 more components behind the block,
+// DA_d = a_d(old vector) - a_d(stage start) = dv_d + (D dv)_d, dv = t2inc momentum/rho
+constexpr int M1_IV_DA    = 26;
+constexpr int M1_NIW_VIMP_T2 = 3;
 
 // <rad_m1>/implicit_partition: how a column that spans several MeshBlocks (and ranks) is
 // solved (milestone 3a2, LIMIT 4).

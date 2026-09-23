@@ -1,0 +1,35 @@
+case                                                               max|Z|/A0 end|Z|/A0     exact  noise/A0   NC   fb
+P100_t100000_N32_nt24_amp1.0e-8_tshesdirk2                         ABORTED (non-finite state)
+P100_t100000_N32_nt24_amp1.0e-8                                            1    0.0774     0.799      0.18    0   -1
+P100_t100000_N32_nt24_tshesdirk2                                   ABORTED (non-finite state)
+P100_t100000_N32_nt24                                                      1     0.192     0.799    0.0049   28   -1
+P100_t100000_N64_nt128_tshesdirk2                                        408       147     0.799   9.1e+03    0    0
+P100_t100000_N64_nt16_tshesdirk2                                        1.03     0.724     0.799    0.0052    0    0
+P100_t100000_N64_nt24_tshesdirk2                                         114      95.1     0.799   1.8e+03   55   37
+P100_t100000_N64_nt32_amp1.0e-8_tshesdirk2                         ABORTED (non-finite state)
+P100_t100000_N64_nt32_tshesdirk2                                   ABORTED (non-finite state)
+P100_t100000_N64_nt48_amp1.0e-8_tshesdirk2                         ABORTED (non-finite state)
+P100_t100000_N64_nt48_amp1.0e-8                                            1    0.0681     0.799       0.1    0   -1
+P100_t100000_N64_nt48_tshesdirk2                                   ABORTED (non-finite state)
+P100_t100000_N64_nt48                                                      1     0.112     0.799    0.0014    4   -1
+P100_t100000_N64_nt64_tshesdirk2                                   ABORTED (non-finite state)
+P100_t100000_N64_nt96_tshesdirk2                                         444       444     0.799   1.6e+04    0    0
+P100_t1e+06_N64_nt16_tshesdirk2                                    ABORTED (non-finite state)
+P100_t1e+06_N64_nt24_tshesdirk2                                    ABORTED (non-finite state)
+P100_t1e+06_N64_nt32_tshesdirk2                                    ABORTED (non-finite state)
+P100_t1e+06_N64_nt48_tshesdirk2                                    ABORTED (non-finite state)
+P100_t1e+06_N64_nt64_tshesdirk2                                    ABORTED (non-finite state)
+P10_t100000_N64_nt128_tshesdirk2                                           1      0.53     0.533    0.0058    0    0
+P10_t100000_N64_nt16_tshesdirk2                                            1     0.426     0.533     0.048    0    0
+P10_t100000_N64_nt24_tshesdirk2                                            1     0.426     0.533     0.048    0    0
+P10_t100000_N64_nt32_tshesdirk2                                            1     0.452     0.533     0.037    1    0
+P10_t100000_N64_nt48_tshesdirk2                                            1      0.52     0.533    0.0023    6    6
+P10_t100000_N64_nt64_tshesdirk2                                            1      0.54     0.533    0.0035    0    0
+P10_t100000_N64_nt96_tshesdirk2                                            1     0.533     0.533    0.0051    0    0
+P10_t1e+06_N64_nt128_tshesdirk2                                    ABORTED (non-finite state)
+P10_t1e+06_N64_nt16_tshesdirk2                                     ABORTED (non-finite state)
+P10_t1e+06_N64_nt24_tshesdirk2                                     ABORTED (non-finite state)
+P10_t1e+06_N64_nt32_tshesdirk2                                     ABORTED (non-finite state)
+P10_t1e+06_N64_nt48_tshesdirk2                                     ABORTED (non-finite state)
+P10_t1e+06_N64_nt64_tshesdirk2                                     ABORTED (non-finite state)
+P10_t1e+06_N64_nt96_tshesdirk2                                     ABORTED (non-finite state)
