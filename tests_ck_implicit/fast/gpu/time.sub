@@ -1,0 +1,32 @@
+#!/bin/bash -l
+#SBATCH -o /viper/ptmp2/jinma/ckfast_0923/time/log.out.%j
+#SBATCH -e /viper/ptmp2/jinma/ckfast_0923/time/log.err.%j
+#SBATCH -J ckfast_t
+#SBATCH -p apudev
+#SBATCH --ntasks=2
+#SBATCH --constraint="apu"
+#SBATCH --gres=gpu:2
+#SBATCH --cpus-per-task=24
+#SBATCH --time=00:14:50
+# ck-fast GPU timing: arms interleaved forward / reversed / forward; ms/cycle from the
+# elapsed= diag lines (ndiag = 20; ana_time.py skips the first 20 cycles).
+# usage: sbatch time.sub <tag> <rst> <arms...>
+source /viper/ptmp2/jinma/ckfast_0923/common.sh
+TAG=$1; RST=$2; shift 2
+ARMS="$@"
+T0=$(head -c 300000 $RST | strings | sed -n '/<output4>/,/<output5>/p' | grep last_time | head -1 | awk '{print $3}')
+TL=$(python3 -c "print($T0+3000.0)")
+echo "RST $RST T0=$T0 md5=$(md5sum $RST | cut -c1-32) BIN md5=$(md5sum $BIN | cut -c1-32) XNACK=$HSA_XNACK NSR=$HSA_NO_SCRATCH_RECLAIM"
+arm() {
+  local a=$1; local d=$2
+  mkdir -p $P/time/$TAG/$d; cd $P/time/$TAG/$d
+  /usr/bin/time -f "WALL_$d %e s" srun -n 2 $BIN -r $RST -i $INP -t 00:03:00 \
+      output3/dt=1e30 output4/dt=1e30 time/ndiag=20 time/tlim=$TL $(args $a) > run.log 2>run.err
+  echo "rc_$d=$?"
+  rm -rf rst bin 2>/dev/null
+}
+REV=$(echo $ARMS | tr ' ' '\n' | tac | tr '\n' ' ')
+for a in $ARMS; do arm $a ${a}_r1; done
+for a in $REV; do arm $a ${a}_r2; done
+for a in $ARMS; do arm $a ${a}_r3; done
+echo CKFAST_TIME_DONE
