@@ -195,19 +195,41 @@ A2 200  aa   call 2:   6.14e-03 5.01e-03 2.53e-04 1.32e-06 4.04e-07 2.35e-07 6.5
 
 ## GPU cost (production restart; apudev; 2 ranks / 2 GPUs; HSA_XNACK=1 HSA_NO_SCRATCH_RECLAIM=1; 150 cycles)
 
-**PENDING at commit time.** Jobs 11953388 (SET=A: s t4 aa aae, plus t4 with the base
-binary) and 11953389 (SET=B: s t4 sub esc, plus sub with the base binary) were submitted
-with `jac/submit_gpu.sh`. Details:
+Jobs 11953388 (SET=A: s t4 aa aae, plus t4 with the base binary) and 11953389 (SET=B:
+s t4 sub esc, plus sub with the base binary) ran one after the other on vipa1327, using
+`jac/submit_gpu.sh`. Details:
 
 * Restart: `bench/cs_hyd4_prod/rst/dhj.00127.rst`, read in place. Rotation 63.50,
   t = 1.93675e7 s, ncycle 986896, dt 19.47 s, md5 9fb8a77f...
 * Input: `gpu/hyd.athinput`, which is the hyd4 production input plus the T4 `<problem>`
   block of README_glob plus `jac_keys.athinput`.
-* Binaries: `athena.gpu.jac` and `athena.gpu.base` (be02c647 + hooks).
-* Arm order: interleaved r1 / reversed r2 / r3.
+* Binaries: `athena.gpu.jac` (md5 e80d642f...) and `athena.gpu.base` (be02c647 + hooks).
+* Arm order: interleaved r1 / reversed r2 / r3. Times are `cpu time used`.
 
-Table: `python3 tests_ck_implicit/jac/ana_gpu.py`. GPU gate 1: the `cmpdir.py` line at the
-end of each log (`/viper/ptmp2/jinma/ckjac_0923/gpu/log.out.<job>`) must read BITWISE.
+**GPU gate 1: PASS.**
+* t4 on jac vs base: 3 files BITWISE (job A).
+* ls_sub on jac vs base: 3 files BITWISE (job B).
+
+```
+arm     job  cpu r1/r2/r3 [s]     x semi(same job)  passes maxp nonconv subrst escx
+s       A    10.01/9.92/10.22     1.00
+t4      A    17.67/17.54/17.41    1.75              4.50    5     0       0      0
+aa      A    17.43/17.32/17.62    1.74              4.50    5     0       0      0
+aae     A    17.45/17.31/17.24    1.72              4.50    5     0       0      0
+s       B     9.93/9.86/10.03     1.00
+t4      B    18.84/17.46/17.42    1.80              4.50    5     0       0      0
+sub     B    17.34/17.37/17.82    1.76              4.50    5     0       0      0
+esc     B    17.45/17.40/17.31    1.75              4.50    5     0       0      0
+```
+
+* At the production dt every lever costs the same as T4, within the repeat spread (t4 is
+  1.75 / 1.80 in the two jobs).
+  * aa and aae take accelerated steps: 1.86e6 column-steps over the run. Their passes are
+    unchanged at 4.50 (max 5), and no column goes non-converged.
+  * esc never fires at this dt: escx = 0, subrst = 0.
+* Job B's directories overwrote job A's s and t4 run directories (same names). The job A
+  numbers for s and t4 come from `log.out.11953388`, and the directories now hold job B.
+  `ana_gpu.py` therefore reads only job B's s and t4.
 
 ## Open
 
