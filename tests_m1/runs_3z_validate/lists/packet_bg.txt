@@ -1,0 +1,9 @@
+pkbg1.0e-2_be_128_k0.5 /viper/ptmp2/jinma/validate_0923/inp/packet_be.athinput mesh/nx1=128 mesh/nx2=128 meshblock/nx1=128 meshblock/nx2=128 rad_m1/implicit_cfl=0.5 rad_m1/e_floor=1.0e-2
+pkbg1.0e-2_h2_128_k0.5 /viper/ptmp2/jinma/validate_0923/inp/packet_h2.athinput mesh/nx1=128 mesh/nx2=128 meshblock/nx1=128 meshblock/nx2=128 rad_m1/implicit_cfl=0.5 rad_m1/e_floor=1.0e-2
+pkbg1.0e-2_expl_128 /viper/ptmp2/jinma/validate_0923/inp/packet_expl.athinput mesh/nx1=128 mesh/nx2=128 meshblock/nx1=128 meshblock/nx2=128 rad_m1/e_floor=1.0e-2
+pkbg1.0e-4_be_128_k0.5 /viper/ptmp2/jinma/validate_0923/inp/packet_be.athinput mesh/nx1=128 mesh/nx2=128 meshblock/nx1=128 meshblock/nx2=128 rad_m1/implicit_cfl=0.5 rad_m1/e_floor=1.0e-4
+pkbg1.0e-4_h2_128_k0.5 /viper/ptmp2/jinma/validate_0923/inp/packet_h2.athinput mesh/nx1=128 mesh/nx2=128 meshblock/nx1=128 meshblock/nx2=128 rad_m1/implicit_cfl=0.5 rad_m1/e_floor=1.0e-4
+pkbg1.0e-4_expl_128 /viper/ptmp2/jinma/validate_0923/inp/packet_expl.athinput mesh/nx1=128 mesh/nx2=128 meshblock/nx1=128 meshblock/nx2=128 rad_m1/e_floor=1.0e-4
+pkbg1.0e-8_be_128_k0.5 /viper/ptmp2/jinma/validate_0923/inp/packet_be.athinput mesh/nx1=128 mesh/nx2=128 meshblock/nx1=128 meshblock/nx2=128 rad_m1/implicit_cfl=0.5 rad_m1/e_floor=1.0e-8
+pkbg1.0e-8_h2_128_k0.5 /viper/ptmp2/jinma/validate_0923/inp/packet_h2.athinput mesh/nx1=128 mesh/nx2=128 meshblock/nx1=128 meshblock/nx2=128 rad_m1/implicit_cfl=0.5 rad_m1/e_floor=1.0e-8
+pkbg1.0e-8_expl_128 /viper/ptmp2/jinma/validate_0923/inp/packet_expl.athinput mesh/nx1=128 mesh/nx2=128 meshblock/nx1=128 meshblock/nx2=128 rad_m1/e_floor=1.0e-8

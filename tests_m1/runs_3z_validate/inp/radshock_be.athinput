@@ -1,0 +1,147 @@
+# AthenaK input file for the grey M1 RADIATIVE SHOCK (design note T7; Lowrie & Edwards
+# 2008, in the Skinner & Ostriker / QUOKKA cgs scaling).
+#
+# The parameter numbers below are the Mach 2 SUBCRITICAL set printed by
+#   python3 tests_m1/t7_radshock.py --m0 2 --athinput
+# (nondimensional P0 = 1e-4, sigma_a = 1e6, kappa = 1, gamma = 5/3).  For Mach 5 run the
+# same script with --m0 5 and override the <problem> and <mesh> lines on the command
+# line; tests_m1/runs_open/run_t7.sh does exactly that.
+#
+# UNITS: honest cgs for rho, v, e, E, F and x.  The ideal-gas EOS returns
+# T_code = (gamma-1) e/rho = [k/(mu m_H)] T_kelvin, so <problem>/m1_shock_tunit is
+# k/(mu m_H) = 8.2499208e7 with mu m_H = 1.67353e-24 g, and <rad_m1>/arad is
+# a_cgs/tunit^4 = 1.6332399e-46 so that E = arad T_code^4 comes out in erg/cm^3 and the
+# gas heat capacity is the cgs c_v = 1.2374881e8 erg/g/K that t7_radshock.py expects.
+#
+# OPACITY: the Lowrie-Edwards problem has a CONSTANT cross section per unit length,
+# sigma_t = sigma_a = 577.35/L~ = 577.16 per cm, not a constant opacity per gram.  The
+# powerlaw law with opac_a = -1 and rho_ref = 1 stores rho*kappa = kappa0 = 577.16
+# independently of rho, which is what is wanted.  There is no scattering.
+#
+# INITIAL CONDITION: the semi-analytic profile itself, read from
+# <problem>/m1_shock_ref (written by t7_radshock.py --write-ref; its x column is
+# measured from the shock and is shifted by m1_shock_xs here).  Starting from the two
+# far-field states with a smoothed jump instead (leave m1_shock_ref unset and set
+# m1_shock_w) needs many flow-through times to build the precursor, which at the
+# light-speed CFL is unaffordable on one core.  Both x1 faces are Dirichlet at the
+# equilibrium states, i.e. the shock is held in its own frame, and the run measures
+# whether the scheme KEEPS the semi-analytic solution.
+
+<comment>
+problem = grey M1 radiative shock (Lowrie & Edwards), M0 = 2
+
+<job>
+basename = m1_radshock
+
+<mesh>
+nghost    = 2
+nx1       = 512
+x1min     = 0.0
+x1max     = 1.52978124e-02
+ix1_bc    = user
+ox1_bc    = user
+
+nx2       = 4
+x2min     = -6.0e-5
+x2max     = 6.0e-5
+ix2_bc    = periodic
+ox2_bc    = periodic
+
+nx3       = 1
+x3min     = -0.5
+x3max     = 0.5
+ix3_bc    = periodic
+ox3_bc    = periodic
+
+<meshblock>
+nx1       = 512
+nx2       = 4
+nx3       = 1
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.4
+nlim       = -1
+tlim       = 1.0e-10
+ndiag      = 20000
+
+<hydro>
+eos         = ideal
+reconstruct = plm
+rsolver     = hllc
+gamma       = 1.666666666666667
+
+<rad_m1>
+c_light      = 2.99792458e10
+chat_over_c  = 1.0
+cfl_rad      = 0.4
+reconstruct  = plm
+thick_flux   = ap_hll
+ap_form      = alpha2
+advect_split = true
+split_vel    = recon
+source_form  = full
+f_source     = cell
+closure      = eddington
+arad         = 1.6332399e-46
+e_floor      = 1.0e-30
+subcycle     = false
+opacity      = powerlaw
+kappa_p      = 577.16
+kappa_e      = 577.16
+kappa_f      = 577.16
+kappa_s      = 0.0
+rho_ref      = 1.0
+t_ref        = 1.0
+opac_a       = -1.0
+opac_b       = 0.0
+coupling     = true
+gas_feedback = true
+transport             = implicit
+implicit_solver       = bicgstab
+implicit_offdiag      = auto
+implicit_closure_lag  = step
+implicit_lin_maxit    = 200
+implicit_lin_tol      = 1.0e-10
+implicit_cfl          = -1.0
+implicit_tol          = 1.0e-8
+implicit_maxit        = 200
+implicit_flux         = central
+implicit_recon        = dc
+implicit_enthalpy     = plm
+implicit_vimp         = true
+time_scheme           = be
+implicit_bc_x1min     = marshak
+implicit_ebath_x1min  = 0.0
+implicit_bc_x1max     = marshak
+implicit_ebath_x1max  = 0.0
+
+<problem>
+pgen_name       = rad_m1_beam
+m1_test         = radshock
+user_bcs        = true
+m1_shock_tunit  = 8.2499208e7
+m1_shock_ref    = ref_m2.txt
+m1_shock_w      = 2.0
+m1_shock_rho_l  = 5.69000000e+00
+m1_shock_v_l    = 3.46264132e+07
+m1_shock_t_l    = 2.18000000e+06
+m1_shock_rho_r  = 1.30077662e+01
+m1_shock_v_r    = 1.51466661e+07
+m1_shock_t_r    = 4.52910259e+06
+m1_shock_xs     = 1.00251232e-02
+
+<output1>
+file_type   = tab
+variable    = m1
+slice_x2    = 0.0
+data_format = %26.17e
+dt          = 5.0e-11
+
+<output2>
+file_type   = tab
+variable    = hydro_w
+slice_x2    = 0.0
+data_format = %26.17e
+dt          = 5.0e-11

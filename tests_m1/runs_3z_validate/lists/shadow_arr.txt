@@ -1,0 +1,5 @@
+arr_expl_280 /viper/ptmp2/jinma/validate_0923/inp/shadow_expl.athinput mesh/nx1=280 mesh/nx2=80 meshblock/nx1=280 meshblock/nx2=80 time/tlim=4.0027e-11 output1/dt=1.33424e-12 output2/dt=4.0027e-11
+arr_h2_280_k1 /viper/ptmp2/jinma/validate_0923/inp/shadow_h2.athinput mesh/nx1=280 mesh/nx2=80 meshblock/nx1=280 meshblock/nx2=80 time/tlim=4.0027e-11 output1/dt=1.33424e-12 output2/dt=4.0027e-11 rad_m1/implicit_cfl=1
+arr_h2_280_k8 /viper/ptmp2/jinma/validate_0923/inp/shadow_h2.athinput mesh/nx1=280 mesh/nx2=80 meshblock/nx1=280 meshblock/nx2=80 time/tlim=4.0027e-11 output1/dt=1.33424e-12 output2/dt=4.0027e-11 rad_m1/implicit_cfl=8
+arr_be_280_k1 /viper/ptmp2/jinma/validate_0923/inp/shadow_be.athinput mesh/nx1=280 mesh/nx2=80 meshblock/nx1=280 meshblock/nx2=80 time/tlim=4.0027e-11 output1/dt=1.33424e-12 output2/dt=4.0027e-11 rad_m1/implicit_cfl=1
+arr_be_280_k8 /viper/ptmp2/jinma/validate_0923/inp/shadow_be.athinput mesh/nx1=280 mesh/nx2=80 meshblock/nx1=280 meshblock/nx2=80 time/tlim=4.0027e-11 output1/dt=1.33424e-12 output2/dt=4.0027e-11 rad_m1/implicit_cfl=8
