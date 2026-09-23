@@ -319,7 +319,8 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   //    eta_k = min(ew_max, gamma (|r0_k|/|r0_{k-1}|)^2) with the gamma eta_{k-1}^2
   //    safeguard (bcg_sync >= 1 only);
   //  implicit_predictor = step   start the loop from the previous step's implicit
-  //    increment scaled by dt/dt_prev (closures that do not read the iterate only).
+  //    increment scaled by dt/dt_prev (closures that do not read the iterate only;
+  //    the default for them since 0923, restart-safe).
   //  The Eisenstat-Walker default is 1e-2 with bcg_sync >= 1 and 0 (off) with
   //  bcg_sync = 0, so an input that asks for the original BiCGStab loop still runs.
   const bool fixcl = eddington || vet_sc || tau_closure;
@@ -342,9 +343,11 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (impl_ew_max > 0.0 && impl_bcg_sync == 0) {
     ImplFatal("<rad_m1>/implicit_lin_ew_max needs implicit_bcg_sync >= 1");
   }
-  {std::string pr = pin->GetOrAddString("rad_m1","implicit_predictor","none");
-  // predictor = step is NOT a default yet: its state is not in the restart file, so a
-  // restart would not be bitwise (tests_m1/runs_3k_gpu3d/README_DEFAULTS.md).
+  {std::string pr = pin->GetOrAddString("rad_m1","implicit_predictor",
+                                        fixcl ? "step" : "none");
+  // predictor = step is the default for the closures that do not read the iterate: its
+  // state (ipred, pred_ok, pred_dt) travels in the restart file (radm1::kM1PredRstMagic,
+  // tests_m1/runs_3k_gpu3d/README_PREDRST.md), so a restart stays bitwise.
   if (pr.compare("none") == 0) {
     impl_pred = false;
   } else if (pr.compare("step") == 0) {

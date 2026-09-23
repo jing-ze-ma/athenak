@@ -193,6 +193,14 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
                           std::make_pair(0,nmb), Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
       }
     }
+    // implicit_predictor = step: the stored previous-step increment (radm1::ipred)
+    if (pradm1->impl_pred && pradm1->pred_ok) {
+      const int npc = static_cast<int>(pradm1->ipred.extent(1));
+      Kokkos::realloc(outarray_m1p, nmb, npc, nout3, nout2, nout1);
+      Kokkos::deep_copy(outarray_m1p, Kokkos::subview(pradm1->ipred,
+                        std::make_pair(0,nmb), Kokkos::ALL, Kokkos::ALL, Kokkos::ALL,
+                        Kokkos::ALL));
+    }
   }
   if (pturb != nullptr) {
     Kokkos::realloc(outarray_force, nmb, nforce, nout3, nout2, nout1);
@@ -254,6 +262,18 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
     const Real bdtp = two_stream_rt::rt_c3_bdt_prev;
     std::memcpy(&(warm_hdr[0]), &(hdr[0]), sizeof(hdr));
     std::memcpy(&(warm_hdr[0]) + sizeof(hdr), &bdtp, sizeof(bdtp));
+  }
+  // <rad_m1> implicit_predictor = step: the number of ipred channels written (0 when no
+  // increment is stored, and then not one byte), and its marked header -- int32 have,
+  // int32 ncomp, Real pred_dt.  See radm1::kM1PredRstMagic.
+  const int npred = (pradm1 != nullptr && pradm1->impl_pred && pradm1->pred_ok) ?
+                    static_cast<int>(pradm1->ipred.extent(1)) : 0;
+  char pred_hdr[2*sizeof(std::int32_t) + sizeof(Real)];
+  {
+    const std::int32_t hdr[2] = {(npred > 0) ? 1 : 0, static_cast<std::int32_t>(npred)};
+    const Real pdt = (pradm1 != nullptr) ? pradm1->pred_dt : 0.0;
+    std::memcpy(&(pred_hdr[0]), &(hdr[0]), sizeof(hdr));
+    std::memcpy(&(pred_hdr[0]) + sizeof(hdr), &pdt, sizeof(pdt));
   }
   int nhydro=0, nmhd=0, nrad=0, nm1=0, nforce=3, nz4c=0, nadm=0, nco=0;
   if (pradm1 != nullptr) {
@@ -390,6 +410,15 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
       resfile.Write_any_type(&nb, sizeof(IOWrapperSizeT), "byte", single_file_per_rank);
       resfile.Write_any_type(&(warm_hdr[0]), nb, "byte", single_file_per_rank);
     }
+    // the implicit_predictor header, same marked form, behind the warm-start one
+    if (npred > 0) {
+      IOWrapperSizeT nb = sizeof(pred_hdr);
+      resfile.Write_any_type(&(radm1::kM1PredRstMagic[0]),
+                             sizeof(radm1::kM1PredRstMagic), "byte",
+                             single_file_per_rank);
+      resfile.Write_any_type(&nb, sizeof(IOWrapperSizeT), "byte", single_file_per_rank);
+      resfile.Write_any_type(&(pred_hdr[0]), nb, "byte", single_file_per_rank);
+    }
   }
 
   //--- STEP 4.  All ranks write data over all MeshBlocks (5D arrays) in parallel
@@ -451,6 +480,9 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   if (nwarm > 0) {
     data_size += nwarm*nout1*nout2*nout3*sizeof(Real);  // rt_c3bp (+ rt_c3bp2)
   }
+  if (npred > 0) {
+    data_size += npred*nout1*nout2*nout3*sizeof(Real);  // rad_m1 ipred
+  }
   if (global_variable::my_rank == 0 || single_file_per_rank) {
     resfile.Write_any_type(&(data_size), sizeof(IOWrapperSizeT), "byte",
                             single_file_per_rank);
@@ -470,6 +502,10 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   if (nwarm > 0) {
     step3size += sizeof(two_stream_rt::kRtWarmRstMagic) + sizeof(IOWrapperSizeT)
                  + sizeof(warm_hdr);
+  }
+  if (npred > 0) {
+    step3size += sizeof(radm1::kM1PredRstMagic) + sizeof(IOWrapperSizeT)
+                 + sizeof(pred_hdr);
   }
 
   // write cell-centered variables in parallel
@@ -900,7 +936,7 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
 
   // write the general-EOS temperature cache last, one MeshBlock at a time, exactly as
   // the arrays above.  Same loop for hydro and MHD, so it is written once here.
-  auto write_wtemp = [&](const HostArray4D<Real> &a, const char *what) {
+  auto write_wtemp = [&](const auto &a, const char *what) {
     for (int m=0;  m<noutmbs_max; ++m) {
       if (m < noutmbs_min) {
         auto mbptr = Kokkos::subview(a, m, Kokkos::ALL, Kokkos::ALL, Kokkos::ALL);
@@ -943,6 +979,11 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   // and the warm-start history behind that, same layout, same loop
   if (nwarm > 0) { write_wtemp(outarray_wm1, "rt warm start"); }
   if (nwarm > 1) { write_wtemp(outarray_wm2, "rt warm start 2"); }
+  // and the implicit_predictor increment behind that, one slab per channel
+  for (int n=0; n<npred; ++n) {
+    write_wtemp(Kokkos::subview(outarray_m1p, Kokkos::ALL, n, Kokkos::ALL, Kokkos::ALL,
+                                Kokkos::ALL), "rad_m1 predictor");
+  }
 
   // close file, clean up
   resfile.Close(single_file_per_rank);

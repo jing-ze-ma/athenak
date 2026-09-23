@@ -20,6 +20,13 @@
 
 namespace radm1 {
 
+// implicit_predictor = step as RESTART STATE: the marker of the little header block
+// (int32 have, int32 ncomp, Real pred_dt) written behind the two-stream warm-start
+// header, and read by the same eight-byte peek (src/outputs/restart.cpp, pgen.cpp).
+// Present only when a stored increment exists; its ncomp per-cell slabs of ipred then
+// follow the warm-start slabs at the end of every MeshBlock record.
+constexpr char kM1PredRstMagic[8] = {'M', '1', 'P', 'R', 'E', 'D', '0', '1'};
+
 // <rad_m1>/transport
 constexpr int M1_TRANSPORT_EXPLICIT   = 0;   // stages 1-2: PD-ARS, sub-cycled
 constexpr int M1_TRANSPORT_IMPLICIT_X1 = 1;  // stage 3a: backward Euler on x1 columns

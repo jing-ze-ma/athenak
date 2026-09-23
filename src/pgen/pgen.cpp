@@ -385,6 +385,44 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     }
   }
 
+  // --- THE <rad_m1> implicit_predictor HEADER (radm1::kM1PredRstMagic): the same peek
+  // once more, behind the warm-start header.  It says how many ipred channels the tail
+  // carries behind the warm-start slabs and the dt of the step they were stored on.
+  int npred_file = 0;
+  Real pred_dt_file = 0.0;
+  if (std::memcmp(variabledata, &(radm1::kM1PredRstMagic[0]),
+                  sizeof(radm1::kM1PredRstMagic)) == 0) {
+    char pred_hdr[2*sizeof(std::int32_t) + sizeof(Real)];
+    IOWrapperSizeT nb = 0;
+    bool ok = true;
+    if (global_variable::my_rank == 0 || single_file_per_rank) {
+      ok = (resfile.Read_bytes(&nb, 1, sizeof(IOWrapperSizeT), single_file_per_rank)
+            == sizeof(IOWrapperSizeT)) && (nb == sizeof(pred_hdr));
+      ok = ok && (resfile.Read_bytes(&(pred_hdr[0]), 1, nb, single_file_per_rank) == nb);
+      ok = ok && (resfile.Read_bytes(variabledata, 1, variablesize, single_file_per_rank)
+                  == variablesize);
+    }
+#if MPI_PARALLEL_ENABLED
+    if (!single_file_per_rank) {
+      MPI_Bcast(&ok, sizeof(bool), MPI_CHAR, 0, MPI_COMM_WORLD);
+      MPI_Bcast(&(pred_hdr[0]), sizeof(pred_hdr), MPI_CHAR, 0, MPI_COMM_WORLD);
+      MPI_Bcast(variabledata, variablesize, MPI_CHAR, 0, MPI_COMM_WORLD);
+    }
+#endif
+    std::int32_t hdr[2] = {0, 0};
+    if (ok) {
+      std::memcpy(&(hdr[0]), &(pred_hdr[0]), sizeof(hdr));
+      std::memcpy(&pred_dt_file, &(pred_hdr[0]) + sizeof(hdr), sizeof(pred_dt_file));
+    }
+    if (!ok || hdr[0] != 1 || hdr[1] < 1 || hdr[1] > 3) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "the <rad_m1> predictor header of this restart file is "
+                << "broken." << std::endl;
+      exit(EXIT_FAILURE);
+    }
+    npred_file = static_cast<int>(hdr[1]);
+  }
+
   IOWrapperSizeT data_size;
   std::memcpy(&data_size, &(variabledata[0]), sizeof(IOWrapperSizeT));
 
@@ -469,7 +507,8 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
   if (wd_mhd) { wd_size += 2*nout1*nout2*nout3*sizeof(Real); }
   // and behind both of them, the mode-3 warm-start history: nwarm_file slabs, a number
   // the marked header above gave us rather than something inferred from the length
-  IOWrapperSizeT wm_size = nwarm_file*nout1*nout2*nout3*sizeof(Real);
+  // (and behind those the npred_file <rad_m1> predictor slabs, also header-declared)
+  IOWrapperSizeT wm_size = (nwarm_file + npred_file)*nout1*nout2*nout3*sizeof(Real);
   if ((data_size_ + wt_size + wd_size + wm_size) == data_size) {
     data_size_ += wt_size + wd_size + wm_size;
   } else if (wd_hyd && wd_mhd &&
@@ -1032,7 +1071,20 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
               << "level and problem/rt_impl_warm = 2 wants two; the first column solve "
               << "does not extrapolate and this restart is not bitwise." << std::endl;
   }
-  if (wt_hyd || wt_mhd || nwarm_read > 0) {
+  // the <rad_m1> predictor increment: delivered straight into ipred (allocated by the
+  // RadiationM1 constructor) when this run keeps one with the same channel count.  A
+  // file without it leaves pred_ok = false: the first step cold starts, as before.
+  const bool pred_want = (pradm1 != nullptr) && pradm1->impl_pred;
+  const bool pred_read = pred_want && (npred_file > 0) &&
+                         (static_cast<int>(pradm1->ipred.extent(1)) == npred_file) &&
+                         (static_cast<int>(pradm1->ipred.extent(0)) >= nmb);
+  if (pred_want && !pred_read && global_variable::my_rank == 0) {
+    std::cout << "### WARNING: restart file has no <rad_m1> implicit_predictor "
+              << "increment (written before it was added, or by a run without one); "
+              << "the first implicit step cold starts and this restart is not bitwise."
+              << std::endl;
+  }
+  if (wt_hyd || wt_mhd || nwarm_read > 0 || pred_read) {
     HostArray4D<Real> wtin("rst-wt-in", 1, 1, 1, 1);
     Kokkos::realloc(wtin, nmb, nout3, nout2, nout1);
     // fills wtin with the next per-MeshBlock slab and advances the offsets; the caller
@@ -1118,6 +1170,18 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
         read_slab("rt warm start 2");
         ts::rt_warm_stage2.assign(wtin.data(), wtin.data() + nw);
       }
+    }
+    if (pred_read) {
+      // step over the warm-start slabs this run did not want
+      offset_myrank += (nwarm_file - nwarm_read)*nout1*nout2*nout3*sizeof(Real);
+      myoffset = offset_myrank;
+      for (int n=0; n<npred_file; ++n) {
+        read_slab("rad_m1 predictor");
+        Kokkos::deep_copy(Kokkos::subview(pradm1->ipred, std::make_pair(0,nmb), n,
+                          Kokkos::ALL, Kokkos::ALL, Kokkos::ALL), wtin);
+      }
+      pradm1->pred_ok = true;
+      pradm1->pred_dt = pred_dt_file;
     }
   }
 

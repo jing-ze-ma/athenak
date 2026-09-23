@@ -286,6 +286,9 @@ class BaseTypeOutput {
   // a cold started restart is not a bitwise continuation.  Empty unless the warm start is
   // on and has allocated; see utils/two_stream_warm_rst.hpp for the file format.
   HostArray4D<Real> outarray_wm1, outarray_wm2;
+  // the <rad_m1> implicit_predictor = step increment (RadiationM1::ipred, 3 channels);
+  // empty unless one is stored.  See radm1::kM1PredRstMagic.
+  HostArray5D<Real> outarray_m1p;
   HostFaceFld4D<Real> outfield;  // FC output field on host
   std::vector<int> noutmbs;   // with MPI, number of output MBs across all ranks
   int noutmbs_min;            // with MPI, minimum number of output MBs across all ranks

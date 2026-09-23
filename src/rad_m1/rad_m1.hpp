@@ -452,7 +452,7 @@ class RadiationM1 {
   Real ew_fprev, ew_etaprev;    // max|r0| and eta of the previous pass of this step
                                 // (* = for eddington | vet_sc | tau; m1-type closures
                                 // default to the opposite, the pre-0923 path)
-  bool impl_pred;               // <rad_m1>/implicit_predictor = step (default none):
+  bool impl_pred;               // <rad_m1>/implicit_predictor = step (default step*):
                                 // start the Picard loop from E^n + (dt/dt_prev) dE_prev
                                 // (and T likewise); none = cold start
   bool pred_ok;                 // a previous-step increment is stored
