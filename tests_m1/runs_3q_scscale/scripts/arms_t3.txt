@@ -1,0 +1,7 @@
+g1_base 1 he3d_fast.athinput meshblock/nx3=26
+g1_msp 1 he3d_fast.athinput meshblock/nx3=26 rad_m1/vet_mb_mom_split=true
+g1_fuse 1 he3d_fast.athinput meshblock/nx3=26 rad_m1/vet_mb_mom_fuse=true
+g2_agg 2 he3d_fast.athinput meshblock/nx3=26
+g2_msp 2 he3d_fast.athinput meshblock/nx3=26 rad_m1/vet_mb_mom_split=true
+g2_fuse 2 he3d_fast.athinput meshblock/nx3=26 rad_m1/vet_mb_mom_fuse=true
+g2_hybm 2 he3d_fast.athinput meshblock/nx3=26 rad_m1/vet_mb_agroup=2 rad_m1/vet_mb_mom_split=true

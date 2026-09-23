@@ -1,0 +1,239 @@
+a7ea154a778ab07d12ebb423eb2dd627  ../b_ref_cpu/src/athena
+0f9009c52b8949a53adcdbfda42c05bd  ../b_new_cpu/src/athena
+== A. default arms, new vs ref (all files byte-identical)
+ref_U1 vs new_U1: 15/15 identical; hst: m1slab.hydro=same m1slab.user=same; | exit 0 exit 0
+ref_F1 vs new_F1: 15/15 identical; hst: m1slab.hydro=same m1slab.user=same; | exit 0 exit 0
+ref_Ux2r4 vs new_Ux2r4: 15/15 identical; hst: m1slab.hydro=same m1slab.user=same; | exit 0 exit 0
+ref_Fx2r4 vs new_Fx2r4: 15/15 identical; hst: m1slab.hydro=same m1slab.user=same; | exit 0 exit 0
+ref_Ux2r1 vs new_Ux2r1: 15/15 identical; hst: m1slab.hydro=same m1slab.user=same; | exit 0 exit 0
+ref_Ux2b2r2 vs new_Ux2b2r2: 15/15 identical; hst: m1slab.hydro=same m1slab.user=same; | exit 0 exit 0
+ref_Ux1r4 vs new_Ux1r4: 15/15 identical; hst: m1slab.hydro=same m1slab.user=same; | exit 0 exit 0
+ref_Fx12r4 vs new_Fx12r4: 15/15 identical; hst: m1slab.hydro=same m1slab.user=same; | exit 0 exit 0
+ref_Uoddr3 vs new_Uoddr3: 15/15 identical; hst: m1slab.hydro=same m1slab.user=same; | exit 0 exit 0
+ref_T3r4 vs new_T3r4: 11/11 identical; hst: m1slab.hydro=same m1slab.user=same; | exit 0 exit 0
+ref_T3r2 vs new_T3r2: 11/11 identical; hst: m1slab.hydro=same m1slab.user=same; | exit 0 exit 0
+ref_T3r1 vs new_T3r1: 11/11 identical; hst: m1slab.hydro=same m1slab.user=same; | exit 0 exit 0
+ref_T3oddr4 vs new_T3oddr4: 11/11 identical; hst: m1slab.hydro=same m1slab.user=same; | exit 0 exit 0
+== A2. new vs ref on the o3 inputs (all files byte-identical)
+r3_T3r4 vs n3_T3r4: 11/11 identical; hst: m1slab.hydro=same m1slab.user=same; | exit 0 exit 0
+r3_Ux2r4 vs n3_Ux2r4: 15/15 identical; hst: m1slab.hydro=same m1slab.user=same; | exit 0 exit 0
+== B. exact options vs ref (hst identical; bin/rst differ only in the echoed keys)
+r3_Ux2r4 vs na_Ux2r4: 3/15 identical; hst: m1slab.hydro=same m1slab.user=same; m1slab.hydro_w.00000.bin:5B@<=13759 m1slab.hydro_w.00001.bin:5B@<=13764 m1slab.hydro_w.00002.bin:5B@<=13766 m1slab.hydro_w.00003.bin:5B@<=13760 m1slab.m1.00000.bin:5B@<=13756 m1slab.m1.00001.bin:5B@<=13761 m1slab.m1.00002.bin:5B@<=13763 m1slab.m1.00003.bin:5B@<=13757 m1slab.00000.rst:5B@<=13552 m1slab.00001.rst:5B@<=13552 m1slab.00002.rst:5B@<=13552 m1slab.00003.rst:5B@<=13552 | exit 0 exit 0
+r3_T3r4 vs na_T3r4: 3/11 identical; hst: m1slab.hydro=same m1slab.user=same; m1slab.hydro_w.00000.bin:5B@<=11912 m1slab.hydro_w.00001.bin:5B@<=11919 m1slab.hydro_w.00002.bin:5B@<=11919 m1slab.m1.00000.bin:5B@<=11909 m1slab.m1.00001.bin:5B@<=11916 m1slab.00000.rst:5B@<=11705 m1slab.00001.rst:5B@<=11705 m1slab.00002.rst:5B@<=11705 | exit 0 exit 0
+r3_Ux2b2r2 vs fu_Ux2b2r2: 3/15 identical; hst: m1slab.hydro=same m1slab.user=same; m1slab.hydro_w.00000.bin:5B@<=13846 m1slab.hydro_w.00001.bin:5B@<=13851 m1slab.hydro_w.00002.bin:5B@<=13853 m1slab.hydro_w.00003.bin:5B@<=13847 m1slab.m1.00000.bin:5B@<=13843 m1slab.m1.00001.bin:5B@<=13848 m1slab.m1.00002.bin:5B@<=13850 m1slab.m1.00003.bin:5B@<=13844 m1slab.00000.rst:5B@<=13639 m1slab.00001.rst:5B@<=13639 m1slab.00002.rst:5B@<=13639 m1slab.00003.rst:5B@<=13639 | exit 0 exit 0
+r3_Ux2r4 vs fu_Ux2r4: 3/15 identical; hst: m1slab.hydro=same m1slab.user=same; m1slab.hydro_w.00000.bin:5B@<=13846 m1slab.hydro_w.00001.bin:5B@<=13851 m1slab.hydro_w.00002.bin:5B@<=13853 m1slab.hydro_w.00003.bin:5B@<=13847 m1slab.m1.00000.bin:5B@<=13843 m1slab.m1.00001.bin:5B@<=13848 m1slab.m1.00002.bin:5B@<=13850 m1slab.m1.00003.bin:5B@<=13844 m1slab.00000.rst:5B@<=13639 m1slab.00001.rst:5B@<=13639 m1slab.00002.rst:5B@<=13639 m1slab.00003.rst:5B@<=13639 | exit 0 exit 0
+r3_Ux1r4 vs fu_Ux1r4: 3/15 identical; hst: m1slab.hydro=same m1slab.user=same; m1slab.hydro_w.00000.bin:5B@<=13846 m1slab.hydro_w.00001.bin:5B@<=13851 m1slab.hydro_w.00002.bin:5B@<=13853 m1slab.hydro_w.00003.bin:5B@<=13847 m1slab.m1.00000.bin:5B@<=13843 m1slab.m1.00001.bin:5B@<=13848 m1slab.m1.00002.bin:5B@<=13850 m1slab.m1.00003.bin:5B@<=13844 m1slab.00000.rst:5B@<=13639 m1slab.00001.rst:5B@<=13639 m1slab.00002.rst:5B@<=13639 m1slab.00003.rst:5B@<=13639 | exit 0 exit 0
+r3_Fx12r4 vs fu_Fx12r4: 3/15 identical; hst: m1slab.hydro=same m1slab.user=same; m1slab.hydro_w.00000.bin:5B@<=13846 m1slab.hydro_w.00001.bin:5B@<=13852 m1slab.hydro_w.00002.bin:5B@<=13853 m1slab.hydro_w.00003.bin:5B@<=13847 m1slab.m1.00000.bin:5B@<=13843 m1slab.m1.00001.bin:5B@<=13849 m1slab.m1.00002.bin:5B@<=13850 m1slab.m1.00003.bin:5B@<=13844 m1slab.00000.rst:5B@<=13639 m1slab.00001.rst:5B@<=13639 m1slab.00002.rst:5B@<=13639 m1slab.00003.rst:5B@<=13639 | exit 0 exit 0
+r3_Uoddr3 vs fu_Uoddr3: 3/15 identical; hst: m1slab.hydro=same m1slab.user=same; m1slab.hydro_w.00000.bin:5B@<=13846 m1slab.hydro_w.00001.bin:5B@<=13852 m1slab.hydro_w.00002.bin:5B@<=13853 m1slab.hydro_w.00003.bin:5B@<=13847 m1slab.m1.00000.bin:5B@<=13843 m1slab.m1.00001.bin:5B@<=13849 m1slab.m1.00002.bin:5B@<=13850 m1slab.m1.00003.bin:5B@<=13844 m1slab.00000.rst:5B@<=13639 m1slab.00001.rst:5B@<=13639 m1slab.00002.rst:5B@<=13639 m1slab.00003.rst:5B@<=13639 | exit 0 exit 0
+r3_T3r4 vs fu_T3r4: 3/11 identical; hst: m1slab.hydro=same m1slab.user=same; m1slab.hydro_w.00000.bin:5B@<=11999 m1slab.hydro_w.00001.bin:5B@<=12006 m1slab.hydro_w.00002.bin:5B@<=12006 m1slab.m1.00000.bin:5B@<=11996 m1slab.m1.00001.bin:5B@<=12003 m1slab.00000.rst:5B@<=11792 m1slab.00001.rst:5B@<=11792 m1slab.00002.rst:5B@<=11792 | exit 0 exit 0
+r3_T3r1 vs fu_T3r1: 3/11 identical; hst: m1slab.hydro=same m1slab.user=same; m1slab.hydro_w.00000.bin:5B@<=11999 m1slab.hydro_w.00001.bin:5B@<=12006 m1slab.hydro_w.00002.bin:5B@<=12006 m1slab.m1.00000.bin:5B@<=11996 m1slab.m1.00001.bin:5B@<=12003 m1slab.00000.rst:5B@<=11792 m1slab.00001.rst:5B@<=11792 m1slab.00002.rst:5B@<=11792 | exit 0 exit 0
+r3_T3oddr4 vs fu_T3oddr4: 3/11 identical; hst: m1slab.hydro=same m1slab.user=same; m1slab.hydro_w.00000.bin:5B@<=11999 m1slab.hydro_w.00001.bin:5B@<=12006 m1slab.hydro_w.00002.bin:5B@<=12006 m1slab.m1.00000.bin:5B@<=11996 m1slab.m1.00001.bin:5B@<=12003 m1slab.00000.rst:5B@<=11792 m1slab.00001.rst:5B@<=11792 m1slab.00002.rst:5B@<=11792 | exit 0 exit 0
+r3_T3r4 vs fuh3_T3r4: 3/11 identical; hst: m1slab.hydro=same m1slab.user=same; m1slab.hydro_w.00000.bin:6B@<=11999 m1slab.hydro_w.00001.bin:6B@<=12006 m1slab.hydro_w.00002.bin:6B@<=12006 m1slab.m1.00000.bin:6B@<=11996 m1slab.m1.00001.bin:6B@<=12003 m1slab.00000.rst:6B@<=11792 m1slab.00001.rst:6B@<=11792 m1slab.00002.rst:6B@<=11792 | exit 0 exit 0
+r3_T3r4 vs fuh2o_T3r4: 3/11 identical; hst: m1slab.hydro=same m1slab.user=same; m1slab.hydro_w.00000.bin:11B@<=11999 m1slab.hydro_w.00001.bin:11B@<=12006 m1slab.hydro_w.00002.bin:11B@<=12006 m1slab.m1.00000.bin:11B@<=11996 m1slab.m1.00001.bin:11B@<=12003 m1slab.00000.rst:11B@<=11792 m1slab.00001.rst:11B@<=11792 m1slab.00002.rst:11B@<=11792 | exit 0 exit 0
+r3_T3r4 vs h3_T3r4: 3/11 identical; hst: m1slab.hydro=same m1slab.user=same; m1slab.hydro_w.00000.bin:1B@<=11488 m1slab.hydro_w.00001.bin:1B@<=11495 m1slab.hydro_w.00002.bin:1B@<=11495 m1slab.m1.00000.bin:1B@<=11485 m1slab.m1.00001.bin:1B@<=11492 m1slab.00000.rst:1B@<=11281 m1slab.00001.rst:1B@<=11281 m1slab.00002.rst:1B@<=11281 | exit 0 exit 0
+r3_T3r2 vs nah3o_T3r2: 3/11 identical; hst: m1slab.hydro=same m1slab.user=same; m1slab.hydro_w.00000.bin:11B@<=11912 m1slab.hydro_w.00001.bin:11B@<=11919 m1slab.hydro_w.00002.bin:11B@<=11919 m1slab.m1.00000.bin:11B@<=11909 m1slab.m1.00001.bin:11B@<=11916 m1slab.00000.rst:11B@<=11705 m1slab.00001.rst:11B@<=11705 m1slab.00002.rst:11B@<=11705 | exit 0 exit 0
+== C. hybrid vs ref (round-off)
+hy2_Ux2r4
+   call 0: K/J max 6.66e-16 rms 1.81e-16 | D max 0.00e+00 | J rel max 1.11e-15
+   call 0: K/J max 6.66e-16 rms 1.81e-16 | D max 0.00e+00 | J rel max 1.11e-15
+   call 0: K/J max 6.66e-16 rms 1.81e-16 | D max 0.00e+00 | J rel max 1.11e-15
+   call 0: K/J max 6.66e-16 rms 1.81e-16 | D max 0.00e+00 | J rel max 1.11e-15
+   call 5: K/J max 2.35e-11 rms 4.16e-12 | D max 0.00e+00 | J rel max 4.41e-10
+   call 5: K/J max 2.35e-11 rms 4.16e-12 | D max 0.00e+00 | J rel max 4.41e-10
+   call 5: K/J max 2.35e-11 rms 4.16e-12 | D max 0.00e+00 | J rel max 4.41e-10
+   call 5: K/J max 2.35e-11 rms 4.16e-12 | D max 0.00e+00 | J rel max 4.41e-10
+   call 10: K/J max 2.15e-11 rms 4.36e-12 | D max 0.00e+00 | J rel max 4.40e-10
+   call 10: K/J max 2.15e-11 rms 4.36e-12 | D max 0.00e+00 | J rel max 4.40e-10
+   call 10: K/J max 2.15e-11 rms 4.36e-12 | D max 0.00e+00 | J rel max 4.40e-10
+   call 10: K/J max 2.15e-11 rms 4.36e-12 | D max 0.00e+00 | J rel max 4.40e-10
+   call 15: K/J max 1.61e-11 rms 4.15e-12 | D max 0.00e+00 | J rel max 4.73e-10
+   call 15: K/J max 1.61e-11 rms 4.15e-12 | D max 0.00e+00 | J rel max 4.73e-10
+   call 15: K/J max 1.61e-11 rms 4.15e-12 | D max 0.00e+00 | J rel max 4.73e-10
+   call 15: K/J max 1.61e-11 rms 4.15e-12 | D max 0.00e+00 | J rel max 4.73e-10
+hy4_Ux2r4
+   call 0: K/J max 6.66e-16 rms 1.81e-16 | D max 0.00e+00 | J rel max 1.11e-15
+   call 0: K/J max 6.66e-16 rms 1.81e-16 | D max 0.00e+00 | J rel max 1.11e-15
+   call 0: K/J max 6.66e-16 rms 1.81e-16 | D max 0.00e+00 | J rel max 1.11e-15
+   call 0: K/J max 6.66e-16 rms 1.81e-16 | D max 0.00e+00 | J rel max 1.11e-15
+   call 5: K/J max 1.92e-11 rms 4.22e-12 | D max 0.00e+00 | J rel max 4.62e-10
+   call 5: K/J max 1.92e-11 rms 4.22e-12 | D max 0.00e+00 | J rel max 4.62e-10
+   call 5: K/J max 1.92e-11 rms 4.22e-12 | D max 0.00e+00 | J rel max 4.62e-10
+   call 5: K/J max 1.92e-11 rms 4.22e-12 | D max 0.00e+00 | J rel max 4.62e-10
+   call 10: K/J max 2.28e-11 rms 4.31e-12 | D max 0.00e+00 | J rel max 4.71e-10
+   call 10: K/J max 2.28e-11 rms 4.31e-12 | D max 0.00e+00 | J rel max 4.71e-10
+   call 10: K/J max 2.28e-11 rms 4.31e-12 | D max 0.00e+00 | J rel max 4.71e-10
+   call 10: K/J max 2.28e-11 rms 4.31e-12 | D max 0.00e+00 | J rel max 4.71e-10
+   call 15: K/J max 1.77e-11 rms 4.17e-12 | D max 0.00e+00 | J rel max 4.60e-10
+   call 15: K/J max 1.77e-11 rms 4.17e-12 | D max 0.00e+00 | J rel max 4.60e-10
+   call 15: K/J max 1.77e-11 rms 4.17e-12 | D max 0.00e+00 | J rel max 4.60e-10
+   call 15: K/J max 1.77e-11 rms 4.17e-12 | D max 0.00e+00 | J rel max 4.60e-10
+hy2_Fx12r4
+   call 0: K/J max 5.00e-16 rms 1.68e-16 | D max 3.89e-16 | J rel max 1.11e-15
+   call 0: K/J max 5.00e-16 rms 1.68e-16 | D max 3.89e-16 | J rel max 1.11e-15
+   call 0: K/J max 5.00e-16 rms 1.68e-16 | D max 3.89e-16 | J rel max 1.11e-15
+   call 0: K/J max 5.00e-16 rms 1.68e-16 | D max 3.89e-16 | J rel max 1.11e-15
+   call 5: K/J max 2.50e-11 rms 4.16e-12 | D max 2.50e-11 | J rel max 5.65e-10
+   call 5: K/J max 2.50e-11 rms 4.16e-12 | D max 2.50e-11 | J rel max 5.65e-10
+   call 5: K/J max 2.50e-11 rms 4.16e-12 | D max 2.50e-11 | J rel max 5.65e-10
+   call 5: K/J max 2.50e-11 rms 4.16e-12 | D max 2.50e-11 | J rel max 5.65e-10
+   call 10: K/J max 1.84e-11 rms 4.24e-12 | D max 1.84e-11 | J rel max 5.64e-10
+   call 10: K/J max 1.84e-11 rms 4.24e-12 | D max 1.84e-11 | J rel max 5.64e-10
+   call 10: K/J max 1.84e-11 rms 4.24e-12 | D max 1.84e-11 | J rel max 5.64e-10
+   call 10: K/J max 1.84e-11 rms 4.24e-12 | D max 1.84e-11 | J rel max 5.64e-10
+   call 15: K/J max 1.86e-11 rms 4.17e-12 | D max 1.86e-11 | J rel max 4.43e-10
+   call 15: K/J max 1.86e-11 rms 4.17e-12 | D max 1.86e-11 | J rel max 4.43e-10
+   call 15: K/J max 1.86e-11 rms 4.17e-12 | D max 1.86e-11 | J rel max 4.43e-10
+   call 15: K/J max 1.86e-11 rms 4.17e-12 | D max 1.86e-11 | J rel max 4.43e-10
+hy4_Fx12r4
+   call 0: K/J max 6.11e-16 rms 1.62e-16 | D max 3.89e-16 | J rel max 1.11e-15
+   call 0: K/J max 6.11e-16 rms 1.62e-16 | D max 3.89e-16 | J rel max 1.11e-15
+   call 0: K/J max 6.11e-16 rms 1.62e-16 | D max 3.89e-16 | J rel max 1.11e-15
+   call 0: K/J max 6.11e-16 rms 1.62e-16 | D max 3.89e-16 | J rel max 1.11e-15
+   call 5: K/J max 2.05e-11 rms 4.09e-12 | D max 2.05e-11 | J rel max 4.41e-10
+   call 5: K/J max 2.05e-11 rms 4.09e-12 | D max 2.05e-11 | J rel max 4.41e-10
+   call 5: K/J max 2.05e-11 rms 4.09e-12 | D max 2.05e-11 | J rel max 4.41e-10
+   call 5: K/J max 2.05e-11 rms 4.09e-12 | D max 2.05e-11 | J rel max 4.41e-10
+   call 10: K/J max 2.11e-11 rms 4.35e-12 | D max 2.11e-11 | J rel max 4.23e-10
+   call 10: K/J max 2.11e-11 rms 4.35e-12 | D max 2.11e-11 | J rel max 4.23e-10
+   call 10: K/J max 2.11e-11 rms 4.35e-12 | D max 2.11e-11 | J rel max 4.23e-10
+   call 10: K/J max 2.11e-11 rms 4.35e-12 | D max 2.11e-11 | J rel max 4.23e-10
+   call 15: K/J max 2.26e-11 rms 4.13e-12 | D max 2.26e-11 | J rel max 5.66e-10
+   call 15: K/J max 2.26e-11 rms 4.13e-12 | D max 2.26e-11 | J rel max 5.66e-10
+   call 15: K/J max 2.26e-11 rms 4.13e-12 | D max 2.26e-11 | J rel max 5.66e-10
+   call 15: K/J max 2.26e-11 rms 4.13e-12 | D max 2.26e-11 | J rel max 5.66e-10
+hy2_T3r4: m1slab.hydro.hst rows 2: max rel diff (col-scaled) 7.39e-05, last row 7.39e-05 | m1slab.user.hst rows 2: max rel diff (col-scaled) 1.59e-08, last row 1.59e-08
+hy4_T3r4: m1slab.hydro.hst rows 2: max rel diff (col-scaled) 7.79e-05, last row 7.79e-05 | m1slab.user.hst rows 2: max rel diff (col-scaled) 2.57e-09, last row 2.57e-09
+hy2_T3r2: m1slab.hydro.hst rows 2: max rel diff (col-scaled) 6.97e-05, last row 6.97e-05 | m1slab.user.hst rows 2: max rel diff (col-scaled) 1.15e-08, last row 1.15e-08
+hy2fuh3_T3r4: m1slab.hydro.hst rows 2: max rel diff (col-scaled) 7.39e-05, last row 7.39e-05 | m1slab.user.hst rows 2: max rel diff (col-scaled) 1.59e-08, last row 1.59e-08
+hy2na_T3r4: m1slab.hydro.hst rows 2: max rel diff (col-scaled) 7.39e-05, last row 7.39e-05 | m1slab.user.hst rows 2: max rel diff (col-scaled) 1.59e-08, last row 1.59e-08
+== C2. hybrid variants against each other (exact options on top of G=2)
+hy2_T3r4 vs hy2fuh3_T3r4: 3/11 identical; hst: m1slab.hydro=same m1slab.user=same; m1slab.hydro_w.00000.bin:6B@<=11999 m1slab.hydro_w.00001.bin:6B@<=12006 m1slab.hydro_w.00002.bin:6B@<=12006 m1slab.m1.00000.bin:6B@<=11996 m1slab.m1.00001.bin:6B@<=12003 m1slab.00000.rst:6B@<=11792 m1slab.00001.rst:6B@<=11792 m1slab.00002.rst:6B@<=11792 | exit 0 exit 0
+hy2_T3r4 vs hy2na_T3r4: 3/11 identical; hst: m1slab.hydro=same m1slab.user=same; m1slab.hydro_w.00000.bin:5B@<=11912 m1slab.hydro_w.00001.bin:5B@<=11919 m1slab.hydro_w.00002.bin:5B@<=11919 m1slab.m1.00000.bin:5B@<=11909 m1slab.m1.00001.bin:5B@<=11916 m1slab.00000.rst:5B@<=11705 m1slab.00001.rst:5B@<=11705 m1slab.00002.rst:5B@<=11705 | exit 0 exit 0
+e_ang_Fx12r4: <rad_m1> implicit transport: solves=1.900000e+01 Picard iterations mean=2.947368e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00
+e_ang_Ux1r4: <rad_m1> implicit transport: solves=1.900000e+01 Picard iterations mean=2.789474e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00
+e_hy2_Fx12r4: <rad_m1> implicit transport: solves=1.900000e+01 Picard iterations mean=2.894737e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00
+e_hy2_Ux1r4: <rad_m1> implicit transport: solves=1.900000e+01 Picard iterations mean=2.789474e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00
+e_hy4_Fx12r4: <rad_m1> implicit transport: solves=1.900000e+01 Picard iterations mean=2.947368e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00
+e_hy4_Ux1r4: <rad_m1> implicit transport: solves=1.900000e+01 Picard iterations mean=2.789474e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00
+e_ref_Fx12r4: <rad_m1> implicit transport: solves=1.900000e+01 Picard iterations mean=2.894737e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00
+e_ref_Ux1r4: <rad_m1> implicit transport: solves=1.900000e+01 Picard iterations mean=2.789474e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00
+e_ang_Fx12r4
+   call 0: K/J max 6.11e-16 rms 1.62e-16 | D max 3.89e-16 | J rel max 1.11e-15
+   call 1: K/J max 1.33e-11 rms 3.56e-12 | D max 1.33e-11 | J rel max 2.73e-10
+   call 2: K/J max 1.89e-11 rms 4.04e-12 | D max 1.89e-11 | J rel max 4.08e-10
+   call 3: K/J max 1.87e-11 rms 4.15e-12 | D max 1.87e-11 | J rel max 4.38e-10
+   call 4: K/J max 2.14e-11 rms 4.25e-12 | D max 2.14e-11 | J rel max 5.40e-10
+   call 5: K/J max 2.05e-11 rms 4.09e-12 | D max 2.05e-11 | J rel max 4.41e-10
+   call 6: K/J max 1.99e-11 rms 4.22e-12 | D max 1.99e-11 | J rel max 4.36e-10
+   call 7: K/J max 1.89e-11 rms 4.26e-12 | D max 1.89e-11 | J rel max 4.78e-10
+   call 8: K/J max 1.75e-11 rms 4.33e-12 | D max 1.75e-11 | J rel max 4.81e-10
+   call 9: K/J max 2.37e-11 rms 4.17e-12 | D max 2.37e-11 | J rel max 4.83e-10
+   call 10: K/J max 2.11e-11 rms 4.35e-12 | D max 2.11e-11 | J rel max 4.23e-10
+   call 11: K/J max 1.86e-11 rms 4.21e-12 | D max 1.86e-11 | J rel max 5.56e-10
+   call 12: K/J max 2.07e-11 rms 4.01e-12 | D max 2.07e-11 | J rel max 4.86e-10
+   call 13: K/J max 2.94e-11 rms 4.39e-12 | D max 2.94e-11 | J rel max 5.63e-10
+   call 14: K/J max 2.53e-11 rms 4.16e-12 | D max 2.53e-11 | J rel max 4.77e-10
+   call 15: K/J max 2.26e-11 rms 4.13e-12 | D max 2.26e-11 | J rel max 5.66e-10
+   call 16: K/J max 1.85e-11 rms 4.08e-12 | D max 1.85e-11 | J rel max 4.21e-10
+   call 17: K/J max 1.90e-11 rms 4.06e-12 | D max 1.90e-11 | J rel max 3.61e-10
+   call 18: K/J max 1.73e-11 rms 4.47e-12 | D max 1.73e-11 | J rel max 4.78e-10
+e_hy4_Fx12r4
+   call 0: K/J max 6.11e-16 rms 1.62e-16 | D max 3.89e-16 | J rel max 1.11e-15
+   call 1: K/J max 1.33e-11 rms 3.56e-12 | D max 1.33e-11 | J rel max 2.73e-10
+   call 2: K/J max 1.89e-11 rms 4.04e-12 | D max 1.89e-11 | J rel max 4.08e-10
+   call 3: K/J max 1.87e-11 rms 4.15e-12 | D max 1.87e-11 | J rel max 4.38e-10
+   call 4: K/J max 2.14e-11 rms 4.25e-12 | D max 2.14e-11 | J rel max 5.40e-10
+   call 5: K/J max 2.05e-11 rms 4.09e-12 | D max 2.05e-11 | J rel max 4.41e-10
+   call 6: K/J max 1.99e-11 rms 4.22e-12 | D max 1.99e-11 | J rel max 4.36e-10
+   call 7: K/J max 1.89e-11 rms 4.26e-12 | D max 1.89e-11 | J rel max 4.78e-10
+   call 8: K/J max 1.75e-11 rms 4.33e-12 | D max 1.75e-11 | J rel max 4.81e-10
+   call 9: K/J max 2.37e-11 rms 4.17e-12 | D max 2.37e-11 | J rel max 4.83e-10
+   call 10: K/J max 2.11e-11 rms 4.35e-12 | D max 2.11e-11 | J rel max 4.23e-10
+   call 11: K/J max 1.86e-11 rms 4.21e-12 | D max 1.86e-11 | J rel max 5.56e-10
+   call 12: K/J max 2.07e-11 rms 4.01e-12 | D max 2.07e-11 | J rel max 4.86e-10
+   call 13: K/J max 2.94e-11 rms 4.39e-12 | D max 2.94e-11 | J rel max 5.63e-10
+   call 14: K/J max 2.53e-11 rms 4.16e-12 | D max 2.53e-11 | J rel max 4.77e-10
+   call 15: K/J max 2.26e-11 rms 4.13e-12 | D max 2.26e-11 | J rel max 5.66e-10
+   call 16: K/J max 1.85e-11 rms 4.08e-12 | D max 1.85e-11 | J rel max 4.21e-10
+   call 17: K/J max 1.90e-11 rms 4.06e-12 | D max 1.90e-11 | J rel max 3.61e-10
+   call 18: K/J max 1.73e-11 rms 4.47e-12 | D max 1.73e-11 | J rel max 4.78e-10
+e_hy2_Fx12r4
+   call 0: K/J max 5.00e-16 rms 1.68e-16 | D max 3.89e-16 | J rel max 1.11e-15
+   call 1: K/J max 1.46e-11 rms 3.58e-12 | D max 1.46e-11 | J rel max 3.79e-10
+   call 2: K/J max 1.85e-11 rms 4.18e-12 | D max 1.85e-11 | J rel max 4.06e-10
+   call 3: K/J max 1.71e-11 rms 3.91e-12 | D max 1.71e-11 | J rel max 4.78e-10
+   call 4: K/J max 2.33e-11 rms 4.20e-12 | D max 2.33e-11 | J rel max 5.72e-10
+   call 5: K/J max 2.50e-11 rms 4.16e-12 | D max 2.50e-11 | J rel max 5.65e-10
+   call 6: K/J max 2.09e-11 rms 4.30e-12 | D max 2.09e-11 | J rel max 5.15e-10
+   call 7: K/J max 2.11e-11 rms 4.13e-12 | D max 2.11e-11 | J rel max 3.79e-10
+   call 8: K/J max 1.67e-11 rms 4.33e-12 | D max 1.67e-11 | J rel max 4.35e-10
+   call 9: K/J max 1.88e-11 rms 4.32e-12 | D max 1.88e-11 | J rel max 4.87e-10
+   call 10: K/J max 1.84e-11 rms 4.24e-12 | D max 1.84e-11 | J rel max 5.64e-10
+   call 11: K/J max 1.77e-11 rms 4.24e-12 | D max 1.77e-11 | J rel max 4.36e-10
+   call 12: K/J max 2.01e-11 rms 4.29e-12 | D max 2.01e-11 | J rel max 4.96e-10
+   call 13: K/J max 1.92e-11 rms 4.19e-12 | D max 1.92e-11 | J rel max 5.02e-10
+   call 14: K/J max 2.05e-11 rms 4.30e-12 | D max 2.05e-11 | J rel max 4.81e-10
+   call 15: K/J max 1.86e-11 rms 4.17e-12 | D max 1.86e-11 | J rel max 4.43e-10
+   call 16: K/J max 1.86e-11 rms 4.22e-12 | D max 1.86e-11 | J rel max 4.45e-10
+   call 17: K/J max 1.96e-11 rms 4.17e-12 | D max 1.96e-11 | J rel max 3.97e-10
+   call 18: K/J max 2.05e-11 rms 4.44e-12 | D max 2.05e-11 | J rel max 3.89e-10
+e_ang_Ux1r4
+   call 0: K/J max 6.66e-16 rms 1.81e-16 | D max 0.00e+00 | J rel max 1.11e-15
+   call 1: K/J max 1.43e-11 rms 3.51e-12 | D max 0.00e+00 | J rel max 3.10e-10
+   call 2: K/J max 1.85e-11 rms 4.01e-12 | D max 0.00e+00 | J rel max 4.09e-10
+   call 3: K/J max 1.83e-11 rms 4.11e-12 | D max 0.00e+00 | J rel max 4.34e-10
+   call 4: K/J max 1.95e-11 rms 4.15e-12 | D max 0.00e+00 | J rel max 4.89e-10
+   call 5: K/J max 2.16e-11 rms 4.33e-12 | D max 0.00e+00 | J rel max 4.54e-10
+   call 6: K/J max 2.00e-11 rms 4.25e-12 | D max 0.00e+00 | J rel max 5.10e-10
+   call 7: K/J max 1.55e-11 rms 4.05e-12 | D max 0.00e+00 | J rel max 3.95e-10
+   call 8: K/J max 1.79e-11 rms 4.02e-12 | D max 0.00e+00 | J rel max 4.39e-10
+   call 9: K/J max 1.85e-11 rms 4.13e-12 | D max 0.00e+00 | J rel max 4.11e-10
+   call 10: K/J max 1.96e-11 rms 4.22e-12 | D max 0.00e+00 | J rel max 4.74e-10
+   call 11: K/J max 2.14e-11 rms 4.29e-12 | D max 0.00e+00 | J rel max 5.46e-10
+   call 12: K/J max 2.01e-11 rms 4.34e-12 | D max 0.00e+00 | J rel max 5.14e-10
+   call 13: K/J max 1.98e-11 rms 4.08e-12 | D max 0.00e+00 | J rel max 4.30e-10
+   call 14: K/J max 1.74e-11 rms 4.26e-12 | D max 0.00e+00 | J rel max 6.93e-10
+   call 15: K/J max 1.69e-11 rms 4.27e-12 | D max 0.00e+00 | J rel max 4.49e-10
+   call 16: K/J max 1.96e-11 rms 4.23e-12 | D max 0.00e+00 | J rel max 4.10e-10
+   call 17: K/J max 1.99e-11 rms 4.35e-12 | D max 0.00e+00 | J rel max 4.70e-10
+   call 18: K/J max 1.97e-11 rms 4.49e-12 | D max 0.00e+00 | J rel max 4.82e-10
+e_hy4_Ux1r4
+   call 0: K/J max 6.66e-16 rms 1.81e-16 | D max 0.00e+00 | J rel max 1.11e-15
+   call 1: K/J max 1.43e-11 rms 3.51e-12 | D max 0.00e+00 | J rel max 3.10e-10
+   call 2: K/J max 1.85e-11 rms 4.01e-12 | D max 0.00e+00 | J rel max 4.09e-10
+   call 3: K/J max 1.83e-11 rms 4.11e-12 | D max 0.00e+00 | J rel max 4.34e-10
+   call 4: K/J max 1.95e-11 rms 4.15e-12 | D max 0.00e+00 | J rel max 4.89e-10
+   call 5: K/J max 2.16e-11 rms 4.33e-12 | D max 0.00e+00 | J rel max 4.54e-10
+   call 6: K/J max 2.00e-11 rms 4.25e-12 | D max 0.00e+00 | J rel max 5.10e-10
+   call 7: K/J max 1.55e-11 rms 4.05e-12 | D max 0.00e+00 | J rel max 3.95e-10
+   call 8: K/J max 1.79e-11 rms 4.02e-12 | D max 0.00e+00 | J rel max 4.39e-10
+   call 9: K/J max 1.85e-11 rms 4.13e-12 | D max 0.00e+00 | J rel max 4.11e-10
+   call 10: K/J max 1.96e-11 rms 4.22e-12 | D max 0.00e+00 | J rel max 4.74e-10
+   call 11: K/J max 2.14e-11 rms 4.29e-12 | D max 0.00e+00 | J rel max 5.46e-10
+   call 12: K/J max 2.01e-11 rms 4.34e-12 | D max 0.00e+00 | J rel max 5.14e-10
+   call 13: K/J max 1.98e-11 rms 4.08e-12 | D max 0.00e+00 | J rel max 4.30e-10
+   call 14: K/J max 1.74e-11 rms 4.26e-12 | D max 0.00e+00 | J rel max 6.93e-10
+   call 15: K/J max 1.69e-11 rms 4.27e-12 | D max 0.00e+00 | J rel max 4.49e-10
+   call 16: K/J max 1.96e-11 rms 4.23e-12 | D max 0.00e+00 | J rel max 4.10e-10
+   call 17: K/J max 1.99e-11 rms 4.35e-12 | D max 0.00e+00 | J rel max 4.70e-10
+   call 18: K/J max 1.97e-11 rms 4.49e-12 | D max 0.00e+00 | J rel max 4.82e-10
+e_hy2_Ux1r4
+   call 0: K/J max 6.66e-16 rms 1.97e-16 | D max 0.00e+00 | J rel max 1.11e-15
+   call 1: K/J max 1.50e-11 rms 3.66e-12 | D max 0.00e+00 | J rel max 2.83e-10
+   call 2: K/J max 1.86e-11 rms 4.02e-12 | D max 0.00e+00 | J rel max 3.50e-10
+   call 3: K/J max 1.67e-11 rms 4.25e-12 | D max 0.00e+00 | J rel max 4.43e-10
+   call 4: K/J max 1.70e-11 rms 4.04e-12 | D max 0.00e+00 | J rel max 4.62e-10
+   call 5: K/J max 2.06e-11 rms 4.23e-12 | D max 0.00e+00 | J rel max 4.13e-10
+   call 6: K/J max 1.74e-11 rms 4.22e-12 | D max 0.00e+00 | J rel max 4.61e-10
+   call 7: K/J max 1.66e-11 rms 4.17e-12 | D max 0.00e+00 | J rel max 6.01e-10
+   call 8: K/J max 1.77e-11 rms 4.08e-12 | D max 0.00e+00 | J rel max 4.44e-10
+   call 9: K/J max 1.98e-11 rms 4.14e-12 | D max 0.00e+00 | J rel max 4.45e-10
+   call 10: K/J max 1.75e-11 rms 4.04e-12 | D max 0.00e+00 | J rel max 3.86e-10
+   call 11: K/J max 2.16e-11 rms 4.23e-12 | D max 0.00e+00 | J rel max 5.71e-10
+   call 12: K/J max 2.56e-11 rms 4.39e-12 | D max 0.00e+00 | J rel max 5.04e-10
+   call 13: K/J max 1.71e-11 rms 4.11e-12 | D max 0.00e+00 | J rel max 4.39e-10
+   call 14: K/J max 1.94e-11 rms 4.15e-12 | D max 0.00e+00 | J rel max 4.82e-10
+   call 15: K/J max 1.65e-11 rms 4.17e-12 | D max 0.00e+00 | J rel max 3.91e-10
+   call 16: K/J max 1.81e-11 rms 4.09e-12 | D max 0.00e+00 | J rel max 3.79e-10
+   call 17: K/J max 2.17e-11 rms 4.34e-12 | D max 0.00e+00 | J rel max 3.60e-10
+   call 18: K/J max 1.93e-11 rms 4.56e-12 | D max 0.00e+00 | J rel max 3.92e-10

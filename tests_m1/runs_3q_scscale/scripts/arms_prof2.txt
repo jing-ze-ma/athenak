@@ -1,0 +1,3 @@
+p1_new 1 he3d_fast.athinput meshblock/nx3=26
+p2_new 2 he3d_fast.athinput meshblock/nx3=26
+p2_hyb 2 he3d_fast.athinput meshblock/nx3=26 rad_m1/vet_mb_agroup=2

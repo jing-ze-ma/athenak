@@ -1,0 +1,9 @@
+head_g1 1 he3d_fast.athinput meshblock/nx3=26
+g1_new 1 he3d_fast.athinput meshblock/nx3=26
+g1_fuse 1 he3d_fast.athinput meshblock/nx3=26 rad_m1/vet_mb_mom_fuse=true
+g1_hyd 1 he3d_hydro.athinput meshblock/nx3=26
+head_g2 2 he3d_fast.athinput meshblock/nx3=26
+g2_noagg 2 he3d_fast.athinput meshblock/nx3=26 rad_m1/vet_mb_agg=false
+g2_new 2 he3d_fast.athinput meshblock/nx3=26
+g2_hyb 2 he3d_fast.athinput meshblock/nx3=26 rad_m1/vet_mb_agroup=2
+g2_hyd 2 he3d_hydro.athinput meshblock/nx3=26
