@@ -1,0 +1,15 @@
+== h2 rc=0 BE=0.000000e+00 1p=9.300000e+02
+SAME bin/m1slab.hydro_w.00002.bin
+SAME bin/m1slab.m1.00002.bin
+SAME rst/m1slab.00002.rst
+hst overlapping lines 100 different 0
+== hv rc=0 BE=0.000000e+00 1p=9.290000e+02
+SAME bin/m1slab.hydro_w.00002.bin
+SAME bin/m1slab.m1.00002.bin
+SAME rst/m1slab.00002.rst
+hst overlapping lines 100 different 0
+== be rc=0 BE= 1p=4.650000e+02
+SAME bin/m1slab.hydro_w.00002.bin
+SAME bin/m1slab.m1.00002.bin
+SAME rst/m1slab.00002.rst
+hst overlapping lines 100 different 0

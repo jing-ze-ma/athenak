@@ -1666,6 +1666,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // blend does not gate it (conduction.cpp:1533) -- so the luminosity would enter the
     // box twice.  The two-stream hands the flux over the same way (rt_bottom_flux).
     pc->rad_flux_inner = 0.0;
+    // nothing reads the column tau under <rad_m1> (no two-stream; the top sponge is the
+    // one reader): Conduction::BuildRadWeights may then skip its sweep when it proves
+    // every blend weight 0 (bitwise the same weights; tests_m1/runs_4j_accmerge)
+    pc->rad_tauf_unread = !(vdamp_tau_ > 0.0);
     m1_cl_ = pm1->c_light;
     m1_efl_ = pm1->e_floor;
     {

@@ -1,0 +1,4 @@
+1 100000 x1 64 edd impl 24 enth=plm ny=4 nper=10 vimp=true ts=hesdirk2 tol=1.0e-10
+1 100000 x1 64 edd impl 24 enth=plm ny=4 nper=10 vimp=true ts=hesdirk2 tol=1.0e-10 rm_implicit_fast_kernels=true rm_implicit_one_pass=4 rm_implicit_predictor_order=2
+1 100000 x1 64 edd impl 24 enth=plm ny=4 nper=10 vimp=true ts=hesdirk2 tol=1.0e-9
+1 100000 x1 64 edd impl 24 enth=plm ny=4 nper=10 vimp=true ts=hesdirk2 tol=1.0e-9 rm_implicit_fast_kernels=true rm_implicit_one_pass=4 rm_implicit_predictor_order=2

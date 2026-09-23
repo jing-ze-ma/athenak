@@ -131,7 +131,7 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
     if (trans_x3) {Kokkos::realloc(t2f3, nmb, n3+1, n2, n1);}
   }
   if (impl_pred) {
-    Kokkos::realloc(ipred2, nmb, 3, n3, n2, n1);
+    Kokkos::realloc(ipred2, nmb, (impl_pord == 2) ? 5 : 3, n3, n2, n1);
     Kokkos::deep_copy(ipred2, 0.0);
   }
   if (vet_sc) {
@@ -381,6 +381,24 @@ void RadiationM1::Time2VetExtrapolate() {
   int n2 = static_cast<int>(vet_cell.extent(3));
   int n1 = static_cast<int>(vet_cell.extent(4));
   Real nclip = 0.0;
+  if (r == 0.0 && impl_fastk) {
+    // implicit_fast_kernels: nothing is extrapolated, only D^n is saved (bitwise the
+    // same values as the reduction below writes, which adds no clip when r = 0)
+    const int nc = M1_T2_NVET;
+    const int nt = (nmb1 + 1)*n3*n2*n1;
+    par_for("m1_t2_vcopy", DevExeSpace(), 0, nc-1, 0, nt-1,
+    KOKKOS_LAMBDA(const int c, const int idx) {
+      int m = idx/(n3*n2*n1);
+      int r3 = idx - m*(n3*n2*n1);
+      int k = r3/(n2*n1);
+      r3 -= k*(n2*n1);
+      int j = r3/n1;
+      int i = r3 - j*n1;
+      vp_(m,c,k,j,i) = vc_(m,M1_VET_CHI+c,k,j,i);
+    });
+    t2_vprev = true;
+    return;
+  }
   Kokkos::parallel_reduce("m1_t2_vext",
   Kokkos::MDRangePolicy<Kokkos::Rank<4>>(DevExeSpace(), {0,0,0,0},
                                          {nmb1+1,n3,n2,n1}),
@@ -425,7 +443,8 @@ void RadiationM1::Time2VetExtrapolate() {
 
 int RadiationM1::Time2RstNchWant() {
   if (time_scheme != M1_TIME_HESDIRK2) return 0;
-  return M1_T2_NK + (impl_pred ? 3 : 0) + (vet_sc ? M1_T2_NVET : 0);
+  const int np = (impl_pord == 2) ? 5 : 3;
+  return M1_T2_NK + (impl_pred ? np : 0) + (vet_sc ? M1_T2_NVET : 0);
 }
 
 int RadiationM1::Time2RstNch() {
@@ -440,9 +459,10 @@ void RadiationM1::Time2RstPack(DvceArray5D<Real> &a, int nmb) {
                     Kokkos::subview(t2k1, mb, AL, AL, AL, AL));
   c += M1_T2_NK;
   if (impl_pred) {
-    Kokkos::deep_copy(Kokkos::subview(a, mb, std::make_pair(c, c+3), AL, AL, AL),
+    const int np = (impl_pord == 2) ? 5 : 3;
+    Kokkos::deep_copy(Kokkos::subview(a, mb, std::make_pair(c, c+np), AL, AL, AL),
                       Kokkos::subview(ipred2, mb, AL, AL, AL, AL));
-    c += 3;
+    c += np;
   }
   if (vet_sc) {
     Kokkos::deep_copy(Kokkos::subview(a, mb, std::make_pair(c, c+M1_T2_NVET), AL, AL, AL),
@@ -459,11 +479,12 @@ void RadiationM1::Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb) {
   }
   ch -= M1_T2_NK;
   if (impl_pred) {
-    if (ch < 3) {
+    const int np = (impl_pord == 2) ? 5 : 3;
+    if (ch < np) {
       Kokkos::deep_copy(Kokkos::subview(ipred2, mb, ch, AL, AL, AL), w);
       return;
     }
-    ch -= 3;
+    ch -= np;
   }
   if (vet_sc) {
     Kokkos::deep_copy(Kokkos::subview(vet_prev, mb, ch, AL, AL, AL), w);

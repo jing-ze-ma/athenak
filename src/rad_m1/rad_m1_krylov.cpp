@@ -607,7 +607,7 @@ int RadiationM1::ImplicitBiCGStabPipe(Real rhsmax) {
   Real rnorm = r0.mx;
   Real rho = r0.s[0];
   bcg_r0rel = rnorm/bscale;
-  const bool ew = (impl_ew_max > 0.0);
+  const bool ew = (impl_ew_max > 0.0) && !ew_tight;   // ew_tight: runs_4a_accel
   Real tabs = tol*bscale;
   if (ew) {
     Real eta = impl_ew_max;
