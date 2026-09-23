@@ -245,3 +245,72 @@ The metric is the same as before: nt 128 ... 2048, amplitude 1e-5, tol 1e-11, me
 - **Cause.** Not identified. It is not clipping (0 active clips), not solver convergence (NC 0), and not fallbacks (0).
 
 Gates not run: He slab (`cpu_gate.sh` was launched and its runs are in `h2_3x/cpu/`, but they are not evaluated here), G8, fallback, G7, G5.
+
+## Follow-up 3 (09-23): D^n default, He slab, G8, G7 -- STOPPED at G7 for vet_sc
+
+**Default change.** `time2_vet_extrap` now defaults to **false**: vet_sc stage solves use D^n. Extrapolation stays available as an option. Commit 85501c2e; be is untouched.
+
+### He slab 2-D (CPU, `h2_3x/cpu`; binary built at 346669f9 = eddington defaults unchanged)
+
+| run | result |
+|---|---|
+| hesdirk2, 200 s | NC 0; 1240 stage steps, 1 BE step, 0 fallbacks |
+| hesdirk2, 2 ranks (2 blocks) | NC 0, 0 fallbacks |
+| hesdirk2, 1000 s | NC 0; 6205 stage steps, 1 BE step, 0 fallbacks |
+| hesdirk2 + vet_sc (extrapolated, the default of that binary), 200 s | NC 0, 0 fallbacks |
+| forced fallback (`time2_dbg_fail = 50`) | 1 stage fallback and 2 BE steps (first step + fallback); run completes, NC 0 |
+
+At t = 1000 s the 1000 s runs compare as follows:
+
+| run | KE1 | KE2 |
+|---|---|---|
+| hesdirk2 | 1.086e26 | 2.33e23 |
+| be | 1.148e26 | 3.91e23 |
+
+### G8 restart (CPU): PASS
+
+| test | result |
+|---|---|
+| hesdirk2 restart from the t=100 rst, run to 200 s, vs the continuous run | bin (hydro_w, m1) and rst at t=200 identical (cmp); all 100 overlapping hst lines identical; 620 stage steps, 0 BE steps, so the slope block was read |
+| vet_sc hesdirk2, same test | identical; 0 BE steps (K1, ipred2, vet_prev restored) |
+| hesdirk2 run restarted from a be restart file (no slope block) | WARNING printed; exactly 1 BE step, then stage steps; rc 0 |
+
+### G7 GPU cost and GPU be-bitwise (job 11950786, apudev, 1 GPU)
+
+**be bitwise on the GPU.** Binary md5 62844ad6 (clean rebuild of 85501c2e) vs 2c3c4178 (md5 998ab6bb): 3-D box, 40 cycles, all 10 bin files, both hst files and rt_profile are identical.
+
+**Timing setup.** 3-D He box 84x104x104 in 4 blocks, plm + vimp, 120 cycles; ms/cycle over cycles 20-120; arms interleaved as a, b (reversed), c.
+
+| arm | ms/cycle a, b, c | Picard/solve | inner/solve | NC |
+|---|---|---|---|---|
+| Eddington be | 52.8, 52.3, 52.1 | 2.125 | 38.26 | 0 |
+| Eddington hesdirk2 | 77.9, 77.6, 76.7 | 2.067 | 29.79 | 0 |
+| vet_sc full be | 58.4, 58.7, 58.3 | 2.733 | 39.90 | 0 |
+| vet_sc full hesdirk2 (D^n) | 92.6, 91.7, 91.8 | 2.623 | 31.52 | 0 |
+
+**Ratios.**
+- **Eddington: 1.48x. PASS** (the design criterion is <= 1.55).
+- **vet_sc: 1.57x. FAIL** (the design criterion is <= 1.40).
+
+**Why vet_sc exceeds its bound.** The 1.40 bound assumed an 18.3 ms SC sweep shared by both stages. The fast-path SC here costs 4.4 ms per call and is the same in both arms (`RESULTS_g7_gpu_11950786.txt`, run.log "vet_sc: SC seconds").
+- The implicit solve without SC takes 30.4 ms per step under be and 55.4 ms per step under hesdirk2 (27.7 per solve).
+- Recomputed with these numbers, the "two full solves" bound is 23.7 + 4.4 + 2 x 30.4 = 88.9 ms, i.e. 1.52x.
+- The measured 92 ms is about 3 ms above that. That excess is roughly what `Time2VetStart` adds per step: two extra `Opacity` calls and one EOS temperature kernel, to evaluate the formal solution at U^n.
+- Not tuned, per the stop rule.
+
+### G5: He-box CFL pair
+
+- The Eddington pair is SUBMITTED, and Eddington passed every gate so far:
+  - `h2_3x/g5/H30` = job 11950787 (cfl 0.3);
+  - `h2_3x/g5/H15` = job 11950788 (cfl 0.15);
+  - input `he_slab_m1_3d_h2.athinput`: eddington + plm + vimp + hesdirk2 (central), tlim 1000, apu partition, HSA_XNACK=1 and HSA_NO_SCRATCH_RECLAIM=1.
+- The vet_sc pair (V30/V15, input `he_slab_m1_3d_h2v.athinput`) was submitted and CANCELLED (jobs 11950789/90) after vet_sc failed G7.
+- Analysis, once the jobs finish:
+
+      cd /viper/ptmp2/jinma/h2_3x/g5
+      python3 /viper/u2/jinma/ATHENAK/athenak/tests_m1/runs_3o_vet3d_cfl/gate3d.py H30 H15
+      python3 /viper/u2/jinma/ATHENAK/athenak/tests_m1/runs_3o_vet3d_cfl/gate3d.py \
+          /viper/u2/jinma/ATHENAK/bench/m1_vet3dcfl_0923/E30 /viper/u2/jinma/ATHENAK/bench/m1_vet3dcfl_0923/E15
+
+  The be reference is E30/E15: KE_h 8.15e24 / 2.31e24 at t=100 and 3.81e24 / 8.05e23 at t=1000.
+- Caveat: E30/E15 used implicit_enthalpy = upwind without vimp, so a be + plm + vimp pair would separate the spatial change from the time scheme. It was not submitted.
