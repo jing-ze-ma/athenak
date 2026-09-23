@@ -10,6 +10,7 @@
 
 namespace global_variable {
 extern int my_rank, nranks;
+extern bool restart_run;   // true when started with -r <restart_file>
 }
 
 #endif // GLOBALS_HPP_

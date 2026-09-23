@@ -494,9 +494,16 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (impl_prec > 0 && impl_kfuse == 0) {
     ImplFatal("<rad_m1>/implicit_precond = rbgs needs implicit_krylov_fuse >= 1");
   }
-  // multi-rank Krylov (rad_m1_krylov.cpp, tests_m1/runs_3w_krylov): both default OFF
+  // multi-rank Krylov (rad_m1_krylov.cpp, tests_m1/runs_3w_krylov).  krylov_pipe
+  // defaults OFF.  halo_mpi (bitwise the ordinary exchange) defaults ON since
+  // m1-defaults wherever its preconditions hold: implicit_halo_direct, a same-level mesh
+  // (no SMR/AMR), no cubed-sphere seams and no polar boundary; otherwise the ordinary
+  // exchange, silently.  A key the input (or restart echo) names keeps its value.
   impl_kpipe = pin->GetOrAddBoolean("rad_m1","implicit_krylov_pipe",false);
-  impl_halo_mpi = pin->GetOrAddBoolean("rad_m1","implicit_halo_mpi",false);
+  {auto *pmh = pmy_pack->pmesh;
+  const bool hmdef = impl_halo_direct && !pmh->multilevel && !pmh->use_cubed_sphere &&
+                     !pmh->use_polar_boundary;
+  impl_halo_mpi = pin->GetOrAddBoolean("rad_m1","implicit_halo_mpi",hmdef);}
   hm_state = 0;
   hm_comm = nullptr;
   if (impl_kpipe && impl_kfuse != 3) {
@@ -653,23 +660,24 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   } else {
     ImplFatal("<rad_m1>/implicit_recon = '" + srn + "' is not a choice (dc | plm_dc)");
   }
-  // implicit_enthalpy (see rad_m1_implicit.hpp).  Read only when it is named, so that
-  // the parameter dump of an input that does not name it is unchanged.
-  impl_enth = M1_IENTH_UPWIND;
-  if (pin->DoesParameterExist("rad_m1","implicit_enthalpy")) {
-    std::string sen = pin->GetString("rad_m1","implicit_enthalpy");
-    if (sen.compare("upwind") == 0) {
-      impl_enth = M1_IENTH_UPWIND;
-    } else if (sen.compare("central") == 0) {
-      impl_enth = M1_IENTH_CENTRAL;
-    } else if (sen.compare("plm") == 0) {
-      impl_enth = M1_IENTH_PLM;
-    } else {
-      ImplFatal("<rad_m1>/implicit_enthalpy = '" + sen
-                + "' is not a choice (upwind | central | plm)");
-    }
+  // implicit_enthalpy (see rad_m1_implicit.hpp).  DEFAULT plm since m1-defaults
+  // (tests_m1/runs_3s_space2: second order, fewer Picard passes, NON-CONVERGED 0).  Up to
+  // d0c59f7c the key was read only when named, so a restart file written then carries
+  // it only if the input named it; such a restart that does NOT carry it keeps the old
+  // default, upwind.  The resolved value is echoed, so later restarts keep it.
+  const std::string sen = pin->GetOrAddString("rad_m1","implicit_enthalpy",
+                              global_variable::restart_run ? "upwind" : "plm");
+  if (sen.compare("upwind") == 0) {
+    impl_enth = M1_IENTH_UPWIND;
+  } else if (sen.compare("central") == 0) {
+    impl_enth = M1_IENTH_CENTRAL;
+  } else if (sen.compare("plm") == 0) {
+    impl_enth = M1_IENTH_PLM;
+  } else {
+    ImplFatal("<rad_m1>/implicit_enthalpy = '" + sen
+              + "' is not a choice (upwind | central | plm)");
   }
-  // implicit_vimp (rad_m1_implicit.hpp).  Read only when named, like implicit_enthalpy.
+  // implicit_vimp (rad_m1_implicit.hpp).  Read only when named.
   impl_vimp = false;
   if (pin->DoesParameterExist("rad_m1","implicit_vimp")) {
     impl_vimp = pin->GetBoolean("rad_m1","implicit_vimp");

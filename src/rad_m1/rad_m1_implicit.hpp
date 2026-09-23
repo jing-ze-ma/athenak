@@ -233,11 +233,11 @@ constexpr int M1_IRECON_PLMDC = 1;   // plm as a DEFERRED CORRECTION: the differ
 // high-order one.  The donor-cell form is FIRST order even for a linear wave: with v = 0
 // in the background its error (4/3) E0 (dx/2) sign(v) dv/dx is independent of the
 // amplitude (tests_m1/runs_3r_radwave, tests_m1/runs_3s_space2).
-constexpr int M1_IENTH_UPWIND  = 0;  // donor cell (default; bitwise the old scheme)
+constexpr int M1_IENTH_UPWIND  = 0;  // donor cell (old scheme; default to d0c59f7c)
 constexpr int M1_IENTH_CENTRAL = 1;  // a_f (E_L + E_R)/2, a_f = (a_L + a_R)/2
-constexpr int M1_IENTH_PLM     = 2;  // a_f E_f, E_f the van Leer plm value from the side
-                                     // upwind of a_f; central where the 4-cell stencil
-                                     // is not available on both sides of the face
+constexpr int M1_IENTH_PLM     = 2;  // DEFAULT: a_f E_f, E_f the van Leer plm value from
+                                     // the side upwind of a_f; central where the 4-cell
+                                     // stencil is not available on both sides of the face
 
 // <rad_m1>/implicit_vimp: the gas velocity v' of the enthalpy flux a(v') E' taken
 // IMPLICIT through the radiative force of the same solve (tests_m1/runs_3v_vimplicit).
