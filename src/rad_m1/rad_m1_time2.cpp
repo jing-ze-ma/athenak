@@ -38,6 +38,7 @@
 #include "eos/eos.hpp"
 #include "rad_m1/rad_m1.hpp"
 #include "rad_m1/rad_m1_implicit.hpp"
+#include "rad_m1/rad_m1_opacity.hpp"
 
 namespace radm1 {
 
@@ -136,6 +137,7 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   if (vet_sc) {
     Kokkos::realloc(vet_prev, nmb, M1_T2_NVET, n3, n2, n1);
     Kokkos::realloc(vet_now, nmb, M1_T2_NVET, n3, n2, n1);
+    Kokkos::realloc(vet_opac, nmb, M1_NOPAC, n3, n2, n1);
     Kokkos::deep_copy(vet_prev, 0.0);
   }
   t2_ok = false;
@@ -279,7 +281,48 @@ void RadiationM1::Time2VetStart() {
   auto phicc = hh ? ph->phicc0 : arad_ref;
   const Real efl = e_floor;
   auto u0_ = u0;
-  if (hh) {
+  // the fast form (default): ONE fused pass over U^n (the hydro u1) gives T^n and the
+  // opacities of U^n, with exactly the arithmetic of RadiationM1::Opacity, and the
+  // stage-start opacities are saved and copied back afterwards instead of re-evaluated.
+  // The debug opacity options (opac_freeze, dbg_opac_patch) take the general form.
+  const bool fast = hh && !opac_zero && !opac_freeze && (dbg_opac_patch == 1.0) &&
+                    !(opacity_type == M1_OPAC_TABLE && otab.nT <= 0);
+  if (fast) {
+    Kokkos::deep_copy(DevExeSpace(), vet_opac, opac);
+    auto eos = ph->peos->eos_data;
+    auto opac_ = opac;
+    const int n1 = static_cast<int>(opac.extent(4));
+    const int n2 = static_cast<int>(opac.extent(3));
+    const int n3 = static_cast<int>(opac.extent(2));
+    const int otype = opacity_type;
+    const Real kp = kappa_p, kev = kappa_e, kf = kappa_f, kss = kappa_s;
+    const Real rref = opac_rho_ref, tref = opac_t_ref, aa = opac_a, bb = opac_b;
+    M1OpacTab ot = otab;
+    par_for("m1_t2_vsf", DevExeSpace(), 0, nmb1, 0, n3-1, 0, n2-1, 0, n1-1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      Real d = uh1(m,IDN,k,j,i);
+      Real ke_dens = 0.5*(SQR(uh1(m,IM1,k,j,i)) + SQR(uh1(m,IM2,k,j,i)) +
+                          SQR(uh1(m,IM3,k,j,i)))/fmax(d, 1.0e-300);
+      Real eint = uh1(m,IEN,k,j,i) - ke_dens;
+      if (etg) eint -= d*phicc(m,k,j,i);
+      Real t = eos.Temperature(d, fmax(eint, 0.0));
+      Real op, oe, of, os;
+      if (otype == M1_OPAC_TABLE) {
+        M1TableOpacities(ot, d, t, op, oe, of, os);
+      } else {
+        M1Opacities(otype, d, t, kp, kev, kf, kss, rref, tref, aa, bb, op, oe, of, os);
+      }
+      opac_(m,M1_OP_P,k,j,i) = d*op;
+      opac_(m,M1_OP_E,k,j,i) = d*oe;
+      opac_(m,M1_OP_T,k,j,i) = d*(of + os);
+      if (i >= is && i <= ie && j >= js && j <= je && k >= ks && k <= ke) {
+        vn_(m,0,k,j,i) = iw_(m,M1_IW_EN,k,j,i);
+        vn_(m,1,k,j,i) = iw_(m,M1_IW_TP,k,j,i);
+        iw_(m,M1_IW_EN,k,j,i) = fmax(u0_(m,M1_E,k,j,i), efl);
+        iw_(m,M1_IW_TP,k,j,i) = t;
+      }
+    });
+  } else if (hh) {
     auto eos = ph->peos->eos_data;
     par_for("m1_t2_vs0", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
@@ -305,7 +348,11 @@ void RadiationM1::Time2VetStart() {
     });
   }
   VetShortChar();
-  if (hh) {(void) Opacity(nullptr, 1);}
+  if (fast) {
+    Kokkos::deep_copy(DevExeSpace(), opac, vet_opac);
+  } else if (hh) {
+    (void) Opacity(nullptr, 1);
+  }
   par_for("m1_t2_vs1", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     iw_(m,M1_IW_EN,k,j,i) = vn_(m,0,k,j,i);

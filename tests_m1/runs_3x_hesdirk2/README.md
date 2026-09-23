@@ -314,3 +314,46 @@ At t = 1000 s the 1000 s runs compare as follows:
 
   The be reference is E30/E15: KE_h 8.15e24 / 2.31e24 at t=100 and 3.81e24 / 8.05e23 at t=1000.
 - Caveat: E30/E15 used implicit_enthalpy = upwind without vimp, so a be + plm + vimp pair would separate the spatial change from the time scheme. It was not submitted.
+
+## Follow-up 4 (09-23): vet_sc cost saving, G7 re-timed; G5 six arms submitted
+
+### The saving (`Time2VetStart`, vet_sc stage 1 only)
+
+- **What changed.** At U^n, T^n and the opacities now come from ONE fused pass over the hydro `u1`. This pass uses exactly the arithmetic of `RadiationM1::Opacity`.
+- **Stage-start opacities.** They are saved to `vet_opac` and copied back after the formal solution, instead of being re-evaluated. This replaces two Opacity calls plus one EOS temperature kernel with one fused pass plus two copies.
+- **Debug options.** With `opac_freeze` or `dbg_opac_patch`, the general form is used.
+- **be is bitwise.** The code is reached only by stage-1 vet_sc solves, and the GPU G0 re-check in the same job is identical: 13 files, SAME.
+- **hesdirk2 Eddington is bitwise:** the hst is identical to the pre-change run.
+- **hesdirk2 vet_sc changes at round-off.** T^n now comes from the Opacity formula (`/fmax(d)`, `fmax(eint,0)`) instead of `*1/fmax(d)`, `fmax(eg,1e-300)`.
+  - Radwave (ideal EOS): identical, all 34 dumps of 2 cases.
+  - 3-D He box (table EOS), 120 cycles: hst differences <= 1.8e-8 relative in KE, 2e-12 in the other energies.
+
+### G7 re-timed (job 11950922, apudev, binary md5 979e8e38; `RESULTS_g7b_gpu_11950922.txt`)
+
+| arm | ms/cycle a, b, c | Picard/solve | inner/solve | NC |
+|---|---|---|---|---|
+| Eddington be | 52.1, 51.4, 51.8 | 2.125 | 38.26 | 0 |
+| Eddington hesdirk2 | 76.6, 76.6, 76.0 | 2.067 | 29.79 | 0 |
+| vet_sc full be | 58.2, 58.7, 57.7 | 2.733 | 39.90 | 0 |
+| vet_sc full hesdirk2 (D^n) | 88.4, 87.8, 88.1 | 2.623 | 31.49 | 0 |
+
+- **Eddington: 1.47x.** It was 1.48x.
+- **vet_sc: 1.51x.** It was 1.57x; the recomputed target was <= 1.52x.
+
+### G5 (submitted, apu; binary `h2_3x/g5/athena_gpu`, md5 62844ad6 = 85501c2e)
+
+All jobs run cfl 0.3 / 0.15 to t=1000, 3-D seeded He slab. They were still queued when this was written. The G5 binary predates the saving, which changes vet_sc only at round-off.
+
+| arm | job | input |
+|---|---|---|
+| H30 / H15 | 11950787 / 11950788 | eddington + plm + vimp + hesdirk2 (central) |
+| V30 / V15 | 11950870 / 11950871 | vet_sc full (D^n) + plm + vimp + hesdirk2 |
+| B30 / B15 | 11950872 / 11950873 | eddington + plm + vimp + be (control) |
+
+Analysis:
+
+    cd /viper/ptmp2/jinma/h2_3x/g5
+    B=/viper/u2/jinma/ATHENAK/bench/m1_vet3dcfl_0923
+    G=/viper/u2/jinma/ATHENAK/athenak/tests_m1/runs_3o_vet3d_cfl/gate3d.py
+    python3 $G $B/E30 $B/E15 B30 B15 H30 H15
+    python3 $G $B/C30 $B/C15 V30 V15

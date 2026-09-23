@@ -487,6 +487,8 @@ class RadiationM1 {
   Real pred2_dt;
   DvceArray5D<Real> vet_prev;   // vet_sc: the start-of-step tensor of the previous step
   DvceArray5D<Real> vet_now;    // vet_sc: the start-of-step tensor of this step
+  DvceArray5D<Real> vet_opac;   // vet_sc: the stage-start opacities, saved over the
+                                // formal solution at U^n
   void Time2Init(ParameterInput *pin);
   bool Time2Active();           // the next step runs the stages (else BE)
   void Time2FormStage(int stage, Real dt);
