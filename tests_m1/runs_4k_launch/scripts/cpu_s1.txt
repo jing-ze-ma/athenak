@@ -1,0 +1,17 @@
+1	/viper/ptmp2/jinma/launch_0923/scripts/run.sh e1_base base 1 slab2d_def time/tlim=100
+1	/viper/ptmp2/jinma/launch_0923/scripts/run.sh e1_off new 1 slab2d_def time/tlim=100
+1	/viper/ptmp2/jinma/launch_0923/scripts/run.sh e1_dev new 1 slab2d_def time/tlim=100 rad_m1/implicit_krylov_dev=4
+1	/viper/ptmp2/jinma/launch_0923/scripts/run.sh v1_off new 1 slab2d_def time/tlim=100 rad_m1/closure=vet_sc rad_m1/vet_tensor=full
+1	/viper/ptmp2/jinma/launch_0923/scripts/run.sh v1_dev new 1 slab2d_def time/tlim=100 rad_m1/closure=vet_sc rad_m1/vet_tensor=full rad_m1/implicit_krylov_dev=4
+1	/viper/ptmp2/jinma/launch_0923/scripts/run.sh v1_base base 1 slab2d_def time/tlim=100 rad_m1/closure=vet_sc rad_m1/vet_tensor=full
+2	/viper/ptmp2/jinma/launch_0923/scripts/run.sh e2_base base 2 slab2d_def time/tlim=100 meshblock/nx2=16
+2	/viper/ptmp2/jinma/launch_0923/scripts/run.sh e2_off new 2 slab2d_def time/tlim=100 meshblock/nx2=16
+2	/viper/ptmp2/jinma/launch_0923/scripts/run.sh e2_dev new 2 slab2d_def time/tlim=100 meshblock/nx2=16 rad_m1/implicit_krylov_dev=4
+1	/viper/ptmp2/jinma/launch_0923/scripts/run.sh b1_off new 1 box3d_def mesh/nx2=32 mesh/nx3=32 mesh/x2max=3.39480832e8 mesh/x3max=3.39480832e8 meshblock/nx2=16 meshblock/nx3=16 time/nlim=30
+1	/viper/ptmp2/jinma/launch_0923/scripts/run.sh b1_dev new 1 box3d_def mesh/nx2=32 mesh/nx3=32 mesh/x2max=3.39480832e8 mesh/x3max=3.39480832e8 meshblock/nx2=16 meshblock/nx3=16 time/nlim=30 rad_m1/implicit_krylov_dev=4
+1	/viper/ptmp2/jinma/launch_0923/scripts/run.sh bv1_off new 1 box3d_def mesh/nx2=32 mesh/nx3=32 mesh/x2max=3.39480832e8 mesh/x3max=3.39480832e8 meshblock/nx2=16 meshblock/nx3=16 time/nlim=30 rad_m1/closure=vet_sc rad_m1/vet_tensor=full
+1	/viper/ptmp2/jinma/launch_0923/scripts/run.sh bv1_dev new 1 box3d_def mesh/nx2=32 mesh/nx3=32 mesh/x2max=3.39480832e8 mesh/x3max=3.39480832e8 meshblock/nx2=16 meshblock/nx3=16 time/nlim=30 rad_m1/closure=vet_sc rad_m1/vet_tensor=full rad_m1/implicit_krylov_dev=4
+1	/viper/ptmp2/jinma/launch_0923/scripts/run.sh bh1_off new 1 box3d_h2_x mesh/nx2=32 mesh/nx3=32 mesh/x2max=3.39480832e8 mesh/x3max=3.39480832e8 meshblock/nx2=16 meshblock/nx3=16 time/nlim=30 rad_m1/closure=vet_sc rad_m1/vet_tensor=full rad_m1/implicit_vimp_fold=true rad_m1/implicit_fast_kernels=true rad_m1/implicit_one_pass=4 rad_m1/implicit_predictor_order=2
+1	/viper/ptmp2/jinma/launch_0923/scripts/run.sh bh1_dev new 1 box3d_h2_x mesh/nx2=32 mesh/nx3=32 mesh/x2max=3.39480832e8 mesh/x3max=3.39480832e8 meshblock/nx2=16 meshblock/nx3=16 time/nlim=30 rad_m1/closure=vet_sc rad_m1/vet_tensor=full rad_m1/implicit_vimp_fold=true rad_m1/implicit_fast_kernels=true rad_m1/implicit_one_pass=4 rad_m1/implicit_predictor_order=2 rad_m1/implicit_krylov_dev=4
+4	/viper/ptmp2/jinma/launch_0923/scripts/run.sh b4_base base 4 box3d_def mesh/nx2=32 mesh/nx3=32 mesh/x2max=3.39480832e8 mesh/x3max=3.39480832e8 meshblock/nx2=16 meshblock/nx3=16 time/nlim=30
+4	/viper/ptmp2/jinma/launch_0923/scripts/run.sh b4_off new 4 box3d_def mesh/nx2=32 mesh/nx3=32 mesh/x2max=3.39480832e8 mesh/x3max=3.39480832e8 meshblock/nx2=16 meshblock/nx3=16 time/nlim=30

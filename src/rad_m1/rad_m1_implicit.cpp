@@ -542,6 +542,30 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (impl_halo_mpi && !impl_halo_direct) {
     ImplFatal("<rad_m1>/implicit_halo_mpi needs implicit_halo_direct = true");
   }
+  // implicit_krylov_dev (tests_m1/runs_4k_launch): default 0, read only when named
+  impl_kdev = 0;
+  kdev_last[0] = kdev_last[1] = kdev_last[2] = 0;
+  kdev_slot = 0;
+  kdev_x1p = -1;
+  kdev_nchk = 0.0;
+  kdev_nq = 0.0;
+  impl_kdev_halo = 0;
+  if (pin->DoesParameterExist("rad_m1","implicit_krylov_dev")) {
+    impl_kdev = pin->GetInteger("rad_m1","implicit_krylov_dev");
+    if (impl_kdev < 0) {ImplFatal("<rad_m1>/implicit_krylov_dev must be >= 0");}
+    if (impl_kdev > 0 && (impl_kfuse != 3 || impl_kpipe || !impl_halo_direct)) {
+      ImplFatal("<rad_m1>/implicit_krylov_dev needs implicit_krylov_fuse = 3, "
+                "implicit_halo_direct = true and implicit_krylov_pipe = false");
+    }
+    impl_kdev_halo = 0;
+    if (impl_kdev > 0 && pin->DoesParameterExist("rad_m1","implicit_krylov_dev_halo")) {
+      impl_kdev_halo = pin->GetInteger("rad_m1","implicit_krylov_dev_halo");
+    }
+    if (impl_kdev > 0) {
+      kdv = DvceArray1D<Real>("m1_kdv", M1_KD_SIZE);
+      kdh = Kokkos::View<Real*, Kokkos::SharedHostPinnedSpace>("m1_kdh", M1_KD_SIZE);
+    }
+  }
   // the Picard pass count (bench/m1_picard_0923): a per-pass log, off by default
   impl_plog = pin->GetOrAddInteger("rad_m1","implicit_picard_log",0);
   // ...and the options that cut it.  Since bench/m1_defaults_0923 they DEFAULT ON for
@@ -4445,6 +4469,7 @@ int RadiationM1::ImplicitBiCGStabFused(Real rhsmax) {
   const int kf = impl_kfuse;   // implicit_krylov_fuse (needs bcg_sync = 1, pcr)
   if (impl_stencil) {ImplicitStencilBuild();}   // the operator of this pass, once
   if (kf == 3 && impl_kpipe) {return ImplicitBiCGStabPipe(rhsmax);}
+  if (kf == 3 && ImplicitKrylovDevOK()) {return ImplicitBiCGStabDev(rhsmax);}
   if (kf == 3) {return ImplicitBiCGStabTwo(rhsmax);}
   auto rvd_ = bcg_rvd;
   // implicit_lin_cnorm > 0: the max norm is taken of r_i/(s_i E^k_i), s_i = 1 + SRCB_i
@@ -4933,6 +4958,11 @@ void RadiationM1::ImplicitReport() {
               << " line_jacobi fallbacks=" << bcg_nfall
               << " global reductions=" << bcg_nred
               << " (" << rper << " per inner iteration)" << std::endl;
+    if (impl_kdev > 0) {
+      std::cout << "<rad_m1> implicit_krylov_dev: period=" << impl_kdev
+                << " host status reads=" << kdev_nchk << " queued iterations="
+                << kdev_nq << std::endl;
+    }
   }
   if (impl_gas_newton || impl_eos_cache) {
     Real fpc = (gas_ncell > 0.0) ? (newt_nfb/gas_ncell) : 0.0;
@@ -6471,6 +6501,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       if (odm == M1_OD_OPERATOR && !impl_odskip) {
         ImplicitOffDiagOp(M1_IW_EP, M1_IW_KB, 1.0);
       }
+      kdev_slot = std::min(it, 2);
       nin = ImplicitBiCGStab(rhsmax);
       if (vimp_now && odm != M1_OD_OPERATOR) {
         // implicit_vimp POSITIVITY: the Newton coupling is not an M-matrix either; a

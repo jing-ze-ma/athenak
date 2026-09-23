@@ -487,6 +487,24 @@ class RadiationM1 {
   void ImplicitHaloOp(int xc, int yc, int red, Real *out);
   void ImplicitStencilOpPart(int xc, int yc, int red, int part, int w, Real *hs);
   int ImplicitBiCGStabPipe(Real rhsmax);
+  // ---- launch and host-sync cuts (tests_m1/runs_4k_launch, rad_m1_launch.cpp).  Every
+  // key defaults OFF and is read only when named; off, nothing below is allocated.
+  int impl_kdev;                // <rad_m1>/implicit_krylov_dev: K > 0 = BiCGStab scalars
+                                // and convergence test on the device, host status read
+                                // every K iterations (one rank, halo_direct, stencil)
+  int impl_kdev_halo;           // <rad_m1>/implicit_krylov_dev_halo: 0 = the operator
+                                // reads ghosts from the neighbour block, 1 = halo kernel
+  int kdev_last[3];             // inner iterations of the previous device solve, per
+                                // slot (Picard pass 0, 1, >= 2)
+  int kdev_slot;                // the slot of this solve (set by ImplicitSolve)
+  int kdev_x1p;                 // -1 = not known, 1 = no x1 neighbour anywhere
+  Real kdev_nchk, kdev_nq;      // host status reads, queued iterations (statistics)
+  DvceArray1D<Real> kdv;        // (M1_KD_SIZE) the device scalars
+  Kokkos::View<Real*, Kokkos::SharedHostPinnedSpace> kdh;  // their host copy
+  bool ImplicitKrylovDevOK();
+  void ImplicitPrecondXD(int zc, int upd);
+  void ImplicitOpXD(int xc, int yc, int red);
+  int ImplicitBiCGStabDev(Real rhsmax);
   // ---- the Picard pass count (bench/m1_picard_0923).  Since bench/m1_defaults_0923
   // lres_test = false, conv_est = true and lin_ew_max = 1e-2 (not predictor) are the
   // DEFAULTS for closure = eddington | vet_sc | tau (the OFF settings stay the defaults
