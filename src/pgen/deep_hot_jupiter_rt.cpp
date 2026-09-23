@@ -601,6 +601,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   two_stream_rt::ck_impl_xstep_thr =
       pin->GetOrAddReal("problem","ck_impl_xstep_thr",0.0);
   two_stream_rt::ck_impl_jreuse = pin->GetOrAddReal("problem","ck_impl_jreuse",0.0);
+  two_stream_rt::ck_impl_jreuse_xc =
+      pin->GetOrAddBoolean("problem","ck_impl_jreuse_xc",false);
   two_stream_rt::ck_impl_pred = pin->GetOrAddBoolean("problem","ck_impl_pred",false);
   two_stream_rt::ck_impl_pred_fac =
       pin->GetOrAddReal("problem","ck_impl_pred_fac",1.0);

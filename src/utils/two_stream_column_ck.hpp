@@ -199,6 +199,10 @@ inline DvceArray4D<Real> *ck_xsD_ptr = nullptr;
 // only and reused (chord) until the max residual contracts by less than rho per pass,
 // after which the next pass rebuilds it.
 inline Real ck_impl_jreuse = 0.0;
+// problem/ck_impl_jreuse_xc: with ck_impl_xstep, a call that re-applies the stored
+// operator also starts from the previous call's Jacobian instead of building one
+inline bool ck_impl_jreuse_xc = false;
+inline bool ck_impl_jac_built = false;
 inline Real ck_impl_prev_res = -1.0;
 // problem/ck_impl_pred (lever 4): no confirmation pass.  A column whose residual r_p
 // (after the step of pass p) is predicted by the observed contraction to be below tol,

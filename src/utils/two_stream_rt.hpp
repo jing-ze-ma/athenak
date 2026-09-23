@@ -1993,7 +1993,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
     auto cosc_uc_ = pmbp->pcoord->cos_cell;
     const bool etg_uc_ = (pmbp->phydro != nullptr) ? pmbp->phydro->use_etotgrav
                        : ((pmbp->pmhd != nullptr) ? pmbp->pmhd->use_etotgrav : false);
-    DvceArray4D<Real> phicc_uc_("rt_phi_dummy", 1, 1, 1, 1);
+    DvceArray4D<Real> phicc_uc_ = CkDum<DvceArray4D<Real>>("rt_phi_dummy");
     if (pmbp->phydro != nullptr) {
       phicc_uc_ = pmbp->phydro->phicc0;
     } else if (pmbp->pmhd != nullptr) {
@@ -2009,7 +2009,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
     // would return the same numbers.  On the cubed sphere bcc0 is already in the
     // orthonormal frame, so no metric enters.
     const bool mhd_uc_ = (pmbp->pmhd != nullptr);
-    DvceArray5D<Real> bcc_uc_("rt_bcc_dummy", 1, 1, 1, 1, 1);
+    DvceArray5D<Real> bcc_uc_ = CkDum<DvceArray5D<Real>>("rt_bcc_dummy");
     if (pmbp->pmhd != nullptr) {
       bcc_uc_ = pmbp->pmhd->bcc0;
     }
@@ -2358,7 +2358,9 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
       // ck_impl_glob = ls_sub: also the pass after a sub-step restart / advance
       // problem/ck_impl_jreuse (lever 3): the chord with an adaptive rebuild -- the
       // driver sets ck_impl_jac_again when the residual stopped contracting
-      const bool ckjacp_ = ckimp_ && ((ck_impl_reuse_jac == 0 && !(ck_impl_jreuse > 0.0))
+      // (not const: ck_impl_jreuse_xc may drop the build of a re-applying call's pass 0,
+      // decided with ck_impl_xstep after rt_pre_tp)
+      bool ckjacp_ = ckimp_ && ((ck_impl_reuse_jac == 0 && !(ck_impl_jreuse > 0.0))
                                       || (ck_impl_pass == CkImplJacPass())
                                       || (ck_impl_jac_again && ck_impl_pass > 0));
       // problem/ck_impl_jac_lin: the tridiagonal of a pass that builds it comes from the
@@ -2645,6 +2647,12 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
             ckfst_ = false;
             ckfus_ = true;
             ++ck_impl_nreuse;
+            // ck_impl_jreuse_xc: the chord Jacobian of the previous call carries over to
+            // a call that re-applies the same operator (rebuilt as usual once the
+            // residual stops contracting)
+            if (ck_impl_jreuse > 0.0 && ck_impl_jreuse_xc && ck_impl_jac_built) {
+              ckjacp_ = false;
+            }
           } else {
             ck_impl_xs_cyc = pm->ncycle;
             ++ck_impl_nstore;
@@ -2664,6 +2672,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
             }
           }
         }
+        if (ckjacp_) ck_impl_jac_built = true;
         // problem/ck_impl_frozen_op: the CUT is frozen over the Newton passes with the
         // opacity.  The stored operator covers the cells pass 0 swept, so a cut that
         // moved down by one cell at a later pass would read a kappa rho this call never
@@ -6456,6 +6465,8 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
       // problem/rt_budget_verbose: the v.f work accumulator (see rt_bud_ptr)
       const bool budg_ = (rt_bud_ptr != nullptr) && radforce;
       auto bud_ = budg_ ? *rt_bud_ptr : CkDum<DvceArray1D<Real>>("rtbuddummy");
+      const bool cklean_ = ck_impl_nosync && ckimp_ && !report_on && !diag && !radforce
+                           && !dbg_on;
       par_reduce_clip4("rt_apply", 0, nmb1, ks, ke, js, je, is, ie, nclip,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, int &nc) {
         // ck_impl_colskip: a converged column is left exactly as its last pass left it
@@ -6582,6 +6593,9 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
           // NEXT pass, which is what freezes it for that pass's matrix and solve.
           ckthk_g(m,k,j,i) =
               ((Emc > 0.0) && (src + Emc <= ckarat_*Emc)) ? 1.0 : 0.0;
+          // problem/ck_impl_nosync: nothing below reaches the gas or the solve under
+          // ck_implicit (skip_de); with no diagnostic asked for, stop here
+          if (cklean_) return;
         }
         // SEMI-IMPLICIT APPLICATION.  The source splits as src = A - E(T), A being the
         // absorption of the field from elsewhere, fixed on this step, and E the cell's
