@@ -1,0 +1,9 @@
+head_g2 2 he3d_fast.athinput meshblock/nx3=26
+g2_off 2 he3d_fast.athinput meshblock/nx3=26
+g2_tb3 2 he3d_fast.athinput meshblock/nx3=26 rad_m1/vet_mb_tblock=3
+g2_tb3no 2 he3d_fast.athinput meshblock/nx3=26 rad_m1/vet_mb_tblock=3 rad_m1/vet_mb_tblock_ovl=false
+g2_tb3k13 2 he3d_fast.athinput meshblock/nx3=26 rad_m1/vet_mb_tblock=3 rad_m1/vet_mb_tblock_tk=13
+g2_tb6 2 he3d_fast.athinput meshblock/nx3=26 rad_m1/vet_mb_tblock=6 rad_m1/vet_mb_halo=6 rad_m1/vet_mb_mom_batch=6
+g2_tb6k13 2 he3d_fast.athinput meshblock/nx3=26 rad_m1/vet_mb_tblock=6 rad_m1/vet_mb_halo=6 rad_m1/vet_mb_mom_batch=6 rad_m1/vet_mb_tblock_tk=13
+head_hyb 2 he3d_fast.athinput meshblock/nx3=26 rad_m1/vet_mb_agroup=2
+g2_hybtb3 2 he3d_fast.athinput meshblock/nx3=26 rad_m1/vet_mb_agroup=2 rad_m1/vet_mb_tblock=3

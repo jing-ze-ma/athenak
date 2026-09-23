@@ -65,6 +65,9 @@
 //! vet_mb_agroup = G (round-off): HYBRID decomposition, the rays split over the G
 //! consecutive ranks of a group (one node), the space over the groups; the moments are
 //! summed over the group in rank order.
+//! vet_mb_tblock = B (exact, tests_m1/runs_4i_sctb/README.md): TEMPORAL BLOCKING, up to
+//! B launches of one band-exchange group (B <= vet_mb_halo) in one kernel launch, one
+//! team per (block, ray, plane tile) with a team barrier per launch (VetTBLaunch).
 //!
 //! LIMITS (checked at start-up).  Periodic x2 (and x3), uniform mesh, every MeshBlock at
 //! least w cells wide in x2 (x3) and 2 cells in x1; vet_milne needs one block along x1.
@@ -315,6 +318,13 @@ struct VetMBState {
   DvceArray1D<Real> sfl, rfl;  // flat send / receive buffers
   // vet_mb_mom_fuse: the moments are summed in the ray launch (team scratch)
   bool fuse = false;
+  // vet_mb_tblock = B > 1: temporal blocking, up to B launches of one band-exchange
+  // group per kernel launch (VetTBLaunch); tile TJ x TK cells (0 = the whole plane),
+  // threads per team, and the MPI band exchange overlapped with the next blocked launch
+  int tb = 1, tbj = 0, tbk = 0, tbts = 256;
+  bool tbovl = true;
+  bool tbdir = true;           // vet_mb_tblock_direct: read rank neighbours directly
+  std::vector<int> rdh;        // (4 nrl) host copy of rdep
 };
 
 namespace {
@@ -566,14 +576,16 @@ void VetRayRegion(const int d, const int nx, const int b, const int hk, const in
 //! oblique one).  Same values in every cell that is read.
 
 void VetPlanePost(VetMBState &st, DvceArray5D<Real> &a, const int p, const int nray,
-                  const int nmb, const int nx2, const int nx3) {
+                  const int nmb, const int nx2, const int nx3, const bool loc = true) {
   const int nof = st.nof, b2 = st.b2, b3 = st.b3, mreg = st.maxreg, hk = st.hk;
   const auto oj = st.oj;
   const auto ok = st.ok;
   auto hl_ = st.hloc.d_view;
   auto rd_ = st.rdep;
   auto a_ = a;
-  VetFor("m1_vet_plane_loc", nmb*nof*nray*mreg, KOKKOS_LAMBDA(const int t) {
+  // loc = false (vet_mb_tblock direct reads): the next launch reads the rank's
+  // neighbours directly, no local copy
+  VetFor("m1_vet_plane_loc", loc ? nmb*nof*nray*mreg : 0, KOKKOS_LAMBDA(const int t) {
     const int idx = t%mreg;
     int q = t/mreg;
     const int r = q%nray;
@@ -784,9 +796,41 @@ struct VetRayK {
   DvceArray5D<Real> cs, ip;
   DvceArray1D<int> lx;
   DvceArray2D<Real> ang, dx;
+  DvceArray1D<int> hl;         // vet_mb_tblock direct reads: st.hloc (slot neighbours)
 
   KOKKOS_INLINE_FUNCTION
   bool operator()(const int m, const int r, const int kk, const int jj, Real &ivo) const {
+    return Cell<false>(m, r, kk, jj, l, ek, pw, pr, ivo);
+  }
+
+  // DIR (vet_mb_tblock, the first launch after a band exchange): an upwind cell in the
+  // ghost band of a slot whose neighbour is on the rank is read from the NEIGHBOUR's
+  // plane (the value the local band copy would have put there), so that copy can be
+  // skipped; remote slots read the band as received.  Same values, same arithmetic.
+  KOKKOS_INLINE_FUNCTION
+  Real Up(const int m, const int r, const int pr, const int kq, const int jq) const {
+    const int dj = (jq < b2) ? -1 : ((jq >= b2 + nx2) ? 1 : 0);
+    const int dk = thrd ? ((kq < b3) ? -1 : ((kq >= b3 + nx3) ? 1 : 0)) : 0;
+    if (dj != 0 || dk != 0) {
+      int o;
+      if (thrd) {
+        const int t = 3*(dk + 1) + dj + 1;
+        o = (t < 4) ? t : (t - 1);
+      } else {
+        o = (dj < 0) ? 0 : 1;
+      }
+      const int n = hl(8*m + o);
+      if (n >= 0) return ip(n,pr,r,kq - dk*nx3,jq - dj*nx2);
+    }
+    return ip(m,pr,r,kq,jq);
+  }
+
+  // the same at launch l_, overlap ek_, ring slots pw_ (write) and pr_ (upwind): used by
+  // the temporally blocked launch (VetTBLaunch), which sweeps several launches in one
+  template <bool DIR>
+  KOKKOS_INLINE_FUNCTION
+  bool Cell(const int m, const int r, const int kk, const int jj, const int l,
+            const int ek, const int pw, const int pr, Real &ivo) const {
     if (ek > 0) {
       // the overlap a ray still has valid upwind data for: ek of its own reaches
       if (jj < b2 - ek*rd(r,0) || jj >= b2 + nx2 + ek*rd(r,1)) return false;
@@ -853,8 +897,19 @@ struct VetRayK {
       }
       const Real waa = (1.0 - a2)*(1.0 - a3), wab = a2*(1.0 - a3);
       const Real wba = (1.0 - a2)*a3, wbb = a2*a3;
-      const Real iup_v = waa*ip(m,pr,r,ka,ja) + wab*ip(m,pr,r,ka,jb)
-                         + wba*ip(m,pr,r,kb,ja) + wbb*ip(m,pr,r,kb,jb);
+      Real iaa, iab, iba, ibb;
+      if (DIR) {
+        iaa = Up(m, r, pr, ka, ja);
+        iab = Up(m, r, pr, ka, jb);
+        iba = Up(m, r, pr, kb, ja);
+        ibb = Up(m, r, pr, kb, jb);
+      } else {
+        iaa = ip(m,pr,r,ka,ja);
+        iab = ip(m,pr,r,ka,jb);
+        iba = ip(m,pr,r,kb,ja);
+        ibb = ip(m,pr,r,kb,jb);
+      }
+      const Real iup_v = waa*iaa + wab*iab + wba*iba + wbb*ibb;
       const Real cu = waa*cs(m,li,0,ka,ja) + wab*cs(m,li,0,ka,jb)
                       + wba*cs(m,li,0,kb,ja) + wbb*cs(m,li,0,kb,jb);
       const Real su = waa*cs(m,li,1,ka,ja) + wab*cs(m,li,1,ka,jb)
@@ -899,6 +954,91 @@ void VetRayLaunch(const char *name, const int nmb, const int nray, const int jlo
     Real iv;
     rk(m, r, kk, jj, iv);
   });
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn VetTBLaunch
+//! \brief vet_mb_tblock = B: TEMPORAL BLOCKING, launches la..lb (at most B, all in one
+//! band-exchange group of vet_mb_halo and one x1 block) in ONE kernel launch.  A team
+//! takes one (sweep block m, local ray r, tile of the plane) and sweeps the launches in
+//! turn with a team barrier between them (the intensity planes stay in the ring ipl;
+//! the team's own writes are visible to it after the barrier).  A ray only reads its own
+//! intensity plane, so teams never depend on each other.  The tile core is a TJ x TK
+//! piece of the region the last launch lb must fill (the active cells widened by the
+//! overlap ek(lb) of vet_mb_halo); launch l covers the core widened by (lb - l) reaches
+//! of the ray (rdep), clipped to the ray's own valid overlap at l (as VetRayK), i.e.
+//! exactly the upwind cone of the core: neighbouring tiles recompute the cone cells both
+//! need, with the same arithmetic, so every value written is the value of the unblocked
+//! sweep (VetRayK::Cell term for term).  pass 1 runs only the tiles whose cone at la
+//! reads no ghost cell of the upwind plane (under the MPI of the band), pass 2 the
+//! others, pass 0 all.
+
+void VetTBLaunch(const char *name, const int nmb, const int nray, const int la,
+                 const int lb, const int hk, const int nring, const int cj0,
+                 const int ncj, const int ck0, const int nck, const int tj, const int tk,
+                 const int pass, const bool dir, const int tsz, const VetRayK &rk) {
+  const int ntj = (ncj + tj - 1)/tj, ntk = (nck + tk - 1)/tk;
+  const int nlg = nmb*nray*ntk*ntj;
+  if (nlg <= 0) return;
+  const int b2 = rk.b2, b3 = rk.b3, nx2 = rk.nx2, nx3 = rk.nx3;
+  const bool thrd = rk.thrd;
+  auto rd_ = rk.rd;
+  auto f = KOKKOS_LAMBDA(const TeamMember_t &tm) {
+    int q = tm.league_rank();
+    const int tjx = q%ntj;
+    q /= ntj;
+    const int tkx = q%ntk;
+    q /= ntk;
+    const int r = q%nray, m = q/nray;
+    const int j0 = cj0 + tjx*tj, j1 = (j0 + tj < cj0 + ncj) ? (j0 + tj) : (cj0 + ncj);
+    const int k0 = ck0 + tkx*tk, k1 = (k0 + tk < ck0 + nck) ? (k0 + tk) : (ck0 + nck);
+    const int r0 = rd_(r,0), r1 = rd_(r,1);
+    const int r2 = thrd ? rd_(r,2) : 0, r3 = thrd ? rd_(r,3) : 0;
+    if (pass != 0) {
+      // the cells of plane la-1 the cone reads: inside the active area = no ghost
+      const int d = lb - la + 1;
+      const bool in = (j0 - d*r0 >= b2) && (j1 + d*r1 <= b2 + nx2) &&
+                      (!thrd || ((k0 - d*r2 >= b3) && (k1 + d*r3 <= b3 + nx3)));
+      if ((pass == 1) != in) return;
+    }
+    for (int l = la; l <= lb; ++l) {
+      const int tt = (l == 0) ? hk : ((l - 1) % hk) + 1;
+      const int ek = hk - tt;
+      const int pw = l%nring, pr = (l + nring - 1)%nring;
+      const int d = lb - l;
+      int ja = j0 - d*r0, jb = j1 + d*r1;
+      if (ja < b2 - ek*r0) ja = b2 - ek*r0;
+      if (jb > b2 + nx2 + ek*r1) jb = b2 + nx2 + ek*r1;
+      int ka = 0, kb = 1;
+      if (thrd) {
+        ka = k0 - d*r2;
+        kb = k1 + d*r3;
+        if (ka < b3 - ek*r2) ka = b3 - ek*r2;
+        if (kb > b3 + nx3 + ek*r3) kb = b3 + nx3 + ek*r3;
+      }
+      const int nj = jb - ja, nk = kb - ka;
+      if (nj > 0 && nk > 0) {
+        Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, nj*nk), [&](const int idx) {
+          const int kk = ka + idx/nj, jj = ja + idx%nj;
+          Real iv;
+          if (dir && l == la) {
+            rk.Cell<true>(m, r, kk, jj, l, ek, pw, pr, iv);
+          } else {
+            rk.Cell<false>(m, r, kk, jj, l, ek, pw, pr, iv);
+          }
+        });
+      }
+      if (l < lb) tm.team_barrier();
+    }
+  };
+  static_assert(sizeof(f) <= 3072, "VetTBLaunch functor too large for a kernel-argument "
+                "launch");
+  Kokkos::TeamPolicy<> p0(DevExeSpace(), nlg, Kokkos::AUTO);
+  const int tmax = p0.team_size_max(f, Kokkos::ParallelForTag());
+  const int ts = (tsz < tmax) ? tsz : tmax;
+  Kokkos::parallel_for(name, Kokkos::Experimental::require(
+                       Kokkos::TeamPolicy<>(DevExeSpace(), nlg, ts),
+                       Kokkos::Experimental::WorkItemProperty::HintLightWeight), f);
 }
 
 //----------------------------------------------------------------------------------------
@@ -1678,13 +1818,44 @@ void RadiationM1::VetMBInit(ParameterInput *pin) {
       VetFatal("<rad_m1>/vet_mb_kernel = '" + kn + "' not implemented (ray | cell)");
     }
   }
+  // vet_mb_tblock = B (exact, default 1 = off; tests_m1/runs_4i_sctb/README.md): up to
+  // B launches per kernel launch, never across a band exchange, so B <= vet_mb_halo
+  // matters; without vet_mb_halo in the input, the default halo becomes max(3, B).
+  // vet_mb_tblock_tj / _tk: tile of the plane per team (0 = whole); vet_mb_tblock_team:
+  // threads per team; vet_mb_tblock_ovl (default true): the next blocked launch's
+  // interior tiles (and the moment launch) run while the MPI band is in flight;
+  // vet_mb_tblock_direct (default true): the first launch after a band exchange reads
+  // the ghost band of a rank-local neighbour from that neighbour's plane, and the local
+  // band copy is skipped (except before an x1 block face).  All read only when given.
+  if (pin->DoesParameterExist("rad_m1", "vet_mb_tblock")) {
+    st.tb = pin->GetInteger("rad_m1", "vet_mb_tblock");
+  }
+  if (pin->DoesParameterExist("rad_m1", "vet_mb_tblock_tj")) {
+    st.tbj = pin->GetInteger("rad_m1", "vet_mb_tblock_tj");
+  }
+  if (pin->DoesParameterExist("rad_m1", "vet_mb_tblock_tk")) {
+    st.tbk = pin->GetInteger("rad_m1", "vet_mb_tblock_tk");
+  }
+  if (pin->DoesParameterExist("rad_m1", "vet_mb_tblock_team")) {
+    st.tbts = pin->GetInteger("rad_m1", "vet_mb_tblock_team");
+  }
+  if (pin->DoesParameterExist("rad_m1", "vet_mb_tblock_ovl")) {
+    st.tbovl = pin->GetBoolean("rad_m1", "vet_mb_tblock_ovl");
+  }
+  if (pin->DoesParameterExist("rad_m1", "vet_mb_tblock_direct")) {
+    st.tbdir = pin->GetBoolean("rad_m1", "vet_mb_tblock_direct");
+  }
+  if (st.tb < 1 || st.tbj < 0 || st.tbk < 0 || st.tbts < 1) {
+    VetFatal("<rad_m1>/vet_mb_tblock must be >= 1, vet_mb_tblock_tj/_tk >= 0 and "
+             "vet_mb_tblock_team >= 1");
+  }
   // DEFAULT vet_mb_halo = 3 (tests_m1/runs_3p_fastdefault; exact, 8.2 -> 5.6 ms per
   // sweep on 2 GPUs, tests_m1/runs_3m_vetmb/README_SCALING.md) when the input does not
   // name it, with the ray kernel and no vet_mb_lag, narrowed until the band fits a block.
   if (!pin->DoesParameterExist("rad_m1", "vet_mb_halo") && st.raypar &&
       !(pin->DoesParameterExist("rad_m1", "vet_mb_lag") &&
         pin->GetInteger("rad_m1", "vet_mb_lag") > 0)) {
-    st.hk = 3;
+    st.hk = std::max(3, st.tb);
     while (st.hk > 1 && (st.hk*st.w2 > nx2 || (thrd && st.hk*st.w3 > nx3))) {--st.hk;}
   }
   if (st.hk < 1) {
@@ -1714,6 +1885,11 @@ void RadiationM1::VetMBInit(ParameterInput *pin) {
     VetFatal("<rad_m1>/vet_mb_mom_batch must be >= 1 (1 with vet_mb_kernel = cell)");
   }
   st.nring = st.fuse ? 2 : std::max(st.nbat, 2);
+  if (st.tb > 1) {
+    // the pending moment layers (< nbat) plus the B planes of the next blocked launch,
+    // and the upwind plane plus B right after a moment launch
+    st.nring = std::max(st.nring, std::max(st.nbat - 1 + st.tb, st.tb + 1));
+  }
   st.n2w = nx2 + 2*st.b2;
   st.n3w = thrd ? (nx3 + 2*st.b3) : 1;
   const int nx3e = thrd ? nx3 : 1;
@@ -1763,6 +1939,12 @@ void RadiationM1::VetMBInit(ParameterInput *pin) {
       }
     }
     Kokkos::deep_copy(st.rdep, rdh);
+    st.rdh.assign(4*st.nrl, 0);
+    for (int rl = 0; rl < st.nrl; ++rl) {
+      for (int c = 0; c < 4; ++c) {
+        st.rdh[4*rl + c] = rdh(rl,c);
+      }
+    }
     Kokkos::realloc(st.offs, st.nof, st.nrl + 1);
     Kokkos::realloc(st.offr, st.nof, st.nrl + 1);
     auto osh = Kokkos::create_mirror_view(st.offs);
@@ -2127,6 +2309,10 @@ void RadiationM1::VetMBInit(ParameterInput *pin) {
     VetFatal("<rad_m1>/vet_mb_agroup > 1 excludes vet_mb_angles, vet_mb_lag, "
              "vet_mb_kernel = cell and vet_milne");
   }
+  if (st.tb > 1 && (!st.raypar || st.nlag > 0 || st.fuse || st.ang)) {
+    VetFatal("<rad_m1>/vet_mb_tblock > 1 needs vet_mb_kernel = ray and excludes "
+             "vet_mb_lag, vet_mb_mom_fuse and vet_mb_angles");
+  }
   if (st.fuse && (!st.raypar || st.nlag > 0 || st.nrl > 512)) {
     VetFatal("<rad_m1>/vet_mb_mom_fuse needs vet_mb_kernel = ray, no vet_mb_lag and at "
              "most 512 rays per rank");
@@ -2386,7 +2572,108 @@ void RadiationM1::VetSweepMB(bool lagged) {
   rk.lx = lxd_;
   rk.ang = st.angl;
   rk.dx = st.sdx;
-  for (int l = 0; l < nx1g; ++l) {
+  rk.hl = st.hloc.d_view;
+  // vet_mb_tblock = B > 1: TEMPORAL BLOCKING.  The launches are cut into chunks of at
+  // most B that lie in one band-exchange group (they end at tt = hk) and one x1 block;
+  // each chunk is ONE VetTBLaunch.  The moments, the band exchange and the x1 moves are
+  // those of the loop below, in the same places (the moment batches may end at other
+  // launches: exact, see VetMomLaunch).  With MPI neighbours (and vet_mb_tblock_ovl) the
+  // moment launch and the interior tiles of the next chunk run while the band is in
+  // flight.
+  const bool tbon = (st.tb > 1 && !lagged);
+  if (tbon) {
+    auto ttof = [=](const int x) { return (x == 0) ? hk : ((x - 1) % hk) + 1; };
+    auto chend = [&](const int la) {
+      int lb = la;
+      while (ttof(lb) != hk && lb - la + 1 < st.tb && lb + 1 < nx1g &&
+             ((lb + 1) % nx1) != 0) {
+        ++lb;
+      }
+      return lb;
+    };
+    // pass 1 (interior tiles only) returns false, launching nothing, when no (ray,
+    // tile) has a cone free of ghost cells (the host copy of VetTBLaunch's test)
+    auto tblaunch = [&](const char *nm, const int la, const int lb, const int pass) {
+      const int ekb = hk - ttof(lb);
+      const int cj0 = w2 - ekb*rw2, ncj = nx2 + 2*ekb*rw2;
+      const int ck0 = thrd ? (w3 - ekb*rw3) : 0, nck = thrd ? (nx3 + 2*ekb*rw3) : 1;
+      const int tj = (st.tbj > 0) ? st.tbj : ncj;
+      const int tk = thrd ? ((st.tbk > 0) ? st.tbk : nck) : 1;
+      if (pass == 1) {
+        bool any = false;
+        const int d = lb - la + 1;
+        for (int r = 0; r < nrl && !any; ++r) {
+          const int *q = &st.rdh[4*r];
+          for (int k0 = ck0; k0 < ck0 + nck && !any; k0 += tk) {
+            const int k1 = std::min(k0 + tk, ck0 + nck);
+            if (thrd && (k0 - d*q[2] < w3 || k1 + d*q[3] > w3 + nx3)) continue;
+            for (int j0 = cj0; j0 < cj0 + ncj && !any; j0 += tj) {
+              const int j1 = std::min(j0 + tj, cj0 + ncj);
+              any = (j0 - d*q[0] >= w2 && j1 + d*q[1] <= w2 + nx2);
+            }
+          }
+        }
+        if (!any) return false;
+      }
+      // direct reads: the chunk starts right after a band exchange, not at an x1 face
+      const bool dir = st.tbdir && la > 0 && ttof(la - 1) == hk && (la % nx1) != 0;
+      VetTBLaunch(nm, nsb, nrl, la, lb, hk, nring, cj0, ncj, ck0, nck, tj, tk, pass,
+                  dir, st.tbts, rk);
+      return true;
+    };
+    const bool tovl = st.tbovl && st.hmpi;
+    int mst = 0;          // the first launch whose moments are not summed yet
+    bool pint = false;    // the interior tiles of the next chunk ran under the MPI
+    int la = 0;
+    while (la < nx1g) {
+      const int lb = chend(la);
+      if (la > 0 && (la % nx1) == 0) {
+        // x1 move of the upwind plane into the next block of the stack (as below)
+        if (pend) {
+          VetPlaneWait(st, st.ipl, nrl, nsb, nx2, nx3);
+          pend = false;
+        }
+        const int q = la/nx1, pr = (la + nring - 1)%nring;
+        VetX1Move(st, st.ipl, 0, q, pr, pr, 0, nhl, nsb);
+        VetX1Move(st, st.ipl, 1, nbx1 - 1 - q, pr, pr, nhl, nrl - nhl, nsb);
+      }
+      if (pend) {
+        VetPlaneWait(st, st.ipl, nrl, nsb, nx2, nx3);
+        pend = false;
+      }
+      if (pint) {
+        tblaunch("m1_vet_mb_tb_fr", la, lb, 2);
+        pint = false;
+      } else {
+        tblaunch("m1_vet_mb_tb", la, lb, 0);
+      }
+      const bool mdue = (lb - mst + 1 >= nbat || lb == nx1g - 1);
+      if (ttof(lb) == hk && lb < nx1g - 1) {
+        // the local band copy is needed only where the next chunk cannot read the
+        // neighbours directly: before an x1 face (the x1 move copies whole planes)
+        const bool loc = !(st.tbdir && ((lb + 1) % nx1) != 0);
+        VetPlanePost(st, st.ipl, lb%nring, nrl, nsb, nx2, nx3, loc);
+        if (mdue) {
+          VetMomLaunch(nsb, nrl, mst, lb, nring, nx1, nx1g, mi0, mj0, mk0, nx2, nx3, w2,
+                       w3, mt_, ip_, lxd_, st.angl, st.rlist, nhl, mn0);
+          mst = lb + 1;
+        }
+        const int ln = lb + 1;
+        if (tovl && (ln % nx1) != 0) {
+          pint = tblaunch("m1_vet_mb_tb_in", ln, chend(ln), 1);
+          pend = true;
+        } else {
+          VetPlaneWait(st, st.ipl, nrl, nsb, nx2, nx3);
+        }
+      } else if (mdue) {
+        VetMomLaunch(nsb, nrl, mst, lb, nring, nx1, nx1g, mi0, mj0, mk0, nx2, nx3, w2,
+                     w3, mt_, ip_, lxd_, st.angl, st.rlist, nhl, mn0);
+        mst = lb + 1;
+      }
+      la = lb + 1;
+    }
+  }
+  for (int l = 0; l < (tbon ? 0 : nx1g); ++l) {
     // ring slot of this launch's plane and of the upwind one (l & 1, pw ^ 1 for 2)
     const int pw = l%nring, pr = (l + nring - 1)%nring;
     if (l > 0 && (l % nx1) == 0) {
