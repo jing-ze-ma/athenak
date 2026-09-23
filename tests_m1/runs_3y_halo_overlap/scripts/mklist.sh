@@ -1,0 +1,35 @@
+#!/bin/bash
+# job list of merge gates (a) and (c) on CPU
+W=/viper/ptmp2/jinma/m1int_0924; R=$W/scripts/run.sh; D=$W/scripts/rundhj.sh
+V="rad_m1/closure=vet_sc rad_m1/vet_tensor=full"
+S="time/tlim=100"
+X2="meshblock/nx2=16"; X4="meshblock/nx2=8"
+B3="mesh/nx2=32 mesh/nx3=32 mesh/x2max=3.39480832e8 mesh/x3max=3.39480832e8 meshblock/nx2=16 meshblock/nx3=16 time/nlim=30"
+HM="rad_m1/implicit_halo_mpi=true"; PP="rad_m1/implicit_krylov_pipe=true"
+for w in ref new; do
+echo "4	$D dh_$w $w hyd 4"
+echo "4	$D dm_$w $w mhd 4"
+echo "3	cd /viper/u2/jinma/ATHENAK/athenak/tests_m1/runs_3r_radwave && mkdir -p $W/rw/$w && RW_EXE=$W/bin/athena_${w}_rwcpu RW_RUNS=$W/rw/$w OMP_NUM_THREADS=1 nice python3 run_radwave.py run $W/rw/cases.txt --np 3 > $W/rw/$w.log 2>&1"
+for c in e v; do
+  O=""; [ $c = v ] && O="$V"
+  echo "1	$R ${c}_${w}1 $w 1 slab2d_def $S $O"
+  echo "2	$R ${c}_${w}2 $w 2 slab2d_def $S $X2 $O"
+  echo "4	$R ${c}_${w}4 $w 4 slab2d_def $S $X4 $O"
+  echo "1	$R ${c}3_${w}1 $w 1 box3d_def $B3 $O"
+  echo "2	$R ${c}3_${w}2 $w 2 box3d_def $B3 $O"
+  echo "4	$R ${c}3_${w}4 $w 4 box3d_def $B3 $O"
+done; done
+echo "1	$R s_pvh1  new 1 slab2d_plm_vimp_h2 $S"
+echo "2	$R s_pvh2  new 2 slab2d_plm_vimp_h2 $S $X2"
+echo "2	$R s_pvh2m new 2 slab2d_plm_vimp_h2 $S $X2 $HM"
+echo "4	$R s_pvh4  new 4 slab2d_plm_vimp_h2 $S $X4"
+echo "4	$R s_pvh4m new 4 slab2d_plm_vimp_h2 $S $X4 $HM"
+echo "4	$R s_pvh4p new 4 slab2d_plm_vimp_h2 $S $X4 $HM $PP"
+echo "4	$R s_pv4   new 4 slab2d_plm_vimp $S $X4"
+echo "4	$R s_pv4m  new 4 slab2d_plm_vimp $S $X4 $HM"
+echo "4	$R b_pvh4  new 4 box3d_plm_vimp_h2 $B3"
+echo "4	$R b_pvh4m new 4 box3d_plm_vimp_h2 $B3 $HM"
+echo "4	$R b_pvh4p new 4 box3d_plm_vimp_h2 $B3 $HM $PP"
+echo "4	$R b_pvh4v new 4 box3d_plm_vimp_h2 $B3 $HM $V"
+echo "4	$R v3_ag2  new 4 box3d_def $B3 $V rad_m1/vet_mb_agroup=2"
+echo "4	$R v3_hp4  new 4 box3d_def $B3 $V $HM $PP"

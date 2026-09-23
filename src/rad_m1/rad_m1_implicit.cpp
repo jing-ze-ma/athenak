@@ -506,6 +506,15 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   impl_halo_mpi = pin->GetOrAddBoolean("rad_m1","implicit_halo_mpi",hmdef);}
   hm_state = 0;
   hm_comm = nullptr;
+  // implicit_halo_overlap (rad_m1_krylov.cpp, tests_m1/runs_3y_halo_overlap): read
+  // only when named, so the parameter dump of a run without it is unchanged
+  impl_halo_ovl = false;
+  if (pin->DoesParameterExist("rad_m1","implicit_halo_overlap")) {
+    impl_halo_ovl = pin->GetBoolean("rad_m1","implicit_halo_overlap");
+  }
+  if (impl_halo_ovl && !impl_halo_mpi) {
+    ImplFatal("<rad_m1>/implicit_halo_overlap needs implicit_halo_mpi = true");
+  }
   if (impl_kpipe && impl_kfuse != 3) {
     ImplFatal("<rad_m1>/implicit_krylov_pipe needs implicit_krylov_fuse = 3");
   }
@@ -3205,6 +3214,170 @@ void RadiationM1::ImplicitStencilOp(int xc, int yc, int red, Real *out) {
   out[3] = amx;
 }
 
+namespace {
+//! implicit_halo_overlap: three sums and one max (|r| >= 0, so 0 is the identity of
+//! the max slot), reduced into pinned host memory so the launch does not block the host
+struct M1HoVal {
+  Real s[3];
+  Real mx;
+};
+struct M1HoRed {
+ public:
+  using reducer = M1HoRed;
+  using value_type = M1HoVal;
+  using result_view_type = Kokkos::View<value_type, Kokkos::SharedHostPinnedSpace,
+                                        Kokkos::MemoryUnmanaged>;
+
+ private:
+  result_view_type value;
+
+ public:
+  KOKKOS_INLINE_FUNCTION
+  explicit M1HoRed(const result_view_type &v) : value(v) {}
+  KOKKOS_INLINE_FUNCTION
+  void join(value_type &d, const value_type &s) const {
+    for (int q = 0; q < 3; ++q) {d.s[q] += s.s[q];}
+    d.mx = (s.mx > d.mx) ? s.mx : d.mx;
+  }
+  KOKKOS_INLINE_FUNCTION
+  void init(value_type &v) const {
+    for (int q = 0; q < 3; ++q) {v.s[q] = 0.0;}
+    v.mx = 0.0;
+  }
+  KOKKOS_INLINE_FUNCTION
+  value_type &reference() const {return *value.data();}
+  KOKKOS_INLINE_FUNCTION
+  result_view_type view() const {return value;}
+  KOKKOS_INLINE_FUNCTION
+  bool references_scalar() const {return false;}
+};
+} // namespace
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::ImplicitStencilOpPart
+//! \brief implicit_halo_overlap: ImplicitStencilOp on PART of the active cells, with the
+//! same per-cell arithmetic.  part = 1: the interior box, every cell at least `w` cells
+//! from each face of a non-degenerate direction (it reads no ghost zone, so it may run
+//! while the halo exchange is in flight); part = 2: the rest (the shell), after the
+//! halo.  `red` as ImplicitOffDiagOpC; the partial sums go (asynchronously) into the 4
+//! pinned Reals at `hs` (s0, s1, s2, max), which the caller combines after a fence.
+
+void RadiationM1::ImplicitStencilOpPart(int xc, int yc, int red, int part, int w,
+                                        Real *hs) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie;
+  const int js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto iw_ = iw;
+  auto st_ = ost;
+  const bool thrd = trans_x3;
+  const int cx = xc, cy = yc;
+  const int rm = red;
+  const bool edg = st_edges;
+  const bool vim = vimp_now;
+  const int ivb = iw_vimp;
+  const bool cyclic = (ibc_x1min == M1_IBC_PERIODIC);
+  // the interior box
+  const int il = is + w, iu = ie - w;
+  const int jl = (indcs.nx2 > 1) ? (js + w) : js, ju = (indcs.nx2 > 1) ? (je - w) : je;
+  const int kl = (indcs.nx3 > 1) ? (ks + w) : ks, ku = (indcs.nx3 > 1) ? (ke - w) : ke;
+  auto row = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) -> Real {
+    Real y = st_(m,0,k,j,i)*iw_(m,cx,k,j,i)
+             + st_(m,1,k,j,i)*iw_(m,cx,k,j,i-1) + st_(m,2,k,j,i)*iw_(m,cx,k,j,i+1)
+             + st_(m,3,k,j,i)*iw_(m,cx,k,j-1,i) + st_(m,4,k,j,i)*iw_(m,cx,k,j+1,i);
+    if (edg) {
+      y += st_(m,7,k,j,i)*iw_(m,cx,k,j-1,i-1) + st_(m,8,k,j,i)*iw_(m,cx,k,j-1,i+1)
+           + st_(m,9,k,j,i)*iw_(m,cx,k,j+1,i-1) + st_(m,10,k,j,i)*iw_(m,cx,k,j+1,i+1);
+    }
+    if (thrd) {
+      y += st_(m,5,k,j,i)*iw_(m,cx,k-1,j,i) + st_(m,6,k,j,i)*iw_(m,cx,k+1,j,i);
+      if (edg) {
+        y += st_(m,11,k,j,i)*iw_(m,cx,k-1,j,i-1) + st_(m,12,k,j,i)*iw_(m,cx,k-1,j,i+1)
+             + st_(m,13,k,j,i)*iw_(m,cx,k+1,j,i-1) + st_(m,14,k,j,i)*iw_(m,cx,k+1,j,i+1)
+             + st_(m,15,k,j,i)*iw_(m,cx,k-1,j-1,i) + st_(m,16,k,j,i)*iw_(m,cx,k-1,j+1,i)
+             + st_(m,17,k,j,i)*iw_(m,cx,k+1,j-1,i) + st_(m,18,k,j,i)*iw_(m,cx,k+1,j+1,i);
+      }
+    }
+    if (vim) {y += M1VimpRow(iw_, ivb, cx, m, k, j, i, is, ie, cyclic, thrd);}
+    iw_(m,cy,k,j,i) = y;
+    return y;
+  };
+  // the cells of the part, flattened per block: part 1 the interior box (k,j,i order),
+  // part 2 the shell only -- the w-deep planes at both x3 ends, then per interior k the
+  // w-deep rows at both x2 ends and per interior (k,j) the w cells at both x1 ends
+  const bool inner = (part == 1);
+  const int n1 = ie - is + 1, n2 = je - js + 1;
+  const int w1 = w, w2 = (indcs.nx2 > 1) ? w : 0, w3 = (indcs.nx3 > 1) ? w : 0;
+  const int m1 = iu - il + 1, m2 = ju - jl + 1, m3 = ku - kl + 1;
+  const int npl = 2*w3*n2*n1;                 // shell: the x3 end planes
+  const int nkc = 2*w2*n1 + m2*2*w1;          // shell: per interior k
+  const int ncell = inner ? (m3*m2*m1) : (npl + m3*nkc);
+  auto cell = KOKKOS_LAMBDA(const int idx, int &m, int &k, int &j, int &i) {
+    m = idx/ncell;
+    int r = idx - m*ncell;
+    if (inner) {
+      k = r/(m2*m1);
+      r -= k*m2*m1;
+      j = r/m1;
+      i = il + r - j*m1;
+      j += jl;
+      k += kl;
+      return;
+    }
+    if (r < npl) {
+      const int q = r/(n2*n1);
+      r -= q*n2*n1;
+      k = (q < w3) ? (ks + q) : (ke - (2*w3 - 1 - q));
+      j = js + r/n1;
+      i = is + r%n1;
+      return;
+    }
+    r -= npl;
+    const int kk = r/nkc;
+    r -= kk*nkc;
+    k = kl + kk;
+    if (r < 2*w2*n1) {
+      const int q = r/n1;
+      j = (q < w2) ? (js + q) : (je - (2*w2 - 1 - q));
+      i = is + r%n1;
+      return;
+    }
+    r -= 2*w2*n1;
+    j = jl + r/(2*w1);
+    const int q = r%(2*w1);
+    i = (q < w1) ? (is + q) : (ie - (2*w1 - 1 - q));
+  };
+  Kokkos::RangePolicy<DevExeSpace, Kokkos::LaunchBounds<256,1>>
+      pol(DevExeSpace(), 0, (nmb1 + 1)*ncell);
+  if (rm == 0) {
+    Kokkos::parallel_for("m1_impl_stop", pol, KOKKOS_LAMBDA(const int idx) {
+      int m, k, j, i;
+      cell(idx, m, k, j, i);
+      row(m, k, j, i);
+    });
+    return;
+  }
+  M1HoRed::result_view_type res(reinterpret_cast<M1HoVal *>(hs));
+  Kokkos::parallel_reduce("m1_impl_stopr", pol,
+  KOKKOS_LAMBDA(const int idx, M1HoVal &v) {
+    int m, k, j, i;
+    cell(idx, m, k, j, i);
+    Real y = row(m, k, j, i);
+    if (rm == 1 || rm == 4) {
+      v.s[0] += iw_(m,M1_IW_KRH,k,j,i)*y;
+      if (rm == 4) {
+        Real a = fabs(iw_(m,M1_IW_KR,k,j,i));
+        v.mx = (a > v.mx) ? a : v.mx;
+      }
+    } else {
+      v.s[0] += y*iw_(m,M1_IW_KS,k,j,i);
+      v.s[1] += y*y;
+      if (rm == 3) {v.s[2] += iw_(m,M1_IW_KRH,k,j,i)*y;}
+    }
+  }, M1HoRed(res));
+}
+
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::ImplicitOpX
 //! \brief y = A x (+ the reductions `red` of ImplicitOffDiagOpC) on the fast path: from
@@ -3388,11 +3561,11 @@ void RadiationM1::ImplicitOffDiagOp(int xc, int yc, Real sgn) {
 //! gathered line solve treats as an interior row.
 
 void RadiationM1::ImplicitApplyOp(int xc, int yc) {
-  ImplicitKrylovHalo(xc);
   if (impl_stencil) {   // the 19-point stencil of this pass
-    ImplicitStencilOp(xc, yc, 0, nullptr);
+    ImplicitHaloOp(xc, yc, 0, nullptr);
     return;
   }
+  ImplicitKrylovHalo(xc);
   if (impl_odc) {   // 7-point row + off-diagonal Eddington terms in one kernel
     ImplicitOffDiagOpC(xc, yc, 1.0, true, 0, nullptr);
     return;
@@ -4216,9 +4389,8 @@ int RadiationM1::ImplicitBiCGStabFused(Real rhsmax) {
         // implicit_krylov_fuse: the p update rides in the preconditioner's load phase
         ImplicitPrecondX(-1, M1_IW_KY, 1, bt, om);
         if (kf == 2) {
-          ImplicitKrylovHalo(M1_IW_KY);
           Real o4[4];
-          ImplicitOpX(M1_IW_KY, M1_IW_KV, 1, o4);
+          ImplicitHaloOp(M1_IW_KY, M1_IW_KV, 1, o4);
           rv = o4[0];
           Real d2 = 0.0;
           M1GlobalSum2(rv, d2);
@@ -4277,11 +4449,10 @@ int RadiationM1::ImplicitBiCGStabFused(Real rhsmax) {
         ImplicitPrecond(-1, M1_IW_KZ);
         }
         if (kf == 2) {
-          ImplicitKrylovHalo(M1_IW_KZ);
           red.s2 = 0.0;
           red.mx = 0.0;
           Real o4[4];
-          ImplicitOpX(M1_IW_KZ, M1_IW_KTT, 2, o4);
+          ImplicitHaloOp(M1_IW_KZ, M1_IW_KTT, 2, o4);
           red.s0 = o4[0];
           red.s1 = o4[1];
         } else {
@@ -4492,9 +4663,8 @@ int RadiationM1::ImplicitBiCGStabTwo(Real rhsmax) {
     if (!breakdown) {
       Real beta = (rhon/rho)*(alpha/omega);
       ImplicitPrecondX(-1, M1_IW_KY, 1, beta, omega);
-      ImplicitKrylovHalo(M1_IW_KY);
       Real o4[4];
-      ImplicitOpX(M1_IW_KY, M1_IW_KV, 4, o4);
+      ImplicitHaloOp(M1_IW_KY, M1_IW_KV, 4, o4);
       M1BcgVal a;
       a.s0 = o4[0]; a.s1 = 0.0; a.s2 = 0.0; a.mx = o4[3];
       M1GlobalBcg(a);
@@ -4515,8 +4685,7 @@ int RadiationM1::ImplicitBiCGStabTwo(Real rhsmax) {
       if (!breakdown) {
         alpha = rhon/rv;
         ImplicitPrecondX(-1, M1_IW_KZ, 2, alpha, 0.0);
-        ImplicitKrylovHalo(M1_IW_KZ);
-        ImplicitOpX(M1_IW_KZ, M1_IW_KTT, 3, o4);
+        ImplicitHaloOp(M1_IW_KZ, M1_IW_KTT, 3, o4);
         red.s0 = o4[0]; red.s1 = o4[1]; red.s2 = o4[2]; red.mx = 0.0;
         M1GlobalBcg(red);
         bcg_nred += 1.0;

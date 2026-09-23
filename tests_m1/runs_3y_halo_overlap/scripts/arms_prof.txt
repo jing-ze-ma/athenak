@@ -1,0 +1,4 @@
+g2_ph 2 he3d_fast.athinput meshblock/nx3=26 rad_m1/implicit_halo_mpi=true rad_m1/implicit_krylov_pipe=true
+g2_pho 2 he3d_fast.athinput meshblock/nx3=26 rad_m1/implicit_halo_mpi=true rad_m1/implicit_krylov_pipe=true rad_m1/implicit_halo_overlap=true
+g2_hm 2 he3d_fast.athinput meshblock/nx3=26 rad_m1/implicit_halo_mpi=true
+g2_hmo 2 he3d_fast.athinput meshblock/nx3=26 rad_m1/implicit_halo_mpi=true rad_m1/implicit_halo_overlap=true
