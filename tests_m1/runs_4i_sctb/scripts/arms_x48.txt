@@ -1,0 +1,12 @@
+head_g4 4 he3d_fast.athinput meshblock/nx3=26
+g4_off 4 he3d_fast.athinput meshblock/nx3=26
+g4_tb3k13 4 he3d_fast.athinput meshblock/nx3=26 rad_m1/vet_mb_tblock=3 rad_m1/vet_mb_tblock_tk=13
+g4_tb3k9 4 he3d_fast.athinput meshblock/nx3=26 rad_m1/vet_mb_tblock=3 rad_m1/vet_mb_tblock_tk=9
+g4_tb3j18k9 4 he3d_fast.athinput meshblock/nx3=26 rad_m1/vet_mb_tblock=3 rad_m1/vet_mb_tblock_tk=9 rad_m1/vet_mb_tblock_tj=18
+g4_tb6k13 4 he3d_fast.athinput meshblock/nx3=26 rad_m1/vet_mb_tblock=6 rad_m1/vet_mb_halo=6 rad_m1/vet_mb_mom_batch=6 rad_m1/vet_mb_tblock_tk=13
+head_g8 8 he3d_fast.athinput meshblock/nx3=26
+g8_off 8 he3d_fast.athinput meshblock/nx3=26
+g8_tb3k13 8 he3d_fast.athinput meshblock/nx3=26 rad_m1/vet_mb_tblock=3 rad_m1/vet_mb_tblock_tk=13
+g8_tb3k9 8 he3d_fast.athinput meshblock/nx3=26 rad_m1/vet_mb_tblock=3 rad_m1/vet_mb_tblock_tk=9
+g8_tb3j18k9 8 he3d_fast.athinput meshblock/nx3=26 rad_m1/vet_mb_tblock=3 rad_m1/vet_mb_tblock_tk=9 rad_m1/vet_mb_tblock_tj=18
+g8_tb6k13 8 he3d_fast.athinput meshblock/nx3=26 rad_m1/vet_mb_tblock=6 rad_m1/vet_mb_halo=6 rad_m1/vet_mb_mom_batch=6 rad_m1/vet_mb_tblock_tk=13
