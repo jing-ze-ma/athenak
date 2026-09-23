@@ -837,8 +837,11 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // c q (E - E_bath), so the lab-frame radiation energy advected with the gas,
   // A E = v (1 + chi) E, cannot leave (or enter) through the end: the end cell's E is
   // raised by ~(A/(c q)) E at an outflow end (lowered at an inflow end), and the
-  // Lowrie-Edwards shocks drift / carry an N-independent T error.
-  impl_bc_advect = pin->GetOrAddBoolean("rad_m1","implicit_bc_advect",false);
+  // Lowrie-Edwards shocks drift / carry an N-independent T error.  DEFAULT true since
+  // m1-bcadv (tests_m1/runs_4h_bcadv).  On a restart whose file lacks the key (written
+  // before 5c9e4432) the old value false is kept; files since then echo their value.
+  impl_bc_advect = pin->GetOrAddBoolean("rad_m1","implicit_bc_advect",
+                                        !global_variable::restart_run);
   if ((ibc_x1min == M1_IBC_PERIODIC) != (ibc_x1max == M1_IBC_PERIODIC)) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
       << std::endl << "<rad_m1> implicit x1 boundaries: periodic must be set on BOTH "
@@ -1128,6 +1131,10 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       std::cout << "         implicit_enthalpy="
                 << ((impl_enth == M1_IENTH_PLM) ? "plm" : "central")
                 << " (deferred correction)" << std::endl;
+    }
+    if (ibc_x1min == M1_IBC_MARSHAK || ibc_x1max == M1_IBC_MARSHAK) {
+      std::cout << "         implicit_bc_advect=" << (impl_bc_advect ? "true" : "false")
+                << " (Marshak x1 end carries A E)" << std::endl;
     }
     if (trans_on) {
       std::cout << "         implicit_offdiag="
