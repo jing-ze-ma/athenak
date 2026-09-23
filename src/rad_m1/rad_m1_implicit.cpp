@@ -459,27 +459,12 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   impl_kfuse = pin->GetOrAddInteger("rad_m1","implicit_krylov_fuse",fdef ? 3 : 0);
   impl_stencil = pin->GetOrAddBoolean("rad_m1","implicit_op_stencil",fdef && !x1per);
   impl_prec_float = pin->GetOrAddBoolean("rad_m1","implicit_precond_float",false);
-  // tests_m1/runs_4a_accel: both default OFF and read only when named, so the parameter
-  // dump and the restart file of an input that does not name them are unchanged
+  // tests_m1/runs_4a_accel levers (implicit_vimp_fold, implicit_one_pass,
+  // implicit_predictor_order, implicit_fast_kernels): resolved further down, once
+  // implicit_predictor and implicit_vimp are known (their defaults depend on them)
   impl_vfold = false;
-  if (pin->DoesParameterExist("rad_m1","implicit_vimp_fold")) {
-    impl_vfold = pin->GetBoolean("rad_m1","implicit_vimp_fold");
-  }
-  // implicit_one_pass = N (runs_4a_accel): see ImplicitSolve.  Read only when named.
   impl_onep = 0;
   impl_onep_s = 3.0;
-  if (pin->DoesParameterExist("rad_m1","implicit_one_pass")) {
-    impl_onep = pin->GetInteger("rad_m1","implicit_one_pass");
-    if (impl_onep != 0 && impl_onep < 2) {
-      ImplFatal("<rad_m1>/implicit_one_pass (the check period) must be 0 (off) or >= 2");
-    }
-    if (impl_onep > 0) {
-      impl_onep_s = pin->GetOrAddReal("rad_m1","implicit_one_pass_safety",3.0);
-      if (!(impl_onep_s >= 1.0)) {
-        ImplFatal("<rad_m1>/implicit_one_pass_safety must be >= 1");
-      }
-    }
-  }
   for (int t = 0; t < 3; ++t) {
     onep_qa[t] = -1.0;
     onep_qb[t] = -1.0;
@@ -488,35 +473,13 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   impl_onep_n = 0.0;
   impl_onep_nchk = 0.0;
   ew_tight = false;
-  // implicit_predictor_order = 2 (runs_4a_accel): the predictor extrapolates the
-  // increment rate g = dE/dt linearly in time, g* = g1 + h dt1 with h = (g1 - g2)/dt2,
-  // h stored per cell in ipred channels 3 (E) and 4 (T).  Under hesdirk2 the backward-
-  // Euler steps (first step, fallbacks) then leave ipred alone, so that it holds stage-1
-  // increments only.  Read only when named; 1 = the default first-order predictor.
   impl_pord = 1;
-  if (pin->DoesParameterExist("rad_m1","implicit_predictor_order")) {
-    impl_pord = pin->GetInteger("rad_m1","implicit_predictor_order");
-    if (impl_pord != 1 && impl_pord != 2) {
-      ImplFatal("<rad_m1>/implicit_predictor_order must be 1 or 2");
-    }
-  }
   impl_opsplit = false;
   if (pin->DoesParameterExist("rad_m1","implicit_op_split_red")) {
     impl_opsplit = pin->GetBoolean("rad_m1","implicit_op_split_red");
   }
-  // implicit_fast_kernels (runs_4a_accel): bitwise-exact kernel shortcuts --
-  //  closure = eddington: D_ab = 0 off the diagonal, so the stencil build and the
-  //    right-hand side skip the off-diagonal (od) terms, which are exactly zero;
-  //  hesdirk2 + vet_sc without extrapolation (time2_vet_extrap = false): the tensor
-  //    save of Time2VetExtrapolate is a plain copy instead of a clip-count reduction.
   impl_fastk = false;
-  if (pin->DoesParameterExist("rad_m1","implicit_fast_kernels")) {
-    impl_fastk = pin->GetBoolean("rad_m1","implicit_fast_kernels");
-  }
-  impl_odskip = impl_fastk && eddington;
-  if (impl_vfold && !impl_stencil) {
-    ImplFatal("<rad_m1>/implicit_vimp_fold needs implicit_op_stencil = true");
-  }
+  impl_odskip = false;
   if (impl_stencil && impl_bcg_sync != 1) {
     ImplFatal("<rad_m1>/implicit_op_stencil needs implicit_bcg_sync = 1");
   }
@@ -757,6 +720,62 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   impl_vimp_jscale = 1.0;
   if (pin->DoesParameterExist("rad_m1","implicit_vimp_jscale")) {
     impl_vimp_jscale = pin->GetReal("rad_m1","implicit_vimp_jscale");
+  }
+  // ---- THE runs_4a_accel LEVERS (tests_m1/runs_4a_accel, tests_m1/runs_4j_accmerge).
+  // DEFAULT ON since m1-accmerge for time_scheme = be with transport = implicit and a
+  // closure whose tensor is fixed within a step (eddington, vet_sc, tau), wherever each
+  // is valid:
+  //   implicit_fast_kernels = true   (bitwise-exact kernel shortcuts)
+  //   implicit_vimp_fold = true      where implicit_vimp and implicit_op_stencil are on
+  //   implicit_one_pass = 8          where the predictor is on
+  //   implicit_predictor_order = 2   where the predictor is on
+  // (1 GPU, 3-D He box: be 51.6 -> 43.5 ms/cycle Eddington, 57.5 -> 50.7 vet_sc with
+  // one_pass = 4; one_pass = 8 is the faster of the two in runs_4a_accel).  Up to the
+  // merge of m1-accel the keys were read only when named, so a restart file written
+  // before this default carries them only if its input named them; such a restart that
+  // does NOT carry a key keeps the old value (off / 0 / 1).  The resolved values are
+  // always echoed, so later restarts keep them.  Explicit input values override.
+  //  implicit_vimp_fold: fold the implicit_vimp operator part into the stored stencil
+  //    (x2/x3 +-1 into slots 3-6, +-2 neighbours into slots 19-24) instead of
+  //    M1VimpRow per apply (round-off).  Needs implicit_op_stencil.
+  //  implicit_one_pass = N: see ImplicitSolve; its state travels in M1ONEP01.
+  //  implicit_predictor_order = 2: the predictor extrapolates the increment rate g =
+  //    dE/dt linearly in time, g* = g1 + h dt1 with h = (g1 - g2)/dt2, h stored per cell
+  //    in ipred channels 3 (E) and 4 (T).  Under hesdirk2 the backward-Euler steps (first
+  //    step, fallbacks) then leave ipred alone, so that it holds stage-1 increments only.
+  //  implicit_fast_kernels: closure = eddington: D_ab = 0 off the diagonal, so the
+  //    stencil build and the right-hand side skip the off-diagonal (od) terms, which are
+  //    exactly zero; hesdirk2 + vet_sc without extrapolation (time2_vet_extrap = false):
+  //    the tensor save of Time2VetExtrapolate is a plain copy.
+  {
+  bool ts_be = true;
+  if (pin->DoesParameterExist("rad_m1","time_scheme")) {
+    ts_be = (pin->GetString("rad_m1","time_scheme").compare("be") == 0);
+  }
+  const bool ldef = full && ts_be && fixcl && !global_variable::restart_run;
+  impl_fastk = pin->GetOrAddBoolean("rad_m1","implicit_fast_kernels",ldef);
+  impl_vfold = pin->GetOrAddBoolean("rad_m1","implicit_vimp_fold",
+                                    ldef && impl_vimp && impl_stencil);
+  impl_onep = pin->GetOrAddInteger("rad_m1","implicit_one_pass",
+                                   (ldef && impl_pred) ? 8 : 0);
+  if (impl_onep != 0 && impl_onep < 2) {
+    ImplFatal("<rad_m1>/implicit_one_pass (the check period) must be 0 (off) or >= 2");
+  }
+  if (impl_onep > 0) {
+    impl_onep_s = pin->GetOrAddReal("rad_m1","implicit_one_pass_safety",3.0);
+    if (!(impl_onep_s >= 1.0)) {
+      ImplFatal("<rad_m1>/implicit_one_pass_safety must be >= 1");
+    }
+  }
+  impl_pord = pin->GetOrAddInteger("rad_m1","implicit_predictor_order",
+                                   (ldef && impl_pred) ? 2 : 1);
+  if (impl_pord != 1 && impl_pord != 2) {
+    ImplFatal("<rad_m1>/implicit_predictor_order must be 1 or 2");
+  }
+  impl_odskip = impl_fastk && eddington;
+  if (impl_vfold && !impl_stencil) {
+    ImplFatal("<rad_m1>/implicit_vimp_fold needs implicit_op_stencil = true");
+  }
   }
   // LIMIT 4 of the 3a findings is NOT implemented in 3a2: a column still has to live
   // inside one MeshBlock along x1 (the fatal below).  The option is parsed so that the

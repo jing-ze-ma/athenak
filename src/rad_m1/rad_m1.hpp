@@ -430,13 +430,15 @@ class RadiationM1 {
                                 // the implicit_vimp operator part folded into the stored
                                 // stencil (x2/x3 +-1 into slots 3-6, the +-2 neighbours
                                 // into slots 19-24) instead of M1VimpRow per apply
-  int impl_onep;                // <rad_m1>/implicit_one_pass: check period N (0 = off)
+  int impl_onep;                // <rad_m1>/implicit_one_pass: check period N (0 = off;
+                                // default 8 for be, see ImplicitInit)
   Real impl_onep_s;             // <rad_m1>/implicit_one_pass_safety (default 3)
   Real onep_qa[3], onep_qb[3];  // last two measured contractions (be, stage 1, stage 2)
   Real onep_cnt[3];             // solves since the last measurement
   Real impl_onep_n, impl_onep_nchk;  // accepted after one pass / measurements (counters)
   bool ew_tight;                // this pass: no Eisenstat-Walker loosening
-  int impl_pord;                // <rad_m1>/implicit_predictor_order: 1 (default) or 2
+  int impl_pord;                // <rad_m1>/implicit_predictor_order: 1 or 2 (default 2
+                                // for be, see ImplicitInit)
   bool impl_opsplit;            // <rad_m1>/implicit_op_split_red: the stencil apply as a
                                 // plain par_for, then a separate read-only reduction
                                 // kernel (instead of the fused 4-value reduction)
