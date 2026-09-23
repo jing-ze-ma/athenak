@@ -1,0 +1,10 @@
+g4_off 4 he3d_fast.athinput meshblock/nx3=26
+g4_hm 4 he3d_fast.athinput meshblock/nx3=26 rad_m1/implicit_halo_mpi=true
+g4_pipe 4 he3d_fast.athinput meshblock/nx3=26 rad_m1/implicit_krylov_pipe=true
+g4_ph 4 he3d_fast.athinput meshblock/nx3=26 rad_m1/implicit_halo_mpi=true rad_m1/implicit_krylov_pipe=true
+g4_hyd 4 he3d_hydro.athinput meshblock/nx3=26
+w4_off 4 he3d_fast.athinput mesh/nx2=208 mesh/x2max=2.20662552e9 mesh/nx3=208 mesh/x3max=2.20662552e9 meshblock/nx3=26
+w4_hm 4 he3d_fast.athinput mesh/nx2=208 mesh/x2max=2.20662552e9 mesh/nx3=208 mesh/x3max=2.20662552e9 meshblock/nx3=26 rad_m1/implicit_halo_mpi=true
+w4_pipe 4 he3d_fast.athinput mesh/nx2=208 mesh/x2max=2.20662552e9 mesh/nx3=208 mesh/x3max=2.20662552e9 meshblock/nx3=26 rad_m1/implicit_krylov_pipe=true
+w4_ph 4 he3d_fast.athinput mesh/nx2=208 mesh/x2max=2.20662552e9 mesh/nx3=208 mesh/x3max=2.20662552e9 meshblock/nx3=26 rad_m1/implicit_halo_mpi=true rad_m1/implicit_krylov_pipe=true
+w4_hyd 4 he3d_hydro.athinput mesh/nx2=208 mesh/x2max=2.20662552e9 mesh/nx3=208 mesh/x3max=2.20662552e9 meshblock/nx3=26
