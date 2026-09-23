@@ -440,6 +440,7 @@ void RadiationM1::ImplicitHaloMPIFinish(int nq, int c0) {
   const int nc0 = c0;
   auto iw_ = iw;
   auto segs = hm_segs.d_view;
+  M1EvtB().wait();   // the pack kernel is done: the send buffer may go out
   for (int s = 0; s < nseg; ++s) {
     if (hm_slen[s] > 0) {
       MPI_Isend(sbuf.data() + static_cast<size_t>(hm_soff[s])*nq, hm_slen[s]*nq,
