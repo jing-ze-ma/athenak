@@ -476,6 +476,7 @@ class RadiationM1 {
   Real t2_nstep, t2_nbe, t2_nfall;  // stage steps, BE steps, fallbacks (counters)
   Real t2_dtprev;               // the dt of the previous step (vet_sc extrapolation)
   bool t2_vprev;                // vet_prev holds the tensor of the previous step
+  bool t2_vext;                 // DIAGNOSTIC time2_vet_extrap (default true)
   Real t2_nclip;                // vet_sc cells whose extrapolated tensor was clipped
   DvceArray5D<Real> t2k1;       // (m,M1_T2_NK,k,j,i) the FSAL slope K1 (restart state)
   DvceArray5D<Real> t2k2;       // (m,M1_T2_NK,k,j,i) the stage-2 slope K2

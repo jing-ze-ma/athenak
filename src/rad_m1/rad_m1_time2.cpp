@@ -102,6 +102,11 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
       std::exit(EXIT_FAILURE);
     }
   }
+  // DIAGNOSTIC time2_vet_extrap = false: stage solves use D^n (no extrapolation)
+  t2_vext = true;
+  if (pin->DoesParameterExist("rad_m1", "time2_vet_extrap")) {
+    t2_vext = pin->GetBoolean("rad_m1", "time2_vet_extrap");
+  }
   t2_dbg_fail = -1;
   if (pin->DoesParameterExist("rad_m1", "time2_dbg_fail")) {
     t2_dbg_fail = pin->GetInteger("rad_m1", "time2_dbg_fail");
@@ -318,7 +323,10 @@ void RadiationM1::Time2VetExtrapolate() {
   auto vc_ = vet_cell;
   auto vp_ = vet_prev;
   const Real dt = pmy_pack->pmesh->dt;
-  const Real r = (t2_vprev && t2_dtprev > 0.0) ? (dt/t2_dtprev) : 0.0;
+  const Real r = (t2_vprev && t2_dtprev > 0.0 && t2_vext) ? (dt/t2_dtprev) : 0.0;
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
   const bool full = vet_full;
   int nmb1 = pmy_pack->nmb_thispack - 1;
   int n3 = static_cast<int>(vet_cell.extent(2));
@@ -354,8 +362,8 @@ void RadiationM1::Time2VetExtrapolate() {
     }
     if (ok) {
       for (int q = 0; q < M1_T2_NVET; ++q) {vc_(m,M1_VET_CHI+q,k,j,i) = ds[q];}
-    } else {
-      lc += 1.0;
+    } else if (i >= is && i <= ie && j >= js && j <= je && k >= ks && k <= ke) {
+      lc += 1.0;   // counted over the ACTIVE cells only
     }
   }, Kokkos::Sum<Real>(nclip));
   t2_nclip += nclip;

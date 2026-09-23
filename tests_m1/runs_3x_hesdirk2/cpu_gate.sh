@@ -4,8 +4,6 @@
 W=/viper/ptmp2/jinma/h2_3x; R=$W/cpu_run.sh
 V="rad_m1/closure=vet_sc rad_m1/vet_tensor=full"
 S="time/tlim=200 output3/dt=100"
-$R base g0_base 1 slab2d_plm_vimp $S &
-$R new  g0_new  1 slab2d_plm_vimp $S &
 $R new  be_200  1 slab2d_plm_vimp_be $S &
 $R new  h_200   1 slab2d_plm_vimp_h2 $S &
 $R new  h_fail  1 slab2d_plm_vimp_h2 $S rad_m1/time2_dbg_fail=50 &
@@ -25,4 +23,7 @@ d=$W/cpu/h_rst_noslope; rm -rf $d; mkdir -p $d; cd $d
 OMP_NUM_THREADS=1 nice -n 10 mpirun -np 1 $W/new/build_boxcpu/src/athena \
   -r $W/cpu/be_200/rst/m1slab.00001.rst -d $d rad_m1/time_scheme=hesdirk2 > log.txt 2>&1
 echo "rc=$?" >> log.txt
+d=$W/cpu/hv_rst; rm -rf $d; mkdir -p $d; cd $d
+OMP_NUM_THREADS=1 nice -n 10 mpirun -np 1 $W/new/build_boxcpu/src/athena \
+  -r $W/cpu/hv_200/rst/m1slab.00001.rst -d $d > log.txt 2>&1; echo "rc=$?" >> log.txt
 echo CPU GATE DONE

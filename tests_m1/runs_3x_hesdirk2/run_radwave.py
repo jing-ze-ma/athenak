@@ -162,6 +162,8 @@ def make_input(c, bg, w, vec):
         A("implicit_vimp = true")
     if "ts" in c["extra"]:
         A("time_scheme = %s" % c["extra"]["ts"])
+    if "vx" in c["extra"]:
+        A("time2_vet_extrap = %s" % c["extra"]["vx"])
     if "ev" in c["extra"]:
         A("time2_enth_vel = %s" % c["extra"]["ev"])
     if "dbgfail" in c["extra"]:

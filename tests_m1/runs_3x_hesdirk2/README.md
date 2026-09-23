@@ -206,3 +206,42 @@ The metric is the same as before: nt 128 ... 2048, amplitude 1e-5, tol 1e-11, me
   - grid noise at or below be;
   - G1 order >= 1.9 in 11 of 12 cases, with (100,10) at 1.89 by the gate metric (1.93 at amp 1e-4).
 - **Stopped as instructed.** Per the follow-up brief (`start` failed, so try `central`, report both and stop), the remaining gates were not run: vet_sc G1, He slab, G8, fallback, G7, G5.
+
+## Follow-up 2 (09-23): the tolerance check, then vet_sc G1 -- STOPPED at vet_sc G1
+
+### Is the fine-dt order tail a tolerance floor? No (lists/g1_ltol.txt)
+
+- **The inputs already had a tight linear tolerance.** Every G1 run used `implicit_lin_tol = 1e-13` (run_radwave.py default), not 1e-10.
+- **The requested settings do not converge.** With `implicit_tol = 1e-13` and `implicit_lin_tol = 1e-14`, the Picard loop cannot meet the tolerance. Non-converged solves at nt 1024 / 2048 / 4096 / 8192:
+  - (100, 10): 2 / 431 / 3487 / 8192;
+  - (1, 1e3): 2 / 449 / 3486 / 8189.
+- **Every such solve becomes a backward-Euler fallback**, so the omega differences get worse (5.1e-3 and 7.1e-3 at 2048/4096), not better.
+- **Earlier result.** `implicit_tol = 1e-12` gave the same differences as 1e-11.
+- **Conclusion.** The tail below p = 2 beyond nt 1024 is not removed by tightening the tolerances, and its cause is not identified. As instructed, it was not chased further.
+
+### vet_sc G1, extrapolated tensor (`RESULTS_g1_vet.txt`): FAIL
+
+**Setup:** `closure = vet_sc`, `vet_tensor = full`, x1 wave on 64x4, plm + vimp, hesdirk2 (central a_f), nt 128 ... 2048, `D* = D^n + (dt/dt_prev)(D^n - D^{n-1})`.
+- Solver behaviour: NON-CONVERGED 0 and 0 fallbacks in all 60 runs.
+- Clip counts: the first binary also counted ghost cells. Recounted over active cells only (binary v5), there are 0 clips in all 20 runs of the (100,10) / (10,10) diagnostic.
+
+**Medians:**
+- (100, 10): **1.59**, with successive orders 1.59, 1.59, 1.48. It fails.
+- (10, 10): 1.90, with successive orders 1.93, 1.90, 1.84.
+- The other ten cases: 1.93-2.00.
+
+**The same runs with the tensor NOT extrapolated** (DIAGNOSTIC `time2_vet_extrap = false`, D^n in both stages; `RESULTS_g1_vet_nextrap.txt`, binary `h2_3x/athena_mpi_v5`, md5 633f7108) pass in all 12 cases:
+
+| P \ tau | 0.1 | 10 | 1e3 |
+|---|---|---|---|
+| 0.1 | 1.95 | 1.92 | 1.99 |
+| 1 | 1.98 | 1.96 | 1.93 |
+| 10 | 1.97 | 1.96 | 2.00 |
+| 100 | 1.98 | 1.95 | 1.97 |
+
+- **Errors.** e128 = 3.8e-4 to 1.25e-3 and e1024 <= 1.65e-5.
+- **Extrapolation hurts at the worst case.** At (100, 10) the extrapolated tensor has 1.4-3x larger error than D^n: e128 7.7e-4 vs 5.3e-4, e1024 2.7e-5 vs 9.1e-6.
+- **Against the model.** The design model (test G) says the lag is first order but hidden under the Heun floor for D^n (1.72-2.01), and 1.98-2.00 for the extrapolated tensor. The code shows the opposite at (100, 10).
+- **Cause.** Not identified. It is not clipping (0 active clips), not solver convergence (NC 0), and not fallbacks (0).
+
+Gates not run: He slab (`cpu_gate.sh` was launched and its runs are in `h2_3x/cpu/`, but they are not evaluated here), G8, fallback, G7, G5.
