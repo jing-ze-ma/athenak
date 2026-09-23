@@ -1,0 +1,12 @@
+P100_t100000_N64_nt24_nper10_tshesdirk2_vimptrue max|Z|/A0 1.010 end 9.505e-01 exact 9.454e-01 noise 9.0e-02 ncyc 240 NC 0 stage steps=2.390000e+02 backward-Euler steps=1.000000e+00 stage fallbacks=0.000000e+00 vet 
+P100_t100000_N64_nt24_nper10_vimptrue max|Z|/A0 1.000 end 2.415e-01 exact 9.454e-01 noise 8.8e-04 ncyc 240 NC 
+P100_t1000_N64_nt24_nper10_tshesdirk2_v01.2909944_vimptrue max|Z|/A0 1.000 end 5.390e-02 exact 6.269e-03 noise 1.1e-04 ncyc 241 NC 0 stage steps=2.400000e+02 backward-Euler steps=1.000000e+00 stage fallbacks=0.000000e+00 vet 
+P100_t1000_N64_nt24_nper10_tshesdirk2_vimptrue max|Z|/A0 1.000 end 5.838e-02 exact 3.559e-03 noise 5.1e-05 ncyc 240 NC 0 stage steps=2.390000e+02 backward-Euler steps=1.000000e+00 stage fallbacks=0.000000e+00 vet 
+P100_t1000_N64_nt48_nper10_tshesdirk2_v01.2909944_vimptrue max|Z|/A0 1.000 end 1.795e-02 exact 6.269e-03 noise 6.7e-05 ncyc 481 NC 0 stage steps=4.800000e+02 backward-Euler steps=1.000000e+00 stage fallbacks=0.000000e+00 vet 
+P100_t1000_N64_nt48_nper10_tshesdirk2_vimptrue max|Z|/A0 1.000 end 1.773e-02 exact 3.559e-03 noise 9.1e-06 ncyc 481 NC 0 stage steps=4.800000e+02 backward-Euler steps=1.000000e+00 stage fallbacks=0.000000e+00 vet 
+P100_t10_N64_nt24_nper10_tshesdirk2_v01.2909944_vimptrue max|Z|/A0 1.000 end 1.204e-04 exact 1.232e-04 noise 4.8e-07 ncyc 923 NC 0 stage steps=9.220000e+02 backward-Euler steps=1.000000e+00 stage fallbacks=0.000000e+00 vet 
+P100_t10_N64_nt24_nper10_tshesdirk2_vimptrue max|Z|/A0 1.000 end 5.431e-09 exact 5.900e-10 noise 3.2e-08 ncyc 1089 NC 0 stage steps=1.088000e+03 backward-Euler steps=1.000000e+00 stage fallbacks=0.000000e+00 vet 
+P100_t10_N64_nt48_nper10_tshesdirk2_v01.2909944_vimptrue max|Z|/A0 1.000 end 1.204e-04 exact 1.232e-04 noise 4.8e-07 ncyc 923 NC 0 stage steps=9.220000e+02 backward-Euler steps=1.000000e+00 stage fallbacks=0.000000e+00 vet 
+P100_t10_N64_nt48_nper10_tshesdirk2_vimptrue max|Z|/A0 1.000 end 5.431e-09 exact 5.900e-10 noise 3.2e-08 ncyc 1089 NC 0 stage steps=1.088000e+03 backward-Euler steps=1.000000e+00 stage fallbacks=0.000000e+00 vet 
+P1_t100000_N64_nt24_nper10_tshesdirk2_vimptrue max|Z|/A0 1.000 end 4.098e-01 exact 7.986e-01 noise 2.4e-03 ncyc 612 NC 265 stage steps=3.460000e+02 backward-Euler steps=2.660000e+02 stage fallbacks=2.650000e+02 vet 
+P1_t100000_N64_nt24_nper10_vimptrue max|Z|/A0 1.000 end 1.871e-01 exact 7.986e-01 noise 1.2e-03 ncyc 612 NC 

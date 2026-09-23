@@ -1,0 +1,23 @@
+Extended stiff probe: radwave x1, 40 periods (nper40), |Z|/A0 of the box fundamental, grid noise
+(rms of all other rho modes)/A0 and L1(rho) vs the exact damped mode at the end; NaN = run aborted
+case                                                                   max|Z|/A0 end|Z|/A0     exact  noise/A0    NC
+P100_t100000_N32_nt24_enthplm_nper40_ny4_tshesdirk2_vimptrue                27.7      27.7     0.799   1.7e+03    12  L1=1.52e+03
+P100_t100000_N32_nt24_enthplm_nper40_ny4_vimptrue                              1     0.192     0.799    0.0049    28  L1=0.523
+P100_t100000_N64_nt24_enthplm_nper40_ny4_tshesdirk2_vimptrue                   1     0.687     0.799     0.068     0  L1=0.37
+P100_t100000_N64_nt32_enthplm_nper40_ny4_tshesdirk2_vimptrue                 280       248     0.799   1.8e+03    13  L1=812
+P100_t100000_N64_nt48_amp1.0e-3_enthplm_nper40_ny4_tshesdirk2_vimptrue      3.01      2.01     0.799        66     2  L1=51
+P100_t100000_N64_nt48_amp1.0e-8_enthplm_nper40_ny4_tshesdirk2_vimptrue  1.31e+05  1.31e+05     0.799   7.3e+06     2  L1=6.28e+06
+P100_t100000_N64_nt48_enthcentral_nper40_ny4_tshesdirk2_vimptrue               1     0.801     0.799   0.00077     0  L1=0.278
+P100_t100000_N64_nt48_enthcentral_nper40_ny4_vimptrue                          1     0.113     0.799    0.0012     5  L1=0.515
+P100_t100000_N64_nt48_enthplm_nper40_ny4_tol1.0e-8_tshesdirk2_vimptrue       281       182     0.799   7.4e+03     0  L1=6.17e+03
+P100_t100000_N64_nt48_enthplm_nper40_ny4_tshesdirk2                    ABORTED (non-finite state; see log.txt)
+P100_t100000_N64_nt48_enthplm_nper40_ny4_tshesdirk2_vimptrue                 396       396     0.799   5.1e+03     3  L1=3.78e+03
+P100_t100000_N64_nt48_enthplm_nper40_ny4_vimptrue                              1     0.112     0.799    0.0014     4  L1=0.513
+P100_t100000_N64_nt48_enthupwind_nper40_ny4_tshesdirk2_vimptrue        ABORTED (non-finite state; see log.txt)
+P100_t100000_N64_nt48_enthupwind_nper40_ny4_vimptrue                   ABORTED (non-finite state; see log.txt)
+P100_t100000_N64_nt48_nper40_ny4_tshesdirk2                            ABORTED (non-finite state; see log.txt)
+P100_t100000_N64_nt64_enthplm_nper40_ny4_tshesdirk2_vimptrue                   1     0.691     0.799     0.043     0  L1=0.137
+P100_t100000_N64_nt96_enthplm_nper40_ny4_tshesdirk2_vimptrue                   1     0.771     0.799     0.032     0  L1=0.067
+P100_t10000_N64_nt48_enthplm_nper40_ny4_tshesdirk2_vimptrue                    1      0.12     0.106   0.00013     0  L1=0.0181
+P100_t1000_N64_nt48_enthplm_nper40_ny4_tshesdirk2_vimptrue                     1    0.0111   1.6e-10   3.4e-05     0  L1=0.00707
+P10_t100000_N64_nt48_enthplm_nper40_ny4_tshesdirk2_vimptrue                    1     0.471     0.533    0.0019    17  L1=0.0842

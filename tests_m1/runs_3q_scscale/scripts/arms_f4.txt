@@ -1,0 +1,9 @@
+head_g4 4 he3d_fast.athinput meshblock/nx3=26
+g4_noagg 4 he3d_fast.athinput meshblock/nx3=26 rad_m1/vet_mb_agg=false
+g4_new 4 he3d_fast.athinput meshblock/nx3=26
+g4_hyb 4 he3d_fast.athinput meshblock/nx3=26 rad_m1/vet_mb_agroup=2
+g4_hyd 4 he3d_hydro.athinput meshblock/nx3=26
+head_w4 4 he3d_fast.athinput mesh/nx2=208 mesh/x2max=2.20662552e9 mesh/nx3=208 mesh/x3max=2.20662552e9 meshblock/nx3=26
+w4_new 4 he3d_fast.athinput mesh/nx2=208 mesh/x2max=2.20662552e9 mesh/nx3=208 mesh/x3max=2.20662552e9 meshblock/nx3=26
+w4_hyb 4 he3d_fast.athinput mesh/nx2=208 mesh/x2max=2.20662552e9 mesh/nx3=208 mesh/x3max=2.20662552e9 meshblock/nx3=26 rad_m1/vet_mb_agroup=2
+w4_hyd 4 he3d_hydro.athinput mesh/nx2=208 mesh/x2max=2.20662552e9 mesh/nx3=208 mesh/x3max=2.20662552e9 meshblock/nx3=26

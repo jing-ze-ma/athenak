@@ -1,0 +1,83 @@
+<comment>
+problem = G3 (runs_3x_hesdirk2): uniform-box gas-radiation equilibration through the implicit
+          M1 solve (transport = implicit, bicgstab, plm + vimp), cold / hot start, dt/t_exch sweep
+<job>
+basename = m1_equil
+<mesh>
+nghost    = 2
+nx1       = 8
+x1min     = 0.0
+x1max     = 8.0e12
+ix1_bc    = periodic
+ox1_bc    = periodic
+nx2       = 4
+x2min     = 0.0
+x2max     = 4.0e12
+ix2_bc    = periodic
+ox2_bc    = periodic
+nx3       = 1
+x3min     = -0.5
+x3max     = 0.5
+ix3_bc    = periodic
+ox3_bc    = periodic
+<meshblock>
+nx1       = 8
+nx2       = 4
+nx3       = 1
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim       = 20
+tlim       = 1.0e10
+ndiag      = 1
+<hydro>
+eos         = ideal
+reconstruct = plm
+rsolver     = hllc
+gamma       = 1.666666666666667
+<rad_m1>
+c_light      = 2.99792458e10
+chat_over_c  = 1.0
+cfl_rad      = 0.4
+thick_flux   = none
+closure      = eddington
+e_floor      = 1.0e-30
+subcycle     = false
+opacity      = const
+kappa_p      = 0.4
+kappa_e      = 0.4
+kappa_f      = 0.4
+kappa_s      = 0.0
+arad         = 2.0517256e-47
+coupling     = true
+gas_feedback = true
+transport             = implicit
+implicit_solver       = bicgstab
+implicit_offdiag      = operator
+implicit_closure_lag  = step
+implicit_flux         = central
+implicit_recon        = dc
+implicit_enthalpy     = plm
+implicit_vimp         = true
+implicit_cfl          = 4.5e-8
+implicit_tol          = 1.0e-10
+implicit_maxit        = 200
+implicit_lin_tol      = 1.0e-13
+implicit_lin_maxit    = 400
+<problem>
+pgen_name = rad_m1_beam
+m1_test   = equil
+gas_rho   = 1.0e-7
+gas_eint  = 1.0e2
+e_rad     = 1.0e12
+<output1>
+file_type   = tab
+variable    = hydro_w
+data_format = %26.17e
+dt          = 1.0e-30
+<output2>
+file_type   = tab
+variable    = m1
+data_format = %26.17e
+dt          = 1.0e-30

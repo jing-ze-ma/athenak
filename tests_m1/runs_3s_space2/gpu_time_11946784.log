@@ -1,0 +1,89 @@
+dcc7232713942df55d83deaa18504f2b  /viper/ptmp2/jinma/space2_3s/new/build_gpu/src/athena
+#### T1_Eup_a vipa1001 09:10:10
+rc=0 09:10:26
+  x1 walls: bc_mode = 3 (0 column ghost, 1 mirror, 2 mirror x the column ratio, 3 WB continuation), wall_noflux = 1 (mass exact, energy via enthalpy)
+<rad_m1> implicit transport: solves=1.200000e+02 Picard iterations mean=2.233333e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00
+<rad_m1> bicgstab: outer passes=2.680000e+02 linear solves=2.680000e+02 inner iterations mean=1.857836e+01 max=5.200000e+01 total=4.979000e+03
+#### T1_Eplm_a vipa1001 09:10:26
+rc=0 09:10:42
+         implicit_enthalpy=plm (deferred correction)
+  x1 walls: bc_mode = 3 (0 column ghost, 1 mirror, 2 mirror x the column ratio, 3 WB continuation), wall_noflux = 1 (mass exact, energy via enthalpy)
+<rad_m1> implicit transport: solves=1.200000e+02 Picard iterations mean=2.125000e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00
+<rad_m1> bicgstab: outer passes=2.550000e+02 linear solves=2.550000e+02 inner iterations mean=1.792941e+01 max=4.700000e+01 total=4.572000e+03
+#### T1_Vup_a vipa1001 09:10:42
+rc=0 09:10:59
+  x1 walls: bc_mode = 3 (0 column ghost, 1 mirror, 2 mirror x the column ratio, 3 WB continuation), wall_noflux = 1 (mass exact, energy via enthalpy)
+<rad_m1> implicit transport: solves=1.200000e+02 Picard iterations mean=2.733333e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00
+<rad_m1> bicgstab: outer passes=3.280000e+02 linear solves=3.280000e+02 inner iterations mean=1.463110e+01 max=5.300000e+01 total=4.799000e+03
+#### T1_Vplm_a vipa1001 09:10:59
+rc=0 09:11:16
+         implicit_enthalpy=plm (deferred correction)
+  x1 walls: bc_mode = 3 (0 column ghost, 1 mirror, 2 mirror x the column ratio, 3 WB continuation), wall_noflux = 1 (mass exact, energy via enthalpy)
+<rad_m1> implicit transport: solves=1.200000e+02 Picard iterations mean=2.733333e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00
+<rad_m1> bicgstab: outer passes=3.280000e+02 linear solves=3.280000e+02 inner iterations mean=1.447256e+01 max=5.000000e+01 total=4.747000e+03
+#### T1_Vplm_b vipa1001 09:11:16
+rc=0 09:11:33
+         implicit_enthalpy=plm (deferred correction)
+  x1 walls: bc_mode = 3 (0 column ghost, 1 mirror, 2 mirror x the column ratio, 3 WB continuation), wall_noflux = 1 (mass exact, energy via enthalpy)
+<rad_m1> implicit transport: solves=1.200000e+02 Picard iterations mean=2.733333e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00
+<rad_m1> bicgstab: outer passes=3.280000e+02 linear solves=3.280000e+02 inner iterations mean=1.447256e+01 max=5.000000e+01 total=4.747000e+03
+#### T1_Vup_b vipa1001 09:11:33
+rc=0 09:11:50
+  x1 walls: bc_mode = 3 (0 column ghost, 1 mirror, 2 mirror x the column ratio, 3 WB continuation), wall_noflux = 1 (mass exact, energy via enthalpy)
+<rad_m1> implicit transport: solves=1.200000e+02 Picard iterations mean=2.733333e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00
+<rad_m1> bicgstab: outer passes=3.280000e+02 linear solves=3.280000e+02 inner iterations mean=1.463110e+01 max=5.300000e+01 total=4.799000e+03
+#### T1_Eplm_b vipa1001 09:11:50
+rc=0 09:12:06
+         implicit_enthalpy=plm (deferred correction)
+  x1 walls: bc_mode = 3 (0 column ghost, 1 mirror, 2 mirror x the column ratio, 3 WB continuation), wall_noflux = 1 (mass exact, energy via enthalpy)
+<rad_m1> implicit transport: solves=1.200000e+02 Picard iterations mean=2.125000e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00
+<rad_m1> bicgstab: outer passes=2.550000e+02 linear solves=2.550000e+02 inner iterations mean=1.792941e+01 max=4.700000e+01 total=4.572000e+03
+#### T1_Eup_b vipa1001 09:12:06
+rc=0 09:12:22
+  x1 walls: bc_mode = 3 (0 column ghost, 1 mirror, 2 mirror x the column ratio, 3 WB continuation), wall_noflux = 1 (mass exact, energy via enthalpy)
+<rad_m1> implicit transport: solves=1.200000e+02 Picard iterations mean=2.233333e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00
+<rad_m1> bicgstab: outer passes=2.680000e+02 linear solves=2.680000e+02 inner iterations mean=1.857836e+01 max=5.200000e+01 total=4.979000e+03
+arm                      ms/cyc  Picard inner/step NONCONV
+T1_Eplm_a                  47.3   2.125      38.10       0
+T1_Eplm_b                  47.2   2.125      38.10       0
+T1_Eup_a                   49.4   2.233      41.49       0
+T1_Eup_b                   49.0   2.233      41.49       0
+T1_Vplm_a                  52.9   2.733      39.56       0
+T1_Vplm_b                  53.0   2.733      39.56       0
+T1_Vup_a                   53.8   2.733      39.99       0
+T1_Vup_b                   52.8   2.733      39.99       0
+                                  
+================================= 
+Global information about the job: 
+================================= 
+  
+Job owner: jinma(28895)
+Job name:  m1space2
+Node list: vipa1001
+Job start: Wed Sep 23 09:10:08 CEST 2026
+Job end:   Wed Sep 23 09:12:22 CEST 2026
+Work dir:  /viper/ptmp2/jinma/space2_3s/gate
+Command:   /viper/ptmp2/jinma/space2_3s/gate/time.sh
+  
+  
+  
+==========================================================================================
+Information on jobsteps (Note: MaxRSS/AveRSS is the maximum/average over all 
+tasks of the per-task memory high-water marks; cf. "man sacct"): 
+==========================================================================================
+  
+JobID            JobName NNodes NTasks  NCPUS       MaxRSS       AveRSS    Elapsed ExitCode
+------------- ---------- ------ ------ ------ ------------ ------------ ---------- --------
+11946784        m1space2      1            48                             00:02:14      0:0
+11946784.0        athena      1      1     48     1139.86M     1139.86M   00:00:16      0:0
+11946784.1        athena      1      1     48     1119.12M     1119.12M   00:00:16      0:0
+11946784.2        athena      1      1     48     1121.17M     1121.17M   00:00:17      0:0
+11946784.3        athena      1      1     48     1139.95M     1139.95M   00:00:17      0:0
+11946784.4        athena      1      1     48     1121.18M     1121.18M   00:00:17      0:0
+11946784.5        athena      1      1     48     1141.90M     1141.90M   00:00:17      0:0
+11946784.6        athena      1      1     48     1138.84M     1138.84M   00:00:16      0:0
+11946784.7        athena      1      1     48     1121.07M     1121.07M   00:00:16      0:0
+  
+Maximum memory per node: 1.197372 GB (defined as MaxRSS*Ntasks/NNodes)
+CPU utilization: 2.2 %
+  

@@ -1,0 +1,4 @@
+head_w2 2 he3d_fast.athinput mesh/nx2=208 mesh/x2max=2.20662552e9 meshblock/nx3=26
+w2_new 2 he3d_fast.athinput mesh/nx2=208 mesh/x2max=2.20662552e9 meshblock/nx3=26
+w2_hyb 2 he3d_fast.athinput mesh/nx2=208 mesh/x2max=2.20662552e9 meshblock/nx3=26 rad_m1/vet_mb_agroup=2
+w2_hyd 2 he3d_hydro.athinput mesh/nx2=208 mesh/x2max=2.20662552e9 meshblock/nx3=26

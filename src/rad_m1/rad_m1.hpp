@@ -244,6 +244,8 @@ class RadiationM1 {
   bool vet_sc;               // closure = vet_sc (default false)
   int vet_nmu, vet_nphi, vet_nray;  // mu nodes per hemisphere, azimuths, rays
   bool vet_milne;            // DIAGNOSTIC: source = exact grey Milne S(tau), gate 3
+  bool vet_x1per;            // vet_x1_periodic (default false): periodic x1 sweep
+  int vet_x1npass;           // ...and its number of passes (runs_3r_radwave)
   bool vet_axis_flux;        // uniaxial axis: the SC flux (true) or the principal axis
   bool vet_full;             // vet_tensor = full: the solve reads all six D_ab = K_ab/J
   Real vet_eig_min;          // vet_tensor = full: eigenvalue floor of the guarded D
@@ -303,6 +305,7 @@ class RadiationM1 {
   // constant means and docs/dev/rad_m1_implicit_design.md sect. 7 for the measurements.
   int impl_flux;                // M1_IFLUX_*: the spatial form of the implicit E-flux
   int impl_recon;               // M1_IRECON_*: dc, or plm by deferred correction
+  int impl_enth;                // M1_IENTH_*: face value of the enthalpy flux a E
   Real impl_recon_w;            // implicit_recon = plm_dc: the weight the deferred
                                 // correction carries.  <= 0 (the default) means the
                                 // automatic 1/(1 + chat dt/dx), which is what keeps the
@@ -431,6 +434,27 @@ class RadiationM1 {
                                 // original), 1 = symmetric red-black transverse line
                                 // Gauss-Seidel, block-local (no communication), 2 = its
                                 // forward half (red, black)
+  // ---- multi-rank Krylov (tests_m1/runs_3w_krylov, rad_m1_krylov.cpp).  Both keys
+  // default OFF; off, nothing below is allocated and the path is bitwise the old one.
+  bool impl_kpipe;              // <rad_m1>/implicit_krylov_pipe: pipelined (Cools-
+                                // Vanroose) BiCGStab, reductions hidden behind the
+                                // preconditioner + operator (needs krylov_fuse = 3)
+  DvceArray5D<Real> kpw;        // (m,4,k,j,i) its extra vectors phat, s, shat, rhat
+  Kokkos::View<Real*, Kokkos::SharedHostPinnedSpace> kp_h;  // its 2 x 6 reduction slots
+  bool impl_halo_mpi;           // <rad_m1>/implicit_halo_mpi: implicit_halo_direct on
+                                // several ranks: on-rank copy kernel + ONE message per
+                                // neighbour rank (pack / unpack kernels)
+  int hm_state;                 // 0 = not built, 1 = on, -1 = not possible on this mesh
+  int hm_nsend, hm_nrecv;       // entries (cells) sent / received per component
+  int hm_nq;                    // components the buffers are sized for
+  std::vector<int> hm_rank, hm_soff, hm_slen, hm_roff, hm_rlen;  // per neighbour rank
+  DualArray1D<int> hm_sm, hm_skji, hm_sseg, hm_rm, hm_rkji, hm_rseg;  // per entry
+  DualArray1D<int> hm_segs;     // (4*nseg) soff, slen, roff, rlen
+  DvceArray1D<Real> hm_sbuf, hm_rbuf;
+  void *hm_comm;                // MPI_Comm* (the dup'ed communicator), opaque here
+  void ImplicitHaloMPIInit();
+  void ImplicitHaloMPI(int nq, int c0);
+  int ImplicitBiCGStabPipe(Real rhsmax);
   // ---- the Picard pass count (bench/m1_picard_0923).  Since bench/m1_defaults_0923
   // lres_test = false, conv_est = true and lin_ew_max = 1e-2 (not predictor) are the
   // DEFAULTS for closure = eddington | vet_sc | tau (the OFF settings stay the defaults
@@ -458,6 +482,45 @@ class RadiationM1 {
   bool pred_ok;                 // a previous-step increment is stored
   Real pred_dt;                 // the dt of that step
   DvceArray5D<Real> ipred;      // (m,3,k,j,i): dE_prev, dT_prev, T^n of this step
+
+  // ---- <rad_m1>/time_scheme = hesdirk2 (docs/dev/rad_m1_time2_design.md sect. 5,
+  // tests_m1/runs_3x_hesdirk2): two implicit stage solves inside the Heun stages.  With
+  // time_scheme = be (default) nothing below is allocated or read.
+  int time_scheme;              // M1_TIME_BE | M1_TIME_HESDIRK2
+  bool t2_ok;                   // a valid FSAL slope K1 is stored
+  int t2_afmode;                // time2_enth_vel: 0 old | 1 start (plm a_f from the
+                                // stage-start a, the rest as a face mean) | 2 central
+                                // (a_f central, E_f plm), in stage solves with vimp
+  int t2_solve;                 // what the next ImplicitSolve does (M1_T2S_*)
+  bool t2_fail;                 // the last stage solve was not admissible
+  int t2_dbg_fail;              // DEBUG time2_dbg_fail: fail stage 1 at this cycle
+  Real t2_nstep, t2_nbe, t2_nfall;  // stage steps, BE steps, fallbacks (counters)
+  Real t2_dtprev;               // the dt of the previous step (vet_sc extrapolation)
+  bool t2_vprev;                // vet_prev holds the tensor of the previous step
+  bool t2_vext;                 // time2_vet_extrap (default false: D^n)
+  Real t2_nclip;                // vet_sc cells whose extrapolated tensor was clipped
+  DvceArray5D<Real> t2k1;       // (m,M1_T2_NK,k,j,i) the FSAL slope K1 (restart state)
+  DvceArray5D<Real> t2k2;       // (m,M1_T2_NK,k,j,i) the stage-2 slope K2
+  DvceArray5D<Real> t2inc;      // (m,M1_T2_NK,k,j,i) old vector - stage start state
+  DvceArray4D<Real> t2f1, t2f2, t2f3;  // the face fluxes of U^n (Heun average)
+  DvceArray5D<Real> ipred2;     // the predictor increment of the stage-2 solve
+  bool pred2_ok;
+  Real pred2_dt;
+  DvceArray5D<Real> vet_prev;   // vet_sc: the start-of-step tensor of the previous step
+  DvceArray5D<Real> vet_now;    // vet_sc: the start-of-step tensor of this step
+  DvceArray5D<Real> vet_opac;   // vet_sc: the stage-start opacities, saved over the
+                                // formal solution at U^n
+  void Time2Init(ParameterInput *pin);
+  bool Time2Active();           // the next step runs the stages (else BE)
+  void Time2FormStage(int stage, Real dt);
+  void Time2Restore(Driver *pdrive);
+  void Time2VetStart();        // vet_sc: formal solution at U^n, then extrapolate
+  void Time2VetExtrapolate();
+  void Time2Report();
+  int Time2RstNchWant();        // restart channels this run keeps (0 unless hesdirk2)
+  int Time2RstNch();            // ...and writes (0 unless a slope is stored)
+  void Time2RstPack(DvceArray5D<Real> &a, int nmb);
+  void Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb);
 
   // ---- MILESTONE 3b phase D: the OFF-DIAGONAL Eddington terms and the closure lag.
   // All inert with transport = explicit | implicit_x1 and on a 1-D mesh.
@@ -500,6 +563,17 @@ class RadiationM1 {
   bool impl_eccheck;            // <rad_m1>/implicit_eos_cache_check: one TRUE-table
                                 // evaluation per cell at the end of the step, which
                                 // measures the cache error and corrects T'
+  // <rad_m1>/implicit_vimp (tests_m1/runs_3v_vimplicit): the gas velocity of the
+  // enthalpy flux implicit through the radiative force of the solve (Newton form)
+  bool impl_vimp;               // the switch (default false: nothing below is touched)
+  Real impl_vimp_jscale;        // DIAGNOSTIC implicit_vimp_jscale: scale of P (1)
+  bool vimp_now;                // on for this step (the positivity fallback drops it)
+  int iw_vimp;                  // first iw component of the M1_NIW_VIMP block, or -1
+  Real vimp_nfall;              // how often the positivity fallback dropped it
+  Real vimp_emin;               // the smallest E the linear solve produced with it on
+  DvceArray5D<Real> vmw, vmw_c;   // exchange scratch of the M1_NVIMP_X components
+  MeshBoundaryValuesCC *pbval_vm;  // ...and its exchange object
+  void ImplicitVimpBuild();     // the Jacobian of a(v') E' for this Picard pass
   int iw_gas;                   // first iw component of the M1_NIW_GAS block (see
                                 // rad_m1_implicit.hpp); < 0 when neither option is on
   int impl_nec;                 // components of `ecache`

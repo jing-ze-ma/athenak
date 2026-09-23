@@ -1,0 +1,8 @@
+100 1000 x1 64 edd impl 4096 enth=plm ny=4 v0=cmix
+100 1000 x1 64 edd impl 4096 enth=plm ny=4 v0=cmix vimp=true
+100 1000 x1 128 edd impl 4096 enth=plm ny=4 v0=cmix
+100 1000 x1 128 edd impl 4096 enth=plm ny=4 v0=cmix vimp=true
+100 1000 x1 64 edd impl 4096 enth=plm ny=4 v0=1.2909944
+100 1000 x1 64 edd impl 4096 enth=plm ny=4 v0=1.2909944 vimp=true
+100 1000 x1 128 edd impl 4096 enth=plm ny=4 v0=1.2909944
+100 1000 x1 128 edd impl 4096 enth=plm ny=4 v0=1.2909944 vimp=true

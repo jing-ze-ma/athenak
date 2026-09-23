@@ -1,0 +1,20 @@
+100 10 x1 64 vetf impl 128 enth=plm ny=4 vimp=true ts=hesdirk2
+100 10 x1 64 vetf impl 128 enth=plm ny=4 vimp=true ts=hesdirk2 vx=false
+100 10 x1 64 vetf impl 256 enth=plm ny=4 vimp=true ts=hesdirk2
+100 10 x1 64 vetf impl 256 enth=plm ny=4 vimp=true ts=hesdirk2 vx=false
+100 10 x1 64 vetf impl 512 enth=plm ny=4 vimp=true ts=hesdirk2
+100 10 x1 64 vetf impl 512 enth=plm ny=4 vimp=true ts=hesdirk2 vx=false
+100 10 x1 64 vetf impl 1024 enth=plm ny=4 vimp=true ts=hesdirk2
+100 10 x1 64 vetf impl 1024 enth=plm ny=4 vimp=true ts=hesdirk2 vx=false
+100 10 x1 64 vetf impl 2048 enth=plm ny=4 vimp=true ts=hesdirk2
+100 10 x1 64 vetf impl 2048 enth=plm ny=4 vimp=true ts=hesdirk2 vx=false
+10 10 x1 64 vetf impl 128 enth=plm ny=4 vimp=true ts=hesdirk2
+10 10 x1 64 vetf impl 128 enth=plm ny=4 vimp=true ts=hesdirk2 vx=false
+10 10 x1 64 vetf impl 256 enth=plm ny=4 vimp=true ts=hesdirk2
+10 10 x1 64 vetf impl 256 enth=plm ny=4 vimp=true ts=hesdirk2 vx=false
+10 10 x1 64 vetf impl 512 enth=plm ny=4 vimp=true ts=hesdirk2
+10 10 x1 64 vetf impl 512 enth=plm ny=4 vimp=true ts=hesdirk2 vx=false
+10 10 x1 64 vetf impl 1024 enth=plm ny=4 vimp=true ts=hesdirk2
+10 10 x1 64 vetf impl 1024 enth=plm ny=4 vimp=true ts=hesdirk2 vx=false
+10 10 x1 64 vetf impl 2048 enth=plm ny=4 vimp=true ts=hesdirk2
+10 10 x1 64 vetf impl 2048 enth=plm ny=4 vimp=true ts=hesdirk2 vx=false

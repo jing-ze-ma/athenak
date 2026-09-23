@@ -423,6 +423,43 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     npred_file = static_cast<int>(hdr[1]);
   }
 
+  // --- THE <rad_m1> time_scheme = hesdirk2 HEADER (radm1::kM1Time2RstMagic), behind the
+  // predictor one: nch slabs of the stored FSAL slope follow the predictor slabs.
+  int nt2_file = 0;
+  Real t2_hv[3] = {0.0, 0.0, 0.0};
+  if (std::memcmp(variabledata, &(radm1::kM1Time2RstMagic[0]),
+                  sizeof(radm1::kM1Time2RstMagic)) == 0) {
+    char t2_hdr[2*sizeof(std::int32_t) + 3*sizeof(Real)];
+    IOWrapperSizeT nb = 0;
+    bool ok = true;
+    if (global_variable::my_rank == 0 || single_file_per_rank) {
+      ok = (resfile.Read_bytes(&nb, 1, sizeof(IOWrapperSizeT), single_file_per_rank)
+            == sizeof(IOWrapperSizeT)) && (nb == sizeof(t2_hdr));
+      ok = ok && (resfile.Read_bytes(&(t2_hdr[0]), 1, nb, single_file_per_rank) == nb);
+      ok = ok && (resfile.Read_bytes(variabledata, 1, variablesize, single_file_per_rank)
+                  == variablesize);
+    }
+#if MPI_PARALLEL_ENABLED
+    if (!single_file_per_rank) {
+      MPI_Bcast(&ok, sizeof(bool), MPI_CHAR, 0, MPI_COMM_WORLD);
+      MPI_Bcast(&(t2_hdr[0]), sizeof(t2_hdr), MPI_CHAR, 0, MPI_COMM_WORLD);
+      MPI_Bcast(variabledata, variablesize, MPI_CHAR, 0, MPI_COMM_WORLD);
+    }
+#endif
+    std::int32_t hdr[2] = {0, 0};
+    if (ok) {
+      std::memcpy(&(hdr[0]), &(t2_hdr[0]), sizeof(hdr));
+      std::memcpy(&(t2_hv[0]), &(t2_hdr[0]) + sizeof(hdr), sizeof(t2_hv));
+    }
+    if (!ok || hdr[0] != 1 || hdr[1] < 1 || hdr[1] > 64) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "the <rad_m1> hesdirk2 header of this restart file is "
+                << "broken." << std::endl;
+      exit(EXIT_FAILURE);
+    }
+    nt2_file = static_cast<int>(hdr[1]);
+  }
+
   IOWrapperSizeT data_size;
   std::memcpy(&data_size, &(variabledata[0]), sizeof(IOWrapperSizeT));
 
@@ -508,7 +545,8 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
   // and behind both of them, the mode-3 warm-start history: nwarm_file slabs, a number
   // the marked header above gave us rather than something inferred from the length
   // (and behind those the npred_file <rad_m1> predictor slabs, also header-declared)
-  IOWrapperSizeT wm_size = (nwarm_file + npred_file)*nout1*nout2*nout3*sizeof(Real);
+  IOWrapperSizeT wm_size = (nwarm_file + npred_file + nt2_file)*nout1*nout2*nout3
+                           *sizeof(Real);
   if ((data_size_ + wt_size + wd_size + wm_size) == data_size) {
     data_size_ += wt_size + wd_size + wm_size;
   } else if (wd_hyd && wd_mhd &&
@@ -1084,7 +1122,19 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
               << "the first implicit step cold starts and this restart is not bitwise."
               << std::endl;
   }
-  if (wt_hyd || wt_mhd || nwarm_read > 0 || pred_read) {
+  // time_scheme = hesdirk2: the stored slope, when this run wants one of that size.  A
+  // file without it leaves t2_ok = false: the first step is backward Euler.
+  const bool t2_want = (pradm1 != nullptr) &&
+                       (pradm1->time_scheme == radm1::M1_TIME_HESDIRK2);
+  const bool t2_read = t2_want && (nt2_file > 0) &&
+                       (pradm1->Time2RstNchWant() == nt2_file) &&
+                       (static_cast<int>(pradm1->t2k1.extent(0)) >= nmb);
+  if (t2_want && !t2_read && global_variable::my_rank == 0) {
+    std::cout << "### WARNING: restart file has no <rad_m1> hesdirk2 slope; the first "
+              << "step is backward Euler and this restart is not bitwise." << std::endl;
+  }
+  if (wt_hyd || wt_mhd || nwarm_read > 0 || pred_read || t2_read) {
+    const IOWrapperSizeT tail0 = offset_myrank;
     HostArray4D<Real> wtin("rst-wt-in", 1, 1, 1, 1);
     Kokkos::realloc(wtin, nmb, nout3, nout2, nout1);
     // fills wtin with the next per-MeshBlock slab and advances the offsets; the caller
@@ -1182,6 +1232,23 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
       }
       pradm1->pred_ok = true;
       pradm1->pred_dt = pred_dt_file;
+    }
+    if (t2_read) {
+      // the slope slabs sit behind every other tail slab of the record
+      int nprev = (wt_hyd ? 1 : 0) + (wt_mhd ? 1 : 0) + (wd_hyd ? 2 : 0)
+                  + (wd_mhd ? 2 : 0)
+                  + nwarm_file + npred_file;
+      offset_myrank = tail0 + nprev*nout1*nout2*nout3*sizeof(Real);
+      myoffset = offset_myrank;
+      for (int n=0; n<nt2_file; ++n) {
+        read_slab("rad_m1 hesdirk2 slope");
+        pradm1->Time2RstSet(n, wtin, nmb);
+      }
+      pradm1->t2_ok = true;
+      pradm1->pred2_ok = (t2_hv[0] > 0.0);
+      pradm1->pred2_dt = t2_hv[0];
+      pradm1->t2_dtprev = t2_hv[1];
+      pradm1->t2_vprev = (t2_hv[2] > 0.5);
     }
   }
 

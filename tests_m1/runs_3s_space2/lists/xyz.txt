@@ -1,0 +1,9 @@
+100 1000 xyz 64 edd impl 2048 enth=plm mb=16 np=16
+100 1000 xyz 64 edd impl 2048 enth=upwind mb=16 np=16
+100 1000 xyz 64 edd impl 1024 enth=plm mb=16 np=16
+100 1000 xyz 64 edd impl 1024 enth=upwind mb=16 np=16
+100 1000 xyz 32 edd impl 2048 enth=plm mb=16 np=4
+100 1000 xyz 32 edd impl 2048 enth=upwind mb=16 np=4
+100 1000 xyz 32 edd impl 1024 enth=plm mb=16 np=4
+100 1000 xyz 32 edd impl 1024 enth=upwind mb=16 np=4
+100 1000 xyz 32 edd impl 1024 enth=plm

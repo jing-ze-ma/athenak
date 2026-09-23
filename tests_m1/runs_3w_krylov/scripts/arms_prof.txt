@@ -1,0 +1,4 @@
+g1_off 1 he3d_fast.athinput meshblock/nx3=26
+g1_pipe 1 he3d_fast.athinput meshblock/nx3=26 rad_m1/implicit_krylov_pipe=true
+g2_off 2 he3d_fast.athinput meshblock/nx3=26
+g2_ph 2 he3d_fast.athinput meshblock/nx3=26 rad_m1/implicit_halo_mpi=true rad_m1/implicit_krylov_pipe=true

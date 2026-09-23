@@ -1,0 +1,113 @@
+b5a5e7161305a268ab3911b66efb691d  /viper/ptmp2/jinma/vimp_3v/new/build_gpu/src/athena
+#### T1_Eplm_a vipa1001 13:10:45
+rc=0 13:11:02
+<rad_m1> implicit transport: solves=1.200000e+02 Picard iterations mean=2.125000e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00
+<rad_m1> bicgstab: outer passes=2.550000e+02 linear solves=2.550000e+02 inner iterations mean=1.792941e+01 max=4.700000e+01 total=4.572000e+03
+#### T1_Evim_a vipa1001 13:11:02
+rc=0 13:11:19
+         implicit_vimp=true (v' of the enthalpy flux implicit)
+<rad_m1> implicit transport: solves=1.200000e+02 Picard iterations mean=2.125000e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00
+<rad_m1> bicgstab: outer passes=2.550000e+02 linear solves=2.550000e+02 inner iterations mean=1.800392e+01 max=5.300000e+01 total=4.591000e+03
+<rad_m1> implicit_vimp positivity fallbacks=0.000000e+00 min E from the solve=1.648393e+05
+#### T1_Vplm_a vipa1001 13:11:19
+rc=0 13:11:36
+<rad_m1> implicit transport: solves=1.200000e+02 Picard iterations mean=2.733333e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00
+<rad_m1> bicgstab: outer passes=3.280000e+02 linear solves=3.280000e+02 inner iterations mean=1.447256e+01 max=5.000000e+01 total=4.747000e+03
+#### T1_Vvim_a vipa1001 13:11:36
+rc=0 13:11:53
+         implicit_vimp=true (v' of the enthalpy flux implicit)
+<rad_m1> implicit transport: solves=1.200000e+02 Picard iterations mean=2.733333e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00
+<rad_m1> bicgstab: outer passes=3.280000e+02 linear solves=3.280000e+02 inner iterations mean=1.459756e+01 max=5.100000e+01 total=4.788000e+03
+<rad_m1> implicit_vimp positivity fallbacks=0.000000e+00 min E from the solve=1.605480e+05
+#### T1_Vvim_b vipa1001 13:11:53
+rc=0 13:12:11
+         implicit_vimp=true (v' of the enthalpy flux implicit)
+<rad_m1> implicit transport: solves=1.200000e+02 Picard iterations mean=2.733333e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00
+<rad_m1> bicgstab: outer passes=3.280000e+02 linear solves=3.280000e+02 inner iterations mean=1.459756e+01 max=5.100000e+01 total=4.788000e+03
+<rad_m1> implicit_vimp positivity fallbacks=0.000000e+00 min E from the solve=1.605480e+05
+#### T1_Vplm_b vipa1001 13:12:11
+rc=0 13:12:28
+<rad_m1> implicit transport: solves=1.200000e+02 Picard iterations mean=2.733333e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00
+<rad_m1> bicgstab: outer passes=3.280000e+02 linear solves=3.280000e+02 inner iterations mean=1.447256e+01 max=5.000000e+01 total=4.747000e+03
+#### T1_Evim_b vipa1001 13:12:28
+rc=0 13:12:44
+         implicit_vimp=true (v' of the enthalpy flux implicit)
+<rad_m1> implicit transport: solves=1.200000e+02 Picard iterations mean=2.125000e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00
+<rad_m1> bicgstab: outer passes=2.550000e+02 linear solves=2.550000e+02 inner iterations mean=1.800392e+01 max=5.300000e+01 total=4.591000e+03
+<rad_m1> implicit_vimp positivity fallbacks=0.000000e+00 min E from the solve=1.648393e+05
+#### T1_Eplm_b vipa1001 13:12:44
+rc=0 13:13:01
+<rad_m1> implicit transport: solves=1.200000e+02 Picard iterations mean=2.125000e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00
+<rad_m1> bicgstab: outer passes=2.550000e+02 linear solves=2.550000e+02 inner iterations mean=1.792941e+01 max=4.700000e+01 total=4.572000e+03
+#### T1_Eplm_c vipa1001 13:13:01
+rc=0 13:13:17
+<rad_m1> implicit transport: solves=1.200000e+02 Picard iterations mean=2.125000e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00
+<rad_m1> bicgstab: outer passes=2.550000e+02 linear solves=2.550000e+02 inner iterations mean=1.792941e+01 max=4.700000e+01 total=4.572000e+03
+#### T1_Evim_c vipa1001 13:13:17
+rc=0 13:13:34
+         implicit_vimp=true (v' of the enthalpy flux implicit)
+<rad_m1> implicit transport: solves=1.200000e+02 Picard iterations mean=2.125000e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00
+<rad_m1> bicgstab: outer passes=2.550000e+02 linear solves=2.550000e+02 inner iterations mean=1.800392e+01 max=5.300000e+01 total=4.591000e+03
+<rad_m1> implicit_vimp positivity fallbacks=0.000000e+00 min E from the solve=1.648393e+05
+#### T1_Vplm_c vipa1001 13:13:34
+rc=0 13:13:51
+<rad_m1> implicit transport: solves=1.200000e+02 Picard iterations mean=2.733333e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00
+<rad_m1> bicgstab: outer passes=3.280000e+02 linear solves=3.280000e+02 inner iterations mean=1.447256e+01 max=5.000000e+01 total=4.747000e+03
+#### T1_Vvim_c vipa1001 13:13:51
+rc=0 13:14:09
+         implicit_vimp=true (v' of the enthalpy flux implicit)
+<rad_m1> implicit transport: solves=1.200000e+02 Picard iterations mean=2.733333e+00 max=4.000000e+00 NON-CONVERGED=0.000000e+00
+<rad_m1> bicgstab: outer passes=3.280000e+02 linear solves=3.280000e+02 inner iterations mean=1.459756e+01 max=5.100000e+01 total=4.788000e+03
+<rad_m1> implicit_vimp positivity fallbacks=0.000000e+00 min E from the solve=1.605480e+05
+arm                      ms/cyc  Picard inner/step NONCONV
+T1_Eplm_a                  48.6   2.125      38.10       0
+T1_Eplm_b                  48.9   2.125      38.10       0
+T1_Eplm_c                  47.1   2.125      38.10       0
+T1_Evim_a                  51.7   2.125      38.26       0
+T1_Evim_b                  52.0   2.125      38.26       0
+T1_Evim_c                  51.8   2.125      38.26       0
+T1_Vplm_a                  53.6   2.733      39.56       0
+T1_Vplm_b                  53.6   2.733      39.56       0
+T1_Vplm_c                  54.9   2.733      39.56       0
+T1_Vvim_a                  58.2   2.733      39.90       0
+T1_Vvim_b                  58.2   2.733      39.90       0
+T1_Vvim_c                  58.8   2.733      39.90       0
+                                  
+================================= 
+Global information about the job: 
+================================= 
+  
+Job owner: jinma(28895)
+Job name:  m1vimp
+Node list: vipa1001
+Job start: Wed Sep 23 13:10:43 CEST 2026
+Job end:   Wed Sep 23 13:14:09 CEST 2026
+Work dir:  /viper/ptmp2/jinma/vimp_3v/gate
+Command:   /viper/ptmp2/jinma/vimp_3v/gate/time.sh
+  
+  
+  
+==========================================================================================
+Information on jobsteps (Note: MaxRSS/AveRSS is the maximum/average over all 
+tasks of the per-task memory high-water marks; cf. "man sacct"): 
+==========================================================================================
+  
+JobID            JobName NNodes NTasks  NCPUS       MaxRSS       AveRSS    Elapsed ExitCode
+------------- ---------- ------ ------ ------ ------------ ------------ ---------- --------
+11949611          m1vimp      1            48                             00:03:26      0:0
+11949611.0        athena      1      1     48     1119.16M     1119.16M   00:00:17      0:0
+11949611.1        athena      1      1     48     1119.14M     1119.14M   00:00:17      0:0
+11949611.2        athena      1      1     48      771.17M      771.17M   00:00:17      0:0
+11949611.3        athena      1      1     48     1121.18M     1121.18M   00:00:17      0:0
+11949611.4        athena      1      1     48      586.09M      586.09M   00:00:18      0:0
+11949611.5        athena      1      1     48     1119.22M     1119.22M   00:00:17      0:0
+11949611.6        athena      1      1     48     1119.16M     1119.16M   00:00:16      0:0
+11949611.7        athena      1      1     48      550.72M      550.72M   00:00:17      0:0
+11949611.8        athena      1      1     48     1119.31M     1119.31M   00:00:16      0:0
+11949611.9        athena      1      1     48     1119.20M     1119.20M   00:00:17      0:0
+11949611.10       athena      1      1     48     1119.24M     1119.24M   00:00:18      0:0
+11949611.11       athena      1      1     48     1119.21M     1119.21M   00:00:17      0:0
+  
+Maximum memory per node: 1.175639 GB (defined as MaxRSS*Ntasks/NNodes)
+CPU utilization: 2.2 %
+  

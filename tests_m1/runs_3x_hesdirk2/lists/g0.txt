@@ -1,0 +1,4 @@
+1 10 x1 64 edd impl 256 enth=plm ny=4 vimp=true
+100 1000 x1 64 edd impl 256 enth=plm ny=4 vimp=true
+1 1000 x1 64 vetf impl 128 enth=plm ny=4 vimp=true
+1 10 x1 64 edd impl 256

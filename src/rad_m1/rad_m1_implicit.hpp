@@ -27,6 +27,28 @@ namespace radm1 {
 // follow the warm-start slabs at the end of every MeshBlock record.
 constexpr char kM1PredRstMagic[8] = {'M', '1', 'P', 'R', 'E', 'D', '0', '1'};
 
+// <rad_m1>/time_scheme (docs/dev/rad_m1_time2_design.md, tests_m1/runs_3x_hesdirk2)
+constexpr int M1_TIME_BE = 0;         // Lie splitting: Heun hydro, then one BE solve
+constexpr int M1_TIME_HESDIRK2 = 1;   // H-ESDIRK2: one stage solve inside each Heun stage
+// what the next ImplicitSolve does (RadiationM1::t2_solve)
+constexpr int M1_T2S_NONE = 0;        // plain backward Euler (time_scheme = be)
+constexpr int M1_T2S_BESTORE = 1;     // backward Euler, and K1 = (Y - rhs)/dt is stored
+constexpr int M1_T2S_STAGE1 = 2;      // stage solve 1 (gamma dt), K2 stored
+constexpr int M1_T2S_STAGE2 = 3;      // stage solve 2 (gamma dt), K1 (FSAL) stored
+// channels of t2k1 / t2k2 / t2inc: cell E, gas momentum and total energy, and the face
+// fluxes F0 of x1/x2/x3, each face stored at its own (lower) index
+constexpr int M1_T2_E = 0;
+constexpr int M1_T2_M1 = 1;
+constexpr int M1_T2_EN = 4;
+constexpr int M1_T2_F1 = 5;
+constexpr int M1_T2_NK = 8;
+// vet_sc: the extrapolated components of vet_cell, M1_VET_CHI .. M1_VET_D11+5
+constexpr int M1_T2_NVET = 10;
+// the restart block of the stored slope: int32 have, int32 nch, Real pred2_dt,
+// Real dt_prev, Real vprev; then nch cell slabs (K1, ipred2, vet_prev) behind the
+// predictor slabs.  Absent when no slope is stored: old files stay byte-identical.
+constexpr char kM1Time2RstMagic[8] = {'M', '1', 'T', 'I', 'M', 'E', '2', 'A'};
+
 // <rad_m1>/transport
 constexpr int M1_TRANSPORT_EXPLICIT   = 0;   // stages 1-2: PD-ARS, sub-cycled
 constexpr int M1_TRANSPORT_IMPLICIT_X1 = 1;  // stage 3a: backward Euler on x1 columns
@@ -201,6 +223,47 @@ constexpr int M1_IRECON_PLMDC = 1;   // plm as a DEFERRED CORRECTION: the differ
                                      // between the plm and the dc flux, evaluated at the
                                      // PREVIOUS Picard iterate, goes into the right-hand
                                      // side, so the matrix stays the low-order M-matrix.
+
+// <rad_m1>/implicit_enthalpy: the face value of the advective enthalpy flux A_d = a_d E
+// (a_d = v_d + (v.D)_d) of every face of the implicit operator.  The MATRIX always
+// carries the donor-cell form a_up E_up (upwind on the face velocity), which keeps the
+// M-matrix; the other two add the difference between their face flux and the donor-cell
+// one, evaluated at the PREVIOUS Picard iterate, to the right-hand side (a deferred
+// correction, like implicit_recon = plm_dc).  At the Picard fixed point the scheme is the
+// high-order one.  The donor-cell form is FIRST order even for a linear wave: with v = 0
+// in the background its error (4/3) E0 (dx/2) sign(v) dv/dx is independent of the
+// amplitude (tests_m1/runs_3r_radwave, tests_m1/runs_3s_space2).
+constexpr int M1_IENTH_UPWIND  = 0;  // donor cell (default; bitwise the old scheme)
+constexpr int M1_IENTH_CENTRAL = 1;  // a_f (E_L + E_R)/2, a_f = (a_L + a_R)/2
+constexpr int M1_IENTH_PLM     = 2;  // a_f E_f, E_f the van Leer plm value from the side
+                                     // upwind of a_f; central where the 4-cell stencil
+                                     // is not available on both sides of the face
+
+// <rad_m1>/implicit_vimp: the gas velocity v' of the enthalpy flux a(v') E' taken
+// IMPLICIT through the radiative force of the same solve (tests_m1/runs_3v_vimplicit).
+// Per face f of axis d the flux gains
+//   E_f^k [ (1 + D_dd) dv_d^k + sum_{e != d} D_de dv_e^k ]_f
+//     + E_f^k (1 + D_dd)_f [ (P dv_d)(E') - (P dv_d)(E^k) ]_f,
+// dv^k the velocity change of the ITERATE's face fluxes (the write-back rule) and P the
+// Jacobian of dv_d in E' (the face-normal eliminated flux, od/g0 terms lagged).  At the
+// Picard fixed point the flux is E_f a_f(v') whatever the Jacobian; the operator couples
+// cells two apart along every axis.  The components below are APPENDED to iw (offset
+// RadiationM1::iw_vimp); the first M1_NVIMP_X are exchanged once per pass.
+constexpr int M1_NVIMP_X  = 12;   // P1m,P10,P1p, P2m,P20,P2p, P3m,P30,P3p, DV1,DV2,DV3
+constexpr int M1_IV_DV    = 9;
+constexpr int M1_IV_X1M2  = 12;   // operator coefficients not in the 7-point row:
+constexpr int M1_IV_X1P2  = 13;   // x1 +-2; x2 -2,-1,+1,+2; x3 -2,-1,+1,+2
+constexpr int M1_IV_X2M2  = 14;
+constexpr int M1_IV_X3M2  = 18;
+constexpr int M1_IV_JD    = 22;   // added to the row: diagonal, x1 -1, x1 +1
+constexpr int M1_IV_J1M   = 23;
+constexpr int M1_IV_J1P   = 24;
+constexpr int M1_IV_JRHS  = 25;   // added to the right-hand side
+constexpr int M1_NIW_VIMP = 26;
+// time_scheme = hesdirk2 (time2_enth_vel = start): 3 more components behind the block,
+// DA_d = a_d(old vector) - a_d(stage start) = dv_d + (D dv)_d, dv = t2inc momentum/rho
+constexpr int M1_IV_DA    = 26;
+constexpr int M1_NIW_VIMP_T2 = 3;
 
 // <rad_m1>/implicit_partition: how a column that spans several MeshBlocks (and ranks) is
 // solved (milestone 3a2, LIMIT 4).

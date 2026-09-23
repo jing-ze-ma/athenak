@@ -27,6 +27,7 @@
 #include "ion-neutral/ion-neutral.hpp"
 #include "radiation/radiation.hpp"
 #include "rad_m1/rad_m1.hpp"
+#include "rad_m1/rad_m1_implicit.hpp"
 #include "driver.hpp"
 #include "diffusion/resistivity.hpp"
 #include "gravity/gravity.hpp"
@@ -428,7 +429,13 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       ExecuteTaskList(pmesh, "before_timeintegrator", 0);
 
       // time-integrator tasks for each stage of integrator
-      for (int stage=1; stage<=(nexp_stages); ++stage) {
+      // <rad_m1>/time_scheme = hesdirk2 (rad_m1_time2.cpp): the implicit radiation solve
+      // runs INSIDE each Heun stage, after its after_stagen; a stage that is not
+      // admissible sends the step back to U^n and through the backward-Euler path below.
+      radm1::RadiationM1 *pm1 = pmesh->pmb_pack->pradm1;
+      const bool m1t2 = (pm1 != nullptr) && pm1->Time2Active();
+      bool m1t2fail = false;
+      auto hydro_stage = [&](int stage) {
         ExecuteTaskList(pmesh, "before_stagen", stage);
         // solve gravity at each RK stage so the potential is consistent
         // with the current density (required for 2nd-order accuracy)
@@ -436,6 +443,23 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
             {pmesh->pmb_pack->pgrav->pmgd->Solve(this, stage);}
         ExecuteTaskList(pmesh, "stagen", stage);
         ExecuteTaskList(pmesh, "after_stagen", stage);
+      };
+      for (int stage=1; stage<=(nexp_stages); ++stage) {
+        hydro_stage(stage);
+        if (m1t2) {
+          pm1->Time2FormStage(stage, pmesh->dt);
+          ExecuteTaskList(pmesh, "m1_before_stagen", 1);
+          ExecuteTaskList(pmesh, "m1_stagen", 1);
+          ExecuteTaskList(pmesh, "m1_after_stagen", 1);
+          if (pm1->t2_fail) {
+            m1t2fail = true;
+            break;
+          }
+        }
+      }
+      if (m1t2fail) {
+        pm1->Time2Restore(this);
+        for (int stage=1; stage<=(nexp_stages); ++stage) {hydro_stage(stage);}
       }
         
       if (pmesh->pmb_pack->pmhd != nullptr) {
@@ -459,7 +483,17 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
       // N_sub = ceil(dt_mesh/dt_rad); each substep runs the module's own two-stage
       // PD-ARS chain with dt_sub = dt_mesh/N_sub.  Skipped entirely -- lists empty,
       // loop not entered -- when there is no <rad_m1> block.
-      if (pmesh->pmb_pack->pradm1 != nullptr) {
+      if (pm1 != nullptr && m1t2 && !m1t2fail) {
+        // hesdirk2: U^{n+1} = Y3 is in place and K1 is stored by the stage-2 solve
+        pm1->t2_solve = radm1::M1_T2S_NONE;
+        pm1->t2_nstep += 1.0;
+        (void) pm1->ApplyClosureLimits(this, 1);
+        (void) pm1->NewTimeStep(this, 1);
+        pm1->t2_dtprev = pmesh->dt;
+      } else if (pmesh->pmb_pack->pradm1 != nullptr) {
+        // hesdirk2 without a valid slope: backward Euler, which stores K1
+        const bool m1be2 = (pm1->time_scheme == radm1::M1_TIME_HESDIRK2);
+        pm1->t2_solve = m1be2 ? radm1::M1_T2S_BESTORE : radm1::M1_T2S_NONE;
         int nsub = pmesh->pmb_pack->pradm1->SetSubsteps(pmesh->dt);
         for (int nst=0; nst<nsub; ++nst) {
           // nstage is M1_NSTAGE for the explicit scheme and 1 for the implicit one
@@ -476,6 +510,12 @@ void Driver::Execute(Mesh *pmesh, ParameterInput *pin, Outputs *pout) {
           (void) pmesh->pmb_pack->pradm1->ApplyClosureLimits(this, 1);
         }
         (void) pmesh->pmb_pack->pradm1->NewTimeStep(this, 1);
+        if (m1be2) {
+          pm1->t2_solve = radm1::M1_T2S_NONE;
+          pm1->t2_ok = true;
+          pm1->t2_nbe += 1.0;
+          pm1->t2_dtprev = pmesh->dt;
+        }
       }
 
       // Work after time integrator indicated by "1" in stage

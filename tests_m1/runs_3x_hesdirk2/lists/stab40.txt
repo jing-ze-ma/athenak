@@ -1,0 +1,4 @@
+100 100000 x1 64 edd impl 24 enth=plm ny=4 nper=40 vimp=true ts=hesdirk2
+100 100000 x1 64 edd impl 48 enth=plm ny=4 nper=40 vimp=true ts=hesdirk2
+100 100000 x1 64 edd impl 96 enth=plm ny=4 nper=40 vimp=true ts=hesdirk2
+100 100000 x1 32 edd impl 24 enth=plm ny=4 nper=40 vimp=true ts=hesdirk2

@@ -289,6 +289,9 @@ class BaseTypeOutput {
   // the <rad_m1> implicit_predictor = step increment (RadiationM1::ipred, 3 channels);
   // empty unless one is stored.  See radm1::kM1PredRstMagic.
   HostArray5D<Real> outarray_m1p;
+  // <rad_m1> time_scheme = hesdirk2: the stored slope K1, ipred2, vet_prev (channels of
+  // RadiationM1::Time2RstPack); empty unless a slope is stored.  radm1::kM1Time2RstMagic.
+  HostArray5D<Real> outarray_m1t;
   HostFaceFld4D<Real> outfield;  // FC output field on host
   std::vector<int> noutmbs;   // with MPI, number of output MBs across all ranks
   int noutmbs_min;            // with MPI, minimum number of output MBs across all ranks

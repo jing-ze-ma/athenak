@@ -1,0 +1,6 @@
+100 100000 x1 64 edd impl 48 enth=upwind ny=4 nper=40 vimp=true ts=hesdirk2
+100 100000 x1 64 edd impl 48 enth=central ny=4 nper=40 vimp=true ts=hesdirk2
+100 100000 x1 64 edd impl 48 enth=upwind ny=4 nper=40 vimp=true
+100 1000 x1 64 edd impl 48 enth=plm ny=4 nper=40 vimp=true ts=hesdirk2
+100 10000 x1 64 edd impl 48 enth=plm ny=4 nper=40 vimp=true ts=hesdirk2
+10 100000 x1 64 edd impl 48 enth=plm ny=4 nper=40 vimp=true ts=hesdirk2
