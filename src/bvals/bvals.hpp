@@ -21,6 +21,7 @@ enum class BoundaryFlag {undef=-1,block, panel, polar, reflect, inflow, outflow,
                          mg_zerograd, mg_zerofixed, mg_multipole};
 
 #include <algorithm>
+#include <utility>
 #include <vector>
 
 #include "athena.hpp"
@@ -365,6 +366,19 @@ class MeshBoundaryValuesCC : public MeshBoundaryValues {
   TaskStatus RecvAndUnpackCC(DvceArray5D<Real> &a, DvceArray5D<Real> &ca,
                              int iwl = -1, int iwu = -1);
   void FillPanelCornersCC(DvceArray5D<Real> &a, bool coarse = false);
+
+  // COMPONENT-ROLE TABLE of this exchange.  The polar sign flip (sp) and the seam
+  // basis transform (cs) act on the TANGENTIAL VECTOR PAIRS of the exchanged array and
+  // leave every other slot alone.  By default the pair is (IVY, IVZ) = slots (2, 3),
+  // whatever the array holds -- right for the fluid momenta/velocities, wrong for an
+  // array whose slots 2,3 are scalars.  SetVectorPairs(nvar, {{a,b},...}) replaces the
+  // default for THIS object: slot a is the x2 (theta / xi) component, slot b its x3
+  // (phi / eta) partner, and every slot not listed is a SCALAR.  An empty list marks
+  // every slot scalar.  Objects that never call it are bitwise unchanged.
+  void SetVectorPairs(const int nvar, const std::vector<std::pair<int,int>> &pairs);
+  bool vrole_set_ = false;
+  // per slot: -1 = scalar; else 2*partner + (0 if the slot is the x2 member, 1 if x3)
+  DvceArray1D<int> vrole_;
   // functions to communicate fluxes of CC data
   TaskStatus PackAndSendFluxCC(DvceFaceFld5D<Real> &flx);
   TaskStatus RecvAndUnpackFluxCC(DvceFaceFld5D<Real> &flx);

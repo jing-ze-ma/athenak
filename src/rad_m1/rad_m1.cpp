@@ -18,6 +18,7 @@
 #include "parameter_input.hpp"
 #include "mesh/mesh.hpp"
 #include "bvals/bvals.hpp"
+#include "coordinates/coordinates.hpp"
 #include "rad_m1/rad_m1.hpp"
 #include "rad_m1/rad_m1_closure.hpp"
 #include "rad_m1/rad_m1_implicit.hpp"
@@ -65,6 +66,41 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
       << "(explicit | implicit_x1 | implicit)" << std::endl;
     std::exit(EXIT_FAILURE);
   }
+  }
+  // GEOMETRY GUARD (docs/dev/rad_m1_curvilinear_design.md sect. 0).  Every M1 kernel,
+  // explicit and implicit, is CARTESIAN with a UNIFORM cell: divergences divide by
+  // mb_size.dx1..3 (rad_m1_update.cpp, rad_m1_fluxes.cpp, rad_m1_implicit.cpp), the
+  // flux vector is Cartesian, and no metric enters.  On a spherical-polar or cubed-sphere
+  // mesh the run would proceed silently with that arithmetic (on sp dx2 is Delta theta
+  // in radians: the transverse transport is wrong by r and r sin(theta)), so refuse it.
+  // The radial stretches are refused too although they only act inside the sp/cs
+  // geometry (on a plain Cartesian mesh the hydro ignores them and so would M1), so
+  // that no stretched input can reach the uniform-dx kernels; and relativistic
+  // coordinates, since the M1 here is the O(v/c) flat-space system.
+  {
+    Mesh *pm_ = ppack->pmesh;
+    std::string why;
+    if (pm_->use_spherical_polar) {why += " mesh/use_spherical_polar";}
+    if (pm_->use_cubed_sphere) {why += " mesh/use_cubed_sphere";}
+    if (pm_->use_polar_boundary) {why += " mesh/use_polar_boundary";}
+    if (pm_->use_grid_stretch_r) {why += " mesh/use_grid_stretch_r";}
+    if (pm_->use_grid_stretch_r_poly) {why += " mesh/use_grid_stretch_r_poly";}
+    if (pm_->use_grid_stretch_theta) {why += " mesh/use_grid_stretch_theta";}
+    if (ppack->pcoord != nullptr &&
+        (ppack->pcoord->is_special_relativistic ||
+         ppack->pcoord->is_general_relativistic ||
+         ppack->pcoord->is_dynamical_relativistic)) {
+      why += " relativistic coordinates";
+    }
+    if (!why.empty()) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+        << std::endl << "<rad_m1> (explicit and implicit transport) supports only a "
+        << "uniform Cartesian mesh; this input sets:" << why << "." << std::endl
+        << "The M1 kernels would run with Cartesian uniform-dx arithmetic on it.  See "
+        << "docs/dev/rad_m1_curvilinear_design.md (branch m1-curv-design) for the "
+        << "staged plan that lifts this." << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
   }
   nstage = M1_NSTAGE;
   impl_cfl = -1.0;
@@ -625,6 +661,9 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   // (5) boundary buffers
   pbval_u = new MeshBoundaryValuesCC(ppack, pin, false);
   pbval_u->InitializeBuffers(M1_NVAR);
+  // (F2, F3) is the tangential pair (what the default (IVY, IVZ) rule gives by luck);
+  // E and F1 (radial) are scalars.  Stated explicitly, see SetVectorPairs.
+  pbval_u->SetVectorPairs(M1_NVAR, {{M1_F2, M1_F3}});
 
   if (global_variable::my_rank == 0) {
     std::cout << "<rad_m1>: c=" << c_light << " chat/c=" << chat_over_c
