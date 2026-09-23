@@ -1,0 +1,5 @@
+<problem>
+ck_impl_glob    = none     # none | ls | ls_sub (README_glob.md)
+ck_impl_ls_ntry = 4
+ck_impl_ls_c    = 1.0e-4
+ck_impl_sub_max = 8

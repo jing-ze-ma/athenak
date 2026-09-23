@@ -1580,10 +1580,27 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
                 << " rt_implicit_column=" << rt_implicit_column << "." << std::endl;
       std::exit(EXIT_FAILURE);
     }
-    int npass = ck_impl_maxit;
+    // problem/ck_impl_glob = ls_sub: the passes a column may spend on its sub-steps
+    // (maxit per sub-step at every level 1, 2, 4, .. sub_max, plus the restarts)
+    int nitmax = ck_impl_maxit;
+    if (ck_impl_glob == 2) {
+      int nsl = 0;
+      for (int l=1; l<=ck_impl_sub_max; l*=2) nsl += l;
+      nitmax = ck_impl_maxit*nsl + 2*nsl + 2;
+    }
+    int npass = nitmax;
     bool conv = false;
     // ck_impl_colskip: every column is live again at the start of a call
     if (ck_done_ptr != nullptr) Kokkos::deep_copy(*ck_done_ptr, 0.0);
+    // ck_impl_glob: every column starts the call on level 0 with no pending trial
+    ck_impl_nrej = 0;
+    ck_impl_nsub = 0;
+    ck_impl_nsubfail = 0;
+    ck_impl_jac_again = false;
+    if (ck_impl_glob > 0 && ck_lsc_ptr != nullptr) {
+      Kokkos::deep_copy(*ck_lsc_ptr, 0.0);
+      if (ck_sacc_ptr != nullptr) Kokkos::deep_copy(*ck_sacc_ptr, 0.0);
+    }
     // problem/ck_impl_warm: reset the per-call increment accumulator and, when the
     // switch is on, seed the gas with the previous call's converged increment
     {
@@ -1593,7 +1610,7 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
     }
     // ck_impl_debug <= -2: the residual and the step of every pass, on the report line
     std::string hist;
-    for (int it=0; it<ck_impl_maxit; ++it) {
+    for (int it=0; it<nitmax; ++it) {
       ck_impl_pass = it;
       picket_fence_two_stream_RT_pass(pm, bdt);
       MeshBlockPack *pp = pm->pmb_pack;
@@ -1613,6 +1630,7 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
       }
     }
     ck_impl_last_it = npass;
+    if (ck_impl_nsubfail > 0) conv = false;   // ls_sub: a column failed at the finest L
     ck_impl_nonconv = conv ? 0 : 1;
     ck_impl_pass = -1;
     // ck_impl_debug = -1: the report line from EVERY rank, tagged; the Newton loop is
@@ -1626,6 +1644,9 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
                 << " thin=" << ck_impl_nthin << " active=" << ck_impl_nactive
                 << " nsweep=" << ck_impl_nsweep
                 << " rj=" << ck_impl_reuse_jac << " sd=" << ck_impl_seed
+                << ((ck_impl_glob > 0) ? (" lsrej=" + std::to_string(ck_impl_nrej)
+                    + " subrst=" + std::to_string(ck_impl_nsub)
+                    + " subfail=" + std::to_string(ck_impl_nsubfail)) : std::string(""))
                 << (conv ? "" : " NOT-CONVERGED")
                 << ((ck_impl_debug <= -2) ? (" hist=" + hist) : std::string(""))
                 << std::endl;
@@ -1801,6 +1822,12 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                   << "double-precision chain (RT_FP32 = 0)." << std::endl;
         std::exit(EXIT_FAILURE);
       }
+    }
+    // problem/ck_impl_glob lives in the fused step only
+    if (ck_impl_glob > 0 && (!ck_impl_fuse || ck_impl_debug > 0)) {
+      std::cout << "### FATAL ERROR in two_stream_rt: problem/ck_impl_glob needs "
+                << "problem/ck_impl_fuse (and ck_impl_debug <= 0)." << std::endl;
+      std::exit(EXIT_FAILURE);
     }
     // problem/ck_impl_cvsec lives in the fused step only
     if (ck_impl_cvsec && !ck_impl_fuse) {
@@ -2251,8 +2278,10 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
       // atomic_add per (cell, chain) of the assembly AND the CK_NB pair of
       // Planck-fraction look-ups per cell that dB_b/dT costs.  See
       // utils/two_stream_column_ck.hpp.
+      // ck_impl_glob = ls_sub: also the pass after a sub-step restart / advance
       const bool ckjacp_ = ckimp_ && ((ck_impl_reuse_jac == 0)
-                                      || (ck_impl_pass == CkImplJacPass()));
+                                      || (ck_impl_pass == CkImplJacPass())
+                                      || (ck_impl_jac_again && ck_impl_pass > 0));
       // problem/ck_impl_jac_lin: the tridiagonal of a pass that builds it comes from the
       // stored factorisation of the linear kernel, never from the JAC chain kernel
       const bool ckjl_ = ckimp_ && ck_impl_jac_lin;
