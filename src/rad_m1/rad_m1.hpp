@@ -404,6 +404,26 @@ class RadiationM1 {
                                 // (5 blocking reductions per its), 1 = fused reductions
                                 // (3), 2 = 1 plus alpha kept on the device (2 on 1 rank)
   Kokkos::View<Real, DevMemSpace> bcg_rvd;  // rhat.v on the device (sync level 2)
+  // ---- the Picard pass count (bench/m1_picard_0923).  Every option defaults OFF and
+  // is then not referenced, so the default path is bitwise unchanged.
+  int impl_plog;                // <rad_m1>/implicit_picard_log: print one line per
+                                // Picard pass for the first N solves (rank 0)
+  Real bcg_r0rel;               // max|b - A x0|/max|b| of the last BiCGStab call
+  bool impl_lres_test;          // <rad_m1>/implicit_lres_test (default true): require the
+                                // pass-to-pass transverse change lresid < lin_tol too
+  bool impl_conv_est;           // <rad_m1>/implicit_conv_est: stop when the linear-rate
+                                // estimate of the REMAINING change is below implicit_tol
+  Real impl_ew_max;             // <rad_m1>/implicit_lin_ew_max: Eisenstat-Walker forcing
+                                // of the inner tolerance (0 = off, the fixed lin_tol)
+  Real impl_ew_gam;             // <rad_m1>/implicit_lin_ew_gamma
+  Real impl_lin_cnorm;          // <rad_m1>/implicit_lin_cnorm: inner test on the per-cell
+                                // relative E error max|r_i|/(s_i E_i) (0 = off)
+  Real ew_fprev, ew_etaprev;    // max|r0| and eta of the previous pass of this step
+  bool impl_pred;               // <rad_m1>/implicit_predictor = step: start the Picard
+                                // loop from E^n + (dt/dt_prev) dE_prev (and T likewise)
+  bool pred_ok;                 // a previous-step increment is stored
+  Real pred_dt;                 // the dt of that step
+  DvceArray5D<Real> ipred;      // (m,3,k,j,i): dE_prev, dT_prev, T^n of this step
 
   // ---- MILESTONE 3b phase D: the OFF-DIAGONAL Eddington terms and the closure lag.
   // All inert with transport = explicit | implicit_x1 and on a 1-D mesh.
@@ -632,6 +652,7 @@ class RadiationM1 {
   //! the same BiCGStab with fused reductions and vector updates (implicit_bcg_sync > 0)
   int ImplicitBiCGStabFused(Real rhsmax);
   void ImplicitBiCGStabEnd(int nit, bool fell_back);  // fallback / output / statistics
+  void ImplicitPicardLog(int it, int nin, Real resid, Real lresid, bool srct);
 
   // ---- <rad_m1>/closure = tau (rad_m1_tau.cpp): the Eddington tensor of the multi-D
   // implicit solve from the COLUMN OPTICAL DEPTH measured from the top of the domain

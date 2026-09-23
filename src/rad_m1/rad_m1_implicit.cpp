@@ -231,6 +231,49 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (impl_bcg_sync == 2) {
     bcg_rvd = Kokkos::View<Real, DevMemSpace>("m1_bcg_rvd");
   }
+  // the Picard pass count (bench/m1_picard_0923): a per-pass log, off by default
+  impl_plog = pin->GetOrAddInteger("rad_m1","implicit_picard_log",0);
+  // ...and the options that cut it.  All OFF by default (bitwise the HEAD path):
+  //  implicit_lres_test = false  drop the pass-to-pass transverse-change test under
+  //    bicgstab, where the transverse coupling is IN the operator and is solved to
+  //    implicit_lin_tol on every pass (the test lags the Picard test by one pass);
+  //  implicit_conv_est = true    stop once q/(1-q) times the last change (q = the
+  //    measured contraction of the last two passes, required < 1/2) is below
+  //    implicit_tol, i.e. without the confirming pass;
+  //  implicit_lin_ew_max > 0     Eisenstat-Walker (choice 2) inner tolerance
+  //    max(lin_tol max|b|, eta_k max|r0|), eta_0 = ew_max,
+  //    eta_k = min(ew_max, gamma (|r0_k|/|r0_{k-1}|)^2) with the gamma eta_{k-1}^2
+  //    safeguard (bcg_sync >= 1 only);
+  //  implicit_predictor = step   start the loop from the previous step's implicit
+  //    increment scaled by dt/dt_prev (closures that do not read the iterate only).
+  impl_lres_test = pin->GetOrAddBoolean("rad_m1","implicit_lres_test",true);
+  impl_conv_est = pin->GetOrAddBoolean("rad_m1","implicit_conv_est",false);
+  impl_ew_max = pin->GetOrAddReal("rad_m1","implicit_lin_ew_max",0.0);
+  impl_ew_gam = pin->GetOrAddReal("rad_m1","implicit_lin_ew_gamma",0.9);
+  //  implicit_lin_cnorm > 0     the inner test on max_i |r_i|/(s_i E^k_i) < cnorm,
+  //    s_i = 1 + SRCB_i the row excess: a bound on the per-cell relative error of E
+  //    the residual implies (bcg_sync >= 1 only).
+  impl_lin_cnorm = pin->GetOrAddReal("rad_m1","implicit_lin_cnorm",0.0);
+  if (impl_lin_cnorm < 0.0 || (impl_lin_cnorm > 0.0 && impl_bcg_sync == 0)) {
+    ImplFatal("<rad_m1>/implicit_lin_cnorm must be >= 0 and needs "
+              "implicit_bcg_sync >= 1");
+  }
+  if (impl_ew_max < 0.0 || impl_ew_max >= 1.0 || !(impl_ew_gam > 0.0)) {
+    ImplFatal("<rad_m1>/implicit_lin_ew_max must lie in [0,1), ew_gamma > 0");
+  }
+  if (impl_ew_max > 0.0 && impl_bcg_sync == 0) {
+    ImplFatal("<rad_m1>/implicit_lin_ew_max needs implicit_bcg_sync >= 1");
+  }
+  {std::string pr = pin->GetOrAddString("rad_m1","implicit_predictor","none");
+  if (pr.compare("none") == 0) {
+    impl_pred = false;
+  } else if (pr.compare("step") == 0) {
+    impl_pred = true;
+  } else {
+    ImplFatal("<rad_m1>/implicit_predictor = '" + pr
+              + "' is not a choice (none | step)");
+  }
+  }
   if (impl_ecnt < 0 || impl_ecnt > M1_EC_NTMAX) {
     ImplFatal("<rad_m1>/implicit_eos_cache_nt must lie in [0,8]");
   }
@@ -483,6 +526,11 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   }
   Kokkos::realloc(iw, nmb, niw, ncells3, ncells2, ncells1);
   Kokkos::deep_copy(iw, 0.0);
+  if (impl_pred) {
+    Kokkos::realloc(ipred, nmb, 3, ncells3, ncells2, ncells1);
+    Kokkos::deep_copy(ipred, 0.0);
+    pred_ok = false;
+  }
   Kokkos::realloc(ifw, nmb, M1_NIFW, ncells3, ncells2, ncells1+1);
   Kokkos::deep_copy(ifw, 0.0);
   if (trans_on) {
@@ -2561,6 +2609,7 @@ int RadiationM1::ImplicitBiCGStab(Real rhsmax) {
   }, Kokkos::Max<Real>(rnorm));
   M1GlobalMax(rnorm);
   bcg_nred += 1.0;
+  bcg_r0rel = rnorm/bscale;
 
   int nit = 0;
   int nrestart = 0;
@@ -2771,6 +2820,13 @@ int RadiationM1::ImplicitBiCGStabFused(Real rhsmax) {
   using HRed = M1BcgRed<Kokkos::HostSpace>;
   const bool devrv = (impl_bcg_sync == 2) && (global_variable::nranks == 1);
   auto rvd_ = bcg_rvd;
+  // implicit_lin_cnorm > 0: the max norm is taken of r_i/(s_i E^k_i), s_i = 1 + SRCB_i
+  // the row EXCESS of the M-matrix (diagonal minus the off-diagonal moduli: the
+  // transport rows sum to zero, the absorption does not), instead of r_i/max|b|.  For
+  // an M-matrix A s >= s componentwise, so |dE_i| <= max_j |r_j|/s_j: the norm bounds
+  // the error of E in every cell relative to the local E; the test is r < lin_cnorm.
+  const bool cn = (impl_lin_cnorm > 0.0);
+  const Real efl = e_floor;
 
   // x0 = the Picard iterate; r0 = b - A x0, with max|r0| and (r0,r0) in the same kernel
   par_for("m1_impl_bcgf_x0", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
@@ -2790,18 +2846,40 @@ int RadiationM1::ImplicitBiCGStabFused(Real rhsmax) {
     iw_(m,M1_IW_KP,k,j,i) = 0.0;
     iw_(m,M1_IW_KV,k,j,i) = 0.0;
     v.s0 += r*r;
-    Real a = fabs(r);
+    Real a = cn ? (fabs(r)/((1.0 + fmax(iw_(m,M1_IW_SRCB,k,j,i), 0.0))
+                            *fmax(iw_(m,M1_IW_EP,k,j,i), efl))) : fabs(r);
     v.mx = (a > v.mx) ? a : v.mx;
   }, HRed(red));
   M1GlobalBcg(red);
   bcg_nred += 1.0;
   Real rnorm = red.mx;
   Real rhon = red.s0;   // (rhat, r) of the NEXT iteration, always known on entry
+  bcg_r0rel = cn ? rnorm : (rnorm/bscale);
+  // Eisenstat-Walker (implicit_lin_ew_max > 0): max|r0| IS the nonlinear residual of
+  // the Picard iterate in the max norm (the system was re-linearised about it), so the
+  // forcing term needs nothing that is not already here.  Off: the fixed test, as is.
+  const bool ew = (impl_ew_max > 0.0);
+  Real tabs = cn ? impl_lin_cnorm : (tol*bscale);
+  if (ew) {
+    Real eta = impl_ew_max;
+    if (ew_fprev > 0.0) {
+      eta = impl_ew_gam*SQR(rnorm/ew_fprev);
+      const Real sg = impl_ew_gam*SQR(ew_etaprev);
+      if (sg > 0.1) {eta = fmax(eta, sg);}
+      eta = fmin(eta, impl_ew_max);
+    }
+    ew_fprev = rnorm;
+    ew_etaprev = eta;
+    tabs = fmax(tabs, eta*rnorm);
+  }
+  auto lin_done = [=](const Real r) {
+    return (ew || cn) ? (r < tabs) : (r/bscale < tol);
+  };
 
   int nit = 0;
   int nrestart = 0;
   Real rho = 1.0, alpha = 1.0, omega = 1.0;
-  bool done = (rnorm/bscale < tol);
+  bool done = lin_done(rnorm);
   bool fell_back = false;
   while (!done && nit < impl_lin_maxit) {
     ++nit;
@@ -2886,7 +2964,8 @@ int RadiationM1::ImplicitBiCGStabFused(Real rhsmax) {
           Real r = iw_(m,M1_IW_KS,k,j,i) - ow*iw_(m,M1_IW_KTT,k,j,i);
           iw_(m,M1_IW_KR,k,j,i) = r;
           v.s0 += iw_(m,M1_IW_KRH,k,j,i)*r;
-          Real a = fabs(r);
+          Real a = cn ? (fabs(r)/((1.0 + fmax(iw_(m,M1_IW_SRCB,k,j,i), 0.0))
+                                  *fmax(iw_(m,M1_IW_EP,k,j,i), efl))) : fabs(r);
           v.mx = (a > v.mx) ? a : v.mx;
         }, HRed(red));
         M1GlobalBcg(red);
@@ -2894,7 +2973,7 @@ int RadiationM1::ImplicitBiCGStabFused(Real rhsmax) {
         rho = rhon;
         rhon = red.s0;
         rnorm = red.mx;
-        if (rnorm/bscale < tol) {
+        if (lin_done(rnorm)) {
           // the TRUE residual, which is what the tolerance is about
           ImplicitApplyOp(M1_IW_KX, M1_IW_KTT);
           Kokkos::parallel_reduce("m1_impl_bcgf_true", pol,
@@ -2904,12 +2983,13 @@ int RadiationM1::ImplicitBiCGStabFused(Real rhsmax) {
             k += ks; j += js; i += is;
             Real r = iw_(m,M1_IW_KB,k,j,i) - iw_(m,M1_IW_KTT,k,j,i);
             iw_(m,M1_IW_KR,k,j,i) = r;
-            Real a = fabs(r);
+            Real a = cn ? (fabs(r)/((1.0 + fmax(iw_(m,M1_IW_SRCB,k,j,i), 0.0))
+                                    *fmax(iw_(m,M1_IW_EP,k,j,i), efl))) : fabs(r);
             v.mx = (a > v.mx) ? a : v.mx;
           }, HRed(red));
           M1GlobalBcg(red);
           bcg_nred += 1.0;
-          if (red.mx/bscale < tol) {
+          if (lin_done(red.mx)) {
             done = true;
           } else {
             breakdown = true;   // restart the recurrence from the true residual
@@ -3035,6 +3115,55 @@ void RadiationM1::ImplicitReport() {
               << " closure_lag=" << (impl_clag_step ? "step" : "pass")
               << " positivity fallbacks=" << od_nfall
               << " min E from the solve=" << od_emin << std::endl;
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::ImplicitPicardLog
+//! \brief DIAGNOSTIC (<rad_m1>/implicit_picard_log): one line per Picard pass with the
+//! E and T parts of the Picard residual (and the x1 index of the cell that owns each),
+//! the transverse change lresid, the inner iterations and the inner starting residual.
+
+void RadiationM1::ImplicitPicardLog(int it, int nin, Real resid, Real lresid, bool srct) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  int is = indcs.is, ie = indcs.ie;
+  int js = indcs.js, je = indcs.je;
+  int ks = indcs.ks, ke = indcs.ke;
+  int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto iw_ = iw;
+  using MaxLoc = Kokkos::MaxLoc<Real,int>;
+  Real vals[3] = {0.0, 0.0, 0.0};
+  int locs[3] = {-1, -1, -1};
+  const int comp[3] = {M1_IW_S1, M1_IW_S3, M1_IW_LRES};
+  for (int q = 0; q < 3; ++q) {
+    if (q == 1 && !srct) {continue;}
+    if (q == 2 && !trans_on) {continue;}
+    if (q == 0 && !srct) {
+      // without the gas coupling RES is the E part alone
+      locs[0] = 0;
+    }
+    const int c = (q == 0 && !srct) ? M1_IW_RES : comp[q];
+    MaxLoc::value_type mloc;
+    Kokkos::parallel_reduce("m1_impl_plog",
+    Kokkos::MDRangePolicy<Kokkos::Rank<4>>(DevExeSpace(), {0,ks,js,is},
+                                           {nmb1+1,ke+1,je+1,ie+1}),
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i,
+                  MaxLoc::value_type &lmx) {
+      Real r = iw_(m,c,k,j,i);
+      if (r > lmx.val) {
+        lmx.val = r;
+        lmx.loc = i;
+      }
+    }, MaxLoc(mloc));
+    vals[q] = mloc.val;
+    locs[q] = mloc.loc;
+  }
+  if (global_variable::my_rank == 0) {
+    std::cout << "<rad_m1> plog step=" << static_cast<int>(impl_nstep) << " pass=" << it
+              << " res=" << resid << " resE=" << vals[0] << " iE=" << locs[0]
+              << " resT=" << vals[1] << " iT=" << locs[1]
+              << " lres=" << lresid << " iL=" << locs[2]
+              << " nin=" << nin << " r0=" << bcg_r0rel << std::endl;
   }
 }
 
@@ -3304,6 +3433,39 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   // then read by step (b) on every Picard pass: the tensor is lagged by one hydro step.
   if (vetsc) {VetShortChar();}
 
+  // implicit_predictor = step: start the Picard loop from the previous step's implicit
+  // increment, scaled by dt/dt_prev.  Only the STARTING POINT moves: E^n (M1_IW_EN),
+  // e^n, the EOS cache window and every scale below are those of the step, and the
+  // closures it is allowed with do not read the iterate (the Eddington D_ab does not
+  // depend on n, vet_sc and tau read their own arrays), so the fixed point is unchanged.
+  // It runs AFTER the vet_sc formal solution, which reads T^n (M1_IW_TP) as its source,
+  // and the moved E is then sent to the ghost cells.
+  const bool pred = impl_pred && (edd || vetsc || tauc) && !(aphll && rfreeze);
+  if (impl_pred && (static_cast<int>(ipred.extent(0)) != nmb1 + 1)) {
+    pred_ok = false;   // the pack changed size (AMR): start cold
+  }
+  auto pd_ = ipred;
+  if (pred) {
+    const bool pok = pred_ok && (pred_dt > 0.0);
+    const Real rat = pok ? (dt/pred_dt) : 0.0;
+    const bool hh = have_hydro;
+    par_for("m1_impl_pred", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      Real tn = iw_(m,M1_IW_TP,k,j,i);
+      pd_(m,2,k,j,i) = tn;
+      if (!pok) {return;}
+      Real ep = iw_(m,M1_IW_EN,k,j,i) + rat*pd_(m,0,k,j,i);
+      if (ep > efl) {iw_(m,M1_IW_EP,k,j,i) = ep;}
+      if (hh) {
+        Real tp = tn + rat*pd_(m,1,k,j,i);
+        if (tp > 0.5*tn && tp < 2.0*tn) {iw_(m,M1_IW_TP,k,j,i) = tp;}
+      }
+    });
+    if (pok) {
+      if (trans) {ImplicitTransverseHalo(1);} else {ImplicitX1Halo(true);}
+    }
+  }
+
   // MILESTONE 3e: the Anderson histories start empty at every step, and the per-cell
   // scale of the fixed-point vector is frozen at the start-of-step energy (see
   // ImplicitAccelSave).  Nothing here runs under implicit_accel = none.
@@ -3324,7 +3486,14 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   int it = 0;
   Real resid = 0.0;
   bool converged = false;
+  // the per-pass log (implicit_picard_log): E and T parts of the Picard residual, the
+  // transverse change, the inner iterations and the inner starting residual
+  const bool plog = (impl_plog > 0) && (impl_nstep < static_cast<Real>(impl_plog));
+  ew_fprev = 0.0;
+  ew_etaprev = 0.0;
+  Real rprev = -1.0;
   for (it = 0; it < impl_maxit && !converged; ++it) {
+    int nin = -1;
     // MILESTONE 3e: x_k, the state this pass maps
     if (accel) {ImplicitAccelSave();}
     // the off-diagonal mode of THIS pass (the positivity fallback can change it)
@@ -3990,7 +4159,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       if (odm == M1_OD_OPERATOR) {
         ImplicitOffDiagOp(M1_IW_EP, M1_IW_KB, 1.0);
       }
-      ImplicitBiCGStab(rhsmax);
+      nin = ImplicitBiCGStab(rhsmax);
       if (odm == M1_OD_OPERATOR) {
         // POSITIVITY.  The cross-derivative coefficients have mixed signs, so the
         // 9-/19-point operator is not an M-matrix and E' > 0 is no longer guaranteed.
@@ -4091,6 +4260,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         Real re = fabs(enew - eold)/fmax(fmax(fabs(enew), escale), 1.0e-300);
         Real rt = fabs(tnew - told)/fmax(fabs(tnew), 1.0e-300);
         iw_(m,M1_IW_RES,k,j,i) = fmax(re, rt);
+        if (plog) {
+          iw_(m,M1_IW_S1,k,j,i) = re;
+          iw_(m,M1_IW_S3,k,j,i) = rt;
+        }
       });
     } else {
       par_for("m1_impl_accept", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
@@ -4255,6 +4428,19 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       lresid /= rhsmax;
     }
     converged = (resid < impl_tol) && (!trans || (lresid < impl_lin_tol));
+    if (impl_conv_est || !impl_lres_test) {
+      // the Picard test, optionally without the confirming pass: q is the contraction
+      // of the last two passes, and q/(1-q) times this change bounds what is left
+      bool pc = (resid < impl_tol);
+      if (impl_conv_est && !pc && rprev > 0.0) {
+        Real q = resid/rprev;
+        pc = (q < 0.5) && (resid*q/(1.0 - q) < impl_tol);
+      }
+      bool lc = !trans || (lresid < impl_lin_tol) || (!impl_lres_test && bicg);
+      converged = pc && lc;
+    }
+    rprev = resid;
+    if (plog) {ImplicitPicardLog(it, nin, resid, lresid, src_on);}
     // MILESTONE 3e: ACCELERATE.  Only on a pass that is followed by another one: the
     // state the step ENDS on must be the one the face fluxes of step (g) were built
     // from, so a converged pass -- and the last pass of a non-converged step -- keeps
@@ -4269,6 +4455,16 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         ImplicitX1Halo(true);
       }
     }
+  }
+  if (pred) {
+    const bool hh = have_hydro;
+    par_for("m1_impl_pstore", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      pd_(m,0,k,j,i) = iw_(m,M1_IW_EP,k,j,i) - iw_(m,M1_IW_EN,k,j,i);
+      pd_(m,1,k,j,i) = hh ? (iw_(m,M1_IW_TP,k,j,i) - pd_(m,2,k,j,i)) : 0.0;
+    });
+    pred_ok = true;
+    pred_dt = dt;
   }
   if (trans) {
     // refresh the stored transverse face fluxes with the CONVERGED E, so that the
