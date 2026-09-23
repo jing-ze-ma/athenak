@@ -2014,6 +2014,10 @@ void RadiationM1::VetMBInit(ParameterInput *pin) {
     Kokkos::realloc(st.dsc_c, nmb, 6, 1, 1, 1);
     st.pbd = new MeshBoundaryValuesCC(pmy_pack, pin, false);
     st.pbd->InitializeBuffers(6);
+    // the six components of the symmetric tensor D: no slot is a tangential VECTOR
+    // member (the default rule would treat slots 2,3 as one).  A tensor transform at
+    // poles/seams is a later stage; rad_m1 is a fatal on sp/cs until then.
+    st.pbd->SetVectorPairs(6, {});
   }
   // DIAGNOSTIC: vet_mb_lag = K (read only when given) emulates the BLOCK-JACOBI sweep
   if (pin->DoesParameterExist("rad_m1", "vet_mb_lag")) {

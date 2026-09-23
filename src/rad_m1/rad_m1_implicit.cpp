@@ -911,6 +911,19 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     Kokkos::realloc(thw_c, nmb, M1_NHALO_T, 1, 1, 1);
     pbval_th = new MeshBoundaryValuesCC(pmy_pack, pin, false);
     pbval_th->InitializeBuffers(M1_NHALO_T);
+    // COMPONENT ROLES of the scratch halos (SetVectorPairs).  Slots 2,3 hold F1 and KT,
+    // SCALARS under the polar flip and the seam transform; the real tangential pairs
+    // are (N2,N3), (A2,A3), (V2,V3).  The default (IVY, IVZ) rule would get all of that
+    // wrong (a latent trap while rad_m1 is a fatal on sp/cs, see rad_m1.cpp).
+    {
+      auto slot = [](const int iw) {
+        for (int n=0; n<M1_NHALO_T; ++n) {if (M1HaloCompT(n) == iw) return n;}
+        return -1;
+      };
+      pbval_th->SetVectorPairs(M1_NHALO_T, {{slot(M1_IW_N2), slot(M1_IW_N3)},
+                                            {slot(M1_IW_A2), slot(M1_IW_A3)},
+                                            {slot(M1_IW_V2), slot(M1_IW_V3)}});
+    }
     // the NARROW exchange of the same list: the M1_NHALO_Q components a Picard pass can
     // move once the closure is frozen.  A separate array because the exchange takes the
     // variable count from the array's second extent, and a prefix subview of a
@@ -920,6 +933,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     Kokkos::realloc(thq_c, nmb, M1_NHALO_Q, 1, 1, 1);
     pbval_tq = new MeshBoundaryValuesCC(pmy_pack, pin, false);
     pbval_tq->InitializeBuffers(M1_NHALO_Q);
+    pbval_tq->SetVectorPairs(M1_NHALO_Q, {});   // E', G0, F1, KT: all scalars
     // the deep interior of the scratch arrays is neither read by a send nor written by a
     // receive when every neighbour is at the SAME level (a same-level buffer reaches ng
     // cells in from the active boundary, buffs_cc.cpp) and neither the cubed-sphere
@@ -942,6 +956,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       Kokkos::realloc(krw_c, nmb, 1, 1, 1, 1);
       pbval_kr = new MeshBoundaryValuesCC(pmy_pack, pin, false);
       pbval_kr->InitializeBuffers(1);
+      pbval_kr->SetVectorPairs(1, {});   // one scalar Krylov vector
       // implicit_vimp: the per-pass exchange of the Jacobian rows and dv^k (same
       // sequential-use argument as above)
       if (impl_vimp) {
@@ -950,6 +965,9 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
         Kokkos::realloc(vmw_c, nmb, M1_NVIMP_X, 1, 1, 1);
         pbval_vm = new MeshBoundaryValuesCC(pmy_pack, pin, false);
         pbval_vm->InitializeBuffers(M1_NVIMP_X);
+        // (DV2, DV3) is the tangential pair; the nine per-direction Jacobian rows P are
+        // treated as scalars (their proper curvilinear treatment is a later stage)
+        pbval_vm->SetVectorPairs(M1_NVIMP_X, {{M1_IV_DV + 1, M1_IV_DV + 2}});
       }
     }
     if (impl_halo_direct) {ImplicitHaloDirectInit();}

@@ -1,0 +1,42 @@
+# Unit test of the MeshBoundaryValuesCC component-role table (SetVectorPairs) on the
+# cubed sphere.  Build with -D PROBLEM=bvals_roles_test; the result is the one line
+# "BVALS_ROLES ... PASS|FAIL" printed by the problem generator (nlim = 0).
+<job>
+basename = bvr_cs
+
+<mesh>
+nghost   = 3
+nx1      = 8
+x1min    = 1.0
+x1max    = 2.0
+ix1_bc   = reflect
+ox1_bc   = reflect
+nx2      = 16
+x2min    = -1.0
+x2max    = 1.0
+ix2_bc   = panel
+ox2_bc   = panel
+nx3      = 16
+x3min    = -1.0
+x3max    = 1.0
+ix3_bc   = panel
+ox3_bc   = panel
+use_cubed_sphere = true
+
+<meshblock>
+nx1      = 8
+nx2      = 8
+nx3      = 8
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim       = 0
+tlim       = 1.0
+
+<hydro>
+eos         = ideal
+reconstruct = plm
+rsolver     = hllc
+gamma       = 1.6666666666666667

@@ -1,0 +1,43 @@
+# Unit test of the MeshBoundaryValuesCC component-role table (SetVectorPairs) on a
+# spherical-polar mesh with polar boundaries.  Build with -D PROBLEM=bvals_roles_test;
+# the result is the one line "BVALS_ROLES ... PASS|FAIL" (nlim = 0).
+<job>
+basename = bvr_sp
+
+<mesh>
+nghost = 2
+nx1 = 8
+x1min = 0.5
+x1max = 1.5
+ix1_bc = outflow
+ox1_bc = outflow
+nx2 = 16
+x2min = -1.0
+x2max = -1.0
+ix2_bc = polar
+ox2_bc = polar
+nx3 = 16
+x3min = -1.0
+x3max = -1.0
+ix3_bc = periodic
+ox3_bc = periodic
+use_spherical_polar = true
+use_polar_boundary = true
+
+<meshblock>
+nx1 = 8
+nx2 = 8
+nx3 = 8
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim       = 0
+tlim       = 1.0
+
+<hydro>
+eos         = ideal
+reconstruct = plm
+rsolver     = hllc
+gamma       = 1.6666666666666667
