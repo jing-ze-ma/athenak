@@ -619,7 +619,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         pin->GetOrAddInteger("problem","ck_impl_ls_ntry",4);
     two_stream_rt::ck_impl_ls_c = pin->GetOrAddReal("problem","ck_impl_ls_c",1.0e-4);
     two_stream_rt::ck_impl_sub_max =
-        pin->GetOrAddInteger("problem","ck_impl_sub_max",8);
+        pin->GetOrAddInteger("problem","ck_impl_sub_max",32);
   }
   // problem/ck_impl_reuse_jac (0 off / 1 chord / 2 scaled chord) and problem/ck_impl_seed
   // (0 off / 1 semi-implicit / 2 exact lagged): the two phase-4 levers, both default off.

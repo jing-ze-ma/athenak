@@ -333,7 +333,7 @@ inline bool ck_impl_lw = false;
 inline int ck_impl_glob = 0;
 inline int ck_impl_ls_ntry = 4;
 inline Real ck_impl_ls_c = 1.0e-4;
-inline int ck_impl_sub_max = 8;
+inline int ck_impl_sub_max = 32;
 // per-column state (m, q, k, j), q = 0 merit at the accepted iterate, 1 pending trial's
 // alpha (0 = none), 2 halvings so far, 3 sub-step level L, 4 sub-step index, 5 residual
 // evaluations in this sub-step
