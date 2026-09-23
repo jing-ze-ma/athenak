@@ -1587,6 +1587,8 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
       int nsl = 0;
       for (int l=1; l<=ck_impl_sub_max; l*=2) nsl += l;
       nitmax = ck_impl_maxit*nsl + 2*nsl + 2;
+      // ck_impl_esc: the extra passes a contracting (sub-)step may take
+      if (ck_impl_esc > 0) nitmax += ck_impl_esc_extra*nsl;
     }
     int npass = nitmax;
     bool conv = false;
@@ -1597,6 +1599,9 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
     ck_impl_nsub = 0;
     ck_impl_nsubfail = 0;
     ck_impl_jac_again = false;
+    ck_impl_nesc = 0;
+    ck_impl_ncoarse = 0;
+    ck_impl_naa = 0;
     if (ck_impl_glob > 0 && ck_lsc_ptr != nullptr) {
       Kokkos::deep_copy(*ck_lsc_ptr, 0.0);
       if (ck_sacc_ptr != nullptr) Kokkos::deep_copy(*ck_sacc_ptr, 0.0);
@@ -1647,6 +1652,10 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
                 << ((ck_impl_glob > 0) ? (" lsrej=" + std::to_string(ck_impl_nrej)
                     + " subrst=" + std::to_string(ck_impl_nsub)
                     + " subfail=" + std::to_string(ck_impl_nsubfail)) : std::string(""))
+                << ((ck_impl_esc > 0) ? (" escx=" + std::to_string(ck_impl_nesc)
+                    + " coarse=" + std::to_string(ck_impl_ncoarse)) : std::string(""))
+                << ((ck_impl_aa > 0) ? (" aa=" + std::to_string(ck_impl_naa))
+                    : std::string(""))
                 << (conv ? "" : " NOT-CONVERGED")
                 << ((ck_impl_debug <= -2) ? (" hist=" + hist) : std::string(""))
                 << std::endl;
@@ -1827,6 +1836,15 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
     if (ck_impl_glob > 0 && (!ck_impl_fuse || ck_impl_debug > 0)) {
       std::cout << "### FATAL ERROR in two_stream_rt: problem/ck_impl_glob needs "
                 << "problem/ck_impl_fuse (and ck_impl_debug <= 0)." << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    // problem/ck_impl_esc refines ls_sub; problem/ck_impl_aa lives in the fused step
+    if ((ck_impl_esc > 0 && ck_impl_glob != 2)
+        || (ck_impl_aa > 0 && (!ck_impl_fuse || ck_impl_debug > 0))
+        || ck_impl_aa < 0 || ck_impl_aa > CK_AA_MAX) {
+      std::cout << "### FATAL ERROR in two_stream_rt: problem/ck_impl_esc needs "
+                << "ck_impl_glob = ls_sub, and problem/ck_impl_aa (0.." << CK_AA_MAX
+                << ") needs ck_impl_fuse (and ck_impl_debug <= 0)." << std::endl;
       std::exit(EXIT_FAILURE);
     }
     // problem/ck_impl_cvsec lives in the fused step only

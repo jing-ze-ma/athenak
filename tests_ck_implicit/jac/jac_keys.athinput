@@ -1,0 +1,11 @@
+<problem>
+ck_impl_glob      = none   # none | ls | ls_sub (README_glob.md)
+ck_impl_ls_ntry   = 4
+ck_impl_ls_c      = 1.0e-4
+ck_impl_sub_max   = 32
+ck_impl_esc       = 0      # README_jac.md
+ck_impl_esc_rho   = 0.9
+ck_impl_esc_extra = 8
+ck_impl_aa        = 0
+ck_impl_aa_rst    = true
+ck_impl_jneg      = false

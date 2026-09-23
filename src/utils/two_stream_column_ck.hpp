@@ -349,6 +349,50 @@ inline int ck_impl_nsubfail = 0;
 // state; a sub-step starts with its own seed step (ck_impl_seed = 2), and the pass after
 // one rebuilds the Jacobian at the seeded state (for every live column)
 inline bool ck_impl_jac_again = false;
+// problem/ck_impl_esc (tests_ck_implicit/README_jac.md): CHEAPER ESCALATION for ls_sub.
+// 0 = off (default, bitwise ls_sub).  1 = (i) a (sub-)step that has used its maxit
+// residual evaluations but whose merit still falls by ck_impl_esc_rho or better per pass,
+// and whose projected passes to tol at that rate fit in ck_impl_esc_extra more, keeps
+// iterating instead of being split; (ii) a split restarts ONLY the failing sub-step (from
+// its own start state e^n + ck_sacc, redone as two sub-steps of half its length), not the
+// whole column from e^n; (iii) after a sub-step that converged in <= maxit/2 steps (its
+// first residual evaluation is not a step) the column returns to the coarser level where
+// the sub-step grid allows it.
+// Needs ck_impl_glob = ls_sub.
+inline int ck_impl_esc = 0;
+inline Real ck_impl_esc_rho = 0.9;
+inline int ck_impl_esc_extra = 8;
+// problem/ck_impl_aa (README_jac.md): ANDERSON (Pulay / DIIS) ACCELERATION of the chord
+// iteration, depth ck_impl_aa (0 = off, default, bitwise; at most CK_AA_MAX).  Each
+// column keeps the last aa differences of its iterates dX and of its backward-Euler
+// residuals dR
+// (the residual every pass's ordinary sweep already evaluates, so no extra sweep).  The
+// step is taken from the combination of the past iterates that minimises the weighted
+// linearised residual, gamma = argmin || W (r - dR gamma) ||_2 (W = the merit weights
+// 1/(e*_i + eps e*_max)), and is the tridiagonal solve of that minimised residual:
+//     e_new = e - dX gamma + P^{-1} (-(r - dR gamma)),  P the chord tridiagonal.
+// On a linear problem with a fixed P this is GMRES preconditioned by the tridiagonal
+// (Walker & Ni 2011): the non-local two-stream coupling and the dropped negative
+// per-chain parts that the tridiagonal leaves out are picked up from the secant
+// information, so the iteration is superlinear instead of linear.  Thin rows (whose step
+// is the per-cell thin solve) are left out of the least squares and are not mixed.  The
+// history restarts with every new backward-Euler residual (pass 0, every sub-step), after
+// a fallback step and whenever the weighted residual norm grew over the last step (the
+// secants then span a region where the column is far from linear); a seed step's pair is
+// never stored (the seed is not a step of this iteration).  Needs ck_impl_fuse.
+constexpr int CK_AA_MAX = 8;
+inline int ck_impl_aa = 0;
+// problem/ck_impl_aa_rst: restart the history when the weighted residual norm grew
+inline bool ck_impl_aa_rst = true;
+// ck_aah: (m, s, k, j, i), s = 0..aa-1 dX, aa..2aa-1 dR, 2aa the last iterate, 2aa+1 its
+// residual; ck_aac: (m, q, k, j), q = 0 stored pairs, 1 ring head, 2 last iterate valid,
+// 3 its weighted residual norm^2
+inline DvceArray5D<Real> *ck_aah_ptr = nullptr;
+inline DvceArray4D<Real> *ck_aac_ptr = nullptr;
+// host counters over one call: extra passes granted, coarsenings, accelerated steps
+inline int ck_impl_nesc = 0;
+inline int ck_impl_ncoarse = 0;
+inline int ck_impl_naa = 0;
 
 // the Newton pass index inside one RT call; read by the pass function to decide whether
 // the opacity is rebuilt.  -1 = ck_implicit is off.
@@ -591,6 +635,12 @@ inline void CkImplAlloc(const int nmb, const int nb, const int nch, const int n1
       delete ck_sacc_ptr;
       ck_sacc_ptr = nullptr;
     }
+    if (ck_aah_ptr != nullptr) {
+      delete ck_aah_ptr;
+      delete ck_aac_ptr;
+      ck_aah_ptr = nullptr;
+      ck_aac_ptr = nullptr;
+    }
   }
   ck_jac_ptr = new DvceArray5D<Real>("ck_jac", nmb, 3, n3, n2, n1);
   ck_dbdt_ptr = new DvceArray5D<Real>("ck_dbdt", nmb, nb, n1, n3, n2);
@@ -653,10 +703,16 @@ inline void CkImplAlloc(const int nmb, const int nb, const int nch, const int n1
       ck_sacc_ptr = new DvceArray4D<Real>("ck_sacc", nmb, n3, n2, n1);
     }
   }
+  // problem/ck_impl_aa: the per-column Anderson history
+  if (ck_impl_aa > 0) {
+    ck_aah_ptr = new DvceArray5D<Real>("ck_aah", nmb, 2*ck_impl_aa + 2, n3, n2, n1);
+    ck_aac_ptr = new DvceArray4D<Real>("ck_aac", nmb, 4, n3, n2);
+  }
   if (ck_conv_ptr == nullptr) {
     // slots 8-11: ck_impl_glob's rejected trials, sub-step restarts, failed columns,
-    // sub-step seed steps
-    ck_conv_ptr = new DvceArray1D<Real>("ck_conv", 12);
+    // sub-step seed steps; 12-14: ck_impl_esc's extra passes and coarsenings, and
+    // ck_impl_aa's accelerated steps
+    ck_conv_ptr = new DvceArray1D<Real>("ck_conv", 16);
   }
 }
 
@@ -772,7 +828,12 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
     const int nkj = nk*nj;
     const int nlg = (nmb1 + 1)*nkj;
     const int ns = ie + 1;                   // scratch rows are indexed by q = i - ic
-    const size_t scr = 6*ScrArray1D<Real>::shmem_size(ns);
+    // problem/ck_impl_aa: the Gram matrix, right-hand side and coefficients of the
+    // least squares go to team scratch too (one element when off)
+    const int naa_ = ck_impl_aa;
+    const int nsg = (naa_ > 0) ? (CK_AA_MAX*CK_AA_MAX + 2*CK_AA_MAX) : 1;
+    const size_t scr = 6*ScrArray1D<Real>::shmem_size(ns)
+                       + ScrArray1D<Real>::shmem_size(nsg);
     // problem/ck_impl_cvsec: the secant heat capacity (1-element dummies when off)
     const bool cvs_ = ck_impl_cvsec;
     const bool cv0_ = (ck_impl_pass <= 0);
@@ -789,6 +850,14 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
     const Real lsca_ = ck_impl_ls_c;
     const int maxit_ = ck_impl_maxit;
     const int submax_ = ck_impl_sub_max;
+    // problem/ck_impl_esc and ck_impl_aa (1-element dummies when off)
+    const bool esc_ = (ck_impl_esc > 0) && sub_;
+    const Real escr_ = ck_impl_esc_rho;
+    const int escx_ = ck_impl_esc_extra;
+    const bool pz_ = (ck_impl_pass <= 0);
+    const bool aarst_ = ck_impl_aa_rst;
+    auto aah_ = (naa_ > 0) ? *ck_aah_ptr : DvceArray5D<Real>("ck_aah_d", 1, 1, 1, 1, 1);
+    auto aac_ = (naa_ > 0) ? *ck_aac_ptr : DvceArray4D<Real>("ck_aac_d", 1, 1, 1, 1);
     // one wavefront per column on a device; the host backends take their own size
 #if defined(KOKKOS_ENABLE_HIP) || defined(KOKKOS_ENABLE_CUDA)
     Kokkos::TeamPolicy<> tpol(DevExeSpace(), nlg, 64);
@@ -818,7 +887,9 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
       Real hh = bdt;
       // ck_impl_glob: the merit of this iterate and the sub-step bookkeeping to store
       Real phi = 0.0;
-      int sst = 0, cnt = 0;
+      int sst = 0, cnt = 0, lvl = 0;
+      // ck_impl_aa: the largest e* of the column (the merit weights)
+      Real esmax = 0.0;
       if (!glb_) {
         Kokkos::parallel_reduce(Kokkos::TeamThreadRange(tm, ic, ie+1),
         [&](const int i, Real &mx) {
@@ -852,11 +923,10 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
         const Real phia = lsc_(m,0,k,j);
         const Real alp = lsc_(m,1,k,j);
         const int ntr = static_cast<int>(lsc_(m,2,k,j));
-        const int lvl = static_cast<int>(lsc_(m,3,k,j));
+        lvl = static_cast<int>(lsc_(m,3,k,j));
         sst = static_cast<int>(lsc_(m,4,k,j));
         cnt = static_cast<int>(lsc_(m,5,k,j)) + 1;
         hh = bdt/static_cast<Real>(1 << lvl);
-        Real esmax = 0.0;
         Kokkos::parallel_reduce(Kokkos::TeamThreadRange(tm, ic, ie+1),
         [&](const int i, Real &mx) {
           const Real e = est_(m,k,j,i);
@@ -926,10 +996,43 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
             Kokkos::single(Kokkos::PerTeam(tm), [&]() { done_(m,k,j) = 1.0; });
             return;
           }
-        } else if (sub_ && cnt > maxit_) {
+        }
+        // ck_impl_esc: a (sub-)step past its maxit evaluations that is still contracting
+        // fast enough to reach tol within ck_impl_esc_extra more passes keeps going
+        bool keep = false;
+        if (esc_ && !cvd && cnt > maxit_ && cnt <= maxit_ + escx_ && phia > 0.0
+            && rn > tol && tol > 0.0) {
+          const Real rt = phi/phia;
+          if (rt > 0.0 && rt <= escr_) {
+            const Real np = log(tol/rn)/log(rt);
+            if (np <= static_cast<Real>(maxit_ + escx_ + 1 - cnt)) keep = true;
+          }
+        }
+        if (keep) {
+          Kokkos::single(Kokkos::PerTeam(tm), [&]() {
+            Kokkos::atomic_add(&cnv_(12), 1.0);
+          });
+        } else if (!cvd && sub_ && cnt > maxit_) {
           // (b) the sub-step did not converge in maxit passes: redo the column from e^n
           // with twice the sub-steps, or give up at the finest level
-          if ((2 << lvl) <= submax_) {
+          if ((2 << lvl) <= submax_ && esc_) {
+            // ck_impl_esc: redo ONLY this sub-step, from its own start e^n + sacc, as two
+            // sub-steps of half its length
+            Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, ic, ie+1), [&](const int i) {
+              u0(m,IEN,k,j,i) -= dep_(m,k,j,i) - sacc_(m,k,j,i);
+              dep_(m,k,j,i) = sacc_(m,k,j,i);
+            });
+            Kokkos::single(Kokkos::PerTeam(tm), [&]() {
+              lsc_(m,0,k,j) = 0.0;
+              lsc_(m,1,k,j) = 0.0;
+              lsc_(m,2,k,j) = 0.0;
+              lsc_(m,3,k,j) = static_cast<Real>(lvl + 1);
+              lsc_(m,4,k,j) = static_cast<Real>(2*sst);
+              lsc_(m,5,k,j) = 0.0;
+              Kokkos::atomic_add(&cnv_(6), 1.0);
+              Kokkos::atomic_add(&cnv_(9), 1.0);
+            });
+          } else if ((2 << lvl) <= submax_) {
             Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, ic, ie+1), [&](const int i) {
               u0(m,IEN,k,j,i) -= dep_(m,k,j,i);
               dep_(m,k,j,i) = 0.0;
@@ -959,6 +1062,16 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
           });
           tm.team_barrier();
           sst += 1;
+          // ck_impl_esc: a sub-step that converged quickly hands the column back to the
+          // coarser level wherever the finished sub-steps end on its grid
+          if (esc_ && lvl > 0 && (sst % 2) == 0 && 2*(cnt - 1) <= maxit_) {
+            lvl -= 1;
+            sst /= 2;
+            hh = bdt/static_cast<Real>(1 << lvl);
+            Kokkos::single(Kokkos::PerTeam(tm), [&]() {
+              Kokkos::atomic_add(&cnv_(13), 1.0);
+            });
+          }
           cnt = 1;
           ph2 = 0.0;
           Kokkos::parallel_reduce(Kokkos::TeamThreadRange(tm, ic, ie+1),
@@ -986,6 +1099,8 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
       ScrArray1D<Real> sd(tm.team_scratch(0), ns);
       ScrArray1D<Real> sx(tm.team_scratch(0), ns);
       ScrArray1D<Real> sv(tm.team_scratch(0), ns);
+      ScrArray1D<Real> sgm(tm.team_scratch(0), nsg);
+      constexpr int g0 = CK_AA_MAX*CK_AA_MAX + CK_AA_MAX;   // gamma's slots in sg
       // ck_impl_cvsec: this pass's cv of every cell, before any row reads a neighbour's
       if (cvs_) {
         Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, 0, n), [&](const int q) {
@@ -1106,6 +1221,139 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
       const int nbad = nbt % 65536;
       const int nthn = nbt/65536;
       tm.team_barrier();
+      // ---- problem/ck_impl_aa: the Anderson history and the least squares ----
+      bool acc = false;
+      int nh = 0;
+      if (naa_ > 0 && nbad == 0) {
+        const int na = naa_;
+        if (!glb_) {
+          Kokkos::parallel_reduce(Kokkos::TeamThreadRange(tm, ic, ie+1),
+          [&](const int i, Real &mx) {
+            const Real e = est_(m,k,j,i);
+            if (e > mx) mx = e;
+          }, Kokkos::Max<Real>(esmax));
+          if (!(esmax > 0.0)) esmax = emax;
+        }
+        // a new backward-Euler residual (pass 0, a new sub-step) restarts the history
+        const bool rs = sdc || (glb_ ? (cnt == 1) : pz_);
+        // the weighted residual norm^2 of this iterate (thick rows)
+        Real rr = 0.0;
+        Kokkos::parallel_reduce(Kokkos::TeamThreadRange(tm, ic, ie+1),
+        [&](const int i, Real &sm) {
+          if (!(thk_(m,k,j,i) > 0.0)) return;
+          const Real sac = sub_ ? sacc_(m,k,j,i) : 0.0;
+          const Real r = ((ei_(m,k,j,i) - est_(m,k,j,i)) - sac) - hh*src_(m,k,j,i);
+          const Real es = est_(m,k,j,i);
+          const Real w = 1.0/(((es > 0.0) ? es : 0.0) + eps*esmax);
+          sm += w*w*r*r;
+        }, rr);
+        // restart: a new residual, or the norm grew since the last iterate
+        const bool grw = aarst_ && !rs && (aac_(m,2,k,j) > 0.0)
+                         && !(rr <= aac_(m,3,k,j));
+        nh = (rs || grw) ? 0 : static_cast<int>(aac_(m,0,k,j));
+        int hd = (rs || grw) ? 0 : static_cast<int>(aac_(m,1,k,j));
+        const bool pv = !rs && !grw && (aac_(m,2,k,j) > 0.0);
+        Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, ic, ie+1), [&](const int i) {
+          const Real e = ei_(m,k,j,i);
+          const Real sac = sub_ ? sacc_(m,k,j,i) : 0.0;
+          const Real r = ((e - est_(m,k,j,i)) - sac) - hh*src_(m,k,j,i);
+          if (pv) {
+            aah_(m,hd,k,j,i) = e - aah_(m,2*na,k,j,i);
+            aah_(m,na+hd,k,j,i) = r - aah_(m,2*na+1,k,j,i);
+          }
+          aah_(m,2*na,k,j,i) = e;
+          aah_(m,2*na+1,k,j,i) = r;
+        });
+        if (pv) {
+          hd = (hd + 1) % na;
+          if (nh < na) nh += 1;
+        }
+        tm.team_barrier();
+        Kokkos::single(Kokkos::PerTeam(tm), [&]() {
+          aac_(m,0,k,j) = static_cast<Real>(nh);
+          aac_(m,1,k,j) = static_cast<Real>(hd);
+          aac_(m,2,k,j) = sdc ? 0.0 : 1.0;      // a seed step's pair is never stored
+          aac_(m,3,k,j) = rr;
+        });
+        if (!sdc && nh > 0) {
+          // the weighted Gram matrix of dR over the thick rows, and dR^T W^2 r
+          for (int a=0; a<nh; ++a) {
+            for (int b=0; b<=a+1; ++b) {
+              Real g = 0.0;
+              Kokkos::parallel_reduce(Kokkos::TeamThreadRange(tm, ic, ie+1),
+              [&](const int i, Real &sm) {
+                if (!(thk_(m,k,j,i) > 0.0)) return;
+                const Real es = est_(m,k,j,i);
+                const Real w = 1.0/(((es > 0.0) ? es : 0.0) + eps*esmax);
+                const Real v = (b <= a) ? aah_(m,na+b,k,j,i) : aah_(m,2*na+1,k,j,i);
+                sm += w*w*aah_(m,na+a,k,j,i)*v;
+              }, g);
+              Kokkos::single(Kokkos::PerTeam(tm), [&]() {
+                if (b <= a) {
+                  sgm(a*CK_AA_MAX + b) = g;
+                } else {
+                  sgm(CK_AA_MAX*CK_AA_MAX + a) = g;
+                }
+              });
+            }
+          }
+          tm.team_barrier();
+          // regularised Cholesky of the Gram matrix, in place, and gamma
+          int ok = 0;
+          Kokkos::single(Kokkos::PerTeam(tm), [&](int &okl) {
+            Real dmx = 0.0;
+            for (int a=0; a<nh; ++a) {
+              if (sgm(a*CK_AA_MAX + a) > dmx) dmx = sgm(a*CK_AA_MAX + a);
+            }
+            okl = (dmx > 0.0) ? 1 : 0;
+            const Real lam = 1.0e-10*dmx;
+            for (int a=0; a<nh && okl == 1; ++a) {
+              for (int b=0; b<=a; ++b) {
+                Real v = sgm(a*CK_AA_MAX + b) + ((a == b) ? lam : 0.0);
+                for (int c=0; c<b; ++c) v -= sgm(a*CK_AA_MAX + c)*sgm(b*CK_AA_MAX + c);
+                if (a == b) {
+                  if (!(v > 1.0e-14*dmx)) {
+                    okl = 0;
+                    break;
+                  }
+                  sgm(a*CK_AA_MAX + a) = sqrt(v);
+                } else {
+                  sgm(a*CK_AA_MAX + b) = v/sgm(b*CK_AA_MAX + b);
+                }
+              }
+            }
+            if (okl == 1) {
+              for (int a=0; a<nh; ++a) {
+                Real y = sgm(CK_AA_MAX*CK_AA_MAX + a);
+                for (int c=0; c<a; ++c) y -= sgm(a*CK_AA_MAX + c)*sgm(g0 + c);
+                sgm(g0 + a) = y/sgm(a*CK_AA_MAX + a);
+              }
+              for (int a=nh-1; a>=0; --a) {
+                Real x = sgm(g0 + a);
+                for (int c=a+1; c<nh; ++c) x -= sgm(c*CK_AA_MAX + a)*sgm(g0 + c);
+                sgm(g0 + a) = x/sgm(a*CK_AA_MAX + a);
+                if (!(x == x)) okl = 0;
+              }
+            }
+          }, ok);
+          acc = (ok == 1);
+          tm.team_barrier();
+        }
+        if (acc) {
+          // the thick rows solve for the minimised residual r - dR gamma
+          Kokkos::parallel_for(Kokkos::TeamThreadRange(tm, 0, n), [&](const int q) {
+            const int i = ic + q;
+            if (!(thk_(m,k,j,i) > 0.0)) return;
+            Real sm = 0.0;
+            for (int a=0; a<nh; ++a) sm += sgm(g0 + a)*aah_(m,na+a,k,j,i);
+            sd(q) += sm;
+          });
+          Kokkos::single(Kokkos::PerTeam(tm), [&]() {
+            Kokkos::atomic_add(&cnv_(14), 1.0);
+          });
+          tm.team_barrier();
+        }
+      }
       // the Thomas recurrences on one lane: cp overwrites c, dp overwrites d, and the
       // uncapped solution (NaN-guarded, as the unfused back substitution carries it)
       // goes to x
@@ -1150,12 +1398,20 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
           dep_(m,k,j,i) += de;
           if (glb_) lsd_(m,k,j,i) = 0.0;
         });
+        if (naa_ > 0) {
+          Kokkos::single(Kokkos::PerTeam(tm), [&]() {
+            aac_(m,0,k,j) = 0.0;          // a fallback step restarts the history
+            aac_(m,1,k,j) = 0.0;
+            aac_(m,2,k,j) = 0.0;
+          });
+        }
         if (glb_) {
           Kokkos::single(Kokkos::PerTeam(tm), [&]() {
             lsc_(m,0,k,j) = phi;
             lsc_(m,1,k,j) = 0.0;          // a fallback step is not line-searched
             lsc_(m,2,k,j) = 0.0;
             lsc_(m,4,k,j) = static_cast<Real>(sst);
+            if (esc_) lsc_(m,3,k,j) = static_cast<Real>(lvl);
             lsc_(m,5,k,j) = static_cast<Real>(cnt);
           });
         }
@@ -1168,6 +1424,12 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
       [&](const int q, Real &mx) {
         const int i = ic + q;
         Real de = sx(q);
+        // ck_impl_aa: from the combination of the past iterates
+        if (acc && thk_(m,k,j,i) > 0.0) {
+          Real sm = 0.0;
+          for (int a=0; a<nh; ++a) sm += sgm(g0 + a)*aah_(m,a,k,j,i);
+          de -= sm;
+        }
         bool cap = false;
         const Real ei = ei_(m,k,j,i);
         const Real lim = dcap*ei;
@@ -1221,6 +1483,7 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
           if (sub_ && sdc && !seedp_) Kokkos::atomic_add(&cnv_(11), 1.0);
           lsc_(m,2,k,j) = 0.0;
           lsc_(m,4,k,j) = static_cast<Real>(sst);
+          if (esc_) lsc_(m,3,k,j) = static_cast<Real>(lvl);
           lsc_(m,5,k,j) = static_cast<Real>(cnt);
         }
       });
@@ -1243,6 +1506,11 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
       ck_impl_nsubfail += static_cast<int>(hcf(10));
       ck_impl_jac_again = (ck_impl_glob == 2) && (hcf(11) > 0.0);
     }
+    if (ck_impl_esc > 0) {
+      ck_impl_nesc += static_cast<int>(hcf(12));
+      ck_impl_ncoarse += static_cast<int>(hcf(13));
+    }
+    if (ck_impl_aa > 0) ck_impl_naa += static_cast<int>(hcf(14));
     if (hcf(6) == 0.0) return 0;
     ck_impl_last_dst = hcf(1);
     ck_impl_ncap = static_cast<int>(hcf(2));
