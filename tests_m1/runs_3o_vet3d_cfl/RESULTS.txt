@@ -42,3 +42,39 @@ ringing of the vertical mode. Suspect: an O(dt) horizontal forcing from a quanti
 (the SC tensor, which carries the only horizontal/off-diagonal structure, is computed once per step at
 the start-of-step state). NEXT (not run): the same pair with closure = eddington (no lagged tensor)
 and with vet_tensor = uniaxial, to isolate it.
+
+=== ISOLATION ARMS (read 2026-09-23 with gate3d.py; jobs 11945504-7 COMPLETED, tlim 1000) ===
+KE_h (1e24)     t=100   250    500    1000
+  C30 vet_sc    8.23   5.28   2.55   3.74
+  C15 vet_sc    2.45   1.61   0.675  0.785
+  E30 eddington 8.15   5.55   2.71   3.81
+  E15 eddington 2.31   1.62   0.686  0.805
+  U30 uniaxial  8.31   5.45   2.47   3.65
+  U15 uniaxial  2.45   1.65   0.649  0.764
+VERDICT: the cfl 0.3/0.15 ratio of KE_h (x3.4 at t=100, x4.7 at t=1000) is the SAME for all three
+closures. The lagged SC tensor is EXONERATED. The dt dependence is in the hydro step or the
+hydro<->radiation coupling (operator split), not in the closure. KE_v also closure-insensitive in
+ratio. NEXT: isolate hydro vs coupling (gas_feedback / fofc / wellbalance arms, eddington, tlim 1000).
+
+=== ARMS 2 (bench/m1_vet3dcfl_0923/README_ARMS2.md) ===
+F30/F15 (hydro/fofc=false, override confirmed in submit.sh): hydro.hst BITWISE identical to E30/E15
+-> FOFC never fires in this box; it is not the cause. N30/N15 (gas_feedback off) pending
+(N30 died at t=500 on a u2 quota spike, resubmitted as 11945901).
+N30/N15 (rad_m1 gas_feedback=false, force_reference=none: hydro alone in the static Phi_eff column,
+jobs 11945901/11945673): KE_h t=100 2.71e27/2.70e27, t=1000 1.626e27/1.620e27 (ratio 1.004);
+KE_v 7.59e26/7.63e26 at t=1000. (KE_h is 400x larger than with feedback: no radiative damping
+of the seeded entropy modes.)
+VERDICT: HYDRO ALONE IS dt-INDEPENDENT. The x4.7 cfl dependence of KE_h lives in the
+radiation<->gas coupling (Lie split, backward Euler, first order; see docs/dev/rad_m1_time2_design.md:
+the present scheme does not preserve a split steady state, error O(dt)). Gate G5 of H-ESDIRK2
+(branch m1-time2) is the test of the cure.
+
+=== G5 of H-ESDIRK2 (m1-time2b; /viper/ptmp2/jinma/h2_3x/g5; jobs 11950787-8, 11950870-3) ===
+KE_h cfl 0.3 / 0.15, ratio:           t=100                 t=1000
+  E  be, upwind (old)          8.15e24/2.31e24 3.5    3.81e24/8.05e23 4.7
+  B  be + plm + vimp           8.13e24/2.31e24 3.5    3.80e24/7.83e23 4.9
+  H  hesdirk2 eddington        1.07e25/2.76e24 3.9    2.93e24/7.31e23 4.0
+  V  hesdirk2 vet_sc (D^n)     1.11e25/2.95e24 3.8    2.90e24/7.32e23 4.0
+All NON-CONVERGED 0. VERDICT: the 2nd-order coupling does NOT remove the dt dependence (KE_h ~ dt^2,
+i.e. v_h is an O(dt) error); plm+vimp changes nothing. Another first-order piece of the coupling
+remains outside the M1 solve. Bisection agent started 09-24 (runs in /viper/ptmp2/jinma/kehdt_0924).
