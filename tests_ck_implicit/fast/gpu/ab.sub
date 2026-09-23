@@ -1,0 +1,26 @@
+#!/bin/bash -l
+#SBATCH -o /viper/ptmp2/jinma/ckfast_0923/ab/log.out.%j
+#SBATCH -e /viper/ptmp2/jinma/ckfast_0923/ab/log.err.%j
+#SBATCH -J ckfast_ab
+#SBATCH -p apudev
+#SBATCH --ntasks=2
+#SBATCH --constraint="apu"
+#SBATCH --gres=gpu:2
+#SBATCH --cpus-per-task=24
+#SBATCH --time=00:14:50
+# ck-fast production A/B: each arm from the same cs_hyd4_prod restart (read in place)
+# to T0 + 3.05e4 s (0.1 rotation), verbose ck lines, final restart kept in <arm>/rst.
+# usage: sbatch ab.sub <rst> <arms...>
+source /viper/ptmp2/jinma/ckfast_0923/common.sh
+RST=$1; shift
+T0=$(head -c 300000 $RST | strings | sed -n '/<output4>/,/<output5>/p' | grep last_time | head -1 | awk '{print $3}')
+TL=$(python3 -c "print($T0+3.05e4)")
+echo "RST $RST T0=$T0 md5=$(md5sum $RST | cut -c1-32) BIN $BIN md5=$(md5sum $BIN | cut -c1-32)"
+for a in "$@"; do
+  d=$P/ab/$a; mkdir -p $d; cd $d
+  srun -n 2 $BIN -r $RST -i $INP -t 00:07:00 output3/dt=1e30 time/ndiag=100 \
+      time/tlim=$TL $(args $a) problem/ck_impl_verbose=true $AB_EXTRA > run.log 2>run.err
+  echo "rc_$a=$? $(ls rst 2>/dev/null | tail -1)"
+  rm -rf bin 2>/dev/null
+done
+echo CKFAST_AB_DONE

@@ -389,6 +389,33 @@ using correlated_k::ck_build_rosseland_table;
 // in that form it is the better physics; set false to drop the magnetic force entirely.
 bool bc_outer_maxwell = true;
 
+// ---- problem/rt_test_* : TEST HOOKS for the well-posed checks of the implicit
+// correlated-k solve (tests_ck_implicit/wellposed/README.md).  All default off, and off
+// they change nothing: no hook is enrolled, no array is allocated and the only code on
+// the default path is one untaken branch in SourceFunc.
+//  rt_test_freeze  the hydro is FROZEN: the RK stages still run, but after the last one
+//                  the state is reset to the frozen one and ONLY the radiation is
+//                  applied to it, once per cycle (user_split_once), with dt =
+//                  rt_test_dt if > 0 (else the hydro dt).  rho and the momenta never
+//                  change; the internal energy changes by the radiation alone.
+//  rt_test_rho, rt_test_T   (> 0) a horizontally AND radially uniform initial state
+//                  [g/cm^3, K] (only meaningful with rt_test_freeze).
+//  rt_test_dT, rt_test_nwave   initial perturbation T -> T (1 + dT sin(nwave pi xi)),
+//                  xi = (r - x1min)/(x1max - x1min); nwave = 0 is a uniform dT.
+//  rt_test_out, rt_test_every  per-cycle diagnostic file (serial runs only).
+namespace {
+bool rt_test_freeze = false;
+Real rt_test_dt = 0.0;
+std::string rt_test_out;
+int rt_test_every = 1;
+int rt_test_col[3] = {0, -1, -1};
+DvceArray5D<Real> *rt_frz_ptr = nullptr;
+DvceArray4D<Real> *rt_frzT_ptr = nullptr;
+std::int64_t rt_test_ncall = 0;
+std::FILE *rt_test_fp = nullptr;
+}  // namespace
+void DhjRtFreezeSplit(Mesh *pm, const Real dt);
+
 //----------------------------------------------------------------------------------------
 //! \fn KOKKOS_INLINE_FUNCTION std::uint64_t SplitMix64Mix()
 //! \brief splitmix64 finalizer: an integer hash built from xor-shifts and multiplies.
@@ -565,6 +592,30 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       pin->GetOrAddBoolean("problem","ck_impl_colskip",true);
   two_stream_rt::ck_impl_once =
       pin->GetOrAddBoolean("problem","ck_impl_once",false);
+  // ck-fast levers (tests_ck_implicit/README_fast.md), all default off: the stored
+  // operator kept across calls (xstep = k cycles, xstep_thr = max relative T/rho change),
+  // the adaptive chord Jacobian (jreuse = the contraction that triggers a rebuild), no
+  // confirmation pass (pred, pred_fac), and no allocation/blocking fill in the pass path
+  // (nosync).  See utils/two_stream_column_ck.hpp.
+  two_stream_rt::ck_impl_xstep = pin->GetOrAddInteger("problem","ck_impl_xstep",0);
+  two_stream_rt::ck_impl_xstep_thr =
+      pin->GetOrAddReal("problem","ck_impl_xstep_thr",0.0);
+  two_stream_rt::ck_impl_jreuse = pin->GetOrAddReal("problem","ck_impl_jreuse",0.0);
+  two_stream_rt::ck_impl_jreuse_xc =
+      pin->GetOrAddBoolean("problem","ck_impl_jreuse_xc",false);
+  two_stream_rt::ck_impl_jreuse_act =
+      pin->GetOrAddReal("problem","ck_impl_jreuse_act",0.25);
+  two_stream_rt::ck_impl_pred = pin->GetOrAddBoolean("problem","ck_impl_pred",false);
+  two_stream_rt::ck_impl_pred_fac =
+      pin->GetOrAddReal("problem","ck_impl_pred_fac",0.5);
+  two_stream_rt::ck_impl_pred_chk =
+      pin->GetOrAddBoolean("problem","ck_impl_pred_chk",false);
+  two_stream_rt::ck_impl_nosync =
+      pin->GetOrAddBoolean("problem","ck_impl_nosync",false);
+  two_stream_rt::ck_impl_warm_step =
+      pin->GetOrAddBoolean("problem","ck_impl_warm_step",false);
+  two_stream_rt::ck_impl_cvkeep =
+      pin->GetOrAddBoolean("problem","ck_impl_cvkeep",false);
   // problem/ck_impl_frozen_op: freeze the exchange operator over the Newton passes (the
   // sweep is linear in B_b at frozen opacity, so only the opacity-dependent coefficients
   // have to be rebuilt -- and they do not change); ck_impl_frozen_cof decides whether the
@@ -653,6 +704,35 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
               << "IGNORED with ck_impl_refresh_kappa = true: the operator is frozen "
               << "only where the opacity is." << std::endl;
   }
+  if (two_stream_rt::ck_impl_xstep > 0 && !(two_stream_rt::ck_implicit &&
+      two_stream_rt::ck_impl_frozen_op && !two_stream_rt::ck_impl_refresh_kappa)) {
+    std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: problem/ck_impl_xstep keeps "
+              << "the stored operator of ck_impl_frozen_op across calls; it needs "
+              << "ck_implicit and ck_impl_frozen_op (and not ck_impl_refresh_kappa)."
+              << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  if (two_stream_rt::ck_impl_jreuse > 0.0 && (two_stream_rt::ck_impl_reuse_jac != 0 ||
+      two_stream_rt::ck_impl_glob != 0)) {
+    std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: problem/ck_impl_jreuse is the "
+              << "adaptive chord; it replaces ck_impl_reuse_jac (set it 0) and is not "
+              << "combined with ck_impl_glob." << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  if (two_stream_rt::ck_impl_cvkeep && !two_stream_rt::ck_impl_cvsec) {
+    std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: problem/ck_impl_cvkeep keeps "
+              << "the secant cv of ck_impl_cvsec across calls; set ck_impl_cvsec."
+              << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  if (two_stream_rt::ck_impl_pred && (!two_stream_rt::ck_impl_fuse ||
+      two_stream_rt::ck_impl_debug > 0 || two_stream_rt::ck_impl_glob != 0 ||
+      two_stream_rt::ck_impl_aa > 0)) {
+    std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: problem/ck_impl_pred needs "
+              << "ck_impl_fuse (ck_impl_debug <= 0) and neither ck_impl_glob nor "
+              << "ck_impl_aa." << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
   if (two_stream_rt::ck_impl_once && !two_stream_rt::ck_implicit) {
     std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: problem/ck_impl_once moves "
               << "the WHOLE radiation operator out of the RK stage and is only meant "
@@ -674,6 +754,25 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     user_split_func = DhjCkRtSplit;
     user_split_once = true;
   }
+  // problem/rt_test_* (see the note at rt_test_freeze).  Default off.
+  rt_test_freeze = pin->GetOrAddBoolean("problem","rt_test_freeze",false);
+  if (rt_test_freeze) {
+    if (pmy_mesh_->pmb_pack->pmhd != nullptr || global_variable::nranks != 1) {
+      std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: problem/rt_test_freeze is "
+                << "a serial hydro-only test mode" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    rt_test_dt = pin->GetOrAddReal("problem","rt_test_dt",0.0);
+    rt_test_out = pin->GetOrAddString("problem","rt_test_out","");
+    rt_test_every = pin->GetOrAddInteger("problem","rt_test_every",1);
+    rt_test_col[0] = pin->GetOrAddInteger("problem","rt_test_col_m",0);
+    rt_test_col[1] = pin->GetOrAddInteger("problem","rt_test_col_k",-1);
+    rt_test_col[2] = pin->GetOrAddInteger("problem","rt_test_col_j",-1);
+    user_split_func = DhjRtFreezeSplit;
+    user_split_once = true;
+  }
+  two_stream_rt::rt_test_mu0 = pin->GetOrAddReal("problem","rt_test_mu0",-2.0);
+  two_stream_rt::ck_test_kgrey = pin->GetOrAddReal("problem","ck_test_kgrey",0.0);
   if (two_stream_rt::ck_implicit && global_variable::my_rank == 0) {
     std::cout << "deep_hot_jupiter_rt: correlated-k source is IMPLICIT "
               << "(ck_implicit), tol " << two_stream_rt::ck_impl_tol << ", maxit "
@@ -1892,6 +1991,56 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       });
     }
 
+  // problem/rt_test_rho / rt_test_T / rt_test_dT / rt_test_nwave: the test initial
+  // state (see the note at rt_test_freeze).  Default off; from scratch only.
+  {
+    const Real trho = pin->GetOrAddReal("problem","rt_test_rho",0.0);
+    const Real tTk = pin->GetOrAddReal("problem","rt_test_T",0.0);
+    const Real tdT = pin->GetOrAddReal("problem","rt_test_dT",0.0);
+    const Real tnw = pin->GetOrAddReal("problem","rt_test_nwave",0.0);
+    if (!restart && (trho > 0.0 || tTk > 0.0 || tdT != 0.0)) {
+      if (pmbp->phydro == nullptr || use_cubed_sphere_) {
+        std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: problem/rt_test_rho, _T "
+                  << "and _dT need a hydro run on a spherical-polar mesh" << std::endl;
+        std::exit(EXIT_FAILURE);
+      }
+      auto u0t = pmbp->phydro->u0;
+      auto eost = eos;
+      const bool etgt = use_etotgrav;
+      auto phit = phicc0;
+      auto &x1vt = pmbp->pcoord->x1v;
+      const Real r0t = pmy_mesh_->mesh_size.x1min;
+      const Real r1t = pmy_mesh_->mesh_size.x1max;
+      const Real tcode = (tTk > 0.0) ? tTk/eost.temp_cgs : 0.0;
+      par_for("pgen_rt_test_init", DevExeSpace(), 0, (pmbp->nmb_thispack-1),
+              ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(int m, int k, int j, int i) {
+        const Real rho0 = u0t(m,IDN,k,j,i);
+        const Real ph = etgt ? phit(m,k,j,i) : 0.0;
+        const Real eold = EintFromCons(u0t, m, k, j, i, 0.0, false, etgt, ph);
+        Real ke0 = u0t(m,IEN,k,j,i) - eold - (etgt ? rho0*ph : 0.0);
+        Real rho = rho0;
+        if (trho > 0.0) {
+          rho = trho;
+          u0t(m,IDN,k,j,i) = rho;
+          u0t(m,IM1,k,j,i) = 0.0;
+          u0t(m,IM2,k,j,i) = 0.0;
+          u0t(m,IM3,k,j,i) = 0.0;
+          ke0 = 0.0;
+        }
+        Real t = (tcode > 0.0) ? tcode : eost.Temperature(rho0, eold);
+        const Real xi = (x1vt(m,i) - r0t)/(r1t - r0t);
+        t *= 1.0 + tdT*((tnw > 0.0) ? sin(tnw*M_PI*xi) : 1.0);
+        u0t(m,IEN,k,j,i) = eost.EnergyFromTemperature(rho, t) + ke0
+                         + (etgt ? rho*ph : 0.0);
+      });
+      if (global_variable::my_rank == 0) {
+        std::cout << "deep_hot_jupiter_rt: rt_test initial state: rho " << trho
+                  << " T " << tTk << " dT " << tdT << " nwave " << tnw << std::endl;
+      }
+    }
+  }
+
   // the correlated-k Rosseland table for the radiative diffusion (no-op unless
   // <mhd>/rad_kappa_src = table)
   ck_build_rosseland_table((pmbp->pmhd != nullptr) ? pmbp->pmhd->pcond
@@ -1931,6 +2080,22 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
         }
       }
     }
+  }
+
+  // problem/rt_test_freeze: the frozen state is the state the problem generator (or the
+  // restart) leaves behind
+  if (rt_test_freeze) {
+    auto &u0f = pmy_mesh_->pmb_pack->phydro->u0;
+    rt_frz_ptr = new DvceArray5D<Real>("rt_frz", u0f.extent(0), u0f.extent(1),
+                                       u0f.extent(2), u0f.extent(3), u0f.extent(4));
+    Kokkos::deep_copy(*rt_frz_ptr, u0f);
+    // and the temperature cache the RT takes its EOS guess from (TGuess(wtemp)): it is
+    // restored with the state, so that a horizontally uniform state stays bitwise
+    // uniform instead of inheriting the per-column guesses of the discarded RK stages
+    auto &wt = pmy_mesh_->pmb_pack->phydro->wtemp;
+    rt_frzT_ptr = new DvceArray4D<Real>("rt_frzT", wt.extent(0), wt.extent(1),
+                                        wt.extent(2), wt.extent(3));
+    Kokkos::deep_copy(*rt_frzT_ptr, wt);
   }
 
   return;
@@ -2730,7 +2895,10 @@ void SourceFunc(Mesh *pm, Real bdt) {
     
     // problem/ck_impl_once: the radiation has left the RK stage (see
     // DhjCkRtSplit); nothing radiative is evaluated here.
-    if (!two_stream_rt::ck_impl_once) picket_fence_two_stream_RT(pm, bdt);
+    // problem/rt_test_freeze: the radiation is applied by DhjRtFreezeSplit instead
+    if (!two_stream_rt::ck_impl_once && !rt_test_freeze) {
+      picket_fence_two_stream_RT(pm, bdt);
+    }
 
     // which fluid module is on, as VALUES: dereferencing the host pointer `pmbp`
     // inside a device lambda is illegal on a discrete GPU (see CLAUDE.md).
@@ -4207,6 +4375,159 @@ void adjust_ad_pT_arr(const EOS_Data &eos, const Real &Rgas, const Real &gamma, 
 
 void DhjCkRtSplit(Mesh *pm, const Real dt) {
   picket_fence_two_stream_RT(pm, dt);
+}
+
+//--------------------------------------------------------------------------------
+//! \fn void DhjRtFreezeSplit
+//! \brief problem/rt_test_freeze.  Reset the state to the frozen one (throwing away what
+//! the RK stages did), apply the radiation once with dt = rt_test_dt (else the hydro dt),
+//! write the diagnostic record, and keep the result as the new frozen state.  Test mode
+//! only; see the note at rt_test_freeze.
+
+void DhjRtFreezeSplit(Mesh *pm, const Real dt) {
+  namespace ts = two_stream_rt;
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  DvceArray5D<Real> u0 = pmbp->phydro->u0;
+  auto &frz = *rt_frz_ptr;
+  auto &frzT = *rt_frzT_ptr;
+  DvceArray4D<Real> wt = pmbp->phydro->wtemp;
+  Kokkos::deep_copy(u0, frz);
+  Kokkos::deep_copy(wt, frzT);
+  const Real dtr = (rt_test_dt > 0.0) ? rt_test_dt : dt;
+  picket_fence_two_stream_RT(pm, dtr);
+  ++rt_test_ncall;
+  if (!rt_test_out.empty()) {
+    auto &indcs = pm->mb_indcs;
+    const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+    const int ks = indcs.ks, ke = indcs.ke;
+    const int nmb = pmbp->nmb_thispack;
+    auto eos = pmbp->phydro->peos->eos_data;
+    const bool etg = pmbp->phydro->use_etotgrav;
+    auto phi = pmbp->phydro->phicc0;
+    // T [K], e, and c_v [erg/g/K] at the NEW state, on the device
+    DvceArray5D<Real> dg("rt_test_dg", nmb, 3, u0.extent(2), u0.extent(3), u0.extent(4));
+    par_for("rt_test_diag", DevExeSpace(), 0, nmb-1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(int m, int k, int j, int i) {
+      const Real d = u0(m,IDN,k,j,i);
+      const Real e = EintFromCons(u0, m, k, j, i, 0.0, false, etg,
+                                  etg ? phi(m,k,j,i) : 0.0);
+      const Real t = eos.Temperature(d, e);
+      dg(m,0,k,j,i) = t*eos.temp_cgs;
+      dg(m,1,k,j,i) = e;
+      dg(m,2,k,j,i) = eos.SpecificHeatCv(d, e, t)/eos.temp_cgs;
+    });
+    auto hdg = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), dg);
+    auto hu = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), u0);
+    auto hf = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), frz);
+    auto hx = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(),
+                                                  pmbp->pcoord->xx1f);
+    const bool haveS = ts::ck_implicit && ts::ck_src_ptr != nullptr &&
+                       ts::rt_icut_ptr != nullptr;
+    DvceArray4D<Real>::HostMirror hs;
+    DvceArray3D<int>::HostMirror hc;
+    if (haveS) {
+      hs = Kokkos::create_mirror_view(*ts::ck_src_ptr);
+      Kokkos::deep_copy(hs, *ts::ck_src_ptr);
+      hc = Kokkos::create_mirror_view(*ts::rt_icut_ptr);
+      Kokkos::deep_copy(hc, *ts::rt_icut_ptr);
+    }
+    const int m0 = rt_test_col[0];
+    const int k0 = (rt_test_col[1] >= 0) ? rt_test_col[1] : ks;
+    const int j0 = (rt_test_col[2] >= 0) ? rt_test_col[2] : js;
+    // E: every column against the reference column, BITWISE, on T and on u0(IEN)
+    std::int64_t ndT = 0, ndE = 0;
+    Real mxT = 0.0;
+    // C: the column budget sum V (e - e*) - dt sum V S, and the solver's own residual
+    // norm max |R|/(e + eps emax) re-evaluated on the FINAL state
+    Real bud0 = 0.0, dE0 = 0.0, dS0 = 0.0, budmax = 0.0, rnmax = 0.0, ve0 = 0.0;
+    for (int m=0; m<nmb; ++m) {
+      for (int k=ks; k<=ke; ++k) {
+        for (int j=js; j<=je; ++j) {
+          Real sE = 0.0, sS = 0.0, sA = 0.0, emax = 0.0, sV = 0.0;
+          const int ic = haveS ? hc(m,k,j) : is;
+          for (int i=is; i<=ie; ++i) {
+            const Real t = hdg(m,0,k,j,i), tr = hdg(m0,0,k0,j0,i);
+            if (t != tr) ++ndT;
+            if (hu(m,IEN,k,j,i) != hu(m0,IEN,k0,j0,i)) ++ndE;
+            const Real rl = std::fabs(t - tr)/tr;
+            if (rl > mxT) mxT = rl;
+            if (i >= ic && hdg(m,1,k,j,i) > emax) emax = hdg(m,1,k,j,i);
+          }
+          if (!haveS) continue;
+          for (int i=ic; i<=ie; ++i) {
+            const Real r0 = hx(m,i), r1 = hx(m,i+1);
+            const Real v = (r1*r1*r1 - r0*r0*r0)/3.0;
+            const Real de = hu(m,IEN,k,j,i) - hf(m,IEN,k,j,i);
+            const Real sd = dtr*hs(m,k,j,i);
+            sE += v*de;
+            sS += v*sd;
+            sA += v*std::fabs(sd);
+            sV += v*hdg(m,1,k,j,i);
+            const Real rn = std::fabs(de - sd)/
+                            (hdg(m,1,k,j,i) + ts::ck_impl_norm_eps*emax);
+            if (rn > rnmax) rnmax = rn;
+          }
+          const Real b = (sA > 0.0) ? std::fabs(sE - sS)/sA : 0.0;
+          if (b > budmax) budmax = b;
+          if (m == m0 && k == k0 && j == j0) {
+            bud0 = (sA > 0.0) ? (sE - sS)/sA : 0.0;
+            dE0 = sE;
+            dS0 = sS;
+            ve0 = sV;
+          }
+        }
+      }
+    }
+    if (rt_test_fp == nullptr) {
+      rt_test_fp = std::fopen(rt_test_out.c_str(), "w");
+      std::fprintf(rt_test_fp, "# S ncall trt dt ndiffT ndiffE maxrelT passes nonconv "
+                   "res gap capped fallback bud0 dE0 dtS0 budmax resfinal sumVe0\n");
+      std::fprintf(rt_test_fp, "X");
+      for (int i=is; i<=ie; ++i) std::fprintf(rt_test_fp, " %.17e",
+                                              0.5*(hx(m0,i) + hx(m0,i+1)));
+      std::fprintf(rt_test_fp, "\nD");
+      for (int i=is; i<=ie; ++i) std::fprintf(rt_test_fp, " %.17e",
+                                              hu(m0,IDN,k0,j0,i));
+      std::fprintf(rt_test_fp, "\n");
+      if (haveS) std::fprintf(rt_test_fp, "I %d\n", hc(m0,k0,j0) - is);
+    }
+    std::fprintf(rt_test_fp, "S %lld %.17e %.17e %lld %lld %.6e %d %d %.6e %.6e %d %d "
+                 "%.9e %.9e %.9e %.6e %.6e %.9e\n", static_cast<long long>(rt_test_ncall),
+                 rt_test_ncall*dtr, dtr, static_cast<long long>(ndT),
+                 static_cast<long long>(ndE), mxT,
+                 ts::ck_implicit ? ts::ck_impl_last_it : 0,
+                 ts::ck_implicit ? ts::ck_impl_nonconv : 0, ts::ck_impl_last_res,
+                 ts::ck_impl_last_gap, ts::ck_impl_ncap, ts::ck_impl_nfall,
+                 bud0, dE0, dS0,
+                 budmax, rnmax, ve0);
+    if (rt_test_ncall == 1 || rt_test_ncall % rt_test_every == 0) {
+      const char tag[3] = {'T', 'E', 'C'};
+      for (int q=0; q<3; ++q) {
+        std::fprintf(rt_test_fp, "%c %lld", tag[q],
+                     static_cast<long long>(rt_test_ncall));
+        for (int i=is; i<=ie; ++i) std::fprintf(rt_test_fp, " %.17e",
+                                                hdg(m0,q,k0,j0,i));
+        std::fprintf(rt_test_fp, "\n");
+      }
+    }
+    std::fflush(rt_test_fp);
+  }
+  Kokkos::deep_copy(frz, u0);
+  // the new state's temperature cache, solved with the old one as the guess
+  {
+    auto &indcs = pm->mb_indcs;
+    auto eos = pmbp->phydro->peos->eos_data;
+    const bool etg = pmbp->phydro->use_etotgrav;
+    auto phi = pmbp->phydro->phicc0;
+    par_for("rt_test_frzT", DevExeSpace(), 0, pmbp->nmb_thispack-1, indcs.ks, indcs.ke,
+            indcs.js, indcs.je, indcs.is, indcs.ie,
+    KOKKOS_LAMBDA(int m, int k, int j, int i) {
+      const Real e = EintFromCons(u0, m, k, j, i, 0.0, false, etg,
+                                  etg ? phi(m,k,j,i) : 0.0);
+      frzT(m,k,j,i) = eos.Temperature(u0(m,IDN,k,j,i), e, frzT(m,k,j,i));
+    });
+    Kokkos::deep_copy(wt, frzT);
+  }
 }
 
 void DhjCycleDiag(Mesh *pm) {
