@@ -1,0 +1,211 @@
+================================================================================
+MILESTONE 3n -- <rad_m1>/transport = sc_heating: the short-characteristics formal
+solution used DIRECTLY as the gas heating/cooling and force (MURaM / CO5BOLD style),
+no M1 moments evolved.  Seeded 2-D He slab and 3-D box vs implicit M1 + VET.
+================================================================================
+Date:    2026-09-23, viper.  NOT COMMITTED.
+Patch:   bench/m1_scheat_0923/scheat.patch vs HEAD dccdf506 (git apply --check: clean).
+         Files: rad_m1/rad_sc_heat.cpp (NEW, all of the path), rad_m1_vet.cpp (the SC
+         sweep moved verbatim out of VetShortChar into VetSweep(); no arithmetic change,
+         band exchange untouched), rad_m1.hpp (decls, 2 members), rad_m1.cpp (transport
+         keyword, init/report), rad_m1_tasks.cpp (task swap), src/CMakeLists.txt.
+         cpplint (90 col): new file clean; 1 pre-existing line-length hit in vet.cpp.
+Builds:  bench/m1_scheat_0923/{ref, .} = git archive HEAD (+ patch), kokkos symlinked.
+         CPU gcc/14 openmpi/5.0 Release MPI PROBLEM=box_convection:
+           ref/build/src/athena md5 7c70bbd4..., build/src/athena md5 f4ec61ce...
+         HIP rocm/6.3 gfx942_APU: athena_gpu md5 ace0fc4a... (the same final source).
+Runs:    bench/m1_scheat_0923/runs (CPU), gpu_runs (GPU, job 11944339, apudev).
+Inputs:  he_slab_sc.athinput (= runs_3j_vet/he_slab_vet + override keys + sc_* keys),
+         he_slab_sc_3d.athinput (= runs_3k_gpu3d/he_slab_m1_3d + the same keys).
+Scripts: gate2.py -> gate2.txt, gate3_re.py (exact Hopf q by Nystrom, q(0) = 0.577346
+         vs 1/sqrt3 = 0.577350), gpu_stats.py -> gpu_stats.txt (this directory).
+
+--------------------------------------------------------------------------------
+WHAT WAS BUILT (rad_sc_heat.cpp; default path untouched, all keys read only on
+transport = sc_heating)
+--------------------------------------------------------------------------------
+Per hydro step, operator split after the hydro integrator, on the implicit-M1
+infrastructure (work arrays, the SC sweep incl. the multi-block/MPI band exchange):
+ (0) T^n, rho e^n from hydro; chi = rho(kF + ks); eps = min(kP/chi, 1) (same thermal
+     fraction as the VET source); approximate lambda operator L* = sum_r w_r w0_r
+     (the SC weight of the cell's own source, per ray; boundary layers incl. the
+     1.5 S_0 face extrapolation).
+ (1) one sweep of S = eps B + (1 - eps) J  -> J_fs, H.  Bottom: I = S_face + 3 F_in mu/c
+     (the Milne form; F_in = implicit_flux_x1min), top vacuum.
+ (2) ALI + Newton on T per cell: J' = J_fs + L*(S' - S), rho e(T') = rho e^n + dt c eps
+     chi (J' - B') -> the module's bracketed Newton (M1ImplTemperature).
+ (3) hand-over + x1 line solve (sc_diff_tau = 3): see choice 2 below.
+ (4) force dm = dt chi H (diffusion flux in the hand-over), minus dt rho a_rad_ref
+     (force_reference = wb_arad), work of the full force: the implicit-M1 write-back
+     convention.  u0(E, F) := (J', c H) for the history/outputs only.
+Keys: sc_ali_maxit/sc_ali_tol (lambda iterations), sc_lstar, sc_diff_tau, sc_ali_line,
+sc_strang, sc_rad_cv, sc_force, and diagnostics sc_ali_tri, sc_diag, sc_dump,
+sc_re_iter (gate 3).  Recommended: sc_diff_tau = 3, everything else default.
+Limits: hand-over / line solve need ONE MeshBlock along x1 (fatal otherwise; x2/x3
+splits fine, 3-D box = 4 blocks OK); without the hand-over any decomposition works.
+
+--------------------------------------------------------------------------------
+PHYSICS CHOICES
+--------------------------------------------------------------------------------
+1. Stiffness in the thin top.  Explicit Q would need dt < t_cool ~ e/(4 c chi_th B),
+   estimated ~0.01 s in the top cell, ~5e-4 s at tau ~ 0.3 (dt = 0.16 s).  ALI-implicit
+   local update has no such limit: thin cells (L* -> 0) have implicit emission against
+   the frozen J; thick cells get the coupling c chi (1 - L*), the diffusion rate.  No
+   Newton bracket failure in any run (0 no-bracket cells).  Lambda iterations: the
+   first-sweep residual max|S' - S|/S' is largest in the TOP (run-mean per layer
+   1.8e-3 in the top cell, 1-3e-4 below tau ~ 1; run-max 5e-2 at the top in the first
+   steps, the IC adjustment) and shrinks with dt: step mean 1.9e-3 / 4.3e-4 / 2.2e-4 at
+   cfl 0.3 / 0.15 / 0.075 (FL logs).  To reach 1e-4 needs > 4 sweeps in 877 of 1240
+   steps (2-D, arm ST3_K4 with the diagnostic tridiagonal ALI); on the GPU (diagonal
+   ALI) mean 2.96 sweeps (2-D), 4 of max 4 in 60/60 steps (3-D).
+   BUT more than one sweep per step is harmful here: with hand-over + force, 2 or 8
+   sweeps drive horizontal KE growth everywhere (KE2 at 100 s: 2.6e25 (K2), 1.2e26 (K8)
+   vs 1.4e23 (K1); rate ~0.04/s), with L* = 0 as well (K2_nol 2.5e25); not with the
+   hand-over off (K2_noh 2.9e23) or the force off (K2_nof 1.3e22).  Default: 1 sweep.
+   The x1-TRIDIAGONAL ALI (sc_ali_tri, diagnostic) converges RE 14x faster (1881 vs
+   26453 sweeps) but diverges in the dynamics: without the hand-over dt collapsed at
+   cycle 10 (run ST0), with the hand-over at tau 30 and 2 sweeps at cycle 8 (K2_d30):
+   it assumes full vertical coupling for every horizontal Fourier mode and
+   over-corrects the rest.
+2. Deep interior.  The J - S form alone CANNOT pin the flux: gate 3 below, the discrete
+   radiative equilibrium of the pure SC-ALI carries 0.958 F_in (T 1.1 % low) at every
+   nmu (2, 4, 8) -- a J/S residual of 1.7e-5 in the bottom cell is amplified by the
+   thick column; refining 2x / 4x (python replica of the kernel) gives 0.9967 / 1.0000.
+   In the 2-D slab without the hand-over (FN) the SC flux at 160 s spans 0.92-1.09 F_in
+   and the deep T drifts 5 % from the M1 run by 100 s: the one-sweep Jacobi lag makes
+   the deep thermal relaxation ~2 dt c/(3 chi dx^2) 4B/e ~ 1e3-1e4 times too slow
+   (tau_cell ~ 2, E/e_gas ~ 1.6 there).  An EXPLICIT flux-divergence form -c div H
+   is conservative but violates the same diffusion limit (dt/t_diff,cell ~ 1e3).
+   Adopted: below tau0 = 3 (weight 0 -> 1 over tau 3 -> 6) the heating is the
+   conservative diffusion flux divergence sum_f c/(3 chi_f dx^2)(B_nb - B') with F_in
+   imposed at the bottom face, solved IMPLICITLY along x1 (Thomas per column, EOS
+   linearised, 2 passes, transverse neighbours lagged); the force there is the mean of
+   the two face diffusion fluxes.  "Noise" with/without (step-1000 dumps, deep layers
+   0-40): F_sc/F_in in [0.92, 1.08] vs [0.993, 1.028]; gate 3 flux 0.958 vs 0.9991.
+3. Radiation energy and pressure are NOT evolved.  The slab keeps eos_radiation =
+   false (gas-only EOS): the radiation pressure enters only through the force chi F/c,
+   which in the diffusion limit IS -grad(aT^4/3); putting aT^4 in the EOS as well would
+   count it twice.  What is lost vs M1: the radiation heat capacity 4aT^3 and inertia,
+   and the radiation enthalpy flux (4/3) E v.  At t = 0 (F_ref profile) E/e_gas and
+   P_rad/P_gas = 1.64/0.55 (bottom), 1.02/0.54 (layer 20), 0.36/0.27 (40), 0.12/0.13
+   (60), 0.81/1.22 (top cell): not small.  Tested the first with sc_rad_cv (LTE aT^4 in
+   the hand-over heat capacity): no measurable change in this 200 s comparison
+   (FSR_cfl015 vs FS_cfl015: KE@100 2.84e25 vs 2.98e25, deep T err 2.96e-3 vs 3.25e-3).
+   The missing enthalpy advection is untested; it matters once convection carries flux.
+4. Radiation force from the SC flux, dm = dt chi H, residual to a_rad_ref (Phi_eff
+   carries the reference).  At t = 0 the SC flux is within 0.3 % of F_in in layers
+   0-40, up to 4.5 % high in 41-65 and 5-9 % in the top 18 (the M1 IC is not the SC
+   equilibrium there): the top relaxes to the Hopf profile (2-3 % cooler than the M1
+   Marshak top) and rings the column (V1mid up to 4e4 cm/s in the first 30 s at
+   cfl 0.3).
+
+--------------------------------------------------------------------------------
+GATE 1  byte-identity vs HEAD (CPU, seeded slab, tlim 3, bin/rst every 1 s)
+--------------------------------------------------------------------------------
+  default (closure m1)          16/16 files cmp-identical, log identical ex. timings
+  closure vet_sc, vet_tensor = full (the refactored sweep): 16/16 identical
+  (runs G1f_ref_* vs G1f_new_*, final binaries; also the unmodified runs_3j_vet input:
+  G1o_*, and the first build G1_*).
+
+--------------------------------------------------------------------------------
+GATE 2  CPU, seeded 2-D slab, vpert 1e-3, 200 s (gate2.txt; dt = 0.1611 s in every
+        cfl-0.3 arm; T errors vs F = the implicit-M1 VET full-tensor arm, rt_profile)
+--------------------------------------------------------------------------------
+ arm                 cfl  F1top/Fin      KE(1+2)  KE     dlnKE/dt  T err     T top20
+                          end (max)      @100 s   @200 s [1,16] s  lay 0-63  mean
+ F   M1 VET full     .30  1.0000(1.0003) 2.11e26 1.38e26 0.181     ref       ref
+ F   M1 VET full     .15  1.0000(1.0003) 2.32e26 1.36e26 0.186     5.6e-5    -8.0e-5
+ T3  M1 tau closure  .30  1.0000(1.0003) 1.78e26 1.23e26 0.195     1.3e-3    -1.1e-3
+ FN  SC, no hand-over .30 1.0938(1.0938) 1.01e28 1.83e27 0.321     5.0e-2    +1.5e-2
+ FL  SC + hand-over  .30  1.0319(1.0387) 1.10e27 1.49e26 0.358     2.5e-2    -2.9e-3
+ FL  SC + hand-over  .15  1.0073(1.0253) 1.18e25 2.01e25 0.277     5.1e-3    -1.7e-2
+ FL  SC + hand-over  .075 1.0013(1.0140) 2.95e25 1.13e25 0.210     3.2e-3    -2.2e-2
+ FS  SC, Strang      .30  1.0073(1.0240) 1.14e25 2.01e25 0.274     5.1e-3    -1.7e-2
+ FS  SC, Strang      .15  1.0013(1.0134) 2.98e25 1.14e25 0.208     3.2e-3    -2.2e-2
+ FLR SC + rad_cv     .30  1.0325(1.0387) 1.18e27 1.55e26 0.358     2.6e-2    -2.6e-3
+ FSR Strang + rad_cv .15  1.0014(1.0135) 2.84e25 1.01e25 0.212     3.0e-3    -2.2e-2
+ (KE = hydro.hst 1-KE + 2-KE; T err = max |<T>/<T>_F - 1| at 100 s over layers 0-63;
+ T top20 = mean over the top 20 layers.  All stable, no Newton failure.)
+ Converged SC (small dt) vs M1: deep T within 3.2e-3, top 2.2 % cooler (the top cell
+ 3.4 %): the SC top follows Hopf, J(0) = sqrt3 F/c, the M1 Marshak q = 0.5 top gives
+ E(0) = 2 F/c (+15 %, +3.6 % in T) -- the SC is the more correct one there.  Flux
+ F1top/Fin -> 1.0013.  KE: the SC slab is 5-12x QUIETER at 100-200 s; the M1 KE sits in
+ the deep/bottom (rms v1 at 175 s in the bottom cell 8.8e3 cm/s M1 vs 6.5e2 SC; top
+ cell 1.9e4 in both; top-20-layer share of KE_1 0.02 M1 vs 0.49 SC) -- the known M1
+ bottom-cell flow, not a SC deficit.  KE_2 3.7e22 (SC .15) vs 1.9e21 (M1).
+
+--------------------------------------------------------------------------------
+SPLIT-LAG GATE (tests_tm_prof_growth/README.md sect. 8: halve cfl, compare d ln KE/dt)
+--------------------------------------------------------------------------------
+ growth of KE over [1,16] s (the rise of the start-up ringing), ratio cfl .3 / .15:
+   M1 VET (F):          0.181 / 0.186 = 0.97   -> dt-independent
+   SC Lie (FL):         0.358 / 0.277 = 1.29,  .15/.075: 0.277/0.210 = 1.32
+   SC Strang (FS):      0.274 / 0.208 = 1.32
+ and the profiles move with dt: deep T err 2.5e-2 / 5.1e-3 / 3.2e-3, F1top/Fin 1.032 /
+ 1.007 / 1.0013, KE@100 1.1e27 / 1.2e25 / 3.0e25 (cfl .3 / .15 / .075).
+ Strang(dt) reproduces Lie(dt/2) to 3 digits in every statistic (FS .30 vs FL .15:
+ KE@200 2.009e25 vs 2.007e25, rate 0.274 vs 0.277, T err 5.13e-3 vs 5.13e-3; FS .15
+ vs FL .075 likewise): each half step is itself backward Euler with a lagged J, so
+ H(dt/2) H(dt/2) is just the source taken with half the step -- no second order.
+ VERDICT: Lie with one sweep per step is NOT enough (dt-dependent, first order);
+ Strang is not a fix, only a 2x smaller heating step for 2 sweeps (the same as
+ sub-stepping the heating twice); IMEX NEEDED: the heating inside each RK stage with
+ the stage state (the driver's ImEx coefficients), 1 sweep per stage = 2 per step on
+ rk2, the cost of Strang, but consistent with the flux divergence at second order in
+ the non-stiff limit and L-stable in the stiff one.  Not implemented here.
+
+--------------------------------------------------------------------------------
+GATE 3  plane-parallel static atmosphere, converged radiative equilibrium
+        (sc_re_iter: the slab's own chi at t = 0, 84 cells, tau_bot 97.6, eps = 1,
+        dt -> infinity, from the Eddington profile; stop at max |dB|/B < 1e-12)
+--------------------------------------------------------------------------------
+ arm                 sweeps  max|T/T_Hopf-1|: tau<0.1 0.1-1   1-10    >10    cH/F_in
+ pure SC-ALI (REf)      26453   1.2e-2   1.1e-2   1.1e-2   1.1e-2   0.9575-0.9589
+   same, nmu 2 / 8      26294/26455     1.5e-2 / 1.1e-2 everywhere  0.959 / 0.958
+   x1-tridiag ALI       1881    identical fixed point (1.2e-2 ...)  0.958
+ hand-over tau 3        436     1.6e-3   3.1e-4   2.1e-4   5.2e-5   0.9991 (top)
+   same, nmu 8          436     6.3e-4   2.9e-4   2.0e-4   5.3e-5   0.9991
+ hand-over tau 10       1885    1.6e-3   3.4e-4   1.6e-4   2.9e-5   0.9993
+ (exact reference: Hopf q(tau) from gate3_re.py; top cell q 0.5777 vs exact 0.5793.)
+ PASS with the hand-over; the J - S form alone fails by 4 % in flux (choice 2).
+
+--------------------------------------------------------------------------------
+GATE 4  GPU cost, apudev MI300A, 1 GPU, same binary (ace0fc4a), interleaved, 2
+        repeats (job 11944339, gpu_stats.txt).  ms per hydro step from the elapsed
+        lines (start-up excluded); dt identical in all arms (0.1612 s).
+--------------------------------------------------------------------------------
+ 2-D slab 84x32, 1 block, 400 steps          ms/step (rep 1, 2)   heating/transport
+   M1 impl., vet_sc full, pcr, sync 1        73.85, 73.44   solve 59.4 (SC 9.2), Pic 4.17
+   SC Lie, 1 sweep                             28.12, 28.03   13.91 per call, 1 sweep
+   SC Strang, 2 sweeps                         43.20, 43.10   13.90 x 2 calls
+   SC <= 4 sweeps, tol 1e-4                    54.16, 54.01   40.6 per call, 2.96 sweeps
+ 3-D box 84x104x104, 4 blocks (84x52x52), 60 steps
+   M1 impl., vet_sc full, pcr, sync 1       238.75,233.19  solve 219.1 (SC 18.5), Pic 4.95
+   SC Lie, 1 sweep                             66.64, 64.29   29.1 per call, 1 sweep
+   SC Strang, 2 sweeps                         93.63, 92.34   29.1 x 2 calls
+   SC 4 sweeps, tol 1e-4                      145.16, 147.32  112.0 per call, 4 sweeps
+ (3-D arms: cost only, 60 steps each, all rc = 0; no 3-D physics comparison made.)
+ Per step SC-Lie is 2.6x (2-D) / 3.6x (3-D) cheaper than implicit M1; one sc_heating
+ call costs 1.5x (2-D) / 1.6x (3-D) the bare VET sweep of the M1 arm (the extra EOS
+ inversions, Newton and line solve).  At EQUAL ACCURACY of the heating (dt-converged
+ to the level of Lie at cfl 0.075 = Strang at 0.15, table above): Strang at cfl 0.15
+ costs 2 x 43.1 = 86 ms (2-D) / 2 x 93.0 = 186 ms (3-D) per 0.16 s of simulated time
+ vs 73.6 / 236 for M1 at cfl 0.3 (whose dynamics are dt-independent) -- 1.2x MORE
+ expensive in 2-D, 1.27x cheaper in 3-D, and the SC growth rate is still moving
+ (0.21 at the finest dt vs 0.18 for M1).
+
+--------------------------------------------------------------------------------
+VERDICT
+--------------------------------------------------------------------------------
+ * The SC heating path works only WITH the implicit diffusion hand-over below tau ~ 3:
+   the J - S form cannot fix the flux in the thick interior (4 % in RE) and its
+   Jacobi lag freezes the deep thermal relaxation.  With it: stable, RE exact to 1.6e-3
+   in T, the 200 s slab within 3e-3 of M1 in T below the top, a more correct top.
+ * It is 2.6-3.6x cheaper per step on the GPU, but at the production step its dynamics
+   are dt-dependent (split-lag ratio 1.29-1.32 per halving; M1 0.97), Strang = Lie at
+   dt/2, and extra lambda iterations destabilise horizontal modes.  A production SC
+   heating needs the source inside the RK stages (IMEX), which is expected to cost
+   about Strang (2 sweeps per step) -- i.e. ~1.7x (2-D) / 2.5x (3-D) cheaper than M1
+   per step IF it removes the dt dependence; untested.
+ * Physics not in the SC path: radiation inertia and enthalpy advection (E/e_gas up to
+   1.6 here); the heat-capacity part made no difference in 200 s.

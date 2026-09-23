@@ -1,0 +1,249 @@
+- **[Cubed sphere MHD convergence: WIP](cubed-sphere-mhd-convergence.md) — fe39529d, cs_test iprob=9. Harness VALIDATED (exact at t=0), but the evolved error is FLAT and unexplained. Next: run iprob=3 alone to see if the field is implicated. START HERE**
+- **[Cubed sphere: seam EMF CLOSED](cubed-sphere-seam-emf.md) — 42323a66 + 7b421818 + 2646f826: exact to round-off at 1, 4 AND 16 blocks/panel; the last bug was the cube-vertex send COLLIDING with a real four-block seam edge. div B is the WRONG gate. START HERE for cs+MHD**
+- **[Cubed sphere + MPI: FIXED](cubed-sphere-mpi-hang.md) — 1c2e29d6; hung in ClearRecv on an unmatched receive, SAME cube-vertex cause. 1/2/4 ranks bitwise identical. Run the RECIPROCITY AUDIT first for any boundary bug**
+- **[Cubed sphere: MHD seam FIXED](cubed-sphere-mhd-seam.md) — 4f19a244: halo now 2nd order (seam <= interior), 3 plumbing bugs incl. no valid CUBE-VERTEX corner halo; the transform was always exact. Remaining + pre-existing: negative internal energy at panel corners. START HERE**
+- **[Cubed sphere: MHD](cubed-sphere-mhd.md) — e0c74357 + 5f635505. dxedge was zero so B never evolved; mhd_fluxes had NO gnomonic rotation; bcc was a non-orthogonal triple. All FIXED + 2nd order. Only the bvals_fc seam is left. START HERE for cs+MHD**
+- **[Cubed sphere: COMMITTED as 9492a946](cubed-sphere-committed.md) - five sessions of hydro work is now in git; stale inputs fixed. START HERE for cs**
+- **[Cubed sphere: along-seam resample, 2nd ORDER](cubed-sphere-seam-interp.md) — the halo now resamples along the seam; hydro is uniformly 2nd order and the "flat interior residual" is RETRACTED. START HERE for cs**
+- **[Cubed sphere: seam basis transform, FIXED](cubed-sphere-seam-basis.md) — the halo needed a tangent-BASIS transform, not a signed permutation; rigid rotation now CONVERGES**
+- [Cubed sphere panel frames](cubed-sphere-panel-frames.md) — the six frames are forced by panel_neighbors; 4,0,1,2 are equatorial and 3/5 polar; a duplicate copy had 3/4 swapped
+- [Cubed-sphere hydro fix](cubed-sphere-hydro-fix.md) — halo axis bug FIXED; its "BUG 2 = interpolation" is SUBLEADING and its numbers predate the panel 3/4 swap
+- [Cubed sphere: x1 as radial](cubed-sphere-x1-radial.md) — DONE, verified bit-identical; axis roles cyclically permuted, PanelBoundaries fields renamed rev_a/rev_b
+- [Use fork, not origin](use-fork-not-origin.md) — all git fetch/push goes to jing-ze-ma/athenak, never upstream IAS-Astrophysics
+- [Viper HIP build recipe](viper-hip-build-recipe.md) — module loads + cmake flags for the MI300A APU nodes; plain CPU configure is broken on this branch
+- [Never write in run/](never-write-in-run-dir.md) — 165 GB of output; read-only, and never `git add -A` in this repo
+- **[Measure impact before claiming it](measure-impact-before-claiming.md) — report the defect, but not its consequences, until an A/B has shown them; this has cost retractions twice**
+- [Don't propose confounded tests](confounded-tests-rejected.md) — the user vetoes experiments whose result could not discriminate, and calls a halt when hypotheses churn without converging
+- [IN FLIGHT: nx2=64 + GPU timings](inflight-nx64-timings.md) — paused 2026-08-16; mesh edit uncommitted, sections 5/6 still to re-measure on GPU
+- [Ideal-gas + EOS x_e resistive runs](xe-resistivity-long-runs.md) — max_eta=1e13 runs COMPLETED 2026-08-21 but carry the stellar-heating bug (~76% of insolation); do not restart them with a fixed binary
+- **[GPU nondeterminism, FIXED + COMMITTED 6e600f12](dhj-run-to-run-nondeterminism.md) — missing `member.team_barrier()` before the x1 interface-pressure floor (general EOS only, device only). New `_gpu` regression test, validated failing pre-fix. Invalidates the scatter in dhj blow-up times**
+- [RT kernel optimization](inflight-rt-kernel-optimization.md) — HISTORICAL: the 1.39x IR interleaving (2be5d0d9). Superseded by the split kernel and the coalescing fix
+- [Meshblock decomposition on one GPU](meshblock-decomposition-gpu.md) — 32 blocks beats 2 by 1.35-1.45x; the second APU buys ~1%
+- [RT band scaling, MEASURED](inflight-rt-band-scaling.md) — HISTORICAL: monolithic-kernel cost curve. Its cost numbers are all superseded
+- [RT kernel is occupancy-starved](rt-kernel-occupancy-limit.md) — HISTORICAL diagnosis that led to the split kernel; the starvation is FIXED
+- [RT chain-parallel split kernel](rt-chain-parallel-split.md) — the split-kernel design (38311a8a, pushed). Still the live architecture; its cost numbers predate the coalescing fix
+- **[Correlated-k design + build](correlated-k-design.md) — THE MAIN THREAD. COMPLETE -- physics, docs, tests, MPI, harness retired. START HERE**
+- [Exo-FMS cross-validation](exofms-cross-validation.md) — direct C++ vs Exo-FMS: LW agrees 1.7%; found a ~25% stellar-heating loss, FIXED in both c-k and grey (b4e0953c changes production answers; fixed200.a is stale)
+- [Restart bug with tfloor_kelvin, FIXED](athenak-restart-tfloor-bug.md) — ba2f0943; general-EOS runs could never be restarted. New ParameterInput::IsParameterDefaulted()
+- **[dhj blow-up: CLOSED, it was the race](dhj-ck-eos-blowup.md) — all six re-run arms including the UNMODIFIED baseline clear tlim 3.934 rot on the fixed binary (6e600f12). No thermodynamic blow-up exists; every pre-fix arm comparison is retracted**
+- [Overall GPU profile of a dhj run](dhj-overall-gpu-profile.md) — RE-PROFILED 2026-08-22 for the production setup (c-k + tabulated EOS + eos resistivity): RT 35.7%, fluxes 27.8%, ConsToPrim 12.2%, boundaries 9.6%
+- [par_for_outer team size](par-for-outer-team-size.md) — Kokkos::AUTO mis-sizes teams, but only ~3% of wall on the production nx1=128 grid; DECIDED not worth it, do not re-propose
+- [nx1 ceiling from MHD LDS](nx1-ceiling-lds.md) — radial resolution capped at nx1=264 (general EOS, production runs 256); x1 can't be split because RT is a column solve; scratch-level-1 fix known but DECIDED against
+- [Polar MPI host-mirror bug, FIXED](polar-mpi-host-mirror-bug.md) — 3882e37f; every multi-rank polar run died on cycle 1 from 2026-08-19; a lazy-sizing guard that never fired
+- [MHD flux stale x1 limits](mhd-fluxes-stale-x1-limits.md) — 3429f59f; well-balanced x2/x3 used the x1 sweep's il,iu. LATENT, measured to change no answer; also records the full race audit that found no second 6e600f12
+- [dhj ideal input out-of-bounds, FIXED](dhj-ideal-input-oob.md) — 0d1f6f6a; wtemp is general-EOS-only and the RT read it anyway. Use a Debug build (Kokkos bounds checking) to find this class of bug
+- [General EOS optimization](general-eos-optimization.md) — 1.41x on CPU but only **1.062x on GPU** (EOS is 12.5% of GPU time, not 62%); general vs ideal costs just 1.10x wall on GPU, 1.04x at production scale. Further EOS work capped at ~8%
+- [FastChem vs the general EOS](fastchem-vs-general-eos.md) — MEASURED: buys nothing (mu <=2%, x_e <=25%, no internal energy in the table); but validates the EOS composition. DECIDED against
+- [UHJ band structure in the literature](uhj-band-structure-literature.md) — Parmentier+2018 and Tan+2024 both use 11 Kataria bins x 8 g; all their hosts are 5500-6500 K; our grid choice is right
+- **[EOS table dump](eos-table-dump.md) — f882159f, `<hydro>/eos_table_dump`; recovers p and T from binary dumps under the tabulated EOS. Table is NaN below 71 K, which explains the tfloor=50 crash**
+- [ck_hydro_long: RETIRED](ck-hydro-long-run.md) — superseded by ck_limb; sim "days" are Earth days, and its mass drift was a transient, not a leak
+- [ck_limb: the CONSTANT-g run](ck-limb-run.md) — job 11022482, live at 78/283 rot; x1max 1.433e10 + nx1 88 + f_stretch_theta 3.0. Superseded as the science campaign by ck_grav_prod; still the calibration reference (1.76 H buffer)
+- **[Point-mass gravity flag](grav-point-mass-flag.md) — `problem/grav_point_mass` (c37ebe75); constant g understates H by 2.7x at 1e-6 bar; dt is 2.3x LARGER, dfloor fires 128x less**
+- [ck_grav_size: the sizing run](ck-grav-size-run.md) — ANSWERED at 21 rot: r99 = 1.794e10, H = 22 cells; can be cancelled
+- **[ck_grav_prod: THE PRODUCTION CAMPAIGN](ck-grav-prod-run.md) — point-mass gravity, x1max 2.0556e10, nx1 234 stretched + 2 GPUs, BUILT + SMOKE-TESTED, ~70-110 h. HELD, NOT LAUNCHED. START HERE**
+- **[dt binding direction](dt-binding-direction.md) — dt is a straight MIN over x1/x2/x3; the radial stretch flips the binding direction from azimuthal to radial, costing 1.76x in dt**
+- **[Radial grid stretch](radial-grid-stretch.md) — 1e19d4e7, `mesh/use_grid_stretch_r_poly` + new coordinates/grid_stretch.hpp. Post-processing MUST apply the map to x1v**
+- **[Stellar tide flag](stellar-tide-flag.md) — c4aa730f, `problem/stellar_tide`; validated, deliberately OFF (mirror-symmetric between limbs, so no limb asymmetry)**
+- [Grid resolution design](dhj-grid-resolution-design.md) — measure cells/H AT the feature, not aggregated; the cost is the timestep, not the cells
+- [Sizing x1max from the isobar](isobar-buffer-calibration.md) — buffer in SCALE HEIGHTS calibrated against the accepted run (1.76 H), plus the two mu validations any inversion must pass
+- **[Upper-atmosphere mottling](upper-atm-mottling.md) — the speckled T maps are the H2 dissociation front + sinking plumes, NOT noise/floors/meshblocks; polar emphasis is the theta stretching**
+- **[H2 chemistry quenches above 1e-3.6 bar](h2-chemistry-quench.md) — the EOS assumes instant dissociation; recombination is 8 decades too slow at the plumes, so the upper-atm H2 front is not physical**
+- [Stellar tide at the domain top](stellar-tide-at-domain-top.md) — missing (2Om^2 x, -Om^2 y, -Om^2 z); 0.5% at the limb but +6.8 cells substellar on the taller grid; r_L1 = 4.28 R_p
+- **[EOS inversion NaN trap](eos-inversion-nan-trap.md) — a naive (E<t).sum() root find on the dumped EOS table is SILENTLY 0.35 dex low in T and 3.5x low in p. Validate against ck_dump_file**
+- **[Isobar, not shell](dhj-isobar-vs-shell.md) — the 1e-6 bar level must be measured on the ISOBAR: floors touch it 0%, but 86.7% of the DAYSIDE isobar is outside the domain. Supersedes the floor conclusions**
+- **[ck_mhd_b3: MHD + EOS resistivity, bbot 3 G](ck-mhd-b3-run.md) — ck_grav_prod's input, 6 lines changed, no rebuild. SMOKE PASSED: dt identical to hydro (10.8648 s), field doesn't bind. NOT LAUNCHED**
+- [Cubed sphere: hydro state](cubed-sphere-hydro-state.md) — 4 bugs FIXED (2D NaN, dt=0, ghost geometry + OOB alloc); its rigid-rotation section is RETRACTED
+- [Cubed sphere for the hot Jupiter](cubed-sphere-for-hot-jupiter.md) — the dt argument is DEAD (radial binds); MHD's crux is seam EMF consistency; mhd_fluxes has no gnomonic rotation at all
+- [Floors for the 1e-6 bar level](dhj-floors-for-1e-6-bar.md) — MEASURED: lower pfloor 1.0→1e-3 (free); do NOT extend x1max or raise dfloor; tfloor_kelvin=50 crashes
+
+
+
+---
+**Session end 2026-08-27 (tenth session).** Branch `polar-average-perf` still at
+**1e19d4e7**, `src/` clean, **PUSHED to fork 2026-08-27** (eleventh session). No commits this session -- the work was
+run setup and one measurement.
+
+**[[ck-grav-prod-run]] is now fully built and smoke-tested, and deliberately NOT LAUNCHED.**
+The user said mid-session *"let's not submit the production run for now"*. Everything the
+ninth session left on its to-do list is done:
+* input on the revised grid: `nx1 = 234` (mesh + meshblock) + `use_grid_stretch_r_poly`
+  with the four coefficients; old input kept as `deep_hot_jupiter.athinput.nx200.bak`
+* `athena` rebuilt from HEAD 1e19d4e7, `BUILD_COMMIT.txt` restamped; verified
+  **byte-identical** to a clean rebuild, so it carries no leftover diagnostic
+* both submit scripts now `--ntasks=2 --gres=gpu:2`
+* smoke **11105755** (apudev, 2 ranks, 300 cycles): clean, 32 meshblocks split 16/16
+* `sbatch submit_viper.sh` from `bench/ck_grav_prod` is the ONLY remaining step
+
+**The one real finding: [[dt-binding-direction]].** Measured dt on the stretched grid is
+10.86 s, not the design's predicted 22.0 s. I first explained this as the fine cells
+"competing with" the azimuthal polar CFL -- **wrong**, because AthenaK's dt is a straight
+MIN over directions, not a sum. A three-arm diagnostic (job 11105825) showed the binding
+direction **switches from azimuthal to radial**: dt3 = 63.8 s binds both uniform grids,
+the stretch drops dt1 to 36.2 s, and 63.84/36.22 = 1.76x is exactly the observed drop.
+Consequences (no free lunch; `f_stretch_theta` no longer buys dt; angular refinement is now
+dt-free up to ~2x `nx3`) are in that memory. Arms kept in `bench/ck_grav_prod/dtdiag/`.
+
+**Cost estimate revised** from the ninth session's "~90 h, four slots" to an honest
+**70-110 h bracket** -- 347 simulated s per wall s measured at cycle 0, but every run of
+this setup settles dt down ~0.64x over the first rotation. The first real slot will pin it.
+
+**Cluster at sign-off:** `ck_limb` 11022482 has TIMED OUT and was not resubmitted (its
+`rst/` is intact; `sbatch resubmit_viper.sh` from `bench/ck_limb` continues it).
+`ck_grav_size` continuation **11046058 is still running** on apu1 -- that run has already
+ANSWERED its question ([[ck-grav-size-run]]) and is the obvious slot to reclaim for
+production. Carried over, still FOR THE USER: rotate the GitHub token in the `origin` URL,
+push `polar-average-perf` to the fork, and the completed `xe_*_e13` runs carry the
+stellar-heating bug.
+
+---
+**Session end 2026-08-26 (ninth session).** Branch `polar-average-perf` at **1e19d4e7**,
+`src/` clean, **NOT PUSHED** (push to the fork, never upstream -- [[use-fork-not-origin]]).
+
+**Two features written, validated and committed:**
+* [[stellar-tide-flag]] (**c4aa730f**) -- `problem/stellar_tide`. Off path **bitwise identical** to
+  c37ebe75; on path reproduces the predicted isobar shifts. **Deliberately left OFF.**
+* [[radial-grid-stretch]] (**1e19d4e7**) -- `mesh/use_grid_stretch_r_poly`, non-monotonic.
+  Verified end-to-end; 0.25-rot A/B agrees with uniform within the run's own variability.
+
+**START HERE: [[ck-grav-prod-run]], the "GRID REVISED" section.** The production run is
+designed and NOT launched: nx1 234 + the four stretch coefficients + `--gres=gpu:2`, giving
+the user's requested **10 cells/H below the 1e-6 bar level** in ~90 h. The `ck_grav_prod`
+directory still holds the old uniform nx1=200 input and a 1-GPU submit script -- it must be
+rebuilt on the new grid, smoke-tested, and launched.
+
+**The session's biggest correction: [[meshblock-decomposition-gpu]] was wrong at production
+size.** Its "a second APU gains 1.4%" was measured on a 3.7x smaller grid; at nx1=234 two
+GPUs give **1.81x (91% efficiency)** and every submit script in this campaign has been asking
+for one of the node's two APUs. 1/2/4 ranks verified **bitwise identical**.
+
+**Four errors of my own, all caught by measurement, all recorded:**
+* I recommended a 0.55x cheaper grid on an **aggregated** cells/H metric that conflated the
+  well-resolved observable with the under-resolved H2 structure. At the 1e-6 bar isobar the
+  old grid was already at 9.7-17.2 cells/H. See [[dhj-grid-resolution-design]].
+* I called the scale-height minimum "the H2 dissociation front" -- they are different radii
+  (r/Rp 1.244 vs 1.280).
+* I said the tide's source-only treatment broke well-balancing; **well-balancing is OFF** in
+  this campaign, so there was nothing to break.
+* I suggested rebalancing `f_stretch_theta` to recover cost once x1 limits; it cannot.
+
+**Also worth keeping:** `bin_convert`/`athena_read` rebuild coordinates as
+`linspace(xmin,xmax,nx+1)`, so **a stretched radial grid must have the map re-applied to
+`x1v` in every analysis script**, exactly as theta already does.
+
+**Cluster at sign-off:** `ck_limb` **11022482 is ~23 h into a 23:55 slot and will TIME OUT
+imminently** -- it needs `sbatch resubmit_viper.sh` from `bench/ck_limb` to continue, and I
+did NOT resubmit it because the open question is whether to reclaim that slot for
+[[ck-grav-prod-run]] instead. Nothing is lost either way: `rst/` holds its restart files.
+`ck_grav_size` 11043450 finished its slot and its dependency continuation **11046058 is now
+running** -- that run has ANSWERED its question ([[ck-grav-size-run]]) and is the other slot
+to reclaim.
+Carried over, still FOR THE USER: rotate the GitHub token in the `origin` URL, and the
+completed `xe_*_e13` runs carry the stellar-heating bug.
+
+---
+**Session end 2026-08-26 (eighth session).** Branch `polar-average-perf` at **c37ebe75**,
+`src/` clean, **NOT pushed**. Three commits this session: f882159f
+([[eos-table-dump]]), c37ebe75 ([[grav-point-mass-flag]]), and 3429f59f was already there.
+
+**ONE JOB RUNNING: 11022482** = `bench/ck_limb` on apu1, the live campaign. Needs
+`sbatch resubmit_viper.sh` per 24 h timeout, ~3 times. **START HERE: [[ck-limb-run]].**
+
+**THE NEXT TASK, explicitly requested and NOT started:** set up the resized
+`grav_point_mass = true` campaign. **Read the sizing section of [[grav-point-mass-flag]]
+first** -- my first-order x1max estimate is superseded and the honest answer needs an
+oversized-grid run measured after several rotations, not from the IC.
+
+**What drove the session.** The user's science goal, stated mid-session, is *the leading and
+trailing terminators resolved to 1e-6 bar with the observable surface unaffected by the
+top*. That retired `ck_hydro_long` (stopped at 137 days; 68 % of terminator columns had the
+isobar outside the domain) and produced `ck_limb`, and then exposed the constant-gravity
+approximation as a 2.7x systematic on the very observable the campaign exists for.
+
+**Two of my own errors, both caught by measurement, both worth remembering:**
+* [[eos-inversion-nan-trap]] -- a silently wrong EOS inversion made every pressure 3.5x and
+  every temperature 0.35 dex too low, and I reported those numbers for several turns. It
+  survived a circular "validation". **Validate against `ck_dump_file`.** It did NOT change
+  the x1max decision, which got stronger.
+* I sized a domain from a 0.5-rotation snapshot at the very end of the session, which is the
+  same IC-vs-evolved trap [[dhj-floors-for-1e-6-bar]] already records. Flagged, not acted on.
+
+Carried over, still FOR THE USER not code: rotate the GitHub token in the `origin` URL, and
+the completed `xe_*_e13` runs carry the stellar-heating bug.
+
+
+---
+**Session end 2026-08-25 (seventh session).** Branch `polar-average-perf` still at
+**3429f59f**, `src/` clean, nothing committed this session -- the work was experimental,
+not code. **ONE JOB QUEUED: 11009786** on `apu1` (pending on priority; apu1 was fully
+allocated all session).
+
+**START HERE: [[dhj-floors-for-1e-6-bar]].** The user asked what floors and `max_eta` to
+use for the dhj run with tabulated EOS + correlated-k, then asked me to test it (hydro
+only), varying floors and `x1max`, with the goal "include the 1e-6 bar level but keep the
+timestep large". Measured on apudev, production grid, ~1 rotation per arm.
+
+**The answer is one parameter: `pfloor = 1.0e-3`, not 1.0.** Units are cgs, so
+1 barye = 1e-6 bar exactly -- the old floor pinned the top 7 cells at precisely
+p = 1.000e-06 bar / 2159.9 K. It did not miss the level, it manufactured it. Costs 0.2 %
+in cycles. `x1max` must NOT be extended and `dfloor` must NOT be raised; both are
+measured dead ends, reasons in the memory. `tfloor_kelvin = 50` crashes the run.
+
+**Job 11009786** = `/viper/u2/jinma/ATHENAK/bench/ck_hydro_long`, a long confirmation run
+(pure hydro, tabulated EOS, correlated-k, the recommended floors), set up on the
+`xe_long` pattern: own `athena` snapshot, `BUILD_COMMIT.txt`, `NOTES.md`, and
+`resubmit_viper.sh` for each 24 h timeout. **When picking up: check it started, then check
+`dhj.log` column `eos_efloor` is still 0** -- that is the tripwire saying pfloor is still
+non-binding. If it fires, drop pfloor to 1e-4. Also watch mass drift in `dhj.hydro.hst`
+(+0.061 % per rotation over the first rotation, not sustainable forever).
+
+Two judgement calls I made without asking, both flagged to the user and easily changed:
+the long run is **pure hydro** (that is what was validated; an MHD companion would add
+`ohmic_resistivity = eos`, `max_eta = 1e13`, `bbot`), and `pfloor = 1e-3` is the measured
+value rather than the safer-but-untested `1e-4`.
+
+**Process lesson, cost a whole sweep:** my first sweep moved `pfloor`, `dfloor` AND
+`tfloor_kelvin` together and all five arms died -- I could not tell which factor did it
+and had to re-run everything with only `tfloor` restored. Also: I first told the user
+`x1max` had to grow to 14.2e9, from the INITIAL condition. Wrong -- the atmosphere expands
+and cools under correlated-k, and the evolved 1e-6 bar level is already inside the current
+domain. **Measure the evolved state, not the IC.**
+
+Carried over, still FOR THE USER not code: rotate the GitHub token in the `origin` URL,
+and the completed `xe_*_e13` runs carry the stellar-heating bug. Still open as natural
+next steps: the correlated-k PR ([[correlated-k-design]]) and [[inflight-nx64-timings]].
+
+---
+**Session end 2026-08-25 (sixth session).** Branch `polar-average-perf` at **3429f59f**,
+pushed to the fork, `src/` clean, **nothing running on the cluster**.
+
+**The dhj campaign is CLOSED.** The six re-run arms landed and all six cleared tlim
+3.934 rot -- including `rf.limoff`, the UNMODIFIED baseline that used to die at 0.370-0.685
+rot. There was never a general-EOS blow-up: it was the data race fixed in **6e600f12**.
+See [[dhj-ck-eos-blowup]] for the table and the full retraction list, and
+`docs/HANDOFF_dhj_ck_eos.md` (**07a27135**), rewritten this session to match.
+
+Retracted with it: "rt_de_max cures the general-EOS case" (it is still the right fix for
+the *ideal* EOS + c-k NaN), "eos_h2=false cures it", and "the failure needs MHD". The nine
+refuted hypotheses are moot rather than wrong.
+
+Then, asked whether more bugs like 6e600f12 exist, I audited both hazard classes across
+`src/`. **No second instance.** One real inconsistency found and fixed (**3429f59f**):
+four well-balanced call sites in `MHD::CalculateFluxes` x2/x3 passed the x1 sweep's stale
+`il,iu`. See [[mhd-fluxes-stale-x1-limits]], which also records what was checked and the
+scan method, so the sweep need not be redone.
+
+**Carry forward the lesson, not just the fix:** I claimed that bug caused a wrong flux and
+a live race BEFORE measuring, and both claims were false -- pre-fix and post-fix are
+bitwise identical over 5 replicates x 600 cycles. It is latent. I also deliberately did
+NOT add a regression-test arm for it, because the arm would pass with and without the fix;
+if a future session wants one, that is the reason it is missing.
+
+Nothing is blocked. Natural next steps: open the PR for the correlated-k work
+([[correlated-k-design]]), or resume [[inflight-nx64-timings]]. Still FOR THE USER, not
+code: rotate the GitHub token embedded in the `origin` URL, and the completed `xe_*_e13`
+runs carry the stellar-heating bug.
+
+---
+*Sessions 1-5 (2026-08-22 to 08-23) trimmed for length; their content lives in the
+topic files above -- see [[dhj-ck-eos-blowup]], [[dhj-run-to-run-nondeterminism]],
+[[correlated-k-design]] and [[mhd-fluxes-stale-x1-limits]].*

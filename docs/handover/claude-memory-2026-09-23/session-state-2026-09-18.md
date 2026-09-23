@@ -1,0 +1,10 @@
+---
+name: session-state-2026-09-18
+description: Viper session state and next steps as of 2026-09-18 (B star / He box productions, global He4).
+metadata:
+  type: project
+---
+
+**CURRENT STATE, 2026-09-18 10:30, VIPER (session handover).** PRODUCTIONS DONE: B star prod_w7 40 turnovers (40 node-h), He box_w8 40 turnovers (62 node-h); final analyses: patterns (analysis_0916/patterns_0918, dark, absolute scales), light curves + SLF spectra (analysis_0916/lightcurve_0918: B alpha0 3.5 ppm, nu_char 4.0/d, gamma 3.1; disk-scaled 0.2 ppm = 30-100x below observed B0.5-B1 V; He flat 0.02 ppm). PAGES: production page v13 https://claude.ai/artifact/SLgYFj9JDBUsNqxj5UYgPJ (table, dark v_z/dT/T maps at tau 1 + opacity peak, light curves/spectra with Bowman-2020 overlays); HR diagram https://claude.ai/artifact/79q5ATcM6xcDy5QLTR39Gz (files analysis_0916/hrd_3d, dark build-up frames); RG prod11 dark page https://claude.ai/artifact/EHrBVrgbdYKCuh4rVaSn9z. GLOBAL He4 (he4-presn-global, bench/wt_he4 HEAD a0fb4b26+, unpushed): survives 2.2 turnovers, convection starting (KEh x30/turnover), envelope inflates slowly (L_out 0.97), dt erodes to 0.07 s because ~1 % of columns above the swept shell (0.96-0.99 R) become hot voids (rho 1e-12, T 1e7). RUNNING: arms d1 (dfloor 1e-11, job 11798237) and d2 (dfloor 1e-10, 11798238), 2 turnovers, tests_r11/{d1,d2}, done ~13:00. OPUS quota back 09-19 23:00. Main checkout = rt-integration.
+
+**NEXT STEPS (new session):** (1) read tests_r11/d1, d2: dt history (hst col 1), hot-void count (script pattern in this session: rho<1e-11 & e/rho>1e16 in the 0.5-turnover bin dumps), L_out/L (tests_r9/lout9.py), lnKEh; pick the floor; chain to 5 turnovers (r11_3d_arm.sh, rst every 0.2 turnover) and judge settling + convection onset; production only with user approval. (2) Handover doc for 09-18 (docs/handover) not yet written for the afternoon: write it. (3) Port 4bcdc855 + 94c7165d to rt-integration; bvals_fc seam defects; push after user OK. (4) Ideas noted: mid-MS 15 Msun box for SLF; spatial power spectrum of the emergent flux map; SLF vs distance-from-ZAMS in Burssens 2020.
