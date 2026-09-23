@@ -1,0 +1,5 @@
+1	/viper/ptmp2/jinma/launch_0923/scripts/run.sh e1_dvh new 1 slab2d_def time/tlim=100 rad_m1/implicit_krylov_dev=2 rad_m1/implicit_krylov_dev_halo=1
+1	/viper/ptmp2/jinma/launch_0923/scripts/run.sh e1_dv2 new 1 slab2d_def time/tlim=100 rad_m1/implicit_krylov_dev=2
+1	/viper/ptmp2/jinma/launch_0923/scripts/run.sh bv1_dvh new 1 box3d_def mesh/nx2=32 mesh/nx3=32 mesh/x2max=3.39480832e8 mesh/x3max=3.39480832e8 meshblock/nx2=16 meshblock/nx3=16 time/nlim=30 rad_m1/closure=vet_sc rad_m1/vet_tensor=full rad_m1/implicit_krylov_dev=2 rad_m1/implicit_krylov_dev_halo=1
+1	/viper/ptmp2/jinma/launch_0923/scripts/run.sh e1_off2 new 1 slab2d_def time/tlim=100
+1	/viper/ptmp2/jinma/launch_0923/scripts/run.sh bv1_off2 new 1 box3d_def mesh/nx2=32 mesh/nx3=32 mesh/x2max=3.39480832e8 mesh/x3max=3.39480832e8 meshblock/nx2=16 meshblock/nx3=16 time/nlim=30 rad_m1/closure=vet_sc rad_m1/vet_tensor=full

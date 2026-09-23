@@ -1,0 +1,9 @@
+E_off 1 s1c box_be rad_m1/implicit_vimp_fold=true rad_m1/implicit_fast_kernels=true rad_m1/implicit_one_pass=4 rad_m1/implicit_predictor_order=2
+E_dev2 1 s1c box_be rad_m1/implicit_vimp_fold=true rad_m1/implicit_fast_kernels=true rad_m1/implicit_one_pass=4 rad_m1/implicit_predictor_order=2 rad_m1/implicit_krylov_dev=2
+V_off 1 s1c box_be rad_m1/closure=vet_sc rad_m1/vet_tensor=full rad_m1/implicit_vimp_fold=true rad_m1/implicit_fast_kernels=true rad_m1/implicit_one_pass=4 rad_m1/implicit_predictor_order=2
+V_dev2 1 s1c box_be rad_m1/closure=vet_sc rad_m1/vet_tensor=full rad_m1/implicit_vimp_fold=true rad_m1/implicit_fast_kernels=true rad_m1/implicit_one_pass=4 rad_m1/implicit_predictor_order=2 rad_m1/implicit_krylov_dev=2
+Vh_off 1 s1c box_h2 rad_m1/closure=vet_sc rad_m1/vet_tensor=full rad_m1/implicit_vimp_fold=true rad_m1/implicit_fast_kernels=true rad_m1/implicit_one_pass=4 rad_m1/implicit_predictor_order=2
+Vh_dev2 1 s1c box_h2 rad_m1/closure=vet_sc rad_m1/vet_tensor=full rad_m1/implicit_vimp_fold=true rad_m1/implicit_fast_kernels=true rad_m1/implicit_one_pass=4 rad_m1/implicit_predictor_order=2 rad_m1/implicit_krylov_dev=2
+E_dev2h 1 s1c box_be rad_m1/implicit_vimp_fold=true rad_m1/implicit_fast_kernels=true rad_m1/implicit_one_pass=4 rad_m1/implicit_predictor_order=2 rad_m1/implicit_krylov_dev=2 rad_m1/implicit_krylov_dev_halo=1
+V_dev2h 1 s1c box_be rad_m1/closure=vet_sc rad_m1/vet_tensor=full rad_m1/implicit_vimp_fold=true rad_m1/implicit_fast_kernels=true rad_m1/implicit_one_pass=4 rad_m1/implicit_predictor_order=2 rad_m1/implicit_krylov_dev=2 rad_m1/implicit_krylov_dev_halo=1
+Vh_dev2h 1 s1c box_h2 rad_m1/closure=vet_sc rad_m1/vet_tensor=full rad_m1/implicit_vimp_fold=true rad_m1/implicit_fast_kernels=true rad_m1/implicit_one_pass=4 rad_m1/implicit_predictor_order=2 rad_m1/implicit_krylov_dev=2 rad_m1/implicit_krylov_dev_halo=1

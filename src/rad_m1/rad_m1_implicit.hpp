@@ -420,6 +420,8 @@ constexpr Real M1_NEWT_TRUST = 0.5;
 // BiCGStab breakdown thresholds: |rho| and |rhat.v| below these times the scale of the
 // right-hand side mean the shadow residual has become orthogonal to the Krylov space.
 constexpr Real M1_BCG_EPS = 1.0e-300;
+// implicit_krylov_dev (rad_m1_launch.cpp): the size of its device scalar array
+constexpr int M1_KD_SIZE = 20;
 
 // the LAGGED quantities the transverse halo exchanges once per Picard pass.  Everything
 // the x2/x3 face fluxes, the lagged off-diagonal Eddington terms and the x1 assembly read

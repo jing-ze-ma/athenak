@@ -1,0 +1,4 @@
+E_beL 1 base box_be rad_m1/implicit_vimp_fold=true rad_m1/implicit_fast_kernels=true rad_m1/implicit_one_pass=4 rad_m1/implicit_predictor_order=2
+V_beL 1 base box_be rad_m1/closure=vet_sc rad_m1/vet_tensor=full rad_m1/implicit_vimp_fold=true rad_m1/implicit_fast_kernels=true rad_m1/implicit_one_pass=4 rad_m1/implicit_predictor_order=2
+V_h2L 1 base box_h2 rad_m1/closure=vet_sc rad_m1/vet_tensor=full rad_m1/implicit_vimp_fold=true rad_m1/implicit_fast_kernels=true rad_m1/implicit_one_pass=4 rad_m1/implicit_predictor_order=2
+hyd 1 base box_hyd
