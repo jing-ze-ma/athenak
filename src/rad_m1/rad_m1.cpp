@@ -121,6 +121,12 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   od_now = M1_OD_LAGGED;
   od_nfall = 0.0;
   od_emin = 1.0e300;
+  impl_vimp = false;
+  vimp_now = false;
+  iw_vimp = -1;
+  vimp_nfall = 0.0;
+  vimp_emin = 1.0e300;
+  pbval_vm = nullptr;
   impl_crelax = 1.0;
   impl_crelax_thin = false;
   impl_clag_step = false;
@@ -664,6 +670,7 @@ RadiationM1::~RadiationM1() {
   if (pbval_th != nullptr) {delete pbval_th;}
   if (pbval_tq != nullptr) {delete pbval_tq;}
   if (pbval_kr != nullptr) {delete pbval_kr;}
+  if (pbval_vm != nullptr) {delete pbval_vm;}
 }
 
 //----------------------------------------------------------------------------------------

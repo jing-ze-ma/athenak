@@ -1,0 +1,28 @@
+
+Part 3: BiCGStab iterations (right line preconditioner along x1, max-norm tol 1e-10)
+2-D 64 x 64 periodic, dx = 1/64, Eddington, c = 1e3; stage factor a = g dt (H-ESDIRK2) and a = dt (BE)
+prec: old = present tridiagonal (no v' terms), tri = tridiagonal part of the new operator, penta = +-2 x1 terms added; 'none' = operator without v' and old prec (today's count)
+cen hesdirk2 cfl 0.15 P=1     none/old/tri/penta: tc=0.01 119/118/117/116.5  tc=1 50/52/53/49  tc=100 7.5/7.5/7.5/7.5  tc=10000 2.5/2.5/2.5/2.5
+cen hesdirk2 cfl 0.15 P=10    none/old/tri/penta: tc=0.01 120.5/117.5/121.5/113  tc=1 53/53/53.5/53.5  tc=100 8/8/8/8  tc=10000 2.5/2.5/2.5/2.5
+cen hesdirk2 cfl 0.15 P=100   none/old/tri/penta: tc=0.01 118/118.5/121.5/120.5  tc=1 55.5/52.5/54.5/55  tc=100 8/8/8/7.5  tc=10000 2.5/5/5/4
+cen hesdirk2 cfl 0.30 P=1     none/old/tri/penta: tc=0.01 126.5/148/134/130  tc=1 65.5/63.5/63/64  tc=100 10/10/10/10  tc=10000 2.5/2.5/2.5/2.5
+cen hesdirk2 cfl 0.30 P=10    none/old/tri/penta: tc=0.01 126/128.5/127.5/140  tc=1 64.5/66/70/66  tc=100 10.5/10.5/10.5/10.5  tc=10000 2.5/3.5/3.5/3.5
+cen hesdirk2 cfl 0.30 P=100   none/old/tri/penta: tc=0.01 124.5/144.5/150/158  tc=1 71/67/67.5/68  tc=100 10.5/11/11/10  tc=10000 2.5/8.5/8.5/6.5
+cen BE       cfl 0.15 P=1     none/old/tri/penta: tc=0.01 155/160/140.5/159  tc=1 80.5/75/77.5/80  tc=100 12.5/12.5/12.5/12.5  tc=10000 3/3/3/3
+cen BE       cfl 0.15 P=10    none/old/tri/penta: tc=0.01 154.5/150.5/156.5/154  tc=1 84/80/81/77.5  tc=100 13/12.5/12.5/13  tc=10000 3/5.5/5.5/4
+cen BE       cfl 0.15 P=100   none/old/tri/penta: tc=0.01 156.5/142/141.5/157  tc=1 80/81/83.5/82.5  tc=100 13.5/17/16.5/13  tc=10000 3/14.5/15/10.5
+cen BE       cfl 0.30 P=1     none/old/tri/penta: tc=0.01 163.5/159.5/161.5/165.5  tc=1 98.5/94.5/100/98  tc=100 17/17/17/17  tc=10000 3.5/4/4/3.5
+cen BE       cfl 0.30 P=10    none/old/tri/penta: tc=0.01 154.5/163.5/154.5/157.5  tc=1 100.5/97.5/98/98  tc=100 18/16.5/17/16.5  tc=10000 3.5/9.5/9.5/7
+cen BE       cfl 0.30 P=100   none/old/tri/penta: tc=0.01 165.5/162.5/156/157  tc=1 106.5/91/102/102.5  tc=100 18/33.5/33.5/24  tc=10000 3.5/32.5/32.5/22
+upw hesdirk2 cfl 0.15 P=1     none/old/tri/penta: tc=0.01 119/118.5/120/118.5  tc=1 50/50.5/53.5/56  tc=100 7.5/7.5/7.5/7.5  tc=10000 2.5/2.5/2.5/2
+upw hesdirk2 cfl 0.15 P=10    none/old/tri/penta: tc=0.01 120.5/124/120/123.5  tc=1 53/59.5/57.5/51.5  tc=100 8/8/8/8  tc=10000 2.5/3.5/3/3
+upw hesdirk2 cfl 0.15 P=100   none/old/tri/penta: tc=0.01 118/120.5/121.5/122.5  tc=1 55.5/52/54.5/52.5  tc=100 8/8.5/8/8  tc=10000 2.5/8.5/7/6.5
+upw hesdirk2 cfl 0.30 P=1     none/old/tri/penta: tc=0.01 126.5/154.5/138/144  tc=1 65.5/64/68/66  tc=100 10/10/10/10  tc=10000 2.5/3/2.5/2.5
+upw hesdirk2 cfl 0.30 P=10    none/old/tri/penta: tc=0.01 126/137/133.5/141  tc=1 64.5/66.5/68/64  tc=100 10.5/10/10/10.5  tc=10000 2.5/5.5/5/4.5
+upw hesdirk2 cfl 0.30 P=100   none/old/tri/penta: tc=0.01 124.5/137/155/134  tc=1 71/67/64.5/66  tc=100 10.5/16.5/15/13.5  tc=10000 2.5/23.5/18.5/15
+upw BE       cfl 0.15 P=1     none/old/tri/penta: tc=0.01 155/158/155.5/160.5  tc=1 80.5/80.5/78.5/78  tc=100 12.5/12.5/12.5/12.5  tc=10000 3/4/3.5/3
+upw BE       cfl 0.15 P=10    none/old/tri/penta: tc=0.01 154.5/155.5/141.5/152.5  tc=1 84/81.5/81.5/80  tc=100 13/12/12/12.5  tc=10000 3/9/7.5/7
+upw BE       cfl 0.15 P=100   none/old/tri/penta: tc=0.01 156.5/141.5/140.5/157.5  tc=1 80/80.5/85/86.5  tc=100 13.5/31/31.5/22.5  tc=10000 3/74.5/51.5/43.5
+upw BE       cfl 0.30 P=1     none/old/tri/penta: tc=0.01 163.5/160.5/154/167  tc=1 98.5/97.5/98/97.5  tc=100 17/17/17/17  tc=10000 3.5/5.5/5/4.5
+upw BE       cfl 0.30 P=10    none/old/tri/penta: tc=0.01 154.5/156.5/165.5/161  tc=1 100.5/96/98/99  tc=100 18/18.5/17.5/16.5  tc=10000 3.5/25.5/20.5/15.5
+upw BE       cfl 0.30 P=100   none/old/tri/penta: tc=0.01 165.5/159.5/160/149  tc=1 106.5/95/95.5/94.5  tc=100 18/88/110.5/62  tc=10000 3.5/258.5/282.5/347.5

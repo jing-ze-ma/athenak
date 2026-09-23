@@ -217,6 +217,28 @@ constexpr int M1_IENTH_PLM     = 2;  // a_f E_f, E_f the van Leer plm value from
                                      // upwind of a_f; central where the 4-cell stencil
                                      // is not available on both sides of the face
 
+// <rad_m1>/implicit_vimp: the gas velocity v' of the enthalpy flux a(v') E' taken
+// IMPLICIT through the radiative force of the same solve (tests_m1/runs_3v_vimplicit).
+// Per face f of axis d the flux gains
+//   E_f^k [ (1 + D_dd) dv_d^k + sum_{e != d} D_de dv_e^k ]_f
+//     + E_f^k (1 + D_dd)_f [ (P dv_d)(E') - (P dv_d)(E^k) ]_f,
+// dv^k the velocity change of the ITERATE's face fluxes (the write-back rule) and P the
+// Jacobian of dv_d in E' (the face-normal eliminated flux, od/g0 terms lagged).  At the
+// Picard fixed point the flux is E_f a_f(v') whatever the Jacobian; the operator couples
+// cells two apart along every axis.  The components below are APPENDED to iw (offset
+// RadiationM1::iw_vimp); the first M1_NVIMP_X are exchanged once per pass.
+constexpr int M1_NVIMP_X  = 12;   // P1m,P10,P1p, P2m,P20,P2p, P3m,P30,P3p, DV1,DV2,DV3
+constexpr int M1_IV_DV    = 9;
+constexpr int M1_IV_X1M2  = 12;   // operator coefficients not in the 7-point row:
+constexpr int M1_IV_X1P2  = 13;   // x1 +-2; x2 -2,-1,+1,+2; x3 -2,-1,+1,+2
+constexpr int M1_IV_X2M2  = 14;
+constexpr int M1_IV_X3M2  = 18;
+constexpr int M1_IV_JD    = 22;   // added to the row: diagonal, x1 -1, x1 +1
+constexpr int M1_IV_J1M   = 23;
+constexpr int M1_IV_J1P   = 24;
+constexpr int M1_IV_JRHS  = 25;   // added to the right-hand side
+constexpr int M1_NIW_VIMP = 26;
+
 // <rad_m1>/implicit_partition: how a column that spans several MeshBlocks (and ranks) is
 // solved (milestone 3a2, LIMIT 4).
 constexpr int M1_IPART_NONE   = 0;   // one MeshBlock per column; fatal otherwise (3a)

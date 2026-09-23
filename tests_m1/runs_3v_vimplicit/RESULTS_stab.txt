@@ -1,0 +1,15 @@
+
+Part 2: max over theta = 2 pi m/64 (m = 1..32), tau in 1,1e2,1e4,1e6 (per unit length, dx = 1/64) of rho(G) - 1
+dt = cfl dx / c_s,gas.  'full' = with the Rusanov hydro rows; 'Lh=0' as C3
+cen full cfl 0.15 | P=1 imp -5.0e-04 rhs -4.9e-04 code 0.0e+00 codeimp 0.0e+00| P=10 imp -4.0e-04 rhs -1.7e-04 code 0.0e+00 codeimp 0.0e+00| P=100 imp -3.8e-04 rhs 1.5e-01 code 0.0e+00 codeimp 0.0e+00
+cen full cfl 0.30 | P=1 imp -1.0e-03 rhs -9.5e-04 code 0.0e+00 codeimp 0.0e+00| P=10 imp -8.0e-04 rhs 1.3e-03 code 0.0e+00 codeimp 0.0e+00| P=100 imp -7.7e-04 rhs 5.2e-01 code 2.2e+00 codeimp 0.0e+00
+cen full cfl 0.80 | P=1 imp -2.7e-03 rhs -2.2e-03 code 0.0e+00 codeimp 0.0e+00| P=10 imp -2.1e-03 rhs 1.3e-01 code 0.0e+00 codeimp 0.0e+00| P=100 imp -2.7e-03 rhs 2.8e+00 code 1.5e+01 codeimp 0.0e+00
+cen Lh=0 cfl 0.15 | P=1 imp 4.4e-16 rhs 6.6e-04 code 4.4e-16 codeimp 4.4e-16| P=10 imp 0.0e+00 rhs 2.3e-02 code 2.2e-16 codeimp 2.2e-16| P=100 imp 0.0e+00 rhs 2.3e-01 code 4.4e-16 codeimp 4.4e-16
+cen Lh=0 cfl 0.30 | P=1 imp 0.0e+00 rhs 5.4e-03 code 4.4e-16 codeimp 4.4e-16| P=10 imp 4.4e-16 rhs 9.4e-02 code 6.7e-16 codeimp 6.7e-16| P=100 imp 8.9e-16 rhs 7.6e-01 code 3.9e+00 codeimp 4.4e-16
+cen Lh=0 cfl 0.80 | P=1 imp 8.9e-16 rhs 5.3e-02 code 2.2e-16 codeimp 2.2e-16| P=10 imp 4.4e-16 rhs 5.6e-01 code 1.6e+00 codeimp 4.4e-16| P=100 imp 4.4e-16 rhs 9.5e+00 code 4.7e+01 codeimp 0.0e+00
+upw full cfl 0.15 | P=1 imp -2.8e-04 rhs -2.6e-04 code 0.0e+00 codeimp 0.0e+00| P=10 imp 1.5e-01 rhs 1.6e-01 code 1.4e-01 codeimp 7.3e-02| P=100 imp 8.1e-01 rhs 1.1e+00 code 1.3e+00 codeimp 1.9e-01
+upw full cfl 0.30 | P=1 imp -5.5e-04 rhs -4.9e-04 code 0.0e+00 codeimp 0.0e+00| P=10 imp 2.7e-01 rhs 3.3e-01 code 2.8e-01 codeimp 4.5e-02| P=100 imp 1.2e+00 rhs 3.0e+00 code 5.3e+00 codeimp 0.0e+00
+upw full cfl 0.80 | P=1 imp -1.5e-03 rhs -1.1e-03 code 1.1e-02 codeimp 0.0e+00| P=10 imp 1.3e-01 rhs 7.2e-01 code 1.7e+00 codeimp 3.4e-02| P=100 imp 3.8e-01 rhs 2.0e+01 code 2.5e+01 codeimp 0.0e+00
+upw Lh=0 cfl 0.15 | P=1 imp 7.9e-02 rhs 8.1e-02 code 8.0e-02 codeimp 7.4e-02| P=10 imp 3.0e-01 rhs 3.1e-01 code 3.1e-01 codeimp 2.2e-01| P=100 imp 1.1e+00 rhs 1.4e+00 code 1.7e+00 codeimp 3.6e-01
+upw Lh=0 cfl 0.30 | P=1 imp 1.6e-01 rhs 1.7e-01 code 1.7e-01 codeimp 1.4e-01| P=10 imp 6.4e-01 rhs 7.4e-01 code 7.6e-01 codeimp 3.1e-01| P=100 imp 1.9e+00 rhs 4.5e+00 code 9.0e+00 codeimp 1.4e-01
+upw Lh=0 cfl 0.80 | P=1 imp 4.8e-01 rhs 5.4e-01 code 5.3e-01 codeimp 2.7e-01| P=10 imp 1.7e+00 rhs 3.2e+00 code 5.7e+00 codeimp 2.6e-01| P=100 imp 2.6e+00 rhs 8.7e+01 code 7.4e+01 codeimp 1.4e-12

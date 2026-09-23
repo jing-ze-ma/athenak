@@ -503,6 +503,17 @@ class RadiationM1 {
   bool impl_eccheck;            // <rad_m1>/implicit_eos_cache_check: one TRUE-table
                                 // evaluation per cell at the end of the step, which
                                 // measures the cache error and corrects T'
+  // <rad_m1>/implicit_vimp (tests_m1/runs_3v_vimplicit): the gas velocity of the
+  // enthalpy flux implicit through the radiative force of the solve (Newton form)
+  bool impl_vimp;               // the switch (default false: nothing below is touched)
+  Real impl_vimp_jscale;        // DIAGNOSTIC implicit_vimp_jscale: scale of P (1)
+  bool vimp_now;                // on for this step (the positivity fallback drops it)
+  int iw_vimp;                  // first iw component of the M1_NIW_VIMP block, or -1
+  Real vimp_nfall;              // how often the positivity fallback dropped it
+  Real vimp_emin;               // the smallest E the linear solve produced with it on
+  DvceArray5D<Real> vmw, vmw_c;   // exchange scratch of the M1_NVIMP_X components
+  MeshBoundaryValuesCC *pbval_vm;  // ...and its exchange object
+  void ImplicitVimpBuild();     // the Jacobian of a(v') E' for this Picard pass
   int iw_gas;                   // first iw component of the M1_NIW_GAS block (see
                                 // rad_m1_implicit.hpp); < 0 when neither option is on
   int impl_nec;                 // components of `ecache`

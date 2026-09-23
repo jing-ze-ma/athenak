@@ -1,0 +1,48 @@
+0.1 0.1 x1 64 edd impl 4096 enth=plm ny=4
+0.1 0.1 x1 64 edd impl 4096 enth=plm ny=4 vimp=true
+0.1 0.1 x1 128 edd impl 4096 enth=plm ny=4
+0.1 0.1 x1 128 edd impl 4096 enth=plm ny=4 vimp=true
+0.1 10 x1 64 edd impl 4096 enth=plm ny=4
+0.1 10 x1 64 edd impl 4096 enth=plm ny=4 vimp=true
+0.1 10 x1 128 edd impl 4096 enth=plm ny=4
+0.1 10 x1 128 edd impl 4096 enth=plm ny=4 vimp=true
+0.1 1000 x1 64 edd impl 4096 enth=plm ny=4
+0.1 1000 x1 64 edd impl 4096 enth=plm ny=4 vimp=true
+0.1 1000 x1 128 edd impl 4096 enth=plm ny=4
+0.1 1000 x1 128 edd impl 4096 enth=plm ny=4 vimp=true
+1 0.1 x1 64 edd impl 4096 enth=plm ny=4
+1 0.1 x1 64 edd impl 4096 enth=plm ny=4 vimp=true
+1 0.1 x1 128 edd impl 4096 enth=plm ny=4
+1 0.1 x1 128 edd impl 4096 enth=plm ny=4 vimp=true
+1 10 x1 64 edd impl 4096 enth=plm ny=4
+1 10 x1 64 edd impl 4096 enth=plm ny=4 vimp=true
+1 10 x1 128 edd impl 4096 enth=plm ny=4
+1 10 x1 128 edd impl 4096 enth=plm ny=4 vimp=true
+1 1000 x1 64 edd impl 4096 enth=plm ny=4
+1 1000 x1 64 edd impl 4096 enth=plm ny=4 vimp=true
+1 1000 x1 128 edd impl 4096 enth=plm ny=4
+1 1000 x1 128 edd impl 4096 enth=plm ny=4 vimp=true
+10 0.1 x1 64 edd impl 4096 enth=plm ny=4
+10 0.1 x1 64 edd impl 4096 enth=plm ny=4 vimp=true
+10 0.1 x1 128 edd impl 4096 enth=plm ny=4
+10 0.1 x1 128 edd impl 4096 enth=plm ny=4 vimp=true
+10 10 x1 64 edd impl 4096 enth=plm ny=4
+10 10 x1 64 edd impl 4096 enth=plm ny=4 vimp=true
+10 10 x1 128 edd impl 4096 enth=plm ny=4
+10 10 x1 128 edd impl 4096 enth=plm ny=4 vimp=true
+10 1000 x1 64 edd impl 4096 enth=plm ny=4
+10 1000 x1 64 edd impl 4096 enth=plm ny=4 vimp=true
+10 1000 x1 128 edd impl 4096 enth=plm ny=4
+10 1000 x1 128 edd impl 4096 enth=plm ny=4 vimp=true
+100 0.1 x1 64 edd impl 4096 enth=plm ny=4
+100 0.1 x1 64 edd impl 4096 enth=plm ny=4 vimp=true
+100 0.1 x1 128 edd impl 4096 enth=plm ny=4
+100 0.1 x1 128 edd impl 4096 enth=plm ny=4 vimp=true
+100 10 x1 64 edd impl 4096 enth=plm ny=4
+100 10 x1 64 edd impl 4096 enth=plm ny=4 vimp=true
+100 10 x1 128 edd impl 4096 enth=plm ny=4
+100 10 x1 128 edd impl 4096 enth=plm ny=4 vimp=true
+100 1000 x1 64 edd impl 4096 enth=plm ny=4
+100 1000 x1 64 edd impl 4096 enth=plm ny=4 vimp=true
+100 1000 x1 128 edd impl 4096 enth=plm ny=4
+100 1000 x1 128 edd impl 4096 enth=plm ny=4 vimp=true
