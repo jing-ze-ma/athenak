@@ -492,9 +492,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   // default is conditioned on every one of the flag's own refusals, so that flipping it
   // cannot turn a working input into a startup fatal: it falls back to 0 with
   // ck_spherical off (plane-parallel: the two-pass sweep IS the exact form there), with
-  // ck_implicit on (the column solve's tridiagonal differentiates the four-pass
-  // recurrence and has not been rederived) and at ck_sweep_cache != 2 (the only setting
-  // the probe-free forms are instantiated at).  Set the line explicitly to override.
+  // ck_implicit on (kept so that an existing implicit input does not change form; tm
+  // carries its own tridiagonal since phase T1, so ck_sweep_form = 1 may be set
+  // explicitly there) and at ck_sweep_cache != 2 (the only setting the probe-free forms
+  // are instantiated at).  Set the line explicitly to override.
   // ck_implicit itself is read in full below; peek at it here, exactly as with
   // rt_layer_legacy above.
   const bool cksweepform_set = pin->DoesParameterExist("problem","ck_sweep_form");
@@ -576,6 +577,19 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       pin->GetOrAddBoolean("problem","ck_impl_frozen_cof",true);
   two_stream_rt::ck_impl_warm =
       pin->GetOrAddBoolean("problem","ck_impl_warm",false);
+  // problem/ck_impl_lin (+ ck_impl_lin_check): the linear re-apply kernel of the tm sweep
+  // for the Newton passes that do not build the Jacobian.  See
+  // utils/two_stream_column_ck.hpp.  Default off; the requirements are checked at the
+  // first RT call.
+  two_stream_rt::ck_impl_lin = pin->GetOrAddBoolean("problem","ck_impl_lin",false);
+  two_stream_rt::ck_impl_lin_check =
+      pin->GetOrAddInteger("problem","ck_impl_lin_check",0);
+  two_stream_rt::ck_impl_lin_thr = pin->GetOrAddInteger("problem","ck_impl_lin_thr",1);
+  if (two_stream_rt::ck_impl_lin_thr != 1 && two_stream_rt::ck_impl_lin_thr != 4) {
+    std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: problem/ck_impl_lin_thr "
+              << "must be 1 or 4, got " << two_stream_rt::ck_impl_lin_thr << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
   // problem/ck_impl_reuse_jac (0 off / 1 chord / 2 scaled chord) and problem/ck_impl_seed
   // (0 off / 1 semi-implicit / 2 exact lagged): the two phase-4 levers, both default off.
   // See tests_ck_implicit/README_phase4.md.

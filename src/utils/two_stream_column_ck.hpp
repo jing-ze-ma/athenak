@@ -201,6 +201,28 @@ inline bool ck_impl_frozen_op = false;
 // deliverable today; on a GPU the default should be reconsidered per mesh, and the
 // natural third option -- storing per band block and looping the blocks -- is not built.
 inline bool ck_impl_frozen_cof = true;
+// problem/ck_impl_lin: THE LINEAR RE-APPLY KERNEL (tm sweep only, tests_ck_implicit/
+// DESIGN_tm.md phase T3).  With the opacity and the beam frozen for the call
+// (ck_impl_frozen_op), the tm sweep is AFFINE in the band Planck functions, Src = M B +
+// s0, and its reflectance R does not depend on B at all: pass 1's R recurrence IS the
+// factorisation of the column.  So after the storing pass a small kernel (ck_lin_build)
+// parks R and 1/(1 + R beta) at every face and the three BFace/face-interpolation weights
+// of every layer, and every later Newton pass that does not assemble the Jacobian runs
+// rt_chain_ck_lin instead of the chain kernel: the Sc forward substitution and the ray
+// back substitution on the new B_b, with no k-table look-up, no exponential, no divide
+// and no beam.  The answer is the chain kernel's to round-off (the divides become
+// multiplies by stored reciprocals).  Needs ck_impl_frozen_op, ck_impl_frozen_cof and
+// ck_sweep_form = 1; the pass that builds the Jacobian still runs the chain kernel.
+inline bool ck_impl_lin = false;
+// problem/ck_impl_lin_check: on every pass the linear kernel runs, run the chain kernel
+// on the same B first and print max|lin - chain|/max|chain| of Src, Fb, Em.  Gate only.
+inline int ck_impl_lin_check = 0;
+// problem/ck_impl_lin_thr: the linear kernel's threading.  4 = one thread per block of
+// RT_NB chains, writing Src/Fb/Em directly (the chain kernel's layout); 1 = one thread
+// per CHAIN, 4x the threads and a quarter of the registers, into per-chain partials that
+// a second small kernel sums over the block (rt_chain_ck_lin_sum).  Same answer to
+// round-off; the choice is a GPU occupancy one (tests_ck_implicit/README_T3.md).
+inline int ck_impl_lin_thr = 1;
 // problem/ck_impl_warm: start the Newton from the PREVIOUS call's converged increment.
 // The fixed point does not move -- only the initial iterate does -- so a warm start can
 // change the pass count and nothing else.  The seed is the total de the previous call
@@ -295,6 +317,21 @@ inline DvceArray5D<Real> *ck_co_ptr = nullptr;
 // multiplies the ghost cell's Planck function: the one piece of the operator that is not
 // per cell
 inline DvceArray4D<Real> *ck_tpf_ptr = nullptr;
+// ---- problem/ck_impl_lin: the factorisation, packed so that the linear kernel
+// captures few Views.  lP (m, q*nch + chain, i, k, j), q = 0..8: e0, cin, cout (the
+// half-layer triple), R on the below side of face i and 1/(1 + R beta_i) (i = icut ..
+// ie+1), the layer joining cells i and i+1 (i = icut .. ie-1): dslv/dB_i, dsuu/dB_{i+1}
+// and the face interpolation dt_l/dtc, and 2 (wfc/mu) kappa rho (the emission).
+// lG (m, q, i, k, j), q = 0..3: beta at face i, A_{i-1}/A_i, the flux frame factor and
+// 1/dz.  lC (q, chain): the flux weight and the internal-flux datum at the cut.
+inline DvceArray5D<Real> *ck_linP_ptr = nullptr;
+inline DvceArray5D<Real> *ck_linG_ptr = nullptr;
+inline DvceArray2D<Real> *ck_linC_ptr = nullptr;
+// ck_impl_lin_thr = 1: the per-chain partial Src and Fb, (m, chain, i, k, j)
+inline DvceArray5D<Real> *ck_lps_ptr = nullptr;
+inline DvceArray5D<Real> *ck_lpf_ptr = nullptr;
+// ck_impl_lin_check: the chain kernel's Src, Fb, Em on the checked pass, (m, 3*nblk, ...)
+inline DvceArray5D<Real> *ck_lchk_ptr = nullptr;
 // ---- problem/ck_impl_warm: the total increment this call has applied so far, carried
 // over to seed the next one, and the seed actually applied (so that e^n can be recorded
 // net of it)
@@ -368,7 +405,7 @@ Real CkThinSolve(const Real ei, const Real est, const Real src, const Real em,
 //! ck_implicit off.
 
 inline void CkImplAlloc(const int nmb, const int nb, const int nch, const int n1,
-                        const int n2, const int n3) {
+                        const int n2, const int n3, const int nbk = 1) {
   if (ck_jac_ptr != nullptr &&
       ck_jac_ptr->extent(0) == static_cast<size_t>(nmb) &&
       ck_jac_ptr->extent(4) == static_cast<size_t>(n1)) {
@@ -396,6 +433,21 @@ inline void CkImplAlloc(const int nmb, const int nb, const int nch, const int n1
       delete ck_co_ptr;
       delete ck_tpf_ptr;
       ck_kro_ptr = nullptr;
+    }
+    if (ck_linP_ptr != nullptr) {
+      delete ck_linP_ptr;
+      delete ck_linG_ptr;
+      delete ck_linC_ptr;
+      ck_linP_ptr = nullptr;
+    }
+    if (ck_lps_ptr != nullptr) {
+      delete ck_lps_ptr;
+      delete ck_lpf_ptr;
+      ck_lps_ptr = nullptr;
+    }
+    if (ck_lchk_ptr != nullptr) {
+      delete ck_lchk_ptr;
+      ck_lchk_ptr = nullptr;
     }
   }
   ck_jac_ptr = new DvceArray5D<Real>("ck_jac", nmb, 3, n3, n2, n1);
@@ -429,6 +481,19 @@ inline void CkImplAlloc(const int nmb, const int nb, const int nch, const int n1
     ck_ci_ptr = new DvceArray5D<Real>("ck_ci", nmb, nc3, n13, n33, n23);
     ck_co_ptr = new DvceArray5D<Real>("ck_co", nmb, nc3, n13, n33, n23);
     ck_tpf_ptr = new DvceArray4D<Real>("ck_tpf", nmb, nch, n3, n2);
+    // problem/ck_impl_lin: nine more Reals per (cell, chain), four per cell
+    if (ck_impl_lin) {
+      ck_linP_ptr = new DvceArray5D<Real>("ck_lP", nmb, 9*nch, n1, n3, n2);
+      ck_linG_ptr = new DvceArray5D<Real>("ck_lG", nmb, 4, n1, n3, n2);
+      ck_linC_ptr = new DvceArray2D<Real>("ck_lC", 2, nch);
+      if (ck_impl_lin_thr == 1) {
+        ck_lps_ptr = new DvceArray5D<Real>("ck_lps", nmb, nch, n1, n3, n2);
+        ck_lpf_ptr = new DvceArray5D<Real>("ck_lpf", nmb, nch, n1, n3, n2);
+      }
+      if (ck_impl_lin_check > 0) {
+        ck_lchk_ptr = new DvceArray5D<Real>("ck_lchk", nmb, 3*nbk, n1, n3, n2);
+      }
+    }
   }
   if (ck_conv_ptr == nullptr) {
     ck_conv_ptr = new DvceArray1D<Real>("ck_conv", 8);
