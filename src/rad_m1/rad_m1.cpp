@@ -127,6 +127,19 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   vimp_nfall = 0.0;
   vimp_emin = 1.0e300;
   pbval_vm = nullptr;
+  time_scheme = 0;
+  t2_ok = false;
+  t2_solve = 0;
+  t2_fail = false;
+  t2_dbg_fail = -1;
+  t2_nstep = 0.0;
+  t2_nbe = 0.0;
+  t2_nfall = 0.0;
+  t2_dtprev = 0.0;
+  t2_vprev = false;
+  t2_nclip = 0.0;
+  pred2_ok = false;
+  pred2_dt = 0.0;
   impl_crelax = 1.0;
   impl_crelax_thin = false;
   impl_clag_step = false;
@@ -664,6 +677,7 @@ RadiationM1::~RadiationM1() {
   if (tau_closure) {TauClosureReport();}
   ReportCounters();
   ImplicitReport();   // milestone 3a; a no-op in transport = explicit
+  Time2Report();      // time_scheme = hesdirk2; a no-op otherwise
   if (vet_sc) {VetReport();}
   VetFree();
   delete pbval_u;

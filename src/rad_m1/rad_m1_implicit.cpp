@@ -963,6 +963,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
               << " flux_max=" << iflux_x1max << std::endl;
   }
   if (vet_sc) {VetInit(pin);}
+  Time2Init(pin);
 }
 
 //----------------------------------------------------------------------------------------
@@ -4924,6 +4925,35 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     Kokkos::deep_copy(DevExeSpace(), f0x2n, f0x2);
     if (thrd) {Kokkos::deep_copy(DevExeSpace(), f0x3n, f0x3);}
   }
+  // <rad_m1>/time_scheme = hesdirk2 (rad_m1_time2.cpp).  A STAGE solve takes the stage
+  // start state (u0, f0x*, the hydro u0) as its first iterate and as the only state the
+  // EOS and the opacities see; its OLD vector is that state plus t2inc, which can be
+  // non-physical.  Under time_scheme = be t2st is false and nothing below moves.
+  const int t2s = t2_solve;
+  const bool t2st = (t2s == M1_T2S_STAGE1) || (t2s == M1_T2S_STAGE2);
+  auto t2i_ = t2inc;
+  const bool t2k = (t2s != M1_T2S_NONE);
+  auto kk_ = (t2s == M1_T2S_STAGE1) ? t2k2 : t2k1;
+  if (t2st) {
+    par_for("m1_t2_f1n", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      f0n_(m,k,j,i) += t2i_(m,M1_T2_F1,k,j,i);
+    });
+    if (trans) {
+      auto f2n_ = f0x2n;
+      par_for("m1_t2_f2n", DevExeSpace(), 0, nmb1, ks, ke, js, je+1, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        f2n_(m,k,j,i) += t2i_(m,M1_T2_F1+1,k,j,i);
+      });
+      if (thrd) {
+        auto f3n_ = f0x3n;
+        par_for("m1_t2_f3n", DevExeSpace(), 0, nmb1, ks, ke+1, js, je, is, ie,
+        KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+          f3n_(m,k,j,i) += t2i_(m,M1_T2_F1+2,k,j,i);
+        });
+      }
+    }
+  }
   auto &mbbcs = pmy_pack->pmb->mb_bcs;
   auto opac_ = opac;
   auto &mbsize = pmy_pack->pmb->mb_size;
@@ -4992,7 +5022,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   par_for("m1_impl_i0", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     Real e = fmax(u0_(m,M1_E,k,j,i), efl);
-    iw_(m,M1_IW_EN,k,j,i) = e;
+    iw_(m,M1_IW_EN,k,j,i) = t2st ? (u0_(m,M1_E,k,j,i) + t2i_(m,M1_T2_E,k,j,i)) : e;
     iw_(m,M1_IW_EP,k,j,i) = e;
     iw_(m,M1_IW_F1,k,j,i) = u0_(m,M1_F1,k,j,i);
     iw_(m,M1_IW_V1,k,j,i) = 0.0;
@@ -5036,8 +5066,18 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                        SQR(uh(m,IM3,k,j,i)))*idd;
       Real egrv = etg ? (dd*phicc(m,k,j,i)) : 0.0;
       Real eg = uh(m,IEN,k,j,i) - ekin - egrv;
-      iw_(m,M1_IW_EGN,k,j,i) = eg;
       iw_(m,M1_IW_TP,k,j,i) = eos.Temperature(dd, fmax(eg, 1.0e-300));
+      if (t2st) {
+        // the start T is set; now the gas becomes the OLD vector of the stage solve
+        uh(m,IM1,k,j,i) += t2i_(m,M1_T2_M1,k,j,i);
+        uh(m,IM2,k,j,i) += t2i_(m,M1_T2_M1+1,k,j,i);
+        uh(m,IM3,k,j,i) += t2i_(m,M1_T2_M1+2,k,j,i);
+        uh(m,IEN,k,j,i) += t2i_(m,M1_T2_EN,k,j,i);
+        ekin = 0.5*(SQR(uh(m,IM1,k,j,i)) + SQR(uh(m,IM2,k,j,i)) +
+                    SQR(uh(m,IM3,k,j,i)))*idd;
+        eg = uh(m,IEN,k,j,i) - ekin - egrv;
+      }
+      iw_(m,M1_IW_EGN,k,j,i) = eg;
       iw_(m,M1_IW_V1,k,j,i) = uh(m,IM1,k,j,i)*idd;
       if (trans) {
         iw_(m,M1_IW_V2,k,j,i) = uh(m,IM2,k,j,i)*idd;
@@ -5115,7 +5155,14 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
 
   // closure = vet_sc: the formal solution of the start-of-step state.  (chi, n) are
   // then read by step (b) on every Picard pass: the tensor is lagged by one hydro step.
-  if (vetsc) {VetShortChar();}
+  if (vetsc) {
+    if (t2s == M1_T2S_STAGE1) {
+      Time2VetStart();          // at U^n, then D* extrapolated to the stage time
+    } else if (t2s != M1_T2S_STAGE2) {
+      VetShortChar();           // stage 2 keeps D* of stage 1
+      if (t2s == M1_T2S_BESTORE) {t2_vprev = false;}
+    }
+  }
 
   // implicit_predictor = step: start the Picard loop from the previous step's implicit
   // increment, scaled by dt/dt_prev.  Only the STARTING POINT moves: E^n (M1_IW_EN),
@@ -5128,17 +5175,21 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   if (impl_pred && (static_cast<int>(ipred.extent(0)) != nmb1 + 1)) {
     pred_ok = false;   // the pack changed size (AMR): start cold
   }
-  auto pd_ = ipred;
+  // hesdirk2: the stage-2 solve keeps its own increment (ipred2); increments are
+  // measured from the stage START state (EP here), which under be is E^n = EN
+  const bool p2 = (t2s == M1_T2S_STAGE2);
+  auto pd_ = p2 ? ipred2 : ipred;
   if (pred) {
-    const bool pok = pred_ok && (pred_dt > 0.0);
-    const Real rat = pok ? (dt/pred_dt) : 0.0;
+    const bool pok = p2 ? (pred2_ok && (pred2_dt > 0.0)) : (pred_ok && (pred_dt > 0.0));
+    const Real rat = pok ? (dt/(p2 ? pred2_dt : pred_dt)) : 0.0;
     const bool hh = have_hydro;
     par_for("m1_impl_pred", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       Real tn = iw_(m,M1_IW_TP,k,j,i);
       pd_(m,2,k,j,i) = tn;
       if (!pok) {return;}
-      Real ep = iw_(m,M1_IW_EN,k,j,i) + rat*pd_(m,0,k,j,i);
+      Real ep = (t2st ? iw_(m,M1_IW_EP,k,j,i) : iw_(m,M1_IW_EN,k,j,i))
+                + rat*pd_(m,0,k,j,i);
       if (ep > efl) {iw_(m,M1_IW_EP,k,j,i) = ep;}
       if (hh) {
         Real tp = tn + rat*pd_(m,1,k,j,i);
@@ -5162,7 +5213,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     auto sc_ = aa_sc;
     par_for("m1_acc_scale", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      sc_(m,k,j,i) = fmax(iw_(m,M1_IW_EN,k,j,i), efl);
+      sc_(m,k,j,i) = t2st ? fmax(u0_(m,M1_E,k,j,i), efl)
+                          : fmax(iw_(m,M1_IW_EN,k,j,i), efl);
     });
   }
 
@@ -6220,11 +6272,17 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     const bool hh = have_hydro;
     par_for("m1_impl_pstore", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      pd_(m,0,k,j,i) = iw_(m,M1_IW_EP,k,j,i) - iw_(m,M1_IW_EN,k,j,i);
+      pd_(m,0,k,j,i) = iw_(m,M1_IW_EP,k,j,i) - (t2st ? fmax(u0_(m,M1_E,k,j,i), efl)
+                                                      : iw_(m,M1_IW_EN,k,j,i));
       pd_(m,1,k,j,i) = hh ? (iw_(m,M1_IW_TP,k,j,i) - pd_(m,2,k,j,i)) : 0.0;
     });
-    pred_ok = true;
-    pred_dt = dt;
+    if (p2) {
+      pred2_ok = true;
+      pred2_dt = dt;
+    } else {
+      pred_ok = true;
+      pred_dt = dt;
+    }
   }
   if (trans) {
     // refresh the stored transverse face fluxes with the CONVERGED E, so that the
@@ -6243,6 +6301,42 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     it = iglob;
   }
 #endif
+  // hesdirk2: is the stage admissible?  Not when the Picard loop did not converge, when
+  // a positivity fallback of the operator fired, or when the solved E or T is not
+  // positive; the Driver then redoes the step from U^n with backward Euler.
+  if (t2st) {
+    const bool hh = have_hydro;
+    const bool gq = have_hydro && coupling && dbgh;
+    Real vmin = 1.0e300;
+    Kokkos::parallel_reduce("m1_t2_adm",
+    Kokkos::MDRangePolicy<Kokkos::Rank<4>>(DevExeSpace(), {0,ks,js,is},
+                                           {nmb1+1,ke+1,je+1,ie+1}),
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &lmin) {
+      Real r = iw_(m,M1_IW_S2,k,j,i);
+      if (hh) {r = fmin(r, iw_(m,M1_IW_TP,k,j,i));}
+      if (gq) {
+        // the gas internal energy the write-back will set (its step (a))
+        Real qq = iw_(m,M1_IW_SRCR,k,j,i) - iw_(m,M1_IW_SRCB,k,j,i)*iw_(m,M1_IW_EP,k,j,i);
+        r = fmin(r, iw_(m,M1_IW_EGN,k,j,i) - (cl/ch)*qq);
+      }
+      if (!(r > 0.0)) {r = -1.0;}
+      lmin = (r < lmin) ? r : lmin;
+    }, Kokkos::Min<Real>(vmin));
+#if MPI_PARALLEL_ENABLED
+    {Real g;
+    MPI_Allreduce(&vmin, &g, 1, MPI_ATHENA_REAL, MPI_MIN, MPI_COMM_WORLD);
+    vmin = g;}
+#endif
+    t2_fail = !converged || !(vmin > 0.0) || (od_now != impl_offdiag) ||
+              (vimp_now != impl_vimp) ||
+              ((t2s == M1_T2S_STAGE1) && (pmy_pack->pmesh->ncycle == t2_dbg_fail));
+    if (t2_fail && global_variable::my_rank == 0) {
+      std::cout << "<rad_m1> hesdirk2 stage " << ((t2s == M1_T2S_STAGE1) ? 1 : 2)
+                << " NOT ADMISSIBLE at cycle " << pmy_pack->pmesh->ncycle
+                << " (converged=" << converged << " min(E,T)=" << vmin
+                << "): the step is redone with backward Euler" << std::endl;
+    }
+  }
   impl_nstep += 1.0;
   impl_itsum += static_cast<Real>(it);
   impl_itmax = std::max(impl_itmax, static_cast<Real>(it));
@@ -6489,6 +6583,17 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     }
 
     M1ApplyLimits(cl, efl, ep, fp1, fp2, fp3);
+    // hesdirk2: the slope of this solve, K = (Y - old vector)/dt_solve
+    if (t2k) {
+      const Real fk = 1.0/dt;
+      kk_(m,M1_T2_E,k,j,i) = (ep - iw_(m,M1_IW_EN,k,j,i))*fk;
+      bool gk = have_hydro && feedback;
+      kk_(m,M1_T2_M1,k,j,i) = gk ? ((dm1 - dmref)*fk) : 0.0;
+      kk_(m,M1_T2_M1+1,k,j,i) = (gk && trans && dbgft) ? (dm2*fk) : 0.0;
+      kk_(m,M1_T2_M1+2,k,j,i) = (gk && trans && dbgft && thrd) ? (dm3*fk) : 0.0;
+      kk_(m,M1_T2_EN,k,j,i) = gk ? ((eg + ekin + egrv + work - uh(m,IEN,k,j,i))*fk)
+                                 : 0.0;
+    }
     u0_(m,M1_E,k,j,i) = ep;
     u0_(m,M1_F1,k,j,i) = fp1;
     u0_(m,M1_F2,k,j,i) = fp2;
@@ -6502,6 +6607,29 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       uh(m,IEN,k,j,i) = eg + ekin + egrv + work;
     }
   });
+
+  // hesdirk2: the face part of the slope, over the active faces
+  if (t2k) {
+    const Real fk = 1.0/dt;
+    par_for("m1_t2_kf1", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      kk_(m,M1_T2_F1,k,j,i) = (f0_(m,k,j,i) - f0n_(m,k,j,i))*fk;
+    });
+    if (trans) {
+      auto f2n_ = f0x2n;
+      par_for("m1_t2_kf2", DevExeSpace(), 0, nmb1, ks, ke, js, je+1, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+        kk_(m,M1_T2_F1+1,k,j,i) = (f2_(m,k,j,i) - f2n_(m,k,j,i))*fk;
+      });
+      if (thrd) {
+        auto f3n_ = f0x3n;
+        par_for("m1_t2_kf3", DevExeSpace(), 0, nmb1, ks, ke+1, js, je, is, ie,
+        KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+          kk_(m,M1_T2_F1+2,k,j,i) = (f3_(m,k,j,i) - f3n_(m,k,j,i))*fk;
+        });
+      }
+    }
+  }
 
   if (vetsc) {Kokkos::fence(); vet_itime += vtimer.seconds();}
   return TaskStatus::complete;

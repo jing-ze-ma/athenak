@@ -462,6 +462,39 @@ class RadiationM1 {
   Real pred_dt;                 // the dt of that step
   DvceArray5D<Real> ipred;      // (m,3,k,j,i): dE_prev, dT_prev, T^n of this step
 
+  // ---- <rad_m1>/time_scheme = hesdirk2 (docs/dev/rad_m1_time2_design.md sect. 5,
+  // tests_m1/runs_3x_hesdirk2): two implicit stage solves inside the Heun stages.  With
+  // time_scheme = be (default) nothing below is allocated or read.
+  int time_scheme;              // M1_TIME_BE | M1_TIME_HESDIRK2
+  bool t2_ok;                   // a valid FSAL slope K1 is stored
+  int t2_solve;                 // what the next ImplicitSolve does (M1_T2S_*)
+  bool t2_fail;                 // the last stage solve was not admissible
+  int t2_dbg_fail;              // DEBUG time2_dbg_fail: fail stage 1 at this cycle
+  Real t2_nstep, t2_nbe, t2_nfall;  // stage steps, BE steps, fallbacks (counters)
+  Real t2_dtprev;               // the dt of the previous step (vet_sc extrapolation)
+  bool t2_vprev;                // vet_prev holds the tensor of the previous step
+  Real t2_nclip;                // vet_sc cells whose extrapolated tensor was clipped
+  DvceArray5D<Real> t2k1;       // (m,M1_T2_NK,k,j,i) the FSAL slope K1 (restart state)
+  DvceArray5D<Real> t2k2;       // (m,M1_T2_NK,k,j,i) the stage-2 slope K2
+  DvceArray5D<Real> t2inc;      // (m,M1_T2_NK,k,j,i) old vector - stage start state
+  DvceArray4D<Real> t2f1, t2f2, t2f3;  // the face fluxes of U^n (Heun average)
+  DvceArray5D<Real> ipred2;     // the predictor increment of the stage-2 solve
+  bool pred2_ok;
+  Real pred2_dt;
+  DvceArray5D<Real> vet_prev;   // vet_sc: the start-of-step tensor of the previous step
+  DvceArray5D<Real> vet_now;    // vet_sc: the start-of-step tensor of this step
+  void Time2Init(ParameterInput *pin);
+  bool Time2Active();           // the next step runs the stages (else BE)
+  void Time2FormStage(int stage, Real dt);
+  void Time2Restore(Driver *pdrive);
+  void Time2VetStart();        // vet_sc: formal solution at U^n, then extrapolate
+  void Time2VetExtrapolate();
+  void Time2Report();
+  int Time2RstNchWant();        // restart channels this run keeps (0 unless hesdirk2)
+  int Time2RstNch();            // ...and writes (0 unless a slope is stored)
+  void Time2RstPack(DvceArray5D<Real> &a, int nmb);
+  void Time2RstSet(int ch, const HostArray4D<Real> &w, int nmb);
+
   // ---- MILESTONE 3b phase D: the OFF-DIAGONAL Eddington terms and the closure lag.
   // All inert with transport = explicit | implicit_x1 and on a 1-D mesh.
   int impl_offdiag;             // M1_OD_*: lagged | operator | none

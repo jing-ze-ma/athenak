@@ -201,6 +201,14 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
                         std::make_pair(0,nmb), Kokkos::ALL, Kokkos::ALL, Kokkos::ALL,
                         Kokkos::ALL));
     }
+    // time_scheme = hesdirk2: the FSAL slope and what goes with it
+    if (pradm1->Time2RstNch() > 0) {
+      const int nct = pradm1->Time2RstNch();
+      DvceArray5D<Real> tmp("rst-m1t", nmb, nct, nout3, nout2, nout1);
+      pradm1->Time2RstPack(tmp, nmb);
+      Kokkos::realloc(outarray_m1t, nmb, nct, nout3, nout2, nout1);
+      Kokkos::deep_copy(outarray_m1t, tmp);
+    }
   }
   if (pturb != nullptr) {
     Kokkos::realloc(outarray_force, nmb, nforce, nout3, nout2, nout1);
@@ -274,6 +282,21 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
     const Real pdt = (pradm1 != nullptr) ? pradm1->pred_dt : 0.0;
     std::memcpy(&(pred_hdr[0]), &(hdr[0]), sizeof(hdr));
     std::memcpy(&(pred_hdr[0]) + sizeof(hdr), &pdt, sizeof(pdt));
+  }
+  // <rad_m1> time_scheme = hesdirk2: the slope block, behind the predictor one --
+  // int32 have, int32 nch, Real pred2_dt, Real dt_prev, Real vprev
+  const int nt2 = (pradm1 != nullptr) ? pradm1->Time2RstNch() : 0;
+  char t2_hdr[2*sizeof(std::int32_t) + 3*sizeof(Real)];
+  {
+    const std::int32_t hdr[2] = {(nt2 > 0) ? 1 : 0, static_cast<std::int32_t>(nt2)};
+    Real hv[3] = {0.0, 0.0, 0.0};
+    if (pradm1 != nullptr) {
+      hv[0] = pradm1->pred2_ok ? pradm1->pred2_dt : 0.0;
+      hv[1] = pradm1->t2_dtprev;
+      hv[2] = pradm1->t2_vprev ? 1.0 : 0.0;
+    }
+    std::memcpy(&(t2_hdr[0]), &(hdr[0]), sizeof(hdr));
+    std::memcpy(&(t2_hdr[0]) + sizeof(hdr), &(hv[0]), sizeof(hv));
   }
   int nhydro=0, nmhd=0, nrad=0, nm1=0, nforce=3, nz4c=0, nadm=0, nco=0;
   if (pradm1 != nullptr) {
@@ -419,6 +442,15 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
       resfile.Write_any_type(&nb, sizeof(IOWrapperSizeT), "byte", single_file_per_rank);
       resfile.Write_any_type(&(pred_hdr[0]), nb, "byte", single_file_per_rank);
     }
+    // the hesdirk2 slope header, same marked form, behind the predictor one
+    if (nt2 > 0) {
+      IOWrapperSizeT nb = sizeof(t2_hdr);
+      resfile.Write_any_type(&(radm1::kM1Time2RstMagic[0]),
+                             sizeof(radm1::kM1Time2RstMagic), "byte",
+                             single_file_per_rank);
+      resfile.Write_any_type(&nb, sizeof(IOWrapperSizeT), "byte", single_file_per_rank);
+      resfile.Write_any_type(&(t2_hdr[0]), nb, "byte", single_file_per_rank);
+    }
   }
 
   //--- STEP 4.  All ranks write data over all MeshBlocks (5D arrays) in parallel
@@ -483,6 +515,9 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   if (npred > 0) {
     data_size += npred*nout1*nout2*nout3*sizeof(Real);  // rad_m1 ipred
   }
+  if (nt2 > 0) {
+    data_size += nt2*nout1*nout2*nout3*sizeof(Real);    // rad_m1 hesdirk2 slope
+  }
   if (global_variable::my_rank == 0 || single_file_per_rank) {
     resfile.Write_any_type(&(data_size), sizeof(IOWrapperSizeT), "byte",
                             single_file_per_rank);
@@ -506,6 +541,10 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   if (npred > 0) {
     step3size += sizeof(radm1::kM1PredRstMagic) + sizeof(IOWrapperSizeT)
                  + sizeof(pred_hdr);
+  }
+  if (nt2 > 0) {
+    step3size += sizeof(radm1::kM1Time2RstMagic) + sizeof(IOWrapperSizeT)
+                 + sizeof(t2_hdr);
   }
 
   // write cell-centered variables in parallel
@@ -983,6 +1022,11 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   for (int n=0; n<npred; ++n) {
     write_wtemp(Kokkos::subview(outarray_m1p, Kokkos::ALL, n, Kokkos::ALL, Kokkos::ALL,
                                 Kokkos::ALL), "rad_m1 predictor");
+  }
+  // and the hesdirk2 slope behind that
+  for (int n=0; n<nt2; ++n) {
+    write_wtemp(Kokkos::subview(outarray_m1t, Kokkos::ALL, n, Kokkos::ALL, Kokkos::ALL,
+                                Kokkos::ALL), "rad_m1 hesdirk2 slope");
   }
 
   // close file, clean up
