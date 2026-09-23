@@ -1668,6 +1668,20 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
       }
     }
     ck_impl_last_it = npass;
+    // problem/ck_impl_pred_chk: the final state's own residual and gap (one more sweep,
+    // no step; diagnostic only -- the gas is not touched)
+    int pchk_act = -1;
+    if (ck_impl_pred && ck_impl_pred_chk && conv) {
+      Kokkos::deep_copy(*ck_done_ptr, 0.0);
+      ck_impl_pass = npass;
+      picket_fence_two_stream_RT_pass(pm, bdt);
+      MeshBlockPack *pp = pm->pmb_pack;
+      DvceArray5D<Real> u0c = (pp->pmhd != nullptr) ? pp->pmhd->u0 : pp->phydro->u0;
+      ck_impl_evalonly = true;
+      CkImplStep(pm, u0c, *rt_icut_ptr, *rt_T_ptr, pp->pcoord->dx1, bdt);
+      ck_impl_evalonly = false;
+      pchk_act = ck_impl_nactive;
+    }
     if (ck_impl_nsubfail > 0) conv = false;   // ls_sub: a column failed at the finest L
     ck_impl_nonconv = conv ? 0 : 1;
     ck_impl_pass = -1;
@@ -1693,6 +1707,8 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
                     + (ck_impl_reuse_op ? "R" : "S") + " xsd="
                     + std::to_string(ck_impl_xs_dmax)) : std::string(""))
                 << (ck_impl_pred ? (" pred=" + std::to_string(ck_impl_npred))
+                    : std::string(""))
+                << ((pchk_act >= 0) ? (" pchk_active=" + std::to_string(pchk_act))
                     : std::string(""))
                 << (conv ? "" : " NOT-CONVERGED")
                 << ((ck_impl_debug <= -2) ? (" hist=" + hist) : std::string(""))
@@ -2525,6 +2541,8 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
       // the three-band Q_v that the old rt_pre computed are all dead: nothing reads them.
       if (band_on) {
         const Real tmu_ = rt_test_mu0;
+        // problem/ck_impl_nosync: mu0 is geometry; the later passes of a call keep it
+        if (!(ck_impl_nosync && ck_impl_pass > 0)) {
         par_for("rt_pre_geom", DevExeSpace(), 0, nmb1, ks, ke, js, je,
         KOKKOS_LAMBDA(const int m, const int k, const int j) {
           // PLANE-PARALLEL: there is no substellar direction, and x2v/x3v are 1x1
@@ -2553,6 +2571,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
           if (tmu_ >= -1.0) mu0 = tmu_;
           cf_g(m,k,j,3) = mu0;
         });
+        }
         // ONE ANGULAR GHOST EACH SIDE under rt_rad_force: the transverse Prad grad w term
         // differences T_g over j+-1 and k+-1, so at a MeshBlock edge it read a T_g that
         // was never filled (0 or stale).  With the temperature gate on, that put a large

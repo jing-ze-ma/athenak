@@ -604,6 +604,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
   two_stream_rt::ck_impl_pred = pin->GetOrAddBoolean("problem","ck_impl_pred",false);
   two_stream_rt::ck_impl_pred_fac =
       pin->GetOrAddReal("problem","ck_impl_pred_fac",1.0);
+  two_stream_rt::ck_impl_pred_chk =
+      pin->GetOrAddBoolean("problem","ck_impl_pred_chk",false);
   two_stream_rt::ck_impl_nosync =
       pin->GetOrAddBoolean("problem","ck_impl_nosync",false);
   // problem/ck_impl_frozen_op: freeze the exchange operator over the Newton passes (the

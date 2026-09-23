@@ -208,6 +208,12 @@ inline bool ck_impl_pred = false;
 inline Real ck_impl_pred_fac = 1.0;
 inline DvceArray3D<Real> *ck_rprev_ptr = nullptr;
 inline int ck_impl_npred = 0;              // columns ended by the prediction, last pass
+// problem/ck_impl_pred_chk (diagnostic, for the accuracy gates only): after a call the
+// prediction ended, run ONE more sweep over every column and evaluate (no step)
+// the residual and the energy gap of the state actually handed to the gas, so that the
+// reported res / ckdesum (and ck_src, which the test hooks read) are the final state's.
+inline bool ck_impl_pred_chk = false;
+inline bool ck_impl_evalonly = false;
 // problem/ck_impl_nosync (lever 5): no device allocation and no blocking scalar
 // deep_copy in the RT pass path (cached dummies and host mirrors, stream-ordered
 // fills), and the apply's clip count reduced into a device View.
@@ -932,6 +938,7 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
     // ck_impl_pred (1-element dummy when off)
     const bool pred_ = ck_impl_pred;
     const Real pfac_ = ck_impl_pred_fac;
+    const bool evo_ = ck_impl_evalonly;
     auto rprev_ = pred_ ? *ck_rprev_ptr : CkDum<DvceArray3D<Real>>("ck_rprev_d");
     const bool aarst_ = ck_impl_aa_rst;
     auto aah_ = (naa_ > 0) ? *ck_aah_ptr : CkDum<DvceArray5D<Real>>("ck_aah_d");
@@ -1018,7 +1025,7 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
               rprev_(m,k,j) = rn;
             }
           });
-          if (rn <= tol || pdone) return;
+          if (rn <= tol || pdone || evo_) return;
           pwill = (rp > 0.0) && (rn*rn <= pfac_*tol*rp);
         }
       } else {
