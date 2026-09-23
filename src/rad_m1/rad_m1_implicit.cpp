@@ -3292,40 +3292,66 @@ void RadiationM1::ImplicitStencilOpPart(int xc, int yc, int red, int part, int w
     iw_(m,cy,k,j,i) = y;
     return y;
   };
-  // the cell range: the interior box (part 1) or the whole block with the interior
-  // cells skipped (part 2)
+  // the cells of the part, flattened per block: part 1 the interior box (k,j,i order),
+  // part 2 the shell only -- the w-deep planes at both x3 ends, then per interior k the
+  // w-deep rows at both x2 ends and per interior (k,j) the w cells at both x1 ends
   const bool inner = (part == 1);
-  const int a1 = inner ? il : is, b1 = inner ? iu : ie;
-  const int a2 = inner ? jl : js, b2 = inner ? ju : je;
-  const int a3 = inner ? kl : ks, b3 = inner ? ku : ke;
-  auto skip = KOKKOS_LAMBDA(const int k, const int j, const int i) -> bool {
-    return (!inner) && (i >= il) && (i <= iu) && (j >= jl) && (j <= ju) && (k >= kl) &&
-           (k <= ku);
+  const int n1 = ie - is + 1, n2 = je - js + 1;
+  const int w1 = w, w2 = (indcs.nx2 > 1) ? w : 0, w3 = (indcs.nx3 > 1) ? w : 0;
+  const int m1 = iu - il + 1, m2 = ju - jl + 1, m3 = ku - kl + 1;
+  const int npl = 2*w3*n2*n1;                 // shell: the x3 end planes
+  const int nkc = 2*w2*n1 + m2*2*w1;          // shell: per interior k
+  const int ncell = inner ? (m3*m2*m1) : (npl + m3*nkc);
+  auto cell = KOKKOS_LAMBDA(const int idx, int &m, int &k, int &j, int &i) {
+    m = idx/ncell;
+    int r = idx - m*ncell;
+    if (inner) {
+      k = r/(m2*m1);
+      r -= k*m2*m1;
+      j = r/m1;
+      i = il + r - j*m1;
+      j += jl;
+      k += kl;
+      return;
+    }
+    if (r < npl) {
+      const int q = r/(n2*n1);
+      r -= q*n2*n1;
+      k = (q < w3) ? (ks + q) : (ke - (2*w3 - 1 - q));
+      j = js + r/n1;
+      i = is + r%n1;
+      return;
+    }
+    r -= npl;
+    const int kk = r/nkc;
+    r -= kk*nkc;
+    k = kl + kk;
+    if (r < 2*w2*n1) {
+      const int q = r/n1;
+      j = (q < w2) ? (js + q) : (je - (2*w2 - 1 - q));
+      i = is + r%n1;
+      return;
+    }
+    r -= 2*w2*n1;
+    j = jl + r/(2*w1);
+    const int q = r%(2*w1);
+    i = (q < w1) ? (is + q) : (ie - (2*w1 - 1 - q));
   };
+  Kokkos::RangePolicy<DevExeSpace, Kokkos::LaunchBounds<256,1>>
+      pol(DevExeSpace(), 0, (nmb1 + 1)*ncell);
   if (rm == 0) {
-    par_for("m1_impl_stop", DevExeSpace(), 0, nmb1, a3, b3, a2, b2, a1, b1,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      if (skip(k, j, i)) return;
+    Kokkos::parallel_for("m1_impl_stop", pol, KOKKOS_LAMBDA(const int idx) {
+      int m, k, j, i;
+      cell(idx, m, k, j, i);
       row(m, k, j, i);
     });
     return;
   }
-  const int ni = b1 - a1 + 1;
-  const int nji = (b2 - a2 + 1)*ni;
-  const int nkji = (b3 - a3 + 1)*nji;
-  Kokkos::RangePolicy<DevExeSpace, Kokkos::LaunchBounds<256,1>>
-      pol(DevExeSpace(), 0, (nmb1 + 1)*nkji);
   M1HoRed::result_view_type res(reinterpret_cast<M1HoVal *>(hs));
   Kokkos::parallel_reduce("m1_impl_stopr", pol,
   KOKKOS_LAMBDA(const int idx, M1HoVal &v) {
-    int m = idx/nkji;
-    int r = idx - m*nkji;
-    int k = r/nji;
-    r -= k*nji;
-    int j = r/ni;
-    int i = r - j*ni;
-    k += a3; j += a2; i += a1;
-    if (skip(k, j, i)) return;
+    int m, k, j, i;
+    cell(idx, m, k, j, i);
     Real y = row(m, k, j, i);
     if (rm == 1 || rm == 4) {
       v.s[0] += iw_(m,M1_IW_KRH,k,j,i)*y;
