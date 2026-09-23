@@ -10,7 +10,7 @@
 ## STATUS: stopped at G1, stiff-limit boundedness
 
 **Passed:**
-- **G0.** Bitwise when off, on CPU; the GPU check is job g0_gpu.
+- **G0.** Bitwise when off, on CPU and on GPU.
 - **G1, Eddington time order.** p >= 1.9 in all 12 cases.
 - **G1, listed stiff arms.** Every stiff arm of the vimp gate is bounded.
 
@@ -72,7 +72,7 @@ The Driver then restores U^n (the radiation `u1` and the face copies, the hydro 
 
 - **Radwave.** Four cases (`lists/g0.txt`: Eddington default, Eddington plm+vimp at P=1/tau=10 and at P=100/tau=1e3, and vet_sc full plm+vimp). All 34 tab dumps of each case are identical with `cmp`. Location: `h2_3x/g0rw/{new,base}`.
 - **He slab 2-D** (`slab2d_plm_vimp`, 200 s). All hst, bin, rst and `rt_profile.bin` files are identical. Location: `h2_3x/cpu/g0_{new,base}`.
-- **GPU.** Job script `h2_3x/gpu/g0_gpu.sh`: 3-D box, 40 cycles, base vs new. The result is in `h2_3x/gpu/log.out.*`.
+- **GPU.** Job 11949915 on apudev, script `g0_gpu.sh`. It ran the 3-D He box (plm + vimp) for 40 cycles, base (md5 998ab6bb) vs new (md5 6efbbf8f). All 5+5 bin files, both hst files and `rt_profile.bin` are identical. Location: `h2_3x/gpu/g0_*`, log `h2_3x/gpu/log.out.11949915`.
 
 ### G1: radwave time order, Eddington (`RESULTS_g1_edd.txt`)
 
