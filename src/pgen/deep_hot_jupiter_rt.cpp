@@ -621,6 +621,15 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     two_stream_rt::ck_impl_sub_max =
         pin->GetOrAddInteger("problem","ck_impl_sub_max",32);
   }
+  // problem/ck_impl_esc (cheaper ls_sub escalation) and problem/ck_impl_aa (Anderson
+  // acceleration of the chord iteration, depth), both default off = bitwise
+  // (utils/two_stream_column_ck.hpp, tests_ck_implicit/README_jac.md)
+  two_stream_rt::ck_impl_esc = pin->GetOrAddInteger("problem","ck_impl_esc",0);
+  two_stream_rt::ck_impl_esc_rho = pin->GetOrAddReal("problem","ck_impl_esc_rho",0.9);
+  two_stream_rt::ck_impl_esc_extra =
+      pin->GetOrAddInteger("problem","ck_impl_esc_extra",8);
+  two_stream_rt::ck_impl_aa = pin->GetOrAddInteger("problem","ck_impl_aa",0);
+  two_stream_rt::ck_impl_aa_rst = pin->GetOrAddBoolean("problem","ck_impl_aa_rst",true);
   // problem/ck_impl_reuse_jac (0 off / 1 chord / 2 scaled chord) and problem/ck_impl_seed
   // (0 off / 1 semi-implicit / 2 exact lagged): the two phase-4 levers, both default off.
   // See tests_ck_implicit/README_phase4.md.
