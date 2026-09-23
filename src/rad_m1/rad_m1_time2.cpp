@@ -102,8 +102,9 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
       std::exit(EXIT_FAILURE);
     }
   }
-  // DIAGNOSTIC time2_vet_extrap = false: stage solves use D^n (no extrapolation)
-  t2_vext = true;
+  // time2_vet_extrap (default false): the stage solves use D^n of the formal solution at
+  // U^n; true = D* = D^n + (dt/dt_prev)(D^n - D^{n-1}) (runs_3x: fails G1 at P=100 tau=10)
+  t2_vext = false;
   if (pin->DoesParameterExist("rad_m1", "time2_vet_extrap")) {
     t2_vext = pin->GetBoolean("rad_m1", "time2_vet_extrap");
   }
