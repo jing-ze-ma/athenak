@@ -227,6 +227,11 @@ inline bool ck_impl_nosync = false;
 // the seed is never accepted as it is (the residual norm is loose in the thin top,
 // where e << ck_impl_norm_eps e_max).
 inline bool ck_impl_warm_step = false;
+// problem/ck_impl_cvkeep (lever 4, with ck_impl_cvsec): pass 0 of a call builds its rows
+// with the secant heat capacity the previous call ended on (bounded to 1/50 .. 50 of
+// e/T, else e/T as before) instead of e/T, which README_T1_stall measured 5x off in the
+// dissociating top.  Only the Jacobian changes, not the balance solved.
+inline bool ck_impl_cvkeep = false;
 
 //! \fn CkDum
 //! \brief a 1-element View for a capture that is never read.  CkDum<V>(label) builds a
@@ -926,6 +931,7 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
     // problem/ck_impl_cvsec: the secant heat capacity (1-element dummies when off)
     const bool cvs_ = ck_impl_cvsec;
     const bool cv0_ = (ck_impl_pass <= 0);
+    const bool cvk_ = cv0_ && ck_impl_cvkeep;
     auto ep_ = cvs_ ? *ck_ep_ptr : CkDum<DvceArray4D<Real>>("ck_ep_d");
     auto tp_ = cvs_ ? *ck_tp_ptr : CkDum<DvceArray4D<Real>>("ck_tp_d");
     auto cv_ = cvs_ ? *ck_cv_ptr : CkDum<DvceArray4D<Real>>("ck_cv_d");
@@ -1231,6 +1237,11 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
           const Real ei = ei_(m,k,j,i);
           const Real Ti = T_(m,k,j,i);
           Real cv = (ei > 0.0 && Ti > 0.0) ? ei/Ti : 1.0;
+          // ck_impl_cvkeep: pass 0 starts from the secant cv the previous call ended on
+          if (cvk_) {
+            const Real cvo = cv_(m,k,j,i);
+            if (cvo > 0.02*cv && cvo < 50.0*cv) cv = cvo;
+          }
           if (!cv0_) {
             const Real cvo = cv_(m,k,j,i);
             const Real dT = Ti - tp_(m,k,j,i);

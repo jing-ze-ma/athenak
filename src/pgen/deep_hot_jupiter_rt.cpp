@@ -612,6 +612,8 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       pin->GetOrAddBoolean("problem","ck_impl_nosync",false);
   two_stream_rt::ck_impl_warm_step =
       pin->GetOrAddBoolean("problem","ck_impl_warm_step",false);
+  two_stream_rt::ck_impl_cvkeep =
+      pin->GetOrAddBoolean("problem","ck_impl_cvkeep",false);
   // problem/ck_impl_frozen_op: freeze the exchange operator over the Newton passes (the
   // sweep is linear in B_b at frozen opacity, so only the opacity-dependent coefficients
   // have to be rebuilt -- and they do not change); ck_impl_frozen_cof decides whether the
@@ -713,6 +715,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: problem/ck_impl_jreuse is the "
               << "adaptive chord; it replaces ck_impl_reuse_jac (set it 0) and is not "
               << "combined with ck_impl_glob." << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  if (two_stream_rt::ck_impl_cvkeep && !two_stream_rt::ck_impl_cvsec) {
+    std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: problem/ck_impl_cvkeep keeps "
+              << "the secant cv of ck_impl_cvsec across calls; set ck_impl_cvsec."
+              << std::endl;
     std::exit(EXIT_FAILURE);
   }
   if (two_stream_rt::ck_impl_pred && (!two_stream_rt::ck_impl_fuse ||
