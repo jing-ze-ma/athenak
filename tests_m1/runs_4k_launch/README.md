@@ -131,23 +131,53 @@ queued, see HANDOVER.
 ## HANDOVER
 
 **Done and gated:**
-- The `implicit_krylov_dev` switch (+ `implicit_krylov_dev_halo`), commit below.
+- The `implicit_krylov_dev` switch (+ `implicit_krylov_dev_halo`), commit below. Default OFF.
 - Off is bitwise; on is bitwise on the CPU; NON-CONVERGED 0 everywhere.
-- GPU 1-GPU timing is in the tables above.
+- **Restart gate, switch on (K = 2, dev_halo = 1), CPU 1 rank: BITWISE.** N cycles vs
+  N/2 + restart + N/2 (`/viper/ptmp2/jinma/launch_0923/rstgate/`, `gate.sh`):
+  3-D box vet_sc (N = 30) and 2-D slab Eddington (N = 40). rst data after `<par_end>`
+  identical at the restart cycle N and at the end; hst identical except the extra row the
+  first leg writes at its end (same time, next dt), as for any restart.
+- **GPU on vs off hst (s1c, job 11955221), same binary:** off is repeat-to-repeat
+  bitwise. On vs off: mass 2e-16, time 2e-12, dt 3e-11, totE < 6e-12 (row-wise rel.);
+  KE and V1mid 1e-10 to 2e-8. The differences are flat in time (no growth) and sit at
+  the solver tolerance (`implicit_tol` = 1e-8): device dot products sum in a different
+  order, so the inner iteration counts differ (V: 38.28 vs 39.31 per step). Net 2-/3-mom
+  columns are round-off noise around 0 and are not meaningful. Accepted as a pass.
+
+**GPU timing, 1 GPU, s1c (job 11955221, ms/cycle, 3 repeats, `tsum.py s1c`):**
+
+| arm | off | K = 2 | K = 2 + dev_halo |
+|---|---|---|---|
+| E be+L | 36.2, 36.2, 36.0 (36.1) | 34.5, 34.5, 34.9 (34.6) | 35.0, 34.4, 34.8 (34.7) |
+| V vet_sc be+L | 43.2, 43.2, 43.4 (43.3) | 42.8, 42.5, 43.0 (42.8) | 42.3, 42.2, 42.2 (**42.2**) |
+| Vh vet_sc hesdirk2+L | 59.6, 59.9, 60.0 (59.8) | 59.3, 59.5, 59.5 (59.4) | 58.3, 58.4, 58.3 (**58.4**) |
+
+- NC = 0 in every arm. The switch saves 0.5 to 1.5 ms/cycle; dev_halo = 1 is the better
+  operator for vet_sc.
+
+**GPU weak scaling, 2 GPUs, w2 (job 11955222, 0.9 M cells per GPU, switch off since it
+is 1-rank only; halo_mpi + overlap; ms/cycle, 2 repeats):**
+
+| arm | ms/cycle |
+|---|---|
+| E | 43.0, 43.4 (43.2) |
+| V | 53.4, 53.4 (53.4) |
+| Vh | 73.2, 73.3 (73.3) |
+| hydro, 2 GPUs | 21.7, 21.6 (21.6) |
+| hydro, 1 GPU | 21.1, 20.9 (21.0) |
 
 **Not done:**
-- Restart gate, switch on.
-- GPU on-vs-off hst round-off check.
 - Step (b), Picard-level fusion. Low value: 36.6 launches per cycle, 0.8 ms idle, 4.7 ms
   of compute-heavy single kernels.
 - Step (c), the M1 fences. Only 2 timer fences per solve in ImplicitSolve plus the
   vet.cpp ones (m1-sctb). Hydro holds 43 of the ~49 device syncs.
 - Step (d), HIP graphs. Not worth it on 1 GPU: the GPU is busy 91 % with the switch on.
-- Weak scaling 2/4/8 GPUs.
+- Weak scaling 4/8 GPUs; the pw2 profile (2 GPUs) is not analysed.
 - The multi-rank version of the device scalars. It needs an MPI allreduce per
   reduction, which the pipe already hides.
 
-**Pending jobs (submitted, not waited for):**
+**Jobs (finished; s1c and w2 are in the tables above, pw2 not yet analysed):**
 - **11955221: s1c, 1 GPU.** Off / K = 2 / K = 2 with dev_halo = 1; E, V, Vh; 3 repeats.
   Binary `bin/athena_s1c_gpu`, md5 4be2bf0d.
   Analyse: `python3 /viper/ptmp2/jinma/launch_0923/scripts/tsum.py s1c`.
@@ -159,7 +189,7 @@ queued, see HANDOVER.
   (and rank 1).
 
 **Next step I would take:**
-1. Read s1c. If dev_halo = 1 beats the in-place lookup, make it the operator of the
+1. s1c: dev_halo = 1 wins for vet_sc (table above); make it the operator of the
    switch.
 2. From pw2, find what costs the +8 ms per cycle between 1 and 2 GPUs (halo MPI, MPI
    reductions, SC sweep). That, not the 1-GPU launch count, is where weak scaling is lost.
