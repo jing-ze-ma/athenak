@@ -1151,6 +1151,26 @@ void RadiationM1::VetInit(ParameterInput *pin) {
     VetFatal("<rad_m1>/vet_eig_min must lie in [0, 0.33]");
   }
   if (vet_nmu < 1 || vet_nphi < 1) {VetFatal("<rad_m1>/vet_nmu, vet_nphi must be >= 1");}
+  // vet_x1_periodic = true (default false; tests_m1/runs_3r_radwave): a PERIODIC x1
+  // sweep for a periodic x1 mesh.  The sweep is repeated vet_x1_npass times, each pass
+  // entering layer is (ie) from the upward (downward) intensity the previous pass left
+  // in layer ie (is); the first pass uses the ordinary boundary intensities and only
+  // the last pass accumulates the moments.  The inflow error decays as exp(-tau) along
+  // each ray per box crossing.  Single MeshBlock only.  Read only when named.
+  vet_x1per = false;
+  vet_x1npass = 1;
+  if (pin->DoesParameterExist("rad_m1", "vet_x1_periodic")) {
+    vet_x1per = pin->GetBoolean("rad_m1", "vet_x1_periodic");
+  }
+  if (vet_x1per) {
+    if (mbpath) {VetFatal("<rad_m1>/vet_x1_periodic needs a single MeshBlock");}
+    if (vet_milne) {VetFatal("<rad_m1>/vet_x1_periodic excludes vet_milne");}
+    if (pm->mesh_bcs[BoundaryFace::inner_x1] != BoundaryFlag::periodic) {
+      VetFatal("<rad_m1>/vet_x1_periodic needs periodic x1 boundaries");
+    }
+    vet_x1npass = pin->GetOrAddInteger("rad_m1", "vet_x1_npass", 64);
+    if (vet_x1npass < 1) {VetFatal("<rad_m1>/vet_x1_npass must be >= 1");}
+  }
   vet_nray = 2*vet_nmu*vet_nphi;
 
   // the angle set: (mu1, mu2, mu3, weight), upward hemisphere first
@@ -2081,8 +2101,13 @@ void RadiationM1::VetShortChar() {
     VetMBSweeps();
   }
   const int nlaunch = (vet_mbs != nullptr) ? 0 : nx1;   // the banded sweep ran instead
+  const int npass = vet_x1per ? vet_x1npass : 1;
+  for (int p = 0; p < npass; ++p) {
+  const bool wrap = (p > 0);            // layer is (ie) reads the periodic image
+  const bool accum = (p == npass - 1);  // only the last pass adds to the moments
   for (int l = 0; l < nlaunch; ++l) {
-    const int pw = l & 1, pr = pw ^ 1;
+    const int gl = p*nlaunch + l;
+    const int pw = gl & 1, pr = pw ^ 1;
     par_for("m1_vet_sweep", DevExeSpace(), 0, nmb1, ks, ke, js, je,
     KOKKOS_LAMBDA(const int m, const int k, const int j) {
       const Real dx1 = mbsize.d_view(m).dx1;
@@ -2099,7 +2124,7 @@ void RadiationM1::VetShortChar() {
         const Real c0 = vc_(m,M1_VET_CHX,k,j,i);
         const Real s0 = vc_(m,M1_VET_SRC,k,j,i);
         Real iv;
-        if (l == 0) {
+        if (l == 0 && !wrap) {
           // half a cell from the boundary face; S at the face linearly extrapolated
           // from the two boundary cells (exact for the deep linear S of a diffusion
           // regime), and linear in tau along the segment
@@ -2131,7 +2156,7 @@ void RadiationM1::VetShortChar() {
           }
           iv = ib*ex + wu*su + w0*s0;
         } else {
-          const int iup = up ? (i - 1) : (i + 1);
+          const int iup = (l == 0) ? (up ? ie : is) : (up ? (i - 1) : (i + 1));
           // the foot of the characteristic on the upwind plane, in cell units
           const Real sh2 = -dx1*m2/(am1*dx2);
           const Real fl2 = floor(sh2);
@@ -2189,11 +2214,14 @@ void RadiationM1::VetShortChar() {
         ac[8] += a*m2;
         ac[9] += a*m3;
       }
-      for (int n = 0; n < 10; ++n) {
-        vc_(m,M1_VET_J+n,k,j,iu) += acu[n];
-        vc_(m,M1_VET_J+n,k,j,id) += acd[n];
+      if (accum) {
+        for (int n = 0; n < 10; ++n) {
+          vc_(m,M1_VET_J+n,k,j,iu) += acu[n];
+          vc_(m,M1_VET_J+n,k,j,id) += acd[n];
+        }
       }
     });
+  }
   }
 
   // (3) the uniaxial projection (chi, n) of D = K/J

@@ -244,6 +244,8 @@ class RadiationM1 {
   bool vet_sc;               // closure = vet_sc (default false)
   int vet_nmu, vet_nphi, vet_nray;  // mu nodes per hemisphere, azimuths, rays
   bool vet_milne;            // DIAGNOSTIC: source = exact grey Milne S(tau), gate 3
+  bool vet_x1per;            // vet_x1_periodic (default false): periodic x1 sweep
+  int vet_x1npass;           // ...and its number of passes (runs_3r_radwave)
   bool vet_axis_flux;        // uniaxial axis: the SC flux (true) or the principal axis
   bool vet_full;             // vet_tensor = full: the solve reads all six D_ab = K_ab/J
   Real vet_eig_min;          // vet_tensor = full: eigenvalue floor of the guarded D
@@ -303,6 +305,7 @@ class RadiationM1 {
   // constant means and docs/dev/rad_m1_implicit_design.md sect. 7 for the measurements.
   int impl_flux;                // M1_IFLUX_*: the spatial form of the implicit E-flux
   int impl_recon;               // M1_IRECON_*: dc, or plm by deferred correction
+  int impl_enth;                // M1_IENTH_*: face value of the enthalpy flux a E
   Real impl_recon_w;            // implicit_recon = plm_dc: the weight the deferred
                                 // correction carries.  <= 0 (the default) means the
                                 // automatic 1/(1 + chat dt/dx), which is what keeps the

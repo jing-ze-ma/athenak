@@ -202,6 +202,21 @@ constexpr int M1_IRECON_PLMDC = 1;   // plm as a DEFERRED CORRECTION: the differ
                                      // PREVIOUS Picard iterate, goes into the right-hand
                                      // side, so the matrix stays the low-order M-matrix.
 
+// <rad_m1>/implicit_enthalpy: the face value of the advective enthalpy flux A_d = a_d E
+// (a_d = v_d + (v.D)_d) of every face of the implicit operator.  The MATRIX always
+// carries the donor-cell form a_up E_up (upwind on the face velocity), which keeps the
+// M-matrix; the other two add the difference between their face flux and the donor-cell
+// one, evaluated at the PREVIOUS Picard iterate, to the right-hand side (a deferred
+// correction, like implicit_recon = plm_dc).  At the Picard fixed point the scheme is the
+// high-order one.  The donor-cell form is FIRST order even for a linear wave: with v = 0
+// in the background its error (4/3) E0 (dx/2) sign(v) dv/dx is independent of the
+// amplitude (tests_m1/runs_3r_radwave, tests_m1/runs_3s_space2).
+constexpr int M1_IENTH_UPWIND  = 0;  // donor cell (default; bitwise the old scheme)
+constexpr int M1_IENTH_CENTRAL = 1;  // a_f (E_L + E_R)/2, a_f = (a_L + a_R)/2
+constexpr int M1_IENTH_PLM     = 2;  // a_f E_f, E_f the van Leer plm value from the side
+                                     // upwind of a_f; central where the 4-cell stencil
+                                     // is not available on both sides of the face
+
 // <rad_m1>/implicit_partition: how a column that spans several MeshBlocks (and ranks) is
 // solved (milestone 3a2, LIMIT 4).
 constexpr int M1_IPART_NONE   = 0;   // one MeshBlock per column; fatal otherwise (3a)

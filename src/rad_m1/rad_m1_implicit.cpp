@@ -67,6 +67,64 @@
 
 namespace radm1 {
 
+//----------------------------------------------------------------------------------------
+//! \fn M1EnthIdx
+//! \brief implicit_enthalpy: the cell index a face stencil may read along one direction,
+//! for the raw (unwrapped) index ii.  With a periodic wrap inside the block (cyc) the
+//! index is wrapped; otherwise it must lie in [lo - hlo, hi + hhi], hlo/hhi being the
+//! number of ghost layers filled on that side (0 at a physical boundary).
+
+KOKKOS_INLINE_FUNCTION
+int M1EnthIdx(const int ii, const int lo, const int hi, const bool cyc, const int hlo,
+              const int hhi, bool &ok) {
+  if (cyc) {
+    const int n = hi - lo + 1;
+    int r = ii;
+    if (r < lo) {r += n;}
+    if (r > hi) {r -= n;}
+    ok = true;
+    return r;
+  }
+  ok = (ii >= lo - hlo) && (ii <= hi + hhi);
+  return ok ? ii : lo;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn M1EnthCorr
+//! \brief implicit_enthalpy: (high-order face enthalpy flux) - (donor-cell face flux the
+//! matrix carries), both at the lagged iterate.  el2, el, er, er2 are E and al2, al, ar,
+//! ar2 the advective coefficients a at the cells L-1, L, R, R+1 of the face, and ok says
+//! whether L-1 AND R+1 exist; vf is the face velocity whose sign picks the donor cell of
+//! the matrix.  Requiring BOTH outer cells for the plm form makes the choice the same for
+//! the two MeshBlocks that share a face (each of them misses one of the two when the halo
+//! is too thin), so the face flux stays single valued.
+//!   central: a_f = (a_L + a_R)/2, E_f = (E_L + E_R)/2.
+//!   plm:     a_f = the mean of the two van Leer plm face values of a (it reduces to the
+//!            central mean at an extremum of a and is a 4-point interpolation where a is
+//!            smooth and monotone), E_f = the van Leer plm value of E from the side
+//!            upwind of a_f (monotone, E_f <= 2 E_donor).  Central where !ok.
+
+KOKKOS_INLINE_FUNCTION
+Real M1EnthCorr(const int mode, const Real el2, const Real el, const Real er,
+                const Real er2, const bool ok, const Real al2, const Real al,
+                const Real ar, const Real ar2, const Real vf) {
+  const Real alow = (vf > 0.0) ? (al*el) : (ar*er);
+  Real af = 0.5*(al + ar);
+  Real ef = 0.5*(el + er);
+  if (mode == M1_IENTH_PLM && ok) {
+    Real dum, afl, afr;
+    PLM(al2, al, ar, afl, dum);
+    PLM(al, ar, ar2, dum, afr);
+    af = 0.5*(afl + afr);
+    if (af > 0.0) {
+      PLM(el2, el, er, ef, dum);
+    } else if (af < 0.0) {
+      PLM(el, er, er2, dum, ef);
+    }
+  }
+  return af*ef - alow;
+}
+
 namespace {
 //----------------------------------------------------------------------------------------
 //! \fn ImplBCFromString
@@ -467,6 +525,22 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   } else {
     ImplFatal("<rad_m1>/implicit_recon = '" + srn + "' is not a choice (dc | plm_dc)");
   }
+  // implicit_enthalpy (see rad_m1_implicit.hpp).  Read only when it is named, so that
+  // the parameter dump of an input that does not name it is unchanged.
+  impl_enth = M1_IENTH_UPWIND;
+  if (pin->DoesParameterExist("rad_m1","implicit_enthalpy")) {
+    std::string sen = pin->GetString("rad_m1","implicit_enthalpy");
+    if (sen.compare("upwind") == 0) {
+      impl_enth = M1_IENTH_UPWIND;
+    } else if (sen.compare("central") == 0) {
+      impl_enth = M1_IENTH_CENTRAL;
+    } else if (sen.compare("plm") == 0) {
+      impl_enth = M1_IENTH_PLM;
+    } else {
+      ImplFatal("<rad_m1>/implicit_enthalpy = '" + sen
+                + "' is not a choice (upwind | central | plm)");
+    }
+  }
   // LIMIT 4 of the 3a findings is NOT implemented in 3a2: a column still has to live
   // inside one MeshBlock along x1 (the fatal below).  The option is parsed so that the
   // input files and the gate scripts can already name it, and `gather` fatals rather
@@ -754,6 +828,11 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
               << ((impl_recon == M1_IRECON_PLMDC) ? "plm_dc" : "dc")
               << " implicit_partition="
               << ((impl_part == M1_IPART_GATHER) ? "gather" : "none") << std::endl;
+    if (impl_enth != M1_IENTH_UPWIND) {
+      std::cout << "         implicit_enthalpy="
+                << ((impl_enth == M1_IENTH_PLM) ? "plm" : "central")
+                << " (deferred correction)" << std::endl;
+    }
     if (trans_on) {
       std::cout << "         implicit_offdiag="
                 << ((impl_offdiag == M1_OD_OPERATOR) ? "operator" :
@@ -1514,7 +1593,11 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
   }
 
   // (3) the cell terms: the diagonal part, the lagged right-hand side and the residual
-  // of the full 7-point system
+  // of the full 7-point system.  implicit_enthalpy adds its deferred correction to the
+  // face fluxes fp/fm/gp/gm, which reach only the right-hand side (TRHS), never the row.
+  const int enm = impl_enth;
+  const bool enth2 = (enm != M1_IENTH_UPWIND);
+  const int ngh = indcs.ng;
   par_for("m1_impl_tcell", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     Real dx2 = mbsize.d_view(m).dx2;
@@ -1543,6 +1626,14 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
         fp += iw_(m,M1_IW_A2,k,j+1,i)*iw_(m,M1_IW_EP,k,j+1,i);
         if (bcg) {cjp += nu2*cr*iw_(m,M1_IW_A2,k,j+1,i);}
       }
+      if (enth2) {
+        bool o0, o3;
+        int j0 = M1EnthIdx(j-1, js, je, false, p2lo ? 0 : ngh, p2hi ? 0 : ngh, o0);
+        int j3 = M1EnthIdx(j+2, js, je, false, p2lo ? 0 : ngh, p2hi ? 0 : ngh, o3);
+        fp += M1EnthCorr(enm, iw_(m,M1_IW_EP,k,j0,i), ec, iw_(m,M1_IW_EP,k,j+1,i),
+                         iw_(m,M1_IW_EP,k,j3,i), o0 && o3, iw_(m,M1_IW_A2,k,j0,i),
+                         a2c, iw_(m,M1_IW_A2,k,j+1,i), iw_(m,M1_IW_A2,k,j3,i), vf);
+      }
       dia += nu2*th*ch*ch*dt*d2c/dx2;
       if (bcg) {
         Real d2p = M1DDiag(iw_,vd_,dfull,m,1,k,j+1,i);
@@ -1560,6 +1651,14 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
       } else {
         fm += a2c*ec;
         dia -= nu2*cr*a2c;
+      }
+      if (enth2) {
+        bool o0, o3;
+        int j0 = M1EnthIdx(j-2, js, je, false, p2lo ? 0 : ngh, p2hi ? 0 : ngh, o0);
+        int j3 = M1EnthIdx(j+1, js, je, false, p2lo ? 0 : ngh, p2hi ? 0 : ngh, o3);
+        fm += M1EnthCorr(enm, iw_(m,M1_IW_EP,k,j0,i), iw_(m,M1_IW_EP,k,j-1,i), ec,
+                         iw_(m,M1_IW_EP,k,j3,i), o0 && o3, iw_(m,M1_IW_A2,k,j0,i),
+                         iw_(m,M1_IW_A2,k,j-1,i), a2c, iw_(m,M1_IW_A2,k,j3,i), vf);
       }
       dia += nu2*th*ch*ch*dt*d2c/dx2;
       if (bcg) {
@@ -1596,6 +1695,15 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
           gp += iw_(m,M1_IW_A3,k+1,j,i)*iw_(m,M1_IW_EP,k+1,j,i);
           if (bcg) {ckp += nu3*cr*iw_(m,M1_IW_A3,k+1,j,i);}
         }
+        if (enth2) {
+          bool o0, o3;
+          int k0 = M1EnthIdx(k-1, ks, ke, false, p3lo ? 0 : ngh, p3hi ? 0 : ngh, o0);
+          int k3 = M1EnthIdx(k+2, ks, ke, false, p3lo ? 0 : ngh, p3hi ? 0 : ngh, o3);
+          gp += M1EnthCorr(enm, iw_(m,M1_IW_EP,k0,j,i), ec, iw_(m,M1_IW_EP,k+1,j,i),
+                           iw_(m,M1_IW_EP,k3,j,i), o0 && o3,
+                           iw_(m,M1_IW_A3,k0,j,i), a3c, iw_(m,M1_IW_A3,k+1,j,i),
+                           iw_(m,M1_IW_A3,k3,j,i), vf);
+        }
         dia += nu3*th*ch*ch*dt*d3c/dx3;
         if (bcg) {
           Real d3p = M1DDiag(iw_,vd_,dfull,m,2,k+1,j,i);
@@ -1613,6 +1721,15 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
         } else {
           gm += a3c*ec;
           dia -= nu3*cr*a3c;
+        }
+        if (enth2) {
+          bool o0, o3;
+          int k0 = M1EnthIdx(k-2, ks, ke, false, p3lo ? 0 : ngh, p3hi ? 0 : ngh, o0);
+          int k3 = M1EnthIdx(k+1, ks, ke, false, p3lo ? 0 : ngh, p3hi ? 0 : ngh, o3);
+          gm += M1EnthCorr(enm, iw_(m,M1_IW_EP,k0,j,i), iw_(m,M1_IW_EP,k-1,j,i), ec,
+                           iw_(m,M1_IW_EP,k3,j,i), o0 && o3,
+                           iw_(m,M1_IW_A3,k0,j,i), iw_(m,M1_IW_A3,k-1,j,i), a3c,
+                           iw_(m,M1_IW_A3,k3,j,i), vf);
         }
         dia += nu3*th*ch*ch*dt*d3c/dx3;
         if (bcg) {
@@ -5165,6 +5282,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     }
 
     // (d) assemble the tridiagonal system of every column
+    // implicit_enthalpy: the deferred correction of the x1 enthalpy flux (header)
+    const int enm = impl_enth;
+    const bool enth2 = (enm != M1_IENTH_UPWIND);
+    const int ngh = indcs.ng;
     par_for("m1_impl_asm", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       Real dx = mbsize.d_view(m).dx1;
@@ -5205,6 +5326,17 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       }
       Real dx2 = mbsize.d_view(m).dx2;
       Real dx3 = mbsize.d_view(m).dx3;
+      // implicit_enthalpy: the x1 ghost layers the plm stencil may read on each side
+      int hxl = 0, hxh = 0;
+      if (enth2) {
+        if (trans) {
+          hxl = (il < is) ? ngh : 0;
+          hxh = (iu > ie) ? ngh : 0;
+        } else {
+          hxl = botb ? 0 : nlay_;
+          hxh = topb ? 0 : nlay_;
+        }
+      }
 
       // ---- face i+1/2
       if (i < ie || cyclic || !topb) {
@@ -5238,6 +5370,15 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           bb += nu*cr*ai;
         } else {
           cc += nu*cr*iw_(m,M1_IW_ADV,k,j,ip);
+        }
+        if (enth2) {
+          bool o0, o3;
+          int i0 = M1EnthIdx(i-1, is, ie, cyclic, hxl, hxh, o0);
+          int i3 = M1EnthIdx(i+2, is, ie, cyclic, hxl, hxh, o3);
+          rr -= nu*cr*M1EnthCorr(enm, iw_(m,M1_IW_EP,k,j,i0), iw_(m,M1_IW_EP,k,j,i),
+                                 iw_(m,M1_IW_EP,k,j,ip), iw_(m,M1_IW_EP,k,j,i3),
+                                 o0 && o3, iw_(m,M1_IW_ADV,k,j,i0), ai,
+                                 iw_(m,M1_IW_ADV,k,j,ip), iw_(m,M1_IW_ADV,k,j,i3), vf);
         }
       } else if (bchi == M1_IBC_MARSHAK) {
         bb += nu*ch*mq;
@@ -5274,6 +5415,16 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           aa -= nu*cr*iw_(m,M1_IW_ADV,k,j,im);
         } else {
           bb -= nu*cr*ai;
+        }
+        if (enth2) {
+          bool o0, o3;
+          int i0 = M1EnthIdx(i-2, is, ie, cyclic, hxl, hxh, o0);
+          int i3 = M1EnthIdx(i+1, is, ie, cyclic, hxl, hxh, o3);
+          rr += nu*cr*M1EnthCorr(enm, iw_(m,M1_IW_EP,k,j,i0), iw_(m,M1_IW_EP,k,j,im),
+                                 iw_(m,M1_IW_EP,k,j,i), iw_(m,M1_IW_EP,k,j,i3),
+                                 o0 && o3, iw_(m,M1_IW_ADV,k,j,i0),
+                                 iw_(m,M1_IW_ADV,k,j,im), ai, iw_(m,M1_IW_ADV,k,j,i3),
+                                 vf);
         }
       } else if (bclo == M1_IBC_MARSHAK) {
         bb += nu*ch*mq;
