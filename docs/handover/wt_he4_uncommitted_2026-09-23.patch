@@ -1,0 +1,312 @@
+diff --git a/inputs/hydro/he4_presn_cs.athinput b/inputs/hydro/he4_presn_cs.athinput
+index 62154352..3df7bf02 100644
+--- a/inputs/hydro/he4_presn_cs.athinput
++++ b/inputs/hydro/he4_presn_cs.athinput
+@@ -465,6 +465,18 @@ rt_force_verbose   = 0
+ rt_force_tau_gate  = false
+ rt_force_tau_lo    = 0.3
+ rt_force_tau_hi    = 3.0
++# problem/rt_kappa_hsmooth: the POROSITY CORRECTION.  The radial sweep is per column, so
++# a shell of inhomogeneous rho at uniform T transports <1/(kappa rho)> and not
++# 1/<kappa rho>: 1.1-1.5x too much flux once convection is developed.  With this on, the
++# extinction chi = kappa rho the sweep builds its optical depths from is replaced by its
++# ARITHMETIC horizontal mean over a disc of radius rt_kappa_hsmooth_fac photon mean free
++# paths (arc length, capped at 3 cells) -- the sideways wandering a real photon does
++# before it is reabsorbed.  Density, temperature and the deposit's bookkeeping are
++# untouched, and cells thicker than one mean free path per cell are left bitwise alone,
++# so the deep diffusion limit does not move.  Listed (not left to its default) so that it
++# can be overridden from the command line.
++rt_kappa_hsmooth     = false
++rt_kappa_hsmooth_fac = 1.0
+ # OPERATOR SPLITTING: the radiation operator is Strang-split around the time integrator
+ # (dt/2 before, dt/2 after) instead of applied once per RK stage.
+ rt_strang          = true
+diff --git a/inputs/hydro/he4_presn_sp.athinput b/inputs/hydro/he4_presn_sp.athinput
+index 8c130d3d..983108dc 100644
+--- a/inputs/hydro/he4_presn_sp.athinput
++++ b/inputs/hydro/he4_presn_sp.athinput
+@@ -472,6 +472,18 @@ rt_force_verbose   = 0
+ rt_force_tau_gate  = false
+ rt_force_tau_lo    = 0.3
+ rt_force_tau_hi    = 3.0
++# problem/rt_kappa_hsmooth: the POROSITY CORRECTION.  The radial sweep is per column, so
++# a shell of inhomogeneous rho at uniform T transports <1/(kappa rho)> and not
++# 1/<kappa rho>: 1.1-1.5x too much flux once convection is developed.  With this on, the
++# extinction chi = kappa rho the sweep builds its optical depths from is replaced by its
++# ARITHMETIC horizontal mean over a disc of radius rt_kappa_hsmooth_fac photon mean free
++# paths (arc length, capped at 3 cells) -- the sideways wandering a real photon does
++# before it is reabsorbed.  Density, temperature and the deposit's bookkeeping are
++# untouched, and cells thicker than one mean free path per cell are left bitwise alone,
++# so the deep diffusion limit does not move.  Listed (not left to its default) so that it
++# can be overridden from the command line.
++rt_kappa_hsmooth     = false
++rt_kappa_hsmooth_fac = 1.0
+ # OPERATOR SPLITTING: the radiation operator is Strang-split around the time integrator
+ # (dt/2 before, dt/2 after) instead of applied once per RK stage.
+ rt_strang          = true
+diff --git a/src/pgen/red_giant.cpp b/src/pgen/red_giant.cpp
+index faaeefc7..b657c8b5 100644
+--- a/src/pgen/red_giant.cpp
++++ b/src/pgen/red_giant.cpp
+@@ -1985,6 +1985,32 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
+                   << std::endl;
+       }
+     }
++    // ---- problem/rt_kappa_hsmooth: smear the sweep's extinction sideways over one
++    // photon mean free path (see two_stream_rt.hpp for the porosity argument this is
++    // for).  Default OFF, and then not a single kernel of it runs.
++    ts::rt_kappa_hsmooth = pin->GetOrAddBoolean("problem", "rt_kappa_hsmooth", false);
++    ts::rt_kappa_hsmooth_fac = pin->GetOrAddReal("problem", "rt_kappa_hsmooth_fac", 1.0);
++    if (ts::rt_kappa_hsmooth) {
++      if (!(rt_grey_ && ts::rt_split)) {
++        std::cout << "### FATAL ERROR in red_giant: problem/rt_kappa_hsmooth is built "
++                  << "into the GREY SPLIT opacity pre-kernel, so it needs "
++                  << "problem/rt_grey = true and problem/rt_split = true." << std::endl;
++        std::exit(EXIT_FAILURE);
++      }
++      if (!(ts::rt_kappa_hsmooth_fac > 0.0)) {
++        std::cout << "### FATAL ERROR in red_giant: problem/rt_kappa_hsmooth_fac is the "
++                  << "stencil radius in photon mean free paths and must be > 0 (got "
++                  << ts::rt_kappa_hsmooth_fac << "); switch the option off instead."
++                  << std::endl;
++        std::exit(EXIT_FAILURE);
++      }
++      if (global_variable::my_rank == 0) {
++        std::cout << "red_giant: RT extinction HORIZONTALLY SMOOTHED over "
++                  << ts::rt_kappa_hsmooth_fac << " photon mean free path(s), capped at "
++                  << ts::rt_khs_ncap << " cells; arithmetic mean of kappa rho, density "
++                  << "and temperature untouched" << std::endl;
++      }
++    }
+     // problem/rt_force_tau_gate: gate the force above by the optical depth to the top
+     // (see two_stream_rt.hpp).  Default OFF and bitwise off.
+     ts::rt_force_tau_gate = pin->GetOrAddBoolean("problem", "rt_force_tau_gate", false);
+diff --git a/src/utils/two_stream_rt.hpp b/src/utils/two_stream_rt.hpp
+index 3abb81ce..18daa895 100644
+--- a/src/utils/two_stream_rt.hpp
++++ b/src/utils/two_stream_rt.hpp
+@@ -1415,6 +1415,52 @@ inline bool rt_kappa_frozen = false;
+ inline DvceArray1D<Real> *rt_kfrz_d_ptr = nullptr;
+ inline HostArray1D<Real> *rt_kfrz_h_ptr = nullptr;
+ 
++// ---- problem/rt_kappa_hsmooth: THE SWEEP'S EXTINCTION, SMEARED SIDEWAYS -------------
++// THE DEFECT IT IS FOR.  The radial transport here is a per-column two-stream: each
++// (j,k) column is integrated with its OWN chi = kappa rho and nothing crosses between
++// columns.  Once convection makes rho strongly inhomogeneous at nearly uniform T (rms
++// rho/<rho> 0.4-0.9, T uniform to ~1 %, He4 wedge past ~2 turnovers) the per-column
++// flux goes as 1/chi, so the shell average of it is <1/chi> and not 1/<chi>: the
++// POROSITY factor <1/chi><chi> = 1.1-1.5 (tests_r19/r21/r24/r26/r27), L_out reaches
++// 1.2-1.3 L and the envelope drains.  It is a real effect only if the low-chi channels
++// are wider than a photon mean free path.  They are not: the channels have
++// autocorrelation lengths 5-14e9 cm and the mean free path inside them is 0.13-0.85 of
++// that (tests_r21/out_chan.txt), so a photon leaving a channel wanders into the
++// neighbouring clumps well before it escapes -- which a strictly radial sweep cannot
++// represent, and which is why the channel flux is overestimated.
++//
++// WHAT THIS DOES.  Before the sweep, chi is replaced by its HORIZONTAL average over a
++// neighbourhood of radius fac x the local photon mean free path l = 1/chi, measured in
++// physical ARC LENGTH (r dtheta, r sin(theta) dphi -- the DX2/DX3 of this file), and
++// kc_g is set back to chi_smoothed/rho.  kc_g is the ONE opacity array the whole solver
++// reads, so the layer optical depths, the BFace emissivity weighting, Em, the mode-3
++// column solve and the radiative force all see the same smeared extinction and the
++// sweep remains exactly a two-stream with extinction chi_s and source function B(T).
++// NEITHER the density that carries the heat capacity NOR the temperature the emissivity
++// is built from is touched, and the deposit is still a per-column flux difference, so
++// the energy bookkeeping is unchanged: only the fluxes move.
++//
++// ARITHMETIC, NOT HARMONIC.  A ray leaving a channel at a small angle to the radial
++// direction crosses the neighbouring clumps within one mean free path, so the
++// extinction it integrates is the LINEAR average of chi over that neighbourhood.  The
++// harmonic mean 1/<1/chi> is, by construction, what the strictly radial per-column
++// sweep already produces when its columns are averaged -- i.e. exactly the porosity
++// this option exists to remove -- so averaging chi harmonically would be a no-op.
++//
++// THE WEIGHT is a tent, w = 1 - d/R, in the transverse distance d, normalised over the
++// valid neighbours it reaches, with R = fac/chi capped at rt_khs_ncap cells.  Where
++// l is below one cell no neighbour can carry weight, and the cell is then left BITWISE
++// alone (the early return below), so the optically-thick deep interior -- the diffusion
++// limit -- is untouched by construction.  Where l >> dx the stencil saturates at the
++// cap.  Grey split path only; default off and then no kernel runs at all.
++inline bool rt_kappa_hsmooth = false;
++inline Real rt_kappa_hsmooth_fac = 1.0;
++// how many cells the stencil may reach, capped again by nghost: chi is rebuilt in the
++// angular ghosts (see the pre-kernel ranges) so that a MeshBlock edge is bit for bit a
++// single-block run, and the ghosts are only nghost deep.
++inline constexpr int rt_khs_ncap = 3;
++inline DvceArray4D<Real> *rt_khs_ptr = nullptr;   // (m,k,j,i) chi = kappa rho [1/cm]
++
+ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
+   const int nit = (rt_outer_iter > 1) ? rt_outer_iter : 1;
+   if (nit > 1) {
+@@ -2190,8 +2236,20 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
+         // 24th cell by 0.5 turnover, neighbouring shells quiet), on the cubed sphere too.
+         const int jg_tp = (rt_rad_force && pm->multi_d) ? 1 : 0;
+         const int kg_tp = (rt_rad_force && pm->three_d) ? 1 : 0;
+-        par_for("rt_pre_tp", DevExeSpace(), 0, nmb1, ks-kg_tp, ke+kg_tp, js-jg_tp,
+-                je+jg_tp, is, ie+1,
++        // ANGULAR GHOSTS FOR problem/rt_kappa_hsmooth.  The stencil averages chi over
++        // the (j,k) neighbours, so chi -- and therefore T_g, pb_g and icut_g, which it
++        // is built from -- has to exist that deep.  Rebuilding them in the ghosts from
++        // the ghost hydro state is what makes a MeshBlock edge identical to a
++        // single-block run: w0, wtemp and rad_w are all valid over the full ghost
++        // extent (conduction.cpp:1059), so the ghost values are the neighbour's own.
++        const int ngh_hs = (rt_kappa_hsmooth && grey_on)
++                         ? ((indcs.ng < rt_khs_ncap) ? indcs.ng : rt_khs_ncap) : 0;
++        const int jg_hs = (pm->multi_d) ? ngh_hs : 0;
++        const int kg_hs = (pm->three_d) ? ngh_hs : 0;
++        const int jg_p = (jg_tp > jg_hs) ? jg_tp : jg_hs;
++        const int kg_p = (kg_tp > kg_hs) ? kg_tp : kg_hs;
++        par_for("rt_pre_tp", DevExeSpace(), 0, nmb1, ks-kg_p, ke+kg_p, js-jg_p,
++                je+jg_p, is, ie+1,
+         KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+           // THE TOP SLOT READS THE TOP ACTIVE CELL, NOT THE HYDRO GHOST.  i = ie+1 is the
+           // unresolved column above the domain, and physically it IS the continuation of
+@@ -2213,7 +2271,8 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
+           T_g(m,k,j,i) = TT;
+           pb_g(m,k,j,i) = pp*1.0e-6;
+         });
+-        par_for("rt_pre_cut", DevExeSpace(), 0, nmb1, ks, ke, js, je,
++        par_for("rt_pre_cut", DevExeSpace(), 0, nmb1, ks-kg_hs, ke+kg_hs,
++                js-jg_hs, je+jg_hs,
+         KOKKOS_LAMBDA(const int m, const int k, const int j) {
+           // i = is is the bottom, so pressure falls as i rises: the cut is the deepest
+           // cell still shallower than pcut, i.e. the first one scanning up
+@@ -2231,7 +2290,8 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
+           icut_g(m,k,j) = icut;
+         });
+         if (grey_on) {
+-          par_for("rt_pre_opac_grey", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
++          par_for("rt_pre_opac_grey", DevExeSpace(), 0, nmb1, ks-kg_hs, ke+kg_hs,
++                  js-jg_hs, je+jg_hs, is, ie+1,
+           KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+             if (i < icut_g(m,k,j)) return;        // deeper than the cut: never read
+             const int ii = (topclamp && i > ie) ? ie : i;  // top slot: see rt_pre_tp
+@@ -2318,6 +2378,69 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt, const int oit,
+               kc_g(m,0,i,k,j) = kfd(i - is);
+             });
+           }
++          // ---- problem/rt_kappa_hsmooth: chi -> its horizontal mean over one photon
++          // mean free path.  See the long note at the top of this file for why this is
++          // an ARITHMETIC average of chi, why it touches nothing but the extinction,
++          // and why the deep interior is left bitwise alone.
++          if (ngh_hs > 0) {
++            if (rt_khs_ptr == nullptr) {
++              rt_khs_ptr = new DvceArray4D<Real>("rt_khs", pmbp->nmb_thispack,
++                                                 n3, n2, n1);
++            }
++            auto khs = *rt_khs_ptr;
++            // chi over the active cells AND the angular ghosts.  A cell that takes no
++            // part in this call -- below its column's cut, or with no usable EOS state,
++            // or in the inert corona where kappa is 0 -- is marked with -1 and is left
++            // out of every neighbourhood: it has no extinction to lend.  The top slot
++            // i = ie+1 is the unresolved column above the domain, whose kappa is read
++            // WITHOUT a density (RTTopDtau uses p/g), so it is deliberately not smeared.
++            par_for("rt_hs_chi", DevExeSpace(), 0, nmb1, ks-kg_hs, ke+kg_hs,
++                    js-jg_hs, je+jg_hs, is, ie,
++            KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
++              const bool ok = (i >= icut_g(m,k,j)) && (T_g(m,k,j,i) > 0.0);
++              const Real ch = ok ? kc_g(m,0,i,k,j)*rhoN(m,k,j,i) : -1.0;
++              khs(m,k,j,i) = (ch > 0.0) ? ch : -1.0;
++            });
++            const Real hsfac = rt_kappa_hsmooth_fac;
++            const int njh = jg_hs, nkh = kg_hs;
++            par_for("rt_hs_put", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
++            KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
++              const Real c0 = khs(m,k,j,i);
++              if (!(c0 > 0.0)) return;
++              const Real d2 = DX2(m,k,j,i), d3 = DX3(m,k,j,i);
++              // the shortest step to a neighbour that exists in this geometry
++              Real dmin;
++              if (njh > 0 && nkh > 0) {
++                dmin = (d2 < d3) ? d2 : d3;
++              } else {
++                dmin = (njh > 0) ? d2 : d3;
++              }
++              const int ncap = (njh > nkh) ? njh : nkh;
++              Real rad = hsfac/c0;                  // fac x the photon mean free path
++              const Real rmax = static_cast<Real>(ncap)*dmin;
++              if (rad > rmax) rad = rmax;
++              // Below one cell the tent gives every neighbour zero weight, so the
++              // answer is the cell's own chi -- return before writing it back, and the
++              // optically thick interior keeps the last bit of its opacity.
++              if (!(rad > dmin)) return;
++              Real sw = 0.0, sc = 0.0;
++              for (int dk=-nkh; dk<=nkh; ++dk) {
++                for (int dj=-njh; dj<=njh; ++dj) {
++                  const Real dd = sqrt(SQR(dj*d2) + SQR(dk*d3));
++                  if (dd >= rad) continue;
++                  const Real cn = khs(m,k+dk,j+dj,i);
++                  if (!(cn > 0.0)) continue;
++                  const Real wg = 1.0 - dd/rad;
++                  sw += wg;
++                  sc += wg*cn;
++                }
++              }
++              // kc_g is what every consumer multiplies by this cell's OWN rho, so the
++              // smeared extinction is handed back as chi_s/rho and nothing downstream
++              // has to know that the opacity is no longer the local Rosseland value.
++              if (sw > 0.0) kc_g(m,0,i,k,j) = (sc/sw)/rhoN(m,k,j,i);
++            });
++          }
+         } else {
+         par_for("rt_pre_opac", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie+1,
+         KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+diff --git a/tests_r8/r8_1d_long.log b/tests_r8/r8_1d_long.log
+index bdf1d2fe..945a5b62 100644
+--- a/tests_r8/r8_1d_long.log
++++ b/tests_r8/r8_1d_long.log
+@@ -1 +1,54 @@
+ =========== ARM x_gate5 : 
++elapsed=9.929689e+03 cycle=87600 time=1.622911e+04 dt=2.657020e-02
++elapsed=9.941197e+03 cycle=87700 time=1.623177e+04 dt=2.661062e-02
++elapsed=9.952708e+03 cycle=87800 time=1.623443e+04 dt=2.666314e-02
++elapsed=9.964213e+03 cycle=87900 time=1.623710e+04 dt=2.669826e-02
++elapsed=9.975724e+03 cycle=88000 time=1.623977e+04 dt=2.671730e-02
++elapsed=9.987233e+03 cycle=88100 time=1.624244e+04 dt=2.669620e-02
++elapsed=9.998737e+03 cycle=88200 time=1.624512e+04 dt=2.681732e-02
++elapsed=1.001025e+04 cycle=88300 time=1.624780e+04 dt=2.684293e-02
++elapsed=1.002176e+04 cycle=88400 time=1.625049e+04 dt=2.682665e-02
++elapsed=1.003326e+04 cycle=88500 time=1.625317e+04 dt=2.688038e-02
++elapsed=1.004477e+04 cycle=88600 time=1.625586e+04 dt=2.693458e-02
++elapsed=1.005627e+04 cycle=88700 time=1.625856e+04 dt=2.697970e-02
++elapsed=1.006778e+04 cycle=88800 time=1.626126e+04 dt=2.707862e-02
++elapsed=1.007928e+04 cycle=88900 time=1.626397e+04 dt=2.722529e-02
++elapsed=1.009077e+04 cycle=89000 time=1.626670e+04 dt=2.733297e-02
++elapsed=1.010226e+04 cycle=89100 time=1.626944e+04 dt=2.743122e-02
++elapsed=1.011375e+04 cycle=89200 time=1.627219e+04 dt=2.763551e-02
++elapsed=1.012525e+04 cycle=89300 time=1.627496e+04 dt=2.773607e-02
++elapsed=1.013674e+04 cycle=89400 time=1.627773e+04 dt=2.772653e-02
++elapsed=1.014823e+04 cycle=89500 time=1.628051e+04 dt=2.768688e-02
++elapsed=1.015972e+04 cycle=89600 time=1.628328e+04 dt=2.782881e-02
++elapsed=1.017120e+04 cycle=89700 time=1.628606e+04 dt=2.781593e-02
++elapsed=1.018268e+04 cycle=89800 time=1.628884e+04 dt=2.777832e-02
++elapsed=1.019416e+04 cycle=89900 time=1.629162e+04 dt=2.778604e-02
++srun: Terminating StepId=11784397.0
++                                  
++================================= 
++Global information about the job: 
++================================= 
++  
++Job owner: jinma(28895)
++Job name:  r8_1dL
++Node list: vipa1013
++Job start: Thu Sep 17 22:55:23 CEST 2026
++Job end:   Fri Sep 18 01:45:28 CEST 2026
++Work dir:  /viper/u2/jinma/ATHENAK/bench/wt_he4
++Command:   /viper/u2/jinma/ATHENAK/bench/wt_he4/tests_r8/r8_1d_long.sh
++  
++  
++  
++==========================================================================================
++Information on jobsteps (Note: MaxRSS/AveRSS is the maximum/average over all 
++tasks of the per-task memory high-water marks; cf. "man sacct"): 
++==========================================================================================
++  
++JobID            JobName NNodes NTasks  NCPUS       MaxRSS       AveRSS    Elapsed ExitCode
++------------- ---------- ------ ------ ------ ------------ ------------ ---------- --------
++11784397          r8_1dL      1            48                             02:50:05      0:0
++11784397.0     athena_v4      1      1     16     2016.88M     2016.88M   02:50:03      1:0
++  
++Maximum memory per node: 2.114853 GB (defined as MaxRSS*Ntasks/NNodes)
++CPU utilization: 4.3 %
++  

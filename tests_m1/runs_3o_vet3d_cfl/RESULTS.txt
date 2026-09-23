@@ -42,3 +42,56 @@ ringing of the vertical mode. Suspect: an O(dt) horizontal forcing from a quanti
 (the SC tensor, which carries the only horizontal/off-diagonal structure, is computed once per step at
 the start-of-step state). NEXT (not run): the same pair with closure = eddington (no lagged tensor)
 and with vet_tensor = uniaxial, to isolate it.
+
+=== ISOLATION ARMS (read 2026-09-23 with gate3d.py; jobs 11945504-7 COMPLETED, tlim 1000) ===
+KE_h (1e24)     t=100   250    500    1000
+  C30 vet_sc    8.23   5.28   2.55   3.74
+  C15 vet_sc    2.45   1.61   0.675  0.785
+  E30 eddington 8.15   5.55   2.71   3.81
+  E15 eddington 2.31   1.62   0.686  0.805
+  U30 uniaxial  8.31   5.45   2.47   3.65
+  U15 uniaxial  2.45   1.65   0.649  0.764
+VERDICT: the cfl 0.3/0.15 ratio of KE_h (x3.4 at t=100, x4.7 at t=1000) is the SAME for all three
+closures. The lagged SC tensor is EXONERATED. The dt dependence is in the hydro step or the
+hydro<->radiation coupling (operator split), not in the closure. KE_v also closure-insensitive in
+ratio. NEXT: isolate hydro vs coupling (gas_feedback / fofc / wellbalance arms, eddington, tlim 1000).
+
+=== ARMS 2 (bench/m1_vet3dcfl_0923/README_ARMS2.md) ===
+F30/F15 (hydro/fofc=false, override confirmed in submit.sh): hydro.hst BITWISE identical to E30/E15
+-> FOFC never fires in this box; it is not the cause. N30/N15 (gas_feedback off) pending
+(N30 died at t=500 on a u2 quota spike, resubmitted as 11945901).
+N30/N15 (rad_m1 gas_feedback=false, force_reference=none: hydro alone in the static Phi_eff column,
+jobs 11945901/11945673): KE_h t=100 2.71e27/2.70e27, t=1000 1.626e27/1.620e27 (ratio 1.004);
+KE_v 7.59e26/7.63e26 at t=1000. (KE_h is 400x larger than with feedback: no radiative damping
+of the seeded entropy modes.)
+VERDICT: HYDRO ALONE IS dt-INDEPENDENT. The x4.7 cfl dependence of KE_h lives in the
+radiation<->gas coupling (Lie split, backward Euler, first order; see docs/dev/rad_m1_time2_design.md:
+the present scheme does not preserve a split steady state, error O(dt)). Gate G5 of H-ESDIRK2
+(branch m1-time2) is the test of the cure.
+
+=== G5 of H-ESDIRK2 (m1-time2b; /viper/ptmp2/jinma/h2_3x/g5; jobs 11950787-8, 11950870-3) ===
+KE_h cfl 0.3 / 0.15, ratio:           t=100                 t=1000
+  E  be, upwind (old)          8.15e24/2.31e24 3.5    3.81e24/8.05e23 4.7
+  B  be + plm + vimp           8.13e24/2.31e24 3.5    3.80e24/7.83e23 4.9
+  H  hesdirk2 eddington        1.07e25/2.76e24 3.9    2.93e24/7.31e23 4.0
+  V  hesdirk2 vet_sc (D^n)     1.11e25/2.95e24 3.8    2.90e24/7.32e23 4.0
+All NON-CONVERGED 0. VERDICT: the 2nd-order coupling does NOT remove the dt dependence (KE_h ~ dt^2,
+i.e. v_h is an O(dt) error); plm+vimp changes nothing. Another first-order piece of the coupling
+remains outside the M1 solve. Bisection agent started 09-24 (runs in /viper/ptmp2/jinma/kehdt_0924).
+
+=== ROOT CAUSE (09-24, bisection in /viper/ptmp2/jinma/kehdt_0924, jobs 11951303-7, 11951491-4, 11951523) ===
+The KE_h dt dependence is a START-UP KICK, not an ongoing coupling error. ~88 % of KE_h is made in
+cycle 1 (cfl 0.3: 9.94e24 after one dt=0.161 step; cfl 0.15: 2.59e24 after dt=0.081; v_h ~ dt).
+Cause: the eint seed (box_convection.cpp:2381-2402) changes T_gas at fixed rho while the M1 E keeps its
+file value (m1_seed_consistent=false default, :2462-2488), so seeded cells start with T_gas != T_rad;
+the first hydro step feels the gas-pressure perturbation for a full dt before the implicit M1 solve
+(rad_m1_tasks.cpp:46) relaxes T_gas (physical relaxation time << dt, correct kick ~0). The kick is
+barely damped afterwards and carries the x4 through the run.
+DECISIVE: common restart at t=20 (R0, cfl 0.15) continued at cfl 0.3 and 0.15 to t=120:
+KE_h ratio 1.00/0.99/0.99/0.98/0.96/0.98 at t=21/25/40/70/100/120. Predictor/closure lag/solver
+settings (P4) change nothing; m1_seed_consistent=true only reduces the ratio to 2.5 (not an exact
+equilibrium for the ionizing EOS).
+CORRECTION of the earlier verdicts: "the coupling" was right only in the sense of the seed +
+first split step; H-ESDIRK2 could not fix it and its G5 is not a valid gate. Judge dt-independence
+from a common restart, or seed in thermal equilibrium (or with a velocity seed). Untested: the late
+vet_sc C30/C15 x15 at t=3750 (possibly this kick amplified by convection).
