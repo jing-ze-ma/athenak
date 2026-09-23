@@ -6839,6 +6839,15 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   par_for("m1_impl_wb", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     Real ep = iw_(m,M1_IW_EP,k,j,i);
+    // an M1_IBC_EFIX end cell: its row was replaced by E' = EN (the Dirichlet value),
+    // and that is the E it keeps -- the work term below must not move it.  It used to:
+    // the replaced row has no transverse coupling, so nothing damped the x2 structure
+    // the per-step work kicks left in the end column, and at the OUTFLOW end of the
+    // radiative shock (T7) it grew into an x2 mode (E, F2, gas v2) until the end cell
+    // hit the E floor (tests_m1/runs_4d_efix).
+    const int ipw = pos_.d_view(m);
+    const bool efc = !cyclic && ((i == is && ipw == 0 && bclo == M1_IBC_EFIX) ||
+                                 (i == ie && ipw == nblkx1-1 && bchi == M1_IBC_EFIX));
     Real fl = f0_(m,k,j,i), fr = f0_(m,k,j,i+1);
     Real fp1 = 0.5*(fl + fr) + iw_(m,M1_IW_ADV,k,j,i)*ep;
     // MILESTONE 3b phase B: the derived cell-centred transverse fluxes, the face means
@@ -6947,7 +6956,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
               work += 0.5*(v3 + w3n)*dm3;
             }
           }
-          ep -= (ch/cl)*work;
+          if (!efc) {
+            ep -= (ch/cl)*work;
+          }
         }
       }
     }
