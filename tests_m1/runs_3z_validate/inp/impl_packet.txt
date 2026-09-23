@@ -1,0 +1,14 @@
+transport             = implicit
+implicit_solver       = bicgstab
+implicit_offdiag      = auto
+implicit_closure_lag  = step
+implicit_lin_maxit    = 200
+implicit_lin_tol      = 1.0e-10
+implicit_cfl          = 0.5
+implicit_tol          = 1.0e-8
+implicit_maxit        = 200
+implicit_flux         = central
+implicit_recon        = dc
+time_scheme           = hesdirk2
+implicit_bc_x1min     = periodic
+implicit_bc_x1max     = periodic

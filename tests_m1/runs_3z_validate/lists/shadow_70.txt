@@ -1,0 +1,5 @@
+sh_expl_70 /viper/ptmp2/jinma/validate_0923/inp/shadow_expl.athinput mesh/nx1=70 mesh/nx2=20 meshblock/nx1=70 meshblock/nx2=20
+sh_h2_70_k1 /viper/ptmp2/jinma/validate_0923/inp/shadow_h2.athinput mesh/nx1=70 mesh/nx2=20 meshblock/nx1=70 meshblock/nx2=20 rad_m1/implicit_cfl=1
+sh_h2_70_k8 /viper/ptmp2/jinma/validate_0923/inp/shadow_h2.athinput mesh/nx1=70 mesh/nx2=20 meshblock/nx1=70 meshblock/nx2=20 rad_m1/implicit_cfl=8
+sh_be_70_k1 /viper/ptmp2/jinma/validate_0923/inp/shadow_be.athinput mesh/nx1=70 mesh/nx2=20 meshblock/nx1=70 meshblock/nx2=20 rad_m1/implicit_cfl=1
+sh_be_70_k8 /viper/ptmp2/jinma/validate_0923/inp/shadow_be.athinput mesh/nx1=70 mesh/nx2=20 meshblock/nx1=70 meshblock/nx2=20 rad_m1/implicit_cfl=8

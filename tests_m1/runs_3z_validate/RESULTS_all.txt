@@ -1,0 +1,139 @@
+### T7 radiative shocks (idx 2 = t 1e-10 for M2/M5, 1e-9 for M7; last = 2e-10 / 4e-9)
+m2_be_n1024_c0.2       t=1.00031e-10 L1 rho 3.902e-04 Tg 3.422e-04 Tr 8.996e-05 dshift  -0.10 | spike  +0.35% prec  +0.00% | dt 5.700e-14 Picard 2.494158e+00 NC 0.000000e+00 fallb - BE -
+m2_be_n1024_c0.2       t=2e-10    L1 rho 4.365e-04 Tg 3.908e-04 Tr 9.638e-05 dshift  -0.13 | spike  +0.45% prec  +0.00% | dt 5.700e-14 Picard 2.494158e+00 NC 0.000000e+00 fallb - BE -
+m2_be_n1024_c0.4       t=1.00092e-10 L1 rho 3.780e-04 Tg 3.325e-04 Tr 1.021e-04 dshift  -0.14 | spike  +0.58% prec  +0.32% | dt 1.140e-13 Picard 2.656410e+00 NC 0.000000e+00 fallb - BE -
+m2_be_n1024_c0.4       t=2e-10    L1 rho 4.522e-04 Tg 3.877e-04 Tr 1.074e-04 dshift  -0.16 | spike  +0.33% prec  +0.00% | dt 1.140e-13 Picard 2.656410e+00 NC 0.000000e+00 fallb - BE -
+m2_be_n256_c0.2        t=1.00108e-10 L1 rho 2.708e-04 Tg 4.136e-04 Tr 1.483e-04 dshift  +0.05 | spike  +1.58% prec  +0.00% | dt 2.278e-13 Picard 2.111617e+00 NC 0.000000e+00 fallb - BE -
+m2_be_n256_c0.2        t=2e-10    L1 rho 3.345e-04 Tg 4.166e-04 Tr 1.158e-04 dshift  +0.04 | spike  +1.55% prec  +0.00% | dt 2.278e-13 Picard 2.111617e+00 NC 0.000000e+00 fallb - BE -
+m2_be_n256_c0.4        t=1.00351e-10 L1 rho 2.974e-04 Tg 4.400e-04 Tr 1.991e-04 dshift  +0.02 | spike  +1.50% prec  +0.00% | dt 4.556e-13 Picard 2.284738e+00 NC 0.000000e+00 fallb - BE -
+m2_be_n256_c0.4        t=2e-10    L1 rho 3.827e-04 Tg 4.670e-04 Tr 1.616e-04 dshift  +0.02 | spike  +1.48% prec  +0.00% | dt 4.556e-13 Picard 2.284738e+00 NC 0.000000e+00 fallb - BE -
+m2_be_n512_c0.2        t=1.00097e-10 L1 rho 4.117e-04 Tg 5.040e-04 Tr 1.175e-04 dshift  +0.04 | spike  +0.87% prec  +0.00% | dt 1.140e-13 Picard 1.821083e+00 NC 0.000000e+00 fallb - BE -
+m2_be_n512_c0.2        t=2e-10    L1 rho 4.533e-04 Tg 5.042e-04 Tr 9.680e-05 dshift  +0.04 | spike  +0.86% prec  +0.00% | dt 1.140e-13 Picard 1.821083e+00 NC 0.000000e+00 fallb - BE -
+m2_be_n512_c0.4        t=1.00105e-10 L1 rho 4.206e-04 Tg 5.153e-04 Tr 1.389e-04 dshift  +0.01 | spike  +0.84% prec  +0.00% | dt 2.278e-13 Picard 2.126424e+00 NC 0.000000e+00 fallb - BE -
+m2_be_n512_c0.4        t=2e-10    L1 rho 4.804e-04 Tg 5.210e-04 Tr 1.208e-04 dshift  +0.01 | spike  +0.82% prec  +0.00% | dt 2.278e-13 Picard 2.126424e+00 NC 0.000000e+00 fallb - BE -
+m2_expl_n512           t=1e-10    L1 rho 4.253e-04 Tg 4.943e-04 Tr 8.875e-05 dshift  +0.07 | spike  +0.90% prec  +0.00% | dt 3.987e-16 Picard - NC - fallb - BE -
+m2_expl_n512           t=2e-10    L1 rho 4.368e-04 Tg 5.012e-04 Tr 7.054e-05 dshift  +0.07 | spike  +0.89% prec  +0.00% | dt 3.987e-16 Picard - NC - fallb - BE -
+m2_h2_n1024_c0.2       t=1.0003e-10 L1 rho 3.913e-04 Tg 3.542e-04 Tr 7.981e-05 dshift  -0.07 | spike  +0.30% prec  +0.00% | dt 5.700e-14 Picard 2.182984e+00 NC 0.000000e+00 fallb 0.000000e+00 BE 1.000000e+00
+m2_h2_n1024_c0.2       t=2e-10    L1 rho 4.438e-04 Tg 3.886e-04 Tr 9.152e-05 dshift  -0.11 | spike  +0.26% prec  +0.00% | dt 5.700e-14 Picard 2.182984e+00 NC 0.000000e+00 fallb 0.000000e+00 BE 1.000000e+00
+m2_h2_n1024_c0.4       t=1.0009e-10 L1 rho 3.863e-04 Tg 3.546e-04 Tr 8.028e-05 dshift  -0.08 | spike  +0.46% prec  +0.00% | dt 1.140e-13 Picard 2.663722e+00 NC 0.000000e+00 fallb 0.000000e+00 BE 1.000000e+00
+m2_h2_n1024_c0.4       t=2e-10    L1 rho 4.463e-04 Tg 3.834e-04 Tr 9.197e-05 dshift  -0.11 | spike  +0.34% prec  +0.00% | dt 1.140e-13 Picard 2.663722e+00 NC 0.000000e+00 fallb 0.000000e+00 BE 1.000000e+00
+m2_h2_n256_c0.2        t=1.00105e-10 L1 rho 2.904e-04 Tg 3.840e-04 Tr 1.161e-04 dshift  +0.06 | spike  +1.65% prec  +0.00% | dt 2.278e-13 Picard 2.095157e+00 NC 0.000000e+00 fallb 0.000000e+00 BE 1.000000e+00
+m2_h2_n256_c0.2        t=2e-10    L1 rho 3.110e-04 Tg 3.758e-04 Tr 7.720e-05 dshift  +0.06 | spike  +1.63% prec  +0.00% | dt 2.278e-13 Picard 2.095157e+00 NC 0.000000e+00 fallb 0.000000e+00 BE 1.000000e+00
+m2_h2_n256_c0.4        t=1.00345e-10 L1 rho 2.891e-04 Tg 3.749e-04 Tr 1.105e-04 dshift  +0.05 | spike  +1.65% prec  +0.00% | dt 4.556e-13 Picard 2.198404e+00 NC 0.000000e+00 fallb 0.000000e+00 BE 1.000000e+00
+m2_h2_n256_c0.4        t=2e-10    L1 rho 3.124e-04 Tg 3.714e-04 Tr 7.726e-05 dshift  +0.06 | spike  +1.63% prec  +0.00% | dt 4.556e-13 Picard 2.198404e+00 NC 0.000000e+00 fallb 0.000000e+00 BE 1.000000e+00
+m2_h2_n512_c0.2        t=1.00096e-10 L1 rho 4.230e-04 Tg 4.930e-04 Tr 1.018e-04 dshift  +0.06 | spike  +0.90% prec  +0.00% | dt 1.140e-13 Picard 1.682246e+00 NC 0.000000e+00 fallb 0.000000e+00 BE 1.000000e+00
+m2_h2_n512_c0.2        t=2e-10    L1 rho 4.460e-04 Tg 4.925e-04 Tr 7.577e-05 dshift  +0.06 | spike  +0.89% prec  +0.00% | dt 1.140e-13 Picard 1.682246e+00 NC 0.000000e+00 fallb 0.000000e+00 BE 1.000000e+00
+m2_h2_n512_c0.4        t=1.00102e-10 L1 rho 4.224e-04 Tg 4.857e-04 Tr 1.009e-04 dshift  +0.05 | spike  +0.90% prec  +0.00% | dt 2.278e-13 Picard 2.018234e+00 NC 0.000000e+00 fallb 0.000000e+00 BE 1.000000e+00
+m2_h2_n512_c0.4        t=2e-10    L1 rho 4.476e-04 Tg 4.868e-04 Tr 7.690e-05 dshift  +0.05 | spike  +0.89% prec  +0.00% | dt 2.278e-13 Picard 2.018234e+00 NC 0.000000e+00 fallb 0.000000e+00 BE 1.000000e+00
+m5_be_n1024_c0.2       t=1.00036e-10 L1 rho 1.102e-03 Tg 6.045e-04 Tr 1.793e-04 dshift  -0.40 | spike  -7.47% prec  +0.00% | dt 5.626e-14 Picard 2.103235e+00 NC 0.000000e+00 fallb - BE -
+m5_be_n1024_c0.2       t=2e-10    L1 rho 1.818e-03 Tg 4.287e-04 Tr 7.045e-05 dshift  -0.89 | spike  -1.27% prec  +0.12% | dt 5.626e-14 Picard 2.103235e+00 NC 0.000000e+00 fallb - BE -
+m5_be_n1024_c0.4       t=1.00039e-10 L1 rho 1.161e-03 Tg 5.881e-04 Tr 1.962e-04 dshift  -0.42 | spike  -7.61% prec  +0.00% | dt 1.125e-13 Picard 2.508436e+00 NC 0.000000e+00 fallb - BE -
+m5_be_n1024_c0.4       t=2e-10    L1 rho 1.814e-03 Tg 4.477e-04 Tr 9.653e-05 dshift  -0.89 | spike  -1.72% prec  +0.12% | dt 1.125e-13 Picard 2.508436e+00 NC 0.000000e+00 fallb - BE -
+m5_be_n2048_c0.2       t=1.00006e-10 L1 rho 4.901e-04 Tg 5.258e-04 Tr 3.212e-04 dshift  -0.64 | spike  +1.78% prec  +0.00% | dt 2.813e-14 Picard 2.023625e+00 NC 0.000000e+00 fallb - BE -
+m5_be_n2048_c0.2       t=2e-10    L1 rho 1.487e-03 Tg 7.286e-04 Tr 2.067e-04 dshift  -1.64 | spike  +1.68% prec  +0.00% | dt 2.813e-14 Picard 2.023625e+00 NC 0.000000e+00 fallb - BE -
+m5_be_n2048_c0.4       t=1.00035e-10 L1 rho 5.332e-04 Tg 5.390e-04 Tr 3.545e-04 dshift  -0.64 | spike  +1.23% prec  +0.00% | dt 5.626e-14 Picard 2.427848e+00 NC 0.000000e+00 fallb - BE -
+m5_be_n2048_c0.4       t=2e-10    L1 rho 1.482e-03 Tg 7.264e-04 Tr 2.484e-04 dshift  -1.64 | spike  +1.10% prec  +0.00% | dt 5.626e-14 Picard 2.427848e+00 NC 0.000000e+00 fallb - BE -
+m5_be_n512_c0.2        t=1.00015e-10 L1 rho 1.285e-03 Tg 4.817e-04 Tr 2.240e-04 dshift  -0.27 | spike  -1.83% prec  +0.00% | dt 1.110e-13 Picard 2.012215e+00 NC 0.000000e+00 fallb - BE -
+m5_be_n512_c0.2        t=2e-10    L1 rho 1.864e-03 Tg 4.415e-04 Tr 1.151e-04 dshift  -0.52 | spike  +2.38% prec  +0.00% | dt 1.110e-13 Picard 2.012215e+00 NC 0.000000e+00 fallb - BE -
+m5_be_n512_c0.4        t=1.0011e-10 L1 rho 1.451e-03 Tg 5.324e-04 Tr 2.527e-04 dshift  -0.30 | spike  -1.84% prec  +0.00% | dt 2.200e-13 Picard 2.698570e+00 NC 0.000000e+00 fallb - BE -
+m5_be_n512_c0.4        t=2e-10    L1 rho 1.978e-03 Tg 5.109e-04 Tr 1.693e-04 dshift  -0.53 | spike  +2.17% prec  +0.00% | dt 2.200e-13 Picard 2.698570e+00 NC 0.000000e+00 fallb - BE -
+m5_expl_n1024          t=1e-10    L1 rho 4.052e-04 Tg 5.205e-04 Tr 1.315e-04 dshift  -0.07 | spike  -8.47% prec  +0.00% | dt 4.369e-16 Picard - NC - fallb - BE -
+m5_expl_n1024          t=2e-10    L1 rho 4.462e-04 Tg 7.552e-04 Tr 3.032e-04 dshift  -0.07 | spike  -8.48% prec  +0.00% | dt 4.369e-16 Picard - NC - fallb - BE -
+m5_h2_n1024_c0.2       t=1.00034e-10 L1 rho 1.012e-03 Tg 6.643e-04 Tr 1.944e-04 dshift  -0.36 | spike  -7.51% prec  +0.00% | dt 5.626e-14 Picard 2.018709e+00 NC 0.000000e+00 fallb 0.000000e+00 BE 1.000000e+00
+m5_h2_n1024_c0.2       t=2e-10    L1 rho 1.790e-03 Tg 4.521e-04 Tr 6.576e-05 dshift  -0.86 | spike  -1.10% prec  +0.00% | dt 5.626e-14 Picard 2.018709e+00 NC 0.000000e+00 fallb 0.000000e+00 BE 1.000000e+00
+m5_h2_n1024_c0.4       t=1.00035e-10 L1 rho 1.043e-03 Tg 6.403e-04 Tr 1.922e-04 dshift  -0.37 | spike  -7.32% prec  +0.00% | dt 1.125e-13 Picard 2.379747e+00 NC 0.000000e+00 fallb 0.000000e+00 BE 1.000000e+00
+m5_h2_n1024_c0.4       t=2e-10    L1 rho 1.802e-03 Tg 4.379e-04 Tr 6.564e-05 dshift  -0.87 | spike  -0.99% prec  +0.00% | dt 1.125e-13 Picard 2.379747e+00 NC 0.000000e+00 fallb 0.000000e+00 BE 1.000000e+00
+m5_h2_n2048_c0.2       t=1.00005e-10 L1 rho 4.641e-04 Tg 5.163e-04 Tr 2.988e-04 dshift  -0.64 | spike  +1.93% prec  +0.00% | dt 2.813e-14 Picard 2.003657e+00 NC 0.000000e+00 fallb 0.000000e+00 BE 1.000000e+00
+m5_h2_n2048_c0.2       t=2e-10    L1 rho 1.492e-03 Tg 7.327e-04 Tr 1.744e-04 dshift  -1.64 | spike  +2.26% prec  +0.00% | dt 2.813e-14 Picard 2.003657e+00 NC 0.000000e+00 fallb 0.000000e+00 BE 1.000000e+00
+m5_h2_n2048_c0.4       t=1.00033e-10 L1 rho 4.641e-04 Tg 5.162e-04 Tr 3.083e-04 dshift  -0.64 | spike  +1.93% prec  +0.00% | dt 5.624e-14 Picard 2.315146e+00 NC 0.000000e+00 fallb 0.000000e+00 BE 1.000000e+00
+m5_h2_n2048_c0.4       t=2e-10    L1 rho 1.492e-03 Tg 7.326e-04 Tr 1.837e-04 dshift  -1.64 | spike  +2.26% prec  +0.00% | dt 5.624e-14 Picard 2.315146e+00 NC 0.000000e+00 fallb 0.000000e+00 BE 1.000000e+00
+m5_h2_n512_c0.2        t=1.00062e-10 L1 rho 1.006e-03 Tg 5.199e-04 Tr 2.372e-04 dshift  -0.24 | spike  -2.40% prec  +0.25% | dt 1.114e-13 Picard 2.007523e+00 NC 0.000000e+00 fallb 0.000000e+00 BE 1.000000e+00
+m5_h2_n512_c0.2        t=2e-10    L1 rho 1.717e-03 Tg 4.066e-04 Tr 8.782e-05 dshift  -0.50 | spike  +2.45% prec  +0.00% | dt 1.114e-13 Picard 2.007523e+00 NC 0.000000e+00 fallb 0.000000e+00 BE 1.000000e+00
+m5_h2_n512_c0.4        t=1.00105e-10 L1 rho 1.016e-03 Tg 5.025e-04 Tr 2.428e-04 dshift  -0.24 | spike  -2.24% prec  +0.25% | dt 2.215e-13 Picard 2.027147e+00 NC 0.000000e+00 fallb 0.000000e+00 BE 1.000000e+00
+m5_h2_n512_c0.4        t=2e-10    L1 rho 1.722e-03 Tg 3.933e-04 Tr 9.111e-05 dshift  -0.50 | spike  +2.59% prec  +0.00% | dt 2.215e-13 Picard 2.027147e+00 NC 0.000000e+00 fallb 0.000000e+00 BE 1.000000e+00
+m7_be_n1024_c0.2       t=1.00042e-09 L1 rho 5.900e-04 Tg 3.312e-04 Tr 2.964e-04 dshift  -0.01 | spike  +0.06% prec  +0.00% | dt 2.564e-12 Picard 2.003205e+00 NC 0.000000e+00 fallb - BE -
+m7_be_n1024_c0.2       t=4e-09    L1 rho 9.135e-04 Tg 7.735e-04 Tr 7.721e-04 dshift  -0.18 | spike  +0.05% prec  -0.62% | dt 2.564e-12 Picard 2.003205e+00 NC 0.000000e+00 fallb - BE -
+m7_be_n1024_c0.4       t=1.00043e-09 L1 rho 6.169e-04 Tg 3.709e-04 Tr 2.942e-04 dshift  -0.02 | spike  +0.06% prec  -0.15% | dt 5.128e-12 Picard 2.005128e+00 NC 0.000000e+00 fallb - BE -
+m7_be_n1024_c0.4       t=4e-09    L1 rho 8.892e-04 Tg 7.700e-04 Tr 7.801e-04 dshift  -0.17 | spike  +0.05% prec  -0.62% | dt 5.128e-12 Picard 2.005128e+00 NC 0.000000e+00 fallb - BE -
+m7_be_n2048_c0.2       t=1.00042e-09 L1 rho 4.044e-04 Tg 3.069e-04 Tr 2.905e-04 dshift  -0.02 | spike  +0.05% prec  +0.00% | dt 1.282e-12 Picard 2.001603e+00 NC 0.000000e+00 fallb - BE -
+m7_be_n2048_c0.2       t=4e-09    L1 rho 4.674e-04 Tg 7.703e-04 Tr 7.575e-04 dshift  +0.50 | spike  -0.37% prec  -0.62% | dt 1.282e-12 Picard 2.001603e+00 NC 0.000000e+00 fallb - BE -
+m7_be_n2048_c0.4       t=1.00042e-09 L1 rho 4.220e-04 Tg 3.231e-04 Tr 2.883e-04 dshift  -0.03 | spike  +0.05% prec  +0.00% | dt 2.564e-12 Picard 2.002564e+00 NC 0.000000e+00 fallb - BE -
+m7_be_n2048_c0.4       t=4e-09    L1 rho 5.017e-04 Tg 7.599e-04 Tr 7.483e-04 dshift  +0.50 | spike  -0.38% prec  -0.62% | dt 2.564e-12 Picard 2.002564e+00 NC 0.000000e+00 fallb - BE -
+m7_be_n512_c0.2        t=1.00043e-09 L1 rho 8.258e-04 Tg 3.841e-04 Tr 3.080e-04 dshift  -0.01 | spike  +0.06% prec  +0.00% | dt 5.128e-12 Picard 2.005128e+00 NC 0.000000e+00 fallb - BE -
+m7_be_n512_c0.2        t=4e-09    L1 rho 1.228e-03 Tg 7.955e-04 Tr 8.036e-04 dshift  -0.10 | spike  +0.06% prec  -0.62% | dt 5.128e-12 Picard 2.005128e+00 NC 0.000000e+00 fallb - BE -
+m7_be_n512_c0.4        t=1.00558e-09 L1 rho 8.744e-04 Tg 4.744e-04 Tr 3.104e-04 dshift  -0.02 | spike  +0.06% prec  +0.00% | dt 1.026e-11 Picard 2.023077e+00 NC 0.000000e+00 fallb - BE -
+m7_be_n512_c0.4        t=4e-09    L1 rho 1.427e-03 Tg 7.850e-04 Tr 8.166e-04 dshift  -0.10 | spike  +0.06% prec  -0.62% | dt 1.026e-11 Picard 2.023077e+00 NC 0.000000e+00 fallb - BE -
+m7_expl_n1024          t=1e-09    L1 rho 6.083e-04 Tg 2.614e-05 Tr 2.523e-05 dshift  +0.01 | spike  +0.01% prec  +0.00% | dt 2.378e-14 Picard - NC - fallb - BE -
+m7_expl_n1024          t=4e-09    L1 rho 1.093e-03 Tg 9.826e-05 Tr 9.694e-05 dshift  -0.08 | spike  +0.01% prec  -0.15% | dt 2.378e-14 Picard - NC - fallb - BE -
+m7_expl_n2048          t=1e-09    L1 rho 4.031e-04 Tg 2.239e-05 Tr 2.139e-05 dshift  +0.00 | spike  +0.00% prec  +0.00% | dt 1.189e-14 Picard - NC - fallb - BE -
+m7_expl_n2048          t=4e-09    L1 rho 7.469e-04 Tg 7.702e-05 Tr 7.560e-05 dshift  +0.86 | spike  +0.00% prec  +0.00% | dt 1.189e-14 Picard - NC - fallb - BE -
+m7_h2_n1024_c0.2       t=1.00041e-09 L1 rho 5.656e-04 Tg 3.128e-04 Tr 3.027e-04 dshift  -0.01 | spike  +0.06% prec  +0.00% | dt 2.564e-12 Picard 2.002886e+00 NC 0.000000e+00 fallb 0.000000e+00 BE 1.000000e+00
+m7_h2_n1024_c0.2       t=4e-09    L1 rho 9.468e-04 Tg 7.845e-04 Tr 7.821e-04 dshift  -0.20 | spike  +0.05% prec  -0.62% | dt 2.564e-12 Picard 2.002886e+00 NC 0.000000e+00 fallb 0.000000e+00 BE 1.000000e+00
+m7_h2_n1024_c0.4       t=1.00042e-09 L1 rho 5.649e-04 Tg 3.211e-04 Tr 3.010e-04 dshift  -0.01 | spike  +0.06% prec  +0.00% | dt 5.128e-12 Picard 2.005773e+00 NC 0.000000e+00 fallb 0.000000e+00 BE 1.000000e+00
+m7_h2_n1024_c0.4       t=4e-09    L1 rho 9.439e-04 Tg 7.878e-04 Tr 7.823e-04 dshift  -0.20 | spike  +0.05% prec  -0.62% | dt 5.128e-12 Picard 2.005773e+00 NC 0.000000e+00 fallb 0.000000e+00 BE 1.000000e+00
+m7_h2_n2048_c0.2       t=1.00041e-09 L1 rho 3.882e-04 Tg 3.002e-04 Tr 2.949e-04 dshift  -0.03 | spike  +0.05% prec  +0.00% | dt 1.282e-12 Picard 2.000802e+00 NC 0.000000e+00 fallb 0.000000e+00 BE 1.000000e+00
+m7_h2_n2048_c0.2       t=4e-09    L1 rho 4.551e-04 Tg 7.761e-04 Tr 7.691e-04 dshift  -0.50 | spike  -0.40% prec  -0.62% | dt 1.282e-12 Picard 2.000802e+00 NC 0.000000e+00 fallb 0.000000e+00 BE 1.000000e+00
+m7_h2_n2048_c0.4       t=1.00041e-09 L1 rho 3.879e-04 Tg 3.040e-04 Tr 2.939e-04 dshift  -0.03 | spike  +0.05% prec  +0.00% | dt 2.564e-12 Picard 2.004168e+00 NC 0.000000e+00 fallb 0.000000e+00 BE 1.000000e+00
+m7_h2_n2048_c0.4       t=4e-09    L1 rho 4.561e-04 Tg 7.754e-04 Tr 7.683e-04 dshift  -0.50 | spike  -0.42% prec  -0.62% | dt 2.564e-12 Picard 2.004168e+00 NC 0.000000e+00 fallb 0.000000e+00 BE 1.000000e+00
+m7_h2_n512_c0.2        t=1.00042e-09 L1 rho 7.800e-04 Tg 3.350e-04 Tr 3.146e-04 dshift  -0.01 | spike  +0.06% prec  +0.00% | dt 5.128e-12 Picard 2.004490e+00 NC 0.000000e+00 fallb 0.000000e+00 BE 1.000000e+00
+m7_h2_n512_c0.2        t=4e-09    L1 rho 1.290e-03 Tg 8.161e-04 Tr 8.102e-04 dshift  -0.11 | spike  +0.06% prec  -0.62% | dt 5.128e-12 Picard 2.004490e+00 NC 0.000000e+00 fallb 0.000000e+00 BE 1.000000e+00
+m7_h2_n512_c0.4        t=1.00555e-09 L1 rho 7.804e-04 Tg 3.545e-04 Tr 3.130e-04 dshift  -0.01 | spike  +0.06% prec  +0.00% | dt 1.026e-11 Picard 2.014121e+00 NC 0.000000e+00 fallb 0.000000e+00 BE 1.000000e+00
+m7_h2_n512_c0.4        t=4e-09    L1 rho 1.287e-03 Tg 8.239e-04 Tr 8.109e-04 dshift  -0.12 | spike  +0.06% prec  -0.62% | dt 1.026e-11 Picard 2.014121e+00 NC 0.000000e+00 fallb 0.000000e+00 BE 1.000000e+00
+### packet (beam width)
+pk_expl_64                 t=0.500 nx=64 dt=6.173e-03 | dE/E +2.24e-09 peak 0.567 | travel/(ct) 0.9991 dq +0.0000 | sig_perp 1.208 sig_par 1.210 (x initial) | negE 0 |f|>1 0 fmax 1.0000 | NC - fallb -
+### shadow
+== sh_expl_140  
+front at x=0.98: arrival 1.110453e-12 s vs 3.268928e-11 s (-96.60 %)
+front SPEED from the 0.01 threshold in the lit lane (0 dumps): nan cm/s = nan c
+shadow depth E(0.8,0)/E(0.8,0.12) over time: 1.000e+00 2.254e-03 1.231e-02 2.277e-02 2.986e-02 3.323e-02 3.853e-02 5.075e-02 5.439e-02 5.724e-02 5.587e-02
+FAIL T2 shadow: arrival 1.1105e-12 s vs 3.2689e-11 s (9.660e-01, <= 0.05) [front speed nan c]  depth=5.587e-02 (<= 0.001)  eddington control=nan
+== sh_expl_560  
+front at x=0.98: arrival nan s vs 3.268928e-11 s (+nan %)
+front SPEED from the 0.01 threshold in the lit lane (0 dumps): nan cm/s = nan c
+shadow depth E(0.8,0)/E(0.8,0.12) over time: 1.000e+00
+FAIL T2 shadow: arrival nan s vs 3.2689e-11 s (nan, <= 0.05) [front speed nan c]  depth=1.000e+00 (<= 0.001)  eddington control=nan
+### He 3-D vet_sc (gate3d.py; first dir = reference)
+h2_c0.15: t_end 500.0 links 1  Picard mean 2.002769e+00 max 4.000000e+00 nonconv 0.000000e+00  BiCGStab inner mean 1.004705e+01 max 3.300000e+01 breakdowns 0.000000e+00  (stats of the LAST link only)
+   F1top/Fin 1.0000 [min 0.9999 max 1.0000]  dt 0.08054 [min 0.08054]  cpu 4.076424e+02 s
+   t=   100  KE_v 6.3511e+26  KE_h 2.5284e+24  F1top/Fin 0.99996
+   t=   250  KE_v 5.7558e+26  KE_h 1.7142e+24  F1top/Fin 1.00003
+   t=   500  KE_v 4.7980e+26  KE_h 6.7911e+23  F1top/Fin 1.00002
+   dlnKE/dt [1,16]  v +nan  h +nan
+   dlnKE/dt [20,100]  v +2.9002e-03  h +4.0572e-03
+   dlnKE/dt [100,500]  v -4.1554e-04  h -2.1631e-03
+   dlnKE/dt [500,1000]  v +nan  h +nan
+   dlnKE/dt [1000,2000]  v +nan  h +nan
+   dlnKE/dt [2000,3750]  v +nan  h +nan
+h2_c0.3: t_end 500.0 links 1  Picard mean 2.229569e+00 max 4.000000e+00 nonconv 0.000000e+00  BiCGStab inner mean 1.287430e+01 max 4.400000e+01 breakdowns 5.000000e+00  (stats of the LAST link only)
+   F1top/Fin 1.0000 [min 0.9999 max 1.0000]  dt 0.1611 [min 0.1611]  cpu 2.316737e+02 s
+   t=   100  KE_v 6.4618e+26  KE_h 2.5743e+24  F1top/Fin 0.99996
+   t=   250  KE_v 6.0351e+26  KE_h 1.7652e+24  F1top/Fin 1.00003
+   t=   500  KE_v 4.9025e+26  KE_h 7.0752e+23  F1top/Fin 1.00002
+   dlnKE/dt [1,16]  v +nan  h +nan
+   dlnKE/dt [20,100]  v +2.9985e-03  h +4.2780e-03
+   dlnKE/dt [100,500]  v -3.6129e-04  h -2.0644e-03
+   dlnKE/dt [500,1000]  v +nan  h +nan
+   dlnKE/dt [1000,2000]  v +nan  h +nan
+   dlnKE/dt [2000,3750]  v +nan  h +nan
+be_c0.15: t_end 500.0 links 1  Picard mean 2.078704e+00 max 4.000000e+00 nonconv 0.000000e+00  BiCGStab inner mean 1.413659e+01 max 5.000000e+01 breakdowns 1.500000e+01  (stats of the LAST link only)
+   F1top/Fin 1.0000 [min 0.9998 max 1.0000]  dt 0.08054 [min 0.08054]  cpu 2.918519e+02 s
+   t=   100  KE_v 6.3787e+26  KE_h 2.3696e+24  F1top/Fin 0.99996
+   t=   250  KE_v 5.6731e+26  KE_h 1.5620e+24  F1top/Fin 1.00002
+   t=   500  KE_v 4.8464e+26  KE_h 6.7032e+23  F1top/Fin 1.00002
+   dlnKE/dt [1,16]  v +nan  h +nan
+   dlnKE/dt [20,100]  v +2.8797e-03  h +3.3810e-03
+   dlnKE/dt [100,500]  v -4.2007e-04  h -2.1639e-03
+   dlnKE/dt [500,1000]  v +nan  h +nan
+   dlnKE/dt [1000,2000]  v +nan  h +nan
+   dlnKE/dt [2000,3750]  v +nan  h +nan
+be_c0.3: t_end 500.0 links 1  Picard mean 2.517114e+00 max 4.000000e+00 nonconv 0.000000e+00  BiCGStab inner mean 1.469231e+01 max 6.100000e+01 breakdowns 1.600000e+01  (stats of the LAST link only)
+   F1top/Fin 1.0000 [min 0.9998 max 1.0000]  dt 0.1611 [min 0.1611]  cpu 1.608206e+02 s
+   t=   100  KE_v 6.7657e+26  KE_h 2.2668e+24  F1top/Fin 0.99996
+   t=   250  KE_v 5.8676e+26  KE_h 1.4913e+24  F1top/Fin 1.00002
+   t=   500  KE_v 5.0137e+26  KE_h 7.1793e+23  F1top/Fin 1.00002
+   dlnKE/dt [1,16]  v +nan  h +nan
+   dlnKE/dt [20,100]  v +3.2264e-03  h +2.9713e-03
+   dlnKE/dt [100,500]  v -4.1326e-04  h -1.9716e-03
+   dlnKE/dt [500,1000]  v +nan  h +nan
+   dlnKE/dt [1000,2000]  v +nan  h +nan
+   dlnKE/dt [2000,3750]  v +nan  h +nan
