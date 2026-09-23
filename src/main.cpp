@@ -234,6 +234,7 @@ int main(int argc, char *argv[]) {
   // read parameters from restart file
   bool single_file_per_rank = false; // DBF: flag for single_file_per_rank for rst files
   if (res_flag) {
+    global_variable::restart_run = true;
     // Check if the path contains "rank_" directory
     size_t rank_pos = restart_file.find("/rank_");
     single_file_per_rank = (rank_pos != std::string::npos);

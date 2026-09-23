@@ -4,8 +4,9 @@
 // Licensed under the 3-clause BSD License (the "LICENSE")
 //========================================================================================
 //! \file rad_m1_krylov.cpp
-//! \brief the implicit-M1 Krylov loop on SEVERAL ranks (tests_m1/runs_3w_krylov).  Both
-//! switches default OFF; off, nothing here runs and the solve is bitwise the old one.
+//! \brief the implicit-M1 Krylov loop on SEVERAL ranks (tests_m1/runs_3w_krylov).
+//! implicit_krylov_pipe defaults OFF; implicit_halo_mpi defaults ON where its
+//! preconditions hold (ImplicitInit; bitwise the ordinary exchange either way).
 //!
 //!  * <rad_m1>/implicit_halo_mpi (needs implicit_halo_direct): the ghost zones of the
 //!    implicit exchanges on a mesh whose neighbours are NOT all on this rank.  The
