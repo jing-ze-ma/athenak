@@ -434,6 +434,27 @@ class RadiationM1 {
                                 // original), 1 = symmetric red-black transverse line
                                 // Gauss-Seidel, block-local (no communication), 2 = its
                                 // forward half (red, black)
+  // ---- multi-rank Krylov (tests_m1/runs_3w_krylov, rad_m1_krylov.cpp).  Both keys
+  // default OFF; off, nothing below is allocated and the path is bitwise the old one.
+  bool impl_kpipe;              // <rad_m1>/implicit_krylov_pipe: pipelined (Cools-
+                                // Vanroose) BiCGStab, reductions hidden behind the
+                                // preconditioner + operator (needs krylov_fuse = 3)
+  DvceArray5D<Real> kpw;        // (m,4,k,j,i) its extra vectors phat, s, shat, rhat
+  Kokkos::View<Real*, Kokkos::SharedHostPinnedSpace> kp_h;  // its 2 x 6 reduction slots
+  bool impl_halo_mpi;           // <rad_m1>/implicit_halo_mpi: implicit_halo_direct on
+                                // several ranks: on-rank copy kernel + ONE message per
+                                // neighbour rank (pack / unpack kernels)
+  int hm_state;                 // 0 = not built, 1 = on, -1 = not possible on this mesh
+  int hm_nsend, hm_nrecv;       // entries (cells) sent / received per component
+  int hm_nq;                    // components the buffers are sized for
+  std::vector<int> hm_rank, hm_soff, hm_slen, hm_roff, hm_rlen;  // per neighbour rank
+  DualArray1D<int> hm_sm, hm_skji, hm_sseg, hm_rm, hm_rkji, hm_rseg;  // per entry
+  DualArray1D<int> hm_segs;     // (4*nseg) soff, slen, roff, rlen
+  DvceArray1D<Real> hm_sbuf, hm_rbuf;
+  void *hm_comm;                // MPI_Comm* (the dup'ed communicator), opaque here
+  void ImplicitHaloMPIInit();
+  void ImplicitHaloMPI(int nq, int c0);
+  int ImplicitBiCGStabPipe(Real rhsmax);
   // ---- the Picard pass count (bench/m1_picard_0923).  Since bench/m1_defaults_0923
   // lres_test = false, conv_est = true and lin_ew_max = 1e-2 (not predictor) are the
   // DEFAULTS for closure = eddington | vet_sc | tau (the OFF settings stay the defaults

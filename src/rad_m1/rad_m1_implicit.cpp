@@ -377,6 +377,17 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (impl_prec > 0 && impl_kfuse == 0) {
     ImplFatal("<rad_m1>/implicit_precond = rbgs needs implicit_krylov_fuse >= 1");
   }
+  // multi-rank Krylov (rad_m1_krylov.cpp, tests_m1/runs_3w_krylov): both default OFF
+  impl_kpipe = pin->GetOrAddBoolean("rad_m1","implicit_krylov_pipe",false);
+  impl_halo_mpi = pin->GetOrAddBoolean("rad_m1","implicit_halo_mpi",false);
+  hm_state = 0;
+  hm_comm = nullptr;
+  if (impl_kpipe && impl_kfuse != 3) {
+    ImplFatal("<rad_m1>/implicit_krylov_pipe needs implicit_krylov_fuse = 3");
+  }
+  if (impl_halo_mpi && !impl_halo_direct) {
+    ImplFatal("<rad_m1>/implicit_halo_mpi needs implicit_halo_direct = true");
+  }
   // the Picard pass count (bench/m1_picard_0923): a per-pass log, off by default
   impl_plog = pin->GetOrAddInteger("rad_m1","implicit_picard_log",0);
   // ...and the options that cut it.  Since bench/m1_defaults_0923 they DEFAULT ON for
@@ -1236,6 +1247,13 @@ void RadiationM1::ImplicitHaloExchange(int nq, int c0) {
   if (halo_direct_on) {   // implicit_halo_direct, every neighbour on this rank
     ImplicitHaloDirect(nq, c0);
     return;
+  }
+  if (impl_halo_mpi) {     // implicit_halo_mpi: on-rank copy + one message per rank
+    if (hm_state == 0) {ImplicitHaloMPIInit();}
+    if (hm_state == 1) {
+      ImplicitHaloMPI(nq, c0);
+      return;
+    }
   }
   DvceArray5D<Real> *pa, *pc;
   MeshBoundaryValuesCC *pb;
@@ -3893,6 +3911,7 @@ int RadiationM1::ImplicitBiCGStabFused(Real rhsmax) {
   const bool devrv = (impl_bcg_sync == 2) && (global_variable::nranks == 1);
   const int kf = impl_kfuse;   // implicit_krylov_fuse (needs bcg_sync = 1, pcr)
   if (impl_stencil) {ImplicitStencilBuild();}   // the operator of this pass, once
+  if (kf == 3 && impl_kpipe) {return ImplicitBiCGStabPipe(rhsmax);}
   if (kf == 3) {return ImplicitBiCGStabTwo(rhsmax);}
   auto rvd_ = bcg_rvd;
   // implicit_lin_cnorm > 0: the max norm is taken of r_i/(s_i E^k_i), s_i = 1 + SRCB_i
