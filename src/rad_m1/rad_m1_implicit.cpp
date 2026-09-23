@@ -527,12 +527,14 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   impl_halo_mpi = pin->GetOrAddBoolean("rad_m1","implicit_halo_mpi",hmdef);}
   hm_state = 0;
   hm_comm = nullptr;
-  // implicit_halo_overlap (rad_m1_krylov.cpp, tests_m1/runs_3y_halo_overlap): read
-  // only when named, so the parameter dump of a run without it is unchanged
-  impl_halo_ovl = false;
-  if (pin->DoesParameterExist("rad_m1","implicit_halo_overlap")) {
-    impl_halo_ovl = pin->GetBoolean("rad_m1","implicit_halo_overlap");
-  }
+  // implicit_halo_overlap (rad_m1_krylov.cpp, tests_m1/runs_3y_halo_overlap: round-off
+  // vs off, restarts bitwise).  DEFAULT true since m1-accmerge wherever it is valid:
+  // implicit_halo_mpi on and more than one rank; otherwise false, silently.  A restart
+  // whose file lacks the key (written before m1-accmerge, which read it only when
+  // named) keeps false; the resolved value is echoed; explicit input overrides.
+  impl_halo_ovl = pin->GetOrAddBoolean("rad_m1","implicit_halo_overlap",
+                      impl_halo_mpi && (global_variable::nranks > 1) &&
+                      !global_variable::restart_run);
   if (impl_halo_ovl && !impl_halo_mpi) {
     ImplFatal("<rad_m1>/implicit_halo_overlap needs implicit_halo_mpi = true");
   }
