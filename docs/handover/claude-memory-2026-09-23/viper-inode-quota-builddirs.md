@@ -16,3 +16,4 @@ deleting prod_w7 rst 00000-40 (keep newest 3), prod_w5/prod_w6 rst dirs, he4_rg_
 **How to apply:** before any new worktree/build or big test, run the inode loop; each build
 dir costs ~800 inodes, each handover memory copy ~350. See [[rt-integration-branch]] (GPFS
 inode quota note), [[save-tokens-everywhere]].
+- ptmp2 RULE (09-23): /viper/ptmp2/jinma is scratch (not backed up, may be purged): only regenerable build/run trees there; patches, READMEs, results on u2 / in the repo.
