@@ -20,4 +20,6 @@ tests_m1/runs_3k_gpu3d/README_HALO.md and tests_env_tuning/README.md when it exi
 Deep-hot-Jupiter tests start from the newest prod4 restart (bench/cs_mhd_prod4/rst, copy it,
 never write into a production dir) with the prod4 input, not from prod3 restarts (odd-even columns);
 hydro tests from bench/cs_hyd4_prod/rst. State the rotation of the restart used.
+Keep your context small: read functions or line ranges (grep first), not whole large files or logs.
+If your jobs will run longer than ~20 min, submit them, leave an analysis script and stop; do not wait.
 Report measured numbers only, with the file or job they came from.
