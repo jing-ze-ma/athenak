@@ -1907,9 +1907,12 @@ void RadiationM1::ImplicitOffDiagOp(int xc, int yc, Real sgn) {
   int ks = indcs.ks, ke = indcs.ke;
   int nmb1 = pmy_pack->nmb_thispack - 1;
   auto iw_ = iw;
-  auto &mbsize = pmy_pack->pmb->mb_size;
-  auto &mbbcs = pmy_pack->pmb->mb_bcs;
-  auto pos_ = part_pos;
+  // capture the DEVICE Views only: whole DualViews pushed this functor past 512 bytes,
+  // i.e. onto Kokkos HIP's constant-memory launch, which waits on the previous such
+  // launch (hip_event_synchronize) -- one hidden host stall per call, ~290 per cycle.
+  auto mbsize = pmy_pack->pmb->mb_size.d_view;
+  auto mbbcs = pmy_pack->pmb->mb_bcs.d_view;
+  auto pos_ = part_pos.d_view;
   auto vd_ = vet_cell;   // vet_tensor = full (M1DDiag, M1OffDiv)
   const bool dfull = vet_full;
   const int nblkx1 = part_nblk;
@@ -1927,21 +1930,21 @@ void RadiationM1::ImplicitOffDiagOp(int xc, int yc, Real sgn) {
   const Real sg = sgn;
   par_for("m1_impl_odop", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-    int ipos = pos_.d_view(m);
+    int ipos = pos_(m);
     bool botb = (ipos == 0), topb = (ipos == nblkx1-1);
     if (!cyclic && ((i == is && botb && bclo == M1_IBC_EFIX) ||
                     (i == ie && topb && bchi == M1_IBC_EFIX))) {
       return;
     }
-    Real dx1 = mbsize.d_view(m).dx1;
-    Real dx2 = mbsize.d_view(m).dx2;
-    Real dx3 = mbsize.d_view(m).dx3;
-    BoundaryFlag q1 = mbbcs.d_view(m,BoundaryFace::inner_x1);
-    BoundaryFlag q2 = mbbcs.d_view(m,BoundaryFace::outer_x1);
-    BoundaryFlag q3 = mbbcs.d_view(m,BoundaryFace::inner_x2);
-    BoundaryFlag q4 = mbbcs.d_view(m,BoundaryFace::outer_x2);
-    BoundaryFlag q5 = mbbcs.d_view(m,BoundaryFace::inner_x3);
-    BoundaryFlag q6 = mbbcs.d_view(m,BoundaryFace::outer_x3);
+    Real dx1 = mbsize(m).dx1;
+    Real dx2 = mbsize(m).dx2;
+    Real dx3 = mbsize(m).dx3;
+    BoundaryFlag q1 = mbbcs(m,BoundaryFace::inner_x1);
+    BoundaryFlag q2 = mbbcs(m,BoundaryFace::outer_x1);
+    BoundaryFlag q3 = mbbcs(m,BoundaryFace::inner_x2);
+    BoundaryFlag q4 = mbbcs(m,BoundaryFace::outer_x2);
+    BoundaryFlag q5 = mbbcs(m,BoundaryFace::inner_x3);
+    BoundaryFlag q6 = mbbcs(m,BoundaryFace::outer_x3);
     bool p2lo = (q3 != BoundaryFlag::block) && (q3 != BoundaryFlag::periodic);
     bool p2hi = (q4 != BoundaryFlag::block) && (q4 != BoundaryFlag::periodic);
     bool p3lo = (q5 != BoundaryFlag::block) && (q5 != BoundaryFlag::periodic);

@@ -10,6 +10,7 @@
 
 #include <cstdlib>
 #include <iostream>
+#include <type_traits>
 #include <utility>
 
 #include "athena.hpp"
@@ -64,8 +65,8 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
   int no_rs_cc = 0;
   { const char *e_ = std::getenv("CS_NORESAMP_CC");
     if (e_ != nullptr) { no_rs_cc = std::atoi(e_); } }
-  auto &sbuf = sendbuf;
-  auto &rbuf = recvbuf;
+  auto sbuf = SendBufDv();
+  auto rbuf = RecvBufDv();
   auto &is_z4c = is_z4c_;
   auto &multilevel = pmy_pack->pmesh->multilevel;
   // x1 index window (see the declaration): only buffers spanning the whole x1 extent
@@ -75,7 +76,14 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
   // Outer loop over (# of MeshBlocks)*(# of buffers)*(# of variables)
   int nmnv = nmb*nnghbr*nvar;
   Kokkos::TeamPolicy<> policy(DevExeSpace(), nmnv, Kokkos::AUTO);
-  Kokkos::parallel_for("SendBuff", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
+  // The seam/pole branch below keeps per-thread arrays (stencil indices, three SeamXform)
+  // that give the kernel a PRIVATE SEGMENT (scratch).  A dispatch that needs scratch
+  // right after ones that do not stalls the GPU queue ~140 us while the runtime
+  // (re)attaches scratch -- measured before every pack of the implicit M1 halo exchange
+  // (tests_m1/runs_3k_gpu3d/README_HALO.md).  So the body is compiled twice: with the
+  // branch (cubed sphere / polar) and without it (everything else), where do_cs and
+  // do_pole are false anyway, i.e. the same arithmetic; still one launch per call.
+  auto pack_ = KOKKOS_LAMBDA(const TeamMember_t &tmember, const auto kseam_) {
     const int m = (tmember.league_rank())/(nnghbr*nvar);
     const int n = (tmember.league_rank() - m*(nnghbr*nvar))/nvar;
     const int v = (tmember.league_rank() - m*(nnghbr*nvar) - n*nvar);
@@ -135,7 +143,7 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
       const bool do_pole = use_pole &&
                            (nghbr.d_view(m,n).polar > 0);
 
-      if (do_cs || do_pole) {
+      if (kseam_.value && (do_cs || do_pole)) {
         int aj = 1, bj = 0;
         int ak = 1, bk = 0;
         int signvar = 1;
@@ -563,13 +571,22 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
       }  // end if-do-cs/do-pole block
     }  // end if-neighbor-exists block
     tmember.team_barrier();
-  }); // end par_for_outer
+  };
+  if (use_cs || use_pole) {
+    BvalsTeamFor("SendBuff", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
+      pack_(tmember, std::true_type());
+    });
+  } else {
+    BvalsTeamFor("SendBuff", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
+      pack_(tmember, std::false_type());
+    });
+  }  // end par_for_outer
 
   // The whole body of this kernel sits under (is_z4c && multilevel), both of which are
   // host-side constants, so when they do not hold the launch has nothing to do at all:
   // skip it.  It is otherwise a full-size empty team launch on EVERY halo exchange.
   if (is_z4c_ && ml_) {
-  Kokkos::parallel_for("SendBuffZ4c", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
+  BvalsTeamFor("SendBuffZ4c", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
     const int m = (tmember.league_rank())/(nnghbr*nvar);
     const int n = (tmember.league_rank() - m*(nnghbr*nvar))/nvar;
     const int v = (tmember.league_rank() - m*(nnghbr*nvar) - n*nvar);
@@ -633,7 +650,9 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
 
 #if MPI_PARALLEL_ENABLED
   // Send boundary buffer to neighboring MeshBlocks using MPI
-  Kokkos::fence();
+  // fence only before the first MPI_Isend: an exchange with no off-rank neighbour
+  // (1 rank) has nothing to wait for -- the unpack kernel is on the same stream.
+  bool fenced_ = false;
   auto &is_z4c = is_z4c_;
   int my_rank = global_variable::my_rank;
   auto &nghbr = pmy_pack->pmb->nghbr;
@@ -653,6 +672,10 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendCC(DvceArray5D<Real> &a,
         int dn = nghbr.h_view(m,n).dest;
         int drank = nghbr.h_view(m,n).rank;
         if (drank != my_rank) {
+          if (!fenced_) {
+            Kokkos::fence();
+            fenced_ = true;
+          }
           // create tag using local ID and buffer index of *receiving* MeshBlock
           int lid = nghbr.h_view(m,n).gid - pmy_pack->pmesh->gids_eachrank[drank];
           int tag = CreateBvals_MPI_Tag(lid, dn);
@@ -700,7 +723,7 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackCC(DvceArray5D<Real> &a,
   int nmb = pmy_pack->nmb_thispack;
   int nnghbr = pmy_pack->pmb->nnghbr;
   auto &nghbr = pmy_pack->pmb->nghbr;
-  auto &rbuf = recvbuf;
+  auto rbuf = RecvBufDv();
   auto &is_z4c = is_z4c_;
   auto &mbpanel = pmy_pack->pmb->mb_panel;
   auto &mblev = pmy_pack->pmb->mb_lev;
@@ -731,7 +754,7 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackCC(DvceArray5D<Real> &a,
           !(skipd_ && IsX2X3DiagSlot(n))) {
         if (nghbr.h_view(m,n).rank != global_variable::my_rank) {
           int test;
-          int ierr = MPI_Test(&(rbuf[n].vars_req[m]), &test, MPI_STATUS_IGNORE);
+          int ierr = MPI_Test(&(recvbuf[n].vars_req[m]), &test, MPI_STATUS_IGNORE);
           if (ierr != MPI_SUCCESS) {no_errors=false;}
           if (!(static_cast<bool>(test))) {
             bflag = true;
@@ -757,7 +780,7 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackCC(DvceArray5D<Real> &a,
 
   // Outer loop over (# of MeshBlocks)*(# of buffers)*(# of variables)
   Kokkos::TeamPolicy<> policy(DevExeSpace(), (nmb*nnghbr*nvar), Kokkos::AUTO);
-  Kokkos::parallel_for("RecvBuff", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
+  BvalsTeamFor("RecvBuff", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
     const int m = (tmember.league_rank())/(nnghbr*nvar);
     const int n = (tmember.league_rank() - m*(nnghbr*nvar))/nvar;
     const int v = (tmember.league_rank() - m*(nnghbr*nvar) - n*nvar);
@@ -878,7 +901,7 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackCC(DvceArray5D<Real> &a,
   // Outer loop over (# of MeshBlocks)*(# of buffers)*(# of variables).  Whole body is
   // under the host-side (is_z4c && multilevel): skip the launch when it cannot fire.
   if (is_z4c_ && ml_) {
-  Kokkos::parallel_for("RecvBuffZ4c", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
+  BvalsTeamFor("RecvBuffZ4c", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
     const int m = (tmember.league_rank())/(nnghbr*nvar);
     const int n = (tmember.league_rank() - m*(nnghbr*nvar))/nvar;
     const int v = (tmember.league_rank() - m*(nnghbr*nvar) - n*nvar);

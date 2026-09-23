@@ -38,7 +38,7 @@ void MeshBoundaryValuesCC::FillCoarseInBndryCC(DvceArray5D<Real> &a,
   int nmnv = nmb*nnghbr*nvar;
   auto &nghbr = pmy_pack->pmb->nghbr;
   auto &mblev = pmy_pack->pmb->mb_lev;
-  auto &rbuf = recvbuf;
+  auto rbuf = RecvBufDv();
   auto &indcs  = pmy_pack->pmesh->mb_indcs;
   const bool multi_d = pmy_pack->pmesh->multi_d;
   const bool three_d = pmy_pack->pmesh->three_d;
@@ -60,7 +60,7 @@ void MeshBoundaryValuesCC::FillCoarseInBndryCC(DvceArray5D<Real> &a,
     auto &cks = indcs.cks;
     // Outer loop over (# of MeshBlocks)*(# of buffers)*(# of variables)
     Kokkos::TeamPolicy<> policy(DevExeSpace(), nmnv, Kokkos::AUTO);
-    Kokkos::parallel_for("ProlCCSame", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
+    BvalsTeamFor("ProlCCSame", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
       const int m = (tmember.league_rank())/(nnghbr*nvar);
       const int n = (tmember.league_rank() - m*(nnghbr*nvar))/nvar;
       const int v = (tmember.league_rank() - m*(nnghbr*nvar) - n*nvar);
@@ -151,7 +151,7 @@ void MeshBoundaryValuesCC::ProlongateCC(DvceArray5D<Real> &a, DvceArray5D<Real> 
   int nmnv = nmb*nnghbr*nvar;
   auto &nghbr = pmy_pack->pmb->nghbr;
   auto &mblev = pmy_pack->pmb->mb_lev;
-  auto &rbuf = recvbuf;
+  auto rbuf = RecvBufDv();
   auto &indcs  = pmy_pack->pmesh->mb_indcs;
   const bool multi_d = pmy_pack->pmesh->multi_d;
   const bool three_d = pmy_pack->pmesh->three_d;
@@ -163,7 +163,7 @@ void MeshBoundaryValuesCC::ProlongateCC(DvceArray5D<Real> &a, DvceArray5D<Real> 
 
   // Outer loop over (# of MeshBlocks)*(# of buffers)*(# of variables)
   Kokkos::TeamPolicy<> policy(DevExeSpace(), nmnv, Kokkos::AUTO);
-  Kokkos::parallel_for("ProlCC", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
+  BvalsTeamFor("ProlCC", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
     const int m = (tmember.league_rank())/(nnghbr*nvar);
     const int n = (tmember.league_rank() - m*(nnghbr*nvar))/nvar;
     const int v = (tmember.league_rank() - m*(nnghbr*nvar) - n*nvar);
@@ -256,13 +256,13 @@ void MeshBoundaryValuesFC::FillCoarseInBndryFC(DvceFaceFld4D<Real> &b,
 
   if (multi_d) {
     int nmnv = 3*nmb*nnghbr;
-    auto &rbuf = recvbuf;
+    auto rbuf = RecvBufDv();
     auto &cis = indcs.cis;
     auto &cjs = indcs.cjs;
     auto &cks = indcs.cks;
     // Outer loop over (# of MeshBlocks)*(# of buffers)*(# of variables)
     Kokkos::TeamPolicy<> policy(DevExeSpace(), nmnv, Kokkos::AUTO);
-    Kokkos::parallel_for("ProlFCSame", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
+    BvalsTeamFor("ProlFCSame", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
       const int m = (tmember.league_rank())/(3*nnghbr);
       const int n = (tmember.league_rank() - m*(3*nnghbr))/3;
       const int v = (tmember.league_rank() - m*(3*nnghbr) - 3*n);
@@ -395,9 +395,9 @@ void MeshBoundaryValuesFC::ProlongateFC(DvceFaceFld4D<Real> &b, DvceFaceFld4D<Re
 
   // Outer loop over (# of MeshBlocks)*(# of buffers)*(three field components)
   {int nmnv = 3*nmb*nnghbr;
-  auto &rbuf = recvbuf;
+  auto rbuf = RecvBufDv();
   Kokkos::TeamPolicy<> policy(DevExeSpace(), nmnv, Kokkos::AUTO);
-  Kokkos::parallel_for("ProFC-2d-shared", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
+  BvalsTeamFor("ProFC-2d-shared", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
     const int m = (tmember.league_rank())/(3*nnghbr);
     const int n = (tmember.league_rank() - m*(3*nnghbr))/3;
     const int v = (tmember.league_rank() - m*(3*nnghbr) - 3*n);
@@ -464,9 +464,9 @@ void MeshBoundaryValuesFC::ProlongateFC(DvceFaceFld4D<Real> &b, DvceFaceFld4D<Re
   // Outer loop over (# of MeshBlocks)*(# of buffers)
   {int nmn = nmb*nnghbr;
   bool &one_d = pmy_pack->pmesh->one_d;
-  auto &rbuf = recvbuf;
+  auto rbuf = RecvBufDv();
   Kokkos::TeamPolicy<> policy(DevExeSpace(), nmn, Kokkos::AUTO);
-  Kokkos::parallel_for("ProFC-2d-int", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
+  BvalsTeamFor("ProFC-2d-int", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
     const int m = (tmember.league_rank())/(nnghbr);
     const int n = (tmember.league_rank() - m*(nnghbr));
 

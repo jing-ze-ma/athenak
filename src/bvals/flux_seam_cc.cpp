@@ -159,10 +159,10 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendFluxSeamCC(DvceFaceFld5D<Real> &flx)
   auto &mbpanel = pmy_pack->pmb->mb_panel;
   auto &mbsize = pmy_pack->pmb->mb_size;
   auto &cs_indcs = pmy_pack->pmesh->mb_indcs;
-  auto &rbuf = recvbuf;
+  auto rbuf = RecvBufDv();
 
   Kokkos::TeamPolicy<> policy(DevExeSpace(), (nmb*nnghbr*nvar), Kokkos::AUTO);
-  Kokkos::parallel_for("SeamFluxSendLocal", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
+  BvalsTeamFor("SeamFluxSendLocal", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
     const int m = (tmember.league_rank())/(nnghbr*nvar);
     const int n = (tmember.league_rank() - m*(nnghbr*nvar))/nvar;
     const int v = (tmember.league_rank() - m*(nnghbr*nvar) - n*nvar);
@@ -259,8 +259,8 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendFluxSeamCC(DvceFaceFld5D<Real> &flx)
   // alone is clean (0 of 20), including the version that keeps writing across blocks --
   // so it is the captured state, not the cross-block write. Same lesson as the gnomonic
   // trig POD: give a kernel only what it uses.
-  auto &sbuf = sendbuf;
-  Kokkos::parallel_for("SeamFluxSendMPI", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
+  auto sbuf = SendBufDv();
+  BvalsTeamFor("SeamFluxSendMPI", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
     const int m = (tmember.league_rank())/(nnghbr*nvar);
     const int n = (tmember.league_rank() - m*(nnghbr*nvar))/nvar;
     const int v = (tmember.league_rank() - m*(nnghbr*nvar) - n*nvar);
@@ -348,7 +348,9 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendFluxSeamCC(DvceFaceFld5D<Real> &flx)
 #endif
 
 #if MPI_PARALLEL_ENABLED
-  Kokkos::fence();
+  // fence only before the first MPI_Isend: an exchange with no off-rank neighbour
+  // (1 rank) has nothing to wait for -- the unpack kernel is on the same stream.
+  bool fenced_ = false;
   bool no_errors=true;
   auto &nghbr_h = pmy_pack->pmb->nghbr;
   auto &mbpanel_h = pmy_pack->pmb->mb_panel;
@@ -365,6 +367,10 @@ TaskStatus MeshBoundaryValuesCC::PackAndSendFluxSeamCC(DvceFaceFld5D<Real> &flx)
         int dn = nghbr_h.h_view(m,n).dest;
         int drank = nghbr_h.h_view(m,n).rank;
         if (drank != my_rank) {
+          if (!fenced_) {
+            Kokkos::fence();
+            fenced_ = true;
+          }
           int lid = nghbr_h.h_view(m,n).gid - pmy_pack->pmesh->gids_eachrank[drank];
           int tag = CreateBvals_MPI_Tag(lid, dn);
           int data_size = nvar*(sendbuf[n].iflxs_ndat);
@@ -399,7 +405,7 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackFluxSeamCC(DvceFaceFld5D<Real> &fl
   int nnghbr = pmy_pack->pmb->nnghbr;
   auto &nghbr = pmy_pack->pmb->nghbr;
   auto &mbpanel = pmy_pack->pmb->mb_panel;
-  auto &rbuf = recvbuf;
+  auto rbuf = RecvBufDv();
   auto &cs_indcs = pmy_pack->pmesh->mb_indcs;
 
 #if MPI_PARALLEL_ENABLED
@@ -414,7 +420,7 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackFluxSeamCC(DvceFaceFld5D<Real> &fl
           (nghbr.h_view(m,n).panel != mbpanel.h_view(m)) &&
           (nghbr.h_view(m,n).rank != global_variable::my_rank)) {
         int test;
-        int ierr = MPI_Test(&(rbuf[n].flux_req[m]), &test, MPI_STATUS_IGNORE);
+        int ierr = MPI_Test(&(recvbuf[n].flux_req[m]), &test, MPI_STATUS_IGNORE);
         if (ierr != MPI_SUCCESS) {no_errors=false;}
         if (!(static_cast<bool>(test))) {bflag = true;}
       }
@@ -430,7 +436,7 @@ TaskStatus MeshBoundaryValuesCC::RecvAndUnpackFluxSeamCC(DvceFaceFld5D<Real> &fl
 
   int nvar = flx.x1f.extent_int(1);
   Kokkos::TeamPolicy<> policy(DevExeSpace(), (nmb*nnghbr*nvar), Kokkos::AUTO);
-  Kokkos::parallel_for("SeamFluxRecv", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
+  BvalsTeamFor("SeamFluxRecv", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
     const int m = (tmember.league_rank())/(nnghbr*nvar);
     const int n = (tmember.league_rank() - m*(nnghbr*nvar))/nvar;
     const int v = (tmember.league_rank() - m*(nnghbr*nvar) - n*nvar);

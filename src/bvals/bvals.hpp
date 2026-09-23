@@ -145,6 +145,7 @@ static int CreateBvals_MPI_Tag(int lid, int bufid) {
 
 struct MeshBufferIndcs {
   int bis,bie,bjs,bje,bks,bke;  // start/end buffer ("b") indices in each dir
+  KOKKOS_INLINE_FUNCTION
   MeshBufferIndcs() :
     bis(0), bie(0), bjs(0), bje(0), bks(0), bke(0) {}
 };
@@ -195,6 +196,62 @@ struct MeshBoundaryBuffer {
   }
 };
 
+//----------------------------------------------------------------------------------------
+//! \struct MeshBufferData
+//! \brief raw (pointer, row stride) handle on one (nmb, ndata) LayoutRight buffer View.
+//! (m,i) is the element the View's own (m,i) addresses, so reads and writes through
+//! it are bit-for-bit those of the View.
+
+struct MeshBufferData {
+  Real *ptr = nullptr;
+  size_t s0 = 0;
+  KOKKOS_INLINE_FUNCTION
+  Real &operator()(const int m, const int i) const {
+    return ptr[static_cast<size_t>(m)*s0 + static_cast<size_t>(i)];
+  }
+};
+
+//----------------------------------------------------------------------------------------
+//! \struct MeshBufferDv
+//! \brief DEVICE image of one MeshBoundaryBuffer: every index range and size a kernel
+//! reads, and (pointer, stride) handles on its vars/flux Views.
+//!
+//! WHY: the 56-element host arrays sendbuf/recvbuf are ~31.5 kB EACH (19 index triples,
+//! 2 Views and 2 pointers per element).  A kernel that captured them by value (every
+//! pack/unpack, flux-correction and prolongation kernel) carried a 32-64 kB functor, over
+//! Kokkos HIP's 32 kB constant-memory limit, so each launch went through
+//! hip_parallel_launch_global_memory, whose functor staging begins with a
+//! hipStreamSynchronize (kokkos/core/src/HIP/Kokkos_HIP_Instance.cpp, l. 322): one full
+//! host-device sync per halo pack and per unpack.  Kernels now capture ONE View of these
+//! (MeshBoundaryValues::SendBufDv/RecvBufDv) and launch through BvalsTeamFor below; the
+//! arithmetic and every address are unchanged.
+
+struct MeshBufferDv {
+  MeshBufferIndcs isame[3], icoar[3], ifine[3], iprol[3], iflux_same[3], iflux_coar[3];
+  MeshBufferIndcs isame_z4c;
+  int isame_ndat, isame_z4c_ndat, icoar_ndat, ifine_ndat, iflxs_ndat, iflxc_ndat;
+  MeshBufferData vars, flux;
+};
+
+//----------------------------------------------------------------------------------------
+//! \fn void BvalsTeamFor(name, policy, functor)
+//! \brief launch a boundary-value team kernel with the functor passed as a KERNEL
+//! ARGUMENT (Kokkos HintLightWeight: local-memory launch for a driver < 4 kB), i.e. with
+//! no host synchronisation at all.  The default mechanism for a 0.5-32 kB functor is the
+//! constant-memory path, which waits on the previous constant-memory launch
+//! (hip_event_synchronize on constantMemReusable) -- another hidden host stall.  The
+//! static_assert keeps a functor that has grown from silently falling back to the
+//! global-memory (hipStreamSynchronize) path, which HintLightWeight selects above 4 kB.
+
+template <class F>
+inline void BvalsTeamFor(const char *name, const Kokkos::TeamPolicy<> &policy,
+                         const F &functor) {
+  static_assert(sizeof(F) <= 3072, "boundary kernel functor too large for a kernel-"
+                "argument launch: capture Views, not host structs (see bvals.hpp)");
+  Kokkos::parallel_for(name, Kokkos::Experimental::require(policy,
+                       Kokkos::Experimental::WorkItemProperty::HintLightWeight), functor);
+}
+
 // Forward declarations
 class MeshBlockPack;
 
@@ -211,6 +268,23 @@ class MeshBoundaryValues {
   // However each MeshBoundaryBuffer is lightweight, so the convenience of fixed array
   // sizes and index values for array elements outweighs cost of extra memory.
   MeshBoundaryBuffer sendbuf[56], recvbuf[56];
+
+  // device images of sendbuf/recvbuf for kernels (see MeshBufferDv).  Rebuilt by
+  // SyncBufferDv() at the end of InitializeBuffers(), and again whenever an accessor sees
+  // that a buffer View has been reallocated since.
+  DvceArray1D<MeshBufferDv> SendBufDv() {
+    if (BufferDvStale()) {
+      SyncBufferDv();
+    }
+    return sbuf_dv_;
+  }
+  DvceArray1D<MeshBufferDv> RecvBufDv() {
+    if (BufferDvStale()) {
+      SyncBufferDv();
+    }
+    return rbuf_dv_;
+  }
+  void SyncBufferDv();
 
   // constant inflow states at each face, initialized in problem generator
   DualArray2D<Real> u_in, b_in, i_in;
@@ -246,6 +320,11 @@ class MeshBoundaryValues {
   // many types (Hydro, MHD, Radiation, Z4c, etc.)
   MeshBlockPack* pmy_pack;
   bool is_z4c_;   // flag to denote if this BoundaryValues is for Z4c module
+
+ private:
+  DvceArray1D<MeshBufferDv> sbuf_dv_, rbuf_dv_;
+  const Real *dv_ptr_[4][56] = {};   // vars/flux data pointers the images were built from
+  bool BufferDvStale() const;
 
  public:
   // skip_x2x3_diag (default false): drop every DIAGONAL transverse buffer -- the x2x3

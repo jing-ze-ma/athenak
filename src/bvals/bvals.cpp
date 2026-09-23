@@ -218,7 +218,72 @@ void MeshBoundaryValues::InitializeBuffers(const int nvar) {
     }
   }
 
+  SyncBufferDv();
   return;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void MeshBoundaryValues::SyncBufferDv
+//! \brief copy the index ranges, sizes and buffer (pointer, stride) handles of all 56
+//! send and recv buffers into the device images the kernels capture (see MeshBufferDv).
+
+void MeshBoundaryValues::SyncBufferDv() {
+  if (!sbuf_dv_.is_allocated()) {
+    sbuf_dv_ = DvceArray1D<MeshBufferDv>("sbuf_dv", 56);
+    rbuf_dv_ = DvceArray1D<MeshBufferDv>("rbuf_dv", 56);
+  }
+  auto hs = Kokkos::create_mirror_view(sbuf_dv_);
+  auto hr = Kokkos::create_mirror_view(rbuf_dv_);
+  for (int side=0; side<2; ++side) {
+    MeshBoundaryBuffer *b = (side == 0) ? sendbuf : recvbuf;
+    auto &h = (side == 0) ? hs : hr;
+    for (int n=0; n<56; ++n) {
+      MeshBufferDv d;
+      for (int c=0; c<3; ++c) {
+        d.isame[c] = b[n].isame[c];
+        d.icoar[c] = b[n].icoar[c];
+        d.ifine[c] = b[n].ifine[c];
+        d.iprol[c] = b[n].iprol[c];
+        d.iflux_same[c] = b[n].iflux_same[c];
+        d.iflux_coar[c] = b[n].iflux_coar[c];
+      }
+      d.isame_z4c = b[n].isame_z4c;
+      d.isame_ndat = b[n].isame_ndat;
+      d.isame_z4c_ndat = b[n].isame_z4c_ndat;
+      d.icoar_ndat = b[n].icoar_ndat;
+      d.ifine_ndat = b[n].ifine_ndat;
+      d.iflxs_ndat = b[n].iflxs_ndat;
+      d.iflxc_ndat = b[n].iflxc_ndat;
+      d.vars.ptr = b[n].vars.data();
+      d.vars.s0 = (b[n].vars.is_allocated()) ? b[n].vars.stride(0) : 0;
+      d.flux.ptr = b[n].flux.data();
+      d.flux.s0 = (b[n].flux.is_allocated()) ? b[n].flux.stride(0) : 0;
+      h(n) = d;
+      dv_ptr_[2*side][n] = b[n].vars.data();
+      dv_ptr_[2*side+1][n] = b[n].flux.data();
+    }
+  }
+  Kokkos::deep_copy(sbuf_dv_, hs);
+  Kokkos::deep_copy(rbuf_dv_, hr);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn bool MeshBoundaryValues::BufferDvStale
+//! \brief true when the device images are missing or any buffer View has been
+//! reallocated since they were built (a host-side pointer compare, no device access).
+
+bool MeshBoundaryValues::BufferDvStale() const {
+  if (!sbuf_dv_.is_allocated()) {
+    return true;
+  }
+  for (int n=0; n<56; ++n) {
+    if (dv_ptr_[0][n] != sendbuf[n].vars.data() || dv_ptr_[1][n] != sendbuf[n].flux.data()
+        || dv_ptr_[2][n] != recvbuf[n].vars.data()
+        || dv_ptr_[3][n] != recvbuf[n].flux.data()) {
+      return true;
+    }
+  }
+  return false;
 }
 
 //----------------------------------------------------------------------------------------

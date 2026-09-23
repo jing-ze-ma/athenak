@@ -261,13 +261,13 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
   auto cs_gtbl = cs_seam_geom;
   auto cs_stbl = cs_seam_stnc;
   auto cs_sltb = cs_seam_slot;
-  auto &sbuf = sendbuf;
-  auto &rbuf = recvbuf;
+  auto sbuf = SendBufDv();
+  auto rbuf = RecvBufDv();
 
   // Outer loop over (# of MeshBlocks)*(# of buffers)*(three field components)
   int nmnv = 3*nmb;
   Kokkos::TeamPolicy<> policy(DevExeSpace(), nmnv, Kokkos::AUTO);
-  Kokkos::parallel_for("SendBuff", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
+  BvalsTeamFor("SendBuff", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
     const int m = tmember.league_rank()/3;
     const int v = tmember.league_rank()%3;
 
@@ -954,7 +954,9 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
 
 #if MPI_PARALLEL_ENABLED
   // Send boundary buffer to neighboring MeshBlocks using MPI
-  Kokkos::fence();
+  // fence only before the first MPI_Isend: an exchange with no off-rank neighbour
+  // (1 rank) has nothing to wait for -- the unpack kernel is on the same stream.
+  bool fenced_ = false;
   int my_rank = global_variable::my_rank;
   auto &nghbr = pmy_pack->pmb->nghbr;
   auto &mbpanel = pmy_pack->pmb->mb_panel;
@@ -970,6 +972,10 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFC(DvceFaceFld4D<Real> &b,
         int dn = nghbr.h_view(m,n).dest;
         int drank = nghbr.h_view(m,n).rank;
         if (drank != my_rank) {
+          if (!fenced_) {
+            Kokkos::fence();
+            fenced_ = true;
+          }
           // create tag using local ID and buffer index of *receiving* MeshBlock
           int lid = nghbr.h_view(m,n).gid - pmy_pack->pmesh->gids_eachrank[drank];
           int tag = CreateBvals_MPI_Tag(lid, dn);
@@ -1216,7 +1222,7 @@ TaskStatus MeshBoundaryValuesFC::RecvAndUnpackFC(DvceFaceFld4D<Real> &b,
   int nmb = pmy_pack->nmb_thispack;
   int nnghbr = pmy_pack->pmb->nnghbr;
   auto &nghbr = pmy_pack->pmb->nghbr;
-  auto &rbuf = recvbuf;
+  auto rbuf = RecvBufDv();
   auto &mbpanel = pmy_pack->pmb->mb_panel;
   const bool use_cs = pmy_pack->pmesh->use_cubed_sphere;
   const bool ml_ = pmy_pack->pmesh->multilevel;
@@ -1238,7 +1244,7 @@ TaskStatus MeshBoundaryValuesFC::RecvAndUnpackFC(DvceFaceFld4D<Real> &b,
           !(use_cs && IsCubeVertexCorner(nghbr.h_view, mbpanel.h_view, m, n))) {
         if (nghbr.h_view(m,n).rank != global_variable::my_rank) {
           int test;
-          int ierr = MPI_Test(&(rbuf[n].vars_req[m]), &test, MPI_STATUS_IGNORE);
+          int ierr = MPI_Test(&(recvbuf[n].vars_req[m]), &test, MPI_STATUS_IGNORE);
           if (ierr != MPI_SUCCESS) {no_errors=false;}
           if (!(static_cast<bool>(test))) {
             bflag = true;
@@ -1262,7 +1268,7 @@ TaskStatus MeshBoundaryValuesFC::RecvAndUnpackFC(DvceFaceFld4D<Real> &b,
 
   // Outer loop over (# of MeshBlocks)*(# of buffers)*(three field components)
   Kokkos::TeamPolicy<> policy(DevExeSpace(), (3*nmb), Kokkos::AUTO);
-  Kokkos::parallel_for("RecvBuff", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
+  BvalsTeamFor("RecvBuff", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
     const int m = tmember.league_rank()/3;
     const int v = tmember.league_rank()%3;
 

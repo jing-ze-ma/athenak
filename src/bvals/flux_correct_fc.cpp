@@ -99,8 +99,8 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFluxFC(DvceEdgeFld4D<Real> &flx) {
   auto dxe1_ = pmy_pack->pcoord->dxedge.x1e;
   auto dxe2_ = pmy_pack->pcoord->dxedge.x2e;
   auto dxe3_ = pmy_pack->pcoord->dxedge.x3e;
-  auto &sbuf = sendbuf;
-  auto &rbuf = recvbuf;
+  auto sbuf = SendBufDv();
+  auto rbuf = RecvBufDv();
   auto &one_d = pmy_pack->pmesh->one_d;
   auto &two_d = pmy_pack->pmesh->two_d;
   auto &mbpanel = pmy_pack->pmb->mb_panel;
@@ -108,7 +108,7 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFluxFC(DvceEdgeFld4D<Real> &flx) {
 
   // Outer loop over (# of MeshBlocks)*(# of neighbors)*(3 field components)
   Kokkos::TeamPolicy<> policy(DevExeSpace(), (3*nmb*nnghbr), Kokkos::AUTO);
-  Kokkos::parallel_for("RecvBuff", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
+  BvalsTeamFor("RecvBuff", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
     const int m = (tmember.league_rank())/(3*nnghbr);
     const int n = (tmember.league_rank() - m*(3*nnghbr))/3;
     const int v = (tmember.league_rank() - m*(3*nnghbr) - 3*n);
@@ -504,7 +504,9 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFluxFC(DvceEdgeFld4D<Real> &flx) {
 #if MPI_PARALLEL_ENABLED
   // Send boundary buffer to neighboring MeshBlocks using MPI
   // Sends only occur to neighbors on FACES and EDGES at COARSER or SAME level
-  Kokkos::fence();
+  // fence only before the first MPI_Isend: an exchange with no off-rank neighbour
+  // (1 rank) has nothing to wait for -- the unpack kernel is on the same stream.
+  bool fenced_ = false;
   bool no_errors=true;
   for (int m=0; m<nmb; ++m) {
     for (int n=0; n<nnghbr; ++n) {
@@ -518,6 +520,10 @@ TaskStatus MeshBoundaryValuesFC::PackAndSendFluxFC(DvceEdgeFld4D<Real> &flx) {
         int drank = nghbr.h_view(m,n).rank;
 
         if (drank != my_rank) {
+          if (!fenced_) {
+            Kokkos::fence();
+            fenced_ = true;
+          }
           // create tag using local ID and buffer index of *receiving* MeshBlock
           int lid = nghbr.h_view(m,n).gid - pmy_pack->pmesh->gids_eachrank[drank];
           int tag = CreateBvals_MPI_Tag(lid, dn);
@@ -560,7 +566,7 @@ TaskStatus MeshBoundaryValuesFC::RecvAndUnpackFluxFC(DvceEdgeFld4D<Real> &flx) {
 #if MPI_PARALLEL_ENABLED
   int nnghbr = pmy_pack->pmb->nnghbr;
   auto &nghbr = pmy_pack->pmb->nghbr;
-  auto &rbuf = recvbuf;
+  auto rbuf = RecvBufDv();
   auto &mblev = pmy_pack->pmb->mb_lev;
   //----- STEP 1: check that recv boundary buffer communications have all completed
   // receives only occur for neighbors on faces and edges at FINER or SAME level
@@ -574,7 +580,7 @@ TaskStatus MeshBoundaryValuesFC::RecvAndUnpackFluxFC(DvceEdgeFld4D<Real> &flx) {
            (n<48) ) {
         if (nghbr.h_view(m,n).rank != global_variable::my_rank) {
           int test;
-          int ierr = MPI_Test(&(rbuf[n].flux_req[m]), &test, MPI_STATUS_IGNORE);
+          int ierr = MPI_Test(&(recvbuf[n].flux_req[m]), &test, MPI_STATUS_IGNORE);
           if (ierr != MPI_SUCCESS) {no_errors=false;}
           if (!(static_cast<bool>(test))) {
             bflag = true;
@@ -696,7 +702,7 @@ void MeshBoundaryValuesFC::AveragePanelCornerEMF(DvceEdgeFld4D<Real> &flx,
   auto &nghbr = pmy_pack->pmb->nghbr;
   auto &mblev = pmy_pack->pmb->mb_lev;
   auto &mbpanel = pmy_pack->pmb->mb_panel;
-  auto &rbuf = recvbuf;
+  auto rbuf = RecvBufDv();
   auto e1 = flx.x1e;
   auto sv = save;
 
@@ -734,7 +740,7 @@ void MeshBoundaryValuesFC::SumBoundaryFluxes(DvceEdgeFld4D<Real> &flx,
   int nmb = pmy_pack->nmb_thispack;
   int nnghbr = pmy_pack->pmb->nnghbr;
   auto &nghbr = pmy_pack->pmb->nghbr;
-  auto &rbuf = recvbuf;
+  auto rbuf = RecvBufDv();
   auto &mblev = pmy_pack->pmb->mb_lev;
   auto &mbbcs = pmy_pack->pmb->mb_bcs;
   auto &mbpanel = pmy_pack->pmb->mb_panel;
@@ -753,7 +759,7 @@ void MeshBoundaryValuesFC::SumBoundaryFluxes(DvceEdgeFld4D<Real> &flx,
   // Sum recieve buffers into EMFs stored on MeshBlocks
   // Outer loop over (# of MeshBlocks)*(3 field components)
   Kokkos::TeamPolicy<> policy(DevExeSpace(), (3*nmb), Kokkos::AUTO);
-  Kokkos::parallel_for("RecvBuff", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
+  BvalsTeamFor("RecvBuff", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
     const int m = tmember.league_rank()/3;
     const int v = tmember.league_rank()%3;
 
@@ -967,12 +973,12 @@ void MeshBoundaryValuesFC::ZeroFluxesAtBoundaryWithFiner(DvceEdgeFld4D<Real> &fl
   int nmb = pmy_pack->nmb_thispack;
   int nnghbr = pmy_pack->pmb->nnghbr;
   auto &nghbr = pmy_pack->pmb->nghbr;
-  auto &rbuf = recvbuf;
+  auto rbuf = RecvBufDv();
   auto &mblev = pmy_pack->pmb->mb_lev;
 
   // Outer loop over (# of MeshBlocks)*(# of neighbors)*(3 field components)
   Kokkos::TeamPolicy<> policy(DevExeSpace(), (3*nmb*nnghbr), Kokkos::AUTO);
-  Kokkos::parallel_for("RecvBuff", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
+  BvalsTeamFor("RecvBuff", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
     const int m = (tmember.league_rank())/(3*nnghbr);
     const int n = (tmember.league_rank() - m*(3*nnghbr))/3;
     const int v = (tmember.league_rank() - m*(3*nnghbr) - 3*n);
@@ -1113,7 +1119,7 @@ void MeshBoundaryValuesFC::AverageBoundaryFluxes(DvceEdgeFld4D<Real> &flx,
   int nmb = pmy_pack->nmb_thispack;
   int nnghbr = pmy_pack->pmb->nnghbr;
   auto &nghbr = pmy_pack->pmb->nghbr;
-  auto &rbuf = recvbuf;
+  auto rbuf = RecvBufDv();
   auto &mblev = pmy_pack->pmb->mb_lev;
   auto &mbbcs = pmy_pack->pmb->mb_bcs;
   bool &multi_d = pmy_pack->pmesh->multi_d;
@@ -1121,7 +1127,7 @@ void MeshBoundaryValuesFC::AverageBoundaryFluxes(DvceEdgeFld4D<Real> &flx,
 
   // Outer loop over (# of MeshBlocks)*(# of neighbors)*(3 field components)
   Kokkos::TeamPolicy<> policy(DevExeSpace(), (3*nmb*nnghbr), Kokkos::AUTO);
-  Kokkos::parallel_for("RecvBuff", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
+  BvalsTeamFor("RecvBuff", policy, KOKKOS_LAMBDA(TeamMember_t tmember) {
     const int m = (tmember.league_rank())/(3*nnghbr);
     const int n = (tmember.league_rank() - m*(3*nnghbr))/3;
     const int v = (tmember.league_rank() - m*(3*nnghbr) - 3*n);
