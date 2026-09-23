@@ -405,6 +405,32 @@ class RadiationM1 {
                                 // (3, the DEFAULT), 2 = 1 plus alpha kept on the device
                                 // (2 on 1 rank)
   Kokkos::View<Real, DevMemSpace> bcg_rvd;  // rhat.v on the device (sync level 2)
+  // ---- GPU cost of the Krylov iteration (bench/m1_fast_0923).  Every key defaults OFF;
+  // off, nothing below is allocated or referenced and the path is bitwise HEAD.
+  bool impl_halo_direct;        // <rad_m1>/implicit_halo_direct: fill the ghost zones of
+                                // the implicit exchanges by ONE on-rank copy kernel
+  bool halo_direct_on;          // ...and the mesh allows it (same level, all neighbours
+                                // on this rank on EVERY rank, no seam/pole)
+  DualArray2D<int> hd_src;      // (m, 27 directions): local source MeshBlock or -1
+  bool impl_odc;                // <rad_m1>/implicit_od_cache: the off-diagonal Eddington
+                                // operator from a per-cell cache of sum_e d_e P_de, and
+                                // ONE fused 7-point + off-diagonal kernel (bitwise)
+  DvceArray5D<Real> odc;        // (m,3,k,j,i) that cache
+  bool impl_stencil;            // <rad_m1>/implicit_op_stencil: the operator of each
+                                // Picard pass as a 19-point stencil, built once
+  DvceArray5D<Real> ost;        // (m,19,k,j,i) that stencil
+  bool st_edges;                // ...and whether any edge coefficient is non-zero
+  bool impl_prec_float;         // <rad_m1>/implicit_precond_float: the fast path's
+                                // line solves in float
+  int impl_kfuse;               // <rad_m1>/implicit_krylov_fuse: 1 = the preconditioner
+                                // reads/writes the Krylov vectors directly and carries
+                                // the p / s updates (bitwise); 2 = 1 plus the (rhat,v)
+                                // and (t,s),(t,t) reductions inside the operator kernel;
+                                // 3 = 2 with two blocking reductions per iteration
+  int impl_prec;                // <rad_m1>/implicit_precond: 0 = x1 line Jacobi (the
+                                // original), 1 = symmetric red-black transverse line
+                                // Gauss-Seidel, block-local (no communication), 2 = its
+                                // forward half (red, black)
   // ---- the Picard pass count (bench/m1_picard_0923).  Since bench/m1_defaults_0923
   // lres_test = false, conv_est = true and lin_ew_max = 1e-2 (not predictor) are the
   // DEFAULTS for closure = eddington | vet_sc | tau (the OFF settings stay the defaults
@@ -638,6 +664,29 @@ class RadiationM1 {
   //! implicit_line_solver = pcr: the same line solve by parallel cyclic reduction,
   //! one Kokkos team per x1 column (GPU)
   void ImplicitPCRSolve();
+  //! implicit_krylov_fuse: the pcr line solve with the right-hand side read from `rc`
+  //! (upd = 0), or made on the fly as the BiCGStab p (upd = 1) / s (upd = 2) update,
+  //! and the answer written to `zc`.  `col` >= 0 solves only the columns of that
+  //! red-black colour (implicit_precond = rbgs); `sub` >= 0 then subtracts the
+  //! transverse 5-point coupling to component `sub` from the right-hand side.
+  void ImplicitPCRSolveX(int rc, int zc, int upd, Real c1, Real c2, int col, int sub);
+  //! implicit_od_cache: fill odc with sum_{e!=d} d_e P_de(x) of component xc
+  void ImplicitODCache(int xc);
+  //! the preconditioner of the fast path: z = M^{-1} r (see implicit_precond)
+  void ImplicitPrecondX(int rc, int zc, int upd, Real c1, Real c2);
+  //! implicit_od_cache: y += sgn L_off(x) (with7 = false) or y = A x (with7 = true) from
+  //! the cache; red > 0 also returns reductions in out[4] (see the definition)
+  void ImplicitOffDiagOpC(int xc, int yc, Real sgn, bool with7, int red, Real *out);
+  //! implicit_krylov_fuse = 3: BiCGStab with TWO blocking reductions per iteration
+  int ImplicitBiCGStabTwo(Real rhsmax);
+  //! implicit_halo_direct: the neighbour table, and the one-kernel ghost fill
+  void ImplicitHaloDirectInit();
+  //! implicit_op_stencil: build the 19-point operator of the pass / apply it
+  void ImplicitStencilBuild();
+  void ImplicitStencilOp(int xc, int yc, int red, Real *out);
+  //! the fast-path operator product: stencil or od cache
+  void ImplicitOpX(int xc, int yc, int red, Real *out);
+  void ImplicitHaloDirect(int nq, int c0);
   //! the Thomas / cyclic-Thomas sweep (implicit_line_solver = thomas)
   void ImplicitThomasSolve();
   //! milestone 3b phase C: exchange ONE component of iw with all six neighbours

@@ -51,6 +51,7 @@
 #include "globals.hpp"
 #include "parameter_input.hpp"
 #include "mesh/mesh.hpp"
+#include "mesh/nghbr_index.hpp"
 #include "driver/driver.hpp"
 #include "eos/eos.hpp"
 #include "hydro/hydro.hpp"
@@ -233,6 +234,68 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   }
   if (impl_bcg_sync == 2) {
     bcg_rvd = Kokkos::View<Real, DevMemSpace>("m1_bcg_rvd");
+  }
+  // GPU COST OF THE KRYLOV ITERATION (bench/m1_fast_0923).  All OFF by default, and
+  // off nothing is allocated or called: the default path is bitwise HEAD.
+  //  implicit_halo_direct = true   the implicit exchanges as ONE on-rank copy kernel
+  //    when every neighbour of every block is on its own rank at the same level
+  //    (otherwise the ordinary exchange, as before).  Bitwise.
+  //  implicit_od_cache = true      the off-diagonal Eddington operator from a per-cell
+  //    cache of sum_e d_e P_de, fused with the 7-point row into one kernel.  Bitwise.
+  //  implicit_krylov_fuse = 1      the pcr preconditioner reads and writes the Krylov
+  //    vectors itself and carries the p / s updates (bitwise); = 2 also puts the
+  //    (rhat,v) and (t,s),(t,t) reductions in the operator kernel (round-off: the sums
+  //    are ordered differently).  Needs implicit_bcg_sync = 1, implicit_line_solver =
+  //    pcr, one block along x1; 2 needs implicit_od_cache.  3 = 2 with TWO blocking
+  //    reductions per iteration (ImplicitBiCGStabTwo; round-off).
+  //  implicit_op_stencil = true    the frozen operator of each Picard pass written out
+  //    once as a 19-point stencil (7-point row + off-diagonal Eddington terms), applied
+  //    by one kernel per Krylov product (round-off: the terms are grouped differently).
+  //    Needs implicit_bcg_sync = 1; not with a periodic x1 wrap.
+  //  implicit_precond_float = true  the line solves of the fused path's preconditioner
+  //    in float (the operator, the vectors and every reduction stay double: a
+  //    preconditioner only sets the convergence rate).  Needs implicit_krylov_fuse >= 1.
+  //  implicit_precond = line | rbgs | rbgs_fwd   the preconditioner of the fused path:
+  //    x1 line Jacobi (the original), symmetric / forward red-black transverse line
+  //    Gauss-Seidel, block-local (ImplicitPrecondX).  Needs implicit_krylov_fuse >= 1.
+  impl_halo_direct = pin->GetOrAddBoolean("rad_m1","implicit_halo_direct",false);
+  impl_odc = pin->GetOrAddBoolean("rad_m1","implicit_od_cache",false);
+  impl_kfuse = pin->GetOrAddInteger("rad_m1","implicit_krylov_fuse",0);
+  impl_stencil = pin->GetOrAddBoolean("rad_m1","implicit_op_stencil",false);
+  impl_prec_float = pin->GetOrAddBoolean("rad_m1","implicit_precond_float",false);
+  if (impl_stencil && impl_bcg_sync != 1) {
+    ImplFatal("<rad_m1>/implicit_op_stencil needs implicit_bcg_sync = 1");
+  }
+  {std::string pc = pin->GetOrAddString("rad_m1","implicit_precond","line");
+  if (pc.compare("line") == 0) {
+    impl_prec = 0;
+  } else if (pc.compare("rbgs") == 0) {
+    impl_prec = 1;
+  } else if (pc.compare("rbgs_fwd") == 0) {
+    impl_prec = 2;
+  } else {
+    ImplFatal("<rad_m1>/implicit_precond = '" + pc
+              + "' is not a choice (line | rbgs | rbgs_fwd)");
+  }
+  }
+  if (impl_kfuse < 0 || impl_kfuse > 3) {
+    ImplFatal("<rad_m1>/implicit_krylov_fuse must be 0, 1, 2 or 3");
+  }
+  if (impl_kfuse == 3 && pin->GetOrAddReal("rad_m1","implicit_lin_cnorm",0.0) > 0.0) {
+    ImplFatal("<rad_m1>/implicit_krylov_fuse = 3 does not take implicit_lin_cnorm");
+  }
+  if (impl_kfuse > 0 && (impl_bcg_sync != 1 || impl_line_solver != 1)) {
+    ImplFatal("<rad_m1>/implicit_krylov_fuse needs implicit_bcg_sync = 1 and "
+              "implicit_line_solver = pcr");
+  }
+  if (impl_kfuse >= 2 && !impl_odc) {
+    ImplFatal("<rad_m1>/implicit_krylov_fuse >= 2 needs implicit_od_cache = true");
+  }
+  if (impl_prec_float && impl_kfuse == 0) {
+    ImplFatal("<rad_m1>/implicit_precond_float needs implicit_krylov_fuse >= 1");
+  }
+  if (impl_prec > 0 && impl_kfuse == 0) {
+    ImplFatal("<rad_m1>/implicit_precond = rbgs needs implicit_krylov_fuse >= 1");
   }
   // the Picard pass count (bench/m1_picard_0923): a per-pass log, off by default
   impl_plog = pin->GetOrAddInteger("rad_m1","implicit_picard_log",0);
@@ -613,6 +676,18 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       Kokkos::realloc(krw_c, nmb, 1, 1, 1, 1);
       pbval_kr = new MeshBoundaryValuesCC(pmy_pack, pin, false);
       pbval_kr->InitializeBuffers(1);
+    }
+    if (impl_halo_direct) {ImplicitHaloDirectInit();}
+    if (impl_odc) {
+      Kokkos::realloc(odc, nmb, 3, ncells3, ncells2, ncells1);
+      Kokkos::deep_copy(odc, 0.0);
+    }
+    if (impl_stencil) {
+      if (ibc_x1min == M1_IBC_PERIODIC) {
+        ImplFatal("<rad_m1>/implicit_op_stencil does not take a periodic x1 wrap");
+      }
+      Kokkos::realloc(ost, nmb, 19, ncells3, ncells2, ncells1);
+      Kokkos::deep_copy(ost, 0.0);
     }
   }
   // MILESTONE 3e: the Anderson histories.  Allocated ONLY when the acceleration is on.
@@ -1001,6 +1076,25 @@ void RadiationM1::ImplicitHaloCopy(DvceArray5D<Real> &sc, int nq, int c0, bool t
   const bool pack_ = topack;
   auto iw_ = iw;
   auto sc_ = sc;
+  if (impl_halo_direct) {
+    // implicit_halo_direct on a mesh whose neighbours are not all on this rank: the
+    // same shell copy with ONE thread per cell (coalesced along i) instead of one per
+    // row -- the row loop runs ~13k threads with strided rows on the 3-D box.
+    par_for("m1_impl_hcpyf", DevExeSpace(), 0, nmb1, 0, nq-1, 0, n3-1, 0, n2-1, 0, n1-1,
+    KOKKOS_LAMBDA(const int m, const int n, const int k, const int j, const int i) {
+      if ((k >= kl_) && (k <= ku_) && (j >= jl_) && (j <= ju_) && (i >= il_) &&
+          (i <= iu_)) {
+        return;
+      }
+      const int nc = (nc0 >= 0) ? nc0 : M1HaloCompT(n);
+      if (pack_) {
+        sc_(m,n,k,j,i) = iw_(m,nc,k,j,i);
+      } else {
+        iw_(m,nc,k,j,i) = sc_(m,n,k,j,i);
+      }
+    });
+    return;
+  }
   par_for("m1_impl_hcpy", DevExeSpace(), 0, nmb1, 0, nq-1, 0, n3-1, 0, n2-1,
   KOKKOS_LAMBDA(const int m, const int n, const int k, const int j) {
     const int nc = (nc0 >= 0) ? nc0 : M1HaloCompT(n);
@@ -1036,6 +1130,10 @@ void RadiationM1::ImplicitHaloCopy(DvceArray5D<Real> &sc, int nq, int c0, bool t
 //! they are used strictly sequentially, so they may share the MPI tag space.
 
 void RadiationM1::ImplicitHaloExchange(int nq, int c0) {
+  if (halo_direct_on) {   // implicit_halo_direct, every neighbour on this rank
+    ImplicitHaloDirect(nq, c0);
+    return;
+  }
   DvceArray5D<Real> *pa, *pc;
   MeshBoundaryValuesCC *pb;
   if (nq == M1_NHALO_T) {
@@ -1927,6 +2025,342 @@ void RadiationM1::ImplicitPCRSolve() {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::ImplicitPCRSolveX
+//! \brief implicit_krylov_fuse >= 1: the pcr line solve of ImplicitPCRSolve, term for
+//! term, with the right-hand side taken from component `rc` of iw (upd = 0) or MADE in
+//! the load phase as the BiCGStab update p = r + c1 (p - c2 v) (upd = 1, written to
+//! M1_IW_KP) or s = r - c1 v (upd = 2, written to M1_IW_KS), and the answer written
+//! straight into component `zc`.  That removes the staging copy into M1_IW_TR, the copy
+//! out of M1_IW_S2 and the separate p / s kernels: 1 launch where there were 3.
+//!
+//! implicit_precond = rbgs: `col` = 0 / 1 solves only the columns (k,j) whose parity
+//! (k-ks)+(j-js) is `col` (one launch per colour, half the teams), and `sub` >= 0
+//! subtracts the transverse 5-point coupling sum_nb C_nb z_nb of component `sub` from
+//! the right-hand side, over the neighbours INSIDE the MeshBlock only (the other colour,
+//! which the previous half-sweep has just written).  col < 0: every column, sub ignored.
+
+namespace {
+//! the kernel of ImplicitPCRSolveX, with the elimination carried in T (Real, or float
+//! under implicit_precond_float: a preconditioner only has to be a FIXED linear map,
+//! so its precision sets the convergence rate, not the converged answer)
+template <typename T>
+void M1PCRX(const DvceArray5D<Real> &iw_, Kokkos::TeamPolicy<DevExeSpace> policy,
+            const int is, const int ie, const int js, const int je, const int ks,
+            const int ke, const int nkj, const int njl, const bool colr, const int cl_,
+            const int cs_, const bool thrd, const bool cyclic, const int cr,
+            const int cz, const int up, const Real a1, const Real a2) {
+  const int nx = ie - is + 1;
+  const int nv = cyclic ? 5 : 4;   // a, b, c, r (+ u) per buffer
+  size_t scr_size = ScrArray1D<T>::shmem_size(2*nv*nx);
+  int nround = 0;
+  while ((1 << nround) < nx) ++nround;
+  Kokkos::parallel_for("m1_impl_pcrx",
+                       policy.set_scratch_size(0, Kokkos::PerTeam(scr_size)),
+  KOKKOS_LAMBDA(TeamMember_t tm) {
+    const int m = tm.league_rank()/nkj;
+    const int kk = (tm.league_rank() - m*nkj)/njl;
+    const int jj = (tm.league_rank() - m*nkj)%njl;
+    const int k = kk + ks;
+    const int j = colr ? (js + 2*jj + ((cl_ + kk) & 1)) : (jj + js);
+    if (j > je) return;   // team-uniform
+    ScrArray1D<T> sw(tm.team_scratch(0), 2*nv*nx);
+    Real alpha = 0.0, beta = 0.0, gam = 1.0;
+    if (cyclic) {
+      alpha = iw_(m,M1_IW_TC,k,j,ie);
+      beta = iw_(m,M1_IW_TA,k,j,is);
+      gam = -iw_(m,M1_IW_TB,k,j,is);
+    }
+    Kokkos::parallel_for(Kokkos::TeamVectorRange(tm, nx), [&](const int i) {
+      const int ii = i + is;
+      Real bd = iw_(m,M1_IW_TB,k,j,ii);
+      if (cyclic) {
+        if (i == 0) bd -= gam;
+        if (i == nx-1) bd -= alpha*beta/gam;
+        sw(4*nx + i) = static_cast<T>((i == 0) ? gam : ((i == nx-1) ? alpha : 0.0));
+      }
+      sw(i) = static_cast<T>((i == 0) ? 0.0 : iw_(m,M1_IW_TA,k,j,ii));
+      sw(nx + i) = static_cast<T>(bd);
+      sw(2*nx + i) = static_cast<T>((i == nx-1) ? 0.0 : iw_(m,M1_IW_TC,k,j,ii));
+      Real rr;
+      if (up == 1) {
+        rr = iw_(m,M1_IW_KR,k,j,ii)
+             + a1*(iw_(m,M1_IW_KP,k,j,ii) - a2*iw_(m,M1_IW_KV,k,j,ii));
+        iw_(m,M1_IW_KP,k,j,ii) = rr;
+      } else if (up == 2) {
+        rr = iw_(m,M1_IW_KR,k,j,ii) - a1*iw_(m,M1_IW_KV,k,j,ii);
+        iw_(m,M1_IW_KS,k,j,ii) = rr;
+      } else {
+        rr = iw_(m,cr,k,j,ii);
+      }
+      if (cs_ >= 0) {
+        if (j > js) rr -= iw_(m,M1_IW_CJM,k,j,ii)*iw_(m,cs_,k,j-1,ii);
+        if (j < je) rr -= iw_(m,M1_IW_CJP,k,j,ii)*iw_(m,cs_,k,j+1,ii);
+        if (thrd) {
+          if (k > ks) rr -= iw_(m,M1_IW_CKM,k,j,ii)*iw_(m,cs_,k-1,j,ii);
+          if (k < ke) rr -= iw_(m,M1_IW_CKP,k,j,ii)*iw_(m,cs_,k+1,j,ii);
+        }
+      }
+      sw(3*nx + i) = static_cast<T>(rr);
+    });
+    tm.team_barrier();
+    int src = 0;
+    for (int rd=0, s=1; rd<nround; ++rd, s*=2) {
+      const int o = src*nv*nx, d = (1-src)*nv*nx;
+      Kokkos::parallel_for(Kokkos::TeamVectorRange(tm, nx), [&](const int i) {
+        const int im = i - s, ip = i + s;
+        T ai = sw(o + i), bi = sw(o + nx + i), ci = sw(o + 2*nx + i);
+        T ri = sw(o + 3*nx + i);
+        T ui = cyclic ? sw(o + 4*nx + i) : static_cast<T>(0.0);
+        T an = 0.0, cn = 0.0;
+        if (im >= 0) {
+          T f = -ai/sw(o + nx + im);
+          an = f*sw(o + im);
+          bi += f*sw(o + 2*nx + im);
+          ri += f*sw(o + 3*nx + im);
+          if (cyclic) ui += f*sw(o + 4*nx + im);
+        }
+        if (ip < nx) {
+          T g = -ci/sw(o + nx + ip);
+          cn = g*sw(o + 2*nx + ip);
+          bi += g*sw(o + ip);
+          ri += g*sw(o + 3*nx + ip);
+          if (cyclic) ui += g*sw(o + 4*nx + ip);
+        }
+        sw(d + i) = an;
+        sw(d + nx + i) = bi;
+        sw(d + 2*nx + i) = cn;
+        sw(d + 3*nx + i) = ri;
+        if (cyclic) sw(d + 4*nx + i) = ui;
+      });
+      tm.team_barrier();
+      src = 1 - src;
+    }
+    const int o = src*nv*nx;
+    if (!cyclic) {
+      Kokkos::parallel_for(Kokkos::TeamVectorRange(tm, nx), [&](const int i) {
+        iw_(m,cz,k,j,i+is) = static_cast<Real>(sw(o + 3*nx + i)/sw(o + nx + i));
+      });
+    } else {
+      T y0 = sw(o + 3*nx)/sw(o + nx);
+      T yn = sw(o + 4*nx - 1)/sw(o + 2*nx - 1);
+      T z0 = sw(o + 4*nx)/sw(o + nx);
+      T zn = sw(o + 5*nx - 1)/sw(o + 2*nx - 1);
+      T bg = static_cast<T>(beta/gam);
+      T fac = (y0 + bg*yn)/(static_cast<T>(1.0) + z0 + bg*zn);
+      Kokkos::parallel_for(Kokkos::TeamVectorRange(tm, nx), [&](const int i) {
+        T bi = sw(o + nx + i);
+        iw_(m,cz,k,j,i+is) = static_cast<Real>(sw(o + 3*nx + i)/bi
+                                               - fac*(sw(o + 4*nx + i)/bi));
+      });
+    }
+  });
+}
+} // namespace
+
+void RadiationM1::ImplicitPCRSolveX(int rc, int zc, int upd, Real c1, Real c2, int col,
+                                    int sub) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie;
+  const int js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb = pmy_pack->nmb_thispack;
+  const int nx = ie - is + 1;
+  const int nj = je - js + 1, nk = ke - ks + 1;
+  const bool colr = (col >= 0);
+  const int njl = colr ? (nj + 1)/2 : nj;   // league columns per (m,k)
+  const int nkj = nk*njl;
+  const int cl_ = colr ? col : 0;
+  const int cs_ = (colr && sub >= 0) ? sub : -1;
+  const bool cyclic = (ibc_x1min == M1_IBC_PERIODIC);
+  Kokkos::TeamPolicy<DevExeSpace> policy;
+  if (!std::is_same<DevExeSpace, Kokkos::DefaultHostExecutionSpace>::value) {
+    int ts = impl_pcr_team;
+    if (ts == 0) {
+      ts = 1;
+      while (ts < nx && ts < 256) ts *= 2;
+    }
+    policy = Kokkos::TeamPolicy<DevExeSpace>(DevExeSpace(), nmb*nkj, ts);
+  } else {
+    policy = Kokkos::TeamPolicy<DevExeSpace>(DevExeSpace(), nmb*nkj, Kokkos::AUTO);
+  }
+  if (impl_prec_float) {
+    M1PCRX<float>(iw, policy, is, ie, js, je, ks, ke, nkj, njl, colr, cl_, cs_,
+                  trans_x3, cyclic, rc, zc, upd, c1, c2);
+  } else {
+    M1PCRX<Real>(iw, policy, is, ie, js, je, ks, ke, nkj, njl, colr, cl_, cs_,
+                 trans_x3, cyclic, rc, zc, upd, c1, c2);
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::ImplicitPrecondX
+//! \brief the preconditioner of the implicit_krylov_fuse path, z = M^{-1} r with r from
+//! `rc` or made by the p / s update `upd` (ImplicitPCRSolveX):
+//!  implicit_precond = line: M = the x1 line part of the row (as ImplicitPrecond);
+//!  implicit_precond = rbgs: ONE symmetric red-black transverse line Gauss-Seidel sweep
+//!    from z = 0 (red, black, red; each colour one line solve of its columns against
+//!    the just-updated other colour), block-local: the x2/x3 couplings across a
+//!    MeshBlock face are left out of M (they stay in the operator), so it needs no
+//!    communication.  M is symmetric positive definite whenever the 5-point part is, and
+//!    stronger than line Jacobi on the transverse coupling (an approximate inverse of
+//!    the whole 5-point-per-line system instead of its x1 part alone).
+//!  implicit_precond = rbgs_fwd: the forward half only (red, black).
+
+void RadiationM1::ImplicitPrecondX(int rc, int zc, int upd, Real c1, Real c2) {
+  if (impl_prec == 0) {
+    ImplicitPCRSolveX(rc, zc, upd, c1, c2, -1, -1);
+    return;
+  }
+  // the right-hand side the third half-sweep re-reads: the update the first one wrote
+  const int rr = (upd == 1) ? M1_IW_KP : ((upd == 2) ? M1_IW_KS : rc);
+  ImplicitPCRSolveX(rc, zc, upd, c1, c2, 0, -1);
+  ImplicitPCRSolveX(rc, zc, upd, c1, c2, 1, zc);
+  if (impl_prec == 1) {
+    ImplicitPCRSolveX(rr, zc, 0, 0.0, 0.0, 0, zc);
+  }
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::ImplicitODCache
+//! \brief implicit_od_cache: odc(m,d,k,j,i) = M1OffDiv(x, d) at every cell a face of
+//! ImplicitOffDiagOp reads it from -- the active box plus one layer in x1, x2 (and x3)
+//! -- with exactly the index limits that routine passes, so every face value
+//! 0.5*(odc_L + odc_R) is the very number ImplicitOffDiagOp forms (bitwise), from 3
+//! evaluations per cell instead of 12.  Cells the faces never read are computed and
+//! ignored.
+
+void RadiationM1::ImplicitODCache(int xc) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  int is = indcs.is, ie = indcs.ie;
+  int js = indcs.js, je = indcs.je;
+  int ks = indcs.ks, ke = indcs.ke;
+  const bool thrd = trans_x3;
+  const int e3 = thrd ? 1 : 0;
+  int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto iw_ = iw;
+  auto od_ = odc;
+  auto mbsize = pmy_pack->pmb->mb_size.d_view;
+  auto mbbcs = pmy_pack->pmb->mb_bcs.d_view;
+  auto vd_ = vet_cell;
+  const bool dfull = vet_full;
+  const int cx = xc;
+  par_for("m1_impl_odc", DevExeSpace(), 0, nmb1, ks-e3, ke+e3, js-1, je+1, is-1, ie+1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    Real dx1 = mbsize(m).dx1;
+    Real dx2 = mbsize(m).dx2;
+    Real dx3 = mbsize(m).dx3;
+    BoundaryFlag q1 = mbbcs(m,BoundaryFace::inner_x1);
+    BoundaryFlag q2 = mbbcs(m,BoundaryFace::outer_x1);
+    BoundaryFlag q3 = mbbcs(m,BoundaryFace::inner_x2);
+    BoundaryFlag q4 = mbbcs(m,BoundaryFace::outer_x2);
+    BoundaryFlag q5 = mbbcs(m,BoundaryFace::inner_x3);
+    BoundaryFlag q6 = mbbcs(m,BoundaryFace::outer_x3);
+    bool p2lo = (q3 != BoundaryFlag::block) && (q3 != BoundaryFlag::periodic);
+    bool p2hi = (q4 != BoundaryFlag::block) && (q4 != BoundaryFlag::periodic);
+    bool p3lo = (q5 != BoundaryFlag::block) && (q5 != BoundaryFlag::periodic);
+    bool p3hi = (q6 != BoundaryFlag::block) && (q6 != BoundaryFlag::periodic);
+    int il = is, iu = ie, jl = js, ju = je, kl = ks, ku = ke;
+    if ((q1 == BoundaryFlag::block) || (q1 == BoundaryFlag::periodic)) {il = is-1;}
+    if ((q2 == BoundaryFlag::block) || (q2 == BoundaryFlag::periodic)) {iu = ie+1;}
+    if (!p2lo) {jl = js-1;}
+    if (!p2hi) {ju = je+1;}
+    if (thrd && !p3lo) {kl = ks-1;}
+    if (thrd && !p3hi) {ku = ke+1;}
+    od_(m,0,k,j,i) = M1OffDiv(iw_,m,0,k,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,cx,vd_,
+                              dfull);
+    od_(m,1,k,j,i) = M1OffDiv(iw_,m,1,k,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,cx,vd_,
+                              dfull);
+    if (thrd) {
+      od_(m,2,k,j,i) = M1OffDiv(iw_,m,2,k,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,cx,vd_,
+                                dfull);
+    }
+  });
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::ImplicitHaloDirectInit
+//! \brief implicit_halo_direct: tabulate, for every MeshBlock of the pack and each of the
+//! 26 directions (ox1,ox2,ox3), the LOCAL index of the same-level neighbour that fills
+//! that ghost region, or -1 where there is none (a physical boundary: its ghost zones
+//! are not filled by the ordinary exchange either).  The direct copy is used only when
+//! EVERY rank finds every neighbour on its own rank at the same level, outside the
+//! cubed-sphere and polar transforms (so all ranks take the same branch and no MPI
+//! exchange is left half-posted); otherwise the ordinary exchange runs, as before.
+
+void RadiationM1::ImplicitHaloDirectInit() {
+  auto *pm = pmy_pack->pmesh;
+  const int nmb = pmy_pack->nmb_thispack;
+  hd_src = DualArray2D<int>("m1_hd_src", nmb, 27);
+  int ok = (pm->multilevel || pm->use_cubed_sphere || pm->use_polar_boundary) ? 0 : 1;
+  auto &nb = pmy_pack->pmb->nghbr;
+  auto &lev = pmy_pack->pmb->mb_lev;
+  const int e2 = pm->multi_d ? 1 : 0;
+  const int e3 = pm->three_d ? 1 : 0;
+  for (int m = 0; m < nmb; ++m) {
+    for (int d = 0; d < 27; ++d) {hd_src.h_view(m,d) = -1;}
+    for (int o3 = -e3; o3 <= e3; ++o3) {
+      for (int o2 = -e2; o2 <= e2; ++o2) {
+        for (int o1 = -1; o1 <= 1; ++o1) {
+          if (o1 == 0 && o2 == 0 && o3 == 0) continue;
+          int n = NeighborIndex(o1, o2, o3, 0, 0);
+          if (n < 0 || n >= pmy_pack->pmb->nnghbr) {ok = 0; continue;}
+          const NeighborBlock &q = nb.h_view(m,n);
+          if (q.gid < 0) continue;
+          if (q.rank != global_variable::my_rank || q.lev != lev.h_view(m)) {
+            ok = 0;
+            continue;
+          }
+          hd_src.h_view(m, (o1+1) + 3*(o2+1) + 9*(o3+1)) = q.gid - pmy_pack->gids;
+        }
+      }
+    }
+  }
+#if MPI_PARALLEL_ENABLED
+  {int g = ok;
+  MPI_Allreduce(&ok, &g, 1, MPI_INT, MPI_MIN, MPI_COMM_WORLD);
+  ok = g;}
+#endif
+  halo_direct_on = (ok == 1);
+  hd_src.modify_host();
+  hd_src.sync_device();
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::ImplicitHaloDirect
+//! \brief implicit_halo_direct: the ghost zones of `nq` components (c0 >= 0: that one
+//! component; else the M1HaloCompT list) filled by ONE kernel that copies each ghost
+//! cell from the active cell of the neighbour that owns it (all neighbours are on this
+//! rank at the same level, ImplicitHaloDirectInit).  The same numbers the pack /
+//! exchange / unpack chain delivers: 1 launch where there were 4, and no host work.
+
+void RadiationM1::ImplicitHaloDirect(int nq, int c0) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie;
+  const int js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nx1 = indcs.nx1, nx2 = indcs.nx2, nx3 = indcs.nx3;
+  const int n1 = nx1 + 2*indcs.ng;
+  const int n2 = (nx2 > 1) ? (nx2 + 2*indcs.ng) : 1;
+  const int n3 = (nx3 > 1) ? (nx3 + 2*indcs.ng) : 1;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  const bool md = (nx2 > 1), td = (nx3 > 1);
+  auto iw_ = iw;
+  auto tab = hd_src.d_view;
+  const int nc0 = c0;
+  par_for("m1_impl_hdir", DevExeSpace(), 0, nmb1, 0, nq-1, 0, n3-1, 0, n2-1, 0, n1-1,
+  KOKKOS_LAMBDA(const int m, const int n, const int k, const int j, const int i) {
+    const int o1 = (i < is) ? -1 : ((i > ie) ? 1 : 0);
+    const int o2 = md ? ((j < js) ? -1 : ((j > je) ? 1 : 0)) : 0;
+    const int o3 = td ? ((k < ks) ? -1 : ((k > ke) ? 1 : 0)) : 0;
+    if (o1 == 0 && o2 == 0 && o3 == 0) return;
+    const int src = tab(m, (o1+1) + 3*(o2+1) + 9*(o3+1));
+    if (src < 0) return;
+    const int nc = (nc0 >= 0) ? nc0 : M1HaloCompT(n);
+    iw_(m,nc,k,j,i) = iw_(src,nc,k - o3*nx3,j - o2*nx2,i - o1*nx1);
+  });
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::ImplicitKrylovHalo
 //! \brief milestone 3b phase C: put ONE component of the work array into the scratch
 //! array `krw`, exchange it with all six neighbours through the module's ordinary
@@ -1937,6 +2371,474 @@ void RadiationM1::ImplicitPCRSolve() {
 
 void RadiationM1::ImplicitKrylovHalo(int comp) {
   ImplicitHaloExchange(1, comp);
+}
+
+namespace {
+//----------------------------------------------------------------------------------------
+//! \fn M1OdFaces
+//! \brief implicit_od_cache: the six face terms of ImplicitOffDiagOp at cell (m,k,j,i),
+//! in the same order and with the same arithmetic, from the per-cell cache od(m,d,...)
+//! = M1OffDiv(x, d) instead of re-evaluating M1OffDiv at both cells of every face.
+//! The caller has already returned on an M1_IBC_EFIX row.
+
+KOKKOS_INLINE_FUNCTION
+Real M1OdFaces(const DvceArray5D<Real> &iw_, const DvceArray5D<Real> &od_,
+               const DvceArray4D<Real> &th2_, const DvceArray4D<Real> &th3_,
+               const bool lm, const int m, const int k, const int j, const int i,
+               const int is, const int ie, const int js, const int je, const int ks,
+               const int ke, const bool cyclic, const bool botb, const bool topb,
+               const bool p2lo, const bool p2hi, const bool p3lo, const bool p3hi,
+               const bool thrd, const Real dx1, const Real dx2, const Real dx3,
+               const Real ch, const Real cl, const Real dt) {
+  Real cr = ch/cl;
+  Real kk = ch*cl*dt;
+  Real y = 0.0;
+  if (i < ie || cyclic || !topb) {
+    int ip = (i < ie) ? (i+1) : (cyclic ? is : (ie+1));
+    Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j,i) + iw_(m,M1_IW_KT,k,j,ip));
+    Real th = 1.0/(1.0 + ch*dt*ktf);
+    Real od = 0.5*(od_(m,0,k,j,i) + od_(m,0,k,j,ip));
+    y -= (dt/dx1)*cr*th*kk*od;
+  }
+  if (i > is || cyclic || !botb) {
+    int im = (i > is) ? (i-1) : (cyclic ? ie : (is-1));
+    Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j,im) + iw_(m,M1_IW_KT,k,j,i));
+    Real th = 1.0/(1.0 + ch*dt*ktf);
+    Real od = 0.5*(od_(m,0,k,j,im) + od_(m,0,k,j,i));
+    y += (dt/dx1)*cr*th*kk*od;
+  }
+  Real nu2 = dt/dx2;
+  if (!(j == je && p2hi)) {
+    Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j,i) + iw_(m,M1_IW_KT,k,j+1,i));
+    Real th = lm ? th2_(m,k,j+1,i) : 1.0/(1.0 + ch*dt*ktf);
+    Real od = 0.5*(od_(m,1,k,j,i) + od_(m,1,k,j+1,i));
+    y -= nu2*cr*th*kk*od;
+  }
+  if (!(j == js && p2lo)) {
+    Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j-1,i) + iw_(m,M1_IW_KT,k,j,i));
+    Real th = lm ? th2_(m,k,j,i) : 1.0/(1.0 + ch*dt*ktf);
+    Real od = 0.5*(od_(m,1,k,j-1,i) + od_(m,1,k,j,i));
+    y += nu2*cr*th*kk*od;
+  }
+  if (thrd) {
+    Real nu3 = dt/dx3;
+    if (!(k == ke && p3hi)) {
+      Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j,i) + iw_(m,M1_IW_KT,k+1,j,i));
+      Real th = lm ? th3_(m,k+1,j,i) : 1.0/(1.0 + ch*dt*ktf);
+      Real od = 0.5*(od_(m,2,k,j,i) + od_(m,2,k+1,j,i));
+      y -= nu3*cr*th*kk*od;
+    }
+    if (!(k == ks && p3lo)) {
+      Real ktf = 0.5*(iw_(m,M1_IW_KT,k-1,j,i) + iw_(m,M1_IW_KT,k,j,i));
+      Real th = lm ? th3_(m,k,j,i) : 1.0/(1.0 + ch*dt*ktf);
+      Real od = 0.5*(od_(m,2,k-1,j,i) + od_(m,2,k,j,i));
+      y += nu3*cr*th*kk*od;
+    }
+  }
+  return y;
+}
+} // namespace
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::ImplicitOffDiagOpC
+//! \brief implicit_od_cache: ImplicitOffDiagOp (y += sgn L_off(x)) from the cache, and,
+//! with `with7`, the whole operator y = A x in ONE kernel (the 7-point row of
+//! ImplicitApplyOp, then + L_off(x) exactly as ImplicitApplyOp + ImplicitOffDiagOp
+//! form it).  The reduction rides in the operator kernel (implicit_krylov_fuse >= 2):
+//! red = 1: out[0] = (rhat,y);  red = 2: out[0] = (y,s), out[1] = (y,y);
+//! red = 3: as 2 plus out[2] = (rhat,y);  red = 4: as 1 plus out[3] = max|r|.
+
+void RadiationM1::ImplicitOffDiagOpC(int xc, int yc, Real sgn, bool with7, int red,
+                                     Real *out) {
+  ImplicitODCache(xc);
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie;
+  const int js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto iw_ = iw;
+  auto od_ = odc;
+  auto mbsize = pmy_pack->pmb->mb_size.d_view;
+  auto mbbcs = pmy_pack->pmb->mb_bcs.d_view;
+  auto pos_ = part_pos.d_view;
+  const int nblkx1 = part_nblk;
+  const bool cyclic = (ibc_x1min == M1_IBC_PERIODIC);
+  const bool thrd = trans_x3;
+  const bool lm = (impl_tlim != M1_TLIM_NONE);
+  auto th2_ = thx2;
+  auto th3_ = thx3;
+  const int bclo = ibc_x1min, bchi = ibc_x1max;
+  const Real cl = c_light, ch = chat, dt = dt_sub;
+  const int cx = xc, cy = yc;
+  const Real sg = sgn;
+  const bool w7 = with7;
+  const int rm = red;
+  // the standalone call (with7 = false) is made only under the operator form
+  const bool odon = w7 ? (od_now == M1_OD_OPERATOR) : true;
+  const int ni = ie - is + 1;
+  const int nji = (je - js + 1)*ni;
+  const int nkji = (ke - ks + 1)*nji;
+  // one cell's result; returns y (the value stored)
+  auto row = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) -> Real {
+    Real y7 = 0.0;
+    if (w7) {
+      int im = (i > is) ? (i-1) : (cyclic ? ie : (is-1));
+      int ip = (i < ie) ? (i+1) : (cyclic ? is : (ie+1));
+      y7 = iw_(m,M1_IW_TB,k,j,i)*iw_(m,cx,k,j,i)
+           + iw_(m,M1_IW_TA,k,j,i)*iw_(m,cx,k,j,im)
+           + iw_(m,M1_IW_TC,k,j,i)*iw_(m,cx,k,j,ip)
+           + iw_(m,M1_IW_CJM,k,j,i)*iw_(m,cx,k,j-1,i)
+           + iw_(m,M1_IW_CJP,k,j,i)*iw_(m,cx,k,j+1,i);
+      if (thrd) {
+        y7 += iw_(m,M1_IW_CKM,k,j,i)*iw_(m,cx,k-1,j,i)
+              + iw_(m,M1_IW_CKP,k,j,i)*iw_(m,cx,k+1,j,i);
+      }
+    } else {
+      y7 = iw_(m,cy,k,j,i);
+    }
+    if (!odon) {
+      iw_(m,cy,k,j,i) = y7;
+      return y7;
+    }
+    int ipos = pos_(m);
+    bool botb = (ipos == 0), topb = (ipos == nblkx1-1);
+    if (!cyclic && ((i == is && botb && bclo == M1_IBC_EFIX) ||
+                    (i == ie && topb && bchi == M1_IBC_EFIX))) {
+      iw_(m,cy,k,j,i) = y7;
+      return y7;
+    }
+    BoundaryFlag q3 = mbbcs(m,BoundaryFace::inner_x2);
+    BoundaryFlag q4 = mbbcs(m,BoundaryFace::outer_x2);
+    BoundaryFlag q5 = mbbcs(m,BoundaryFace::inner_x3);
+    BoundaryFlag q6 = mbbcs(m,BoundaryFace::outer_x3);
+    bool p2lo = (q3 != BoundaryFlag::block) && (q3 != BoundaryFlag::periodic);
+    bool p2hi = (q4 != BoundaryFlag::block) && (q4 != BoundaryFlag::periodic);
+    bool p3lo = (q5 != BoundaryFlag::block) && (q5 != BoundaryFlag::periodic);
+    bool p3hi = (q6 != BoundaryFlag::block) && (q6 != BoundaryFlag::periodic);
+    Real y = M1OdFaces(iw_, od_, th2_, th3_, lm, m, k, j, i, is, ie, js, je, ks, ke,
+                       cyclic, botb, topb, p2lo, p2hi, p3lo, p3hi, thrd,
+                       mbsize(m).dx1, mbsize(m).dx2, mbsize(m).dx3, ch, cl, dt);
+    Real out = y7 + sg*y;
+    iw_(m,cy,k,j,i) = out;
+    return out;
+  };
+  if (rm == 0) {
+    par_for("m1_impl_opc", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      row(m, k, j, i);
+    });
+    return;
+  }
+  // 256-thread blocks: the default 1024-thread block of a reduction with a 4-Real
+  // value takes 33 kB of LDS, i.e. ONE block per CU (measured 97 us vs 47 us for the
+  // same stencil as a par_for)
+  Kokkos::RangePolicy<DevExeSpace, Kokkos::LaunchBounds<256,1>>
+      pol(DevExeSpace(), 0, (nmb1 + 1)*nkji);
+  Real a0 = 0.0, a1 = 0.0, a2 = 0.0, amx = 0.0;
+  Kokkos::parallel_reduce("m1_impl_opcr", pol,
+  KOKKOS_LAMBDA(const int idx, Real &l0, Real &l1, Real &l2, Real &lmx) {
+    int m = idx/nkji;
+    int r = idx - m*nkji;
+    int k = r/nji;
+    r -= k*nji;
+    int j = r/ni;
+    int i = r - j*ni;
+    k += ks; j += js; i += is;
+    Real y = row(m, k, j, i);
+    if (rm == 1 || rm == 4) {
+      l0 += iw_(m,M1_IW_KRH,k,j,i)*y;
+      if (rm == 4) {
+        Real a = fabs(iw_(m,M1_IW_KR,k,j,i));
+        lmx = (a > lmx) ? a : lmx;
+      }
+    } else {
+      l0 += y*iw_(m,M1_IW_KS,k,j,i);
+      l1 += y*y;
+      if (rm == 3) {l2 += iw_(m,M1_IW_KRH,k,j,i)*y;}
+    }
+  }, a0, a1, a2, Kokkos::Max<Real>(amx));
+  out[0] = a0;
+  out[1] = a1;
+  out[2] = a2;
+  out[3] = amx;
+}
+
+namespace {
+//----------------------------------------------------------------------------------------
+//! \fn M1StIdx
+//! \brief implicit_op_stencil: the slot of the 19-point stencil for the offset
+//! (di,dj,dk) in {-1,0,1}^3 with at most two non-zero entries: 0 centre; 1..6 the faces
+//! i-1,i+1,j-1,j+1,k-1,k+1; 7..10 the (i,j) edges, 11..14 the (i,k) edges, 15..18 the
+//! (j,k) edges, each ordered (-,-),(+,-),(-,+),(+,+) in (first, second) axis.
+
+KOKKOS_INLINE_FUNCTION
+int M1StIdx(const int di, const int dj, const int dk) {
+  if (dk == 0) {
+    if (dj == 0) {return (di == 0) ? 0 : ((di < 0) ? 1 : 2);}
+    if (di == 0) {return (dj < 0) ? 3 : 4;}
+    return 7 + ((di > 0) ? 1 : 0) + ((dj > 0) ? 2 : 0);
+  }
+  if (dj == 0) {
+    if (di == 0) {return (dk < 0) ? 5 : 6;}
+    return 11 + ((di > 0) ? 1 : 0) + ((dk > 0) ? 2 : 0);
+  }
+  return 15 + ((dj > 0) ? 1 : 0) + ((dk > 0) ? 2 : 0);
+}
+
+//! D_de of the frozen closure at one cell (the coefficient M1POff multiplies x by)
+KOKKOS_INLINE_FUNCTION
+Real M1DOffC(const DvceArray5D<Real> &iw, const DvceArray5D<Real> &vd, const bool full,
+             const int m, const int a, const int b, const int k, const int j,
+             const int i) {
+  if (full) {return vd(m,M1_VET_D11+2+a+b,k,j,i);}
+  return M1EddOff(iw(m,M1_IW_WCHI,k,j,i), iw(m,M1_IW_N1+a,k,j,i),
+                  iw(m,M1_IW_N1+b,k,j,i));
+}
+} // namespace
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::ImplicitStencilBuild
+//! \brief implicit_op_stencil: the frozen operator of this Picard pass -- the 7-point
+//! row (TA,TB,TC,CJM..CKP) plus, under implicit_offdiag = operator, the off-diagonal
+//! Eddington terms of ImplicitOffDiagOp -- written out ONCE as a 19-point stencil
+//! st(m,0..18,k,j,i).  Every face term of ImplicitOffDiagOp,
+//!   -/+ (dt/dx_d) (chat/c) theta_f chat c dt * 0.5 [OD_d(L) + OD_d(R)],
+//!   OD_d(q) = sum_{e!=d} [D_de x](q_a) - [D_de x](q_b)) / ((a-b) dx_e)
+//! with the same one-sided clamps at physical faces, is linear in x with coefficients
+//! frozen over the pass, so it distributes onto the centre, the 6 face and the 12 edge
+//! neighbours.  Applying the stencil (ImplicitStencilOp) is then one read of 19
+//! coefficients per cell instead of re-deriving D_de and theta at every face in every
+//! Krylov iteration.  Same operator; the sums are grouped differently (round-off).
+//! Not for a periodic x1 wrap (cyclic), which keeps the od_cache path.
+
+void RadiationM1::ImplicitStencilBuild() {
+  if (ibc_x1min == M1_IBC_PERIODIC) {   // a problem generator may set it late
+    ImplFatal("<rad_m1>/implicit_op_stencil does not take a periodic x1 wrap");
+  }
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie;
+  const int js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto iw_ = iw;
+  auto st_ = ost;
+  auto vd_ = vet_cell;
+  const bool dfull = vet_full;
+  auto mbsize = pmy_pack->pmb->mb_size.d_view;
+  auto mbbcs = pmy_pack->pmb->mb_bcs.d_view;
+  auto pos_ = part_pos.d_view;
+  const int nblkx1 = part_nblk;
+  const bool thrd = trans_x3;
+  const bool lm = (impl_tlim != M1_TLIM_NONE);
+  auto th2_ = thx2;
+  auto th3_ = thx3;
+  const int bclo = ibc_x1min, bchi = ibc_x1max;
+  const Real cl = c_light, ch = chat, dt = dt_sub;
+  const bool odon = (od_now == M1_OD_OPERATOR);
+  const int ni = ie - is + 1;
+  const int nji = (je - js + 1)*ni;
+  const int nkji = (ke - ks + 1)*nji;
+  Real emax = 0.0;
+  Kokkos::parallel_reduce("m1_impl_stb",
+  Kokkos::RangePolicy<DevExeSpace, Kokkos::LaunchBounds<256,1>>(DevExeSpace(), 0,
+                                                                (nmb1 + 1)*nkji),
+  KOKKOS_LAMBDA(const int idx, Real &lmx) {
+    int m = idx/nkji;
+    int r = idx - m*nkji;
+    int k = r/nji;
+    r -= k*nji;
+    int j = r/ni;
+    int i = r - j*ni;
+    k += ks; j += js; i += is;
+    Real c[19];
+    for (int o = 0; o < 19; ++o) {c[o] = 0.0;}
+    c[0] = iw_(m,M1_IW_TB,k,j,i);
+    c[1] = iw_(m,M1_IW_TA,k,j,i);
+    c[2] = iw_(m,M1_IW_TC,k,j,i);
+    c[3] = iw_(m,M1_IW_CJM,k,j,i);
+    c[4] = iw_(m,M1_IW_CJP,k,j,i);
+    if (thrd) {
+      c[5] = iw_(m,M1_IW_CKM,k,j,i);
+      c[6] = iw_(m,M1_IW_CKP,k,j,i);
+    }
+    int ipos = pos_(m);
+    bool botb = (ipos == 0), topb = (ipos == nblkx1-1);
+    bool efix = (i == is && botb && bclo == M1_IBC_EFIX) ||
+                (i == ie && topb && bchi == M1_IBC_EFIX);
+    if (odon && !efix) {
+      Real dxv[3] = {mbsize(m).dx1, mbsize(m).dx2, mbsize(m).dx3};
+      BoundaryFlag q1 = mbbcs(m,BoundaryFace::inner_x1);
+      BoundaryFlag q2 = mbbcs(m,BoundaryFace::outer_x1);
+      BoundaryFlag q3 = mbbcs(m,BoundaryFace::inner_x2);
+      BoundaryFlag q4 = mbbcs(m,BoundaryFace::outer_x2);
+      BoundaryFlag q5 = mbbcs(m,BoundaryFace::inner_x3);
+      BoundaryFlag q6 = mbbcs(m,BoundaryFace::outer_x3);
+      bool p2lo = (q3 != BoundaryFlag::block) && (q3 != BoundaryFlag::periodic);
+      bool p2hi = (q4 != BoundaryFlag::block) && (q4 != BoundaryFlag::periodic);
+      bool p3lo = (q5 != BoundaryFlag::block) && (q5 != BoundaryFlag::periodic);
+      bool p3hi = (q6 != BoundaryFlag::block) && (q6 != BoundaryFlag::periodic);
+      // the index limits M1OffDiv is given, per axis
+      int lo[3] = {is, js, ks}, hi[3] = {ie, je, ke};
+      if ((q1 == BoundaryFlag::block) || (q1 == BoundaryFlag::periodic)) {lo[0] = is-1;}
+      if ((q2 == BoundaryFlag::block) || (q2 == BoundaryFlag::periodic)) {hi[0] = ie+1;}
+      if (!p2lo) {lo[1] = js-1;}
+      if (!p2hi) {hi[1] = je+1;}
+      if (thrd && !p3lo) {lo[2] = ks-1;}
+      if (thrd && !p3hi) {hi[2] = ke+1;}
+      const int cc[3] = {i, j, k};
+      const Real cr = ch/cl, kk = ch*cl*dt;
+      const int nd = thrd ? 3 : 2;
+      for (int d = 0; d < nd; ++d) {
+        for (int sd = -1; sd <= 1; sd += 2) {
+          // does this face carry the term (the conditions of ImplicitOffDiagOp)?
+          bool has;
+          if (d == 0) {
+            has = (sd > 0) ? (i < ie || !topb) : (i > is || !botb);
+          } else if (d == 1) {
+            has = (sd > 0) ? !(j == je && p2hi) : !(j == js && p2lo);
+          } else {
+            has = (sd > 0) ? !(k == ke && p3hi) : !(k == ks && p3lo);
+          }
+          if (!has) continue;
+          // the face theta, from the two cells' transport opacities (or the limiter)
+          int nb[3] = {i, j, k};
+          nb[d] += sd;
+          Real th;
+          if (d > 0 && lm) {
+            th = (d == 1) ? th2_(m,k,(sd > 0) ? j+1 : j,i)
+                          : th3_(m,(sd > 0) ? k+1 : k,j,i);
+          } else {
+            Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j,i) + iw_(m,M1_IW_KT,nb[2],nb[1],nb[0]));
+            th = 1.0/(1.0 + ch*dt*ktf);
+          }
+          // upper face: y -= w od; lower face: y += w od; od = 0.5 (OD(c) + OD(nb))
+          const Real w = -static_cast<Real>(sd)*(dt/dxv[d])*cr*th*kk*0.5;
+          for (int qs = 0; qs <= 1; ++qs) {
+            int q[3] = {i, j, k};
+            if (qs == 1) {q[d] += sd;}
+            for (int e = 0; e < nd; ++e) {
+              if (e == d) continue;
+              int qa[3] = {q[0], q[1], q[2]}, qb[3] = {q[0], q[1], q[2]};
+              if (q[e] + 1 <= hi[e]) {qa[e] = q[e] + 1;}
+              if (q[e] - 1 >= lo[e]) {qb[e] = q[e] - 1;}
+              if (qa[e] == qb[e]) continue;
+              const Real f = w/((qa[e] - qb[e])*dxv[e]);
+              const Real da = M1DOffC(iw_, vd_, dfull, m, d, e, qa[2], qa[1], qa[0]);
+              const Real db = M1DOffC(iw_, vd_, dfull, m, d, e, qb[2], qb[1], qb[0]);
+              c[M1StIdx(qa[0]-cc[0], qa[1]-cc[1], qa[2]-cc[2])] += f*da;
+              c[M1StIdx(qb[0]-cc[0], qb[1]-cc[1], qb[2]-cc[2])] -= f*db;
+            }
+          }
+        }
+      }
+    }
+    for (int o = 0; o < 19; ++o) {st_(m,o,k,j,i) = c[o];}
+    for (int o = 7; o < 19; ++o) {lmx = fmax(lmx, fabs(c[o]));}
+  }, Kokkos::Max<Real>(emax));
+  // no edge coefficient anywhere (the Eddington closure: D_ab = 0 off the diagonal, or
+  // implicit_offdiag not operator): ImplicitStencilOp reads the 7 face/centre slots only,
+  // which adds the same non-zero terms in the same order
+#if MPI_PARALLEL_ENABLED
+  {Real g = emax;
+  MPI_Allreduce(&emax, &g, 1, MPI_ATHENA_REAL, MPI_MAX, MPI_COMM_WORLD);
+  emax = g;}
+#endif
+  st_edges = (emax > 0.0);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::ImplicitStencilOp
+//! \brief implicit_op_stencil: y = A x from the 19-point stencil of ImplicitStencilBuild
+//! (the caller has filled the ghost zones of x).  `red` and `out` as ImplicitOffDiagOpC.
+
+void RadiationM1::ImplicitStencilOp(int xc, int yc, int red, Real *out) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie;
+  const int js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto iw_ = iw;
+  auto st_ = ost;
+  const bool thrd = trans_x3;
+  const int cx = xc, cy = yc;
+  const int rm = red;
+  const int ni = ie - is + 1;
+  const int nji = (je - js + 1)*ni;
+  const int nkji = (ke - ks + 1)*nji;
+  const bool edg = st_edges;
+  auto row = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) -> Real {
+    Real y = st_(m,0,k,j,i)*iw_(m,cx,k,j,i)
+             + st_(m,1,k,j,i)*iw_(m,cx,k,j,i-1) + st_(m,2,k,j,i)*iw_(m,cx,k,j,i+1)
+             + st_(m,3,k,j,i)*iw_(m,cx,k,j-1,i) + st_(m,4,k,j,i)*iw_(m,cx,k,j+1,i);
+    if (edg) {
+      y += st_(m,7,k,j,i)*iw_(m,cx,k,j-1,i-1) + st_(m,8,k,j,i)*iw_(m,cx,k,j-1,i+1)
+           + st_(m,9,k,j,i)*iw_(m,cx,k,j+1,i-1) + st_(m,10,k,j,i)*iw_(m,cx,k,j+1,i+1);
+    }
+    if (thrd) {
+      y += st_(m,5,k,j,i)*iw_(m,cx,k-1,j,i) + st_(m,6,k,j,i)*iw_(m,cx,k+1,j,i);
+      if (edg) {
+        y += st_(m,11,k,j,i)*iw_(m,cx,k-1,j,i-1) + st_(m,12,k,j,i)*iw_(m,cx,k-1,j,i+1)
+             + st_(m,13,k,j,i)*iw_(m,cx,k+1,j,i-1) + st_(m,14,k,j,i)*iw_(m,cx,k+1,j,i+1)
+             + st_(m,15,k,j,i)*iw_(m,cx,k-1,j-1,i) + st_(m,16,k,j,i)*iw_(m,cx,k-1,j+1,i)
+             + st_(m,17,k,j,i)*iw_(m,cx,k+1,j-1,i) + st_(m,18,k,j,i)*iw_(m,cx,k+1,j+1,i);
+      }
+    }
+    iw_(m,cy,k,j,i) = y;
+    return y;
+  };
+  if (rm == 0) {
+    par_for("m1_impl_sto", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      row(m, k, j, i);
+    });
+    return;
+  }
+  // 256-thread blocks: the default 1024-thread block of a reduction with a 4-Real
+  // value takes 33 kB of LDS, i.e. ONE block per CU (measured 97 us vs 47 us for the
+  // same stencil as a par_for)
+  Kokkos::RangePolicy<DevExeSpace, Kokkos::LaunchBounds<256,1>>
+      pol(DevExeSpace(), 0, (nmb1 + 1)*nkji);
+  Real a0 = 0.0, a1 = 0.0, a2 = 0.0, amx = 0.0;
+  Kokkos::parallel_reduce("m1_impl_stor", pol,
+  KOKKOS_LAMBDA(const int idx, Real &l0, Real &l1, Real &l2, Real &lmx) {
+    int m = idx/nkji;
+    int r = idx - m*nkji;
+    int k = r/nji;
+    r -= k*nji;
+    int j = r/ni;
+    int i = r - j*ni;
+    k += ks; j += js; i += is;
+    Real y = row(m, k, j, i);
+    if (rm == 1 || rm == 4) {
+      l0 += iw_(m,M1_IW_KRH,k,j,i)*y;
+      if (rm == 4) {
+        Real a = fabs(iw_(m,M1_IW_KR,k,j,i));
+        lmx = (a > lmx) ? a : lmx;
+      }
+    } else {
+      l0 += y*iw_(m,M1_IW_KS,k,j,i);
+      l1 += y*y;
+      if (rm == 3) {l2 += iw_(m,M1_IW_KRH,k,j,i)*y;}
+    }
+  }, a0, a1, a2, Kokkos::Max<Real>(amx));
+  out[0] = a0;
+  out[1] = a1;
+  out[2] = a2;
+  out[3] = amx;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::ImplicitOpX
+//! \brief y = A x (+ the reductions `red` of ImplicitOffDiagOpC) on the fast path: from
+//! the 19-point stencil under implicit_op_stencil, else from the od cache.  The caller
+//! has filled the ghost zones of x.
+
+void RadiationM1::ImplicitOpX(int xc, int yc, int red, Real *out) {
+  if (impl_stencil) {
+    ImplicitStencilOp(xc, yc, red, out);
+  } else {
+    ImplicitOffDiagOpC(xc, yc, 1.0, true, red, out);
+  }
 }
 
 //----------------------------------------------------------------------------------------
@@ -1966,6 +2868,10 @@ void RadiationM1::ImplicitKrylovHalo(int comp) {
 //! and an M1_IBC_EFIX Dirichlet row is replaced whole and gets nothing at all.
 
 void RadiationM1::ImplicitOffDiagOp(int xc, int yc, Real sgn) {
+  if (impl_odc) {   // the same numbers from the per-cell cache
+    ImplicitOffDiagOpC(xc, yc, sgn, false, 0, nullptr);
+    return;
+  }
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
   int js = indcs.js, je = indcs.je;
@@ -2105,6 +3011,14 @@ void RadiationM1::ImplicitOffDiagOp(int xc, int yc, Real sgn) {
 
 void RadiationM1::ImplicitApplyOp(int xc, int yc) {
   ImplicitKrylovHalo(xc);
+  if (impl_stencil) {   // the 19-point stencil of this pass
+    ImplicitStencilOp(xc, yc, 0, nullptr);
+    return;
+  }
+  if (impl_odc) {   // 7-point row + off-diagonal Eddington terms in one kernel
+    ImplicitOffDiagOpC(xc, yc, 1.0, true, 0, nullptr);
+    return;
+  }
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
   int js = indcs.js, je = indcs.je;
@@ -2836,6 +3750,9 @@ int RadiationM1::ImplicitBiCGStabFused(Real rhsmax) {
   Kokkos::RangePolicy<DevExeSpace> pol(DevExeSpace(), 0, (nmb1 + 1)*nkji);
   using HRed = M1BcgRed<Kokkos::HostSpace>;
   const bool devrv = (impl_bcg_sync == 2) && (global_variable::nranks == 1);
+  const int kf = impl_kfuse;   // implicit_krylov_fuse (needs bcg_sync = 1, pcr)
+  if (impl_stencil) {ImplicitStencilBuild();}   // the operator of this pass, once
+  if (kf == 3) {return ImplicitBiCGStabTwo(rhsmax);}
   auto rvd_ = bcg_rvd;
   // implicit_lin_cnorm > 0: the max norm is taken of r_i/(s_i E^k_i), s_i = 1 + SRCB_i
   // the row EXCESS of the M-matrix (diagonal minus the off-diagonal moduli: the
@@ -2904,6 +3821,24 @@ int RadiationM1::ImplicitBiCGStabFused(Real rhsmax) {
     if (!breakdown) {
       Real beta = (rhon/rho)*(alpha/omega);
       const Real bt = beta, om = omega;
+      Real rv = 0.0;
+      bool rvdone = false;
+      if (kf > 0) {
+        // implicit_krylov_fuse: the p update rides in the preconditioner's load phase
+        ImplicitPrecondX(-1, M1_IW_KY, 1, bt, om);
+        if (kf == 2) {
+          ImplicitKrylovHalo(M1_IW_KY);
+          Real o4[4];
+          ImplicitOpX(M1_IW_KY, M1_IW_KV, 1, o4);
+          rv = o4[0];
+          Real d2 = 0.0;
+          M1GlobalSum2(rv, d2);
+          bcg_nred += 1.0;
+          rvdone = true;
+        } else {
+          ImplicitApplyOp(M1_IW_KY, M1_IW_KV);
+        }
+      } else {
       par_for("m1_impl_bcgf_p", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
       KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
         Real p = iw_(m,M1_IW_KR,k,j,i)
@@ -2913,7 +3848,7 @@ int RadiationM1::ImplicitBiCGStabFused(Real rhsmax) {
       });
       ImplicitPrecond(-1, M1_IW_KY);
       ImplicitApplyOp(M1_IW_KY, M1_IW_KV);
-      Real rv = 0.0;
+      }
       auto rvf = KOKKOS_LAMBDA(const int idx, Real &ls) {
         int m, k, j, i;
         M1BcgIdx(idx, nkji, nji, ni, m, k, j, i);
@@ -2925,10 +3860,12 @@ int RadiationM1::ImplicitBiCGStabFused(Real rhsmax) {
         Kokkos::parallel_reduce("m1_impl_bcgf_rv", pol, rvf,
                                 Kokkos::Sum<Real, DevMemSpace>(rvd_));
       } else {
+        if (!rvdone) {
         Kokkos::parallel_reduce("m1_impl_bcgf_rv", pol, rvf, rv);
         Real d2 = 0.0;
         M1GlobalSum2(rv, d2);
         bcg_nred += 1.0;
+        }
         if (!(fabs(rv) > M1_BCG_EPS)) {
           breakdown = true;
         } else {
@@ -2938,6 +3875,9 @@ int RadiationM1::ImplicitBiCGStabFused(Real rhsmax) {
       if (!breakdown) {
         const Real al = alpha, rh = rhon;
         const bool dv = devrv;
+        if (kf > 0) {
+          ImplicitPrecondX(-1, M1_IW_KZ, 2, al, 0.0);
+        } else {
         par_for("m1_impl_bcgf_s", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
         KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
           Real a = dv ? (rh/rvd_()) : al;
@@ -2946,6 +3886,16 @@ int RadiationM1::ImplicitBiCGStabFused(Real rhsmax) {
           iw_(m,M1_IW_TR,k,j,i) = s;
         });
         ImplicitPrecond(-1, M1_IW_KZ);
+        }
+        if (kf == 2) {
+          ImplicitKrylovHalo(M1_IW_KZ);
+          red.s2 = 0.0;
+          red.mx = 0.0;
+          Real o4[4];
+          ImplicitOpX(M1_IW_KZ, M1_IW_KTT, 2, o4);
+          red.s0 = o4[0];
+          red.s1 = o4[1];
+        } else {
         ImplicitApplyOp(M1_IW_KZ, M1_IW_KTT);
         Kokkos::parallel_reduce("m1_impl_bcgf_ts", pol,
         KOKKOS_LAMBDA(const int idx, M1BcgVal &v) {
@@ -2957,6 +3907,7 @@ int RadiationM1::ImplicitBiCGStabFused(Real rhsmax) {
           v.s1 += t*t;
           if (dv && idx == 0) {v.s2 += rvd_();}   // carries rhat.v to the host, exactly
         }, HRed(red));
+        }
         M1GlobalBcg(red);
         bcg_nred += 1.0;
         if (devrv) {
@@ -3042,6 +3993,190 @@ int RadiationM1::ImplicitBiCGStabFused(Real rhsmax) {
       alpha = 1.0;
       omega = 1.0;
     }
+  }
+  ImplicitBiCGStabEnd(nit, fell_back);
+  return nit;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn int RadiationM1::ImplicitBiCGStabTwo
+//! \brief implicit_krylov_fuse = 3: the right-preconditioned BiCGStab of
+//! ImplicitBiCGStabFused with TWO blocking reductions per iteration instead of three.
+//!  * (rhat, v) comes out of the operator kernel v = A y, together with max|r| of the
+//!    CURRENT r (the one the previous iteration made): the convergence test is taken
+//!    one half-iteration late, and on success that half-iteration (p, y, v; x and r are
+//!    untouched by it) is discarded;
+//!  * (t,s), (t,t) and (rhat,t) come out of the operator kernel t = A z;
+//!  * the update x += alpha y + omega z, r = s - omega t is then a plain kernel, and
+//!    rho_{k+1} = (rhat, r_{k+1}) = rho_k - alpha (rhat,v) - omega (rhat,t) follows by
+//!    recurrence (exact in exact arithmetic, since (rhat,s) = rho_k - alpha (rhat,v)).
+//! Breakdown, restart, true-residual and fallback rules are those of the fused loop.
+//! Same iterates in exact arithmetic; round-off differs (the recurrence for rho).
+
+int RadiationM1::ImplicitBiCGStabTwo(Real rhsmax) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  int is = indcs.is, ie = indcs.ie;
+  int js = indcs.js, je = indcs.je;
+  int ks = indcs.ks, ke = indcs.ke;
+  int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto iw_ = iw;
+  const Real tol = impl_lin_tol;
+  const Real bscale = fmax(rhsmax, 1.0e-300);
+  const int ni = ie - is + 1;
+  const int nji = (je - js + 1)*ni;
+  const int nkji = (ke - ks + 1)*nji;
+  Kokkos::RangePolicy<DevExeSpace, Kokkos::LaunchBounds<256,1>>
+      pol(DevExeSpace(), 0, (nmb1 + 1)*nkji);
+  using HRed = M1BcgRed<Kokkos::HostSpace>;
+
+  // x0 = the Picard iterate; r0 = b - A x0, with max|r0| and (r0,r0) in the same kernel
+  par_for("m1_impl_bcg2_x0", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    iw_(m,M1_IW_KX,k,j,i) = iw_(m,M1_IW_EP,k,j,i);
+  });
+  ImplicitApplyOp(M1_IW_KX, M1_IW_KV);
+  M1BcgVal red;
+  Kokkos::parallel_reduce("m1_impl_bcg2_r0", pol,
+  KOKKOS_LAMBDA(const int idx, M1BcgVal &v) {
+    int m, k, j, i;
+    M1BcgIdx(idx, nkji, nji, ni, m, k, j, i);
+    k += ks; j += js; i += is;
+    Real r = iw_(m,M1_IW_KB,k,j,i) - iw_(m,M1_IW_KV,k,j,i);
+    iw_(m,M1_IW_KR,k,j,i) = r;
+    iw_(m,M1_IW_KRH,k,j,i) = r;
+    iw_(m,M1_IW_KP,k,j,i) = 0.0;
+    iw_(m,M1_IW_KV,k,j,i) = 0.0;
+    v.s0 += r*r;
+    Real a = fabs(r);
+    v.mx = (a > v.mx) ? a : v.mx;
+  }, HRed(red));
+  M1GlobalBcg(red);
+  bcg_nred += 1.0;
+  Real rnorm = red.mx;
+  Real rhon = red.s0;
+  bcg_r0rel = rnorm/bscale;
+  const bool ew = (impl_ew_max > 0.0);
+  Real tabs = tol*bscale;
+  if (ew) {
+    Real eta = impl_ew_max;
+    if (ew_fprev > 0.0) {
+      eta = impl_ew_gam*SQR(rnorm/ew_fprev);
+      const Real sg = impl_ew_gam*SQR(ew_etaprev);
+      if (sg > 0.1) {eta = fmax(eta, sg);}
+      eta = fmin(eta, impl_ew_max);
+    }
+    ew_fprev = rnorm;
+    ew_etaprev = eta;
+    tabs = fmax(tabs, eta*rnorm);
+  }
+  auto lin_done = [=](const Real r) {
+    return ew ? (r < tabs) : (r/bscale < tol);
+  };
+  // the true residual of x, which is what the tolerance is about
+  auto true_ok = [&]() -> bool {
+    ImplicitApplyOp(M1_IW_KX, M1_IW_KTT);
+    M1BcgVal tr;
+    Kokkos::parallel_reduce("m1_impl_bcg2_true", pol,
+    KOKKOS_LAMBDA(const int idx, M1BcgVal &v) {
+      int m, k, j, i;
+      M1BcgIdx(idx, nkji, nji, ni, m, k, j, i);
+      k += ks; j += js; i += is;
+      Real r = iw_(m,M1_IW_KB,k,j,i) - iw_(m,M1_IW_KTT,k,j,i);
+      iw_(m,M1_IW_KR,k,j,i) = r;
+      Real a = fabs(r);
+      v.mx = (a > v.mx) ? a : v.mx;
+    }, HRed(tr));
+    M1GlobalBcg(tr);
+    bcg_nred += 1.0;
+    return lin_done(tr.mx);
+  };
+
+  int nit = 0;
+  int nrestart = 0;
+  Real rho = 1.0, alpha = 1.0, omega = 1.0;
+  bool done = lin_done(rnorm);
+  bool fell_back = false;
+  bool pend = false;   // r was updated by the last iteration; its max is not known yet
+  while (!done && nit < impl_lin_maxit) {
+    ++nit;
+    bool breakdown = !(fabs(rhon) > M1_BCG_EPS) || !(fabs(omega) > M1_BCG_EPS);
+    if (!breakdown) {
+      Real beta = (rhon/rho)*(alpha/omega);
+      ImplicitPrecondX(-1, M1_IW_KY, 1, beta, omega);
+      ImplicitKrylovHalo(M1_IW_KY);
+      Real o4[4];
+      ImplicitOpX(M1_IW_KY, M1_IW_KV, 4, o4);
+      M1BcgVal a;
+      a.s0 = o4[0]; a.s1 = 0.0; a.s2 = 0.0; a.mx = o4[3];
+      M1GlobalBcg(a);
+      bcg_nred += 1.0;
+      if (pend) {
+        pend = false;
+        if (lin_done(a.mx)) {
+          --nit;   // this half-iteration is discarded: x and r are those it started from
+          if (true_ok()) {
+            done = true;
+            break;
+          }
+          breakdown = true;   // restart the recurrence from the true residual
+        }
+      }
+      const Real rv = a.s0;
+      if (!breakdown && !(fabs(rv) > M1_BCG_EPS)) {breakdown = true;}
+      if (!breakdown) {
+        alpha = rhon/rv;
+        ImplicitPrecondX(-1, M1_IW_KZ, 2, alpha, 0.0);
+        ImplicitKrylovHalo(M1_IW_KZ);
+        ImplicitOpX(M1_IW_KZ, M1_IW_KTT, 3, o4);
+        red.s0 = o4[0]; red.s1 = o4[1]; red.s2 = o4[2]; red.mx = 0.0;
+        M1GlobalBcg(red);
+        bcg_nred += 1.0;
+        const Real ts = red.s0, tt2 = red.s1, rt = red.s2;
+        omega = (tt2 > 0.0) ? (ts/tt2) : 0.0;
+        const Real al = alpha, ow = omega;
+        par_for("m1_impl_bcg2_upd", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+        KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+          iw_(m,M1_IW_KX,k,j,i) += al*iw_(m,M1_IW_KY,k,j,i) + ow*iw_(m,M1_IW_KZ,k,j,i);
+          iw_(m,M1_IW_KR,k,j,i) = iw_(m,M1_IW_KS,k,j,i) - ow*iw_(m,M1_IW_KTT,k,j,i);
+        });
+        rho = rhon;
+        rhon = rhon - alpha*rv - omega*rt;
+        pend = true;
+        if (!(fabs(omega) > M1_BCG_EPS)) {breakdown = true;}
+      }
+    }
+    if (breakdown && !done) {
+      pend = false;
+      ++nrestart;
+      bcg_nbreak += 1.0;
+      if (nrestart > 2) {
+        fell_back = true;
+        break;
+      }
+      ImplicitApplyOp(M1_IW_KX, M1_IW_KTT);
+      Kokkos::parallel_reduce("m1_impl_bcg2_rs", pol,
+      KOKKOS_LAMBDA(const int idx, M1BcgVal &v) {
+        int m, k, j, i;
+        M1BcgIdx(idx, nkji, nji, ni, m, k, j, i);
+        k += ks; j += js; i += is;
+        Real r = iw_(m,M1_IW_KB,k,j,i) - iw_(m,M1_IW_KTT,k,j,i);
+        iw_(m,M1_IW_KR,k,j,i) = r;
+        iw_(m,M1_IW_KRH,k,j,i) = r;
+        iw_(m,M1_IW_KP,k,j,i) = 0.0;
+        iw_(m,M1_IW_KV,k,j,i) = 0.0;
+        v.s0 += r*r;
+      }, HRed(red));
+      M1GlobalBcg(red);
+      bcg_nred += 1.0;
+      rhon = red.s0;
+      rho = 1.0;
+      alpha = 1.0;
+      omega = 1.0;
+    }
+  }
+  // the cap reached with an update whose max is not known yet: test it once
+  if (!done && !fell_back && pend) {
+    if (true_ok()) {done = true;}
   }
   ImplicitBiCGStabEnd(nit, fell_back);
   return nit;

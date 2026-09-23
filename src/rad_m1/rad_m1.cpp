@@ -144,6 +144,14 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   impl_line_solver = 0;
   impl_pcr_team = 0;
   impl_pcr_check = false;
+  impl_halo_direct = false;
+  halo_direct_on = false;
+  impl_odc = false;
+  impl_stencil = false;
+  st_edges = true;
+  impl_prec_float = false;
+  impl_kfuse = 0;
+  impl_prec = 0;
   pcr_chk_max = 0.0;
   pcr_chk_n = 0.0;
   impl_ecnt = 2;
