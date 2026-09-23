@@ -121,6 +121,11 @@ class M1Evt {
 
 M1Evt &M1EvtA() {static M1Evt e; return e;}
 M1Evt &M1EvtB() {static M1Evt e; return e;}
+#if MPI_PARALLEL_ENABLED
+//! implicit_halo_mpi: the requests of the exchange in flight (Post -> Finish)
+std::vector<MPI_Request> &M1HmReqR() {static std::vector<MPI_Request> v; return v;}
+std::vector<MPI_Request> &M1HmReqS() {static std::vector<MPI_Request> v; return v;}
+#endif
 
 #if MPI_PARALLEL_ENABLED
 void M1PipeOpFn(void *in, void *inout, int *len, MPI_Datatype *) {
@@ -357,10 +362,22 @@ void RadiationM1::ImplicitHaloMPIInit() {
 //! major, i.e. entry e of component n at off*nq + n*len + (e - off).
 
 void RadiationM1::ImplicitHaloMPI(int nq, int c0) {
+  ImplicitHaloMPIPost(nq, c0);
+  ImplicitHaloMPIFinish(nq, c0);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::ImplicitHaloMPIPost
+//! \brief implicit_halo_mpi, first half: receives posted, pack kernel, event, on-rank
+//! copy kernel.  The host does not wait here, so the caller may queue more work
+//! (implicit_halo_overlap: the interior operator) before ImplicitHaloMPIFinish.
+
+void RadiationM1::ImplicitHaloMPIPost(int nq, int c0) {
 #if MPI_PARALLEL_ENABLED
   MPI_Comm comm = *static_cast<MPI_Comm *>(hm_comm);
   const int nseg = static_cast<int>(hm_rank.size());
-  static std::vector<MPI_Request> rq, sq;
+  auto &rq = M1HmReqR();
+  auto &sq = M1HmReqS();
   rq.assign(nseg, MPI_REQUEST_NULL);
   sq.assign(nseg, MPI_REQUEST_NULL);
   auto sbuf = hm_sbuf;
@@ -397,7 +414,32 @@ void RadiationM1::ImplicitHaloMPI(int nq, int c0) {
   }
   M1EvtB().record();
   ImplicitHaloDirect(nq, c0);   // the on-rank neighbours, behind the pack
-  M1EvtB().wait();
+#else
+  (void)nq;
+  (void)c0;
+#endif
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::ImplicitHaloMPIFinish
+//! \brief implicit_halo_mpi, second half: wait for the pack, sends, wait for every
+//! message, unpack kernel, wait for the sends.
+
+void RadiationM1::ImplicitHaloMPIFinish(int nq, int c0) {
+#if MPI_PARALLEL_ENABLED
+  MPI_Comm comm = *static_cast<MPI_Comm *>(hm_comm);
+  const int nseg = static_cast<int>(hm_rank.size());
+  auto &rq = M1HmReqR();
+  auto &sq = M1HmReqS();
+  auto sbuf = hm_sbuf;
+  auto rbuf = hm_rbuf;
+  constexpr int tag = 4242;
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int n1 = indcs.nx1 + 2*indcs.ng;
+  const int n2 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*indcs.ng) : 1;
+  const int nc0 = c0;
+  auto iw_ = iw;
+  auto segs = hm_segs.d_view;
   for (int s = 0; s < nseg; ++s) {
     if (hm_slen[s] > 0) {
       MPI_Isend(sbuf.data() + static_cast<size_t>(hm_soff[s])*nq, hm_slen[s]*nq,
@@ -427,6 +469,51 @@ void RadiationM1::ImplicitHaloMPI(int nq, int c0) {
   (void)nq;
   (void)c0;
 #endif
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::ImplicitHaloOp
+//! \brief the halo of x followed by y = A x (+ the reductions `red` of
+//! ImplicitOffDiagOpC into out[0..3]).  Off (the default), exactly ImplicitKrylovHalo
+//! then ImplicitOpX.  implicit_halo_overlap (with implicit_halo_mpi active and the
+//! stencil operator): the exchange is split around the operator on the interior cells,
+//!   receives + pack + on-rank copy | interior operator | [host: wait for the pack,
+//!   sends, wait for the messages] unpack | shell operator,
+//! so the GPU computes the interior while the messages fly.  Every cell gets the same
+//! arithmetic as ImplicitStencilOp, so y is bitwise; with red > 0 the sums are summed
+//! in two parts (interior, shell), i.e. round-off.
+
+void RadiationM1::ImplicitHaloOp(int xc, int yc, int red, Real *out) {
+  bool ovl = impl_halo_ovl && impl_stencil && !halo_direct_on && impl_halo_mpi;
+  if (ovl && hm_state == 0) {ImplicitHaloMPIInit();}
+  ovl = ovl && (hm_state == 1);
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int w = vimp_now ? 2 : 1;       // the reach of the operator (M1VimpRow: 2)
+  if (ovl) {
+    // an interior box that is not empty in every non-degenerate direction
+    ovl = (indcs.nx1 > 2*w) && ((indcs.nx2 == 1) || (indcs.nx2 > 2*w)) &&
+          ((indcs.nx3 == 1) || (indcs.nx3 > 2*w));
+  }
+  if (!ovl) {
+    ImplicitKrylovHalo(xc);
+    ImplicitOpX(xc, yc, red, out);
+    return;
+  }
+  if (ho_h.extent_int(0) != 8) {
+    ho_h = Kokkos::View<Real*, Kokkos::SharedHostPinnedSpace>("m1_ho_h", 8);
+  }
+  Real *h0 = ho_h.data(), *h1 = ho_h.data() + 4;
+  ImplicitHaloMPIPost(1, xc);
+  ImplicitStencilOpPart(xc, yc, red, 1, w, h0);
+  ImplicitHaloMPIFinish(1, xc);
+  ImplicitStencilOpPart(xc, yc, red, 2, w, h1);
+  if (red != 0) {
+    DevExeSpace().fence();
+    out[0] = h0[0] + h1[0];
+    out[1] = h0[1] + h1[1];
+    out[2] = h0[2] + h1[2];
+    out[3] = (h1[3] > h0[3]) ? h1[3] : h0[3];
+  }
 }
 
 //----------------------------------------------------------------------------------------
@@ -539,9 +626,8 @@ int RadiationM1::ImplicitBiCGStabPipe(Real rhsmax) {
   // t = A what; returns (rtilde, w)
   auto start = [&]() -> Real {
     ImplicitPrecondX(M1_IW_KR, M1_IW_KY, 0, 0.0, 0.0);
-    ImplicitKrylovHalo(M1_IW_KY);
     Real o4[4];
-    ImplicitOpX(M1_IW_KY, M1_IW_KP, 1, o4);
+    ImplicitHaloOp(M1_IW_KY, M1_IW_KP, 1, o4);
     M1PipeVal a;
     for (int c = 0; c < 5; ++c) {a.s[c] = 0.0;}
     a.s[0] = o4[0];
@@ -558,8 +644,7 @@ int RadiationM1::ImplicitBiCGStabPipe(Real rhsmax) {
       iw_(m,M1_IW_KV,k,j,i) = 0.0;
     });
     ImplicitPrecondX(M1_IW_KP, M1_IW_KY, 0, 0.0, 0.0);
-    ImplicitKrylovHalo(M1_IW_KY);
-    ImplicitOpX(M1_IW_KY, M1_IW_KTT, 0, nullptr);
+    ImplicitHaloOp(M1_IW_KY, M1_IW_KTT, 0, nullptr);
     return a.s[0];
   };
 
@@ -612,8 +697,7 @@ int RadiationM1::ImplicitBiCGStabPipe(Real rhsmax) {
       M1EvtA().wait();
       M1PipeVal a = *h1;
       M1PipePost(a);
-      ImplicitKrylovHalo(M1_IW_KZ);
-      ImplicitOpX(M1_IW_KZ, M1_IW_KV, 0, nullptr);
+      ImplicitHaloOp(M1_IW_KZ, M1_IW_KV, 0, nullptr);
       M1PipeFinish(a);
       bcg_nred += 1.0;
       omega = (a.s[1] > 0.0) ? (a.s[0]/a.s[1]) : 0.0;
@@ -653,8 +737,7 @@ int RadiationM1::ImplicitBiCGStabPipe(Real rhsmax) {
       M1EvtA().wait();
       M1PipeVal b = *h2;
       M1PipePost(b);
-      ImplicitKrylovHalo(M1_IW_KY);
-      ImplicitOpX(M1_IW_KY, M1_IW_KTT, 0, nullptr);
+      ImplicitHaloOp(M1_IW_KY, M1_IW_KTT, 0, nullptr);
       M1PipeFinish(b);
       bcg_nred += 1.0;
       if (lin_done(b.mx)) {

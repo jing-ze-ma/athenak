@@ -454,6 +454,15 @@ class RadiationM1 {
   void *hm_comm;                // MPI_Comm* (the dup'ed communicator), opaque here
   void ImplicitHaloMPIInit();
   void ImplicitHaloMPI(int nq, int c0);
+  void ImplicitHaloMPIPost(int nq, int c0);    // receives, pack, on-rank copy
+  void ImplicitHaloMPIFinish(int nq, int c0);  // sends, wait, unpack
+  // ---- implicit_halo_overlap (tests_m1/runs_3y_halo_overlap): the Krylov halo of x
+  // overlapped with the operator on the interior cells; read only when named, default
+  // off (then nothing below runs).  Needs implicit_halo_mpi and implicit_op_stencil.
+  bool impl_halo_ovl;
+  Kokkos::View<Real*, Kokkos::SharedHostPinnedSpace> ho_h;  // 2 x 4 partial sums
+  void ImplicitHaloOp(int xc, int yc, int red, Real *out);
+  void ImplicitStencilOpPart(int xc, int yc, int red, int part, int w, Real *hs);
   int ImplicitBiCGStabPipe(Real rhsmax);
   // ---- the Picard pass count (bench/m1_picard_0923).  Since bench/m1_defaults_0923
   // lres_test = false, conv_est = true and lin_ew_max = 1e-2 (not predictor) are the
