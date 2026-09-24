@@ -32,7 +32,7 @@ stretch made the per-cell spacing part of S1.
 | `src/rad_m1/rad_m1.cpp` | geometry guard: sp is no longer refused outright; still refused: the polar boundary and any theta range reaching 0 or pi ("the poles are not supported yet"), the cubed sphere, the theta stretch, the radial stretches on a Cartesian mesh, relativity.  Sets `sph_geom` and calls `SphericalS1Check` after `ImplicitInit`. |
 | `src/rad_m1/rad_m1_sph.cpp` (new, in `src/CMakeLists.txt`) | `SphericalS1Check`: on sp everything but transport = implicit, closure = eddington, time_scheme = be, one block along x1, no SMR, implicit_halo_mpi = false, implicit_flux = central, implicit_recon = dc, implicit_trans_limit = none, no implicit_vimp, no dbg_tensor is a fatal.  implicit_offdiag is set to none (Eddington D_ab = 0 off the diagonal: the dropped terms are identically zero, and M1OffDiv's uniform dx stays off this mesh). |
 | `src/rad_m1/rad_m1.hpp` | `sph_geom`, `SphericalS1Check`. |
-| `src/rad_m1/rad_m1_implicit.cpp` | the geometry, as `sph` overwrites / separate branches (the Cartesian expression trees are unchanged): x1 row (`m1_impl_asm`): per face `nu = dt A1_f/V_i` instead of `dt/dx1`, and the face-flux gradient over `dxface.x1f` (centroid to centroid) instead of `dx1`, including the Marshak / flux boundary faces (the imposed flux enters times its area); x1 face flux (`m1_impl_face`): gradient over `dxface.x1f`; x2/x3 face fluxes (`m1_impl_f2face/f3face`): gradient over the arc lengths `dxface.x2f = r dtheta`, `dxface.x3f = r sin(theta) dphi`; transverse cell terms (`m1_impl_tcell`): `dt A2_f/V`, `dt A3_f/V` per face in TDIA / TRHS / CJM..CKP.  The Krylov operator, the stencil, the line preconditioner and PCR read those stored coefficients, so they need nothing.  `implicit_halo_mpi` defaults to false on sp. |
+| `src/rad_m1/rad_m1_implicit.cpp` | the geometry, in separate `if (sph)` blocks that OVERWRITE the Cartesian results; every Cartesian expression is textually that of 90b01f2f (the first version, 600c4fed, used per-face run-time selects in the Cartesian expressions and was NOT GPU bitwise, see below): x1 row (`m1_impl_asm`): per face `nu = dt A1_f/V_i` instead of `dt/dx1`, and the face-flux gradient over `dxface.x1f` (centroid to centroid) instead of `dx1`, including the Marshak / flux boundary faces (the imposed flux enters times its area); x1 face flux (`m1_impl_face`): gradient over `dxface.x1f`; x2/x3 face fluxes (`m1_impl_f2face/f3face`): gradient over the arc lengths `dxface.x2f = r dtheta`, `dxface.x3f = r sin(theta) dphi`; transverse cell terms (`m1_impl_tcell`, rebuilt by `M1SphTransRow`): `dt A2_f/V`, `dt A3_f/V` per face in TDIA / TRHS / CJM..CKP.  The Krylov operator, the stencil, the line preconditioner and PCR read those stored coefficients, so they need nothing.  `implicit_halo_mpi` defaults to false on sp. |
 | `src/rad_m1/rad_m1_newdt.cpp` | on sp `implicit_cfl` uses the smallest physical width (Coordinates dx1, r dtheta, r sin(theta) dphi), not mb_size (angles, unstretched dr). |
 | `src/pgen/tests/rad_m1_tests2.cpp` | `m1_test = sph_shell` (built-in `pgen_name = rad_m1_beam`): static uniform gas, `E = e_out + e_amp exp(-((r-r0)/w)^2)`, F = 0; also runs on a Cartesian mesh (r = x1) as the planar twin. |
 
@@ -153,11 +153,24 @@ ref = 90b01f2f, new = m1-sp, same inputs and ranks, bitwise = every output file 
 
 ## HANDOVER
 
-State: m1-sp = rt-integration 90b01f2f + this commit, NOT merged.  Every number above is
-from /viper/ptmp2/jinma/s1_0924/cpu (CPU).  No GPU run was made: the sp branches are
-overwrites behind `sph_geom`, and CPU T-bit is bitwise, but a GPU (hipcc) Cartesian T-bit
-was not measured; do one (apudev, HSA_XNACK=1, HSA_NO_SCRATCH_RECLAIM=1) before a
-production uses this branch.
+State: m1-sp = rt-integration 90b01f2f + 600c4fed + ced90b9a (the overwrite
+restructure) + this README commit, NOT merged.  CPU numbers above: 600c4fed; after
+ced90b9a the sp gates were rerun (`cpu/v2*`): T-S1 L1 identical to 5 digits (order 1.998 /
+1.999 uniform, 1.987 / 1.994 stretched), T-sym 1.86e-14, symg 7.5e-13, Marshak R = 1e3
+0.01398, restart 12/12 identical.
+
+GPU Cartesian bitwise gate (apudev, 2 x gfx942, hipcc/rocm 6.3, HSA_XNACK=1,
+HSA_NO_SCRATCH_RECLAIM=1, one job, interleaved; `scripts/gate_gpu*.sh`):
+* 600c4fed vs 90b01f2f (job 11956456): He slab 2-D 1 rank bitwise; 3-D box3d_nd 2 ranks
+  and box3d_nd + vet_sc 2 ranks DIFFERENT from the first hst row (time 1.1298793033168635
+  vs ...184462): the per-face selects changed hipcc's FMA contraction.
+* ced90b9a vs 90b01f2f (job 11956732): slab 1 rank, box3d_nd 2 ranks, box3d_nd + vet_sc
+  2 ranks all BITWISE (10/10 files each); 90b01f2f rerun vs itself also bitwise (no
+  run-to-run noise).
+
+CPU T-bit of the merge: ref = rt-integration e89954e2, new = `git merge-tree
+--write-tree ced90b9a e89954e2` (tree e9629506, no conflicts), the same 11 cases as the
+table below (`scripts/gate_tbit3.sh`, log s1_0924/gate_tbit3.log): all 11 BITWISE.
 
 Next step, S2 (design sect. 6), plus what S1 left refused:
 
