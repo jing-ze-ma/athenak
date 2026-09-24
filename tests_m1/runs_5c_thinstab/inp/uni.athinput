@@ -1,0 +1,96 @@
+<comment>
+problem = runs_5c_thinstab: uniform scattering slab, flux in at x1min, Marshak out at x1max,
+          periodic x2, a transverse E seed (atm_seed, atm_seed_k)
+
+<job>
+basename = uni
+
+<mesh>
+nghost    = 2
+nx1       = 32
+x1min     = 0.0
+x1max     = 4.0
+ix1_bc    = outflow
+ox1_bc    = outflow
+nx2       = 16
+x2min     = 0.0
+x2max     = 2.0
+ix2_bc    = periodic
+ox2_bc    = periodic
+nx3       = 1
+x3min     = -0.5
+x3max     = 0.5
+ix3_bc    = periodic
+ox3_bc    = periodic
+
+<meshblock>
+nx1       = 32
+nx2       = 16
+nx3       = 1
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim       = 100
+tlim       = 1.0e30
+ndiag      = 1000
+
+<hydro>
+eos         = ideal
+reconstruct = plm
+rsolver     = hllc
+gamma       = 1.666666666666667
+
+<rad_m1>
+c_light      = 100.0
+chat_over_c  = 1.0
+closure      = m1
+e_floor      = 1.0e-30
+opacity      = const
+kappa_p      = 0.0
+kappa_e      = 0.0
+kappa_f      = 0.0
+kappa_s      = 1.0        # rho = 1: tau_cell = kappa_s dx1
+arad         = 1.0e8
+coupling     = true
+gas_feedback = false
+transport    = implicit
+implicit_cfl = 300.0      # c dt/dx1 (fixed dt)
+implicit_solver = bicgstab
+implicit_maxit  = 100
+implicit_tol = 1.0e-10
+implicit_lin_tol = 1.0e-10
+implicit_offdiag = auto
+implicit_closure_lag = step
+implicit_closure_relax = 1.0
+implicit_trans_limit = none
+implicit_accel = none
+implicit_closure_thin_relax = 0.0
+implicit_anderson_m = 5
+implicit_trans_fmax = 1.0
+implicit_op_check = 0
+dbg_trans_memory = 1.0
+implicit_bc_x1min   = flux
+implicit_flux_x1min = 1.0
+implicit_bc_x1max   = marshak
+marshak_q    = 0.5
+
+<problem>
+pgen_name  = rad_m1_beam
+m1_test    = atmosphere
+atm_rho_top = 1.0
+atm_scale_h = 1.0e8
+atm_flux   = 100.0        # F = c: E ~ O(1)
+atm_temp   = 1.0e-3
+atm_seed   = 1.0e-5
+atm_seed_k = 1
+
+<output1>
+file_type   = hst
+dt          = 1.0e30
+
+<output3>
+file_type   = bin
+variable    = m1
+dcycle      = 5

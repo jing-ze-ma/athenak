@@ -605,6 +605,14 @@ class RadiationM1 {
                                 // passes (1 = no relaxation), and the same for n
   bool impl_crelax_thin;        // relax only where the cell is optically THIN
                                 // (theta = 1/(1 + c dt rho kappa_t) > 1/2)
+  // <rad_m1>/implicit_closure_thin_relax = C (runs_5c_thinstab; 0 = off, nothing is
+  // allocated or read): under implicit_closure_lag = step, the (chi, n) a cell starts a
+  // step with is relaxed from the one it used in the previous step with a weight
+  // w = min(1, 2/(1 + G^2)), G = C max(chi', b/f)/tau_c + f chi'/min(chi, 1-chi), the
+  // bound of the lagged-closure gain.  ctr_mem holds (chi, n1, n2, n3) of the last step.
+  Real impl_ctrelax;
+  bool ctr_init;
+  DvceArray5D<Real> ctr_mem;
   bool impl_clag_step;          // <rad_m1>/implicit_closure_lag = step: freeze chi and n
                                 // at the START-of-step state for the whole step, so each
                                 // step is one linear solve plus the T nonlinearity

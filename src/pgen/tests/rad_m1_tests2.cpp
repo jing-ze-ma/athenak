@@ -391,6 +391,13 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
     if (restart) return;
     auto uh = pmbp->phydro->u0;
     Real egas = m1_at_egas;
+    // atm_seed (runs_5c_thinstab): a TRANSVERSE perturbation of the initial E,
+    // E *= 1 + atm_seed cos(2 pi atm_seed_k (x2 - x2min)/L2), or (-1)^j for
+    // atm_seed_k <= 0.  Default 0: the IC is untouched.
+    const Real aseed = pin->GetOrAddReal("problem","atm_seed",0.0);
+    const int aseedk = pin->GetOrAddInteger("problem","atm_seed_k",1);
+    const Real ax2min = pmy_mesh_->mesh_size.x2min;
+    const Real ax2len = pmy_mesh_->mesh_size.x2max - ax2min;
     par_for("m1_atm_ic", DevExeSpace(), 0,nmb1,0,(n3-1),0,(n2-1),0,(n1-1),
     KOKKOS_LAMBDA(int m, int k, int j, int i) {
       Real &x1min = size.d_view(m).x1min;
@@ -405,6 +412,14 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
       uh(m,IEN,k,j,i) = d*egas;
       // the EDDINGTON guess, deliberately not the M1 answer
       u0(m,radm1::M1_E,k,j,i) = fmax(3.0*(fin/cl)*(tau + 2.0/3.0), efl);
+      if (aseed != 0.0) {
+        Real &x2min = size.d_view(m).x2min;
+        Real &x2max = size.d_view(m).x2max;
+        Real x2v = CellCenterX(j-js, nx2, x2min, x2max);
+        Real sm = (aseedk > 0) ? cos(2.0*M_PI*aseedk*(x2v - ax2min)/ax2len)
+                               : ((((j - js) & 1) == 0) ? 1.0 : -1.0);
+        u0(m,radm1::M1_E,k,j,i) *= 1.0 + aseed*sm;
+      }
       u0(m,radm1::M1_F1,k,j,i) = fin;
       u0(m,radm1::M1_F2,k,j,i) = 0.0;
       u0(m,radm1::M1_F3,k,j,i) = 0.0;

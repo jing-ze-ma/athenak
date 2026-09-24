@@ -346,6 +346,16 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     ImplFatal("<rad_m1>/implicit_closure_relax must lie in (0,1]");
   }
   impl_crelax_thin = pin->GetOrAddBoolean("rad_m1","implicit_closure_relax_thin",false);
+  // runs_5c_thinstab: the step-to-step closure relaxation of optically thin cells.  Read
+  // only when named, so an input file that does not name it is bitwise unchanged.
+  impl_ctrelax = 0.0;
+  ctr_init = false;
+  if (pin->DoesParameterExist("rad_m1","implicit_closure_thin_relax")) {
+    impl_ctrelax = pin->GetReal("rad_m1","implicit_closure_thin_relax");
+    if (impl_ctrelax < 0.0) {
+      ImplFatal("<rad_m1>/implicit_closure_thin_relax must be >= 0");
+    }
+  }
   {std::string sc = pin->GetOrAddString("rad_m1","implicit_closure_lag","pass");
   if (sc.compare("pass") == 0) {
     impl_clag_step = false;
@@ -1044,6 +1054,13 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     Kokkos::deep_copy(ecache, -1.0);
   }
   Kokkos::realloc(iw, nmb, niw, ncells3, ncells2, ncells1);
+  if (impl_ctrelax > 0.0) {
+    if (!trans_on || !impl_clag_step) {
+      ImplFatal("<rad_m1>/implicit_closure_thin_relax needs transport = implicit on a "
+                "multi-D mesh and implicit_closure_lag = step");
+    }
+    Kokkos::realloc(ctr_mem, nmb, 4, ncells3, ncells2, ncells1);
+  }
   Kokkos::deep_copy(iw, 0.0);
   if (impl_pred) {
     Kokkos::realloc(ipred, nmb, (impl_pord == 2) ? 5 : 3, ncells3, ncells2, ncells1);
@@ -6089,6 +6106,12 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     // implicit_closure_lag = step
     const bool dorel = (crw < 1.0) && (it > 0);
     const bool dofreeze = clagst && (it > 0);
+    // runs_5c_thinstab: implicit_closure_thin_relax, first pass of the step only
+    const bool ctr = (impl_ctrelax > 0.0) && (it == 0);
+    const bool ctri = ctr_init;
+    const Real ctc = impl_ctrelax;
+    const bool ctsph = sph_geom;
+    auto cm_ = ctr_mem;
     // DIAGNOSTIC dbg_tensor (VET scaffolding): tkeep = read the stored tensor; ttau =
     // rebuild it from the optical depth (first pass of every step); ttilt = rotate the
     // axis of the tensor computed on the very first pass of the run
@@ -6232,6 +6255,48 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           n2 = tt_(m,2,k,j,i);
           n3 = tt_(m,3,k,j,i);
         }
+        // implicit_closure_thin_relax (tests_m1/runs_5c_thinstab): the lagged closure's
+        // dependence on F is explicit, and at c dt >> dx a flux perturbation comes back
+        // amplified by g ~ max(chi', b/f)/tau_c each step (tau_c the cell optical depth
+        // along n).  Relaxing (chi, n) from the previous step's values with
+        // w = 2/(1 + G^2), G >= |g|, makes the step map contract (|1 - w + w g| < 1 for
+        // Re g < 1) to the SAME fixed point; cells with G <= 1 are left untouched.
+        if (ctr && !edd && !vetsc && !tkeep && !tauc) {
+          if (ctri) {
+            Real dx1 = mbsize.d_view(m).dx1;
+            Real kt = iw_(m,M1_IW_KT,k,j,i);
+            Real tc = kt*dx1;
+            if (!ctsph) {
+              Real dx2 = mbsize.d_view(m).dx2;
+              Real dx3 = mbsize.d_view(m).dx3;
+              tc = kt/fmax(fabs(n1)/dx1 + fabs(n2)/dx2 + fabs(n3)/dx3, 1.0e-300);
+            }
+            Real fh = fmin(fmax(rfm, 1.0e-3), 0.999);
+            Real cp = (M1Chi(fh + 1.0e-3, chk) - M1Chi(fh - 1.0e-3, chk))/2.0e-3;
+            Real bf = 0.5*(3.0*chi - 1.0)/fh;
+            Real gg = ctc*fmax(cp, bf)/fmax(tc, 1.0e-300)
+                      + fh*cp/fmax(fmin(chi, 1.0 - chi), 1.0e-3);
+            Real w = 2.0/(1.0 + gg*gg);
+            if (w < 1.0) {
+              Real w1 = 1.0 - w;
+              chi = w1*cm_(m,0,k,j,i) + w*chi;
+              n1 = w1*cm_(m,1,k,j,i) + w*n1;
+              n2 = w1*cm_(m,2,k,j,i) + w*n2;
+              n3 = w1*cm_(m,3,k,j,i) + w*n3;
+              Real nn = sqrt(n1*n1 + n2*n2 + n3*n3);
+              if (nn > 0.0) {
+                Real inn = 1.0/nn;
+                n1 *= inn;
+                n2 *= inn;
+                n3 *= inn;
+              }
+            }
+          }
+          cm_(m,0,k,j,i) = chi;
+          cm_(m,1,k,j,i) = n1;
+          cm_(m,2,k,j,i) = n2;
+          cm_(m,3,k,j,i) = n3;
+        }
         iw_(m,M1_IW_WCHI,k,j,i) = chi;
         iw_(m,M1_IW_N1,k,j,i) = n1;
         iw_(m,M1_IW_N2,k,j,i) = n2;
@@ -6308,6 +6373,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       iw_(m,M1_IW_RF0,k,j,i) = r0;
     });
     if ((tmode == 1 || tmode == 2) && it == 0) {dbg_tensor_init = true;}
+    if (ctr) {ctr_init = true;}
 
     // the x1 halo of the LAGGED quantities (w, a, g0, v1, the comoving reduced flux and
     // the transport opacity).  Every face of the stack is then assembled by both of its
