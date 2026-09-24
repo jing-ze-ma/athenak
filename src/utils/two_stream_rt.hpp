@@ -222,30 +222,34 @@ using RtF = Real;
 // THE ck CHAIN KERNEL'S WHOLE-COLUMN ARRAYS LIVE IN GLOBAL MEMORY (ck-scratch).
 // rt_chain_ck keeps up to ten [RT_NB][n1] column arrays per thread (I_down, Cmx, Krs,
 // Kpc, Cc0/Cci/Cco, Js0..2).  As private arrays they were sized by a compile-time column
-// tier and put in the private (scratch) segment: 45 kB per lane at the 136 tier, 86 kB at
-// 264, which the MI300A runtime has to reserve for FULL occupancy (~40 GB at 264) and
-// cannot; every ck run with n1 > 136 died with HSA_STATUS_ERROR_OUT_OF_RESOURCES.  They
-// are now slices of one device buffer (rt_ckscr_ptr) sized by the actual n1 and thread
-// count.  Group g (one array, all RT_NB chains) of thread t holds element (cc, i) at
-//   buf[g*gsz + (cc*n1 + i)*nthr + t],   gsz = RT_NB*n1*nthr (Reals),
-// with t = ((m*nbc + blk%nbc)*n3 + k-ks)*n2 + j-js, so that neighbouring lanes (j) are
-// neighbouring words at the same (cc, i): every access is coalesced.  Only the storage
-// moves; every value, and every operation on it, is the one the private array held, so
-// the result is bitwise unchanged.  A switched-off array (the SPH/BSP/CCH/JAC tag false)
-// stays the one-element private array it was.  CkScrCol[cc][i] reads like the array.
+// tier and put in the private (scratch) segment: 31 kB per lane for the production
+// kernel at the 136 tier, 60 kB at 264 (86 kB with the Jacobian), which the MI300A
+// runtime reserves for FULL occupancy (~40 GB at 264) and cannot; every ck run with
+// n1 > 136 died with HSA_STATUS_ERROR_OUT_OF_RESOURCES.  They are now slices of one
+// device buffer (rt_ckscr_ptr) sized by the actual n1 and thread count, laid out the way
+// the hardware lays out scratch: threads in tiles of CKS_W = 64 (one wavefront), each
+// tile owning one contiguous region, and inside it group g (one array, all RT_NB chains)
+// holding element (cc, i) of lane l at
+//   tile + ((g*RT_NB + cc)*n1 + i)*CKS_W + l.
+// So a wave's access at one (cc, i) is one contiguous 512-byte line, and the whole of a
+// wave's column data is one contiguous block (few pages; a plain (i, thread) layout put
+// successive i half a megabyte apart and cost 30 % on the kernel in TLB misses).  The
+// thread number is the par_for flattening of (m, blk, k, j), so a tile is a wave.  Only
+// the storage moves: every value, and every operation on it, is the one the private
+// array held.  A switched-off array (the SPH/BSP/CCH/JAC tag false) stays the
+// one-element private array it was.  CkScrCol[cc][i] reads like the array.
+constexpr int CKS_W = 64;
 template <typename T>
 struct CkScrRow {
   T *p;
-  int s;
-  KOKKOS_INLINE_FUNCTION T &operator[](const int i) const { return p[i*s]; }
+  KOKKOS_INLINE_FUNCTION T &operator[](const int i) const { return p[i*CKS_W]; }
 };
 template <typename T>
 struct CkScrCol {
   T *p;
-  int si;
-  size_t sc;
+  int sc;
   KOKKOS_INLINE_FUNCTION CkScrRow<T> operator[](const int c) const {
-    return CkScrRow<T>{p + c*sc, si};
+    return CkScrRow<T>{p + c*sc};
   }
 };
 template <typename T>
@@ -254,15 +258,17 @@ struct CkScrOne {
   KOKKOS_INLINE_FUNCTION T *operator[](const int c) { return a[c]; }
   KOKKOS_INLINE_FUNCTION const T *operator[](const int c) const { return a[c]; }
 };
-// group g of thread t in buffer buf; ON false gives the one-element private stand-in
+// group g of thread t; tsz = Reals per tile.  ON false gives the one-element stand-in.
 template <typename T, bool ON>
 KOKKOS_INLINE_FUNCTION
 std::conditional_t<ON, CkScrCol<T>, CkScrOne<T>> CkScrGet(Real *buf, const int g,
-                                                         const size_t gsz, const int n1,
-                                                         const int nthr, const int t) {
+                                                         const size_t tsz, const int n1,
+                                                         const int t) {
   if constexpr (ON) {
-    T *p = reinterpret_cast<T*>(buf + g*gsz) + t;
-    return CkScrCol<T>{p, nthr, static_cast<size_t>(n1)*nthr};
+    Real *tile = buf + static_cast<size_t>(t/CKS_W)*tsz;
+    T *p = reinterpret_cast<T*>(tile + static_cast<size_t>(g)*RT_NB*n1*CKS_W)
+           + (t % CKS_W);
+    return CkScrCol<T>{p, n1*CKS_W};
   } else {
     return CkScrOne<T>{};
   }
@@ -3765,14 +3771,18 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
           if (gb1*nblk > rt_ckscr_gb) {
             nbc = std::max(1, static_cast<int>(rt_ckscr_gb/gb1));
           }
-          const int scnt = (nmb1 + 1)*nbc*scn3*scn2;
-          const size_t scgsz = static_cast<size_t>(RT_NB)*scn1*scnt;
-          CkScrEnsure(scgsz*nGrp);
+          const size_t sctsz = static_cast<size_t>(nGrp)*RT_NB*scn1*CKS_W;
+          const size_t scntl = (static_cast<size_t>(nmb1 + 1)*nbc*scn3*scn2 + CKS_W - 1)
+                               /CKS_W;
+          CkScrEnsure(scntl*sctsz);
           Real *scbuf = rt_ckscr_ptr->data();
           auto chain_body =
           KOKKOS_LAMBDA(const int m, const int blk, const int k, const int j) {
             constexpr int NC = RT_NB;
-            const int sct = ((m*nbc + blk%nbc)*scn3 + (k - ks))*scn2 + (j - js);
+            // this thread's number in its launch (the par_for flattening of m, blk, k, j)
+            const int scb0 = blk - blk%nbc;
+            const int scnb = (nblk - scb0 < nbc) ? (nblk - scb0) : nbc;
+            const int sct = ((m*scnb + (blk - scb0))*scn3 + (k - ks))*scn2 + (j - js);
             // the frozen-operator pass selectors.  With the tag off these are
             // compile-time false and every frozen branch below is dead code; see FOP.
             const bool ckfst = FOP && ckfst_;   // this pass STORES the operator
@@ -3863,7 +3873,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
             // neutral (454 vs 457 ms), which confirms the diagnosis. Neutral is not a
             // reason to change it, so the column stays.  (ck-scratch: it, and the other
             // whole-column arrays below, now live in rt_ckscr_ptr, not on the stack.)
-            auto I_down = CkScrGet<RtF, true>(scbuf, gI, scgsz, scn1, scnt, sct);
+            auto I_down = CkScrGet<RtF, true>(scbuf, gI, sctsz, scn1, sct);
             // THE FACE MIXING, STORED.  Conservation needs the two rays to use the SAME
             // c at a face -- that, and only that, is what makes A_below (u_b - d_b) =
             // A_above (u_a - d_a) hold and the deposit telescope.  The down-sweep forms
@@ -3872,12 +3882,12 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
             // would be a different number and would break the telescoping at O(beta) per
             // face (measured: 0.7 % per cell, 19 % over the production column).  The
             // accuracy of c is then the probe's; its CONSISTENCY is exact.
-            auto Cmx = CkScrGet<RtF, SPH>(scbuf, gC, scgsz, scn1, scnt, sct);
+            auto Cmx = CkScrGet<RtF, SPH>(scbuf, gC, sctsz, scn1, sct);
             // problem/ck_beam_sph: the (kappa rho) column, filled by the down-sweep and
             // read by the ray integration.  tau_ray is NOT a running sum -- every target
             // radius has its own chord set -- so the profile has to be kept.  One element
             // when the switch is off.
-            auto Krs = CkScrGet<RtF, BSP>(scbuf, gK, scgsz, scn1, scnt, sct);
+            auto Krs = CkScrGet<RtF, BSP>(scbuf, gK, sctsz, scn1, sct);
 
             // Top: the column above the domain, using the top cell's opacity over the
             // hydrostatic column p/g -- the same construction the grey scheme uses.
@@ -4094,10 +4104,10 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               // ck-scratch) and is a one-element private array otherwise.
               RtF cry0[NC], cryi[NC], cryo[NC];
               constexpr bool CC2 = (CCH >= 2);
-              auto Kpc = CkScrGet<Real, CC2>(scbuf, gP, scgsz, scn1, scnt, sct);
-              auto Cc0 = CkScrGet<RtF, CC2>(scbuf, gP+1, scgsz, scn1, scnt, sct);
-              auto Cci = CkScrGet<RtF, CC2>(scbuf, gP+2, scgsz, scn1, scnt, sct);
-              auto Cco = CkScrGet<RtF, CC2>(scbuf, gP+3, scgsz, scn1, scnt, sct);
+              auto Kpc = CkScrGet<Real, CC2>(scbuf, gP, sctsz, scn1, sct);
+              auto Cc0 = CkScrGet<RtF, CC2>(scbuf, gP+1, sctsz, scn1, sct);
+              auto Cci = CkScrGet<RtF, CC2>(scbuf, gP+2, sctsz, scn1, sct);
+              auto Cco = CkScrGet<RtF, CC2>(scbuf, gP+3, sctsz, scn1, sct);
               // one half-layer step, in the chain's own precision: the same exponential
               // coefficients the staggered layers used, handed the half interval.  dsrc
               // comes back as absorbed minus emitted, which is what Src_g wants and is
@@ -4331,9 +4341,9 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                 // M-matrix the Thomas sweep relies on), which makes it quasi-Newton with
                 // the same root.  All of it is compiled only into the JAC instantiation.
                 constexpr int NJ = JAC ? NC : 1;
-                auto Js0 = CkScrGet<Real, JAC>(scbuf, gJ, scgsz, scn1, scnt, sct);
-                auto Js1 = CkScrGet<Real, JAC>(scbuf, gJ+1, scgsz, scn1, scnt, sct);
-                auto Js2 = CkScrGet<Real, JAC>(scbuf, gJ+2, scgsz, scn1, scnt, sct);
+                auto Js0 = CkScrGet<Real, JAC>(scbuf, gJ, sctsz, scn1, sct);
+                auto Js1 = CkScrGet<Real, JAC>(scbuf, gJ+1, sctsz, scn1, sct);
+                auto Js2 = CkScrGet<Real, JAC>(scbuf, gJ+2, sctsz, scn1, sct);
                 Real jS[NJ][3], jfc[NJ][2], juc[NJ][2];
                 // ---- PASS 1: upward, accumulating the relation at every face --------
                 {
