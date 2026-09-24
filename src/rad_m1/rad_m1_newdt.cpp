@@ -17,6 +17,7 @@
 
 #include "athena.hpp"
 #include "mesh/mesh.hpp"
+#include "coordinates/coordinates.hpp"
 #include "driver/driver.hpp"
 #include "rad_m1/rad_m1.hpp"
 #include "rad_m1/rad_m1_implicit.hpp"
@@ -50,6 +51,34 @@ TaskStatus RadiationM1::NewTimeStep(Driver *pdriver, int stage) {
   Real dxmin = dt1;
   if (pmy_pack->pmesh->multi_d) {dxmin = std::min(dxmin, dt2);}
   if (pmy_pack->pmesh->three_d) {dxmin = std::min(dxmin, dt3);}
+  if (sph_geom) {
+    // stage S1, spherical polar: mb_size.dx2/dx3 are ANGLES and dx1 is the unstretched
+    // spacing, so take the smallest physical cell width dr, r dtheta, r sin(theta) dphi
+    // of Coordinates over the active cells (reduced over ranks by the driver)
+    auto cx1 = pmy_pack->pcoord->dx1;
+    auto cx2 = pmy_pack->pcoord->dx2;
+    auto cx3 = pmy_pack->pcoord->dx3;
+    const int is = indcs.is, js = indcs.js, ks = indcs.ks;
+    const int nji = nx2*nx1;
+    const bool md = pmy_pack->pmesh->multi_d, td = pmy_pack->pmesh->three_d;
+    Real smin = std::numeric_limits<float>::max();
+    Kokkos::parallel_reduce("RadM1NudtSph",
+                            Kokkos::RangePolicy<>(DevExeSpace(), 0, nmkji),
+    KOKKOS_LAMBDA(const int &idx, Real &lmin) {
+      int m = idx/nkji;
+      int r = idx - m*nkji;
+      int k = r/nji;
+      r -= k*nji;
+      int j = r/nx1;
+      int i = r - j*nx1;
+      k += ks; j += js; i += is;
+      Real d = cx1(m,k,j,i);
+      if (md) {d = fmin(d, cx2(m,k,j,i));}
+      if (td) {d = fmin(d, cx3(m,k,j,i));}
+      lmin = fmin(d, lmin);
+    }, Kokkos::Min<Real>(smin));
+    dxmin = smin;
+  }
 
   // ---- MILESTONE 3a hook: the implicit scheme has no light-speed CFL.  It takes the
   // step it is given; <rad_m1>/implicit_cfl > 0 asks for a radiation CFL c dt/dx, which

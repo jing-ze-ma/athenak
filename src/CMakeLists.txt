@@ -167,6 +167,7 @@ add_executable(
         rad_m1/rad_m1_coupling.cpp
         rad_m1/rad_m1_fluxes.cpp
         rad_m1/rad_m1_implicit.cpp
+        rad_m1/rad_m1_sph.cpp
         rad_m1/rad_m1_krylov.cpp
         rad_m1/rad_m1_launch.cpp
         rad_m1/rad_m1_time2.cpp

@@ -720,6 +720,14 @@ class RadiationM1 {
   //! read the implicit-solver parameters and allocate its arrays; a no-op in
   //! transport = explicit
   void ImplicitInit(ParameterInput *pin);
+  //! STAGE S1 (rad_m1_sph.cpp): the configuration the spherical-polar wedge supports;
+  //! fatal on anything else.  Called after ImplicitInit when sph_geom is set.
+  void SphericalS1Check(ParameterInput *pin);
+  // true on a spherical-polar mesh (a wedge clear of the poles, S1): the implicit
+  // kernels then take the face areas, cell volumes and centre-to-centre distances of
+  // Coordinates instead of the uniform mb_size.dx1..3 (appended as overwrites, so
+  // the Cartesian arithmetic is untouched)
+  bool sph_geom = false;
   //! print the Picard statistics of the implicit solver (from the destructor, rank 0)
   void ImplicitReport();
   //! VET (rad_m1_vet.cpp): read <rad_m1>/vet_*, check the mesh, allocate

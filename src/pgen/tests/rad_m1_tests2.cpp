@@ -81,6 +81,7 @@
 #include "athena.hpp"
 #include "parameter_input.hpp"
 #include "coordinates/cell_locations.hpp"
+#include "coordinates/coordinates.hpp"
 #include "mesh/mesh.hpp"
 #include "eos/eos.hpp"
 #include "hydro/hydro.hpp"
@@ -595,12 +596,53 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
       u0(m,radm1::M1_F2,k,j,i) = ff*ny;
       u0(m,radm1::M1_F3,k,j,i) = ff*nz;
     });
+  } else if (test.compare("sph_shell") == 0) {
+    // STAGE S1 (tests_m1/runs_5a_sp_s1): a static uniform gas on a spherical-polar
+    // wedge and a spherically symmetric radiation field, E = e_out + e_amp
+    // exp(-((r - r0)/w)^2) at the cell centroid r = x1v, F = 0.  e_amp = 0 (default)
+    // is the flat start of the steady-diffusion gate T-S1 (imposed flux at r_in, the
+    // outer end cell held at e_out by implicit_bc_x1max = efix); e_amp > 0 is the
+    // symmetric transient of T-sym.  The gas does not move (run it with
+    // <rad_m1>/gas_feedback = false and a scattering opacity).
+    // (On a Cartesian mesh r is x1: the planar twin used to compare solver behaviour.)
+    if (pmbp->phydro == nullptr) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+        << std::endl << "<problem>/m1_test = sph_shell needs a <hydro> block"
+        << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    Real dgas = pin->GetOrAddReal("problem","gas_rho",1.0);
+    Real tgas = pin->GetOrAddReal("problem","gas_temp",1.0e-8);
+    Real eout = pin->GetReal("problem","e_out");
+    Real eamp = pin->GetOrAddReal("problem","e_amp",0.0);
+    Real r0 = pin->GetOrAddReal("problem","r0",0.0);
+    Real wid = pin->GetOrAddReal("problem","width",1.0);
+    Real gm1 = pmbp->phydro->peos->eos_data.gamma - 1.0;
+    if (restart) return;
+    auto uh = pmbp->phydro->u0;
+    auto x1v = pmbp->pcoord->x1v;
+    const bool sp = pmy_mesh_->use_spherical_polar;
+    par_for("m1_sph_ic", DevExeSpace(), 0,nmb1,0,(n3-1),0,(n2-1),0,(n1-1),
+    KOKKOS_LAMBDA(int m, int k, int j, int i) {
+      Real r = sp ? x1v(m,i) : CellCenterX(i-is, nx1, size.d_view(m).x1min,
+                                           size.d_view(m).x1max);
+      uh(m,IDN,k,j,i) = dgas;
+      uh(m,IM1,k,j,i) = 0.0;
+      uh(m,IM2,k,j,i) = 0.0;
+      uh(m,IM3,k,j,i) = 0.0;
+      uh(m,IEN,k,j,i) = dgas*tgas/gm1;
+      Real x = (r - r0)/wid;
+      u0(m,radm1::M1_E,k,j,i) = fmax(eout + eamp*exp(-x*x), efl);
+      u0(m,radm1::M1_F1,k,j,i) = 0.0;
+      u0(m,radm1::M1_F2,k,j,i) = 0.0;
+      u0(m,radm1::M1_F3,k,j,i) = 0.0;
+    });
   } else {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
       << std::endl << "<problem>/m1_test = '" << test << "' not implemented "
       << "(beam | pulse1d | thick_pulse | tophat | jump | equil | advect_pulse "
       << "| advect_uniform | advect_shear | marshak | shadow | radshock "
-      << "| atmosphere | radwave)" << std::endl;
+      << "| atmosphere | radwave | sph_shell)" << std::endl;
     std::exit(EXIT_FAILURE);
   }
   return;

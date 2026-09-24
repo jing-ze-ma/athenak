@@ -52,6 +52,7 @@
 #include "parameter_input.hpp"
 #include "mesh/mesh.hpp"
 #include "mesh/nghbr_index.hpp"
+#include "coordinates/coordinates.hpp"
 #include "driver/driver.hpp"
 #include "eos/eos.hpp"
 #include "hydro/hydro.hpp"
@@ -523,7 +524,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   impl_kpipe = pin->GetOrAddBoolean("rad_m1","implicit_krylov_pipe",false);
   {auto *pmh = pmy_pack->pmesh;
   const bool hmdef = impl_halo_direct && !pmh->multilevel && !pmh->use_cubed_sphere &&
-                     !pmh->use_polar_boundary;
+                     !pmh->use_polar_boundary && !pmh->use_spherical_polar;
   impl_halo_mpi = pin->GetOrAddBoolean("rad_m1","implicit_halo_mpi",hmdef);}
   hm_state = 0;
   hm_comm = nullptr;
@@ -1833,6 +1834,14 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
   // ImplicitSolve step (e), where the term is subtracted from the right-hand side and
   // handed to the operator instead).  Under `none` it is dropped everywhere.
   const int odm = od_now;
+  // STAGE S1 (rad_m1_sph.cpp): on the spherical-polar wedge the face-flux equations take
+  // the centre-to-centre arc length dxface (r dtheta, r sin(theta) dphi) and the E row
+  // takes dt A_f/V_i per face.  Appended as overwrites / separate branches, so that the
+  // Cartesian arithmetic is untouched.
+  const bool sph = sph_geom;
+  auto cvol = pmy_pack->pcoord->volume;
+  auto carea = pmy_pack->pcoord->area;
+  auto cdxf = pmy_pack->pcoord->dxface;
 
   // (1) the x2 face fluxes
   par_for("m1_impl_f2face", DevExeSpace(), 0, nmb1, ks, ke, js, je+1, is, ie,
@@ -1868,6 +1877,9 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
     Real dl = M1DDiag(iw_,vd_,dfull,m,1,k,jm,i);
     Real dr = M1DDiag(iw_,vd_,dfull,m,1,k,j,i);
     Real gr = (dr*iw_(m,M1_IW_EP,k,j,i) - dl*iw_(m,M1_IW_EP,k,jm,i))/dx2;
+    if (sph) {
+      gr = (dr*iw_(m,M1_IW_EP,k,j,i) - dl*iw_(m,M1_IW_EP,k,jm,i))/cdxf.x2f(m,k,j,i);
+    }
     Real vf = 0.5*(iw_(m,M1_IW_V2,k,jm,i) + iw_(m,M1_IW_V2,k,j,i));
     Real g0f = 0.5*(iw_(m,M1_IW_G0,k,jm,i) + iw_(m,M1_IW_G0,k,j,i));
     Real off = 0.0;
@@ -1915,6 +1927,9 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
       Real dl = M1DDiag(iw_,vd_,dfull,m,2,km,j,i);
       Real dr = M1DDiag(iw_,vd_,dfull,m,2,k,j,i);
       Real gr = (dr*iw_(m,M1_IW_EP,k,j,i) - dl*iw_(m,M1_IW_EP,km,j,i))/dx3;
+      if (sph) {
+        gr = (dr*iw_(m,M1_IW_EP,k,j,i) - dl*iw_(m,M1_IW_EP,km,j,i))/cdxf.x3f(m,k,j,i);
+      }
       Real vf = 0.5*(iw_(m,M1_IW_V3,km,j,i) + iw_(m,M1_IW_V3,k,j,i));
       Real g0f = 0.5*(iw_(m,M1_IW_G0,km,j,i) + iw_(m,M1_IW_G0,k,j,i));
       Real off = 0.0;
@@ -1952,6 +1967,16 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
     bool p2lo = (b3 != BoundaryFlag::block) && (b3 != BoundaryFlag::periodic);
     bool p2hi = (b4 != BoundaryFlag::block) && (b4 != BoundaryFlag::periodic);
     Real nu2 = dt/dx2;
+    // per face: the divergence factor (dt/dx2, or dt A/V on sp) and the gradient
+    // distance (dx2, or the arc length between the two cell centres on sp)
+    Real nu2p = nu2, nu2m = nu2, dx2p = dx2, dx2m = dx2;
+    if (sph) {
+      Real iv = dt/cvol(m,k,j,i);
+      nu2p = carea.x2f(m,k,j+1,i)*iv;
+      nu2m = carea.x2f(m,k,j,i)*iv;
+      dx2p = cdxf.x2f(m,k,j+1,i);
+      dx2m = cdxf.x2f(m,k,j,i);
+    }
     Real d2c = M1DDiag(iw_,vd_,dfull,m,1,k,j,i);
     Real a2c = iw_(m,M1_IW_A2,k,j,i);
     Real fp = 0.0, fm = 0.0;
@@ -1963,10 +1988,10 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
       fp = f2_(m,k,j+1,i);
       if (vf > 0.0) {
         fp += a2c*ec;
-        dia += nu2*cr*a2c;
+        dia += nu2p*cr*a2c;
       } else {
         fp += iw_(m,M1_IW_A2,k,j+1,i)*iw_(m,M1_IW_EP,k,j+1,i);
-        if (bcg) {cjp += nu2*cr*iw_(m,M1_IW_A2,k,j+1,i);}
+        if (bcg) {cjp += nu2p*cr*iw_(m,M1_IW_A2,k,j+1,i);}
       }
       if (enth2) {
         bool o0, o3;
@@ -1984,10 +2009,10 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
                          a2c, iw_(m,M1_IW_A2,k,j+1,i), iw_(m,M1_IW_A2,k,j3,i), vf);
         }
       }
-      dia += nu2*th*ch*ch*dt*d2c/dx2;
+      dia += nu2p*th*ch*ch*dt*d2c/dx2p;
       if (bcg) {
         Real d2p = M1DDiag(iw_,vd_,dfull,m,1,k,j+1,i);
-        cjp -= nu2*th*ch*ch*dt*d2p/dx2;
+        cjp -= nu2p*th*ch*ch*dt*d2p/dx2p;
       }
     }
     if (!(j == js && p2lo)) {
@@ -1997,10 +2022,10 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
       fm = f2_(m,k,j,i);
       if (vf > 0.0) {
         fm += iw_(m,M1_IW_A2,k,j-1,i)*iw_(m,M1_IW_EP,k,j-1,i);
-        if (bcg) {cjm -= nu2*cr*iw_(m,M1_IW_A2,k,j-1,i);}
+        if (bcg) {cjm -= nu2m*cr*iw_(m,M1_IW_A2,k,j-1,i);}
       } else {
         fm += a2c*ec;
-        dia -= nu2*cr*a2c;
+        dia -= nu2m*cr*a2c;
       }
       if (enth2) {
         bool o0, o3;
@@ -2018,13 +2043,17 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
                          iw_(m,M1_IW_A2,k,j-1,i), a2c, iw_(m,M1_IW_A2,k,j3,i), vf);
         }
       }
-      dia += nu2*th*ch*ch*dt*d2c/dx2;
+      dia += nu2m*th*ch*ch*dt*d2c/dx2m;
       if (bcg) {
         Real d2m = M1DDiag(iw_,vd_,dfull,m,1,k,j-1,i);
-        cjm -= nu2*th*ch*ch*dt*d2m/dx2;
+        cjm -= nu2m*th*ch*ch*dt*d2m/dx2m;
       }
     }
-    tt += nu2*cr*(fp - fm);
+    if (sph) {
+      tt += cr*(nu2p*fp - nu2m*fm);
+    } else {
+      tt += nu2*cr*(fp - fm);
+    }
     if (bcg) {
       iw_(m,M1_IW_CJM,k,j,i) = cjm;
       iw_(m,M1_IW_CJP,k,j,i) = cjp;
@@ -2037,6 +2066,14 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
       bool p3lo = (b5 != BoundaryFlag::block) && (b5 != BoundaryFlag::periodic);
       bool p3hi = (b6 != BoundaryFlag::block) && (b6 != BoundaryFlag::periodic);
       Real nu3 = dt/dx3;
+      Real nu3p = nu3, nu3m = nu3, dx3p = dx3, dx3m = dx3;
+      if (sph) {
+        Real iv = dt/cvol(m,k,j,i);
+        nu3p = carea.x3f(m,k+1,j,i)*iv;
+        nu3m = carea.x3f(m,k,j,i)*iv;
+        dx3p = cdxf.x3f(m,k+1,j,i);
+        dx3m = cdxf.x3f(m,k,j,i);
+      }
       Real d3c = M1DDiag(iw_,vd_,dfull,m,2,k,j,i);
       Real a3c = iw_(m,M1_IW_A3,k,j,i);
       Real gp = 0.0, gm = 0.0;
@@ -2048,10 +2085,10 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
         gp = f3_(m,k+1,j,i);
         if (vf > 0.0) {
           gp += a3c*ec;
-          dia += nu3*cr*a3c;
+          dia += nu3p*cr*a3c;
         } else {
           gp += iw_(m,M1_IW_A3,k+1,j,i)*iw_(m,M1_IW_EP,k+1,j,i);
-          if (bcg) {ckp += nu3*cr*iw_(m,M1_IW_A3,k+1,j,i);}
+          if (bcg) {ckp += nu3p*cr*iw_(m,M1_IW_A3,k+1,j,i);}
         }
         if (enth2) {
           bool o0, o3;
@@ -2071,10 +2108,10 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
                            iw_(m,M1_IW_A3,k3,j,i), vf);
           }
         }
-        dia += nu3*th*ch*ch*dt*d3c/dx3;
+        dia += nu3p*th*ch*ch*dt*d3c/dx3p;
         if (bcg) {
           Real d3p = M1DDiag(iw_,vd_,dfull,m,2,k+1,j,i);
-          ckp -= nu3*th*ch*ch*dt*d3p/dx3;
+          ckp -= nu3p*th*ch*ch*dt*d3p/dx3p;
         }
       }
       if (!(k == ks && p3lo)) {
@@ -2084,10 +2121,10 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
         gm = f3_(m,k,j,i);
         if (vf > 0.0) {
           gm += iw_(m,M1_IW_A3,k-1,j,i)*iw_(m,M1_IW_EP,k-1,j,i);
-          if (bcg) {ckm -= nu3*cr*iw_(m,M1_IW_A3,k-1,j,i);}
+          if (bcg) {ckm -= nu3m*cr*iw_(m,M1_IW_A3,k-1,j,i);}
         } else {
           gm += a3c*ec;
-          dia -= nu3*cr*a3c;
+          dia -= nu3m*cr*a3c;
         }
         if (enth2) {
           bool o0, o3;
@@ -2107,13 +2144,17 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
                            iw_(m,M1_IW_A3,k3,j,i), vf);
           }
         }
-        dia += nu3*th*ch*ch*dt*d3c/dx3;
+        dia += nu3m*th*ch*ch*dt*d3c/dx3m;
         if (bcg) {
           Real d3m = M1DDiag(iw_,vd_,dfull,m,2,k-1,j,i);
-          ckm -= nu3*th*ch*ch*dt*d3m/dx3;
+          ckm -= nu3m*th*ch*ch*dt*d3m/dx3m;
         }
       }
-      tt += nu3*cr*(gp - gm);
+      if (sph) {
+        tt += cr*(nu3p*gp - nu3m*gm);
+      } else {
+        tt += nu3*cr*(gp - gm);
+      }
       if (bcg) {
         iw_(m,M1_IW_CKM,k,j,i) = ckm;
         iw_(m,M1_IW_CKP,k,j,i) = ckp;
@@ -6260,6 +6301,11 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     const bool vim = vimp_now;
     const int ivb = iw_vimp;
 
+    // STAGE S1 (rad_m1_sph.cpp): the spherical-polar geometry of the x1 faces
+    const bool sph = sph_geom;
+    auto cvol = pmy_pack->pcoord->volume;
+    auto carea = pmy_pack->pcoord->area;
+    auto cdxf = pmy_pack->pcoord->dxface;
     // (d) assemble the tridiagonal system of every column
     // implicit_enthalpy: the deferred correction of the x1 enthalpy flux (header)
     const int enm = impl_enth;
@@ -6269,6 +6315,16 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       Real dx = mbsize.d_view(m).dx1;
       Real nu = dt/dx;
+      // STAGE S1 (sp): per face, the divergence factor dt A_f/V_i and the distance
+      // between the two cell centres; on the Cartesian mesh both faces keep dt/dx, dx
+      Real nup = nu, num = nu, dxp = dx, dxm = dx;
+      if (sph) {
+        Real iv = dt/cvol(m,k,j,i);
+        nup = carea.x1f(m,k,j,i+1)*iv;
+        num = carea.x1f(m,k,j,i)*iv;
+        dxp = cdxf.x1f(m,k,j,i+1);
+        dxm = cdxf.x1f(m,k,j,i);
+      }
       Real cr = ch/cl;
       int ipos = pos_.d_view(m);
       bool botb = (ipos == 0), topb = (ipos == nblkx1-1);
@@ -6323,11 +6379,11 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         Real om = 1.0 - ifw_(m,M1_IFW_AL,k,j,i+1);
         Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j,i) + iw_(m,M1_IW_KT,k,j,ip));
         Real th = 1.0/(1.0 + ch*dt*ktf);
-        Real df = om*th*ch*ch*dt/dx;
-        bb += nu*df*wi;
+        Real df = om*th*ch*ch*dt/dxp;
+        bb += nup*df*wi;
         Real wp = iw_(m,M1_IW_WCHI,k,j,ip);
         if (trans) {wp = M1DDiag(iw_,vd_,dfull,m,0,k,j,ip);}
-        cc -= nu*df*wp;
+        cc -= nup*df*wp;
         Real vf = 0.5*(vi + iw_(m,M1_IW_V1,k,j,ip));
         Real g0f = 0.5*(iw_(m,M1_IW_G0,k,j,i) + iw_(m,M1_IW_G0,k,j,ip));
         // the OFF-diagonal Eddington terms of the x1 flux equation, d_2 P_12 + d_3 P_13,
@@ -6339,49 +6395,49 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                     + M1OffDiv(iw_,m,0,k,j,ip,dx,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,
                                M1_IW_EP,vd_,dfull));
         }
-        rr -= nu*cr*om*th*(f0n_(m,k,j,i+1) - ch*dt*vf*g0f - ch*cl*dt*od);
+        rr -= nup*cr*om*th*(f0n_(m,k,j,i+1) - ch*dt*vf*g0f - ch*cl*dt*od);
         // the HLL part: its E'_L coefficient is >= 0 (diagonal) and its E'_R coefficient
         // <= 0 (upper off-diagonal), so the blend keeps the M-matrix.
-        bb += nu*ifw_(m,M1_IFW_HCL,k,j,i+1);
-        cc += nu*ifw_(m,M1_IFW_HCR,k,j,i+1);
-        rr -= nu*ifw_(m,M1_IFW_DG,k,j,i+1);
+        bb += nup*ifw_(m,M1_IFW_HCL,k,j,i+1);
+        cc += nup*ifw_(m,M1_IFW_HCR,k,j,i+1);
+        rr -= nup*ifw_(m,M1_IFW_DG,k,j,i+1);
         if (vf > 0.0) {
-          bb += nu*cr*ai;
+          bb += nup*cr*ai;
         } else {
-          cc += nu*cr*iw_(m,M1_IW_ADV,k,j,ip);
+          cc += nup*cr*iw_(m,M1_IW_ADV,k,j,ip);
         }
         if (enth2) {
           bool o0, o3;
           int i0 = M1EnthIdx(i-1, is, ie, cyclic, hxl, hxh, o0);
           int i3 = M1EnthIdx(i+2, is, ie, cyclic, hxl, hxh, o3);
           if (t2vs) {
-            rr -= nu*cr*M1EnthCorrT(enm, iw_(m,M1_IW_EP,k,j,i0), iw_(m,M1_IW_EP,k,j,i),
+            rr -= nup*cr*M1EnthCorrT(enm, iw_(m,M1_IW_EP,k,j,i0), iw_(m,M1_IW_EP,k,j,i),
                                     iw_(m,M1_IW_EP,k,j,ip), iw_(m,M1_IW_EP,k,j,i3),
                                     o0 && o3, iw_(m,M1_IW_ADV,k,j,i0), ai,
                                     iw_(m,M1_IW_ADV,k,j,ip), iw_(m,M1_IW_ADV,k,j,i3),
                                     iw_(m,t2da,k,j,i0), iw_(m,t2da,k,j,i),
                                     iw_(m,t2da,k,j,ip), iw_(m,t2da,k,j,i3), vf, t2afc);
           } else {
-          rr -= nu*cr*M1EnthCorr(enm, iw_(m,M1_IW_EP,k,j,i0), iw_(m,M1_IW_EP,k,j,i),
+          rr -= nup*cr*M1EnthCorr(enm, iw_(m,M1_IW_EP,k,j,i0), iw_(m,M1_IW_EP,k,j,i),
                                  iw_(m,M1_IW_EP,k,j,ip), iw_(m,M1_IW_EP,k,j,i3),
                                  o0 && o3, iw_(m,M1_IW_ADV,k,j,i0), ai,
                                  iw_(m,M1_IW_ADV,k,j,ip), iw_(m,M1_IW_ADV,k,j,i3), vf);
           }
         }
       } else if (bchi == M1_IBC_MARSHAK) {
-        bb += nu*ch*mq;
-        rr += nu*ch*mq*ebhi;
+        bb += nup*ch*mq;
+        rr += nup*ch*mq*ebhi;
         // implicit_bc_advect: the enthalpy flux A E through the end face, upwinded with
         // the end cell's velocity (outflow: this cell's E; inflow: the bath)
         if (badv) {
           if (vi > 0.0) {
-            bb += nu*cr*ai;
+            bb += nup*cr*ai;
           } else {
-            rr -= nu*cr*ai*ebhi;
+            rr -= nup*cr*ai*ebhi;
           }
         }
       } else if (bchi == M1_IBC_FLUX) {
-        rr -= nu*cr*fxhi;
+        rr -= nup*cr*fxhi;
       }
 
       // ---- face i-1/2
@@ -6390,11 +6446,11 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         Real om = 1.0 - ifw_(m,M1_IFW_AL,k,j,i);
         Real ktf = 0.5*(iw_(m,M1_IW_KT,k,j,im) + iw_(m,M1_IW_KT,k,j,i));
         Real th = 1.0/(1.0 + ch*dt*ktf);
-        Real df = om*th*ch*ch*dt/dx;
-        bb += nu*df*wi;
+        Real df = om*th*ch*ch*dt/dxm;
+        bb += num*df*wi;
         Real wm = iw_(m,M1_IW_WCHI,k,j,im);
         if (trans) {wm = M1DDiag(iw_,vd_,dfull,m,0,k,j,im);}
-        aa -= nu*df*wm;
+        aa -= num*df*wm;
         Real vf = 0.5*(iw_(m,M1_IW_V1,k,j,im) + vi);
         Real g0f = 0.5*(iw_(m,M1_IW_G0,k,j,im) + iw_(m,M1_IW_G0,k,j,i));
         Real od = 0.0;
@@ -6404,21 +6460,21 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                     + M1OffDiv(iw_,m,0,k,j,i,dx,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,M1_IW_EP,
                                vd_,dfull));
         }
-        rr += nu*cr*om*th*(f0n_(m,k,j,i) - ch*dt*vf*g0f - ch*cl*dt*od);
-        aa -= nu*ifw_(m,M1_IFW_HCL,k,j,i);
-        bb -= nu*ifw_(m,M1_IFW_HCR,k,j,i);
-        rr += nu*ifw_(m,M1_IFW_DG,k,j,i);
+        rr += num*cr*om*th*(f0n_(m,k,j,i) - ch*dt*vf*g0f - ch*cl*dt*od);
+        aa -= num*ifw_(m,M1_IFW_HCL,k,j,i);
+        bb -= num*ifw_(m,M1_IFW_HCR,k,j,i);
+        rr += num*ifw_(m,M1_IFW_DG,k,j,i);
         if (vf > 0.0) {
-          aa -= nu*cr*iw_(m,M1_IW_ADV,k,j,im);
+          aa -= num*cr*iw_(m,M1_IW_ADV,k,j,im);
         } else {
-          bb -= nu*cr*ai;
+          bb -= num*cr*ai;
         }
         if (enth2) {
           bool o0, o3;
           int i0 = M1EnthIdx(i-2, is, ie, cyclic, hxl, hxh, o0);
           int i3 = M1EnthIdx(i+1, is, ie, cyclic, hxl, hxh, o3);
           if (t2vs) {
-            rr += nu*cr*M1EnthCorrT(enm, iw_(m,M1_IW_EP,k,j,i0), iw_(m,M1_IW_EP,k,j,im),
+            rr += num*cr*M1EnthCorrT(enm, iw_(m,M1_IW_EP,k,j,i0), iw_(m,M1_IW_EP,k,j,im),
                                     iw_(m,M1_IW_EP,k,j,i), iw_(m,M1_IW_EP,k,j,i3),
                                     o0 && o3, iw_(m,M1_IW_ADV,k,j,i0),
                                     iw_(m,M1_IW_ADV,k,j,im), ai,
@@ -6426,7 +6482,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                                     iw_(m,t2da,k,j,im), iw_(m,t2da,k,j,i),
                                     iw_(m,t2da,k,j,i3), vf, t2afc);
           } else {
-          rr += nu*cr*M1EnthCorr(enm, iw_(m,M1_IW_EP,k,j,i0), iw_(m,M1_IW_EP,k,j,im),
+          rr += num*cr*M1EnthCorr(enm, iw_(m,M1_IW_EP,k,j,i0), iw_(m,M1_IW_EP,k,j,im),
                                  iw_(m,M1_IW_EP,k,j,i), iw_(m,M1_IW_EP,k,j,i3),
                                  o0 && o3, iw_(m,M1_IW_ADV,k,j,i0),
                                  iw_(m,M1_IW_ADV,k,j,im), ai, iw_(m,M1_IW_ADV,k,j,i3),
@@ -6434,17 +6490,17 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           }
         }
       } else if (bclo == M1_IBC_MARSHAK) {
-        bb += nu*ch*mq;
-        rr += nu*ch*mq*eblo;
+        bb += num*ch*mq;
+        rr += num*ch*mq*eblo;
         if (badv) {
           if (vi > 0.0) {
-            rr += nu*cr*ai*eblo;
+            rr += num*cr*ai*eblo;
           } else {
-            bb -= nu*cr*ai;
+            bb -= num*cr*ai;
           }
         }
       } else if (bclo == M1_IBC_FLUX) {
-        rr += nu*cr*fxlo;
+        rr += num*cr*fxlo;
       }
 
       // implicit_vimp: the diagonal and x1 +-1 part of the implicit enthalpy velocity
@@ -6702,6 +6758,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           wm = M1DDiag(iw_,vd_,dfull,m,0,k,j,im);
         }
         Real gr = (wp*iw_(m,M1_IW_EP,k,j,ip) - wm*iw_(m,M1_IW_EP,k,j,im))/dx;
+        if (sph) {
+          gr = (wp*iw_(m,M1_IW_EP,k,j,ip) - wm*iw_(m,M1_IW_EP,k,j,im))/cdxf.x1f(m,k,j,i);
+        }
         Real od = 0.0;
         if (trans && odm != M1_OD_NONE) {
           Real dx2 = mbsize.d_view(m).dx2;
