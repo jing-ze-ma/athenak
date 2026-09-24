@@ -19,6 +19,8 @@
 #include "rad_m1/rad_m1.hpp"
 #include "rad_m1/rad_m1_implicit.hpp"
 
+namespace radm1 {
+
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::ImplicitDumpOp
 //! \brief file layout (all int32 then float64): nmb, nst, n1, n2, n3; per block gid,
@@ -72,3 +74,5 @@ void RadiationM1::ImplicitDumpOp() {
   }
   std::fclose(f);
 }
+
+} // namespace radm1
