@@ -288,6 +288,15 @@ void RadiationM1::Time2Restore(Driver *pdrive) {
   t2_fail = false;
   t2_ok = false;
   t2_nfall += 1.0;
+  // m1-h2div (tests_m1/runs_5j_h2div): the predictor increments were stored by the
+  // stage solve that just FAILED (the store precedes the admissibility test), and the
+  // backward-Euler redo would start its Picard loop from U^n + (dt/(g dt)) x that
+  // increment (+ the order-2 rate term).  Where the redo does not converge either, its
+  // result stays near that start, and the failed increment of the next step extrapolates
+  // it again: the diffuse-wall shadow grew x1.5 per step to E ~ 1e12.  The redo starts
+  // cold from U^n instead, and the next stage solves rebuild the history.
+  pred_ok = false;
+  pred2_ok = false;
   t2_solve = M1_T2S_NONE;
 }
 
