@@ -583,7 +583,11 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     vcol_np = pin->GetOrAddInteger("rad_m1","vet_col_nsub",1);
     vcol_nmu = pin->GetOrAddInteger("rad_m1","vet_col_nmu",4);
     vcol_every = pin->GetOrAddInteger("rad_m1","vet_col_every",1);
-    vcol_sq = pin->GetOrAddBoolean("rad_m1","vet_col_surface_q",false);
+    // vet_col_surface_q: DEFAULT true since m1-defaults2 (tests_m1/runs_5e_vetcol2:
+    // T-S4 L1 2.1e-3 -> 5.2e-5 at n = 256, Milne 1.8e-3 -> 1.1e-4).  A restart whose
+    // file lacks the key keeps false; the resolved value is echoed.
+    vcol_sq = pin->GetOrAddBoolean("rad_m1","vet_col_surface_q",
+                                   !global_variable::restart_run);
     vcol_qmin = pin->GetOrAddReal("rad_m1","vet_col_surface_qmin",1.0e-3);
     vcol_qmax = pin->GetOrAddReal("rad_m1","vet_col_surface_qmax",1.0);
     vcol_team = pin->GetOrAddBoolean("rad_m1","vet_col_team",true);
