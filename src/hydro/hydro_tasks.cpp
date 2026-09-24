@@ -190,6 +190,7 @@ void Hydro::AssembleHydroTasks(std::map<std::string, std::shared_ptr<TaskList>> 
   id.splitpst  = tl["after_timeintegrator"]->AddTask(&Hydro::RTStrangSplit, this, none);
   id.splitsc2p = tl["after_timeintegrator"]->AddTask(&Hydro::ConToPrim, this,
                                                      id.splitpst);
+  pmy_pack->split_hook_tasks = true;
 
   id.irecv = tl["before_stagen"]->AddTask(&Hydro::InitRecv, this, none);
 
