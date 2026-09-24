@@ -1956,6 +1956,14 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
   auto cvol = pmy_pack->pcoord->volume;
   auto carea = pmy_pack->pcoord->area;
   auto cdxf = pmy_pack->pcoord->dxface;
+  // STAGE S2 (sph_q: a chi(f) closure on the wedge): the lagged part of the face
+  // equation is M1SphCurv (curvature always, off-diagonal terms under `lagged`), which
+  // OVERWRITES the Cartesian `off` below
+  const bool sphq = sph_q;
+  const bool odl = (odm != M1_OD_NONE);
+  auto cx1v = pmy_pack->pcoord->x1v;
+  auto cx2v = pmy_pack->pcoord->x2v;
+  auto cx3v = pmy_pack->pcoord->x3v;
 
   // (1) the x2 face fluxes
   par_for("m1_impl_f2face", DevExeSpace(), 0, nmb1, ks, ke, js, je+1, is, ie,
@@ -2002,6 +2010,12 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
                           dfull)
                  + M1OffDiv(iw_,m,1,k,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,M1_IW_EP,vd_,
                             dfull));
+    }
+    if (sphq) {
+      off = 0.5*(M1SphCurv(iw_,cx1v,cx2v,cx3v,m,1,k,jm,i,odl,thrd,il,iu,jl,ju,kl,ku,
+                           M1_IW_EP)
+                 + M1SphCurv(iw_,cx1v,cx2v,cx3v,m,1,k,j,i,odl,thrd,il,iu,jl,ju,kl,ku,
+                             M1_IW_EP));
     }
     f2_(m,k,j,i) = th*(wmem*f2n_(m,k,j,i) - ch*cl*dt*gr - ch*dt*vf*g0f - ch*cl*dt*off);
   });
@@ -2052,6 +2066,12 @@ void RadiationM1::ImplicitTransverseTerms(bool first) {
                             vd_,dfull)
                    + M1OffDiv(iw_,m,2,k,j,i,dx1,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,M1_IW_EP,
                               vd_,dfull));
+      }
+      if (sphq) {
+        off = 0.5*(M1SphCurv(iw_,cx1v,cx2v,cx3v,m,2,km,j,i,odl,thrd,il,iu,jl,ju,kl,ku,
+                             M1_IW_EP)
+                   + M1SphCurv(iw_,cx1v,cx2v,cx3v,m,2,k,j,i,odl,thrd,il,iu,jl,ju,kl,ku,
+                               M1_IW_EP));
       }
       f3_(m,k,j,i) = th*(wmem*f3n_(m,k,j,i)
                          - ch*cl*dt*gr - ch*dt*vf*g0f - ch*cl*dt*off);
@@ -6437,6 +6457,14 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     auto cvol = pmy_pack->pcoord->volume;
     auto carea = pmy_pack->pcoord->area;
     auto cdxf = pmy_pack->pcoord->dxface;
+    // STAGE S2: a chi(f) closure on the wedge -- the radial integrating factor
+    // (M1SphDrr) and the lagged curvature (M1SphCurv), inside the sp overwrites only
+    const bool sphq = sph_q;
+    const bool odl = (odm != M1_OD_NONE);
+    auto cx1v = pmy_pack->pcoord->x1v;
+    auto cx2v = pmy_pack->pcoord->x2v;
+    auto cx3v = pmy_pack->pcoord->x3v;
+    auto cx1f = pmy_pack->pcoord->xx1f;
     // (d) assemble the tridiagonal system of every column
     // implicit_enthalpy: the deferred correction of the x1 enthalpy flux (header)
     const int enm = impl_enth;
@@ -6656,7 +6684,24 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           Real df = th*ch*ch*dt/cdxf.x1f(m,k,j,i+1);
           Real wp = iw_(m,M1_IW_WCHI,k,j,ip);
           if (trans) {wp = M1DDiag(iw_,vd_,dfull,m,0,k,j,ip);}
-          bb += nup*df*wi;
+          Real wiu = wi;
+          if (sphq) {
+            // S2: the integrating factor, (r_c/r_f)^2 on the q n_r^2 part of each cell
+            Real rf = cx1f(m,i+1);
+            Real si = SQR(cx1v(m,i)/rf), sp = SQR(cx1v(m,ip)/rf);
+            Real n1i = trans ? iw_(m,M1_IW_N1,k,j,i) : 1.0;
+            Real n1p = trans ? iw_(m,M1_IW_N1,k,j,ip) : 1.0;
+            wiu = M1SphDrr(iw_(m,M1_IW_WCHI,k,j,i), n1i, si);
+            wp = M1SphDrr(iw_(m,M1_IW_WCHI,k,j,ip), n1p, sp);
+            if (trans) {
+              Real od = 0.5*(M1SphCurv(iw_,cx1v,cx2v,cx3v,m,0,k,j,i,odl,thrd,il,iu,jl,ju,
+                                       kl,ku,M1_IW_EP)
+                             + M1SphCurv(iw_,cx1v,cx2v,cx3v,m,0,k,j,ip,odl,thrd,il,iu,jl,
+                                         ju,kl,ku,M1_IW_EP));
+              rr += nup*cr*th*ch*cl*dt*od;
+            }
+          }
+          bb += nup*df*wiu;
           cc -= nup*df*wp;
           Real vf = 0.5*(vi + iw_(m,M1_IW_V1,k,j,ip));
           Real g0f = 0.5*(iw_(m,M1_IW_G0,k,j,i) + iw_(m,M1_IW_G0,k,j,ip));
@@ -6695,7 +6740,23 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           Real df = th*ch*ch*dt/cdxf.x1f(m,k,j,i);
           Real wm = iw_(m,M1_IW_WCHI,k,j,im);
           if (trans) {wm = M1DDiag(iw_,vd_,dfull,m,0,k,j,im);}
-          bb += num*df*wi;
+          Real wil = wi;
+          if (sphq) {
+            Real rf = cx1f(m,i);
+            Real si = SQR(cx1v(m,i)/rf), sm = SQR(cx1v(m,im)/rf);
+            Real n1i = trans ? iw_(m,M1_IW_N1,k,j,i) : 1.0;
+            Real n1m = trans ? iw_(m,M1_IW_N1,k,j,im) : 1.0;
+            wil = M1SphDrr(iw_(m,M1_IW_WCHI,k,j,i), n1i, si);
+            wm = M1SphDrr(iw_(m,M1_IW_WCHI,k,j,im), n1m, sm);
+            if (trans) {
+              Real od = 0.5*(M1SphCurv(iw_,cx1v,cx2v,cx3v,m,0,k,j,im,odl,thrd,il,iu,jl,ju,
+                                       kl,ku,M1_IW_EP)
+                             + M1SphCurv(iw_,cx1v,cx2v,cx3v,m,0,k,j,i,odl,thrd,il,iu,jl,
+                                         ju,kl,ku,M1_IW_EP));
+              rr -= num*cr*th*ch*cl*dt*od;
+            }
+          }
+          bb += num*df*wil;
           aa -= num*df*wm;
           Real vf = 0.5*(iw_(m,M1_IW_V1,k,j,im) + vi);
           Real g0f = 0.5*(iw_(m,M1_IW_G0,k,j,im) + iw_(m,M1_IW_G0,k,j,i));
@@ -7001,6 +7062,39 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                              vd_,dfull)
                     + M1OffDiv(iw_,m,0,k,j,ip,dx,dx2,dx3,thrd,il,iu,jl,ju,kl,ku,
                                M1_IW_EP,vd_,dfull));
+        }
+        if (sphq) {
+          // STAGE S2: the integrating-factor gradient and the lagged curvature, the same
+          // expressions the row was assembled with (m1_impl_asm)
+          Real rf = cx1f(m,i);
+          Real n1p = trans ? iw_(m,M1_IW_N1,k,j,ip) : 1.0;
+          Real n1m = trans ? iw_(m,M1_IW_N1,k,j,im) : 1.0;
+          Real wps = M1SphDrr(iw_(m,M1_IW_WCHI,k,j,ip), n1p, SQR(cx1v(m,ip)/rf));
+          Real wms = M1SphDrr(iw_(m,M1_IW_WCHI,k,j,im), n1m, SQR(cx1v(m,im)/rf));
+          gr = (wps*iw_(m,M1_IW_EP,k,j,ip) - wms*iw_(m,M1_IW_EP,k,j,im))
+               /cdxf.x1f(m,k,j,i);
+          od = 0.0;
+          if (trans) {
+            int il = is, iu = ie, jl = js, ju = je, kl = ks, ku = ke;
+            BoundaryFlag q3 = mbbcs.d_view(m,BoundaryFace::inner_x2);
+            BoundaryFlag q4 = mbbcs.d_view(m,BoundaryFace::outer_x2);
+            BoundaryFlag q5 = mbbcs.d_view(m,BoundaryFace::inner_x3);
+            BoundaryFlag q6 = mbbcs.d_view(m,BoundaryFace::outer_x3);
+            if ((q3 == BoundaryFlag::block) || (q3 == BoundaryFlag::periodic)) {
+              jl = js-1;
+            }
+            if ((q4 == BoundaryFlag::block) || (q4 == BoundaryFlag::periodic)) {
+              ju = je+1;
+            }
+            if (thrd && ((q5 == BoundaryFlag::block) ||
+                         (q5 == BoundaryFlag::periodic))) {kl = ks-1;}
+            if (thrd && ((q6 == BoundaryFlag::block) ||
+                         (q6 == BoundaryFlag::periodic))) {ku = ke+1;}
+            od = 0.5*(M1SphCurv(iw_,cx1v,cx2v,cx3v,m,0,k,j,im,odl,thrd,il,iu,jl,ju,kl,ku,
+                                M1_IW_EP)
+                      + M1SphCurv(iw_,cx1v,cx2v,cx3v,m,0,k,j,ip,odl,thrd,il,iu,jl,ju,kl,
+                                  ku,M1_IW_EP));
+          }
         }
         Real fn = th*(f0n_(m,k,j,(i == ie+1 && cyclic) ? is : i)
                       - ch*cl*dt*gr - ch*dt*vf*g0f - ch*cl*dt*od);

@@ -81,8 +81,9 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   // STAGE S1 (tests_m1/runs_5a_sp_s1) lifts the refusal for ONE configuration: a
   // spherical-polar WEDGE that does not touch a pole, with the radial stretches allowed,
   // transport = implicit, closure = eddington and the restrictions checked by
-  // SphericalS1Check after ImplicitInit.  Everything else on sp (the poles, explicit
-  // transport, the other closures) and everything on the cubed sphere stays refused.
+  // SphericalS1Check after ImplicitInit; STAGE S2 (tests_m1/runs_5b_sp_s2) adds the
+  // chi(f) closures m1 / minerbo / kershaw there.  Everything else on sp (the poles,
+  // explicit transport, vet_sc, tau) and everything on the cubed sphere stays refused.
   sph_geom = false;
   {
     Mesh *pm_ = ppack->pmesh;
@@ -110,8 +111,8 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     if (!why.empty()) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
         << std::endl << "<rad_m1> (explicit and implicit transport) supports a "
-        << "uniform Cartesian mesh and, for the implicit Eddington solve only "
-        << "(stage S1), "
+        << "uniform Cartesian mesh and, for the implicit solve only (stages S1, S2: "
+        << "closure eddington | m1 | minerbo | kershaw), "
         << "a spherical-polar wedge clear of the poles; this input sets:" << why << "."
         << std::endl
         << "The M1 kernels would run with Cartesian uniform-dx arithmetic on it.  See "

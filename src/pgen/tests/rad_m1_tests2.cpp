@@ -106,6 +106,10 @@ Real m1_rs_r[5] = {1.0, 0.0, 1.0, 0.0, 0.0};
 Real m1_at_rho = 0.128, m1_at_h = 0.113, m1_at_ztop = 1.0, m1_at_egas = 1.0;
 Real m1_at_flux = 1.0, m1_at_c = 1.0, m1_at_ebot = 1.0, m1_at_kap = 1.0;
 
+// sph_atm (STAGE S2, tests_m1/runs_5b_sp_s2): the held gas rho = rho0 (r/r_in)^-n
+Real m1_sa_rho0 = 1.0, m1_sa_rin = 1.0, m1_sa_n = 0.0;
+bool m1_sa_hold = true;
+
 //----------------------------------------------------------------------------------------
 //! \fn M1AtmTau
 //! \brief the Rosseland optical depth measured DOWNWARD from the top mesh face z = ztop
@@ -142,6 +146,7 @@ void RadM1ShadowGas(Mesh *pm, const Real bdt);
 void RadM1ShockBC(Mesh *pm);
 void RadM1AtmBC(Mesh *pm);
 void RadM1AtmGas(Mesh *pm, const Real bdt);
+void RadM1SphAtmGas(Mesh *pm, const Real bdt);
 
 //----------------------------------------------------------------------------------------
 //! \fn void ProblemGenerator::RadiationM1Tests2()
@@ -617,6 +622,10 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
     Real eamp = pin->GetOrAddReal("problem","e_amp",0.0);
     Real r0 = pin->GetOrAddReal("problem","r0",0.0);
     Real wid = pin->GetOrAddReal("problem","width",1.0);
+    // STAGE S2 (T-S2): e_in > 0 sets the first active cell and the inner ghosts to e_in
+    // (the Dirichlet source of the free-streaming point source, implicit_bc_x1min =
+    // efix), with F_r = c e_in there
+    Real ein = pin->GetOrAddReal("problem","e_in",0.0);
     Real gm1 = pmbp->phydro->peos->eos_data.gamma - 1.0;
     if (restart) return;
     auto uh = pmbp->phydro->u0;
@@ -634,15 +643,126 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
       Real x = (r - r0)/wid;
       u0(m,radm1::M1_E,k,j,i) = fmax(eout + eamp*exp(-x*x), efl);
       u0(m,radm1::M1_F1,k,j,i) = 0.0;
+      if (ein > 0.0 && i <= is) {
+        u0(m,radm1::M1_E,k,j,i) = ein;
+        u0(m,radm1::M1_F1,k,j,i) = cl*ein;
+      }
       u0(m,radm1::M1_F2,k,j,i) = 0.0;
       u0(m,radm1::M1_F3,k,j,i) = 0.0;
     });
+  } else if (test.compare("sph_atm") == 0) {
+    // STAGE S2 (tests_m1/runs_5b_sp_s2, gate T-S4): an extended grey atmosphere on the
+    // spherical-polar wedge.  Gas rho = atm_rho0 (r/r_in)^(-atm_rho_n) at T = atm_temp,
+    // E = e_out, F = 0; the luminosity enters through implicit_bc_x1min = flux and leaves
+    // through a Marshak outer face.  With atm_hold = true (default) the gas density and
+    // velocity are re-imposed every stage (RadM1SphAtmGas) and only its internal energy
+    // follows the radiation, so the steady state is radiative equilibrium; with
+    // atm_hold = false the gas moves (risk 6).  force_reference = wb_arad takes the
+    // reference acceleration of the exact steady state, F = F_in (r_in/r)^2 (what a
+    // well-balanced hydro source would carry), see atm_aref below.
+    if (pmbp->phydro == nullptr) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+        << std::endl << "<problem>/m1_test = sph_atm needs a <hydro> block" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    m1_sa_rho0 = pin->GetOrAddReal("problem","atm_rho0",1.0);
+    m1_sa_n = pin->GetOrAddReal("problem","atm_rho_n",0.0);
+    m1_sa_hold = pin->GetOrAddBoolean("problem","atm_hold",true);
+    m1_sa_rin = pmy_mesh_->mesh_size.x1min;
+    Real tgas = pin->GetOrAddReal("problem","atm_temp",1.0);
+    Real eout = pin->GetOrAddReal("problem","e_out",1.0e-10);
+    Real gm1 = pmbp->phydro->peos->eos_data.gamma - 1.0;
+    user_srcs_func = RadM1SphAtmGas;
+    auto x1v = pmbp->pcoord->x1v;
+    const bool sp = pmy_mesh_->use_spherical_polar;
+    if (pmbp->pradm1->force_ref == radm1::M1_FREF_WB_ARAD) {
+      Real fin = pin->GetOrAddReal("rad_m1","implicit_flux_x1min",0.0);
+      Real kt = pmbp->pradm1->kappa_f + pmbp->pradm1->kappa_s;
+      Real rin = m1_sa_rin;
+      // a local View: the module's copy (arad_ref) keeps it alive and is destroyed with
+      // the module, before Kokkos::finalize
+      DvceArray4D<Real> aref("m1_sa_aref", nmb1+1, n3, n2, n1);
+      // atm_aref = face (default): the reference in the form the implicit coupling
+      // deposits the force, the mean of kappa_t F_f/c over the two x1 faces with the
+      // exact steady F_f = F_in (r_in/r_f)^2; = cell: kappa_t F(r_c)/c at the centroid
+      const bool afc = (pin->GetOrAddString("problem","atm_aref","face")
+                        .compare("cell") == 0);
+      auto xf = pmbp->pcoord->xx1f;
+      par_for("m1_sa_aref", DevExeSpace(), 0,nmb1,0,(n3-1),0,(n2-1),0,(n1-1),
+      KOKKOS_LAMBDA(int m, int k, int j, int i) {
+        Real r = sp ? x1v(m,i) : CellCenterX(i-is, nx1, size.d_view(m).x1min,
+                                             size.d_view(m).x1max);
+        Real rl = sp ? xf(m,i) : LeftEdgeX(i-is, nx1, size.d_view(m).x1min,
+                                           size.d_view(m).x1max);
+        Real rr = sp ? xf(m,i+1) : LeftEdgeX(i+1-is, nx1, size.d_view(m).x1min,
+                                             size.d_view(m).x1max);
+        aref(m,k,j,i) = afc ? (kt*fin*rin*rin/(cl*r*r))
+                            : (0.5*kt*fin*rin*rin*(1.0/(rl*rl) + 1.0/(rr*rr))/cl);
+      });
+      pmbp->pradm1->SetForceReference(aref);
+    }
+    // atm_init = eddington: start from the spherical EDDINGTON solution of the same
+    // atmosphere, E = 3 int_r^rout rho kappa_t F/c dr' + F_out/(c q), F = F_in
+    // (r_in/r)^2 on the cells and the x1 faces, the gas at T = (E/a)^(1/4) when it
+    // absorbs (a start close to the answer, as the Cartesian atmosphere gate of runs_3a2
+    // does)
+    const bool edd0 = (pin->GetOrAddString("problem","atm_init","vacuum")
+                       .compare("eddington") == 0);
+    // atm_seed: a small deterministic cell-to-cell perturbation of the initial E (a seed
+    // for transverse modes, which a symmetric start on a Cartesian mesh never has)
+    const Real seed = pin->GetOrAddReal("problem","atm_seed",0.0);
+    if (restart) return;
+    auto uh = pmbp->phydro->u0;
+    Real rho0 = m1_sa_rho0, rin = m1_sa_rin, en = m1_sa_n;
+    Real fin = pin->GetOrAddReal("rad_m1","implicit_flux_x1min",0.0);
+    Real kt = pmbp->pradm1->kappa_f + pmbp->pradm1->kappa_s;
+    Real rout = pmy_mesh_->mesh_size.x1max;
+    Real qm = pmbp->pradm1->marshak_q;
+    // with absorption the gas starts at the radiation temperature; pure scattering keeps
+    // atm_temp (uniform: the static state of risk 6)
+    const bool teq = (pmbp->pradm1->kappa_p > 0.0);
+    par_for("m1_sa_ic", DevExeSpace(), 0,nmb1,0,(n3-1),0,(n2-1),0,(n1-1),
+    KOKKOS_LAMBDA(int m, int k, int j, int i) {
+      Real r = sp ? x1v(m,i) : CellCenterX(i-is, nx1, size.d_view(m).x1min,
+                                           size.d_view(m).x1max);
+      Real d = rho0*pow(r/rin, -en);
+      Real e = fmax(eout, efl), f = 0.0, tt = tgas;
+      if (edd0) {
+        f = fin*rin*rin/(r*r);
+        e = 3.0*rho0*kt*fin*pow(rin, en + 2.0)/(cl*(en + 1.0))
+            *(pow(r, -(en + 1.0)) - pow(rout, -(en + 1.0)))
+            + fin*rin*rin/(rout*rout*cl*qm);
+        if (teq) {tt = pow(e/ar, 0.25);}
+      }
+      uh(m,IDN,k,j,i) = d;
+      uh(m,IM1,k,j,i) = 0.0;
+      uh(m,IM2,k,j,i) = 0.0;
+      uh(m,IM3,k,j,i) = 0.0;
+      uh(m,IEN,k,j,i) = d*tt/gm1;
+      u0(m,radm1::M1_E,k,j,i) = e*(1.0 + seed*cos(2.3*j + 1.7*k + 0.9*i));
+      u0(m,radm1::M1_F1,k,j,i) = f;
+      u0(m,radm1::M1_F2,k,j,i) = 0.0;
+      u0(m,radm1::M1_F3,k,j,i) = 0.0;
+    });
+    // the comoving x1 face fluxes of the implicit transport (allocated only there)
+    auto ff0 = pmbp->pradm1->f0x1;
+    if (edd0 && ff0.extent_int(0) >= nmb1 + 1) {
+      auto xf = pmbp->pcoord->xx1f;
+      const int e3 = ff0.extent_int(1) - 1, e2 = ff0.extent_int(2) - 1;
+      const int e1 = ff0.extent_int(3) - 1;
+      par_for("m1_sa_icf", DevExeSpace(), 0,nmb1,0,e3,0,e2,0,e1,
+      KOKKOS_LAMBDA(int m, int k, int j, int i) {
+        Real r = sp ? xf(m,i) : LeftEdgeX(i-is, nx1, size.d_view(m).x1min,
+                                          size.d_view(m).x1max);
+        ff0(m,k,j,i) = fin*rin*rin/(r*r);
+      });
+    }
   } else {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
       << std::endl << "<problem>/m1_test = '" << test << "' not implemented "
       << "(beam | pulse1d | thick_pulse | tophat | jump | equil | advect_pulse "
       << "| advect_uniform | advect_shear | marshak | shadow | radshock "
-      << "| atmosphere | radwave | sph_shell)" << std::endl;
+      << "| atmosphere | radwave | sph_shell | sph_atm)" << std::endl;
     std::exit(EXIT_FAILURE);
   }
   return;
@@ -814,6 +934,46 @@ void RadM1AtmGas(Mesh *pm, const Real bdt) {
     uh(m,IEN,k,j,i) = d*egas;
   });
   return;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadM1SphAtmGas()
+//! \brief sph_atm with atm_hold = true: re-impose the gas density profile and zero
+//! velocity (all cells, ghosts included), keeping the specific internal energy, so the
+//! gas temperature follows the radiation and nothing moves.  atm_hold = false: nothing.
+
+void RadM1SphAtmGas(Mesh *pm, const Real bdt) {
+  (void) bdt;
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  if (pmbp->phydro == nullptr || !m1_sa_hold) return;
+  auto &indcs = pm->mb_indcs;
+  int &ng = indcs.ng;
+  int n1 = indcs.nx1 + 2*ng;
+  int n2 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*ng) : 1;
+  int n3 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*ng) : 1;
+  int &is = indcs.is;
+  int nx1 = indcs.nx1;
+  int nmb1 = (pmbp->nmb_thispack - 1);
+  auto &size = pmbp->pmb->mb_size;
+  auto uh = pmbp->phydro->u0;
+  auto x1v = pmbp->pcoord->x1v;
+  const bool sp = pm->use_spherical_polar;
+  Real rho0 = m1_sa_rho0, rin = m1_sa_rin, en = m1_sa_n;
+  par_for("m1_sa_hold", DevExeSpace(), 0,nmb1,0,(n3-1),0,(n2-1),0,(n1-1),
+  KOKKOS_LAMBDA(int m, int k, int j, int i) {
+    Real r = sp ? x1v(m,i) : CellCenterX(i-is, nx1, size.d_view(m).x1min,
+                                         size.d_view(m).x1max);
+    Real d0 = uh(m,IDN,k,j,i);
+    Real ek = 0.5*(SQR(uh(m,IM1,k,j,i)) + SQR(uh(m,IM2,k,j,i)) + SQR(uh(m,IM3,k,j,i)))
+              /fmax(d0, 1.0e-300);
+    Real eint = (uh(m,IEN,k,j,i) - ek)/fmax(d0, 1.0e-300);
+    Real d = rho0*pow(r/rin, -en);
+    uh(m,IDN,k,j,i) = d;
+    uh(m,IM1,k,j,i) = 0.0;
+    uh(m,IM2,k,j,i) = 0.0;
+    uh(m,IM3,k,j,i) = 0.0;
+    uh(m,IEN,k,j,i) = d*eint;
+  });
 }
 
 //----------------------------------------------------------------------------------------
