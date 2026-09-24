@@ -1,0 +1,46 @@
+99ee05f022e4123c7f83aa85c129e304  /viper/ptmp2/jinma/h2div_0924/bin/athena_base_none_gpu
+6015150dd74b91ad03165418240dca9a  /viper/ptmp2/jinma/h2div_0924/bin/athena_f2_none_gpu
+#### f2 h2 rep 1 rc=0 cpu time used  = 8.163094e+00 stage fallbacks=0.000000e+00 NON-CONVERGED=1.000000e+00
+#### base h2 rep 1 rc=0 cpu time used  = 1.473615e+01 stage fallbacks=1.200000e+02 NON-CONVERGED=1.220000e+02
+#### f2 be rep 1 rc=0 cpu time used  = 8.273409e+00  NON-CONVERGED=1.010000e+02
+#### base be rep 1 rc=0 cpu time used  = 8.778446e+00  NON-CONVERGED=1.740000e+02
+#### f2 h2 rep 2 rc=0 cpu time used  = 7.929571e+00 stage fallbacks=0.000000e+00 NON-CONVERGED=1.000000e+00
+#### base h2 rep 2 rc=0 cpu time used  = 1.417226e+01 stage fallbacks=1.200000e+02 NON-CONVERGED=1.220000e+02
+#### f2 be rep 2 rc=0 cpu time used  = 7.746724e+00  NON-CONVERGED=1.010000e+02
+#### base be rep 2 rc=0 cpu time used  = 8.805529e+00  NON-CONVERGED=1.740000e+02
+GPU DONE
+                                  
+================================= 
+Global information about the job: 
+================================= 
+  
+Job owner: jinma(28895)
+Job name:  h2div
+Node list: vipa1327
+Job start: Thu Sep 24 22:26:12 CEST 2026
+Job end:   Thu Sep 24 22:27:49 CEST 2026
+Work dir:  /viper/ptmp2/jinma/h2div_0924
+Command:   /viper/ptmp2/jinma/h2div_0924/gpu/shadow_gpu.sh
+  
+  
+  
+==========================================================================================
+Information on jobsteps (Note: MaxRSS/AveRSS is the maximum/average over all 
+tasks of the per-task memory high-water marks; cf. "man sacct"): 
+==========================================================================================
+  
+JobID            JobName NNodes NTasks  NCPUS       MaxRSS       AveRSS    Elapsed ExitCode
+------------- ---------- ------ ------ ------ ------------ ------------ ---------- --------
+11966336           h2div      1            48                             00:01:37      0:0
+11966336.0    athena_f2_      1      1     48       35.37M       35.37M   00:00:10      0:0
+11966336.1    athena_bas      1      1     48      894.64M      894.64M   00:00:18      0:0
+11966336.2    athena_f2_      1      1     48       35.38M       35.38M   00:00:10      0:0
+11966336.3    athena_bas      1      1     48       36.37M       36.37M   00:00:10      0:0
+11966336.4    athena_f2_      1      1     48       36.37M       36.37M   00:00:10      0:0
+11966336.5    athena_bas      1      1     48      894.63M      894.63M   00:00:15      0:0
+11966336.6    athena_f2_      1      1     48       35.37M       35.37M   00:00:10      0:0
+11966336.7    athena_bas      1      1     48       35.38M       35.38M   00:00:10      0:0
+  
+Maximum memory per node: 0.938098 GB (defined as MaxRSS*Ntasks/NNodes)
+CPU utilization: 0.9 %
+  
