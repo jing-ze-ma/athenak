@@ -1,0 +1,12 @@
+100 100000 x1 64 edd impl 32 enth=plm ny=4 nper=40 vimp=true ts=hesdirk2 rm_time2_dbg_g3=0.15
+100 100000 x1 64 edd impl 48 enth=plm ny=4 nper=40 vimp=true ts=hesdirk2 rm_time2_dbg_g3=0.15
+100 100000 x1 32 edd impl 24 enth=plm ny=4 nper=40 vimp=true ts=hesdirk2 rm_time2_dbg_g3=0.15
+100 1000 x1 64 edd impl 24 enth=plm ny=4 nper=10 vimp=true ts=hesdirk2 rm_time2_dbg_g3=0.15
+100 1000 x1 64 edd impl 48 enth=plm ny=4 nper=10 vimp=true ts=hesdirk2 rm_time2_dbg_g3=0.15
+100 1000 x1 64 edd impl 24 enth=plm ny=4 nper=10 v0=1.2909944 vimp=true ts=hesdirk2 rm_time2_dbg_g3=0.15
+100 1000 x1 64 edd impl 48 enth=plm ny=4 nper=10 v0=1.2909944 vimp=true ts=hesdirk2 rm_time2_dbg_g3=0.15
+100 10 x1 64 edd impl 24 enth=plm ny=4 nper=10 vimp=true ts=hesdirk2 rm_time2_dbg_g3=0.15
+100 10 x1 64 edd impl 48 enth=plm ny=4 nper=10 vimp=true ts=hesdirk2 rm_time2_dbg_g3=0.15
+100 10 x1 64 edd impl 24 enth=plm ny=4 nper=10 v0=1.2909944 vimp=true ts=hesdirk2 rm_time2_dbg_g3=0.15
+100 10 x1 64 edd impl 48 enth=plm ny=4 nper=10 v0=1.2909944 vimp=true ts=hesdirk2 rm_time2_dbg_g3=0.15
+100 100000 x1 64 edd impl 24 enth=plm ny=4 nper=10 vimp=true ts=hesdirk2 rm_time2_dbg_g3=0.15

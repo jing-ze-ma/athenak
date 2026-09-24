@@ -1,0 +1,97 @@
+diff --git a/src/rad_m1/rad_m1.cpp b/src/rad_m1/rad_m1.cpp
+index 893f23f2..7d7bb057 100644
+--- a/src/rad_m1/rad_m1.cpp
++++ b/src/rad_m1/rad_m1.cpp
+@@ -195,6 +195,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
+   t2_dtprev = 0.0;
+   t2_vprev = false;
+   t2_vext = true;
++  t2_vgas = true;
+   t2_nclip = 0.0;
+   pred2_ok = false;
+   pred2_dt = 0.0;
+diff --git a/src/rad_m1/rad_m1.hpp b/src/rad_m1/rad_m1.hpp
+index 5db895ee..ccf8e109 100644
+--- a/src/rad_m1/rad_m1.hpp
++++ b/src/rad_m1/rad_m1.hpp
+@@ -563,6 +563,9 @@ class RadiationM1 {
+   Real t2_dtprev;               // the dt of the previous step (vet_sc extrapolation)
+   bool t2_vprev;                // vet_prev holds the tensor of the previous step
+   bool t2_vext;                 // time2_vet_extrap (default false: D^n)
++  bool t2_vgas;                 // time2_vet_gas: true = start (the tensor's T and
++                                // opacities are the stage-1 solve's own, as under be),
++                                // false = old (those of U^n); runs_5k_h2acc
+   Real t2_lin_tol;              // time2_lin_tol: stage solves' implicit_lin_tol (<= 0:
+                                 // implicit_lin_tol x t2_lin_fac)
+   Real t2_onep_s;               // time2_one_pass_safety: implicit_one_pass_safety of the
+diff --git a/src/rad_m1/rad_m1_time2.cpp b/src/rad_m1/rad_m1_time2.cpp
+index 73368a56..363b05f3 100644
+--- a/src/rad_m1/rad_m1_time2.cpp
++++ b/src/rad_m1/rad_m1_time2.cpp
+@@ -112,6 +112,28 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
+   if (pin->DoesParameterExist("rad_m1", "time2_vet_extrap")) {
+     t2_vext = pin->GetBoolean("rad_m1", "time2_vet_extrap");
+   }
++  // time2_vet_gas = start | old (tests_m1/runs_5k_h2acc): the gas state the per-step
++  // formal solution (vet_sc, vet_col) reads.  `start` (default): the stage-1 solve's own
++  // start state -- T and opacities after the Heun predictor, radiation E^n -- which is
++  // exactly what a backward-Euler step reads, so a steady state is the same fixed point
++  // under both schemes (a held-gas vet_col atmosphere: 1.9e-4 apart under `old`).
++  // `old`: T^n and the opacities of U^n (m1-sph2 up to d2572b4f), also the default of
++  // a restart whose file does not carry the key.
++  {
++    const bool rs0 = global_variable::restart_run;
++    std::string vg = pin->GetOrAddString("rad_m1", "time2_vet_gas",
++                                         rs0 ? "old" : "start");
++    if (vg.compare("start") == 0) {
++      t2_vgas = true;
++    } else if (vg.compare("old") == 0) {
++      t2_vgas = false;
++    } else {
++      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
++                << std::endl << "<rad_m1>/time2_vet_gas = '" << vg
++                << "' is not a choice (start | old)" << std::endl;
++      std::exit(EXIT_FAILURE);
++    }
++  }
+   // time2_lin_tol / time2_lin_tol_fac (tests_m1/runs_5f_h2fast): the linear (Krylov)
+   // tolerance of the two stage solves: time2_lin_tol when named, else implicit_lin_tol
+   // x time2_lin_tol_fac.  Default 10 (the input files set implicit_lin_tol =
+@@ -317,6 +339,9 @@ void RadiationM1::Time2Restore(Driver *pdrive) {
+ //! closure = vet_col (m1-sph2, tests_m1/runs_5h_sph2): the same, with VetColBuild (the
+ //! tensor tau_ten and the surface q at U^n) and NO extrapolation: both stages use D^n
+ //! (an extrapolated chi and q were measured: same order, 3e-11 from D^n).
++//! time2_vet_gas = start (the default since runs_5k_h2acc): the gas side (T, opacities)
++//! is NOT moved back to U^n; the formal solution reads E^n and the stage-1 start gas,
++//! i.e. the state a backward-Euler step reads, so held-gas steady states agree.
+ 
+ void RadiationM1::Time2VetStart() {
+   auto &indcs = pmy_pack->pmesh->mb_indcs;
+@@ -332,6 +357,27 @@ void RadiationM1::Time2VetStart() {
+   auto phicc = hh ? ph->phicc0 : arad_ref;
+   const Real efl = e_floor;
+   auto u0_ = u0;
++  // time2_vet_gas = start (default, runs_5k_h2acc): only the radiation is put back to
++  // E^n (the old vector of a stage solve is E^n + t2inc); T and the opacities are those
++  // the stage-1 solve itself starts from, as in a backward-Euler step
++  if (t2_vgas) {
++    par_for("m1_t2_vsg0", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
++    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
++      vn_(m,0,k,j,i) = iw_(m,M1_IW_EN,k,j,i);
++      iw_(m,M1_IW_EN,k,j,i) = fmax(u0_(m,M1_E,k,j,i), efl);
++    });
++    if (vet_col) {
++      VetColBuild();
++    } else {
++      VetShortChar();
++    }
++    par_for("m1_t2_vsg1", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
++    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
++      iw_(m,M1_IW_EN,k,j,i) = vn_(m,0,k,j,i);
++    });
++    if (vet_sc) {Time2VetExtrapolate();}
++    return;
++  }
+   // the fast form (default): ONE fused pass over U^n (the hydro u1) gives T^n and the
+   // opacities of U^n, with exactly the arithmetic of RadiationM1::Opacity, and the
+   // stage-start opacities are saved and copied back afterwards instead of re-evaluated.
