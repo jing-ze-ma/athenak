@@ -85,6 +85,9 @@ class MeshBlockPack {
 
   // map for task lists which operate over all MeshBlocks in this MeshBlockPack
   std::map<std::string, std::shared_ptr<TaskList>> tl_map;
+  // true once a task list that calls ProblemGenerator::user_split_func has been
+  // assembled (pure hydro or pure MHD); checked by the ProblemGenerator constructors
+  bool split_hook_tasks = false;
 
   // functions
   void AddPhysics(ParameterInput *pin);

@@ -33,8 +33,27 @@
 #include "rad_m1/rad_m1_implicit.hpp"
 #include "srcterms/turb_driver.hpp"
 #include "utils/two_stream_warm_rst.hpp"
+#include "utils/two_stream_ck_rst.hpp"
 #include "pgen.hpp"
 
+
+namespace {
+//----------------------------------------------------------------------------------------
+//! \fn void CheckSplitHookCalled
+//! \brief a pgen that enrolled user_split_func needs a task list that calls it.  Only the
+//! pure-hydro (AssembleHydroTasks) and pure-MHD (AssembleMHDTasks) lists do; every other
+//! physics combination (ion-neutral, radiation, NR, ...) would skip the source silently.
+
+void CheckSplitHookCalled(ProblemGenerator *ppgen, Mesh *pm) {
+  if (ppgen->user_split_func == nullptr) return;
+  if (pm->pmb_pack != nullptr && pm->pmb_pack->split_hook_tasks) return;
+  std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
+            << "The problem generator enrolled user_split_func (an operator-split source "
+            << "such as problem/ck_impl_once), but no task list for this physics "
+            << "combination calls it (only pure <hydro> or pure <mhd> do)." << std::endl;
+  exit(EXIT_FAILURE);
+}
+}  // namespace
 
 //----------------------------------------------------------------------------------------
 // default constructor, calls pgen function.
@@ -102,6 +121,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm) :
       exit(EXIT_FAILURE);
     }
   }
+  CheckSplitHookCalled(this, pm);
 }
 
 //----------------------------------------------------------------------------------------
@@ -523,6 +543,42 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
     neint_file = static_cast<int>(hdr[0]);
   }
 
+  // --- THE IMPLICIT-CK STATE HEADER (kCkRstMagic, utils/two_stream_ck_rst.hpp), behind
+  // every other one: nck_file slabs, the LAST ones of each MeshBlock record.
+  int nck_file = 0;
+  two_stream_rt::ck_rst_restarted = true;
+  if (std::memcmp(variabledata, &(two_stream_rt::kCkRstMagic[0]),
+                  sizeof(two_stream_rt::kCkRstMagic)) == 0) {
+    two_stream_rt::CkRstHdr ckh;
+    std::memset(&ckh, 0, sizeof(ckh));
+    IOWrapperSizeT nb = 0;
+    bool ok = true;
+    if (global_variable::my_rank == 0 || single_file_per_rank) {
+      ok = (resfile.Read_bytes(&nb, 1, sizeof(IOWrapperSizeT), single_file_per_rank)
+            == sizeof(IOWrapperSizeT)) && (nb == sizeof(ckh));
+      ok = ok && (resfile.Read_bytes(reinterpret_cast<char *>(&ckh), 1, nb,
+                                     single_file_per_rank) == nb);
+      ok = ok && (resfile.Read_bytes(variabledata, 1, variablesize, single_file_per_rank)
+                  == variablesize);
+    }
+#if MPI_PARALLEL_ENABLED
+    if (!single_file_per_rank) {
+      MPI_Bcast(&ok, sizeof(bool), MPI_CHAR, 0, MPI_COMM_WORLD);
+      MPI_Bcast(&ckh, sizeof(ckh), MPI_CHAR, 0, MPI_COMM_WORLD);
+      MPI_Bcast(variabledata, variablesize, MPI_CHAR, 0, MPI_COMM_WORLD);
+    }
+#endif
+    if (!ok || ckh.version != 1 || ckh.nslab < 1 ||
+        ckh.nslab > two_stream_rt::kCkRstMaxSlab) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "the implicit-ck state header of this restart file is "
+                << "broken." << std::endl;
+      exit(EXIT_FAILURE);
+    }
+    two_stream_rt::ck_rst_hdr = ckh;
+    nck_file = ckh.nslab;
+  }
+
   IOWrapperSizeT data_size;
   std::memcpy(&data_size, &(variabledata[0]), sizeof(IOWrapperSizeT));
 
@@ -608,7 +664,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
   // and behind both of them, the mode-3 warm-start history: nwarm_file slabs, a number
   // the marked header above gave us rather than something inferred from the length
   // (and behind those the npred_file <rad_m1> predictor slabs, also header-declared)
-  IOWrapperSizeT wm_size = (nwarm_file + npred_file + nt2_file + neint_file)
+  IOWrapperSizeT wm_size = (nwarm_file + npred_file + nt2_file + neint_file + nck_file)
                            *nout1*nout2*nout3
                            *sizeof(Real);
   if ((data_size_ + wt_size + wd_size + wm_size) == data_size) {
@@ -1204,7 +1260,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
       pradm1->onep_cnt[t] = onep_hv[6+t];
     }
   }
-  if (wt_hyd || wt_mhd || nwarm_read > 0 || pred_read || t2_read) {
+  if (wt_hyd || wt_mhd || nwarm_read > 0 || pred_read || t2_read || nck_file > 0) {
     const IOWrapperSizeT tail0 = offset_myrank;
     HostArray4D<Real> wtin("rst-wt-in", 1, 1, 1, 1);
     Kokkos::realloc(wtin, nmb, nout3, nout2, nout1);
@@ -1348,6 +1404,27 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
                 << "re-derives it from (E - rho phi) + rho phi and this restart is not "
                 << "bitwise." << std::endl;
     }
+    // the implicit-ck state (kCkRstMagic): staged by slab id, consumed by the first RT
+    // call(s) of the restarted run (utils/two_stream_ck_rst_state.hpp)
+    if (nck_file > 0) {
+      int nprev = (wt_hyd ? 1 : 0) + (wt_mhd ? 1 : 0) + (wd_hyd ? 2 : 0)
+                  + (wd_mhd ? 2 : 0) + nwarm_file + npred_file + nt2_file + neint_file;
+      offset_myrank = tail0 + nprev*nout1*nout2*nout3*sizeof(Real);
+      myoffset = offset_myrank;
+      two_stream_rt::ck_rst_stage.assign(two_stream_rt::kCkRstMaxSlab,
+                                         std::vector<Real>());
+      two_stream_rt::ck_rst_nmb = nmb;
+      two_stream_rt::ck_rst_n3 = nout3;
+      two_stream_rt::ck_rst_n2 = nout2;
+      two_stream_rt::ck_rst_n1 = nout1;
+      for (int n=0; n<nck_file; ++n) {
+        read_slab("ck restart state");
+        const int id = two_stream_rt::ck_rst_hdr.id[n];
+        if (id < 0 || id >= two_stream_rt::kCkRstMaxSlab) continue;
+        two_stream_rt::ck_rst_stage[id].assign(wtin.data(), wtin.data() + wtin.size());
+      }
+      two_stream_rt::ck_rst_have = true;
+    }
   }
 
   // call problem generator again to re-initialize data, fn ptrs, as needed
@@ -1381,6 +1458,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
       exit(EXIT_FAILURE);
     }
   }
+  CheckSplitHookCalled(this, pm);
 }
 
 //----------------------------------------------------------------------------------------

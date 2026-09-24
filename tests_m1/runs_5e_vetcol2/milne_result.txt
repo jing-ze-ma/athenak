@@ -1,0 +1,29 @@
+# Hopf q(0) 0.577350 (1/sqrt3 0.577350), q(0.01) 0.588235 (0.588236), q(0.1) 0.627919 (0.627919), q(1) 0.698539 (0.697729), q(inf) 0.710446 (0.710446)
+mlo32    n= 32 t=541.3  L1 2.023e-02 Linf 2.356e-01  top E/E_ref-1 -6.586e-01
+mlo64    n= 64 t=270.6  L1 9.666e-03 Linf 1.557e-01  top E/E_ref-1 -4.919e-01
+mlo128   n=128 t=133.9  L1 4.153e-03 Linf 9.078e-02  top E/E_ref-1 -3.166e-01
+mlo256   n=256 t=71.83  L1 1.838e-03 Linf 4.374e-02  top E/E_ref-1 -1.638e-01
+mlq32    n= 32 t=541.2  L1 5.447e-04 Linf 5.131e-03  top E/E_ref-1 -2.037e-02
+mlq64    n= 64 t=270.6  L1 2.336e-04 Linf 3.176e-03  top E/E_ref-1 -1.264e-02
+mlq128   n=128 t=135.3  L1 7.472e-05 Linf 1.044e-03  top E/E_ref-1 -3.794e-03
+mlq256   n=256 t=71.83  L1 1.073e-04 Linf 5.344e-04  top E/E_ref-1 +2.139e-03
+ml8o32   n= 32 t=541.3  L1 2.023e-02 Linf 2.356e-01  top E/E_ref-1 -6.586e-01
+ml8o64   n= 64 t=270.6  L1 9.666e-03 Linf 1.557e-01  top E/E_ref-1 -4.919e-01
+ml8o128  n=128 t=135.3  L1 4.540e-03 Linf 9.119e-02  top E/E_ref-1 -3.178e-01
+ml8o256  n=256 t=71.83  L1 1.816e-03 Linf 4.374e-02  top E/E_ref-1 -1.638e-01
+ml8q32   n= 32 t=541.2  L1 5.446e-04 Linf 5.134e-03  top E/E_ref-1 -2.038e-02
+ml8q64   n= 64 t=270.6  L1 2.352e-04 Linf 3.126e-03  top E/E_ref-1 -1.245e-02
+ml8q128  n=128 t=135.3  L1 7.374e-05 Linf 1.051e-03  top E/E_ref-1 -4.197e-03
+ml8q256  n=256 t=71.83  L1 1.064e-04 Linf 2.827e-04  top E/E_ref-1 -2.653e-04
+mlo n=32,64: Richardson L1 7.301e-04 Linf 1.905e-02
+mlo n=64,128: Richardson L1 1.129e-03 Linf 1.073e-02
+mlo n=128,256: Richardson L1 3.591e-04 Linf 9.893e-03
+mlq n=32,64: Richardson L1 2.173e-04 Linf 5.891e-03
+mlq n=64,128: Richardson L1 1.035e-04 Linf 3.887e-03
+mlq n=128,256: Richardson L1 2.789e-04 Linf 2.098e-03
+ml8o n=32,64: Richardson L1 7.304e-04 Linf 1.905e-02
+ml8o n=64,128: Richardson L1 3.643e-04 Linf 1.016e-02
+ml8o n=128,256: Richardson L1 7.826e-04 Linf 1.096e-02
+ml8q n=32,64: Richardson L1 2.135e-04 Linf 5.840e-03
+ml8q n=64,128: Richardson L1 1.081e-04 Linf 3.962e-03
+ml8q n=128,256: Richardson L1 2.840e-04 Linf 2.375e-03

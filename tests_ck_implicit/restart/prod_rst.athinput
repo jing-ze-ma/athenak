@@ -1,0 +1,257 @@
+# deep_hot_jupiter_cs_hyd4 -- PURE-HYDRO twin of deep_hot_jupiter_cs_prod4 (2026-09-22).
+# PREPARED for bench/cs_hyd4_prod, NOT LAUNCHED (launch = ./chain.sh <dir> 4).  Tests:
+# tests_hyd4/README.md (smoke, timing); cs_wellbalanced_src
+# under <hydro>: tests_hyd4/README_wbsrc.md.
+#
+# Base = inputs/production/deep_hot_jupiter_cs_prod4.athinput (launched as bench/cs_mhd_prod4;
+# read its header for the nine prod3 -> prod4 changes: ck_spherical + ck_beam_sph,
+# ck_sweep_form = 1 (tm), WB polytropic with wb_cache_every 0, rad_angular false,
+# dt_min 1e-3, max_eta 5e12, pfloor 1e-5 barye, two dead keys removed).  Every one of those
+# that still applies without a magnetic field is kept unchanged here: grid, stretch, RT
+# (spherical tm ck sweep + pseudo-spherical beam), WB polytropic / wb_x1 / wb_cache_every 0,
+# rot_potential (so rotpot_src stays true), etotgrav, radiative conduction with
+# rad_implicit_x1 and rad_angular false, general EOS table, floors (pfloor 1e-5 barye,
+# dfloor 5e-14, tfloor_kelvin 200), dt_min 1e-3, cfl 0.3, rk2, output cadences.
+#
+# Changes vs prod4 (and nothing else):
+# H1. <mhd> -> <hydro>.  MeshBlockPack::AddPhysics builds Hydro instead of MHD; the pgen
+#     (src/pgen/deep_hot_jupiter_rt.cpp) branches on phydro/pmhd everywhere and has a
+#     hydro path for WB, conduction, the ck table and the boundaries.  All WB / rad_* / eos
+#     keys are read from whichever block exists (hydro.cpp:177-252, conduction.cpp,
+#     eos.cpp), with the same defaults for every shared key.
+# H2. rsolver hlld -> hllc.  hlld is MHD-only; hllc is the hydro counterpart used by the
+#     controlled sp_dhj_hyd / sp_dhj_ctl pair and by cs_hyd_rs/hllc; the general EOS sets
+#     is_ideal = true (general_hyd.cpp:33) so hllc is accepted.
+# H3. cs_wellbalanced_src = true, KEPT as in prod4 (was removed in the first draft).
+#     Before 09-22 Coordinates read it only from <mhd>, so under <hydro> it was silently
+#     unread (as in cs_hyd_rs/base.athinput).  Patch tests_hyd4/cs_wbsrc_hydro.patch
+#     (coordinates.cpp, <hydro> branch) now reads it from <hydro>; the hydro source path
+#     (SrcTermsGnomonicEquiangle -> shared SrcTermsGnomonicEquiangleImpl ->
+#     SrcTermsCurvilinearWB with is_mhd = false) already honoured the flag, so no kernel
+#     changed.  Needs a binary built with that patch (bench/cs_hyd4_prod/athena); the
+#     prod4 binary ignores the key.  Gates: tests_hyd4/README_wbsrc.md.  With this, hyd4
+#     is exactly "prod4 minus B" (H1, H2, H4-H6 are all consequences of B = 0).
+# H4. MHD-only keys removed: ohmic_resistivity / max_eta / use_rkg_sts (resistivity.cpp
+#     reads "mhd" only; eos.cpp:296 would also build the unused electron-fraction table
+#     if ohmic_resistivity were left in <hydro>), cs_lowbeta_fallback (mhd.cpp:359).
+# H5. <problem> bbot 3.0 -> 0.0 and bc_outer_maxwell removed.  bbot is a REQUIRED key for
+#     every hot_jupiter run (pgen.cpp:57/131 GetReal; the first smoke job died on
+#     "Parameter name 'bbot' not found" when it was removed) but is used only on MHD paths
+#     (initial vector potential, outer-ghost field), so 0 is inert.  bc_outer_maxwell only
+#     switches the Maxwell-stress term of the outer ghost extrapolation (is_mhd_ branch).
+# H6. <output3> variable mhd_w_bcc -> hydro_w.  History is written as dhj.hydro.hst.
+#
+# The dt-collapse cell diagnostic exists on the hydro path too (Hydro::dt_diag, printed
+# from mesh.cpp:1043 when the dt_min guard fires).
+
+<comment>
+problem   = ultra-hot Jupiter, general EOS + metal ionization, PURE HYDRO (hyd4)
+reference = Heng et al. MNRAS 413, 2380 (2011); Perna et al. ApJ 719, 1421 (2010)
+
+<job>
+basename  = dhj
+
+<mesh>
+nghost    = 2
+nx1       = 128
+                        # The science requirement is 10 cells per scale height BELOW the
+                        # 1e-6 bar level; a uniform nx1 = 200 (dr = 5.558e7, the ck_limb
+                        # value) delivers only median 7.3 / p05 2.9 there.  Stretching
+                        # concentrates cells across the scale-height minimum and coarsens
+                        # the near-vacuum top, giving median 10.1 / p05 7.3 / p01 5.1 for
+                        # 1.70x the cells of the uniform plan.  See NOTES.md.
+x1min     = 9.44e9
+x1max     = 2.0556e10   # MEASURED, not estimated.  ck_grav_size ran the same physics on
+                        # a deliberately oversized 1.90e10 grid; at 21 rotations the 99th
+                        # percentile of the 1e-6 bar isobar over the terminator columns
+                        # (lon = +-90 +-20, |lat| < 30) sits at 1.794e10 with a local
+                        # scale height of 1.24e9 cm.  This x1max puts ~1.8 H above the
+                        # worst terminator columns, which is what ck_limb delivers and
+                        # was accepted as meeting the science goal -- a literal "+3 H"
+                        # would want 2.166e10 / nx1 = 220 and is over-built.
+                        # The residual drift is INWARD (-1.1e7 cm/rot and decelerating)
+                        # while H has been flat since rotation 4, so the buffer at this
+                        # x1max can only grow.  See ck_grav_size/NOTES.md.
+ix1_bc    = user
+ox1_bc    = user
+
+# 64, not 56, so that every direction is a power of two and the meshblock split is free to
+# use the round numbers -- see the <meshblock> note below.  Costs 14.3% more cells than the
+# 56 this ran at previously.
+nx2       = 32
+x2min     = -1.0        # -1 lets the pgen set the full polar range
+x2max     = 1.0
+ix2_bc    = panel
+ox2_bc    = panel
+
+nx3       = 32
+x3min     = -1.0
+x3max     = 1.0
+ix3_bc    = panel
+ox3_bc    = panel
+
+# --- radial grid stretch ---------------------------------------------------------------
+use_grid_stretch_r_poly = true
+f_stretch_r_c1          = -0.068392
+f_stretch_r_c2          = -2.191487
+f_stretch_r_c3          = 2.464818
+f_stretch_r_c4          = -1.366698
+
+use_cubed_sphere       = true
+
+<meshblock>
+nx1       = 128
+nx2       = 16
+nx3       = 16
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim = 1000000000       # effectively no cycle limit; tlim and the wall clock stop it.
+tlim = 8.64e7           # 1000 days = 283 rotations, the ck_limb value
+ndiag      = 100
+dt_min     = 1.0e-3      # CHANGED from prod3's 1.0e-2: see change (4) above.
+
+<units>
+length_cgs = 1.0
+mass_cgs   = 1.0
+time_cgs   = 1.0
+mu         = 1.0
+
+<hydro>
+# H1: this block was <mhd> in prod4.
+# --- WELL-BALANCED HYDROSTATIC SOURCE: ON, polytropic closure --------------------------
+# Restored from cs_mhd_prod2 / sp_mhd_prod3 (prod3 had turned this off). See change (2)
+# in the header for wb_cache_every = 0 (not prod2's 10: stale-cache energy pump) and the
+# rot_potential consequence.
+wellbalance_dynamic = true
+wb_x1               = true
+wb_option           = polytropic
+wb_cache_every      = 0
+cs_wellbalanced_src = false   # 09-23 user: DROPPED. min beta at prod3 rot 283 = 1.22 (>> the ~2e-3 crossover); hurts hydro accuracy (tests_hyd4/README_wbsrc.md)
+isotropic_conduction = radiative
+rad_implicit_x1 = true
+rad_cap_ang     = 0.5    # silent no-op with rad_angular=false below; kept for the diff.
+rad_angular     = false  # CHANGED from prod3 (implicit default true): see change (3).
+rad_tau_lo     = 30.0
+rad_tau_hi     = 300.0
+rad_kappa_src  = table
+rad_flux_inner = -1.0              # sigma T_int^4 from Teq, set by the problem generator
+rad_met        = 0.0
+eos             = general
+general_eos     = table
+reconstruct     = plm
+rsolver         = hllc            # H2: was hlld (MHD-only)
+# cs_lowbeta_fallback: REMOVED (H4, MHD-only)
+gamma           = 1.4727545958   # unused by the table; kept so ideal/general inputs match
+etotgrav        = true
+
+# --- composition ---
+eos_h2               = true      # H2 dissociation: the heat pipe
+eos_ionization       = true      # Saha for H, He, He+
+eos_metal_ionization = true      # Na, K, Ca, Al, Mg, Fe -- the electron donors
+eos_radiation        = false     # aT^4/3 is ~1e-7 of the gas pressure here
+eos_xh               = 0.7381
+eos_yhe              = 0.2485
+eos_metal_condensation = true
+
+# --- table grid: must bracket the run ---
+eos_logd_min    = -14.0
+eos_logd_max    = 0.0
+eos_logt_min    = 1.5
+eos_logt_max    = 6.0
+eos_dlog        = 0.05
+
+# --- non-ideal MHD: REMOVED (H4) -- ohmic_resistivity, max_eta, use_rkg_sts ---
+
+pfloor = 1.0e-5                       # 09-22 (change 8): was 1e-3; units BARYE (1e-6 bar); see header
+dfloor = 5.0e-14
+tfloor_kelvin = 200.0
+
+<problem>
+ck_implicit = false
+ck_impl_arat = 2.0
+ck_impl_frozen_op = false
+ck_impl_frozen_cof = true
+ck_impl_lin = false
+ck_impl_lin_thr = 1
+ck_impl_fuse = false
+ck_impl_jac_lin = false
+ck_impl_cvsec = false
+ck_impl_tol = 1.0e-8
+ck_impl_dtol = 1.0e-8
+ck_impl_maxit = 8
+ck_impl_verbose = false
+ck_impl_debug = 0
+ck_impl_once = false
+ck_impl_warm = false
+ck_impl_reuse_jac = 0
+ck_impl_seed = 0
+ck_impl_lw = false
+ck_impl_xstep = 0
+ck_impl_xstep_thr = 0.0
+ck_impl_jreuse = 0.0
+ck_impl_pred = false
+ck_impl_pred_fac = 1.0
+ck_impl_pred_chk = false
+ck_impl_jreuse_xc = false
+ck_impl_warm_step = false
+ck_impl_cvkeep = false
+ck_impl_every = 1                # ck-cadence (README_cadence.md)
+ck_impl_every_thr = 0.0
+ck_impl_jreuse_act = 0.25
+ck_impl_nosync = false
+user_srcs   = true
+# bc_outer_maxwell: REMOVED (H5) -- acts only when MHD is on
+hot_jupiter = true
+Teq   = 2500.0
+omega = 2.06e-5
+rot_potential = true     # sp_mhd_prod3 value; see change (2) header note for the
+                         # rotpot_src consequence now that WB is on.
+grav  = 942.0
+grav_point_mass = true
+ap    = 9.44e9
+Rgas  = 4.593e7                  # ignored under the general EOS; composition is the EOS's
+met   = 0.0                      # [M/H] dex; also sets the EOS's metal donors
+bbot  = 0.0       # H5: was 3.0 G.  Must stay: pgen.cpp:57/131 GetReal it for every hot_jupiter
+                  # run; it is used only on the MHD paths.  0 = the cs_hyd_rs / sp_dhj_hyd value.
+
+# --- radiative transfer -----------------------------------------------------------
+rt_de_max    = 0.5
+rt_use_cons  = true
+rt_ck = true
+rt_split     = false
+ck_pcut_bar  = 10.0
+ck_nquad     = 1
+ck_star_teff = 6000.0
+ck_spherical = true              # NEW: spherical thermal two-stream. See change (1).
+ck_beam_sph  = true              # NEW: pseudo-spherical direct beam. See change (1).
+ck_sweep_form = 1                # 09-22 (change 9): tm = exact probe-free spherical sweep; see header
+ck_table     = /viper/u2/jinma/ATHENAK/athenak/data/exo_fms_ck/ck/Premixed_1x_g8_11.txt
+ck_data_dir  = /viper/u2/jinma/ATHENAK/athenak/data/exo_fms_ck   # CE_tables/, cia/, ray/, sw_flux/ live here
+
+# One-shot column dump: off for production.
+ck_dump_file =
+ck_dump_m    = 0
+ck_dump_j    = -1
+ck_dump_k    = -1
+
+<output1>
+file_type  = hst
+data_format = %.17e
+dt         = 3.05e4              # 10 per rotation
+
+<output2>
+file_type  = log                 # floor / C2P counters; rows are per-interval
+dt         = 3.05e4              # 10 per rotation (floor / C2P counters)
+
+<output3>
+file_type  = bin
+variable   = hydro_w           # H6: was mhd_w_bcc
+dt         = 6.10e5              # every 2 rotations (production cadence)
+
+<output4>
+file_type  = rst                 # so a 24 h timeout can be continued with -r
+dt         = 1.525e5             # every 0.5 rotations (P = 3.05e5 s), plus one at clean
+                                 # exit.  sp_mhd_prod3's cadence, for 24 h apu links.

@@ -1,0 +1,45 @@
+#!/bin/bash -l
+#SBATCH -o /viper/ptmp2/jinma/ckrst_0924/gpugate/log.out.%j
+#SBATCH -e /viper/ptmp2/jinma/ckrst_0924/gpugate/log.err.%j
+#SBATCH -J ckrst_gate
+#SBATCH -p apudev
+#SBATCH --ntasks=2
+#SBATCH --constraint="apu"
+#SBATCH --gres=gpu:2
+#SBATCH --cpus-per-task=24
+#SBATCH --time=00:14:50
+# ck-restart GPU gate: c2 + every = 4 on the production state (cs_hyd4_prod restart, read
+# in place): 2M cycles straight vs M + restart + M (M = 830, ~0.05 rotation each).
+# usage: sbatch gpugate.sub <rst> [arm]
+module purge
+module load gcc/14 rocm/6.3 openmpi_gpu/5.0 cmake/4.0
+export HSA_XNACK=1
+export HSA_NO_SCRATCH_RECLAIM=1
+export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK}
+P=/viper/ptmp2/jinma/ckrst_0924
+T=/viper/ptmp2/jinma/wt_ckrst/tests_ck_implicit/restart
+BIN=${BIN:-$P/athena.gpu.r2}
+INP=$T/prod_rst.athinput
+RST=$1; ARM=${2:-c2e4}; M=${M:-830}
+T4="problem/ck_implicit=true problem/ck_impl_arat=1e30 problem/ck_impl_frozen_op=true \
+problem/ck_impl_lin=true problem/ck_impl_lin_thr=1 problem/ck_impl_fuse=true \
+problem/ck_impl_jac_lin=true problem/ck_impl_cvsec=true"
+C2="$T4 problem/ck_impl_once=true problem/ck_impl_xstep=2 problem/ck_impl_jreuse=0.2 \
+problem/ck_impl_pred=true problem/ck_impl_pred_fac=0.5 problem/ck_impl_nosync=true"
+case $ARM in c2) X="$C2" ;; c2e4) X="$C2 problem/ck_impl_every=4" ;; esac
+read T0 DT0 NC0 <<< $(python3 $T/rstinfo.py $RST)
+echo "RST $RST t=$T0 ncycle=$NC0 md5=$(md5sum $RST | cut -c1-32) BIN $BIN md5=$(md5sum $BIN | cut -c1-32)"
+O="output1/dt=1500 output2/dt=1e30 output3/dt=1e30 output4/dt=1e30 time/tlim=1e30 time/ndiag=200"
+G=$P/gpugate/$ARM
+for r in s a; do
+  d=$G/$r; rm -rf $d; mkdir -p $d; cd $d
+  n=$((NC0 + 2*M)); [ $r = a ] && n=$((NC0 + M))
+  srun -n 2 $BIN -r $RST -i $INP $O $X time/nlim=$n > run.log 2>run.err
+  echo "rc_$r=$? $(ls rst | tail -1)"
+done
+d=$G/r; rm -rf $d; mkdir -p $d; cd $d
+srun -n 2 $BIN -r $(ls $G/a/rst/*.rst | tail -1) $O time/nlim=$((NC0 + 2*M)) > run.log 2>run.err
+echo "rc_r=$? $(ls rst | tail -1)"
+python3 $T/cmp.py rst $G/s $G/r
+grep -h "ck restart\|WARNING" $G/r/run.log | head
+echo CKRST_GPUGATE_DONE

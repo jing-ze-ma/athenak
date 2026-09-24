@@ -36,6 +36,7 @@
 #include "srcterms/turb_driver.hpp"
 #include "pgen/pgen.hpp"
 #include "utils/two_stream_warm_rst.hpp"
+#include "utils/two_stream_ck_rst.hpp"
 //#include "outputs.hpp"
 
 //----------------------------------------------------------------------------------------
@@ -164,6 +165,17 @@ void RestartOutput::LoadOutputData(Mesh *pm) {
     Kokkos::deep_copy(outarray_wem, Kokkos::subview(pmhd->w0,
                       std::make_pair(0,nmb), static_cast<int>(IEN),
                       Kokkos::ALL, Kokkos::ALL, Kokkos::ALL));
+  }
+  // the implicit correlated-k solver's cross-call state (utils/two_stream_ck_rst.hpp)
+  ck_rst_hdr_bytes.clear();
+  if (two_stream_rt::ck_rst_collect_fn != nullptr) {
+    two_stream_rt::CkRstHdr ckh;
+    const int nck = (two_stream_rt::ck_rst_collect_fn)(pm, outarray_ck, ckh, nmb, nout3,
+                                                       nout2, nout1);
+    if (nck > 0) {
+      ck_rst_hdr_bytes.resize(sizeof(ckh));
+      std::memcpy(ck_rst_hdr_bytes.data(), &ckh, sizeof(ckh));
+    }
   }
   // the mode-3 Newton warm-start history, see the note on outarray_wm1
   {
@@ -325,6 +337,9 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   const bool we_hyd = (phydro != nullptr) && phydro->peos->eos_data.IsGeneral();
   const bool we_mhd = (pmhd != nullptr) && pmhd->peos->eos_data.IsGeneral();
   const int neint = (we_hyd ? 1 : 0) + (we_mhd ? 1 : 0);
+  // the implicit-ck state block (utils/two_stream_ck_rst.hpp), behind even that one
+  const int nck = ck_rst_hdr_bytes.empty() ? 0
+                  : static_cast<int>(outarray_ck.extent(0));
   char eint_hdr[2*sizeof(std::int32_t)];
   {
     const std::int32_t hdr[2] = {static_cast<std::int32_t>(neint), 0};
@@ -499,6 +514,15 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
       resfile.Write_any_type(&nb, sizeof(IOWrapperSizeT), "byte", single_file_per_rank);
       resfile.Write_any_type(&(eint_hdr[0]), nb, "byte", single_file_per_rank);
     }
+    // the implicit-ck state header, same marked form, behind all the others
+    if (nck > 0) {
+      IOWrapperSizeT nb = ck_rst_hdr_bytes.size();
+      resfile.Write_any_type(&(two_stream_rt::kCkRstMagic[0]),
+                             sizeof(two_stream_rt::kCkRstMagic), "byte",
+                             single_file_per_rank);
+      resfile.Write_any_type(&nb, sizeof(IOWrapperSizeT), "byte", single_file_per_rank);
+      resfile.Write_any_type(ck_rst_hdr_bytes.data(), nb, "byte", single_file_per_rank);
+    }
   }
 
   //--- STEP 4.  All ranks write data over all MeshBlocks (5D arrays) in parallel
@@ -567,6 +591,7 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
     data_size += nt2*nout1*nout2*nout3*sizeof(Real);    // rad_m1 hesdirk2 slope
   }
   data_size += neint*nout1*nout2*nout3*sizeof(Real);    // hydro / mhd w0(IEN)
+  data_size += nck*nout1*nout2*nout3*sizeof(Real);      // implicit-ck state
   if (global_variable::my_rank == 0 || single_file_per_rank) {
     resfile.Write_any_type(&(data_size), sizeof(IOWrapperSizeT), "byte",
                             single_file_per_rank);
@@ -601,6 +626,10 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   }
   if (neint > 0) {
     step3size += sizeof(kEintRstMagic) + sizeof(IOWrapperSizeT) + sizeof(eint_hdr);
+  }
+  if (nck > 0) {
+    step3size += sizeof(two_stream_rt::kCkRstMagic) + sizeof(IOWrapperSizeT)
+                 + ck_rst_hdr_bytes.size();
   }
 
   // write cell-centered variables in parallel
@@ -1087,6 +1116,11 @@ void RestartOutput::WriteOutputFile(Mesh *pm, ParameterInput *pin) {
   // and the internal energy last of all (kEintRstMagic)
   if (we_hyd) { write_wtemp(outarray_weh, "hydro internal energy"); }
   if (we_mhd) { write_wtemp(outarray_wem, "mhd internal energy"); }
+  // and the implicit-ck state behind it (utils/two_stream_ck_rst.hpp)
+  for (int n=0; n<nck; ++n) {
+    write_wtemp(Kokkos::subview(outarray_ck, n, Kokkos::ALL, Kokkos::ALL, Kokkos::ALL,
+                                Kokkos::ALL), "ck restart state");
+  }
 
   // close file, clean up
   resfile.Close(single_file_per_rank);

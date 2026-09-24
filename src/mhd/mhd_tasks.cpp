@@ -40,7 +40,16 @@ void MHD::AssembleMHDTasks(std::map<std::string, std::shared_ptr<TaskList>> tl) 
   TaskID none(0);
 
   // assemble "before_timeintegrator" task list
-  id.savest = tl["before_timeintegrator"]->AddTask(&MHD::SaveMHDState, this, none);
+  // ---- the operator-split source (ProblemGenerator::user_split_func), the MHD twin of
+  // the Hydro::RTStrangSplit pair in AssembleHydroTasks: half the cycle dt before the
+  // integrator and half after, or (user_split_once) the full dt once after the last
+  // stage.  Each call is followed by the u0 halo/BC/ConToPrim tail (RTOpSplitBvals).  A
+  // null hook returns immediately, so every run that does not enrol one is unchanged.
+  id.splitpre = tl["before_timeintegrator"]->AddTask(&MHD::RTStrangSplit, this, none);
+  id.savest = tl["before_timeintegrator"]->AddTask(&MHD::SaveMHDState, this,
+                                                   id.splitpre);
+  id.splitpst = tl["after_timeintegrator"]->AddTask(&MHD::RTStrangSplit, this, none);
+  pmy_pack->split_hook_tasks = true;
 
   // assemble "before_stagen" task list
   id.irecv = tl["before_stagen"]->AddTask(&MHD::InitRecv, this, none);
@@ -665,6 +674,52 @@ TaskStatus MHD::Prolongate(Driver *pdrive, int stage) {
       pbval_b->ProlongateFC(b0, coarse_b0);
     }
   }
+  return TaskStatus::complete;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void MHD::RTOpSplitBvals
+//! \brief the MHD twin of Hydro::RTOpSplitBvals: a complete synchronous ghost-zone update
+//! of u0 after an operator that ran outside the stage's own communication window (the
+//! split source of RTStrangSplit), then ConToPrim.  The split source changes u0 only;
+//! b0 is untouched, so only u0 is exchanged.  ApplyPhysicalBCs and Prolongate also
+//! refill the b0 ghosts from the unchanged b0, which gives the same values again.
+
+void MHD::RTOpSplitBvals() {
+  while (pbval_u->InitRecv(nmhd+nscalars) != TaskStatus::complete) {}
+  if (pmy_pack->pmesh->multilevel) {
+    pmy_pack->pmesh->pmr->RestrictCC(u0, coarse_u0);
+  }
+  while (pbval_u->PackAndSendCC(u0, coarse_u0) != TaskStatus::complete) {}
+  while (pbval_u->RecvAndUnpackCC(u0, coarse_u0) != TaskStatus::complete) {}
+  (void) ApplyPhysicalBCs(nullptr, 0);
+  (void) Prolongate(nullptr, 0);
+  (void) ConToPrim(nullptr, 0);
+  while (pbval_u->ClearSend() != TaskStatus::complete) {}
+  while (pbval_u->ClearRecv() != TaskStatus::complete) {}
+  return;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn TaskStatus MHD::RTStrangSplit
+//! \brief ProblemGenerator::user_split_func on the MHD task list, with the semantics of
+//! Hydro::RTStrangSplit: Strang halves (dt/2 in "before_timeintegrator", stage 0, and
+//! dt/2 in "after_timeintegrator") or, with user_split_once, ONE call with the full cycle
+//! dt after the last RK stage.  pmesh->dt is the cycle dt in both lists.
+
+TaskStatus MHD::RTStrangSplit(Driver *pdrive, int stage) {
+  Mesh *pm = pmy_pack->pmesh;
+  if (pm->pgen == nullptr || pm->pgen->user_split_func == nullptr) {
+    return TaskStatus::complete;
+  }
+  if (pm->pgen->user_split_once) {
+    if (stage == 0) return TaskStatus::complete;
+    (pm->pgen->user_split_func)(pm, pm->dt);
+    RTOpSplitBvals();
+    return TaskStatus::complete;
+  }
+  (pm->pgen->user_split_func)(pm, 0.5*(pm->dt));
+  RTOpSplitBvals();
   return TaskStatus::complete;
 }
 

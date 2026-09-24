@@ -82,6 +82,7 @@ constexpr int TAU_TAG_BASE = 16384;
 //! TauClosureBuild (by every rank: all ranks run the implicit solve together).
 
 void RadiationM1::TauClosureInit() {
+  if (vet_col) {VetColInit(); return;}   // closure = vet_col (rad_m1_vetcol.cpp)
   Mesh *pm = pmy_pack->pmesh;
   auto &indcs = pm->mb_indcs;
   auto &mindcs = pm->mesh_indcs;
@@ -172,6 +173,7 @@ void RadiationM1::TauClosureInit() {
 //! \brief (chi, n) of every active cell into tau_ten, from M1_IW_KT of the work array.
 
 void RadiationM1::TauClosureBuild() {
+  if (vet_col) {return;}   // vet_col: built before the predictor in ImplicitSolve
   if (!tau_ready) {TauClosureInit();}
   Kokkos::fence();
   Kokkos::Timer timer;
@@ -336,6 +338,7 @@ void RadiationM1::TauClosureBuild() {
 //! \brief one cost line at the end of the run (rank 0)
 
 void RadiationM1::TauClosureReport() {
+  if (vet_col) {VetColReport(); return;}
   if (global_variable::my_rank != 0) return;
   std::cout << "<rad_m1> closure = tau: " << tau_ncall << " tensor builds, "
             << tau_time << " s (rank 0, fenced), "

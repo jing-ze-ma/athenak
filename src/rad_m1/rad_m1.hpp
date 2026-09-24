@@ -562,6 +562,12 @@ class RadiationM1 {
   Real t2_dtprev;               // the dt of the previous step (vet_sc extrapolation)
   bool t2_vprev;                // vet_prev holds the tensor of the previous step
   bool t2_vext;                 // time2_vet_extrap (default false: D^n)
+  Real t2_lin_tol;              // time2_lin_tol: stage solves' implicit_lin_tol (<= 0:
+                                // implicit_lin_tol x t2_lin_fac)
+  Real t2_onep_s;               // time2_one_pass_safety: implicit_one_pass_safety of the
+                                // stage solves (0: implicit_one_pass_safety)
+  Real t2_lin_fac;              // time2_lin_tol_fac (default 10)
+  Real t2_lin_save;             // the implicit_lin_tol put back after a stage solve
   Real t2_nclip;                // vet_sc cells whose extrapolated tensor was clipped
   DvceArray5D<Real> t2k1;       // (m,M1_T2_NK,k,j,i) the FSAL slope K1 (restart state)
   DvceArray5D<Real> t2k2;       // (m,M1_T2_NK,k,j,i) the stage-2 slope K2
@@ -750,6 +756,10 @@ class RadiationM1 {
   // Coordinates instead of the uniform mb_size.dx1..3 (appended as overwrites, so
   // the Cartesian arithmetic is untouched)
   bool sph_geom = false;
+  // STAGE S2 (rad_m1_sph.cpp): sph_geom with a closure that is not Eddington (m1,
+  // minerbo, kershaw): the radial faces take the integrating factor (M1SphDrr) and every
+  // face equation the lagged curvature M1SphCurv; false keeps the S1 arithmetic
+  bool sph_q = false;
   //! print the Picard statistics of the implicit solver (from the destructor, rank 0)
   void ImplicitReport();
   //! VET (rad_m1_vet.cpp): read <rad_m1>/vet_*, check the mesh, allocate
@@ -892,6 +902,44 @@ class RadiationM1 {
   void TauClosureBuild();
   //! closure = tau: cost line at the end of the run
   void TauClosureReport();
+
+  // ---- <rad_m1>/closure = vet_col (rad_m1_vetcol.cpp, design stage S5, option D): the
+  // Eddington factor f_K = K/J of a 1-D formal solution per RADIAL COLUMN (spherical
+  // impact-parameter rays on the sp wedge, Gauss rays in plane-parallel on a Cartesian
+  // mesh) with the column's own extinction and source, handed to the implicit solve as a
+  // FIXED uniaxial tensor about r_hat (or the M1 flux axis) through the tau closure's
+  // tau_ten (tau_closure is set as well; only the tensor build differs).
+  bool vet_col;                // closure = vet_col (default false)
+  bool vcol_sph;               // spherical rays (sp) or plane-parallel (Cartesian)
+  bool vcol_axis_flux;         // vet_col_axis = flux: n = the M1 cell flux direction
+  int vcol_nc, vcol_np, vcol_nmu, vcol_every, vcol_nray;
+  int vcol_dump_every;         // vet_col_dump_every (0 = off)
+  bool vcol_built;             // a tensor exists (vet_col_every > 1 skips builds)
+  std::string vcol_dump;       // vet_col_dump: file prefix of the column dump
+  Real vcol_time, vcol_ncall, vcol_nskip;
+  DvceArray2D<Real> vcol_seg;  // (ray, shell l): path length from shell l to l+1 / top
+  DvceArray2D<Real> vcol_mu;   // (ray, shell): mu of the ray at the shell
+  DvceArray2D<Real> vcol_w;    // (ray, shell): hemisphere quadrature weight (sum 1)
+  DvceArray2D<Real> vcol_ray;  // (ray, 0..3): L (first shell), type, seg0, a_t | mu_face
+  DvceArray1D<int> vcol_klast; // (shell): index of the last ray active at the shell
+  DvceArray2D<Real> vcol_buf;  // (ray, column): the running intensity of each ray
+  DvceArray5D<Real> vcol_mom;  // (m,5,k,j,i): J, H, K, S, chi of the solution (dump)
+  std::vector<double> vcol_rc; // shell radii (host, for the dump)
+  // vet_col_surface_q (runs_5e): the outer-x1 Marshak q per column from the formal
+  // solution, q = H(top face)/J(top cell), lagged like the tensor; vet_col_team: the
+  // build as one team per column (rays over the team's threads, fixed-order moments)
+  bool vcol_sq, vcol_team;
+  Real vcol_qmin, vcol_qmax;
+  int vcol_lc;                 // shells per chunk of the team build (scratch budget)
+  int vcol_ts, vcol_lcin;      // vet_col_team_size (0 = AUTO), vet_col_chunk (0 = auto)
+  DvceArray3D<Real> vcol_q;    // (m, k, j): the column's Marshak q at the top face
+  DvceArray1D<Real> vcol_muf;  // (ray): mu at the top face
+  DvceArray1D<Real> vcol_wf;   // (ray): hemisphere weight at the top face
+  void VetColInit();           // checks, ray tables, buffers (first TauClosureInit)
+  void VetColBuild();          // the formal solution -> tau_ten (chi, n)
+  void VetColBuildTeam(bool dmp);   // the same, one team per column (vet_col_team)
+  void VetColReport();
+  void VetColDumpColumn(int ncall);
 
   // ...in "m1_before_stagen"
   TaskStatus InitRecv(Driver *d, int stage);

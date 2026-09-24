@@ -58,6 +58,7 @@
 #include "utils/two_stream_column_implicit.hpp"
 #include "utils/two_stream_column_partition.hpp"
 #include "utils/two_stream_column_ck.hpp"
+#include "utils/two_stream_ck_rst_state.hpp"
 
 namespace two_stream_rt {
 
@@ -1665,6 +1666,9 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
                 << " rt_implicit_column=" << rt_implicit_column << "." << std::endl;
       std::exit(EXIT_FAILURE);
     }
+    // the first call of a restarted run: the cross-call state the file carried, and the
+    // ck_impl_xstep operator rebuilt when this call re-applies it (two_stream_ck_rst.hpp)
+    CkRstBeginCall(pm);
     // problem/ck_impl_glob = ls_sub: the passes a column may spend on its sub-steps
     // (maxit per sub-step at every level 1, 2, 4, .. sub_max, plus the restarts)
     int nitmax = ck_impl_maxit;
@@ -2403,7 +2407,10 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
           rt_Qb_ptr = new DvceArray5D<Real>("rt_Qb", nmb, nblk, n1, n3, n2);
           // problem/ck_implicit: the column solve's own scratch.  Nothing here exists
           // with the switch off (see utils/two_stream_column_ck.hpp).
-          if (ck_implicit) CkImplAlloc(nmb, nb_a, nblk*NC, n1, n2, n3, nblk);
+          if (ck_implicit) {
+            CkImplAlloc(nmb, nb_a, nblk*NC, n1, n2, n3, nblk);
+            CkRstAfterAlloc();     // restart: ck_thk / ck_cv (two_stream_ck_rst.hpp)
+          }
         }
         if (rt_diag) {
           rt_diag_ptr = new DvceArray5D<Real>("rt_diag", nmb, 7, n3, n2, n1);
@@ -2742,6 +2749,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
           } else {
             ck_impl_xs_cyc = pm->ncycle;
             ++ck_impl_nstore;
+            CkXsSnap(pm, bdt);       // what this store read, for a restart's rebuild
             if (ck_xsT_ptr == nullptr) {
               ck_xsT_ptr = new DvceArray4D<Real>("ck_xsT", nmb1+1, n3, n2, n1);
               ck_xsD_ptr = new DvceArray4D<Real>("ck_xsD", nmb1+1, n3, n2, n1);
@@ -8096,6 +8104,7 @@ inline void CkCadStep(Mesh *pm, const Real dt) {
   auto &indcs = pm->mb_indcs;
   const int ncol = pmbp->nmb_thispack*indcs.nx2*indcs.nx3;
   const bool diag = ck_impl_verbose;
+  CkRstCadRestore(pm);     // restart: Q0, D, T0, rho0 (two_stream_ck_rst.hpp)
   const bool full = (ck_cad_ptr == nullptr) ||
                     (pm->ncycle % static_cast<int64_t>(ck_impl_every) == 0);
   if (ck_cad_stat_ptr == nullptr) {

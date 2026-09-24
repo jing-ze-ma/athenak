@@ -1,0 +1,94 @@
+== tn_edd_1 new 10:26:30
+== tn_c1_1 new 10:26:33
+== tn_t0_l8_1 new 10:26:37
+== tn_t0_l16_1 new 10:26:41
+== tn_t0_l32_1 new 10:26:44
+== tn_t64_l8_1 new 10:26:48
+== tn_t64_l16_1 new 10:26:52
+== tn_t64_l32_1 new 10:26:55
+== tn_t128_l8_1 new 10:26:59
+== tn_t128_l16_1 new 10:27:03
+== tn_t128_l32_1 new 10:27:06
+== tn_edd_2 new 10:27:10
+== tn_c1_2 new 10:27:13
+== tn_t0_l8_2 new 10:27:17
+== tn_t0_l16_2 new 10:27:21
+== tn_t0_l32_2 new 10:27:24
+== tn_t64_l8_2 new 10:27:28
+== tn_t64_l16_2 new 10:27:32
+== tn_t64_l32_2 new 10:27:35
+== tn_t128_l8_2 new 10:27:39
+== tn_t128_l16_2 new 10:27:43
+== tn_t128_l32_2 new 10:27:47
+== tn_c1_1: 2.252351e+00 1.176699e+01 ms per build 
+== tn_c1_2: 2.263620e+00 1.175154e+01 ms per build 
+== tn_edd_1: 1.798057e+00 
+== tn_edd_2: 1.825181e+00 
+== tn_t0_l16_1: 1.900557e+00 3.315139e+00 ms per build 
+== tn_t0_l16_2: 1.857949e+00 3.351042e+00 ms per build 
+== tn_t0_l32_1: 2.093895e+00 7.734549e+00 ms per build 
+== tn_t0_l32_2: 2.096276e+00 7.739010e+00 ms per build 
+== tn_t0_l8_1: 1.942731e+00 3.835011e+00 ms per build 
+== tn_t0_l8_2: 1.913598e+00 3.570875e+00 ms per build 
+== tn_t128_l16_1: 1.930105e+00 3.383199e+00 ms per build 
+== tn_t128_l16_2: 1.877045e+00 3.374667e+00 ms per build 
+== tn_t128_l32_1: 2.105637e+00 7.624068e+00 ms per build 
+== tn_t128_l32_2: 2.068942e+00 7.624553e+00 ms per build 
+== tn_t128_l8_1: 1.935014e+00 3.557925e+00 ms per build 
+== tn_t128_l8_2: 1.895225e+00 3.519112e+00 ms per build 
+== tn_t64_l16_1: 1.893620e+00 3.732716e+00 ms per build 
+== tn_t64_l16_2: 1.934118e+00 3.757736e+00 ms per build 
+== tn_t64_l32_1: 2.132288e+00 8.644660e+00 ms per build 
+== tn_t64_l32_2: 2.137026e+00 8.645812e+00 ms per build 
+== tn_t64_l8_1: 1.971682e+00 3.865026e+00 ms per build 
+== tn_t64_l8_2: 1.934582e+00 3.324091e+00 ms per build 
+TUNE DONE
+                                  
+================================= 
+Global information about the job: 
+================================= 
+  
+Job owner: jinma(28895)
+Job name:  vetcol2_tune
+Node list: vipa1327
+Job start: Thu Sep 24 10:26:28 CEST 2026
+Job end:   Thu Sep 24 10:27:54 CEST 2026
+Work dir:  /viper/ptmp2/jinma/vetcol2_0924
+Command:   /viper/ptmp2/jinma/vetcol2_0924/tune_gpu.sh
+  
+  
+  
+==========================================================================================
+Information on jobsteps (Note: MaxRSS/AveRSS is the maximum/average over all 
+tasks of the per-task memory high-water marks; cf. "man sacct"): 
+==========================================================================================
+  
+JobID            JobName NNodes NTasks  NCPUS       MaxRSS       AveRSS    Elapsed ExitCode
+------------- ---------- ------ ------ ------ ------------ ------------ ---------- --------
+11959410      vetcol2_tu      1            96                             00:01:26      0:0
+11959410.0    athena_new      1      2     96       24.33M       24.33M   00:00:03      0:0
+11959410.1    athena_new      1      2     96       23.67M       23.67M   00:00:04      0:0
+11959410.2    athena_new      1      2     96       24.34M       24.34M   00:00:04      0:0
+11959410.3    athena_new      1      2     96       23.67M       23.67M   00:00:03      0:0
+11959410.4    athena_new      1      2     96       23.68M       23.68M   00:00:04      0:0
+11959410.5    athena_new      1      2     96       23.01M       23.01M   00:00:04      0:0
+11959410.6    athena_new      1      2     96       23.68M       23.68M   00:00:03      0:0
+11959410.7    athena_new      1      2     96       23.68M       23.68M   00:00:04      0:0
+11959410.8    athena_new      1      2     96       23.68M       23.68M   00:00:04      0:0
+11959410.9    athena_new      1      2     96       23.68M       23.68M   00:00:03      0:0
+11959410.10   athena_new      1      2     96       24.34M       24.34M   00:00:04      0:0
+11959410.11   athena_new      1      2     96       24.34M       24.34M   00:00:03      0:0
+11959410.12   athena_new      1      2     96       24.34M       24.34M   00:00:04      0:0
+11959410.13   athena_new      1      2     96       23.68M       23.68M   00:00:04      0:0
+11959410.14   athena_new      1      2     96       24.34M       24.34M   00:00:03      0:0
+11959410.15   athena_new      1      2     96       23.68M       23.68M   00:00:04      0:0
+11959410.16   athena_new      1      2     96       23.68M       23.68M   00:00:04      0:0
+11959410.17   athena_new      1      2     96       24.33M       24.33M   00:00:03      0:0
+11959410.18   athena_new      1      2     96       24.34M       24.34M   00:00:04      0:0
+11959410.19   athena_new      1      2     96       23.68M       23.68M   00:00:05      0:0
+11959410.20   athena_new      1      2     96       23.68M       23.68M   00:00:05      0:0
+11959410.21   athena_new      1      2     96       23.68M       23.68M   00:00:05      0:0
+  
+Maximum memory per node: 0.051050 GB (defined as MaxRSS*Ntasks/NNodes)
+CPU utilization: 0.0 %
+  

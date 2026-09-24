@@ -250,9 +250,9 @@ inline bool ck_impl_cvkeep = false;
 // problem/ck_impl_every_thr = thr > 0: before the linearised step, a column any of
 // whose RT cells has |T/T0 - 1| or |rho/rho0 - 1| > thr takes a full solve instead
 // (only those columns: the others are masked out of the Newton by ck_done = 2).
-// RESTART: the stored arrays are not written; the first call after a restart is a full
-// call.  With the schedule on ncycle, a restart written on a cycle that is a multiple
-// of N is therefore a bitwise continuation.
+// RESTART: Q0, D, T0, rho0 travel in the restart file (utils/two_stream_ck_rst.hpp),
+// so a restarted run follows the schedule bitwise; a file without them (older) forces a
+// full call first.
 inline int ck_impl_every = 1;
 inline Real ck_impl_every_thr = 0.0;
 inline bool ck_cad_partial = false;          // this call solves the unmasked columns only

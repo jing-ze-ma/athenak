@@ -1,0 +1,44 @@
+#!/bin/bash -l
+#SBATCH -o /viper/ptmp2/jinma/ckrst_0924/ab3/log.out.%j
+#SBATCH -e /viper/ptmp2/jinma/ckrst_0924/ab3/log.err.%j
+#SBATCH -J ckrst_ab3
+#SBATCH -p apu
+#SBATCH --ntasks=2
+#SBATCH --constraint="apu"
+#SBATCH --gres=gpu:2
+#SBATCH --cpus-per-task=24
+#SBATCH --time=01:40:00
+# 3-rotation hydro A/B of the production cadence: c2 (every = 1) vs c2 + every = 4, from
+# the cs_hyd4_prod restart (read in place), in two restart-chained segments (1.5 rot by
+# cycle count, then to rotation T0 + 3); rst + bin every 0.5 rotation, verbose ck lines.
+# usage: sbatch ab3.sub <rst> <arm>
+module purge
+module load gcc/14 rocm/6.3 openmpi_gpu/5.0 cmake/4.0
+export HSA_XNACK=1
+export HSA_NO_SCRATCH_RECLAIM=1
+export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK}
+P=/viper/ptmp2/jinma/ckrst_0924
+T=/viper/ptmp2/jinma/wt_ckrst/tests_ck_implicit/restart
+BIN=${BIN:-$P/athena.gpu.r2}
+INP=$T/prod_rst.athinput
+RST=$1; ARM=$2
+T4="problem/ck_implicit=true problem/ck_impl_arat=1e30 problem/ck_impl_frozen_op=true \
+problem/ck_impl_lin=true problem/ck_impl_lin_thr=1 problem/ck_impl_fuse=true \
+problem/ck_impl_jac_lin=true problem/ck_impl_cvsec=true"
+C2="$T4 problem/ck_impl_once=true problem/ck_impl_xstep=2 problem/ck_impl_jreuse=0.2 \
+problem/ck_impl_pred=true problem/ck_impl_pred_fac=0.5 problem/ck_impl_nosync=true"
+case $ARM in c2) X="$C2" ;; e4) X="$C2 problem/ck_impl_every=4" ;;
+  c2p) X="$C2 problem/ck_impl_tol=0.9e-8" ;;   # noise reference: c2 at 0.9 x the Newton tol
+esac
+read T0 DT0 NC0 <<< $(python3 $T/rstinfo.py $RST)
+TL=$(python3 -c "print(2.44e7 + 3*3.05e5 + 100.0)")
+echo "RST $RST t=$T0 ncycle=$NC0 md5=$(md5sum $RST | cut -c1-32) BIN $BIN md5=$(md5sum $BIN | cut -c1-32) TL=$TL"
+O="output3/dt=1.525e5 output4/dt=1.525e5 time/ndiag=500 time/tlim=$TL"
+d=$P/ab3/$ARM; mkdir -p $d; cd $d
+srun -n 2 $BIN -r $RST -i $INP $O $X problem/ck_impl_verbose=true time/nlim=$((NC0 + 25000)) \
+  > run1.log 2>run1.err
+echo "rc_seg1=$? $(ls rst | tail -1)"
+R1=$d/rst/$(ls rst | tail -1)
+srun -n 2 $BIN -r $R1 $O time/nlim=-1 > run2.log 2>run2.err
+echo "rc_seg2=$? $(ls rst | tail -1)"
+echo CKRST_AB3_DONE

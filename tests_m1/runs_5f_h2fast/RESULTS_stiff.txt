@@ -1,0 +1,11 @@
+40-period stiff probe, final (v4)
+case                                                               max|Z|/A0 end|Z|/A0     exact  noise/A0   NC   fb
+P100_t100000_N32_nt24_tshesdirk2                                           1     0.719     0.799    0.0022    1    0
+P100_t100000_N64_nt32_tshesdirk2                                           1       0.8     0.799    0.0012    0    0
+P100_t100000_N64_nt48_tshesdirk2                                           1     0.801     0.799   0.00077    0    0
+
+base 9c1a12d7
+case                                                               max|Z|/A0 end|Z|/A0     exact  noise/A0   NC   fb
+P100_t100000_N32_nt24_tshesdirk2                                           1     0.719     0.799    0.0022    1    0
+P100_t100000_N64_nt32_tshesdirk2                                           1       0.8     0.799    0.0012    0    0
+P100_t100000_N64_nt48_tshesdirk2                                           1     0.801     0.799   0.00078    0    0

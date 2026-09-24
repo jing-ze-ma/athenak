@@ -49,8 +49,8 @@ const Real kT2G = 1.0 - 1.0/std::sqrt(2.0);
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::Time2Init
 //! \brief read <rad_m1>/time_scheme (be | hesdirk2) and allocate the stage state.  The
-//! parameter is read only when it is named, so the parameter dump of a be run does not
-//! change.
+//! key is always present here: ImplicitInit resolves its default (hesdirk2 where it is
+//! accepted, be elsewhere and on restarts whose file lacks it; m1-defaults2).
 
 void RadiationM1::Time2Init(ParameterInput *pin) {
   time_scheme = M1_TIME_BE;
@@ -76,7 +76,9 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
               << "= rk2 (its explicit part IS the Heun hydro)" << std::endl;
     std::exit(EXIT_FAILURE);
   }
-  if (tau_closure) {
+  // closure = vet_col (m1-sph2) sets tau_closure too: its tensor is a formal solution
+  // like vet_sc's, built at U^n by Time2VetStart and kept for both stages
+  if (tau_closure && !vet_col) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
               << std::endl << "<rad_m1>/time_scheme = hesdirk2 is not wired for "
               << "closure = tau" << std::endl;
@@ -104,10 +106,42 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
     }
   }
   // time2_vet_extrap (default false): the stage solves use D^n of the formal solution at
-  // U^n; true = D* = D^n + (dt/dt_prev)(D^n - D^{n-1}) (runs_3x: fails G1 at P=100 tau=10)
+  // U^n; true = D* = D^n + (dt/dt_prev)(D^n - D^{n-1}) (runs_3x: fails G1 at P=100,
+  // tau=10)
   t2_vext = false;
   if (pin->DoesParameterExist("rad_m1", "time2_vet_extrap")) {
     t2_vext = pin->GetBoolean("rad_m1", "time2_vet_extrap");
+  }
+  // time2_lin_tol / time2_lin_tol_fac (tests_m1/runs_5f_h2fast): the linear (Krylov)
+  // tolerance of the two stage solves: time2_lin_tol when named, else implicit_lin_tol
+  // x time2_lin_tol_fac.  Default 10 (the input files set implicit_lin_tol =
+  // implicit_tol/100; the stage solves then take implicit_tol/10); 3-D He box: 21 -> 15
+  // Krylov iterations per stage solve; the radwave G1 order is kept together with
+  // time2_one_pass_safety = 30.  As for the runs_4a_accel levers, a restart whose file
+  // does not carry the key keeps the old behaviour (1).
+  const bool rs = global_variable::restart_run;
+  t2_lin_tol = -1.0;
+  if (pin->DoesParameterExist("rad_m1", "time2_lin_tol")) {
+    t2_lin_tol = pin->GetReal("rad_m1", "time2_lin_tol");
+  }
+  t2_lin_fac = pin->GetOrAddReal("rad_m1", "time2_lin_tol_fac", rs ? 1.0 : 10.0);
+  if (!(t2_lin_fac > 0.0)) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+              << std::endl << "<rad_m1>/time2_lin_tol_fac must be > 0" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  // time2_one_pass_safety (tests_m1/runs_5f_h2fast): the implicit_one_pass safety factor
+  // of the stage solves.  One-pass acceptance leaves a Picard error ~ tol/safety where
+  // the two-pass test leaves ~ q tol; the radwave G1 order at implicit_tol = 1e-11 needs
+  // the stage solves closer to the latter (safety 3: median order 1.74 at P=100,
+  // tau=1e3; 30: >= 1.94 in all 24 cases).  Default 30; 0 = implicit_one_pass_safety,
+  // the default of a restart whose file does not carry the key.
+  t2_onep_s = pin->GetOrAddReal("rad_m1", "time2_one_pass_safety", rs ? 0.0 : 30.0);
+  if (t2_onep_s != 0.0 && !(t2_onep_s >= 1.0)) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+              << std::endl << "<rad_m1>/time2_one_pass_safety must be 0 or >= 1"
+              << std::endl;
+    std::exit(EXIT_FAILURE);
   }
   t2_dbg_fail = -1;
   if (pin->DoesParameterExist("rad_m1", "time2_dbg_fail")) {
@@ -139,6 +173,11 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
     Kokkos::realloc(vet_now, nmb, M1_T2_NVET, n3, n2, n1);
     Kokkos::realloc(vet_opac, nmb, M1_NOPAC, n3, n2, n1);
     Kokkos::deep_copy(vet_prev, 0.0);
+  }
+  if (vet_col) {
+    // Time2VetStart's save slots (E, T) and the saved stage-start opacities
+    Kokkos::realloc(vet_now, nmb, 2, n3, n2, n1);
+    Kokkos::realloc(vet_opac, nmb, M1_NOPAC, n3, n2, n1);
   }
   t2_ok = false;
   if (global_variable::my_rank == 0) {
@@ -266,6 +305,9 @@ void RadiationM1::Time2Restore(Driver *pdrive) {
 //! D* = D^n + (dt/dt_prev)(D^n - D^{n-1}), which both stage solves read.  Called from
 //! ImplicitSolve at the point where the backward-Euler step calls VetShortChar; the
 //! solve's own EN (old vector), TP (start T) and opacities are put back afterwards.
+//! closure = vet_col (m1-sph2, tests_m1/runs_5h_sph2): the same, with VetColBuild (the
+//! tensor tau_ten and the surface q at U^n) and NO extrapolation: both stages use D^n
+//! (an extrapolated chi and q were measured: same order, 3e-11 from D^n).
 
 void RadiationM1::Time2VetStart() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -347,7 +389,13 @@ void RadiationM1::Time2VetStart() {
       iw_(m,M1_IW_EN,k,j,i) = fmax(u0_(m,M1_E,k,j,i), efl);
     });
   }
-  VetShortChar();
+  // closure = vet_col (m1-sph2): the per-column formal solution of the same state;
+  // its tensor (tau_ten) and surface q are then kept for both stages (no extrapolation)
+  if (vet_col) {
+    VetColBuild();
+  } else {
+    VetShortChar();
+  }
   if (fast) {
     Kokkos::deep_copy(DevExeSpace(), opac, vet_opac);
   } else if (hh) {
@@ -358,7 +406,7 @@ void RadiationM1::Time2VetStart() {
     iw_(m,M1_IW_EN,k,j,i) = vn_(m,0,k,j,i);
     if (hh) {iw_(m,M1_IW_TP,k,j,i) = vn_(m,1,k,j,i);}
   });
-  Time2VetExtrapolate();
+  if (vet_sc) {Time2VetExtrapolate();}
 }
 
 //----------------------------------------------------------------------------------------

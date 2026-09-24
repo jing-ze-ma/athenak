@@ -1,0 +1,130 @@
+# AthenaK input file: grey M1 LINEAR RADIATION-MODIFIED ACOUSTIC WAVE (design T10,
+# milestone 3b phase E).  A uniform, optically thick, radiation-pressure-significant
+# medium carrying one wavelength of a linear sound wave across a periodic box.  The wave
+# direction is <problem>/radwave_dir = x1 | x2 | x3 | xy, so that the IDENTICAL physical
+# problem can be propagated along the column direction of the implicit solve (x1) and
+# along a TRANSVERSE one (x2, x3) -- which is what isolates the transverse
+# gas-radiation coupling of <rad_m1>/transport = implicit.
+#
+# CODE UNITS are chosen so that the numbers are round.  The ideal-gas EOS carries
+# T = p/rho, so with rho0 = 1 and T0 = 1 the gas pressure is 1; arad = 3 then makes
+# E_rad = 3 and P_rad = 1, i.e. beta = P_gas/P_tot = 1/2.  Chandrasekhar's mixture
+# exponents for gamma = 5/3 at beta = 1/2 are Gamma_1 = 1.4259259259 and
+# Gamma_3 - 1 = 0.3703703704, so
+#
+#   c_s = sqrt(Gamma_1 P_tot/rho) = 1.6887426837300739
+#
+# and c_light = 1688.7426837300738 puts c/c_s at exactly 1e3, as in the He-star box.
+# kappa = 1e5 with rho = 1 and a box of unit length gives tau per wavelength = 1e5:
+# the diffusive correction to the phase speed is O((c/c_s)^2/tau^2) ~ 1e-4 and the
+# damping is a few per cent per period, both small enough for a 1 % phase-speed gate.
+#
+# The defaults below are the x1 wave on a 1-D mesh with transport = implicit_x1 (the
+# VALIDATED path).  tests_m1/runs_3b6/run_gates_3b6.sh overrides mesh/nx2, mesh/nx3,
+# meshblock/*, rad_m1/transport, problem/radwave_dir and time/tlim on the command line
+# for the other arms; every one of those keys is named here so that AthenaK accepts the
+# override.
+
+<comment>
+problem = grey M1 radiation-modified acoustic wave
+
+<job>
+basename = rw
+
+<mesh>
+nghost    = 2
+nx1       = 4
+x1min     = 0.0
+x1max     = 0.1
+ix1_bc    = reflect
+ox1_bc    = reflect
+nx2       = 64
+x2min     = 0.0
+x2max     = 1.0
+ix2_bc    = periodic
+ox2_bc    = periodic
+nx3       = 4
+x3min     = 0.0
+x3max     = 0.1
+ix3_bc    = periodic
+ox3_bc    = periodic
+
+<meshblock>
+nx1       = 4
+nx2       = 64
+nx3       = 4
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim       = -1
+tlim       = 1.184313050927584      # 2 wave periods, lambda = 1
+ndiag      = 100000
+
+<hydro>
+eos         = ideal
+reconstruct = plm
+rsolver      = hllc
+gamma        = 1.666666666666667
+
+<rad_m1>
+c_light      = 1688.7426837300738   # c/c_s = 1e3
+chat_over_c  = 1.0
+cfl_rad      = 0.4
+thick_flux   = none
+closure      = m1
+e_floor      = 1.0e-30
+subcycle     = true                 # only used by transport = explicit
+opacity      = const
+kappa_p      = 1.0e5
+kappa_e      = 1.0e5
+kappa_f      = 1.0e5
+kappa_s      = 0.0
+arad         = 3.0
+coupling     = true
+gas_feedback = true
+dbg_gas_force = true
+dbg_gas_heat  = true
+
+transport             = implicit
+implicit_cfl          = -1.0
+implicit_tol          = 1.0e-8    # a tighter tol stalls: the T^4 Picard floors at ~3e-9
+implicit_maxit        = 200
+implicit_lin_tol      = 1.0e-12
+implicit_lin_maxit    = 200
+implicit_solver       = bicgstab
+implicit_offdiag      = lagged
+implicit_closure_lag  = pass         # pass | step
+implicit_closure_relax = 1.0
+implicit_opac_update  = false
+implicit_allow_multid = true
+implicit_flux         = central
+implicit_recon        = dc
+implicit_partition    = none
+implicit_recon_lag    = picard
+implicit_res_floor    = 0.0
+implicit_trans_limit  = none      # none | lp (3b G)
+implicit_trans_fmax   = 1.0
+implicit_bmom_half    = true
+marshak_q             = 0.5
+implicit_bc_x1min     = reflect
+implicit_bc_x1max     = reflect
+
+<problem>
+pgen_name    = rad_m1_beam
+m1_test      = radwave
+radwave_dir  = x2
+radwave_amp  = 1.0e-4
+radwave_rho  = 1.0
+radwave_t    = 1.0
+
+# 32 dumps over two periods: enough to fit the phase and the decay, and small enough
+# that the whole gate fits in the inode budget.
+<output1>
+file_type   = tab
+variable    = hydro_w
+data_format = %24.16e
+slice_x1    = 0.0375
+slice_x3    = 0.0375
+dt          = 0.0740391906

@@ -38,7 +38,8 @@ SLAB = ("slab2d_plm_vimp_be_x meshblock/nx2=8 time/nlim=12 "
 LEV = ("rad_m1/implicit_vimp_fold=true rad_m1/implicit_fast_kernels=true "
        "rad_m1/implicit_one_pass=4 rad_m1/implicit_predictor_order=2")
 HM = "rad_m1/implicit_halo_mpi=true"
-OV = "rad_m1/implicit_halo_overlap=true"
+OV = ("rad_m1/implicit_halo_overlap=true "
+      "rad_m1/implicit_halo_ovl_faces=false")  # full shell (faces default on since 09-24)
 NOV = "rad_m1/implicit_halo_overlap=false"
 FC = "rad_m1/implicit_halo_ovl_faces=true"
 # implicit_lin_tol = 1e-12 stalls at round-off (100 breakdowns and 20 line-Jacobi
@@ -51,14 +52,14 @@ ARMS = {
     "box_k1": (1, BOX, LEV + " rad_m1/implicit_krylov_dev=2"),
     "box_m2": (2, BOX, LEV + " " + HM + " " + NOV),
     "box_o2": (2, BOX, LEV + " " + HM + " " + OV),
-    "box_f2": (2, BOX, LEV + " " + HM + " " + OV + " " + FC),
+    "box_f2": (2, BOX, LEV + " " + HM + " rad_m1/implicit_halo_overlap=true " + FC),
     "box_g2": (2, BOX, LEV + " rad_m1/implicit_halo_mpi=false"),
     "box_m4": (4, BOX, LEV + " " + HM + " " + NOV),
     "slab_a1": (1, SLAB, LEV),
     "slab_k1": (1, SLAB, LEV + " rad_m1/implicit_krylov_dev=2"),
     "slab_m2": (2, SLAB, LEV + " " + HM + " " + NOV),
     "slab_o2": (2, SLAB, LEV + " " + HM + " " + OV),
-    "slab_f2": (2, SLAB, LEV + " " + HM + " " + OV + " " + FC),
+    "slab_f2": (2, SLAB, LEV + " " + HM + " rad_m1/implicit_halo_overlap=true " + FC),
     "slab_g2": (2, SLAB, LEV + " rad_m1/implicit_halo_mpi=false"),
     "slab_m4": (4, SLAB, LEV + " " + HM + " " + NOV),
 }
