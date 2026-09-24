@@ -1,0 +1,101 @@
+<comment>
+problem = S2 T-S4: grey radiative-equilibrium extended atmosphere on a sp wedge (M1)
+
+<job>
+basename = hw
+
+<mesh>
+nghost    = 2
+nx1 = 32
+x1min     = 1.0
+x1max     = 2.0287
+ix1_bc    = outflow
+ox1_bc    = outflow
+nx2 = 12
+x2min     = 0.7853981633974483     # pi/2 - 0.1
+x2max     = 2.356194490192345
+ix2_bc    = periodic
+ox2_bc    = periodic
+nx3 = 12
+x3min     = 0.0
+x3max     = 1.5707963267948966
+ix3_bc    = periodic
+ox3_bc    = periodic
+use_spherical_polar = true
+use_grid_stretch_r_poly = true   # the he4_presn_sp coefficients
+f_stretch_r_c1 = +0.134559
+f_stretch_r_c2 = +4.942505
+f_stretch_r_c3 = -8.950106
+f_stretch_r_c4 = +4.403042
+
+<meshblock>
+nx1 = 32
+nx2       = 32
+nx3       = 32
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim = 1
+tlim       = 1.0e30
+ndiag      = 10
+
+<hydro>
+eos         = ideal
+reconstruct = plm
+rsolver     = hllc
+gamma       = 1.666666666666667
+
+<rad_m1>
+vet_col_dump = none
+vet_col_ncore = 8
+vet_col_nsub = 1
+vet_col_every = 1
+vet_col_axis = radial
+c_light      = 100.0
+chat_over_c  = 1.0
+closure = eddington
+e_floor      = 1.0e-30
+opacity      = const
+kappa_p      = 20.0       # absorption (gas coupled)
+kappa_e      = 20.0
+kappa_f      = 20.0
+kappa_s      = 80.0       # rho kappa_t = 100 (r/r_in)^-2: tau(1..5) = 80
+arad         = 1.0e8
+coupling     = true
+gas_feedback = true
+dbg_gas_force = false     # the gas is held (atm_hold): no momentum, no work
+transport    = implicit
+implicit_cfl = 1.0e6
+implicit_solver = bicgstab
+implicit_maxit  = 100
+implicit_tol = 1.0e-10
+implicit_lin_tol = 1.0e-10
+implicit_offdiag = auto
+implicit_closure_lag = step     # the closure frozen within a step (converges; steady state unaffected)
+dbg_sph_s2 = 0
+implicit_bc_x1min   = flux
+implicit_flux_x1min = 1.0
+implicit_bc_x1max   = marshak
+implicit_ebath_x1max = 0.0
+marshak_q    = 0.5
+
+implicit_op_check = 0
+<problem>
+pgen_name  = rad_m1_beam
+m1_test    = sph_atm
+atm_rho0   = 1.0
+atm_rho_n  = 2.0
+atm_temp   = 1.0e-3
+atm_init   = eddington
+atm_seed   = 1.0e-6     # a transverse seed: the state must stay symmetric
+e_out      = 1.0e-6
+user_srcs  = true
+
+<output91>
+file_type = hst
+dcycle = 1
+<output92>
+file_type = rst
+dcycle = 1000000

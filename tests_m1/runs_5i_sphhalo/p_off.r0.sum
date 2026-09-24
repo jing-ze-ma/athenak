@@ -1,0 +1,50 @@
+/viper/ptmp2/jinma/sphhalo_0924/gpu/p_off/prof: rank 0, 30.0 cycles, 33.22 ms/cycle, launches/cycle 512, busy 22.06, idle 11.16
+  category               kernel_ms idle_before  total launch/cyc
+  KRY:precond                3.30       1.27    4.57    108.9
+  KRY:matvec+dot             3.05       0.00    3.05     56.6
+  KRY:vec+red                0.49       1.31    1.80     31.1
+  KRY:halo                   5.77       6.49   12.26    243.5
+  VET build                  3.41       0.03    3.44      1.0
+  Picard setup+rest M1       2.35       0.53    2.87     28.7
+  hydro+rest                 3.68       1.54    5.22     42.0
+  idle after a reducing stencil op before the next Krylov kernel: 2.46 ms/cycle over 54.5 gaps
+  top kernels (ms/cycle, calls/cycle, us/call, category):
+     3.411     1.0   3411.1  VetColBuildTeam#1  [VET build]
+     3.304   108.9     30.3  M1PCRX<double>  [KRY:precond]
+     3.010    54.5     55.3  ImplicitStencilOp#1R  [KRY:matvec+dot]
+     2.358    64.9     36.4  RecvAndUnpackCC#1  [hydro+rest]
+     2.233    64.9     34.4  PackAndSendCC#2  [hydro+rest]
+     1.549   121.7     12.7  ImplicitHaloCopy#1  [KRY:halo]
+     1.454     4.0    363.5  CalculateFluxes#1  [hydro+rest]
+     0.570     2.0    285.1  CalculateFluxes#2  [hydro+rest]
+     0.513     1.1    452.7  ImplicitSolve#15  [Picard setup+rest M1]
+     0.407     2.0    203.5  RKUpdate#1  [hydro+rest]
+     0.383    26.7     14.3  ImplicitBiCGStabTwo#2  [KRY:vec+red]
+     0.358     5.0     71.7  ConsToPrim#1R  [hydro+rest]
+     0.303     2.1    141.8  ImplicitTransverseTerms#3  [Picard setup+rest M1]
+     0.241     2.0    120.6  SrcTermsSphericalPolarHydro#1  [hydro+rest]
+     0.206     1.1    181.8  ImplicitSolve#13  [Picard setup+rest M1]
+     0.182     1.1    160.7  ImplicitSolve#12  [Picard setup+rest M1]
+     0.182     1.1    160.2  ImplicitStencilBuild#1R  [Picard setup+rest M1]
+     0.149     3.0     49.5  NewTimeStep#1R  [Picard setup+rest M1]
+     0.136     1.0    135.6  Opacity#1  [Picard setup+rest M1]
+     0.108     1.0    108.3  ImplicitSolve#5  [Picard setup+rest M1]
+     0.098     2.1     45.8  ImplicitTransverseTerms#1  [Picard setup+rest M1]
+     0.090     2.1     42.1  ImplicitTransverseTerms#2  [Picard setup+rest M1]
+     0.083     2.0     41.3  RadM1SphAtmGas#1  [hydro+rest]
+     0.071     1.1     62.9  ImplicitSolve#10  [Picard setup+rest M1]
+     0.057     1.1     50.5  ImplicitSolve#17  [Picard setup+rest M1]
+     0.056     1.0     56.0  ImplicitSolve#20  [Picard setup+rest M1]
+     0.051     1.0     51.1  ImplicitSolve#4  [Picard setup+rest M1]
+     0.051     1.1     44.9  ImplicitBiCGStabTwoR  [KRY:vec+red]
+     0.043     4.0     10.7  __amd_rocclr_copyBuffer  [hydro+rest]
+     0.042     2.1     19.7  ImplicitStencilOp#2  [KRY:matvec+dot]
+  HIP API (host ms/cycle, calls/cycle):
+      9.83    82.9  hipDeviceSynchronize
+      7.58   106.2  hipMemcpyAsync
+      4.02   507.9  hipLaunchKernel
+      2.94    33.2  hipEventSynchronize
+      0.29    33.2  hipMemcpyToSymbolAsync
+      0.14   138.5  hipStreamSynchronize
+      0.12    33.2  hipEventRecord
+      0.07   763.3  hipSetDevice
