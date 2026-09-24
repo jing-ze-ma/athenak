@@ -1,0 +1,10 @@
+TV vet_col h2 base (own ref): m1_e: rel L1 err 8.876e-06 4.357e-06 2.056e-06 8.914e-07 | orders 1.03 1.08 1.21 (t=6.4)
+TV vet_col h2 new (own ref): m1_e: rel L1 err 4.051e-05 1.763e-05 6.902e-06 4.468e-06 | orders 1.20 1.35 0.63 (t=6.4)
+TV vet_col be (new ref): m1_e: rel L1 err 3.725e-05 1.625e-05 6.008e-06 4.172e-06 | orders 1.20 1.44 0.53 (t=6.4)
+TV vet_col base vs new refs: m1_e: rel L1 err 1.242e-06 | orders  (t=6.4)
+TV m1 h2 new: m1_e: rel L1 err 8.353e-06 4.143e-06 1.879e-06 7.457e-07 | orders 1.01 1.14 1.33 (t=6.4)
+TV2 vet_col base: m1_e: rel L1 err 2.433e-08 1.027e-08 4.403e-09 1.791e-09 | orders 1.24 1.22 1.30 (t=6.4)
+TV2 vet_col new: m1_e: rel L1 err 2.433e-08 1.027e-08 4.403e-09 1.791e-09 | orders 1.24 1.22 1.30 (t=6.4)
+VAL TV TV2 DONE
+T1 vet_col new: m1_e: rel L1 err 8.422e-05 2.139e-05 5.435e-06 1.372e-06 | orders 1.98 1.98 1.99 (t=100)
+VAL T1 DONE

@@ -1,0 +1,31 @@
+g3=0.2929 g2=0.2929 stageRinf=-2.414 Rinf=-4.83e-08 max|R(iy)|=1.0000 errc=0.1238 PR(-1e3) err 3.70e-05 ord [1.13 1.24 1.4  1.57]
+g3=0.2500 g2=0.3333 stageRinf=-2.000 Rinf=-5.00e-08 max|R(iy)|=1.0000 errc=0.1250 PR(-1e3) err 3.69e-05 ord [1.13 1.25 1.4  1.57]
+g3=0.2000 g2=0.3750 stageRinf=-1.667 Rinf=-5.67e-08 max|R(iy)|=1.0000 errc=0.1292 PR(-1e3) err 3.65e-05 ord [1.14 1.27 1.43 1.6 ]
+g3=0.1500 g2=0.4118 stageRinf=-1.429 Rinf=-7.10e-08 max|R(iy)|=1.0000 errc=0.1358 PR(-1e3) err 3.56e-05 ord [1.17 1.31 1.48 1.64]
+g3=0.1000 g2=0.4444 stageRinf=-1.250 Rinf=-1.02e-07 max|R(iy)|=1.0000 errc=0.1444 PR(-1e3) err 3.39e-05 ord [1.23 1.38 1.56 1.72]
+g2=1 g3 0.5 Rinf -0.9999999600000008 maxRiy 1.0000000000000002
+g2=1 g3 1.0 Rinf -0.4999999800000002 maxRiy 1.0
+--- dissipation/dispersion on imaginary axis (radwave-like) and PR at several stiffness
+g3=0.2929 y=0.25: |R|-1=-1.42e-05 ph/y-1=-2.51e-03; y=0.5: |R|-1=-2.20e-04 ph/y-1=-9.91e-03; y=1.0: |R|-1=-3.13e-03 ph/y-1=-3.75e-02; y=2.0: |R|-1=-3.32e-02 ph/y-1=-1.24e-01
+   PR lam=-10 err 3.59e-04 5.97e-06 ord [1.95 1.97 1.99]
+   PR lam=-100 err 1.95e-04 5.13e-06 ord [1.62 1.76 1.87]
+   PR lam=-10000 err 4.07e-06 4.80e-07 ord [1.   1.02 1.06]
+   PR lam=-1e+06 err 4.11e-08 5.24e-09 ord [0.98 0.99 1.  ]
+   z: stage/final [(-1, np.float64(0.227), np.float64(0.35)), (-3, np.float64(-0.597), np.float64(-0.069)), (-10, np.float64(-1.545), np.float64(-0.204)), (-100, np.float64(-2.301), np.float64(-0.044))]
+g3=0.2000 y=0.25: |R|-1=-1.09e-05 ph/y-1=-2.85e-03; y=0.5: |R|-1=-1.68e-04 ph/y-1=-1.12e-02; y=1.0: |R|-1=-2.37e-03 ph/y-1=-4.20e-02; y=2.0: |R|-1=-2.51e-02 ph/y-1=-1.36e-01
+   PR lam=-10 err 3.23e-04 5.33e-06 ord [1.96 1.98 1.99]
+   PR lam=-100 err 1.81e-04 4.55e-06 ord [1.65 1.79 1.88]
+   PR lam=-10000 err 4.06e-06 4.74e-07 ord [1.   1.03 1.07]
+   PR lam=-1e+06 err 4.11e-08 5.24e-09 ord [0.98 0.99 1.  ]
+   z: stage/final [(-1, np.float64(0.273), np.float64(0.348)), (-3, np.float64(-0.412), np.float64(-0.081)), (-10, np.float64(-1.105), np.float64(-0.228)), (-100, np.float64(-1.597), np.float64(-0.051))]
+g3=0.1500 y=0.25: |R|-1=-7.36e-06 ph/y-1=-3.26e-03; y=0.5: |R|-1=-1.14e-04 ph/y-1=-1.28e-02; y=1.0: |R|-1=-1.60e-03 ph/y-1=-4.75e-02; y=2.0: |R|-1=-1.68e-02 ph/y-1=-1.50e-01
+   PR lam=-10 err 2.78e-04 4.54e-06 ord [1.96 1.98 1.99]
+   PR lam=-100 err 1.62e-04 3.82e-06 ord [1.69 1.82 1.9 ]
+   PR lam=-10000 err 4.05e-06 4.65e-07 ord [1.01 1.04 1.08]
+   PR lam=-1e+06 err 4.11e-08 5.24e-09 ord [0.98 0.99 1.  ]
+   z: stage/final [(-1, np.float64(0.292), np.float64(0.346)), (-3, np.float64(-0.342), np.float64(-0.097)), (-10, np.float64(-0.954), np.float64(-0.264)), (-100, np.float64(-1.371), np.float64(-0.063))]
+--- SDIRK2 (g, not Heun-pairable: b^T c_explicit = g != 1/2) PR for reference
+   SDIRK2 PR lam=-10 err 2.05e-04 3.55e-06 ord [1.92 1.96 1.98]
+   SDIRK2 PR lam=-100 err 1.30e-04 3.56e-06 ord [1.59 1.75 1.86]
+   SDIRK2 PR lam=-10000 err 2.76e-06 3.38e-07 ord [0.97 1.01 1.05]
+   SDIRK2 PR lam=-1e+06 err 2.79e-08 3.69e-09 ord [0.95 0.98 0.99]

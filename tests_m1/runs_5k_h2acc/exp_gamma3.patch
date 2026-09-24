@@ -1,0 +1,67 @@
+diff --git a/src/rad_m1/rad_m1.hpp b/src/rad_m1/rad_m1.hpp
+index ccf8e109..a0b4907b 100644
+--- a/src/rad_m1/rad_m1.hpp
++++ b/src/rad_m1/rad_m1.hpp
+@@ -563,6 +563,7 @@ class RadiationM1 {
+   Real t2_dtprev;               // the dt of the previous step (vet_sc extrapolation)
+   bool t2_vprev;                // vet_prev holds the tensor of the previous step
+   bool t2_vext;                 // time2_vet_extrap (default false: D^n)
++  Real t2_g2 = 1.0 - 1.0/std::sqrt(2.0), t2_g3 = 1.0 - 1.0/std::sqrt(2.0);
+   bool t2_vgas;                 // time2_vet_gas: true = start (the tensor's T and
+                                 // opacities are the stage-1 solve's own, as under be),
+                                 // false = old (those of U^n); runs_5k_h2acc
+diff --git a/src/rad_m1/rad_m1_time2.cpp b/src/rad_m1/rad_m1_time2.cpp
+index 363b05f3..aa53faa0 100644
+--- a/src/rad_m1/rad_m1_time2.cpp
++++ b/src/rad_m1/rad_m1_time2.cpp
+@@ -165,6 +165,11 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
+               << std::endl;
+     std::exit(EXIT_FAILURE);
+   }
++  if (pin->DoesParameterExist("rad_m1", "time2_dbg_g3")) {
++    t2_g3 = pin->GetReal("rad_m1", "time2_dbg_g3");
++    t2_g2 = (1.0 - 2.0*t2_g3)/(2.0*(1.0 - t2_g3));
++    std::cout << "EXP time2_dbg_g3: g2=" << t2_g2 << " g3=" << t2_g3 << std::endl;
++  }
+   t2_dbg_fail = -1;
+   if (pin->DoesParameterExist("rad_m1", "time2_dbg_fail")) {
+     t2_dbg_fail = pin->GetInteger("rad_m1", "time2_dbg_fail");
+@@ -226,8 +231,7 @@ bool RadiationM1::Time2Active() {
+ //! into the old vector of the stage solve.  ImplicitSolve applies t2inc.
+ 
+ void RadiationM1::Time2FormStage(int stage, Real dt) {
+-  const Real g = kT2G;
+-  const Real b2 = g/(2.0*(1.0 - g));
++  const Real g2 = t2_g2, g3 = t2_g3;
+   Real c1, c2;
+   auto u0_ = u0;
+   auto u1_ = u1;
+@@ -239,7 +243,7 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
+       Kokkos::deep_copy(DevExeSpace(), t2f2, f0x2);
+       if (trans_x3) {Kokkos::deep_copy(DevExeSpace(), t2f3, f0x3);}
+     }
+-    c1 = (1.0 - g)*dt;
++    c1 = (1.0 - g2)*dt;
+     c2 = 0.0;
+   } else {
+     int nmb1 = static_cast<int>(u0.extent(0)) - 1;
+@@ -265,8 +269,8 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
+       avgf(f0x2, t2f2);
+       if (trans_x3) {avgf(f0x3, t2f3);}
+     }
+-    c1 = 0.5*g*dt;
+-    c2 = (b2 - 0.5*g)*dt;
++    c1 = 0.5*g2*dt;
++    c2 = (0.5 - g3 - 0.5*g2)*dt;
+   }
+   (void) nf1;
+   auto k1_ = t2k1;
+@@ -285,7 +289,7 @@ void RadiationM1::Time2FormStage(int stage, Real dt) {
+   t2_solve = (stage == 1) ? M1_T2S_STAGE1 : M1_T2S_STAGE2;
+   t2_fail = false;
+   nsub = 1;
+-  dt_sub = g*dt;
++  dt_sub = ((stage == 1) ? g2 : g3)*dt;
+ }
+ 
+ //----------------------------------------------------------------------------------------
