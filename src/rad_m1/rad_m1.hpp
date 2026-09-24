@@ -244,6 +244,7 @@ class RadiationM1 {
   bool vet_sc;               // closure = vet_sc (default false)
   int vet_nmu, vet_nphi, vet_nray;  // mu nodes per hemisphere, azimuths, rays
   bool vet_milne;            // DIAGNOSTIC: source = exact grey Milne S(tau), gate 3
+  bool vet_bc_bath;          // a MARSHAK x1 end gives the SC rays its bath (m1-h2div)
   bool vet_x1per;            // vet_x1_periodic (default false): periodic x1 sweep
   int vet_x1npass;           // ...and its number of passes (runs_3r_radwave)
   bool vet_axis_flux;        // uniaxial axis: the SC flux (true) or the principal axis
