@@ -403,6 +403,16 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   impl_eos_cache = pin->GetOrAddBoolean("rad_m1","implicit_eos_cache",false);
   impl_ecnt = pin->GetOrAddInteger("rad_m1","implicit_eos_cache_nt",2);
   impl_eccheck = pin->GetOrAddBoolean("rad_m1","implicit_eos_cache_check",true);
+  // the check is a MEASUREMENT only (nothing reads igm or ec_emax/ec_tmax but the final
+  // report): implicit_eos_cache_check_every = N takes it on the cycles N divides.  Read
+  // only when named; the default 1 is the old every-step check.
+  impl_eccheck_every = 1;
+  if (pin->DoesParameterExist("rad_m1","implicit_eos_cache_check_every")) {
+    impl_eccheck_every = pin->GetInteger("rad_m1","implicit_eos_cache_check_every");
+    if (impl_eccheck_every < 1) {
+      ImplFatal("<rad_m1>/implicit_eos_cache_check_every must be >= 1");
+    }
+  }
   // the x1 LINE SOLVE (preconditioner and line-Jacobi pass): thomas = one thread per
   // column, serial recurrence (the original); pcr = one team per column, parallel
   // cyclic reduction in team scratch (GPU).  Same system; the answers agree to
@@ -504,6 +514,10 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   impl_opsplit = false;
   if (pin->DoesParameterExist("rad_m1","implicit_op_split_red")) {
     impl_opsplit = pin->GetBoolean("rad_m1","implicit_op_split_red");
+  }
+  impl_opteam = false;
+  if (pin->DoesParameterExist("rad_m1","implicit_op_team_red")) {
+    impl_opteam = pin->GetBoolean("rad_m1","implicit_op_team_red");
   }
   impl_fastk = false;
   impl_odskip = false;
@@ -3497,6 +3511,45 @@ void RadiationM1::ImplicitStencilBuild() {
   st_edges = (emax > 0.0);
 }
 
+namespace {
+//! implicit_op_team_red: three sums and one max (|r| >= 0: 0 is the max identity), for
+//! the team-level reduction of ImplicitStencilOp (the reference is a per-thread value)
+struct M1R4Val {
+  Real s[3];
+  Real mx;
+};
+struct M1R4Red {
+ public:
+  using reducer = M1R4Red;
+  using value_type = M1R4Val;
+  using result_view_type = Kokkos::View<value_type, Kokkos::HostSpace,
+                                        Kokkos::MemoryUnmanaged>;
+
+ private:
+  result_view_type value;
+
+ public:
+  KOKKOS_INLINE_FUNCTION
+  explicit M1R4Red(value_type &v) : value(&v) {}
+  KOKKOS_INLINE_FUNCTION
+  void join(value_type &d, const value_type &s) const {
+    for (int q = 0; q < 3; ++q) {d.s[q] += s.s[q];}
+    d.mx = (s.mx > d.mx) ? s.mx : d.mx;
+  }
+  KOKKOS_INLINE_FUNCTION
+  void init(value_type &v) const {
+    for (int q = 0; q < 3; ++q) {v.s[q] = 0.0;}
+    v.mx = 0.0;
+  }
+  KOKKOS_INLINE_FUNCTION
+  value_type &reference() const {return *value.data();}
+  KOKKOS_INLINE_FUNCTION
+  result_view_type view() const {return value;}
+  KOKKOS_INLINE_FUNCTION
+  bool references_scalar() const {return true;}
+};
+} // namespace
+
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::ImplicitStencilOp
 //! \brief implicit_op_stencil: y = A x from the 19-point stencil of ImplicitStencilBuild
@@ -3564,6 +3617,62 @@ void RadiationM1::ImplicitStencilOp(int xc, int yc, int red, Real *out,
   Kokkos::RangePolicy<DevExeSpace, Kokkos::LaunchBounds<256,1>>
       pol(DevExeSpace(), 0, (nmb1 + 1)*nkji);
   Real a0 = 0.0, a1 = 0.0, a2 = 0.0, amx = 0.0;
+  if (impl_opteam && !spl) {
+    // implicit_op_team_red (m1-fast3): one cell per thread, as the plain par_for, and
+    // the sums of each team of 256 cells into opt_part; then one small reduction over
+    // the teams.  y is bitwise; the sums are summed in another order (round-off).
+    constexpr int ts = 256;
+    const int nw = (nmb1 + 1)*nkji;
+    const int nl = (nw + ts - 1)/ts;
+    if (opt_part.extent_int(0) < nl) {
+      opt_part = DvceArray2D<Real>("m1_opt_part", nl, 4);
+    }
+    auto pt_ = opt_part;
+    Kokkos::parallel_for("m1_impl_stot", Kokkos::TeamPolicy<DevExeSpace>(nl, ts),
+    KOKKOS_LAMBDA(const TeamMember_t &tm) {
+      const int idx = tm.league_rank()*ts + tm.team_rank();
+      M1R4Val v;
+      v.s[0] = 0.0; v.s[1] = 0.0; v.s[2] = 0.0; v.mx = 0.0;
+      if (idx < nw) {
+        int m = idx/nkji;
+        int r = idx - m*nkji;
+        int k = r/nji;
+        r -= k*nji;
+        int j = r/ni;
+        int i = r - j*ni;
+        k += ks; j += js; i += is;
+        const Real y = row(m, k, j, i);
+        if (rm == 1 || rm == 4) {
+          v.s[0] = iw_(m,M1_IW_KRH,k,j,i)*y;
+          if (rm == 4) {v.mx = fabs(iw_(m,M1_IW_KR,k,j,i));}
+        } else {
+          v.s[0] = y*iw_(m,M1_IW_KS,k,j,i);
+          v.s[1] = y*y;
+          if (rm == 3) {v.s[2] = iw_(m,M1_IW_KRH,k,j,i)*y;}
+        }
+      }
+      tm.team_reduce(M1R4Red(v));
+      if (tm.team_rank() == 0) {
+        const int l = tm.league_rank();
+        pt_(l,0) = v.s[0];
+        pt_(l,1) = v.s[1];
+        pt_(l,2) = v.s[2];
+        pt_(l,3) = v.mx;
+      }
+    });
+    Kokkos::parallel_reduce("m1_impl_stot2", Kokkos::RangePolicy<DevExeSpace>(0, nl),
+    KOKKOS_LAMBDA(const int l, Real &l0, Real &l1, Real &l2, Real &lmx) {
+      l0 += pt_(l,0);
+      l1 += pt_(l,1);
+      l2 += pt_(l,2);
+      lmx = (pt_(l,3) > lmx) ? pt_(l,3) : lmx;
+    }, a0, a1, a2, Kokkos::Max<Real>(amx));
+    out[0] = a0;
+    out[1] = a1;
+    out[2] = a2;
+    out[3] = amx;
+    return;
+  }
   if (spl) {
     // implicit_op_split_red (m1-fast3): the read-only reduction as its own lambda, so
     // the kernel carries no stencil code.  Same policy, same reducer, same per-cell
@@ -7661,7 +7770,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   // re-evaluated one would break exactly that algebraic balance.  Consistency with the
   // real table is instead structural: the evolved gas state is (rho, e_gas), T' is not
   // persistent, and the next step re-inverts e_gas through the real table.
-  if (usec && impl_eccheck && src_on) {
+  if (usec && impl_eccheck && src_on &&
+      (impl_eccheck_every == 1 || pmy_pack->pmesh->ncycle % impl_eccheck_every == 0)) {
     auto eos = pmy_pack->phydro->peos->eos_data;
     Real emx = 0.0, qmx = 0.0;
     Kokkos::parallel_reduce("m1_impl_eck",

@@ -510,7 +510,7 @@ void RadiationM1::ImplicitHaloOp(int xc, int yc, int red, Real *out) {
     ho_h = Kokkos::View<Real*, Kokkos::SharedHostPinnedSpace>("m1_ho_h", 8);
   }
   Real *h0 = ho_h.data(), *h1 = ho_h.data() + 4;
-  if (impl_opsplit && red != 0) {
+  if ((impl_opsplit || impl_opteam) && red != 0) {
     // implicit_op_split_red (m1-fast3): both parts as plain kernels, then ONE read-only
     // reduction over every active cell (ImplicitStencilOp, red_only): the sums are those
     // of the one-rank-style flat reduction, not interior + shell (round-off)

@@ -440,6 +440,11 @@ class RadiationM1 {
   bool ew_tight;                // this pass: no Eisenstat-Walker loosening
   int impl_pord;                // <rad_m1>/implicit_predictor_order: 1 or 2 (default 2
                                 // for be, see ImplicitInit)
+  bool impl_opteam;             // <rad_m1>/implicit_op_team_red (m1-fast3): the fused
+                                // stencil + dots as one-cell-per-thread teams of 256
+                                // with a team reduction into opt_part, then a small
+                                // reduction over the teams (round-off vs the fused one)
+  DvceArray2D<Real> opt_part;   // (teams, 4) partial sums of implicit_op_team_red
   bool impl_opsplit;            // <rad_m1>/implicit_op_split_red: the stencil apply as a
                                 // plain par_for, then a separate read-only reduction
                                 // kernel (instead of the fused 4-value reduction)
@@ -639,6 +644,8 @@ class RadiationM1 {
                                 // per-cell 1-D Hermite in ln T built once per step
   int impl_ecnt;                // <rad_m1>/implicit_eos_cache_nt, the half-width of the
                                 // cached window in TABLE temperature cells
+  int impl_eccheck_every;       // <rad_m1>/implicit_eos_cache_check_every (m1-fast3):
+                                // the check on every N-th cycle only (1 = every step)
   bool impl_eccheck;            // <rad_m1>/implicit_eos_cache_check: one TRUE-table
                                 // evaluation per cell at the end of the step, which
                                 // measures the cache error and corrects T'
