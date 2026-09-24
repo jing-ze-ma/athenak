@@ -80,6 +80,10 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm) :
           pin->GetOrAddBoolean("problem","stellar_tide",false);
       hot_jupiter_param.rot_potential =
           pin->GetOrAddBoolean("problem","rot_potential",false);
+      hot_jupiter_param.sponge_top =
+          pin->GetOrAddBoolean("problem","sponge_top",true);
+      hot_jupiter_param.sponge_bottom =
+          pin->GetOrAddBoolean("problem","sponge_bottom",true);
   }
   // check for user-defined boundary conditions
   for (int dir=0; dir<6; ++dir) {
@@ -155,6 +159,10 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
         pin->GetOrAddBoolean("problem","stellar_tide",false);
     hot_jupiter_param.rot_potential =
         pin->GetOrAddBoolean("problem","rot_potential",false);
+    hot_jupiter_param.sponge_top =
+        pin->GetOrAddBoolean("problem","sponge_top",true);
+    hot_jupiter_param.sponge_bottom =
+        pin->GetOrAddBoolean("problem","sponge_bottom",true);
   }
         
   // check for user-defined boundary conditions

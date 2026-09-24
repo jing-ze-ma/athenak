@@ -67,6 +67,11 @@ struct HotJupiterParam {
   // equilibrium of the TOTAL potential), and its radial part leaves the explicit source.
   // The theta part stays an explicit source. See TotPotAt/ZEffFromPot.
   bool rot_potential = false;
+  // deep_hot_jupiter_rt velocity sponges (problem/sponge_top, problem/sponge_bottom):
+  // true (the historical behaviour) = the top Rayleigh sponge (1e-7..1e-6 bar) and the
+  // bottom horizontal sponge (50..100 bar) are applied; false switches each one off.
+  bool sponge_top = true;
+  bool sponge_bottom = true;
 };
 
 //----------------------------------------------------------------------------------------
