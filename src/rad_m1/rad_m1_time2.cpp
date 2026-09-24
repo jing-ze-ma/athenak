@@ -133,6 +133,17 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1", "time2_lin_tol")) {
     t2_lin_tol = pin->GetReal("rad_m1", "time2_lin_tol");
   }
+  // time2_one_pass_safety (tests_m1/runs_5f_h2fast): the implicit_one_pass safety factor
+  // of the stage solves.  One-pass acceptance leaves a Picard error ~ tol/safety where
+  // the two-pass test leaves ~ q tol; the radwave G1 order at implicit_tol = 1e-11 needs
+  // the stage solves closer to the latter (safety 3: median order 1.74 at P=100,
+  // tau=1e3; 30: >= 1.94 in all 24 cases).  Default 30.
+  t2_onep_s = pin->GetOrAddReal("rad_m1", "time2_one_pass_safety", 30.0);
+  if (!(t2_onep_s >= 1.0)) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+              << std::endl << "<rad_m1>/time2_one_pass_safety must be >= 1" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
   t2_dbg_fail = -1;
   if (pin->DoesParameterExist("rad_m1", "time2_dbg_fail")) {
     t2_dbg_fail = pin->GetInteger("rad_m1", "time2_dbg_fail");

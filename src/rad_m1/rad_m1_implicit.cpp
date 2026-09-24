@@ -7202,7 +7202,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       }
       if (onep && it == 0 && !pc && !ocheck) {
         const Real qm = std::max(onep_qa[otyp], onep_qb[otyp]);
-        const Real qe = std::max(impl_onep_s*qm, 1.0e-6);
+        // time2_one_pass_safety for the stage solves (otyp 1, 2)
+        const Real sf = (otyp != 0 && t2_onep_s > 0.0) ? t2_onep_s : impl_onep_s;
+        const Real qe = std::max(sf*qm, 1.0e-6);
         pc = (qe < 0.5) && (resid*qe/(1.0 - qe) < impl_tol);
         if (pc) {impl_onep_n += 1.0;}
       }
