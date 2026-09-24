@@ -235,6 +235,34 @@ inline bool ck_impl_warm_step = false;
 // e/T, else e/T as before) instead of e/T, which README_T1_stall measured 5x off in the
 // dissociating top.  Only the Jacobian changes, not the balance solved.
 inline bool ck_impl_cvkeep = false;
+// ---- ck-cadence (tests_ck_implicit/README_cadence.md).  Default off (every = 1), and
+// off it is bitwise the code without it.
+// problem/ck_impl_every = N > 1: the full implicit call (with whatever levers are on)
+// runs on the cycles with ncycle % N == 0 only, each with THAT STEP'S OWN dt.  After it,
+// per cell, Q0 = (e - e*)/dt (the heating rate the gas actually received), D = dQ/dT at
+// fixed rho (the Newton diagonal jac1, or -4 E/T for a thin cell; clamped <= 0), T0 and
+// rho0 are stored.  On every other cycle each cell takes the linearised backward-Euler
+// step
+//     dT = (Q0 + D (T - T0)) dt / (c_v - D dt),   de = c_v dT,
+// c_v = rho c_v(EOS) per kelvin, |de| capped at min(ck_impl_dtmax, ck_impl_demax) e.
+// Each step's RT therefore covers exactly its own dt (nothing is lumped, lagged or
+// counted twice); see the README for why this form and not a summed dt_rad.
+// problem/ck_impl_every_thr = thr > 0: before the linearised step, a column any of
+// whose RT cells has |T/T0 - 1| or |rho/rho0 - 1| > thr takes a full solve instead
+// (only those columns: the others are masked out of the Newton by ck_done = 2).
+// RESTART: the stored arrays are not written; the first call after a restart is a full
+// call.  With the schedule on ncycle, a restart written on a cycle that is a multiple
+// of N is therefore a bitwise continuation.
+inline int ck_impl_every = 1;
+inline Real ck_impl_every_thr = 0.0;
+inline bool ck_cad_partial = false;          // this call solves the unmasked columns only
+inline DvceArray3D<Real> *ck_cad_mask_ptr = nullptr;   // (m,k,j): 0 solve, 2 masked
+inline DvceArray5D<Real> *ck_cad_ptr = nullptr;        // (m,5,k,j,i): Q0 D T0 rho0 Tn
+inline DvceArray1D<Real> *ck_cad_stat_ptr = nullptr;   // per-step sums, see CkCadStep
+inline int64_t ck_cad_nfull = 0;             // scheduled full calls
+inline int64_t ck_cad_nlin = 0;              // linearised steps
+inline int64_t ck_cad_nguard = 0;            // linearised steps with a guard call
+inline double ck_cad_fref = 0.0;             // sum over linearised steps of nref/ncol
 
 //! \fn CkDum
 //! \brief a 1-element View for a capture that is never read.  CkDum<V>(label) builds a
@@ -961,6 +989,8 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
     const bool wfs_ = ck_impl_warm && ck_impl_warm_step && pz_;
     auto rprev_ = pred_ ? *ck_rprev_ptr : CkDum<DvceArray3D<Real>>("ck_rprev_d");
     const bool aarst_ = ck_impl_aa_rst;
+    // ck_impl_every_thr: a column masked out of this call (ck_done = 2) is not touched
+    const bool msk_ = ck_cad_partial;
     auto aah_ = (naa_ > 0) ? *ck_aah_ptr : CkDum<DvceArray5D<Real>>("ck_aah_d");
     auto aac_ = (naa_ > 0) ? *ck_aac_ptr : CkDum<DvceArray4D<Real>>("ck_aac_d");
     // one wavefront per column on a device; the host backends take their own size
@@ -975,6 +1005,7 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
       const int m = lr/nkj;
       const int k = (lr - m*nkj)/nj + ks;
       const int j = (lr - m*nkj) % nj + js;
+      if (msk_ && done_(m,k,j) > 1.5) return;
       const int ic = icut_(m,k,j);
       // ---- the residual of the column (ck_impl_res) ----
       Real emax = 0.0;

@@ -1611,8 +1611,11 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
     int npass = nitmax;
     bool conv = false;
     // ck_impl_colskip: every column is live again at the start of a call
+    // (ck_impl_every_thr: except the columns this partial call masks out, ck_done = 2)
     if (ck_done_ptr != nullptr) {
-      if (ck_impl_nosync) {
+      if (ck_cad_partial) {
+        Kokkos::deep_copy(DevExeSpace(), *ck_done_ptr, *ck_cad_mask_ptr);
+      } else if (ck_impl_nosync) {
         Kokkos::deep_copy(DevExeSpace(), *ck_done_ptr, 0.0);   // stream-ordered, no fence
       } else {
         Kokkos::deep_copy(*ck_done_ptr, 0.0);
@@ -1681,7 +1684,11 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
     // no step; diagnostic only -- the gas is not touched)
     int pchk_act = -1;
     if (ck_impl_pred && ck_impl_pred_chk && conv) {
-      Kokkos::deep_copy(*ck_done_ptr, 0.0);
+      if (ck_cad_partial) {
+        Kokkos::deep_copy(*ck_done_ptr, *ck_cad_mask_ptr);
+      } else {
+        Kokkos::deep_copy(*ck_done_ptr, 0.0);
+      }
       ck_impl_pass = npass;
       picket_fence_two_stream_RT_pass(pm, bdt);
       MeshBlockPack *pp = pm->pmb_pack;
@@ -2650,6 +2657,9 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
             ck_impl_xs_dmax = dmx;
             reu = (dmx <= ck_impl_xstep_thr);
           }
+          // ck_impl_every_thr: a partial (guard) call always stores for its columns;
+          // CkCadStep then drops the partial operator (xs_cyc = -1)
+          if (ck_cad_partial) reu = false;
           ck_impl_reuse_op = reu;
           if (reu) {
             ckfrz_ = ckimp_ && !ck_impl_refresh_kappa;
@@ -7739,6 +7749,313 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
     }
 
     return;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void CkCadState
+//! \brief problem/ck_impl_every: the pieces every cadence kernel needs to read the
+//! thermodynamic state of a cell out of u0 exactly as the RT's eiN/rhoN do.
+struct CkCadState {
+  DvceArray5D<Real> u0;
+  DvceArray4D<Real> wtemp;
+  DvceArray4D<Real> phi;
+  DvceArray3D<Real> cosc;
+  DvceArray5D<Real> bcc;
+  EOS_Data eos;
+  Real gm1, Rgas;
+  bool etg, cs, mhd;
+  KOKKOS_INLINE_FUNCTION
+  Real Eint(const int m, const int k, const int j, const int i) const {
+    return EintFromCons(u0, m, k, j, i, cs ? cosc(m,k,j) : 0.0, cs, etg,
+                        etg ? phi(m,k,j,i) : 0.0, mhd ? MagEnergyCC(bcc,m,k,j,i) : 0.0);
+  }
+  // T [K] and de/dT [energy per volume per K] at (d, e); false for an unusable state
+  KOKKOS_INLINE_FUNCTION
+  bool TCv(const int m, const int k, const int j, const int i, const Real d,
+           const Real e, Real &tk, Real &cv) const {
+    if (!(d > 0.0) || !(e > 0.0)) return false;
+    Real pp;
+    PresTempFromEint(eos, gm1, Rgas, d, e, TGuess(wtemp, m, k, j, i), pp, tk);
+    if (!(tk > 0.0)) return false;
+    if (eos.IsGeneral()) {
+      cv = d*eos.SpecificHeatCv(d, e, tk/eos.temp_cgs)/eos.temp_cgs;
+    } else {
+      cv = e/tk;
+    }
+    return (cv > 0.0);
+  }
+};
+
+inline CkCadState CkCadMakeState(Mesh *pm) {
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  CkCadState s;
+  const bool hyd = (pmbp->phydro != nullptr);
+  s.u0 = hyd ? pmbp->phydro->u0 : pmbp->pmhd->u0;
+  s.wtemp = hyd ? pmbp->phydro->wtemp : pmbp->pmhd->wtemp;
+  s.phi = hyd ? pmbp->phydro->phicc0 : pmbp->pmhd->phicc0;
+  s.etg = hyd ? pmbp->phydro->use_etotgrav : pmbp->pmhd->use_etotgrav;
+  s.eos = hyd ? pmbp->phydro->peos->eos_data : pmbp->pmhd->peos->eos_data;
+  s.mhd = !hyd;
+  s.bcc = hyd ? CkDum<DvceArray5D<Real>>("ck_cad_bcc_d") : pmbp->pmhd->bcc0;
+  s.cs = pm->use_cubed_sphere;
+  s.cosc = pmbp->pcoord->cos_cell;
+  s.gm1 = s.eos.gamma - 1.0;
+  s.Rgas = pm->pgen->hot_jupiter_param.Rgas;
+  return s;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void CkCadStore
+//! \brief after a full implicit call: store Q0, D, T0, rho0 for every cell of every
+//! column the call solved (all of them, or the unmasked ones of a guard call).
+//! Q0 = (e - e*)/dt is the rate the gas actually received (ck_dep is the call's total
+//! applied increment), so the stored rate is exact whatever ended the Newton (tol, the
+//! prediction of ck_impl_pred).  D is the Newton diagonal jac1 = dS_i/dT_i (thick
+//! cell) or -4 E/T (a thin cell, whose own implicit step CkThinSolve linearises exactly
+//! that), clamped to <= 0 so that c_v - D dt >= c_v.  Cells below the cut get Q0 = D = 0.
+//! With diag, slots 6/7 of ck_cad_stat get sum dx |Q_new - (Q0 + D (T - T0))_old| and
+//! sum dx |Q_new| over the refreshed cells: the linear model's error at the refresh.
+
+inline void CkCadStore(Mesh *pm, const Real dt, const bool partial, const bool diag) {
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie;
+  const int js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pm->pmb_pack->nmb_thispack - 1;
+  const CkCadState st = CkCadMakeState(pm);
+  auto cad_ = *ck_cad_ptr;
+  auto msk_ = *ck_cad_mask_ptr;
+  auto dep_ = *ck_dep_ptr;
+  auto jac_ = *ck_jac_ptr;
+  auto thu_ = *ck_thu_ptr;
+  auto em_ = *ck_em_ptr;
+  auto trt_ = *rt_T_ptr;
+  auto icut_ = *rt_icut_ptr;
+  auto dx1_ = pm->pmb_pack->pcoord->dx1;
+  auto sta_ = *ck_cad_stat_ptr;
+  const Real idt = 1.0/dt;
+  par_for("ck_cad_store", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    if (partial && msk_(m,k,j) > 0.5) return;
+    const Real d = st.u0(m,IDN,k,j,i);
+    const Real e = st.Eint(m, k, j, i);
+    Real tk = 0.0, cv = 0.0;
+    const bool ok = st.TCv(m, k, j, i, d, e, tk, cv);
+    Real q = 0.0, dd = 0.0;
+    if (ok && i >= icut_(m,k,j)) {
+      q = dep_(m,k,j,i)*idt;
+      if (thu_(m,k,j,i) > 0.0) {
+        dd = jac_(m,1,k,j,i);
+      } else {
+        const Real tr = trt_(m,k,j,i);
+        dd = (tr > 0.0) ? -4.0*em_(m,k,j,i)/tr : 0.0;
+      }
+      if (!(dd <= 0.0)) dd = 0.0;          // positive or NaN: no implicit term
+      if (!(q == q)) q = 0.0;
+      if (diag && cad_(m,2,k,j,i) > 0.0) {
+        const Real qp = cad_(m,0,k,j,i) + cad_(m,1,k,j,i)*(tk - cad_(m,2,k,j,i));
+        const Real w = dx1_(m,k,j,i);
+        Kokkos::atomic_add(&sta_(6), w*fabs(q - qp));
+        Kokkos::atomic_add(&sta_(7), w*fabs(q));
+      }
+    }
+    cad_(m,0,k,j,i) = q;
+    cad_(m,1,k,j,i) = dd;
+    cad_(m,2,k,j,i) = ok ? tk : 0.0;
+    cad_(m,3,k,j,i) = d;
+  });
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn int CkCadLin
+//! \brief the linearised step of problem/ck_impl_every.  One team per column.  With
+//! ck_impl_every_thr > 0 the column's largest relative change of T or rho since its last
+//! full solve is measured first; above thr the column is left untouched and marked for a
+//! full solve this step (mask 0), otherwise (mask 2) every cell takes
+//!     dT = (Q0 + D (T - T0)) dt / (c_v - D dt),  de = c_v dT,
+//! implicit in T, unconditionally stable for D <= 0 (|dT| <= |Q0 dt/c_v| + |T - T0|, and
+//! the step moves T toward T0 - Q0/D), with |de| capped at min(dtmax, demax) e.
+//! Stat slots: 0 columns flagged, 1 sum dx de, 2 sum dx Q0 dt, 3 capped cells,
+//! 4 max deviation, 5 sum dx |Q0| dt.  Returns the columns flagged on this rank.
+
+inline int CkCadLin(Mesh *pm, const Real dt, const bool diag) {
+  auto &indcs = pm->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie;
+  const int js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pm->pmb_pack->nmb_thispack - 1;
+  const CkCadState st = CkCadMakeState(pm);
+  auto cad_ = *ck_cad_ptr;
+  auto msk_ = *ck_cad_mask_ptr;
+  auto dx1_ = pm->pmb_pack->pcoord->dx1;
+  auto sta_ = *ck_cad_stat_ptr;
+  const Real thr = ck_impl_every_thr;
+  const bool thr_on = (thr > 0.0);
+  Real capf = ck_impl_dtmax;
+  if (ck_impl_demax > 0.0 && ck_impl_demax < capf) capf = ck_impl_demax;
+  const int nk = ke - ks + 1;
+  const int nj = je - js + 1;
+  const int nkj = nk*nj;
+  const int nlg = (nmb1 + 1)*nkj;
+#if defined(KOKKOS_ENABLE_HIP) || defined(KOKKOS_ENABLE_CUDA)
+  Kokkos::TeamPolicy<> tpol(DevExeSpace(), nlg, 64);
+#else
+  Kokkos::TeamPolicy<> tpol(DevExeSpace(), nlg, Kokkos::AUTO);
+#endif
+  Kokkos::parallel_for("ck_cad_lin", tpol, KOKKOS_LAMBDA(TeamMember_t tm) {
+    const int lr = tm.league_rank();
+    const int m = lr/nkj;
+    const int k = (lr - m*nkj)/nj + ks;
+    const int j = (lr - m*nkj) % nj + js;
+    // the current T of every cell (slot 4) and, with the guard, the column's deviation
+    Real dv = 0.0;
+    Kokkos::parallel_reduce(Kokkos::TeamThreadRange(tm, is, ie+1),
+    [&](const int i, Real &mx) {
+      const Real d = st.u0(m,IDN,k,j,i);
+      const Real e = st.Eint(m, k, j, i);
+      Real tk = 0.0, cv = 0.0;
+      const bool ok = st.TCv(m, k, j, i, d, e, tk, cv);
+      cad_(m,4,k,j,i) = ok ? tk : 0.0;
+      cad_(m,5,k,j,i) = ok ? cv : 0.0;
+      const Real t0 = cad_(m,2,k,j,i);
+      if (!(cad_(m,0,k,j,i) != 0.0 || cad_(m,1,k,j,i) != 0.0)) return;
+      Real r = 0.0;
+      if (!ok || !(t0 > 0.0)) {
+        r = 1.0e30;                          // a cell went bad: re-solve the column
+      } else {
+        r = fabs(tk/t0 - 1.0);
+        const Real d0 = cad_(m,3,k,j,i);
+        if (d0 > 0.0) {
+          const Real rd = fabs(d/d0 - 1.0);
+          if (rd > r) r = rd;
+        }
+      }
+      if (r > mx) mx = r;
+    }, Kokkos::Max<Real>(dv));
+    if (!(dv > 0.0)) dv = 0.0;
+    if (thr_on && dv > thr) {
+      Kokkos::single(Kokkos::PerTeam(tm), [&]() {
+        msk_(m,k,j) = 0.0;
+        Kokkos::atomic_add(&sta_(0), 1.0);
+        Kokkos::atomic_max(&sta_(4), dv);
+      });
+      return;
+    }
+    tm.team_barrier();
+    Real sde = 0.0, sq = 0.0, saq = 0.0;
+    int ncp = 0;
+    Kokkos::parallel_reduce(Kokkos::TeamThreadRange(tm, is, ie+1),
+    [&](const int i, int &nc) {
+      const Real q0 = cad_(m,0,k,j,i);
+      const Real dd = cad_(m,1,k,j,i);
+      const Real tk = cad_(m,4,k,j,i);
+      const Real cv = cad_(m,5,k,j,i);
+      Real de = 0.0;
+      if ((q0 != 0.0 || dd != 0.0) && tk > 0.0 && cv > 0.0) {
+        const Real dT = (q0 + dd*(tk - cad_(m,2,k,j,i)))*dt/(cv - dd*dt);
+        de = cv*dT;
+        const Real e = st.Eint(m, k, j, i);
+        const Real lim = capf*e;
+        if (de > lim) {
+          de = lim;
+          nc += 1;
+        } else if (de < -lim) {
+          de = -lim;
+          nc += 1;
+        }
+        if (!(de == de)) de = 0.0;
+        st.u0(m,IEN,k,j,i) += de;
+      }
+      cad_(m,5,k,j,i) = de;
+    }, ncp);
+    Kokkos::single(Kokkos::PerTeam(tm), [&]() {
+      msk_(m,k,j) = 2.0;
+      Kokkos::atomic_max(&sta_(4), dv);
+    });
+    if (!diag) return;
+    tm.team_barrier();
+    Kokkos::parallel_reduce(Kokkos::TeamThreadRange(tm, is, ie+1),
+    [&](const int i, Real &sm) {
+      sm += dx1_(m,k,j,i)*cad_(m,5,k,j,i);
+    }, sde);
+    Kokkos::parallel_reduce(Kokkos::TeamThreadRange(tm, is, ie+1),
+    [&](const int i, Real &sm) {
+      sm += dx1_(m,k,j,i)*cad_(m,0,k,j,i)*dt;
+    }, sq);
+    Kokkos::parallel_reduce(Kokkos::TeamThreadRange(tm, is, ie+1),
+    [&](const int i, Real &sm) {
+      sm += dx1_(m,k,j,i)*fabs(cad_(m,0,k,j,i))*dt;
+    }, saq);
+    Kokkos::single(Kokkos::PerTeam(tm), [&]() {
+      Kokkos::atomic_add(&sta_(1), sde);
+      Kokkos::atomic_add(&sta_(2), sq);
+      Kokkos::atomic_add(&sta_(3), static_cast<Real>(ncp));
+      Kokkos::atomic_add(&sta_(5), saq);
+    });
+  });
+  if (!thr_on && !diag) return 0;
+  auto hs = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), sta_);
+  return static_cast<int>(hs(0));
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void CkCadStep
+//! \brief problem/ck_impl_every: the whole correlated-k RT of one hydro step (called
+//! once per cycle by the pgen's split hook in place of picket_fence_two_stream_RT).
+//! Full call on ncycle % N == 0 (and on the first call of a run or a restart), the
+//! linearised step otherwise, with a full call for the columns the guard flags.
+
+inline void CkCadStep(Mesh *pm, const Real dt) {
+  MeshBlockPack *pmbp = pm->pmb_pack;
+  auto &indcs = pm->mb_indcs;
+  const int ncol = pmbp->nmb_thispack*indcs.nx2*indcs.nx3;
+  const bool diag = ck_impl_verbose;
+  const bool full = (ck_cad_ptr == nullptr) ||
+                    (pm->ncycle % static_cast<int64_t>(ck_impl_every) == 0);
+  if (ck_cad_stat_ptr == nullptr) {
+    ck_cad_stat_ptr = new DvceArray1D<Real>("ck_cad_stat", 8);
+  }
+  Kokkos::deep_copy(DevExeSpace(), *ck_cad_stat_ptr, 0.0);
+  const bool had = (ck_cad_ptr != nullptr);
+  int nref = 0;
+  if (full) {
+    ck_cad_partial = false;
+    picket_fence_two_stream_RT(pm, dt);
+    if (ck_cad_ptr == nullptr) {
+      const int n1 = indcs.nx1 + 2*indcs.ng;
+      const int n2 = (indcs.nx2 > 1) ? (indcs.nx2 + 2*indcs.ng) : 1;
+      const int n3 = (indcs.nx3 > 1) ? (indcs.nx3 + 2*indcs.ng) : 1;
+      ck_cad_ptr = new DvceArray5D<Real>("ck_cad", pmbp->nmb_thispack, 6, n3, n2, n1);
+      ck_cad_mask_ptr = new DvceArray3D<Real>("ck_cad_mask", pmbp->nmb_thispack, n3, n2);
+      Kokkos::deep_copy(*ck_cad_mask_ptr, 2.0);
+    }
+    CkCadStore(pm, dt, false, diag && had);
+    ++ck_cad_nfull;
+  } else {
+    nref = CkCadLin(pm, dt, diag);
+    ++ck_cad_nlin;
+    if (nref > 0) {
+      ck_cad_partial = true;
+      picket_fence_two_stream_RT(pm, dt);
+      CkCadStore(pm, dt, true, diag);
+      ck_cad_partial = false;
+      ck_impl_xs_cyc = -1;          // the operator this call stored is partial: drop it
+      ++ck_cad_nguard;
+    }
+    ck_cad_fref += static_cast<double>(nref)/static_cast<double>(ncol);
+  }
+  if (diag && (global_variable::my_rank == 0 || ck_impl_debug < 0)) {
+    auto hs = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), *ck_cad_stat_ptr);
+    std::printf("### ck_cadence ncycle=%d rank=%d mode=%s nref=%d ncol=%d fref=%.4e "
+                "dvmax=%.3e edef=%.4e sde=%.6e sq=%.6e ncap=%d linerr=%.4e "
+                "nfull=%lld nlin=%lld nguard=%lld\n",
+                pm->ncycle, global_variable::my_rank, full ? "F" : (nref > 0 ? "G" : "L"),
+                nref, ncol, static_cast<double>(nref)/ncol, hs(4),
+                (hs(5) > 0.0) ? (hs(1) - hs(2))/hs(5) : 0.0, hs(1), hs(2),
+                static_cast<int>(hs(3)), (hs(7) > 0.0) ? hs(6)/hs(7) : -1.0,
+                static_cast<long long>(ck_cad_nfull), static_cast<long long>(ck_cad_nlin),
+                static_cast<long long>(ck_cad_nguard));
+  }
 }
 
 }  // namespace two_stream_rt

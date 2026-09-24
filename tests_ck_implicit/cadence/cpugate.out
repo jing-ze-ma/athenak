@@ -1,0 +1,39 @@
+rc=0 hyd c2 cad1
+rc=0 hyd c2 base
+rc=0 hyd t4 cad1
+rc=0 hyd t4 base
+rc=0 A2 semi nonconv=0
+rc=0 A2 semi nonconv=0
+rc=0 A2 t4 nonconv=0
+rc=0 A2 t4 nonconv=0
+rec t4 BITWISE
+/viper/ptmp2/jinma/ckcad_0924/wp_base/A2/t4 vs /viper/ptmp2/jinma/ckcad_0924/wp_cad1/A2/t4: 5 files, BITWISE
+rec semi BITWISE
+/viper/ptmp2/jinma/ckcad_0924/wp_base/A2/semi vs /viper/ptmp2/jinma/ckcad_0924/wp_cad1/A2/semi: 5 files, BITWISE
+/viper/ptmp2/jinma/ckcad_0924/hyd/t4_base vs /viper/ptmp2/jinma/ckcad_0924/hyd/t4_cad1: 5 files, BITWISE
+/viper/ptmp2/jinma/ckcad_0924/hyd/c2_base vs /viper/ptmp2/jinma/ckcad_0924/hyd/c2_cad1: 5 files, BITWISE
+rc=1 e4g2 s12
+rc=1 e4 a6
+rc=1 e4 s12
+rc=1 e4 a8
+rc=1 e4g2 a8
+rc=1 e4g2 a6
+rc=0 e1 a6
+rc=0 e1 a8
+rc=0 e1 s12
+ls: cannot access '/viper/ptmp2/jinma/ckcad_0924/rstgate/e4/a8/rst/*.rst': No such file or directory
+ls: cannot access '/viper/ptmp2/jinma/ckcad_0924/rstgate/e4/a6/rst/*.rst': No such file or directory
+ls: cannot access '/viper/ptmp2/jinma/ckcad_0924/rstgate/e4g2/a8/rst/*.rst': No such file or directory
+ls: cannot access '/viper/ptmp2/jinma/ckcad_0924/rstgate/e4g2/a6/rst/*.rst': No such file or directory
+rc=1 e4 restart a8
+rc=1 e4g2 restart a6
+rc=1 e4 restart a6
+rc=1 e4g2 restart a8
+rc=0 e1 restart a8
+rc=0 e1 restart a6
+RSTGATE e1 r8 dhj.00001.rst dhj.00002.rst DIFFER
+RSTGATE e1 r6 dhj.00001.rst dhj.00002.rst DIFFER
+Traceback (most recent call last):
+  File "<stdin>", line 6, in <module>
+IndexError: list index out of range
+CPUGATE_DONE

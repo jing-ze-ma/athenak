@@ -616,6 +616,12 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       pin->GetOrAddBoolean("problem","ck_impl_warm_step",false);
   two_stream_rt::ck_impl_cvkeep =
       pin->GetOrAddBoolean("problem","ck_impl_cvkeep",false);
+  // ck-cadence (tests_ck_implicit/README_cadence.md), default off: the full implicit
+  // call every N cycles, the per-cell linearised implicit step in between, and the
+  // per-column refresh guard.  See utils/two_stream_column_ck.hpp.
+  two_stream_rt::ck_impl_every = pin->GetOrAddInteger("problem","ck_impl_every",1);
+  two_stream_rt::ck_impl_every_thr =
+      pin->GetOrAddReal("problem","ck_impl_every_thr",0.0);
   // problem/ck_impl_frozen_op: freeze the exchange operator over the Newton passes (the
   // sweep is linear in B_b at frozen opacity, so only the opacity-dependent coefficients
   // have to be rebuilt -- and they do not change); ck_impl_frozen_cof decides whether the
@@ -731,6 +737,16 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: problem/ck_impl_pred needs "
               << "ck_impl_fuse (ck_impl_debug <= 0) and neither ck_impl_glob nor "
               << "ck_impl_aa." << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  if (two_stream_rt::ck_impl_every > 1 && !(two_stream_rt::ck_implicit &&
+      two_stream_rt::ck_impl_once && two_stream_rt::ck_impl_fuse &&
+      two_stream_rt::ck_impl_colskip && two_stream_rt::ck_impl_debug <= 0 &&
+      two_stream_rt::ck_impl_glob == 0 && !two_stream_rt::ck_impl_warm)) {
+    std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: problem/ck_impl_every > 1 "
+              << "needs ck_implicit, ck_impl_once, ck_impl_fuse, ck_impl_colskip, "
+              << "ck_impl_debug <= 0, ck_impl_glob = 0 and ck_impl_warm off."
+              << std::endl;
     std::exit(EXIT_FAILURE);
   }
   if (two_stream_rt::ck_impl_once && !two_stream_rt::ck_implicit) {
@@ -4374,6 +4390,12 @@ void adjust_ad_pT_arr(const EOS_Data &eos, const Real &Rgas, const Real &gamma, 
 //! of a per-stage relaxation is not second order in a stiff source either.
 
 void DhjCkRtSplit(Mesh *pm, const Real dt) {
+  // problem/ck_impl_every > 1: the cadence (full call every N cycles, linearised step in
+  // between); see utils/two_stream_column_ck.hpp
+  if (two_stream_rt::ck_impl_every > 1) {
+    two_stream_rt::CkCadStep(pm, dt);
+    return;
+  }
   picket_fence_two_stream_RT(pm, dt);
 }
 

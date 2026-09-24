@@ -1,0 +1,457 @@
+# tests_ck_implicit/wellposed: inputs/tests/dhj_ck_implicit.athinput with the radiative
+# conduction removed (RT only), mesh 128 x 4 x 8 in TWO MeshBlocks of 128 x 4 x 4 (32 columns;
+# polar BCs need two blocks in x3 and a block needs >= 4 cells per dimension).
+# The test switches (rt_test_*, ck_test_kgrey) are given on the command line by run.sh.
+# deep_hot_jupiter_rt on the PRODUCTION RADIAL GRID, the ck_implicit gate input
+# (tests_ck_implicit/README.md).  Identical to dhj_ck_spherical.athinput plus the
+# problem/ck_implicit knobs and problem/rt_use_cons, all at their defaults.
+# deep_hot_jupiter_rt on the PRODUCTION RADIAL GRID, shrunk to a few columns so it
+# runs serially on a CPU in seconds.  This is bench/photosphere/in.athinput (nx1 = 128,
+# x1 = 9.44e9 .. 2.0556e10 cm, r_out/r_in = 2.18, area ratio 4.74, point-mass gravity,
+# the polynomial radial stretch) with nx2 = nx3 = 8 and one extra key,
+# problem/ck_spherical, so that the spherical form of the correlated-k two-stream can be
+# switched from the command line.  Drive it with
+#   problem/ck_table=<repo>/data/exo_fms_ck/ck/Premixed_1x_g8_11.txt
+#   problem/ck_data_dir=<repo>/data/exo_fms_ck
+# The gates that use it, and what they measure, are in tests_ck_sph/README.md.
+#
+# MHD TEST RUN, bbot = 3 G.  This is ck_grav_prod's input -- the current production
+# physics: correlated-k RT, tabulated general EOS with metal ionization, point-mass
+# gravity, the polynomial radial stretch, and the measured floors -- switched from hydro
+# to MHD with the EOS-derived Ohmic resistivity.
+#
+# Changed from ck_grav_prod/deep_hot_jupiter.athinput, and NOTHING else:
+#   <hydro>            -> <mhd>
+#   rsolver hllc       -> hlld
+#   ohmic_resistivity  = eos      (was commented out; the general EOS supplies x_e)
+#   max_eta            = 1.0e13   (the value measured in xe_long; see NOTES.md)
+#   bbot               1.0e1 -> 3.0e0
+#   output3 variable   hydro_w -> mhd_w_bcc
+# The grid, floors, gravity and RT settings are UNCHANGED, so hydro-vs-MHD at fixed
+# resolution is a clean comparison against ck_grav_prod.
+#
+# Ultra-hot Jupiter (deep_hot_jupiter_rt): general EOS with metal ionization, and an
+# Ohmic resistivity built from the EOS's own electron fraction.
+#
+# Build with  -DPROBLEM=deep_hot_jupiter_rt.  This is the ideal-gas spherical-polar MHD
+# setup with three connected changes:
+#
+# 1. eos = general, general_eos = table.  H2 dissociation is the dominant energetic
+#    process in an ultra-hot Jupiter atmosphere: the reservoir is 1.58e12 erg/g, a
+#    16,000 K equivalent for a mu = 1.27 monatomic gas, against a day-night contrast of
+#    order 1000 K.  Dissociating on the dayside and recombining on the nightside is a heat
+#    pipe that flattens the contrast, and a fixed gamma cannot represent it.
+#    Half-dissociation sits near 2900 K at photospheric pressures, ~4300 K at 1 bar.
+#
+# 2. eos_metal_ionization = true.  Below ~4000 K hydrogen supplies essentially no free
+#    electrons (13.6 eV is far too high); Na, K, Ca, Al, Mg and Fe at 4-8 eV supply all of
+#    them.  Without it the electron fraction is orders of magnitude too small over exactly
+#    the range this atmosphere occupies.
+#
+# 3. ohmic_resistivity = eos reads that electron fraction instead of the potassium-only
+#    fit of `perna`.  The fit is good to a factor ~3 over 1500-5000 K, but it has no
+#    saturation ceiling, so it over-predicts x_e at low pressure once the alkalis are
+#    fully ionized, and no hydrogen term, so it under-predicts above ~6000 K.  `eos` also
+#    adds the Spitzer term, which is the larger of the two above ~7000 K.
+#
+# `perna` remains available and needs neither <units> nor an EOS table.
+# See docs/general_eos.md.
+
+<comment>
+problem   = ultra-hot Jupiter, general EOS + metal ionization + EOS resistivity
+reference = Heng et al. MNRAS 413, 2380 (2011); Perna et al. ApJ 719, 1421 (2010)
+
+<job>
+basename  = dhj
+
+<mesh>
+nghost    = 2
+nx1       = 128
+                        # The science requirement is 10 cells per scale height BELOW the
+                        # 1e-6 bar level; a uniform nx1 = 200 (dr = 5.558e7, the ck_limb
+                        # value) delivers only median 7.3 / p05 2.9 there.  Stretching
+                        # concentrates cells across the scale-height minimum and coarsens
+                        # the near-vacuum top, giving median 10.1 / p05 7.3 / p01 5.1 for
+                        # 1.70x the cells of the uniform plan.  See NOTES.md.
+x1min     = 9.44e9
+x1max     = 2.0556e10   # MEASURED, not estimated.  ck_grav_size ran the same physics on
+                        # a deliberately oversized 1.90e10 grid; at 21 rotations the 99th
+                        # percentile of the 1e-6 bar isobar over the terminator columns
+                        # (lon = +-90 +-20, |lat| < 30) sits at 1.794e10 with a local
+                        # scale height of 1.24e9 cm.  This x1max puts ~1.8 H above the
+                        # worst terminator columns, which is what ck_limb delivers and
+                        # was accepted as meeting the science goal -- a literal "+3 H"
+                        # would want 2.166e10 / nx1 = 220 and is over-built.
+                        # The residual drift is INWARD (-1.1e7 cm/rot and decelerating)
+                        # while H has been flat since rotation 4, so the buffer at this
+                        # x1max can only grow.  See ck_grav_size/NOTES.md.
+ix1_bc    = user
+ox1_bc    = user
+
+# 64, not 56, so that every direction is a power of two and the meshblock split is free to
+# use the round numbers -- see the <meshblock> note below.  Costs 14.3% more cells than the
+# 56 this ran at previously.
+nx2       = 4
+x2min     = -1.0        # -1 lets the pgen set the full polar range
+x2max     = -1.0
+ix2_bc    = polar
+ox2_bc    = polar
+
+nx3       = 8
+x3min     = -1.0
+x3max     = -1.0
+ix3_bc    = periodic
+ox3_bc    = periodic
+
+# --- radial grid stretch ---------------------------------------------------------------
+# Non-monotonic polynomial map r(xi) = x1min + (x1max-x1min)*[ xi + sum_k c_k xi^k (1-xi) ]
+# (mesh/use_grid_stretch_r_poly, see coordinates/grid_stretch.hpp).  The exponential
+# mesh/use_grid_stretch_r cannot do this: the spacing here must be FINE in the middle of
+# the domain, not at one end.  Coefficients were fitted to the H(r) profile measured in
+# ck_grav_size at 21 rotations.  Resulting dr:
+#     r/Rp 1.00  5.13e7      (deep interior, where H is large and nothing is observed)
+#     r/Rp 1.18  1.73e7      (the scale-height minimum -- the finest cells)
+#     r/Rp 1.28  2.06e7      (the H2 dissociation front)
+#     r/Rp 2.18  2.18e8      (the top, near vacuum)
+# Mesh checks du/dxi > 0 at startup and fatals if the map would fold over; this set has
+# min du/dxi = 0.364.
+#
+# POST-PROCESSING: bin_convert/athena_read rebuild x1v as linspace(x1min,x1max,nx1+1), so
+# every analysis script MUST re-apply this map to x1v, exactly as theta already needs.
+use_grid_stretch_r_poly = true
+f_stretch_r_c1          = -0.068392
+f_stretch_r_c2          = -2.191487
+f_stretch_r_c3          =  2.464818
+f_stretch_r_c4          = -1.366698
+
+use_spherical_polar    = true
+use_polar_boundary     = true
+use_grid_stretch_theta = true
+f_stretch_theta        = 3.0   # 2.0 -> 3.0.  dt is set by the AZIMUTHAL CFL in the
+                               # polar-most row (x3 = 20.0 s, vs x1 = 58.3 and x2 = 201
+                               # globally), and dx3 = r sin(theta) dphi, so widening the
+                               # polar cell buys dt back nearly linearly: est. 1.44x.
+                               # Also refines the equator (dtheta 1.55 -> 0.84 deg), which
+                               # is where the terminators this run exists to resolve are.
+                               # Costs: polar cells 5.66 -> 8.10 deg, and the equatorial
+                               # cell becomes 3.3:1 anisotropic against dphi = 2.81 deg.
+
+<meshblock>
+# nx1 MUST equal the mesh nx1: the two-stream RT sweeps whole radial columns.
+#
+# PORTING TO GPUs: this 8x8 split gives 112 blocks (1 x 7 x 16), which suits many CPU
+# ranks and is wrong for accelerators -- you want a few LARGE blocks, at least one per GPU
+# and ideally a small multiple of the rank count.
+#
+# Mind the theta divisor.  The mesh above is 64 x 56 x 128 and must divide evenly into
+# meshblocks, so the legal nx2 are the divisors of 56 -- 1, 2, 4, 7, 8, 14, 28, 56.  The
+# round numbers 16 and 32 are NOT among them and abort at startup.  nx3 takes any power of
+# two up to 128.
+#
+# For a GPU run consider raising <mesh>/nx2 to 64, which puts powers of two in every
+# direction and lets nx2 = nx3 = 32 give 8 blocks.  That is a RESOLUTION change, not just
+# a decomposition one -- 14.3% more cells, and the CPU timings recorded below were taken
+# at 56 -- but it removes the divisor problem entirely.
+#
+# On a 2-GPU node (Viper's apu partitions carry two MI300A each) aim for 8 blocks: at 56
+# that is nx2 = 28, nx3 = 32; at 64 it is nx2 = nx3 = 32.  Either gives 4 per GPU with
+# slack left for load balancing.  Two blocks would saturate the node but leave AthenaK
+# nothing to redistribute.  Shift one row down on a 4-GPU machine.
+#
+# Build with -DPROBLEM=deep_hot_jupiter_rt and the Kokkos HIP/CUDA arch flags.
+nx1       = 128
+nx2       = 4
+nx3       = 4
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim = 1000000000
+tlim = 8.64e7           # 1000 days = 283 rotations, the ck_limb value
+                        # (40 rotations, which was sized only to answer the x1max
+                        # question -- the top-cell pressure had settled by ~38 rotations
+                        # in the retired constant-g run).  At the measured 292.6
+                        # simulated s per wall s this is ~41 h = two 24 h slots.
+                        # NOTE: a restart takes tlim from the RESTART FILE's embedded
+                        # input, not from this file, so resubmit_viper.sh passes
+                        # time/tlim on the command line as well.
+ndiag      = 100
+
+<units>
+# REQUIRED by the general EOS.  All factors 1, so code units ARE cgs -- which this problem
+# already assumed: the mesh is in cm, and the resistivity returns cm^2/s with no
+# conversion.  mu = 1 because mu is divided back out of the temperature scale; the
+# composition lives in the EOS, not here.
+length_cgs = 1.0
+mass_cgs   = 1.0
+time_cgs   = 1.0
+mu         = 1.0
+
+<hydro>
+# RADIATIVE CONDUCTION + THE OPTICAL-DEPTH BLEND, as bench/cs_mhd_prod3 runs them (it
+# carries them in its <mhd> block; rad_implicit_x1 is <hydro>-only, conduction.cpp:173-180,
+# so a hydro copy is the only place they can all be set).  With rad_tau_hi > 0 the blend
+# owns the deep region, ck_int_at_cut is forced false (two_stream_rt.hpp:2145) and the
+# internal flux enters ONCE, as sigma T_int^4 per unit area through the face i = is, i.e.
+# AT x1min (conduction.cpp:1533-1537), so the luminosity it injects is
+# A(x1min) sigma T_int^4.
+eos             = general
+general_eos     = table
+reconstruct     = plm
+rsolver         = hllc
+gamma           = 1.4727545958   # unused by the table; kept so ideal/general inputs match
+etotgrav        = true
+
+# --- composition ---
+eos_h2               = true      # H2 dissociation: the heat pipe
+eos_ionization       = true      # Saha for H, He, He+
+eos_metal_ionization = true      # Na, K, Ca, Al, Mg, Fe -- the electron donors
+eos_radiation        = false     # aT^4/3 is ~1e-7 of the gas pressure here
+eos_xh               = 0.7381
+eos_yhe              = 0.2485
+# eos_metal_mh       = 0.0       # [M/H] in dex for the donors. Defaults to <problem>/met
+#                                # below, which feeds the opacity fit, so metallicity is
+#                                # set in ONE place. Overriding it here makes the pgen
+#                                # abort, since the atmosphere would then be opaque at one
+#                                # metallicity and conducting at another.
+eos_metal_condensation = true    # rain the donors out below their own T_cond(p, [M/H]),
+#                                # from Visscher+2010 / Morley+2012 / Wakeford+2017.
+#                                # At 1 bar: Ca 2004 K, Al 1994, Fe 1838, Mg 1698,
+#                                # Na 996, K 801.  Since K and Na both dominate n_e at
+#                                # low T AND condense last, the effect is a cliff below
+#                                # ~800 K rather than a gradual taper.  Costs a second
+#                                # pass at table build; nothing at run time.
+# eos_metal_tcond    = 0.0       # crude alternative: one temperature for all species,
+#                                # overrides the above when positive
+
+# --- table grid: must bracket the run ---
+eos_logd_min    = -14.0
+eos_logd_max    = 0.0
+eos_logt_min    = 1.5
+eos_logt_max    = 6.0
+eos_dlog        = 0.05
+
+# --- non-ideal MHD ---
+#ohmic_resistivity = eos (HYDRO: no MHD)           # constant | perna | eos
+#max_eta           = 1.0e13        # caps eta [cm^2/s], and therefore FLOORS the electron
+#                                # fraction at x_e = 230 sqrt(T)/max_eta.  That floor is
+#                                # the reason not to leave the cap low: at 1e12 it is
+#                                # x_e ~ 1e-8, which overrides the tabulated value below
+#                                # ~2000 K in the upper atmosphere and ~3000 K in the deep
+#                                # gas -- most of a Teq = 2500 K domain.  1e14 needs
+#                                # use_rkg_sts below; the two go together.
+#use_rkg_sts       = false         # RKG super-time-stepping.  REQUIRED at max_eta = 1e14:
+#                                # the diffusive dt would otherwise sit ~29x below the CFL
+#                                # value.  Measured on a 64x64x128 polar grid with constant
+#                                # eta: 1e13 lifts dt from 4.68 s back to the 13.41 s CFL
+#                                # value, and at 1e15 dt is STILL 13.41 s.
+#                                #
+#                                # It is NOT free.  s = ceil(-a + sqrt((a+1)^2 + tau(3+2a)))
+#                                # sub-stages with a = 0.5 and tau = dt_hydro/dt_diff,
+#                                # FLOORED AT 3 -- so with diffusion not binding it is a
+#                                # pure ~40% loss.  Break-even is tau ~ 1.5-2; measured
+#                                # gains 1.8x at tau=2.9, 10.7x at tau=29, 45x at tau=287.
+#                                # Rule of thumb: if dt sits at the hydro CFL value, turn
+#                                # this OFF.
+#                                #
+#                                # ACCURACY: the super-step runs after the complete RK2
+#                                # step (driver.cpp), i.e. Lie splitting, where with STS off
+#                                # the resistive fluxes sit inside the RK2 stages.  A/B at
+#                                # fixed simulated time: at eta = 1e14 the magnetic energies
+#                                # agree to <= 1.5e-5 and the decay of 1-ME is identical to
+#                                # the 6 digits the .hst carries; only the kinetic energies
+#                                # differ, by <= 0.8%.  Re-check if the resistivity ever
+#                                # shapes the field rather than just damping it.
+
+pfloor = 1.0e-3   # 1 barye = 1e-6 bar EXACTLY.  At the old pfloor = 1.0 the top 7
+                 # cells pinned to p = 1.000e-06 bar / 2160 K -- a floor slab AT the
+                 # level of interest.  At 1e-3 the pressure floor never fires at all
+                 # (efloor counter = 0) and 1e-6 bar sits at r = 1.257e10 with 9 real
+                 # cells above it.  Costs 0.2 % in cycles.  See bench notes below.
+dfloor = 5.0e-14   # 10x lower; measured on apudev to cost 0.0% in dt (jobs 11019549-51)
+# Stated in KELVIN.  `tfloor` is a floor on the CODE temperature, which is p/rho for an
+# ideal gas but the EOS's own T here, the two scales differing by <units>/mu -- so a value
+# carried across from an ideal-gas input is silently wrong.  (That input's tfloor = 400.0
+# was 400 in p/rho units, i.e. ~1e-5 K with Rgas = 4.593e7: no floor at all.)  200 K is a
+# nan guard well below anything this atmosphere should reach.  Setting tfloor and
+# tfloor_kelvin together is a fatal error; use one.  See docs/general_eos.md.
+tfloor_kelvin = 200.0   # DO NOT LOWER.  50 K sits too near the table floor of 31.6 K
+                     # (eos_logt_min = 1.5) and correlated-k cools the tenuous top hard:
+                     # every 50 K arm died with dt exploding 10 s -> 1e9 s in ~1500 cycles.
+
+<problem>
+photosphere_dump = photo.txt
+user_srcs   = true
+# Outer-x1 ghost extrapolation: include the magnetic force as a bounded effective gravity,
+# dphi -> dphi*(1 - dM1mag/(rho|g|)) clamped to [-1, 0.9], applied inside the hydrostatic
+# solve.  This is the default; false drops the term entirely.  The older form added it to
+# the energy instead and was unbounded -- its size relative to the hydrostatic term is
+# (B^2/dr)/(rho g), which is 0.03 at bbot = 3 G but 3.0 at 30 G and 33 at 100 G, so past
+# O(1) it SET the ghost rather than correcting it and the last two active radial shells
+# collapsed.  In the present form the answer is independent of dfloor from 3 to 300 G.
+bc_outer_maxwell = true
+hot_jupiter = true
+Teq   = 2500.0
+omega = 2.06e-5
+grav  = 942.0
+grav_point_mass = true   # g(r) = grav*(ap/r)^2 instead of a constant.  Over r/ap = 2.01
+                         # here the constant form is wrong by 2.5x at the top, which
+                         # understates H by the same factor -- a first-order systematic on
+                         # the very limb observable this campaign exists for.  Verified
+                         # bitwise-off / well-balanced-on (jobs 11025710-11); dt is 2.3x
+                         # LARGER with it on and the density floor fires 128x less.
+ap    = 9.44e9
+Rgas  = 4.593e7                  # ignored under the general EOS; composition is the EOS's
+met   = 0.0                      # [M/H] dex; also sets the EOS's metal donors
+bbot  = 3.0e0     # G at the base, r = ap. The lower of the two values run in
+                  # xe_long (3 and 10 G); start here.
+
+# --- radiative transfer -----------------------------------------------------------
+# The correlated-k scheme is documented in docs/correlated_k_rt.md.
+# Defaults below are the shipped ones, listed explicitly because AthenaK's command-line
+# overrides only MODIFY parameters that already exist: without these lines,
+# `problem/rt_ck=true` on the command line fatals with "not found".
+rt_use_cons  = false
+# problem/ck_implicit: the BACKWARD-EULER correlated-k column solve.  false = bitwise the
+# semi-implicit per-cell apply.  See utils/two_stream_column_ck.hpp and
+# tests_ck_implicit/README.md.
+ck_implicit  = false
+ck_impl_tol  = 1.0e-8
+ck_impl_dtol = 1.0e-8
+ck_impl_norm_eps = 1.0e-3
+ck_impl_maxit = 8
+ck_impl_dtmax = 0.5
+ck_impl_demax = 0.5
+ck_impl_verbose = false
+ck_impl_refresh_kappa = false
+# problem/ck_impl_tau_min: THE TWO-LEVEL SPLIT.  A cell whose own (Planck-weighted
+# continuum) optical depth kappa rho dr is below this keeps a bracketed, positivity-
+# preserving per-cell implicit step and enters the tridiagonal only through its field;
+# the rest is solved implicitly together.  This is what makes the Newton converge at 10x
+# and 100x the production dt.  0 = every cell in the tridiagonal (diverges at 10x).
+ck_impl_tau_min = 0.0
+# problem/ck_impl_arat: the discriminant that does the work -- a cell is thick only while
+# A <= arat*E.  See two_stream_column_ck.hpp.
+ck_impl_arat = 2.0
+ck_impl_debug = 0
+# problem/ck_impl_colskip: stop sweeping a column once it is converged.
+ck_impl_colskip = true
+# problem/ck_impl_once: the whole radiation once per HYDRO STEP with the full cycle dt,
+# after the last RK stage, instead of once per RK stage.  Halves the sweeps under rk2.
+ck_impl_once = false
+# problem/ck_impl_frozen_op: FREEZE THE EXCHANGE OPERATOR over the Newton passes -- pass 0
+# stores what the sweep built from the opacity (kappa rho per cell and chain, and with
+# ck_impl_frozen_cof the three half-layer coefficients), every later pass re-applies it to
+# the new B_b(T) with no table look-up, no exponential and no beam.  Bitwise the same
+# iteration; see tests_ck_implicit/README_phase3.md.
+ck_impl_frozen_op = false
+ck_impl_frozen_cof = true
+# problem/ck_impl_warm: seed the Newton with the previous call's converged increment.
+ck_impl_warm = false
+# problem/ck_impl_reuse_jac: QUASI-NEWTON.  0 = rebuild the tridiagonal every pass,
+# 1 = build it on the first Newton pass and REUSE it (chord method), 2 = as 1 but rescale
+# each entry by (T/T_build)^3, the dominant temperature dependence of the dB_b/dT it
+# carries.  The residual is re-formed by a full sweep either way, so the fixed point does
+# not move.  See tests_ck_implicit/README_phase4.md.
+ck_impl_reuse_jac = 0
+# problem/ck_impl_seed: THE INITIAL GUESS.  0 = pass 0 takes an ordinary Newton step,
+# 1 = pass 0 takes the SEMI-IMPLICIT step the default scheme would take, 2 = pass 0 takes
+# the exact per-cell bracketed backward-Euler step with the absorbed field lagged.
+ck_impl_seed = 0
+rt_de_max    = 0.5
+# problem/ck_spherical: the SPHERICAL form of the correlated-k two-stream (see
+# two_stream_rt::ck_spherical).  false = bitwise the plane-parallel arithmetic the ck
+# kernel has always run.
+ck_spherical = false
+# problem/ck_beam_sph: the PSEUDO-SPHERICAL direct beam (straight rays through the
+# shells, no secant clamp, twilight columns lit).  Independent of ck_spherical.
+ck_beam_sph  = false
+rt_cell_report  = false   # true also prints the rt_desum line (sweep vs gas energy)
+rt_report_every = 100
+rt_ck = true
+rt_split     = false             # run the RT as chain-parallel kernels instead of one
+                                 # kernel looping over chains serially.  Implied by
+                                 # rt_ck.  Same arithmetic and the same summation
+                                 # order, so the GREY scheme is bitwise identical
+                                 # either way -- that A/B is the check on the split
+                                 # kernel.  Leave it false for grey production runs:
+                                 # with only 4 chains the split path gains no
+                                 # parallelism and pays extra launches (133 vs 167
+                                 # ms/100cyc).
+ck_pcut_bar  = 10.0              # correlated-k only above this pressure; below it the
+                                 # atmosphere is optically thick (grey tau ~ 1e4 at 10 bar)
+                                 # and convective, and no radiative source is applied
+ck_nquad     = 1                 # 1 = diffusivity factor 1/1.66 (88 column solves);
+                                 # 2 = the 2-point Gauss quadrature (176)
+ck_star_teff = 6000.0            # host T_eff; the stellar spectrum is a blackbody at this
+                                 # temperature. Only its SHAPE is used -- it is renormalised
+                                 # to sigma T_irr^4 -- so nothing else about the star enters.
+                                 # 5500-6500 K is the range Tan+2024 and Parmentier+2018 use.
+# These two are resolved against the WORKING DIRECTORY, not the input file, so they are
+# only right when the run is launched from the repository root. Give absolute paths when
+# running out of a run directory or via -d. The tables are not in git: see
+# data/exo_fms_ck/PROVENANCE.md for where to fetch them.
+ck_table     = /viper/u2/jinma/ATHENAK/athenak/data/exo_fms_ck/ck/Premixed_1x_g8_11.txt
+ck_data_dir  = /viper/u2/jinma/ATHENAK/athenak/data/exo_fms_ck   # CE_tables/, cia/, ray/, sw_flux/ live here
+
+# One-shot dump of a single radial column (level pressures, temperatures, net longwave
+# flux and shortwave heating) the first time the correlated-k source term runs, for
+# cross-code comparison and for the regression test.  Empty = off.  ck_dump_m/j/k pick
+# the column; -1 takes the centre of the meshblock in that direction.
+ck_dump_file =
+ck_dump_m    = 0
+ck_dump_j    = -1
+ck_dump_k    = -1
+# ---- phase T1-T4 switches (defaults) and the wellposed test hooks (defaults = off)
+ck_sweep_form   = 1
+ck_impl_lin     = false
+ck_impl_lin_thr = 1
+ck_impl_fuse    = false
+ck_impl_lw      = false
+ck_impl_jac_lin = false
+ck_impl_cvsec   = false
+ck_impl_xstep   = 0
+ck_impl_xstep_thr = 0.0
+ck_impl_jreuse  = 0.0
+ck_impl_pred    = false
+ck_impl_pred_fac = 1.0
+ck_impl_pred_chk = false
+ck_impl_jreuse_xc = false
+ck_impl_warm_step = false
+ck_impl_cvkeep = false
+ck_impl_every = 1                # ck-cadence (README_cadence.md)
+ck_impl_every_thr = 0.0
+ck_impl_jreuse_act = 0.25
+ck_impl_nosync  = false
+rt_test_freeze  = false
+rt_test_dt      = 0.0
+rt_test_out     =
+rt_test_every   = 1
+rt_test_col_m   = 0
+rt_test_col_k   = -1
+rt_test_col_j   = -1
+rt_test_mu0     = -2.0
+ck_test_kgrey   = 0.0
+rt_test_rho     = 0.0
+rt_test_T       = 0.0
+rt_test_dT      = 0.0
+rt_test_nwave   = 0.0
+
+<output1>
+file_type  = hst
+dt         = 3.05e4
+
+<output2>
+file_type  = log                 # floor / C2P counters; rows are per-interval
+dt         = 3.05e4
+
+<output3>
+file_type  = bin
+variable   = hydro_w
+dt         = 6.10e5              # every 2 rotations   # ONE PER ROTATION: 40 dumps over 1000 days was far
+                                 # too few to time-average the limb.  283 dumps, ~4 GB.
+
+<output4>
+file_type  = rst                 # so a 24 h timeout can be continued with -r
+dt         = 3.05e6              # every 10 rotations, plus one at clean exit
