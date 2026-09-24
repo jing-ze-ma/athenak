@@ -2890,6 +2890,10 @@ void SourceFunc(Mesh *pm, Real bdt) {
     // explicit radial term is dropped only when that scheme is on; with etotgrav the
     // energy flux carries the potential either way
     const bool rotpot = pm->pgen->hot_jupiter_param.rot_potential;
+    // problem/sponge_top, problem/sponge_bottom (default true): switch the two velocity
+    // sponges at the end of this kernel off; captured by value.
+    const bool sponge_top_ = pm->pgen->hot_jupiter_param.sponge_top;
+    const bool sponge_bottom_ = pm->pgen->hot_jupiter_param.sponge_bottom;
     const bool rotpot_src = rotpot && use_wellbalance_dynamic;
 
     // Radial grid stretch, copied out of the Mesh so the device lambdas below capture
@@ -3142,9 +3146,11 @@ void SourceFunc(Mesh *pm, Real bdt) {
         fdrag = (fdrag > 1.0) ? 1.0 : fdrag;
         itdrag = fdrag/1.0e3;
         fredux = itdrag*bdt; ///(1.0+itdrag*bdt);
-        u0(m,IM1,k,j,i) -= u0(m,IM1,k,j,i)*fredux;
-        u0(m,IM2,k,j,i) -= u0(m,IM2,k,j,i)*fredux;
-        u0(m,IM3,k,j,i) -= u0(m,IM3,k,j,i)*fredux;
+        if (sponge_top_) {
+          u0(m,IM1,k,j,i) -= u0(m,IM1,k,j,i)*fredux;
+          u0(m,IM2,k,j,i) -= u0(m,IM2,k,j,i)*fredux;
+          u0(m,IM3,k,j,i) -= u0(m,IM3,k,j,i)*fredux;
+        }
         // Bottom sponge layer
         logpl = log(1.0e2*bar);
         logpt = log(5.0e1*bar);
@@ -3155,8 +3161,10 @@ void SourceFunc(Mesh *pm, Real bdt) {
         itdrag = fdrag/1.0e3;
         fredux = itdrag*bdt; ///(1.0+itdrag*bdt);
 //        u0(m,IM1,k,j,i) -= u0(m,IM1,k,j,i)*fredux;
-        u0(m,IM2,k,j,i) -= u0(m,IM2,k,j,i)*fredux;
-        u0(m,IM3,k,j,i) -= u0(m,IM3,k,j,i)*fredux;
+        if (sponge_bottom_) {
+          u0(m,IM2,k,j,i) -= u0(m,IM2,k,j,i)*fredux;
+          u0(m,IM3,k,j,i) -= u0(m,IM3,k,j,i)*fredux;
+        }
     });
 
     return;
