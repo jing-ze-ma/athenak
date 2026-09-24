@@ -1,0 +1,7 @@
+box1: hst_cons 0.00e+00 ()  hst_dyn 0.00e+00 ()  row1_cons 0.00e+00 ()  rst_cons 0.00e+00 ()  rst_dyn 0.00e+00 ()  rst bitwise True
+box2o: hst_cons 0.00e+00 ()  hst_dyn 0.00e+00 ()  row1_cons 0.00e+00 ()  rst_cons 0.00e+00 ()  rst_dyn 0.00e+00 ()  rst bitwise True
+box4o: hst_cons 0.00e+00 ()  hst_dyn 0.00e+00 ()  row1_cons 0.00e+00 ()  rst_cons 0.00e+00 ()  rst_dyn 0.00e+00 ()  rst bitwise True
+slab1: hst_cons 0.00e+00 ()  hst_dyn 0.00e+00 ()  row1_cons 0.00e+00 ()  rst_cons 0.00e+00 ()  rst_dyn 0.00e+00 ()  rst bitwise True
+slab2o: hst_cons 0.00e+00 ()  hst_dyn 0.00e+00 ()  row1_cons 0.00e+00 ()  rst_cons 0.00e+00 ()  rst_dyn 0.00e+00 ()  rst bitwise True
+slabnd2: hst_cons 0.00e+00 ()  hst_dyn 0.00e+00 ()  row1_cons 0.00e+00 ()  rst_cons 0.00e+00 ()  rst_dyn 0.00e+00 ()  rst bitwise True
+slabv2: hst_cons 0.00e+00 ()  hst_dyn 0.00e+00 ()  row1_cons 0.00e+00 ()  rst_cons 0.00e+00 ()  rst_dyn 0.00e+00 ()  rst bitwise True
