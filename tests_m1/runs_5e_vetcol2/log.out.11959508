@@ -1,0 +1,73 @@
+== slab1 ref 10:37:17
+== box2 ref 10:37:31
+== boxvet2 ref 10:37:43
+== slab1 new 10:37:56
+== box2 new 10:38:13
+== boxvet2 new 10:38:26
+== slab1: VERDICT BITWISE files=10 diff=0 rc=0 rc=0
+== box2: VERDICT BITWISE files=10 diff=0 rc=0 rc=0
+== boxvet2: VERDICT BITWISE files=10 diff=0 rc=0 rc=0
+== a4t new 10:38:39
+== a4s new 10:38:42
+== a4 team vs one-thread (GPU): VERDICT BITWISE files=8 diff=0
+== a4 team vs one-thread max rel diff (last tab): 0.0
+== hw_edd_1 new 10:38:47
+== hw_vct_1 new 10:38:51
+== hw_vc1_1 new 10:38:54
+== hw_vcq_1 new 10:38:58
+== hw_edd_2 new 10:39:02
+== hw_vct_2 new 10:39:05
+== hw_vc1_2 new 10:39:09
+== hw_vcq_2 new 10:39:13
+== hw_edd_1: cpu time used  = 1.841613e+00 zone-cycles/cpu_second = 3.416275e+07 <rad_m1> bicgstab: outer passes=5.100000e+01 linear solves=5.100000e+01 inner iterations mean=2.947059e+01 max=7.600000e+01 total=1.503000e+03 
+== hw_vct_1: cpu time used  = 1.880733e+00 zone-cycles/cpu_second = 3.345214e+07 <rad_m1> closure = vet_col: 4.000000e+01 tensor builds (0.000000e+00 skipped), 1.325048e-01 s (rank 0, fenced), 3.312619e+00 ms per build <rad_m1> bicgstab: outer passes=5.200000e+01 linear solves=5.200000e+01 inner iterations mean=2.726923e+01 max=6.800000e+01 total=1.418000e+03 
+== hw_vc1_1: cpu time used  = 2.267900e+00 zone-cycles/cpu_second = 2.774132e+07 <rad_m1> closure = vet_col: 4.000000e+01 tensor builds (0.000000e+00 skipped), 4.743995e-01 s (rank 0, fenced), 1.185999e+01 ms per build <rad_m1> bicgstab: outer passes=5.200000e+01 linear solves=5.200000e+01 inner iterations mean=2.726923e+01 max=6.800000e+01 total=1.418000e+03 
+== hw_vcq_1: cpu time used  = 1.874256e+00 zone-cycles/cpu_second = 3.356775e+07 <rad_m1> closure = vet_col: 4.000000e+01 tensor builds (0.000000e+00 skipped), 1.393464e-01 s (rank 0, fenced), 3.483660e+00 ms per build <rad_m1> bicgstab: outer passes=5.100000e+01 linear solves=5.100000e+01 inner iterations mean=2.723529e+01 max=6.900000e+01 total=1.389000e+03 
+== hw_edd_2: cpu time used  = 1.837090e+00 zone-cycles/cpu_second = 3.424686e+07 <rad_m1> bicgstab: outer passes=5.100000e+01 linear solves=5.100000e+01 inner iterations mean=2.947059e+01 max=7.600000e+01 total=1.503000e+03 
+== hw_vct_2: cpu time used  = 1.925342e+00 zone-cycles/cpu_second = 3.267708e+07 <rad_m1> closure = vet_col: 4.000000e+01 tensor builds (0.000000e+00 skipped), 1.342990e-01 s (rank 0, fenced), 3.357475e+00 ms per build <rad_m1> bicgstab: outer passes=5.200000e+01 linear solves=5.200000e+01 inner iterations mean=2.726923e+01 max=6.800000e+01 total=1.418000e+03 
+== hw_vc1_2: cpu time used  = 2.221189e+00 zone-cycles/cpu_second = 2.832472e+07 <rad_m1> closure = vet_col: 4.000000e+01 tensor builds (0.000000e+00 skipped), 4.741008e-01 s (rank 0, fenced), 1.185252e+01 ms per build <rad_m1> bicgstab: outer passes=5.200000e+01 linear solves=5.200000e+01 inner iterations mean=2.726923e+01 max=6.800000e+01 total=1.418000e+03 
+== hw_vcq_2: cpu time used  = 1.908351e+00 zone-cycles/cpu_second = 3.296802e+07 <rad_m1> closure = vet_col: 4.000000e+01 tensor builds (0.000000e+00 skipped), 1.393274e-01 s (rank 0, fenced), 3.483185e+00 ms per build <rad_m1> bicgstab: outer passes=5.100000e+01 linear solves=5.100000e+01 inner iterations mean=2.723529e+01 max=6.900000e+01 total=1.389000e+03 
+GPU GATE DONE
+                                  
+================================= 
+Global information about the job: 
+================================= 
+  
+Job owner: jinma(28895)
+Job name:  vetcol2_gpu
+Node list: vipa1327
+Job start: Thu Sep 24 10:37:15 CEST 2026
+Job end:   Thu Sep 24 10:39:17 CEST 2026
+Work dir:  /viper/ptmp2/jinma/vetcol2_0924
+Command:   /viper/ptmp2/jinma/vetcol2_0924/gate_gpu.sh
+  
+  
+  
+==========================================================================================
+Information on jobsteps (Note: MaxRSS/AveRSS is the maximum/average over all 
+tasks of the per-task memory high-water marks; cf. "man sacct"): 
+==========================================================================================
+  
+JobID            JobName NNodes NTasks  NCPUS       MaxRSS       AveRSS    Elapsed ExitCode
+------------- ---------- ------ ------ ------ ------------ ------------ ---------- --------
+11959508      vetcol2_gp      1            96                             00:02:02      0:0
+11959508.0    athena_ref      1      1     48      911.31M      911.31M   00:00:15      0:0
+11959508.1    athena_ref      1      2     96     1441.22M     1175.02M   00:00:13      0:0
+11959508.2    athena_ref      1      2     96     1441.93M     1176.84M   00:00:12      0:0
+11959508.3    athena_new      1      1     48      894.98M      894.98M   00:00:18      0:0
+11959508.4    athena_new      1      2     96     1441.14M     1175.00M   00:00:13      0:0
+11959508.5    athena_new      1      2     96     1440.01M     1173.91M   00:00:10      0:0
+11959508.6    athena_new      1      1     48       35.38M       35.38M   00:00:03      0:0
+11959508.7    athena_new      1      1     48       35.38M       35.38M   00:00:02      0:0
+11959508.8    athena_new      1      2     96       23.67M       23.67M   00:00:04      0:0
+11959508.9    athena_new      1      2     96       24.34M       24.33M   00:00:03      0:0
+11959508.10   athena_new      1      2     96       23.68M       23.68M   00:00:04      0:0
+11959508.11   athena_new      1      2     96       24.33M       24.33M   00:00:04      0:0
+11959508.12   athena_new      1      2     96       24.33M       24.33M   00:00:03      0:0
+11959508.13   athena_new      1      2     96       23.67M       23.67M   00:00:04      0:0
+11959508.14   athena_new      1      2     96       23.68M       23.68M   00:00:04      0:0
+11959508.15   athena_new      1      2     96       24.33M       24.33M   00:00:04      0:0
+  
+Maximum memory per node: 3.023946 GB (defined as MaxRSS*Ntasks/NNodes)
+CPU utilization: 1.5 %
+  

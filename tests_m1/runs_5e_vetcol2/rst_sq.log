@@ -1,0 +1,2 @@
+VERDICT BITWISE files=26 diff=0
+<rad_m1> closure = vet_col: per-column 1-D formal solution, spherical p-rays (ncore 8, nsub 1, 73 rays, 64 shells), axis radial, rebuilt every 1 step(s); team build, 16 shells per chunk, team size AUTO; outer Marshak q = H(face)/J(top cell) in [1.000000e-03, 1.000000e+00]

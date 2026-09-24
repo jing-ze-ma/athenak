@@ -911,8 +911,19 @@ class RadiationM1 {
   DvceArray2D<Real> vcol_buf;  // (ray, column): the running intensity of each ray
   DvceArray5D<Real> vcol_mom;  // (m,5,k,j,i): J, H, K, S, chi of the solution (dump)
   std::vector<double> vcol_rc; // shell radii (host, for the dump)
+  // vet_col_surface_q (runs_5e): the outer-x1 Marshak q per column from the formal
+  // solution, q = H(top face)/J(top cell), lagged like the tensor; vet_col_team: the
+  // build as one team per column (rays over the team's threads, fixed-order moments)
+  bool vcol_sq, vcol_team;
+  Real vcol_qmin, vcol_qmax;
+  int vcol_lc;                 // shells per chunk of the team build (scratch budget)
+  int vcol_ts, vcol_lcin;      // vet_col_team_size (0 = AUTO), vet_col_chunk (0 = auto)
+  DvceArray3D<Real> vcol_q;    // (m, k, j): the column's Marshak q at the top face
+  DvceArray1D<Real> vcol_muf;  // (ray): mu at the top face
+  DvceArray1D<Real> vcol_wf;   // (ray): hemisphere weight at the top face
   void VetColInit();           // checks, ray tables, buffers (first TauClosureInit)
   void VetColBuild();          // the formal solution -> tau_ten (chi, n)
+  void VetColBuildTeam(bool dmp);   // the same, one team per column (vet_col_team)
   void VetColReport();
   void VetColDumpColumn(int ncall);
 

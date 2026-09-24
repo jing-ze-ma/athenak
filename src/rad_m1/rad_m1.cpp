@@ -540,6 +540,11 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   vcol_nc = vcol_np = vcol_nmu = vcol_every = vcol_nray = vcol_dump_every = 0;
   vcol_built = false;
   vcol_time = vcol_ncall = vcol_nskip = 0.0;
+  vcol_sq = false;
+  vcol_team = false;
+  vcol_qmin = vcol_qmax = 0.0;
+  vcol_lc = 1;
+  vcol_ts = vcol_lcin = 0;
   {std::string cl = pin->GetOrAddString("rad_m1","closure","m1");
   chi_kind = M1_CHI_LEVERMORE;
   if (cl.compare("m1") == 0) {
@@ -574,6 +579,12 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     vcol_np = pin->GetOrAddInteger("rad_m1","vet_col_nsub",1);
     vcol_nmu = pin->GetOrAddInteger("rad_m1","vet_col_nmu",4);
     vcol_every = pin->GetOrAddInteger("rad_m1","vet_col_every",1);
+    vcol_sq = pin->GetOrAddBoolean("rad_m1","vet_col_surface_q",false);
+    vcol_qmin = pin->GetOrAddReal("rad_m1","vet_col_surface_qmin",1.0e-3);
+    vcol_qmax = pin->GetOrAddReal("rad_m1","vet_col_surface_qmax",1.0);
+    vcol_team = pin->GetOrAddBoolean("rad_m1","vet_col_team",true);
+    vcol_ts = pin->GetOrAddInteger("rad_m1","vet_col_team_size",0);
+    vcol_lcin = pin->GetOrAddInteger("rad_m1","vet_col_chunk",0);
     std::string ax = pin->GetOrAddString("rad_m1","vet_col_axis","radial");
     if (ax.compare("flux") == 0) {
       vcol_axis_flux = true;
