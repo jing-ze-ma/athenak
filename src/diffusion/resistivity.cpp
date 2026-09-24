@@ -274,6 +274,7 @@ void Resistivity::AddEMFConstantResist(const DvceFaceFld4D<Real> &b0,
     int scr_level = 0;
     size_t scr_size = ScrArray1D<Real>::shmem_size(ncells1) * 3;
 
+    scr_level = TeamScratchLevel(scr_size, 0);
     par_for_outer("ohm1", DevExeSpace(), scr_size, scr_level, 0, nmb1,
     KOKKOS_LAMBDA(TeamMember_t member, const int m) {
       ScrArray1D<Real> j1(member.team_scratch(scr_level), ncells1);
@@ -305,6 +306,7 @@ void Resistivity::AddEMFConstantResist(const DvceFaceFld4D<Real> &b0,
     int scr_level = 0;
     size_t scr_size = ScrArray1D<Real>::shmem_size(ncells1) * 3;
 
+    scr_level = TeamScratchLevel(scr_size, 0);
     par_for_outer("ohm2", DevExeSpace(), scr_size, scr_level, 0, nmb1, js, je+1,
     KOKKOS_LAMBDA(TeamMember_t member, const int m, const int j) {
       ScrArray1D<Real> j1(member.team_scratch(scr_level), ncells1);
@@ -337,6 +339,7 @@ void Resistivity::AddEMFConstantResist(const DvceFaceFld4D<Real> &b0,
   int scr_level = 0;
   size_t scr_size = ScrArray1D<Real>::shmem_size(ncells1) * 3;
 
+  scr_level = TeamScratchLevel(scr_size, 0);
   par_for_outer("ohm3", DevExeSpace(), scr_size, scr_level, 0, nmb1, ks, ke+1, js, je+1,
   KOKKOS_LAMBDA(TeamMember_t member, const int m, const int k, const int j) {
     ScrArray1D<Real> j1(member.team_scratch(scr_level), ncells1);
@@ -397,6 +400,7 @@ void Resistivity::AddEMFGeneralResist(const DvceFaceFld4D<Real> &b0,
     int scr_level = 0;
     size_t scr_size = ScrArray1D<Real>::shmem_size(ncells1) * 3;
 
+    scr_level = TeamScratchLevel(scr_size, 0);
     par_for_outer("ohm1", DevExeSpace(), scr_size, scr_level, 0, nmb1,
     KOKKOS_LAMBDA(TeamMember_t member, const int m) {
       ScrArray1D<Real> j1(member.team_scratch(scr_level), ncells1);
@@ -433,6 +437,7 @@ void Resistivity::AddEMFGeneralResist(const DvceFaceFld4D<Real> &b0,
     int scr_level = 0;
     size_t scr_size = ScrArray1D<Real>::shmem_size(ncells1) * 3;
 
+    scr_level = TeamScratchLevel(scr_size, 0);
     par_for_outer("ohm2", DevExeSpace(), scr_size, scr_level, 0, nmb1, js, je+1,
     KOKKOS_LAMBDA(TeamMember_t member, const int m, const int j) {
       ScrArray1D<Real> j1(member.team_scratch(scr_level), ncells1);
@@ -468,6 +473,7 @@ void Resistivity::AddEMFGeneralResist(const DvceFaceFld4D<Real> &b0,
   size_t scr_size = ScrArray1D<Real>::shmem_size(ncells1) * 3;
 
   auto &mb_bcs_ = pmy_pack->pmb->mb_bcs;
+  scr_level = TeamScratchLevel(scr_size, 0);
   par_for_outer("ohm3", DevExeSpace(), scr_size, scr_level, 0, nmb1, ks, ke+1, js, je+1,
   KOKKOS_LAMBDA(TeamMember_t member, const int m, const int k, const int j) {
     ScrArray1D<Real> j1(member.team_scratch(scr_level), ncells1);

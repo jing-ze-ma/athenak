@@ -83,6 +83,7 @@ void Viscosity::AddIsotropicViscousFluxConstVisc(const DvceArray5D<Real> &w0,
   auto flx1 = flx.x1f;
 
   const Real nu_iso_ = nu_iso;   // alias: naming the member captures `this`
+  scr_level = TeamScratchLevel(scr_size, 0);
   par_for_outer("visc1",DevExeSpace(), scr_size, scr_level, 0, nmb1, ks, ke, js, je,
   KOKKOS_LAMBDA(TeamMember_t member, const int m, const int k, const int j) {
     ScrArray1D<Real> fvx(member.team_scratch(scr_level), ncells1);

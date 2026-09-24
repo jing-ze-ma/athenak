@@ -67,6 +67,7 @@ TaskStatus Resistivity::RKUpdate(Driver *pdriver, int stage) {
   const Real mu_ = mu;
   const Real nu_ = nu;
 
+  scr_level = TeamScratchLevel(scr_size, 0);
   par_for_outer("resmhd_update",DevExeSpace(),scr_size,scr_level,0,nmb1,ks,ke,js,je,
   KOKKOS_LAMBDA(TeamMember_t member, const int m, const int k, const int j) {
     ScrArray1D<Real> divf(member.team_scratch(scr_level), ncells1);

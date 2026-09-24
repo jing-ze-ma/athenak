@@ -54,6 +54,7 @@ TaskStatus Hydro::RKUpdate(Driver *pdriver, int stage) {
   int scr_level = 0;
   size_t scr_size = ScrArray1D<Real>::shmem_size(ncells1);
 
+  scr_level = TeamScratchLevel(scr_size, 0);
   par_for_outer("h_update",DevExeSpace(),scr_size,scr_level,0,nmb1,0,nvar-1,ks,ke,js,je,
   KOKKOS_LAMBDA(TeamMember_t member, const int m, const int n, const int k, const int j) {
     ScrArray1D<Real> divf(member.team_scratch(scr_level), ncells1);

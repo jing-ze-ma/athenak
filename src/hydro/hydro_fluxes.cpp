@@ -183,6 +183,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
 
   const Real wbreb_ = wbreb_h ? 1.0 : 0.0;
 
+  scr_level = TeamScratchLevel(scr_size, scratch_level);
   par_for_outer("hflux_x1",DevExeSpace(), scr_size, scr_level, 0, nmb1, kl, ku, jl, ju,
   KOKKOS_LAMBDA(TeamMember_t member, const int m, const int k, const int j) {
     auto wbcnt = wbcnt_;
@@ -512,6 +513,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
       if (!pmy_pack->pmesh->two_d) { kl = ks-1, ku = ke+1; }
     }
 
+    scr_level = TeamScratchLevel(scr_size, scratch_level);
     par_for_outer("hflux_x2",DevExeSpace(), scr_size, scr_level, 0, nmb1, kl, ku,
     KOKKOS_LAMBDA(TeamMember_t member, const int m, const int k) {
       ScrArray2D<Real> scr1(member.team_scratch(scr_level), nvars, ncells1);
@@ -705,6 +707,7 @@ void Hydro::CalculateFluxes(Driver *pdriver, int stage) {
       if (use_fofc) { kl = ks-2, ku = ke+2; }
     }
 
+    scr_level = TeamScratchLevel(scr_size, scratch_level);
     par_for_outer("hflux_x3",DevExeSpace(), scr_size, scr_level, 0, nmb1, jl, ju,
     KOKKOS_LAMBDA(TeamMember_t member, const int m, const int j) {
       ScrArray2D<Real> scr1(member.team_scratch(scr_level), nvars, ncells1);

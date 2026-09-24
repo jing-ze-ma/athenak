@@ -8,6 +8,8 @@
 //! \file athena.hpp
 //  \brief contains Athena++ general purpose types, structures, enums, etc.
 
+#include <stdexcept>
+#include <type_traits>
 #include <string>
 #include <cstdint>
 
@@ -362,6 +364,36 @@ inline void par_for(const std::string &name, ExeSpace exec_space,
     j += jl;
     function(m, n, k, j, i);
   });
+}
+
+//------------------------------------------
+// Team scratch level that can be launched: returns scr_level unchanged unless it is 0 and
+// the device cannot fit scr_size bytes of level-0 (on-chip) team scratch in any team size
+// (e.g. MHD fluxes at nx1 > ~264 on a 64 KB-LDS AMD GPU), in which case it returns 1
+// (global memory). Every size that launches on level 0 today stays on level 0. Host
+// backends are never changed. Kernels must use the returned level in team_scratch().
+struct TeamScratchProbe {
+  KOKKOS_INLINE_FUNCTION void operator()(const TeamMember_t &) const {}
+};
+inline int TeamScratchLevel(size_t scr_size, int scr_level) {
+  if constexpr (std::is_same_v<DevExeSpace, Kokkos::DefaultHostExecutionSpace>) {
+    return scr_level;
+  } else {
+    // cache of sizes already probed (sizes are few and fixed per run)
+    static size_t fits_max = 32768, fails_min = SIZE_MAX;
+    if (scr_level != 0 || scr_size <= fits_max) return scr_level;
+    if (scr_size >= fails_min) return 1;
+    Kokkos::TeamPolicy<> policy(DevExeSpace(), 1, Kokkos::AUTO);
+    policy.set_scratch_size(0, Kokkos::PerTeam(scr_size));
+    try {
+      policy.team_size_recommended(TeamScratchProbe(), Kokkos::ParallelForTag());
+    } catch (const std::runtime_error &) {
+      fails_min = scr_size;
+      return 1;
+    }
+    fits_max = scr_size;
+    return 0;
+  }
 }
 
 //------------------------------------------
