@@ -281,8 +281,8 @@ inline Real rt_ckscr_gb = 16.0;
 inline void CkScrEnsure(const size_t len) {
   if (rt_ckscr_ptr != nullptr && rt_ckscr_len >= len) return;
   if (rt_ckscr_ptr != nullptr) delete rt_ckscr_ptr;
-  rt_ckscr_ptr = new DvceArray1D<Real>(Kokkos::ViewAllocateWithoutInitializing("rt_ckscr"),
-                                       len);
+  rt_ckscr_ptr = new DvceArray1D<Real>(
+      Kokkos::ViewAllocateWithoutInitializing("rt_ckscr"), len);
   rt_ckscr_len = len;
 }
 
