@@ -27,7 +27,9 @@ problem/ck_impl_lin=true problem/ck_impl_lin_thr=1 problem/ck_impl_fuse=true \
 problem/ck_impl_jac_lin=true problem/ck_impl_cvsec=true"
 C2="$T4 problem/ck_impl_once=true problem/ck_impl_xstep=2 problem/ck_impl_jreuse=0.2 \
 problem/ck_impl_pred=true problem/ck_impl_pred_fac=0.5 problem/ck_impl_nosync=true"
-case $ARM in c2) X="$C2" ;; e4) X="$C2 problem/ck_impl_every=4" ;; esac
+case $ARM in c2) X="$C2" ;; e4) X="$C2 problem/ck_impl_every=4" ;;
+  c2p) X="$C2 problem/ck_impl_tol=0.9e-8" ;;   # noise reference: c2 at 0.9 x the Newton tol
+esac
 read T0 DT0 NC0 <<< $(python3 $T/rstinfo.py $RST)
 TL=$(python3 -c "print(2.44e7 + 3*3.05e5 + 100.0)")
 echo "RST $RST t=$T0 ncycle=$NC0 md5=$(md5sum $RST | cut -c1-32) BIN $BIN md5=$(md5sum $BIN | cut -c1-32) TL=$TL"

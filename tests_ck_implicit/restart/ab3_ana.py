@@ -105,56 +105,66 @@ def hst(arm):
     return h[:, 0], h[:, 6]
 
 
-ROOT = sys.argv[1]
-REF = sys.argv[2] if len(sys.argv) > 2 else 'c2'
-ARM = sys.argv[3] if len(sys.argv) > 3 else 'e4'
-R = {a: {round(rsttime(f)/P_ROT, 2): f
-         for f in glob.glob(os.path.join(ROOT, a, 'rst', '*.rst'))} for a in (REF, ARM)}
-L = {a: logs(a) for a in (REF, ARM)}
-H = {a: hst(a) for a in (REF, ARM)}
-rots = sorted(r for r in R[REF] if r in R[ARM] and abs(r*2 - round(r*2)) < 1e-6)
-print('%s - %s, T relative difference; per band rms day/night [bar]; kinks >0.1/>0.3 in '
-      '1e-5..1e-7 and <1e-7 bar per arm; nc, passes, |gap| over the interval ending there'
-      % (ARM, REF))
-print('%6s %8s %8s %8s %8s' % ('rot', 'max', 'rms', 'rms day', 'rms ngt')
-      + ''.join(' %17s' % b[0] for b in BANDS)
-      + ' | %-15s %-15s | %9s %9s | %5s %5s %5s %5s | %8s %8s | %9s %9s %9s'
-      % ('kinks ' + REF, 'kinks ' + ARM, 'dE/E', 'tE', 'nc' + REF[:2], 'nc' + ARM[:2],
-         'ps' + REF[:2], 'ps' + ARM[:2], 'gap' + REF[:2], 'gap' + ARM[:2],
-         'edef', 'linerr', 'lin max'))
-prev = None
-for r in rots:
-    a = decode(R[REF][r])
-    b = decode(R[ARM][r])
-    d = np.abs(b['T']/a['T'] - 1.0)
-    row = '%6.2f %8.1e %8.1e %8.1e %8.1e' % (r, d.max(), np.sqrt((d**2).mean()),
-                                             np.sqrt((d[DAY]**2).mean()),
-                                             np.sqrt((d[~DAY]**2).mean()))
-    for nm, hi, lo in BANDS:
-        sel = (a['p'] < hi*1e6) & (a['p'] >= lo*1e6)
-        sd, sn = sel & DAY, sel & ~DAY
-        row += ' %8.1e/%8.1e' % (np.sqrt((d[sd]**2).mean()) if sd.any() else 0,
-                                 np.sqrt((d[sn]**2).mean()) if sn.any() else 0)
-    ka, kb = kinks(a['T'], a['p']), kinks(b['T'], b['p'])
-    row += ' | %-15s %-15s' % (' '.join('%d/%d' % k for k in ka),
-                               ' '.join('%d/%d' % k for k in kb))
-    t = r*P_ROT
-    ea = np.interp(t, *H[REF])
-    eb = np.interp(t, *H[ARM])
-    row += ' | %9.2e %9.2e' % (eb/ea - 1.0, ea)
-    t0 = (r - 0.5)*P_ROT
-    st = []
-    for arm in (REF, ARM):
-        cyc, calls, cad = L[arm]
-        sel = [c for c in calls if t0 < c2t(cyc, c[0]) <= t]
-        st.append((sum(c[3] for c in sel), np.mean([c[1] for c in sel]) if sel else 0,
-                   np.mean([c[2] for c in sel]) if sel else 0))
-    row += ' | %5d %5d %5.2f %5.2f | %8.1e %8.1e' % (st[0][0], st[1][0], st[0][1],
-                                                     st[1][1], st[0][2], st[1][2])
-    cyc, calls, cad = L[ARM]
-    cs = [c for c in cad if t0 < c2t(cyc, c[0]) <= t]
-    ed = [c[1] for c in cs if c[1] != 0.0]
-    le = [c[2] for c in cs if c[2] >= 0.0]
-    row += ' | %9.2e %9.2e %9.2e' % (np.mean(ed) if ed else 0, np.mean(le) if le else 0,
-                                     max(le) if le else 0)
-    print(row)
+ROOT = None
+
+
+def main():
+    global ROOT
+    ROOT = sys.argv[1]
+    REF = sys.argv[2] if len(sys.argv) > 2 else 'c2'
+    ARM = sys.argv[3] if len(sys.argv) > 3 else 'e4'
+    R = {a: {round(rsttime(f)/P_ROT, 2): f
+             for f in glob.glob(os.path.join(ROOT, a, 'rst', '*.rst'))}
+         for a in (REF, ARM)}
+    L = {a: logs(a) for a in (REF, ARM)}
+    H = {a: hst(a) for a in (REF, ARM)}
+    rots = sorted(r for r in R[REF] if r in R[ARM] and abs(r*2 - round(r*2)) < 1e-6)
+    print('%s - %s, T relative difference; per band rms day/night [bar]; kinks '
+          '>0.1/>0.3 in 1e-5..1e-7 and <1e-7 bar per arm; nc, passes, |gap| over the '
+          'interval ending there'
+          % (ARM, REF))
+    print('%6s %8s %8s %8s %8s' % ('rot', 'max', 'rms', 'rms day', 'rms ngt')
+          + ''.join(' %17s' % b[0] for b in BANDS)
+          + ' | %-15s %-15s | %9s %9s | %5s %5s %5s %5s | %8s %8s | %9s %9s %9s'
+          % ('kinks ' + REF, 'kinks ' + ARM, 'dE/E', 'tE', 'nc' + REF[:2], 'nc' + ARM[:2],
+             'ps' + REF[:2], 'ps' + ARM[:2], 'gap' + REF[:2], 'gap' + ARM[:2],
+             'edef', 'linerr', 'lin max'))
+    for r in rots:
+        a = decode(R[REF][r])
+        b = decode(R[ARM][r])
+        d = np.abs(b['T']/a['T'] - 1.0)
+        row = '%6.2f %8.1e %8.1e %8.1e %8.1e' % (r, d.max(), np.sqrt((d**2).mean()),
+                                                 np.sqrt((d[DAY]**2).mean()),
+                                                 np.sqrt((d[~DAY]**2).mean()))
+        for nm, hi, lo in BANDS:
+            sel = (a['p'] < hi*1e6) & (a['p'] >= lo*1e6)
+            sd, sn = sel & DAY, sel & ~DAY
+            row += ' %8.1e/%8.1e' % (np.sqrt((d[sd]**2).mean()) if sd.any() else 0,
+                                     np.sqrt((d[sn]**2).mean()) if sn.any() else 0)
+        ka, kb = kinks(a['T'], a['p']), kinks(b['T'], b['p'])
+        row += ' | %-15s %-15s' % (' '.join('%d/%d' % k for k in ka),
+                                   ' '.join('%d/%d' % k for k in kb))
+        t = r*P_ROT
+        ea = np.interp(t, *H[REF])
+        eb = np.interp(t, *H[ARM])
+        row += ' | %9.2e %9.2e' % (eb/ea - 1.0, ea)
+        t0 = (r - 0.5)*P_ROT
+        st = []
+        for arm in (REF, ARM):
+            cyc, calls, cad = L[arm]
+            sel = [c for c in calls if t0 < c2t(cyc, c[0]) <= t]
+            st.append((sum(c[3] for c in sel), np.mean([c[1] for c in sel]) if sel else 0,
+                       np.mean([c[2] for c in sel]) if sel else 0))
+        row += ' | %5d %5d %5.2f %5.2f | %8.1e %8.1e' % (st[0][0], st[1][0], st[0][1],
+                                                         st[1][1], st[0][2], st[1][2])
+        cyc, calls, cad = L[ARM]
+        cs = [c for c in cad if t0 < c2t(cyc, c[0]) <= t]
+        ed = [c[1] for c in cs if c[1] != 0.0]
+        le = [c[2] for c in cs if c[2] >= 0.0]
+        row += ' | %9.2e %9.2e %9.2e' % (np.mean(ed) if ed else 0,
+                                         np.mean(le) if le else 0, max(le) if le else 0)
+        print(row)
+
+
+if __name__ == '__main__':
+    main()

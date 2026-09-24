@@ -19,7 +19,7 @@ export OMP_NUM_THREADS=1
 args() { case $1 in semi) echo "" ;; t4) echo "$T4" ;; c2) echo "$C2" ;;
   c2e4) echo "$C2 problem/ck_impl_every=4" ;; c2e4g) echo "$C2 problem/ck_impl_every=4 problem/ck_impl_every_thr=0.02" ;; esac; }
 inp() { echo $T/restart/wp_rst.athinput; }
-G=$Q/gate
+G=$Q/${GATEDIR:-gate}
 run() {  # run <dir> <bin> <inp> <arm> <nlim>
   rm -rf $1; mkdir -p $1
   (cd $1 && nice -n 10 $2 -i $(inp $3) $GEO $O $(args $4) time/nlim=$5 > run.log 2>&1; echo "rc=$? $1" >> $G/rc.txt)
@@ -30,7 +30,7 @@ rrun() { # rrun <dir> <bin> <from-dir> <nlim>
   (cd $1 && nice -n 10 $2 -r $f $O time/nlim=$4 > run.log 2>&1; echo "rc=$? $1" >> $G/rc.txt)
 }
 mkdir -p $G; : > $G/rc.txt
-ARMS="semi t4 c2 c2e4 c2e4g"
+ARMS=${ARMS:-"semi t4 c2 c2e4 c2e4g"}
 # phase 1: straight and first halves
 for a in $ARMS; do
   run $G/wpc/$a/s8 $NEW wpc $a 8 &

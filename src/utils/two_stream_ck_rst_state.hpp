@@ -20,7 +20,9 @@
 //! not touch the solution.
 
 #include <cstdint>
+#include <cstring>
 #include <iostream>
+#include <utility>
 #include <vector>
 
 #include "athena.hpp"
@@ -34,6 +36,7 @@
 namespace two_stream_rt {
 
 inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt);
+inline void CkRstScalars();
 
 // ---- the ck_impl_xstep snapshot: the state pass 0 of the last STORING call read, and
 // that call's bdt.  Refreshed on every store (a device-to-device copy of u0, wtemp,
@@ -98,23 +101,31 @@ inline void CkXsSnap(Mesh *pm, const Real bdt) {
 inline int CkRstCollect(Mesh *pm, HostArray5D<Real> &out, CkRstHdr &h, int nmb,
                         int n3, int n2, int n1) {
   std::memset(&h, 0, sizeof(h));
-  if (!ck_implicit || ck_thk_ptr == nullptr) return 0;
+  // a restarted run that has not made an implicit call yet (e.g. only linearised
+  // cadence steps since the restart) still holds its state in the staging: pass it on
+  if (ck_rst_have) CkRstScalars();
+  const bool thk_stg = (ck_thk_ptr == nullptr) && CkRstStaged(kCkSlabThk);
+  if (!ck_implicit || (ck_thk_ptr == nullptr && !thk_stg)) return 0;
   MeshBlockPack *pmbp = pm->pmb_pack;
   const bool hyd = (pmbp->phydro != nullptr);
   DvceArray5D<Real> u0 = hyd ? pmbp->phydro->u0 : pmbp->pmhd->u0;
   // does the next call re-apply a stored operator on some rank?  Then every rank writes
   // the snapshot slabs (a rank without one writes zeros, and its XSCYC says -1)
-  int need = (ck_impl_xstep > 0 && ck_xs_have && ck_impl_xs_cyc >= 0 &&
+  const bool xs_stg = !ck_xs_have && CkRstStaged(kCkSlabXsK);
+  int need = (ck_impl_xstep > 0 && (ck_xs_have || xs_stg) && ck_impl_xs_cyc >= 0 &&
               pm->ncycle - ck_impl_xs_cyc < ck_impl_xstep) ? 1 : 0;
 #if MPI_PARALLEL_ENABLED
   MPI_Allreduce(MPI_IN_PLACE, &need, 1, MPI_INT, MPI_MAX, MPI_COMM_WORLD);
 #endif
   std::vector<int> ids;
   ids.push_back(kCkSlabThk);
-  if (ck_cad_ptr != nullptr) {
+  const bool cad_stg = (ck_cad_ptr == nullptr) && CkRstStaged(kCkSlabCad0);
+  if (ck_cad_ptr != nullptr || cad_stg) {
     for (int s=0; s<4; ++s) ids.push_back(kCkSlabCad0 + s);
   }
-  if (ck_impl_cvkeep && ck_cv_ptr != nullptr) ids.push_back(kCkSlabCv);
+  if (ck_impl_cvkeep && (ck_cv_ptr != nullptr || CkRstStaged(kCkSlabCv))) {
+    ids.push_back(kCkSlabCv);
+  }
   if (ck_impl_xstep > 0) {
     ids.push_back(kCkSlabXsCyc);
     ids.push_back(kCkSlabXsBdt);
@@ -136,7 +147,19 @@ inline int CkRstCollect(Mesh *pm, HostArray5D<Real> &out, CkRstHdr &h, int nmb,
   for (int s=0; s<ns; ++s) {
     const int id = ids[s];
     auto dst = Kokkos::subview(out, s, ALL, ALL, ALL, ALL);
-    if (id == kCkSlabThk) {
+    // still staged (not consumed since the restart): copy the staged bytes
+    const bool stg = CkRstStaged(id) &&
+        ((id == kCkSlabThk && thk_stg) || (id == kCkSlabCv && ck_cv_ptr == nullptr) ||
+         (id >= kCkSlabCad0 && id < kCkSlabCad0 + 4 && cad_stg) ||
+         (id >= kCkSlabXsW && xs_stg));
+    if (stg) {
+      const std::size_t nd = dst.size();
+      if (ck_rst_stage[id].size() == nd) {
+        std::memcpy(dst.data(), ck_rst_stage[id].data(), nd*sizeof(Real));
+      } else {
+        Kokkos::deep_copy(dst, 0.0);
+      }
+    } else if (id == kCkSlabThk) {
       Kokkos::deep_copy(dst, Kokkos::subview(*ck_thk_ptr, nm, ALL, ALL, ALL));
     } else if (id >= kCkSlabCad0 && id < kCkSlabCad0 + 4) {
       Kokkos::deep_copy(dst, Kokkos::subview(*ck_cad_ptr, nm, id - kCkSlabCad0,

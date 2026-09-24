@@ -1,0 +1,345 @@
+# deep_hot_jupiter_cs_prod4 -- LAUNCHED cubed-sphere dhj MHD production.
+#
+# LAUNCHED 2026-09-22 (user-approved) from bench/cs_mhd_prod4, FROM SCRATCH (no -r).
+#   binary  ./athena, md5 f95130b22e6b7f9f57d86ca44da22058
+#   commit  395db5bc10893de49fc22d072cc92f708bf95692 (rt-integration HEAD, clean archive)
+#   jobs    11941995 -> 11941996 -> 11941997 -> 11941998 (4 chained apu links, 23:55:00 each)
+#   see BUILD_COMMIT.txt (build recipe + strings verification) and NOTES.md (monitoring).
+#
+# 7. <mhd> max_eta 1e13 -> 5e12 (2026-09-22, user decision).  With the spherical two-stream the
+#    night-side shell at r/Rp 1.24 (~7 mbar, T 1406-1461 K) sits 6-14 K below the alkali-ionisation
+#    temperature at which eta reaches max_eta, so the OHMIC limit (dt ~12.9 s) replaced the MHD CFL
+#    (~18-20 s) -- in sph AND sphbeam; the beam warms only the top (1e-6..1e-3 bar).  max_eta 5e12
+#    returns both to the CFL limit (sph 17.4, sphbeam 18.0 s) at no cost to the old form; 1e14 is
+#    worse.  tests_gpu_ab_0922/README.md "Ohmic cap in sphbeam".  Physics caveat: caps the
+#    resistivity lower in the neutral night side.
+# 8. <mhd> pfloor 1e-3 -> 1e-5 BARYE (= 1e-9 -> 1e-11 bar; 2026-09-22, user decision).  The centre-to-centre ck layers
+#    (d8f00d49) give the top cell its correct (46 % larger) emission; the old staggered layer had
+#    averaged it with the ghost above the domain and kept the slab artificially warm, and pfloor
+#    1e-3 was calibrated for that.  With the correct emission the slab lands on the floor: efloor
+#    events 27048 -> 0 on the CPU reproducer with pfloor 1e-5, T(p) unchanged to 5 digits,
+#    dE/E = the physical radiative loss (tests_ck_topslab/README.md).  GPU confirmation arm
+#    bench/pfloor_ab/p1e5 pending at the time of writing; the earlier floor study
+#    (dhj-floors-for-1e-6-bar) chose 1e-3 with tfloor_kelvin 50 crashing -- re-check tfloor.
+# 9. <problem> ck_sweep_form = 1 (tm, 2026-09-22, user decision): the exact probe-free
+#    transfer-matrix (adding-doubling) spherical sweep.  The 4-pass form's probe-lagged mixing
+#    constant is only O(beta^2): 2.3e-2 in the face flux at the domain's area ratio; tm and the
+#    S/D form agree to 3.5e-17.  GPU 14.35 cycles/s vs 10.10 (4-pass) and 13.72 (plane-parallel):
+#    the spherical penalty is gone.  Refuses ck_implicit (not needed here) and ck_spherical=false.
+#    tests_ck_sweep_form/README.md.
+
+# Base = bench/cs_mhd_prod3/deep_hot_jupiter.athinput (reached rot 283 clean). Six changes
+# from that file, each documented below and reasoned against the current (2026-09-22) HEAD
+# of rt-integration:
+#
+# 1. <problem> ck_spherical = true, ck_beam_sph = true
+#    Turns on the spherical form of the correlated-k thermal two-stream and the
+#    pseudo-spherical direct stellar beam (src/pgen/deep_hot_jupiter_rt.cpp:434-441,
+#    src/utils/two_stream_rt.hpp:951-1067; both default false = bitwise plane-parallel).
+#    See tests_ck_sph/README.md, tests_ck_sph/README_beam.md and
+#    tests_gpu_ab_0922/README.md for the measured effect (~-2.9..-5.9% at ck_spherical
+#    only per tests_ck_sph/README.md 0.3) -- but read the caveat above before trusting
+#    that number is isolated at this resolution.
+#
+# 2. Well-balanced hydrostatic source ON with the polytropic closure, restoring what
+#    cs_mhd_prod2 / sp_mhd_prod3 ran (prod3 deliberately turned this OFF -- see prod3's
+#    own header (b) and its <mhd> comment block):
+#      <mhd> wellbalance_dynamic = true
+#      <mhd> wb_x1              = true
+#      <mhd> wb_option          = polytropic
+#      <mhd> wb_cache_every     = 0        # NOT 10 -- see fmode-wb-cache-culprit.md:
+#                                          # a stale cache (every-10) pumps spurious energy
+#                                          # into the box-convection f-mode (gamma 0.86 ->
+#                                          # 0.05, 6-sigma, when switched to every-1/0).
+#                                          # 0 recomputes the WB background every stage.
+#      <mhd> cs_wellbalanced_src = true
+#    Placement: cs_wellbalanced_src is read from the <mhd> block, not <coordinates> or
+#    <mesh> -- src/coordinates/coordinates.cpp:43 reads
+#    `pin->GetOrAddBoolean("mhd","cs_wellbalanced_src",false)` even though the flag lives
+#    on the Coordinates object (coordinates.hpp:195-198) and is consumed in
+#    coordinates.cpp:1491 (SrcTermsGnomonicEquiangle). All four wb_* keys and
+#    cs_wellbalanced_src are likewise read from "mhd" (src/mhd/mhd.cpp:210-267;
+#    src/coordinates/coordinates.cpp:43). Verdict in docs/dev/switch_inventory_2026-09-22.md
+#    line 317: mhd/cs_wellbalanced_src = KEEP.
+#
+#    CONSEQUENCE for rot_potential / etotgrav (prod3 <problem> comment, its own lines
+#    ~150-170, citing deep_hot_jupiter_rt.cpp:2270 in that file's line numbering, now at
+#    src/pgen/deep_hot_jupiter_rt.cpp:2479):
+#      const bool rotpot_src = rotpot && use_wellbalance_dynamic;
+#    problem/rot_potential stays true unchanged (both prod3 and this file). With WB OFF
+#    (prod3) rotpot_src was false, so the radial centrifugal force ran through the
+#    EXPLICIT term (deep_hot_jupiter_rt.cpp near :2596/:2664, `oor` branch), while
+#    etotgrav still carried the centrifugal potential in the energy flux because that
+#    array is filled whenever `use_etotgrav || use_wellbalance_dynamic` (mhd.cpp:221) --
+#    prod3 was self-consistent only because etotgrav = true regardless.
+#    With WB turned ON here, rotpot_src becomes TRUE (rot_potential already true, and now
+#    use_wellbalance_dynamic is also true), so the radial centrifugal force SWITCHES from
+#    the explicit term to the WB-consistent potential-array path (the `rotpot_src ? 0.0 :
+#    oor` and `rotpot_src ? SQR(omega)*(...) : 0.0` branches in deep_hot_jupiter_rt.cpp).
+#    This is exactly the path cs_mhd_prod2 and sp_mhd_prod3 ran; no other <problem> key
+#    needs to change. <mhd>/etotgrav is left at true (already required either way).
+#
+# 3. <mhd> rad_angular = false
+#    Master switch for the HORIZONTAL (x2/x3) radiative conduction, committed in 213095e4
+#    and read at src/diffusion/conduction.cpp:136 as
+#    `pin->GetOrAddBoolean(block,"rad_angular",true)` where `block` is whichever of
+#    <hydro>/<mhd> owns the conduction module -- here that is <mhd>, so the key belongs in
+#    <mhd> as written. Default is true, so this line is an explicit opt-out of the
+#    transverse operator; rad_cap_ang is left as prod3 had it (0.5) because
+#    conduction.cpp:938-940 / :1580-1584 return immediately when rad_angular is false, so
+#    the angular cap becomes a silent no-op rather than doing anything (kept only so the
+#    diff against prod3 stays small and documents the intent).
+#
+# 4. <time> dt_min = 1.0e-3 (was 1.0e-2 in prod3)
+#    Lower abort floor on the timestep collapse guard: the WB source restores different
+#    dt-limiting physics than prod3 ran (fold cs_wellbalanced_src + wb polytropic back in),
+#    and rad_angular=false removes the transverse conduction dt term entirely
+#    (conduction.cpp:2842-2846: dt2/dt3 for conduction are gated by `radiative &&
+#    rad_angular`), so headline dt could sit closer to the floor during the first few
+#    cycles after enrolling ck_spherical/ck_beam_sph than prod3's steady 5-20 s. 1e-3
+#    gives one more decade of margin before the abort fires, matching the more
+#    conservative value already used elsewhere on this branch (e.g. cs_ens arms).
+#
+# 5. Removed keys (no longer read anywhere in src/ at this HEAD; verified with
+#    `grep -rn '"<name>"' src/` returning zero hits, and confirmed by git history):
+#      <problem> cs_full_rotation   -- dropped in commit ae831665: "the cubed sphere
+#                                       always applies the full rotation" (the old
+#                                       Cartesian beta-plane fallback was a bug, f75ad783);
+#                                       behavior with the key removed is unconditionally
+#                                       what cs_full_rotation = true used to select, so
+#                                       omitting it changes nothing physically.
+#      <mhd>     cs_gs07_emf        -- dropped in commit b71ef392: "the cubed sphere now
+#                                       takes the same GS07 upwind corner-EMF branch as
+#                                       every other grid" (unconditional); the plain
+#                                       four-face average survives only behind the
+#                                       unrelated diagnostic <mhd>/bs_emf, which prod3 does
+#                                       not set either. Omitting cs_gs07_emf changes
+#                                       nothing (prod3 had it =true, which is now the only
+#                                       behavior).
+#    No key here is marked ABANDON in docs/dev/switch_inventory_2026-09-22.md (checked
+#    every parameter of prod3's <problem>/<mhd>/<hydro> blocks against that table).
+#
+# 6. Everything else (mesh, meshblock, radial stretch coefficients, EOS/table setup,
+#    resistivity, floors, rot_potential, grav_point_mass, ck_table paths, output cadence,
+#    restart cadence) is byte-identical to bench/cs_mhd_prod3/deep_hot_jupiter.athinput.
+#    rt_cell_report / rt_report_every diagnostics are left OFF (unset, as in prod3) for
+#    production.
+#
+# Parse-checked with the CPU binary build_cpu_box/src/athena -n -i <file> (different pgen
+# than that binary was built for -- box_convection -- so only the parser and block
+# placement were checked, not physics): PASSED, all six changed/added keys land in the
+# blocks intended above and no parser error occurred. See the tail of this file's
+# accompanying check log for the confirmation.
+
+<comment>
+problem   = ultra-hot Jupiter, general EOS + metal ionization + EOS resistivity
+reference = Heng et al. MNRAS 413, 2380 (2011); Perna et al. ApJ 719, 1421 (2010)
+
+<job>
+basename  = dhj
+
+<mesh>
+nghost    = 2
+nx1       = 128
+                        # The science requirement is 10 cells per scale height BELOW the
+                        # 1e-6 bar level; a uniform nx1 = 200 (dr = 5.558e7, the ck_limb
+                        # value) delivers only median 7.3 / p05 2.9 there.  Stretching
+                        # concentrates cells across the scale-height minimum and coarsens
+                        # the near-vacuum top, giving median 10.1 / p05 7.3 / p01 5.1 for
+                        # 1.70x the cells of the uniform plan.  See NOTES.md.
+x1min     = 9.44e9
+x1max     = 2.0556e10   # MEASURED, not estimated.  ck_grav_size ran the same physics on
+                        # a deliberately oversized 1.90e10 grid; at 21 rotations the 99th
+                        # percentile of the 1e-6 bar isobar over the terminator columns
+                        # (lon = +-90 +-20, |lat| < 30) sits at 1.794e10 with a local
+                        # scale height of 1.24e9 cm.  This x1max puts ~1.8 H above the
+                        # worst terminator columns, which is what ck_limb delivers and
+                        # was accepted as meeting the science goal -- a literal "+3 H"
+                        # would want 2.166e10 / nx1 = 220 and is over-built.
+                        # The residual drift is INWARD (-1.1e7 cm/rot and decelerating)
+                        # while H has been flat since rotation 4, so the buffer at this
+                        # x1max can only grow.  See ck_grav_size/NOTES.md.
+ix1_bc    = user
+ox1_bc    = user
+
+# 64, not 56, so that every direction is a power of two and the meshblock split is free to
+# use the round numbers -- see the <meshblock> note below.  Costs 14.3% more cells than the
+# 56 this ran at previously.
+nx2       = 32
+x2min     = -1.0        # -1 lets the pgen set the full polar range
+x2max     = 1.0
+ix2_bc    = panel
+ox2_bc    = panel
+
+nx3       = 32
+x3min     = -1.0
+x3max     = 1.0
+ix3_bc    = panel
+ox3_bc    = panel
+
+# --- radial grid stretch ---------------------------------------------------------------
+use_grid_stretch_r_poly = true
+f_stretch_r_c1          = -0.068392
+f_stretch_r_c2          = -2.191487
+f_stretch_r_c3          = 2.464818
+f_stretch_r_c4          = -1.366698
+
+use_cubed_sphere       = true
+
+<meshblock>
+nx1       = 128
+nx2       = 16
+nx3       = 16
+
+<time>
+evolution  = dynamic
+integrator = rk2
+cfl_number = 0.3
+nlim = 1000000000       # effectively no cycle limit; tlim and the wall clock stop it.
+tlim = 8.64e7           # 1000 days = 283 rotations, the ck_limb value
+ndiag      = 100
+dt_min     = 1.0e-3      # CHANGED from prod3's 1.0e-2: see change (4) above.
+
+<units>
+length_cgs = 1.0
+mass_cgs   = 1.0
+time_cgs   = 1.0
+mu         = 1.0
+
+<mhd>
+# --- WELL-BALANCED HYDROSTATIC SOURCE: ON, polytropic closure --------------------------
+# Restored from cs_mhd_prod2 / sp_mhd_prod3 (prod3 had turned this off). See change (2)
+# in the header for wb_cache_every = 0 (not prod2's 10: stale-cache energy pump) and the
+# rot_potential consequence.
+wellbalance_dynamic = true
+wb_x1               = true
+wb_option           = polytropic
+wb_cache_every      = 0
+cs_wellbalanced_src = false   # 09-23 user: DROPPED. min beta at prod3 rot 283 = 1.22 (>> the ~2e-3 crossover); hurts hydro accuracy (tests_hyd4/README_wbsrc.md)
+isotropic_conduction = radiative
+rad_implicit_x1 = true
+rad_cap_ang     = 0.5    # silent no-op with rad_angular=false below; kept for the diff.
+rad_angular     = false  # CHANGED from prod3 (implicit default true): see change (3).
+rad_tau_lo     = 30.0
+rad_tau_hi     = 300.0
+rad_kappa_src  = table
+rad_flux_inner = -1.0              # sigma T_int^4 from Teq, set by the problem generator
+rad_met        = 0.0
+eos             = general
+general_eos     = table
+reconstruct     = plm
+rsolver         = hlld
+cs_lowbeta_fallback = 0.5
+gamma           = 1.4727545958   # unused by the table; kept so ideal/general inputs match
+etotgrav        = true
+
+# --- composition ---
+eos_h2               = true      # H2 dissociation: the heat pipe
+eos_ionization       = true      # Saha for H, He, He+
+eos_metal_ionization = true      # Na, K, Ca, Al, Mg, Fe -- the electron donors
+eos_radiation        = false     # aT^4/3 is ~1e-7 of the gas pressure here
+eos_xh               = 0.7381
+eos_yhe              = 0.2485
+eos_metal_condensation = true
+
+# --- table grid: must bracket the run ---
+eos_logd_min    = -14.0
+eos_logd_max    = 0.0
+eos_logt_min    = 1.5
+eos_logt_max    = 6.0
+eos_dlog        = 0.05
+
+# --- non-ideal MHD ---
+ohmic_resistivity = eos           # constant | perna | eos
+max_eta           = 5.0e12           # 09-22 (change 7): was 1e13; see header
+use_rkg_sts       = false
+
+pfloor = 1.0e-5                       # 09-22 (change 8): was 1e-3; units BARYE (1e-6 bar); see header
+dfloor = 5.0e-14
+tfloor_kelvin = 200.0
+
+<problem>
+ck_implicit = false
+ck_impl_arat = 2.0
+ck_impl_frozen_op = false
+ck_impl_frozen_cof = true
+ck_impl_lin = false
+ck_impl_lin_thr = 1
+ck_impl_fuse = false
+ck_impl_jac_lin = false
+ck_impl_cvsec = false
+ck_impl_tol = 1.0e-8
+ck_impl_dtol = 1.0e-8
+ck_impl_maxit = 8
+ck_impl_verbose = false
+ck_impl_debug = 0
+ck_impl_once = false
+ck_impl_warm = false
+ck_impl_reuse_jac = 0
+ck_impl_seed = 0
+ck_impl_lw = false
+ck_impl_xstep = 0
+ck_impl_xstep_thr = 0.0
+ck_impl_jreuse = 0.0
+ck_impl_pred = false
+ck_impl_pred_fac = 1.0
+ck_impl_pred_chk = false
+ck_impl_jreuse_xc = false
+ck_impl_warm_step = false
+ck_impl_cvkeep = false
+ck_impl_every = 1                # ck-cadence (README_cadence.md)
+ck_impl_every_thr = 0.0
+ck_impl_jreuse_act = 0.25
+ck_impl_nosync = false
+user_srcs   = true
+bc_outer_maxwell = true
+hot_jupiter = true
+Teq   = 2500.0
+omega = 2.06e-5
+rot_potential = true     # sp_mhd_prod3 value; see change (2) header note for the
+                         # rotpot_src consequence now that WB is on.
+grav  = 942.0
+grav_point_mass = true
+ap    = 9.44e9
+Rgas  = 4.593e7                  # ignored under the general EOS; composition is the EOS's
+met   = 0.0                      # [M/H] dex; also sets the EOS's metal donors
+bbot  = 3.0e0     # G at the base, r = ap.
+
+# --- radiative transfer -----------------------------------------------------------
+rt_de_max    = 0.5
+rt_use_cons  = true
+rt_ck = true
+rt_split     = false
+ck_pcut_bar  = 10.0
+ck_nquad     = 1
+ck_star_teff = 6000.0
+ck_spherical = true              # NEW: spherical thermal two-stream. See change (1).
+ck_beam_sph  = true              # NEW: pseudo-spherical direct beam. See change (1).
+ck_sweep_form = 1                # 09-22 (change 9): tm = exact probe-free spherical sweep; see header
+ck_table     = /viper/u2/jinma/ATHENAK/athenak/data/exo_fms_ck/ck/Premixed_1x_g8_11.txt
+ck_data_dir  = /viper/u2/jinma/ATHENAK/athenak/data/exo_fms_ck   # CE_tables/, cia/, ray/, sw_flux/ live here
+
+# One-shot column dump: off for production.
+ck_dump_file =
+ck_dump_m    = 0
+ck_dump_j    = -1
+ck_dump_k    = -1
+
+<output1>
+file_type  = hst
+data_format = %.17e
+dt         = 3.05e4              # 10 per rotation
+
+<output2>
+file_type  = log                 # floor / C2P counters; rows are per-interval
+dt         = 3.05e4              # 10 per rotation (floor / C2P counters)
+
+<output3>
+file_type  = bin
+variable   = mhd_w_bcc
+dt         = 6.10e5              # every 2 rotations (production cadence)
+
+<output4>
+file_type  = rst                 # so a 24 h timeout can be continued with -r
+dt         = 1.525e5             # every 0.5 rotations (P = 3.05e5 s), plus one at clean
+                                 # exit.  sp_mhd_prod3's cadence, for 24 h apu links.
