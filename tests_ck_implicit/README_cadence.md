@@ -249,3 +249,32 @@ Next steps, in order:
 
 Cleanup: the build directories (src_*) are deleted and the binaries are kept in
 /viper/ptmp2/jinma/ckcad_0924.
+
+## 8. Three-rotation A/B and verdict (ck-restart, 2026-09-24)
+
+Runs and table: /viper/ptmp2/jinma/ckrst_0924/README (ab3/). Setup:
+- Hydro, GPU apu, 2 ranks, binary athena.gpu.r2 (ck-restart, bitwise restarts).
+- From cs_hyd4_prod dhj.00160.rst (**rotation 80.0**) to rotation 83.0, chained once
+  through a restart.
+- Arms: c2, e4 = c2 + every 4, and c2p = c2 with ck_impl_tol = 0.9e-8 as the noise
+  reference.
+
+| rot | e4-c2 rms day/night | c2p-c2 rms day/night | kinks <1e-7 bar c2 / c2p / e4 |
+|---|---|---|---|
+| 80.5 | 1.1e-3 / 2.3e-2 | 9.7e-4 / 2.4e-2 | 763 / 773 / 797 |
+| 81.0 | 3.9e-3 / 3.3e-2 | 3.5e-3 / 3.0e-2 | 786 / 776 / 833 |
+| 82.0 | 5.3e-3 / 4.3e-2 | 5.3e-3 / 4.4e-2 | 732 / 782 / 809 |
+| 82.5 | 5.3e-3 / 4.0e-2 | 5.6e-3 / 4.2e-2 | 788 / 814 / 786 |
+| 83.0 | 5.5e-3 / 4.2e-2 | 5.4e-3 / 4.1e-2 | 738 / 741 / 795 |
+
+Findings:
+- The e4 - c2 difference saturates after about 1.5 rotations. It equals the drift
+  between two c2 runs that differ only at the Newton tolerance, so it is chaos, not a
+  cadence bias.
+- Kinks: e4 has mean 804 against 761 (c2) and 777 (c2p), i.e. within the noise band.
+- Non-converged calls: e4 0; c2 2; c2p 32.
+- Energy: tot-E is within 2.7e-5 of c2 (c2p: 4.8e-5); edef is at most 2.5e-5; linerr is
+  4-6e-3 and does not grow.
+
+**Verdict: every = 4 (no guard) is OK for the production.** The restart is bitwise
+(README_restart.md), so the forced full call at each restart is gone.
