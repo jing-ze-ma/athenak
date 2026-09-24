@@ -219,6 +219,66 @@ using RtF = Real;
 #define RT_EXP(x)   exp(x)
 #endif
 
+// THE ck CHAIN KERNEL'S WHOLE-COLUMN ARRAYS LIVE IN GLOBAL MEMORY (ck-scratch).
+// rt_chain_ck keeps up to ten [RT_NB][n1] column arrays per thread (I_down, Cmx, Krs,
+// Kpc, Cc0/Cci/Cco, Js0..2).  As private arrays they were sized by a compile-time column
+// tier and put in the private (scratch) segment: 45 kB per lane at the 136 tier, 86 kB at
+// 264, which the MI300A runtime has to reserve for FULL occupancy (~40 GB at 264) and
+// cannot; every ck run with n1 > 136 died with HSA_STATUS_ERROR_OUT_OF_RESOURCES.  They
+// are now slices of one device buffer (rt_ckscr_ptr) sized by the actual n1 and thread
+// count.  Group g (one array, all RT_NB chains) of thread t holds element (cc, i) at
+//   buf[g*gsz + (cc*n1 + i)*nthr + t],   gsz = RT_NB*n1*nthr (Reals),
+// with t = ((m*nbc + blk%nbc)*n3 + k-ks)*n2 + j-js, so that neighbouring lanes (j) are
+// neighbouring words at the same (cc, i): every access is coalesced.  Only the storage
+// moves; every value, and every operation on it, is the one the private array held, so
+// the result is bitwise unchanged.  A switched-off array (the SPH/BSP/CCH/JAC tag false)
+// stays the one-element private array it was.  CkScrCol[cc][i] reads like the array.
+template <typename T>
+struct CkScrRow {
+  T *p;
+  int s;
+  KOKKOS_INLINE_FUNCTION T &operator[](const int i) const { return p[i*s]; }
+};
+template <typename T>
+struct CkScrCol {
+  T *p;
+  int si;
+  size_t sc;
+  KOKKOS_INLINE_FUNCTION CkScrRow<T> operator[](const int c) const {
+    return CkScrRow<T>{p + c*sc, si};
+  }
+};
+template <typename T>
+struct CkScrOne {
+  T a[1][1];
+  KOKKOS_INLINE_FUNCTION T *operator[](const int c) { return a[c]; }
+};
+// group g of thread t in buffer buf; ON false gives the one-element private stand-in
+template <typename T, bool ON>
+KOKKOS_INLINE_FUNCTION
+std::conditional_t<ON, CkScrCol<T>, CkScrOne<T>> CkScrGet(Real *buf, const int g,
+                                                         const size_t gsz, const int n1,
+                                                         const int nthr, const int t) {
+  if constexpr (ON) {
+    T *p = reinterpret_cast<T*>(buf + g*gsz) + t;
+    return CkScrCol<T>{p, nthr, static_cast<size_t>(n1)*nthr};
+  } else {
+    return CkScrOne<T>{};
+  }
+}
+// the buffer (grown on demand, never shrunk; leaked like the other rt_ Views) and the cap
+// on its size: a launch whose groups would exceed rt_ckscr_gb is split over chain blocks
+inline DvceArray1D<Real> *rt_ckscr_ptr = nullptr;
+inline size_t rt_ckscr_len = 0;
+inline Real rt_ckscr_gb = 16.0;
+inline void CkScrEnsure(const size_t len) {
+  if (rt_ckscr_ptr != nullptr && rt_ckscr_len >= len) return;
+  if (rt_ckscr_ptr != nullptr) delete rt_ckscr_ptr;
+  rt_ckscr_ptr = new DvceArray1D<Real>(Kokkos::ViewAllocateWithoutInitializing("rt_ckscr"),
+                                       len);
+  rt_ckscr_len = len;
+}
+
 // Column solves ("chains") the RT kernel steps per cell: 4 for the grey picket fence
 // (two IR channels x the two Gauss angles), CK_NB*CK_NG*ck_nquad for correlated-k.
 // Derived from the scheme, not an input.
@@ -3668,7 +3728,6 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
         auto launch_ck_chain = [&](auto nn_tag, auto sph_tag, auto bsp_tag,
                                    auto cch_tag, auto frm_tag, auto fop_tag,
                                    auto jac_tag) {
-          constexpr int NN = decltype(nn_tag)::value;
           constexpr bool SPH = decltype(sph_tag)::value;
           constexpr bool BSP = decltype(bsp_tag)::value;
           constexpr int CCH = decltype(cch_tag)::value;    // see ck_sweep_cache
@@ -3688,9 +3747,31 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
           // pass that reuses the Jacobian run the JAC = 0 code, which is the tm sweep
           // exactly as it was.  See the JAC blocks in the tm body.
           constexpr bool JAC = decltype(jac_tag)::value;
-          par_for("rt_chain_ck", DevExeSpace(), 0, nmb1, 0, nblk-1, ks, ke, js, je,
+          // ck-scratch: the whole-column arrays' groups in rt_ckscr_ptr (see CkScrCol).
+          // gI..gJ are this instantiation's group numbers; a switched-off array has none.
+          constexpr int gI = 0;
+          constexpr int gC = 1;
+          constexpr int gK = 1 + (SPH ? 1 : 0);
+          constexpr int gP = gK + (BSP ? 1 : 0);
+          constexpr int gJ = gP + ((CCH >= 2) ? 4 : 0);
+          constexpr int nGrp = gJ + (JAC ? 3 : 0);
+          const int scn1 = n1;
+          const int scn2 = je - js + 1, scn3 = ke - ks + 1;
+          const size_t grp1 = static_cast<size_t>(RT_NB)*scn1*(nmb1 + 1)*scn3*scn2;
+          // chain blocks per launch: all of them unless the buffer would exceed the cap
+          int nbc = nblk;
+          const double gb1 = 8.0e-9*static_cast<double>(grp1)*nGrp;   // per chain block
+          if (gb1*nblk > rt_ckscr_gb) {
+            nbc = std::max(1, static_cast<int>(rt_ckscr_gb/gb1));
+          }
+          const int scnt = (nmb1 + 1)*nbc*scn3*scn2;
+          const size_t scgsz = static_cast<size_t>(RT_NB)*scn1*scnt;
+          CkScrEnsure(scgsz*nGrp);
+          Real *scbuf = rt_ckscr_ptr->data();
+          auto chain_body =
           KOKKOS_LAMBDA(const int m, const int blk, const int k, const int j) {
             constexpr int NC = RT_NB;
+            const int sct = ((m*nbc + blk%nbc)*scn3 + (k - ks))*scn2 + (j - js);
             // the frozen-operator pass selectors.  With the tag off these are
             // compile-time false and every frozen branch below is dead code; see FOP.
             const bool ckfst = FOP && ckfst_;   // this pass STORES the operator
@@ -3779,8 +3860,9 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
             // because
             // the extra flux traffic it adds was uncoalesced. On the fixed layout it is
             // neutral (454 vs 457 ms), which confirms the diagnosis. Neutral is not a
-            // reason to change it, so the column stays.
-            RtF I_down[NC][NN];
+            // reason to change it, so the column stays.  (ck-scratch: it, and the other
+            // whole-column arrays below, now live in rt_ckscr_ptr, not on the stack.)
+            auto I_down = CkScrGet<RtF, true>(scbuf, gI, scgsz, scn1, scnt, sct);
             // THE FACE MIXING, STORED.  Conservation needs the two rays to use the SAME
             // c at a face -- that, and only that, is what makes A_below (u_b - d_b) =
             // A_above (u_a - d_a) hold and the deposit telescope.  The down-sweep forms
@@ -3789,12 +3871,12 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
             // would be a different number and would break the telescoping at O(beta) per
             // face (measured: 0.7 % per cell, 19 % over the production column).  The
             // accuracy of c is then the probe's; its CONSISTENCY is exact.
-            RtF Cmx[SPH ? NC : 1][SPH ? NN : 1];
+            auto Cmx = CkScrGet<RtF, SPH>(scbuf, gC, scgsz, scn1, scnt, sct);
             // problem/ck_beam_sph: the (kappa rho) column, filled by the down-sweep and
             // read by the ray integration.  tau_ray is NOT a running sum -- every target
             // radius has its own chord set -- so the profile has to be kept.  One element
             // when the switch is off.
-            RtF Krs[BSP ? NC : 1][BSP ? NN : 1];
+            auto Krs = CkScrGet<RtF, BSP>(scbuf, gK, scgsz, scn1, scnt, sct);
 
             // Top: the column above the domain, using the top cell's opacity over the
             // hydrostatic column p/g -- the same construction the grey scheme uses.
@@ -4007,13 +4089,14 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               // BEFORE the multiplication by rho, so that the beam's kappa and every
               // kappa rho are still formed by the expression that formed them) for the
               // whole column, which is what lets the three later passes skip the table.
-              // That one costs NC x NN of private storage and is sized to one element
-              // otherwise.
+              // That one costs NC x n1 of column storage (in rt_ckscr_ptr since
+              // ck-scratch) and is a one-element private array otherwise.
               RtF cry0[NC], cryi[NC], cryo[NC];
-              Real Kpc[(CCH >= 2) ? NC : 1][(CCH >= 2) ? NN : 1];
-              RtF Cc0[(CCH >= 2) ? NC : 1][(CCH >= 2) ? NN : 1];
-              RtF Cci[(CCH >= 2) ? NC : 1][(CCH >= 2) ? NN : 1];
-              RtF Cco[(CCH >= 2) ? NC : 1][(CCH >= 2) ? NN : 1];
+              constexpr bool CC2 = (CCH >= 2);
+              auto Kpc = CkScrGet<Real, CC2>(scbuf, gP, scgsz, scn1, scnt, sct);
+              auto Cc0 = CkScrGet<RtF, CC2>(scbuf, gP+1, scgsz, scn1, scnt, sct);
+              auto Cci = CkScrGet<RtF, CC2>(scbuf, gP+2, scgsz, scn1, scnt, sct);
+              auto Cco = CkScrGet<RtF, CC2>(scbuf, gP+3, scgsz, scn1, scnt, sct);
               // one half-layer step, in the chain's own precision: the same exponential
               // coefficients the staggered layers used, handed the half interval.  dsrc
               // comes back as absorbed minus emitted, which is what Src_g wants and is
@@ -4247,8 +4330,9 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                 // M-matrix the Thomas sweep relies on), which makes it quasi-Newton with
                 // the same root.  All of it is compiled only into the JAC instantiation.
                 constexpr int NJ = JAC ? NC : 1;
-                constexpr int NJN = JAC ? NN : 1;
-                Real Js0[NJ][NJN], Js1[NJ][NJN], Js2[NJ][NJN];
+                auto Js0 = CkScrGet<Real, JAC>(scbuf, gJ, scgsz, scn1, scnt, sct);
+                auto Js1 = CkScrGet<Real, JAC>(scbuf, gJ+1, scgsz, scn1, scnt, sct);
+                auto Js2 = CkScrGet<Real, JAC>(scbuf, gJ+2, scgsz, scn1, scnt, sct);
                 Real jS[NJ][3], jfc[NJ][2], juc[NJ][2];
                 // ---- PASS 1: upward, accumulating the relation at every face --------
                 {
@@ -5338,7 +5422,11 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                 }
               }
             }
-          });
+          };
+          for (int b0=0; b0<nblk; b0+=nbc) {
+            par_for("rt_chain_ck", DevExeSpace(), 0, nmb1, b0, std::min(nblk, b0+nbc)-1,
+                    ks, ke, js, je, chain_body);
+          }
         };
         auto launch_ck_cch = [&](auto nn_tag, auto sph_tag, auto bsp_tag,
                                  auto frm_tag, auto fop_tag) {
@@ -5380,29 +5468,21 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
           if constexpr (SPHF) {
             if (ckform_ == 1) {
               // tm: the JAC instantiation only on a pass that assembles the Jacobian.
-              // Its per-face window (3 Reals per face and chain) does not fit the GPU
-              // stack at the 520 tier, so it is instantiated up to 264 only.
+              // Its per-face window (3 Reals per face and chain) no longer sits on the
+              // GPU stack (ck-scratch), so it exists at every n1.
               // problem/ck_impl_frozen_op (phase T2): the FOP instantiations, JAC or not,
               // exist only under ck_implicit; the production kernel is FOP = JAC = 0.
-              constexpr int NNJ = decltype(nn_tag)::value;
               if (ckjacp_ && !ckjl_) {
-                if constexpr (NNJ <= 264) {
-                  if (ckfop_) {
-                    launch_ck_chain(nn_tag, sph_tag, bsp_tag,
-                                    std::integral_constant<int, 2>{},
-                                    std::integral_constant<int, 1>{}, std::true_type{},
-                                    std::true_type{});
-                  } else {
-                    launch_ck_chain(nn_tag, sph_tag, bsp_tag,
-                                    std::integral_constant<int, 2>{},
-                                    std::integral_constant<int, 1>{}, std::false_type{},
-                                    std::true_type{});
-                  }
+                if (ckfop_) {
+                  launch_ck_chain(nn_tag, sph_tag, bsp_tag,
+                                  std::integral_constant<int, 2>{},
+                                  std::integral_constant<int, 1>{}, std::true_type{},
+                                  std::true_type{});
                 } else {
-                  std::cout << "### FATAL ERROR in two_stream_rt: problem/ck_implicit "
-                            << "with ck_sweep_form = 1 is instantiated for n1 <= 264 "
-                            << "only." << std::endl;
-                  std::exit(EXIT_FAILURE);
+                  launch_ck_chain(nn_tag, sph_tag, bsp_tag,
+                                  std::integral_constant<int, 2>{},
+                                  std::integral_constant<int, 1>{}, std::false_type{},
+                                  std::true_type{});
                 }
               } else if (ckfop_) {
                 launch_ck_chain(nn_tag, sph_tag, bsp_tag,
@@ -5427,16 +5507,11 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
           launch_ck_cache(nn_tag, sph_tag, bsp_tag,
                           std::integral_constant<int, 0>{});
         };
+        // ck-scratch: the chain kernel no longer has a column tier -- its column arrays
+        // are sized by n1 at run time (see CkScrCol) -- so it is instantiated once, with
+        // the tag 0, for every n1.
         auto launch_ck_tier = [&](auto sph_tag, auto bsp_tag) {
-          if (n1 <= 72) {
-            launch_ck_form(std::integral_constant<int, 72>{}, sph_tag, bsp_tag);
-          } else if (n1 <= 136) {
-            launch_ck_form(std::integral_constant<int, 136>{}, sph_tag, bsp_tag);
-          } else if (n1 <= 264) {
-            launch_ck_form(std::integral_constant<int, 264>{}, sph_tag, bsp_tag);
-          } else {
-            launch_ck_form(std::integral_constant<int, 520>{}, sph_tag, bsp_tag);
-          }
+          launch_ck_form(std::integral_constant<int, 0>{}, sph_tag, bsp_tag);
         };
         // =============== problem/ck_impl_lin: THE LINEAR RE-APPLY OF THE tm SWEEP =====
         // DESIGN_tm.md phase T3.  With the opacity, the cut and the beam frozen for the
