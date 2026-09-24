@@ -76,7 +76,9 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
               << "= rk2 (its explicit part IS the Heun hydro)" << std::endl;
     std::exit(EXIT_FAILURE);
   }
-  if (tau_closure) {
+  // closure = vet_col (m1-sph2) sets tau_closure too: its tensor is a formal solution
+  // like vet_sc's, built at U^n by Time2VetStart and kept for both stages
+  if (tau_closure && !vet_col) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
               << std::endl << "<rad_m1>/time_scheme = hesdirk2 is not wired for "
               << "closure = tau" << std::endl;
@@ -171,6 +173,11 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
     Kokkos::realloc(vet_now, nmb, M1_T2_NVET, n3, n2, n1);
     Kokkos::realloc(vet_opac, nmb, M1_NOPAC, n3, n2, n1);
     Kokkos::deep_copy(vet_prev, 0.0);
+  }
+  if (vet_col) {
+    // Time2VetStart's save slots (E, T) and the saved stage-start opacities
+    Kokkos::realloc(vet_now, nmb, 2, n3, n2, n1);
+    Kokkos::realloc(vet_opac, nmb, M1_NOPAC, n3, n2, n1);
   }
   t2_ok = false;
   if (global_variable::my_rank == 0) {
@@ -298,6 +305,9 @@ void RadiationM1::Time2Restore(Driver *pdrive) {
 //! D* = D^n + (dt/dt_prev)(D^n - D^{n-1}), which both stage solves read.  Called from
 //! ImplicitSolve at the point where the backward-Euler step calls VetShortChar; the
 //! solve's own EN (old vector), TP (start T) and opacities are put back afterwards.
+//! closure = vet_col (m1-sph2, tests_m1/runs_5h_sph2): the same, with VetColBuild (the
+//! tensor tau_ten and the surface q at U^n) and NO extrapolation: both stages use D^n
+//! (an extrapolated chi and q were measured: same order, 3e-11 from D^n).
 
 void RadiationM1::Time2VetStart() {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
@@ -379,7 +389,13 @@ void RadiationM1::Time2VetStart() {
       iw_(m,M1_IW_EN,k,j,i) = fmax(u0_(m,M1_E,k,j,i), efl);
     });
   }
-  VetShortChar();
+  // closure = vet_col (m1-sph2): the per-column formal solution of the same state;
+  // its tensor (tau_ten) and surface q are then kept for both stages (no extrapolation)
+  if (vet_col) {
+    VetColBuild();
+  } else {
+    VetShortChar();
+  }
   if (fast) {
     Kokkos::deep_copy(DevExeSpace(), opac, vet_opac);
   } else if (hh) {
@@ -390,7 +406,7 @@ void RadiationM1::Time2VetStart() {
     iw_(m,M1_IW_EN,k,j,i) = vn_(m,0,k,j,i);
     if (hh) {iw_(m,M1_IW_TP,k,j,i) = vn_(m,1,k,j,i);}
   });
-  Time2VetExtrapolate();
+  if (vet_sc) {Time2VetExtrapolate();}
 }
 
 //----------------------------------------------------------------------------------------

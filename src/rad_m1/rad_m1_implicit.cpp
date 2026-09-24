@@ -292,17 +292,17 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // <rad_m1>/time_scheme (read by Time2Init below).  DEFAULT hesdirk2 since m1-defaults2
   // (tests_m1/runs_5g_defaults2; /viper/ptmp2/jinma/h2val_0924: hesdirk2 at cfl 0.9 is
   // 1.57x cheaper than be at cfl 0.3 at equal accuracy) wherever hesdirk2 is accepted:
-  // transport = implicit (not implicit_x1) on a Cartesian mesh (no spherical-polar S1/S2,
-  // cubed sphere or polar boundary), a closure other than tau / vet_col, and
+  // transport = implicit (not implicit_x1) on a Cartesian mesh or (m1-sph2,
+  // tests_m1/runs_5h_sph2) the spherical-polar wedge (no cubed sphere or polar
+  // boundary), a closure other than tau (vet_col included since m1-sph2), and
   // <time>/integrator = rk2.  Elsewhere the default stays be, silently.  A restart whose
   // file lacks the key (written when it was read only when named) keeps be.  The
   // resolved value is echoed (so later restarts keep it); explicit input overrides.
   {auto *pmh = pmy_pack->pmesh;
   const std::string integ = pin->DoesParameterExist("time","integrator") ?
                             pin->GetString("time","integrator") : "rk2";
-  const bool h2def = full && !sph_geom && !pmh->use_spherical_polar &&
-                     !pmh->use_cubed_sphere && !pmh->use_polar_boundary &&
-                     !tau_closure && (integ.compare("rk2") == 0) &&
+  const bool h2def = full && !pmh->use_cubed_sphere && !pmh->use_polar_boundary &&
+                     (!tau_closure || vet_col) && (integ.compare("rk2") == 0) &&
                      !global_variable::restart_run;
   (void) pin->GetOrAddString("rad_m1","time_scheme", h2def ? "hesdirk2" : "be");}
   trans_on = false;
@@ -5356,6 +5356,18 @@ void RadiationM1::ImplicitVimpBuild() {
                                           t2_solve == M1_T2S_STAGE2);
   const bool t2afc = (t2_afmode == 2);
   const int bda = b + M1_IV_DA;
+  // m1-sph2 (tests_m1/runs_5h_sph2): on the spherical-polar wedge the face-flux rows
+  // take the centre distance dxface (and, for a chi(f) closure, the S2 radial
+  // integrating factor M1SphDrr), and the enthalpy divergence takes dt A_f/V_i per face,
+  // exactly as the rows of ImplicitSolve.  The Cartesian expressions are untouched; the
+  // sp forms are `if (sph)` overwrites.
+  const bool sph = sph_geom;
+  const bool sphq = sph_q;
+  auto cvol = pmy_pack->pcoord->volume;
+  auto carea = pmy_pack->pcoord->area;
+  auto cdxf = pmy_pack->pcoord->dxface;
+  auto cx1v = pmy_pack->pcoord->x1v;
+  auto cx1f = pmy_pack->pcoord->xx1f;
 
   // (1) the Jacobian rows and dv^k
   par_for("m1_vimp_p", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
@@ -5399,6 +5411,21 @@ void RadiationM1::ImplicitVimpBuild() {
           cL[s] = (1.0 - al)*cL[s] + (cl/ch)*ifw_(m,M1_IFW_HCL,k,j,fi);
           cR[s] = (1.0 - al)*cR[s] + (cl/ch)*ifw_(m,M1_IFW_HCR,k,j,fi);
         }
+        if (sph) {
+          // sp (central flux only): the face distance, and the S2 integrating factor
+          const Real bsp = th*ch*cl*dt/cdxf.x1f(m,k,j,fi);
+          Real wl = M1DDiag(iw_,vd_,dfull,m,0,k,j,im);
+          Real wr = M1DDiag(iw_,vd_,dfull,m,0,k,j,ip);
+          if (sphq) {
+            const Real rf = cx1f(m,fi);
+            wl = M1SphDrr(iw_(m,M1_IW_WCHI,k,j,im), iw_(m,M1_IW_N1,k,j,im),
+                          SQR(cx1v(m,im)/rf));
+            wr = M1SphDrr(iw_(m,M1_IW_WCHI,k,j,ip), iw_(m,M1_IW_N1,k,j,ip),
+                          SQR(cx1v(m,ip)/rf));
+          }
+          cL[s] = bsp*wl;
+          cR[s] = -bsp*wr;
+        }
       }
     }
     iw_(m,b+0,k,j,i) = sj*wf[0]*kf[0]*cL[0];
@@ -5441,6 +5468,12 @@ void RadiationM1::ImplicitVimpBuild() {
             const Real bs = th*ch*cl*dt/dxd;
             cL[s] = bs*M1DDiag(iw_,vd_,dfull,m,d,kl,jl,i);
             cR[s] = -bs*M1DDiag(iw_,vd_,dfull,m,d,kq,jq,i);
+            if (sph) {
+              const Real dxs = (d == 1) ? cdxf.x2f(m,k,cf,i) : cdxf.x3f(m,cf,j,i);
+              const Real bsp = th*ch*cl*dt/dxs;
+              cL[s] = bsp*M1DDiag(iw_,vd_,dfull,m,d,kl,jl,i);
+              cR[s] = -bsp*M1DDiag(iw_,vd_,dfull,m,d,kq,jq,i);
+            }
           }
         }
         p0 = sj*wf[0]*kf[0]*cL[0];
@@ -5520,6 +5553,7 @@ void RadiationM1::ImplicitVimpBuild() {
         }
       }
       Real phf[2] = {0.0, 0.0};
+      const Real jr0 = jr;
       for (int s = 0; s < 2; ++s) {
         if ((s == 0) ? flo : fhi) continue;
         const Real sg = (s == 0) ? -1.0 : 1.0;
@@ -5549,6 +5583,52 @@ void RadiationM1::ImplicitVimpBuild() {
           pe += 0.5*(P[r][0]*E[x-1] + P[r][1]*E[x] + P[r][2]*E[x+1]);
         }
         jr -= sg*(ph*dvk + ps - ph*pe);
+      }
+      if (sph) {
+        // sp: the same two faces with dt A_f/V_i each instead of dt/dx_d (the Cartesian
+        // loop above is left as it is and its contribution taken out again)
+        jr = jr0;
+        const Real iv = dt/cvol(m,k,j,i);
+        for (int s = 0; s < 2; ++s) {
+          phf[s] = 0.0;
+          if ((s == 0) ? flo : fhi) continue;
+          Real af;
+          if (d == 0) {
+            af = carea.x1f(m,k,j,i+s);
+          } else if (d == 1) {
+            af = carea.x2f(m,k,j+s,i);
+          } else {
+            af = carea.x3f(m,k+s,j,i);
+          }
+          const Real nus = af*iv;
+          const Real sg = (s == 0) ? -1.0 : 1.0;
+          const int ol = s - 1;
+          const int xl = ol + 2;
+          const bool ok = av[xl-1] && av[xl+2];
+          const Real vf = 0.5*(V[ol+1] + V[ol+2]);
+          const Real ef = t2vs
+              ? M1EnthEfT(enm, E[xl-1], E[xl], E[xl+1], E[xl+2], ok, A[xl-1], A[xl],
+                          A[xl+1], A[xl+2], DA[xl-1], DA[xl], DA[xl+1], DA[xl+2], vf,
+                          t2afc)
+              : M1EnthEf(enm, E[xl-1], E[xl], E[xl+1], E[xl+2], ok, A[xl-1],
+                         A[xl], A[xl+1], A[xl+2], vf);
+          const Real ph = nus*cr*ef*(1.0 + 0.5*(D[xl] + D[xl+1]));
+          phf[s] = ph;
+          const Real dvk = 0.5*(DV[ol+1][d] + DV[ol+2][d]);
+          Real ps = 0.0;
+          for (int e = 0; e < 3; ++e) {
+            if (e == d) continue;
+            ps += 0.5*(DO[ol+1][e] + DO[ol+2][e])*0.5*(DV[ol+1][e] + DV[ol+2][e]);
+          }
+          ps *= nus*cr*ef;
+          Real pe = 0.0;
+          for (int h = 0; h < 2; ++h) {
+            const int x = xl + h;
+            const int r = ol + 1 + h;
+            pe += 0.5*(P[r][0]*E[x-1] + P[r][1]*E[x] + P[r][2]*E[x+1]);
+          }
+          jr -= sg*(ph*dvk + ps - ph*pe);
+        }
       }
       const Real pl = 0.5*phf[0], ph = 0.5*phf[1];
       const Real cm2 = -pl*P[0][0];
@@ -5902,7 +5982,16 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   }
   // closure = vet_col (rad_m1_vetcol.cpp): the per-column formal solution of the
   // start-of-step state, here for the same reason (T^n, before the predictor moves it)
-  if (vet_col) {VetColBuild();}
+  // m1-sph2: under time_scheme = hesdirk2 the tensor (and the surface q) is built ONCE
+  // per step, at U^n, by the stage-1 solve (Time2VetStart, as vet_sc), and the stage-2
+  // solve keeps it; a backward-Euler step builds it here as before
+  if (vet_col) {
+    if (t2s == M1_T2S_STAGE1) {
+      Time2VetStart();
+    } else if (t2s != M1_T2S_STAGE2) {
+      VetColBuild();
+    }
+  }
 
   // implicit_predictor = step: start the Picard loop from the previous step's implicit
   // increment, scaled by dt/dt_prev.  Only the STARTING POINT moves: E^n (M1_IW_EN),
@@ -6717,7 +6806,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       // STAGE S1 (sp): the row rebuilt with dt A_f/V_i per face and the centroid
       // distance dxface.x1f in the face-flux gradient.  The Cartesian row above is left
       // textually untouched and overwritten here.  On sp (SphericalS1Check) the flux is
-      // central (om = 1, no HLL/DG part), the time scheme be, no vimp, offdiag none.
+      // central (om = 1, no HLL/DG part) and offdiag none or lagged; m1-sph2 adds the
+      // hesdirk2 stage solves (the old vector is generic) and implicit_vimp.
       if (sph) {
         Real iv = dt/cvol(m,k,j,i);
         Real nup = carea.x1f(m,k,j,i+1)*iv, num = carea.x1f(m,k,j,i)*iv;
@@ -6767,10 +6857,21 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
             bool o0, o3;
             int i0 = M1EnthIdx(i-1, is, ie, false, hxl, hxh, o0);
             int i3 = M1EnthIdx(i+2, is, ie, false, hxl, hxh, o3);
+            if (t2vs) {
+              // m1-sph2: a hesdirk2 stage solve under implicit_vimp, as the Cartesian row
+              rr -= nup*cr*M1EnthCorrT(enm, iw_(m,M1_IW_EP,k,j,i0),
+                                       iw_(m,M1_IW_EP,k,j,i), iw_(m,M1_IW_EP,k,j,ip),
+                                       iw_(m,M1_IW_EP,k,j,i3), o0 && o3,
+                                       iw_(m,M1_IW_ADV,k,j,i0), ai,
+                                       iw_(m,M1_IW_ADV,k,j,ip), iw_(m,M1_IW_ADV,k,j,i3),
+                                       iw_(m,t2da,k,j,i0), iw_(m,t2da,k,j,i),
+                                       iw_(m,t2da,k,j,ip), iw_(m,t2da,k,j,i3), vf, t2afc);
+            } else {
             rr -= nup*cr*M1EnthCorr(enm, iw_(m,M1_IW_EP,k,j,i0), iw_(m,M1_IW_EP,k,j,i),
                                     iw_(m,M1_IW_EP,k,j,ip), iw_(m,M1_IW_EP,k,j,i3),
                                     o0 && o3, iw_(m,M1_IW_ADV,k,j,i0), ai,
                                     iw_(m,M1_IW_ADV,k,j,ip), iw_(m,M1_IW_ADV,k,j,i3), vf);
+            }
           }
         } else if (bchi == M1_IBC_MARSHAK) {
           const Real mq = vqs ? vq_(m,k,j) : mqo;   // vet_col_surface_q
@@ -6823,11 +6924,21 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
             bool o0, o3;
             int i0 = M1EnthIdx(i-2, is, ie, false, hxl, hxh, o0);
             int i3 = M1EnthIdx(i+1, is, ie, false, hxl, hxh, o3);
+            if (t2vs) {
+              rr += num*cr*M1EnthCorrT(enm, iw_(m,M1_IW_EP,k,j,i0),
+                                       iw_(m,M1_IW_EP,k,j,im), iw_(m,M1_IW_EP,k,j,i),
+                                       iw_(m,M1_IW_EP,k,j,i3), o0 && o3,
+                                       iw_(m,M1_IW_ADV,k,j,i0), iw_(m,M1_IW_ADV,k,j,im),
+                                       ai, iw_(m,M1_IW_ADV,k,j,i3), iw_(m,t2da,k,j,i0),
+                                       iw_(m,t2da,k,j,im), iw_(m,t2da,k,j,i),
+                                       iw_(m,t2da,k,j,i3), vf, t2afc);
+            } else {
             rr += num*cr*M1EnthCorr(enm, iw_(m,M1_IW_EP,k,j,i0), iw_(m,M1_IW_EP,k,j,im),
                                     iw_(m,M1_IW_EP,k,j,i), iw_(m,M1_IW_EP,k,j,i3),
                                     o0 && o3, iw_(m,M1_IW_ADV,k,j,i0),
                                     iw_(m,M1_IW_ADV,k,j,im), ai,
                                     iw_(m,M1_IW_ADV,k,j,i3), vf);
+            }
           }
         } else if (bclo == M1_IBC_MARSHAK) {
           bb += num*ch*mq;
@@ -6841,6 +6952,14 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           }
         } else if (bclo == M1_IBC_FLUX) {
           rr += num*cr*fxlo;
+        }
+        // m1-sph2: implicit_vimp, as in the Cartesian row above (ImplicitVimpBuild
+        // builds its coefficients with the sp areas, volumes and face distances)
+        if (vim) {
+          aa += iw_(m,ivb+M1_IV_J1M,k,j,i);
+          bb += iw_(m,ivb+M1_IV_JD,k,j,i);
+          cc += iw_(m,ivb+M1_IV_J1P,k,j,i);
+          rr += iw_(m,ivb+M1_IV_JRHS,k,j,i);
         }
       }
 
