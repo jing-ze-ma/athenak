@@ -735,6 +735,10 @@ class RadiationM1 {
   // Coordinates instead of the uniform mb_size.dx1..3 (appended as overwrites, so
   // the Cartesian arithmetic is untouched)
   bool sph_geom = false;
+  // STAGE S2 (rad_m1_sph.cpp): sph_geom with a closure that is not Eddington (m1,
+  // minerbo, kershaw): the radial faces take the integrating factor (M1SphDrr) and every
+  // face equation the lagged curvature M1SphCurv; false keeps the S1 arithmetic
+  bool sph_q = false;
   //! print the Picard statistics of the implicit solver (from the destructor, rank 0)
   void ImplicitReport();
   //! VET (rad_m1_vet.cpp): read <rad_m1>/vet_*, check the mesh, allocate
