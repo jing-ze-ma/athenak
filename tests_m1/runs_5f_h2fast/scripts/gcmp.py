@@ -1,0 +1,26 @@
+#!/usr/bin/env python3
+"""cmp.py dirA dirB: bitwise compare of every output file (bin/rst from <par_end> on,
+the header echoes the input).  Prints one line per pair and a verdict."""
+import os, sys
+a, b = sys.argv[1], sys.argv[2]
+skip = {'log.txt'}
+def payload(p):
+    d = open(p, 'rb').read()
+    if p.endswith(('.bin', '.rst')):
+        k = d.find(b'<par_end>')
+        if k >= 0:
+            d = d[k:]
+    return d
+nf = nd = 0
+for root, _, files in os.walk(a):
+    for f in sorted(files):
+        if f in skip or f.startswith(('slurm', 'log.')):
+            continue
+        pa = os.path.join(root, f); pb = os.path.join(b, os.path.relpath(pa, a))
+        if not os.path.exists(pb):
+            print('MISSING', pb); nd += 1; continue
+        nf += 1
+        same = payload(pa) == payload(pb)
+        nd += (not same)
+        print(('same ' if same else 'DIFF ') + os.path.relpath(pa, a))
+print(f'VERDICT {"BITWISE" if nd == 0 and nf > 0 else "DIFFERENT"} files={nf} diff={nd}')

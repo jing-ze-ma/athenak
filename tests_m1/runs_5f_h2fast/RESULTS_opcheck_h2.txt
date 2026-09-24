@@ -1,0 +1,7 @@
+box1 pass 5 fail 0 rc=0 worst 6.29e-16 fold=
+box2h pass 5 fail 0 rc=0 worst 6.38e-16 fold=
+boxv1 pass 5 fail 0 rc=0 worst 9.68e-16 fold=
+slab1 pass 5 fail 0 rc=0 worst 4.14e-16 fold=
+slab2h pass 5 fail 0 rc=0 worst 4.32e-16 fold=
+slabv2 pass 5 fail 0 rc=0 worst 6.09e-16 fold=
+OPCHK_DONE

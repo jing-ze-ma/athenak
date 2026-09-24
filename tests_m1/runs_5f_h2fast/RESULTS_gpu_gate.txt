@@ -1,0 +1,9 @@
+== slab1 base 11:23:11
+== box2 base 11:23:25
+== boxvet2 base 11:23:36
+== slab1 v4 11:23:47
+== box2 v4 11:24:02
+== boxvet2 v4 11:24:13
+== slab1: VERDICT BITWISE files=10 diff=0 rc=0 rc=0
+== box2: VERDICT BITWISE files=10 diff=0 rc=0 rc=0
+== boxvet2: VERDICT BITWISE files=10 diff=0 rc=0 rc=0

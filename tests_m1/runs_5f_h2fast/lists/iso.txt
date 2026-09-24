@@ -1,0 +1,60 @@
+10 1000 x1 64 edd impl 128 enth=plm ny=4 vimp=true ts=hesdirk2 rm_implicit_one_pass=0
+10 1000 x1 64 edd impl 256 enth=plm ny=4 vimp=true ts=hesdirk2 rm_implicit_one_pass=0
+10 1000 x1 64 edd impl 512 enth=plm ny=4 vimp=true ts=hesdirk2 rm_implicit_one_pass=0
+10 1000 x1 64 edd impl 1024 enth=plm ny=4 vimp=true ts=hesdirk2 rm_implicit_one_pass=0
+10 1000 x1 64 edd impl 2048 enth=plm ny=4 vimp=true ts=hesdirk2 rm_implicit_one_pass=0
+100 1000 x1 64 edd impl 128 enth=plm ny=4 vimp=true ts=hesdirk2 rm_implicit_one_pass=0
+100 1000 x1 64 edd impl 256 enth=plm ny=4 vimp=true ts=hesdirk2 rm_implicit_one_pass=0
+100 1000 x1 64 edd impl 512 enth=plm ny=4 vimp=true ts=hesdirk2 rm_implicit_one_pass=0
+100 1000 x1 64 edd impl 1024 enth=plm ny=4 vimp=true ts=hesdirk2 rm_implicit_one_pass=0
+100 1000 x1 64 edd impl 2048 enth=plm ny=4 vimp=true ts=hesdirk2 rm_implicit_one_pass=0
+10 1000 x1 64 edd impl 128 enth=plm ny=4 vimp=true ts=hesdirk2 rm_implicit_predictor_order=1
+10 1000 x1 64 edd impl 256 enth=plm ny=4 vimp=true ts=hesdirk2 rm_implicit_predictor_order=1
+10 1000 x1 64 edd impl 512 enth=plm ny=4 vimp=true ts=hesdirk2 rm_implicit_predictor_order=1
+10 1000 x1 64 edd impl 1024 enth=plm ny=4 vimp=true ts=hesdirk2 rm_implicit_predictor_order=1
+10 1000 x1 64 edd impl 2048 enth=plm ny=4 vimp=true ts=hesdirk2 rm_implicit_predictor_order=1
+100 1000 x1 64 edd impl 128 enth=plm ny=4 vimp=true ts=hesdirk2 rm_implicit_predictor_order=1
+100 1000 x1 64 edd impl 256 enth=plm ny=4 vimp=true ts=hesdirk2 rm_implicit_predictor_order=1
+100 1000 x1 64 edd impl 512 enth=plm ny=4 vimp=true ts=hesdirk2 rm_implicit_predictor_order=1
+100 1000 x1 64 edd impl 1024 enth=plm ny=4 vimp=true ts=hesdirk2 rm_implicit_predictor_order=1
+100 1000 x1 64 edd impl 2048 enth=plm ny=4 vimp=true ts=hesdirk2 rm_implicit_predictor_order=1
+10 1000 x1 64 edd impl 128 enth=plm ny=4 vimp=true ts=hesdirk2 rm_implicit_one_pass=4
+10 1000 x1 64 edd impl 256 enth=plm ny=4 vimp=true ts=hesdirk2 rm_implicit_one_pass=4
+10 1000 x1 64 edd impl 512 enth=plm ny=4 vimp=true ts=hesdirk2 rm_implicit_one_pass=4
+10 1000 x1 64 edd impl 1024 enth=plm ny=4 vimp=true ts=hesdirk2 rm_implicit_one_pass=4
+10 1000 x1 64 edd impl 2048 enth=plm ny=4 vimp=true ts=hesdirk2 rm_implicit_one_pass=4
+100 1000 x1 64 edd impl 128 enth=plm ny=4 vimp=true ts=hesdirk2 rm_implicit_one_pass=4
+100 1000 x1 64 edd impl 256 enth=plm ny=4 vimp=true ts=hesdirk2 rm_implicit_one_pass=4
+100 1000 x1 64 edd impl 512 enth=plm ny=4 vimp=true ts=hesdirk2 rm_implicit_one_pass=4
+100 1000 x1 64 edd impl 1024 enth=plm ny=4 vimp=true ts=hesdirk2 rm_implicit_one_pass=4
+100 1000 x1 64 edd impl 2048 enth=plm ny=4 vimp=true ts=hesdirk2 rm_implicit_one_pass=4
+10 1000 x1 64 edd impl 128 enth=plm ny=4 vimp=true ts=hesdirk2 rm_implicit_one_pass_safety=30
+10 1000 x1 64 edd impl 256 enth=plm ny=4 vimp=true ts=hesdirk2 rm_implicit_one_pass_safety=30
+10 1000 x1 64 edd impl 512 enth=plm ny=4 vimp=true ts=hesdirk2 rm_implicit_one_pass_safety=30
+10 1000 x1 64 edd impl 1024 enth=plm ny=4 vimp=true ts=hesdirk2 rm_implicit_one_pass_safety=30
+10 1000 x1 64 edd impl 2048 enth=plm ny=4 vimp=true ts=hesdirk2 rm_implicit_one_pass_safety=30
+100 1000 x1 64 edd impl 128 enth=plm ny=4 vimp=true ts=hesdirk2 rm_implicit_one_pass_safety=30
+100 1000 x1 64 edd impl 256 enth=plm ny=4 vimp=true ts=hesdirk2 rm_implicit_one_pass_safety=30
+100 1000 x1 64 edd impl 512 enth=plm ny=4 vimp=true ts=hesdirk2 rm_implicit_one_pass_safety=30
+100 1000 x1 64 edd impl 1024 enth=plm ny=4 vimp=true ts=hesdirk2 rm_implicit_one_pass_safety=30
+100 1000 x1 64 edd impl 2048 enth=plm ny=4 vimp=true ts=hesdirk2 rm_implicit_one_pass_safety=30
+10 1000 x1 64 edd impl 128 enth=plm ny=4 vimp=true ts=hesdirk2 rm_implicit_one_pass=0 rm_implicit_predictor_order=1
+10 1000 x1 64 edd impl 256 enth=plm ny=4 vimp=true ts=hesdirk2 rm_implicit_one_pass=0 rm_implicit_predictor_order=1
+10 1000 x1 64 edd impl 512 enth=plm ny=4 vimp=true ts=hesdirk2 rm_implicit_one_pass=0 rm_implicit_predictor_order=1
+10 1000 x1 64 edd impl 1024 enth=plm ny=4 vimp=true ts=hesdirk2 rm_implicit_one_pass=0 rm_implicit_predictor_order=1
+10 1000 x1 64 edd impl 2048 enth=plm ny=4 vimp=true ts=hesdirk2 rm_implicit_one_pass=0 rm_implicit_predictor_order=1
+100 1000 x1 64 edd impl 128 enth=plm ny=4 vimp=true ts=hesdirk2 rm_implicit_one_pass=0 rm_implicit_predictor_order=1
+100 1000 x1 64 edd impl 256 enth=plm ny=4 vimp=true ts=hesdirk2 rm_implicit_one_pass=0 rm_implicit_predictor_order=1
+100 1000 x1 64 edd impl 512 enth=plm ny=4 vimp=true ts=hesdirk2 rm_implicit_one_pass=0 rm_implicit_predictor_order=1
+100 1000 x1 64 edd impl 1024 enth=plm ny=4 vimp=true ts=hesdirk2 rm_implicit_one_pass=0 rm_implicit_predictor_order=1
+100 1000 x1 64 edd impl 2048 enth=plm ny=4 vimp=true ts=hesdirk2 rm_implicit_one_pass=0 rm_implicit_predictor_order=1
+10 1000 x1 64 edd impl 128 enth=plm ny=4 vimp=true ts=hesdirk2 tol=1.0e-12
+10 1000 x1 64 edd impl 256 enth=plm ny=4 vimp=true ts=hesdirk2 tol=1.0e-12
+10 1000 x1 64 edd impl 512 enth=plm ny=4 vimp=true ts=hesdirk2 tol=1.0e-12
+10 1000 x1 64 edd impl 1024 enth=plm ny=4 vimp=true ts=hesdirk2 tol=1.0e-12
+10 1000 x1 64 edd impl 2048 enth=plm ny=4 vimp=true ts=hesdirk2 tol=1.0e-12
+100 1000 x1 64 edd impl 128 enth=plm ny=4 vimp=true ts=hesdirk2 tol=1.0e-12
+100 1000 x1 64 edd impl 256 enth=plm ny=4 vimp=true ts=hesdirk2 tol=1.0e-12
+100 1000 x1 64 edd impl 512 enth=plm ny=4 vimp=true ts=hesdirk2 tol=1.0e-12
+100 1000 x1 64 edd impl 1024 enth=plm ny=4 vimp=true ts=hesdirk2 tol=1.0e-12
+100 1000 x1 64 edd impl 2048 enth=plm ny=4 vimp=true ts=hesdirk2 tol=1.0e-12

@@ -766,7 +766,9 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     impl_vimp_jscale = pin->GetReal("rad_m1","implicit_vimp_jscale");
   }
   // ---- THE runs_4a_accel LEVERS (tests_m1/runs_4a_accel, tests_m1/runs_4j_accmerge).
-  // DEFAULT ON since m1-accmerge for time_scheme = be with transport = implicit and a
+  // DEFAULT ON since m1-accmerge for time_scheme = be (and since m1-h2fast for hesdirk2,
+  // tests_m1/runs_5f_h2fast, whose stage solves also take time2_one_pass_safety and
+  // time2_lin_tol_fac, rad_m1_time2.cpp) with transport = implicit and a
   // closure whose tensor is fixed within a step (eddington, vet_sc, tau), wherever each
   // is valid:
   //   implicit_fast_kernels = true   (bitwise-exact kernel shortcuts)
@@ -792,11 +794,14 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   //    exactly zero; hesdirk2 + vet_sc without extrapolation (time2_vet_extrap = false):
   //    the tensor save of Time2VetExtrapolate is a plain copy.
   {
-  bool ts_be = true;
+  // m1-h2fast (tests_m1/runs_5f_h2fast): the same defaults for time_scheme = hesdirk2,
+  // whose stage solves already track the one_pass q and the predictor per solve kind
+  bool ts_ok = true;
   if (pin->DoesParameterExist("rad_m1","time_scheme")) {
-    ts_be = (pin->GetString("rad_m1","time_scheme").compare("be") == 0);
+    const std::string tsn = pin->GetString("rad_m1","time_scheme");
+    ts_ok = (tsn.compare("be") == 0) || (tsn.compare("hesdirk2") == 0);
   }
-  const bool ldef = full && ts_be && fixcl && !global_variable::restart_run;
+  const bool ldef = full && ts_ok && fixcl && !global_variable::restart_run;
   impl_fastk = pin->GetOrAddBoolean("rad_m1","implicit_fast_kernels",ldef);
   impl_vfold = pin->GetOrAddBoolean("rad_m1","implicit_vimp_fold",
                                     ldef && impl_vimp && impl_stencil);
@@ -5621,6 +5626,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   // non-physical.  Under time_scheme = be t2st is false and nothing below moves.
   const int t2s = t2_solve;
   const bool t2st = (t2s == M1_T2S_STAGE1) || (t2s == M1_T2S_STAGE2);
+  // time2_lin_tol: the stage solves' linear tolerance (put back at the end of the solve)
+  t2_lin_save = impl_lin_tol;
+  if (t2st) {impl_lin_tol = (t2_lin_tol > 0.0) ? t2_lin_tol : (t2_lin_fac*impl_lin_tol);}
   auto t2i_ = t2inc;
   const bool t2k = (t2s != M1_T2S_NONE);
   const bool t2vs = t2st && (t2_afmode != 0) && impl_vimp && trans;
@@ -7204,7 +7212,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       }
       if (onep && it == 0 && !pc && !ocheck) {
         const Real qm = std::max(onep_qa[otyp], onep_qb[otyp]);
-        const Real qe = std::max(impl_onep_s*qm, 1.0e-6);
+        // time2_one_pass_safety for the stage solves (otyp 1, 2)
+        const Real sf = (otyp != 0 && t2_onep_s > 0.0) ? t2_onep_s : impl_onep_s;
+        const Real qe = std::max(sf*qm, 1.0e-6);
         pc = (qe < 0.5) && (resid*qe/(1.0 - qe) < impl_tol);
         if (pc) {impl_onep_n += 1.0;}
       }
@@ -7631,6 +7641,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   }
 
   if (vetsc) {Kokkos::fence(); vet_itime += vtimer.seconds();}
+  impl_lin_tol = t2_lin_save;
   return TaskStatus::complete;
 }
 
