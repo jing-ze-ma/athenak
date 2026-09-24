@@ -168,11 +168,12 @@ using atm_column::EffGravAt;
 #define RT_NB 4
 #endif
 
-// Radial extent of the private intensity column in the GREY split kernel. The
-// correlated-k kernel no longer uses this -- it instantiates itself at several sizes and
-// dispatches the smallest that fits n1 at run time, because an oversized column is not
-// free: at n1 = 68 the chain kernel costs 454 ms with a 72-deep column against 540 with a
-// 272-deep one. The grey split path is a test path and keeps the fixed size, guarded.
+// Radial extent of the private intensity column in the PICKET-FENCE split kernel
+// (rt_chain, rt_ck = false, rt_split = true), a test path that keeps the fixed size,
+// guarded.  The correlated-k kernels (rt_chain_ck, rt_chain_ck_lin, rt_chain_ck_lin1) and
+// the grey chain (rt_chain_grey) no longer use a compile-time column: their whole-column
+// arrays live in the n1-sized global buffer rt_ckscr_ptr (ck-scratch, ck-tiers), so any
+// n1 runs with no tier waste and no cap.
 #ifndef RT_NNC
 #define RT_NNC 72
 #endif
@@ -273,6 +274,19 @@ std::conditional_t<ON, CkScrCol<T>, CkScrOne<T>> CkScrGet(Real *buf, const int g
   } else {
     return CkScrOne<T>{};
   }
+}
+// ck-tiers: the same wave-tiled layout for the other column kernels (rt_chain_ck_lin,
+// rt_chain_ck_lin1, rt_chain_grey).  Thread t's tile holds rows of n1 values; row r
+// (one chain or angle of one array) holds element i of lane l at
+//   tile + (r*n1 + i)*CKS_W + l,  tsz = (rows per thread)*n1*CKS_W.
+// CkScrRows(...)[c][i] is row r0 + c.
+template <typename T>
+KOKKOS_INLINE_FUNCTION
+CkScrCol<T> CkScrRows(Real *buf, const int r0, const size_t tsz, const int n1,
+                      const int t) {
+  Real *tile = buf + static_cast<size_t>(t/CKS_W)*tsz;
+  T *p = reinterpret_cast<T*>(tile + static_cast<size_t>(r0)*n1*CKS_W) + (t % CKS_W);
+  return CkScrCol<T>{p, n1*CKS_W};
 }
 // the buffer (grown on demand, never shrunk; leaked like the other rt_ Views) and the cap
 // on its size: a launch whose groups would exceed rt_ckscr_gb is split over chain blocks
@@ -2615,8 +2629,8 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
       const int ck_nq_ = ck_nq;
 
       if (!band_on && n1 > RT_NNC) {
-        // the correlated-k path dispatches its column size at run time; the grey split
-        // path below still uses the fixed RT_NNC, so it has to be checked
+        // the correlated-k and grey paths size their columns by n1 at run time; the
+        // picket-fence split path below still uses the fixed RT_NNC, so it is checked
         std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: problem/rt_split with grey "
                   << "RT needs RT_NNC >= n1, but RT_NNC = " << RT_NNC
                   << " and n1 = " << n1
@@ -3084,10 +3098,17 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
         // band kernel uses (17 % low).  It only sets the implicit relaxation rate, but
         // the rate is what decides whether a thin cell can be integrated at the
         // hydrodynamic timestep, so it is worth having right.
-        auto launch_grey_chain = [&](auto nn_tag) {
-          constexpr int NN = decltype(nn_tag)::value;
+        // ck-tiers: the two whole-column arrays, I_down and I_upb (2 angles each), live
+        // in rt_ckscr_ptr (CkScrRows: rows 0-1 and 2-3), sized by n1 at run time.
+        auto launch_grey_chain = [&]() {
+          const int sg2 = je - js + 1, sg3 = ke - ks + 1;
+          const size_t sgtsz = static_cast<size_t>(4)*n1*CKS_W;
+          const size_t sgntl = (static_cast<size_t>(nmb1 + 1)*sg3*sg2 + CKS_W - 1)/CKS_W;
+          CkScrEnsure(sgntl*sgtsz);
+          Real *sgbuf = rt_ckscr_ptr->data();
           par_for("rt_chain_grey", DevExeSpace(), 0, nmb1, ks, ke, js, je,
           KOKKOS_LAMBDA(const int m, const int k, const int j) {
+            const int sgt = (m*sg3 + (k - ks))*sg2 + (j - js);
             for (int i=is; i<ie+2; ++i) {
               Fb_g(m,0,i,k,j) = 0.0;
               Qb_g(m,0,i,k,j) = 0.0;
@@ -3159,7 +3180,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
             // the top face's incoming datum: area-weighted for the legacy branch, a
             // plain intensity in the face's own frame for the centre-to-centre one
             const Real atop_ = layer_legacy ? aft_ : aftn_;
-            Real I_down[2][NN];
+            auto I_down = CkScrRows<Real>(sgbuf, 0, sgtsz, n1, sgt);
             // Top: the unresolved hydrostatic column above the domain, p/g of it, at the
             // top cell's opacity -- the same construction the band solver uses.
             {
@@ -3343,7 +3364,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               // O(beta), leaving the down ray's mixing exact to O(beta^2) -- beta is
               // dr/2r, so ~2e-5 on the test grids, which is what the gates measure.
               // Mode 3 needs none of this: it solves the coupled system exactly.
-              Real I_upb[2][NN];
+              auto I_upb = CkScrRows<Real>(sgbuf, 2, sgtsz, n1, sgt);
               if (!pp_) {
                 for (int q=0; q<nq; ++q) {
                   Real ipb = b_cutf + (int_at_cut ? Iint : 0.0) + muq[q]*dbdtau_cut;
@@ -3461,19 +3482,8 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
           // identically 0 on the grey path (only the correlated-k chain accumulates
           // into it) and stays at its allocation zero, Fb_g is written by the column
           // solve below, and Src_g/Em_g stay zero with no consumer left.
-        } else if (n1 <= 72) {
-          launch_grey_chain(std::integral_constant<int, 72>{});
-        } else if (n1 <= 136) {
-          launch_grey_chain(std::integral_constant<int, 136>{});
-        } else if (n1 <= 264) {
-          launch_grey_chain(std::integral_constant<int, 264>{});
-        } else if (n1 <= 520) {
-          launch_grey_chain(std::integral_constant<int, 520>{});
         } else {
-          std::cout << "### FATAL ERROR in two_stream_rt: n1 = " << n1
-                    << " exceeds the largest grey radial tier (520). Add a tier to the "
-                    << "dispatch in picket_fence_two_stream_RT." << std::endl;
-          std::exit(EXIT_FAILURE);
+          launch_grey_chain();
         }
         // ---- rt_implicit_column = 3: THE EXACT IMPLICIT COLUMN SOLVE ----------------
         // The sweep above has just filled kc_g/Bb_g (the FROZEN opacity and the entry
@@ -5563,8 +5573,17 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
         auto lP_g = cklon_ ? *ck_linP_ptr : CkDum<DvceArray5D<Real>>("ck_lP_d");
         auto lG_g = cklon_ ? *ck_linG_ptr : CkDum<DvceArray5D<Real>>("ck_lG_d");
         auto lC_g = cklon_ ? *ck_linC_ptr : CkDum<DvceArray2D<Real>>("ck_lC_d");
-        auto launch_ck_lin = [&](auto nn_tag) {
-          constexpr int NN = decltype(nn_tag)::value;
+        // ck-tiers: Sc, the one whole-column array of ck_lin / ck_lin1, lives in
+        // rt_ckscr_ptr (CkScrRows), sized by the actual n1: RT_NB rows per ck_lin thread,
+        // one per ck_lin1 thread; the thread count is the same (nch_ per column), so
+        // both need nch_*n1 Reals per column, 1/7 of what the chain kernel's groups take.
+        const int scl2 = je - js + 1, scl3 = ke - ks + 1;
+        auto launch_ck_lin = [&]() {
+          const size_t sltsz = static_cast<size_t>(RT_NB)*n1*CKS_W;
+          const size_t slntl = (static_cast<size_t>(nmb1 + 1)*nblk*scl3*scl2 + CKS_W - 1)
+                               /CKS_W;
+          CkScrEnsure(slntl*sltsz);
+          Real *slbuf = rt_ckscr_ptr->data();
           par_for("rt_chain_ck_lin", DevExeSpace(), 0, nmb1, 0, nblk-1, ks, ke, js, je,
           KOKKOS_LAMBDA(const int m, const int blk, const int k, const int j) {
             constexpr int NC = RT_NB;
@@ -5583,7 +5602,8 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
             }
             // PASS 1: Sc up the column on the stored R; Sc on the below side of every
             // face is kept for pass 2
-            Real Sc[NC][NN];
+            const int slt = ((m*nblk + blk)*scl3 + (k - ks))*scl2 + (j - js);
+            auto Sc = CkScrRows<Real>(slbuf, 0, sltsz, n1, slt);
             Real ss[NC], sfc[NC], suc[NC];
             for (int cc=0; cc<NC; ++cc) {
               const Real bcut = Bb_g(m,bandc[cc],icut,k,j);
@@ -5720,8 +5740,12 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                    : CkDum<DvceArray5D<Real>>("ck_lps_d");
         auto lpf_g = (cklon_ && ck_lpf_ptr != nullptr) ? *ck_lpf_ptr
                    : CkDum<DvceArray5D<Real>>("ck_lpf_d");
-        auto launch_ck_lin1 = [&](auto nn_tag) {
-          constexpr int NN = decltype(nn_tag)::value;
+        auto launch_ck_lin1 = [&]() {
+          const size_t sltsz = static_cast<size_t>(n1)*CKS_W;
+          const size_t slntl = (static_cast<size_t>(nmb1 + 1)*nch_*scl3*scl2 + CKS_W - 1)
+                               /CKS_W;
+          CkScrEnsure(slntl*sltsz);
+          Real *slbuf = rt_ckscr_ptr->data();
           CkParFor4("rt_chain_ck_lin1", cklw_, 0, nmb1, 0, nch_-1, ks, ke, js, je,
           KOKKOS_LAMBDA(const int m, const int c, const int k, const int j) {
             if (ckskip_ && ckdone_g(m,k,j) > 0.0) return;
@@ -5729,7 +5753,8 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
             if (icut > ie) return;
             const int b = (ck_nq_ == 1) ? (c/CK_NG) : (c/(2*CK_NG));
             const Real wfc = lC_g(0,c);
-            Real Sc[NN];
+            const int slt = ((m*nch_ + c)*scl3 + (k - ks))*scl2 + (j - js);
+            auto Sc = CkScrRows<Real>(slbuf, 0, sltsz, n1, slt)[0];
             const Real bcut = Bb_g(m,b,icut,k,j);
             Real sfc = bcut, suc = bcut, ss = bcut + lC_g(1,c);
             Real bown = bcut;
@@ -5851,30 +5876,10 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
         };
         const bool cklthr1_ = (ck_impl_lin_thr == 1);
         auto launch_ck_lin_tier = [&]() {
-          if (n1 <= 72) {
-            if (cklthr1_) {
-              launch_ck_lin1(std::integral_constant<int, 72>{});
-            } else {
-              launch_ck_lin(std::integral_constant<int, 72>{});
-            }
-          } else if (n1 <= 136) {
-            if (cklthr1_) {
-              launch_ck_lin1(std::integral_constant<int, 136>{});
-            } else {
-              launch_ck_lin(std::integral_constant<int, 136>{});
-            }
-          } else if (n1 <= 264) {
-            if (cklthr1_) {
-              launch_ck_lin1(std::integral_constant<int, 264>{});
-            } else {
-              launch_ck_lin(std::integral_constant<int, 264>{});
-            }
+          if (cklthr1_) {
+            launch_ck_lin1();
           } else {
-            if (cklthr1_) {
-              launch_ck_lin1(std::integral_constant<int, 520>{});
-            } else {
-              launch_ck_lin(std::integral_constant<int, 520>{});
-            }
+            launch_ck_lin();
           }
         };
         auto launch_ck_full = [&]() {
@@ -5892,7 +5897,7 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
             }
           }
         };
-        if (n1 <= 520) {
+        {   // ck-tiers: every column kernel is sized by n1 at run time; no n1 cap
           if (cklin_) {
             // ck_impl_lin_check: the chain kernel on the same B first, kept aside
             auto lchk_g = cklchk_ ? *ck_lchk_ptr : CkDum<DvceArray5D<Real>>("lchk_d");
@@ -6189,12 +6194,6 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
               jac_g(m,2,k,j,i) = (s2 > 0.0) ? s2 : 0.0;
             });
           }
-        } else {
-          std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: n1 = " << n1
-                    << " exceeds the largest correlated-k radial tier (520). Add a tier "
-                        << "to "
-                    << "the dispatch in picket_fence_two_stream_RT." << std::endl;
-          std::exit(EXIT_FAILURE);
         }
       } else {
       par_for("rt_chain", DevExeSpace(), 0, nmb1, 0, nblk-1, ks, ke, js, je,
