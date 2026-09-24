@@ -274,3 +274,19 @@ counts point at the same thin-cell closure loop.
   there).
 - Cleanup: build dirs `b_*` in `/viper/ptmp2/jinma/thinstab_0924` were deleted; the
   runs are kept.
+
+## 6. After merging rt-integration 08a82d86 (merge fc2b0b9c)
+
+- `bitwise_off.sh` with the switch off, new vs 08a82d86 (box_convection CPU): all 7 cases
+  have rst bitwise, hst 0.
+- tst rad_m1: 3/3 passed (ATHENAK_M1_DATA=/viper/ptmp2/jinma/faces_0924/m1data).
+- Reproducer under `time_scheme = hesdirk2` (`inp/uni_ctr_h2`), 500 steps, spread s at
+  steps 75 -> 475:
+
+| tau_cell | switch off | switch 1.5 |
+|---|---|---|
+| 0.125 | O(1), 933 positivity fallbacks | 1.1e-7 -> 0, 1 fallback |
+| 0.031 | O(1), 987 | 3.6e-6 -> 1.1e-6, 3 |
+| 0.006 | O(1), 990 | 1.3e-5 -> 1.4e-5 (bounded), 2 |
+
+The cure holds under hesdirk2. The relaxation acts on the first pass of each stage solve.
