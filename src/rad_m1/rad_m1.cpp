@@ -77,14 +77,30 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   // geometry (on a plain Cartesian mesh the hydro ignores them and so would M1), so
   // that no stretched input can reach the uniform-dx kernels; and relativistic
   // coordinates, since the M1 here is the O(v/c) flat-space system.
+  //
+  // STAGE S1 (tests_m1/runs_5a_sp_s1) lifts the refusal for ONE configuration: a
+  // spherical-polar WEDGE that does not touch a pole, with the radial stretches allowed,
+  // transport = implicit, closure = eddington and the restrictions checked by
+  // SphericalS1Check after ImplicitInit; STAGE S2 (tests_m1/runs_5b_sp_s2) adds the
+  // chi(f) closures m1 / minerbo / kershaw there.  Everything else on sp (the poles,
+  // explicit transport, vet_sc, tau) and everything on the cubed sphere stays refused.
+  sph_geom = false;
   {
     Mesh *pm_ = ppack->pmesh;
     std::string why;
-    if (pm_->use_spherical_polar) {why += " mesh/use_spherical_polar";}
+    const bool sp_ = pm_->use_spherical_polar && !pm_->use_cubed_sphere;
+    if (pm_->use_spherical_polar && !sp_) {why += " mesh/use_spherical_polar";}
     if (pm_->use_cubed_sphere) {why += " mesh/use_cubed_sphere";}
-    if (pm_->use_polar_boundary) {why += " mesh/use_polar_boundary";}
-    if (pm_->use_grid_stretch_r) {why += " mesh/use_grid_stretch_r";}
-    if (pm_->use_grid_stretch_r_poly) {why += " mesh/use_grid_stretch_r_poly";}
+    if (pm_->use_polar_boundary) {
+      why += " mesh/use_polar_boundary (the poles are not supported yet: run a wedge "
+             "whose theta range stays clear of theta = 0 and pi)";
+    } else if (sp_ && (pm_->mesh_size.x2min <= 1.0e-10 ||
+                       pm_->mesh_size.x2max >= M_PI - 1.0e-10)) {
+      why += " a theta range that reaches a pole (the poles are not supported yet: run "
+             "a wedge whose theta range stays clear of theta = 0 and pi)";
+    }
+    if (pm_->use_grid_stretch_r && !sp_) {why += " mesh/use_grid_stretch_r";}
+    if (pm_->use_grid_stretch_r_poly && !sp_) {why += " mesh/use_grid_stretch_r_poly";}
     if (pm_->use_grid_stretch_theta) {why += " mesh/use_grid_stretch_theta";}
     if (ppack->pcoord != nullptr &&
         (ppack->pcoord->is_special_relativistic ||
@@ -94,13 +110,17 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     }
     if (!why.empty()) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-        << std::endl << "<rad_m1> (explicit and implicit transport) supports only a "
-        << "uniform Cartesian mesh; this input sets:" << why << "." << std::endl
+        << std::endl << "<rad_m1> (explicit and implicit transport) supports a "
+        << "uniform Cartesian mesh and, for the implicit solve only (stages S1, S2: "
+        << "closure eddington | m1 | minerbo | kershaw), "
+        << "a spherical-polar wedge clear of the poles; this input sets:" << why << "."
+        << std::endl
         << "The M1 kernels would run with Cartesian uniform-dx arithmetic on it.  See "
         << "docs/dev/rad_m1_curvilinear_design.md (branch m1-curv-design) for the "
         << "staged plan that lifts this." << std::endl;
       std::exit(EXIT_FAILURE);
     }
+    sph_geom = sp_;
   }
   nstage = M1_NSTAGE;
   impl_cfl = -1.0;
@@ -514,6 +534,12 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   tau_ready = false;
   tau_time = 0.0;
   tau_ncall = 0.0;
+  vet_col = false;
+  vcol_sph = false;
+  vcol_axis_flux = false;
+  vcol_nc = vcol_np = vcol_nmu = vcol_every = vcol_nray = vcol_dump_every = 0;
+  vcol_built = false;
+  vcol_time = vcol_ncall = vcol_nskip = 0.0;
   {std::string cl = pin->GetOrAddString("rad_m1","closure","m1");
   chi_kind = M1_CHI_LEVERMORE;
   if (cl.compare("m1") == 0) {
@@ -538,10 +564,35 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // speeds, the 1-D branch, the explicit coupling) keeps Levermore's, as closure = m1
     eddington = false;
     tau_closure = true;
+  } else if (cl.compare("vet_col") == 0) {
+    // STAGE S5 (rad_m1_vetcol.cpp): the tensor of a per-column 1-D formal solution,
+    // carried by the tau closure's machinery (tau_ten, built once per step)
+    eddington = false;
+    tau_closure = true;
+    vet_col = true;
+    vcol_nc = pin->GetOrAddInteger("rad_m1","vet_col_ncore",8);
+    vcol_np = pin->GetOrAddInteger("rad_m1","vet_col_nsub",1);
+    vcol_nmu = pin->GetOrAddInteger("rad_m1","vet_col_nmu",4);
+    vcol_every = pin->GetOrAddInteger("rad_m1","vet_col_every",1);
+    std::string ax = pin->GetOrAddString("rad_m1","vet_col_axis","radial");
+    if (ax.compare("flux") == 0) {
+      vcol_axis_flux = true;
+    } else if (ax.compare("radial") != 0) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+        << std::endl << "<rad_m1>/vet_col_axis = '" << ax << "' not implemented "
+        << "(radial | flux)" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    vcol_dump = "";
+    if (pin->DoesParameterExist("rad_m1","vet_col_dump")) {
+      vcol_dump = pin->GetString("rad_m1","vet_col_dump");
+      vcol_dump_every = pin->GetOrAddInteger("rad_m1","vet_col_dump_every",1);
+      if (vcol_dump.compare("none") == 0 || vcol_dump_every <= 0) {vcol_dump = "";}
+    }
   } else {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
       << std::endl << "<rad_m1>/closure = '" << cl << "' not implemented "
-      << "(m1 | minerbo | kershaw | eddington | vet_sc | tau)" << std::endl;
+      << "(m1 | minerbo | kershaw | eddington | vet_sc | tau | vet_col)" << std::endl;
     std::exit(EXIT_FAILURE);
   }
   if (vet_sc && transport != M1_TRANSPORT_IMPLICIT) {
@@ -657,6 +708,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   // (4b) MILESTONE 3a hook: the implicit solver's own parameters, checks and arrays.
   // Returns immediately with transport = explicit.
   ImplicitInit(pin);
+  if (sph_geom) {SphericalS1Check(pin);}
 
   // (5) boundary buffers
   pbval_u = new MeshBoundaryValuesCC(ppack, pin, false);

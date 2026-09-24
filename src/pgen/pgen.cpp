@@ -37,6 +37,24 @@
 #include "pgen.hpp"
 
 
+namespace {
+//----------------------------------------------------------------------------------------
+//! \fn void CheckSplitHookCalled
+//! \brief a pgen that enrolled user_split_func needs a task list that calls it.  Only the
+//! pure-hydro (AssembleHydroTasks) and pure-MHD (AssembleMHDTasks) lists do; every other
+//! physics combination (ion-neutral, radiation, NR, ...) would skip the source silently.
+
+void CheckSplitHookCalled(ProblemGenerator *ppgen, Mesh *pm) {
+  if (ppgen->user_split_func == nullptr) return;
+  if (pm->pmb_pack != nullptr && pm->pmb_pack->split_hook_tasks) return;
+  std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__ << std::endl
+            << "The problem generator enrolled user_split_func (an operator-split source "
+            << "such as problem/ck_impl_once), but no task list for this physics "
+            << "combination calls it (only pure <hydro> or pure <mhd> do)." << std::endl;
+  exit(EXIT_FAILURE);
+}
+}  // namespace
+
 //----------------------------------------------------------------------------------------
 // default constructor, calls pgen function.
 
@@ -103,6 +121,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm) :
       exit(EXIT_FAILURE);
     }
   }
+  CheckSplitHookCalled(this, pm);
 }
 
 //----------------------------------------------------------------------------------------
@@ -1439,6 +1458,7 @@ ProblemGenerator::ProblemGenerator(ParameterInput *pin, Mesh *pm, IOWrapper resf
       exit(EXIT_FAILURE);
     }
   }
+  CheckSplitHookCalled(this, pm);
 }
 
 //----------------------------------------------------------------------------------------

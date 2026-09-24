@@ -512,6 +512,13 @@ class RadiationM1 {
   void ImplicitPrecondXD(int zc, int upd);
   void ImplicitOpXD(int xc, int yc, int red);
   int ImplicitBiCGStabDev(Real rhsmax);
+  // <rad_m1>/implicit_op_check = K (tests_m1/gates; read only when named, default 0 =
+  // off, then nothing below runs): at the first |K| solves, every operator variant of
+  // the configuration applied to the same pseudo-random vector and compared
+  // (rad_m1_opcheck.cpp); K > 0 fatal on a mismatch, K < 0 report only
+  int impl_opchk, opchk_n;
+  Real impl_opchk_tol;          // <rad_m1>/implicit_op_check_tol (default 1e-12)
+  void ImplicitOpCheck();
   // ---- the Picard pass count (bench/m1_picard_0923).  Since bench/m1_defaults_0923
   // lres_test = false, conv_est = true and lin_ew_max = 1e-2 (not predictor) are the
   // DEFAULTS for closure = eddington | vet_sc | tau (the OFF settings stay the defaults
@@ -727,6 +734,18 @@ class RadiationM1 {
   //! read the implicit-solver parameters and allocate its arrays; a no-op in
   //! transport = explicit
   void ImplicitInit(ParameterInput *pin);
+  //! STAGE S1 (rad_m1_sph.cpp): the configuration the spherical-polar wedge supports;
+  //! fatal on anything else.  Called after ImplicitInit when sph_geom is set.
+  void SphericalS1Check(ParameterInput *pin);
+  // true on a spherical-polar mesh (a wedge clear of the poles, S1): the implicit
+  // kernels then take the face areas, cell volumes and centre-to-centre distances of
+  // Coordinates instead of the uniform mb_size.dx1..3 (appended as overwrites, so
+  // the Cartesian arithmetic is untouched)
+  bool sph_geom = false;
+  // STAGE S2 (rad_m1_sph.cpp): sph_geom with a closure that is not Eddington (m1,
+  // minerbo, kershaw): the radial faces take the integrating factor (M1SphDrr) and every
+  // face equation the lagged curvature M1SphCurv; false keeps the S1 arithmetic
+  bool sph_q = false;
   //! print the Picard statistics of the implicit solver (from the destructor, rank 0)
   void ImplicitReport();
   //! VET (rad_m1_vet.cpp): read <rad_m1>/vet_*, check the mesh, allocate
@@ -869,6 +888,33 @@ class RadiationM1 {
   void TauClosureBuild();
   //! closure = tau: cost line at the end of the run
   void TauClosureReport();
+
+  // ---- <rad_m1>/closure = vet_col (rad_m1_vetcol.cpp, design stage S5, option D): the
+  // Eddington factor f_K = K/J of a 1-D formal solution per RADIAL COLUMN (spherical
+  // impact-parameter rays on the sp wedge, Gauss rays in plane-parallel on a Cartesian
+  // mesh) with the column's own extinction and source, handed to the implicit solve as a
+  // FIXED uniaxial tensor about r_hat (or the M1 flux axis) through the tau closure's
+  // tau_ten (tau_closure is set as well; only the tensor build differs).
+  bool vet_col;                // closure = vet_col (default false)
+  bool vcol_sph;               // spherical rays (sp) or plane-parallel (Cartesian)
+  bool vcol_axis_flux;         // vet_col_axis = flux: n = the M1 cell flux direction
+  int vcol_nc, vcol_np, vcol_nmu, vcol_every, vcol_nray;
+  int vcol_dump_every;         // vet_col_dump_every (0 = off)
+  bool vcol_built;             // a tensor exists (vet_col_every > 1 skips builds)
+  std::string vcol_dump;       // vet_col_dump: file prefix of the column dump
+  Real vcol_time, vcol_ncall, vcol_nskip;
+  DvceArray2D<Real> vcol_seg;  // (ray, shell l): path length from shell l to l+1 / top
+  DvceArray2D<Real> vcol_mu;   // (ray, shell): mu of the ray at the shell
+  DvceArray2D<Real> vcol_w;    // (ray, shell): hemisphere quadrature weight (sum 1)
+  DvceArray2D<Real> vcol_ray;  // (ray, 0..3): L (first shell), type, seg0, a_t | mu_face
+  DvceArray1D<int> vcol_klast; // (shell): index of the last ray active at the shell
+  DvceArray2D<Real> vcol_buf;  // (ray, column): the running intensity of each ray
+  DvceArray5D<Real> vcol_mom;  // (m,5,k,j,i): J, H, K, S, chi of the solution (dump)
+  std::vector<double> vcol_rc; // shell radii (host, for the dump)
+  void VetColInit();           // checks, ray tables, buffers (first TauClosureInit)
+  void VetColBuild();          // the formal solution -> tau_ten (chi, n)
+  void VetColReport();
+  void VetColDumpColumn(int ncall);
 
   // ...in "m1_before_stagen"
   TaskStatus InitRecv(Driver *d, int stage);

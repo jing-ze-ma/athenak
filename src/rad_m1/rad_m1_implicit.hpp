@@ -567,6 +567,116 @@ Real M1OffDiv(const V &iw, const int m, const int d, const int k, const int j,
   return s;
 }
 
+//----------------------------------------------------------------------------------------
+//! \fn M1SphDrr
+//! \brief STAGE S2 (spherical-polar wedge, closure m1/minerbo/kershaw): the radial face
+//! weight of one cell with the INTEGRATING FACTOR of design sect. 1.4 (branch
+//! m1-curv-design).  With P = p I + q n n, p = (1-chi) E/2, q = (3 chi-1) E/2,
+//!   (div P)_r = d_r p + (1/r^2) d_r(r^2 q n_r^2) - q (1 - n_r^2)/r + [tangential],
+//! and the face gradient at r_f is
+//!   (p_R - p_L)/dr_f + (r_R^2 Q_R E_R - r_L^2 Q_L E_L)/(r_f^2 dr_f),  Q = q n_r^2/E,
+//! i.e. the Cartesian two-point difference of D E with D_rr replaced, per cell and per
+//! face, by (1-chi)/2 + (3 chi-1)/2 n_r^2 (r_c/r_f)^2.  s2 = (r_c/r_f)^2.  Both parts are
+//! >= 0, so the row stays an M-matrix; chi = 1, n = r gives r^2 E = const exactly.
+
+KOKKOS_INLINE_FUNCTION
+Real M1SphDrr(const Real chi, const Real n1, const Real s2) {
+  return 0.5*(1.0 - chi) + 0.5*(3.0*chi - 1.0)*n1*n1*s2;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn M1SphCurv
+//! \brief STAGE S2: the LAGGED part of (div P)_d at one cell centre of the
+//! spherical-polar wedge (physical orthonormal components r, theta, phi), i.e. what
+//! the face equation of direction d does not carry implicitly.  The implicit parts are
+//! d_r of the integrating-factor form (M1SphDrr, radial faces) and (1/r) d_th P_thth,
+//! (1/(r sin)) d_ph P_phph on the transverse faces (the S1 two-point differences over
+//! dxface).
+//! With P = p I + q n n (uniaxial closure, components from WCHI and N1..N3):
+//!   d = 0:  - q (1 - n_r^2)/r
+//!           + [od] (1/r) d_th P_rt + cot P_rt / r + (1/(r sin)) d_ph P_rp
+//!   d = 1:  cot (P_tt - P_pp)/r
+//!           + [od] (1/r^3) d_r (r^3 P_rt) + (1/(r sin)) d_ph P_tp
+//!   d = 2:  [od] (1/r^3) d_r (r^3 P_rp) + (1/r) d_th P_tp + 2 cot P_tp / r
+//! [od] = the off-diagonal (tangential-derivative) terms, present when `od` is set
+//! (implicit_offdiag = lagged; the sp default is none); the curvature of the diagonal
+//! components is always on.
+//! Centred differences over the coordinate distances of the neighbours, one-sided at a
+//! physical boundary exactly as M1OffDiv ([il,iu] x [jl,ju] x [kl,ku] the readable
+//! range).  E is read from component `ec` (M1_IW_EP: the lagged form).  The wedge stays
+//! clear of the poles, so cot and 1/sin are finite at every cell centre.
+
+template <class V>
+KOKKOS_INLINE_FUNCTION
+Real M1SphPab(const V &iw, const int m, const int a, const int b, const int k,
+              const int j, const int i, const int ec) {
+  return 0.5*(3.0*iw(m,M1_IW_WCHI,k,j,i) - 1.0)*iw(m,M1_IW_N1+a,k,j,i)
+         *iw(m,M1_IW_N1+b,k,j,i)*iw(m,ec,k,j,i);
+}
+
+template <class V, class A>
+KOKKOS_INLINE_FUNCTION
+Real M1SphCurv(const V &iw, const A &x1v, const A &x2v, const A &x3v, const int m,
+               const int d, const int k, const int j, const int i, const bool od,
+               const bool thrd, const int il, const int iu, const int jl, const int ju,
+               const int kl, const int ku, const int ec) {
+  const Real r = x1v(m,i);
+  const Real sn = sin(x2v(m,j));
+  const Real ct = cos(x2v(m,j))/sn;
+  const Real e = iw(m,ec,k,j,i);
+  const Real chi = iw(m,M1_IW_WCHI,k,j,i);
+  const Real n1 = iw(m,M1_IW_N1,k,j,i);
+  const Real n2 = iw(m,M1_IW_N2,k,j,i);
+  const Real n3 = iw(m,M1_IW_N3,k,j,i);
+  const Real q = 0.5*(3.0*chi - 1.0)*e;
+  Real s = 0.0;
+  if (d == 0) {
+    s = -q*(1.0 - n1*n1)/r;
+  } else if (d == 1) {
+    s = ct*q*(n2*n2 - n3*n3)/r;
+  }
+  if (!od) {return s;}
+  const int ia = (i+1 <= iu) ? (i+1) : i;
+  const int ib = (i-1 >= il) ? (i-1) : i;
+  const int ja = (j+1 <= ju) ? (j+1) : j;
+  const int jb = (j-1 >= jl) ? (j-1) : j;
+  const int ka = (thrd && k+1 <= ku) ? (k+1) : k;
+  const int kb = (thrd && k-1 >= kl) ? (k-1) : k;
+  if (d == 0) {
+    if (ja != jb) {
+      s += (M1SphPab(iw,m,0,1,k,ja,i,ec) - M1SphPab(iw,m,0,1,k,jb,i,ec))
+           /(r*(x2v(m,ja) - x2v(m,jb)));
+    }
+    s += ct*q*n1*n2/r;
+    if (ka != kb) {
+      s += (M1SphPab(iw,m,0,2,ka,j,i,ec) - M1SphPab(iw,m,0,2,kb,j,i,ec))
+           /(r*sn*(x3v(m,ka) - x3v(m,kb)));
+    }
+  } else if (d == 1) {
+    if (ia != ib) {
+      const Real ra = x1v(m,ia), rb = x1v(m,ib);
+      s += (ra*ra*ra*M1SphPab(iw,m,0,1,k,j,ia,ec) - rb*rb*rb*M1SphPab(iw,m,0,1,k,j,ib,ec))
+           /(r*r*r*(ra - rb));
+    }
+    if (ka != kb) {
+      s += (M1SphPab(iw,m,1,2,ka,j,i,ec) - M1SphPab(iw,m,1,2,kb,j,i,ec))
+           /(r*sn*(x3v(m,ka) - x3v(m,kb)));
+    }
+  } else {
+    if (ia != ib) {
+      const Real ra = x1v(m,ia), rb = x1v(m,ib);
+      s += (ra*ra*ra*M1SphPab(iw,m,0,2,k,j,ia,ec) - rb*rb*rb*M1SphPab(iw,m,0,2,k,j,ib,ec))
+           /(r*r*r*(ra - rb));
+    }
+    if (ja != jb) {
+      s += (M1SphPab(iw,m,1,2,k,ja,i,ec) - M1SphPab(iw,m,1,2,k,jb,i,ec))
+           /(r*(x2v(m,ja) - x2v(m,jb)));
+    }
+    s += 2.0*ct*q*n2*n3/r;
+  }
+  return s;
+}
+
 // the six LAGGED quantities the x1 halo of the partitioned solve exchanges once per
 // Picard iteration (halo "A"), in the order the pack kernel uses.  The seventh exchange
 // (halo "B") carries M1_IW_EP alone, after the line solve has accepted the new iterate.

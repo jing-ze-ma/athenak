@@ -1,6 +1,6 @@
 ## RULE ZERO
 
-- **[NEXT SESSION START HERE: docs/handover/HANDOVER-2026-09-24.md (top block)](merge-finished-branches.md)** — 09-23 session: M1 defaults/fixes merged (rt-integration c65233b4), unmerged m1-launch / ck-fast / m1-thin, kink cause found, open decisions
+- **[NEXT SESSION START HERE: docs/handover/HANDOVER-2026-09-24.md (top block, 07:20)](merge-finished-branches.md)** — 09-24 night: 7 merges (rt-integration 809b47df), next production = T4+c2+ck_impl_every=4 with 2 blockers (mhd-split, ck-restart agents), S2 on sp running
 
 - **[cs_mhd_prod4 RUNNING since 09-22 20:45](cs-mhd-prod4-run.md)** — jobs 11941995 (link 1) + 11944873-5 (links 2-4, HSA_NO_SCRATCH_RECLAIM=1), bench/cs_mhd_prod4; what to check at rot 0.5; do not relaunch/chain without the user
 - **[cs_hyd4_prod LAUNCHED 09-23 (hydro twin of prod4)](cs-hyd4-prod-run.md)** — jobs 11943719 (link 1) + 11944876-8 (links 2-4, HSA_NO_SCRATCH_RECLAIM=1), bench/cs_hyd4_prod; do not relaunch/chain without the user
@@ -39,6 +39,9 @@ Standing user rules (full text in [index-standing-rules](index-standing-rules.md
 - **[COMPARE WITH v_MLT AND F_conv/F](compare-with-mlt-not-old-runs.md)** — not with box_w4, which was 19x v_MLT
 - **[USE rt-integration FOR EVERYTHING](use-rt-integration-branch.md)** — incl. He4; he4-presn-global merged as e688efd4 and frozen
 - **[viper INODE QUOTA](viper-inode-quota-builddirs.md)** — worktree add fails while big writes work; delete build dirs in frozen worktrees
+
+- **[ck x1 ONE-BLOCK CONSTRAINT: DEFERRED (user 09-24)](ck-x1-one-block-deferred.md)** — design A (column transpose) / C (affine interface) recorded; weak-scaling test at nx1 256 in /viper/ptmp2/jinma/cs_weak_0924
+- **[NEXT dhj PRODUCTION: T4 + c2 + ck_impl_every=4 (user 09-24)](next-prod-ck-c2.md)** — keys + 3 blockers inside (MHD split hook, ck restart, nx1>136 scratch)
 
 ## Active work (M1 radiation, He4)
 
