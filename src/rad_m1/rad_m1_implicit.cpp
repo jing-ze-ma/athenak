@@ -571,6 +571,16 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       kdh = Kokkos::View<Real*, Kokkos::SharedHostPinnedSpace>("m1_kdh", M1_KD_SIZE);
     }
   }
+  // implicit_op_check (rad_m1_opcheck.cpp, tests_m1/gates): read only when named
+  impl_opchk = 0;
+  opchk_n = 0;
+  impl_opchk_tol = 1.0e-12;
+  if (pin->DoesParameterExist("rad_m1","implicit_op_check")) {
+    impl_opchk = pin->GetInteger("rad_m1","implicit_op_check");
+    if (pin->DoesParameterExist("rad_m1","implicit_op_check_tol")) {
+      impl_opchk_tol = pin->GetReal("rad_m1","implicit_op_check_tol");
+    }
+  }
   // the Picard pass count (bench/m1_picard_0923): a per-pass log, off by default
   impl_plog = pin->GetOrAddInteger("rad_m1","implicit_picard_log",0);
   // ...and the options that cut it.  Since bench/m1_defaults_0923 they DEFAULT ON for
@@ -4256,6 +4266,7 @@ void RadiationM1::ImplicitAccelApply(int it) {
 //! five scalars in all.
 
 int RadiationM1::ImplicitBiCGStab(Real rhsmax) {
+  if (impl_opchk != 0) {ImplicitOpCheck();}   // implicit_op_check (debug, default off)
   if (impl_bcg_sync > 0) {return ImplicitBiCGStabFused(rhsmax);}
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   int is = indcs.is, ie = indcs.ie;
