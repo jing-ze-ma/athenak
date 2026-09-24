@@ -173,9 +173,14 @@ Mesh::Mesh(ParameterInput *pin) :
                 << "are mutually exclusive" << std::endl;
       std::exit(EXIT_FAILURE);
     }
+    // c1..c4 are always recorded (default 0); c5..c8 are read only when the input gives
+    // them, so a 4-coefficient input keeps its exact parameter dump (and, with the extra
+    // coefficients zero, its bitwise grid).
     for (int n=0; n<NSTRETCH_R_POLY; ++n) {
-      fStretchRPoly[n] = pin->GetOrAddReal("mesh",
-                             "f_stretch_r_c" + std::to_string(n+1), 0.0);
+      const std::string key = "f_stretch_r_c" + std::to_string(n+1);
+      if (n < 4 || pin->DoesParameterExist("mesh", key)) {
+        fStretchRPoly[n] = pin->GetOrAddReal("mesh", key, 0.0);
+      }
     }
     // The mapping must be strictly increasing, or the grid folds over and cell widths go
     // negative. A bad coefficient set has to fatal here rather than corrupt the run, so

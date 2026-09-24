@@ -168,6 +168,7 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
   }
 
 
+  scr_level = TeamScratchLevel(scr_size, 0);
   par_for_outer("mhd_flux1",DevExeSpace(), scr_size, scr_level, 0, nmb1, kl, ku, jl, ju,
   KOKKOS_LAMBDA(TeamMember_t member, const int m, const int k, const int j) {
     ScrArray2D<Real> wl(member.team_scratch(scr_level), nvars, ncells1);
@@ -453,6 +454,7 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
     jl = js-1, ju = je+1;
     if (use_fofc) { jl = js-2, ju = je+2; }
 
+    scr_level = TeamScratchLevel(scr_size, 0);
     par_for_outer("mhd_flux2",DevExeSpace(),scr_size,scr_level,0,nmb1, kl, ku,
     KOKKOS_LAMBDA(TeamMember_t member, const int m, const int k) {
       ScrArray2D<Real> scr1(member.team_scratch(scr_level), nvars, ncells1);
@@ -707,6 +709,7 @@ void MHD::CalculateFluxes(Driver *pdriver, int stage) {
     kl = ks-1, ku = ke+1;
     if (use_fofc) { kl = ks-2, ku = ke+2; }
 
+    scr_level = TeamScratchLevel(scr_size, 0);
     par_for_outer("mhd_flux3",DevExeSpace(), scr_size, scr_level, 0, nmb1, js-1, je+1,
     KOKKOS_LAMBDA(TeamMember_t member, const int m, const int j) {
       ScrArray2D<Real> scr1(member.team_scratch(scr_level), nvars, ncells1);

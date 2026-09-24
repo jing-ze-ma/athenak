@@ -19,7 +19,9 @@
 
 // Number of coefficients in the polynomial radial stretch (see StretchRPoly):
 //     u(xi) = xi + sum_{k=1}^{NSTRETCH_R_POLY} c_k xi^k (1-xi).
-#define NSTRETCH_R_POLY 4
+// Inputs give mesh/f_stretch_r_c1..c8; missing ones are zero, which adds exact zeros
+// (a 4-coefficient input gives the same grid bit for bit as when this was 4).
+#define NSTRETCH_R_POLY 8
 
 
 KOKKOS_INLINE_FUNCTION

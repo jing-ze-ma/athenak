@@ -87,6 +87,7 @@ TaskStatus DynGRMHDPS<EOSPolicy, ErrorPolicy>::CalcFluxes(Driver *pdriver, int s
   int il = is, iu = ie+1;
   if (use_fofc) { il = is-1, iu = ie+2; }
 
+  scr_level = TeamScratchLevel(scr_size, scratch_level);
   par_for_outer("dyngrflux_x1",DevExeSpace(), scr_size, scr_level,
       0, nmb1, kl, ku, jl, ju,
   KOKKOS_LAMBDA(TeamMember_t member, const int m, const int k, const int j) {
@@ -181,6 +182,7 @@ TaskStatus DynGRMHDPS<EOSPolicy, ErrorPolicy>::CalcFluxes(Driver *pdriver, int s
     jl = js-1, ju = je+1;
     if (use_fofc) { jl = js-2, ju = je+2; }
 
+    scr_level = TeamScratchLevel(scr_size, scratch_level);
     par_for_outer("dyngrflux_x2",DevExeSpace(), scr_size, scr_level, 0, nmb1, kl, ku,
     KOKKOS_LAMBDA(TeamMember_t member, const int m, const int k) {
       ScrArray2D<Real> scr1(member.team_scratch(scr_level), nvars, ncells1);
@@ -289,6 +291,7 @@ TaskStatus DynGRMHDPS<EOSPolicy, ErrorPolicy>::CalcFluxes(Driver *pdriver, int s
     kl = ks-1, ku = ke+1;
     if (use_fofc) { kl = ks-2, ku = ke+2; }
 
+    scr_level = TeamScratchLevel(scr_size, scratch_level);
     par_for_outer("dyngrflux_x3",DevExeSpace(), scr_size, scr_level, 0, nmb1, js-1, je+1,
     KOKKOS_LAMBDA(TeamMember_t member, const int m, const int j) {
       ScrArray2D<Real> scr1(member.team_scratch(scr_level), nvars, ncells1);
