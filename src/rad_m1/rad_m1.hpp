@@ -512,6 +512,13 @@ class RadiationM1 {
   void ImplicitPrecondXD(int zc, int upd);
   void ImplicitOpXD(int xc, int yc, int red);
   int ImplicitBiCGStabDev(Real rhsmax);
+  // <rad_m1>/implicit_op_check = K (tests_m1/gates; read only when named, default 0 =
+  // off, then nothing below runs): at the first |K| solves, every operator variant of
+  // the configuration applied to the same pseudo-random vector and compared
+  // (rad_m1_opcheck.cpp); K > 0 fatal on a mismatch, K < 0 report only
+  int impl_opchk, opchk_n;
+  Real impl_opchk_tol;          // <rad_m1>/implicit_op_check_tol (default 1e-12)
+  void ImplicitOpCheck();
   // ---- the Picard pass count (bench/m1_picard_0923).  Since bench/m1_defaults_0923
   // lres_test = false, conv_est = true and lin_ew_max = 1e-2 (not predictor) are the
   // DEFAULTS for closure = eddington | vet_sc | tau (the OFF settings stay the defaults
