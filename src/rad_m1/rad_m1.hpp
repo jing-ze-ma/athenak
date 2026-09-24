@@ -483,6 +483,13 @@ class RadiationM1 {
   // overlapped with the operator on the interior cells; read only when named, default
   // off (then nothing below runs).  Needs implicit_halo_mpi and implicit_op_stencil.
   bool impl_halo_ovl;
+  // <rad_m1>/implicit_halo_ovl_faces (tests_m1/runs_4l_sync; read only when named,
+  // default false): the shell of the overlapped operator is only as deep as the faces
+  // whose ghosts arrive by MPI (hm_face, the union over the pack, set by
+  // ImplicitHaloMPIInit: x1-, x1+, x2-, x2+, x3-, x3+); the other faces go with the
+  // interior, whose ghosts (on-rank copy, physical: coefficient 0) are in place
+  bool impl_ovl_faces;
+  int hm_face[6];
   Kokkos::View<Real*, Kokkos::SharedHostPinnedSpace> ho_h;  // 2 x 4 partial sums
   void ImplicitHaloOp(int xc, int yc, int red, Real *out);
   void ImplicitStencilOpPart(int xc, int yc, int red, int part, int w, Real *hs);

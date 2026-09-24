@@ -1,0 +1,2 @@
+w2_hyd 2 new box_hyd mesh/nx2=208 mesh/x2max=2.20662552e9
+g1_hyd 1 new box_hyd
