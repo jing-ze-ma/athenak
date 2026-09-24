@@ -1,0 +1,24 @@
+c2_r1         46.67 ms/cyc  cycles 480  dt 18.446
+c2_r2         46.37 ms/cyc  cycles 480  dt 18.446
+c2_r3         46.67 ms/cyc  cycles 480  dt 18.446
+e2_r1         39.35 ms/cyc  cycles 480  dt 18.470
+e2_r2         39.08 ms/cyc  cycles 480  dt 18.470
+e2_r3         38.97 ms/cyc  cycles 480  dt 18.470
+e4_r1         28.99 ms/cyc  cycles 480  dt 18.494
+e4_r2         28.51 ms/cyc  cycles 480  dt 18.494
+e4_r3         28.64 ms/cyc  cycles 480  dt 18.494
+e4g10_r1      38.08 ms/cyc  cycles 480  dt 18.443
+e4g10_r2      38.07 ms/cyc  cycles 480  dt 18.443
+e4g10_r3      37.90 ms/cyc  cycles 480  dt 18.443
+e8g10_r1      39.25 ms/cyc  cycles 480  dt 18.470
+e8g10_r2      39.05 ms/cyc  cycles 480  dt 18.470
+e8g10_r3      38.97 ms/cyc  cycles 480  dt 18.470
+h_r1          14.82 ms/cyc  cycles 780  dt 10.275
+h_r2          14.76 ms/cyc  cycles 780  dt 10.275
+h_r3          14.78 ms/cyc  cycles 780  dt 10.275
+c2     median    46.67 ms  n=3  x hydro 3.16
+e2     median    39.08 ms  n=3  x hydro 2.65
+e4     median    28.64 ms  n=3  x hydro 1.94
+e4g10  median    38.07 ms  n=3  x hydro 2.58
+e8g10  median    39.05 ms  n=3  x hydro 2.64
+h      median    14.78 ms  n=3  x hydro 1.00
