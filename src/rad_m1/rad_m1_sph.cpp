@@ -15,8 +15,10 @@
 //!   * <rad_m1>/transport = implicit, closure = eddington, time_scheme = be (m1-sph2:
 //!     also hesdirk2, and implicit_vimp; tests_m1/runs_5h_sph2);
 //!   * one MeshBlock along x1 per column (implicit_partition = none), no SMR/AMR;
-//!   * implicit_halo_mpi = false (the direct same-rank halo is allowed: without a pole
-//!     it is the plain copy of the Cartesian mesh);
+//!   * implicit_halo_direct, implicit_halo_mpi, implicit_halo_overlap and
+//!     implicit_halo_ovl_faces as on the Cartesian mesh (without a pole every ghost is
+//!     the plain copy; halo_mpi and the overlap allowed since m1-sphhalo,
+//!     tests_m1/runs_5i_sphhalo);
 //!   * implicit_flux = central, implicit_recon = dc, implicit_trans_limit = none,
 //!     no dbg_tensor; implicit_offdiag is set to none (the Eddington
 //!     tensor has no off-diagonal part, so the terms it drops are identically zero).
@@ -65,7 +67,6 @@ void RadiationM1::SphericalS1Check(ParameterInput *pin) {
     why += " more than one MeshBlock along x1 (meshblock/nx1 must equal mesh/nx1);";
   }
   if (transport == M1_TRANSPORT_IMPLICIT) {
-    if (impl_halo_mpi) {why += " implicit_halo_mpi = true;";}
     if (impl_flux != M1_IFLUX_CENTRAL) {why += " implicit_flux != central;";}
     if (impl_recon != M1_IRECON_DC) {why += " implicit_recon != dc;";}
     if (impl_tlim != M1_TLIM_NONE) {why += " implicit_trans_limit != none;";}
@@ -91,7 +92,7 @@ void RadiationM1::SphericalS1Check(ParameterInput *pin) {
       << "vet_col, "
       << "implicit_offdiag = auto | none (| lagged for m1/minerbo/kershaw), "
       << "time_scheme = be | hesdirk2, one MeshBlock "
-      << "along x1, no SMR, implicit_halo_mpi = false, implicit_flux = central, "
+      << "along x1, no SMR, implicit_flux = central, "
       << "implicit_recon = dc, implicit_trans_limit = none, no "
       << "dbg_tensor; this input has:" << why << std::endl
       << "See tests_m1/runs_5a_sp_s1/README.md and tests_m1/runs_5b_sp_s2/README.md."

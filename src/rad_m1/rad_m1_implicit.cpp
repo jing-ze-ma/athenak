@@ -537,10 +537,14 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // m1-defaults wherever its preconditions hold: implicit_halo_direct, a same-level mesh
   // (no SMR/AMR), no cubed-sphere seams and no polar boundary; otherwise the ordinary
   // exchange, silently.  A key the input (or restart echo) names keeps its value.
+  // m1-sphhalo (tests_m1/runs_5i_sphhalo): also on the spherical-polar WEDGE (no pole:
+  // every ghost is the plain copy, no vector slot flips), except on a restart whose file
+  // lacks the key (written before m1-sphhalo), which keeps the ordinary exchange.
   impl_kpipe = pin->GetOrAddBoolean("rad_m1","implicit_krylov_pipe",false);
   {auto *pmh = pmy_pack->pmesh;
   const bool hmdef = impl_halo_direct && !pmh->multilevel && !pmh->use_cubed_sphere &&
-                     !pmh->use_polar_boundary && !pmh->use_spherical_polar;
+                     !pmh->use_polar_boundary &&
+                     !(pmh->use_spherical_polar && global_variable::restart_run);
   impl_halo_mpi = pin->GetOrAddBoolean("rad_m1","implicit_halo_mpi",hmdef);}
   hm_state = 0;
   hm_comm = nullptr;
