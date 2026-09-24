@@ -46,7 +46,9 @@
 //!
 //! BOUNDARIES.  Bottom (x1min face), upward rays: the diffusion intensity
 //! eps = E + 3 (F . Omega) / c of the bottom cell's M1 state, carried half a cell with
-//! S of that cell.  Top (x1max face), downward rays: vacuum.
+//! S of that cell.  Top (x1max face), downward rays: vacuum.  With vet_bc_bath (default
+//! true, m1-h2div) an x1 end whose implicit_bc is marshak gives its entering rays the
+//! isotropic incident bath eps = implicit_ebath of that end instead (0: vacuum).
 //!
 //! SEVERAL MESHBLOCKS / MPI RANKS (VetSweepMB).  The same sweep over the GLOBAL layers,
 //! EXACT: the planes are banded by w = floor(max dx1 |mu_perp/mu_1|/dx_perp) + 1 cells
@@ -791,6 +793,7 @@ struct VetRayK {
   int l, nx1, nx1g, b2, b3, ek, nx2, nx3, pw, pr;
   bool thrd, milne;
   Real fmil, cl, efl;
+  Real bblo, bbhi;             // the x1 bath intensities (vet_bc_bath; bblo < 0: off)
   DvceArray2D<int> rd;
   DvceArray4D<Real> bw;
   DvceArray5D<Real> cs, ip;
@@ -854,9 +857,11 @@ struct VetRayK {
     if (l == 0) {
       // the physical x1 face (active cells only: no overlap at l = 0)
       const Real su = fmax(1.5*s0 - 0.5*cs(m,up ? (li0 + 1) : (li0 - 1),1,kk,jj), 0.0);
-      Real ib = 0.0;
+      Real ib = up ? 0.0 : bbhi;
       if (up) {
-        if (milne) {
+        if (bblo >= 0.0) {
+          ib = bblo;
+        } else if (milne) {
           ib = su + 3.0*fmil/cl*m1;
         } else {
           const int kb = kk - b3, jb = jj - b2;
@@ -1314,7 +1319,8 @@ void VetMomOut(const DvceArray5D<Real> &mo_, const DvceArray2D<Real> &rv_, const
 
 void VetSweepAng(VetMBState &st, const int nmb, const int is, const int js,
                  const int ks, const int nx1, const int nx2, const int nx3,
-                 const bool thrd, const bool milne, const Real fmil, const Real cl,
+                 const bool thrd, const bool milne, const Real fmil, const Real bblo,
+                 const Real bbhi, const Real cl,
                  const Real efl, const DvceArray5D<Real> &iw_,
                  const DvceArray5D<Real> &vc_, const DvceArray2D<Real> &ang_) {
   const int nx1g = st.nx1g, n2g = st.n2g, n3g = st.n3g, nbx2 = st.nbx2;
@@ -1421,9 +1427,11 @@ void VetSweepAng(VetMBState &st, const int nmb, const int is, const int js,
       Real iv;
       if (l == 0) {
         const Real su = fmax(1.5*s0 - 0.5*gc_(up ? (i + 1) : (i - 1),1,k,j), 0.0);
-        Real ib = 0.0;
+        Real ib = up ? 0.0 : bbhi;
         if (up) {
-          if (milne) {
+          if (bblo >= 0.0) {
+            ib = bblo;
+          } else if (milne) {
             ib = su + 3.0*fmil/cl*m1;
           } else {
             Real e = fmax(gbt_(0,k,j), efl);
@@ -1587,6 +1595,15 @@ void RadiationM1::VetInit(ParameterInput *pin) {
   vet_nmu = pin->GetOrAddInteger("rad_m1", "vet_nmu", 4);
   vet_nphi = pin->GetOrAddInteger("rad_m1", "vet_nphi", 8);
   vet_milne = pin->GetOrAddBoolean("rad_m1", "vet_milne", false);
+  // m1-h2div (tests_m1/runs_5j_h2div): at an x1 end with implicit_bc = marshak the rays
+  // entering the box carry the incident bath, eps = implicit_ebath (0 = the vacuum of a
+  // free surface), instead of the diffusion intensity E + 3 F.Omega/c of the end cell's
+  // M1 state.  That intensity closes a lagged loop through the tensor: in the thin
+  // diffuse-wall shadow the wall cell went to f = 1, E = 1.5-1.6 E_bath (exact 0.5) at
+  // every dt and time scheme, and under hesdirk2 its stages failed every step.  Default
+  // true; a restart whose file lacks the key keeps the old boundary (false).
+  vet_bc_bath = pin->GetOrAddBoolean("rad_m1", "vet_bc_bath",
+                                     !global_variable::restart_run);
   vet_dump = pin->GetOrAddString("rad_m1", "vet_dump", "none");
   if (vet_dump.compare("none") == 0) {vet_dump = "";}
   vet_dump_every = pin->GetOrAddInteger("rad_m1", "vet_dump_every", 0);
@@ -2438,6 +2455,9 @@ void RadiationM1::VetSweepMB(bool lagged) {
   const Real efl = e_floor;
   const bool milne = vet_milne;
   const Real fmil = iflux_x1min;
+  const Real bblo = (vet_bc_bath && !milne && ibc_x1min == M1_IBC_MARSHAK) ?
+                     iebath_x1min : -1.0;
+  const Real bbhi = (vet_bc_bath && ibc_x1max == M1_IBC_MARSHAK) ? iebath_x1max : 0.0;
   auto bw_ = st.bwe;
   const int ncb = nx3*nx2*nx1, npb = nx3*nx2;
 #if MPI_PARALLEL_ENABLED
@@ -2563,6 +2583,8 @@ void RadiationM1::VetSweepMB(bool lagged) {
   rk.thrd = thrd;
   rk.milne = milne;
   rk.fmil = fmil;
+  rk.bblo = bblo;
+  rk.bbhi = bbhi;
   rk.cl = cl;
   rk.efl = efl;
   rk.rd = rd_;
@@ -2780,9 +2802,11 @@ void RadiationM1::VetSweepMB(bool lagged) {
             // the physical x1 face: VetShortChar, verbatim
             const int iin = up ? (i + 1) : (i - 1);
             const Real su = fmax(1.5*s0 - 0.5*vc_(m,M1_VET_SRC,k,j,iin), 0.0);
-            Real ib = 0.0;
+            Real ib = up ? 0.0 : bbhi;
             if (up) {
-              if (milne) {
+              if (bblo >= 0.0) {
+                ib = bblo;
+              } else if (milne) {
                 ib = su + 3.0*fmil/cl*m1;
               } else {
                 Real e = fmax(iw_(m,M1_IW_EN,k,j,i), efl);
@@ -2937,9 +2961,12 @@ void RadiationM1::VetMBSweeps() {
   VetMBState &st = *vet_mbs;
   if (st.ang) {
     auto &indcs = pmy_pack->pmesh->mb_indcs;
+    const Real bblo = (vet_bc_bath && !vet_milne && ibc_x1min == M1_IBC_MARSHAK) ?
+                      iebath_x1min : -1.0;
+    const Real bbhi = (vet_bc_bath && ibc_x1max == M1_IBC_MARSHAK) ? iebath_x1max : 0.0;
     VetSweepAng(st, pmy_pack->nmb_thispack, indcs.is, indcs.js, indcs.ks, indcs.nx1,
                 indcs.nx2, trans_x3 ? indcs.nx3 : 1, trans_x3, vet_milne, iflux_x1min,
-                c_light, e_floor, iw, vet_cell, vet_ang);
+                bblo, bbhi, c_light, e_floor, iw, vet_cell, vet_ang);
     return;
   }
   VetSweepMB(false);
@@ -3028,6 +3055,9 @@ void RadiationM1::VetShortChar() {
   const bool thermal = (pmy_pack->phydro != nullptr) && coupling && !opac_zero;
   const bool milne = vet_milne;
   const Real fmil = iflux_x1min;
+  const Real bblo = (vet_bc_bath && !milne && ibc_x1min == M1_IBC_MARSHAK) ?
+                     iebath_x1min : -1.0;
+  const Real bbhi = (vet_bc_bath && ibc_x1max == M1_IBC_MARSHAK) ? iebath_x1max : 0.0;
 
   // (1) extinction and source: cell by cell, or column by column for the Milne
   // diagnostic, which needs tau (the same arithmetic; a column loop per thread leaves
@@ -3123,9 +3153,11 @@ void RadiationM1::VetShortChar() {
           // regime), and linear in tau along the segment
           const int iin = up ? (i + 1) : (i - 1);
           const Real su = fmax(1.5*s0 - 0.5*vc_(m,M1_VET_SRC,k,j,iin), 0.0);
-          Real ib = 0.0;
+          Real ib = up ? 0.0 : bbhi;
           if (up) {
-            if (milne) {
+            if (bblo >= 0.0) {
+              ib = bblo;
+            } else if (milne) {
               // the exact deep Milne intensity 3 H (tau + q + mu) = S + 3 H mu
               ib = su + 3.0*fmil/cl*m1;
             } else {

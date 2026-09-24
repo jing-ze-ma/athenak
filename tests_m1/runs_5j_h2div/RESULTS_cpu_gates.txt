@@ -1,0 +1,28 @@
+== A_box1: VERDICT BITWISE files=10 diff=0 | base: NON-CONVERGED=0.000000e+00 rc=0 | fix: NON-CONVERGED=0.000000e+00 rc=0
+== A_slabv2: VERDICT BITWISE files=10 diff=0 | base: NON-CONVERGED=0.000000e+00 rc=0 | fix: NON-CONVERGED=0.000000e+00 rc=0
+== A_nd2: VERDICT BITWISE files=12 diff=0 | base: NON-CONVERGED=0.000000e+00 rc=0 | fix: NON-CONVERGED=0.000000e+00 rc=0
+== A_cart_sym: VERDICT BITWISE files=18 diff=0 | base: NON-CONVERGED=0.000000e+00 rc=0 | fix: NON-CONVERGED=0.000000e+00 rc=0
+== A_marshak_cart: VERDICT BITWISE files=4 diff=0 | base: NON-CONVERGED=0.000000e+00 rc=0 | fix: NON-CONVERGED=0.000000e+00 rc=0
+== A_rw_cart: VERDICT BITWISE files=17 diff=0 | base: NON-CONVERGED=3.270000e+02 rc=0 | fix: NON-CONVERGED=3.270000e+02 rc=0
+== B_nd2: VERDICT BITWISE files=13 diff=0 | base: NON-CONVERGED=0.000000e+00 stage fallbacks=0.000000e+00 rc=0 | fix: NON-CONVERGED=0.000000e+00 stage fallbacks=0.000000e+00 rc=0
+== B_boxnd2: VERDICT BITWISE files=10 diff=0 | base: NON-CONVERGED=0.000000e+00 stage fallbacks=0.000000e+00 rc=0 | fix: NON-CONVERGED=0.000000e+00 stage fallbacks=0.000000e+00 rc=0
+== B_boxv2: VERDICT BITWISE files=10 diff=0 | base: NON-CONVERGED=0.000000e+00 stage fallbacks=0.000000e+00 rc=0 | fix: NON-CONVERGED=0.000000e+00 stage fallbacks=0.000000e+00 rc=0
+== B_cart_sym: VERDICT DIFFERENT files=18 diff=12 | base: NON-CONVERGED=0.000000e+00 stage fallbacks=1.000000e+00 rc=0 | fix: NON-CONVERGED=0.000000e+00 stage fallbacks=1.000000e+00 rc=0
+== B_marshak_cart: VERDICT BITWISE files=4 diff=0 | base: NON-CONVERGED=0.000000e+00 stage fallbacks=0.000000e+00 rc=0 | fix: NON-CONVERGED=0.000000e+00 stage fallbacks=0.000000e+00 rc=0
+== B_rw_cart: VERDICT BITWISE files=17 diff=0 | base: NON-CONVERGED=1.000000e+00 stage fallbacks=0.000000e+00 rc=0 | fix: NON-CONVERGED=1.000000e+00 stage fallbacks=0.000000e+00 rc=0
+== F_nd2 | base: NON-CONVERGED=0.000000e+00 stage fallbacks=1.000000e+00 rc=0 | fix: NON-CONVERGED=0.000000e+00 stage fallbacks=1.000000e+00 rc=0 | fixT: NON-CONVERGED=0.000000e+00 stage fallbacks=1.000000e+00 rc=0
+   fix vs base: hst_cons 3.77e-09 (F1top)  hst_dyn 7.92e-08 (1-mom)  row1_cons 0.00e+00 ()  rst_cons 5.76e-10 (Frad)  rst_dyn 4.07e-08 (mom)  rst bitwise False
+   base vs fixT: hst_cons 2.60e-09 (F1top)  hst_dyn 4.56e-07 (V1max)  row1_cons 7.03e-10 (F1top)  rst_cons 7.31e-10 (Frad)  rst_dyn 1.41e-07 (mom)  rst bitwise False
+   fix  vs fixT: hst_cons 3.08e-09 (F1top)  hst_dyn 4.34e-07 (V1max)  row1_cons 7.03e-10 (F1top)  rst_cons 6.70e-10 (E)  rst_dyn 1.64e-07 (mom)  rst bitwise False
+== F_boxv2 | base: NON-CONVERGED=0.000000e+00 stage fallbacks=1.000000e+00 rc=0 | fix: NON-CONVERGED=0.000000e+00 stage fallbacks=1.000000e+00 rc=0 | fixT: NON-CONVERGED=0.000000e+00 stage fallbacks=1.000000e+00 rc=0
+   fix vs base: hst_cons 4.68e-10 (F1top)  hst_dyn 3.85e-09 (1-mom)  row1_cons 0.00e+00 ()  rst_cons 1.83e-10 (Frad)  rst_dyn 2.90e-08 (mom)  rst bitwise False
+   base vs fixT: hst_cons 9.47e-10 (F1top)  hst_dyn 5.71e-09 (V1max)  row1_cons 6.28e-10 (F1top)  rst_cons 1.29e-09 (Frad)  rst_dyn 4.77e-08 (mom)  rst bitwise False
+   fix  vs fixT: hst_cons 9.55e-10 (F1top)  hst_dyn 8.40e-09 (1-mom)  row1_cons 6.28e-10 (F1top)  rst_cons 1.29e-09 (Frad)  rst_dyn 5.07e-08 (mom)  rst bitwise False
+== F_box2 | base: NON-CONVERGED=0.000000e+00 stage fallbacks=1.000000e+00 rc=0 | fix: NON-CONVERGED=0.000000e+00 stage fallbacks=1.000000e+00 rc=0 | fixT: NON-CONVERGED=0.000000e+00 stage fallbacks=1.000000e+00 rc=0
+   fix vs base: hst_cons 5.66e-10 (Fres)  hst_dyn 6.78e-08 (1-mom)  row1_cons 0.00e+00 ()  rst_cons 7.18e-10 (Frad)  rst_dyn 7.25e-08 (mom)  rst bitwise False
+   base vs fixT: hst_cons 8.19e-10 (F1top)  hst_dyn 9.62e-08 (1-mom)  row1_cons 4.86e-10 (F1top)  rst_cons 8.33e-10 (Frad)  rst_dyn 1.08e-07 (mom)  rst bitwise False
+   fix  vs fixT: hst_cons 5.54e-10 (F1top)  hst_dyn 2.84e-08 (1-mom)  row1_cons 4.86e-10 (F1top)  rst_cons 9.69e-10 (Frad)  rst_dyn 6.96e-08 (mom)  rst bitwise False
+   F_box2 baseT vs fixT: hst_cons 8.85e-12 (Fres)  hst_dyn 4.67e-10 (1-mom)  row1_cons 0.00e+00 ()  rst_cons 4.08e-11 (Frad)  rst_dyn 1.41e-08 (mom)  rst bitwise False
+== D_h2: fallbacks straight NON-CONVERGED=0.000000e+00 stage fallbacks=1.000000e+00 rc=0 cont NON-CONVERGED=0.000000e+00 stage fallbacks=1.000000e+00 rc=0
+RESTART VERDICT BITWISE rst=1
+GATES A B F D DONE
