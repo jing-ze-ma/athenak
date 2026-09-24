@@ -12,12 +12,13 @@
 //!   * mesh/use_spherical_polar without the polar boundary (the theta range must stay
 //!     clear of the poles; the theta faces are periodic or reflecting like any other
 //!     boundary), the radial stretches use_grid_stretch_r / _r_poly allowed;
-//!   * <rad_m1>/transport = implicit, closure = eddington, time_scheme = be;
+//!   * <rad_m1>/transport = implicit, closure = eddington, time_scheme = be (m1-sph2:
+//!     also hesdirk2, and implicit_vimp; tests_m1/runs_5h_sph2);
 //!   * one MeshBlock along x1 per column (implicit_partition = none), no SMR/AMR;
 //!   * implicit_halo_mpi = false (the direct same-rank halo is allowed: without a pole
 //!     it is the plain copy of the Cartesian mesh);
 //!   * implicit_flux = central, implicit_recon = dc, implicit_trans_limit = none,
-//!     implicit_vimp off, no dbg_tensor; implicit_offdiag is set to none (the Eddington
+//!     no dbg_tensor; implicit_offdiag is set to none (the Eddington
 //!     tensor has no off-diagonal part, so the terms it drops are identically zero).
 //!
 //! The geometry itself lives in the implicit kernels (rad_m1_implicit.cpp, `sph`
@@ -68,9 +69,10 @@ void RadiationM1::SphericalS1Check(ParameterInput *pin) {
     if (impl_flux != M1_IFLUX_CENTRAL) {why += " implicit_flux != central;";}
     if (impl_recon != M1_IRECON_DC) {why += " implicit_recon != dc;";}
     if (impl_tlim != M1_TLIM_NONE) {why += " implicit_trans_limit != none;";}
-    if (impl_vimp) {why += " implicit_vimp = true;";}
+    // m1-sph2 (tests_m1/runs_5h_sph2): time_scheme = hesdirk2 and implicit_vimp are
+    // allowed on the wedge (the stage solves' old vector carries no geometry; the vimp
+    // rows take the sp areas, volumes and face distances in ImplicitVimpBuild)
     if (dbg_tensor != 0) {why += " dbg_tensor != none;";}
-    if (time_scheme != M1_TIME_BE) {why += " time_scheme != be;";}
     if (pin->DoesParameterExist("rad_m1","implicit_offdiag")) {
       std::string s = pin->GetString("rad_m1","implicit_offdiag");
       // S2: `lagged` for the non-Eddington closures; `operator` (the 19-point stencil,
@@ -88,9 +90,9 @@ void RadiationM1::SphericalS1Check(ParameterInput *pin) {
       << "only transport = implicit, closure = eddington | m1 | minerbo | kershaw | "
       << "vet_col, "
       << "implicit_offdiag = auto | none (| lagged for m1/minerbo/kershaw), "
-      << "time_scheme = be, one MeshBlock "
+      << "time_scheme = be | hesdirk2, one MeshBlock "
       << "along x1, no SMR, implicit_halo_mpi = false, implicit_flux = central, "
-      << "implicit_recon = dc, implicit_trans_limit = none, no implicit_vimp, no "
+      << "implicit_recon = dc, implicit_trans_limit = none, no "
       << "dbg_tensor; this input has:" << why << std::endl
       << "See tests_m1/runs_5a_sp_s1/README.md and tests_m1/runs_5b_sp_s2/README.md."
       << std::endl;

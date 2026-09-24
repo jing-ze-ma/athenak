@@ -498,3 +498,9 @@ the Cartesian path bitwise on the GPU as well as on the CPU.
 compares every operator variant on one vector per row at 1e-12 and checks the halo ghosts;
 use it on sp/cs operators as they are added (every variant must agree with the plain
 `ImplicitStencilOp`). tst/test_suite/rad_m1 has CPU slab, operator-check and restart tests.
+
+**m1-sph2** (tests_m1/runs_5h_sph2/README.md): time_scheme = hesdirk2 and implicit_vimp on
+the wedge (vimp rows with dxface, M1SphDrr and dt A_f/V_i in `if (sph)` overwrites), vet_col
+under hesdirk2 (tensor and surface q at U^n, both stages); hesdirk2 (+ vimp) is now the
+default on the wedge and for vet_col.  T-S1 order 2.0, T-S5 2.03-2.08 (Eddington + vimp);
+Cartesian and be-named sp bitwise (CPU + GPU); GPU per step 1.00x be on the He wedge grid.
