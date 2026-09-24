@@ -1,0 +1,7 @@
+s4q32    n= 32 t=101.3  exact: L1 4.808e-04 Linf 2.444e-03  exactMarshak: L1 4.532e-03 Linf 3.612e-02  max|L/L_in-1| 5.59e-05
+s4q64    n= 64 t=97.04  exact: L1 2.499e-04 Linf 1.847e-03  exactMarshak: L1 4.366e-03 Linf 4.000e-02  max|L/L_in-1| 2.99e-05
+s4q128   n=128 t=58.55  exact: L1 1.180e-04 Linf 1.046e-03  exactMarshak: L1 4.253e-03 Linf 4.206e-02  max|L/L_in-1| 1.54e-05
+s4q256   n=256 t=58.35  exact: L1 5.220e-05 Linf 4.889e-04  exactMarshak: L1 4.189e-03 Linf 4.270e-02  max|L/L_in-1| 7.77e-06
+s4q n=32,64: Richardson L1 1.182e-04 Linf 4.365e-04   (n=64 alone: L1 2.289e-04 Linf 1.847e-03)
+s4q n=64,128: Richardson L1 5.042e-05 Linf 4.394e-04   (n=128 alone: L1 1.117e-04 Linf 1.046e-03)
+s4q n=128,256: Richardson L1 2.301e-05 Linf 2.441e-04   (n=256 alone: L1 5.153e-05 Linf 4.889e-04)

@@ -5302,6 +5302,11 @@ void RadiationM1::ImplicitVimpBuild() {
   const bool cyclic = (ibc_x1min == M1_IBC_PERIODIC);
   const int bclo = ibc_x1min, bchi = ibc_x1max;
   const Real mq = marshak_q;
+  // vet_col_surface_q (rad_m1_vetcol.cpp): the OUTER x1 Marshak q of each column from
+  // its formal solution; the branches below shadow mq with it (off: mq itself)
+  const bool vqs = vet_col && vcol_sq;
+  auto vq_ = vcol_q;
+  const Real mqo = marshak_q;
   const bool aphll = (impl_flux != M1_IFLUX_CENTRAL);
   const bool bmhalf = impl_bmom_half;
   const bool fref = (force_ref == M1_FREF_WB_ARAD);
@@ -5342,6 +5347,7 @@ void RadiationM1::ImplicitVimpBuild() {
           if (lo) {
             cR[s] = -cl*mq;
           } else {
+            const Real mq = vqs ? vq_(m,k,j) : mqo;   // vet_col_surface_q
             cL[s] = cl*mq;
           }
         }
@@ -5675,6 +5681,11 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   bool fref = (force_ref == M1_FREF_WB_ARAD);
   auto aref_ = arad_ref;
   Real mq = marshak_q;
+  // vet_col_surface_q (rad_m1_vetcol.cpp): the OUTER x1 Marshak q of each column from
+  // its formal solution; the branches below shadow mq with it (off: mq itself)
+  const bool vqs = vet_col && vcol_sq;
+  auto vq_ = vcol_q;
+  const Real mqo = marshak_q;
   int bclo = ibc_x1min, bchi = ibc_x1max;
   Real fxlo = iflux_x1min, fxhi = iflux_x1max;
   Real eblo = iebath_x1min, ebhi = iebath_x1max;
@@ -6577,6 +6588,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
           }
         }
       } else if (bchi == M1_IBC_MARSHAK) {
+        const Real mq = vqs ? vq_(m,k,j) : mqo;   // vet_col_surface_q
         bb += nu*ch*mq;
         rr += nu*ch*mq*ebhi;
         // implicit_bc_advect: the enthalpy flux A E through the end face, upwinded with
@@ -6724,6 +6736,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                                     iw_(m,M1_IW_ADV,k,j,ip), iw_(m,M1_IW_ADV,k,j,i3), vf);
           }
         } else if (bchi == M1_IBC_MARSHAK) {
+          const Real mq = vqs ? vq_(m,k,j) : mqo;   // vet_col_surface_q
           bb += nup*ch*mq;
           rr += nup*ch*mq*ebhi;
           if (badv) {
@@ -7015,6 +7028,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
         Real sgn = lo ? -1.0 : 1.0;
         Real fb = 0.0;
         if (bc == M1_IBC_MARSHAK) {
+          const Real mq = (hi && vqs) ? vq_(m,k,j) : mqo;   // vet_col_surface_q
           fb = sgn*cl*mq*(iw_(m,M1_IW_EP,k,j,ic) - (lo ? eblo : ebhi));
         } else if (bc == M1_IBC_FLUX) {
           fb = lo ? fxlo : fxhi;
