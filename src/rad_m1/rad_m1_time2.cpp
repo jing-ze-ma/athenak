@@ -49,8 +49,8 @@ const Real kT2G = 1.0 - 1.0/std::sqrt(2.0);
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::Time2Init
 //! \brief read <rad_m1>/time_scheme (be | hesdirk2) and allocate the stage state.  The
-//! parameter is read only when it is named, so the parameter dump of a be run does not
-//! change.
+//! key is always present here: ImplicitInit resolves its default (hesdirk2 where it is
+//! accepted, be elsewhere and on restarts whose file lacks it; m1-defaults2).
 
 void RadiationM1::Time2Init(ParameterInput *pin) {
   time_scheme = M1_TIME_BE;

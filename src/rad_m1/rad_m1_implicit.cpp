@@ -289,6 +289,22 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   // ---- MILESTONE 3b phase B.  `implicit` = the full 7-point solve; `implicit_x1` keeps
   // every branch below on the 3a/3a2/3c arithmetic, bit for bit.
   const bool full = (transport == M1_TRANSPORT_IMPLICIT);
+  // <rad_m1>/time_scheme (read by Time2Init below).  DEFAULT hesdirk2 since m1-defaults2
+  // (tests_m1/runs_5g_defaults2; /viper/ptmp2/jinma/h2val_0924: hesdirk2 at cfl 0.9 is
+  // 1.57x cheaper than be at cfl 0.3 at equal accuracy) wherever hesdirk2 is accepted:
+  // transport = implicit (not implicit_x1) on a Cartesian mesh (no spherical-polar S1/S2,
+  // cubed sphere or polar boundary), a closure other than tau / vet_col, and
+  // <time>/integrator = rk2.  Elsewhere the default stays be, silently.  A restart whose
+  // file lacks the key (written when it was read only when named) keeps be.  The
+  // resolved value is echoed (so later restarts keep it); explicit input overrides.
+  {auto *pmh = pmy_pack->pmesh;
+  const std::string integ = pin->DoesParameterExist("time","integrator") ?
+                            pin->GetString("time","integrator") : "rk2";
+  const bool h2def = full && !sph_geom && !pmh->use_spherical_polar &&
+                     !pmh->use_cubed_sphere && !pmh->use_polar_boundary &&
+                     !tau_closure && (integ.compare("rk2") == 0) &&
+                     !global_variable::restart_run;
+  (void) pin->GetOrAddString("rad_m1","time_scheme", h2def ? "hesdirk2" : "be");}
   trans_on = false;
   trans_x3 = false;
   impl_cfl = pin->GetOrAddReal("rad_m1","implicit_cfl",-1.0);
@@ -754,11 +770,20 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     ImplFatal("<rad_m1>/implicit_enthalpy = '" + sen
               + "' is not a choice (upwind | central | plm)");
   }
-  // implicit_vimp (rad_m1_implicit.hpp).  Read only when named.
-  impl_vimp = false;
-  if (pin->DoesParameterExist("rad_m1","implicit_vimp")) {
-    impl_vimp = pin->GetBoolean("rad_m1","implicit_vimp");
-  }
+  // implicit_vimp (rad_m1_implicit.hpp).  DEFAULT on since m1-defaults2
+  // (tests_m1/runs_5g_defaults2) only where the resolved time_scheme is hesdirk2, with
+  // which it was validated (under be it over-damps P = 100 waves), and where it is valid:
+  // a multi-D mesh with implicit_solver = bicgstab, nghost >= 2, hydro with coupling,
+  // gas_feedback and dbg_gas_force.  Otherwise off, silently.  A restart whose file lacks
+  // the key (read only when named before) keeps off; the resolved value is echoed;
+  // explicit input overrides.
+  {auto *pmh = pmy_pack->pmesh;
+  const bool vdef = (pin->GetString("rad_m1","time_scheme").compare("hesdirk2") == 0) &&
+                    full && pmh->multi_d && (impl_solver == M1_ISOLV_BICGSTAB) &&
+                    (pmh->mb_indcs.ng >= 2) && (pmy_pack->phydro != nullptr) &&
+                    coupling && gas_feedback && dbg_gas_force &&
+                    !global_variable::restart_run;
+  impl_vimp = pin->GetOrAddBoolean("rad_m1","implicit_vimp",vdef);}
   // DIAGNOSTIC: a scale of the Jacobian P (1 = Newton).  The converged state does not
   // depend on it; only the Picard contraction does.
   impl_vimp_jscale = 1.0;

@@ -184,6 +184,7 @@ implicit_lin_ew_max   = 1.0e-2
 implicit_precond_float = false
 implicit_pcr_team     = 0
 implicit_precond      = rbgs_fwd
+time_scheme           = be        # named: the gates test the be path (default hesdirk2 since m1-defaults2)
 implicit_picard_log   = 0
 implicit_halo_mpi     = false
 implicit_halo_overlap = false
