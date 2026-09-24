@@ -562,7 +562,7 @@ class RadiationM1 {
   Real t2_dtprev;               // the dt of the previous step (vet_sc extrapolation)
   bool t2_vprev;                // vet_prev holds the tensor of the previous step
   bool t2_vext;                 // time2_vet_extrap (default false: D^n)
-  Real t2_lin_tol;              // time2_lin_tol: the stage solves' implicit_lin_tol (<= 0:
+  Real t2_lin_tol;              // time2_lin_tol: stage solves' implicit_lin_tol (<= 0:
                                 // implicit_lin_tol x t2_lin_fac)
   Real t2_onep_s;               // time2_one_pass_safety: implicit_one_pass_safety of the
                                 // stage solves (0: implicit_one_pass_safety)
