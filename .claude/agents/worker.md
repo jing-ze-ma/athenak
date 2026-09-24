@@ -28,3 +28,5 @@ background and not watched; no throughput diagnosis, no progress checks. Do not 
 or run trees you only need to read: read them in place, or symlink them (a production restart may
 be read directly as long as you never write into its directory). Builds and run trees go on
 /viper/ptmp2/jinma (u2 quota is tight).
+
+- Job monitoring (user rule 09-24): ONE background loop per agent, `squeue` every 600 s (sleep 600), exiting when your jobs finish. No shorter sleeps, no extra watchers, no foreground waits.

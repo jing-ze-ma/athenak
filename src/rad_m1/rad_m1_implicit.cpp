@@ -536,8 +536,12 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   impl_halo_ovl = pin->GetOrAddBoolean("rad_m1","implicit_halo_overlap",
                       impl_halo_mpi && (global_variable::nranks > 1) &&
                       !global_variable::restart_run);
-  impl_ovl_faces = pin->DoesParameterExist("rad_m1","implicit_halo_ovl_faces") ?
-                   pin->GetBoolean("rad_m1","implicit_halo_ovl_faces") : false;
+  // implicit_halo_ovl_faces (tests_m1/runs_4l_sync): DEFAULT true since 09-24 wherever
+  // the overlap is on (4 GPUs weak: -1.6..-3.4 ms/cycle vs the full shell; round-off vs
+  // off, restarts bitwise).  As for the overlap, a restart whose file lacks the key keeps
+  // false, the resolved value is echoed, and explicit input overrides.
+  impl_ovl_faces = pin->GetOrAddBoolean("rad_m1","implicit_halo_ovl_faces",
+                       impl_halo_ovl && !global_variable::restart_run);
   for (int f = 0; f < 6; ++f) {hm_face[f] = 1;}
   if (impl_halo_ovl && !impl_halo_mpi) {
     ImplFatal("<rad_m1>/implicit_halo_overlap needs implicit_halo_mpi = true");
