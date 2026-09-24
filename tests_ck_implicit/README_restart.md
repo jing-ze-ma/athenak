@@ -114,3 +114,28 @@ Setup:
 
 Logs: /viper/ptmp2/jinma/ckrst_0924/gpugate/log.out.1195695{4,5}, and the runs are in
 `gpugate/<arm>/{s,a,r}`.
+
+## 5. On the merge with rt-integration 9c1a12d7 (ck-scratch, mhd-split), and MHD
+
+Merge commit 8dbab6bb. CPU binaries `athena.cpu.m1` (the merge) and `athena.cpu.m2`
+(ccb9712d, the fix below).
+
+**MHD gate** (`restart/mhdgate.sh`, 12 ranks):
+- Setup: bench/cs_mhd_prod4/rst/dhj.00127.rst, read in place: t = 1.93151e7 s,
+  **rotation 63.3**, cycle 1192186. Input `restart/prod4_mhd_rst.athinput` (the prod4
+  input plus the ck keys). Arm: c2 + every = 4. Runs: 6 cycles straight vs 3 + restart
+  + 3.
+- m1 result: **DIFFER**. The three cycles after the restart are all linearised steps,
+  so no implicit call allocated `ck_thk`. The restart written at their end then carried
+  no ck block at all, and the staged state was lost.
+- Fix (ccb9712d): `CkRstCollect` passes on whatever is still staged: THK, CAD0-3, CV and
+  the XS snapshot.
+- m2 result: rst payload **BITWISE** (mhdgate/gate.out).
+
+**Hydro gates on m2** (gate_m2/gate.out):
+- R: wpc 4 + 4 and 3 + 5, and wpf 3 + 3, for semi, c2, c2e4 and c2e4g: all BITWISE.
+- D (against e89954e2) and O (old restart): BITWISE.
+
+GPU: athena.gpu.r2 predates the ccb9712d fix. The fix only matters for a restart written
+before the first implicit call after a restart. It does not affect the GPU gates, nor the
+ab3 chain, whose segment-1 restart comes after 25000 cycles.
