@@ -109,6 +109,24 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1", "time2_vet_extrap")) {
     t2_vext = pin->GetBoolean("rad_m1", "time2_vet_extrap");
   }
+  // time2_stage2_pred = step | stage1 (tests_m1/runs_5f_h2fast).  step: the stage-2
+  // predictor extrapolates the previous steps' stage-2 increments d2 (ipred2).  stage1:
+  // d2 = d1/2 at leading order in both the non-stiff (d1 ~ dt F, d2 ~ dt F/2) and the
+  // stiff limit (Y2 ~ Y3 ~ equilibrium, S2 = (U^n + Y2)/2), so the predictor is
+  // d1/2 (this step's stage-1 increment) + the extrapolated history of (d2 - d1/2);
+  // ipred2 then holds (d2 - d1/2).  Only the starting iterate moves.
+  t2_p2s1 = false;
+  if (pin->DoesParameterExist("rad_m1", "time2_stage2_pred")) {
+    std::string sp = pin->GetString("rad_m1", "time2_stage2_pred");
+    if (sp.compare("stage1") == 0) {
+      t2_p2s1 = true;
+    } else if (sp.compare("step") != 0) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<rad_m1>/time2_stage2_pred = '" << sp
+                << "' is not a choice (step | stage1)" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+  }
   t2_dbg_fail = -1;
   if (pin->DoesParameterExist("rad_m1", "time2_dbg_fail")) {
     t2_dbg_fail = pin->GetInteger("rad_m1", "time2_dbg_fail");
