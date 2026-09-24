@@ -562,6 +562,9 @@ class RadiationM1 {
   Real t2_dtprev;               // the dt of the previous step (vet_sc extrapolation)
   bool t2_vprev;                // vet_prev holds the tensor of the previous step
   bool t2_vext;                 // time2_vet_extrap (default false: D^n)
+  Real t2_lin_tol;              // time2_lin_tol: implicit_lin_tol of the stage solves (<= 0:
+                                // implicit_lin_tol)
+  Real t2_lin_save;             // the implicit_lin_tol put back after a stage solve
   bool t2_p2s1;                // time2_stage2_pred = stage1: the stage-2 predictor is
                                 // d1/2 + the history of (d2 - d1/2) (runs_5f_h2fast)
   Real t2_nclip;                // vet_sc cells whose extrapolated tensor was clipped

@@ -5618,6 +5618,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   // non-physical.  Under time_scheme = be t2st is false and nothing below moves.
   const int t2s = t2_solve;
   const bool t2st = (t2s == M1_T2S_STAGE1) || (t2s == M1_T2S_STAGE2);
+  // time2_lin_tol: the stage solves' linear tolerance (put back at the end of the solve)
+  t2_lin_save = impl_lin_tol;
+  if (t2st && t2_lin_tol > 0.0) {impl_lin_tol = t2_lin_tol;}
   auto t2i_ = t2inc;
   const bool t2k = (t2s != M1_T2S_NONE);
   const bool t2vs = t2st && (t2_afmode != 0) && impl_vimp && trans;
@@ -7633,6 +7636,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   }
 
   if (vetsc) {Kokkos::fence(); vet_itime += vtimer.seconds();}
+  impl_lin_tol = t2_lin_save;
   return TaskStatus::complete;
 }
 

@@ -127,6 +127,12 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
       std::exit(EXIT_FAILURE);
     }
   }
+  // time2_lin_tol (tests_m1/runs_5f_h2fast): the linear (Krylov) tolerance of the two
+  // stage solves; default: implicit_lin_tol
+  t2_lin_tol = -1.0;
+  if (pin->DoesParameterExist("rad_m1", "time2_lin_tol")) {
+    t2_lin_tol = pin->GetReal("rad_m1", "time2_lin_tol");
+  }
   t2_dbg_fail = -1;
   if (pin->DoesParameterExist("rad_m1", "time2_dbg_fail")) {
     t2_dbg_fail = pin->GetInteger("rad_m1", "time2_dbg_fail");
