@@ -889,6 +889,33 @@ class RadiationM1 {
   //! closure = tau: cost line at the end of the run
   void TauClosureReport();
 
+  // ---- <rad_m1>/closure = vet_col (rad_m1_vetcol.cpp, design stage S5, option D): the
+  // Eddington factor f_K = K/J of a 1-D formal solution per RADIAL COLUMN (spherical
+  // impact-parameter rays on the sp wedge, Gauss rays in plane-parallel on a Cartesian
+  // mesh) with the column's own extinction and source, handed to the implicit solve as a
+  // FIXED uniaxial tensor about r_hat (or the M1 flux axis) through the tau closure's
+  // tau_ten (tau_closure is set as well; only the tensor build differs).
+  bool vet_col;                // closure = vet_col (default false)
+  bool vcol_sph;               // spherical rays (sp) or plane-parallel (Cartesian)
+  bool vcol_axis_flux;         // vet_col_axis = flux: n = the M1 cell flux direction
+  int vcol_nc, vcol_np, vcol_nmu, vcol_every, vcol_nray;
+  int vcol_dump_every;         // vet_col_dump_every (0 = off)
+  bool vcol_built;             // a tensor exists (vet_col_every > 1 skips builds)
+  std::string vcol_dump;       // vet_col_dump: file prefix of the column dump
+  Real vcol_time, vcol_ncall, vcol_nskip;
+  DvceArray2D<Real> vcol_seg;  // (ray, shell l): path length from shell l to l+1 / top
+  DvceArray2D<Real> vcol_mu;   // (ray, shell): mu of the ray at the shell
+  DvceArray2D<Real> vcol_w;    // (ray, shell): hemisphere quadrature weight (sum 1)
+  DvceArray2D<Real> vcol_ray;  // (ray, 0..3): L (first shell), type, seg0, a_t | mu_face
+  DvceArray1D<int> vcol_klast; // (shell): index of the last ray active at the shell
+  DvceArray2D<Real> vcol_buf;  // (ray, column): the running intensity of each ray
+  DvceArray5D<Real> vcol_mom;  // (m,5,k,j,i): J, H, K, S, chi of the solution (dump)
+  std::vector<double> vcol_rc; // shell radii (host, for the dump)
+  void VetColInit();           // checks, ray tables, buffers (first TauClosureInit)
+  void VetColBuild();          // the formal solution -> tau_ten (chi, n)
+  void VetColReport();
+  void VetColDumpColumn(int ncall);
+
   // ...in "m1_before_stagen"
   TaskStatus InitRecv(Driver *d, int stage);
   // ...in "m1_stagen"

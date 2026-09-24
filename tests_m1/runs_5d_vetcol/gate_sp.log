@@ -1,0 +1,10 @@
+== e_sd: VERDICT BITWISE files=3 diff=0 rc rc=0 rc=0
+== e_sds: VERDICT BITWISE files=3 diff=0 rc rc=0 rc=0
+== e_sym: VERDICT BITWISE files=12 diff=0 rc rc=0 rc=0
+== e_symg: VERDICT BITWISE files=24 diff=0 rc rc=0 rc=0
+== e_mk: VERDICT BITWISE files=4 diff=0 rc rc=0 rc=0
+== m_fs: VERDICT BITWISE files=3 diff=0 rc rc=0 rc=0
+== m_atm: VERDICT BITWISE files=16 diff=0 rc rc=0 rc=0
+== m_rw: VERDICT BITWISE files=17 diff=0 rc rc=0 rc=0
+== m_sym: VERDICT BITWISE files=12 diff=0 rc rc=0 rc=0
+SP GATES DONE

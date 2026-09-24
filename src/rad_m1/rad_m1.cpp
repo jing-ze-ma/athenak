@@ -534,6 +534,12 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   tau_ready = false;
   tau_time = 0.0;
   tau_ncall = 0.0;
+  vet_col = false;
+  vcol_sph = false;
+  vcol_axis_flux = false;
+  vcol_nc = vcol_np = vcol_nmu = vcol_every = vcol_nray = vcol_dump_every = 0;
+  vcol_built = false;
+  vcol_time = vcol_ncall = vcol_nskip = 0.0;
   {std::string cl = pin->GetOrAddString("rad_m1","closure","m1");
   chi_kind = M1_CHI_LEVERMORE;
   if (cl.compare("m1") == 0) {
@@ -558,10 +564,35 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     // speeds, the 1-D branch, the explicit coupling) keeps Levermore's, as closure = m1
     eddington = false;
     tau_closure = true;
+  } else if (cl.compare("vet_col") == 0) {
+    // STAGE S5 (rad_m1_vetcol.cpp): the tensor of a per-column 1-D formal solution,
+    // carried by the tau closure's machinery (tau_ten, built once per step)
+    eddington = false;
+    tau_closure = true;
+    vet_col = true;
+    vcol_nc = pin->GetOrAddInteger("rad_m1","vet_col_ncore",8);
+    vcol_np = pin->GetOrAddInteger("rad_m1","vet_col_nsub",1);
+    vcol_nmu = pin->GetOrAddInteger("rad_m1","vet_col_nmu",4);
+    vcol_every = pin->GetOrAddInteger("rad_m1","vet_col_every",1);
+    std::string ax = pin->GetOrAddString("rad_m1","vet_col_axis","radial");
+    if (ax.compare("flux") == 0) {
+      vcol_axis_flux = true;
+    } else if (ax.compare("radial") != 0) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+        << std::endl << "<rad_m1>/vet_col_axis = '" << ax << "' not implemented "
+        << "(radial | flux)" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    vcol_dump = "";
+    if (pin->DoesParameterExist("rad_m1","vet_col_dump")) {
+      vcol_dump = pin->GetString("rad_m1","vet_col_dump");
+      vcol_dump_every = pin->GetOrAddInteger("rad_m1","vet_col_dump_every",1);
+      if (vcol_dump.compare("none") == 0 || vcol_dump_every <= 0) {vcol_dump = "";}
+    }
   } else {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
       << std::endl << "<rad_m1>/closure = '" << cl << "' not implemented "
-      << "(m1 | minerbo | kershaw | eddington | vet_sc | tau)" << std::endl;
+      << "(m1 | minerbo | kershaw | eddington | vet_sc | tau | vet_col)" << std::endl;
     std::exit(EXIT_FAILURE);
   }
   if (vet_sc && transport != M1_TRANSPORT_IMPLICIT) {

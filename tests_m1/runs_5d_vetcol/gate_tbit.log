@@ -1,0 +1,12 @@
+== slab1: VERDICT BITWISE files=12 diff=0 rc rc=0 rc=0
+== slab2: VERDICT BITWISE files=12 diff=0 rc rc=0 rc=0
+== slabnd2: VERDICT BITWISE files=12 diff=0 rc rc=0 rc=0
+== vet2: VERDICT BITWISE files=12 diff=0 rc rc=0 rc=0
+== vimp2: VERDICT BITWISE files=10 diff=0 rc rc=0 rc=0
+== box4: VERDICT BITWISE files=10 diff=0 rc rc=0 rc=0
+== boxd4: VERDICT BITWISE files=10 diff=0 rc rc=0 rc=0
+== expl2: VERDICT BITWISE files=10 diff=0 rc rc=0 rc=0
+== mkx1: VERDICT BITWISE files=4 diff=0 rc rc=0 rc=0
+== mkcart: VERDICT BITWISE files=4 diff=0 rc rc=0 rc=0
+== spblast: VERDICT BITWISE files=7 diff=0 rc rc=0 rc=0
+TBIT DONE
