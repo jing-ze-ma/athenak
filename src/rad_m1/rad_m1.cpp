@@ -198,9 +198,9 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   t2_nclip = 0.0;
   pred2_ok = false;
   pred2_dt = 0.0;
-  t2_p2s1 = false;
   t2_lin_tol = -1.0;
   t2_lin_save = 0.0;
+  t2_lin_fac = 1.0;
   t2_onep_s = -1.0;
   impl_crelax = 1.0;
   impl_crelax_thin = false;

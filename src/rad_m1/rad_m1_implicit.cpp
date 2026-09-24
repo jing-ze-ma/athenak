@@ -766,7 +766,9 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     impl_vimp_jscale = pin->GetReal("rad_m1","implicit_vimp_jscale");
   }
   // ---- THE runs_4a_accel LEVERS (tests_m1/runs_4a_accel, tests_m1/runs_4j_accmerge).
-  // DEFAULT ON since m1-accmerge for time_scheme = be with transport = implicit and a
+  // DEFAULT ON since m1-accmerge for time_scheme = be (and since m1-h2fast for hesdirk2,
+  // tests_m1/runs_5f_h2fast, whose stage solves also take time2_one_pass_safety and
+  // time2_lin_tol_fac, rad_m1_time2.cpp) with transport = implicit and a
   // closure whose tensor is fixed within a step (eddington, vet_sc, tau), wherever each
   // is valid:
   //   implicit_fast_kernels = true   (bitwise-exact kernel shortcuts)
@@ -5620,7 +5622,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   const bool t2st = (t2s == M1_T2S_STAGE1) || (t2s == M1_T2S_STAGE2);
   // time2_lin_tol: the stage solves' linear tolerance (put back at the end of the solve)
   t2_lin_save = impl_lin_tol;
-  if (t2st && t2_lin_tol > 0.0) {impl_lin_tol = t2_lin_tol;}
+  if (t2st) {impl_lin_tol = (t2_lin_tol > 0.0) ? t2_lin_tol : (t2_lin_fac*impl_lin_tol);}
   auto t2i_ = t2inc;
   const bool t2k = (t2s != M1_T2S_NONE);
   const bool t2vs = t2st && (t2_afmode != 0) && impl_vimp && trans;
@@ -5886,10 +5888,6 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     // implicit_predictor_order = 2: + dt dt1 h (h = 0 until two increments are known)
     const bool po2 = (impl_pord == 2);
     const Real r2 = po2 ? dt*(p2 ? pred2_dt : pred_dt) : 0.0;
-    // time2_stage2_pred = stage1: + d1/2, this step's stage-1 increment (ipred)
-    const bool s1p = p2 && t2_p2s1 && pred_ok;
-    const Real s1w = s1p ? 0.5 : 0.0;
-    auto pd1_ = ipred;
     par_for("m1_impl_pred", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       Real tn = iw_(m,M1_IW_TP,k,j,i);
@@ -5898,12 +5896,10 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       Real ep = (t2st ? iw_(m,M1_IW_EP,k,j,i) : iw_(m,M1_IW_EN,k,j,i))
                 + rat*pd_(m,0,k,j,i);
       if (po2) {ep += r2*pd_(m,3,k,j,i);}
-      if (s1p) {ep += s1w*pd1_(m,0,k,j,i);}
       if (ep > efl) {iw_(m,M1_IW_EP,k,j,i) = ep;}
       if (hh) {
         Real tp = tn + rat*pd_(m,1,k,j,i);
         if (po2) {tp += r2*pd_(m,4,k,j,i);}
-        if (s1p) {tp += s1w*pd1_(m,1,k,j,i);}
         if (tp > 0.5*tn && tp < 2.0*tn) {iw_(m,M1_IW_TP,k,j,i) = tp;}
       }
     });
@@ -7252,18 +7248,11 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
                                : (pred_ok && pred_dt > 0.0));
     const Real dto = hv ? (p2 ? pred2_dt : pred_dt) : 1.0;
     const Real dtn = dt;
-    // time2_stage2_pred = stage1: ipred2 holds d2 - d1/2
-    const Real s1w = (p2 && t2_p2s1) ? 0.5 : 0.0;
-    auto pd1_ = ipred;
     par_for("m1_impl_pstore", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
-      Real de = iw_(m,M1_IW_EP,k,j,i) - (t2st ? fmax(u0_(m,M1_E,k,j,i), efl)
-                                              : iw_(m,M1_IW_EN,k,j,i));
-      Real dtp = hh ? (iw_(m,M1_IW_TP,k,j,i) - pd_(m,2,k,j,i)) : 0.0;
-      if (s1w != 0.0) {
-        de -= s1w*pd1_(m,0,k,j,i);
-        if (hh) {dtp -= s1w*pd1_(m,1,k,j,i);}
-      }
+      const Real de = iw_(m,M1_IW_EP,k,j,i) - (t2st ? fmax(u0_(m,M1_E,k,j,i), efl)
+                                                    : iw_(m,M1_IW_EN,k,j,i));
+      const Real dtp = hh ? (iw_(m,M1_IW_TP,k,j,i) - pd_(m,2,k,j,i)) : 0.0;
       if (po2) {
         pd_(m,3,k,j,i) = hv ? (de/dtn - pd_(m,0,k,j,i)/dto)/dto : 0.0;
         pd_(m,4,k,j,i) = hv ? (dtp/dtn - pd_(m,1,k,j,i)/dto)/dto : 0.0;

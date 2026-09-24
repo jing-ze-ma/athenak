@@ -109,39 +109,35 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1", "time2_vet_extrap")) {
     t2_vext = pin->GetBoolean("rad_m1", "time2_vet_extrap");
   }
-  // time2_stage2_pred = step | stage1 (tests_m1/runs_5f_h2fast).  step: the stage-2
-  // predictor extrapolates the previous steps' stage-2 increments d2 (ipred2).  stage1:
-  // d2 = d1/2 at leading order in both the non-stiff (d1 ~ dt F, d2 ~ dt F/2) and the
-  // stiff limit (Y2 ~ Y3 ~ equilibrium, S2 = (U^n + Y2)/2), so the predictor is
-  // d1/2 (this step's stage-1 increment) + the extrapolated history of (d2 - d1/2);
-  // ipred2 then holds (d2 - d1/2).  Only the starting iterate moves.
-  t2_p2s1 = false;
-  if (pin->DoesParameterExist("rad_m1", "time2_stage2_pred")) {
-    std::string sp = pin->GetString("rad_m1", "time2_stage2_pred");
-    if (sp.compare("stage1") == 0) {
-      t2_p2s1 = true;
-    } else if (sp.compare("step") != 0) {
-      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-                << std::endl << "<rad_m1>/time2_stage2_pred = '" << sp
-                << "' is not a choice (step | stage1)" << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
-  }
-  // time2_lin_tol (tests_m1/runs_5f_h2fast): the linear (Krylov) tolerance of the two
-  // stage solves; default: implicit_lin_tol
+  // time2_lin_tol / time2_lin_tol_fac (tests_m1/runs_5f_h2fast): the linear (Krylov)
+  // tolerance of the two stage solves: time2_lin_tol when named, else implicit_lin_tol
+  // x time2_lin_tol_fac.  Default 10 (the input files set implicit_lin_tol =
+  // implicit_tol/100; the stage solves then take implicit_tol/10); 3-D He box: 21 -> 15
+  // Krylov iterations per stage solve; the radwave G1 order is kept together with
+  // time2_one_pass_safety = 30.  As for the runs_4a_accel levers, a restart whose file
+  // does not carry the key keeps the old behaviour (1).
+  const bool rs = global_variable::restart_run;
   t2_lin_tol = -1.0;
   if (pin->DoesParameterExist("rad_m1", "time2_lin_tol")) {
     t2_lin_tol = pin->GetReal("rad_m1", "time2_lin_tol");
+  }
+  t2_lin_fac = pin->GetOrAddReal("rad_m1", "time2_lin_tol_fac", rs ? 1.0 : 10.0);
+  if (!(t2_lin_fac > 0.0)) {
+    std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+              << std::endl << "<rad_m1>/time2_lin_tol_fac must be > 0" << std::endl;
+    std::exit(EXIT_FAILURE);
   }
   // time2_one_pass_safety (tests_m1/runs_5f_h2fast): the implicit_one_pass safety factor
   // of the stage solves.  One-pass acceptance leaves a Picard error ~ tol/safety where
   // the two-pass test leaves ~ q tol; the radwave G1 order at implicit_tol = 1e-11 needs
   // the stage solves closer to the latter (safety 3: median order 1.74 at P=100,
-  // tau=1e3; 30: >= 1.94 in all 24 cases).  Default 30.
-  t2_onep_s = pin->GetOrAddReal("rad_m1", "time2_one_pass_safety", 30.0);
-  if (!(t2_onep_s >= 1.0)) {
+  // tau=1e3; 30: >= 1.94 in all 24 cases).  Default 30; 0 = implicit_one_pass_safety,
+  // the default of a restart whose file does not carry the key.
+  t2_onep_s = pin->GetOrAddReal("rad_m1", "time2_one_pass_safety", rs ? 0.0 : 30.0);
+  if (t2_onep_s != 0.0 && !(t2_onep_s >= 1.0)) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-              << std::endl << "<rad_m1>/time2_one_pass_safety must be >= 1" << std::endl;
+              << std::endl << "<rad_m1>/time2_one_pass_safety must be 0 or >= 1"
+              << std::endl;
     std::exit(EXIT_FAILURE);
   }
   t2_dbg_fail = -1;
