@@ -616,6 +616,11 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
       impl_opchk_tol = pin->GetReal("rad_m1","implicit_op_check_tol");
     }
   }
+  impl_dump_cyc = -1;
+  impl_dump_done = false;
+  if (pin->DoesParameterExist("rad_m1","implicit_dump_op")) {
+    impl_dump_cyc = pin->GetInteger("rad_m1","implicit_dump_op");
+  }
   // the Picard pass count (bench/m1_picard_0923): a per-pass log, off by default
   impl_plog = pin->GetOrAddInteger("rad_m1","implicit_picard_log",0);
   // ...and the options that cut it.  Since bench/m1_defaults_0923 they DEFAULT ON for
@@ -4720,6 +4725,7 @@ int RadiationM1::ImplicitBiCGStabFused(Real rhsmax) {
   const bool devrv = (impl_bcg_sync == 2) && (global_variable::nranks == 1);
   const int kf = impl_kfuse;   // implicit_krylov_fuse (needs bcg_sync = 1, pcr)
   if (impl_stencil) {ImplicitStencilBuild();}   // the operator of this pass, once
+  if (impl_stencil && impl_dump_cyc >= 0) {ImplicitDumpOp();}
   if (kf == 3 && impl_kpipe) {return ImplicitBiCGStabPipe(rhsmax);}
   if (kf == 3 && ImplicitKrylovDevOK()) {return ImplicitBiCGStabDev(rhsmax);}
   if (kf == 3) {return ImplicitBiCGStabTwo(rhsmax);}

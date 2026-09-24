@@ -519,6 +519,9 @@ class RadiationM1 {
   // (rad_m1_opcheck.cpp); K > 0 fatal on a mismatch, K < 0 report only
   int impl_opchk, opchk_n;
   Real impl_opchk_tol;          // <rad_m1>/implicit_op_check_tol (default 1e-12)
+  int impl_dump_cyc;            // <rad_m1>/implicit_dump_op (debug, rad_m1_precond.cpp)
+  bool impl_dump_done;
+  void ImplicitDumpOp();
   void ImplicitOpCheck();
   // ---- the Picard pass count (bench/m1_picard_0923).  Since bench/m1_defaults_0923
   // lres_test = false, conv_est = true and lin_ew_max = 1e-2 (not predictor) are the
