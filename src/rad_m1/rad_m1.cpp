@@ -77,14 +77,29 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   // geometry (on a plain Cartesian mesh the hydro ignores them and so would M1), so
   // that no stretched input can reach the uniform-dx kernels; and relativistic
   // coordinates, since the M1 here is the O(v/c) flat-space system.
+  //
+  // STAGE S1 (tests_m1/runs_5a_sp_s1) lifts the refusal for ONE configuration: a
+  // spherical-polar WEDGE that does not touch a pole, with the radial stretches allowed,
+  // transport = implicit, closure = eddington and the restrictions checked by
+  // SphericalS1Check after ImplicitInit.  Everything else on sp (the poles, explicit
+  // transport, the other closures) and everything on the cubed sphere stays refused.
+  sph_geom = false;
   {
     Mesh *pm_ = ppack->pmesh;
     std::string why;
-    if (pm_->use_spherical_polar) {why += " mesh/use_spherical_polar";}
+    const bool sp_ = pm_->use_spherical_polar && !pm_->use_cubed_sphere;
+    if (pm_->use_spherical_polar && !sp_) {why += " mesh/use_spherical_polar";}
     if (pm_->use_cubed_sphere) {why += " mesh/use_cubed_sphere";}
-    if (pm_->use_polar_boundary) {why += " mesh/use_polar_boundary";}
-    if (pm_->use_grid_stretch_r) {why += " mesh/use_grid_stretch_r";}
-    if (pm_->use_grid_stretch_r_poly) {why += " mesh/use_grid_stretch_r_poly";}
+    if (pm_->use_polar_boundary) {
+      why += " mesh/use_polar_boundary (the poles are not supported yet: run a wedge "
+             "whose theta range stays clear of theta = 0 and pi)";
+    } else if (sp_ && (pm_->mesh_size.x2min <= 1.0e-10 ||
+                       pm_->mesh_size.x2max >= M_PI - 1.0e-10)) {
+      why += " a theta range that reaches a pole (the poles are not supported yet: run "
+             "a wedge whose theta range stays clear of theta = 0 and pi)";
+    }
+    if (pm_->use_grid_stretch_r && !sp_) {why += " mesh/use_grid_stretch_r";}
+    if (pm_->use_grid_stretch_r_poly && !sp_) {why += " mesh/use_grid_stretch_r_poly";}
     if (pm_->use_grid_stretch_theta) {why += " mesh/use_grid_stretch_theta";}
     if (ppack->pcoord != nullptr &&
         (ppack->pcoord->is_special_relativistic ||
@@ -94,13 +109,17 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
     }
     if (!why.empty()) {
       std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
-        << std::endl << "<rad_m1> (explicit and implicit transport) supports only a "
-        << "uniform Cartesian mesh; this input sets:" << why << "." << std::endl
+        << std::endl << "<rad_m1> (explicit and implicit transport) supports a "
+        << "uniform Cartesian mesh and, for the implicit Eddington solve only "
+        << "(stage S1), "
+        << "a spherical-polar wedge clear of the poles; this input sets:" << why << "."
+        << std::endl
         << "The M1 kernels would run with Cartesian uniform-dx arithmetic on it.  See "
         << "docs/dev/rad_m1_curvilinear_design.md (branch m1-curv-design) for the "
         << "staged plan that lifts this." << std::endl;
       std::exit(EXIT_FAILURE);
     }
+    sph_geom = sp_;
   }
   nstage = M1_NSTAGE;
   impl_cfl = -1.0;
@@ -657,6 +676,7 @@ RadiationM1::RadiationM1(MeshBlockPack *ppack, ParameterInput *pin) :
   // (4b) MILESTONE 3a hook: the implicit solver's own parameters, checks and arrays.
   // Returns immediately with transport = explicit.
   ImplicitInit(pin);
+  if (sph_geom) {SphericalS1Check(pin);}
 
   // (5) boundary buffers
   pbval_u = new MeshBoundaryValuesCC(ppack, pin, false);
