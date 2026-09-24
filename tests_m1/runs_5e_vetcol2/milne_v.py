@@ -124,7 +124,8 @@ def main():
         x, e, t = load(root, run)
         tr = (eref(x)/arad)**0.25
         dv = np.abs((e/arad)**0.25/tr - 1.0)
-        print(f"{run:8s} n={len(x):3d} t={t:.4g}  L1 {np.mean(dv):.3e} Linf {np.max(dv):.3e}"
+        print(f"{run:8s} n={len(x):3d} t={t:.4g}  L1 {np.mean(dv):.3e}"
+              f" Linf {np.max(dv):.3e}"
               f"  top E/E_ref-1 {e[-1]/eref(x[-1])-1:+.3e}")
 
 
