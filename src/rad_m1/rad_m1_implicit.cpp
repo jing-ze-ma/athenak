@@ -535,6 +535,9 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   impl_halo_ovl = pin->GetOrAddBoolean("rad_m1","implicit_halo_overlap",
                       impl_halo_mpi && (global_variable::nranks > 1) &&
                       !global_variable::restart_run);
+  impl_ovl_faces = pin->DoesParameterExist("rad_m1","implicit_halo_ovl_faces") ?
+                   pin->GetBoolean("rad_m1","implicit_halo_ovl_faces") : false;
+  for (int f = 0; f < 6; ++f) {hm_face[f] = 1;}
   if (impl_halo_ovl && !impl_halo_mpi) {
     ImplFatal("<rad_m1>/implicit_halo_overlap needs implicit_halo_mpi = true");
   }
@@ -3422,9 +3425,13 @@ struct M1HoRed {
 //! \brief implicit_halo_overlap: ImplicitStencilOp on PART of the active cells, with the
 //! same per-cell arithmetic.  part = 1: the interior box, every cell at least `w` cells
 //! from each face of a non-degenerate direction (it reads no ghost zone, so it may run
-//! while the halo exchange is in flight); part = 2: the rest (the shell), after the
-//! halo.  `red` as ImplicitOffDiagOpC; the partial sums go (asynchronously) into the 4
-//! pinned Reals at `hs` (s0, s1, s2, max), which the caller combines after a fence.
+//! while the halo exchange is in flight); under implicit_halo_ovl_faces only from the
+//! faces whose ghosts arrive by MPI (hm_face); part = 2: the rest (the shell), after
+//! the halo.  Under implicit_vimp_fold the row is the folded one of ImplicitStencilOp
+//! (before m1-sync the unfolded M1VimpRow was ADDED to the folded stencil, counting
+//! the x2/x3 +-1 vimp terms twice: tests_m1/runs_4l_sync).  `red` as
+//! ImplicitOffDiagOpC; the partial sums go (asynchronously) into the 4 pinned Reals
+//! at `hs` (s0, s1, s2, max), which the caller combines after a fence.
 
 void RadiationM1::ImplicitStencilOpPart(int xc, int yc, int red, int part, int w,
                                         Real *hs) {
@@ -3439,13 +3446,23 @@ void RadiationM1::ImplicitStencilOpPart(int xc, int yc, int red, int part, int w
   const int cx = xc, cy = yc;
   const int rm = red;
   const bool edg = st_edges;
-  const bool vim = vimp_now;
+  // implicit_vimp_fold: the vimp part of the row is in the stencil (slots 3-6 and
+  // 19-24), exactly as in ImplicitStencilOp; M1VimpRow only when it is not folded
+  const bool vfold = impl_vfold && vimp_now;
+  const bool vim = vimp_now && !vfold;
   const int ivb = iw_vimp;
   const bool cyclic = (ibc_x1min == M1_IBC_PERIODIC);
+  // the depth of the shell at each face (x1-, x1+, x2-, x2+, x3-, x3+): w at every face
+  // of a non-degenerate direction; under implicit_halo_ovl_faces only at the faces
+  // whose ghosts arrive by MPI
+  int fw[6];
+  for (int f = 0; f < 6; ++f) {fw[f] = (!impl_ovl_faces || hm_face[f]) ? w : 0;}
+  if (indcs.nx2 == 1) {fw[2] = fw[3] = 0;}
+  if (indcs.nx3 == 1) {fw[4] = fw[5] = 0;}
   // the interior box
-  const int il = is + w, iu = ie - w;
-  const int jl = (indcs.nx2 > 1) ? (js + w) : js, ju = (indcs.nx2 > 1) ? (je - w) : je;
-  const int kl = (indcs.nx3 > 1) ? (ks + w) : ks, ku = (indcs.nx3 > 1) ? (ke - w) : ke;
+  const int il = is + fw[0], iu = ie - fw[1];
+  const int jl = js + fw[2], ju = je - fw[3];
+  const int kl = ks + fw[4], ku = ke - fw[5];
   auto row = KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) -> Real {
     Real y = st_(m,0,k,j,i)*iw_(m,cx,k,j,i)
              + st_(m,1,k,j,i)*iw_(m,cx,k,j,i-1) + st_(m,2,k,j,i)*iw_(m,cx,k,j,i+1)
@@ -3464,19 +3481,34 @@ void RadiationM1::ImplicitStencilOpPart(int xc, int yc, int red, int part, int w
       }
     }
     if (vim) {y += M1VimpRow(iw_, ivb, cx, m, k, j, i, is, ie, cyclic, thrd);}
+    if (vfold) {
+      y += st_(m,19,k,j,i)*iw_(m,cx,k,j,i-2) + st_(m,20,k,j,i)*iw_(m,cx,k,j,i+2)
+           + st_(m,21,k,j,i)*iw_(m,cx,k,j-2,i) + st_(m,22,k,j,i)*iw_(m,cx,k,j+2,i);
+      if (thrd) {
+        y += st_(m,23,k,j,i)*iw_(m,cx,k-2,j,i) + st_(m,24,k,j,i)*iw_(m,cx,k+2,j,i);
+      }
+    }
     iw_(m,cy,k,j,i) = y;
     return y;
   };
   // the cells of the part, flattened per block: part 1 the interior box (k,j,i order),
-  // part 2 the shell only -- the w-deep planes at both x3 ends, then per interior k the
-  // w-deep rows at both x2 ends and per interior (k,j) the w cells at both x1 ends
+  // part 2 the shell only -- the end planes at both x3 ends, then per interior k the
+  // end rows at both x2 ends and per interior (k,j) the end cells at both x1 ends
   const bool inner = (part == 1);
   const int n1 = ie - is + 1, n2 = je - js + 1;
-  const int w1 = w, w2 = (indcs.nx2 > 1) ? w : 0, w3 = (indcs.nx3 > 1) ? w : 0;
+  const int w1l = fw[0], w1h = fw[1], w2l = fw[2], w2h = fw[3];
+  const int w3l = fw[4], w3h = fw[5];
+  const int w1 = w1l + w1h, w2 = w2l + w2h, w3 = w3l + w3h;
   const int m1 = iu - il + 1, m2 = ju - jl + 1, m3 = ku - kl + 1;
-  const int npl = 2*w3*n2*n1;                 // shell: the x3 end planes
-  const int nkc = 2*w2*n1 + m2*2*w1;          // shell: per interior k
+  const int npl = w3*n2*n1;                 // shell: the x3 end planes
+  const int nkc = w2*n1 + m2*w1;            // shell: per interior k
   const int ncell = inner ? (m3*m2*m1) : (npl + m3*nkc);
+  if (ncell == 0) {   // no shell (every face in place before the interior operator)
+    if (rm != 0) {
+      for (int q = 0; q < 4; ++q) {hs[q] = 0.0;}
+    }
+    return;
+  }
   auto cell = KOKKOS_LAMBDA(const int idx, int &m, int &k, int &j, int &i) {
     m = idx/ncell;
     int r = idx - m*ncell;
@@ -3492,7 +3524,7 @@ void RadiationM1::ImplicitStencilOpPart(int xc, int yc, int red, int part, int w
     if (r < npl) {
       const int q = r/(n2*n1);
       r -= q*n2*n1;
-      k = (q < w3) ? (ks + q) : (ke - (2*w3 - 1 - q));
+      k = (q < w3l) ? (ks + q) : (ku + 1 + (q - w3l));
       j = js + r/n1;
       i = is + r%n1;
       return;
@@ -3501,16 +3533,16 @@ void RadiationM1::ImplicitStencilOpPart(int xc, int yc, int red, int part, int w
     const int kk = r/nkc;
     r -= kk*nkc;
     k = kl + kk;
-    if (r < 2*w2*n1) {
+    if (r < w2*n1) {
       const int q = r/n1;
-      j = (q < w2) ? (js + q) : (je - (2*w2 - 1 - q));
+      j = (q < w2l) ? (js + q) : (ju + 1 + (q - w2l));
       i = is + r%n1;
       return;
     }
-    r -= 2*w2*n1;
-    j = jl + r/(2*w1);
-    const int q = r%(2*w1);
-    i = (q < w1) ? (is + q) : (ie - (2*w1 - 1 - q));
+    r -= w2*n1;
+    j = jl + r/w1;
+    const int q = r%w1;
+    i = (q < w1l) ? (is + q) : (iu + 1 + (q - w1l));
   };
   Kokkos::RangePolicy<DevExeSpace, Kokkos::LaunchBounds<256,1>>
       pol(DevExeSpace(), 0, (nmb1 + 1)*ncell);

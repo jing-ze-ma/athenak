@@ -219,6 +219,7 @@ void RadiationM1::ImplicitHaloMPIInit() {
   // (neighbour rank, receiver gid, receiver direction, local m, o1, o2, o3)
   using Reg = std::tuple<int, int, int, int, int, int, int>;
   std::vector<Reg> sr, rr;
+  int hm_mpif[6] = {0, 0, 0, 0, 0, 0};   // faces with an off-rank ghost (the pack)
   for (int m = 0; m < nmb; ++m) {
     for (int o3 = -e3; o3 <= e3; ++o3) {
       for (int o2 = -e2; o2 <= e2; ++o2) {
@@ -233,6 +234,9 @@ void RadiationM1::ImplicitHaloMPIInit() {
           const int oi = (o1+1) + 3*(o2+1) + 9*(o3+1);
           const int oin = (1-o1) + 3*(1-o2) + 9*(1-o3);
           rr.emplace_back(q.rank, pmy_pack->gids + m, oi, m, o1, o2, o3);
+          if (o1 != 0) {hm_mpif[(o1 < 0) ? 0 : 1] = 1;}
+          if (o2 != 0) {hm_mpif[(o2 < 0) ? 2 : 3] = 1;}
+          if (o3 != 0) {hm_mpif[(o3 < 0) ? 4 : 5] = 1;}
           sr.emplace_back(q.rank, q.gid, oin, m, o1, o2, o3);
         }
       }
@@ -346,6 +350,7 @@ void RadiationM1::ImplicitHaloMPIInit() {
   MPI_Comm_dup(MPI_COMM_WORLD, c);
   hm_comm = static_cast<void *>(c);
   hm_state = 1;
+  for (int f = 0; f < 6; ++f) {hm_face[f] = hm_mpif[f];}
   if (me == 0) {
     std::cout << "<rad_m1> implicit_halo_mpi: ON, rank 0 has " << nseg
               << " neighbour ranks, " << hm_nsend << " cells sent per component"
