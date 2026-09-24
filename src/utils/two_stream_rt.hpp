@@ -252,6 +252,7 @@ template <typename T>
 struct CkScrOne {
   T a[1][1];
   KOKKOS_INLINE_FUNCTION T *operator[](const int c) { return a[c]; }
+  KOKKOS_INLINE_FUNCTION const T *operator[](const int c) const { return a[c]; }
 };
 // group g of thread t in buffer buf; ON false gives the one-element private stand-in
 template <typename T, bool ON>
