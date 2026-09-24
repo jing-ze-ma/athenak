@@ -22,7 +22,7 @@
 //----------------------------------------------------------------------------------------
 //! \fn void RadiationM1::ImplicitDumpOp
 //! \brief file layout (all int32 then float64): nmb, nst, n1, n2, n3; per block gid,
-//! lx1, lx2, lx3, level; then per block st(0..nst-1), b, x0 over the active cells
+//! lx1, lx2, lx3, level; then per block st(0..nst-1), b, x0, TA, TB, TC, CJM, CJP, CKM, CKP over the active cells
 //! (k,j,i order, i fastest)
 
 void RadiationM1::ImplicitDumpOp() {
@@ -52,7 +52,9 @@ void RadiationM1::ImplicitDumpOp() {
   }
   std::vector<double> buf(static_cast<size_t>(n1)*n2*n3);
   for (int m = 0; m < nmb; ++m) {
-    for (int q = 0; q < nst + 2; ++q) {
+    const int cmp[9] = {M1_IW_KB, M1_IW_EP, M1_IW_TA, M1_IW_TB, M1_IW_TC, M1_IW_CJM,
+                        M1_IW_CJP, M1_IW_CKM, M1_IW_CKP};
+    for (int q = 0; q < nst + 9; ++q) {
       size_t p = 0;
       for (int k = ks; k < ks + n3; ++k) {
         for (int j = js; j < js + n2; ++j) {
@@ -60,7 +62,7 @@ void RadiationM1::ImplicitDumpOp() {
             if (q < nst) {
               buf[p++] = hst(m,q,k,j,i);
             } else {
-              buf[p++] = hiw(m, (q == nst) ? M1_IW_KB : M1_IW_EP, k, j, i);
+              buf[p++] = hiw(m, cmp[q - nst], k, j, i);
             }
           }
         }
