@@ -1,0 +1,45 @@
+== A_box1: VERDICT BITWISE files=10 diff=0 rc=0 rc=0 
+== A_box2o: VERDICT BITWISE files=10 diff=0 rc=0 rc=0 
+== A_slab1: VERDICT BITWISE files=10 diff=0 rc=0 rc=0 
+== A_slabv2: VERDICT BITWISE files=10 diff=0 rc=0 rc=0 
+== A_nd2: VERDICT BITWISE files=12 diff=0 rc=0 rc=0 
+== A_boxnd2: VERDICT BITWISE files=10 diff=0 rc=0 rc=0 
+== A_cart_sym: VERDICT BITWISE files=18 diff=0 rc=0 rc=0 
+== A_marshak_cart: VERDICT BITWISE files=4 diff=0 rc=0 rc=0 
+== A_rw_cart: VERDICT BITWISE files=17 diff=0 rc=0 rc=0 
+== A_pp_np: VERDICT BITWISE files=30 diff=0 rc=0 rc=0 
+== B_nd2: VERDICT BITWISE files=13 diff=0 rc=0 rc=0 
+== B_boxnd2: VERDICT BITWISE files=10 diff=0 rc=0 rc=0 
+== B_boxv2: VERDICT BITWISE files=10 diff=0 rc=0 rc=0 
+== B_cart_sym: VERDICT BITWISE files=18 diff=0 rc=0 rc=0 
+== B_marshak_cart: VERDICT BITWISE files=4 diff=0 rc=0 rc=0 
+== B_rw_cart: VERDICT DIFFERENT files=17 diff=16 rc=0 rc=0 
+== B_pp_np: VERDICT DIFFERENT files=0 diff=0 rc=1 rc=0 
+== D_old: VERDICT BITWISE files=7 diff=0 rc=0 rc=0 
+same m1slab.00002.rst
+same m1slab.hydro.hst rows 100/100
+same m1slab.user.hst rows 100/100
+RESTART VERDICT BITWISE rst=1
+same m1slab.00002.rst
+same m1slab.hydro.hst rows 100/100
+same m1slab.user.hst rows 100/100
+RESTART VERDICT BITWISE rst=1
+GATES A B DONE
+== B_rw_cartv (base + implicit_vimp=true named): BITWISE files=17; B_ppnd (pp_np is sp, no key, base vs new): BITWISE files=30
+== C_sd: VERDICT BITWISE files=3 diff=0 rc=0 rc=0 
+== C_sds: VERDICT BITWISE files=3 diff=0 rc=0 rc=0 
+== C_sym: VERDICT BITWISE files=12 diff=0 rc=0 rc=0 
+== C_symg: VERDICT BITWISE files=24 diff=0 rc=0 rc=0 
+== C_mk: VERDICT BITWISE files=4 diff=0 rc=0 rc=0 
+== C_fs: VERDICT BITWISE files=3 diff=0 rc=0 rc=0 
+== C_atm: VERDICT BITWISE files=16 diff=0 rc=0 rc=0 
+== C_rw: VERDICT BITWISE files=17 diff=0 rc=0 rc=0 
+== C_msym: VERDICT BITWISE files=12 diff=0 rc=0 rc=0 
+== C_vatm: VERDICT BITWISE files=16 diff=0 rc=0 rc=0 
+== C_vsym: VERDICT BITWISE files=12 diff=0 rc=0 rc=0 
+== C_vsymg: VERDICT BITWISE files=24 diff=0 rc=0 rc=0 
+== C_vstr: VERDICT BITWISE files=8 diff=0 rc=0 rc=0 
+== C_vpp: VERDICT BITWISE files=8 diff=0 rc=0 rc=0 
+== C_vbin: VERDICT BITWISE files=12 diff=0 rc=0 rc=0 
+== C_sqdef: VERDICT BITWISE files=16 diff=0 rc=0 rc=0 
+GATES C DONE

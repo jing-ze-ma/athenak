@@ -1,0 +1,26 @@
+E_D     newton_fallbacks=('4.400000e+01', '1.608941e-07') NC=<rad_m1>
+    vs E_T: hst_cons 1.22e-09 (F1top)  hst_dyn 8.57e-08 (3-KE)  row1_cons 2.55e-10 (F1top)  rst_cons 1.07e-09 (Frad)  rst_dyn 2.56e-07 (mom)  rst bitwise False
+    vs E_L1: hst_cons 1.21e-09 (F1top)  hst_dyn 4.64e-08 (1-mom)  row1_cons 2.57e-10 (Fres)  rst_cons 1.06e-09 (Frad)  rst_dyn 5.38e-08 (mom)  rst bitwise False
+E_L1    newton_fallbacks=('4.900000e+01', '1.674921e-07') NC=<rad_m1>
+    vs E_T: hst_cons 4.69e-10 (Fres)  hst_dyn 7.15e-08 (3-KE)  row1_cons 1.35e-11 (F1top)  rst_cons 6.44e-10 (Frad)  rst_dyn 2.57e-07 (mom)  rst bitwise False
+E_L1S0  newton_fallbacks=('2.600000e+01', '9.971155e-08') NC=<rad_m1>
+    vs E_T: hst_cons 4.82e-10 (Fres)  hst_dyn 8.10e-08 (3-KE)  row1_cons 1.35e-11 (F1top)  rst_cons 5.66e-10 (Frad)  rst_dyn 2.49e-07 (mom)  rst bitwise False
+    vs E_L1: hst_cons 2.64e-10 (Fres)  hst_dyn 1.25e-08 (3-KE)  row1_cons 0.00e+00 ()  rst_cons 1.10e-10 (Frad)  rst_dyn 4.33e-08 (mom)  rst bitwise False
+E_OP0   newton_fallbacks=('1.210000e+02', '2.695954e-07') NC=<rad_m1>
+    vs E_T: hst_cons 7.81e-10 (F1top)  hst_dyn 3.95e-08 (1-mom)  row1_cons 3.81e-10 (F1top)  rst_cons 1.28e-09 (Frad)  rst_dyn 4.42e-08 (mom)  rst bitwise False
+    vs E_L1: hst_cons 7.76e-10 (F1top)  hst_dyn 7.12e-08 (3-KE)  row1_cons 3.67e-10 (F1top)  rst_cons 1.38e-09 (Frad)  rst_dyn 2.49e-07 (mom)  rst bitwise False
+E_S0    newton_fallbacks=('2.600000e+01', '9.971155e-08') NC=<rad_m1>
+    vs E_T: hst_cons 8.56e-10 (F1top)  hst_dyn 8.98e-08 (3-KE)  row1_cons 2.55e-10 (F1top)  rst_cons 1.08e-09 (Frad)  rst_dyn 2.60e-07 (mom)  rst bitwise False
+    vs E_L1: hst_cons 8.57e-10 (F1top)  hst_dyn 7.11e-08 (1-mom)  row1_cons 2.57e-10 (Fres)  rst_cons 1.02e-09 (Frad)  rst_dyn 7.69e-08 (mom)  rst bitwise False
+E_T     newton_fallbacks=('1.430000e+02', '3.212137e-07') NC=<rad_m1>
+    vs E_L1: hst_cons 4.69e-10 (Fres)  hst_dyn 7.15e-08 (3-KE)  row1_cons 1.35e-11 (F1top)  rst_cons 6.44e-10 (Frad)  rst_dyn 2.57e-07 (mom)  rst bitwise False
+V_D     newton_fallbacks=('1.500000e+01', '5.413093e-08') NC=<rad_m1>
+    vs V_T: hst_cons 8.36e-10 (F1top)  hst_dyn 8.80e-08 (3-KE)  row1_cons 5.72e-10 (F1top)  rst_cons 1.70e-09 (Frad)  rst_dyn 2.20e-07 (mom)  rst bitwise False
+    vs V_L1: hst_cons 8.52e-10 (F1top)  hst_dyn 3.55e-08 (1-KE)  row1_cons 5.84e-10 (F1top)  rst_cons 1.68e-09 (Frad)  rst_dyn 3.82e-08 (mom)  rst bitwise False
+V_L1    newton_fallbacks=('2.900000e+01', '9.443551e-08') NC=<rad_m1>
+    vs V_T: hst_cons 9.23e-11 (F1top)  hst_dyn 5.76e-08 (2-KE)  row1_cons 1.24e-11 (F1top)  rst_cons 8.05e-10 (Frad)  rst_dyn 2.33e-07 (mom)  rst bitwise False
+V_S0    newton_fallbacks=('1.300000e+01', '4.917047e-08') NC=<rad_m1>
+    vs V_T: hst_cons 7.79e-10 (F1top)  hst_dyn 9.09e-08 (3-KE)  row1_cons 5.72e-10 (F1top)  rst_cons 2.05e-09 (Frad)  rst_dyn 2.18e-07 (mom)  rst bitwise False
+    vs V_L1: hst_cons 7.75e-10 (F1top)  hst_dyn 4.76e-08 (1-KE)  row1_cons 5.84e-10 (F1top)  rst_cons 2.00e-09 (Frad)  rst_dyn 4.57e-08 (mom)  rst bitwise False
+V_T     newton_fallbacks=('4.000000e+01', '8.930322e-08') NC=<rad_m1>
+    vs V_L1: hst_cons 9.23e-11 (F1top)  hst_dyn 5.76e-08 (2-KE)  row1_cons 1.24e-11 (F1top)  rst_cons 8.05e-10 (Frad)  rst_dyn 2.33e-07 (mom)  rst bitwise False

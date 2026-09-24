@@ -1,0 +1,6 @@
+7b7cd4a3022da19dbd2fde965d185375  /viper/ptmp2/jinma/m1def2_0924/bin/athena_base_box_gpu
+ffb9a91d7532904372123077ae4930d6  /viper/ptmp2/jinma/m1def2_0924/bin/athena_new_box_gpu
+== slab1: VERDICT BITWISE files=10 diff=0 rc=0 rc=0
+== box2: VERDICT BITWISE files=10 diff=0 rc=0 rc=0
+== boxvet2: VERDICT BITWISE files=10 diff=0 rc=0 rc=0
+== boxh2: VERDICT BITWISE files=10 diff=0 rc=0 rc=0

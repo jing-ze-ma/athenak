@@ -44,7 +44,7 @@ under ck_implicit and only after decision 1.
    On MHD: e4 34.1 vs c2 52.2 ms/cycle (README_mhdsplit.md). Once gated, make the T4 set the defaults when
    ck_implicit = true, so inputs no longer need 13 lines (frozen_op, lin, fuse, jac_lin, cvsec, arat 1e30,
    nosync, and the c2 set once / xstep 2 / jreuse 0.2 / pred).
-2. **time_scheme = hesdirk2 (+ implicit_vimp)**: KEEP-OPTION, not default. It is 2nd order (G1 Edd 1.89-2.00,
+2. **time_scheme = hesdirk2 (+ implicit_vimp)**: DEFAULT-ON since m1-defaults2 (user, 09-24; tests_m1/runs_5g_defaults2/README.md). Earlier note: KEEP-OPTION, not default. It is 2nd order (G1 Edd 1.89-2.00,
    vet_sc 1.92-2.00) and restarts are bitwise. It costs 1.39x be+levers (60.5 vs 43.5 ms/cycle, 1 GPU;
    runs_4a_accel jobs 11954113/4). On the He box its accuracy edge is gone by t = 500 (runs_3z_validate).
    Side decision: the accel levers (vimp_fold, fast_kernels, one_pass, predictor_order 2) default on only
@@ -107,11 +107,11 @@ only to Cartesian boxes.
 | key | default | what | evidence | gate | benefit / cost | rec |
 |---|---|---|---|---|---|---|
 | transport | explicit | explicit / implicit_x1 / implicit | all tests_m1 RESULTS; HANDOVER-09-24 | top selector | implicit is the only mode used on the He slab/box | KEEP-OPTION |
-| time_scheme | be (read only when named) | be / hesdirk2 (H-ESDIRK2; needs integrator rk2; refuses tau, vet_col) | runs_3x_hesdirk2, 3z_validate, 4a_accel, 3u | G0 bitwise CPU+GPU; G1 order 1.89-2.00; restart bitwise; the free-streaming packet test fails (so does be) | 1 GPU: E 76.6 vs 52, V 88 vs 58 (job 11950922); with levers 60.5 vs 43.5 (1.39x); He box KE_h within 2 % vs 5 % (be) to t=200, equal by t=500 | KEEP-OPTION: use when time error matters |
+| time_scheme | hesdirk2 since m1-defaults2 where accepted (transport = implicit, Cartesian, integrator rk2, closure not tau / vet_col); be elsewhere and on restarts whose file lacks the key | be / hesdirk2 (H-ESDIRK2) | runs_3x_hesdirk2, 3z_validate, 4a_accel, 5f_h2fast, h2val_0924, 5g_defaults2 | G0 bitwise CPU+GPU; G1 order 1.89-2.00; restart bitwise; be named = bitwise base (5g) | 1.35x be per step (5f); at cfl 0.9 1.57x cheaper than be at cfl 0.3 at equal accuracy (h2val_0924) | DEFAULT-ON (tests_m1/runs_5g_defaults2/README.md) |
 | time2_enth_vel | central (named only) | a_f build in hesdirk2 stages: old / start / central | runs_3x | old and start unstable at P=100, tau >= 1e5 | n/a | REMOVE old/start (keep central, hard-wired) |
 | time2_vet_extrap | false (named only) | extrapolate the VET tensor in stages | runs_3x | FAILED (G1 order 1.59) | none | REMOVE |
 | time2_dbg_fail | -1 | forces a stage-1 failure (fallback test) | runs_3x | n/a | n/a | DIAG |
-| implicit_vimp | off (named only) | Newton-implicit gas velocity in the enthalpy flux | runs_3v_vimplicit, 3u, 3z | bitwise-off; restart bitwise; NC 0; fatal on a 1-D mesh | +7.5 % E, +8 % V (job 11949611); under be it over-damps P=100 waves (0.22 vs 3.6e-3) | KEEP-OPTION: only with hesdirk2 |
+| implicit_vimp | on where the resolved time_scheme is hesdirk2 and vimp is valid (multi-D, bicgstab, nghost >= 2, hydro + coupling); else off; off on restarts whose file lacks the key | Newton-implicit gas velocity in the enthalpy flux | runs_3v_vimplicit, 3u, 3z, 5g_defaults2 | bitwise-off; restart bitwise; NC 0; fatal on a 1-D mesh | +7.5 % E, +8 % V (job 11949611); under be it over-damps P=100 waves (0.22 vs 3.6e-3) | DEFAULT-ON with hesdirk2 only (tests_m1/runs_5g_defaults2/README.md) |
 | implicit_vimp_jscale | 1.0 (named only) | Jacobian scale of vimp | runs_3v (0.5/1/2 agree to 5e-11) | n/a | n/a | DIAG |
 | implicit_vimp_fold | on (be + fixed closure + vimp + op_stencil) | fold vimp terms into the stored stencil | runs_4a, 4j; bug fix 68ea1fd0 | bitwise-off; restart bitwise | -1.1 ms E, -2.0 ms V (hesdirk2) | DEFAULT-ON; extend to hesdirk2 (decision 2) |
 | closure | m1 | m1 / minerbo / kershaw / eddington / vet_sc / tau / vet_col | runs_4b (m1 slab NC 6), 5b Finding 1 (m1, kershaw unstable in thin cells), 3j, 3l, 5d | per closure | 1 GPU box: E 40.5, V ~47.5 ms/cycle; vet_col +22 % vs E (job 11958342) | KEEP-OPTION (m1 is the explicit default); add a warning or fatal for implicit + chi(f) closures |
@@ -120,6 +120,7 @@ only to Cartesian boxes.
 | vet_eig_min | 0 (named only) | eigenvalue floor of the full tensor | runs_3j gate 3 | partly | none | PARAM |
 | vet_col_every | 1 | rebuild the vet_col tensor every k steps | runs_5d | restart bitwise only at multiples of k | build = 21 % of the vet_col run (11.9 ms/step) | NEEDS-TEST: accuracy and cost at every = 2..4 on GPU |
 | vet_col_axis | radial | tensor axis r-hat / M1 flux | runs_5d thin-cell table | both stable | none | KEEP-OPTION (radial default) |
+| vet_col_surface_q | true since m1-defaults2 (false on restarts whose file lacks the key) | outer-x1 Marshak q from the vet_col formal solution | runs_5e_vetcol2 | bitwise-off (sp gates); false named = bitwise base (5g) | T-S4 L1 2.1e-3 -> 5.2e-5 (n = 256); Milne 1.8e-3 -> 1.1e-4 | DEFAULT-ON (tests_m1/runs_5g_defaults2/README.md) |
 | implicit_enthalpy | plm (implicit + fixed closure); else upwind | enthalpy face value upwind / central / plm | runs_3s_space2, 4b | bitwise-off; restart bitwise | 2nd order in space; 4 % faster E; Picard 2.27 -> 2.05 | DEFAULT-ON (done) |
 | implicit_bc_advect | on (not on old restarts) | Marshak end face carries the enthalpy flux | runs_4f_drift, 4h_bcadv | bitwise-off; restart bitwise; NC 0 | drift -1.64 -> -0.46 cells; T_gas L1 7.7e-4 -> 8.3e-5 | DEFAULT-ON (done) |
 | implicit_closure_lag | pass | closure recomputed per Picard pass, or frozen per step | runs_3b5 (recommends step for 2-D/3-D); every modern input sets step | step changes G-static in the 7th digit | pass ~4x slower per sim-sec (09-22 csv) | DEFAULT-ON (step, for implicit multi-D); needs one flip gate |
