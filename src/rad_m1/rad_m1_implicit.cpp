@@ -518,10 +518,21 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     impl_prec = 1;
   } else if (pc.compare("rbgs_fwd") == 0) {
     impl_prec = 2;
+  } else if (pc.compare("mg") == 0) {
+    impl_prec = 3;
   } else {
     ImplFatal("<rad_m1>/implicit_precond = '" + pc
-              + "' is not a choice (line | rbgs | rbgs_fwd)");
+              + "' is not a choice (line | rbgs | rbgs_fwd | mg)");
   }
+  }
+  // implicit_precond = mg (rad_m1_precond.cpp, tests_m1/runs_5m_precond): keys read only
+  // under mg, so every other configuration is untouched
+  mg_nlev = 0;
+  mg_halo = true;
+  if (impl_prec == 3) {
+    mg_nlev = pin->GetOrAddInteger("rad_m1","implicit_mg_levels",2);
+    mg_halo = pin->GetOrAddBoolean("rad_m1","implicit_mg_halo",true);
+    if (mg_nlev < 2) {ImplFatal("<rad_m1>/implicit_mg_levels must be >= 2");}
   }
   if (impl_kfuse < 0 || impl_kfuse > 3) {
     ImplFatal("<rad_m1>/implicit_krylov_fuse must be 0, 1, 2 or 3");
@@ -593,6 +604,9 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1","implicit_krylov_dev")) {
     impl_kdev = pin->GetInteger("rad_m1","implicit_krylov_dev");
     if (impl_kdev < 0) {ImplFatal("<rad_m1>/implicit_krylov_dev must be >= 0");}
+    if (impl_kdev > 0 && impl_prec == 3) {
+      ImplFatal("<rad_m1>/implicit_krylov_dev does not take implicit_precond = mg");
+    }
     if (impl_kdev > 0 && (impl_kfuse != 3 || impl_kpipe || !impl_halo_direct)) {
       ImplFatal("<rad_m1>/implicit_krylov_dev needs implicit_krylov_fuse = 3, "
                 "implicit_halo_direct = true and implicit_krylov_pipe = false");
@@ -2942,6 +2956,10 @@ void RadiationM1::ImplicitPCRSolveX(int rc, int zc, int upd, Real c1, Real c2, i
 //!  implicit_precond = rbgs_fwd: the forward half only (red, black).
 
 void RadiationM1::ImplicitPrecondX(int rc, int zc, int upd, Real c1, Real c2) {
+  if (impl_prec == 3) {
+    ImplicitMGApply(rc, zc, upd, c1, c2);
+    return;
+  }
   if (impl_prec == 0) {
     ImplicitPCRSolveX(rc, zc, upd, c1, c2, -1, -1);
     return;
@@ -4726,6 +4744,7 @@ int RadiationM1::ImplicitBiCGStabFused(Real rhsmax) {
   const int kf = impl_kfuse;   // implicit_krylov_fuse (needs bcg_sync = 1, pcr)
   if (impl_stencil) {ImplicitStencilBuild();}   // the operator of this pass, once
   if (impl_stencil && impl_dump_cyc >= 0) {ImplicitDumpOp();}
+  if (impl_prec == 3) {ImplicitMGBuild();}      // the coarse rows of this pass
   if (kf == 3 && impl_kpipe) {return ImplicitBiCGStabPipe(rhsmax);}
   if (kf == 3 && ImplicitKrylovDevOK()) {return ImplicitBiCGStabDev(rhsmax);}
   if (kf == 3) {return ImplicitBiCGStabTwo(rhsmax);}
