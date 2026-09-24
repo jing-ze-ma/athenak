@@ -848,7 +848,8 @@ class RadiationM1 {
   void ImplicitHaloDirectInit();
   //! implicit_op_stencil: build the 19-point operator of the pass / apply it
   void ImplicitStencilBuild();
-  void ImplicitStencilOp(int xc, int yc, int red, Real *out);
+  // red_only (m1-fast3): y is already in yc (the overlap parts): the reductions only
+  void ImplicitStencilOp(int xc, int yc, int red, Real *out, bool red_only = false);
   //! the fast-path operator product: stencil or od cache
   void ImplicitOpX(int xc, int yc, int red, Real *out);
   void ImplicitHaloDirect(int nq, int c0);

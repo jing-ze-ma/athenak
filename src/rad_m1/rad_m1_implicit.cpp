@@ -3502,7 +3502,8 @@ void RadiationM1::ImplicitStencilBuild() {
 //! \brief implicit_op_stencil: y = A x from the 19-point stencil of ImplicitStencilBuild
 //! (the caller has filled the ghost zones of x).  `red` and `out` as ImplicitOffDiagOpC.
 
-void RadiationM1::ImplicitStencilOp(int xc, int yc, int red, Real *out) {
+void RadiationM1::ImplicitStencilOp(int xc, int yc, int red, Real *out,
+                                    bool red_only) {
   auto &indcs = pmy_pack->pmesh->mb_indcs;
   const int is = indcs.is, ie = indcs.ie;
   const int js = indcs.js, je = indcs.je;
@@ -3549,20 +3550,52 @@ void RadiationM1::ImplicitStencilOp(int xc, int yc, int red, Real *out) {
     iw_(m,cy,k,j,i) = y;
     return y;
   };
-  if (rm == 0 || impl_opsplit) {
+  if ((rm == 0 || impl_opsplit) && !red_only) {
     par_for("m1_impl_sto", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       row(m, k, j, i);
     });
     if (rm == 0) {return;}
   }
-  const bool spl = impl_opsplit;   // implicit_op_split_red: y is already in cy
+  const bool spl = impl_opsplit || red_only;   // y is already in cy
   // 256-thread blocks: the default 1024-thread block of a reduction with a 4-Real
   // value takes 33 kB of LDS, i.e. ONE block per CU (measured 97 us vs 47 us for the
   // same stencil as a par_for)
   Kokkos::RangePolicy<DevExeSpace, Kokkos::LaunchBounds<256,1>>
       pol(DevExeSpace(), 0, (nmb1 + 1)*nkji);
   Real a0 = 0.0, a1 = 0.0, a2 = 0.0, amx = 0.0;
+  if (spl) {
+    // implicit_op_split_red (m1-fast3): the read-only reduction as its own lambda, so
+    // the kernel carries no stencil code.  Same policy, same reducer, same per-cell
+    // terms in the same order as the fused kernel below: bitwise the same sums.
+    Kokkos::parallel_reduce("m1_impl_stos", pol,
+    KOKKOS_LAMBDA(const int idx, Real &l0, Real &l1, Real &l2, Real &lmx) {
+      int m = idx/nkji;
+      int r = idx - m*nkji;
+      int k = r/nji;
+      r -= k*nji;
+      int j = r/ni;
+      int i = r - j*ni;
+      k += ks; j += js; i += is;
+      const Real y = iw_(m,cy,k,j,i);
+      if (rm == 1 || rm == 4) {
+        l0 += iw_(m,M1_IW_KRH,k,j,i)*y;
+        if (rm == 4) {
+          Real a = fabs(iw_(m,M1_IW_KR,k,j,i));
+          lmx = (a > lmx) ? a : lmx;
+        }
+      } else {
+        l0 += y*iw_(m,M1_IW_KS,k,j,i);
+        l1 += y*y;
+        if (rm == 3) {l2 += iw_(m,M1_IW_KRH,k,j,i)*y;}
+      }
+    }, a0, a1, a2, Kokkos::Max<Real>(amx));
+    out[0] = a0;
+    out[1] = a1;
+    out[2] = a2;
+    out[3] = amx;
+    return;
+  }
   Kokkos::parallel_reduce("m1_impl_stor", pol,
   KOKKOS_LAMBDA(const int idx, Real &l0, Real &l1, Real &l2, Real &lmx) {
     int m = idx/nkji;
@@ -3572,7 +3605,7 @@ void RadiationM1::ImplicitStencilOp(int xc, int yc, int red, Real *out) {
     int j = r/ni;
     int i = r - j*ni;
     k += ks; j += js; i += is;
-    Real y = spl ? iw_(m,cy,k,j,i) : row(m, k, j, i);
+    Real y = row(m, k, j, i);
     if (rm == 1 || rm == 4) {
       l0 += iw_(m,M1_IW_KRH,k,j,i)*y;
       if (rm == 4) {
