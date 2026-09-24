@@ -5837,6 +5837,9 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       if (t2s == M1_T2S_BESTORE) {t2_vprev = false;}
     }
   }
+  // closure = vet_col (rad_m1_vetcol.cpp): the per-column formal solution of the
+  // start-of-step state, here for the same reason (T^n, before the predictor moves it)
+  if (vet_col) {VetColBuild();}
 
   // implicit_predictor = step: start the Picard loop from the previous step's implicit
   // increment, scaled by dt/dt_prev.  Only the STARTING POINT moves: E^n (M1_IW_EN),

@@ -57,7 +57,8 @@ void RadiationM1::SphericalS1Check(ParameterInput *pin) {
   if (transport != M1_TRANSPORT_IMPLICIT) {why += " transport != implicit;";}
   // STAGE S2: the uniaxial chi(f) closures (m1, minerbo, kershaw) as well; vet_sc and
   // the tau closure (plane-parallel column depth on index space) stay refused
-  if (vet_sc || tau_closure) {why += " closure = vet_sc | tau;";}
+  // STAGE S5: closure = vet_col (the per-column spherical formal solution) is allowed
+  if (vet_sc || (tau_closure && !vet_col)) {why += " closure = vet_sc | tau;";}
   if (pm->multilevel) {why += " SMR/AMR;";}
   if (pm->mesh_indcs.nx1 != pm->mb_indcs.nx1) {
     why += " more than one MeshBlock along x1 (meshblock/nx1 must equal mesh/nx1);";
@@ -84,7 +85,8 @@ void RadiationM1::SphericalS1Check(ParameterInput *pin) {
   if (!why.empty()) {
     std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
       << std::endl << "<rad_m1> on a spherical-polar mesh (stages S1, S2) supports "
-      << "only transport = implicit, closure = eddington | m1 | minerbo | kershaw, "
+      << "only transport = implicit, closure = eddington | m1 | minerbo | kershaw | "
+      << "vet_col, "
       << "implicit_offdiag = auto | none (| lagged for m1/minerbo/kershaw), "
       << "time_scheme = be, one MeshBlock "
       << "along x1, no SMR, implicit_halo_mpi = false, implicit_flux = central, "

@@ -1,0 +1,19 @@
+q4e32    n= 32 t=101.4  exact: L1 1.374e-02 Linf 1.100e-01  exactMarshak: L1 1.763e-02 Linf 1.402e-01  max|L/L_in-1| 5.58e-05
+q4e64    n= 64 t=97.06  exact: L1 8.833e-03 Linf 6.791e-02  exactMarshak: L1 1.283e-02 Linf 1.040e-01  max|L/L_in-1| 2.98e-05
+q4e128   n=128 t=58.56  exact: L1 6.480e-03 Linf 4.267e-02  exactMarshak: L1 1.052e-02 Linf 8.004e-02  max|L/L_in-1| 1.53e-05
+q4e256   n=256 t=58.36  exact: L1 5.328e-03 Linf 3.206e-02  exactMarshak: L1 9.393e-03 Linf 6.810e-02  max|L/L_in-1| 7.77e-06
+q4m32    n= 32 t=101.3  exact: L1 5.796e-03 Linf 1.100e-01  exactMarshak: L1 9.717e-03 Linf 1.402e-01  max|L/L_in-1| 5.58e-05
+q4m64    n= 64 t=97.05  exact: L1 2.370e-03 Linf 6.791e-02  exactMarshak: L1 4.647e-03 Linf 1.040e-01  max|L/L_in-1| 2.98e-05
+q4m128   n=128 t=58.56  exact: L1 2.665e-03 Linf 4.039e-02  exactMarshak: L1 2.381e-03 Linf 8.004e-02  max|L/L_in-1| 1.53e-05
+q4m256   n=256 t=58.35  exact: L1 3.298e-03 Linf 2.307e-02  exactMarshak: L1 1.772e-03 Linf 6.465e-02  max|L/L_in-1| 7.77e-06
+q4v32    n= 32 t=101.3  exact: L1 1.213e-02 Linf 1.100e-01  exactMarshak: L1 1.603e-02 Linf 1.402e-01  max|L/L_in-1| 5.59e-05
+q4v64    n= 64 t=97.04  exact: L1 6.707e-03 Linf 6.791e-02  exactMarshak: L1 1.072e-02 Linf 1.040e-01  max|L/L_in-1| 2.99e-05
+q4v128   n=128 t=58.55  exact: L1 3.773e-03 Linf 4.039e-02  exactMarshak: L1 7.844e-03 Linf 8.004e-02  max|L/L_in-1| 1.54e-05
+q4v256   n=256 t=58.35  exact: L1 2.121e-03 Linf 2.307e-02  exactMarshak: L1 6.222e-03 Linf 6.465e-02  max|L/L_in-1| 7.77e-06
+q4v2_128 n=128 t=58.55  exact: L1 3.758e-03 Linf 4.039e-02  exactMarshak: L1 7.830e-03 Linf 8.004e-02  max|L/L_in-1| 1.53e-05
+q4e n=64,128: Richardson L1 4.159e-03 Linf 2.257e-02   (n=128 alone: L1 6.261e-03 Linf 4.267e-02)
+q4e n=128,256: Richardson L1 4.196e-03 Linf 2.282e-02   (n=256 alone: L1 5.279e-03 Linf 3.206e-02)
+q4m n=64,128: Richardson L1 4.327e-03 Linf 2.864e-02   (n=128 alone: L1 2.387e-03 Linf 8.126e-03)
+q4m n=128,256: Richardson L1 4.277e-03 Linf 2.012e-02   (n=256 alone: L1 3.233e-03 Linf 1.210e-02)
+q4v n=64,128: Richardson L1 8.716e-04 Linf 8.748e-03   (n=128 alone: L1 3.510e-03 Linf 3.511e-02)
+q4v n=128,256: Richardson L1 4.860e-04 Linf 5.245e-03   (n=256 alone: L1 2.046e-03 Linf 2.184e-02)
