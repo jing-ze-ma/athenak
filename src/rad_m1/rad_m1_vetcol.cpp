@@ -611,8 +611,8 @@ void RadiationM1::VetColInit() {
     // within 24 kB (runs_5e GPU sweep: 32 kB halves the occupancy, 3.3 ms at 16 vs 7.7
     // ms at 32 on the He wedge grid)
     const int avail = 3072 - 5*n1 - (vcol_rtop ? 3 : 2)*nray;
-    // (m1-fast5-sp: 8 shells per chunk with the grouped moment sums, runs_5s job 11980678:
-    // 4.95 ms per build at 8, 5.2-5.9 at 6/7/10/12, 7.5 at 16 on the He wedge)
+    // (m1-fast5-sp: 8 shells per chunk with the grouped moment sums, runs_5s job
+    // 11980678: 4.95 ms per build at 8, 5.2-5.9 at 6/7/10/12, 7.5 at 16 on the He wedge)
     vcol_lc = std::max(1, std::min(std::min(n1, 8), avail/nray));
     if (vcol_lcin > 0) {vcol_lc = std::min(n1, vcol_lcin);}
   } else {

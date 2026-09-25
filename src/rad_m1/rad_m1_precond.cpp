@@ -258,12 +258,18 @@ void RadiationM1::ImplicitMGBuild() {
           // a coupling inside the aggregate goes onto the diagonal, one to another
           // aggregate of the block stays, one across the block face is dropped
           if (j - 1 >= 2*jc) {tb += v[3];} else if (j - 1 >= 0) {jm += v[3];}
-          if (j + 1 <= 2*jc + 1 && j + 1 < fj) {tb += v[4];}
-          else if (j + 1 < fj) {jp += v[4];}
+          if (j + 1 <= 2*jc + 1 && j + 1 < fj) {
+            tb += v[4];
+          } else if (j + 1 < fj) {
+            jp += v[4];
+          }
           if (thrd) {
             if (k - 1 >= 2*kc) {tb += v[5];} else if (k - 1 >= 0) {km += v[5];}
-            if (k + 1 <= 2*kc + 1 && k + 1 < fk) {tb += v[6];}
-            else if (k + 1 < fk) {kp += v[6];}
+            if (k + 1 <= 2*kc + 1 && k + 1 < fk) {
+              tb += v[6];
+            } else if (k + 1 < fk) {
+              kp += v[6];
+            }
           }
         }
       }
