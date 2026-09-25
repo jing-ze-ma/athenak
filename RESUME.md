@@ -93,3 +93,21 @@
    - m1_impl_asm: occupancy 22 %.
    - Hydro hflux_x1/x2/x3 on sp: 1.0-1.4 kB scratch per lane, 2.9 ms/cycle. This is hydro, outside the brief; report it.
 6. Final report (under 12 lines): per-kernel before/after, ms/cycle and radiation/hydro at 1 and 2 GPUs. State that v1-v8 are bitwise on CPU and round-off on GPU, and that v9 is round-off. Then delete `b_*` and `src_*` in `/viper/ptmp2/jinma/fast5sp_0925`.
+
+## Session 09-26 (dated 2026-09-26; worker agent)
+
+- **Builds from HEAD 9ebad969 (code = 54eb6cf7, v9 with default chunk 8), all OK:**
+  - `bin/athena_v10_none_gpu`, md5 82b832af02d8cc45c523b86a03d59215
+  - `bin/athena_v10c_none_cpu`, md5 f7f9a21c0a116eea7c3e5f995ecc7556
+  - `bin/athena_v10c_box_convection_cpu`, md5 5cc6eaf65a3760869b26ed8909bfe32e
+- **GPU timing job 11981006** was submitted: TAGS="b0 v8 v10", RUN=t7, NREP=3, PROF=1, TIMERS=1. `job_t.sh` already exports HSA_XNACK=1 and HSA_NO_SCRATCH_RECLAIM=1. The job is not evaluated yet. To evaluate it, run `tsum.py runs/t7 10 50`, `ktab.py runs/t7/prof/wed1_*` and `tmr.py runs/t7/wed{1,2}tm_*`.
+- **CPU gates** (`bash scripts/cpugates.sh b0 v10c`, output in `cpu/gates_b0_v10c.out`):
+  - **Cartesian box/slab:** box_a1, box_m2, slab_a1 and slab_m2 are BITWISE in both loose and tight modes, restart files included.
+  - **Cartesian vet_col:** cpugates.sh has no such arm (every gates.py arm uses vet_sc), so this gate was NOT run.
+  - **sp wedge (b0 vs v10c):** not bitwise, as expected. Measured with rstdiff.py:
+    - after 4 cycles (`cpu/g_b0_v10c/w_*`): 1.31M of 2.51M doubles differ; relative max 1.01, median 2.9e-5.
+    - after 1 cycle (`cpu/g_b0_v10c/n1_*`): 0.75M of 2.09M doubles differ; relative max 4.7e-4, median 2.0e-11.
+    - The difference grows about 1e6 times in 3 cycles, even though implicit_tol and lin_tol are 1e-10. This matches the GPU b0 1-GPU vs 2-GPU spread from the earlier session (median 1e-4 after 60 cycles), but the case for round-off would be stronger with a b0-vs-b0 CPU perturbation baseline.
+    - NON-CONVERGED 0.
+  - **Wedge restart within v10c:** BITWISE after par_end.
+  - **Space-time set:** 16/16 L1 rows are identical between s0 (b0) and s1 (v10c) (`st/RESULTS_s.txt`, overwritten by this run).
