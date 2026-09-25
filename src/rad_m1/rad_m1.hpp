@@ -333,6 +333,7 @@ class RadiationM1 {
   Real mr_nr = 0.0, mr_nfall = 0.0;   // radiation steps, BE fallbacks (counters)
   int mr_kc = 0, mr_kn = 0;    // window length (steps) of the last / next window
   Real mr_theta = 0.0;         // implicit_mr_theta: the adaptive guard (0 = fixed k)
+  bool mr_peq = true;          // implicit_mr_peq: stage-A local-equilibrium start
   Real mr_thmax = 0.0, mr_ksum = 0.0;   // largest theta seen, sum of window lengths
   // vet_sc_every = N (m1-fast4, rad_m1_mr.cpp; default 1): the vet_sc formal solution
   // on every N-th stage-1 (or multi-rate) tensor build only; in between the tensor is

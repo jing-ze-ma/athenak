@@ -97,6 +97,11 @@ void RadiationM1::MRInit(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1", "implicit_mr_theta")) {
     mr_theta = pin->GetReal("rad_m1", "implicit_mr_theta");
   }
+  // implicit_mr_peq (default true; read only when named): the stage-A starting point
+  // (ImplicitSolve): the local gas-radiation equilibrium of each cell
+  if (pin->DoesParameterExist("rad_m1", "implicit_mr_peq")) {
+    mr_peq = pin->GetBoolean("rad_m1", "implicit_mr_peq");
+  }
   mr_first = true;
   mr_cnt = 0;
   mr_acc = 0.0;

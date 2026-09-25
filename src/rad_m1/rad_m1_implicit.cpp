@@ -6456,6 +6456,36 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     }
   }
 
+  // implicit_mr_every (rad_m1_mr.cpp), implicit_mr_peq: the stage-A solve of a
+  // multi-rate step starts from the LOCAL equilibrium of every cell -- the gas-radiation
+  // exchange of the stage alone, backward Euler, no transport:
+  //   E' = (E0 + ap a T'^4)/(1 + ae),  rho e(T') + ap/(1+ae) a T'^4 = rho e0 + ae/(1+ae) E0
+  // (ap, ae = c g Delta rho kappa_P, kappa_E).  The hydro steps of the window leave the
+  // gas out of equilibrium with E, which the extrapolated increment of the last window
+  // does not know.  Only the starting point moves; the fixed point is unchanged.
+  if (mr_on && mr_peq && t2s == M1_T2S_STAGE1 && src_on) {
+    auto eos = pmy_pack->phydro->peos->eos_data;
+    const Real cdt = cl*dt;
+    par_for("m1_mr_peq", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real ap = cdt*opac_(m,M1_OP_P,k,j,i);
+      const Real ae = cdt*opac_(m,M1_OP_E,k,j,i);
+      if (!(ap > 0.0) || !(ae > 0.0)) return;
+      const Real e0 = fmax(u0_(m,M1_E,k,j,i), efl);
+      const Real t0 = iw_(m,M1_IW_TP,k,j,i);
+      const Real iae = 1.0/(1.0 + ae);
+      Real tq = t0;
+      bool ok = true;
+      (void) M1ImplTemperature(eos, uh(m,IDN,k,j,i), t0, iw_(m,M1_IW_EGN,k,j,i),
+                               ap*iae*ar, ae*iae*e0, tq, ok);
+      if (!ok || !(tq > 0.5*t0 && tq < 2.0*t0)) return;
+      const Real t2 = tq*tq;
+      iw_(m,M1_IW_EP,k,j,i) = fmax((e0 + ap*ar*t2*t2)*iae, efl);
+      iw_(m,M1_IW_TP,k,j,i) = tq;
+    });
+    if (trans) {ImplicitTransverseHalo(1);} else {ImplicitX1Halo(true);}
+  }
+
   // MILESTONE 3e: the Anderson histories start empty at every step, and the per-cell
   // scale of the fixed-point vector is frozen at the start-of-step energy (see
   // ImplicitAccelSave).  Nothing here runs under implicit_accel = none.
