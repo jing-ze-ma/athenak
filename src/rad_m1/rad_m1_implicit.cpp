@@ -58,6 +58,7 @@
 #include "hydro/hydro.hpp"
 #include "reconstruct/plm.hpp"
 #include "rad_m1/rad_m1.hpp"
+#include "rad_m1/rad_m1_parfor.hpp"
 #include "rad_m1/rad_m1_closure.hpp"
 #include "rad_m1/rad_m1_opacity.hpp"
 #include "rad_m1/rad_m1_implicit.hpp"
@@ -5891,7 +5892,7 @@ void RadiationM1::ImplicitVimpBuild() {
   ImplicitHaloExchange(M1_NVIMP_X, b);
 
   // (2) the operator coefficients and the right-hand side
-  par_for("m1_vimp_j", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  par_for_lb("m1_vimp_j", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
   KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
     const int ipos = pos_(m);
     const bool botb = (ipos == 0), topb = (ipos == nblkx1-1);
@@ -6277,7 +6278,7 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
 
   if (have_hydro) {
     auto eos = pmy_pack->phydro->peos->eos_data;
-    par_for("m1_impl_i1", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    par_for_lb("m1_impl_i1", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       Real dd = uh(m,IDN,k,j,i);
       Real idd = 1.0/fmax(dd, 1.0e-300);
@@ -6459,15 +6460,16 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
   // implicit_mr_every (rad_m1_mr.cpp), implicit_mr_peq: the stage-A solve of a
   // multi-rate step starts from the LOCAL equilibrium of every cell -- the gas-radiation
   // exchange of the stage alone, backward Euler, no transport:
-  //   E' = (E0 + ap a T'^4)/(1 + ae),  rho e(T') + ap/(1+ae) a T'^4 = rho e0 + ae/(1+ae) E0
+  //   E' = (E0 + ap a T'^4)/(1 + ae),
+  //   rho e(T') + ap/(1+ae) a T'^4 = rho e0 + ae/(1+ae) E0
   // (ap, ae = c g Delta rho kappa_P, kappa_E).  The hydro steps of the window leave the
   // gas out of equilibrium with E, which the extrapolated increment of the last window
   // does not know.  Only the starting point moves; the fixed point is unchanged.
   if (mr_on && mr_peq && t2s == M1_T2S_STAGE1 && src_on) {
     auto eos = pmy_pack->phydro->peos->eos_data;
     const Real cdt = cl*dt;
-    par_for("m1_mr_peq", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    par_for_lb("m1_mr_peq", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) M1_INL {
       const Real ap = cdt*opac_(m,M1_OP_P,k,j,i);
       const Real ae = cdt*opac_(m,M1_OP_E,k,j,i);
       if (!(ap > 0.0) || !(ae > 0.0)) return;
@@ -7130,8 +7132,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     const int enm = impl_enth;
     const bool enth2 = (enm != M1_IENTH_UPWIND);
     const int ngh = indcs.ng;
-    par_for("m1_impl_asm", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    par_for_lb("m1_impl_asm", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) M1_INL {
       Real dx = mbsize.d_view(m).dx1;
       Real nu = dt/dx;
       Real cr = ch/cl;
@@ -7645,8 +7647,8 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     // (f) accept E', solve for T' and measure the Picard residual
     if (src_on) {
       auto eos = pmy_pack->phydro->peos->eos_data;
-      par_for("m1_impl_tsolve", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
-      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      par_for_lb("m1_impl_tsolve", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) M1_INL {
         Real enew = fmax(iw_(m,M1_IW_S2,k,j,i), efl);
         Real eold = iw_(m,M1_IW_EP,k,j,i);
         Real rkpv = opac_(m,M1_OP_P,k,j,i);
@@ -8029,10 +8031,18 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
     const bool hh = have_hydro;
     const bool gq = have_hydro && coupling && dbgh;
     Real vmin = 1.0e300;
+    // a flat 1-D range (m1-fast4): the rank-4 MDRange reduction ran at 360 us on the
+    // wedge; a min is order-independent, so the result is the same bit for bit
+    const int ni = ie - is + 1, nji = (je - js + 1)*ni, nkji = (ke - ks + 1)*nji;
     Kokkos::parallel_reduce("m1_t2_adm",
-    Kokkos::MDRangePolicy<Kokkos::Rank<4>>(DevExeSpace(), {0,ks,js,is},
-                                           {nmb1+1,ke+1,je+1,ie+1}),
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &lmin) {
+    Kokkos::RangePolicy<DevExeSpace>(DevExeSpace(), 0, (nmb1 + 1)*nkji),
+    KOKKOS_LAMBDA(const int idx, Real &lmin) {
+      const int m = idx/nkji;
+      int q = idx - m*nkji;
+      const int k = q/nji + ks;
+      q -= (k - ks)*nji;
+      const int j = q/ni + js;
+      const int i = q - (j - js)*ni + is;
       Real r = iw_(m,M1_IW_S2,k,j,i);
       if (hh) {r = fmin(r, iw_(m,M1_IW_TP,k,j,i));}
       if (gq) {
@@ -8141,10 +8151,19 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       (impl_eccheck_every == 1 || pmy_pack->pmesh->ncycle % impl_eccheck_every == 0)) {
     auto eos = pmy_pack->phydro->peos->eos_data;
     Real emx = 0.0, qmx = 0.0;
+    // m1-fast4: a flat range with LaunchBounds<256,1> (the MDRange form spilled 55
+    // VGPRs); a max is order-independent, so the result is bitwise the same
+    const int eni = ie - is + 1, enji = (je - js + 1)*eni, enkji = (ke - ks + 1)*enji;
     Kokkos::parallel_reduce("m1_impl_eck",
-    Kokkos::MDRangePolicy<Kokkos::Rank<4>>(DevExeSpace(), {0,ks,js,is},
-                                           {nmb1+1,ke+1,je+1,ie+1}),
-    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i, Real &lmax) {
+    Kokkos::RangePolicy<DevExeSpace, Kokkos::LaunchBounds<256,1>>(DevExeSpace(), 0,
+                                                                  (nmb1 + 1)*enkji),
+    KOKKOS_LAMBDA(const int idx, Real &lmax) {
+      const int m = idx/enkji;
+      int q = idx - m*enkji;
+      const int k = q/enji + ks;
+      q -= (k - ks)*enji;
+      const int j = q/eni + js;
+      const int i = q - (j - js)*eni + is;
       iw_(m,igm,k,j,i) = 0.0;
       Real rkpv = opac_(m,M1_OP_P,k,j,i);
       Real rkev = opac_(m,M1_OP_E,k,j,i);

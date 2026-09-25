@@ -353,10 +353,19 @@ bool RadiationM1::VscSkip() {
 
 void RadiationM1::VscStore() {
   std::swap(vsc_d0, vsc_d1);
-  auto AL = Kokkos::ALL;
-  Kokkos::deep_copy(DevExeSpace(), vsc_d1,
-                    Kokkos::subview(vet_cell, AL, std::make_pair(M1_VET_CHI,
-                                    M1_VET_CHI + M1_T2_NVET), AL, AL, AL));
+  // a device kernel: a deep_copy from the strided subview of vet_cell is not a plain
+  // device copy (it measured +15 ms/cycle on the box)
+  auto vc_ = vet_cell;
+  auto d1_ = vsc_d1;
+  const int nmb1 = static_cast<int>(vsc_d1.extent(0)) - 1;
+  const int n3 = static_cast<int>(vsc_d1.extent(2));
+  const int n2 = static_cast<int>(vsc_d1.extent(3));
+  const int n1 = static_cast<int>(vsc_d1.extent(4));
+  par_for("m1_vsc_store", DevExeSpace(), 0, nmb1, 0, M1_T2_NVET-1, 0, n3-1, 0, n2-1,
+          0, n1-1,
+  KOKKOS_LAMBDA(const int m, const int c, const int k, const int j, const int i) {
+    d1_(m,c,k,j,i) = vc_(m,M1_VET_CHI+c,k,j,i);
+  });
   vsc_t0 = vsc_t1;
   vsc_t1 = vsc_tn;
   vsc_nb = std::min(vsc_nb + 1, 2);

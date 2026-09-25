@@ -37,6 +37,7 @@
 #include "hydro/hydro.hpp"
 #include "eos/eos.hpp"
 #include "rad_m1/rad_m1.hpp"
+#include "rad_m1/rad_m1_parfor.hpp"
 #include "rad_m1/rad_m1_implicit.hpp"
 #include "rad_m1/rad_m1_opacity.hpp"
 
@@ -414,7 +415,7 @@ void RadiationM1::Time2VetStart() {
     const Real kp = kappa_p, kev = kappa_e, kf = kappa_f, kss = kappa_s;
     const Real rref = opac_rho_ref, tref = opac_t_ref, aa = opac_a, bb = opac_b;
     M1OpacTab ot = otab;
-    par_for("m1_t2_vsf", DevExeSpace(), 0, nmb1, 0, n3-1, 0, n2-1, 0, n1-1,
+    par_for_lb("m1_t2_vsf", DevExeSpace(), 0, nmb1, 0, n3-1, 0, n2-1, 0, n1-1,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       Real d = uh1(m,IDN,k,j,i);
       Real ke_dens = 0.5*(SQR(uh1(m,IM1,k,j,i)) + SQR(uh1(m,IM2,k,j,i)) +
@@ -622,7 +623,7 @@ void RadiationM1::Time2VetColAt(int which) {
     const Real kp = kappa_p, kev = kappa_e, kf = kappa_f, kss = kappa_s;
     const Real rref = opac_rho_ref, tref = opac_t_ref, aa = opac_a, bb = opac_b;
     M1OpacTab ot = otab;
-    par_for("m1_t2_vcp", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    par_for_lb("m1_t2_vcp", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
     KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
       const Real d = uh(m,IDN,k,j,i);
       Real t, e;

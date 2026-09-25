@@ -41,8 +41,42 @@ void M1TableOpacities(const M1OpacTab &tab, const Real d, const Real t,
                       Real &op, Real &oe, Real &of, Real &os) {
   const Real tk = t*tab.tunit;
   const Real dc = d*tab.dunit;
-  const Real kr = RosselandTable(tab.kr, tab.lT, tab.lD, tab.nT, tab.nD, tk, dc);
-  const Real kp = RosselandTable(tab.kp, tab.lT, tab.lD, tab.nT, tab.nD, tk, dc);
+  // m1-fast4: both tables share the grid, so the logarithms, the two bisections and the
+  // weights are made ONCE; the arithmetic is RosselandTable's, term for term (bitwise)
+  const Real x = log10(tk), y = log10(dc);
+  const int nT = tab.nT, nD = tab.nD;
+  int i = 0, j = 0;
+  Real fx = 0.0, fy = 0.0;
+  if (!(x > tab.lT(0))) {
+    i = 0; fx = 0.0;
+  } else if (x >= tab.lT(nT-1)) {
+    i = nT-2; fx = 1.0;
+  } else {
+    int hi = nT-2;
+    while (i < hi) {
+      const int mid = (i + hi + 1)/2;
+      if (tab.lT(mid) <= x) {i = mid;} else {hi = mid - 1;}
+    }
+    fx = (x - tab.lT(i))/(tab.lT(i+1) - tab.lT(i));
+  }
+  if (!(y > tab.lD(0))) {
+    j = 0; fy = 0.0;
+  } else if (y >= tab.lD(nD-1)) {
+    j = nD-2; fy = 1.0;
+  } else {
+    int hj = nD-2;
+    while (j < hj) {
+      const int mid = (j + hj + 1)/2;
+      if (tab.lD(mid) <= y) {j = mid;} else {hj = mid - 1;}
+    }
+    fy = (y - tab.lD(j))/(tab.lD(j+1) - tab.lD(j));
+  }
+  const Real lr = (1.0-fx)*((1.0-fy)*tab.kr(i,j) + fy*tab.kr(i,j+1))
+                +      fx *((1.0-fy)*tab.kr(i+1,j) + fy*tab.kr(i+1,j+1));
+  const Real lp = (1.0-fx)*((1.0-fy)*tab.kp(i,j) + fy*tab.kp(i,j+1))
+                +      fx *((1.0-fy)*tab.kp(i+1,j) + fy*tab.kp(i+1,j+1));
+  const Real kr = pow(10.0, lr);
+  const Real kp = pow(10.0, lp);
   op = kp*tab.kunit;
   oe = op;
   of = kr*tab.kunit;
