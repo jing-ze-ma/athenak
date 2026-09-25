@@ -1,0 +1,710 @@
+diff --git a/src/rad_m1/rad_m1.hpp b/src/rad_m1/rad_m1.hpp
+index 47a8dc00..76b7a24e 100644
+--- a/src/rad_m1/rad_m1.hpp
++++ b/src/rad_m1/rad_m1.hpp
+@@ -525,6 +525,20 @@ class RadiationM1 {
+   bool mg_halo;                 // <rad_m1>/implicit_mg_halo: fine residual with the halo
+   std::vector<DvceArray5D<Real>> mgc;   // level l >= 1: (m,9,nk_l,nj_l,nx1)
+   std::vector<int> mg_nj, mg_nk;        // per level (level 0 = the MeshBlock)
++  bool mg_fuse;                 // <rad_m1>/implicit_mg_fuse: restrictions in the PCR loads
++  int mg_glob;                  // <rad_m1>/implicit_mg_global: 1 = global band coarse space
++  int mg_gb2, mg_gb3;           // <rad_m1>/implicit_mg_gbands2/3: bands in x2 / x3
++  int mg_gn1;                   // global x1 cells (coarse unknowns per band)
++  bool mg_gok;                  // the global coarse factorisation of this pass is usable
++  DvceArray2D<int> mg_goff;     // (m, 4): global offsets in x1, x2, x3; first x2 band
++  int mg_gnseg;                 // x2 bands one MeshBlock can meet
++  DvceArray5D<Real> mg_gpart;   // (m, k, band seg, i, q): per-row partial sums
++  DvceArray2D<Real> mg_ga;      // (gi, nb*nb + 2 nb): the coarse rows D, L, U
++  DvceArray2D<Real> mg_gv;      // (gi, nb): restricted residual, then the coarse solution
++  HostArray2D<Real> mg_hga, mg_hgv, mg_hdinv;   // host copies, inverse pivot blocks
++  void ImplicitMGInit(ParameterInput *pin);
++  void ImplicitMGGlobalBuild();
++  void ImplicitMGGlobalSolve();
+   void ImplicitMGBuild();
+   void ImplicitMGApply(int rc, int zc, int upd, Real c1, Real c2);
+   int impl_dump_cyc;            // <rad_m1>/implicit_dump_op (debug, rad_m1_precond.cpp)
+diff --git a/src/rad_m1/rad_m1_implicit.cpp b/src/rad_m1/rad_m1_implicit.cpp
+index bd77a690..2ba71c17 100644
+--- a/src/rad_m1/rad_m1_implicit.cpp
++++ b/src/rad_m1/rad_m1_implicit.cpp
+@@ -527,13 +527,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
+   }
+   // implicit_precond = mg (rad_m1_precond.cpp, tests_m1/runs_5m_precond): keys read only
+   // under mg, so every other configuration is untouched
+-  mg_nlev = 0;
+-  mg_halo = true;
+-  if (impl_prec == 3) {
+-    mg_nlev = pin->GetOrAddInteger("rad_m1","implicit_mg_levels",2);
+-    mg_halo = pin->GetOrAddBoolean("rad_m1","implicit_mg_halo",true);
+-    if (mg_nlev < 2) {ImplFatal("<rad_m1>/implicit_mg_levels must be >= 2");}
+-  }
++  ImplicitMGInit(pin);
+   if (impl_kfuse < 0 || impl_kfuse > 3) {
+     ImplFatal("<rad_m1>/implicit_krylov_fuse must be 0, 1, 2 or 3");
+   }
+diff --git a/src/rad_m1/rad_m1_precond.cpp b/src/rad_m1/rad_m1_precond.cpp
+index 903cb7b4..066b4bb3 100644
+--- a/src/rad_m1/rad_m1_precond.cpp
++++ b/src/rad_m1/rad_m1_precond.cpp
+@@ -24,9 +24,25 @@
+ //! the fine residual (implicit_mg_halo = true, default; false = block-local residual).
+ //! M is a fixed linear map (a valid right preconditioner); it changes the iterates, not
+ //! the converged answer.
++//!
++//! implicit_mg_fuse = true (default; tests_m1/runs_5n_mgfuse): the restricted residual
++//! of level l is formed in the load phase of level l's own line sweeps instead of in a
++//! separate kernel after level l-1 -- the same numbers, 1 launch fewer per level.
++//!
++//! implicit_mg_global = 1 (default 0): a GLOBAL coarse space in front of the above, the
++//! piecewise-constant fields over implicit_mg_gbands2 x implicit_mg_gbands3 (x2,x3)
++//! bands of the whole mesh, one unknown per band and global x1 index (with 1 x 1 bands:
++//! the sideways mean of each x1 layer, the slowest mode of rbgs_fwd).  Per application:
++//! x_g = A_g^{-1} P_g^T r (one MPI_Allreduce of N1 x nbands numbers, the block-
++//! tridiagonal coarse system solved redundantly on the host of every rank), then the
++//! smoother and the block-local levels on r - A7 P_g x_g, and z += P_g x_g.
+ 
+ #include <algorithm>
++#include <cmath>
++#include <cstdint>
+ #include <cstdio>
++#include <cstdlib>
++#include <iostream>
+ #include <string>
+ #include <type_traits>
+ #include <vector>
+@@ -36,6 +52,10 @@
+ #include "rad_m1/rad_m1.hpp"
+ #include "rad_m1/rad_m1_implicit.hpp"
+ 
++#if MPI_PARALLEL_ENABLED
++#include <mpi.h>
++#endif
++
+ namespace radm1 {
+ 
+ //----------------------------------------------------------------------------------------
+@@ -97,12 +117,92 @@ namespace {
+ constexpr int MG_TA = 0, MG_TB = 1, MG_TC = 2, MG_CJM = 3, MG_CJP = 4, MG_CKM = 5,
+               MG_CKP = 6, MG_R = 7, MG_Z = 8, MG_NC = 9;
+ 
++void MGFatal(const std::string &msg) {
++  std::cout << "### FATAL ERROR in " << __FILE__ << std::endl << msg << std::endl;
++  std::exit(EXIT_FAILURE);
++}
++
++//! the restricted fine residual R (r - A7 z0) of level-1 cell (kc,jc,i): the 2 x 2 fine
++//! columns of the aggregate, with (hal) or without the halo of z0
++KOKKOS_INLINE_FUNCTION
++Real MGRes0(const DvceArray5D<Real> &iw_, const int m, const int kc, const int jc,
++            const int i, const int is, const int js, const int ks, const int nx,
++            const int fj, const int fk, const bool thrd, const bool hal, const int rr,
++            const int zc) {
++  Real sum = 0.0;
++  const int ii = i + is;
++  for (int a = 0; a < 2; ++a) {
++    const int k = 2*kc + a;
++    if (k >= fk) continue;
++    const int kk = k + ks;
++    for (int b = 0; b < 2; ++b) {
++      const int j = 2*jc + b;
++      if (j >= fj) continue;
++      const int jj = j + js;
++      Real y = iw_(m,M1_IW_TB,kk,jj,ii)*iw_(m,zc,kk,jj,ii);
++      if (hal || i > 0) y += iw_(m,M1_IW_TA,kk,jj,ii)*iw_(m,zc,kk,jj,ii-1);
++      if (hal || i < nx-1) y += iw_(m,M1_IW_TC,kk,jj,ii)*iw_(m,zc,kk,jj,ii+1);
++      if (hal || j > 0) y += iw_(m,M1_IW_CJM,kk,jj,ii)*iw_(m,zc,kk,jj-1,ii);
++      if (hal || j < fj-1) y += iw_(m,M1_IW_CJP,kk,jj,ii)*iw_(m,zc,kk,jj+1,ii);
++      if (thrd) {
++        if (hal || k > 0) y += iw_(m,M1_IW_CKM,kk,jj,ii)*iw_(m,zc,kk-1,jj,ii);
++        if (hal || k < fk-1) y += iw_(m,M1_IW_CKP,kk,jj,ii)*iw_(m,zc,kk+1,jj,ii);
++      }
++      sum += iw_(m,rr,kk,jj,ii) - y;
++    }
++  }
++  return sum;
++}
++
++//! the restricted residual of level l-1 (array c_, size cj x ck, x3 couplings th) at
++//! level-l cell (kc,jc,i)
++KOKKOS_INLINE_FUNCTION
++Real MGResL(const DvceArray5D<Real> &c_, const int m, const int kc, const int jc,
++            const int i, const int nx, const int cj, const int ck, const bool th) {
++  Real sum = 0.0;
++  for (int a = 0; a < 2; ++a) {
++    const int k = 2*kc + a;
++    if (k >= ck) continue;
++    for (int b = 0; b < 2; ++b) {
++      const int j = 2*jc + b;
++      if (j >= cj) continue;
++      Real y = c_(m,MG_TB,k,j,i)*c_(m,MG_Z,k,j,i);
++      if (i > 0) y += c_(m,MG_TA,k,j,i)*c_(m,MG_Z,k,j,i-1);
++      if (i < nx-1) y += c_(m,MG_TC,k,j,i)*c_(m,MG_Z,k,j,i+1);
++      if (j > 0) y += c_(m,MG_CJM,k,j,i)*c_(m,MG_Z,k,j-1,i);
++      if (j < cj-1) y += c_(m,MG_CJP,k,j,i)*c_(m,MG_Z,k,j+1,i);
++      if (th) {
++        if (k > 0) y += c_(m,MG_CKM,k,j,i)*c_(m,MG_Z,k-1,j,i);
++        if (k < ck-1) y += c_(m,MG_CKP,k,j,i)*c_(m,MG_Z,k+1,j,i);
++      }
++      sum += c_(m,MG_R,k,j,i) - y;
++    }
++  }
++  return sum;
++}
++
++//! where the right-hand side of a coarse line sweep comes from (implicit_mg_fuse):
++//! mode 0 = MG_R as stored by a separate restriction kernel; mode 1 = restricted from the
++//! fine rows (MGRes0) and mode 2 = from level l-1 (MGResL), both in the load phase of the
++//! sweep and stored to MG_R for the next level's restriction.  The value is the very
++//! number the separate kernel stores, so the fused and unfused maps agree.
++struct MGRes {
++  int mode = 0;
++  DvceArray5D<Real> iw;
++  int rr = 0, zc = 0, is = 0, js = 0, ks = 0;
++  bool hal = false, fthrd = false;
++  DvceArray5D<Real> f;
++  int fj = 1, fk = 1;
++  bool fth = false;
++};
++
+ //! one colour of the forward red-black line sweep on a coarse level: columns (k,j) with
+ //! parity (k+j) = col solve A_line z = r (- the 5-point coupling to z of the other
+ //! colour when sub), by parallel cyclic reduction in team scratch (as M1PCRX)
+ template <typename T>
+ void M1PCRMG(const DvceArray5D<Real> &a_, const int nmb, const int nx, const int nj,
+-             const int nk, const int col, const bool sub, const bool thrd, int ts) {
++             const int nk, const int col, const bool sub, const bool thrd, int ts,
++             const MGRes &rs) {
+   const int njl = (nj + 1)/2;
+   const int nkj = nk*njl;
+   size_t scr_size = ScrArray1D<T>::shmem_size(8*nx);
+@@ -114,6 +214,12 @@ void M1PCRMG(const DvceArray5D<Real> &a_, const int nmb, const int nx, const int
+   } else {
+     policy = Kokkos::TeamPolicy<DevExeSpace>(DevExeSpace(), nmb*nkj, Kokkos::AUTO);
+   }
++  const int mode = rs.mode;
++  auto riw = rs.iw;
++  auto rf = rs.f;
++  const int rrc = rs.rr, rzc = rs.zc, ris = rs.is, rjs = rs.js, rks = rs.ks;
++  const bool rhal = rs.hal, rfthrd = rs.fthrd, rfth = rs.fth;
++  const int rfj = rs.fj, rfk = rs.fk;
+   Kokkos::parallel_for("m1_mg_pcr", policy.set_scratch_size(0, Kokkos::PerTeam(scr_size)),
+   KOKKOS_LAMBDA(TeamMember_t tm) {
+     const int m = tm.league_rank()/nkj;
+@@ -126,7 +232,17 @@ void M1PCRMG(const DvceArray5D<Real> &a_, const int nmb, const int nx, const int
+       sw(i) = static_cast<T>((i == 0) ? 0.0 : a_(m,MG_TA,k,j,i));
+       sw(nx + i) = static_cast<T>(a_(m,MG_TB,k,j,i));
+       sw(2*nx + i) = static_cast<T>((i == nx-1) ? 0.0 : a_(m,MG_TC,k,j,i));
+-      Real rr = a_(m,MG_R,k,j,i);
++      Real rr;
++      if (mode == 1) {
++        rr = MGRes0(riw, m, k, j, i, ris, rjs, rks, nx, rfj, rfk, rfthrd, rhal, rrc,
++                    rzc);
++        a_(m,MG_R,k,j,i) = rr;
++      } else if (mode == 2) {
++        rr = MGResL(rf, m, k, j, i, nx, rfj, rfk, rfth);
++        a_(m,MG_R,k,j,i) = rr;
++      } else {
++        rr = a_(m,MG_R,k,j,i);
++      }
+       if (sub) {
+         if (j > 0) rr -= a_(m,MG_CJM,k,j,i)*a_(m,MG_Z,k,j-1,i);
+         if (j < nj-1) rr -= a_(m,MG_CJP,k,j,i)*a_(m,MG_Z,k,j+1,i);
+@@ -172,8 +288,52 @@ void M1PCRMG(const DvceArray5D<Real> &a_, const int nmb, const int nx, const int
+     });
+   });
+ }
++
++//! band of a global index g of n cells split into nb bands
++KOKKOS_INLINE_FUNCTION
++int MGBand(const int g, const int n, const int nb) {
++  return static_cast<int>((static_cast<int64_t>(g)*nb)/n);
++}
+ } // namespace
+ 
++//----------------------------------------------------------------------------------------
++//! \fn void RadiationM1::ImplicitMGInit
++//! \brief the implicit_precond = mg keys, read only under mg (every other configuration
++//! untouched)
++
++void RadiationM1::ImplicitMGInit(ParameterInput *pin) {
++  mg_nlev = 0;
++  mg_halo = true;
++  mg_fuse = true;
++  mg_glob = 0;
++  mg_gb2 = 1;
++  mg_gb3 = 1;
++  mg_gn1 = 0;
++  mg_gnseg = 0;
++  mg_gok = false;
++  if (impl_prec != 3) {return;}
++  mg_nlev = pin->GetOrAddInteger("rad_m1","implicit_mg_levels",2);
++  mg_halo = pin->GetOrAddBoolean("rad_m1","implicit_mg_halo",true);
++  mg_fuse = pin->GetOrAddBoolean("rad_m1","implicit_mg_fuse",true);
++  mg_glob = pin->GetOrAddInteger("rad_m1","implicit_mg_global",0);
++  if (mg_glob < 0 || mg_glob > 1) {MGFatal("<rad_m1>/implicit_mg_global must be 0 or 1");}
++  if (mg_glob == 1) {
++    mg_gb2 = pin->GetOrAddInteger("rad_m1","implicit_mg_gbands2",1);
++    mg_gb3 = pin->GetOrAddInteger("rad_m1","implicit_mg_gbands3",1);
++    auto *pm = pmy_pack->pmesh;
++    if (mg_gb2 < 1 || mg_gb2 > pm->mesh_indcs.nx2 || mg_gb3 < 1
++        || mg_gb3 > std::max(pm->mesh_indcs.nx3, 1)) {
++      MGFatal("<rad_m1>/implicit_mg_gbands2/3 must be in 1..mesh nx2 / nx3");
++    }
++    if (pm->multilevel) {
++      MGFatal("<rad_m1>/implicit_mg_global needs a single-level mesh");
++    }
++    if (mg_nlev < 1) {MGFatal("<rad_m1>/implicit_mg_levels must be >= 1");}
++  } else if (mg_nlev < 2) {
++    MGFatal("<rad_m1>/implicit_mg_levels must be >= 2 (>= 1 with implicit_mg_global)");
++  }
++}
++
+ //----------------------------------------------------------------------------------------
+ //! \fn void RadiationM1::ImplicitMGBuild
+ //! \brief implicit_precond = mg: the level sizes (once) and the Galerkin coarse rows of
+@@ -245,6 +405,216 @@ void RadiationM1::ImplicitMGBuild() {
+       c_(m,MG_CKM,kc,jc,i) = km; c_(m,MG_CKP,kc,jc,i) = kp;
+     });
+   }
++  if (mg_glob == 1) {ImplicitMGGlobalBuild();}
++}
++
++//----------------------------------------------------------------------------------------
++//! \fn void RadiationM1::ImplicitMGGlobalBuild
++//! \brief implicit_mg_global = 1: the coarse space of piecewise-constant fields over
++//! gb2 x gb3 global (x2,x3) bands, one unknown per band and GLOBAL x1 index (the
++//! sideways band means).  The coarse rows P^T A7 P, over all ranks: at every global x1
++//! index gi an nb x nb block D (band to band) and the diagonal x1 couplings L (to gi-1)
++//! and U (to gi+1).  Sums are per (block, x3 row, band, x1) partials reduced in a fixed
++//! order (deterministic), then one MPI_Allreduce; the block-tridiagonal factorisation
++//! (the inverses of the pivot blocks) is done redundantly on every rank on the host.
++//! A coupling towards a physical face is identically zero in the row, so neighbour
++//! bands wrap periodically without harm.
++
++void RadiationM1::ImplicitMGGlobalBuild() {
++  auto *pm = pmy_pack->pmesh;
++  auto &indcs = pm->mb_indcs;
++  const int is = indcs.is, js = indcs.js, ks = indcs.ks;
++  const int n1 = indcs.nx1, n2 = indcs.nx2;
++  const bool thrd = trans_x3;
++  const int n3 = thrd ? indcs.nx3 : 1;
++  const int nmb = pmy_pack->nmb_thispack;
++  if (ibc_x1min == M1_IBC_PERIODIC) {
++    MGFatal("<rad_m1>/implicit_mg_global does not take a periodic x1 boundary");
++  }
++  const int N1 = pm->mesh_indcs.nx1, N2 = pm->mesh_indcs.nx2;
++  const int N3 = thrd ? pm->mesh_indcs.nx3 : 1;
++  const int gb2 = mg_gb2, gb3 = thrd ? mg_gb3 : 1;
++  const int nb = gb2*gb3;
++  const int nq = nb + 2;
++  // the blocks' global offsets and first x2 band
++  HostArray2D<int> hoff("m1_mg_hoff", nmb, 4);
++  pmy_pack->pmb->mb_gid.sync_host();
++  int nseg = 1;
++  for (int m = 0; m < nmb; ++m) {
++    auto &ll = pm->lloc_eachmb[pmy_pack->pmb->mb_gid.h_view(m)];
++    hoff(m,0) = static_cast<int>(ll.lx1)*n1;
++    hoff(m,1) = static_cast<int>(ll.lx2)*n2;
++    hoff(m,2) = static_cast<int>(ll.lx3)*n3;
++    hoff(m,3) = MGBand(hoff(m,1), N2, gb2);
++    nseg = std::max(nseg, MGBand(hoff(m,1) + n2 - 1, N2, gb2) - hoff(m,3) + 1);
++  }
++  if (mg_gn1 != N1 || mg_goff.extent_int(0) != nmb || mg_gnseg != nseg) {
++    mg_gn1 = N1;
++    mg_gnseg = nseg;
++    mg_goff = DvceArray2D<int>("m1_mg_goff", nmb, 4);
++    mg_gpart = DvceArray5D<Real>("m1_mg_gpart", nmb, n3, nseg, n1, nq);
++    mg_ga = DvceArray2D<Real>("m1_mg_ga", N1, nb*nb + 2*nb);
++    mg_gv = DvceArray2D<Real>("m1_mg_gv", N1, nb);
++    mg_hga = HostArray2D<Real>("m1_mg_hga", N1, nb*nb + 2*nb);
++    mg_hgv = HostArray2D<Real>("m1_mg_hgv", N1, nb);
++    mg_hdinv = HostArray2D<Real>("m1_mg_hdinv", N1, nb*nb);
++  }
++  Kokkos::deep_copy(mg_goff, hoff);
++  auto iw_ = iw;
++  auto off_ = mg_goff;
++  auto pt_ = mg_gpart;
++  auto ga_ = mg_ga;
++  Kokkos::deep_copy(pt_, 0.0);
++  // per (m, x3 row k, x1 i): the row sums of the rows along x2, by band
++  par_for("m1_mg_gbuild", DevExeSpace(), 0, nmb-1, 0, n3-1, 0, n1-1,
++  KOKKOS_LAMBDA(const int m, const int k, const int i) {
++    const int kg = off_(m,2) + k;
++    const int b3 = MGBand(kg, N3, gb3);
++    const int kk = k + ks, ii = i + is;
++    int b3m = b3, b3p = b3;
++    if (thrd) {
++      b3m = MGBand((kg - 1 + N3) % N3, N3, gb3);
++      b3p = MGBand((kg + 1) % N3, N3, gb3);
++    }
++    for (int j = 0; j < n2; ++j) {
++      const int jg = off_(m,1) + j;
++      const int b2 = MGBand(jg, N2, gb2);
++      const int s = b2 - off_(m,3);
++      const int b = b3*gb2 + b2;
++      const int jj = j + js;
++      pt_(m,k,s,i,nb) += iw_(m,M1_IW_TA,kk,jj,ii);
++      pt_(m,k,s,i,nb+1) += iw_(m,M1_IW_TC,kk,jj,ii);
++      pt_(m,k,s,i,b) += iw_(m,M1_IW_TB,kk,jj,ii);
++      const int bjm = b3*gb2 + MGBand((jg - 1 + N2) % N2, N2, gb2);
++      const int bjp = b3*gb2 + MGBand((jg + 1) % N2, N2, gb2);
++      pt_(m,k,s,i,bjm) += iw_(m,M1_IW_CJM,kk,jj,ii);
++      pt_(m,k,s,i,bjp) += iw_(m,M1_IW_CJP,kk,jj,ii);
++      if (thrd) {
++        pt_(m,k,s,i,b3m*gb2 + b2) += iw_(m,M1_IW_CKM,kk,jj,ii);
++        pt_(m,k,s,i,b3p*gb2 + b2) += iw_(m,M1_IW_CKP,kk,jj,ii);
++      }
++    }
++  });
++  // reduce the partials in a fixed order: row band b, global x1 index gi, entry q
++  par_for("m1_mg_gbred", DevExeSpace(), 0, N1-1, 0, nb-1, 0, nq-1,
++  KOKKOS_LAMBDA(const int gi, const int b, const int q) {
++    const int b3 = b/gb2, b2 = b - b3*gb2;
++    Real sum = 0.0;
++    for (int m = 0; m < nmb; ++m) {
++      const int i = gi - off_(m,0);
++      if (i < 0 || i >= n1) continue;
++      const int s = b2 - off_(m,3);
++      if (s < 0 || s >= nseg) continue;
++      if (MGBand(off_(m,1) + n2 - 1, N2, gb2) < b2) continue;
++      for (int k = 0; k < n3; ++k) {
++        if (MGBand(off_(m,2) + k, N3, gb3) != b3) continue;
++        sum += pt_(m,k,s,i,q);
++      }
++    }
++    // layout: D(b, q) for q < nb, then L(b), U(b)
++    if (q < nb) {
++      ga_(gi, b*nb + q) = sum;
++    } else {
++      ga_(gi, nb*nb + (q - nb)*nb + b) = sum;
++    }
++  });
++  Kokkos::deep_copy(mg_hga, mg_ga);
++#if MPI_PARALLEL_ENABLED
++  MPI_Allreduce(MPI_IN_PLACE, mg_hga.data(), N1*(nb*nb + 2*nb), MPI_ATHENA_REAL, MPI_SUM,
++                MPI_COMM_WORLD);
++#endif
++  // block LU: Dp_0 = D_0, Dp_gi = D_gi - L_gi Dp_{gi-1}^{-1} U_{gi-1}; keep Dp^{-1}
++  auto &A = mg_hga;
++  auto &Di = mg_hdinv;
++  std::vector<Real> w(2*nb*nb);
++  mg_gok = true;
++  for (int gi = 0; gi < N1 && mg_gok; ++gi) {
++    Real *dp = w.data(), *inv = w.data() + nb*nb;
++    for (int r = 0; r < nb; ++r) {
++      for (int c = 0; c < nb; ++c) {
++        dp[r*nb + c] = A(gi, r*nb + c);
++        if (gi > 0) {
++          dp[r*nb + c] -= A(gi, nb*nb + r)*Di(gi-1, r*nb + c)*A(gi-1, nb*nb + nb + c);
++        }
++        inv[r*nb + c] = (r == c) ? 1.0 : 0.0;
++      }
++    }
++    // Gauss-Jordan with partial pivoting
++    for (int c = 0; c < nb; ++c) {
++      int p = c;
++      for (int r = c + 1; r < nb; ++r) {
++        if (std::abs(dp[r*nb + c]) > std::abs(dp[p*nb + c])) p = r;
++      }
++      Real pv = dp[p*nb + c];
++      if (!(std::abs(pv) > 0.0) || !std::isfinite(pv)) {mg_gok = false; break;}
++      if (p != c) {
++        for (int q = 0; q < nb; ++q) {
++          std::swap(dp[p*nb + q], dp[c*nb + q]);
++          std::swap(inv[p*nb + q], inv[c*nb + q]);
++        }
++      }
++      for (int q = 0; q < nb; ++q) {dp[c*nb + q] /= pv; inv[c*nb + q] /= pv;}
++      for (int r = 0; r < nb; ++r) {
++        if (r == c) continue;
++        Real f = dp[r*nb + c];
++        if (f == 0.0) continue;
++        for (int q = 0; q < nb; ++q) {
++          dp[r*nb + q] -= f*dp[c*nb + q];
++          inv[r*nb + q] -= f*inv[c*nb + q];
++        }
++      }
++    }
++    if (!mg_gok) break;
++    for (int q = 0; q < nb*nb; ++q) {
++      Di(gi, q) = inv[q];
++      if (!std::isfinite(inv[q])) mg_gok = false;
++    }
++  }
++}
++
++//----------------------------------------------------------------------------------------
++//! \fn void RadiationM1::ImplicitMGGlobalSolve
++//! \brief the band sums in mg_gv (this rank's) -> all ranks' sum (one MPI_Allreduce of
++//! N1 x nb numbers) -> the coarse solution, redundantly on every rank, back in mg_gv
++
++void RadiationM1::ImplicitMGGlobalSolve() {
++  const int N1 = mg_gn1;
++  const int nb = mg_gb2*(trans_x3 ? mg_gb3 : 1);
++  auto &g = mg_hgv;
++  Kokkos::deep_copy(g, mg_gv);
++#if MPI_PARALLEL_ENABLED
++  MPI_Allreduce(MPI_IN_PLACE, g.data(), N1*nb, MPI_ATHENA_REAL, MPI_SUM, MPI_COMM_WORLD);
++#endif
++  auto &A = mg_hga;
++  auto &Di = mg_hdinv;
++  std::vector<Real> t(nb), y(nb);
++  if (!mg_gok) {
++    for (int gi = 0; gi < N1; ++gi) {for (int b = 0; b < nb; ++b) g(gi,b) = 0.0;}
++  } else {
++    // forward: y_gi = g_gi - L_gi Dp_{gi-1}^{-1} y_{gi-1} (in place in g)
++    for (int gi = 1; gi < N1; ++gi) {
++      for (int r = 0; r < nb; ++r) {
++        Real s = 0.0;
++        for (int c = 0; c < nb; ++c) s += Di(gi-1, r*nb + c)*g(gi-1, c);
++        t[r] = s;
++      }
++      for (int r = 0; r < nb; ++r) g(gi, r) -= A(gi, nb*nb + r)*t[r];
++    }
++    // back: x_gi = Dp_gi^{-1} (y_gi - U_gi x_{gi+1})
++    for (int gi = N1 - 1; gi >= 0; --gi) {
++      for (int r = 0; r < nb; ++r) {
++        y[r] = g(gi, r);
++        if (gi < N1 - 1) y[r] -= A(gi, nb*nb + nb + r)*g(gi+1, r);
++      }
++      for (int r = 0; r < nb; ++r) {
++        Real s = 0.0;
++        for (int c = 0; c < nb; ++c) s += Di(gi, r*nb + c)*y[c];
++        t[r] = s;
++      }
++      for (int r = 0; r < nb; ++r) g(gi, r) = t[r];
++    }
++  }
++  Kokkos::deep_copy(mg_gv, g);
+ }
+ 
+ //----------------------------------------------------------------------------------------
+@@ -253,95 +623,158 @@ void RadiationM1::ImplicitMGBuild() {
+ //! as ImplicitPCRSolveX
+ 
+ void RadiationM1::ImplicitMGApply(int rc, int zc, int upd, Real c1, Real c2) {
+-  // the fine smoother: rbgs_fwd, exactly the implicit_precond = rbgs_fwd map
+-  ImplicitPCRSolveX(rc, zc, upd, c1, c2, 0, -1);
+-  ImplicitPCRSolveX(rc, zc, upd, c1, c2, 1, zc);
+-  const int nl = static_cast<int>(mgc.size());
+-  if (nl < 2) {return;}
+-  const int rr = (upd == 1) ? M1_IW_KP : ((upd == 2) ? M1_IW_KS : rc);
+   auto &indcs = pmy_pack->pmesh->mb_indcs;
+   const int is = indcs.is, js = indcs.js, ks = indcs.ks;
+   const int nx = indcs.nx1;
+   const int nmb = pmy_pack->nmb_thispack;
+   const bool thrd = trans_x3;
++  auto iw_ = iw;
++  const bool glb = (mg_glob == 1);
++  int src = rc, sup = upd;
++  // implicit_mg_global: the band coarse correction FIRST, x_g = A_g^{-1} P_g^T r, then
++  // the rest of the preconditioner on r - A7 P_g x_g (in M1_IW_TR, free in the fused
++  // Krylov path), and P_g x_g added with the final prolongation
++  const int N1 = mg_gn1, gb2 = mg_gb2, gb3 = thrd ? mg_gb3 : 1;
++  const int nb = gb2*gb3;
++  const int N2 = pmy_pack->pmesh->mesh_indcs.nx2;
++  const int N3 = thrd ? pmy_pack->pmesh->mesh_indcs.nx3 : 1;
++  auto off_ = mg_goff;
++  auto gv_ = mg_gv;
++  if (glb) {
++    const int n2 = indcs.nx2, n3 = thrd ? indcs.nx3 : 1;
++    auto pt_ = mg_gpart;
++    // the right-hand side (the p / s update of the fused path when upd > 0) and its
++    // per-row band sums
++    par_for("m1_mg_gres", DevExeSpace(), 0, nmb-1, 0, n3-1, 0, nx-1,
++    KOKKOS_LAMBDA(const int m, const int k, const int i) {
++      const int kk = k + ks, ii = i + is;
++      int scur = -1;
++      Real sum = 0.0;
++      for (int j = 0; j < n2; ++j) {
++        const int jj = j + js;
++        Real rr;
++        if (upd == 1) {
++          rr = iw_(m,M1_IW_KR,kk,jj,ii)
++               + c1*(iw_(m,M1_IW_KP,kk,jj,ii) - c2*iw_(m,M1_IW_KV,kk,jj,ii));
++          iw_(m,M1_IW_KP,kk,jj,ii) = rr;
++        } else if (upd == 2) {
++          rr = iw_(m,M1_IW_KR,kk,jj,ii) - c1*iw_(m,M1_IW_KV,kk,jj,ii);
++          iw_(m,M1_IW_KS,kk,jj,ii) = rr;
++        } else {
++          rr = iw_(m,rc,kk,jj,ii);
++        }
++        const int s = MGBand(off_(m,1) + j, N2, gb2) - off_(m,3);
++        if (s != scur) {
++          if (scur >= 0) pt_(m,k,scur,i,0) = sum;
++          scur = s;
++          sum = 0.0;
++        }
++        sum += rr;
++      }
++      pt_(m,k,scur,i,0) = sum;
++    });
++    const int nseg = mg_gnseg, n1 = nx;
++    par_for("m1_mg_gred", DevExeSpace(), 0, N1-1, 0, nb-1,
++    KOKKOS_LAMBDA(const int gi, const int b) {
++      const int b3 = b/gb2, b2 = b - b3*gb2;
++      Real sum = 0.0;
++      for (int m = 0; m < nmb; ++m) {
++        const int i = gi - off_(m,0);
++        if (i < 0 || i >= n1) continue;
++        const int s = b2 - off_(m,3);
++        if (s < 0 || s >= nseg) continue;
++        if (MGBand(off_(m,1) + n2 - 1, N2, gb2) < b2) continue;
++        for (int k = 0; k < n3; ++k) {
++          if (MGBand(off_(m,2) + k, N3, gb3) != b3) continue;
++          sum += pt_(m,k,s,i,0);
++        }
++      }
++      gv_(gi,b) = sum;
++    });
++    ImplicitMGGlobalSolve();
++    const int rs = (upd == 1) ? M1_IW_KP : ((upd == 2) ? M1_IW_KS : rc);
++    par_for("m1_mg_gcor", DevExeSpace(), 0, nmb-1, 0, n3-1, 0, n2-1, 0, nx-1,
++    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
++      const int kk = k + ks, jj = j + js, ii = i + is;
++      const int gi = off_(m,0) + i, jg = off_(m,1) + j, kg = off_(m,2) + k;
++      const int b3 = MGBand(kg, N3, gb3), b2 = MGBand(jg, N2, gb2);
++      const int b = b3*gb2 + b2;
++      Real y = iw_(m,M1_IW_TB,kk,jj,ii)*gv_(gi,b);
++      if (gi > 0) y += iw_(m,M1_IW_TA,kk,jj,ii)*gv_(gi-1,b);
++      if (gi < N1-1) y += iw_(m,M1_IW_TC,kk,jj,ii)*gv_(gi+1,b);
++      y += iw_(m,M1_IW_CJM,kk,jj,ii)*gv_(gi, b3*gb2 + MGBand((jg-1+N2) % N2, N2, gb2));
++      y += iw_(m,M1_IW_CJP,kk,jj,ii)*gv_(gi, b3*gb2 + MGBand((jg+1) % N2, N2, gb2));
++      if (thrd) {
++        y += iw_(m,M1_IW_CKM,kk,jj,ii)*gv_(gi, MGBand((kg-1+N3) % N3, N3, gb3)*gb2 + b2);
++        y += iw_(m,M1_IW_CKP,kk,jj,ii)*gv_(gi, MGBand((kg+1) % N3, N3, gb3)*gb2 + b2);
++      }
++      iw_(m,M1_IW_TR,kk,jj,ii) = iw_(m,rs,kk,jj,ii) - y;
++    });
++    src = M1_IW_TR;
++    sup = 0;
++  }
++  // the fine smoother: rbgs_fwd, exactly the implicit_precond = rbgs_fwd map
++  ImplicitPCRSolveX(src, zc, sup, c1, c2, 0, -1);
++  ImplicitPCRSolveX(src, zc, sup, c1, c2, 1, zc);
++  const int nl = static_cast<int>(mgc.size());
++  if (nl < 2) {
++    if (glb) {
++      par_for("m1_mg_gadd", DevExeSpace(), 0, nmb-1, 0, mg_nk[0]-1, 0, mg_nj[0]-1,
++              0, nx-1,
++      KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
++        const int b = MGBand(off_(m,2) + k, N3, gb3)*gb2 + MGBand(off_(m,1) + j, N2, gb2);
++        iw_(m,zc,k+ks,j+js,i+is) += gv_(off_(m,0) + i, b);
++      });
++    }
++    return;
++  }
++  const int rr = (sup == 1) ? M1_IW_KP : ((sup == 2) ? M1_IW_KS : src);
+   const bool hal = mg_halo;
+   if (hal) {ImplicitKrylovHalo(zc);}
+-  auto iw_ = iw;
+   int ts = impl_pcr_team;
+   if (ts == 0) {
+     ts = 1;
+     while (ts < nx && ts < 256) ts *= 2;
+   }
+-  // the fine residual r - A7 z0, restricted
+-  {
++  const bool fuse = mg_fuse;
++  // the fine residual r - A7 z0, restricted (unfused: its own kernel)
++  if (!fuse) {
+     auto c_ = mgc[1];
+     const int fj = mg_nj[0], fk = mg_nk[0];
+     const int cj = mg_nj[1], ck = mg_nk[1];
+     par_for("m1_mg_res0", DevExeSpace(), 0, nmb-1, 0, ck-1, 0, cj-1, 0, nx-1,
+     KOKKOS_LAMBDA(const int m, const int kc, const int jc, const int i) {
+-      Real sum = 0.0;
+-      const int ii = i + is;
+-      for (int a = 0; a < 2; ++a) {
+-        const int k = 2*kc + a;
+-        if (k >= fk) continue;
+-        const int kk = k + ks;
+-        for (int b = 0; b < 2; ++b) {
+-          const int j = 2*jc + b;
+-          if (j >= fj) continue;
+-          const int jj = j + js;
+-          Real y = iw_(m,M1_IW_TB,kk,jj,ii)*iw_(m,zc,kk,jj,ii);
+-          if (hal || i > 0) y += iw_(m,M1_IW_TA,kk,jj,ii)*iw_(m,zc,kk,jj,ii-1);
+-          if (hal || i < nx-1) y += iw_(m,M1_IW_TC,kk,jj,ii)*iw_(m,zc,kk,jj,ii+1);
+-          if (hal || j > 0) y += iw_(m,M1_IW_CJM,kk,jj,ii)*iw_(m,zc,kk,jj-1,ii);
+-          if (hal || j < fj-1) y += iw_(m,M1_IW_CJP,kk,jj,ii)*iw_(m,zc,kk,jj+1,ii);
+-          if (thrd) {
+-            if (hal || k > 0) y += iw_(m,M1_IW_CKM,kk,jj,ii)*iw_(m,zc,kk-1,jj,ii);
+-            if (hal || k < fk-1) y += iw_(m,M1_IW_CKP,kk,jj,ii)*iw_(m,zc,kk+1,jj,ii);
+-          }
+-          sum += iw_(m,rr,kk,jj,ii) - y;
+-        }
+-      }
+-      c_(m,MG_R,kc,jc,i) = sum;
++      c_(m,MG_R,kc,jc,i) = MGRes0(iw_, m, kc, jc, i, is, js, ks, nx, fj, fk, thrd, hal,
++                                  rr, zc);
+     });
+   }
+-  // down the coarse levels: one forward red-black sweep each, then the restricted
+-  // residual of the next level (block-local)
++  // down the coarse levels: one forward red-black sweep each, the restricted residual
++  // of the next level either in the next level's sweep (fused) or its own kernel
+   for (int l = 1; l < nl; ++l) {
+     auto c_ = mgc[l];
+     const int cj = mg_nj[l], ck = mg_nk[l];
+     const bool th = thrd && (ck > 1);
++    MGRes rs;
++    if (fuse && l == 1) {
++      rs.mode = 1; rs.iw = iw_; rs.rr = rr; rs.zc = zc; rs.is = is; rs.js = js;
++      rs.ks = ks; rs.hal = hal; rs.fthrd = thrd; rs.fj = mg_nj[0]; rs.fk = mg_nk[0];
++    } else if (fuse) {
++      rs.mode = 2; rs.f = mgc[l-1]; rs.fj = mg_nj[l-1]; rs.fk = mg_nk[l-1];
++      rs.fth = thrd && (mg_nk[l-1] > 1);
++    }
+     if (impl_prec_float) {
+-      M1PCRMG<float>(c_, nmb, nx, cj, ck, 0, false, th, ts);
+-      M1PCRMG<float>(c_, nmb, nx, cj, ck, 1, true, th, ts);
++      M1PCRMG<float>(c_, nmb, nx, cj, ck, 0, false, th, ts, rs);
++      M1PCRMG<float>(c_, nmb, nx, cj, ck, 1, true, th, ts, rs);
+     } else {
+-      M1PCRMG<Real>(c_, nmb, nx, cj, ck, 0, false, th, ts);
+-      M1PCRMG<Real>(c_, nmb, nx, cj, ck, 1, true, th, ts);
++      M1PCRMG<Real>(c_, nmb, nx, cj, ck, 0, false, th, ts, rs);
++      M1PCRMG<Real>(c_, nmb, nx, cj, ck, 1, true, th, ts, rs);
+     }
+-    if (l + 1 < nl) {
++    if (!fuse && l + 1 < nl) {
+       auto n_ = mgc[l+1];
+       const int nj2 = mg_nj[l+1], nk2 = mg_nk[l+1];
+       par_for("m1_mg_res", DevExeSpace(), 0, nmb-1, 0, nk2-1, 0, nj2-1, 0, nx-1,
+       KOKKOS_LAMBDA(const int m, const int kc, const int jc, const int i) {
+-        Real sum = 0.0;
+-        for (int a = 0; a < 2; ++a) {
+-          const int k = 2*kc + a;
+-          if (k >= ck) continue;
+-          for (int b = 0; b < 2; ++b) {
+-            const int j = 2*jc + b;
+-            if (j >= cj) continue;
+-            Real y = c_(m,MG_TB,k,j,i)*c_(m,MG_Z,k,j,i);
+-            if (i > 0) y += c_(m,MG_TA,k,j,i)*c_(m,MG_Z,k,j,i-1);
+-            if (i < nx-1) y += c_(m,MG_TC,k,j,i)*c_(m,MG_Z,k,j,i+1);
+-            if (j > 0) y += c_(m,MG_CJM,k,j,i)*c_(m,MG_Z,k,j-1,i);
+-            if (j < cj-1) y += c_(m,MG_CJP,k,j,i)*c_(m,MG_Z,k,j+1,i);
+-            if (th) {
+-              if (k > 0) y += c_(m,MG_CKM,k,j,i)*c_(m,MG_Z,k-1,j,i);
+-              if (k < ck-1) y += c_(m,MG_CKP,k,j,i)*c_(m,MG_Z,k+1,j,i);
+-            }
+-            sum += c_(m,MG_R,k,j,i) - y;
+-          }
+-        }
+-        n_(m,MG_R,kc,jc,i) = sum;
++        n_(m,MG_R,kc,jc,i) = MGResL(c_, m, kc, jc, i, nx, cj, ck, th);
+       });
+     }
+   }
+@@ -368,6 +801,10 @@ void RadiationM1::ImplicitMGApply(int rc, int zc, int upd, Real c1, Real c2) {
+     if (nlc > 1) s += c2_(m,MG_Z,k >> 2,j >> 2,i);
+     if (nlc > 2) s += c3_(m,MG_Z,k >> 3,j >> 3,i);
+     if (nlc > 3) s += c4_(m,MG_Z,k >> 4,j >> 4,i);
++    if (glb) {
++      s += gv_(off_(m,0) + i,
++               MGBand(off_(m,2) + k, N3, gb3)*gb2 + MGBand(off_(m,1) + j, N2, gb2));
++    }
+     iw_(m,zc,k+ks,j+js,i+is) += s;
+   });
+ }
