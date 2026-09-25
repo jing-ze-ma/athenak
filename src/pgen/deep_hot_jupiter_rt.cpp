@@ -4201,6 +4201,11 @@ void get_wb_eos(const EOS_Data &eos, const Real &Rgas, const Real &grav_acc, con
 
     if (z >= 0.0) {
         int Nt = std::floor(z/dz);
+        // clamp to the last segment (linear extrapolation beyond it): cells above the
+        // column top (z_eff > 1.1 (r1-r0) under rot_potential) read past the end of
+        // logparr, which faulted on the GPU (ck-hitemp2-gpu). In range: unchanged.
+        const int Nmax = zarr.extent_int(0) - 2;
+        if (Nt > Nmax) Nt = Nmax;
         Real logp = logparr(Nt) + (logparr(Nt+1)-logparr(Nt))/(zarr(Nt+1)-zarr(Nt))*(z-zarr(Nt));
         p = std::exp(logp);
         get_wb_Tp(p,T);
@@ -4304,6 +4309,7 @@ void get_init_eos(const EOS_Data &eos, const Real &Rgas, const Real &grav_acc, c
 
     if (z >= zarr(0)) {   // zarr(0) = 0 unless the ic_profile column reaches below z = 0
         int Nt = std::floor((z - zarr(0))/dz);
+        if (Nt > N-2) Nt = N-2;   // as in get_wb_eos: never read past the column top
         Real logp = logparr(Nt) + (logparr(Nt+1)-logparr(Nt))/(zarr(Nt+1)-zarr(Nt))*(z-zarr(Nt));
         p = std::exp(logp);
         get_init_Tp(N, Tarr, lgparr, p,T);
