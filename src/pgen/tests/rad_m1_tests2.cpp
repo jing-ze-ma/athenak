@@ -655,6 +655,15 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
                      pin->GetReal("problem","lat_l3") : 0.0;
     const Real gvr = pin->DoesParameterExist("problem","gas_vr") ?
                      pin->GetReal("problem","gas_vr") : 0.0;
+    // m1-sp-order2b (tests_m1/runs_5q_sporder2b), read only when named: gas_vth sets
+    // v_theta = gas_vth sin(pi (x2 - x2min)/(x2max - x2min)) (sp: a lateral flow, zero at
+    // reflecting theta walls); gas_teq = true puts the gas at T = (E/arad)^(1/4) of the
+    // initial E (radiative equilibrium, the start of the stiff coupled tests)
+    const Real gvt = pin->DoesParameterExist("problem","gas_vth") ?
+                     pin->GetReal("problem","gas_vth") : 0.0;
+    const bool gteq = pin->DoesParameterExist("problem","gas_teq") ?
+                      pin->GetBoolean("problem","gas_teq") : false;
+    const Real ara = (pmbp->pradm1 != nullptr) ? pmbp->pradm1->arad : 1.0;
     Real gm1 = pmbp->phydro->peos->eos_data.gamma - 1.0;
     if (restart) return;
     auto uh = pmbp->phydro->u0;
@@ -681,10 +690,18 @@ void ProblemGenerator::RadiationM1Tests2(ParameterInput *pin, const bool restart
         u0(m,radm1::M1_E,k,j,i) *= 1.0 + lamp*cos(ll2*M_PI*(x2v(m,j) - x2a)/x2l)
                                    *cos(2.0*M_PI*ll3*(x3v(m,k) - x3a)/x3l);
       }
+      if (gteq) {
+        uh(m,IEN,k,j,i) = dgas*sqrt(sqrt(u0(m,radm1::M1_E,k,j,i)/ara))/gm1;
+      }
       if (gvr != 0.0) {
         Real vr = gvr*sin(M_PI*(r - x1a)/x1l);
         uh(m,IM1,k,j,i) = dgas*vr;
         uh(m,IEN,k,j,i) += 0.5*dgas*vr*vr;
+      }
+      if (gvt != 0.0 && sp) {
+        Real vt = gvt*sin(M_PI*(x2v(m,j) - x2a)/x2l);
+        uh(m,IM2,k,j,i) = dgas*vt;
+        uh(m,IEN,k,j,i) += 0.5*dgas*vt*vt;
       }
       u0(m,radm1::M1_F1,k,j,i) = 0.0;
       if (ein > 0.0 && i <= is) {

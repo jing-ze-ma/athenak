@@ -636,6 +636,22 @@ class RadiationM1 {
   void Time2Restore(Driver *pdrive);
   void Time2VetStart();        // vet_sc: formal solution at U^n, then extrapolate
   void Time2VetExtrapolate();
+  // closure = vet_col under hesdirk2 (m1-sp-order2b): time2_vet_col = lag (D^n in both
+  // stages, first order in time) | predict (ONE build per step at the predicted state
+  // U^n + dt K1, at t^{n+1} to O(dt^2)) | rebuild (predict for stage 1, a second build
+  // at the stage-1 solution Y1 for stage 2) | extrap (DIAGNOSTIC: D^n + r (D^n -
+  // D^{n-1}), history in memory only, not in the restart)
+  int t2_vcmode = 0;
+  bool t2_fvnew = false;        // time2_vstage (rad_m1_time2.cpp)
+  bool t2_wk = false;           // the last assembled E rows carried the gas work
+  void ImplicitWorkRow(bool row);   // time2_vstage: the gas work in the E row
+  bool t2_vcprev = false;       // extrap: vcol_prev holds the previous step's tensor
+  Real t2_vcnfb = 0.0;          // predict/rebuild builds that fell back to U^n
+  DvceArray4D<Real> vcol_prev;  // extrap: (m,k,j,i) f_K of the previous step
+  DvceArray3D<Real> vcol_qprev; // extrap: (m,k,j) q of the previous step
+  void Time2VetColAt(int which);    // vet_col build at 1 = U^n + dt K1, 2 = Y1
+  void Time2VetColSaveY1();         // end of the stage-1 solve: E, T of Y1 (rebuild)
+  void Time2VetColExtrap();
   void Time2Report();
   int Time2RstNchWant();        // restart channels this run keeps (0 unless hesdirk2)
   int Time2RstNch();            // ...and writes (0 unless a slope is stored)
@@ -970,6 +986,27 @@ class RadiationM1 {
   // linear in r along the segments, the core rays from E and F at the inner face (the
   // mirrored incoming intensity at a reflecting inner x1)
   bool vcol_o2 = false;
+  // vet_col_fk_min (m1-sp-order2b): the lower bound of f_K = K/J.  1/3 (the old clamp,
+  // inherited from vet_sc's eigen/flux projection) or 0 (sp default: f_K < 1/3 is
+  // physical behind a radiating front and D = diag(f, (1-f)/2, (1-f)/2) stays
+  // realizable for 0 <= f <= 1)
+  Real vcol_fkmin = 1.0/3.0;
+  // vet_col with a REFLECTING outer x1 (m1-sp-order2b): the incoming intensity at the
+  // top face is the mirror of the outgoing one, I_in = b/(1 - a) per ray (b the outgoing
+  // intensity of a vacuum-top sweep, a the ray's round-trip transmission), in a second
+  // sweep; a is capped at vet_col_reflect_amax
+  bool vcol_rtop = false;
+  // vet_col_surface_face (m1-sp-order2b, sp): with vet_col_surface_q and
+  // implicit_marshak_face = linear, the outer face flux is c q E_f with E_f the linear
+  // face E and q = H(face)/J_f, J_f the formal J extrapolated to the face in the same
+  // way (r^2 J linear from the top two shells): F = c H(face) (E/J)_face, second order
+  // (the cell form c H(face) (E/J)_top-cell is first order when E/J varies).  vcol_jca,
+  // vcol_jcb: the extrapolation weights of the top face (M1SphMarshakCoef), vcol_jcap
+  // the limiter's 2 (r_c/r_f)^2
+  bool vcol_sqf = false;
+  Real vcol_jca = 0.0, vcol_jcb = 0.0, vcol_jcap = 0.0;
+  Real vcol_amax = 0.99;
+  DvceArray2D<Real> vcol_abuf; // (ray, column): transmission, then the top intensity
   int vcol_dump_every;         // vet_col_dump_every (0 = off)
   bool vcol_built;             // a tensor exists (vet_col_every > 1 skips builds)
   std::string vcol_dump;       // vet_col_dump: file prefix of the column dump

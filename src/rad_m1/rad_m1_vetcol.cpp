@@ -20,7 +20,12 @@
 //!     D = diag(f_K, (1-f_K)/2, (1-f_K)/2)   about n = r_hat (x1 on Cartesian),
 //! or about the M1 cell flux direction (vet_col_axis = flux), through the tau closure's
 //! tau_ten (tau_closure is set too; only this build differs).  f_K is clamped to
-//! [1/3, 1].
+//! [vet_col_fk_min, 1]: 1/3 (the old clamp, from vet_sc's eigen/flux projection, where
+//! chi >= 1/3 by construction) or 0 (sp default since m1-sp-order2b).  About r_hat f_K
+//! < 1/3 is physical (limb-brightened intensity: behind a radiating front, inside an
+//! emitting shell) and D stays realizable for 0 <= f_K <= 1; the 1/3 clamp put a kink
+//! into f_K where K/J crosses 1/3 (the vet_col pulse was order 0.8, runs_5q_sporder2b).
+//! vet_col_axis = flux keeps 1/3.
 //!
 //! RAYS (sp): IMPACT-PARAMETER (p-ray) geometry.  A straight ray keeps its impact
 //! parameter p; at a shell r >= p it has mu = sqrt(r^2 - p^2)/r.  Shells are the cell
@@ -62,6 +67,20 @@
 //!
 //! WHEN.  ImplicitSolve calls VetColBuild where it calls vet_sc's formal solution: at the
 //! start-of-step state (E^n, T^n, the M1 F of the bottom cell), before the predictor.
+//! Under time_scheme = hesdirk2 both stage solves sit at t^{n+1}: time2_vet_col
+//! (rad_m1_time2.cpp) = predict (sp default) builds once per step at U^n + dt K1, second
+//! order in time; lag keeps D(U^n) (first order).
+//!
+//! REFLECTING OUTER x1 (vet_col_reflect_top, sp default with implicit_bc_x1max =
+//! reflect, m1-sp-order2b).  Specular reflection at the top sphere keeps p, so the
+//! incoming intensity of each ray at the top face is I_in = b + a I_in: b the outgoing
+//! intensity at the top face of a sweep from a vacuum top, a the ray's round-trip
+//! transmission (the product of its segment factors exp(-dtau); 0 for a core ray that
+//! starts from the diffusion intensity).  A first sweep gives b and a, a second one runs
+//! from I_in = b/(1 - min(a, vet_col_reflect_amax)).  Exact for the steady transfer
+//! problem; in a nearly transparent closed cavity (a -> 1) the intensity is not set by
+//! the instantaneous source at all (it remembers its history), which no formal
+//! solution can give: the cap (default 0.99) bounds I_in there.  Twice the build cost.
 //!
 //! OUTER BOUNDARY (vet_col_surface_q = true, runs_5e).  The outgoing intensities of the
 //! top shell are carried over the last half segment to the top face (the incoming
@@ -99,7 +118,7 @@
 //!
 //! LIMITS (fatal at start-up): transport = implicit on a multi-D mesh, ONE MeshBlock
 //! along x1 (every block then spans the same radial grid: the ray tables are shared), no
-//! SMR/AMR, no periodic x1, no cubed sphere, time_scheme = be (the tau closure's rule).
+//! SMR/AMR, no periodic x1, no cubed sphere.
 
 #include <algorithm>
 #include <cmath>
@@ -362,6 +381,12 @@ void RadiationM1::VetColInit() {
     VcolFatal("vet_col_ncore, vet_col_nsub, vet_col_nmu, vet_col_every must be >= 1");
   }
   vcol_sph = sph_geom;
+  // vet_col_reflect_top: only on sp with a reflecting outer x1 of the M1 solve
+  vcol_rtop = vcol_rtop && vcol_sph && (ibc_x1max == M1_IBC_REFLECT);
+  vcol_sqf = vcol_sqf && vcol_sph && vcol_sq && impl_mface_lin;
+  if (vcol_rtop && !(vcol_amax >= 0.0 && vcol_amax < 1.0)) {
+    VcolFatal("vet_col_reflect_amax must be in [0, 1)");
+  }
   const int n1 = indcs.nx1, is = indcs.is, ie = indcs.ie;
 
   // the radial grid of block 0: with one block along x1 and no SMR every block has it
@@ -375,6 +400,9 @@ void RadiationM1::VetColInit() {
     for (int l = 0; l < n1; ++l) {rc[l] = x1v_h(0, is + l);}
     rin = x1f_h(0, is);
     rtop = x1f_h(0, ie + 1);
+    // vet_col_surface_face: the face extrapolation of J (M1SphMarshakFaceE's weights)
+    M1SphMarshakCoef(rc[n1-1], rc[n1-2], rtop, vcol_jca, vcol_jcb);
+    vcol_jcap = 2.0*SQR(rc[n1-1]/rtop);
   } else {
     auto &sz = pmy_pack->pmb->mb_size.h_view(0);
     dx1 = sz.dx1;
@@ -566,12 +594,16 @@ void RadiationM1::VetColInit() {
     // shells per chunk: at most 16 and the team scratch (5 n1 + 2 nray + lc nray reals)
     // within 24 kB (runs_5e GPU sweep: 32 kB halves the occupancy, 3.3 ms at 16 vs 7.7
     // ms at 32 on the He wedge grid)
-    const int avail = 3072 - 5*n1 - 2*nray;
+    const int avail = 3072 - 5*n1 - (vcol_rtop ? 3 : 2)*nray;
     vcol_lc = std::max(1, std::min(std::min(n1, 16), avail/nray));
     if (vcol_lcin > 0) {vcol_lc = std::min(n1, vcol_lcin);}
   } else {
     Kokkos::realloc(vcol_buf, nray, ncol);
     Kokkos::deep_copy(vcol_buf, 0.0);
+    if (vcol_rtop) {
+      Kokkos::realloc(vcol_abuf, nray, ncol);
+      Kokkos::deep_copy(vcol_abuf, 0.0);
+    }
   }
   if (vcol_sq) {
     Kokkos::realloc(vcol_q, nmb, c3, c2);
@@ -598,6 +630,12 @@ void RadiationM1::VetColInit() {
               << (vcol_axis_flux ? "M1 flux" : "radial") << ", rebuilt every "
               << vcol_every << " step(s)";
     if (vcol_o2) {std::cout << "; vet_col_order2 (quadratic mu, face core)";}
+    if (vcol_fkmin != 1.0/3.0) {
+      std::cout << "; f_K >= " << vcol_fkmin;
+    }
+    if (vcol_rtop) {
+      std::cout << "; reflecting top (mirrored, a <= " << vcol_amax << ")";
+    }
     if (nneg > 0) {std::cout << "; " << nneg << " shell(s) kept trapezoid weights";}
     if (vcol_team) {
       std::cout << "; team build, " << vcol_lc << " shells per chunk, team size "
@@ -662,6 +700,16 @@ void RadiationM1::VetColBuild() {
   auto gb_ = vcol_gb;
   auto gb0_ = vcol_gb0;
   const int nray = vcol_nray;
+  // vet_col_fk_min: the lower clamp of f_K (the flux axis keeps 1/3)
+  const Real fkm = axf ? (1.0/3.0) : vcol_fkmin;
+  // vet_col_reflect_top: two sweeps (rad_m1.hpp)
+  const bool rtop = vcol_rtop;
+  const int npass = rtop ? 2 : 1;
+  const Real amx = vcol_amax;
+  auto ab_ = vcol_abuf;
+  // vet_col_surface_face: q = H(face)/J_f, J_f extrapolated (rad_m1.hpp)
+  const bool sqf = vcol_sqf;
+  const Real jca = vcol_jca, jcb = vcol_jcb, jcap = vcol_jcap;
   if (vcol_team) {
     VetColBuildTeam(dmp);
   } else {
@@ -687,6 +735,12 @@ void RadiationM1::VetColBuild() {
     const Real sbot = fmax(1.5*src(0) - 0.5*src(1), 0.0);
     const Real stop = fmax(1.5*src(n1-1) - 0.5*src(n1-2), 0.0);
 
+    // vet_col_reflect_top: pass 0 from a vacuum top, tracking each ray's round-trip
+    // transmission in ab_; then ab_ <- the mirrored top intensity b/(1 - a) and pass 1
+    Real jtop = 0.0, jnb = 0.0;
+    for (int ps = 0; ps < npass; ++ps) {
+    const bool trk = rtop && (ps == 0);
+    const bool rt1 = rtop && (ps == 1);
     // (1) incoming rays, top down
     Real chu = 0.0, su = 0.0;
     for (int l = n1 - 1; l >= 0; --l) {
@@ -697,7 +751,7 @@ void RadiationM1::VetColBuild() {
       const int kr = kl_(l);
       Real jj = 0.0, hh = 0.0, kk = 0.0;
       for (int r = 0; r <= kr; ++r) {
-        const Real iu = top ? 0.0 : buf_(r,c);
+        const Real iu = top ? (rt1 ? ab_(r,c) : 0.0) : buf_(r,c);
         Real ex, w0, wu;
         VcolW(cseg*seg_(r,l), ex, w0, wu);
         if (g2) {
@@ -707,6 +761,9 @@ void RadiationM1::VetColBuild() {
         }
         const Real iv = fmax(iu*ex + wu*sup + w0*s0, 0.0);
         buf_(r,c) = iv;
+        if (trk) {
+          ab_(r,c) = top ? ex : ab_(r,c)*ex;
+        }
         const Real wq = w_(r,l)*iv, mq = mu_(r,l);
         jj += wq;
         hh -= wq*mq;
@@ -726,7 +783,9 @@ void RadiationM1::VetColBuild() {
       e0 = fmax(1.5*iw_(m,M1_IW_EN,k,j,is) - 0.5*iw_(m,M1_IW_EN,k,j,is+1), efl);
       f0 = f0f_(m,k,j,is);
     }
-    Real chd = 0.0, sd = 0.0, jtop = 0.0;
+    Real chd = 0.0, sd = 0.0;
+    jtop = 0.0;
+    jnb = 0.0;
     for (int l = 0; l < n1; ++l) {
       const int i = is + l;
       const Real ch0 = chx(l), s0 = src(l);
@@ -745,6 +804,9 @@ void RadiationM1::VetColBuild() {
             VcolW2((chd + (ch0 - chd)*gb)*seg_(r,l-1), VcolC2(gb), ex, w0, wu);
           }
           iv = buf_(r,c)*ex + wu*sd + w0*s0;
+          if (trk) {
+            ab_(r,c) *= ex;
+          }
         } else {
           const int ty = static_cast<int>(ray_(r,1));
           if (ty == VC_CORE) {
@@ -753,8 +815,14 @@ void RadiationM1::VetColBuild() {
             VcolW(ch0*ray_(r,2), ex, w0, wu);
             if (g2) {VcolW2(ch0*ray_(r,2), -VcolC2(gb0_(r)), ex, w0, wu);}
             if (mir) {ib = fmax(buf_(r,c)*ex + wu*s0 + w0*sbot, 0.0);}
+            if (trk) {
+              ab_(r,c) = mir ? (ab_(r,c)*ex) : 0.0;
+            }
             if (g2) {VcolW2(ch0*ray_(r,2), VcolC2(gb0_(r)), ex, w0, wu);}
             iv = ib*ex + wu*sbot + w0*s0;
+            if (trk) {
+              ab_(r,c) *= ex;
+            }
           } else if (ty == VC_TAN) {
             iv = buf_(r,c);            // mu = 0 at its tangent shell: out = in
           } else {
@@ -768,11 +836,20 @@ void RadiationM1::VetColBuild() {
               const Real dt2 = (cht + (ch0 - cht)*gb)*ray_(r,2);
               VcolW2(dt2, -VcolC2(gb), ex, w0, wu);
               const Real it = fmax(buf_(r,c)*ex + wu*s0 + w0*st, 0.0);
+              if (trk) {
+                ab_(r,c) *= ex;
+              }
               VcolW2(dt2, VcolC2(gb), ex, w0, wu);
               iv = it*ex + wu*st + w0*s0;
+              if (trk) {
+                ab_(r,c) *= ex;
+              }
             } else {
             const Real it = fmax(buf_(r,c)*ex + wu*s0 + w0*st, 0.0);
             iv = it*ex + wu*st + w0*s0;
+            if (trk) {
+              ab_(r,c) *= ex*ex;
+            }
             }
           }
         }
@@ -787,7 +864,9 @@ void RadiationM1::VetColBuild() {
       hh *= 0.5;
       kk *= 0.5;
       Real chi = 1.0/3.0;
-      if (jj > 0.0) {chi = fmin(fmax(kk/jj, 1.0/3.0), 1.0);}
+      if (jj > 0.0) {
+        chi = fmin(fmax(kk/jj, fkm), 1.0);
+      }
       Real n1v = 1.0, n2v = 0.0, n3v = 0.0;
       if (axf) {
         Real fa = iw_(m,M1_IW_F1,k,j,i), fb = iw_(m,M1_IW_F2,k,j,i);
@@ -812,8 +891,24 @@ void RadiationM1::VetColBuild() {
       }
       chd = ch0;
       sd = s0;
+      jnb = jtop;
       jtop = jj;
     }
+    if (trk) {
+      // the outgoing intensity at the top face (b) and the round-trip transmission (a)
+      // of every ray: specular reflection keeps p, so I_in = b + a I_in
+      const Real ch0 = chx(n1-1), s0 = src(n1-1);
+      for (int r = 0; r < nray; ++r) {
+        Real ex, w0, wu;
+        VcolW(ch0*seg_(r,n1-1), ex, w0, wu);
+        if (g2) {
+          VcolW2(ch0*seg_(r,n1-1), VcolC2(gb_(r,n1-1)), ex, w0, wu);
+        }
+        const Real bo = fmax(buf_(r,c)*ex + wu*s0 + w0*stop, 0.0);
+        ab_(r,c) = bo/(1.0 - fmin(ab_(r,c)*ex, amx));
+      }
+    }
+    }   // passes
     // vet_col_surface_q: the outgoing intensities carried from the top shell to the top
     // face (the incoming sweep's top segment), q = H(face)/J(top cell)
     if (sq) {
@@ -827,7 +922,9 @@ void RadiationM1::VetColBuild() {
         hf += wf_(r)*muf_(r)*iv;
       }
       hf *= 0.5;
-      vq_(m,k,j) = (jtop > 0.0) ? fmin(fmax(hf/jtop, qlo), qhi) : q0;
+      // vet_col_surface_face: J extrapolated to the face (r^2 J linear, limited)
+      const Real jq = sqf ? fmin(fmax(jca*jtop - jcb*jnb, 0.0), jcap*jtop) : jtop;
+      vq_(m,k,j) = (jq > 0.0) ? fmin(fmax(hf/jq, qlo), qhi) : q0;
     }
   });
   }
@@ -885,8 +982,17 @@ void RadiationM1::VetColBuildTeam(bool dmp) {
   auto gb_ = vcol_gb;
   auto gb0_ = vcol_gb0;
   const int nray = vcol_nray, lc = vcol_lc;
+  const Real fkm = axf ? (1.0/3.0) : vcol_fkmin;
+  // vet_col_reflect_top: two sweeps; the third ray slot holds the round-trip
+  // transmission (pass 0), then the mirrored top intensity (pass 1)
+  const bool rtop = vcol_rtop;
+  const int npass = rtop ? 2 : 1;
+  const Real amx = vcol_amax;
+  const int nrs = rtop ? 3 : 2;
+  const bool sqf = vcol_sqf;
+  const Real jca = vcol_jca, jcb = vcol_jcb, jcap = vcol_jcap;
   const size_t scr = ScrArray1D<Real>::shmem_size(5*n1) +
-                     ScrArray1D<Real>::shmem_size(2*nray) +
+                     ScrArray1D<Real>::shmem_size(nrs*nray) +
                      ScrArray2D<Real>::shmem_size(lc, nray);
 
   const int nk = ke - ks + 1, nj = je - js + 1;
@@ -900,7 +1006,7 @@ void RadiationM1::VetColBuildTeam(bool dmp) {
     const int k = (tm.league_rank() - m*nk*nj)/nj + ks;
     const int j = (tm.league_rank() - m*nk*nj) % nj + js;
     ScrArray1D<Real> pr_(tm.team_scratch(0), 5*n1);    // chi, S, J_in, H_in, K_in
-    ScrArray1D<Real> ir_(tm.team_scratch(0), 2*nray);  // running I; face I
+    ScrArray1D<Real> ir_(tm.team_scratch(0), nrs*nray);  // running I; face I; top
     ScrArray2D<Real> ic_(tm.team_scratch(0), lc, nray);
     par_for_inner(tm, 0, n1-1, [&](const int l) {
       const int i = is + l;
@@ -920,6 +1026,9 @@ void RadiationM1::VetColBuildTeam(bool dmp) {
     const Real sbot = fmax(1.5*pr_(n1) - 0.5*pr_(n1+1), 0.0);
     const Real stop = fmax(1.5*pr_(2*n1-1) - 0.5*pr_(2*n1-2), 0.0);
 
+    for (int ps = 0; ps < npass; ++ps) {
+    const bool trk = rtop && (ps == 0);
+    const bool rt1 = rtop && (ps == 1);
     // (1) incoming rays, top down, in chunks of lc shells
     for (int la = n1 - 1; la >= 0; la -= lc) {
       const int lb = (la - lc + 1 > 0) ? (la - lc + 1) : 0;
@@ -930,7 +1039,7 @@ void RadiationM1::VetColBuildTeam(bool dmp) {
         const Real sup = top ? stop : pr_(n1 + l + 1);
         const int ll = la - l;
         par_for_inner(tm, 0, kl_(l), [&](const int r) {
-          const Real iu = top ? 0.0 : ir_(r);
+          const Real iu = top ? (rt1 ? ir_(2*nray + r) : 0.0) : ir_(r);
           Real ex, w0, wu;
           VcolW(cseg*seg_(r,l), ex, w0, wu);
           if (g2) {
@@ -940,6 +1049,9 @@ void RadiationM1::VetColBuildTeam(bool dmp) {
           const Real iv = fmax(iu*ex + wu*sup + w0*s0, 0.0);
           ir_(r) = iv;
           ic_(ll, r) = iv;
+          if (trk) {
+            ir_(2*nray + r) = top ? ex : ir_(2*nray + r)*ex;
+          }
         });
         tm.team_barrier();
       }
@@ -987,6 +1099,9 @@ void RadiationM1::VetColBuildTeam(bool dmp) {
               VcolW2((chd + (ch0 - chd)*gb)*seg_(r,l-1), VcolC2(gb), ex, w0, wu);
             }
             iv = ir_(r)*ex + wu*sd + w0*s0;
+            if (trk) {
+              ir_(2*nray + r) *= ex;
+            }
           } else {
             const int ty = static_cast<int>(ray_(r,1));
             if (ty == VC_CORE) {
@@ -994,8 +1109,14 @@ void RadiationM1::VetColBuildTeam(bool dmp) {
               VcolW(ch0*ray_(r,2), ex, w0, wu);
               if (g2) {VcolW2(ch0*ray_(r,2), -VcolC2(gb0_(r)), ex, w0, wu);}
               if (mir) {ib = fmax(ir_(r)*ex + wu*s0 + w0*sbot, 0.0);}
+              if (trk) {
+                ir_(2*nray + r) = mir ? (ir_(2*nray + r)*ex) : 0.0;
+              }
               if (g2) {VcolW2(ch0*ray_(r,2), VcolC2(gb0_(r)), ex, w0, wu);}
               iv = ib*ex + wu*sbot + w0*s0;
+              if (trk) {
+                ir_(2*nray + r) *= ex;
+              }
             } else if (ty == VC_TAN) {
               iv = ir_(r);
             } else {
@@ -1008,17 +1129,41 @@ void RadiationM1::VetColBuildTeam(bool dmp) {
                 const Real dt2 = (cht + (ch0 - cht)*gb)*ray_(r,2);
                 VcolW2(dt2, -VcolC2(gb), ex, w0, wu);
                 const Real it = fmax(ir_(r)*ex + wu*s0 + w0*st, 0.0);
+                if (trk) {
+                  ir_(2*nray + r) *= ex;
+                }
                 VcolW2(dt2, VcolC2(gb), ex, w0, wu);
                 iv = it*ex + wu*st + w0*s0;
+                if (trk) {
+                  ir_(2*nray + r) *= ex;
+                }
               } else {
               const Real it = fmax(ir_(r)*ex + wu*s0 + w0*st, 0.0);
               iv = it*ex + wu*st + w0*s0;
+              if (trk) {
+                ir_(2*nray + r) *= ex*ex;
+              }
               }
             }
           }
           iv = fmax(iv, 0.0);
           ir_(r) = iv;
           ic_(ll, r) = iv;
+        });
+        tm.team_barrier();
+      }
+      if (trk && lb == n1 - 1) {
+        // the outgoing intensity at the top face (b) and the round-trip transmission
+        // (a) of every ray: specular reflection keeps p, so I_in = b + a I_in
+        const Real ch0 = pr_(n1-1), s0 = pr_(2*n1-1);
+        par_for_inner(tm, 0, nray-1, [&](const int r) {
+          Real ex, w0, wu;
+          VcolW(ch0*seg_(r,n1-1), ex, w0, wu);
+          if (g2) {
+            VcolW2(ch0*seg_(r,n1-1), VcolC2(gb_(r,n1-1)), ex, w0, wu);
+          }
+          const Real bo = fmax(ir_(r)*ex + wu*s0 + w0*stop, 0.0);
+          ir_(2*nray + r) = bo/(1.0 - fmin(ir_(2*nray + r)*ex, amx));
         });
         tm.team_barrier();
       }
@@ -1048,7 +1193,9 @@ void RadiationM1::VetColBuildTeam(bool dmp) {
         hh *= 0.5;
         kk *= 0.5;
         Real chi = 1.0/3.0;
-        if (jj > 0.0) {chi = fmin(fmax(kk/jj, 1.0/3.0), 1.0);}
+        if (jj > 0.0) {
+          chi = fmin(fmax(kk/jj, fkm), 1.0);
+        }
         Real n1v = 1.0, n2v = 0.0, n3v = 0.0;
         if (axf) {
           Real fa = iw_(m,M1_IW_F1,k,j,i), fb = iw_(m,M1_IW_F2,k,j,i);
@@ -1071,15 +1218,34 @@ void RadiationM1::VetColBuildTeam(bool dmp) {
           mo_(m,3,k,j,i) = pr_(n1 + l);
           mo_(m,4,k,j,i) = pr_(l);
         }
-        if (sq && l == n1 - 1) {
+        if (sq && l == n1 - 1 && !sqf) {
           Real hf = 0.0;
           for (int r = 0; r < nray; ++r) {hf += wf_(r)*muf_(r)*ir_(nray + r);}
           hf *= 0.5;
           vq_(m,k,j) = (jj > 0.0) ? fmin(fmax(hf/jj, qlo), qhi) : q0;
         }
+        if (sqf && l >= n1 - 2) {   // the full J of the top shells
+          pr_(2*n1 + l) = jj;
+        }
       });
       tm.team_barrier();
     }
+    if (sq && sqf) {
+      // vet_col_surface_face: q = H(face)/J_f, J extrapolated to the face (r^2 J
+      // linear from the top two shells, limited), after every chunk is summed
+      Kokkos::single(Kokkos::PerTeam(tm), [&]() {
+        Real hf = 0.0;
+        for (int r = 0; r < nray; ++r) {
+          hf += wf_(r)*muf_(r)*ir_(nray + r);
+        }
+        hf *= 0.5;
+        const Real jt = pr_(3*n1 - 1), jn = pr_(3*n1 - 2);
+        const Real jq = fmin(fmax(jca*jt - jcb*jn, 0.0), jcap*jt);
+        vq_(m,k,j) = (jq > 0.0) ? fmin(fmax(hf/jq, qlo), qhi) : q0;
+      });
+      tm.team_barrier();
+    }
+    }   // passes
   });
 }
 

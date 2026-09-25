@@ -51,7 +51,18 @@
 //! was first order is the Marshak end face (c q E of the end CELL) -> option
 //! <rad_m1>/implicit_marshak_face = linear (sp only), and the vet_col formal solution
 //! (trapezoid in mu, S and chi linear in the path, cell E/F at the core) -> option
-//! <rad_m1>/vet_col_order2 = true.  Both default off (bitwise).
+//! <rad_m1>/vet_col_order2 = true.
+//!
+//! m1-sp-order2b (tests_m1/runs_5q_sporder2b): on the wedge both are the DEFAULT
+//! (implicit_marshak_face = linear with the fixed-tensor closures eddington, vet_sc,
+//! tau and vet_col; cell with the lagged m1 closures; vet_col_order2 = true), with
+//! vet_col_fk_min = 0 (no 1/3 clamp of f_K), vet_col_reflect_top = true (the mirrored
+//! top under a reflecting outer x1), vet_col_surface_face = true (q from the face J),
+//! time2_vet_col = predict (the vet_col tensor of the hesdirk2 stages at t^{n+1}, not
+//! U^n), time2_vstage = true (implicit_vimp: the stage's own velocity in the cell flux
+//! and the gas work in the E row) and implicit_precond = mg_gc (implicit_mg_levels = 1)
+//! where rbgs_fwd was the default.  A restart whose file lacks a key keeps its old value
+//! (the resolved values are echoed); Cartesian meshes are unchanged.
 
 #include <iostream>
 #include <string>

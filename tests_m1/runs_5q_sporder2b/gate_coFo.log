@@ -1,0 +1,42 @@
+pcfix o_sp_sph_diff_be.athinput mg_gc -> rbgs_fwd
+pcfix o_sp_marshak_sph_be.athinput unchanged
+pcfix o_sp_sph_diff_str_be.athinput mg_gc -> rbgs_fwd
+pcfix o_sp_sph_atm_be.athinput unchanged
+pcfix o_sp_sph_sym_gas_be.athinput unchanged
+pcfix o_sp_sph_sym_be.athinput unchanged
+pcfix o_sp_sph_atm_vc_be.athinput mg_gc -> rbgs_fwd
+pcfix o_sp_sph_atm_str_vc_be.athinput mg_gc -> rbgs_fwd
+pcfix o_sp_sph_atm_bin_vc_be.athinput unchanged
+pcfix o_sp_sph_fs_be.athinput unchanged
+pcfix o_sp_rw_sph_R100_be.athinput unchanged
+pcfix o_vc_sp_sph_sym_be.athinput unchanged
+pcfix o_vc_sp_sph_fs_be.athinput mg_gc -> rbgs_fwd
+pcfix o_vc_sp_sph_sym_gas_be.athinput unchanged
+== CO_sp_marshak_sph_be: VERDICT BITWISE files=4 diff=0 rc=0 rc=0 
+== CO_sp_rw_sph_R100_be: VERDICT BITWISE files=17 diff=0 rc=0 rc=0 
+== CO_sp_sph_atm_be: VERDICT BITWISE files=8 diff=0 rc=0 rc=0 
+== CO_sp_sph_atm_bin_vc_be: VERDICT BITWISE files=12 diff=0 rc=0 rc=0 
+== CO_sp_sph_atm_str_vc_be: VERDICT BITWISE files=8 diff=0 rc=0 rc=0 
+== CO_sp_sph_atm_vc_be: VERDICT BITWISE files=8 diff=0 rc=0 rc=0 
+== CO_sp_sph_diff_be: VERDICT BITWISE files=3 diff=0 rc=0 rc=0 
+== CO_sp_sph_diff_str_be: VERDICT BITWISE files=3 diff=0 rc=0 rc=0 
+== CO_sp_sph_fs_be: VERDICT BITWISE files=3 diff=0 rc=0 rc=0 
+== CO_sp_sph_sym_be: VERDICT BITWISE files=12 diff=0 rc=0 rc=0 
+== CO_sp_sph_sym_gas_be: VERDICT BITWISE files=24 diff=0 rc=0 rc=0 
+== CO_vc_sp_sph_fs_be: VERDICT BITWISE files=3 diff=0 rc=0 rc=0 
+== CO_vc_sp_sph_sym_be: VERDICT BITWISE files=12 diff=0 rc=0 rc=0 
+== CO_vc_sp_sph_sym_gas_be: VERDICT BITWISE files=24 diff=0 rc=0 rc=0 
+pcfix o_sp_sph_atm_vc.athinput mg_gc -> rbgs_fwd
+pcfix o_sp_sph_sym.athinput unchanged
+pcfix o_sp_sph_sym_gas.athinput unchanged
+pcfix o_sp_sph_fs.athinput unchanged
+pcfix o_vc_sp_sph_sym.athinput unchanged
+pcfix o_vc_sp_sph_fs.athinput mg_gc -> rbgs_fwd
+pcfix o_vc_sp_sph_sym_gas.athinput unchanged
+== FO_sp_sph_atm_vc: VERDICT BITWISE files=8 diff=0 rc=0 rc=0 
+== FO_sp_sph_fs: VERDICT BITWISE files=3 diff=0 rc=0 rc=0 
+== FO_sp_sph_sym: VERDICT BITWISE files=12 diff=0 rc=0 rc=0 
+== FO_sp_sph_sym_gas: VERDICT BITWISE files=24 diff=0 rc=0 rc=0 
+== FO_vc_sp_sph_fs: VERDICT BITWISE files=3 diff=0 rc=0 rc=0 
+== FO_vc_sp_sph_sym: VERDICT BITWISE files=12 diff=0 rc=0 rc=0 
+== FO_vc_sp_sph_sym_gas: VERDICT BITWISE files=24 diff=0 rc=0 rc=0 
