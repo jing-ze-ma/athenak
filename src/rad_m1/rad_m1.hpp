@@ -604,6 +604,27 @@ class RadiationM1 {
   void ImplicitGCBuild();
   void ImplicitGCPre(int rc, int upd, Real c1, Real c2);
   void ImplicitGCAdd(int zc);
+  // implicit_precond = mg_gf (rad_m1_precond.cpp, tests_m1/runs_5t_fast5box): a GLOBAL
+  // coarse space of the lowest (x2,x3) Fourier modes of each x1 layer in front of mg
+  bool gf_on = false;
+  int gf_k = 2;                 // <rad_m1>/implicit_gf_modes: |k2|, |k3| <= K
+  int gf_nb2 = 1, gf_nb3 = 1, gf_nm = 1;   // 1-D basis sizes, modes per layer
+  int gf_nkc = 1, gf_kcw = 1;   // k chunks of the layer reductions, their width
+  bool gf_ok = false;           // the coarse space is set up (per-mode flags: gf_okd)
+  DvceArray1D<Real> gf_u, gf_v;     // 1-D bases (a, gj) / (c, gk)
+  DvceArray1D<Real> gf_cud, gf_cvd; // their correlation sums (a, d + 2), d = -2..2
+  DvceArray1D<Real> gf_nrm;         // 1 / |phi_q|^2
+  DvceArray1D<Real> gf_part;        // (m, kc, q, i) partial layer sums
+  DvceArray1D<Real> gf_g;           // (gi*25 + s) layer sums of the stencil slots
+  Kokkos::View<Real*, Kokkos::SharedHostPinnedSpace> gf_gh;   // (gi*nm + q) multi-rank
+  DvceArray1D<Real> gf_hg, gf_hx;   // ((c*n2+gj)*n1+gi): sum_a u_a(gj) (gn, x)(a, c)
+  DvceArray1D<Real> gf_gn, gf_x;    // (gi*nm + q): P^T r / |phi|^2, x_g
+  DvceArray1D<Real> gf_ainv;        // ((q*n1 + c)*n1 + gi): inverse of the mode-q matrix
+  DvceArray1D<int> gf_okd;          // (q) the mode-q factorisation is usable
+  void ImplicitGFInit();
+  void ImplicitGFBuild();
+  void ImplicitGFPre(int rc, int upd, Real c1, Real c2);
+  void ImplicitGFAdd(int zc);
   bool impl_rho_direct = false;  // <rad_m1>/implicit_bcg_rho_direct (krylov_fuse = 3)
   int impl_dump_cyc;            // <rad_m1>/implicit_dump_op (debug, rad_m1_precond.cpp)
   bool impl_dump_done;

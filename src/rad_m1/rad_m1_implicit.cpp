@@ -541,9 +541,11 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     impl_prec = 3;
   } else if (pc.compare("mg_gc") == 0) {
     impl_prec = 4;
+  } else if (pc.compare("mg_gf") == 0) {
+    impl_prec = 5;
   } else {
     ImplFatal("<rad_m1>/implicit_precond = '" + pc
-              + "' is not a choice (line | rbgs | rbgs_fwd | mg | mg_gc)");
+              + "' is not a choice (line | rbgs | rbgs_fwd | mg | mg_gc | mg_gf)");
   }
   }
   // implicit_precond = mg (rad_m1_precond.cpp, tests_m1/runs_5m_precond): keys read only
@@ -565,6 +567,16 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
     gc_b2 = pin->GetOrAddInteger("rad_m1","implicit_gc_bands2",1);
     gc_b3 = pin->GetOrAddInteger("rad_m1","implicit_gc_bands3",1);
     gc_on = true;
+  }
+  // implicit_precond = mg_gf (rad_m1_precond.cpp, tests_m1/runs_5t_fast5box): mg plus
+  // the global Fourier coarse space; its keys are read only under mg_gf
+  if (impl_prec == 5) {
+    mg_nlev = pin->GetOrAddInteger("rad_m1","implicit_mg_levels",3);
+    mg_halo = pin->GetOrAddBoolean("rad_m1","implicit_mg_halo",true);
+    if (mg_nlev < 1) {ImplFatal("<rad_m1>/implicit_mg_levels must be >= 1 (mg_gf)");}
+    gf_k = pin->GetOrAddInteger("rad_m1","implicit_gf_modes",2);
+    if (gf_k < 0 || gf_k > 3) {ImplFatal("<rad_m1>/implicit_gf_modes must be 0..3");}
+    gf_on = true;
   }
   // implicit_bcg_rho_direct (runs_5p_coarse2; read only when named, default false =
   // the recurrence, bitwise): implicit_krylov_fuse = 3 sums (rhat, r) directly
