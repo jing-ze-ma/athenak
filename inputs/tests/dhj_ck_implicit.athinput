@@ -367,7 +367,7 @@ rt_de_max    = 0.5
 # problem/ck_spherical: the SPHERICAL form of the correlated-k two-stream (see
 # two_stream_rt::ck_spherical).  false = bitwise the plane-parallel arithmetic the ck
 # kernel has always run.
-ck_spherical = false
+ck_spherical = true      # 09-25: must be true with the tau blend on sp (dhj-cksph-guard)
 # problem/ck_beam_sph: the PSEUDO-SPHERICAL direct beam (straight rays through the
 # shells, no secant clamp, twilight columns lit).  Independent of ck_spherical.
 ck_beam_sph  = false
