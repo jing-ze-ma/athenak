@@ -97,6 +97,6 @@ Everything else was checked and is clean:
 
 ## Local extension above 6100 K
 
-`ck/Premixed_1x_g8_11_hiT.txt` and `CE_tables/FastChem_ck_1x_int_hiT.txt` are NOT upstream:
-they are these tables extended to 10100 K (rows up to 6100 K verbatim) by
-`tools/gen_hitemp.py`. Method and validation in `HITEMP.md`.
+`ck/Premixed_1x_g8_11_hiT2.txt` and `CE_tables/FastChem_ck_1x_int_hiT2.txt` (and the first
+version, `_hiT`) are NOT upstream: they are these tables extended to 10100 K (rows up to
+6100 K verbatim) by `tools/gen_hitemp.py` (`--v1` for `_hiT`). Method and validation in `HITEMP.md`.
