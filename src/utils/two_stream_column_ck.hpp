@@ -1913,8 +1913,8 @@ inline int CkImplStep(Mesh *pm, DvceArray5D<Real> u0, DvceArray3D<int> icut_,
             Kokkos::printf("### ckstall pass=%d m=%d k=%d j=%d i=%d w=%d lat=%.2f "
                            "lon=%.2f "
                            "T=%.5e rho=%.4e p=%.4e r/e=%.4e e=%.10e est=%.6e hS/e=%.4e "
-                           "hEm/e=%.4e Etot/e=%.4e efl/e=%.6e cvT=%.4e cvEOS=%.4e thick=%d "
-                           "kkt=%d b=%.4e dx/e=%.4e de/e=%.4e cap=%d\n",
+                           "hEm/e=%.4e Etot/e=%.4e efl/e=%.6e cvT=%.4e cvEOS=%.4e "
+                           "thick=%d kkt=%d b=%.4e dx/e=%.4e de/e=%.4e cap=%d\n",
                            pass_, m, k, j, i, (i == iwd) ? 1 : 0,
                            plat*57.29577951308232, plon*57.29577951308232, Ti, rho,
                            eosfb_.Pressure(rho, ei, Ti), r/ei, ei, es,
