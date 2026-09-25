@@ -530,6 +530,8 @@ class RadiationM1 {
   bool mg_halo;                 // <rad_m1>/implicit_mg_halo: fine residual with the halo
   std::vector<DvceArray5D<Real>> mgc;   // level l >= 1: (m,9,nk_l,nj_l,nx1)
   std::vector<int> mg_nj, mg_nk;        // per level (level 0 = the MeshBlock)
+  bool mg_fuse;                 // <rad_m1>/implicit_mg_fuse: restrictions in the PCR loads
+  void ImplicitMGInit(ParameterInput *pin);
   void ImplicitMGBuild();
   void ImplicitMGApply(int rc, int zc, int upd, Real c1, Real c2);
   int impl_dump_cyc;            // <rad_m1>/implicit_dump_op (debug, rad_m1_precond.cpp)

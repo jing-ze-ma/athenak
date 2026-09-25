@@ -541,13 +541,7 @@ void RadiationM1::ImplicitInit(ParameterInput *pin) {
   }
   // implicit_precond = mg (rad_m1_precond.cpp, tests_m1/runs_5m_precond): keys read only
   // under mg, so every other configuration is untouched
-  mg_nlev = 0;
-  mg_halo = true;
-  if (impl_prec == 3) {
-    mg_nlev = pin->GetOrAddInteger("rad_m1","implicit_mg_levels",2);
-    mg_halo = pin->GetOrAddBoolean("rad_m1","implicit_mg_halo",true);
-    if (mg_nlev < 2) {ImplFatal("<rad_m1>/implicit_mg_levels must be >= 2");}
-  }
+  ImplicitMGInit(pin);
   if (impl_kfuse < 0 || impl_kfuse > 3) {
     ImplFatal("<rad_m1>/implicit_krylov_fuse must be 0, 1, 2 or 3");
   }
