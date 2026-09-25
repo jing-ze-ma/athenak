@@ -6367,7 +6367,8 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
             });
             par_for("ck_beam_tau", DevExeSpace(), 0, nmb1, 0, nbc_-1, is, ie+1, ks, ke,
                     js, je,
-            KOKKOS_LAMBDA(const int m, const int p, const int f, const int k, const int j) {
+            KOKKOS_LAMBDA(const int m, const int p, const int f, const int k,
+                          const int j) {
               if (ckskip_ && ckdone_g(m,k,j) > 0.0) return;
               const int icut = icc_g(m,k,j);
               if (icut > ie || f < icut || f < bsp_(m,p,k,j)) return;
@@ -6435,7 +6436,8 @@ inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt) {
                 const bool dark = (tl >= 1.0e30);
                 const RtF thi = RT_EXP(-static_cast<RtF>(th));
                 const Real dtl = dark ? 1.0e30 : (tl - th);
-                const RtF tlo = dark ? static_cast<RtF>(0.0) : RT_EXP(-static_cast<RtF>(tl));
+                const RtF tlo = dark ? static_cast<RtF>(0.0)
+                                     : RT_EXP(-static_cast<RtF>(tl));
                 const Real dif = static_cast<Real>(thi) - static_cast<Real>(tlo);
                 const Real fac = (fabs(dtl) > 1.0e-3)
                     ? (dif/dtl) : (static_cast<Real>(thi)*(1.0 - 0.5*dtl));
