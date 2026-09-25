@@ -159,6 +159,10 @@ inline int ck_impl_nkkt = 0;               // cells excluded from the test as KK
 inline bool ck_impl_verbose = false;
 // problem/ck_impl_debug: print the worst cell of every pass with its whole row.
 inline int ck_impl_debug = 0;
+// problem/ck_impl_ncloc = N > 0: on a NOT-CONVERGED call, print the location of up to
+// N still-active columns (gid, m, k, j), their worst cell i with its residual, pressure
+// and T.  Print only (works under ck_impl_every); 0 (default) = off, bitwise.
+inline int ck_impl_ncloc = 0;
 // problem/ck_impl_refresh_kappa: re-look-up the correlated-k opacity (and hence the beam
 // transmission tau_ray) at every Newton pass instead of freezing it over the step.  OFF
 // by default.  Cost: the pre-opacity kernel is a ck_continuum call plus two table index

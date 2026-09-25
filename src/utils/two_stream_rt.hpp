@@ -1636,6 +1636,64 @@ void get_Tint(const Real &Teq, Real &Tint) {
 inline void picket_fence_two_stream_RT_pass(Mesh *pm, Real bdt);
 
 //----------------------------------------------------------------------------------------
+//! \fn CkNonconvLoc
+//! \brief problem/ck_impl_ncloc: after a NOT-CONVERGED ck_implicit call, print where the
+//! columns still active (ck_done = 0) are: gid, m, k, j, the cell i of the column's
+//! largest relative residual |e - e* - dt S|/(e + eps e_max) (the fused test's norm),
+//! its pressure [bar] and T from the last sweep, and the column's top pressure.  Print
+//! only; nothing is written.
+
+inline void CkNonconvLoc(Mesh *pm, const Real bdt) {
+  auto &indcs = pm->mb_indcs;
+  const int ie = indcs.ie;
+  const int js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pm->pmb_pack->nmb_thispack - 1;
+  if (ck_done_ptr == nullptr || rt_pb_ptr == nullptr || rt_icut_ptr == nullptr) return;
+  auto done_ = *ck_done_ptr;
+  auto ei_ = *ck_ei_ptr;
+  auto est_ = *ck_estar_ptr;
+  auto src_ = *ck_src_ptr;
+  auto pb_ = *rt_pb_ptr;
+  auto T_ = *rt_T_ptr;
+  auto icut_ = *rt_icut_ptr;
+  auto gid_ = pm->pmb_pack->pmb->mb_gid.d_view;
+  const Real eps = ck_impl_norm_eps;
+  const int nmax = ck_impl_ncloc;
+  const int rank = global_variable::my_rank;
+  const int ncyc = static_cast<int>(pm->ncycle);
+  DvceArray1D<int> cnt("ck_ncloc_cnt", 1);
+  par_for("ck_ncloc", DevExeSpace(), 0, nmb1, ks, ke, js, je,
+  KOKKOS_LAMBDA(const int m, const int k, const int j) {
+    if (done_(m,k,j) != 0.0) return;
+    const int ic = icut_(m,k,j);
+    if (ic > ie) return;
+    Real emax = 0.0;
+    for (int i=ic; i<ie+1; ++i) {
+      if (ei_(m,k,j,i) > emax) emax = ei_(m,k,j,i);
+    }
+    Real rn = -1.0;
+    int iw = ic;
+    for (int i=ic; i<ie+1; ++i) {
+      const Real r = ei_(m,k,j,i) - est_(m,k,j,i) - bdt*src_(m,k,j,i);
+      const Real s = fabs(r)/(ei_(m,k,j,i) + eps*emax);
+      if (s > rn) {
+        rn = s;
+        iw = i;
+      }
+    }
+    const int n = Kokkos::atomic_fetch_add(&cnt(0), 1);
+    if (n < nmax) {
+      Kokkos::printf("### ck_ncloc ncycle=%d rank=%d gid=%d m=%d k=%d j=%d i=%d ie=%d "
+                     "icut=%d res=%.3e p_bar=%.4e T=%.1f ptop_bar=%.4e\n", ncyc, rank,
+                     gid_(m), m, k, j, iw, ie, ic, rn, pb_(m,k,j,iw), T_(m,k,j,iw),
+                     pb_(m,k,j,ie));
+    }
+  });
+  Kokkos::fence();
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn picket_fence_two_stream_RT
 //! \brief the two-stream source step.
 
@@ -1799,6 +1857,7 @@ inline void picket_fence_two_stream_RT(Mesh *pm, Real bdt) {
     }
     if (ck_impl_nsubfail > 0) conv = false;   // ls_sub: a column failed at the finest L
     ck_impl_nonconv = conv ? 0 : 1;
+    if (!conv && ck_impl_ncloc > 0) CkNonconvLoc(pm, bdt);
     ck_impl_pass = -1;
     // ck_impl_debug = -1: the report line from EVERY rank, tagged; the Newton loop is
     // rank-local, so rank 0's verdict is not the call's
