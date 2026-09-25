@@ -198,7 +198,7 @@ template <typename View1D>
 void get_init_eos_arr(const EOS_Data &eos, const Real &Rgas, const Real &grav_acc,
                       const Real &ap, const bool &grav_pmass, const View1D &Tarr,
                       const View1D &lgparr, const int &N, const Real &zmax,
-                      View1D zarr, View1D logparr);
+                      View1D zarr, View1D logparr, const Real zlow = 0.0);
 KOKKOS_INLINE_FUNCTION
 void get_init_eos(const EOS_Data &eos, const Real &Rgas, const Real &grav_acc, const DvceArray1D<Real> &Tarr, const DvceArray1D<Real> &lgparr, const int &N, const DvceArray1D<Real> &zarr, const DvceArray1D<Real> &logparr, const Real &z, Real &rho, Real &p);
 
@@ -1242,9 +1242,25 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
 //    DvceArray1D<Real> logpinitarr("logpinitarr", N);
     DualArray1D<Real> zarr_init("zarrinit", N);
     DualArray1D<Real> logparr_init("logparrinit", N);
+    // problem/ic_profile: extend the IC column below z = 0 to the deepest cell or inner
+    // ghost (smallest radius, on the equator where rot_potential lowers z_eff most),
+    // with a 10 % margin.  Picket-fence path (no ic_profile): zlow = 0, unchanged.
+    Real zlow_ic = 0.0;
+    if (!ic_prof.empty() && (use_spherical_polar || use_cubed_sphere_)) {
+      auto x1v_h = Kokkos::create_mirror_view_and_copy(HostMemSpace(), x1v_);
+      Real rg = x1v_h(0, 0);
+      for (int m=0; m<pmbp->nmb_thispack; ++m) rg = std::min(rg, x1v_h(m, 0));
+      const Real zg = (om2_ > 0.0) ?
+          ZEffFromPot(grav_acc, ap, TotPotAt(grav_acc, ap, rg, rg - ap, grav_pmass, om2_,
+                                             0.5*M_PI), grav_pmass) : (rg - ap);
+      if (zg < 0.0) zlow_ic = 1.1*zg;
+      std::cout << "deep_hot_jupiter_rt: ic_profile column extended to z = " << zlow_ic
+                << " cm below the 250 bar anchor (deepest ghost r = " << rg << ")"
+                << std::endl;
+    }
     get_init_eos_arr(eos, Rgas, grav_acc, ap, grav_pmass, Tarr_init.h_view,
                      lgparr_init.h_view, N, (r1-r0)*1.1, zarr_init.h_view,
-                     logparr_init.h_view);
+                     logparr_init.h_view, zlow_ic);
     
     zarr_init.modify_host();
     zarr_init.sync_device();
@@ -4005,7 +4021,7 @@ void get_init_Tp(const int &N, const DvceArray1D<Real> &Tarr, const DvceArray1D<
     Real lgp = log10(p);
     Real dlgp = (lgparr(N-1)-lgparr(0))/(N-1);
     int Nt = std::floor((lgp - lgparr(0))/dlgp);
-    int NN = (Nt < 0) ? 0 : Nt;
+    int NN = (Nt < 0) ? 0 : ((Nt > N-2) ? N-2 : Nt);   // never past the table end
 //    for (int it=Nt-2; it<Nt+3; ++it)
 //    {
 //        if (lgp < lgparr(it) && lgp >= lgparr(it-1)) {
@@ -4058,7 +4074,7 @@ void get_init_Tp_host(const int &N, const View1D &Tarr, const View1D &lgparr, co
     Real lgp = log10(p);
     Real dlgp = (lgparr(N-1)-lgparr(0))/(N-1);
     int Nt = std::floor((lgp - lgparr(0))/dlgp);
-    int NN = (Nt < 0) ? 0 : Nt;
+    int NN = (Nt < 0) ? 0 : ((Nt > N-2) ? N-2 : Nt);   // never past the table end
 //    for (int it=Nt-2; it<Nt+3; ++it)
 //    {
 //        if (lgp < lgparr(it) && lgp >= lgparr(it-1)) {
@@ -4190,7 +4206,34 @@ template <typename View1D>
 void get_init_eos_arr(const EOS_Data &eos, const Real &Rgas, const Real &grav_acc,
                       const Real &ap, const bool &grav_pmass, const View1D &Tarr,
                       const View1D &lgparr, const int &N, const Real &zmax,
-                      View1D zarr, View1D logparr) {
+                      View1D zarr, View1D logparr, const Real zlow) {
+    // zlow < 0 (problem/ic_profile only): the column also covers z in [zlow, 0) -- the
+    // cells and inner ghosts below the 250 bar anchor, deepest on the equator under
+    // rot_potential -- integrated DOWN from p0 through the same table T(p), so they sit
+    // on the table's adiabat instead of get_init_eos's isothermal extension.  The node
+    // n0 is exactly z = 0.  zlow = 0 (default) is the original loop below, unchanged.
+    if (zlow < 0.0) {
+      const Real bar_ = 1.0e6;
+      const Real dzd = (zmax - zlow)/N;
+      const int n0 = static_cast<int>(std::ceil(-zlow/dzd));
+      for (int n=0; n<N; n++) zarr(n) = (n - n0)*dzd;
+      logparr(n0) = std::log(250.0*bar_);
+      for (int n=n0; n<N-1; n++) {           // up, as the original loop
+        Real T;
+        const Real p = exp(logparr(n));
+        const Real gz = GravAccAt(grav_acc, ap, ap + zarr(n), grav_pmass);
+        get_init_Tp_host(N, Tarr, lgparr, p, T);
+        logparr(n+1) = logparr(n) + gz*dzd*DensFromPT(eos, Rgas, p, T)/p;
+      }
+      for (int n=n0; n>0; n--) {              // down
+        Real T;
+        const Real p = exp(logparr(n));
+        const Real gz = GravAccAt(grav_acc, ap, ap + zarr(n), grav_pmass);
+        get_init_Tp_host(N, Tarr, lgparr, p, T);
+        logparr(n-1) = logparr(n) - gz*dzd*DensFromPT(eos, Rgas, p, T)/p;
+      }
+      return;
+    }
 
 //    Real Rgas = 4.593e7;
 //    Real grav_acc = -942.0;
@@ -4242,8 +4285,8 @@ void get_init_eos(const EOS_Data &eos, const Real &Rgas, const Real &grav_acc, c
     Real dz = zarr(1)-zarr(0);
     Real T;
 
-    if (z >= 0.0) {
-        int Nt = std::floor(z/dz);
+    if (z >= zarr(0)) {   // zarr(0) = 0 unless the ic_profile column reaches below z = 0
+        int Nt = std::floor((z - zarr(0))/dz);
         Real logp = logparr(Nt) + (logparr(Nt+1)-logparr(Nt))/(zarr(Nt+1)-zarr(Nt))*(z-zarr(Nt));
         p = std::exp(logp);
         get_init_Tp(N, Tarr, lgparr, p,T);
