@@ -438,9 +438,11 @@ Mesh::Mesh(ParameterInput *pin) :
     // as orthogonal -- an approximation on the gnomonic grid, but the horizontal
     // radiative flux is negligible against the radial one it exists for)
     } else if ((pin->DoesParameterExist("hydro", "isotropic_conduction") &&
-                pin->GetString("hydro", "isotropic_conduction") != "radiative") ||
+                pin->GetString("hydro", "isotropic_conduction") != "radiative" &&
+                pin->GetString("hydro", "isotropic_conduction") != "none") ||
                (pin->DoesParameterExist("mhd", "isotropic_conduction") &&
-                pin->GetString("mhd", "isotropic_conduction") != "radiative")) {
+                pin->GetString("mhd", "isotropic_conduction") != "radiative" &&
+                pin->GetString("mhd", "isotropic_conduction") != "none")) {
       missing = "thermal conduction (isotropic_conduction): diffusion/conduction.cpp "
                 "has no curvilinear form at all";
     // RADIATION.  src/radiation/ contains not one mention of use_cubed_sphere, and not

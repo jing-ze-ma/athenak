@@ -43,12 +43,12 @@ NIGHT_K = 2
 DAY_K = 5
 
 
-def column(binary, name, dump_k):
+def column(binary, name, dump_k, extra=[]):
     """One cycle of the correlated-k scheme, dumping one radial column."""
     rundir = os.path.join(BUILD, "run")
     out = ck.run(binary, rundir, MESH + ck.CK
                  + ["problem/ck_dump_file=" + name,
-                    "problem/ck_dump_k=" + repr(dump_k)])
+                    "problem/ck_dump_k=" + repr(dump_k)] + extra)
     return out, os.path.join(rundir, name)
 
 
@@ -144,5 +144,25 @@ def test_run():
         incident = hdr["mu0"] * ck.SIGMA_SB * hdr["T_irr"] ** 4
         assert 0.9 < absorbed / incident < 1.0, \
             f"shortwave absorbs {absorbed / incident:g} of the incident flux"
+
+        # --- ck_nquad = 2: the two-point Gauss quadrature's thick limit is the exact
+        # diffusion flux.  The dump's column 38 is the exact NON-GREY discrete diffusion
+        # flux sum_bg (4 pi/3) gw dB_b/dtau_bg over the sweep's own centre-to-centre
+        # layer; where every (band, g) is thick (col 39, tau_min_bg > 10) the net
+        # two-stream flux must equal it (measured 1.0000-1.0010; nquad = 1 gives 0.904)
+        out2, night2 = column(binary, "col_night_q2.txt", NIGHT_K,
+                              ["problem/ck_nquad=2"])
+        assert "176 column solves" in out2, \
+            "expected 11 bands x 8 g-points x 2 angles = 176 chains"
+        thin2 = ck.grab(out2, r"transparent slab F/sigmaT\^4 = *([0-9.eE+-]+)",
+                        "transparent-slab self-test (nquad = 2)")
+        assert abs(thin2 - 1.0) < 1.0e-10, f"nquad = 2 slab emits {thin2:g} sigma T^4"
+        _, col2 = ck.read_column(night2)
+        assert col2.shape[1] > 39, "the column dump lacks the Rosseland diagnostics"
+        sel = (col2[:, 39] > 10.0) & (col2[:, 38] != 0.0) & (col2[:, 9] < 0.9)
+        assert np.count_nonzero(sel) >= 3, "fewer than 3 thick faces above the cut"
+        ratio = col2[sel, 4] / col2[sel, 38]
+        assert np.all(np.abs(ratio - 1.0) < 1.0e-2), \
+            f"nquad = 2 flux / exact diffusion flux in the thick faces: {ratio}"
     finally:
         shutil.rmtree(BUILD, ignore_errors=True)
