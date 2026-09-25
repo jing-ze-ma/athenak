@@ -223,6 +223,7 @@ void RadiationM1::ImplicitMGBuild() {
       mgc.push_back(DvceArray5D<Real>("m1_mgc", nmb, MG_NC, mg_nk[l], mg_nj[l], nx));
     }
     if (gc_on) {ImplicitGCInit();}
+    if (gf_on) {ImplicitGFInit();}
   }
   const int nl = static_cast<int>(mgc.size());
   auto iw_ = iw;
@@ -272,6 +273,7 @@ void RadiationM1::ImplicitMGBuild() {
     });
   }
   if (gc_on) {ImplicitGCBuild();}
+  if (gf_on) {ImplicitGFBuild();}
 }
 
 //----------------------------------------------------------------------------------------
@@ -285,11 +287,18 @@ void RadiationM1::ImplicitMGApply(int rc, int zc, int upd, Real c1, Real c2) {
     rc = M1_IW_S1;
     upd = 0;
   }
+  const bool gfa = gf_on && gf_ok;
+  if (gfa) {     // mg_gf: the Fourier coarse solve first, then mg on r' = r - Pi r
+    ImplicitGFPre(rc, upd, c1, c2);
+    rc = M1_IW_S1;
+    upd = 0;
+  }
   // the fine smoother: rbgs_fwd, exactly the implicit_precond = rbgs_fwd map
   ImplicitPCRSolveX(rc, zc, upd, c1, c2, 0, -1);
   ImplicitPCRSolveX(rc, zc, upd, c1, c2, 1, zc);
   if (mgc.size() < 2) {
     if (gc_on) {ImplicitGCAdd(zc);}
+    if (gfa) {ImplicitGFAdd(zc);}
     return;
   }
   const int nl = static_cast<int>(mgc.size());
@@ -397,6 +406,24 @@ void RadiationM1::ImplicitMGApply(int rc, int zc, int upd, Real c1, Real c2) {
     }
   }
   const int nlc = std::min(nl - 1, 4);   // coarse levels read by the fine kernel
+  if (gfa) {     // the same, plus P x_g of the Fourier coarse space
+    auto hx_ = gf_hx;
+    auto go_ = gc_off;
+    auto v_ = gf_v;
+    const int n1 = gc_n1, n2 = gc_n2, n3 = gc_n3, nb3 = gf_nb3;
+    par_for("m1_gf_pro0", DevExeSpace(), 0, nmb-1, 0, mg_nk[0]-1, 0, mg_nj[0]-1, 0, nx-1,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      Real s = c1_(m,MG_Z,k >> 1,j >> 1,i);
+      if (nlc > 1) s += c2_(m,MG_Z,k >> 2,j >> 2,i);
+      if (nlc > 2) s += c3_(m,MG_Z,k >> 3,j >> 3,i);
+      if (nlc > 3) s += c4_(m,MG_Z,k >> 4,j >> 4,i);
+      const int gi = go_(3*m) + i, gj = go_(3*m+1) + j, gk = go_(3*m+2) + k;
+      Real g = 0.0;
+      for (int c = 0; c < nb3; ++c) {g += v_(c*n3 + gk)*hx_((c*n2 + gj)*n1 + gi);}
+      iw_(m,zc,k+ks,j+js,i+is) += s + g;
+    });
+    return;
+  }
   if (gc_on) {   // the same, plus P_g x_g
     auto gx_ = gc_x;
     auto go_ = gc_off;
@@ -913,6 +940,586 @@ void RadiationM1::ImplicitGCAdd(int zc) {
     const int b2 = ((go_(3*m+1) + j)*gb2)/n2;
     const int b3 = ((go_(3*m+2) + k)*gb3)/n3;
     iw_(m,zc,k+ks,j+js,i+is) += gx_((go_(3*m) + i)*nb + b3*gb2 + b2);
+  });
+}
+
+
+//----------------------------------------------------------------------------------------
+// implicit_precond = mg_gf (tests_m1/runs_5t_fast5box): the global Fourier coarse space
+
+namespace {
+constexpr int GF_IB = 16, GF_RG = 16, GF_NV = GF_IB*GF_RG;
+
+//! p_(((m*nkc + kc)*NQ + q)*nx + i) = the sum over the k of chunk kc (width kcw) of block
+//! m of what f(m, k, g, i, acc) adds to acc[0..NQ-1] for the rows j = g, g + GF_RG, ...
+//! (active indices from 0).  One team per (m, kc, 16 x1 cells): 16 row groups g x 16 x1
+//! cells, the row groups added in a fixed order (deterministic; the host path, team
+//! size 1, sums in the same order)
+template <int NQ, class F>
+void GFLayerReduce(const char *name, const int nmb, const int nkc, const int kcw,
+                   const int nk, const int nx, const DvceArray1D<Real> &p_, F f) {
+  constexpr int IB = GF_IB, RG = GF_RG, NV = GF_NV, QB = 8;
+  const int nib = (nx + IB - 1)/IB;
+  const int nlg = nmb*nkc*nib;
+  const bool host = std::is_same<DevExeSpace, Kokkos::DefaultHostExecutionSpace>::value;
+  const int ts = host ? 1 : NV;
+  const int nsc = host ? NV*NQ : NV*QB;
+  size_t scr = ScrArray1D<Real>::shmem_size(nsc);
+  using Pol = Kokkos::TeamPolicy<DevExeSpace, Kokkos::LaunchBounds<NV,1>>;
+  using TM = typename Pol::member_type;
+  Pol pol(DevExeSpace(), nlg, ts);
+  Kokkos::parallel_for(name, pol.set_scratch_size(0, Kokkos::PerTeam(scr)),
+  KOKKOS_LAMBDA(const TM &tm) {
+    int l = tm.league_rank();
+    const int ib = l%nib; l /= nib;
+    const int kc = l%nkc;
+    const int m = l/nkc;
+    const int k0 = kc*kcw;
+    const int k1 = (k0 + kcw < nk) ? (k0 + kcw) : nk;
+    const size_t ob = (static_cast<size_t>(m)*nkc + kc)*NQ;
+    ScrArray1D<Real> sw(tm.team_scratch(0), nsc);
+    if (tm.team_size() == NV) {
+      const int t = tm.team_rank();
+      const int il = t%IB, g = t/IB, i = ib*IB + il;
+      Real acc[NQ];
+      for (int q = 0; q < NQ; ++q) {acc[q] = 0.0;}
+      if (i < nx) {
+        for (int k = k0; k < k1; ++k) {f(m, k, g, i, acc);}
+      }
+      for (int q0 = 0; q0 < NQ; q0 += QB) {
+        for (int qq = 0; qq < QB; ++qq) {
+          if (q0 + qq < NQ) {sw(qq*NV + t) = acc[q0 + qq];}
+        }
+        tm.team_barrier();
+        if (t < QB*IB) {
+          const int qq = t/IB, i2 = ib*IB + t%IB;
+          if (q0 + qq < NQ && i2 < nx) {
+            Real a = 0.0;
+            for (int g2 = 0; g2 < RG; ++g2) {a += sw(qq*NV + g2*IB + t%IB);}
+            p_((ob + q0 + qq)*nx + i2) = a;
+          }
+        }
+        tm.team_barrier();
+      }
+    } else {
+      for (int t = 0; t < NV; ++t) {
+        const int il = t%IB, g = t/IB, i = ib*IB + il;
+        Real acc[NQ];
+        for (int q = 0; q < NQ; ++q) {acc[q] = 0.0;}
+        if (i < nx) {
+          for (int k = k0; k < k1; ++k) {f(m, k, g, i, acc);}
+        }
+        for (int q = 0; q < NQ; ++q) {sw(q*NV + t) = acc[q];}
+      }
+      for (int q = 0; q < NQ; ++q) {
+        for (int il = 0; il < IB; ++il) {
+          const int i2 = ib*IB + il;
+          if (i2 >= nx) continue;
+          Real a = 0.0;
+          for (int g2 = 0; g2 < RG; ++g2) {a += sw(q*NV + g2*IB + il);}
+          p_((ob + q)*nx + i2) = a;
+        }
+      }
+    }
+  });
+}
+
+//! out_(gi*nq + q) = the sum over the blocks m holding layer gi (in order) and the k
+//! chunks kc (in order) of p_(((m*nkc + kc)*nq + q)*nx + gi - x1 offset of m)
+void GFLayerSum(const int nmb, const int nkc, const int nq, const int nx, const int n1,
+                const DvceArray1D<int> &go_, const DvceArray1D<Real> &p_,
+                const DvceArray1D<Real> &out_) {
+  Kokkos::parallel_for("m1_gf_sum", Kokkos::RangePolicy<DevExeSpace>(0, n1*nq),
+  KOKKOS_LAMBDA(const int idx) {
+    const int q = idx/n1, gi = idx%n1;
+    Real s = 0.0;
+    for (int m = 0; m < nmb; ++m) {
+      const int li = gi - go_(3*m);
+      if (li < 0 || li >= nx) continue;
+      const size_t o = (static_cast<size_t>(m)*nkc*nq + q)*nx + li;
+      const size_t st = static_cast<size_t>(nq)*nx;
+      Real a[4] = {0.0, 0.0, 0.0, 0.0};   // independent partial sums, fixed order
+      int kc = 0;
+      for (; kc + 3 < nkc; kc += 4) {
+        a[0] += p_(o + kc*st);
+        a[1] += p_(o + (kc + 1)*st);
+        a[2] += p_(o + (kc + 2)*st);
+        a[3] += p_(o + (kc + 3)*st);
+      }
+      for (; kc < nkc; ++kc) {a[0] += p_(o + kc*st);}
+      s += (a[0] + a[1]) + (a[2] + a[3]);
+    }
+    out_(gi*nq + q) = s;
+  });
+}
+
+//! the layer projections g(gi, c*NB2 + a) = sum_k v_c(gk) sum_j u_a(gj) r(gi,j,k), with
+//! the BiCGStab p / s update when up > 0 (as ImplicitPCRSolveX)
+template <int NB2, int NB3>
+void GFProject(const int nmb, const int nkc, const int kcw, const int nk, const int nj,
+               const int nx, const int is, const int js, const int ks, const int n2,
+               const int n3, const int up, const int cr, const Real a1, const Real a2,
+               const DvceArray5D<Real> &iw_, const DvceArray1D<int> &go_,
+               const DvceArray1D<Real> &u_, const DvceArray1D<Real> &v_,
+               const DvceArray1D<Real> &p_) {
+  GFLayerReduce<NB2*NB3>("m1_gf_red", nmb, nkc, kcw, nk, nx, p_,
+  KOKKOS_LAMBDA(const int m, const int k, const int g, const int i, Real *acc) {
+    const int kk = k + ks, ii = i + is;
+    const int o2 = go_(3*m+1), gk = go_(3*m+2) + k;
+    Real b[NB2];
+    for (int a = 0; a < NB2; ++a) {b[a] = 0.0;}
+    for (int j = g; j < nj; j += GF_RG) {
+      const int jj = j + js;
+      Real v;
+      if (up == 1) {
+        v = iw_(m,M1_IW_KR,kk,jj,ii) + a1*(iw_(m,M1_IW_KP,kk,jj,ii)
+                                           - a2*iw_(m,M1_IW_KV,kk,jj,ii));
+        iw_(m,M1_IW_KP,kk,jj,ii) = v;
+      } else if (up == 2) {
+        v = iw_(m,M1_IW_KR,kk,jj,ii) - a1*iw_(m,M1_IW_KV,kk,jj,ii);
+        iw_(m,M1_IW_KS,kk,jj,ii) = v;
+      } else {
+        v = iw_(m,cr,kk,jj,ii);
+      }
+      for (int a = 0; a < NB2; ++a) {b[a] += u_(a*n2 + o2 + j)*v;}
+    }
+    for (int c = 0; c < NB3; ++c) {
+      const Real vc = v_(c*n3 + gk);
+      for (int a = 0; a < NB2; ++a) {acc[c*NB2 + a] += vc*b[a];}
+    }
+  });
+}
+} // namespace
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::ImplicitGFInit
+//! \brief implicit_precond = mg_gf: checks, the blocks' global offsets, the 1-D Fourier
+//! bases and their correlation sums, the storage (once)
+
+void RadiationM1::ImplicitGFInit() {
+  auto *pm = pmy_pack->pmesh;
+  auto &indcs = pm->mb_indcs;
+  const bool thrd = trans_x3;
+  const int nmb = pmy_pack->nmb_thispack;
+  const int nx = indcs.nx1, nx2 = indcs.nx2, nx3 = thrd ? indcs.nx3 : 1;
+  if (pm->multilevel) {
+    GCFatal("<rad_m1>/implicit_precond = mg_gf needs a single-level mesh");
+  }
+  if (!impl_stencil) {
+    GCFatal("<rad_m1>/implicit_precond = mg_gf needs implicit_op_stencil");
+  }
+  gc_n1 = pm->mesh_indcs.nx1;
+  gc_n2 = pm->mesh_indcs.nx2;
+  gc_n3 = thrd ? pm->mesh_indcs.nx3 : 1;
+  gc_per2 = (pm->mesh_bcs[static_cast<int>(BoundaryFace::inner_x2)]
+             == BoundaryFlag::periodic);
+  gc_per3 = (pm->mesh_bcs[static_cast<int>(BoundaryFace::inner_x3)]
+             == BoundaryFlag::periodic);
+  if (!gc_per2 || (thrd && !gc_per3)) {
+    GCFatal("<rad_m1>/implicit_precond = mg_gf needs periodic x2 (and x3) boundaries");
+  }
+  const int K = gf_k;
+  if (2*K >= gc_n2 || (thrd && 2*K >= gc_n3)) {
+    GCFatal("<rad_m1>/implicit_gf_modes: 2 K must be below the mesh nx2 (and nx3)");
+  }
+  if (gc_n1 > 1024) {
+    GCFatal("<rad_m1>/implicit_precond = mg_gf: at most 1024 x1 cells");
+  }
+  gf_nb2 = 2*K + 1;
+  gf_nb3 = thrd ? 2*K + 1 : 1;
+  gf_nm = gf_nb2*gf_nb3;
+  pmy_pack->pmb->mb_gid.sync_host();
+  gc_off_h.assign(3*nmb, 0);
+  for (int m = 0; m < nmb; ++m) {
+    auto &ll = pm->lloc_eachmb[pmy_pack->pmb->mb_gid.h_view(m)];
+    gc_off_h[3*m] = static_cast<int>(ll.lx1)*nx;
+    gc_off_h[3*m+1] = static_cast<int>(ll.lx2)*nx2;
+    gc_off_h[3*m+2] = thrd ? static_cast<int>(ll.lx3)*nx3 : 0;
+  }
+  gc_off = DvceArray1D<int>("m1_gf_off", 3*nmb);
+  {
+    auto h1 = Kokkos::create_mirror_view(gc_off);
+    for (int q = 0; q < 3*nmb; ++q) {h1(q) = gc_off_h[q];}
+    Kokkos::deep_copy(gc_off, h1);
+  }
+  // 1-D bases at the cell centres: 1, cos(2 pi k x), sin(2 pi k x), k = 1..K, and
+  // their correlation sums C(a, d) = sum_j u_a(j) u_a(j + d) (periodic), d = -2..2
+  std::vector<Real> cu, cv;
+  auto basis = [&](const int n, const int nb, DvceArray1D<Real> &d, DvceArray1D<Real> &dc,
+                   std::vector<Real> &cc) {
+    std::vector<Real> b(static_cast<size_t>(nb)*n, 1.0);
+    const Real tp = 8.0*std::atan(1.0);
+    for (int a = 1; a < nb; ++a) {
+      const int kk = (a + 1)/2;
+      for (int j = 0; j < n; ++j) {
+        const Real ph = tp*kk*(j + 0.5)/n;
+        b[a*n + j] = (a % 2 == 1) ? std::cos(ph) : std::sin(ph);
+      }
+    }
+    cc.assign(5*nb, 0.0);
+    for (int a = 0; a < nb; ++a) {
+      for (int dd = -2; dd <= 2; ++dd) {
+        Real s = 0.0;
+        for (int j = 0; j < n; ++j) {s += b[a*n + j]*b[a*n + ((j + dd)%n + n)%n];}
+        cc[5*a + dd + 2] = s;
+      }
+    }
+    d = DvceArray1D<Real>("m1_gf_basis", nb*n);
+    auto h = Kokkos::create_mirror_view(d);
+    for (int q = 0; q < nb*n; ++q) {h(q) = b[q];}
+    Kokkos::deep_copy(d, h);
+    dc = DvceArray1D<Real>("m1_gf_corr", 5*nb);
+    auto hc = Kokkos::create_mirror_view(dc);
+    for (int q = 0; q < 5*nb; ++q) {hc(q) = cc[q];}
+    Kokkos::deep_copy(dc, hc);
+  };
+  basis(gc_n2, gf_nb2, gf_u, gf_cud, cu);
+  basis(gc_n3, gf_nb3, gf_v, gf_cvd, cv);
+  gf_nrm = DvceArray1D<Real>("m1_gf_nrm", gf_nm);
+  {
+    auto h = Kokkos::create_mirror_view(gf_nrm);
+    for (int c = 0; c < gf_nb3; ++c) {
+      for (int a = 0; a < gf_nb2; ++a) {h(c*gf_nb2 + a) = 1.0/(cu[5*a + 2]*cv[5*c + 2]);}
+    }
+    Kokkos::deep_copy(gf_nrm, h);
+  }
+  // k chunks of the layer reductions: ~192 rows per team
+  gf_kcw = std::max(1, std::min(nx3, 192/std::max(nx2, 1)));
+  gf_nkc = (nx3 + gf_kcw - 1)/gf_kcw;
+  const int nqm = std::max(gf_nm, 25), n1 = gc_n1;
+  const size_t npart = static_cast<size_t>(nmb)*std::max(gf_nkc*gf_nm, nx3*25)*nx;
+  gf_part = DvceArray1D<Real>("m1_gf_part", npart);
+  gf_gh = Kokkos::View<Real*, Kokkos::SharedHostPinnedSpace>("m1_gf_gh", nqm*gc_n1);
+  gf_g = DvceArray1D<Real>("m1_gf_g", nqm*n1);
+  gf_gn = DvceArray1D<Real>("m1_gf_gn", gf_nm*n1);
+  gf_x = DvceArray1D<Real>("m1_gf_x", gf_nm*n1);
+  gf_hg = DvceArray1D<Real>("m1_gf_hg", static_cast<size_t>(gf_nb3)*gc_n2*n1);
+  gf_hx = DvceArray1D<Real>("m1_gf_hx", static_cast<size_t>(gf_nb3)*gc_n2*n1);
+  gf_ainv = DvceArray1D<Real>("m1_gf_ainv", static_cast<size_t>(gf_nm)*n1*n1);
+  gf_okd = DvceArray1D<int>("m1_gf_okd", gf_nm);
+  gf_ok = true;
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::ImplicitGFBuild
+//! \brief the mode-diagonal coarse matrices of this pass, A_q(gi, gi+di) =
+//! sum_s Sbar_s(gi)/(n2 n3) C2(a, dj_s) C3(c, dk_s), from the layer sums Sbar of the
+//! stencil slots (the coefficients of the Krylov operator: the Galerkin operator of the
+//! layer-mean stencil without the cos-sin couplings), and their banded LU with partial
+//! pivoting (device, one team per mode; a singular mode is left out, gf_okd = 0)
+
+void RadiationM1::ImplicitGFBuild() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, js = indcs.js, ks = indcs.ks;
+  const int nx = indcs.nx1, nj = indcs.nx2;
+  const int nmb = pmy_pack->nmb_thispack;
+  const bool thrd = trans_x3;
+  const int nk = thrd ? indcs.nx3 : 1;
+  const int n1 = gc_n1;
+  const bool edg = st_edges, vfold = impl_vfold && vimp_now;
+  const int nst = ost.extent_int(1);
+  auto st_ = ost;
+  auto go_ = gc_off;
+  GFLayerReduce<25>("m1_gf_sbar", nmb, nk, 1, nk, nx, gf_part,
+  KOKKOS_LAMBDA(const int m, const int k, const int g, const int i, Real *acc) {
+    const int gi = go_(3*m) + i;
+    for (int s = 0; s < 25; ++s) {
+      int di, dj, dk;
+      if (s >= nst || !GCSlot(s, thrd, edg, vfold, di, dj, dk)) continue;
+      if (gi + di < 0 || gi + di >= n1) continue;
+      Real a = 0.0;
+      for (int j = g; j < nj; j += GF_RG) {a += st_(m,s,k+ks,j+js,i+is);}
+      acc[s] += a;
+    }
+  });
+  GFLayerSum(nmb, nk, 25, nx, n1, go_, gf_part, gf_g);
+#if MPI_PARALLEL_ENABLED
+  if (global_variable::nranks > 1) {
+    auto sb = Kokkos::create_mirror_view_and_copy(Kokkos::HostSpace(), gf_g);
+    MPI_Allreduce(MPI_IN_PLACE, sb.data(), 25*n1, MPI_ATHENA_REAL, MPI_SUM,
+                  MPI_COMM_WORLD);
+    Kokkos::deep_copy(gf_g, sb);
+  }
+#endif
+  const int nb2 = gf_nb2;
+  const Real inv = 1.0/(static_cast<Real>(gc_n2)*gc_n3);
+  auto sb_ = gf_g;
+  auto cu_ = gf_cud;
+  auto cv_ = gf_cvd;
+  auto ok_ = gf_okd;
+  const int ts = std::is_same<DevExeSpace, Kokkos::DefaultHostExecutionSpace>::value
+                 ? 1 : 128;
+  size_t scr = ScrArray1D<Real>::shmem_size(7*n1) + ScrArray1D<int>::shmem_size(n1);
+  auto ai_ = gf_ainv;
+  Kokkos::TeamPolicy<DevExeSpace> pol(DevExeSpace(), gf_nm, ts);
+  Kokkos::parallel_for("m1_gf_fac", pol.set_scratch_size(0, Kokkos::PerTeam(scr)),
+  KOKKOS_LAMBDA(const TeamMember_t &tm) {
+    const int q = tm.league_rank();
+    const int a = q%nb2, c = q/nb2;
+    ScrArray1D<Real> el(tm.team_scratch(0), 7*n1);   // (r, cc) at r*7 + cc - r + 2
+    ScrArray1D<int> pvs(tm.team_scratch(0), n1);
+    for (int r = tm.team_rank(); r < n1; r += tm.team_size()) {
+      Real w[5] = {0.0, 0.0, 0.0, 0.0, 0.0};
+      for (int s = 0; s < 25; ++s) {
+        int di, dj, dk;
+        if (s >= nst || !GCSlot(s, thrd, edg, vfold, di, dj, dk)) continue;
+        if (r + di < 0 || r + di >= n1) continue;
+        w[di + 2] += sb_(r*25 + s)*inv*cu_(5*a + dj + 2)*cv_(5*c + dk + 2);
+      }
+      for (int e = 0; e < 7; ++e) {el(r*7 + e) = (e < 5) ? w[e] : 0.0;}
+    }
+    tm.team_barrier();
+    // banded LU with partial pivoting (the multipliers stay where they are made, as
+    // the host LU of mg_gc), by one thread with the three active rows in registers:
+    // w[t][e] = element (cc + t, cc + e), e = 0..4
+    Kokkos::single(Kokkos::PerTeam(tm), [&]() {
+      auto band = [&](const int r, const int cc) -> Real {   // original row r, column cc
+        const int o = cc - r + 2;
+        return (r < n1 && cc < n1 && o >= 0 && o < 5) ? el(r*7 + o) : 0.0;
+      };
+      Real w0[5], w1[5], w2[5];
+      for (int e = 0; e < 5; ++e) {
+        w0[e] = band(0, e);
+        w1[e] = band(1, e);
+        w2[e] = band(2, e);
+      }
+      int good = 1;
+      for (int cc = 0; cc < n1; ++cc) {
+        const int nr = (n1 - 1 - cc < 2) ? n1 - 1 - cc : 2;   // rows below the pivot
+        int p = 0;
+        if (nr >= 1 && fabs(w1[0]) > fabs(w0[0])) p = 1;
+        if (nr >= 2 && fabs(w2[0]) > fabs((p == 1) ? w1[0] : w0[0])) p = 2;
+        pvs(cc) = cc + p;
+        for (int e = 0; e < 5; ++e) {
+          const Real t = w0[e];
+          if (p == 1) {w0[e] = w1[e]; w1[e] = t;}
+          if (p == 2) {w0[e] = w2[e]; w2[e] = t;}
+        }
+        if (!(fabs(w0[0]) > 0.0) || !Kokkos::isfinite(w0[0])) {good = 0; break;}
+        const Real ip = 1.0/w0[0];
+        const Real f1 = (nr >= 1) ? w1[0]*ip : 0.0;
+        const Real f2 = (nr >= 2) ? w2[0]*ip : 0.0;
+        for (int e = 1; e < 5; ++e) {
+          if (f1 != 0.0) w1[e] -= f1*w0[e];
+          if (f2 != 0.0) w2[e] -= f2*w0[e];
+        }
+        for (int e = 0; e < 5; ++e) {el(cc*7 + 2 + e) = w0[e];}   // U row cc
+        if (nr >= 1) el((cc + 1)*7 + 1) = f1;                     // multipliers
+        if (nr >= 2) el((cc + 2)*7 + 0) = f2;
+        for (int e = 0; e < 4; ++e) {w0[e] = w1[e + 1]; w1[e] = w2[e + 1];}
+        w0[4] = 0.0; w1[4] = 0.0;
+        for (int e = 0; e < 5; ++e) {w2[e] = band(cc + 3, cc + 1 + e);}
+      }
+      ok_(q) = good;
+    });
+    tm.team_barrier();
+    // the inverse, one column per thread: ai_((q*n1 + col)*n1 + r) = (A_q^{-1})(r, col),
+    // the forward / back substitution of ImplicitGFPre's former per-application solve
+    const bool okq = (ok_(q) != 0);
+    for (int col = tm.team_rank(); col < n1; col += tm.team_size()) {
+      const size_t oa = (static_cast<size_t>(q)*n1 + col)*n1;
+      if (!okq) {
+        for (int r = 0; r < n1; ++r) {ai_(oa + r) = 0.0;}
+        continue;
+      }
+      Real w0 = (col == 0) ? 1.0 : 0.0;
+      Real w1 = (col == 1) ? 1.0 : 0.0;
+      Real w2 = (col == 2) ? 1.0 : 0.0;
+      for (int cc = 0; cc < n1; ++cc) {
+        const int p = pvs(cc) - cc;
+        if (p == 1) {const Real t = w0; w0 = w1; w1 = t;}
+        if (p == 2) {const Real t = w0; w0 = w2; w2 = t;}
+        if (cc + 1 < n1) w1 -= el((cc + 1)*7 + 1)*w0;
+        if (cc + 2 < n1) w2 -= el((cc + 2)*7 + 0)*w0;
+        ai_(oa + cc) = w0;
+        w0 = w1;
+        w1 = w2;
+        w2 = (cc + 3 == col) ? 1.0 : 0.0;
+      }
+      Real x1 = 0.0, x2 = 0.0, x3 = 0.0, x4 = 0.0;
+      for (int r = n1 - 1; r >= 0; --r) {
+        const int o = r*7 + 2;
+        const Real xr = (ai_(oa + r) - el(o + 1)*x1 - el(o + 2)*x2 - el(o + 3)*x3
+                         - el(o + 4)*x4)/el(o);
+        ai_(oa + r) = xr;
+        x4 = x3; x3 = x2; x2 = x1; x1 = xr;
+      }
+    }
+  });
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::ImplicitGFPre
+//! \brief mg_gf, before mg: the right-hand side (made as the BiCGStab p / s update when
+//! upd > 0), its layer projections g = P^T r (one MPI_Allreduce on several ranks),
+//! x_g = A_q^{-1} g per mode (one team per mode, the banded solve in scratch), the
+//! tables sum_a u_a (g/|phi|^2, x_g), and r' = r - P diag(1/|phi|^2) g into M1_IW_S1
+
+void RadiationM1::ImplicitGFPre(int rc, int upd, Real c1, Real c2) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, js = indcs.js, ks = indcs.ks;
+  const int nx = indcs.nx1, nj = indcs.nx2;
+  const int nmb = pmy_pack->nmb_thispack;
+  const int nk = trans_x3 ? indcs.nx3 : 1;
+  const int n1 = gc_n1, n2 = gc_n2, n3 = gc_n3, nm = gf_nm, nb2 = gf_nb2, nb3 = gf_nb3;
+  const int nkc = gf_nkc, kcw = gf_kcw;
+  auto iw_ = iw;
+  auto go_ = gc_off;
+  auto u_ = gf_u;
+  auto v_ = gf_v;
+  auto p_ = gf_part;
+  const int key = nb2*10 + nb3;
+#define M1_GF_PROJ(A, B) GFProject<A, B>(nmb, nkc, kcw, nk, nj, nx, is, js, ks, n2, n3, \
+                                         upd, rc, c1, c2, iw_, go_, u_, v_, p_)
+  switch (key) {
+    case 11: M1_GF_PROJ(1, 1); break;
+    case 31: M1_GF_PROJ(3, 1); break;
+    case 33: M1_GF_PROJ(3, 3); break;
+    case 51: M1_GF_PROJ(5, 1); break;
+    case 55: M1_GF_PROJ(5, 5); break;
+    case 71: M1_GF_PROJ(7, 1); break;
+    default: M1_GF_PROJ(7, 7); break;
+  }
+#undef M1_GF_PROJ
+  bool mpi = false;
+#if MPI_PARALLEL_ENABLED
+  if (global_variable::nranks > 1) {
+    mpi = true;
+    auto gh_ = gf_gh;
+    Kokkos::parallel_for("m1_gf_sum", Kokkos::RangePolicy<DevExeSpace>(0, n1*nm),
+    KOKKOS_LAMBDA(const int idx) {
+      const int q = idx/n1, gi = idx%n1;
+      Real s = 0.0;
+      for (int m = 0; m < nmb; ++m) {
+        const int li = gi - go_(3*m);
+        if (li < 0 || li >= nx) continue;
+        for (int kc = 0; kc < nkc; ++kc) {
+          s += p_(((static_cast<size_t>(m)*nkc + kc)*nm + q)*nx + li);
+        }
+      }
+      gh_(gi*nm + q) = s;
+    });
+    Kokkos::fence();
+    MPI_Allreduce(MPI_IN_PLACE, gf_gh.data(), nm*n1, MPI_ATHENA_REAL, MPI_SUM,
+                  MPI_COMM_WORLD);
+  }
+#endif
+  // x_g per mode: one team per mode; the layer sums (in the order of GFLayerSum), then
+  // the banded forward / back substitution by one thread in scratch
+  {
+    auto g_ = gf_gh;
+    auto gn_ = gf_gn;
+    auto x_ = gf_x;
+    auto nr_ = gf_nrm;
+    auto ok_ = gf_okd;
+    const int ts = std::is_same<DevExeSpace, Kokkos::DefaultHostExecutionSpace>::value
+                   ? 1 : 128;
+    auto ai_ = gf_ainv;
+    size_t scr = ScrArray1D<Real>::shmem_size(n1);
+    Kokkos::TeamPolicy<DevExeSpace> pol(DevExeSpace(), nm, ts);
+    Kokkos::parallel_for("m1_gf_solve", pol.set_scratch_size(0, Kokkos::PerTeam(scr)),
+    KOKKOS_LAMBDA(const TeamMember_t &tm) {
+      const int q = tm.league_rank();
+      ScrArray1D<Real> y(tm.team_scratch(0), n1);
+      const bool ok = (ok_(q) != 0);
+      const Real nq = nr_(q);
+      for (int gi = tm.team_rank(); gi < n1; gi += tm.team_size()) {
+        Real s = 0.0;
+        if (mpi) {
+          s = g_(gi*nm + q);
+        } else {
+          // independent partial sums (latency: the partials are L2 reads), fixed order
+          for (int m = 0; m < nmb; ++m) {
+            const int li = gi - go_(3*m);
+            if (li < 0 || li >= nx) continue;
+            const size_t o = (static_cast<size_t>(m)*nkc*nm + q)*nx + li;
+            const size_t st = static_cast<size_t>(nm)*nx;
+            Real a[4] = {0.0, 0.0, 0.0, 0.0};
+            int kc = 0;
+            for (; kc + 3 < nkc; kc += 4) {
+              a[0] += p_(o + kc*st);
+              a[1] += p_(o + (kc + 1)*st);
+              a[2] += p_(o + (kc + 2)*st);
+              a[3] += p_(o + (kc + 3)*st);
+            }
+            for (; kc < nkc; ++kc) {a[0] += p_(o + kc*st);}
+            s += (a[0] + a[1]) + (a[2] + a[3]);
+          }
+        }
+        y(gi) = s;
+        gn_(gi*nm + q) = ok ? s*nq : 0.0;
+      }
+      tm.team_barrier();
+      for (int gi = tm.team_rank(); gi < n1; gi += tm.team_size()) {
+        Real s = 0.0;
+        const size_t oa = static_cast<size_t>(q)*n1*n1 + gi;
+        Real a[4] = {0.0, 0.0, 0.0, 0.0};
+        int c = 0;
+        for (; c + 3 < n1; c += 4) {
+          a[0] += ai_(oa + static_cast<size_t>(c)*n1)*y(c);
+          a[1] += ai_(oa + static_cast<size_t>(c + 1)*n1)*y(c + 1);
+          a[2] += ai_(oa + static_cast<size_t>(c + 2)*n1)*y(c + 2);
+          a[3] += ai_(oa + static_cast<size_t>(c + 3)*n1)*y(c + 3);
+        }
+        for (; c < n1; ++c) {a[0] += ai_(oa + static_cast<size_t>(c)*n1)*y(c);}
+        s = (a[0] + a[1]) + (a[2] + a[3]);
+        x_(gi*nm + q) = s;
+      }
+    });
+  }
+  // the tables hg / hx ((c*n2 + gj)*n1 + gi) = sum_a u_a(gj) (gn, x)(gi, c*nb2 + a)
+  {
+    auto gn_ = gf_gn;
+    auto x_ = gf_x;
+    auto hg_ = gf_hg;
+    auto hx_ = gf_hx;
+    Kokkos::parallel_for("m1_gf_h", Kokkos::RangePolicy<DevExeSpace>(0, nb3*n2*n1),
+    KOKKOS_LAMBDA(const int idx) {
+      const int gi = idx%n1, cj = idx/n1;
+      const int gj = cj%n2, c = cj/n2;
+      Real sg = 0.0, sx = 0.0;
+      for (int a = 0; a < nb2; ++a) {
+        const Real ua = u_(a*n2 + gj);
+        sg += ua*gn_(gi*nm + c*nb2 + a);
+        sx += ua*x_(gi*nm + c*nb2 + a);
+      }
+      hg_(idx) = sg;
+      hx_(idx) = sx;
+    });
+  }
+  // r' = r - P diag(1/|phi_q|^2) P^T r
+  const int rr = (upd == 1) ? M1_IW_KP : ((upd == 2) ? M1_IW_KS : rc);
+  auto hg_ = gf_hg;
+  par_for("m1_gf_rp", DevExeSpace(), 0, nmb-1, 0, nk-1, 0, nj-1, 0, nx-1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const int gi = go_(3*m) + i, gj = go_(3*m+1) + j, gk = go_(3*m+2) + k;
+    Real g = 0.0;
+    for (int c = 0; c < nb3; ++c) {g += v_(c*n3 + gk)*hg_((c*n2 + gj)*n1 + gi);}
+    iw_(m,M1_IW_S1,k+ks,j+js,i+is) = iw_(m,rr,k+ks,j+js,i+is) - g;
+  });
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::ImplicitGFAdd
+//! \brief mg_gf without local levels: z += P x_g
+
+void RadiationM1::ImplicitGFAdd(int zc) {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, js = indcs.js, ks = indcs.ks;
+  const int nx = indcs.nx1, nj = indcs.nx2;
+  const int nmb = pmy_pack->nmb_thispack;
+  const int nk = trans_x3 ? indcs.nx3 : 1;
+  const int n1 = gc_n1, n2 = gc_n2, n3 = gc_n3, nb3 = gf_nb3;
+  auto iw_ = iw;
+  auto hx_ = gf_hx;
+  auto go_ = gc_off;
+  auto v_ = gf_v;
+  par_for("m1_gf_add", DevExeSpace(), 0, nmb-1, 0, nk-1, 0, nj-1, 0, nx-1,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const int gi = go_(3*m) + i, gj = go_(3*m+1) + j, gk = go_(3*m+2) + k;
+    Real g = 0.0;
+    for (int c = 0; c < nb3; ++c) {g += v_(c*n3 + gk)*hx_((c*n2 + gj)*n1 + gi);}
+    iw_(m,zc,k+ks,j+js,i+is) += g;
   });
 }
 
