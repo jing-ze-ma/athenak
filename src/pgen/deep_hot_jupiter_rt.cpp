@@ -594,6 +594,7 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       pin->GetOrAddReal("problem","ck_impl_tau_min",0.0);
   two_stream_rt::ck_impl_arat = pin->GetOrAddReal("problem","ck_impl_arat",2.0);
   two_stream_rt::ck_impl_debug = pin->GetOrAddInteger("problem","ck_impl_debug",0);
+  two_stream_rt::ck_impl_ncloc = pin->GetOrAddInteger("problem","ck_impl_ncloc",0);
   two_stream_rt::ck_impl_colskip =
       pin->GetOrAddBoolean("problem","ck_impl_colskip",true);
   two_stream_rt::ck_impl_once =
@@ -1414,7 +1415,10 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     // index), so it is identical for any MeshBlock decomposition or MPI rank count.
     const int ic_seed = pin->GetOrAddInteger("problem","seed",0);
     const Real seed_amp = pin->GetOrAddReal("problem","seed_amp",0.0);
-    if (!restart && seed_amp > 0.0) {
+    // problem/seed_restart = true: apply the same kick to the state read from a restart
+    // (a chaotic-noise twin of a restarted run).  Default false: restarts untouched.
+    const bool seed_rst = pin->GetOrAddBoolean("problem","seed_restart",false);
+    if ((!restart || seed_rst) && seed_amp > 0.0) {
       // global index offset of each MeshBlock, from its LogicalLocation on the host
       // (panel, global i/j/k of the block's first active cell). The LEVEL is
       // deliberately NOT hashed: the root level shifts when the MeshBlock size changes,
