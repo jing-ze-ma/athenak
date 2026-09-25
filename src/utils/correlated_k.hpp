@@ -402,14 +402,19 @@ inline DvceArray2D<Real> *ray_x_ptr = nullptr;
 //  \brief read the FastChem composition table, the four CIA pair tables and the Rayleigh
 //  cross sections. All are whitespace-separated numbers after a short header.
 
+//  ce_file is the FastChem composition table relative to dir. The default is the upstream
+//  table (100-6100 K); CE_tables/FastChem_ck_1x_int_hiT.txt extends it to 10100 K (see
+//  data/exo_fms_ck/HITEMP.md), for use with ck/Premixed_1x_g8_11_hiT.txt.
 inline void read_ck_continuum(const std::string &dir, const std::string &swfile,
-                              const Real star_teff) {
+                              const Real star_teff,
+                              const std::string &ce_file =
+                                  "CE_tables/FastChem_ck_1x_int.txt") {
   const Real rt_star_teff = star_teff;   // the stellar band fractions are built here
   // ---- FastChem composition: "nT nP nrec nspecies", species names, T grid, p grid,
   // then nrec records of {mu, VMR(H2), VMR(He), VMR(H), VMR(e-), VMR(H-)}. Note SIX
   // columns for five species: mu is prepended.
   {
-    const std::string fn = dir + "/CE_tables/FastChem_ck_1x_int.txt";
+    const std::string fn = dir + "/" + ce_file;
     std::ifstream f(fn);
     if (!f.is_open()) {
       std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: could not open '" << fn

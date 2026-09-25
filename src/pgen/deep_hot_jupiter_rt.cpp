@@ -919,7 +919,13 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
                                           "data/exo_fms_ck"),
                       pin->GetOrAddString("problem","ck_swflux",
                                           "sw_band_flux_W121_11.txt"),
-                      rt_star_teff);
+                      rt_star_teff,
+                      // problem/ck_ce_table: composition table under ck_data_dir. Read
+                      // only when set, so inputs without it keep an identical parameter
+                      // dump. Pair the _hiT table with ck/Premixed_1x_g8_11_hiT.txt.
+                      pin->DoesParameterExist("problem", "ck_ce_table") ?
+                          pin->GetString("problem", "ck_ce_table") :
+                          std::string("CE_tables/FastChem_ck_1x_int.txt"));
     ck_selftest();
     ck_rt_selftest();
     // The chain set is fixed by the table once correlated-k is on: every (band, g-point)
