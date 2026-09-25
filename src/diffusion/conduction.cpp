@@ -630,7 +630,8 @@ Conduction::~Conduction() {
   }
   if (rad_tauf_unread && global_variable::my_rank == 0) {
     std::cout << "### rad_w builds: " << rad_skip_n << " skipped (all weights provably "
-              << "0), " << rad_sweep_n << " swept" << std::endl;
+              << "0), " << rad_sweep_n << " swept; flux kernels skipped "
+              << rad_flx_skip_n << " times" << std::endl;
   }
 #if MPI_PARALLEL_ENABLED
   if (adi_comm_set) MPI_Comm_free(&adi_comm);
@@ -1329,6 +1330,20 @@ void Conduction::AddIsotropicHeatFluxRadiative(const DvceArray5D<Real> &w0,
   const bool limit = rad_flux_limit;
   const Real ffac = 4.0;                // c a T^4 = 4 sigma T^4, the free-streaming flux
   const Real sigma_sb = 5.670374419e-5;
+
+  // THE INERT-FLUX SKIP (m1-fast3, tests_m1/runs_5l_fast3).  BuildRadWeights has just
+  // proved every blend weight 0 (rad_w_zero) and no wall flux is imposed (fin = 0), so
+  // on the plain explicit path every face below adds wt*face_flux = +-0 to a flux: the
+  // three kernels change nothing (bar the sign of an exactly-zero flux, and a non-finite
+  // face_flux, which 0*inf would turn into a NaN) and are not launched.  Every other
+  // path (x1 implicit / sts, angular implicit / cap / split, diag, nan_report) runs.
+  if (taumode && rad_w_zero && fin == 0.0 && blend_r
+      && (blend_t || !multi_d || !rad_angular)
+      && !rad_implicit_x1 && !rad_sts_all && !rad_sts_split && !rad_implicit_ang
+      && !(rad_cap_ang > 0.0) && !diag && !nan_report) {
+    rad_flx_skip_n += 1.0;
+    return;
+  }
 
   // the heat flux across one face in CODE units, from the two adjacent cell states and
   // the centroid distance dl (code units); zero above the pressure cut

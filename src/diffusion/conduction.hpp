@@ -573,6 +573,7 @@ class Conduction {
   bool rad_tauf_unread = false;
   bool rad_w_zero = false;       // rad_w currently holds the all-zero skip state
   double rad_skip_n = 0.0, rad_sweep_n = 0.0;  // counters (skipped / full builds)
+  double rad_flx_skip_n = 0.0;   // AddIsotropicHeatFluxRadiative calls skipped (inert)
   // rad_blend_use_2s: REMOVED as a runtime switch (measured a net loss on every arm it
   // was tried on -- see git history).  This module can no longer turn it on, but the
   // two members below survive because src/utils/two_stream_rt.hpp still names them
@@ -633,7 +634,14 @@ Real RosselandTable(const DvceArray2D<Real> &tab, const DvceArray1D<Real> &lT,
   } else if (x >= lT(nT-1)) {
     i = nT-2; fx = 1.0;
   } else {
-    while (i < nT-2 && lT(i+1) <= x) ++i;
+    // the largest i <= nT-2 with lT(i) <= x, by bisection: the index (and so every
+    // bit of the result) the linear scan `while (i < nT-2 && lT(i+1) <= x) ++i` gave,
+    // for any non-decreasing lT, in log2(nT) loads instead of up to nT (m1-fast3)
+    int hi = nT-2;
+    while (i < hi) {
+      const int mid = (i + hi + 1)/2;
+      if (lT(mid) <= x) {i = mid;} else {hi = mid - 1;}
+    }
     fx = (x - lT(i))/(lT(i+1) - lT(i));
   }
   if (!(y > lP(0))) {
@@ -641,7 +649,11 @@ Real RosselandTable(const DvceArray2D<Real> &tab, const DvceArray1D<Real> &lT,
   } else if (y >= lP(nP-1)) {
     j = nP-2; fy = 1.0;
   } else {
-    while (j < nP-2 && lP(j+1) <= y) ++j;
+    int hj = nP-2;   // bisection, as for i
+    while (j < hj) {
+      const int mid = (j + hj + 1)/2;
+      if (lP(mid) <= y) {j = mid;} else {hj = mid - 1;}
+    }
     fy = (y - lP(j))/(lP(j+1) - lP(j));
   }
   const Real lk = (1.0-fx)*((1.0-fy)*tab(i,j) + fy*tab(i,j+1))
