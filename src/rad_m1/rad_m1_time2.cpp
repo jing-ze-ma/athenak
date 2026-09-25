@@ -112,6 +112,59 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
   if (pin->DoesParameterExist("rad_m1", "time2_vet_extrap")) {
     t2_vext = pin->GetBoolean("rad_m1", "time2_vet_extrap");
   }
+  // time2_vet_col (closure = vet_col; m1-sp-order2b, tests_m1/runs_5q_sporder2b): when
+  // the vet_col tensor (and surface q) of the two stage solves is built.  Both stages
+  // sit at t^{n+1} (c = 1), so D(U^n) is an O(dt) lag and the step first order in time.
+  //   lag     : D(U^n) for both stages (the m1-sph2 form)
+  //   predict : ONE build per step at P = (stage-1 start) + dt K1 (radiation U^n + dt
+  //             K1, gas the Heun predictor + dt K1 of the coupling): D(t^{n+1}) + O(dt^2)
+  //   rebuild : predict for stage 1, then a second build at the stage-1 solution Y1
+  //   extrap  : DIAGNOSTIC, D^n + (dt/dt_prev)(D^n - D^{n-1}); the history is not in
+  //             the restart file
+  // DEFAULT predict on the spherical-polar wedge; lag elsewhere and on a restart whose
+  // file lacks the key (echoed).  K1 is restart state: predict restarts bitwise.
+  // time2_vstage (m1-sp-order2b, tests_m1/runs_5q_sporder2b): in a stage solve under
+  // implicit_vimp the lagged v-dependent terms take the stage's own velocity instead of
+  // the stage-start one (which misses the stage's radiative kick, an O(dt) lag): the
+  // comoving correction E0 - E at v_old + dv^k of the iterate, and the derived cell flux
+  // F = F0 + a E at the velocity the write-back gives the gas.  Without it F is first
+  // order in time (rsw_u_T: 1.00, E/T/gas 1.9-2.0).  Default true on the spherical-polar
+  // wedge (a restart whose file lacks the key keeps false, echoed); elsewhere false
+  // unless named.
+  t2_fvnew = false;
+  if (sph_geom) {
+    t2_fvnew = pin->GetOrAddBoolean("rad_m1", "time2_vstage",
+                                    !global_variable::restart_run);
+  } else if (pin->DoesParameterExist("rad_m1", "time2_vstage")) {
+    t2_fvnew = pin->GetBoolean("rad_m1", "time2_vstage");
+  }
+  t2_vcmode = 0;
+  if (vet_col) {
+    const bool vdef = sph_geom && !global_variable::restart_run;
+    std::string vm = (sph_geom || pin->DoesParameterExist("rad_m1", "time2_vet_col")) ?
+        pin->GetOrAddString("rad_m1", "time2_vet_col", vdef ? "predict" : "lag") :
+        std::string("lag");
+    if (vm.compare("lag") == 0) {
+      t2_vcmode = 0;
+    } else if (vm.compare("predict") == 0) {
+      t2_vcmode = 1;
+    } else if (vm.compare("rebuild") == 0) {
+      t2_vcmode = 2;
+    } else if (vm.compare("extrap") == 0) {
+      t2_vcmode = 3;
+    } else {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<rad_m1>/time2_vet_col = '" << vm
+                << "' is not a choice (lag | predict | rebuild | extrap)" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+    if (t2_vcmode != 0 && vcol_every != 1) {
+      std::cout << "### FATAL ERROR in " << __FILE__ << " at line " << __LINE__
+                << std::endl << "<rad_m1>/time2_vet_col = " << vm
+                << " needs vet_col_every = 1" << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
+  }
   // time2_lin_tol / time2_lin_tol_fac (tests_m1/runs_5f_h2fast): the linear (Krylov)
   // tolerance of the two stage solves: time2_lin_tol when named, else implicit_lin_tol
   // x time2_lin_tol_fac.  Default 10 (the input files set implicit_lin_tol =
@@ -175,9 +228,15 @@ void RadiationM1::Time2Init(ParameterInput *pin) {
     Kokkos::deep_copy(vet_prev, 0.0);
   }
   if (vet_col) {
-    // Time2VetStart's save slots (E, T) and the saved stage-start opacities
-    Kokkos::realloc(vet_now, nmb, 2, n3, n2, n1);
+    // Time2VetStart's save slots (E, T) and the saved stage-start opacities;
+    // time2_vet_col = predict | rebuild: also KT, T(Y1), E(Y1) and the inner face flux
+    Kokkos::realloc(vet_now, nmb, (t2_vcmode == 0 || t2_vcmode == 3) ? 2 : 6, n3, n2, n1);
     Kokkos::realloc(vet_opac, nmb, M1_NOPAC, n3, n2, n1);
+    if (t2_vcmode == 3) {
+      Kokkos::realloc(vcol_prev, nmb, n3, n2, n1);
+      Kokkos::realloc(vcol_qprev, nmb, n3, n2);
+      t2_vcprev = false;
+    }
   }
   t2_ok = false;
   if (global_variable::my_rank == 0) {
@@ -502,6 +561,180 @@ void RadiationM1::Time2VetExtrapolate() {
 }
 
 //----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::Time2VetColAt
+//! \brief closure = vet_col, time2_vet_col = predict | rebuild (m1-sp-order2b): the
+//! formal solution of a state at t^{n+1} accurate to O(dt^2), in place of U^n.
+//!   which = 1 (stage 1): P = the stage-1 start + dt K1: radiation E^n + dt K1_E, the
+//!             inner face flux F^n + dt K1_F, gas = the Heun predictor + dt K1 of the
+//!             momentum and total energy (the implicit coupling's rate; the hydro u0 is
+//!             already the old vector, Heun + (1-g) dt K1, so g dt K1 is added);
+//!   which = 2 (stage 2, rebuild): the stage-1 solution Y1: E and T saved at the end of
+//!             the stage-1 solve (Time2VetColSaveY1), rho of the stage-2 start, the inner
+//!             face flux 2 F_avg - F^n.
+//! The source (M1_IW_EN, M1_IW_TP), the extinction (M1_IW_KT), the opacities and f0x1 at
+//! the inner face are swapped in for the build and put back afterwards; the solve itself
+//! sees its own stage-start state as before.  Opacity options without the fused form
+//! (opac_freeze, dbg_opac_patch, an empty table) fall back to D(U^n) (counted).
+
+void RadiationM1::Time2VetColAt(int which) {
+  hydro::Hydro *ph = pmy_pack->phydro;
+  const bool hh = (ph != nullptr);
+  const bool fast = hh && !opac_zero && !opac_freeze && (dbg_opac_patch == 1.0) &&
+                    !(opacity_type == M1_OPAC_TABLE && otab.nT <= 0);
+  if (hh && !fast) {
+    t2_vcnfb += 1.0;
+    if (which == 1) {
+      Time2VetStart();
+    }
+    return;
+  }
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  const Real dt = pmy_pack->pmesh->dt;
+  const Real gdt = kT2G*dt;
+  const bool two = (which == 2);
+  auto iw_ = iw;
+  auto vn_ = vet_now;
+  auto u0_ = u0;
+  auto k1_ = t2k1;
+  auto f0_ = f0x1;
+  auto t2f1_ = t2f1;
+  const Real efl = e_floor;
+  // the inner face flux (vet_col_order2 core rays): saved in slot 5 at i = is
+  par_for("m1_t2_vcf", DevExeSpace(), 0, nmb1, ks, ke, js, je,
+  KOKKOS_LAMBDA(const int m, const int k, const int j) {
+    const Real f = f0_(m,k,j,is);
+    vn_(m,5,k,j,is) = f;
+    f0_(m,k,j,is) = two ? (2.0*f - t2f1_(m,k,j,is)) : (f + dt*k1_(m,M1_T2_F1,k,j,is));
+  });
+  if (hh) {
+    Kokkos::deep_copy(DevExeSpace(), vet_opac, opac);
+    auto uh = ph->u0;
+    const bool etg = ph->use_etotgrav;
+    auto phicc = ph->phicc0;
+    auto eos = ph->peos->eos_data;
+    auto opac_ = opac;
+    const int otype = opacity_type;
+    const Real kp = kappa_p, kev = kappa_e, kf = kappa_f, kss = kappa_s;
+    const Real rref = opac_rho_ref, tref = opac_t_ref, aa = opac_a, bb = opac_b;
+    M1OpacTab ot = otab;
+    par_for("m1_t2_vcp", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      const Real d = uh(m,IDN,k,j,i);
+      Real t, e;
+      if (two) {
+        t = vn_(m,3,k,j,i);
+        e = vn_(m,4,k,j,i);
+      } else {
+        // the hydro u0 is already the stage-1 OLD vector here (ImplicitSolve added
+        // t2inc = (1-g) dt K1 to it): g dt K1 completes dt K1
+        const Real m1 = uh(m,IM1,k,j,i) + gdt*k1_(m,M1_T2_M1,k,j,i);
+        const Real m2 = uh(m,IM2,k,j,i) + gdt*k1_(m,M1_T2_M1+1,k,j,i);
+        const Real m3 = uh(m,IM3,k,j,i) + gdt*k1_(m,M1_T2_M1+2,k,j,i);
+        Real eint = uh(m,IEN,k,j,i) + gdt*k1_(m,M1_T2_EN,k,j,i)
+                    - 0.5*(m1*m1 + m2*m2 + m3*m3)/fmax(d, 1.0e-300);
+        if (etg) eint -= d*phicc(m,k,j,i);
+        t = eos.Temperature(d, fmax(eint, 0.0));
+        e = u0_(m,M1_E,k,j,i) + dt*k1_(m,M1_T2_E,k,j,i);
+      }
+      Real op, oe, of, os;
+      if (otype == M1_OPAC_TABLE) {
+        M1TableOpacities(ot, d, t, op, oe, of, os);
+      } else {
+        M1Opacities(otype, d, t, kp, kev, kf, kss, rref, tref, aa, bb, op, oe, of, os);
+      }
+      opac_(m,M1_OP_P,k,j,i) = d*op;
+      opac_(m,M1_OP_E,k,j,i) = d*oe;
+      opac_(m,M1_OP_T,k,j,i) = d*(of + os);
+      vn_(m,0,k,j,i) = iw_(m,M1_IW_EN,k,j,i);
+      vn_(m,1,k,j,i) = iw_(m,M1_IW_TP,k,j,i);
+      vn_(m,2,k,j,i) = iw_(m,M1_IW_KT,k,j,i);
+      iw_(m,M1_IW_EN,k,j,i) = fmax(e, efl);
+      iw_(m,M1_IW_TP,k,j,i) = t;
+      iw_(m,M1_IW_KT,k,j,i) = d*(of + os);
+    });
+  } else {
+    par_for("m1_t2_vcr", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+    KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+      vn_(m,0,k,j,i) = iw_(m,M1_IW_EN,k,j,i);
+      const Real e = two ? vn_(m,4,k,j,i)
+                         : (u0_(m,M1_E,k,j,i) + dt*k1_(m,M1_T2_E,k,j,i));
+      iw_(m,M1_IW_EN,k,j,i) = fmax(e, efl);
+    });
+  }
+  VetColBuild();
+  if (hh) {
+    Kokkos::deep_copy(DevExeSpace(), opac, vet_opac);
+  }
+  par_for("m1_t2_vcb", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    iw_(m,M1_IW_EN,k,j,i) = vn_(m,0,k,j,i);
+    if (hh) {
+      iw_(m,M1_IW_TP,k,j,i) = vn_(m,1,k,j,i);
+      iw_(m,M1_IW_KT,k,j,i) = vn_(m,2,k,j,i);
+    }
+    if (i == is) {
+      f0_(m,k,j,is) = vn_(m,5,k,j,is);
+    }
+  });
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::Time2VetColSaveY1
+//! \brief time2_vet_col = rebuild: at the end of the stage-1 solve, E and T of Y1
+
+void RadiationM1::Time2VetColSaveY1() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  auto iw_ = iw;
+  auto vn_ = vet_now;
+  auto u0_ = u0;
+  par_for("m1_t2_vcy", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    vn_(m,3,k,j,i) = iw_(m,M1_IW_TP,k,j,i);
+    vn_(m,4,k,j,i) = u0_(m,M1_E,k,j,i);
+  });
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn void RadiationM1::Time2VetColExtrap
+//! \brief time2_vet_col = extrap (DIAGNOSTIC): f_K and q of D(U^n) extrapolated to
+//! t^{n+1} with the previous step's, f_K clipped to [vet_col_fk_min, 1], q to its range
+
+void RadiationM1::Time2VetColExtrap() {
+  auto &indcs = pmy_pack->pmesh->mb_indcs;
+  const int is = indcs.is, ie = indcs.ie, js = indcs.js, je = indcs.je;
+  const int ks = indcs.ks, ke = indcs.ke;
+  const int nmb1 = pmy_pack->nmb_thispack - 1;
+  const Real r = (t2_vcprev && t2_dtprev > 0.0) ? (pmy_pack->pmesh->dt/t2_dtprev) : 0.0;
+  auto tt_ = tau_ten;
+  auto vp_ = vcol_prev;
+  const Real fkm = vcol_axis_flux ? (1.0/3.0) : vcol_fkmin;
+  par_for("m1_t2_vcx", DevExeSpace(), 0, nmb1, ks, ke, js, je, is, ie,
+  KOKKOS_LAMBDA(const int m, const int k, const int j, const int i) {
+    const Real dn = tt_(m,0,k,j,i);
+    tt_(m,0,k,j,i) = fmin(fmax(dn + r*(dn - vp_(m,k,j,i)), fkm), 1.0);
+    vp_(m,k,j,i) = dn;
+  });
+  if (vcol_sq) {
+    auto vq_ = vcol_q;
+    auto qp_ = vcol_qprev;
+    const Real qlo = vcol_qmin, qhi = vcol_qmax;
+    par_for("m1_t2_vcq", DevExeSpace(), 0, nmb1, ks, ke, js, je,
+    KOKKOS_LAMBDA(const int m, const int k, const int j) {
+      const Real qn = vq_(m,k,j);
+      vq_(m,k,j) = fmin(fmax(qn + r*(qn - qp_(m,k,j)), qlo), qhi);
+      qp_(m,k,j) = qn;
+    });
+  }
+  t2_vcprev = true;
+}
+
+//----------------------------------------------------------------------------------------
 //! \fn RadiationM1::Time2Rst*
 //! \brief the restart channels: K1 (M1_T2_NK), then ipred2 (3, implicit_predictor), then
 //! vet_prev (M1_T2_NVET, closure = vet_sc)
@@ -584,7 +817,13 @@ void RadiationM1::Time2Report() {
   if (global_variable::my_rank != 0) return;
   std::cout << "<rad_m1> time_scheme=hesdirk2: stage steps=" << t2_nstep
             << " backward-Euler steps=" << t2_nbe << " stage fallbacks=" << t2_nfall
-            << " vet clips=" << t2_nclip << std::endl;
+            << " vet clips=" << t2_nclip;
+  if (vet_col && t2_vcmode != 0) {
+    std::cout << " time2_vet_col=" << ((t2_vcmode == 1) ? "predict" :
+                                       ((t2_vcmode == 2) ? "rebuild" : "extrap"))
+              << " fallbacks=" << t2_vcnfb;
+  }
+  std::cout << std::endl;
 }
 
 }  // namespace radm1

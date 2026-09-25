@@ -1,0 +1,112 @@
+== A_box1: VERDICT BITWISE files=10 diff=0 rc=0 rc=0 
+== A_box2o: VERDICT BITWISE files=10 diff=0 rc=0 rc=0 
+== A_slab1: VERDICT BITWISE files=10 diff=0 rc=0 rc=0 
+== A_slabv2: VERDICT BITWISE files=10 diff=0 rc=0 rc=0 
+== A_nd2: VERDICT BITWISE files=12 diff=0 rc=0 rc=0 
+== A_boxnd2: VERDICT BITWISE files=10 diff=0 rc=0 rc=0 
+== A_cart_sym: VERDICT BITWISE files=18 diff=0 rc=0 rc=0 
+== A_marshak_cart: VERDICT BITWISE files=4 diff=0 rc=0 rc=0 
+== A_rw_cart: VERDICT BITWISE files=17 diff=0 rc=0 rc=0 
+== A_pp_np: VERDICT BITWISE files=30 diff=0 rc=0 rc=0 
+== B_nd2: VERDICT BITWISE files=13 diff=0 rc=0 rc=0 
+== B_boxnd2: VERDICT BITWISE files=10 diff=0 rc=0 rc=0 
+== B_boxv2: VERDICT BITWISE files=10 diff=0 rc=0 rc=0 
+== B_cart_sym: VERDICT BITWISE files=18 diff=0 rc=0 rc=0 
+== B_marshak_cart: VERDICT BITWISE files=4 diff=0 rc=0 rc=0 
+== B_rw_cart: VERDICT BITWISE files=17 diff=0 rc=0 rc=0 
+== B_milne_vc: VERDICT BITWISE files=16 diff=0 rc=0 rc=0 
+pcfix o_sp_sph_diff_be.athinput mg_gc -> rbgs_fwd
+pcfix o_sp_sph_diff_str_be.athinput mg_gc -> rbgs_fwd
+pcfix o_sp_sph_atm_be.athinput unchanged
+pcfix o_sp_sph_sym_be.athinput unchanged
+pcfix o_sp_marshak_sph_be.athinput unchanged
+pcfix o_sp_sph_atm_vc_be.athinput mg_gc -> rbgs_fwd
+pcfix o_sp_sph_atm_str_vc_be.athinput mg_gc -> rbgs_fwd
+pcfix o_sp_sph_sym_gas_be.athinput unchanged
+pcfix o_sp_sph_atm_bin_vc_be.athinput unchanged
+pcfix o_sp_sph_fs_be.athinput unchanged
+pcfix o_sp_rw_sph_R100_be.athinput unchanged
+== CO_sp_marshak_sph_be: VERDICT BITWISE files=4 diff=0 rc=0 rc=0 
+== CO_sp_rw_sph_R100_be: VERDICT BITWISE files=17 diff=0 rc=0 rc=0 
+== CO_sp_sph_atm_be: VERDICT BITWISE files=8 diff=0 rc=0 rc=0 
+== CO_sp_sph_atm_bin_vc_be: VERDICT BITWISE files=12 diff=0 rc=0 rc=0 
+== CO_sp_sph_atm_str_vc_be: VERDICT BITWISE files=8 diff=0 rc=0 rc=0 
+== CO_sp_sph_atm_vc_be: VERDICT BITWISE files=8 diff=0 rc=0 rc=0 
+== CO_sp_sph_diff_be: VERDICT BITWISE files=3 diff=0 rc=0 rc=0 
+== CO_sp_sph_diff_str_be: VERDICT BITWISE files=3 diff=0 rc=0 rc=0 
+== CO_sp_sph_fs_be: VERDICT BITWISE files=3 diff=0 rc=0 rc=0 
+== CO_sp_sph_sym_be: VERDICT BITWISE files=12 diff=0 rc=0 rc=0 
+== CO_sp_sph_sym_gas_be: VERDICT BITWISE files=24 diff=0 rc=0 rc=0 
+== CO_vc_sp_sph_fs_be: VERDICT DIFFERENT files=3 diff=2 rc=0 rc=0 
+== CO_vc_sp_sph_sym_be: VERDICT BITWISE files=12 diff=0 rc=0 rc=0 
+== CO_vc_sp_sph_sym_gas_be: VERDICT BITWISE files=24 diff=0 rc=0 rc=0 
+pcfix o_sp_sph_sym.athinput unchanged
+pcfix o_sp_sph_atm_vc.athinput mg_gc -> rbgs_fwd
+pcfix o_sp_sph_sym_gas.athinput unchanged
+pcfix o_sp_sph_fs.athinput unchanged
+== FO_sp_sph_atm_vc: VERDICT BITWISE files=8 diff=0 rc=0 rc=0 
+== FO_sp_sph_fs: VERDICT BITWISE files=3 diff=0 rc=0 rc=0 
+== FO_sp_sph_sym: VERDICT BITWISE files=12 diff=0 rc=0 rc=0 
+== FO_sp_sph_sym_gas: VERDICT BITWISE files=24 diff=0 rc=0 rc=0 
+== FO_vc_sp_sph_fs: VERDICT DIFFERENT files=3 diff=2 rc=0 rc=0 
+== FO_vc_sp_sph_sym: VERDICT BITWISE files=12 diff=0 rc=0 rc=0 
+== FO_vc_sp_sph_sym_gas: VERDICT BITWISE files=24 diff=0 rc=0 rc=0 
+== O_vc: VERDICT BITWISE files=26 diff=0 rc=0 rc=0 
+<rad_m1> implicit transport: solves=5.000000e+02 Picard iterations mean=3.914000e+00 max=5.000000e+00 NON-CONVERGED=0.000000e+00
+== O_vcr: VERDICT BITWISE files=26 diff=0 rc=0 rc=0 
+<rad_m1> implicit transport: solves=5.000000e+02 Picard iterations mean=3.000000e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00
+== O_ed: VERDICT BITWISE files=26 diff=0 rc=0 rc=0 
+<rad_m1> implicit transport: solves=5.000000e+02 Picard iterations mean=4.240000e+00 max=5.000000e+00 NON-CONVERGED=0.000000e+00
+same sd.00002.rst
+same sd.00003.rst
+RESTART VERDICT BITWISE rst=2
+<rad_m1> implicit transport: solves=9.990000e+02 Picard iterations mean=4.683684e+00 max=6.000000e+00 NON-CONVERGED=0.000000e+00
+<rad_m1> time_scheme=hesdirk2: stage steps=4.990000e+02 backward-Euler steps=1.000000e+00 stage fallbacks=0.000000e+00 vet clips=0.000000e+00 time2_vet_col=pred
+<rad_m1> closure = vet_col: per-column 1-D formal solution, spherical p-rays (ncore 8, nsub 1, 73 rays, 64 shells), axis radial, rebuilt every 1 step(s); vet_col_order2 (quadratic mu, face core); f_K >= 0.000000e+00; 1 shell(s) kept trapezoid weights; team build, 16 shells per chunk, team size AUTO; outer Marshak q = H(face)/J(top cell) in [1.000000e-03, 1.000000e+00]
+<rad_m1> time_scheme=hesdirk2: stage steps=2.500000e+02 backward-Euler steps=0.000000e+00 stage fallbacks=0.000000e+00 vet clips=0.000000e+00 time2_vet_col=predict fallbacks=0.000000e+00
+same sd.00002.rst
+same sd.00003.rst
+RESTART VERDICT BITWISE rst=2
+<rad_m1> closure = vet_col: per-column 1-D formal solution, spherical p-rays (ncore 8, nsub 1, 73 rays, 64 shells), axis radial, rebuilt every 1 step(s); vet_co
+<rad_m1> implicit transport: solves=9.990000e+02 Picard iterations mean=3.379379e+00 max=6.000000e+00 NON-CONVERGED=0.000000e+00
+<rad_m1> time_scheme=hesdirk2: stage steps=4.990000e+02 backward-Euler steps=1.000000e+00 stage fallbacks=0.000000e+00 vet clips=0.000000e+00 time2_vet_col=pred
+<rad_m1> closure = vet_col: per-column 1-D formal solution, spherical p-rays (ncore 8, nsub 1, 73 rays, 64 shells), axis radial, rebuilt every 1 step(s); vet_col_order2 (quadratic mu, face core); f_K >= 0.000000e+00; reflecting top (mirrored, a <= 9.900000e-01); 1 shell(s) kept trapezoid weights; team build, 16 shells per chunk, team size AUTO; outer Marshak q = H(face)/J(top cell) in [1.000000e-03, 1.000000e+00]
+<rad_m1> time_scheme=hesdirk2: stage steps=2.500000e+02 backward-Euler steps=0.000000e+00 stage fallbacks=0.000000e+00 vet clips=0.000000e+00 time2_vet_col=predict fallbacks=0.000000e+00
+same sd.00002.rst
+same sd.00003.rst
+RESTART VERDICT BITWISE rst=2
+<rad_m1> implicit transport: solves=9.990000e+02 Picard iterations mean=4.880881e+00 max=6.000000e+00 NON-CONVERGED=0.000000e+00
+== O2: VERDICT BITWISE files=7 diff=0 rc=0 rc=0 
+<rad_m1> implicit transport: solves=3.000000e+02 Picard iterations mean=1.156667e+00 max=2.000000e+00 NON-CONVERGED=0.000000e+00
+<rad_m1> implicit transport: solves=3.000000e+02 Picard iterations mean=1.156667e+00 max=2.000000e+00 NON-CONVERGED=0.000000e+00
+<rad_m1> implicit transport: solves=5.990000e+02 Picard iterations mean=1.168614e+00 max=3.000000e+00 NON-CONVERGED=0.000000e+00
+/viper/ptmp2/jinma/sporder2b_0925/gate/O2/new/rst/sa.00002.rst: implicit_precond_float      = 0                  # Default value added at run time
+/viper/ptmp2/jinma/sporder2b_0925/gate/O2/ref/rst/sa.00002.rst: implicit_precond_float      = 0        # Default value added at run time
+/viper/ptmp2/jinma/sporder2b_0925/gate/O2_src/ref/rst/sa.00002.rst: implicit_precond_float      = 0        # Default value added at run time
+same sa.00002.rst
+same sa.00003.rst
+RESTART VERDICT BITWISE rst=2
+<rad_m1> implicit transport: solves=3.000000e+02 Picard iterations mean=1.160000e+00 max=2.000000e+00 NON-CONVERGED=0.000000e+00
+<rad_m1> implicit transport: solves=5.990000e+02 Picard iterations mean=1.165275e+00 max=2.000000e+00 NON-CONVERGED=0.000000e+00
+/viper/ptmp2/jinma/sporder2b_0925/gate/R2_rst/new/rst/sa.00002.rst: implicit_precond_float      = 0        # Default value added at run time
+/viper/ptmp2/jinma/sporder2b_0925/gate/R2_src/new/rst/sa.00002.rst: implicit_precond_float      = 0        # Default value added at run time
+== C_sd: VERDICT DIFFERENT files=3 diff=2 rc=0 rc=0 
+== C_sds: VERDICT DIFFERENT files=3 diff=2 rc=0 rc=0 
+== C_sym: VERDICT DIFFERENT files=12 diff=6 rc=0 rc=0 
+== C_symg: VERDICT DIFFERENT files=24 diff=12 rc=0 rc=0 
+== C_mk: VERDICT DIFFERENT files=4 diff=2 rc=0 rc=0 
+== C_fs: VERDICT BITWISE files=3 diff=0 rc=0 rc=0 
+== C_atm: VERDICT BITWISE files=16 diff=0 rc=0 rc=0 
+== C_rw: VERDICT BITWISE files=17 diff=0 rc=0 rc=0 
+== C_msym: VERDICT BITWISE files=12 diff=0 rc=0 rc=0 
+== C_vatm: VERDICT DIFFERENT files=16 diff=13 rc=0 rc=0 
+== C_vsym: VERDICT DIFFERENT files=12 diff=6 rc=0 rc=0 
+== C_vsymg: VERDICT DIFFERENT files=24 diff=12 rc=0 rc=0 
+== C_vstr: VERDICT DIFFERENT files=8 diff=5 rc=0 rc=0 
+== C_vpp: VERDICT BITWISE files=8 diff=0 rc=0 rc=0 
+== C_vbin: VERDICT BITWISE files=12 diff=0 rc=0 rc=0 
+== F_sym: VERDICT DIFFERENT files=12 diff=6 rc=0 rc=0 
+== F_symg: VERDICT DIFFERENT files=24 diff=12 rc=0 rc=0 
+== F_vsym: VERDICT DIFFERENT files=12 diff=6 rc=0 rc=0 
+== F_vatm: VERDICT DIFFERENT files=8 diff=5 rc=0 rc=0 
+== F_fs: VERDICT BITWISE files=3 diff=0 rc=0 rc=0 
