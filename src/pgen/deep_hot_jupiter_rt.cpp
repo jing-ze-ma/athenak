@@ -693,6 +693,23 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
       pin->GetOrAddInteger("problem","ck_impl_esc_extra",8);
   two_stream_rt::ck_impl_aa = pin->GetOrAddInteger("problem","ck_impl_aa",0);
   two_stream_rt::ck_impl_aa_rst = pin->GetOrAddBoolean("problem","ck_impl_aa_rst",true);
+  // problem/ck_impl_floorbound / ck_impl_kkt_demax: the Newton as a bound-constrained
+  // solve (e >= e_floor; KKT cells on the floor / on the demax bound count as converged).
+  // Both default off (bitwise).  See utils/two_stream_column_ck.hpp.
+  two_stream_rt::ck_impl_floorbound =
+      pin->GetOrAddBoolean("problem","ck_impl_floorbound",false);
+  two_stream_rt::ck_impl_kkt_demax =
+      pin->GetOrAddBoolean("problem","ck_impl_kkt_demax",false);
+  if ((two_stream_rt::ck_impl_floorbound || two_stream_rt::ck_impl_kkt_demax) &&
+      (!two_stream_rt::ck_implicit || !two_stream_rt::ck_impl_fuse ||
+       two_stream_rt::ck_impl_debug > 0 || two_stream_rt::ck_impl_glob != 0 ||
+       two_stream_rt::ck_impl_aa > 0)) {
+    std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: problem/ck_impl_floorbound and "
+              << "problem/ck_impl_kkt_demax are implemented on the fused ck_implicit "
+              << "Newton only (ck_implicit, ck_impl_fuse, ck_impl_debug <= 0, "
+              << "ck_impl_glob = none, ck_impl_aa = 0)." << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
   // problem/ck_impl_reuse_jac (0 off / 1 chord / 2 scaled chord) and problem/ck_impl_seed
   // (0 off / 1 semi-implicit / 2 exact lagged): the two phase-4 levers, both default off.
   // See tests_ck_implicit/README_phase4.md.
