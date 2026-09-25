@@ -80,3 +80,47 @@ python3 ana.py <arms>                                   # floors, dt
 3. If not: implement design step 2 (Broyden or a banded Jacobian on the flagged columns) behind a new default-off key.
    Then build into bin_0925, rerun the same arms plus the new key, and gate.
 4. Update SMOKE_DIAG.md (new section 8) and commit. No merge, no push.
+
+## 09-26: stalled columns diagnosed (job 11981384, binary bin_0925/athena.gpu.9326804a, md5 7fb751ee)
+Script: `wasp121_0925/smokediag/diag14.sub`. Input: `in_s.athinput` (= in_b + the two new keys).
+Runs: fresh 10x start, 200 cycles, 50 calls, tol 1e-8, maxit 12. Summaries with `python3 lev.py s_b0 ...`.
+
+| arm | not converged / 50 | notes |
+|---|---|---|
+| s_b0 (production keys) | 14 | stalls, e.g. 4.89e-08 held for 4 passes with 8 columns left |
+| s_nofb (floorbound off) | 13 | floorbound is NOT the cause |
+| s_nokd (kkt_demax off) | 46 | residual pinned at 4.7e-5 |
+| s_none (both off) | 46 | |
+| s_krow (`ck_impl_kkt_row=true`) | 1 | the one left is cycle 0 (the start transient, 1.6e-7) |
+| s_krowm16 (kkt_row + maxit 16) | 0 | 8.1 passes/call, 36.8 ms/cycle (b0 39.3; single runs, indicative) |
+
+**Cause** (from the `ck_impl_stalldbg=6` dump, s_b0/run.log):
+- Where: NIGHT-side columns, lon +-100..118 deg, lat +-21..70 deg (the dump shows mirror pairs).
+- The stalled worst cell:
+  - either i = 48-49 at ~1e-5 bar, T 230-250 K (just above tfloor);
+  - or i = 52 at ~1e-4 bar, T 1280 K.
+  - Its r/e is 1e-4 to 2e-3, i.e. about 3-5e-8 in the tol norm, and its applied step is 1e-11 to 1e-14 of e.
+- The cell directly above it sits on the ck_impl_demax LOWER bound (kkt=1, cap=1). Its residual asks for cooling of
+  0.4-1.8 e, and its applied step is 0.
+- That KKT cell is removed from the convergence test, but its row still gives the tridiagonal an unclipped step of
+  -0.4 to -1.7 e.
+  - The neighbour's solution is built on that step through the off-diagonal.
+  - The neighbour therefore converges to the fixed point of the clipped iteration, not to R = 0.
+  - Its step decays quadratically to 0 while its residual stays constant: the stall.
+- It is NOT round-off: hEm/e ~1e-4 and hS/e ~0.05 at the worst cell, so the round-off floor is ~1e-17 of e.
+  Tol 1e-8 is achievable.
+
+**Fix:** `problem/ck_impl_kkt_row` (commit f82d8591, namespace fix 9326804a; default false = bitwise).
+- A thick KKT cell gets the identity row with d = 0, applied after rsec so the secant keeps the true residual.
+  Its neighbours then solve the reduced (active-set) system.
+- `problem/ck_impl_stalldbg = N` dumps every active column's worst cell, its neighbours and all clipped cells on passes
+  >= N. Diagnosis only.
+  - It is verbose: about 250 MB of log per 200 cycles, because a demax-clamped step differs from sx at round-off and
+    so counts as clipped.
+
+**Next:**
+- Recommended 10x keys: `ck_impl_kkt_row = true`, maxit 16 (0/50 at tol 1e-8).
+- Run the longer test (>= 800 cycles) plus the 1x regression arm.
+- Run the CPU gates: keys off bitwise vs cab48eb7; 6 + 6 restart bitwise with kkt_row on.
+- Both keys must be listed in the input before they can be overridden on the command line.
+- The stalldbg run logs in smokediag/s_* are large (s_none ~1 GB) and can be deleted.
