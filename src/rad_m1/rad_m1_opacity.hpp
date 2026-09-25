@@ -55,7 +55,11 @@ void M1TableOpacities(const M1OpacTab &tab, const Real d, const Real t,
     int hi = nT-2;
     while (i < hi) {
       const int mid = (i + hi + 1)/2;
-      if (tab.lT(mid) <= x) {i = mid;} else {hi = mid - 1;}
+      if (tab.lT(mid) <= x) {
+        i = mid;
+      } else {
+        hi = mid - 1;
+      }
     }
     fx = (x - tab.lT(i))/(tab.lT(i+1) - tab.lT(i));
   }
@@ -67,7 +71,11 @@ void M1TableOpacities(const M1OpacTab &tab, const Real d, const Real t,
     int hj = nD-2;
     while (j < hj) {
       const int mid = (j + hj + 1)/2;
-      if (tab.lD(mid) <= y) {j = mid;} else {hj = mid - 1;}
+      if (tab.lD(mid) <= y) {
+        j = mid;
+      } else {
+        hj = mid - 1;
+      }
     }
     fy = (y - tab.lD(j))/(tab.lD(j+1) - tab.lD(j));
   }

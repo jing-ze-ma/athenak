@@ -6485,7 +6485,11 @@ TaskStatus RadiationM1::ImplicitSolve(Driver *pdrive, int stage) {
       iw_(m,M1_IW_EP,k,j,i) = fmax((e0 + ap*ar*t2*t2)*iae, efl);
       iw_(m,M1_IW_TP,k,j,i) = tq;
     });
-    if (trans) {ImplicitTransverseHalo(1);} else {ImplicitX1Halo(true);}
+    if (trans) {
+      ImplicitTransverseHalo(1);
+    } else {
+      ImplicitX1Halo(true);
+    }
   }
 
   // MILESTONE 3e: the Anderson histories start empty at every step, and the per-cell
