@@ -1,6 +1,6 @@
 ## RULE ZERO
 
-- **[NEXT SESSION START HERE: docs/handover/HANDOVER-2026-09-24.md (top block, 07:20)](merge-finished-branches.md)** — 09-24 night: 7 merges (rt-integration 809b47df), next production = T4+c2+ck_impl_every=4 with 2 blockers (mhd-split, ck-restart agents), S2 on sp running
+- **[NEXT SESSION START HERE: docs/handover/HANDOVER-2026-09-25.md, section LATE 09-25 STATE](merge-finished-branches.md)** — 23:40: sponge arms (WASP-121b 1x) running, a320 queued; unfinished branches ck-newton10x-b / m1-fast5-box / m1-fast5-sp each have RESUME.md in their worktree
 
 - **[cs_mhd_prod4 STOPPED 09-25 (was running since 09-22)](cs-mhd-prod4-run.md)** — jobs 11941995 (link 1) + 11944873-5 (links 2-4, HSA_NO_SCRATCH_RECLAIM=1), bench/cs_mhd_prod4; what to check at rot 0.5; do not relaunch/chain without the user
 - **[cs_hyd4_prod STOPPED 09-25 (hydro twin of prod4)](cs-hyd4-prod-run.md)** — jobs 11943719 (link 1) + 11944876-8 (links 2-4, HSA_NO_SCRATCH_RECLAIM=1), bench/cs_hyd4_prod; do not relaunch/chain without the user
@@ -33,7 +33,12 @@ Standing user rules (full text in [index-standing-rules](index-standing-rules.md
 - **[TEST STATE = prod4 RESTARTS (user 09-23)](test-state-use-prod4-restarts.md)** — dhj tests start from the newest bench/cs_mhd_prod4/rst restart (read-only copy), not prod3 (odd-even columns)
 - **[GPU ENV IN EVERY JOB (user 09-23)](gpu-env-settings-all-jobs.md)** — every GPU sbatch exports the validated set: HSA_XNACK=1, HSA_NO_SCRATCH_RECLAIM=1 (+ whatever the env sweep validates)
 - **[MEASURE COST ON GPU (user 09-22, tightened 23:40)](measure-cost-on-gpu.md)** — ALL timing comparisons on GPU (apudev, same binary, interleaved); CPU = correctness gates only; productions are all GPU
-- **[THREAD TRIAGE 09-25: production path only (user)](thread-triage-0925.md)** — no new side threads without asking; mg phase 2 parked; ck-fast2 waits
+- **[TARGET PLANET = WASP-121b (user 09-25)](target-planet-wasp121b.md)** — all parameters from literature; R_p at the computed transit pressure; setup in wasp121_0925
+- **[KELT-20b setup ready, not run (09-25)](kelt20b-setup-0925.md)** — mass 2.0 M_J (unmeasured); UV < 0.26 um 14 % folded into band 10; albedo 0.32 disputed
+- **[CLOUDS desk study 09-25](clouds-desk-study-0925.md)** — ADAM = SPARC renamed; we lack scattering; cloud-free baseline OK; minimal nightside-deck test
+- **[OVERNIGHT PLAN 09-25 (user asleep)](overnight-plan-0925.md)** — smoke -> submit sponge arms if clean; merge gated branches; morning summary only
+- **[NO ACCURACY SACRIFICE for speed (user 09-25)](no-accuracy-sacrifice.md)** — only accuracy-neutral speed-ups; multi-rate etc. opt-in, never recommended
+- **[THREAD TRIAGE 09-25: production path only (user)](thread-triage-0925.md)** — no new side threads without asking; mg phase 2 RESUMED as m1-coarse2 (user); ck-fast2 running
 - **[DELEGATE to SONNET when adequate (user 09-22)](delegate-to-sonnet-when-adequate.md)** — ONLY really simple, single-step, binary-checked tasks -> sonnet (tightened 09-22 after the 3-attempt profiling job); everything else -> opus
 - **[DELEGATE simple tasks to Opus 5](delegate-simple-tasks-to-opus.md)** — from the first tool call; Fable decides, Opus executes
 - **[DELEGATE heavy work to Opus 5](delegate-heavy-work-to-opus.md)** — agents read/edit/build/launch/monitor; I diagnose, brief, and VERIFY every diff and number
@@ -47,13 +52,13 @@ Standing user rules (full text in [index-standing-rules](index-standing-rules.md
 - **[NEXT dhj PRODUCTION: T4 + c2 + ck_impl_every=4 (user 09-24)](next-prod-ck-c2.md)** — GOAL 300 rotations (~1060 Earth days); keys inside; all blockers cleared 09-24; setup needs user choices (grid, MHD/hydro, nx1, start, nodes)
 - **[MHD RELAX: hydro spin-up + 10-20 rot C256 MHD is enough (09-25)](mhd-relax-hydro-spinup-ok.md)** — bbot=3 MHD = hydro within noise after rot 6; grid256 (8-coef, nx1 256/320 GPU) merged 587accf0
 - **[GRID RESOLUTION COUNTS ONLY BELOW 1e-6 bar (user 09-25)](resolution-only-below-1e-6-bar.md)** — cells/H targets for p > 1e-6 bar only; top is free
-- **[SPARC 300 rot + 3 sponge-test arms 100 rot (09-25)](sparc-sponge-campaign-0925.md)** — /viper/ptmp2/jinma/sparc_0925; setup agent building binary with sponge switches
+- **[SPONGE RUNS SUBMITTED on WASP-121b 1x (09-25 22:45)](sparc-sponge-campaign-0925.md)** — jobs 11980312-5, /viper/ptmp2/jinma/sparc_w121x1/<arm>; check T-floor cells < 1e-6 bar after a few rotations
 - **[ck_nquad = 2 FOR dhj PRODUCTION (user 09-25)](ck-nquad2-production.md)** — exact diffusion limit; nq1 is 10 % low; validation branch ck-nq2
 - **[M1 precond = mg merged 091d1422 (09-25)](m1-precond-mg.md)** — box -7 %/cycle, wedge ~0; boxes only, levels 3
 - **[dhj DEEP IS CONVECTIVE below ~3 bar; old IC transient ~60 rot (09-25)](dhj-deep-convective-verdict.md)** — fix = exact-adiabat IC on the relaxed adiabat; no MLT needed
 
 - **[NEW M1/VET RUN: DECIDE CFL FOR hesdirk2 (user 09-24)](m1-hesdirk2-cfl-recommendation.md)** — cfl 0.6 (2x more accurate, 1.19x cheaper than be@0.3) or 0.9 (same accuracy, 1.57x cheaper); ask the user at setup
-- **[vet_col IS ENOUGH; no SC on sp (measured 09-24)](vet-col-enough-no-sc-on-sp.md)** — tensor err <1 % below tau 1, <=6 % at the corrugated photosphere
+- **[vet_col IS ENOUGH; no SC on sp (He 09-24, dhj 09-25)](vet-col-enough-no-sc-on-sp.md)** — dhj night photosphere f_rr 8 %, flux 1.5 %; SC ~60x cost, only f_rr usable; NO-GO
 - **[M1 THIN-CELL CURE: implicit_closure_thin_relax = 1.5 (merged 09-24, default off)](m1-thin-cell-cure.md)** — same mechanism as the 09-22 He-slab thin-top damage; lp 0.5 + offdiag none does NOT cure it
 - **[dhj KINK: horizontal rad diffusion RULED OUT (09-24, real profile)](dhj-kink-horizontal-rad-candidate.md)** — rad_angular adds zero flux where the kinks are; irrelevant at 128 and 1024 grids
 

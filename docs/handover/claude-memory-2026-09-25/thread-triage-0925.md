@@ -12,3 +12,5 @@ phase 2 (global coarse correction) PARKED. ck-fast2 (nq2 speed + scaling) NOT st
 **Why:** the user felt too many threads were open.
 **How to apply:** don't open new side threads without asking; propose, and prefer finishing/merging over starting.
 Related: [[sparc-sponge-campaign-0925]], [[ck-nquad2-production]], [[m1-precond-mg]].
+- m1-sp-order2 (2nd-order implicit VET on sp wedge) started 09-25 by user request; wt_sporder2
+- cloud desk study started 09-25 (user asked; Parmentier SPARC/MITgcm + new ADAM framework): /viper/ptmp2/jinma/clouds_0925
