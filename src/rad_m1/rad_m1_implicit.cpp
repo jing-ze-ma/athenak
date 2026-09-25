@@ -3548,6 +3548,15 @@ struct M1R4Red {
   KOKKOS_INLINE_FUNCTION
   bool references_scalar() const {return true;}
 };
+// the team size of implicit_op_team_red: 256 cells on a GPU; a host backend allows only
+// 1-thread teams (Serial; 256 exceeds OpenMP's limit), so there each cell is its own
+// partial (round-off)
+#if defined(KOKKOS_ENABLE_HIP) || defined(KOKKOS_ENABLE_CUDA) \
+    || defined(KOKKOS_ENABLE_SYCL)
+constexpr int kM1TeamRed = 256;
+#else
+constexpr int kM1TeamRed = 1;
+#endif
 } // namespace
 
 //----------------------------------------------------------------------------------------
@@ -3621,7 +3630,7 @@ void RadiationM1::ImplicitStencilOp(int xc, int yc, int red, Real *out,
     // implicit_op_team_red (m1-fast3): one cell per thread, as the plain par_for, and
     // the sums of each team of 256 cells into opt_part; then one small reduction over
     // the teams.  y is bitwise; the sums are summed in another order (round-off).
-    constexpr int ts = 256;
+    constexpr int ts = kM1TeamRed;
     const int nw = (nmb1 + 1)*nkji;
     const int nl = (nw + ts - 1)/ts;
     if (opt_part.extent_int(0) < nl) {
@@ -3907,6 +3916,56 @@ void RadiationM1::ImplicitStencilOpPart(int xc, int yc, int red, int part, int w
     return;
   }
   M1HoRed::result_view_type res(reinterpret_cast<M1HoVal *>(hs));
+  if (impl_opteam) {
+    // implicit_op_team_red (m1-fast3): as in ImplicitStencilOp, one cell per thread in
+    // teams, per-team partials in opt_part, then a small reduction into the pinned hs
+    // (still asynchronous).  Same stream, so part 2 cannot overwrite opt_part before
+    // part 1's small reduction has read it.  Round-off vs the fused reduction.
+    constexpr int ts = kM1TeamRed;
+    const int nw = (nmb1 + 1)*ncell;
+    const int nl = (nw + ts - 1)/ts;
+    if (opt_part.extent_int(0) < nl) {
+      // sized for the whole pack at once, so parts 1 and 2 never reallocate
+      const int nall = (nmb1 + 1)*(ke - ks + 1)*(je - js + 1)*(ie - is + 1);
+      opt_part = DvceArray2D<Real>("m1_opt_part", std::max(nl, (nall + ts - 1)/ts), 4);
+    }
+    auto pt_ = opt_part;
+    Kokkos::parallel_for("m1_impl_stopt", Kokkos::TeamPolicy<DevExeSpace>(nl, ts),
+    KOKKOS_LAMBDA(const TeamMember_t &tm) {
+      const int idx = tm.league_rank()*ts + tm.team_rank();
+      M1R4Val v;
+      v.s[0] = 0.0; v.s[1] = 0.0; v.s[2] = 0.0; v.mx = 0.0;
+      if (idx < nw) {
+        int m, k, j, i;
+        cell(idx, m, k, j, i);
+        const Real y = row(m, k, j, i);
+        if (rm == 1 || rm == 4) {
+          v.s[0] = iw_(m,M1_IW_KRH,k,j,i)*y;
+          if (rm == 4) {v.mx = fabs(iw_(m,M1_IW_KR,k,j,i));}
+        } else {
+          v.s[0] = y*iw_(m,M1_IW_KS,k,j,i);
+          v.s[1] = y*y;
+          if (rm == 3) {v.s[2] = iw_(m,M1_IW_KRH,k,j,i)*y;}
+        }
+      }
+      tm.team_reduce(M1R4Red(v));
+      if (tm.team_rank() == 0) {
+        const int l = tm.league_rank();
+        pt_(l,0) = v.s[0];
+        pt_(l,1) = v.s[1];
+        pt_(l,2) = v.s[2];
+        pt_(l,3) = v.mx;
+      }
+    });
+    Kokkos::parallel_reduce("m1_impl_stopt2", Kokkos::RangePolicy<DevExeSpace>(0, nl),
+    KOKKOS_LAMBDA(const int l, M1HoVal &v) {
+      v.s[0] += pt_(l,0);
+      v.s[1] += pt_(l,1);
+      v.s[2] += pt_(l,2);
+      v.mx = (pt_(l,3) > v.mx) ? pt_(l,3) : v.mx;
+    }, M1HoRed(res));
+    return;
+  }
   Kokkos::parallel_reduce("m1_impl_stopr", pol,
   KOKKOS_LAMBDA(const int idx, M1HoVal &v) {
     int m, k, j, i;
