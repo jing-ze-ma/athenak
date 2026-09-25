@@ -909,6 +909,24 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
     MeshBlockPack *pk = pmy_mesh_->pmb_pack;
     Conduction *pcd = (pk->pmhd != nullptr) ? pk->pmhd->pcond : pk->phydro->pcond;
     if (pcd != nullptr && pcd->rad_kappa_tab) ck_need_table = true;
+    // The tau blend (<hydro|mhd>/rad_tau_hi > 0) splits each x1 face flux between the
+    // conduction (weight rad_w) and the two-stream (1 - rad_w).  The conduction always
+    // differences with the mesh's own face areas and volumes (spherical on a curvilinear
+    // mesh); with ck_spherical = false the correlated-k deposit is plane-parallel (unit
+    // areas, dx1).  The blended flux then mixes two divergences and does not telescope,
+    // i.e. the blend is not conservative.  ck_spherical = true uses the same areas and
+    // volumes as the conduction, and the blend is exact.
+    if (rt_ck && !ck_spherical && (use_spherical_polar || use_cubed_sphere_) &&
+        pcd != nullptr && pcd->rad_tau_mode) {
+      std::cout << "### FATAL ERROR in deep_hot_jupiter_rt: problem/rt_ck = true with "
+                << "problem/ck_spherical = false on a curvilinear mesh, together with "
+                << "the radiative-conduction tau blend (rad_tau_hi > 0).  The ck "
+                << "deposit is then plane-parallel while the conduction is spherical, "
+                << "so the blended x1 face flux does not telescope (not conservative). "
+                << "Set problem/ck_spherical = true (the curvilinear default), or turn "
+                << "the blend off (rad_tau_hi = 0)." << std::endl;
+      std::exit(EXIT_FAILURE);
+    }
   }
   if (ck_need_table && ck_lk_ptr == nullptr) {
     read_ck_table(pin->GetOrAddString("problem","ck_table",

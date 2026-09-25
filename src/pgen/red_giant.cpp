@@ -1652,6 +1652,21 @@ void ProblemGenerator::UserProblem(ParameterInput *pin, const bool restart) {
               << "two solvers for the same layers. Pick one." << std::endl;
     std::exit(EXIT_FAILURE);
   }
+  // red_giant never sets two_stream_rt::ck_spherical, so its correlated-k deposit is
+  // always the plane-parallel form (unit areas, dx1), while the conduction differences
+  // with the mesh's spherical areas and volumes.  Under the tau blend the two share each
+  // x1 face flux, and the blended flux then does not telescope (not conservative).
+  // See the same guard in deep_hot_jupiter_rt.cpp.
+  if (rt_ck_ && !two_stream_rt::ck_spherical && curv && pc != nullptr &&
+      pc->rad_tau_mode) {
+    std::cout << "### FATAL ERROR in red_giant: problem/rt_ck = true on a curvilinear "
+              << "mesh with the radiative-conduction tau blend (rad_tau_hi > 0).  The ck "
+              << "deposit is plane-parallel here (red_giant has no ck_spherical switch) "
+              << "while the conduction is spherical, so the blended x1 face flux does "
+              << "not telescope (not conservative).  Use problem/rt_grey (spherical) or "
+              << "a 1D Cartesian column." << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
   if (rt_grey_) {
     namespace ts = two_stream_rt;
     ts::rt_grey = true;
