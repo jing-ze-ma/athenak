@@ -1,4 +1,41 @@
-# High-temperature extension of the Exo-FMS 11-band tables (`_hiT`, 2026-09-25)
+# High-temperature extension of the Exo-FMS 11-band tables (`_hiT2`, 2026-09-25)
+
+**Use `_hiT2`.** `_hiT` (first version, below) is continuous in value but not in slope at
+6100 K: d ln k/d ln T jumps by up to 720 (1x) / 650 (10x) there and by up to 990 above
+8000 K at low p (the H bf/ff term was added as kH(T) - kH(6100), clipped at 0, which at
+p < 1e-3 bar is 1e9 times the line k and falls below its 6100 K value once H ionises).
+`_hiT2` (`python3 tools/gen_hitemp.py [--met 1x|10x]`; `--v1` rebuilds `_hiT`
+byte-identically):
+
+* above 7100 K: the same carrier taper plus the FULL kH(T) (the upstream data lack H bf/ff
+  at every T); kappa_R/kappa_P within 0-3 % of `_hiT` at 7100-10000 K and >= 1e-4 bar
+  (+10 % kappa_R at 1e-6 bar, 10000 K);
+* 6100-7100 K: log q = (1-w) log q_a + w log q_b per (p, band, g) and per composition
+  column, q_a the upstream table continued at its own 5900-6100 K (k) / 6075-6100 K (CE)
+  log-log slope, q_b the physics above, w the quintic smootherstep in ln T; k-table nodes
+  every 25 K in the window (6125..7075, then 7100..10100 every 200 K), CE every 25 K as
+  before. g-monotonicity restored by a running max (161 entries 1x, 183 10x);
+* rows <= 6100 K: verbatim tokens (checked).
+
+Slope continuity (node-to-node jump of the table's d ln k/d ln T, all p, b, g;
+`/viper/ptmp2/jinma/hitemp2_0925/slopes2.py`):
+
+| table | at 6100 K | 6125-7100 K | > 7100 K | upstream 4000-5900 K |
+| --- | --- | --- | --- | --- |
+| 1x `_hiT` -> `_hiT2` | 722 -> 1.1 | 700 -> 25 | 987 -> 5.1 | 35 |
+| 10x `_hiT` -> `_hiT2` | 651 -> 1.0 | 629 -> 22 | 871 -> 8.8 | 36 |
+
+Max |d ln k/d ln T| in the window drops from 720/649 to 309/281 (1x/10x); what is left
+is the H bf continuum switching on at p < 1e-3 bar, where it exceeds the upstream line k
+by ~1e9 (the upstream 4000-6100 K maximum is 40). Composition columns: slope jump at
+6100 K 1.1 -> 2e-4. kappa_R/kappa_P: plots and numbers in
+`/viper/ptmp2/jinma/hitemp2_0925/` (kappa_RP_hiT_vs_hiT2.png, kmeans.out).
+
+The 10x tables (WASP-121b, KELT-20b) are built with `CK_DATA=<dir with the upstream 10x
+files>` and `FASTCHEM_INPUT` = Asplund 2009 with the metals +1 dex
+(`/viper/ptmp2/jinma/wasp121_0925/ckdata10`, `met10/fc_in`).
+
+# First version (`_hiT`, 2026-09-25)
 
 The upstream tables (`PROVENANCE.md`) stop at **6100 K** (k-table and FastChem composition
 alike, p = 1e-8 .. 1000 bar); beyond that every lookup clamps. The deep hot Jupiter reaches
